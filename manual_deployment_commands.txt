@@ -1,0 +1,119 @@
+MANUAL DEPLOYMENT COMMANDS FOR VPS 5.189.154.73:2223
+================================================
+
+STEP 1: Connect to your VPS
+----------------------------
+Open Command Prompt or PowerShell and run:
+ssh -p 2223 iotxad_user@5.189.154.73
+Password: iotxad@2025
+
+STEP 2: Navigate to project directory
+---------------------------------
+cd /var/www/lyceapade-new
+
+STEP 3: Create backups (optional but recommended)
+--------------------------------------------
+cp app/Views/pages/dashboard.php app/Views/pages/dashboard.php.backup
+cp app/Views/main.php app/Views/main.php.backup
+cp public/assets/css/main.css public/assets/css/main.css.backup
+cp public/assets/js/parsley-extra-validators.js public/assets/js/parsley-extra-validators.js.backup
+
+STEP 4: Create necessary directories
+-----------------------------------
+mkdir -p public/assets/css/assets/fonts
+mkdir -p public/assets/images/profile
+
+STEP 5: Download FontAwesome fonts (if local fonts not available)
+-------------------------------------------------------------
+cd public/assets/css/assets/fonts
+wget -q https://use.fontawesome.com/releases/v5.15.4/webfonts/fa-solid-900.woff2
+wget -q https://use.fontawesome.com/releases/v5.15.4/webfonts/fa-solid-900.woff
+wget -q https://use.fontawesome.com/releases/v5.15.4/webfonts/fa-solid-900.ttf
+wget -q https://use.fontawesome.com/releases/v5.15.4/webfonts/fa-solid-900.eot
+cd /var/www/lyceapade-new
+
+STEP 6: Create placeholder profile image
+--------------------------------------
+cp public/assets/images/no_image.jpg public/assets/images/profile/69cb742350f35.png
+
+STEP 7: Set correct permissions
+-------------------------------
+sudo chown -R www-data:www-data app/Views/
+sudo chown -R www-data:www-data public/assets/
+sudo find app/Views/ -type f -exec chmod 644 {} \;
+sudo find public/assets/ -type f -exec chmod 644 {} \;
+sudo find public/assets/ -type d -exec chmod 755 {} \;
+
+STEP 8: Restart web server
+--------------------------
+sudo systemctl reload apache2
+# OR if using nginx:
+sudo systemctl reload nginx
+
+STEP 9: Upload modified files from your local machine
+--------------------------------------------------
+Open a NEW Command Prompt window on your Windows machine and run these commands:
+
+# Using scp (if available):
+scp -P 2223 c:\xampp7\htdocs\apade\app\Views\pages\dashboard.php iotxad_user@5.189.154.73:/var/www/lyceapade-new/app/Views/pages/
+scp -P 2223 c:\xampp7\htdocs\apade\app\Views\main.php iotxad_user@5.189.154.73:/var/www/lyceapade-new/app/Views/
+scp -P 2223 c:\xampp7\htdocs\apade\public\assets\css\main.css iotxad_user@5.189.154.73:/var/www/lyceapade-new/public/assets/css/
+scp -P 2223 c:\xampp7\htdocs\apade\public\assets\js\parsley-extra-validators.js iotxad_user@5.189.154.73:/var/www/lyceapade-new/public/assets/js/
+
+# If scp not available, you can use FileZilla or WinSCP with these settings:
+# Host: 5.189.154.73
+# Port: 2223
+# Username: iotxad_user
+# Password: iotxad@2025
+# Protocol: SFTP
+
+STEP 10: Alternative - Create files directly on VPS
+------------------------------------------------
+If you can't upload files, create them directly on VPS:
+
+# Edit dashboard.php
+nano app/Views/pages/dashboard.php
+# Find all donut-chart divs and add width: 100% to style attribute
+# Change: style="height: 300px;"
+# To: style="height: 300px; width: 100%;"
+
+# Edit main.php
+nano app/Views/main.php
+# Add autocomplete attributes to password fields:
+# autocomplete="current-password" for current password fields
+# autocomplete="new-password" for new password fields
+
+# Edit main.css
+nano public/assets/css/main.css
+# Find font paths around line 22195-22196 and change:
+# From: url(assets/fonts/fa-solid-900.woff2)
+# To: url(assets/css/assets/fonts/fa-solid-900.woff2)
+
+# Edit parsley-extra-validators.js
+nano public/assets/js/parsley-extra-validators.js
+# Replace all instances of:
+# window.ParsleyValidator.addValidator
+# With:
+# window.Parsley.addValidator
+
+STEP 11: Testing
+----------------
+1. Open browser: http://5.189.154.73/dashboard
+2. Press F12 for developer tools
+3. Go to Console tab
+4. Refresh with Ctrl+Shift+R
+5. Check for errors
+
+Expected results:
+- No 404 errors for fonts or images
+- Charts render properly with correct dimensions
+- FontAwesome icons display correctly
+- No deprecated method warnings
+- Password fields have proper autocomplete
+
+TROUBLESHOOTING:
+---------------
+- If fonts still 404: Check file paths in main.css
+- If charts still broken: Check browser console for JavaScript errors
+- If permissions denied: Run sudo chown commands again
+- If web server not responding: Check sudo systemctl status apache2/nginx

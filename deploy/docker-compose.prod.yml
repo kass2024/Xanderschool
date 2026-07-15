@@ -1,0 +1,44 @@
+# Independent stack — does NOT join parrot_* networks or use /var/www
+# Binds ONLY host port 8091 (Apache keeps 80/443; parrot keeps 8090)
+name: xander-school
+
+services:
+  db:
+    image: mariadb:10.6
+    container_name: xander_school_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - xander_school_mysql_data:/var/lib/mysql
+      - ./db/iotxa_db.sql:/docker-entrypoint-initdb.d/01-iotxa.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    # MySQL NOT published on host — avoids conflict with host 3306 / parrot_mysql
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xander_school_app
+    restart: unless-stopped
+    ports:
+      # Localhost only — Apache proxies schoolmis.xanderglobalacademy.com → 8091
+      - "127.0.0.1:${XANDER_SCHOOL_HTTP_PORT:-8091}:80"
+    volumes:
+      - ../app:/var/www/html
+    environment:
+      CI_ENVIRONMENT: production
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  xander_school_mysql_data:
