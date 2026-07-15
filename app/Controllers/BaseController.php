@@ -9,7 +9,7 @@ use App\Models\StudentModel;
 use App\Models\UserModel;
 use App\Models\IntouchAccount;
 use CodeIgniter\Controller;
-define('version', "V1.1.2");
+define('version', "V2.0.0");
 const PER_SMS=160;
 //define("SMS_API","http://dstr.connectbind.com:8080/sendsms?username=kod-somanet&password=BDS2020&type=0&dlr=1&source=SOMANET");
 //const SMS_API="https://www.intouchsms.co.rw/api/sendsms/.json";

@@ -5,170 +5,243 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta http-equiv="Content-Language" content="en">
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-	<title>IOTXAD - <?= lang("app.login")?></title>
+	<title>SmartSMS — XanderTech Smart School Management System</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
-	<meta name="description" content="School management system — attendance, academics, fees, staff and reports in one place.">
+	<meta name="description" content="XanderTech Smart School Management System (SmartSMS) — cloud-based admissions, attendance, examinations, fees, report cards, and parent communication.">
 	<meta name="msapplication-tap-highlight" content="no">
+	<link rel="icon" href="<?= base_url('assets/images/smartsms-logo-web.png'); ?>">
 	<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.11.2/css/all.css" rel="stylesheet">
 	<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
-	<meta http-equiv="Pragma" content="no-cache">
-	<meta http-equiv="Expires" content="0">
 	<style>
 		:root {
-			--school-green: #145c3a;
-			--school-green-dark: #0f4730;
-			--school-accent: #d62828;
-			--school-page: #eef1f4;
-			--school-input: #f3f6f9;
-			--school-text: #1c2430;
-			--school-muted: #6b7785;
+			--brand: #0EA5E9;
+			--brand-dark: #0284C7;
+			--navy: #0B1220;
+			--navy-800: #1A2336;
+			--page: #F8FAFC;
+			--input: #F1F5F9;
+			--text: #0F172A;
+			--muted: #64748B;
+			--violet: #6366F1;
 		}
 		* { box-sizing: border-box; }
 		html, body {
 			margin: 0;
 			min-height: 100%;
 			font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-			background: var(--school-page);
-			color: var(--school-text);
+			background:
+				radial-gradient(900px 420px at 10% -10%, rgba(14,165,233,0.18), transparent 60%),
+				radial-gradient(700px 360px at 95% 0%, rgba(99,102,241,0.14), transparent 55%),
+				var(--page);
+			color: var(--text);
 		}
 		.login-page {
 			min-height: 100vh;
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			padding: 24px 16px 56px;
+			padding: 24px 16px 64px;
 		}
 		.login-card {
 			width: 100%;
-			max-width: 980px;
-			min-height: 560px;
+			max-width: 1080px;
+			min-height: 620px;
 			display: grid;
-			grid-template-columns: 1fr 1fr;
-			border-radius: 18px;
+			grid-template-columns: 1.08fr 0.92fr;
+			border-radius: 20px;
 			overflow: hidden;
 			background: #fff;
-			box-shadow: 0 18px 48px rgba(20, 40, 30, 0.14);
+			box-shadow: 0 22px 55px rgba(11, 18, 32, 0.16);
+			border: 1px solid #E2E8F0;
 		}
 		.login-brand {
-			background: linear-gradient(165deg, var(--school-green) 0%, var(--school-green-dark) 100%);
+			background: linear-gradient(165deg, var(--navy) 0%, #0F172A 52%, var(--navy-800) 100%);
 			color: #fff;
-			padding: 42px 40px;
+			padding: 36px 40px 40px;
 			display: flex;
 			flex-direction: column;
-			justify-content: center;
-			gap: 18px;
+			gap: 14px;
+			position: relative;
+			overflow: hidden;
+		}
+		.login-brand::after {
+			content: "";
+			position: absolute;
+			width: 280px;
+			height: 280px;
+			right: -80px;
+			bottom: -90px;
+			border-radius: 50%;
+			background: radial-gradient(circle, rgba(14,165,233,0.35), transparent 68%);
+			pointer-events: none;
+		}
+		.brand-top {
+			display: flex;
+			align-items: center;
+			gap: 14px;
+			position: relative;
+			z-index: 1;
 		}
 		.brand-logo {
-			width: 88px;
-			height: 88px;
-			border-radius: 50%;
+			width: 72px;
+			height: 72px;
+			border-radius: 16px;
 			object-fit: cover;
 			background: #fff;
-			border: 3px solid rgba(255,255,255,0.35);
-			padding: 6px;
+			padding: 4px;
+			box-shadow: 0 8px 24px rgba(0,0,0,0.25);
 		}
-		.brand-logo-fallback {
-			width: 88px;
-			height: 88px;
-			border-radius: 50%;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			background: rgba(255,255,255,0.12);
-			border: 2px solid rgba(255,255,255,0.35);
-			font-weight: 700;
-			font-size: 22px;
-			letter-spacing: 0.5px;
-		}
-		.login-brand h1 {
+		.brand-titles h1 {
 			margin: 0;
-			font-size: 2rem;
+			font-size: 1.55rem;
 			line-height: 1.15;
-			font-weight: 700;
+			font-weight: 800;
+			letter-spacing: -0.02em;
 		}
-		.login-brand .lead {
-			margin: 0;
+		.brand-titles h1 span { color: #38BDF8; }
+		.brand-titles .tag {
+			margin-top: 4px;
+			font-size: 0.72rem;
+			letter-spacing: 0.12em;
+			text-transform: uppercase;
+			color: #94A3B8;
+			font-weight: 600;
+		}
+		.lead {
+			margin: 6px 0 0;
 			font-size: 0.98rem;
 			line-height: 1.55;
-			color: rgba(255,255,255,0.92);
+			color: #E2E8F0;
+			position: relative;
+			z-index: 1;
 		}
-		.feature-list {
-			list-style: none;
+		.problem {
+			margin: 0;
+			font-size: 0.9rem;
+			line-height: 1.5;
+			color: #CBD5E1;
+			position: relative;
+			z-index: 1;
+			padding: 12px 14px;
+			border-radius: 12px;
+			background: rgba(255,255,255,0.05);
+			border: 1px solid rgba(148,163,184,0.2);
+		}
+		.section-label {
 			margin: 4px 0 0;
-			padding: 0;
+			font-size: 0.72rem;
+			letter-spacing: 0.12em;
+			text-transform: uppercase;
+			color: #38BDF8;
+			font-weight: 700;
+			position: relative;
+			z-index: 1;
+		}
+		.feature-grid {
 			display: grid;
-			gap: 8px;
-		}
-		.feature-list li {
-			display: flex;
-			align-items: flex-start;
+			grid-template-columns: 1fr 1fr;
 			gap: 10px;
-			font-size: 0.92rem;
-			line-height: 1.4;
-			color: rgba(255,255,255,0.95);
+			position: relative;
+			z-index: 1;
 		}
-		.feature-list i {
-			margin-top: 3px;
-			color: #ffd4d4;
-			width: 16px;
-			flex-shrink: 0;
+		.feature-grid li {
+			list-style: none;
+			margin: 0;
+			padding: 10px 12px;
+			border-radius: 12px;
+			background: rgba(14,165,233,0.1);
+			border: 1px solid rgba(56,189,248,0.22);
+			font-size: 0.86rem;
+			line-height: 1.35;
+			display: flex;
+			gap: 8px;
+			align-items: flex-start;
 		}
+		.feature-grid i {
+			color: #38BDF8;
+			margin-top: 2px;
+			width: 14px;
+		}
+		.benefits {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+			display: grid;
+			gap: 6px;
+			position: relative;
+			z-index: 1;
+		}
+		.benefits li {
+			font-size: 0.88rem;
+			color: #E2E8F0;
+			display: flex;
+			gap: 8px;
+			align-items: center;
+		}
+		.benefits i { color: #22D3EE; font-size: 0.75rem; }
 		.brand-pill {
 			display: inline-flex;
-			align-items: center;
-			justify-content: center;
 			align-self: flex-start;
-			margin-top: 8px;
-			padding: 12px 18px;
-			border: 0;
+			margin-top: 4px;
+			padding: 11px 16px;
 			border-radius: 10px;
-			background: var(--school-accent);
+			background: linear-gradient(90deg, #0EA5E9, #0284C7);
 			color: #fff;
-			font-weight: 600;
-			font-size: 0.92rem;
-			cursor: default;
+			font-weight: 700;
+			font-size: 0.86rem;
+			letter-spacing: 0.04em;
+			text-transform: uppercase;
+			position: relative;
+			z-index: 1;
+		}
+		.slogan {
+			margin-top: auto;
+			font-size: 0.78rem;
+			letter-spacing: 0.18em;
+			text-transform: uppercase;
+			color: #94A3B8;
+			position: relative;
+			z-index: 1;
 		}
 		.login-panel {
 			padding: 48px 42px;
 			display: flex;
 			flex-direction: column;
 			justify-content: center;
-			position: relative;
 		}
 		.login-panel h2 {
 			margin: 0 0 6px;
-			font-size: 1.65rem;
-			font-weight: 700;
-			color: var(--school-text);
+			font-size: 1.7rem;
+			font-weight: 800;
+			color: var(--text);
 		}
 		.login-panel .sub {
-			margin: 0 0 28px;
-			color: var(--school-muted);
+			margin: 0 0 26px;
+			color: var(--muted);
 			font-size: 0.95rem;
 		}
-		.form-group { margin-bottom: 18px; }
+		.form-group { margin-bottom: 16px; }
 		.form-group label {
 			display: block;
 			margin-bottom: 7px;
-			font-size: 0.88rem;
-			color: var(--school-muted);
+			font-size: 0.86rem;
+			color: var(--muted);
 			font-weight: 600;
 		}
 		.form-control {
 			width: 100%;
 			height: 48px;
 			padding: 0 14px;
-			border: 1.5px solid #d5dde6;
+			border: 1.5px solid #CBD5E1;
 			border-radius: 10px;
-			background: var(--school-input);
+			background: var(--input);
 			font-size: 0.98rem;
-			color: var(--school-text);
+			color: var(--text);
 			outline: none;
-			transition: border-color .15s ease, box-shadow .15s ease;
 		}
 		.form-control:focus {
-			border-color: var(--school-green);
-			box-shadow: 0 0 0 3px rgba(20, 92, 58, 0.12);
+			border-color: var(--brand);
+			box-shadow: 0 0 0 3px rgba(14,165,233,0.18);
 			background: #fff;
 		}
 		.password-wrap { position: relative; }
@@ -180,29 +253,28 @@
 			transform: translateY(-50%);
 			border: 0;
 			background: transparent;
-			color: #8a96a3;
+			color: #94A3B8;
 			cursor: pointer;
 			padding: 6px;
-			font-size: 1rem;
 		}
 		.form-row {
 			display: flex;
 			align-items: center;
 			justify-content: space-between;
 			gap: 12px;
-			margin: 6px 0 22px;
+			margin: 4px 0 20px;
 			flex-wrap: wrap;
 		}
 		.form-check {
 			display: flex;
 			align-items: center;
 			gap: 8px;
-			color: var(--school-muted);
+			color: var(--muted);
 			font-size: 0.9rem;
 		}
-		.form-check input { width: 16px; height: 16px; accent-color: var(--school-green); }
+		.form-check input { width: 16px; height: 16px; accent-color: var(--brand); }
 		.link-muted {
-			color: var(--school-green);
+			color: var(--brand-dark);
 			text-decoration: none;
 			font-weight: 600;
 			font-size: 0.9rem;
@@ -213,22 +285,21 @@
 			height: 50px;
 			border: 0;
 			border-radius: 10px;
-			background: var(--school-green);
+			background: linear-gradient(90deg, #0EA5E9, #0284C7);
 			color: #fff;
 			font-size: 1.05rem;
 			font-weight: 700;
 			cursor: pointer;
-			transition: background .15s ease;
 		}
-		.btn-login:hover { background: var(--school-green-dark); }
+		.btn-login:hover { filter: brightness(0.96); }
 		.btn-login:disabled { opacity: 0.7; cursor: wait; }
 		.alert {
 			padding: 12px 14px;
 			border-radius: 10px;
 			margin-bottom: 16px;
-			background: #fdecec;
-			border: 1px solid #f5c2c2;
-			color: #8a1f1f;
+			background: #FEF2F2;
+			border: 1px solid #FECACA;
+			color: #991B1B;
 		}
 		.alert-heading { margin: 0 0 4px; font-weight: 700; display: block; }
 		.alert p { margin: 0; font-size: 0.9rem; }
@@ -238,76 +309,85 @@
 			justify-content: space-between;
 			gap: 10px;
 			font-size: 0.78rem;
-			color: #93a0ad;
+			color: #94A3B8;
 		}
-		.panel-foot a { color: var(--school-green); text-decoration: none; }
+		.panel-foot a { color: var(--brand-dark); text-decoration: none; }
 		.lang {
 			position: fixed;
 			left: 16px;
 			bottom: 14px;
 			font-size: 0.85rem;
-			color: var(--school-muted);
-			background: rgba(255,255,255,0.9);
+			color: var(--muted);
+			background: rgba(255,255,255,0.92);
 			padding: 8px 12px;
 			border-radius: 999px;
-			box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+			box-shadow: 0 4px 14px rgba(15,23,42,0.08);
 		}
-		.lang a {
-			margin-left: 8px;
-			color: var(--school-text);
-			text-decoration: none;
-		}
-		.lang img {
-			vertical-align: middle;
-			margin-right: 4px;
-			margin-top: -2px;
-		}
-		@media (max-width: 860px) {
-			.login-card {
-				grid-template-columns: 1fr;
-				max-width: 460px;
-				min-height: auto;
-			}
-			.login-brand { padding: 32px 28px; }
+		.lang a { margin-left: 8px; color: var(--text); text-decoration: none; }
+		.lang img { vertical-align: middle; margin-right: 4px; margin-top: -2px; }
+		@media (max-width: 920px) {
+			.login-card { grid-template-columns: 1fr; max-width: 480px; min-height: auto; }
+			.feature-grid { grid-template-columns: 1fr; }
+			.login-brand { padding: 28px; }
 			.login-panel { padding: 32px 28px 36px; }
-			.feature-list { display: none; }
+			.slogan { margin-top: 12px; }
 		}
 	</style>
 </head>
 <body>
 <?php
-if (!isset($type)) { $type = ''; }
 if (!isset($email)) { $email = ''; }
-if ($type == 'nhapa') {
-	$logo = base_url('assets/images/schools/nhapa.jpg');
-} else {
-	$logo = base_url('assets/images/iotxad1.png');
-}
+$logo = base_url('assets/images/smartsms-logo-web.png');
 ?>
 <div class="login-page">
 	<div class="login-card">
 		<aside class="login-brand">
-			<img class="brand-logo" src="<?= $logo; ?>" alt="IOTXAD"
-				 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
-			<div class="brand-logo-fallback" style="display:none;">IX</div>
-			<h1>IOTXAD School MIS</h1>
+			<div class="brand-top">
+				<img class="brand-logo" src="<?= $logo; ?>" alt="XanderTech SmartSMS">
+				<div class="brand-titles">
+					<h1>XanderTech <span>SmartSMS</span></h1>
+					<div class="tag">Smart School Management System</div>
+				</div>
+			</div>
+
 			<p class="lead">
-				Complete school management in one dashboard — students, staff, classes, attendance,
-				fees, exams, discipline and reports for day-to-day school operations.
+				Cloud-based solution for admissions, attendance, examinations, fees, report cards,
+				and parent communication — built by XanderTech to digitize every day school operations
+				from one secure dashboard.
 			</p>
-			<ul class="feature-list">
-				<li><i class="fas fa-user-graduate"></i><span>Student admissions, profiles, classes and academic records</span></li>
-				<li><i class="fas fa-chalkboard-teacher"></i><span>Staff accounts, permissions and daily school workflows</span></li>
-				<li><i class="fas fa-calendar-check"></i><span>Attendance tracking for students, boarding and courses</span></li>
-				<li><i class="fas fa-coins"></i><span>Fees, payments, accounting and financial reporting</span></li>
-				<li><i class="fas fa-book-open"></i><span>Marks, deliberation, library, transport and more</span></li>
+
+			<p class="problem">
+				Schools often rely on disconnected spreadsheets and paper processes, making administration
+				slow and difficult. SmartSMS centralizes records so teams can work faster with clear academic
+				and financial visibility.
+			</p>
+
+			<div class="section-label">Core modules</div>
+			<ul class="feature-grid">
+				<li><i class="fas fa-user-plus"></i><span><strong>Admissions</strong> &amp; student management</span></li>
+				<li><i class="fas fa-calendar-check"></i><span><strong>Attendance</strong> tracking</span></li>
+				<li><i class="fas fa-file-alt"></i><span><strong>Examinations</strong> &amp; grades</span></li>
+				<li><i class="fas fa-coins"></i><span><strong>Fees</strong> &amp; payments</span></li>
+				<li><i class="fas fa-clipboard-list"></i><span><strong>Report cards</strong> &amp; academics</span></li>
+				<li><i class="fas fa-comments"></i><span><strong>Parent</strong> communication</span></li>
 			</ul>
-			<span class="brand-pill">All-in-one School Management</span>
+
+			<div class="section-label">Benefits</div>
+			<ul class="benefits">
+				<li><i class="fas fa-check-circle"></i> Centralized student and school records</li>
+				<li><i class="fas fa-check-circle"></i> Faster daily administration</li>
+				<li><i class="fas fa-check-circle"></i> Better parent communication</li>
+				<li><i class="fas fa-check-circle"></i> Accurate fee tracking</li>
+				<li><i class="fas fa-check-circle"></i> Clear academic visibility</li>
+			</ul>
+
+			<span class="brand-pill">Manage. Monitor. Empower Education.</span>
+			<div class="slogan">XanderTech · Smart IT Solutions &amp; Digital Services</div>
 		</aside>
 
 		<section class="login-panel">
 			<h2>Sign in to your account</h2>
-			<p class="sub">Access your IOTXAD school dashboard</p>
+			<p class="sub">Access your XanderTech SmartSMS school dashboard</p>
 
 			<form method="post" action="<?= base_url('login_pro'); ?>" id="frm_login">
 				<?php if (!empty($error)) { ?>
@@ -345,8 +425,8 @@ if ($type == 'nhapa') {
 				<button class="btn-login" type="submit"><?= lang("app.loginDashboard"); ?></button>
 
 				<div class="panel-foot">
-					<span>IOTXAD <?= version; ?></span>
-					<span><?= lang("app.poweredBy"); ?><a href="http://www.bbdigitech.com" target="_blank" rel="noopener">BDS Ltd</a></span>
+					<span>SmartSMS <?= version; ?></span>
+					<span><?= lang("app.poweredBy"); ?><a href="https://xandertech.rw" target="_blank" rel="noopener">XanderTech</a></span>
 				</div>
 			</form>
 
@@ -361,8 +441,8 @@ if ($type == 'nhapa') {
 				</div>
 				<button class="btn-login" type="submit"><?= lang("app.resetlink"); ?></button>
 				<div class="panel-foot">
-					<span>IOTXAD <?= version; ?></span>
-					<span><?= lang("app.poweredBy"); ?> <a href="http://www.bbdigitech.com" target="_blank" rel="noopener">BDS Ltd</a></span>
+					<span>SmartSMS <?= version; ?></span>
+					<span><?= lang("app.poweredBy"); ?> <a href="https://xandertech.rw" target="_blank" rel="noopener">XanderTech</a></span>
 				</div>
 			</form>
 		</section>
@@ -385,7 +465,6 @@ if ($type == 'nhapa') {
 <script>
 	$(function () {
 		var active_btn = null;
-
 		$("#togglePass").on("click", function () {
 			var input = $("#examplePassword");
 			var icon = $(this).find("i");
@@ -397,24 +476,15 @@ if ($type == 'nhapa') {
 				icon.removeClass("fa-eye-slash").addClass("fa-eye");
 			}
 		});
-
 		$(document).on("click", ".lang_switcher", function () {
 			var lang = $(this).data("target");
 			$.getJSON("<?= base_url('set_lang/'); ?>" + lang, function (json) {
-				if (json.hasOwnProperty("success")) {
-					window.location.reload();
-				} else {
-					alert("Changing language failed");
-				}
+				if (json.hasOwnProperty("success")) window.location.reload();
+				else alert("Changing language failed");
 			});
 		});
-
-		$(document).on("click", "form [type='submit']", function () {
-			active_btn = $(this);
-		});
-
+		$(document).on("click", "form [type='submit']", function () { active_btn = $(this); });
 		$("form").parsley();
-
 		$(".btnrecover").on("click", function () {
 			$("#frm_reset").slideDown(300);
 			$("#frm_login").slideUp(300);
@@ -423,7 +493,6 @@ if ($type == 'nhapa') {
 			$("#frm_reset").slideUp(300);
 			$("#frm_login").slideDown(300);
 		});
-
 		$(".autoSubmit").on("submit", function (e) {
 			e.preventDefault();
 			var form = $(this);
@@ -432,25 +501,10 @@ if ($type == 'nhapa') {
 			btn.text("Please wait...").prop("disabled", true);
 			$.post(form.prop("action"), form.serialize(), function (data) {
 				btn.text(btn_txt).prop("disabled", false);
-				if (data.hasOwnProperty("error")) {
-					toastada.error(data.error);
-				} else if (data.hasOwnProperty("success")) {
-					if (btn.data("target")) {
-						toastada.success(data.success);
-						var target = btn.data("target");
-						if (target.startsWith("#")) {
-							$(target).modal('hide');
-							return;
-						}
-						if (target == "reload") {
-							setTimeout(function () { window.location.reload(); }, 1500);
-							return;
-						}
-						setTimeout(function () { window.location.href = btn.data("target"); }, 1500);
-					} else {
-						toastada.success(data.success);
-						form.trigger("reset");
-					}
+				if (data.hasOwnProperty("error")) toastada.error(data.error);
+				else if (data.hasOwnProperty("success")) {
+					toastada.success(data.success);
+					form.trigger("reset");
 				} else {
 					toastada.error("Fatal error occurred, if the problem persist please contact system admin");
 				}

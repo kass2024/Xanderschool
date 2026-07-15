@@ -5,7 +5,7 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta http-equiv="Content-Language" content="en">
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-	<title>IOTXAD admin login</title>
+	<title>SmartSMS admin login</title>
 	<meta name="viewport"
 		  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
 	<meta name="description" content="school management system">
@@ -63,7 +63,7 @@
 										<button class="btn btn-primary btn-lg"><?= lang("app.loginDashboard"); ?></button>
 									</div>
 								</div>
-								<label style="position: absolute;font-size: 10pt;bottom: 0;">IOTXAD <?=version;?></label>
+								<label style="position: absolute;font-size: 10pt;bottom: 0;">SmartSMS <?=version;?></label>
 								<label style="position: absolute;font-size: 10pt;bottom: 0;right:10px"><?= lang("app.poweredBy"); ?> <a href="http://www.bbdigitech.com" target="_blank" class="alert-link">BDS Ltd</a></label>
 							</form>
 						</div>

@@ -5,7 +5,7 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta http-equiv="Content-Language" content="en">
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-	<title>IOTXAD - <?= $title; ?></title>
+	<title>SmartSMS - <?= $title; ?></title>
 	<meta name="viewport"
 		  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
 	<meta name="description" content="School management system">
@@ -639,7 +639,7 @@
 				<div class="header-mobile-wrapper">
 					<div class="app-header__logo">
 						<a href="#" data-toggle="tooltip" data-placement="bottom" title="" class="logo-src"
-						   data-original-title="IOTXAD"></a>
+						   data-original-title="SmartSMS"></a>
 						<button type="button" class="hamburger hamburger--elastic mobile-toggle-sidebar-nav">
                                 <span class="hamburger-box">
                                     <span class="hamburger-inner"></span>

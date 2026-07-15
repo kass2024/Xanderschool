@@ -5,7 +5,7 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta http-equiv="Content-Language" content="en">
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-	<title>IOTXAD - login</title>
+	<title>SmartSMS - login</title>
 	<meta name="viewport"
 		  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
 	<meta name="description" content="school management system">
@@ -42,7 +42,7 @@
 													<div class="slide-img-bg"
 														 style="background-color: #e2c527"></div>
 													<div class="slider-content"><h3>Smart, lightweight school</h3>
-														<p>IOTXAD system include all required to driver modern school</p></div>
+														<p>SmartSMS system include all required to driver modern school</p></div>
 												</div>
 											</div>
 										</div>
@@ -57,7 +57,7 @@
 													<div class="slide-img-bg"
 														 style="background-color: #16b643;"></div>
 													<div class="slider-content"><h3>Perfect Features</h3>
-														<p>IOTXAD perfect features</p></div>
+														<p>SmartSMS perfect features</p></div>
 												</div>
 											</div>
 										</div>
@@ -72,7 +72,7 @@
 													<div class="slide-img-bg"
 														 style="background-color: #b6191a;"></div>
 													<div class="slider-content"><h3>Consistent and efficiency</h3>
-														<p>IOTXAD consistent features</p></div>
+														<p>SmartSMS consistent features</p></div>
 												</div>
 											</div>
 										</div>

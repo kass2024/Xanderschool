@@ -5,7 +5,7 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta http-equiv="Content-Language" content="en">
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-	<title>IOTXAD - <?= $title; ?></title>
+	<title>SmartSMS - <?= $title; ?></title>
 	<meta name="viewport"
 		  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
 	<meta name="description" content="School management system">
@@ -18,10 +18,10 @@
 	<meta name="msapplication-tap-highlight" content="no">
 
 	<link href="<?= base_url(); ?>assets/css/main.css" rel="stylesheet">
+	<link href="<?= base_url(); ?>assets/css/xandertech-brand.css" rel="stylesheet">
 	<link href="<?= base_url(); ?>assets/css/font-awesome-animation.min.css" rel="stylesheet">
 	<script type="text/javascript" src="<?= base_url(); ?>assets/js/jquery-3.4.1.min.js"></script>
-	<!-- Favicon -->
-	<link rel="favorite icon" href="<?= base_url(); ?>assets/landing/images/favicon.jpeg">
+	<link rel="icon" href="<?= base_url(); ?>assets/images/smartsms-logo-web.png">
 
 
 </head>
@@ -380,7 +380,7 @@
 										<a data-placement="top" rel="popover-focus" data-offset="300"
 										   data-toggle="popover-custom" class="nav-link" data-original-title=""
 										   title="">
-											IOTXAD <?= version; ?>
+											SmartSMS <?= version; ?>
 										</a>
 										<div class="rm-max-width rm-pointers">
 											<div class="d-none popover-custom-content">
@@ -388,7 +388,7 @@
 													<div class="grid-menu grid-menu-2col">
 														<div class="no-gutters row">
 															<div class="col-sm-6 col-xl-6">
-																<p>IOTXAD is complete school management software ... to
+																<p>SmartSMS is complete school management software ... to
 																	be added later</p>
 															</div>
 															<div class="col-sm-6 col-xl-6">

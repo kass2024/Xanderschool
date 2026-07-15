@@ -1,0 +1,121 @@
+/* XanderTech SmartSMS brand overrides — electric cyan on navy */
+:root {
+	--primary: #0EA5E9;
+	--brand-500: #0EA5E9;
+	--brand-600: #0284C7;
+	--brand-700: #0369A1;
+	--navy-950: #0B1220;
+	--navy-900: #0F172A;
+	--navy-800: #1A2336;
+	--focus: #0EA5E9;
+	--info: #38BDF8;
+}
+
+.btn-primary {
+	color: #fff !important;
+	background-color: #0EA5E9 !important;
+	border-color: #0EA5E9 !important;
+}
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary.focus {
+	color: #fff !important;
+	background-color: #0284C7 !important;
+	border-color: #0284C7 !important;
+	box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.35) !important;
+}
+.btn-primary:not(:disabled):not(.disabled):active,
+.btn-primary:not(:disabled):not(.disabled).active,
+.show > .btn-primary.dropdown-toggle {
+	background-color: #0369A1 !important;
+	border-color: #0369A1 !important;
+}
+
+.btn-outline-primary {
+	color: #0EA5E9 !important;
+	border-color: #0EA5E9 !important;
+}
+.btn-outline-primary:hover {
+	color: #fff !important;
+	background-color: #0EA5E9 !important;
+	border-color: #0EA5E9 !important;
+}
+
+.btn-gradient-primary {
+	background-image: linear-gradient(90deg, #0EA5E9, #0284C7) !important;
+	border: 0 !important;
+	color: #fff !important;
+}
+
+.bg-primary { background-color: #0EA5E9 !important; }
+a.bg-primary:hover, a.bg-primary:focus,
+button.bg-primary:hover, button.bg-primary:focus {
+	background-color: #0284C7 !important;
+}
+.text-primary { color: #0EA5E9 !important; }
+.border-primary { border-color: #0EA5E9 !important; }
+
+.badge-primary,
+.badge.badge-primary {
+	background-color: #0EA5E9 !important;
+}
+
+.app-sidebar__heading {
+	color: #38BDF8 !important;
+	opacity: 0.95 !important;
+}
+
+/* Sidebar: navy instead of old danger red */
+.app-sidebar.bg-danger,
+.app-sidebar.bg-primary,
+.app-sidebar.sidebar-text-light {
+	background: linear-gradient(180deg, #0B1220 0%, #0F172A 55%, #1A2336 100%) !important;
+}
+
+.app-sidebar.sidebar-text-light .vertical-nav-menu ul > li > a,
+.app-sidebar.sidebar-text-light .vertical-nav-menu > li > a {
+	color: rgba(241, 245, 249, 0.88) !important;
+}
+.app-sidebar.sidebar-text-light .vertical-nav-menu ul > li > a:hover,
+.app-sidebar.sidebar-text-light .vertical-nav-menu > li > a:hover,
+.app-sidebar.sidebar-text-light .vertical-nav-menu ul > li.mm-active > a,
+.app-sidebar.sidebar-text-light .vertical-nav-menu > li.mm-active > a {
+	color: #fff !important;
+	background: rgba(14, 165, 233, 0.16) !important;
+}
+
+.app-header__logo .logo-src {
+	display: inline-block;
+	height: 36px !important;
+	width: 36px !important;
+	background: url("../images/smartsms-logo-web.png") center/contain no-repeat !important;
+	border-radius: 8px;
+}
+
+.page-title-heading {
+	color: #0F172A;
+}
+
+.app-wrapper-footer .app-footer {
+	border-top: 1px solid #E2E8F0;
+}
+
+a.alert-link {
+	color: #0284C7 !important;
+}
+
+.form-control:focus,
+.custom-select:focus {
+	border-color: #0EA5E9 !important;
+	box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.2) !important;
+}
+
+.nav-link.active,
+.nav-pills .nav-link.active {
+	background-color: #0EA5E9 !important;
+}
+
+.slider .line,
+.slider .subline {
+	background: #0EA5E9 !important;
+}

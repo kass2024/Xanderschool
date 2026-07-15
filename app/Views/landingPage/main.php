@@ -75,7 +75,7 @@
 						<h2 class="section-title mb-3" data-aos="fade-up" data-aos-delay=""><?= lang("app.aboutUs");?> </h2>
 						<p class="lead" data-aos="fade-up" data-aos-delay="100">
 							<font color="#000">
-								<b>IOTXAD</b> <?= lang("app.");?> is a platform for your school information management. It’s a complete
+								<b>SmartSMS</b> <?= lang("app.");?> is a platform for your school information management. It’s a complete
 								packaged solution. It is flexible, you can still choose features you want to use and
 								leave out what you don’t need.</p>
 						</font>
@@ -92,7 +92,7 @@
 
 						<h3 class="text-black mb-4"><?= lang("app.weSolve");?></h3>
 
-						<p><b>IOTXAD</b> <?= lang("app.");?> came to solve all educational issues you used to meet at you daily basis
+						<p><b>SmartSMS</b> <?= lang("app.");?> came to solve all educational issues you used to meet at you daily basis
 							as it is an efficient platform for attendance managements of students and staffs , exams and mark management
 							communication management between schools authorities and parents whose children enrolled
 							in schools, permission management to the students and technology enhancement .</p>
@@ -162,7 +162,7 @@
 			<div class="container">
 				<div class="row mb-5">
 					<div class="col-12 text-center" data-aos="fade">
-						<h2 class="section-title mb-3"> IOTXAD <?= lang("app.features");?> </h2>
+						<h2 class="section-title mb-3"> SmartSMS <?= lang("app.features");?> </h2>
 					</div>
 				</div>
 				<div class="row align-items-stretch">
@@ -189,7 +189,7 @@
 							</div>
 							<div>
 								<h3><?= lang("app.reportCards");?> </h3>
-								<p><?= lang("app.");?> IOTXAD makes it easy for a school to generate, download and print student report
+								<p><?= lang("app.");?> SmartSMS makes it easy for a school to generate, download and print student report
 									card</p>
 							</div>
 						</div>
@@ -203,7 +203,7 @@
 							</div>
 							<div>
 								<h3><?= lang("app.accounting");?> </h3>
-								<p><?= lang("app.");?> IOTXAD makes it easy for accountants to manage school accounts.</p>
+								<p><?= lang("app.");?> SmartSMS makes it easy for accountants to manage school accounts.</p>
 							</div>
 						</div>
 					</div>
@@ -218,7 +218,7 @@
 							</div>
 							<div>
 								<h3><?= lang("app.communication");?> </h3>
-								<p><?= lang("app.");?> IOTXAD brings you a complete sms solution to directly communicate with parents
+								<p><?= lang("app.");?> SmartSMS brings you a complete sms solution to directly communicate with parents
 									even in remote areas without internet.
 								</p>
 							</div>
@@ -308,10 +308,10 @@
 					<div id="opac">
 						<br>
 						<h2><b><font color="white"><?= lang("app.mobile");?> </font></b></h2>
-						<a href="./app_iotxad.apk">
-							<button class="btn btn-secondary" id="down"><?= lang("app.download");?> IOTXAD </button>
+						<a href="./app_SmartSMS.apk">
+							<button class="btn btn-secondary" id="down"><?= lang("app.download");?> SmartSMS </button>
 						</a>
-						<a href="./app_iotxad_fingerprint.apk">
+						<a href="./app_SmartSMS_fingerprint.apk">
 							<button class="btn btn-secondary" id="down"><?= lang("app.download");?> STUDENT ATTENDANCE </button>
 						</a>
 					</div>
@@ -427,7 +427,7 @@
 					<div class="col-md-4 text-center">
 						<p class="mb-4">
 							<span class="icon-room d-block h2 text-primary"></span>
-							<span>IOTXAD Systems Ltd </span>
+							<span>SmartSMS Systems Ltd </span>
 							<span>4th Floor Makuza Peace Plaza, KN 4 AV. 10 Kigali</span>
 						</p>
 					</div>

@@ -5,20 +5,18 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta http-equiv="Content-Language" content="en">
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-	<title>IOTXAD - <?= $title; ?></title>
+	<title>SmartSMS - <?= $title; ?></title>
 	<meta name="viewport"
 		  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
-	<meta name="description" content="School management system">
-	<!--	<link rel="icon" href="https://qonics.com/assets/images/favicon.png">-->
+	<meta name="description" content="XanderTech Smart School Management System (SmartSMS)">
 	<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.11.2/css/all.css" rel="stylesheet">
 	<link href="<?= base_url(); ?>assets/plugins/typicons/font/typicons.min.css" rel="stylesheet">
 	<link rel="stylesheet" type="text/css" href="<?= base_url('assets/plugins/select2/css/select2.min.css'); ?>">
-	<!-- Disable tap highlight on IE -->
 	<meta name="msapplication-tap-highlight" content="no">
 	<link href="<?= base_url(); ?>assets/css/main.css" rel="stylesheet">
+	<link href="<?= base_url(); ?>assets/css/xandertech-brand.css" rel="stylesheet">
 	<script type="text/javascript" src="<?= base_url(); ?>assets/js/jquery-3.4.1.min.js"></script>
-	<!-- Favicon -->
-	<link rel="favorite icon" href="<?= base_url(); ?>assets/landing/images/about.png">
+	<link rel="icon" href="<?= base_url(); ?>assets/images/smartsms-logo-web.png">
 
 	<style>
 		.dataTables_filter input[type='search'] {
@@ -665,7 +663,7 @@
 				<div class="header-mobile-wrapper">
 					<div class="app-header__logo">
 						<a href="#" data-toggle="tooltip" data-placement="bottom" title="" class="logo-src"
-						   data-original-title="IOTXAD"></a>
+						   data-original-title="SmartSMS"></a>
 						<button type="button" class="hamburger hamburger--elastic mobile-toggle-sidebar-nav">
                                 <span class="hamburger-box">
                                     <span class="hamburger-inner"></span>
@@ -968,7 +966,7 @@
 					<div class="">
 						<div class="app-footer__inner">
 							<div class="app-footer-left">
-								<label><?= lang("app.poweredBy"); ?><a href="#" target="_blank" class="alert-link" style="pointer-events: none; color: gray; text-decoration: none; cursor: default;">IOTXAD Ltd</a>
+								<label><?= lang("app.poweredBy"); ?><a href="https://xandertech.rw" target="_blank" class="alert-link">XanderTech</a>
 </label>
 							</div>
 							<div class="app-footer-right">
@@ -977,7 +975,7 @@
 										<a data-placement="top" rel="popover-focus" data-offset="300"
 										   data-toggle="popover-custom" class="nav-link" data-original-title=""
 										   title="">
-											IOTXAD <?= version; ?>
+											SmartSMS <?= version; ?>
 										</a>
 										<div class="rm-max-width rm-pointers">
 											<div class="d-none popover-custom-content">
@@ -985,15 +983,16 @@
 													<div class="grid-menu grid-menu-2col">
 														<div class="no-gutters row">
 															<div class="col-sm-6 col-xl-6">
-																<p>IOTXAD is complete school management software ... to
-																	be added later</p>
+																<p>XanderTech Smart School Management System (SmartSMS) —
+																	cloud-based admissions, attendance, examinations, fees,
+																	report cards, and parent communication.</p>
 															</div>
 															<div class="col-sm-6 col-xl-6">
 																<ul class="nav flex-column">
 																	<li class="nav-item-header nav-item">Useful links
 																	</li>
-																	<li class="nav-item"><a href="javascript:void(0);"
-																							class="nav-link">BDS</a>
+																	<li class="nav-item"><a href="https://xandertech.rw"
+																							class="nav-link" target="_blank" rel="noopener">XanderTech</a>
 																	</li>
 
 																</ul>

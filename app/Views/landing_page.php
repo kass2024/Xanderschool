@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <title>IOTXAD</title>
+  <title>SmartSMS</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
@@ -96,7 +96,7 @@
       <div class="row align-items-center">
 
         <div class="col-10 col-xl-2">
-          <img src="<?=base_url('assets/images/Logo1.jpg');?>" style="max-height:54px" alt="IOTXAD">
+          <img src="<?=base_url('assets/images/Logo1.jpg');?>" style="max-height:54px" alt="SmartSMS">
         </div>
 
         <div class="col-10 col-md-10 d-none d-xl-block">
@@ -141,7 +141,7 @@
           <div class="row">
             <div class="col-md-5">
               <h2 class="footer-heading mb-4"><?= lang("app.aboutUs");?></h2>
-              <p><b>IOTXAD</b> is a platform for your school information management. It’s a complete
+              <p><b>SmartSMS</b> is a platform for your school information management. It’s a complete
                 packaged solution. It is flexible, you can still choose features you want to use and
                 leave out what you don’t need.</p>
             </div>
@@ -169,7 +169,7 @@
           <div class="border-top pt-5">
             <p class="copyright"><small>
               Copyright &copy;<script>document.write(new Date().getFullYear());</script>
-              All rights reserved | Powered by <a href="http://www.bbdigitech.com">IOTXAD Systems Ltd</a>
+              All rights reserved | Powered by <a href="http://www.bbdigitech.com">SmartSMS Systems Ltd</a>
             </small></p>
           </div>
         </div>
