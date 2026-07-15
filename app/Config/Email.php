@@ -3,6 +3,22 @@ namespace Config;
 
 class Email
 {
+	public function __construct()
+	{
+		$this->fromEmail = env('SMTP_FROM_EMAIL', env('SMTP_USERNAME', ''));
+		$this->fromName  = env('SMTP_FROM_NAME', 'XanderTech SmartSMS');
+		$this->SMTPHost  = env('SMTP_HOST', '');
+		$this->SMTPUser  = env('SMTP_USERNAME', '');
+		$this->SMTPPass  = env('SMTP_PASSWORD', '');
+		$this->SMTPPort  = (int) env('SMTP_PORT', 465);
+
+		$crypto = strtolower((string) env('SMTP_ENCRYPTION', ''));
+		if ($crypto === '') {
+			$crypto = ($this->SMTPPort === 465) ? 'ssl' : 'tls';
+		}
+		$this->SMTPCrypto = ($crypto === 'ssl' || $crypto === 'smtps') ? 'ssl' : 'tls';
+		$this->protocol   = $this->SMTPHost !== '' ? 'smtp' : 'mail';
+	}
 
 	/**
 	 * @var string
@@ -19,14 +35,14 @@ class Email
 	 *
 	 * @var string
 	 */
-	public $userAgent = 'CodeIgniter';
+	public $userAgent = 'XanderTech SmartSMS';
 
 	/**
 	 * The mail sending protocol: mail, sendmail, smtp
 	 *
 	 * @var string
 	 */
-	public $protocol = 'mail';
+	public $protocol = 'smtp';
 
 	/**
 	 * The server path to Sendmail.
@@ -61,14 +77,14 @@ class Email
 	 *
 	 * @var integer
 	 */
-	public $SMTPPort = 25;
+	public $SMTPPort = 465;
 
 	/**
 	 * SMTP Timeout (in seconds)
 	 *
 	 * @var integer
 	 */
-	public $SMTPTimeout = 5;
+	public $SMTPTimeout = 20;
 
 	/**
 	 * Enable persistent SMTP connections
@@ -82,7 +98,7 @@ class Email
 	 *
 	 * @var string
 	 */
-	public $SMTPCrypto = 'tls';
+	public $SMTPCrypto = 'ssl';
 
 	/**
 	 * Enable word-wrap
@@ -103,7 +119,7 @@ class Email
 	 *
 	 * @var string
 	 */
-	public $mailType = 'text';
+	public $mailType = 'html';
 
 	/**
 	 * Character set (utf-8, iso-8859-1, etc.)

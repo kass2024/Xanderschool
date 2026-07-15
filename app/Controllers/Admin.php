@@ -422,9 +422,9 @@ class Admin extends BaseController
 			];
 			$staffMdl->save($staffData);
 			//send notification EMAIL and SMS
-			$msg  = "Dear $fname, $name is on iotxad, you can now login, \nEmail: "
+			$msg  = "Dear $fname, $name is on XanderTech SmartSMS, you can now login, \nEmail: "
 				. $email . "\nPassword: " . $default_password . "\n Thank you";
-			$msg2 = "Dear $fname, $name is on iotxad, you can now login, \nEmail: "
+			$msg2 = "Dear $fname, $name is on XanderTech SmartSMS, you can now login, \nEmail: "
 				. $email . "\nPassword: *******\n Thank you";
 //			if ($this->_send_sms($phone, $msg, $result, 1))
             if ($this->sendSMS($phone, $msg, $result))
@@ -447,8 +447,14 @@ class Admin extends BaseController
 				'default_password' => $default_password,
 			];
 			$html_msg = view('emails/school_creation', $data);
-			$this->_send_email($email, 'Welcome on iotxad', $html_msg);
-			return $this->response->setJSON(['success' => 'School saved!']);
+			$sent = $this->_send_email($email, 'Welcome to XanderTech SmartSMS', $html_msg);
+			if (! $sent) {
+				return $this->response->setJSON([
+					'success' => 'School saved!',
+					'warning' => 'School created but welcome email could not be sent. Check SMTP settings in .env.',
+				]);
+			}
+			return $this->response->setJSON(['success' => 'School saved! Welcome email sent.']);
 		}
 		catch (\Exception $e)
 		{
@@ -579,8 +585,14 @@ class Admin extends BaseController
 				'default_password' => $default_password,
 			];
 			$html_msg = view('emails/user_creation', $data);
-			$this->_send_email($email, 'Welcome on IOTXAD', $html_msg);
-			return $this->response->setJSON(['success' => 'User saved']);
+			$sent = $this->_send_email($email, 'Welcome to XanderTech SmartSMS', $html_msg);
+			if (! $sent) {
+				return $this->response->setJSON([
+					'success' => 'User saved',
+					'warning' => 'User created but welcome email could not be sent. Check SMTP settings in .env.',
+				]);
+			}
+			return $this->response->setJSON(['success' => 'User saved. Welcome email sent.']);
 		}
 		catch (\Exception $e)
 		{
@@ -675,7 +687,7 @@ class Admin extends BaseController
 
 	public function testEmail()
 	{
-		if ($this->_send_email('methode@visaconsultantcanada.com', 'Test from IOTXAD', 'Test by QONICS INC on ' . date('Y-m-d H:i:s') . ' from IOTXAD'))
+		if ($this->_send_email('methode@visaconsultantcanada.com', 'Test from XanderTech SmartSMS', 'SMTP test on ' . date('Y-m-d H:i:s') . ' from XanderTech SmartSMS'))
 		{
 			echo 'EMAIL SENT';
 		}

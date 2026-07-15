@@ -2668,8 +2668,14 @@ public function attendanceCard()
 			}
 			$data = array("name" => $name, "phone" => $phone, "email" => $email, "default_password" => $default_password);
 			$html_msg = view("emails/staff_creation", $data);
-			$this->_send_email($email, lang("app.welcomeOnSomanet"), $html_msg);
-			return $this->response->setJSON(array("success" => lang("app.userSaved")));
+			$sent = $this->_send_email($email, lang("app.welcomeOnSomanet"), $html_msg);
+			if (! $sent) {
+				return $this->response->setJSON(array(
+					"success" => lang("app.userSaved"),
+					"warning" => "Staff saved but welcome email could not be sent. Check SMTP settings in .env.",
+				));
+			}
+			return $this->response->setJSON(array("success" => lang("app.userSaved") . " Welcome email sent."));
 		} catch (\Exception $e) {
 			if ($e->getCode() == 1062) {
 				return $this->response->setJSON(array("error" => lang("app.emailAlready")));

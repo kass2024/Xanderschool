@@ -238,40 +238,63 @@ class BaseController extends Controller
             }
         }
 
-    // ✅ EMAIL FUNCTION
-   public function _send_email($toEmail, $subject, $msgBody)
-{
-    echo "Initializing PHPMailer...<br>";
-    $mail = new PHPMailer(true);
+	/**
+	 * Send email via SMTP settings from .env (SMTP_*).
+	 * Used by school creation, staff creation, password reset, etc.
+	 */
+	public function _send_email($toEmail, $subject, $msgBody)
+	{
+		$host     = env('SMTP_HOST', '');
+		$port     = (int) env('SMTP_PORT', 465);
+		$user     = env('SMTP_USERNAME', '');
+		$pass     = env('SMTP_PASSWORD', '');
+		$from     = env('SMTP_FROM_EMAIL', $user);
+		$fromName = env('SMTP_FROM_NAME', 'XanderTech SmartSMS');
+		$crypto   = strtolower((string) env('SMTP_ENCRYPTION', ''));
 
-    try {
-        echo "Configuring Gmail SMTP...<br>";
-        $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com';
-        $mail->SMTPAuth   = true;
-        $mail->Username   = 'iotxad@gmail.com';
-        $mail->Password   = 'xsazziokcgvagbft'; // Gmail App Password (no spaces)
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
+		if ($host === '' || $user === '' || $pass === '' || $from === '') {
+			log_message('error', 'SMTP not configured: missing SMTP_HOST / SMTP_USERNAME / SMTP_PASSWORD / SMTP_FROM_EMAIL in .env');
+			return false;
+		}
 
-        $mail->setFrom('iotxad@gmail.com', 'Parrot Canada via Gmail');
-        $mail->addAddress($toEmail);
+		if ($crypto === '') {
+			$crypto = ($port === 465) ? 'ssl' : 'tls';
+		}
 
-        $mail->isHTML(true);
-        $mail->CharSet = 'UTF-8';
-        $mail->Subject = $subject;
-        $mail->Body    = $msgBody;
+		$mail = new PHPMailer(true);
 
-        echo "Sending email...<br>";
-        $mail->send();
-        echo "✅ Email successfully sent.<br>";
-        return true;
+		try {
+			$mail->isSMTP();
+			$mail->Host       = $host;
+			$mail->SMTPAuth   = true;
+			$mail->Username   = $user;
+			$mail->Password   = $pass;
+			$mail->Port       = $port > 0 ? $port : 465;
+			$mail->SMTPSecure = ($crypto === 'ssl' || $crypto === 'smtps')
+				? PHPMailer::ENCRYPTION_SMTPS
+				: PHPMailer::ENCRYPTION_STARTTLS;
+			$mail->Timeout    = 20;
+			$mail->CharSet    = 'UTF-8';
 
-    } catch (Exception $e) {
-        echo '❌ Mailer Error: ' . $e->getMessage();
-        return false;
-    }
-}
+			$mail->setFrom($from, $fromName);
+			$mail->addAddress($toEmail);
+			$mail->addReplyTo($from, $fromName);
+
+			$mail->isHTML(true);
+			$mail->Subject = $subject;
+			$mail->Body    = $msgBody;
+			$mail->AltBody = trim(strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $msgBody)));
+
+			$mail->send();
+			return true;
+		} catch (Exception $e) {
+			log_message('error', 'Mailer Error to {to}: {err}', [
+				'to'  => $toEmail,
+				'err' => $mail->ErrorInfo ?: $e->getMessage(),
+			]);
+			return false;
+		}
+	}
 
 
 
