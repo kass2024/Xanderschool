@@ -7,9 +7,9 @@
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 	<title>SmartSMS — XanderTech Smart School Management System</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
-	<meta name="description" content="XanderTech Smart School Management System (SmartSMS) — cloud-based admissions, attendance, examinations, fees, report cards, and parent communication.">
+	<meta name="description" content="XanderTech Smart School Management System (SmartSMS)">
 	<meta name="msapplication-tap-highlight" content="no">
-	<link rel="icon" href="<?= base_url('assets/images/smartsms-logo-web.png'); ?>">
+	<link rel="icon" href="<?= base_url('assets/images/smartsms-mark-web.png'); ?>">
 	<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.11.2/css/all.css" rel="stylesheet">
 	<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
 	<style>
@@ -18,97 +18,173 @@
 			--brand-dark: #0284C7;
 			--navy: #0B1220;
 			--navy-800: #1A2336;
-			--page: #F8FAFC;
 			--input: #F1F5F9;
 			--text: #0F172A;
 			--muted: #64748B;
 			--violet: #6366F1;
+			--gap: 28px;
 		}
 		* { box-sizing: border-box; }
 		html, body {
 			margin: 0;
 			min-height: 100%;
 			font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-			background:
-				radial-gradient(900px 420px at 10% -10%, rgba(14,165,233,0.18), transparent 60%),
-				radial-gradient(700px 360px at 95% 0%, rgba(99,102,241,0.14), transparent 55%),
-				var(--page);
 			color: var(--text);
+			overflow-x: hidden;
 		}
+
+		/* Full-page smart animated background */
+		.bg-scene {
+			position: fixed;
+			inset: 0;
+			z-index: 0;
+			background:
+				radial-gradient(1200px 700px at 12% -8%, rgba(14,165,233,0.38), transparent 55%),
+				radial-gradient(900px 600px at 88% 8%, rgba(99,102,241,0.28), transparent 50%),
+				radial-gradient(800px 500px at 50% 110%, rgba(34,211,238,0.18), transparent 45%),
+				linear-gradient(160deg, #07101f 0%, #0f172a 42%, #12263f 100%);
+		}
+		.bg-grid {
+			position: absolute;
+			inset: 0;
+			background-image:
+				linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(148,163,184,0.08) 1px, transparent 1px);
+			background-size: 48px 48px;
+			mask-image: radial-gradient(ellipse at center, #000 35%, transparent 78%);
+			animation: gridDrift 28s linear infinite;
+		}
+		.orb {
+			position: absolute;
+			border-radius: 50%;
+			filter: blur(2px);
+			opacity: 0.55;
+			animation: floatY 12s ease-in-out infinite;
+		}
+		.orb-a {
+			width: 340px; height: 340px;
+			left: -80px; top: 18%;
+			background: radial-gradient(circle, rgba(14,165,233,0.55), transparent 68%);
+			animation-duration: 14s;
+		}
+		.orb-b {
+			width: 280px; height: 280px;
+			right: -60px; top: 8%;
+			background: radial-gradient(circle, rgba(99,102,241,0.5), transparent 68%);
+			animation-duration: 16s;
+			animation-delay: -4s;
+		}
+		.orb-c {
+			width: 220px; height: 220px;
+			left: 42%; bottom: -40px;
+			background: radial-gradient(circle, rgba(34,211,238,0.42), transparent 70%);
+			animation-duration: 11s;
+			animation-delay: -2s;
+		}
+		.scanline {
+			position: absolute;
+			left: 0; right: 0;
+			height: 120px;
+			background: linear-gradient(180deg, transparent, rgba(56,189,248,0.08), transparent);
+			animation: scan 9s linear infinite;
+			pointer-events: none;
+		}
+
 		.login-page {
+			position: relative;
+			z-index: 1;
 			min-height: 100vh;
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			padding: 24px 16px 64px;
+			padding: 28px 18px 72px;
 		}
-		.login-card {
+		.login-shell {
 			width: 100%;
-			max-width: 1080px;
-			min-height: 620px;
+			max-width: 1120px;
 			display: grid;
-			grid-template-columns: 1.08fr 0.92fr;
-			border-radius: 20px;
-			overflow: hidden;
-			background: #fff;
-			box-shadow: 0 22px 55px rgba(11, 18, 32, 0.16);
-			border: 1px solid #E2E8F0;
+			grid-template-columns: 1.05fr 0.95fr;
+			gap: var(--gap);
+			align-items: stretch;
 		}
+
+		.panel {
+			border-radius: 22px;
+			min-height: 620px;
+			box-shadow:
+				0 24px 60px rgba(2, 8, 23, 0.45),
+				0 0 0 1px rgba(148, 163, 184, 0.12);
+			animation: riseIn 0.75s cubic-bezier(.2,.8,.2,1) both;
+			transition: transform .25s ease, box-shadow .25s ease;
+		}
+		.panel:hover {
+			transform: translateY(-3px);
+			box-shadow:
+				0 30px 70px rgba(2, 8, 23, 0.55),
+				0 0 0 1px rgba(56, 189, 248, 0.22);
+		}
+		.login-panel { animation-delay: 0.12s; }
+
 		.login-brand {
-			background: linear-gradient(165deg, var(--navy) 0%, #0F172A 52%, var(--navy-800) 100%);
+			background: linear-gradient(165deg, rgba(11,18,32,0.92) 0%, rgba(15,23,42,0.96) 55%, rgba(26,35,54,0.96) 100%);
+			backdrop-filter: blur(10px);
 			color: #fff;
-			padding: 36px 40px 40px;
+			padding: 34px 36px 36px;
 			display: flex;
 			flex-direction: column;
 			gap: 14px;
 			position: relative;
 			overflow: hidden;
 		}
+		.login-brand::before {
+			content: "";
+			position: absolute;
+			inset: -40% auto auto -20%;
+			width: 280px; height: 280px;
+			border-radius: 50%;
+			background: radial-gradient(circle, rgba(14,165,233,0.35), transparent 70%);
+			animation: pulseSoft 6s ease-in-out infinite;
+		}
 		.login-brand::after {
 			content: "";
 			position: absolute;
-			width: 280px;
-			height: 280px;
-			right: -80px;
-			bottom: -90px;
+			width: 260px; height: 260px;
+			right: -90px; bottom: -100px;
 			border-radius: 50%;
-			background: radial-gradient(circle, rgba(14,165,233,0.35), transparent 68%);
+			background: radial-gradient(circle, rgba(99,102,241,0.28), transparent 70%);
 			pointer-events: none;
 		}
-		.brand-top {
-			display: flex;
-			align-items: center;
-			gap: 14px;
+
+		.brand-logo-wrap {
 			position: relative;
 			z-index: 1;
+			width: fit-content;
+			margin-bottom: 4px;
 		}
 		.brand-logo {
-			width: 72px;
-			height: 72px;
-			border-radius: 16px;
-			object-fit: cover;
+			width: 96px;
+			height: 96px;
+			border-radius: 22px;
+			object-fit: contain;
 			background: #fff;
-			padding: 4px;
-			box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+			padding: 8px;
+			box-shadow:
+				0 10px 28px rgba(0,0,0,0.35),
+				0 0 0 1px rgba(56,189,248,0.35);
+			animation: logoFloat 5.5s ease-in-out infinite;
 		}
-		.brand-titles h1 {
-			margin: 0;
-			font-size: 1.55rem;
-			line-height: 1.15;
-			font-weight: 800;
-			letter-spacing: -0.02em;
+		.brand-logo-glow {
+			position: absolute;
+			inset: -10px;
+			border-radius: 28px;
+			background: radial-gradient(circle, rgba(14,165,233,0.45), transparent 70%);
+			z-index: -1;
+			filter: blur(8px);
+			animation: pulseSoft 4s ease-in-out infinite;
 		}
-		.brand-titles h1 span { color: #38BDF8; }
-		.brand-titles .tag {
-			margin-top: 4px;
-			font-size: 0.72rem;
-			letter-spacing: 0.12em;
-			text-transform: uppercase;
-			color: #94A3B8;
-			font-weight: 600;
-		}
+
 		.lead {
-			margin: 6px 0 0;
+			margin: 2px 0 0;
 			font-size: 0.98rem;
 			line-height: 1.55;
 			color: #E2E8F0;
@@ -143,6 +219,8 @@
 			gap: 10px;
 			position: relative;
 			z-index: 1;
+			margin: 0;
+			padding: 0;
 		}
 		.feature-grid li {
 			list-style: none;
@@ -156,6 +234,12 @@
 			display: flex;
 			gap: 8px;
 			align-items: flex-start;
+			transition: transform .2s ease, background .2s ease, border-color .2s ease;
+		}
+		.feature-grid li:hover {
+			transform: translateY(-2px);
+			background: rgba(14,165,233,0.18);
+			border-color: rgba(56,189,248,0.45);
 		}
 		.feature-grid i {
 			color: #38BDF8;
@@ -193,6 +277,7 @@
 			text-transform: uppercase;
 			position: relative;
 			z-index: 1;
+			box-shadow: 0 8px 22px rgba(14,165,233,0.35);
 		}
 		.slogan {
 			margin-top: auto;
@@ -203,7 +288,10 @@
 			position: relative;
 			z-index: 1;
 		}
+
 		.login-panel {
+			background: rgba(255,255,255,0.96);
+			backdrop-filter: blur(12px);
 			padding: 48px 42px;
 			display: flex;
 			flex-direction: column;
@@ -238,11 +326,13 @@
 			font-size: 0.98rem;
 			color: var(--text);
 			outline: none;
+			transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 		}
 		.form-control:focus {
 			border-color: var(--brand);
 			box-shadow: 0 0 0 3px rgba(14,165,233,0.18);
 			background: #fff;
+			transform: translateY(-1px);
 		}
 		.password-wrap { position: relative; }
 		.password-wrap .form-control { padding-right: 46px; }
@@ -290,8 +380,14 @@
 			font-size: 1.05rem;
 			font-weight: 700;
 			cursor: pointer;
+			box-shadow: 0 10px 24px rgba(14,165,233,0.35);
+			transition: transform .15s ease, filter .15s ease, box-shadow .15s ease;
 		}
-		.btn-login:hover { filter: brightness(0.96); }
+		.btn-login:hover {
+			filter: brightness(1.03);
+			transform: translateY(-1px);
+			box-shadow: 0 14px 28px rgba(14,165,233,0.42);
+		}
 		.btn-login:disabled { opacity: 0.7; cursor: wait; }
 		.alert {
 			padding: 12px 14px;
@@ -300,6 +396,7 @@
 			background: #FEF2F2;
 			border: 1px solid #FECACA;
 			color: #991B1B;
+			animation: shakeIn .35s ease;
 		}
 		.alert-heading { margin: 0 0 4px; font-weight: 700; display: block; }
 		.alert p { margin: 0; font-size: 0.9rem; }
@@ -316,43 +413,94 @@
 			position: fixed;
 			left: 16px;
 			bottom: 14px;
+			z-index: 2;
 			font-size: 0.85rem;
-			color: var(--muted);
-			background: rgba(255,255,255,0.92);
+			color: #E2E8F0;
+			background: rgba(15,23,42,0.72);
 			padding: 8px 12px;
 			border-radius: 999px;
-			box-shadow: 0 4px 14px rgba(15,23,42,0.08);
+			box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+			border: 1px solid rgba(148,163,184,0.25);
+			backdrop-filter: blur(8px);
 		}
-		.lang a { margin-left: 8px; color: var(--text); text-decoration: none; }
+		.lang a { margin-left: 8px; color: #F8FAFC; text-decoration: none; }
 		.lang img { vertical-align: middle; margin-right: 4px; margin-top: -2px; }
-		@media (max-width: 920px) {
-			.login-card { grid-template-columns: 1fr; max-width: 480px; min-height: auto; }
+
+		@keyframes riseIn {
+			from { opacity: 0; transform: translateY(22px) scale(0.98); }
+			to { opacity: 1; transform: translateY(0) scale(1); }
+		}
+		@keyframes floatY {
+			0%, 100% { transform: translateY(0); }
+			50% { transform: translateY(-28px); }
+		}
+		@keyframes logoFloat {
+			0%, 100% { transform: translateY(0); }
+			50% { transform: translateY(-6px); }
+		}
+		@keyframes pulseSoft {
+			0%, 100% { opacity: 0.55; transform: scale(1); }
+			50% { opacity: 0.9; transform: scale(1.06); }
+		}
+		@keyframes gridDrift {
+			from { transform: translateY(0); }
+			to { transform: translateY(48px); }
+		}
+		@keyframes scan {
+			0% { top: -20%; }
+			100% { top: 110%; }
+		}
+		@keyframes shakeIn {
+			0% { transform: translateX(-6px); opacity: 0; }
+			60% { transform: translateX(3px); opacity: 1; }
+			100% { transform: translateX(0); }
+		}
+
+		@media (max-width: 960px) {
+			.login-shell {
+				grid-template-columns: 1fr;
+				max-width: 480px;
+				gap: 18px;
+			}
+			.panel { min-height: auto; }
 			.feature-grid { grid-template-columns: 1fr; }
 			.login-brand { padding: 28px; }
 			.login-panel { padding: 32px 28px 36px; }
 			.slogan { margin-top: 12px; }
+		}
+		@media (prefers-reduced-motion: reduce) {
+			*, *::before, *::after {
+				animation: none !important;
+				transition: none !important;
+			}
 		}
 	</style>
 </head>
 <body>
 <?php
 if (!isset($email)) { $email = ''; }
-$logo = base_url('assets/images/smartsms-logo-web.png');
+$logo = base_url('assets/images/smartsms-mark-web.png');
 ?>
+
+<div class="bg-scene" aria-hidden="true">
+	<div class="bg-grid"></div>
+	<div class="orb orb-a"></div>
+	<div class="orb orb-b"></div>
+	<div class="orb orb-c"></div>
+	<div class="scanline"></div>
+</div>
+
 <div class="login-page">
-	<div class="login-card">
-		<aside class="login-brand">
-			<div class="brand-top">
-				<img class="brand-logo" src="<?= $logo; ?>" alt="XanderTech SmartSMS">
-				<div class="brand-titles">
-					<h1>XanderTech <span>SmartSMS</span></h1>
-					<div class="tag">Smart School Management System</div>
-				</div>
+	<div class="login-shell">
+		<aside class="panel login-brand">
+			<div class="brand-logo-wrap">
+				<span class="brand-logo-glow" aria-hidden="true"></span>
+				<img class="brand-logo" src="<?= $logo; ?>" alt="SmartSMS">
 			</div>
 
 			<p class="lead">
 				Cloud-based solution for admissions, attendance, examinations, fees, report cards,
-				and parent communication — built by XanderTech to digitize every day school operations
+				and parent communication — built by XanderTech to digitize everyday school operations
 				from one secure dashboard.
 			</p>
 
@@ -385,7 +533,7 @@ $logo = base_url('assets/images/smartsms-logo-web.png');
 			<div class="slogan">XanderTech · Smart IT Solutions &amp; Digital Services</div>
 		</aside>
 
-		<section class="login-panel">
+		<section class="panel login-panel">
 			<h2>Sign in to your account</h2>
 			<p class="sub">Access your XanderTech SmartSMS school dashboard</p>
 
@@ -506,7 +654,7 @@ $logo = base_url('assets/images/smartsms-logo-web.png');
 					toastada.success(data.success);
 					form.trigger("reset");
 				} else {
-					toastada.error("Fatal error occurred, if the problem persist please contact system admin");
+					toastada.error("System error occurred, if the problem persist please contact system admin");
 				}
 			}).fail(function () {
 				btn.text(btn_txt).prop("disabled", false);
