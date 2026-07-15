@@ -9,7 +9,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
 	<meta name="description" content="XanderTech Smart School Management System (SmartSMS)">
 	<meta name="msapplication-tap-highlight" content="no">
-	<link rel="icon" href="<?= base_url('assets/images/smartsms-mark-web.png'); ?>">
+	<link rel="icon" href="<?= base_url('assets/images/smartsms-logo-full-web.png'); ?>">
 	<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.11.2/css/all.css" rel="stylesheet">
 	<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
 	<style>
@@ -126,13 +126,13 @@
 		.login-panel { animation-delay: 0.12s; }
 
 		.login-brand {
-			background: linear-gradient(165deg, rgba(11,18,32,0.92) 0%, rgba(15,23,42,0.96) 55%, rgba(26,35,54,0.96) 100%);
+			background: linear-gradient(165deg, rgba(11,18,32,0.94) 0%, rgba(15,23,42,0.97) 55%, rgba(26,35,54,0.97) 100%);
 			backdrop-filter: blur(10px);
 			color: #fff;
-			padding: 34px 36px 36px;
+			padding: 22px 22px 28px;
 			display: flex;
 			flex-direction: column;
-			gap: 14px;
+			gap: 16px;
 			position: relative;
 			overflow: hidden;
 		}
@@ -155,138 +155,196 @@
 			pointer-events: none;
 		}
 
+		/* Full-width uncropped logo banner */
 		.brand-logo-wrap {
 			position: relative;
 			z-index: 1;
-			width: fit-content;
-			margin-bottom: 4px;
+			width: 100%;
+			margin: 0;
+			padding: 14px 14px 10px;
+			border-radius: 16px;
+			background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+			box-shadow:
+				0 14px 34px rgba(0,0,0,0.28),
+				0 0 0 1px rgba(56,189,248,0.28),
+				inset 0 1px 0 rgba(255,255,255,0.9);
 		}
 		.brand-logo {
-			width: 96px;
-			height: 96px;
-			border-radius: 22px;
+			display: block;
+			width: 100%;
+			height: auto;
+			max-height: none;
 			object-fit: contain;
-			background: #fff;
-			padding: 8px;
-			box-shadow:
-				0 10px 28px rgba(0,0,0,0.35),
-				0 0 0 1px rgba(56,189,248,0.35);
+			object-position: center;
+			border-radius: 8px;
 			animation: logoFloat 5.5s ease-in-out infinite;
 		}
 		.brand-logo-glow {
-			position: absolute;
-			inset: -10px;
-			border-radius: 28px;
-			background: radial-gradient(circle, rgba(14,165,233,0.45), transparent 70%);
-			z-index: -1;
-			filter: blur(8px);
-			animation: pulseSoft 4s ease-in-out infinite;
+			display: none;
 		}
 
-		.lead {
-			margin: 2px 0 0;
-			font-size: 0.98rem;
-			line-height: 1.55;
-			color: #E2E8F0;
+		.brand-copy {
 			position: relative;
 			z-index: 1;
+			display: flex;
+			flex-direction: column;
+			gap: 14px;
+			padding: 0 6px;
 		}
-		.problem {
+		.lead {
+			margin: 0;
+			font-size: 1rem;
+			line-height: 1.6;
+			color: #F1F5F9;
+			font-weight: 450;
+		}
+		.lead strong {
+			color: #38BDF8;
+			font-weight: 700;
+		}
+		.insight-card {
+			margin: 0;
+			position: relative;
+			padding: 14px 14px 14px 16px;
+			border-radius: 14px;
+			background: linear-gradient(135deg, rgba(14,165,233,0.14), rgba(99,102,241,0.12));
+			border: 1px solid rgba(56,189,248,0.28);
+			box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+		}
+		.insight-card::before {
+			content: "";
+			position: absolute;
+			left: 0; top: 10px; bottom: 10px;
+			width: 3px;
+			border-radius: 999px;
+			background: linear-gradient(180deg, #38BDF8, #6366F1);
+		}
+		.insight-card .kicker {
+			display: inline-block;
+			font-size: 0.68rem;
+			letter-spacing: 0.14em;
+			text-transform: uppercase;
+			color: #7DD3FC;
+			font-weight: 700;
+			margin-bottom: 6px;
+		}
+		.insight-card p {
 			margin: 0;
 			font-size: 0.9rem;
-			line-height: 1.5;
-			color: #CBD5E1;
-			position: relative;
-			z-index: 1;
-			padding: 12px 14px;
-			border-radius: 12px;
-			background: rgba(255,255,255,0.05);
-			border: 1px solid rgba(148,163,184,0.2);
+			line-height: 1.55;
+			color: #E2E8F0;
 		}
 		.section-label {
-			margin: 4px 0 0;
+			margin: 2px 0 0;
 			font-size: 0.72rem;
-			letter-spacing: 0.12em;
+			letter-spacing: 0.14em;
 			text-transform: uppercase;
 			color: #38BDF8;
 			font-weight: 700;
-			position: relative;
-			z-index: 1;
 		}
 		.feature-grid {
 			display: grid;
 			grid-template-columns: 1fr 1fr;
 			gap: 10px;
-			position: relative;
-			z-index: 1;
 			margin: 0;
 			padding: 0;
 		}
 		.feature-grid li {
 			list-style: none;
 			margin: 0;
-			padding: 10px 12px;
-			border-radius: 12px;
-			background: rgba(14,165,233,0.1);
+			padding: 12px;
+			border-radius: 14px;
+			background: rgba(15,23,42,0.55);
 			border: 1px solid rgba(56,189,248,0.22);
-			font-size: 0.86rem;
+			font-size: 0.84rem;
 			line-height: 1.35;
 			display: flex;
-			gap: 8px;
+			gap: 10px;
 			align-items: flex-start;
-			transition: transform .2s ease, background .2s ease, border-color .2s ease;
+			transition: transform .2s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease;
 		}
 		.feature-grid li:hover {
 			transform: translateY(-2px);
-			background: rgba(14,165,233,0.18);
-			border-color: rgba(56,189,248,0.45);
+			background: rgba(14,165,233,0.16);
+			border-color: rgba(56,189,248,0.5);
+			box-shadow: 0 8px 20px rgba(2,8,23,0.25);
 		}
-		.feature-grid i {
-			color: #38BDF8;
-			margin-top: 2px;
-			width: 14px;
+		.feature-grid .ico {
+			width: 28px;
+			height: 28px;
+			border-radius: 8px;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			flex-shrink: 0;
+			background: rgba(14,165,233,0.18);
+			color: #7DD3FC;
+			font-size: 0.85rem;
+		}
+		.feature-grid span b {
+			display: block;
+			color: #F8FAFC;
+			font-weight: 700;
+			margin-bottom: 2px;
+		}
+		.feature-grid span small {
+			color: #CBD5E1;
+			font-size: 0.78rem;
 		}
 		.benefits {
 			margin: 0;
-			padding: 0;
+			padding: 12px 14px;
 			list-style: none;
 			display: grid;
-			gap: 6px;
-			position: relative;
-			z-index: 1;
+			gap: 8px;
+			border-radius: 14px;
+			background: rgba(2,8,23,0.35);
+			border: 1px solid rgba(148,163,184,0.16);
 		}
 		.benefits li {
 			font-size: 0.88rem;
 			color: #E2E8F0;
 			display: flex;
-			gap: 8px;
+			gap: 10px;
 			align-items: center;
 		}
-		.benefits i { color: #22D3EE; font-size: 0.75rem; }
+		.benefits i {
+			width: 18px;
+			height: 18px;
+			border-radius: 50%;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			background: rgba(34,211,238,0.16);
+			color: #22D3EE;
+			font-size: 0.65rem;
+			flex-shrink: 0;
+		}
 		.brand-pill {
 			display: inline-flex;
-			align-self: flex-start;
-			margin-top: 4px;
-			padding: 11px 16px;
-			border-radius: 10px;
-			background: linear-gradient(90deg, #0EA5E9, #0284C7);
+			align-self: stretch;
+			justify-content: center;
+			margin-top: 2px;
+			padding: 12px 16px;
+			border-radius: 12px;
+			background: linear-gradient(90deg, #0EA5E9, #0284C7 55%, #6366F1);
+			background-size: 160% 100%;
+			animation: shimmer 6s ease-in-out infinite;
 			color: #fff;
-			font-weight: 700;
-			font-size: 0.86rem;
-			letter-spacing: 0.04em;
+			font-weight: 800;
+			font-size: 0.82rem;
+			letter-spacing: 0.08em;
 			text-transform: uppercase;
-			position: relative;
-			z-index: 1;
-			box-shadow: 0 8px 22px rgba(14,165,233,0.35);
+			text-align: center;
+			box-shadow: 0 10px 26px rgba(14,165,233,0.35);
 		}
 		.slogan {
-			margin-top: auto;
-			font-size: 0.78rem;
-			letter-spacing: 0.18em;
+			margin-top: 2px;
+			font-size: 0.72rem;
+			letter-spacing: 0.16em;
 			text-transform: uppercase;
 			color: #94A3B8;
-			position: relative;
-			z-index: 1;
+			text-align: center;
 		}
 
 		.login-panel {
@@ -455,6 +513,10 @@
 			60% { transform: translateX(3px); opacity: 1; }
 			100% { transform: translateX(0); }
 		}
+		@keyframes shimmer {
+			0%, 100% { background-position: 0% 50%; }
+			50% { background-position: 100% 50%; }
+		}
 
 		@media (max-width: 960px) {
 			.login-shell {
@@ -479,7 +541,7 @@
 <body>
 <?php
 if (!isset($email)) { $email = ''; }
-$logo = base_url('assets/images/smartsms-mark-web.png');
+$logo = base_url('assets/images/smartsms-logo-full-web.png');
 ?>
 
 <div class="bg-scene" aria-hidden="true">
@@ -494,43 +556,65 @@ $logo = base_url('assets/images/smartsms-mark-web.png');
 	<div class="login-shell">
 		<aside class="panel login-brand">
 			<div class="brand-logo-wrap">
-				<span class="brand-logo-glow" aria-hidden="true"></span>
-				<img class="brand-logo" src="<?= $logo; ?>" alt="SmartSMS">
+				<img class="brand-logo" src="<?= $logo; ?>" alt="XanderTech SmartSMS — Smart School Management System">
 			</div>
 
-			<p class="lead">
-				Cloud-based solution for admissions, attendance, examinations, fees, report cards,
-				and parent communication — built by XanderTech to digitize everyday school operations
-				from one secure dashboard.
-			</p>
+			<div class="brand-copy">
+				<p class="lead">
+					<strong>Cloud-based school OS</strong> for admissions, attendance, examinations,
+					fees, report cards, and parent communication — digitize everyday operations
+					from one secure dashboard.
+				</p>
 
-			<p class="problem">
-				Schools often rely on disconnected spreadsheets and paper processes, making administration
-				slow and difficult. SmartSMS centralizes records so teams can work faster with clear academic
-				and financial visibility.
-			</p>
+				<div class="insight-card">
+					<span class="kicker">Why SmartSMS</span>
+					<p>
+						Schools often rely on disconnected spreadsheets and paper processes.
+						SmartSMS centralizes records so teams move faster with clear academic
+						and financial visibility.
+					</p>
+				</div>
 
-			<div class="section-label">Core modules</div>
-			<ul class="feature-grid">
-				<li><i class="fas fa-user-plus"></i><span><strong>Admissions</strong> &amp; student management</span></li>
-				<li><i class="fas fa-calendar-check"></i><span><strong>Attendance</strong> tracking</span></li>
-				<li><i class="fas fa-file-alt"></i><span><strong>Examinations</strong> &amp; grades</span></li>
-				<li><i class="fas fa-coins"></i><span><strong>Fees</strong> &amp; payments</span></li>
-				<li><i class="fas fa-clipboard-list"></i><span><strong>Report cards</strong> &amp; academics</span></li>
-				<li><i class="fas fa-comments"></i><span><strong>Parent</strong> communication</span></li>
-			</ul>
+				<div class="section-label">Core modules</div>
+				<ul class="feature-grid">
+					<li>
+						<span class="ico"><i class="fas fa-user-plus"></i></span>
+						<span><b>Admissions</b><small>Student lifecycle &amp; records</small></span>
+					</li>
+					<li>
+						<span class="ico"><i class="fas fa-calendar-check"></i></span>
+						<span><b>Attendance</b><small>Daily &amp; course tracking</small></span>
+					</li>
+					<li>
+						<span class="ico"><i class="fas fa-file-alt"></i></span>
+						<span><b>Exams &amp; grades</b><small>Assessments made simple</small></span>
+					</li>
+					<li>
+						<span class="ico"><i class="fas fa-coins"></i></span>
+						<span><b>Fees &amp; payments</b><small>Accurate fee tracking</small></span>
+					</li>
+					<li>
+						<span class="ico"><i class="fas fa-clipboard-list"></i></span>
+						<span><b>Report cards</b><small>Academic visibility</small></span>
+					</li>
+					<li>
+						<span class="ico"><i class="fas fa-comments"></i></span>
+						<span><b>Parents</b><small>Built-in communication</small></span>
+					</li>
+				</ul>
 
-			<div class="section-label">Benefits</div>
-			<ul class="benefits">
-				<li><i class="fas fa-check-circle"></i> Centralized student and school records</li>
-				<li><i class="fas fa-check-circle"></i> Faster daily administration</li>
-				<li><i class="fas fa-check-circle"></i> Better parent communication</li>
-				<li><i class="fas fa-check-circle"></i> Accurate fee tracking</li>
-				<li><i class="fas fa-check-circle"></i> Clear academic visibility</li>
-			</ul>
+				<div class="section-label">Benefits</div>
+				<ul class="benefits">
+					<li><i class="fas fa-check"></i> Centralized student and school records</li>
+					<li><i class="fas fa-check"></i> Faster daily administration</li>
+					<li><i class="fas fa-check"></i> Better parent communication</li>
+					<li><i class="fas fa-check"></i> Accurate fee tracking</li>
+					<li><i class="fas fa-check"></i> Clear academic visibility</li>
+				</ul>
 
-			<span class="brand-pill">Manage. Monitor. Empower Education.</span>
-			<div class="slogan">XanderTech · Smart IT Solutions &amp; Digital Services</div>
+				<span class="brand-pill">Manage. Monitor. Empower Education.</span>
+				<div class="slogan">XanderTech · Smart IT Solutions &amp; Digital Services</div>
+			</div>
 		</aside>
 
 		<section class="panel login-panel">
