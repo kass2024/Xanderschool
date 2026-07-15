@@ -131,7 +131,42 @@ class BaseController extends Controller
 		$pass = implode($password);
 		return $pass;
 	}
+	/**
+	 * Write email/SMS debug lines to writable/logs/comms-YYYY-mm-dd.log
+	 * Enabled when DEBUG_COMMS=1 in .env (default on for easier troubleshooting).
+	 */
+	protected function _comms_debug(string $channel, string $message, array $context = []): void
+	{
+		$enabled = (string) env('DEBUG_COMMS', '1');
+		if ($enabled === '0' || strtolower($enabled) === 'false') {
+			return;
+		}
+
+		$line = '[' . date('Y-m-d H:i:s') . "] [{$channel}] {$message}";
+		if (! empty($context)) {
+			// Never log raw SMTP/SMS secrets
+			unset($context['password'], $context['pass'], $context['api_key'], $context['SMTP_PASSWORD']);
+			$line .= ' | ' . json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+		}
+		$line .= PHP_EOL;
+
+		log_message('debug', trim($line));
+
+		$dir = WRITEPATH . 'logs';
+		if (! is_dir($dir)) {
+			@mkdir($dir, 0775, true);
+		}
+		@file_put_contents($dir . '/comms-' . date('Y-m-d') . '.log', $line, FILE_APPEND);
+	}
+
 	function _send_sms($phone,$message,&$result,$remaining_sms,$school_acronym="SOMANET", $school_id=null){
+		$this->_comms_debug('SMS', 'intouch:_send_sms start', [
+			'phone_raw' => $phone,
+			'remaining_sms' => $remaining_sms,
+			'sender' => $school_acronym,
+			'school_id' => $school_id,
+			'msg_len' => strlen((string) $message),
+		]);
 
 		//check if we have custom account to be used for the transaction
 		$username = "jean.methode";
@@ -149,94 +184,132 @@ class BaseController extends Controller
 				$username = $info['username'];
 				$password = $info['password'];
 				$check_balance = false;
+				$this->_comms_debug('SMS', 'intouch: using school custom account', ['school_id' => $school_id, 'username' => $username]);
 			}
 		}
 		if ($check_balance && $remaining_sms<=0 ){
 			$result=array("code"=>200,"content"=>"SMS limit reached, contact SOMANET admin");
+			$this->_comms_debug('SMS', 'intouch: blocked — SMS limit reached', ['remaining_sms' => $remaining_sms]);
 			return false;
 		}
 		$phone = str_replace("+","",$phone);
 		$phone = substr( $phone, 0, 3 )=="250"?$phone:"25".$phone;
-//		$link = SMS_API."&destination={$phone}&message=".urlencode($message);
+		$this->_comms_debug('SMS', 'intouch: normalized phone', ['phone' => $phone]);
+
 		$this->curl = \Config\Services::curlrequest();
-		$response = $this->curl->setAuth($username, $password)
-			->request("POST",SMS_API,[
-				'form_params' => [
-					'sender' => $school_acronym,
-					'recipients' => $phone,
-					'message' => $message
-				],'verify' => false,'http_errors' => false
-			]);
+		try {
+			$response = $this->curl->setAuth($username, $password)
+				->request("POST",SMS_API,[
+					'form_params' => [
+						'sender' => $school_acronym,
+						'recipients' => $phone,
+						'message' => $message
+					],'verify' => false,'http_errors' => false
+				]);
+		} catch (\Throwable $e) {
+			$result = ['code' => 500, 'content' => $e->getMessage()];
+			$this->_comms_debug('SMS', 'intouch: HTTP exception', ['error' => $e->getMessage()]);
+			return false;
+		}
+
 		$code = $response->getStatusCode();
-//		echo $response->getBody();
-		$res = json_decode($response->getBody(),true);
+		$body = $response->getBody();
+		$res = json_decode($body,true);
+		$this->_comms_debug('SMS', 'intouch: provider response', [
+			'http_code' => $code,
+			'body' => mb_substr((string) $body, 0, 500),
+		]);
+
 		if ($code==200){
-			if ($res['success']==true){
+			if (is_array($res) && ($res['success'] ?? false) == true){
+				$this->_comms_debug('SMS', 'intouch: SUCCESS', ['phone' => $phone]);
 				return true;
 			}
-			$result = $res['response'][0]['errors']['error'];
+			$result = $res['response'][0]['errors']['error'] ?? ($res['detail'] ?? 'Unknown SMS error');
+			$this->_comms_debug('SMS', 'intouch: FAIL business', ['result' => $result]);
 		}else{
-			$result=$res["detail"];
+			$result = is_array($res) ? ($res["detail"] ?? $body) : $body;
+			$this->_comms_debug('SMS', 'intouch: FAIL http', ['result' => $result]);
 		}
 		return false;
 	}
     
     public function sendSMS($phone, $message, &$result, $sender = "SWIFTQOM"): bool
-        {
-           
-//            $phone = (getenv('sms.type') == 'swiftqom'?'':'+') . validSMSNumber($phone);
-            $phone = str_replace("+","",$phone);
-            $phone = substr( $phone, 0, 3 )=="250"?$phone:"25".$phone;
-            $curl = \Config\Services::curlrequest();
-//            $smsResult = $this->smsTopUpHistory(0, false);
-//            if ($smsResult['smsLeft'] < getenv('custom.sms_limit')) {
-//                $result = ["code" => 400, "content" => "SMS limit reached, contact your sms provider"];
-//                return false;
-//            }
-           if (getenv('sms.type') == 'swiftqom') {
-                //use centric API for Rwanda and Uganda
-                $data = [
-                    "phone" => $phone,
-                    "sender_id" => $sender,
-                    "message" => $message,
-                ];
-                //"https://eoi2k822v3849fk.m.pipedream.net" | ASCENTRIC_SMS_API
-                // log_message('critical','SMS data: '.json_encode($data));
-                $req = $curl
-                    ->request("POST", "https://swiftqom.io/api/dev/api/v1/send_sms", [
-                        'headers' => [
-                            'x-api-key' => getenv("sms.swiftqom.key"),
-                        ],
-                        'json' => $data,
-                        'verify' => false,
-                        'http_errors' => false,
-                    ]);
-                //            $req = $curl->setBody(json_encode($data))
-                //                ->setHeader("Authorization", "Bearer " . getenv("app.ascentric_token"))
-                //                ->setHeader("Content-Type", "application/json")
-                //                ->request(
-                //                    "POST",
-                //                    "https://eoi2k822v3849fk.m.pipedream.net",
-                //                    ['verify' => false, 'http_errors' => false]
-                //                );
-                $res = $req->getBody();
-                //            log_message('critical','Sms response: '.$res);
-                if (($resData = json_decode($res)) === false) {
-                    $result = ["code" => 500, "content" => 'Sms send failed, please try again later'];
-                    return false;
-                } else if (isset($resData->status)) {
-                    if ($resData->status == 200) {
-                        return true;
-                    } else {
-                        $result = ["code" => 400, "content" => $resData->message];
-                        return false;
-                    }
-                } else {
-                    $result = ["code" => 500, "content" => 'Sms send failed, please try again later'];
-                    return false;
-                }
-            }
-        }
+	{
+		$smsType = env('sms.type', getenv('sms.type') ?: '');
+		$this->_comms_debug('SMS', 'sendSMS start', [
+			'sms.type' => $smsType,
+			'phone_raw' => $phone,
+			'sender' => $sender,
+			'msg_len' => strlen((string) $message),
+			'has_swiftqom_key' => env('sms.swiftqom.key', getenv('sms.swiftqom.key') ?: '') !== '',
+		]);
+
+		$phone = str_replace("+","",$phone);
+		$phone = substr( $phone, 0, 3 )=="250"?$phone:"25".$phone;
+		$curl = \Config\Services::curlrequest();
+
+		if ($smsType == 'swiftqom') {
+			$data = [
+				"phone" => $phone,
+				"sender_id" => $sender,
+				"message" => $message,
+			];
+			$apiKey = env('sms.swiftqom.key', getenv('sms.swiftqom.key') ?: '');
+			$this->_comms_debug('SMS', 'swiftqom: request prepared', [
+				'phone' => $phone,
+				'sender_id' => $sender,
+				'api_key_prefix' => $apiKey !== '' ? substr($apiKey, 0, 6) . '…' : '(empty)',
+			]);
+
+			try {
+				$req = $curl
+					->request("POST", "https://swiftqom.io/api/dev/api/v1/send_sms", [
+						'headers' => [
+							'x-api-key' => $apiKey,
+						],
+						'json' => $data,
+						'verify' => false,
+						'http_errors' => false,
+					]);
+			} catch (\Throwable $e) {
+				$result = ["code" => 500, "content" => $e->getMessage()];
+				$this->_comms_debug('SMS', 'swiftqom: HTTP exception', ['error' => $e->getMessage()]);
+				return false;
+			}
+
+			$httpCode = $req->getStatusCode();
+			$res = $req->getBody();
+			$this->_comms_debug('SMS', 'swiftqom: provider response', [
+				'http_code' => $httpCode,
+				'body' => mb_substr((string) $res, 0, 500),
+			]);
+
+			$resData = json_decode($res);
+			if ($resData === null && json_last_error() !== JSON_ERROR_NONE) {
+				$result = ["code" => 500, "content" => 'Sms send failed, please try again later'];
+				$this->_comms_debug('SMS', 'swiftqom: invalid JSON response', ['json_error' => json_last_error_msg()]);
+				return false;
+			} else if (isset($resData->status)) {
+				if ($resData->status == 200) {
+					$this->_comms_debug('SMS', 'swiftqom: SUCCESS', ['phone' => $phone]);
+					return true;
+				} else {
+					$result = ["code" => 400, "content" => $resData->message ?? 'SMS failed'];
+					$this->_comms_debug('SMS', 'swiftqom: FAIL business', ['result' => $result]);
+					return false;
+				}
+			} else {
+				$result = ["code" => 500, "content" => 'Sms send failed, please try again later'];
+				$this->_comms_debug('SMS', 'swiftqom: FAIL missing status', ['result' => $result]);
+				return false;
+			}
+		}
+
+		$result = ["code" => 500, "content" => "Unsupported sms.type [{$smsType}] in .env"];
+		$this->_comms_debug('SMS', 'sendSMS: unsupported provider', ['sms.type' => $smsType]);
+		return false;
+	}
 
 	/**
 	 * Send email via SMTP settings from .env (SMTP_*).
@@ -252,7 +325,25 @@ class BaseController extends Controller
 		$fromName = env('SMTP_FROM_NAME', 'XanderTech SmartSMS');
 		$crypto   = strtolower((string) env('SMTP_ENCRYPTION', ''));
 
+		$this->_comms_debug('EMAIL', 'start', [
+			'to' => $toEmail,
+			'subject' => $subject,
+			'host' => $host,
+			'port' => $port,
+			'username' => $user,
+			'from' => $from,
+			'from_name' => $fromName,
+			'encryption' => $crypto !== '' ? $crypto : '(auto)',
+			'body_len' => strlen((string) $msgBody),
+		]);
+
 		if ($host === '' || $user === '' || $pass === '' || $from === '') {
+			$this->_comms_debug('EMAIL', 'FAIL missing SMTP config', [
+				'has_host' => $host !== '',
+				'has_user' => $user !== '',
+				'has_pass' => $pass !== '',
+				'has_from' => $from !== '',
+			]);
 			log_message('error', 'SMTP not configured: missing SMTP_HOST / SMTP_USERNAME / SMTP_PASSWORD / SMTP_FROM_EMAIL in .env');
 			return false;
 		}
@@ -275,6 +366,15 @@ class BaseController extends Controller
 				: PHPMailer::ENCRYPTION_STARTTLS;
 			$mail->Timeout    = 20;
 			$mail->CharSet    = 'UTF-8';
+			$mail->SMTPDebug  = 0;
+			$mail->Debugoutput = function ($str, $level) {
+				$this->_comms_debug('EMAIL-SMTP', trim((string) $str), ['level' => $level]);
+			};
+
+			// Enable protocol-level debug when DEBUG_COMMS is on
+			if ((string) env('DEBUG_COMMS', '1') !== '0') {
+				$mail->SMTPDebug = 2;
+			}
 
 			$mail->setFrom($from, $fromName);
 			$mail->addAddress($toEmail);
@@ -285,12 +385,19 @@ class BaseController extends Controller
 			$mail->Body    = $msgBody;
 			$mail->AltBody = trim(strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $msgBody)));
 
+			$this->_comms_debug('EMAIL', 'sending via PHPMailer…', [
+				'secure' => $mail->SMTPSecure,
+				'port' => $mail->Port,
+			]);
 			$mail->send();
+			$this->_comms_debug('EMAIL', 'SUCCESS', ['to' => $toEmail, 'subject' => $subject]);
 			return true;
 		} catch (Exception $e) {
+			$err = $mail->ErrorInfo ?: $e->getMessage();
+			$this->_comms_debug('EMAIL', 'FAIL', ['to' => $toEmail, 'error' => $err]);
 			log_message('error', 'Mailer Error to {to}: {err}', [
 				'to'  => $toEmail,
-				'err' => $mail->ErrorInfo ?: $e->getMessage(),
+				'err' => $err,
 			]);
 			return false;
 		}
