@@ -1276,9 +1276,19 @@ public function testEmail()
 		$schoolId = (int) $this->session->get("soma_school_id");
 		$data['settings'] = $settingsMdl->getSchool(array("schools.id" => $schoolId))->getRowArray();
 		$data['faculities'] = $data['faculty'] = $faculityModel->get()->getResultArray();
+		$nurseryFaculty = null;
+		foreach ($data['faculities'] as $fac) {
+			if (strcasecmp(trim((string) ($fac['title'] ?? '')), 'Nursery') === 0
+				|| stripos((string) ($fac['title'] ?? ''), 'Nursery') !== false) {
+				$nurseryFaculty = $fac;
+				break;
+			}
+		}
+		$data['nursery_faculty'] = $nurseryFaculty;
 		$data['colors'] = $grade->select("grade.id,grade.color_title,grade.max_point,grade.min_point,grade.color,f.title")
 				->join("faculty f", "f.id=grade.faculty_id", "LEFT")
 				->where("grade.school_id", $schoolId)
+				->orderBy('grade.max_point', 'DESC')
 				->get()->getResultArray();
 		$data['title'] = lang("app.settings");
 		$data['subtitle'] = lang("app.schoolSettings");
@@ -2259,26 +2269,62 @@ public function scanCard()
 	public function manipulate_grade()
 	{
 		$this->_preset();
-		$data = $this->data;
 		$grade = new GradeModel();
-		$title = $this->request->getPost("color_title");
+		$title = trim((string) $this->request->getPost("color_title"));
 		$max = $this->request->getPost("max_point");
 		$min = $this->request->getPost("min_point");
-		$fac = $this->request->getPost("faculite");
 		$color = $this->request->getPost("color");
-		$data = array("faculty_id" => $fac,
-				"school_id" => $this->session->get("soma_school_id"),
-				"color_title" => $title,
-				"max_point" => $max,
-				"min_point" => $min,
-				"min_point" => $min,
-				"color" => $color,
-				"created_by" => $this->session->get("soma_id"));
+		$schoolId = (int) $this->session->get("soma_school_id");
+
+		// Always lock educational path to Nursery
+		$facMdl = new FacultyModel();
+		$nursery = $facMdl->like('title', 'Nursery', 'both')->first();
+		if (!$nursery) {
+			$all = $facMdl->findAll();
+			foreach ($all as $f) {
+				if (stripos((string) ($f['title'] ?? ''), 'Nursery') !== false) {
+					$nursery = $f;
+					break;
+				}
+			}
+		}
+		if (!$nursery) {
+			return $this->response->setJSON(['error' => 'Nursery educational path not found. Create a faculty named Nursery first.']);
+		}
+		$facId = (int) $nursery['id'];
+
+		if ($title === '') {
+			return $this->response->setJSON(['error' => 'Mention is required']);
+		}
+		if ($max === '' || $min === '' || !is_numeric($max) || !is_numeric($min)) {
+			return $this->response->setJSON(['error' => 'Max and Min points must be numbers']);
+		}
+
+		$data = [
+			'faculty_id' => $facId,
+			'school_id' => $schoolId,
+			'color_title' => $title,
+			'max_point' => $max,
+			'min_point' => $min,
+			'color' => $color ?: '#22c55e',
+			'created_by' => $this->session->get('soma_id'),
+		];
 		try {
 			$grade->save($data);
-			return $this->response->setJSON(array("success" => lang("app.gradeSaved")));
+			$newId = (int) $grade->getInsertID();
+			return $this->response->setJSON([
+				'success' => lang('app.gradeSaved'),
+				'grade' => [
+					'id' => $newId,
+					'color_title' => $title,
+					'max_point' => $max,
+					'min_point' => $min,
+					'color' => $data['color'],
+					'title' => $nursery['title'] ?? 'Nursery',
+				],
+			]);
 		} catch (\Exception $e) {
-			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
 		}
 	}
 public function attendanceCard()
