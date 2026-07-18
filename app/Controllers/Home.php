@@ -3,7 +3,12 @@
 namespace App\Controllers;
 
 use App\Libraries\Wkhtmltopdf;
+use App\Libraries\WdaReportBuilder;
+use App\Libraries\GeminiCardBackground;
+use App\Libraries\GeminiAcademicDocs;
 use App\Models\AcademicYearModel;
+use App\Models\AcademicPlanModel;
+use App\Models\AcademicAiAnalysisModel;
 use App\Models\ActiveTermModel;
 use App\Models\ActivityModel;
 use App\Models\AddressModel;
@@ -15,6 +20,7 @@ use App\Models\BookModel;
 use App\Models\BookRecordModel;
 use App\Models\BusModel;
 use App\Models\ClassesModel;
+use App\Models\ClassPedagogicalDocModel;
 use App\Models\ClassRecordModel;
 use App\Models\CourseCategoryModel;
 use App\Models\CourseModel;
@@ -82,11 +88,12 @@ class Home extends BaseController
 			// 	header("location: " . base_url('dashboard'));
 			// 	die();
 			// }
+			$this->ensurePeriodLocksSchema();
 			$schoolMdl = new SchoolModel();
 			$skl = $schoolMdl->select("schools.name,schools.slogan,schools.extra_sms,schools.head_master
 			,schools.head_master_gender,schools.headmaster_signature,schools.acronym,p.sms_limit,at.academic_year,schools.status
 			,schools.email,schools.phone,schools.website,schools.active_term,schools.logo,schools.in_time,schools.leave_time,schools.address
-			,schools.tolerance,schools.pobox,at.term,at.sms_usage,schools.discipline_max,at.use_period
+			,schools.tolerance,schools.pobox,at.term,at.sms_usage,schools.discipline_max,at.use_period,at.locked_periods
 			,ac.title as academic_year_title, ac.id AS academic_year_id, at.id as active_term_id,date_format(schools.created_at,'%Y') as start_year")
 					->join("packages p", "p.id=schools.package")
 					->join("active_term at", "at.id=schools.active_term", "LEFT")
@@ -94,7 +101,7 @@ class Home extends BaseController
 					->where("schools.id", $this->session->get("soma_school_id"))->get()->getRow();
 			if ($skl->status == 0) {
 				//school is disabled by somanet admin
-				$this->session->setFlashdata('error', "Your school is locked by IOTXAD admin");
+				$this->session->setFlashdata('error', "Your school is locked by XanderTech admin");
 				header("location: " . base_url('logout'));
 				die();
 			}
@@ -136,6 +143,7 @@ class Home extends BaseController
 			$this->data['academic_year_title'] = $skl->academic_year_title;
 			$this->data['discipline_max'] = $skl->discipline_max;
 			$this->data['periodic'] = $skl->use_period;
+			$this->data['locked_periods'] = $this->parseLockedPeriods($skl->locked_periods ?? '');
 			$this->data['school_address'] = $skl->address;
 			$this->data['school_acronym'] = $skl->acronym;
 			$this->data['school_moto'] = $skl->slogan;
@@ -188,8 +196,8 @@ public function testEmail()
 		if ($type !== null) {
 			return redirect()->to("login");
 		}
-		$data['title'] = "IOTXAD";
-		$data['subtitle'] = lang("app.SchoolManagementSystem");
+		$data['title'] = "SmartSMS";
+		$data['subtitle'] = "XanderTech Smart School Management System";
 		$data['content'] = view('landingPage/main', $data);
 		return view('landing_page', $data);
 	}
@@ -487,38 +495,378 @@ public function testEmail()
 		}
 		$stMdl = new StudentModel();
 		$sklMdl = new SchoolModel();
-		$skData = $sklMdl->select("name,card_design,logo,slogan,card_background,header_text_1,header_text_2,header_color,main_color,footer_color,capitalize")
+		$this->ensureStaffCardSchema();
+		$skData = $sklMdl->select("name,card_design,card_orientation,card_bg_mode,card_template,card_layout,logo,slogan,card_background,header_text_1,header_text_2,header_color,main_color,footer_color,paint_color,capitalize,headmaster_signature,head_master,phone,email,address,website,pobox")
 				->where("id", $this->session->get("soma_school_id"))
 				->get(1)->getRow();
+		$cardTemplate = \App\Libraries\CardLayout::normalizeTemplate($skData->card_template ?? 'ocean');
+		$orientation = \App\Libraries\CardLayout::normalizeOrientation(
+			$skData->card_orientation ?: \App\Libraries\CardLayout::preferredOrientation($cardTemplate)
+		);
+		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($skData);
 		$data['year'] = $this->data['academic_year'];
 		$data['theyear'] = $this->data['academic_year_title'];
 		$data['moto'] = $skData->slogan;
 		$data['logo'] = $skData->logo;
 		$data['school_name'] = $skData->name;
-		$data['header1'] = $skData->header_text_1;
-		$data['header2'] = $skData->header_text_2;
+		$data['header1'] = $autoHeaders['header1'];
+		$data['header2'] = $autoHeaders['header2'];
 		$data['background'] = $skData->card_background;
 		$data['header_color'] = $skData->header_color;
-		$data['main_color'] = $skData->main_color;
+		$data['main_color'] = $skData->main_color ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate);
+		$data['paint_color'] = $skData->paint_color ?: ($skData->main_color ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate));
 		$data['capitalize'] = $skData->capitalize;
 		$data['footer_color'] = $skData->footer_color;
-		$ids = implode(",", $ids);
-		$data['students'] = $stMdl->get_student_simple2("students.id in (" . $ids . ")");
-		//$html = view("templates/student_card_" . $skData->card_design, $data);
-		$html = view("templates/student_card_2", $data);
+		$data['orientation'] = $orientation;
+		$data['headmaster_signature'] = $skData->headmaster_signature ?? '';
+		$data['head_master'] = $skData->head_master ?? '';
+		$data['card_template'] = $cardTemplate;
+		$data['card_layout'] = $skData->card_layout ?? null;
+		$safeIds = array_map('intval', (array)$ids);
+		$safeIds = array_values(array_filter($safeIds));
+		if (count($safeIds) === 0) {
+			return redirect()->to("student-cards");
+		}
+		$ids = implode(",", $safeIds);
+		$students = $stMdl->get_student_simple2("students.id in (" . $ids . ")");
+		// Only print cards for students with a real uploaded photo (no fallback).
+		$printable = [];
+		foreach ($students as $student) {
+			if (resolve_profile_photo($student['photo'] ?? '') !== null) {
+				$printable[] = $student;
+			}
+		}
+		if (count($printable) === 0) {
+			return redirect()->to("student-cards");
+		}
+		$data['students'] = $printable;
+		$html = view("templates/student_card_smart", $data);
 		try {
-			$mask = FCPATH . "assets/templates/*.html";
-			array_map('unlink', glob($mask));//clear previous cards
-			$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
+			$tplDir = FCPATH . 'assets/templates/';
+			$imgDir = $tplDir . '_card_img';
+			if (!is_dir($imgDir)) {
+				@mkdir($imgDir, 0775, true);
+			}
+			$mask = $tplDir . '*.html';
+			array_map('unlink', glob($mask) ?: []);
+			$wkhtmltopdf = new Wkhtmltopdf(array('path' => $tplDir));
 			$wkhtmltopdf->setTitle(lang("app.studentCards"));
 			$wkhtmltopdf->setHtml($html);
-			$wkhtmltopdf->setOrientation("Landscape");
-			$wkhtmltopdf->setOptions(array("page-width" => "278px", "page-height" => "430px"));
+			// Exact CR80 size. Always Portrait + page-width/height — Landscape orientation
+			// swaps dimensions in wkhtmltopdf and produced tall/portrait PDFs for landscape cards.
+			$pageW = $orientation === 'portrait' ? '54mm' : '85.6mm';
+			$pageH = $orientation === 'portrait' ? '85.6mm' : '54mm';
+			$wkhtmltopdf->setOrientation("Portrait");
+			$wkhtmltopdf->setOptions(array(
+				'enable-local-file-access' => null,
+				'disable-smart-shrinking' => null,
+				'enable-javascript' => null,
+				'javascript-delay' => 500,
+				'no-stop-slow-scripts' => null,
+				'encoding' => 'UTF-8',
+				'page-width' => $pageW,
+				'page-height' => $pageH,
+			));
 			$wkhtmltopdf->setMargins(array("top" => 0, "left" => 0, "right" => 0, "bottom" => 0));
 			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "students_card_" . time() . ".pdf");
 		} catch (\Exception $e) {
 			echo $e->getMessage();
 		}
+	}
+
+	/**
+	 * Save card template + drag-drop field layout JSON from School Settings.
+	 */
+	public function save_card_layout()
+	{
+		$this->_preset(1, 3);
+		$this->ensureStaffCardSchema();
+		$schoolId = (int)$this->session->get('soma_school_id');
+		$audience = strtolower((string)$this->request->getPost('audience')) === 'staff' ? 'staff' : 'student';
+		$template = \App\Libraries\CardLayout::normalizeTemplate($this->request->getPost('template'));
+		$orientation = \App\Libraries\CardLayout::normalizeOrientation($this->request->getPost('orientation'));
+		$fieldsRaw = $this->request->getPost('fields');
+		$fields = is_string($fieldsRaw) ? json_decode($fieldsRaw, true) : $fieldsRaw;
+		if (!is_array($fields)) {
+			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid fields payload']);
+		}
+		$rawPayload = json_encode([
+			'template' => $template,
+			'orientation' => $orientation,
+			'fields' => $fields,
+		], JSON_UNESCAPED_UNICODE);
+		$resolved = $audience === 'staff'
+			? \App\Libraries\CardLayout::resolveStaff($rawPayload, $template, $orientation)
+			: \App\Libraries\CardLayout::resolve($rawPayload, $template, $orientation);
+		$payload = json_encode($resolved, JSON_UNESCAPED_UNICODE);
+		$update = $audience === 'staff'
+			? [
+				'sf_card_template' => $resolved['template'],
+				'sf_card_layout' => $payload,
+				'sf_card_orientation' => $resolved['orientation'],
+			]
+			: [
+				'card_template' => $resolved['template'],
+				'card_layout' => $payload,
+				'card_orientation' => $resolved['orientation'],
+			];
+		try {
+			$skl = new SchoolModel();
+			$skl->update($schoolId, $update);
+			return $this->response->setJSON([
+				'success' => 'Card layout saved',
+				'audience' => $audience,
+				'template' => $resolved['template'],
+				'orientation' => $resolved['orientation'],
+				'layout' => $resolved,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * Reset card layout to selected template defaults.
+	 */
+	public function reset_card_layout()
+	{
+		$this->_preset(1, 3);
+		$this->ensureStaffCardSchema();
+		$schoolId = (int)$this->session->get('soma_school_id');
+		$audience = strtolower((string)$this->request->getPost('audience')) === 'staff' ? 'staff' : 'student';
+		$template = \App\Libraries\CardLayout::normalizeTemplate($this->request->getPost('template'));
+		$orientation = \App\Libraries\CardLayout::normalizeOrientation(
+			$this->request->getPost('orientation') ?: \App\Libraries\CardLayout::preferredOrientation($template)
+		);
+		$defaults = $audience === 'staff'
+			? \App\Libraries\CardLayout::staffDefaults($template, $orientation)
+			: \App\Libraries\CardLayout::defaults($template, $orientation);
+		$payload = json_encode($defaults, JSON_UNESCAPED_UNICODE);
+		$update = $audience === 'staff'
+			? [
+				'sf_card_template' => $template,
+				'sf_card_layout' => $payload,
+				'sf_card_orientation' => $orientation,
+			]
+			: [
+				'card_template' => $template,
+				'card_layout' => $payload,
+				'card_orientation' => $orientation,
+			];
+		try {
+			(new SchoolModel())->update($schoolId, $update);
+			return $this->response->setJSON([
+				'success' => 'Reset to template defaults',
+				'audience' => $audience,
+				'layout' => $defaults,
+				'orientation' => $orientation,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * Generate 3+ modern CR80-sized AI background proposals for student or staff.
+	 * Does not auto-apply — client picks one via apply_card_background_proposal.
+	 */
+	public function generate_card_background()
+	{
+		$this->_preset(1, 3);
+		$this->ensureStaffCardSchema();
+		$schoolId = (int)$this->session->get("soma_school_id");
+		$audience = strtolower((string)$this->request->getPost('type')) === 'staff' ? 'staff' : 'student';
+		$regenerate = (int)$this->request->getPost('regenerate') === 1;
+		$sklMdl = new SchoolModel();
+		$sk = $sklMdl->select("id,name,main_color,sf_main_color,card_orientation,sf_card_orientation,card_template,sf_card_template,card_layout,sf_card_layout")
+			->where("id", $schoolId)->get(1)->getRow();
+		if (!$sk) {
+			return $this->response->setStatusCode(404)->setJSON(["error" => "School not found"]);
+		}
+
+		try {
+			$templatePost = (string)$this->request->getPost('template');
+			$template = \App\Libraries\CardLayout::normalizeTemplate(
+				$templatePost !== ''
+					? $templatePost
+					: ($audience === 'staff' ? ($sk->sf_card_template ?? 'ocean') : ($sk->card_template ?? 'ocean'))
+			);
+			$orientation = $audience === 'staff'
+				? ((string)($sk->sf_card_orientation ?: 'landscape'))
+				: ((string)($sk->card_orientation ?: 'landscape'));
+			$orientation = \App\Libraries\CardLayout::normalizeOrientation(
+				$this->request->getPost('orientation') ?: $orientation
+			);
+			$brandColor = $audience === 'staff'
+				? ((string)($sk->sf_main_color ?: $sk->main_color ?: ''))
+				: ((string)($sk->main_color ?: ''));
+			if ($brandColor === '') {
+				$brandColor = \App\Libraries\CardLayout::defaultAccent($template);
+			}
+
+			$fieldsRaw = $this->request->getPost('fields');
+			$fields = is_string($fieldsRaw) ? json_decode($fieldsRaw, true) : $fieldsRaw;
+			if (!is_array($fields)) {
+				$layoutJson = $audience === 'staff' ? ($sk->sf_card_layout ?? null) : ($sk->card_layout ?? null);
+				$resolved = $audience === 'staff'
+					? \App\Libraries\CardLayout::resolveStaff($layoutJson, $template, $orientation)
+					: \App\Libraries\CardLayout::resolve($layoutJson, $template, $orientation);
+				$fields = $resolved['fields'] ?? [];
+			}
+
+			$lib = new GeminiCardBackground();
+			$analysis = $lib->analyzeTemplate($template, $orientation, $fields, $audience, $brandColor);
+			$proposals = $lib->generateProposals(
+				(string)$sk->name,
+				$orientation,
+				$analysis['accent'],
+				$audience,
+				3,
+				$template,
+				$fields,
+				$regenerate
+			);
+			$anyGemini = false;
+			foreach ($proposals as $p) {
+				if (($p['source'] ?? '') === 'gemini') {
+					$anyGemini = true;
+					break;
+				}
+			}
+			$msg = $anyGemini
+				? ($regenerate
+					? 'New set ready — pick one, or regenerate again'
+					: 'Analyzed “' . $template . '” template — pick a background (content areas kept white for text)')
+				: 'Background generation unavailable — edge-accent blanks shown.';
+			return $this->response->setJSON([
+				"success" => $msg,
+				"proposals" => $proposals,
+				"audience" => $audience,
+				"orientation" => $orientation,
+				"template" => $template,
+				"accent" => $analysis['accent'],
+				"analysis" => [
+					'content_box' => $analysis['content_box'],
+					'decorate' => $analysis['decorate'],
+					'keepout_count' => count($analysis['keepouts']),
+				],
+				"source" => $anyGemini ? 'gemini' : 'fallback',
+				"regenerated" => $regenerate,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON(["error" => $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * Apply a chosen AI proposal (or any background filename) to student/staff card.
+	 */
+	public function apply_card_background_proposal()
+	{
+		$this->_preset(1, 3);
+		$this->ensureStaffCardSchema();
+		$schoolId = (int)$this->session->get("soma_school_id");
+		$audience = strtolower((string)$this->request->getPost('type')) === 'staff' ? 'staff' : 'student';
+		$filename = basename((string)$this->request->getPost('filename'));
+		if ($filename === '' || !preg_match('/^[a-zA-Z0-9._-]+\.(png|jpe?g|webp)$/i', $filename)) {
+			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid background file']);
+		}
+		$path = FCPATH . 'assets/images/background/' . $filename;
+		if (!is_file($path)) {
+			return $this->response->setStatusCode(404)->setJSON(['error' => 'Background file not found']);
+		}
+		$sklMdl = new SchoolModel();
+		$sk = $sklMdl->select('id,card_background,sf_card_background')->where('id', $schoolId)->get(1)->getRow();
+		if (!$sk) {
+			return $this->response->setStatusCode(404)->setJSON(['error' => 'School not found']);
+		}
+		$old = $audience === 'staff' ? (string)($sk->sf_card_background ?? '') : (string)($sk->card_background ?? '');
+		$orientation = \App\Libraries\CardLayout::normalizeOrientation($this->request->getPost('orientation') ?: 'landscape');
+		$update = $audience === 'staff'
+			? [
+				'sf_card_background' => $filename,
+				'sf_card_bg_mode' => 'smart',
+				'sf_card_orientation' => $orientation,
+			]
+			: [
+				'card_background' => $filename,
+				'card_bg_mode' => 'smart',
+				'card_orientation' => $orientation,
+			];
+		$sklMdl->update($schoolId, $update);
+		return $this->response->setJSON([
+			'success' => 'Background applied',
+			'filename' => $filename,
+			'url' => base_url('assets/images/background/' . $filename),
+			'audience' => $audience,
+			'orientation' => $orientation,
+			'previous' => $old,
+		]);
+	}
+
+	private function ensureStaffCardSchema()
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('schools')) {
+			$done = true;
+			return;
+		}
+		$fields = $db->getFieldNames('schools');
+		$alters = [];
+		if (!in_array('sf_card_template', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_card_template` VARCHAR(32) DEFAULT 'ocean'";
+		}
+		if (!in_array('sf_card_orientation', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_card_orientation` VARCHAR(20) DEFAULT 'landscape'";
+		}
+		if (!in_array('sf_card_bg_mode', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_card_bg_mode` VARCHAR(20) DEFAULT 'manual'";
+		}
+		if (!in_array('sf_card_layout', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_card_layout` LONGTEXT NULL";
+		}
+		if (!in_array('sf_header_text_1', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_header_text_1` VARCHAR(255) NULL";
+		}
+		if (!in_array('sf_header_text_2', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_header_text_2` VARCHAR(255) NULL";
+		}
+		if (!in_array('sf_header_color', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_header_color` VARCHAR(20) NULL";
+		}
+		if (!in_array('sf_main_color', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_main_color` VARCHAR(20) NULL";
+		}
+		if (!in_array('sf_footer_color', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_footer_color` VARCHAR(20) NULL";
+		}
+		if (!in_array('paint_color', $fields, true)) {
+			$alters[] = "ADD COLUMN `paint_color` VARCHAR(20) NULL";
+		}
+		if (!in_array('sf_paint_color', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_paint_color` VARCHAR(20) NULL";
+		}
+		if (!in_array('sf_capitalize', $fields, true)) {
+			$alters[] = "ADD COLUMN `sf_capitalize` TINYINT(1) NULL";
+		}
+		if ($alters) {
+			$db->query('ALTER TABLE `schools` ' . implode(', ', $alters));
+			$db->query("UPDATE `schools` SET
+				`sf_header_text_1` = IFNULL(`sf_header_text_1`, `header_text_1`),
+				`sf_header_text_2` = IFNULL(`sf_header_text_2`, `header_text_2`),
+				`sf_header_color` = IFNULL(`sf_header_color`, `header_color`),
+				`sf_main_color` = IFNULL(`sf_main_color`, `main_color`),
+				`sf_footer_color` = IFNULL(`sf_footer_color`, `footer_color`),
+				`sf_capitalize` = IFNULL(`sf_capitalize`, `capitalize`),
+				`paint_color` = IFNULL(`paint_color`, IFNULL(`main_color`, '#1E6FD9')),
+				`sf_paint_color` = IFNULL(`sf_paint_color`, IFNULL(`sf_main_color`, IFNULL(`main_color`, '#1E6FD9')))
+			");
+		}
+		$done = true;
 	}
 
 	public function generate_staff_cards()
@@ -533,32 +881,59 @@ public function testEmail()
 		}
 		$stMdl = new StaffModel();
 		$sklMdl = new SchoolModel();
-		$skData = $sklMdl->select("name,card_design,logo,slogan,sf_card_background,header_text_1,header_text_2,header_color,main_color,footer_color,capitalize")
+		$this->ensureStaffCardSchema();
+		$skData = $sklMdl->select("name,card_design,logo,slogan,sf_card_background,sf_card_template,sf_card_orientation,sf_card_layout,header_text_1,header_text_2,header_color,main_color,footer_color,paint_color,capitalize,sf_header_text_1,sf_header_text_2,sf_header_color,sf_main_color,sf_footer_color,sf_paint_color,sf_capitalize,headmaster_signature,head_master,phone,email,address,website,pobox")
 				->where("id", $this->session->get("soma_school_id"))
 				->get(1)->getRow();
+		$cardTemplate = \App\Libraries\CardLayout::normalizeTemplate($skData->sf_card_template ?? 'ocean');
+		$orientation = \App\Libraries\CardLayout::normalizeOrientation(
+			$skData->sf_card_orientation ?: \App\Libraries\CardLayout::preferredOrientation($cardTemplate)
+		);
+		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($skData);
 		$data['year'] = $this->data['academic_year'];
+		$data['theyear'] = $this->data['academic_year_title'] ?? $this->data['academic_year'];
 		$data['moto'] = $skData->slogan;
 		$data['logo'] = $skData->logo;
 		$data['school_name'] = $skData->name;
-		$data['header1'] = $skData->header_text_1;
-		$data['header2'] = $skData->header_text_2;
+		$data['header1'] = $autoHeaders['header1'];
+		$data['header2'] = $autoHeaders['header2'];
 		$data['background'] = $skData->sf_card_background;
-		$data['header_color'] = $skData->header_color;
-		$data['main_color'] = $skData->main_color;
-		$data['capitalize'] = $skData->capitalize;
-		$data['footer_color'] = $skData->footer_color;
-		$ids = implode(",", $ids);
+		$data['header_color'] = $skData->sf_header_color ?: $skData->header_color;
+		$data['main_color'] = ($skData->sf_main_color ?: $skData->main_color) ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate);
+		$data['paint_color'] = ($skData->sf_paint_color ?: ($skData->paint_color ?: ($skData->sf_main_color ?: $skData->main_color)))
+			?: \App\Libraries\CardLayout::defaultAccent($cardTemplate);
+		$data['capitalize'] = $skData->sf_capitalize !== null && $skData->sf_capitalize !== ''
+			? $skData->sf_capitalize
+			: $skData->capitalize;
+		$data['footer_color'] = $skData->sf_footer_color ?: $skData->footer_color;
+		$data['orientation'] = $orientation;
+		$data['card_template'] = $cardTemplate;
+		$data['card_layout'] = $skData->sf_card_layout ?? null;
+		$data['headmaster_signature'] = $skData->headmaster_signature ?? '';
+		$data['head_master'] = $skData->head_master ?? '';
+		$data['card_badge'] = 'STAFF CARD';
+		$ids = implode(",", array_map('intval', (array) $ids));
 		$data['staffs'] = $stMdl->get_staff("staffs.id in (" . $ids . ")");
-		$html = view("templates/staff_card_0", $data);
-//		echo $html; die();
+		$html = view("templates/staff_card_smart", $data);
 		try {
 			$mask = FCPATH . "assets/templates/*.html";
-			array_map('unlink', glob($mask));//clear previous cards
+			array_map('unlink', glob($mask) ?: []);
 			$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
-			$wkhtmltopdf->setTitle(lang("app.studentCards"));
+			$wkhtmltopdf->setTitle(lang("app.staffCards") ?: 'Staff cards');
 			$wkhtmltopdf->setHtml($html);
-			$wkhtmltopdf->setOrientation("Landscape");
-			$wkhtmltopdf->setOptions(array("page-width" => "430px", "page-height" => "278px"));
+			$pageW = $orientation === 'portrait' ? '54mm' : '85.6mm';
+			$pageH = $orientation === 'portrait' ? '85.6mm' : '54mm';
+			$wkhtmltopdf->setOrientation("Portrait");
+			$wkhtmltopdf->setOptions(array(
+				'enable-local-file-access' => null,
+				'disable-smart-shrinking' => null,
+				'enable-javascript' => null,
+				'javascript-delay' => 500,
+				'no-stop-slow-scripts' => null,
+				'encoding' => 'UTF-8',
+				'page-width' => $pageW,
+				'page-height' => $pageH,
+			));
 			$wkhtmltopdf->setMargins(array("top" => 0, "left" => 0, "right" => 0, "bottom" => 0));
 			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "staffs_card_" . time() . ".pdf");
 		} catch (\Exception $e) {
@@ -623,26 +998,1040 @@ public function testEmail()
 		return view('main', $data);
 	}
 
+	/**
+	 * Academic structure manager: Faculty → Department → Level (REB & TVET).
+	 */
+	public function academic_structure()
+	{
+		$this->_preset(1, 3);
+		$this->ensureAcademicStructureSchema();
+		$data = $this->data;
+		$data['title'] = 'Academic structure';
+		$data['subtitle'] = 'Manage faculties, departments and levels';
+		$data['page'] = 'academic_structure';
+		$data['content'] = view('pages/academic_structure', $data);
+		return view('main', $data);
+	}
+
+	/** Ensure levels.department_id exists for Faculty→Dept→Level hierarchy. */
+	private function ensureAcademicStructureSchema()
+	{
+		$db = \Config\Database::connect();
+		$col = $db->query(
+			"SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'levels' AND COLUMN_NAME = 'department_id'"
+		)->getRow();
+		if ($col && (int) $col->c === 0) {
+			$db->query('ALTER TABLE levels ADD COLUMN department_id INT NULL DEFAULT NULL AFTER faculty_id');
+		}
+	}
+
+	/** JSON tree for structure manager. Levels are shared (not per-department). */
+	public function getAcademicStructure($program = 0): Response
+	{
+		$this->_preset(1, 3);
+		$this->ensureAcademicStructureSchema();
+		$db = \Config\Database::connect();
+		$program = (int) $program;
+
+		$facBuilder = $db->table('faculty')->select('id, title, abbrev, type, status')->orderBy('title', 'ASC');
+		if ($program === 1 || $program === 2) {
+			$facBuilder->where('type', $program);
+		}
+		$faculties = $facBuilder->get()->getResultArray();
+
+		// TVET: one shared Level 1–5 pool for all departments
+		$sharedLevels = [];
+		if ($program === 1) {
+			$rows = $db->table('levels')->select('id, title, type, faculty_id, department_id, status')
+				->where('type', 1)
+				->orderBy('title', 'ASC')
+				->get()->getResultArray();
+			$byId = [];
+			foreach ($rows as $lv) {
+				$title = strtolower(trim((string) $lv['title']));
+				if (preg_match('/\b(senior|ordinary|primary|nursery|year|s1|s2|s3|s4|s5|s6)\b/', $title)) {
+					continue;
+				}
+				if (!preg_match('/\blevel\s*[1-5]\b|^l\s*[1-5]$/', $title)) {
+					continue;
+				}
+				$byId[$lv['id']] = $lv;
+			}
+			$sharedLevels = array_values($byId);
+			usort($sharedLevels, function ($a, $b) {
+				preg_match('/([1-5])/', (string) $a['title'], $ma);
+				preg_match('/([1-5])/', (string) $b['title'], $mb);
+				$na = isset($ma[1]) ? (int) $ma[1] : 9;
+				$nb = isset($mb[1]) ? (int) $mb[1] : 9;
+				if ($na !== $nb) {
+					return $na < $nb ? -1 : 1;
+				}
+				return strcasecmp((string) $a['title'], (string) $b['title']);
+			});
+		}
+
+		$tree = [];
+		foreach ($faculties as $fac) {
+			$depts = $db->table('departments')->select('id, title, code, faculty_id')
+				->where('faculty_id', $fac['id'])
+				->orderBy('title', 'ASC')
+				->get()->getResultArray();
+			$deptNodes = [];
+			foreach ($depts as $dept) {
+				$deptNodes[] = [
+					'id' => (int) $dept['id'],
+					'title' => $dept['title'],
+					'code' => $dept['code'],
+				];
+			}
+
+			// REB: levels belong to faculty (shared by all its departments)
+			$facLevels = [];
+			if ((int) $fac['type'] === 2) {
+				$facLevels = $db->table('levels')->select('id, title, type, faculty_id, department_id, status')
+					->where('faculty_id', $fac['id'])
+					->orderBy('title', 'ASC')
+					->get()->getResultArray();
+			}
+
+			$tree[] = [
+				'id' => (int) $fac['id'],
+				'title' => $fac['title'],
+				'abbrev' => $fac['abbrev'],
+				'type' => (int) $fac['type'],
+				'status' => (int) $fac['status'],
+				'departments' => $deptNodes,
+				'levels' => $facLevels,
+			];
+		}
+		return $this->response->setJSON([
+			'success' => 1,
+			'program' => $program,
+			'shared_levels' => $sharedLevels,
+			'levels_mode' => $program === 1 ? 'program' : 'faculty',
+			'faculties' => $tree,
+		]);
+	}
+
+	public function saveAcademicFaculty(): Response
+	{
+		$this->_preset(1, 3);
+		$fMdl = new FacultyModel();
+		$id = (int) $this->request->getPost('id');
+		$title = trim((string) $this->request->getPost('title'));
+		$abbrev = trim((string) $this->request->getPost('abbrev'));
+		$type = (int) $this->request->getPost('type');
+		if ($title === '') {
+			return $this->response->setJSON(['error' => 'Faculty name is required']);
+		}
+		if ($type !== 1 && $type !== 2) {
+			return $this->response->setJSON(['error' => 'Type must be REB (2) or TVET (1)']);
+		}
+		$row = [
+			'title' => $title,
+			'abbrev' => $abbrev !== '' ? $abbrev : substr($title, 0, 20),
+			'type' => $type,
+			'status' => 0,
+		];
+		if ($id > 0) {
+			$row['id'] = $id;
+		}
+		try {
+			$fMdl->save($row);
+			return $this->response->setJSON(['success' => 'Faculty saved', 'id' => $id > 0 ? $id : $fMdl->getInsertID()]);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
+	public function saveAcademicDepartment(): Response
+	{
+		$this->_preset(1, 3);
+		$dMdl = new DeptModel();
+		$id = (int) $this->request->getPost('id');
+		$facultyId = (int) $this->request->getPost('faculty_id');
+		$title = trim((string) $this->request->getPost('title'));
+		$code = trim((string) $this->request->getPost('code'));
+		if ($facultyId <= 0) {
+			return $this->response->setJSON(['error' => 'Select a faculty first']);
+		}
+		if ($title === '') {
+			return $this->response->setJSON(['error' => 'Department name is required']);
+		}
+		if ($code === '') {
+			$code = strtoupper(substr(preg_replace('/\s+/', '', $title), 0, 10));
+		}
+		$row = [
+			'title' => $title,
+			'code' => $code,
+			'faculty_id' => $facultyId,
+			'created_by' => (int) $this->session->get('soma_id'),
+			'updated_by' => (int) $this->session->get('soma_id'),
+		];
+		if ($id > 0) {
+			$row['id'] = $id;
+		}
+		try {
+			$dMdl->save($row);
+			return $this->response->setJSON(['success' => 'Department saved', 'id' => $id > 0 ? $id : $dMdl->getInsertID()]);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
+	public function saveAcademicLevel(): Response
+	{
+		$this->_preset(1, 3);
+		$this->ensureAcademicStructureSchema();
+		$lMdl = new LevelsModel();
+		$fMdl = new FacultyModel();
+		$id = (int) $this->request->getPost('id');
+		$facultyId = (int) $this->request->getPost('faculty_id');
+		$title = trim((string) $this->request->getPost('title'));
+		if ($title === '') {
+			return $this->response->setJSON(['error' => 'Level name is required']);
+		}
+
+		$facType = 2;
+		if ($facultyId > 0) {
+			$fac = $fMdl->select('id,type')->where('id', $facultyId)->get(1)->getRow();
+			if (!$fac) {
+				return $this->response->setJSON(['error' => 'Faculty not found']);
+			}
+			$facType = (int) $fac->type;
+		} else {
+			// TVET shared pool: type=1, no faculty ownership required
+			$facType = 1;
+		}
+
+		if ($facType === 1 && preg_match('/\b(senior|s4|s5|s6)\b/i', $title)) {
+			return $this->response->setJSON(['error' => 'TVET uses Level 1–5 only (not Senior)']);
+		}
+		if ($facType === 2 && $facultyId <= 0) {
+			return $this->response->setJSON(['error' => 'Select a faculty first — REB levels are shared by all departments under that faculty']);
+		}
+
+		$row = [
+			'title' => $title,
+			'faculty_id' => $facType === 1 ? ($facultyId > 0 ? $facultyId : 0) : $facultyId,
+			'department_id' => null,
+			'type' => $facType,
+			'status' => 1,
+		];
+		if ($id > 0) {
+			$row['id'] = $id;
+		}
+		try {
+			$lMdl->save($row);
+			return $this->response->setJSON(['success' => 'Level saved', 'id' => $id > 0 ? $id : $lMdl->getInsertID()]);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
+	public function deleteAcademicNode(): Response
+	{
+		$this->_preset(1, 3);
+		$kind = strtolower(trim((string) $this->request->getPost('kind')));
+		$id = (int) $this->request->getPost('id');
+		if ($id <= 0 || !in_array($kind, ['faculty', 'department', 'level'], true)) {
+			return $this->response->setJSON(['error' => 'Invalid request']);
+		}
+		$db = \Config\Database::connect();
+		try {
+			if ($kind === 'faculty') {
+				$used = $db->table('departments')->where('faculty_id', $id)->countAllResults();
+				if ($used > 0) {
+					return $this->response->setJSON(['error' => 'Remove departments under this faculty first']);
+				}
+				$db->table('faculty')->where('id', $id)->delete();
+			} elseif ($kind === 'department') {
+				$used = $db->table('classes')->where('department', $id)->countAllResults();
+				if ($used > 0) {
+					return $this->response->setJSON(['error' => 'Department is used by classes — cannot delete']);
+				}
+				$db->table('departments')->where('id', $id)->delete();
+			} else {
+				$used = $db->table('classes')->where('level', $id)->countAllResults();
+				if ($used > 0) {
+					return $this->response->setJSON(['error' => 'Level is used by classes — cannot delete']);
+				}
+				$db->table('levels')->where('id', $id)->delete();
+			}
+			return $this->response->setJSON(['success' => 'Deleted']);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
 	public function settings()
 	{
 		$this->_preset(1, 3);
+		$this->ensurePeriodLocksSchema();
 		$data = $this->data;
 		$settingsMdl = new SchoolModel();
 		$faculityModel = new FacultyModel();
 		$grade = new GradeModel();
-		$data['settings'] = $settingsMdl->getSchool(array("schools.id" => $this->session->get("soma_school_id")))->getRowArray();
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$data['settings'] = $settingsMdl->getSchool(array("schools.id" => $schoolId))->getRowArray();
 		$data['faculities'] = $data['faculty'] = $faculityModel->get()->getResultArray();
 		$data['colors'] = $grade->select("grade.id,grade.color_title,grade.max_point,grade.min_point,grade.color,f.title")
 				->join("faculty f", "f.id=grade.faculty_id", "LEFT")
-				->where("grade.school_id", $this->session->get("soma_school_id"))
+				->where("grade.school_id", $schoolId)
 				->get()->getResultArray();
 		$data['title'] = lang("app.settings");
 		$data['subtitle'] = lang("app.schoolSettings");
 		$data['page'] = "settings";
-		$data['intouch_info'] = (new IntouchAccount())->where('school_id', $this->session->get("soma_school_id"))->get()->getResultArray()[0] ?? ['school_id' => $this->session->get("soma_school_id"), "username" => "", "password" => ""];
-		// var_dump($data['intouch_info']); die();
+		$data['intouch_info'] = (new IntouchAccount())->where('school_id', $schoolId)->get()->getResultArray()[0] ?? ['school_id' => $schoolId, "username" => "", "password" => ""];
+		$data['app_settings'] = (new ApplicationSettingsModel())->forSchool($schoolId);
+		$shiftMdl = new ShiftModel();
+		$data['shifts'] = $shiftMdl->select("shifts.*,count(st.id) as staffs")
+				->join("staffs st", "shifts.id=st.shift_id", "left")
+				->where("shifts.school_id", $schoolId)
+				->groupBy("shifts.id")
+				->get()->getResultArray();
+
+		$this->ensurePedagogicalDocsSchema();
+		$this->ensureStaffCardSchema();
+		$classMdl = new ClassesModel();
+		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name,f.abbrev as faculty_code")
+				->join("departments d", "d.id=classes.department")
+				->join("levels l", "l.id=classes.level")
+				->join("faculty f", "f.id=d.faculty_id")
+				->where("classes.school_id", $schoolId)
+				->orderBy("l.id", "ASC")
+				->orderBy("classes.title", "ASC")
+				->get()->getResultArray();
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$pedMdl = new ClassPedagogicalDocModel();
+		$data['academic_year_id'] = $yearId;
+		$data['pedagogical_docs'] = [];
+		if ($yearId > 0) {
+			// Strict: only documents for the active academic year (new year = empty set)
+			$data['pedagogical_docs'] = $pedMdl->where('school_id', $schoolId)
+				->where('academic_year', $yearId)
+				->orderBy('id', 'DESC')
+				->findAll();
+		}
+
+		// Sample staff from DB for staff card preview (post required)
+		$stMdl = new StaffModel();
+		$sampleStaff = $stMdl->select('staffs.id,staffs.fname,staffs.lname,staffs.phone,staffs.email,staffs.photo,p.title as post_title')
+			->join('posts p', 'p.id=staffs.post', 'left')
+			->where('staffs.school_id', $schoolId)
+			->where('staffs.status', 1)
+			->orderBy('staffs.id', 'ASC')
+			->get(1)
+			->getRowArray();
+		if (!$sampleStaff) {
+			$sampleStaff = $stMdl->select('staffs.id,staffs.fname,staffs.lname,staffs.phone,staffs.email,staffs.photo,p.title as post_title')
+				->join('posts p', 'p.id=staffs.post', 'left')
+				->where('staffs.school_id', $schoolId)
+				->orderBy('staffs.id', 'ASC')
+				->get(1)
+				->getRowArray();
+		}
+		$data['card_sample_staff'] = $sampleStaff ?: null;
+
 		$data['content'] = view("pages/school_settings", $data);
 		return view('main', $data);
+	}
+
+	private function ensurePedagogicalDocsSchema()
+	{
+		$db = \Config\Database::connect();
+		if ($db->tableExists('class_pedagogical_docs')) {
+			return;
+		}
+		$db->query("CREATE TABLE IF NOT EXISTS `class_pedagogical_docs` (
+		  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+		  `school_id` int(11) NOT NULL,
+		  `class_id` int(11) NOT NULL,
+		  `academic_year` int(11) DEFAULT NULL,
+		  `doc_type` varchar(32) NOT NULL,
+		  `term` tinyint(4) DEFAULT NULL,
+		  `file_name` varchar(255) NOT NULL,
+		  `original_name` varchar(255) NOT NULL,
+		  `created_by` int(11) DEFAULT NULL,
+		  `created_at` datetime DEFAULT NULL,
+		  `updated_at` datetime DEFAULT NULL,
+		  PRIMARY KEY (`id`),
+		  KEY `idx_school_class` (`school_id`,`class_id`),
+		  KEY `idx_type` (`doc_type`,`term`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+	}
+
+	private function ensurePeriodLocksSchema()
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('active_term')) {
+			$done = true;
+			return;
+		}
+		$fields = $db->getFieldNames('active_term');
+		if (!in_array('locked_periods', $fields, true)) {
+			$db->query("ALTER TABLE `active_term` ADD COLUMN `locked_periods` VARCHAR(32) NOT NULL DEFAULT '' AFTER `use_period`");
+		}
+		$done = true;
+	}
+
+	private function parseLockedPeriods($raw): array
+	{
+		if ($raw === null || $raw === '') {
+			return [];
+		}
+		$out = [];
+		foreach (explode(',', (string) $raw) as $part) {
+			$n = (int) trim($part);
+			if ($n >= 1 && $n <= 4 && !in_array($n, $out, true)) {
+				$out[] = $n;
+			}
+		}
+		sort($out);
+		return $out;
+	}
+
+	private function isPeriodLocked($activeTermId, $period): bool
+	{
+		$period = (int) $period;
+		$activeTermId = (int) $activeTermId;
+		if ($period < 1 || $activeTermId < 1) {
+			return false;
+		}
+		$this->ensurePeriodLocksSchema();
+		$row = (new ActiveTermModel())->select('locked_periods')->find($activeTermId);
+		if (!$row) {
+			return false;
+		}
+		$raw = is_array($row) ? ($row['locked_periods'] ?? '') : ($row->locked_periods ?? '');
+		return in_array($period, $this->parseLockedPeriods($raw), true);
+	}
+
+	public function toggle_period_lock()
+	{
+		$this->_preset(1, 3);
+		$this->ensurePeriodLocksSchema();
+		$period = (int) $this->request->getPost('period');
+		$lock = (int) $this->request->getPost('lock');
+		if ($period < 1 || $period > 4) {
+			return $this->response->setJSON(['error' => 'Invalid period']);
+		}
+		$termId = (int) ($this->data['active_term'] ?? 0);
+		if ($termId <= 0) {
+			return $this->response->setJSON(['error' => 'No active term set']);
+		}
+		if ((int) ($this->data['periodic'] ?? 0) !== 1) {
+			return $this->response->setJSON(['error' => 'Enable the periodic system for this term first']);
+		}
+		$mdl = new ActiveTermModel();
+		$row = $mdl->select('id, locked_periods')->find($termId);
+		if (!$row) {
+			return $this->response->setJSON(['error' => 'Active term not found']);
+		}
+		$raw = is_array($row) ? ($row['locked_periods'] ?? '') : ($row->locked_periods ?? '');
+		$locked = $this->parseLockedPeriods($raw);
+		if ($lock === 1) {
+			if (!in_array($period, $locked, true)) {
+				$locked[] = $period;
+			}
+		} else {
+			$locked = array_values(array_filter($locked, static function ($p) use ($period) {
+				return (int) $p !== $period;
+			}));
+		}
+		sort($locked);
+		$mdl->save(['id' => $termId, 'locked_periods' => implode(',', $locked)]);
+		$msg = $lock === 1
+			? ('Period ' . $period . ' is now locked. Teachers cannot enter marks for it.')
+			: ('Period ' . $period . ' is unlocked. Marks entry is allowed again.');
+		return $this->response->setJSON([
+			'success' => $msg,
+			'locked_periods' => $locked,
+			'period' => $period,
+			'locked' => $lock === 1,
+		]);
+	}
+
+	public function upload_pedagogical_document()
+	{
+		$this->_preset(1, 3);
+		$this->ensurePedagogicalDocsSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$classId = (int) $this->request->getPost('class_id');
+		$docType = strtolower(trim((string) $this->request->getPost('doc_type')));
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+
+		if ($yearId <= 0) {
+			return $this->response->setJSON(['error' => 'No active academic year. Set an active term first.']);
+		}
+		if (!in_array($docType, ['curriculum', 'chronogram'], true)) {
+			return $this->response->setJSON(['error' => 'Invalid document type']);
+		}
+
+		$class = (new ClassesModel())->where('id', $classId)->where('school_id', $schoolId)->first();
+		if (!$class) {
+			return $this->response->setJSON(['error' => 'Class not found']);
+		}
+
+		$file = $this->request->getFile('document');
+		if (!$file || !$file->isValid()) {
+			return $this->response->setJSON(['error' => 'Please choose a valid file']);
+		}
+		$ext = strtolower($file->getClientExtension());
+		if (!in_array($ext, ['pdf', 'doc', 'docx'], true)) {
+			return $this->response->setJSON(['error' => 'Only PDF or Word files are allowed']);
+		}
+		if ($file->getSize() > 15 * 1024 * 1024) {
+			return $this->response->setJSON(['error' => 'File too large (max 15MB)']);
+		}
+
+		$dir = FCPATH . 'assets/documents/pedagogical';
+		if (!is_dir($dir)) {
+			mkdir($dir, 0755, true);
+		}
+		// Full academic year docs (no term split)
+		$newName = 'ped_' . $schoolId . '_' . $classId . '_y' . $yearId . '_' . $docType . '_' . time() . '.' . $ext;
+		$file->move($dir, $newName);
+
+		$mdl = new ClassPedagogicalDocModel();
+		$old = $mdl->where('school_id', $schoolId)
+			->where('class_id', $classId)
+			->where('doc_type', $docType)
+			->where('academic_year', $yearId)
+			->first();
+		if ($old) {
+			$oldPath = $dir . '/' . $old['file_name'];
+			if (is_file($oldPath)) {
+				@unlink($oldPath);
+			}
+			$mdl->update($old['id'], [
+				'file_name' => $newName,
+				'original_name' => $file->getClientName(),
+				'term' => null,
+				'academic_year' => $yearId,
+				'created_by' => (int) $this->session->get('soma_id'),
+			]);
+		} else {
+			$mdl->insert([
+				'school_id' => $schoolId,
+				'class_id' => $classId,
+				'academic_year' => $yearId,
+				'doc_type' => $docType,
+				'term' => null,
+				'file_name' => $newName,
+				'original_name' => $file->getClientName(),
+				'created_by' => (int) $this->session->get('soma_id'),
+			]);
+		}
+
+		return $this->response->setJSON([
+			'success' => ucfirst($docType) . ' saved for academic year ' . ($this->data['academic_year_title'] ?? $yearId),
+			'file' => $newName,
+			'academic_year' => $yearId,
+		]);
+	}
+
+	public function delete_pedagogical_document()
+	{
+		$this->_preset(1, 3);
+		$this->ensurePedagogicalDocsSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$id = (int) $this->request->getPost('id');
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$mdl = new ClassPedagogicalDocModel();
+		$row = $mdl->where('id', $id)->where('school_id', $schoolId)->first();
+		if (!$row) {
+			return $this->response->setJSON(['error' => 'Document not found']);
+		}
+		if ($yearId > 0 && (int) ($row['academic_year'] ?? 0) !== $yearId) {
+			return $this->response->setJSON(['error' => 'This document belongs to another academic year']);
+		}
+		$path = FCPATH . 'assets/documents/pedagogical/' . $row['file_name'];
+		if (is_file($path)) {
+			@unlink($path);
+		}
+		$mdl->delete($id);
+		return $this->response->setJSON(['success' => 'Document deleted for current academic year']);
+	}
+
+	/** Posts allowed for AI academic plans (DoS, HM, Headmistress, Principal, IT, Librarian, Matron, Patron). */
+	private function academicPlanPosts(): array
+	{
+		return GeminiAcademicDocs::ALLOWED_POSTS;
+	}
+
+	private function requireAcademicPlanAccess(): void
+	{
+		$this->_preset(...$this->academicPlanPosts());
+		if (!_is_allowed($this->academicPlanPosts())) {
+			header('location: ' . base_url('dashboard'));
+			die();
+		}
+	}
+
+	private function ensureAcademicPlansSchema(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('academic_plans')) {
+			$db->query("CREATE TABLE IF NOT EXISTS `academic_plans` (
+			  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+			  `school_id` int(11) NOT NULL,
+			  `class_id` int(11) NOT NULL,
+			  `course_id` int(11) DEFAULT NULL,
+			  `academic_year` int(11) DEFAULT NULL,
+			  `plan_type` varchar(32) NOT NULL,
+			  `program_type` varchar(16) NOT NULL DEFAULT 'tvet',
+			  `title` varchar(255) NOT NULL,
+			  `week_number` int(11) DEFAULT NULL,
+			  `term` tinyint(4) DEFAULT NULL,
+			  `topic` varchar(255) DEFAULT NULL,
+			  `lecturer_id` int(11) DEFAULT NULL,
+			  `content_html` longtext,
+			  `content_json` longtext,
+			  `created_by` int(11) DEFAULT NULL,
+			  `created_at` datetime DEFAULT NULL,
+			  `updated_at` datetime DEFAULT NULL,
+			  PRIMARY KEY (`id`),
+			  KEY `idx_school_class_year` (`school_id`,`class_id`,`academic_year`),
+			  KEY `idx_plan_type` (`plan_type`)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		}
+		if (!$db->tableExists('academic_ai_analyses')) {
+			$db->query("CREATE TABLE IF NOT EXISTS `academic_ai_analyses` (
+			  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+			  `school_id` int(11) NOT NULL,
+			  `class_id` int(11) NOT NULL,
+			  `academic_year` int(11) DEFAULT NULL,
+			  `program_type` varchar(16) DEFAULT NULL,
+			  `analysis_json` longtext,
+			  `created_by` int(11) DEFAULT NULL,
+			  `created_at` datetime DEFAULT NULL,
+			  `updated_at` datetime DEFAULT NULL,
+			  PRIMARY KEY (`id`),
+			  UNIQUE KEY `uniq_class_year` (`school_id`,`class_id`,`academic_year`)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		}
+		$dir = FCPATH . 'assets/documents/academic_plans';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0755, true);
+		}
+		$done = true;
+	}
+
+	/**
+	 * Academic AI plans page — Scheme of Work + Session/Lesson plans from curriculum & chronogram.
+	 */
+	public function academic_plans()
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$this->ensurePedagogicalDocsSchema();
+		$data = $this->data;
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+
+		$classMdl = new ClassesModel();
+		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.id as level_id,l.title as level_name,f.type as faculty_type,f.abbrev as faculty_code,f.title as faculty_title")
+			->join('departments d', 'd.id=classes.department')
+			->join('levels l', 'l.id=classes.level')
+			->join('faculty f', 'f.id=d.faculty_id')
+			->where('classes.school_id', $schoolId)
+			->orderBy('l.id', 'ASC')
+			->orderBy('classes.title', 'ASC')
+			->get()->getResultArray();
+
+		$pedMdl = new ClassPedagogicalDocModel();
+		$data['pedagogical_docs'] = $yearId > 0
+			? $pedMdl->where('school_id', $schoolId)->where('academic_year', $yearId)->findAll()
+			: [];
+
+		$planMdl = new AcademicPlanModel();
+		$data['saved_plans'] = $yearId > 0
+			? $planMdl->where('school_id', $schoolId)->where('academic_year', $yearId)->orderBy('id', 'DESC')->findAll(80)
+			: [];
+
+		$ai = new GeminiAcademicDocs();
+		$data['gemini_ready'] = $ai->isConfigured();
+		$data['title'] = 'Academic AI Plans';
+		$data['subtitle'] = 'Scheme of Work & Session / Lesson Plans';
+		$data['page'] = 'academic_plans';
+		$data['content'] = view('pages/academic_plans', $data);
+		return view('main', $data);
+	}
+
+	/** Build DB context for Gemini matching. */
+	private function buildAcademicAiContext(int $schoolId, int $classId, int $yearId): array
+	{
+		$school = (new SchoolModel())->select('id,name,acronym,address,phone,email,website,slogan,head_master')
+			->where('id', $schoolId)->first();
+		$class = (new ClassesModel())->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.id as level_id,l.title as level_name,f.type as faculty_type,f.abbrev as faculty_code,f.title as faculty_title")
+			->join('departments d', 'd.id=classes.department')
+			->join('levels l', 'l.id=classes.level')
+			->join('faculty f', 'f.id=d.faculty_id')
+			->where('classes.id', $classId)
+			->where('classes.school_id', $schoolId)
+			->first();
+		$levels = (new LevelsModel())->select('levels.id,levels.title,levels.type,levels.faculty_id')
+			->orderBy('levels.id', 'ASC')
+			->findAll();
+		$courses = [];
+		if ($yearId > 0) {
+			$courses = (new CourseModel())->select("courses.id,courses.title,courses.code,courses.credit,r.lecturer as lecturer_id,concat(s.fname,' ',s.lname) as mentor_name,r.id as record_id,r.term")
+				->join('course_records r', 'courses.id=r.course')
+				->join('staffs s', 's.id=r.lecturer', 'left')
+				->where('courses.school_id', $schoolId)
+				->where('r.class', $classId)
+				->where('r.year', $yearId)
+				->groupBy('courses.id')
+				->get()->getResultArray();
+		}
+		return [
+			'school' => $school ?: [],
+			'class' => $class ?: [],
+			'levels' => $levels,
+			'courses' => $courses,
+			'academic_year_title' => $this->data['academic_year_title'] ?? '',
+			'academic_year_id' => $yearId,
+		];
+	}
+
+	public function ai_analyze_curriculum()
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$this->ensurePedagogicalDocsSchema();
+		set_time_limit(240);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$classId = (int) $this->request->getPost('class_id');
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$force = (int) $this->request->getPost('force') === 1;
+
+		if ($yearId <= 0) {
+			return $this->response->setJSON(['error' => 'No active academic year']);
+		}
+		$ctx = $this->buildAcademicAiContext($schoolId, $classId, $yearId);
+		if (empty($ctx['class']['id'])) {
+			return $this->response->setJSON(['error' => 'Class not found']);
+		}
+
+		$cacheMdl = new AcademicAiAnalysisModel();
+		if (!$force) {
+			$cached = $cacheMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->first();
+			if ($cached && !empty($cached['analysis_json'])) {
+				$decoded = json_decode($cached['analysis_json'], true);
+				if (is_array($decoded)) {
+					return $this->response->setJSON(['success' => 'Cached analysis', 'analysis' => $decoded, 'cached' => true]);
+				}
+			}
+		}
+
+		$pedMdl = new ClassPedagogicalDocModel();
+		$docs = $pedMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->findAll();
+		$curriculum = null;
+		$chronogram = null;
+		foreach ($docs as $d) {
+			$path = FCPATH . 'assets/documents/pedagogical/' . $d['file_name'];
+			$pack = ['path' => $path, 'original' => $d['original_name']];
+			if ($d['doc_type'] === 'curriculum') {
+				$curriculum = $pack;
+			} elseif ($d['doc_type'] === 'chronogram') {
+				$chronogram = $pack;
+			}
+		}
+		if (!$curriculum || !is_file($curriculum['path'])) {
+			return $this->response->setJSON(['error' => 'Upload a curriculum for this class in School Settings → Pedagogical documents first.']);
+		}
+
+		$ai = new GeminiAcademicDocs();
+		if (!$ai->isConfigured()) {
+			return $this->response->setJSON(['error' => 'Gemini API key missing on server']);
+		}
+		$analysis = $ai->analyzeCurriculum($curriculum, $chronogram, $ctx);
+		if ($analysis === null) {
+			return $this->response->setJSON(['error' => 'AI analysis failed: ' . $ai->lastError()]);
+		}
+
+		$existing = $cacheMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->first();
+		$payload = [
+			'school_id' => $schoolId,
+			'class_id' => $classId,
+			'academic_year' => $yearId,
+			'program_type' => $analysis['program_type'] ?? (((int)($ctx['class']['faculty_type'] ?? 1) === 2) ? 'reb' : 'tvet'),
+			'analysis_json' => json_encode($analysis, JSON_UNESCAPED_UNICODE),
+			'created_by' => (int) $this->session->get('soma_id'),
+		];
+		if ($existing) {
+			$cacheMdl->update($existing['id'], $payload);
+		} else {
+			$cacheMdl->insert($payload);
+		}
+
+		return $this->response->setJSON(['success' => 'Curriculum analyzed', 'analysis' => $analysis, 'cached' => false]);
+	}
+
+	public function ai_generate_scheme_of_work()
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		set_time_limit(240);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$classId = (int) $this->request->getPost('class_id');
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$moduleJson = $this->request->getPost('module');
+		$module = is_string($moduleJson) ? json_decode($moduleJson, true) : (array) $moduleJson;
+		if (!is_array($module) || empty($module)) {
+			return $this->response->setJSON(['error' => 'Module payload required']);
+		}
+
+		$ctx = $this->buildAcademicAiContext($schoolId, $classId, $yearId);
+		$cache = (new AcademicAiAnalysisModel())->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->first();
+		$analysis = $cache ? json_decode($cache['analysis_json'] ?? '', true) : [];
+		$programType = (string) ($analysis['program_type'] ?? (((int)($ctx['class']['faculty_type'] ?? 1) === 2) ? 'reb' : 'tvet'));
+		$chrono = is_array($analysis) ? ($analysis['chronogram'] ?? null) : null;
+
+		$ai = new GeminiAcademicDocs();
+		$result = $ai->generateSchemeOfWork($module, $ctx, $programType, $chrono);
+		if ($result === null) {
+			return $this->response->setJSON(['error' => 'Scheme generation failed: ' . $ai->lastError()]);
+		}
+
+		$planMdl = new AcademicPlanModel();
+		$courseId = (int) ($module['matched_course_id'] ?? 0) ?: null;
+		$lecturerId = (int) ($module['teacher_id'] ?? 0) ?: null;
+		// Replace previous SOW for same class+course+year
+		if ($courseId) {
+			$planMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)
+				->where('course_id', $courseId)->where('plan_type', 'scheme_of_work')->delete();
+		}
+		$id = $planMdl->insert([
+			'school_id' => $schoolId,
+			'class_id' => $classId,
+			'course_id' => $courseId,
+			'academic_year' => $yearId,
+			'plan_type' => 'scheme_of_work',
+			'program_type' => $programType,
+			'title' => $result['title'],
+			'week_number' => null,
+			'term' => null,
+			'topic' => $module['title'] ?? ($module['code'] ?? ''),
+			'lecturer_id' => $lecturerId,
+			'content_html' => $result['html'],
+			'content_json' => json_encode($result['json'], JSON_UNESCAPED_UNICODE),
+			'created_by' => (int) $this->session->get('soma_id'),
+		]);
+
+		return $this->response->setJSON([
+			'success' => 'Scheme of Work generated',
+			'plan_id' => $id,
+			'title' => $result['title'],
+			'topics' => $result['json']['topics_for_sessions'] ?? [],
+			'preview_url' => base_url('view_academic_plan/' . $id),
+		]);
+	}
+
+	public function ai_generate_session_plan()
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		set_time_limit(240);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$classId = (int) $this->request->getPost('class_id');
+		$schemeId = (int) $this->request->getPost('scheme_id');
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$topicJson = $this->request->getPost('topic');
+		$topic = is_string($topicJson) ? json_decode($topicJson, true) : (array) $topicJson;
+		$moduleJson = $this->request->getPost('module');
+		$module = is_string($moduleJson) ? json_decode($moduleJson, true) : (array) $moduleJson;
+		if (!is_array($topic) || empty($topic)) {
+			return $this->response->setJSON(['error' => 'Select a topic / week from the Scheme of Work']);
+		}
+
+		$planMdl = new AcademicPlanModel();
+		$scheme = $planMdl->where('id', $schemeId)->where('school_id', $schoolId)->where('plan_type', 'scheme_of_work')->first();
+		if (!$scheme) {
+			return $this->response->setJSON(['error' => 'Generate a Scheme of Work for this course first']);
+		}
+		$schemeJson = json_decode($scheme['content_json'] ?? '', true) ?: [];
+		$ctx = $this->buildAcademicAiContext($schoolId, $classId, $yearId);
+		$programType = (string) ($scheme['program_type'] ?: 'tvet');
+		$planType = $programType === 'reb' ? 'lesson_plan' : 'session_plan';
+
+		$ai = new GeminiAcademicDocs();
+		$result = $ai->generateSessionOrLessonPlan(is_array($module) ? $module : [], $schemeJson, $topic, $ctx, $programType);
+		if ($result === null) {
+			return $this->response->setJSON(['error' => 'Plan generation failed: ' . $ai->lastError()]);
+		}
+
+		$id = $planMdl->insert([
+			'school_id' => $schoolId,
+			'class_id' => $classId,
+			'course_id' => $scheme['course_id'],
+			'academic_year' => $yearId,
+			'plan_type' => $planType,
+			'program_type' => $programType,
+			'title' => $result['title'],
+			'week_number' => (int) ($topic['week'] ?? 0) ?: null,
+			'term' => (int) ($topic['term'] ?? 0) ?: null,
+			'topic' => $topic['topic'] ?? ($topic['ic_title'] ?? ''),
+			'lecturer_id' => $scheme['lecturer_id'],
+			'content_html' => $result['html'],
+			'content_json' => json_encode($result['json'], JSON_UNESCAPED_UNICODE),
+			'created_by' => (int) $this->session->get('soma_id'),
+		]);
+
+		$label = $planType === 'lesson_plan' ? 'Lesson Plan' : 'Session Plan';
+		return $this->response->setJSON([
+			'success' => $label . ' generated',
+			'plan_id' => $id,
+			'title' => $result['title'],
+			'preview_url' => base_url('view_academic_plan/' . $id),
+		]);
+	}
+
+	public function view_academic_plan($id = 0)
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = (new AcademicPlanModel())->where('id', (int) $id)->where('school_id', $schoolId)->first();
+		if (!$row) {
+			return $this->response->setStatusCode(404)->setBody('Plan not found');
+		}
+		$html = (string) ($row['content_html'] ?? '');
+		if ($html === '') {
+			$html = '<p>Empty plan</p>';
+		}
+		// Ensure standalone document
+		if (stripos($html, '<html') === false) {
+			$html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' . esc($row['title']) . '</title></head><body>' . $html . '</body></html>';
+		}
+		return $this->response->setHeader('Content-Type', 'text/html; charset=UTF-8')->setBody($html);
+	}
+
+	public function download_academic_plan($id = 0)
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = (new AcademicPlanModel())->where('id', (int) $id)->where('school_id', $schoolId)->first();
+		if (!$row) {
+			return $this->response->setStatusCode(404)->setBody('Plan not found');
+		}
+		$html = (string) ($row['content_html'] ?? '');
+		$name = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $row['title'] ?? 'plan') . '.doc';
+		return $this->response
+			->setHeader('Content-Type', 'application/msword')
+			->setHeader('Content-Disposition', 'attachment; filename="' . $name . '"')
+			->setBody($html);
+	}
+
+	public function list_academic_plan_topics()
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$schemeId = (int) $this->request->getGet('scheme_id');
+		$row = (new AcademicPlanModel())->where('id', $schemeId)->where('school_id', $schoolId)->where('plan_type', 'scheme_of_work')->first();
+		if (!$row) {
+			return $this->response->setJSON(['error' => 'Scheme not found', 'topics' => []]);
+		}
+		$json = json_decode($row['content_json'] ?? '', true) ?: [];
+		return $this->response->setJSON(['topics' => $json['topics_for_sessions'] ?? [], 'scheme' => ['id' => $row['id'], 'title' => $row['title'], 'program_type' => $row['program_type']]]);
+	}
+
+	/**
+	 * Save online registration fee + Babyeyi requirement for current school.
+	 */
+	public function save_application_settings()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$appMdl = new ApplicationSettingsModel();
+		$current = $appMdl->forSchool($schoolId);
+
+		$fees = (int) preg_replace('/\D/', '', (string) $this->request->getPost('registration_fees'));
+		$start = trim((string) $this->request->getPost('start_date'));
+		$end = trim((string) $this->request->getPost('end_date'));
+		$babyeyi = (int) $this->request->getPost('babyeyi_required') === 1 ? 1 : 0;
+
+		if ($fees < 0) {
+			return $this->response->setJSON(['error' => 'Registration fee must be 0 or more']);
+		}
+		if ($start === '' || $end === '') {
+			return $this->response->setJSON(['error' => 'Start and end dates are required']);
+		}
+
+		$payload = [
+			'id' => (int) ($current['id'] ?? 0),
+			'school_id' => $schoolId,
+			'registration_fees' => $fees,
+			'start_date' => $start,
+			'end_date' => $end,
+			'babyeyi_required' => $babyeyi,
+			'requirement_document' => $current['requirement_document'] ?? '',
+			'operator' => (int) ($this->session->get('soma_id') ?: 0),
+		];
+		try {
+			$appMdl->save($payload);
+			$fresh = $appMdl->forSchool($schoolId);
+			return $this->response->setJSON([
+				'success' => 'Online registration settings saved',
+				'settings' => $fresh,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * Upload requirement PDF (shown on online registration).
+	 */
+	public function upload_requirement_document()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$file = $this->request->getFile('file');
+		if (!$file || !$file->isValid()) {
+			return $this->response->setJSON(['error' => 'Invalid file upload']);
+		}
+		$ext = strtolower($file->getClientExtension() ?: '');
+		if ($ext !== 'pdf') {
+			return $this->response->setJSON(['error' => 'Only PDF is allowed for requirement document']);
+		}
+		if ($file->getSize() > (10 * 1024 * 1024)) {
+			return $this->response->setJSON(['error' => 'File too large (max 10MB)']);
+		}
+		$dir = FCPATH . 'assets/documents/';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0775, true);
+		}
+		$name = 'req_' . $schoolId . '_' . time() . '.pdf';
+		$file->move($dir, $name, true);
+
+		$appMdl = new ApplicationSettingsModel();
+		$current = $appMdl->forSchool($schoolId);
+		$old = (string) ($current['requirement_document'] ?? '');
+		$appMdl->save([
+			'id' => (int) $current['id'],
+			'requirement_document' => $name,
+		]);
+		if ($old !== '' && $old !== $name && is_file($dir . $old)) {
+			@unlink($dir . $old);
+		}
+		return $this->response->setJSON([
+			'success' => 'Requirement PDF uploaded',
+			'filename' => $name,
+			'url' => base_url('assets/documents/' . $name),
+		]);
 	}
 private function normalizeUID($uid)
 {
@@ -796,11 +2185,7 @@ public function scanCard()
     // ==========================
     // PHOTO
     // ==========================
-    $photoPath = FCPATH . 'assets/images/profile/' . $student->photo;
-
-    $photo = (!empty($student->photo) && file_exists($photoPath))
-        ? base_url('assets/images/profile/' . $student->photo) . '?v=' . time()
-        : base_url('assets/images/no-photo.png');
+    $photo = profile_photo_url($student->photo ?? null);
 
     // ==========================
     // ATTENDANCE
@@ -1668,19 +3053,7 @@ public function attendanceCard()
 
 	public function shifts()
 	{
-		$this->_preset(1, 3);
-		$data = $this->data;
-		$data['title'] = lang("app.shiftsLists");
-		$data['subtitle'] = lang("app.viewAllShift");
-		$data['page'] = "shifts";
-		$shiftMdl = new ShiftModel();
-		$data['shifts'] = $shiftMdl->select("shifts.*,count(st.id) as staffs")
-				->join("staffs st", "shifts.id=st.shift_id", "left")
-				->where("shifts.school_id", $this->session->get("soma_school_id"))
-				->groupBy("shifts.id")
-				->get()->getResultArray();
-		$data['content'] = view("pages/shifts", $data);
-		return view('main', $data);
+		return redirect()->to(base_url('settings#staff-attendance-settings'));
 	}
 
 	public function staffs()
@@ -2582,8 +3955,9 @@ public function attendanceCard()
 				if ($active_term === false)
 					return $this->response->setJSON(array("error" => lang("app.savactivetermeRR")));
 			} else {
-				//term data already exists
+				//term data already exists — reuse and refresh periodic flag
 				$active_term = $termData->id;
+				$termMdl->save(array("id" => $active_term, "use_period" => $periods));
 			}
 			$schoolMdl = new SchoolModel();
 			//update school active term
@@ -2640,7 +4014,7 @@ public function attendanceCard()
 		$country = $this->request->getPost("country");
 		$city = $this->request->getPost("city");
 		$address = $this->request->getPost("address");
-		$shift = $this->request->getPost("shift");
+		$shift = (int) ($this->request->getPost("shift") ?? 0);
 		$default_password = $this->random_password();
 		try {
 			$staffMdl = new StaffModel();
@@ -2651,7 +4025,7 @@ public function attendanceCard()
 			if ($update_v_data != null)
 				$update_v = $update_v_data->version;
 			$id = $staffMdl->insert(array("school_id" => $school_id, "fname" => $fname, "lname" => $lname, "phone" => $phone, "email" => $email, "password" => password_hash($default_password, PASSWORD_DEFAULT)
-			, "status" => 2, "post" => $post, "shift_id" => $shift, "country" => $country, "city" => $city, "address" => $address, "updateVersion" => $update_v));
+			, "status" => 2, "post" => $post, "shift_id" => $shift > 0 ? $shift : 0, "country" => $country, "city" => $city, "address" => $address, "updateVersion" => $update_v));
 			$name = $fname . " " . strtoupper(substr($lname, 0, 1)) . ".";
 			//send notification EMAIL and SMS
 			$msg = lang("app.dear") . " $name" . lang("app.accountIsCreated") . ", \nEmail: "
@@ -3379,63 +4753,130 @@ public function getApplicationDocs($id = null)
     // 1) Validate id
     $id = is_numeric($id) ? (int)$id : 0;
     if ($id <= 0) {
-        // 400 Bad Request + JSON body
         return $this->response
             ->setStatusCode(400)
             ->setJSON(['success' => false, 'error' => 'Missing or invalid id']);
     }
 
-    // 2) Load model and fetch only the columns we need
     $mdl = new \App\Models\StudentApplicationModel();
-
-    // Use the query builder exposed via the model for safety/clarity
-    $row = $mdl->select('id, report1, report2, report3, documents')
-               ->where('id', $id)
+    $row = $mdl->select('applications.id, applications.report1, applications.report2, applications.report3, applications.documents,
+                applications.faculty_id, applications.level, applications.schoolId,
+                f.title as faculty_title, f.type as faculty_type, l.title as level_title')
+               ->join('faculty f', 'f.id = applications.faculty_id', 'left')
+               ->join('levels l', 'l.id = applications.level', 'left')
+               ->where('applications.id', $id)
                ->get(1)
                ->getRowArray();
 
     if (!$row) {
-        // 404 Not Found + JSON body
         return $this->response
             ->setStatusCode(404)
             ->setJSON(['success' => false, 'error' => 'Application not found']);
     }
 
-    // 3) Normalize empty strings to null (cleaner for the frontend check)
-    $clean = static function($v) {
+    $clean = static function ($v) {
         $v = is_string($v) ? trim($v) : $v;
         return ($v === '' || $v === null) ? null : $v;
     };
 
-    $data = [
+    $paths = [
         'report1'   => $clean($row['report1']   ?? null),
         'report2'   => $clean($row['report2']   ?? null),
         'report3'   => $clean($row['report3']   ?? null),
         'documents' => $clean($row['documents'] ?? null),
     ];
 
-    // 4) (Optional) If you ever want absolute URLs directly from the API,
-    //    you can support a query param ?abs=1 and keep the view unchanged.
-    //    The view you have now DOESN'T require this, so it will still get relative paths.
-    if ((int)($this->request->getGet('abs') ?? 0) === 1) {
+    if ((int) ($this->request->getGet('abs') ?? 0) === 1) {
         helper('url');
-        $abs = static function($rel) {
-            if (!$rel) return null;
-            $rel = ltrim($rel, '/'); // avoid double slashes
+        $abs = static function ($rel) {
+            if (!$rel) {
+                return null;
+            }
+            $rel = ltrim($rel, '/');
             return rtrim(base_url('/'), '/') . '/' . $rel;
         };
-        $data = [
-            'report1'   => $abs($data['report1']),
-            'report2'   => $abs($data['report2']),
-            'report3'   => $abs($data['report3']),
-            'documents' => $abs($data['documents']),
+        foreach ($paths as $k => $v) {
+            $paths[$k] = $abs($v);
+        }
+    }
+
+    // Labels match online registration form (by faculty + level)
+    $pack = $this->resolveApplicationDocRequirements(
+        (int) ($row['faculty_type'] ?? 1),
+        (string) ($row['faculty_title'] ?? ''),
+        (string) ($row['level_title'] ?? '')
+    );
+    $items = [];
+    $seen = [];
+    foreach ($pack['docs'] as $doc) {
+        $field = $doc['field'];
+        $seen[$field] = true;
+        $items[] = [
+            'field'    => $field,
+            'label'    => $doc['label'],
+            'required' => !empty($doc['required']),
+            'path'     => $paths[$field] ?? null,
+        ];
+    }
+    // Show any leftover uploaded slots with friendly names
+    $fallbackLabels = [
+        'report1'   => 'Previous academic report',
+        'report2'   => 'Supporting certificate / exam slip',
+        'report3'   => 'Additional document',
+        'documents' => 'Payment proof',
+    ];
+    foreach ($fallbackLabels as $field => $label) {
+        if (!empty($seen[$field])) {
+            continue;
+        }
+        if (empty($paths[$field])) {
+            continue;
+        }
+        // Prefer "Payment proof" when path looks like a payment proof upload
+        if ($field === 'documents') {
+            $label = 'Payment proof';
+        } elseif ($field === 'report3' && is_string($paths[$field]) && strpos($paths[$field], 'payment_proof') !== false) {
+            $label = 'Payment proof';
+        }
+        $items[] = [
+            'field'    => $field,
+            'label'    => $label,
+            'required' => false,
+            'path'     => $paths[$field],
         ];
     }
 
-    // 5) Return exactly what the view expects by default (relative paths)
+    // Always surface payment proof even if empty slot was in required pack (should not happen)
+    if (!empty($paths['documents'])) {
+        $hasProof = false;
+        foreach ($items as $it) {
+            if (($it['field'] ?? '') === 'documents') {
+                $hasProof = true;
+                break;
+            }
+        }
+        if (!$hasProof) {
+            $items[] = [
+                'field'    => 'documents',
+                'label'    => 'Payment proof',
+                'required' => false,
+                'path'     => $paths['documents'],
+            ];
+        }
+    }
+
     return $this->response->setJSON([
         'success' => true,
-        'data'    => $data,
+        'hint'    => $pack['hint'] ?? '',
+        'faculty' => $row['faculty_title'] ?? null,
+        'level'   => $row['level_title'] ?? null,
+        'data'    => [
+            'report1'   => $paths['report1'],
+            'report2'   => $paths['report2'],
+            'report3'   => $paths['report3'],
+            'documents' => $paths['documents'],
+            'items'     => $items,
+        ],
     ]);
 }
 
@@ -3483,15 +4924,30 @@ public function getApplicationDocs($id = null)
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>";
 			} else if ($type == 2) {
-				//student card
-				$photo = strlen($student['photo']) < 3 ? "" : "<img src='" . base_url('assets/images/profile/' . $student['photo']) . "' style='width:60px;height:60px' />
-				<input type='hidden' value=" . $student['id'] . " name='stId[]'>";
-				$color = strlen($student['photo']) < 3 ? "color:orangered" : "";
-				echo "<tr class='disc_row' style='$color' id=" . $student['regno'] . $type . ">
-				<td>" . $student['regno'] . "</td>
-				<td>" . $student['stdnames'] . "</td>
-				<td>" . $student['level_name'] . " " . $student['title'] . " " . $student['code'] . " </td>
-				<td>" . $photo . "</td>
+				//student card preview — no photo fallback; only printable students get stId[]
+				$resolved = resolve_profile_photo($student['photo'] ?? '');
+				$hasPhoto = $resolved !== null;
+				// Heal truncated DB values when we can match the file on disk.
+				if ($hasPhoto && trim((string)$student['photo']) !== $resolved) {
+					try {
+						$StudentModel->update((int)$student['id'], ['photo' => $resolved]);
+					} catch (\Throwable $e) {
+						// non-fatal; preview still works via resolve
+					}
+				}
+				if ($hasPhoto) {
+					$photoUrl = profile_photo_url($resolved);
+					$photoHtml = "<img src='" . esc($photoUrl, 'attr') . "' alt='' style='width:60px;height:60px;object-fit:cover;border-radius:4px;' />"
+						. "<input type='hidden' value='" . (int)$student['id'] . "' name='stId[]'>";
+				} else {
+					$photoHtml = "<span style='display:inline-block;width:60px;height:60px;background:#f1f3f5;border-radius:4px;' title='No photo'></span>";
+				}
+				$color = $hasPhoto ? "" : "color:orangered";
+				echo "<tr class='disc_row' style='$color' id='" . esc($student['regno'] . $type, 'attr') . "'>
+				<td>" . esc($student['regno']) . "</td>
+				<td>" . esc($student['stdnames']) . "</td>
+				<td>" . esc($student['level_name'] . " " . $student['title'] . " " . $student['code']) . " </td>
+				<td>" . $photoHtml . "</td>
 				<td style='text-align: center;'>
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>";
@@ -3616,14 +5072,24 @@ public function getApplicationDocs($id = null)
 		$i = 1;
 		foreach ($staffs as $staff) {
 			if ($type == 1) {
-				//student card
-				$photo = strlen($staff['photo']) < 3 ? "" : "<img src='" . base_url('assets/images/profile/' . $staff['photo']) . "' style='width:60px;height:60px' />
-				<input type='hidden' value=" . $staff['id'] . " name='stId[]'>";
-				$color = strlen($staff['photo']) < 3 ? "color:orangered" : "";
-				echo "<tr class='disc_row' style='$color' id='row" . $staff['id'] . "'>
-				<td>" . $staff['id'] . "</td>
-				<td>" . $staff['fname'] . ' ' . $staff['lname'] . "</td>
-				<td>" . $staff['post_title'] . " </td>
+				//staff card preview
+				$resolved = resolve_profile_photo($staff['photo'] ?? '');
+				$hasPhoto = $resolved !== null;
+				if ($hasPhoto && trim((string)$staff['photo']) !== $resolved) {
+					try {
+						$StaffModel->update((int)$staff['id'], ['photo' => $resolved]);
+					} catch (\Throwable $e) {
+					}
+				}
+				$fallback = profile_photo_url(null);
+				$photoUrl = $hasPhoto ? profile_photo_url($resolved) : $fallback;
+				$photo = "<img src='" . esc($photoUrl, 'attr') . "' alt='' style='width:60px;height:60px;object-fit:cover;border-radius:4px;' onerror=\"this.onerror=null;this.src='" . esc($fallback, 'attr') . "';\" />"
+					. "<input type='hidden' value='" . (int)$staff['id'] . "' name='stId[]'>";
+				$color = $hasPhoto ? "" : "color:orangered";
+				echo "<tr class='disc_row' style='$color' id='row" . (int)$staff['id'] . "'>
+				<td>" . (int)$staff['id'] . "</td>
+				<td>" . esc($staff['fname'] . ' ' . $staff['lname']) . "</td>
+				<td>" . esc($staff['post_title']) . " </td>
 				<td>" . $photo . "</td>
 				<td style='text-align: center;'>
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
@@ -4172,6 +5638,214 @@ public function getApplicationDocs($id = null)
 		}
 	}
 
+	public function download_staff_template()
+	{
+		$this->_preset(1, 3);
+		$posts = (new PostsModel())->orderBy('title', 'ASC')->findAll();
+		$spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+		$sheet = $spreadsheet->getActiveSheet();
+		$sheet->setTitle('Staff');
+		$sheet->fromArray([
+			['First Name', 'Last Name', 'Phone', 'Email', 'Privilege', 'Country', 'City', 'Address'],
+			['John', 'Doe', '0788000000', 'john.doe@school.com', $posts[0]['title'] ?? 'Teacher', 'Rwanda', 'Kigali', ''],
+		], null, 'A1');
+		$this->_styleExcelTemplateHeader($sheet, 'A1:H1');
+		$sheet->freezePane('A2');
+		foreach (range('A', 'H') as $col) {
+			$sheet->getColumnDimension($col)->setAutoSize(true);
+		}
+
+		$privSheet = $spreadsheet->createSheet();
+		$privSheet->setTitle('Privileges');
+		$privSheet->fromArray([['Privilege title', 'ID']], null, 'A1');
+		$row = 2;
+		foreach ($posts as $post) {
+			$privSheet->setCellValue('A' . $row, $post['title']);
+			$privSheet->setCellValue('B' . $row, $post['id']);
+			$row++;
+		}
+		$this->_styleExcelTemplateHeader($privSheet, 'A1:B1');
+		$privSheet->freezePane('A2');
+		foreach (range('A', 'B') as $col) {
+			$privSheet->getColumnDimension($col)->setAutoSize(true);
+		}
+
+		if (! empty($posts)) {
+			$lastPrivRow = $row - 1;
+			$listFormula = sprintf("='Privileges'!\$A\$2:\$A\$%d", $lastPrivRow);
+			for ($dataRow = 2; $dataRow <= 500; $dataRow++) {
+				$validation = new \PhpOffice\PhpSpreadsheet\Cell\DataValidation();
+				$validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+				$validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_STOP);
+				$validation->setAllowBlank(false);
+				$validation->setShowInputMessage(true);
+				$validation->setShowErrorMessage(true);
+				$validation->setShowDropDown(true);
+				$validation->setErrorTitle('Invalid privilege');
+				$validation->setError('Choose a privilege from the dropdown list.');
+				$validation->setPromptTitle('Privilege');
+				$validation->setPrompt('Select a post from all available privileges.');
+				$validation->setFormula1($listFormula);
+				$sheet->getCell('E' . $dataRow)->setDataValidation($validation);
+			}
+		}
+
+		$spreadsheet->setActiveSheetIndex(0);
+
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment;filename="Staff_upload_template.xlsx"');
+		header('Cache-Control: max-age=0');
+		$writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+		$writer->save('php://output');
+		exit;
+	}
+
+	private function _styleExcelTemplateHeader(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, string $range): void
+	{
+		$sheet->getStyle($range)->applyFromArray([
+			'font' => [
+				'bold' => true,
+				'color' => ['rgb' => 'FFFFFF'],
+			],
+			'fill' => [
+				'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+				'startColor' => ['rgb' => '012F6B'],
+			],
+			'alignment' => [
+				'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+				'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+				'wrapText' => true,
+			],
+		]);
+		$sheet->getRowDimension(1)->setRowHeight(24);
+	}
+
+	public function upload_staff_template()
+	{
+		$this->_preset(1, 3);
+		set_time_limit(0);
+		ini_set('memory_limit', '-1');
+		ini_set('max_execution_time', '-1');
+
+		if (! isset($_FILES['documents']['name']) || $_FILES['documents']['error'] !== UPLOAD_ERR_OK) {
+			$this->session->setFlashdata('error', lang('app.invalidFileUploaded'));
+			return redirect()->to(base_url('staffs'));
+		}
+
+		$arr_file = explode('.', $_FILES['documents']['name']);
+		$extension = strtolower((string) end($arr_file));
+		if (! in_array($extension, ['csv', 'xlsx', 'xls'], true)) {
+			$this->session->setFlashdata('error', lang('app.invalidFileUploaded'));
+			return redirect()->to(base_url('staffs'));
+		}
+
+		try {
+			if ($extension === 'csv') {
+				$reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv();
+			} elseif ($extension === 'xls') {
+				$reader = new \PhpOffice\PhpSpreadsheet\Reader\Xls();
+			} else {
+				$reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+			}
+			$spreadsheet = $reader->load($_FILES['documents']['tmp_name']);
+			$sheetData = $spreadsheet->getActiveSheet()->toArray(null, true, true, true);
+		} catch (\Throwable $e) {
+			$this->session->setFlashdata('error', 'Could not read file: ' . $e->getMessage());
+			return redirect()->to(base_url('staffs'));
+		}
+
+		$postsMdl = new PostsModel();
+		$postsByTitle = [];
+		$postsById = [];
+		foreach ($postsMdl->findAll() as $post) {
+			$postsByTitle[strtolower(trim((string) $post['title']))] = (int) $post['id'];
+			$postsById[(int) $post['id']] = (int) $post['id'];
+		}
+
+		$staffMdl = new StaffModel();
+		$school_id = (int) $this->session->get('soma_school_id');
+		$uvMdl = new UpdateVersionModel();
+		$update_v = 1;
+		$update_v_data = $uvMdl->select('version')->where('type', 'staff')->where('school_id', $school_id)->get(1)->getRow();
+		if ($update_v_data != null) {
+			$update_v = $update_v_data->version;
+		}
+
+		$imported = 0;
+		$skipped = 0;
+		$empty = 0;
+		$i = 0;
+		foreach ($sheetData as $sheet) {
+			if ($i === 0) {
+				$i++;
+				continue;
+			}
+			$fname = $this->_sanitize_txt($sheet['A'] ?? '');
+			if ($fname === '') {
+				$empty++;
+				if ($empty > 2) {
+					break;
+				}
+				continue;
+			}
+			$empty = 0;
+			$lname = $this->_sanitize_txt($sheet['B'] ?? '');
+			$phone = $this->_sanitize_txt($sheet['C'] ?? '');
+			$email = $this->_sanitize_txt($sheet['D'] ?? '');
+			$privRaw = $this->_sanitize_txt($sheet['E'] ?? '');
+			$country = $this->_sanitize_txt($sheet['F'] ?? '') ?: 'Rwanda';
+			$city = $this->_sanitize_txt($sheet['G'] ?? '');
+			$address = $this->_sanitize_txt($sheet['H'] ?? '');
+
+			$postId = null;
+			if (is_numeric($privRaw)) {
+				$postId = $postsById[(int) $privRaw] ?? null;
+			} else {
+				$postId = $postsByTitle[strtolower($privRaw)] ?? null;
+			}
+
+			if ($postId === null || $email === '' || $lname === '') {
+				$skipped++;
+				$i++;
+				continue;
+			}
+
+			try {
+				$default_password = $this->random_password();
+				$staffMdl->insert([
+					'school_id' => $school_id,
+					'fname' => $fname,
+					'lname' => $lname,
+					'phone' => $phone,
+					'email' => $email,
+					'password' => password_hash($default_password, PASSWORD_DEFAULT),
+					'status' => 2,
+					'post' => $postId,
+					'shift_id' => 0,
+					'country' => $country,
+					'city' => $city,
+					'address' => $address,
+					'updateVersion' => $update_v,
+				]);
+				$imported++;
+			} catch (\Exception $e) {
+				if ((int) $e->getCode() === 1062) {
+					$skipped++;
+				} else {
+					$skipped++;
+				}
+			}
+			$i++;
+		}
+
+		$msg = $imported . ' staff imported successfully';
+		if ($skipped > 0) {
+			$msg .= ' (' . $skipped . ' skipped — duplicate email or invalid privilege)';
+		}
+		$this->session->setFlashdata('success', $msg);
+		return redirect()->to(base_url('staffs'));
+	}
+
 	public
 	function _sanitize_txt($txt)
 	{
@@ -4398,26 +6072,31 @@ public function getApplicationDocs($id = null)
 
     $id   = $this->request->getPost("id");
     $file = $this->request->getFile("file");
+    $maxBytes = 5 * 1024 * 1024; // 5 MB
 
     // --- Validate file existence
     if (!$file || !$file->isValid()) {
-        return $this->response->setJSON(["error" => lang("app.invalidFile")]);
+        return $this->response->setJSON(["error" => lang("app.invalidFile") ?: "Invalid file upload"]);
     }
 
-    // --- Validate file type
+    // --- Validate file type (prefer client extension; fallback guess)
     $allowedExt = ["jpg", "jpeg", "png"];
-    $ext = strtolower($file->getExtension());
+    $ext = strtolower($file->getClientExtension() ?: $file->getExtension() ?: '');
+    if ($ext === '' && $file->getMimeType()) {
+        $mimeMap = ['image/jpeg' => 'jpg', 'image/jpg' => 'jpg', 'image/png' => 'png'];
+        $ext = $mimeMap[$file->getMimeType()] ?? '';
+    }
 
-    if (!in_array($ext, $allowedExt)) {
+    if (!in_array($ext, $allowedExt, true)) {
         return $this->response->setJSON(["error" => lang("app.fileNotAllowed")]);
     }
 
-    // --- Validate file size (512 KB max)
-    if ($file->getSize() > 512 * 1024) {
-        return $this->response->setJSON(["error" => lang("app.fileSizeBigger")]);
+    // --- Validate file size (5 MB max)
+    if ($file->getSize() > $maxBytes) {
+        return $this->response->setJSON(["error" => lang("app.fileSizeBigger") . " (max 5MB)"]);
     }
 
-    $name = uniqid() . "." . $ext;
+    $name = make_profile_photo_name($ext);
 
     // Define base folders
     $profilePath    = FCPATH . "assets/images/profile/";
@@ -4425,13 +6104,32 @@ public function getApplicationDocs($id = null)
     $backgroundPath = FCPATH . "assets/images/background/";
     $signaturePath  = FCPATH . "assets/images/signatures/";
 
+    $ensureDir = static function (string $path): void {
+        if (!is_dir($path) && !@mkdir($path, 0775, true) && !is_dir($path)) {
+            throw new \RuntimeException("Upload folder missing and could not be created: " . $path);
+        }
+        if (!is_writable($path)) {
+            @chmod($path, 0775);
+        }
+        if (!is_writable($path)) {
+            throw new \RuntimeException("Upload folder is not writable: " . $path);
+        }
+    };
+
+    $safeMove = static function ($file, string $path, string $name) use ($ensureDir): void {
+        $ensureDir($path);
+        if (!$file->move($path, $name, true)) {
+            $err = method_exists($file, 'getErrorString') ? $file->getErrorString() : 'move failed';
+            throw new \RuntimeException("Could not save upload to {$path}{$name}: {$err}");
+        }
+    };
+
     try {
         switch ($type) {
 
             /* ==================== STUDENT PICTURE ==================== */
             case "student_picture":
-                if (!$file->move($profilePath, $name))
-                    throw new \Exception($file->getErrorString());
+                $safeMove($file, $profilePath, $name);
 
                 $student = new \App\Models\StudentModel();
                 $student->update($id, ["photo" => $name]);
@@ -4440,8 +6138,7 @@ public function getApplicationDocs($id = null)
 
             /* ==================== STAFF PICTURE ==================== */
             case "staff_picture":
-                if (!$file->move($profilePath, $name))
-                    throw new \Exception($file->getErrorString());
+                $safeMove($file, $profilePath, $name);
 
                 $staff = new \App\Models\StaffModel();
                 $staff->update($id, ["photo" => $name]);
@@ -4455,8 +6152,7 @@ public function getApplicationDocs($id = null)
             /* ==================== STUDENT / STAFF CARD BACKGROUND ==================== */
             case "card_background":
             case "sf_card_background":
-                if (!$file->move($backgroundPath, $name))
-                    throw new \Exception($file->getErrorString());
+                $safeMove($file, $backgroundPath, $name);
 
                 $schoolId = $this->session->get("soma_school_id");
                 if (!$schoolId) throw new \Exception("School ID missing from session.");
@@ -4475,8 +6171,7 @@ public function getApplicationDocs($id = null)
             case "matron_signature":
             case "patron_signature":
             case "discipline_signature":
-                if (!$file->move($signaturePath, $name))
-                    throw new \Exception($file->getErrorString());
+                $safeMove($file, $signaturePath, $name);
 
                 $schoolId = $this->session->get("soma_school_id");
                 if (!$schoolId) throw new \Exception("School ID missing from session.");
@@ -4497,8 +6192,7 @@ public function getApplicationDocs($id = null)
 
             /* ==================== SCHOOL LOGO (DEFAULT) ==================== */
             default:
-                if (!$file->move($logoPath, $name))
-                    throw new \Exception($file->getErrorString());
+                $safeMove($file, $logoPath, $name);
 
                 $schoolId = $this->session->get("soma_school_id");
                 if (!$schoolId) throw new \Exception("School ID missing from session.");
@@ -4868,6 +6562,11 @@ public function getApplicationDocs($id = null)
 		$created_by = $this->session->get("soma_id");
 		if (!is_array($student_id)) {
 			return $this->response->setJSON(array("error" => lang("app.pleaseAddErr")));
+		}
+		if ((int) $period > 0 && $this->isPeriodLocked($term, $period)) {
+			return $this->response->setJSON(array(
+				"error" => "Period " . (int) $period . " is locked. Marks entry is not allowed. Contact the school admin to unlock it."
+			));
 		}
 //		print_r($marks_id); die();
 
@@ -5851,6 +7550,13 @@ public function getApplicationDocs($id = null)
 			}
 			$active_term = $at_data->id;
 		}
+		if ((int) $period > 0 && $this->isPeriodLocked($active_term, $period)) {
+			echo '<div class="alert alert-danger" style="margin:1rem;">'
+				. '<strong>Period ' . (int) $period . ' is locked.</strong> '
+				. 'Marks cannot be entered or changed until the school admin unlocks this period in School settings.'
+				. '</div>';
+			die();
+		}
 		if ($ct == "undefined") {
 			$ct = '';
 		}
@@ -5983,7 +7689,7 @@ public function getApplicationDocs($id = null)
 			foreach ($students as $student) {
 				if (strlen($student['outof']) > 0 && strlen($outof) == 0) {
 					$outof = $student['outof'];
-					$date = $student['examDate'] == '' ? '' : date("Y-m-d", $student['examDate']);
+					$date = $student['examDate'] == '' ? date('Y-m-d') : date("Y-m-d", $student['examDate']);
 				}
 				$html .= "
 				<tr>
@@ -6043,7 +7749,7 @@ public function getApplicationDocs($id = null)
 			foreach ($students as $student) {
 				if (strlen($student['outof']) > 0 && strlen($outof) == 0) {
 					$outof = $student['outof'];
-					$date = $student['examDate'] == '' ? '' : date("Y-m-d", $student['examDate']);
+					$date = $student['examDate'] == '' ? date('Y-m-d') : date("Y-m-d", $student['examDate']);
 				}
 				$html .= "
 				<tr>
@@ -6466,56 +8172,20 @@ public function getApplicationDocs($id = null)
 
 
 		$this->_preset();
-		// var_dump("<pre>", $class, $year, $term, $pdf, $_GET, $this->data); die();
-		//Here we need to check the class level type if it is one we change codes
+		$school_id = $this->session->get("soma_school_id");
+		$classModel = new ClassesModel();
+		$classRow = $classModel->select('classes.id, f.id AS fac_id')
+				->join('departments d', 'd.id = classes.department')
+				->join('faculty f', 'f.id = d.faculty_id')
+				->where('classes.id', $class)
+				->get()->getRow();
+		$fact = $classRow ? (int) $classRow->fac_id : 0;
+		$isTvet = !in_array($fact, [1, 2, 3, 19], true);
+		$useWdaNewFormat = $isTvet && !in_array((int) $school_id, [52], true);
 
-		/**
-		 * 55. ITER RUTOBWE
-		 */
-
-		$send_request_to_api = false;
-
-		if (in_array($this->data['school_id'], [55])) {
-			//Check the comming class for clalification
-			$classModel = new ClassesModel();
-			$classInfo = $classModel->select("b.type, classes.id, b.title AS levelTitle")
-					->join('levels b', 'b.id=classes.level')
-					->where('classes.id', $class)
-					->get()->getResultArray();
-			if (count($classInfo) > 0 && $classInfo[0]['type'] == 1) {
-				$send_request_to_api = true;
-			}
-		}
-
-		if ($send_request_to_api && in_array($this->data['school_id'], [55])) {
-			$report_info = [];
-			$report_info['class_id'] = $class;
-			$report_info['academic_year_id'] = $year;
-			$report_info['term'] = $term;
-			if (count($_GET) > 0 && isset($_GET['student'])) {
-				$report_info['student'] = $_GET['student'];
-			}
-
-			$client = new Client();
-			try {
-				$config_info = config('App');
-				$request = $client->request(
-						'POST',
-						$config_info->ReportApiUrl . "/reports/" . $this->data['school_id'] . "/" . $this->data['academic_year_id'] . "/" . $this->data['active_term_id'] . "/{$term}",
-						[
-								'headers' => [
-										'Content-Type' => 'application/json',
-										'Accept' => 'application/json'
-								],
-								'body' => json_encode($report_info)
-						]
-				);
-				header('location:/student_report');
-				exit();
-			} catch (\Exception $err) {
-				return $err->getMessage();
-			}
-			// var_dump($class, $year, $term, $pdf, $_GET); die("Please consider building required data for the report operation");
+		if ($useWdaNewFormat) {
+			$pdfMode = isset($_GET['pdf']);
+			return $this->renderWdaProgressReport($class, $year, $term, $pdfMode);
 		} else {
 			// die("Stoped!");
 			$data = $this->data;
@@ -7027,15 +8697,6 @@ public function getApplicationDocs($id = null)
 	public
 	function student_report()
 	{
-		$config_info = config('App');
-		if (isset($_GET['download']) && $_GET['download'] == true && is_numeric($_GET['report_id'])) {
-			header("Content-disposition: attachment; filename=student_report_card.pdf");
-			header("Content-type: application/pdf");
-			$file = $config_info->ReportApiUrl . "/download/reports/" . $_GET['report_id'];
-			// var_dump($file);
-			readfile($config_info->ReportApiUrl . "/download/reports/" . $_GET['report_id']);
-			return;
-		}
 		$this->_preset();
 		$data = $this->data;
 		$data['title'] = lang("app.resultRecord");
@@ -7047,67 +8708,73 @@ public function getApplicationDocs($id = null)
 		$acMdl = new AcademicYearModel();
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
 				->orderBy("id", 'DESC')->get()->getResultArray();
-
-		//Here make sure to get the list of generated reports
-		$client = new Client();
-		if (isset($_GET['delete']) && $_GET['delete'] == true && is_numeric($_GET['report_id'])) {
-			try {
-				$request = $client->request(
-						'DELETE',
-						$config_info->ReportApiUrl . "/destroy/reports/{$school_id}/" . $_GET['report_id'],
-						[
-								'headers' => [
-										'Content-Type' => 'application/json',
-										'Accept' => 'application/json'
-								]
-						]
-				);
-
-				$response_code = $request->getStatusCode();
-
-				// echo $response_code; die();
-			} catch (\Exception $err) {
-				// $data['error'] = $err->getMessage();
-				// echo $err->getMessage(); die();
-			}
-		}
-
-		try {
-
-			//Here send the request to the target service for data retrieval
-			$request = $client->request(
-					'GET',
-					$config_info->ReportApiUrl . "/reports/{$school_id}/" . $data['academic_year_id'] . "/" . $data['active_term_id'],
-					[
-							'headers' => [
-									'Content-Type' => 'application/json',
-									'Accept' => 'application/json'
-							]
-					]
-			);
-			$response_code = $request->getStatusCode();
-			if ($response_code == 200) {
-				$response = json_decode($request->getBody());
-				// var_dump($response); die();
-				if ($response->success && property_exists($response, "data")) {
-					$data['error'] = "";
-					$data['reports'] = $response->data;
-				} else {
-					$data['error'] = $response->message;
-					$data['reports'] = []; //<<<<<<<<<< Remove the exceptiom
-				}
-			} else {
-				$data['error'] = sprintf("%s is response code found", $response_code);
-				$data['reports'] = []; //<<<<<<<<<< Remove the exceptiom
-			}
-			// $data['reports'] = [];
-		} catch (\Exception $err) {
-			$data['error'] = $data['error'] ?? "" . "<br />" . $err->getMessage();
-			$data['reports'] = []; //<<<<<<<<<< Remove the exceptiom
-		}
-		// die();
+		$data['error'] = '';
+		$data['reports'] = [];
 		$data['content'] = view("pages/student_reports", $data);
 		return view('main', $data);
+	}
+
+	/**
+	 * TVET progressive report (local generation, ported from Laravel report_app).
+	 */
+	private function renderWdaProgressReport($class, $year, $term, $pdfMode = false)
+	{
+		try {
+			$school_id = (int) $this->session->get("soma_school_id");
+			$studentId = null;
+			if (isset($_GET['student']) && is_numeric($_GET['student'])) {
+				$studentId = (int) $_GET['student'];
+			}
+
+			$builder = new WdaReportBuilder();
+			$reportData = $builder->build($school_id, (int) $class, (int) $year, (int) $term, $studentId);
+
+			if (isset($reportData['error'])) {
+				echo htmlspecialchars($reportData['error'], ENT_QUOTES, 'UTF-8');
+				return;
+			}
+
+			$reportData['pdf'] = (bool) $pdfMode;
+			$reportData['term'] = $term;
+			$html = view('pages/reports/wda_new_format', $reportData);
+
+			if ($pdfMode) {
+				try {
+					$mask = FCPATH . "assets/templates/*.html";
+					$files = glob($mask);
+					if (is_array($files)) {
+						array_map('unlink', $files);
+					}
+					$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
+					$wkhtmltopdf->setTitle(lang("app.rtudentProgressReport"));
+					$wkhtmltopdf->setHtml(utf8_decode($html));
+					$wkhtmltopdf->setPageSize("A4");
+					$wkhtmltopdf->setOrientation("portrait");
+					$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
+					$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "student_progress_report" . time() . ".pdf");
+				} catch (\Exception $e) {
+					echo htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
+				}
+				return;
+			}
+
+			$data = $this->data;
+			$data['title'] = lang("app.resultRecord");
+			$data['subtitle'] = lang("app.resultRecord");
+			$data['page'] = "Result_record";
+			$data['content'] = $html;
+			return view('main', $data);
+		} catch (\Throwable $e) {
+			log_message('error', 'WDA report failed: {msg} in {file}:{line}', [
+				'msg' => $e->getMessage(),
+				'file' => $e->getFile(),
+				'line' => $e->getLine(),
+			]);
+			echo '<div class="alert alert-danger" style="margin:20px">TVET report error: '
+				. htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8')
+				. '</div>';
+			return;
+		}
 	}
 
 	public
@@ -7803,27 +9470,39 @@ public function getApplicationDocs($id = null)
 	function upload_pictures()
 	{
 		$file = $this->request->getFile("file");
-		if ($file->getExtension() != "jpg" && $file->getExtension() != "jpeg" & $file->getExtension() != "png") {
-			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.fileNotAllowed") . " " . $file->getExtension()));
+		if (!$file || !$file->isValid()) {
+			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.invalidFile") ?: "Invalid file"));
 		}
-		if ($file->getSize() > 3 * 1024 * 1024) {
-			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.fileSizeBigger")));
+		$ext = strtolower($file->getClientExtension() ?: $file->getExtension() ?: '');
+		if (!in_array($ext, ["jpg", "jpeg", "png"], true)) {
+			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.fileNotAllowed") . " " . $ext));
+		}
+		if ($file->getSize() > 5 * 1024 * 1024) {
+			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.fileSizeBigger") . " (max 5MB)"));
 		}
 		$stMdl = new StudentModel();
 		$student = $stMdl->select('id,photo,fname')->where('regno', explode('.', $file->getName())[0])->get(1)->getRow();
 		if ($student == null) {
 			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.opsStudentNotFound")));
 		}
-		$name = uniqid() . "." . $file->getExtension();
-		if ($file->move(FCPATH . "assets/images/profile", $name)) {
+		$name = make_profile_photo_name($ext);
+		$profilePath = FCPATH . "assets/images/profile/";
+		if (!is_dir($profilePath)) {
+			@mkdir($profilePath, 0775, true);
+		}
+		if (!is_writable($profilePath)) {
+			@chmod($profilePath, 0775);
+		}
+		if ($file->move($profilePath, $name, true)) {
 			//save to student
 			try {
 				$stMdl->save(array("id" => $student->id, "photo" => $name));
 			} catch (\Exception $e) {
 				return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.photoNotSaved")));
 			}
-			if (!empty($student->photo))
-				unlink(FCPATH . "assets/images/profile/" . $student->photo);//delete old photo
+			if (!empty($student->photo) && is_file($profilePath . $student->photo)) {
+				@unlink($profilePath . $student->photo);//delete old photo
+			}
 			return $this->response->setJSON(array("message" => lang("app.photoUploaded"), "student" => $student->fname));
 		} else {
 			//upload error
@@ -10104,6 +11783,140 @@ public function assign_card()
 		}
 	}
 
+	/**
+	 * Build required upload slots from faculty + level (REB vs TVET).
+	 * Maps to report1 / report2 columns. Babyeyi is school-settings only (not collected here).
+	 *
+	 * @return array{hint:string,docs:array<int,array{field:string,label:string,required:bool,accept:string,hint:string}>}
+	 */
+	private function resolveApplicationDocRequirements(int $facultyType, string $facultyTitle, string $levelTitle): array
+	{
+		$levelKey = strtolower(trim($levelTitle));
+		$facKey = strtolower(trim($facultyTitle));
+		$docs = [];
+		$hint = 'Upload clear PDF or image scans. Max 5 MB per file.';
+
+		$isNursery = (bool) preg_match('/\b(nursery|baby class|middle class|top class|n1|n2|n3)\b/', $levelKey . ' ' . $facKey);
+		$isPrimary = (bool) preg_match('/\b(primary|p1|p2|p3|p4|p5|p6)\b/', $levelKey . ' ' . $facKey);
+		$isOLevel = (bool) preg_match('/\b(ordinary|o[\'’]? ?level|s1|s2|s3)\b/', $levelKey . ' ' . $facKey);
+		$isALevel = (bool) preg_match('/\b(a[\'’]? ?level|s4|s5|s6|science|humanities|languages)\b/', $levelKey . ' ' . $facKey);
+		$isL3 = (bool) preg_match('/\b(level\s*3|l3)\b/', $levelKey);
+		$isL4 = (bool) preg_match('/\b(level\s*4|l4)\b/', $levelKey);
+		$isL5 = (bool) preg_match('/\b(level\s*5|l5)\b/', $levelKey);
+
+		if ((int) $facultyType === 2) {
+			// REB — general education
+			if ($isNursery) {
+				$hint = 'Nursery applicants: upload the latest school/nursery report. Birth certificate helps verification.';
+				$docs[] = ['field' => 'report1', 'label' => 'Previous nursery / school report', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Latest report from previous class'];
+				$docs[] = ['field' => 'report2', 'label' => 'Birth certificate', 'required' => false, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Optional but recommended'];
+			} elseif ($isPrimary) {
+				$hint = 'Primary applicants: upload the previous academic year school report.';
+				$docs[] = ['field' => 'report1', 'label' => 'Previous year school report', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Report that led to the class you are applying for'];
+				$docs[] = ['field' => 'report2', 'label' => 'Birth certificate', 'required' => false, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Optional'];
+			} elseif ($isOLevel) {
+				$hint = 'O\'Level (S1–S3): upload previous academic year reports that led to completion of the prior class.';
+				$docs[] = ['field' => 'report1', 'label' => 'Previous academic year reports', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Required'];
+				$docs[] = ['field' => 'report2', 'label' => 'Primary leaving / prior certificate', 'required' => false, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'If available'];
+			} elseif ($isALevel) {
+				$hint = 'A\'Level (S4–S6): upload previous reports and the O\'Level national exam result slip.';
+				$docs[] = ['field' => 'report1', 'label' => 'Previous academic year reports', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Required'];
+				$docs[] = ['field' => 'report2', 'label' => 'O\'Level national exam result slip (N.E)', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Required for A\'Level entry'];
+			} else {
+				$hint = 'Upload previous academic reports for the level you are applying to.';
+				$docs[] = ['field' => 'report1', 'label' => 'Previous academic reports', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Required'];
+				$docs[] = ['field' => 'report2', 'label' => 'Supporting certificate / exam slip', 'required' => false, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'If available'];
+			}
+		} else {
+			// RTB / TVET
+			if ($isL3 || preg_match('/\b(level\s*1|level\s*2|senior\s*4)\b/', $levelKey)) {
+				$hint = 'TVET entry (L3): upload prior academic reports and O\'Level national exam slip.';
+				$docs[] = ['field' => 'report1', 'label' => 'Previous academic / O\'Level reports', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Required'];
+				$docs[] = ['field' => 'report2', 'label' => 'O\'Level national exam result slip (N.E)', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Required for L3 entry'];
+			} elseif ($isL4) {
+				$hint = 'TVET Level 4: upload Level 3 academic reports.';
+				$docs[] = ['field' => 'report1', 'label' => 'Level 3 academic reports', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Required'];
+				$docs[] = ['field' => 'report2', 'label' => 'Level 3 assessment / trade test', 'required' => false, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'If available'];
+			} elseif ($isL5) {
+				$hint = 'TVET Level 5: upload Level 4 academic reports.';
+				$docs[] = ['field' => 'report1', 'label' => 'Level 4 academic reports', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Required'];
+				$docs[] = ['field' => 'report2', 'label' => 'Level 4 assessment / trade test', 'required' => false, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'If available'];
+			} else {
+				$hint = 'TVET applicants: upload previous level reports and any national exam slip you have.';
+				$docs[] = ['field' => 'report1', 'label' => 'Previous TVET / academic reports', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'Required'];
+				$docs[] = ['field' => 'report2', 'label' => 'National exam / prior level slip', 'required' => false, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'If available'];
+			}
+		}
+
+		return ['hint' => $hint, 'docs' => $docs];
+	}
+
+	/**
+	 * AJAX: required documents for selected faculty + level.
+	 */
+	public function getApplicationRequiredDocs(int $facultyId, int $levelId, int $schoolId = 0): Response
+	{
+		$fMdl = new FacultyModel();
+		$lMdl = new LevelsModel();
+		$fac = $fMdl->select('id,title,type')->where('id', $facultyId)->get(1)->getRow();
+		$level = $lMdl->select('id,title,type,faculty_id')->where('id', $levelId)->get(1)->getRow();
+		if (!$fac || !$level) {
+			return $this->response->setJSON(['error' => 'Invalid faculty or level']);
+		}
+		$pack = $this->resolveApplicationDocRequirements(
+			(int) $fac->type,
+			(string) $fac->title,
+			(string) $level->title
+		);
+		return $this->response->setJSON([
+			'success' => 1,
+			'faculty' => $fac->title,
+			'level' => $level->title,
+			'program_type' => (int) $fac->type,
+			'hint' => $pack['hint'],
+			'docs' => $pack['docs'],
+		]);
+	}
+
+	/**
+	 * Notify parent by SMS + email after successful application.
+	 */
+	private function notifyParentOfApplication(
+		string $parentPhone,
+		string $parentEmail,
+		string $parentNames,
+		string $studentNames,
+		string $schoolName,
+		string $levelName,
+		string $code
+	): void {
+		$sms = "Dear {$parentNames}, application for {$studentNames} at {$schoolName} ({$levelName}) was received. Registration code: {$code}. Keep this code. - XanderTech SmartSMS";
+		$smsResult = '';
+		if (strlen(preg_replace('/\D/', '', $parentPhone)) >= 9) {
+			try {
+				$this->sendSMS($parentPhone, $sms, $smsResult);
+			} catch (\Throwable $e) {
+				log_message('error', 'Application SMS failed: ' . $e->getMessage());
+			}
+		}
+		if (filter_var($parentEmail, FILTER_VALIDATE_EMAIL)) {
+			$e = function ($v) {
+				return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+			};
+			$html = '<p>Dear ' . $e($parentNames) . ',</p>'
+				. '<p>We received the online application for <strong>' . $e($studentNames) . '</strong> '
+				. 'at <strong>' . $e($schoolName) . '</strong> (Level: ' . $e($levelName) . ').</p>'
+				. '<p>Your registration code is: <strong style="font-size:18px;">' . $e($code) . '</strong></p>'
+				. '<p>Please keep this code. You may need it to complete remaining steps.</p>'
+				. '<p>Thank you,<br>XanderTech SmartSMS<br>' . $e($schoolName) . '</p>';
+			try {
+				$this->_send_email($parentEmail, 'Application received — ' . $schoolName, $html);
+			} catch (\Throwable $ex) {
+				log_message('error', 'Application email failed: ' . $ex->getMessage());
+			}
+		}
+	}
+
 	/** This function helps to retrieve schools which have selected
 	 * program from the user form
 	 * @param int $program
@@ -10119,6 +11932,7 @@ public function assign_card()
 				->join("schools s", "s.id=classes.school_id")
 				->where("f.type", $program)
 				->groupBy("s.id")
+				->orderBy("s.name", "ASC")
 				->get()->getResultArray();
 		if ($schools == null) {
 			return $this->response->setStatusCode("400")->setJSON(["error" => "No data found"]);
@@ -10127,32 +11941,55 @@ public function assign_card()
 		}
 	}
 
+	/**
+	 * Faculties for a school, filtered by program (1=RTB/TVET, 2=REB).
+	 */
 	public
-	function getFacultyBySchool(int $school): Response
+	function getFacultyBySchool(int $school, int $program = 0): Response
 	{
 		$mdl = new FacultyModel();
 		$appMdl = new ApplicationSettingsModel();
-		$settings = $appMdl->select('id,start_date,end_date,requirement_document,registration_fees')
+		$settings = $appMdl->select('id,start_date,end_date,requirement_document,registration_fees,babyeyi_required')
 				->where('school_id', $school)
 				->orderBy('id', 'desc')
 				->get(1)->getRow();
 		if ($settings == null) {
-			return $this->response->setJSON(["error" => "Online application not available for this  school"]);
+			return $this->response->setJSON(["error" => "Online application not available for this school. Ask the school to configure registration fees in Settings."]);
 		}
-		$faculty = $mdl->select("faculty.id,faculty.title as name")
+		$builder = $mdl->select("faculty.id,faculty.title as name")
 				->join("departments d", "d.faculty_id=faculty.id")
 				->join("classes c", "c.department=d.id")
-				->where("c.school_id", $school)
+				->where("c.school_id", $school);
+		// REB=2 (general), RTB/WDA=1 (TVET) — never mix programs
+		if ($program === 1 || $program === 2) {
+			$builder->where("faculty.type", $program);
+		}
+		$faculty = $builder
 				->groupBy("faculty.id")
+				->orderBy("faculty.title", "ASC")
 				->get()->getResultArray();
 		if ($faculty == null) {
-			return $this->response->setJSON(["error" => "No Faculty found"]);
+			return $this->response->setJSON(["error" => "No Faculty found for the selected school program"]);
 		} else {
+			$fee = (int) $settings->registration_fees;
+			$charges = 600;
+			$platform = 100;
+			$total = $fee + $charges + $platform;
 			$data['success'] = 1;
 			$data['requirement_document'] = $settings->requirement_document;
-			$data['settings_fees'] = number_format($settings->registration_fees) . ' Rwf';
-			$data['settings_charges'] = '600 Rwf';
+			$data['has_requirement_document'] = strlen(trim((string) $settings->requirement_document)) > 3;
+			$data['settings_fees'] = number_format($fee) . ' Rwf';
+			$data['settings_fees_raw'] = $fee;
+			$data['settings_charges'] = number_format($charges) . ' Rwf';
+			$data['settings_charges_raw'] = $charges;
+			$data['settings_platform'] = number_format($platform) . ' Rwf';
+			$data['settings_platform_raw'] = $platform;
+			$data['settings_total'] = number_format($total) . ' Rwf';
+			$data['settings_total_raw'] = $total;
+			$data['babyeyi_required'] = (int) ($settings->babyeyi_required ?? 1);
 			$data['settings_id'] = $settings->id;
+			$data['payment_bypass'] = (string) env('REGISTRATION_PAYMENT_BYPASS', '1') === '1' ? 1 : 0;
+			$data['program'] = $program;
 			$data['faculties'] = $faculty;
 			return $this->response->setJSON($data);
 		}
@@ -10167,6 +12004,7 @@ public function assign_card()
 				->where("c.school_id", $school)
 				->where("departments.faculty_id", $faculty)
 				->groupBy("departments.id")
+				->orderBy("departments.title", "ASC")
 				->get()->getResultArray();
 		if ($data == null) {
 			return $this->response->setStatusCode("400")->setJSON(["error" => "No data found"]);
@@ -10180,20 +12018,43 @@ public function assign_card()
 	{
 		$mdl = new LevelsModel();
 		$fMdl = new FacultyModel();
-		$key = "faculty_id";
-		$val = $fac;
 
 		$facData = $fMdl->select('type')->where('id', $fac)->get()->getRow();
-		if ($facData->type == 1) {
-			$key = "type";
-			$val = '1';
-		}
-		$data = $mdl->select("levels.id,levels.title as name")->where($key, $val)->get()->getResultArray();
-		if ($data == null) {
-			return $this->response->setStatusCode("400")->setJSON(["error" => "No data found"]);
+		$isTvet = $facData && (int) $facData->type === 1;
+
+		if ($isTvet) {
+			// TVET/RTB: only Level 1–5 (never Senior / Year / REB class names)
+			$rows = $mdl->select("levels.id,levels.title as name")
+					->where("type", 1)
+					->orderBy("levels.title", "ASC")
+					->get()->getResultArray();
+			$data = [];
+			foreach ($rows as $row) {
+				$title = strtolower(trim((string) ($row['name'] ?? '')));
+				if (preg_match('/\b(senior|ordinary|primary|nursery|year|s1|s2|s3|s4|s5|s6)\b/', $title)) {
+					continue;
+				}
+				if (preg_match('/\blevel\s*[1-5]\b/', $title) || preg_match('/^l\s*[1-5]$/', $title)) {
+					$data[] = $row;
+				}
+			}
+			// Stable order: Level 1 → 5
+			usort($data, static function ($a, $b) {
+				preg_match('/([1-5])/', (string) $a['name'], $ma);
+				preg_match('/([1-5])/', (string) $b['name'], $mb);
+				return ((int) ($ma[1] ?? 9)) <=> ((int) ($mb[1] ?? 9));
+			});
 		} else {
-			return $this->response->setJSON($data);
+			$data = $mdl->select("levels.id,levels.title as name")
+					->where("faculty_id", $fac)
+					->orderBy("levels.id", "ASC")
+					->get()->getResultArray();
 		}
+
+		if ($data == null || count($data) === 0) {
+			return $this->response->setStatusCode("400")->setJSON(["error" => "No data found"]);
+		}
+		return $this->response->setJSON($data);
 	}
 
 	/** This function helps to created new student who made his/her
@@ -10215,7 +12076,15 @@ public function assign_card()
     if ($schoolData == null) {
         return $this->response->setJSON(["error" => "Error: School not available"]);
     }
-    if (strlen($schoolData->mtn_momo_phone) < 5) {
+
+    // Payment API not ready yet — bypass MOMO but keep Payment step in UI.
+    $paymentBypass = (string) env('REGISTRATION_PAYMENT_BYPASS', '1') === '1';
+    $paymentMethod = strtolower(trim((string) $this->request->getPost('paymentMethod')));
+    if ($paymentMethod !== 'proof') {
+        $paymentMethod = 'momo';
+    }
+
+    if ($paymentMethod === 'momo' && !$paymentBypass && strlen($schoolData->mtn_momo_phone) < 5) {
         return $this->response->setJSON(["error" => "Error: School not available, doesn't allow online payment"]);
     }
 
@@ -10224,7 +12093,7 @@ public function assign_card()
         return $this->response->setJSON(["error" => "Invalid data, please try again or reload the page"]);
     }
 
-    $settingsData = $settingsMdl->select('registration_fees,school_id')
+    $settingsData = $settingsMdl->select('registration_fees,school_id,babyeyi_required')
         ->where('id', $applicationSettings)
         ->get(1)->getRow();
 
@@ -10251,8 +12120,18 @@ public function assign_card()
 
     // ---- Payment phone normalization
     $momoPhone = $this->request->getPost("momoPhoneNumber");
-    $momoPhone = str_replace("+", "", $momoPhone);
-    $momoPhone = substr($momoPhone, 0, 3) == "250" ? $momoPhone : "25" . $momoPhone;
+    if ($paymentMethod === 'proof') {
+        $proofPhone = $this->request->getPost('proofPhoneNumber');
+        if (strlen(trim((string) $proofPhone)) >= 9) {
+            $momoPhone = $proofPhone;
+        } elseif (strlen(trim((string) $studentPhone)) >= 9) {
+            $momoPhone = $studentPhone;
+        }
+    }
+    $momoPhone = str_replace("+", "", (string) $momoPhone);
+    if (strlen($momoPhone) >= 9 && substr($momoPhone, 0, 3) !== "250") {
+        $momoPhone = "25" . $momoPhone;
+    }
 
     $code = uniqid();
 
@@ -10308,8 +12187,8 @@ public function assign_card()
                 // throw new \RuntimeException("Invalid file type for $field. Allowed: PDF/JPG/PNG.");
                 return null;
             }
-            if ($file->getSize() > (5 * 1024 * 1024)) {
-                // throw new \RuntimeException("$field is larger than 5MB.");
+            if ($file->getSize() > (10 * 1024 * 1024)) {
+                // throw new \RuntimeException("$field is larger than 10MB.");
                 return null;
             }
 
@@ -10320,14 +12199,42 @@ public function assign_card()
             return $publicRel . $basename; // relative public path for DB
         };
 
-        $toUpdate = [];
-        $r1 = $savePath('report1', 'report1');
-        $r2 = $savePath('report2', 'report2');
-        $r3 = $savePath('report3', 'report3');
+        // Resolve required docs from faculty + level (REB vs TVET) — no Babyeyi upload on form
+        $facRow = (new FacultyModel())->select('id,title,type')->where('id', $fac)->get(1)->getRow();
+        $levelRow = (new LevelsModel())->select('id,title')->where('id', $level)->get(1)->getRow();
+        $docPack = $this->resolveApplicationDocRequirements(
+            $facRow ? (int) $facRow->type : 1,
+            $facRow ? (string) $facRow->title : '',
+            $levelRow ? (string) $levelRow->title : ''
+        );
+        $savedByField = [
+            'report1' => $savePath('report1', 'report1'),
+            'report2' => $savePath('report2', 'report2'),
+            'report3' => $savePath('report3', 'report3'),
+        ];
+        foreach ($docPack['docs'] as $docReq) {
+            if (!empty($docReq['required']) && empty($savedByField[$docReq['field']])) {
+                return $this->response->setJSON([
+                    'error' => $docReq['label'] . ' is required',
+                ]);
+            }
+        }
 
-        if ($r1 !== null) { $toUpdate['report1'] = $r1; }
-        if ($r2 !== null) { $toUpdate['report2'] = $r2; }
-        if ($r3 !== null) { $toUpdate['report3'] = $r3; }
+        $paymentProofPath = null;
+        if ($paymentMethod === 'proof') {
+            $paymentProofPath = $savePath('paymentProof', 'payment_proof');
+            if ($paymentProofPath === null) {
+                return $this->response->setJSON([
+                    'error' => 'Payment proof is required (PDF, JPG or PNG)',
+                ]);
+            }
+        }
+
+        $toUpdate = [];
+        if ($savedByField['report1'] !== null) { $toUpdate['report1'] = $savedByField['report1']; }
+        if ($savedByField['report2'] !== null) { $toUpdate['report2'] = $savedByField['report2']; }
+        if ($savedByField['report3'] !== null) { $toUpdate['report3'] = $savedByField['report3']; }
+        if ($paymentProofPath !== null) { $toUpdate['documents'] = $paymentProofPath; }
 
         if (!empty($toUpdate)) {
             $toUpdate['id'] = $applicationId;
@@ -10335,11 +12242,85 @@ public function assign_card()
         }
         // ===== /NEW attachments =====
 
-        // Continue with your existing payment logic unchanged
         $txId         = $code . time();
         $charges      = 600;
         $SomaCharges  = 100;
-        $totalAmount  = $settingsData->registration_fees + $charges + $SomaCharges;
+        // Proof uploads: school registration fee only (no MOMO service / platform charges)
+        $totalAmount  = $paymentMethod === 'proof'
+            ? (int) $settingsData->registration_fees
+            : ((int) $settingsData->registration_fees + $charges + $SomaCharges);
+        $studentNames = trim($firstName . ' ' . $lastName);
+        $levelName    = $levelRow ? (string) $levelRow->title : '';
+        $schoolName   = (string) $schoolData->name;
+
+        // Offline / other payment with attached proof
+        if ($paymentMethod === 'proof') {
+            $studentAppModel->save([
+                'id' => $applicationId,
+                'status' => 1,
+            ]);
+            $transMdl->save([
+                'applicationId'  => $applicationId,
+                'transaction_id' => $txId,
+                'amount'         => $totalAmount,
+                'momo_ref'       => '',
+                'status'         => 200,
+                'response_body'  => json_encode([
+                    'payment_method' => 'proof',
+                    'payment_proof'  => $paymentProofPath,
+                    'registration_fee' => (int) $settingsData->registration_fees,
+                    'charges'        => 0,
+                    'platform_fee'   => 0,
+                    'note'           => 'Applicant uploaded payment proof — registration fee only (no gateway charges)',
+                ]),
+            ]);
+            $this->notifyParentOfApplication(
+                (string) $parentPhone,
+                (string) $parentEmail,
+                (string) $parentNames,
+                $studentNames,
+                $schoolName,
+                $levelName,
+                $code
+            );
+            return $this->response->setJSON([
+                'success'        => 'Application submitted with payment proof',
+                'applicationId'  => $applicationId,
+                'code'           => $code,
+                'payment_proof'  => 1,
+            ]);
+        }
+
+        // Bypass live MOMO when payment API is not configured yet.
+        if ($paymentBypass) {
+            $studentAppModel->save([
+                'id' => $applicationId,
+                'status' => 1, // treat as completed so Finish flow continues
+            ]);
+            $transMdl->save([
+                'applicationId'  => $applicationId,
+                'transaction_id' => $txId,
+                'amount'         => $totalAmount,
+                'momo_ref'       => '',
+                'status'         => 200,
+                'response_body'  => json_encode(['bypass' => true, 'payment_method' => 'momo', 'note' => 'Payment API disabled — pending real gateway']),
+            ]);
+            $this->notifyParentOfApplication(
+                (string) $parentPhone,
+                (string) $parentEmail,
+                (string) $parentNames,
+                $studentNames,
+                $schoolName,
+                $levelName,
+                $code
+            );
+            return $this->response->setJSON([
+                'success'       => 'Application submitted (payment gateway coming soon)',
+                'applicationId' => $applicationId,
+                'code'          => $code,
+                'payment_bypass'=> 1,
+            ]);
+        }
 
         $input = (object)[
             'schoolPhone'           => $schoolData->mtn_momo_phone,
@@ -10354,7 +12335,6 @@ public function assign_card()
             'names' => $firstName . " " . $lastName,
             'code'  => $code
         ];
-//kwishyura
         $this->registrationPayment($txId, $input, $applicant);
 
         $transMdl->save([
@@ -10368,10 +12348,6 @@ public function assign_card()
             "success"       => 'payment request send',
             'applicationId' => $applicationId
         ]);
-// 		return $this->response->setJSON([
-//     "success"       => 'application saved successfully (payment skipped)',
-//     'applicationId' => $applicationId
-// ]);
 
 
     } catch (\Exception $e) {
@@ -10405,7 +12381,7 @@ public function assign_card()
 		$appTMdl = new ApplicationTransactionModel();
 		log_message("alert", "request" . $jsonData);
 		$appTransaction = $appTMdl->select('application_transactions.applicationId,application_transactions.status,
-		ap.phoneNumber,ap.fname,ap.lname,ap.level,d.code as dept_code,ap.code,s.acronym,application_transactions.id,l.title as levelName')
+		ap.phoneNumber,ap.fname,ap.lname,ap.level,ap.parentNames,ap.parentPhoneNumber,ap.email,d.code as dept_code,ap.code,s.acronym,s.name as schoolName,application_transactions.id,l.title as levelName')
 				->join('applications ap', 'ap.id = application_transactions.applicationId')
 				->join('departments d', 'd.id = ap.department_id')
 				->join('levels l', 'l.id = ap.level')
@@ -10431,6 +12407,15 @@ public function assign_card()
 					$message = "{$appTransaction->fname} {$appTransaction->lname} Wasabye umwanya mu mwaka wa {$appTransaction->levelName} {$appTransaction->dept_code} code yawe ikuranga uhawe ni {$appTransaction->code} yikoreshe usoze kuzuza ibisabwa uhabwe umwanya wasabye.";
 					log_message("alert", "SMS TO {$appTransaction->phoneNumber} - " . $message);
 					$this->sendSMS($appTransaction->phoneNumber, $message, $result);
+					$this->notifyParentOfApplication(
+						(string) ($appTransaction->parentPhoneNumber ?? ''),
+						(string) ($appTransaction->email ?? ''),
+						(string) ($appTransaction->parentNames ?? 'Parent'),
+						trim($appTransaction->fname . ' ' . $appTransaction->lname),
+						(string) ($appTransaction->schoolName ?? $appTransaction->acronym),
+						(string) $appTransaction->levelName,
+						(string) $appTransaction->code
+					);
 				}
 
 				return $this->response->setJSON(['status' => 'success']);
@@ -10522,14 +12507,35 @@ public function assign_card()
 				->where("applications.id", $application)
 				->get()
 				->getRowArray();
+		if (!$data) {
+			return $this->response->setJSON(["error" => "Application not found"]);
+		}
 		$classes = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
 		,f.type,f.abbrev as faculty_code")
 				->join("departments d", "d.id=classes.department and d.id={$data['dptId']}")
 				->join("levels l", "l.id=classes.level and l.id={$data['levelId']}")
 				->join("faculty f", "f.id=d.faculty_id and f.id={$data['facultyId']}")
 				->where("classes.school_id", $this->session->get("soma_school_id"))
+				->orderBy("classes.title", "ASC")
 				->get()->getResultArray();
-		return $this->response->setJSON(["structure" => $data, "classes" => $classes]);
+
+		$defaultClassId = null;
+		$defaultClassLabel = null;
+		if (count($classes) === 1) {
+			$defaultClassId = (int) $classes[0]['id'];
+			$defaultClassLabel = trim(($classes[0]['level_name'] ?? '') . ' ' . ($classes[0]['title'] ?? '') . ' (' . ($classes[0]['department_name'] ?? '') . ')');
+		} elseif (count($classes) > 1) {
+			// Prefer first class; registration already fixed level/dept
+			$defaultClassId = (int) $classes[0]['id'];
+			$defaultClassLabel = trim(($classes[0]['level_name'] ?? '') . ' ' . ($classes[0]['title'] ?? '') . ' (' . ($classes[0]['department_name'] ?? '') . ')');
+		}
+
+		return $this->response->setJSON([
+			"structure" => $data,
+			"classes" => $classes,
+			"defaultClassId" => $defaultClassId,
+			"defaultClassLabel" => $defaultClassLabel,
+		]);
 	}
 
 	public
@@ -10539,13 +12545,34 @@ public function assign_card()
 		$applicationMdl = new StudentApplicationModel();
 		$studentMdl = new StudentModel();
 		$classRecordMdl = new ClassRecordModel();
+		$classMdl = new ClassesModel();
 		$applicationId = $this->request->getPost("applicationId");
 		$classId = $this->request->getPost("classId");
 		$application = $applicationMdl->select("id,fname,lname,
 		gender,phoneNumber,parentType,parentPhoneNumber,parentNames,dateOfBirth,
-		level,studyingMode")
+		level,studyingMode,faculty_id,department_id,schoolId")
 				->where("id", $applicationId)
 				->get()->getRowArray();
+		if (!$application) {
+			return $this->response->setJSON(["error" => "Application not found"]);
+		}
+
+		// Use class from registration structure when not explicitly posted
+		if (empty($classId)) {
+			$match = $classMdl->select("classes.id")
+					->where("classes.school_id", $this->session->get("soma_school_id"))
+					->where("classes.department", $application['department_id'])
+					->where("classes.level", $application['level'])
+					->orderBy("classes.title", "ASC")
+					->get(1)->getRowArray();
+			if ($match) {
+				$classId = $match['id'];
+			}
+		}
+		if (empty($classId)) {
+			return $this->response->setJSON(["error" => "No matching class found for this application's level and department. Create the class first."]);
+		}
+
 		$regNo = $this->_generate_regno(true);
 		$studentData = [
 				"school_id" => $this->session->get("soma_school_id"),
@@ -10580,7 +12607,6 @@ public function assign_card()
 				$classRecordMdl->save($classData);
 				$message = "{$application['lname']} {$application['fname']} wamaze guhabwa umwanya wasabye koresha app yitwa SOMANET CODE YAWE {$regNo} ";
 				$this->sendSMS($application['phoneNumber'], $message, $result);
-//				log_message("alert", "SMS TO {$application['phoneNumber']} - " . $message);
 			}
 			return $this->response->setJSON(array("success" => "Applicant approved successfully"));
 		} catch (\Exception $e) {
@@ -10635,11 +12661,7 @@ public function assign_card()
 				} else if ($appData->status == 2) {
 					$data['error'] = "oops, Your registration payment failed";
 				} else {
-					//check if document is uploaded
-					$docMdl = new DocumentsModel();
-					$docData = $docMdl->select('documentName')->where('applicationId', $appData->id)
-							->get()->getResultArray();
-					$data['applicationDocument'] = count($docData) != 0;
+					// Documents already collected on the Documents step during registration
 					$data['application'] = $appData;
 					$data['applicationId'] = $appData->id;
 				}
@@ -10730,11 +12752,15 @@ public function assign_card()
 	function upload_application_docs()
 	{
 		$file = $this->request->getFile("file");
-		if ($file->getExtension() != "pdf") {
-			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.fileNotAllowed") . " " . $file->getExtension()));
+		if (!$file || !$file->isValid()) {
+			return $this->response->setStatusCode(400)->setJSON(array("error" => "Invalid file"));
 		}
-		if ($file->getSize() > 512 * 1024) {
-			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.fileSizeBigger")));
+		$ext = strtolower($file->getClientExtension() ?: $file->getExtension() ?: '');
+		if ($ext != "pdf") {
+			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.fileNotAllowed") . " " . $ext));
+		}
+		if ($file->getSize() > 10 * 1024 * 1024) {
+			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.fileSizeBigger") . " (max 10MB)"));
 		}
 		$stMdl = new StudentApplicationModel();
 		$appId = $this->request->getPost('applicationId');
@@ -10745,10 +12771,14 @@ public function assign_card()
 		$docName = $file->getName();
 		$name = $student->code . "_" . $file->getName();
 		$name = urlencode(str_replace(' ', '', $name));
-		if (file_exists(FCPATH . "assets/documents/" . $name)) {
+		$docsPath = FCPATH . "assets/documents/";
+		if (!is_dir($docsPath)) {
+			@mkdir($docsPath, 0775, true);
+		}
+		if (file_exists($docsPath . $name)) {
 			return $this->response->setStatusCode(400)->setJSON(["error" => 'This document already uploaded']);
 		}
-		if ($file->move(FCPATH . "assets/documents", $name)) {
+		if ($file->move($docsPath, $name, true)) {
 			//save to db
 			$docMdl = new DocumentsModel();
 			try {
