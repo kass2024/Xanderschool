@@ -695,7 +695,7 @@ PROMPT;
 			return false;
 		}
 		// Same trailing digits; letter stems close (SWDBS vs SWBS, SWDPP vs SWDP)
-		if (str_contains($ma[1], $mb[1]) || str_contains($mb[1], $ma[1])) {
+		if (strpos($ma[1], $mb[1]) !== false || strpos($mb[1], $ma[1]) !== false) {
 			return true;
 		}
 		return levenshtein($ma[1], $mb[1]) <= 2;
