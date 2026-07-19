@@ -114,6 +114,7 @@ class GeminiAcademicDocs
 		$fileIndex = []; // code hint => text
 		$pdfByCode = []; // code => extract pack with bytes
 		$pdfFiles = []; // list of PDF extracts for vision
+		$filenameSeeds = []; // code => [title, module_type] from RTB filenames
 		$primaryPdf = null;
 		$totalBytes = 0;
 
@@ -121,16 +122,30 @@ class GeminiAcademicDocs
 			$ex = DocumentTextExtractor::extract($f['path']);
 			$text = $this->safeUtf8((string) ($ex['text'] ?? ''));
 			$orig = $f['original'] ?? basename($f['path']);
+			$pathHint = $orig . ' ' . ($f['path'] ?? '');
 			$label = "=== FILE: {$orig} (ext={$ex['ext']}, chars=" . mb_strlen($text, 'UTF-8') . ") ===\n";
 			$combinedText .= $label . $text . "\n\n";
 			$totalBytes += (int) ($ex['chars'] ?? 0);
 
-			// Map filename codes like SWDDD401 to this file's text
+			$codeFromName = DocumentTextExtractor::extractModuleCodeFromFilename($orig);
+			$titleFromName = DocumentTextExtractor::extractModuleTitleFromFilename($orig);
+			$typeFromPath = DocumentTextExtractor::guessModuleTypeFromPath($pathHint);
 			$codesInFile = [];
+			if ($codeFromName !== '' && $typeFromPath !== 'structure') {
+				$codesInFile[] = $codeFromName;
+				if (!isset($filenameSeeds[$codeFromName])) {
+					$filenameSeeds[$codeFromName] = [
+						'title' => $titleFromName,
+						'module_type' => $typeFromPath !== '' ? $typeFromPath : 'specific',
+					];
+				}
+			}
+
+			// Also map codes found in filename/text header
 			if (preg_match_all('/\b([A-Z]{3,8}\d{3})\b/', strtoupper($orig . ' ' . mb_substr($text, 0, 800, 'UTF-8')), $cm)) {
 				foreach ($cm[1] as $code) {
 					$code = DocumentTextExtractor::cleanModuleCode($code);
-					if ($code === '') {
+					if ($code === '' || preg_match('/^(PAGE|HTTP|HTTPS|RQF|TVET|ICTSWD|LEVEL|DATE)$/', $code)) {
 						continue;
 					}
 					$codesInFile[] = $code;
@@ -139,6 +154,10 @@ class GeminiAcademicDocs
 					}
 				}
 			}
+			if ($codeFromName !== '') {
+				$fileIndex[$codeFromName] = $text !== '' ? $text : ($fileIndex[$codeFromName] ?? '');
+			}
+			$codesInFile = array_values(array_unique($codesInFile));
 
 			$ext = strtolower((string) ($ex['ext'] ?? ''));
 			$byteLen = strlen((string) ($ex['bytes'] ?? ''));
@@ -148,20 +167,26 @@ class GeminiAcademicDocs
 					'mime' => 'application/pdf',
 					'bytes' => $ex['bytes'],
 					'chars' => (int) ($ex['chars'] ?? 0),
-					'codes' => array_values(array_unique($codesInFile)),
+					'codes' => $codesInFile,
+					'module_type' => $typeFromPath,
 				];
 				foreach ($codesInFile as $code) {
-					if (!isset($pdfByCode[$code]) || $byteLen > strlen((string) ($pdfByCode[$code]['bytes'] ?? ''))) {
+					// Prefer dedicated module PDFs over the big General Information PDF
+					$isStructure = ($typeFromPath === 'structure');
+					if (!isset($pdfByCode[$code]) || (!$isStructure && ($pdfByCode[$code]['_structure'] ?? false))) {
 						$pdfByCode[$code] = [
 							'original' => $orig,
 							'mime' => 'application/pdf',
 							'bytes' => $ex['bytes'],
+							'_structure' => $isStructure,
 						];
 					}
 				}
 				$n = strtolower($orig);
-				if ($primaryPdf === null || strpos($n, 'general') !== false || strpos($n, 'structure') !== false || strpos($n, 'curriculum') !== false) {
-					if (strpos($n, 'general') !== false || strpos($n, 'structure') !== false || strpos($n, 'curriculum') !== false || $primaryPdf === null) {
+				if ($primaryPdf === null || $typeFromPath === 'structure'
+					|| strpos($n, 'general information') !== false || strpos($n, 'structure') !== false) {
+					if ($typeFromPath === 'structure' || strpos($n, 'general information') !== false
+						|| strpos($n, 'structure') !== false || $primaryPdf === null) {
 						$primaryPdf = $ex;
 						$primaryPdf['_original'] = $orig;
 					}
@@ -180,7 +205,7 @@ class GeminiAcademicDocs
 
 		$curriculumChars = mb_strlen($combinedText, 'UTF-8');
 		if ($curriculumChars < 400 && $pdfFiles === []) {
-			$this->lastError = 'Curriculum files have no readable text and no usable PDF for AI vision. Re-upload Word/PDF curriculum (General + Specific module files).';
+			$this->lastError = 'Curriculum files have no readable text and no usable PDF for AI vision. Re-upload the full package (General Information + Specific + General + CCM module PDFs, or one ZIP).';
 			$this->reportProgress(0, $this->lastError, ['status' => 'error']);
 			return null;
 		}
@@ -220,14 +245,37 @@ class GeminiAcademicDocs
 
 		// Deterministic module inventory from codes in filenames + text
 		$this->reportProgress(18, 'Discovering module codes…');
-		$seedCodes = $this->discoverModuleCodes($combinedText, array_keys($fileIndex));
+		$seedCodes = $this->discoverModuleCodes($combinedText, array_merge(array_keys($fileIndex), array_keys($filenameSeeds)));
 		$seedList = [];
+		$seenSeed = [];
+		// Prefer RTB filename seeds (Specific / General / CCM module PDFs)
+		foreach ($filenameSeeds as $code => $meta) {
+			$code = DocumentTextExtractor::cleanModuleCode((string) $code);
+			if ($code === '' || isset($seenSeed[$code])) {
+				continue;
+			}
+			$seenSeed[$code] = true;
+			$titleHint = trim((string) ($meta['title'] ?? ''));
+			if ($titleHint === '' && isset($chronoTitles[$code])) {
+				$titleHint = $chronoTitles[$code];
+			}
+			$seedList[] = [
+				'code' => $code,
+				'title' => $titleHint,
+				'module_type' => (string) ($meta['module_type'] ?? ''),
+			];
+		}
 		foreach ($seedCodes as $code) {
+			$code = DocumentTextExtractor::cleanModuleCode((string) $code);
+			if ($code === '' || isset($seenSeed[$code])) {
+				continue;
+			}
+			$seenSeed[$code] = true;
 			$titleHint = $chronoTitles[$code] ?? '';
 			if ($titleHint === '' && preg_match('/\b' . preg_quote($code, '/') . '\s+([^\n\r]{5,90})/i', $combinedText, $tm)) {
 				$titleHint = DocumentTextExtractor::cleanModuleTitle(trim(preg_replace('/\s+/', ' ', $tm[1]) ?? ''));
 			}
-			$seedList[] = ['code' => $code, 'title' => $titleHint];
+			$seedList[] = ['code' => $code, 'title' => $titleHint, 'module_type' => ''];
 		}
 
 		// Pass 1 — full inventory (must include every seed code) — attach curriculum PDFs for vision
@@ -302,10 +350,16 @@ class GeminiAcademicDocs
 			$code0 = DocumentTextExtractor::cleanModuleCode((string) ($m0['code'] ?? ''));
 			$m0['code'] = $code0;
 			$title0 = DocumentTextExtractor::cleanModuleTitle((string) ($m0['title'] ?? ''));
+			if (($title0 === '' || strcasecmp($title0, $code0) === 0) && isset($filenameSeeds[$code0]['title']) && $filenameSeeds[$code0]['title'] !== '') {
+				$title0 = $filenameSeeds[$code0]['title'];
+			}
 			if (($title0 === '' || strcasecmp($title0, $code0) === 0) && isset($chronoTitles[$code0])) {
 				$title0 = $chronoTitles[$code0];
 			}
 			$m0['title'] = $title0 !== '' ? $title0 : $code0;
+			if (empty($m0['module_type']) && isset($filenameSeeds[$code0]['module_type'])) {
+				$m0['module_type'] = $filenameSeeds[$code0]['module_type'];
+			}
 			$have[$code0] = true;
 		}
 		unset($m0);
@@ -317,6 +371,7 @@ class GeminiAcademicDocs
 					'title' => ($s['title'] ?: ($chronoTitles[$c] ?? $c)),
 					'rqf_level' => null,
 					'learning_hours' => null,
+					'module_type' => (string) ($s['module_type'] ?? ''),
 					'learning_outcomes' => [],
 				];
 				$have[$c] = true;
@@ -576,7 +631,8 @@ PROMPT;
 			'chronogram_chars' => mb_strlen($chrText, 'UTF-8'),
 			'file_count' => count($packFiles),
 			'pdf_files' => count($pdfFiles),
-			'seed_codes' => count($seedCodes),
+			'filename_module_pdfs' => count($filenameSeeds),
+			'seed_codes' => count($seedList),
 			'module_count' => count($merged),
 			'lo_count' => $loFilled,
 			'ic_count' => $icFilled,
@@ -586,7 +642,11 @@ PROMPT;
 		];
 		if ($loFilled === 0) {
 			$raw['notes'] = ($raw['notes'] ?? '')
-				. ' WARNING: 0 Learning Outcomes extracted — upload General + Specific module curriculum PDFs and Re-analyse.';
+				. ' WARNING: 0 Learning Outcomes extracted — upload the full RTB package (General Information + Specific Modules + General Modules + CCM Modules) as multiple PDFs or one ZIP, then Re-analyse.';
+		}
+		if (count($filenameSeeds) < 3 && count($packFiles) <= 2) {
+			$raw['notes'] = ($raw['notes'] ?? '')
+				. ' TIP: Package looks incomplete (only ' . count($packFiles) . ' curriculum file(s)). Add Specific/General/CCM module PDFs.';
 		}
 		$this->reportProgress(92, 'Matching modules to school courses…', [
 			'modules' => count($merged),
@@ -1079,6 +1139,7 @@ PROMPT;
 					$zip->close();
 				}
 			}
+			$destReal = realpath($dest) ?: $dest;
 			$rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dest, \FilesystemIterator::SKIP_DOTS));
 			foreach ($rii as $file) {
 				/** @var \SplFileInfo $file */
@@ -1089,7 +1150,12 @@ PROMPT;
 				if (!in_array($e, ['pdf', 'doc', 'docx'], true)) {
 					continue;
 				}
-				$out[] = ['path' => $file->getPathname(), 'original' => $file->getFilename()];
+				$full = $file->getPathname();
+				$rel = $full;
+				if (strpos($full, $destReal) === 0) {
+					$rel = ltrim(substr($full, strlen($destReal)), '/\\');
+				}
+				$out[] = ['path' => $full, 'original' => str_replace('\\', '/', $rel)];
 			}
 		} else {
 			$out[] = $curriculum;
@@ -1110,6 +1176,15 @@ PROMPT;
 			$seen[$rp] = true;
 			$uniq[] = $f;
 		}
+		// RTB package order: General Information → Specific → General → CCM
+		usort($uniq, static function ($a, $b) {
+			$ka = DocumentTextExtractor::curriculumFileSortKey(($a['original'] ?? '') . ' ' . ($a['path'] ?? ''));
+			$kb = DocumentTextExtractor::curriculumFileSortKey(($b['original'] ?? '') . ' ' . ($b['path'] ?? ''));
+			if ($ka !== $kb) {
+				return $ka <=> $kb;
+			}
+			return strcasecmp((string) ($a['original'] ?? ''), (string) ($b['original'] ?? ''));
+		});
 		return $uniq;
 	}
 

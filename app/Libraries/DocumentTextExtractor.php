@@ -94,6 +94,81 @@ class DocumentTextExtractor
 	}
 
 	/**
+	 * Extract module code from RTB curriculum filenames, e.g.
+	 * "SWDDD401 - DATABASE DEVELOPMENT.pdf", "CCMEN 402  - ENGLISH.pdf", "CMCZ401 - CITIZENSHIP.pdf"
+	 */
+	public static function extractModuleCodeFromFilename(string $filename): string
+	{
+		$base = pathinfo(str_replace('\\', '/', $filename), PATHINFO_FILENAME);
+		$base = strtoupper(trim($base));
+		$base = preg_replace('/\s+/', ' ', $base) ?? $base;
+		// Skip structure / qualification overview PDFs
+		if (stripos($base, 'GENERAL INFORMATION') !== false || stripos($base, 'CURRICULUM GENERAL') !== false) {
+			return '';
+		}
+		// Typo: CMCZ401 → CCMCZ401
+		if (preg_match('/^CM([A-Z]{2}\s*\d{3})\b/', $base, $m)) {
+			return self::cleanModuleCode('CCM' . preg_replace('/\s+/', '', $m[1]));
+		}
+		// Prefer CODE at start: SWDDD401 - TITLE / CCMEN 402 - ENGLISH
+		if (preg_match('/^((?:SWD|GEN|CCM)[A-Z]{0,6})\s*[-_]?\s*(\d{3})\b/', $base, $m)) {
+			return self::cleanModuleCode($m[1] . $m[2]);
+		}
+		if (preg_match('/\b((?:SWD|GEN|CCM)[A-Z]{0,6})\s*[-_]?\s*(\d{3})\b/', $base, $m)) {
+			$code = self::cleanModuleCode($m[1] . $m[2]);
+			// Reject qualification-style codes (ICTSWD400…)
+			if (preg_match('/^ICT/', $code)) {
+				return '';
+			}
+			return $code;
+		}
+		return '';
+	}
+
+	/** Human title from "CODE - TITLE.pdf" filenames. */
+	public static function extractModuleTitleFromFilename(string $filename): string
+	{
+		$base = pathinfo(str_replace('\\', '/', $filename), PATHINFO_FILENAME);
+		$title = preg_replace('/^(?:CM|SWD|GEN|CCM|ICT)[A-Z]{0,6}\s*[-_]?\s*\d{3}\s*[-–—_]?\s*/i', '', $base) ?? $base;
+		$title = preg_replace('/\s*correct\s*$/i', '', $title) ?? $title;
+		$title = preg_replace('/\s+/', ' ', $title) ?? $title;
+		$title = trim($title, " \t\n\r\0\x0B-–—_.");
+		$clean = self::cleanModuleTitle($title);
+		return $clean !== '' ? $clean : $title;
+	}
+
+	/**
+	 * Guess module_type from folder/filename (Specific / General / CCM / structure).
+	 */
+	public static function guessModuleTypeFromPath(string $pathOrName): string
+	{
+		$n = strtolower(str_replace('\\', '/', $pathOrName));
+		if (strpos($n, 'general information') !== false || strpos($n, 'curriculum general') !== false
+			|| (strpos($n, 'structure') !== false && strpos($n, 'module') === false)) {
+			return 'structure';
+		}
+		if (strpos($n, 'complementary') !== false || strpos($n, 'ccm module') !== false
+			|| preg_match('#/(ccm|ccms)(/|$)#', $n) || preg_match('/\bccm[a-z]{0,6}\s*\d{3}\b/', $n)) {
+			return 'ccm';
+		}
+		if (strpos($n, 'specific') !== false || preg_match('/\bswd[a-z]{0,6}\s*\d{3}\b/', $n)) {
+			return 'specific';
+		}
+		if (strpos($n, 'general module') !== false || preg_match('/\bgen[a-z]{0,6}\s*\d{3}\b/', $n)) {
+			return 'general';
+		}
+		return '';
+	}
+
+	/** Sort key: structure/general-info first, then specific, general, ccm. */
+	public static function curriculumFileSortKey(string $pathOrName): int
+	{
+		$type = self::guessModuleTypeFromPath($pathOrName);
+		$map = ['structure' => 0, 'specific' => 1, 'general' => 2, 'ccm' => 3];
+		return $map[$type] ?? 5;
+	}
+
+	/**
 	 * Parse RTB chronogram text for timetable hours/week (typical weekly periods).
 	 * Uses week-grid cells when present; else Modules periods ÷ teaching weeks.
 	 *

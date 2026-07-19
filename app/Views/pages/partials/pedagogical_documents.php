@@ -107,9 +107,16 @@ $renderDocCell = function (array $docs, $cid, $type, $uploadLabel) {
 </div>
 
 <p class="ped-intro">
-	Upload <strong>multiple curriculum</strong> and <strong>multiple chronogram</strong> files per class
-	(example: General curriculum PDF + Specific module PDFs + chronogram PDF). You can select several files at once.<br>
-	Accepted: PDF or Word (.doc/.docx). ZIP is optional.
+	Upload the <strong>full RTB curriculum package</strong> for each class — not only the General Information PDF.<br>
+	Include all of these (select multiple files, or ZIP the whole folder):
+	<strong>Curriculum General Information</strong> +
+	<strong>Specific Modules</strong> +
+	<strong>General Modules</strong> +
+	<strong>CCM / Complementary Modules</strong>,
+	plus the <strong>chronogram</strong>.<br>
+	Example folder: <code>RQF LEVEL 4 SoftWare_Development curriculum PDF</code>
+	(with subfolders <code>Specific Modules</code>, <code>General Modules</code>, <code>CCM Modules-1</code>).<br>
+	Accepted: PDF or Word (.doc/.docx). ZIP of the whole package is best.
 </p>
 
 <?php if ($yearId <= 0): ?>

@@ -83,8 +83,9 @@ include __DIR__ . '/_nav.php';
 	<div class="aiplan-card">
 		<h5>Select class &amp; analyse</h5>
 		<p class="text-muted" style="font-size:.88rem;">
-			Uses all curriculum + chronogram files from School Settings. Upload multiple PDFs per class
-			(General + Specific module files, plus chronogram). After uploading, click <b>Re-analyse</b>.
+			Uses <b>all</b> curriculum + chronogram files from School Settings.
+			Upload the full RTB package: <b>General Information</b> + <b>Specific Modules</b> + <b>General Modules</b> + <b>CCM Modules</b>
+			(or one ZIP of that folder), plus chronogram. After uploading, click <b>Re-analyse</b>.
 		</p>
 		<div class="row">
 			<div class="col-md-8">

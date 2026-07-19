@@ -1949,6 +1949,12 @@ public function testEmail()
 			return $this->response->setJSON(['error' => 'Upload at least one chronogram for this class in School Settings → Pedagogical documents (needed to map weeks & hours).']);
 		}
 
+		// Prefer General Information / structure PDF as primary when multiple curricula uploaded
+		usort($curricula, static function ($a, $b) {
+			$ka = \App\Libraries\DocumentTextExtractor::curriculumFileSortKey(($a['original'] ?? '') . ' ' . ($a['path'] ?? ''));
+			$kb = \App\Libraries\DocumentTextExtractor::curriculumFileSortKey(($b['original'] ?? '') . ' ' . ($b['path'] ?? ''));
+			return $ka <=> $kb;
+		});
 		$curriculum = $curricula[0];
 		$chronogram = $chronograms[0];
 		$sourceHash = $this->pedagogicalSourceHashMulti($curricula, $chronograms);
@@ -1994,10 +2000,11 @@ public function testEmail()
 			$this->writeAiProgress($schoolId, $classId, $yearId, $pct, $action, $meta);
 		});
 
-		// Extra curriculum files: additional uploads (general/specific PDFs) + ZIP package folder
+		// Extra curriculum files: additional uploads (General/Specific/CCM PDFs) + ZIP package folder
 		$extraFiles = array_slice($curricula, 1);
 		if (is_dir($pkgDir)) {
 			$rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($pkgDir, \FilesystemIterator::SKIP_DOTS));
+			$pkgRoot = realpath($pkgDir) ?: $pkgDir;
 			foreach ($rii as $file) {
 				/** @var \SplFileInfo $file */
 				if (!$file->isFile()) {
@@ -2007,7 +2014,12 @@ public function testEmail()
 				if (!in_array($e, ['pdf', 'doc', 'docx'], true)) {
 					continue;
 				}
-				$extraFiles[] = ['path' => $file->getPathname(), 'original' => $file->getFilename()];
+				$full = $file->getPathname();
+				$rel = $file->getFilename();
+				if (strpos($full, $pkgRoot) === 0) {
+					$rel = ltrim(str_replace('\\', '/', substr($full, strlen($pkgRoot))), '/');
+				}
+				$extraFiles[] = ['path' => $full, 'original' => $rel];
 			}
 		}
 
