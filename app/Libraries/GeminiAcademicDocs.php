@@ -355,6 +355,7 @@ PROMPT
 		$slots = is_array($chronoResult['module_slots'] ?? null) ? $chronoResult['module_slots'] : [];
 		// Also harvest totals from chronogram header text (Modules periods / hours)
 		$headerTotals = $this->parseChronogramHeaderTotals($chrText, $chronoCodes);
+		$weeklyFromText = DocumentTextExtractor::parseChronogramWeeklyHours($chrText);
 		foreach ($merged as &$mm) {
 			$code = strtoupper(trim((string) ($mm['code'] ?? '')));
 			if ($code === '') {
@@ -372,6 +373,24 @@ PROMPT
 				$mm['chronogram_slots'] = $this->synthesizeSlotsFromTotal($total, $chronoResult['chronogram'] ?? []);
 				$mm['weekly_hours_total'] = $total;
 				$mm['chronogram_periods_total'] = $total;
+			}
+			// Timetable load: typical periods/week from chronogram grid (not yearly totals)
+			$hpw = 0.0;
+			if (isset($weeklyFromText[$code]['hours_per_week'])) {
+				$hpw = (float) $weeklyFromText[$code]['hours_per_week'];
+			} else {
+				foreach ($weeklyFromText as $wkCode => $wkInfo) {
+					if ($this->moduleCodesCompatible($code, (string) $wkCode)) {
+						$hpw = (float) ($wkInfo['hours_per_week'] ?? 0);
+						break;
+					}
+				}
+			}
+			if ($hpw <= 0) {
+				$hpw = $this->typicalWeeklyFromSlots($mm['chronogram_slots'] ?? []);
+			}
+			if ($hpw > 0) {
+				$mm['hours_per_week'] = round($hpw, 1);
 			}
 			if (empty($mm['learning_hours']) && !empty($mm['weekly_hours_total'])) {
 				// Chronogram periods ≈ contact hours budget when curriculum hours missing
@@ -711,9 +730,17 @@ PROMPT;
 			return [];
 		}
 		$weeks = is_array($chronogramBlock['weeks'] ?? null) ? $chronogramBlock['weeks'] : [];
+		$weekCount = count($weeks) >= 4 ? count($weeks) : 30;
+		$per = round($totalPeriods / $weekCount, 1);
+		if ($per <= 0) {
+			$per = 1.0;
+		}
+		// Cap so a yearly total never looks like one week's timetable load
+		if ($per > 16) {
+			$per = 16.0;
+		}
+		$out = [];
 		if (count($weeks) >= 4) {
-			$per = round($totalPeriods / count($weeks), 1);
-			$out = [];
 			foreach ($weeks as $w) {
 				$out[] = [
 					'week' => (int) ($w['week'] ?? 0),
@@ -726,15 +753,47 @@ PROMPT;
 			}
 			return $out;
 		}
-		// No week grid — keep one annual bucket so UI/SoW still have hours
-		return [[
-			'week' => 1,
-			'term' => 1,
-			'date_from' => '',
-			'date_to' => '',
-			'periods' => $totalPeriods,
-			'hours' => $totalPeriods,
-		]];
+		for ($i = 1; $i <= $weekCount; $i++) {
+			$out[] = [
+				'week' => $i,
+				'term' => $i <= 13 ? 1 : ($i <= 25 ? 2 : 3),
+				'date_from' => '',
+				'date_to' => '',
+				'periods' => $per,
+				'hours' => $per,
+			];
+		}
+		return $out;
+	}
+
+	/** Typical weekly periods from slot list (ignores annual dump values). */
+	private function typicalWeeklyFromSlots($slots): float
+	{
+		if (!is_array($slots) || $slots === []) {
+			return 0.0;
+		}
+		$vals = [];
+		foreach ($slots as $s) {
+			if (!is_array($s)) {
+				continue;
+			}
+			$p = (float) ($s['periods'] ?? $s['hours'] ?? 0);
+			if ($p > 0 && $p <= 20) {
+				$vals[] = $p;
+			}
+		}
+		if ($vals === []) {
+			return 0.0;
+		}
+		$counts = [];
+		foreach ($vals as $v) {
+			$key = (string) round($v, 1);
+			$counts[$key] = ($counts[$key] ?? 0) + 1;
+		}
+		arsort($counts);
+		reset($counts);
+		$top = key($counts);
+		return $top !== null ? (float) $top : round(array_sum($vals) / count($vals), 1);
 	}
 
 	private function guessChronogramYearLabel(string $chrText): string

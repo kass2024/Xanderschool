@@ -2859,14 +2859,26 @@ public function attendanceCard()
 				$cid = (int) ($row['class_id'] ?? 0);
 				$decoded = json_decode($row['analysis_json'] ?? '', true);
 				$modules = is_array($decoded['modules'] ?? null) ? $decoded['modules'] : [];
+				$chrText = (string) ($row['chronogram_text'] ?? '');
+				if ($chrText === '' && !empty($decoded['_chronogram_text'])) {
+					$chrText = (string) $decoded['_chronogram_text'];
+				}
+				if ($chrText === '' && !empty($row['source_text'])) {
+					$chrText = (string) $row['source_text'];
+				}
+				$weeklyMap = \App\Libraries\DocumentTextExtractor::parseChronogramWeeklyHours($chrText);
 				$items = [];
 				foreach ($modules as $m) {
 					$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
-					$title = \App\Libraries\DocumentTextExtractor::cleanModuleTitle((string) ($m['title'] ?? ''));
+					$rawTitle = trim((string) ($m['title'] ?? ''));
+					$title = \App\Libraries\DocumentTextExtractor::cleanModuleTitle($rawTitle);
+					if ($title === '' && $rawTitle !== '') {
+						$title = \App\Libraries\DocumentTextExtractor::cleanPedagogicalText($rawTitle);
+					}
 					if ($code === '' && $title === '') {
 						continue;
 					}
-					$hours = $this->estimateHoursPerWeekFromModule($m);
+					$hours = $this->estimateHoursPerWeekFromModule($m, $weeklyMap);
 					$cat = $this->categoryTitleFromModuleType((string) ($m['module_type'] ?? ''));
 					$items[] = [
 						'code' => $code,
@@ -2896,30 +2908,81 @@ public function attendanceCard()
 		return view('main', $data);
 	}
 
-	/** Average weekly periods/hours from chronogram slots (fallback: learning_hours). */
-	private function estimateHoursPerWeekFromModule(array $m): float
+	/**
+	 * Timetable hours/week = typical weekly periods from chronogram (not yearly module hours).
+	 *
+	 * @param array<string,array{hours_per_week?:float}> $weeklyMap from chronogram text parse
+	 */
+	private function estimateHoursPerWeekFromModule(array $m, array $weeklyMap = []): float
 	{
+		// Prefer value already computed during analysis
+		if (isset($m['hours_per_week']) && (float) $m['hours_per_week'] > 0 && (float) $m['hours_per_week'] <= 20) {
+			return round((float) $m['hours_per_week'], 1);
+		}
+
+		$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
+		if ($code !== '' && isset($weeklyMap[$code]['hours_per_week']) && (float) $weeklyMap[$code]['hours_per_week'] > 0) {
+			return round((float) $weeklyMap[$code]['hours_per_week'], 1);
+		}
+		if ($code !== '' && $weeklyMap !== []) {
+			foreach ($weeklyMap as $wkCode => $info) {
+				$wkCode = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) $wkCode);
+				if ($wkCode === $code && (float) ($info['hours_per_week'] ?? 0) > 0) {
+					return round((float) $info['hours_per_week'], 1);
+				}
+				// Soft match stems (SWDBS vs SWBS)
+				if ($wkCode !== '' && preg_match('/^([A-Z]+)(\d{3})$/', $code, $ma) && preg_match('/^([A-Z]+)(\d{3})$/', $wkCode, $mb)
+					&& $ma[2] === $mb[2]
+					&& (strpos($ma[1], $mb[1]) !== false || strpos($mb[1], $ma[1]) !== false || levenshtein($ma[1], $mb[1]) <= 2)
+					&& (float) ($info['hours_per_week'] ?? 0) > 0) {
+					return round((float) $info['hours_per_week'], 1);
+				}
+			}
+		}
+
+		// Mode of realistic weekly slot values (1–20 periods)
 		$vals = [];
 		foreach ($m['chronogram_slots'] ?? [] as $s) {
 			if (!is_array($s)) {
 				continue;
 			}
 			$p = (float) ($s['periods'] ?? $s['hours'] ?? 0);
-			if ($p > 0) {
+			if ($p > 0 && $p <= 20) {
 				$vals[] = $p;
 			}
 		}
 		if ($vals !== []) {
+			$counts = [];
+			foreach ($vals as $v) {
+				$key = (string) round($v, 1);
+				$counts[$key] = ($counts[$key] ?? 0) + 1;
+			}
+			arsort($counts);
+			reset($counts);
+			$top = key($counts);
+			if ($top !== null && $top !== '') {
+				return (float) $top;
+			}
 			return round(array_sum($vals) / count($vals), 1);
 		}
-		$total = (float) ($m['weekly_hours_total'] ?? $m['chronogram_periods_total'] ?? 0);
-		$weeks = is_array($m['chronogram_slots'] ?? null) ? count($m['chronogram_slots']) : 0;
-		if ($total > 0 && $weeks > 0) {
+
+		// Yearly period total ÷ teaching weeks (never treat yearly as weekly)
+		$total = (float) ($m['chronogram_periods_total'] ?? $m['weekly_hours_total'] ?? 0);
+		$slotCount = 0;
+		foreach ($m['chronogram_slots'] ?? [] as $s) {
+			if (is_array($s)) {
+				$slotCount++;
+			}
+		}
+		if ($total > 20) {
+			$weeks = $slotCount >= 8 ? $slotCount : 30;
 			return round($total / $weeks, 1);
 		}
+
+		// Only accept learning_hours when it already looks like weekly load
 		$lh = (float) ($m['learning_hours'] ?? 0);
-		if ($lh > 0 && $lh <= 40) {
-			return $lh; // already looks like weekly hours
+		if ($lh > 0 && $lh <= 12) {
+			return $lh;
 		}
 		return 0.0;
 	}
@@ -2969,31 +3032,21 @@ public function attendanceCard()
 	/**
 	 * Bulk-create courses from Pedagogical Documents extraction.
 	 * Marks = hours_per_week × 10. Category created if missing.
+	 * Does not assign to class/teacher — assign manually per course later.
 	 */
 	public function smart_create_courses()
 	{
 		$this->_preset(1, 3);
 		$schoolId = (int) $this->session->get('soma_school_id');
-		$classId = (int) $this->request->getPost('class_id');
-		$assign = (int) $this->request->getPost('assign') === 1;
-		$teacherId = (int) $this->request->getPost('teacher_id');
-		$yearId = (int) ($this->data['academic_year'] ?? 0);
 		$raw = $this->request->getPost('courses');
 		$courses = is_string($raw) ? json_decode($raw, true) : $raw;
 		if (!is_array($courses) || $courses === []) {
 			return $this->response->setJSON(['error' => 'No courses selected']);
 		}
-		if ($classId > 0) {
-			$class = (new ClassesModel())->where('id', $classId)->where('school_id', $schoolId)->first();
-			if (!$class) {
-				return $this->response->setJSON(['error' => 'Class not found']);
-			}
-		}
 
 		$courseMdl = new CourseModel();
 		$created = 0;
 		$skipped = 0;
-		$assigned = 0;
 		$errors = [];
 		$createdIds = [];
 
@@ -3013,6 +3066,10 @@ public function attendanceCard()
 			if ($hours < 0) {
 				$hours = 0;
 			}
+			// Cap absurd values (yearly totals mistakenly sent as weekly)
+			if ($hours > 20) {
+				$hours = round($hours / 30, 1);
+			}
 			$marks = (int) round($hours * 10);
 			if ($marks <= 0 && $hours > 0) {
 				$marks = max(1, (int) round($hours * 10));
@@ -3026,7 +3083,6 @@ public function attendanceCard()
 			}
 			if ($existing) {
 				$skipped++;
-				$courseId = (int) $existing['id'];
 			} else {
 				try {
 					$courseMdl->insert([
@@ -3046,45 +3102,17 @@ public function attendanceCard()
 					continue;
 				}
 			}
-
-			if ($assign && $classId > 0 && $yearId > 0 && $courseId > 0 && $teacherId > 0) {
-				$recMdl = new CourseRecordModel();
-				$dt = $recMdl->select('count(id) as cc')
-					->where('course', $courseId)
-					->where('class', $classId)
-					->where('year', $yearId)
-					->get()->getRow();
-				if ($dt && (int) $dt->cc === 0) {
-					try {
-						$recMdl->insert([
-							'course' => $courseId,
-							'lecturer' => $teacherId,
-							'class' => $classId,
-							'year' => $yearId,
-							'term' => '1,2,3',
-						]);
-						$assigned++;
-					} catch (\Throwable $e) {
-						$errors[] = ($code ?: $title) . ' assign: ' . $e->getMessage();
-					}
-				}
-			} elseif ($assign && $teacherId <= 0) {
-				// Course created but not assigned — teacher required for class assignment
-			}
 		}
 
 		$msg = $created . ' course(s) created';
 		if ($skipped) {
 			$msg .= ', ' . $skipped . ' already existed';
 		}
-		if ($assigned) {
-			$msg .= ', ' . $assigned . ' assigned to class';
-		}
+		$msg .= '. Assign teachers/classes manually on each course.';
 		return $this->response->setJSON([
 			'success' => $msg,
 			'created' => $created,
 			'skipped' => $skipped,
-			'assigned' => $assigned,
 			'created_ids' => $createdIds,
 			'errors' => $errors,
 		]);

@@ -93,6 +93,151 @@ class DocumentTextExtractor
 		return $title;
 	}
 
+	/**
+	 * Parse RTB chronogram text for timetable hours/week (typical weekly periods).
+	 * Uses week-grid cells when present; else Modules periods ÷ teaching weeks.
+	 *
+	 * @return array<string,array{hours_per_week:float,period_total:float,samples:int}>
+	 */
+	public static function parseChronogramWeeklyHours(string $chrText): array
+	{
+		if (trim($chrText) === '') {
+			return [];
+		}
+		$text = self::cleanPedagogicalText($chrText);
+		$upper = strtoupper($text);
+		$cut = stripos($upper, 'MODULES HOURS');
+		if ($cut === false) {
+			$cut = stripos($upper, 'MODULES PERIODS');
+		}
+		$headerChunk = $cut !== false ? substr($text, 0, (int) $cut) : $text;
+		$ordered = [];
+		$seen = [];
+		if (preg_match_all('/\b((?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3})\b/', strtoupper($headerChunk), $cm)) {
+			foreach ($cm[1] as $c) {
+				$c = self::cleanModuleCode($c);
+				if ($c === '' || isset($seen[$c])) {
+					continue;
+				}
+				$seen[$c] = true;
+				$ordered[] = $c;
+			}
+		}
+		if ($ordered === []) {
+			if (preg_match_all('/\b((?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3})\b/', strtoupper($text), $cm2)) {
+				foreach ($cm2[1] as $c) {
+					$c = self::cleanModuleCode($c);
+					if ($c === '' || isset($seen[$c])) {
+						continue;
+					}
+					$seen[$c] = true;
+					$ordered[] = $c;
+				}
+			}
+		}
+		if ($ordered === []) {
+			return [];
+		}
+
+		$n = count($ordered);
+		$samples = [];
+		foreach ($ordered as $c) {
+			$samples[$c] = [];
+		}
+
+		$lines = preg_split("/\r\n|\n|\r/", $chrText) ?: [];
+		foreach ($lines as $line) {
+			$line = trim($line);
+			if (!preg_match('/^(\d{1,2})\s+(\d{2}\/\d{2}-\d{2}\/\d{2}\/\d{4})\s+(.+)$/', $line, $wm)) {
+				continue;
+			}
+			$rest = trim($wm[3]);
+			$parts = preg_split('/\s+/', $rest) ?: [];
+			$nums = [];
+			foreach ($parts as $p) {
+				if (preg_match('/^\d{1,2}$/', $p)) {
+					$nums[] = (int) $p;
+				}
+			}
+			if (count($nums) < 3) {
+				continue;
+			}
+			// Drop trailing "Total Periods/Week" (commonly 40–55)
+			$last = $nums[count($nums) - 1];
+			if ($last >= 40 && $last <= 60) {
+				array_pop($nums);
+			}
+			$cols = array_slice($nums, 0, $n);
+			foreach ($cols as $i => $v) {
+				if ($v > 0 && $v <= 20 && isset($ordered[$i])) {
+					$samples[$ordered[$i]][] = (float) $v;
+				}
+			}
+		}
+
+		$periodTotals = [];
+		if (preg_match('/Modules\s+periods\s+([0-9\s]+)/i', $text, $pm)) {
+			$pnums = array_values(array_filter(array_map('floatval', preg_split('/\s+/', trim($pm[1])) ?: []), static function ($x) {
+				return $x > 0 && $x <= 500;
+			}));
+			for ($i = 0; $i < min($n, count($pnums)); $i++) {
+				$periodTotals[$ordered[$i]] = $pnums[$i];
+			}
+		}
+
+		$teachingWeeks = 0;
+		foreach ($samples as $vals) {
+			$teachingWeeks = max($teachingWeeks, count($vals));
+		}
+		if ($teachingWeeks < 8) {
+			$teachingWeeks = 30;
+		}
+
+		$out = [];
+		foreach ($ordered as $code) {
+			$vals = $samples[$code] ?? [];
+			$periodTotal = (float) ($periodTotals[$code] ?? 0);
+			$hpw = 0.0;
+			if ($vals !== []) {
+				$hpw = self::modeFloat($vals);
+			} elseif ($periodTotal > 0) {
+				$hpw = round($periodTotal / $teachingWeeks, 1);
+			}
+			if ($hpw <= 0) {
+				continue;
+			}
+			$out[$code] = [
+				'hours_per_week' => round($hpw, 1),
+				'period_total' => $periodTotal,
+				'samples' => count($vals),
+			];
+		}
+		return $out;
+	}
+
+	/** @param list<float|int> $vals */
+	private static function modeFloat(array $vals): float
+	{
+		if ($vals === []) {
+			return 0.0;
+		}
+		$counts = [];
+		foreach ($vals as $v) {
+			$key = (string) round((float) $v, 1);
+			if (!isset($counts[$key])) {
+				$counts[$key] = 0;
+			}
+			$counts[$key]++;
+		}
+		arsort($counts);
+		reset($counts);
+		$top = key($counts);
+		if ($top === null || $top === '') {
+			return round(array_sum($vals) / count($vals), 1);
+		}
+		return (float) $top;
+	}
+
 	public static function mimeForExt(string $ext): string
 	{
 		$map = [

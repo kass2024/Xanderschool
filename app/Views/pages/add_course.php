@@ -202,9 +202,6 @@ foreach ($classes as $c) {
 		var classesByType = <?= json_encode($classesByType, JSON_UNESCAPED_UNICODE); ?>;
 		var smartByClass = <?= json_encode($smartByClass, JSON_UNESCAPED_UNICODE); ?>;
 		var currentType = null;
-		var staffOptions = <?= json_encode(array_map(static function ($s) {
-			return ['id' => (int)$s['id'], 'name' => trim(($s['fname'] ?? '') . ' ' . ($s['lname'] ?? ''))];
-		}, $staffs ?? []), JSON_UNESCAPED_UNICODE); ?>;
 
 		$('#example').DataTable();
 		$('#createCourseDiv').hide();
@@ -271,34 +268,27 @@ foreach ($classes as $c) {
 					+ '<th>Title</th><th>Code</th><th>Category</th><th>Hours/week</th><th>Marks</th><th>Status</th>'
 					+ '</tr></thead><tbody></tbody></table>');
 				pack.modules.forEach(function (m, idx) {
-					var checked = m.already_exists ? '' : 'checked';
-					var disabled = m.already_exists ? 'disabled' : '';
+					var checked = !m.already_exists;
 					var status = m.already_exists
 						? '<span class="smart-badge exists">Already in courses</span>'
 						: '<span class="smart-badge ok">Ready to create</span>';
 					var hours = m.hours_per_week != null ? m.hours_per_week : 0;
 					var marks = Math.round((parseFloat(hours) || 0) * 10);
-					$tbl.find('tbody').append(
-						'<tr data-idx="' + idx + '">'
-						+ '<td><input type="checkbox" class="smart-row-check" ' + checked + ' ' + disabled + '></td>'
-						+ '<td><input type="text" class="form-control form-control-sm smart-title" value="' + $('<div>').text(m.title || '').html() + '"></td>'
-						+ '<td><input type="text" class="form-control form-control-sm smart-code" value="' + $('<div>').text(m.code || '').html() + '"></td>'
-						+ '<td><input type="text" class="form-control form-control-sm smart-cat" value="' + $('<div>').text(m.category_title || 'General').html() + '"></td>'
-						+ '<td><input type="number" step="0.1" min="0" class="form-control form-control-sm hours-input smart-hours" value="' + hours + '"></td>'
-						+ '<td><input type="number" class="form-control form-control-sm marks-input smart-marks" value="' + marks + '" readonly></td>'
-						+ '<td>' + status + '</td></tr>'
-					);
+					var $tr = $('<tr data-idx="' + idx + '"></tr>');
+					var $check = $('<input type="checkbox" class="smart-row-check">').prop('checked', checked).prop('disabled', !!m.already_exists);
+					$tr.append($('<td></td>').append($check));
+					$tr.append($('<td></td>').append($('<input type="text" class="form-control form-control-sm smart-title">').val(m.title || m.code || '')));
+					$tr.append($('<td></td>').append($('<input type="text" class="form-control form-control-sm smart-code">').val(m.code || '')));
+					$tr.append($('<td></td>').append($('<input type="text" class="form-control form-control-sm smart-cat">').val(m.category_title || 'General')));
+					$tr.append($('<td></td>').append($('<input type="number" step="0.1" min="0" class="form-control form-control-sm hours-input smart-hours">').val(hours)));
+					$tr.append($('<td></td>').append($('<input type="number" class="form-control form-control-sm marks-input smart-marks" readonly>').val(marks)));
+					$tr.append($('<td></td>').html(status));
+					$tbl.find('tbody').append($tr);
 				});
 				$body.append($tbl);
-				var teacherSelect = '<select class="form-control form-control-sm smart-teacher" style="max-width:220px;display:inline-block;"><option value="0">— Teacher (optional) —</option>';
-				staffOptions.forEach(function (s) {
-					teacherSelect += '<option value="' + s.id + '">' + $('<div>').text(s.name).html() + '</option>';
-				});
-				teacherSelect += '</select>';
 				$body.append(
 					'<div class="smart-actions">'
-					+ '<label class="mb-0 mr-2"><input type="checkbox" class="smart-assign" checked> Assign to this class (needs teacher)</label> '
-					+ teacherSelect + ' '
+					+ '<span class="text-muted mr-2" style="font-size:12px;">Courses only — assign teachers/classes later per course</span> '
 					+ '<button type="button" class="btn btn-success btn-sm btn-smart-create"><i class="fa fa-plus"></i> Create selected</button>'
 					+ '</div>'
 				);
@@ -348,13 +338,6 @@ foreach ($classes as $c) {
 				else alert('Select at least one course');
 				return;
 			}
-			var assign = $card.find('.smart-assign').is(':checked');
-			var teacherId = parseInt($card.find('.smart-teacher').val() || '0', 10) || 0;
-			if (assign && !teacherId) {
-				if (window.toastada) toastada.error('Select a teacher to assign courses to this class (or uncheck Assign)');
-				else alert('Select a teacher to assign courses to this class (or uncheck Assign)');
-				return;
-			}
 			var $btn = $(this).prop('disabled', true).text('Creating…');
 			$.ajax({
 				url: '<?= base_url('smart_create_courses'); ?>',
@@ -362,8 +345,6 @@ foreach ($classes as $c) {
 				dataType: 'json',
 				data: {
 					class_id: classId,
-					assign: assign ? 1 : 0,
-					teacher_id: teacherId,
 					courses: JSON.stringify(courses)
 				}
 			}).done(function (res) {
