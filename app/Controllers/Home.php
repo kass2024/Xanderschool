@@ -1870,7 +1870,9 @@ public function testEmail()
 		$this->requireAcademicPlanAccess();
 		$this->ensureAcademicPlansSchema();
 		$this->ensurePedagogicalDocsSchema();
-		set_time_limit(600);
+		@ini_set('max_execution_time', '0');
+		@set_time_limit(0);
+		@ignore_user_abort(true);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$classId = (int) $this->request->getPost('class_id');
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
@@ -1883,6 +1885,39 @@ public function testEmail()
 		if (empty($ctx['class']['id'])) {
 			return $this->response->setJSON(['error' => 'Class not found']);
 		}
+
+		try {
+			return $this->runAiAnalyzeCurriculum($schoolId, $classId, $yearId, $force, $ctx);
+		} catch (\Throwable $e) {
+			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Analysis failed: ' . $e->getMessage(), ['status' => 'error']);
+			log_message('error', 'ai_analyze_curriculum: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+			return $this->response->setJSON([
+				'error' => 'Analysis failed: ' . $e->getMessage(),
+			]);
+		}
+	}
+
+	public function ai_analyze_progress()
+	{
+		$this->requireAcademicPlanAccess();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$classId = (int) ($this->request->getGet('class_id') ?: $this->request->getPost('class_id'));
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$data = $this->readAiProgress($schoolId, $classId, $yearId);
+		return $this->response->setJSON($data ?: [
+			'pct' => 0,
+			'action' => 'Waiting…',
+			'status' => 'idle',
+			'updated_at' => null,
+		]);
+	}
+
+	/**
+	 * @param array<string,mixed> $ctx
+	 */
+	private function runAiAnalyzeCurriculum(int $schoolId, int $classId, int $yearId, bool $force, array $ctx)
+	{
+		$this->writeAiProgress($schoolId, $classId, $yearId, 2, 'Checking uploaded documents…', ['status' => 'running']);
 
 		$pedMdl = new ClassPedagogicalDocModel();
 		$docs = $pedMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->findAll();
@@ -1906,9 +1941,11 @@ public function testEmail()
 			}
 		}
 		if ($curricula === []) {
+			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'No curriculum uploaded', ['status' => 'error']);
 			return $this->response->setJSON(['error' => 'Upload at least one curriculum file for this class in School Settings → Pedagogical documents.']);
 		}
 		if ($chronograms === []) {
+			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'No chronogram uploaded', ['status' => 'error']);
 			return $this->response->setJSON(['error' => 'Upload at least one chronogram for this class in School Settings → Pedagogical documents (needed to map weeks & hours).']);
 		}
 
@@ -1930,6 +1967,7 @@ public function testEmail()
 			$hashOk = empty($cached['source_hash']) || hash_equals((string) $cached['source_hash'], $sourceHash);
 			if (is_array($decoded) && $hashOk && !empty($decoded['modules'])) {
 				$stats = $this->countAnalysisStats($decoded);
+				$this->writeAiProgress($schoolId, $classId, $yearId, 100, 'Loaded from database cache', ['status' => 'done', 'cached' => true]);
 				return $this->response->setJSON([
 					'success' => 'Loaded from database cache (no AI call)',
 					'analysis' => $decoded,
@@ -1947,8 +1985,13 @@ public function testEmail()
 
 		$ai = new GeminiAcademicDocs();
 		if (!$ai->isConfigured()) {
+			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Gemini API key missing', ['status' => 'error']);
 			return $this->response->setJSON(['error' => 'Gemini API key missing on server']);
 		}
+		$ai->onProgress(function (int $pct, string $action, array $meta = []) use ($schoolId, $classId, $yearId) {
+			$meta['status'] = $meta['status'] ?? 'running';
+			$this->writeAiProgress($schoolId, $classId, $yearId, $pct, $action, $meta);
+		});
 
 		// Extra curriculum files: additional uploads (general/specific PDFs) + ZIP package folder
 		$extraFiles = array_slice($curricula, 1);
@@ -1968,9 +2011,16 @@ public function testEmail()
 		}
 
 		$extraChronograms = array_slice($chronograms, 1);
+		$this->writeAiProgress($schoolId, $classId, $yearId, 5, 'Starting AI analysis…', [
+			'status' => 'running',
+			'curriculum_files' => count($curricula),
+			'chronogram_files' => count($chronograms),
+		]);
 		$analysis = $ai->analyzeCurriculum($curriculum, $chronogram, $ctx, $extraFiles, $extraChronograms);
 		if ($analysis === null) {
-			return $this->response->setJSON(['error' => 'AI analysis failed: ' . $ai->lastError()]);
+			$err = 'AI analysis failed: ' . $ai->lastError();
+			$this->writeAiProgress($schoolId, $classId, $yearId, 0, $err, ['status' => 'error']);
+			return $this->response->setJSON(['error' => $err]);
 		}
 
 		$modules = is_array($analysis['modules'] ?? null) ? $analysis['modules'] : [];
@@ -1979,6 +2029,7 @@ public function testEmail()
 		$chronogramText = $analysis['_chronogram_text'] ?? null;
 		unset($analysis['_extract_meta'], $analysis['_source_text'], $analysis['_chronogram_text']);
 
+		$this->writeAiProgress($schoolId, $classId, $yearId, 96, 'Saving analysis to database…', ['status' => 'running']);
 		$payload = [
 			'school_id' => $schoolId,
 			'class_id' => $classId,
@@ -1999,6 +2050,12 @@ public function testEmail()
 		}
 
 		$stats = $this->countAnalysisStats($analysis);
+		$this->writeAiProgress($schoolId, $classId, $yearId, 100, 'Full analysis saved', [
+			'status' => 'done',
+			'modules' => $stats['module_count'],
+			'lo' => $stats['lo_count'],
+			'ic' => $stats['ic_count'],
+		]);
 
 		return $this->response->setJSON([
 			'success' => 'Full curriculum + chronogram analysis saved to database',
@@ -2012,6 +2069,41 @@ public function testEmail()
 			'file_count' => count($extraFiles) + 1,
 			'source_hash' => $sourceHash,
 		]);
+	}
+
+	private function aiProgressPath(int $schoolId, int $classId, int $yearId): string
+	{
+		$dir = WRITEPATH . 'ai_progress';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0755, true);
+		}
+		return $dir . '/analyze_' . $schoolId . '_' . $classId . '_y' . $yearId . '.json';
+	}
+
+	/** @param array<string,mixed> $meta */
+	private function writeAiProgress(int $schoolId, int $classId, int $yearId, int $pct, string $action, array $meta = []): void
+	{
+		$path = $this->aiProgressPath($schoolId, $classId, $yearId);
+		$payload = array_merge($meta, [
+			'pct' => max(0, min(100, $pct)),
+			'action' => $action,
+			'updated_at' => date('c'),
+			'class_id' => $classId,
+			'academic_year' => $yearId,
+		]);
+		@file_put_contents($path, json_encode($payload, JSON_UNESCAPED_UNICODE), LOCK_EX);
+	}
+
+	/** @return array<string,mixed>|null */
+	private function readAiProgress(int $schoolId, int $classId, int $yearId): ?array
+	{
+		$path = $this->aiProgressPath($schoolId, $classId, $yearId);
+		if (!is_file($path)) {
+			return null;
+		}
+		$raw = @file_get_contents($path);
+		$data = is_string($raw) ? json_decode($raw, true) : null;
+		return is_array($data) ? $data : null;
 	}
 
 	private function dirFingerprint(string $dir): string

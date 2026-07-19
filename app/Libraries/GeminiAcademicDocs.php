@@ -18,9 +18,31 @@ class GeminiAcademicDocs
 	/** @var string */
 	private $lastError = '';
 
+	/** @var callable|null fn(int $pct, string $action, array $meta): void */
+	private $progressCb = null;
+
 	public function lastError(): string
 	{
 		return $this->lastError;
+	}
+
+	public function onProgress(?callable $cb): self
+	{
+		$this->progressCb = $cb;
+		return $this;
+	}
+
+	/** @param array<string,mixed> $meta */
+	private function reportProgress(int $pct, string $action, array $meta = []): void
+	{
+		$pct = max(0, min(100, $pct));
+		if ($this->progressCb) {
+			try {
+				($this->progressCb)($pct, $action, $meta);
+			} catch (\Throwable $e) {
+				// never break analysis for progress UI
+			}
+		}
 	}
 
 	public function isConfigured(): bool
@@ -80,12 +102,14 @@ class GeminiAcademicDocs
 	 */
 	public function analyzeCurriculum(array $curriculum, ?array $chronogram, array $dbContext, array $extraFiles = [], array $extraChronograms = []): ?array
 	{
+		$this->reportProgress(3, 'Preparing curriculum package…');
 		$packFiles = $this->expandCurriculumPackage($curriculum, $extraFiles);
 		if ($packFiles === []) {
 			$this->lastError = 'Could not read curriculum file(s)';
 			return null;
 		}
 
+		$this->reportProgress(8, 'Reading ' . count($packFiles) . ' curriculum file(s)…', ['files' => count($packFiles)]);
 		$combinedText = '';
 		$fileIndex = []; // code hint => text
 		$primaryPdf = null;
@@ -127,6 +151,7 @@ class GeminiAcademicDocs
 			}
 		}
 
+		$this->reportProgress(18, 'Reading chronogram for weekly hours…');
 		$chronoPacks = [];
 		if ($chronogram && !empty($chronogram['path']) && is_file($chronogram['path'])) {
 			$chronoPacks[] = $chronogram;
@@ -153,10 +178,12 @@ class GeminiAcademicDocs
 		$chrText = $this->safeUtf8($chrText);
 		if ($chrText === '' && empty($chr['bytes'])) {
 			$this->lastError = 'Chronogram file is empty or unreadable — upload a PDF/Word chronogram for weekly hour distribution';
+			$this->reportProgress(0, 'Chronogram unreadable', ['status' => 'error']);
 			return null;
 		}
 
 		// Deterministic module inventory from codes in filenames + text
+		$this->reportProgress(22, 'Discovering module codes…');
 		$seedCodes = $this->discoverModuleCodes($combinedText, array_keys($fileIndex));
 		$seedList = [];
 		foreach ($seedCodes as $code) {
@@ -169,6 +196,7 @@ class GeminiAcademicDocs
 		}
 
 		// Pass 1 — full inventory (must include every seed code)
+		$this->reportProgress(28, 'AI inventory: listing all courses/modules…', ['seed_codes' => count($seedList)]);
 		$invParts = [[
 			'text' => "SEED MODULE CODES (MUST ALL appear in modules[]):\n"
 				. json_encode($seedList, JSON_UNESCAPED_UNICODE)
@@ -196,6 +224,9 @@ class GeminiAcademicDocs
 
 		$invPrompt = $this->promptFullInventory($dbContext, count($seedList));
 		$inventory = $this->generateJson($invPrompt, $invParts, 12288);
+		if (!is_array($inventory)) {
+			$inventory = [];
+		}
 		$modules = is_array($inventory['modules'] ?? null) ? $inventory['modules'] : [];
 
 		// Merge missing seed codes
@@ -250,8 +281,20 @@ class GeminiAcademicDocs
 		// Pass 2 — full LO/IC per module (use per-file text when available)
 		$detailed = [];
 		$batchSize = 2;
-		for ($i = 0, $n = count($modules); $i < $n; $i += $batchSize) {
+		$moduleCount = count($modules);
+		$this->reportProgress(35, 'Extracting Learning Outcomes & Indicative Contents…', ['modules' => $moduleCount]);
+		for ($i = 0, $n = $moduleCount; $i < $n; $i += $batchSize) {
 			$batch = array_slice($modules, $i, $batchSize);
+			$done = min($i + $batchSize, $n);
+			$pct = 35 + (int) round(($done / max(1, $n)) * 40); // 35% → 75%
+			$labels = array_map(static function ($m) {
+				return trim((string) (($m['code'] ?? '') . ' ' . ($m['title'] ?? '')));
+			}, $batch);
+			$this->reportProgress($pct, 'Extracting LO/IC (' . $done . '/' . $n . '): ' . implode(', ', array_filter($labels)), [
+				'batch' => (int) floor($i / $batchSize) + 1,
+				'done' => $done,
+				'total' => $n,
+			]);
 			$windows = '';
 			foreach ($batch as $m) {
 				$code = strtoupper(trim((string) ($m['code'] ?? '')));
@@ -303,8 +346,10 @@ PROMPT
 		unset($mm);
 		$codes = array_values(array_unique($codes));
 		$chronoCodes = $this->discoverModuleCodes($chrText, $codes);
+		$this->reportProgress(78, 'Extracting chronogram weekly hours distribution…', ['chrono_codes' => count($chronoCodes)]);
 		$chronoResult = $this->extractChronogramDistribution($chr, $chrText, $chronoCodes, $dbContext);
 		if (empty($chronoResult['module_slots']) && empty($chronoResult['chronogram']['weeks'])) {
+			$this->reportProgress(85, 'Retrying chronogram totals from Modules periods row…');
 			$chronoResult = $this->extractChronogramTotalsFallback($chr, $chrText, $chronoCodes, $dbContext);
 		}
 		$slots = is_array($chronoResult['module_slots'] ?? null) ? $chronoResult['module_slots'] : [];
@@ -381,7 +426,14 @@ PROMPT
 			'chronogram_slots_filled' => $slotsFilled,
 			'mode' => 'full_package_multipass_with_chronogram',
 		];
-		return $this->matchToDb($raw, $dbContext);
+		$this->reportProgress(92, 'Matching modules to school courses…', [
+			'modules' => count($merged),
+			'chronogram_weeks' => $weekCount,
+			'chronogram_slots' => $slotsFilled,
+		]);
+		$result = $this->matchToDb($raw, $dbContext);
+		$this->reportProgress(100, 'Analysis complete', ['status' => 'done', 'modules' => count($merged)]);
+		return $result;
 	}
 
 	/**
