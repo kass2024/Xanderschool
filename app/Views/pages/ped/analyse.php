@@ -39,8 +39,8 @@ include __DIR__ . '/_nav.php';
 	<div class="aiplan-card">
 		<h5>Select class &amp; analyse</h5>
 		<p class="text-muted" style="font-size:.88rem;">
-			Uses curriculum + chronogram from School Settings. Prefer a <b>ZIP of the full curriculum folder</b>
-			(structure + all module PDFs) so every LO/IC is extracted and saved to DB for Scheme of Work.
+			Uses all curriculum + chronogram files from School Settings (multiple PDFs per class allowed —
+			e.g. General + Specific). ZIP is optional.
 		</p>
 		<div class="row">
 			<div class="col-md-8">

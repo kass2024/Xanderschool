@@ -1352,25 +1352,43 @@ public function testEmail()
 	private function ensurePedagogicalDocsSchema()
 	{
 		$db = \Config\Database::connect();
-		if ($db->tableExists('class_pedagogical_docs')) {
+		if (!$db->tableExists('class_pedagogical_docs')) {
+			$db->query("CREATE TABLE IF NOT EXISTS `class_pedagogical_docs` (
+			  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+			  `school_id` int(11) NOT NULL,
+			  `class_id` int(11) NOT NULL,
+			  `academic_year` int(11) DEFAULT NULL,
+			  `doc_type` varchar(32) NOT NULL,
+			  `term` tinyint(4) DEFAULT NULL,
+			  `file_name` varchar(255) NOT NULL,
+			  `original_name` varchar(255) NOT NULL,
+			  `created_by` int(11) DEFAULT NULL,
+			  `created_at` datetime DEFAULT NULL,
+			  `updated_at` datetime DEFAULT NULL,
+			  PRIMARY KEY (`id`),
+			  KEY `idx_school_class` (`school_id`,`class_id`),
+			  KEY `idx_school_year_type` (`school_id`,`academic_year`,`doc_type`),
+			  KEY `idx_type` (`doc_type`,`term`)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 			return;
 		}
-		$db->query("CREATE TABLE IF NOT EXISTS `class_pedagogical_docs` (
-		  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
-		  `school_id` int(11) NOT NULL,
-		  `class_id` int(11) NOT NULL,
-		  `academic_year` int(11) DEFAULT NULL,
-		  `doc_type` varchar(32) NOT NULL,
-		  `term` tinyint(4) DEFAULT NULL,
-		  `file_name` varchar(255) NOT NULL,
-		  `original_name` varchar(255) NOT NULL,
-		  `created_by` int(11) DEFAULT NULL,
-		  `created_at` datetime DEFAULT NULL,
-		  `updated_at` datetime DEFAULT NULL,
-		  PRIMARY KEY (`id`),
-		  KEY `idx_school_class` (`school_id`,`class_id`),
-		  KEY `idx_type` (`doc_type`,`term`)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		// Allow multiple curriculum/chronogram files per class+year (drop old single-file unique key)
+		try {
+			$indexes = $db->query("SHOW INDEX FROM `class_pedagogical_docs` WHERE Key_name = 'uniq_class_year_type'")->getResultArray();
+			if (!empty($indexes)) {
+				$db->query('ALTER TABLE `class_pedagogical_docs` DROP INDEX `uniq_class_year_type`');
+			}
+		} catch (\Throwable $e) {
+			// ignore if already dropped
+		}
+		try {
+			$idx = $db->query("SHOW INDEX FROM `class_pedagogical_docs` WHERE Key_name = 'idx_school_year_type'")->getResultArray();
+			if (empty($idx)) {
+				$db->query('ALTER TABLE `class_pedagogical_docs` ADD KEY `idx_school_year_type` (`school_id`,`academic_year`,`doc_type`)');
+			}
+		} catch (\Throwable $e) {
+			// ignore
+		}
 	}
 
 	private function ensurePeriodLocksSchema()
@@ -1475,6 +1493,7 @@ public function testEmail()
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$classId = (int) $this->request->getPost('class_id');
 		$docType = strtolower(trim((string) $this->request->getPost('doc_type')));
+		$replaceId = (int) $this->request->getPost('replace_id');
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
 
 		if ($yearId <= 0) {
@@ -1489,78 +1508,98 @@ public function testEmail()
 			return $this->response->setJSON(['error' => 'Class not found']);
 		}
 
-		$file = $this->request->getFile('document');
-		if (!$file || !$file->isValid()) {
-			return $this->response->setJSON(['error' => 'Please choose a valid file']);
+		// Support one or many files in the same request
+		$files = $this->request->getFileMultiple('documents');
+		if (!$files || $files === []) {
+			$one = $this->request->getFile('document');
+			$files = ($one && $one->isValid()) ? [$one] : [];
 		}
-		$ext = strtolower($file->getClientExtension());
-		if (!in_array($ext, ['pdf', 'doc', 'docx', 'zip'], true)) {
-			return $this->response->setJSON(['error' => 'Only PDF, Word, or ZIP (full curriculum package) are allowed']);
+		$files = array_values(array_filter($files, static function ($f) {
+			return $f && $f->isValid() && !$f->hasMoved();
+		}));
+		if ($files === []) {
+			return $this->response->setJSON(['error' => 'Please choose at least one valid file']);
 		}
-		$maxMb = $ext === 'zip' ? 80 : 20;
-		if ($file->getSize() > $maxMb * 1024 * 1024) {
-			return $this->response->setJSON(['error' => "File too large (max {$maxMb}MB)"]);
+		// Replace mode only applies to a single file
+		if ($replaceId > 0 && count($files) > 1) {
+			return $this->response->setJSON(['error' => 'Replace one file at a time']);
 		}
 
 		$dir = FCPATH . 'assets/documents/pedagogical';
 		if (!is_dir($dir)) {
 			mkdir($dir, 0755, true);
 		}
-		// Full academic year docs (no term split)
-		$newName = 'ped_' . $schoolId . '_' . $classId . '_y' . $yearId . '_' . $docType . '_' . time() . '.' . $ext;
-		$file->move($dir, $newName);
-
-		// Expand curriculum ZIP into package folder for full module PDFs
-		if ($docType === 'curriculum' && $ext === 'zip') {
-			$pkgDir = $dir . '/pkg_' . $schoolId . '_' . $classId . '_y' . $yearId;
-			$this->wipeDir($pkgDir);
-			@mkdir($pkgDir, 0755, true);
-			$zip = new \ZipArchive();
-			if ($zip->open($dir . '/' . $newName) === true) {
-				$zip->extractTo($pkgDir);
-				$zip->close();
-			}
-		}
 
 		$mdl = new ClassPedagogicalDocModel();
-		$old = $mdl->where('school_id', $schoolId)
-			->where('class_id', $classId)
-			->where('doc_type', $docType)
-			->where('academic_year', $yearId)
-			->first();
-		if ($old) {
-			$oldPath = $dir . '/' . $old['file_name'];
-			if (is_file($oldPath)) {
-				@unlink($oldPath);
+		$saved = [];
+		$hadZip = false;
+		foreach ($files as $i => $file) {
+			$ext = strtolower($file->getClientExtension());
+			if (!in_array($ext, ['pdf', 'doc', 'docx', 'zip'], true)) {
+				return $this->response->setJSON(['error' => 'Only PDF, Word, or ZIP are allowed']);
 			}
-			$mdl->update($old['id'], [
+			$maxMb = $ext === 'zip' ? 80 : 20;
+			if ($file->getSize() > $maxMb * 1024 * 1024) {
+				return $this->response->setJSON(['error' => "File too large (max {$maxMb}MB): " . $file->getClientName()]);
+			}
+
+			$newName = 'ped_' . $schoolId . '_' . $classId . '_y' . $yearId . '_' . $docType . '_' . time() . '_' . $i . '_' . bin2hex(random_bytes(2)) . '.' . $ext;
+			$file->move($dir, $newName);
+
+			if ($docType === 'curriculum' && $ext === 'zip') {
+				$hadZip = true;
+				$pkgDir = $dir . '/pkg_' . $schoolId . '_' . $classId . '_y' . $yearId;
+				$this->wipeDir($pkgDir);
+				@mkdir($pkgDir, 0755, true);
+				$zip = new \ZipArchive();
+				if ($zip->open($dir . '/' . $newName) === true) {
+					$zip->extractTo($pkgDir);
+					$zip->close();
+				}
+			}
+
+			$payload = [
 				'file_name' => $newName,
 				'original_name' => $file->getClientName(),
 				'term' => null,
 				'academic_year' => $yearId,
 				'created_by' => (int) $this->session->get('soma_id'),
-			]);
-		} else {
-			$mdl->insert([
-				'school_id' => $schoolId,
-				'class_id' => $classId,
-				'academic_year' => $yearId,
-				'doc_type' => $docType,
-				'term' => null,
-				'file_name' => $newName,
-				'original_name' => $file->getClientName(),
-				'created_by' => (int) $this->session->get('soma_id'),
-			]);
+			];
+
+			if ($replaceId > 0) {
+				$old = $mdl->where('id', $replaceId)->where('school_id', $schoolId)
+					->where('class_id', $classId)->where('doc_type', $docType)
+					->where('academic_year', $yearId)->first();
+				if (!$old) {
+					@unlink($dir . '/' . $newName);
+					return $this->response->setJSON(['error' => 'Document to replace not found']);
+				}
+				$oldPath = $dir . '/' . $old['file_name'];
+				if (is_file($oldPath)) {
+					@unlink($oldPath);
+				}
+				$mdl->update($old['id'], $payload);
+				$saved[] = $newName;
+			} else {
+				$mdl->insert(array_merge($payload, [
+					'school_id' => $schoolId,
+					'class_id' => $classId,
+					'doc_type' => $docType,
+				]));
+				$saved[] = $newName;
+			}
 		}
 
-		$msg = ucfirst($docType) . ' saved for academic year ' . ($this->data['academic_year_title'] ?? $yearId);
-		if ($ext === 'zip') {
-			$msg .= ' (ZIP package extracted — all module PDFs will be analysed)';
+		$count = count($saved);
+		$msg = $count . ' ' . $docType . ' file' . ($count === 1 ? '' : 's')
+			. ' saved for academic year ' . ($this->data['academic_year_title'] ?? $yearId);
+		if ($hadZip) {
+			$msg .= ' (ZIP package extracted)';
 		}
 
 		return $this->response->setJSON([
 			'success' => $msg,
-			'file' => $newName,
+			'files' => $saved,
 			'academic_year' => $yearId,
 		]);
 	}
@@ -1847,10 +1886,13 @@ public function testEmail()
 
 		$pedMdl = new ClassPedagogicalDocModel();
 		$docs = $pedMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->findAll();
-		$curriculum = null;
-		$chronogram = null;
+		$curricula = [];
+		$chronograms = [];
 		foreach ($docs as $d) {
 			$path = FCPATH . 'assets/documents/pedagogical/' . $d['file_name'];
+			if (!is_file($path)) {
+				continue;
+			}
 			$pack = [
 				'path' => $path,
 				'original' => $d['original_name'],
@@ -1858,19 +1900,21 @@ public function testEmail()
 				'updated_at' => $d['updated_at'] ?? ($d['created_at'] ?? ''),
 			];
 			if ($d['doc_type'] === 'curriculum') {
-				$curriculum = $pack;
+				$curricula[] = $pack;
 			} elseif ($d['doc_type'] === 'chronogram') {
-				$chronogram = $pack;
+				$chronograms[] = $pack;
 			}
 		}
-		if (!$curriculum || !is_file($curriculum['path'])) {
-			return $this->response->setJSON(['error' => 'Upload a curriculum for this class in School Settings → Pedagogical documents first.']);
+		if ($curricula === []) {
+			return $this->response->setJSON(['error' => 'Upload at least one curriculum file for this class in School Settings → Pedagogical documents.']);
 		}
-		if (!$chronogram || !is_file($chronogram['path'])) {
-			return $this->response->setJSON(['error' => 'Upload a chronogram for this class in School Settings → Pedagogical documents first (needed to map weeks & hours).']);
+		if ($chronograms === []) {
+			return $this->response->setJSON(['error' => 'Upload at least one chronogram for this class in School Settings → Pedagogical documents (needed to map weeks & hours).']);
 		}
 
-		$sourceHash = $this->pedagogicalSourceHash($curriculum, $chronogram);
+		$curriculum = $curricula[0];
+		$chronogram = $chronograms[0];
+		$sourceHash = $this->pedagogicalSourceHashMulti($curricula, $chronograms);
 		// Include package folder mtime in hash when ZIP was expanded
 		$pkgDir = FCPATH . 'assets/documents/pedagogical/pkg_' . $schoolId . '_' . $classId . '_y' . $yearId;
 		if (is_dir($pkgDir)) {
@@ -1906,8 +1950,8 @@ public function testEmail()
 			return $this->response->setJSON(['error' => 'Gemini API key missing on server']);
 		}
 
-		// Extra module PDFs from ZIP package folder (full curriculum content)
-		$extraFiles = [];
+		// Extra curriculum files: additional uploads (general/specific PDFs) + ZIP package folder
+		$extraFiles = array_slice($curricula, 1);
 		if (is_dir($pkgDir)) {
 			$rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($pkgDir, \FilesystemIterator::SKIP_DOTS));
 			foreach ($rii as $file) {
@@ -1923,7 +1967,8 @@ public function testEmail()
 			}
 		}
 
-		$analysis = $ai->analyzeCurriculum($curriculum, $chronogram, $ctx, $extraFiles);
+		$extraChronograms = array_slice($chronograms, 1);
+		$analysis = $ai->analyzeCurriculum($curriculum, $chronogram, $ctx, $extraFiles, $extraChronograms);
 		if ($analysis === null) {
 			return $this->response->setJSON(['error' => 'AI analysis failed: ' . $ai->lastError()]);
 		}
@@ -2018,21 +2063,32 @@ public function testEmail()
 	}
 
 	/**
-	 * Fingerprint curriculum+chronogram files so cache invalidates only when uploads change.
+	 * Fingerprint all curriculum + chronogram uploads so cache invalidates when any file changes.
 	 *
-	 * @param array{path:string,file_name?:string,updated_at?:string} $curriculum
-	 * @param array{path:string,file_name?:string,updated_at?:string} $chronogram
+	 * @param list<array{path:string,file_name?:string,updated_at?:string}> $curricula
+	 * @param list<array{path:string,file_name?:string,updated_at?:string}> $chronograms
 	 */
-	private function pedagogicalSourceHash(array $curriculum, array $chronogram): string
+	private function pedagogicalSourceHashMulti(array $curricula, array $chronograms): string
 	{
 		$bits = [];
-		foreach ([$curriculum, $chronogram] as $f) {
+		foreach (array_merge($curricula, $chronograms) as $f) {
 			$path = $f['path'] ?? '';
 			$bits[] = ($f['file_name'] ?? basename($path))
 				. '|' . (is_file($path) ? (filesize($path) . '|' . filemtime($path)) : 'missing')
 				. '|' . ($f['updated_at'] ?? '');
 		}
+		sort($bits);
 		return hash('sha256', implode('||', $bits));
+	}
+
+	/**
+	 * @deprecated use pedagogicalSourceHashMulti
+	 * @param array{path:string,file_name?:string,updated_at?:string} $curriculum
+	 * @param array{path:string,file_name?:string,updated_at?:string} $chronogram
+	 */
+	private function pedagogicalSourceHash(array $curriculum, array $chronogram): string
+	{
+		return $this->pedagogicalSourceHashMulti([$curriculum], [$chronogram]);
 	}
 
 	public function ai_generate_scheme_of_work()

@@ -75,9 +75,10 @@ class GeminiAcademicDocs
 	 * @param array{path:string,original?:string}|null $chronogram
 	 * @param array $dbContext
 	 * @param list<array{path:string,original?:string}> $extraFiles additional module PDFs
+	 * @param list<array{path:string,original?:string}> $extraChronograms additional chronogram files
 	 * @return array|null
 	 */
-	public function analyzeCurriculum(array $curriculum, ?array $chronogram, array $dbContext, array $extraFiles = []): ?array
+	public function analyzeCurriculum(array $curriculum, ?array $chronogram, array $dbContext, array $extraFiles = [], array $extraChronograms = []): ?array
 	{
 		$packFiles = $this->expandCurriculumPackage($curriculum, $extraFiles);
 		if ($packFiles === []) {
@@ -126,10 +127,27 @@ class GeminiAcademicDocs
 			}
 		}
 
-		$chr = ($chronogram && !empty($chronogram['path']) && is_file($chronogram['path']))
-			? DocumentTextExtractor::extract($chronogram['path'])
-			: ['text' => '', 'mime' => '', 'bytes' => null, 'chars' => 0, 'ext' => ''];
-		$chrText = $this->safeUtf8((string) ($chr['text'] ?? ''));
+		$chronoPacks = [];
+		if ($chronogram && !empty($chronogram['path']) && is_file($chronogram['path'])) {
+			$chronoPacks[] = $chronogram;
+		}
+		foreach ($extraChronograms as $ec) {
+			if (!empty($ec['path']) && is_file($ec['path'])) {
+				$chronoPacks[] = $ec;
+			}
+		}
+		$chr = ['text' => '', 'mime' => '', 'bytes' => null, 'chars' => 0, 'ext' => ''];
+		$chrText = '';
+		foreach ($chronoPacks as $ci => $cp) {
+			$ex = DocumentTextExtractor::extract($cp['path']);
+			$t = $this->safeUtf8((string) ($ex['text'] ?? ''));
+			$orig = $cp['original'] ?? basename($cp['path']);
+			$chrText .= "=== CHRONOGRAM FILE: {$orig} ===\n" . $t . "\n\n";
+			if ($ci === 0) {
+				$chr = $ex;
+			}
+		}
+		$chrText = $this->safeUtf8($chrText);
 		if ($chrText === '' && empty($chr['bytes'])) {
 			$this->lastError = 'Chronogram file is empty or unreadable — upload a PDF/Word chronogram for weekly hour distribution';
 			return null;
