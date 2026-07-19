@@ -39,8 +39,8 @@ include __DIR__ . '/_nav.php';
 	<div class="aiplan-card">
 		<h5>Select class &amp; analyse</h5>
 		<p class="text-muted" style="font-size:.88rem;">
-			Uses all curriculum + chronogram files from School Settings (multiple PDFs per class allowed —
-			e.g. General + Specific). ZIP is optional.
+			Uses all curriculum + chronogram files from School Settings. Upload multiple PDFs per class
+			(General + Specific module files, plus chronogram). After uploading, click <b>Re-analyse</b>.
 		</p>
 		<div class="row">
 			<div class="col-md-8">
@@ -171,7 +171,7 @@ include __DIR__ . '/_nav.php';
 				$details.append($ul);
 				$row.append($details);
 			} else {
-				$row.append('<div class="text-warning" style="font-size:.8rem;margin-top:.35rem;">No LO/IC detail yet — upload the full curriculum ZIP (module PDFs) and Re-analyse.</div>');
+				$row.append('<div class="text-warning" style="font-size:.8rem;margin-top:.35rem;">No LO/IC detail yet — upload the module curriculum PDFs (General + Specific) in School Settings and Re-analyse.</div>');
 			}
 			$box.append($row);
 		});

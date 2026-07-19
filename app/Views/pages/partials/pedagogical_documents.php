@@ -108,9 +108,8 @@ $renderDocCell = function (array $docs, $cid, $type, $uploadLabel) {
 
 <p class="ped-intro">
 	Upload <strong>multiple curriculum</strong> and <strong>multiple chronogram</strong> files per class
-	(example: General curriculum + Specific module PDFs). You can select several files at once.<br>
-	ZIP packages are still accepted, but usually not needed if you upload each PDF/Word file separately.
-	Accepted: PDF, Word (.doc/.docx), or ZIP.
+	(example: General curriculum PDF + Specific module PDFs + chronogram PDF). You can select several files at once.<br>
+	Accepted: PDF or Word (.doc/.docx). ZIP is optional.
 </p>
 
 <?php if ($yearId <= 0): ?>

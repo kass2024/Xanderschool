@@ -46,6 +46,53 @@ class DocumentTextExtractor
 		];
 	}
 
+	/**
+	 * Strip PDF language tags (en-ZA, en-US…) and tidy pedagogical text.
+	 */
+	public static function cleanPedagogicalText(string $text): string
+	{
+		if ($text === '') {
+			return '';
+		}
+		// Tagged-PDF locale markers (often glued: en-ZADevelop, en-US3, en-ZACCM…)
+		$text = preg_replace('/[a-z]{2}-[A-Z]{2}/u', ' ', $text) ?? $text;
+		$text = preg_replace('/[a-z]{2}_[A-Z]{2}/u', ' ', $text) ?? $text;
+		$text = preg_replace('/\b(?:en|fr|rw|sw)(?=(?:CCM|SWD|GEN|ICT))/iu', '', $text) ?? $text;
+		$text = preg_replace('/\bZA(?=CCM)/u', '', $text) ?? $text;
+		$text = preg_replace('/[ \t]+/', ' ', $text) ?? $text;
+		$text = preg_replace("/\n{3,}/", "\n\n", $text) ?? $text;
+		$text = preg_replace('/\s{2,}/', ' ', $text) ?? $text;
+		return trim($text);
+	}
+
+	/** Normalize a module/course code extracted from messy PDF text. */
+	public static function cleanModuleCode(string $code): string
+	{
+		$code = strtoupper(trim($code));
+		$code = preg_replace('/[A-Z]{2}-[A-Z]{2}/', '', $code) ?? $code;
+		$code = preg_replace('/[^A-Z0-9]/', '', $code) ?? $code;
+		$code = preg_replace('/^(?:EN|FR|RW|SW)?ZA(?=CCM)/', '', $code) ?? $code;
+		$code = preg_replace('/^(?:EN|FR|RW|SW)(?=(?:CCM|SWD|GEN|ICT))/', '', $code) ?? $code;
+		if (preg_match('/((?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3})/', $code, $m)) {
+			return $m[1];
+		}
+		if (preg_match('/([A-Z]{3,8}\d{3})/', $code, $m)) {
+			return $m[1];
+		}
+		return $code;
+	}
+
+	public static function cleanModuleTitle(string $title): string
+	{
+		$title = self::cleanPedagogicalText($title);
+		// Drop standalone module codes that leaked into the title
+		$title = preg_replace('/\b(?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3}\b/', ' ', $title) ?? $title;
+		$title = preg_replace('/\b\d+(?:\.\d+)?\b/', ' ', $title) ?? $title;
+		$title = preg_replace('/\s+/', ' ', $title) ?? $title;
+		$title = trim($title, " \t\n\r\0\x0B-–—.");
+		return $title;
+	}
+
 	public static function mimeForExt(string $ext): string
 	{
 		$map = [
@@ -76,7 +123,8 @@ class DocumentTextExtractor
 		$text = preg_replace("/\r\n?/", "\n", $text) ?? $text;
 		$text = preg_replace("/[ \t]+/", ' ', $text) ?? $text;
 		$text = preg_replace("/\n{3,}/", "\n\n", $text) ?? $text;
-		return trim($text);
+		$text = self::cleanPedagogicalText(trim($text));
+		return $text;
 	}
 
 	private static function extractDocx(string $path): string

@@ -138,13 +138,16 @@ class GeminiAcademicDocs
 		}
 		$chr = ['text' => '', 'mime' => '', 'bytes' => null, 'chars' => 0, 'ext' => ''];
 		$chrText = '';
+		$bestChrBytes = 0;
 		foreach ($chronoPacks as $ci => $cp) {
 			$ex = DocumentTextExtractor::extract($cp['path']);
 			$t = $this->safeUtf8((string) ($ex['text'] ?? ''));
 			$orig = $cp['original'] ?? basename($cp['path']);
 			$chrText .= "=== CHRONOGRAM FILE: {$orig} ===\n" . $t . "\n\n";
-			if ($ci === 0) {
+			$byteLen = strlen((string) ($ex['bytes'] ?? ''));
+			if ($ci === 0 || $byteLen > $bestChrBytes) {
 				$chr = $ex;
+				$bestChrBytes = $byteLen;
 			}
 		}
 		$chrText = $this->safeUtf8($chrText);
@@ -215,8 +218,33 @@ class GeminiAcademicDocs
 		}
 
 		if ($modules === []) {
-			$this->lastError = 'No modules found in curriculum PDF/ZIP';
+			$this->lastError = 'No modules found in curriculum files';
 			return null;
+		}
+
+		// Ensure chronogram module codes appear even if structure PDF missed them
+		$chronoSeed = $this->discoverModuleCodes($chrText, []);
+		$have = [];
+		foreach ($modules as $m) {
+			$have[DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''))] = true;
+		}
+		foreach ($chronoSeed as $cc) {
+			$cc = DocumentTextExtractor::cleanModuleCode($cc);
+			if ($cc === '' || !empty($have[$cc])) {
+				continue;
+			}
+			$titleHint = '';
+			if (preg_match('/\b' . preg_quote($cc, '/') . '\s+([^\n\r]{5,90})/i', $chrText, $tm)) {
+				$titleHint = DocumentTextExtractor::cleanModuleTitle($tm[1]);
+			}
+			$modules[] = [
+				'code' => $cc,
+				'title' => $titleHint ?: $cc,
+				'rqf_level' => $inventory['detected_rqf_level'] ?? 4,
+				'learning_hours' => null,
+				'learning_outcomes' => [],
+			];
+			$have[$cc] = true;
 		}
 
 		// Pass 2 — full LO/IC per module (use per-file text when available)
@@ -264,30 +292,56 @@ PROMPT
 		}
 
 		// Pass 3 — dedicated chronogram extraction (weekly hours distribution)
-		$codes = array_values(array_filter(array_map(static function ($m) {
-			return strtoupper(trim((string) ($m['code'] ?? '')));
-		}, $merged)));
-		$chronoResult = $this->extractChronogramDistribution($chr, $chrText, $codes, $dbContext);
+		$codes = [];
+		foreach ($merged as &$mm) {
+			$mm['code'] = DocumentTextExtractor::cleanModuleCode((string) ($mm['code'] ?? ''));
+			$mm['title'] = DocumentTextExtractor::cleanModuleTitle((string) ($mm['title'] ?? ''));
+			if ($mm['code'] !== '') {
+				$codes[] = $mm['code'];
+			}
+		}
+		unset($mm);
+		$codes = array_values(array_unique($codes));
+		$chronoCodes = $this->discoverModuleCodes($chrText, $codes);
+		$chronoResult = $this->extractChronogramDistribution($chr, $chrText, $chronoCodes, $dbContext);
+		if (empty($chronoResult['module_slots']) && empty($chronoResult['chronogram']['weeks'])) {
+			$chronoResult = $this->extractChronogramTotalsFallback($chr, $chrText, $chronoCodes, $dbContext);
+		}
 		$slots = is_array($chronoResult['module_slots'] ?? null) ? $chronoResult['module_slots'] : [];
+		// Also harvest totals from chronogram header text (Modules periods / hours)
+		$headerTotals = $this->parseChronogramHeaderTotals($chrText, $chronoCodes);
 		foreach ($merged as &$mm) {
 			$code = strtoupper(trim((string) ($mm['code'] ?? '')));
 			if ($code === '') {
 				continue;
 			}
-			foreach ($slots as $sk => $sv) {
-				if (strcasecmp((string) $sk, $code) === 0 && is_array($sv)) {
-					$mm['chronogram_slots'] = $this->normalizeChronogramSlots($sv);
-					$mm['weekly_hours_total'] = array_sum(array_map(static function ($s) {
-						return (float) ($s['hours'] ?? $s['periods'] ?? 0);
-					}, $mm['chronogram_slots']));
-					break;
-				}
+			$matchedSlots = $this->findSlotsForCode($code, $slots);
+			if ($matchedSlots !== []) {
+				$mm['chronogram_slots'] = $this->normalizeChronogramSlots($matchedSlots);
+				$mm['weekly_hours_total'] = array_sum(array_map(static function ($s) {
+					return (float) ($s['hours'] ?? $s['periods'] ?? 0);
+				}, $mm['chronogram_slots']));
+			} elseif (($headerTotal = $this->findHeaderTotalForCode($code, $headerTotals)) !== null) {
+				$total = (float) $headerTotal;
+				// Synthesize week slots from total periods so Scheme of Work has hour budget
+				$mm['chronogram_slots'] = $this->synthesizeSlotsFromTotal($total, $chronoResult['chronogram'] ?? []);
+				$mm['weekly_hours_total'] = $total;
+				$mm['chronogram_periods_total'] = $total;
+			}
+			if (empty($mm['learning_hours']) && !empty($mm['weekly_hours_total'])) {
+				// Chronogram periods ≈ contact hours budget when curriculum hours missing
+				$mm['learning_hours'] = $mm['weekly_hours_total'];
 			}
 		}
 		unset($mm);
 
 		$chronogramBlock = $chronoResult['chronogram'] ?? ['school_year_label' => '', 'weeks' => []];
 		$chronogramBlock = $this->normalizeChronogramBlock($chronogramBlock);
+		if (empty($chronogramBlock['weeks']) && $headerTotals !== []) {
+			$chronogramBlock['school_year_label'] = $chronogramBlock['school_year_label'] ?: $this->guessChronogramYearLabel($chrText);
+			$chronogramBlock['total_weeks'] = 0;
+			$chronogramBlock['module_period_totals'] = $headerTotals;
+		}
 
 		$raw = [
 			'program_type' => $inventory['program_type'] ?? 'tvet',
@@ -356,11 +410,14 @@ PROMPT
 
 
 RULES:
-1. Chronograms are often grids/tables/images — read carefully (text and/or attached PDF).
-2. For each week capture: week number, term (1/2/3 if shown), date_from, date_to.
-3. For each module taught that week: code + periods (or hours). If the grid shows "periods", keep periods; also set hours = periods when hours not labeled separately.
-4. Cover the full school year visible in the document — do not stop after a few weeks.
-5. module_slots must list, per module code, every week that module appears.
+1. Chronograms are often grids/tables — read the ATTACHED PDF carefully (do not invent empty grids).
+2. Module codes in THIS chronogram look like SWDDD401, SWDBS401, SWDDA401, GENNF401, CCMCZ401 (use EXACT codes from the PDF).
+3. For each week capture: week number, term (1/2/3), date_from, date_to.
+4. Week cells show PERIODS (not empty). If a cell is blank, periods=0 for that module that week.
+5. Also read "Modules periods" / "Modules hours" header rows for yearly totals.
+6. Cover FIRST TERM, SECOND TERM, THIRD TERM when present — do not stop after a few weeks.
+7. module_slots must list every week each module appears (including 0-period weeks is optional; prefer weeks with periods>0).
+8. Never invent module codes with locale prefixes (no en-ZA / ZACCM…).
 
 Return ONLY JSON:
 {
@@ -408,9 +465,232 @@ PROMPT;
 		$result = $this->generateJson(
 			'Extract the complete chronogram weekly hours distribution JSON as specified in the attached content. JSON only.',
 			$parts,
-			12288
+			16384
 		);
-		return is_array($result) ? $result : [];
+		if (!is_array($result)) {
+			return [];
+		}
+		// Normalize slot keys (clean locale-glued codes)
+		if (is_array($result['module_slots'] ?? null)) {
+			$cleanSlots = [];
+			foreach ($result['module_slots'] as $sk => $sv) {
+				$ck = DocumentTextExtractor::cleanModuleCode((string) $sk);
+				if ($ck === '' || !is_array($sv)) {
+					continue;
+				}
+				$cleanSlots[$ck] = array_merge($cleanSlots[$ck] ?? [], $sv);
+			}
+			$result['module_slots'] = $cleanSlots;
+		}
+		return $result;
+	}
+
+	/**
+	 * Lighter chronogram pass: totals per module + as many week rows as possible.
+	 *
+	 * @param list<string> $moduleCodes
+	 * @return array{chronogram?:array,module_slots?:array}
+	 */
+	private function extractChronogramTotalsFallback(array $chr, string $chrText, array $moduleCodes, array $dbContext): array
+	{
+		$codesJson = json_encode(array_values($moduleCodes), JSON_UNESCAPED_UNICODE);
+		$prompt = <<<PROMPT
+Read this Rwanda TVET TRAINING CHRONOGRAM.
+MODULE CODES: {$codesJson}
+
+Return ONLY JSON with:
+1) module_period_totals — from the "Modules periods" header row (total periods per module for the year)
+2) module_slots — weekly grid when readable (week, term, periods). Prefer periods from the week cells.
+
+{
+  "module_period_totals": {"SWDDD401":135,"SWDBS401":105},
+  "module_slots": {"SWDBS401":[{"week":1,"term":1,"date_from":"25/09/2023","date_to":"29/09/2023","periods":0,"hours":0}]},
+  "chronogram": {"school_year_label":"2023-2024","weeks":[]}
+}
+PROMPT;
+		$parts = [['text' => $prompt . "\n\n=== TEXT ===\n" . mb_substr($chrText, 0, 80000, 'UTF-8')]];
+		$ext = strtolower((string) ($chr['ext'] ?? ''));
+		if (!empty($chr['bytes']) && strlen((string) $chr['bytes']) <= 10 * 1024 * 1024
+			&& in_array($ext, ['pdf', 'png', 'jpg', 'jpeg', 'webp'], true)) {
+			$parts[] = [
+				'inlineData' => [
+					'mimeType' => (string) ($chr['mime'] ?: 'application/pdf'),
+					'data' => base64_encode((string) $chr['bytes']),
+				],
+			];
+		}
+		$result = $this->generateJson('Return chronogram totals/slots JSON only.', $parts, 12288);
+		if (!is_array($result)) {
+			return [];
+		}
+		// Promote totals into slots when week grid missing
+		$totals = is_array($result['module_period_totals'] ?? null) ? $result['module_period_totals'] : [];
+		$slots = is_array($result['module_slots'] ?? null) ? $result['module_slots'] : [];
+		foreach ($totals as $code => $periods) {
+			$code = DocumentTextExtractor::cleanModuleCode((string) $code);
+			if ($code === '' || !empty($slots[$code])) {
+				continue;
+			}
+			$p = (float) $periods;
+			$slots[$code] = $this->synthesizeSlotsFromTotal($p, $result['chronogram'] ?? []);
+		}
+		$result['module_slots'] = $slots;
+		return $result;
+	}
+
+	/**
+	 * Parse "Modules periods" / codes from chronogram text without AI.
+	 *
+	 * @param list<string> $preferredCodes
+	 * @return array<string,float> code => total periods
+	 */
+	private function parseChronogramHeaderTotals(string $chrText, array $preferredCodes = []): array
+	{
+		$text = DocumentTextExtractor::cleanPedagogicalText($chrText);
+		$codes = $this->discoverModuleCodes($text, $preferredCodes);
+		if ($codes === []) {
+			return [];
+		}
+		$totals = [];
+		// Prefer an AI-free pairing when line contains "Modules periods"
+		if (preg_match('/Modules\s+periods\s+([0-9\s]+)/i', $text, $m)) {
+			$nums = array_values(array_filter(array_map('floatval', preg_split('/\s+/', trim($m[1])) ?: []), static function ($n) {
+				return $n > 0;
+			}));
+			// Visual RTB order often matches first occurrence order of codes near header — best-effort
+			$headerChunk = mb_substr($text, 0, 2500, 'UTF-8');
+			$headerCodes = $this->discoverModuleCodes($headerChunk, []);
+			// Keep preferred order when possible
+			$ordered = [];
+			foreach ($preferredCodes as $c) {
+				$c = DocumentTextExtractor::cleanModuleCode($c);
+				if ($c !== '' && in_array($c, $headerCodes, true)) {
+					$ordered[] = $c;
+				}
+			}
+			foreach ($headerCodes as $c) {
+				if (!in_array($c, $ordered, true)) {
+					$ordered[] = $c;
+				}
+			}
+			$n = min(count($ordered), count($nums));
+			for ($i = 0; $i < $n; $i++) {
+				$totals[$ordered[$i]] = $nums[$i];
+			}
+		}
+		// Direct "CODE … NNN" near module titles
+		foreach ($codes as $code) {
+			if (isset($totals[$code])) {
+				continue;
+			}
+			if (preg_match('/\b' . preg_quote($code, '/') . '\b[^0-9]{0,80}?(\d{2,3})\b/i', $text, $mm)) {
+				$val = (float) $mm[1];
+				if ($val >= 20 && $val <= 400) {
+					$totals[$code] = $val;
+				}
+			}
+		}
+		return $totals;
+	}
+
+	/** @param array<string,mixed> $slots */
+	private function findSlotsForCode(string $code, array $slots): array
+	{
+		$code = DocumentTextExtractor::cleanModuleCode($code);
+		if ($code !== '' && isset($slots[$code]) && is_array($slots[$code])) {
+			return $slots[$code];
+		}
+		foreach ($slots as $sk => $sv) {
+			if (!is_array($sv)) {
+				continue;
+			}
+			if ($this->moduleCodesCompatible($code, DocumentTextExtractor::cleanModuleCode((string) $sk))) {
+				return $sv;
+			}
+		}
+		return [];
+	}
+
+	/** @param array<string,float> $headerTotals */
+	private function findHeaderTotalForCode(string $code, array $headerTotals): ?float
+	{
+		$code = DocumentTextExtractor::cleanModuleCode($code);
+		if ($code !== '' && isset($headerTotals[$code])) {
+			return (float) $headerTotals[$code];
+		}
+		foreach ($headerTotals as $sk => $val) {
+			if ($this->moduleCodesCompatible($code, DocumentTextExtractor::cleanModuleCode((string) $sk))) {
+				return (float) $val;
+			}
+		}
+		return null;
+	}
+
+	private function moduleCodesCompatible(string $a, string $b): bool
+	{
+		$a = DocumentTextExtractor::cleanModuleCode($a);
+		$b = DocumentTextExtractor::cleanModuleCode($b);
+		if ($a === '' || $b === '') {
+			return false;
+		}
+		if ($a === $b) {
+			return true;
+		}
+		if (!preg_match('/^([A-Z]+)(\d{3})$/', $a, $ma) || !preg_match('/^([A-Z]+)(\d{3})$/', $b, $mb)) {
+			return false;
+		}
+		if ($ma[2] !== $mb[2]) {
+			return false;
+		}
+		// Same trailing digits; letter stems close (SWDBS vs SWBS, SWDPP vs SWDP)
+		if (str_contains($ma[1], $mb[1]) || str_contains($mb[1], $ma[1])) {
+			return true;
+		}
+		return levenshtein($ma[1], $mb[1]) <= 2;
+	}
+
+	/**
+	 * @param array<string,mixed> $chronogramBlock
+	 * @return list<array<string,mixed>>
+	 */
+	private function synthesizeSlotsFromTotal(float $totalPeriods, array $chronogramBlock): array
+	{
+		if ($totalPeriods <= 0) {
+			return [];
+		}
+		$weeks = is_array($chronogramBlock['weeks'] ?? null) ? $chronogramBlock['weeks'] : [];
+		if (count($weeks) >= 4) {
+			$per = round($totalPeriods / count($weeks), 1);
+			$out = [];
+			foreach ($weeks as $w) {
+				$out[] = [
+					'week' => (int) ($w['week'] ?? 0),
+					'term' => (int) ($w['term'] ?? 0) ?: null,
+					'date_from' => (string) ($w['date_from'] ?? ''),
+					'date_to' => (string) ($w['date_to'] ?? ''),
+					'periods' => $per,
+					'hours' => $per,
+				];
+			}
+			return $out;
+		}
+		// No week grid — keep one annual bucket so UI/SoW still have hours
+		return [[
+			'week' => 1,
+			'term' => 1,
+			'date_from' => '',
+			'date_to' => '',
+			'periods' => $totalPeriods,
+			'hours' => $totalPeriods,
+		]];
+	}
+
+	private function guessChronogramYearLabel(string $chrText): string
+	{
+		if (preg_match('/SCHOOL\s+YEAR\s+(\d{4}\s*[-–]\s*\d{4})/i', $chrText, $m)) {
+			return trim(preg_replace('/\s+/', '', $m[1]) ?? $m[1]);
+		}
+		return '';
 	}
 
 	/** @param list<array<string,mixed>> $slots */
@@ -576,17 +856,22 @@ PROMPT;
 	/** @param list<string> $extra */
 	private function discoverModuleCodes(string $text, array $extra = []): array
 	{
+		$text = DocumentTextExtractor::cleanPedagogicalText($text);
 		$codes = [];
 		foreach ($extra as $c) {
-			$c = strtoupper(trim((string) $c));
+			$c = DocumentTextExtractor::cleanModuleCode((string) $c);
 			if ($c !== '') {
 				$codes[$c] = true;
 			}
 		}
 		if (preg_match_all('/\b([A-Z]{3,8}\d{3})\b/', strtoupper($text), $m)) {
 			foreach ($m[1] as $c) {
+				$c = DocumentTextExtractor::cleanModuleCode($c);
+				if ($c === '') {
+					continue;
+				}
 				// Filter obvious non-module tokens
-				if (preg_match('/^(PAGE|HTTP|HTTPS|RQF|TVET|ICTSWD|LEVEL)$/', $c)) {
+				if (preg_match('/^(PAGE|HTTP|HTTPS|RQF|TVET|ICTSWD|LEVEL|DATE)$/', $c)) {
 					continue;
 				}
 				$codes[$c] = true;
@@ -1499,17 +1784,21 @@ PROMPT;
 		}
 
 		foreach ($modules as &$mod) {
+			$mod['code'] = DocumentTextExtractor::cleanModuleCode((string) ($mod['code'] ?? ''));
+			$mod['title'] = DocumentTextExtractor::cleanModuleTitle((string) ($mod['title'] ?? ''));
 			$code = strtoupper(trim((string) ($mod['code'] ?? '')));
 			$title = strtolower(trim((string) ($mod['title'] ?? '')));
 			$rqf = $mod['rqf_level'] ?? $analysis['detected_rqf_level'] ?? null;
 			$best = null;
 			$bestScore = 0.0;
 			foreach ($courses as $c) {
-				$cCode = strtoupper(trim((string) ($c['code'] ?? '')));
+				$cCode = DocumentTextExtractor::cleanModuleCode((string) ($c['code'] ?? ''));
 				$cTitle = strtolower(trim((string) ($c['title'] ?? '')));
 				$score = 0.0;
-				if ($code !== '' && $cCode !== '' && ($code === $cCode || strpos($cCode, $code) !== false || strpos($code, $cCode) !== false)) {
-					$score += 0.7;
+				if ($code !== '' && $cCode !== '' && ($code === $cCode || $this->moduleCodesCompatible($code, $cCode))) {
+					$score += 0.75;
+				} elseif ($code !== '' && $cCode !== '' && (strpos($cCode, $code) !== false || strpos($code, $cCode) !== false)) {
+					$score += 0.55;
 				}
 				similar_text($title, $cTitle, $pct);
 				$score += ($pct / 100) * 0.5;
