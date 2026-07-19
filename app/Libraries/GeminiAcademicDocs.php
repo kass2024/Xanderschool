@@ -102,16 +102,18 @@ class GeminiAcademicDocs
 	 */
 	public function analyzeCurriculum(array $curriculum, ?array $chronogram, array $dbContext, array $extraFiles = [], array $extraChronograms = []): ?array
 	{
-		$this->reportProgress(3, 'Preparing curriculum package…');
+		$this->reportProgress(0, 'Preparing curriculum package…');
 		$packFiles = $this->expandCurriculumPackage($curriculum, $extraFiles);
 		if ($packFiles === []) {
 			$this->lastError = 'Could not read curriculum file(s)';
 			return null;
 		}
 
-		$this->reportProgress(8, 'Reading ' . count($packFiles) . ' curriculum file(s)…', ['files' => count($packFiles)]);
+		$this->reportProgress(5, 'Reading ' . count($packFiles) . ' curriculum file(s)…', ['files' => count($packFiles)]);
 		$combinedText = '';
 		$fileIndex = []; // code hint => text
+		$pdfByCode = []; // code => extract pack with bytes
+		$pdfFiles = []; // list of PDF extracts for vision
 		$primaryPdf = null;
 		$totalBytes = 0;
 
@@ -124,8 +126,14 @@ class GeminiAcademicDocs
 			$totalBytes += (int) ($ex['chars'] ?? 0);
 
 			// Map filename codes like SWDDD401 to this file's text
-			if (preg_match_all('/\b([A-Z]{3,8}\d{3})\b/', strtoupper($orig . ' ' . mb_substr($text, 0, 500, 'UTF-8')), $cm)) {
+			$codesInFile = [];
+			if (preg_match_all('/\b([A-Z]{3,8}\d{3})\b/', strtoupper($orig . ' ' . mb_substr($text, 0, 800, 'UTF-8')), $cm)) {
 				foreach ($cm[1] as $code) {
+					$code = DocumentTextExtractor::cleanModuleCode($code);
+					if ($code === '') {
+						continue;
+					}
+					$codesInFile[] = $code;
 					if (!isset($fileIndex[$code]) || mb_strlen($text, 'UTF-8') > mb_strlen($fileIndex[$code], 'UTF-8')) {
 						$fileIndex[$code] = $text;
 					}
@@ -133,25 +141,51 @@ class GeminiAcademicDocs
 			}
 
 			$ext = strtolower((string) ($ex['ext'] ?? ''));
-			if ($ext === 'pdf' && $primaryPdf === null && !empty($ex['bytes']) && strlen((string) $ex['bytes']) <= 8 * 1024 * 1024) {
-				// Prefer structure / "curriculum" / "general information" as primary attach
+			$byteLen = strlen((string) ($ex['bytes'] ?? ''));
+			if ($ext === 'pdf' && !empty($ex['bytes']) && $byteLen > 0 && $byteLen <= 12 * 1024 * 1024) {
+				$pdfFiles[] = [
+					'original' => $orig,
+					'mime' => 'application/pdf',
+					'bytes' => $ex['bytes'],
+					'chars' => (int) ($ex['chars'] ?? 0),
+					'codes' => array_values(array_unique($codesInFile)),
+				];
+				foreach ($codesInFile as $code) {
+					if (!isset($pdfByCode[$code]) || $byteLen > strlen((string) ($pdfByCode[$code]['bytes'] ?? ''))) {
+						$pdfByCode[$code] = [
+							'original' => $orig,
+							'mime' => 'application/pdf',
+							'bytes' => $ex['bytes'],
+						];
+					}
+				}
 				$n = strtolower($orig);
-				if (strpos($n, 'general') !== false || strpos($n, 'structure') !== false || strpos($n, 'curriculum') !== false || count($packFiles) === 1) {
-					$primaryPdf = $ex;
+				if ($primaryPdf === null || strpos($n, 'general') !== false || strpos($n, 'structure') !== false || strpos($n, 'curriculum') !== false) {
+					if (strpos($n, 'general') !== false || strpos($n, 'structure') !== false || strpos($n, 'curriculum') !== false || $primaryPdf === null) {
+						$primaryPdf = $ex;
+						$primaryPdf['_original'] = $orig;
+					}
 				}
 			}
 		}
-		if ($primaryPdf === null) {
-			foreach ($packFiles as $f) {
-				$ex = DocumentTextExtractor::extract($f['path']);
-				if (strtolower((string) ($ex['ext'] ?? '')) === 'pdf' && !empty($ex['bytes']) && strlen((string) $ex['bytes']) <= 8 * 1024 * 1024) {
-					$primaryPdf = $ex;
-					break;
-				}
-			}
+		if ($primaryPdf === null && $pdfFiles !== []) {
+			$primaryPdf = [
+				'bytes' => $pdfFiles[0]['bytes'],
+				'mime' => 'application/pdf',
+				'ext' => 'pdf',
+				'chars' => $pdfFiles[0]['chars'],
+				'_original' => $pdfFiles[0]['original'],
+			];
 		}
 
-		$this->reportProgress(18, 'Reading chronogram for weekly hours…');
+		$curriculumChars = mb_strlen($combinedText, 'UTF-8');
+		if ($curriculumChars < 400 && $pdfFiles === []) {
+			$this->lastError = 'Curriculum files have no readable text and no usable PDF for AI vision. Re-upload Word/PDF curriculum (General + Specific module files).';
+			$this->reportProgress(0, $this->lastError, ['status' => 'error']);
+			return null;
+		}
+
+		$this->reportProgress(12, 'Reading chronogram for weekly hours…');
 		$chronoPacks = [];
 		if ($chronogram && !empty($chronogram['path']) && is_file($chronogram['path'])) {
 			$chronoPacks[] = $chronogram;
@@ -182,38 +216,71 @@ class GeminiAcademicDocs
 			return null;
 		}
 
+		$chronoTitles = DocumentTextExtractor::parseChronogramModuleTitles($chrText);
+
 		// Deterministic module inventory from codes in filenames + text
-		$this->reportProgress(22, 'Discovering module codes…');
+		$this->reportProgress(18, 'Discovering module codes…');
 		$seedCodes = $this->discoverModuleCodes($combinedText, array_keys($fileIndex));
 		$seedList = [];
 		foreach ($seedCodes as $code) {
-			$titleHint = '';
-			if (preg_match('/\b' . preg_quote($code, '/') . '\s+([^\n\r]{5,90})/i', $combinedText, $tm)) {
-				$titleHint = trim(preg_replace('/\s+/', ' ', $tm[1]) ?? '');
-				$titleHint = preg_replace('/\d+\s*$/', '', $titleHint) ?? $titleHint;
+			$titleHint = $chronoTitles[$code] ?? '';
+			if ($titleHint === '' && preg_match('/\b' . preg_quote($code, '/') . '\s+([^\n\r]{5,90})/i', $combinedText, $tm)) {
+				$titleHint = DocumentTextExtractor::cleanModuleTitle(trim(preg_replace('/\s+/', ' ', $tm[1]) ?? ''));
 			}
 			$seedList[] = ['code' => $code, 'title' => $titleHint];
 		}
 
-		// Pass 1 — full inventory (must include every seed code)
-		$this->reportProgress(28, 'AI inventory: listing all courses/modules…', ['seed_codes' => count($seedList)]);
+		// Pass 1 — full inventory (must include every seed code) — attach curriculum PDFs for vision
+		$this->reportProgress(22, 'AI inventory: listing all courses/modules…', ['seed_codes' => count($seedList)]);
 		$invParts = [[
-			'text' => "SEED MODULE CODES (MUST ALL appear in modules[]):\n"
+			'text' => "SEED MODULE CODES (MUST ALL appear in modules[] with REAL titles — never invent LO/IC here):\n"
 				. json_encode($seedList, JSON_UNESCAPED_UNICODE)
+				. "\n\nCHRONOGRAM MODULE TITLES (use these when curriculum title missing):\n"
+				. json_encode($chronoTitles, JSON_UNESCAPED_UNICODE)
 				. "\n\n=== COMBINED CURRICULUM TEXT (may be truncated) ===\n"
-				. mb_substr($combinedText, 0, 120000, 'UTF-8')
-				. "\n\n=== CHRONOGRAM ===\n" . mb_substr($chrText, 0, 35000, 'UTF-8'),
+				. mb_substr($combinedText, 0, 140000, 'UTF-8')
+				. "\n\n=== CHRONOGRAM ===\n" . mb_substr($chrText, 0, 40000, 'UTF-8'),
 		]];
+		// Attach up to 3 curriculum PDFs (structure first) for scanned packages
+		$attached = 0;
+		$budget = 18 * 1024 * 1024;
+		$used = 0;
 		if ($primaryPdf && !empty($primaryPdf['bytes'])) {
+			$blen = strlen((string) $primaryPdf['bytes']);
+			if ($blen <= $budget) {
+				$invParts[] = [
+					'inlineData' => [
+						'mimeType' => 'application/pdf',
+						'data' => base64_encode((string) $primaryPdf['bytes']),
+					],
+				];
+				$used += $blen;
+				$attached++;
+			}
+		}
+		foreach ($pdfFiles as $pf) {
+			if ($attached >= 3) {
+				break;
+			}
+			$blen = strlen((string) $pf['bytes']);
+			if ($blen <= 0 || $used + $blen > $budget) {
+				continue;
+			}
+			// Skip duplicate of primary
+			if ($primaryPdf && isset($primaryPdf['_original']) && ($pf['original'] ?? '') === $primaryPdf['_original']) {
+				continue;
+			}
 			$invParts[] = [
 				'inlineData' => [
 					'mimeType' => 'application/pdf',
-					'data' => base64_encode((string) $primaryPdf['bytes']),
+					'data' => base64_encode((string) $pf['bytes']),
 				],
 			];
+			$used += $blen;
+			$attached++;
 		}
 		if (($chr['chars'] ?? 0) < 1200 && !empty($chr['bytes']) && ($chr['ext'] ?? '') === 'pdf'
-			&& strlen((string) $chr['bytes']) <= 5 * 1024 * 1024) {
+			&& strlen((string) $chr['bytes']) <= 5 * 1024 * 1024 && $used + strlen((string) $chr['bytes']) <= $budget) {
 			$invParts[] = [
 				'inlineData' => [
 					'mimeType' => 'application/pdf',
@@ -223,7 +290,7 @@ class GeminiAcademicDocs
 		}
 
 		$invPrompt = $this->promptFullInventory($dbContext, count($seedList));
-		$inventory = $this->generateJson($invPrompt, $invParts, 12288);
+		$inventory = $this->generateJson($invPrompt, $invParts, 16384);
 		if (!is_array($inventory)) {
 			$inventory = [];
 		}
@@ -231,15 +298,23 @@ class GeminiAcademicDocs
 
 		// Merge missing seed codes
 		$have = [];
-		foreach ($modules as $m) {
-			$have[strtoupper(trim((string) ($m['code'] ?? '')))] = true;
+		foreach ($modules as &$m0) {
+			$code0 = DocumentTextExtractor::cleanModuleCode((string) ($m0['code'] ?? ''));
+			$m0['code'] = $code0;
+			$title0 = DocumentTextExtractor::cleanModuleTitle((string) ($m0['title'] ?? ''));
+			if (($title0 === '' || strcasecmp($title0, $code0) === 0) && isset($chronoTitles[$code0])) {
+				$title0 = $chronoTitles[$code0];
+			}
+			$m0['title'] = $title0 !== '' ? $title0 : $code0;
+			$have[$code0] = true;
 		}
+		unset($m0);
 		foreach ($seedList as $s) {
-			$c = strtoupper($s['code']);
+			$c = DocumentTextExtractor::cleanModuleCode((string) $s['code']);
 			if ($c !== '' && empty($have[$c])) {
 				$modules[] = [
 					'code' => $c,
-					'title' => $s['title'] ?: $c,
+					'title' => ($s['title'] ?: ($chronoTitles[$c] ?? $c)),
 					'rqf_level' => null,
 					'learning_hours' => null,
 					'learning_outcomes' => [],
@@ -264,8 +339,8 @@ class GeminiAcademicDocs
 			if ($cc === '' || !empty($have[$cc])) {
 				continue;
 			}
-			$titleHint = '';
-			if (preg_match('/\b' . preg_quote($cc, '/') . '\s+([^\n\r]{5,90})/i', $chrText, $tm)) {
+			$titleHint = $chronoTitles[$cc] ?? '';
+			if ($titleHint === '' && preg_match('/\b' . preg_quote($cc, '/') . '\s+([^\n\r]{5,90})/i', $chrText, $tm)) {
 				$titleHint = DocumentTextExtractor::cleanModuleTitle($tm[1]);
 			}
 			$modules[] = [
@@ -278,15 +353,15 @@ class GeminiAcademicDocs
 			$have[$cc] = true;
 		}
 
-		// Pass 2 — full LO/IC per module (use per-file text when available)
+		// Pass 2 — LO/IC one module at a time with PDF vision when available
 		$detailed = [];
-		$batchSize = 2;
+		$batchSize = 1;
 		$moduleCount = count($modules);
-		$this->reportProgress(35, 'Extracting Learning Outcomes & Indicative Contents…', ['modules' => $moduleCount]);
+		$this->reportProgress(28, 'Extracting Learning Outcomes & Indicative Contents…', ['modules' => $moduleCount]);
 		for ($i = 0, $n = $moduleCount; $i < $n; $i += $batchSize) {
 			$batch = array_slice($modules, $i, $batchSize);
 			$done = min($i + $batchSize, $n);
-			$pct = 35 + (int) round(($done / max(1, $n)) * 40); // 35% → 75%
+			$pct = 28 + (int) round(($done / max(1, $n)) * 48); // 28% → 76%
 			$labels = array_map(static function ($m) {
 				return trim((string) (($m['code'] ?? '') . ' ' . ($m['title'] ?? '')));
 			}, $batch);
@@ -295,39 +370,87 @@ class GeminiAcademicDocs
 				'done' => $done,
 				'total' => $n,
 			]);
-			$windows = '';
-			foreach ($batch as $m) {
-				$code = strtoupper(trim((string) ($m['code'] ?? '')));
-				$title = trim((string) ($m['title'] ?? ''));
-				$body = $fileIndex[$code] ?? $this->sliceAroundKeywords($combinedText, array_filter([$code, $title]), 14000);
-				$windows .= "\n\n----- MODULE {$code} {$title} -----\n" . mb_substr($body, 0, 16000, 'UTF-8');
-			}
+			$m = $batch[0];
+			$code = DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
+			$title = trim((string) ($m['title'] ?? ''));
+			$body = $fileIndex[$code] ?? $this->sliceAroundKeywords($combinedText, array_filter([$code, $title]), 22000);
 			$detailPrompt = <<<PROMPT
-Extract COMPLETE Learning Outcomes and Indicative Contents for each module below.
-If the text uses Elements of Competence / Performance Criteria, map them to learning_outcomes and indicative_contents.
-Include hours/credits when present. Return ONLY JSON:
-{"modules":[{"code":"","title":"","rqf_level":null,"learning_hours":null,"credits":null,"module_type":"","purpose":"","learning_outcomes":[{"code":"","title":"","performance_criteria":[string],"indicative_contents":[{"code":"","title":"","hours":null}]}],"raw_topics":[string]}]}
+You are extracting REAL curriculum content for ONE Rwanda TVET/RTB module from the attached document text/PDF.
 
-MODULES: 
-PROMPT
-				. json_encode($batch, JSON_UNESCAPED_UNICODE)
-				. "\n\nTEXT:\n" . $this->safeUtf8($windows);
-			$detail = $this->generateJson($detailPrompt, [], 12288);
-			if (is_array($detail['modules'] ?? null)) {
-				foreach ($detail['modules'] as $dm) {
-					$key = strtoupper(trim((string) ($dm['code'] ?? '')));
-					if ($key !== '') {
-						$detailed[$key] = $dm;
-					}
+RULES:
+1. Extract ONLY Learning Outcomes (LO) and Indicative Contents (IC) that appear in the source. NEVER invent or guess.
+2. If the PDF uses Elements of Competence / Performance Criteria, map them to learning_outcomes + indicative_contents.
+3. If this module's LO/IC are not in the provided text/PDF, return learning_outcomes:[].
+4. Always keep the exact module code. Prefer the human title from the document (not the code).
+5. Include hours when printed next to LO/IC.
+
+Return ONLY JSON:
+{"modules":[{"code":"{$code}","title":"","rqf_level":null,"learning_hours":null,"credits":null,"module_type":"specific|general|ccm","purpose":"","learning_outcomes":[{"code":"","title":"","performance_criteria":[string],"indicative_contents":[{"code":"","title":"","hours":null}]}],"raw_topics":[string]}]}
+
+MODULE: {$code} — {$title}
+
+----- MODULE TEXT -----
+PROMPT;
+			$detailParts = [];
+			// Attach module PDF or structure PDF for vision (scanned curricula)
+			$pdfAttached = false;
+			if (isset($pdfByCode[$code]['bytes']) && strlen((string) $pdfByCode[$code]['bytes']) <= 10 * 1024 * 1024) {
+				$detailParts[] = [
+					'inlineData' => [
+						'mimeType' => 'application/pdf',
+						'data' => base64_encode((string) $pdfByCode[$code]['bytes']),
+					],
+				];
+				$pdfAttached = true;
+			} elseif ($primaryPdf && !empty($primaryPdf['bytes']) && strlen((string) $primaryPdf['bytes']) <= 10 * 1024 * 1024
+				&& mb_strlen($body, 'UTF-8') < 2500) {
+				$detailParts[] = [
+					'inlineData' => [
+						'mimeType' => 'application/pdf',
+						'data' => base64_encode((string) $primaryPdf['bytes']),
+					],
+				];
+				$pdfAttached = true;
+			}
+			$fullPrompt = $detailPrompt . "\n" . mb_substr($this->safeUtf8($body), 0, 28000, 'UTF-8');
+			$detail = $this->generateJson($fullPrompt, $detailParts, 16384);
+			$got = (is_array($detail) && is_array($detail['modules'][0] ?? null)) ? $detail['modules'][0] : null;
+			$loCount = is_array($got['learning_outcomes'] ?? null) ? count($got['learning_outcomes']) : 0;
+			// Retry once with structure PDF if empty and we have vision capacity
+			if ($loCount === 0 && !$pdfAttached && $primaryPdf && !empty($primaryPdf['bytes'])
+				&& strlen((string) $primaryPdf['bytes']) <= 10 * 1024 * 1024) {
+				$retryParts = [[
+					'inlineData' => [
+						'mimeType' => 'application/pdf',
+						'data' => base64_encode((string) $primaryPdf['bytes']),
+					],
+				]];
+				$retryPrompt = $detailPrompt
+					. "\nFind this module inside the attached curriculum PDF and extract ALL LO/IC. If absent, return empty learning_outcomes.\n\nTEXT:\n"
+					. mb_substr($this->safeUtf8($body), 0, 12000, 'UTF-8');
+				$detail = $this->generateJson($retryPrompt, $retryParts, 16384);
+				if (is_array($detail) && is_array($detail['modules'][0] ?? null)) {
+					$got = $detail['modules'][0];
 				}
+			}
+			if (is_array($got) && $code !== '') {
+				$detailed[$code] = $got;
 			}
 		}
 
 		$merged = [];
 		foreach ($modules as $m) {
-			$key = strtoupper(trim((string) ($m['code'] ?? '')));
+			$key = DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
 			$full = ($key !== '' && isset($detailed[$key])) ? array_merge($m, $detailed[$key]) : $m;
-			// Ensure learning_outcomes array exists
+			$full['code'] = $key;
+			$title = DocumentTextExtractor::cleanModuleTitle((string) ($full['title'] ?? ''));
+			if (($title === '' || strcasecmp($title, $key) === 0) && isset($chronoTitles[$key])) {
+				$title = $chronoTitles[$key];
+			}
+			if ($title === '') {
+				$title = $key;
+			}
+			$full['title'] = $title;
 			if (empty($full['learning_outcomes']) || !is_array($full['learning_outcomes'])) {
 				$full['learning_outcomes'] = [];
 			}
@@ -364,15 +487,15 @@ PROMPT
 			$matchedSlots = $this->findSlotsForCode($code, $slots);
 			if ($matchedSlots !== []) {
 				$mm['chronogram_slots'] = $this->normalizeChronogramSlots($matchedSlots);
-				$mm['weekly_hours_total'] = array_sum(array_map(static function ($s) {
+				$mm['weekly_hours_total'] = round(array_sum(array_map(static function ($s) {
 					return (float) ($s['hours'] ?? $s['periods'] ?? 0);
-				}, $mm['chronogram_slots']));
+				}, $mm['chronogram_slots'])), 1);
 			} elseif (($headerTotal = $this->findHeaderTotalForCode($code, $headerTotals)) !== null) {
 				$total = (float) $headerTotal;
 				// Synthesize week slots from total periods so Scheme of Work has hour budget
 				$mm['chronogram_slots'] = $this->synthesizeSlotsFromTotal($total, $chronoResult['chronogram'] ?? []);
-				$mm['weekly_hours_total'] = $total;
-				$mm['chronogram_periods_total'] = $total;
+				$mm['weekly_hours_total'] = round($total, 1);
+				$mm['chronogram_periods_total'] = round($total, 1);
 			}
 			// Timetable load: typical periods/week from chronogram grid (not yearly totals)
 			$hpw = 0.0;
@@ -394,7 +517,9 @@ PROMPT
 			}
 			if (empty($mm['learning_hours']) && !empty($mm['weekly_hours_total'])) {
 				// Chronogram periods ≈ contact hours budget when curriculum hours missing
-				$mm['learning_hours'] = $mm['weekly_hours_total'];
+				$mm['learning_hours'] = round((float) $mm['weekly_hours_total'], 1);
+			} elseif (!empty($mm['learning_hours'])) {
+				$mm['learning_hours'] = round((float) $mm['learning_hours'], 1);
 			}
 		}
 		unset($mm);
@@ -417,9 +542,14 @@ PROMPT
 			'chronogram' => $chronogramBlock,
 			'hours_distribution' => $this->buildHoursDistributionSummary($merged, $chronogramBlock),
 			'notes' => 'Full multi-file curriculum + chronogram extract (' . count($packFiles) . ' curriculum file(s), ' . count($merged) . ' modules)',
-			'source_files' => array_map(static function ($f) {
-				return $f['original'] ?? basename($f['path'] ?? '');
-			}, $packFiles),
+			'source_files' => array_values(array_filter(array_merge(
+				array_map(static function ($f) {
+					return $f['original'] ?? basename($f['path'] ?? '');
+				}, $packFiles),
+				array_map(static function ($f) {
+					return $f['original'] ?? basename($f['path'] ?? '');
+				}, $chronoPacks)
+			))),
 			'_source_text' => mb_substr(
 				$combinedText . "\n\n===== CHRONOGRAM SOURCE =====\n" . $chrText,
 				0,
@@ -431,20 +561,33 @@ PROMPT
 
 		$weekCount = is_array($chronogramBlock['weeks'] ?? null) ? count($chronogramBlock['weeks']) : 0;
 		$slotsFilled = 0;
+		$loFilled = 0;
+		$icFilled = 0;
 		foreach ($merged as $m) {
 			$slotsFilled += is_array($m['chronogram_slots'] ?? null) ? count($m['chronogram_slots']) : 0;
+			foreach ($m['learning_outcomes'] ?? [] as $lo) {
+				$loFilled++;
+				$icFilled += is_array($lo['indicative_contents'] ?? null) ? count($lo['indicative_contents']) : 0;
+			}
 		}
 
 		$raw['_extract_meta'] = [
 			'curriculum_chars' => mb_strlen($combinedText, 'UTF-8'),
 			'chronogram_chars' => mb_strlen($chrText, 'UTF-8'),
 			'file_count' => count($packFiles),
+			'pdf_files' => count($pdfFiles),
 			'seed_codes' => count($seedCodes),
 			'module_count' => count($merged),
+			'lo_count' => $loFilled,
+			'ic_count' => $icFilled,
 			'chronogram_weeks' => $weekCount,
 			'chronogram_slots_filled' => $slotsFilled,
-			'mode' => 'full_package_multipass_with_chronogram',
+			'mode' => 'full_package_multipass_pdf_vision_loic',
 		];
+		if ($loFilled === 0) {
+			$raw['notes'] = ($raw['notes'] ?? '')
+				. ' WARNING: 0 Learning Outcomes extracted — upload General + Specific module curriculum PDFs and Re-analyse.';
+		}
 		$this->reportProgress(92, 'Matching modules to school courses…', [
 			'modules' => count($merged),
 			'chronogram_weeks' => $weekCount,
@@ -820,6 +963,12 @@ PROMPT;
 			if ($periods === null && $hours !== null) {
 				$periods = $hours;
 			}
+			if ($periods !== null) {
+				$periods = round($periods, 1);
+			}
+			if ($hours !== null) {
+				$hours = round($hours, 1);
+			}
 			$out[] = [
 				'week' => (int) ($s['week'] ?? 0),
 				'term' => (int) ($s['term'] ?? 0) ?: null,
@@ -1004,6 +1153,8 @@ You are extracting a COMPLETE module inventory from a Rwanda TVET curriculum pac
 
 CRITICAL: Return EVERY module/course. Seed list has about {$seedCount} codes — your modules[] must include ALL of them (CCM + General + Specific).
 Do not stop after a few Specific modules.
+Use REAL human-readable titles from the curriculum/chronogram (never leave title equal to the code when a name exists).
+Do NOT invent Learning Outcomes here — leave learning_outcomes as [].
 
 SCHOOL: {$school}
 CLASS: {$classMeta}
@@ -1780,8 +1931,8 @@ PROMPT;
 			],
 			CURLOPT_POSTFIELDS => $body,
 			CURLOPT_RETURNTRANSFER => true,
-			CURLOPT_TIMEOUT => 180,
-			CURLOPT_CONNECTTIMEOUT => 25,
+			CURLOPT_TIMEOUT => 300,
+			CURLOPT_CONNECTTIMEOUT => 30,
 		]);
 		$raw = curl_exec($ch);
 		$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);

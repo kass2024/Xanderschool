@@ -164,8 +164,9 @@ include __DIR__ . '/_nav.php';
 		var step = 'read';
 		if (pct >= 96) step = 'save';
 		else if (pct >= 78) step = 'chrono';
-		else if (pct >= 35) step = 'loic';
-		else if (pct >= 22) step = 'inventory';
+		else if (pct >= 28) step = 'loic';
+		else if (pct >= 18) step = 'inventory';
+		else if (pct <= 0) step = 'read';
 		var order = ['read', 'inventory', 'loic', 'chrono', 'save'];
 		var idx = order.indexOf(step);
 		$('#aiplanSteps .aiplan-step').each(function () {
@@ -242,6 +243,7 @@ include __DIR__ . '/_nav.php';
 				var wh = m.weekly_hours_total != null ? m.weekly_hours_total : slots.reduce(function (a, s) {
 					return a + (parseFloat(s.hours || s.periods || 0) || 0);
 				}, 0);
+				wh = Math.round((parseFloat(wh) || 0) * 10) / 10;
 				badges += '<span class="aiplan-badge ok">' + slots.length + ' weeks · ' + wh + 'h</span>';
 			} else {
 				badges += '<span class="aiplan-badge warn">No chronogram hours</span>';
@@ -249,9 +251,10 @@ include __DIR__ . '/_nav.php';
 			var los = (m.learning_outcomes || []);
 			var icCount = 0;
 			los.forEach(function (lo) { icCount += (lo.indicative_contents || []).length; });
-			$row.append('<div style="font-weight:700;">' + $('<div>').text(m.title || 'Untitled').html() + '</div>');
+			var hoursLabel = m.learning_hours != null ? (Math.round((parseFloat(m.learning_hours) || 0) * 10) / 10) : '';
+			$row.append('<div style="font-weight:700;">' + $('<div>').text(m.title || m.code || 'Untitled').html() + '</div>');
 			$row.append('<div style="margin-top:.35rem;">' + badges + '</div>');
-			$row.append('<div class="text-muted" style="font-size:.8rem;margin-top:.25rem;">LO: ' + los.length + ' · IC: ' + icCount + (m.learning_hours ? (' · Hours: ' + m.learning_hours) : '') + (m.credits ? (' · Credits: ' + m.credits) : '') + '</div>');
+			$row.append('<div class="text-muted" style="font-size:.8rem;margin-top:.25rem;">LO: ' + los.length + ' · IC: ' + icCount + (hoursLabel !== '' ? (' · Hours: ' + hoursLabel) : '') + (m.credits ? (' · Credits: ' + m.credits) : '') + '</div>');
 			if (slots.length) {
 				var $chr = $('<details style="margin-top:.35rem;font-size:.8rem;"></details>');
 				$chr.append('<summary style="cursor:pointer;color:#0f766e;">Weekly hours from chronogram</summary>');
@@ -304,7 +307,7 @@ include __DIR__ . '/_nav.php';
 
 		analyzing = true;
 		showProgress(true);
-		setProgress(force ? 2 : 5, force ? 'Re-analysing with AI…' : 'Loading cache / preparing analysis…');
+		setProgress(0, force ? 'Starting re-analysis…' : 'Starting…');
 		status(force ? 'Smart analysis running — please keep this page open.' : 'Loading…');
 		startProgressPoll(cid);
 
@@ -335,6 +338,11 @@ include __DIR__ . '/_nav.php';
 			if (weeks != null) extra += ' · Chronogram ' + weeks + ' week(s)';
 			if (slots != null) extra += ' · ' + slots + ' week-slots';
 			status((res.cached ? 'Loaded from DB cache — ' : 'Full analysis saved to DB — ') + n + ' module(s)' + extra + '.');
+			if (!res.cached && lo === 0) {
+				status('Analysis saved but 0 LO/IC found. Upload General + Specific curriculum PDFs in School Settings, then click Re-analyse with AI.', true);
+			} else if (res.cached && lo === 0) {
+				status('Cached analysis has 0 LO/IC (incomplete). Click Re-analyse with AI after uploading full curriculum PDFs.', true);
+			}
 			$opt.attr('data-has-cache', '1').data('has-cache', 1);
 			renderModules();
 			setTimeout(function () { showProgress(false); }, 900);

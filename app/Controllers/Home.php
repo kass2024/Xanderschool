@@ -1917,7 +1917,7 @@ public function testEmail()
 	 */
 	private function runAiAnalyzeCurriculum(int $schoolId, int $classId, int $yearId, bool $force, array $ctx)
 	{
-		$this->writeAiProgress($schoolId, $classId, $yearId, 2, 'Checking uploaded documents…', ['status' => 'running']);
+		$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Checking uploaded documents…', ['status' => 'running']);
 
 		$pedMdl = new ClassPedagogicalDocModel();
 		$docs = $pedMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->findAll();
@@ -1977,6 +1977,7 @@ public function testEmail()
 					'ic_count' => $stats['ic_count'],
 					'chronogram_weeks' => $stats['chronogram_weeks'],
 					'chronogram_slots' => $stats['chronogram_slots'],
+					'needs_reanalyse' => $stats['lo_count'] === 0,
 					'source_hash' => $sourceHash,
 					'updated_at' => $cached['updated_at'] ?? null,
 				]);
@@ -2011,7 +2012,7 @@ public function testEmail()
 		}
 
 		$extraChronograms = array_slice($chronograms, 1);
-		$this->writeAiProgress($schoolId, $classId, $yearId, 5, 'Starting AI analysis…', [
+		$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Starting AI analysis…', [
 			'status' => 'running',
 			'curriculum_files' => count($curricula),
 			'chronogram_files' => count($chronograms),
@@ -2066,6 +2067,7 @@ public function testEmail()
 			'ic_count' => $stats['ic_count'],
 			'chronogram_weeks' => $stats['chronogram_weeks'],
 			'chronogram_slots' => $stats['chronogram_slots'],
+			'needs_reanalyse' => $stats['lo_count'] === 0,
 			'file_count' => count($extraFiles) + 1,
 			'source_hash' => $sourceHash,
 		]);

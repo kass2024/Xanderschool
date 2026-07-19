@@ -238,6 +238,86 @@ class DocumentTextExtractor
 		return (float) $top;
 	}
 
+	/**
+	 * Best-effort module titles from chronogram header (names above codes).
+	 *
+	 * @return array<string,string> code => title
+	 */
+	public static function parseChronogramModuleTitles(string $chrText): array
+	{
+		if (trim($chrText) === '') {
+			return [];
+		}
+		$upper = strtoupper($chrText);
+		$cut = stripos($upper, 'MODULES HOURS');
+		if ($cut === false) {
+			$cut = stripos($upper, 'MODULES PERIODS');
+		}
+		$header = $cut !== false ? substr($chrText, 0, (int) $cut) : $chrText;
+		$lines = preg_split("/\r\n|\n|\r/", $header) ?: [];
+		$codes = [];
+		$codeLineIdx = null;
+		foreach ($lines as $i => $line) {
+			$line = trim($line);
+			if (preg_match('/^((?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3})$/i', $line, $m)) {
+				if ($codeLineIdx === null) {
+					$codeLineIdx = $i;
+				}
+				$c = self::cleanModuleCode($m[1]);
+				if ($c !== '' && !in_array($c, $codes, true)) {
+					$codes[] = $c;
+				}
+			}
+		}
+		if ($codes === [] || $codeLineIdx === null) {
+			return [];
+		}
+		$rawTitles = [];
+		for ($i = 0; $i < $codeLineIdx; $i++) {
+			$t = trim($lines[$i]);
+			if ($t === '') {
+				continue;
+			}
+			if (preg_match('/^(Republic|Ministry|TRAINING|SECTOR|TRADE|RQF|QUALIFICATION|SCHOOL|CORE|SPECIFIC|COMPLEMENTARY|HOLIDAYS|PERIODS|FIRST|SECOND|THIRD)/i', $t)) {
+				continue;
+			}
+			if (preg_match('/^(?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3}$/i', $t)) {
+				continue;
+			}
+			$rawTitles[] = preg_replace('/\s+/', ' ', $t) ?? $t;
+		}
+		if ($rawTitles === []) {
+			return [];
+		}
+		// Merge wrapped title lines into ~count(codes) phrases
+		$merged = [];
+		$buf = '';
+		foreach ($rawTitles as $t) {
+			$startsNew = preg_match('/^(Develop|Apply|Design|Perform|Use|Integrate|Gukoresha|Exprime|Citiz)/i', $t);
+			if ($buf !== '' && $startsNew && count($merged) < count($codes) - 1) {
+				$merged[] = trim($buf);
+				$buf = $t;
+			} else {
+				$buf = $buf === '' ? $t : ($buf . ' ' . $t);
+			}
+		}
+		if ($buf !== '') {
+			$merged[] = trim($buf);
+		}
+		$out = [];
+		$n = min(count($codes), count($merged));
+		for ($i = 0; $i < $n; $i++) {
+			$title = self::cleanModuleTitle($merged[$i]);
+			if ($title === '') {
+				$title = trim($merged[$i]);
+			}
+			if ($title !== '' && strcasecmp($title, $codes[$i]) !== 0) {
+				$out[$codes[$i]] = $title;
+			}
+		}
+		return $out;
+	}
+
 	public static function mimeForExt(string $ext): string
 	{
 		$map = [
