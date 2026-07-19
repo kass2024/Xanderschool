@@ -11,7 +11,8 @@ class AcademicAiAnalysisModel extends Model
 	protected $primaryKey = 'id';
 	protected $allowedFields = [
 		'school_id', 'class_id', 'academic_year',
-		'program_type', 'analysis_json', 'created_by',
+		'program_type', 'source_hash', 'module_count', 'extract_meta', 'source_text', 'chronogram_text',
+		'analysis_json', 'created_by',
 		'created_at', 'updated_at',
 	];
 	protected $useTimestamps = true;

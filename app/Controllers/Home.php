@@ -1289,6 +1289,7 @@ public function testEmail()
 				->join("faculty f", "f.id=grade.faculty_id", "LEFT")
 				->where("grade.school_id", $schoolId)
 				->orderBy('grade.max_point', 'DESC')
+				->orderBy('grade.min_point', 'DESC')
 				->get()->getResultArray();
 		$data['title'] = lang("app.settings");
 		$data['subtitle'] = lang("app.schoolSettings");
@@ -1493,11 +1494,12 @@ public function testEmail()
 			return $this->response->setJSON(['error' => 'Please choose a valid file']);
 		}
 		$ext = strtolower($file->getClientExtension());
-		if (!in_array($ext, ['pdf', 'doc', 'docx'], true)) {
-			return $this->response->setJSON(['error' => 'Only PDF or Word files are allowed']);
+		if (!in_array($ext, ['pdf', 'doc', 'docx', 'zip'], true)) {
+			return $this->response->setJSON(['error' => 'Only PDF, Word, or ZIP (full curriculum package) are allowed']);
 		}
-		if ($file->getSize() > 15 * 1024 * 1024) {
-			return $this->response->setJSON(['error' => 'File too large (max 15MB)']);
+		$maxMb = $ext === 'zip' ? 80 : 20;
+		if ($file->getSize() > $maxMb * 1024 * 1024) {
+			return $this->response->setJSON(['error' => "File too large (max {$maxMb}MB)"]);
 		}
 
 		$dir = FCPATH . 'assets/documents/pedagogical';
@@ -1507,6 +1509,18 @@ public function testEmail()
 		// Full academic year docs (no term split)
 		$newName = 'ped_' . $schoolId . '_' . $classId . '_y' . $yearId . '_' . $docType . '_' . time() . '.' . $ext;
 		$file->move($dir, $newName);
+
+		// Expand curriculum ZIP into package folder for full module PDFs
+		if ($docType === 'curriculum' && $ext === 'zip') {
+			$pkgDir = $dir . '/pkg_' . $schoolId . '_' . $classId . '_y' . $yearId;
+			$this->wipeDir($pkgDir);
+			@mkdir($pkgDir, 0755, true);
+			$zip = new \ZipArchive();
+			if ($zip->open($dir . '/' . $newName) === true) {
+				$zip->extractTo($pkgDir);
+				$zip->close();
+			}
+		}
 
 		$mdl = new ClassPedagogicalDocModel();
 		$old = $mdl->where('school_id', $schoolId)
@@ -1539,11 +1553,37 @@ public function testEmail()
 			]);
 		}
 
+		$msg = ucfirst($docType) . ' saved for academic year ' . ($this->data['academic_year_title'] ?? $yearId);
+		if ($ext === 'zip') {
+			$msg .= ' (ZIP package extracted — all module PDFs will be analysed)';
+		}
+
 		return $this->response->setJSON([
-			'success' => ucfirst($docType) . ' saved for academic year ' . ($this->data['academic_year_title'] ?? $yearId),
+			'success' => $msg,
 			'file' => $newName,
 			'academic_year' => $yearId,
 		]);
+	}
+
+	/** Recursively delete a directory. */
+	private function wipeDir(string $dir): void
+	{
+		if (!is_dir($dir)) {
+			return;
+		}
+		$it = new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+			\RecursiveIteratorIterator::CHILD_FIRST
+		);
+		foreach ($it as $file) {
+			/** @var \SplFileInfo $file */
+			if ($file->isDir()) {
+				@rmdir($file->getPathname());
+			} else {
+				@unlink($file->getPathname());
+			}
+		}
+		@rmdir($dir);
 	}
 
 	public function delete_pedagogical_document()
@@ -1622,6 +1662,11 @@ public function testEmail()
 			  `class_id` int(11) NOT NULL,
 			  `academic_year` int(11) DEFAULT NULL,
 			  `program_type` varchar(16) DEFAULT NULL,
+			  `source_hash` varchar(64) DEFAULT NULL,
+			  `module_count` int(11) DEFAULT 0,
+			  `extract_meta` longtext,
+			  `source_text` longtext,
+			  `chronogram_text` longtext,
 			  `analysis_json` longtext,
 			  `created_by` int(11) DEFAULT NULL,
 			  `created_at` datetime DEFAULT NULL,
@@ -1629,6 +1674,23 @@ public function testEmail()
 			  PRIMARY KEY (`id`),
 			  UNIQUE KEY `uniq_class_year` (`school_id`,`class_id`,`academic_year`)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		} else {
+			$fields = $db->getFieldNames('academic_ai_analyses');
+			if (!in_array('source_hash', $fields, true)) {
+				$db->query("ALTER TABLE `academic_ai_analyses` ADD COLUMN `source_hash` varchar(64) DEFAULT NULL AFTER `program_type`");
+			}
+			if (!in_array('module_count', $fields, true)) {
+				$db->query("ALTER TABLE `academic_ai_analyses` ADD COLUMN `module_count` int(11) DEFAULT 0 AFTER `source_hash`");
+			}
+			if (!in_array('extract_meta', $fields, true)) {
+				$db->query("ALTER TABLE `academic_ai_analyses` ADD COLUMN `extract_meta` longtext AFTER `module_count`");
+			}
+			if (!in_array('source_text', $fields, true)) {
+				$db->query("ALTER TABLE `academic_ai_analyses` ADD COLUMN `source_text` longtext AFTER `extract_meta`");
+			}
+			if (!in_array('chronogram_text', $fields, true)) {
+				$db->query("ALTER TABLE `academic_ai_analyses` ADD COLUMN `chronogram_text` longtext AFTER `source_text`");
+			}
 		}
 		$dir = FCPATH . 'assets/documents/academic_plans';
 		if (!is_dir($dir)) {
@@ -1641,6 +1703,26 @@ public function testEmail()
 	 * Academic AI plans page — Scheme of Work + Session/Lesson plans from curriculum & chronogram.
 	 */
 	public function academic_plans()
+	{
+		return redirect()->to(base_url('ped_analyse'));
+	}
+
+	public function ped_analyse()
+	{
+		return $this->renderPedagogicalPage('analyse', 'Analyse Curriculum & Chronogram', 'Extract courses from curriculum and map chronogram weeks/hours (cached in DB).');
+	}
+
+	public function ped_scheme_of_work()
+	{
+		return $this->renderPedagogicalPage('scheme', 'Scheme of Work', 'Select an extracted course and generate a weekly Scheme of Work mapped to the chronogram.');
+	}
+
+	public function ped_session_plan()
+	{
+		return $this->renderPedagogicalPage('session', 'Session Plan', 'Pick a Scheme of Work topic/week and generate a weekly Session Plan.');
+	}
+
+	private function renderPedagogicalPage(string $section, string $title, string $subtitle)
 	{
 		$this->requireAcademicPlanAccess();
 		$this->ensureAcademicPlansSchema();
@@ -1665,16 +1747,46 @@ public function testEmail()
 			: [];
 
 		$planMdl = new AcademicPlanModel();
-		$data['saved_plans'] = $yearId > 0
-			? $planMdl->where('school_id', $schoolId)->where('academic_year', $yearId)->orderBy('id', 'DESC')->findAll(80)
+		$allPlans = $yearId > 0
+			? $planMdl->where('school_id', $schoolId)->where('academic_year', $yearId)->orderBy('id', 'DESC')->findAll(120)
 			: [];
+		$data['saved_plans'] = $allPlans;
+		$data['scheme_plans'] = array_values(array_filter($allPlans, static function ($p) {
+			return ($p['plan_type'] ?? '') === 'scheme_of_work';
+		}));
+		$data['session_plans'] = array_values(array_filter($allPlans, static function ($p) {
+			return in_array($p['plan_type'] ?? '', ['session_plan', 'lesson_plan'], true);
+		}));
 
 		$ai = new GeminiAcademicDocs();
 		$data['gemini_ready'] = $ai->isConfigured();
-		$data['title'] = 'Academic AI Plans';
-		$data['subtitle'] = 'Scheme of Work & Session / Lesson Plans';
+
+		$cacheMdl = new AcademicAiAnalysisModel();
+		$cacheRows = $yearId > 0
+			? $cacheMdl->select('id,class_id,program_type,module_count,source_hash,updated_at,analysis_json')
+				->where('school_id', $schoolId)->where('academic_year', $yearId)->findAll()
+			: [];
+		$cacheByClass = [];
+		foreach ($cacheRows as $row) {
+			$decoded = json_decode($row['analysis_json'] ?? '', true);
+			$cacheByClass[(int) $row['class_id']] = [
+				'id' => (int) $row['id'],
+				'module_count' => (int) ($row['module_count'] ?? 0),
+				'program_type' => $row['program_type'] ?? '',
+				'updated_at' => $row['updated_at'] ?? '',
+				'has_cache' => !empty($decoded['modules']),
+				'modules' => is_array($decoded['modules'] ?? null) ? $decoded['modules'] : [],
+				'analysis' => is_array($decoded) ? $decoded : null,
+			];
+		}
+		$data['analysis_cache'] = $cacheByClass;
+		$data['ped_section'] = $section;
+
+		$data['title'] = $title;
+		$data['subtitle'] = $subtitle;
 		$data['page'] = 'academic_plans';
-		$data['content'] = view('pages/academic_plans', $data);
+		$view = 'pages/ped/' . $section;
+		$data['content'] = view($view, $data);
 		return view('main', $data);
 	}
 
@@ -1719,7 +1831,7 @@ public function testEmail()
 		$this->requireAcademicPlanAccess();
 		$this->ensureAcademicPlansSchema();
 		$this->ensurePedagogicalDocsSchema();
-		set_time_limit(240);
+		set_time_limit(600);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$classId = (int) $this->request->getPost('class_id');
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
@@ -1733,24 +1845,18 @@ public function testEmail()
 			return $this->response->setJSON(['error' => 'Class not found']);
 		}
 
-		$cacheMdl = new AcademicAiAnalysisModel();
-		if (!$force) {
-			$cached = $cacheMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->first();
-			if ($cached && !empty($cached['analysis_json'])) {
-				$decoded = json_decode($cached['analysis_json'], true);
-				if (is_array($decoded)) {
-					return $this->response->setJSON(['success' => 'Cached analysis', 'analysis' => $decoded, 'cached' => true]);
-				}
-			}
-		}
-
 		$pedMdl = new ClassPedagogicalDocModel();
 		$docs = $pedMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->findAll();
 		$curriculum = null;
 		$chronogram = null;
 		foreach ($docs as $d) {
 			$path = FCPATH . 'assets/documents/pedagogical/' . $d['file_name'];
-			$pack = ['path' => $path, 'original' => $d['original_name']];
+			$pack = [
+				'path' => $path,
+				'original' => $d['original_name'],
+				'file_name' => $d['file_name'],
+				'updated_at' => $d['updated_at'] ?? ($d['created_at'] ?? ''),
+			];
 			if ($d['doc_type'] === 'curriculum') {
 				$curriculum = $pack;
 			} elseif ($d['doc_type'] === 'chronogram') {
@@ -1760,32 +1866,173 @@ public function testEmail()
 		if (!$curriculum || !is_file($curriculum['path'])) {
 			return $this->response->setJSON(['error' => 'Upload a curriculum for this class in School Settings → Pedagogical documents first.']);
 		}
+		if (!$chronogram || !is_file($chronogram['path'])) {
+			return $this->response->setJSON(['error' => 'Upload a chronogram for this class in School Settings → Pedagogical documents first (needed to map weeks & hours).']);
+		}
+
+		$sourceHash = $this->pedagogicalSourceHash($curriculum, $chronogram);
+		// Include package folder mtime in hash when ZIP was expanded
+		$pkgDir = FCPATH . 'assets/documents/pedagogical/pkg_' . $schoolId . '_' . $classId . '_y' . $yearId;
+		if (is_dir($pkgDir)) {
+			$sourceHash = hash('sha256', $sourceHash . '|pkg|' . $this->dirFingerprint($pkgDir));
+		}
+
+		$cacheMdl = new AcademicAiAnalysisModel();
+		$cached = $cacheMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->first();
+
+		// Serve DB cache whenever files unchanged — do NOT re-extract or call Gemini
+		if (!$force && $cached && !empty($cached['analysis_json'])) {
+			$decoded = json_decode($cached['analysis_json'], true);
+			$hashOk = empty($cached['source_hash']) || hash_equals((string) $cached['source_hash'], $sourceHash);
+			if (is_array($decoded) && $hashOk && !empty($decoded['modules'])) {
+				$stats = $this->countAnalysisStats($decoded);
+				return $this->response->setJSON([
+					'success' => 'Loaded from database cache (no AI call)',
+					'analysis' => $decoded,
+					'cached' => true,
+					'module_count' => $stats['module_count'],
+					'lo_count' => $stats['lo_count'],
+					'ic_count' => $stats['ic_count'],
+					'chronogram_weeks' => $stats['chronogram_weeks'],
+					'chronogram_slots' => $stats['chronogram_slots'],
+					'source_hash' => $sourceHash,
+					'updated_at' => $cached['updated_at'] ?? null,
+				]);
+			}
+		}
 
 		$ai = new GeminiAcademicDocs();
 		if (!$ai->isConfigured()) {
 			return $this->response->setJSON(['error' => 'Gemini API key missing on server']);
 		}
-		$analysis = $ai->analyzeCurriculum($curriculum, $chronogram, $ctx);
+
+		// Extra module PDFs from ZIP package folder (full curriculum content)
+		$extraFiles = [];
+		if (is_dir($pkgDir)) {
+			$rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($pkgDir, \FilesystemIterator::SKIP_DOTS));
+			foreach ($rii as $file) {
+				/** @var \SplFileInfo $file */
+				if (!$file->isFile()) {
+					continue;
+				}
+				$e = strtolower($file->getExtension());
+				if (!in_array($e, ['pdf', 'doc', 'docx'], true)) {
+					continue;
+				}
+				$extraFiles[] = ['path' => $file->getPathname(), 'original' => $file->getFilename()];
+			}
+		}
+
+		$analysis = $ai->analyzeCurriculum($curriculum, $chronogram, $ctx, $extraFiles);
 		if ($analysis === null) {
 			return $this->response->setJSON(['error' => 'AI analysis failed: ' . $ai->lastError()]);
 		}
 
-		$existing = $cacheMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->first();
+		$modules = is_array($analysis['modules'] ?? null) ? $analysis['modules'] : [];
+		$extractMeta = $analysis['_extract_meta'] ?? null;
+		$sourceText = $analysis['_source_text'] ?? null;
+		$chronogramText = $analysis['_chronogram_text'] ?? null;
+		unset($analysis['_extract_meta'], $analysis['_source_text'], $analysis['_chronogram_text']);
+
 		$payload = [
 			'school_id' => $schoolId,
 			'class_id' => $classId,
 			'academic_year' => $yearId,
 			'program_type' => $analysis['program_type'] ?? (((int)($ctx['class']['faculty_type'] ?? 1) === 2) ? 'reb' : 'tvet'),
+			'source_hash' => $sourceHash,
+			'module_count' => count($modules),
+			'extract_meta' => $extractMeta ? json_encode($extractMeta, JSON_UNESCAPED_UNICODE) : null,
+			'source_text' => $sourceText,
+			'chronogram_text' => $chronogramText,
 			'analysis_json' => json_encode($analysis, JSON_UNESCAPED_UNICODE),
 			'created_by' => (int) $this->session->get('soma_id'),
 		];
-		if ($existing) {
-			$cacheMdl->update($existing['id'], $payload);
+		if ($cached) {
+			$cacheMdl->update($cached['id'], $payload);
 		} else {
 			$cacheMdl->insert($payload);
 		}
 
-		return $this->response->setJSON(['success' => 'Curriculum analyzed', 'analysis' => $analysis, 'cached' => false]);
+		$stats = $this->countAnalysisStats($analysis);
+
+		return $this->response->setJSON([
+			'success' => 'Full curriculum + chronogram analysis saved to database',
+			'analysis' => $analysis,
+			'cached' => false,
+			'module_count' => $stats['module_count'],
+			'lo_count' => $stats['lo_count'],
+			'ic_count' => $stats['ic_count'],
+			'chronogram_weeks' => $stats['chronogram_weeks'],
+			'chronogram_slots' => $stats['chronogram_slots'],
+			'file_count' => count($extraFiles) + 1,
+			'source_hash' => $sourceHash,
+		]);
+	}
+
+	private function dirFingerprint(string $dir): string
+	{
+		$bits = [];
+		if (!is_dir($dir)) {
+			return 'missing';
+		}
+		$rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS));
+		foreach ($rii as $file) {
+			/** @var \SplFileInfo $file */
+			if ($file->isFile()) {
+				$bits[] = $file->getFilename() . ':' . $file->getSize() . ':' . $file->getMTime();
+			}
+		}
+		sort($bits);
+		return hash('sha256', implode('|', $bits));
+	}
+
+	/**
+	 * @param array<string,mixed> $analysis
+	 * @return array{module_count:int,lo_count:int,ic_count:int,chronogram_weeks:int,chronogram_slots:int}
+	 */
+	private function countAnalysisStats(array $analysis): array
+	{
+		$modules = is_array($analysis['modules'] ?? null) ? $analysis['modules'] : [];
+		$loTotal = 0;
+		$icTotal = 0;
+		$slotTotal = 0;
+		foreach ($modules as $m) {
+			foreach ($m['learning_outcomes'] ?? [] as $lo) {
+				$loTotal++;
+				$icTotal += is_array($lo['indicative_contents'] ?? null) ? count($lo['indicative_contents']) : 0;
+			}
+			$slotTotal += is_array($m['chronogram_slots'] ?? null) ? count($m['chronogram_slots']) : 0;
+		}
+		$weekTotal = is_array($analysis['chronogram']['weeks'] ?? null) ? count($analysis['chronogram']['weeks']) : 0;
+		if ($weekTotal === 0 && isset($analysis['hours_distribution']['total_weeks'])) {
+			$weekTotal = (int) $analysis['hours_distribution']['total_weeks'];
+		}
+
+		return [
+			'module_count' => count($modules),
+			'lo_count' => $loTotal,
+			'ic_count' => $icTotal,
+			'chronogram_weeks' => $weekTotal,
+			'chronogram_slots' => $slotTotal,
+		];
+	}
+
+	/**
+	 * Fingerprint curriculum+chronogram files so cache invalidates only when uploads change.
+	 *
+	 * @param array{path:string,file_name?:string,updated_at?:string} $curriculum
+	 * @param array{path:string,file_name?:string,updated_at?:string} $chronogram
+	 */
+	private function pedagogicalSourceHash(array $curriculum, array $chronogram): string
+	{
+		$bits = [];
+		foreach ([$curriculum, $chronogram] as $f) {
+			$path = $f['path'] ?? '';
+			$bits[] = ($f['file_name'] ?? basename($path))
+				. '|' . (is_file($path) ? (filesize($path) . '|' . filemtime($path)) : 'missing')
+				. '|' . ($f['updated_at'] ?? '');
+		}
+		return hash('sha256', implode('||', $bits));
 	}
 
 	public function ai_generate_scheme_of_work()
@@ -1807,6 +2054,19 @@ public function testEmail()
 		$analysis = $cache ? json_decode($cache['analysis_json'] ?? '', true) : [];
 		$programType = (string) ($analysis['program_type'] ?? (((int)($ctx['class']['faculty_type'] ?? 1) === 2) ? 'reb' : 'tvet'));
 		$chrono = is_array($analysis) ? ($analysis['chronogram'] ?? null) : null;
+		// Prefer full module (with chronogram_slots) from saved analysis
+		if (is_array($analysis) && !empty($analysis['modules']) && !empty($module['code'])) {
+			$code = strtoupper(trim((string) $module['code']));
+			foreach ($analysis['modules'] as $am) {
+				if (strcasecmp((string) ($am['code'] ?? ''), $code) === 0) {
+					$module = array_merge($am, $module);
+					if (empty($module['chronogram_slots']) && !empty($am['chronogram_slots'])) {
+						$module['chronogram_slots'] = $am['chronogram_slots'];
+					}
+					break;
+				}
+			}
+		}
 
 		$ai = new GeminiAcademicDocs();
 		$result = $ai->generateSchemeOfWork($module, $ctx, $programType, $chrono);
@@ -3467,6 +3727,49 @@ public function attendanceCard()
 		}
 	}
 
+	/**
+	 * Marks entry rules:
+	 * - "0" = scored zero (stored as 0)
+	 * - "" / "-" = did not sit test (stored as -1, shown as "-")
+	 * Calculations treat -1 as 0.
+	 */
+	public static function normalizeMarkEntry($raw)
+	{
+		if ($raw === null) {
+			return -1;
+		}
+		$v = is_string($raw) ? trim($raw) : $raw;
+		if ($v === '' || $v === '-' || $v === '--' || $v === '-1') {
+			return -1;
+		}
+		if (!is_numeric($v)) {
+			return -1;
+		}
+		return 0 + $v;
+	}
+
+	/** Format stored mark for the entry input field. */
+	public static function displayMarkEntry($stored, $markId = '')
+	{
+		$hasRecord = $markId !== null && $markId !== '' && (string) $markId !== '0';
+		if (!$hasRecord && ($stored === null || $stored === '')) {
+			return '';
+		}
+		if ($stored === null || $stored === '' || (is_numeric($stored) && (float) $stored < 0)) {
+			return '-';
+		}
+		if ((float) $stored == 0.0) {
+			return '0';
+		}
+		return (string) $stored;
+	}
+
+	/** SQL expression: treat absent (-1) as zero in averages. */
+	public static function sqlMarkValue($alias = 'marks.marks')
+	{
+		return "IF(COALESCE({$alias},0)<0,0,COALESCE({$alias},0))";
+	}
+
 	public static function ModeToStr($type)
 	{
 		switch ($type) {
@@ -4183,10 +4486,42 @@ public function attendanceCard()
 		try {
 			$CourseRecordModel->save($data);
 
-			return $this->response->setJSON(array("success" => lang("app.courseAssignedSuccess")));
+			return $this->response->setJSON(array(
+				"success" => lang("app.courseAssignedSuccess"),
+				"course_id" => (int) $course,
+			));
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}
+	}
+
+	/**
+	 * Assignments for a course in the active academic year (smart view).
+	 */
+	public function get_course_assignments($courseId = 0)
+	{
+		$this->_preset();
+		$courseId = (int) $courseId;
+		$year = (int) ($this->data['academic_year'] ?? 0);
+		$schoolId = (int) $this->session->get("soma_school_id");
+		if ($courseId <= 0) {
+			return $this->response->setJSON(["assignments" => []]);
+		}
+		$CourseRecordModel = new CourseRecordModel();
+		$rows = $CourseRecordModel->select("course_records.id, course_records.term,
+				concat(l.title,' ',d.code,' ',if(classes.title='','',classes.title)) as class_name,
+				concat(s.fname,' ',s.lname) as teacher_name")
+			->join("classes", "classes.id=course_records.class")
+			->join("departments d", "d.id=classes.department")
+			->join("levels l", "l.id=classes.level")
+			->join("staffs s", "s.id=course_records.lecturer", "LEFT")
+			->where("course_records.course", $courseId)
+			->where("course_records.year", $year)
+			->where("classes.school_id", $schoolId)
+			->orderBy("class_name", "ASC")
+			->get()->getResultArray();
+
+		return $this->response->setJSON(["assignments" => $rows, "course_id" => $courseId]);
 	}
 
 	public function get_faculty($val)
@@ -6623,6 +6958,8 @@ public function getApplicationDocs($id = null)
 			$i = 0;
 			foreach ($student_id as $std) {
 				$a = $std;
+				$catVal = self::normalizeMarkEntry($Catmarks[$i] ?? '');
+				$examVal = self::normalizeMarkEntry($Exammarks[$i] ?? '');
 				$data1 = array(
 						"student_id" => $a,
 						"term" => $term,
@@ -6630,7 +6967,7 @@ public function getApplicationDocs($id = null)
 						"course_id" => $course_id,
 						"class_id" => $class,
 						"mark_type" => 1,
-						"marks" => $Catmarks[$i],
+						"marks" => $catVal,
 						"outof" => $outof,
 						"cat_type" => $catType,
 						"period" => $period,
@@ -6642,34 +6979,29 @@ public function getApplicationDocs($id = null)
 						"course_id" => $course_id,
 						"class_id" => $class,
 						"mark_type" => 2,
-						"marks" => $Exammarks[$i],
+						"marks" => $examVal,
 						"outof" => $outof,
 						"cat_type" => $catType,
 						"period" => $period,
 						"created_by" => $created_by);
-				if ($marks_id[$i] != 0 && strlen($marks_id[$i]) > 0) {
+				if ($marks_id[$i] != 0 && strlen((string) $marks_id[$i]) > 0) {
 					//edit
-					$m = $Catmarks[$i] == -1 ? null : $Catmarks[$i];
 					$data1 = array(
 							"id" => $marks_id[$i],
 							"outof" => $outof,
-							"marks" => $m);
+							"marks" => $catVal);
 				}
-				if ($marks_id1[$i] != 0 && strlen($Exammarks[$i]) > 0) {
+				if ($marks_id1[$i] != 0 && strlen((string) $marks_id1[$i]) > 0) {
 					//edit exam
-					$m1 = $Exammarks[$i] == -1 ? null : $Exammarks[$i];
 					$data2 = array(
 							"id" => $marks_id1[$i],
 							"outof" => $outof,
-							"marks" => $m1);
+							"marks" => $examVal);
 				}
 				try {
-					if (!empty($Catmarks[$i])) {
-						$MarksModel->save($data1);
-					}
-					if (!empty($Exammarks[$i])) {
-						$MarksModel->save($data2);
-					}
+					// Always save (0 = zero score, -1 = did not sit)
+					$MarksModel->save($data1);
+					$MarksModel->save($data2);
 				} catch (\Exception $e) {
 					return $this->response->setJSON(array("error" => lang("app.OopsAction") . $e->getMessage()));
 				}
@@ -6680,11 +7012,13 @@ public function getApplicationDocs($id = null)
 			$i = 0;
 			foreach ($student_id as $std) {
 				$a = $std;
-				if ($mark_type == 9 && strlen($marks[$i]) == 0) {
-					//skip
+				$rawMark = $marks[$i] ?? '';
+				if ($mark_type == 9 && (trim((string) $rawMark) === '' || trim((string) $rawMark) === '-')) {
+					//skip empty re-assessment
 					$i++;
 					continue;
 				}
+				$markVal = self::normalizeMarkEntry($rawMark);
 				$data = array(
 						"student_id" => $a,
 						"term" => $term,
@@ -6692,24 +7026,22 @@ public function getApplicationDocs($id = null)
 						"course_id" => $course_id,
 						"class_id" => $class,
 						"mark_type" => $mark_type,
-						"marks" => $marks[$i],
+						"marks" => $markVal,
 						"outof" => $outof,
 						"cat_type" => $catType,
 						"period" => $period,
 						"created_by" => $created_by);
-				if ($marks_id[$i] != 0 && strlen($marks_id[$i]) > 0) {
+				if ($marks_id[$i] != 0 && strlen((string) $marks_id[$i]) > 0) {
 					//edit
-					$m = $marks[$i] == -1 ? null : $marks[$i];
 					$data = array(
 							"id" => $marks_id[$i],
 							"outof" => $outof,
-							"marks" => $m);
+							"marks" => $markVal);
 				}
 
 				try {
-					if (!empty($marks[$i])) {
-						$MarksModel->save($data);
-					}
+					// Save including explicit 0 and absent (-1)
+					$MarksModel->save($data);
 				} catch (\Exception $e) {
 					return $this->response->setJSON(array("error" => lang("app.OopsAction") . $e->getMessage()));
 				}
@@ -7305,7 +7637,7 @@ public function getApplicationDocs($id = null)
 														  CAST(sum(m.total) as float) as total1")
 					->join("class_records cr", "students.id=cr.student AND cr.year=$year")
 					->join("course_records r", "cr.class=r.class AND cr.year=$year")
-					->join("(select distinct m.mark_type,m.student_id,m.course_id,m.period,concat(m.course_id,':',coalesce((sum(m.marks/m.outof*c.marks)/count(m.id)),0),':',c.marks) as marks,coalesce((sum(m.marks/m.outof*c.marks)/count(m.id)),0) as total from marks m
+					->join("(select distinct m.mark_type,m.student_id,m.course_id,m.period,concat(m.course_id,':',coalesce((sum(" . self::sqlMarkValue('m.marks') . "/m.outof*c.marks)/count(m.id)),0),':',c.marks) as marks,coalesce((sum(" . self::sqlMarkValue('m.marks') . "/m.outof*c.marks)/count(m.id)),0) as total from marks m
 				 inner join courses c on c.id = m.course_id where m.mark_type=1 and m.period=$period and m.term={$active_term->id} and m.course_id in ($course_ids_str) group by m.student_id,m.course_id order by m.course_id) as m"
 							, "students.id=m.student_id and m.course_id=r.course and $course_filter", "LEFT")
 					->where("r.class", $class)
@@ -7675,13 +8007,15 @@ public function getApplicationDocs($id = null)
 				if ($student['outof'] != null && $filledIndex == 0) {
 					$filledIndex = $i;
 				}
+				$dispC = self::displayMarkEntry($student['marks'], $student['mark_id']);
+				$dispE = self::displayMarkEntry($student['marks_ex'], $student['mark_id_ex']);
 				$html .= "
 				<tr>
 				<td>" . $student['regno'] . "<input type='hidden' value='" . $student['mark_id'] . "' name='marks_id[]' class='mark_id'>
 				<input type='hidden' value='" . $student['mark_id_ex'] . "' name='marks_id1[]' class='mark_id'></td>
 				<td>" . $student['name'] . "<input type='hidden' value='" . $student['id'] . "' name='discId[]'></td>
-				<td><input type='text'  name='marksC[]' class='form-control' value='" . $student['marks'] . "'   data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
-				<td><input type='text'  name='marksE[]' class='form-control' value='" . $student['marks_ex'] . "'   data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>";
+				<td><input type='text'  name='marksC[]' class='form-control marks-entry-input' value='" . $dispC . "' placeholder='-'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
+				<td><input type='text'  name='marksE[]' class='form-control marks-entry-input' value='" . $dispE . "' placeholder='-'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>";
 				$i++;
 			}
 			$html .= '</tbody>
@@ -7737,11 +8071,12 @@ public function getApplicationDocs($id = null)
 					$outof = $student['outof'];
 					$date = $student['examDate'] == '' ? date('Y-m-d') : date("Y-m-d", $student['examDate']);
 				}
+				$disp = self::displayMarkEntry($student['marks'], $student['mark_id']);
 				$html .= "
 				<tr>
 				<td>" . $student['regno'] . "<input type='hidden' value='" . $student['mark_id'] . "' name='marks_id[]' class='mark_id'></td>
 				<td>" . $student['name'] . "<input type='hidden' value='" . $student['id'] . "' name='discId[]'></td>
-				<td><input type='text'  name='marks[]' class='form-control' value='" . $student['marks'] . "'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
+				<td><input type='text'  name='marks[]' class='form-control marks-entry-input' value='" . $disp . "' placeholder='-'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
 				</tr>
 				";
 			}
@@ -7797,11 +8132,12 @@ public function getApplicationDocs($id = null)
 					$outof = $student['outof'];
 					$date = $student['examDate'] == '' ? date('Y-m-d') : date("Y-m-d", $student['examDate']);
 				}
+				$disp = self::displayMarkEntry($student['marks'], $student['mark_id']);
 				$html .= "
 				<tr>
 				<td>" . $student['regno'] . "<input type='hidden' value='" . $student['mark_id'] . "' name='marks_id[]' class='mark_id'></td>
 				<td>" . $student['name'] . "<input type='hidden' value='" . $student['id'] . "' name='discId[]'></td>
-				<td><input type='text'  name='marks[]' class='form-control' value='" . $student['marks'] . "'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
+				<td><input type='text'  name='marks[]' class='form-control marks-entry-input' value='" . $disp . "' placeholder='-'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
 				</tr>
 				";
 			}
@@ -8127,7 +8463,7 @@ public function getApplicationDocs($id = null)
 			$records[$a] = $student;
 			$tot = 0;
 			foreach ($this->get_courses($student['class'], $term, $year) as $core) {
-				$core['result'] = $MarksModel->select("(sum(marks.marks/marks.outof*c.marks)/count(marks.id)) as marks")
+				$core['result'] = $MarksModel->select("(sum(" . self::sqlMarkValue('marks.marks') . "/marks.outof*c.marks)/count(marks.id)) as marks")
 						->join("active_term at", "at.id=marks.term")
 						->join("courses c", "c.id=marks.course_id")
 						->where("marks.course_id", $core['id'])
@@ -8693,7 +9029,7 @@ public function getApplicationDocs($id = null)
 //		echo $cat_filter;die();
 
 //		//cat marks
-		$catBuilder = $MarksModel->select("(sum(marks.marks/marks.outof*c.marks)/count(marks.id)) as marks,at.term")
+		$catBuilder = $MarksModel->select("(sum(" . self::sqlMarkValue('marks.marks') . "/marks.outof*c.marks)/count(marks.id)) as marks,at.term")
 				->join("active_term at", "at.id=marks.term")
 				->join("courses c", "c.id=marks.course_id")
 				->where("marks.course_id", $course)
@@ -8706,7 +9042,7 @@ public function getApplicationDocs($id = null)
 		}
 		$cat_marks = array_column($catBuilder->groupBy("at.id")->get()->getResultArray(), 'marks', 'term');
 //		//exam marks
-		$examBuilder = $MarksModel->select("coalesce((marks.marks/marks.outof*c.marks)) as marks,at.term")
+		$examBuilder = $MarksModel->select("coalesce((" . self::sqlMarkValue('marks.marks') . "/marks.outof*c.marks)) as marks,at.term")
 				->join("active_term at", "at.id=marks.term")
 				->join("courses c", "c.id=marks.course_id")
 				->where("marks.course_id", $course)
@@ -8728,7 +9064,7 @@ public function getApplicationDocs($id = null)
 	static function reAssessment($course, $student, $term, $year)
 	{
 		$MarksModel = new MarksModel();
-		$marks = $MarksModel->select("(marks.marks/marks.outof*100) as marks")
+		$marks = $MarksModel->select("(" . self::sqlMarkValue('marks.marks') . "/marks.outof*100) as marks")
 				->join("active_term at", "at.id=marks.term")
 				->join("courses c", "c.id=marks.course_id")
 				->where("marks.course_id", $course)

@@ -37,33 +37,901 @@ class GeminiAcademicDocs
 	/** @return list<string> */
 	public function textModels(): array
 	{
-		$primary = trim((string) (env('GEMINI_MODEL') ?: ''));
-		$candidates = array_filter([
+		$primary = trim((string) (env('GEMINI_MODEL') ?: env('GOOGLE_AI_MODEL') ?: ''));
+		$dead = [
+			'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash-latest',
+			'gemini-pro', 'gemini-1.0-pro', 'gemini-1.0-pro-latest',
+			'gemini-2.0-flash', 'gemini-2.0-flash-001', 'gemini-2.0-flash-lite',
+			'gemini-2.5-flash-lite', 'gemini-2.5-flash-lite-preview',
+			// Pro/thinking models often return non-JSON or truncate — skip for doc analysis
+			'gemini-2.5-pro', 'gemini-2.5-pro-preview', 'gemini-3-pro', 'gemini-3.5-pro',
+		];
+		$candidates = [
 			$primary,
 			'gemini-2.5-flash',
-			'gemini-2.0-flash',
-			'gemini-1.5-flash',
-		]);
-		return array_values(array_unique($candidates));
+			'gemini-flash-latest',
+			'gemini-2.5-flash-preview-05-20',
+		];
+		$out = [];
+		foreach ($candidates as $m) {
+			$m = trim((string) $m);
+			if ($m === '' || in_array(strtolower($m), $dead, true) || in_array($m, $dead, true)) {
+				continue;
+			}
+			if (stripos($m, 'pro') !== false) {
+				continue; // keep analysis fast & JSON-stable
+			}
+			if (!in_array($m, $out, true)) {
+				$out[] = $m;
+			}
+		}
+		return $out !== [] ? $out : ['gemini-2.5-flash'];
 	}
 
 	/**
-	 * Analyze curriculum (+ optional chronogram) and return structured modules matched to DB.
+	 * Full curriculum analyse (Word/PDF/ZIP package) → all modules + LO/IC saved for SoW.
+	 *
+	 * @param array{path:string,original?:string} $curriculum primary file (structure PDF or ZIP)
+	 * @param array{path:string,original?:string}|null $chronogram
+	 * @param array $dbContext
+	 * @param list<array{path:string,original?:string}> $extraFiles additional module PDFs
+	 * @return array|null
+	 */
+	public function analyzeCurriculum(array $curriculum, ?array $chronogram, array $dbContext, array $extraFiles = []): ?array
+	{
+		$packFiles = $this->expandCurriculumPackage($curriculum, $extraFiles);
+		if ($packFiles === []) {
+			$this->lastError = 'Could not read curriculum file(s)';
+			return null;
+		}
+
+		$combinedText = '';
+		$fileIndex = []; // code hint => text
+		$primaryPdf = null;
+		$totalBytes = 0;
+
+		foreach ($packFiles as $f) {
+			$ex = DocumentTextExtractor::extract($f['path']);
+			$text = $this->safeUtf8((string) ($ex['text'] ?? ''));
+			$orig = $f['original'] ?? basename($f['path']);
+			$label = "=== FILE: {$orig} (ext={$ex['ext']}, chars=" . mb_strlen($text, 'UTF-8') . ") ===\n";
+			$combinedText .= $label . $text . "\n\n";
+			$totalBytes += (int) ($ex['chars'] ?? 0);
+
+			// Map filename codes like SWDDD401 to this file's text
+			if (preg_match_all('/\b([A-Z]{3,8}\d{3})\b/', strtoupper($orig . ' ' . mb_substr($text, 0, 500, 'UTF-8')), $cm)) {
+				foreach ($cm[1] as $code) {
+					if (!isset($fileIndex[$code]) || mb_strlen($text, 'UTF-8') > mb_strlen($fileIndex[$code], 'UTF-8')) {
+						$fileIndex[$code] = $text;
+					}
+				}
+			}
+
+			$ext = strtolower((string) ($ex['ext'] ?? ''));
+			if ($ext === 'pdf' && $primaryPdf === null && !empty($ex['bytes']) && strlen((string) $ex['bytes']) <= 8 * 1024 * 1024) {
+				// Prefer structure / "curriculum" / "general information" as primary attach
+				$n = strtolower($orig);
+				if (strpos($n, 'general') !== false || strpos($n, 'structure') !== false || strpos($n, 'curriculum') !== false || count($packFiles) === 1) {
+					$primaryPdf = $ex;
+				}
+			}
+		}
+		if ($primaryPdf === null) {
+			foreach ($packFiles as $f) {
+				$ex = DocumentTextExtractor::extract($f['path']);
+				if (strtolower((string) ($ex['ext'] ?? '')) === 'pdf' && !empty($ex['bytes']) && strlen((string) $ex['bytes']) <= 8 * 1024 * 1024) {
+					$primaryPdf = $ex;
+					break;
+				}
+			}
+		}
+
+		$chr = ($chronogram && !empty($chronogram['path']) && is_file($chronogram['path']))
+			? DocumentTextExtractor::extract($chronogram['path'])
+			: ['text' => '', 'mime' => '', 'bytes' => null, 'chars' => 0, 'ext' => ''];
+		$chrText = $this->safeUtf8((string) ($chr['text'] ?? ''));
+		if ($chrText === '' && empty($chr['bytes'])) {
+			$this->lastError = 'Chronogram file is empty or unreadable — upload a PDF/Word chronogram for weekly hour distribution';
+			return null;
+		}
+
+		// Deterministic module inventory from codes in filenames + text
+		$seedCodes = $this->discoverModuleCodes($combinedText, array_keys($fileIndex));
+		$seedList = [];
+		foreach ($seedCodes as $code) {
+			$titleHint = '';
+			if (preg_match('/\b' . preg_quote($code, '/') . '\s+([^\n\r]{5,90})/i', $combinedText, $tm)) {
+				$titleHint = trim(preg_replace('/\s+/', ' ', $tm[1]) ?? '');
+				$titleHint = preg_replace('/\d+\s*$/', '', $titleHint) ?? $titleHint;
+			}
+			$seedList[] = ['code' => $code, 'title' => $titleHint];
+		}
+
+		// Pass 1 — full inventory (must include every seed code)
+		$invParts = [[
+			'text' => "SEED MODULE CODES (MUST ALL appear in modules[]):\n"
+				. json_encode($seedList, JSON_UNESCAPED_UNICODE)
+				. "\n\n=== COMBINED CURRICULUM TEXT (may be truncated) ===\n"
+				. mb_substr($combinedText, 0, 120000, 'UTF-8')
+				. "\n\n=== CHRONOGRAM ===\n" . mb_substr($chrText, 0, 35000, 'UTF-8'),
+		]];
+		if ($primaryPdf && !empty($primaryPdf['bytes'])) {
+			$invParts[] = [
+				'inlineData' => [
+					'mimeType' => 'application/pdf',
+					'data' => base64_encode((string) $primaryPdf['bytes']),
+				],
+			];
+		}
+		if (($chr['chars'] ?? 0) < 1200 && !empty($chr['bytes']) && ($chr['ext'] ?? '') === 'pdf'
+			&& strlen((string) $chr['bytes']) <= 5 * 1024 * 1024) {
+			$invParts[] = [
+				'inlineData' => [
+					'mimeType' => 'application/pdf',
+					'data' => base64_encode((string) $chr['bytes']),
+				],
+			];
+		}
+
+		$invPrompt = $this->promptFullInventory($dbContext, count($seedList));
+		$inventory = $this->generateJson($invPrompt, $invParts, 12288);
+		$modules = is_array($inventory['modules'] ?? null) ? $inventory['modules'] : [];
+
+		// Merge missing seed codes
+		$have = [];
+		foreach ($modules as $m) {
+			$have[strtoupper(trim((string) ($m['code'] ?? '')))] = true;
+		}
+		foreach ($seedList as $s) {
+			$c = strtoupper($s['code']);
+			if ($c !== '' && empty($have[$c])) {
+				$modules[] = [
+					'code' => $c,
+					'title' => $s['title'] ?: $c,
+					'rqf_level' => null,
+					'learning_hours' => null,
+					'learning_outcomes' => [],
+				];
+				$have[$c] = true;
+			}
+		}
+
+		if ($modules === []) {
+			$this->lastError = 'No modules found in curriculum PDF/ZIP';
+			return null;
+		}
+
+		// Pass 2 — full LO/IC per module (use per-file text when available)
+		$detailed = [];
+		$batchSize = 2;
+		for ($i = 0, $n = count($modules); $i < $n; $i += $batchSize) {
+			$batch = array_slice($modules, $i, $batchSize);
+			$windows = '';
+			foreach ($batch as $m) {
+				$code = strtoupper(trim((string) ($m['code'] ?? '')));
+				$title = trim((string) ($m['title'] ?? ''));
+				$body = $fileIndex[$code] ?? $this->sliceAroundKeywords($combinedText, array_filter([$code, $title]), 14000);
+				$windows .= "\n\n----- MODULE {$code} {$title} -----\n" . mb_substr($body, 0, 16000, 'UTF-8');
+			}
+			$detailPrompt = <<<PROMPT
+Extract COMPLETE Learning Outcomes and Indicative Contents for each module below.
+If the text uses Elements of Competence / Performance Criteria, map them to learning_outcomes and indicative_contents.
+Include hours/credits when present. Return ONLY JSON:
+{"modules":[{"code":"","title":"","rqf_level":null,"learning_hours":null,"credits":null,"module_type":"","purpose":"","learning_outcomes":[{"code":"","title":"","performance_criteria":[string],"indicative_contents":[{"code":"","title":"","hours":null}]}],"raw_topics":[string]}]}
+
+MODULES: 
+PROMPT
+				. json_encode($batch, JSON_UNESCAPED_UNICODE)
+				. "\n\nTEXT:\n" . $this->safeUtf8($windows);
+			$detail = $this->generateJson($detailPrompt, [], 12288);
+			if (is_array($detail['modules'] ?? null)) {
+				foreach ($detail['modules'] as $dm) {
+					$key = strtoupper(trim((string) ($dm['code'] ?? '')));
+					if ($key !== '') {
+						$detailed[$key] = $dm;
+					}
+				}
+			}
+		}
+
+		$merged = [];
+		foreach ($modules as $m) {
+			$key = strtoupper(trim((string) ($m['code'] ?? '')));
+			$full = ($key !== '' && isset($detailed[$key])) ? array_merge($m, $detailed[$key]) : $m;
+			// Ensure learning_outcomes array exists
+			if (empty($full['learning_outcomes']) || !is_array($full['learning_outcomes'])) {
+				$full['learning_outcomes'] = [];
+			}
+			$merged[] = $full;
+		}
+
+		// Pass 3 — dedicated chronogram extraction (weekly hours distribution)
+		$codes = array_values(array_filter(array_map(static function ($m) {
+			return strtoupper(trim((string) ($m['code'] ?? '')));
+		}, $merged)));
+		$chronoResult = $this->extractChronogramDistribution($chr, $chrText, $codes, $dbContext);
+		$slots = is_array($chronoResult['module_slots'] ?? null) ? $chronoResult['module_slots'] : [];
+		foreach ($merged as &$mm) {
+			$code = strtoupper(trim((string) ($mm['code'] ?? '')));
+			if ($code === '') {
+				continue;
+			}
+			foreach ($slots as $sk => $sv) {
+				if (strcasecmp((string) $sk, $code) === 0 && is_array($sv)) {
+					$mm['chronogram_slots'] = $this->normalizeChronogramSlots($sv);
+					$mm['weekly_hours_total'] = array_sum(array_map(static function ($s) {
+						return (float) ($s['hours'] ?? $s['periods'] ?? 0);
+					}, $mm['chronogram_slots']));
+					break;
+				}
+			}
+		}
+		unset($mm);
+
+		$chronogramBlock = $chronoResult['chronogram'] ?? ['school_year_label' => '', 'weeks' => []];
+		$chronogramBlock = $this->normalizeChronogramBlock($chronogramBlock);
+
+		$raw = [
+			'program_type' => $inventory['program_type'] ?? 'tvet',
+			'qualification_title' => $inventory['qualification_title'] ?? '',
+			'sector' => $inventory['sector'] ?? '',
+			'trade' => $inventory['trade'] ?? '',
+			'detected_rqf_level' => $inventory['detected_rqf_level'] ?? null,
+			'modules' => $merged,
+			'chronogram' => $chronogramBlock,
+			'hours_distribution' => $this->buildHoursDistributionSummary($merged, $chronogramBlock),
+			'notes' => 'Full multi-file curriculum + chronogram extract (' . count($packFiles) . ' curriculum file(s), ' . count($merged) . ' modules)',
+			'source_files' => array_map(static function ($f) {
+				return $f['original'] ?? basename($f['path'] ?? '');
+			}, $packFiles),
+			'_source_text' => mb_substr(
+				$combinedText . "\n\n===== CHRONOGRAM SOURCE =====\n" . $chrText,
+				0,
+				600000,
+				'UTF-8'
+			),
+			'_chronogram_text' => mb_substr($chrText, 0, 200000, 'UTF-8'),
+		];
+
+		$weekCount = is_array($chronogramBlock['weeks'] ?? null) ? count($chronogramBlock['weeks']) : 0;
+		$slotsFilled = 0;
+		foreach ($merged as $m) {
+			$slotsFilled += is_array($m['chronogram_slots'] ?? null) ? count($m['chronogram_slots']) : 0;
+		}
+
+		$raw['_extract_meta'] = [
+			'curriculum_chars' => mb_strlen($combinedText, 'UTF-8'),
+			'chronogram_chars' => mb_strlen($chrText, 'UTF-8'),
+			'file_count' => count($packFiles),
+			'seed_codes' => count($seedCodes),
+			'module_count' => count($merged),
+			'chronogram_weeks' => $weekCount,
+			'chronogram_slots_filled' => $slotsFilled,
+			'mode' => 'full_package_multipass_with_chronogram',
+		];
+		return $this->matchToDb($raw, $dbContext);
+	}
+
+	/**
+	 * Dedicated chronogram pass — always prefer PDF vision for weekly grids.
+	 *
+	 * @param array $chr extractor result
+	 * @param list<string> $moduleCodes
+	 * @return array{chronogram?:array,module_slots?:array}
+	 */
+	private function extractChronogramDistribution(array $chr, string $chrText, array $moduleCodes, array $dbContext): array
+	{
+		$classMeta = json_encode($dbContext['class'] ?? [], JSON_UNESCAPED_UNICODE);
+		$year = (string) ($dbContext['academic_year_title'] ?? '');
+		$prompt = <<<PROMPT
+You are reading a Rwanda school CHRONOGRAM (weekly teaching timetable / distribution of hours).
+
+GOAL: Extract EVERY week and how many periods/hours each module is taught that week.
+This data is used later to distribute Scheme of Work content across weeks.
+
+CLASS: {$classMeta}
+YEAR: {$year}
+MODULE CODES TO MAP: 
+PROMPT
+			. json_encode(array_values($moduleCodes), JSON_UNESCAPED_UNICODE)
+			. <<<PROMPT
+
+
+RULES:
+1. Chronograms are often grids/tables/images — read carefully (text and/or attached PDF).
+2. For each week capture: week number, term (1/2/3 if shown), date_from, date_to.
+3. For each module taught that week: code + periods (or hours). If the grid shows "periods", keep periods; also set hours = periods when hours not labeled separately.
+4. Cover the full school year visible in the document — do not stop after a few weeks.
+5. module_slots must list, per module code, every week that module appears.
+
+Return ONLY JSON:
+{
+  "chronogram": {
+    "school_year_label": "",
+    "total_weeks": 0,
+    "weeks": [
+      {
+        "week": 1,
+        "term": 1,
+        "date_from": "",
+        "date_to": "",
+        "modules": [{"code":"SWDDD401","periods":4,"hours":4}]
+      }
+    ]
+  },
+  "module_slots": {
+    "SWDDD401": [{"week":1,"term":1,"date_from":"","date_to":"","periods":4,"hours":4}]
+  }
+}
+PROMPT;
+
+		$parts = [[
+			'text' => $prompt . "\n\n=== CHRONOGRAM EXTRACTED TEXT ===\n"
+				. ($chrText !== '' ? mb_substr($chrText, 0, 100000, 'UTF-8') : '(little/no text — rely on attached PDF grid)'),
+		]];
+
+		// Always attach chronogram PDF/image when reasonably sized (grids need vision)
+		$ext = strtolower((string) ($chr['ext'] ?? ''));
+		$max = 10 * 1024 * 1024;
+		if (!empty($chr['bytes']) && strlen((string) $chr['bytes']) <= $max
+			&& in_array($ext, ['pdf', 'png', 'jpg', 'jpeg', 'webp'], true)) {
+			$mime = (string) ($chr['mime'] ?? '');
+			if ($mime === '') {
+				$mime = $ext === 'pdf' ? 'application/pdf' : 'image/' . ($ext === 'jpg' ? 'jpeg' : $ext);
+			}
+			$parts[] = [
+				'inlineData' => [
+					'mimeType' => $mime,
+					'data' => base64_encode((string) $chr['bytes']),
+				],
+			];
+		}
+
+		$result = $this->generateJson(
+			'Extract the complete chronogram weekly hours distribution JSON as specified in the attached content. JSON only.',
+			$parts,
+			12288
+		);
+		return is_array($result) ? $result : [];
+	}
+
+	/** @param list<array<string,mixed>> $slots */
+	private function normalizeChronogramSlots(array $slots): array
+	{
+		$out = [];
+		foreach ($slots as $s) {
+			if (!is_array($s)) {
+				continue;
+			}
+			$periods = isset($s['periods']) ? (float) $s['periods'] : null;
+			$hours = isset($s['hours']) ? (float) $s['hours'] : null;
+			if ($hours === null && $periods !== null) {
+				$hours = $periods;
+			}
+			if ($periods === null && $hours !== null) {
+				$periods = $hours;
+			}
+			$out[] = [
+				'week' => (int) ($s['week'] ?? 0),
+				'term' => (int) ($s['term'] ?? 0) ?: null,
+				'date_from' => (string) ($s['date_from'] ?? ''),
+				'date_to' => (string) ($s['date_to'] ?? ''),
+				'periods' => $periods,
+				'hours' => $hours,
+			];
+		}
+		usort($out, static function ($a, $b) {
+			return ($a['week'] ?? 0) <=> ($b['week'] ?? 0);
+		});
+		return $out;
+	}
+
+	private function normalizeChronogramBlock(array $block): array
+	{
+		$weeks = [];
+		foreach ($block['weeks'] ?? [] as $w) {
+			if (!is_array($w)) {
+				continue;
+			}
+			$mods = [];
+			foreach ($w['modules'] ?? [] as $m) {
+				if (!is_array($m)) {
+					continue;
+				}
+				$periods = isset($m['periods']) ? (float) $m['periods'] : null;
+				$hours = isset($m['hours']) ? (float) $m['hours'] : null;
+				if ($hours === null && $periods !== null) {
+					$hours = $periods;
+				}
+				$mods[] = [
+					'code' => strtoupper(trim((string) ($m['code'] ?? ''))),
+					'periods' => $periods,
+					'hours' => $hours,
+				];
+			}
+			$weeks[] = [
+				'week' => (int) ($w['week'] ?? 0),
+				'term' => (int) ($w['term'] ?? 0) ?: null,
+				'date_from' => (string) ($w['date_from'] ?? ''),
+				'date_to' => (string) ($w['date_to'] ?? ''),
+				'modules' => $mods,
+			];
+		}
+		usort($weeks, static function ($a, $b) {
+			return ($a['week'] ?? 0) <=> ($b['week'] ?? 0);
+		});
+		return [
+			'school_year_label' => (string) ($block['school_year_label'] ?? ''),
+			'total_weeks' => (int) ($block['total_weeks'] ?? count($weeks)),
+			'weeks' => $weeks,
+		];
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $modules
+	 */
+	private function buildHoursDistributionSummary(array $modules, array $chronogramBlock): array
+	{
+		$byModule = [];
+		foreach ($modules as $m) {
+			$code = strtoupper(trim((string) ($m['code'] ?? '')));
+			if ($code === '') {
+				continue;
+			}
+			$slots = is_array($m['chronogram_slots'] ?? null) ? $m['chronogram_slots'] : [];
+			$hours = 0.0;
+			foreach ($slots as $s) {
+				$hours += (float) ($s['hours'] ?? $s['periods'] ?? 0);
+			}
+			$byModule[$code] = [
+				'title' => (string) ($m['title'] ?? ''),
+				'weeks' => count($slots),
+				'total_hours' => $hours,
+			];
+		}
+		return [
+			'total_weeks' => count($chronogramBlock['weeks'] ?? []),
+			'modules_with_slots' => count(array_filter($byModule, static function ($x) {
+				return ($x['weeks'] ?? 0) > 0;
+			})),
+			'by_module' => $byModule,
+		];
+	}
+
+	/**
+	 * @param array{path:string,original?:string} $curriculum
+	 * @param list<array{path:string,original?:string}> $extraFiles
+	 * @return list<array{path:string,original?:string}>
+	 */
+	private function expandCurriculumPackage(array $curriculum, array $extraFiles = []): array
+	{
+		$out = [];
+		$path = $curriculum['path'] ?? '';
+		if ($path === '' || !is_file($path)) {
+			return $extraFiles;
+		}
+		$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+		if ($ext === 'zip' && class_exists(\ZipArchive::class)) {
+			$dest = dirname($path) . '/pkg_' . pathinfo($path, PATHINFO_FILENAME);
+			if (!is_dir($dest)) {
+				@mkdir($dest, 0755, true);
+				$zip = new \ZipArchive();
+				if ($zip->open($path) === true) {
+					$zip->extractTo($dest);
+					$zip->close();
+				}
+			}
+			$rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dest, \FilesystemIterator::SKIP_DOTS));
+			foreach ($rii as $file) {
+				/** @var \SplFileInfo $file */
+				if (!$file->isFile()) {
+					continue;
+				}
+				$e = strtolower($file->getExtension());
+				if (!in_array($e, ['pdf', 'doc', 'docx'], true)) {
+					continue;
+				}
+				$out[] = ['path' => $file->getPathname(), 'original' => $file->getFilename()];
+			}
+		} else {
+			$out[] = $curriculum;
+		}
+		foreach ($extraFiles as $f) {
+			if (!empty($f['path']) && is_file($f['path'])) {
+				$out[] = $f;
+			}
+		}
+		// de-dupe by realpath
+		$seen = [];
+		$uniq = [];
+		foreach ($out as $f) {
+			$rp = realpath($f['path']) ?: $f['path'];
+			if (isset($seen[$rp])) {
+				continue;
+			}
+			$seen[$rp] = true;
+			$uniq[] = $f;
+		}
+		return $uniq;
+	}
+
+	/** @param list<string> $extra */
+	private function discoverModuleCodes(string $text, array $extra = []): array
+	{
+		$codes = [];
+		foreach ($extra as $c) {
+			$c = strtoupper(trim((string) $c));
+			if ($c !== '') {
+				$codes[$c] = true;
+			}
+		}
+		if (preg_match_all('/\b([A-Z]{3,8}\d{3})\b/', strtoupper($text), $m)) {
+			foreach ($m[1] as $c) {
+				// Filter obvious non-module tokens
+				if (preg_match('/^(PAGE|HTTP|HTTPS|RQF|TVET|ICTSWD|LEVEL)$/', $c)) {
+					continue;
+				}
+				$codes[$c] = true;
+			}
+		}
+		$out = array_keys($codes);
+		sort($out);
+		return $out;
+	}
+
+	private function promptFullInventory(array $ctx, int $seedCount): string
+	{
+		$dbCourses = json_encode($ctx['courses'] ?? [], JSON_UNESCAPED_UNICODE);
+		$classMeta = json_encode($ctx['class'] ?? [], JSON_UNESCAPED_UNICODE);
+		$school = json_encode($ctx['school'] ?? [], JSON_UNESCAPED_UNICODE);
+
+		return <<<PROMPT
+You are extracting a COMPLETE module inventory from a Rwanda TVET curriculum package (structure PDF + optional module PDFs).
+
+CRITICAL: Return EVERY module/course. Seed list has about {$seedCount} codes — your modules[] must include ALL of them (CCM + General + Specific).
+Do not stop after a few Specific modules.
+
+SCHOOL: {$school}
+CLASS: {$classMeta}
+DB COURSES: {$dbCourses}
+
+Return ONLY JSON:
+{
+  "program_type": "tvet",
+  "qualification_title": "",
+  "sector": "",
+  "trade": "",
+  "detected_rqf_level": 4,
+  "modules": [
+    {"code":"","title":"","rqf_level":4,"learning_hours":null,"credits":null,"module_type":"specific|general|ccm","learning_outcomes":[]}
+  ],
+  "chronogram": {"school_year_label":"","weeks":[]}
+}
+PROMPT;
+	}
+
+	/**
+	 * Build compact multimodal parts for Word/PDF (text first; PDF binary only when needed).
+	 *
+	 * @param array $cur
+	 * @param array $chr
+	 * @return list<array<string,mixed>>
+	 */
+	private function buildQuickAnalyseParts(
+		array $curriculum,
+		?array $chronogram,
+		array $cur,
+		array $chr,
+		string $curText,
+		string $chrText
+	): array {
+		$parts = [];
+		$curExt = strtolower((string) ($cur['ext'] ?? ''));
+		$chrExt = strtolower((string) ($chr['ext'] ?? ''));
+		$curOrig = $curriculum['original'] ?? basename($curriculum['path'] ?? 'curriculum');
+		$chrOrig = $chronogram['original'] ?? 'chronogram';
+
+		$curSample = $this->buildInventorySample($curText);
+		if ($curSample === '' && in_array($curExt, ['doc', 'docx'], true)) {
+			$parts[] = ['text' => "=== CURRICULUM FILE: {$curOrig} (Word, little extractable text) ===\nRe-save as PDF if analysis is empty."];
+		} else {
+			$parts[] = [
+				'text' => "=== CURRICULUM FILE: {$curOrig} (ext={$curExt}, chars=" . mb_strlen($curText, 'UTF-8') . ") ===\n"
+					. ($curSample !== '' ? $curSample : '(no text extracted)'),
+			];
+		}
+
+		// Attach curriculum PDF only when text is sparse (scanned)
+		if (
+			$curExt === 'pdf'
+			&& mb_strlen($curText, 'UTF-8') < 1500
+			&& !empty($cur['bytes'])
+			&& strlen((string) $cur['bytes']) <= 6 * 1024 * 1024
+		) {
+			$parts[] = [
+				'inlineData' => [
+					'mimeType' => 'application/pdf',
+					'data' => base64_encode((string) $cur['bytes']),
+				],
+			];
+		}
+
+		$parts[] = [
+			'text' => "=== CHRONOGRAM FILE: {$chrOrig} (ext={$chrExt}, chars=" . mb_strlen($chrText, 'UTF-8') . ") ===\n"
+				. ($chrText !== '' ? mb_substr($chrText, 0, 40000, 'UTF-8') : '(no text — use attached PDF grid if present)'),
+		];
+		if (
+			in_array($chrExt, ['pdf', 'png', 'jpg', 'jpeg'], true)
+			&& mb_strlen($chrText, 'UTF-8') < 1500
+			&& !empty($chr['bytes'])
+			&& strlen((string) $chr['bytes']) <= 5 * 1024 * 1024
+		) {
+			$parts[] = [
+				'inlineData' => [
+					'mimeType' => ($chr['mime'] ?? '') ?: ($chrExt === 'pdf' ? 'application/pdf' : 'image/png'),
+					'data' => base64_encode((string) $chr['bytes']),
+				],
+			];
+		}
+
+		return $parts;
+	}
+
+	private function promptQuickAnalyse(array $ctx, int $curChars, int $chrChars, string $curExt, string $chrExt): string
+	{
+		$dbCourses = json_encode($ctx['courses'] ?? [], JSON_UNESCAPED_UNICODE);
+		$classMeta = json_encode($ctx['class'] ?? [], JSON_UNESCAPED_UNICODE);
+		$school = json_encode($ctx['school'] ?? [], JSON_UNESCAPED_UNICODE);
+		$year = (string) ($ctx['academic_year_title'] ?? '');
+
+		return <<<PROMPT
+You are a fast Rwanda TVET/REB curriculum parser. Documents are Word (.doc/.docx) or PDF.
+
+GOAL (one pass): Extract ALL courses/modules from CURRICULUM with LO + Indicative Contents, and map weeks/hours from CHRONOGRAM.
+
+Doc meta: curriculum_ext={$curExt} chars={$curChars}; chronogram_ext={$chrExt} chars={$chrChars}; year={$year}
+
+RULES:
+1. Work from EXTRACTED TEXT. If a PDF is attached with little text, read the PDF visually.
+2. List EVERY module/course (code + title). Do not stop early.
+3. For each module include learning_outcomes (LO) and indicative_contents (IC) with hours when present.
+4. From chronogram, fill chronogram.weeks and each module's chronogram_slots (week, term, dates, periods).
+5. Prefer matching DB course codes when obvious.
+
+SCHOOL: {$school}
+CLASS: {$classMeta}
+DB COURSES: {$dbCourses}
+
+Return ONLY valid JSON (no markdown):
+{
+  "program_type": "tvet",
+  "qualification_title": "",
+  "sector": "",
+  "trade": "",
+  "detected_rqf_level": null,
+  "modules": [
+    {
+      "code": "",
+      "title": "",
+      "rqf_level": null,
+      "learning_hours": null,
+      "credits": null,
+      "module_type": "",
+      "learning_outcomes": [{"code":"","title":"","indicative_contents":[{"code":"","title":"","hours":null}]}],
+      "chronogram_slots": [{"week":1,"term":1,"date_from":"","date_to":"","periods":0}],
+      "matched_course_id": null,
+      "match_confidence": 0,
+      "match_reason": ""
+    }
+  ],
+  "chronogram": {"school_year_label":"","weeks":[{"week":1,"term":1,"date_from":"","date_to":"","modules":[{"code":"","periods":0}]}]},
+  "notes": ""
+}
+PROMPT;
+	}
+
+	/**
+	 * Multi-pass analyser: inventory → detail batches → chronogram map.
+	 * Avoids stuffing a huge curriculum into one Gemini call.
 	 *
 	 * @param array{path:string,original?:string} $curriculum
 	 * @param array{path:string,original?:string}|null $chronogram
-	 * @param array $dbContext school/class/levels/courses/teachers
-	 * @return array|null
+	 * @param array $cur
+	 * @param array $chr
 	 */
-	public function analyzeCurriculum(array $curriculum, ?array $chronogram, array $dbContext): ?array
-	{
-		$parts = $this->buildFileParts($curriculum, $chronogram);
-		$prompt = $this->promptAnalyze($dbContext);
-		$raw = $this->generateJson($prompt, $parts);
-		if ($raw === null) {
+	private function analyzeLargeCurriculum(
+		string $curText,
+		string $chrText,
+		array $curriculum,
+		?array $chronogram,
+		array $cur,
+		array $chr,
+		array $dbContext
+	): ?array {
+		$ctxBrief = $this->promptAnalyze($dbContext);
+
+		// Pass 1 — module inventory (head + sampled body + chronogram summary)
+		$inventoryText = $this->buildInventorySample($curText);
+		$parts1 = [[
+			'text' => "=== CURRICULUM SAMPLE (large document — inventory pass) ===\n" . $inventoryText
+				. "\n\n=== CHRONOGRAM TEXT (may be truncated) ===\n" . mb_substr($chrText, 0, 40000, 'UTF-8'),
+		]];
+		// Attach chronogram PDF when text is sparse (weekly grids)
+		if (($chr['chars'] ?? 0) < 1200 && !empty($chr['bytes']) && in_array(($chr['ext'] ?? ''), ['pdf', 'png', 'jpg', 'jpeg'], true)
+			&& strlen((string) $chr['bytes']) <= 4 * 1024 * 1024) {
+			$parts1[] = [
+				'inlineData' => [
+					'mimeType' => $chr['mime'] ?: 'application/pdf',
+					'data' => base64_encode((string) $chr['bytes']),
+				],
+			];
+		}
+
+		$invPrompt = $ctxBrief . "\n\nIMPORTANT: This is PASS 1 (INVENTORY ONLY) of a LARGE curriculum.\n"
+			. "Return JSON with program_type, qualification_title, sector, trade, detected_rqf_level,\n"
+			. "and modules array with ONLY code+title+rqf_level+learning_hours (leave learning_outcomes empty for now).\n"
+			. "List EVERY module/course code you can find. Also return a chronogram.weeks skeleton if visible.";
+		$inventory = $this->generateJson($invPrompt, $parts1);
+		if ($inventory === null) {
 			return null;
 		}
-		return $this->matchToDb($raw, $dbContext);
+
+		$modules = is_array($inventory['modules'] ?? null) ? $inventory['modules'] : [];
+		if ($modules === []) {
+			// Fallback: single-shot on truncated curriculum
+			$parts = [[
+				'text' => "=== CURRICULUM (truncated) ===\n" . mb_substr($curText, 0, 90000, 'UTF-8')
+					. "\n\n=== CHRONOGRAM ===\n" . mb_substr($chrText, 0, 50000, 'UTF-8'),
+			]];
+			return $this->generateJson($this->promptAnalyze($dbContext), $parts);
+		}
+
+		// Pass 2 — detail batches (LO / IC) using text windows around each module code
+		$detailed = [];
+		$batchSize = 4;
+		for ($i = 0, $n = count($modules); $i < $n; $i += $batchSize) {
+			$batch = array_slice($modules, $i, $batchSize);
+			$windows = '';
+			foreach ($batch as $m) {
+				$code = trim((string) ($m['code'] ?? ''));
+				$title = trim((string) ($m['title'] ?? ''));
+				$slice = $this->sliceAroundKeywords($curText, array_filter([$code, $title]), 9000);
+				$windows .= "\n\n----- MODULE WINDOW: {$code} {$title} -----\n" . $slice;
+			}
+			$detailPrompt = <<<PROMPT
+You are extracting Learning Outcomes and Indicative Contents for a batch of TVET/REB modules from curriculum text windows.
+
+Return ONLY JSON:
+{
+  "modules": [
+    {
+      "code": string,
+      "title": string,
+      "rqf_level": number|null,
+      "learning_hours": number|null,
+      "credits": number|null,
+      "module_type": string,
+      "learning_outcomes": [{"code":string,"title":string,"indicative_contents":[{"code":string,"title":string,"hours":number|null}]}]
+    }
+  ]
+}
+
+Fill learning_outcomes thoroughly for each module in the batch. Use the module codes/titles below as anchors:
+PROMPT
+				. json_encode($batch, JSON_UNESCAPED_UNICODE)
+				. "\n\nTEXT WINDOWS:\n" . $this->safeUtf8($windows);
+
+			$detail = $this->generateJson($detailPrompt, []);
+			if (is_array($detail) && !empty($detail['modules']) && is_array($detail['modules'])) {
+				foreach ($detail['modules'] as $dm) {
+					$key = strtoupper(trim((string) ($dm['code'] ?? ''))) ?: strtolower(trim((string) ($dm['title'] ?? '')));
+					if ($key !== '') {
+						$detailed[$key] = $dm;
+					}
+				}
+			}
+		}
+
+		// Merge inventory + details
+		$mergedModules = [];
+		foreach ($modules as $m) {
+			$key = strtoupper(trim((string) ($m['code'] ?? ''))) ?: strtolower(trim((string) ($m['title'] ?? '')));
+			$full = $detailed[$key] ?? $m;
+			$mergedModules[] = array_merge($m, is_array($full) ? $full : []);
+		}
+
+		// Pass 3 — chronogram mapping
+		$chronoPrompt = <<<PROMPT
+Map chronogram weeks/hours to the module codes below. Return ONLY JSON:
+{
+  "chronogram": {
+    "school_year_label": string,
+    "weeks": [{"week":number,"term":number,"date_from":string,"date_to":string,"modules":[{"code":string,"periods":number}]}]
+  },
+  "module_slots": {"MODULE_CODE":[{"week":number,"term":number,"date_from":string,"date_to":string,"periods":number}]}
+}
+
+MODULE CODES:
+PROMPT
+			. json_encode(array_values(array_filter(array_map(static function ($m) {
+				return $m['code'] ?? null;
+			}, $mergedModules))), JSON_UNESCAPED_UNICODE)
+			. "\n\nCHRONOGRAM TEXT:\n" . mb_substr($chrText, 0, 70000, 'UTF-8');
+
+		$chronoParts = [['text' => $chronoPrompt]];
+		if (($chr['chars'] ?? 0) < 1200 && !empty($chr['bytes']) && ($chr['ext'] ?? '') === 'pdf'
+			&& strlen((string) $chr['bytes']) <= 4 * 1024 * 1024) {
+			$chronoParts[] = [
+				'inlineData' => [
+					'mimeType' => 'application/pdf',
+					'data' => base64_encode((string) $chr['bytes']),
+				],
+			];
+		}
+		$chrono = $this->generateJson('Return the chronogram mapping JSON as specified.', $chronoParts);
+		$slots = is_array($chrono['module_slots'] ?? null) ? $chrono['module_slots'] : [];
+		foreach ($mergedModules as &$mm) {
+			$code = (string) ($mm['code'] ?? '');
+			if ($code !== '' && !empty($slots[$code]) && is_array($slots[$code])) {
+				$mm['chronogram_slots'] = $slots[$code];
+			} elseif ($code !== '') {
+				foreach ($slots as $sk => $sv) {
+					if (strcasecmp((string) $sk, $code) === 0 && is_array($sv)) {
+						$mm['chronogram_slots'] = $sv;
+						break;
+					}
+				}
+			}
+		}
+		unset($mm);
+
+		return [
+			'program_type' => $inventory['program_type'] ?? null,
+			'qualification_title' => $inventory['qualification_title'] ?? '',
+			'sector' => $inventory['sector'] ?? '',
+			'trade' => $inventory['trade'] ?? '',
+			'detected_rqf_level' => $inventory['detected_rqf_level'] ?? null,
+			'modules' => $mergedModules,
+			'chronogram' => $chrono['chronogram'] ?? ($inventory['chronogram'] ?? ['school_year_label' => '', 'weeks' => []]),
+			'notes' => 'Chunked smart analysis for large curriculum',
+		];
+	}
+
+	private function buildInventorySample(string $text): string
+	{
+		$len = mb_strlen($text, 'UTF-8');
+		if ($len <= 45000) {
+			return $text;
+		}
+		$head = mb_substr($text, 0, 18000, 'UTF-8');
+		$midStart = (int) max(0, (int) ($len / 2) - 9000);
+		$mid = mb_substr($text, $midStart, 18000, 'UTF-8');
+		$tail = mb_substr($text, max(0, $len - 12000), 12000, 'UTF-8');
+		return $head . "\n\n[... middle sample ...]\n\n" . $mid . "\n\n[... end sample ...]\n\n" . $tail;
+	}
+
+	/** @param list<string> $keywords */
+	private function sliceAroundKeywords(string $text, array $keywords, int $window = 8000): string
+	{
+		if ($text === '') {
+			return '';
+		}
+		$bestPos = null;
+		foreach ($keywords as $kw) {
+			$kw = trim((string) $kw);
+			if ($kw === '' || mb_strlen($kw, 'UTF-8') < 3) {
+				continue;
+			}
+			$pos = mb_stripos($text, $kw, 0, 'UTF-8');
+			if ($pos !== false && ($bestPos === null || $pos < $bestPos)) {
+				$bestPos = $pos;
+			}
+		}
+		if ($bestPos === null) {
+			return mb_substr($text, 0, $window, 'UTF-8');
+		}
+		$start = max(0, $bestPos - (int) ($window / 4));
+		return mb_substr($text, $start, $window, 'UTF-8');
 	}
 
 	/**
@@ -114,6 +982,10 @@ class GeminiAcademicDocs
 	}
 
 	/**
+	 * Gemini inlineData supports PDF/images — not Word. DOCX/DOC → text only.
+	 * Attaching unsupported Word binaries (or invalid UTF-8) caused HTTP 400
+	 * "GenerateContentRequest.contents: contents is not specified".
+	 *
 	 * @param array{path:string,original?:string} $curriculum
 	 * @param array{path:string,original?:string}|null $chronogram
 	 * @return list<array<string,mixed>>
@@ -128,22 +1000,61 @@ class GeminiAcademicDocs
 			$extracted = DocumentTextExtractor::extract($pack['file']['path']);
 			$label = $pack['label'];
 			$orig = $pack['file']['original'] ?? basename($pack['file']['path']);
+			$ext = strtolower((string) ($extracted['ext'] ?? ''));
+			$text = $this->safeUtf8((string) ($extracted['text'] ?? ''));
+			$chars = mb_strlen($text, 'UTF-8');
+
 			$parts[] = [
-				'text' => "=== {$label} FILE: {$orig} (ext={$extracted['ext']}, extracted_chars={$extracted['chars']}) ===\n"
-					. ($extracted['chars'] > 0
-						? ("EXTRACTED TEXT (may be incomplete; also use the attached binary):\n" . mb_substr($extracted['text'], 0, 120000, 'UTF-8'))
-						: "EXTRACTED TEXT EMPTY — this is likely a scanned/image document. You MUST visually analyze the attached binary file."),
+				'text' => "=== {$label} FILE: {$orig} (ext={$ext}, extracted_chars={$chars}) ===\n"
+					. ($chars > 0
+						? ("EXTRACTED TEXT:\n" . mb_substr($text, 0, 180000, 'UTF-8'))
+						: 'EXTRACTED TEXT EMPTY — likely scanned/image PDF. Analyze the attached binary carefully for modules, weeks, and hours.'),
 			];
-			if (!empty($extracted['bytes']) && strlen($extracted['bytes']) < 18 * 1024 * 1024) {
+
+			// Only PDF/images as multimodal attachments (Gemini rejects Word MIME types).
+			$attachBinary = in_array($ext, ['pdf', 'png', 'jpg', 'jpeg', 'webp'], true)
+				|| strpos((string) ($extracted['mime'] ?? ''), 'image/') === 0
+				|| (($extracted['mime'] ?? '') === 'application/pdf');
+			$maxBytes = 8 * 1024 * 1024;
+			$fileSize = !empty($extracted['bytes']) ? strlen($extracted['bytes']) : 0;
+			$needVision = $chars < 1200; // scanned / sparse text — need the PDF/image
+			if (
+				$attachBinary
+				&& $fileSize > 0
+				&& $fileSize <= $maxBytes
+				&& ($needVision || ($ext === 'pdf' && $fileSize <= 4 * 1024 * 1024))
+			) {
 				$parts[] = [
 					'inlineData' => [
-						'mimeType' => $extracted['mime'],
+						'mimeType' => $extracted['mime'] ?: DocumentTextExtractor::mimeForExt($ext),
 						'data' => base64_encode($extracted['bytes']),
 					],
+				];
+			} elseif (in_array($ext, ['doc', 'docx'], true) && $chars < 40) {
+				$parts[] = [
+					'text' => "WARNING: {$label} is a Word file with almost no extractable text. Re-upload as PDF if analysis is incomplete.",
 				];
 			}
 		}
 		return $parts;
+	}
+
+	private function safeUtf8(string $text): string
+	{
+		if ($text === '') {
+			return '';
+		}
+		if (!mb_check_encoding($text, 'UTF-8')) {
+			$converted = @mb_convert_encoding($text, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+			$text = is_string($converted) ? $converted : $text;
+		}
+		if (function_exists('iconv')) {
+			$clean = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+			if (is_string($clean)) {
+				$text = $clean;
+			}
+		}
+		return $text;
 	}
 
 	private function promptAnalyze(array $ctx): string
@@ -156,16 +1067,18 @@ class GeminiAcademicDocs
 		return <<<PROMPT
 You are an expert Rwanda education curriculum analyst for both TVET/RTB and REB programmes.
 
-TASK: Analyze the attached CURRICULUM document (Word or PDF — layouts vary wildly; never assume a fixed template) and optional CHRONOGRAM.
-Extract EVERY course/module/subject with its RQF / curriculum level and learning structure.
+PRIMARY GOAL: Extract EVERY course/module from the CURRICULUM with full learning structure (LO + Indicative Contents + hours), then MAP each module onto the CHRONOGRAM (weeks, date ranges, periods/hours) so a Scheme of Work can be generated later.
 
-POWERFUL ANALYSIS RULES:
-1. Documents do NOT share one structure. Detect headings, tables, competence codes, learning outcomes, indicative contents, hours, credits, sector, trade, module type.
-2. For TVET/RTB: look for module codes like GENCP401, ETEED401, SWDPH401, RQF Level, Learning Outcomes (LO), Indicative Content (IC), Elements of competency, Performance criteria, Learning hours.
-3. For REB: look for subjects, topics, units, periods, syllabus strands, senior/ordinary level labels.
-4. From chronogram (often a grid/image PDF): extract weeks, date ranges, module codes, periods per week, terms.
-5. Normalize RQF level to an integer 1–5 when possible (Level 4 / RQF 4 / L4 → 4).
-6. Match modules to the school's DB courses and levels using fuzzy title/code similarity. Prefer exact code matches.
+TASK: Analyze CURRICULUM + CHRONOGRAM (Word text and/or PDF — layouts vary; never assume one template).
+
+EXTRACTION RULES:
+1. List ALL modules/courses/subjects found — do not stop at the first module.
+2. For each module extract: code, title, RQF/level, total learning hours, credits, module type, sector/trade if present.
+3. For TVET/RTB: Learning Outcomes (LO1, LO2…) and nested Indicative Contents (IC1.1, IC1.2…) with hours when available.
+4. For REB: subjects, units/topics, periods.
+5. From chronogram (often a weekly grid): week number, term, date_from, date_to, module codes, periods/hours per week.
+6. When chronogram shows a module across weeks, list those week slots under that module's "chronogram_slots".
+7. Normalize RQF to integer 1–5 when possible. Prefer exact DB course code matches.
 
 SCHOOL CONTEXT JSON:
 {$school}
@@ -195,6 +1108,7 @@ Return ONLY valid JSON (no markdown fences) with this shape:
       "credits": number|null,
       "module_type": string,
       "learning_outcomes": [{"code":string,"title":string,"indicative_contents":[{"code":string,"title":string,"hours":number|null}]}],
+      "chronogram_slots": [{"week":number,"term":number,"date_from":string,"date_to":string,"periods":number}],
       "matched_course_id": number|null,
       "matched_level_id": number|null,
       "match_confidence": number,
@@ -224,18 +1138,32 @@ PROMPT;
 		return <<<PROMPT
 You are an expert instructional designer for Rwanda {$kind}.
 
-Generate a complete SCHEME OF WORK for ONE module/course, following the professional sample structure used in Rwandan TVET schools (even if REB, keep a clear weekly/term plan).
+Generate a complete SCHEME OF WORK for ONE module/course that matches this TVET sample layout (Javascript Fundamentals style):
 
-SAMPLE STRUCTURE TO EMULATE (adapt fields; do not invent school identity — use provided school/class/teacher):
-- Header: School name, district/sector/contact if known, title "SCHEME OF WORK"
-- Meta: Sector, Trainer, Trade/Subject, School Year, Qualification Title, Term(s), RQF Level (TVET) or Level (REB)
-- Module details: Module code & title, Learning hours, Number of classes, Class name, Date
-- For each Term: table columns —
-  Date | Competence Code and Name (LO) | Indicative Content (IC) | Duration | Learning Activities | Resources | Evidence of Formative Assessment | Learning Place | Observation
-- Footer: Prepared by (trainer), Verified by (DOS), Approved by (Head teacher)
+HEADER
+- School name (+ district/sector/email/tel if known from school JSON)
+- Centered title: SCHEME OF WORK
 
-Spread indicative contents across weeks using chronogram periods/dates when available.
-Use realistic classroom activities and resources for the subject.
+META TABLE (2-column pairs):
+- Sector | Trainer
+- Trade | School Year
+- Qualification Title | Term (e.g. 1,2,3)
+- RQF Level | Module details block:
+  Module code and title, Learning hours, Number of Classes, Date, Class Name
+
+WEEKLY BODY (one table per term, or continuous rows grouped by term):
+Columns EXACTLY:
+Date | Learning Outcome | Indicative Content | Duration (Hours) | Learning Activities | Resources (Equipment, Tools, and Materials) | Evidences of Formative Assessment | Learning Place | Observation
+
+MAPPING RULES (critical):
+1. Use MODULE.learning_outcomes and indicative_contents as the source of truth for LO/IC text.
+2. Spread each IC across chronogram weeks/date ranges and periods/hours for THIS module code.
+3. Prefer MODULE.chronogram_slots and CHRONOGRAM ANALYSIS weeks that mention this module.
+4. Duration (Hours) must reflect chronogram periods/hours for that week when available; otherwise use IC hours.
+5. Do NOT invent school identity — use SCHOOL/CLASS/TRAINER provided.
+6. Activities/resources/assessment/place must be realistic for the subject (lab vs classroom).
+
+Footer: Prepared by (trainer), Verified by (DOS), Approved by (Head teacher).
 
 SCHOOL: {$schoolJson}
 CLASS: {$classJson}
@@ -246,9 +1174,9 @@ CHRONOGRAM ANALYSIS: {$chronoJson}
 Return ONLY valid JSON:
 {
   "title": string,
-  "html": "full printable HTML document (inline CSS, A4-friendly tables, school header)",
-  "meta": {"sector":"","trade":"","rqf_level":"","school_year":"","terms":"","module_code":"","module_title":"","learning_hours":0,"class_name":"","trainer":""},
-  "rows": [{"term":1,"date":"","lo_code":"","lo_title":"","ic_code":"","ic_title":"","duration":"","activities":"","resources":"","assessment":"","place":"","observation":""}],
+  "html": "full printable HTML document (inline CSS, A4-friendly, matching the sample tables above)",
+  "meta": {"sector":"","trade":"","rqf_level":"","school_year":"","terms":"","module_code":"","module_title":"","learning_hours":0,"class_name":"","trainer":"","qualification_title":""},
+  "rows": [{"term":1,"week":1,"date":"","lo_code":"","lo_title":"","ic_code":"","ic_title":"","duration":"","activities":"","resources":"","assessment":"","place":"","observation":""}],
   "topics_for_sessions": [{"week":number,"term":number,"date":"","lo_code":"","lo_title":"","ic_code":"","ic_title":"","topic":"","duration":""}]
 }
 PROMPT;
@@ -263,13 +1191,39 @@ PROMPT;
 		$topicJson = json_encode($topic, JSON_UNESCAPED_UNICODE);
 		$schemeBrief = json_encode([
 			'meta' => $schemeJson['meta'] ?? [],
+			'rows' => array_slice($schemeJson['rows'] ?? [], 0, 40),
 			'topics_for_sessions' => $schemeJson['topics_for_sessions'] ?? [],
 		], JSON_UNESCAPED_UNICODE);
-		$teacher = $module['teacher_name'] ?? '';
+		$teacher = $module['teacher_name'] ?? ($schemeJson['meta']['trainer'] ?? '');
 
-		$sampleHint = $isLesson
-			? "Include: subject, class, topic, objectives, teaching aids, introduction, presentation/development steps, conclusion, assessment, homework, references."
-			: "Emulate TVET SESSION PLAN sample fields: Sector, Trade, Level, Date, Trainer, School year, Term, Module (Code&Name), Week, No. Trainees, Class(es), Learning Outcome, Indicative content, Topic of the session, Range, Duration, Objectives, Facilitation techniques, Introduction (trainer/learner activity + resources + duration), Development/Body steps, Conclusion, Assessment/Assignment, Evaluation, References, Appendices, Reflection.";
+		if ($isLesson) {
+			$sampleHint = "Include: subject, class, topic, objectives, teaching aids, introduction, presentation/development steps, conclusion, assessment, homework, references.";
+		} else {
+			$sampleHint = <<<SAMPLE
+Match this TVET SESSION PLAN sample (C Programming style) exactly in structure:
+
+HEADER title: SESSION PLAN
+Meta grid:
+- Sector | Trade | Level | Date
+- Trainer name | School year | Term
+- Module (Code&Name) | Week | No. Trainees | Class(es)
+Then:
+- Learning Outcome (from Scheme of Work LO)
+- Indicative content (from Scheme of Work IC)
+- Topic of the session (weekly activity topic)
+- Range | Duration of the session
+- Objectives (numbered)
+- Facilitation technique(s)
+- Introduction table: Trainer's activity | Learner's activity | Resources | Duration
+- Development/Body: Step 1..N with Trainer's activity + Learner's activity + Resources + Duration
+- Conclusion / Summary
+- Assessment/Assignment
+- Evaluation of the session
+- References | Appendices | Reflection
+
+This is a WEEKLY activity plan for ONE selected topic/week from the Scheme of Work.
+SAMPLE;
+		}
 
 		return <<<PROMPT
 You are an expert Rwanda trainer preparing a {$label}.
@@ -282,17 +1236,17 @@ SCHOOL: {$schoolJson}
 CLASS: {$classJson}
 TRAINER: {$teacher}
 MODULE: {$modJson}
-SELECTED TOPIC: {$topicJson}
+SELECTED TOPIC / WEEK: {$topicJson}
 SCHEME OF WORK SUMMARY: {$schemeBrief}
 
 Return ONLY valid JSON:
 {
   "title": string,
-  "html": "full printable HTML (inline CSS)",
-  "meta": {"week":0,"term":0,"topic":"","duration":"","learning_outcome":"","indicative_content":""},
+  "html": "full printable HTML (inline CSS) matching the SESSION PLAN sample layout",
+  "meta": {"week":0,"term":0,"topic":"","duration":"","learning_outcome":"","indicative_content":"","sector":"","trade":"","level":"","class_name":"","trainer":"","school_year":""},
   "objectives": [string],
   "facilitation_techniques": [string],
-  "sections": {"introduction":{},"development":[],"conclusion":{},"assessment":"","evaluation":"","references":"","reflection":""}
+  "sections": {"introduction":{"trainer":"","learner":"","resources":"","duration":""},"development":[{"step":1,"title":"","trainer":"","learner":"","resources":"","duration":""}],"conclusion":"","assessment":"","evaluation":"","references":"","appendices":"","reflection":""}
 }
 PROMPT;
 	}
@@ -300,20 +1254,32 @@ PROMPT;
 	/**
 	 * @param list<array<string,mixed>> $extraParts
 	 */
-	private function generateJson(string $prompt, array $extraParts): ?array
+	private function generateJson(string $prompt, array $extraParts, int $maxTokens = 8192): ?array
 	{
 		$this->lastError = '';
 		if (!$this->isConfigured()) {
 			$this->lastError = 'Gemini API key not configured (GOOGLE_AI_API_KEY)';
 			return null;
 		}
+		$prompt = $this->safeUtf8($prompt);
 		$parts = array_merge([['text' => $prompt]], $extraParts);
+		if ($parts === []) {
+			$this->lastError = 'Gemini request has no content parts';
+			return null;
+		}
 		$payload = [
-			'contents' => [['role' => 'user', 'parts' => $parts]],
+			'contents' => [[
+				'role' => 'user',
+				'parts' => $parts,
+			]],
 			'generationConfig' => [
-				'temperature' => 0.35,
-				'maxOutputTokens' => 8192,
+				'temperature' => 0.2,
+				'maxOutputTokens' => max(2048, $maxTokens),
 				'responseMimeType' => 'application/json',
+				// Disable thinking on 2.5 Flash so we get JSON, not prose/thoughts
+				'thinkingConfig' => [
+					'thinkingBudget' => 0,
+				],
 			],
 		];
 
@@ -326,21 +1292,45 @@ PROMPT;
 				if (is_array($json)) {
 					return $json;
 				}
-				$lastErr = 'Model ' . $model . ' returned non-JSON';
+				$finish = (string) ($raw['candidates'][0]['finishReason'] ?? '');
+				$lastErr = 'Model ' . $model . ' returned non-JSON'
+					. ($finish !== '' ? (' (finish=' . $finish . ')') : '')
+					. ($text !== '' ? ('; preview=' . substr(preg_replace('/\s+/', ' ', $text) ?? '', 0, 120)) : '');
 			} catch (\Throwable $e) {
 				$lastErr = $e->getMessage();
-				// Retry without responseMimeType for older models
+				if (stripos($lastErr, 'NOT_FOUND') !== false || stripos($lastErr, 'is not found') !== false || stripos($lastErr, 'HTTP 404') !== false) {
+					continue;
+				}
+				// Retry without thinkingConfig / responseMimeType
 				try {
 					$payload2 = $payload;
-					unset($payload2['generationConfig']['responseMimeType']);
+					unset($payload2['generationConfig']['thinkingConfig'], $payload2['generationConfig']['responseMimeType']);
 					$raw = $this->request($model, $payload2);
 					$text = $this->extractText($raw);
 					$json = $this->parseJson($text);
 					if (is_array($json)) {
 						return $json;
 					}
+					$lastErr = 'Model ' . $model . ' returned non-JSON (retry)';
 				} catch (\Throwable $e2) {
-					$lastErr = $e2->getMessage();
+					$msg = $e2->getMessage();
+					// If thinkingConfig unknown, retry once without it but keep JSON mime
+					if (stripos($msg, 'thinking') !== false || stripos($msg, 'Unknown name') !== false) {
+						try {
+							$payload3 = $payload;
+							unset($payload3['generationConfig']['thinkingConfig']);
+							$raw = $this->request($model, $payload3);
+							$text = $this->extractText($raw);
+							$json = $this->parseJson($text);
+							if (is_array($json)) {
+								return $json;
+							}
+						} catch (\Throwable $e3) {
+							$lastErr = $e3->getMessage();
+						}
+					} else {
+						$lastErr = $msg;
+					}
 				}
 			}
 		}
@@ -353,14 +1343,28 @@ PROMPT;
 		$key = $this->apiKey();
 		$url = 'https://generativelanguage.googleapis.com/v1beta/models/'
 			. rawurlencode($model) . ':generateContent';
+
+		$flags = JSON_UNESCAPED_UNICODE;
+		if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+			$flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+		}
+		$body = json_encode($payload, $flags);
+		if ($body === false || $body === '' || $body === 'null') {
+			throw new \RuntimeException('Failed to encode Gemini payload: ' . json_last_error_msg());
+		}
+		// Guard: empty contents would trigger Google's "contents is not specified"
+		if (strpos($body, '"contents"') === false) {
+			throw new \RuntimeException('Gemini payload missing contents after JSON encode');
+		}
+
 		$ch = curl_init($url);
 		curl_setopt_array($ch, [
 			CURLOPT_POST => true,
 			CURLOPT_HTTPHEADER => [
-				'Content-Type: application/json',
+				'Content-Type: application/json; charset=utf-8',
 				'x-goog-api-key: ' . $key,
 			],
-			CURLOPT_POSTFIELDS => json_encode($payload),
+			CURLOPT_POSTFIELDS => $body,
 			CURLOPT_RETURNTRANSFER => true,
 			CURLOPT_TIMEOUT => 180,
 			CURLOPT_CONNECTTIMEOUT => 25,
@@ -373,7 +1377,7 @@ PROMPT;
 			throw new \RuntimeException('curl failed: ' . $err);
 		}
 		if ($code >= 400) {
-			$msg = substr(preg_replace('/\s+/', ' ', $raw) ?? $raw, 0, 320);
+			$msg = substr(preg_replace('/\s+/', ' ', $raw) ?? $raw, 0, 400);
 			throw new \RuntimeException("HTTP {$code}: {$msg}");
 		}
 		$data = json_decode($raw, true);
@@ -391,8 +1395,23 @@ PROMPT;
 		$parts = $data['candidates'][0]['content']['parts'] ?? [];
 		$buf = '';
 		foreach ($parts as $p) {
-			if (!empty($p['text'])) {
+			if (!is_array($p)) {
+				continue;
+			}
+			// Skip thought/signature-only parts from thinking models
+			if (!empty($p['thought']) || !empty($p['thoughtSignature']) || !empty($p['thought_signature'])) {
+				continue;
+			}
+			if (isset($p['text']) && is_string($p['text']) && $p['text'] !== '') {
 				$buf .= $p['text'];
+			}
+		}
+		// Fallback: any text part if all were tagged thought
+		if (trim($buf) === '') {
+			foreach ($parts as $p) {
+				if (!empty($p['text']) && is_string($p['text'])) {
+					$buf .= $p['text'];
+				}
 			}
 		}
 		return trim($buf);
@@ -404,6 +1423,8 @@ PROMPT;
 		if ($text === '') {
 			return null;
 		}
+		// Strip BOM / fences
+		$text = preg_replace('/^\xEF\xBB\xBF/', '', $text) ?? $text;
 		if (preg_match('/```(?:json)?\s*([\s\S]*?)```/i', $text, $m)) {
 			$text = trim($m[1]);
 		}
@@ -414,12 +1435,40 @@ PROMPT;
 		$start = strpos($text, '{');
 		$end = strrpos($text, '}');
 		if ($start !== false && $end !== false && $end > $start) {
-			$decoded = json_decode(substr($text, $start, $end - $start + 1), true);
+			$slice = substr($text, $start, $end - $start + 1);
+			$decoded = json_decode($slice, true);
 			if (is_array($decoded)) {
 				return $decoded;
 			}
+			// Attempt light repair of truncated JSON (common when MAX_TOKENS)
+			$repaired = $this->repairTruncatedJson($slice);
+			if ($repaired !== null) {
+				return $repaired;
+			}
 		}
 		return null;
+	}
+
+	private function repairTruncatedJson(string $slice): ?array
+	{
+		$s = rtrim($slice);
+		// Close open strings/arrays/objects roughly
+		$opens = substr_count($s, '{') + substr_count($s, '[');
+		$closes = substr_count($s, '}') + substr_count($s, ']');
+		// Trim to last complete-looking property
+		if (preg_match('/,\s*"[^"]*$/', $s)) {
+			$s = preg_replace('/,\s*"[^"]*$/', '', $s) ?? $s;
+		}
+		if (substr($s, -1) === ',') {
+			$s = substr($s, 0, -1);
+		}
+		while ($closes < $opens) {
+			// Prefer closing object if last open was {
+			$s .= '}';
+			$closes++;
+		}
+		$decoded = json_decode($s, true);
+		return is_array($decoded) ? $decoded : null;
 	}
 
 	private function matchToDb(array $analysis, array $ctx): array
@@ -496,13 +1545,26 @@ PROMPT;
 	private function fallbackSchemeHtml(array $data, array $ctx, string $programType): string
 	{
 		$school = esc($ctx['school']['name'] ?? 'School');
-		$title = esc($data['title'] ?? 'Scheme of Work');
+		$meta = is_array($data['meta'] ?? null) ? $data['meta'] : [];
+		$title = esc($data['title'] ?? 'SCHEME OF WORK');
+		$trainer = esc($meta['trainer'] ?? '');
+		$sector = esc($meta['sector'] ?? '');
+		$trade = esc($meta['trade'] ?? '');
+		$year = esc($meta['school_year'] ?? '');
+		$qual = esc($meta['qualification_title'] ?? '');
+		$terms = esc($meta['terms'] ?? '');
+		$rqf = esc((string) ($meta['rqf_level'] ?? ''));
+		$modCode = esc($meta['module_code'] ?? '');
+		$modTitle = esc($meta['module_title'] ?? '');
+		$hours = esc((string) ($meta['learning_hours'] ?? ''));
+		$className = esc($meta['class_name'] ?? ($ctx['class']['name'] ?? ''));
+
 		$rows = '';
 		foreach ($data['rows'] ?? [] as $r) {
 			$rows .= '<tr>'
 				. '<td>' . esc($r['date'] ?? '') . '</td>'
-				. '<td>' . esc(($r['lo_code'] ?? '') . ' ' . ($r['lo_title'] ?? '')) . '</td>'
-				. '<td>' . esc(($r['ic_code'] ?? '') . ' ' . ($r['ic_title'] ?? '')) . '</td>'
+				. '<td>' . esc(trim(($r['lo_code'] ?? '') . ' ' . ($r['lo_title'] ?? ''))) . '</td>'
+				. '<td>' . esc(trim(($r['ic_code'] ?? '') . ' ' . ($r['ic_title'] ?? ''))) . '</td>'
 				. '<td>' . esc($r['duration'] ?? '') . '</td>'
 				. '<td>' . esc($r['activities'] ?? '') . '</td>'
 				. '<td>' . esc($r['resources'] ?? '') . '</td>'
@@ -511,7 +1573,35 @@ PROMPT;
 				. '<td>' . esc($r['observation'] ?? '') . '</td>'
 				. '</tr>';
 		}
-		return "<html><head><meta charset='utf-8'><style>body{font-family:DejaVu Sans,Arial,sans-serif;font-size:11px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #333;padding:4px;vertical-align:top}h1{text-align:center}</style></head><body><h1>{$title}</h1><p><b>{$school}</b> — " . esc(strtoupper($programType)) . "</p><table><thead><tr><th>Date</th><th>Competence / LO</th><th>Indicative Content</th><th>Duration</th><th>Activities</th><th>Resources</th><th>Assessment</th><th>Place</th><th>Observation</th></tr></thead><tbody>{$rows}</tbody></table></body></html>";
+
+		return "<html><head><meta charset='utf-8'><style>
+body{font-family:DejaVu Sans,Arial,sans-serif;font-size:11px;color:#111}
+h1{text-align:center;font-size:18px;margin:12px 0}
+.meta,.body{width:100%;border-collapse:collapse;margin-bottom:14px}
+.meta td,.body td,.body th{border:1px solid #333;padding:5px;vertical-align:top}
+.body th{background:#f3f3f3}
+.school{text-align:center;font-weight:700}
+.foot{margin-top:28px;display:flex;justify-content:space-between}
+</style></head><body>
+<p class='school'>{$school}</p>
+<h1>{$title}</h1>
+<table class='meta'>
+<tr><td><b>Sector:</b></td><td>{$sector}</td><td><b>Trainer:</b></td><td>{$trainer}</td></tr>
+<tr><td><b>Trade:</b></td><td>{$trade}</td><td><b>School Year:</b></td><td>{$year}</td></tr>
+<tr><td><b>Qualification Title:</b></td><td>{$qual}</td><td><b>Term:</b></td><td>{$terms}</td></tr>
+<tr><td><b>RQF Level:</b></td><td>{$rqf}</td><td><b>Module code and title</b></td><td>{$modCode} {$modTitle}</td></tr>
+<tr><td><b>Learning hours:</b></td><td>{$hours}</td><td><b>Class Name:</b></td><td>{$className}</td></tr>
+</table>
+<table class='body'>
+<thead><tr>
+<th>Date</th><th>Learning Outcome</th><th>Indicative Content</th><th>Duration (Hours)</th>
+<th>Learning Activities</th><th>Resources (Equipment, Tools, and Materials)</th>
+<th>Evidences of Formative Assessment</th><th>Learning Place</th><th>Observation</th>
+</tr></thead>
+<tbody>{$rows}</tbody>
+</table>
+<div class='foot'><div>Prepared by: {$trainer}</div><div>Verified by (DOS): ________</div><div>Approved by (Head teacher): ________</div></div>
+</body></html>";
 	}
 
 	private function fallbackSessionHtml(array $data, array $ctx, bool $isLesson): string

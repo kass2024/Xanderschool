@@ -29,6 +29,11 @@ class DocumentTextExtractor
 			$text = self::extractDocBinary($bytes);
 		} elseif ($ext === 'pdf') {
 			$text = self::extractPdf($bytes);
+			// Prefer pdftotext when available (much better for RTB curricula)
+			$cli = self::extractPdfCli($abs);
+			if (mb_strlen($cli, 'UTF-8') > mb_strlen($text, 'UTF-8')) {
+				$text = $cli;
+			}
 		}
 
 		$text = self::normalize($text);
@@ -56,6 +61,17 @@ class DocumentTextExtractor
 
 	private static function normalize(string $text): string
 	{
+		if ($text !== '' && !mb_check_encoding($text, 'UTF-8')) {
+			$converted = @mb_convert_encoding($text, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+			$text = is_string($converted) ? $converted : utf8_encode($text);
+		}
+		// Strip leftover invalid bytes so json_encode never fails on Gemini payloads
+		if (function_exists('iconv')) {
+			$clean = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+			if (is_string($clean)) {
+				$text = $clean;
+			}
+		}
 		$text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 		$text = preg_replace("/\r\n?/", "\n", $text) ?? $text;
 		$text = preg_replace("/[ \t]+/", ' ', $text) ?? $text;
@@ -145,6 +161,41 @@ class DocumentTextExtractor
 			// Likely scanned/image PDF
 			return '';
 		}
+		return $text;
+	}
+
+	/** Use poppler/xpdf pdftotext when installed on the server. */
+	private static function extractPdfCli(string $absolutePath): string
+	{
+		if (!is_file($absolutePath) || !function_exists('exec')) {
+			return '';
+		}
+		$bin = trim((string) @shell_exec('command -v pdftotext 2>/dev/null'));
+		if ($bin === '') {
+			// Windows common path
+			foreach ([
+				'C:\\xampp\\pdftotext.exe',
+				'C:\\Program Files\\poppler\\Library\\bin\\pdftotext.exe',
+			] as $cand) {
+				if (is_file($cand)) {
+					$bin = $cand;
+					break;
+				}
+			}
+		}
+		if ($bin === '') {
+			return '';
+		}
+		$tmp = tempnam(sys_get_temp_dir(), 'pdfx');
+		if ($tmp === false) {
+			return '';
+		}
+		@unlink($tmp);
+		$outFile = $tmp . '.txt';
+		$cmd = escapeshellarg($bin) . ' -layout -enc UTF-8 ' . escapeshellarg($absolutePath) . ' ' . escapeshellarg($outFile) . ' 2>nul';
+		@exec($cmd);
+		$text = is_file($outFile) ? (string) @file_get_contents($outFile) : '';
+		@unlink($outFile);
 		return $text;
 	}
 }
