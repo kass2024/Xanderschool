@@ -2821,8 +2821,18 @@ public function attendanceCard()
 		$courseModel = new CourseModel();
 		$CourseCategory = new CourseCategoryModel();
 		$data['title'] = lang("app.createNewCourse");
-		$data['classes'] = $classMdl->get_classes();
 		$school_id = $this->session->get("soma_school_id");
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+
+		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,d.code,l.title as level_name,f.type as faculty_type,f.abbrev as faculty_code")
+			->join('departments d', 'd.id=classes.department')
+			->join('levels l', 'l.id=classes.level')
+			->join('faculty f', 'f.id=d.faculty_id')
+			->where('classes.school_id', $school_id)
+			->orderBy('l.id', 'ASC')
+			->orderBy('classes.title', 'ASC')
+			->get()->getResultArray();
+
 		$data['courses'] = $courseModel->select("courses.id,courses.title,courses.code,courses.marks,courses.credit,cs.title as category")
 				->join("course_category cs", "cs.id=courses.category")
 				->where("courses.school_id", $school_id)
@@ -2830,10 +2840,254 @@ public function attendanceCard()
 		$data['faculty'] = $faculty->get()->getResultArray();
 		$data['categories'] = $CourseCategory->where("school_id", $school_id)->get()->getResultArray();
 		$data['staffs'] = $staffMdl->where("school_id", $this->session->get("soma_school_id"))->get()->getResultArray();
+
+		// Extracted modules from Pedagogical Documents analysis, grouped by class
+		$existingCodes = [];
+		foreach ($data['courses'] as $c) {
+			$code = strtoupper(trim((string) ($c['code'] ?? '')));
+			if ($code !== '') {
+				$existingCodes[$code] = (int) $c['id'];
+			}
+		}
+		$smartByClass = [];
+		if ($yearId > 0) {
+			$cacheRows = (new AcademicAiAnalysisModel())
+				->where('school_id', $school_id)
+				->where('academic_year', $yearId)
+				->findAll();
+			foreach ($cacheRows as $row) {
+				$cid = (int) ($row['class_id'] ?? 0);
+				$decoded = json_decode($row['analysis_json'] ?? '', true);
+				$modules = is_array($decoded['modules'] ?? null) ? $decoded['modules'] : [];
+				$items = [];
+				foreach ($modules as $m) {
+					$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
+					$title = \App\Libraries\DocumentTextExtractor::cleanModuleTitle((string) ($m['title'] ?? ''));
+					if ($code === '' && $title === '') {
+						continue;
+					}
+					$hours = $this->estimateHoursPerWeekFromModule($m);
+					$cat = $this->categoryTitleFromModuleType((string) ($m['module_type'] ?? ''));
+					$items[] = [
+						'code' => $code,
+						'title' => $title !== '' ? $title : $code,
+						'category_title' => $cat,
+						'hours_per_week' => $hours,
+						'marks' => (int) round($hours * 10),
+						'already_exists' => ($code !== '' && isset($existingCodes[$code])),
+						'existing_course_id' => ($code !== '' && isset($existingCodes[$code])) ? $existingCodes[$code] : null,
+						'matched_course_id' => (int) ($m['matched_course_id'] ?? 0) ?: null,
+					];
+				}
+				if ($items !== []) {
+					$smartByClass[$cid] = [
+						'program_type' => (string) ($row['program_type'] ?? ($decoded['program_type'] ?? '')),
+						'module_count' => count($items),
+						'modules' => $items,
+					];
+				}
+			}
+		}
+		$data['smart_by_class'] = $smartByClass;
+
 		$data['subtitle'] = lang("app.createNewCourse");
 		$data['page'] = "add_course";
 		$data['content'] = view("pages/add_course", $data);
 		return view('main', $data);
+	}
+
+	/** Average weekly periods/hours from chronogram slots (fallback: learning_hours). */
+	private function estimateHoursPerWeekFromModule(array $m): float
+	{
+		$vals = [];
+		foreach ($m['chronogram_slots'] ?? [] as $s) {
+			if (!is_array($s)) {
+				continue;
+			}
+			$p = (float) ($s['periods'] ?? $s['hours'] ?? 0);
+			if ($p > 0) {
+				$vals[] = $p;
+			}
+		}
+		if ($vals !== []) {
+			return round(array_sum($vals) / count($vals), 1);
+		}
+		$total = (float) ($m['weekly_hours_total'] ?? $m['chronogram_periods_total'] ?? 0);
+		$weeks = is_array($m['chronogram_slots'] ?? null) ? count($m['chronogram_slots']) : 0;
+		if ($total > 0 && $weeks > 0) {
+			return round($total / $weeks, 1);
+		}
+		$lh = (float) ($m['learning_hours'] ?? 0);
+		if ($lh > 0 && $lh <= 40) {
+			return $lh; // already looks like weekly hours
+		}
+		return 0.0;
+	}
+
+	private function categoryTitleFromModuleType(string $type): string
+	{
+		$t = strtolower(trim($type));
+		$map = [
+			'specific' => 'Specific',
+			'core' => 'Core',
+			'general' => 'General',
+			'ccm' => 'Complementary',
+			'complementary' => 'Complementary',
+			'optional' => 'Optional',
+		];
+		if (isset($map[$t])) {
+			return $map[$t];
+		}
+		if ($t !== '') {
+			return ucwords(str_replace(['_', '-'], ' ', $t));
+		}
+		return 'General';
+	}
+
+	/** Find or create a course category by title for this school. */
+	private function resolveCourseCategoryId(int $schoolId, string $title): int
+	{
+		$title = trim($title);
+		if ($title === '') {
+			$title = 'General';
+		}
+		$mdl = new CourseCategoryModel();
+		$rows = $mdl->where('school_id', $schoolId)->findAll();
+		foreach ($rows as $r) {
+			if (strcasecmp(trim((string) ($r['title'] ?? '')), $title) === 0) {
+				return (int) $r['id'];
+			}
+		}
+		$mdl->insert([
+			'school_id' => $schoolId,
+			'title' => $title,
+			'status' => 1,
+		]);
+		return (int) $mdl->getInsertID();
+	}
+
+	/**
+	 * Bulk-create courses from Pedagogical Documents extraction.
+	 * Marks = hours_per_week × 10. Category created if missing.
+	 */
+	public function smart_create_courses()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$classId = (int) $this->request->getPost('class_id');
+		$assign = (int) $this->request->getPost('assign') === 1;
+		$teacherId = (int) $this->request->getPost('teacher_id');
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$raw = $this->request->getPost('courses');
+		$courses = is_string($raw) ? json_decode($raw, true) : $raw;
+		if (!is_array($courses) || $courses === []) {
+			return $this->response->setJSON(['error' => 'No courses selected']);
+		}
+		if ($classId > 0) {
+			$class = (new ClassesModel())->where('id', $classId)->where('school_id', $schoolId)->first();
+			if (!$class) {
+				return $this->response->setJSON(['error' => 'Class not found']);
+			}
+		}
+
+		$courseMdl = new CourseModel();
+		$created = 0;
+		$skipped = 0;
+		$assigned = 0;
+		$errors = [];
+		$createdIds = [];
+
+		foreach ($courses as $item) {
+			if (!is_array($item)) {
+				continue;
+			}
+			$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($item['code'] ?? ''));
+			$title = trim((string) ($item['title'] ?? ''));
+			if ($title === '') {
+				$title = $code;
+			}
+			if ($code === '' && $title === '') {
+				continue;
+			}
+			$hours = (float) ($item['hours_per_week'] ?? 0);
+			if ($hours < 0) {
+				$hours = 0;
+			}
+			$marks = (int) round($hours * 10);
+			if ($marks <= 0 && $hours > 0) {
+				$marks = max(1, (int) round($hours * 10));
+			}
+			$catTitle = trim((string) ($item['category_title'] ?? 'General')) ?: 'General';
+			$catId = $this->resolveCourseCategoryId($schoolId, $catTitle);
+
+			$existing = null;
+			if ($code !== '') {
+				$existing = $courseMdl->where('school_id', $schoolId)->where('code', $code)->first();
+			}
+			if ($existing) {
+				$skipped++;
+				$courseId = (int) $existing['id'];
+			} else {
+				try {
+					$courseMdl->insert([
+						'school_id' => $schoolId,
+						'title' => $title,
+						'code' => $code !== '' ? $code : strtoupper(substr(preg_replace('/\s+/', '', $title) ?? 'CRS', 0, 12)),
+						'category' => $catId,
+						'credit' => $hours,
+						'marks' => $marks > 0 ? $marks : 10,
+						'created_by' => (int) $this->session->get('soma_id'),
+					]);
+					$courseId = (int) $courseMdl->getInsertID();
+					$created++;
+					$createdIds[] = $courseId;
+				} catch (\Throwable $e) {
+					$errors[] = ($code ?: $title) . ': ' . $e->getMessage();
+					continue;
+				}
+			}
+
+			if ($assign && $classId > 0 && $yearId > 0 && $courseId > 0 && $teacherId > 0) {
+				$recMdl = new CourseRecordModel();
+				$dt = $recMdl->select('count(id) as cc')
+					->where('course', $courseId)
+					->where('class', $classId)
+					->where('year', $yearId)
+					->get()->getRow();
+				if ($dt && (int) $dt->cc === 0) {
+					try {
+						$recMdl->insert([
+							'course' => $courseId,
+							'lecturer' => $teacherId,
+							'class' => $classId,
+							'year' => $yearId,
+							'term' => '1,2,3',
+						]);
+						$assigned++;
+					} catch (\Throwable $e) {
+						$errors[] = ($code ?: $title) . ' assign: ' . $e->getMessage();
+					}
+				}
+			} elseif ($assign && $teacherId <= 0) {
+				// Course created but not assigned — teacher required for class assignment
+			}
+		}
+
+		$msg = $created . ' course(s) created';
+		if ($skipped) {
+			$msg .= ', ' . $skipped . ' already existed';
+		}
+		if ($assigned) {
+			$msg .= ', ' . $assigned . ' assigned to class';
+		}
+		return $this->response->setJSON([
+			'success' => $msg,
+			'created' => $created,
+			'skipped' => $skipped,
+			'assigned' => $assigned,
+			'created_ids' => $createdIds,
+			'errors' => $errors,
+		]);
 	}
 
 	public function assign_shift()
@@ -4742,15 +4996,21 @@ public function attendanceCard()
 		$this->_preset();
 		$courseModel = new CourseModel();
 		$courseId = $this->request->getPost("courseId") ? $this->request->getPost("courseId") : 0;
+		$credit = $this->request->getPost("credit");
+		$marks = $this->request->getPost("marks");
+		// Marks = hours/week × 10 when marks empty
+		if (($marks === null || $marks === '') && is_numeric($credit)) {
+			$marks = (int) round(((float) $credit) * 10);
+		}
 		if ($courseId == 0) {
 			$data = array(
 					"school_id" => $this->session->get("soma_school_id"),
 					"title" => $this->request->getPost("title"),
 					"code" => $this->request->getPost("code"),
 					"category" => $this->request->getPost("category"),
-					"credit" => $this->request->getPost("credit"),
+					"credit" => $credit,
 					"teacher_id" => $this->request->getPost("teacher"),
-					"marks" => $this->request->getPost("marks"),
+					"marks" => $marks,
 					"created_by" => $this->session->get("soma_id"));
 		} else {
 			$data = array(
@@ -4758,9 +5018,9 @@ public function attendanceCard()
 					"title" => $this->request->getPost("title"),
 					"code" => $this->request->getPost("code"),
 					"category" => $this->request->getPost("category"),
-					"credit" => $this->request->getPost("credit"),
+					"credit" => $credit,
 					"teacher_id" => $this->request->getPost("teacher"),
-					"marks" => $this->request->getPost("marks"));
+					"marks" => $marks);
 		}
 		try {
 			$courseModel->save($data);

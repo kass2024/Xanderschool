@@ -16,7 +16,7 @@
 	<!-- Disable tap highlight on IE -->
 	<meta name="msapplication-tap-highlight" content="no">
 	<link href="<?= base_url(); ?>assets/css/main.css" rel="stylesheet">
-	<link href="<?= base_url(); ?>assets/css/xandertech-brand.css" rel="stylesheet">
+	<link href="<?= base_url(); ?>assets/css/xandertech-brand.css?v=modal-stack-1" rel="stylesheet">
 	<script type="text/javascript" src="<?= base_url(); ?>assets/js/jquery-3.4.1.min.js"></script>
 	<link rel="icon" href="<?= base_url(); ?>assets/images/smartsms-logo-web.png">
 	<style>
@@ -44,6 +44,12 @@
 		#mdlTerm .modal-content {
 			overflow: hidden !important;
 		}
+
+		/* System-wide modal stacking */
+		.modal { z-index: 10050 !important; }
+		.modal-backdrop { z-index: 10040 !important; }
+		.select2-container--open,
+		.select2-dropdown { z-index: 10060 !important; }
 	</style>
 </head>
 <body cz-shortcut-listen="true" data-url="<?= base_url(); ?>">
@@ -132,18 +138,6 @@
 									<a href="<?= base_url('classes'); ?>">
 										<i class="metismenu-icon typcn typcn-home-outline"></i>
 										<?= lang("app.classes"); ?>
-									</a>
-								</li>
-								<?php
-							}
-							?>
-							<?php
-							if (is_allowed(1, 3, 5, 6, 13, 15, 17, 18)) {
-								?>
-								<li>
-									<a href="<?= base_url('academic_plans'); ?>">
-										<i class="metismenu-icon fa fa-magic"></i>
-										Academic AI Plans
 									</a>
 								</li>
 								<?php
@@ -335,6 +329,40 @@
 									?>
 								</ul>
 							</li>
+
+							<?php
+							if (is_allowed(1, 3, 5, 6, 13, 15, 17, 18)) {
+								?>
+								<li>
+									<a href="javascript:void">
+										<i class="metismenu-icon fa fa-magic"></i>
+										Pedagogical Documents
+										<i class="metismenu-state-icon fa fa-caret-down"></i>
+									</a>
+									<ul class="mm-collapse">
+										<li>
+											<a href="<?= base_url('ped_analyse'); ?>">
+												<i class="metismenu-icon"></i>
+												Analyse Curriculum &amp; Chronogram
+											</a>
+										</li>
+										<li>
+											<a href="<?= base_url('ped_scheme_of_work'); ?>">
+												<i class="metismenu-icon"></i>
+												Scheme of Work
+											</a>
+										</li>
+										<li>
+											<a href="<?= base_url('ped_session_plan'); ?>">
+												<i class="metismenu-icon"></i>
+												Session Plan
+											</a>
+										</li>
+									</ul>
+								</li>
+								<?php
+							}
+							?>
 
 							<?php
 							if (is_allowed(1, 3, 4, 5, 6)) {
@@ -1482,23 +1510,46 @@
 <?php if ($page == "add_course") {
 	?>
 	<div class="modal fade" id="assignModal" tabindex="-1" role="dialog">
-		<div class="modal-dialog" role="document">
+		<div class="modal-dialog modal-lg" role="document">
 			<div class="modal-content">
-				<form action="<?= base_url('manipulate_assign_course'); ?>" class="autoSubmit validate">
+				<form action="<?= base_url('manipulate_assign_course'); ?>" class="autoSubmit validate" id="assignCourseForm">
 					<div class="modal-header">
-						<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.assign"); ?></h5>
+						<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.assign"); ?> — <span id="assignCourseTitle"></span></h5>
 						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
 							<span aria-hidden="true">×</span>
 						</button>
 					</div>
 					<div class="modal-body">
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
+						<div class="course-assign-smart mb-3">
+							<div class="d-flex align-items-center justify-content-between mb-2">
+								<strong>Already assigned</strong>
+								<small class="text-muted" id="assignSmartMeta">Active year</small>
+							</div>
+							<div class="table-responsive" style="max-height:220px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;">
+								<table class="table table-sm table-striped mb-0" id="assignSmartTable">
+									<thead>
+									<tr>
+										<th>Class</th>
+										<th>Teacher</th>
+										<th>Term</th>
+										<th style="width:70px;"></th>
+									</tr>
+									</thead>
+									<tbody id="assignSmartBody">
+									<tr class="text-muted"><td colspan="4" class="text-center">Loading…</td></tr>
+									</tbody>
+								</table>
+							</div>
+						</div>
+						<hr>
+						<p class="mb-2 font-weight-bold">Assign to another class</p>
+						<div class="col-sm-12 col-md-12 col-lg-12 pull-left px-0">
 							<div class="form-group">
 								<label id="mentor"><?= lang("app.sClass"); ?></label> <i style="color: red;">*</i>
 								<input type="hidden" name="fId">
 								<input type="hidden" name="status" value="1">
-								<select class="form-control select2" name="classes">
-									<option selected disabled><?= lang("app.selectClass"); ?></option>
+								<select class="form-control select2" name="classes" required>
+									<option selected disabled value=""><?= lang("app.selectClass"); ?></option>
 									<?php
 									foreach ($classes as $classe):
 										echo "<option value='{$classe['id']}'>{$classe['level_name']} {$classe['code']} {$classe['title']}</option>";
@@ -1513,7 +1564,7 @@
 							</div>
 							<div class="form-group">
 								<label id="mentor"><?= lang("app.term"); ?></label> <i style="color: red;">*</i>
-								<select class="form-control select2" name="term[]" multiple>
+								<select class="form-control select2" name="term[]" multiple required>
 									<option value="1"><?= lang("app.term1"); ?> </option>
 									<option value="2"><?= lang("app.term2"); ?> </option>
 									<option value="3"><?= lang("app.term3"); ?> </option>
@@ -1522,8 +1573,8 @@
 							<div class="form-group">
 								<label id="mentor"><?= lang("app.subjectTeacher"); ?></label> <i
 										style="color: red;">*</i>
-								<select class="form-control select2" name="teacher">
-									<option selected disabled><?= lang("app.selectSubject"); ?> </option>
+								<select class="form-control select2" name="teacher" required>
+									<option selected disabled value=""><?= lang("app.selectSubject"); ?> </option>
 									<?php
 									foreach ($staffs as $staff):
 										echo "<option value='{$staff['id']}'>{$staff['fname']} {$staff['lname']}</option>";
@@ -1538,8 +1589,7 @@
 						<label style="position: absolute;left: 20px;"><?= lang("app.youAreDone"); ?></label>
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
-						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= base_url('manage_courses'); ?>">
+						<button type="submit" class="btn btn-gradient-primary" data-target="stay-assign">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -1580,11 +1630,11 @@
 								</select>
 							</div>
 							<div class="form-group">
-								<label id="mentor">Credits</label> <i style="color: red;">*</i>
-								<input type="number" name="credit" class="form-control">
+								<label id="mentor">Hours / week</label> <i style="color: red;">*</i>
+								<input type="number" step="0.1" min="0" name="credit" class="form-control">
 							</div>
 							<div class="form-group">
-								<label id="mentor">Marks</label> <i style="color: red;">*</i>
+								<label id="mentor">Marks <small class="text-muted">(hours × 10)</small></label> <i style="color: red;">*</i>
 								<input type="text" name="marks" class="form-control">
 							</div>
 						</div>
@@ -3549,7 +3599,7 @@ if ($page == "pendingRegistration") {
 <script type="application/javascript" src="<?= base_url('assets/js/parsley-extra-validators.js'); ?>"></script>
 <script type="application/javascript" src="<?= base_url('assets/plugins/select2/js/select2.min.js'); ?>"></script>
 <script src="<?= base_url('assets/js/inputmask.bundle.min.js'); ?>"></script>
-<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js"></script>
+<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js?v=stay-assign-1"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.js"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.min.js"></script>
 <script src="<?= base_url(); ?>assets/js/jquery.flot.js"></script>
@@ -3629,9 +3679,14 @@ if ($page == "pendingRegistration") {
 			window.location.reload();
 		});
 		$("#assignModal").on("show.bs.modal", function (e) {
-			var id = $(e.relatedTarget).data("id");
-			// alert(id);
+			var $btn = $(e.relatedTarget);
+			var id = $btn.data("id");
+			var title = $btn.data("title") || "";
 			$("#assignModal [name='fId']").val(id).change();
+			$("#assignCourseTitle").text(title);
+			if (typeof window.refreshCourseAssignments === "function") {
+				window.refreshCourseAssignments(id);
+			}
 		});
 
 		$(document).on("change", "#select_class_trans", function () {
