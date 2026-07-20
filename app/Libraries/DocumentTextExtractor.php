@@ -108,6 +108,55 @@ class DocumentTextExtractor
 	}
 
 	/**
+	 * True for a real human module/course name (not chronogram totals / noise).
+	 */
+	public static function isValidModuleTitle(string $title, string $code = ''): bool
+	{
+		$title = trim(preg_replace('/\s+/', ' ', $title) ?? $title);
+		if ($title === '') {
+			return false;
+		}
+		$code = self::cleanModuleCode($code);
+		if ($code !== '' && strcasecmp($title, $code) === 0) {
+			return false;
+		}
+		$lower = strtolower($title);
+		// Chronogram / table header garbage (e.g. "Modules hours 120 150 120")
+		if (preg_match('/\bmodules?\s+(hours?|periods?)\b/i', $title)) {
+			return false;
+		}
+		if (preg_match('/^(hours?|periods?|credits?|total|week|term|rqf|level)\b/i', $title)) {
+			return false;
+		}
+		if (preg_match('/^(first|second|third)\s+term\b/i', $title)) {
+			return false;
+		}
+		if (preg_match('/^(republic|ministry|training|sector|trade|qualification|school|core|specific|complementary|holidays)\b/i', $title)) {
+			return false;
+		}
+		// Mostly numbers / periods row
+		$digits = preg_replace('/\D+/', '', $title) ?? '';
+		$letters = preg_replace('/[^a-zA-Z]+/', '', $title) ?? '';
+		if (strlen($digits) >= 6 && strlen($letters) < 8) {
+			return false;
+		}
+		if (preg_match('/^[\d\s\.\,]+$/', $title)) {
+			return false;
+		}
+		if (mb_strlen($title, 'UTF-8') < 4) {
+			return false;
+		}
+		if (preg_match('/^(rwf|usd|eur|vat)\d*$/i', $title)) {
+			return false;
+		}
+		// Reject titles that are mostly the same as chronogram label fragments
+		if (strpos($lower, 'modules hours') !== false || strpos($lower, 'modules periods') !== false) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
 	 * Extract module code from RTB curriculum filenames, e.g.
 	 * "SWDDD401 - DATABASE DEVELOPMENT.pdf", "CCMEN 402  - ENGLISH.pdf", "CMCZ401 - CITIZENSHIP.pdf"
 	 */
@@ -534,7 +583,13 @@ class DocumentTextExtractor
 			if (preg_match('/^(Republic|Ministry|TRAINING|SECTOR|TRADE|RQF|QUALIFICATION|SCHOOL|CORE|SPECIFIC|COMPLEMENTARY|HOLIDAYS|PERIODS|FIRST|SECOND|THIRD)/i', $t)) {
 				continue;
 			}
+			if (preg_match('/\bmodules?\s+(hours?|periods?)\b/i', $t)) {
+				continue;
+			}
 			if (preg_match('/^(?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3}$/i', $t)) {
+				continue;
+			}
+			if (!self::isValidModuleTitle($t)) {
 				continue;
 			}
 			$rawTitles[] = preg_replace('/\s+/', ' ', $t) ?? $t;
@@ -564,7 +619,7 @@ class DocumentTextExtractor
 			if ($title === '') {
 				$title = trim($merged[$i]);
 			}
-			if ($title !== '' && strcasecmp($title, $codes[$i]) !== 0) {
+			if (self::isValidModuleTitle($title, $codes[$i])) {
 				$out[$codes[$i]] = $title;
 			}
 		}

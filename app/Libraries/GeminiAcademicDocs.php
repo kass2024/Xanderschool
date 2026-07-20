@@ -370,7 +370,8 @@ class GeminiAcademicDocs
 			}
 
 			$invPrompt = $this->promptFullInventory($dbContext, count($seedList));
-			$inventory = $this->generateJson($invPrompt, $invParts, 8192);
+			// Compact inventory with thinking enabled for accurate titles
+			$inventory = $this->generateJson($invPrompt, $invParts, 8192, 4096);
 			if (!is_array($inventory)) {
 				$inventory = [];
 			}
@@ -451,6 +452,24 @@ class GeminiAcademicDocs
 			];
 			$have[$cc] = true;
 		}
+
+		// Strip chronogram garbage titles; high-thinking AI only for remaining bad names
+		foreach ($modules as &$mx) {
+			$codeX = DocumentTextExtractor::cleanModuleCode((string) ($mx['code'] ?? ''));
+			$titleX = trim((string) ($mx['title'] ?? ''));
+			if (!DocumentTextExtractor::isValidModuleTitle($titleX, $codeX)) {
+				$mx['title'] = $this->resolveModuleTitle($codeX, '', $filenameSeeds, $chronoTitles, $competenceTitles, $combinedText);
+			}
+		}
+		unset($mx);
+		$modules = $this->refineModuleTitlesWithAi(
+			$modules,
+			$filenameSeeds,
+			$chronoTitles,
+			$competenceTitles,
+			$combinedText,
+			$chrText
+		);
 
 		$inventoryMeta = [
 			'program_type' => $inventory['program_type'] ?? 'tvet',
@@ -1144,10 +1163,11 @@ PROMPT;
 			$full = ($key !== '' && isset($detailed[$key])) ? array_merge($m, $detailed[$key]) : $m;
 			$full['code'] = $key;
 			$title = DocumentTextExtractor::cleanModuleTitle((string) ($full['title'] ?? ''));
-			if (($title === '' || strcasecmp($title, $key) === 0) && isset($chronoTitles[$key])) {
-				$title = $chronoTitles[$key];
+			if (!DocumentTextExtractor::isValidModuleTitle($title, $key) && isset($chronoTitles[$key])
+				&& DocumentTextExtractor::isValidModuleTitle((string) $chronoTitles[$key], $key)) {
+				$title = (string) $chronoTitles[$key];
 			}
-			if ($title === '') {
+			if (!DocumentTextExtractor::isValidModuleTitle($title, $key)) {
 				$title = $key;
 			}
 			$full['title'] = $title;
@@ -1659,21 +1679,130 @@ PROMPT;
 		}
 		foreach ($candidates as $t) {
 			$t = trim((string) $t);
-			if ($t === '' || strcasecmp($t, $code) === 0) {
-				continue;
-			}
-			if (preg_match('/^(RWF|USD|EUR|VAT)\d*$/i', $t)) {
+			if ($t === '') {
 				continue;
 			}
 			$clean = DocumentTextExtractor::cleanModuleTitle($t);
-			if ($clean !== '' && strcasecmp($clean, $code) !== 0) {
+			if (DocumentTextExtractor::isValidModuleTitle($clean, $code)) {
 				return $clean;
 			}
-			if (mb_strlen($t, 'UTF-8') >= 4) {
+			if (DocumentTextExtractor::isValidModuleTitle($t, $code)) {
 				return $t;
 			}
 		}
 		return '';
+	}
+
+	/**
+	 * High-thinking Gemini pass: fix empty/invalid titles only (compact, accurate).
+	 *
+	 * @param list<array<string,mixed>> $modules
+	 * @param array<string,array{title?:string}> $filenameSeeds
+	 * @param array<string,string> $chronoTitles
+	 * @param array<string,string> $competenceTitles
+	 * @return list<array<string,mixed>>
+	 */
+	private function refineModuleTitlesWithAi(
+		array $modules,
+		array $filenameSeeds,
+		array $chronoTitles,
+		array $competenceTitles,
+		string $combinedText,
+		string $chrText
+	): array {
+		$needFix = [];
+		foreach ($modules as $idx => $m) {
+			$code = DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
+			$title = trim((string) ($m['title'] ?? ''));
+			if ($code === '' || !DocumentTextExtractor::isValidRtbModuleCode($code)) {
+				continue;
+			}
+			if (DocumentTextExtractor::isValidModuleTitle($title, $code)) {
+				continue;
+			}
+			$needFix[$code] = [
+				'index' => $idx,
+				'code' => $code,
+				'bad_title' => $title,
+				'hints' => [
+					'filename' => (string) ($filenameSeeds[$code]['title'] ?? ''),
+					'competence' => (string) ($competenceTitles[$code] ?? ''),
+					'chronogram' => (string) ($chronoTitles[$code] ?? ''),
+				],
+			];
+		}
+		if ($needFix === []) {
+			return $modules;
+		}
+
+		$this->reportProgress(26, 'AI title refinement (thinking): fixing ' . count($needFix) . ' module name(s)…', [
+			'bad_titles' => count($needFix),
+		]);
+
+		$prompt = <<<PROMPT
+You are an expert Rwanda TVET/RTB curriculum analyst. Think carefully, then return JSON only.
+
+TASK: For each module CODE below, output the REAL human course/module TITLE from the curriculum documents.
+
+HARD RULES:
+1. Title MUST be a real competence/course name (e.g. "Apply Physics", "Perform Basics of Networking", "Citizenship").
+2. NEVER use chronogram labels or totals as titles. Forbidden examples:
+   - "Modules hours 120 150 120"
+   - "Modules periods …"
+   - "First Term", "RQF 4", bare numbers, currency codes.
+3. Prefer titles from: module PDF filename, "Information about competences" table, chronogram header names ABOVE the codes (not hours row).
+4. If uncertain, use the best verb+topic competence phrase from the text near that code. Do not invent unrelated subjects.
+5. Return ONLY the codes listed. Keep exact codes.
+
+CODES NEEDING TITLES:
+PROMPT
+			. json_encode(array_values($needFix), JSON_UNESCAPED_UNICODE)
+			. "\n\nKNOWN GOOD HINTS (use if valid):\n"
+			. json_encode([
+				'competence_table' => $competenceTitles,
+				'filename' => array_map(static function ($m) {
+					return $m['title'] ?? '';
+				}, $filenameSeeds),
+				'chronogram_names' => $chronoTitles,
+			], JSON_UNESCAPED_UNICODE)
+			. "\n\n=== CURRICULUM SAMPLE ===\n" . mb_substr($combinedText, 0, 35000, 'UTF-8')
+			. "\n\n=== CHRONOGRAM SAMPLE ===\n" . mb_substr($chrText, 0, 10000, 'UTF-8')
+			. "\n\nReturn ONLY JSON:\n{\"modules\":[{\"code\":\"GENPH401\",\"title\":\"Apply Physics\"}]}";
+
+		$result = $this->generateJson($prompt, [], 4096, 8192);
+		if (!is_array($result) || !is_array($result['modules'] ?? null)) {
+			return $modules;
+		}
+		foreach ($result['modules'] as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$code = DocumentTextExtractor::cleanModuleCode((string) ($row['code'] ?? ''));
+			$title = DocumentTextExtractor::cleanModuleTitle((string) ($row['title'] ?? ''));
+			if ($code === '' || !isset($needFix[$code])) {
+				continue;
+			}
+			if (!DocumentTextExtractor::isValidModuleTitle($title, $code)) {
+				continue;
+			}
+			$idx = (int) $needFix[$code]['index'];
+			if (isset($modules[$idx])) {
+				$modules[$idx]['title'] = $title;
+			}
+		}
+		// Clear remaining invalid titles so UI does not show chronogram garbage
+		foreach ($needFix as $code => $info) {
+			$idx = (int) $info['index'];
+			if (!isset($modules[$idx])) {
+				continue;
+			}
+			$t = trim((string) ($modules[$idx]['title'] ?? ''));
+			if (!DocumentTextExtractor::isValidModuleTitle($t, $code)) {
+				$fallback = $this->resolveModuleTitle($code, '', $filenameSeeds, $chronoTitles, $competenceTitles, $combinedText);
+				$modules[$idx]['title'] = $fallback !== '' ? $fallback : $code;
+			}
+		}
+		return $modules;
 	}
 
 	/** @param list<string> $extra */
@@ -1708,12 +1837,18 @@ PROMPT;
 		$school = json_encode($ctx['school'] ?? [], JSON_UNESCAPED_UNICODE);
 
 		return <<<PROMPT
-You are extracting a COMPLETE module inventory from a Rwanda TVET curriculum package (structure PDF + optional module PDFs).
+You are a senior Rwanda TVET/RTB curriculum analyst. Reason carefully about each title before answering.
 
 CRITICAL: Return EVERY module/course. Seed list has about {$seedCount} codes — your modules[] must include ALL of them (CCM + General + Specific).
 Do not stop after a few Specific modules.
-Use REAL human-readable titles from the curriculum/chronogram/competence table (never leave title equal to the code when a name exists).
-NEVER invent fake modules from currency/noise tokens (RWF500, USD100, PAGE001, etc.).
+
+TITLE RULES (highest priority):
+1. Title = real competence/course NAME (verb + topic), e.g. "Apply Physics", "Perform Basics of Networking".
+2. NEVER copy chronogram totals or labels into title. Forbidden: "Modules hours 120 150 120", "Modules periods …", week/term headers, bare number lists.
+3. Prefer titles from competence tables / module PDF filenames / names printed above module codes.
+4. Never leave title equal to the code when a real name exists in the documents.
+5. NEVER invent fake modules from currency/noise tokens (RWF500, USD100, PAGE001, etc.).
+
 Do NOT invent Learning Outcomes here — leave learning_outcomes as [].
 
 SCHOOL: {$school}
@@ -2378,8 +2513,9 @@ PROMPT;
 
 	/**
 	 * @param list<array<string,mixed>> $extraParts
+	 * @param int $thinkingBudget 0 = off (cheap JSON); >0 enables Gemini thinking for hard title/reasoning tasks
 	 */
-	private function generateJson(string $prompt, array $extraParts, int $maxTokens = 8192): ?array
+	private function generateJson(string $prompt, array $extraParts, int $maxTokens = 8192, int $thinkingBudget = 0): ?array
 	{
 		$this->lastError = '';
 		if (!$this->isConfigured()) {
@@ -2392,20 +2528,20 @@ PROMPT;
 			$this->lastError = 'Gemini request has no content parts';
 			return null;
 		}
+		$genConfig = [
+			'temperature' => $thinkingBudget > 0 ? 0.1 : 0.2,
+			'maxOutputTokens' => max(2048, $maxTokens),
+			'responseMimeType' => 'application/json',
+			'thinkingConfig' => [
+				'thinkingBudget' => max(0, $thinkingBudget),
+			],
+		];
 		$payload = [
 			'contents' => [[
 				'role' => 'user',
 				'parts' => $parts,
 			]],
-			'generationConfig' => [
-				'temperature' => 0.2,
-				'maxOutputTokens' => max(2048, $maxTokens),
-				'responseMimeType' => 'application/json',
-				// Disable thinking on 2.5 Flash so we get JSON, not prose/thoughts
-				'thinkingConfig' => [
-					'thinkingBudget' => 0,
-				],
-			],
+			'generationConfig' => $genConfig,
 		];
 
 		$lastErr = '';
