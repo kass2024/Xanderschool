@@ -17,8 +17,6 @@ foreach ($classes as $c) {
 	$classesByType[$ft][] = $c;
 }
 ?>
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.20/css/dataTables.bootstrap4.min.css">
-
 <button class="btn btn-success btn-lg" id="createcoursebtn" style="margin-left: 10px" type="button"><?= lang("app.createNewCourse"); ?></button>
 <button class="btn btn-outline-primary btn-lg" id="btnSmartCourses" style="margin-left: 8px" type="button">
 	<i class="fa fa-magic"></i> Smart create from analysis
@@ -152,7 +150,7 @@ foreach ($classes as $c) {
 </div>
 
 <div class="boxd" style="margin-top: 10px;">
-	<table class="table table-hover table-striped table-bordered dataTable dtr-inline" id="example">
+	<table class="table table-hover table-striped table-bordered" id="example" style="width:100%">
 		<thead>
 		<tr>
 			<th><?= lang("app.title"); ?></th>
@@ -190,10 +188,6 @@ foreach ($classes as $c) {
 
 </div>
 
-
-<script type="text/javascript" src="https://cdn.datatables.net/1.10.20/js/jquery.dataTables.min.js"></script>
-<script type="text/javascript" src="https://cdn.datatables.net/1.10.20/js/dataTables.bootstrap4.min.js"></script>
-
 <style>
 	.course-type-pick { text-align: left; white-space: normal; }
 </style>
@@ -203,7 +197,6 @@ foreach ($classes as $c) {
 		var smartByClass = <?= json_encode($smartByClass, JSON_UNESCAPED_UNICODE); ?>;
 		var currentType = null;
 
-		$('#example').DataTable();
 		$('#createCourseDiv').hide();
 
 		var $typeModal = $("#chooseCourseTypeModal");
