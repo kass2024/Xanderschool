@@ -74,12 +74,25 @@ class DocumentTextExtractor
 		$code = preg_replace('/^(?:EN|FR|RW|SW)?ZA(?=CCM)/', '', $code) ?? $code;
 		$code = preg_replace('/^(?:EN|FR|RW|SW)(?=(?:CCM|SWD|GEN|ICT))/', '', $code) ?? $code;
 		if (preg_match('/((?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3})/', $code, $m)) {
-			return $m[1];
+			$c = $m[1];
+			return self::isValidRtbModuleCode($c) ? $c : '';
 		}
-		if (preg_match('/([A-Z]{3,8}\d{3})/', $code, $m)) {
-			return $m[1];
+		// Do NOT accept generic LETTERS+3digits (rejects RWF500, USD100, PAGE001, etc.)
+		return '';
+	}
+
+	/** True for Rwanda TVET module codes only (SWD/GEN/CCM/ICT…). */
+	public static function isValidRtbModuleCode(string $code): bool
+	{
+		$code = strtoupper(trim($code));
+		if ($code === '') {
+			return false;
 		}
-		return $code;
+		// Qualification / currency / document noise
+		if (preg_match('/^(ICTSWD|RWF|USD|EUR|GBP|VAT|TAX|PDF|DOC|ZIP|HTTP|HTTPS|PAGE|DATE|YEAR|TERM|WEEK|HOUR|RQF|TVET|LEVEL)/', $code)) {
+			return false;
+		}
+		return (bool) preg_match('/^(?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3}$/', $code);
 	}
 
 	public static function cleanModuleTitle(string $title): string
@@ -87,7 +100,8 @@ class DocumentTextExtractor
 		$title = self::cleanPedagogicalText($title);
 		// Drop standalone module codes that leaked into the title
 		$title = preg_replace('/\b(?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3}\b/', ' ', $title) ?? $title;
-		$title = preg_replace('/\b\d+(?:\.\d+)?\b/', ' ', $title) ?? $title;
+		// Keep meaningful numbers (e.g. Windows Server 2019); only strip tiny page-like nums
+		$title = preg_replace('/\b\d{1,2}\b/', ' ', $title) ?? $title;
 		$title = preg_replace('/\s+/', ' ', $title) ?? $title;
 		$title = trim($title, " \t\n\r\0\x0B-–—.");
 		return $title;
@@ -194,6 +208,40 @@ class DocumentTextExtractor
 	 */
 	public static function parseCurriculumModuleCredits(string $curText): array
 	{
+		$rows = self::parseCurriculumCompetenceRows($curText);
+		$out = [];
+		foreach ($rows as $code => $row) {
+			$credit = (float) ($row['credit'] ?? 0);
+			if ($credit > 0) {
+				$out[$code] = $credit;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Human module titles from competences table (code + title + credit).
+	 *
+	 * @return array<string,string> code => title
+	 */
+	public static function parseCurriculumModuleTitles(string $curText): array
+	{
+		$rows = self::parseCurriculumCompetenceRows($curText);
+		$out = [];
+		foreach ($rows as $code => $row) {
+			$title = trim((string) ($row['title'] ?? ''));
+			if ($title !== '' && strcasecmp($title, $code) !== 0) {
+				$out[$code] = $title;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @return array<string,array{title:string,credit:float}>
+	 */
+	public static function parseCurriculumCompetenceRows(string $curText): array
+	{
 		if (trim($curText) === '') {
 			return [];
 		}
@@ -225,9 +273,12 @@ class DocumentTextExtractor
 			} else {
 				continue;
 			}
-			$parsed = self::parseCreditFromLine($pending);
+			$parsed = self::parseCompetenceFromLine($pending);
 			if ($parsed !== null) {
-				$out[$parsed['code']] = $parsed['credit'];
+				$out[$parsed['code']] = [
+					'title' => $parsed['title'],
+					'credit' => $parsed['credit'],
+				];
 				$pending = '';
 			}
 		}
@@ -242,9 +293,12 @@ class DocumentTextExtractor
 				if (preg_match('/^(?:total|no\b|code\b|credit\b|general\b|specific\b)/i', $line)) {
 					continue;
 				}
-				$parsed = self::parseCreditFromLine($line);
+				$parsed = self::parseCompetenceFromLine($line);
 				if ($parsed !== null) {
-					$out[$parsed['code']] = $parsed['credit'];
+					$out[$parsed['code']] = [
+						'title' => $parsed['title'],
+						'credit' => $parsed['credit'],
+					];
 				}
 			}
 		}
@@ -252,14 +306,14 @@ class DocumentTextExtractor
 		return $out;
 	}
 
-	/** @return array{code:string,credit:float}|null */
-	private static function parseCreditFromLine(string $line): ?array
+	/** @return array{code:string,title:string,credit:float}|null */
+	private static function parseCompetenceFromLine(string $line): ?array
 	{
 		if (!preg_match('/\b((?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3})\b/i', $line, $cm)) {
 			return null;
 		}
 		$code = self::cleanModuleCode($cm[1]);
-		if ($code === '') {
+		if ($code === '' || !self::isValidRtbModuleCode($code)) {
 			return null;
 		}
 		$afterCode = preg_replace('/^.*?\b' . preg_quote($code, '/') . '\b/i', '', $line) ?? '';
@@ -271,7 +325,25 @@ class DocumentTextExtractor
 		if ($credit <= 0) {
 			return null;
 		}
-		return ['code' => $code, 'credit' => $credit];
+		$titleRaw = trim(preg_replace('/\s*\d+(?:\.\d+)?\s*$/', '', $afterCode) ?? '');
+		$title = self::cleanModuleTitle($titleRaw);
+		if ($title === '') {
+			$title = trim($titleRaw);
+		}
+		if (strcasecmp($title, $code) === 0) {
+			$title = '';
+		}
+		return ['code' => $code, 'title' => $title, 'credit' => $credit];
+	}
+
+	/** @deprecated use parseCompetenceFromLine */
+	private static function parseCreditFromLine(string $line): ?array
+	{
+		$parsed = self::parseCompetenceFromLine($line);
+		if ($parsed === null) {
+			return null;
+		}
+		return ['code' => $parsed['code'], 'credit' => $parsed['credit']];
 	}
 
 	/**
