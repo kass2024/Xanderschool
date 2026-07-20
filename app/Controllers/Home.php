@@ -1714,17 +1714,22 @@ public function testEmail()
 		if ($done) {
 			return;
 		}
-		$db = \Config\Database::connect();
-		if (!$db->tableExists('courses')) {
-			$done = true;
-			return;
-		}
-		$fields = $db->getFieldNames('courses');
-		if (!in_array('program_type', $fields, true)) {
-			$db->query("ALTER TABLE `courses` ADD COLUMN `program_type` varchar(16) NOT NULL DEFAULT 'tvet' AFTER `marks`");
-		}
-		if (!in_array('create_source', $fields, true)) {
-			$db->query("ALTER TABLE `courses` ADD COLUMN `create_source` varchar(16) NOT NULL DEFAULT 'manual' AFTER `program_type`");
+		try {
+			$db = \Config\Database::connect();
+			if (!$db->tableExists('courses')) {
+				$done = true;
+				return;
+			}
+			$fields = $db->getFieldNames('courses');
+			if (!in_array('program_type', $fields, true)) {
+				$db->query("ALTER TABLE `courses` ADD COLUMN `program_type` varchar(16) NOT NULL DEFAULT 'tvet' AFTER `marks`");
+				$fields[] = 'program_type';
+			}
+			if (!in_array('create_source', $fields, true)) {
+				$db->query("ALTER TABLE `courses` ADD COLUMN `create_source` varchar(16) NOT NULL DEFAULT 'manual' AFTER `program_type`");
+			}
+		} catch (\Throwable $e) {
+			log_message('error', 'ensureCoursesMetaSchema: ' . $e->getMessage());
 		}
 		$done = true;
 	}
@@ -3067,7 +3072,22 @@ public function attendanceCard()
 			->orderBy('classes.title', 'ASC')
 			->get()->getResultArray();
 
-		$data['courses'] = $courseModel->select("courses.id,courses.title,courses.code,courses.marks,courses.credit,courses.program_type,courses.create_source,cs.title as category")
+		$courseFields = [];
+		try {
+			$courseFields = \Config\Database::connect()->getFieldNames('courses');
+		} catch (\Throwable $e) {
+			$courseFields = [];
+		}
+		$hasProgramType = in_array('program_type', $courseFields, true);
+		$hasCreateSource = in_array('create_source', $courseFields, true);
+		$selectCols = 'courses.id,courses.title,courses.code,courses.marks,courses.credit,cs.title as category';
+		if ($hasProgramType) {
+			$selectCols .= ',courses.program_type';
+		}
+		if ($hasCreateSource) {
+			$selectCols .= ',courses.create_source';
+		}
+		$data['courses'] = $courseModel->select($selectCols)
 				->join("course_category cs", "cs.id=courses.category")
 				->where("courses.school_id", $school_id)
 				->orderBy('courses.title', 'ASC')
@@ -3077,7 +3097,11 @@ public function attendanceCard()
 		$assignmentTypes = $this->courseAssignmentProgramTypes($school_id, $yearId);
 		$coursesGrouped = ['tvet' => [], 'reb' => []];
 		foreach ($data['courses'] as &$courseRow) {
-			$meta = $this->classifyCourseProgramAndSource($courseRow, $aiCodeMeta, $assignmentTypes);
+			try {
+				$meta = $this->classifyCourseProgramAndSource($courseRow, $aiCodeMeta, $assignmentTypes);
+			} catch (\Throwable $e) {
+				$meta = ['program_type' => 'tvet', 'create_source' => 'manual'];
+			}
 			$courseRow['program_type'] = $meta['program_type'];
 			$courseRow['create_source'] = $meta['create_source'];
 			$bucket = ($meta['program_type'] === 'reb') ? 'reb' : 'tvet';
@@ -3112,7 +3136,7 @@ public function attendanceCard()
 				if ($curText === '' && !empty($decoded['_source_text'])) {
 					$curText = (string) $decoded['_source_text'];
 				}
-				if (str_contains($curText, '===== CHRONOGRAM SOURCE =====')) {
+				if (strpos($curText, '===== CHRONOGRAM SOURCE =====') !== false) {
 					$curText = explode('===== CHRONOGRAM SOURCE =====', $curText, 2)[0];
 				}
 				$creditMap = \App\Libraries\DocumentTextExtractor::parseCurriculumModuleCredits($curText);
@@ -3190,26 +3214,30 @@ public function attendanceCard()
 	/** @return array<int,list<int>> course_id => faculty types from assignments */
 	private function courseAssignmentProgramTypes(int $schoolId, int $yearId): array
 	{
-		$db = \Config\Database::connect();
-		$sql = "SELECT cr.course, f.type AS faculty_type
-			FROM course_records cr
-			INNER JOIN classes c ON c.id = cr.class
-			INNER JOIN departments d ON d.id = c.department
-			INNER JOIN faculty f ON f.id = d.faculty_id
-			WHERE c.school_id = ?";
-		$params = [$schoolId];
-		if ($yearId > 0) {
-			$sql .= " AND cr.year = ?";
-			$params[] = $yearId;
-		}
-		$rows = $db->query($sql, $params)->getResultArray();
 		$out = [];
-		foreach ($rows as $r) {
-			$cid = (int) ($r['course'] ?? 0);
-			if ($cid <= 0) {
-				continue;
+		try {
+			$db = \Config\Database::connect();
+			$sql = "SELECT cr.course, f.type AS faculty_type
+				FROM course_records cr
+				INNER JOIN classes c ON c.id = cr.class
+				INNER JOIN departments d ON d.id = c.department
+				INNER JOIN faculty f ON f.id = d.faculty_id
+				WHERE c.school_id = ?";
+			$params = [$schoolId];
+			if ($yearId > 0) {
+				$sql .= " AND cr.year = ?";
+				$params[] = $yearId;
 			}
-			$out[$cid][] = (int) ($r['faculty_type'] ?? 1);
+			$rows = $db->query($sql, $params)->getResultArray();
+			foreach ($rows as $r) {
+				$cid = (int) ($r['course'] ?? 0);
+				if ($cid <= 0) {
+					continue;
+				}
+				$out[$cid][] = (int) ($r['faculty_type'] ?? 1);
+			}
+		} catch (\Throwable $e) {
+			log_message('error', 'courseAssignmentProgramTypes: ' . $e->getMessage());
 		}
 		return $out;
 	}
