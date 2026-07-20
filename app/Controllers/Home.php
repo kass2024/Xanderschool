@@ -1923,6 +1923,11 @@ public function testEmail()
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
 		$force = (int) $this->request->getPost('force') === 1;
 
+		// Release session lock so progress polling can read updates while this runs
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			session_write_close();
+		}
+
 		if ($yearId <= 0) {
 			return $this->response->setJSON(['error' => 'No active academic year']);
 		}
@@ -1948,6 +1953,10 @@ public function testEmail()
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$classId = (int) ($this->request->getGet('class_id') ?: $this->request->getPost('class_id'));
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		// Do not hold session while serving progress JSON
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			session_write_close();
+		}
 		$data = $this->readAiProgress($schoolId, $classId, $yearId);
 		return $this->response->setJSON($data ?: [
 			'pct' => 0,
@@ -1966,6 +1975,7 @@ public function testEmail()
 
 		$pedMdl = new ClassPedagogicalDocModel();
 		$docs = $pedMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->findAll();
+		$this->writeAiProgress($schoolId, $classId, $yearId, 1, 'Found ' . count($docs) . ' uploaded document(s)…', ['status' => 'running']);
 		$curricula = [];
 		$chronograms = [];
 		foreach ($docs as $d) {
@@ -2192,6 +2202,10 @@ public function testEmail()
 			'academic_year' => $yearId,
 		]);
 		@file_put_contents($path, json_encode($payload, JSON_UNESCAPED_UNICODE), LOCK_EX);
+		// Help PHP-FPM free buffers so concurrent progress polls see updates promptly
+		if (function_exists('clearstatcache')) {
+			clearstatcache(true, $path);
+		}
 	}
 
 	/** @return array<string,mixed>|null */

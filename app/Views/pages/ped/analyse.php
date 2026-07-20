@@ -200,6 +200,16 @@ include __DIR__ . '/_nav.php';
 
 	function startProgressPoll(cid) {
 		stopProgressPoll();
+		// Immediate first poll so UI leaves 0% as soon as server writes progress
+		$.getJSON('<?= base_url('ai_analyze_progress'); ?>', { class_id: cid })
+			.done(function (p) {
+				if (!p) return;
+				if (p.status === 'idle' && !(p.pct > 0)) return;
+				setProgress(p.pct || 0, p.action || 'Working…');
+				if (p.status === 'error' && p.action) {
+					status(p.action, true);
+				}
+			});
 		progressTimer = setInterval(function () {
 			$.getJSON('<?= base_url('ai_analyze_progress'); ?>', { class_id: cid })
 				.done(function (p) {
@@ -209,7 +219,7 @@ include __DIR__ . '/_nav.php';
 						status(p.action, true);
 					}
 				});
-		}, 1200);
+		}, 800);
 	}
 
 	function renderModules() {

@@ -109,7 +109,8 @@ class GeminiAcademicDocs
 			return null;
 		}
 
-		$this->reportProgress(5, 'Reading ' . count($packFiles) . ' curriculum file(s)…', ['files' => count($packFiles)]);
+		$totalFiles = count($packFiles);
+		$this->reportProgress(3, 'Reading ' . $totalFiles . ' curriculum file(s)…', ['files' => $totalFiles]);
 		$combinedText = '';
 		$fileIndex = []; // code hint => text
 		$pdfByCode = []; // code => extract pack with bytes
@@ -118,7 +119,7 @@ class GeminiAcademicDocs
 		$primaryPdf = null;
 		$totalBytes = 0;
 
-		foreach ($packFiles as $f) {
+		foreach ($packFiles as $fi => $f) {
 			$ex = DocumentTextExtractor::extract($f['path']);
 			$text = $this->safeUtf8((string) ($ex['text'] ?? ''));
 			$orig = $f['original'] ?? basename($f['path']);
@@ -126,6 +127,15 @@ class GeminiAcademicDocs
 			$label = "=== FILE: {$orig} (ext={$ex['ext']}, chars=" . mb_strlen($text, 'UTF-8') . ") ===\n";
 			$combinedText .= $label . $text . "\n\n";
 			$totalBytes += (int) ($ex['chars'] ?? 0);
+
+			// Keep UI moving while reading large ZIP packages (0%→12%)
+			if ($totalFiles > 1 && ($fi % 2 === 0 || $fi === $totalFiles - 1)) {
+				$readPct = 3 + (int) round((($fi + 1) / $totalFiles) * 9);
+				$this->reportProgress($readPct, 'Reading files (' . ($fi + 1) . '/' . $totalFiles . '): ' . $orig, [
+					'files' => $totalFiles,
+					'done' => $fi + 1,
+				]);
+			}
 
 			$codeFromName = DocumentTextExtractor::extractModuleCodeFromFilename($orig);
 			$titleFromName = DocumentTextExtractor::extractModuleTitleFromFilename($orig);
