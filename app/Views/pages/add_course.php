@@ -109,24 +109,175 @@ foreach ($classes as $c) {
 	.smart-badge.ok { background:#dcfce7; color:#15803d; }
 	.smart-actions { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.65rem; }
 	.credit-input, .marks-input { width:72px; display:inline-block; }
-	.course-group-panel {
-		border:1px solid #e2e8f0; border-radius:12px; margin:12px 10px 0; background:#fff; overflow:hidden;
+	.course-list-wrap {
+		margin: 16px 10px 0;
+		border: 1px solid #e2e8f0;
+		border-radius: 14px;
+		background: #fff;
+		overflow: hidden;
+		box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 	}
-	.course-group-head {
-		display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap;
-		padding:.85rem 1rem; background:#f8fafc; border-bottom:1px solid #e2e8f0;
+	.course-prog-switch {
+		display: flex;
+		gap: 0;
+		border-bottom: 1px solid #e2e8f0;
+		background: #f8fafc;
+		padding: .5rem .75rem 0;
 	}
-	.course-group-head h4 { margin:0; font-size:1rem; color:#0f172a; }
-	.course-group-meta { color:#64748b; font-size:.82rem; }
-	.course-group-body { padding:.5rem 1rem 1rem; }
+	.course-prog-tab {
+		appearance: none;
+		border: 1px solid transparent;
+		border-bottom: none;
+		background: transparent;
+		color: #64748b;
+		font-weight: 700;
+		font-size: .95rem;
+		padding: .7rem 1.15rem;
+		border-radius: 10px 10px 0 0;
+		cursor: pointer;
+		min-width: 140px;
+		text-align: center;
+	}
+	.course-prog-tab:hover { color: #0f172a; background: #fff; }
+	.course-prog-tab.is-active {
+		background: #fff;
+		color: #0f172a;
+		border-color: #e2e8f0;
+		box-shadow: 0 -1px 0 #fff;
+		position: relative;
+		top: 1px;
+	}
+	.course-prog-tab .tab-count {
+		display: inline-block;
+		margin-left: .35rem;
+		font-size: .75rem;
+		font-weight: 700;
+		padding: .1rem .4rem;
+		border-radius: 999px;
+		background: #e2e8f0;
+		color: #334155;
+	}
+	.course-prog-tab.is-active.rtb .tab-count { background: #dcfce7; color: #15803d; }
+	.course-prog-tab.is-active.reb .tab-count { background: #fef3c7; color: #b45309; }
+	.course-panel-meta {
+		padding: .85rem 1.1rem 0;
+		color: #64748b;
+		font-size: .9rem;
+	}
+	.course-group-body {
+		padding: .75rem 1.1rem 1.15rem;
+	}
+	.course-group-panel { display: none; }
+	.course-group-panel.is-active { display: block; }
 	.course-source-badge {
-		display:inline-block; font-size:.72rem; font-weight:700; padding:.15rem .45rem; border-radius:999px;
+		display: inline-block;
+		font-size: .78rem;
+		font-weight: 700;
+		padding: .2rem .55rem;
+		border-radius: 999px;
 	}
-	.course-source-badge.source-ai { background:#dbeafe; color:#1d4ed8; }
-	.course-source-badge.source-manual { background:#f3f4f6; color:#374151; }
-	.prog-badge { display:inline-block; font-size:.72rem; font-weight:700; padding:.15rem .45rem; border-radius:999px; background:#dcfce7; color:#15803d; }
-	.prog-badge.reb { background:#fef3c7; color:#b45309; }
+	.course-source-badge.source-ai { background: #dbeafe; color: #1d4ed8; }
+	.course-source-badge.source-manual { background: #f3f4f6; color: #374151; }
+
+	/* DataTables controls — larger + readable */
+	.course-list-wrap .dataTables_wrapper {
+		font-size: .95rem;
+	}
+	.course-list-wrap .dataTables_length,
+	.course-list-wrap .dataTables_filter {
+		margin-bottom: .85rem;
+	}
+	.course-list-wrap .dataTables_length label,
+	.course-list-wrap .dataTables_filter label {
+		font-weight: 600;
+		color: #334155;
+		display: inline-flex;
+		align-items: center;
+		gap: .45rem;
+		margin: 0;
+	}
+	.course-list-wrap .dataTables_length select {
+		min-width: 72px;
+		height: 38px;
+		padding: .35rem .55rem;
+		border: 1px solid #cbd5e1;
+		border-radius: 8px;
+		background: #fff;
+	}
+	.course-list-wrap .dataTables_filter input {
+		height: 38px;
+		min-width: 220px;
+		padding: .4rem .7rem;
+		border: 1px solid #cbd5e1;
+		border-radius: 8px;
+		margin-left: .35rem;
+	}
+	.course-list-wrap table.course-list-table {
+		width: 100% !important;
+		font-size: .95rem;
+	}
+	.course-list-wrap table.course-list-table thead th {
+		font-size: .8rem;
+		text-transform: uppercase;
+		letter-spacing: .02em;
+		color: #64748b;
+		padding: .7rem .55rem;
+		white-space: nowrap;
+	}
+	.course-list-wrap table.course-list-table tbody td {
+		padding: .7rem .55rem;
+		vertical-align: middle;
+	}
+	.course-list-wrap .dataTables_info {
+		padding-top: .85rem !important;
+		color: #64748b;
+		font-size: .9rem;
+	}
+	.course-list-wrap .dataTables_paginate {
+		padding-top: .65rem !important;
+		float: right;
+	}
+	.course-list-wrap .dataTables_paginate .paginate_button {
+		display: inline-block !important;
+		box-sizing: border-box;
+		min-width: 38px;
+		padding: .45rem .75rem !important;
+		margin: 0 .2rem !important;
+		border: 1px solid #cbd5e1 !important;
+		border-radius: 8px !important;
+		background: #fff !important;
+		color: #0f172a !important;
+		font-weight: 600 !important;
+		line-height: 1.25 !important;
+		text-decoration: none !important;
+		cursor: pointer;
+		vertical-align: middle;
+	}
+	.course-list-wrap .dataTables_paginate .paginate_button:hover {
+		background: #f1f5f9 !important;
+		border-color: #94a3b8 !important;
+		color: #0f172a !important;
+	}
+	.course-list-wrap .dataTables_paginate .paginate_button.current,
+	.course-list-wrap .dataTables_paginate .paginate_button.current:hover {
+		background: #0f766e !important;
+		border-color: #0f766e !important;
+		color: #fff !important;
+	}
+	.course-list-wrap .dataTables_paginate .paginate_button.disabled,
+	.course-list-wrap .dataTables_paginate .paginate_button.disabled:hover {
+		opacity: .45;
+		cursor: default;
+		background: #f8fafc !important;
+		color: #94a3b8 !important;
+	}
+	.course-list-wrap .dataTables_paginate span {
+		display: inline-block;
+		vertical-align: middle;
+	}
 </style>
+<link rel="stylesheet" type="text/css" href="<?= base_url('assets/plugins/datatables/jquery.dataTables.min.css'); ?>">
+
 
 <div class="smart-wrap" id="smartWrap">
 	<div class="smart-banner">
@@ -196,49 +347,69 @@ $groupDefs = [
 	'tvet' => [
 		'title' => lang('app.wda') . ' / RTB (TVET)',
 		'table_id' => 'courseTableRtb',
-		'badge_class' => 'prog-badge',
+		'tab_class' => 'rtb',
+		'label' => 'RTB',
 	],
 	'reb' => [
 		'title' => lang('app.reb') . ' (REB)',
 		'table_id' => 'courseTableReb',
-		'badge_class' => 'prog-badge reb',
+		'tab_class' => 'reb',
+		'label' => 'REB',
 	],
 ];
-foreach ($groupDefs as $progKey => $groupDef):
-	$rows = $coursesGrouped[$progKey] ?? [];
-	$aiCount = count(array_filter($rows, static function ($c) {
-		return ($c['create_source'] ?? '') === 'ai';
-	}));
-	$manualCount = count($rows) - $aiCount;
+$defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGrouped['reb']) ? 'reb' : 'tvet');
 ?>
-<div class="course-group-panel">
-	<div class="course-group-head">
-		<div>
-			<h4><?= esc($groupDef['title']); ?></h4>
-			<div class="course-group-meta"><?= count($rows); ?> course(s) · <?= $manualCount; ?> manual · <?= $aiCount; ?> AI</div>
+<div class="course-list-wrap" id="courseListWrap">
+	<div class="course-prog-switch" role="tablist" aria-label="Programme type">
+		<?php foreach ($groupDefs as $progKey => $groupDef):
+			$rows = $coursesGrouped[$progKey] ?? [];
+			$active = $progKey === $defaultProg ? ' is-active' : '';
+		?>
+		<button type="button"
+			class="course-prog-tab <?= esc($groupDef['tab_class']); ?><?= $active; ?>"
+			data-prog="<?= esc($progKey); ?>"
+			role="tab"
+			aria-selected="<?= $progKey === $defaultProg ? 'true' : 'false'; ?>">
+			<?= esc($groupDef['label']); ?>
+			<span class="tab-count"><?= count($rows); ?></span>
+		</button>
+		<?php endforeach; ?>
+	</div>
+
+	<?php foreach ($groupDefs as $progKey => $groupDef):
+		$rows = $coursesGrouped[$progKey] ?? [];
+		$aiCount = count(array_filter($rows, static function ($c) {
+			return ($c['create_source'] ?? '') === 'ai';
+		}));
+		$manualCount = count($rows) - $aiCount;
+		$active = $progKey === $defaultProg ? ' is-active' : '';
+	?>
+	<div class="course-group-panel<?= $active; ?>" data-prog-panel="<?= esc($progKey); ?>" role="tabpanel">
+		<div class="course-panel-meta">
+			<strong><?= esc($groupDef['title']); ?></strong>
+			— <?= count($rows); ?> course(s) · <?= $manualCount; ?> manual · <?= $aiCount; ?> AI
 		</div>
-		<span class="<?= esc($groupDef['badge_class']); ?>"><?= strtoupper($progKey === 'reb' ? 'REB' : 'RTB'); ?></span>
+		<div class="course-group-body">
+			<table class="table table-hover table-striped table-bordered course-list-table" id="<?= esc($groupDef['table_id']); ?>" style="width:100%">
+				<thead>
+				<tr>
+					<th><?= lang("app.title"); ?></th>
+					<th><?= lang("app.code"); ?></th>
+					<th><?= lang("app.category"); ?></th>
+					<th>Source</th>
+					<th><?= lang("app.credits"); ?></th>
+					<th><?= lang("app.marks"); ?></th>
+					<th><?= lang("app.use"); ?></th>
+				</tr>
+				</thead>
+				<tbody>
+				<?= $renderCourseRows($rows); ?>
+				</tbody>
+			</table>
+		</div>
 	</div>
-	<div class="course-group-body">
-		<table class="table table-hover table-striped table-bordered course-list-table" id="<?= esc($groupDef['table_id']); ?>" style="width:100%">
-			<thead>
-			<tr>
-				<th><?= lang("app.title"); ?></th>
-				<th><?= lang("app.code"); ?></th>
-				<th><?= lang("app.category"); ?></th>
-				<th>Source</th>
-				<th><?= lang("app.credits"); ?></th>
-				<th><?= lang("app.marks"); ?></th>
-				<th><?= lang("app.use"); ?></th>
-			</tr>
-			</thead>
-			<tbody>
-			<?= $renderCourseRows($rows); ?>
-			</tbody>
-		</table>
-	</div>
+	<?php endforeach; ?>
 </div>
-<?php endforeach; ?>
 
 <style>
 	.course-type-pick { text-align: left; white-space: normal; }
@@ -251,22 +422,57 @@ foreach ($groupDefs as $progKey => $groupDef):
 
 		function initCourseTable(selector) {
 			var $table = $(selector);
-			if (!$table.length) return;
+			if (!$table.length) return null;
 			if ($.fn.DataTable && $.fn.DataTable.isDataTable($table)) {
 				$table.DataTable().destroy();
 			}
 			$table.removeClass('dataTable dtr-inline');
-			$table.DataTable({
-				responsive: true,
+			return $table.DataTable({
+				autoWidth: false,
 				pageLength: 25,
 				lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
-				order: [[0, 'asc']]
+				order: [[0, 'asc']],
+				dom: '<"row align-items-center mb-2"<"col-sm-6"l><"col-sm-6 text-sm-right"f>>rt<"row align-items-center"<"col-sm-5"i><"col-sm-7"p>>',
+				language: {
+					lengthMenu: 'Show _MENU_ entries',
+					search: 'Search:',
+					paginate: { previous: 'Previous', next: 'Next' },
+					info: 'Showing _START_ to _END_ of _TOTAL_ entries',
+					infoEmpty: 'Showing 0 to 0 of 0 entries',
+					zeroRecords: 'No matching courses found'
+				}
 			});
 		}
 
+		var courseTables = {
+			tvet: null,
+			reb: null
+		};
+
+		function ensureTable(prog) {
+			var id = prog === 'reb' ? '#courseTableReb' : '#courseTableRtb';
+			if (!courseTables[prog]) {
+				courseTables[prog] = initCourseTable(id);
+			} else if (courseTables[prog] && courseTables[prog].columns) {
+				courseTables[prog].columns.adjust();
+			}
+		}
+
+		function switchCourseProg(prog) {
+			prog = prog === 'reb' ? 'reb' : 'tvet';
+			$('.course-prog-tab').removeClass('is-active').attr('aria-selected', 'false');
+			$('.course-prog-tab[data-prog="' + prog + '"]').addClass('is-active').attr('aria-selected', 'true');
+			$('.course-group-panel').removeClass('is-active');
+			$('.course-group-panel[data-prog-panel="' + prog + '"]').addClass('is-active');
+			ensureTable(prog);
+		}
+
 		$('#createCourseDiv').hide();
-		initCourseTable('#courseTableRtb');
-		initCourseTable('#courseTableReb');
+		ensureTable('<?= $defaultProg; ?>');
+
+		$(document).on('click', '.course-prog-tab', function () {
+			switchCourseProg($(this).data('prog'));
+		});
 
 		var $typeModal = $("#chooseCourseTypeModal");
 		var $smartTypeModal = $("#smartTypeModal");
