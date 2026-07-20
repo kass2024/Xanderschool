@@ -1546,9 +1546,10 @@ public function testEmail()
 			$newName = 'ped_' . $schoolId . '_' . $classId . '_y' . $yearId . '_' . $docType . '_' . time() . '_' . $i . '_' . bin2hex(random_bytes(2)) . '.' . $ext;
 			$file->move($dir, $newName);
 
-			if ($docType === 'curriculum' && $ext === 'zip') {
+			if ($ext === 'zip') {
 				$hadZip = true;
-				$pkgDir = $dir . '/pkg_' . $schoolId . '_' . $classId . '_y' . $yearId;
+				$pkgDir = $dir . '/pkg_' . $schoolId . '_' . $classId . '_y' . $yearId
+					. ($docType === 'chronogram' ? '_chr' : '');
 				$this->wipeDir($pkgDir);
 				@mkdir($pkgDir, 0755, true);
 				$zip = new \ZipArchive();
@@ -1556,6 +1557,7 @@ public function testEmail()
 					$zip->extractTo($pkgDir);
 					$zip->close();
 				}
+				$this->expandNestedZipsInDir($pkgDir);
 			}
 
 			$payload = [
@@ -1597,6 +1599,18 @@ public function testEmail()
 			$msg .= ' (ZIP package extracted)';
 		}
 
+		// Invalidate stale AI cache so next Analyse re-runs with new files
+		try {
+			$cacheMdl = new AcademicAiAnalysisModel();
+			$cached = $cacheMdl->where('school_id', $schoolId)->where('class_id', $classId)
+				->where('academic_year', $yearId)->first();
+			if ($cached) {
+				$cacheMdl->update($cached['id'], ['source_hash' => 'invalidated_after_upload_' . time()]);
+			}
+		} catch (\Throwable $e) {
+			// non-fatal
+		}
+
 		return $this->response->setJSON([
 			'success' => $msg,
 			'files' => $saved,
@@ -1623,6 +1637,37 @@ public function testEmail()
 			}
 		}
 		@rmdir($dir);
+	}
+
+	/** Expand nested .zip files found inside an extracted pedagogical package. */
+	private function expandNestedZipsInDir(string $dir, int $depth = 0): void
+	{
+		if ($depth > 3 || !is_dir($dir) || !class_exists(\ZipArchive::class)) {
+			return;
+		}
+		$rii = new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+		);
+		$zips = [];
+		foreach ($rii as $file) {
+			/** @var \SplFileInfo $file */
+			if ($file->isFile() && strtolower($file->getExtension()) === 'zip') {
+				$zips[] = $file->getPathname();
+			}
+		}
+		foreach ($zips as $zipPath) {
+			$subDest = $zipPath . '_extracted';
+			if (is_dir($subDest)) {
+				continue;
+			}
+			@mkdir($subDest, 0755, true);
+			$zip = new \ZipArchive();
+			if ($zip->open($zipPath) === true) {
+				$zip->extractTo($subDest);
+				$zip->close();
+				$this->expandNestedZipsInDir($subDest, $depth + 1);
+			}
+		}
 	}
 
 	public function delete_pedagogical_document()
@@ -1967,25 +2012,45 @@ public function testEmail()
 		$cacheMdl = new AcademicAiAnalysisModel();
 		$cached = $cacheMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->first();
 
-		// Serve DB cache whenever files unchanged — do NOT re-extract or call Gemini
+		// Serve DB cache whenever files unchanged AND extract is complete — do NOT re-call Gemini
 		if (!$force && $cached && !empty($cached['analysis_json'])) {
 			$decoded = json_decode($cached['analysis_json'], true);
 			$hashOk = empty($cached['source_hash']) || hash_equals((string) $cached['source_hash'], $sourceHash);
 			if (is_array($decoded) && $hashOk && !empty($decoded['modules'])) {
 				$stats = $this->countAnalysisStats($decoded);
-				$this->writeAiProgress($schoolId, $classId, $yearId, 100, 'Loaded from database cache', ['status' => 'done', 'cached' => true]);
-				return $this->response->setJSON([
-					'success' => 'Loaded from database cache (no AI call)',
-					'analysis' => $decoded,
-					'cached' => true,
-					'module_count' => $stats['module_count'],
+				// Incomplete cache (0 LO/IC while package likely has module PDFs) → re-analyse
+				$pkgPdfCount = 0;
+				if (is_dir($pkgDir)) {
+					$rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($pkgDir, \FilesystemIterator::SKIP_DOTS));
+					foreach ($rii as $file) {
+						/** @var \SplFileInfo $file */
+						if ($file->isFile() && strtolower($file->getExtension()) === 'pdf') {
+							$pkgPdfCount++;
+						}
+					}
+				}
+				$incomplete = $stats['lo_count'] === 0 && ($pkgPdfCount >= 3 || count($curricula) >= 3);
+				$hoursMissing = $stats['chronogram_slots'] === 0 && $stats['module_count'] > 0;
+				if (!$incomplete && !$hoursMissing) {
+					$this->writeAiProgress($schoolId, $classId, $yearId, 100, 'Loaded from database cache', ['status' => 'done', 'cached' => true]);
+					return $this->response->setJSON([
+						'success' => 'Loaded from database cache (no AI call)',
+						'analysis' => $decoded,
+						'cached' => true,
+						'module_count' => $stats['module_count'],
+						'lo_count' => $stats['lo_count'],
+						'ic_count' => $stats['ic_count'],
+						'chronogram_weeks' => $stats['chronogram_weeks'],
+						'chronogram_slots' => $stats['chronogram_slots'],
+						'needs_reanalyse' => false,
+						'source_hash' => $sourceHash,
+						'updated_at' => $cached['updated_at'] ?? null,
+					]);
+				}
+				$this->writeAiProgress($schoolId, $classId, $yearId, 2, 'Cached analysis incomplete — re-running extraction…', [
+					'status' => 'running',
 					'lo_count' => $stats['lo_count'],
-					'ic_count' => $stats['ic_count'],
-					'chronogram_weeks' => $stats['chronogram_weeks'],
 					'chronogram_slots' => $stats['chronogram_slots'],
-					'needs_reanalyse' => $stats['lo_count'] === 0,
-					'source_hash' => $sourceHash,
-					'updated_at' => $cached['updated_at'] ?? null,
 				]);
 			}
 		}
@@ -2024,6 +2089,27 @@ public function testEmail()
 		}
 
 		$extraChronograms = array_slice($chronograms, 1);
+		$chrPkgDir = FCPATH . 'assets/documents/pedagogical/pkg_' . $schoolId . '_' . $classId . '_y' . $yearId . '_chr';
+		if (is_dir($chrPkgDir)) {
+			$rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($chrPkgDir, \FilesystemIterator::SKIP_DOTS));
+			$pkgRoot = realpath($chrPkgDir) ?: $chrPkgDir;
+			foreach ($rii as $file) {
+				/** @var \SplFileInfo $file */
+				if (!$file->isFile()) {
+					continue;
+				}
+				$e = strtolower($file->getExtension());
+				if (!in_array($e, ['pdf', 'doc', 'docx'], true)) {
+					continue;
+				}
+				$full = $file->getPathname();
+				$rel = $file->getFilename();
+				if (strpos($full, $pkgRoot) === 0) {
+					$rel = ltrim(str_replace('\\', '/', substr($full, strlen($pkgRoot))), '/');
+				}
+				$extraChronograms[] = ['path' => $full, 'original' => $rel];
+			}
+		}
 		$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Starting AI analysis…', [
 			'status' => 'running',
 			'curriculum_files' => count($curricula),

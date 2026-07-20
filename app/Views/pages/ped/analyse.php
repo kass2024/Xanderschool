@@ -246,6 +246,10 @@ include __DIR__ . '/_nav.php';
 				}, 0);
 				wh = Math.round((parseFloat(wh) || 0) * 10) / 10;
 				badges += '<span class="aiplan-badge ok">' + slots.length + ' weeks · ' + wh + 'h</span>';
+			} else if (m.hours_per_week) {
+				badges += '<span class="aiplan-badge ok">' + m.hours_per_week + 'h / week</span>';
+			} else if (m.learning_hours) {
+				badges += '<span class="aiplan-badge ok">' + m.learning_hours + 'h total</span>';
 			} else {
 				badges += '<span class="aiplan-badge warn">No chronogram hours</span>';
 			}

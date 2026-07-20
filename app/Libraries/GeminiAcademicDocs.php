@@ -429,6 +429,27 @@ class GeminiAcademicDocs
 			$code = DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
 			$title = trim((string) ($m['title'] ?? ''));
 			$body = $fileIndex[$code] ?? $this->sliceAroundKeywords($combinedText, array_filter([$code, $title]), 22000);
+			// Also try compatible code keys in fileIndex (CCMCL402 vs CCM CL402 cleaned variants)
+			if (($body === '' || mb_strlen($body, 'UTF-8') < 400) && $code !== '') {
+				foreach ($fileIndex as $fk => $ft) {
+					if ($this->moduleCodesCompatible($code, (string) $fk) && mb_strlen((string) $ft, 'UTF-8') > mb_strlen($body, 'UTF-8')) {
+						$body = (string) $ft;
+					}
+				}
+			}
+
+			// Deterministic text parse first (accurate when pdftotext works)
+			$parsedLos = DocumentTextExtractor::parseModuleLearningOutcomes($body);
+			$got = [
+				'code' => $code,
+				'title' => $title,
+				'rqf_level' => $m['rqf_level'] ?? null,
+				'learning_hours' => $m['learning_hours'] ?? null,
+				'module_type' => $m['module_type'] ?? '',
+				'learning_outcomes' => $parsedLos,
+			];
+			$loCount = count($parsedLos);
+
 			$detailPrompt = <<<PROMPT
 You are extracting REAL curriculum content for ONE Rwanda TVET/RTB module from the attached document text/PDF.
 
@@ -438,6 +459,7 @@ RULES:
 3. If this module's LO/IC are not in the provided text/PDF, return learning_outcomes:[].
 4. Always keep the exact module code. Prefer the human title from the document (not the code).
 5. Include hours when printed next to LO/IC.
+6. Return EVERY LO and nested IC for this module — do not stop after the first.
 
 Return ONLY JSON:
 {"modules":[{"code":"{$code}","title":"","rqf_level":null,"learning_hours":null,"credits":null,"module_type":"specific|general|ccm","purpose":"","learning_outcomes":[{"code":"","title":"","performance_criteria":[string],"indicative_contents":[{"code":"","title":"","hours":null}]}],"raw_topics":[string]}]}
@@ -446,49 +468,84 @@ MODULE: {$code} — {$title}
 
 ----- MODULE TEXT -----
 PROMPT;
-			$detailParts = [];
-			// Attach module PDF or structure PDF for vision (scanned curricula)
-			$pdfAttached = false;
-			if (isset($pdfByCode[$code]['bytes']) && strlen((string) $pdfByCode[$code]['bytes']) <= 10 * 1024 * 1024) {
-				$detailParts[] = [
-					'inlineData' => [
-						'mimeType' => 'application/pdf',
-						'data' => base64_encode((string) $pdfByCode[$code]['bytes']),
-					],
-				];
-				$pdfAttached = true;
-			} elseif ($primaryPdf && !empty($primaryPdf['bytes']) && strlen((string) $primaryPdf['bytes']) <= 10 * 1024 * 1024
-				&& mb_strlen($body, 'UTF-8') < 2500) {
-				$detailParts[] = [
-					'inlineData' => [
-						'mimeType' => 'application/pdf',
-						'data' => base64_encode((string) $primaryPdf['bytes']),
-					],
-				];
-				$pdfAttached = true;
-			}
-			$fullPrompt = $detailPrompt . "\n" . mb_substr($this->safeUtf8($body), 0, 28000, 'UTF-8');
-			$detail = $this->generateJson($fullPrompt, $detailParts, 16384);
-			$got = (is_array($detail) && is_array($detail['modules'][0] ?? null)) ? $detail['modules'][0] : null;
-			$loCount = is_array($got['learning_outcomes'] ?? null) ? count($got['learning_outcomes']) : 0;
-			// Retry once with structure PDF if empty and we have vision capacity
-			if ($loCount === 0 && !$pdfAttached && $primaryPdf && !empty($primaryPdf['bytes'])
-				&& strlen((string) $primaryPdf['bytes']) <= 10 * 1024 * 1024) {
-				$retryParts = [[
-					'inlineData' => [
-						'mimeType' => 'application/pdf',
-						'data' => base64_encode((string) $primaryPdf['bytes']),
-					],
-				]];
-				$retryPrompt = $detailPrompt
-					. "\nFind this module inside the attached curriculum PDF and extract ALL LO/IC. If absent, return empty learning_outcomes.\n\nTEXT:\n"
-					. mb_substr($this->safeUtf8($body), 0, 12000, 'UTF-8');
-				$detail = $this->generateJson($retryPrompt, $retryParts, 16384);
+			// Call AI when text parse is empty OR thin (enrich with vision)
+			$needAi = $loCount === 0 || $this->countIndicative($got) < 2;
+			if ($needAi) {
+				$detailParts = [];
+				$pdfAttached = false;
+				if (isset($pdfByCode[$code]['bytes']) && strlen((string) $pdfByCode[$code]['bytes']) <= 10 * 1024 * 1024) {
+					$detailParts[] = [
+						'inlineData' => [
+							'mimeType' => 'application/pdf',
+							'data' => base64_encode((string) $pdfByCode[$code]['bytes']),
+						],
+					];
+					$pdfAttached = true;
+				} else {
+					// Fuzzy PDF match by compatible code
+					foreach ($pdfByCode as $pk => $pf) {
+						if ($this->moduleCodesCompatible($code, (string) $pk) && !empty($pf['bytes'])
+							&& strlen((string) $pf['bytes']) <= 10 * 1024 * 1024) {
+							$detailParts[] = [
+								'inlineData' => [
+									'mimeType' => 'application/pdf',
+									'data' => base64_encode((string) $pf['bytes']),
+								],
+							];
+							$pdfAttached = true;
+							break;
+						}
+					}
+				}
+				if (!$pdfAttached && $primaryPdf && !empty($primaryPdf['bytes'])
+					&& strlen((string) $primaryPdf['bytes']) <= 10 * 1024 * 1024
+					&& mb_strlen($body, 'UTF-8') < 2500) {
+					$detailParts[] = [
+						'inlineData' => [
+							'mimeType' => 'application/pdf',
+							'data' => base64_encode((string) $primaryPdf['bytes']),
+						],
+					];
+					$pdfAttached = true;
+				}
+				$fullPrompt = $detailPrompt . "\n" . mb_substr($this->safeUtf8($body), 0, 28000, 'UTF-8');
+				$detail = $this->generateJson($fullPrompt, $detailParts, 16384);
+				$aiGot = null;
 				if (is_array($detail) && is_array($detail['modules'][0] ?? null)) {
-					$got = $detail['modules'][0];
+					$aiGot = $detail['modules'][0];
+				} elseif (is_array($detail) && is_array($detail['learning_outcomes'] ?? null)) {
+					$aiGot = $detail;
+				}
+				// Retry once with structure PDF if empty
+				if ($this->countIndicative($aiGot ?? []) === 0 && !$pdfAttached && $primaryPdf && !empty($primaryPdf['bytes'])
+					&& strlen((string) $primaryPdf['bytes']) <= 10 * 1024 * 1024) {
+					$retryParts = [[
+						'inlineData' => [
+							'mimeType' => 'application/pdf',
+							'data' => base64_encode((string) $primaryPdf['bytes']),
+						],
+					]];
+					$retryPrompt = $detailPrompt
+						. "\nFind this module inside the attached curriculum PDF and extract ALL LO/IC. If absent, return empty learning_outcomes.\n\nTEXT:\n"
+						. mb_substr($this->safeUtf8($body), 0, 12000, 'UTF-8');
+					$detail = $this->generateJson($retryPrompt, $retryParts, 16384);
+					if (is_array($detail) && is_array($detail['modules'][0] ?? null)) {
+						$aiGot = $detail['modules'][0];
+					}
+				}
+				// Prefer richer of AI vs deterministic
+				if (is_array($aiGot)) {
+					$aiLos = is_array($aiGot['learning_outcomes'] ?? null) ? $aiGot['learning_outcomes'] : [];
+					if (count($aiLos) > $loCount || $this->countIndicative($aiGot) > $this->countIndicative($got)) {
+						$got = array_merge($got, $aiGot);
+						$got['code'] = $code;
+						if (empty($got['title']) || strcasecmp((string) $got['title'], $code) === 0) {
+							$got['title'] = $title;
+						}
+					}
 				}
 			}
-			if (is_array($got) && $code !== '') {
+			if ($code !== '') {
 				$detailed[$code] = $got;
 			}
 		}
@@ -531,15 +588,50 @@ PROMPT;
 			$chronoResult = $this->extractChronogramTotalsFallback($chr, $chrText, $chronoCodes, $dbContext);
 		}
 		$slots = is_array($chronoResult['module_slots'] ?? null) ? $chronoResult['module_slots'] : [];
+		// Harvest slots from chronogram.weeks[].modules when module_slots sparse
+		$fromWeeks = $this->slotsFromChronogramWeeks($chronoResult['chronogram'] ?? []);
+		foreach ($fromWeeks as $wkCode => $wkSlots) {
+			$ck = DocumentTextExtractor::cleanModuleCode((string) $wkCode);
+			if ($ck === '') {
+				continue;
+			}
+			if (empty($slots[$ck]) || count($wkSlots) > count($slots[$ck])) {
+				$slots[$ck] = $wkSlots;
+			}
+		}
 		// Also harvest totals from chronogram header text (Modules periods / hours)
 		$headerTotals = $this->parseChronogramHeaderTotals($chrText, $chronoCodes);
 		$weeklyFromText = DocumentTextExtractor::parseChronogramWeeklyHours($chrText);
+		// Merge period totals from weekly parser into headerTotals
+		foreach ($weeklyFromText as $wkCode => $wkInfo) {
+			$ck = DocumentTextExtractor::cleanModuleCode((string) $wkCode);
+			$pt = (float) ($wkInfo['period_total'] ?? 0);
+			if ($ck !== '' && $pt > 0 && !isset($headerTotals[$ck])) {
+				$headerTotals[$ck] = $pt;
+			}
+		}
+		// Title → chronogram code map for fuzzy hour attachment
+		$titleToChronoCode = [];
+		foreach ($chronoTitles as $cc => $ct) {
+			$key = strtolower(trim(DocumentTextExtractor::cleanModuleTitle((string) $ct)));
+			if ($key !== '') {
+				$titleToChronoCode[$key] = DocumentTextExtractor::cleanModuleCode((string) $cc);
+			}
+		}
+
 		foreach ($merged as &$mm) {
 			$code = strtoupper(trim((string) ($mm['code'] ?? '')));
 			if ($code === '') {
 				continue;
 			}
 			$matchedSlots = $this->findSlotsForCode($code, $slots);
+			// Title-based fallback when code in curriculum ≠ chronogram spelling
+			if ($matchedSlots === []) {
+				$tkey = strtolower(trim(DocumentTextExtractor::cleanModuleTitle((string) ($mm['title'] ?? ''))));
+				if ($tkey !== '' && isset($titleToChronoCode[$tkey])) {
+					$matchedSlots = $this->findSlotsForCode($titleToChronoCode[$tkey], $slots);
+				}
+			}
 			if ($matchedSlots !== []) {
 				$mm['chronogram_slots'] = $this->normalizeChronogramSlots($matchedSlots);
 				$mm['weekly_hours_total'] = round(array_sum(array_map(static function ($s) {
@@ -551,6 +643,18 @@ PROMPT;
 				$mm['chronogram_slots'] = $this->synthesizeSlotsFromTotal($total, $chronoResult['chronogram'] ?? []);
 				$mm['weekly_hours_total'] = round($total, 1);
 				$mm['chronogram_periods_total'] = round($total, 1);
+			} else {
+				// Last resort: title match on header totals
+				$tkey = strtolower(trim(DocumentTextExtractor::cleanModuleTitle((string) ($mm['title'] ?? ''))));
+				if ($tkey !== '' && isset($titleToChronoCode[$tkey])) {
+					$alt = $this->findHeaderTotalForCode($titleToChronoCode[$tkey], $headerTotals);
+					if ($alt !== null) {
+						$total = (float) $alt;
+						$mm['chronogram_slots'] = $this->synthesizeSlotsFromTotal($total, $chronoResult['chronogram'] ?? []);
+						$mm['weekly_hours_total'] = round($total, 1);
+						$mm['chronogram_periods_total'] = round($total, 1);
+					}
+				}
 			}
 			// Timetable load: typical periods/week from chronogram grid (not yearly totals)
 			$hpw = 0.0;
@@ -560,6 +664,13 @@ PROMPT;
 				foreach ($weeklyFromText as $wkCode => $wkInfo) {
 					if ($this->moduleCodesCompatible($code, (string) $wkCode)) {
 						$hpw = (float) ($wkInfo['hours_per_week'] ?? 0);
+						// If still no slots, synthesize from period_total
+						if (empty($mm['chronogram_slots']) && (float) ($wkInfo['period_total'] ?? 0) > 0) {
+							$total = (float) $wkInfo['period_total'];
+							$mm['chronogram_slots'] = $this->synthesizeSlotsFromTotal($total, $chronoResult['chronogram'] ?? []);
+							$mm['weekly_hours_total'] = round($total, 1);
+							$mm['chronogram_periods_total'] = round($total, 1);
+						}
 						break;
 					}
 				}
@@ -569,6 +680,15 @@ PROMPT;
 			}
 			if ($hpw > 0) {
 				$mm['hours_per_week'] = round($hpw, 1);
+			}
+			// Still no slots but we have hours_per_week — synthesize across chronogram weeks
+			if (empty($mm['chronogram_slots']) && $hpw > 0) {
+				$weekCount = is_array($chronoResult['chronogram']['weeks'] ?? null)
+					? count($chronoResult['chronogram']['weeks'])
+					: 0;
+				$total = $weekCount > 0 ? round($hpw * $weekCount, 1) : round($hpw * 30, 1);
+				$mm['chronogram_slots'] = $this->synthesizeSlotsFromTotal($total, $chronoResult['chronogram'] ?? []);
+				$mm['weekly_hours_total'] = $total;
 			}
 			if (empty($mm['learning_hours']) && !empty($mm['weekly_hours_total'])) {
 				// Chronogram periods ≈ contact hours budget when curriculum hours missing
@@ -867,6 +987,73 @@ PROMPT;
 		return $totals;
 	}
 
+	/** @param array<string,mixed>|null $mod */
+	private function countIndicative($mod): int
+	{
+		if (!is_array($mod)) {
+			return 0;
+		}
+		$n = 0;
+		foreach ($mod['learning_outcomes'] ?? [] as $lo) {
+			if (!is_array($lo)) {
+				continue;
+			}
+			$n += is_array($lo['indicative_contents'] ?? null) ? count($lo['indicative_contents']) : 0;
+		}
+		return $n;
+	}
+
+	/**
+	 * Flatten chronogram.weeks[].modules into module_slots shape.
+	 *
+	 * @return array<string,list<array<string,mixed>>>
+	 */
+	private function slotsFromChronogramWeeks($chronogramBlock): array
+	{
+		if (!is_array($chronogramBlock)) {
+			return [];
+		}
+		$slots = [];
+		foreach ($chronogramBlock['weeks'] ?? [] as $w) {
+			if (!is_array($w)) {
+				continue;
+			}
+			$week = (int) ($w['week'] ?? 0);
+			$term = (int) ($w['term'] ?? 0) ?: null;
+			$from = (string) ($w['date_from'] ?? '');
+			$to = (string) ($w['date_to'] ?? '');
+			foreach ($w['modules'] ?? [] as $m) {
+				if (!is_array($m)) {
+					continue;
+				}
+				$code = DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
+				if ($code === '') {
+					continue;
+				}
+				$periods = isset($m['periods']) ? (float) $m['periods'] : null;
+				$hours = isset($m['hours']) ? (float) $m['hours'] : null;
+				if ($hours === null && $periods !== null) {
+					$hours = $periods;
+				}
+				if ($periods === null && $hours !== null) {
+					$periods = $hours;
+				}
+				if (($periods ?? 0) <= 0 && ($hours ?? 0) <= 0) {
+					continue;
+				}
+				$slots[$code][] = [
+					'week' => $week,
+					'term' => $term,
+					'date_from' => $from,
+					'date_to' => $to,
+					'periods' => $periods,
+					'hours' => $hours,
+				];
+			}
+		}
+		return $slots;
+	}
+
 	/** @param array<string,mixed> $slots */
 	private function findSlotsForCode(string $code, array $slots): array
 	{
@@ -1131,7 +1318,29 @@ PROMPT;
 		$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 		if ($ext === 'zip' && class_exists(\ZipArchive::class)) {
 			$dest = dirname($path) . '/pkg_' . pathinfo($path, PATHINFO_FILENAME);
-			if (!is_dir($dest)) {
+			$needExtract = !is_dir($dest);
+			if (!$needExtract && is_file($path)) {
+				// Re-extract when ZIP is newer than package folder
+				$zipMtime = (int) @filemtime($path);
+				$destMtime = (int) @filemtime($dest);
+				$needExtract = $zipMtime > $destMtime;
+			}
+			if ($needExtract) {
+				if (is_dir($dest)) {
+					$it = new \RecursiveIteratorIterator(
+						new \RecursiveDirectoryIterator($dest, \FilesystemIterator::SKIP_DOTS),
+						\RecursiveIteratorIterator::CHILD_FIRST
+					);
+					foreach ($it as $file) {
+						/** @var \SplFileInfo $file */
+						if ($file->isDir()) {
+							@rmdir($file->getPathname());
+						} else {
+							@unlink($file->getPathname());
+						}
+					}
+					@rmdir($dest);
+				}
 				@mkdir($dest, 0755, true);
 				$zip = new \ZipArchive();
 				if ($zip->open($path) === true) {
@@ -1139,6 +1348,8 @@ PROMPT;
 					$zip->close();
 				}
 			}
+			// Expand nested ZIPs inside the package (some RTB packs nest folders as zip)
+			$this->expandNestedZips($dest);
 			$destReal = realpath($dest) ?: $dest;
 			$rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dest, \FilesystemIterator::SKIP_DOTS));
 			foreach ($rii as $file) {
@@ -1186,6 +1397,37 @@ PROMPT;
 			return strcasecmp((string) ($a['original'] ?? ''), (string) ($b['original'] ?? ''));
 		});
 		return $uniq;
+	}
+
+	/** Recursively extract nested .zip files under a package directory. */
+	private function expandNestedZips(string $dir, int $depth = 0): void
+	{
+		if ($depth > 3 || !is_dir($dir) || !class_exists(\ZipArchive::class)) {
+			return;
+		}
+		$rii = new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+		);
+		$zips = [];
+		foreach ($rii as $file) {
+			/** @var \SplFileInfo $file */
+			if ($file->isFile() && strtolower($file->getExtension()) === 'zip') {
+				$zips[] = $file->getPathname();
+			}
+		}
+		foreach ($zips as $zipPath) {
+			$subDest = $zipPath . '_extracted';
+			if (is_dir($subDest)) {
+				continue;
+			}
+			@mkdir($subDest, 0755, true);
+			$zip = new \ZipArchive();
+			if ($zip->open($zipPath) === true) {
+				$zip->extractTo($subDest);
+				$zip->close();
+				$this->expandNestedZips($subDest, $depth + 1);
+			}
+		}
 	}
 
 	/** @param list<string> $extra */

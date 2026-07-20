@@ -512,6 +512,161 @@ class DocumentTextExtractor
 		return $text;
 	}
 
+	/**
+	 * Deterministic LO/IC extraction from RTB/TVET module curriculum text.
+	 * Handles Learning Outcomes, Indicative Contents, Elements of Competence, Performance Criteria.
+	 *
+	 * @return list<array{code:string,title:string,performance_criteria:list<string>,indicative_contents:list<array{code:string,title:string,hours:float|null}>}>
+	 */
+	public static function parseModuleLearningOutcomes(string $text): array
+	{
+		$text = self::cleanPedagogicalText($text);
+		if (mb_strlen($text, 'UTF-8') < 80) {
+			return [];
+		}
+		// Normalize common headings
+		$norm = preg_replace('/\r\n?/', "\n", $text) ?? $text;
+		$norm = preg_replace('/[ \t]+/', ' ', $norm) ?? $norm;
+
+		$los = [];
+		// Pattern A: LO1 / LO 1 / Learning Outcome 1: title
+		if (preg_match_all(
+			'/(?:^|\n)\s*(?:Learning\s+Outcomes?\s*|LO\s*)(\d{1,2})\s*[:.\-–—)]\s*([^\n]{3,200})/iu',
+			$norm,
+			$lm,
+			PREG_SET_ORDER
+		)) {
+			foreach ($lm as $m) {
+				$num = (int) $m[1];
+				$title = self::cleanModuleTitle(trim($m[2]));
+				if ($title === '' || $num < 1) {
+					continue;
+				}
+				$code = 'LO' . $num;
+				$los[$num] = [
+					'code' => $code,
+					'title' => $title,
+					'performance_criteria' => [],
+					'indicative_contents' => [],
+				];
+			}
+		}
+
+		// Pattern B: Element of competence N: title
+		if ($los === [] && preg_match_all(
+			'/(?:^|\n)\s*(?:Element(?:s)?\s+of\s+Competence|EoC)\s*(\d{1,2})\s*[:.\-–—)]\s*([^\n]{3,200})/iu',
+			$norm,
+			$em,
+			PREG_SET_ORDER
+		)) {
+			foreach ($em as $m) {
+				$num = (int) $m[1];
+				$title = self::cleanModuleTitle(trim($m[2]));
+				if ($title === '' || $num < 1) {
+					continue;
+				}
+				$los[$num] = [
+					'code' => 'LO' . $num,
+					'title' => $title,
+					'performance_criteria' => [],
+					'indicative_contents' => [],
+				];
+			}
+		}
+
+		// Indicative contents: IC1.1 / 1.1 title / Indicative content 1.1
+		if (preg_match_all(
+			'/(?:^|\n)\s*(?:IC\s*)?(\d{1,2})\.(\d{1,2})\s*[:.\-–—)]\s*([^\n]{3,220})/iu',
+			$norm,
+			$im,
+			PREG_SET_ORDER
+		)) {
+			foreach ($im as $m) {
+				$loNum = (int) $m[1];
+				$icNum = (int) $m[2];
+				$icTitle = trim($m[3]);
+				// Skip performance-criteria-looking lines that are too short / numeric only
+				$icTitle = self::cleanModuleTitle($icTitle);
+				if ($icTitle === '' || $loNum < 1) {
+					continue;
+				}
+				// Reject lines that look like page headers
+				if (preg_match('/^(page|rqf|tvet|module\s+code|learning\s+hours)\b/i', $icTitle)) {
+					continue;
+				}
+				$hours = null;
+				if (preg_match('/\((\d+(?:\.\d+)?)\s*h(?:ours?)?\)\s*$/i', $m[3], $hm)) {
+					$hours = (float) $hm[1];
+				} elseif (preg_match('/\b(\d+(?:\.\d+)?)\s*h(?:ours?)?\s*$/i', $m[3], $hm2)) {
+					$val = (float) $hm2[1];
+					if ($val > 0 && $val <= 80) {
+						$hours = $val;
+					}
+				}
+				if (!isset($los[$loNum])) {
+					$los[$loNum] = [
+						'code' => 'LO' . $loNum,
+						'title' => '',
+						'performance_criteria' => [],
+						'indicative_contents' => [],
+					];
+				}
+				$icCode = 'IC' . $loNum . '.' . $icNum;
+				// Avoid duplicates
+				$exists = false;
+				foreach ($los[$loNum]['indicative_contents'] as $existing) {
+					if (($existing['code'] ?? '') === $icCode) {
+						$exists = true;
+						break;
+					}
+				}
+				if (!$exists) {
+					$los[$loNum]['indicative_contents'][] = [
+						'code' => $icCode,
+						'title' => $icTitle,
+						'hours' => $hours,
+					];
+				}
+			}
+		}
+
+		// Performance criteria under each LO (optional)
+		if (preg_match_all(
+			'/(?:^|\n)\s*(?:PC\s*)?(\d{1,2})\.(\d{1,2})\s*[:.\-–—)]\s*((?:The\s+trainee|Trainee|Candidate|Able to)[^\n]{10,220})/iu',
+			$norm,
+			$pm,
+			PREG_SET_ORDER
+		)) {
+			foreach ($pm as $m) {
+				$loNum = (int) $m[1];
+				$pc = trim(preg_replace('/\s+/', ' ', $m[3]) ?? $m[3]);
+				if ($pc === '' || !isset($los[$loNum])) {
+					continue;
+				}
+				if (!in_array($pc, $los[$loNum]['performance_criteria'], true)) {
+					$los[$loNum]['performance_criteria'][] = $pc;
+				}
+			}
+		}
+
+		if ($los === []) {
+			return [];
+		}
+		ksort($los);
+		// Drop empty shell LOs with no title and no IC
+		$out = [];
+		foreach ($los as $lo) {
+			if (($lo['title'] ?? '') === '' && empty($lo['indicative_contents'])) {
+				continue;
+			}
+			if (($lo['title'] ?? '') === '' && !empty($lo['indicative_contents'])) {
+				$lo['title'] = 'Learning outcome ' . preg_replace('/\D+/', '', (string) ($lo['code'] ?? ''));
+			}
+			$out[] = $lo;
+		}
+		return $out;
+	}
+
 	/** Use poppler/xpdf pdftotext when installed on the server. */
 	private static function extractPdfCli(string $absolutePath): string
 	{
