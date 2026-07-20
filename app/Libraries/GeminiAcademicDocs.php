@@ -252,6 +252,7 @@ class GeminiAcademicDocs
 		}
 
 		$chronoTitles = DocumentTextExtractor::parseChronogramModuleTitles($chrText);
+		$weeklyFromTextEarly = DocumentTextExtractor::parseChronogramWeeklyHours($chrText);
 
 		// Deterministic module inventory from codes in filenames + text
 		$this->reportProgress(18, 'Discovering module codes…');
@@ -418,6 +419,22 @@ class GeminiAcademicDocs
 			$have[$cc] = true;
 		}
 
+		$inventoryMeta = [
+			'program_type' => $inventory['program_type'] ?? 'tvet',
+			'qualification_title' => $inventory['qualification_title'] ?? '',
+			'sector' => $inventory['sector'] ?? '',
+			'trade' => $inventory['trade'] ?? '',
+			'detected_rqf_level' => $inventory['detected_rqf_level'] ?? null,
+		];
+		$this->reportProgress(27, 'Found ' . count($modules) . ' module(s) — extracting LO/IC…', [
+			'modules_total' => count($modules),
+			'modules_done' => 0,
+			'partial_analysis' => $this->buildPartialSnapshot(
+				$inventoryMeta,
+				$this->mergeModulesPartial($modules, [], $chronoTitles, $weeklyFromTextEarly)
+			),
+		]);
+
 		// Pass 2 — LO/IC one module at a time with PDF vision when available
 		$detailed = [];
 		$batchSize = 1;
@@ -430,14 +447,21 @@ class GeminiAcademicDocs
 			$labels = array_map(static function ($m) {
 				return trim((string) (($m['code'] ?? '') . ' ' . ($m['title'] ?? '')));
 			}, $batch);
-			$this->reportProgress($pct, 'Extracting LO/IC (' . $done . '/' . $n . '): ' . implode(', ', array_filter($labels)), [
-				'batch' => (int) floor($i / $batchSize) + 1,
-				'done' => $done,
-				'total' => $n,
-			]);
 			$m = $batch[0];
 			$code = DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
 			$title = trim((string) ($m['title'] ?? ''));
+			$this->reportProgress($pct, 'Extracting LO/IC (' . $done . '/' . $n . '): ' . implode(', ', array_filter($labels)), [
+				'batch' => (int) floor($i / $batchSize) + 1,
+				'done' => max(0, $done - 1),
+				'total' => $n,
+				'modules_total' => $n,
+				'modules_done' => max(0, $done - 1),
+				'current_module' => $code,
+				'partial_analysis' => $this->buildPartialSnapshot(
+					$inventoryMeta,
+					$this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly)
+				),
+			]);
 			$body = $fileIndex[$code] ?? $this->sliceAroundKeywords($combinedText, array_filter([$code, $title]), 22000);
 			// Also try compatible code keys in fileIndex (CCMCL402 vs CCM CL402 cleaned variants)
 			if (($body === '' || mb_strlen($body, 'UTF-8') < 400) && $code !== '') {
@@ -558,26 +582,20 @@ PROMPT;
 			if ($code !== '') {
 				$detailed[$code] = $got;
 			}
+			// Live UI: push partial modules after each LO/IC extraction
+			$partialMerged = $this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly);
+			$this->reportProgress($pct, 'Extracting LO/IC (' . $done . '/' . $n . '): ' . implode(', ', array_filter($labels)), [
+				'batch' => (int) floor($i / $batchSize) + 1,
+				'done' => $done,
+				'total' => $n,
+				'modules_total' => $n,
+				'modules_done' => $done,
+				'current_module' => $code,
+				'partial_analysis' => $this->buildPartialSnapshot($inventoryMeta, $partialMerged),
+			]);
 		}
 
-		$merged = [];
-		foreach ($modules as $m) {
-			$key = DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
-			$full = ($key !== '' && isset($detailed[$key])) ? array_merge($m, $detailed[$key]) : $m;
-			$full['code'] = $key;
-			$title = DocumentTextExtractor::cleanModuleTitle((string) ($full['title'] ?? ''));
-			if (($title === '' || strcasecmp($title, $key) === 0) && isset($chronoTitles[$key])) {
-				$title = $chronoTitles[$key];
-			}
-			if ($title === '') {
-				$title = $key;
-			}
-			$full['title'] = $title;
-			if (empty($full['learning_outcomes']) || !is_array($full['learning_outcomes'])) {
-				$full['learning_outcomes'] = [];
-			}
-			$merged[] = $full;
-		}
+		$merged = $partialMerged ?? $this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly);
 
 		// Pass 3 — dedicated chronogram extraction (weekly hours distribution)
 		$codes = [];
@@ -716,6 +734,17 @@ PROMPT;
 			$chronogramBlock['total_weeks'] = 0;
 			$chronogramBlock['module_period_totals'] = $headerTotals;
 		}
+
+		$this->reportProgress(88, 'Chronogram hours mapped to modules…', [
+			'modules_total' => count($merged),
+			'modules_done' => count($merged),
+			'partial_analysis' => $this->buildPartialSnapshot(
+				$inventoryMeta,
+				$merged,
+				$chronogramBlock,
+				$this->buildHoursDistributionSummary($merged, $chronogramBlock)
+			),
+		]);
 
 		$raw = [
 			'program_type' => $inventory['program_type'] ?? 'tvet',
@@ -1011,6 +1040,83 @@ PROMPT;
 			$n += is_array($lo['indicative_contents'] ?? null) ? count($lo['indicative_contents']) : 0;
 		}
 		return $n;
+	}
+
+	/**
+	 * Merge inventory + extracted LO/IC for live progress UI.
+	 *
+	 * @param list<array<string,mixed>> $modules
+	 * @param array<string,array<string,mixed>> $detailed
+	 * @param array<string,string> $chronoTitles
+	 * @param array<string,array<string,mixed>> $weeklyFromText
+	 * @return list<array<string,mixed>>
+	 */
+	private function mergeModulesPartial(
+		array $modules,
+		array $detailed,
+		array $chronoTitles = [],
+		array $weeklyFromText = []
+	): array {
+		$merged = [];
+		foreach ($modules as $m) {
+			$key = DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
+			$full = ($key !== '' && isset($detailed[$key])) ? array_merge($m, $detailed[$key]) : $m;
+			$full['code'] = $key;
+			$title = DocumentTextExtractor::cleanModuleTitle((string) ($full['title'] ?? ''));
+			if (($title === '' || strcasecmp($title, $key) === 0) && isset($chronoTitles[$key])) {
+				$title = $chronoTitles[$key];
+			}
+			if ($title === '') {
+				$title = $key;
+			}
+			$full['title'] = $title;
+			if (empty($full['learning_outcomes']) || !is_array($full['learning_outcomes'])) {
+				$full['learning_outcomes'] = [];
+			}
+			// Early chronogram hours from parsed grid (before AI chronogram pass)
+			if (empty($full['hours_per_week']) && $key !== '') {
+				if (isset($weeklyFromText[$key]['hours_per_week'])) {
+					$full['hours_per_week'] = round((float) $weeklyFromText[$key]['hours_per_week'], 1);
+				} else {
+					foreach ($weeklyFromText as $wkCode => $wkInfo) {
+						if ($this->moduleCodesCompatible($key, (string) $wkCode)) {
+							$full['hours_per_week'] = round((float) ($wkInfo['hours_per_week'] ?? 0), 1);
+							break;
+						}
+					}
+				}
+			}
+			$merged[] = $full;
+		}
+		return $merged;
+	}
+
+	/**
+	 * Compact analysis snapshot for live progress polling.
+	 *
+	 * @param array<string,mixed> $meta
+	 * @param list<array<string,mixed>> $modules
+	 * @param array<string,mixed> $chronogramBlock
+	 * @param array<string,mixed> $hoursDist
+	 * @return array<string,mixed>
+	 */
+	private function buildPartialSnapshot(
+		array $meta,
+		array $modules,
+		array $chronogramBlock = [],
+		array $hoursDist = []
+	): array {
+		return [
+			'program_type' => $meta['program_type'] ?? 'tvet',
+			'qualification_title' => $meta['qualification_title'] ?? '',
+			'sector' => $meta['sector'] ?? '',
+			'trade' => $meta['trade'] ?? '',
+			'detected_rqf_level' => $meta['detected_rqf_level'] ?? null,
+			'modules' => $modules,
+			'chronogram' => $chronogramBlock,
+			'hours_distribution' => $hoursDist,
+			'_partial' => true,
+		];
 	}
 
 	/**

@@ -24,6 +24,8 @@ include __DIR__ . '/_nav.php';
 	.aiplan-mod { border:1px solid #e2e8f0; border-radius:10px; padding:.75rem .9rem; margin-bottom:.55rem; }
 	.aiplan-mod.is-matched { border-color:#86efac; background:#f0fdf4; }
 	.aiplan-mod.is-unmatched { border-color:#fcd34d; background:#fffbeb; }
+	.aiplan-mod.is-extracting { border-color:#14b8a6; background:#f0fdfa; box-shadow:0 0 0 2px rgba(20,184,166,.25); }
+	.aiplan-mod.is-pending { opacity:.72; }
 	.aiplan-badge { display:inline-block; font-size:.72rem; font-weight:700; padding:.15rem .45rem; border-radius:999px; background:#e0f2fe; color:#0369a1; margin-right:.25rem; }
 	.aiplan-badge.ok { background:#dcfce7; color:#15803d; }
 	.aiplan-badge.warn { background:#fef3c7; color:#b45309; }
@@ -153,9 +155,25 @@ include __DIR__ . '/_nav.php';
 	var analysis = null;
 	var progressTimer = null;
 	var analyzing = false;
+	var liveCurrentModule = '';
 
 	function status(msg, err) { $('#aiplanStatus').css('color', err ? '#b91c1c' : '#64748b').text(msg || ''); }
 	function currentClassId() { return parseInt($('#aiplanClass').val() || '0', 10) || 0; }
+
+	function applyProgressPoll(p) {
+		if (!p) return;
+		setProgress(p.pct || 0, p.action || 'Working…');
+		if (p.status === 'error' && p.action) {
+			status(p.action, true);
+		}
+		if (p.current_module) {
+			liveCurrentModule = String(p.current_module).toUpperCase();
+		}
+		if (p.partial_analysis && p.partial_analysis.modules && p.partial_analysis.modules.length) {
+			analysis = p.partial_analysis;
+			renderModules(true);
+		}
+	}
 
 	function setProgress(pct, action) {
 		pct = Math.max(0, Math.min(100, parseInt(pct, 10) || 0));
@@ -200,32 +218,27 @@ include __DIR__ . '/_nav.php';
 
 	function startProgressPoll(cid) {
 		stopProgressPoll();
+		liveCurrentModule = '';
 		// Immediate first poll so UI leaves 0% as soon as server writes progress
 		$.getJSON('<?= base_url('ai_analyze_progress'); ?>', { class_id: cid })
 			.done(function (p) {
 				if (!p) return;
 				if (p.status === 'idle' && !(p.pct > 0)) return;
-				setProgress(p.pct || 0, p.action || 'Working…');
-				if (p.status === 'error' && p.action) {
-					status(p.action, true);
-				}
+				applyProgressPoll(p);
 			});
 		progressTimer = setInterval(function () {
 			$.getJSON('<?= base_url('ai_analyze_progress'); ?>', { class_id: cid })
 				.done(function (p) {
-					if (!p) return;
-					setProgress(p.pct || 0, p.action || 'Working…');
-					if (p.status === 'error' && p.action) {
-						status(p.action, true);
-					}
+					applyProgressPoll(p);
 				});
 		}, 800);
 	}
 
-	function renderModules() {
+	function renderModules(live) {
+		live = !!live;
 		var $box = $('#aiplanModules').empty();
 		if (!analysis || !analysis.modules || !analysis.modules.length) {
-			$box.html('<p class="text-muted">No modules extracted.</p>');
+			$box.html('<p class="text-muted">' + (live ? 'Waiting for modules…' : 'No modules extracted.') + '</p>');
 			$('#aiplanResultCard').show();
 			return;
 		}
@@ -233,17 +246,28 @@ include __DIR__ . '/_nav.php';
 		var hd = analysis.hours_distribution || {};
 		var weeks = (analysis.chronogram && analysis.chronogram.weeks) ? analysis.chronogram.weeks.length : (hd.total_weeks || 0);
 		var slotsMods = hd.modules_with_slots != null ? hd.modules_with_slots : null;
-		$('#aiplanMeta').html([
+		var metaParts = [
 			analysis.qualification_title || '',
 			analysis.sector ? ('Sector: ' + analysis.sector) : '',
 			analysis.trade ? ('Trade: ' + analysis.trade) : '',
 			(analysis.source_files && analysis.source_files.length) ? (analysis.source_files.length + ' source file(s)') : '',
-			weeks ? ('<span class="aiplan-badge ok">Chronogram: ' + weeks + ' week(s)</span>') : '<span class="aiplan-badge warn">Chronogram weeks missing — Re-analyse</span>',
-			slotsMods != null ? ('<span class="aiplan-badge ok">' + slotsMods + ' module(s) with weekly hours</span>') : ''
-		].filter(Boolean).join(' · '));
+			weeks ? ('<span class="aiplan-badge ok">Chronogram: ' + weeks + ' week(s)</span>') : '',
+			slotsMods != null ? ('<span class="aiplan-badge ok">' + slotsMods + ' module(s) with weekly hours</span>') : '',
+			live ? ('<span class="aiplan-badge ok">Live extract: ' + analysis.modules.length + ' module(s)</span>') : ''
+		].filter(Boolean);
+		$('#aiplanMeta').html(metaParts.join(' · '));
 		analysis.modules.forEach(function (m) {
+			var code = String(m.code || '').toUpperCase();
 			var matched = !!m.matched_course_id;
-			var $row = $('<div class="aiplan-mod"></div>').addClass(matched ? 'is-matched' : 'is-unmatched');
+			var los = (m.learning_outcomes || []);
+			var icCount = 0;
+			los.forEach(function (lo) { icCount += (lo.indicative_contents || []).length; });
+			var isExtracting = live && liveCurrentModule && code === liveCurrentModule;
+			var isPending = live && !isExtracting && los.length === 0 && icCount === 0 && !m.hours_per_week && !(m.chronogram_slots || []).length;
+			var $row = $('<div class="aiplan-mod"></div>');
+			if (isExtracting) $row.addClass('is-extracting');
+			else if (isPending) $row.addClass('is-pending');
+			else $row.addClass(matched ? 'is-matched' : 'is-unmatched');
 			var badges = '';
 			if (m.code) badges += '<span class="aiplan-badge">' + $('<div>').text(m.code).html() + '</span>';
 			if (m.rqf_level) badges += '<span class="aiplan-badge">RQF ' + m.rqf_level + '</span>';
@@ -263,9 +287,7 @@ include __DIR__ . '/_nav.php';
 			} else {
 				badges += '<span class="aiplan-badge warn">No chronogram hours</span>';
 			}
-			var los = (m.learning_outcomes || []);
-			var icCount = 0;
-			los.forEach(function (lo) { icCount += (lo.indicative_contents || []).length; });
+			if (isExtracting) badges += '<span class="aiplan-badge ok">Extracting…</span>';
 			var hoursLabel = m.learning_hours != null ? (Math.round((parseFloat(m.learning_hours) || 0) * 10) / 10) : '';
 			$row.append('<div style="font-weight:700;">' + $('<div>').text(m.title || m.code || 'Untitled').html() + '</div>');
 			$row.append('<div style="margin-top:.35rem;">' + badges + '</div>');
@@ -304,7 +326,7 @@ include __DIR__ . '/_nav.php';
 				});
 				$details.append($ul);
 				$row.append($details);
-			} else {
+			} else if (!isPending) {
 				$row.append('<div class="text-warning" style="font-size:.8rem;margin-top:.35rem;">No LO/IC detail yet — upload the module curriculum PDFs (General + Specific) in School Settings and Re-analyse.</div>');
 			}
 			$box.append($row);
@@ -321,6 +343,8 @@ include __DIR__ . '/_nav.php';
 		if ($opt.data('has-chr') != '1') { status('Upload chronogram in School Settings first.', true); return; }
 
 		analyzing = true;
+		analysis = { modules: [], program_type: 'tvet', _partial: true };
+		renderModules(true);
 		showProgress(true);
 		setProgress(0, force ? 'Starting re-analysis…' : 'Starting…');
 		status(force ? 'Smart analysis running — please keep this page open.' : 'Loading…');
@@ -334,6 +358,7 @@ include __DIR__ . '/_nav.php';
 			data: { class_id: cid, force: force ? 1 : 0 }
 		}).done(function (res) {
 			analyzing = false;
+			liveCurrentModule = '';
 			stopProgressPoll();
 			if (res && res.error) {
 				setProgress(0, res.error);
@@ -363,6 +388,7 @@ include __DIR__ . '/_nav.php';
 			setTimeout(function () { showProgress(false); }, 900);
 		}).fail(function (xhr) {
 			analyzing = false;
+			liveCurrentModule = '';
 			stopProgressPoll();
 			var msg = (xhr.responseJSON && xhr.responseJSON.error)
 				|| (xhr.status === 504 || xhr.status === 502 ? 'Server timed out while analysing. Click Re-analyse again — progress is saved where possible.' : null)
