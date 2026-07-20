@@ -10,24 +10,47 @@
  */
 $smartByClass = $smart_by_class ?? [];
 $coursesGrouped = $courses_grouped ?? ['tvet' => [], 'reb' => []];
+$courseCategoriesJson = [];
+foreach (($categories ?? []) as $cat) {
+	$courseCategoriesJson[] = [
+		'id' => (int) ($cat['id'] ?? 0),
+		'title' => (string) ($cat['title'] ?? ''),
+	];
+}
 $renderCourseRows = static function (array $rows): string {
 	$html = '';
 	foreach ($rows as $course) {
-		$titleEsc = htmlspecialchars((string) ($course['title'] ?? ''), ENT_QUOTES, 'UTF-8');
+		$id = (int) ($course['id'] ?? 0);
+		$title = (string) ($course['title'] ?? '');
+		$code = (string) ($course['code'] ?? '');
+		$catTitle = (string) ($course['category'] ?? '');
+		$catId = (int) ($course['category_id'] ?? 0);
+		$credit = (string) ($course['credit'] ?? '0');
+		$marks = (string) ($course['marks'] ?? '0');
+		$prog = (($course['program_type'] ?? '') === 'reb') ? 'reb' : 'tvet';
+		$titleEsc = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+		$codeEsc = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
+		$catEsc = htmlspecialchars($catTitle, ENT_QUOTES, 'UTF-8');
 		$source = (($course['create_source'] ?? '') === 'ai') ? 'ai' : 'manual';
 		$sourceLabel = $source === 'ai' ? 'AI' : 'Manual';
 		$sourceClass = $source === 'ai' ? 'source-ai' : 'source-manual';
-		$html .= '<tr>'
-			. '<td>' . htmlspecialchars((string) ($course['title'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
-			. '<td>' . htmlspecialchars((string) ($course['code'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
-			. '<td>' . htmlspecialchars((string) ($course['category'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+		$html .= '<tr class="course-row"'
+			. ' data-id="' . $id . '"'
+			. ' data-title="' . $titleEsc . '"'
+			. ' data-code="' . $codeEsc . '"'
+			. ' data-category-id="' . $catId . '"'
+			. ' data-category="' . $catEsc . '"'
+			. ' data-credit="' . htmlspecialchars($credit, ENT_QUOTES, 'UTF-8') . '"'
+			. ' data-program-type="' . $prog . '">'
+			. '<td class="course-inline" data-field="title" title="Double-click to edit">' . $titleEsc . '</td>'
+			. '<td class="course-inline" data-field="code" title="Double-click to edit">' . $codeEsc . '</td>'
+			. '<td class="course-inline" data-field="category" title="Double-click to edit">' . $catEsc . '</td>'
 			. '<td><span class="course-source-badge ' . $sourceClass . '">' . $sourceLabel . '</span></td>'
-			. '<td>' . htmlspecialchars((string) ($course['credit'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
-			. '<td>' . htmlspecialchars((string) ($course['marks'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td class="course-inline" data-field="credit" title="Double-click to edit">' . htmlspecialchars($credit, ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td class="course-marks">' . htmlspecialchars($marks, ENT_QUOTES, 'UTF-8') . '</td>'
 			. '<td>'
-			. "<label class='typcn typcn-document-add text-primary link' data-id='" . (int) ($course['id'] ?? 0) . "' data-title='" . $titleEsc . "' data-toggle='modal' data-target='#assignModal'>" . lang('app.assign') . "</label>&nbsp;&nbsp;"
-			. "<label class='typcn typcn-edit text-success link' data-toggle='modal' data-target='#editCourseModal' data-id='" . (int) ($course['id'] ?? 0) . "'>" . lang('app.edit') . "</label>&nbsp;&nbsp;"
-			. "<label class='typcn typcn-delete text-danger link' data-title='" . $titleEsc . "' data-toggle='delete' data-target='" . (int) ($course['id'] ?? 0) . "' data-href='delete_course/" . (int) ($course['id'] ?? 0) . "'>" . lang('app.del') . "</label>"
+			. "<label class='typcn typcn-document-add text-primary link' data-id='" . $id . "' data-title='" . $titleEsc . "' data-toggle='modal' data-target='#assignModal'>" . lang('app.assign') . "</label>&nbsp;&nbsp;"
+			. "<label class='typcn typcn-delete text-danger link' data-title='" . $titleEsc . "' data-toggle='delete' data-target='" . $id . "' data-href='delete_course/" . $id . "'>" . lang('app.del') . "</label>"
 			. '</td></tr>';
 	}
 	return $html;
@@ -178,6 +201,35 @@ foreach ($classes as $c) {
 	}
 	.course-source-badge.source-ai { background: #dbeafe; color: #1d4ed8; }
 	.course-source-badge.source-manual { background: #f3f4f6; color: #374151; }
+	.course-inline {
+		cursor: pointer;
+		position: relative;
+	}
+	.course-inline:hover {
+		outline: 1px dashed #94a3b8;
+		outline-offset: -2px;
+		background: #f8fafc;
+	}
+	.course-inline.is-editing {
+		padding: .25rem !important;
+		outline: 2px solid #0f766e;
+		background: #fff;
+	}
+	.course-inline-input, .course-inline-select {
+		width: 100%;
+		min-width: 80px;
+		height: 36px;
+		padding: .3rem .5rem;
+		border: 1px solid #cbd5e1;
+		border-radius: 6px;
+		font-size: .95rem;
+	}
+	.course-panel-meta .inline-hint {
+		display: block;
+		margin-top: .25rem;
+		font-size: .8rem;
+		color: #94a3b8;
+	}
 
 	/* DataTables controls — larger + readable */
 	.course-list-wrap .dataTables_wrapper {
@@ -388,6 +440,7 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 		<div class="course-panel-meta">
 			<strong><?= esc($groupDef['title']); ?></strong>
 			— <?= count($rows); ?> course(s) · <?= $manualCount; ?> manual · <?= $aiCount; ?> AI
+			<span class="inline-hint">Double-click Title, Code, Category or Credits to edit inline. Marks = credit × 10.</span>
 		</div>
 		<div class="course-group-body">
 			<table class="table table-hover table-striped table-bordered course-list-table" id="<?= esc($groupDef['table_id']); ?>" style="width:100%">
@@ -418,7 +471,183 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 	$(document).ready(function () {
 		var classesByType = <?= json_encode($classesByType, JSON_UNESCAPED_UNICODE); ?>;
 		var smartByClass = <?= json_encode($smartByClass, JSON_UNESCAPED_UNICODE); ?>;
+		var courseCategories = <?= json_encode($courseCategoriesJson, JSON_UNESCAPED_UNICODE); ?>;
 		var currentType = null;
+		var inlineSaving = false;
+
+		function saveCourseRow($tr, done) {
+			if (inlineSaving) return;
+			var id = parseInt($tr.data('id'), 10) || 0;
+			if (!id) return;
+			var credit = parseFloat($tr.attr('data-credit')) || 0;
+			if (credit < 0) credit = 0;
+			var marks = Math.round(credit * 10);
+			inlineSaving = true;
+			$.ajax({
+				url: '<?= base_url('manipulate_course'); ?>',
+				method: 'POST',
+				dataType: 'json',
+				data: {
+					courseId: id,
+					title: $tr.attr('data-title') || '',
+					code: $tr.attr('data-code') || '',
+					category: $tr.attr('data-category-id') || '',
+					credit: credit,
+					marks: marks,
+					program_type: $tr.attr('data-program-type') || 'tvet'
+				}
+			}).done(function (res) {
+				if (res && res.error) {
+					if (window.toastada) toastada.error(res.error);
+					else alert(res.error);
+					if (done) done(false);
+					return;
+				}
+				$tr.find('.course-marks').text(String(marks));
+				$tr.find('[data-toggle="modal"][data-target="#assignModal"]').attr('data-title', $tr.attr('data-title') || '');
+				$tr.find('[data-toggle="delete"]').attr('data-title', $tr.attr('data-title') || '');
+				if (window.toastada) toastada.success((res && res.success) ? res.success : 'Saved');
+				if (done) done(true);
+			}).fail(function (xhr) {
+				var msg = (xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || 'Save failed';
+				if (window.toastada) toastada.error(msg);
+				else alert(msg);
+				if (done) done(false);
+			}).always(function () {
+				inlineSaving = false;
+			});
+		}
+
+		function finishInlineEdit($td, newVal, displayText, extra) {
+			var $tr = $td.closest('tr');
+			var field = $td.data('field');
+			var prev = {
+				title: $tr.attr('data-title'),
+				code: $tr.attr('data-code'),
+				categoryId: $tr.attr('data-category-id'),
+				category: $tr.attr('data-category'),
+				credit: $tr.attr('data-credit')
+			};
+			if (field === 'title') {
+				$tr.attr('data-title', newVal);
+			} else if (field === 'code') {
+				$tr.attr('data-code', newVal);
+			} else if (field === 'category') {
+				$tr.attr('data-category-id', String(extra && extra.id != null ? extra.id : newVal));
+				$tr.attr('data-category', displayText);
+			} else if (field === 'credit') {
+				var c = parseFloat(newVal);
+				if (isNaN(c) || c < 0) c = 0;
+				newVal = String(c);
+				displayText = newVal;
+				$tr.attr('data-credit', newVal);
+				$tr.find('.course-marks').text(String(Math.round(c * 10)));
+			}
+			$td.removeClass('is-editing').text(displayText);
+			saveCourseRow($tr, function (ok) {
+				if (!ok) {
+					$tr.attr('data-title', prev.title);
+					$tr.attr('data-code', prev.code);
+					$tr.attr('data-category-id', prev.categoryId);
+					$tr.attr('data-category', prev.category);
+					$tr.attr('data-credit', prev.credit);
+					if (field === 'title') $td.text(prev.title || '');
+					else if (field === 'code') $td.text(prev.code || '');
+					else if (field === 'category') $td.text(prev.category || '');
+					else if (field === 'credit') {
+						$td.text(prev.credit || '0');
+						$tr.find('.course-marks').text(String(Math.round((parseFloat(prev.credit) || 0) * 10)));
+					}
+				}
+			});
+		}
+
+		function startInlineEdit($td) {
+			if ($td.hasClass('is-editing')) return;
+			$('#courseListWrap .course-inline.is-editing').each(function () {
+				var $o = $(this);
+				var $inp = $o.find('.course-inline-input, .course-inline-select');
+				if ($inp.length) $inp.trigger('blur');
+			});
+			var field = $td.data('field');
+			var $tr = $td.closest('tr');
+			$td.addClass('is-editing').empty();
+			if (field === 'category') {
+				var $sel = $('<select class="course-inline-select"></select>');
+				var currentId = String($tr.attr('data-category-id') || '');
+				(courseCategories || []).forEach(function (c) {
+					var $opt = $('<option></option>').val(c.id).text(c.title);
+					if (String(c.id) === currentId) $opt.prop('selected', true);
+					$sel.append($opt);
+				});
+				$td.append($sel);
+				$sel.focus();
+				var committed = false;
+				function commitSelect() {
+					if (committed) return;
+					committed = true;
+					var id = $sel.val();
+					var text = $sel.find('option:selected').text() || '';
+					finishInlineEdit($td, id, text, { id: id });
+				}
+				$sel.on('change', commitSelect);
+				$sel.on('blur', function () { setTimeout(commitSelect, 120); });
+				$sel.on('keydown', function (e) {
+					if (e.key === 'Escape') {
+						committed = true;
+						$td.removeClass('is-editing').text($tr.attr('data-category') || '');
+					} else if (e.key === 'Enter') {
+						e.preventDefault();
+						commitSelect();
+					}
+				});
+				return;
+			}
+			var $inp = $('<input class="course-inline-input" />');
+			if (field === 'credit') {
+				$inp.attr({ type: 'number', step: '0.1', min: '0' });
+				$inp.val($tr.attr('data-credit') || '0');
+			} else if (field === 'code') {
+				$inp.attr({ type: 'text' }).val($tr.attr('data-code') || '');
+			} else {
+				$inp.attr({ type: 'text' }).val($tr.attr('data-title') || '');
+			}
+			$td.append($inp);
+			$inp.focus().select();
+			var committed = false;
+			function commitInput() {
+				if (committed) return;
+				committed = true;
+				var val = $.trim($inp.val() || '');
+				if (field === 'title' && val.length < 1) {
+					$td.removeClass('is-editing').text($tr.attr('data-title') || '');
+					return;
+				}
+				if (field === 'code' && val.length < 1) {
+					$td.removeClass('is-editing').text($tr.attr('data-code') || '');
+					return;
+				}
+				finishInlineEdit($td, val, val);
+			}
+			$inp.on('blur', function () { setTimeout(commitInput, 80); });
+			$inp.on('keydown', function (e) {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					commitInput();
+				} else if (e.key === 'Escape') {
+					committed = true;
+					var restore = field === 'credit' ? ($tr.attr('data-credit') || '0')
+						: (field === 'code' ? ($tr.attr('data-code') || '') : ($tr.attr('data-title') || ''));
+					$td.removeClass('is-editing').text(restore);
+				}
+			});
+		}
+
+		$(document).on('dblclick', '#courseListWrap td.course-inline', function (e) {
+			e.preventDefault();
+			e.stopPropagation();
+			startInlineEdit($(this));
+		});
 
 		function initCourseTable(selector) {
 			var $table = $(selector);

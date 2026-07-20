@@ -3080,7 +3080,7 @@ public function attendanceCard()
 		}
 		$hasProgramType = in_array('program_type', $courseFields, true);
 		$hasCreateSource = in_array('create_source', $courseFields, true);
-		$selectCols = 'courses.id,courses.title,courses.code,courses.marks,courses.credit,cs.title as category';
+		$selectCols = 'courses.id,courses.title,courses.code,courses.marks,courses.credit,cs.id as category_id,cs.title as category';
 		if ($hasProgramType) {
 			$selectCols .= ',courses.program_type';
 		}
@@ -5497,8 +5497,11 @@ public function attendanceCard()
 					"code" => $this->request->getPost("code"),
 					"category" => $this->request->getPost("category"),
 					"credit" => $credit,
-					"teacher_id" => $this->request->getPost("teacher"),
 					"marks" => $marks);
+			$teacher = $this->request->getPost("teacher");
+			if ($teacher !== null && $teacher !== '') {
+				$data["teacher_id"] = $teacher;
+			}
 		}
 		try {
 			$courseModel->save($data);
