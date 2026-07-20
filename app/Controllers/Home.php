@@ -3063,7 +3063,7 @@ public function attendanceCard()
 		$school_id = $this->session->get("soma_school_id");
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
 
-		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,d.code,l.id as level_id,l.title as level_name,f.type as faculty_type,f.abbrev as faculty_code")
+		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,d.code,l.title as level_name,f.type as faculty_type,f.abbrev as faculty_code")
 			->join('departments d', 'd.id=classes.department')
 			->join('levels l', 'l.id=classes.level')
 			->join('faculty f', 'f.id=d.faculty_id')
@@ -3071,14 +3071,6 @@ public function attendanceCard()
 			->orderBy('l.id', 'ASC')
 			->orderBy('classes.title', 'ASC')
 			->get()->getResultArray();
-
-		$classLevelMap = [];
-		foreach ($data['classes'] as $cl) {
-			$classLevelMap[(int) $cl['id']] = [
-				'level_id' => (int) ($cl['level_id'] ?? 0),
-				'level_name' => trim((string) ($cl['level_name'] ?? '')),
-			];
-		}
 
 		$courseFields = [];
 		try {
@@ -3101,9 +3093,8 @@ public function attendanceCard()
 				->orderBy('courses.title', 'ASC')
 				->get()->getResultArray();
 
-		$aiCodeMeta = $this->buildAiCourseCodeMeta($school_id, $yearId, $classLevelMap);
+		$aiCodeMeta = $this->buildAiCourseCodeMeta($school_id, $yearId);
 		$assignmentTypes = $this->courseAssignmentProgramTypes($school_id, $yearId);
-		$assignmentLevels = $this->courseAssignmentLevels($school_id, $yearId);
 		$coursesGrouped = ['tvet' => [], 'reb' => []];
 		foreach ($data['courses'] as &$courseRow) {
 			try {
@@ -3113,35 +3104,10 @@ public function attendanceCard()
 			}
 			$courseRow['program_type'] = $meta['program_type'];
 			$courseRow['create_source'] = $meta['create_source'];
-			$levelInfo = $this->resolveCourseLevelLabel($courseRow, $aiCodeMeta, $assignmentLevels);
-			$courseRow['level_name'] = $levelInfo['level_name'];
-			$courseRow['level_sort'] = $levelInfo['level_sort'];
 			$bucket = ($meta['program_type'] === 'reb') ? 'reb' : 'tvet';
-			$levelKey = $levelInfo['level_name'] !== '' ? $levelInfo['level_name'] : 'Other / Unassigned';
-			if (!isset($coursesGrouped[$bucket][$levelKey])) {
-				$coursesGrouped[$bucket][$levelKey] = [
-					'level_name' => $levelKey,
-					'level_sort' => $levelInfo['level_sort'],
-					'modules' => [],
-				];
-			}
-			$coursesGrouped[$bucket][$levelKey]['modules'][] = $courseRow;
-			$coursesGrouped[$bucket][$levelKey]['level_sort'] = min(
-				(int) $coursesGrouped[$bucket][$levelKey]['level_sort'],
-				(int) $levelInfo['level_sort']
-			);
+			$coursesGrouped[$bucket][] = $courseRow;
 		}
 		unset($courseRow);
-		foreach (['tvet', 'reb'] as $progKey) {
-			uasort($coursesGrouped[$progKey], static function ($a, $b) {
-				$sa = (int) ($a['level_sort'] ?? 999);
-				$sb = (int) ($b['level_sort'] ?? 999);
-				if ($sa === $sb) {
-					return strcasecmp((string) ($a['level_name'] ?? ''), (string) ($b['level_name'] ?? ''));
-				}
-				return $sa < $sb ? -1 : 1;
-			});
-		}
 		$data['courses_grouped'] = $coursesGrouped;
 
 		$data['faculty'] = $faculty->get()->getResultArray();
@@ -3221,10 +3187,9 @@ public function attendanceCard()
 	}
 
 	/**
-	 * @param array<int,array{level_id?:int,level_name?:string}> $classLevelMap
-	 * @return array<string,array{program_type:string,from_ai:bool,level_name?:string,level_sort?:int,rqf_level?:int|null}>
+	 * @return array<string,array{program_type:string,from_ai:bool}>
 	 */
-	private function buildAiCourseCodeMeta(int $schoolId, int $yearId, array $classLevelMap = []): array
+	private function buildAiCourseCodeMeta(int $schoolId, int $yearId): array
 	{
 		$out = [];
 		if ($yearId <= 0) {
@@ -3239,111 +3204,16 @@ public function attendanceCard()
 			if ($prog !== 'reb') {
 				$prog = 'tvet';
 			}
-			$classId = (int) ($row['class_id'] ?? 0);
-			$classLevel = $classLevelMap[$classId] ?? null;
-			$classLevelName = trim((string) ($classLevel['level_name'] ?? ''));
-			$classLevelSort = (int) ($classLevel['level_id'] ?? 999);
 			$decoded = json_decode($row['analysis_json'] ?? '', true);
 			$modules = is_array($decoded['modules'] ?? null) ? $decoded['modules'] : [];
 			foreach ($modules as $m) {
 				$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
-				if ($code === '') {
-					continue;
+				if ($code !== '') {
+					$out[$code] = ['program_type' => $prog, 'from_ai' => true];
 				}
-				$rqf = isset($m['rqf_level']) && is_numeric($m['rqf_level']) ? (int) $m['rqf_level'] : null;
-				$levelName = $classLevelName;
-				$levelSort = $classLevelSort;
-				if ($levelName === '' && $rqf !== null && $rqf > 0) {
-					$levelName = 'Level ' . $rqf;
-					$levelSort = $rqf;
-				}
-				if ($levelName === '') {
-					$guess = $this->guessLevelFromModuleCode($code);
-					$levelName = $guess['level_name'];
-					$levelSort = $guess['level_sort'];
-				}
-				$out[$code] = [
-					'program_type' => $prog,
-					'from_ai' => true,
-					'level_name' => $levelName,
-					'level_sort' => $levelSort,
-					'rqf_level' => $rqf,
-					'class_id' => $classId,
-				];
 			}
 		}
 		return $out;
-	}
-
-	/** @return array<int,array{level_name:string,level_sort:int}> course_id => level */
-	private function courseAssignmentLevels(int $schoolId, int $yearId): array
-	{
-		$out = [];
-		try {
-			$db = \Config\Database::connect();
-			$sql = "SELECT cr.course, l.id AS level_id, l.title AS level_name
-				FROM course_records cr
-				INNER JOIN classes c ON c.id = cr.class
-				INNER JOIN levels l ON l.id = c.level
-				WHERE c.school_id = ?";
-			$params = [$schoolId];
-			if ($yearId > 0) {
-				$sql .= " AND cr.year = ?";
-				$params[] = $yearId;
-			}
-			$rows = $db->query($sql, $params)->getResultArray();
-			foreach ($rows as $r) {
-				$cid = (int) ($r['course'] ?? 0);
-				if ($cid <= 0 || isset($out[$cid])) {
-					continue;
-				}
-				$out[$cid] = [
-					'level_name' => trim((string) ($r['level_name'] ?? '')),
-					'level_sort' => (int) ($r['level_id'] ?? 999),
-				];
-			}
-		} catch (\Throwable $e) {
-			log_message('error', 'courseAssignmentLevels: ' . $e->getMessage());
-		}
-		return $out;
-	}
-
-	/**
-	 * @param array<string,array{level_name?:string,level_sort?:int}> $aiCodeMeta
-	 * @param array<int,array{level_name:string,level_sort:int}> $assignmentLevels
-	 * @return array{level_name:string,level_sort:int}
-	 */
-	private function resolveCourseLevelLabel(array $course, array $aiCodeMeta, array $assignmentLevels): array
-	{
-		// Prefer curriculum/AI extraction class level (analysis is per class/level).
-		$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($course['code'] ?? ''));
-		if ($code !== '' && isset($aiCodeMeta[$code]) && trim((string) ($aiCodeMeta[$code]['level_name'] ?? '')) !== '') {
-			return [
-				'level_name' => trim((string) $aiCodeMeta[$code]['level_name']),
-				'level_sort' => (int) ($aiCodeMeta[$code]['level_sort'] ?? 999),
-			];
-		}
-		$cid = (int) ($course['id'] ?? 0);
-		if ($cid > 0 && isset($assignmentLevels[$cid]) && trim((string) ($assignmentLevels[$cid]['level_name'] ?? '')) !== '') {
-			return [
-				'level_name' => trim((string) $assignmentLevels[$cid]['level_name']),
-				'level_sort' => (int) ($assignmentLevels[$cid]['level_sort'] ?? 999),
-			];
-		}
-		return $this->guessLevelFromModuleCode($code);
-	}
-
-	/** @return array{level_name:string,level_sort:int} */
-	private function guessLevelFromModuleCode(string $code): array
-	{
-		$code = strtoupper(trim($code));
-		if ($code !== '' && preg_match('/(\d)(\d{2})$/', $code, $m)) {
-			$lvl = (int) $m[1];
-			if ($lvl >= 1 && $lvl <= 5) {
-				return ['level_name' => 'Level ' . $lvl, 'level_sort' => $lvl];
-			}
-		}
-		return ['level_name' => 'Other / Unassigned', 'level_sort' => 999];
 	}
 
 	/** @return array<int,list<int>> course_id => faculty types from assignments */
