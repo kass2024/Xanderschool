@@ -60,19 +60,23 @@ class GeminiAcademicDocs
 	public function textModels(): array
 	{
 		$primary = trim((string) (env('GEMINI_MODEL') ?: env('GOOGLE_AI_MODEL') ?: ''));
+		// Retired / renamed preview IDs that return HTTP 404 on generateContent
 		$dead = [
 			'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash-latest',
 			'gemini-pro', 'gemini-1.0-pro', 'gemini-1.0-pro-latest',
 			'gemini-2.0-flash', 'gemini-2.0-flash-001', 'gemini-2.0-flash-lite',
-			'gemini-2.5-flash-lite', 'gemini-2.5-flash-lite-preview',
-			// Pro/thinking models often return non-JSON or truncate — skip for doc analysis
-			'gemini-2.5-pro', 'gemini-2.5-pro-preview', 'gemini-3-pro', 'gemini-3.5-pro',
+			'gemini-2.5-flash-preview-05-20', 'gemini-2.5-flash-preview-04-17',
+			'gemini-2.5-pro-preview', 'gemini-2.5-flash-lite-preview',
+			// Heavy pro models: slow + expensive for JSON doc tasks
+			'gemini-2.5-pro', 'gemini-3-pro', 'gemini-3.5-pro', 'gemini-3.1-pro-preview',
 		];
 		$candidates = [
 			$primary,
+			'gemini-2.5-flash-lite', // cheapest stable flash for light enrichment
 			'gemini-2.5-flash',
+			'gemini-3.5-flash',
+			'gemini-3.1-flash-lite',
 			'gemini-flash-latest',
-			'gemini-2.5-flash-preview-05-20',
 		];
 		$out = [];
 		foreach ($candidates as $m) {
@@ -2196,22 +2200,397 @@ PROMPT
 
 	/**
 	 * Generate Scheme of Work HTML + structured JSON.
+	 * Default: build from cached curriculum/chronogram (no Gemini credits).
+	 * Optional $useAi enriches activities/resources when the API is available.
+	 *
+	 * @return array{html:string,json:array,title:string,from_ai:bool}|null
+	 */
+	public function generateSchemeOfWork(
+		array $module,
+		array $dbContext,
+		string $programType,
+		?array $chronogramAnalysis = null,
+		bool $useAi = false
+	): ?array {
+		$local = $this->buildSchemeOfWorkFromCache($module, $dbContext, $programType, $chronogramAnalysis);
+		if ($local === null) {
+			return null;
+		}
+		$local['from_ai'] = false;
+		if (!$useAi || !$this->isConfigured()) {
+			return $local;
+		}
+
+		// Cheap enrichment only: ask for activities/resources/assessment text for existing rows
+		$briefRows = array_slice($local['json']['rows'] ?? [], 0, 80);
+		$prompt = "You enrich a Rwanda TVET Scheme of Work. Keep LO/IC/dates/hours EXACTLY as given.\n"
+			. "For each row, improve ONLY: activities, resources, assessment, place, observation.\n"
+			. "Return ONLY JSON: {\"rows\":[{\"week\":0,\"ic_code\":\"\",\"activities\":\"\",\"resources\":\"\",\"assessment\":\"\",\"place\":\"\",\"observation\":\"\"}]}\n"
+			. "ROWS:\n" . json_encode($briefRows, JSON_UNESCAPED_UNICODE);
+		$enriched = $this->generateJson($prompt, [], 4096, 0);
+		if (!is_array($enriched) || empty($enriched['rows']) || !is_array($enriched['rows'])) {
+			// Local scheme is already complete — ignore AI failure
+			$this->lastError = '';
+			return $local;
+		}
+		$byKey = [];
+		foreach ($enriched['rows'] as $er) {
+			if (!is_array($er)) {
+				continue;
+			}
+			$key = strtoupper(trim((string) ($er['ic_code'] ?? ''))) . '|' . (int) ($er['week'] ?? 0);
+			$byKey[$key] = $er;
+		}
+		$rows = $local['json']['rows'] ?? [];
+		foreach ($rows as &$row) {
+			$key = strtoupper(trim((string) ($row['ic_code'] ?? ''))) . '|' . (int) ($row['week'] ?? 0);
+			if (!isset($byKey[$key])) {
+				continue;
+			}
+			$er = $byKey[$key];
+			foreach (['activities', 'resources', 'assessment', 'place', 'observation'] as $f) {
+				if (!empty($er[$f]) && is_string($er[$f])) {
+					$row[$f] = trim($er[$f]);
+				}
+			}
+		}
+		unset($row);
+		$local['json']['rows'] = $rows;
+		$local['html'] = $this->fallbackSchemeHtml($local['json'], $dbContext, $programType);
+		$local['from_ai'] = true;
+		$this->lastError = '';
+		return $local;
+	}
+
+	/**
+	 * Deterministic full Scheme of Work from cached module LO/IC + chronogram (zero API cost).
 	 *
 	 * @return array{html:string,json:array,title:string}|null
 	 */
-	public function generateSchemeOfWork(array $module, array $dbContext, string $programType, ?array $chronogramAnalysis = null): ?array
-	{
-		$prompt = $this->promptScheme($module, $dbContext, $programType, $chronogramAnalysis);
-		$data = $this->generateJson($prompt, []);
-		if ($data === null) {
+	public function buildSchemeOfWorkFromCache(
+		array $module,
+		array $dbContext,
+		string $programType,
+		?array $chronogramAnalysis = null
+	): ?array {
+		$school = is_array($dbContext['school'] ?? null) ? $dbContext['school'] : [];
+		$class = is_array($dbContext['class'] ?? null) ? $dbContext['class'] : [];
+		$code = trim((string) ($module['code'] ?? ''));
+		$titleRaw = trim((string) ($module['title'] ?? 'Module'));
+		if ($titleRaw === '' && $code === '') {
+			$this->lastError = 'Module code/title missing — re-run curriculum analyse first';
 			return null;
 		}
-		$html = (string) ($data['html'] ?? '');
-		if ($html === '' && !empty($data['rows'])) {
-			$html = $this->fallbackSchemeHtml($data, $dbContext, $programType);
+
+		$ics = $this->flattenModuleIndicativeContents($module);
+		$slots = $this->resolveModuleChronogramSlots($module, $chronogramAnalysis, $code);
+		if ($slots === [] && $ics === []) {
+			$this->lastError = 'No learning outcomes/indicative contents in cache for this module';
+			return null;
 		}
-		$title = (string) ($data['title'] ?? ('Scheme of Work — ' . ($module['title'] ?? 'Module')));
-		return ['html' => $html, 'json' => $data, 'title' => $title];
+		if ($slots === []) {
+			// Synthesize weekly slots from total hours (assume ~2h/week)
+			$totalH = (float) ($module['learning_hours'] ?? 0);
+			if ($totalH <= 0 && $ics !== []) {
+				foreach ($ics as $ic) {
+					$totalH += (float) ($ic['hours'] ?? 0);
+				}
+			}
+			$weeks = max(1, (int) ceil(max($totalH, count($ics) ?: 1) / 2));
+			for ($w = 1; $w <= $weeks; $w++) {
+				$slots[] = [
+					'week' => $w,
+					'term' => (int) ceil($w / 12),
+					'date_from' => '',
+					'date_to' => '',
+					'periods' => $totalH > 0 ? round($totalH / $weeks, 1) : 2,
+				];
+			}
+		}
+
+		$rows = $this->mapIndicativeContentsToWeeks($ics, $slots, $module, $programType);
+		$termsUsed = [];
+		foreach ($rows as $r) {
+			$t = (int) ($r['term'] ?? 0);
+			if ($t > 0) {
+				$termsUsed[$t] = $t;
+			}
+		}
+		sort($termsUsed);
+		$trainer = (string) ($module['teacher_name'] ?? ($dbContext['teacher_name'] ?? ''));
+		$className = trim((string) (($class['level_name'] ?? '') . ' ' . ($class['dept_code'] ?? '') . ' ' . ($class['title'] ?? '')));
+		if ($className === '') {
+			$className = (string) ($class['name'] ?? '');
+		}
+		$learningHours = $module['learning_hours'] ?? null;
+		if ($learningHours === null || $learningHours === '') {
+			$sum = 0.0;
+			foreach ($rows as $r) {
+				$sum += (float) preg_replace('/[^0-9.]/', '', (string) ($r['duration'] ?? '0'));
+			}
+			$learningHours = $sum > 0 ? round($sum, 1) : '';
+		}
+		$meta = [
+			'sector' => (string) ($chronogramAnalysis['sector'] ?? $module['sector'] ?? $school['sector'] ?? ''),
+			'trade' => (string) ($chronogramAnalysis['trade'] ?? $module['trade'] ?? ($class['dept_name'] ?? '')),
+			'rqf_level' => (string) ($module['rqf_level'] ?? ($class['level_name'] ?? '')),
+			'school_year' => (string) ($chronogramAnalysis['school_year_label'] ?? ($dbContext['school_year_label'] ?? '')),
+			'terms' => $termsUsed !== [] ? implode(',', $termsUsed) : '1,2,3',
+			'module_code' => $code,
+			'module_title' => $titleRaw,
+			'learning_hours' => $learningHours,
+			'class_name' => $className,
+			'trainer' => $trainer,
+			'qualification_title' => (string) ($chronogramAnalysis['qualification_title'] ?? ''),
+			'generated_by' => 'cache',
+		];
+		$topics = [];
+		foreach ($rows as $r) {
+			$topics[] = [
+				'week' => (int) ($r['week'] ?? 0),
+				'term' => (int) ($r['term'] ?? 0),
+				'date' => (string) ($r['date'] ?? ''),
+				'lo_code' => (string) ($r['lo_code'] ?? ''),
+				'lo_title' => (string) ($r['lo_title'] ?? ''),
+				'ic_code' => (string) ($r['ic_code'] ?? ''),
+				'ic_title' => (string) ($r['ic_title'] ?? ''),
+				'topic' => trim(($r['ic_code'] ?? '') . ' ' . ($r['ic_title'] ?? '')),
+				'duration' => (string) ($r['duration'] ?? ''),
+			];
+		}
+		$data = [
+			'title' => 'SCHEME OF WORK — ' . trim($code . ' ' . $titleRaw),
+			'meta' => $meta,
+			'rows' => $rows,
+			'topics_for_sessions' => $topics,
+		];
+		$html = $this->fallbackSchemeHtml($data, $dbContext, $programType);
+		return ['html' => $html, 'json' => $data, 'title' => $data['title']];
+	}
+
+	/**
+	 * @return list<array{lo_code:string,lo_title:string,ic_code:string,ic_title:string,hours:float|null}>
+	 */
+	private function flattenModuleIndicativeContents(array $module): array
+	{
+		$out = [];
+		$los = $module['learning_outcomes'] ?? [];
+		if (!is_array($los)) {
+			return $out;
+		}
+		foreach ($los as $loIdx => $lo) {
+			if (!is_array($lo)) {
+				continue;
+			}
+			$loCode = trim((string) ($lo['code'] ?? ('LO' . ($loIdx + 1))));
+			$loTitle = trim((string) ($lo['title'] ?? $lo['name'] ?? ''));
+			$ics = $lo['indicative_contents'] ?? ($lo['indicative_content'] ?? []);
+			if (!is_array($ics) || $ics === []) {
+				$out[] = [
+					'lo_code' => $loCode,
+					'lo_title' => $loTitle,
+					'ic_code' => $loCode,
+					'ic_title' => $loTitle !== '' ? $loTitle : 'Learning outcome content',
+					'hours' => isset($lo['hours']) ? (float) $lo['hours'] : null,
+				];
+				continue;
+			}
+			foreach ($ics as $icIdx => $ic) {
+				if (is_string($ic)) {
+					$out[] = [
+						'lo_code' => $loCode,
+						'lo_title' => $loTitle,
+						'ic_code' => $loCode . '.' . ($icIdx + 1),
+						'ic_title' => trim($ic),
+						'hours' => null,
+					];
+					continue;
+				}
+				if (!is_array($ic)) {
+					continue;
+				}
+				$out[] = [
+					'lo_code' => $loCode,
+					'lo_title' => $loTitle,
+					'ic_code' => trim((string) ($ic['code'] ?? ($loCode . '.' . ($icIdx + 1)))),
+					'ic_title' => trim((string) ($ic['title'] ?? $ic['name'] ?? '')),
+					'hours' => isset($ic['hours']) ? (float) $ic['hours'] : null,
+				];
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @return list<array{week:int,term:int,date_from:string,date_to:string,periods:float}>
+	 */
+	private function resolveModuleChronogramSlots(array $module, ?array $chrono, string $code): array
+	{
+		$slots = [];
+		$raw = $module['chronogram_slots'] ?? [];
+		if (is_array($raw)) {
+			foreach ($raw as $s) {
+				if (!is_array($s)) {
+					continue;
+				}
+				$slots[] = [
+					'week' => (int) ($s['week'] ?? 0),
+					'term' => (int) ($s['term'] ?? 0),
+					'date_from' => (string) ($s['date_from'] ?? ''),
+					'date_to' => (string) ($s['date_to'] ?? ''),
+					'periods' => (float) ($s['periods'] ?? $s['hours'] ?? 0),
+				];
+			}
+		}
+		if ($slots !== [] || $code === '' || !is_array($chrono)) {
+			usort($slots, static function ($a, $b) {
+				return ((int) $a['week']) <=> ((int) $b['week']);
+			});
+			return $slots;
+		}
+		$codeU = strtoupper($code);
+		foreach ($chrono['weeks'] ?? [] as $w) {
+			if (!is_array($w)) {
+				continue;
+			}
+			$hit = false;
+			$periods = 0.0;
+			foreach ($w['modules'] ?? [] as $wm) {
+				$wc = strtoupper(trim((string) (is_array($wm) ? ($wm['code'] ?? '') : $wm)));
+				if ($wc !== '' && ($wc === $codeU || strpos($wc, $codeU) !== false || strpos($codeU, $wc) !== false)) {
+					$hit = true;
+					$periods = (float) (is_array($wm) ? ($wm['periods'] ?? $wm['hours'] ?? 0) : 0);
+					break;
+				}
+			}
+			if (!$hit) {
+				continue;
+			}
+			$slots[] = [
+				'week' => (int) ($w['week'] ?? 0),
+				'term' => (int) ($w['term'] ?? 0),
+				'date_from' => (string) ($w['date_from'] ?? ''),
+				'date_to' => (string) ($w['date_to'] ?? ''),
+				'periods' => $periods,
+			];
+		}
+		usort($slots, static function ($a, $b) {
+			return ((int) $a['week']) <=> ((int) $b['week']);
+		});
+		return $slots;
+	}
+
+	/**
+	 * Map each indicative content onto chronogram weeks (one row per week, cycling ICs as needed).
+	 *
+	 * @param list<array<string,mixed>> $ics
+	 * @param list<array<string,mixed>> $slots
+	 * @return list<array<string,mixed>>
+	 */
+	private function mapIndicativeContentsToWeeks(array $ics, array $slots, array $module, string $programType): array
+	{
+		if ($ics === []) {
+			$ics = [[
+				'lo_code' => 'LO1',
+				'lo_title' => (string) ($module['title'] ?? 'Module outcomes'),
+				'ic_code' => 'IC1.1',
+				'ic_title' => (string) ($module['title'] ?? 'Module content'),
+				'hours' => null,
+			]];
+		}
+		$modType = strtolower((string) ($module['module_type'] ?? ''));
+		$isPractical = (strpos($modType, 'specific') !== false || strpos($modType, 'pract') !== false
+			|| preg_match('/^(SWD|ICT|AUT|ELT|MEC)/i', (string) ($module['code'] ?? '')));
+		$place = $isPractical ? 'Computer lab / Workshop' : 'Classroom';
+		$resources = $isPractical
+			? 'Projector, computers/workstations, module handouts, whiteboard, internet'
+			: 'Whiteboard, markers, learner handouts, textbooks, projector';
+		$rows = [];
+		$icCount = count($ics);
+		$slotCount = count($slots);
+		for ($i = 0; $i < $slotCount; $i++) {
+			$slot = $slots[$i];
+			$ic = $ics[$i % $icCount];
+			// Prefer IC hours when fewer ICs than weeks are being stretched; else slot periods
+			$dur = (float) ($slot['periods'] ?? 0);
+			if ($dur <= 0 && isset($ic['hours']) && $ic['hours'] !== null) {
+				$dur = (float) $ic['hours'];
+			}
+			if ($dur <= 0) {
+				$dur = 2;
+			}
+			// When many ICs and fewer weeks, pack multiple ICs into one week row (first IC primary)
+			$extraIcNote = '';
+			if ($icCount > $slotCount && $i === $slotCount - 1) {
+				$remaining = array_slice($ics, $slotCount - 1);
+				if (count($remaining) > 1) {
+					$titles = [];
+					foreach ($remaining as $rix => $ric) {
+						if ($rix === 0) {
+							continue;
+						}
+						$titles[] = trim(($ric['ic_code'] ?? '') . ' ' . ($ric['ic_title'] ?? ''));
+					}
+					if ($titles !== []) {
+						$extraIcNote = ' Also cover: ' . implode('; ', array_slice($titles, 0, 8));
+					}
+				}
+			}
+			$date = trim((string) ($slot['date_from'] ?? ''));
+			if ($date !== '' && !empty($slot['date_to']) && $slot['date_to'] !== $date) {
+				$date .= ' – ' . $slot['date_to'];
+			}
+			if ($date === '' && !empty($slot['week'])) {
+				$date = 'Week ' . (int) $slot['week'];
+			}
+			$loLabel = trim(($ic['lo_code'] ?? '') . ' ' . ($ic['lo_title'] ?? ''));
+			$icTitle = trim((string) ($ic['ic_title'] ?? ''));
+			$activities = 'Introduce ' . ($icTitle !== '' ? $icTitle : 'the topic')
+				. '; guided demonstration; guided practice; learner exercises; formative Q&A.'
+				. $extraIcNote;
+			$assessment = 'Oral questioning; observation checklist; short practical/written exercise on '
+				. ($ic['ic_code'] ?? 'this content');
+			$rows[] = [
+				'term' => (int) ($slot['term'] ?? max(1, (int) ceil(((int) ($slot['week'] ?: 1)) / 12))),
+				'week' => (int) ($slot['week'] ?? ($i + 1)),
+				'date' => $date,
+				'lo_code' => (string) ($ic['lo_code'] ?? ''),
+				'lo_title' => (string) ($ic['lo_title'] ?? ''),
+				'ic_code' => (string) ($ic['ic_code'] ?? ''),
+				'ic_title' => $icTitle,
+				'duration' => (string) (round($dur, 1)),
+				'activities' => $activities,
+				'resources' => $resources,
+				'assessment' => $assessment,
+				'place' => $place,
+				'observation' => '',
+				'_lo_display' => $loLabel,
+			];
+		}
+		// If more ICs than weeks, ensure unused ICs still appear (append rows sharing last week hours split)
+		if ($icCount > $slotCount && $slotCount > 0) {
+			// Already noted in last row; also add dedicated rows with 0-duration note for session topics
+			for ($j = $slotCount; $j < $icCount; $j++) {
+				$ic = $ics[$j];
+				$last = $slots[$slotCount - 1];
+				$rows[] = [
+					'term' => (int) ($last['term'] ?? 1),
+					'week' => (int) ($last['week'] ?? $slotCount),
+					'date' => 'Week ' . (int) ($last['week'] ?? $slotCount) . ' (continued)',
+					'lo_code' => (string) ($ic['lo_code'] ?? ''),
+					'lo_title' => (string) ($ic['lo_title'] ?? ''),
+					'ic_code' => (string) ($ic['ic_code'] ?? ''),
+					'ic_title' => (string) ($ic['ic_title'] ?? ''),
+					'duration' => (string) (isset($ic['hours']) && $ic['hours'] ? round((float) $ic['hours'], 1) : '1'),
+					'activities' => 'Continue with ' . trim((string) ($ic['ic_title'] ?? 'content')) . '; practice tasks; peer review.',
+					'resources' => $resources,
+					'assessment' => 'Checklist / short exercise on ' . ($ic['ic_code'] ?? 'content'),
+					'place' => $place,
+					'observation' => '',
+				];
+			}
+		}
+		return $rows;
 	}
 
 	/**

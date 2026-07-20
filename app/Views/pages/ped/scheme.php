@@ -28,13 +28,15 @@ foreach ($analysis_cache ?? [] as $cid => $row) {
 	.aiplan-badge { display:inline-block; font-size:.72rem; font-weight:700; padding:.15rem .45rem; border-radius:999px; background:#e0f2fe; color:#0369a1; margin-right:.25rem; }
 	.aiplan-busy { display:none; color:#0f766e; font-weight:600; }
 	#aiplanModules { max-height:420px; overflow:auto; }
+	.aiplan-opts { font-size:.84rem; color:#475569; margin-top:.5rem; }
 </style>
 
 <div class="aiplan-wrap">
 	<div class="aiplan-card">
 		<h5>Select class</h5>
 		<p class="text-muted" style="font-size:.88rem;">
-			Courses come from the cached curriculum analysis. Each Scheme of Work is organized by weeks using chronogram hours — same layout as the Javascript Fundamentals sample.
+			Schemes are built from the <b>cached</b> curriculum analysis (LO / IC + chronogram weeks) — no Gemini credits by default.
+			Edit inline, then download Word or PDF.
 		</p>
 		<select id="sowClass" class="form-control">
 			<option value="">— Choose class —</option>
@@ -49,8 +51,12 @@ foreach ($analysis_cache ?? [] as $cid => $row) {
 				</option>
 			<?php endforeach; ?>
 		</select>
+		<div class="aiplan-opts">
+			<label class="mb-0 mr-3"><input type="checkbox" id="sowForce"> Force re-generate (replace cache)</label>
+			<label class="mb-0"><input type="checkbox" id="sowUseAi" <?= !empty($gemini_ready) ? '' : 'disabled'; ?>> Optional AI polish (uses Gemini credits)</label>
+		</div>
 		<p class="aiplan-status mt-2 mb-0" id="sowStatus">If analysis is missing, go to Analyse Curriculum &amp; Chronogram first.</p>
-		<p class="aiplan-busy mt-2" id="sowBusy"><i class="fa fa-spinner fa-spin"></i> Generating Scheme of Work…</p>
+		<p class="aiplan-busy mt-2" id="sowBusy"><i class="fa fa-spinner fa-spin"></i> Building Scheme of Work…</p>
 		<div id="sowNeedAnalyse" class="alert alert-warning mt-2" style="display:none;">
 			No cached analysis for this class.
 			<a href="<?= base_url('ped_analyse'); ?>">Run Analyse Curriculum &amp; Chronogram</a> first.
@@ -74,9 +80,11 @@ foreach ($analysis_cache ?? [] as $cid => $row) {
 					<tr>
 						<td><?= esc($p['title']); ?></td>
 						<td><?= esc(strtoupper($p['program_type'] ?? '')); ?></td>
-						<td class="text-right">
+						<td class="text-right text-nowrap">
+							<a class="btn btn-primary btn-sm" href="<?= base_url('edit_academic_plan/' . $p['id']); ?>">Edit</a>
 							<a class="btn btn-outline-primary btn-sm" target="_blank" href="<?= base_url('view_academic_plan/' . $p['id']); ?>">View</a>
-							<a class="btn btn-outline-success btn-sm" href="<?= base_url('download_academic_plan/' . $p['id']); ?>">Download</a>
+							<a class="btn btn-outline-success btn-sm" href="<?= base_url('download_academic_plan/' . $p['id']); ?>">Word</a>
+							<a class="btn btn-outline-danger btn-sm" href="<?= base_url('download_academic_plan_pdf/' . $p['id']); ?>">PDF</a>
 						</td>
 					</tr>
 				<?php endforeach; endif; ?>
@@ -104,7 +112,7 @@ foreach ($analysis_cache ?? [] as $cid => $row) {
 		}
 		$('#sowNeedAnalyse').hide();
 		$('#sowModulesCard').show();
-		currentModules.forEach(function (m, idx) {
+		currentModules.forEach(function (m) {
 			var $row = $('<div class="aiplan-mod"></div>').addClass(m.matched_course_id ? 'is-matched' : '');
 			var left = $('<div></div>');
 			left.append('<div style="font-weight:700;">' + $('<div>').text((m.code ? m.code + ' — ' : '') + (m.title || 'Untitled')).html() + '</div>');
@@ -114,7 +122,7 @@ foreach ($analysis_cache ?? [] as $cid => $row) {
 			var slots = (m.chronogram_slots || []).length;
 			if (slots) badges += '<span class="aiplan-badge">' + slots + ' chronogram weeks</span>';
 			left.append('<div style="margin-top:.35rem;">' + badges + '</div>');
-			var $btn = $('<button type="button" class="btn btn-info btn-sm"><i class="fa fa-magic"></i> Generate Scheme of Work</button>');
+			var $btn = $('<button type="button" class="btn btn-info btn-sm"><i class="fa fa-magic"></i> Generate / Open</button>');
 			$btn.on('click', function () { genSow(m); });
 			$row.append(left).append($('<div></div>').append($btn));
 			$box.append($row);
@@ -126,19 +134,29 @@ foreach ($analysis_cache ?? [] as $cid => $row) {
 		var cid = parseInt($('#sowClass').val() || '0', 10);
 		if (!cid || !mod) return;
 		busy(true);
-		status('Generating weekly Scheme of Work (mapped to chronogram)…');
+		status('Building Scheme of Work from curriculum cache…');
 		$.post('<?= base_url('ai_generate_scheme_of_work'); ?>', {
 			class_id: cid,
-			module: JSON.stringify(mod)
+			module: JSON.stringify(mod),
+			force: $('#sowForce').is(':checked') ? 1 : 0,
+			use_ai: $('#sowUseAi').is(':checked') ? 1 : 0
 		}, function (res) {
 			busy(false);
 			if (res && res.error) { status(res.error, true); return; }
-			status('Scheme ready: ' + (res.title || ''));
+			var msg = res.from_cache
+				? ('Loaded from DB cache: ' + (res.title || ''))
+				: (res.success || ('Scheme ready: ' + (res.title || '')));
+			status(msg);
+			if (res.edit_url) {
+				window.location.href = res.edit_url;
+				return;
+			}
 			if (res.preview_url) window.open(res.preview_url, '_blank');
-			setTimeout(function () { location.reload(); }, 900);
+			setTimeout(function () { location.reload(); }, 700);
 		}, 'json').fail(function (xhr) {
 			busy(false);
-			status((xhr.responseJSON && xhr.responseJSON.error) || 'Scheme generation failed', true);
+			var err = (xhr.responseJSON && xhr.responseJSON.error) || xhr.responseText || 'Scheme generation failed';
+			status(typeof err === 'string' ? err : 'Scheme generation failed', true);
 		});
 	}
 

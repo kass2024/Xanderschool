@@ -2757,6 +2757,8 @@ public function testEmail()
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$classId = (int) $this->request->getPost('class_id');
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$force = (int) $this->request->getPost('force') === 1;
+		$useAi = (int) $this->request->getPost('use_ai') === 1;
 		$moduleJson = $this->request->getPost('module');
 		$module = is_string($moduleJson) ? json_decode($moduleJson, true) : (array) $moduleJson;
 		if (!is_array($module) || empty($module)) {
@@ -2782,17 +2784,34 @@ public function testEmail()
 			}
 		}
 
+		$planMdl = new AcademicPlanModel();
+		$courseId = (int) ($module['matched_course_id'] ?? 0) ?: null;
+		$moduleCode = strtoupper(trim((string) ($module['code'] ?? '')));
+		$existing = $this->findCachedSchemeOfWork($planMdl, $schoolId, $classId, $yearId, $courseId, $moduleCode);
+		if ($existing && !$force) {
+			$json = json_decode($existing['content_json'] ?? '', true) ?: [];
+			return $this->response->setJSON([
+				'success' => 'Loaded Scheme of Work from database cache',
+				'from_cache' => true,
+				'plan_id' => (int) $existing['id'],
+				'title' => $existing['title'],
+				'topics' => $json['topics_for_sessions'] ?? [],
+				'preview_url' => base_url('view_academic_plan/' . $existing['id']),
+				'edit_url' => base_url('edit_academic_plan/' . $existing['id']),
+			]);
+		}
+
 		$ai = new GeminiAcademicDocs();
-		$result = $ai->generateSchemeOfWork($module, $ctx, $programType, $chrono);
+		$result = $ai->generateSchemeOfWork($module, $ctx, $programType, $chrono, $useAi);
 		if ($result === null) {
 			return $this->response->setJSON(['error' => 'Scheme generation failed: ' . $ai->lastError()]);
 		}
 
-		$planMdl = new AcademicPlanModel();
-		$courseId = (int) ($module['matched_course_id'] ?? 0) ?: null;
 		$lecturerId = (int) ($module['teacher_id'] ?? 0) ?: null;
-		// Replace previous SOW for same class+course+year
-		if ($courseId) {
+		// Replace previous SOW for same class+course/code+year
+		if ($existing) {
+			$planMdl->delete((int) $existing['id']);
+		} elseif ($courseId) {
 			$planMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)
 				->where('course_id', $courseId)->where('plan_type', 'scheme_of_work')->delete();
 		}
@@ -2806,7 +2825,7 @@ public function testEmail()
 			'title' => $result['title'],
 			'week_number' => null,
 			'term' => null,
-			'topic' => $module['title'] ?? ($module['code'] ?? ''),
+			'topic' => $moduleCode !== '' ? $moduleCode : ($module['title'] ?? ''),
 			'lecturer_id' => $lecturerId,
 			'content_html' => $result['html'],
 			'content_json' => json_encode($result['json'], JSON_UNESCAPED_UNICODE),
@@ -2814,12 +2833,189 @@ public function testEmail()
 		]);
 
 		return $this->response->setJSON([
-			'success' => 'Scheme of Work generated',
+			'success' => !empty($result['from_ai'])
+				? 'Scheme of Work generated (cache + light AI enrichment)'
+				: 'Scheme of Work built from curriculum cache (no Gemini credits used)',
+			'from_cache' => false,
+			'from_ai' => !empty($result['from_ai']),
 			'plan_id' => $id,
 			'title' => $result['title'],
 			'topics' => $result['json']['topics_for_sessions'] ?? [],
 			'preview_url' => base_url('view_academic_plan/' . $id),
+			'edit_url' => base_url('edit_academic_plan/' . $id),
 		]);
+	}
+
+	/**
+	 * @param int|null $courseId
+	 */
+	private function findCachedSchemeOfWork($planMdl, int $schoolId, int $classId, int $yearId, $courseId, string $moduleCode): ?array
+	{
+		if ($courseId) {
+			$row = $planMdl->where('school_id', $schoolId)->where('class_id', $classId)
+				->where('academic_year', $yearId)->where('plan_type', 'scheme_of_work')
+				->where('course_id', (int) $courseId)->orderBy('id', 'DESC')->first();
+			if ($row) {
+				return $row;
+			}
+		}
+		if ($moduleCode === '') {
+			return null;
+		}
+		$rows = $planMdl->where('school_id', $schoolId)->where('class_id', $classId)
+			->where('academic_year', $yearId)->where('plan_type', 'scheme_of_work')
+			->orderBy('id', 'DESC')->findAll(40);
+		foreach ($rows as $row) {
+			$topic = strtoupper(trim((string) ($row['topic'] ?? '')));
+			if ($topic === $moduleCode || strpos($topic, $moduleCode) !== false) {
+				return $row;
+			}
+			$json = json_decode($row['content_json'] ?? '', true);
+			$metaCode = strtoupper(trim((string) (($json['meta']['module_code'] ?? '') ?: '')));
+			if ($metaCode !== '' && $metaCode === $moduleCode) {
+				return $row;
+			}
+		}
+		return null;
+	}
+
+	public function edit_academic_plan($id = 0)
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = (new AcademicPlanModel())->where('id', (int) $id)->where('school_id', $schoolId)->first();
+		if (!$row) {
+			return redirect()->to(base_url('ped_scheme_of_work'));
+		}
+		$data = $this->data;
+		$data['title'] = 'Edit Scheme of Work';
+		$data['subtitle'] = $row['title'] ?? '';
+		$data['page'] = 'academic_plans';
+		$data['ped_section'] = 'scheme';
+		$data['plan'] = $row;
+		$data['content'] = view('pages/ped/edit_plan', [
+			'plan' => $row,
+			'ped_section' => 'scheme',
+			'title' => $data['title'],
+			'subtitle' => $data['subtitle'],
+		]);
+		return view('main', $data);
+	}
+
+	public function save_academic_plan()
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$id = (int) $this->request->getPost('plan_id');
+		$html = (string) $this->request->getPost('content_html');
+		$title = trim((string) $this->request->getPost('title'));
+		$mdl = new AcademicPlanModel();
+		$row = $mdl->where('id', $id)->where('school_id', $schoolId)->first();
+		if (!$row) {
+			return $this->response->setJSON(['error' => 'Plan not found']);
+		}
+		if (trim(strip_tags($html)) === '') {
+			return $this->response->setJSON(['error' => 'Content cannot be empty']);
+		}
+		// Keep a standalone document wrapper if editor sent body fragment
+		if (stripos($html, '<html') === false) {
+			$safeTitle = htmlspecialchars($title !== '' ? $title : (string) $row['title'], ENT_QUOTES, 'UTF-8');
+			$html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' . $safeTitle . '</title>'
+				. '<style>body{font-family:DejaVu Sans,Arial,sans-serif;font-size:11px;color:#111}'
+				. 'table{width:100%;border-collapse:collapse}td,th{border:1px solid #333;padding:5px;vertical-align:top}'
+				. 'th{background:#f3f3f3}h1{text-align:center;font-size:18px}</style></head><body>'
+				. $html . '</body></html>';
+		}
+		$payload = [
+			'content_html' => $html,
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		if ($title !== '') {
+			$payload['title'] = $title;
+		}
+		$mdl->update($id, $payload);
+		return $this->response->setJSON([
+			'success' => 'Scheme saved',
+			'plan_id' => $id,
+			'preview_url' => base_url('view_academic_plan/' . $id),
+			'word_url' => base_url('download_academic_plan/' . $id),
+			'pdf_url' => base_url('download_academic_plan_pdf/' . $id),
+		]);
+	}
+
+	public function view_academic_plan($id = 0)
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = (new AcademicPlanModel())->where('id', (int) $id)->where('school_id', $schoolId)->first();
+		if (!$row) {
+			return $this->response->setStatusCode(404)->setBody('Plan not found');
+		}
+		$html = (string) ($row['content_html'] ?? '');
+		if ($html === '') {
+			$html = '<p>Empty plan</p>';
+		}
+		// Ensure standalone document
+		if (stripos($html, '<html') === false) {
+			$html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' . esc($row['title']) . '</title></head><body>' . $html . '</body></html>';
+		}
+		return $this->response->setHeader('Content-Type', 'text/html; charset=UTF-8')->setBody($html);
+	}
+
+	public function download_academic_plan($id = 0)
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = (new AcademicPlanModel())->where('id', (int) $id)->where('school_id', $schoolId)->first();
+		if (!$row) {
+			return $this->response->setStatusCode(404)->setBody('Plan not found');
+		}
+		$html = (string) ($row['content_html'] ?? '');
+		$name = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $row['title'] ?? 'plan') . '.doc';
+		return $this->response
+			->setHeader('Content-Type', 'application/msword')
+			->setHeader('Content-Disposition', 'attachment; filename="' . $name . '"')
+			->setBody($html);
+	}
+
+	public function download_academic_plan_pdf($id = 0)
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = (new AcademicPlanModel())->where('id', (int) $id)->where('school_id', $schoolId)->first();
+		if (!$row) {
+			return $this->response->setStatusCode(404)->setBody('Plan not found');
+		}
+		$html = (string) ($row['content_html'] ?? '');
+		if ($html === '') {
+			return $this->response->setStatusCode(400)->setBody('Empty plan');
+		}
+		if (stripos($html, '<html') === false) {
+			$html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' . $html . '</body></html>';
+		}
+		$dir = WRITEPATH . 'uploads/academic_plans';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0755, true);
+		}
+		$name = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $row['title'] ?? 'scheme') . '.pdf';
+		try {
+			$wk = new Wkhtmltopdf(['path' => $dir]);
+			$wk->setHtml($html);
+			$wk->setOrientation(Wkhtmltopdf::ORIENTATION_LANDSCAPE);
+			$wk->setPageSize(Wkhtmltopdf::SIZE_A4);
+			$wk->output(Wkhtmltopdf::MODE_DOWNLOAD, $name);
+			return $this->response;
+		} catch (\Throwable $e) {
+			// Fallback: return printable HTML so user can Print → PDF
+			return $this->response
+				->setHeader('Content-Type', 'text/html; charset=UTF-8')
+				->setBody($html . '<script>window.onload=function(){window.print();}</script>');
+		}
 	}
 
 	public function ai_generate_session_plan()
@@ -2878,44 +3074,8 @@ public function testEmail()
 			'plan_id' => $id,
 			'title' => $result['title'],
 			'preview_url' => base_url('view_academic_plan/' . $id),
+			'edit_url' => base_url('edit_academic_plan/' . $id),
 		]);
-	}
-
-	public function view_academic_plan($id = 0)
-	{
-		$this->requireAcademicPlanAccess();
-		$this->ensureAcademicPlansSchema();
-		$schoolId = (int) $this->session->get('soma_school_id');
-		$row = (new AcademicPlanModel())->where('id', (int) $id)->where('school_id', $schoolId)->first();
-		if (!$row) {
-			return $this->response->setStatusCode(404)->setBody('Plan not found');
-		}
-		$html = (string) ($row['content_html'] ?? '');
-		if ($html === '') {
-			$html = '<p>Empty plan</p>';
-		}
-		// Ensure standalone document
-		if (stripos($html, '<html') === false) {
-			$html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' . esc($row['title']) . '</title></head><body>' . $html . '</body></html>';
-		}
-		return $this->response->setHeader('Content-Type', 'text/html; charset=UTF-8')->setBody($html);
-	}
-
-	public function download_academic_plan($id = 0)
-	{
-		$this->requireAcademicPlanAccess();
-		$this->ensureAcademicPlansSchema();
-		$schoolId = (int) $this->session->get('soma_school_id');
-		$row = (new AcademicPlanModel())->where('id', (int) $id)->where('school_id', $schoolId)->first();
-		if (!$row) {
-			return $this->response->setStatusCode(404)->setBody('Plan not found');
-		}
-		$html = (string) ($row['content_html'] ?? '');
-		$name = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $row['title'] ?? 'plan') . '.doc';
-		return $this->response
-			->setHeader('Content-Type', 'application/msword')
-			->setHeader('Content-Disposition', 'attachment; filename="' . $name . '"')
-			->setBody($html);
 	}
 
 	public function list_academic_plan_topics()
