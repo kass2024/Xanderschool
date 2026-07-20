@@ -3139,7 +3139,12 @@ public function attendanceCard()
 				if (strpos($curText, '===== CHRONOGRAM SOURCE =====') !== false) {
 					$curText = explode('===== CHRONOGRAM SOURCE =====', $curText, 2)[0];
 				}
-				$creditMap = \App\Libraries\DocumentTextExtractor::parseCurriculumModuleCredits($curText);
+				$creditMap = [];
+				try {
+					$creditMap = \App\Libraries\DocumentTextExtractor::parseCurriculumModuleCredits($curText);
+				} catch (\Throwable $e) {
+					log_message('error', 'parseCurriculumModuleCredits: ' . $e->getMessage());
+				}
 				$items = [];
 				foreach ($modules as $m) {
 					$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
