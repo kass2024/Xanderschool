@@ -275,6 +275,34 @@ foreach ($classes as $c) {
 		display: inline-block;
 		vertical-align: middle;
 	}
+	.course-level-block {
+		margin-bottom: 1.25rem;
+		border: 1px solid #e2e8f0;
+		border-radius: 12px;
+		overflow: hidden;
+		background: #fff;
+	}
+	.course-level-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: .75rem;
+		flex-wrap: wrap;
+		padding: .65rem 1rem;
+		background: #f1f5f9;
+		border-bottom: 1px solid #e2e8f0;
+	}
+	.course-level-head strong {
+		color: #0f172a;
+		font-size: .98rem;
+	}
+	.course-level-meta {
+		color: #64748b;
+		font-size: .82rem;
+	}
+	.course-level-body {
+		padding: .75rem 1rem 1rem;
+	}
 </style>
 <link rel="stylesheet" type="text/css" href="<?= base_url('assets/plugins/datatables/jquery.dataTables.min.css'); ?>">
 
@@ -346,23 +374,38 @@ foreach ($classes as $c) {
 $groupDefs = [
 	'tvet' => [
 		'title' => lang('app.wda') . ' / RTB (TVET)',
-		'table_id' => 'courseTableRtb',
+		'table_prefix' => 'courseTableRtb',
 		'tab_class' => 'rtb',
 		'label' => 'RTB',
 	],
 	'reb' => [
 		'title' => lang('app.reb') . ' (REB)',
-		'table_id' => 'courseTableReb',
+		'table_prefix' => 'courseTableReb',
 		'tab_class' => 'reb',
 		'label' => 'REB',
 	],
 ];
+$countProgCourses = static function (array $levelGroups): array {
+	$total = 0;
+	$ai = 0;
+	foreach ($levelGroups as $lg) {
+		$mods = is_array($lg['modules'] ?? null) ? $lg['modules'] : [];
+		$total += count($mods);
+		foreach ($mods as $c) {
+			if (($c['create_source'] ?? '') === 'ai') {
+				$ai++;
+			}
+		}
+	}
+	return ['total' => $total, 'ai' => $ai, 'manual' => $total - $ai];
+};
 $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGrouped['reb']) ? 'reb' : 'tvet');
 ?>
 <div class="course-list-wrap" id="courseListWrap">
 	<div class="course-prog-switch" role="tablist" aria-label="Programme type">
 		<?php foreach ($groupDefs as $progKey => $groupDef):
-			$rows = $coursesGrouped[$progKey] ?? [];
+			$levelGroups = $coursesGrouped[$progKey] ?? [];
+			$counts = $countProgCourses($levelGroups);
 			$active = $progKey === $defaultProg ? ' is-active' : '';
 		?>
 		<button type="button"
@@ -371,41 +414,66 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 			role="tab"
 			aria-selected="<?= $progKey === $defaultProg ? 'true' : 'false'; ?>">
 			<?= esc($groupDef['label']); ?>
-			<span class="tab-count"><?= count($rows); ?></span>
+			<span class="tab-count"><?= (int) $counts['total']; ?></span>
 		</button>
 		<?php endforeach; ?>
 	</div>
 
 	<?php foreach ($groupDefs as $progKey => $groupDef):
-		$rows = $coursesGrouped[$progKey] ?? [];
-		$aiCount = count(array_filter($rows, static function ($c) {
-			return ($c['create_source'] ?? '') === 'ai';
-		}));
-		$manualCount = count($rows) - $aiCount;
+		$levelGroups = $coursesGrouped[$progKey] ?? [];
+		$counts = $countProgCourses($levelGroups);
 		$active = $progKey === $defaultProg ? ' is-active' : '';
+		$levelIdx = 0;
 	?>
 	<div class="course-group-panel<?= $active; ?>" data-prog-panel="<?= esc($progKey); ?>" role="tabpanel">
 		<div class="course-panel-meta">
 			<strong><?= esc($groupDef['title']); ?></strong>
-			— <?= count($rows); ?> course(s) · <?= $manualCount; ?> manual · <?= $aiCount; ?> AI
+			— <?= (int) $counts['total']; ?> course(s) · <?= (int) $counts['manual']; ?> manual · <?= (int) $counts['ai']; ?> AI
+			· grouped by level
 		</div>
 		<div class="course-group-body">
-			<table class="table table-hover table-striped table-bordered course-list-table" id="<?= esc($groupDef['table_id']); ?>" style="width:100%">
-				<thead>
-				<tr>
-					<th><?= lang("app.title"); ?></th>
-					<th><?= lang("app.code"); ?></th>
-					<th><?= lang("app.category"); ?></th>
-					<th>Source</th>
-					<th><?= lang("app.credits"); ?></th>
-					<th><?= lang("app.marks"); ?></th>
-					<th><?= lang("app.use"); ?></th>
-				</tr>
-				</thead>
-				<tbody>
-				<?= $renderCourseRows($rows); ?>
-				</tbody>
-			</table>
+			<?php if (empty($levelGroups)): ?>
+				<p class="text-muted mb-0">No courses in this programme yet.</p>
+			<?php else: ?>
+				<?php foreach ($levelGroups as $levelKey => $levelPack):
+					$mods = is_array($levelPack['modules'] ?? null) ? $levelPack['modules'] : [];
+					$levelName = trim((string) ($levelPack['level_name'] ?? $levelKey));
+					if ($levelName === '') {
+						$levelName = 'Other / Unassigned';
+					}
+					$levelAi = count(array_filter($mods, static function ($c) {
+						return ($c['create_source'] ?? '') === 'ai';
+					}));
+					$levelManual = count($mods) - $levelAi;
+					$tableId = $groupDef['table_prefix'] . '_l' . $levelIdx;
+					$levelIdx++;
+				?>
+				<div class="course-level-block">
+					<div class="course-level-head">
+						<strong><?= esc($levelName); ?></strong>
+						<span class="course-level-meta"><?= count($mods); ?> course(s) · <?= $levelManual; ?> manual · <?= $levelAi; ?> AI</span>
+					</div>
+					<div class="course-level-body">
+						<table class="table table-hover table-striped table-bordered course-list-table" id="<?= esc($tableId); ?>" style="width:100%">
+							<thead>
+							<tr>
+								<th><?= lang("app.title"); ?></th>
+								<th><?= lang("app.code"); ?></th>
+								<th><?= lang("app.category"); ?></th>
+								<th>Source</th>
+								<th><?= lang("app.credits"); ?></th>
+								<th><?= lang("app.marks"); ?></th>
+								<th><?= lang("app.use"); ?></th>
+							</tr>
+							</thead>
+							<tbody>
+							<?= $renderCourseRows($mods); ?>
+							</tbody>
+						</table>
+					</div>
+				</div>
+				<?php endforeach; ?>
+			<?php endif; ?>
 		</div>
 	</div>
 	<?php endforeach; ?>
@@ -444,18 +512,21 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 			});
 		}
 
-		var courseTables = {
-			tvet: null,
-			reb: null
-		};
+		var courseTablesReady = { tvet: false, reb: false };
 
-		function ensureTable(prog) {
-			var id = prog === 'reb' ? '#courseTableReb' : '#courseTableRtb';
-			if (!courseTables[prog]) {
-				courseTables[prog] = initCourseTable(id);
-			} else if (courseTables[prog] && courseTables[prog].columns) {
-				courseTables[prog].columns.adjust();
-			}
+		function ensureTables(prog) {
+			prog = prog === 'reb' ? 'reb' : 'tvet';
+			var $panel = $('.course-group-panel[data-prog-panel="' + prog + '"]');
+			$panel.find('table.course-list-table').each(function () {
+				var $t = $(this);
+				var id = '#' + $t.attr('id');
+				if ($.fn.DataTable && $.fn.DataTable.isDataTable($t)) {
+					$t.DataTable().columns.adjust();
+				} else {
+					initCourseTable(id);
+				}
+			});
+			courseTablesReady[prog] = true;
 		}
 
 		function switchCourseProg(prog) {
@@ -464,11 +535,11 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 			$('.course-prog-tab[data-prog="' + prog + '"]').addClass('is-active').attr('aria-selected', 'true');
 			$('.course-group-panel').removeClass('is-active');
 			$('.course-group-panel[data-prog-panel="' + prog + '"]').addClass('is-active');
-			ensureTable(prog);
+			ensureTables(prog);
 		}
 
 		$('#createCourseDiv').hide();
-		ensureTable('<?= $defaultProg; ?>');
+		ensureTables('<?= $defaultProg; ?>');
 
 		$(document).on('click', '.course-prog-tab', function () {
 			switchCourseProg($(this).data('prog'));
