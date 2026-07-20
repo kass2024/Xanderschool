@@ -168,6 +168,112 @@ class DocumentTextExtractor
 		return $map[$type] ?? 5;
 	}
 
+	/** Normalize curriculum credit (supports decimals like 1.5). */
+	public static function normalizeCreditValue($value): float
+	{
+		if ($value === null || $value === '') {
+			return 0.0;
+		}
+		if (is_string($value)) {
+			$value = str_replace(',', '.', trim($value));
+		}
+		if (!is_numeric($value)) {
+			return 0.0;
+		}
+		$credit = round((float) $value, 1);
+		if ($credit < 0.5 || $credit > 40) {
+			return 0.0;
+		}
+		return $credit;
+	}
+
+	/**
+	 * Parse module credits from RTB curriculum structure (competences tables).
+	 *
+	 * @return array<string,float> code => credit
+	 */
+	public static function parseCurriculumModuleCredits(string $curText): array
+	{
+		if (trim($curText) === '') {
+			return [];
+		}
+		$rawLines = preg_split("/\r\n|\n|\r/", $curText) ?: [];
+		$out = [];
+		$inSection = false;
+		$pending = '';
+
+		foreach ($rawLines as $rawLine) {
+			$line = trim(self::cleanPedagogicalText($rawLine));
+			if ($line === '') {
+				continue;
+			}
+			if (preg_match('/information\s+about\s+competenc/i', $line)) {
+				$inSection = true;
+				$pending = '';
+				continue;
+			}
+			if ($inSection && preg_match('/allocation\s+of\s+learning\s+hours/i', $line)) {
+				break;
+			}
+			if (!$inSection) {
+				continue;
+			}
+			if (preg_match('/\b((?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3})\b/i', $line)) {
+				$pending = $pending !== '' ? ($pending . ' ' . $line) : $line;
+			} elseif ($pending !== '') {
+				$pending .= ' ' . $line;
+			} else {
+				continue;
+			}
+			$parsed = self::parseCreditFromLine($pending);
+			if ($parsed !== null) {
+				$out[$parsed['code']] = $parsed['credit'];
+				$pending = '';
+			}
+		}
+
+		// Fallback when section header missing in PDF extract
+		if ($out === []) {
+			foreach ($rawLines as $rawLine) {
+				$line = trim(self::cleanPedagogicalText($rawLine));
+				if ($line === '') {
+					continue;
+				}
+				if (preg_match('/^(?:total|no\b|code\b|credit\b|general\b|specific\b)/i', $line)) {
+					continue;
+				}
+				$parsed = self::parseCreditFromLine($line);
+				if ($parsed !== null) {
+					$out[$parsed['code']] = $parsed['credit'];
+				}
+			}
+		}
+
+		return $out;
+	}
+
+	/** @return array{code:string,credit:float}|null */
+	private static function parseCreditFromLine(string $line): ?array
+	{
+		if (!preg_match('/\b((?:SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3})\b/i', $line, $cm)) {
+			return null;
+		}
+		$code = self::cleanModuleCode($cm[1]);
+		if ($code === '') {
+			return null;
+		}
+		$afterCode = preg_replace('/^.*?\b' . preg_quote($code, '/') . '\b/i', '', $line) ?? '';
+		$afterCode = trim($afterCode);
+		if ($afterCode === '' || !preg_match('/(\d+(?:\.\d+)?)\s*$/', $afterCode, $credM)) {
+			return null;
+		}
+		$credit = self::normalizeCreditValue($credM[1]);
+		if ($credit <= 0) {
+			return null;
+		}
+		return ['code' => $code, 'credit' => $credit];
+	}
+
 	/**
 	 * Parse RTB chronogram text for timetable hours/week (typical weekly periods).
 	 * Uses week-grid cells when present; else Modules periods ÷ teaching weeks.

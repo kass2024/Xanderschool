@@ -86,14 +86,14 @@ foreach ($classes as $c) {
 	.smart-badge.exists { background:#fef3c7; color:#b45309; }
 	.smart-badge.ok { background:#dcfce7; color:#15803d; }
 	.smart-actions { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.65rem; }
-	.hours-input, .marks-input { width:72px; display:inline-block; }
+	.credit-input, .marks-input { width:72px; display:inline-block; }
 </style>
 
 <div class="smart-wrap" id="smartWrap">
 	<div class="smart-banner">
 		<strong id="smartTypeLabel">TVET</strong> —
 		Extracted courses from Pedagogical Documents analysis, arranged per class.
-		Hours/week come from the chronogram; <b>Marks = Hours/week × 10</b>.
+		<b>Credit</b> comes from the curriculum competences table (e.g. 1.5, 3, 6); <b>Marks = Credit × 10</b>.
 		Category is taken from the curriculum (Specific / General / Complementary) and created if missing.
 		<a href="<?= base_url('ped_analyse'); ?>">Analyse first</a> if a class is empty.
 	</div>
@@ -132,12 +132,12 @@ foreach ($classes as $c) {
 </td>
 <td id="creditDiv">
 	<div class="form-group" >
-		<label id="credits">Hours / week</label>
-		<input class="form-control" type="number" step="0.1" min="0" name="credit" id="manualHours" minlength="1">
+		<label id="credits"><?= lang("app.credits"); ?></label>
+		<input class="form-control" type="number" step="0.1" min="0" name="credit" id="manualCredit" minlength="1">
 	</div>
 </td>
 <td><div class="form-group">
-		<label><?= lang("app.maxPoints"); ?> <small class="text-muted">(auto = hours×10)</small></label>
+		<label><?= lang("app.maxPoints"); ?> <small class="text-muted">(auto = credit×10)</small></label>
 		<input class="form-control" type="number" name="marks" id="manualMarks" required minlength="1">
 	</div>
 </td>
@@ -158,7 +158,7 @@ foreach ($classes as $c) {
 			<th><?= lang("app.title"); ?></th>
 				<th><?= lang("app.code"); ?></th>
 				<th><?= lang("app.category"); ?></th>
-				<th>Hours / week</th>
+				<th><?= lang("app.credits"); ?></th>
 				<th><?= lang("app.marks"); ?></th>
 				<th><?= lang("app.use"); ?></th>
 		</tr>
@@ -215,7 +215,7 @@ foreach ($classes as $c) {
 				return false;
 			}
 			currentType = String(value);
-			$('#credits').text("Hours / week");
+			$('#credits').text("<?= lang("app.credits"); ?>");
 			$('#creditDiv').show();
 			$('#createCourseDiv').show();
 			$('#smartWrap').removeClass('is-on');
@@ -265,22 +265,22 @@ foreach ($classes as $c) {
 				var $body = $('<div class="smart-class-body"></div>');
 				var $tbl = $('<table class="smart-table"><thead><tr>'
 					+ '<th><input type="checkbox" class="smart-check-all"></th>'
-					+ '<th>Title</th><th>Code</th><th>Category</th><th>Hours/week</th><th>Marks</th><th>Status</th>'
+					+ '<th>Title</th><th>Code</th><th>Category</th><th>Credit</th><th>Marks</th><th>Status</th>'
 					+ '</tr></thead><tbody></tbody></table>');
 				pack.modules.forEach(function (m, idx) {
 					var checked = !m.already_exists;
 					var status = m.already_exists
 						? '<span class="smart-badge exists">Already in courses</span>'
 						: '<span class="smart-badge ok">Ready to create</span>';
-					var hours = m.hours_per_week != null ? m.hours_per_week : 0;
-					var marks = Math.round((parseFloat(hours) || 0) * 10);
+					var credit = m.credit != null ? m.credit : (m.credits != null ? m.credits : 0);
+					var marks = Math.round((parseFloat(credit) || 0) * 10);
 					var $tr = $('<tr data-idx="' + idx + '"></tr>');
 					var $check = $('<input type="checkbox" class="smart-row-check">').prop('checked', checked).prop('disabled', !!m.already_exists);
 					$tr.append($('<td></td>').append($check));
 					$tr.append($('<td></td>').append($('<input type="text" class="form-control form-control-sm smart-title">').val(m.title || m.code || '')));
 					$tr.append($('<td></td>').append($('<input type="text" class="form-control form-control-sm smart-code">').val(m.code || '')));
 					$tr.append($('<td></td>').append($('<input type="text" class="form-control form-control-sm smart-cat">').val(m.category_title || 'General')));
-					$tr.append($('<td></td>').append($('<input type="number" step="0.1" min="0" class="form-control form-control-sm hours-input smart-hours">').val(hours)));
+					$tr.append($('<td></td>').append($('<input type="number" step="0.1" min="0" class="form-control form-control-sm credit-input smart-credit">').val(credit)));
 					$tr.append($('<td></td>').append($('<input type="number" class="form-control form-control-sm marks-input smart-marks" readonly>').val(marks)));
 					$tr.append($('<td></td>').html(status));
 					$tbl.find('tbody').append($tr);
@@ -309,13 +309,13 @@ foreach ($classes as $c) {
 			var on = $(this).is(':checked');
 			$(this).closest('table').find('.smart-row-check:not(:disabled)').prop('checked', on);
 		});
-		$(document).on('input change', '.smart-hours', function () {
-			var h = parseFloat($(this).val()) || 0;
-			$(this).closest('tr').find('.smart-marks').val(Math.round(h * 10));
+		$(document).on('input change', '.smart-credit', function () {
+			var c = parseFloat($(this).val()) || 0;
+			$(this).closest('tr').find('.smart-marks').val(Math.round(c * 10));
 		});
-		$('#manualHours').on('input change', function () {
-			var h = parseFloat($(this).val()) || 0;
-			$('#manualMarks').val(Math.round(h * 10));
+		$('#manualCredit').on('input change', function () {
+			var c = parseFloat($(this).val()) || 0;
+			$('#manualMarks').val(Math.round(c * 10));
 		});
 
 		$(document).on('click', '.btn-smart-create', function () {
@@ -325,12 +325,12 @@ foreach ($classes as $c) {
 			$card.find('tbody tr').each(function () {
 				var $tr = $(this);
 				if (!$tr.find('.smart-row-check').is(':checked')) return;
-				var hours = parseFloat($tr.find('.smart-hours').val()) || 0;
+				var credit = parseFloat($tr.find('.smart-credit').val()) || 0;
 				courses.push({
 					title: $tr.find('.smart-title').val(),
 					code: $tr.find('.smart-code').val(),
 					category_title: $tr.find('.smart-cat').val() || 'General',
-					hours_per_week: hours
+					credit: credit
 				});
 			});
 			if (!courses.length) {

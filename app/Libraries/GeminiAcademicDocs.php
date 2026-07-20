@@ -363,6 +363,8 @@ class GeminiAcademicDocs
 		}
 		$modules = is_array($inventory['modules'] ?? null) ? $inventory['modules'] : [];
 
+		$creditsFromText = DocumentTextExtractor::parseCurriculumModuleCredits($combinedText);
+
 		// Merge missing seed codes
 		$have = [];
 		foreach ($modules as &$m0) {
@@ -379,6 +381,9 @@ class GeminiAcademicDocs
 			if (empty($m0['module_type']) && isset($filenameSeeds[$code0]['module_type'])) {
 				$m0['module_type'] = $filenameSeeds[$code0]['module_type'];
 			}
+			if (empty($m0['credits']) && isset($creditsFromText[$code0])) {
+				$m0['credits'] = $creditsFromText[$code0];
+			}
 			$have[$code0] = true;
 		}
 		unset($m0);
@@ -390,6 +395,7 @@ class GeminiAcademicDocs
 					'title' => ($s['title'] ?: ($chronoTitles[$c] ?? $c)),
 					'rqf_level' => null,
 					'learning_hours' => null,
+					'credits' => $creditsFromText[$c] ?? null,
 					'module_type' => (string) ($s['module_type'] ?? ''),
 					'learning_outcomes' => [],
 				];
@@ -439,7 +445,7 @@ class GeminiAcademicDocs
 			'modules_done' => 0,
 			'partial_analysis' => $this->buildPartialSnapshot(
 				$inventoryMeta,
-				$this->mergeModulesPartial($modules, [], $chronoTitles, $weeklyFromTextEarly)
+				$this->mergeModulesPartial($modules, [], $chronoTitles, $weeklyFromTextEarly, $creditsFromText)
 			),
 		]);
 
@@ -466,7 +472,7 @@ class GeminiAcademicDocs
 			'modules_done' => $resumed,
 			'partial_analysis' => $this->buildPartialSnapshot(
 				$inventoryMeta,
-				$this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly)
+				$this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly, $creditsFromText)
 			),
 		]);
 		for ($i = 0, $n = $moduleCount; $i < $n; $i += $batchSize) {
@@ -482,7 +488,7 @@ class GeminiAcademicDocs
 
 			// Skip modules already extracted (resume after timeout)
 			if ($code !== '' && isset($detailed[$code]) && !empty($detailed[$code]['learning_outcomes'])) {
-				$partialMerged = $this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly);
+				$partialMerged = $this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly, $creditsFromText);
 				$this->reportProgress($pct, 'Skipped (cached) LO/IC (' . $done . '/' . $n . '): ' . $code, [
 					'batch' => (int) floor($i / $batchSize) + 1,
 					'done' => $done,
@@ -504,7 +510,7 @@ class GeminiAcademicDocs
 				'current_module' => $code,
 				'partial_analysis' => $this->buildPartialSnapshot(
 					$inventoryMeta,
-					$this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly)
+					$this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly, $creditsFromText)
 				),
 			]);
 			$body = $fileIndex[$code] ?? $this->sliceAroundKeywords($combinedText, array_filter([$code, $title]), 22000);
@@ -601,7 +607,7 @@ PROMPT;
 				$detailed[$code] = $got;
 			}
 			// Live UI: push partial modules after each LO/IC extraction
-			$partialMerged = $this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly);
+			$partialMerged = $this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly, $creditsFromText);
 			$this->reportProgress($pct, 'Extracting LO/IC (' . $done . '/' . $n . '): ' . implode(', ', array_filter($labels)), [
 				'batch' => (int) floor($i / $batchSize) + 1,
 				'done' => $done,
@@ -613,7 +619,7 @@ PROMPT;
 			]);
 		}
 
-		$merged = $partialMerged ?? $this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly);
+		$merged = $partialMerged ?? $this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly, $creditsFromText);
 
 		// Pass 3 — dedicated chronogram extraction (weekly hours distribution)
 		$codes = [];
@@ -1073,7 +1079,8 @@ PROMPT;
 		array $modules,
 		array $detailed,
 		array $chronoTitles = [],
-		array $weeklyFromText = []
+		array $weeklyFromText = [],
+		array $creditsFromText = []
 	): array {
 		$merged = [];
 		foreach ($modules as $m) {
@@ -1090,6 +1097,9 @@ PROMPT;
 			$full['title'] = $title;
 			if (empty($full['learning_outcomes']) || !is_array($full['learning_outcomes'])) {
 				$full['learning_outcomes'] = [];
+			}
+			if (empty($full['credits']) && $key !== '' && isset($creditsFromText[$key])) {
+				$full['credits'] = $creditsFromText[$key];
 			}
 			// Early chronogram hours from parsed grid (before AI chronogram pass)
 			if (empty($full['hours_per_week']) && $key !== '') {

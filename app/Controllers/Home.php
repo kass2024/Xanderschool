@@ -3071,14 +3071,14 @@ public function attendanceCard()
 				$cid = (int) ($row['class_id'] ?? 0);
 				$decoded = json_decode($row['analysis_json'] ?? '', true);
 				$modules = is_array($decoded['modules'] ?? null) ? $decoded['modules'] : [];
-				$chrText = (string) ($row['chronogram_text'] ?? '');
-				if ($chrText === '' && !empty($decoded['_chronogram_text'])) {
-					$chrText = (string) $decoded['_chronogram_text'];
+				$curText = (string) ($row['source_text'] ?? '');
+				if ($curText === '' && !empty($decoded['_source_text'])) {
+					$curText = (string) $decoded['_source_text'];
 				}
-				if ($chrText === '' && !empty($row['source_text'])) {
-					$chrText = (string) $row['source_text'];
+				if (str_contains($curText, '===== CHRONOGRAM SOURCE =====')) {
+					$curText = explode('===== CHRONOGRAM SOURCE =====', $curText, 2)[0];
 				}
-				$weeklyMap = \App\Libraries\DocumentTextExtractor::parseChronogramWeeklyHours($chrText);
+				$creditMap = \App\Libraries\DocumentTextExtractor::parseCurriculumModuleCredits($curText);
 				$items = [];
 				foreach ($modules as $m) {
 					$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
@@ -3090,14 +3090,14 @@ public function attendanceCard()
 					if ($code === '' && $title === '') {
 						continue;
 					}
-					$hours = $this->estimateHoursPerWeekFromModule($m, $weeklyMap);
+					$credit = $this->estimateCreditFromModule($m, $creditMap);
 					$cat = $this->categoryTitleFromModuleType((string) ($m['module_type'] ?? ''));
 					$items[] = [
 						'code' => $code,
 						'title' => $title !== '' ? $title : $code,
 						'category_title' => $cat,
-						'hours_per_week' => $hours,
-						'marks' => (int) round($hours * 10),
+						'credit' => $credit,
+						'marks' => (int) round($credit * 10),
 						'already_exists' => ($code !== '' && isset($existingCodes[$code])),
 						'existing_course_id' => ($code !== '' && isset($existingCodes[$code])) ? $existingCodes[$code] : null,
 						'matched_course_id' => (int) ($m['matched_course_id'] ?? 0) ?: null,
@@ -3118,6 +3118,43 @@ public function attendanceCard()
 		$data['page'] = "add_course";
 		$data['content'] = view("pages/add_course", $data);
 		return view('main', $data);
+	}
+
+	/**
+	 * Curriculum credit for course create (from analysis or competences table — not chronogram hours/week).
+	 *
+	 * @param array<string,float> $creditMap from curriculum text parse
+	 */
+	private function estimateCreditFromModule(array $m, array $creditMap = []): float
+	{
+		$credit = \App\Libraries\DocumentTextExtractor::normalizeCreditValue($m['credits'] ?? null);
+		if ($credit > 0) {
+			return $credit;
+		}
+		$credit = \App\Libraries\DocumentTextExtractor::normalizeCreditValue($m['credit'] ?? null);
+		if ($credit > 0) {
+			return $credit;
+		}
+
+		$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
+		if ($code !== '' && isset($creditMap[$code]) && (float) $creditMap[$code] > 0) {
+			return round((float) $creditMap[$code], 1);
+		}
+		if ($code !== '' && $creditMap !== []) {
+			foreach ($creditMap as $mapCode => $mapCredit) {
+				$mapCode = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) $mapCode);
+				if ($mapCode === $code && (float) $mapCredit > 0) {
+					return round((float) $mapCredit, 1);
+				}
+				if ($mapCode !== '' && preg_match('/^([A-Z]+)(\d{3})$/', $code, $ma) && preg_match('/^([A-Z]+)(\d{3})$/', $mapCode, $mb)
+					&& $ma[2] === $mb[2]
+					&& (strpos($ma[1], $mb[1]) !== false || strpos($mb[1], $ma[1]) !== false || levenshtein($ma[1], $mb[1]) <= 2)
+					&& (float) $mapCredit > 0) {
+					return round((float) $mapCredit, 1);
+				}
+			}
+		}
+		return 0.0;
 	}
 
 	/**
@@ -3243,7 +3280,7 @@ public function attendanceCard()
 
 	/**
 	 * Bulk-create courses from Pedagogical Documents extraction.
-	 * Marks = hours_per_week × 10. Category created if missing.
+	 * Marks = credit × 10. Category created if missing.
 	 * Does not assign to class/teacher — assign manually per course later.
 	 */
 	public function smart_create_courses()
@@ -3274,17 +3311,13 @@ public function attendanceCard()
 			if ($code === '' && $title === '') {
 				continue;
 			}
-			$hours = (float) ($item['hours_per_week'] ?? 0);
-			if ($hours < 0) {
-				$hours = 0;
+			$credit = \App\Libraries\DocumentTextExtractor::normalizeCreditValue($item['credit'] ?? null);
+			if ($credit <= 0) {
+				$credit = \App\Libraries\DocumentTextExtractor::normalizeCreditValue($item['hours_per_week'] ?? null);
 			}
-			// Cap absurd values (yearly totals mistakenly sent as weekly)
-			if ($hours > 20) {
-				$hours = round($hours / 30, 1);
-			}
-			$marks = (int) round($hours * 10);
-			if ($marks <= 0 && $hours > 0) {
-				$marks = max(1, (int) round($hours * 10));
+			$marks = (int) round($credit * 10);
+			if ($marks <= 0 && $credit > 0) {
+				$marks = max(1, (int) round($credit * 10));
 			}
 			$catTitle = trim((string) ($item['category_title'] ?? 'General')) ?: 'General';
 			$catId = $this->resolveCourseCategoryId($schoolId, $catTitle);
@@ -3302,7 +3335,7 @@ public function attendanceCard()
 						'title' => $title,
 						'code' => $code !== '' ? $code : strtoupper(substr(preg_replace('/\s+/', '', $title) ?? 'CRS', 0, 12)),
 						'category' => $catId,
-						'credit' => $hours,
+						'credit' => $credit,
 						'marks' => $marks > 0 ? $marks : 10,
 						'created_by' => (int) $this->session->get('soma_id'),
 					]);
