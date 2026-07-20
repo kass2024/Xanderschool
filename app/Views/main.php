@@ -1655,12 +1655,12 @@
 								</select>
 							</div>
 							<div class="form-group">
-								<label id="mentor">Hours / week</label> <i style="color: red;">*</i>
+								<label id="mentor"><?= lang("app.credits"); ?></label> <i style="color: red;">*</i>
 								<input type="number" step="0.1" min="0" name="credit" class="form-control" id="editHours">
 							</div>
 							<div class="form-group">
-								<label id="mentor">Marks <small class="text-muted">(hours × 10)</small></label> <i style="color: red;">*</i>
-								<input type="text" name="marks" class="form-control" id="editMarks">
+								<label id="mentor"><?= lang("app.maxPoints"); ?> <small class="text-muted">(credit × 10)</small></label> <i style="color: red;">*</i>
+								<input type="number" min="0" name="marks" class="form-control" id="editMarks" readonly>
 							</div>
 						</div>
 					</div>
@@ -3997,10 +3997,15 @@ if ($page == "pendingRegistration") {
 				$("#editCourseModal [name='title']").val(data.title).change();
 				$("#editCourseModal [name='code']").val(data.code).change();
 				$("#editCourseModal [name='category']").val(data.category).trigger('change');
-				$("#editCourseModal [name='credit']").val(data.credit).change();
-				$("#editCourseModal [name='marks']").val(data.marks).change();
+				var credit = parseFloat(data.credit) || 0;
+				$("#editCourseModal [name='credit']").val(credit).change();
+				$("#editCourseModal [name='marks']").val(Math.round(credit * 10)).change();
 			});
 			return;
+		});
+		$(document).on('input change', '#editCourseModal [name="credit"]', function () {
+			var c = parseFloat($(this).val()) || 0;
+			$("#editCourseModal [name='marks']").val(Math.round(c * 10));
 		});
 	});
 

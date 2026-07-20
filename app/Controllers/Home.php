@@ -3087,6 +3087,7 @@ public function attendanceCard()
 		if ($hasCreateSource) {
 			$selectCols .= ',courses.create_source';
 		}
+		$this->syncCourseMarksFromCredits((int) $school_id);
 		$data['courses'] = $courseModel->select($selectCols)
 				->join("course_category cs", "cs.id=courses.category")
 				->where("courses.school_id", $school_id)
@@ -3184,6 +3185,26 @@ public function attendanceCard()
 		$data['page'] = "add_course";
 		$data['content'] = view("pages/add_course", $data);
 		return view('main', $data);
+	}
+
+	/** Force courses.marks = ROUND(credit × 10) for a school (credit 0 => marks 0). */
+	private function syncCourseMarksFromCredits(int $schoolId): void
+	{
+		if ($schoolId <= 0) {
+			return;
+		}
+		try {
+			$db = \Config\Database::connect();
+			$db->query(
+				"UPDATE courses
+				 SET marks = ROUND(COALESCE(credit, 0) * 10)
+				 WHERE school_id = ?
+				   AND CAST(marks AS DECIMAL(12,2)) <> ROUND(COALESCE(credit, 0) * 10)",
+				[$schoolId]
+			);
+		} catch (\Throwable $e) {
+			log_message('error', 'syncCourseMarksFromCredits: ' . $e->getMessage());
+		}
 	}
 
 	/**
@@ -3489,13 +3510,10 @@ public function attendanceCard()
 				continue;
 			}
 			$credit = \App\Libraries\DocumentTextExtractor::normalizeCreditValue($item['credit'] ?? null);
-			if ($credit <= 0) {
-				$credit = \App\Libraries\DocumentTextExtractor::normalizeCreditValue($item['hours_per_week'] ?? null);
+			if ($credit < 0) {
+				$credit = 0.0;
 			}
 			$marks = (int) round($credit * 10);
-			if ($marks <= 0 && $credit > 0) {
-				$marks = max(1, (int) round($credit * 10));
-			}
 			$catTitle = trim((string) ($item['category_title'] ?? 'General')) ?: 'General';
 			$catId = $this->resolveCourseCategoryId($schoolId, $catTitle);
 
@@ -3513,7 +3531,7 @@ public function attendanceCard()
 						'code' => $code !== '' ? $code : strtoupper(substr(preg_replace('/\s+/', '', $title) ?? 'CRS', 0, 12)),
 						'category' => $catId,
 						'credit' => $credit,
-						'marks' => $marks > 0 ? $marks : 10,
+						'marks' => $marks,
 						'program_type' => $programType,
 						'create_source' => 'ai',
 						'created_by' => (int) $this->session->get('soma_id'),
@@ -5449,15 +5467,16 @@ public function attendanceCard()
 		$this->ensureCoursesMetaSchema();
 		$courseModel = new CourseModel();
 		$courseId = $this->request->getPost("courseId") ? $this->request->getPost("courseId") : 0;
-		$credit = $this->request->getPost("credit");
-		$marks = $this->request->getPost("marks");
+		$creditRaw = $this->request->getPost("credit");
+		$credit = is_numeric($creditRaw) ? (float) $creditRaw : 0.0;
+		if ($credit < 0) {
+			$credit = 0.0;
+		}
+		// Always Marks = Credit × 10 (credit 0 => marks 0)
+		$marks = (int) round($credit * 10);
 		$programType = strtolower(trim((string) $this->request->getPost('program_type')));
 		if ($programType !== 'reb') {
 			$programType = 'tvet';
-		}
-		// Marks = credit × 10 when marks empty
-		if (($marks === null || $marks === '') && is_numeric($credit)) {
-			$marks = (int) round(((float) $credit) * 10);
 		}
 		if ($courseId == 0) {
 			$data = array(

@@ -329,7 +329,7 @@ foreach ($classes as $c) {
 </td>
 <td><div class="form-group">
 		<label><?= lang("app.maxPoints"); ?> <small class="text-muted">(auto = credit×10)</small></label>
-		<input class="form-control" type="number" name="marks" id="manualMarks" required minlength="1">
+		<input class="form-control" type="number" name="marks" id="manualMarks" required minlength="1" readonly>
 	</div>
 </td>
 
