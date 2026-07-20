@@ -9,6 +9,7 @@ use App\Libraries\GeminiAcademicDocs;
 use App\Models\AcademicYearModel;
 use App\Models\AcademicPlanModel;
 use App\Models\AcademicAiAnalysisModel;
+use App\Models\AcademicAiJobModel;
 use App\Models\ActiveTermModel;
 use App\Models\ActivityModel;
 use App\Models\AddressModel;
@@ -1802,6 +1803,28 @@ public function testEmail()
 				$db->query("ALTER TABLE `academic_ai_analyses` ADD COLUMN `chronogram_text` longtext AFTER `source_text`");
 			}
 		}
+		if (!$db->tableExists('academic_ai_jobs')) {
+			$db->query("CREATE TABLE IF NOT EXISTS `academic_ai_jobs` (
+			  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+			  `batch_id` varchar(40) NOT NULL,
+			  `school_id` int(11) NOT NULL,
+			  `class_id` int(11) NOT NULL,
+			  `academic_year` int(11) NOT NULL,
+			  `force_flag` tinyint(1) NOT NULL DEFAULT 0,
+			  `status` varchar(16) NOT NULL DEFAULT 'pending',
+			  `skip_reason` varchar(255) DEFAULT NULL,
+			  `error_text` text,
+			  `result_meta` text,
+			  `created_by` int(11) DEFAULT NULL,
+			  `created_at` datetime DEFAULT NULL,
+			  `started_at` datetime DEFAULT NULL,
+			  `finished_at` datetime DEFAULT NULL,
+			  PRIMARY KEY (`id`),
+			  KEY `idx_batch` (`batch_id`),
+			  KEY `idx_status` (`status`,`id`),
+			  KEY `idx_school_year` (`school_id`,`academic_year`)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		}
 		$dir = FCPATH . 'assets/documents/academic_plans';
 		if (!is_dir($dir)) {
 			@mkdir($dir, 0755, true);
@@ -1964,7 +1987,8 @@ public function testEmail()
 		}
 
 		try {
-			return $this->runAiAnalyzeCurriculum($schoolId, $classId, $yearId, $force, $ctx, $createdBy);
+			$result = $this->runAiAnalyzeCurriculum($schoolId, $classId, $yearId, $force, $ctx, $createdBy);
+			return $this->response->setJSON($result);
 		} catch (\Throwable $e) {
 			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Analysis failed: ' . $e->getMessage(), ['status' => 'error']);
 			log_message('error', 'ai_analyze_curriculum: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
@@ -1991,6 +2015,310 @@ public function testEmail()
 			'status' => 'idle',
 			'updated_at' => null,
 		]);
+	}
+
+	/**
+	 * Queue one or more classes for background analyse (one-by-one worker).
+	 * Skips classes missing curriculum/chronogram at enqueue time.
+	 */
+	public function ai_analyze_queue()
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$this->ensurePedagogicalDocsSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$createdBy = (int) $this->session->get('soma_id');
+		$force = (int) $this->request->getPost('force') === 1;
+		$rawIds = $this->request->getPost('class_ids');
+		if (is_string($rawIds)) {
+			$decoded = json_decode($rawIds, true);
+			$classIds = is_array($decoded) ? $decoded : preg_split('/\s*,\s*/', $rawIds);
+		} elseif (is_array($rawIds)) {
+			$classIds = $rawIds;
+		} else {
+			$single = (int) $this->request->getPost('class_id');
+			$classIds = $single > 0 ? [$single] : [];
+		}
+		$classIds = array_values(array_unique(array_filter(array_map('intval', $classIds))));
+		if ($yearId <= 0) {
+			return $this->response->setJSON(['error' => 'No active academic year']);
+		}
+		if ($classIds === []) {
+			return $this->response->setJSON(['error' => 'Select at least one class']);
+		}
+
+		$pedMdl = new ClassPedagogicalDocModel();
+		$docs = $pedMdl->where('school_id', $schoolId)->where('academic_year', $yearId)
+			->whereIn('class_id', $classIds)->findAll();
+		$hasCur = [];
+		$hasChr = [];
+		foreach ($docs as $d) {
+			$cid = (int) ($d['class_id'] ?? 0);
+			$path = FCPATH . 'assets/documents/pedagogical/' . ($d['file_name'] ?? '');
+			if ($cid <= 0 || !is_file($path)) {
+				continue;
+			}
+			if (($d['doc_type'] ?? '') === 'curriculum') {
+				$hasCur[$cid] = true;
+			} elseif (($d['doc_type'] ?? '') === 'chronogram') {
+				$hasChr[$cid] = true;
+			}
+		}
+
+		$batchId = bin2hex(random_bytes(8));
+		$jobMdl = new AcademicAiJobModel();
+		$now = date('Y-m-d H:i:s');
+		$queued = 0;
+		$skipped = 0;
+		$jobs = [];
+		foreach ($classIds as $cid) {
+			$ready = !empty($hasCur[$cid]) && !empty($hasChr[$cid]);
+			$row = [
+				'batch_id' => $batchId,
+				'school_id' => $schoolId,
+				'class_id' => $cid,
+				'academic_year' => $yearId,
+				'force_flag' => $force ? 1 : 0,
+				'status' => $ready ? 'pending' : 'skipped',
+				'skip_reason' => $ready ? null : (
+					empty($hasCur[$cid]) && empty($hasChr[$cid])
+						? 'Missing curriculum and chronogram uploads'
+						: (empty($hasCur[$cid]) ? 'Missing curriculum upload' : 'Missing chronogram upload')
+				),
+				'error_text' => null,
+				'result_meta' => null,
+				'created_by' => $createdBy,
+				'created_at' => $now,
+				'started_at' => null,
+				'finished_at' => $ready ? null : $now,
+			];
+			$jobMdl->insert($row);
+			$id = (int) $jobMdl->getInsertID();
+			$row['id'] = $id;
+			$jobs[] = $row;
+			if ($ready) {
+				$queued++;
+			} else {
+				$skipped++;
+			}
+		}
+
+		$worker = $this->spawnAiAnalyseWorker();
+		return $this->response->setJSON([
+			'success' => 'Queued ' . $queued . ' class(es)' . ($skipped ? (', skipped ' . $skipped) : '') . '. Running in background.',
+			'batch_id' => $batchId,
+			'queued' => $queued,
+			'skipped' => $skipped,
+			'jobs' => $jobs,
+			'worker' => $worker,
+			'background' => true,
+		]);
+	}
+
+	/** Poll batch job statuses (+ live progress for the running class). */
+	public function ai_analyze_queue_status()
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensureAcademicPlansSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$batchId = trim((string) ($this->request->getGet('batch_id') ?: $this->request->getPost('batch_id')));
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			session_write_close();
+		}
+		if ($batchId === '') {
+			return $this->response->setJSON(['error' => 'batch_id required']);
+		}
+		$jobMdl = new AcademicAiJobModel();
+		$jobs = $jobMdl->where('batch_id', $batchId)->where('school_id', $schoolId)
+			->orderBy('id', 'ASC')->findAll();
+		$counts = ['pending' => 0, 'running' => 0, 'done' => 0, 'skipped' => 0, 'error' => 0];
+		$current = null;
+		$progress = null;
+		foreach ($jobs as &$j) {
+			$st = (string) ($j['status'] ?? '');
+			if (isset($counts[$st])) {
+				$counts[$st]++;
+			}
+			if ($st === 'running') {
+				$current = $j;
+				$progress = $this->readAiProgress($schoolId, (int) $j['class_id'], (int) ($j['academic_year'] ?: $yearId));
+			}
+		}
+		unset($j);
+		$total = count($jobs);
+		$finished = $counts['done'] + $counts['skipped'] + $counts['error'];
+		$batchDone = $total > 0 && $counts['pending'] === 0 && $counts['running'] === 0;
+		// Nudge worker if jobs still pending and nothing running
+		if (!$batchDone && $counts['pending'] > 0 && $counts['running'] === 0) {
+			$this->spawnAiAnalyseWorker();
+		}
+		return $this->response->setJSON([
+			'batch_id' => $batchId,
+			'jobs' => $jobs,
+			'counts' => $counts,
+			'total' => $total,
+			'finished' => $finished,
+			'done' => $batchDone,
+			'current' => $current,
+			'progress' => $progress,
+		]);
+	}
+
+	/**
+	 * Process next pending AI analyse job (CLI / internal worker).
+	 * Protected by a file lock so only one class runs at a time.
+	 */
+	public function processNextAiAnalyseJob(): array
+	{
+		$this->ensureAcademicPlansSchema();
+		$this->ensurePedagogicalDocsSchema();
+		@ini_set('max_execution_time', '0');
+		@set_time_limit(0);
+		@ignore_user_abort(true);
+
+		$lockDir = WRITEPATH . 'ai_progress';
+		if (!is_dir($lockDir)) {
+			@mkdir($lockDir, 0755, true);
+		}
+		$lockFile = $lockDir . '/worker.lock';
+		$fp = @fopen($lockFile, 'c+');
+		if (!$fp || !flock($fp, LOCK_EX | LOCK_NB)) {
+			if ($fp) {
+				fclose($fp);
+			}
+			return ['ok' => false, 'busy' => true, 'message' => 'Worker already running'];
+		}
+
+		try {
+			$db = \Config\Database::connect();
+			// Recover stuck "running" jobs older than 45 minutes
+			$db->query(
+				"UPDATE academic_ai_jobs SET status='pending', started_at=NULL
+				 WHERE status='running' AND started_at IS NOT NULL AND started_at < DATE_SUB(NOW(), INTERVAL 45 MINUTE)"
+			);
+
+			$jobMdl = new AcademicAiJobModel();
+			$job = $jobMdl->where('status', 'pending')->orderBy('id', 'ASC')->first();
+			if (!$job) {
+				return ['ok' => true, 'empty' => true, 'message' => 'No pending jobs'];
+			}
+
+			$jobId = (int) $job['id'];
+			$schoolId = (int) $job['school_id'];
+			$classId = (int) $job['class_id'];
+			$yearId = (int) $job['academic_year'];
+			$force = (int) ($job['force_flag'] ?? 0) === 1;
+			$createdBy = (int) ($job['created_by'] ?? 0);
+
+			$jobMdl->update($jobId, [
+				'status' => 'running',
+				'started_at' => date('Y-m-d H:i:s'),
+				'error_text' => null,
+			]);
+
+			$ctx = $this->buildAcademicAiContext($schoolId, $classId, $yearId);
+			if (empty($ctx['class']['id'])) {
+				$jobMdl->update($jobId, [
+					'status' => 'error',
+					'error_text' => 'Class not found',
+					'finished_at' => date('Y-m-d H:i:s'),
+				]);
+				return ['ok' => false, 'job_id' => $jobId, 'error' => 'Class not found'];
+			}
+
+			try {
+				$result = $this->runAiAnalyzeCurriculum($schoolId, $classId, $yearId, $force, $ctx, $createdBy);
+			} catch (\Throwable $e) {
+				$result = ['error' => $e->getMessage()];
+			}
+
+			if (!empty($result['error'])) {
+				$jobMdl->update($jobId, [
+					'status' => 'error',
+					'error_text' => (string) $result['error'],
+					'finished_at' => date('Y-m-d H:i:s'),
+					'result_meta' => json_encode(['error' => $result['error']], JSON_UNESCAPED_UNICODE),
+				]);
+				return ['ok' => false, 'job_id' => $jobId, 'class_id' => $classId, 'error' => $result['error']];
+			}
+
+			$meta = [
+				'cached' => !empty($result['cached']),
+				'module_count' => (int) ($result['module_count'] ?? 0),
+				'lo_count' => (int) ($result['lo_count'] ?? 0),
+				'ic_count' => (int) ($result['ic_count'] ?? 0),
+			];
+			$jobMdl->update($jobId, [
+				'status' => 'done',
+				'error_text' => null,
+				'finished_at' => date('Y-m-d H:i:s'),
+				'result_meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+			]);
+			return ['ok' => true, 'job_id' => $jobId, 'class_id' => $classId, 'result' => $meta];
+		} finally {
+			flock($fp, LOCK_UN);
+			fclose($fp);
+		}
+	}
+
+	/** HTTP kick for worker (optional manual trigger). */
+	public function ai_analyze_queue_process()
+	{
+		$this->requireAcademicPlanAccess();
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			session_write_close();
+		}
+		@ini_set('max_execution_time', '0');
+		@set_time_limit(0);
+		$result = $this->processNextAiAnalyseJob();
+		// Chain: if more pending, spawn background for the rest
+		$pending = (new AcademicAiJobModel())->where('status', 'pending')->countAllResults();
+		if ($pending > 0) {
+			$this->spawnAiAnalyseWorker();
+		}
+		return $this->response->setJSON($result);
+	}
+
+	/**
+	 * Start background CLI worker (non-blocking). Safe to call often.
+	 * @return array{started:bool,command?:string,error?:string}
+	 */
+	private function spawnAiAnalyseWorker(): array
+	{
+		$root = defined('ROOTPATH') ? ROOTPATH : (FCPATH . '..' . DIRECTORY_SEPARATOR);
+		$spark = rtrim($root, '/\\') . DIRECTORY_SEPARATOR . 'spark';
+		$script = rtrim($root, '/\\') . DIRECTORY_SEPARATOR . 'deploy' . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'run_ai_analyse_jobs.php';
+		$php = 'php';
+		if (defined('PHP_BINARY') && PHP_BINARY
+			&& stripos(PHP_BINARY, 'cgi') === false
+			&& stripos(PHP_BINARY, 'fpm') === false) {
+			$php = PHP_BINARY;
+		}
+		$logDir = WRITEPATH . 'ai_progress';
+		if (!is_dir($logDir)) {
+			@mkdir($logDir, 0755, true);
+		}
+		$log = $logDir . DIRECTORY_SEPARATOR . 'worker.log';
+
+		if (is_file($script)) {
+			$run = escapeshellarg($php) . ' ' . escapeshellarg($script);
+		} elseif (is_file($spark)) {
+			$run = escapeshellarg($php) . ' ' . escapeshellarg($spark) . ' process:ai-analyse-jobs 30';
+		} else {
+			return ['started' => false, 'error' => 'Worker script missing'];
+		}
+
+		$isWin = (DIRECTORY_SEPARATOR === '\\');
+		if ($isWin) {
+			$cmd = 'start /B "" ' . $run . ' >> ' . escapeshellarg($log) . ' 2>&1';
+			@pclose(@popen($cmd, 'r'));
+			return ['started' => true, 'command' => $cmd];
+		}
+		$cmd = 'nohup ' . $run . ' >> ' . escapeshellarg($log) . ' 2>&1 &';
+		@exec($cmd);
+		return ['started' => true, 'command' => $cmd];
 	}
 
 	/**
@@ -2024,11 +2352,11 @@ public function testEmail()
 		}
 		if ($curricula === []) {
 			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'No curriculum uploaded', ['status' => 'error']);
-			return $this->response->setJSON(['error' => 'Upload at least one curriculum file for this class in School Settings → Pedagogical documents.']);
+			return ['error' => 'Upload at least one curriculum file for this class in School Settings → Pedagogical documents.'];
 		}
 		if ($chronograms === []) {
 			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'No chronogram uploaded', ['status' => 'error']);
-			return $this->response->setJSON(['error' => 'Upload at least one chronogram for this class in School Settings → Pedagogical documents (needed to map weeks & hours).']);
+			return ['error' => 'Upload at least one chronogram for this class in School Settings → Pedagogical documents (needed to map weeks & hours).'];
 		}
 
 		// Prefer General Information / structure PDF as primary when multiple curricula uploaded
@@ -2072,7 +2400,7 @@ public function testEmail()
 				$partialResume = $stats['lo_count'] > 0 && $stats['lo_count'] < max(3, (int) ($stats['module_count'] * 0.5));
 				if (!$incomplete && !$hoursMissing && !$partialResume) {
 					$this->writeAiProgress($schoolId, $classId, $yearId, 100, 'Loaded from database cache', ['status' => 'done', 'cached' => true]);
-					return $this->response->setJSON([
+					return [
 						'success' => 'Loaded from database cache (no AI call)',
 						'analysis' => $decoded,
 						'cached' => true,
@@ -2084,7 +2412,7 @@ public function testEmail()
 						'needs_reanalyse' => false,
 						'source_hash' => $sourceHash,
 						'updated_at' => $cached['updated_at'] ?? null,
-					]);
+					];
 				}
 				$this->writeAiProgress($schoolId, $classId, $yearId, 2, 'Cached analysis incomplete — re-running extraction…', [
 					'status' => 'running',
@@ -2097,7 +2425,7 @@ public function testEmail()
 		$ai = new GeminiAcademicDocs();
 		if (!$ai->isConfigured()) {
 			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Gemini API key missing', ['status' => 'error']);
-			return $this->response->setJSON(['error' => 'Gemini API key missing on server']);
+			return ['error' => 'Gemini API key missing on server'];
 		}
 
 		// Resume LO/IC from DB + in-progress snapshot (survives proxy timeout)
@@ -2182,7 +2510,7 @@ public function testEmail()
 		if ($analysis === null) {
 			$err = 'AI analysis failed: ' . $ai->lastError();
 			$this->writeAiProgress($schoolId, $classId, $yearId, 0, $err, ['status' => 'error']);
-			return $this->response->setJSON(['error' => $err]);
+			return ['error' => $err];
 		}
 
 		$modules = is_array($analysis['modules'] ?? null) ? $analysis['modules'] : [];
@@ -2219,7 +2547,7 @@ public function testEmail()
 			'ic' => $stats['ic_count'],
 		]);
 
-		return $this->response->setJSON([
+		return [
 			'success' => 'Full curriculum + chronogram analysis saved to database',
 			'analysis' => $analysis,
 			'cached' => false,
@@ -2231,7 +2559,7 @@ public function testEmail()
 			'needs_reanalyse' => $stats['lo_count'] === 0,
 			'file_count' => count($extraFiles) + 1,
 			'source_hash' => $sourceHash,
-		]);
+		];
 	}
 
 	private function aiProgressPath(int $schoolId, int $classId, int $yearId): string

@@ -75,6 +75,28 @@ include __DIR__ . '/_nav.php';
 	.aiplan-step.is-done { background:#dcfce7; border-color:#86efac; color:#15803d; }
 	.aiplan-step.is-active { background:#ccfbf1; border-color:#14b8a6; color:#0f766e; }
 	.aiplan-step.is-todo { color:#94a3b8; border-color:#e2e8f0; background:#f8fafc; }
+	.aiplan-class-list {
+		max-height: 280px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 10px;
+		background: #f8fafc; padding: .4rem .55rem;
+	}
+	.aiplan-class-row {
+		display: flex; align-items: flex-start; gap: .55rem; padding: .4rem .35rem;
+		border-radius: 8px; margin-bottom: .15rem; cursor: pointer;
+	}
+	.aiplan-class-row:hover { background: #fff; }
+	.aiplan-class-row.is-disabled { opacity: .55; cursor: not-allowed; }
+	.aiplan-class-row input { margin-top: .2rem; }
+	.aiplan-class-meta { font-size: .78rem; color: #64748b; }
+	.aiplan-job-list { margin-top: .75rem; font-size: .84rem; }
+	.aiplan-job-row {
+		display: flex; justify-content: space-between; gap: .5rem; flex-wrap: wrap;
+		padding: .35rem .5rem; border-bottom: 1px solid #e2e8f0;
+	}
+	.aiplan-job-row .st-pending { color: #64748b; }
+	.aiplan-job-row .st-running { color: #0f766e; font-weight: 700; }
+	.aiplan-job-row .st-done { color: #15803d; }
+	.aiplan-job-row .st-skipped { color: #b45309; }
+	.aiplan-job-row .st-error { color: #b91c1c; }
 </style>
 
 <div class="aiplan-wrap">
@@ -83,43 +105,63 @@ include __DIR__ . '/_nav.php';
 	<?php endif; ?>
 
 	<div class="aiplan-card">
-		<h5>Select class &amp; analyse</h5>
+		<h5>Select class(es) &amp; analyse</h5>
 		<p class="text-muted" style="font-size:.88rem;">
 			Uses <b>all</b> curriculum + chronogram files from School Settings.
 			Upload the full RTB package: <b>General Information</b> + <b>Specific Modules</b> + <b>General Modules</b> + <b>CCM Modules</b>
-			(or one ZIP of that folder), plus chronogram. After uploading, click <b>Re-analyse</b>.
+			(or one ZIP of that folder), plus chronogram.
+			Select <b>multiple classes</b> — analysis runs <b>one-by-one in the background</b>; classes missing uploads are skipped automatically.
 		</p>
 		<div class="row">
 			<div class="col-md-8">
-				<select id="aiplanClass" class="form-control">
-					<option value="">— Choose class —</option>
+				<div class="d-flex justify-content-between align-items-center mb-1" style="gap:.5rem;flex-wrap:wrap;">
+					<label class="mb-0" style="font-weight:600;">Classes</label>
+					<span>
+						<button type="button" class="btn btn-link btn-sm p-0" id="btnSelectReady">Select ready</button>
+						·
+						<button type="button" class="btn btn-link btn-sm p-0" id="btnClearClasses">Clear</button>
+					</span>
+				</div>
+				<div class="aiplan-class-list" id="aiplanClassList">
 					<?php foreach ($classes as $c):
 						$cid = (int) $c['id'];
 						$docs = $byClassDocs[$cid] ?? ['curriculum' => false, 'chronogram' => false];
 						$prog = ((int)($c['faculty_type'] ?? 1) === 2) ? 'REB' : 'TVET';
 						$label = trim(($c['level_name'] ?? '') . ' ' . ($c['dept_code'] ?? '') . ' ' . ($c['title'] ?? ''));
-						$flags = ($docs['curriculum'] ? 'Curriculum✓' : 'Curriculum✗') . ' · ' . ($docs['chronogram'] ? 'Chronogram✓' : 'Chronogram✗');
+						$ready = !empty($docs['curriculum']) && !empty($docs['chronogram']);
 						$cache = $analysis_cache[$cid] ?? null;
-						$cacheFlag = !empty($cache['has_cache']) ? (' · Cached ' . (int)($cache['module_count'] ?? 0) . ' modules') : '';
+						$cacheFlag = !empty($cache['has_cache']) ? ('Cached ' . (int)($cache['module_count'] ?? 0) . ' modules') : 'No cache';
+						$flags = ($docs['curriculum'] ? 'Curriculum✓' : 'Curriculum✗') . ' · ' . ($docs['chronogram'] ? 'Chronogram✓' : 'Chronogram✗');
 						?>
-						<option value="<?= $cid; ?>"
-								data-has-cur="<?= $docs['curriculum'] ? '1' : '0'; ?>"
-								data-has-chr="<?= $docs['chronogram'] ? '1' : '0'; ?>"
-								data-has-cache="<?= !empty($cache['has_cache']) ? '1' : '0'; ?>">
-							<?= esc($label); ?> (<?= $prog; ?>) — <?= $flags; ?><?= esc($cacheFlag); ?>
-						</option>
+						<label class="aiplan-class-row<?= $ready ? '' : ' is-disabled'; ?>"
+							   data-class-id="<?= $cid; ?>"
+							   data-ready="<?= $ready ? '1' : '0'; ?>"
+							   data-has-cache="<?= !empty($cache['has_cache']) ? '1' : '0'; ?>"
+							   data-label="<?= esc($label); ?>">
+							<input type="checkbox"
+								   class="aiplan-class-check"
+								   value="<?= $cid; ?>">
+							<span>
+								<strong><?= esc($label); ?></strong> <span class="text-muted">(<?= $prog; ?>)</span>
+								<div class="aiplan-class-meta"><?= esc($flags); ?> · <?= esc($cacheFlag); ?><?= $ready ? '' : ' — will be skipped if queued'; ?></div>
+							</span>
+						</label>
 					<?php endforeach; ?>
-				</select>
+				</div>
 			</div>
 			<div class="col-md-4">
 				<button type="button" class="btn btn-primary btn-block" id="btnAnalyzeCurriculum" <?= empty($gemini_ready) ? 'disabled' : ''; ?>>
-					<i class="fa fa-database"></i> Load / Analyse (DB cache)
+					<i class="fa fa-database"></i> Queue Load / Analyse
 				</button>
 				<button type="button" class="btn btn-outline-secondary btn-sm btn-block mt-1" id="btnForceAnalyze" <?= empty($gemini_ready) ? 'disabled' : ''; ?>>
-					Re-analyse with AI
+					Queue Re-analyse with AI
 				</button>
+				<p class="text-muted mt-2 mb-0" style="font-size:.78rem;">
+					Jobs run in the background — you can leave this page and keep working.
+				</p>
 			</div>
 		</div>
+		<div id="aiplanJobBox" class="aiplan-job-list" style="display:none;"></div>
 		<p class="aiplan-status mt-2 mb-0" id="aiplanStatus">If analysis was already done, it loads from DB without calling Gemini.</p>
 
 		<div class="aiplan-progress" id="aiplanProgress" aria-live="polite">
@@ -159,7 +201,21 @@ include __DIR__ . '/_nav.php';
 	var resumeAttempts = 0;
 
 	function status(msg, err) { $('#aiplanStatus').css('color', err ? '#b91c1c' : '#64748b').text(msg || ''); }
-	function currentClassId() { return parseInt($('#aiplanClass').val() || '0', 10) || 0; }
+	var batchId = null;
+	var batchTimer = null;
+	var classLabels = {};
+	$('.aiplan-class-row').each(function () {
+		classLabels[String($(this).data('class-id'))] = $(this).data('label') || ('Class ' + $(this).data('class-id'));
+	});
+
+	function selectedClassIds() {
+		var ids = [];
+		$('.aiplan-class-check:checked').each(function () {
+			var id = parseInt($(this).val(), 10) || 0;
+			if (id) ids.push(id);
+		});
+		return ids;
+	}
 
 	function applyProgressPoll(p) {
 		if (!p) return;
@@ -207,7 +263,8 @@ include __DIR__ . '/_nav.php';
 
 	function showProgress(on) {
 		$('#aiplanProgress').toggleClass('is-on', !!on);
-		$('#btnAnalyzeCurriculum,#btnForceAnalyze').prop('disabled', !!on || <?= empty($gemini_ready) ? 'true' : 'false'; ?>);
+		var geminiOff = <?= empty($gemini_ready) ? 'true' : 'false'; ?>;
+		$('#btnAnalyzeCurriculum,#btnForceAnalyze').prop('disabled', !!on || geminiOff);
 		if (!on) {
 			stopProgressPoll();
 		}
@@ -217,10 +274,13 @@ include __DIR__ . '/_nav.php';
 		if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
 	}
 
+	function stopBatchPoll() {
+		if (batchTimer) { clearInterval(batchTimer); batchTimer = null; }
+	}
+
 	function startProgressPoll(cid) {
 		stopProgressPoll();
 		liveCurrentModule = '';
-		// Immediate first poll so UI leaves 0% as soon as server writes progress
 		$.getJSON('<?= base_url('ai_analyze_progress'); ?>', { class_id: cid })
 			.done(function (p) {
 				if (!p) return;
@@ -233,6 +293,126 @@ include __DIR__ . '/_nav.php';
 					applyProgressPoll(p);
 				});
 		}, 800);
+	}
+
+	function renderJobBox(jobs, counts, done) {
+		var $box = $('#aiplanJobBox').show().empty();
+		var head = 'Batch: ' + (counts.done || 0) + ' done · '
+			+ (counts.running || 0) + ' running · '
+			+ (counts.pending || 0) + ' pending · '
+			+ (counts.skipped || 0) + ' skipped · '
+			+ (counts.error || 0) + ' error';
+		$box.append($('<div style="font-weight:700;margin-bottom:.35rem;"></div>').text(head));
+		(jobs || []).forEach(function (j) {
+			var label = classLabels[String(j.class_id)] || ('Class ' + j.class_id);
+			var st = j.status || '';
+			var extra = '';
+			if (st === 'skipped' && j.skip_reason) extra = ' — ' + j.skip_reason;
+			if (st === 'error' && j.error_text) extra = ' — ' + j.error_text;
+			if (st === 'done' && j.result_meta) {
+				try {
+					var m = typeof j.result_meta === 'string' ? JSON.parse(j.result_meta) : j.result_meta;
+					if (m && m.module_count != null) extra = ' — ' + m.module_count + ' modules';
+				} catch (e) {}
+			}
+			$box.append(
+				$('<div class="aiplan-job-row"></div>')
+					.append($('<span></span>').text(label))
+					.append($('<span class="st-' + st + '"></span>').text(st.toUpperCase() + extra))
+			);
+		});
+		if (done) {
+			$box.append($('<div class="text-success mt-2" style="font-weight:700;"></div>').text('Batch complete — you can keep working.'));
+		}
+	}
+
+	function pollBatch() {
+		if (!batchId) return;
+		$.getJSON('<?= base_url('ai_analyze_queue_status'); ?>', { batch_id: batchId })
+			.done(function (res) {
+				if (!res || res.error) return;
+				renderJobBox(res.jobs || [], res.counts || {}, !!res.done);
+				var cur = res.current;
+				var prog = res.progress;
+				if (cur && cur.class_id) {
+					var label = classLabels[String(cur.class_id)] || ('Class ' + cur.class_id);
+					showProgress(true);
+					if (prog && (prog.pct > 0 || prog.status === 'running')) {
+						applyProgressPoll(prog);
+						setProgress(prog.pct || 0, (prog.action || 'Working…') + ' — ' + label);
+					} else {
+						setProgress(5, 'Background job running: ' + label);
+					}
+					if (prog && prog.partial_analysis && prog.partial_analysis.modules) {
+						analysis = prog.partial_analysis;
+						renderModules(true);
+					}
+				}
+				var counts = res.counts || {};
+				status('Background queue: ' + (counts.done || 0) + '/' + (res.total || 0) + ' finished'
+					+ ((counts.skipped || 0) ? (', ' + counts.skipped + ' skipped') : '')
+					+ ((counts.error || 0) ? (', ' + counts.error + ' failed') : '') + '.');
+				if (res.done) {
+					analyzing = false;
+					stopBatchPoll();
+					stopProgressPoll();
+					setProgress(100, 'All queued classes finished');
+					status('Batch complete. Open a class cache / Scheme of Work when ready.');
+					setTimeout(function () { showProgress(false); }, 1200);
+					// Mark caches for done jobs
+					(res.jobs || []).forEach(function (j) {
+						if (j.status === 'done') {
+							$('.aiplan-class-row[data-class-id="' + j.class_id + '"]').attr('data-has-cache', '1').data('has-cache', 1);
+						}
+					});
+				}
+			});
+	}
+
+	function queueAnalyze(force) {
+		var ids = selectedClassIds();
+		if (!ids.length) {
+			// Also allow selecting disabled? No — user must pick ready ones, or we queue all checked including none
+			status('Select at least one class with Curriculum✓ and Chronogram✓.', true);
+			return;
+		}
+		if (analyzing) return;
+		analyzing = true;
+		analysis = { modules: [], program_type: 'tvet', _partial: true };
+		renderModules(true);
+		showProgress(true);
+		setProgress(2, force ? 'Queuing re-analyse jobs…' : 'Queuing analyse jobs…');
+		status('Queuing ' + ids.length + ' class(es) for background analysis…');
+
+		$.ajax({
+			url: '<?= base_url('ai_analyze_queue'); ?>',
+			type: 'POST',
+			dataType: 'json',
+			data: { class_ids: JSON.stringify(ids), force: force ? 1 : 0 }
+		}).done(function (res) {
+			if (res && res.error) {
+				analyzing = false;
+				showProgress(false);
+				status(res.error, true);
+				return;
+			}
+			batchId = res.batch_id;
+			renderJobBox(res.jobs || [], {
+				pending: res.queued || 0,
+				skipped: res.skipped || 0,
+				running: 0, done: 0, error: 0
+			}, false);
+			status(res.success || 'Queued. Running in background…');
+			setProgress(5, 'Background worker started — processing one class at a time');
+			stopBatchPoll();
+			pollBatch();
+			batchTimer = setInterval(pollBatch, 2000);
+		}).fail(function (xhr) {
+			analyzing = false;
+			showProgress(false);
+			var msg = (xhr.responseJSON && xhr.responseJSON.error) || ('Queue failed (HTTP ' + (xhr.status || '?') + ')');
+			status(msg, true);
+		});
 	}
 
 	function renderModules(live) {
@@ -335,96 +515,19 @@ include __DIR__ . '/_nav.php';
 		$('#aiplanResultCard').show();
 	}
 
-	function analyze(force) {
-		var cid = currentClassId();
-		if (!cid) { status('Select a class first', true); return; }
-		if (analyzing) return;
-		var $opt = $('#aiplanClass option:selected');
-		if ($opt.data('has-cur') != '1') { status('Upload curriculum in School Settings first.', true); return; }
-		if ($opt.data('has-chr') != '1') { status('Upload chronogram in School Settings first.', true); return; }
-
-		analyzing = true;
-		if (!force) resumeAttempts = 0;
-		analysis = analysis && analysis.modules && analysis.modules.length
-			? analysis
-			: { modules: [], program_type: 'tvet', _partial: true };
-		renderModules(true);
-		showProgress(true);
-		setProgress(0, force ? (resumeAttempts ? 'Resuming analysis…' : 'Starting re-analysis…') : 'Starting…');
-		status(force || resumeAttempts ? 'Smart analysis running — please keep this page open.' : 'Loading…');
-		startProgressPoll(cid);
-
-		$.ajax({
-			url: '<?= base_url('ai_analyze_curriculum'); ?>',
-			type: 'POST',
-			dataType: 'json',
-			timeout: 1200000,
-			data: { class_id: cid, force: force ? 1 : 0 }
-		}).done(function (res) {
-			analyzing = false;
-			liveCurrentModule = '';
-			resumeAttempts = 0;
-			stopProgressPoll();
-			if (res && res.error) {
-				setProgress(0, res.error);
-				showProgress(false);
-				status(res.error, true);
-				return;
-			}
-			setProgress(100, res.cached ? 'Loaded from database cache' : 'Analysis saved successfully');
-			analysis = res.analysis || null;
-			var n = ((analysis && analysis.modules) || []).length;
-			var lo = res.lo_count != null ? res.lo_count : null;
-			var ic = res.ic_count != null ? res.ic_count : null;
-			var weeks = res.chronogram_weeks != null ? res.chronogram_weeks : null;
-			var slots = res.chronogram_slots != null ? res.chronogram_slots : null;
-			var extra = '';
-			if (lo != null) extra += ' · LO ' + lo + ' · IC ' + ic;
-			if (weeks != null) extra += ' · Chronogram ' + weeks + ' week(s)';
-			if (slots != null) extra += ' · ' + slots + ' week-slots';
-			status((res.cached ? 'Loaded from DB cache — ' : 'Full analysis saved to DB — ') + n + ' module(s)' + extra + '.');
-			if (!res.cached && lo === 0) {
-				status('Analysis saved but 0 LO/IC found. Upload General + Specific curriculum PDFs in School Settings, then click Re-analyse with AI.', true);
-			} else if (res.cached && lo === 0) {
-				status('Cached analysis has 0 LO/IC (incomplete). Click Re-analyse with AI after uploading full curriculum PDFs.', true);
-			}
-			$opt.attr('data-has-cache', '1').data('has-cache', 1);
-			renderModules();
-			setTimeout(function () { showProgress(false); }, 900);
-		}).fail(function (xhr) {
-			analyzing = false;
-			liveCurrentModule = '';
-			stopProgressPoll();
-			var timedOut = xhr.status === 504 || xhr.status === 502 || xhr.status === 0;
-			// Keep live modules visible; auto-resume from DB partial (up to 4 times)
-			if (timedOut && resumeAttempts < 4) {
-				resumeAttempts++;
-				status('Proxy timed out — progress saved. Auto-resuming (' + resumeAttempts + '/4)…', false);
-				setProgress(Math.max(5, parseInt($('#aiplanPct').text(), 10) || 5), 'Resuming from saved progress…');
-				setTimeout(function () { analyze(true); }, 1500);
-				return;
-			}
-			var msg = (xhr.responseJSON && xhr.responseJSON.error)
-				|| (timedOut ? 'Server timed out. Partial progress was saved — click Re-analyse with AI to continue from where it stopped.' : null)
-				|| ('Analysis failed (HTTP ' + (xhr.status || '?') + ')');
-			if (analysis && analysis.modules && analysis.modules.length) {
-				renderModules(true);
-			}
-			setProgress(0, msg);
-			showProgress(false);
-			status(msg, true);
+	$('#btnSelectReady').on('click', function () {
+		$('.aiplan-class-check').each(function () {
+			var $row = $(this).closest('.aiplan-class-row');
+			$(this).prop('checked', $row.data('ready') == '1');
 		});
-	}
-
-	$('#aiplanClass').on('change', function () {
-		$('#aiplanResultCard').hide();
-		var $opt = $('#aiplanClass option:selected');
-		if (($opt.data('has-cache') == '1') && $opt.val()) analyze(false);
 	});
-	$('#btnAnalyzeCurriculum').on('click', function () { analyze(false); });
+	$('#btnClearClasses').on('click', function () {
+		$('.aiplan-class-check').prop('checked', false);
+	});
+	$('#btnAnalyzeCurriculum').on('click', function () { queueAnalyze(false); });
 	$('#btnForceAnalyze').on('click', function () {
-		if (!confirm('Re-run AI and overwrite cache? This can take several minutes.')) return;
-		analyze(true);
+		if (!confirm('Queue re-analyse for selected classes? This runs in the background one-by-one and may take a while.')) return;
+		queueAnalyze(true);
 	});
 })(jQuery);
 </script>
