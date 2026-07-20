@@ -6,7 +6,7 @@ use CodeIgniter\Model;
 class CourseModel extends Model
 {
 	protected $table="courses";
-	protected $allowedFields = ["school_id","title","code","category","credit","marks","created_by"];
+	protected $allowedFields = ["school_id","title","code","category","credit","marks","program_type","create_source","created_by"];
 	protected $useTimestamps = true;
 	protected $primaryKey = 'id';
 	protected $createdField  = 'created_at';

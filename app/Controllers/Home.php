@@ -1708,6 +1708,27 @@ public function testEmail()
 		}
 	}
 
+	private function ensureCoursesMetaSchema(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('courses')) {
+			$done = true;
+			return;
+		}
+		$fields = $db->getFieldNames('courses');
+		if (!in_array('program_type', $fields, true)) {
+			$db->query("ALTER TABLE `courses` ADD COLUMN `program_type` varchar(16) NOT NULL DEFAULT 'tvet' AFTER `marks`");
+		}
+		if (!in_array('create_source', $fields, true)) {
+			$db->query("ALTER TABLE `courses` ADD COLUMN `create_source` varchar(16) NOT NULL DEFAULT 'manual' AFTER `program_type`");
+		}
+		$done = true;
+	}
+
 	private function ensureAcademicPlansSchema(): void
 	{
 		static $done = false;
@@ -3026,6 +3047,7 @@ public function attendanceCard()
 	public function add_course()
 	{
 		$this->_preset(1, 3);
+		$this->ensureCoursesMetaSchema();
 		$data = $this->data;
 		$faculty = new FacultyModel();
 		$staffMdl = new StaffModel();
@@ -3045,10 +3067,25 @@ public function attendanceCard()
 			->orderBy('classes.title', 'ASC')
 			->get()->getResultArray();
 
-		$data['courses'] = $courseModel->select("courses.id,courses.title,courses.code,courses.marks,courses.credit,cs.title as category")
+		$data['courses'] = $courseModel->select("courses.id,courses.title,courses.code,courses.marks,courses.credit,courses.program_type,courses.create_source,cs.title as category")
 				->join("course_category cs", "cs.id=courses.category")
 				->where("courses.school_id", $school_id)
+				->orderBy('courses.title', 'ASC')
 				->get()->getResultArray();
+
+		$aiCodeMeta = $this->buildAiCourseCodeMeta($school_id, $yearId);
+		$assignmentTypes = $this->courseAssignmentProgramTypes($school_id, $yearId);
+		$coursesGrouped = ['tvet' => [], 'reb' => []];
+		foreach ($data['courses'] as &$courseRow) {
+			$meta = $this->classifyCourseProgramAndSource($courseRow, $aiCodeMeta, $assignmentTypes);
+			$courseRow['program_type'] = $meta['program_type'];
+			$courseRow['create_source'] = $meta['create_source'];
+			$bucket = ($meta['program_type'] === 'reb') ? 'reb' : 'tvet';
+			$coursesGrouped[$bucket][] = $courseRow;
+		}
+		unset($courseRow);
+		$data['courses_grouped'] = $coursesGrouped;
+
 		$data['faculty'] = $faculty->get()->getResultArray();
 		$data['categories'] = $CourseCategory->where("school_id", $school_id)->get()->getResultArray();
 		$data['staffs'] = $staffMdl->where("school_id", $this->session->get("soma_school_id"))->get()->getResultArray();
@@ -3118,6 +3155,108 @@ public function attendanceCard()
 		$data['page'] = "add_course";
 		$data['content'] = view("pages/add_course", $data);
 		return view('main', $data);
+	}
+
+	/**
+	 * @return array<string,array{program_type:string,from_ai:bool}>
+	 */
+	private function buildAiCourseCodeMeta(int $schoolId, int $yearId): array
+	{
+		$out = [];
+		if ($yearId <= 0) {
+			return $out;
+		}
+		$rows = (new AcademicAiAnalysisModel())
+			->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->findAll();
+		foreach ($rows as $row) {
+			$prog = strtolower(trim((string) ($row['program_type'] ?? 'tvet')));
+			if ($prog !== 'reb') {
+				$prog = 'tvet';
+			}
+			$decoded = json_decode($row['analysis_json'] ?? '', true);
+			$modules = is_array($decoded['modules'] ?? null) ? $decoded['modules'] : [];
+			foreach ($modules as $m) {
+				$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
+				if ($code !== '') {
+					$out[$code] = ['program_type' => $prog, 'from_ai' => true];
+				}
+			}
+		}
+		return $out;
+	}
+
+	/** @return array<int,list<int>> course_id => faculty types from assignments */
+	private function courseAssignmentProgramTypes(int $schoolId, int $yearId): array
+	{
+		$db = \Config\Database::connect();
+		$sql = "SELECT cr.course, f.type AS faculty_type
+			FROM course_records cr
+			INNER JOIN classes c ON c.id = cr.class
+			INNER JOIN departments d ON d.id = c.department
+			INNER JOIN faculty f ON f.id = d.faculty_id
+			WHERE c.school_id = ?";
+		$params = [$schoolId];
+		if ($yearId > 0) {
+			$sql .= " AND cr.year = ?";
+			$params[] = $yearId;
+		}
+		$rows = $db->query($sql, $params)->getResultArray();
+		$out = [];
+		foreach ($rows as $r) {
+			$cid = (int) ($r['course'] ?? 0);
+			if ($cid <= 0) {
+				continue;
+			}
+			$out[$cid][] = (int) ($r['faculty_type'] ?? 1);
+		}
+		return $out;
+	}
+
+	/**
+	 * @param array<string,array{program_type:string,from_ai:bool}> $aiCodeMeta
+	 * @param array<int,list<int>> $assignmentTypes
+	 * @return array{program_type:string,create_source:string}
+	 */
+	private function classifyCourseProgramAndSource(array $course, array $aiCodeMeta, array $assignmentTypes): array
+	{
+		$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($course['code'] ?? ''));
+		$storedProg = strtolower(trim((string) ($course['program_type'] ?? '')));
+		$storedSource = strtolower(trim((string) ($course['create_source'] ?? '')));
+		$program = ($storedProg === 'reb') ? 'reb' : 'tvet';
+		$source = ($storedSource === 'ai') ? 'ai' : 'manual';
+
+		if ($code !== '' && isset($aiCodeMeta[$code])) {
+			$source = 'ai';
+			$program = ($aiCodeMeta[$code]['program_type'] === 'reb') ? 'reb' : 'tvet';
+		}
+
+		$cid = (int) ($course['id'] ?? 0);
+		if ($cid > 0 && isset($assignmentTypes[$cid])) {
+			$types = array_values(array_unique(array_map('intval', $assignmentTypes[$cid])));
+			if (in_array(2, $types, true) && !in_array(1, $types, true)) {
+				$program = 'reb';
+			} elseif (in_array(1, $types, true) && !in_array(2, $types, true)) {
+				$program = 'tvet';
+			}
+		} elseif ($source === 'manual' && $code !== '' && preg_match('/^(SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3}$/', $code)) {
+			$program = 'tvet';
+		}
+
+		if ($cid > 0 && ($source !== $storedSource || $program !== $storedProg)) {
+			try {
+				$this->ensureCoursesMetaSchema();
+				(new CourseModel())->update($cid, [
+					'program_type' => $program,
+					'create_source' => $source,
+				]);
+			} catch (\Throwable $e) {
+				// display-only fallback
+			}
+		}
+
+		return ['program_type' => $program, 'create_source' => $source];
 	}
 
 	/**
@@ -3286,11 +3425,16 @@ public function attendanceCard()
 	public function smart_create_courses()
 	{
 		$this->_preset(1, 3);
+		$this->ensureCoursesMetaSchema();
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$raw = $this->request->getPost('courses');
 		$courses = is_string($raw) ? json_decode($raw, true) : $raw;
 		if (!is_array($courses) || $courses === []) {
 			return $this->response->setJSON(['error' => 'No courses selected']);
+		}
+		$programType = strtolower(trim((string) $this->request->getPost('program_type')));
+		if ($programType !== 'reb') {
+			$programType = 'tvet';
 		}
 
 		$courseMdl = new CourseModel();
@@ -3337,6 +3481,8 @@ public function attendanceCard()
 						'category' => $catId,
 						'credit' => $credit,
 						'marks' => $marks > 0 ? $marks : 10,
+						'program_type' => $programType,
+						'create_source' => 'ai',
 						'created_by' => (int) $this->session->get('soma_id'),
 					]);
 					$courseId = (int) $courseMdl->getInsertID();
@@ -5267,11 +5413,16 @@ public function attendanceCard()
 	public function manipulate_course()
 	{
 		$this->_preset();
+		$this->ensureCoursesMetaSchema();
 		$courseModel = new CourseModel();
 		$courseId = $this->request->getPost("courseId") ? $this->request->getPost("courseId") : 0;
 		$credit = $this->request->getPost("credit");
 		$marks = $this->request->getPost("marks");
-		// Marks = hours/week × 10 when marks empty
+		$programType = strtolower(trim((string) $this->request->getPost('program_type')));
+		if ($programType !== 'reb') {
+			$programType = 'tvet';
+		}
+		// Marks = credit × 10 when marks empty
 		if (($marks === null || $marks === '') && is_numeric($credit)) {
 			$marks = (int) round(((float) $credit) * 10);
 		}
@@ -5284,6 +5435,8 @@ public function attendanceCard()
 					"credit" => $credit,
 					"teacher_id" => $this->request->getPost("teacher"),
 					"marks" => $marks,
+					"program_type" => $programType,
+					"create_source" => 'manual',
 					"created_by" => $this->session->get("soma_id"));
 		} else {
 			$data = array(

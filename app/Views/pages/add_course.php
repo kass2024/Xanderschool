@@ -6,8 +6,32 @@
  * @var array $categories
  * @var array $staffs
  * @var array $smart_by_class
+ * @var array $courses_grouped
  */
 $smartByClass = $smart_by_class ?? [];
+$coursesGrouped = $courses_grouped ?? ['tvet' => [], 'reb' => []];
+$renderCourseRows = static function (array $rows): string {
+	$html = '';
+	foreach ($rows as $course) {
+		$titleEsc = htmlspecialchars((string) ($course['title'] ?? ''), ENT_QUOTES, 'UTF-8');
+		$source = (($course['create_source'] ?? '') === 'ai') ? 'ai' : 'manual';
+		$sourceLabel = $source === 'ai' ? 'AI' : 'Manual';
+		$sourceClass = $source === 'ai' ? 'source-ai' : 'source-manual';
+		$html .= '<tr>'
+			. '<td>' . htmlspecialchars((string) ($course['title'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td>' . htmlspecialchars((string) ($course['code'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td>' . htmlspecialchars((string) ($course['category'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td><span class="course-source-badge ' . $sourceClass . '">' . $sourceLabel . '</span></td>'
+			. '<td>' . htmlspecialchars((string) ($course['credit'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td>' . htmlspecialchars((string) ($course['marks'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td>'
+			. "<label class='typcn typcn-document-add text-primary link' data-id='" . (int) ($course['id'] ?? 0) . "' data-title='" . $titleEsc . "' data-toggle='modal' data-target='#assignModal'>" . lang('app.assign') . "</label>&nbsp;&nbsp;"
+			. "<label class='typcn typcn-edit text-success link' data-toggle='modal' data-target='#editCourseModal' data-id='" . (int) ($course['id'] ?? 0) . "'>" . lang('app.edit') . "</label>&nbsp;&nbsp;"
+			. "<label class='typcn typcn-delete text-danger link' data-title='" . $titleEsc . "' data-toggle='delete' data-target='" . (int) ($course['id'] ?? 0) . "' data-href='delete_course/" . (int) ($course['id'] ?? 0) . "'>" . lang('app.del') . "</label>"
+			. '</td></tr>';
+	}
+	return $html;
+};
 $classesByType = ['1' => [], '2' => []];
 foreach ($classes as $c) {
 	$ft = (string) ((int) ($c['faculty_type'] ?? $c['type'] ?? 1));
@@ -85,6 +109,23 @@ foreach ($classes as $c) {
 	.smart-badge.ok { background:#dcfce7; color:#15803d; }
 	.smart-actions { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.65rem; }
 	.credit-input, .marks-input { width:72px; display:inline-block; }
+	.course-group-panel {
+		border:1px solid #e2e8f0; border-radius:12px; margin:12px 10px 0; background:#fff; overflow:hidden;
+	}
+	.course-group-head {
+		display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap;
+		padding:.85rem 1rem; background:#f8fafc; border-bottom:1px solid #e2e8f0;
+	}
+	.course-group-head h4 { margin:0; font-size:1rem; color:#0f172a; }
+	.course-group-meta { color:#64748b; font-size:.82rem; }
+	.course-group-body { padding:.5rem 1rem 1rem; }
+	.course-source-badge {
+		display:inline-block; font-size:.72rem; font-weight:700; padding:.15rem .45rem; border-radius:999px;
+	}
+	.course-source-badge.source-ai { background:#dbeafe; color:#1d4ed8; }
+	.course-source-badge.source-manual { background:#f3f4f6; color:#374151; }
+	.prog-badge { display:inline-block; font-size:.72rem; font-weight:700; padding:.15rem .45rem; border-radius:999px; background:#dcfce7; color:#15803d; }
+	.prog-badge.reb { background:#fef3c7; color:#b45309; }
 </style>
 
 <div class="smart-wrap" id="smartWrap">
@@ -101,6 +142,7 @@ foreach ($classes as $c) {
 
 <div class="boxed" id="createCourseDiv" style="display: none;">
 <form action="<?= base_url('manipulate_course'); ?>" class="validate autoSubmit" id="manualCourseForm">
+	<input type="hidden" name="program_type" id="manualProgramType" value="tvet">
 	<table class="table table-striped table-bordered" style="margin: 0">
 		<tbody>
 <tr>
@@ -149,44 +191,54 @@ foreach ($classes as $c) {
 </form>
 </div>
 
-<div class="boxd" style="margin-top: 10px;">
-	<table class="table table-hover table-striped table-bordered" id="example" style="width:100%">
-		<thead>
-		<tr>
-			<th><?= lang("app.title"); ?></th>
+<?php
+$groupDefs = [
+	'tvet' => [
+		'title' => lang('app.wda') . ' / RTB (TVET)',
+		'table_id' => 'courseTableRtb',
+		'badge_class' => 'prog-badge',
+	],
+	'reb' => [
+		'title' => lang('app.reb') . ' (REB)',
+		'table_id' => 'courseTableReb',
+		'badge_class' => 'prog-badge reb',
+	],
+];
+foreach ($groupDefs as $progKey => $groupDef):
+	$rows = $coursesGrouped[$progKey] ?? [];
+	$aiCount = count(array_filter($rows, static function ($c) {
+		return ($c['create_source'] ?? '') === 'ai';
+	}));
+	$manualCount = count($rows) - $aiCount;
+?>
+<div class="course-group-panel">
+	<div class="course-group-head">
+		<div>
+			<h4><?= esc($groupDef['title']); ?></h4>
+			<div class="course-group-meta"><?= count($rows); ?> course(s) · <?= $manualCount; ?> manual · <?= $aiCount; ?> AI</div>
+		</div>
+		<span class="<?= esc($groupDef['badge_class']); ?>"><?= strtoupper($progKey === 'reb' ? 'REB' : 'RTB'); ?></span>
+	</div>
+	<div class="course-group-body">
+		<table class="table table-hover table-striped table-bordered course-list-table" id="<?= esc($groupDef['table_id']); ?>" style="width:100%">
+			<thead>
+			<tr>
+				<th><?= lang("app.title"); ?></th>
 				<th><?= lang("app.code"); ?></th>
 				<th><?= lang("app.category"); ?></th>
+				<th>Source</th>
 				<th><?= lang("app.credits"); ?></th>
 				<th><?= lang("app.marks"); ?></th>
 				<th><?= lang("app.use"); ?></th>
-		</tr>
-		</thead>
-		<tbody>
-		<?php
-		$i=1;
-		foreach ($courses as $course) {
-			$titleEsc = htmlspecialchars($course['title'], ENT_QUOTES, 'UTF-8');
-			echo "<tr>
-
-<td >" . $course['title'] . "</td>
-<td>" . $course['code'] . "</td>
-<td>" . $course['category'] . "</td>
-<td>" . $course['credit'] . "</td>
-<td>" . $course['marks'] . "</td>
-<td>
-<label class='typcn typcn-document-add text-primary link' data-id='" . $course['id'] . "' data-title='" . $titleEsc . "' data-toggle='modal' data-target='#assignModal'>" . lang("app.assign") . "</label>&nbsp;&nbsp;
-<label class='typcn typcn-edit text-success link'  data-toggle='modal' data-target='#editCourseModal' data-id='" . $course['id'] . "'>" . lang("app.edit") . "</label>&nbsp;&nbsp;
-<label class='typcn typcn-delete text-danger link' data-title='" . $titleEsc . "' data-toggle='delete'
-																		   data-target='" . $course['id'] . "'  data-href='delete_course/" . $course['id'] . "'>" . lang("app.del") . "</label>
-</td>
-</tr>";
-			$i++;
-		}
-		?>
-		</tbody>
-	</table>
-
+			</tr>
+			</thead>
+			<tbody>
+			<?= $renderCourseRows($rows); ?>
+			</tbody>
+		</table>
+	</div>
 </div>
+<?php endforeach; ?>
 
 <style>
 	.course-type-pick { text-align: left; white-space: normal; }
@@ -197,7 +249,24 @@ foreach ($classes as $c) {
 		var smartByClass = <?= json_encode($smartByClass, JSON_UNESCAPED_UNICODE); ?>;
 		var currentType = null;
 
+		function initCourseTable(selector) {
+			var $table = $(selector);
+			if (!$table.length) return;
+			if ($.fn.DataTable && $.fn.DataTable.isDataTable($table)) {
+				$table.DataTable().destroy();
+			}
+			$table.removeClass('dataTable dtr-inline');
+			$table.DataTable({
+				responsive: true,
+				pageLength: 25,
+				lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+				order: [[0, 'asc']]
+			});
+		}
+
 		$('#createCourseDiv').hide();
+		initCourseTable('#courseTableRtb');
+		initCourseTable('#courseTableReb');
 
 		var $typeModal = $("#chooseCourseTypeModal");
 		var $smartTypeModal = $("#smartTypeModal");
@@ -210,6 +279,7 @@ foreach ($classes as $c) {
 			currentType = String(value);
 			$('#credits').text("<?= lang("app.credits"); ?>");
 			$('#creditDiv').show();
+			$('#manualProgramType').val(currentType === '2' ? 'reb' : 'tvet');
 			$('#createCourseDiv').show();
 			$('#smartWrap').removeClass('is-on');
 			$typeModal.modal("hide");
@@ -338,6 +408,7 @@ foreach ($classes as $c) {
 				dataType: 'json',
 				data: {
 					class_id: classId,
+					program_type: currentType === '2' ? 'reb' : 'tvet',
 					courses: JSON.stringify(courses)
 				}
 			}).done(function (res) {
