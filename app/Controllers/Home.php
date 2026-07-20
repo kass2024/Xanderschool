@@ -1922,6 +1922,7 @@ public function testEmail()
 		$classId = (int) $this->request->getPost('class_id');
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
 		$force = (int) $this->request->getPost('force') === 1;
+		$createdBy = (int) $this->session->get('soma_id');
 
 		// Release session lock so progress polling can read updates while this runs
 		if (session_status() === PHP_SESSION_ACTIVE) {
@@ -1937,7 +1938,7 @@ public function testEmail()
 		}
 
 		try {
-			return $this->runAiAnalyzeCurriculum($schoolId, $classId, $yearId, $force, $ctx);
+			return $this->runAiAnalyzeCurriculum($schoolId, $classId, $yearId, $force, $ctx, $createdBy);
 		} catch (\Throwable $e) {
 			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Analysis failed: ' . $e->getMessage(), ['status' => 'error']);
 			log_message('error', 'ai_analyze_curriculum: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
@@ -1969,7 +1970,7 @@ public function testEmail()
 	/**
 	 * @param array<string,mixed> $ctx
 	 */
-	private function runAiAnalyzeCurriculum(int $schoolId, int $classId, int $yearId, bool $force, array $ctx)
+	private function runAiAnalyzeCurriculum(int $schoolId, int $classId, int $yearId, bool $force, array $ctx, int $createdBy = 0)
 	{
 		$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Checking uploaded documents…', ['status' => 'running']);
 
@@ -2041,7 +2042,9 @@ public function testEmail()
 				}
 				$incomplete = $stats['lo_count'] === 0 && ($pkgPdfCount >= 3 || count($curricula) >= 3);
 				$hoursMissing = $stats['chronogram_slots'] === 0 && $stats['module_count'] > 0;
-				if (!$incomplete && !$hoursMissing) {
+				// Partial extract: some LO but not all modules — continue from resume
+				$partialResume = $stats['lo_count'] > 0 && $stats['lo_count'] < max(3, (int) ($stats['module_count'] * 0.5));
+				if (!$incomplete && !$hoursMissing && !$partialResume) {
 					$this->writeAiProgress($schoolId, $classId, $yearId, 100, 'Loaded from database cache', ['status' => 'done', 'cached' => true]);
 					return $this->response->setJSON([
 						'success' => 'Loaded from database cache (no AI call)',
@@ -2070,9 +2073,33 @@ public function testEmail()
 			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Gemini API key missing', ['status' => 'error']);
 			return $this->response->setJSON(['error' => 'Gemini API key missing on server']);
 		}
-		$ai->onProgress(function (int $pct, string $action, array $meta = []) use ($schoolId, $classId, $yearId) {
+
+		// Resume LO/IC from DB + in-progress snapshot (survives proxy timeout)
+		$resumeModules = [];
+		if ($cached && !empty($cached['analysis_json'])) {
+			$prev = json_decode($cached['analysis_json'], true);
+			if (is_array($prev['modules'] ?? null)) {
+				$resumeModules = $prev['modules'];
+			}
+		}
+		$progressSnap = $this->readAiProgress($schoolId, $classId, $yearId);
+		if (is_array($progressSnap['partial_analysis']['modules'] ?? null)) {
+			$resumeModules = $this->mergeResumeModules($resumeModules, $progressSnap['partial_analysis']['modules']);
+		}
+
+		$lastPersistAt = 0;
+		$ai->onProgress(function (int $pct, string $action, array $meta = []) use ($schoolId, $classId, $yearId, $sourceHash, &$cached, &$lastPersistAt, $createdBy) {
 			$meta['status'] = $meta['status'] ?? 'running';
 			$this->writeAiProgress($schoolId, $classId, $yearId, $pct, $action, $meta);
+			// Persist partial every ~3 modules or after chronogram map so timeout keeps work
+			$partial = $meta['partial_analysis'] ?? null;
+			$done = (int) ($meta['modules_done'] ?? 0);
+			$shouldPersist = is_array($partial) && !empty($partial['modules'])
+				&& ($done === 0 || $done % 3 === 0 || $pct >= 88 || ($done - $lastPersistAt) >= 3);
+			if ($shouldPersist) {
+				$lastPersistAt = $done;
+				$this->persistPartialAnalysis($schoolId, $classId, $yearId, $sourceHash, $partial, $cached, $createdBy);
+			}
 		});
 
 		// Extra curriculum files: additional uploads (General/Specific/CCM PDFs) + ZIP package folder
@@ -2125,7 +2152,7 @@ public function testEmail()
 			'curriculum_files' => count($curricula),
 			'chronogram_files' => count($chronograms),
 		]);
-		$analysis = $ai->analyzeCurriculum($curriculum, $chronogram, $ctx, $extraFiles, $extraChronograms);
+		$analysis = $ai->analyzeCurriculum($curriculum, $chronogram, $ctx, $extraFiles, $extraChronograms, $resumeModules);
 		if ($analysis === null) {
 			$err = 'AI analysis failed: ' . $ai->lastError();
 			$this->writeAiProgress($schoolId, $classId, $yearId, 0, $err, ['status' => 'error']);
@@ -2150,7 +2177,7 @@ public function testEmail()
 			'source_text' => $sourceText,
 			'chronogram_text' => $chronogramText,
 			'analysis_json' => json_encode($analysis, JSON_UNESCAPED_UNICODE),
-			'created_by' => (int) $this->session->get('soma_id'),
+			'created_by' => $createdBy ?: (int) $this->session->get('soma_id'),
 		];
 		if ($cached) {
 			$cacheMdl->update($cached['id'], $payload);
@@ -2206,6 +2233,77 @@ public function testEmail()
 		if (function_exists('clearstatcache')) {
 			clearstatcache(true, $path);
 		}
+	}
+
+	/**
+	 * Save in-progress analysis so proxy timeout does not lose LO/IC work.
+	 *
+	 * @param array<string,mixed> $partial
+	 * @param array<string,mixed>|null $cached
+	 */
+	private function persistPartialAnalysis(int $schoolId, int $classId, int $yearId, string $sourceHash, array $partial, &$cached, int $createdBy = 0): void
+	{
+		try {
+			$modules = is_array($partial['modules'] ?? null) ? $partial['modules'] : [];
+			if ($modules === []) {
+				return;
+			}
+			$stats = $this->countAnalysisStats($partial);
+			$cacheMdl = new AcademicAiAnalysisModel();
+			$payload = [
+				'school_id' => $schoolId,
+				'class_id' => $classId,
+				'academic_year' => $yearId,
+				'program_type' => $partial['program_type'] ?? 'tvet',
+				'source_hash' => $sourceHash,
+				'module_count' => count($modules),
+				'extract_meta' => json_encode([
+					'partial' => true,
+					'lo_count' => $stats['lo_count'],
+					'ic_count' => $stats['ic_count'],
+					'module_count' => $stats['module_count'],
+					'saved_at' => date('c'),
+				], JSON_UNESCAPED_UNICODE),
+				'analysis_json' => json_encode($partial, JSON_UNESCAPED_UNICODE),
+				'created_by' => $createdBy,
+			];
+			if ($cached && !empty($cached['id'])) {
+				$cacheMdl->update($cached['id'], $payload);
+			} else {
+				$id = $cacheMdl->insert($payload);
+				$cached = ['id' => $id];
+			}
+		} catch (\Throwable $e) {
+			log_message('error', 'persistPartialAnalysis: ' . $e->getMessage());
+		}
+	}
+
+	/**
+	 * Prefer modules that already have LO/IC when merging resume sources.
+	 *
+	 * @param list<array<string,mixed>> $base
+	 * @param list<array<string,mixed>> $extra
+	 * @return list<array<string,mixed>>
+	 */
+	private function mergeResumeModules(array $base, array $extra): array
+	{
+		$byCode = [];
+		foreach (array_merge($base, $extra) as $m) {
+			if (!is_array($m)) {
+				continue;
+			}
+			$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
+			if ($code === '') {
+				continue;
+			}
+			$lo = is_array($m['learning_outcomes'] ?? null) ? count($m['learning_outcomes']) : 0;
+			$prevLo = isset($byCode[$code]) && is_array($byCode[$code]['learning_outcomes'] ?? null)
+				? count($byCode[$code]['learning_outcomes']) : 0;
+			if (!isset($byCode[$code]) || $lo > $prevLo) {
+				$byCode[$code] = $m;
+			}
+		}
+		return array_values($byCode);
 	}
 
 	/** @return array<string,mixed>|null */

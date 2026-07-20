@@ -156,6 +156,7 @@ include __DIR__ . '/_nav.php';
 	var progressTimer = null;
 	var analyzing = false;
 	var liveCurrentModule = '';
+	var resumeAttempts = 0;
 
 	function status(msg, err) { $('#aiplanStatus').css('color', err ? '#b91c1c' : '#64748b').text(msg || ''); }
 	function currentClassId() { return parseInt($('#aiplanClass').val() || '0', 10) || 0; }
@@ -343,11 +344,14 @@ include __DIR__ . '/_nav.php';
 		if ($opt.data('has-chr') != '1') { status('Upload chronogram in School Settings first.', true); return; }
 
 		analyzing = true;
-		analysis = { modules: [], program_type: 'tvet', _partial: true };
+		if (!force) resumeAttempts = 0;
+		analysis = analysis && analysis.modules && analysis.modules.length
+			? analysis
+			: { modules: [], program_type: 'tvet', _partial: true };
 		renderModules(true);
 		showProgress(true);
-		setProgress(0, force ? 'Starting re-analysis…' : 'Starting…');
-		status(force ? 'Smart analysis running — please keep this page open.' : 'Loading…');
+		setProgress(0, force ? (resumeAttempts ? 'Resuming analysis…' : 'Starting re-analysis…') : 'Starting…');
+		status(force || resumeAttempts ? 'Smart analysis running — please keep this page open.' : 'Loading…');
 		startProgressPoll(cid);
 
 		$.ajax({
@@ -359,6 +363,7 @@ include __DIR__ . '/_nav.php';
 		}).done(function (res) {
 			analyzing = false;
 			liveCurrentModule = '';
+			resumeAttempts = 0;
 			stopProgressPoll();
 			if (res && res.error) {
 				setProgress(0, res.error);
@@ -390,10 +395,21 @@ include __DIR__ . '/_nav.php';
 			analyzing = false;
 			liveCurrentModule = '';
 			stopProgressPoll();
+			var timedOut = xhr.status === 504 || xhr.status === 502 || xhr.status === 0;
+			// Keep live modules visible; auto-resume from DB partial (up to 4 times)
+			if (timedOut && resumeAttempts < 4) {
+				resumeAttempts++;
+				status('Proxy timed out — progress saved. Auto-resuming (' + resumeAttempts + '/4)…', false);
+				setProgress(Math.max(5, parseInt($('#aiplanPct').text(), 10) || 5), 'Resuming from saved progress…');
+				setTimeout(function () { analyze(true); }, 1500);
+				return;
+			}
 			var msg = (xhr.responseJSON && xhr.responseJSON.error)
-				|| (xhr.status === 504 || xhr.status === 502 ? 'Server timed out while analysing. Click Re-analyse again — progress is saved where possible.' : null)
-				|| (xhr.status === 0 ? 'Connection lost during analysis. Try Re-analyse again.' : null)
+				|| (timedOut ? 'Server timed out. Partial progress was saved — click Re-analyse with AI to continue from where it stopped.' : null)
 				|| ('Analysis failed (HTTP ' + (xhr.status || '?') + ')');
+			if (analysis && analysis.modules && analysis.modules.length) {
+				renderModules(true);
+			}
 			setProgress(0, msg);
 			showProgress(false);
 			status(msg, true);

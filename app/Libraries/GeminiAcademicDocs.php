@@ -98,9 +98,17 @@ class GeminiAcademicDocs
 	 * @param array $dbContext
 	 * @param list<array{path:string,original?:string}> $extraFiles additional module PDFs
 	 * @param list<array{path:string,original?:string}> $extraChronograms additional chronogram files
+	 * @param list<array<string,mixed>> $resumeModules previously extracted modules (skip re-doing LO/IC)
 	 * @return array|null
 	 */
-	public function analyzeCurriculum(array $curriculum, ?array $chronogram, array $dbContext, array $extraFiles = [], array $extraChronograms = []): ?array
+	public function analyzeCurriculum(
+		array $curriculum,
+		?array $chronogram,
+		array $dbContext,
+		array $extraFiles = [],
+		array $extraChronograms = [],
+		array $resumeModules = []
+	): ?array
 	{
 		$this->reportProgress(0, 'Preparing curriculum package…');
 		$packFiles = $this->expandCurriculumPackage($curriculum, $extraFiles);
@@ -437,9 +445,30 @@ class GeminiAcademicDocs
 
 		// Pass 2 — LO/IC one module at a time with PDF vision when available
 		$detailed = [];
+		// Resume from previous partial extract (survives proxy timeout)
+		foreach ($resumeModules as $rm) {
+			if (!is_array($rm)) {
+				continue;
+			}
+			$rc = DocumentTextExtractor::cleanModuleCode((string) ($rm['code'] ?? ''));
+			$rLos = is_array($rm['learning_outcomes'] ?? null) ? $rm['learning_outcomes'] : [];
+			if ($rc !== '' && $rLos !== []) {
+				$detailed[$rc] = $rm;
+			}
+		}
 		$batchSize = 1;
 		$moduleCount = count($modules);
-		$this->reportProgress(28, 'Extracting Learning Outcomes & Indicative Contents…', ['modules' => $moduleCount]);
+		$resumed = count($detailed);
+		$this->reportProgress(28, 'Extracting Learning Outcomes & Indicative Contents…'
+			. ($resumed > 0 ? " (resuming {$resumed} done)" : ''), [
+			'modules' => $moduleCount,
+			'modules_total' => $moduleCount,
+			'modules_done' => $resumed,
+			'partial_analysis' => $this->buildPartialSnapshot(
+				$inventoryMeta,
+				$this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly)
+			),
+		]);
 		for ($i = 0, $n = $moduleCount; $i < $n; $i += $batchSize) {
 			$batch = array_slice($modules, $i, $batchSize);
 			$done = min($i + $batchSize, $n);
@@ -450,6 +479,22 @@ class GeminiAcademicDocs
 			$m = $batch[0];
 			$code = DocumentTextExtractor::cleanModuleCode((string) ($m['code'] ?? ''));
 			$title = trim((string) ($m['title'] ?? ''));
+
+			// Skip modules already extracted (resume after timeout)
+			if ($code !== '' && isset($detailed[$code]) && !empty($detailed[$code]['learning_outcomes'])) {
+				$partialMerged = $this->mergeModulesPartial($modules, $detailed, $chronoTitles, $weeklyFromTextEarly);
+				$this->reportProgress($pct, 'Skipped (cached) LO/IC (' . $done . '/' . $n . '): ' . $code, [
+					'batch' => (int) floor($i / $batchSize) + 1,
+					'done' => $done,
+					'total' => $n,
+					'modules_total' => $n,
+					'modules_done' => $done,
+					'current_module' => $code,
+					'partial_analysis' => $this->buildPartialSnapshot($inventoryMeta, $partialMerged),
+				]);
+				continue;
+			}
+
 			$this->reportProgress($pct, 'Extracting LO/IC (' . $done . '/' . $n . '): ' . implode(', ', array_filter($labels)), [
 				'batch' => (int) floor($i / $batchSize) + 1,
 				'done' => max(0, $done - 1),
@@ -502,12 +547,14 @@ MODULE: {$code} — {$title}
 
 ----- MODULE TEXT -----
 PROMPT;
-			// Call AI when text parse is empty OR thin (enrich with vision)
-			$needAi = $loCount === 0 || $this->countIndicative($got) < 2;
+			// Call AI only when text parse found nothing usable (keeps analyse under proxy timeout)
+			$needAi = $loCount === 0 && $this->countIndicative($got) === 0;
 			if ($needAi) {
 				$detailParts = [];
 				$pdfAttached = false;
-				if (isset($pdfByCode[$code]['bytes']) && strlen((string) $pdfByCode[$code]['bytes']) <= 10 * 1024 * 1024) {
+				$bodyLen = mb_strlen($body, 'UTF-8');
+				// Prefer small dedicated module PDF only when text is sparse (vision is slow)
+				if ($bodyLen < 800 && isset($pdfByCode[$code]['bytes']) && strlen((string) $pdfByCode[$code]['bytes']) <= 4 * 1024 * 1024) {
 					$detailParts[] = [
 						'inlineData' => [
 							'mimeType' => 'application/pdf',
@@ -515,11 +562,10 @@ PROMPT;
 						],
 					];
 					$pdfAttached = true;
-				} else {
-					// Fuzzy PDF match by compatible code
+				} elseif ($bodyLen < 800) {
 					foreach ($pdfByCode as $pk => $pf) {
 						if ($this->moduleCodesCompatible($code, (string) $pk) && !empty($pf['bytes'])
-							&& strlen((string) $pf['bytes']) <= 10 * 1024 * 1024) {
+							&& strlen((string) $pf['bytes']) <= 4 * 1024 * 1024) {
 							$detailParts[] = [
 								'inlineData' => [
 									'mimeType' => 'application/pdf',
@@ -531,41 +577,13 @@ PROMPT;
 						}
 					}
 				}
-				if (!$pdfAttached && $primaryPdf && !empty($primaryPdf['bytes'])
-					&& strlen((string) $primaryPdf['bytes']) <= 10 * 1024 * 1024
-					&& mb_strlen($body, 'UTF-8') < 2500) {
-					$detailParts[] = [
-						'inlineData' => [
-							'mimeType' => 'application/pdf',
-							'data' => base64_encode((string) $primaryPdf['bytes']),
-						],
-					];
-					$pdfAttached = true;
-				}
 				$fullPrompt = $detailPrompt . "\n" . mb_substr($this->safeUtf8($body), 0, 28000, 'UTF-8');
-				$detail = $this->generateJson($fullPrompt, $detailParts, 16384);
+				$detail = $this->generateJson($fullPrompt, $detailParts, 8192);
 				$aiGot = null;
 				if (is_array($detail) && is_array($detail['modules'][0] ?? null)) {
 					$aiGot = $detail['modules'][0];
 				} elseif (is_array($detail) && is_array($detail['learning_outcomes'] ?? null)) {
 					$aiGot = $detail;
-				}
-				// Retry once with structure PDF if empty
-				if ($this->countIndicative($aiGot ?? []) === 0 && !$pdfAttached && $primaryPdf && !empty($primaryPdf['bytes'])
-					&& strlen((string) $primaryPdf['bytes']) <= 10 * 1024 * 1024) {
-					$retryParts = [[
-						'inlineData' => [
-							'mimeType' => 'application/pdf',
-							'data' => base64_encode((string) $primaryPdf['bytes']),
-						],
-					]];
-					$retryPrompt = $detailPrompt
-						. "\nFind this module inside the attached curriculum PDF and extract ALL LO/IC. If absent, return empty learning_outcomes.\n\nTEXT:\n"
-						. mb_substr($this->safeUtf8($body), 0, 12000, 'UTF-8');
-					$detail = $this->generateJson($retryPrompt, $retryParts, 16384);
-					if (is_array($detail) && is_array($detail['modules'][0] ?? null)) {
-						$aiGot = $detail['modules'][0];
-					}
 				}
 				// Prefer richer of AI vs deterministic
 				if (is_array($aiGot)) {
