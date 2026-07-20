@@ -2223,9 +2223,10 @@ PROMPT
 
 		// Cheap enrichment only: ask for activities/resources/assessment text for existing rows
 		$briefRows = array_slice($local['json']['rows'] ?? [], 0, 80);
-		$prompt = "You enrich a Rwanda TVET Scheme of Work. Keep LO/IC/dates/hours EXACTLY as given.\n"
-			. "For each row, improve ONLY: activities, resources, assessment, place, observation.\n"
-			. "Return ONLY JSON: {\"rows\":[{\"week\":0,\"ic_code\":\"\",\"activities\":\"\",\"resources\":\"\",\"assessment\":\"\",\"place\":\"\",\"observation\":\"\"}]}\n"
+		$prompt = "You enrich a Rwanda TVET Scheme of Work matching the Javascript Fundamentals sample style.\n"
+			. "Keep LO/IC/dates/hours EXACTLY as given.\n"
+			. "For each row, improve ONLY: activities, resources, assessment, place (short phrases like the sample).\n"
+			. "Return ONLY JSON: {\"rows\":[{\"ic_code\":\"\",\"activities\":\"\",\"resources\":\"\",\"assessment\":\"\",\"place\":\"\",\"observation\":\"\"}]}\n"
 			. "ROWS:\n" . json_encode($briefRows, JSON_UNESCAPED_UNICODE);
 		$enriched = $this->generateJson($prompt, [], 4096, 0);
 		if (!is_array($enriched) || empty($enriched['rows']) || !is_array($enriched['rows'])) {
@@ -2238,13 +2239,15 @@ PROMPT
 			if (!is_array($er)) {
 				continue;
 			}
-			$key = strtoupper(trim((string) ($er['ic_code'] ?? ''))) . '|' . (int) ($er['week'] ?? 0);
-			$byKey[$key] = $er;
+			$key = strtoupper(trim((string) ($er['ic_code'] ?? '')));
+			if ($key !== '') {
+				$byKey[$key] = $er;
+			}
 		}
 		$rows = $local['json']['rows'] ?? [];
 		foreach ($rows as &$row) {
-			$key = strtoupper(trim((string) ($row['ic_code'] ?? ''))) . '|' . (int) ($row['week'] ?? 0);
-			if (!isset($byKey[$key])) {
+			$key = strtoupper(trim((string) ($row['ic_code'] ?? '')));
+			if ($key === '' || !isset($byKey[$key])) {
 				continue;
 			}
 			$er = $byKey[$key];
@@ -2256,6 +2259,24 @@ PROMPT
 		}
 		unset($row);
 		$local['json']['rows'] = $rows;
+		if (!empty($local['json']['lo_tables']) && is_array($local['json']['lo_tables'])) {
+			foreach ($local['json']['lo_tables'] as &$tbl) {
+				foreach ($tbl['rows'] as &$tr) {
+					$key = strtoupper(trim((string) ($tr['ic_code'] ?? '')));
+					if ($key === '' || !isset($byKey[$key])) {
+						continue;
+					}
+					$er = $byKey[$key];
+					foreach (['activities', 'resources', 'assessment', 'place', 'observation'] as $f) {
+						if (!empty($er[$f]) && is_string($er[$f])) {
+							$tr[$f] = trim($er[$f]);
+						}
+					}
+				}
+				unset($tr);
+			}
+			unset($tbl);
+		}
 		$local['html'] = $this->fallbackSchemeHtml($local['json'], $dbContext, $programType);
 		$local['from_ai'] = true;
 		$this->lastError = '';
@@ -2263,7 +2284,9 @@ PROMPT
 	}
 
 	/**
-	 * Deterministic full Scheme of Work from cached module LO/IC + chronogram (zero API cost).
+	 * Deterministic Scheme of Work matching the Javascript Fundamentals TVET sample:
+	 * school header → meta table → one body table per Learning Outcome (IC rows) →
+	 * integrated assessment → prepared/verified/approved.
 	 *
 	 * @return array{html:string,json:array,title:string}|null
 	 */
@@ -2282,68 +2305,125 @@ PROMPT
 			return null;
 		}
 
-		$ics = $this->flattenModuleIndicativeContents($module);
+		$loGroups = $this->groupModuleByLearningOutcomes($module);
 		$slots = $this->resolveModuleChronogramSlots($module, $chronogramAnalysis, $code);
-		if ($slots === [] && $ics === []) {
+		if ($loGroups === [] && $slots === []) {
 			$this->lastError = 'No learning outcomes/indicative contents in cache for this module';
 			return null;
 		}
-		if ($slots === []) {
-			// Synthesize weekly slots from total hours (assume ~2h/week)
-			$totalH = (float) ($module['learning_hours'] ?? 0);
-			if ($totalH <= 0 && $ics !== []) {
-				foreach ($ics as $ic) {
-					$totalH += (float) ($ic['hours'] ?? 0);
-				}
+		if ($loGroups === []) {
+			$loGroups = [[
+				'lo_code' => 'LO1',
+				'lo_title' => $titleRaw !== '' ? $titleRaw : 'Module outcomes',
+				'ics' => [[
+					'ic_code' => 'IC1.1',
+					'ic_title' => $titleRaw !== '' ? $titleRaw : 'Module content',
+					'hours' => (float) ($module['learning_hours'] ?? 0) ?: null,
+				]],
+			]];
+		}
+
+		$totalHours = 0.0;
+		foreach ($loGroups as $g) {
+			foreach ($g['ics'] as $ic) {
+				$totalHours += (float) ($ic['hours'] ?? 0);
 			}
-			$weeks = max(1, (int) ceil(max($totalH, count($ics) ?: 1) / 2));
+		}
+		if ($totalHours <= 0) {
+			$totalHours = (float) ($module['learning_hours'] ?? 0);
+		}
+		if ($slots === []) {
+			$weeks = max(count($loGroups), (int) ceil(max($totalHours, 8) / 8));
 			for ($w = 1; $w <= $weeks; $w++) {
 				$slots[] = [
 					'week' => $w,
 					'term' => (int) ceil($w / 12),
 					'date_from' => '',
 					'date_to' => '',
-					'periods' => $totalH > 0 ? round($totalH / $weeks, 1) : 2,
+					'periods' => $totalHours > 0 ? round($totalHours / $weeks, 1) : 4,
 				];
 			}
 		}
 
-		$rows = $this->mapIndicativeContentsToWeeks($ics, $slots, $module, $programType);
+		$built = $this->buildSampleStyleSchemeRows($loGroups, $slots, $module, $programType);
+		$rows = $built['rows'];
+		$loTables = $built['lo_tables'];
 		$termsUsed = [];
-		foreach ($rows as $r) {
-			$t = (int) ($r['term'] ?? 0);
+		foreach ($slots as $s) {
+			$t = (int) ($s['term'] ?? 0);
 			if ($t > 0) {
 				$termsUsed[$t] = $t;
 			}
 		}
+		if ($termsUsed === []) {
+			$termsUsed = [1 => 1, 2 => 2, 3 => 3];
+		}
 		sort($termsUsed);
+
 		$trainer = (string) ($module['teacher_name'] ?? ($dbContext['teacher_name'] ?? ''));
 		$className = trim((string) (($class['level_name'] ?? '') . ' ' . ($class['dept_code'] ?? '') . ' ' . ($class['title'] ?? '')));
 		if ($className === '') {
 			$className = (string) ($class['name'] ?? '');
 		}
+		$rqf = $module['rqf_level'] ?? null;
+		if ($rqf === null || $rqf === '') {
+			if (preg_match('/\b([1-5])\b/', (string) ($class['level_name'] ?? ''), $m)) {
+				$rqf = $m[1];
+			}
+		}
 		$learningHours = $module['learning_hours'] ?? null;
-		if ($learningHours === null || $learningHours === '') {
+		if ($learningHours === null || $learningHours === '' || (float) $learningHours <= 0) {
 			$sum = 0.0;
 			foreach ($rows as $r) {
 				$sum += (float) preg_replace('/[^0-9.]/', '', (string) ($r['duration'] ?? '0'));
 			}
 			$learningHours = $sum > 0 ? round($sum, 1) : '';
 		}
+		$startDate = '';
+		foreach ($slots as $s) {
+			if (!empty($s['date_from'])) {
+				$startDate = $this->formatSchemeDay((string) $s['date_from']);
+				break;
+			}
+		}
+		if ($startDate === '') {
+			$startDate = date('d/m/Y');
+		}
+		$qual = (string) ($chronogramAnalysis['qualification_title'] ?? '');
+		if ($qual === '' && !empty($class['faculty_title'])) {
+			$lvl = $rqf !== null && $rqf !== '' ? (string) $rqf : '';
+			$trade = (string) ($class['department_name'] ?? $class['dept_code'] ?? '');
+			$qual = trim('TVET Certificate ' . ($lvl !== '' ? $this->romanLevel((int) $lvl) . ' ' : '') . 'in ' . $trade);
+		}
+		$sector = (string) ($chronogramAnalysis['sector'] ?? $module['sector'] ?? '');
+		if ($sector === '') {
+			$sector = (string) ($class['faculty_title'] ?? 'ICT AND MULTIMEDIA');
+		}
+		$trade = (string) ($chronogramAnalysis['trade'] ?? $module['trade'] ?? ($class['department_name'] ?? ''));
+		if ($trade === '' && !empty($class['dept_code'])) {
+			$trade = (string) $class['dept_code'];
+		}
+
 		$meta = [
-			'sector' => (string) ($chronogramAnalysis['sector'] ?? $module['sector'] ?? $school['sector'] ?? ''),
-			'trade' => (string) ($chronogramAnalysis['trade'] ?? $module['trade'] ?? ($class['dept_name'] ?? '')),
-			'rqf_level' => (string) ($module['rqf_level'] ?? ($class['level_name'] ?? '')),
-			'school_year' => (string) ($chronogramAnalysis['school_year_label'] ?? ($dbContext['school_year_label'] ?? '')),
-			'terms' => $termsUsed !== [] ? implode(',', $termsUsed) : '1,2,3',
+			'layout' => 'js_fundamentals_v1',
+			'sector' => $sector,
+			'trade' => $trade,
+			'rqf_level' => (string) ($rqf ?? ''),
+			'school_year' => (string) ($chronogramAnalysis['school_year_label'] ?? ($dbContext['academic_year_title'] ?? '')),
+			'terms' => implode(',', array_values($termsUsed)),
 			'module_code' => $code,
 			'module_title' => $titleRaw,
 			'learning_hours' => $learningHours,
+			'number_of_classes' => 1,
+			'date' => $startDate,
 			'class_name' => $className,
 			'trainer' => $trainer,
-			'qualification_title' => (string) ($chronogramAnalysis['qualification_title'] ?? ''),
+			'qualification_title' => $qual,
+			'dos_name' => (string) ($dbContext['dos_name'] ?? '________________'),
+			'head_teacher' => (string) ($school['head_master'] ?? ($dbContext['head_teacher'] ?? '________________')),
 			'generated_by' => 'cache',
 		];
+
 		$topics = [];
 		foreach ($rows as $r) {
 			$topics[] = [
@@ -2358,20 +2438,34 @@ PROMPT
 				'duration' => (string) ($r['duration'] ?? ''),
 			];
 		}
+
+		$lastSlot = $slots !== [] ? $slots[count($slots) - 1] : null;
+		$projectDate = $lastSlot
+			? ($this->formatSchemeDay((string) ($lastSlot['date_to'] ?: $lastSlot['date_from'])) ?: ('Week ' . (int) ($lastSlot['week'] ?? '')))
+			: '';
+		$integrated = [
+			'date' => $projectDate,
+			'task' => 'Integrated Project: Develop a practical application covering the module learning outcomes — including key indicative contents of '
+				. trim($code . ' ' . $titleRaw) . '.',
+			'consumables' => $this->defaultSchemeResources($module, true),
+			'place' => $this->defaultSchemePlace($module, true),
+		];
+
 		$data = [
-			'title' => 'SCHEME OF WORK — ' . trim($code . ' ' . $titleRaw),
+			'title' => 'SCHEME OF WORK',
 			'meta' => $meta,
 			'rows' => $rows,
+			'lo_tables' => $loTables,
+			'integrated_assessment' => $integrated,
 			'topics_for_sessions' => $topics,
 		];
 		$html = $this->fallbackSchemeHtml($data, $dbContext, $programType);
-		return ['html' => $html, 'json' => $data, 'title' => $data['title']];
+		$docTitle = 'SCHEME OF WORK — ' . trim($code . ' ' . $titleRaw);
+		return ['html' => $html, 'json' => $data, 'title' => $docTitle];
 	}
 
-	/**
-	 * @return list<array{lo_code:string,lo_title:string,ic_code:string,ic_title:string,hours:float|null}>
-	 */
-	private function flattenModuleIndicativeContents(array $module): array
+	/** @return list<array{lo_code:string,lo_title:string,ics:list<array{ic_code:string,ic_title:string,hours:float|null}>}> */
+	private function groupModuleByLearningOutcomes(array $module): array
 	{
 		$out = [];
 		$los = $module['learning_outcomes'] ?? [];
@@ -2384,41 +2478,313 @@ PROMPT
 			}
 			$loCode = trim((string) ($lo['code'] ?? ('LO' . ($loIdx + 1))));
 			$loTitle = trim((string) ($lo['title'] ?? $lo['name'] ?? ''));
-			$ics = $lo['indicative_contents'] ?? ($lo['indicative_content'] ?? []);
-			if (!is_array($ics) || $ics === []) {
-				$out[] = [
-					'lo_code' => $loCode,
-					'lo_title' => $loTitle,
-					'ic_code' => $loCode,
+			$icsRaw = $lo['indicative_contents'] ?? ($lo['indicative_content'] ?? []);
+			$ics = [];
+			if (!is_array($icsRaw) || $icsRaw === []) {
+				$ics[] = [
+					'ic_code' => preg_replace('/^LO/i', 'IC', $loCode) . '.1',
 					'ic_title' => $loTitle !== '' ? $loTitle : 'Learning outcome content',
 					'hours' => isset($lo['hours']) ? (float) $lo['hours'] : null,
 				];
-				continue;
-			}
-			foreach ($ics as $icIdx => $ic) {
-				if (is_string($ic)) {
-					$out[] = [
-						'lo_code' => $loCode,
-						'lo_title' => $loTitle,
-						'ic_code' => $loCode . '.' . ($icIdx + 1),
-						'ic_title' => trim($ic),
-						'hours' => null,
+			} else {
+				foreach ($icsRaw as $icIdx => $ic) {
+					if (is_string($ic)) {
+						$ics[] = [
+							'ic_code' => preg_replace('/^LO/i', 'IC', $loCode) . '.' . ($icIdx + 1),
+							'ic_title' => trim($ic),
+							'hours' => null,
+						];
+						continue;
+					}
+					if (!is_array($ic)) {
+						continue;
+					}
+					$ics[] = [
+						'ic_code' => trim((string) ($ic['code'] ?? (preg_replace('/^LO/i', 'IC', $loCode) . '.' . ($icIdx + 1)))),
+						'ic_title' => trim((string) ($ic['title'] ?? $ic['name'] ?? '')),
+						'hours' => isset($ic['hours']) ? (float) $ic['hours'] : null,
 					];
-					continue;
 				}
-				if (!is_array($ic)) {
-					continue;
-				}
-				$out[] = [
-					'lo_code' => $loCode,
-					'lo_title' => $loTitle,
-					'ic_code' => trim((string) ($ic['code'] ?? ($loCode . '.' . ($icIdx + 1)))),
-					'ic_title' => trim((string) ($ic['title'] ?? $ic['name'] ?? '')),
-					'hours' => isset($ic['hours']) ? (float) $ic['hours'] : null,
-				];
 			}
+			$out[] = ['lo_code' => $loCode, 'lo_title' => $loTitle, 'ics' => $ics];
 		}
 		return $out;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $loGroups
+	 * @param list<array<string,mixed>> $slots
+	 * @return array{rows:list<array<string,mixed>>,lo_tables:list<array<string,mixed>>}
+	 */
+	private function buildSampleStyleSchemeRows(array $loGroups, array $slots, array $module, string $programType): array
+	{
+		$loCount = count($loGroups);
+		$slotCount = count($slots);
+		// Weight weeks by LO hours (sample spreads dates across each LO block)
+		$weights = [];
+		foreach ($loGroups as $g) {
+			$h = 0.0;
+			foreach ($g['ics'] as $ic) {
+				$h += (float) ($ic['hours'] ?? 0);
+			}
+			$weights[] = $h > 0 ? $h : max(1, count($g['ics']));
+		}
+		$weightSum = array_sum($weights) ?: $loCount;
+		$alloc = [];
+		$assigned = 0;
+		for ($i = 0; $i < $loCount; $i++) {
+			if ($i === $loCount - 1) {
+				$n = max(1, $slotCount - $assigned);
+			} else {
+				$n = max(1, (int) round(($weights[$i] / $weightSum) * $slotCount));
+				if ($assigned + $n > $slotCount - ($loCount - $i - 1)) {
+					$n = max(1, $slotCount - $assigned - ($loCount - $i - 1));
+				}
+			}
+			$alloc[$i] = $n;
+			$assigned += $n;
+		}
+
+		$rows = [];
+		$loTables = [];
+		$cursor = 0;
+		foreach ($loGroups as $gi => $g) {
+			$nSlots = (int) ($alloc[$gi] ?? 1);
+			$groupSlots = array_slice($slots, $cursor, $nSlots);
+			if ($groupSlots === [] && $slots !== []) {
+				$groupSlots = [end($slots)];
+			}
+			$cursor += $nSlots;
+			$dateLabels = [];
+			foreach ($groupSlots as $s) {
+				$label = $this->formatSchemeWeekRange((string) ($s['date_from'] ?? ''), (string) ($s['date_to'] ?? ''), (int) ($s['week'] ?? 0));
+				if ($label !== '') {
+					$dateLabels[] = $label;
+				}
+			}
+			// Sample puts most dates on first row; leftover dates on a later IC if many weeks
+			$dateChunks = [];
+			if ($dateLabels === []) {
+				$dateChunks = [''];
+			} elseif (count($dateLabels) <= 3) {
+				$dateChunks = [implode('<br>', $dateLabels)];
+			} else {
+				$mid = (int) ceil(count($dateLabels) * 0.6);
+				$dateChunks = [
+					implode('<br>', array_slice($dateLabels, 0, $mid)),
+					implode('<br>', array_slice($dateLabels, $mid)),
+				];
+			}
+
+			$ics = $g['ics'];
+			$icCount = count($ics);
+			$knownHours = 0.0;
+			$unknown = 0;
+			foreach ($ics as $ic) {
+				if (isset($ic['hours']) && $ic['hours'] !== null && (float) $ic['hours'] > 0) {
+					$knownHours += (float) $ic['hours'];
+				} else {
+					$unknown++;
+				}
+			}
+			$slotHours = 0.0;
+			foreach ($groupSlots as $s) {
+				$slotHours += (float) ($s['periods'] ?? 0);
+			}
+			$defaultIcHours = 4.0;
+			if ($unknown > 0) {
+				$remain = $slotHours > $knownHours ? ($slotHours - $knownHours) : (4.0 * $unknown);
+				$defaultIcHours = max(2, round($remain / $unknown, 1));
+			}
+
+			$tableRows = [];
+			foreach ($ics as $ii => $ic) {
+				$hours = (isset($ic['hours']) && $ic['hours'] !== null && (float) $ic['hours'] > 0)
+					? (float) $ic['hours']
+					: $defaultIcHours;
+				$pack = $this->schemeActivityPack((string) ($ic['ic_title'] ?? ''), $module, $ii, $icCount);
+				$dateHtml = '';
+				if ($ii === 0) {
+					$dateHtml = $dateChunks[0] ?? '';
+				} elseif ($ii === max(1, (int) floor($icCount * 0.7)) && isset($dateChunks[1])) {
+					$dateHtml = $dateChunks[1];
+				}
+				$loDisplay = ($ii === 0)
+					? trim(($g['lo_code'] ?? '') . ': ' . ($g['lo_title'] ?? ''))
+					: '';
+				$icDisplay = trim(($ic['ic_code'] ?? '') . ': ' . ($ic['ic_title'] ?? ''));
+				$row = [
+					'term' => (int) (($groupSlots[0]['term'] ?? 0) ?: 1),
+					'week' => (int) (($groupSlots[0]['week'] ?? 0) ?: ($gi + 1)),
+					'date' => str_replace('<br>', ' ', $dateHtml),
+					'date_html' => $dateHtml,
+					'lo_code' => (string) ($g['lo_code'] ?? ''),
+					'lo_title' => (string) ($g['lo_title'] ?? ''),
+					'lo_display' => $loDisplay,
+					'ic_code' => (string) ($ic['ic_code'] ?? ''),
+					'ic_title' => (string) ($ic['ic_title'] ?? ''),
+					'ic_display' => $icDisplay,
+					'duration' => (string) (round($hours, 1) == floor($hours) ? (int) $hours : round($hours, 1)),
+					'activities' => $pack['activities'],
+					'resources' => $pack['resources'],
+					'assessment' => $pack['assessment'],
+					'place' => $pack['place'],
+					'observation' => '',
+					'lo_group_index' => $gi,
+				];
+				$tableRows[] = $row;
+				$rows[] = $row;
+			}
+			$loTables[] = [
+				'lo_code' => $g['lo_code'],
+				'lo_title' => $g['lo_title'],
+				'rows' => $tableRows,
+			];
+		}
+		return ['rows' => $rows, 'lo_tables' => $loTables];
+	}
+
+	/** @return array{activities:string,resources:string,assessment:string,place:string} */
+	private function schemeActivityPack(string $icTitle, array $module, int $icIndex, int $icCount): array
+	{
+		$t = strtolower($icTitle);
+		$practical = $this->isPracticalModule($module)
+			|| preg_match('/install|setup|practic|project|deploy|build|code|lab|workshop|implement|validat|present|demo/', $t);
+		$activitySets = [
+			'Lecture, Discussion, Demonstration',
+			'Practical setup',
+			'Group work, Individual practice',
+			'Demonstration, Hands-on practice',
+			'Practical exercises, Group discussion',
+			'Hands-on exercises, Group practice',
+			'Practical exercises, Demonstration',
+			'Project setup, Group work',
+			'Individual work, Group discussion',
+			'Group project, Presentation',
+			'Class presentations, Peer review',
+		];
+		$assessSets = [
+			'Written & Oral assessment',
+			'Practical assessment',
+			'Performance assessment',
+			'Written and Practical assessment',
+			'Oral and Performance assessment',
+			'Practical and Oral assessment',
+			'Practical and Written assessment',
+			'Practical and Performance assessment',
+			'Peer feedback, Instructor assessment',
+		];
+		if (preg_match('/install|setup|environment|folder/', $t)) {
+			$act = 'Practical setup';
+			$assess = 'Practical assessment';
+		} elseif (preg_match('/present|feedback|review/', $t)) {
+			$act = 'Class presentations, Peer review';
+			$assess = 'Peer feedback, Instructor assessment';
+		} elseif (preg_match('/deploy|project|integrat/', $t)) {
+			$act = 'Group project, Presentation';
+			$assess = 'Practical and Performance assessment';
+		} elseif (preg_match('/definition|introduc|concept|overview/', $t)) {
+			$act = 'Lecture, Discussion, Demonstration';
+			$assess = 'Written & Oral assessment';
+		} else {
+			$act = $activitySets[$icIndex % count($activitySets)];
+			$assess = $assessSets[$icIndex % count($assessSets)];
+		}
+		return [
+			'activities' => $act,
+			'resources' => $this->defaultSchemeResources($module, $practical),
+			'assessment' => $assess,
+			'place' => $this->defaultSchemePlace($module, $practical),
+		];
+	}
+
+	private function isPracticalModule(array $module): bool
+	{
+		$modType = strtolower((string) ($module['module_type'] ?? ''));
+		$code = (string) ($module['code'] ?? '');
+		return strpos($modType, 'specific') !== false
+			|| strpos($modType, 'pract') !== false
+			|| (bool) preg_match('/^(SWD|ICT|AUT|ELT|MEC|GENNF|GENCS)/i', $code);
+	}
+
+	private function defaultSchemeResources(array $module, bool $practical): string
+	{
+		if ($practical) {
+			return 'Computers, Projector, Internet Access, Module handouts';
+		}
+		return 'Whiteboard, Markers, Handouts, Projector, Textbooks';
+	}
+
+	private function defaultSchemePlace(array $module, bool $practical): string
+	{
+		$code = strtoupper((string) ($module['code'] ?? ''));
+		if ($practical || preg_match('/^(SWD|ICT|GENNF|GENCS)/', $code)) {
+			return 'Computer Lab';
+		}
+		return 'Classroom';
+	}
+
+	private function formatSchemeWeekRange(string $from, string $to, int $week): string
+	{
+		$fromTs = $this->parseLooseDate($from);
+		$toTs = $this->parseLooseDate($to);
+		if ($fromTs && $toTs) {
+			$fd = (int) date('d', $fromTs);
+			$fm = (int) date('m', $fromTs);
+			$fy = (int) date('Y', $fromTs);
+			$td = (int) date('d', $toTs);
+			$tm = (int) date('m', $toTs);
+			$ty = (int) date('Y', $toTs);
+			if ($fm === $tm && $fy === $ty) {
+				return sprintf('%02d-%02d/%02d/%04d', $fd, $td, $fm, $fy);
+			}
+			return sprintf('%02d/%02d-%02d/%02d/%04d', $fd, $fm, $td, $tm, $ty);
+		}
+		if ($fromTs) {
+			return date('d/m/Y', $fromTs);
+		}
+		$from = trim($from);
+		$to = trim($to);
+		if ($from !== '' && $to !== '' && $from !== $to) {
+			return $from . '-' . $to;
+		}
+		if ($from !== '') {
+			return $from;
+		}
+		return $week > 0 ? ('Week ' . $week) : '';
+	}
+
+	private function formatSchemeDay(string $raw): string
+	{
+		$ts = $this->parseLooseDate($raw);
+		return $ts ? date('d/m/Y', $ts) : trim($raw);
+	}
+
+	/** @return int|false */
+	private function parseLooseDate(string $raw)
+	{
+		$raw = trim($raw);
+		if ($raw === '') {
+			return false;
+		}
+		if (preg_match('/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/', $raw, $m)) {
+			$y = (int) $m[3];
+			if ($y < 100) {
+				$y += 2000;
+			}
+			return mktime(0, 0, 0, (int) $m[2], (int) $m[1], $y);
+		}
+		if (preg_match('/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/', $raw, $m)) {
+			return mktime(0, 0, 0, (int) $m[2], (int) $m[3], (int) $m[1]);
+		}
+		$ts = strtotime($raw);
+		return $ts !== false ? $ts : false;
+	}
+
+	private function romanLevel(int $n): string
+	{
+		$map = [1 => 'I', 2 => 'II', 3 => 'III', 4 => 'IV', 5 => 'V'];
+		return $map[$n] ?? (string) $n;
 	}
 
 	/**
@@ -2478,119 +2844,6 @@ PROMPT
 			return ((int) $a['week']) <=> ((int) $b['week']);
 		});
 		return $slots;
-	}
-
-	/**
-	 * Map each indicative content onto chronogram weeks (one row per week, cycling ICs as needed).
-	 *
-	 * @param list<array<string,mixed>> $ics
-	 * @param list<array<string,mixed>> $slots
-	 * @return list<array<string,mixed>>
-	 */
-	private function mapIndicativeContentsToWeeks(array $ics, array $slots, array $module, string $programType): array
-	{
-		if ($ics === []) {
-			$ics = [[
-				'lo_code' => 'LO1',
-				'lo_title' => (string) ($module['title'] ?? 'Module outcomes'),
-				'ic_code' => 'IC1.1',
-				'ic_title' => (string) ($module['title'] ?? 'Module content'),
-				'hours' => null,
-			]];
-		}
-		$modType = strtolower((string) ($module['module_type'] ?? ''));
-		$isPractical = (strpos($modType, 'specific') !== false || strpos($modType, 'pract') !== false
-			|| preg_match('/^(SWD|ICT|AUT|ELT|MEC)/i', (string) ($module['code'] ?? '')));
-		$place = $isPractical ? 'Computer lab / Workshop' : 'Classroom';
-		$resources = $isPractical
-			? 'Projector, computers/workstations, module handouts, whiteboard, internet'
-			: 'Whiteboard, markers, learner handouts, textbooks, projector';
-		$rows = [];
-		$icCount = count($ics);
-		$slotCount = count($slots);
-		for ($i = 0; $i < $slotCount; $i++) {
-			$slot = $slots[$i];
-			$ic = $ics[$i % $icCount];
-			// Prefer IC hours when fewer ICs than weeks are being stretched; else slot periods
-			$dur = (float) ($slot['periods'] ?? 0);
-			if ($dur <= 0 && isset($ic['hours']) && $ic['hours'] !== null) {
-				$dur = (float) $ic['hours'];
-			}
-			if ($dur <= 0) {
-				$dur = 2;
-			}
-			// When many ICs and fewer weeks, pack multiple ICs into one week row (first IC primary)
-			$extraIcNote = '';
-			if ($icCount > $slotCount && $i === $slotCount - 1) {
-				$remaining = array_slice($ics, $slotCount - 1);
-				if (count($remaining) > 1) {
-					$titles = [];
-					foreach ($remaining as $rix => $ric) {
-						if ($rix === 0) {
-							continue;
-						}
-						$titles[] = trim(($ric['ic_code'] ?? '') . ' ' . ($ric['ic_title'] ?? ''));
-					}
-					if ($titles !== []) {
-						$extraIcNote = ' Also cover: ' . implode('; ', array_slice($titles, 0, 8));
-					}
-				}
-			}
-			$date = trim((string) ($slot['date_from'] ?? ''));
-			if ($date !== '' && !empty($slot['date_to']) && $slot['date_to'] !== $date) {
-				$date .= ' – ' . $slot['date_to'];
-			}
-			if ($date === '' && !empty($slot['week'])) {
-				$date = 'Week ' . (int) $slot['week'];
-			}
-			$loLabel = trim(($ic['lo_code'] ?? '') . ' ' . ($ic['lo_title'] ?? ''));
-			$icTitle = trim((string) ($ic['ic_title'] ?? ''));
-			$activities = 'Introduce ' . ($icTitle !== '' ? $icTitle : 'the topic')
-				. '; guided demonstration; guided practice; learner exercises; formative Q&A.'
-				. $extraIcNote;
-			$assessment = 'Oral questioning; observation checklist; short practical/written exercise on '
-				. ($ic['ic_code'] ?? 'this content');
-			$rows[] = [
-				'term' => (int) ($slot['term'] ?? max(1, (int) ceil(((int) ($slot['week'] ?: 1)) / 12))),
-				'week' => (int) ($slot['week'] ?? ($i + 1)),
-				'date' => $date,
-				'lo_code' => (string) ($ic['lo_code'] ?? ''),
-				'lo_title' => (string) ($ic['lo_title'] ?? ''),
-				'ic_code' => (string) ($ic['ic_code'] ?? ''),
-				'ic_title' => $icTitle,
-				'duration' => (string) (round($dur, 1)),
-				'activities' => $activities,
-				'resources' => $resources,
-				'assessment' => $assessment,
-				'place' => $place,
-				'observation' => '',
-				'_lo_display' => $loLabel,
-			];
-		}
-		// If more ICs than weeks, ensure unused ICs still appear (append rows sharing last week hours split)
-		if ($icCount > $slotCount && $slotCount > 0) {
-			// Already noted in last row; also add dedicated rows with 0-duration note for session topics
-			for ($j = $slotCount; $j < $icCount; $j++) {
-				$ic = $ics[$j];
-				$last = $slots[$slotCount - 1];
-				$rows[] = [
-					'term' => (int) ($last['term'] ?? 1),
-					'week' => (int) ($last['week'] ?? $slotCount),
-					'date' => 'Week ' . (int) ($last['week'] ?? $slotCount) . ' (continued)',
-					'lo_code' => (string) ($ic['lo_code'] ?? ''),
-					'lo_title' => (string) ($ic['lo_title'] ?? ''),
-					'ic_code' => (string) ($ic['ic_code'] ?? ''),
-					'ic_title' => (string) ($ic['ic_title'] ?? ''),
-					'duration' => (string) (isset($ic['hours']) && $ic['hours'] ? round((float) $ic['hours'], 1) : '1'),
-					'activities' => 'Continue with ' . trim((string) ($ic['ic_title'] ?? 'content')) . '; practice tasks; peer review.',
-					'resources' => $resources,
-					'assessment' => 'Checklist / short exercise on ' . ($ic['ic_code'] ?? 'content'),
-					'place' => $place,
-					'observation' => '',
-				];
-			}
-		}
-		return $rows;
 	}
 
 	/**
@@ -3188,63 +3441,122 @@ PROMPT;
 
 	private function fallbackSchemeHtml(array $data, array $ctx, string $programType): string
 	{
-		$school = esc($ctx['school']['name'] ?? 'School');
+		$school = is_array($ctx['school'] ?? null) ? $ctx['school'] : [];
 		$meta = is_array($data['meta'] ?? null) ? $data['meta'] : [];
-		$title = esc($data['title'] ?? 'SCHEME OF WORK');
-		$trainer = esc($meta['trainer'] ?? '');
+		$schoolName = esc($school['name'] ?? 'School');
+		$district = esc($school['district'] ?? $school['address'] ?? '');
+		$email = esc($school['email'] ?? '');
+		$tel = esc($school['phone'] ?? '');
 		$sector = esc($meta['sector'] ?? '');
 		$trade = esc($meta['trade'] ?? '');
-		$year = esc($meta['school_year'] ?? '');
+		$year = esc($meta['school_year'] ?? ($ctx['academic_year_title'] ?? ''));
 		$qual = esc($meta['qualification_title'] ?? '');
-		$terms = esc($meta['terms'] ?? '');
+		$terms = esc($meta['terms'] ?? '1,2,3');
 		$rqf = esc((string) ($meta['rqf_level'] ?? ''));
 		$modCode = esc($meta['module_code'] ?? '');
 		$modTitle = esc($meta['module_title'] ?? '');
 		$hours = esc((string) ($meta['learning_hours'] ?? ''));
-		$className = esc($meta['class_name'] ?? ($ctx['class']['name'] ?? ''));
+		$numClasses = esc((string) ($meta['number_of_classes'] ?? '1'));
+		$date = esc($meta['date'] ?? '');
+		$className = esc($meta['class_name'] ?? '');
+		$trainer = esc($meta['trainer'] ?? '');
+		$dos = esc($meta['dos_name'] ?? '________________');
+		$head = esc($meta['head_teacher'] ?? ($school['head_master'] ?? '________________'));
 
-		$rows = '';
-		foreach ($data['rows'] ?? [] as $r) {
-			$rows .= '<tr>'
-				. '<td>' . esc($r['date'] ?? '') . '</td>'
-				. '<td>' . esc(trim(($r['lo_code'] ?? '') . ' ' . ($r['lo_title'] ?? ''))) . '</td>'
-				. '<td>' . esc(trim(($r['ic_code'] ?? '') . ' ' . ($r['ic_title'] ?? ''))) . '</td>'
-				. '<td>' . esc($r['duration'] ?? '') . '</td>'
-				. '<td>' . esc($r['activities'] ?? '') . '</td>'
-				. '<td>' . esc($r['resources'] ?? '') . '</td>'
-				. '<td>' . esc($r['assessment'] ?? '') . '</td>'
-				. '<td>' . esc($r['place'] ?? '') . '</td>'
-				. '<td>' . esc($r['observation'] ?? '') . '</td>'
-				. '</tr>';
+		$contactBits = [];
+		if ($district !== '') {
+			$contactBits[] = 'District: ' . $district;
+		}
+		if ($email !== '') {
+			$contactBits[] = 'Email: ' . $email;
+		}
+		if ($tel !== '') {
+			$contactBits[] = 'Tel: ' . $tel;
+		}
+		$contactLine = $contactBits !== [] ? '<div class="contact">' . implode(' &nbsp;|&nbsp; ', $contactBits) . '</div>' : '';
+
+		$loTables = is_array($data['lo_tables'] ?? null) ? $data['lo_tables'] : [];
+		if ($loTables === [] && !empty($data['rows']) && is_array($data['rows'])) {
+			$loTables = [['lo_code' => '', 'lo_title' => '', 'rows' => $data['rows']]];
 		}
 
-		return "<html><head><meta charset='utf-8'><style>
-body{font-family:DejaVu Sans,Arial,sans-serif;font-size:11px;color:#111}
-h1{text-align:center;font-size:18px;margin:12px 0}
-.meta,.body{width:100%;border-collapse:collapse;margin-bottom:14px}
-.meta td,.body td,.body th{border:1px solid #333;padding:5px;vertical-align:top}
-.body th{background:#f3f3f3}
-.school{text-align:center;font-weight:700}
-.foot{margin-top:28px;display:flex;justify-content:space-between}
+		$bodyHtml = '';
+		foreach ($loTables as $tbl) {
+			$rowsHtml = '';
+			foreach ($tbl['rows'] ?? [] as $r) {
+				$dateCell = (string) ($r['date_html'] ?? '');
+				if ($dateCell === '') {
+					$dateCell = esc($r['date'] ?? '');
+				}
+				$loCell = esc($r['lo_display'] ?? trim(($r['lo_code'] ?? '') . ': ' . ($r['lo_title'] ?? '')));
+				$icCell = esc($r['ic_display'] ?? trim(($r['ic_code'] ?? '') . ': ' . ($r['ic_title'] ?? '')));
+				$rowsHtml .= '<tr>'
+					. '<td class="date-cell">' . $dateCell . '</td>'
+					. '<td>' . $loCell . '</td>'
+					. '<td>' . $icCell . '</td>'
+					. '<td class="ctr">' . esc($r['duration'] ?? '') . '</td>'
+					. '<td>' . esc($r['activities'] ?? '') . '</td>'
+					. '<td>' . esc($r['resources'] ?? '') . '</td>'
+					. '<td>' . esc($r['assessment'] ?? '') . '</td>'
+					. '<td>' . esc($r['place'] ?? '') . '</td>'
+					. '<td>' . esc($r['observation'] ?? '') . '</td>'
+					. '</tr>';
+			}
+			$bodyHtml .= '<table class="body"><thead><tr>'
+				. '<th>Date</th><th>Learning Outcome</th><th>Indicative Content</th><th>Duration (Hours)</th>'
+				. '<th>Learning Activities</th><th>Resources (Equipment, Tools, and Materials)</th>'
+				. '<th>Evidences of Formative Assessment</th><th>Learning Place</th><th>Observation</th>'
+				. '</tr></thead><tbody>' . $rowsHtml . '</tbody></table>';
+		}
+
+		$ia = is_array($data['integrated_assessment'] ?? null) ? $data['integrated_assessment'] : [];
+		$iaHtml = '';
+		if ($ia !== []) {
+			$iaHtml = '<h3 class="subhead">Integrated/Summative Assessment</h3>'
+				. '<table class="body ia"><thead><tr><th>Date</th><th>Task</th><th>Consumables</th><th>Learning Place</th></tr></thead><tbody><tr>'
+				. '<td>' . esc($ia['date'] ?? '') . '</td>'
+				. '<td>' . esc($ia['task'] ?? '') . '</td>'
+				. '<td>' . esc($ia['consumables'] ?? '') . '</td>'
+				. '<td>' . esc($ia['place'] ?? '') . '</td>'
+				. '</tr></tbody></table>';
+		}
+
+		return "<!DOCTYPE html><html><head><meta charset='utf-8'><title>SCHEME OF WORK</title><style>
+body{font-family:DejaVu Sans,Arial,sans-serif;font-size:11px;color:#111;margin:18px}
+.school{text-align:center;font-weight:700;font-size:14px;text-transform:uppercase}
+.contact{text-align:center;font-size:10px;margin:2px 0 10px;color:#222}
+h1{text-align:center;font-size:18px;margin:8px 0 14px;letter-spacing:1px}
+.subhead{font-size:13px;margin:18px 0 8px}
+.meta,.body{width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed}
+.meta td,.body td,.body th{border:1px solid #222;padding:5px 6px;vertical-align:top}
+.body th{background:#f0f0f0;font-size:10px}
+.date-cell{white-space:normal;line-height:1.35;width:11%}
+.ctr{text-align:center}
+.modblock{font-weight:700}
+.foot{margin-top:28px;width:100%}
+.foot td{border:none;padding:10px 4px;vertical-align:top;width:33%}
+@media print{body{margin:8px}}
 </style></head><body>
-<p class='school'>{$school}</p>
-<h1>{$title}</h1>
+<p class='school'>{$schoolName}</p>
+{$contactLine}
+<h1>SCHEME OF WORK</h1>
 <table class='meta'>
 <tr><td><b>Sector:</b></td><td>{$sector}</td><td><b>Trainer:</b></td><td>{$trainer}</td></tr>
 <tr><td><b>Trade:</b></td><td>{$trade}</td><td><b>School Year:</b></td><td>{$year}</td></tr>
 <tr><td><b>Qualification Title:</b></td><td>{$qual}</td><td><b>Term:</b></td><td>{$terms}</td></tr>
-<tr><td><b>RQF Level:</b></td><td>{$rqf}</td><td><b>Module code and title</b></td><td>{$modCode} {$modTitle}</td></tr>
-<tr><td><b>Learning hours:</b></td><td>{$hours}</td><td><b>Class Name:</b></td><td>{$className}</td></tr>
+<tr><td><b>RQF Level:</b></td><td>{$rqf}</td><td colspan='2' class='modblock'>Module details</td></tr>
+<tr><td></td><td></td><td><b>Module code and title</b></td><td>{$modCode} {$modTitle}</td></tr>
+<tr><td></td><td></td><td><b>Learning hours:</b></td><td>{$hours}</td></tr>
+<tr><td></td><td></td><td><b>Number of Classes:</b></td><td>{$numClasses}</td></tr>
+<tr><td><b>Date:</b></td><td>{$date}</td><td><b>Class Name:</b></td><td>{$className}</td></tr>
 </table>
-<table class='body'>
-<thead><tr>
-<th>Date</th><th>Learning Outcome</th><th>Indicative Content</th><th>Duration (Hours)</th>
-<th>Learning Activities</th><th>Resources (Equipment, Tools, and Materials)</th>
-<th>Evidences of Formative Assessment</th><th>Learning Place</th><th>Observation</th>
-</tr></thead>
-<tbody>{$rows}</tbody>
-</table>
-<div class='foot'><div>Prepared by: {$trainer}</div><div>Verified by (DOS): ________</div><div>Approved by (Head teacher): ________</div></div>
+{$bodyHtml}
+{$iaHtml}
+<table class='foot'><tr>
+<td>Prepared by: {$trainer}, Trainer</td>
+<td>Verified by: {$dos}, DOS</td>
+<td>Approved by: {$head}, Head teacher</td>
+</tr></table>
 </body></html>";
 	}
 

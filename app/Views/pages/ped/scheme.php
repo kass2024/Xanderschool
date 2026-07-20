@@ -35,8 +35,8 @@ foreach ($analysis_cache ?? [] as $cid => $row) {
 	<div class="aiplan-card">
 		<h5>Select class</h5>
 		<p class="text-muted" style="font-size:.88rem;">
-			Schemes are built from the <b>cached</b> curriculum analysis (LO / IC + chronogram weeks) — no Gemini credits by default.
-			Edit inline, then download Word or PDF.
+			Schemes follow the <b>Javascript Fundamentals</b> sample layout (header + meta + one table per Learning Outcome with IC hours and chronogram dates).
+			Built from the curriculum DB cache — no Gemini credits by default. Edit inline, then download Word or PDF.
 		</p>
 		<select id="sowClass" class="form-control">
 			<option value="">— Choose class —</option>

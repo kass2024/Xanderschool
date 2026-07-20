@@ -2790,15 +2790,19 @@ public function testEmail()
 		$existing = $this->findCachedSchemeOfWork($planMdl, $schoolId, $classId, $yearId, $courseId, $moduleCode);
 		if ($existing && !$force) {
 			$json = json_decode($existing['content_json'] ?? '', true) ?: [];
-			return $this->response->setJSON([
-				'success' => 'Loaded Scheme of Work from database cache',
-				'from_cache' => true,
-				'plan_id' => (int) $existing['id'],
-				'title' => $existing['title'],
-				'topics' => $json['topics_for_sessions'] ?? [],
-				'preview_url' => base_url('view_academic_plan/' . $existing['id']),
-				'edit_url' => base_url('edit_academic_plan/' . $existing['id']),
-			]);
+			$layout = (string) (($json['meta']['layout'] ?? '') ?: '');
+			// Rebuild if older layout (pre Javascript-Fundamentals sample)
+			if ($layout === 'js_fundamentals_v1') {
+				return $this->response->setJSON([
+					'success' => 'Loaded Scheme of Work from database cache',
+					'from_cache' => true,
+					'plan_id' => (int) $existing['id'],
+					'title' => $existing['title'],
+					'topics' => $json['topics_for_sessions'] ?? [],
+					'preview_url' => base_url('view_academic_plan/' . $existing['id']),
+					'edit_url' => base_url('edit_academic_plan/' . $existing['id']),
+				]);
+			}
 		}
 
 		$ai = new GeminiAcademicDocs();
