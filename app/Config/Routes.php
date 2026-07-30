@@ -135,6 +135,25 @@ $routes->post('parent_visiting/scan', 'Home::parent_visiting_scan');
 $routes->get('parent_visiting/students', 'Home::parent_visiting_students_json');
 $routes->get('parent_visiting/student_visitors/(:num)', 'Home::parent_visiting_student_visitors/$1');
 
+// Asset Management (Phase 1+)
+$routes->get('asset_management/dashboard', 'AssetManagement::dashboard');
+$routes->get('asset_management/assets', 'AssetManagement::assets');
+$routes->get('asset_management/asset_view/(:num)', 'AssetManagement::asset_view/$1');
+$routes->post('asset_management/save_asset', 'AssetManagement::save_asset');
+$routes->post('asset_management/archive_asset', 'AssetManagement::archive_asset');
+$routes->get('asset_management/locations', 'AssetManagement::locations');
+$routes->post('asset_management/save_location', 'AssetManagement::save_location');
+$routes->post('asset_management/archive_location', 'AssetManagement::archive_location');
+$routes->post('asset_management/restore_location', 'AssetManagement::restore_location');
+$routes->get('asset_management/categories', 'AssetManagement::categories');
+$routes->post('asset_management/save_category', 'AssetManagement::save_category');
+$routes->post('asset_management/archive_category', 'AssetManagement::archive_category');
+$routes->post('asset_management/save_category_field', 'AssetManagement::save_category_field');
+$routes->get('asset_management/category_fields/(:num)', 'AssetManagement::category_fields/$1');
+$routes->get('asset_management/settings', 'AssetManagement::settings');
+$routes->post('asset_management/save_settings', 'AssetManagement::save_settings');
+$routes->get('asset_management/placeholder/(:segment)', 'AssetManagement::placeholder/$1');
+
 $routes->add('(:any)', 'Home::$1');
 $routes->get('/home/editRegno/(:num)', 'Home::editRegno/$1');
 $routes->post('/home/updateRegno/(:num)', 'Home::updateRegno/$1');

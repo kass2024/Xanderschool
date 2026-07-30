@@ -155,8 +155,29 @@ class MenuClearance
 				],
 			],
 			[
+				'key' => 'asset_management',
+				'label' => 'Asset Management',
+				'children' => [
+					['key' => 'asset_dashboard', 'label' => 'Dashboard'],
+					['key' => 'asset_assets', 'label' => 'Assets'],
+					['key' => 'asset_locations', 'label' => 'Areas and Locations'],
+					['key' => 'asset_categories', 'label' => 'Categories'],
+					['key' => 'asset_assignments', 'label' => 'Asset Assignments'],
+					['key' => 'asset_checkout', 'label' => 'Check-out / Check-in'],
+					['key' => 'asset_transfers', 'label' => 'Transfers'],
+					['key' => 'asset_maintenance', 'label' => 'Maintenance'],
+					['key' => 'asset_inspections', 'label' => 'Inspections'],
+					['key' => 'asset_incidents', 'label' => 'Incidents and Losses'],
+					['key' => 'asset_audits', 'label' => 'Inventory Audits'],
+					['key' => 'book_management', 'label' => 'Library — Books'],
+					['key' => 'borrowed_report', 'label' => 'Library — Borrowed Report'],
+					['key' => 'asset_reports', 'label' => 'Reports'],
+					['key' => 'asset_settings', 'label' => 'Settings'],
+				],
+			],
+			[
 				'key' => 'library',
-				'label' => 'Library Management',
+				'label' => 'Library Management (legacy group)',
 				'children' => [
 					['key' => 'book_management', 'label' => 'Books Management'],
 					['key' => 'borrowed_report', 'label' => 'Borrowed Report'],
@@ -329,8 +350,9 @@ class MenuClearance
 			$keys = array_merge($keys, self::groupKeys('fees'));
 		}
 
-		// Library: is_allowed(1, 7, 13, 3)
-		if (in_array($postId, [7, 13], true)) {
+		// Asset Management + Library: Store keeper (12), Secretary (7), Librarian (13)
+		if (in_array($postId, [7, 12, 13], true)) {
+			$keys = array_merge($keys, self::groupKeys('asset_management'));
 			$keys = array_merge($keys, self::groupKeys('library'));
 		}
 

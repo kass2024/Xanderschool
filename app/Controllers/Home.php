@@ -71,8 +71,8 @@ use GuzzleHttp\Client;
 
 class Home extends BaseController
 {
-	private $log_status = "Soma_logged_in";
-	private $data = array();
+	protected $log_status = "Soma_logged_in";
+	protected $data = array();
 
 	public function __construct()
 	{
