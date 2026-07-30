@@ -21,7 +21,10 @@
 				<?php } ?>
 			</select>
 			<button class="btn btn-primary mb-2 mr-2" type="submit"><i class="fa fa-search"></i> Filter</button>
-			<button class="btn btn-success mb-2" type="button" data-toggle="modal" data-target="#mdlAsset"><i class="fa fa-plus"></i> Register asset</button>
+			<button class="btn btn-success mb-2 mr-1" type="button" data-toggle="modal" data-target="#mdlAsset"><i class="fa fa-plus"></i> Register asset</button>
+			<a href="<?= base_url('asset_management/import'); ?>" class="btn btn-outline-primary mb-2 mr-1"><i class="fa fa-file-import"></i> Bulk import</a>
+			<a href="<?= base_url('asset_management/export_assets'); ?>?<?= http_build_query(array_filter($filters ?? [])); ?>" class="btn btn-outline-secondary mb-2 mr-1"><i class="fa fa-file-excel"></i> Export Excel</a>
+			<a href="<?= base_url('asset_management/disposals'); ?>" class="btn btn-outline-danger mb-2"><i class="fa fa-trash-alt"></i> Disposals</a>
 		</form>
 	</div>
 </div>
@@ -92,12 +95,18 @@
 					</div>
 					<div class="col-md-6 form-group">
 						<label>Category</label>
-						<select class="form-control" name="category_id" id="asset_category_id">
-							<option value="">— Select —</option>
-							<?php foreach ($categories as $c) { if ((int)$c['status'] !== 1) continue; ?>
-								<option value="<?= (int)$c['id']; ?>"><?= esc($c['category_code'] . ' — ' . $c['name']); ?></option>
-							<?php } ?>
-						</select>
+						<div class="input-group">
+							<select class="form-control" name="category_id" id="asset_category_id">
+								<option value="">— Select —</option>
+								<?php foreach ($categories as $c) { if ((int)$c['status'] !== 1) continue; ?>
+									<option value="<?= (int)$c['id']; ?>"><?= esc($c['category_code'] . ' — ' . $c['name']); ?></option>
+								<?php } ?>
+							</select>
+							<div class="input-group-append">
+								<button type="button" class="btn btn-outline-info" id="btnSuggestCat" title="AI category suggestion"><i class="fa fa-magic"></i> Suggest</button>
+							</div>
+						</div>
+						<small id="catSuggestMsg" class="text-muted"></small>
 					</div>
 					<div class="col-md-6 form-group">
 						<label>Location</label>
@@ -222,6 +231,33 @@ $(function () {
 		$('#asset_depr').val(a.depreciation_method || 'straight_line');
 		$('#asset_notes').val(a.notes || '');
 		$('#mdlAsset').modal('show');
+	});
+	$('#btnSuggestCat').on('click', function () {
+		var name = $('#asset_name').val();
+		if (!name) { toastada.error('Enter asset name first'); return; }
+		var btn = $(this);
+		btn.prop('disabled', true);
+		$('#catSuggestMsg').text('Suggesting…');
+		$.post('<?= base_url('asset_management/ai_suggest_category'); ?>', {
+			name: name,
+			description: $('#asset_description').val()
+		}, function (res) {
+			btn.prop('disabled', false);
+			if (res.error) { toastada.error(res.error); $('#catSuggestMsg').text(''); return; }
+			var s = res.suggestion;
+			if (!s || !s.category_id) {
+				$('#catSuggestMsg').text('No confident match found.');
+				toastada.warning('No category suggestion');
+				return;
+			}
+			$('#asset_category_id').val(s.category_id);
+			$('#catSuggestMsg').text(s.message || ('Suggested: ' + s.category_name));
+			toastada.success('Category suggested — please confirm');
+		}, 'json').fail(function () {
+			btn.prop('disabled', false);
+			$('#catSuggestMsg').text('');
+			toastada.error('Suggestion failed');
+		});
 	});
 	$('#frmAsset').on('submit', function (e) {
 		e.preventDefault();

@@ -38,8 +38,11 @@
 			<div class="card-header">Quick actions</div>
 			<div class="card-body">
 				<a class="btn btn-primary btn-sm mr-1 mb-1" href="<?= base_url('asset_management/assets'); ?>"><i class="fa fa-plus"></i> Register asset</a>
+				<a class="btn btn-outline-primary btn-sm mr-1 mb-1" href="<?= base_url('asset_management/import'); ?>"><i class="fa fa-file-excel"></i> Bulk import</a>
 				<a class="btn btn-outline-secondary btn-sm mr-1 mb-1" href="<?= base_url('asset_management/locations'); ?>"><i class="fa fa-map-marker-alt"></i> Locations (<?= (int)$location_count; ?>)</a>
 				<a class="btn btn-outline-secondary btn-sm mr-1 mb-1" href="<?= base_url('asset_management/categories'); ?>"><i class="fa fa-tags"></i> Categories (<?= (int)$category_count; ?>)</a>
+				<a class="btn btn-outline-secondary btn-sm mr-1 mb-1" href="<?= base_url('asset_management/checkout'); ?>"><i class="fa fa-exchange-alt"></i> Check-out</a>
+				<a class="btn btn-outline-secondary btn-sm mr-1 mb-1" href="<?= base_url('asset_management/reports'); ?>"><i class="fa fa-chart-bar"></i> Reports</a>
 				<a class="btn btn-outline-info btn-sm mb-1" href="<?= base_url('book_management'); ?>"><i class="fa fa-book"></i> Library</a>
 			</div>
 		</div>
@@ -49,7 +52,7 @@
 			<div class="card-header">Catalogue summary</div>
 			<div class="card-body am-muted">
 				<p class="mb-1"><?= (int)$location_count; ?> active locations · <?= (int)$category_count; ?> categories</p>
-				<p class="mb-0">Phase 1 covers register, locations, categories and history. Circulation, RFID kiosk, transfers and audits follow in later phases.</p>
+				<p class="mb-0">Full module: register, import, assignments, RFID check-out, transfers, maintenance, inspections, incidents, audits, disposals, depreciation and reports. Library borrowing remains under this menu.</p>
 			</div>
 		</div>
 	</div>

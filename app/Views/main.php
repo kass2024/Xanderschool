@@ -701,25 +701,25 @@
 										<li><a href="<?= base_url('asset_management/categories'); ?>"><i class="metismenu-icon"></i> Categories</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_assignments')) { ?>
-										<li><a href="<?= base_url('asset_management/placeholder/assignments'); ?>"><i class="metismenu-icon"></i> Asset Assignments</a></li>
+										<li><a href="<?= base_url('asset_management/assignments'); ?>"><i class="metismenu-icon"></i> Asset Assignments</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_checkout')) { ?>
-										<li><a href="<?= base_url('asset_management/placeholder/checkout'); ?>"><i class="metismenu-icon"></i> Check-out / Check-in</a></li>
+										<li><a href="<?= base_url('asset_management/checkout'); ?>"><i class="metismenu-icon"></i> Check-out / Check-in</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_transfers')) { ?>
-										<li><a href="<?= base_url('asset_management/placeholder/transfers'); ?>"><i class="metismenu-icon"></i> Transfers</a></li>
+										<li><a href="<?= base_url('asset_management/transfers'); ?>"><i class="metismenu-icon"></i> Transfers</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_maintenance')) { ?>
-										<li><a href="<?= base_url('asset_management/placeholder/maintenance'); ?>"><i class="metismenu-icon"></i> Maintenance</a></li>
+										<li><a href="<?= base_url('asset_management/maintenance'); ?>"><i class="metismenu-icon"></i> Maintenance</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_inspections')) { ?>
-										<li><a href="<?= base_url('asset_management/placeholder/inspections'); ?>"><i class="metismenu-icon"></i> Inspections</a></li>
+										<li><a href="<?= base_url('asset_management/inspections'); ?>"><i class="metismenu-icon"></i> Inspections</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_incidents')) { ?>
-										<li><a href="<?= base_url('asset_management/placeholder/incidents'); ?>"><i class="metismenu-icon"></i> Incidents and Losses</a></li>
+										<li><a href="<?= base_url('asset_management/incidents'); ?>"><i class="metismenu-icon"></i> Incidents and Losses</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_audits')) { ?>
-										<li><a href="<?= base_url('asset_management/placeholder/audits'); ?>"><i class="metismenu-icon"></i> Inventory Audits</a></li>
+										<li><a href="<?= base_url('asset_management/audits'); ?>"><i class="metismenu-icon"></i> Inventory Audits</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('book_management')) { ?>
 										<li>
@@ -738,7 +738,7 @@
 										</li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_reports')) { ?>
-										<li><a href="<?= base_url('asset_management/placeholder/reports'); ?>"><i class="metismenu-icon"></i> Reports</a></li>
+										<li><a href="<?= base_url('asset_management/reports'); ?>"><i class="metismenu-icon"></i> Reports</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_settings')) { ?>
 										<li><a href="<?= base_url('asset_management/settings'); ?>"><i class="metismenu-icon"></i> Settings</a></li>

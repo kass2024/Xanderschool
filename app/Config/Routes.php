@@ -154,6 +154,52 @@ $routes->get('asset_management/settings', 'AssetManagement::settings');
 $routes->post('asset_management/save_settings', 'AssetManagement::save_settings');
 $routes->get('asset_management/placeholder/(:segment)', 'AssetManagement::placeholder/$1');
 
+// Phase 2+ import/export
+$routes->get('asset_management/import', 'AssetManagement::import');
+$routes->get('asset_management/download_import_template', 'AssetManagement::download_import_template');
+$routes->post('asset_management/upload_import', 'AssetManagement::upload_import');
+$routes->get('asset_management/import_preview/(:num)', 'AssetManagement::import_preview/$1');
+$routes->post('asset_management/commit_import', 'AssetManagement::commit_import');
+$routes->get('asset_management/export_assets', 'AssetManagement::export_assets');
+
+// Phase 3 circulation
+$routes->get('asset_management/assignments', 'AssetManagement::assignments');
+$routes->post('asset_management/save_assignment', 'AssetManagement::save_assignment');
+$routes->post('asset_management/end_assignment', 'AssetManagement::end_assignment');
+$routes->get('asset_management/checkout', 'AssetManagement::checkout');
+$routes->post('asset_management/scan_person', 'AssetManagement::scan_person');
+$routes->post('asset_management/scan_asset', 'AssetManagement::scan_asset');
+$routes->post('asset_management/do_checkout', 'AssetManagement::do_checkout');
+$routes->post('asset_management/do_checkin', 'AssetManagement::do_checkin');
+$routes->post('asset_management/renew_loan', 'AssetManagement::renew_loan');
+
+// Phase 4 operations
+$routes->get('asset_management/transfers', 'AssetManagement::transfers');
+$routes->post('asset_management/save_transfer', 'AssetManagement::save_transfer');
+$routes->post('asset_management/transfer_action', 'AssetManagement::transfer_action');
+$routes->get('asset_management/maintenance', 'AssetManagement::maintenance');
+$routes->post('asset_management/save_maintenance', 'AssetManagement::save_maintenance');
+$routes->post('asset_management/maintenance_status', 'AssetManagement::maintenance_status');
+$routes->get('asset_management/inspections', 'AssetManagement::inspections');
+$routes->post('asset_management/save_inspection', 'AssetManagement::save_inspection');
+$routes->get('asset_management/incidents', 'AssetManagement::incidents');
+$routes->post('asset_management/save_incident', 'AssetManagement::save_incident');
+$routes->get('asset_management/audits', 'AssetManagement::audits');
+$routes->post('asset_management/save_audit', 'AssetManagement::save_audit');
+$routes->get('asset_management/audit_view/(:num)', 'AssetManagement::audit_view/$1');
+$routes->post('asset_management/audit_scan', 'AssetManagement::audit_scan');
+$routes->post('asset_management/close_audit', 'AssetManagement::close_audit');
+$routes->get('asset_management/disposals', 'AssetManagement::disposals');
+$routes->post('asset_management/save_disposal', 'AssetManagement::save_disposal');
+$routes->post('asset_management/disposal_action', 'AssetManagement::disposal_action');
+
+// Phase 5–6 reports + AI
+$routes->get('asset_management/reports', 'AssetManagement::reports');
+$routes->post('asset_management/run_depreciation', 'AssetManagement::run_depreciation');
+$routes->get('asset_management/export_report_csv', 'AssetManagement::export_report_csv');
+$routes->post('asset_management/ai_suggest_category', 'AssetManagement::ai_suggest_category');
+$routes->post('asset_management/ai_detect_duplicates', 'AssetManagement::ai_detect_duplicates');
+
 $routes->add('(:any)', 'Home::$1');
 $routes->get('/home/editRegno/(:num)', 'Home::editRegno/$1');
 $routes->post('/home/updateRegno/(:num)', 'Home::updateRegno/$1');

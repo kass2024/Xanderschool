@@ -2,20 +2,25 @@
 
 namespace App\Controllers;
 
+use App\Controllers\Traits\AssetManagementOpsTrait;
 use App\Models\AssetCategoryFieldModel;
 use App\Models\AssetCategoryModel;
 use App\Models\AssetLocationModel;
 use App\Models\AssetModel;
+use App\Models\AssetOpsSchema;
 use App\Models\AssetSchemaModel;
 use App\Models\AssetStatusHistoryModel;
 use App\Models\StaffModel;
+use App\Services\Assets\AssetAiAssistService;
 
 /**
- * Asset Management Phase 1 — dashboard, assets, locations, categories.
+ * Asset Management — Phases 1–6.
  * Extends Home to reuse _preset() / school shell data.
  */
 class AssetManagement extends Home
 {
+	use AssetManagementOpsTrait;
+
 	/** Allowed lifecycle statuses for create/update in Phase 1. */
 	private static $lifecycleStatuses = [
 		'draft', 'pending_approval', 'approved', 'available', 'assigned',
@@ -24,17 +29,18 @@ class AssetManagement extends Home
 		'pending_disposal', 'disposed', 'sold', 'donated', 'written_off', 'archived',
 	];
 
-	private function bootAssets()
+	protected function bootAssets()
 	{
 		$this->_preset();
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$schema = new AssetSchemaModel();
 		$schema->ensureSchema();
+		AssetOpsSchema::ensureAll();
 		$schema->seedDefaults($schoolId, (int) $this->session->get('soma_id'));
 		return $schoolId;
 	}
 
-	private function denyUnless($menuKey)
+	protected function denyUnless($menuKey)
 	{
 		if (!function_exists('menu_clearance_allowed') || !menu_clearance_allowed($menuKey)) {
 			$this->session->setFlashdata('error', 'You do not have permission for this Asset Management page.');
@@ -609,34 +615,23 @@ class AssetManagement extends Home
 		return $this->response->setJSON(['success' => true, 'fields' => $rows]);
 	}
 
-	/** Placeholder screens for later phases. */
+	/** Legacy placeholder URLs redirect to live screens. */
 	public function placeholder($section = 'module')
 	{
-		$schoolId = $this->bootAssets();
 		$map = [
-			'assignments' => ['asset_assignments', 'Asset Assignments', 3],
-			'checkout' => ['asset_checkout', 'Check-out / Check-in', 3],
-			'transfers' => ['asset_transfers', 'Transfers', 4],
-			'maintenance' => ['asset_maintenance', 'Maintenance', 4],
-			'inspections' => ['asset_inspections', 'Inspections', 4],
-			'incidents' => ['asset_incidents', 'Incidents and Losses', 4],
-			'audits' => ['asset_audits', 'Inventory Audits', 4],
-			'reports' => ['asset_reports', 'Reports', 5],
-			'settings' => ['asset_settings', 'Settings', 1],
+			'assignments' => 'asset_management/assignments',
+			'checkout' => 'asset_management/checkout',
+			'transfers' => 'asset_management/transfers',
+			'maintenance' => 'asset_management/maintenance',
+			'inspections' => 'asset_management/inspections',
+			'incidents' => 'asset_management/incidents',
+			'audits' => 'asset_management/audits',
+			'reports' => 'asset_management/reports',
+			'settings' => 'asset_management/settings',
 		];
 		$section = strtolower((string) $section);
-		if (!isset($map[$section])) {
-			return redirect()->to(base_url('asset_management/dashboard'));
-		}
-		$this->denyUnless($map[$section][0]);
-		$data = $this->data;
-		$data['title'] = $map[$section][1];
-		$data['subtitle'] = 'Coming soon';
-		$data['page'] = $map[$section][0];
-		$data['phase'] = $map[$section][2];
-		$data['section_label'] = $map[$section][1];
-		$data['content'] = view('pages/assets/placeholder', $data);
-		return view('main', $data);
+		$url = isset($map[$section]) ? $map[$section] : 'asset_management/dashboard';
+		return redirect()->to(base_url($url));
 	}
 
 	public function settings()
