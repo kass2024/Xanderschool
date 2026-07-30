@@ -3,13 +3,18 @@
 use App\Models\AddressModel;
 use App\Models\ClassesModel;
 use App\Models\ClassRecordModel;
+use App\Models\DeptModel;
 use App\Models\ExtraSMSModel;
+use App\Models\FacultyModel;
+use App\Models\LevelsModel;
 use App\Models\PackageModel;
 use App\Models\SchoolModel;
 use App\Models\SmsModel;
 use App\Models\StaffModel;
 use App\Models\StudentModel;
 use App\Models\UserModel;
+use App\Models\PlatformSettingsModel;
+use CodeIgniter\HTTP\Response;
 
 class Admin extends BaseController
 {
@@ -39,7 +44,7 @@ class Admin extends BaseController
 	{
 		$this->_preset();
 		$data['title']         = 'Admin Dashboard';
-		$data['subtitle']      = 'IOTXAD Admin Dashboard';
+		$data['subtitle']      = 'XanderTech Admin Dashboard';
 		$smsRecordModel        = new SmsModel();
 		$schoolModel           = new SchoolModel();
 		$packageModel          = new PackageModel();
@@ -348,6 +353,42 @@ class Admin extends BaseController
 		return view('main_admin', $data);
 	}
 
+	/** Super-admin: global registration service + platform fees. */
+	public function platform_fees()
+	{
+		$this->_preset();
+		$mdl = new PlatformSettingsModel();
+		$fees = $mdl->getFees();
+		$momo = trim((string) env('REGISTRATION_SERVICE_FEE_MOMO', ''));
+		$display = $momo !== '' ? $momo : 'Not set — add REGISTRATION_SERVICE_FEE_MOMO in .env';
+		$data = [
+			'title' => 'Registration service & platform fees',
+			'subtitle' => 'Global fees for online registration (all schools)',
+			'page' => 'platform_fees',
+			'fees' => $fees,
+			'service_momo_display' => $display,
+		];
+		$data['content'] = view('admin/platform_fees', $data);
+		return view('main_admin', $data);
+	}
+
+	public function save_platform_fees(): Response
+	{
+		$this->_preset();
+		$service = (int) preg_replace('/\D/', '', (string) $this->request->getPost('service_fee'));
+		$platform = (int) preg_replace('/\D/', '', (string) $this->request->getPost('platform_fee'));
+		if ($service < 0 || $platform < 0) {
+			return $this->response->setJSON(['error' => 'Fees must be 0 or more']);
+		}
+		$mdl = new PlatformSettingsModel();
+		$adminId = (int) ($this->session->get('soma_admin_id') ?: $this->session->get('soma_id') ?: 0);
+		$fees = $mdl->saveFees($service, $platform, $adminId);
+		return $this->response->setJSON([
+			'success' => 'Registration fees saved',
+			'fees' => $fees,
+		]);
+	}
+
 	public function users()
 	{
 		$this->_preset();
@@ -358,6 +399,266 @@ class Admin extends BaseController
 		$data['users']    = $userMdl->get()->getResultArray();
 		$data['content']  = view('admin/users', $data);
 		return view('main_admin', $data);
+	}
+
+	/** Super-admin: Faculty → Department → Level (REB & TVET). */
+	public function academic_structure()
+	{
+		$this->_preset();
+		$this->ensureAcademicStructureSchema();
+		$data = [];
+		$data['title'] = 'Academic structure';
+		$data['subtitle'] = 'Manage faculties, departments and levels (REB & TVET)';
+		$data['page'] = 'academic_structure';
+		$data['structureApiPrefix'] = 'admin';
+		$data['content'] = view('pages/academic_structure', $data);
+		return view('main_admin', $data);
+	}
+
+	private function ensureAcademicStructureSchema()
+	{
+		$db = \Config\Database::connect();
+		$col = $db->query(
+			"SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'levels' AND COLUMN_NAME = 'department_id'"
+		)->getRow();
+		if ($col && (int) $col->c === 0) {
+			$db->query('ALTER TABLE levels ADD COLUMN department_id INT NULL DEFAULT NULL AFTER faculty_id');
+		}
+	}
+
+	public function getAcademicStructure($program = 0): Response
+	{
+		$this->_preset();
+		$this->ensureAcademicStructureSchema();
+		$db = \Config\Database::connect();
+		$program = (int) $program;
+
+		$facBuilder = $db->table('faculty')->select('id, title, abbrev, type, status')->orderBy('title', 'ASC');
+		if ($program === 1 || $program === 2) {
+			$facBuilder->where('type', $program);
+		}
+		$faculties = $facBuilder->get()->getResultArray();
+
+		$sharedLevels = [];
+		if ($program === 1) {
+			$rows = $db->table('levels')->select('id, title, type, faculty_id, department_id, status')
+				->where('type', 1)
+				->orderBy('title', 'ASC')
+				->get()->getResultArray();
+			$byId = [];
+			foreach ($rows as $lv) {
+				$title = strtolower(trim((string) $lv['title']));
+				if (preg_match('/\b(senior|ordinary|primary|nursery|year|s1|s2|s3|s4|s5|s6)\b/', $title)) {
+					continue;
+				}
+				if (!preg_match('/\blevel\s*[1-5]\b|^l\s*[1-5]$/', $title)) {
+					continue;
+				}
+				$byId[$lv['id']] = $lv;
+			}
+			$sharedLevels = array_values($byId);
+			usort($sharedLevels, function ($a, $b) {
+				preg_match('/([1-5])/', (string) $a['title'], $ma);
+				preg_match('/([1-5])/', (string) $b['title'], $mb);
+				$na = isset($ma[1]) ? (int) $ma[1] : 9;
+				$nb = isset($mb[1]) ? (int) $mb[1] : 9;
+				if ($na !== $nb) {
+					return $na < $nb ? -1 : 1;
+				}
+				return strcasecmp((string) $a['title'], (string) $b['title']);
+			});
+		}
+
+		$tree = [];
+		foreach ($faculties as $fac) {
+			$depts = $db->table('departments')->select('id, title, code, faculty_id')
+				->where('faculty_id', $fac['id'])
+				->orderBy('title', 'ASC')
+				->get()->getResultArray();
+			$deptNodes = [];
+			foreach ($depts as $dept) {
+				$deptNodes[] = [
+					'id' => (int) $dept['id'],
+					'title' => $dept['title'],
+					'code' => $dept['code'],
+				];
+			}
+			$facLevels = [];
+			if ((int) $fac['type'] === 2) {
+				$facLevels = $db->table('levels')->select('id, title, type, faculty_id, department_id, status')
+					->where('faculty_id', $fac['id'])
+					->orderBy('title', 'ASC')
+					->get()->getResultArray();
+			}
+			$tree[] = [
+				'id' => (int) $fac['id'],
+				'title' => $fac['title'],
+				'abbrev' => $fac['abbrev'],
+				'type' => (int) $fac['type'],
+				'status' => (int) $fac['status'],
+				'departments' => $deptNodes,
+				'levels' => $facLevels,
+			];
+		}
+		return $this->response->setJSON([
+			'success' => 1,
+			'program' => $program,
+			'shared_levels' => $sharedLevels,
+			'levels_mode' => $program === 1 ? 'program' : 'faculty',
+			'faculties' => $tree,
+		]);
+	}
+
+	public function saveAcademicFaculty(): Response
+	{
+		$this->_preset();
+		$fMdl = new FacultyModel();
+		$id = (int) $this->request->getPost('id');
+		$title = trim((string) $this->request->getPost('title'));
+		$abbrev = trim((string) $this->request->getPost('abbrev'));
+		$type = (int) $this->request->getPost('type');
+		if ($title === '') {
+			return $this->response->setJSON(['error' => 'Faculty name is required']);
+		}
+		if ($type !== 1 && $type !== 2) {
+			return $this->response->setJSON(['error' => 'Type must be REB (2) or TVET (1)']);
+		}
+		$row = [
+			'title' => $title,
+			'abbrev' => $abbrev !== '' ? $abbrev : substr($title, 0, 20),
+			'type' => $type,
+			'status' => 0,
+		];
+		if ($id > 0) {
+			$row['id'] = $id;
+		}
+		try {
+			$fMdl->save($row);
+			return $this->response->setJSON(['success' => 'Faculty saved', 'id' => $id > 0 ? $id : $fMdl->getInsertID()]);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
+	public function saveAcademicDepartment(): Response
+	{
+		$this->_preset();
+		$dMdl = new DeptModel();
+		$id = (int) $this->request->getPost('id');
+		$facultyId = (int) $this->request->getPost('faculty_id');
+		$title = trim((string) $this->request->getPost('title'));
+		$code = trim((string) $this->request->getPost('code'));
+		if ($facultyId <= 0) {
+			return $this->response->setJSON(['error' => 'Select a faculty first']);
+		}
+		if ($title === '') {
+			return $this->response->setJSON(['error' => 'Department name is required']);
+		}
+		if ($code === '') {
+			$code = strtoupper(substr(preg_replace('/\s+/', '', $title), 0, 10));
+		}
+		$adminId = (int) $this->session->get('soma_admin_id');
+		$row = [
+			'title' => $title,
+			'code' => $code,
+			'faculty_id' => $facultyId,
+			'created_by' => $adminId,
+			'updated_by' => $adminId,
+		];
+		if ($id > 0) {
+			$row['id'] = $id;
+		}
+		try {
+			$dMdl->save($row);
+			return $this->response->setJSON(['success' => 'Department saved', 'id' => $id > 0 ? $id : $dMdl->getInsertID()]);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
+	public function saveAcademicLevel(): Response
+	{
+		$this->_preset();
+		$this->ensureAcademicStructureSchema();
+		$lMdl = new LevelsModel();
+		$fMdl = new FacultyModel();
+		$id = (int) $this->request->getPost('id');
+		$facultyId = (int) $this->request->getPost('faculty_id');
+		$title = trim((string) $this->request->getPost('title'));
+		if ($title === '') {
+			return $this->response->setJSON(['error' => 'Level name is required']);
+		}
+
+		$facType = 2;
+		if ($facultyId > 0) {
+			$fac = $fMdl->select('id,type')->where('id', $facultyId)->get(1)->getRow();
+			if (!$fac) {
+				return $this->response->setJSON(['error' => 'Faculty not found']);
+			}
+			$facType = (int) $fac->type;
+		} else {
+			$facType = 1;
+		}
+
+		if ($facType === 1 && preg_match('/\b(senior|s4|s5|s6)\b/i', $title)) {
+			return $this->response->setJSON(['error' => 'TVET uses Level 1–5 only (not Senior)']);
+		}
+		if ($facType === 2 && $facultyId <= 0) {
+			return $this->response->setJSON(['error' => 'Select a faculty first — REB levels are shared by all departments under that faculty']);
+		}
+
+		$row = [
+			'title' => $title,
+			'faculty_id' => $facType === 1 ? ($facultyId > 0 ? $facultyId : 0) : $facultyId,
+			'department_id' => null,
+			'type' => $facType,
+			'status' => 1,
+		];
+		if ($id > 0) {
+			$row['id'] = $id;
+		}
+		try {
+			$lMdl->save($row);
+			return $this->response->setJSON(['success' => 'Level saved', 'id' => $id > 0 ? $id : $lMdl->getInsertID()]);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => $e->getMessage()]);
+		}
+	}
+
+	public function deleteAcademicNode(): Response
+	{
+		$this->_preset();
+		$kind = strtolower(trim((string) $this->request->getPost('kind')));
+		$id = (int) $this->request->getPost('id');
+		if ($id <= 0 || !in_array($kind, ['faculty', 'department', 'level'], true)) {
+			return $this->response->setJSON(['error' => 'Invalid request']);
+		}
+		$db = \Config\Database::connect();
+		try {
+			if ($kind === 'faculty') {
+				$used = $db->table('departments')->where('faculty_id', $id)->countAllResults();
+				if ($used > 0) {
+					return $this->response->setJSON(['error' => 'Remove departments under this faculty first']);
+				}
+				$db->table('faculty')->where('id', $id)->delete();
+			} elseif ($kind === 'department') {
+				$used = $db->table('classes')->where('department', $id)->countAllResults();
+				if ($used > 0) {
+					return $this->response->setJSON(['error' => 'Department is used by classes — cannot delete']);
+				}
+				$db->table('departments')->where('id', $id)->delete();
+			} else {
+				$used = $db->table('classes')->where('level', $id)->countAllResults();
+				if ($used > 0) {
+					return $this->response->setJSON(['error' => 'Level is used by classes — cannot delete']);
+				}
+				$db->table('levels')->where('id', $id)->delete();
+			}
+			return $this->response->setJSON(['success' => 'Deleted']);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => $e->getMessage()]);
+		}
 	}
 
 	public function get_package($json = false)
@@ -674,7 +975,7 @@ class Admin extends BaseController
 
 	public function testSMS()
 	{
-		if ($this->sendSMS('250780699435', 'Test by QONICS INC on ' . date('Y-m-d H:i:s') . ' from IOTXAD', $result))
+		if ($this->sendSMS('250780699435', 'Test by XanderTech on ' . date('Y-m-d H:i:s') . ' from SmartSMS', $result))
 		{
 			echo 'SMS SENT <br>CODE: ' . $result['code'] . '<br>CONTENT: ' . $result['content'];
 		}

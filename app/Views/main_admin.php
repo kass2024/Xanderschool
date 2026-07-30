@@ -31,8 +31,11 @@
 		<div class="app-sidebar-wrapper">
 			<div class="app-sidebar bg-asteroid sidebar-text-light">
 				<div class="app-header__logo">
-					<a href="#" data-toggle="tooltip" data-placement="bottom" title="" class="logo-src"
-					   data-original-title="Somanet"></a>
+					<a href="<?= base_url('admin'); ?>" data-toggle="tooltip" data-placement="bottom"
+					   title="SmartSMS" class="logo-src" data-original-title="SmartSMS">
+						<img src="<?= base_url('assets/images/smartsms-logo-full-web.png'); ?>"
+							 alt="XanderTech SmartSMS" width="168" height="56">
+					</a>
 					<button type="button" class="hamburger hamburger--elastic mobile-toggle-nav">
                                 <span class="hamburger-box">
                                     <span class="hamburger-inner"></span>
@@ -72,9 +75,21 @@
 								</ul>
 							</li>
 							<li>
+								<a href="<?= base_url('admin/academic_structure'); ?>">
+									<i class="metismenu-icon typcn typcn-flow-children"></i>
+									Academic structure
+								</a>
+							</li>
+							<li>
 								<a href="<?= base_url('packages'); ?>">
 									<i class="metismenu-icon typcn typcn-group-outline"></i>
 									<?= lang("app.packages"); ?>
+								</a>
+							</li>
+							<li>
+								<a href="<?= base_url('admin/platform_fees'); ?>">
+									<i class="metismenu-icon typcn typcn-vendor-microsoft"></i>
+									Registration fees
 								</a>
 							</li>
 							<li>
@@ -106,8 +121,11 @@
 			<div class="app-main__inner">
 				<div class="header-mobile-wrapper">
 					<div class="app-header__logo">
-						<a href="#" data-toggle="tooltip" data-placement="bottom" title="" class="logo-src"
-						   data-original-title="KeroUI Admin Template"></a>
+						<a href="<?= base_url('admin'); ?>" data-toggle="tooltip" data-placement="bottom"
+						   title="SmartSMS" class="logo-src" data-original-title="SmartSMS">
+							<img src="<?= base_url('assets/images/smartsms-logo-full-web.png'); ?>"
+								 alt="XanderTech SmartSMS" width="168" height="56">
+						</a>
 						<button type="button" class="hamburger hamburger--elastic mobile-toggle-sidebar-nav">
                                 <span class="hamburger-box">
                                     <span class="hamburger-inner"></span>
@@ -371,8 +389,8 @@
 					<div class="">
 						<div class="app-footer__inner">
 							<div class="app-footer-left">
-								<label><?= lang("app.poweredBy"); ?> <a href="http://www.bbdigitech.com" target="_blank"
-																		class="alert-link">BDS Ltd</a></label>
+								<label><?= lang("app.poweredBy"); ?> <a href="https://xandertech.rw" target="_blank"
+																		class="alert-link">XanderTech</a></label>
 							</div>
 							<div class="app-footer-right">
 								<ul class="header-megamenu nav">

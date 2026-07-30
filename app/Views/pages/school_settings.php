@@ -1013,7 +1013,7 @@
 								<label>Registration fee (RWF)</label>
 								<input type="number" min="0" step="100" class="form-control" id="app_reg_fees"
 									   value="<?= (int)($appSet['registration_fees'] ?? 10000); ?>">
-								<small class="text-muted">School portion received via MOMO. Platform charges are added automatically on payment.</small>
+								<small class="text-muted">School portion received via MOMO. Service/platform fees (if any) are set by the platform admin and paid separately.</small>
 							</div>
 							<div class="form-row">
 								<div class="form-group col-md-6">

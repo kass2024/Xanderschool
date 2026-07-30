@@ -578,11 +578,11 @@
 													</tr>
 													<tr class="fee-row-gateway" id="rowServiceCharges">
 														<td style="padding:4px 0;color:#64748b;">Service charges</td>
-														<td style="padding:4px 0;text-align:right;color:#64748b;" id="registration_charges">600 Rwf</td>
+														<td style="padding:4px 0;text-align:right;color:#64748b;" id="registration_charges">—</td>
 													</tr>
-													<tr class="fee-row-gateway" id="rowPlatformFee">
+													<tr class="fee-row-gateway fee-row-platform" id="rowPlatformFee" style="display:none;">
 														<td style="padding:4px 0;color:#64748b;">Platform fee</td>
-														<td style="padding:4px 0;text-align:right;color:#64748b;" id="registration_platform">100 Rwf</td>
+														<td style="padding:4px 0;text-align:right;color:#64748b;" id="registration_platform">—</td>
 													</tr>
 													<tr style="border-top:1px solid #cbd5e1;">
 														<td style="padding:8px 0 0;font-weight:700;">Total due</td>
@@ -590,8 +590,9 @@
 													</tr>
 												</table>
 												<input type="hidden" id="fee_raw_registration" value="0">
-												<input type="hidden" id="fee_raw_charges" value="600">
-												<input type="hidden" id="fee_raw_platform" value="100">
+												<input type="hidden" id="fee_raw_charges" value="0">
+												<input type="hidden" id="fee_raw_platform" value="0">
+												<input type="hidden" id="fee_platform_enabled" value="0">
 												<div id="payment_bypass_note" class="alert alert-warning" style="display:none;margin:12px 0 0;padding:10px;border-radius:8px;font-size:13px;">
 													<strong>Live MOMO is unavailable right now.</strong>
 													You can still submit and upload another payment proof (bank slip, receipt, etc.), or ask the school to enable MoPay and set the MOMO receive number in Basic Settings.
@@ -722,15 +723,26 @@
 				var fee = parseInt($("#fee_raw_registration").val(), 10) || 0;
 				var charges = parseInt($("#fee_raw_charges").val(), 10) || 0;
 				var platform = parseInt($("#fee_raw_platform").val(), 10) || 0;
+				var platformOn = parseInt($("#fee_platform_enabled").val(), 10) === 1 && platform > 0;
 				if (method === 'proof') {
 					// Proof / bank slip: school registration fee only (no gateway charges)
 					$(".fee-row-gateway").hide();
 					$("#registration_due").text(fee > 0 ? formatRwf(fee) : '—');
 				} else {
-					$(".fee-row-gateway").show();
-					$("#registration_charges").text(formatRwf(charges));
-					$("#registration_platform").text(formatRwf(platform));
-					$("#registration_due").text(fee > 0 ? formatRwf(fee + charges + platform) : '—');
+					if (charges > 0) {
+						$("#rowServiceCharges").show();
+						$("#registration_charges").text(formatRwf(charges));
+					} else {
+						$("#rowServiceCharges").hide();
+					}
+					if (platformOn) {
+						$("#rowPlatformFee").show();
+						$("#registration_platform").text(formatRwf(platform));
+					} else {
+						$("#rowPlatformFee").hide();
+						platform = 0;
+					}
+					$("#registration_due").text(fee > 0 || charges > 0 || platform > 0 ? formatRwf(fee + charges + platform) : '—');
 				}
 			}
 			function syncPaymentMethodUI() {
@@ -916,8 +928,9 @@
 						}
 						$("[name='applicationSettings']").val(data.settings_id);
 						$("#fee_raw_registration").val(parseInt(data.settings_fees_raw, 10) || 0);
-						$("#fee_raw_charges").val(parseInt(data.settings_charges_raw, 10) || 600);
-						$("#fee_raw_platform").val(parseInt(data.settings_platform_raw, 10) || 100);
+						$("#fee_raw_charges").val(parseInt(data.settings_charges_raw, 10) || 0);
+						$("#fee_raw_platform").val(parseInt(data.settings_platform_raw, 10) || 0);
+						$("#fee_platform_enabled").val(parseInt(data.settings_platform_enabled, 10) === 1 ? '1' : '0');
 						$("#registration_amount").text(data.settings_fees || '—');
 						var bypass = parseInt(data.payment_bypass, 10) === 1;
 						$("#payment_bypass_flag").val(bypass ? '1' : '0');

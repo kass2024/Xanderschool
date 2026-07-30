@@ -649,11 +649,12 @@ class BaseController extends Controller
 	}
 	/**
 	 * Initiate registration fee collection via MoPay Gateway V1.
-	 * Debits the parent/applicant MOMO phone and transfers the full amount
-	 * to the school receive number from Basic Settings (schools.mtn_momo_phone).
+	 * Debits payer for gross amount and splits transfers:
+	 * - schoolAmount → school MOMO (Basic Settings)
+	 * - chargesAmount (+ platform if any) → REGISTRATION_SERVICE_FEE_MOMO from .env
 	 *
 	 * @param string $tx_id Preferred MoPay transaction id (may be reminted on duplicate)
-	 * @param object $input phone, schoolPhone, grossAmount, …
+	 * @param object $input phone, schoolPhone, grossAmount, schoolAmount, chargesAmount, somanetChargesAmount
 	 * @param object $student code / names for messages
 	 * @return array{transaction_id:string,momo_ref:string,flow:string,raw:string}
 	 * @throws \Exception
@@ -670,28 +671,60 @@ class BaseController extends Controller
 			throw new \Exception('Invalid MOMO phone number');
 		}
 
-		$receiver = $gateway->normalizeMsisdn((string) ($input->schoolPhone ?? ''));
-		if (strlen($receiver) < 12) {
+		$schoolAmount = (int) ($input->schoolAmount ?? 0);
+		$serviceAmount = (int) ($input->chargesAmount ?? 0);
+		$platformAmount = (int) ($input->somanetChargesAmount ?? 0);
+		$platformOpsAmount = $serviceAmount + $platformAmount;
+		$gross = (int) ($input->grossAmount ?? ($schoolAmount + $platformOpsAmount));
+		if ($gross < 1 || $schoolAmount < 1) {
+			throw new \Exception('Invalid registration payment amount');
+		}
+		if ($schoolAmount + $platformOpsAmount !== $gross) {
+			$gross = $schoolAmount + $platformOpsAmount;
+		}
+
+		$schoolReceiver = $gateway->normalizeMsisdn((string) ($input->schoolPhone ?? ''));
+		if (strlen($schoolReceiver) < 12) {
 			throw new \Exception('School MOMO receive number is not configured in Basic Settings');
 		}
 
-		$amount = (int) ($input->grossAmount ?? 0);
-		if ($amount < 1) {
-			throw new \Exception('Invalid registration payment amount');
+		$serviceMomoRaw = trim((string) env('REGISTRATION_SERVICE_FEE_MOMO', ''));
+		if ($serviceMomoRaw === '') {
+			$serviceMomoRaw = trim((string) env('MOPAY_RECEIVER_ACCOUNT_NO', ''));
+		}
+		$serviceReceiver = $serviceMomoRaw !== '' ? $gateway->normalizeMsisdn($serviceMomoRaw) : '';
+		if ($platformOpsAmount > 0 && strlen($serviceReceiver) < 12) {
+			throw new \Exception('Service fee MOMO is not configured. Set REGISTRATION_SERVICE_FEE_MOMO in .env');
 		}
 
 		$code = (string) ($student->code ?? 'REG');
 		$safeCode = preg_replace('/[^A-Za-z0-9_]/', '', $code) ?: 'REG';
+		$txId = $tx_id !== '' ? $tx_id : $gateway->newTransactionId('XSCHREG');
+
+		$transfers = [[
+			'transactionId' => $txId . '_T1',
+			'account_no' => $schoolReceiver,
+			'amount' => $schoolAmount,
+			'message' => 'XSCHREG_' . $safeCode . '_SCHOOL',
+		]];
+		if ($platformOpsAmount > 0) {
+			$transfers[] = [
+				'transactionId' => $txId . '_T2',
+				'account_no' => $serviceReceiver,
+				'amount' => $platformOpsAmount,
+				'message' => 'XSCHREG_' . $safeCode . '_SERVICE',
+			];
+		}
+
 		$result = $gateway->initiateCollection([
 			'account_no' => $payer,
-			'amount' => $amount,
-			'transaction_id' => $tx_id !== '' ? $tx_id : $gateway->newTransactionId('XSCHREG'),
-			'receiver_account_no' => $receiver,
+			'amount' => $gross,
+			'transaction_id' => $txId,
 			'title' => 'Xander_school_registration',
 			'details' => 'Student_registration_payment_' . $safeCode,
 			'message' => 'XSCHREG_' . $safeCode,
-			'transfer_message' => 'XSCHREG_' . $safeCode . '_SCHOOL',
 			'use_transfer' => true,
+			'transfers' => $transfers,
 		]);
 
 		if (empty($result['ok'])) {
@@ -710,11 +743,30 @@ class BaseController extends Controller
 		}
 
 		return [
-			'transaction_id' => (string) ($result['transaction_id'] ?? $tx_id),
+			'transaction_id' => (string) ($result['transaction_id'] ?? $txId),
 			'momo_ref' => $momoRef,
 			'flow' => (string) ($result['flow'] ?? ''),
 			'raw' => (string) ($result['raw'] ?? ''),
 		];
+	}
+
+	/**
+	 * Global service + platform fees from admin panel.
+	 *
+	 * @return array{service_fee:int,platform_fee:int}
+	 */
+	protected function getRegistrationGatewayFees(): array
+	{
+		try {
+			$fees = (new \App\Models\PlatformSettingsModel())->getFees();
+			return [
+				'service_fee' => max(0, (int) ($fees['service_fee'] ?? 0)),
+				'platform_fee' => max(0, (int) ($fees['platform_fee'] ?? 0)),
+			];
+		} catch (\Throwable $e) {
+			log_message('warning', 'getRegistrationGatewayFees: ' . $e->getMessage());
+			return ['service_fee' => 0, 'platform_fee' => 0];
+		}
 	}
 
 	/**

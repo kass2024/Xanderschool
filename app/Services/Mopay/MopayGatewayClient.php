@@ -177,7 +177,11 @@ class MopayGatewayClient
 		$country = strtolower((string) ($input['country_code'] ?? $this->config['default_country_code'] ?? 'rw'));
 		$mno = (string) ($input['mno'] ?? $this->config['default_mno'] ?? 'mtn');
 		$receiver = trim((string) ($input['receiver_account_no'] ?? $this->config['receiver_account_no'] ?? ''));
-		$useTransfer = ($input['use_transfer'] ?? true) && $receiver !== '';
+		$extraTransfers = [];
+		if (!empty($input['transfers']) && is_array($input['transfers'])) {
+			$extraTransfers = $input['transfers'];
+		}
+		$useTransfer = ($input['use_transfer'] ?? true) && ($receiver !== '' || $extraTransfers !== []);
 
 		$prefix = preg_replace('/[^A-Za-z0-9_]/', '', (string) ($this->config['message_prefix'] ?? 'MOPAY'));
 		if ($prefix === null || $prefix === '') {
@@ -190,7 +194,62 @@ class MopayGatewayClient
 		$url = $useTransfer ? $base . '/api/v1/payment' : $base . '/api/v2/momo/debit';
 
 		if ($useTransfer) {
-			$receiverMsisdn = $this->normalizeMsisdn($receiver);
+			$transfers = [];
+			if ($extraTransfers !== []) {
+				$i = 0;
+				foreach ($extraTransfers as $leg) {
+					if (!is_array($leg)) {
+						continue;
+					}
+					$legAmount = (int) ($leg['amount'] ?? 0);
+					$legPhone = $this->normalizeMsisdn((string) ($leg['account_no'] ?? ''));
+					if ($legAmount < 1 || strlen($legPhone) < 12) {
+						continue;
+					}
+					$i++;
+					$transfers[] = [
+						'transactionId' => (string) ($leg['transactionId'] ?? ($transactionId . '_T' . $i)),
+						'account_no' => $legPhone,
+						'payment_type' => 'momo',
+						'amount' => $legAmount,
+						'currency' => $currency,
+						'message' => (string) ($leg['message'] ?? $transferMessage),
+					];
+				}
+			}
+			if ($transfers === [] && $receiver !== '') {
+				$transfers[] = [
+					'transactionId' => $transactionId . '_T',
+					'account_no' => $this->normalizeMsisdn($receiver),
+					'payment_type' => 'momo',
+					'amount' => $amount,
+					'currency' => $currency,
+					'message' => $transferMessage,
+				];
+			}
+			if ($transfers === []) {
+				return [
+					'ok' => false,
+					'http_status' => 0,
+					'flow' => 'invalid_transfers',
+					'url' => $url,
+					'request' => [],
+					'response' => null,
+					'raw' => '',
+					'auth_mode' => '',
+					'msisdn' => $accountNo,
+					'transaction_id' => $transactionId,
+					'error_message' => 'No valid MoPay transfer destinations.',
+				];
+			}
+			// Debit must equal sum of transfers
+			$transferSum = 0;
+			foreach ($transfers as $t) {
+				$transferSum += (int) $t['amount'];
+			}
+			if ($transferSum !== $amount) {
+				$amount = $transferSum;
+			}
 			$payload = [
 				'transactionId' => $transactionId,
 				'account_no' => $accountNo,
@@ -200,14 +259,7 @@ class MopayGatewayClient
 				'amount' => $amount,
 				'currency' => $currency,
 				'message' => $message,
-				'transfers' => [[
-					'transactionId' => $transactionId . '_T',
-					'account_no' => $receiverMsisdn,
-					'payment_type' => 'momo',
-					'amount' => $amount,
-					'currency' => $currency,
-					'message' => $transferMessage,
-				]],
+				'transfers' => $transfers,
 			];
 			$flow = 'payment_with_transfer';
 		} else {
@@ -258,8 +310,10 @@ class MopayGatewayClient
 			if (isset($payload['transactionId'])) {
 				$payload['transactionId'] = $transactionId;
 			}
-			if (isset($payload['transfers'][0]['transactionId'])) {
-				$payload['transfers'][0]['transactionId'] = $transactionId . '_T';
+			if (!empty($payload['transfers']) && is_array($payload['transfers'])) {
+				foreach ($payload['transfers'] as $ti => $tr) {
+					$payload['transfers'][$ti]['transactionId'] = $transactionId . '_T' . ($ti + 1);
+				}
 			}
 			$res = $this->httpRequest('POST', $url, $headers, json_encode($payload), true);
 			$body = $res['json'];

@@ -13745,8 +13745,9 @@ public function assign_card()
 			return $this->response->setJSON(["error" => "No Faculty found for the selected school program"]);
 		} else {
 			$fee = (int) $settings->registration_fees;
-			$charges = 600;
-			$platform = 100;
+			$gatewayFees = $this->getRegistrationGatewayFees();
+			$charges = (int) $gatewayFees['service_fee'];
+			$platform = (int) $gatewayFees['platform_fee'];
 			$total = $fee + $charges + $platform;
 			$data['success'] = 1;
 			$data['requirement_document'] = $settings->requirement_document;
@@ -13757,6 +13758,7 @@ public function assign_card()
 			$data['settings_charges_raw'] = $charges;
 			$data['settings_platform'] = number_format($platform) . ' Rwf';
 			$data['settings_platform_raw'] = $platform;
+			$data['settings_platform_enabled'] = $platform > 0 ? 1 : 0;
 			$data['settings_total'] = number_format($total) . ' Rwf';
 			$data['settings_total_raw'] = $total;
 			$data['babyeyi_required'] = (int) ($settings->babyeyi_required ?? 1);
@@ -14017,8 +14019,9 @@ public function assign_card()
         // ===== /NEW attachments =====
 
         $txId         = $mopayClient->newTransactionId('XSCHREG');
-        $charges      = 600;
-        $SomaCharges  = 100;
+        $gatewayFees  = $this->getRegistrationGatewayFees();
+        $charges      = (int) $gatewayFees['service_fee'];
+        $SomaCharges  = (int) $gatewayFees['platform_fee'];
         // Proof uploads: school registration fee only (no MOMO service / platform charges)
         $totalAmount  = $paymentMethod === 'proof'
             ? (int) $settingsData->registration_fees
