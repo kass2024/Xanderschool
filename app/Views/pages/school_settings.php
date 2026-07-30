@@ -783,17 +783,17 @@
 								  class="spedit">&nbsp;<?= $settings['bank_account']; ?></span>
 						</div>
 						<div class="form-group">
-							<label>MOMO account:</label>
+							<label>MOMO account (school / registration fees):</label>
 							<span data-value="<?= $settings['mtn_momo_phone']; ?>" data-target="mtn_momo_phone"
 								  class="spedit">&nbsp;<?= $settings['mtn_momo_phone']; ?></span>
-							<label class="text-muted">MTN phone number that is registered in MOMO pay that will be used to receive School and registration fees paid by parents</label>
+							<label class="text-muted">MTN phone number registered in MoPay that receives school and registration fees paid by parents (used for live registration MOMO payments).</label>
 
 						</div>
 						<div class="form-group">
-							<label>MOMO account:</label>
+							<label>MOMO account (pocket money):</label>
 							<span data-value="<?= $settings['pocket_money_phone']; ?>" data-target="pocket_money_phone"
 								  class="spedit">&nbsp;<?= $settings['pocket_money_phone']; ?></span>
-							<label class="text-muted">MTN phone number that is registered in MOMO pay that will be used to receive student money (Pocket money) sent by parents</label>
+							<label class="text-muted">MTN phone number that is registered in MoPay that will be used to receive student money (Pocket money) sent by parents</label>
 
 						</div>
 					</div>
@@ -1328,7 +1328,7 @@
 								</thead>
 								<tbody id="gradeMentionBody">
 								<?php foreach ($colors as $color): ?>
-								<tr data-id="<?= (int) $color['id']; ?>">
+								<tr data-id="<?= (int) $color['id']; ?>" data-max="<?= (float) $color['max_point']; ?>" data-min="<?= (float) $color['min_point']; ?>">
 									<td><?= esc($color['color_title']); ?></td>
 									<td><?= esc($color['max_point']); ?></td>
 									<td><?= esc($color['min_point']); ?></td>
@@ -2450,6 +2450,21 @@ $(document).on("click","#btn-remove-discipline",function () {
 		 });
 
 		 // Live Mentions: save without page reload, append row, keep form ready
+		 function sortGradeMentionRows() {
+			 var $body = $("#gradeMentionBody");
+			 var rows = $body.children("tr").get();
+			 rows.sort(function (a, b) {
+				 var maxA = parseFloat($(a).attr("data-max")) || 0;
+				 var maxB = parseFloat($(b).attr("data-max")) || 0;
+				 if (maxB !== maxA) return maxB - maxA; // descending by max marks
+				 var minA = parseFloat($(a).attr("data-min")) || 0;
+				 var minB = parseFloat($(b).attr("data-min")) || 0;
+				 return minB - minA;
+			 });
+			 $.each(rows, function (_, row) { $body.append(row); });
+		 }
+		 sortGradeMentionRows();
+
 		 $("#gradeMentionForm").on("submit", function (e) {
 			 e.preventDefault();
 			 e.stopImmediatePropagation();
@@ -2470,7 +2485,7 @@ $(document).on("click","#btn-remove-discipline",function () {
 					 }
 					 if (data && data.success && data.grade) {
 						 var g = data.grade;
-						 var row = '<tr data-id="' + g.id + '">'
+						 var row = '<tr data-id="' + g.id + '" data-max="' + (parseFloat(g.max_point) || 0) + '" data-min="' + (parseFloat(g.min_point) || 0) + '">'
 							 + '<td>' + $('<div>').text(g.color_title || '').html() + '</td>'
 							 + '<td>' + $('<div>').text(String(g.max_point)).html() + '</td>'
 							 + '<td>' + $('<div>').text(String(g.min_point)).html() + '</td>'
@@ -2479,7 +2494,8 @@ $(document).on("click","#btn-remove-discipline",function () {
 							 + '<td><center><a class="btn btn-danger" data-toggle="modal" data-target="#DeleteGradeModal" data-id="' + g.id + '">'
 							 + '<i class="fa fa-trash" style="color: white"></i></a></center></td>'
 							 + '</tr>';
-						 $("#gradeMentionBody").prepend(row);
+						 $("#gradeMentionBody").append(row);
+						 sortGradeMentionRows();
 						 if (window.toastada) toastada.success(data.success);
 						 // Clear for next mention — keep Nursery locked & color picker ready
 						 $("#gradeMentionTitle").val("").focus();

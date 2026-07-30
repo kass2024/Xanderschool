@@ -32,6 +32,7 @@ require_once APPPATH . 'ThirdParty/PHPMailer/Exception.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
+use App\Services\Mopay\MopayGatewayClient;
 class BaseController extends Controller
 {
 
@@ -647,57 +648,83 @@ class BaseController extends Controller
 
 	}
 	/**
-	 * @param string $tx_id Transaction ID from database and prepend EDU
-	 * @param object $input object that contains payment info (token,applicationId,phone,amount,..)
-	 * @param object $student object that contains student info (id,name,applicationCode,..)
-	 * @return string Returns Reference number of the payment from MTN #momo_ref_number
-	 * @throws \Exception throw an exception when error occurred
+	 * Initiate registration fee collection via MoPay Gateway V1.
+	 * Debits the parent/applicant MOMO phone and transfers the full amount
+	 * to the school receive number from Basic Settings (schools.mtn_momo_phone).
+	 *
+	 * @param string $tx_id Preferred MoPay transaction id (may be reminted on duplicate)
+	 * @param object $input phone, schoolPhone, grossAmount, …
+	 * @param object $student code / names for messages
+	 * @return array{transaction_id:string,momo_ref:string,flow:string,raw:string}
+	 * @throws \Exception
 	 */
-	public function registrationPayment(string $tx_id,object $input,object $student):string{
-//		var_dump($input->phone); die();
-		if(strlen($input->phone)!=12){
-			throw(new \Exception("Invalid Phone number"));
+	public function registrationPayment(string $tx_id, object $input, object $student): array
+	{
+		$gateway = MopayGatewayClient::make();
+		if (!$gateway->isConfigured()) {
+			throw new \Exception('MoPay is not configured. Set MOPAY_AUTH_KEY and MOPAY_SERVER_BASE_URL in .env');
 		}
-		$SchoolPhone = $input->schoolPhone;
-		$data = [
-			"token"=>BESOFT_API_TOKEN,
-			"external_transaction_id"=>$tx_id,
-			"callback_url"=>base_url('updateRegistrationPaymentStatus'),
-			"debit"=>[
-				"phone_number"=>$input->phone,
-				"amount"=>$input->grossAmount,
-				"message"=>"{$student->code}"
-			],
-			"transfers" => [
-				[
-					"phone_number"=>$SchoolPhone,
-					"amount" => $input->schoolAmount,
-					"message" => "{$student->code} Registration payment"
-				],
-				[
-					"phone_number"=>BESOFT_CHARGES_ACCOUNT,
-					"amount" => $input->chargesAmount,
-					"message" => "{$student->code} Registration charges"
-				],
-				[
-					"phone_number"=>SOMANET_CHARGES_ACCOUNT,
-					"amount" => $input->somanetChargesAmount,
-					"message" => "{$student->code} Registration charges"
-				]
-			]
-		];
 
-		$this->curl = \Config\Services::curlrequest();
-		$req = $this->curl->setBody(json_encode($data))->setHeader("Content-Type","application/json")
-			->request("POST",BESOFT_API_URL,
-				['verify' => false,'http_errors' => false]
-			);
-		$res = $req->getBody();
-		if (($resData = json_decode($res))===false){
-			throw(new \Exception("Invalid API response: {$res}"));
-		}else if($resData->status_code>300){
-			throw(new \Exception("Error: {$resData->message}"));
+		$payer = $gateway->normalizeMsisdn((string) ($input->phone ?? ''));
+		if (strlen($payer) < 12) {
+			throw new \Exception('Invalid MOMO phone number');
 		}
-		return $resData->momo_ref_number??'';
+
+		$receiver = $gateway->normalizeMsisdn((string) ($input->schoolPhone ?? ''));
+		if (strlen($receiver) < 12) {
+			throw new \Exception('School MOMO receive number is not configured in Basic Settings');
+		}
+
+		$amount = (int) ($input->grossAmount ?? 0);
+		if ($amount < 1) {
+			throw new \Exception('Invalid registration payment amount');
+		}
+
+		$code = (string) ($student->code ?? 'REG');
+		$result = $gateway->initiateCollection([
+			'account_no' => $payer,
+			'amount' => $amount,
+			'transaction_id' => $tx_id !== '' ? $tx_id : $gateway->newTransactionId('XSCHREG'),
+			'receiver_account_no' => $receiver,
+			'title' => 'Xander_school_registration',
+			'details' => 'Student registration payment ' . $code,
+			'message' => 'XSCHREG_' . $code,
+			'transfer_message' => 'XSCHREG_' . $code . '_SCHOOL',
+			'use_transfer' => true,
+		]);
+
+		if (empty($result['ok'])) {
+			$msg = (string) ($result['error_message'] ?? 'MoPay payment request failed');
+			log_message('error', 'MoPay registrationPayment failed: ' . $msg . ' raw=' . substr((string) ($result['raw'] ?? ''), 0, 500));
+			throw new \Exception($msg);
+		}
+
+		$momoRef = '';
+		if (is_array($result['response'] ?? null)) {
+			$momoRef = (string) ($result['response']['momoRef']
+				?? $result['response']['momo_ref']
+				?? $result['response']['momo_ref_number']
+				?? '');
+		}
+
+		return [
+			'transaction_id' => (string) ($result['transaction_id'] ?? $tx_id),
+			'momo_ref' => $momoRef,
+			'flow' => (string) ($result['flow'] ?? ''),
+			'raw' => (string) ($result['raw'] ?? ''),
+		];
+	}
+
+	/**
+	 * Whether live MoPay registration can run (env configured + not forced bypass).
+	 */
+	protected function isRegistrationMopayLive(): bool
+	{
+		$forcedBypass = (string) env('REGISTRATION_PAYMENT_BYPASS', '0') === '1';
+		if ($forcedBypass) {
+			return false;
+		}
+
+		return MopayGatewayClient::make()->isConfigured();
 	}
 }

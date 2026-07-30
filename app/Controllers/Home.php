@@ -13751,7 +13751,8 @@ public function assign_card()
 			$data['settings_total_raw'] = $total;
 			$data['babyeyi_required'] = (int) ($settings->babyeyi_required ?? 1);
 			$data['settings_id'] = $settings->id;
-			$data['payment_bypass'] = (string) env('REGISTRATION_PAYMENT_BYPASS', '1') === '1' ? 1 : 0;
+			$data['payment_bypass'] = $this->isRegistrationMopayLive() ? 0 : 1;
+			$data['mopay_configured'] = \App\Services\Mopay\MopayGatewayClient::make()->isConfigured() ? 1 : 0;
 			$data['program'] = $program;
 			$data['faculties'] = $faculty;
 			return $this->response->setJSON($data);
@@ -13840,15 +13841,17 @@ public function assign_card()
         return $this->response->setJSON(["error" => "Error: School not available"]);
     }
 
-    // Payment API not ready yet — bypass MOMO but keep Payment step in UI.
-    $paymentBypass = (string) env('REGISTRATION_PAYMENT_BYPASS', '1') === '1';
+    // Live MoPay when configured and not forced offline; otherwise allow proof / bypass.
+    $paymentBypass = !$this->isRegistrationMopayLive();
     $paymentMethod = strtolower(trim((string) $this->request->getPost('paymentMethod')));
     if ($paymentMethod !== 'proof') {
         $paymentMethod = 'momo';
     }
 
-    if ($paymentMethod === 'momo' && !$paymentBypass && strlen($schoolData->mtn_momo_phone) < 5) {
-        return $this->response->setJSON(["error" => "Error: School not available, doesn't allow online payment"]);
+    if ($paymentMethod === 'momo' && !$paymentBypass && strlen(trim((string) $schoolData->mtn_momo_phone)) < 5) {
+        return $this->response->setJSON([
+            "error" => "School MOMO receive number is not set. Ask the school to configure MOMO account in Basic Settings.",
+        ]);
     }
 
     $applicationSettings = $this->request->getPost("applicationSettings");
@@ -13881,7 +13884,7 @@ public function assign_card()
     $parentPhone   = $this->request->getPost("parentPhone");
     $parentEmail   = $this->request->getPost("email");
 
-    // ---- Payment phone normalization
+    // ---- Payment phone normalization (2507XXXXXXXX)
     $momoPhone = $this->request->getPost("momoPhoneNumber");
     if ($paymentMethod === 'proof') {
         $proofPhone = $this->request->getPost('proofPhoneNumber');
@@ -13891,10 +13894,8 @@ public function assign_card()
             $momoPhone = $studentPhone;
         }
     }
-    $momoPhone = str_replace("+", "", (string) $momoPhone);
-    if (strlen($momoPhone) >= 9 && substr($momoPhone, 0, 3) !== "250") {
-        $momoPhone = "25" . $momoPhone;
-    }
+    $mopayClient = \App\Services\Mopay\MopayGatewayClient::make();
+    $momoPhone = $mopayClient->normalizeMsisdn((string) $momoPhone);
 
     $code = uniqid();
 
@@ -14005,7 +14006,7 @@ public function assign_card()
         }
         // ===== /NEW attachments =====
 
-        $txId         = $code . time();
+        $txId         = $mopayClient->newTransactionId('XSCHREG');
         $charges      = 600;
         $SomaCharges  = 100;
         // Proof uploads: school registration fee only (no MOMO service / platform charges)
@@ -14085,6 +14086,13 @@ public function assign_card()
             ]);
         }
 
+        if (strlen($momoPhone) < 12) {
+            return $this->response->setJSON([
+                'error' => 'Please enter a valid MTN MOMO phone number (e.g. 07XXXXXXXX)',
+                'applicationId' => $applicationId,
+            ]);
+        }
+
         $input = (object)[
             'schoolPhone'           => $schoolData->mtn_momo_phone,
             'phone'                 => $momoPhone,
@@ -14098,13 +14106,31 @@ public function assign_card()
             'names' => $firstName . " " . $lastName,
             'code'  => $code
         ];
-        $this->registrationPayment($txId, $input, $applicant);
+
+        try {
+            $payResult = $this->registrationPayment($txId, $input, $applicant);
+            $txId = (string) ($payResult['transaction_id'] ?? $txId);
+            $momoRef = (string) ($payResult['momo_ref'] ?? '');
+        } catch (\Exception $e) {
+            return $this->response->setJSON([
+                'error' => $e->getMessage(),
+                'applicationId' => $applicationId,
+            ]);
+        }
 
         $transMdl->save([
             'applicationId'  => $applicationId,
             'transaction_id' => $txId,
             'amount'         => $totalAmount,
-            'status'         => 202
+            'momo_ref'       => $momoRef,
+            'status'         => 202,
+            'response_body'  => json_encode([
+                'payment_method' => 'mopay',
+                'flow' => $payResult['flow'] ?? '',
+                'payer' => $momoPhone,
+                'receiver' => $mopayClient->normalizeMsisdn((string) $schoolData->mtn_momo_phone),
+                'raw' => $payResult['raw'] ?? '',
+            ]),
         ]);
 
         return $this->response->setJSON([
@@ -14123,27 +14149,150 @@ public function assign_card()
 	{
 		$applicationId = $this->request->getGet('applicationId');
 		$appMdl = new StudentApplicationModel();
+		$appTMdl = new ApplicationTransactionModel();
 		$data = $appMdl->select('status,code')->where('id', $applicationId)->get(1)->getRow();
 		if ($data == null) {
 			return $this->response->setJSON(["error" => "Oops, invalid data"]);
 		}
-		if ($data->status == 1) {
+		if ((int) $data->status === 1) {
 			return $this->response->setJSON(["success" => "1", 'code' => $data->code]);
 		}
-		if ($data->status == 2) {
+		if ((int) $data->status === 2) {
 			return $this->response->setJSON(["error" => "Payment failed, please try again later"]);
 		}
+
+		// Pending: sync from MoPay gateway (PIN approval may complete without webhook).
+		$txn = $appTMdl->select('id,transaction_id,status,momo_ref')
+			->where('applicationId', $applicationId)
+			->orderBy('id', 'DESC')
+			->get(1)->getRow();
+		if ($txn != null && !empty($txn->transaction_id)) {
+			$synced = $this->syncRegistrationPaymentFromMopay((string) $txn->transaction_id, (int) $applicationId, (int) $txn->id);
+			if (!empty($synced['paid'])) {
+				$fresh = $appMdl->select('status,code')->where('id', $applicationId)->get(1)->getRow();
+				return $this->response->setJSON(["success" => "1", 'code' => $fresh ? $fresh->code : $data->code]);
+			}
+			if (!empty($synced['failed'])) {
+				return $this->response->setJSON([
+					"error" => $synced['message'] ?? "Payment failed, please try again later",
+				]);
+			}
+		}
+
+		// Still waiting for PIN / settlement
+		return $this->response->setJSON(["pending" => 1]);
+	}
+
+	/**
+	 * Poll MoPay and mark application paid/failed when settled.
+	 *
+	 * @return array{paid?:bool,failed?:bool,message?:string}
+	 */
+	protected function syncRegistrationPaymentFromMopay(string $transactionId, int $applicationId, int $txnRowId): array
+	{
+		$gateway = \App\Services\Mopay\MopayGatewayClient::make();
+		if (!$gateway->isConfigured()) {
+			return [];
+		}
+
+		try {
+			$status = $gateway->transactionStatus($transactionId);
+		} catch (\Throwable $e) {
+			log_message('warning', 'MoPay status sync failed: ' . $e->getMessage());
+			return [];
+		}
+
+		$body = is_array($status['response'] ?? null) ? $status['response'] : [];
+		$appMdl = new StudentApplicationModel();
+		$appTMdl = new ApplicationTransactionModel();
+
+		if (!empty($status['success'])) {
+			$momoRef = (string) ($body['momoRef'] ?? $body['momo_ref'] ?? $body['momo_ref_number'] ?? '');
+			$wasPending = true;
+			$before = (new StudentApplicationModel())->select('status')->where('id', $applicationId)->get(1)->getRow();
+			if ($before && (int) $before->status === 1) {
+				$wasPending = false;
+			}
+			$appMdl->save(['id' => $applicationId, 'status' => 1]);
+			$appTMdl->save([
+				'id' => $txnRowId,
+				'momo_ref' => $momoRef,
+				'status' => 200,
+				'response_body' => json_encode($body),
+			]);
+			if ($wasPending) {
+				$this->notifyRegistrationPaid($applicationId);
+			}
+			return ['paid' => true];
+		}
+
+		if (!empty($status['failed'])) {
+			$friendly = (string) ($status['error_message'] ?? $gateway->humanizeError($body));
+			$appMdl->save(['id' => $applicationId, 'status' => 2]);
+			$appTMdl->save([
+				'id' => $txnRowId,
+				'status' => 400,
+				'response_body' => json_encode($body ?: ['error' => $friendly]),
+			]);
+			return ['failed' => true, 'message' => $friendly];
+		}
+
+		return [];
+	}
+
+	/**
+	 * Send SMS/email once when registration MOMO payment settles.
+	 */
+	protected function notifyRegistrationPaid(int $applicationId): void
+	{
+		$appMdl = new StudentApplicationModel();
+		$row = $appMdl->select('applications.fname,applications.lname,applications.phoneNumber,applications.parentNames,
+			applications.parentPhoneNumber,applications.email,applications.code,d.code as dept_code,l.title as levelName,s.name as schoolName,s.acronym')
+			->join('departments d', 'd.id = applications.department_id', 'left')
+			->join('levels l', 'l.id = applications.level', 'left')
+			->join('schools s', 's.id = applications.schoolId', 'left')
+			->where('applications.id', $applicationId)
+			->get(1)->getRow();
+		if ($row == null) {
+			return;
+		}
+
+		$message = "{$row->fname} {$row->lname} Wasabye umwanya mu mwaka wa {$row->levelName} {$row->dept_code} code yawe ikuranga uhawe ni {$row->code} yikoreshe usoze kuzuza ibisabwa uhabwe umwanya wasabye.";
+		try {
+			$this->sendSMS($row->phoneNumber, $message, $result);
+		} catch (\Throwable $e) {
+			log_message('warning', 'Registration paid SMS failed: ' . $e->getMessage());
+		}
+		$this->notifyParentOfApplication(
+			(string) ($row->parentPhoneNumber ?? ''),
+			(string) ($row->email ?? ''),
+			(string) ($row->parentNames ?? 'Parent'),
+			trim($row->fname . ' ' . $row->lname),
+			(string) ($row->schoolName ?? $row->acronym),
+			(string) $row->levelName,
+			(string) $row->code
+		);
 	}
 
 	public
 	function updateRegistrationPaymentStatus()
 	{
 		$jsonData = file_get_contents('php://input');
-		$input = json_decode($jsonData);
+		$raw = trim((string) $jsonData);
+		log_message('alert', 'MoPay registration webhook: ' . substr($raw, 0, 2000));
+
+		if ($this->request->getGet('ping') === '1' || $this->request->getGet('ping') === 'true') {
+			return $this->response->setJSON(['ok' => true, 'message' => 'registration mopay webhook ping ok']);
+		}
+
 		$appMdl = new StudentApplicationModel();
 		$appTMdl = new ApplicationTransactionModel();
-		log_message("alert", "request" . $jsonData);
-		$appTransaction = $appTMdl->select('application_transactions.applicationId,application_transactions.status,
+		$gateway = \App\Services\Mopay\MopayGatewayClient::make();
+
+		// Legacy BESOFT callback shape
+		$input = json_decode($raw);
+		if (is_object($input) && !empty($input->external_transaction_id)) {
+			$appTransaction = $appTMdl->select('application_transactions.applicationId,application_transactions.status,
 		ap.phoneNumber,ap.fname,ap.lname,ap.level,ap.parentNames,ap.parentPhoneNumber,ap.email,d.code as dept_code,ap.code,s.acronym,s.name as schoolName,application_transactions.id,l.title as levelName')
 				->join('applications ap', 'ap.id = application_transactions.applicationId')
 				->join('departments d', 'd.id = ap.department_id')
@@ -14151,44 +14300,126 @@ public function assign_card()
 				->join('schools s', 's.id = ap.schoolId')
 				->where('transaction_id', $input->external_transaction_id)
 				->get(1)->getRow();
-		if ($appTransaction != null && $appTransaction->status != 1) {
-			try {
-				$status = 2;
-				if ($input->status_code == 200) {
-					$status = 1;
+			if ($appTransaction != null && (int) $appTransaction->status !== 200 && (int) $appTransaction->status !== 1) {
+				try {
+					$status = 2;
+					if ((int) ($input->status_code ?? 0) === 200) {
+						$status = 1;
+					}
+					$appMdl->save(["id" => $appTransaction->applicationId, "status" => $status]);
+					$appTMdl->save([
+						'id' => $appTransaction->id,
+						'momo_ref' => $input->momo_ref_number ?? '',
+						'response_body' => $jsonData,
+						'status' => $input->status_code ?? 0,
+					]);
+					if ((int) ($input->status_code ?? 0) === 200) {
+						$this->notifyRegistrationPaid((int) $appTransaction->applicationId);
+					}
+					return $this->response->setJSON(['status' => 'success']);
+				} catch (\ReflectionException|\Exception $e) {
+					log_message('alert', 'exception ' . $e->getMessage());
+					return $this->response->setStatusCode(500)->setJSON(['message' => 'System error, please try again later']);
 				}
-				$appMdl->save(["id" => $appTransaction->applicationId, "status" => $status]);
-				$appTMdl->save(
-						[
-								'id' => $appTransaction->id,
-								'momo_ref' => $input->momo_ref_number,
-								'response_body' => $jsonData,
-								'status' => $input->status_code
-						]
-				);
-				if ($input->status_code == 200) {
-					$message = "{$appTransaction->fname} {$appTransaction->lname} Wasabye umwanya mu mwaka wa {$appTransaction->levelName} {$appTransaction->dept_code} code yawe ikuranga uhawe ni {$appTransaction->code} yikoreshe usoze kuzuza ibisabwa uhabwe umwanya wasabye.";
-					log_message("alert", "SMS TO {$appTransaction->phoneNumber} - " . $message);
-					$this->sendSMS($appTransaction->phoneNumber, $message, $result);
-					$this->notifyParentOfApplication(
-						(string) ($appTransaction->parentPhoneNumber ?? ''),
-						(string) ($appTransaction->email ?? ''),
-						(string) ($appTransaction->parentNames ?? 'Parent'),
-						trim($appTransaction->fname . ' ' . $appTransaction->lname),
-						(string) ($appTransaction->schoolName ?? $appTransaction->acronym),
-						(string) $appTransaction->levelName,
-						(string) $appTransaction->code
-					);
-				}
-
-				return $this->response->setJSON(['status' => 'success']);
-			} catch (\ReflectionException|\Exception $e) {
-				log_message("alert", "exception " . $e->getMessage());
-				return $this->response->setStatusCode(500)->setJSON(array("message" => "System error, please try again later"));
 			}
-		} else {
-			log_message("alert", "Transaction not found");
+			return $this->response->setStatusCode(404)->setJSON(['status' => 404, 'message' => 'Transaction not found']);
 		}
+
+		// MoPay V1: JSON body with transactionId / statusDesc, or raw JWT-ish payload
+		$transactionId = '';
+		$payloadBody = [];
+		if ($raw !== '' && ($raw[0] === '{' || $raw[0] === '[')) {
+			$maybe = json_decode($raw, true);
+			if (is_array($maybe)) {
+				$payloadBody = $maybe;
+				$transactionId = (string) ($maybe['transactionId'] ?? $maybe['referenceId'] ?? $maybe['external_transaction_id'] ?? '');
+				if ($transactionId === '' && isset($maybe['data']) && is_array($maybe['data'])) {
+					$payloadBody = $maybe['data'];
+					$transactionId = (string) ($maybe['data']['transactionId'] ?? $maybe['data']['referenceId'] ?? '');
+				}
+				if ($transactionId === '' && !empty($maybe['jwt'])) {
+					// JWT without local verify — fall through to status poll if we can find tid later
+					$transactionId = '';
+				}
+			}
+		}
+
+		if ($transactionId === '') {
+			return $this->response->setJSON(['status' => 200, 'message' => 'Webhook received (no transaction id)']);
+		}
+
+		$baseRef = preg_replace('/_T$/', '', $transactionId) ?: $transactionId;
+		$appTransaction = $appTMdl->select('id,applicationId,status,transaction_id')
+			->groupStart()
+				->where('transaction_id', $transactionId)
+				->orWhere('transaction_id', $baseRef)
+			->groupEnd()
+			->get(1)->getRow();
+
+		if ($appTransaction == null) {
+			// MoPay callback validation expects 404 for unknown txns
+			return $this->response->setStatusCode(404)->setJSON([
+				'status' => 404,
+				'message' => 'Transaction not found',
+				'transactionId' => $transactionId,
+			]);
+		}
+
+		if ((int) $appTransaction->status === 200) {
+			return $this->response->setJSON(['status' => 200, 'message' => 'Already settled', 'transactionId' => $transactionId]);
+		}
+
+		$success = $gateway->isSettledSuccess($payloadBody, true);
+		$failed = $gateway->isSettledFailure($payloadBody);
+
+		// Prefer authoritative gateway poll when payload is ambiguous
+		if (!$success && !$failed) {
+			$synced = $this->syncRegistrationPaymentFromMopay(
+				(string) $appTransaction->transaction_id,
+				(int) $appTransaction->applicationId,
+				(int) $appTransaction->id
+			);
+			if (!empty($synced['paid'])) {
+				return $this->response->setJSON(['status' => 200, 'message' => 'Payment confirmed', 'transactionId' => $transactionId]);
+			}
+			if (!empty($synced['failed'])) {
+				return $this->response->setJSON([
+					'status' => 200,
+					'message' => $synced['message'] ?? 'Payment failed',
+					'transactionId' => $transactionId,
+					'payment_status' => 'failed',
+				]);
+			}
+			return $this->response->setJSON(['status' => 200, 'message' => 'Webhook processed (pending)', 'transactionId' => $transactionId]);
+		}
+
+		if ($success) {
+			$momoRef = (string) ($payloadBody['momoRef'] ?? $payloadBody['momo_ref'] ?? '');
+			$appMdl->save(['id' => $appTransaction->applicationId, 'status' => 1]);
+			$appTMdl->save([
+				'id' => $appTransaction->id,
+				'momo_ref' => $momoRef,
+				'status' => 200,
+				'response_body' => $raw,
+			]);
+			$this->notifyRegistrationPaid((int) $appTransaction->applicationId);
+			return $this->response->setJSON(['status' => 200, 'message' => 'Payment confirmed', 'transactionId' => $transactionId]);
+		}
+
+		$friendly = $gateway->humanizeError($payloadBody);
+		$appMdl->save(['id' => $appTransaction->applicationId, 'status' => 2]);
+		$appTMdl->save([
+			'id' => $appTransaction->id,
+			'status' => 400,
+			'response_body' => $raw,
+		]);
+
+		return $this->response->setJSON([
+			'status' => 200,
+			'message' => $friendly,
+			'transactionId' => $transactionId,
+			'payment_status' => 'failed',
+		]);
 	}
 
 	public
