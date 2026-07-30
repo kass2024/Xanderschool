@@ -21,7 +21,7 @@
 	<link href="<?= base_url(); ?>assets/css/xandertech-brand.css" rel="stylesheet">
 	<link href="<?= base_url(); ?>assets/css/font-awesome-animation.min.css" rel="stylesheet">
 	<script type="text/javascript" src="<?= base_url(); ?>assets/js/jquery-3.4.1.min.js"></script>
-	<link rel="icon" href="<?= base_url(); ?>assets/images/smartsms-logo-web.png">
+	<link rel="icon" href="<?= base_url(); ?>assets/images/xander-x-3d.png">
 
 
 </head>
@@ -33,8 +33,8 @@
 				<div class="app-header__logo">
 					<a href="<?= base_url('admin'); ?>" data-toggle="tooltip" data-placement="bottom"
 					   title="SmartSMS" class="logo-src" data-original-title="SmartSMS">
-						<img src="<?= base_url('assets/images/smartsms-logo-full-web.png'); ?>"
-							 alt="XanderTech SmartSMS" width="168" height="56">
+						<img src="<?= base_url('assets/images/xander-wordmark-3d.png'); ?>"
+							 alt="XanderTech SmartSMS" width="168" height="56" style="object-fit:contain;background:#000;border-radius:8px;padding:4px;">
 					</a>
 					<button type="button" class="hamburger hamburger--elastic mobile-toggle-nav">
                                 <span class="hamburger-box">
@@ -129,8 +129,8 @@
 					<div class="app-header__logo">
 						<a href="<?= base_url('admin'); ?>" data-toggle="tooltip" data-placement="bottom"
 						   title="SmartSMS" class="logo-src" data-original-title="SmartSMS">
-							<img src="<?= base_url('assets/images/smartsms-logo-full-web.png'); ?>"
-								 alt="XanderTech SmartSMS" width="168" height="56">
+							<img src="<?= base_url('assets/images/xander-wordmark-3d.png'); ?>"
+								 alt="XanderTech SmartSMS" width="168" height="56" style="object-fit:contain;background:#000;border-radius:8px;padding:4px;">
 						</a>
 						<button type="button" class="hamburger hamburger--elastic mobile-toggle-sidebar-nav">
                                 <span class="hamburger-box">
