@@ -28,6 +28,8 @@ use App\Models\SmsModel;
 use App\Models\SmsRecipientModel;
 use App\Models\StaffModel;
 use App\Models\StudentModel;
+use App\Models\StudentVisitorModel;
+use App\Models\VisitorVisitModel;
 use App\Models\TermModel;
 use App\Models\TransportRecordModel;
 use App\Models\UpdateVersionModel;
@@ -72,7 +74,7 @@ class Api extends BaseController
 
 	public function index()
 	{
-		echo "Welcome on IOTXAD API";
+		echo "Welcome on XanderTech SmartSMS API";
 	}
 
 	private function _preset($school_id)
@@ -2592,5 +2594,313 @@ public function permission_card_scan()
 		} catch (\ReflectionException|\Exception $e) {
 			return $this->response->setStatusCode(500)->setJSON(array("message" => "System error, please try again later"));
 		}
+	}
+
+	/**
+	 * Android / API: assign card to visitor.
+	 * POST: card, visitor_id, school_id, operator
+	 */
+	public function visitor_assign_card()
+	{
+		$cardRaw = trim((string) $this->request->getPost('card'));
+		$visitor_id = (int) $this->request->getPost('visitor_id');
+		$school_id = (int) $this->request->getPost('school_id');
+		$operator = (int) $this->request->getPost('operator');
+
+		if ($visitor_id <= 0 || $school_id <= 0 || $cardRaw === '') {
+			return $this->response->setStatusCode(400)
+				->setJSON(['success' => false, 'error' => 'card, visitor_id and school_id are required.']);
+		}
+
+		$card = $this->normalizeVisitorUID($cardRaw);
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$visitor = $visitorMdl->where('id', $visitor_id)
+			->where('school_id', $school_id)
+			->where('status', 1)
+			->first();
+		if (!$visitor) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Visitor not found.']);
+		}
+
+		$collision = $visitorMdl->findCardCollision($school_id, $card, $visitor_id);
+		if ($collision) {
+			$who = $collision['type'] === 'student' ? 'student' : 'visitor';
+			return $this->response->setStatusCode(409)->setJSON([
+				'success' => false,
+				'error' => "Card already assigned to {$who}: {$collision['name']}",
+			]);
+		}
+
+		try {
+			$visitorMdl->save([
+				'id' => $visitor_id,
+				'card' => $card,
+				'updated_by' => $operator,
+			]);
+			return $this->response->setJSON(['success' => 'Card assigned successfully.', 'card' => $card]);
+		} catch (\Throwable $e) {
+			log_message('error', '[visitor_assign_card] ' . $e->getMessage());
+			return $this->response->setStatusCode(500)
+				->setJSON(['success' => false, 'error' => 'Failed to assign card.']);
+		}
+	}
+
+	/**
+	 * Android / API: scan visitor card — IN/OUT toggle for today.
+	 * POST: card, school_id, source=android, operator (optional)
+	 */
+	public function visitor_card_scan()
+	{
+		$school_id = (int) $this->request->getPost('school_id');
+		$cardRaw = trim((string) $this->request->getPost('card'));
+		$source = trim((string) $this->request->getPost('source'));
+		if ($source === '') {
+			$source = 'android';
+		}
+		$operator = $this->request->getPost('operator');
+		$operator = ($operator === null || $operator === '') ? null : (int) $operator;
+
+		$result = $this->processVisitorScan($school_id, $cardRaw, $source, $operator);
+		return $this->response->setJSON($result);
+	}
+
+	/**
+	 * Android / API: lookup visitor by card + school.
+	 * GET/POST: card, school_id
+	 */
+	public function visitor_lookup()
+	{
+		$school_id = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id'));
+		$cardRaw = trim((string) ($this->request->getPost('card') ?: $this->request->getGet('card')));
+
+		if ($school_id <= 0 || $cardRaw === '') {
+			return $this->response->setJSON(['success' => false, 'error' => 'card and school_id required.']);
+		}
+
+		$card = $this->normalizeVisitorUID($cardRaw);
+		$reversed = $this->reverseUidBytes($card);
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$db = \Config\Database::connect();
+		$builder = $db->table('student_visitors sv')
+			->select("sv.*, CONCAT(s.fname, ' ', s.lname) AS student_name, s.regno,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class_name")
+			->join('students s', 's.id = sv.student_id', 'left')
+			->join('class_records cr', 'cr.student = s.id', 'left')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('sv.school_id', $school_id)
+			->groupStart()
+				->where('UPPER(TRIM(sv.card))', $card);
+		if ($reversed !== '') {
+			$builder->orWhere('UPPER(TRIM(sv.card))', $reversed);
+		}
+		$visitor = $builder->groupEnd()->groupBy('sv.id')->get(1)->getRowArray();
+
+		if (!$visitor) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Visitor not found.', 'card' => $card]);
+		}
+
+		return $this->response->setJSON([
+			'success' => true,
+			'allowed' => ((int) $visitor['status'] === 1),
+			'visitor' => [
+				'id' => (int) $visitor['id'],
+				'names' => $visitor['names'],
+				'phone' => $visitor['phone'],
+				'relationship' => $visitor['relationship'],
+				'card' => $visitor['card'],
+				'status' => (int) $visitor['status'],
+				'student_id' => (int) $visitor['student_id'],
+				'student_name' => $visitor['student_name'] ?? '',
+				'regno' => $visitor['regno'] ?? '',
+				'class_name' => $visitor['class_name'] ?? '',
+			],
+			'card' => $card,
+		]);
+	}
+
+	/**
+	 * Android / API: list visitors for a school (optional student_id / updateVersion).
+	 * POST: school_id, student_id?, updateVersion?
+	 */
+	public function visitor_list()
+	{
+		$school_id = (int) $this->request->getPost('school_id');
+		$student_id = (int) $this->request->getPost('student_id');
+		$updateVersion = $this->request->getPost('updateVersion');
+
+		if ($school_id <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'school_id required.']);
+		}
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$builder = $visitorMdl->select("student_visitors.*, CONCAT(s.fname, ' ', s.lname) AS student_name")
+			->join('students s', 's.id = student_visitors.student_id', 'left')
+			->where('student_visitors.school_id', $school_id)
+			->where('student_visitors.status', 1);
+
+		if ($student_id > 0) {
+			$builder->where('student_visitors.student_id', $student_id);
+		}
+
+		// updateVersion kept for Android sync compatibility (ignored if not present on table)
+		if ($updateVersion !== null && $updateVersion !== '') {
+			// no-op column; clients may still send it
+		}
+
+		$list = $builder->orderBy('student_visitors.student_id', 'ASC')
+			->orderBy('student_visitors.id', 'ASC')
+			->findAll();
+
+		return $this->response->setJSON([
+			'success' => true,
+			'visitors' => $list,
+			'count' => count($list),
+		]);
+	}
+
+	/**
+	 * @param int $schoolId
+	 * @param string $cardRaw
+	 * @param string $source
+	 * @param int|null $operator
+	 * @return array
+	 */
+	private function processVisitorScan($schoolId, $cardRaw, $source = 'android', $operator = null)
+	{
+		$schoolId = (int) $schoolId;
+		$cardRaw = trim((string) $cardRaw);
+		if ($schoolId <= 0 || $cardRaw === '') {
+			return ['allowed' => false, 'success' => false, 'error' => 'Missing card or school_id.'];
+		}
+
+		$card = $this->normalizeVisitorUID($cardRaw);
+		$reversed = $this->reverseUidBytes($card);
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$db = \Config\Database::connect();
+		$builder = $db->table('student_visitors')
+			->select('*')
+			->where('school_id', $schoolId)
+			->groupStart()
+				->where('UPPER(TRIM(card))', $card);
+		if ($reversed !== '') {
+			$builder->orWhere('UPPER(TRIM(card))', $reversed);
+		}
+		$visitor = $builder->groupEnd()->get(1)->getRowArray();
+
+		if (!$visitor) {
+			return [
+				'allowed' => false,
+				'success' => false,
+				'error' => 'No visitor registered for this card.',
+				'card' => $card,
+			];
+		}
+
+		if ((int) ($visitor['status'] ?? 0) !== 1) {
+			return [
+				'allowed' => false,
+				'success' => false,
+				'error' => 'Visitor is inactive and cannot visit.',
+				'visitor' => [
+					'id' => (int) $visitor['id'],
+					'names' => $visitor['names'],
+					'relationship' => $visitor['relationship'] ?? '',
+				],
+				'card' => $card,
+			];
+		}
+
+		$student = $db->table('students s')
+			->select("s.id, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class")
+			->join('class_records cr', 'cr.student = s.id', 'left')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('s.id', (int) $visitor['student_id'])
+			->where('s.school_id', $schoolId)
+			->groupBy('s.id')
+			->get(1)->getRowArray();
+
+		$visitMdl = new VisitorVisitModel();
+		$toggle = $visitMdl->toggleVisitToday($visitor, $schoolId, $card, $source, $operator, 'Visiting day verification');
+
+		$timeLabel = date('Y-m-d H:i:s');
+		if (!empty($toggle['visit'])) {
+			$v = $toggle['visit'];
+			if (($toggle['action'] ?? '') === 'out' && !empty($v['time_out'])) {
+				$timeLabel = date('Y-m-d H:i:s', (int) $v['time_out']);
+			} elseif (!empty($v['time_in'])) {
+				$timeLabel = date('Y-m-d H:i:s', (int) $v['time_in']);
+			}
+		}
+
+		return [
+			'allowed' => true,
+			'success' => true,
+			'action' => $toggle['action'] ?? 'in',
+			'too_soon' => !empty($toggle['too_soon']),
+			'message' => $toggle['message'] ?? 'Visit recorded.',
+			'visitor' => [
+				'id' => (int) $visitor['id'],
+				'names' => $visitor['names'],
+				'relationship' => $visitor['relationship'] ?? '',
+				'phone' => $visitor['phone'] ?? '',
+			],
+			'student' => [
+				'id' => (int) ($student['id'] ?? $visitor['student_id']),
+				'name' => $student['name'] ?? '',
+				'regno' => $student['regno'] ?? '',
+				'class' => $student['class'] ?? '',
+			],
+			'visit' => $toggle['visit'] ?? null,
+			'time_label' => $timeLabel,
+			'card' => $card,
+		];
+	}
+
+	/**
+	 * @param string $uid
+	 * @return string
+	 */
+	private function normalizeVisitorUID($uid)
+	{
+		$uid = trim((string) $uid);
+		if ($uid === '') {
+			return '';
+		}
+		$uid = preg_replace('/\s+/', '', $uid);
+		if (ctype_digit($uid)) {
+			$uid = strtoupper(base_convert($uid, 10, 16));
+		}
+		$uid = strtoupper(preg_replace('/[^A-F0-9]/', '', $uid));
+		return $uid;
+	}
+
+	/**
+	 * @param string $uid
+	 * @return string
+	 */
+	private function reverseUidBytes($uid)
+	{
+		$uid = strtoupper(trim((string) $uid));
+		if ($uid === '' || (strlen($uid) % 2) !== 0) {
+			return '';
+		}
+		$bytes = str_split($uid, 2);
+		$bytes = array_reverse($bytes);
+		return implode('', $bytes);
 	}
 }

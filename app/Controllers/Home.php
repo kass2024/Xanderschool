@@ -57,6 +57,8 @@ use App\Models\SmsRecipientModel;
 use App\Models\StaffModel;
 use App\Models\StudentApplicationModel;
 use App\Models\StudentModel;
+use App\Models\StudentVisitorModel;
+use App\Models\VisitorVisitModel;
 use App\Models\TermModel;
 use App\Models\TransportFeesModel;
 use App\Models\UpdateVersionModel;
@@ -11376,6 +11378,495 @@ public function assign_card()
     // 8️⃣ Return main layout view
     return view('main', $data);
 }
+
+	/**
+	 * Parent visiting — assign visitors page.
+	 */
+	public function parent_visiting_assign()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$data = $this->data;
+		$school_id = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->data['academic_year'] ?? date('Y'));
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$studentModel = new StudentModel();
+		$students = $studentModel
+			->select("
+				students.id,
+				CONCAT(students.fname, ' ', students.lname) AS name,
+				students.regno,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class,
+				(
+					SELECT COUNT(sv.id) FROM student_visitors sv
+					WHERE sv.student_id = students.id AND sv.school_id = {$school_id} AND sv.status = 1
+				) AS visitor_count
+			")
+			->join('class_records cr', 'cr.student = students.id')
+			->join('classes c', 'c.id = cr.class')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('students.school_id', $school_id)
+			->where('students.status', 1)
+			->where('cr.year', $year)
+			->groupBy('students.id')
+			->orderBy('students.fname', 'ASC')
+			->orderBy('students.lname', 'ASC')
+			->get()
+			->getResultArray();
+
+		$data['title'] = 'Parent visiting — Assign visitors';
+		$data['subtitle'] = 'Assign visitors';
+		$data['page'] = 'parent_visiting_assign';
+		$data['students'] = $students;
+		$data['content'] = view('pages/parent_visiting/assign', $data);
+		return view('main', $data);
+	}
+
+	/**
+	 * Parent visiting — verify visit (scan) page.
+	 */
+	public function parent_visiting_verify()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$data = $this->data;
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$data['title'] = 'Parent visiting — Verify visit';
+		$data['subtitle'] = 'Verify visit';
+		$data['page'] = 'parent_visiting_verify';
+		$data['content'] = view('pages/parent_visiting/verify', $data);
+		return view('main', $data);
+	}
+
+	/**
+	 * Parent visiting — report page.
+	 */
+	public function parent_visiting_report()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$data = $this->data;
+		$school_id = (int) $this->session->get('soma_school_id');
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$from = trim((string) $this->request->getGet('from'));
+		$to = trim((string) $this->request->getGet('to'));
+		if ($from === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) {
+			$from = date('Y-m-d');
+		}
+		if ($to === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) {
+			$to = date('Y-m-d');
+		}
+		$classId = (int) $this->request->getGet('class_id');
+		$studentId = (int) $this->request->getGet('student_id');
+
+		$db = \Config\Database::connect();
+		$builder = $db->table('visitor_visits vv')
+			->select("
+				vv.id, vv.visit_date, vv.time_in, vv.time_out, vv.source,
+				sv.names AS visitor_name, sv.relationship,
+				CONCAT(s.fname, ' ', s.lname) AS student_name,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class_name,
+				c.id AS class_id
+			")
+			->join('student_visitors sv', 'sv.id = vv.visitor_id', 'left')
+			->join('students s', 's.id = vv.student_id', 'left')
+			->join('class_records cr', 'cr.student = s.id', 'left')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('vv.school_id', $school_id)
+			->where('vv.visit_date >=', $from)
+			->where('vv.visit_date <=', $to)
+			->groupBy('vv.id')
+			->orderBy('vv.visit_date', 'DESC')
+			->orderBy('vv.time_in', 'DESC');
+
+		if ($classId > 0) {
+			$builder->where('c.id', $classId);
+		}
+		if ($studentId > 0) {
+			$builder->where('vv.student_id', $studentId);
+		}
+
+		$classMdl = new ClassesModel();
+		$data['classes'] = $classMdl->get_classes();
+		$data['visits'] = $builder->get()->getResultArray();
+		$data['from_date'] = $from;
+		$data['to_date'] = $to;
+		$data['title'] = 'Parent visiting — Report';
+		$data['subtitle'] = 'Visiting report';
+		$data['page'] = 'parent_visiting_report';
+		$data['content'] = view('pages/parent_visiting/report', $data);
+		return view('main', $data);
+	}
+
+	/**
+	 * Save / add a visitor for a student.
+	 */
+	public function parent_visiting_save_visitor()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$school_id = (int) $this->session->get('soma_school_id');
+		$operator = (int) $this->session->get('soma_id');
+		$student_id = (int) $this->request->getPost('student_id');
+		$names = trim((string) $this->request->getPost('names'));
+		$phone = trim((string) $this->request->getPost('phone'));
+		$relationship = trim((string) $this->request->getPost('relationship'));
+		$visitor_id = (int) $this->request->getPost('visitor_id');
+
+		if ($student_id <= 0 || $names === '') {
+			return $this->response->setJSON(['success' => false, 'error' => 'Student and visitor names are required.']);
+		}
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		// Ensure student belongs to this school and has a class
+		$st = (new StudentModel())->select('id')
+			->join('class_records cr', 'cr.student = students.id')
+			->where('students.id', $student_id)
+			->where('students.school_id', $school_id)
+			->where('students.status', 1)
+			->get(1)->getRow();
+		if (!$st) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Student not found or not in a class.']);
+		}
+
+		$payload = [
+			'school_id' => $school_id,
+			'student_id' => $student_id,
+			'names' => $names,
+			'phone' => $phone !== '' ? $phone : null,
+			'relationship' => $relationship !== '' ? $relationship : null,
+			'status' => 1,
+			'updated_by' => $operator,
+		];
+
+		try {
+			if ($visitor_id > 0) {
+				$existing = $visitorMdl->where('id', $visitor_id)
+					->where('school_id', $school_id)->first();
+				if (!$existing) {
+					return $this->response->setJSON(['success' => false, 'error' => 'Visitor not found.']);
+				}
+				$payload['id'] = $visitor_id;
+				$visitorMdl->save($payload);
+			} else {
+				$payload['created_by'] = $operator;
+				$visitorMdl->insert($payload);
+			}
+
+			$count = $visitorMdl->countActiveForStudent($school_id, $student_id);
+			$warning = null;
+			if ($count < 2) {
+				$warning = "Visitor saved, but this student still has fewer than 2 visitors ({$count}/2).";
+			}
+
+			return $this->response->setJSON([
+				'success' => true,
+				'visitor_count' => $count,
+				'warning' => $warning,
+			]);
+		} catch (\Throwable $e) {
+			log_message('error', '[parent_visiting_save_visitor] ' . $e->getMessage());
+			return $this->response->setJSON(['success' => false, 'error' => 'Failed to save visitor.']);
+		}
+	}
+
+	/**
+	 * Soft-delete (deactivate) a visitor.
+	 */
+	public function parent_visiting_delete_visitor()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$school_id = (int) $this->session->get('soma_school_id');
+		$operator = (int) $this->session->get('soma_id');
+		$visitor_id = (int) $this->request->getPost('visitor_id');
+
+		if ($visitor_id <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Invalid visitor.']);
+		}
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+		$row = $visitorMdl->where('id', $visitor_id)->where('school_id', $school_id)->first();
+		if (!$row) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Visitor not found.']);
+		}
+
+		$visitorMdl->save([
+			'id' => $visitor_id,
+			'status' => 0,
+			'updated_by' => $operator,
+		]);
+
+		$count = $visitorMdl->countActiveForStudent($school_id, (int) $row['student_id']);
+		return $this->response->setJSON(['success' => true, 'visitor_count' => $count]);
+	}
+
+	/**
+	 * Assign RFID card to a visitor (web).
+	 */
+	public function parent_visiting_assign_card()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$school_id = (int) ($this->request->getPost('school_id') ?: $this->session->get('soma_school_id'));
+		$operator = (int) ($this->request->getPost('operator') ?: $this->session->get('soma_id'));
+		$visitor_id = (int) $this->request->getPost('visitor_id');
+		$cardRaw = trim((string) $this->request->getPost('card'));
+
+		if ($visitor_id <= 0 || $cardRaw === '') {
+			return $this->response->setJSON(['success' => false, 'error' => 'Visitor and card are required.']);
+		}
+
+		$card = $this->normalizeUID($cardRaw);
+		if ($card === '') {
+			$card = strtoupper(preg_replace('/[^A-Fa-f0-9]/', '', $cardRaw));
+		}
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$visitor = $visitorMdl->where('id', $visitor_id)
+			->where('school_id', $school_id)
+			->where('status', 1)
+			->first();
+		if (!$visitor) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Visitor not found.']);
+		}
+
+		$collision = $visitorMdl->findCardCollision($school_id, $card, $visitor_id);
+		if ($collision) {
+			$who = $collision['type'] === 'student' ? 'student' : 'visitor';
+			return $this->response->setJSON([
+				'success' => false,
+				'error' => "Card already assigned to {$who}: {$collision['name']}",
+			]);
+		}
+
+		try {
+			$visitorMdl->save([
+				'id' => $visitor_id,
+				'card' => $card,
+				'updated_by' => $operator,
+			]);
+			return $this->response->setJSON(['success' => 'Card assigned successfully.']);
+		} catch (\Throwable $e) {
+			log_message('error', '[parent_visiting_assign_card] ' . $e->getMessage());
+			return $this->response->setJSON(['success' => false, 'error' => 'Failed to assign card.']);
+		}
+	}
+
+	/**
+	 * Scan visitor card and record IN/OUT for today.
+	 */
+	public function parent_visiting_scan()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$school_id = (int) ($this->request->getPost('school_id') ?: $this->session->get('soma_school_id'));
+		$operator = (int) ($this->request->getPost('operator') ?: $this->session->get('soma_id'));
+		$source = trim((string) $this->request->getPost('source'));
+		if ($source === '') {
+			$source = 'web';
+		}
+		$cardRaw = trim((string) $this->request->getPost('card'));
+
+		$result = $this->parentVisitingProcessScan($school_id, $cardRaw, $source, $operator);
+		return $this->response->setJSON($result);
+	}
+
+	/**
+	 * JSON list of students (optional AJAX).
+	 */
+	public function parent_visiting_students_json()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$school_id = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->data['academic_year'] ?? date('Y'));
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$students = (new StudentModel())
+			->select("
+				students.id,
+				CONCAT(students.fname, ' ', students.lname) AS name,
+				students.regno,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class,
+				(
+					SELECT COUNT(sv.id) FROM student_visitors sv
+					WHERE sv.student_id = students.id AND sv.school_id = {$school_id} AND sv.status = 1
+				) AS visitor_count
+			")
+			->join('class_records cr', 'cr.student = students.id')
+			->join('classes c', 'c.id = cr.class')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('students.school_id', $school_id)
+			->where('students.status', 1)
+			->where('cr.year', $year)
+			->groupBy('students.id')
+			->orderBy('students.fname', 'ASC')
+			->get()
+			->getResultArray();
+
+		return $this->response->setJSON(['success' => true, 'students' => $students]);
+	}
+
+	/**
+	 * List visitors for one student.
+	 */
+	public function parent_visiting_student_visitors($id = 0)
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$school_id = (int) $this->session->get('soma_school_id');
+		$student_id = (int) $id;
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		if ($student_id <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Invalid student.']);
+		}
+
+		$visitors = $visitorMdl
+			->where('school_id', $school_id)
+			->where('student_id', $student_id)
+			->where('status', 1)
+			->orderBy('id', 'ASC')
+			->findAll();
+
+		return $this->response->setJSON([
+			'success' => true,
+			'visitors' => $visitors,
+			'visitor_count' => count($visitors),
+			'ready' => count($visitors) >= 2,
+		]);
+	}
+
+	/**
+	 * Shared scan logic for web + API.
+	 *
+	 * @param int $schoolId
+	 * @param string $cardRaw
+	 * @param string $source
+	 * @param int|null $operator
+	 * @return array
+	 */
+	private function parentVisitingProcessScan($schoolId, $cardRaw, $source = 'web', $operator = null)
+	{
+		$schoolId = (int) $schoolId;
+		$cardRaw = trim((string) $cardRaw);
+		if ($schoolId <= 0 || $cardRaw === '') {
+			return ['allowed' => false, 'success' => false, 'error' => 'Missing card or school.'];
+		}
+
+		$card = $this->normalizeUID($cardRaw);
+		if ($card === '') {
+			$card = strtoupper(preg_replace('/[^A-Fa-f0-9]/', '', $cardRaw));
+		}
+
+		$reversed = '';
+		if (strlen($card) % 2 === 0 && strlen($card) >= 6) {
+			$bytes = str_split($card, 2);
+			$bytes = array_reverse($bytes);
+			$reversed = implode('', $bytes);
+		}
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		$db = \Config\Database::connect();
+		$builder = $db->table('student_visitors')
+			->select('*')
+			->where('school_id', $schoolId)
+			->groupStart()
+				->where('UPPER(TRIM(card))', $card);
+		if ($reversed !== '') {
+			$builder->orWhere('UPPER(TRIM(card))', $reversed);
+		}
+		$builder->groupEnd();
+
+		$visitor = $builder->get(1)->getRowArray();
+
+		if (!$visitor) {
+			return [
+				'allowed' => false,
+				'success' => false,
+				'error' => 'No visitor registered for this card.',
+				'card' => $card,
+			];
+		}
+
+		if ((int) ($visitor['status'] ?? 0) !== 1) {
+			return [
+				'allowed' => false,
+				'success' => false,
+				'error' => 'Visitor is inactive and cannot visit.',
+				'visitor' => [
+					'id' => (int) $visitor['id'],
+					'names' => $visitor['names'],
+					'relationship' => $visitor['relationship'] ?? '',
+				],
+				'card' => $card,
+			];
+		}
+
+		$year = (int) ($this->data['academic_year'] ?? date('Y'));
+		$student = $db->table('students s')
+			->select("s.id, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class")
+			->join('class_records cr', 'cr.student = s.id', 'left')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('s.id', (int) $visitor['student_id'])
+			->where('s.school_id', $schoolId)
+			->groupBy('s.id')
+			->get(1)->getRowArray();
+
+		$visitMdl = new VisitorVisitModel();
+		$toggle = $visitMdl->toggleVisitToday($visitor, $schoolId, $card, $source, $operator, 'Visiting day verification');
+
+		$timeLabel = date('Y-m-d H:i:s');
+		if (!empty($toggle['visit'])) {
+			$v = $toggle['visit'];
+			if (($toggle['action'] ?? '') === 'out' && !empty($v['time_out'])) {
+				$timeLabel = date('Y-m-d H:i:s', (int) $v['time_out']);
+			} elseif (!empty($v['time_in'])) {
+				$timeLabel = date('Y-m-d H:i:s', (int) $v['time_in']);
+			}
+		}
+
+		return [
+			'allowed' => true,
+			'success' => true,
+			'action' => $toggle['action'] ?? 'in',
+			'too_soon' => !empty($toggle['too_soon']),
+			'message' => $toggle['message'] ?? 'Visit recorded.',
+			'visitor' => [
+				'id' => (int) $visitor['id'],
+				'names' => $visitor['names'],
+				'relationship' => $visitor['relationship'] ?? '',
+				'phone' => $visitor['phone'] ?? '',
+			],
+			'student' => [
+				'id' => (int) ($student['id'] ?? $visitor['student_id']),
+				'name' => $student['name'] ?? '',
+				'regno' => $student['regno'] ?? '',
+				'class' => $student['class'] ?? '',
+			],
+			'visit' => $toggle['visit'] ?? null,
+			'time_label' => $timeLabel,
+			'card' => $card,
+		];
+	}
 
 	public
 	function get_borrowed_report($student, $type, $book, $from, $to)

@@ -121,6 +121,18 @@ $routes->add('api', 'Api::index');
 $routes->add('api/(:any)', 'Api::$1');
 // ✅ Add this line before the wildcard
 $routes->get('home/testEmail', 'Home::testEmail');
+
+// Parent visiting (must be before (:any) catch-all)
+$routes->get('parent_visiting/assign', 'Home::parent_visiting_assign');
+$routes->get('parent_visiting/verify', 'Home::parent_visiting_verify');
+$routes->get('parent_visiting/report', 'Home::parent_visiting_report');
+$routes->post('parent_visiting/save_visitor', 'Home::parent_visiting_save_visitor');
+$routes->post('parent_visiting/delete_visitor', 'Home::parent_visiting_delete_visitor');
+$routes->post('parent_visiting/assign_card', 'Home::parent_visiting_assign_card');
+$routes->post('parent_visiting/scan', 'Home::parent_visiting_scan');
+$routes->get('parent_visiting/students', 'Home::parent_visiting_students_json');
+$routes->get('parent_visiting/student_visitors/(:num)', 'Home::parent_visiting_student_visitors/$1');
+
 $routes->add('(:any)', 'Home::$1');
 $routes->get('/home/editRegno/(:num)', 'Home::editRegno/$1');
 $routes->post('/home/updateRegno/(:num)', 'Home::updateRegno/$1');

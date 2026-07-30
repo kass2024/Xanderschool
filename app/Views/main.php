@@ -241,6 +241,33 @@
 
 									</ul>
 								</li>
+								<li>
+									<a href="#">
+										<i class="metismenu-icon pe-7s-users"></i>
+										Parent visiting
+										<i class="metismenu-state-icon fa fa-caret-down"></i>
+									</a>
+									<ul class="mm-collapse fa-com">
+										<li>
+											<a href="<?= base_url('parent_visiting/assign'); ?>">
+												<i class="metismenu-icon"></i>
+												Assign visitors
+											</a>
+										</li>
+										<li>
+											<a href="<?= base_url('parent_visiting/verify'); ?>">
+												<i class="metismenu-icon"></i>
+												Verify visit
+											</a>
+										</li>
+										<li>
+											<a href="<?= base_url('parent_visiting/report'); ?>">
+												<i class="metismenu-icon"></i>
+												Visiting report
+											</a>
+										</li>
+									</ul>
+								</li>
 								<?php
 							}
 							?>
