@@ -681,22 +681,24 @@ class BaseController extends Controller
 		}
 
 		$code = (string) ($student->code ?? 'REG');
+		$safeCode = preg_replace('/[^A-Za-z0-9_]/', '', $code) ?: 'REG';
 		$result = $gateway->initiateCollection([
 			'account_no' => $payer,
 			'amount' => $amount,
 			'transaction_id' => $tx_id !== '' ? $tx_id : $gateway->newTransactionId('XSCHREG'),
 			'receiver_account_no' => $receiver,
 			'title' => 'Xander_school_registration',
-			'details' => 'Student registration payment ' . $code,
-			'message' => 'XSCHREG_' . $code,
-			'transfer_message' => 'XSCHREG_' . $code . '_SCHOOL',
+			'details' => 'Student_registration_payment_' . $safeCode,
+			'message' => 'XSCHREG_' . $safeCode,
+			'transfer_message' => 'XSCHREG_' . $safeCode . '_SCHOOL',
 			'use_transfer' => true,
 		]);
 
 		if (empty($result['ok'])) {
 			$msg = (string) ($result['error_message'] ?? 'MoPay payment request failed');
-			log_message('error', 'MoPay registrationPayment failed: ' . $msg . ' raw=' . substr((string) ($result['raw'] ?? ''), 0, 500));
-			throw new \Exception($msg);
+			$http = (int) ($result['http_status'] ?? 0);
+			log_message('error', 'MoPay registrationPayment failed http=' . $http . ' msg=' . $msg . ' raw=' . substr((string) ($result['raw'] ?? ''), 0, 500));
+			throw new \Exception($msg !== '' ? $msg : ('Mobile Money gateway error (HTTP ' . $http . ')'));
 		}
 
 		$momoRef = '';

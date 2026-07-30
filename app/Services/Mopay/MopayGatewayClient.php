@@ -652,28 +652,70 @@ class MopayGatewayClient
 	 */
 	protected function httpRequest(string $method, string $url, array $headers, ?string $body, bool $asJson): array
 	{
-		$curl = \Config\Services::curlrequest([
-			'timeout' => 60,
-			'http_errors' => false,
-			'verify' => false,
-		]);
-
-		$options = [
-			'headers' => $headers,
-			'http_errors' => false,
-			'verify' => false,
-		];
-		if ($body !== null) {
-			$options['body'] = $body;
+		// Use native cURL — CI4 CURLRequest ignores options['body'] (never sets $this->body),
+		// which sent empty POSTs to MoPay and returned "Invalid dataEOF".
+		$ch = curl_init();
+		if ($ch === false) {
+			return [
+				'status' => 0,
+				'raw' => 'Failed to init cURL',
+				'json' => null,
+			];
 		}
 
-		$response = $curl->request($method, $url, $options);
-		$raw = (string) $response->getBody();
-		$json = json_decode($raw, true);
+		$headerLines = [];
+		foreach ($headers as $name => $value) {
+			$headerLines[] = $name . ': ' . $value;
+		}
+
+		$opts = [
+			CURLOPT_URL => $url,
+			CURLOPT_CUSTOMREQUEST => strtoupper($method),
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_HEADER => false,
+			CURLOPT_HTTPHEADER => $headerLines,
+			CURLOPT_TIMEOUT => 60,
+			CURLOPT_CONNECTTIMEOUT => 20,
+			CURLOPT_SSL_VERIFYPEER => false,
+			CURLOPT_SSL_VERIFYHOST => 0,
+			CURLOPT_FOLLOWLOCATION => true,
+			CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+		];
+
+		if ($body !== null) {
+			$opts[CURLOPT_POSTFIELDS] = $body;
+			if ($asJson) {
+				$hasCt = false;
+				foreach ($headerLines as $line) {
+					if (stripos($line, 'Content-Type:') === 0) {
+						$hasCt = true;
+						break;
+					}
+				}
+				if (!$hasCt) {
+					$headerLines[] = 'Content-Type: application/json; charset=UTF-8';
+					$opts[CURLOPT_HTTPHEADER] = $headerLines;
+				}
+			}
+		}
+
+		curl_setopt_array($ch, $opts);
+		$raw = curl_exec($ch);
+		$errno = curl_errno($ch);
+		$error = curl_error($ch);
+		$status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		curl_close($ch);
+
+		if ($raw === false) {
+			$raw = 'cURL error ' . $errno . ': ' . $error;
+			$status = 0;
+		}
+
+		$json = json_decode((string) $raw, true);
 
 		return [
-			'status' => $response->getStatusCode(),
-			'raw' => $raw,
+			'status' => $status,
+			'raw' => (string) $raw,
 			'json' => $json,
 		];
 	}
