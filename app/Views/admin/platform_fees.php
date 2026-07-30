@@ -11,30 +11,16 @@
 							</div>
 						</div>
 						<div class="card-body">
-							<p class="text-muted" style="max-width:640px;">
-								These amounts apply to <strong>all schools</strong> on live MOMO registration.
-								The school MOMO receives only the school registration fee.
-								Service fees go to the platform MOMO number in <code>.env</code>
-								(<code>REGISTRATION_SERVICE_FEE_MOMO</code>).
-								Leave platform fee at <strong>0</strong> to hide it on the parent form.
-							</p>
 							<form id="platformFeesForm" style="max-width:420px;">
 								<div class="form-group">
 									<label>Service fee (RWF)</label>
 									<input type="number" min="0" step="1" class="form-control" name="service_fee" id="service_fee"
 										   value="<?= (int) ($fees['service_fee'] ?? 0); ?>" required>
-									<small class="text-muted">Charged on live MOMO; paid to platform service MOMO.</small>
 								</div>
 								<div class="form-group">
 									<label>Platform fee (RWF)</label>
 									<input type="number" min="0" step="1" class="form-control" name="platform_fee" id="platform_fee"
 										   value="<?= (int) ($fees['platform_fee'] ?? 0); ?>">
-									<small class="text-muted">Optional. Set to 0 to hide this line on the registration payment step.</small>
-								</div>
-								<div class="form-group">
-									<label>Service fee MOMO (from .env)</label>
-									<input type="text" class="form-control" readonly
-										   value="<?= esc($service_momo_display ?? 'Not set — add REGISTRATION_SERVICE_FEE_MOMO in .env', 'attr'); ?>">
 								</div>
 								<button type="submit" class="btn btn-primary" id="btnSavePlatformFees">
 									<i class="fa fa-save"></i> Save fees

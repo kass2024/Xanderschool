@@ -359,14 +359,11 @@ class Admin extends BaseController
 		$this->_preset();
 		$mdl = new PlatformSettingsModel();
 		$fees = $mdl->getFees();
-		$momo = trim((string) env('REGISTRATION_SERVICE_FEE_MOMO', ''));
-		$display = $momo !== '' ? $momo : 'Not set — add REGISTRATION_SERVICE_FEE_MOMO in .env';
 		$data = [
 			'title' => 'Registration service & platform fees',
 			'subtitle' => 'Global fees for online registration (all schools)',
 			'page' => 'platform_fees',
 			'fees' => $fees,
-			'service_momo_display' => $display,
 		];
 		$data['content'] = view('admin/platform_fees', $data);
 		return view('main_admin', $data);
