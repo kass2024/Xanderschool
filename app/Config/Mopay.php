@@ -5,19 +5,19 @@ namespace Config;
 use CodeIgniter\Config\BaseConfig;
 
 /**
- * MoPay Gateway V1 settings (same pattern as Xander Academy / FR Rwanda).
- * Credentials come from .env — do not hardcode secrets here.
+ * MoPay Gateway V1 settings.
+ * All credentials and endpoints come from local .env only — never commit secrets.
  */
 class Mopay extends BaseConfig
 {
-	public $projectSlug = 'xanderschool';
-	public $messagePrefix = 'XANDERSCH';
+	public $projectSlug = '';
+	public $messagePrefix = '';
 	public $accountId = '';
 	public $authKey = '';
 	public $bearerToken = '';
-	public $serverBaseUrl = 'http://41.186.14.66:443/';
+	public $serverBaseUrl = '';
 	public $tokenUrl = '';
-	public $category = 'BIZAO';
+	public $category = '';
 	public $callbackSigningKey = '';
 	public $callbackUrl = '';
 	public $defaultCountryCode = 'rw';
@@ -25,8 +25,8 @@ class Mopay extends BaseConfig
 	public $defaultCurrency = 'RWF';
 	/** Fallback receive MSISDN when school settings have no mtn_momo_phone */
 	public $receiverAccountNo = '';
-	public $paymentTitle = 'Xander_school_registration';
-	public $paymentDetails = 'Student_registration_payment';
+	public $paymentTitle = '';
+	public $paymentDetails = '';
 
 	public function __construct()
 	{
@@ -39,7 +39,7 @@ class Mopay extends BaseConfig
 		$this->bearerToken = (string) env('MOPAY_BEARER_TOKEN', $this->bearerToken);
 		$this->serverBaseUrl = rtrim((string) env('MOPAY_SERVER_BASE_URL', $this->serverBaseUrl), '/');
 		$this->tokenUrl = (string) env('MOPAY_TOKEN_URL', $this->tokenUrl);
-		$this->category = (string) env('MOPAY_CATEGORY', $this->category);
+		$this->category = (string) env('MOPAY_CATEGORY', $this->category !== '' ? $this->category : 'BIZAO');
 		$this->callbackSigningKey = (string) env('MOPAY_CALLBACK_SIGNING_KEY', $this->callbackSigningKey);
 		$this->callbackUrl = (string) env('MOPAY_CALLBACK_URL', $this->callbackUrl);
 		$this->defaultCountryCode = (string) env('MOPAY_DEFAULT_COUNTRY_CODE', $this->defaultCountryCode);

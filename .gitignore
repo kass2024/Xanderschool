@@ -39,13 +39,19 @@ $RECYCLE.BIN/
 #-------------------------
 # Environment Files
 #-------------------------
-# These should never be under version control,
-# as it poses a security risk.
+# Never commit env files (including .env.example) — MoPay and other secrets stay local only.
 .env
+.env.*
+**/.env
+**/.env.*
 .vagrant
 Vagrantfile
 deploy/.env.production
 deploy/app.env.production
+deploy/*.env
+deploy/*.env.*
+# Public Docker host ports / DB placeholders only (no MoPay / SMTP / API secrets)
+!deploy/.env.production.example
 deploy/output/
 deploy/db/*.sql
 **/_ssh_*.py
@@ -100,6 +106,9 @@ phpunit
 #-------------------------
 vendor/
 composer.lock
+
+# Local wkhtmltopdf portable binary (Windows)
+bin/
 
 #-------------------------
 # IDE / Development Files
