@@ -88,6 +88,8 @@ $routes->add('/users', 'Admin::users');
 $routes->add('/packages', 'Admin::packages');
 $routes->get('/admin/platform_fees', 'Admin::platform_fees');
 $routes->post('/admin/save_platform_fees', 'Admin::save_platform_fees');
+$routes->get('/admin/level_clearance', 'Admin::level_clearance');
+$routes->post('/admin/save_level_clearance', 'Admin::save_level_clearance');
 $routes->add('/extra_sms', 'Admin::extra_sms');
 $routes->add('/schools', 'Admin::schools');
 $routes->add('/add-school', 'Admin::add_school');

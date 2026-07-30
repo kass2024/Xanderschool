@@ -23,6 +23,64 @@ if (!function_exists('is_blocked')) {
 		}
 	}
 }
+
+/**
+ * Whether the current staff post may see a school-dashboard menu key.
+ * Uses Level clearance (DB override or legacy defaults). Full-access posts always true.
+ *
+ * @param string $menuKey
+ * @return bool
+ */
+if (!function_exists('menu_clearance_allowed')) {
+	function menu_clearance_allowed($menuKey)
+	{
+		static $cacheKeys = null;
+		static $cachePost = null;
+
+		$menuKey = (string) $menuKey;
+		if ($menuKey === 'dashboard' || $menuKey === 'profile') {
+			return true;
+		}
+
+		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		if ($cacheKeys === null || $cachePost !== $postId) {
+			$cachePost = $postId;
+			try {
+				$mdl = new \App\Models\PostMenuClearanceModel();
+				$cacheKeys = $mdl->allowedKeysForPost($postId);
+			} catch (\Throwable $e) {
+				$cacheKeys = \Config\MenuClearance::defaultKeysForPost($postId);
+			}
+			if (!is_array($cacheKeys)) {
+				$cacheKeys = [];
+			}
+		}
+
+		return in_array($menuKey, $cacheKeys, true);
+	}
+}
+
+/**
+ * Show a parent menu if the parent key or any child key is allowed.
+ *
+ * @param string $parentKey
+ * @return bool
+ */
+if (!function_exists('menu_clearance_group_visible')) {
+	function menu_clearance_group_visible($parentKey)
+	{
+		$parentKey = (string) $parentKey;
+		if (menu_clearance_allowed($parentKey)) {
+			return true;
+		}
+		foreach (\Config\MenuClearance::childKeys($parentKey) as $child) {
+			if (menu_clearance_allowed($child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+}
 if (!function_exists('_is_allowed')) {
 	function _is_allowed($allowed)
 	{
@@ -657,5 +715,368 @@ if (!function_exists('transactions_words')) {
 				break;
 		}
 		return $trans;
+	}
+}
+
+/**
+ * Safe profile filename (fits historically short DB columns; avoid uniqid(..., true) dots).
+ */
+if (!function_exists('make_profile_photo_name')) {
+	function make_profile_photo_name(string $ext): string
+	{
+		$ext = strtolower(preg_replace('/[^a-z0-9]/i', '', $ext) ?: 'jpg');
+		return 'img_' . bin2hex(random_bytes(8)) . '.' . $ext;
+	}
+}
+
+/**
+ * Resolve a stored photo name to an existing file under assets/images/profile/.
+ * Handles DB truncation (varchar(20)) of longer uniqid filenames.
+ */
+if (!function_exists('resolve_profile_photo')) {
+	function resolve_profile_photo(?string $stored): ?string
+	{
+		$stored = trim((string)$stored);
+		if ($stored === '' || strlen($stored) < 3) {
+			return null;
+		}
+		$base = basename(str_replace(["\0", '\\'], '', $stored));
+		if ($base === '' || $base === '.' || $base === '..') {
+			return null;
+		}
+		$dir = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR;
+		if (is_file($dir . $base)) {
+			return $base;
+		}
+		// Truncated name often has no extension; match prefix on disk.
+		$matches = glob($dir . $base . '*') ?: [];
+		$matches = array_values(array_filter($matches, 'is_file'));
+		if (count($matches) === 1) {
+			return basename($matches[0]);
+		}
+		if (count($matches) > 1) {
+			usort($matches, static function ($a, $b) {
+				return filemtime($b) <=> filemtime($a);
+			});
+			return basename($matches[0]);
+		}
+		return null;
+	}
+}
+
+if (!function_exists('profile_photo_url')) {
+	function profile_photo_url(?string $stored, ?string $fallback = null): string
+	{
+		$resolved = resolve_profile_photo($stored);
+		if ($resolved !== null) {
+			$path = FCPATH . 'assets/images/profile/' . $resolved;
+			return base_url('assets/images/profile/' . $resolved) . '?v=' . (@filemtime($path) ?: time());
+		}
+		if ($fallback !== null) {
+			return $fallback;
+		}
+		if (is_file(FCPATH . 'assets/images/fallback-avatar.png')) {
+			return base_url('assets/images/fallback-avatar.png');
+		}
+		if (is_file(FCPATH . 'assets/images/no_image.jpg')) {
+			return base_url('assets/images/no_image.jpg');
+		}
+		return base_url('assets/images/logo.jpeg');
+	}
+}
+
+/**
+ * Absolute filesystem path under public/ for an assets-relative path.
+ */
+if (!function_exists('asset_fs_path')) {
+	function asset_fs_path(string $relative): string
+	{
+		$relative = ltrim(str_replace(['\\', "\0"], ['/', ''], $relative), '/');
+		return rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+	}
+}
+
+/**
+ * Resolve first existing candidate path under public assets.
+ */
+if (!function_exists('asset_resolve_path')) {
+	function asset_resolve_path(?string $relativeOrAbs, ?string $fallbackRelative = null): ?string
+	{
+		$candidates = [];
+		if ($relativeOrAbs) {
+			$p = $relativeOrAbs;
+			if (strpos($p, '://') === false && !preg_match('#^([a-zA-Z]:[\\\\/]|/|\\\\)#', $p)) {
+				$p = asset_fs_path($p);
+			}
+			$candidates[] = $p;
+		}
+		if ($fallbackRelative) {
+			$candidates[] = asset_fs_path($fallbackRelative);
+		}
+		$candidates[] = asset_fs_path('assets/images/fallback-avatar.png');
+		$candidates[] = asset_fs_path('assets/images/no_image.jpg');
+		$candidates[] = asset_fs_path('assets/images/white_blank.png');
+
+		foreach ($candidates as $path) {
+			if (!$path || !is_file($path)) {
+				continue;
+			}
+			$real = realpath($path);
+			if ($real !== false) {
+				return $real;
+			}
+		}
+		return null;
+	}
+}
+
+/**
+ * file:// URL for wkhtmltopdf (enable-local-file-access).
+ */
+if (!function_exists('asset_file_src')) {
+	function asset_file_src(?string $relativeOrAbs, ?string $fallbackRelative = null): string
+	{
+		$real = asset_resolve_path($relativeOrAbs, $fallbackRelative);
+		if ($real === null) {
+			return '';
+		}
+		$posix = str_replace('\\', '/', $real);
+		if (preg_match('#^[a-zA-Z]:/#', $posix)) {
+			return 'file:///' . $posix;
+		}
+		return 'file://' . $posix;
+	}
+}
+
+/**
+ * Data-URI src (small images). Prefer asset_card_img_src() for PDFs.
+ */
+if (!function_exists('asset_embed_src')) {
+	function asset_embed_src(?string $relativeOrAbs, ?string $fallbackRelative = null): string
+	{
+		$real = asset_resolve_path($relativeOrAbs, $fallbackRelative);
+		if ($real === null) {
+			return '';
+		}
+		$data = @file_get_contents($real);
+		if ($data === false || $data === '') {
+			return '';
+		}
+		$ext = strtolower(pathinfo($real, PATHINFO_EXTENSION));
+		if ($ext === 'jpg' || $ext === 'jpeg') {
+			$mime = 'image/jpeg';
+		} elseif ($ext === 'png') {
+			$mime = 'image/png';
+		} elseif ($ext === 'gif') {
+			$mime = 'image/gif';
+		} elseif ($ext === 'webp') {
+			$mime = 'image/webp';
+		} elseif ($ext === 'svg') {
+			$mime = 'image/svg+xml';
+		} else {
+			$mime = 'application/octet-stream';
+		}
+		return 'data:' . $mime . ';base64,' . base64_encode($data);
+	}
+}
+
+/**
+ * Resized image for card PDFs (PNG keeps alpha so light logos stay visible on dark cards).
+ * Written next to the wkhtml temp HTML so relative paths always load.
+ */
+if (!function_exists('asset_card_img_src')) {
+	function asset_card_img_src(?string $relativeOrAbs, ?string $fallbackRelative = null, int $maxW = 240, int $maxH = 240): string
+	{
+		$real = asset_resolve_path($relativeOrAbs, $fallbackRelative);
+		if ($real === null) {
+			return '';
+		}
+
+		// Sibling folder of wkhtml HTML output (FCPATH/assets/templates/)
+		$cacheDir = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'templates' . DIRECTORY_SEPARATOR . '_card_img';
+		if (!is_dir($cacheDir)) {
+			@mkdir($cacheDir, 0775, true);
+		}
+
+		$info = @getimagesize($real);
+		$keepAlpha = is_array($info) && (int) $info[2] === IMAGETYPE_PNG;
+		$ext = $keepAlpha ? 'png' : 'jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|{$maxW}x{$maxH}|a1") . '.' . $ext;
+		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
+
+		if (!is_file($cached) && function_exists('imagecreatetruecolor')) {
+			$src = null;
+			if (is_array($info)) {
+				switch ($info[2]) {
+					case IMAGETYPE_JPEG:
+						$src = @imagecreatefromjpeg($real);
+						break;
+					case IMAGETYPE_PNG:
+						$src = @imagecreatefrompng($real);
+						break;
+					case IMAGETYPE_GIF:
+						$src = @imagecreatefromgif($real);
+						break;
+					case IMAGETYPE_WEBP:
+						if (function_exists('imagecreatefromwebp')) {
+							$src = @imagecreatefromwebp($real);
+						}
+						break;
+				}
+			}
+			if ($src) {
+				$sw = imagesx($src);
+				$sh = imagesy($src);
+				$scale = min($maxW / max(1, $sw), $maxH / max(1, $sh), 1.0);
+				$dw = max(1, (int) round($sw * $scale));
+				$dh = max(1, (int) round($sh * $scale));
+				$dst = imagecreatetruecolor($dw, $dh);
+				if ($keepAlpha) {
+					imagealphablending($dst, false);
+					imagesavealpha($dst, true);
+					$transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+					imagefill($dst, 0, 0, $transparent);
+					imagealphablending($dst, true);
+				} else {
+					$white = imagecolorallocate($dst, 255, 255, 255);
+					imagefill($dst, 0, 0, $white);
+				}
+				imagecopyresampled($dst, $src, 0, 0, 0, 0, $dw, $dh, $sw, $sh);
+				if ($keepAlpha) {
+					@imagepng($dst, $cached, 6);
+				} else {
+					@imagejpeg($dst, $cached, 85);
+				}
+				imagedestroy($dst);
+				imagedestroy($src);
+			} else {
+				// Non-GD fallback: copy original
+				@copy($real, $cached);
+			}
+		}
+
+		if (is_file($cached)) {
+			// Relative to assets/templates/*.html used by Wkhtmltopdf
+			return '_card_img/' . $key;
+		}
+
+		return asset_file_src($real, $fallbackRelative);
+	}
+}
+
+if (!function_exists('profile_photo_embed')) {
+	function profile_photo_embed(?string $stored, int $maxW = 220, int $maxH = 260): string
+	{
+		$resolved = resolve_profile_photo($stored);
+		if ($resolved !== null) {
+			return asset_card_img_src('assets/images/profile/' . $resolved, 'assets/images/fallback-avatar.png', $maxW, $maxH);
+		}
+		return asset_card_img_src(null, 'assets/images/fallback-avatar.png', $maxW, $maxH);
+	}
+}
+
+/**
+ * Student card PDF photo — returns empty string when no uploaded photo (no fallback silhouette).
+ */
+if (!function_exists('profile_photo_card_src')) {
+	function profile_photo_card_src(?string $stored, int $maxW = 360, int $maxH = 440): string
+	{
+		$resolved = resolve_profile_photo($stored);
+		if ($resolved === null) {
+			return '';
+		}
+		return asset_card_img_src('assets/images/profile/' . $resolved, null, $maxW, $maxH);
+	}
+}
+
+/**
+ * Center-crop profile photo to exact WxH (keeps face proportional — no stretch).
+ * Used by CR80 PDF so wkhtmltopdf cannot squash the image into the photo box.
+ */
+if (!function_exists('profile_photo_card_cover_src')) {
+	function profile_photo_card_cover_src(?string $stored, int $outW = 360, int $outH = 480): string
+	{
+		$resolved = resolve_profile_photo($stored);
+		if ($resolved === null) {
+			return '';
+		}
+		$outW = max(80, min(1200, $outW));
+		$outH = max(80, min(1600, $outH));
+		$relative = 'assets/images/profile/' . $resolved;
+		$real = asset_resolve_path($relative, null);
+		if ($real === null) {
+			return '';
+		}
+
+		$cacheDir = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'templates' . DIRECTORY_SEPARATOR . '_card_img';
+		if (!is_dir($cacheDir)) {
+			@mkdir($cacheDir, 0775, true);
+		}
+		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v2") . '.jpg';
+		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
+		if (is_file($cached)) {
+			return '_card_img/' . $key;
+		}
+
+		if (!function_exists('imagecreatetruecolor')) {
+			return asset_card_img_src($relative, null, $outW, $outH);
+		}
+
+		$info = @getimagesize($real);
+		$src = null;
+		if (is_array($info)) {
+			switch ((int) $info[2]) {
+				case IMAGETYPE_JPEG:
+					$src = @imagecreatefromjpeg($real);
+					break;
+				case IMAGETYPE_PNG:
+					$src = @imagecreatefrompng($real);
+					break;
+				case IMAGETYPE_GIF:
+					$src = @imagecreatefromgif($real);
+					break;
+				case IMAGETYPE_WEBP:
+					if (function_exists('imagecreatefromwebp')) {
+						$src = @imagecreatefromwebp($real);
+					}
+					break;
+			}
+		}
+		if (!$src) {
+			return asset_card_img_src($relative, null, $outW, $outH);
+		}
+
+		$sw = imagesx($src);
+		$sh = imagesy($src);
+		$targetRatio = $outW / max(1, $outH);
+		$srcRatio = $sw / max(1, $sh);
+		if ($srcRatio > $targetRatio) {
+			// Source wider → crop sides
+			$cropH = $sh;
+			$cropW = (int) round($sh * $targetRatio);
+			$sx = (int) max(0, ($sw - $cropW) / 2);
+			$sy = 0;
+		} else {
+			// Source taller → crop top/bottom (bias slightly toward top for faces)
+			$cropW = $sw;
+			$cropH = (int) round($sw / $targetRatio);
+			$sx = 0;
+			$sy = (int) max(0, ($sh - $cropH) * 0.28);
+		}
+		$cropW = max(1, min($sw - $sx, $cropW));
+		$cropH = max(1, min($sh - $sy, $cropH));
+
+		$dst = imagecreatetruecolor($outW, $outH);
+		$white = imagecolorallocate($dst, 255, 255, 255);
+		imagefill($dst, 0, 0, $white);
+		imagecopyresampled($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $cropW, $cropH);
+		@imagejpeg($dst, $cached, 90);
+		imagedestroy($dst);
+		imagedestroy($src);
+
+		if (is_file($cached)) {
+			return '_card_img/' . $key;
+		}
+		return asset_card_img_src($relative, null, $outW, $outH);
 	}
 }

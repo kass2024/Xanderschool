@@ -93,6 +93,12 @@
 								</a>
 							</li>
 							<li>
+								<a href="<?= base_url('admin/level_clearance'); ?>">
+									<i class="metismenu-icon typcn typcn-lock-closed"></i>
+									Level clearance
+								</a>
+							</li>
+							<li>
 								<a href="<?= base_url('extra_sms'); ?>">
 									<i class="metismenu-icon typcn typcn-group-outline"></i>
 									<?= lang("app.extraSMS"); ?>

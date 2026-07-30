@@ -79,9 +79,7 @@
 									<?= lang("app.dashboard"); ?>
 								</a>
 							</li>
-							<?php
-							if (!is_blocked(2)) {
-								?>
+							<?php if (menu_clearance_group_visible('students')) { ?>
 								<li>
 									<a href="#">
 										<i class="metismenu-icon typcn typcn-user-outline"></i>
@@ -89,75 +87,82 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('register-student')) { ?>
 										<li>
 											<a href="<?= base_url('register-student'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.newStudent"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('students')) { ?>
 										<li>
 											<a href="<?= base_url('students'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.viewStudents"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('pendingRegistrations')) { ?>
 										<li>
 											<a href="<?= base_url('pendingRegistrations'); ?>">
 												<i class="metismenu-icon typcn typcn-group-outline"></i>
 												<?= lang("app.pendingRegistration"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('dismissedStudent')) { ?>
 										<li>
 											<a href="<?= base_url('dismissedStudent'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.DismissedStudents"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('student-cards')) { ?>
 										<li>
 											<a href="<?= base_url('student-cards'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.studentCards"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('student-photo')) { ?>
 										<li>
 											<a href="<?= base_url('student-photo'); ?>">
 												<i class="metismenu-icon"></i>
 												Student Photo
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('assign-card')) { ?>
 										<li>
-    <a href="<?= base_url('assign-card'); ?>">
-        <i class="metismenu-icon"></i>
-        Assign Card
-    </a>
-</li>
-<li>
-    <a href="<?= base_url('attendance-card'); ?>">
-        <i class="metismenu-icon"></i>
-        Student IN/OUT Attendance
-    </a>
-</li>
-
+											<a href="<?= base_url('assign-card'); ?>">
+												<i class="metismenu-icon"></i>
+												Assign Card
+											</a>
+										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('attendance-card')) { ?>
+										<li>
+											<a href="<?= base_url('attendance-card'); ?>">
+												<i class="metismenu-icon"></i>
+												Student IN/OUT Attendance
+											</a>
+										</li>
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-							?>
-							<?php
-							if (is_allowed(1, 3)) {
-								?>
+							<?php } ?>
+							<?php if (menu_clearance_allowed('classes')) { ?>
 								<li>
 									<a href="<?= base_url('classes'); ?>">
 										<i class="metismenu-icon typcn typcn-home-outline"></i>
 										<?= lang("app.classes"); ?>
 									</a>
 								</li>
-								<?php
-							}
-							?>
-							<?php
-							if (!is_blocked(2, 4, 5, 6)) {
-								?>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('course')) { ?>
 								<li>
 									<a href="#">
 										<i class="metismenu-icon typcn typcn-user-outline"></i>
@@ -165,30 +170,34 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('course-category')) { ?>
 										<li>
 											<a href="<?= base_url('course-category'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.courseCategory"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('add_course')) { ?>
 										<li>
 											<a href="<?= base_url('add_course'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.createCourse"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('manage_courses')) { ?>
 										<li>
 											<a href="<?= base_url('manage_courses'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.manageCourse"); ?>
 											</a>
 										</li>
-
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-							?>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('behavior')) { ?>
 							<li>
 								<a href="#">
 									<i class="metismenu-icon typcn typcn-user-outline"></i>
@@ -196,29 +205,34 @@
 									<i class="metismenu-state-icon fa fa-caret-down"></i>
 								</a>
 								<ul class="mm-collapse">
+									<?php if (menu_clearance_allowed('discipline_record_entry')) { ?>
 									<li>
 										<a href="<?= base_url('discipline_record_entry'); ?>">
 											<i class="metismenu-icon"></i>
 											<?= lang("app.recordEntry"); ?>
 										</a>
 									</li>
+									<?php } ?>
+									<?php if (menu_clearance_allowed('completedDisciplineMarks')) { ?>
 									<li>
 										<a href="<?= base_url('completedDisciplineMarks'); ?>">
 											<i class="metismenu-icon"></i>
 											<?= lang("app.completedDisciplineMarks"); ?>
 										</a>
 									</li>
+									<?php } ?>
+									<?php if (menu_clearance_allowed('discipline_record')) { ?>
 									<li>
 										<a href="<?= base_url('discipline_record'); ?>">
 											<i class="metismenu-icon"></i>
 											<?= lang("app.disciplineRecord"); ?>
 										</a>
 									</li>
+									<?php } ?>
 								</ul>
 							</li>
-							<?php
-							if (is_allowed(1, 3, 4, 5, 6)) {
-								?>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('permissions')) { ?>
 								<li>
 									<a href="#">
 										<i class="metismenu-icon typcn typcn-film"></i>
@@ -226,21 +240,26 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse fa-com">
+										<?php if (menu_clearance_allowed('permission_entry')) { ?>
 										<li>
 											<a href="<?= base_url('permission_entry'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.permissionEntry"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('permission_report')) { ?>
 										<li>
 											<a href="<?= base_url('permission_report'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.permissionReport"); ?>
 											</a>
 										</li>
-
+										<?php } ?>
 									</ul>
 								</li>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('parent_visiting')) { ?>
 								<li>
 									<a href="#">
 										<i class="metismenu-icon pe-7s-users"></i>
@@ -248,29 +267,34 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse fa-com">
+										<?php if (menu_clearance_allowed('parent_visiting/assign')) { ?>
 										<li>
 											<a href="<?= base_url('parent_visiting/assign'); ?>">
 												<i class="metismenu-icon"></i>
 												Assign visitors
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('parent_visiting/verify')) { ?>
 										<li>
 											<a href="<?= base_url('parent_visiting/verify'); ?>">
 												<i class="metismenu-icon"></i>
 												Verify visit
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('parent_visiting/report')) { ?>
 										<li>
 											<a href="<?= base_url('parent_visiting/report'); ?>">
 												<i class="metismenu-icon"></i>
 												Visiting report
 											</a>
 										</li>
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-							?>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('marks')) { ?>
 							<li class="app-sidebar__heading"><?= lang("app.marks"); ?></li>
 							<li>
 								<a href="#">
@@ -279,99 +303,113 @@
 									<i class="metismenu-state-icon fa fa-caret-down"></i>
 								</a>
 								<ul class="mm-collapse fa-com hidden">
+									<?php if (menu_clearance_allowed('marks_entry')) { ?>
 									<li>
 										<a href="#" data-toggle="modal" data-target="#mdlmarks">
 											<i class="metismenu-icon"></i>
 											<?= lang("app.marksEntry"); ?>
 										</a>
 									</li>
-									<?php
-									if (is_allowed(1, 3)) {
-										?>
+									<?php } ?>
+									<?php if (menu_clearance_allowed('get_uploaded_marks')) { ?>
 										<li>
 											<a href="<?= base_url('get_uploaded_marks');?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.marksList"); ?>
 											</a>
 										</li>
+									<?php } ?>
+									<?php if (menu_clearance_allowed('student_report')) { ?>
 										<li>
 											<a href="<?= base_url('student_report'); ?>">
 												<i class="metismenu-icon typcn typcn-user-outline"></i>
 												<?= lang("app.progressReports"); ?>
 											</a>
 										</li>
+									<?php } ?>
+									<?php if (menu_clearance_allowed('get_periodic_report')) { ?>
 										<li>
 											<a href="<?= base_url('get_periodic_report'); ?>">
 												<i class="metismenu-icon"></i>
 												Periodic report
 											</a>
 										</li>
+									<?php } ?>
+									<?php if (menu_clearance_allowed('get_periodic_marks') || menu_clearance_allowed('proclamation_list') || menu_clearance_allowed('student_term_results')) { ?>
 										<li>
 											<a href="javascript:void">
 												<i class="metismenu-icon typcn typcn-group-outline"></i>
 												<?= lang("app.parmaless"); ?>
 												<i class="metismenu-state-icon fa fa-caret-down"></i>
 											</a>
-
 											<ul class="mm-collapse">
+												<?php if (menu_clearance_allowed('get_periodic_marks')) { ?>
 												<li>
 													<a href="<?= base_url('get_periodic_marks'); ?>">
 														<i class="metismenu-icon"></i>
 														<?= lang("app.periodicResult"); ?>
 													</a>
 												</li>
+												<?php } ?>
+												<?php if (menu_clearance_allowed('proclamation_list')) { ?>
 												<li>
 													<a href="<?= base_url('proclamation_list'); ?>">
 														<i class="metismenu-icon"></i>
 														<?= lang("app.proclamationList"); ?>
 													</a>
 												</li>
+												<?php } ?>
+												<?php if (menu_clearance_allowed('student_term_results')) { ?>
 												<li>
 													<a href="<?= base_url('student_term_results'); ?>">
 														<i class="metismenu-icon"></i>
 														<?= lang("app.termProclamationList"); ?>
 													</a>
 												</li>
-
+												<?php } ?>
 											</ul>
 										</li>
+									<?php } ?>
+									<?php if (menu_clearance_allowed('class-deliberation') || menu_clearance_allowed('finish_deliberation') || menu_clearance_allowed('deliberation_settings')) { ?>
 										<li>
 											<a href="javascript:void">
 												<i class="metismenu-icon typcn typcn-group-outline"></i>
 												<?= lang("app.deliberation"); ?>
 												<i class="metismenu-state-icon fa fa-caret-down"></i>
 											</a>
-
 											<ul class="mm-collapse">
+												<?php if (menu_clearance_allowed('class-deliberation')) { ?>
 												<li>
 													<a href="<?= base_url('class-deliberation'); ?>">
 														<i class="metismenu-icon"></i>
 														<?= lang("app.deliberation"); ?>
 													</a>
 												</li>
+												<?php } ?>
+												<?php if (menu_clearance_allowed('finish_deliberation')) { ?>
 												<li>
 													<a href="<?= base_url('finish_deliberation'); ?>">
 														<i class="metismenu-icon"></i>
 														<?= lang("app.finishDeliberation"); ?>
 													</a>
 												</li>
+												<?php } ?>
+												<?php if (menu_clearance_allowed('deliberation_settings')) { ?>
 												<li>
 													<a href="<?= base_url('deliberation_settings'); ?>">
 														<i class="metismenu-icon"></i>
 														<?= lang("app.deliberationSettings"); ?>
 													</a>
 												</li>
+												<?php } ?>
 											</ul>
 										</li>
-										<?php
-									}
-									?>
+									<?php } ?>
 								</ul>
 							</li>
+							<?php } ?>
 
-							<?php
-							if (is_allowed(1, 3, 5, 6, 13, 15, 17, 18)) {
-								?>
+							<?php if (menu_clearance_group_visible('pedagogical')) { ?>
 								<li>
 									<a href="javascript:void">
 										<i class="metismenu-icon fa fa-magic"></i>
@@ -379,33 +417,35 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('ped_analyse')) { ?>
 										<li>
 											<a href="<?= base_url('ped_analyse'); ?>">
 												<i class="metismenu-icon"></i>
 												Analyse Curriculum &amp; Chronogram
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('ped_scheme_of_work')) { ?>
 										<li>
 											<a href="<?= base_url('ped_scheme_of_work'); ?>">
 												<i class="metismenu-icon"></i>
 												Scheme of Work
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('ped_session_plan')) { ?>
 										<li>
 											<a href="<?= base_url('ped_session_plan'); ?>">
 												<i class="metismenu-icon"></i>
 												Session Plan
 											</a>
 										</li>
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-							?>
+							<?php } ?>
 
-							<?php
-							if (is_allowed(1, 3, 4, 5, 6)) {
-								?>
+							<?php if (menu_clearance_group_visible('messaging')) { ?>
 								<li class="app-sidebar__heading"><?= lang("app.messaging"); ?></li>
 								<li>
 									<a href="javascript:void">
@@ -414,27 +454,29 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('messaging/parents')) { ?>
 										<li>
 											<a href="<?= base_url('messaging/parents'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.parentsMessaging"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('messaging/employees')) { ?>
 										<li>
 											<a href="<?= base_url('messaging/employees'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.employeesMessaging"); ?>
 											</a>
 										</li>
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-							?>
-							<?php
-							if (!is_blocked(5, 6)) {
-								?>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('student_reports') || menu_clearance_group_visible('staff_reports')) { ?>
 								<li class="app-sidebar__heading"><?= lang("app.attendance"); ?></li>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('student_reports')) { ?>
 								<li>
 									<a href="javascript:void">
 										<i class="metismenu-icon typcn typcn-group-outline"></i>
@@ -442,62 +484,80 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('attendance_record')) { ?>
 										<li>
 											<a href="javascript:void" data-target="#attendanceMdl" data-toggle="modal">
 												<i class="fa fa-plus"></i>
 												<?= lang("app.recordAttendance"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('student-report/inout/monthly')) { ?>
 										<li>
 											<a href="<?= base_url('student-report/inout/monthly'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.studentInOut"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('student-report/course/monthly')) { ?>
 										<li>
 											<a href="<?= base_url('student-report/course/monthly/'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.studentCourse"); ?>
 											</a>
 										</li>
+										<?php } ?>
 										<li style="display: none">
 											<a href="<?= base_url('student-report/course/summary/'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.courseSummary"); ?>
 											</a>
 										</li>
+										<?php if (menu_clearance_allowed('student-report/daily/class')) { ?>
 										<li>
 											<a href="<?= base_url('student-report/daily/class'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.studentDailyAttendance"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('student-report/daily/all')) { ?>
 										<li>
 											<a href="<?= base_url('student-report/daily/all'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.dailyAttendance"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('student-report/daily/details')) { ?>
 										<li>
 											<a href="<?= base_url('student-report/daily/details'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.dailyGeneralAttendance"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('student-report/boarding/all')) { ?>
 										<li>
 											<a href="<?= base_url('student-report/boarding/all'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.boardingAttendance"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('student-report/boarding/details')) { ?>
 										<li>
 											<a href="<?= base_url('student-report/boarding/details'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.boardingGeneralAttendance"); ?>
 											</a>
 										</li>
+										<?php } ?>
 									</ul>
 								</li>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('staff_reports')) { ?>
 								<li>
 									<a href="javascript:void">
 										<i class="metismenu-icon typcn typcn-group-outline"></i>
@@ -505,27 +565,27 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('staff-report/monthly')) { ?>
 										<li>
 											<a href="<?= base_url('staff-report/monthly'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.monthlyReport"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('staff-report/individual')) { ?>
 										<li>
 											<a href="<?= base_url('staff-report/individual'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.individualReport"); ?>
 											</a>
 										</li>
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-							?>
+							<?php } ?>
 
-							<?php
-							if (is_allowed(1, 3)) {
-								?>
+							<?php if (menu_clearance_group_visible('staffs')) { ?>
 								<li class="app-sidebar__heading"><?= lang("app.hrDept"); ?></li>
 								<li>
 									<a href="#">
@@ -534,6 +594,7 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('staffs')) { ?>
 										<li>
 											<a href="javascript:void" data-toggle="modal" data-target="#mdlStaff">
 												<i class="metismenu-icon"></i>
@@ -546,20 +607,19 @@
 												<?= lang("app.allStaffs"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('staff-cards')) { ?>
 										<li>
 											<a href="<?= base_url('staff-cards'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.staffCards"); ?>
 											</a>
 										</li>
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-							?>
-							<?php
-							if (is_allowed(1, 9, 3)) {
-								?>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('fees')) { ?>
 								<li class="app-sidebar__heading"><?= lang("app.feesManagement"); ?></li>
 								<li>
 									<a href="javascript:void">
@@ -567,50 +627,59 @@
 										<?= lang("app.feesManagement"); ?>
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
-
 									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('fees_entry')) { ?>
 										<li>
 											<a href="<?= base_url('fees_entry'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.feesEntry"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('school_fees_management')) { ?>
 										<li>
 											<a href="<?= base_url('school_fees_management'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.schoolFeesManagement"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('extra_fees_management')) { ?>
 										<li>
 											<a href="<?= base_url('extra_fees_management'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.extraFeesManagement"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('transport_fees_management')) { ?>
 										<li>
 											<a href="<?= base_url('transport_fees_management'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.transportFeesManagement"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('finance_records')) { ?>
 										<li>
 											<a href="<?= base_url('finance_records'); ?>">
 												<i class="metismenu-icon"></i>
 												Self service transactions
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('system-report/fees')) { ?>
 										<li>
 											<a href="<?= base_url('system-report/fees'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.feesReport"); ?>
 											</a>
 										</li>
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-							if (is_allowed(1, 7, 13, 3)) {
-								?>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('library')) { ?>
 								<li class="app-sidebar__heading"><?= lang("app.libraryManagement"); ?></li>
 								<li>
 									<a href="javascript:void">
@@ -618,28 +687,27 @@
 										<?= lang("app.libraryManagement"); ?>
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
-
 									<ul class="mm-collapse">
-
+										<?php if (menu_clearance_allowed('book_management')) { ?>
 										<li>
 											<a href="<?= base_url('book_management'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.booksManagement"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('borrowed_report')) { ?>
 										<li>
 											<a href="<?= base_url('borrowed_report'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.borrowedReport"); ?>
 											</a>
 										</li>
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-
-							if (is_allowed(1, 5, 6, 7, 3)) {
-								?>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('transport')) { ?>
 								<li class="app-sidebar__heading"><?= lang("app.transportManagement"); ?></li>
 								<li>
 									<a href="javascript:void">
@@ -647,27 +715,27 @@
 										<?= lang("app.transportManagement"); ?>
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
-
 									<ul class="mm-collapse">
-
+										<?php if (menu_clearance_allowed('bus_management')) { ?>
 										<li>
 											<a href="<?= base_url('bus_management'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.busManagement"); ?>
 											</a>
 										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('route_management')) { ?>
 										<li>
 											<a href="<?= base_url('route_management'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.routeManagement"); ?>
 											</a>
 										</li>
+										<?php } ?>
 									</ul>
 								</li>
-								<?php
-							}
-							if (is_allowed(1, 3, 14)) {
-								?>
+							<?php } ?>
+							<?php if (menu_clearance_allowed('pocket_money')) { ?>
 								<li class="app-sidebar__heading"><?= lang("app.PocketMoney"); ?></li>
 								<li>
 									<a href="<?= base_url('pocket_money'); ?>">
@@ -675,27 +743,23 @@
 										<?= lang("app.PocketMoney"); ?>
 									</a>
 								</li>
-								<?php
-							}
-							?>
+							<?php } ?>
+							<?php if (menu_clearance_allowed('leave_application')) { ?>
 							<li>
 								<a href="<?= base_url('leave_application'); ?>">
 									<i class="metismenu-icon typcn typcn-chart-pie-outline"></i>
 									<?= lang("app.leaveApplication"); ?>
 								</a>
 							</li>
-							<?php
-							if (is_allowed(1, 3)) {
-								?>
+							<?php } ?>
+							<?php if (menu_clearance_allowed('leave_management')) { ?>
 								<li>
 									<a href="<?= base_url('leave_management'); ?>">
 										<i class="metismenu-icon typcn typcn-chart-pie-outline"></i>
 										<?= lang("app.leaveManagement"); ?>
 									</a>
 								</li>
-								<?php
-							}
-							?>
+							<?php } ?>
 							<!--
 							<li class="app-sidebar__heading">MISCELLANIOUS</li>
 							<li>
@@ -962,27 +1026,21 @@
 														<ul class="nav flex-column">
 															<li class="nav-item-header nav-item"><?= lang("app.activity"); ?>
 															</li>
-															<?php
-															if (is_allowed(1, 3)) {
-																?>
+															<?php if (menu_clearance_allowed('settings')) { ?>
 																<li class="nav-item">
 																	<a href="<?= base_url('settings'); ?>"
 																	   class="nav-link"><i class="fa fa-cog"></i>&nbsp;&nbsp;
 																		<?= lang("app.settings"); ?>
 																	</a>
 																</li>
-																<?php
-															}
-															?>
+															<?php } ?>
 															<li class="nav-item">
 																<a href="<?= base_url('profile'); ?>"
 																   class="nav-link"><i class="fa fa-user-alt"></i>&nbsp;&nbsp;
 																	<?= lang("app.myProfile"); ?>
 																</a>
 															</li>
-															<?php
-															if (is_allowed(1, 3)) {
-																?>
+															<?php if (menu_clearance_allowed('settings')) { ?>
 																<li class="nav-item">
 																	<a href="javascript:void(0);" class="nav-link"
 																	   data-toggle="modal"
@@ -991,8 +1049,7 @@
 																		<?= lang("app.changeActiveTerm"); ?>
 																	</a>
 																</li>
-																<?php
-															}
+															<?php }
 															?>
 															<li class="nav-item">
 																<a href="javascript:void(0);" class="nav-link"

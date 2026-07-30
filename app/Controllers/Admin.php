@@ -14,7 +14,10 @@ use App\Models\StaffModel;
 use App\Models\StudentModel;
 use App\Models\UserModel;
 use App\Models\PlatformSettingsModel;
+use App\Models\PostMenuClearanceModel;
+use App\Models\PostsModel;
 use CodeIgniter\HTTP\Response;
+use Config\MenuClearance;
 
 class Admin extends BaseController
 {
@@ -383,6 +386,95 @@ class Admin extends BaseController
 		return $this->response->setJSON([
 			'success' => 'Registration fees saved',
 			'fees' => $fees,
+		]);
+	}
+
+	/** Super-admin: assign school-dashboard menus per staff post. */
+	public function level_clearance()
+	{
+		$this->_preset();
+		$clearanceMdl = new PostMenuClearanceModel();
+		$clearanceMdl->ensureSchema();
+		$postsMdl = new PostsModel();
+		$posts = $postsMdl->orderBy('id', 'ASC')->findAll();
+		if (!is_array($posts)) {
+			$posts = [];
+		}
+
+		$clearanceByPost = [];
+		$customByPost = [];
+		foreach ($posts as $post) {
+			$pid = (int) ($post['id'] ?? 0);
+			$clearanceByPost[$pid] = $clearanceMdl->allowedKeysForPost($pid);
+			$customByPost[$pid] = $clearanceMdl->hasCustomRow($pid);
+		}
+
+		$data = [
+			'title' => 'Level clearance',
+			'subtitle' => 'Assign school dashboard menus per staff post',
+			'page' => 'level_clearance',
+			'posts' => $posts,
+			'menuTree' => MenuClearance::tree(),
+			'fullAccessPosts' => MenuClearance::FULL_ACCESS_POSTS,
+			'clearanceByPost' => $clearanceByPost,
+			'customByPost' => $customByPost,
+			'defaultsByPost' => [],
+		];
+		foreach ($posts as $post) {
+			$pid = (int) ($post['id'] ?? 0);
+			$data['defaultsByPost'][$pid] = PostMenuClearanceModel::defaultKeysForPost($pid);
+		}
+		$data['content'] = view('admin/level_clearance', $data);
+		return view('main_admin', $data);
+	}
+
+	public function save_level_clearance(): Response
+	{
+		$this->_preset();
+		$postId = (int) $this->request->getPost('post_id');
+		$action = trim((string) $this->request->getPost('action'));
+		$mdl = new PostMenuClearanceModel();
+		$mdl->ensureSchema();
+
+		if ($postId < 1) {
+			return $this->response->setJSON(['error' => 'Invalid post']);
+		}
+		if (MenuClearance::isFullAccessPost($postId)) {
+			return $this->response->setJSON([
+				'error' => 'This post always has full access and cannot be restricted',
+				'menus' => MenuClearance::allKeys(),
+				'locked' => true,
+			]);
+		}
+
+		$adminId = (int) ($this->session->get('soma_admin_id') ?: $this->session->get('soma_id') ?: 0);
+
+		if ($action === 'reset') {
+			$mdl->resetToDefaults($postId);
+			$menus = PostMenuClearanceModel::defaultKeysForPost($postId);
+			return $this->response->setJSON([
+				'success' => 'Reset to defaults',
+				'menus' => $menus,
+				'custom' => false,
+			]);
+		}
+
+		$menusRaw = $this->request->getPost('menus');
+		$menus = [];
+		if (is_string($menusRaw)) {
+			$decoded = json_decode($menusRaw, true);
+			if (is_array($decoded)) {
+				$menus = $decoded;
+			}
+		} elseif (is_array($menusRaw)) {
+			$menus = $menusRaw;
+		}
+
+		$saved = $mdl->saveForPost($postId, $menus, $adminId);
+		return $this->response->setJSON([
+			'success' => 'Level clearance saved',
+			'menus' => $saved,
+			'custom' => true,
 		]);
 	}
 
