@@ -1297,6 +1297,8 @@ public function testEmail()
 		$data['page'] = "settings";
 		$data['intouch_info'] = (new IntouchAccount())->where('school_id', $schoolId)->get()->getResultArray()[0] ?? ['school_id' => $schoolId, "username" => "", "password" => ""];
 		$data['app_settings'] = (new ApplicationSettingsModel())->forSchool($schoolId);
+		$data['private_registration_url'] = rtrim(base_url('application'), '/') . '?school=' . (int) $schoolId;
+		$data['public_registration_url'] = rtrim(base_url('application'), '/');
 		$shiftMdl = new ShiftModel();
 		$data['shifts'] = $shiftMdl->select("shifts.*,count(st.id) as staffs")
 				->join("staffs st", "shifts.id=st.shift_id", "left")
@@ -13689,15 +13691,23 @@ public function assign_card()
 	function getSchoolsHavingSelectedProgram(int $program): Response
 	{
 		$classesMdl = new ClassesModel();
-		$schools = $classesMdl->select("s.id,s.name")
+		$builder = $classesMdl->select("s.id,s.name")
 				->join("departments d", "d.id=classes.department")
 				->join("faculty f", "f.id=d.faculty_id")
 				->join("schools s", "s.id=classes.school_id")
-				->where("f.type", $program)
+				->where("f.type", $program);
+
+		// Private registration link: only this school
+		$onlySchool = (int) $this->request->getGet('school');
+		if ($onlySchool > 0) {
+			$builder->where('s.id', $onlySchool);
+		}
+
+		$schools = $builder
 				->groupBy("s.id")
 				->orderBy("s.name", "ASC")
 				->get()->getResultArray();
-		if ($schools == null) {
+		if ($schools == null || count($schools) === 0) {
 			return $this->response->setStatusCode("400")->setJSON(["error" => "No data found"]);
 		} else {
 			return $this->response->setJSON($schools);
@@ -14642,6 +14652,8 @@ public function assign_card()
 		$data['title'] = "Somanet";
 		$data['page'] = 'Application';
 		$data['subtitle'] = lang("app.SchoolManagementSystem");
+		$data['locked_school_id'] = 0;
+		$data['locked_school_name'] = '';
 		if ($code != null) {
 			$appMdl = new StudentApplicationModel();
 			$appData = $appMdl->select('fname,lname,gender,phoneNumber,code,id,status')
@@ -14658,6 +14670,24 @@ public function assign_card()
 					// Documents already collected on the Documents step during registration
 					$data['application'] = $appData;
 					$data['applicationId'] = $appData->id;
+				}
+			}
+		} else {
+			// Private school registration link: /application?school={id}
+			$lockSchoolId = (int) $this->request->getGet('school');
+			if ($lockSchoolId > 0) {
+				$schoolRow = (new SchoolModel())->select('id,name,status')
+					->where('id', $lockSchoolId)
+					->get(1)->getRow();
+				$appOk = (new ApplicationSettingsModel())->select('id')
+					->where('school_id', $lockSchoolId)
+					->orderBy('id', 'desc')
+					->get(1)->getRow();
+				if ($schoolRow != null && (int) ($schoolRow->status ?? 1) !== 0 && $appOk != null) {
+					$data['locked_school_id'] = (int) $schoolRow->id;
+					$data['locked_school_name'] = (string) $schoolRow->name;
+				} else {
+					$data['private_link_error'] = 'This school registration link is not available. Ask the school to configure online registration settings.';
 				}
 			}
 		}

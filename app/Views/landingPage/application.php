@@ -408,6 +408,20 @@
 													<h6 class="newApplicant">Fill this form to start a new application</h6>
 													<hr class="newApplicant">
 													<div class="newApplicant">
+														<?php if (!empty($private_link_error)): ?>
+															<div class="alert alert-warning"><?= esc($private_link_error); ?></div>
+														<?php endif; ?>
+														<?php
+														$lockedSchoolId = (int) ($locked_school_id ?? 0);
+														$lockedSchoolName = (string) ($locked_school_name ?? '');
+														?>
+														<input type="hidden" id="locked_school_id" value="<?= $lockedSchoolId; ?>">
+														<?php if ($lockedSchoolId > 0 && $lockedSchoolName !== ''): ?>
+															<div class="alert alert-info" style="background:#ecfeff;border-color:#a5f3fc;color:#155e75;padding:10px 12px;border-radius:8px;">
+																<strong>School:</strong> <?= esc($lockedSchoolName); ?>
+																<br><small>You opened this school's private registration link.</small>
+															</div>
+														<?php endif; ?>
 														<div class="form-group">
 															<label class="control-label mb-1">School program</label>
 															<select class="form-control" name="schoolProgram" id="schoolProgram">
@@ -416,10 +430,14 @@
 																<option value="1">RTB</option>
 															</select>
 														</div>
-														<div class="form-group">
+														<div class="form-group" id="schoolSelectWrap" <?= $lockedSchoolId > 0 ? 'style="display:none;"' : ''; ?>>
 															<label for="schoolOptions" class="control-label mb-1">Schools</label>
 															<select class="form-control" name="school" id="schoolOptions">
-																<option disabled selected>-- Choose school --</option>
+																<?php if ($lockedSchoolId > 0): ?>
+																	<option value="<?= $lockedSchoolId; ?>" selected><?= esc($lockedSchoolName); ?></option>
+																<?php else: ?>
+																	<option disabled selected>-- Choose school --</option>
+																<?php endif; ?>
 															</select>
 														</div>
 
@@ -833,19 +851,46 @@
 			// --- Program -> Schools
 			$("#schoolProgram").on("change", function () {
 				let program = $(this).val();
+				let lockedId = parseInt($("#locked_school_id").val(), 10) || 0;
 				let options = '<option disabled selected>-- Choose school --</option>';
-				$("#schoolOptions").html(options);
-				$.getJSON("<?= site_url('getSchoolsHavingSelectedProgram'); ?>/" + program, function (data) {
+				if (!lockedId) {
+					$("#schoolOptions").html(options);
+				}
+				var schoolsUrl = "<?= site_url('getSchoolsHavingSelectedProgram'); ?>/" + program;
+				if (lockedId > 0) {
+					schoolsUrl += "?school=" + lockedId;
+				}
+				$.getJSON(schoolsUrl, function (data) {
 					if (Array.isArray(data)) {
-						$.each(data, function (i, obj) {
-							options += "<option value='" + obj.id + "'>" + obj.name + "</option>";
-						});
-						$("#schoolOptions").html(options);
+						if (lockedId > 0) {
+							var match = null;
+							$.each(data, function (i, obj) {
+								if (parseInt(obj.id, 10) === lockedId) {
+									match = obj;
+									return false;
+								}
+							});
+							if (!match) {
+								toastada.error("This school has no classes for the selected program");
+								$(".registration-data").hide();
+								return;
+							}
+							$("#schoolOptions").html("<option value='" + match.id + "' selected>" + match.name + "</option>");
+							$("#schoolOptions").trigger("change");
+						} else {
+							$.each(data, function (i, obj) {
+								options += "<option value='" + obj.id + "'>" + obj.name + "</option>";
+							});
+							$("#schoolOptions").html(options);
+						}
 					} else if (data && data.error) {
 						toastada.error(data.error);
 					}
 				}).fail(function(xhr){
 					console.error('Schools load failed:', xhr.status, xhr.responseText);
+					if (lockedId > 0) {
+						toastada.error("This school is not available for the selected program");
+					}
 				});
 			});
 

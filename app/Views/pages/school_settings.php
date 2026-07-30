@@ -980,9 +980,33 @@
 			<div id="collapseAppReg" data-parent="#accordion" class="collapse">
 				<div class="card-body">
 					<p class="text-muted" style="margin-bottom:1rem;">
-						Configure what parents pay and which PDFs are required on
-						<a href="<?= base_url('application'); ?>" target="_blank">Online Registration</a>.
+						Configure what parents pay and which PDFs are required on Online Registration.
 					</p>
+					<?php
+					$privateRegUrl = (string) ($private_registration_url ?? (rtrim(base_url('application'), '/') . '?school=' . (int) ($settings['id'] ?? 0)));
+					$publicRegUrl = (string) ($public_registration_url ?? rtrim(base_url('application'), '/'));
+					?>
+					<div class="form-group" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:1.1rem;">
+						<label style="font-weight:600;margin-bottom:6px;">Private registration link (this school only)</label>
+						<div class="input-group">
+							<input type="text" class="form-control" id="private_reg_link" readonly
+								   value="<?= esc($privateRegUrl, 'attr'); ?>">
+							<div class="input-group-append">
+								<button type="button" class="btn btn-outline-primary" id="btn_copy_private_reg" title="Copy link">
+									<i class="fa fa-copy"></i> Copy
+								</button>
+								<a class="btn btn-outline-secondary" href="<?= esc($privateRegUrl, 'attr'); ?>" target="_blank" rel="noopener">
+									<i class="fa fa-external-link"></i>
+								</a>
+							</div>
+						</div>
+						<small class="text-muted d-block" style="margin-top:6px;">
+							Share this link with parents — they will only see <strong>your school</strong> (not the full school list).
+							Public all-schools page:
+							<a href="<?= esc($publicRegUrl, 'attr'); ?>" target="_blank"><?= esc($publicRegUrl); ?></a>
+						</small>
+						<span id="private_reg_copy_status" class="text-success" style="display:none;margin-left:.25rem;">Copied</span>
+					</div>
 					<div class="row">
 						<div class="col-md-6">
 							<div class="form-group">
@@ -2375,6 +2399,26 @@ $(document).on("click","#btn-remove-discipline",function () {
 
 	// Online registration settings (fees + Babyeyi + requirement PDF)
 	$(function () {
+		$("#btn_copy_private_reg").on("click", function () {
+			var input = document.getElementById("private_reg_link");
+			if (!input) return;
+			var text = input.value || "";
+			var done = function () {
+				$("#private_reg_copy_status").show().delay(1600).fadeOut();
+				if (window.toastada) toastada.success("Private registration link copied");
+			};
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				navigator.clipboard.writeText(text).then(done).catch(function () {
+					input.select();
+					document.execCommand("copy");
+					done();
+				});
+			} else {
+				input.select();
+				document.execCommand("copy");
+				done();
+			}
+		});
 		$("#btn_save_app_reg").on("click", function () {
 			var $st = $("#app_reg_status").text("Saving…");
 			$.post("<?= base_url('save_application_settings'); ?>", {
