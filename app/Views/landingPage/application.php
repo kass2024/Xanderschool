@@ -382,6 +382,32 @@
 		margin-left: 6px;
 		vertical-align: middle;
 	}
+	.ss-form-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: .85rem 1rem;
+	}
+	@media (max-width: 768px) {
+		.ss-form-row { grid-template-columns: 1fr; }
+	}
+	.ss-section-title {
+		font-size: .95rem;
+		font-weight: 700;
+		color: var(--app-navy);
+		margin: 1rem 0 .65rem;
+		padding-top: .5rem;
+		border-top: 1px dashed var(--app-line);
+	}
+	.ss-section-title:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+	.ss-hint-box {
+		background: #f0f9ff;
+		border: 1px solid #bae6fd;
+		border-radius: 10px;
+		padding: .65rem .85rem;
+		font-size: .82rem;
+		color: #0369a1;
+		margin-bottom: 1rem;
+	}
 </style>
 
 <section class="ss-app" id="home">
@@ -402,7 +428,7 @@
 							<!-- progressbar -->
 							<ul id="progressbar">
 								<li id="personal" class="active"><strong>Personal</strong></li>
-								<li id="payment" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Visitors</strong></li>
+								<li id="payment" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Family</strong></li>
 								<li id="documents" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Documents</strong></li>
 								<li id="complete" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Payment</strong></li>
 								<li id="confirm" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Finish</strong></li>
@@ -516,26 +542,46 @@
 																<label class="control-label mb-1">Last name</label>
 																<input required name="lastName" type="text" class="form-control" placeholder="Last name">
 															</div>
-															<div class="form-group">
-																<label class="control-label mb-1">Gender</label>
-																<select class="form-control" name="gender" required>
-																	<option disabled selected>-- Choose Gender --</option>
-																	<option value="M">Male</option>
-																	<option value="F">Female</option>
-																</select>
+															<div class="ss-hint-box">
+																<strong>Reg No</strong> is generated automatically when the school admits the student (same as Excel mass upload).
 															</div>
-															<div class="form-group has-success">
-																<label class="control-label mb-1">Phone number (Enter parent's phone if you don't have phone)</label>
-																<input id="cc-name" name="phoneNumber" placeholder="Phone number" type="text" required class="form-control">
+															<div class="ss-form-row">
+																<div class="form-group">
+																	<label class="control-label mb-1">Gender</label>
+																	<select class="form-control" name="gender" required>
+																		<option disabled selected value="">-- Choose Gender --</option>
+																		<option value="M">Male</option>
+																		<option value="F">Female</option>
+																	</select>
+																</div>
+																<div class="form-group">
+																	<label class="control-label mb-1">Birth date</label>
+																	<input name="dateOfBirth" type="date" class="form-control" required>
+																</div>
 															</div>
-
-															<div class="form-group has-success">
-																<label class="control-label mb-1">Studying mode</label>
-																<select class="form-control" name="studingMode">
-																	<option disabled selected>-- Choose mode --</option>
-																	<option value="0">Boarding</option>
-																	<option value="1">Day</option>
-																</select>
+															<div class="ss-form-row">
+																<div class="form-group has-success">
+																	<label class="control-label mb-1">Studying mode</label>
+																	<select class="form-control" name="studingMode" required>
+																		<option disabled selected value="">-- Choose mode --</option>
+																		<option value="0">Boarding</option>
+																		<option value="1">Day</option>
+																	</select>
+																</div>
+																<div class="form-group">
+																	<label class="control-label mb-1">Nationality</label>
+																	<input name="nationality" type="text" class="form-control" placeholder="e.g. Rwandan" required>
+																</div>
+															</div>
+															<div class="ss-form-row">
+																<div class="form-group">
+																	<label class="control-label mb-1">Religion</label>
+																	<input name="religion" type="text" class="form-control" placeholder="e.g. Christian" required>
+																</div>
+																<div class="form-group has-success">
+																	<label class="control-label mb-1">Student phone</label>
+																	<input id="cc-name" name="phoneNumber" placeholder="Parent phone if none" type="text" required class="form-control">
+																</div>
 															</div>
 														</div><!-- /.registration-data -->
 													</div><!-- /.newApplicant -->
@@ -545,27 +591,64 @@
 										<input type="button" name="next" class="next action-button newApplicant" value="Next" style="display:none;"/>
 									</fieldset>
 
-									<!-- STEP 2: VISITORS / PARENT CONTACT -->
+									<!-- STEP 2: FAMILY + VISITORS (matches Excel template) -->
 									<fieldset>
 										<div class="form-card">
-											<h6 class="fs-title" style="font-size:1.15rem;margin-bottom:.35rem;">Guardians / visitors</h6>
+											<h6 class="fs-title" style="font-size:1.15rem;margin-bottom:.35rem;">Family &amp; visitors</h6>
 											<p class="text-muted" style="font-size:.9rem;margin-bottom:1rem;">
-												Add at least <strong>two visitors</strong> who may collect this student (used for parent visiting &amp; RFID cards).
+												Same fields as the student Excel template — used for student record, parent visiting &amp; RFID cards.
 											</p>
+
+											<div class="ss-section-title">Father</div>
+											<div class="ss-form-row">
+												<div class="form-group">
+													<label class="control-label mb-1">Father names</label>
+													<input name="father" id="father" type="text" class="form-control" placeholder="Father full names">
+												</div>
+												<div class="form-group">
+													<label class="control-label mb-1">Father phone</label>
+													<input name="ft_phone" id="ft_phone" type="text" class="form-control" placeholder="0780000000">
+												</div>
+											</div>
+
+											<div class="ss-section-title">Mother</div>
+											<div class="ss-form-row">
+												<div class="form-group">
+													<label class="control-label mb-1">Mother names</label>
+													<input name="mother" id="mother" type="text" class="form-control" placeholder="Mother full names">
+												</div>
+												<div class="form-group">
+													<label class="control-label mb-1">Mother phone</label>
+													<input name="mt_phone" id="mt_phone" type="text" class="form-control" placeholder="0780000000">
+												</div>
+											</div>
+
+											<div class="ss-section-title">Guardian</div>
+											<div class="ss-form-row">
+												<div class="form-group">
+													<label class="control-label mb-1">Guardian names</label>
+													<input name="guardian" id="guardian" type="text" class="form-control" placeholder="Guardian full names">
+												</div>
+												<div class="form-group">
+													<label class="control-label mb-1">Guardian phone</label>
+													<input name="gd_phone" id="gd_phone" type="text" class="form-control" placeholder="0780000000">
+												</div>
+											</div>
+
+											<div class="ss-section-title">Visitor 1 <span class="badge-req">Required for visiting</span></div>
 											<div class="ss-visitor-grid">
 												<div class="ss-visitor-card">
-													<h6>Visitor 1 <span class="badge-req">Required</span></h6>
 													<div class="form-group">
-														<label class="control-label mb-1">Full names</label>
-														<input name="visitor1Names" id="visitor1Names" type="text" class="form-control" required placeholder="e.g. NAKIRYOWA PATIENCE">
-													</div>
-													<div class="form-group has-success">
-														<label class="control-label mb-1">Phone number</label>
-														<input name="visitor1Phone" id="visitor1Phone" type="text" class="form-control" required placeholder="0780000000">
+														<label class="control-label mb-1">Visitor 1 name</label>
+														<input name="visitor1Names" id="visitor1Names" type="text" class="form-control" placeholder="Same as father/mother if applicable">
 													</div>
 													<div class="form-group">
-														<label class="control-label mb-1">Relationship</label>
-														<select class="form-control" name="visitor1Relationship" id="visitor1Relationship" required>
+														<label class="control-label mb-1">Visitor 1 phone</label>
+														<input name="visitor1Phone" id="visitor1Phone" type="text" class="form-control" placeholder="0780000000">
+													</div>
+													<div class="form-group">
+														<label class="control-label mb-1">Visitor 1 relationship</label>
+														<select class="form-control" name="visitor1Relationship" id="visitor1Relationship">
 															<option value="">-- Choose relationship --</option>
 															<option value="Father">Father</option>
 															<option value="Mother">Mother</option>
@@ -577,17 +660,17 @@
 													</div>
 												</div>
 												<div class="ss-visitor-card">
-													<h6>Visitor 2</h6>
+													<div class="ss-section-title" style="border:0;padding:0;margin:0 0 .75rem;">Visitor 2</div>
 													<div class="form-group">
-														<label class="control-label mb-1">Full names</label>
-														<input name="visitor2Names" id="visitor2Names" type="text" class="form-control" placeholder="Second guardian / visitor">
+														<label class="control-label mb-1">Visitor 2 name</label>
+														<input name="visitor2Names" id="visitor2Names" type="text" class="form-control" placeholder="Second visitor">
 													</div>
 													<div class="form-group">
-														<label class="control-label mb-1">Phone number</label>
+														<label class="control-label mb-1">Visitor 2 phone</label>
 														<input name="visitor2Phone" id="visitor2Phone" type="text" class="form-control" placeholder="0780000000">
 													</div>
 													<div class="form-group">
-														<label class="control-label mb-1">Relationship</label>
+														<label class="control-label mb-1">Visitor 2 relationship</label>
 														<select class="form-control" name="visitor2Relationship" id="visitor2Relationship">
 															<option value="">-- Choose relationship --</option>
 															<option value="Father">Father</option>
@@ -600,6 +683,7 @@
 													</div>
 												</div>
 											</div>
+
 											<input type="hidden" name="parentNames" id="parentNamesHidden" value="">
 											<input type="hidden" name="parentPhone" id="parentPhoneHidden" value="">
 											<input type="hidden" name="relationship" id="relationshipHidden" value="1">
@@ -864,18 +948,35 @@
 
 			$('#autoSave').on('submit', function (e) {
 				e.preventDefault();
-				// Sync legacy parent fields from visitor 1 for server compatibility
+				// Auto-fill visitors from family fields when left blank (Excel parity)
+				var father = ($('#father').val() || '').trim();
+				var ftPhone = ($('#ft_phone').val() || '').trim();
+				var mother = ($('#mother').val() || '').trim();
+				var mtPhone = ($('#mt_phone').val() || '').trim();
+				if (!$('#visitor1Names').val().trim() && father) {
+					$('#visitor1Names').val(father);
+					if (!$('#visitor1Phone').val().trim()) $('#visitor1Phone').val(ftPhone);
+					if (!$('#visitor1Relationship').val()) $('#visitor1Relationship').val('Father');
+				}
+				if (!$('#visitor2Names').val().trim() && mother) {
+					$('#visitor2Names').val(mother);
+					if (!$('#visitor2Phone').val().trim()) $('#visitor2Phone').val(mtPhone);
+					if (!$('#visitor2Relationship').val()) $('#visitor2Relationship').val('Mother');
+				}
 				var v1n = ($('#visitor1Names').val() || '').trim();
 				var v1p = ($('#visitor1Phone').val() || '').trim();
 				var v1r = ($('#visitor1Relationship').val() || 'Father');
-				if (!v1n || !v1p) {
-					toastada.error('Visitor 1 name and phone are required.');
+				var hasFamily = (father && ftPhone) || (mother && mtPhone) || (($('#guardian').val() || '').trim() && ($('#gd_phone').val() || '').trim());
+				if ((!v1n || !v1p) && !hasFamily) {
+					toastada.error('Fill Visitor 1 or at least one family contact (name + phone).');
 					return;
 				}
-				$('#parentNamesHidden').val(v1n);
-				$('#parentPhoneHidden').val(v1p);
+				var primaryName = v1n || father || mother || ($('#guardian').val() || '').trim();
+				var primaryPhone = v1p || ftPhone || mtPhone || ($('#gd_phone').val() || '').trim();
+				$('#parentNamesHidden').val(primaryName);
+				$('#parentPhoneHidden').val(primaryPhone);
 				var relMap = { 'Father': '1', 'Mother': '2', 'Guardian': '3', 'Sibling': '3', 'Relative': '3', 'Other': '3' };
-				$('#relationshipHidden').val(relMap[v1r] || '1');
+				$('#relationshipHidden').val(relMap[v1r] || (mother && !father ? '2' : '1'));
 				var method = $("input[name='paymentMethod']:checked").val() || 'momo';
 				if (method === 'proof') {
 					var pf = document.getElementById('paymentProof');

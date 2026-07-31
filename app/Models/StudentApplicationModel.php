@@ -49,6 +49,16 @@ class StudentApplicationModel extends Model
         'visitor2_phone',
         'visitor2_relationship',
         'email',
+
+        // same fields as Students.xlsx mass-upload template
+        'nationality',
+        'religion',
+        'father',
+        'ft_phone',
+        'mother',
+        'mt_phone',
+        'guardian',
+        'gd_phone',
     ];
 
     // Your table has created_at (timestamp default current_timestamp) and updated_at (datetime)
@@ -68,7 +78,7 @@ class StudentApplicationModel extends Model
     private static $visitorColumnsReady = false;
 
     /**
-     * Add visitor columns to applications table when missing.
+     * Ensure applications table has visitor + student profile columns from Excel template.
      */
     public function ensureVisitorColumns(): void
     {
@@ -84,6 +94,14 @@ class StudentApplicationModel extends Model
             'visitor2_phone' => 'VARCHAR(50) NULL DEFAULT NULL',
             'visitor2_relationship' => 'VARCHAR(80) NULL DEFAULT NULL',
             'email' => 'VARCHAR(120) NULL DEFAULT NULL',
+            'nationality' => 'VARCHAR(80) NULL DEFAULT NULL',
+            'religion' => 'VARCHAR(80) NULL DEFAULT NULL',
+            'father' => 'VARCHAR(150) NULL DEFAULT NULL',
+            'ft_phone' => 'VARCHAR(50) NULL DEFAULT NULL',
+            'mother' => 'VARCHAR(150) NULL DEFAULT NULL',
+            'mt_phone' => 'VARCHAR(50) NULL DEFAULT NULL',
+            'guardian' => 'VARCHAR(150) NULL DEFAULT NULL',
+            'gd_phone' => 'VARCHAR(50) NULL DEFAULT NULL',
         ];
         foreach ($columns as $name => $def) {
             if (!$db->fieldExists($name, 'applications')) {

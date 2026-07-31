@@ -14752,6 +14752,15 @@ public function assign_card()
     $fac           = $this->request->getPost("faculty");
     $studentPhone  = $this->request->getPost("phoneNumber");
     $studyingMode  = $this->request->getPost("studingMode");
+    $dateOfBirth   = trim((string) $this->request->getPost('dateOfBirth'));
+    $nationality   = trim((string) $this->request->getPost('nationality'));
+    $religion      = trim((string) $this->request->getPost('religion'));
+    $father        = trim((string) $this->request->getPost('father'));
+    $ftPhone       = trim((string) $this->request->getPost('ft_phone'));
+    $mother        = trim((string) $this->request->getPost('mother'));
+    $mtPhone       = trim((string) $this->request->getPost('mt_phone'));
+    $guardian      = trim((string) $this->request->getPost('guardian'));
+    $gdPhone       = trim((string) $this->request->getPost('gd_phone'));
 
     // ---- Parent / visitor information
     $visitor1Names = trim((string) $this->request->getPost('visitor1Names'));
@@ -14770,9 +14779,31 @@ public function assign_card()
         $parentNames = $visitor1Names;
         $parentPhone = $visitor1Phone !== '' ? $visitor1Phone : $parentPhone;
         $relationship = (string) $this->_visitorRelToParentType($visitor1Rel !== '' ? $visitor1Rel : 'Father');
+    } elseif ($father !== '') {
+        $parentNames = $father;
+        $parentPhone = $ftPhone !== '' ? $ftPhone : $parentPhone;
+        $relationship = '1';
+    } elseif ($mother !== '') {
+        $parentNames = $mother;
+        $parentPhone = $mtPhone !== '' ? $mtPhone : $parentPhone;
+        $relationship = '2';
+    } elseif ($guardian !== '') {
+        $parentNames = $guardian;
+        $parentPhone = $gdPhone !== '' ? $gdPhone : $parentPhone;
+        $relationship = '3';
+    }
+    if ($visitor1Names === '' && $father !== '' && $ftPhone !== '') {
+        $visitor1Names = $father;
+        $visitor1Phone = $ftPhone;
+        $visitor1Rel = $visitor1Rel !== '' ? $visitor1Rel : 'Father';
+    }
+    if ($visitor2Names === '' && $mother !== '' && $mtPhone !== '') {
+        $visitor2Names = $mother;
+        $visitor2Phone = $mtPhone;
+        $visitor2Rel = $visitor2Rel !== '' ? $visitor2Rel : 'Mother';
     }
     if ($parentNames === '' || $parentPhone === '') {
-        return $this->response->setJSON(['error' => 'Visitor 1 name and phone are required.']);
+        return $this->response->setJSON(['error' => 'Provide at least Visitor 1 or Father/Mother contact with phone.']);
     }
 
     // ---- Payment phone normalization (2507XXXXXXXX)
@@ -14803,6 +14834,15 @@ public function assign_card()
         "faculty_id"         => $fac,
         "gender"             => $gender,
         "studyingMode"       => $studyingMode,
+        "dateOfBirth"        => $dateOfBirth,
+        "nationality"        => $nationality,
+        "religion"           => $religion,
+        "father"             => $father,
+        "ft_phone"           => $ftPhone,
+        "mother"             => $mother,
+        "mt_phone"           => $mtPhone,
+        "guardian"           => $guardian,
+        "gd_phone"           => $gdPhone,
         "parentNames"        => $parentNames,
         "parentType"         => $relationship,
         "status"             => 0,
@@ -15444,6 +15484,7 @@ public function assign_card()
 		$application = $applicationMdl->select("id,fname,lname,
 		gender,phoneNumber,parentType,parentPhoneNumber,parentNames,dateOfBirth,
 		level,studyingMode,faculty_id,department_id,schoolId,
+		nationality,religion,father,ft_phone,mother,mt_phone,guardian,gd_phone,
 		visitor1_names,visitor1_phone,visitor1_relationship,
 		visitor2_names,visitor2_phone,visitor2_relationship")
 				->where("id", $applicationId)
@@ -15476,17 +15517,25 @@ public function assign_card()
 				"phone" => $application['phoneNumber'],
 				"regno" => $regNo,
 				"sex" => $application['gender'],
-				"dob" => $application['dateOfBirth'],
+				"dob" => $application['dateOfBirth'] ?? '',
+				"nationality" => $application['nationality'] ?? '',
+				"religion" => $application['religion'] ?? '',
+				"father" => trim((string) ($application['father'] ?? '')),
+				"ft_phone" => trim((string) ($application['ft_phone'] ?? '')),
+				"mother" => trim((string) ($application['mother'] ?? '')),
+				"mt_phone" => trim((string) ($application['mt_phone'] ?? '')),
+				"guardian" => trim((string) ($application['guardian'] ?? '')),
+				"gd_phone" => trim((string) ($application['gd_phone'] ?? '')),
 				"status" => 1,
 				"studying_mode" => $application['studyingMode'],
 				"created_by" => $this->session->get("soma_id")];
-		if ($application['parentType'] == 1) {
+		if (empty($studentData['father']) && (int) ($application['parentType'] ?? 0) === 1) {
 			$studentData['father'] = $application['parentNames'];
 			$studentData['ft_phone'] = $application['parentPhoneNumber'];
-		} else if ($application['parentType'] == 2) {
+		} else if (empty($studentData['mother']) && (int) ($application['parentType'] ?? 0) === 2) {
 			$studentData['mother'] = $application['parentNames'];
 			$studentData['mt_phone'] = $application['parentPhoneNumber'];
-		} else {
+		} else if (empty($studentData['guardian']) && (int) ($application['parentType'] ?? 0) === 3) {
 			$studentData['guardian'] = $application['parentNames'];
 			$studentData['gd_phone'] = $application['parentPhoneNumber'];
 		}
