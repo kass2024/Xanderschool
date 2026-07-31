@@ -60,6 +60,22 @@ if (!function_exists('menu_clearance_allowed')) {
 	}
 }
 
+if (!function_exists('budget_permission_allowed')) {
+	function budget_permission_allowed($permKey)
+	{
+		static $svc = null;
+		$staffId = isset($_SESSION['soma_id']) ? (int) $_SESSION['soma_id'] : 0;
+		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		if ($staffId <= 0) {
+			return false;
+		}
+		if ($svc === null) {
+			$svc = new \App\Services\Budget\BudgetPermissionService();
+		}
+		return $svc->can($staffId, $postId, $permKey);
+	}
+}
+
 /**
  * Show a parent menu if the parent key or any child key is allowed.
  *

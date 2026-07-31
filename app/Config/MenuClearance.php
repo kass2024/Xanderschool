@@ -192,6 +192,28 @@ class MenuClearance
 				],
 			],
 			[
+				'key' => 'budget_cashflow',
+				'label' => 'Budget & Cash Flow',
+				'children' => [
+					['key' => 'budget_dashboard', 'label' => 'Dashboard'],
+					['key' => 'budget_prepare', 'label' => 'Budget Preparation'],
+					['key' => 'budget_periods', 'label' => 'Budget Periods'],
+					['key' => 'budget_templates', 'label' => 'Budget Templates'],
+					['key' => 'budget_review', 'label' => 'Budget Review & Approval'],
+					['key' => 'budget_approved', 'label' => 'Approved Budgets'],
+					['key' => 'budget_cash_requests', 'label' => 'Cash Requests'],
+					['key' => 'budget_pending', 'label' => 'My Pending Actions'],
+					['key' => 'budget_procurement', 'label' => 'Procurement Review'],
+					['key' => 'budget_availability', 'label' => 'Budget Availability Review'],
+					['key' => 'budget_final_approval', 'label' => 'Final Finance Approval'],
+					['key' => 'budget_payments', 'label' => 'Payments'],
+					['key' => 'budget_filing', 'label' => 'Receipt & Filing'],
+					['key' => 'budget_reports', 'label' => 'Reports'],
+					['key' => 'budget_audit', 'label' => 'Audit Trail'],
+					['key' => 'budget_settings', 'label' => 'Settings'],
+				],
+			],
+			[
 				'key' => 'pocket_money',
 				'label' => 'Pocket Money',
 				'children' => [],
@@ -348,6 +370,15 @@ class MenuClearance
 		// Fees: is_allowed(1, 9, 3)
 		if ($postId === 9) {
 			$keys = array_merge($keys, self::groupKeys('fees'));
+			$keys = array_merge($keys, self::groupKeys('budget_cashflow'));
+		}
+
+		// Budget & Cash Flow finance roles
+		if (in_array($postId, [1, 8, 19, 20, 21, 22, 23], true)) {
+			$keys = array_merge($keys, self::groupKeys('budget_cashflow'));
+		}
+		if ($postId === 3) {
+			$keys = array_merge($keys, ['budget_dashboard', 'budget_reports', 'budget_audit']);
 		}
 
 		// Asset Management + Library: Store keeper (12), Secretary (7), Librarian (13)

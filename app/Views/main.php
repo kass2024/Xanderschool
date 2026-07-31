@@ -691,57 +691,83 @@
 										<?php if (menu_clearance_allowed('asset_dashboard')) { ?>
 										<li><a href="<?= base_url('asset_management/dashboard'); ?>"><i class="metismenu-icon"></i> Dashboard</a></li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_assets')) { ?>
-										<li><a href="<?= base_url('asset_management/assets'); ?>"><i class="metismenu-icon"></i> Assets</a></li>
-										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_locations')) { ?>
-										<li><a href="<?= base_url('asset_management/locations'); ?>"><i class="metismenu-icon"></i> Areas and Locations</a></li>
+										<li><a href="<?= base_url('asset_management/locations'); ?>"><i class="metismenu-icon"></i> Locations</a></li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_categories')) { ?>
-										<li><a href="<?= base_url('asset_management/categories'); ?>"><i class="metismenu-icon"></i> Categories</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_assignments')) { ?>
-										<li><a href="<?= base_url('asset_management/assignments'); ?>"><i class="metismenu-icon"></i> Asset Assignments</a></li>
+										<?php if (menu_clearance_allowed('asset_assets')) { ?>
+										<li><a href="<?= base_url('asset_management/assets'); ?>"><i class="metismenu-icon"></i> Register assets</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_checkout')) { ?>
-										<li><a href="<?= base_url('asset_management/checkout'); ?>"><i class="metismenu-icon"></i> Check-out / Check-in</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_transfers')) { ?>
-										<li><a href="<?= base_url('asset_management/transfers'); ?>"><i class="metismenu-icon"></i> Transfers</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_maintenance')) { ?>
-										<li><a href="<?= base_url('asset_management/maintenance'); ?>"><i class="metismenu-icon"></i> Maintenance</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_inspections')) { ?>
-										<li><a href="<?= base_url('asset_management/inspections'); ?>"><i class="metismenu-icon"></i> Inspections</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_incidents')) { ?>
-										<li><a href="<?= base_url('asset_management/incidents'); ?>"><i class="metismenu-icon"></i> Incidents and Losses</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_audits')) { ?>
-										<li><a href="<?= base_url('asset_management/audits'); ?>"><i class="metismenu-icon"></i> Inventory Audits</a></li>
+										<li><a href="<?= base_url('asset_management/checkout'); ?>"><i class="metismenu-icon"></i> Borrow / Return</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('book_management')) { ?>
-										<li>
-											<a href="<?= base_url('book_management'); ?>">
-												<i class="metismenu-icon"></i>
-												Library — <?= lang("app.booksManagement"); ?>
-											</a>
-										</li>
+										<li><a href="<?= base_url('book_management'); ?>"><i class="metismenu-icon"></i> Library books</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('borrowed_report')) { ?>
-										<li>
-											<a href="<?= base_url('borrowed_report'); ?>">
-												<i class="metismenu-icon"></i>
-												Library — <?= lang("app.borrowedReport"); ?>
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_reports')) { ?>
-										<li><a href="<?= base_url('asset_management/reports'); ?>"><i class="metismenu-icon"></i> Reports</a></li>
+										<li><a href="<?= base_url('borrowed_report'); ?>"><i class="metismenu-icon"></i> Library borrowed</a></li>
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_settings')) { ?>
 										<li><a href="<?= base_url('asset_management/settings'); ?>"><i class="metismenu-icon"></i> Settings</a></li>
+										<?php } ?>
+									</ul>
+								</li>
+							<?php } ?>
+							<?php if (menu_clearance_group_visible('budget_cashflow')) { ?>
+								<li class="app-sidebar__heading">Budget & Cash Flow</li>
+								<li>
+									<a href="javascript:void">
+										<i class="metismenu-icon pe-7s-cash"></i>
+										Budget & Cash Flow
+										<i class="metismenu-state-icon fa fa-caret-down"></i>
+									</a>
+									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('budget_dashboard')) { ?>
+										<li><a href="<?= base_url('budget/dashboard'); ?>"><i class="metismenu-icon"></i> Dashboard</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_prepare')) { ?>
+										<li><a href="<?= base_url('budget/prepare'); ?>"><i class="metismenu-icon"></i> Budget Preparation</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_periods')) { ?>
+										<li><a href="<?= base_url('budget/periods'); ?>"><i class="metismenu-icon"></i> Budget Periods</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_templates')) { ?>
+										<li><a href="<?= base_url('budget/templates'); ?>"><i class="metismenu-icon"></i> Budget Templates</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_review')) { ?>
+										<li><a href="<?= base_url('budget/budget_review'); ?>"><i class="metismenu-icon"></i> Budget Review</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_approved')) { ?>
+										<li><a href="<?= base_url('budget/approved_budgets'); ?>"><i class="metismenu-icon"></i> Approved Budgets</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_cash_requests')) { ?>
+										<li><a href="<?= base_url('budget/cash_requests'); ?>"><i class="metismenu-icon"></i> Cash Requests</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_pending')) { ?>
+										<li><a href="<?= base_url('budget/pending_actions'); ?>"><i class="metismenu-icon"></i> My Pending Actions</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_procurement')) { ?>
+										<li><a href="<?= base_url('budget/procurement_review'); ?>"><i class="metismenu-icon"></i> Procurement Review</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_availability')) { ?>
+										<li><a href="<?= base_url('budget/budget_availability_review'); ?>"><i class="metismenu-icon"></i> Budget Availability</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_final_approval')) { ?>
+										<li><a href="<?= base_url('budget/final_approval'); ?>"><i class="metismenu-icon"></i> Final Approval</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_payments')) { ?>
+										<li><a href="<?= base_url('budget/payments'); ?>"><i class="metismenu-icon"></i> Payments</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_filing')) { ?>
+										<li><a href="<?= base_url('budget/filing'); ?>"><i class="metismenu-icon"></i> Receipt & Filing</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_reports')) { ?>
+										<li><a href="<?= base_url('budget/reports'); ?>"><i class="metismenu-icon"></i> Reports</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_audit')) { ?>
+										<li><a href="<?= base_url('budget/audit_trail'); ?>"><i class="metismenu-icon"></i> Audit Trail</a></li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('budget_settings')) { ?>
+										<li><a href="<?= base_url('budget/settings'); ?>"><i class="metismenu-icon"></i> Settings</a></li>
 										<?php } ?>
 									</ul>
 								</li>
@@ -2998,6 +3024,14 @@ if ($page == "add_classes") {
 						</button>
 					</div>
 					<div class="modal-body">
+						<div class="alert alert-light border small mb-3">
+							<strong>Scan borrower card</strong> — place the student or staff RFID card on the reader to fill borrower details automatically.
+						</div>
+						<div class="form-group">
+							<label>Scan card (student or staff)</label>
+							<input class="form-control text-center" type="text" id="borrowCardScan" placeholder="Waiting for card scan…" readonly style="font-family:monospace;letter-spacing:.08em;">
+							<div id="borrowCardPerson" class="small mt-1 text-muted"></div>
+						</div>
 						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
 							<div class="form-group">
 								<label><?= lang("app.title"); ?>:</label>
@@ -3653,89 +3687,6 @@ if ($page == "settings") {
 }
 if ($page == "pendingRegistration") {
 	?>
-	<!-- edit course -->
-	<div class="modal fade" id="documentModal" tabindex="-1" role="dialog">
-		<div class="modal-dialog" role="document">
-			<div class="modal-content">
-				<form action="<?= base_url('manipulate_course_category'); ?>" class="autoSubmit validate">
-					<div class="modal-header">
-						<h5 class="modal-title">Applicant document</h5>
-						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
-							<span aria-hidden="true">×</span>
-						</button>
-					</div>
-					<div class="modal-body">
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<table class="table">
-								<tr>
-									<th>#</th>
-									<th style='text-align: center'>Name</th>
-									<th style='text-align: center'>Download document</th>
-								</tr>
-								<tbody id="documentTbl">
-
-								</tbody>
-							</table>
-						</div>
-					</div>
-					<div class="modal-footer">
-						<button type="button" class="btn btn-secondary"
-								data-dismiss="modal"><?= lang("app.close"); ?></button>
-					</div>
-				</form>
-			</div>
-		</div>
-	</div>
-	<div class="modal fade" id="approveRegistrationModal" tabindex="-1" role="dialog">
-		<div class="modal-dialog" role="document">
-			<div class="modal-content">
-				<form action="<?= base_url('manipulateApproveStudentsRegistration'); ?>" class="autoSubmit validate">
-					<div class="modal-header">
-						<h5 class="modal-title">Approve applicant</h5>
-						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
-							<span aria-hidden="true">×</span>
-						</button>
-					</div>
-					<div class="modal-body">
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<div class="form-group">
-								<label><?= lang("app.faculty"); ?>:</label>
-								<input type="text" class="form-control" name="faculty" readonly>
-								<input type="hidden" name="applicationId">
-							</div>
-						</div>
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<div class="form-group">
-								<label>Department:</label>
-								<input type="text" class="form-control" name="dpt" readonly>
-							</div>
-						</div>
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<div class="form-group">
-								<label><?= lang("app.level"); ?>:</label>
-								<input type="text" class="form-control" name="level" readonly>
-							</div>
-						</div>
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<div class="form-group">
-								<label><?= lang("app.classes"); ?>:</label>
-								<select class="select2 form-control" name="classId" required id="classesOptions">
-
-								</select>
-							</div>
-						</div>
-					</div>
-					<div class="modal-footer">
-						<button type="button" class="btn btn-secondary"
-								data-dismiss="modal"><?= lang("app.close"); ?></button>
-						<button type="submit" class="btn btn-primary"
-								data-target="reload">Approve
-						</button>
-					</div>
-				</form>
-			</div>
-		</div>
-	</div>
 	<?php
 }
 ?>
@@ -3767,17 +3718,18 @@ if ($page == "pendingRegistration") {
 			}
 		})
 		let row
+		<?php if ($page != "pendingRegistration") { ?>
 		$("#documentModal").on("show.bs.modal", function (e) {
 			let id = $(e.relatedTarget).data("id")
 			$("#documentTbl").html(" ")
 			row = " "
 			$.getJSON("<?=base_url();?>registrationsDocument/" + id, function (data) {
 				$.each(data, function (index, obj) {
-					let docsUrl = "<?=base_url('assets/documents/');?>" + obj.fileName
+					let docsUrl = obj.url || ("<?=base_url('assets/documents/');?>" + obj.fileName)
 					row += "<tr>" +
 						"<td>" + (index + 1) + "</td>" +
 						"<td style='text-align: center'>" + obj.documentName + "</td>" +
-						"<td style='text-align: center'><a target='_blank' href=" + docsUrl + ">Click here to download</a</td>" +
+						"<td style='text-align: center'><a target='_blank' href='" + docsUrl + "'>Click here to download</a></td>" +
 						"</tr>"
 				})
 				$("#documentTbl").html(row)
@@ -3800,6 +3752,7 @@ if ($page == "pendingRegistration") {
 				$("#classesOptions").append(options)
 			})
 		})
+		<?php } ?>
 		$('#marks_table').dataTable({paging: false});
 		$('#example1').dataTable({
 			paging: true
@@ -3960,12 +3913,69 @@ if ($page == "pendingRegistration") {
 
 		$("#borrowBook").on("show.bs.modal", function (e) {
 			var id = $(e.relatedTarget).data("id");
+			$("#borrowCardScan").val('');
+			$("#borrowCardPerson").text('');
 			$.getJSON("<?=base_url();?>get_book/" + id, function (data) {
-				// alert(id);
 				$("#borrowBook [name='bookId']").val(data.id).change();
 				$("#borrowBook [name='title']").val(data.title).change();
 			});
+			setTimeout(function () { $("#borrowCardScan").focus(); }, 300);
 			return;
+		});
+
+		var borrowCardBuffer = '';
+		var borrowCardLock = false;
+		function applyBorrowCardPerson(person) {
+			if (person.type === 'staff') {
+				$("#borrowType").val('2').trigger('change');
+				$("#selected_staff_book").val(String(person.id)).trigger('change');
+				$("#borrowCardPerson").html('<span class="text-success"><i class="fa fa-check"></i> Staff: <strong>' + person.name + '</strong></span>');
+			} else if (person.type === 'student') {
+				$("#borrowType").val('1').trigger('change');
+				if (person.class_id) {
+					$("#select_class_book").val(String(person.class_id)).trigger('change');
+					$.get("<?=base_url();?>get_student/" + person.class_id + "/1/7", function (html) {
+						$("[name='select_student_book']").html(html);
+						$("[name='select_student_book']").val(String(person.id)).trigger('change');
+					});
+				}
+				var meta = person.regno ? (' (' + person.regno + ')') : '';
+				var cls = person.class ? (' — ' + person.class) : '';
+				$("#borrowCardPerson").html('<span class="text-success"><i class="fa fa-check"></i> Student: <strong>' + person.name + '</strong>' + meta + cls + '</span>');
+			}
+		}
+		function lookupBorrowCard(uid) {
+			if (borrowCardLock) return;
+			borrowCardLock = true;
+			setTimeout(function () { borrowCardLock = false; }, 500);
+			$("#borrowCardPerson").html('<span class="text-info">Looking up card…</span>');
+			$.post("<?= base_url('api/lookup_card_person'); ?>", {
+				card: uid,
+				school_id: <?= json_encode((int) session('soma_school_id')) ?>
+			}, function (res) {
+				if (!res.success || !res.person) {
+					$("#borrowCardPerson").html('<span class="text-danger">' + (res.error || 'Card not recognized') + '</span>');
+					return;
+				}
+				applyBorrowCardPerson(res.person);
+			}, 'json').fail(function () {
+				$("#borrowCardPerson").html('<span class="text-danger">Lookup failed</span>');
+			});
+		}
+		$(document).on('keypress', function (e) {
+			if (!$("#borrowBook").hasClass('show')) return;
+			if ($(e.target).is('input, textarea, select') && e.target.id !== 'borrowCardScan') return;
+			if (e.key === 'Enter') {
+				var uid = borrowCardBuffer.trim();
+				borrowCardBuffer = '';
+				if (uid.length >= 4) {
+					$("#borrowCardScan").val(uid.toUpperCase());
+					lookupBorrowCard(uid);
+				}
+				e.preventDefault();
+			} else if (e.key.length === 1) {
+				borrowCardBuffer += e.key;
+			}
 		});
 		$("#select_class_book").on("change", function () {
 			var classe = $(this).val();
