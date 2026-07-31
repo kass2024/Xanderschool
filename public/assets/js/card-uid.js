@@ -1,5 +1,9 @@
 /**
  * Shared RFID UID normalization — assign-card, attendance-card, parent visiting.
+ *
+ * NFC reader wedge sends UID in reader byte order (e.g. 6C0477CD).
+ * Storage / assign-card form reverses byte pairs for DB (e.g. CD77046C).
+ * Always use CardUid.toStorage() before save; lookups try both orders server-side.
  */
 (function (global) {
 	'use strict';

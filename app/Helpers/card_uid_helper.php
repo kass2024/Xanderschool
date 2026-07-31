@@ -2,7 +2,12 @@
 
 /**
  * RFID card UID helpers — same rules as assign-card + attendance-card.
- * Storage form: byte-reversed hex (assign-card). Lookup tries both byte orders (attendance-card).
+ *
+ * NFC reader order:  6C0477CD  (bytes as read from USB wedge)
+ * Storage order:     CD77046C  (byte pairs reversed — assign-card / DB form)
+ *
+ * Save: normalize_card_uid() reverses bytes once.
+ * Lookup: card_uid_lookup_variants() tries both orders.
  */
 
 if (!function_exists('reverse_card_uid_bytes')) {

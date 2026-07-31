@@ -105,6 +105,7 @@
 
 <!-- SweetAlert -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="<?= base_url('assets/js/card-uid.js') ?>"></script>
 
 <script>
 console.log("✅ Script loaded and ready");
@@ -140,35 +141,28 @@ document.addEventListener("DOMContentLoaded", () => {
   closeModalBtn.addEventListener("click", closeAssignModal);
   closeBtn.addEventListener("click", closeAssignModal);
 
-  // ===============================
-  // 🧠 Universal UID Detection System
-  // ===============================
+  /**
+   * NFC storage form — clean decimal/hex then reverse byte pairs (same as Android NFC / parent visiting).
+   * Canonical implementation: assets/js/card-uid.js → CardUid.toStorage()
+   */
   function normalizeUID(uid) {
-    uid = uid.trim();
+    if (window.CardUid && CardUid.toStorage) {
+      return CardUid.toStorage(uid);
+    }
+    uid = String(uid || "").trim();
     if (!uid) return "";
-
-    // Case 1: Decimal (only digits)
     if (/^\d+$/.test(uid)) {
       try {
-        const num = BigInt(uid);
-        uid = num.toString(16).toUpperCase();
-        uid = uid.padStart(8, "0");
-      } catch (e) {
-        console.warn("⚠️ Decimal to Hex conversion failed:", e);
-      }
+        uid = BigInt(uid).toString(16).toUpperCase().padStart(8, "0");
+      } catch (e) { /* keep as-is */ }
     }
-
-    // Case 2: Hexadecimal (letters & digits)
-    uid = uid.replace(/[^A-Fa-f0-9]/g, '').toUpperCase();
-
-    // Reverse byte order if even length (to match Android NFC)
+    uid = uid.replace(/[^A-Fa-f0-9]/g, "").toUpperCase();
     if (uid.length % 2 === 0) {
       const bytes = uid.match(/.{1,2}/g);
       bytes.reverse();
-      uid = bytes.join('');
+      uid = bytes.join("");
     }
-
-    return uid.toUpperCase();
+    return uid;
   }
 
   // RFID Reader (keyboard emulation)
@@ -177,7 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (modalBox.classList.contains("d-none")) return;
     if (e.key === "Enter") {
       let uid = buffer.trim();
-      if (uid.length >= 5) { // handle short decimal too
+		if (uid.length >= 4) { // hex UID from NFC wedge (4+ chars)
         const normalized = normalizeUID(uid);
         console.log("🔹 UID raw:", uid, "→ normalized:", normalized);
         cardInput.value = normalized;

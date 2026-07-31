@@ -18,6 +18,7 @@ FILES = [
     "app/Controllers/Api.php",
     "app/Views/pages/parent_visiting/assign.php",
     "app/Views/pages/parent_visiting/verify.php",
+    "app/Views/pages/students/assign_card.php",
     "public/assets/js/card-uid.js",
 ]
 
