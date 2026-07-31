@@ -177,6 +177,30 @@ class Home extends BaseController
 //			echo "<pre>";var_dump($this->data);die();
 		}
 	}
+
+	/**
+	 * Fast auth for parent-visiting AJAX — skips heavy _preset work and releases session lock.
+	 *
+	 * @return \CodeIgniter\HTTP\ResponseInterface|null null = OK to continue
+	 */
+	protected function _beginJsonAction()
+	{
+		if ($this->session->get($this->log_status) == null) {
+			return $this->response->setStatusCode(401)->setJSON([
+				'success' => false,
+				'error' => 'Session expired. Please refresh and log in again.',
+			]);
+		}
+		if (empty($this->data['academic_year'])) {
+			$yr = (int) $this->session->get('soma_academics_year');
+			$this->data['academic_year'] = $yr > 0 ? $yr : (int) date('Y');
+		}
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			session_write_close();
+		}
+		return null;
+	}
+
 public function testEmail()
 {
     echo "Testing...<br>";
@@ -5165,6 +5189,15 @@ public function attendanceCard()
 		$data["email"] = $this->session->getFlashdata("email");
 		$data["error"] = $this->session->getFlashdata("error");
 		$data['type'] = $type;
+		try {
+			$schoolMdl = new SchoolModel();
+			$data['school_count'] = (int) $schoolMdl->where('status', 1)->countAllResults();
+			$studentMdl = new StudentModel();
+			$data['student_count'] = (int) $studentMdl->where('status', 1)->countAllResults();
+		} catch (\Throwable $e) {
+			$data['school_count'] = 0;
+			$data['student_count'] = 0;
+		}
 		return view("login", $data);
 	}
 
@@ -11420,7 +11453,9 @@ public function assign_card()
 		$data['title'] = 'Parent visiting — Assign visitors';
 		$data['subtitle'] = 'Assign visitors';
 		$data['page'] = 'parent_visiting_assign';
+		$data['settings'] = $visitorMdl->getSettings($school_id);
 		$data['students'] = $students;
+		$data['students_by_class'] = $this->parentVisitingGroupStudentsByClass($students);
 		$data['content'] = view('pages/parent_visiting/assign', $data);
 		return view('main', $data);
 	}
@@ -11511,44 +11546,54 @@ public function assign_card()
 	 */
 	public function parent_visiting_save_visitor()
 	{
-		$this->_preset(1, 3, 4, 5, 6);
-		$school_id = (int) $this->session->get('soma_school_id');
-		$operator = (int) $this->session->get('soma_id');
-		$student_id = (int) $this->request->getPost('student_id');
-		$names = trim((string) $this->request->getPost('names'));
-		$phone = trim((string) $this->request->getPost('phone'));
-		$relationship = trim((string) $this->request->getPost('relationship'));
-		$visitor_id = (int) $this->request->getPost('visitor_id');
-
-		if ($student_id <= 0 || $names === '') {
-			return $this->response->setJSON(['success' => false, 'error' => 'Student and visitor names are required.']);
-		}
-
-		$visitorMdl = new StudentVisitorModel();
-		$visitorMdl->ensureSchema();
-
-		// Ensure student belongs to this school and has a class
-		$st = (new StudentModel())->select('id')
-			->join('class_records cr', 'cr.student = students.id')
-			->where('students.id', $student_id)
-			->where('students.school_id', $school_id)
-			->where('students.status', 1)
-			->get(1)->getRow();
-		if (!$st) {
-			return $this->response->setJSON(['success' => false, 'error' => 'Student not found or not in a class.']);
-		}
-
-		$payload = [
-			'school_id' => $school_id,
-			'student_id' => $student_id,
-			'names' => $names,
-			'phone' => $phone !== '' ? $phone : null,
-			'relationship' => $relationship !== '' ? $relationship : null,
-			'status' => 1,
-			'updated_by' => $operator,
-		];
-
 		try {
+			$school_id = (int) $this->session->get('soma_school_id');
+			$operator = (int) $this->session->get('soma_id');
+			if ($blocked = $this->_beginJsonAction()) {
+				return $blocked;
+			}
+			$student_id = (int) $this->request->getPost('student_id');
+			$names = trim((string) $this->request->getPost('names'));
+			$phone = trim((string) $this->request->getPost('phone'));
+			$relationship = trim((string) $this->request->getPost('relationship'));
+			$visitor_id = (int) $this->request->getPost('visitor_id');
+			$cardRaw = trim((string) $this->request->getPost('card'));
+			$clearCard = (int) $this->request->getPost('clear_card');
+			$skipCard = (int) $this->request->getPost('skip_card');
+			$saveWithCard = (int) $this->request->getPost('save_with_card');
+			$cardFromPicker = (int) $this->request->getPost('card_picked');
+			if ($saveWithCard === 1) {
+				$skipCard = 0;
+			}
+
+			if ($student_id <= 0 || $names === '') {
+				return $this->response->setJSON(['success' => false, 'error' => 'Student and visitor names are required.']);
+			}
+
+			$visitorMdl = new StudentVisitorModel();
+			$visitorMdl->ensureSchema();
+			$settings = $visitorMdl->getSettings($school_id);
+
+			$st = (new StudentModel())->select('students.id')
+				->join('class_records cr', 'cr.student = students.id')
+				->where('students.id', $student_id)
+				->where('students.school_id', $school_id)
+				->where('students.status', 1)
+				->get(1)->getRow();
+			if (!$st) {
+				return $this->response->setJSON(['success' => false, 'error' => 'Student not found or not in a class.']);
+			}
+
+			$payload = [
+				'school_id' => $school_id,
+				'student_id' => $student_id,
+				'names' => $names,
+				'phone' => $phone !== '' ? $phone : null,
+				'relationship' => $relationship !== '' ? $relationship : null,
+				'status' => 1,
+				'updated_by' => $operator,
+			];
+
 			if ($visitor_id > 0) {
 				$existing = $visitorMdl->where('id', $visitor_id)
 					->where('school_id', $school_id)->first();
@@ -11556,26 +11601,116 @@ public function assign_card()
 					return $this->response->setJSON(['success' => false, 'error' => 'Visitor not found.']);
 				}
 				$payload['id'] = $visitor_id;
-				$visitorMdl->save($payload);
 			} else {
 				$payload['created_by'] = $operator;
-				$visitorMdl->insert($payload);
 			}
 
+			$file = $this->request->getFile('photo');
+			if ($file && $file->isValid() && !$file->hasMoved()) {
+				$allowedExt = ['jpg', 'jpeg', 'png'];
+				$ext = strtolower($file->getClientExtension() ?: $file->getExtension() ?: '');
+				if ($ext === '' && $file->getMimeType()) {
+					$mimeMap = ['image/jpeg' => 'jpg', 'image/jpg' => 'jpg', 'image/png' => 'png'];
+					$ext = $mimeMap[$file->getMimeType()] ?? '';
+				}
+				if (!in_array($ext, $allowedExt, true)) {
+					return $this->response->setJSON(['success' => false, 'error' => 'Photo must be JPG or PNG.']);
+				}
+				if ($file->getSize() > 5 * 1024 * 1024) {
+					return $this->response->setJSON(['success' => false, 'error' => 'Photo must be 5 MB or smaller.']);
+				}
+				helper('filesystem');
+				$name = make_profile_photo_name($ext);
+				$profilePath = FCPATH . 'assets/images/profile/';
+				if (!is_dir($profilePath)) {
+					@mkdir($profilePath, 0775, true);
+				}
+				if (!$file->move($profilePath, $name, true)) {
+					return $this->response->setJSON(['success' => false, 'error' => 'Could not save visitor photo.']);
+				}
+				$payload['photo'] = $name;
+			}
+
+			if ($clearCard === 1) {
+				$payload['card'] = null;
+			} elseif ($cardRaw !== '') {
+				// New visitors: always persist a scanned card (skip_card only applies when editing).
+				$shouldAssignCard = ($saveWithCard === 1 || $skipCard !== 1 || $visitor_id <= 0);
+				if (!$shouldAssignCard) {
+					// Editing details only — leave existing card unchanged.
+				} else {
+				$card = $this->parentVisitingNormalizeCard($cardRaw, $cardFromPicker === 1);
+				if ($card === '') {
+					return $this->response->setJSON(['success' => false, 'error' => 'Invalid card UID. Scan again or enter a valid hex code.']);
+				}
+				$collision = $visitorMdl->findCardCollision(
+					$school_id,
+					$card,
+					$visitor_id,
+					$student_id,
+					(int) $settings['card_sharing']
+				);
+				if ($collision) {
+					$who = $collision['type'];
+					$msg = $collision['error'] ?? "Card already assigned to {$who}: {$collision['name']}";
+					return $this->response->setJSON([
+						'success' => false,
+						'error' => $msg,
+						'holders' => $collision['holders'] ?? [],
+					]);
+				}
+				$payload['card'] = $card;
+				}
+			} elseif ($saveWithCard === 1 && $cardRaw === '') {
+				return $this->response->setJSON(['success' => false, 'error' => 'Scan a card first, then click Save visitor & card.']);
+			}
+
+			if ($visitor_id > 0) {
+				$visitorMdl->save($payload);
+				$savedId = $visitor_id;
+			} else {
+				$visitorMdl->insert($payload);
+				$savedId = (int) $visitorMdl->getInsertID();
+			}
+
+			$row = $visitorMdl->find($savedId);
+			$expectedCard = ($cardRaw !== '' && $clearCard !== 1 && ($saveWithCard === 1 || $skipCard !== 1 || $visitor_id <= 0));
+			if ($expectedCard && empty($row['card'])) {
+				log_message('error', '[parent_visiting_save_visitor] card not persisted id=' . $savedId . ' raw=' . $cardRaw);
+				// Fallback: direct update when model save skipped the card column.
+				try {
+					$visitorMdl->update($savedId, [
+						'card' => $this->parentVisitingNormalizeCard($cardRaw, $cardFromPicker === 1),
+						'updated_by' => $operator,
+					]);
+					$row = $visitorMdl->find($savedId);
+				} catch (\Throwable $cardEx) {
+					log_message('error', '[parent_visiting_save_visitor] card fallback failed: ' . $cardEx->getMessage());
+				}
+				if (empty($row['card'])) {
+					return $this->response->setJSON([
+						'success' => false,
+						'error' => 'Visitor saved but card was not stored. Try Assign card on the visitor profile.',
+					]);
+				}
+			}
 			$count = $visitorMdl->countActiveForStudent($school_id, $student_id);
+			$minVisitors = (int) $settings['min_visitors'];
 			$warning = null;
-			if ($count < 2) {
-				$warning = "Visitor saved, but this student still has fewer than 2 visitors ({$count}/2).";
+			if ($count < $minVisitors) {
+				$warning = "Visitor saved, but this student still has fewer than {$minVisitors} visitors ({$count}/{$minVisitors}).";
 			}
 
 			return $this->response->setJSON([
 				'success' => true,
+				'visitor_id' => $savedId,
+				'visitor' => $this->parentVisitingFormatVisitor($row),
 				'visitor_count' => $count,
 				'warning' => $warning,
 			]);
 		} catch (\Throwable $e) {
 			log_message('error', '[parent_visiting_save_visitor] ' . $e->getMessage());
-			return $this->response->setJSON(['success' => false, 'error' => 'Failed to save visitor.']);
+			return $this->response->setJSON(['success' => false, 'error' => 'Failed to save visitor: ' . $e->getMessage()]);
 		}
 	}
 
@@ -11584,7 +11719,9 @@ public function assign_card()
 	 */
 	public function parent_visiting_delete_visitor()
 	{
-		$this->_preset(1, 3, 4, 5, 6);
+		if ($blocked = $this->_beginJsonAction()) {
+			return $blocked;
+		}
 		$school_id = (int) $this->session->get('soma_school_id');
 		$operator = (int) $this->session->get('soma_id');
 		$visitor_id = (int) $this->request->getPost('visitor_id');
@@ -11615,7 +11752,9 @@ public function assign_card()
 	 */
 	public function parent_visiting_assign_card()
 	{
-		$this->_preset(1, 3, 4, 5, 6);
+		if ($blocked = $this->_beginJsonAction()) {
+			return $blocked;
+		}
 		$school_id = (int) ($this->request->getPost('school_id') ?: $this->session->get('soma_school_id'));
 		$operator = (int) ($this->request->getPost('operator') ?: $this->session->get('soma_id'));
 		$visitor_id = (int) $this->request->getPost('visitor_id');
@@ -11625,13 +11764,14 @@ public function assign_card()
 			return $this->response->setJSON(['success' => false, 'error' => 'Visitor and card are required.']);
 		}
 
-		$card = $this->normalizeUID($cardRaw);
+		$card = $this->parentVisitingNormalizeCard($cardRaw);
 		if ($card === '') {
-			$card = strtoupper(preg_replace('/[^A-Fa-f0-9]/', '', $cardRaw));
+			return $this->response->setJSON(['success' => false, 'error' => 'Invalid card UID.']);
 		}
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
+		$settings = $visitorMdl->getSettings($school_id);
 
 		$visitor = $visitorMdl->where('id', $visitor_id)
 			->where('school_id', $school_id)
@@ -11641,9 +11781,15 @@ public function assign_card()
 			return $this->response->setJSON(['success' => false, 'error' => 'Visitor not found.']);
 		}
 
-		$collision = $visitorMdl->findCardCollision($school_id, $card, $visitor_id);
+		$collision = $visitorMdl->findCardCollision(
+			$school_id,
+			$card,
+			$visitor_id,
+			(int) $visitor['student_id'],
+			(int) $settings['card_sharing']
+		);
 		if ($collision) {
-			$who = $collision['type'] === 'student' ? 'student' : 'visitor';
+			$who = $collision['type'];
 			return $this->response->setJSON([
 				'success' => false,
 				'error' => "Card already assigned to {$who}: {$collision['name']}",
@@ -11656,7 +11802,11 @@ public function assign_card()
 				'card' => $card,
 				'updated_by' => $operator,
 			]);
-			return $this->response->setJSON(['success' => 'Card assigned successfully.']);
+			return $this->response->setJSON([
+				'success' => true,
+				'message' => 'Card assigned successfully.',
+				'card' => $card,
+			]);
 		} catch (\Throwable $e) {
 			log_message('error', '[parent_visiting_assign_card] ' . $e->getMessage());
 			return $this->response->setJSON(['success' => false, 'error' => 'Failed to assign card.']);
@@ -11668,7 +11818,9 @@ public function assign_card()
 	 */
 	public function parent_visiting_scan()
 	{
-		$this->_preset(1, 3, 4, 5, 6);
+		if ($blocked = $this->_beginJsonAction()) {
+			return $blocked;
+		}
 		$school_id = (int) ($this->request->getPost('school_id') ?: $this->session->get('soma_school_id'));
 		$operator = (int) ($this->request->getPost('operator') ?: $this->session->get('soma_id'));
 		$source = trim((string) $this->request->getPost('source'));
@@ -11686,7 +11838,9 @@ public function assign_card()
 	 */
 	public function parent_visiting_students_json()
 	{
-		$this->_preset(1, 3, 4, 5, 6);
+		if ($blocked = $this->_beginJsonAction()) {
+			return $blocked;
+		}
 		$school_id = (int) $this->session->get('soma_school_id');
 		$year = (int) ($this->data['academic_year'] ?? date('Y'));
 
@@ -11724,7 +11878,9 @@ public function assign_card()
 	 */
 	public function parent_visiting_student_visitors($id = 0)
 	{
-		$this->_preset(1, 3, 4, 5, 6);
+		if ($blocked = $this->_beginJsonAction()) {
+			return $blocked;
+		}
 		$school_id = (int) $this->session->get('soma_school_id');
 		$student_id = (int) $id;
 
@@ -11742,12 +11898,144 @@ public function assign_card()
 			->orderBy('id', 'ASC')
 			->findAll();
 
+		$formatted = [];
+		foreach ($visitors as $v) {
+			$formatted[] = $this->parentVisitingFormatVisitor($v);
+		}
+		$settings = $visitorMdl->getSettings($school_id);
+		$minVisitors = (int) $settings['min_visitors'];
+
 		return $this->response->setJSON([
 			'success' => true,
-			'visitors' => $visitors,
-			'visitor_count' => count($visitors),
-			'ready' => count($visitors) >= 2,
+			'visitors' => $formatted,
+			'visitor_count' => count($formatted),
+			'ready' => count($formatted) >= $minVisitors,
+			'min_visitors' => $minVisitors,
+			'settings' => $settings,
+			'card_groups' => $visitorMdl->getStudentCardGroups($school_id, $student_id),
 		]);
+	}
+
+	/**
+	 * Lookup who holds an RFID card (for assign UI preview).
+	 */
+	public function parent_visiting_lookup_card()
+	{
+		try {
+			if ($blocked = $this->_beginJsonAction()) {
+				return $blocked;
+			}
+			$school_id = (int) $this->session->get('soma_school_id');
+			$student_id = (int) $this->request->getPost('student_id');
+			$visitor_id = (int) $this->request->getPost('visitor_id');
+			$cardRaw = trim((string) $this->request->getPost('card'));
+
+			$visitorMdl = new StudentVisitorModel();
+			$visitorMdl->ensureSchema();
+			$settings = $visitorMdl->getSettings($school_id);
+
+			$cardFromPicker = (int) $this->request->getPost('card_picked');
+			$card = $this->parentVisitingNormalizeCard($cardRaw, $cardFromPicker === 1);
+			if ($card === '') {
+				return $this->response->setJSON(['success' => false, 'error' => 'Invalid card UID.']);
+			}
+
+			$holders = $visitorMdl->getCardHolders($school_id, $card, $visitor_id);
+			$collision = $visitorMdl->findCardCollision(
+				$school_id,
+				$card,
+				$visitor_id,
+				$student_id,
+				(int) $settings['card_sharing']
+			);
+
+			return $this->response->setJSON([
+				'success' => true,
+				'card' => $card,
+				'holders' => $holders,
+				'allowed' => $collision === null,
+				'blocked_reason' => $collision ? ($collision['error'] ?? ('Used by ' . ($collision['name'] ?? 'another user'))) : null,
+				'settings' => $settings,
+			]);
+		} catch (\Throwable $e) {
+			log_message('error', '[parent_visiting_lookup_card] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+			return $this->response->setJSON(['success' => false, 'error' => 'Card lookup failed: ' . $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * Save visitor module settings (card sharing mode).
+	 */
+	public function parent_visiting_save_settings()
+	{
+		if ($blocked = $this->_beginJsonAction()) {
+			return $blocked;
+		}
+		$school_id = (int) $this->session->get('soma_school_id');
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+		$visitorMdl->saveSettings($school_id, [
+			'card_sharing' => (int) $this->request->getPost('card_sharing'),
+			'min_visitors' => (int) $this->request->getPost('min_visitors'),
+		]);
+		return $this->response->setJSON([
+			'success' => true,
+			'settings' => $visitorMdl->getSettings($school_id),
+		]);
+	}
+
+	/**
+	 * Group student rows by class label for the assign UI.
+	 *
+	 * @param array $students
+	 * @return array<string, array<int, array>>
+	 */
+	private function parentVisitingGroupStudentsByClass(array $students)
+	{
+		$groups = [];
+		foreach ($students as $row) {
+			$class = trim((string) ($row['class'] ?? 'Unassigned'));
+			if ($class === '') {
+				$class = 'Unassigned';
+			}
+			if (!isset($groups[$class])) {
+				$groups[$class] = [];
+			}
+			$groups[$class][] = $row;
+		}
+		ksort($groups, SORT_NATURAL | SORT_FLAG_CASE);
+		return $groups;
+	}
+
+	/**
+	 * Normalize RFID UID from reader (decimal or hex).
+	 *
+	 * @param string $raw
+	 * @return string
+	 */
+	private function parentVisitingNormalizeCard($raw, $fromPicker = false)
+	{
+		helper('card_uid');
+		return resolve_card_uid_for_save((string) $raw, $fromPicker);
+	}
+
+	/**
+	 * @param array|null $row
+	 * @return array|null
+	 */
+	private function parentVisitingFormatVisitor($row)
+	{
+		if (!$row) {
+			return null;
+		}
+		$photo = trim((string) ($row['photo'] ?? ''));
+		$row['photo_url'] = ($photo !== '' && strlen($photo) > 4)
+			? base_url('assets/images/profile/' . $photo)
+			: base_url('assets/images/fallback-avatar.png');
+		$card = strtoupper(trim((string) ($row['card'] ?? '')));
+		$row['card'] = $card !== '' ? $card : null;
+		$row['has_card'] = $card !== '';
+		return $row;
 	}
 
 	/**
@@ -11761,39 +12049,38 @@ public function assign_card()
 	 */
 	private function parentVisitingProcessScan($schoolId, $cardRaw, $source = 'web', $operator = null)
 	{
+		helper('card_uid');
 		$schoolId = (int) $schoolId;
 		$cardRaw = trim((string) $cardRaw);
 		if ($schoolId <= 0 || $cardRaw === '') {
 			return ['allowed' => false, 'success' => false, 'error' => 'Missing card or school.'];
 		}
 
-		$card = $this->normalizeUID($cardRaw);
+		$card = normalize_card_uid($cardRaw);
 		if ($card === '') {
 			$card = strtoupper(preg_replace('/[^A-Fa-f0-9]/', '', $cardRaw));
-		}
-
-		$reversed = '';
-		if (strlen($card) % 2 === 0 && strlen($card) >= 6) {
-			$bytes = str_split($card, 2);
-			$bytes = array_reverse($bytes);
-			$reversed = implode('', $bytes);
 		}
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
 
-		$db = \Config\Database::connect();
-		$builder = $db->table('student_visitors')
-			->select('*')
-			->where('school_id', $schoolId)
-			->groupStart()
-				->where('UPPER(TRIM(card))', $card);
-		if ($reversed !== '') {
-			$builder->orWhere('UPPER(TRIM(card))', $reversed);
+		$matches = $visitorMdl->findByCard($schoolId, $card);
+		if (count($matches) > 1) {
+			$options = [];
+			foreach ($matches as $m) {
+				$options[] = $this->parentVisitingFormatVisitor($m);
+			}
+			return [
+				'allowed' => false,
+				'success' => false,
+				'pick_visitor' => true,
+				'visitors' => $options,
+				'card' => $card,
+				'error' => 'Multiple visitors use this card. Select who is visiting.',
+			];
 		}
-		$builder->groupEnd();
 
-		$visitor = $builder->get(1)->getRowArray();
+		$visitor = $matches[0] ?? null;
 
 		if (!$visitor) {
 			return [
@@ -11801,6 +12088,7 @@ public function assign_card()
 				'success' => false,
 				'error' => 'No visitor registered for this card.',
 				'card' => $card,
+				'card_tried' => card_uid_lookup_variants($cardRaw),
 			];
 		}
 
@@ -11819,6 +12107,7 @@ public function assign_card()
 		}
 
 		$year = (int) ($this->data['academic_year'] ?? date('Y'));
+		$db = \Config\Database::connect();
 		$student = $db->table('students s')
 			->select("s.id, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
 				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class")
@@ -11855,6 +12144,7 @@ public function assign_card()
 				'names' => $visitor['names'],
 				'relationship' => $visitor['relationship'] ?? '',
 				'phone' => $visitor['phone'] ?? '',
+				'card' => strtoupper(trim((string) ($visitor['card'] ?? ''))),
 			],
 			'student' => [
 				'id' => (int) ($student['id'] ?? $visitor['student_id']),
