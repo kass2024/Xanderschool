@@ -2624,9 +2624,16 @@ public function permission_card_scan()
 			return $this->response->setJSON(['success' => false, 'error' => 'Visitor not found.']);
 		}
 
-		$collision = $visitorMdl->findCardCollision($school_id, $card, $visitor_id);
+		$settings = $visitorMdl->getSettings($school_id);
+		$collision = $visitorMdl->findCardCollision(
+			$school_id,
+			$card,
+			$visitor_id,
+			(int) $visitor['student_id'],
+			(int) $settings['card_sharing']
+		);
 		if ($collision) {
-			$who = $collision['type'] === 'student' ? 'student' : 'visitor';
+			$who = $collision['type'];
 			return $this->response->setStatusCode(409)->setJSON([
 				'success' => false,
 				'error' => "Card already assigned to {$who}: {$collision['name']}",
@@ -2639,7 +2646,7 @@ public function permission_card_scan()
 				'card' => $card,
 				'updated_by' => $operator,
 			]);
-			return $this->response->setJSON(['success' => 'Card assigned successfully.', 'card' => $card]);
+			return $this->response->setJSON(['success' => true, 'message' => 'Card assigned successfully.', 'card' => $card]);
 		} catch (\Throwable $e) {
 			log_message('error', '[visitor_assign_card] ' . $e->getMessage());
 			return $this->response->setStatusCode(500)
@@ -2776,28 +2783,32 @@ public function permission_card_scan()
 	 */
 	private function processVisitorScan($schoolId, $cardRaw, $source = 'android', $operator = null)
 	{
+		helper('card_uid');
 		$schoolId = (int) $schoolId;
 		$cardRaw = trim((string) $cardRaw);
 		if ($schoolId <= 0 || $cardRaw === '') {
 			return ['allowed' => false, 'success' => false, 'error' => 'Missing card or school_id.'];
 		}
 
-		$card = $this->normalizeVisitorUID($cardRaw);
-		$reversed = $this->reverseUidBytes($card);
+		$card = normalize_card_uid($cardRaw);
+		if ($card === '') {
+			$card = stored_card_uid($cardRaw);
+		}
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
 
-		$db = \Config\Database::connect();
-		$builder = $db->table('student_visitors')
-			->select('*')
-			->where('school_id', $schoolId)
-			->groupStart()
-				->where('UPPER(TRIM(card))', $card);
-		if ($reversed !== '') {
-			$builder->orWhere('UPPER(TRIM(card))', $reversed);
+		$matches = $visitorMdl->findByCard($schoolId, $cardRaw);
+		if (count($matches) > 1) {
+			return [
+				'allowed' => false,
+				'success' => false,
+				'error' => 'Multiple visitors use this card.',
+				'card' => $card,
+			];
 		}
-		$visitor = $builder->groupEnd()->get(1)->getRowArray();
+
+		$visitor = $matches[0] ?? null;
 
 		if (!$visitor) {
 			return [
@@ -2805,6 +2816,7 @@ public function permission_card_scan()
 				'success' => false,
 				'error' => 'No visitor registered for this card.',
 				'card' => $card,
+				'card_tried' => card_uid_lookup_variants($cardRaw),
 			];
 		}
 
@@ -2818,10 +2830,11 @@ public function permission_card_scan()
 					'names' => $visitor['names'],
 					'relationship' => $visitor['relationship'] ?? '',
 				],
-				'card' => $card,
+				'card' => strtoupper(trim((string) ($visitor['card'] ?? $card))),
 			];
 		}
 
+		$db = \Config\Database::connect();
 		$student = $db->table('students s')
 			->select("s.id, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
 				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class")
@@ -2877,16 +2890,9 @@ public function permission_card_scan()
 	 */
 	private function normalizeVisitorUID($uid)
 	{
-		$uid = trim((string) $uid);
-		if ($uid === '') {
-			return '';
-		}
-		$uid = preg_replace('/\s+/', '', $uid);
-		if (ctype_digit($uid)) {
-			$uid = strtoupper(base_convert($uid, 10, 16));
-		}
-		$uid = strtoupper(preg_replace('/[^A-F0-9]/', '', $uid));
-		return $uid;
+		helper('card_uid');
+		$normalized = normalize_card_uid((string) $uid);
+		return $normalized !== '' ? $normalized : stored_card_uid((string) $uid);
 	}
 
 	/**

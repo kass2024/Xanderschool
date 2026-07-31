@@ -18,6 +18,12 @@
     letter-spacing: .08em;
     text-align: center;
     height: 56px;
+    font-family: monospace;
+    text-transform: uppercase;
+  }
+  .pv-card-badge {
+    display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 999px;
+    background: rgba(0,0,0,.06); font-family: monospace; font-size: .95rem; letter-spacing: .06em;
   }
 </style>
 
@@ -27,7 +33,7 @@
       <h4 class="card-title mb-1">
         <i class="fa fa-id-card"></i> Verify Parent Visit
       </h4>
-      <p class="text-muted mb-3">Visiting day verification — scan visitor smart card (keyboard RFID reader).</p>
+      <p class="text-muted mb-3">Visiting day verification — scan visitor smart card (same lookup as assign-card / attendance-card).</p>
 
       <div class="mb-3">
         <label class="form-label">Scan visitor card</label>
@@ -42,7 +48,8 @@
 
       <div id="scanDetails" class="mt-3 d-none">
         <table class="table table-bordered table-sm mb-0">
-          <tr><th style="width:40%">Visitor</th><td id="dVisitor"></td></tr>
+          <tr><th style="width:40%">Card UID</th><td id="dCard"><code></code></td></tr>
+          <tr><th>Visitor</th><td id="dVisitor"></td></tr>
           <tr><th>Relationship</th><td id="dRel"></td></tr>
           <tr><th>Student</th><td id="dStudent"></td></tr>
           <tr><th>Class</th><td id="dClass"></td></tr>
@@ -54,7 +61,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="<?= base_url('assets/js/card-uid.js') ?>"></script>
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   const school_id = <?= json_encode(session('soma_school_id')) ?>;
@@ -65,33 +72,22 @@ document.addEventListener("DOMContentLoaded", function () {
   let buffer = "";
   let busy = false;
 
+  /** Same byte-reversal as assign-card (NFC compatible storage form). */
   function normalizeUID(uid) {
-    uid = uid.trim();
-    if (!uid) return "";
-    if (/^\d+$/.test(uid)) {
-      try {
-        const num = BigInt(uid);
-        uid = num.toString(16).toUpperCase();
-        uid = uid.padStart(8, "0");
-      } catch (e) {}
-    }
-    uid = uid.replace(/[^A-Fa-f0-9]/g, "").toUpperCase();
-    if (uid.length % 2 === 0) {
-      const bytes = uid.match(/.{1,2}/g);
-      bytes.reverse();
-      uid = bytes.join("");
-    }
-    return uid.toUpperCase();
+    return (window.CardUid && CardUid.toStorage) ? CardUid.toStorage(uid) : String(uid || "").trim().toUpperCase();
   }
 
-  function setResult(state, title, meta) {
+  function setResult(state, title, meta, cardUid) {
     resultBox.className = "pv-result " + state;
-    resultBox.innerHTML = '<div class="pv-status">' + title + '</div><div class="pv-meta">' + meta + '</div>';
+    let html = '<div class="pv-status">' + title + '</div><div class="pv-meta">' + meta + '</div>';
+    if (cardUid) {
+      html += '<div class="pv-card-badge"><i class="fa fa-id-card"></i> ' + cardUid + '</div>';
+    }
+    resultBox.innerHTML = html;
   }
 
   document.addEventListener("keypress", function (e) {
     if (busy) return;
-    // Ignore if typing in another editable field (except our readonly input)
     const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
     if ((tag === "input" || tag === "textarea") && e.target.id !== "verifyCardInput") {
       if (!e.target.readOnly) return;
@@ -99,7 +95,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (e.key === "Enter") {
       const uid = buffer.trim();
       buffer = "";
-      if (uid.length >= 5) {
+      if (uid.length >= 4) {
         const normalized = normalizeUID(uid);
         cardInput.value = normalized;
         scanCard(normalized);
@@ -125,16 +121,15 @@ document.addEventListener("DOMContentLoaded", function () {
       .then(function (r) { return r.json(); })
       .then(function (res) {
         busy = false;
+        const storedCard = (res.visitor && res.visitor.card) || res.card || card;
         if (!res.allowed) {
-          setResult("denied", "DENIED", res.error || "Visitor not allowed");
-          if (res.visitor) {
-            fillDetails(res, false);
-          }
+          setResult("denied", "DENIED", res.error || "Visitor not allowed", storedCard);
+          fillDetails(res, false, storedCard);
           return;
         }
         const actionLabel = (res.action === "out") ? "CHECKED OUT" : "CHECKED IN";
-        setResult("allowed", "ALLOWED", actionLabel + " — " + (res.message || ""));
-        fillDetails(res, true);
+        setResult("allowed", "ALLOWED", actionLabel + " — " + (res.message || ""), storedCard);
+        fillDetails(res, true, storedCard);
       })
       .catch(function (err) {
         busy = false;
@@ -142,8 +137,9 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   }
 
-  function fillDetails(res, ok) {
+  function fillDetails(res, ok, cardUid) {
     details.classList.remove("d-none");
+    document.getElementById("dCard").innerHTML = '<code>' + (cardUid || "—") + '</code>';
     document.getElementById("dVisitor").textContent = (res.visitor && res.visitor.names) || "—";
     document.getElementById("dRel").textContent = (res.visitor && res.visitor.relationship) || "—";
     document.getElementById("dStudent").textContent = (res.student && res.student.name) || "—";
@@ -154,7 +150,6 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("dTime").textContent = res.time_label || new Date().toLocaleString();
   }
 
-  // Keep focus hint
   cardInput.focus();
 });
 </script>

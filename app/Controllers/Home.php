@@ -11764,7 +11764,8 @@ public function assign_card()
 			return $this->response->setJSON(['success' => false, 'error' => 'Visitor and card are required.']);
 		}
 
-		$card = $this->parentVisitingNormalizeCard($cardRaw);
+		$cardFromPicker = (int) $this->request->getPost('card_picked');
+		$card = $this->parentVisitingNormalizeCard($cardRaw, $cardFromPicker === 1);
 		if ($card === '') {
 			return $this->response->setJSON(['success' => false, 'error' => 'Invalid card UID.']);
 		}
@@ -12056,15 +12057,16 @@ public function assign_card()
 			return ['allowed' => false, 'success' => false, 'error' => 'Missing card or school.'];
 		}
 
+		// Canonical storage UID (assign-card): byte-reversed hex.
 		$card = normalize_card_uid($cardRaw);
 		if ($card === '') {
-			$card = strtoupper(preg_replace('/[^A-Fa-f0-9]/', '', $cardRaw));
+			$card = stored_card_uid($cardRaw);
 		}
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
 
-		$matches = $visitorMdl->findByCard($schoolId, $card);
+		$matches = $visitorMdl->findByCard($schoolId, $cardRaw);
 		if (count($matches) > 1) {
 			$options = [];
 			foreach ($matches as $m) {

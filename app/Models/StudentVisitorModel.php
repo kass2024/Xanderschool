@@ -15,6 +15,7 @@ class StudentVisitorModel extends Model
 		'names',
 		'phone',
 		'relationship',
+		'photo',
 		'card',
 		'status',
 		'created_by',
@@ -51,6 +52,25 @@ class StudentVisitorModel extends Model
 			KEY `idx_sv_school_card` (`school_id`, `card`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+		if (!$db->fieldExists('photo', 'student_visitors')) {
+			$db->query("ALTER TABLE `student_visitors`
+				ADD COLUMN `photo` VARCHAR(120) NULL DEFAULT NULL AFTER `relationship`");
+		}
+
+		$db->query("CREATE TABLE IF NOT EXISTS `visitor_settings` (
+			`school_id` INT UNSIGNED NOT NULL,
+			`card_sharing` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '0=exclusive,1=same student,2=school-wide',
+			`min_visitors` TINYINT UNSIGNED NOT NULL DEFAULT 2,
+			`max_per_card` TINYINT UNSIGNED NOT NULL DEFAULT 2,
+			`updated_at` DATETIME NULL DEFAULT NULL,
+			PRIMARY KEY (`school_id`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+		if (!$db->fieldExists('max_per_card', 'visitor_settings')) {
+			$db->query("ALTER TABLE `visitor_settings`
+				ADD COLUMN `max_per_card` TINYINT UNSIGNED NOT NULL DEFAULT 2 AFTER `min_visitors`");
+		}
+
 		$db->query("CREATE TABLE IF NOT EXISTS `visitor_visits` (
 			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
 			`school_id` INT UNSIGNED NOT NULL,
@@ -75,13 +95,144 @@ class StudentVisitorModel extends Model
 	}
 
 	/**
-	 * Check if card is already used by a student or visitor in this school.
+	 * Per-school visitor module settings.
+	 *
+	 * @param int $schoolId
+	 * @return array{card_sharing:int,min_visitors:int}
+	 */
+	public function getSettings($schoolId)
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		$db = \Config\Database::connect();
+		$row = $db->table('visitor_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
+		if (!$row) {
+			return ['card_sharing' => 1, 'min_visitors' => 2, 'max_per_card' => 2];
+		}
+		return [
+			'card_sharing' => (int) ($row['card_sharing'] ?? 1),
+			'min_visitors' => max(1, (int) ($row['min_visitors'] ?? 2)),
+			'max_per_card' => max(1, min(5, (int) ($row['max_per_card'] ?? 2))),
+		];
+	}
+
+	/**
+	 * @param int $schoolId
+	 * @param array $data
+	 * @return bool
+	 */
+	public function saveSettings($schoolId, array $data)
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		$payload = [
+			'school_id' => $schoolId,
+			'card_sharing' => max(0, min(2, (int) ($data['card_sharing'] ?? 1))),
+			'min_visitors' => max(1, min(10, (int) ($data['min_visitors'] ?? 2))),
+			'max_per_card' => max(1, min(5, (int) ($data['max_per_card'] ?? 2))),
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		$db = \Config\Database::connect();
+		$exists = $db->table('visitor_settings')->where('school_id', $schoolId)->countAllResults();
+		if ($exists) {
+			return $db->table('visitor_settings')->where('school_id', $schoolId)->update($payload);
+		}
+		return (bool) $db->table('visitor_settings')->insert($payload);
+	}
+
+	/**
+	 * Active visitors holding a card (both byte orders).
+	 *
 	 * @param int $schoolId
 	 * @param string $card
 	 * @param int $excludeVisitorId
-	 * @return array|null ['type'=>'student'|'visitor','name'=>..., 'id'=>...]
+	 * @return array
 	 */
-	public function findCardCollision($schoolId, $card, $excludeVisitorId = 0)
+	public function getCardHolders($schoolId, $card, $excludeVisitorId = 0)
+	{
+		helper('card_uid');
+		$matchCards = card_uid_lookup_variants($card);
+		if (empty($matchCards)) {
+			return [];
+		}
+
+		$db = \Config\Database::connect();
+		$placeholders = implode(',', array_fill(0, count($matchCards), '?'));
+		$params = array_merge([(int) $schoolId], $matchCards);
+		$sql = "SELECT sv.id, sv.names, sv.student_id, sv.card, sv.relationship, sv.status,
+				CONCAT(st.fname, ' ', st.lname) AS student_name
+			FROM student_visitors sv
+			LEFT JOIN students st ON st.id = sv.student_id
+			WHERE sv.school_id = ? AND sv.status = 1
+			AND UPPER(TRIM(sv.card)) IN ({$placeholders})";
+		if ($excludeVisitorId > 0) {
+			$sql .= ' AND sv.id != ?';
+			$params[] = (int) $excludeVisitorId;
+		}
+		$sql .= ' ORDER BY sv.id DESC';
+		return $db->query($sql, $params)->getResultArray();
+	}
+
+	/**
+	 * @param int $schoolId
+	 * @param string $card
+	 * @return array|null
+	 */
+	private function findStudentCardOwner($schoolId, $card)
+	{
+		helper('card_uid');
+		$variants = card_uid_lookup_variants($card);
+		if (empty($variants)) {
+			return null;
+		}
+		$db = \Config\Database::connect();
+		$placeholders = implode(',', array_fill(0, count($variants), '?'));
+		$params = array_merge([(int) $schoolId], $variants);
+		return $db->query(
+			"SELECT id, CONCAT(fname, ' ', lname) AS name FROM students
+			WHERE school_id = ? AND card IS NOT NULL AND TRIM(card) <> ''
+			AND UPPER(TRIM(card)) IN ({$placeholders}) LIMIT 1",
+			$params
+		)->getRowArray();
+	}
+
+	/**
+	 * @param int $schoolId
+	 * @param string $card
+	 * @return array|null
+	 */
+	private function findStaffCardOwner($schoolId, $card)
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('staffs') || !$db->fieldExists('card', 'staffs')) {
+			return null;
+		}
+		helper('card_uid');
+		$variants = card_uid_lookup_variants($card);
+		if (empty($variants)) {
+			return null;
+		}
+		$placeholders = implode(',', array_fill(0, count($variants), '?'));
+		$params = array_merge([(int) $schoolId], $variants);
+		return $db->query(
+			"SELECT id, CONCAT(fname, ' ', lname) AS name FROM staffs
+			WHERE school_id = ? AND card IS NOT NULL AND TRIM(card) <> ''
+			AND UPPER(TRIM(card)) IN ({$placeholders}) LIMIT 1",
+			$params
+		)->getRowArray();
+	}
+
+	/**
+	 * Check if card is already used by a student, staff, or visitor in this school.
+	 *
+	 * @param int $schoolId
+	 * @param string $card
+	 * @param int $excludeVisitorId
+	 * @param int $forStudentId student being assigned (for sharing rules)
+	 * @param int|null $sharingMode 0 exclusive, 1 same-student share, 2 school-wide share
+	 * @return array|null ['type'=>'student'|'staff'|'visitor','name'=>..., 'id'=>..., 'holders'=>...]
+	 */
+	public function findCardCollision($schoolId, $card, $excludeVisitorId = 0, $forStudentId = 0, $sharingMode = null)
 	{
 		$schoolId = (int) $schoolId;
 		$card = strtoupper(trim((string) $card));
@@ -89,15 +240,15 @@ class StudentVisitorModel extends Model
 			return null;
 		}
 
+		$settings = $this->getSettings($schoolId);
+		if ($sharingMode === null) {
+			$sharingMode = (int) $settings['card_sharing'];
+		}
+		$maxPerCard = max(1, (int) ($settings['max_per_card'] ?? 2));
+
 		$db = \Config\Database::connect();
 
-		$student = $db->table('students')
-			->select("id, CONCAT(fname, ' ', lname) AS name")
-			->where('school_id', $schoolId)
-			->where('UPPER(TRIM(card))', $card)
-			->get(1)
-			->getRowArray();
-
+		$student = $this->findStudentCardOwner($schoolId, $card);
 		if ($student) {
 			return [
 				'type' => 'student',
@@ -106,26 +257,129 @@ class StudentVisitorModel extends Model
 			];
 		}
 
-		$builder = $db->table('student_visitors')
-			->select('id, names')
-			->where('school_id', $schoolId)
-			->where('UPPER(TRIM(card))', $card)
-			->where('status', 1);
-
-		if ($excludeVisitorId > 0) {
-			$builder->where('id !=', (int) $excludeVisitorId);
+		$staff = $this->findStaffCardOwner($schoolId, $card);
+		if ($staff) {
+			return [
+				'type' => 'staff',
+				'id' => (int) $staff['id'],
+				'name' => $staff['name'],
+			];
 		}
 
-		$visitor = $builder->get(1)->getRowArray();
-		if ($visitor) {
+		$holders = $this->getCardHolders($schoolId, $card, $excludeVisitorId);
+		if (empty($holders)) {
+			return null;
+		}
+
+		if ((int) $sharingMode === 0) {
+			$h = $holders[0];
 			return [
 				'type' => 'visitor',
-				'id' => (int) $visitor['id'],
-				'name' => $visitor['names'],
+				'id' => (int) $h['id'],
+				'name' => $h['names'],
+				'holders' => $holders,
+			];
+		}
+
+		if ((int) $sharingMode === 1) {
+			foreach ($holders as $h) {
+				if ((int) $forStudentId > 0 && (int) $h['student_id'] !== (int) $forStudentId) {
+					return [
+						'type' => 'visitor',
+						'id' => (int) $h['id'],
+						'name' => $h['names'],
+						'error' => 'Card belongs to a visitor of another student.',
+						'holders' => $holders,
+					];
+				}
+			}
+			$sameStudentCount = 0;
+			foreach ($holders as $h) {
+				if ((int) $forStudentId <= 0 || (int) $h['student_id'] === (int) $forStudentId) {
+					$sameStudentCount++;
+				}
+			}
+			if ($sameStudentCount >= $maxPerCard) {
+				$h = $holders[0];
+				return [
+					'type' => 'visitor',
+					'id' => (int) $h['id'],
+					'name' => $h['names'],
+					'error' => "This card already has {$maxPerCard} visitor(s). Remove one or use another card.",
+					'holders' => $holders,
+				];
+			}
+			return null;
+		}
+
+		// School-wide sharing
+		if (count($holders) >= $maxPerCard) {
+			$h = $holders[0];
+			return [
+				'type' => 'visitor',
+				'id' => (int) $h['id'],
+				'name' => $h['names'],
+				'error' => "This card already has {$maxPerCard} visitor(s) school-wide.",
+				'holders' => $holders,
 			];
 		}
 
 		return null;
+	}
+
+	/**
+	 * Cards assigned to a student's visitors, grouped by UID.
+	 *
+	 * @param int $schoolId
+	 * @param int $studentId
+	 * @return array
+	 */
+	public function getStudentCardGroups($schoolId, $studentId)
+	{
+		$rows = $this->where('school_id', (int) $schoolId)
+			->where('student_id', (int) $studentId)
+			->where('status', 1)
+			->orderBy('card', 'ASC')
+			->findAll();
+
+		$groups = [];
+		foreach ($rows as $row) {
+			$key = strtoupper(trim((string) ($row['card'] ?? '')));
+			if ($key === '') {
+				continue;
+			}
+			if (!isset($groups[$key])) {
+				$groups[$key] = ['card' => $key, 'visitors' => []];
+			}
+			$groups[$key]['visitors'][] = [
+				'id' => (int) $row['id'],
+				'names' => $row['names'],
+				'relationship' => $row['relationship'] ?? '',
+			];
+		}
+		return array_values($groups);
+	}
+
+	/**
+	 * Active visitors sharing a card (for scan disambiguation).
+	 *
+	 * @param int $schoolId
+	 * @param string $card
+	 * @return array
+	 */
+	public function findByCard($schoolId, $card)
+	{
+		return $this->getCardHolders($schoolId, $card, 0);
+	}
+
+	/**
+	 * @param string $card
+	 * @return string
+	 */
+	public function reverseCardBytes($card)
+	{
+		helper('card_uid');
+		return reverse_card_uid_bytes((string) $card);
 	}
 
 	/**

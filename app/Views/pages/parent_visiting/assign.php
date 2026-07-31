@@ -569,7 +569,8 @@ document.addEventListener("DOMContentLoaded", function () {
 	function assignCardOnly(cardRaw) {
 		const body = new URLSearchParams({
 			visitor_id: String(assignCardVisitorId),
-			card: cardRaw
+			card: cardRaw,
+			card_picked: "1"
 		});
 		return fetch("<?= base_url('parent_visiting/assign_card') ?>", {
 			method: "POST",
@@ -580,16 +581,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
 	function handleCardCapture(uid) {
 		if (!uid || uid.length < 4) return;
-		const raw = uid.trim();
-		/* Keep raw until lookup returns canonical storage UID */
-		document.getElementById("pvCardHidden").value = raw;
-		document.getElementById("pvCard").value = raw;
-		cardFromPicker = false;
+		const normalized = normalizeUID(uid);
+		setCardValue(normalized, true);
 		scanMode = false;
 		updateScanBtn();
 
 		if (assignCardOnlyMode && assignCardVisitorId > 0) {
-			assignCardOnly(raw).then(function (res) {
+			assignCardOnly(normalized).then(function (res) {
 				assignCardOnlyMode = false;
 				assignCardVisitorId = 0;
 				if (res.success) {
@@ -600,13 +598,13 @@ document.addEventListener("DOMContentLoaded", function () {
 					loadVisitors(currentStudentId);
 				} else {
 					notify("error", res.error || "Could not assign card.");
-					lookupCard(raw, false);
+					lookupCard(normalized, true);
 				}
 			}).catch(function (e) { notify("error", e.message); });
 			return;
 		}
 
-		lookupCard(raw, false);
+		lookupCard(normalized, true);
 	}
 
 	document.addEventListener("keypress", function (e) {
