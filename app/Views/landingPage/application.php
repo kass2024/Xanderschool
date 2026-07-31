@@ -351,6 +351,37 @@
 	.toast-warn{ background:rgba(180,83,9,.95); }
 
 	.purple-text { color: var(--app-cyan-d); font-weight: 650; }
+
+	.ss-visitor-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+		margin-bottom: 1rem;
+	}
+	@media (max-width: 768px) {
+		.ss-visitor-grid { grid-template-columns: 1fr; }
+	}
+	.ss-visitor-card {
+		background: var(--app-paper);
+		border: 1px solid var(--app-line);
+		border-radius: 14px;
+		padding: 1rem 1.1rem;
+	}
+	.ss-visitor-card h6 {
+		font-size: .95rem;
+		font-weight: 700;
+		color: var(--app-navy);
+		margin: 0 0 .75rem;
+	}
+	.ss-visitor-card .badge-req {
+		font-size: .68rem;
+		background: #dbeafe;
+		color: #1d4ed8;
+		padding: 2px 8px;
+		border-radius: 999px;
+		margin-left: 6px;
+		vertical-align: middle;
+	}
 </style>
 
 <section class="ss-app" id="home">
@@ -371,7 +402,7 @@
 							<!-- progressbar -->
 							<ul id="progressbar">
 								<li id="personal" class="active"><strong>Personal</strong></li>
-								<li id="payment" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Parent</strong></li>
+								<li id="payment" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Visitors</strong></li>
 								<li id="documents" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Documents</strong></li>
 								<li id="complete" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Payment</strong></li>
 								<li id="confirm" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Finish</strong></li>
@@ -514,29 +545,67 @@
 										<input type="button" name="next" class="next action-button newApplicant" value="Next" style="display:none;"/>
 									</fieldset>
 
-									<!-- STEP 2: PARENT INFORMATION -->
+									<!-- STEP 2: VISITORS / PARENT CONTACT -->
 									<fieldset>
 										<div class="form-card">
-											<div class="form-group">
-												<label class="control-label mb-1">Parent relationship</label>
-												<select class="form-control" name="relationship" id="relationship" required>
-													<option disabled selected>-- Choose relationship --</option>
-													<option value="1">Father</option>
-													<option value="2">Mother</option>
-													<option value="3">Guardian</option>
-												</select>
+											<h6 class="fs-title" style="font-size:1.15rem;margin-bottom:.35rem;">Guardians / visitors</h6>
+											<p class="text-muted" style="font-size:.9rem;margin-bottom:1rem;">
+												Add at least <strong>two visitors</strong> who may collect this student (used for parent visiting &amp; RFID cards).
+											</p>
+											<div class="ss-visitor-grid">
+												<div class="ss-visitor-card">
+													<h6>Visitor 1 <span class="badge-req">Required</span></h6>
+													<div class="form-group">
+														<label class="control-label mb-1">Full names</label>
+														<input name="visitor1Names" id="visitor1Names" type="text" class="form-control" required placeholder="e.g. NAKIRYOWA PATIENCE">
+													</div>
+													<div class="form-group has-success">
+														<label class="control-label mb-1">Phone number</label>
+														<input name="visitor1Phone" id="visitor1Phone" type="text" class="form-control" required placeholder="0780000000">
+													</div>
+													<div class="form-group">
+														<label class="control-label mb-1">Relationship</label>
+														<select class="form-control" name="visitor1Relationship" id="visitor1Relationship" required>
+															<option value="">-- Choose relationship --</option>
+															<option value="Father">Father</option>
+															<option value="Mother">Mother</option>
+															<option value="Guardian">Guardian</option>
+															<option value="Sibling">Sibling</option>
+															<option value="Relative">Relative</option>
+															<option value="Other">Other</option>
+														</select>
+													</div>
+												</div>
+												<div class="ss-visitor-card">
+													<h6>Visitor 2</h6>
+													<div class="form-group">
+														<label class="control-label mb-1">Full names</label>
+														<input name="visitor2Names" id="visitor2Names" type="text" class="form-control" placeholder="Second guardian / visitor">
+													</div>
+													<div class="form-group">
+														<label class="control-label mb-1">Phone number</label>
+														<input name="visitor2Phone" id="visitor2Phone" type="text" class="form-control" placeholder="0780000000">
+													</div>
+													<div class="form-group">
+														<label class="control-label mb-1">Relationship</label>
+														<select class="form-control" name="visitor2Relationship" id="visitor2Relationship">
+															<option value="">-- Choose relationship --</option>
+															<option value="Father">Father</option>
+															<option value="Mother">Mother</option>
+															<option value="Guardian">Guardian</option>
+															<option value="Sibling">Sibling</option>
+															<option value="Relative">Relative</option>
+															<option value="Other">Other</option>
+														</select>
+													</div>
+												</div>
 											</div>
+											<input type="hidden" name="parentNames" id="parentNamesHidden" value="">
+											<input type="hidden" name="parentPhone" id="parentPhoneHidden" value="">
+											<input type="hidden" name="relationship" id="relationshipHidden" value="1">
 											<div class="form-group">
-												<label class="control-label mb-1">Names</label>
-												<input name="parentNames" type="text" class="form-control" required>
-											</div>
-											<div class="form-group has-success">
-												<label class="control-label mb-1">Phone number</label>
-												<input name="parentPhone" type="text" class="form-control" required>
-											</div>
-											<div class="form-group">
-												<label class="control-label mb-1">Email</label>
-												<input name="email" type="email" class="form-control">
+												<label class="control-label mb-1">Contact email (optional)</label>
+												<input name="email" type="email" class="form-control" placeholder="parent@email.com">
 											</div>
 										</div>
 										<input type="button" name="next" class="next action-button" value="Next"/>
@@ -795,6 +864,18 @@
 
 			$('#autoSave').on('submit', function (e) {
 				e.preventDefault();
+				// Sync legacy parent fields from visitor 1 for server compatibility
+				var v1n = ($('#visitor1Names').val() || '').trim();
+				var v1p = ($('#visitor1Phone').val() || '').trim();
+				var v1r = ($('#visitor1Relationship').val() || 'Father');
+				if (!v1n || !v1p) {
+					toastada.error('Visitor 1 name and phone are required.');
+					return;
+				}
+				$('#parentNamesHidden').val(v1n);
+				$('#parentPhoneHidden').val(v1p);
+				var relMap = { 'Father': '1', 'Mother': '2', 'Guardian': '3', 'Sibling': '3', 'Relative': '3', 'Other': '3' };
+				$('#relationshipHidden').val(relMap[v1r] || '1');
 				var method = $("input[name='paymentMethod']:checked").val() || 'momo';
 				if (method === 'proof') {
 					var pf = document.getElementById('paymentProof');

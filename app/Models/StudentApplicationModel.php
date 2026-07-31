@@ -40,6 +40,15 @@ class StudentApplicationModel extends Model
         'report1',
         'report2',
         'report3',
+
+        // parent visiting visitors (copied to student_visitors on approval)
+        'visitor1_names',
+        'visitor1_phone',
+        'visitor1_relationship',
+        'visitor2_names',
+        'visitor2_phone',
+        'visitor2_relationship',
+        'email',
     ];
 
     // Your table has created_at (timestamp default current_timestamp) and updated_at (datetime)
@@ -54,4 +63,33 @@ class StudentApplicationModel extends Model
     protected $validationRules      = [];
     protected $validationMessages   = [];
     protected $skipValidation       = true;
+
+    /** @var bool */
+    private static $visitorColumnsReady = false;
+
+    /**
+     * Add visitor columns to applications table when missing.
+     */
+    public function ensureVisitorColumns(): void
+    {
+        if (self::$visitorColumnsReady) {
+            return;
+        }
+        $db = \Config\Database::connect();
+        $columns = [
+            'visitor1_names' => 'VARCHAR(150) NULL DEFAULT NULL',
+            'visitor1_phone' => 'VARCHAR(50) NULL DEFAULT NULL',
+            'visitor1_relationship' => 'VARCHAR(80) NULL DEFAULT NULL',
+            'visitor2_names' => 'VARCHAR(150) NULL DEFAULT NULL',
+            'visitor2_phone' => 'VARCHAR(50) NULL DEFAULT NULL',
+            'visitor2_relationship' => 'VARCHAR(80) NULL DEFAULT NULL',
+            'email' => 'VARCHAR(120) NULL DEFAULT NULL',
+        ];
+        foreach ($columns as $name => $def) {
+            if (!$db->fieldExists($name, 'applications')) {
+                $db->query("ALTER TABLE `applications` ADD COLUMN `{$name}` {$def}");
+            }
+        }
+        self::$visitorColumnsReady = true;
+    }
 }

@@ -7107,6 +7107,68 @@ public function getApplicationDocs($id = null)
 		return $this->response->setJSON(array("success" => 'Multiple extra fees created'));
 	}
 
+	/**
+	 * Map visitor relationship label to students.parentType (1=Father, 2=Mother, 3=Guardian).
+	 */
+	private function _visitorRelToParentType(string $relationship): int
+	{
+		$key = strtolower(preg_replace('/[^a-z]/', '', trim($relationship)));
+		if ($key === 'mother') {
+			return 2;
+		}
+		if ($key === 'guardian') {
+			return 3;
+		}
+		return 1;
+	}
+
+	/**
+	 * Build visitor rows from application or bulk-upload columns.
+	 *
+	 * @param array<string,mixed> $row
+	 * @return array<int,array{names:string,phone:string,relationship:string}>
+	 */
+	private function _visitorRowsFromData(array $row): array
+	{
+		$visitors = [];
+		for ($i = 1; $i <= 2; $i++) {
+			$names = trim((string) ($row['visitor' . $i . '_names'] ?? $row['visitor' . $i . 'Names'] ?? ''));
+			if ($names === '') {
+				continue;
+			}
+			$visitors[] = [
+				'names' => $names,
+				'phone' => trim((string) ($row['visitor' . $i . '_phone'] ?? $row['visitor' . $i . 'Phone'] ?? '')),
+				'relationship' => trim((string) ($row['visitor' . $i . '_relationship'] ?? $row['visitor' . $i . 'Relationship'] ?? '')),
+			];
+		}
+		if (empty($visitors)) {
+			$parentNames = trim((string) ($row['parentNames'] ?? ''));
+			if ($parentNames !== '') {
+				$ptype = (int) ($row['parentType'] ?? 1);
+				$rel = $ptype === 2 ? 'Mother' : ($ptype === 3 ? 'Guardian' : 'Father');
+				$visitors[] = [
+					'names' => $parentNames,
+					'phone' => trim((string) ($row['parentPhoneNumber'] ?? '')),
+					'relationship' => $rel,
+				];
+			}
+		}
+		return $visitors;
+	}
+
+	/**
+	 * Register parent visiting visitors for a student.
+	 */
+	private function _syncStudentVisitors(int $schoolId, int $studentId, array $visitors, ?int $operator = null): void
+	{
+		if ($studentId <= 0 || empty($visitors)) {
+			return;
+		}
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->syncForStudent($schoolId, $studentId, $visitors, $operator);
+	}
+
 	public
 	function download_student_template()
 	{
@@ -7425,6 +7487,23 @@ public function getApplicationDocs($id = null)
 					//create class record
 					$classRecordMdl = new ClassRecordModel();
 					$classRecordMdl->save(array("student" => $id, "year" => $this->data['academic_year'], "class" => $post_class));
+					$visitorRows = $this->_visitorRowsFromData([
+						'visitor1_names' => $this->_sanitize_txt($sheet['O'] ?? ''),
+						'visitor1_phone' => $this->_sanitize_txt($sheet['P'] ?? ''),
+						'visitor1_relationship' => $this->_sanitize_txt($sheet['Q'] ?? ''),
+						'visitor2_names' => $this->_sanitize_txt($sheet['R'] ?? ''),
+						'visitor2_phone' => $this->_sanitize_txt($sheet['S'] ?? ''),
+						'visitor2_relationship' => $this->_sanitize_txt($sheet['T'] ?? ''),
+						'parentNames' => $this->_sanitize_txt($sheet['H'] ?? '') ?: $this->_sanitize_txt($sheet['J'] ?? '') ?: $this->_sanitize_txt($sheet['L'] ?? ''),
+						'parentPhoneNumber' => $this->_sanitize_txt($sheet['I'] ?? '') ?: $this->_sanitize_txt($sheet['K'] ?? '') ?: $this->_sanitize_txt($sheet['M'] ?? ''),
+						'parentType' => strlen($this->_sanitize_txt($sheet['H'] ?? '')) > 1 ? 1 : (strlen($this->_sanitize_txt($sheet['J'] ?? '')) > 1 ? 2 : 3),
+					]);
+					$this->_syncStudentVisitors(
+						(int) $this->session->get('soma_school_id'),
+						(int) $id,
+						$visitorRows,
+						(int) $this->session->get('soma_id')
+					);
 					$i++;
 				}
 				$this->session->setFlashdata("success", ($i - 1) . lang("app.studentsUploade") . str_replace("-", " ", $post_cl[1]));
@@ -14623,6 +14702,7 @@ public function assign_card()
 	public function manipulateStudentSelfRegistration(): Response
 {
     $studentAppModel = new StudentApplicationModel();
+    $studentAppModel->ensureVisitorColumns();
     $transMdl        = new ApplicationTransactionModel();
     $school          = $this->request->getPost("school");
     $schoolMdl       = new SchoolModel();
@@ -14673,11 +14753,27 @@ public function assign_card()
     $studentPhone  = $this->request->getPost("phoneNumber");
     $studyingMode  = $this->request->getPost("studingMode");
 
-    // ---- Parent information
+    // ---- Parent / visitor information
+    $visitor1Names = trim((string) $this->request->getPost('visitor1Names'));
+    $visitor1Phone = trim((string) $this->request->getPost('visitor1Phone'));
+    $visitor1Rel   = trim((string) $this->request->getPost('visitor1Relationship'));
+    $visitor2Names = trim((string) $this->request->getPost('visitor2Names'));
+    $visitor2Phone = trim((string) $this->request->getPost('visitor2Phone'));
+    $visitor2Rel   = trim((string) $this->request->getPost('visitor2Relationship'));
+
     $relationship  = $this->request->getPost("relationship");
-    $parentNames   = $this->request->getPost("parentNames");
-    $parentPhone   = $this->request->getPost("parentPhone");
-    $parentEmail   = $this->request->getPost("email");
+    $parentNames   = trim((string) $this->request->getPost("parentNames"));
+    $parentPhone   = trim((string) $this->request->getPost("parentPhone"));
+    $parentEmail   = trim((string) $this->request->getPost("email"));
+
+    if ($visitor1Names !== '') {
+        $parentNames = $visitor1Names;
+        $parentPhone = $visitor1Phone !== '' ? $visitor1Phone : $parentPhone;
+        $relationship = (string) $this->_visitorRelToParentType($visitor1Rel !== '' ? $visitor1Rel : 'Father');
+    }
+    if ($parentNames === '' || $parentPhone === '') {
+        return $this->response->setJSON(['error' => 'Visitor 1 name and phone are required.']);
+    }
 
     // ---- Payment phone normalization (2507XXXXXXXX)
     $momoPhone = $this->request->getPost("momoPhoneNumber");
@@ -14711,7 +14807,13 @@ public function assign_card()
         "parentType"         => $relationship,
         "status"             => 0,
         "parentPhoneNumber"  => $parentPhone,
-        "email"              => $parentEmail
+        "email"              => $parentEmail,
+        "visitor1_names"     => $visitor1Names !== '' ? $visitor1Names : $parentNames,
+        "visitor1_phone"     => $visitor1Phone !== '' ? $visitor1Phone : $parentPhone,
+        "visitor1_relationship"=> $visitor1Rel !== '' ? $visitor1Rel : 'Father',
+        "visitor2_names"     => $visitor2Names,
+        "visitor2_phone"     => $visitor2Phone,
+        "visitor2_relationship"=> $visitor2Rel,
         // NOTE: 'documents' left untouched to preserve existing logic
     ];
 
@@ -15333,6 +15435,7 @@ public function assign_card()
 	{
 		$this->_preset();
 		$applicationMdl = new StudentApplicationModel();
+		$applicationMdl->ensureVisitorColumns();
 		$studentMdl = new StudentModel();
 		$classRecordMdl = new ClassRecordModel();
 		$classMdl = new ClassesModel();
@@ -15340,7 +15443,9 @@ public function assign_card()
 		$classId = $this->request->getPost("classId");
 		$application = $applicationMdl->select("id,fname,lname,
 		gender,phoneNumber,parentType,parentPhoneNumber,parentNames,dateOfBirth,
-		level,studyingMode,faculty_id,department_id,schoolId")
+		level,studyingMode,faculty_id,department_id,schoolId,
+		visitor1_names,visitor1_phone,visitor1_relationship,
+		visitor2_names,visitor2_phone,visitor2_relationship")
 				->where("id", $applicationId)
 				->get()->getRowArray();
 		if (!$application) {
@@ -15388,10 +15493,12 @@ public function assign_card()
 		try {
 			$studentId = $studentMdl->insert($studentData);
 			if ($studentId > 0) {
-				$parentData = ["student_id" => $studentId,
-						"parentNames" => $application['parentNames'],
-						"type" => parentType($application['parentType']),
-						"phone" => $application['parentPhoneNumber']];
+				$this->_syncStudentVisitors(
+					(int) $this->session->get('soma_school_id'),
+					(int) $studentId,
+					$this->_visitorRowsFromData($application),
+					(int) $this->session->get('soma_id')
+				);
 				$classData = ["student" => $studentId, "year" => $this->data['academic_year'], "class" => $classId, "status" => 1];
 				$applicationMdl->save(["id" => $applicationId, "admitted" => 1]);
 				$classRecordMdl->save($classData);

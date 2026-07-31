@@ -395,4 +395,66 @@ class StudentVisitorModel extends Model
 			->where('status', 1)
 			->countAllResults();
 	}
+
+	/**
+	 * Normalize relationship label for storage (matches parent visiting assign UI).
+	 */
+	public static function normalizeRelationship(string $raw): string
+	{
+		$raw = trim($raw);
+		if ($raw === '') {
+			return '';
+		}
+		$key = strtolower(preg_replace('/[^a-z]/', '', $raw));
+		$map = [
+			'mother' => 'Mother',
+			'father' => 'Father',
+			'guardian' => 'Guardian',
+			'sibling' => 'Sibling',
+			'relative' => 'Relative',
+			'other' => 'Other',
+		];
+		return $map[$key] ?? ucfirst(strtolower($raw));
+	}
+
+	/**
+	 * Create active visitor rows for a student (skips empty names; no RFID card at import).
+	 *
+	 * @param int $schoolId
+	 * @param int $studentId
+	 * @param array<int,array{names?:string,phone?:string,relationship?:string}> $visitors
+	 * @param int|null $operator
+	 * @return int rows inserted
+	 */
+	public function syncForStudent(int $schoolId, int $studentId, array $visitors, ?int $operator = null): int
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		$studentId = (int) $studentId;
+		if ($schoolId <= 0 || $studentId <= 0) {
+			return 0;
+		}
+
+		$inserted = 0;
+		foreach ($visitors as $v) {
+			$names = trim((string) ($v['names'] ?? ''));
+			if ($names === '') {
+				continue;
+			}
+			$phone = trim((string) ($v['phone'] ?? ''));
+			$relationship = self::normalizeRelationship((string) ($v['relationship'] ?? ''));
+			$this->insert([
+				'school_id' => $schoolId,
+				'student_id' => $studentId,
+				'names' => $names,
+				'phone' => $phone !== '' ? $phone : null,
+				'relationship' => $relationship !== '' ? $relationship : null,
+				'status' => 1,
+				'created_by' => $operator,
+				'updated_by' => $operator,
+			]);
+			$inserted++;
+		}
+		return $inserted;
+	}
 }
