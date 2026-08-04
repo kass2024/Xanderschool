@@ -65,6 +65,7 @@ use App\Models\UpdateVersionModel;
 use App\Models\VerdictModel;
 use App\Models\IntouchAccount;
 use App\Models\BoardingAttendanceModel;
+use App\Services\ApplicationRegistrationFeeService;
 use CodeIgniter\HTTP\Response;
 
 use GuzzleHttp\Client;
@@ -896,6 +897,19 @@ public function testEmail()
 		$done = true;
 	}
 
+	private function ensureStaffRfidColumn()
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists('staffs') && !$db->fieldExists('card', 'staffs')) {
+			$db->query('ALTER TABLE `staffs` ADD COLUMN `card` VARCHAR(50) NULL DEFAULT NULL');
+		}
+		$done = true;
+	}
+
 	public function generate_staff_cards()
 	{
 		$this->_preset(1, 3);
@@ -1323,6 +1337,36 @@ public function testEmail()
 		$data['page'] = "settings";
 		$data['intouch_info'] = (new IntouchAccount())->where('school_id', $schoolId)->get()->getResultArray()[0] ?? ['school_id' => $schoolId, "username" => "", "password" => ""];
 		$data['app_settings'] = (new ApplicationSettingsModel())->forSchool($schoolId);
+		$feeSvc = new ApplicationRegistrationFeeService();
+		$feeSvc->ensureSchema();
+		$data['app_fee_mode'] = $data['app_settings']['fee_mode'] ?? 'flat';
+		$data['app_fee_tiers'] = $feeSvc->getTierMap((int) ($data['app_settings']['id'] ?? 0));
+		$db = \Config\Database::connect();
+		$data['reg_classes'] = $db->table('classes c')
+			->select('c.id, c.title, c.level, c.department, l.title as level_name, d.title as dept_name')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->where('c.school_id', $schoolId)
+			->orderBy('l.id', 'ASC')
+			->orderBy('d.title', 'ASC')
+			->orderBy('c.title', 'ASC')
+			->get()->getResultArray();
+		$data['reg_levels'] = $db->table('classes c')
+			->select('l.id, l.title')
+			->join('levels l', 'l.id = c.level')
+			->where('c.school_id', $schoolId)
+			->groupBy('l.id, l.title')
+			->orderBy('l.id', 'ASC')
+			->get()->getResultArray();
+		$data['reg_departments'] = $db->table('departments d')
+			->select('d.id, d.title as dept_name, f.id as faculty_id, f.title as faculty_name')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
+			->join('classes c', 'c.department = d.id')
+			->where('c.school_id', $schoolId)
+			->groupBy('d.id, d.title, f.id, f.title')
+			->orderBy('f.title', 'ASC')
+			->orderBy('d.title', 'ASC')
+			->get()->getResultArray();
 		$data['private_registration_url'] = rtrim(base_url('application'), '/') . '?school=' . (int) $schoolId;
 		$data['public_registration_url'] = rtrim(base_url('application'), '/');
 		$shiftMdl = new ShiftModel();
@@ -3132,9 +3176,15 @@ public function testEmail()
 		$this->_preset(1, 3);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$appMdl = new ApplicationSettingsModel();
+		$feeSvc = new ApplicationRegistrationFeeService();
+		$feeSvc->ensureSchema();
 		$current = $appMdl->forSchool($schoolId);
 
 		$fees = (int) preg_replace('/\D/', '', (string) $this->request->getPost('registration_fees'));
+		$feeMode = trim((string) $this->request->getPost('fee_mode'));
+		if (!in_array($feeMode, ['flat', 'level', 'class', 'department'], true)) {
+			$feeMode = 'flat';
+		}
 		$start = trim((string) $this->request->getPost('start_date'));
 		$end = trim((string) $this->request->getPost('end_date'));
 		$babyeyi = (int) $this->request->getPost('babyeyi_required') === 1 ? 1 : 0;
@@ -3146,10 +3196,12 @@ public function testEmail()
 			return $this->response->setJSON(['error' => 'Start and end dates are required']);
 		}
 
+		$settingsId = (int) ($current['id'] ?? 0);
 		$payload = [
-			'id' => (int) ($current['id'] ?? 0),
+			'id' => $settingsId,
 			'school_id' => $schoolId,
 			'registration_fees' => $fees,
+			'fee_mode' => $feeMode,
 			'start_date' => $start,
 			'end_date' => $end,
 			'babyeyi_required' => $babyeyi,
@@ -3159,6 +3211,18 @@ public function testEmail()
 		try {
 			$appMdl->save($payload);
 			$fresh = $appMdl->forSchool($schoolId);
+			$settingsId = (int) ($fresh['id'] ?? $settingsId);
+			$levelFees = json_decode((string) $this->request->getPost('level_fees'), true) ?: [];
+			$classFees = json_decode((string) $this->request->getPost('class_fees'), true) ?: [];
+			$departmentFees = json_decode((string) $this->request->getPost('department_fees'), true) ?: [];
+			$feeSvc->saveTierFees(
+				$schoolId,
+				$settingsId,
+				$feeMode,
+				is_array($levelFees) ? $levelFees : [],
+				is_array($classFees) ? $classFees : [],
+				is_array($departmentFees) ? $departmentFees : []
+			);
 			return $this->response->setJSON([
 				'success' => 'Online registration settings saved',
 				'settings' => $fresh,
@@ -4757,6 +4821,7 @@ public function attendanceCard()
 	public function staffs()
 	{
 		$this->_preset(1, 3);
+		$this->ensureStaffRfidColumn();
 		$data = $this->data;
 		$data['title'] = lang("app.staffLists");
 		$data['subtitle'] = lang("app.viewAllStaff");
@@ -4778,10 +4843,17 @@ public function attendanceCard()
 		$data['title'] = lang("app.studentsLists");
 		$data['subtitle'] = lang("app.viewAllStudent");
 		$data['page'] = "students";
-		$classe = $this->request->getGet("c") == null ? "-1" : $this->request->getGet("c");
-		$yearId = $this->request->getGet("y") == null ? "-1" : $this->request->getGet("y");
+		$school_id = (int) $this->session->get("soma_school_id");
+		$activeYearId = (int) ($this->data['academic_year_id'] ?? 0);
+		$classe = $this->request->getGet("c");
+		$yearId = $this->request->getGet("y");
+		if ($classe === null || $classe === '') {
+			$classe = "-1";
+		}
+		if ($yearId === null || $yearId === '' || $yearId === '-1') {
+			$yearId = $activeYearId > 0 ? (string) $activeYearId : "-1";
+		}
 		$classMdl = new ClassesModel();
-		$school_id = $this->session->get("soma_school_id");
 		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
 		,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf")
 				->join("departments d", "d.id=classes.department")
@@ -4796,6 +4868,19 @@ public function attendanceCard()
 		$data['students'] = $studentMdl->get_student_simple("c.id = $classe and cr.year=$yearId", null);
 		$data['class_id'] = $classe;
 		$data['academic_year'] = $yearId;
+		$data['active_year_id'] = $activeYearId;
+		$data['active_year_title'] = (string) ($this->data['academic_year_title'] ?? '');
+		$data['active_term_label'] = (string) ($this->data['term'] ?? '');
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+		$data['visitors_no_card_total'] = $visitorMdl->countActiveWithoutCard($school_id);
+		$data['visitors_no_card_map'] = [];
+		if (!empty($data['students'])) {
+			$ids = array_column($data['students'], 'id');
+			$data['visitors_no_card_map'] = $visitorMdl->countActiveWithoutCardByStudents($school_id, $ids);
+		}
+
 		$data['content'] = view("pages/students", $data);
 		return view('main', $data);
 	}
@@ -6323,25 +6408,23 @@ public function attendanceCard()
 
 	public function delete_student()
 	{
-		$id = $this->request->getPost("data");
+		$id = (int) $this->request->getPost("data");
+		$school_id = (int) $this->session->get("soma_school_id");
 		$stMdl = new StudentModel();
 		try {
+			$row = $stMdl->where('id', $id)->where('school_id', $school_id)->first();
+			if (!$row) {
+				return $this->response->setJSON(['error' => lang("app.studentNotDeleted") ?? 'Student not found.']);
+			}
+
+			$visitorMdl = new StudentVisitorModel();
+			$visitorMdl->ensureSchema();
+			$visitorMdl->purgeForStudent($school_id, $id);
+
 			$mksMdl = new MarksModel();
 			$dscMdl = new DisciplineModel();
 			$permMdl = new PermissionModel();
 			$clRecord = new ClassRecordModel();
-			$isUsed = false;
-			/**** disable student checking as requested by Methode on 10/06/2021 ****
-			 * if ($mksMdl->where("student_id", $id)->get()->getRow() != null)
-			 * $isUsed = true;
-			 * if ($dscMdl->where("student_id", $id)->get()->getRow() != null)
-			 * $isUsed = true;
-			 * if ($permMdl->where("student_id", $id)->get()->getRow() != null)
-			 * $isUsed = true;
-			 * //check if has record in library, finance and attendance
-			 * if ($isUsed)
-			 * return $this->response->setJSON(array("error" => lang("app.studentNotDeleted")));
-			 */
 			$stMdl->delete($id);
 			//remove class record
 			$clRecord->where("student", $id)->delete();
@@ -6615,6 +6698,8 @@ public function getApplicationDocs($id = null)
             'label'    => $doc['label'],
             'required' => !empty($doc['required']),
             'path'     => $paths[$field] ?? null,
+            'url'      => !empty($paths[$field]) ? rtrim(base_url('/'), '/') . '/' . ltrim($paths[$field], '/') : null,
+            'ext'      => !empty($paths[$field]) ? strtolower(pathinfo($paths[$field], PATHINFO_EXTENSION)) : null,
         ];
     }
     // Show any leftover uploaded slots with friendly names
@@ -6642,6 +6727,8 @@ public function getApplicationDocs($id = null)
             'label'    => $label,
             'required' => false,
             'path'     => $paths[$field],
+            'url'      => rtrim(base_url('/'), '/') . '/' . ltrim($paths[$field], '/'),
+            'ext'      => strtolower(pathinfo($paths[$field], PATHINFO_EXTENSION)),
         ];
     }
 
@@ -6660,6 +6747,8 @@ public function getApplicationDocs($id = null)
                 'label'    => 'Payment proof',
                 'required' => false,
                 'path'     => $paths['documents'],
+                'url'      => rtrim(base_url('/'), '/') . '/' . ltrim($paths['documents'], '/'),
+                'ext'      => strtolower(pathinfo($paths['documents'], PATHINFO_EXTENSION)),
             ];
         }
     }
@@ -7438,12 +7527,13 @@ public function getApplicationDocs($id = null)
 					$reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
 				}
 				$spreadsheet = $reader->load($_FILES['documents']['tmp_name']);
-				$sheetData = $spreadsheet->getActiveSheet()->toArray(null, true, true, true);
+				$worksheet = $spreadsheet->getActiveSheet();
+				$sheetData = $worksheet->toArray(null, true, true, true);
 				//print_r($sheetData);die();
 				$i = 0;
 				$empty = 0;
 				// echo "upload done";die();
-				foreach ($sheetData as $sheet) {
+				foreach ($sheetData as $rowNum => $sheet) {
 					if ($i == 0) {
 						$i++;
 						continue;
@@ -7465,11 +7555,13 @@ public function getApplicationDocs($id = null)
 					if ($update_v_data != null)
 						$update_v = $update_v_data->version;
 					$regno = strlen($this->_sanitize_txt($sheet['C'])) > 2 ? $this->_sanitize_txt($sheet['C']) : $this->_generate_regno(true);
+					$dobCell = $worksheet->getCell('E' . (int) $rowNum);
+					$dobParsed = $this->_parseSpreadsheetDate($sheet['E'] ?? '', $dobCell);
 					$dt = array("school_id" => $this->session->get("soma_school_id"),
 							"fname" => $this->_sanitize_txt($sheet['A']),
 							"lname" => $this->_sanitize_txt($sheet['B']),
 							"sex" => $this->_sanitize_txt($sheet['D']),
-							"dob" => $this->_sanitize_txt($sheet['E']),
+							"dob" => $dobParsed,
 							"regno" => $regno,
 							"studying_mode" => $mode,
 							"nationality" => $this->_sanitize_txt($sheet['G']),
@@ -7728,6 +7820,72 @@ public function getApplicationDocs($id = null)
 	function _sanitize_txt($txt)
 	{
 		return empty($txt) ? "" : trim($txt);
+	}
+
+	/**
+	 * Normalize birth dates from Excel template (serial, YYYY-MM-DD, M/D/YYYY, etc.).
+	 *
+	 * @param mixed $raw
+	 * @param \PhpOffice\PhpSpreadsheet\Cell\Cell|null $cell
+	 * @return string YYYY-MM-DD or empty
+	 */
+	private function _parseSpreadsheetDate($raw, $cell = null): string
+	{
+		if ($cell instanceof \PhpOffice\PhpSpreadsheet\Cell\Cell) {
+			try {
+				if (\PhpOffice\PhpSpreadsheet\Shared\Date::isDateTime($cell)) {
+					$val = $cell->getValue();
+					if (is_numeric($val)) {
+						$dt = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $val);
+						return $dt->format('Y-m-d');
+					}
+				}
+			} catch (\Throwable $e) {
+				// fall through to string parsing
+			}
+		}
+
+		if ($raw === null || $raw === '') {
+			return '';
+		}
+
+		if (is_numeric($raw)) {
+			try {
+				$dt = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $raw);
+				return $dt->format('Y-m-d');
+			} catch (\Throwable $e) {
+				return '';
+			}
+		}
+
+		$s = trim((string) $raw);
+		if ($s === '') {
+			return '';
+		}
+
+		if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) {
+			return $s;
+		}
+
+		if (preg_match('#^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$#', $s, $m)) {
+			$part1 = (int) $m[1];
+			$part2 = (int) $m[2];
+			$year = (int) $m[3];
+			if ($part1 > 12) {
+				return sprintf('%04d-%02d-%02d', $year, $part2, $part1);
+			}
+			if ($part2 > 12) {
+				return sprintf('%04d-%02d-%02d', $year, $part1, $part2);
+			}
+			return sprintf('%04d-%02d-%02d', $year, $part1, $part2);
+		}
+
+		$ts = strtotime($s);
+		if ($ts !== false) {
+			return date('Y-m-d', $ts);
+		}
+
+		return '';
 	}
 
 	public
@@ -11497,12 +11655,14 @@ public function assign_card()
 	public function parent_visiting_assign()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
+		session_write_close();
 		$data = $this->data;
-		$school_id = (int) $this->session->get('soma_school_id');
-		$year = (int) ($this->data['academic_year'] ?? date('Y'));
+		$school_id = (int) ($data['school_id'] ?? 0);
+		$year = (int) ($data['academic_year'] ?? date('Y'));
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
+		$visitorMdl->purgeOrphans($school_id);
 
 		$studentModel = new StudentModel();
 		$students = $studentModel
@@ -11545,9 +11705,12 @@ public function assign_card()
 	public function parent_visiting_verify()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
+		session_write_close();
 		$data = $this->data;
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
+		$school_id = (int) ($data['school_id'] ?? 0);
+		$visitorMdl->purgeOrphans($school_id);
 
 		$data['title'] = 'Parent visiting — Verify visit';
 		$data['subtitle'] = 'Verify visit';
@@ -11562,8 +11725,9 @@ public function assign_card()
 	public function parent_visiting_report()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
+		session_write_close();
 		$data = $this->data;
-		$school_id = (int) $this->session->get('soma_school_id');
+		$school_id = (int) ($data['school_id'] ?? 0);
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
@@ -11576,21 +11740,27 @@ public function assign_card()
 		if ($to === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) {
 			$to = date('Y-m-d');
 		}
+		if ($from > $to) {
+			[$from, $to] = [$to, $from];
+		}
 		$classId = (int) $this->request->getGet('class_id');
 		$studentId = (int) $this->request->getGet('student_id');
+		$year = (int) ($this->data['academic_year_id'] ?? $this->session->get('soma_academics_year') ?? date('Y'));
 
 		$db = \Config\Database::connect();
-		$builder = $db->table('visitor_visits vv')
+
+		$visitBuilder = $db->table('visitor_visits vv')
 			->select("
-				vv.id, vv.visit_date, vv.time_in, vv.time_out, vv.source,
+				vv.id, vv.student_id, vv.visit_date, vv.time_in, vv.time_out, vv.source,
 				sv.names AS visitor_name, sv.relationship,
+				s.regno,
 				CONCAT(s.fname, ' ', s.lname) AS student_name,
 				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class_name,
 				c.id AS class_id
 			")
 			->join('student_visitors sv', 'sv.id = vv.visitor_id', 'left')
 			->join('students s', 's.id = vv.student_id', 'left')
-			->join('class_records cr', 'cr.student = s.id', 'left')
+			->join('class_records cr', 'cr.student = s.id AND cr.year = ' . (int) $year, 'left')
 			->join('classes c', 'c.id = cr.class', 'left')
 			->join('departments d', 'd.id = c.department', 'left')
 			->join('levels l', 'l.id = c.level', 'left')
@@ -11598,21 +11768,147 @@ public function assign_card()
 			->where('vv.visit_date >=', $from)
 			->where('vv.visit_date <=', $to)
 			->groupBy('vv.id')
-			->orderBy('vv.visit_date', 'DESC')
-			->orderBy('vv.time_in', 'DESC');
+			->orderBy('class_name', 'ASC')
+			->orderBy('student_name', 'ASC')
+			->orderBy('vv.visit_date', 'ASC')
+			->orderBy('vv.time_in', 'ASC');
 
 		if ($classId > 0) {
-			$builder->where('c.id', $classId);
+			$visitBuilder->where('c.id', $classId);
 		}
 		if ($studentId > 0) {
-			$builder->where('vv.student_id', $studentId);
+			$visitBuilder->where('vv.student_id', $studentId);
 		}
+		$visits = $visitBuilder->get()->getResultArray();
+
+		$studentBuilder = $db->table('students s')
+			->select("
+				s.id AS student_id, s.regno,
+				CONCAT(s.fname, ' ', s.lname) AS student_name,
+				c.id AS class_id,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class_label
+			")
+			->join('class_records cr', 'cr.student = s.id')
+			->join('classes c', 'c.id = cr.class')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('s.school_id', $school_id)
+			->where('s.status', 1)
+			->where('cr.year', $year);
+		if ($classId > 0) {
+			$studentBuilder->where('c.id', $classId);
+		}
+		if ($studentId > 0) {
+			$studentBuilder->where('s.id', $studentId);
+		}
+		$students = $studentBuilder
+			->orderBy('class_label', 'ASC')
+			->orderBy('s.fname', 'ASC')
+			->orderBy('s.lname', 'ASC')
+			->get()->getResultArray();
+
+		$visitsByStudent = [];
+		foreach ($visits as $v) {
+			$sid = (int) ($v['student_id'] ?? 0);
+			if ($sid <= 0) {
+				continue;
+			}
+			if (!isset($visitsByStudent[$sid])) {
+				$visitsByStudent[$sid] = [];
+			}
+			$visitsByStudent[$sid][] = $v;
+		}
+
+		$classSections = [];
+		foreach ($students as $st) {
+			$cid = (int) ($st['class_id'] ?? 0);
+			if ($cid <= 0) {
+				continue;
+			}
+			if (!isset($classSections[$cid])) {
+				$classSections[$cid] = [
+					'class_id' => $cid,
+					'class_label' => (string) ($st['class_label'] ?? ''),
+					'visited' => [],
+					'not_visited' => [],
+				];
+			}
+			$sid = (int) $st['student_id'];
+			$row = [
+				'student_id' => $sid,
+				'student_name' => (string) ($st['student_name'] ?? ''),
+				'regno' => (string) ($st['regno'] ?? ''),
+			];
+			if (!empty($visitsByStudent[$sid])) {
+				$studentVisits = $visitsByStudent[$sid];
+				$row['visits'] = $studentVisits;
+				$row['visit_count'] = count($studentVisits);
+				$visitorNames = [];
+				$firstIn = null;
+				$lastOut = null;
+				foreach ($studentVisits as $v) {
+					$vn = trim((string) ($v['visitor_name'] ?? ''));
+					if ($vn !== '') {
+						$visitorNames[$vn] = true;
+					}
+					if (!empty($v['time_in'])) {
+						$ti = (int) $v['time_in'];
+						if ($firstIn === null || $ti < $firstIn) {
+							$firstIn = $ti;
+						}
+					}
+					if (!empty($v['time_out'])) {
+						$toTs = (int) $v['time_out'];
+						if ($lastOut === null || $toTs > $lastOut) {
+							$lastOut = $toTs;
+						}
+					}
+				}
+				$row['visitor_summary'] = implode(', ', array_keys($visitorNames));
+				$row['first_check_in'] = $firstIn ? date('Y-m-d H:i', $firstIn) : '';
+				$row['last_check_out'] = $lastOut ? date('Y-m-d H:i', $lastOut) : '';
+				$classSections[$cid]['visited'][] = $row;
+			} else {
+				$classSections[$cid]['not_visited'][] = $row;
+			}
+		}
+
+		foreach ($classSections as &$sec) {
+			$vCount = count($sec['visited'] ?? []);
+			$nCount = count($sec['not_visited'] ?? []);
+			$total = $vCount + $nCount;
+			$sec['visited_count'] = $vCount;
+			$sec['not_visited_count'] = $nCount;
+			$sec['total_students'] = $total;
+			$sec['visit_rate'] = $total > 0 ? (int) round(($vCount / $total) * 100) : 0;
+		}
+		unset($sec);
+
+		$classSections = array_values($classSections);
+		usort($classSections, static function ($a, $b) {
+			return strcmp($a['class_label'], $b['class_label']);
+		});
+
+		$totalStudents = count($students);
+		$visitedStudentCount = count($visitsByStudent);
+		$notVisitedCount = max(0, $totalStudents - $visitedStudentCount);
 
 		$classMdl = new ClassesModel();
 		$data['classes'] = $classMdl->get_classes();
-		$data['visits'] = $builder->get()->getResultArray();
+		$data['visits'] = $visits;
+		$data['class_sections'] = $classSections;
+		$data['report_summary'] = [
+			'total_students' => $totalStudents,
+			'visited_students' => $visitedStudentCount,
+			'not_visited_students' => $notVisitedCount,
+			'total_visits' => count($visits),
+			'classes_count' => count($classSections),
+		];
 		$data['from_date'] = $from;
 		$data['to_date'] = $to;
+		$data['filter_class_id'] = $classId;
+		$data['filter_student_id'] = $studentId;
+		$data['view_class_id'] = (int) $this->request->getGet('view_class');
 		$data['title'] = 'Parent visiting — Report';
 		$data['subtitle'] = 'Visiting report';
 		$data['page'] = 'parent_visiting_report';
@@ -11651,6 +11947,7 @@ public function assign_card()
 
 			$visitorMdl = new StudentVisitorModel();
 			$visitorMdl->ensureSchema();
+			$visitorMdl->purgeOrphans($school_id);
 			$settings = $visitorMdl->getSettings($school_id);
 
 			$st = (new StudentModel())->select('students.id')
@@ -11851,6 +12148,7 @@ public function assign_card()
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
+		$visitorMdl->purgeOrphans($school_id);
 		$settings = $visitorMdl->getSettings($school_id);
 
 		$visitor = $visitorMdl->where('id', $visitor_id)
@@ -12174,6 +12472,7 @@ public function assign_card()
 		}
 
 		if ((int) ($visitor['status'] ?? 0) !== 1) {
+			$inactive = $this->parentVisitingFormatVisitor($visitor);
 			return [
 				'allowed' => false,
 				'success' => false,
@@ -12182,6 +12481,8 @@ public function assign_card()
 					'id' => (int) $visitor['id'],
 					'names' => $visitor['names'],
 					'relationship' => $visitor['relationship'] ?? '',
+					'photo' => trim((string) ($inactive['photo'] ?? '')),
+					'photo_url' => $inactive['photo_url'] ?? '',
 				],
 				'card' => $card,
 			];
@@ -12190,9 +12491,9 @@ public function assign_card()
 		$year = (int) ($this->data['academic_year'] ?? date('Y'));
 		$db = \Config\Database::connect();
 		$student = $db->table('students s')
-			->select("s.id, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
+			->select("s.id, s.status, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
 				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class")
-			->join('class_records cr', 'cr.student = s.id', 'left')
+			->join('class_records cr', 'cr.student = s.id AND cr.year = ' . (int) $year, 'left')
 			->join('classes c', 'c.id = cr.class', 'left')
 			->join('departments d', 'd.id = c.department', 'left')
 			->join('levels l', 'l.id = c.level', 'left')
@@ -12200,6 +12501,16 @@ public function assign_card()
 			->where('s.school_id', $schoolId)
 			->groupBy('s.id')
 			->get(1)->getRowArray();
+
+		if (!$student || (int) ($student['status'] ?? 0) !== 1) {
+			$visitorMdl->purgeForStudent($schoolId, (int) $visitor['student_id']);
+			return [
+				'allowed' => false,
+				'success' => false,
+				'error' => 'Student no longer exists. Visitor card and records were removed.',
+				'card' => $card,
+			];
+		}
 
 		$visitMdl = new VisitorVisitModel();
 		$toggle = $visitMdl->toggleVisitToday($visitor, $schoolId, $card, $source, $operator, 'Visiting day verification');
@@ -12214,6 +12525,8 @@ public function assign_card()
 			}
 		}
 
+		$formattedVisitor = $this->parentVisitingFormatVisitor($visitor);
+
 		return [
 			'allowed' => true,
 			'success' => true,
@@ -12226,6 +12539,8 @@ public function assign_card()
 				'relationship' => $visitor['relationship'] ?? '',
 				'phone' => $visitor['phone'] ?? '',
 				'card' => strtoupper(trim((string) ($visitor['card'] ?? ''))),
+				'photo' => trim((string) ($formattedVisitor['photo'] ?? '')),
+				'photo_url' => $formattedVisitor['photo_url'] ?? '',
 			],
 			'student' => [
 				'id' => (int) ($student['id'] ?? $visitor['student_id']),
@@ -14397,14 +14712,44 @@ public function assign_card()
 	{
 		$this->_preset();
 		$Mdl = new ClassesModel();
-		$class = $this->request->getPost("key");
+		$class = (int) $this->request->getPost("key");
 		$value = $this->request->getPost("value");
-		$data = array(
+		$field = trim((string) $this->request->getPost("field"));
+		if ($class <= 0) {
+			return $this->response->setStatusCode(400)->setJSON(["error" => "Invalid class"]);
+		}
+		if ($field === 'mentor') {
+			$mentorId = (int) $value;
+			if ($mentorId <= 0) {
+				return $this->response->setStatusCode(400)->setJSON(["error" => "Select a staff member"]);
+			}
+			$staff = (new StaffModel())->where('id', $mentorId)
+				->where('school_id', (int) $this->session->get('soma_school_id'))
+				->get(1)->getRowArray();
+			if (!$staff) {
+				return $this->response->setStatusCode(400)->setJSON(["error" => "Staff not found in this school"]);
+			}
+			$data = [
 				"id" => $class,
-				"title" => $value);
+				"mentor" => $mentorId,
+				"updated_by" => (int) $this->session->get('soma_id'),
+			];
+			$successMsg = "Class mentor updated to " . trim($staff['fname'] . ' ' . $staff['lname']);
+		} else {
+			$title = trim((string) $value);
+			if ($title === '') {
+				return $this->response->setStatusCode(400)->setJSON(["error" => "Class title cannot be empty"]);
+			}
+			$data = [
+				"id" => $class,
+				"title" => $title,
+				"updated_by" => (int) $this->session->get('soma_id'),
+			];
+			$successMsg = "Class title updated";
+		}
 		try {
 			$Mdl->save($data);
-			return $this->response->setJSON(["success" => "Title changed successfully"]);
+			return $this->response->setJSON(["success" => $successMsg]);
 		} catch (\Exception $e) {
 			return $this->response->setStatusCode(400)->setJSON(["error" => "Error: " . $e->getMessage()]);
 		}
@@ -14584,7 +14929,7 @@ public function assign_card()
 	{
 		$mdl = new FacultyModel();
 		$appMdl = new ApplicationSettingsModel();
-		$settings = $appMdl->select('id,start_date,end_date,requirement_document,registration_fees,babyeyi_required')
+		$settings = $appMdl->select('id,start_date,end_date,requirement_document,registration_fees,fee_mode,babyeyi_required')
 				->where('school_id', $school)
 				->orderBy('id', 'desc')
 				->get(1)->getRow();
@@ -14607,11 +14952,13 @@ public function assign_card()
 			return $this->response->setJSON(["error" => "No Faculty found for the selected school program"]);
 		} else {
 			$fee = (int) $settings->registration_fees;
+			$feeMode = $settings->fee_mode ?? 'flat';
 			$gatewayFees = $this->getRegistrationGatewayFees();
 			$charges = (int) $gatewayFees['service_fee'];
 			$platform = (int) $gatewayFees['platform_fee'];
 			$total = $fee + $charges + $platform;
 			$data['success'] = 1;
+			$data['fee_mode'] = $feeMode;
 			$data['requirement_document'] = $settings->requirement_document;
 			$data['has_requirement_document'] = strlen(trim((string) $settings->requirement_document)) > 3;
 			$data['settings_fees'] = number_format($fee) . ' Rwf';
@@ -14649,6 +14996,84 @@ public function assign_card()
 		} else {
 			return $this->response->setJSON($data);
 		}
+	}
+
+	/**
+	 * Classes created for this school + department (online registration).
+	 */
+	public function getClassesByDepartment(int $department, int $school): Response
+	{
+		$feeSvc = new ApplicationRegistrationFeeService();
+		$feeSvc->ensureSchema();
+		$appMdl = new ApplicationSettingsModel();
+		$settings = $appMdl->select('id,registration_fees,fee_mode')
+			->where('school_id', $school)
+			->orderBy('id', 'desc')
+			->get(1)->getRow();
+		if (!$settings) {
+			return $this->response->setJSON(['error' => 'Online registration not configured for this school']);
+		}
+		$classMdl = new ClassesModel();
+		$classes = $classMdl->select('classes.id, classes.title, classes.level, classes.department, levels.title as level_name, departments.title as dept_name')
+			->join('levels', 'levels.id = classes.level', 'left')
+			->join('departments', 'departments.id = classes.department', 'left')
+			->where('classes.school_id', $school)
+			->where('classes.department', $department)
+			->orderBy('levels.id', 'ASC')
+			->orderBy('classes.title', 'ASC')
+			->get()->getResultArray();
+		if (!$classes) {
+			return $this->response->setJSON(['error' => 'No classes found for this department. Create classes in School Settings first.']);
+		}
+		$settingsId = (int) $settings->id;
+		foreach ($classes as &$cls) {
+			$fee = $feeSvc->resolveFee($settingsId, (int) $cls['id'], (int) $cls['level']);
+			$label = trim(($cls['level_name'] ?? '') . ' ' . ($cls['title'] ?? ''));
+			if ($label === '') {
+				$label = 'Class #' . $cls['id'];
+			}
+			$cls['label'] = $label;
+			$cls['fee'] = $fee;
+			$cls['fee_label'] = number_format($fee) . ' Rwf';
+		}
+		unset($cls);
+		return $this->response->setJSON([
+			'success' => 1,
+			'fee_mode' => $settings->fee_mode ?? 'flat',
+			'default_fee' => (int) $settings->registration_fees,
+			'classes' => $classes,
+		]);
+	}
+
+	/**
+	 * Registration fee for department + day/boarding (online registration payment step).
+	 */
+	public function getRegistrationFeeByDepartment(int $school, int $department, int $studyingMode): Response
+	{
+		$feeSvc = new ApplicationRegistrationFeeService();
+		$feeSvc->ensureSchema();
+		$appMdl = new ApplicationSettingsModel();
+		$settings = $appMdl->select('id,registration_fees,fee_mode')
+			->where('school_id', $school)
+			->orderBy('id', 'desc')
+			->get(1)->getRow();
+		if (!$settings) {
+			return $this->response->setJSON(['error' => 'Online registration not configured for this school']);
+		}
+		$deptRow = (new DeptModel())->select('departments.title as dept_name, faculty.title as faculty_name')
+			->join('faculty', 'faculty.id = departments.faculty_id', 'left')
+			->where('departments.id', $department)
+			->get(1)->getRowArray();
+		$fee = $feeSvc->resolveFee((int) $settings->id, null, null, $department, $studyingMode);
+		$modeLabel = ((int) $studyingMode === 1) ? 'Day' : 'Boarding';
+		$deptLabel = trim(($deptRow['faculty_name'] ?? '') . ' · ' . ($deptRow['dept_name'] ?? ''));
+		return $this->response->setJSON([
+			'success' => 1,
+			'fee' => $fee,
+			'fee_label' => number_format($fee) . ' Rwf',
+			'fee_mode' => $settings->fee_mode ?? 'flat',
+			'description' => ($deptLabel !== '·' ? $deptLabel . ' · ' : '') . $modeLabel,
+		]);
 	}
 
 	public
@@ -14748,6 +15173,7 @@ public function assign_card()
     $lastName      = $this->request->getPost("lastName");
     $gender        = $this->request->getPost("gender");
     $level         = $this->request->getPost("level");
+    $classId       = (int) $this->request->getPost("class_id");
     $dept          = $this->request->getPost("department");
     $fac           = $this->request->getPost("faculty");
     $studentPhone  = $this->request->getPost("phoneNumber");
@@ -14755,6 +15181,18 @@ public function assign_card()
     $dateOfBirth   = trim((string) $this->request->getPost('dateOfBirth'));
     $nationality   = trim((string) $this->request->getPost('nationality'));
     $religion      = trim((string) $this->request->getPost('religion'));
+    if ($religion === '') {
+        $religion = 'Not specified';
+    }
+    $medicalStatus = trim((string) $this->request->getPost('medical_status'));
+    if ($medicalStatus === '') {
+        $medicalStatus = 'Normal';
+    }
+    $medicalDetail = trim((string) $this->request->getPost('medical_detail'));
+    if (strtolower($medicalStatus) !== 'normal' && $medicalDetail !== '') {
+        $medicalStatus = $medicalStatus . ' — ' . $medicalDetail;
+    }
+    $cellId        = (int) $this->request->getPost('cell');
     $father        = trim((string) $this->request->getPost('father'));
     $ftPhone       = trim((string) $this->request->getPost('ft_phone'));
     $mother        = trim((string) $this->request->getPost('mother'));
@@ -14806,6 +15244,30 @@ public function assign_card()
         return $this->response->setJSON(['error' => 'Provide at least Visitor 1 or Father/Mother contact with phone.']);
     }
 
+    if ($classId <= 0) {
+        return $this->response->setJSON(['error' => 'Please select a class for this school.']);
+    }
+    $classRow = (new ClassesModel())->select('id,level,department,school_id,title')
+        ->where('id', $classId)
+        ->where('school_id', $school)
+        ->get(1)->getRow();
+    if (!$classRow) {
+        return $this->response->setJSON(['error' => 'Invalid class selected for this school']);
+    }
+    $level = (string) $classRow->level;
+    $dept = (string) $classRow->department;
+
+    $registrationFee = (new ApplicationRegistrationFeeService())->resolveFee(
+        (int) $applicationSettings,
+        $classId,
+        (int) $level,
+        (int) $dept,
+        $studyingMode
+    );
+    if ($registrationFee < 0) {
+        $registrationFee = (int) $settingsData->registration_fees;
+    }
+
     // ---- Payment phone normalization (2507XXXXXXXX)
     $momoPhone = $this->request->getPost("momoPhoneNumber");
     if ($paymentMethod === 'proof') {
@@ -14837,6 +15299,9 @@ public function assign_card()
         "dateOfBirth"        => $dateOfBirth,
         "nationality"        => $nationality,
         "religion"           => $religion,
+        "medical_status"     => $medicalStatus,
+        "cell_id"            => $cellId > 0 ? $cellId : null,
+        "class_id"           => $classId > 0 ? $classId : null,
         "father"             => $father,
         "ft_phone"           => $ftPhone,
         "mother"             => $mother,
@@ -14949,8 +15414,8 @@ public function assign_card()
         $SomaCharges  = (int) $gatewayFees['platform_fee'];
         // Proof uploads: school registration fee only (no MOMO service / platform charges)
         $totalAmount  = $paymentMethod === 'proof'
-            ? (int) $settingsData->registration_fees
-            : ((int) $settingsData->registration_fees + $charges + $SomaCharges);
+            ? $registrationFee
+            : ($registrationFee + $charges + $SomaCharges);
         $studentNames = trim($firstName . ' ' . $lastName);
         $levelName    = $levelRow ? (string) $levelRow->title : '';
         $schoolName   = (string) $schoolData->name;
@@ -14970,7 +15435,7 @@ public function assign_card()
                 'response_body'  => json_encode([
                     'payment_method' => 'proof',
                     'payment_proof'  => $paymentProofPath,
-                    'registration_fee' => (int) $settingsData->registration_fees,
+                    'registration_fee' => $registrationFee,
                     'charges'        => 0,
                     'platform_fee'   => 0,
                     'note'           => 'Applicant uploaded payment proof — registration fee only (no gateway charges)',
@@ -15035,7 +15500,7 @@ public function assign_card()
             'schoolPhone'           => $schoolData->mtn_momo_phone,
             'phone'                 => $momoPhone,
             'grossAmount'           => $totalAmount,
-            'schoolAmount'          => $settingsData->registration_fees,
+            'schoolAmount'          => $registrationFee,
             'chargesAmount'         => $charges,
             'somanetChargesAmount'  => $SomaCharges
         ];
@@ -15376,7 +15841,9 @@ public function assign_card()
 		parentPhoneNumber,parentNames,dateOfBirth,l.title as level,if(studyingMode=0,'Boarding','Day') mode,applications.status,code,admitted")
 				->join("levels l", "l.id=applications.level")
 				->where("admitted", 0)
+				->where("applications.status !=", '3')
 				->where("schoolId", $school_id)
+				->orderBy('applications.id', 'DESC')
 				->get()->getResultArray();
 		$data['content'] = view("pages/pendingRegistrations", $data);
 		return view('main', $data);
@@ -15386,15 +15853,49 @@ public function assign_card()
 	function registrationsDocument($applicationId)
 	{
 		$this->_preset();
-		$documentMdl = new DocumentsModel();
-		$documents = $documentMdl->select("id,documentName,fileName")
-				->where("applicationId", $applicationId)
-				->get()->getResultArray();
-		if ($documents == null) {
-			return $this->response->setStatusCode(404)->setJSON(["error" => "No data found"]);
-		} else {
-			return $this->response->setJSON($documents);
+		$applicationId = (int) $applicationId;
+		if ($applicationId <= 0) {
+			return $this->response->setJSON([]);
 		}
+
+		$out = [];
+		$documentMdl = new DocumentsModel();
+		$documents = $documentMdl->select('id,documentName,fileName')
+			->where('applicationId', $applicationId)
+			->get()->getResultArray();
+		foreach ($documents as $obj) {
+			$fileName = (string) ($obj['fileName'] ?? '');
+			$out[] = [
+				'documentName' => (string) ($obj['documentName'] ?? 'Document'),
+				'fileName'     => $fileName,
+				'url'          => rtrim(base_url('/'), '/') . '/assets/documents/' . ltrim($fileName, '/'),
+			];
+		}
+
+		$applicationMdl = new StudentApplicationModel();
+		$row = $applicationMdl->where('id', $applicationId)->first();
+		if ($row) {
+			$labels = [
+				'report1'   => 'Previous academic report',
+				'report2'   => 'Supporting certificate / exam slip',
+				'report3'   => 'Additional document',
+				'documents' => 'Payment proof',
+			];
+			foreach ($labels as $field => $label) {
+				$path = trim((string) ($row[$field] ?? ''));
+				if ($path === '') {
+					continue;
+				}
+				$out[] = [
+					'documentName' => $label,
+					'fileName'     => basename($path),
+					'url'          => rtrim(base_url('/'), '/') . '/' . ltrim($path, '/'),
+					'path'         => $path,
+				];
+			}
+		}
+
+		return $this->response->setJSON($out);
 	}
 
 	public
@@ -15483,7 +15984,7 @@ public function assign_card()
 		$classId = $this->request->getPost("classId");
 		$application = $applicationMdl->select("id,fname,lname,
 		gender,phoneNumber,parentType,parentPhoneNumber,parentNames,dateOfBirth,
-		level,studyingMode,faculty_id,department_id,schoolId,
+		level,studyingMode,faculty_id,department_id,schoolId,class_id,cell_id,medical_status,
 		nationality,religion,father,ft_phone,mother,mt_phone,guardian,gd_phone,
 		visitor1_names,visitor1_phone,visitor1_relationship,
 		visitor2_names,visitor2_phone,visitor2_relationship")
@@ -15493,7 +15994,10 @@ public function assign_card()
 			return $this->response->setJSON(["error" => "Application not found"]);
 		}
 
-		// Use class from registration structure when not explicitly posted
+		// Use class from registration when posted on application
+		if (empty($classId) && !empty($application['class_id'])) {
+			$classId = (int) $application['class_id'];
+		}
 		if (empty($classId)) {
 			$match = $classMdl->select("classes.id")
 					->where("classes.school_id", $this->session->get("soma_school_id"))
@@ -15510,6 +16014,13 @@ public function assign_card()
 		}
 
 		$regNo = $this->_generate_regno(true);
+		$villageId = null;
+		if (!empty($application['cell_id'])) {
+			$vRow = (new AddressModel())->getAddress('soma_village', (int) $application['cell_id'], 'cell', true);
+			if ($vRow && !empty($vRow['id'])) {
+				$villageId = (int) $vRow['id'];
+			}
+		}
 		$studentData = [
 				"school_id" => $this->session->get("soma_school_id"),
 				"fname" => $application['fname'],
@@ -15520,6 +16031,7 @@ public function assign_card()
 				"dob" => $application['dateOfBirth'] ?? '',
 				"nationality" => $application['nationality'] ?? '',
 				"religion" => $application['religion'] ?? '',
+				"village_id" => $villageId,
 				"father" => trim((string) ($application['father'] ?? '')),
 				"ft_phone" => trim((string) ($application['ft_phone'] ?? '')),
 				"mother" => trim((string) ($application['mother'] ?? '')),
@@ -15558,6 +16070,67 @@ public function assign_card()
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}
+	}
+
+	/**
+	 * Reject a pending online registration (keeps record, hides from pending list).
+	 */
+	public function rejectApplicationRegistration()
+	{
+		$this->_preset();
+		$school_id = (int) $this->session->get('soma_school_id');
+		$applicationId = (int) $this->request->getPost('applicationId');
+		if ($applicationId <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Invalid application.']);
+		}
+		$applicationMdl = new StudentApplicationModel();
+		$row = $applicationMdl->where('id', $applicationId)
+			->where('schoolId', $school_id)
+			->where('admitted', 0)
+			->first();
+		if (!$row) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Application not found or already processed.']);
+		}
+		$applicationMdl->save([
+			'id' => $applicationId,
+			'status' => '3',
+		]);
+		return $this->response->setJSON(['success' => true, 'message' => 'Application rejected.']);
+	}
+
+	/**
+	 * Permanently delete a pending registration and its uploads.
+	 */
+	public function deleteApplicationRegistration()
+	{
+		$this->_preset();
+		$school_id = (int) $this->session->get('soma_school_id');
+		$applicationId = (int) $this->request->getPost('applicationId');
+		if ($applicationId <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Invalid application.']);
+		}
+		$applicationMdl = new StudentApplicationModel();
+		$row = $applicationMdl->where('id', $applicationId)
+			->where('schoolId', $school_id)
+			->where('admitted', 0)
+			->first();
+		if (!$row) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Application not found or already admitted.']);
+		}
+		$uploadDir = FCPATH . 'uploads' . DIRECTORY_SEPARATOR . 'applications' . DIRECTORY_SEPARATOR . $applicationId;
+		if (is_dir($uploadDir)) {
+			$files = glob($uploadDir . DIRECTORY_SEPARATOR . '*');
+			if ($files) {
+				foreach ($files as $f) {
+					if (is_file($f)) {
+						@unlink($f);
+					}
+				}
+			}
+			@rmdir($uploadDir);
+		}
+		$applicationMdl->delete($applicationId);
+		return $this->response->setJSON(['success' => true, 'message' => 'Application deleted.']);
 	}
 
 	public
@@ -15633,6 +16206,7 @@ public function assign_card()
 				}
 			}
 		}
+		$data['provinces'] = (new AddressModel())->getProvince();
 		$type = $this->request->getGet('type');
 		$data['type'] = $type;
 		$data['content'] = view('landingPage/application', $data);

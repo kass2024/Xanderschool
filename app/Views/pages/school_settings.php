@@ -969,6 +969,11 @@
 		$reqDoc = trim((string)($appSet['requirement_document'] ?? ''));
 		$hasReqDoc = strlen($reqDoc) > 3;
 		$reqDocUrl = $hasReqDoc ? base_url('assets/documents/' . $reqDoc) : '';
+		$appFeeMode = $app_fee_mode ?? 'flat';
+		$appFeeTiers = $app_fee_tiers ?? ['level' => [], 'class' => [], 'department' => []];
+		$regLevels = $reg_levels ?? [];
+		$regClasses = $reg_classes ?? [];
+		$regDepartments = $reg_departments ?? [];
 		?>
 		<div class="card ss-acc-item">
 			<div id="headingAppReg" class="b-radius-0 card-header">
@@ -1010,10 +1015,71 @@
 					<div class="row">
 						<div class="col-md-6">
 							<div class="form-group">
-								<label>Registration fee (RWF)</label>
+								<label>Registration fee mode</label>
+								<div class="mb-2">
+									<label class="mr-3"><input type="radio" name="app_fee_mode" value="flat" <?= $appFeeMode === 'flat' ? 'checked' : ''; ?>> Single fee for all</label>
+									<label class="mr-3"><input type="radio" name="app_fee_mode" value="level" <?= $appFeeMode === 'level' ? 'checked' : ''; ?>> Per level</label>
+									<label class="mr-3"><input type="radio" name="app_fee_mode" value="department" <?= $appFeeMode === 'department' ? 'checked' : ''; ?>> Per department (Day &amp; Boarding)</label>
+									<label><input type="radio" name="app_fee_mode" value="class" <?= $appFeeMode === 'class' ? 'checked' : ''; ?>> Per class</label>
+								</div>
+							</div>
+							<div class="form-group" id="app_reg_flat_wrap">
+								<label>Default registration fee (RWF)</label>
 								<input type="number" min="0" step="100" class="form-control" id="app_reg_fees"
 									   value="<?= (int)($appSet['registration_fees'] ?? 10000); ?>">
-								<small class="text-muted">School portion received via MOMO. Service/platform fees (if any) are set by the platform admin and paid separately.</small>
+								<small class="text-muted">Used when mode is <strong>Single fee</strong>, or as fallback when no amount is set for a level/department/class.</small>
+							</div>
+							<div id="app_reg_department_wrap" style="display:none;margin-bottom:1rem;">
+								<label class="font-weight-bold">Fee per department (RWF)</label>
+								<p class="text-muted" style="font-size:.85rem;margin-bottom:.65rem;">Set separate registration fees for <strong>Day</strong> and <strong>Boarding</strong> students in each department (e.g. Primary Day 5,000 / Boarding 10,000).</p>
+								<div class="table-responsive" style="max-height:320px;overflow:auto;"><table class="table table-sm table-bordered mb-0">
+									<thead><tr><th>Faculty</th><th>Department</th><th style="width:120px">Day</th><th style="width:120px">Boarding</th></tr></thead>
+									<tbody>
+									<?php foreach ($regDepartments as $dep) {
+										$did = (int) $dep['id'];
+										$dayAmt = (int) ($appFeeTiers['department'][$did]['day'] ?? ($appSet['registration_fees'] ?? 0));
+										$boardAmt = (int) ($appFeeTiers['department'][$did]['boarding'] ?? ($appSet['registration_fees'] ?? 0));
+									?>
+									<tr>
+										<td><?= esc($dep['faculty_name'] ?? '—'); ?></td>
+										<td><?= esc($dep['dept_name'] ?? '—'); ?></td>
+										<td><input type="number" min="0" step="100" class="form-control form-control-sm app-dept-fee-day" data-id="<?= $did; ?>" value="<?= $dayAmt; ?>"></td>
+										<td><input type="number" min="0" step="100" class="form-control form-control-sm app-dept-fee-boarding" data-id="<?= $did; ?>" value="<?= $boardAmt; ?>"></td>
+									</tr>
+									<?php } ?>
+									</tbody>
+								</table></div>
+							</div>
+							<div id="app_reg_level_wrap" style="display:none;margin-bottom:1rem;">
+								<label class="font-weight-bold">Fee per level (RWF)</label>
+								<div class="table-responsive"><table class="table table-sm table-bordered mb-0">
+									<thead><tr><th>Level</th><th style="width:140px">Fee (RWF)</th></tr></thead>
+									<tbody>
+									<?php foreach ($regLevels as $lv) {
+										$lid = (int) $lv['id'];
+										$amt = (int) ($appFeeTiers['level'][$lid] ?? ($appSet['registration_fees'] ?? 0));
+									?>
+									<tr><td><?= esc($lv['title']); ?></td>
+									<td><input type="number" min="0" step="100" class="form-control form-control-sm app-level-fee" data-id="<?= $lid; ?>" value="<?= $amt; ?>"></td></tr>
+									<?php } ?>
+									</tbody>
+								</table></div>
+							</div>
+							<div id="app_reg_class_wrap" style="display:none;margin-bottom:1rem;">
+								<label class="font-weight-bold">Fee per class (RWF)</label>
+								<div class="table-responsive" style="max-height:280px;overflow:auto;"><table class="table table-sm table-bordered mb-0">
+									<thead><tr><th>Class</th><th style="width:140px">Fee (RWF)</th></tr></thead>
+									<tbody>
+									<?php foreach ($regClasses as $cl) {
+										$cid = (int) $cl['id'];
+										$label = trim(($cl['level_name'] ?? '') . ' ' . ($cl['dept_name'] ?? '') . ' ' . ($cl['title'] ?? ''));
+										$amt = (int) ($appFeeTiers['class'][$cid] ?? ($appSet['registration_fees'] ?? 0));
+									?>
+									<tr><td><?= esc($label); ?></td>
+									<td><input type="number" min="0" step="100" class="form-control form-control-sm app-class-fee" data-id="<?= $cid; ?>" value="<?= $amt; ?>"></td></tr>
+									<?php } ?>
+									</tbody>
+								</table></div>
 							</div>
 							<div class="form-row">
 								<div class="form-group col-md-6">
@@ -2399,6 +2465,15 @@ $(document).on("click","#btn-remove-discipline",function () {
 
 	// Online registration settings (fees + Babyeyi + requirement PDF)
 	$(function () {
+		function syncAppFeeModeUI() {
+			var mode = $("input[name='app_fee_mode']:checked").val() || 'flat';
+			$("#app_reg_level_wrap").toggle(mode === 'level');
+			$("#app_reg_department_wrap").toggle(mode === 'department');
+			$("#app_reg_class_wrap").toggle(mode === 'class');
+		}
+		$("input[name='app_fee_mode']").on("change", syncAppFeeModeUI);
+		syncAppFeeModeUI();
+
 		$("#btn_copy_private_reg").on("click", function () {
 			var input = document.getElementById("private_reg_link");
 			if (!input) return;
@@ -2421,8 +2496,27 @@ $(document).on("click","#btn-remove-discipline",function () {
 		});
 		$("#btn_save_app_reg").on("click", function () {
 			var $st = $("#app_reg_status").text("Saving…");
+			var levelFees = {};
+			$(".app-level-fee").each(function () { levelFees[$(this).data("id")] = $(this).val(); });
+			var classFees = {};
+			$(".app-class-fee").each(function () { classFees[$(this).data("id")] = $(this).val(); });
+			var departmentFees = {};
+			$(".app-dept-fee-day").each(function () {
+				var id = $(this).data("id");
+				if (!departmentFees[id]) departmentFees[id] = {};
+				departmentFees[id].day = $(this).val();
+			});
+			$(".app-dept-fee-boarding").each(function () {
+				var id = $(this).data("id");
+				if (!departmentFees[id]) departmentFees[id] = {};
+				departmentFees[id].boarding = $(this).val();
+			});
 			$.post("<?= base_url('save_application_settings'); ?>", {
 				registration_fees: $("#app_reg_fees").val(),
+				fee_mode: $("input[name='app_fee_mode']:checked").val() || 'flat',
+				level_fees: JSON.stringify(levelFees),
+				class_fees: JSON.stringify(classFees),
+				department_fees: JSON.stringify(departmentFees),
 				start_date: $("#app_reg_start").val(),
 				end_date: $("#app_reg_end").val(),
 				babyeyi_required: $("#app_babyeyi_required").is(":checked") ? 1 : 0

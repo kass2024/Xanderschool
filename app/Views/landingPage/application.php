@@ -388,7 +388,7 @@
 		gap: .85rem 1rem;
 	}
 	@media (max-width: 768px) {
-		.ss-form-row { grid-template-columns: 1fr; }
+		.ss-form-row { grid-template-columns: 1fr; gap: .65rem; }
 	}
 	.ss-section-title {
 		font-size: .95rem;
@@ -396,9 +396,114 @@
 		color: var(--app-navy);
 		margin: 1rem 0 .65rem;
 		padding-top: .5rem;
-		border-top: 1px dashed var(--app-line);
+		border-top: 1px solid var(--app-line);
 	}
 	.ss-section-title:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+	.ss-panel {
+		background: linear-gradient(180deg, #fff 0%, #fafbfc 100%);
+		border: 1px solid var(--app-line);
+		border-radius: 16px;
+		padding: 1rem 1.1rem 1.15rem;
+		margin-bottom: 1rem;
+		box-shadow: 0 6px 20px rgba(15, 23, 42, .05);
+	}
+	.ss-panel-head {
+		display: flex;
+		align-items: center;
+		gap: .55rem;
+		font-size: .98rem;
+		font-weight: 700;
+		color: var(--app-navy);
+		margin: 0 0 .9rem;
+		padding-bottom: .7rem;
+		border-bottom: 1px solid var(--app-line);
+	}
+	.ss-panel-head i {
+		color: var(--app-cyan);
+		font-size: 1.05rem;
+		width: 1.35rem;
+		text-align: center;
+		flex-shrink: 0;
+	}
+	.ss-panel .form-group:last-child { margin-bottom: 0; }
+	.ss-nationality-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: .5rem;
+	}
+	.ss-search-field {
+		position: relative;
+	}
+	.ss-search-field i {
+		position: absolute;
+		left: .85rem;
+		top: 50%;
+		transform: translateY(-50%);
+		color: #94a3b8;
+		pointer-events: none;
+		font-size: .85rem;
+	}
+	.ss-search-field input { padding-left: 2.35rem !important; }
+	.ss-app .registration-data .form-group { margin-bottom: .85rem; }
+	@media (max-width: 768px) {
+		.ss-app {
+			padding: calc(64px + .85rem) .65rem 2.5rem;
+		}
+		.ss-app .card {
+			padding: 1.15rem 1rem 1.35rem;
+			border-radius: 14px;
+		}
+		.ss-app .fs-title { font-size: 1.35rem; }
+		#msform .form-control,
+		#msform input[type="text"],
+		#msform input[type="email"],
+		#msform input[type="number"],
+		#msform input[type="tel"],
+		#msform input[type="date"],
+		#msform select,
+		#msform textarea {
+			font-size: 16px;
+			min-height: 48px;
+			padding: .72rem 1rem;
+		}
+		#progressbar { margin-bottom: 1.25rem; gap: .15rem; }
+		#progressbar li { font-size: .62rem; }
+		#progressbar li strong { font-size: .62rem; line-height: 1.2; }
+		#progressbar li:before {
+			width: 34px;
+			height: 34px;
+			line-height: 34px;
+			font-size: .72rem;
+			box-shadow: 0 0 0 3px #fff;
+		}
+		#progressbar li:after { top: 16px; height: 2px; }
+		.ss-app .fieldset-actions {
+			position: sticky;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			background: linear-gradient(180deg, rgba(255,255,255,.92) 0%, #fff 35%);
+			padding: .85rem 0 .35rem;
+			margin-top: .75rem;
+			border-top: 1px solid var(--app-line);
+			z-index: 20;
+			backdrop-filter: blur(6px);
+		}
+		#msform .action-button,
+		#msform .action-button-previous,
+		#msform #btn-pay {
+			flex: 1 1 auto;
+			min-width: 0;
+			margin: 0;
+			min-height: 48px;
+		}
+		.ss-panel { padding: .95rem .95rem 1rem; border-radius: 14px; }
+		.ss-app .form-check { padding: .75rem .85rem; }
+	}
+	@media (max-width: 420px) {
+		#progressbar li strong { display: none; }
+		#progressbar li:before { margin-bottom: 0; }
+	}
 	.ss-hint-box {
 		background: #f0f9ff;
 		border: 1px solid #bae6fd;
@@ -407,6 +512,30 @@
 		font-size: .82rem;
 		color: #0369a1;
 		margin-bottom: 1rem;
+	}
+	.ss-panel-loading {
+		position: relative;
+		min-height: 80px;
+	}
+	.ss-panel-loading::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: rgba(255, 255, 255, .78);
+		border-radius: inherit;
+		z-index: 2;
+	}
+	.ss-panel-loading::before {
+		content: 'Loading…';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		z-index: 3;
+		font-size: .85rem;
+		font-weight: 600;
+		color: var(--app-cyan-d);
+		white-space: nowrap;
 	}
 </style>
 
@@ -439,6 +568,8 @@
 								<form method="post" id="autoSave"
 									  action="<?= site_url('manipulateStudentSelfRegistration'); ?>"
 									  class="validates" enctype="multipart/form-data">
+									<input type="hidden" name="religion" value="Not specified">
+									<input type="hidden" id="registration_fee_mode" value="flat">
 									<!-- STEP 1: PERSONAL -->
 									<fieldset>
 										<div class="form-card ">
@@ -516,71 +647,145 @@
 														</div>
 
 														<div class="registration-data" style="display: none">
-															<div class="form-group">
-																<label for="facultyOptions" class="control-label mb-1">Faculty</label>
-																<select class="form-control" name="faculty" id="facultyOptions">
-																	<option disabled selected>-- Choose faculty --</option>
-																</select>
-															</div>
-															<div class="form-group">
-																<label for="departmentOptions" class="control-label mb-1">Department</label>
-																<select class="form-control" name="department" id="departmentOptions">
-																	<option disabled selected>-- Choose department --</option>
-																</select>
-															</div>
-															<div class="form-group has-success">
-																<label for="levelOptions" class="control-label mb-1">Level</label>
-																<select class="form-control" name="level" required id="levelOptions">
-																	<option disabled selected>-- Choose Level --</option>
-																</select>
-															</div>
-															<div class="form-group">
-																<label class="control-label mb-1">First name</label>
-																<input required name="firstName" type="text" class="form-control" placeholder="First name">
-															</div>
-															<div class="form-group">
-																<label class="control-label mb-1">Last name</label>
-																<input required name="lastName" type="text" class="form-control" placeholder="Last name">
-															</div>
-															<div class="ss-hint-box">
-																<strong>Reg No</strong> is generated automatically when the school admits the student (same as Excel mass upload).
-															</div>
-															<div class="ss-form-row">
+															<div class="ss-panel" id="classSchoolPanel">
+																<div class="ss-panel-head"><i class="fa fa-graduation-cap"></i> Class &amp; school</div>
 																<div class="form-group">
-																	<label class="control-label mb-1">Gender</label>
-																	<select class="form-control" name="gender" required>
-																		<option disabled selected value="">-- Choose Gender --</option>
-																		<option value="M">Male</option>
-																		<option value="F">Female</option>
+																	<label for="facultyOptions" class="control-label mb-1">Faculty</label>
+																	<select class="form-control" name="faculty" id="facultyOptions">
+																		<option disabled selected>-- Choose faculty --</option>
 																	</select>
 																</div>
 																<div class="form-group">
-																	<label class="control-label mb-1">Birth date</label>
-																	<input name="dateOfBirth" type="date" class="form-control" required>
+																	<label for="departmentOptions" class="control-label mb-1">Department</label>
+																	<select class="form-control" name="department" id="departmentOptions">
+																		<option disabled selected>-- Choose department --</option>
+																	</select>
 																</div>
-															</div>
-															<div class="ss-form-row">
 																<div class="form-group has-success">
-																	<label class="control-label mb-1">Studying mode</label>
-																	<select class="form-control" name="studingMode" required>
-																		<option disabled selected value="">-- Choose mode --</option>
-																		<option value="0">Boarding</option>
-																		<option value="1">Day</option>
+																	<label for="classOptions" class="control-label mb-1">Class</label>
+																	<select class="form-control" name="class_id" required id="classOptions">
+																		<option disabled selected value="">— Choose department first —</option>
 																	</select>
+																	<input type="hidden" name="level" id="levelHidden" value="">
+																</div>
+															</div>
+
+															<div class="ss-panel">
+																<div class="ss-panel-head"><i class="fa fa-user"></i> Student details</div>
+																<div class="ss-form-row">
+																	<div class="form-group">
+																		<label class="control-label mb-1">First name</label>
+																		<input required name="firstName" type="text" class="form-control" placeholder="First name" autocomplete="given-name">
+																	</div>
+																	<div class="form-group">
+																		<label class="control-label mb-1">Last name</label>
+																		<input required name="lastName" type="text" class="form-control" placeholder="Last name" autocomplete="family-name">
+																	</div>
+																</div>
+																<div class="ss-hint-box">
+																	<strong>Reg No</strong> is generated automatically when the school admits the student (same as Excel mass upload).
+																</div>
+																<div class="ss-form-row">
+																	<div class="form-group">
+																		<label class="control-label mb-1">Gender</label>
+																		<select class="form-control" name="gender" required>
+																			<option disabled selected value="">— Choose gender —</option>
+																			<option value="M">Male</option>
+																			<option value="F">Female</option>
+																		</select>
+																	</div>
+																	<div class="form-group">
+																		<label class="control-label mb-1">Birth date</label>
+																		<input name="dateOfBirth" type="date" class="form-control" required autocomplete="bday">
+																	</div>
+																</div>
+																<div class="ss-form-row">
+																	<div class="form-group has-success">
+																		<label class="control-label mb-1">Studying mode</label>
+																		<select class="form-control" name="studingMode" required>
+																			<option disabled selected value="">— Choose mode —</option>
+																			<option value="0">Boarding</option>
+																			<option value="1">Day</option>
+																		</select>
+																	</div>
+																	<div class="form-group has-success">
+																		<label class="control-label mb-1">Student phone</label>
+																		<input id="studentPhone" name="phoneNumber" placeholder="Parent phone if none" type="tel" inputmode="tel" required class="form-control" autocomplete="tel">
+																	</div>
 																</div>
 																<div class="form-group">
 																	<label class="control-label mb-1">Nationality</label>
-																	<input name="nationality" type="text" class="form-control" placeholder="e.g. Rwandan" required>
+																	<div class="ss-nationality-wrap">
+																		<div class="ss-search-field">
+																			<i class="fa fa-search"></i>
+																			<input type="text" id="nationalitySearch" class="form-control" placeholder="Search country…" autocomplete="off">
+																		</div>
+																		<select class="form-control" name="nationality" id="nationalitySelect" required>
+																			<option value="" disabled selected>— Choose country —</option>
+																			<?php
+																			helper('form_options');
+																			foreach (form_country_options() as $country):
+																			?>
+																				<option value="<?= esc($country) ?>"><?= esc($country) ?></option>
+																			<?php endforeach; ?>
+																		</select>
+																	</div>
 																</div>
 															</div>
-															<div class="ss-form-row">
-																<div class="form-group">
-																	<label class="control-label mb-1">Religion</label>
-																	<input name="religion" type="text" class="form-control" placeholder="e.g. Christian" required>
+
+															<div class="ss-panel">
+																<div class="ss-panel-head"><i class="fa fa-heartbeat"></i> Medical information</div>
+																<div class="ss-form-row">
+																	<div class="form-group">
+																		<label class="control-label mb-1">Medical status</label>
+																		<select class="form-control" name="medical_status" id="medicalStatus">
+																			<option value="Normal" selected>Normal</option>
+																			<option value="Asthma">Asthma</option>
+																			<option value="Diabetes">Diabetes</option>
+																			<option value="Epilepsy">Epilepsy</option>
+																			<option value="Allergies">Allergies</option>
+																			<option value="Other">Other condition</option>
+																		</select>
+																	</div>
+																	<div class="form-group" id="medicalDetailWrap" style="display:none;">
+																		<label class="control-label mb-1">Describe condition</label>
+																		<input type="text" class="form-control" name="medical_detail" id="medicalDetail" placeholder="Brief description">
+																	</div>
 																</div>
-																<div class="form-group has-success">
-																	<label class="control-label mb-1">Student phone</label>
-																	<input id="cc-name" name="phoneNumber" placeholder="Parent phone if none" type="text" required class="form-control">
+															</div>
+
+															<div class="ss-panel">
+																<div class="ss-panel-head"><i class="fa fa-map-marker"></i> Home location</div>
+																<div class="ss-form-row">
+																	<div class="form-group">
+																		<label class="control-label mb-1">Province</label>
+																		<select class="form-control address_select" data-target="district" name="province" required>
+																			<option value="" disabled selected>Select province</option>
+																			<?php foreach (($provinces ?? []) as $province): ?>
+																			<option value="<?= (int) $province['id']; ?>"><?= esc($province['title']); ?></option>
+																			<?php endforeach; ?>
+																		</select>
+																	</div>
+																	<div class="form-group">
+																		<label class="control-label mb-1">District</label>
+																		<select class="form-control address_select" data-target="sector" name="district" required>
+																			<option value="" disabled selected>Select district</option>
+																		</select>
+																	</div>
+																</div>
+																<div class="ss-form-row">
+																	<div class="form-group">
+																		<label class="control-label mb-1">Sector</label>
+																		<select class="form-control address_select" data-target="cell" name="sector" required>
+																			<option value="" disabled selected>Select sector</option>
+																		</select>
+																	</div>
+																	<div class="form-group">
+																		<label class="control-label mb-1">Cell</label>
+																		<select class="form-control" name="cell" id="cellSelect" required>
+																			<option value="" disabled selected>Select cell</option>
+																		</select>
+																	</div>
 																</div>
 															</div>
 														</div><!-- /.registration-data -->
@@ -588,7 +793,9 @@
 												</div>
 											</div>
 										</div>
+										<div class="fieldset-actions">
 										<input type="button" name="next" class="next action-button newApplicant" value="Next" style="display:none;"/>
+										</div>
 									</fieldset>
 
 									<!-- STEP 2: FAMILY + VISITORS (matches Excel template) -->
@@ -599,101 +806,115 @@
 												Same fields as the student Excel template — used for student record, parent visiting &amp; RFID cards.
 											</p>
 
-											<div class="ss-section-title">Father</div>
-											<div class="ss-form-row">
-												<div class="form-group">
-													<label class="control-label mb-1">Father names</label>
-													<input name="father" id="father" type="text" class="form-control" placeholder="Father full names">
-												</div>
-												<div class="form-group">
-													<label class="control-label mb-1">Father phone</label>
-													<input name="ft_phone" id="ft_phone" type="text" class="form-control" placeholder="0780000000">
-												</div>
-											</div>
-
-											<div class="ss-section-title">Mother</div>
-											<div class="ss-form-row">
-												<div class="form-group">
-													<label class="control-label mb-1">Mother names</label>
-													<input name="mother" id="mother" type="text" class="form-control" placeholder="Mother full names">
-												</div>
-												<div class="form-group">
-													<label class="control-label mb-1">Mother phone</label>
-													<input name="mt_phone" id="mt_phone" type="text" class="form-control" placeholder="0780000000">
-												</div>
-											</div>
-
-											<div class="ss-section-title">Guardian</div>
-											<div class="ss-form-row">
-												<div class="form-group">
-													<label class="control-label mb-1">Guardian names</label>
-													<input name="guardian" id="guardian" type="text" class="form-control" placeholder="Guardian full names">
-												</div>
-												<div class="form-group">
-													<label class="control-label mb-1">Guardian phone</label>
-													<input name="gd_phone" id="gd_phone" type="text" class="form-control" placeholder="0780000000">
-												</div>
-											</div>
-
-											<div class="ss-section-title">Visitor 1 <span class="badge-req">Required for visiting</span></div>
-											<div class="ss-visitor-grid">
-												<div class="ss-visitor-card">
+											<div class="ss-panel">
+												<div class="ss-panel-head"><i class="fa fa-male"></i> Father</div>
+												<div class="ss-form-row">
 													<div class="form-group">
-														<label class="control-label mb-1">Visitor 1 name</label>
-														<input name="visitor1Names" id="visitor1Names" type="text" class="form-control" placeholder="Same as father/mother if applicable">
+														<label class="control-label mb-1">Father names</label>
+														<input name="father" id="father" type="text" class="form-control" placeholder="Father full names">
 													</div>
 													<div class="form-group">
-														<label class="control-label mb-1">Visitor 1 phone</label>
-														<input name="visitor1Phone" id="visitor1Phone" type="text" class="form-control" placeholder="0780000000">
-													</div>
-													<div class="form-group">
-														<label class="control-label mb-1">Visitor 1 relationship</label>
-														<select class="form-control" name="visitor1Relationship" id="visitor1Relationship">
-															<option value="">-- Choose relationship --</option>
-															<option value="Father">Father</option>
-															<option value="Mother">Mother</option>
-															<option value="Guardian">Guardian</option>
-															<option value="Sibling">Sibling</option>
-															<option value="Relative">Relative</option>
-															<option value="Other">Other</option>
-														</select>
-													</div>
-												</div>
-												<div class="ss-visitor-card">
-													<div class="ss-section-title" style="border:0;padding:0;margin:0 0 .75rem;">Visitor 2</div>
-													<div class="form-group">
-														<label class="control-label mb-1">Visitor 2 name</label>
-														<input name="visitor2Names" id="visitor2Names" type="text" class="form-control" placeholder="Second visitor">
-													</div>
-													<div class="form-group">
-														<label class="control-label mb-1">Visitor 2 phone</label>
-														<input name="visitor2Phone" id="visitor2Phone" type="text" class="form-control" placeholder="0780000000">
-													</div>
-													<div class="form-group">
-														<label class="control-label mb-1">Visitor 2 relationship</label>
-														<select class="form-control" name="visitor2Relationship" id="visitor2Relationship">
-															<option value="">-- Choose relationship --</option>
-															<option value="Father">Father</option>
-															<option value="Mother">Mother</option>
-															<option value="Guardian">Guardian</option>
-															<option value="Sibling">Sibling</option>
-															<option value="Relative">Relative</option>
-															<option value="Other">Other</option>
-														</select>
+														<label class="control-label mb-1">Father phone</label>
+														<input name="ft_phone" id="ft_phone" type="tel" inputmode="tel" class="form-control" placeholder="0780000000">
 													</div>
 												</div>
 											</div>
 
-											<input type="hidden" name="parentNames" id="parentNamesHidden" value="">
-											<input type="hidden" name="parentPhone" id="parentPhoneHidden" value="">
-											<input type="hidden" name="relationship" id="relationshipHidden" value="1">
-											<div class="form-group">
-												<label class="control-label mb-1">Contact email (optional)</label>
-												<input name="email" type="email" class="form-control" placeholder="parent@email.com">
+											<div class="ss-panel">
+												<div class="ss-panel-head"><i class="fa fa-female"></i> Mother</div>
+												<div class="ss-form-row">
+													<div class="form-group">
+														<label class="control-label mb-1">Mother names</label>
+														<input name="mother" id="mother" type="text" class="form-control" placeholder="Mother full names">
+													</div>
+													<div class="form-group">
+														<label class="control-label mb-1">Mother phone</label>
+														<input name="mt_phone" id="mt_phone" type="tel" inputmode="tel" class="form-control" placeholder="0780000000">
+													</div>
+												</div>
+											</div>
+
+											<div class="ss-panel">
+												<div class="ss-panel-head"><i class="fa fa-users"></i> Guardian</div>
+												<div class="ss-form-row">
+													<div class="form-group">
+														<label class="control-label mb-1">Guardian names</label>
+														<input name="guardian" id="guardian" type="text" class="form-control" placeholder="Guardian full names">
+													</div>
+													<div class="form-group">
+														<label class="control-label mb-1">Guardian phone</label>
+														<input name="gd_phone" id="gd_phone" type="tel" inputmode="tel" class="form-control" placeholder="0780000000">
+													</div>
+												</div>
+											</div>
+
+											<div class="ss-panel">
+												<div class="ss-panel-head"><i class="fa fa-id-badge"></i> Visitors <span class="badge-req">Required for visiting</span></div>
+												<div class="ss-visitor-grid">
+													<div class="ss-visitor-card">
+														<h6>Visitor 1</h6>
+														<div class="form-group">
+															<label class="control-label mb-1">Visitor 1 name</label>
+															<input name="visitor1Names" id="visitor1Names" type="text" class="form-control" placeholder="Same as father/mother if applicable">
+														</div>
+														<div class="form-group">
+															<label class="control-label mb-1">Visitor 1 phone</label>
+															<input name="visitor1Phone" id="visitor1Phone" type="tel" inputmode="tel" class="form-control" placeholder="0780000000">
+														</div>
+														<div class="form-group">
+															<label class="control-label mb-1">Visitor 1 relationship</label>
+															<select class="form-control" name="visitor1Relationship" id="visitor1Relationship">
+																<option value="">— Choose relationship —</option>
+																<option value="Father">Father</option>
+																<option value="Mother">Mother</option>
+																<option value="Guardian">Guardian</option>
+																<option value="Sibling">Sibling</option>
+																<option value="Relative">Relative</option>
+																<option value="Other">Other</option>
+															</select>
+														</div>
+													</div>
+													<div class="ss-visitor-card">
+														<h6>Visitor 2</h6>
+														<div class="form-group">
+															<label class="control-label mb-1">Visitor 2 name</label>
+															<input name="visitor2Names" id="visitor2Names" type="text" class="form-control" placeholder="Second visitor">
+														</div>
+														<div class="form-group">
+															<label class="control-label mb-1">Visitor 2 phone</label>
+															<input name="visitor2Phone" id="visitor2Phone" type="tel" inputmode="tel" class="form-control" placeholder="0780000000">
+														</div>
+														<div class="form-group">
+															<label class="control-label mb-1">Visitor 2 relationship</label>
+															<select class="form-control" name="visitor2Relationship" id="visitor2Relationship">
+																<option value="">— Choose relationship —</option>
+																<option value="Father">Father</option>
+																<option value="Mother">Mother</option>
+																<option value="Guardian">Guardian</option>
+																<option value="Sibling">Sibling</option>
+																<option value="Relative">Relative</option>
+																<option value="Other">Other</option>
+															</select>
+														</div>
+													</div>
+												</div>
+											</div>
+
+											<div class="ss-panel">
+												<div class="ss-panel-head"><i class="fa fa-envelope"></i> Contact</div>
+												<input type="hidden" name="parentNames" id="parentNamesHidden" value="">
+												<input type="hidden" name="parentPhone" id="parentPhoneHidden" value="">
+												<input type="hidden" name="relationship" id="relationshipHidden" value="1">
+												<div class="form-group" style="margin-bottom:0;">
+													<label class="control-label mb-1">Contact email (optional)</label>
+													<input name="email" type="email" class="form-control" placeholder="parent@email.com" autocomplete="email">
+												</div>
 											</div>
 										</div>
+										<div class="fieldset-actions">
 										<input type="button" name="next" class="next action-button" value="Next"/>
 										<input type="button" name="previous" class="previous action-button-previous" value="Previous"/>
+										</div>
 									</fieldset>
 
 									<!-- STEP 3: DOCUMENTS (dynamic by faculty + level) -->
@@ -715,8 +936,10 @@
 												<input type="file" name="documents[]" id="legacyDocuments" class="form-control" multiple accept=".pdf,.jpg,.jpeg,.png">
 											</div>
 										</div>
+										<div class="fieldset-actions">
 										<input type="button" name="next" class="next action-button" value="Next"/>
 										<input type="button" name="previous" class="previous action-button-previous" value="Previous"/>
+										</div>
 									</fieldset>
 
 									<!-- STEP 4: PAYMENT -->
@@ -724,9 +947,12 @@
 										<div class="form-card">
 											<div class="reg-fee-box" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
 												<h5 class="fs-title" style="font-size:16px;margin:0 0 10px;">Registration fee summary</h5>
+												<div id="paymentClassBanner" class="ss-hint-box" style="margin-bottom:12px;display:none;">
+													<strong>Selected class:</strong> <span id="payment_class_label">—</span>
+												</div>
 												<table style="width:100%;font-size:14px;margin:0;">
 													<tr>
-														<td style="padding:4px 0;">Registration fee</td>
+														<td style="padding:4px 0;">Registration fee <small class="text-muted" id="payment_fee_note"></small></td>
 														<td style="padding:4px 0;text-align:right;"><strong id="registration_amount">—</strong></td>
 													</tr>
 													<tr class="fee-row-gateway" id="rowServiceCharges">
@@ -805,7 +1031,9 @@
 												</div>
 											</div>
 										</div>
+										<div class="fieldset-actions">
 										<input type="button" name="previous" class="previous action-button-previous finalPrev" value="Previous"/>
+										</div>
 									</fieldset>
 								</form>
 							<?php else: ?>
@@ -862,6 +1090,31 @@
 		let checkInterval;
 
 		$(document).ready(function () {
+			(function initNationalitySearch() {
+				var $search = $('#nationalitySearch');
+				var $select = $('#nationalitySelect');
+				if (!$search.length || !$select.length) return;
+				var $opts = $select.find('option').not('[value=""]');
+				$search.on('input', function () {
+					var q = $(this).val().toLowerCase().trim();
+					var first = null;
+					$opts.each(function () {
+						var match = q === '' || $(this).text().toLowerCase().indexOf(q) >= 0;
+						$(this).prop('hidden', !match);
+						if (match && first === null) first = $(this).val();
+					});
+					if (q !== '' && first) {
+						$select.val(first);
+					}
+				});
+				$select.on('change', function () {
+					var txt = $select.find('option:selected').text();
+					if (txt && txt.indexOf('—') !== 0) {
+						$search.val(txt);
+					}
+				});
+			})();
+
 			$("[name='phoneNumber']").change(function () {
 				$("[name='momoPhoneNumber']").val($(this).val());
 				$("[name='proofPhoneNumber']").val($(this).val());
@@ -877,8 +1130,8 @@
 				var charges = parseInt($("#fee_raw_charges").val(), 10) || 0;
 				var platform = parseInt($("#fee_raw_platform").val(), 10) || 0;
 				var platformOn = parseInt($("#fee_platform_enabled").val(), 10) === 1 && platform > 0;
+				$("#registration_amount").text(fee > 0 ? formatRwf(fee) : '—');
 				if (method === 'proof') {
-					// Proof / bank slip: school registration fee only (no gateway charges)
 					$(".fee-row-gateway").hide();
 					$("#registration_due").text(fee > 0 ? formatRwf(fee) : '—');
 				} else {
@@ -1042,107 +1295,224 @@
 				});
 			});
 
-			// --- Program -> Schools
+			function showRegistrationForm() {
+				$(".registration-data").stop(true, true).show();
+				$(".registration-error").hide();
+				$(".action-button.newApplicant").show();
+			}
+
+			function setClassPanelLoading(loading) {
+				var $panel = $("#classSchoolPanel");
+				if (loading) {
+					$panel.addClass("ss-panel-loading");
+				} else {
+					$panel.removeClass("ss-panel-loading");
+				}
+				$("#facultyOptions, #departmentOptions, #classOptions").prop("disabled", !!loading);
+			}
+
+			function resetClassSchoolFields(message) {
+				var facultyMsg = message || "-- Choose faculty --";
+				$("#facultyOptions").html("<option disabled selected>" + facultyMsg + "</option>");
+				$("#departmentOptions").html('<option disabled selected>-- Choose department --</option>');
+				$("#classOptions").html('<option disabled selected value="">— Choose department first —</option>');
+				$("#levelHidden").val("");
+			}
+
+			function applyFacultyResponse(data) {
+				setClassPanelLoading(false);
+				if (data && data.success) {
+					if (data.has_requirement_document && data.requirement_document) {
+						$(".requirement-doc").show();
+						$(".requirement-doc a").prop("href", "<?= base_url('assets/documents/'); ?>" + data.requirement_document);
+					} else {
+						$(".requirement-doc").hide();
+					}
+					$("[name='applicationSettings']").val(data.settings_id);
+					$("#fee_raw_registration").val(parseInt(data.settings_fees_raw, 10) || 0);
+					$("#fee_raw_charges").val(parseInt(data.settings_charges_raw, 10) || 0);
+					$("#fee_raw_platform").val(parseInt(data.settings_platform_raw, 10) || 0);
+					$("#fee_platform_enabled").val(parseInt(data.settings_platform_enabled, 10) === 1 ? "1" : "0");
+					$("#registration_amount").text(data.settings_fees || "—");
+					var bypass = parseInt(data.payment_bypass, 10) === 1;
+					$("#payment_bypass_flag").val(bypass ? "1" : "0");
+					if (bypass) {
+						$("#payment_bypass_note").show();
+						$("#payment_momo_ready_note").hide();
+					} else {
+						$("#payment_bypass_note").hide();
+						$("#payment_momo_ready_note").show();
+					}
+					syncPaymentMethodUI();
+					$("#dynamicDocsContainer").html("<p class=\"text-muted\">Choose faculty and level to load required documents.</p>");
+					$("#docsHintText").text("Select a faculty and level — required uploads will appear here.");
+					var options = "<option disabled selected>-- Choose faculty --</option>";
+					$.each(data.faculties, function (i, obj) {
+						options += "<option value='" + obj.id + "'>" + obj.name + "</option>";
+					});
+					$("#facultyOptions").html(options);
+					showRegistrationForm();
+					$("#registration_fee_mode").val(data.fee_mode || "flat");
+				} else if (data && data.error) {
+					$(".requirement-doc").hide();
+					$(".action-button.newApplicant").hide();
+					$(".registration-data").hide();
+					$(".registration-error").show();
+					$(".registration-error p").text(data.error);
+				}
+			}
+
+			function loadRegistrationForSchool(schoolId, program) {
+				schoolId = parseInt(schoolId, 10) || 0;
+				program = parseInt(program, 10) || 0;
+				if (!schoolId || !program) return;
+				setClassPanelLoading(true);
+				showRegistrationForm();
+				$.getJSON("<?= site_url('getFacultyBySchool'); ?>/" + schoolId + "/" + program, function (data) {
+					applyFacultyResponse(data);
+				}).fail(function (xhr) {
+					setClassPanelLoading(false);
+					console.error("Faculties load failed:", xhr.status, xhr.responseText);
+					toastada.error("Could not load classes for this school. Please try again.");
+				});
+			}
+
+			// --- Program -> Schools (show form immediately; load classes in parallel)
 			$("#schoolProgram").on("change", function () {
 				let program = $(this).val();
 				let lockedId = parseInt($("#locked_school_id").val(), 10) || 0;
-				let options = '<option disabled selected>-- Choose school --</option>';
-				if (!lockedId) {
-					$("#schoolOptions").html(options);
+				resetClassSchoolFields();
+				$(".registration-error").hide();
+
+				if (!program) {
+					$(".registration-data").hide();
+					$(".action-button.newApplicant").hide();
+					return;
 				}
-				var schoolsUrl = "<?= site_url('getSchoolsHavingSelectedProgram'); ?>/" + program;
+
+				showRegistrationForm();
+
 				if (lockedId > 0) {
-					schoolsUrl += "?school=" + lockedId;
+					loadRegistrationForSchool(lockedId, program);
+					return;
 				}
-				$.getJSON(schoolsUrl, function (data) {
+
+				let options = "<option disabled selected>-- Choose school --</option>";
+				$("#schoolOptions").html(options);
+				resetClassSchoolFields("— Select school first —");
+				setClassPanelLoading(true);
+
+				$.getJSON("<?= site_url('getSchoolsHavingSelectedProgram'); ?>/" + program, function (data) {
+					setClassPanelLoading(false);
 					if (Array.isArray(data)) {
-						if (lockedId > 0) {
-							var match = null;
-							$.each(data, function (i, obj) {
-								if (parseInt(obj.id, 10) === lockedId) {
-									match = obj;
-									return false;
-								}
-							});
-							if (!match) {
-								toastada.error("This school has no classes for the selected program");
-								$(".registration-data").hide();
-								return;
-							}
-							$("#schoolOptions").html("<option value='" + match.id + "' selected>" + match.name + "</option>");
-							$("#schoolOptions").trigger("change");
-						} else {
-							$.each(data, function (i, obj) {
-								options += "<option value='" + obj.id + "'>" + obj.name + "</option>";
-							});
-							$("#schoolOptions").html(options);
-						}
+						$.each(data, function (i, obj) {
+							options += "<option value='" + obj.id + "'>" + obj.name + "</option>";
+						});
+						$("#schoolOptions").html(options);
 					} else if (data && data.error) {
 						toastada.error(data.error);
 					}
-				}).fail(function(xhr){
-					console.error('Schools load failed:', xhr.status, xhr.responseText);
-					if (lockedId > 0) {
-						toastada.error("This school is not available for the selected program");
+				}).fail(function (xhr) {
+					setClassPanelLoading(false);
+					console.error("Schools load failed:", xhr.status, xhr.responseText);
+					toastada.error("Could not load schools for this program.");
+				});
+			});
+
+			$("[name='studingMode']").on("change", function () {
+				refreshRegistrationFee();
+			});
+
+			$("#medicalStatus").on("change", function () {
+				var v = $(this).val();
+				if (v && v !== 'Normal') {
+					$("#medicalDetailWrap").slideDown(200);
+				} else {
+					$("#medicalDetailWrap").hide();
+					$("#medicalDetail").val('');
+				}
+			});
+
+			$(".address_select").on("change", function () {
+				var target = $(this).data("target");
+				var val = $(this).val();
+				if (!target || !val) return;
+				$.get("<?= site_url('get_address'); ?>/" + target, { key: $(this).attr('name'), val: val }, function (html) {
+					$("[name='" + target + "']").html(html);
+					if (target === 'district') {
+						$("[name='sector']").html('<option value="" disabled selected>Select sector</option>');
+						$("#cellSelect").html('<option value="" disabled selected>Select cell</option>');
+					}
+					if (target === 'sector') {
+						$("#cellSelect").html('<option value="" disabled selected>Select cell</option>');
 					}
 				});
 			});
 
-			// --- School -> Faculties (+ settings + requirement doc), filtered by REB/RTB program
+			function getSchoolIdForReg() {
+				var locked = parseInt($("#locked_school_id").val(), 10) || 0;
+				return locked > 0 ? locked : ($("#schoolOptions").val() || 0);
+			}
+
+			function applyClassFee(fee) {
+				fee = parseInt(fee, 10) || 0;
+				$("#fee_raw_registration").val(fee);
+				$("#registration_amount").text(fee > 0 ? formatRwf(fee) : '—');
+				syncPaymentMethodUI();
+			}
+
+			function refreshPaymentFeeFromClass() {
+				var $opt = $("#classOptions").find(":selected");
+				var fee = parseInt($opt.data("fee"), 10);
+				if (isNaN(fee) || fee < 0) {
+					fee = parseInt($("#fee_raw_registration").val(), 10) || 0;
+				}
+				var classText = ($opt.text() || "").trim();
+				if (classText && $opt.val()) {
+					var classLabel = classText.split("—")[0].trim();
+					$("#payment_class_label").text(classLabel);
+					$("#paymentClassBanner").show();
+					$("#payment_fee_note").text("(for " + classLabel + ")");
+				} else {
+					$("#paymentClassBanner").hide();
+					$("#payment_fee_note").text("");
+				}
+				applyClassFee(fee);
+			}
+
+			function refreshRegistrationFee() {
+				var feeMode = $("#registration_fee_mode").val() || "flat";
+				if (feeMode === "department") {
+					var deptId = $("#departmentOptions").val();
+					var studyMode = $("[name='studingMode']").val();
+					var schoolId = getSchoolIdForReg();
+					if (!deptId || studyMode === "" || studyMode === null || !schoolId) {
+						return;
+					}
+					$.getJSON("<?= site_url('getRegistrationFeeByDepartment'); ?>/" + schoolId + "/" + deptId + "/" + studyMode, function (data) {
+						if (data && data.success) {
+							applyClassFee(data.fee);
+							if (data.description) {
+								$("#payment_class_label").text(data.description);
+								$("#paymentClassBanner").show();
+								$("#payment_fee_note").text("(for " + data.description + ")");
+							}
+						}
+					});
+					return;
+				}
+				refreshPaymentFeeFromClass();
+			}
+
 			$("#schoolOptions").on("change", function () {
 				let id = $(this).val();
 				let program = $("#schoolProgram").val();
-				let options = '<option disabled selected>-- Choose faculty --</option>';
-				$("#facultyOptions").html(options);
-				$("#departmentOptions").html('<option disabled selected>-- Choose department --</option>');
-				$("#levelOptions").html('<option disabled selected>-- Choose Level --</option>');
 				if (!program) {
 					toastada.error("Please choose school program first");
 					return;
 				}
-				$.getJSON("<?= site_url('getFacultyBySchool'); ?>/" + id + "/" + program, function (data) {
-					if (data && data.success) {
-						if (data.has_requirement_document && data.requirement_document) {
-						$(".requirement-doc").slideDown(300);
-						$(".requirement-doc a").prop('href', '<?= base_url("assets/documents/"); ?>' + data.requirement_document);
-						} else {
-							$(".requirement-doc").hide();
-						}
-						$("[name='applicationSettings']").val(data.settings_id);
-						$("#fee_raw_registration").val(parseInt(data.settings_fees_raw, 10) || 0);
-						$("#fee_raw_charges").val(parseInt(data.settings_charges_raw, 10) || 0);
-						$("#fee_raw_platform").val(parseInt(data.settings_platform_raw, 10) || 0);
-						$("#fee_platform_enabled").val(parseInt(data.settings_platform_enabled, 10) === 1 ? '1' : '0');
-						$("#registration_amount").text(data.settings_fees || '—');
-						var bypass = parseInt(data.payment_bypass, 10) === 1;
-						$("#payment_bypass_flag").val(bypass ? '1' : '0');
-						if (bypass) {
-							$("#payment_bypass_note").show();
-							$("#payment_momo_ready_note").hide();
-						} else {
-							$("#payment_bypass_note").hide();
-							$("#payment_momo_ready_note").show();
-						}
-						syncPaymentMethodUI();
-						$("#dynamicDocsContainer").html('<p class="text-muted">Choose faculty and level to load required documents.</p>');
-						$("#docsHintText").text('Select a faculty and level — required uploads will appear here.');
-						$.each(data.faculties, function (i, obj) {
-							options += "<option value='" + obj.id + "'>" + obj.name + "</option>";
-						});
-						$("#facultyOptions").html(options);
-						$(".action-button.newApplicant").show();
-						$(".registration-data").slideDown(300);
-						$(".registration-error").hide();
-					} else if (data && data.error) {
-						$(".requirement-doc").hide();
-						$(".action-button.newApplicant").hide();
-						$(".registration-data").hide();
-						$(".registration-error").slideDown(300);
-						$(".registration-error p").text(data.error);
-					}
-				}).fail(function(xhr){
-					console.error('Faculties load failed:', xhr.status, xhr.responseText);
-				});
+				resetClassSchoolFields();
+				loadRegistrationForSchool(id, program);
 			});
 
 			function bindDocPreview(inputId) {
@@ -1193,10 +1563,10 @@
 
 			function loadRequiredDocs() {
 				var facultyId = $("#facultyOptions").val();
-				var levelId = $("#levelOptions").val();
+				var levelId = $("#levelHidden").val();
 				var schoolId = $("#schoolOptions").val();
 				if (!facultyId || !levelId) {
-					$("#dynamicDocsContainer").html('<p class="text-muted" id="docsEmptyMsg">Choose school, faculty and level on the Personal step to load the correct document list.</p>');
+					$("#dynamicDocsContainer").html('<p class="text-muted" id="docsEmptyMsg">Choose school, faculty and class on the Personal step to load the correct document list.</p>');
 					return;
 				}
 				$("#dynamicDocsContainer").html('<p class="text-muted">Loading required documents…</p>');
@@ -1217,8 +1587,9 @@
 				let school_id = $("#schoolOptions").val();
 				let options = '<option disabled selected>-- Choose department --</option>';
 				$("#departmentOptions").html(options);
-				$("#levelOptions").html('<option disabled selected>-- Choose Level --</option>');
-				$("#dynamicDocsContainer").html('<p class="text-muted">Choose a level to load required documents.</p>');
+				$("#classOptions").html('<option disabled selected value="">— Choose department first —</option>');
+				$("#levelHidden").val('');
+				$("#dynamicDocsContainer").html('<p class="text-muted">Choose a class to load required documents.</p>');
 				$.getJSON("<?= site_url('getDepartmentBySchool'); ?>/" + id + "/" + school_id, function (data) {
 					if (Array.isArray(data)) {
 						$.each(data, function (i, obj) {
@@ -1231,27 +1602,36 @@
 				});
 			});
 
-			// --- Department -> Levels
+			// --- Department -> Classes (school-specific)
 			$("#departmentOptions").on("change", function () {
-				let id = $("#facultyOptions").val();
-				let programId = $("#schoolProgram").val();
-				let options = '<option disabled selected>-- Choose level --</option>';
-				$("#levelOptions").html(options);
-				$("#dynamicDocsContainer").html('<p class="text-muted">Choose a level to load required documents.</p>');
-				$.getJSON("<?= site_url('getLevelByFaculty'); ?>/" + id + "/" + programId, function (data) {
-					if (Array.isArray(data)) {
-						$.each(data, function (i, obj) {
-							options += "<option value='" + obj.id + "'>" + obj.name + "</option>";
+				let deptId = $(this).val();
+				let school_id = $("#schoolOptions").val();
+				let options = '<option disabled selected value="">— Select class —</option>';
+				$("#classOptions").html(options);
+				$("#levelHidden").val('');
+				$("#dynamicDocsContainer").html('<p class="text-muted">Choose a class to load required documents.</p>');
+				if (!deptId || !school_id) return;
+				$.getJSON("<?= site_url('getClassesByDepartment'); ?>/" + deptId + "/" + school_id, function (data) {
+					if (data && data.success && data.classes) {
+						$.each(data.classes, function (i, obj) {
+							options += "<option value='" + obj.id + "' data-level='" + obj.level + "' data-fee='" + obj.fee + "'>" + obj.label + "</option>";
 						});
-						$("#levelOptions").html(options);
+						$("#classOptions").html(options);
+					} else if (data && data.error) {
+						toastada.error(data.error);
 					}
 				}).fail(function(xhr){
-					console.error('Levels load failed:', xhr.status, xhr.responseText);
+					console.error('Classes load failed:', xhr.status, xhr.responseText);
 				});
+				refreshRegistrationFee();
 			});
 
-			$("#levelOptions").on("change", function () {
+			$("#classOptions").on("change", function () {
+				var $opt = $(this).find(':selected');
+				var levelId = $opt.data('level') || '';
+				$("#levelHidden").val(levelId);
 				loadRequiredDocs();
+				refreshRegistrationFee();
 			});
 
 			$('#confirmBox').click(function () {
@@ -1331,11 +1711,11 @@
 					var gender = $('select[name=gender]').val();
 					var phone = $('input[name=phoneNumber]').val();
 					var parentPhone = $('input[name=parentPhoneNumber]').val();
-					var level = $('select[name=level]').val();
+					var level = $('#levelHidden').val();
 					const data = { names, gender, phone, parentPhone, level };
 					localStorage.setItem('data', JSON.stringify(data));
-					if (!$("#levelOptions").val()) {
-						toastada.error("Please select a level first");
+					if (!$("#classOptions").val()) {
+						toastada.error("Please select a class first");
 						return false;
 					}
 					loadRequiredDocs();
@@ -1356,9 +1736,10 @@
 						return false;
 					}
 					if (!$("#dynamicDocsContainer .app-doc-input").length) {
-						toastada.error("Please select faculty and level so required documents can load");
+						toastada.error("Please select faculty and class so required documents can load");
 						return false;
 					}
+					refreshRegistrationFee();
 				}
 				$("#progressbar li").eq($("fieldset").index(next_fs)).addClass("active");
 				next_fs.show();
