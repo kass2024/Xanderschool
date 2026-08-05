@@ -1,8 +1,10 @@
 -- Add Stream combination (A' Level) and Stream one/two/three class levels for class creation.
 SET NAMES utf8mb4;
 
-INSERT IGNORE INTO `departments` (`id`, `title`, `code`, `faculty_id`, `created_at`, `created_by`, `updated_at`, `updated_by`) VALUES
-(113, 'Stream', 'STR', 1, NOW(), 1, NOW(), 0);
+INSERT INTO `departments` (`title`, `code`, `faculty_id`, `created_at`, `created_by`, `updated_at`, `updated_by`)
+SELECT 'Stream', 'STR', 1, NOW(), 1, NOW(), 0
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM departments WHERE title = 'Stream');
 
 INSERT IGNORE INTO `levels` (`id`, `title`, `type`, `faculty_id`, `status`) VALUES
 (34, 'Stream one', 2, 1, 1),
