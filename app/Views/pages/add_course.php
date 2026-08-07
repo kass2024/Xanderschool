@@ -41,13 +41,14 @@ $renderCourseRows = static function (array $rows): string {
 			. ' data-category-id="' . $catId . '"'
 			. ' data-category="' . $catEsc . '"'
 			. ' data-credit="' . htmlspecialchars($credit, ENT_QUOTES, 'UTF-8') . '"'
+			. ' data-marks="' . htmlspecialchars($marks, ENT_QUOTES, 'UTF-8') . '"'
 			. ' data-program-type="' . $prog . '">'
 			. '<td class="course-inline" data-field="title" title="Double-click to edit">' . $titleEsc . '</td>'
 			. '<td class="course-inline" data-field="code" title="Double-click to edit">' . $codeEsc . '</td>'
 			. '<td class="course-inline" data-field="category" title="Double-click to edit">' . $catEsc . '</td>'
 			. '<td><span class="course-source-badge ' . $sourceClass . '">' . $sourceLabel . '</span></td>'
 			. '<td class="course-inline" data-field="credit" title="Double-click to edit">' . htmlspecialchars($credit, ENT_QUOTES, 'UTF-8') . '</td>'
-			. '<td class="course-marks">' . htmlspecialchars($marks, ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td class="course-inline" data-field="marks" title="Double-click to edit">' . htmlspecialchars($marks, ENT_QUOTES, 'UTF-8') . '</td>'
 			. '<td>'
 			. "<label class='typcn typcn-document-add text-primary link' data-id='" . $id . "' data-title='" . $titleEsc . "' data-toggle='modal' data-target='#assignModal'>" . lang('app.assign') . "</label>&nbsp;&nbsp;"
 			. "<label class='typcn typcn-delete text-danger link' data-title='" . $titleEsc . "' data-toggle='delete' data-target='" . $id . "' data-href='delete_course/" . $id . "'>" . lang('app.del') . "</label>"
@@ -440,7 +441,7 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 		<div class="course-panel-meta">
 			<strong><?= esc($groupDef['title']); ?></strong>
 			— <?= count($rows); ?> course(s) · <?= $manualCount; ?> manual · <?= $aiCount; ?> AI
-			<span class="inline-hint">Double-click Title, Code, Category or Credits to edit inline. Marks = credit × 10.</span>
+			<span class="inline-hint">Double-click Title, Code, Category, Credits or Marks to edit inline. Editing Credits resets Marks to credit × 10.</span>
 		</div>
 		<div class="course-group-body">
 			<table class="table table-hover table-striped table-bordered course-list-table" id="<?= esc($groupDef['table_id']); ?>" style="width:100%">
@@ -481,7 +482,10 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 			if (!id) return;
 			var credit = parseFloat($tr.attr('data-credit')) || 0;
 			if (credit < 0) credit = 0;
-			var marks = Math.round(credit * 10);
+			var marks = parseInt($tr.attr('data-marks'), 10);
+			if (isNaN(marks) || marks < 0) {
+				marks = Math.round(credit * 10);
+			}
 			inlineSaving = true;
 			$.ajax({
 				url: '<?= base_url('manipulate_course'); ?>',
@@ -503,7 +507,8 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 					if (done) done(false);
 					return;
 				}
-				$tr.find('.course-marks').text(String(marks));
+				$tr.attr('data-marks', String(marks));
+				$tr.find('td[data-field="marks"]').text(String(marks));
 				$tr.find('[data-toggle="modal"][data-target="#assignModal"]').attr('data-title', $tr.attr('data-title') || '');
 				$tr.find('[data-toggle="delete"]').attr('data-title', $tr.attr('data-title') || '');
 				if (window.toastada) toastada.success((res && res.success) ? res.success : 'Saved');
@@ -526,7 +531,8 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 				code: $tr.attr('data-code'),
 				categoryId: $tr.attr('data-category-id'),
 				category: $tr.attr('data-category'),
-				credit: $tr.attr('data-credit')
+				credit: $tr.attr('data-credit'),
+				marks: $tr.attr('data-marks')
 			};
 			if (field === 'title') {
 				$tr.attr('data-title', newVal);
@@ -541,7 +547,15 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 				newVal = String(c);
 				displayText = newVal;
 				$tr.attr('data-credit', newVal);
-				$tr.find('.course-marks').text(String(Math.round(c * 10)));
+				var autoMarks = String(Math.round(c * 10));
+				$tr.attr('data-marks', autoMarks);
+				$tr.find('td[data-field="marks"]').text(autoMarks);
+			} else if (field === 'marks') {
+				var m = parseInt(newVal, 10);
+				if (isNaN(m) || m < 0) m = 0;
+				newVal = String(m);
+				displayText = newVal;
+				$tr.attr('data-marks', newVal);
 			}
 			$td.removeClass('is-editing').text(displayText);
 			saveCourseRow($tr, function (ok) {
@@ -551,12 +565,17 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 					$tr.attr('data-category-id', prev.categoryId);
 					$tr.attr('data-category', prev.category);
 					$tr.attr('data-credit', prev.credit);
+					$tr.attr('data-marks', prev.marks);
 					if (field === 'title') $td.text(prev.title || '');
 					else if (field === 'code') $td.text(prev.code || '');
 					else if (field === 'category') $td.text(prev.category || '');
 					else if (field === 'credit') {
 						$td.text(prev.credit || '0');
-						$tr.find('.course-marks').text(String(Math.round((parseFloat(prev.credit) || 0) * 10)));
+						$tr.attr('data-marks', prev.marks || '0');
+						$tr.find('td[data-field="marks"]').text(prev.marks || '0');
+					} else if (field === 'marks') {
+						$tr.attr('data-marks', prev.marks || '0');
+						$td.text(prev.marks || '0');
 					}
 				}
 			});
@@ -607,6 +626,9 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 			if (field === 'credit') {
 				$inp.attr({ type: 'number', step: '0.1', min: '0' });
 				$inp.val($tr.attr('data-credit') || '0');
+			} else if (field === 'marks') {
+				$inp.attr({ type: 'number', step: '1', min: '0' });
+				$inp.val($tr.attr('data-marks') || '0');
 			} else if (field === 'code') {
 				$inp.attr({ type: 'text' }).val($tr.attr('data-code') || '');
 			} else {
@@ -637,7 +659,8 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 				} else if (e.key === 'Escape') {
 					committed = true;
 					var restore = field === 'credit' ? ($tr.attr('data-credit') || '0')
-						: (field === 'code' ? ($tr.attr('data-code') || '') : ($tr.attr('data-title') || ''));
+						: (field === 'marks' ? ($tr.attr('data-marks') || '0')
+						: (field === 'code' ? ($tr.attr('data-code') || '') : ($tr.attr('data-title') || '')));
 					$td.removeClass('is-editing').text(restore);
 				}
 			});

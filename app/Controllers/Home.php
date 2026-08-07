@@ -3559,6 +3559,7 @@ public function scanCard()
 	}
 public function attendanceCard()
 {
+    helper('qonics');
     return view('attendance_card');
 }
 	public function manipulate_intouch($school_id)
@@ -3671,7 +3672,6 @@ public function attendanceCard()
 		if ($hasCreateSource) {
 			$selectCols .= ',courses.create_source';
 		}
-		$this->syncCourseMarksFromCredits((int) $school_id);
 		$data['courses'] = $courseModel->select($selectCols)
 				->join("course_category cs", "cs.id=courses.category")
 				->where("courses.school_id", $school_id)
@@ -5745,13 +5745,26 @@ public function attendanceCard()
 	public function manipulate_course_category($id = null)
 	{
 		$this->_preset();
-		$title = $this->request->getPost("title");
+		$title = trim((string) $this->request->getPost("title"));
+		$id = $this->request->getPost("fId");
 		$categoryMdl = new CourseCategoryModel();
-		$data = array("title" => $title, "school_id" => $this->session->get("soma_school_id"));
+		$school_id = $this->session->get("soma_school_id");
+		if ($id) {
+			$existing = $categoryMdl->where("id", $id)->where("school_id", $school_id)->get(1)->getRow();
+			if ($existing === null) {
+				return $this->response->setJSON(array("error" => lang("app.errorOccurred")));
+			}
+			$data = array("id" => $id, "title" => $title);
+		} else {
+			$data = array("title" => $title, "school_id" => $school_id);
+		}
 		try {
 			$categoryMdl->save($data);
 			return $this->response->setJSON(array("success" => lang("app.courseCategorySaved")));
 		} catch (\Exception $e) {
+			if ($e->getCode() == 1062) {
+				return $this->response->setJSON(array("error" => 'This category title already exists.'));
+			}
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}
 	}
@@ -6086,8 +6099,12 @@ public function attendanceCard()
 		if ($credit < 0) {
 			$credit = 0.0;
 		}
-		// Always Marks = Credit × 10 (credit 0 => marks 0)
-		$marks = (int) round($credit * 10);
+		$marksRaw = $this->request->getPost('marks');
+		if ($marksRaw !== null && $marksRaw !== '' && is_numeric($marksRaw)) {
+			$marks = max(0, (int) round((float) $marksRaw));
+		} else {
+			$marks = (int) round($credit * 10);
+		}
 		$programType = strtolower(trim((string) $this->request->getPost('program_type')));
 		if ($programType !== 'reb') {
 			$programType = 'tvet';
