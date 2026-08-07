@@ -159,10 +159,10 @@ class StudentVisitorModel extends Model
 		$db = \Config\Database::connect();
 		$placeholders = implode(',', array_fill(0, count($matchCards), '?'));
 		$params = array_merge([(int) $schoolId], $matchCards);
-		$sql = "SELECT sv.id, sv.names, sv.student_id, sv.card, sv.relationship, sv.status,
+		$sql = "SELECT sv.id, sv.names, sv.student_id, sv.card, sv.relationship, sv.status, sv.photo,
 				CONCAT(st.fname, ' ', st.lname) AS student_name
 			FROM student_visitors sv
-			LEFT JOIN students st ON st.id = sv.student_id
+			INNER JOIN students st ON st.id = sv.student_id AND st.school_id = sv.school_id AND st.status = 1
 			WHERE sv.school_id = ? AND sv.status = 1
 			AND UPPER(TRIM(sv.card)) IN ({$placeholders})";
 		if ($excludeVisitorId > 0) {
@@ -397,6 +397,54 @@ class StudentVisitorModel extends Model
 	}
 
 	/**
+	 * Active visitors with no RFID card assigned.
+	 */
+	public function countActiveWithoutCard(int $schoolId): int
+	{
+		$this->ensureSchema();
+		$db = \Config\Database::connect();
+		$row = $db->query(
+			"SELECT COUNT(*) AS c FROM student_visitors
+			WHERE school_id = ? AND status = 1
+			AND (card IS NULL OR TRIM(card) = '')",
+			[(int) $schoolId]
+		)->getRowArray();
+		return (int) ($row['c'] ?? 0);
+	}
+
+	/**
+	 * Per-student counts of active visitors missing a card.
+	 *
+	 * @param int $schoolId
+	 * @param list<int> $studentIds
+	 * @return array<int,int> student_id => count
+	 */
+	public function countActiveWithoutCardByStudents(int $schoolId, array $studentIds): array
+	{
+		$this->ensureSchema();
+		$studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds))));
+		if ($schoolId <= 0 || empty($studentIds)) {
+			return [];
+		}
+		$placeholders = implode(',', array_fill(0, count($studentIds), '?'));
+		$params = array_merge([(int) $schoolId], $studentIds);
+		$db = \Config\Database::connect();
+		$rows = $db->query(
+			"SELECT student_id, COUNT(*) AS c FROM student_visitors
+			WHERE school_id = ? AND status = 1
+			AND (card IS NULL OR TRIM(card) = '')
+			AND student_id IN ({$placeholders})
+			GROUP BY student_id",
+			$params
+		)->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$out[(int) $row['student_id']] = (int) $row['c'];
+		}
+		return $out;
+	}
+
+	/**
 	 * Normalize relationship label for storage (matches parent visiting assign UI).
 	 */
 	public static function normalizeRelationship(string $raw): string
@@ -405,7 +453,7 @@ class StudentVisitorModel extends Model
 		if ($raw === '') {
 			return '';
 		}
-		$key = strtolower(preg_replace('/[^a-z]/', '', $raw));
+		$key = strtolower(preg_replace('/[^a-z]/', '', strtolower($raw)));
 		$map = [
 			'mother' => 'Mother',
 			'father' => 'Father',
@@ -456,5 +504,145 @@ class StudentVisitorModel extends Model
 			$inserted++;
 		}
 		return $inserted;
+	}
+
+	/**
+	 * Force-delete all parent-visiting data for a student (visits, visitors, photos, cards).
+	 *
+	 * @return array{visitors:int,visits:int,photos:int}
+	 */
+	public function purgeForStudent(int $schoolId, int $studentId): array
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		$studentId = (int) $studentId;
+		$stats = ['visitors' => 0, 'visits' => 0, 'photos' => 0];
+		if ($schoolId <= 0 || $studentId <= 0) {
+			return $stats;
+		}
+
+		$db = \Config\Database::connect();
+		$visitors = $this->where('school_id', $schoolId)
+			->where('student_id', $studentId)
+			->findAll();
+
+		$visitorIds = [];
+		$profileDir = FCPATH . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR;
+		foreach ($visitors as $v) {
+			$vid = (int) ($v['id'] ?? 0);
+			if ($vid > 0) {
+				$visitorIds[] = $vid;
+			}
+			$photo = trim((string) ($v['photo'] ?? ''));
+			if ($photo !== '' && strpos($photo, '..') === false) {
+				$path = $profileDir . $photo;
+				if (is_file($path)) {
+					@unlink($path);
+					$stats['photos']++;
+				}
+			}
+		}
+
+		if (!empty($visitorIds)) {
+			$stats['visits'] = (int) $db->table('visitor_visits')
+				->where('school_id', $schoolId)
+				->whereIn('visitor_id', $visitorIds)
+				->delete();
+		}
+
+		$stats['visits'] += (int) $db->table('visitor_visits')
+			->where('school_id', $schoolId)
+			->where('student_id', $studentId)
+			->delete();
+
+		$stats['visitors'] = (int) $db->table('student_visitors')
+			->where('school_id', $schoolId)
+			->where('student_id', $studentId)
+			->delete();
+
+		return $stats;
+	}
+
+	/**
+	 * Remove visitors whose student was deleted or is inactive.
+	 *
+	 * @return array{visitors:int,visits:int,photos:int}
+	 */
+	public function purgeOrphans(int $schoolId): array
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		$stats = ['visitors' => 0, 'visits' => 0, 'photos' => 0];
+		if ($schoolId <= 0) {
+			return $stats;
+		}
+
+		$db = \Config\Database::connect();
+		$orphans = $db->query(
+			"SELECT sv.id, sv.student_id, sv.photo
+			FROM student_visitors sv
+			LEFT JOIN students s ON s.id = sv.student_id AND s.school_id = sv.school_id AND s.status = 1
+			WHERE sv.school_id = ? AND s.id IS NULL",
+			[$schoolId]
+		)->getResultArray();
+
+		$profileDir = FCPATH . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR;
+		$visitorIds = [];
+		foreach ($orphans as $v) {
+			$vid = (int) ($v['id'] ?? 0);
+			if ($vid > 0) {
+				$visitorIds[] = $vid;
+			}
+			$photo = trim((string) ($v['photo'] ?? ''));
+			if ($photo !== '' && strpos($photo, '..') === false) {
+				$path = $profileDir . $photo;
+				if (is_file($path)) {
+					@unlink($path);
+					$stats['photos']++;
+				}
+			}
+		}
+
+		if (!empty($visitorIds)) {
+			$placeholders = implode(',', array_fill(0, count($visitorIds), '?'));
+			$params = array_merge([$schoolId], $visitorIds);
+			$stats['visits'] = (int) $db->query(
+				"DELETE FROM visitor_visits WHERE school_id = ? AND visitor_id IN ({$placeholders})",
+				$params
+			);
+			$stats['visitors'] = (int) $db->query(
+				"DELETE FROM student_visitors WHERE school_id = ? AND id IN ({$placeholders})",
+				$params
+			);
+		}
+
+		$db->query(
+			"DELETE vv FROM visitor_visits vv
+			LEFT JOIN students s ON s.id = vv.student_id AND s.school_id = vv.school_id AND s.status = 1
+			WHERE vv.school_id = ? AND s.id IS NULL",
+			[$schoolId]
+		);
+
+		return $stats;
+	}
+
+	/**
+	 * Unassign every visitor RFID card for a school (visitors kept).
+	 */
+	public function clearAllCards(int $schoolId): int
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		if ($schoolId <= 0) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$db->table('student_visitors')
+			->where('school_id', $schoolId)
+			->update([
+				'card' => null,
+				'updated_at' => date('Y-m-d H:i:s'),
+			]);
+		return (int) $db->affectedRows();
 	}
 }
