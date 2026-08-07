@@ -1,6 +1,6 @@
 <?php
 /**
- * Seed CAT + Exam marks for all P4 A students and assigned courses (Term 1, 2026-2027).
+ * Seed periodic CAT + Exam marks for all P4 A students and courses (Term 1, 2026-2027).
  * Run: docker exec xander_school_app php /var/www/html/deploy/seed_wisdom_p4a_marks.php
  */
 declare(strict_types=1);
@@ -19,10 +19,10 @@ const SCHOOL_ID = 27;
 const CLASS_ID = 180;
 const ACADEMIC_YEAR_ID = 16;
 const TERM_NUMBER = 1;
-const PERIOD = 0;
+const PERIODS = [1, 2, 3, 4];
 const CAT_TYPE = '';
-const CREATED_BY = 39; // Head master
-const EXAM_DATE = 1713139200; // 2026-04-15
+const CREATED_BY = 39;
+const EXAM_DATE_BASE = 1713139200; // 2026-04-15
 
 function resolve_active_term_id(\CodeIgniter\Database\BaseConnection $db): ?int
 {
@@ -36,18 +36,22 @@ function resolve_active_term_id(\CodeIgniter\Database\BaseConnection $db): ?int
     return $row ? (int) $row['id'] : null;
 }
 
-function sample_mark(int $studentId, int $courseId, string $kind, int $outOf): float
+function sample_mark(int $studentId, int $courseId, string $kind, int $outOf, int $period): float
 {
     if ($outOf <= 0) {
         return 0.0;
     }
-    $seed = crc32($studentId . ':' . $courseId . ':' . $kind);
-    $base = 0.42 + ($seed % 43) / 100;
+    $seed = crc32($studentId . ':' . $courseId . ':' . $kind . ':' . $period);
+    $base = 0.40 + ($seed % 45) / 100;
     if ($kind === 'exam') {
-        $base += 0.03;
+        $base += 0.04;
     }
-    if ($base > 0.95) {
-        $base = 0.95;
+    $base -= ($period - 1) * 0.015;
+    if ($base < 0.35) {
+        $base = 0.35;
+    }
+    if ($base > 0.96) {
+        $base = 0.96;
     }
     $mark = round($outOf * $base, 1);
     if ($mark < 0) {
@@ -67,6 +71,7 @@ function upsert_mark(
     int $courseId,
     int $classId,
     int $markType,
+    int $period,
     float $mark,
     int $outOf,
     int $examDate
@@ -78,7 +83,7 @@ function upsert_mark(
         ->where('class_id', $classId)
         ->where('mark_type', $markType)
         ->where('cat_type', CAT_TYPE)
-        ->where('period', PERIOD)
+        ->where('period', $period)
         ->get(1)
         ->getRowArray();
 
@@ -92,7 +97,7 @@ function upsert_mark(
         'marks' => $mark,
         'outof' => $outOf,
         'cat_type' => CAT_TYPE,
-        'period' => PERIOD,
+        'period' => $period,
         'created_by' => CREATED_BY,
     ];
 
@@ -145,64 +150,98 @@ if ($students === [] || $courses === []) {
     exit(1);
 }
 
-echo "Seeding marks: P4 A, term id {$termId}, " . count($students) . ' students, ' . count($courses) . " courses\n";
+$removed = (int) $db->table('marks')
+    ->where('class_id', CLASS_ID)
+    ->where('term', $termId)
+    ->countAllResults();
+
+$db->table('marks')
+    ->where('class_id', CLASS_ID)
+    ->where('term', $termId)
+    ->delete();
+
+echo "Removed {$removed} old mark row(s) for P4 A term {$termId}.\n";
+echo 'Seeding periodic marks: P4 A, term id ' . $termId . ', periods ' . implode(',', PERIODS) . ', ';
+echo count($students) . ' students, ' . count($courses) . " courses\n";
 
 $created = 0;
 $updated = 0;
 
-foreach ($courses as $course) {
-    $courseId = (int) $course['id'];
-    $outOf = max(1, (int) round((float) ($course['marks'] ?? 0)));
+foreach (PERIODS as $period) {
+    echo "Period {$period}:\n";
+    $examDate = EXAM_DATE_BASE + (($period - 1) * 14 * 86400);
 
-    foreach ($students as $student) {
-        $studentId = (int) $student['id'];
+    foreach ($courses as $course) {
+        $courseId = (int) $course['id'];
+        $outOf = max(1, (int) round((float) ($course['marks'] ?? 0)));
 
-        foreach ([1 => 'cat', 2 => 'exam'] as $markType => $kind) {
-            $mark = sample_mark($studentId, $courseId, $kind, $outOf);
-            $result = upsert_mark($db, $termId, $studentId, $courseId, CLASS_ID, $markType, $mark, $outOf, EXAM_DATE);
-            if ($result === 'created') {
-                $created++;
-            } else {
-                $updated++;
+        foreach ($students as $student) {
+            $studentId = (int) $student['id'];
+
+            foreach ([1 => 'cat', 2 => 'exam'] as $markType => $kind) {
+                $mark = sample_mark($studentId, $courseId, $kind, $outOf, $period);
+                $result = upsert_mark(
+                    $db,
+                    $termId,
+                    $studentId,
+                    $courseId,
+                    CLASS_ID,
+                    $markType,
+                    $period,
+                    $mark,
+                    $outOf,
+                    $examDate
+                );
+                if ($result === 'created') {
+                    $created++;
+                } else {
+                    $updated++;
+                }
             }
         }
-    }
 
-    echo "  {$course['code']} - {$course['title']} (out of {$outOf})\n";
+        echo "  {$course['code']} - {$course['title']} (out of {$outOf})\n";
+    }
 }
 
 echo "\nSummary: created {$created}, updated {$updated}\n";
 
 $summary = $db->query(
-    'SELECT c.code,
+    'SELECT m.period,
             COUNT(DISTINCT m.student_id) AS students,
             SUM(m.mark_type = 1) AS cat_rows,
             SUM(m.mark_type = 2) AS exam_rows
      FROM marks m
-     JOIN courses c ON c.id = m.course_id
-     WHERE m.class_id = ? AND m.term = ? AND m.period = ? AND m.cat_type = ?
-     GROUP BY c.id, c.code
-     ORDER BY c.code',
-    [CLASS_ID, $termId, PERIOD, CAT_TYPE]
+     WHERE m.class_id = ? AND m.term = ? AND m.period > 0
+     GROUP BY m.period
+     ORDER BY m.period',
+    [CLASS_ID, $termId]
 )->getResultArray();
 
-echo "\nVerification:\n";
+echo "\nBy period:\n";
 foreach ($summary as $row) {
     echo sprintf(
-        "  %-8s  students=%s  CAT=%s  EXAM=%s\n",
-        $row['code'],
+        "  Period %s: students=%s  CAT=%s  EXAM=%s\n",
+        $row['period'],
         $row['students'],
         $row['cat_rows'],
         $row['exam_rows']
     );
 }
 
+$periodZero = $db->table('marks')
+    ->where('class_id', CLASS_ID)
+    ->where('term', $termId)
+    ->where('period', 0)
+    ->countAllResults();
+
 $total = $db->table('marks')
     ->where('class_id', CLASS_ID)
     ->where('term', $termId)
-    ->where('period', PERIOD)
+    ->where('period >', 0)
     ->countAllResults();
 
-echo "\nTotal mark rows for P4 A term 1: {$total}\n";
+echo "\nPeriod 0 rows remaining: {$periodZero}\n";
+echo "Total periodic mark rows: {$total}\n";
 
 exit(0);
