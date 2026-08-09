@@ -207,57 +207,67 @@ class Api extends BaseController
 							$data = [
 								'soma_name' => $result->fname . ' ' . $result->lname,
 								'soma_id' => $result->id,
-								'soma_term' => $result->active_term,
-								'soma_term_number' => $result->term,
-								'soma_academic' => $result->academic_year,
+								'soma_term' => $result->active_term ?? 0,
+								'soma_term_number' => $result->term ?? 0,
+								'soma_academic' => $result->academic_year ?? 0,
 								'soma_school_id' => $result->school_id,
-								'soma_school' => $result->school_name,
-								'soma_post' => $result->post,
-								'soma_post_title' => $result->post_title,
-								'soma_use_period' => $result->use_period,
+								'soma_school' => $result->school_name ?? '',
+								'soma_post' => $result->post ?? 0,
+								'soma_post_title' => $result->post_title ?? '',
+								'soma_use_period' => $result->use_period ?? 0,
 								'school_country' => isset($result->school_country) ? $result->school_country : 'Rwanda',
-								'academic_type' => isset($result->academic_type) ? $result->academic_type : '', // ✅ added
-								'school_phone' => isset($result->school_phone) ? $result->school_phone : '', // ✅ Add this line
-								'school_email' => isset($result->school_email) ? $result->school_email : '', // ✅ Add this line
+								'academic_type' => isset($result->academic_type) ? $result->academic_type : '',
+								'school_phone' => isset($result->school_phone) ? $result->school_phone : '',
+								'school_email' => isset($result->school_email) ? $result->school_email : '',
 								'success' => "Login done",
 								'courses' => [],
 								'classes' => [],
 								'assessmentTypes' => [],
 							];
-							$csMdl = new CourseModel();
-							$coursesData = $csMdl->select("courses.id,courses.title,courses.code,r.class as class_id,courses.marks")
-								->join("course_records r", "courses.id=r.course")
-								->where("r.year", $result->academic_year)
-								->where("find_in_set({$result->term},r.term)>0")
-								->where("r.lecturer", $result->id)
-								->groupBy("courses.id")
-								->groupBy("r.class")
-								->get()->getResultArray();
-							$data['courses'] = $coursesData;
-							$clMdl = new CourseRecordModel();
-							$classes = $clMdl->select("c.id,concat(l.title,' ',c.title,' ',d.code) as title")
-								->join("classes c", "c.id=course_records.class")
-								->join("departments d", "d.id=c.department")
-								->join("levels l", "l.id=c.level")
-								->where("course_records.year", $result->academic_year)
-								->where("course_records.lecturer", $result->id)
-								->where("c.school_id", $result->school_id)
-								->groupBy("c.id")
-								->orderBy("d.code")
-								->orderBy("l.title")->get()->getResultArray();
-							$data['classes'] = $classes;
+							try {
+								$csMdl = new CourseModel();
+								$year = (int) ($result->academic_year ?? 0);
+								$term = (int) ($result->term ?? 0);
+								$coursesData = $csMdl->select("courses.id,courses.title,courses.code,r.class as class_id,courses.marks")
+									->join("course_records r", "courses.id=r.course")
+									->where("r.year", $year)
+									->where("find_in_set({$term},r.term)>0")
+									->where("r.lecturer", $result->id)
+									->groupBy("courses.id")
+									->groupBy("r.class")
+									->get()->getResultArray();
+								$data['courses'] = $coursesData ?: [];
+								$clMdl = new CourseRecordModel();
+								$classes = $clMdl->select("c.id,concat(l.title,' ',c.title,' ',d.code) as title")
+									->join("classes c", "c.id=course_records.class")
+									->join("departments d", "d.id=c.department")
+									->join("levels l", "l.id=c.level")
+									->where("course_records.year", $year)
+									->where("course_records.lecturer", $result->id)
+									->where("c.school_id", $result->school_id)
+									->groupBy("c.id")
+									->orderBy("d.code")
+									->orderBy("l.title")->get()->getResultArray();
+								$data['classes'] = $classes ?: [];
+							} catch (\Throwable $e) {
+								log_message('error', 'API login courses/classes: ' . $e->getMessage());
+								$data['courses'] = [];
+								$data['classes'] = [];
+							}
 							// Match web marks entry types (Home::marksTypeToStr)
 							$academicTypeId = 1;
 							if (!empty($result->academic_type)) {
 								$parts = explode(',', (string) $result->academic_type);
 								$academicTypeId = (int) trim($parts[0] ?: '1');
+								if ($academicTypeId < 1) {
+									$academicTypeId = 1;
+								}
 							}
 							$data['assessmentTypes'] = [
 								['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'CAT'],
 								['id' => 2, 'academic_type_id' => $academicTypeId, 'title' => 'Exam'],
 								['id' => 3, 'academic_type_id' => $academicTypeId, 'title' => 'Second sitting'],
 								['id' => 9, 'academic_type_id' => $academicTypeId, 'title' => 'Re-assess'],
-							];
 							];
 							return $this->response->setJSON($data);
 						}
