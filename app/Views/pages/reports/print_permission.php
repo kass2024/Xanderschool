@@ -97,7 +97,7 @@ body {
 }
 
 .print-header {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 700;
   text-transform: uppercase;
   color: #222;
@@ -110,20 +110,20 @@ body {
 .title {
   font-weight: 600;
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
   margin-bottom: 6px;
   color: #444;
 }
 
 .logo img {
-  width: 50px;
+  width: 88px;
   height: auto;
-  margin: 5px 0;
+  margin: 8px 0;
 }
 
 .school-name-inner {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 700;
   text-transform: uppercase;
   color: #111;
@@ -131,8 +131,8 @@ body {
 }
 
 .school-info {
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.45;
   color: #555;
   margin-top: 3px;
   margin-bottom: 6px;
@@ -147,8 +147,8 @@ hr {
 .section {
   text-align: left;
   padding: 3px 5px;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .label {
@@ -159,7 +159,7 @@ hr {
 .footer {
   text-align: center;
   margin-top: 10px;
-  font-size: 11px;
+  font-size: 13px;
   font-style: italic;
   color: #333;
 }
@@ -245,7 +245,7 @@ hr {
 }
 
 .sign-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: #222;
   margin-top: 3px;
@@ -352,6 +352,14 @@ hr {
 <div style="text-align:center;">
   <button id="printBtn" onclick="window.print()">Print to PDF / Thermal</button>
 </div>
+
+<?php if (!empty($autoprint)) : ?>
+<script>
+window.addEventListener('load', function () {
+  setTimeout(function () { window.print(); }, 300);
+});
+</script>
+<?php endif; ?>
 
 </body>
 </html>

@@ -610,9 +610,12 @@ public function testEmail()
 		$this->_preset(1, 3);
 		$this->ensureStaffCardSchema();
 		$schoolId = (int)$this->session->get('soma_school_id');
-		$audience = strtolower((string)$this->request->getPost('audience')) === 'staff' ? 'staff' : 'student';
+		$audRaw = strtolower(trim((string)$this->request->getPost('audience')));
+		$audience = in_array($audRaw, ['staff', 'visitor'], true) ? $audRaw : 'student';
 		$template = \App\Libraries\CardLayout::normalizeTemplate($this->request->getPost('template'));
-		$orientation = \App\Libraries\CardLayout::normalizeOrientation($this->request->getPost('orientation'));
+		$orientation = $audience === 'visitor'
+			? 'landscape'
+			: \App\Libraries\CardLayout::normalizeOrientation($this->request->getPost('orientation'));
 		$fieldsRaw = $this->request->getPost('fields');
 		$fields = is_string($fieldsRaw) ? json_decode($fieldsRaw, true) : $fieldsRaw;
 		if (!is_array($fields)) {
@@ -623,21 +626,28 @@ public function testEmail()
 			'orientation' => $orientation,
 			'fields' => $fields,
 		], JSON_UNESCAPED_UNICODE);
-		$resolved = $audience === 'staff'
-			? \App\Libraries\CardLayout::resolveStaff($rawPayload, $template, $orientation)
-			: \App\Libraries\CardLayout::resolve($rawPayload, $template, $orientation);
-		$payload = json_encode($resolved, JSON_UNESCAPED_UNICODE);
-		$update = $audience === 'staff'
-			? [
+		if ($audience === 'staff') {
+			$resolved = \App\Libraries\CardLayout::resolveStaff($rawPayload, $template, $orientation);
+			$update = [
 				'sf_card_template' => $resolved['template'],
-				'sf_card_layout' => $payload,
+				'sf_card_layout' => json_encode($resolved, JSON_UNESCAPED_UNICODE),
 				'sf_card_orientation' => $resolved['orientation'],
-			]
-			: [
+			];
+		} elseif ($audience === 'visitor') {
+			$resolved = \App\Libraries\CardLayout::resolveVisitor($rawPayload, $template, 'landscape');
+			$update = [
+				'vi_card_template' => $resolved['template'],
+				'vi_card_layout' => json_encode($resolved, JSON_UNESCAPED_UNICODE),
+				'vi_card_orientation' => 'landscape',
+			];
+		} else {
+			$resolved = \App\Libraries\CardLayout::resolve($rawPayload, $template, $orientation);
+			$update = [
 				'card_template' => $resolved['template'],
-				'card_layout' => $payload,
+				'card_layout' => json_encode($resolved, JSON_UNESCAPED_UNICODE),
 				'card_orientation' => $resolved['orientation'],
 			];
+		}
 		try {
 			$skl = new SchoolModel();
 			$skl->update($schoolId, $update);
@@ -661,33 +671,43 @@ public function testEmail()
 		$this->_preset(1, 3);
 		$this->ensureStaffCardSchema();
 		$schoolId = (int)$this->session->get('soma_school_id');
-		$audience = strtolower((string)$this->request->getPost('audience')) === 'staff' ? 'staff' : 'student';
+		$audRaw = strtolower(trim((string)$this->request->getPost('audience')));
+		$audience = in_array($audRaw, ['staff', 'visitor'], true) ? $audRaw : 'student';
 		$template = \App\Libraries\CardLayout::normalizeTemplate($this->request->getPost('template'));
-		$orientation = \App\Libraries\CardLayout::normalizeOrientation(
-			$this->request->getPost('orientation') ?: \App\Libraries\CardLayout::preferredOrientation($template)
-		);
-		$defaults = $audience === 'staff'
-			? \App\Libraries\CardLayout::staffDefaults($template, $orientation)
-			: \App\Libraries\CardLayout::defaults($template, $orientation);
-		$payload = json_encode($defaults, JSON_UNESCAPED_UNICODE);
-		$update = $audience === 'staff'
-			? [
+		$orientation = $audience === 'visitor'
+			? 'landscape'
+			: \App\Libraries\CardLayout::normalizeOrientation(
+				$this->request->getPost('orientation') ?: \App\Libraries\CardLayout::preferredOrientation($template)
+			);
+		if ($audience === 'staff') {
+			$defaults = \App\Libraries\CardLayout::staffDefaults($template, $orientation);
+			$update = [
 				'sf_card_template' => $template,
-				'sf_card_layout' => $payload,
+				'sf_card_layout' => json_encode($defaults, JSON_UNESCAPED_UNICODE),
 				'sf_card_orientation' => $orientation,
-			]
-			: [
+			];
+		} elseif ($audience === 'visitor') {
+			$defaults = \App\Libraries\CardLayout::visitorDefaults($template, 'landscape');
+			$update = [
+				'vi_card_template' => $defaults['template'],
+				'vi_card_layout' => json_encode($defaults, JSON_UNESCAPED_UNICODE),
+				'vi_card_orientation' => 'landscape',
+			];
+		} else {
+			$defaults = \App\Libraries\CardLayout::defaults($template, $orientation);
+			$update = [
 				'card_template' => $template,
-				'card_layout' => $payload,
+				'card_layout' => json_encode($defaults, JSON_UNESCAPED_UNICODE),
 				'card_orientation' => $orientation,
 			];
+		}
 		try {
 			(new SchoolModel())->update($schoolId, $update);
 			return $this->response->setJSON([
 				'success' => 'Reset to template defaults',
 				'audience' => $audience,
 				'layout' => $defaults,
-				'orientation' => $orientation,
+				'orientation' => $audience === 'visitor' ? 'landscape' : $orientation,
 			]);
 		} catch (\Throwable $e) {
 			return $this->response->setStatusCode(500)->setJSON(['error' => $e->getMessage()]);
@@ -703,10 +723,11 @@ public function testEmail()
 		$this->_preset(1, 3);
 		$this->ensureStaffCardSchema();
 		$schoolId = (int)$this->session->get("soma_school_id");
-		$audience = strtolower((string)$this->request->getPost('type')) === 'staff' ? 'staff' : 'student';
+		$typeRaw = strtolower((string)$this->request->getPost('type'));
+		$audience = in_array($typeRaw, ['staff', 'visitor'], true) ? $typeRaw : 'student';
 		$regenerate = (int)$this->request->getPost('regenerate') === 1;
 		$sklMdl = new SchoolModel();
-		$sk = $sklMdl->select("id,name,main_color,sf_main_color,card_orientation,sf_card_orientation,card_template,sf_card_template,card_layout,sf_card_layout")
+		$sk = $sklMdl->select("id,name,main_color,sf_main_color,vi_main_color,card_orientation,sf_card_orientation,vi_card_orientation,card_template,sf_card_template,vi_card_template,card_layout,sf_card_layout,vi_card_layout")
 			->where("id", $schoolId)->get(1)->getRow();
 		if (!$sk) {
 			return $this->response->setStatusCode(404)->setJSON(["error" => "School not found"]);
@@ -717,17 +738,30 @@ public function testEmail()
 			$template = \App\Libraries\CardLayout::normalizeTemplate(
 				$templatePost !== ''
 					? $templatePost
-					: ($audience === 'staff' ? ($sk->sf_card_template ?? 'ocean') : ($sk->card_template ?? 'ocean'))
+					: ($audience === 'staff'
+						? ($sk->sf_card_template ?? 'ocean')
+						: ($audience === 'visitor'
+							? ($sk->vi_card_template ?? 'ocean')
+							: ($sk->card_template ?? 'ocean')))
 			);
-			$orientation = $audience === 'staff'
-				? ((string)($sk->sf_card_orientation ?: 'landscape'))
-				: ((string)($sk->card_orientation ?: 'landscape'));
-			$orientation = \App\Libraries\CardLayout::normalizeOrientation(
-				$this->request->getPost('orientation') ?: $orientation
-			);
+			if ($audience === 'visitor' && !in_array($template, \App\Libraries\CardLayout::VISITOR_TEMPLATES, true)) {
+				$template = 'ocean';
+			}
+			$orientation = $audience === 'visitor'
+				? 'landscape'
+				: ($audience === 'staff'
+					? ((string)($sk->sf_card_orientation ?: 'landscape'))
+					: ((string)($sk->card_orientation ?: 'landscape')));
+			$orientation = $audience === 'visitor'
+				? 'landscape'
+				: \App\Libraries\CardLayout::normalizeOrientation(
+					$this->request->getPost('orientation') ?: $orientation
+				);
 			$brandColor = $audience === 'staff'
 				? ((string)($sk->sf_main_color ?: $sk->main_color ?: ''))
-				: ((string)($sk->main_color ?: ''));
+				: ($audience === 'visitor'
+					? ((string)($sk->vi_main_color ?: $sk->main_color ?: ''))
+					: ((string)($sk->main_color ?: '')));
 			if ($brandColor === '') {
 				$brandColor = \App\Libraries\CardLayout::defaultAccent($template);
 			}
@@ -735,10 +769,16 @@ public function testEmail()
 			$fieldsRaw = $this->request->getPost('fields');
 			$fields = is_string($fieldsRaw) ? json_decode($fieldsRaw, true) : $fieldsRaw;
 			if (!is_array($fields)) {
-				$layoutJson = $audience === 'staff' ? ($sk->sf_card_layout ?? null) : ($sk->card_layout ?? null);
+				$layoutJson = $audience === 'staff'
+					? ($sk->sf_card_layout ?? null)
+					: ($audience === 'visitor'
+						? ($sk->vi_card_layout ?? null)
+						: ($sk->card_layout ?? null));
 				$resolved = $audience === 'staff'
 					? \App\Libraries\CardLayout::resolveStaff($layoutJson, $template, $orientation)
-					: \App\Libraries\CardLayout::resolve($layoutJson, $template, $orientation);
+					: ($audience === 'visitor'
+						? \App\Libraries\CardLayout::resolveVisitor($layoutJson, $template, $orientation)
+						: \App\Libraries\CardLayout::resolve($layoutJson, $template, $orientation));
 				$fields = $resolved['fields'] ?? [];
 			}
 
@@ -794,7 +834,8 @@ public function testEmail()
 		$this->_preset(1, 3);
 		$this->ensureStaffCardSchema();
 		$schoolId = (int)$this->session->get("soma_school_id");
-		$audience = strtolower((string)$this->request->getPost('type')) === 'staff' ? 'staff' : 'student';
+		$typeRaw = strtolower((string)$this->request->getPost('type'));
+		$audience = in_array($typeRaw, ['staff', 'visitor'], true) ? $typeRaw : 'student';
 		$filename = basename((string)$this->request->getPost('filename'));
 		if ($filename === '' || !preg_match('/^[a-zA-Z0-9._-]+\.(png|jpe?g|webp)$/i', $filename)) {
 			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid background file']);
@@ -804,23 +845,35 @@ public function testEmail()
 			return $this->response->setStatusCode(404)->setJSON(['error' => 'Background file not found']);
 		}
 		$sklMdl = new SchoolModel();
-		$sk = $sklMdl->select('id,card_background,sf_card_background')->where('id', $schoolId)->get(1)->getRow();
+		$sk = $sklMdl->select('id,card_background,sf_card_background,vi_card_background')->where('id', $schoolId)->get(1)->getRow();
 		if (!$sk) {
 			return $this->response->setStatusCode(404)->setJSON(['error' => 'School not found']);
 		}
-		$old = $audience === 'staff' ? (string)($sk->sf_card_background ?? '') : (string)($sk->card_background ?? '');
-		$orientation = \App\Libraries\CardLayout::normalizeOrientation($this->request->getPost('orientation') ?: 'landscape');
+		$old = $audience === 'staff'
+			? (string)($sk->sf_card_background ?? '')
+			: ($audience === 'visitor'
+				? (string)($sk->vi_card_background ?? '')
+				: (string)($sk->card_background ?? ''));
+		$orientation = $audience === 'visitor'
+			? 'landscape'
+			: \App\Libraries\CardLayout::normalizeOrientation($this->request->getPost('orientation') ?: 'landscape');
 		$update = $audience === 'staff'
 			? [
 				'sf_card_background' => $filename,
 				'sf_card_bg_mode' => 'smart',
 				'sf_card_orientation' => $orientation,
 			]
-			: [
-				'card_background' => $filename,
-				'card_bg_mode' => 'smart',
-				'card_orientation' => $orientation,
-			];
+			: ($audience === 'visitor'
+				? [
+					'vi_card_background' => $filename,
+					'vi_card_bg_mode' => 'smart',
+					'vi_card_orientation' => 'landscape',
+				]
+				: [
+					'card_background' => $filename,
+					'card_bg_mode' => 'smart',
+					'card_orientation' => $orientation,
+				]);
 		$sklMdl->update($schoolId, $update);
 		return $this->response->setJSON([
 			'success' => 'Background applied',
@@ -881,6 +934,25 @@ public function testEmail()
 		if (!in_array('sf_capitalize', $fields, true)) {
 			$alters[] = "ADD COLUMN `sf_capitalize` TINYINT(1) NULL";
 		}
+		$viCols = [
+			'vi_card_template' => "ADD COLUMN `vi_card_template` VARCHAR(32) DEFAULT 'ocean'",
+			'vi_card_orientation' => "ADD COLUMN `vi_card_orientation` VARCHAR(20) DEFAULT 'landscape'",
+			'vi_card_bg_mode' => "ADD COLUMN `vi_card_bg_mode` VARCHAR(20) DEFAULT 'manual'",
+			'vi_card_layout' => "ADD COLUMN `vi_card_layout` LONGTEXT NULL",
+			'vi_card_background' => "ADD COLUMN `vi_card_background` VARCHAR(120) NULL",
+			'vi_header_text_1' => "ADD COLUMN `vi_header_text_1` VARCHAR(255) NULL",
+			'vi_header_text_2' => "ADD COLUMN `vi_header_text_2` VARCHAR(255) NULL",
+			'vi_header_color' => "ADD COLUMN `vi_header_color` VARCHAR(20) NULL",
+			'vi_main_color' => "ADD COLUMN `vi_main_color` VARCHAR(20) NULL",
+			'vi_footer_color' => "ADD COLUMN `vi_footer_color` VARCHAR(20) NULL",
+			'vi_paint_color' => "ADD COLUMN `vi_paint_color` VARCHAR(20) NULL",
+			'vi_capitalize' => "ADD COLUMN `vi_capitalize` TINYINT(1) NULL",
+		];
+		foreach ($viCols as $col => $sql) {
+			if (!in_array($col, $fields, true)) {
+				$alters[] = $sql;
+			}
+		}
 		if ($alters) {
 			$db->query('ALTER TABLE `schools` ' . implode(', ', $alters));
 			$db->query("UPDATE `schools` SET
@@ -891,7 +963,14 @@ public function testEmail()
 				`sf_footer_color` = IFNULL(`sf_footer_color`, `footer_color`),
 				`sf_capitalize` = IFNULL(`sf_capitalize`, `capitalize`),
 				`paint_color` = IFNULL(`paint_color`, IFNULL(`main_color`, '#1E6FD9')),
-				`sf_paint_color` = IFNULL(`sf_paint_color`, IFNULL(`sf_main_color`, IFNULL(`main_color`, '#1E6FD9')))
+				`sf_paint_color` = IFNULL(`sf_paint_color`, IFNULL(`sf_main_color`, IFNULL(`main_color`, '#1E6FD9'))),
+				`vi_header_text_1` = IFNULL(`vi_header_text_1`, `header_text_1`),
+				`vi_header_text_2` = IFNULL(`vi_header_text_2`, `header_text_2`),
+				`vi_header_color` = IFNULL(`vi_header_color`, `header_color`),
+				`vi_main_color` = IFNULL(`vi_main_color`, `main_color`),
+				`vi_footer_color` = IFNULL(`vi_footer_color`, `footer_color`),
+				`vi_paint_color` = IFNULL(`vi_paint_color`, IFNULL(`vi_main_color`, IFNULL(`main_color`, '#0EA5E9'))),
+				`vi_capitalize` = IFNULL(`vi_capitalize`, `capitalize`)
 			");
 		}
 		$done = true;
@@ -1398,6 +1477,47 @@ public function testEmail()
 				->orderBy('id', 'DESC')
 				->findAll();
 		}
+
+		$ttSchema = new \App\Models\TimetableSchemaModel();
+		$ttSchema->ensureSchema();
+		$ttSchema->seedDefaultSlots($schoolId);
+
+		if ($this->request->getGet('tt_shared') !== null) {
+			$sharedVal = (int) $this->request->getGet('tt_shared') ? 1 : 0;
+			$row = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
+			if ($row) {
+				$db->table('timetable_settings')->where('school_id', $schoolId)->update([
+					'shared_timetable' => $sharedVal,
+					'updated_at' => date('Y-m-d H:i:s'),
+				]);
+			} else {
+				$db->table('timetable_settings')->insert([
+					'school_id' => $schoolId,
+					'days_json' => json_encode(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']),
+					'include_sunday' => 0,
+					'include_saturday' => 0,
+					'shared_timetable' => $sharedVal,
+					'updated_at' => date('Y-m-d H:i:s'),
+				]);
+			}
+		}
+
+		$data['timetable_shared'] = $ttSchema->isSharedSchedule($schoolId);
+		$data['timetable_tracks'] = $ttSchema->schoolTracks($schoolId);
+		$data['timetable_track_key'] = \App\Libraries\TimetableTrack::normalize(
+			$this->request->getGet('tt_track') ?? ($data['timetable_shared'] ? 'all' : ($data['timetable_tracks'][0]['key'] ?? 'primary'))
+		);
+		if ($data['timetable_shared']) {
+			$data['timetable_track_key'] = 'all';
+		}
+		$ttSchema->ensureTrackSlots($schoolId, $data['timetable_track_key']);
+		$data['timetable_slots'] = $ttSchema->allSlots($schoolId, $data['timetable_track_key']);
+		$data['timetable_settings'] = $db->table('timetable_settings')
+			->where('school_id', $schoolId)->get(1)->getRowArray();
+		$data['timetable_special_times'] = $ttSchema->specialTimes($schoolId, $data['timetable_track_key']);
+		$data['timetable_track_labels'] = \App\Libraries\TimetableTrack::labels();
+		$data['timetable_day_labels'] = \App\Models\TimetableSchemaModel::dayLabelsFromSettings($data['timetable_settings']);
+		$data['timetable_day_map'] = \App\Models\TimetableSchemaModel::dayMapFromSettings($data['timetable_settings']);
 
 		// Sample staff from DB for staff card preview (post required)
 		$stMdl = new StaffModel();
@@ -8182,10 +8302,13 @@ public function getApplicationDocs($id = null)
 
             /* ==================== STUDENT PICTURE ==================== */
             case "student_picture":
-                $safeMove($file, $profilePath, $name);
-
                 $student = new \App\Models\StudentModel();
+                $existing = $student->select('photo')->find($id);
+                $safeMove($file, $profilePath, $name);
                 $student->update($id, ["photo" => $name]);
+                if (!empty($existing['photo']) && is_file($profilePath . $existing['photo'])) {
+                    @unlink($profilePath . $existing['photo']);
+                }
 
                 return $this->response->setJSON(["success" => lang("app.photoUploaded")]);
 
@@ -8269,6 +8392,39 @@ public function getApplicationDocs($id = null)
         ]);
     }
 }
+
+
+	public function remove_student_photo()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$studentId = (int) $this->request->getPost('id');
+		if ($studentId <= 0) {
+			return $this->response->setJSON(['error' => lang('app.fatalErrorRestart')]);
+		}
+
+		$stMdl = new StudentModel();
+		$student = $stMdl->get_student_simple($studentId, 'students.id', true);
+		if ($student === null) {
+			return $this->response->setJSON(['error' => lang('app.opsStudentNotFound')]);
+		}
+
+		$oldPhoto = trim((string) ($student['photo'] ?? ''));
+		if ($oldPhoto === '' || strlen($oldPhoto) <= 4) {
+			return $this->response->setJSON(['error' => lang('app.noPhotoToRemove')]);
+		}
+
+		$profilePath = FCPATH . 'assets/images/profile/';
+		if (is_file($profilePath . $oldPhoto)) {
+			@unlink($profilePath . $oldPhoto);
+		}
+
+		try {
+			$stMdl->update($studentId, ['photo' => '']);
+			return $this->response->setJSON(['success' => lang('app.photoRemoved')]);
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => lang('app.OopsAction')]);
+		}
+	}
 
 
 	public
@@ -11628,41 +11784,49 @@ public function assign_card()
 
     // 3️⃣ Fetch school ID from session
     $school_id = (int) $this->session->get('soma_school_id');
+    $year = (int) ($data['academic_year_id'] ?? $data['academic_year'] ?? 0);
 
     // 4️⃣ Page setup
     $data['title'] = lang('app.assignCard');
     $data['subtitle'] = lang('app.assignCard');
     $data['page'] = 'Assign_card';
 
-    // 5️⃣ Load model
+    // 5️⃣ Load students for current academic year
     $studentModel = new \App\Models\StudentModel();
-
-    // 6️⃣ Build query — include full class name (L3 CSA) and section
-    $students = $studentModel
+    $builder = $studentModel
         ->select("
             students.id,
+            students.regno,
             CONCAT(students.fname, ' ', students.lname) AS name,
             CONCAT(l.title, ' ', d.code, ' ', c.title) AS class,
+            c.id AS class_id,
             d.title AS section,
             students.card AS card_number
         ")
-        ->join('class_records cr', 'cr.student = students.id', 'left')
+        ->join('class_records cr', 'cr.student = students.id', 'inner')
         ->join('classes c', 'c.id = cr.class', 'left')
         ->join('departments d', 'd.id = c.department', 'left')
         ->join('levels l', 'l.id = c.level', 'left')
         ->where('students.school_id', $school_id)
-        ->where('students.status', 1)
+        ->where('students.status', 1);
+
+    if ($year > 0) {
+        $builder->where('cr.year', (string) $year);
+    }
+
+    $students = $builder
         ->groupBy('students.id')
+        ->orderBy('l.title', 'ASC')
+        ->orderBy('c.title', 'ASC')
         ->orderBy('students.fname', 'ASC')
         ->orderBy('students.lname', 'ASC')
         ->get()
         ->getResultArray();
 
-    // 7️⃣ Pass data to view
     $data['students'] = $students;
+    $data['students_by_class'] = $this->parentVisitingGroupStudentsByClass($students);
     $data['content'] = view('pages/students/assign_card', $data);
 
-    // 8️⃣ Return main layout view
     return view('main', $data);
 }
 
@@ -11934,6 +12098,292 @@ public function assign_card()
 	}
 
 	/**
+	 * Parent visiting — print visitor cards by class.
+	 */
+	public function parent_visiting_cards()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		session_write_close();
+		$data = $this->data;
+		$school_id = (int) ($data['school_id'] ?? 0);
+		$this->ensureStaffCardSchema();
+
+		$classMdl = new ClassesModel();
+		$data['classes'] = $classMdl->select('classes.id,classes.title,d.code,d.code as dept_code,l.title as level_name')
+			->join('departments d', 'd.id=classes.department')
+			->join('levels l', 'l.id=classes.level')
+			->where('classes.school_id', $school_id)
+			->orderBy('l.id', 'ASC')
+			->orderBy('classes.title', 'ASC')
+			->get()->getResultArray();
+
+		$data['title'] = 'Parent visiting — Print visitor cards';
+		$data['subtitle'] = 'Print visitor cards';
+		$data['page'] = 'parent_visiting_cards';
+		$data['content'] = view('pages/parent_visiting/cards', $data);
+		return view('main', $data);
+	}
+
+	/**
+	 * Load printable visitors for card print UI (by class or by student).
+	 */
+	public function get_visitors($id, $isClass = 0, $type = 0)
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$school_id = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->data['academic_year'] ?? date('Y'));
+		$targetId = (int) $id;
+		$byClass = (int) $isClass === 1;
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+
+		if ($targetId <= 0) {
+			echo '<tr><td colspan="7" class="text-center text-muted py-3">Invalid selection.</td></tr>';
+			return;
+		}
+
+		$db = \Config\Database::connect();
+		$sql = "
+			SELECT sv.id, sv.names, sv.relationship, sv.photo, sv.card, sv.student_id,
+				s.photo AS student_photo,
+				s.regno AS student_regno,
+				s.father AS student_father,
+				s.mother AS student_mother,
+				CONCAT(s.fname, ' ', s.lname) AS student_name,
+				TRIM(CONCAT(COALESCE(l.title, ''), ' ', COALESCE(d.code, ''), ' ', COALESCE(c.title, ''))) AS student_class
+			FROM student_visitors sv
+			INNER JOIN students s ON s.id = sv.student_id AND s.school_id = sv.school_id
+			LEFT JOIN class_records cr ON cr.student = s.id AND cr.year = ?
+			LEFT JOIN classes c ON c.id = cr.class
+			LEFT JOIN departments d ON d.id = c.department
+			LEFT JOIN levels l ON l.id = c.level
+			WHERE sv.school_id = ? AND sv.status = 1
+		";
+		$params = [$year, $school_id];
+		if ($byClass) {
+			$sql .= ' AND c.id = ?';
+			$params[] = $targetId;
+		} else {
+			$sql .= ' AND s.id = ?';
+			$params[] = $targetId;
+		}
+		$sql .= ' ORDER BY student_name ASC, sv.names ASC';
+		$rows = $db->query($sql, $params)->getResultArray();
+
+		if (empty($rows)) {
+			$msg = $byClass
+				? 'No visitors found for this class.'
+				: 'No visitors registered for this student.';
+			echo '<tr><td colspan="7" class="text-center text-muted py-3">' . esc($msg) . '</td></tr>';
+			return;
+		}
+
+		foreach ($rows as $row) {
+			echo $this->renderVisitorPrintRow($row);
+		}
+	}
+
+	/**
+	 * HTML table row for visitor card print picker.
+	 */
+	private function renderVisitorPrintRow(array $row): string
+	{
+		$hasCard = trim((string) ($row['card'] ?? '')) !== '';
+		$resolved = resolve_profile_photo($row['photo'] ?? '');
+		$photoUrl = profile_photo_url($resolved);
+		$photoHtml = $resolved
+			? "<img src='" . esc($photoUrl, 'attr') . "' alt='' style='width:48px;height:48px;object-fit:cover;border-radius:4px;' />"
+			: "<span style='display:inline-block;width:48px;height:48px;background:#f1f5f9;border-radius:4px;'></span>";
+		$hidden = $hasCard ? "<input type='hidden' name='viId[]' value='" . (int) $row['id'] . "'>" : '';
+		$color = $hasCard ? '' : 'color:orangered';
+		$classLabel = trim((string) ($row['student_class'] ?? ''));
+		if ($classLabel === '') {
+			$classLabel = '—';
+		}
+
+		return "<tr class='disc_row pv-visitor-row' data-visitor-id='" . (int) $row['id'] . "' data-student-id='" . (int) ($row['student_id'] ?? 0) . "' data-has-card='" . ($hasCard ? '1' : '0') . "' style='{$color}'>"
+			. '<td>' . esc($row['names']) . $hidden . '</td>'
+			. '<td>' . esc($row['relationship'] ?? '') . '</td>'
+			. '<td>' . esc($row['student_name']) . '</td>'
+			. '<td>' . esc($classLabel) . '</td>'
+			. '<td><code>' . esc($hasCard ? $row['card'] : 'NOT ASSIGNED') . '</code></td>'
+			. '<td>' . $photoHtml . '</td>'
+			. "<td style='text-align:center;'><span class='btn-sm btn-danger' id='removerow'>" . lang('app.remove') . "</span></td>"
+			. '</tr>';
+	}
+
+	/**
+	 * Load visitor rows eligible for card PDF (must have RFID card assigned).
+	 *
+	 * @param int[] $visitorIds
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function fetchPrintableVisitors(array $visitorIds, int $schoolId, int $year, int $classId = 0): array
+	{
+		$db = \Config\Database::connect();
+		$sql = "
+			SELECT sv.id, sv.names, sv.relationship, sv.photo, sv.card,
+				s.photo AS student_photo,
+				s.regno AS student_regno,
+				s.father AS student_father,
+				s.mother AS student_mother,
+				s.dob AS student_dob,
+				CONCAT(s.fname, ' ', s.lname) AS student_name,
+				TRIM(CONCAT(COALESCE(l.title, ''), ' ', COALESCE(d.code, ''), ' ', COALESCE(c.title, ''))) AS student_class
+			FROM student_visitors sv
+			INNER JOIN students s ON s.id = sv.student_id AND s.school_id = sv.school_id
+			LEFT JOIN class_records cr ON cr.student = s.id AND cr.year = ?
+			LEFT JOIN classes c ON c.id = cr.class
+			LEFT JOIN departments d ON d.id = c.department
+			LEFT JOIN levels l ON l.id = c.level
+			WHERE sv.school_id = ? AND sv.status = 1
+		";
+		$params = [$year, $schoolId];
+
+		if ($classId > 0) {
+			$sql .= ' AND c.id = ?';
+			$params[] = $classId;
+		} else {
+			$visitorIds = array_values(array_unique(array_filter(array_map('intval', $visitorIds))));
+			if (empty($visitorIds)) {
+				return [];
+			}
+			$sql .= ' AND sv.id IN (' . implode(',', $visitorIds) . ')';
+		}
+
+		$sql .= ' ORDER BY student_class ASC, student_name ASC, sv.names ASC';
+		$rows = $db->query($sql, $params)->getResultArray();
+
+		$visitors = [];
+		foreach ($rows as $row) {
+			if (trim((string) ($row['card'] ?? '')) === '') {
+				continue;
+			}
+			$classLabel = trim((string) ($row['student_class'] ?? ''));
+			$row['student_class'] = $classLabel !== '' ? $classLabel : '—';
+			$visitors[] = $row;
+		}
+
+		return $visitors;
+	}
+
+	/**
+	 * Generate landscape PDF visitor cards.
+	 */
+	public function generate_visitor_cards()
+	{
+		$this->_preset(1, 3);
+		set_time_limit(0);
+		ini_set('memory_limit', '-1');
+		ini_set('max_execution_time', '-1');
+
+		$school_id = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->data['academic_year'] ?? date('Y'));
+		$classId = (int) ($this->request->getGet('class_id') ?: $this->request->getPost('class_id') ?: $this->request->getVar('class_id'));
+
+		$ids = $this->request->getGet('ids') ?: $this->request->getVar('viId');
+		if (!is_array($ids)) {
+			$idsRaw = trim((string) ($ids ?? ''));
+			if ($idsRaw !== '' && strpos($idsRaw, ',') !== false) {
+				$ids = array_filter(array_map('trim', explode(',', $idsRaw)));
+			} else {
+				$ids = ($idsRaw !== '') ? [$idsRaw] : [];
+			}
+		}
+		$safeIds = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+		if ($classId <= 0 && count($safeIds) === 0) {
+			session_write_close();
+			return $this->response->setStatusCode(400)->setBody('No visitors selected for printing.');
+		}
+
+		$this->ensureStaffCardSchema();
+		session_write_close();
+
+		$sklMdl = new SchoolModel();
+		$skData = $sklMdl->select('name,logo,slogan,pobox,vi_card_background,vi_card_template,vi_card_layout,vi_header_text_1,vi_header_text_2,vi_header_color,vi_main_color,vi_footer_color,vi_paint_color,vi_capitalize,header_text_1,header_text_2,header_color,main_color,footer_color,capitalize,phone,email,address,website')
+			->where('id', $school_id)->get(1)->getRow();
+		if (!$skData) {
+			return $this->response->setStatusCode(404)->setBody('School not found.');
+		}
+
+		$visitors = $this->fetchPrintableVisitors($safeIds, $school_id, $year, $classId);
+		if (empty($visitors)) {
+			return $this->response->setStatusCode(400)->setBody('No printable visitors with assigned RFID cards for this selection.');
+		}
+
+		$cardTemplate = \App\Libraries\CardLayout::normalizeTemplate($skData->vi_card_template ?? 'ocean');
+		if (!in_array($cardTemplate, \App\Libraries\CardLayout::VISITOR_TEMPLATES, true)) {
+			$cardTemplate = 'ocean';
+		}
+		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($skData);
+
+		$data = [
+			'year' => $this->data['academic_year'],
+			'theyear' => $this->data['academic_year_title'] ?? $this->data['academic_year'],
+			'moto' => $skData->slogan,
+			'logo' => $skData->logo,
+			'school_name' => $skData->name,
+			'header1' => $autoHeaders['header1'],
+			'header2' => $autoHeaders['header2'],
+			'background' => $skData->vi_card_background,
+			'header_color' => $skData->vi_header_color ?: $skData->header_color,
+			'main_color' => ($skData->vi_main_color ?: $skData->main_color) ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate),
+			'paint_color' => ($skData->vi_paint_color ?: ($skData->vi_main_color ?: $skData->main_color))
+				?: \App\Libraries\CardLayout::defaultAccent($cardTemplate),
+			'capitalize' => $skData->vi_capitalize !== null && $skData->vi_capitalize !== ''
+				? $skData->vi_capitalize : $skData->capitalize,
+			'footer_color' => $skData->vi_footer_color ?: $skData->footer_color,
+			'orientation' => 'landscape',
+			'card_template' => $cardTemplate,
+			'card_layout' => $skData->vi_card_layout ?? null,
+			'card_badge' => 'VISITOR CARD',
+			'school_phone' => $skData->phone ?? '',
+			'school_email' => $skData->email ?? '',
+			'school_website' => $skData->website ?? '',
+			'school_address' => $skData->address ?? '',
+			'visitors' => $visitors,
+		];
+
+		try {
+			while (ob_get_level() > 0) {
+				ob_end_clean();
+			}
+			$html = view('templates/visitor_card_smart', $data);
+			$tplDir = FCPATH . 'assets/templates/';
+			$imgDir = $tplDir . '_card_img';
+			if (!is_dir($imgDir)) {
+				@mkdir($imgDir, 0775, true);
+			}
+			$mask = $tplDir . '*.html';
+			array_map('unlink', glob($mask) ?: []);
+			$wkhtmltopdf = new Wkhtmltopdf(['path' => $tplDir]);
+			$wkhtmltopdf->setTitle('Visitor cards');
+			$wkhtmltopdf->setHtml($html);
+			$pageW = '85.6mm';
+			$pageH = '54mm';
+			$wkhtmltopdf->setOrientation('Portrait');
+			$wkhtmltopdf->setOptions([
+				'enable-local-file-access' => null,
+				'disable-smart-shrinking' => null,
+				'encoding' => 'UTF-8',
+				'page-width' => $pageW,
+				'page-height' => $pageH,
+				'zoom' => '1',
+			]);
+			$wkhtmltopdf->setMargins(['top' => 0, 'left' => 0, 'right' => 0, 'bottom' => 0]);
+			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, 'visitor_cards_' . time() . '.pdf');
+		} catch (\Throwable $e) {
+			while (ob_get_level() > 0) {
+				ob_end_clean();
+			}
+			log_message('error', '[generate_visitor_cards] ' . $e->getMessage());
+			return $this->response->setStatusCode(500)->setBody('PDF generation failed: ' . $e->getMessage());
+		}
+	}
+
+	/**
 	 * Save / add a visitor for a student.
 	 */
 	public function parent_visiting_save_visitor()
@@ -12066,26 +12516,25 @@ public function assign_card()
 				$savedId = (int) $visitorMdl->getInsertID();
 			}
 
-			$row = $visitorMdl->find($savedId);
+			// Guaranteed card write (same storage form as student assign-card).
+			if (!empty($payload['card'])) {
+				$row = $this->parentVisitingPersistVisitorCard(
+					$savedId,
+					$school_id,
+					(string) $payload['card'],
+					$operator
+				);
+			} else {
+				$row = $visitorMdl->find($savedId);
+			}
+
 			$expectedCard = ($cardRaw !== '' && $clearCard !== 1 && ($saveWithCard === 1 || $skipCard !== 1 || $visitor_id <= 0));
 			if ($expectedCard && empty($row['card'])) {
 				log_message('error', '[parent_visiting_save_visitor] card not persisted id=' . $savedId . ' raw=' . $cardRaw);
-				// Fallback: direct update when model save skipped the card column.
-				try {
-					$visitorMdl->update($savedId, [
-						'card' => $this->parentVisitingNormalizeCard($cardRaw, $cardFromPicker === 1),
-						'updated_by' => $operator,
-					]);
-					$row = $visitorMdl->find($savedId);
-				} catch (\Throwable $cardEx) {
-					log_message('error', '[parent_visiting_save_visitor] card fallback failed: ' . $cardEx->getMessage());
-				}
-				if (empty($row['card'])) {
-					return $this->response->setJSON([
-						'success' => false,
-						'error' => 'Visitor saved but card was not stored. Try Assign card on the visitor profile.',
-					]);
-				}
+				return $this->response->setJSON([
+					'success' => false,
+					'error' => 'Visitor saved but card was not stored. Try Assign card on the visitor profile.',
+				]);
 			}
 			$count = $visitorMdl->countActiveForStudent($school_id, $student_id);
 			$minVisitors = (int) $settings['min_visitors'];
@@ -12197,10 +12646,17 @@ public function assign_card()
 				'card' => $card,
 				'updated_by' => $operator,
 			]);
+			$row = $this->parentVisitingPersistVisitorCard($visitor_id, $school_id, $card, $operator);
+			if (!$row || trim((string) ($row['card'] ?? '')) === '') {
+				return $this->response->setJSON([
+					'success' => false,
+					'error' => 'Card assignment failed to save. Please scan again.',
+				]);
+			}
 			return $this->response->setJSON([
 				'success' => true,
 				'message' => 'Card assigned successfully.',
-				'card' => $card,
+				'card' => strtoupper(trim((string) $row['card'])),
 			]);
 		} catch (\Throwable $e) {
 			log_message('error', '[parent_visiting_assign_card] ' . $e->getMessage());
@@ -12344,12 +12800,15 @@ public function assign_card()
 				(int) $settings['card_sharing']
 			);
 
+			$owner = \App\Libraries\CardRegistry::lookup($school_id, $card);
+
 			return $this->response->setJSON([
 				'success' => true,
 				'card' => $card,
 				'holders' => $holders,
 				'allowed' => $collision === null,
-				'blocked_reason' => $collision ? ($collision['error'] ?? ('Used by ' . ($collision['name'] ?? 'another user'))) : null,
+				'owner' => $owner,
+				'blocked_reason' => $collision ? ($collision['error'] ?? ('Used by ' . ($collision['type'] ?? 'user') . ': ' . ($collision['name'] ?? ''))) : null,
 				'settings' => $settings,
 			]);
 		} catch (\Throwable $e) {
@@ -12411,7 +12870,52 @@ public function assign_card()
 	private function parentVisitingNormalizeCard($raw, $fromPicker = false)
 	{
 		helper('card_uid');
-		return resolve_card_uid_for_save((string) $raw, $fromPicker);
+		$raw = trim((string) $raw);
+		if ($raw === '') {
+			return '';
+		}
+		if ($fromPicker) {
+			return stored_card_uid($raw);
+		}
+		// USB wedge / NFC scan — same rule as api/assign_card (normalize once).
+		$card = normalize_card_uid($raw);
+		return $card !== '' ? $card : stored_card_uid($raw);
+	}
+
+	/**
+	 * @param int $visitorId
+	 * @param int $schoolId
+	 * @param string $card
+	 * @param int|null $operator
+	 * @return array|null refreshed visitor row
+	 */
+	private function parentVisitingPersistVisitorCard($visitorId, $schoolId, $card, $operator = null)
+	{
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+		$visitorId = (int) $visitorId;
+		$schoolId = (int) $schoolId;
+		$card = strtoupper(trim($card));
+		if ($visitorId <= 0 || $schoolId <= 0 || $card === '') {
+			return null;
+		}
+
+		$visitorMdl->persistCard($visitorId, $schoolId, $card, $operator);
+		$row = $visitorMdl->where('id', $visitorId)->where('school_id', $schoolId)->first();
+		if ($row && trim((string) ($row['card'] ?? '')) === '') {
+			$db = \Config\Database::connect();
+			$db->table('student_visitors')
+				->where('id', $visitorId)
+				->where('school_id', $schoolId)
+				->update([
+					'card' => $card,
+					'updated_by' => $operator,
+					'updated_at' => date('Y-m-d H:i:s'),
+				]);
+			$row = $visitorMdl->where('id', $visitorId)->where('school_id', $schoolId)->first();
+		}
+
+		return $row;
 	}
 
 	/**
@@ -12758,6 +13262,11 @@ public function assign_card()
     $data['school_phone']  = $settings['phone'];
     $data['school_logo']   = $settings['logo'];
     $data['settings']      = $settings;
+    $data['autoprint']     = $this->request->getGet('autoprint') === '1';
+
+    if ($data['autoprint']) {
+        return view("pages/reports/print_permission", $data);
+    }
 
     // ✅ Load the content (permission slip)
     $data['content'] = view("pages/reports/print_permission", $data);
@@ -15210,6 +15719,7 @@ public function assign_card()
         $medicalStatus = $medicalStatus . ' — ' . $medicalDetail;
     }
     $cellId        = (int) $this->request->getPost('cell');
+    $villageId     = (int) $this->request->getPost('village');
     $father        = trim((string) $this->request->getPost('father'));
     $ftPhone       = trim((string) $this->request->getPost('ft_phone'));
     $mother        = trim((string) $this->request->getPost('mother'));
@@ -15318,6 +15828,7 @@ public function assign_card()
         "religion"           => $religion,
         "medical_status"     => $medicalStatus,
         "cell_id"            => $cellId > 0 ? $cellId : null,
+        "village_id"         => $villageId > 0 ? $villageId : null,
         "class_id"           => $classId > 0 ? $classId : null,
         "father"             => $father,
         "ft_phone"           => $ftPhone,
@@ -16001,7 +16512,7 @@ public function assign_card()
 		$classId = $this->request->getPost("classId");
 		$application = $applicationMdl->select("id,fname,lname,
 		gender,phoneNumber,parentType,parentPhoneNumber,parentNames,dateOfBirth,
-		level,studyingMode,faculty_id,department_id,schoolId,class_id,cell_id,medical_status,
+		level,studyingMode,faculty_id,department_id,schoolId,class_id,cell_id,village_id,medical_status,
 		nationality,religion,father,ft_phone,mother,mt_phone,guardian,gd_phone,
 		visitor1_names,visitor1_phone,visitor1_relationship,
 		visitor2_names,visitor2_phone,visitor2_relationship")
@@ -16031,8 +16542,8 @@ public function assign_card()
 		}
 
 		$regNo = $this->_generate_regno(true);
-		$villageId = null;
-		if (!empty($application['cell_id'])) {
+		$villageId = !empty($application['village_id']) ? (int) $application['village_id'] : null;
+		if (!$villageId && !empty($application['cell_id'])) {
 			$vRow = (new AddressModel())->getAddress('soma_village', (int) $application['cell_id'], 'cell', true);
 			if ($vRow && !empty($vRow['id'])) {
 				$villageId = (int) $vRow['id'];
