@@ -1,68 +1,292 @@
-<?php $r = $request; ?>
-<div class="card mb-3"><div class="card-body">
-<h5><?= esc($r['request_no']); ?> <span class="badge badge-info"><?= esc($r['status']); ?></span></h5>
-<p><strong>Payee:</strong> <?= esc($r['payee_name']); ?> | <strong>Amount:</strong> <?= number_format((float)$r['requested_amount'], 2); ?> RWF</p>
-<p><?= esc($r['purpose']); ?></p>
-</div></div>
-<div class="row">
-<div class="col-md-6">
-<div class="card mb-3"><div class="card-header">Lines &amp; budget availability</div><div class="card-body">
-<?php foreach ($lines as $ln) {
-	$av = !empty($ln['budget_line_id']) ? ($availability[$ln['budget_line_id']] ?? null) : null; ?>
-<p><strong><?= esc($ln['description']); ?></strong>: <?= number_format((float)$ln['amount'], 2); ?>
-<?php if ($av) { ?><br><small class="text-muted">Available: <?= number_format($av['available'], 2); ?> (<?= $av['utilization_pct']; ?>% used)</small><?php } ?></p>
-<?php } ?>
-</div></div>
-<?php if (!empty($payments)) { ?>
-<div class="card"><div class="card-header">Payments</div><ul class="list-group list-group-flush">
-<?php foreach ($payments as $p) { ?>
-<li class="list-group-item"><?= esc($p['payment_date']); ?> — <?= number_format((float)$p['amount'], 2); ?> (<?= esc($p['payment_reference']); ?>)</li>
-<?php } ?></ul></div>
-<?php } ?>
-</div>
-<div class="col-md-6">
-<div class="card mb-3"><div class="card-header">Workflow actions</div><div class="card-body">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=2" rel="stylesheet">
+
 <?php
-$wfActions = [];
-if ($r['status'] === 'SUBMITTED') {
-	$wfActions = ['headteacher_approve' => 'Headteacher approve', 'procurement_approve' => 'Procurement approve', 'return' => 'Return'];
-} elseif ($r['status'] === 'HEADTEACHER_APPROVED') {
-	$wfActions = ['procurement_approve' => 'Procurement approve', 'return' => 'Return'];
-} elseif ($r['status'] === 'PROCUREMENT_APPROVED') {
-	$wfActions = ['budget_approve' => 'Budget approve', 'return' => 'Return'];
-} elseif ($r['status'] === 'BUDGET_APPROVED') {
-	$wfActions = ['final_approve' => 'Authorize payment', 'reject' => 'Reject', 'return' => 'Return'];
-}
-foreach ($wfActions as $key => $label) { ?>
-<button type="button" class="btn btn-sm btn-primary mr-1 mb-1 btn-wf" data-action="<?= esc($key, 'attr'); ?>"><?= esc($label); ?></button>
-<?php } ?>
-<?php if (empty($wfActions)) { ?><p class="text-muted mb-0">No actions for this status.</p><?php } ?>
-</div></div>
-<div class="card"><div class="card-header">Approval timeline</div><ul class="list-group list-group-flush">
-<?php foreach ($actions as $act) { ?>
-<li class="list-group-item small">
-<strong><?= esc($act['action']); ?></strong>: <?= esc($act['previous_status']); ?> → <?= esc($act['new_status']); ?>
-<?php if (!empty($act['comment'])) { ?><br><em><?= esc($act['comment']); ?></em><?php } ?>
-<br><span class="text-muted"><?= esc($act['created_at']); ?></span>
-</li>
-<?php } ?>
-</ul></div>
+
+$r = $request;
+
+$statusFlow = ['DRAFT','SUBMITTED','HEADTEACHER_APPROVED','PROCUREMENT_APPROVED','BUDGET_APPROVED','FINANCE_AUTHORIZED','PAID','RECEIPT_CONFIRMED','CLOSED'];
+
+$currentIdx = array_search($r['status'], $statusFlow, true);
+
+if ($currentIdx === false) $currentIdx = 0;
+
+?>
+
+<div class="budget-cr-view budget-cr-form">
+
+<div class="cr-hero">
+
+	<div class="d-flex flex-wrap justify-content-between align-items-start">
+
+		<div>
+
+			<h4 class="mb-1"><?= esc($r['request_no']); ?></h4>
+
+			<span class="badge badge-light"><?= esc($r['status']); ?></span>
+
+			<span class="ml-2"><?= number_format((float)$r['requested_amount'], 0); ?> RWF</span>
+
+		</div>
+
+		<a href="<?= base_url('budget/requests'); ?>" class="btn btn-sm btn-light"><i class="fa fa-arrow-left"></i> All requests</a>
+
+	</div>
+
 </div>
+
+
+
+<div class="cr-flow-steps mb-3">
+
+<?php
+
+$steps = [
+
+	['SUBMITTED','Submitted'],
+
+	['PROCUREMENT_APPROVED','Procurement'],
+
+	['BUDGET_APPROVED','Budget Mgr'],
+
+	['FINANCE_AUTHORIZED','Dep. Director'],
+
+	['PAID','Paid'],
+
+];
+
+foreach ($steps as $s) {
+
+	$done = array_search($s[0], $statusFlow, true) !== false && array_search($s[0], $statusFlow, true) <= $currentIdx;
+
+	$active = $r['status'] === $s[0] || ($s[0]==='SUBMITTED' && in_array($r['status'], ['SUBMITTED','HEADTEACHER_APPROVED'], true));
+
+?>
+
+<span class="cr-flow-step <?= $active ? 'active' : ($done ? 'active' : ''); ?>"><?= esc($s[1]); ?></span>
+
+<?php } ?>
+
 </div>
+
+
+
+<div class="row">
+
+<div class="col-lg-7">
+
+<div class="cr-section">
+
+	<div class="cr-section-title"><i class="fa fa-info-circle"></i> Request details</div>
+
+	<p><strong>Payee:</strong> <?= esc($r['payee_name']); ?> (<?= esc($r['payee_type'] ?? 'supplier'); ?>)</p>
+
+	<p><strong>Purpose:</strong> <?= esc($r['purpose']); ?></p>
+
+	<p class="mb-0 small text-muted">Request date: <?= esc($r['request_date']); ?> · Payment method: <?= esc($r['payment_method'] ?? '—'); ?></p>
+
+</div>
+
+
+
+<div class="cr-section">
+
+	<div class="cr-section-title"><i class="fa fa-chart-pie"></i> Budget consumption</div>
+
+	<p class="small text-muted mb-2">Each approved request <strong>commits</strong> funds on the budget line. Payment moves amounts from committed to <strong>paid</strong>. Budget Manager checks availability before authorizing.</p>
+
+	<?php foreach ($lines as $ln) {
+
+		$av = !empty($ln['budget_line_id']) ? ($availability[$ln['budget_line_id']] ?? null) : null; ?>
+
+	<div class="mb-3 p-2 bg-light rounded">
+
+		<strong><?= esc($ln['description']); ?></strong>: <?= number_format((float)$ln['amount'], 0); ?> RWF
+
+		<?php if ($av) { ?>
+
+		<div class="progress mt-2" style="height:8px"><div class="progress-bar bg-success" style="width:<?= min(100, (float)$av['utilization_pct']); ?>%"></div></div>
+
+		<small class="text-muted">Line budget: <?= number_format($av['revised'], 0); ?> · Available now: <strong><?= number_format($av['available'], 0); ?></strong> RWF (<?= $av['utilization_pct']; ?>% utilized)</small>
+
+		<?php } ?>
+
+	</div>
+
+	<?php } ?>
+
+</div>
+
+
+
+<?php if (!empty($documents)) { ?>
+
+<div class="cr-section">
+
+	<div class="cr-section-title"><i class="fa fa-paperclip"></i> Supporting documents</div>
+
+	<ul class="cr-doc-list">
+
+		<?php foreach ($documents as $doc) { ?>
+
+		<li><span><i class="fa fa-file-pdf"></i> <?= esc($doc['original_name']); ?> <small class="text-muted">(<?= esc($doc['doc_type']); ?>)</small></span>
+
+		<a href="<?= base_url('budget/cash_request_document/'.$doc['id']); ?>" class="btn btn-sm btn-outline-primary" target="_blank"><i class="fa fa-download"></i> Download</a></li>
+
+		<?php } ?>
+
+	</ul>
+
+</div>
+
+<?php } ?>
+
+
+
+<?php if (!empty($payments)) { ?>
+
+<div class="cr-section">
+
+	<div class="cr-section-title"><i class="fa fa-money-check"></i> Payments</div>
+
+	<ul class="list-group list-group-flush">
+
+	<?php foreach ($payments as $p) { ?>
+
+	<li class="list-group-item px-0"><?= esc($p['payment_date']); ?> — <?= number_format((float)$p['amount'], 0); ?> RWF (<?= esc($p['payment_reference'] ?? '—'); ?>)</li>
+
+	<?php } ?>
+
+	</ul>
+
+</div>
+
+<?php } ?>
+
+</div>
+
+
+
+<div class="col-lg-5">
+
+<div class="cr-section">
+
+	<div class="cr-section-title"><i class="fa fa-gavel"></i> Your actions</div>
+
+	<p class="small text-muted">Budget Manager confirms funds exist on the line. Deputy Director of Finance gives final authorization to pay.</p>
+
+	<?php
+
+	$wfActions = [];
+
+	if ($r['status'] === 'SUBMITTED') {
+
+		$wfActions = ['headteacher_approve' => 'Headteacher approve', 'procurement_approve' => 'Procurement approve', 'return' => 'Return to requester'];
+
+	} elseif ($r['status'] === 'HEADTEACHER_APPROVED') {
+
+		$wfActions = ['procurement_approve' => 'Procurement approve', 'return' => 'Return'];
+
+	} elseif ($r['status'] === 'PROCUREMENT_APPROVED') {
+
+		$wfActions = ['budget_approve' => 'Budget Manager — confirm availability', 'return' => 'Return'];
+
+	} elseif ($r['status'] === 'BUDGET_APPROVED') {
+
+		$wfActions = ['final_approve' => 'Deputy Director — authorize payment', 'reject' => 'Reject', 'return' => 'Return'];
+
+	}
+
+	foreach ($wfActions as $key => $label) { ?>
+
+	<button type="button" class="btn btn-sm btn-primary mr-1 mb-2 btn-wf btn-block text-left" data-action="<?= esc($key, 'attr'); ?>"><i class="fa fa-check"></i> <?= esc($label); ?></button>
+
+	<?php } ?>
+
+	<?php if (empty($wfActions)) { ?><p class="text-muted mb-0">No actions available at status <strong><?= esc($r['status']); ?></strong>.</p><?php } ?>
+
+</div>
+
+
+
+<div class="cr-section">
+
+	<div class="cr-section-title"><i class="fa fa-history"></i> Approval timeline</div>
+
+	<div class="cr-timeline">
+
+	<?php foreach ($actions as $act) { ?>
+
+	<div class="cr-timeline-item">
+
+		<strong><?= esc($act['action']); ?></strong><br>
+
+		<?= esc($act['previous_status']); ?> → <?= esc($act['new_status']); ?>
+
+		<?php if (!empty($act['comment'])) { ?><br><em><?= esc($act['comment']); ?></em><?php } ?>
+
+		<br><span class="text-muted"><?= esc($act['created_at']); ?></span>
+
+	</div>
+
+	<?php } ?>
+
+	<?php if (empty($actions)) { ?><p class="text-muted small mb-0">No actions recorded yet.</p><?php } ?>
+
+	</div>
+
+</div>
+
+
+
+<?= view('pages/budget/partials/process_guide', ['ctx' => 'execution', 'compact' => true]); ?>
+
+</div>
+
+</div>
+
+</div>
+
+
+
 <script>
+
 $('.btn-wf').on('click', function () {
+
 	var action = $(this).data('action');
+
 	var comment = prompt('Comment (required for return/reject):') || '';
-	var extra = {};
-	if (action === 'budget_approve' && !confirm('Confirm budget availability?')) return;
+
+	if ((action === 'return' || action === 'reject') && !comment.trim()) {
+
+		toastada.error('Comment is required.');
+
+		return;
+
+	}
+
+	if (action === 'budget_approve' && !confirm('Confirm budget line has sufficient uncommitted funds for this request?')) return;
+
+	if (action === 'final_approve' && !confirm('Authorize the accountant to process payment?')) return;
+
 	$.post('<?= base_url('budget/cash_request_action'); ?>', {
+
 		request_id: <?= (int)$r['id']; ?>,
+
 		action: action,
+
 		comment: comment
+
 	}, function (res) {
+
 		if (res.error) { toastada.error(res.error); return; }
+
 		toastada.success('Status: ' + res.status);
+
 		location.reload();
+
 	}, 'json');
+
 });
+
 </script>
+

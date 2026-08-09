@@ -23,7 +23,7 @@ class BudgetPermissionService
 		$staffId = (int) session('soma_id');
 		$postId = (int) session('soma_post');
 		if (!$this->can($staffId, $postId, $permKey)) {
-			session()->setFlashdata('error', 'You do not have permission for this action.');
+			session()->setFlashdata('error', 'You do not have permission for this action. Contact your administrator to enable Budget & Cash Flow for your role.');
 			header('Location: ' . base_url('budget/dashboard'));
 			exit;
 		}

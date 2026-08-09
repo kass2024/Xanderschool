@@ -89,10 +89,23 @@ class BudgetSchemaModel extends Model
 			23 => 'Internal Auditor',
 		];
 		foreach ($newPosts as $id => $title) {
-			if (!$db->table('posts')->where('id', $id)->countAllResults()) {
-				$db->table('posts')->insert(['id' => $id, 'title' => $title, 'status' => 1]);
+			$row = $db->table('posts')->where('id', $id)->get(1)->getRowArray();
+			if ($row) {
+				$db->table('posts')->where('id', $id)->update(['title' => $title, 'status' => 1]);
+				continue;
 			}
+			$db->table('posts')->insert(['id' => $id, 'title' => $title, 'status' => 1]);
 		}
+	}
+
+	/** Ensure finance posts + budget permissions exist (safe to run anytime). */
+	public function seedFinanceRoles()
+	{
+		$this->ensureSchema();
+		$db = \Config\Database::connect();
+		$this->seedPermissionsCatalog($db);
+		$this->seedFinancePosts($db);
+		$this->seedPostPermissions($db);
 	}
 
 	private function seedPostPermissions($db)
@@ -158,6 +171,7 @@ class BudgetSchemaModel extends Model
 
 		$this->assignStaffToBranch($db, $staffId, $branchId);
 		$this->ensureOrgSettings($db, $orgId, $staffId);
+		$this->ensureDefaultBudgetPeriod($db, $orgId, $branchId, $staffId);
 	}
 
 	/** Non-Wisdom schools: own org + one branch = standalone school. Never touches Wisdom org. */
@@ -200,6 +214,7 @@ class BudgetSchemaModel extends Model
 
 		$this->assignStaffToBranch($db, $staffId, $branchId);
 		$this->ensureOrgSettings($db, $orgId, $staffId);
+		$this->ensureDefaultBudgetPeriod($db, $orgId, $branchId, $staffId);
 	}
 
 	private function assignStaffToBranch($db, $staffId, $branchId)
@@ -231,6 +246,40 @@ class BudgetSchemaModel extends Model
 			'headteacher_approval_mode' => 'evidence',
 			'ai_enabled' => 0,
 			'budget_utilization_alert_pct' => 80,
+			'created_by' => $staffId ?: null,
+			'created_at' => date('Y-m-d H:i:s'),
+			'updated_at' => date('Y-m-d H:i:s'),
+		]);
+	}
+
+	/** Open annual period so headmasters can start budget prep immediately. */
+	private function ensureDefaultBudgetPeriod($db, $orgId, $branchId, $staffId)
+	{
+		if ($branchId <= 0) {
+			return;
+		}
+		$open = $db->table('budget_periods')->where('branch_id', $branchId)->where('status', 'open')->countAllResults();
+		if ($open > 0) {
+			return;
+		}
+		$year = (int) date('Y');
+		$title = $year . '-' . ($year + 1) . ' Annual Budget';
+		$exists = $db->table('budget_periods')->where('branch_id', $branchId)->where('title', $title)->countAllResults();
+		if ($exists) {
+			$db->table('budget_periods')->where('branch_id', $branchId)->where('title', $title)->update([
+				'status' => 'open',
+				'updated_at' => date('Y-m-d H:i:s'),
+			]);
+			return;
+		}
+		$db->table('budget_periods')->insert([
+			'organization_id' => (int) $orgId,
+			'branch_id' => (int) $branchId,
+			'title' => $title,
+			'period_type' => 'annual',
+			'start_date' => $year . '-01-01',
+			'end_date' => $year . '-12-31',
+			'status' => 'open',
 			'created_by' => $staffId ?: null,
 			'created_at' => date('Y-m-d H:i:s'),
 			'updated_at' => date('Y-m-d H:i:s'),

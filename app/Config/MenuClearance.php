@@ -36,7 +36,7 @@ class MenuClearance
 					['key' => 'student-cards', 'label' => 'Student Cards'],
 					['key' => 'student-photo', 'label' => 'Student Photo'],
 					['key' => 'assign-card', 'label' => 'Assign Card'],
-					['key' => 'attendance-card', 'label' => 'Student IN/OUT Attendance'],
+					['key' => 'student_material_check', 'label' => 'Required Material Check'],
 				],
 			],
 			[
@@ -75,6 +75,7 @@ class MenuClearance
 				'label' => 'Parent visiting',
 				'children' => [
 					['key' => 'parent_visiting/assign', 'label' => 'Assign visitors'],
+					['key' => 'parent_visiting/cards', 'label' => 'Print visitor cards'],
 					['key' => 'parent_visiting/verify', 'label' => 'Verify visit'],
 					['key' => 'parent_visiting/report', 'label' => 'Visiting report'],
 				],
@@ -102,6 +103,7 @@ class MenuClearance
 					['key' => 'ped_analyse', 'label' => 'Analyse Curriculum & Chronogram'],
 					['key' => 'ped_scheme_of_work', 'label' => 'Scheme of Work'],
 					['key' => 'ped_session_plan', 'label' => 'Session Plan'],
+					['key' => 'timetable_dashboard', 'label' => 'Timetable Management'],
 				],
 			],
 			[
@@ -117,6 +119,7 @@ class MenuClearance
 				'label' => 'Student Attendance',
 				'children' => [
 					['key' => 'attendance_record', 'label' => 'Record Attendance'],
+					['key' => 'attendance-card', 'label' => 'Student IN/OUT Attendance'],
 					['key' => 'student-report/inout/monthly', 'label' => 'Student In/Out'],
 					['key' => 'student-report/course/monthly', 'label' => 'Student Course'],
 					['key' => 'student-report/daily/class', 'label' => 'Student Daily Attendance'],
@@ -140,6 +143,14 @@ class MenuClearance
 				'children' => [
 					['key' => 'staffs', 'label' => 'All Staffs'],
 					['key' => 'staff-cards', 'label' => 'Staff Cards'],
+				],
+			],
+			[
+				'key' => 'finance',
+				'label' => 'Finance',
+				'children' => [
+					['key' => 'fees', 'label' => 'Fees Management (group)'],
+					['key' => 'budget_cashflow', 'label' => 'Budget & Cash Flow (group)'],
 				],
 			],
 			[
@@ -371,11 +382,13 @@ class MenuClearance
 		if ($postId === 9) {
 			$keys = array_merge($keys, self::groupKeys('fees'));
 			$keys = array_merge($keys, self::groupKeys('budget_cashflow'));
+			$keys[] = 'finance';
 		}
 
 		// Budget & Cash Flow finance roles
 		if (in_array($postId, [1, 8, 19, 20, 21, 22, 23], true)) {
 			$keys = array_merge($keys, self::groupKeys('budget_cashflow'));
+			$keys[] = 'finance';
 		}
 		if ($postId === 3) {
 			$keys = array_merge($keys, ['budget_dashboard', 'budget_reports', 'budget_audit']);

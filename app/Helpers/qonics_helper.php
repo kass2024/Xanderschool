@@ -60,6 +60,19 @@ if (!function_exists('menu_clearance_allowed')) {
 	}
 }
 
+if (!function_exists('budget_menu_any')) {
+	/** True if the current post may see any of the budget sidebar menu keys. */
+	function budget_menu_any(array $menuKeys)
+	{
+		foreach ($menuKeys as $key) {
+			if (menu_clearance_allowed((string) $key)) {
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
 if (!function_exists('budget_permission_allowed')) {
 	function budget_permission_allowed($permKey)
 	{
@@ -86,11 +99,18 @@ if (!function_exists('menu_clearance_group_visible')) {
 	function menu_clearance_group_visible($parentKey)
 	{
 		$parentKey = (string) $parentKey;
+		if ($parentKey === 'finance') {
+			return menu_clearance_group_visible('fees') || menu_clearance_group_visible('budget_cashflow');
+		}
 		if (menu_clearance_allowed($parentKey)) {
 			return true;
 		}
 		foreach (\Config\MenuClearance::childKeys($parentKey) as $child) {
 			if (menu_clearance_allowed($child)) {
+				return true;
+			}
+			// Finance sub-groups (fees, budget_cashflow) are also parent keys.
+			if (in_array($child, ['fees', 'budget_cashflow'], true) && menu_clearance_group_visible($child)) {
 				return true;
 			}
 		}
@@ -110,6 +130,71 @@ if (!function_exists('_is_allowed')) {
 		return false;
 	}
 }
+
+if (!function_exists('material_check_full_access')) {
+	function material_check_full_access()
+	{
+		$postId = (int) ($_SESSION['soma_post'] ?? 0);
+		if (in_array($postId, \Config\StudentMaterialPermissions::FULL_ACCESS_POST_IDS, true)) {
+			return true;
+		}
+		$title = strtolower(trim((string) ($_SESSION['soma_post_title'] ?? '')));
+		foreach (\Config\StudentMaterialPermissions::FULL_ACCESS_TITLE_KEYWORDS as $kw) {
+			if ($title !== '' && strpos($title, $kw) !== false) {
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+if (!function_exists('material_check_mentor_class_ids')) {
+	function material_check_mentor_class_ids($schoolId = null)
+	{
+		static $cache = [];
+		$schoolId = (int) ($schoolId ?? ($_SESSION['soma_school_id'] ?? 0));
+		if (isset($cache[$schoolId])) {
+			return $cache[$schoolId];
+		}
+		$staffId = (int) ($_SESSION['soma_id'] ?? 0);
+		if ($staffId <= 0 || $schoolId <= 0) {
+			$cache[$schoolId] = [];
+			return [];
+		}
+		$db = \Config\Database::connect();
+		$rows = $db->table('classes')->select('id')
+			->where('school_id', $schoolId)
+			->where('mentor', $staffId)
+			->get()->getResultArray();
+		$cache[$schoolId] = array_values(array_map('intval', array_column($rows, 'id')));
+		return $cache[$schoolId];
+	}
+}
+
+if (!function_exists('material_check_menu_visible')) {
+	function material_check_menu_visible()
+	{
+		if (material_check_full_access()) {
+			return true;
+		}
+		return count(material_check_mentor_class_ids()) > 0;
+	}
+}
+
+if (!function_exists('material_check_can_access_class')) {
+	function material_check_can_access_class($classId, $schoolId = null)
+	{
+		$classId = (int) $classId;
+		if ($classId <= 0) {
+			return false;
+		}
+		if (material_check_full_access()) {
+			return true;
+		}
+		return in_array($classId, material_check_mentor_class_ids($schoolId), true);
+	}
+}
+
 if (!function_exists('cmp')) {
 	function cmp($a, $b)
 	{
@@ -794,10 +879,25 @@ if (!function_exists('profile_photo_url')) {
 		if (is_file(FCPATH . 'assets/images/fallback-avatar.png')) {
 			return base_url('assets/images/fallback-avatar.png');
 		}
+		if (is_file(FCPATH . 'assets/images/fallback-avatar.svg')) {
+			return base_url('assets/images/fallback-avatar.svg');
+		}
 		if (is_file(FCPATH . 'assets/images/no_image.jpg')) {
 			return base_url('assets/images/no_image.jpg');
 		}
 		return base_url('assets/images/logo.jpeg');
+	}
+}
+
+/** Thumbnail for discipline / permission entry student rows. */
+if (!function_exists('student_entry_photo_html')) {
+	function student_entry_photo_html(?string $stored): string
+	{
+		$fallback = profile_photo_url(null);
+		$resolved = resolve_profile_photo($stored);
+		$url = $resolved !== null ? profile_photo_url($resolved) : $fallback;
+		return '<img class="student-entry-photo" src="' . esc($url, 'attr') . '" alt="" '
+			. 'onerror="this.onerror=null;this.src=\'' . esc($fallback, 'attr') . '\';" />';
 	}
 }
 

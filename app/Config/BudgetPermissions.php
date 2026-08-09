@@ -101,11 +101,15 @@ class BudgetPermissions
 				'cash_request.submit', 'cash_request.confirm_receipt', 'cash_request.close',
 				'cash_request.manage_documents', 'budget.view_reports',
 			],
-			1 => [ // Head master
-				'cash_request.headteacher_approve', 'budget.view_reports', 'cash_request.view_audit',
+			1 => [ // Head master — branch budget & cash requests
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
+				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
+				'cash_request.headteacher_approve', 'cash_request.view_audit',
 			],
 			18 => [ // Headmistress
-				'cash_request.headteacher_approve', 'budget.view_reports', 'cash_request.view_audit',
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
+				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
+				'cash_request.headteacher_approve', 'cash_request.view_audit',
 			],
 			8 => [ // Cashier
 				'cash_request.process_payment', 'cash_request.manage_documents', 'budget.view_reports',

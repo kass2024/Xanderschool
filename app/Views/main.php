@@ -143,11 +143,11 @@
 											</a>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('attendance-card')) { ?>
+										<?php if (function_exists('material_check_menu_visible') ? material_check_menu_visible() : menu_clearance_allowed('student_material_check')) { ?>
 										<li>
-											<a href="<?= base_url('attendance-card'); ?>">
+											<a href="<?= base_url('student_material_check'); ?>">
 												<i class="metismenu-icon"></i>
-												Student IN/OUT Attendance
+												Required Material Check
 											</a>
 										</li>
 										<?php } ?>
@@ -272,6 +272,14 @@
 											<a href="<?= base_url('parent_visiting/assign'); ?>">
 												<i class="metismenu-icon"></i>
 												Assign visitors
+											</a>
+										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('parent_visiting/cards')) { ?>
+										<li>
+											<a href="<?= base_url('parent_visiting/cards'); ?>">
+												<i class="metismenu-icon"></i>
+												Print visitor cards
 											</a>
 										</li>
 										<?php } ?>
@@ -441,6 +449,14 @@
 											</a>
 										</li>
 										<?php } ?>
+										<?php if (menu_clearance_allowed('timetable_dashboard')) { ?>
+										<li>
+											<a href="<?= base_url('timetable/dashboard'); ?>">
+												<i class="metismenu-icon"></i>
+												Timetable Management
+											</a>
+										</li>
+										<?php } ?>
 									</ul>
 								</li>
 							<?php } ?>
@@ -489,6 +505,14 @@
 											<a href="javascript:void" data-target="#attendanceMdl" data-toggle="modal">
 												<i class="fa fa-plus"></i>
 												<?= lang("app.recordAttendance"); ?>
+											</a>
+										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('attendance-card')) { ?>
+										<li>
+											<a href="<?= base_url('attendance-card'); ?>" target="_blank" rel="noopener noreferrer">
+												<i class="metismenu-icon"></i>
+												Student IN/OUT Attendance
 											</a>
 										</li>
 										<?php } ?>
@@ -619,61 +643,96 @@
 									</ul>
 								</li>
 							<?php } ?>
-							<?php if (menu_clearance_group_visible('fees')) { ?>
-								<li class="app-sidebar__heading"><?= lang("app.feesManagement"); ?></li>
+							<?php if (menu_clearance_group_visible('finance')) { ?>
+								<li class="app-sidebar__heading"><?= lang("app.finance"); ?></li>
 								<li>
 									<a href="javascript:void">
-										<i class="metismenu-icon typcn typcn-group-outline"></i>
-										<?= lang("app.feesManagement"); ?>
+										<i class="metismenu-icon pe-7s-wallet"></i>
+										<?= lang("app.finance"); ?>
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
-										<?php if (menu_clearance_allowed('fees_entry')) { ?>
+										<?php if (menu_clearance_group_visible('fees')) { ?>
 										<li>
-											<a href="<?= base_url('fees_entry'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.feesEntry"); ?>
+											<a href="javascript:void">
+												<i class="metismenu-icon typcn typcn-group-outline"></i>
+												<?= lang("app.feesManagement"); ?>
+												<i class="metismenu-state-icon fa fa-caret-down"></i>
 											</a>
+											<ul class="mm-collapse">
+												<?php if (menu_clearance_allowed('fees_entry')) { ?>
+												<li>
+													<a href="<?= base_url('fees_entry'); ?>">
+														<i class="metismenu-icon"></i>
+														<?= lang("app.feesEntry"); ?>
+													</a>
+												</li>
+												<?php } ?>
+												<?php if (menu_clearance_allowed('school_fees_management')) { ?>
+												<li>
+													<a href="<?= base_url('school_fees_management'); ?>">
+														<i class="metismenu-icon"></i>
+														<?= lang("app.schoolFeesManagement"); ?>
+													</a>
+												</li>
+												<?php } ?>
+												<?php if (menu_clearance_allowed('extra_fees_management')) { ?>
+												<li>
+													<a href="<?= base_url('extra_fees_management'); ?>">
+														<i class="metismenu-icon"></i>
+														<?= lang("app.extraFeesManagement"); ?>
+													</a>
+												</li>
+												<?php } ?>
+												<?php // Hidden from sidebar — routes still work if accessed directly ?>
+												<?php if (false && menu_clearance_allowed('transport_fees_management')) { ?>
+												<li>
+													<a href="<?= base_url('transport_fees_management'); ?>">
+														<i class="metismenu-icon"></i>
+														<?= lang("app.transportFeesManagement"); ?>
+													</a>
+												</li>
+												<?php } ?>
+												<?php if (false && menu_clearance_allowed('finance_records')) { ?>
+												<li>
+													<a href="<?= base_url('finance_records'); ?>">
+														<i class="metismenu-icon"></i>
+														Self service transactions
+													</a>
+												</li>
+												<?php } ?>
+												<?php if (menu_clearance_allowed('system-report/fees')) { ?>
+												<li>
+													<a href="<?= base_url('system-report/fees'); ?>">
+														<i class="metismenu-icon"></i>
+														<?= lang("app.feesReport"); ?>
+													</a>
+												</li>
+												<?php } ?>
+											</ul>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('school_fees_management')) { ?>
+										<?php if (menu_clearance_group_visible('budget_cashflow')) { ?>
 										<li>
-											<a href="<?= base_url('school_fees_management'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.schoolFeesManagement"); ?>
+											<a href="javascript:void">
+												<i class="metismenu-icon pe-7s-cash"></i>
+												Budget & Cash Flow
+												<i class="metismenu-state-icon fa fa-caret-down"></i>
 											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('extra_fees_management')) { ?>
-										<li>
-											<a href="<?= base_url('extra_fees_management'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.extraFeesManagement"); ?>
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('transport_fees_management')) { ?>
-										<li>
-											<a href="<?= base_url('transport_fees_management'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.transportFeesManagement"); ?>
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('finance_records')) { ?>
-										<li>
-											<a href="<?= base_url('finance_records'); ?>">
-												<i class="metismenu-icon"></i>
-												Self service transactions
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('system-report/fees')) { ?>
-										<li>
-											<a href="<?= base_url('system-report/fees'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.feesReport"); ?>
-											</a>
+											<ul class="mm-collapse">
+												<?php if (menu_clearance_allowed('budget_dashboard')) { ?>
+												<li><a href="<?= base_url('budget/dashboard'); ?>"><i class="metismenu-icon"></i> Dashboard</a></li>
+												<?php } ?>
+												<?php if (budget_menu_any(['budget_prepare', 'budget_periods', 'budget_templates', 'budget_review', 'budget_approved'])) { ?>
+												<li><a href="<?= base_url('budget/prepare'); ?>"><i class="metismenu-icon"></i> Prepare Budget</a></li>
+												<?php } ?>
+												<?php if (budget_menu_any(['budget_cash_requests', 'budget_pending', 'budget_procurement', 'budget_availability', 'budget_final_approval', 'budget_payments', 'budget_filing'])) { ?>
+												<li><a href="<?= base_url('budget/requests'); ?>"><i class="metismenu-icon"></i> Requests & Approvals</a></li>
+												<?php } ?>
+												<?php if (budget_menu_any(['budget_reports', 'budget_audit', 'budget_settings'])) { ?>
+												<li><a href="<?= base_url('budget/reports'); ?>"><i class="metismenu-icon"></i> Reports</a></li>
+												<?php } ?>
+											</ul>
 										</li>
 										<?php } ?>
 									</ul>
@@ -708,66 +767,6 @@
 										<?php } ?>
 										<?php if (menu_clearance_allowed('asset_settings')) { ?>
 										<li><a href="<?= base_url('asset_management/settings'); ?>"><i class="metismenu-icon"></i> Settings</a></li>
-										<?php } ?>
-									</ul>
-								</li>
-							<?php } ?>
-							<?php if (menu_clearance_group_visible('budget_cashflow')) { ?>
-								<li class="app-sidebar__heading">Budget & Cash Flow</li>
-								<li>
-									<a href="javascript:void">
-										<i class="metismenu-icon pe-7s-cash"></i>
-										Budget & Cash Flow
-										<i class="metismenu-state-icon fa fa-caret-down"></i>
-									</a>
-									<ul class="mm-collapse">
-										<?php if (menu_clearance_allowed('budget_dashboard')) { ?>
-										<li><a href="<?= base_url('budget/dashboard'); ?>"><i class="metismenu-icon"></i> Dashboard</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_prepare')) { ?>
-										<li><a href="<?= base_url('budget/prepare'); ?>"><i class="metismenu-icon"></i> Budget Preparation</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_periods')) { ?>
-										<li><a href="<?= base_url('budget/periods'); ?>"><i class="metismenu-icon"></i> Budget Periods</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_templates')) { ?>
-										<li><a href="<?= base_url('budget/templates'); ?>"><i class="metismenu-icon"></i> Budget Templates</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_review')) { ?>
-										<li><a href="<?= base_url('budget/budget_review'); ?>"><i class="metismenu-icon"></i> Budget Review</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_approved')) { ?>
-										<li><a href="<?= base_url('budget/approved_budgets'); ?>"><i class="metismenu-icon"></i> Approved Budgets</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_cash_requests')) { ?>
-										<li><a href="<?= base_url('budget/cash_requests'); ?>"><i class="metismenu-icon"></i> Cash Requests</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_pending')) { ?>
-										<li><a href="<?= base_url('budget/pending_actions'); ?>"><i class="metismenu-icon"></i> My Pending Actions</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_procurement')) { ?>
-										<li><a href="<?= base_url('budget/procurement_review'); ?>"><i class="metismenu-icon"></i> Procurement Review</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_availability')) { ?>
-										<li><a href="<?= base_url('budget/budget_availability_review'); ?>"><i class="metismenu-icon"></i> Budget Availability</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_final_approval')) { ?>
-										<li><a href="<?= base_url('budget/final_approval'); ?>"><i class="metismenu-icon"></i> Final Approval</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_payments')) { ?>
-										<li><a href="<?= base_url('budget/payments'); ?>"><i class="metismenu-icon"></i> Payments</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_filing')) { ?>
-										<li><a href="<?= base_url('budget/filing'); ?>"><i class="metismenu-icon"></i> Receipt & Filing</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_reports')) { ?>
-										<li><a href="<?= base_url('budget/reports'); ?>"><i class="metismenu-icon"></i> Reports</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_audit')) { ?>
-										<li><a href="<?= base_url('budget/audit_trail'); ?>"><i class="metismenu-icon"></i> Audit Trail</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('budget_settings')) { ?>
-										<li><a href="<?= base_url('budget/settings'); ?>"><i class="metismenu-icon"></i> Settings</a></li>
 										<?php } ?>
 									</ul>
 								</li>
@@ -1808,8 +1807,8 @@
 								<input type="number" step="0.1" min="0" name="credit" class="form-control" id="editHours">
 							</div>
 							<div class="form-group">
-								<label id="mentor"><?= lang("app.maxPoints"); ?> <small class="text-muted">(credit × 10)</small></label> <i style="color: red;">*</i>
-								<input type="number" min="0" name="marks" class="form-control" id="editMarks" readonly>
+								<label id="mentor"><?= lang("app.maxPoints"); ?> <small class="text-muted">(default credit × 10)</small></label> <i style="color: red;">*</i>
+								<input type="number" min="0" step="1" name="marks" class="form-control" id="editMarks">
 							</div>
 						</div>
 					</div>
@@ -2027,8 +2026,9 @@
 		<div class="modal-dialog" role="document">
 			<div class="modal-content">
 				<form action="<?= base_url('manipulate_course_category'); ?>" class="autoSubmit validate">
+					<input type="hidden" name="fId" value="">
 					<div class="modal-header">
-						<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.addNewCourseCategory"); ?></h5>
+						<h5 class="modal-title" id="courseCategoryModalTitle"><?= lang("app.addNewCourseCategory"); ?></h5>
 						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
 							<span aria-hidden="true">×</span>
 						</button>
@@ -2141,9 +2141,9 @@
 ?>
 <?php if ($page == "School_fees") { ?>
 	<div class="modal fade" id="mdlfees" tabindex="-1" role="dialog">
-		<div class="modal-dialog" role="document">
+		<div class="modal-dialog modal-lg" role="document">
 			<div class="modal-content">
-				<form action="<?= base_url('manipulate_school_fee'); ?>" class="autoSubmit validate">
+				<form action="<?= base_url('manipulate_school_fee'); ?>" class="autoSubmit validate" id="frmSchoolFee">
 					<div class="modal-header">
 						<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.createFee"); ?></h5>
 						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
@@ -2151,32 +2151,47 @@
 						</button>
 					</div>
 					<div class="modal-body">
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<div class="form-group">
-								<label><?= lang("app.selectDepartment"); ?></label>
-								<select class="form-control select2" required name="dept" id="select_dept">
-									<option selected disabled><?= lang("app.selectDepartment"); ?></option>
-									<?php foreach ($depts as $dept) { ?>
-										<option
-												value="<?= $dept['id']; ?>"><?= $dept['title']; ?> <?= $dept['code']; ?></option>
-										<?php
-									}
-									?>
-								</select>
+						<div class="row">
+							<div class="col-md-6">
+								<div class="form-group">
+									<label><?= lang("app.selectDepartment"); ?></label>
+									<select class="form-control select2" required name="dept" id="select_dept">
+										<option selected disabled value=""><?= lang("app.selectDepartment"); ?></option>
+										<?php foreach ($depts as $dept) { ?>
+											<option value="<?= $dept['id']; ?>"><?= esc($dept['title']); ?> <?= esc($dept['code']); ?></option>
+										<?php } ?>
+									</select>
+								</div>
+							</div>
+							<div class="col-md-6">
+								<div class="form-group">
+									<label><?= lang("app.selectClass"); ?></label>
+									<select class="form-control select2" required name="target[]" id="fee_targets" multiple data-placeholder="<?= lang("app.selectClass"); ?>">
+									</select>
+									<small class="form-text text-muted">Select class(es) — e.g. P4 A, P4 B when multiple exist.</small>
+								</div>
 							</div>
 						</div>
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<div class="form-group">
-								<label><?= lang("app.selectLevel"); ?></label>
-								<select class="form-control select2" required name="level">
-
-								</select>
+						<div class="row">
+							<div class="col-md-6">
+								<div class="form-group">
+									<label><?= lang("app.amount"); ?></label>
+									<input type="number" min="0" step="1" name="amount" class="form-control" required>
+								</div>
 							</div>
-						</div>
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<div class="form-group">
-								<label><?= lang("app.singleTermAmount"); ?></label>
-								<input type="text" name="amount" class="form-control">
+							<div class="col-md-6">
+								<div class="form-group">
+									<label><?= lang("app.selectTerms"); ?></label>
+									<div class="custom-control custom-checkbox mb-2">
+										<input type="checkbox" class="custom-control-input" id="fee_all_terms" name="all_terms" value="1" checked>
+										<label class="custom-control-label" for="fee_all_terms"><?= lang("app.allTermsSameAmount"); ?></label>
+									</div>
+									<select class="form-control select2" name="term[]" id="fee_terms" multiple data-placeholder="<?= lang("app.selectTerms"); ?>" disabled>
+										<option value="1"><?= lang("app.term1"); ?></option>
+										<option value="2"><?= lang("app.term2"); ?></option>
+										<option value="3"><?= lang("app.term3"); ?></option>
+									</select>
+								</div>
 							</div>
 						</div>
 					</div>
@@ -2190,6 +2205,70 @@
 			</div>
 		</div>
 	</div>
+	<script>
+	(function ($) {
+		function initFeeModalSelect2() {
+			$('#mdlfees .select2').each(function () {
+				var $el = $(this);
+				if ($el.data('select2')) {
+					$el.select2('destroy');
+				}
+				$el.select2({
+					width: '100%',
+					dropdownParent: $('#mdlfees')
+				});
+			});
+		}
+
+		function toggleFeeTerms() {
+			var allTerms = $('#fee_all_terms').is(':checked');
+			var $terms = $('#fee_terms');
+			$terms.prop('disabled', allTerms);
+			$terms.prop('required', !allTerms);
+			if (allTerms) {
+				$terms.val(null).trigger('change');
+			}
+			if ($terms.data('select2')) {
+				$terms.select2('destroy');
+			}
+			$terms.select2({
+				width: '100%',
+				dropdownParent: $('#mdlfees'),
+				placeholder: '<?= esc(lang("app.selectTerms"), "js"); ?>'
+			});
+			if (allTerms) {
+				$terms.next('.select2-container').addClass('select2-container--disabled');
+			}
+		}
+
+		$('#mdlfees').on('shown.bs.modal', function () {
+			initFeeModalSelect2();
+			toggleFeeTerms();
+		});
+
+		$('#fee_all_terms').on('change', toggleFeeTerms);
+
+		$('#select_dept').on('change', function () {
+			var dept = $(this).val();
+			if (!dept) {
+				return;
+			}
+			$.get('<?= base_url(); ?>get_fee_targets/' + dept, function (data) {
+				var $sel = $('#fee_targets');
+				if ($sel.data('select2')) {
+					$sel.select2('destroy');
+				}
+				$sel.html(data);
+				$sel.select2({
+					width: '100%',
+					dropdownParent: $('#mdlfees'),
+					placeholder: '<?= esc(lang("app.selectClass"), "js"); ?>'
+				});
+			});
+		});
+
+	})(jQuery);
+	</script>
 	<?php
 }
 ?>
@@ -2260,122 +2339,86 @@
 
 <?php if ($page == "Fees_Entry") { ?>
 	<div class="modal fade" id="mdlfeesEntry" tabindex="-1" role="dialog">
-		<div class="modal-dialog modal-lg" role="document">
-			<div class="modal-content">
-				<div class="modal-header">
-					<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.recordNewInvoice"); ?></h5>
-					<button type="button" class="close" data-dismiss="modal" aria-label="Close">
-						<span aria-hidden="true">×</span>
-					</button>
-				</div>
-				<div class="modal-body">
-					<form class="autoSubmits validate">
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<div class="form-group">
-								<label><?= lang("app.feeType"); ?></label>
-								<select class="form-control select2" name="feetype" id="select_fees_type">
-									<option selected disabled><?= lang("app.selectType"); ?></option>
-									<option value="0"><?= lang("app.schoolFees"); ?></option>
-									<option value="1"><?= lang("app.extraFees"); ?></option>
-								</select>
-							</div>
-						</div>
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left" id="schoolfeesType" style="display: none">
-							<div class="form-group">
-								<label><?= lang("app.schoolFeesTerm"); ?></label>
-								<select class="form-control select2" name="select_term" id="select_fees_term">
+		<div class="modal-dialog modal-xl" role="document">
+			<div class="modal-content fe-invoice-modal">
+				<form action="<?= base_url('manipulate_fee_entry'); ?>" id="frmSaveFeesRecords" class="validate">
+					<div class="modal-header">
+						<h5 class="modal-title"><?= lang("app.recordNewInvoice"); ?></h5>
+						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+							<span aria-hidden="true">×</span>
+						</button>
+					</div>
+					<div class="modal-body">
+						<input type="hidden" name="studentid" id="studentId">
 
-								</select>
-							</div>
+						<div id="feInvoiceLoading" class="fe-invoice-loading">
+							<i class="fa fa-spinner fa-spin"></i> Loading payable items…
 						</div>
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left" id="extrafeesType" style="display: none">
-							<div class="form-group">
-								<label><?= lang("app.extraFees"); ?></label>
-								<select class="form-control select2" name="ExtrafeeType" id="ExtrafeeType">
+						<div id="feInvoiceEmpty" class="fe-invoice-empty" style="display:none">
+							<i class="fa fa-check-circle"></i>
+							<p>All fees for this student are fully paid.</p>
+						</div>
 
-								</select>
+						<div id="feInvoiceWrap" style="display:none">
+							<div class="fe-invoice-toolbar">
+								<button type="button" class="btn btn-sm btn-outline-primary" id="feInvSelectAll">
+									Select all
+								</button>
+								<button type="button" class="btn btn-sm btn-outline-secondary" id="feInvFillBalance">
+									Fill full balance
+								</button>
+								<span class="fe-invoice-hint">Check items and enter amounts — school fees and extra fees can be saved together.</span>
 							</div>
-						</div>
-						<div class="col-sm-6 col-md-6 col-lg-6 pull-left">
-							<div class="form-group">
-								<label><?= lang("app.expectedAmount"); ?></label>
-								<input type="text" name="expected_amount" class="form-control" readonly>
-							</div>
-						</div>
-						<div class="col-sm-6 col-md-6 col-lg-6 pull-right">
-							<div class="form-group">
-								<label><?= lang("app.paidAmount"); ?></label>
-								<input type="text" name="paid_amount" id="paidAmount" class="form-control" disabled>
-							</div>
-						</div>
-						<div class="col-sm-6 col-md-6 col-lg-6 pull-left" id="remainDiv">
-							<div class="form-group">
-								<label><?= lang("app.remainAmount"); ?></label>
-								<input type="number" name="remain_amount" class="form-control" id="remainField"
-									   readonly>
-							</div>
-						</div>
-						<div class="col-sm-6 col-md-6 col-lg-6 pull-right" id="recievedDiv">
-							<div class="form-group">
-								<label><?= lang("app.receivedAmount"); ?></label>
-								<input type="number" name="received_amount" class="form-control"
-									   data-parsley-lt-message="Received amount must be less than remaining amount"
-									   required id="receivedAmount">
-							</div>
-						</div>
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left" id="paymentModeDiv">
-							<div class="form-group">
-								<label><?= lang("app.paymentMode"); ?></label>
-								<select class="form-control select2" name="payment_mode" id="paymentMode" required>
-									<option selected disabled><?= lang("app.selectPaymentMode"); ?></option>
-									<option value="1"><?= lang("app.bankSlip"); ?></option>
-									<option value="2"><?= lang("app.cash"); ?></option>
-									<option value="3"><?= lang("app.cheque"); ?></option>
-									<option value="4"><?= lang("app.momo"); ?></option>
-									<option value="5"><?= lang("app.airtelMoney"); ?></option>
-								</select>
-							</div>
-							<button type="submit" class="btn btn-success btn-sm float-right"
-									style="margin-bottom: 13px;margin-top:-12px;color: #ffffff" id="addItemBtn"
-									data-target="open">Add item
-							</button>
-						</div>
-					</form>
 
-					<div class="modal-footer">
-						<form action="<?= base_url('manipulate_fee_entry'); ?>" id="frmSaveFeesRecords"
-							  class="autoSubmit validate" style="display:none;">
-							<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-								<input type="hidden" name="studentid" id="studentId">
-								<table class="table table-bordered" id="pendingTbl">
+							<div class="table-responsive fe-invoice-table-wrap">
+								<table class="table table-sm table-hover mb-0" id="feInvoiceTable">
 									<thead>
 									<tr>
-										<th scope="col">#</th>
-										<th scope="col">Item</th>
-										<th scope="col">Type</th>
-										<th scope="col">Amount</th>
-										<th scope="col">Payment Mode</th>
-										<th scope="col"></th>
+										<th style="width:36px"></th>
+										<th><?= lang("app.item"); ?></th>
+										<th><?= lang("app.term"); ?></th>
+										<th class="text-right"><?= lang("app.expectedAmount"); ?></th>
+										<th class="text-right"><?= lang("app.paidAmount"); ?></th>
+										<th class="text-right"><?= lang("app.remainAmount"); ?></th>
+										<th class="text-right" style="min-width:120px"><?= lang("app.receivedAmount"); ?></th>
 									</tr>
 									</thead>
-									<tbody>
-
-									</tbody>
+									<tbody id="feInvoiceBody"></tbody>
+									<tfoot>
+									<tr class="fe-invoice-total-row">
+										<td colspan="6" class="text-right"><strong>Total to pay</strong></td>
+										<td class="text-right"><strong id="feInvoiceTotal">0</strong> Rwf</td>
+									</tr>
+									</tfoot>
 								</table>
 							</div>
-							<div class="col-sm-12 col-md-12 col-lg-12 pull-left" id="duedateDiv">
-								<div class="form-group">
+
+							<div class="row fe-invoice-meta">
+								<div class="col-md-6">
+									<label><?= lang("app.paymentMode"); ?></label>
+									<select class="form-control" id="feInvoicePaymentMode" required>
+										<option value="" disabled selected><?= lang("app.selectPaymentMode"); ?></option>
+										<option value="1"><?= lang("app.bankSlip"); ?></option>
+										<option value="2"><?= lang("app.cash"); ?></option>
+										<option value="3"><?= lang("app.cheque"); ?></option>
+										<option value="4"><?= lang("app.momo"); ?></option>
+										<option value="5"><?= lang("app.airtelMoney"); ?></option>
+									</select>
+								</div>
+								<div class="col-md-6">
 									<label><?= lang("app.dueDate"); ?></label>
-									<input type="date" name="dueDate" class="form-control">
+									<input type="date" name="dueDate" class="form-control" id="feInvoiceDueDate">
 								</div>
 							</div>
+						</div>
 					</div>
-					<button type="button" class="btn btn-secondary"
-							data-dismiss="modal"><?= lang("app.close"); ?></button>
-					<button type="submit" class="btn btn-gradient-primary" data-target="open"
-							id="btnSave"><?= lang("app.save"); ?></button>
-					</form>
-				</div>
+					<div class="modal-footer">
+						<button type="button" class="btn btn-secondary" data-dismiss="modal"><?= lang("app.close"); ?></button>
+						<button type="submit" class="btn btn-gradient-primary" id="btnSave" disabled>
+							<?= lang("app.save"); ?> <span id="feSaveCount"></span>
+						</button>
+					</div>
+				</form>
 			</div>
 		</div>
 	</div>
@@ -3829,7 +3872,13 @@ if ($page == "pendingRegistration") {
 			$("#editLecCourseModal [name='fid']").val(id).change();
 		});
 		$("#select_dept").on("change", function () {
+			if ($("#fee_targets").length) {
+				return;
+			}
 			var dept = $(this).val();
+			if (!dept) {
+				return;
+			}
 			$.get("<?=base_url();?>get_level/" + dept, function (data) {
 				$("[name='level']").html(data);
 			});
@@ -4079,6 +4128,19 @@ if ($page == "pendingRegistration") {
 			});
 			return;
 		});
+		$("#addCourseCategory").on("show.bs.modal", function (e) {
+			var trigger = $(e.relatedTarget);
+			var id = trigger.data("id") || "";
+			var title = trigger.data("title") || "";
+			$("#addCourseCategory [name='fId']").val(id);
+			$("#addCourseCategory [name='title']").val(title);
+			$("#courseCategoryModalTitle").text(id ? "<?= lang('app.editCourseCategory'); ?>" : "<?= lang('app.addNewCourseCategory'); ?>");
+		});
+		$("#addCourseCategory").on("hidden.bs.modal", function () {
+			$("#addCourseCategory [name='fId']").val("");
+			$("#addCourseCategory [name='title']").val("");
+			$("#courseCategoryModalTitle").text("<?= lang('app.addNewCourseCategory'); ?>");
+		});
 
 		$("#editLecCourseModal").on("show.bs.modal", function (e) {
 			var id = $(e.relatedTarget).data("id");
@@ -4132,13 +4194,20 @@ if ($page == "pendingRegistration") {
 				$("#editCourseModal [name='category']").val(data.category).trigger('change');
 				var credit = parseFloat(data.credit) || 0;
 				$("#editCourseModal [name='credit']").val(credit).change();
-				$("#editCourseModal [name='marks']").val(Math.round(credit * 10)).change();
+				var marks = parseInt(data.marks, 10);
+				if (isNaN(marks) || marks < 0) marks = Math.round(credit * 10);
+				$("#editCourseModal [name='marks']").val(marks).data('manual-edit', true).change();
 			});
 			return;
 		});
 		$(document).on('input change', '#editCourseModal [name="credit"]', function () {
+			var $marks = $("#editCourseModal [name='marks']");
+			if ($marks.data('manual-edit')) return;
 			var c = parseFloat($(this).val()) || 0;
-			$("#editCourseModal [name='marks']").val(Math.round(c * 10));
+			$marks.val(Math.round(c * 10));
+		});
+		$(document).on('input', '#editCourseModal [name="marks"]', function () {
+			$(this).data('manual-edit', true);
 		});
 	});
 

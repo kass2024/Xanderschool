@@ -37,6 +37,48 @@ class BudgetCashflow extends Home
 		}
 	}
 
+	protected function denyMenuAny(array $keys)
+	{
+		if (function_exists('budget_menu_any') && budget_menu_any($keys)) {
+			return;
+		}
+		$this->denyMenu($keys[0] ?? 'budget_dashboard');
+	}
+
+	protected function branchFinancialSummary($branchId, $db)
+	{
+		$branchId = (int) $branchId;
+		$budget = $db->table('budgets')->where('branch_id', $branchId)->where('status', 'APPROVED')
+			->orderBy('id', 'DESC')->get(1)->getRowArray();
+		$totalBudget = $budget ? (float) $budget['total_expenses'] : 0.0;
+		$totalIncome = $budget ? (float) $budget['total_income'] : 0.0;
+		$enrollment = 0;
+		if ($budget && !empty($budget['notes'])) {
+			$setup = json_decode($budget['notes'], true);
+			if (is_array($setup)) {
+				$enrollment = (int) ($setup['enrollment'] ?? 0);
+			}
+		}
+		$paidRow = $db->query(
+			"SELECT COALESCE(SUM(p.amount),0) AS t FROM cash_request_payments p
+			INNER JOIN cash_requests cr ON cr.id = p.cash_request_id
+			WHERE cr.branch_id = ? AND p.status = 'completed'",
+			[$branchId]
+		)->getRowArray();
+		$totalActual = (float) ($paidRow['t'] ?? 0);
+		$variance = round($totalBudget - $totalActual, 2);
+		$variancePct = $totalBudget > 0 ? round(($variance / $totalBudget) * 100, 1) : 0.0;
+		return [
+			'budget' => $budget,
+			'total_budget' => $totalBudget,
+			'total_income' => $totalIncome,
+			'total_actual' => $totalActual,
+			'variance' => $variance,
+			'variance_pct' => $variancePct,
+			'enrollment' => $enrollment,
+		];
+	}
+
 	protected function denyPerm($perm)
 	{
 		$perms = new BudgetPermissionService();
@@ -101,6 +143,7 @@ class BudgetCashflow extends Home
 				'awaiting_receipt' => $db->table('cash_requests')->where('branch_id', $bid)->where('status', 'PAID')->countAllResults(),
 			];
 			$data['branch_stats'] = [];
+			$data['financials'] = $this->branchFinancialSummary($bid, $db);
 		}
 		$data['content'] = view('pages/budget/dashboard', $data);
 		return view('main', $data);
@@ -108,38 +151,7 @@ class BudgetCashflow extends Home
 
 	public function periods()
 	{
-		$this->denyMenu('budget_periods');
-		$this->denyPerm('budget.periods.manage');
-		$c = $this->ctx();
-		$data = $this->data;
-		$db = \Config\Database::connect();
-		$data['title'] = 'Budget Periods';
-		$data['page'] = 'budget_periods';
-		if ($c['isCentral']) {
-			$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-			$data['periods'] = $db->table('budget_periods bp')
-				->select('bp.*, b.name as branch_name, b.organization_id')
-				->join('branches b', 'b.id = bp.branch_id')
-				->whereIn('bp.branch_id', $branchIds)
-				->orderBy('bp.start_date', 'DESC')->get()->getResultArray();
-			foreach ($data['periods'] as &$p) {
-				$p['branch_name'] = $c['branchCtx']->displayBranchName([
-					'name' => $p['branch_name'],
-					'organization_id' => $p['organization_id'],
-				], true);
-			}
-			unset($p);
-		} else {
-			$data['periods'] = $db->table('budget_periods')->where('branch_id', $c['branchId'])->orderBy('start_date', 'DESC')->get()->getResultArray();
-			$label = $c['branch'] ? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false) : '';
-			foreach ($data['periods'] as &$p) {
-				$p['branch_name'] = $label;
-			}
-			unset($p);
-		}
-		$data['branches'] = $c['branchCtx']->accessibleBranches($c['staffId'], $c['postId'], $c['schoolId'], $c['isCentral']);
-		$data['content'] = view('pages/budget/periods', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('budget/prepare?tab=periods'));
 	}
 
 	public function save_period()
@@ -181,16 +193,7 @@ class BudgetCashflow extends Home
 
 	public function settings()
 	{
-		$this->denyMenu('budget_settings');
-		$this->denyPerm('budget.settings.manage');
-		$c = $this->ctx();
-		$data = $this->data;
-		$db = \Config\Database::connect();
-		$data['title'] = 'Budget Settings';
-		$data['page'] = 'budget_settings';
-		$data['settings'] = $db->table('budget_settings')->where('organization_id', $c['orgId'])->where('branch_id', null)->get(1)->getRowArray();
-		$data['content'] = view('pages/budget/settings', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('budget/reports?tab=audit'));
 	}
 
 	public function save_settings()
@@ -221,16 +224,38 @@ class BudgetCashflow extends Home
 
 	public function templates()
 	{
-		$this->denyMenu('budget_templates');
+		return redirect()->to(base_url('budget/prepare?tab=templates'));
+	}
+
+	public function download_official_template()
+	{
+		$this->bootBudget();
 		$this->denyPerm('budget.templates.view');
+		$import = new BudgetTemplateImportService();
+		$path = $import->officialTemplatePath();
+		if (!$path) {
+			return redirect()->to(base_url('budget/templates'))->with('error', 'Official template not found.');
+		}
+		return $this->response->download($path, null)->setFileName(BudgetTemplateImportService::OFFICIAL_TEMPLATE);
+	}
+
+	public function install_official_template()
+	{
+		$this->bootBudget();
+		$this->denyPerm('budget.templates.upload');
 		$c = $this->ctx();
-		$data = $this->data;
-		$db = \Config\Database::connect();
-		$data['title'] = 'Budget Templates';
-		$data['page'] = 'budget_templates';
-		$data['templates'] = $db->table('budget_templates')->where('organization_id', $c['orgId'])->orderBy('id', 'DESC')->get()->getResultArray();
-		$data['content'] = view('pages/budget/templates', $data);
-		return view('main', $data);
+		$import = new BudgetTemplateImportService();
+		$res = $import->installOfficialTemplate($c['orgId'], $c['staffId'], true);
+		if (empty($res['success'])) {
+			return $this->response->setJSON(['error' => $res['error'] ?? 'Install failed.']);
+		}
+		(new FinancialAuditService())->log('budget_template', $res['template_id'], 'install_official', $c['staffId']);
+		$msg = !empty($res['existing']) ? 'Official template already installed and activated.' : 'Official Wisdom template installed and activated.';
+		return $this->response->setJSON([
+			'success' => $msg,
+			'template_id' => $res['template_id'],
+			'line_count' => $res['line_count'] ?? 0,
+		]);
 	}
 
 	public function upload_template()
@@ -253,31 +278,116 @@ class BudgetCashflow extends Home
 		$name = trim((string) $this->request->getPost('name')) ?: 'Budget Template ' . date('Y-m-d');
 		$res = $import->saveTemplateVersion($c['orgId'], $name, $fullPath, $stored['original_name'], $stored['checksum'], $c['staffId'], $parsed['rows']);
 		(new FinancialAuditService())->log('budget_template', $res['template_id'], 'upload', $c['staffId']);
-		return $this->response->setJSON(['success' => 'Template uploaded.', 'template_id' => $res['template_id']]);
+		return $this->response->setJSON([
+			'success' => 'Template uploaded (' . ($parsed['format'] ?? 'import') . ').',
+			'template_id' => $res['template_id'],
+			'line_count' => $res['line_count'] ?? count($parsed['rows']),
+		]);
 	}
 
 	public function activate_template()
 	{
 		$this->bootBudget();
 		$this->denyPerm('budget.templates.activate');
+		$c = $this->ctx();
 		$id = (int) $this->request->getPost('template_id');
-		$db = \Config\Database::connect();
-		$db->table('budget_templates')->where('id', $id)->update(['status' => 'active', 'updated_at' => date('Y-m-d H:i:s')]);
+		$import = new BudgetTemplateImportService();
+		$import->activateTemplateForOrg($c['orgId'], $id);
 		return $this->response->setJSON(['success' => 'Template activated.']);
 	}
 
 	public function prepare()
 	{
-		$this->denyMenu('budget_prepare');
-		$this->denyPerm('budget.prepare');
+		$this->denyMenuAny(['budget_prepare', 'budget_periods', 'budget_templates', 'budget_review', 'budget_approved']);
 		$c = $this->ctx();
 		$data = $this->data;
 		$db = \Config\Database::connect();
-		$data['title'] = 'Budget Preparation';
+		$tab = trim((string) $this->request->getGet('tab')) ?: 'budgets';
+		$tabKeys = [
+			'budgets' => ['budget_prepare'],
+			'periods' => ['budget_periods'],
+			'templates' => ['budget_templates'],
+			'review' => ['budget_review'],
+			'approved' => ['budget_approved'],
+		];
+		if (!isset($tabKeys[$tab]) || !budget_menu_any($tabKeys[$tab])) {
+			$tab = 'budgets';
+			if (!budget_menu_any(['budget_prepare'])) {
+				foreach ($tabKeys as $k => $keys) {
+					if (budget_menu_any($keys)) {
+						$tab = $k;
+						break;
+					}
+				}
+			}
+		}
+		$data['tab'] = $tab;
+		$data['title'] = 'Prepare Budget';
 		$data['page'] = 'budget_prepare';
+		$data['branch_label'] = $c['branch']
+			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
+			: session('soma_school');
 		$data['budgets'] = $db->table('budgets')->where('branch_id', $c['branchId'])->orderBy('id', 'DESC')->get()->getResultArray();
-		$data['periods'] = $db->table('budget_periods')->where('branch_id', $c['branchId'])->get()->getResultArray();
+		$data['periods'] = $db->table('budget_periods')->where('branch_id', $c['branchId'])->orderBy('start_date', 'DESC')->get()->getResultArray();
 		$data['templates'] = $db->table('budget_templates')->where('organization_id', $c['orgId'])->where('status', 'active')->get()->getResultArray();
+		$data['active_template'] = $data['templates'][0] ?? null;
+		if ($tab === 'periods') {
+			$this->denyPerm('budget.periods.manage');
+			if ($c['isCentral']) {
+				$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
+				$data['periods'] = $db->table('budget_periods bp')
+					->select('bp.*, b.name as branch_name, b.organization_id')
+					->join('branches b', 'b.id = bp.branch_id')
+					->whereIn('bp.branch_id', $branchIds)
+					->orderBy('bp.start_date', 'DESC')->get()->getResultArray();
+				foreach ($data['periods'] as &$p) {
+					$p['branch_name'] = $c['branchCtx']->displayBranchName([
+						'name' => $p['branch_name'],
+						'organization_id' => $p['organization_id'],
+					], true);
+				}
+				unset($p);
+			} else {
+				$label = $data['branch_label'];
+				foreach ($data['periods'] as &$p) {
+					$p['branch_name'] = $label;
+				}
+				unset($p);
+			}
+			$data['branches'] = $c['branchCtx']->accessibleBranches($c['staffId'], $c['postId'], $c['schoolId'], $c['isCentral']);
+		}
+		if ($tab === 'templates') {
+			$this->denyPerm('budget.templates.view');
+			$allTemplates = $db->table('budget_templates')->where('organization_id', $c['orgId'])->orderBy('id', 'DESC')->get()->getResultArray();
+			foreach ($allTemplates as &$t) {
+				$vid = (int) ($t['current_version_id'] ?? 0);
+				$t['line_count'] = $vid ? $db->table('budget_template_lines')->where('version_id', $vid)->countAllResults() : 0;
+			}
+			unset($t);
+			$data['all_templates'] = $allTemplates;
+			$import = new BudgetTemplateImportService();
+			$data['can_install_official'] = $import->officialTemplatePath() && $c['perms']->can($c['staffId'], $c['postId'], 'budget.templates.upload');
+		}
+		if ($tab === 'review') {
+			$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
+			$data['review_budgets'] = $db->table('budgets')->whereIn('branch_id', $branchIds)
+				->whereNotIn('status', ['DRAFT', 'APPROVED', 'CANCELLED'])->orderBy('id', 'DESC')->get()->getResultArray();
+		}
+		if ($tab === 'approved') {
+			$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
+			$data['approved_budgets'] = $db->table('budgets b')
+				->select('b.*, br.name as branch_name, br.organization_id')
+				->join('branches br', 'br.id = b.branch_id')
+				->where('b.status', 'APPROVED')
+				->whereIn('b.branch_id', $branchIds)->orderBy('b.id', 'DESC')->get()->getResultArray();
+			foreach ($data['approved_budgets'] as &$b) {
+				$b['branch_name'] = $c['branchCtx']->displayBranchName([
+					'name' => $b['branch_name'],
+					'organization_id' => $b['organization_id'],
+				], $c['isCentral']);
+			}
+			unset($b);
+		}
 		$data['content'] = view('pages/budget/prepare', $data);
 		return view('main', $data);
 	}
@@ -290,6 +400,10 @@ class BudgetCashflow extends Home
 		$db = \Config\Database::connect();
 		$periodId = (int) $this->request->getPost('budget_period_id');
 		$templateId = (int) $this->request->getPost('template_id');
+		if ($templateId <= 0) {
+			$active = $db->table('budget_templates')->where('organization_id', $c['orgId'])->where('status', 'active')->get(1)->getRowArray();
+			$templateId = $active ? (int) $active['id'] : 0;
+		}
 		$template = $db->table('budget_templates')->where('id', $templateId)->get(1)->getRowArray();
 		$versionId = $template ? (int) $template['current_version_id'] : 0;
 		$db->transStart();
@@ -318,6 +432,10 @@ class BudgetCashflow extends Home
 					'template_line_id' => $ln['id'],
 					'section_label' => $secLabel,
 					'category' => $ln['normalized_label'],
+					'account_code' => $ln['account_code'] ?? null,
+					'calculation_mode' => $ln['calculation_mode'] ?? 'manual',
+					'unit' => $ln['default_unit'] ?? null,
+					'frequency' => $ln['default_frequency'] ?? 1,
 					'is_total_row' => $ln['is_total_row'],
 					'is_editable' => $ln['is_editable'],
 					'sort_order' => $ln['sort_order'],
@@ -347,17 +465,77 @@ class BudgetCashflow extends Home
 		$c = $this->ctx();
 		$id = (int) $id;
 		$db = \Config\Database::connect();
-		$budget = $db->table('budgets')->where('id', $id)->where('branch_id', $c['branchId'])->get(1)->getRowArray();
+		$this->ensureBudgetLineColumns($db);
+		$calc = new BudgetCalculationService();
+		$budget = $db->table('budgets b')
+			->select('b.*, bp.title as period_title, bp.start_date, bp.end_date')
+			->join('budget_periods bp', 'bp.id = b.budget_period_id', 'left')
+			->where('b.id', $id)->where('b.branch_id', $c['branchId'])->get(1)->getRowArray();
 		if (!$budget || $budget['status'] === 'APPROVED') {
 			return redirect()->to(base_url('budget/prepare'));
 		}
+		$lines = $db->query("
+			SELECT bl.*, btl.line_key
+			FROM budget_lines bl
+			LEFT JOIN budget_template_lines btl ON btl.id = bl.template_line_id
+			WHERE bl.budget_id = ?
+			ORDER BY bl.sort_order
+		", [$id])->getResultArray();
+		foreach ($lines as &$ln) {
+			$ln['months'] = $calc->decodeMonthlyJson($ln['monthly_json'] ?? null);
+		}
+		unset($ln);
+		$setup = [];
+		if (!empty($budget['notes'])) {
+			$decoded = json_decode($budget['notes'], true);
+			if (is_array($decoded)) {
+				$setup = $decoded;
+			}
+		}
 		$data = $this->data;
-		$data['title'] = 'Edit Budget';
+		$data['title'] = 'Budget Workspace';
 		$data['page'] = 'budget_prepare';
 		$data['budget'] = $budget;
-		$data['lines'] = $db->table('budget_lines')->where('budget_id', $id)->orderBy('sort_order')->get()->getResultArray();
+		$data['lines'] = $lines;
+		$data['sections'] = $calc->groupLinesBySection($lines);
+		$data['branch_label'] = $c['branch']
+			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
+			: session('soma_school');
+		$data['setup'] = $setup;
+		$data['units'] = ['Student', 'Meal', 'Trip', 'Litre', 'Month', 'Item', 'Employee', 'Vehicle', 'Other'];
 		$data['content'] = view('pages/budget/edit_budget', $data);
 		return view('main', $data);
+	}
+
+	public function save_budget_setup()
+	{
+		$this->bootBudget();
+		$this->denyPerm('budget.edit_own');
+		$c = $this->ctx();
+		$budgetId = (int) $this->request->getPost('budget_id');
+		$db = \Config\Database::connect();
+		$budget = $db->table('budgets')->where('id', $budgetId)->where('branch_id', $c['branchId'])->get(1)->getRowArray();
+		if (!$budget || !in_array($budget['status'], ['DRAFT', 'RETURNED'], true)) {
+			return $this->response->setJSON(['error' => 'Budget is not editable.']);
+		}
+		$setup = [
+			'enrollment' => (int) $this->request->getPost('enrollment'),
+			'opening_cash' => (float) $this->request->getPost('opening_cash'),
+			'planning_notes' => trim((string) $this->request->getPost('planning_notes')),
+			'prepared_by' => session('soma_name'),
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		$title = trim((string) $this->request->getPost('title'));
+		$update = [
+			'notes' => json_encode($setup),
+			'updated_at' => date('Y-m-d H:i:s'),
+			'updated_by' => $c['staffId'],
+		];
+		if ($title !== '') {
+			$update['title'] = $title;
+		}
+		$db->table('budgets')->where('id', $budgetId)->update($update);
+		return $this->response->setJSON(['success' => 'Setup saved.', 'setup' => $setup]);
 	}
 
 	public function save_budget_lines()
@@ -367,6 +545,7 @@ class BudgetCashflow extends Home
 		$c = $this->ctx();
 		$budgetId = (int) $this->request->getPost('budget_id');
 		$db = \Config\Database::connect();
+		$this->ensureBudgetLineColumns($db);
 		$budget = $db->table('budgets')->where('id', $budgetId)->get(1)->getRowArray();
 		if (!$budget || $budget['status'] !== 'DRAFT' && $budget['status'] !== 'RETURNED') {
 			return $this->response->setJSON(['error' => 'Budget is not editable.']);
@@ -375,9 +554,14 @@ class BudgetCashflow extends Home
 		$calc = new BudgetCalculationService();
 		foreach ($lines as $lid => $row) {
 			if (!is_array($row)) continue;
+			$monthlyJson = null;
+			if (!empty($row['months']) && is_array($row['months'])) {
+				$monthlyJson = $calc->encodeMonthlyJson($row['months']);
+			}
 			$update = [
 				'user_amount' => (float) ($row['user_amount'] ?? 0),
 				'quantity' => $row['quantity'] ?? null,
+				'unit' => $row['unit'] ?? null,
 				'unit_cost' => $row['unit_cost'] ?? null,
 				'frequency' => $row['frequency'] ?? 1,
 				'term_1_amount' => (float) ($row['term_1_amount'] ?? 0),
@@ -385,6 +569,7 @@ class BudgetCashflow extends Home
 				'term_3_amount' => (float) ($row['term_3_amount'] ?? 0),
 				'calculation_mode' => $row['calculation_mode'] ?? 'manual',
 				'assumptions' => $row['assumptions'] ?? null,
+				'monthly_json' => $monthlyJson,
 			];
 			$line = $db->table('budget_lines')->where('id', (int) $lid)->where('budget_id', $budgetId)->get(1)->getRowArray();
 			if ($line && (int) $line['is_editable'] === 1) {
@@ -408,17 +593,7 @@ class BudgetCashflow extends Home
 
 	public function budget_review()
 	{
-		$this->denyMenu('budget_review');
-		$c = $this->ctx();
-		$data = $this->data;
-		$db = \Config\Database::connect();
-		$data['title'] = 'Budget Review & Approval';
-		$data['page'] = 'budget_review';
-		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-		$data['budgets'] = $db->table('budgets')->whereIn('branch_id', $branchIds)
-			->whereNotIn('status', ['DRAFT','APPROVED','CANCELLED'])->orderBy('id','DESC')->get()->getResultArray();
-		$data['content'] = view('pages/budget/budget_review', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('budget/prepare?tab=review'));
 	}
 
 	public function budget_action()
@@ -433,50 +608,76 @@ class BudgetCashflow extends Home
 
 	public function approved_budgets()
 	{
-		$this->denyMenu('budget_approved');
+		return redirect()->to(base_url('budget/prepare?tab=approved'));
+	}
+
+	public function requests()
+	{
+		$this->denyMenuAny([
+			'budget_cash_requests', 'budget_pending', 'budget_procurement',
+			'budget_availability', 'budget_final_approval', 'budget_payments', 'budget_filing',
+		]);
 		$c = $this->ctx();
 		$db = \Config\Database::connect();
 		$data = $this->data;
-		$data['title'] = 'Approved Budgets';
-		$data['page'] = 'budget_approved';
-		$data['budgets'] = $db->table('budgets b')
-			->select('b.*, br.name as branch_name, br.organization_id')
-			->join('branches br', 'br.id = b.branch_id')
-			->where('b.status', 'APPROVED');
-		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-		$data['budgets'] = $data['budgets']->whereIn('b.branch_id', $branchIds)->orderBy('b.id','DESC')->get()->getResultArray();
-		foreach ($data['budgets'] as &$b) {
-			$b['branch_name'] = $c['branchCtx']->displayBranchName([
-				'name' => $b['branch_name'],
-				'organization_id' => $b['organization_id'],
-			], $c['isCentral']);
+		$tab = trim((string) $this->request->getGet('tab')) ?: 'all';
+		$tabKeys = [
+			'all' => ['budget_cash_requests'],
+			'pending' => ['budget_pending', 'budget_procurement', 'budget_availability', 'budget_final_approval'],
+			'payments' => ['budget_payments'],
+			'receipts' => ['budget_filing'],
+		];
+		if (!isset($tabKeys[$tab]) || !budget_menu_any($tabKeys[$tab])) {
+			$tab = 'all';
 		}
-		unset($b);
-		$data['content'] = view('pages/budget/approved_budgets', $data);
+		$data['tab'] = $tab;
+		$data['title'] = 'Requests & Approvals';
+		$data['page'] = 'budget_requests';
+		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
+		$data['requests'] = [];
+		if ($tab === 'all') {
+			$q = $db->table('cash_requests cr')->select('cr.*, b.name as branch_name, b.organization_id')->join('branches b', 'b.id=cr.branch_id');
+			$data['requests'] = $q->whereIn('cr.branch_id', $branchIds)->orderBy('cr.id', 'DESC')->get()->getResultArray();
+		} elseif ($tab === 'pending') {
+			$postId = $c['postId'];
+			$statusMap = [
+				20 => ['SUBMITTED', 'HEADTEACHER_APPROVED'],
+				19 => ['PROCUREMENT_APPROVED'],
+				21 => ['BUDGET_APPROVED'],
+				22 => ['FINANCE_AUTHORIZED'],
+				9 => ['PAID'],
+				1 => ['SUBMITTED'],
+				18 => ['SUBMITTED'],
+			];
+			$statuses = $statusMap[$postId] ?? [];
+			if ($statuses) {
+				$data['requests'] = $db->table('cash_requests')->whereIn('status', $statuses)
+					->whereIn('branch_id', $branchIds)->orderBy('id', 'DESC')->get()->getResultArray();
+			}
+		} elseif ($tab === 'payments') {
+			$data['requests'] = $db->table('cash_requests')->whereIn('branch_id', $branchIds)
+				->whereIn('status', ['FINANCE_AUTHORIZED', 'PARTIALLY_PAID'])->orderBy('id', 'DESC')->get()->getResultArray();
+		} else {
+			$data['requests'] = $db->table('cash_requests')->whereIn('branch_id', $branchIds)
+				->where('status', 'PAID')->orderBy('id', 'DESC')->get()->getResultArray();
+		}
+		foreach ($data['requests'] as &$r) {
+			if (!empty($r['branch_name'])) {
+				continue;
+			}
+			$br = $db->table('branches')->where('id', (int) $r['branch_id'])->get(1)->getRowArray();
+			if ($br) {
+				$r['branch_name'] = $c['branchCtx']->displayBranchName($br, $c['isCentral']);
+			}
+		}
+		unset($r);
+		$data['content'] = view('pages/budget/requests', $data);
 		return view('main', $data);
 	}
 
 	public function cash_requests()
 	{
-		$this->denyMenu('budget_cash_requests');
-		$c = $this->ctx();
-		$db = \Config\Database::connect();
-		$data = $this->data;
-		$data['title'] = 'Cash Requests';
-		$data['page'] = 'budget_cash_requests';
-		$q = $db->table('cash_requests cr')->select('cr.*, b.name as branch_name, b.organization_id')->join('branches b','b.id=cr.branch_id');
-		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-		$q->whereIn('cr.branch_id', $branchIds);
-		$data['requests'] = $q->orderBy('cr.id','DESC')->get()->getResultArray();
-		foreach ($data['requests'] as &$r) {
-			$r['branch_name'] = $c['branchCtx']->displayBranchName([
-				'name' => $r['branch_name'],
-				'organization_id' => $r['organization_id'],
-			], $c['isCentral']);
-		}
-		unset($r);
-		$data['content'] = view('pages/budget/cash_requests', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('budget/requests'));
 	}
 
 	public function cash_request_form($id = null)
@@ -491,6 +692,7 @@ class BudgetCashflow extends Home
 		$data['request'] = $id ? $db->table('cash_requests')->where('id', (int)$id)->get(1)->getRowArray() : null;
 		$data['budgets'] = $db->table('budgets')->where('branch_id', $c['branchId'])->where('status','APPROVED')->get()->getResultArray();
 		$data['lines'] = $id ? $db->table('cash_request_lines')->where('cash_request_id', (int)$id)->get()->getResultArray() : [];
+		$data['documents'] = $id ? $db->table('cash_request_documents')->where('cash_request_id', (int)$id)->orderBy('id')->get()->getResultArray() : [];
 		$data['content'] = view('pages/budget/cash_request_form', $data);
 		return view('main', $data);
 	}
@@ -502,7 +704,8 @@ class BudgetCashflow extends Home
 		$c = $this->ctx();
 		$db = \Config\Database::connect();
 		$id = (int) $this->request->getPost('id');
-		$amount = (float) $this->request->getPost('requested_amount');
+		$lineAmount = (float) $this->request->getPost('line_amount');
+		$amount = (float) ($this->request->getPost('requested_amount') ?: $lineAmount);
 		$row = [
 			'organization_id' => $c['orgId'],
 			'branch_id' => $c['branchId'],
@@ -535,7 +738,6 @@ class BudgetCashflow extends Home
 			$db->table('cash_requests')->insert($row);
 			$id = (int) $db->insertID();
 		}
-		$lineAmount = (float) $this->request->getPost('line_amount');
 		$lineDesc = $this->request->getPost('line_description');
 		$budgetLineId = (int) $this->request->getPost('budget_line_id');
 		if ($lineDesc && $lineAmount > 0) {
@@ -546,6 +748,28 @@ class BudgetCashflow extends Home
 				'description' => $lineDesc,
 				'amount' => $lineAmount,
 			]);
+		}
+		$docSvc = new DocumentStorageService();
+		$docType = trim((string) $this->request->getPost('doc_type')) ?: 'other';
+		$files = $this->request->getFileMultiple('documents');
+		if ($files) {
+			foreach ($files as $file) {
+				if (!$file || !$file->isValid() || $file->getError() === UPLOAD_ERR_NO_FILE) {
+					continue;
+				}
+				$stored = $docSvc->storeUpload($file, 'budget/cash_requests');
+				if (empty($stored['success'])) {
+					continue;
+				}
+				$db->table('cash_request_documents')->insert([
+					'cash_request_id' => $id,
+					'doc_type' => $docType,
+					'original_name' => $stored['original_name'],
+					'stored_path' => $stored['stored_path'],
+					'uploaded_by' => $c['staffId'],
+					'created_at' => date('Y-m-d H:i:s'),
+				]);
+			}
 		}
 		if ($this->request->getPost('submit_now')) {
 			$res = $wf->transition($id, 'submit', $c['staffId'], $c['postId'], 'Submitted');
@@ -573,6 +797,7 @@ class BudgetCashflow extends Home
 		$data['lines'] = $db->table('cash_request_lines')->where('cash_request_id', $id)->get()->getResultArray();
 		$data['actions'] = $db->table('cash_request_actions')->where('cash_request_id', $id)->orderBy('id')->get()->getResultArray();
 		$data['payments'] = $db->table('cash_request_payments')->where('cash_request_id', $id)->get()->getResultArray();
+		$data['documents'] = $db->table('cash_request_documents')->where('cash_request_id', $id)->orderBy('id')->get()->getResultArray();
 		$data['availability'] = [];
 		foreach ($data['lines'] as $ln) {
 			if (!empty($ln['budget_line_id'])) {
@@ -601,67 +826,27 @@ class BudgetCashflow extends Home
 
 	public function pending_actions()
 	{
-		$this->denyMenu('budget_pending');
-		$c = $this->ctx();
-		$db = \Config\Database::connect();
-		$data = $this->data;
-		$data['title'] = 'My Pending Actions';
-		$data['page'] = 'budget_pending';
-		$postId = $c['postId'];
-		$statusMap = [
-			20 => ['SUBMITTED','HEADTEACHER_APPROVED'],
-			19 => ['PROCUREMENT_APPROVED'],
-			21 => ['BUDGET_APPROVED'],
-			22 => ['FINANCE_AUTHORIZED'],
-			9 => ['PAID'],
-			1 => ['SUBMITTED'],
-		];
-		$statuses = $statusMap[$postId] ?? [];
-		$data['requests'] = [];
-		if ($statuses) {
-			$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-			$data['requests'] = $db->table('cash_requests')->whereIn('status', $statuses)
-				->whereIn('branch_id', $branchIds)->orderBy('id','DESC')->get()->getResultArray();
-		}
-		$data['content'] = view('pages/budget/pending', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('budget/requests?tab=pending'));
 	}
 
 	public function procurement_review()
 	{
-		$this->denyMenu('budget_procurement');
-		$this->denyPerm('cash_request.procurement_review');
-		return $this->pending_actions();
+		return redirect()->to(base_url('budget/requests?tab=pending'));
 	}
 
 	public function budget_availability_review()
 	{
-		$this->denyMenu('budget_availability');
-		$this->denyPerm('cash_request.budget_review');
-		return $this->pending_actions();
+		return redirect()->to(base_url('budget/requests?tab=pending'));
 	}
 
 	public function final_approval()
 	{
-		$this->denyMenu('budget_final_approval');
-		$this->denyPerm('cash_request.final_approve');
-		return $this->pending_actions();
+		return redirect()->to(base_url('budget/requests?tab=pending'));
 	}
 
 	public function payments()
 	{
-		$this->denyMenu('budget_payments');
-		$this->denyPerm('cash_request.process_payment');
-		$c = $this->ctx();
-		$db = \Config\Database::connect();
-		$data = $this->data;
-		$data['title'] = 'Payments';
-		$data['page'] = 'budget_payments';
-		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-		$data['requests'] = $db->table('cash_requests')->whereIn('branch_id', $branchIds)
-			->whereIn('status', ['FINANCE_AUTHORIZED','PARTIALLY_PAID'])->orderBy('id','DESC')->get()->getResultArray();
-		$data['content'] = view('pages/budget/payments', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('budget/requests?tab=payments'));
 	}
 
 	public function record_payment()
@@ -684,18 +869,7 @@ class BudgetCashflow extends Home
 
 	public function filing()
 	{
-		$this->denyMenu('budget_filing');
-		$this->denyPerm('cash_request.confirm_receipt');
-		$c = $this->ctx();
-		$db = \Config\Database::connect();
-		$data = $this->data;
-		$data['title'] = 'Receipt & Filing';
-		$data['page'] = 'budget_filing';
-		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-		$data['requests'] = $db->table('cash_requests')->whereIn('branch_id', $branchIds)
-			->where('status', 'PAID')->orderBy('id','DESC')->get()->getResultArray();
-		$data['content'] = view('pages/budget/filing', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('budget/requests?tab=receipts'));
 	}
 
 	public function confirm_receipt()
@@ -720,38 +894,98 @@ class BudgetCashflow extends Home
 
 	public function reports()
 	{
-		$this->denyMenu('budget_reports');
-		$this->denyPerm('budget.view_reports');
+		$this->denyMenuAny(['budget_reports', 'budget_audit', 'budget_settings']);
+		$c = $this->ctx();
+		$db = \Config\Database::connect();
 		$data = $this->data;
+		$tab = trim((string) $this->request->getGet('tab')) ?: 'summary';
+		if (!in_array($tab, ['summary', 'cashflow', 'actuals', 'audit'], true)) {
+			$tab = 'summary';
+		}
+		$data['tab'] = $tab;
 		$data['title'] = 'Budget Reports';
 		$data['page'] = 'budget_reports';
+		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
+		$data['branch_label'] = $c['branch']
+			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
+			: session('soma_school');
+		$bid = (int) $c['branchId'];
+		$data['financials'] = $this->branchFinancialSummary($bid, $db);
+		$budgetId = !empty($data['financials']['budget']['id']) ? (int) $data['financials']['budget']['id'] : 0;
+		$data['summary_lines'] = [];
+		if ($budgetId > 0) {
+			$data['summary_lines'] = $db->table('budget_lines')->where('budget_id', $budgetId)
+				->where('is_total_row', 0)->orderBy('sort_order')->get()->getResultArray();
+		}
+		$data['actuals'] = $db->table('cash_request_payments p')
+			->select('p.*, cr.request_no, cr.payee_name, cr.purpose')
+			->join('cash_requests cr', 'cr.id = p.cash_request_id')
+			->whereIn('cr.branch_id', $branchIds)
+			->where('p.status', 'completed')
+			->orderBy('p.payment_date', 'DESC')->limit(200)->get()->getResultArray();
+		$data['cashflow'] = [];
+		if ($budgetId > 0) {
+			$lines = $db->table('budget_lines')->where('budget_id', $budgetId)->where('is_total_row', 0)->get()->getResultArray();
+			$calc = new BudgetCalculationService();
+			$months = BudgetCalculationService::MONTHS;
+			foreach ($months as $m) {
+				$data['cashflow'][$m] = ['in' => 0.0, 'out' => 0.0];
+			}
+			foreach ($lines as $ln) {
+				$monthly = $calc->decodeMonthlyJson($ln['monthly_json'] ?? null);
+				$isIncome = stripos($ln['section_label'] ?? '', 'INCOME') !== false;
+				foreach ($months as $m) {
+					if ($isIncome) {
+						$data['cashflow'][$m]['in'] += (float) ($monthly[$m] ?? 0);
+					} else {
+						$data['cashflow'][$m]['out'] += (float) ($monthly[$m] ?? 0);
+					}
+				}
+			}
+		}
+		if ($tab === 'audit' && budget_menu_any(['budget_audit'])) {
+			$data['logs'] = $db->table('financial_audit_logs')->whereIn('branch_id', $branchIds)
+				->orderBy('id', 'DESC')->limit(300)->get()->getResultArray();
+		} else {
+			$data['logs'] = [];
+		}
+		$data['settings'] = $db->table('budget_settings')->where('organization_id', $c['orgId'])->where('branch_id', null)->get(1)->getRowArray();
 		$data['content'] = view('pages/budget/reports', $data);
 		return view('main', $data);
 	}
 
 	public function audit_trail()
 	{
-		$this->denyMenu('budget_audit');
-		$this->denyPerm('cash_request.view_audit');
-		$c = $this->ctx();
-		$db = \Config\Database::connect();
-		$data = $this->data;
-		$data['title'] = 'Audit Trail';
-		$data['page'] = 'budget_audit';
-		$q = $db->table('financial_audit_logs')->orderBy('id','DESC')->limit(500);
-		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-		$q->whereIn('branch_id', $branchIds);
-		$data['logs'] = $q->get()->getResultArray();
-		$data['content'] = view('pages/budget/audit', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('budget/reports?tab=audit'));
 	}
 
 	public function get_budget_lines_json($budgetId = null)
 	{
 		$this->bootBudget();
 		$db = \Config\Database::connect();
+		$availSvc = new BudgetAvailabilityService();
 		$lines = $db->table('budget_lines')->where('budget_id', (int)$budgetId)->where('is_editable', 1)->orderBy('sort_order')->get()->getResultArray();
+		foreach ($lines as &$ln) {
+			$ln['availability'] = $availSvc->lineAvailability((int) $ln['id']);
+		}
+		unset($ln);
 		return $this->response->setJSON(['lines' => $lines]);
+	}
+
+	public function cash_request_document($docId = null)
+	{
+		$this->bootBudget();
+		$this->denyMenu('budget_cash_requests');
+		$db = \Config\Database::connect();
+		$doc = $db->table('cash_request_documents')->where('id', (int) $docId)->get(1)->getRowArray();
+		if (!$doc) {
+			return redirect()->to(base_url('budget/cash_requests'));
+		}
+		$path = WRITEPATH . str_replace('writable/', '', $doc['stored_path']);
+		if (!is_file($path)) {
+			return redirect()->back()->with('error', 'Document file not found.');
+		}
+		return $this->response->download($path, null)->setFileName($doc['original_name']);
 	}
 
 	public function badge_counts_json()
@@ -764,5 +998,27 @@ class BudgetCashflow extends Home
 			'pending' => $db->table('cash_requests')->where('branch_id', $bid)->whereNotIn('status', ['CLOSED','CANCELLED','DRAFT'])->countAllResults(),
 			'notifications' => (new BudgetNotificationService())->unreadCount($c['staffId']),
 		]);
+	}
+
+	private function ensureBudgetLineColumns($db)
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$sqlFile = ROOTPATH . 'deploy/add_budget_monthly_json.sql';
+		if (is_file($sqlFile)) {
+			foreach (array_filter(array_map('trim', explode(';', file_get_contents($sqlFile)))) as $stmt) {
+				if ($stmt === '') {
+					continue;
+				}
+				try {
+					$db->query($stmt);
+				} catch (\Throwable $e) {
+					// column may exist
+				}
+			}
+		}
+		$done = true;
 	}
 }
