@@ -246,6 +246,19 @@ class Api extends BaseController
 								->orderBy("d.code")
 								->orderBy("l.title")->get()->getResultArray();
 							$data['classes'] = $classes;
+							// Match web marks entry types (Home::marksTypeToStr)
+							$academicTypeId = 1;
+							if (!empty($result->academic_type)) {
+								$parts = explode(',', (string) $result->academic_type);
+								$academicTypeId = (int) trim($parts[0] ?: '1');
+							}
+							$data['assessmentTypes'] = [
+								['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'CAT'],
+								['id' => 2, 'academic_type_id' => $academicTypeId, 'title' => 'Exam'],
+								['id' => 3, 'academic_type_id' => $academicTypeId, 'title' => 'Second sitting'],
+								['id' => 9, 'academic_type_id' => $academicTypeId, 'title' => 'Re-assess'],
+							];
+							];
 							return $this->response->setJSON($data);
 						}
 					} else {
@@ -260,8 +273,68 @@ class Api extends BaseController
 		}
 	}
 
-public function boarding_clock_in()
-{
+	/**
+	 * Mobile marks entry setup — same fields the web marks entry uses.
+	 * POST: school_id, teacher_id
+	 */
+	public function marks_setup()
+	{
+		$school_id = (int) $this->request->getPost('school_id');
+		$teacher_id = (int) $this->request->getPost('teacher_id');
+		if ($school_id < 1 || $teacher_id < 1) {
+			return $this->response->setJSON(['error' => 'Missing school_id or teacher_id']);
+		}
+		$this->_preset($school_id);
+		$schoolMdl = new SchoolModel();
+		$school = $schoolMdl->select('schools.*, at.use_period, at.academic_year, at.term')
+			->join('active_term at', 'CAST(schools.active_term AS UNSIGNED)=at.id', 'left')
+			->where('schools.id', $school_id)
+			->asObject()
+			->first();
+		if (!$school) {
+			return $this->response->setJSON(['error' => 'School not found']);
+		}
+		$csMdl = new CourseModel();
+		$coursesData = $csMdl->select("courses.id,courses.title,courses.code,r.class as class_id,courses.marks")
+			->join("course_records r", "courses.id=r.course")
+			->where("r.year", $school->academic_year)
+			->where("find_in_set({$school->term},r.term)>0")
+			->where("r.lecturer", $teacher_id)
+			->groupBy("courses.id")
+			->groupBy("r.class")
+			->get()->getResultArray();
+		$clMdl = new CourseRecordModel();
+		$classes = $clMdl->select("c.id,concat(l.title,' ',c.title,' ',d.code) as title")
+			->join("classes c", "c.id=course_records.class")
+			->join("departments d", "d.id=c.department")
+			->join("levels l", "l.id=c.level")
+			->where("course_records.year", $school->academic_year)
+			->where("course_records.lecturer", $teacher_id)
+			->where("c.school_id", $school_id)
+			->groupBy("c.id")
+			->orderBy("d.code")
+			->orderBy("l.title")->get()->getResultArray();
+		$academicTypeId = 1;
+		if (!empty($school->academic_type)) {
+			$parts = explode(',', (string) $school->academic_type);
+			$academicTypeId = (int) trim($parts[0] ?: '1');
+		}
+		return $this->response->setJSON([
+			'success' => '1',
+			'use_period' => (int) ($school->use_period ?? 0),
+			'classes' => $classes,
+			'courses' => $coursesData,
+			'assessmentTypes' => [
+				['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'CAT'],
+				['id' => 2, 'academic_type_id' => $academicTypeId, 'title' => 'Exam'],
+				['id' => 3, 'academic_type_id' => $academicTypeId, 'title' => 'Second sitting'],
+				['id' => 9, 'academic_type_id' => $academicTypeId, 'title' => 'Re-assess'],
+			],
+		]);
+	}
+
+	public function boarding_clock_in()
+	{
     $student_id = $this->request->getPost("student_id");
     $school_id  = $this->request->getPost("school_id");
 
