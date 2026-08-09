@@ -1334,6 +1334,20 @@ public function check_school($option)
 				$last_id = 0;
 				foreach ($records as $info) {
 					try {
+						$existing = $mMdl->where('student_id', $info['student_id'])
+							->where('term', $this->data['active_term'])
+							->where('course_id', $info['course_id'])
+							->where('class_id', $info['class_id'])
+							->where('mark_type', $info['mark_type'])
+							->where('outof', $info['out_of'])
+							->where('period', $info['period'] ?? 0)
+							->where('created_by', $info['created_by'])
+							->first();
+						if ($existing) {
+							$last_id = $info['id'];
+							log_message('critical', 'Marks_duplicate_skipped: ' . json_encode($info));
+							continue;
+						}
 						$mMdl->save([
 							'student_id' => $info['student_id'],
 							'term' => $this->data['active_term'],
@@ -1367,6 +1381,20 @@ public function check_school($option)
 				$last_id = 0;
 				foreach ($records as $info) {
 					try {
+						// Skip near-duplicate uploads (same student/type/marks/comment within 3 minutes)
+						$dup = $dMdl->where('school_id', $info['school_id'])
+							->where('student_id', $info['student_id'])
+							->where('type', $info['type'])
+							->where('marks', $info['marks'])
+							->where('comment', $info['comment'])
+							->where('active_term', $this->data['active_term'])
+							->where('created_at >=', date('Y-m-d H:i:s', time() - 180))
+							->first();
+						if ($dup) {
+							$last_id = $info['id'];
+							log_message('critical', 'Discipline_duplicate_skipped: ' . json_encode($info));
+							continue;
+						}
 						$dMdl->save([
 							'type' => $info['type'],
 							'active_term' => $this->data['active_term'],
@@ -1383,14 +1411,6 @@ public function check_school($option)
 							$phone = $st_data['phone'];
 							if (strlen($phone) > 3) {
 								$msg = $this->get_discipline_msg($st_data['name'], $info['marks'], $info['comment']);
-//								if ($this->_send_sms($phone, $msg, $result, $this->data['remaining_sms'], $this->data['school_acronym'])) {
-//									//save sent sms
-//									$sms_count = (int)ceil(strlen($msg) / PER_SMS);
-//									$this->data['remaining_sms'] = $this->data['remaining_sms'] - 1;//prevent exceeding sms limit
-//									$this->_save_sms($this->data['active_term'], $phone, $msg, $info['type'], $school_id, "Discipline", $info['student_id'], $sms_count);
-//								} else {
-//									$this->_save_sms($this->data['active_term'], $phone, $msg, $info['type'], $school_id, "Discipline", $info['student_id'], 0, $result);
-//								}
                                 
                                 if ($this->sendSMS($phone, $msg, $result)) {
                                     //save sent sms
@@ -2036,66 +2056,239 @@ public function get_boarding_classes()
 
 	public function assign_card()
 {
+    helper('card_uid');
     $stMdl = new StudentModel();
-    $card = trim($this->request->getPost("card"));
-    $created_by = (int) $this->request->getPost("operator");
-    $student_id = (int) $this->request->getPost("student_id");
-    $school_id = (int) $this->request->getPost("school_id");
+    $cardRaw = trim((string) $this->request->getPost('card'));
+    $card = normalize_card_uid($cardRaw);
+    $created_by = (int) $this->request->getPost('operator');
+    $student_id = (int) $this->request->getPost('student_id');
+    $school_id = (int) $this->request->getPost('school_id');
 
-    // Validate input
     if ($student_id <= 0) {
         return $this->response->setStatusCode(400)
-            ->setJSON(["error" => "Invalid student ID. Please restart and try again."]);
+            ->setJSON(['error' => 'Invalid student ID. Please restart and try again.']);
     }
-
     if ($school_id <= 0) {
         return $this->response->setStatusCode(400)
-            ->setJSON(["error" => "Invalid school ID. Please log in again."]);
+            ->setJSON(['error' => 'Invalid school ID. Please log in again.']);
+    }
+    if ($card === '') {
+        return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid card UID.']);
+    }
+
+    $blocked = \App\Libraries\CardRegistry::assertAvailable($school_id, $card, 'student', $student_id);
+    if ($blocked) {
+        return $this->response->setStatusCode(409)->setJSON(['error' => $blocked]);
     }
 
     try {
-        // Get update version
         $uvMdl = new UpdateVersionModel();
-        $update_v_data = $uvMdl->select("version")
-            ->where("type", "student")
-            ->where("school_id", $school_id)
+        $update_v_data = $uvMdl->select('version')
+            ->where('type', 'student')
+            ->where('school_id', $school_id)
             ->get(1)->getRow();
-
         $update_v = $update_v_data ? $update_v_data->version : 1;
 
-        // Check if card already exists in same school
-        $existing = $stMdl->select("id, CONCAT(fname, ' ', lname) AS name")
-            ->where("card", $card)
-            ->where("school_id", $school_id)
-            ->get()->getRow();
-
-        if ($existing) {
-            return $this->response->setStatusCode(409)
-                ->setJSON(["error" => "Card already assigned to " . $existing->name]);
-        }
-
-        // Save new card
         $data = [
-            "id" => $student_id,
-            "card" => $card,
-            "updateVersion" => $update_v,
-            "updated_by" => $created_by
+            'id' => $student_id,
+            'card' => $card,
+            'updateVersion' => $update_v,
+            'updated_by' => $created_by,
         ];
 
         if ($stMdl->save($data)) {
             return $this->response->setStatusCode(200)
-                ->setJSON(["success" => "Card assigned successfully."]);
-        } else {
-            return $this->response->setStatusCode(500)
-                ->setJSON(["error" => "Failed to assign card. Try again."]);
+                ->setJSON(['success' => 'Card assigned successfully.']);
         }
-
+        return $this->response->setStatusCode(500)->setJSON(['error' => 'Failed to assign card. Try again.']);
     } catch (\Throwable $e) {
         log_message('error', '[assign_card] ' . $e->getMessage());
         return $this->response->setStatusCode(500)
-            ->setJSON(["error" => "An unexpected error occurred: " . $e->getMessage()]);
+            ->setJSON(['error' => 'An unexpected error occurred: ' . $e->getMessage()]);
     }
 }
+
+	/**
+	 * Remove / unassign RFID card from a student.
+	 */
+	public function remove_student_card()
+	{
+		$stMdl = new StudentModel();
+		$student_id = (int) $this->request->getPost('student_id');
+		$school_id = (int) $this->request->getPost('school_id');
+		$operator = (int) $this->request->getPost('operator');
+
+		if ($student_id <= 0 || $school_id <= 0) {
+			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid student or school ID.']);
+		}
+
+		$student = $stMdl->select('id, card')
+			->where('id', $student_id)
+			->where('school_id', $school_id)
+			->where('status', 1)
+			->get(1)->getRow();
+
+		if (!$student) {
+			return $this->response->setStatusCode(404)->setJSON(['error' => 'Student not found.']);
+		}
+
+		if (trim((string) ($student->card ?? '')) === '') {
+			return $this->response->setJSON(['success' => 'No card was assigned to this student.']);
+		}
+
+		try {
+			$uvMdl = new UpdateVersionModel();
+			$update_v_data = $uvMdl->select('version')
+				->where('type', 'student')
+				->where('school_id', $school_id)
+				->get(1)->getRow();
+			$update_v = $update_v_data ? $update_v_data->version : 1;
+
+			if ($stMdl->save([
+				'id' => $student_id,
+				'card' => null,
+				'updateVersion' => $update_v,
+				'updated_by' => $operator,
+			])) {
+				return $this->response->setJSON(['success' => 'Card removed successfully.']);
+			}
+			return $this->response->setStatusCode(500)->setJSON(['error' => 'Failed to remove card.']);
+		} catch (\Throwable $e) {
+			log_message('error', '[remove_student_card] ' . $e->getMessage());
+			return $this->response->setStatusCode(500)->setJSON(['error' => 'Unexpected error removing card.']);
+		}
+	}
+
+	public function assign_staff_card()
+	{
+		helper('card_uid');
+		$staffMdl = new StaffModel();
+		$cardRaw = trim((string) $this->request->getPost('card'));
+		$card = normalize_card_uid($cardRaw);
+		$created_by = (int) $this->request->getPost('operator');
+		$staff_id = (int) $this->request->getPost('staff_id');
+		$school_id = (int) $this->request->getPost('school_id');
+
+		if ($staff_id <= 0) {
+			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid staff ID.']);
+		}
+		if ($school_id <= 0) {
+			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid school ID. Please log in again.']);
+		}
+		if ($card === '') {
+			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid card UID.']);
+		}
+
+		$staff = $staffMdl->findForCardOperation($staff_id, $school_id);
+
+		if (!$staff) {
+			return $this->response->setStatusCode(404)->setJSON(['error' => 'Staff member not found or account is locked.']);
+		}
+
+		$blocked = \App\Libraries\CardRegistry::assertAvailable($school_id, $card, 'staff', $staff_id);
+		if ($blocked) {
+			return $this->response->setStatusCode(409)->setJSON(['error' => $blocked]);
+		}
+
+		try {
+			$staffMdl->save([
+				'id' => $staff_id,
+				'card' => $card,
+				'updated_by' => $created_by,
+			]);
+			$staffMdl->persistCard($staff_id, $school_id, $card, $created_by);
+
+			$row = $staffMdl->select('card')
+				->where('id', $staff_id)
+				->where('school_id', $school_id)
+				->get(1)->getRow();
+
+			if (!$row || trim((string) ($row->card ?? '')) === '') {
+				return $this->response->setStatusCode(500)->setJSON(['error' => 'Card assignment failed to save.']);
+			}
+
+			return $this->response->setJSON([
+				'success' => 'Staff card assigned successfully.',
+				'card' => strtoupper(trim((string) $row->card)),
+			]);
+		} catch (\Throwable $e) {
+			log_message('error', '[assign_staff_card] ' . $e->getMessage());
+			return $this->response->setStatusCode(500)->setJSON(['error' => 'Unexpected error assigning staff card.']);
+		}
+	}
+
+	/**
+	 * Remove / unassign RFID card from a staff member.
+	 */
+	public function remove_staff_card()
+	{
+		$staffMdl = new StaffModel();
+		$staff_id = (int) $this->request->getPost('staff_id');
+		$school_id = (int) $this->request->getPost('school_id');
+		$operator = (int) $this->request->getPost('operator');
+
+		if ($staff_id <= 0 || $school_id <= 0) {
+			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid staff or school ID.']);
+		}
+
+		$staff = $staffMdl->findForCardOperation($staff_id, $school_id);
+
+		if (!$staff) {
+			return $this->response->setStatusCode(404)->setJSON(['error' => 'Staff member not found or account is locked.']);
+		}
+
+		if (trim((string) ($staff->card ?? '')) === '') {
+			return $this->response->setJSON(['success' => 'No card was assigned to this staff member.']);
+		}
+
+		try {
+			$staffMdl->save([
+				'id' => $staff_id,
+				'card' => null,
+				'updated_by' => $operator,
+			]);
+			$staffMdl->clearCard($staff_id, $school_id, $operator);
+
+			$row = $staffMdl->select('card')
+				->where('id', $staff_id)
+				->where('school_id', $school_id)
+				->get(1)->getRow();
+
+			if ($row && trim((string) ($row->card ?? '')) !== '') {
+				return $this->response->setStatusCode(500)->setJSON(['error' => 'Card removal failed to save.']);
+			}
+
+			return $this->response->setJSON(['success' => 'Staff card removed successfully.']);
+		} catch (\Throwable $e) {
+			log_message('error', '[remove_staff_card] ' . $e->getMessage());
+			return $this->response->setStatusCode(500)->setJSON(['error' => 'Unexpected error removing staff card.']);
+		}
+	}
+
+	/**
+	 * Lookup student or staff by RFID for library / asset operations.
+	 */
+	public function lookup_card_person()
+	{
+		helper('card_uid');
+		$school_id = (int) ($this->request->getPost('school_id') ?: $this->session->get('soma_school_id'));
+		$cardRaw = trim((string) $this->request->getPost('card'));
+		if ($school_id <= 0 || $cardRaw === '') {
+			return $this->response->setJSON(['success' => false, 'error' => 'School and card are required.']);
+		}
+		$person = \App\Libraries\CardRegistry::lookupPerson($school_id, $cardRaw);
+		$card = normalize_card_uid($cardRaw);
+		if ($card === '') {
+			$card = stored_card_uid($cardRaw);
+		}
+		if (!$person) {
+			return $this->response->setJSON([
+				'success' => false,
+				'error' => 'No student or staff found for this card. Visitor cards cannot be used here.',
+			]);
+		}
+		return $this->response->setJSON(['success' => true, 'person' => $person, 'card' => $card]);
+	}
 
 	public function save_student_photo()
 	{
@@ -2309,142 +2502,104 @@ public function get_boarding_classes()
 			return $this->response->setStatusCode(500)->setJSON(array("message" => "Error: " . $errorMsg));
 		}
 	}
+	/**
+	 * Resolve student from a scanned card UID (reader or storage byte order).
+	 */
+	private function findStudentByCardUid(int $schoolId, string $cardRaw): ?object
+	{
+		helper('card_uid');
+		$owner = \App\Libraries\CardRegistry::lookup($schoolId, $cardRaw);
+		if (!$owner || ($owner['type'] ?? '') !== 'student') {
+			return null;
+		}
+
+		$stMdl = new \App\Models\StudentModel();
+		return $stMdl
+			->select('id, CONCAT(fname, " ", lname) AS name, regno, card')
+			->where('id', (int) $owner['id'])
+			->where('school_id', $schoolId)
+			->where('status', 1)
+			->get(1)
+			->getRow();
+	}
+
 public function discipline_card_scan()
 {
-    helper('text');
+    helper(['text', 'card_uid']);
 
-    $card = trim($this->request->getPost('card'));
-    $school_id = (int)$this->request->getPost('school_id');
-    $operator = (int)$this->request->getPost('operator');
-    $reason = trim($this->request->getPost('reason') ?? '');
-    $marks = (int)$this->request->getPost('marks');
-    $notify = (int)$this->request->getPost('notify_parent', 1); // default notify parent
+    $cardRaw = trim((string) $this->request->getPost('card'));
+    $school_id = (int) $this->request->getPost('school_id');
 
-    // 1️⃣ Validate basic inputs
-    if (empty($card) || $school_id <= 0) {
+    if ($cardRaw === '' || $school_id <= 0) {
         return $this->response->setJSON([
             'success' => false,
-            'error' => 'Missing card or school ID'
+            'error' => 'Missing card or school ID',
         ]);
     }
 
-    // 2️⃣ Load active term
-    $this->_preset($school_id);
-    $active = $this->data['active_term'] ?? 0;
-
-    // 3️⃣ Find student by card
-    $stMdl = new \App\Models\StudentModel();
-    $student = $stMdl->select('id, CONCAT(fname," ",lname) as name')
-        ->where('card', $card)
-        ->where('school_id', $school_id)
-        ->get(1)->getRow();
+    $student = $this->findStudentByCardUid($school_id, $cardRaw);
 
     if (!$student) {
+        $display = clean_card_uid_raw($cardRaw) ?: $cardRaw;
         return $this->response->setJSON([
             'success' => false,
-            'error' => 'No student found with this card (' . esc($card) . ')'
+            'error' => 'No student found with this card (' . esc($display) . ')',
         ]);
     }
 
-    // 4️⃣ Record discipline entry
-    $dMdl = new \App\Models\DisciplineModel();
-    try {
-        $data = [
-            'student_id' => $student->id,
-            'school_id' => $school_id,
-            'type' => 1, // 1 = marks deduction
-            'comment' => $reason ?: 'Triggered via RFID scan',
-            'marks' => $marks ?: 0,
-            'active_term' => $active,
-            'notify_parent' => $notify,
-            'created_by' => $operator,
-        ];
-        $dMdl->save($data);
-
-        // 5️⃣ Optional: Notify parent
-        if ($notify == 1) {
-            $p = $this->_get_parent_phone($student->id);
-            $phone = $p['phone'] ?? '';
-            if (strlen($phone) > 3) {
-                $msg = $this->get_discipline_msg($p['name'], $marks, $reason ?: 'discipline recorded');
-                $result = '';
-                if ($this->sendSMS($phone, $msg, $result)) {
-                    $sms_count = (int)ceil(strlen($msg) / PER_SMS);
-                    $this->_save_sms($active, $phone, $msg, 1, $school_id, "Discipline", $student->id, $sms_count);
-                } else {
-                    $this->_save_sms($active, $phone, $msg, 1, $school_id, "Discipline", $student->id, 0, $result);
-                }
-            }
-        }
-
-        return $this->response->setJSON([
-            'success' => true,
-            'message' => "✅ Discipline recorded for {$student->name}",
-            'student' => $student,
-            'card' => $card
-        ]);
-    } catch (\Throwable $e) {
-        return $this->response->setJSON([
-            'success' => false,
-            'error' => 'Error saving discipline: ' . $e->getMessage()
-        ]);
-    }
+    return $this->response->setJSON([
+        'success' => true,
+        'student' => [
+            'id' => (int) $student->id,
+            'name' => (string) $student->name,
+            'regno' => (string) ($student->regno ?? ''),
+        ],
+        'card' => (string) ($student->card ?? ''),
+        'message' => 'Student found: ' . $student->name,
+    ]);
 }
+
 public function permission_card_scan()
 {
-    helper('text');
+    helper(['text', 'card_uid']);
 
     try {
-        // ---------------- 1️⃣ INPUT VALIDATION ----------------
-        $card      = trim((string)$this->request->getPost('card'));
-        $school_id = (int)$this->request->getPost('school_id');
+        $cardRaw = trim((string) $this->request->getPost('card'));
+        $school_id = (int) $this->request->getPost('school_id');
 
-        if (empty($card) || $school_id <= 0) {
+        if ($cardRaw === '' || $school_id <= 0) {
             return $this->response->setJSON([
                 'success' => false,
-                'error'   => 'Missing card or school ID.'
+                'error' => 'Missing card or school ID.',
             ]);
         }
 
-        // ---------------- 2️⃣ LOAD ACTIVE TERM ----------------
-        $this->_preset($school_id);
-        $active = $this->data['active_term'] ?? 0;
-
-        // ---------------- 3️⃣ FIND STUDENT ----------------
-        $stMdl = new \App\Models\StudentModel();
-        $student = $stMdl
-            ->select('id, CONCAT(fname, " ", lname) AS name, regno')
-            ->where('card', $card)
-            ->where('school_id', $school_id)
-            ->get(1)
-            ->getRow();
+        $student = $this->findStudentByCardUid($school_id, $cardRaw);
 
         if (!$student) {
+            $display = clean_card_uid_raw($cardRaw) ?: $cardRaw;
             return $this->response->setJSON([
                 'success' => false,
-                'error'   => "No student found for this card ($card)"
+                'error' => 'No student found for this card (' . esc($display) . ')',
             ]);
         }
 
-        // ---------------- 4️⃣ RETURN ONLY STUDENT INFO ----------------
         return $this->response->setJSON([
             'success' => true,
             'student' => [
-                'id'   => $student->id,
-                'name' => $student->name,
-                'regno'=> $student->regno
+                'id' => (int) $student->id,
+                'name' => (string) $student->name,
+                'regno' => (string) ($student->regno ?? ''),
             ],
-            'card'    => $card,
-            'message' => "Student found: {$student->name}"
+            'card' => (string) ($student->card ?? ''),
+            'message' => 'Student found: ' . $student->name,
         ]);
-
     } catch (\Throwable $e) {
-        // ---------------- 5️⃣ ERROR SAFEGUARD ----------------
         log_message('error', 'permission_card_scan() failed: ' . $e->getMessage());
 
         return $this->response->setJSON([
             'success' => false,
-            'error'   => 'Server error: ' . $e->getMessage()
+            'error' => 'Server error: ' . $e->getMessage(),
         ]);
     }
 }
@@ -2646,7 +2801,19 @@ public function permission_card_scan()
 				'card' => $card,
 				'updated_by' => $operator,
 			]);
-			return $this->response->setJSON(['success' => true, 'message' => 'Card assigned successfully.', 'card' => $card]);
+			$visitorMdl->persistCard($visitor_id, $school_id, $card, $operator);
+			$row = $visitorMdl->where('id', $visitor_id)->where('school_id', $school_id)->first();
+			if (!$row || trim((string) ($row['card'] ?? '')) === '') {
+				return $this->response->setStatusCode(500)->setJSON([
+					'success' => false,
+					'error' => 'Card assignment failed to save.',
+				]);
+			}
+			return $this->response->setJSON([
+				'success' => true,
+				'message' => 'Card assigned successfully.',
+				'card' => strtoupper(trim((string) $row['card'])),
+			]);
 		} catch (\Throwable $e) {
 			log_message('error', '[visitor_assign_card] ' . $e->getMessage());
 			return $this->response->setStatusCode(500)
