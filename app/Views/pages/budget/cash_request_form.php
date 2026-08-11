@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=3" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=4" rel="stylesheet">
 
 <div class="budget-cr-form">
 
@@ -74,16 +74,28 @@
 
 <div class="cr-section border-warning">
 	<div class="cr-section-title"><i class="fa fa-paperclip"></i> Supporting documents <span class="text-danger">*</span> <small class="font-weight-normal text-muted">(required to submit)</small></div>
-	<p class="small text-muted mb-2">Upload invoice, quotation, proforma, delivery note, or approval memo. PDF, Word, Excel, or images — max 10 MB each.</p>
-	<div class="cr-doc-zone" id="docZone">
-		<i class="fa fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
-		<div>Drag files here or <strong>click to browse</strong></div>
-		<input type="file" name="documents[]" id="docInput" multiple accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" style="display:none">
-	</div>
-	<div class="form-row mt-2">
-		<div class="col-md-6 form-group mb-0">
-			<label class="small font-weight-bold">Document type</label>
-			<select name="doc_type" class="form-control form-control-sm">
+	<p class="small text-muted mb-2">Attach invoice, quotation, proforma, delivery note, or memo — then append more from your phone if needed.</p>
+
+	<div class="cr-attach-panel">
+		<div class="cr-doc-zone" id="docZone">
+			<i class="fa fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
+			<div>Drag files here or click <strong>Attach file</strong></div>
+			<input type="file" name="documents[]" id="docInput" multiple accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" style="display:none">
+		</div>
+
+		<div class="cr-attach-actions">
+			<button type="button" class="btn btn-outline-primary cr-attach-btn" id="btnBrowseDocs">
+				<i class="fa fa-paperclip"></i> Attach file
+			</button>
+			<span class="cr-attach-or">or append</span>
+			<button type="button" class="btn btn-success cr-attach-btn" id="btnScanPhone">
+				<i class="fa fa-mobile-alt"></i> Smart Scan (phone)
+			</button>
+		</div>
+
+		<div class="form-group mb-0 mt-2">
+			<label class="small font-weight-bold mb-1">Document type for next attach</label>
+			<select name="doc_type" class="form-control form-control-sm" style="max-width:280px">
 				<option value="invoice">Invoice</option>
 				<option value="quotation">Quotation / Proforma</option>
 				<option value="contract">Contract / PO</option>
@@ -92,11 +104,9 @@
 				<option value="other">Other</option>
 			</select>
 		</div>
-		<div class="col-md-6 form-group mb-0 d-flex align-items-end">
-			<button type="button" class="btn btn-outline-success btn-block" id="btnScanPhone"><i class="fa fa-mobile-alt"></i> Smart Scan (phone)</button>
-		</div>
 	</div>
-	<div class="alert alert-info py-2 small d-none" id="scanWaitBox"><i class="fa fa-spinner fa-spin"></i> Waiting for SmartSMS… Camera should open on your phone automatically. If not, open <strong>Cash Flow → Smart Scan</strong> (same staff account).</div>
+
+	<div class="alert alert-info py-2 small d-none mt-2 mb-0" id="scanWaitBox"><i class="fa fa-spinner fa-spin"></i> Waiting for SmartSMS… Camera opens with the same student-photo camera. Keep the app open (or allow the deep link).</div>
 	<ul class="cr-doc-list" id="docPreview"></ul>
 	<?php if (!empty($documents)) { ?>
 	<p class="small font-weight-bold mt-2 mb-1">Already attached:</p>
@@ -172,11 +182,20 @@ $('#budget_line_id, #line_amount').on('change input', checkAvail);
 loadLines();
 
 $('#docZone').on('click', function () { $('#docInput').click(); });
+$('#btnBrowseDocs').on('click', function (e) { e.preventDefault(); e.stopPropagation(); $('#docInput').click(); });
 $('#docZone').on('dragover', function (e) { e.preventDefault(); $(this).addClass('dragover'); });
 $('#docZone').on('dragleave drop', function (e) { e.preventDefault(); $(this).removeClass('dragover'); });
 $('#docZone').on('drop', function (e) {
-	$('#docInput')[0].files = e.originalEvent.dataTransfer.files;
-	renderDocPreview($('#docInput')[0].files);
+	var incoming = e.originalEvent.dataTransfer.files;
+	if (!incoming || !incoming.length) return;
+	var dt = new DataTransfer();
+	var input = $('#docInput')[0];
+	if (input.files) {
+		for (var i = 0; i < input.files.length; i++) dt.items.add(input.files[i]);
+	}
+	for (var j = 0; j < incoming.length; j++) dt.items.add(incoming[j]);
+	input.files = dt.files;
+	renderDocPreview(input.files);
 });
 $('#docInput').on('change', function () { renderDocPreview(this.files); });
 
