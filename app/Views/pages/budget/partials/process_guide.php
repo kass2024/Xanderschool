@@ -25,8 +25,8 @@ $ctx = $ctx ?? 'full'; // full | prep | execution
 	<div class="bp-phase">
 		<div class="bp-phase-num">2</div>
 		<div class="bp-phase-body">
-			<h6>Budget approval chain</h6>
-			<p class="small text-muted mb-0">Submitted budgets pass: <em>Procurement review</em> → <em>Budget Manager</em> (checks totals &amp; line structure) → <em>Deputy Director of Finance</em> (final sign-off). Only <strong>APPROVED</strong> budgets can be spent against.</p>
+			<h6>Budget approval chain (per school)</h6>
+			<p class="small text-muted mb-0">Each school prepares its own annual budget. Thin approval chain: <em>Submit</em> → <em>Procurement</em> → <em>Budget Manager</em> → <em>Deputy Director of Finance</em> (final). Only that school’s <strong>APPROVED</strong> budget can be spent against.</p>
 		</div>
 	</div>
 	<div class="bp-phase">

@@ -506,8 +506,27 @@ class BudgetCashflow extends Home
 		}
 		if ($tab === 'review') {
 			$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-			$data['review_budgets'] = $db->table('budgets')->whereIn('branch_id', $branchIds)
-				->whereNotIn('status', ['DRAFT', 'APPROVED', 'CANCELLED'])->orderBy('id', 'DESC')->get()->getResultArray();
+			$statuses = BudgetWorkflowService::reviewStatusesForUser($c['perms'], $c['staffId'], $c['postId']);
+			$data['review_budgets'] = [];
+			if ($branchIds && $statuses) {
+				$rows = $db->table('budgets b')
+					->select('b.*, br.name as branch_name, br.organization_id')
+					->join('branches br', 'br.id = b.branch_id')
+					->whereIn('b.branch_id', $branchIds)
+					->whereIn('b.status', $statuses)
+					->orderBy('b.id', 'DESC')->get()->getResultArray();
+				foreach ($rows as &$rb) {
+					$rb['branch_name'] = $c['branchCtx']->displayBranchName([
+						'name' => $rb['branch_name'],
+						'organization_id' => $rb['organization_id'],
+					], $c['isCentral']);
+					$rb['allowed_actions'] = BudgetWorkflowService::allowedActionsForStatus(
+						$rb['status'], $c['perms'], $c['staffId'], $c['postId']
+					);
+				}
+				unset($rb);
+				$data['review_budgets'] = $rows;
+			}
 		}
 		if ($tab === 'approved') {
 			$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
@@ -750,8 +769,12 @@ class BudgetCashflow extends Home
 		$this->denyPerm('budget.submit');
 		$c = $this->ctx();
 		$id = (int) $this->request->getPost('budget_id');
+		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
 		$wf = new BudgetWorkflowService();
-		return $this->response->setJSON($wf->transition($id, 'submit', $c['staffId'], $c['postId'], $this->request->getPost('comment')));
+		return $this->response->setJSON($wf->transition($id, 'submit', $c['staffId'], $c['postId'], $this->request->getPost('comment'), [
+			'perms' => $c['perms'],
+			'allowed_branch_ids' => $branchIds,
+		]));
 	}
 
 	public function budget_review()
@@ -763,10 +786,41 @@ class BudgetCashflow extends Home
 	{
 		$this->bootBudget();
 		$c = $this->ctx();
-		$action = $this->request->getPost('action');
+		$action = trim((string) $this->request->getPost('action'));
 		$id = (int) $this->request->getPost('budget_id');
+		$need = BudgetWorkflowService::permissionForAction($action);
+		if ($need) {
+			$this->denyPerm($need);
+		} else {
+			return $this->response->setJSON(['error' => 'Unknown approval action.']);
+		}
+		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
 		$wf = new BudgetWorkflowService();
-		return $this->response->setJSON($wf->transition($id, $action, $c['staffId'], $c['postId'], $this->request->getPost('comment')));
+		return $this->response->setJSON($wf->transition($id, $action, $c['staffId'], $c['postId'], $this->request->getPost('comment'), [
+			'perms' => $c['perms'],
+			'allowed_branch_ids' => $branchIds,
+		]));
+	}
+
+	public function delete_budget()
+	{
+		$this->bootBudget();
+		$c = $this->ctx();
+		$id = (int) $this->request->getPost('budget_id');
+		if ($id <= 0) {
+			return $this->response->setJSON(['error' => 'Missing budget.']);
+		}
+		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
+		// Always allow acting on own primary school branch
+		if ($c['branchId'] > 0 && !in_array((int) $c['branchId'], array_map('intval', $branchIds), true)) {
+			$branchIds[] = (int) $c['branchId'];
+		}
+		$wf = new BudgetWorkflowService();
+		$res = $wf->deleteBudget($id, $c['staffId'], $c['postId'], $branchIds, $c['perms']);
+		if (!empty($res['error'])) {
+			return $this->response->setJSON(['error' => $res['error']]);
+		}
+		return $this->response->setJSON(['success' => $res['message'] ?? 'Budget deleted.']);
 	}
 
 	public function approved_budgets()

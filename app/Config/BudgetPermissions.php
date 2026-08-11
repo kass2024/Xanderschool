@@ -118,8 +118,8 @@ class BudgetPermissions
 		// Dynamic posts seeded at runtime: 19 Budget Manager, 20 Procurement, 21 Deputy Director, 22 Finance Officer, 23 Auditor
 		$dynamic = [
 			19 => ['budget.review_budget', 'budget.return', 'budget.reject', 'cash_request.budget_review', 'cash_request.return', 'budget.view_reports', 'budget.adjust', 'budget.transfer'],
-			20 => ['budget.review_procurement', 'cash_request.procurement_review', 'cash_request.return', 'budget.view_reports'],
-			21 => ['budget.final_approve', 'budget.view_all_branches', 'cash_request.final_approve', 'cash_request.reject', 'cash_request.return', 'budget.view_reports', 'budget.export', 'cash_request.view_audit', 'cash_request.override_budget'],
+			20 => ['budget.review_procurement', 'budget.return', 'cash_request.procurement_review', 'cash_request.return', 'budget.view_reports'],
+			21 => ['budget.final_approve', 'budget.view_all_branches', 'cash_request.final_approve', 'cash_request.reject', 'cash_request.return', 'budget.view_reports', 'budget.export', 'cash_request.view_audit', 'cash_request.override_budget', 'budget.return', 'budget.reject'],
 			22 => ['cash_request.process_payment', 'cash_request.manage_documents', 'budget.view_reports'],
 			23 => ['cash_request.view_audit', 'budget.view_all_branches', 'budget.view_reports', 'budget.export'],
 		];
