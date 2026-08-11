@@ -211,6 +211,7 @@ class Api extends BaseController
 								'soma_term_number' => $result->term ?? 0,
 								'soma_academic' => $result->academic_year ?? 0,
 								'soma_school_id' => $result->school_id,
+								'soma_home_school_id' => $result->school_id,
 								'soma_school' => $result->school_name ?? '',
 								'soma_post' => $result->post ?? 0,
 								'soma_post_title' => $result->post_title ?? '',
@@ -269,6 +270,19 @@ class Api extends BaseController
 								['id' => 3, 'academic_type_id' => $academicTypeId, 'title' => 'Second sitting'],
 								['id' => 9, 'academic_type_id' => $academicTypeId, 'title' => 'Re-assess'],
 							];
+							// Level clearance → Android / mobile menu tiles
+							try {
+								$clearance = new \App\Models\PostMenuClearanceModel();
+								$menuKeys = $clearance->allowedKeysForPost((int) ($result->post ?? 0));
+								$data['menu_keys'] = $menuKeys;
+								$data['app_menus'] = \Config\MenuClearance::appMenusForKeys($menuKeys);
+								$data['menu_full_access'] = \Config\MenuClearance::isFullAccessPost((int) ($result->post ?? 0));
+							} catch (\Throwable $e) {
+								log_message('error', 'API login menu clearance: ' . $e->getMessage());
+								$data['menu_keys'] = [];
+								$data['app_menus'] = \Config\MenuClearance::appMenusForKeys([]);
+								$data['menu_full_access'] = false;
+							}
 							return $this->response->setJSON($data);
 						}
 					} else {
@@ -3399,5 +3413,229 @@ public function permission_card_scan()
 		$bytes = str_split($uid, 2);
 		$bytes = array_reverse($bytes);
 		return implode('', $bytes);
+	}
+
+	// ── Cash Flow / mobile scan bridge ─────────────────────────────────────
+
+	public function cash_flow_scan_pending($staff_id = null)
+	{
+		$staffId = (int) ($staff_id ?? 0);
+		if ($staffId <= 0) {
+			return $this->response->setJSON(['error' => 'Invalid staff.']);
+		}
+		$svc = new \App\Services\Budget\MobileScanBridgeService();
+		$pending = $svc->getPendingForStaff($staffId);
+		if (!$pending) {
+			return $this->response->setJSON(['pending' => false]);
+		}
+		return $this->response->setJSON([
+			'pending' => true,
+			'token' => $pending['token'],
+		]);
+	}
+
+	public function cash_flow_scan_upload()
+	{
+		$staffId = (int) $this->request->getPost('staff_id');
+		$token = trim((string) $this->request->getPost('token'));
+		$image = (string) $this->request->getPost('image_base64');
+		$filename = trim((string) $this->request->getPost('filename')) ?: 'scan.jpg';
+		if ($staffId <= 0 || $token === '' || $image === '') {
+			return $this->response->setJSON(['error' => 'Missing scan data.']);
+		}
+		$svc = new \App\Services\Budget\MobileScanBridgeService();
+		$res = $svc->uploadCapture($token, $staffId, $image, $filename);
+		return $this->response->setJSON($res);
+	}
+
+	public function get_cash_flow_requests($school_id = null, $staff_id = null)
+	{
+		$schoolId = (int) ($school_id ?? 0);
+		$staffId = (int) ($staff_id ?? 0);
+		$api = new \App\Services\Budget\MobileCashFlowApiService();
+		$ctx = $api->staffContext($schoolId, $staffId);
+		if (!$ctx || $ctx['branch_id'] <= 0) {
+			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
+		}
+		return $this->response->setJSON([
+			'requests' => $api->listRequests($ctx['branch_id'], $staffId),
+		]);
+	}
+
+	public function get_cash_flow_pending($school_id = null, $staff_id = null)
+	{
+		$schoolId = (int) ($school_id ?? 0);
+		$staffId = (int) ($staff_id ?? 0);
+		$api = new \App\Services\Budget\MobileCashFlowApiService();
+		$ctx = $api->staffContext($schoolId, $staffId);
+		if (!$ctx || $ctx['branch_id'] <= 0) {
+			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
+		}
+		$rows = $api->listPending($ctx['branch_id'], $ctx['post_id']);
+		foreach ($rows as &$row) {
+			$row['actions'] = $api->allowedActions($ctx['post_id'], $row['status']);
+		}
+		return $this->response->setJSON(['requests' => $rows]);
+	}
+
+	public function get_cash_flow_form($school_id = null, $staff_id = null)
+	{
+		$schoolId = (int) ($school_id ?? 0);
+		$staffId = (int) ($staff_id ?? 0);
+		$api = new \App\Services\Budget\MobileCashFlowApiService();
+		$ctx = $api->staffContext($schoolId, $staffId);
+		if (!$ctx || $ctx['branch_id'] <= 0) {
+			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
+		}
+		return $this->response->setJSON($api->formData($ctx['branch_id']));
+	}
+
+	public function save_cash_flow_request()
+	{
+		$schoolId = (int) $this->request->getPost('school_id');
+		$staffId = (int) $this->request->getPost('staff_id');
+		$api = new \App\Services\Budget\MobileCashFlowApiService();
+		$ctx = $api->staffContext($schoolId, $staffId);
+		if (!$ctx || $ctx['branch_id'] <= 0) {
+			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
+		}
+		$db = \Config\Database::connect();
+		$budgetId = (int) $this->request->getPost('budget_id');
+		$budgetLineId = (int) $this->request->getPost('budget_line_id');
+		$amount = (float) $this->request->getPost('amount');
+		$submitNow = in_array($this->request->getPost('submit_now'), ['1', 'true', 1, true], true);
+		if ($budgetId <= 0 || $budgetLineId <= 0 || $amount <= 0) {
+			return $this->response->setJSON(['error' => 'Budget line and amount are required.']);
+		}
+		$budget = $db->table('budgets')->where('id', $budgetId)->where('branch_id', $ctx['branch_id'])
+			->where('status', 'APPROVED')->get(1)->getRowArray();
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Approved budget required.']);
+		}
+		$bLine = $db->table('budget_lines')->where('id', $budgetLineId)->where('budget_id', $budgetId)->get(1)->getRowArray();
+		if (!$bLine) {
+			return $this->response->setJSON(['error' => 'Invalid budget line.']);
+		}
+		$purpose = trim((string) $this->request->getPost('purpose'));
+		$payee = trim((string) $this->request->getPost('payee_name'));
+		if ($purpose === '' || $payee === '') {
+			return $this->response->setJSON(['error' => 'Payee and purpose are required.']);
+		}
+		if ($submitNow) {
+			$avail = (new \App\Services\Budget\BudgetAvailabilityService())->lineAvailability($budgetLineId);
+			if ($avail && $amount > (float) $avail['available']) {
+				return $this->response->setJSON(['error' => 'Amount exceeds available budget on this line.']);
+			}
+			$image = (string) $this->request->getPost('image_base64');
+			if ($image === '') {
+				return $this->response->setJSON(['error' => 'Attach a supporting document before submitting.']);
+			}
+		}
+		$wf = new \App\Services\Budget\CashRequestWorkflowService();
+		$row = [
+			'organization_id' => $ctx['org_id'],
+			'branch_id' => $ctx['branch_id'],
+			'budget_id' => $budgetId,
+			'request_date' => date('Y-m-d'),
+			'payee_name' => $payee,
+			'payee_type' => $this->request->getPost('payee_type') ?: 'supplier',
+			'purpose' => $purpose,
+			'currency' => 'RWF',
+			'requested_amount' => $amount,
+			'payment_method' => $this->request->getPost('payment_method') ?: 'bank',
+			'urgency' => 'normal',
+			'status' => 'DRAFT',
+			'created_by' => $staffId,
+			'updated_by' => $staffId,
+			'created_at' => date('Y-m-d H:i:s'),
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		$row['request_no'] = $wf->nextRequestNo($ctx['branch_id']);
+		$db->table('cash_requests')->insert($row);
+		$requestId = (int) $db->insertID();
+		$db->table('cash_request_lines')->insert([
+			'cash_request_id' => $requestId,
+			'budget_line_id' => $budgetLineId,
+			'description' => trim((string) $this->request->getPost('line_description')) ?: ($bLine['category'] . ' — mobile request'),
+			'amount' => $amount,
+		]);
+		$image = (string) $this->request->getPost('image_base64');
+		if ($image !== '') {
+			$raw = base64_decode(preg_replace('#^data:image/\w+;base64,#', '', $image), true);
+			if ($raw !== false) {
+				$stored = 'budget/cash_requests/' . uniqid('mob_', true) . '.jpg';
+				$full = WRITEPATH . 'uploads/' . $stored;
+				@mkdir(dirname($full), 0755, true);
+				file_put_contents($full, $raw);
+				$db->table('cash_request_documents')->insert([
+					'cash_request_id' => $requestId,
+					'doc_type' => $this->request->getPost('doc_type') ?: 'invoice',
+					'original_name' => 'mobile-scan.jpg',
+					'stored_path' => 'writable/uploads/' . $stored,
+					'uploaded_by' => $staffId,
+					'created_at' => date('Y-m-d H:i:s'),
+				]);
+			}
+		}
+		if ($submitNow) {
+			$res = $wf->transition($requestId, 'submit', $staffId, $ctx['post_id'], 'Submitted from SmartSMS app');
+			if (empty($res['success'])) {
+				return $this->response->setJSON($res);
+			}
+		}
+		return $this->response->setJSON([
+			'success' => $submitNow ? 'Cash request submitted.' : 'Cash request saved as draft.',
+			'request_id' => $requestId,
+			'request_no' => $row['request_no'],
+		]);
+	}
+
+	public function cash_flow_request_action()
+	{
+		$schoolId = (int) $this->request->getPost('school_id');
+		$staffId = (int) $this->request->getPost('staff_id');
+		$requestId = (int) $this->request->getPost('request_id');
+		$action = trim((string) $this->request->getPost('action'));
+		$comment = trim((string) $this->request->getPost('comment'));
+		$api = new \App\Services\Budget\MobileCashFlowApiService();
+		$ctx = $api->staffContext($schoolId, $staffId);
+		if (!$ctx) {
+			return $this->response->setJSON(['error' => 'Staff not found.']);
+		}
+		$wf = new \App\Services\Budget\CashRequestWorkflowService();
+		$res = $wf->transition($requestId, $action, $staffId, $ctx['post_id'], $comment ?: 'Approved from SmartSMS app');
+		return $this->response->setJSON($res);
+	}
+
+	/**
+	 * Level clearance for SmartSMS menus.
+	 * GET api/menu_clearance/{post_id}  or  ?post_id=&staff_id=
+	 */
+	public function menu_clearance($post_id = null)
+	{
+		$postId = (int) ($post_id ?? $this->request->getGet('post_id') ?? $this->request->getPost('post_id') ?? 0);
+		$staffId = (int) ($this->request->getGet('staff_id') ?? $this->request->getPost('staff_id') ?? 0);
+		if ($postId <= 0 && $staffId > 0) {
+			$db = \Config\Database::connect();
+			$row = $db->table('staffs')->select('post')->where('id', $staffId)->get(1)->getRowArray();
+			$postId = (int) ($row['post'] ?? 0);
+		}
+		if ($postId <= 0) {
+			return $this->response->setJSON(['error' => 'Missing post.']);
+		}
+		try {
+			$clearance = new \App\Models\PostMenuClearanceModel();
+			$menuKeys = $clearance->allowedKeysForPost($postId);
+			return $this->response->setJSON([
+				'success' => true,
+				'post_id' => $postId,
+				'menu_keys' => $menuKeys,
+				'app_menus' => \Config\MenuClearance::appMenusForKeys($menuKeys),
+				'menu_full_access' => \Config\MenuClearance::isFullAccessPost($postId),
+			]);
+		} catch (\Throwable $e) {
+			log_message('error', 'API menu_clearance: ' . $e->getMessage());
+			return $this->response->setJSON(['error' => 'Could not load menu clearance.']);
+		}
 	}
 }

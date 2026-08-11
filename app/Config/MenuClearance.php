@@ -12,11 +12,30 @@ class MenuClearance
 	const FULL_ACCESS_POSTS = [1, 3, 18]; // Head master, Director of studies, Headmistress
 
 	/**
-	 * Menu tree used by admin UI and key enumeration.
+	 * Menu tree synced from dashboard sidebar (app/Views/main.php).
+	 * Falls back to staticTree() if the view cannot be parsed.
 	 *
 	 * @return array<int, array<string, mixed>>
 	 */
 	public static function tree()
+	{
+		return \App\Services\DashboardSidebarParser::tree();
+	}
+
+	/**
+	 * Legacy static registry (fallback only).
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function staticTree()
+	{
+		return self::legacyTree();
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function legacyTree()
 	{
 		return [
 			[
@@ -158,6 +177,7 @@ class MenuClearance
 				'label' => 'Fees Management',
 				'children' => [
 					['key' => 'fees_entry', 'label' => 'Fees Entry'],
+					['key' => 'fees_pending_approval', 'label' => 'Pending Fees Approval'],
 					['key' => 'school_fees_management', 'label' => 'School Fees Management'],
 					['key' => 'extra_fees_management', 'label' => 'Extra Fees Management'],
 					['key' => 'transport_fees_management', 'label' => 'Transport Fees Management'],
@@ -260,14 +280,47 @@ class MenuClearance
 	 */
 	public static function allKeys()
 	{
-		$keys = [];
-		foreach (self::tree() as $group) {
-			$keys[] = $group['key'];
-			foreach ($group['children'] as $child) {
-				$keys[] = $child['key'];
+		return \App\Services\DashboardSidebarParser::allKeys();
+	}
+
+	/**
+	 * Fee menu keys under Finance (parsed from sidebar).
+	 *
+	 * @return string[]
+	 */
+	public static function feeMenuKeys()
+	{
+		$keys = \App\Services\DashboardSidebarParser::financeSubgroupKeys('fees');
+		return $keys ?: self::childKeysFromLegacy('fees');
+	}
+
+	/**
+	 * Budget & cash-flow keys under Finance (parsed from sidebar).
+	 *
+	 * @return string[]
+	 */
+	public static function budgetMenuKeys()
+	{
+		$keys = \App\Services\DashboardSidebarParser::financeSubgroupKeys('budget_cashflow');
+		return $keys ?: self::childKeysFromLegacy('budget_cashflow');
+	}
+
+	/**
+	 * @param string $parentKey
+	 * @return string[]
+	 */
+	private static function childKeysFromLegacy($parentKey)
+	{
+		foreach (self::legacyTree() as $group) {
+			if (($group['key'] ?? '') === $parentKey) {
+				$keys = [];
+				foreach ($group['children'] ?? [] as $child) {
+					$keys[] = $child['key'];
+				}
+				return $keys;
 			}
 		}
-		return array_values(array_unique($keys));
+		return [];
 	}
 
 	/**
@@ -278,6 +331,12 @@ class MenuClearance
 	 */
 	public static function groupKeys($parentKey)
 	{
+		if ($parentKey === 'fees') {
+			return array_merge(['fees'], self::feeMenuKeys());
+		}
+		if ($parentKey === 'budget_cashflow') {
+			return array_merge(['budget_cashflow'], self::budgetMenuKeys());
+		}
 		foreach (self::tree() as $group) {
 			if ($group['key'] === $parentKey) {
 				$keys = [$parentKey];
@@ -298,6 +357,12 @@ class MenuClearance
 	 */
 	public static function childKeys($parentKey)
 	{
+		if ($parentKey === 'fees') {
+			return self::feeMenuKeys();
+		}
+		if ($parentKey === 'budget_cashflow') {
+			return self::budgetMenuKeys();
+		}
 		foreach (self::tree() as $group) {
 			if ($group['key'] === $parentKey) {
 				$keys = [];
@@ -380,14 +445,23 @@ class MenuClearance
 
 		// Fees: is_allowed(1, 9, 3)
 		if ($postId === 9) {
-			$keys = array_merge($keys, self::groupKeys('fees'));
-			$keys = array_merge($keys, self::groupKeys('budget_cashflow'));
+			$keys = array_merge($keys, self::feeMenuKeys());
+			$keys = array_merge($keys, self::budgetMenuKeys());
 			$keys[] = 'finance';
+		}
+
+		// Fees pending approval + finance menu for Director / Deputy Director of Finance
+		if (in_array($postId, [21, 24], true)) {
+			$keys[] = 'finance';
+			$keys[] = 'fees_pending_approval';
+		}
+		if ($postId === 24) {
+			$keys = array_merge($keys, self::feeMenuKeys());
 		}
 
 		// Budget & Cash Flow finance roles
 		if (in_array($postId, [1, 8, 19, 20, 21, 22, 23], true)) {
-			$keys = array_merge($keys, self::groupKeys('budget_cashflow'));
+			$keys = array_merge($keys, self::budgetMenuKeys());
 			$keys[] = 'finance';
 		}
 		if ($postId === 3) {
@@ -397,7 +471,6 @@ class MenuClearance
 		// Asset Management + Library: Store keeper (12), Secretary (7), Librarian (13)
 		if (in_array($postId, [7, 12, 13], true)) {
 			$keys = array_merge($keys, self::groupKeys('asset_management'));
-			$keys = array_merge($keys, self::groupKeys('library'));
 		}
 
 		// Transport: is_allowed(1, 5, 6, 7, 3)
@@ -411,5 +484,70 @@ class MenuClearance
 		}
 
 		return array_values(array_unique($keys));
+	}
+
+	/**
+	 * Whether a sidebar group (or any of its children) is allowed given a key set.
+	 * Mirrors menu_clearance_group_visible() without session.
+	 *
+	 * @param string[] $allowedKeys
+	 * @param string   $parentKey
+	 */
+	public static function groupVisibleForKeys(array $allowedKeys, $parentKey)
+	{
+		$parentKey = (string) $parentKey;
+		$set = array_flip($allowedKeys);
+		if ($parentKey === 'finance') {
+			return self::groupVisibleForKeys($allowedKeys, 'fees')
+				|| self::groupVisibleForKeys($allowedKeys, 'budget_cashflow');
+		}
+		if (isset($set[$parentKey])) {
+			return true;
+		}
+		foreach (self::childKeys($parentKey) as $child) {
+			if (isset($set[$child])) {
+				return true;
+			}
+			if (in_array($child, ['fees', 'budget_cashflow'], true)
+				&& self::groupVisibleForKeys($allowedKeys, $child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * SmartSMS / Android home tiles mapped from Level Clearance keys.
+	 *
+	 * @param string[] $allowedKeys
+	 * @return array<string,bool>
+	 */
+	public static function appMenusForKeys(array $allowedKeys)
+	{
+		$set = array_flip($allowedKeys);
+		$has = static function ($key) use ($set) {
+			return isset($set[$key]);
+		};
+
+		return [
+			'discipline' => self::groupVisibleForKeys($allowedKeys, 'behavior')
+				|| $has('discipline_record_entry') || $has('discipline_record'),
+			'permission' => self::groupVisibleForKeys($allowedKeys, 'permissions')
+				|| $has('permission_entry') || $has('permission_record'),
+			'students' => self::groupVisibleForKeys($allowedKeys, 'students')
+				|| $has('register-student') || $has('students'),
+			'attendance' => $has('attendance_record') || $has('marks_entry')
+				|| self::groupVisibleForKeys($allowedKeys, 'marks'),
+			'daily_attendance' => $has('attendance_record') || $has('attendance-card'),
+			'payment' => self::groupVisibleForKeys($allowedKeys, 'fees')
+				|| $has('fees_entry') || $has('extra_fees_entry'),
+			'library' => self::groupVisibleForKeys($allowedKeys, 'library')
+				|| $has('book_management')
+				|| self::groupVisibleForKeys($allowedKeys, 'asset_management'),
+			'marks' => self::groupVisibleForKeys($allowedKeys, 'marks') || $has('marks_entry'),
+			'transport' => self::groupVisibleForKeys($allowedKeys, 'transport'),
+			'leaves' => $has('leave_application') || $has('leave_management'),
+			'cashflow' => self::groupVisibleForKeys($allowedKeys, 'budget_cashflow'),
+		];
 	}
 }
