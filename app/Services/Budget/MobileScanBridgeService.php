@@ -33,12 +33,12 @@ class MobileScanBridgeService
 			'staff_id' => $staffId,
 			'status' => 'pending',
 			'created_at' => time(),
-			'expires_at' => time() + 600,
+			'expires_at' => time() + 1800, // 30 minutes — phone capture can take a while
 		];
 		file_put_contents($this->path($token), json_encode($data));
 		return [
 			'token' => $token,
-			'expires_in' => 600,
+			'expires_in' => 1800,
 			'deep_link' => 'smartsms://amscan?token=' . $token,
 			'intent_link' => 'intent://amscan?token=' . rawurlencode($token)
 				. '#Intent;scheme=smartsms;package=com.xandertech.smartsms;end',

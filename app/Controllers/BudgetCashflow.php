@@ -8,12 +8,17 @@ use App\Services\Budget\BudgetAvailabilityService;
 use App\Services\Budget\BudgetCalculationService;
 use App\Services\Budget\BudgetNotificationService;
 use App\Services\Budget\BudgetPermissionService;
+use App\Services\Budget\MobileScanBridgeService;
+use App\Services\Budget\BudgetExcelFillService;
 use App\Services\Budget\BudgetTemplateImportService;
 use App\Services\Budget\BudgetWorkflowService;
 use App\Services\Budget\CashRequestWorkflowService;
 use App\Services\Budget\DocumentStorageService;
 use App\Services\Budget\FinancialAuditService;
 use App\Services\Budget\PaymentService;
+use App\Services\Budget\TermBudgetResetService;
+use App\Services\Budget\TermExpensesBudgetImportService;
+use App\Services\Budget\GeminiBudgetAnalysisService;
 
 class BudgetCashflow extends Home
 {
@@ -52,11 +57,52 @@ class BudgetCashflow extends Home
 			->orderBy('id', 'DESC')->get(1)->getRowArray();
 		$totalBudget = $budget ? (float) $budget['total_expenses'] : 0.0;
 		$totalIncome = $budget ? (float) $budget['total_income'] : 0.0;
+		$periodTitle = '';
 		$enrollment = 0;
 		if ($budget && !empty($budget['notes'])) {
 			$setup = json_decode($budget['notes'], true);
 			if (is_array($setup)) {
 				$enrollment = (int) ($setup['enrollment'] ?? 0);
+			}
+		}
+		if ($budget && !empty($budget['budget_period_id'])) {
+			$period = $db->table('budget_periods')->where('id', (int) $budget['budget_period_id'])->get(1)->getRowArray();
+			$periodTitle = $period['title'] ?? '';
+		}
+		$availSvc = new BudgetAvailabilityService();
+		$lineVariances = [];
+		$totalUsed = 0.0;
+		if ($budget) {
+			$lines = $db->table('budget_lines')->where('budget_id', (int) $budget['id'])
+				->orderBy('sort_order', 'ASC')->get()->getResultArray();
+			foreach ($lines as $line) {
+				if (stripos($line['section_label'] ?? '', 'INCOME') !== false) {
+					continue;
+				}
+				$budgetAmt = (float) $line['annual_amount'];
+				$avail = $availSvc->lineAvailability((int) $line['id']);
+				$used = $avail ? ((float) $avail['paid'] + (float) $avail['committed']) : 0.0;
+				$excelUsed = null;
+				if (!empty($line['assumptions'])) {
+					$meta = json_decode($line['assumptions'], true);
+					if (is_array($meta) && isset($meta['excel_used'])) {
+						$excelUsed = (float) $meta['excel_used'];
+					}
+				}
+				$displayUsed = $used > 0 ? $used : ($excelUsed ?? 0.0);
+				if (empty($line['is_total_row'])) {
+					$totalUsed += $displayUsed;
+				}
+				$lineVariances[] = [
+					'id' => (int) $line['id'],
+					'section' => $line['section_label'],
+					'category' => $line['category'],
+					'budget' => $budgetAmt,
+					'used' => round($displayUsed, 2),
+					'variance' => round($budgetAmt - $displayUsed, 2),
+					'is_total_row' => (int) ($line['is_total_row'] ?? 0),
+					'utilization_pct' => $budgetAmt > 0 ? round(($displayUsed / $budgetAmt) * 100, 1) : 0,
+				];
 			}
 		}
 		$paidRow = $db->query(
@@ -66,16 +112,22 @@ class BudgetCashflow extends Home
 			[$branchId]
 		)->getRowArray();
 		$totalActual = (float) ($paidRow['t'] ?? 0);
-		$variance = round($totalBudget - $totalActual, 2);
+		if ($totalUsed <= 0 && $totalActual > 0) {
+			$totalUsed = $totalActual;
+		}
+		$variance = round($totalBudget - $totalUsed, 2);
 		$variancePct = $totalBudget > 0 ? round(($variance / $totalBudget) * 100, 1) : 0.0;
 		return [
 			'budget' => $budget,
+			'period_title' => $periodTitle,
 			'total_budget' => $totalBudget,
 			'total_income' => $totalIncome,
-			'total_actual' => $totalActual,
+			'total_actual' => $totalUsed,
+			'total_paid_cashflow' => $totalActual,
 			'variance' => $variance,
 			'variance_pct' => $variancePct,
 			'enrollment' => $enrollment,
+			'line_variances' => $lineVariances,
 		];
 	}
 
@@ -144,9 +196,91 @@ class BudgetCashflow extends Home
 			];
 			$data['branch_stats'] = [];
 			$data['financials'] = $this->branchFinancialSummary($bid, $db);
+			$data['gemini_enabled'] = (new GeminiBudgetAnalysisService())->isConfigured();
 		}
 		$data['content'] = view('pages/budget/dashboard', $data);
 		return view('main', $data);
+	}
+
+	public function fill_budget_from_excel()
+	{
+		$this->bootBudget();
+		$this->denyPerm('budget.templates.upload');
+		$c = $this->ctx();
+		$budgetId = (int) ($this->request->getPost('budget_id') ?? 0);
+		$svc = new BudgetExcelFillService();
+		$result = $svc->fillBranchBudget((int) $c['branchId'], $budgetId ?: null);
+		if (empty($result['success'])) {
+			return $this->response->setJSON(['error' => $result['error'] ?? 'Fill failed.']);
+		}
+		return $this->response->setJSON([
+			'success' => sprintf('Filled %d budget lines from Excel.', (int) ($result['lines_matched'] ?? 0)),
+			'budget_id' => $result['budget_id'] ?? null,
+			'matched' => $result['lines_matched'] ?? 0,
+		]);
+	}
+
+	public function dashboard_ai_json()
+	{
+		$this->denyMenu('budget_dashboard');
+		$c = $this->ctx();
+		$db = \Config\Database::connect();
+		$fin = $this->branchFinancialSummary((int) $c['branchId'], $db);
+		$stats = [
+			'pending_cash' => $db->table('cash_requests')->where('branch_id', $c['branchId'])
+				->whereNotIn('status', ['DRAFT','CLOSED','CANCELLED','REJECTED','VOIDED'])->countAllResults(),
+			'awaiting_payment' => $db->table('cash_requests')->where('branch_id', $c['branchId'])
+				->where('status', 'FINANCE_AUTHORIZED')->countAllResults(),
+		];
+		$ctx = array_merge($fin, $stats, [
+			'branch_label' => $c['branch']
+				? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
+				: session('soma_school'),
+		]);
+		$gemini = new GeminiBudgetAnalysisService();
+		if (!$gemini->isConfigured()) {
+			return $this->response->setJSON(['error' => 'AI analysis unavailable — Gemini API key not set.']);
+		}
+		$analysis = $gemini->analyzeDashboard($ctx);
+		if (!$analysis) {
+			return $this->response->setJSON(['error' => $gemini->lastError() ?: 'Analysis failed.']);
+		}
+		return $this->response->setJSON(['success' => true, 'analysis' => $analysis]);
+	}
+
+	public function download_term_template()
+	{
+		$this->bootBudget();
+		$this->denyPerm('budget.templates.view');
+		$svc = new TermExpensesBudgetImportService();
+		$path = $svc->templatePath();
+		if (!$path) {
+			return redirect()->to(base_url('budget/prepare'))->with('error', 'Term budget template not found.');
+		}
+		return $this->response->download($path, null)->setFileName(TermExpensesBudgetImportService::TEMPLATE_FILE);
+	}
+
+	public function reset_term_budget()
+	{
+		$this->bootBudget();
+		$this->denyPerm('budget.templates.upload');
+		$c = $this->ctx();
+		$confirm = trim((string) $this->request->getPost('confirm'));
+		if ($confirm !== 'RESET') {
+			return $this->response->setJSON(['error' => 'Type RESET to confirm wiping all budget and cash request data for this branch.']);
+		}
+		$resetSvc = new TermBudgetResetService();
+		$res = $resetSvc->resetAndSeedBranch($c['orgId'], (int) $c['branchId'], $c['staffId']);
+		if (empty($res['success'])) {
+			return $this->response->setJSON(['error' => $res['error'] ?? 'Reset failed.']);
+		}
+		(new FinancialAuditService())->log('budget', (int) $res['budget_id'], 'reset_seed', $c['staffId'], null, $res, $c['orgId'], $c['branchId']);
+		return $this->response->setJSON([
+			'success' => 'Budget reset complete. New term budget seeded from Excel template.',
+			'budget_id' => $res['budget_id'],
+			'line_count' => $res['line_count'],
+			'total_expenses' => $res['total_expenses'],
+		]);
 	}
 
 	public function periods()
@@ -306,10 +440,12 @@ class BudgetCashflow extends Home
 		$tabKeys = [
 			'budgets' => ['budget_prepare'],
 			'periods' => ['budget_periods'],
-			'templates' => ['budget_templates'],
 			'review' => ['budget_review'],
 			'approved' => ['budget_approved'],
 		];
+		if ($tab === 'templates') {
+			return redirect()->to(base_url('budget/prepare'));
+		}
 		if (!isset($tabKeys[$tab]) || !budget_menu_any($tabKeys[$tab])) {
 			$tab = 'budgets';
 			if (!budget_menu_any(['budget_prepare'])) {
@@ -399,63 +535,84 @@ class BudgetCashflow extends Home
 		$c = $this->ctx();
 		$db = \Config\Database::connect();
 		$periodId = (int) $this->request->getPost('budget_period_id');
-		$templateId = (int) $this->request->getPost('template_id');
-		if ($templateId <= 0) {
-			$active = $db->table('budget_templates')->where('organization_id', $c['orgId'])->where('status', 'active')->get(1)->getRowArray();
-			$templateId = $active ? (int) $active['id'] : 0;
+		if ($periodId <= 0) {
+			$periodId = $this->ensureAnnualBudgetPeriod($c['orgId'], (int) $c['branchId'], $c['staffId']);
 		}
-		$template = $db->table('budget_templates')->where('id', $templateId)->get(1)->getRowArray();
-		$versionId = $template ? (int) $template['current_version_id'] : 0;
+		if ($periodId <= 0) {
+			return $this->response->setJSON(['error' => 'Could not create budget period.']);
+		}
+		$yearLabel = trim((string) $this->request->getPost('academic_year'));
+		if ($yearLabel === '') {
+			$y = (int) date('Y');
+			$yearLabel = $y . '-' . substr((string) ($y + 1), -2);
+		}
+		$title = trim((string) $this->request->getPost('title'));
+		if ($title === '') {
+			$title = 'Annual Budget ' . $yearLabel;
+		}
 		$db->transStart();
 		$db->table('budgets')->insert([
 			'organization_id' => $c['orgId'],
 			'branch_id' => $c['branchId'],
 			'budget_period_id' => $periodId,
-			'template_version_id' => $versionId ?: null,
-			'title' => trim((string) $this->request->getPost('title')) ?: 'Budget ' . date('Y'),
+			'template_version_id' => null,
+			'title' => $title,
 			'currency' => 'RWF',
 			'status' => 'DRAFT',
 			'prepared_by' => $c['staffId'],
 			'prepared_at' => date('Y-m-d H:i:s'),
+			'notes' => json_encode([
+				'academic_year' => $yearLabel,
+				'planning_type' => 'three_term_annual',
+				'enrollment' => 0,
+				'opening_cash' => 0,
+				'planning_notes' => '',
+			]),
 			'created_by' => $c['staffId'],
 			'created_at' => date('Y-m-d H:i:s'),
 			'updated_at' => date('Y-m-d H:i:s'),
 		]);
 		$budgetId = (int) $db->insertID();
-		if ($versionId) {
-			$lines = $db->table('budget_template_lines')->where('version_id', $versionId)->orderBy('sort_order')->get()->getResultArray();
-			foreach ($lines as $ln) {
-				$sec = $db->table('budget_template_sections')->where('id', $ln['section_id'])->get(1)->getRowArray();
-				$secLabel = $sec ? $sec['section_label'] : 'GENERAL';
-				$db->table('budget_lines')->insert([
-					'budget_id' => $budgetId,
-					'template_line_id' => $ln['id'],
-					'section_label' => $secLabel,
-					'category' => $ln['normalized_label'],
-					'account_code' => $ln['account_code'] ?? null,
-					'calculation_mode' => $ln['calculation_mode'] ?? 'manual',
-					'unit' => $ln['default_unit'] ?? null,
-					'frequency' => $ln['default_frequency'] ?? 1,
-					'is_total_row' => $ln['is_total_row'],
-					'is_editable' => $ln['is_editable'],
-					'sort_order' => $ln['sort_order'],
-				]);
-			}
-		} else {
-			$import = new BudgetTemplateImportService();
-			foreach ($import->defaultStructure() as $ln) {
-				$db->table('budget_lines')->insert([
-					'budget_id' => $budgetId,
-					'section_label' => $ln['section'],
-					'category' => $ln['normalized_label'],
-					'is_total_row' => $ln['is_total_row'] ? 1 : 0,
-					'is_editable' => $ln['is_editable'] ? 1 : 0,
-					'sort_order' => $ln['sort_order'],
-				]);
-			}
+		$import = new BudgetTemplateImportService();
+		foreach ($import->defaultStructure() as $ln) {
+			$db->table('budget_lines')->insert([
+				'budget_id' => $budgetId,
+				'section_label' => $ln['section'],
+				'category' => $ln['normalized_label'],
+				'is_total_row' => $ln['is_total_row'] ? 1 : 0,
+				'is_editable' => $ln['is_editable'] ? 1 : 0,
+				'calculation_mode' => 'term_sum',
+				'sort_order' => $ln['sort_order'],
+			]);
 		}
 		$db->transComplete();
-		return $this->response->setJSON(['success' => 'Budget created.', 'budget_id' => $budgetId]);
+		return $this->response->setJSON(['success' => 'Annual budget workspace ready.', 'budget_id' => $budgetId]);
+	}
+
+	protected function ensureAnnualBudgetPeriod(int $orgId, int $branchId, int $staffId): int
+	{
+		$db = \Config\Database::connect();
+		$row = $db->table('budget_periods')->where('branch_id', $branchId)
+			->where('period_type', 'annual')->where('status', 'open')
+			->orderBy('id', 'DESC')->get(1)->getRowArray();
+		if ($row) {
+			return (int) $row['id'];
+		}
+		$y = (int) date('Y');
+		$title = 'Academic Year ' . $y . '-' . substr((string) ($y + 1), -2);
+		$db->table('budget_periods')->insert([
+			'organization_id' => $orgId,
+			'branch_id' => $branchId,
+			'title' => $title,
+			'period_type' => 'annual',
+			'start_date' => $y . '-01-01',
+			'end_date' => ($y + 1) . '-12-31',
+			'status' => 'open',
+			'created_by' => $staffId,
+			'created_at' => date('Y-m-d H:i:s'),
+			'updated_at' => date('Y-m-d H:i:s'),
+		]);
+		return (int) $db->insertID();
 	}
 
 	public function edit_budget($id = null)
@@ -519,6 +676,8 @@ class BudgetCashflow extends Home
 			return $this->response->setJSON(['error' => 'Budget is not editable.']);
 		}
 		$setup = [
+			'academic_year' => trim((string) $this->request->getPost('academic_year')),
+			'planning_type' => 'three_term_annual',
 			'enrollment' => (int) $this->request->getPost('enrollment'),
 			'opening_cash' => (float) $this->request->getPost('opening_cash'),
 			'planning_notes' => trim((string) $this->request->getPost('planning_notes')),
@@ -559,7 +718,6 @@ class BudgetCashflow extends Home
 				$monthlyJson = $calc->encodeMonthlyJson($row['months']);
 			}
 			$update = [
-				'user_amount' => (float) ($row['user_amount'] ?? 0),
 				'quantity' => $row['quantity'] ?? null,
 				'unit' => $row['unit'] ?? null,
 				'unit_cost' => $row['unit_cost'] ?? null,
@@ -567,10 +725,15 @@ class BudgetCashflow extends Home
 				'term_1_amount' => (float) ($row['term_1_amount'] ?? 0),
 				'term_2_amount' => (float) ($row['term_2_amount'] ?? 0),
 				'term_3_amount' => (float) ($row['term_3_amount'] ?? 0),
-				'calculation_mode' => $row['calculation_mode'] ?? 'manual',
+				'calculation_mode' => $row['calculation_mode'] ?? 'term_sum',
 				'assumptions' => $row['assumptions'] ?? null,
 				'monthly_json' => $monthlyJson,
 			];
+			if (($update['calculation_mode'] ?? '') === 'term_sum') {
+				$update['user_amount'] = $update['term_1_amount'] + $update['term_2_amount'] + $update['term_3_amount'];
+			} else {
+				$update['user_amount'] = (float) ($row['user_amount'] ?? 0);
+			}
 			$line = $db->table('budget_lines')->where('id', (int) $lid)->where('budget_id', $budgetId)->get(1)->getRowArray();
 			if ($line && (int) $line['is_editable'] === 1) {
 				$update['annual_amount'] = $calc->lineAnnualAmount(array_merge($line, $update));
@@ -645,7 +808,8 @@ class BudgetCashflow extends Home
 				19 => ['PROCUREMENT_APPROVED'],
 				21 => ['BUDGET_APPROVED'],
 				22 => ['FINANCE_AUTHORIZED'],
-				9 => ['PAID'],
+				24 => ['BUDGET_APPROVED', 'FINANCE_AUTHORIZED'],
+				9 => ['FINANCE_AUTHORIZED', 'PAID'],
 				1 => ['SUBMITTED'],
 				18 => ['SUBMITTED'],
 			];
@@ -690,7 +854,8 @@ class BudgetCashflow extends Home
 		$data['title'] = $id ? 'Edit Cash Request' : 'New Cash Request';
 		$data['page'] = 'budget_cash_requests';
 		$data['request'] = $id ? $db->table('cash_requests')->where('id', (int)$id)->get(1)->getRowArray() : null;
-		$data['budgets'] = $db->table('budgets')->where('branch_id', $c['branchId'])->where('status','APPROVED')->get()->getResultArray();
+		$data['budgets'] = $db->table('budgets')->where('branch_id', $c['branchId'])->where('status','APPROVED')->orderBy('id','DESC')->get()->getResultArray();
+		$data['is_accountant'] = ((int) $c['postId'] === 9);
 		$data['lines'] = $id ? $db->table('cash_request_lines')->where('cash_request_id', (int)$id)->get()->getResultArray() : [];
 		$data['documents'] = $id ? $db->table('cash_request_documents')->where('cash_request_id', (int)$id)->orderBy('id')->get()->getResultArray() : [];
 		$data['content'] = view('pages/budget/cash_request_form', $data);
@@ -704,12 +869,50 @@ class BudgetCashflow extends Home
 		$c = $this->ctx();
 		$db = \Config\Database::connect();
 		$id = (int) $this->request->getPost('id');
+		$submitNow = (bool) $this->request->getPost('submit_now');
 		$lineAmount = (float) $this->request->getPost('line_amount');
 		$amount = (float) ($this->request->getPost('requested_amount') ?: $lineAmount);
+		$budgetId = (int) $this->request->getPost('budget_id');
+		$budgetLineId = (int) $this->request->getPost('budget_line_id');
+
+		if ($budgetId <= 0) {
+			return $this->response->setJSON(['error' => 'Select an approved budget.']);
+		}
+		if ($budgetLineId <= 0) {
+			return $this->response->setJSON(['error' => 'Select a budget line — every request must link to an expense category.']);
+		}
+		if ($lineAmount <= 0) {
+			return $this->response->setJSON(['error' => 'Enter a valid amount.']);
+		}
+
+		$budget = $db->table('budgets')->where('id', $budgetId)->where('branch_id', $c['branchId'])
+			->where('status', 'APPROVED')->get(1)->getRowArray();
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Budget must be APPROVED before raising cash requests.']);
+		}
+		$bLine = $db->table('budget_lines')->where('id', $budgetLineId)->where('budget_id', $budgetId)
+			->where('is_editable', 1)->get(1)->getRowArray();
+		if (!$bLine) {
+			return $this->response->setJSON(['error' => 'Invalid budget line for this budget.']);
+		}
+		$sec = strtoupper(trim($bLine['section_label'] ?? ''));
+		if ($sec === 'INCOME' || strpos($sec, 'INCOME') === 0) {
+			return $this->response->setJSON(['error' => 'Cash requests must use an expense budget line, not income.']);
+		}
+
+		$availSvc = new BudgetAvailabilityService();
+		$avail = $availSvc->lineAvailability($budgetLineId);
+		if ($submitNow && $avail && $lineAmount > (float) $avail['available']) {
+			return $this->response->setJSON([
+				'error' => 'Amount exceeds available budget on this line (available: '
+					. number_format((float) $avail['available'], 0) . ' RWF).',
+			]);
+		}
+
 		$row = [
 			'organization_id' => $c['orgId'],
 			'branch_id' => $c['branchId'],
-			'budget_id' => (int) $this->request->getPost('budget_id') ?: null,
+			'budget_id' => $budgetId,
 			'budget_period_id' => (int) $this->request->getPost('budget_period_id') ?: null,
 			'request_date' => $this->request->getPost('request_date') ?: date('Y-m-d'),
 			'required_payment_date' => $this->request->getPost('required_payment_date'),
@@ -727,9 +930,18 @@ class BudgetCashflow extends Home
 		if ($row['payee_name'] === '' || $row['purpose'] === '') {
 			return $this->response->setJSON(['error' => 'Payee and purpose are required.']);
 		}
+		$lineDesc = trim((string) $this->request->getPost('line_description'));
+		if ($lineDesc === '') {
+			$lineDesc = $bLine['category'] . ' — cash request';
+		}
+
 		$wf = new CashRequestWorkflowService();
 		if ($id > 0) {
-			$db->table('cash_requests')->where('id', $id)->where('created_by', $c['staffId'])->update($row);
+			$existing = $db->table('cash_requests')->where('id', $id)->where('branch_id', $c['branchId'])->get(1)->getRowArray();
+			if (!$existing || !in_array($existing['status'], ['DRAFT', 'RETURNED_TO_ACCOUNTANT'], true)) {
+				return $this->response->setJSON(['error' => 'This request cannot be edited.']);
+			}
+			$db->table('cash_requests')->where('id', $id)->update($row);
 		} else {
 			$row['request_no'] = $wf->nextRequestNo($c['branchId']);
 			$row['status'] = 'DRAFT';
@@ -738,19 +950,18 @@ class BudgetCashflow extends Home
 			$db->table('cash_requests')->insert($row);
 			$id = (int) $db->insertID();
 		}
-		$lineDesc = $this->request->getPost('line_description');
-		$budgetLineId = (int) $this->request->getPost('budget_line_id');
-		if ($lineDesc && $lineAmount > 0) {
-			$db->table('cash_request_lines')->where('cash_request_id', $id)->delete();
-			$db->table('cash_request_lines')->insert([
-				'cash_request_id' => $id,
-				'budget_line_id' => $budgetLineId ?: null,
-				'description' => $lineDesc,
-				'amount' => $lineAmount,
-			]);
-		}
+
+		$db->table('cash_request_lines')->where('cash_request_id', $id)->delete();
+		$db->table('cash_request_lines')->insert([
+			'cash_request_id' => $id,
+			'budget_line_id' => $budgetLineId,
+			'description' => $lineDesc,
+			'amount' => $lineAmount,
+		]);
+
 		$docSvc = new DocumentStorageService();
-		$docType = trim((string) $this->request->getPost('doc_type')) ?: 'other';
+		$docType = trim((string) $this->request->getPost('doc_type')) ?: 'invoice';
+		$newDocCount = 0;
 		$files = $this->request->getFileMultiple('documents');
 		if ($files) {
 			foreach ($files as $file) {
@@ -761,6 +972,7 @@ class BudgetCashflow extends Home
 				if (empty($stored['success'])) {
 					continue;
 				}
+				$newDocCount++;
 				$db->table('cash_request_documents')->insert([
 					'cash_request_id' => $id,
 					'doc_type' => $docType,
@@ -771,13 +983,21 @@ class BudgetCashflow extends Home
 				]);
 			}
 		}
-		if ($this->request->getPost('submit_now')) {
-			$res = $wf->transition($id, 'submit', $c['staffId'], $c['postId'], 'Submitted');
-			if (!$res['success']) {
+		$existingDocs = (int) $db->table('cash_request_documents')->where('cash_request_id', $id)->countAllResults();
+
+		if ($submitNow) {
+			if ($newDocCount + $existingDocs < 1) {
+				return $this->response->setJSON([
+					'error' => 'Attach at least one supporting document (invoice, quotation, or memo) before submitting.',
+				]);
+			}
+			$res = $wf->transition($id, 'submit', $c['staffId'], $c['postId'], 'Submitted by accountant');
+			if (empty($res['success'])) {
 				return $this->response->setJSON($res);
 			}
+			return $this->response->setJSON(['success' => 'Cash request submitted for approval.', 'id' => $id]);
 		}
-		return $this->response->setJSON(['success' => 'Cash request saved.', 'id' => $id]);
+		return $this->response->setJSON(['success' => 'Cash request saved as draft.', 'id' => $id]);
 	}
 
 	public function cash_request_view($id = null)
@@ -964,12 +1184,19 @@ class BudgetCashflow extends Home
 		$this->bootBudget();
 		$db = \Config\Database::connect();
 		$availSvc = new BudgetAvailabilityService();
-		$lines = $db->table('budget_lines')->where('budget_id', (int)$budgetId)->where('is_editable', 1)->orderBy('sort_order')->get()->getResultArray();
-		foreach ($lines as &$ln) {
+		$lines = $db->table('budget_lines')->where('budget_id', (int)$budgetId)->where('is_editable', 1)
+			->orderBy('sort_order')->get()->getResultArray();
+		$out = [];
+		foreach ($lines as $ln) {
+			$sec = strtoupper(trim($ln['section_label'] ?? ''));
+			if ($sec === 'INCOME' || strpos($sec, 'INCOME') === 0) {
+				continue;
+			}
 			$ln['availability'] = $availSvc->lineAvailability((int) $ln['id']);
+			$ln['section'] = $ln['section_label'];
+			$out[] = $ln;
 		}
-		unset($ln);
-		return $this->response->setJSON(['lines' => $lines]);
+		return $this->response->setJSON(['lines' => $out]);
 	}
 
 	public function cash_request_document($docId = null)
@@ -985,7 +1212,43 @@ class BudgetCashflow extends Home
 		if (!is_file($path)) {
 			return redirect()->back()->with('error', 'Document file not found.');
 		}
+		$inline = (string) ($this->request->getGet('inline') ?? '') === '1';
+		$mime = $doc['mime'] ?? null;
+		if (!$mime) {
+			$ext = strtolower(pathinfo($doc['original_name'] ?? '', PATHINFO_EXTENSION));
+			$mimeMap = [
+				'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
+				'gif' => 'image/gif', 'webp' => 'image/webp', 'pdf' => 'application/pdf',
+			];
+			$mime = $mimeMap[$ext] ?? 'application/octet-stream';
+		}
+		if ($inline && (strpos($mime, 'image/') === 0 || $mime === 'application/pdf')) {
+			return $this->response
+				->setHeader('Content-Type', $mime)
+				->setHeader('Content-Disposition', 'inline; filename="' . str_replace('"', '', (string) $doc['original_name']) . '"')
+				->setBody(file_get_contents($path));
+		}
 		return $this->response->download($path, null)->setFileName($doc['original_name']);
+	}
+
+	public function scan_session_start()
+	{
+		$this->bootBudget();
+		$c = $this->ctx();
+		$svc = new MobileScanBridgeService();
+		$session = $svc->createSession((int) $c['staffId']);
+		return $this->response->setJSON(['success' => true] + $session);
+	}
+
+	public function scan_session_poll()
+	{
+		$this->bootBudget();
+		$token = trim((string) ($this->request->getGet('token') ?? $this->request->getPost('token')));
+		if ($token === '') {
+			return $this->response->setJSON(['error' => 'Missing token.']);
+		}
+		$svc = new MobileScanBridgeService();
+		return $this->response->setJSON($svc->poll($token));
 	}
 
 	public function badge_counts_json()

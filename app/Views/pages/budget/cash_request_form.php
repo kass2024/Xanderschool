@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=4" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=5" rel="stylesheet">
 
 <div class="budget-cr-form">
 
@@ -106,17 +106,49 @@
 		</div>
 	</div>
 
-	<div class="alert alert-info py-2 small d-none mt-2 mb-0" id="scanWaitBox"><i class="fa fa-spinner fa-spin"></i> Waiting for SmartSMS… Camera opens with the same student-photo camera. Keep the app open (or allow the deep link).</div>
+	<div class="alert alert-info py-2 small d-none mt-2 mb-0" id="scanWaitBox">
+		<i class="fa fa-spinner fa-spin"></i>
+		Waiting for SmartSMS… Session open for <strong id="scanWaitMins">30</strong> min
+		(<span id="scanCountdown">30:00</span>). Capture with the student-photo camera, then this form will append the file.
+	</div>
 	<ul class="cr-doc-list" id="docPreview"></ul>
 	<?php if (!empty($documents)) { ?>
 	<p class="small font-weight-bold mt-2 mb-1">Already attached:</p>
 	<ul class="cr-doc-list">
-		<?php foreach ($documents as $doc) { ?>
-		<li><span><i class="fa fa-file"></i> <?= esc($doc['original_name']); ?> <small class="text-muted">(<?= esc($doc['doc_type']); ?>)</small></span>
-		<a href="<?= base_url('budget/cash_request_document/'.$doc['id']); ?>" class="btn btn-sm btn-outline-primary" target="_blank"><i class="fa fa-download"></i></a></li>
+		<?php foreach ($documents as $doc) {
+			$ext = strtolower(pathinfo($doc['original_name'] ?? '', PATHINFO_EXTENSION));
+			$canView = in_array($ext, ['jpg','jpeg','png','gif','webp','pdf'], true);
+			$viewUrl = base_url('budget/cash_request_document/'.$doc['id'].'?inline=1');
+			$dlUrl = base_url('budget/cash_request_document/'.$doc['id']);
+		?>
+		<li>
+			<span><i class="fa fa-file"></i> <?= esc($doc['original_name']); ?> <small class="text-muted">(<?= esc($doc['doc_type']); ?>)</small></span>
+			<span class="cr-doc-actions">
+				<?php if ($canView) { ?><a href="<?= $viewUrl; ?>" class="btn btn-sm btn-outline-info" target="_blank" rel="noopener"><i class="fa fa-eye"></i> View</a><?php } ?>
+				<a href="<?= $dlUrl; ?>" class="btn btn-sm btn-outline-primary" download><i class="fa fa-download"></i></a>
+			</span>
+		</li>
 		<?php } ?>
 	</ul>
 	<?php } ?>
+</div>
+
+<!-- Lightbox for pending (unsaved) scans -->
+<div id="crDocViewer" class="cr-doc-viewer d-none" aria-hidden="true">
+	<div class="cr-doc-viewer-backdrop" id="crDocViewerClose"></div>
+	<div class="cr-doc-viewer-panel">
+		<div class="cr-doc-viewer-bar">
+			<strong id="crDocViewerTitle">Document</strong>
+			<div>
+				<a href="#" id="crDocViewerDownload" class="btn btn-sm btn-outline-light" download><i class="fa fa-download"></i></a>
+				<button type="button" class="btn btn-sm btn-light" id="crDocViewerCloseBtn"><i class="fa fa-times"></i></button>
+			</div>
+		</div>
+		<div class="cr-doc-viewer-body">
+			<img id="crDocViewerImg" alt="Document preview" class="d-none">
+			<iframe id="crDocViewerFrame" title="Document" class="d-none"></iframe>
+		</div>
+	</div>
 </div>
 
 <div class="d-flex flex-wrap">
@@ -199,12 +231,113 @@ $('#docZone').on('drop', function (e) {
 });
 $('#docInput').on('change', function () { renderDocPreview(this.files); });
 
+var previewUrls = [];
+var scanPollTimer = null;
+var scanCountdownTimer = null;
+var scanReceivedToken = null;
+var scanActiveToken = null;
+var scanExpiresAt = 0;
+
+function escHtml(s) {
+	return String(s || '').replace(/[&<>"']/g, function (c) {
+		return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+	});
+}
+
+function clearPreviewUrls() {
+	for (var i = 0; i < previewUrls.length; i++) {
+		try { URL.revokeObjectURL(previewUrls[i]); } catch (e) {}
+	}
+	previewUrls = [];
+}
+
+function docTypeLabel() {
+	var $opt = $('select[name="doc_type"] option:selected');
+	var text = ($opt.text() || 'Document').trim();
+	text = text.replace(/\s*\/\s*.*$/, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+	return text || 'Document';
+}
+
+function nextScanFileName(ext) {
+	ext = (ext || 'jpg').replace(/^\./, '');
+	var base = docTypeLabel();
+	var input = $('#docInput')[0];
+	var maxN = 0;
+	var re = new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-(\\d+)\\.', 'i');
+	if (input && input.files) {
+		for (var i = 0; i < input.files.length; i++) {
+			var m = input.files[i].name.match(re);
+			if (m) maxN = Math.max(maxN, parseInt(m[1], 10) || 0);
+		}
+	}
+	return base + '-' + (maxN + 1) + '.' + ext;
+}
+
+function isPreviewable(file) {
+	var n = (file.name || '').toLowerCase();
+	var t = (file.type || '').toLowerCase();
+	return t.indexOf('image/') === 0 || t === 'application/pdf'
+		|| /\.(jpe?g|png|gif|webp|pdf)$/i.test(n);
+}
+
 function renderDocPreview(files) {
+	clearPreviewUrls();
 	var $ul = $('#docPreview').empty();
+	if (!files || !files.length) return;
 	for (var i = 0; i < files.length; i++) {
-		$ul.append('<li><span><i class="fa fa-file"></i> ' + files[i].name + '</span><small class="text-muted">' + Math.round(files[i].size/1024) + ' KB</small></li>');
+		(function (idx, file) {
+			var url = URL.createObjectURL(file);
+			previewUrls.push(url);
+			var canView = isPreviewable(file);
+			var actions = '<span class="cr-doc-actions">'
+				+ (canView ? '<button type="button" class="btn btn-sm btn-outline-info cr-doc-view" data-url="' + url + '" data-name="' + escHtml(file.name) + '" data-type="' + escHtml(file.type || '') + '"><i class="fa fa-eye"></i> View</button>' : '')
+				+ '<a class="btn btn-sm btn-outline-primary" download="' + escHtml(file.name) + '" href="' + url + '"><i class="fa fa-download"></i></a>'
+				+ '<button type="button" class="btn btn-sm btn-outline-danger cr-doc-remove" data-idx="' + idx + '" title="Remove"><i class="fa fa-times"></i></button>'
+				+ '</span>';
+			$ul.append(
+				'<li><span class="cr-doc-meta"><i class="fa fa-file"></i> <strong>' + escHtml(file.name) + '</strong>'
+				+ '<br><small class="text-muted">' + Math.round(file.size / 1024) + ' KB</small></span>'
+				+ actions + '</li>'
+			);
+		})(i, files[i]);
 	}
 }
+
+$('#docPreview').on('click', '.cr-doc-view', function () {
+	openDocViewer($(this).data('url'), $(this).data('name'), $(this).data('type'));
+});
+$('#docPreview').on('click', '.cr-doc-remove', function () {
+	var idx = parseInt($(this).data('idx'), 10);
+	var input = $('#docInput')[0];
+	var dt = new DataTransfer();
+	if (input.files) {
+		for (var i = 0; i < input.files.length; i++) {
+			if (i !== idx) dt.items.add(input.files[i]);
+		}
+	}
+	input.files = dt.files;
+	renderDocPreview(input.files);
+});
+
+function openDocViewer(url, name, mime) {
+	$('#crDocViewerTitle').text(name || 'Document');
+	$('#crDocViewerDownload').attr({ href: url, download: name || 'document' });
+	var isPdf = (mime || '').indexOf('pdf') >= 0 || /\.pdf$/i.test(name || '');
+	$('#crDocViewerImg').addClass('d-none').attr('src', '');
+	$('#crDocViewerFrame').addClass('d-none').attr('src', '');
+	if (isPdf) {
+		$('#crDocViewerFrame').removeClass('d-none').attr('src', url);
+	} else {
+		$('#crDocViewerImg').removeClass('d-none').attr('src', url);
+	}
+	$('#crDocViewer').removeClass('d-none').attr('aria-hidden', 'false');
+}
+function closeDocViewer() {
+	$('#crDocViewer').addClass('d-none').attr('aria-hidden', 'true');
+	$('#crDocViewerImg').attr('src', '');
+	$('#crDocViewerFrame').attr('src', '');
+}
+$('#crDocViewerClose, #crDocViewerCloseBtn').on('click', closeDocViewer);
 
 function validateSubmit() {
 	if (!$('#budget_line_id').val()) { toastada.error('Select a budget line.'); return false; }
@@ -232,9 +365,6 @@ function postForm(submitNow) {
 	});
 }
 
-var scanPollTimer = null;
-var scanReceivedToken = null;
-
 function addMobileScanFile(name, blob) {
 	var file = new File([blob], name, { type: blob.type || 'image/jpeg' });
 	var dt = new DataTransfer();
@@ -249,7 +379,31 @@ function addMobileScanFile(name, blob) {
 
 function stopScanPoll() {
 	if (scanPollTimer) { clearInterval(scanPollTimer); scanPollTimer = null; }
+	if (scanCountdownTimer) { clearInterval(scanCountdownTimer); scanCountdownTimer = null; }
 	$('#scanWaitBox').addClass('d-none');
+	scanActiveToken = null;
+}
+
+function formatCountdown(sec) {
+	sec = Math.max(0, sec | 0);
+	var m = Math.floor(sec / 60);
+	var s = sec % 60;
+	return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function startScanCountdown(expiresIn) {
+	if (scanCountdownTimer) clearInterval(scanCountdownTimer);
+	scanExpiresAt = Date.now() + (expiresIn * 1000);
+	$('#scanWaitMins').text(Math.round(expiresIn / 60));
+	function tick() {
+		var left = Math.ceil((scanExpiresAt - Date.now()) / 1000);
+		$('#scanCountdown').text(formatCountdown(left));
+		if (left <= 0 && scanPollTimer) {
+			/* let poll handler report expired once */
+		}
+	}
+	tick();
+	scanCountdownTimer = setInterval(tick, 1000);
 }
 
 function openSmartSmsAmScan(r) {
@@ -270,25 +424,36 @@ function openSmartSmsAmScan(r) {
 	}
 }
 
-function startScanPoll(token) {
+function startScanPoll(token, expiresIn) {
 	stopScanPoll();
 	scanReceivedToken = null;
+	scanActiveToken = token;
 	$('#scanWaitBox').removeClass('d-none');
+	startScanCountdown(expiresIn || 1800);
 	scanPollTimer = setInterval(function () {
-		$.getJSON('<?= base_url('budget/scan_session_poll'); ?>', { token: token }, function (r) {
+		var watching = scanActiveToken;
+		if (!watching) return;
+		$.getJSON('<?= base_url('budget/scan_session_poll'); ?>', { token: watching }, function (r) {
+			if (watching !== scanActiveToken && watching !== scanReceivedToken) return;
 			if (r.status === 'ready' && r.image_base64) {
-				if (scanReceivedToken === token) return;
-				scanReceivedToken = token;
+				if (scanReceivedToken === watching) return;
+				scanReceivedToken = watching;
 				stopScanPoll();
 				var raw = atob(r.image_base64);
 				var arr = new Uint8Array(raw.length);
 				for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-				var blob = new Blob([arr], { type: r.mime || 'image/jpeg' });
-				addMobileScanFile(r.filename || 'phone-scan.jpg', blob);
-				toastada.success('Document received from phone.');
+				var mime = r.mime || 'image/jpeg';
+				var blob = new Blob([arr], { type: mime });
+				var ext = (mime.indexOf('png') >= 0) ? 'png' : 'jpg';
+				var fname = nextScanFileName(ext);
+				addMobileScanFile(fname, blob);
+				toastada.success('Document received: ' + fname);
 			} else if (r.status === 'expired') {
+				// After a successful receive the session is consumed — ignore late "expired" polls
+				if (scanReceivedToken === watching) return;
+				if (scanActiveToken !== watching) return;
 				stopScanPoll();
-				toastada.error('Scan session expired. Try again.');
+				toastada.error('Scan session expired. Tap Smart Scan again (open for 30 minutes).');
 			}
 		});
 	}, 1500);
@@ -297,8 +462,8 @@ function startScanPoll(token) {
 $('#btnScanPhone').on('click', function () {
 	$.post('<?= base_url('budget/scan_session_start'); ?>', {}, function (r) {
 		if (r.error) { toastada.error(r.error); return; }
-		toastada.info('Opening SmartSMS Smart Scan… Capture starts automatically.');
-		startScanPoll(r.token);
+		toastada.info('Smart Scan open for ' + Math.round((r.expires_in || 1800) / 60) + ' minutes. Capture on your phone…');
+		startScanPoll(r.token, r.expires_in || 1800);
 		openSmartSmsAmScan(r);
 	}, 'json');
 });
