@@ -36,23 +36,45 @@
 					<br><small class="text-muted"><i class="fa fa-school"></i> <?= esc($b['branch_name']); ?></small>
 					<?php } ?>
 				</td>
-				<td><span class="badge badge-info"><?= esc($b['status']); ?></span></td>
+				<td>
+					<span class="badge badge-info"><?= esc($b['status']); ?></span>
+					<?php if (!empty($b['pending_label'])) { ?>
+					<br><small class="text-muted"><?= esc($b['pending_label']); ?></small>
+					<?php } ?>
+				</td>
 				<td class="text-success"><?= number_format((float)($b['total_income'] ?? 0), 0); ?></td>
 				<td class="text-danger"><?= number_format((float)($b['total_expenses'] ?? 0), 0); ?></td>
 				<td class="text-right">
 					<?php if (function_exists('budget_permission_allowed') && budget_permission_allowed('budget.edit_submitted')) { ?>
 					<a href="<?= base_url('budget/edit_budget/' . (int) $b['id']); ?>" class="btn btn-sm btn-warning mb-1"><i class="fa fa-edit"></i> Edit</a>
 					<?php } ?>
-					<?php if (empty($actions)) { ?>
-					<small class="text-muted">Waiting for another role</small>
-					<?php } else {
-						foreach ($actions as $act) {
+					<?php
+					// Only show the step action that belongs to this status (hide return/reject noise for non-actors optionally)
+					$stepActions = array_values(array_filter($actions, static function ($a) {
+						return in_array($a, ['procurement_review', 'budget_review', 'approve'], true);
+					}));
+					$otherActions = array_values(array_filter($actions, static function ($a) {
+						return in_array($a, ['return', 'reject'], true);
+					}));
+					if (empty($stepActions)) {
+					?>
+					<small class="text-muted d-block mb-1"><?= esc($b['pending_label'] ?? 'Waiting for another role'); ?></small>
+					<?php
+					} else {
+						foreach ($stepActions as $act) {
 							$meta = $labels[$act] ?? [$act, 'secondary'];
 					?>
 					<button type="button" class="btn btn-sm btn-<?= esc($meta[1]); ?> btn-act mb-1"
 						data-id="<?= (int)$b['id']; ?>" data-action="<?= esc($act); ?>"><?= esc($meta[0]); ?></button>
-					<?php }
-					} ?>
+					<?php
+						}
+					}
+					foreach ($otherActions as $act) {
+						$meta = $labels[$act] ?? [$act, 'secondary'];
+					?>
+					<button type="button" class="btn btn-sm btn-<?= esc($meta[1]); ?> btn-act mb-1"
+						data-id="<?= (int)$b['id']; ?>" data-action="<?= esc($act); ?>"><?= esc($meta[0]); ?></button>
+					<?php } ?>
 				</td>
 			</tr>
 			<?php } ?>

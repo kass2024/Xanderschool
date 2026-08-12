@@ -4,12 +4,22 @@ namespace App\Services\Budget;
 
 class BudgetWorkflowService
 {
+	/**
+	 * Status = who must act next (strict 3-step chain).
+	 * 1) SUBMITTED / PROCUREMENT_REVIEW → Procurement
+	 * 2) BUDGET_MANAGER_REVIEW → Budget Manager
+	 * 3) DEPUTY_DIRECTOR_REVIEW → Director of Finance (only step that can APPROVE)
+	 */
 	private static $transitions = [
 		'DRAFT' => ['submit' => 'SUBMITTED'],
-		'SUBMITTED' => ['procurement_review' => 'PROCUREMENT_REVIEW', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
-		'PROCUREMENT_REVIEW' => ['budget_review' => 'BUDGET_MANAGER_REVIEW', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
-		// Director of Finance final approve (3rd of 3). Legacy DEPUTY_DIRECTOR_REVIEW still approvable.
-		'BUDGET_MANAGER_REVIEW' => ['approve' => 'APPROVED', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
+		'SUBMITTED' => ['procurement_review' => 'BUDGET_MANAGER_REVIEW', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
+		// Legacy alias: older rows used PROCUREMENT_REVIEW as "waiting for Budget Manager"
+		'PROCUREMENT_REVIEW' => [
+			'budget_review' => 'DEPUTY_DIRECTOR_REVIEW',
+			'return' => 'RETURNED',
+			'reject' => 'REJECTED',
+		],
+		'BUDGET_MANAGER_REVIEW' => ['budget_review' => 'DEPUTY_DIRECTOR_REVIEW', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
 		'DEPUTY_DIRECTOR_REVIEW' => ['approve' => 'APPROVED', 'reject' => 'REJECTED', 'return' => 'RETURNED'],
 		'RETURNED' => ['submit' => 'SUBMITTED'],
 	];
@@ -27,8 +37,8 @@ class BudgetWorkflowService
 	/** Statuses each review role should see in the Review queue. */
 	private static $reviewQueueByPerm = [
 		'budget.review_procurement' => ['SUBMITTED'],
-		'budget.review_budget' => ['PROCUREMENT_REVIEW'],
-		'budget.final_approve' => ['BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW'],
+		'budget.review_budget' => ['PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW'],
+		'budget.final_approve' => ['DEPUTY_DIRECTOR_REVIEW'],
 		'budget.return' => ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW'],
 	];
 
@@ -82,9 +92,60 @@ class BudgetWorkflowService
 			if ($need && !$perms->can($staffId, $postId, $need)) {
 				continue;
 			}
+			// Never expose DoF final approve before Budget Manager step is done
+			if ($action === 'approve' && $status !== 'DEPUTY_DIRECTOR_REVIEW') {
+				continue;
+			}
 			$out[] = $action;
 		}
 		return $out;
+	}
+
+	/**
+	 * Migrate old "BUDGET_MANAGER_REVIEW = waiting for DoF" rows to DEPUTY_DIRECTOR_REVIEW
+	 * when Budget Manager already recorded budget_review.
+	 */
+	public static function normalizeLegacyReviewStatuses(): void
+	{
+		$db = \Config\Database::connect();
+		try {
+			$rows = $db->table('budgets')
+				->select('id')
+				->where('status', 'BUDGET_MANAGER_REVIEW')
+				->get()->getResultArray();
+			foreach ($rows as $row) {
+				$id = (int) ($row['id'] ?? 0);
+				if ($id < 1) {
+					continue;
+				}
+				$hasBm = $db->table('budget_approval_actions')
+					->where('budget_id', $id)
+					->where('action', 'budget_review')
+					->countAllResults();
+				if ($hasBm > 0) {
+					$db->table('budgets')->where('id', $id)->update([
+						'status' => 'DEPUTY_DIRECTOR_REVIEW',
+						'updated_at' => date('Y-m-d H:i:s'),
+					]);
+				}
+			}
+		} catch (\Throwable $e) {
+			// Schema may differ on fresh installs; ignore
+		}
+	}
+
+	/** Short label: who must approve next. */
+	public static function pendingApproverLabel(string $status): string
+	{
+		$map = [
+			'SUBMITTED' => 'Waiting for Procurement',
+			'PROCUREMENT_REVIEW' => 'Waiting for Budget Manager',
+			'BUDGET_MANAGER_REVIEW' => 'Waiting for Budget Manager',
+			'DEPUTY_DIRECTOR_REVIEW' => 'Waiting for Director of Finance',
+			'RETURNED' => 'Returned — resubmit',
+			'REJECTED' => 'Rejected',
+		];
+		return $map[$status] ?? $status;
 	}
 
 	/** Statuses where preparers may edit (before / after return). */
@@ -155,9 +216,26 @@ class BudgetWorkflowService
 		}
 
 		$current = $b['status'];
+		if ($action === 'approve' && $current !== 'DEPUTY_DIRECTOR_REVIEW') {
+			return ['success' => false, 'error' => 'Director of Finance can approve only after Procurement and Budget Manager.'];
+		}
 		$new = self::$transitions[$current][$action] ?? null;
 		if (!$new) {
 			return ['success' => false, 'error' => 'Invalid step for status ' . $current . '.'];
+		}
+		// Enforce mandatory prior steps for final approve
+		if ($action === 'approve') {
+			$hasProcurement = $db->table('budget_approval_actions')
+				->where('budget_id', (int) $budgetId)
+				->where('action', 'procurement_review')
+				->countAllResults();
+			$hasBudgetMgr = $db->table('budget_approval_actions')
+				->where('budget_id', (int) $budgetId)
+				->where('action', 'budget_review')
+				->countAllResults();
+			if ($hasProcurement < 1 || $hasBudgetMgr < 1) {
+				return ['success' => false, 'error' => 'Cannot final-approve: Procurement and Budget Manager must approve first.'];
+			}
 		}
 		$db->table('budgets')->where('id', (int) $budgetId)->update([
 			'status' => $new,

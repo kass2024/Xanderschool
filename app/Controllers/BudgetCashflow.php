@@ -825,6 +825,7 @@ class BudgetCashflow extends Home
 			$data['can_install_official'] = $import->officialTemplatePath() && $c['perms']->can($c['staffId'], $c['postId'], 'budget.templates.upload');
 		}
 		if ($tab === 'review') {
+			BudgetWorkflowService::normalizeLegacyReviewStatuses();
 			$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
 			$statuses = BudgetWorkflowService::reviewStatusesForUser($c['perms'], $c['staffId'], $c['postId']);
 			$data['review_budgets'] = [];
@@ -843,6 +844,7 @@ class BudgetCashflow extends Home
 					$rb['allowed_actions'] = BudgetWorkflowService::allowedActionsForStatus(
 						$rb['status'], $c['perms'], $c['staffId'], $c['postId']
 					);
+					$rb['pending_label'] = BudgetWorkflowService::pendingApproverLabel((string) $rb['status']);
 				}
 				unset($rb);
 				$data['review_budgets'] = $rows;
