@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=8" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=9" rel="stylesheet">
 
 <?php
 $statusBadge = $budget['status'] === 'DRAFT' ? 'secondary' : ($budget['status'] === 'APPROVED' ? 'success' : 'warning');
@@ -176,7 +176,8 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 					data-line-id="<?= $lid; ?>"
 					data-income="<?= $isIncome ? '1' : '0'; ?>"
 					data-section="<?= esc($secKey); ?>"
-					data-category="<?= esc($catLower); ?>">
+					data-category="<?= esc($catLower); ?>"
+					<?= $canManageStructure ? 'draggable="true"' : ''; ?>>
 					<div class="bp-line-top">
 						<div class="bp-line-name">
 							<strong><?= esc($ln['category']); ?></strong>
@@ -184,6 +185,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 						</div>
 						<?php if ($canManageStructure) { ?>
 						<div class="bp-line-actions">
+							<button type="button" class="bp-icon-btn bp-drag-handle" title="Drag to reorder" draggable="false"><i class="fa fa-bars"></i></button>
 							<button type="button" class="bp-icon-btn btn-move-line" data-dir="up" title="Move up" <?= $canMoveUp ? '' : 'disabled'; ?>><i class="fa fa-arrow-up"></i></button>
 							<button type="button" class="bp-icon-btn btn-move-line" data-dir="down" title="Move down" <?= $canMoveDown ? '' : 'disabled'; ?>><i class="fa fa-arrow-down"></i></button>
 							<?php if (!$isSchoolFees) { ?>
@@ -325,7 +327,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 </div>
 <?php } ?>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=8"></script>
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=9"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,
@@ -337,6 +339,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 	addLineUrl: '<?= base_url('budget/add_budget_line'); ?>',
 	deleteLineUrl: '<?= base_url('budget/delete_budget_line'); ?>',
 	moveLineUrl: '<?= base_url('budget/move_budget_line'); ?>',
+	reorderLineUrl: '<?= base_url('budget/reorder_budget_lines'); ?>',
 	fillExcelUrl: '<?= base_url('budget/fill_budget_from_excel'); ?>',
 	fillSchoolFeesUrl: '<?= base_url('budget/fill_school_fees_income'); ?>',
 	resetEmptyUrl: '<?= base_url('budget/reset_budget_empty_amounts'); ?>',

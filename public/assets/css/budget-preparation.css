@@ -1,4 +1,4 @@
-/* Wisdom Schools â€” web budget preparation workspace */
+/* Wisdom Schools ? web budget preparation workspace */
 
 .budget-workspace { --bp-primary: #0d6efd; --bp-income: #198754; --bp-expense: #dc3545; --bp-surface: #f8fafc; --bp-card: #fff; --bp-border: #e2e8f0; --bp-muted: #64748b; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
 
@@ -426,7 +426,7 @@
 .bp-term-table tfoot td { font-size: .85rem; background: #f1f5f9; }
 
 
-/* Director of Finance — add title / row */
+/* Director of Finance ? add title / row */
 .bp-add-line-modal .modal-header { border-bottom: 1px solid #fef3c7; background: linear-gradient(90deg, #fffbeb, #fff); }
 .bp-add-mode { display: flex; gap: .5rem; }
 .bp-mode-chip { flex: 1; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 10px; padding: .65rem .75rem; font-size: .85rem; font-weight: 600; color: #475569; cursor: pointer; transition: all .15s; }
@@ -502,6 +502,12 @@
 .bp-ui-v2 .bp-icon-btn:hover:not(:disabled) { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
 .bp-ui-v2 .bp-icon-btn.danger:hover:not(:disabled) { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
 .bp-ui-v2 .bp-icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+.bp-ui-v2 .bp-drag-handle { cursor: grab; color: #64748b; }
+.bp-ui-v2 .bp-drag-handle:active { cursor: grabbing; }
+.bp-ui-v2 .bp-line-entry[draggable="true"] { cursor: grab; }
+.bp-ui-v2 .bp-line-entry.is-dragging { opacity: .45; transform: scale(.99); box-shadow: 0 10px 28px rgba(15,23,42,.18); }
+.bp-ui-v2 .bp-line-entry.drag-over-before { box-shadow: inset 0 3px 0 #3b82f6; }
+.bp-ui-v2 .bp-line-entry.drag-over-after { box-shadow: inset 0 -3px 0 #3b82f6; }
 
 .bp-ui-v2 .bp-line-notes { margin-bottom: .65rem; border-radius: 8px; }
 .bp-ui-v2 .bp-term-grid {

@@ -305,14 +305,110 @@ var BudgetWorkspace = (function () {
 				if (!cfg.moveLineUrl || !cfg.canManageStructure || $(this).prop('disabled')) return;
 				var dir = $(this).data('dir');
 				var $row = $(this).closest('.budget-line');
-				var id = $row.data('line-id');
-				$.post(cfg.moveLineUrl, { budget_id: cfg.budgetId, line_id: id, direction: dir }, function (r) {
-					if (r.error) { toastada.error(r.error); return; }
-					location.reload();
-				}, 'json').fail(function () {
-					toastada.error('Move failed.');
-				});
+				var $stack = $row.closest('.bp-lines-stack');
+				var $lines = $stack.find('.budget-line');
+				var idx = $lines.index($row);
+				if (dir === 'up' && idx > 0) {
+					$row.insertBefore($lines.eq(idx - 1));
+				} else if (dir === 'down' && idx < $lines.length - 1) {
+					$row.insertAfter($lines.eq(idx + 1));
+				} else {
+					return;
+				}
+				refreshMoveButtons($stack);
+				persistSectionOrder($stack, $row.data('section'));
 			});
+
+			function refreshMoveButtons($stack) {
+				var $lines = $stack.find('.budget-line');
+				$lines.each(function (i) {
+					var $row = $(this);
+					$row.find('.btn-move-line[data-dir="up"]').prop('disabled', i === 0);
+					$row.find('.btn-move-line[data-dir="down"]').prop('disabled', i === $lines.length - 1);
+				});
+			}
+
+			function persistSectionOrder($stack, section) {
+				if (!cfg.reorderLineUrl || !cfg.canManageStructure) return;
+				var ids = [];
+				$stack.find('.budget-line').each(function () {
+					ids.push($(this).data('line-id'));
+				});
+				$('#saveStatus').removeClass('saved').html('<i class="fa fa-spinner fa-spin"></i> Syncing order…');
+				$.post(cfg.reorderLineUrl, { budget_id: cfg.budgetId, section: section, line_ids: ids }, function (r) {
+					if (r.error) {
+						toastada.error(r.error);
+						$('#saveStatus').addClass('saved').html('<i class="fa fa-exclamation-triangle"></i> Order sync failed');
+						return;
+					}
+					$('#saveStatus').addClass('saved').html('<i class="fa fa-check"></i> Order synced to child schools');
+					refreshUI();
+				}, 'json').fail(function () {
+					toastada.error('Could not sync order.');
+					$('#saveStatus').addClass('saved').html('<i class="fa fa-exclamation-triangle"></i> Order sync failed');
+				});
+			}
+
+			// Smart drag-and-drop reorder (live, no page refresh)
+			if (cfg.canManageStructure) {
+				var dragEl = null;
+				$(document).on('dragstart', '.bp-line-entry[draggable="true"]', function (e) {
+					if (!$(e.target).closest('.bp-drag-handle').length) {
+						e.preventDefault();
+						return false;
+					}
+					dragEl = this;
+					$(this).addClass('is-dragging');
+					try {
+						e.originalEvent.dataTransfer.effectAllowed = 'move';
+						e.originalEvent.dataTransfer.setData('text/plain', String($(this).data('line-id')));
+					} catch (err) {}
+				});
+				$(document).on('dragend', '.bp-line-entry', function () {
+					$(this).removeClass('is-dragging');
+					$('.bp-line-entry').removeClass('drag-over');
+					dragEl = null;
+				});
+				$(document).on('dragover', '.bp-line-entry[draggable="true"]', function (e) {
+					e.preventDefault();
+					if (!dragEl || dragEl === this) return;
+					if ($(dragEl).data('section') !== $(this).data('section')) return;
+					e.originalEvent.dataTransfer.dropEffect = 'move';
+					var $target = $(this);
+					var mid = $target.offset().top + $target.outerHeight() / 2;
+					$('.bp-line-entry').removeClass('drag-over drag-over-before drag-over-after');
+					if (e.originalEvent.clientY < mid) {
+						$target.addClass('drag-over drag-over-before');
+					} else {
+						$target.addClass('drag-over drag-over-after');
+					}
+				});
+				$(document).on('dragleave', '.bp-line-entry', function () {
+					$(this).removeClass('drag-over drag-over-before drag-over-after');
+				});
+				$(document).on('drop', '.bp-line-entry[draggable="true"]', function (e) {
+					e.preventDefault();
+					e.stopPropagation();
+					if (!dragEl || dragEl === this) return;
+					var $drag = $(dragEl);
+					var $target = $(this);
+					if ($drag.data('section') !== $target.data('section')) {
+						toastada.error('Lines can only be reordered within the same section.');
+						return;
+					}
+					var mid = $target.offset().top + $target.outerHeight() / 2;
+					if (e.originalEvent.clientY < mid) {
+						$drag.insertBefore($target);
+					} else {
+						$drag.insertAfter($target);
+					}
+					$('.bp-line-entry').removeClass('drag-over drag-over-before drag-over-after is-dragging');
+					var $stack = $drag.closest('.bp-lines-stack');
+					refreshMoveButtons($stack);
+					persistSectionOrder($stack, $drag.data('section'));
+					dragEl = null;
+				});
+			}
 
 			// Silent auto-sync School Fees from fees settings × students (always refresh on open)
 			function autoRefreshSchoolFees() {

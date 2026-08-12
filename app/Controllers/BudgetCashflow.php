@@ -1394,7 +1394,7 @@ class BudgetCashflow extends Home
 		);
 
 		return $this->response->setJSON([
-			'success' => $mode === 'section' ? 'Section title added.' : 'Budget line added.',
+			'success' => ($mode === 'section' ? 'Section title added.' : 'Budget line added.') . ' Synced to child schools.',
 			'created' => $created,
 			'reload' => true,
 		]);
@@ -1544,7 +1544,69 @@ class BudgetCashflow extends Home
 
 		return $this->response->setJSON([
 			'success' => 'Line moved ' . $direction . '.',
-			'reload' => true,
+			'reload' => false,
+			'section' => $section,
+		]);
+	}
+
+	/**
+	 * Persist a full section order (drag-and-drop) and sync to child schools.
+	 */
+	public function reorder_budget_lines()
+	{
+		$this->bootBudget();
+		$c = $this->ctx();
+		if (!$c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_submitted')) {
+			return $this->response->setJSON(['error' => 'Only Director of Finance can reorder budget lines.']);
+		}
+		$hierarchy = new SchoolHierarchyService();
+		if (!$hierarchy->canManageBudgetLineStructure($c['schoolId'])) {
+			return $this->response->setJSON(['error' => 'Only the master school can reorder shared budget lines.']);
+		}
+		$budgetId = (int) $this->request->getPost('budget_id');
+		$section = trim((string) $this->request->getPost('section'));
+		$lineIds = $this->request->getPost('line_ids');
+		if (!is_array($lineIds)) {
+			$raw = trim((string) $this->request->getPost('line_ids'));
+			$lineIds = $raw !== '' ? preg_split('/\s*,\s*/', $raw) : [];
+		}
+		$lineIds = array_values(array_filter(array_map('intval', (array) $lineIds)));
+		if ($section === '' || !$lineIds) {
+			return $this->response->setJSON(['error' => 'Section and line order are required.']);
+		}
+		$budget = $this->loadEditableBudgetForSave($c, $budgetId);
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Budget not found.']);
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if (!BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId'])) {
+			return $this->response->setJSON(['error' => 'Budget is not editable.']);
+		}
+		$db = \Config\Database::connect();
+		$orderMap = [];
+		$base = 10;
+		foreach ($lineIds as $i => $lid) {
+			$row = $db->table('budget_lines')
+				->where('id', $lid)
+				->where('budget_id', $budgetId)
+				->where('section_label', $section)
+				->where('is_total_row', 0)
+				->get(1)->getRowArray();
+			if (!$row) {
+				continue;
+			}
+			$sort = $base + ($i * 10);
+			$db->table('budget_lines')->where('id', $lid)->update(['sort_order' => $sort]);
+			$orderMap[(string) $row['category']] = $sort;
+		}
+		if (!$orderMap) {
+			return $this->response->setJSON(['error' => 'No matching lines to reorder.']);
+		}
+		$this->propagateLineOrderToChildBudgets($c['schoolId'], $section, $orderMap);
+		return $this->response->setJSON([
+			'success' => 'Order updated and synced to child schools.',
+			'section' => $section,
+			'count' => count($orderMap),
 		]);
 	}
 
@@ -1634,7 +1696,7 @@ class BudgetCashflow extends Home
 		}
 	}
 
-	/** Copy a new master line into child school DRAFT budgets (structure only). */
+	/** Copy a new master line into all child-school budgets (structure only). */
 	protected function propagateLineToChildDrafts(int $schoolId, string $section, string $category, string $assumptions = ''): void
 	{
 		$hierarchy = new SchoolHierarchyService();
@@ -1657,8 +1719,9 @@ class BudgetCashflow extends Home
 		if (!$branchIds) {
 			return;
 		}
-		$drafts = $db->table('budgets')->whereIn('branch_id', $branchIds)->where('status', 'DRAFT')->get()->getResultArray();
-		foreach ($drafts as $b) {
+		// All child budgets (draft + submitted/approved) get the new structure line
+		$childBudgets = $db->table('budgets')->whereIn('branch_id', $branchIds)->get()->getResultArray();
+		foreach ($childBudgets as $b) {
 			$bid = (int) $b['id'];
 			$exists = $db->table('budget_lines')->where('budget_id', $bid)
 				->where('section_label', $section)->where('category', $category)->where('is_total_row', 0)->countAllResults();

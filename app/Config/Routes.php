@@ -235,6 +235,7 @@ $routes->post('budget/submit_budget', 'BudgetCashflow::submit_budget');
 $routes->post('budget/add_budget_line', 'BudgetCashflow::add_budget_line');
 $routes->post('budget/delete_budget_line', 'BudgetCashflow::delete_budget_line');
 $routes->post('budget/move_budget_line', 'BudgetCashflow::move_budget_line');
+$routes->post('budget/reorder_budget_lines', 'BudgetCashflow::reorder_budget_lines');
 $routes->get('budget/budget_review', 'BudgetCashflow::budget_review');
 $routes->post('budget/budget_action', 'BudgetCashflow::budget_action');
 $routes->post('budget/delete_budget', 'BudgetCashflow::delete_budget');
