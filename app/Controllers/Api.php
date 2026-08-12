@@ -3473,8 +3473,10 @@ public function permission_card_scan()
 		}
 		$rows = $api->listPending($ctx['branch_id'], $ctx['post_id']);
 		foreach ($rows as &$row) {
-			$row['actions'] = $api->allowedActions($ctx['post_id'], $row['status']);
+			$chain = (string) ($row['approval_chain'] ?? 'full');
+			$row['actions'] = $api->allowedActions($ctx['post_id'], (string) $row['status'], $chain);
 		}
+		unset($row);
 		return $this->response->setJSON(['requests' => $rows]);
 	}
 
@@ -3487,7 +3489,38 @@ public function permission_card_scan()
 		if (!$ctx || $ctx['branch_id'] <= 0) {
 			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
 		}
-		return $this->response->setJSON($api->formData($ctx['branch_id']));
+		return $this->response->setJSON($api->formData($ctx['branch_id'], (int) $ctx['org_id']));
+	}
+
+	/** Mobile Cash Flow hub KPIs (mirrors web budget dashboard cards). */
+	public function get_cash_flow_stats($school_id = null, $staff_id = null)
+	{
+		$schoolId = (int) ($school_id ?? 0);
+		$staffId = (int) ($staff_id ?? 0);
+		$api = new \App\Services\Budget\MobileCashFlowApiService();
+		$ctx = $api->staffContext($schoolId, $staffId);
+		if (!$ctx || $ctx['branch_id'] <= 0) {
+			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
+		}
+		$stats = $api->dashboardStats($ctx['branch_id'], $staffId, (int) $ctx['post_id']);
+		$stats['success'] = true;
+		return $this->response->setJSON($stats);
+	}
+
+	/** Preview approval chain for amount (same policy as web). */
+	public function get_cash_flow_approval_chain($school_id = null, $staff_id = null)
+	{
+		$schoolId = (int) ($school_id ?? $this->request->getGet('school_id') ?? $this->request->getPost('school_id') ?? 0);
+		$staffId = (int) ($staff_id ?? $this->request->getGet('staff_id') ?? $this->request->getPost('staff_id') ?? 0);
+		$amount = (float) ($this->request->getGet('amount') ?? $this->request->getPost('amount') ?? 0);
+		$api = new \App\Services\Budget\MobileCashFlowApiService();
+		$ctx = $api->staffContext($schoolId, $staffId);
+		if (!$ctx || $ctx['org_id'] <= 0) {
+			return $this->response->setJSON(['error' => 'Staff or org not found.']);
+		}
+		$resolved = \App\Services\Budget\CashRequestApprovalPolicy::resolveChain((int) $ctx['org_id'], $amount);
+		$resolved['success'] = true;
+		return $this->response->setJSON($resolved);
 	}
 
 	public function save_cash_flow_request()
@@ -3499,6 +3532,7 @@ public function permission_card_scan()
 		if (!$ctx || $ctx['branch_id'] <= 0) {
 			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
 		}
+		\App\Services\Budget\CashRequestApprovalPolicy::ensureSchema();
 		$db = \Config\Database::connect();
 		$budgetId = (int) $this->request->getPost('budget_id');
 		$budgetLineId = (int) $this->request->getPost('budget_line_id');
@@ -3521,16 +3555,22 @@ public function permission_card_scan()
 		if ($purpose === '' || $payee === '') {
 			return $this->response->setJSON(['error' => 'Payee and purpose are required.']);
 		}
+		$docB64 = (string) ($this->request->getPost('image_base64') ?: $this->request->getPost('document_base64'));
 		if ($submitNow) {
 			$avail = (new \App\Services\Budget\BudgetAvailabilityService())->lineAvailability($budgetLineId);
 			if ($avail && $amount > (float) $avail['available']) {
 				return $this->response->setJSON(['error' => 'Amount exceeds available budget on this line.']);
 			}
-			$image = (string) $this->request->getPost('image_base64');
-			if ($image === '') {
+			if ($docB64 === '') {
 				return $this->response->setJSON(['error' => 'Attach a supporting document before submitting.']);
 			}
 		}
+		$resolved = \App\Services\Budget\CashRequestApprovalPolicy::resolveChain((int) $ctx['org_id'], $amount);
+		$urgency = trim((string) $this->request->getPost('urgency')) ?: 'normal';
+		if (!in_array($urgency, ['low', 'normal', 'high', 'urgent'], true)) {
+			$urgency = 'normal';
+		}
+		$payMethod = trim((string) $this->request->getPost('payment_method')) ?: 'bank';
 		$wf = new \App\Services\Budget\CashRequestWorkflowService();
 		$row = [
 			'organization_id' => $ctx['org_id'],
@@ -3542,8 +3582,9 @@ public function permission_card_scan()
 			'purpose' => $purpose,
 			'currency' => 'RWF',
 			'requested_amount' => $amount,
-			'payment_method' => $this->request->getPost('payment_method') ?: 'bank',
-			'urgency' => 'normal',
+			'approval_chain' => $resolved['chain'],
+			'payment_method' => $payMethod,
+			'urgency' => $urgency,
 			'status' => 'DRAFT',
 			'created_by' => $staffId,
 			'updated_by' => $staffId,
@@ -3559,18 +3600,24 @@ public function permission_card_scan()
 			'description' => trim((string) $this->request->getPost('line_description')) ?: ($bLine['category'] . ' — mobile request'),
 			'amount' => $amount,
 		]);
-		$image = (string) $this->request->getPost('image_base64');
-		if ($image !== '') {
-			$raw = base64_decode(preg_replace('#^data:image/\w+;base64,#', '', $image), true);
-			if ($raw !== false) {
-				$stored = 'budget/cash_requests/' . uniqid('mob_', true) . '.jpg';
+		if ($docB64 !== '') {
+			$raw = base64_decode(preg_replace('#^data:(image|application)/\w+;base64,#', '', $docB64), true);
+			if ($raw !== false && strlen($raw) > 50) {
+				$origName = trim((string) $this->request->getPost('filename')) ?: 'mobile-scan.jpg';
+				$ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+				if ($ext === '' || !in_array($ext, ['jpg', 'jpeg', 'png', 'pdf', 'webp'], true)) {
+					// Detect PDF magic
+					$ext = (strncmp($raw, '%PDF', 4) === 0) ? 'pdf' : 'jpg';
+					$origName = 'mobile-scan.' . $ext;
+				}
+				$stored = 'budget/cash_requests/' . uniqid('mob_', true) . '.' . $ext;
 				$full = WRITEPATH . 'uploads/' . $stored;
 				@mkdir(dirname($full), 0755, true);
 				file_put_contents($full, $raw);
 				$db->table('cash_request_documents')->insert([
 					'cash_request_id' => $requestId,
 					'doc_type' => $this->request->getPost('doc_type') ?: 'invoice',
-					'original_name' => 'mobile-scan.jpg',
+					'original_name' => $origName,
 					'stored_path' => 'writable/uploads/' . $stored,
 					'uploaded_by' => $staffId,
 					'created_at' => date('Y-m-d H:i:s'),
@@ -3578,6 +3625,12 @@ public function permission_card_scan()
 			}
 		}
 		if ($submitNow) {
+			// Align BudgetPermissionService session checks with web (child-school rules)
+			session()->set([
+				'soma_id' => $staffId,
+				'soma_post' => (int) $ctx['post_id'],
+				'soma_school_id' => $schoolId,
+			]);
 			$res = $wf->transition($requestId, 'submit', $staffId, $ctx['post_id'], 'Submitted from SmartSMS app');
 			if (empty($res['success'])) {
 				return $this->response->setJSON($res);
@@ -3587,6 +3640,8 @@ public function permission_card_scan()
 			'success' => $submitNow ? 'Cash request submitted.' : 'Cash request saved as draft.',
 			'request_id' => $requestId,
 			'request_no' => $row['request_no'],
+			'approval_chain' => $resolved['chain'],
+			'approval_steps_label' => $resolved['steps_label'] ?? '',
 		]);
 	}
 
@@ -3602,6 +3657,11 @@ public function permission_card_scan()
 		if (!$ctx) {
 			return $this->response->setJSON(['error' => 'Staff not found.']);
 		}
+		session()->set([
+			'soma_id' => $staffId,
+			'soma_post' => (int) $ctx['post_id'],
+			'soma_school_id' => $schoolId,
+		]);
 		$wf = new \App\Services\Budget\CashRequestWorkflowService();
 		$res = $wf->transition($requestId, $action, $staffId, $ctx['post_id'], $comment ?: 'Approved from SmartSMS app');
 		return $this->response->setJSON($res);

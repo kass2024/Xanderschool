@@ -88,21 +88,34 @@ class MobileScanBridgeService
 		if (($data['status'] ?? '') !== 'pending') {
 			return ['success' => false, 'error' => 'Scan session already completed.'];
 		}
-		$raw = base64_decode(preg_replace('#^data:image/\w+;base64,#', '', $imageBase64), true);
+		$raw = base64_decode(preg_replace('#^data:(image|application)/[\w.+-]+;base64,#', '', $imageBase64), true);
 		if ($raw === false || strlen($raw) < 100) {
-			return ['success' => false, 'error' => 'Invalid image data.'];
+			return ['success' => false, 'error' => 'Invalid scan data.'];
 		}
-		$ext = pathinfo($filename, PATHINFO_EXTENSION) ?: 'jpg';
-		$stored = 'mobile_scan/' . $token . '.' . preg_replace('/[^a-z0-9]/i', '', $ext);
+		$ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION) ?: '');
+		if ($ext === '' || !preg_match('/^[a-z0-9]+$/', $ext)) {
+			$ext = (strncmp($raw, '%PDF', 4) === 0) ? 'pdf' : 'jpg';
+		}
+		$ext = preg_replace('/[^a-z0-9]/i', '', $ext) ?: 'jpg';
+		$mimeMap = [
+			'jpg' => 'image/jpeg',
+			'jpeg' => 'image/jpeg',
+			'png' => 'image/png',
+			'webp' => 'image/webp',
+			'pdf' => 'application/pdf',
+		];
+		$mime = $mimeMap[$ext] ?? 'application/octet-stream';
+		$stored = 'mobile_scan/' . $token . '.' . $ext;
 		$full = WRITEPATH . $stored;
+		@mkdir(dirname($full), 0755, true);
 		file_put_contents($full, $raw);
 		$data['status'] = 'ready';
 		$data['stored_path'] = $stored;
-		$data['original_name'] = $filename ?: 'mobile-scan.jpg';
-		$data['mime'] = 'image/jpeg';
+		$data['original_name'] = $filename ?: ('mobile-scan.' . $ext);
+		$data['mime'] = $mime;
 		$data['captured_at'] = time();
 		file_put_contents($this->path($token), json_encode($data));
-		return ['success' => true, 'token' => $token];
+		return ['success' => true, 'token' => $token, 'mime' => $mime];
 	}
 
 	/**
