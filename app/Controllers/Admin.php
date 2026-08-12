@@ -310,6 +310,31 @@ class Admin extends BaseController
 		$data['title']     = 'Add new school';
 		$data['subtitle']  = 'Create new school';
 		$data['page']      = 'add_school';
+		$data['school']    = null;
+		$data['provinces'] = $addressModel->getProvince();
+		$data['packages']  = $pModel->get()->getResultArray();
+		$data['content']   = view('admin/add_school', $data);
+		return view('main_admin', $data);
+	}
+
+	public function edit_school($id = null)
+	{
+		$this->_preset();
+		$id = (int) $id;
+		if ($id < 1) {
+			return redirect()->to(base_url('schools'));
+		}
+		$schoolMdl = new SchoolModel();
+		$school    = $schoolMdl->getSchool(['schools.id' => $id])->getRowArray();
+		if (! $school) {
+			return redirect()->to(base_url('schools'));
+		}
+		$addressModel      = new AddressModel();
+		$pModel            = new PackageModel();
+		$data['title']     = 'Edit school';
+		$data['subtitle']  = 'Update school details';
+		$data['page']      = 'add_school';
+		$data['school']    = $school;
 		$data['provinces'] = $addressModel->getProvince();
 		$data['packages']  = $pModel->get()->getResultArray();
 		$data['content']   = view('admin/add_school', $data);
@@ -906,8 +931,10 @@ class Admin extends BaseController
 		$headmaster = $this->request->getPost('headmaster');
 		$website    = $this->request->getPost('web');
 		$package    = $this->request->getPost('package');
-		$country    = ucfirst($this->request->getPost('country'));
-		$address    = ucfirst($this->request->getPost('address'));
+		$country    = ucfirst((string) $this->request->getPost('country'));
+		$address    = ucfirst((string) $this->request->getPost('address'));
+		$fId        = $this->request->getPost('fId');
+		$schoolId   = ($fId !== null && $fId !== '') ? (int) $fId : ((int) $id ?: 0);
 
 		try
 		{
@@ -922,10 +949,21 @@ class Admin extends BaseController
 				'package'     => $package,
 				'country'     => $country,
 				'address'     => $address,
-				'status'      => 1,
-				'created_by'  => $this->session->get('soma_admin_id'),
-				'website'     => $website,
 			];
+
+			// Update existing school
+			if ($schoolId > 0) {
+				$existing = $schoolMdl->getSchool(['schools.id' => $schoolId])->getRowArray();
+				if (! $existing) {
+					return $this->response->setJSON(['error' => 'School not found.']);
+				}
+				$schoolMdl->update($schoolId, $data);
+				return $this->response->setJSON(['success' => 'School updated successfully.']);
+			}
+
+			// Create new school
+			$data['status']     = 1;
+			$data['created_by'] = $this->session->get('soma_admin_id');
 			$school_id = $schoolMdl->insert($data);
 			//CREATE DEFAULT STAFF ACCOUNT
 			$staffMdl         = new StaffModel();

@@ -1,5 +1,12 @@
 <link rel="stylesheet" type="text/css" href="<?= base_url('assets/plugins/select2/css/select2.min.css'); ?>">
 <script type="application/javascript" src="<?= base_url('assets/plugins/select2/js/select2.min.js'); ?>"></script>
+<?php
+$isEdit = !empty($school) && !empty($school['id']);
+$s = $isEdit ? $school : [];
+$val = static function (string $key, $default = '') use ($s) {
+	return htmlspecialchars((string) ($s[$key] ?? $default), ENT_QUOTES, 'UTF-8');
+};
+?>
 <div class="app-inner-layout app-inner-layout-page">
 
 	<div class="app-inner-layout__wrapper">
@@ -9,10 +16,17 @@
 					<div class="container-fluid">
 						<div class="row">
 							<form action="<?= base_url('admin/manipulate_school'); ?>" class="validate autoSubmit">
+								<?php if ($isEdit): ?>
+									<input type="hidden" name="fId" value="<?= (int) $school['id']; ?>">
+								<?php endif; ?>
 								<div class="pull-left" style="margin-bottom: 20px">
 									<button type="submit" class="btn btn-success"><?= lang("app.SaveSchool"); ?> </button>
 									<button type="submit" class="btn btn-info" data-target="<?=base_url('schools');?>"><?= lang("app.saveClose"); ?> </button>
-									<button type="reset" class="btn btn-light"><?= lang("app.reset"); ?> </button>
+									<?php if ($isEdit): ?>
+										<a href="<?= base_url('schools'); ?>" class="btn btn-light"><?= lang("app.cancel"); ?></a>
+									<?php else: ?>
+										<button type="reset" class="btn btn-light"><?= lang("app.reset"); ?> </button>
+									<?php endif; ?>
 								</div>
 								<h4 class="pull-right"><?=strtoupper($subtitle);?></h4>
 								<hr style="width: 100%;float: left"/>
@@ -20,31 +34,32 @@
 									<div class="main-card mb-3 card" style="padding: 20px">
 										<div class="form-group">
 											<label><?= lang("app.schoolName"); ?> </label>
-											<input class="form-control" type="text" name="name" required minlength="3">
+											<input class="form-control" type="text" name="name" required minlength="3" value="<?= $val('name'); ?>">
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.acronym"); ?> </label>
-											<input class="form-control" type="text" name="acronym" required minlength="2">
+											<input class="form-control" type="text" name="acronym" required minlength="2" value="<?= $val('acronym'); ?>">
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.phone"); ?> </label>
 											<input class="form-control" type="text" name="phone" required
 												   data-parsley-length="[10,13]"
-												   data-parsley-length-message="<?= lang("app.invPhone");?>">
+												   data-parsley-length-message="<?= lang("app.invPhone");?>"
+												   value="<?= $val('phone'); ?>">
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.mail"); ?> </label>
-											<input class="form-control" type="email" name="email" required>
+											<input class="form-control" type="email" name="email" required value="<?= $val('email'); ?>">
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.headMaster"); ?> </label>
-											<input class="form-control" type="text" name="headmaster" required minlength="4">
+											<input class="form-control" type="text" name="headmaster" required minlength="4" value="<?= $val('head_master'); ?>">
 										</div>
 
 
 										<div class="form-group">
 											<label><?= lang("app.website"); ?> </label>
-											<input class="form-control" type="url" name="web" >
+											<input class="form-control" type="url" name="web" value="<?= $val('website'); ?>">
 										</div>
 									</div>
 								</div>
@@ -55,10 +70,12 @@
 											<a href="javascript:void" class="pull-right" data-toggle="modal" data-target="#mdlpkg"><i class="fa fa-plus"></i> <?= lang("app.createNewPackage"); ?> </a>
 											<a href="javascript:void" class="pull-right" data-toggle="refresh" data-href="<?=base_url('admin/get_package');?>" data-target="package" style="margin: 0 10px"><i class="fa fa-sync faa-spin"></i> </a>
 											<select class="form-control select2" name="package" id="package" required>
-												<option selected disabled><?= lang("app.SelectPackages"); ?> </option>
+												<option disabled <?= $isEdit ? '' : 'selected'; ?>><?= lang("app.SelectPackages"); ?> </option>
 												<?php
+												$pkgSelected = (string) ($s['package'] ?? '');
 												foreach ($packages as $item) {
-													echo "<option value='{$item['id']}'>{$item['title']}</option>";
+													$sel = ((string) $item['id'] === $pkgSelected) ? ' selected' : '';
+													echo "<option value='{$item['id']}'{$sel}>{$item['title']}</option>";
 												}
 												?>
 											</select>
@@ -66,7 +83,7 @@
 										<div class="form-group">
 											<label><?= lang("app.country"); ?> </label>
 											<select class="form-control select2" data-target="district" name="country" required>
-												<option selected disabled><?= lang("app.selectCountry"); ?> </option>
+												<option disabled <?= $isEdit ? '' : 'selected'; ?>><?= lang("app.selectCountry"); ?> </option>
 												<option value="Afganistan">Afghanistan</option>
 												<option value="Albania">Albania</option>
 												<option value="Algeria">Algeria</option>
@@ -317,7 +334,7 @@
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.address"); ?> </label>
-											<input type="text" name="address" class="form-control">
+											<input type="text" name="address" class="form-control" value="<?= $val('address'); ?>">
 										</div>
 								</div>
 
@@ -325,7 +342,11 @@
 								<div class="pull-left" style="margin-bottom: 20px">
 									<button type="submit" class="btn btn-success"><?= lang("app.SaveSchool"); ?> </button>
 									<button type="submit" class="btn btn-info" data-target="<?=base_url('schools');?>" ><?= lang("app.saveClose"); ?></button>
-									<button type="reset" class="btn btn-light"><?= lang("app.reset"); ?> </button>
+									<?php if ($isEdit): ?>
+										<a href="<?= base_url('schools'); ?>" class="btn btn-light"><?= lang("app.cancel"); ?></a>
+									<?php else: ?>
+										<button type="reset" class="btn btn-light"><?= lang("app.reset"); ?> </button>
+									<?php endif; ?>
 								</div>
 							</form>
 						</div>
@@ -347,4 +368,23 @@
 		</div>
 	</div>
 </div>
+<?php if ($isEdit && !empty($s['country'])): ?>
+<script>
+$(function () {
+	var country = <?= json_encode((string) $s['country'], JSON_UNESCAPED_UNICODE); ?>;
+	var $c = $('select[name="country"]');
+	if ($c.find('option[value="' + country.replace(/"/g, '\\"') + '"]').length) {
+		$c.val(country).trigger('change');
+	} else {
+		// Match case-insensitively if stored value differs slightly
+		$c.find('option').each(function () {
+			if (String(this.value).toLowerCase() === String(country).toLowerCase()) {
+				$c.val(this.value).trigger('change');
+				return false;
+			}
+		});
+	}
+});
+</script>
+<?php endif; ?>
 

@@ -98,6 +98,7 @@ $routes->get('/admin/export_wisdom_credentials', 'Admin::export_wisdom_credentia
 $routes->add('/extra_sms', 'Admin::extra_sms');
 $routes->add('/schools', 'Admin::schools');
 $routes->add('/add-school', 'Admin::add_school');
+$routes->get('/edit-school/(:num)', 'Admin::edit_school/$1');
 $routes->post('/admin/share_school_access', 'Admin::share_school_access');
 $routes->get('/admin/academic_structure', 'Admin::academic_structure');
 $routes->get('/admin/getAcademicStructure/(:num)', 'Admin::getAcademicStructure/$1');

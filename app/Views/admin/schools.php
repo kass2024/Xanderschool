@@ -83,6 +83,11 @@
 												<td><?=$groupLabel;?></td>
 												<td><?=$status;?> </td>
 												<td style="white-space:nowrap;">
+													<a href="<?= base_url('edit-school/' . (int) $school['id']); ?>"
+													   class="btn btn-sm btn-primary"
+													   title="<?= lang('app.edit'); ?>">
+														<i class="fa fa-edit"></i> <?= lang('app.edit'); ?>
+													</a>
 													<button type="button" class="btn btn-sm btn-info btn-staff-share-access btn-school-share-access"
 														data-id="<?= (int) $school['id']; ?>"
 														data-name="<?= $hmName !== '' ? $hmName : $schoolName; ?>"
