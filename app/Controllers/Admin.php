@@ -16,6 +16,9 @@ use App\Models\UserModel;
 use App\Models\PlatformSettingsModel;
 use App\Models\PostMenuClearanceModel;
 use App\Models\PostsModel;
+use App\Models\MasterCentralPostModel;
+use App\Models\SchoolHierarchyModel;
+use App\Services\SchoolHierarchyService;
 use CodeIgniter\HTTP\Response;
 use Config\MenuClearance;
 
@@ -318,11 +321,31 @@ class Admin extends BaseController
 		$this->_preset();
 		$schoolMdl        = new SchoolModel();
 		$pkgMdl           = new PackageModel();
+		$hierMdl          = new SchoolHierarchyModel();
+		$hierMdl->ensureSchema();
+		$byId = [];
+		foreach ($hierMdl->allSchoolsWithHierarchy() as $h) {
+			$byId[(int) $h['id']] = $h;
+		}
+		$schools = $schoolMdl->getSchool()->getResultArray();
+		foreach ($schools as &$s) {
+			$hid = (int) ($s['id'] ?? 0);
+			if (isset($byId[$hid])) {
+				$s['is_master'] = (int) ($byId[$hid]['is_master'] ?? 0);
+				$s['master_school_id'] = (int) ($byId[$hid]['master_school_id'] ?? 0);
+				$s['master_name'] = $byId[$hid]['master_name'] ?? '';
+			} else {
+				$s['is_master'] = 0;
+				$s['master_school_id'] = 0;
+				$s['master_name'] = '';
+			}
+		}
+		unset($s);
 		$data['title']    = 'view all schools';
 		$data['subtitle'] = 'view schools';
 		$data['page']     = 'schools';
 		$data['packages'] = $pkgMdl->get()->getResultArray();
-		$data['schools']  = $schoolMdl->getSchool()->getResultArray();
+		$data['schools']  = $schools;
 		$data['content']  = view('admin/schools', $data);
 		return view('main_admin', $data);
 	}
@@ -395,6 +418,8 @@ class Admin extends BaseController
 		$this->_preset();
 		$clearanceMdl = new PostMenuClearanceModel();
 		$clearanceMdl->ensureSchema();
+		$centralMdl = new MasterCentralPostModel();
+		$centralMdl->ensureSchema();
 		$postsMdl = new PostsModel();
 		$posts = $postsMdl->orderBy('id', 'ASC')->findAll();
 		if (!is_array($posts)) {
@@ -419,6 +444,8 @@ class Admin extends BaseController
 			'clearanceByPost' => $clearanceByPost,
 			'customByPost' => $customByPost,
 			'defaultsByPost' => [],
+			'masterCentralPosts' => $centralMdl->centralPostIds(),
+			'masterCentralDefaults' => MasterCentralPostModel::defaultPostIds(),
 		];
 		foreach ($posts as $post) {
 			$pid = (int) ($post['id'] ?? 0);
@@ -426,6 +453,113 @@ class Admin extends BaseController
 		}
 		$data['content'] = view('admin/level_clearance', $data);
 		return view('main_admin', $data);
+	}
+
+	public function save_master_central_posts(): Response
+	{
+		$this->_preset();
+		$centralMdl = new MasterCentralPostModel();
+		$centralMdl->ensureSchema();
+		$raw = $this->request->getPost('post_ids');
+		$postIds = [];
+		if (is_string($raw)) {
+			$decoded = json_decode($raw, true);
+			if (is_array($decoded)) {
+				$postIds = $decoded;
+			}
+		} elseif (is_array($raw)) {
+			$postIds = $raw;
+		}
+		$adminId = (int) ($this->session->get('soma_admin_id') ?: $this->session->get('soma_id') ?: 0);
+		$saved = $centralMdl->saveCentralPostIds($postIds, $adminId);
+		return $this->response->setJSON([
+			'success' => 'Master school central posts saved',
+			'post_ids' => $saved,
+		]);
+	}
+
+	/** Super-admin: master school groups and child school allocation. */
+	public function school_groups()
+	{
+		$this->_preset();
+		$mdl = new SchoolHierarchyModel();
+		$mdl->ensureSchema();
+		$schools = $mdl->allSchoolsWithHierarchy();
+		$masters = array_values(array_filter($schools, static function ($s) {
+			return !empty($s['is_master']);
+		}));
+		$data = [
+			'title' => 'School groups',
+			'subtitle' => 'Master schools and child allocation',
+			'page' => 'school_groups',
+			'schools' => $schools,
+			'masters' => $masters,
+			'centralPosts' => (new MasterCentralPostModel())->centralPostIds(),
+		];
+		$data['content'] = view('admin/school_groups', $data);
+		return view('main_admin', $data);
+	}
+
+	public function save_school_group(): Response
+	{
+		$this->_preset();
+		$masterId = (int) $this->request->getPost('master_id');
+		$childRaw = $this->request->getPost('child_ids');
+		$childIds = [];
+		if (is_string($childRaw)) {
+			$decoded = json_decode($childRaw, true);
+			if (is_array($decoded)) {
+				$childIds = $decoded;
+			}
+		} elseif (is_array($childRaw)) {
+			$childIds = $childRaw;
+		}
+		if ($masterId < 1) {
+			return $this->response->setJSON(['error' => 'Select a master school']);
+		}
+		$mdl = new SchoolHierarchyModel();
+		$result = $mdl->assignChildren($masterId, $childIds);
+		if (empty($result['ok'])) {
+			return $this->response->setJSON([
+				'error' => $result['error'] ?? 'Could not save school group',
+				'conflicts' => $result['conflicts'] ?? [],
+			]);
+		}
+		return $this->response->setJSON([
+			'success' => 'School group saved',
+			'master_id' => $masterId,
+			'children' => count($childIds),
+		]);
+	}
+
+	public function seed_wisdom_master(): Response
+	{
+		$this->_preset();
+		$svc = new SchoolHierarchyService();
+		$result = $svc->seedWisdomMasterGroup();
+		if ($result['master_id'] < 1) {
+			return $this->response->setJSON(['error' => 'WISDOM SCHOOL RWANDA not found in schools table']);
+		}
+		return $this->response->setJSON([
+			'success' => 'WISDOM SCHOOL RWANDA set as master for ' . $result['children'] . ' child school(s)',
+			'result' => $result,
+		]);
+	}
+
+	public function export_wisdom_credentials()
+	{
+		$this->_preset();
+		$masterId = (int) ($this->request->getGet('master_id') ?: 0);
+		$svc = new SchoolHierarchyService();
+		if ($masterId < 1) {
+			$result = $svc->seedWisdomMasterGroup();
+			$masterId = (int) ($result['master_id'] ?? 0);
+		}
+		if ($masterId < 1) {
+			return redirect()->to(base_url('admin/school_groups'))->with('error', 'No master school found');
+		}
+		$file = $svc->exportChildCredentialsTxt($masterId);
+		return $this->response->download($file, null)->setFileName(basename($file));
 	}
 
 	public function save_level_clearance(): Response
@@ -1060,6 +1194,162 @@ class Admin extends BaseController
 		{
 			return $this->response->setJSON(['error' => 'Error occurred: ' . $e->getMessage()]);
 		}
+	}
+
+	/**
+	 * Reset headmaster password and share login via SMS and/or email (admin schools list).
+	 */
+	public function share_school_access()
+	{
+		$this->_preset();
+		$schoolId = (int) ($this->request->getPost('school_id') ?? 0);
+		$channel  = strtolower(trim((string) ($this->request->getPost('channel') ?? 'both')));
+		if (! in_array($channel, ['sms', 'email', 'both'], true)) {
+			return $this->response->setJSON(['error' => 'Invalid channel. Use sms, email, or both.']);
+		}
+		if ($schoolId < 1) {
+			return $this->response->setJSON(['error' => 'School not specified.']);
+		}
+
+		$schoolMdl = new SchoolModel();
+		$school    = $schoolMdl->select('id,name,acronym,phone,email,head_master,status')
+			->where('id', $schoolId)
+			->first();
+		if (! $school) {
+			return $this->response->setJSON(['error' => 'School not found.']);
+		}
+
+		$phone = trim((string) ($school['phone'] ?? ''));
+		$email = trim((string) ($school['email'] ?? ''));
+		$headMaster = trim((string) ($school['head_master'] ?? ''));
+		if ($headMaster === '') {
+			return $this->response->setJSON(['error' => 'This school has no headmaster name on record.']);
+		}
+
+		$staffMdl = new StaffModel();
+		$staff    = $staffMdl->where('school_id', $schoolId)
+			->where('post', 1)
+			->whereIn('status', [1, 2])
+			->orderBy('id', 'ASC')
+			->first();
+
+		$headNames = preg_split('/\s+/', $headMaster, 2);
+		$fname     = $headNames[0] ?? 'Head';
+		$lname     = $headNames[1] ?? 'Master';
+		$defaultPassword = $this->random_password();
+
+		try {
+			if ($staff) {
+				$staffId = (int) $staff['id'];
+				$staffMdl->update($staffId, [
+					'fname'     => $fname,
+					'lname'     => $lname,
+					'phone'     => $phone !== '' ? $phone : ($staff['phone'] ?? ''),
+					'email'     => $email !== '' ? $email : ($staff['email'] ?? ''),
+					'password'  => password_hash($defaultPassword, PASSWORD_DEFAULT),
+					'reset_exp' => 0,
+					'status'    => 2,
+				]);
+				$phone = $phone !== '' ? $phone : trim((string) ($staff['phone'] ?? ''));
+				$email = $email !== '' ? $email : trim((string) ($staff['email'] ?? ''));
+			} else {
+				$staffId = (int) $staffMdl->insert([
+					'school_id'  => $schoolId,
+					'fname'      => $fname,
+					'lname'      => $lname,
+					'phone'      => $phone,
+					'email'      => $email,
+					'password'   => password_hash($defaultPassword, PASSWORD_DEFAULT),
+					'status'     => 2,
+					'post'       => 1,
+					'created_by' => $this->session->get('soma_admin_id'),
+				]);
+			}
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => 'Could not reset password: ' . $e->getMessage()]);
+		}
+
+		$name    = trim($fname . ' ' . strtoupper(substr($lname, 0, 1)) . '.');
+		$loginUser = $email !== '' ? $email : $phone;
+		$smsPack = $this->_staffCredentialSms($name, $loginUser, $defaultPassword, true);
+		$smsBody = $smsPack['body'];
+		$smsLogBody = $smsPack['log'];
+
+		$sentSms   = false;
+		$sentEmail = false;
+		$errors    = [];
+
+		if (in_array($channel, ['sms', 'both'], true)) {
+			if ($phone === '') {
+				$errors[] = 'No phone number';
+			} else {
+				$smsResult = null;
+				if ($this->sendSMS($phone, $smsBody, $smsResult)) {
+					$smsMdl = new SmsModel();
+					$smsMdl->save([
+						'school_id'      => $schoolId,
+						'active_term'    => 0,
+						'content'        => $smsLogBody,
+						'recipient'      => $phone,
+						'recipient_type' => 1,
+					]);
+					$sentSms = true;
+				} else {
+					$errors[] = 'SMS failed' . (is_array($smsResult)
+						? ': ' . ($smsResult['content'] ?? json_encode($smsResult))
+						: ($smsResult ? ': ' . $smsResult : ''));
+				}
+			}
+		}
+
+		if (in_array($channel, ['email', 'both'], true)) {
+			if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+				$errors[] = 'No valid email';
+			} else {
+				$mailData = [
+					'name'             => $school['name'],
+					'email'            => $email,
+					'fname'            => $fname,
+					'lname'            => $lname,
+					'default_password' => $defaultPassword,
+				];
+				$htmlMsg = view('emails/school_creation', $mailData);
+				if ($this->_send_email($email, 'XanderTech SmartSMS login credentials', $htmlMsg)) {
+					$sentEmail = true;
+				} else {
+					$errors[] = 'Email failed';
+				}
+			}
+		}
+
+		$parts = ['Password reset for headmaster'];
+		if ($sentSms) {
+			$parts[] = '1 SMS sent';
+		}
+		if ($sentEmail) {
+			$parts[] = '1 email sent';
+		}
+
+		if ($errors && ($sentSms || $sentEmail)) {
+			return $this->response->setJSON([
+				'warning'    => implode('. ', $parts) . '. Some deliveries failed.',
+				'failed'     => $errors,
+				'sent_sms'   => $sentSms ? 1 : 0,
+				'sent_email' => $sentEmail ? 1 : 0,
+			]);
+		}
+		if (! $sentSms && ! $sentEmail) {
+			return $this->response->setJSON([
+				'error'  => 'Could not send credentials. Check phone number and email address.',
+				'failed' => $errors,
+			]);
+		}
+
+		return $this->response->setJSON([
+			'success'    => implode('. ', $parts) . '.',
+			'sent_sms'   => $sentSms ? 1 : 0,
+			'sent_email' => $sentEmail ? 1 : 0,
+		]);
 	}
 
 	public function testSMS()

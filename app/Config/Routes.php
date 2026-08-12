@@ -90,9 +90,15 @@ $routes->get('/admin/platform_fees', 'Admin::platform_fees');
 $routes->post('/admin/save_platform_fees', 'Admin::save_platform_fees');
 $routes->get('/admin/level_clearance', 'Admin::level_clearance');
 $routes->post('/admin/save_level_clearance', 'Admin::save_level_clearance');
+$routes->post('/admin/save_master_central_posts', 'Admin::save_master_central_posts');
+$routes->get('/admin/school_groups', 'Admin::school_groups');
+$routes->post('/admin/save_school_group', 'Admin::save_school_group');
+$routes->post('/admin/seed_wisdom_master', 'Admin::seed_wisdom_master');
+$routes->get('/admin/export_wisdom_credentials', 'Admin::export_wisdom_credentials');
 $routes->add('/extra_sms', 'Admin::extra_sms');
 $routes->add('/schools', 'Admin::schools');
 $routes->add('/add-school', 'Admin::add_school');
+$routes->post('/admin/share_school_access', 'Admin::share_school_access');
 $routes->get('/admin/academic_structure', 'Admin::academic_structure');
 $routes->get('/admin/getAcademicStructure/(:num)', 'Admin::getAcademicStructure/$1');
 $routes->post('/admin/saveAcademicFaculty', 'Admin::saveAcademicFaculty');
@@ -123,6 +129,9 @@ $routes->add('api', 'Api::index');
 $routes->add('api/(:any)', 'Api::$1');
 // ✅ Add this line before the wildcard
 $routes->get('home/testEmail', 'Home::testEmail');
+$routes->get('switch-school/(:num)', 'Home::switch_school_context/$1');
+$routes->get('reset-school', 'Home::reset_school_context');
+$routes->post('share_staff_access', 'Home::share_staff_access');
 
 // Parent visiting (must be before (:any) catch-all)
 $routes->get('parent_visiting/assign', 'Home::parent_visiting_assign');
