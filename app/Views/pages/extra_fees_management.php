@@ -65,23 +65,24 @@ ksort($uniqueClasses);
 		<div class="ef-kpi-grid">
 			<div class="ef-kpi">
 				<div class="ef-kpi-icon blue"><i class="fa fa-list"></i></div>
-				<div class="ef-kpi-value"><?= (int) $feeCount; ?></div>
+				<div class="ef-kpi-value" id="efKpiCount"><?= (int) $feeCount; ?></div>
 				<div class="ef-kpi-label"><?= lang('app.extraFees'); ?></div>
 			</div>
 			<div class="ef-kpi">
 				<div class="ef-kpi-icon green"><i class="fa fa-university"></i></div>
-				<div class="ef-kpi-value"><?= (int) $classFeeCount; ?></div>
+				<div class="ef-kpi-value" id="efKpiClass"><?= (int) $classFeeCount; ?></div>
 				<div class="ef-kpi-label"><?= lang('app.addClassFee'); ?></div>
 			</div>
 			<div class="ef-kpi">
 				<div class="ef-kpi-icon purple"><i class="fa fa-user"></i></div>
-				<div class="ef-kpi-value"><?= (int) $studentFeeCount; ?></div>
+				<div class="ef-kpi-value" id="efKpiStudent"><?= (int) $studentFeeCount; ?></div>
 				<div class="ef-kpi-label">Individual fees</div>
 			</div>
 			<div class="ef-kpi">
 				<div class="ef-kpi-icon orange"><i class="fa fa-coins"></i></div>
-				<div class="ef-kpi-value"><?= number_format((float) $feeTotalAmount); ?></div>
+				<div class="ef-kpi-value" id="efKpiAmount"><?= number_format((float) $feeTotalAmount); ?></div>
 				<div class="ef-kpi-label"><?= lang('app.amount'); ?> (Rwf)</div>
+				<small class="text-muted d-block" style="font-size:.7rem;margin-top:2px">Unit × students</small>
 			</div>
 		</div>
 
@@ -184,6 +185,9 @@ ksort($uniqueClasses);
 								$target = ef_target_label($fee);
 								$searchText = strtolower($fee['title'] . ' ' . $target . ' ' . ($fee['regno'] ?? ''));
 								$termStr = (string) ($fee['term'] ?? '');
+								$unitAmt = (float) ($fee['amount'] ?? 0);
+								$stuCount = (int) ($fee['student_count'] ?? ($isStudent ? 1 : 0));
+								$lineTotal = (float) ($fee['line_total'] ?? $unitAmt);
 								?>
 								<tr class="ef-fee-row"
 									data-id="<?= (int) $fee['id']; ?>"
@@ -201,7 +205,14 @@ ksort($uniqueClasses);
 										</span>
 									</td>
 									<td><?= esc($target); ?></td>
-									<td class="text-right"><span class="ef-amount"><?= number_format((float) $fee['amount']); ?></span></td>
+									<td class="text-right">
+										<span class="ef-amount"><?= number_format($lineTotal); ?></span>
+										<?php if (!$isStudent) { ?>
+										<small class="d-block text-muted" style="font-size:.72rem"><?= number_format($unitAmt); ?> × <?= $stuCount; ?> student<?= $stuCount === 1 ? '' : 's'; ?></small>
+										<?php } elseif ($stuCount > 0) { ?>
+										<small class="d-block text-muted" style="font-size:.72rem">1 student</small>
+										<?php } ?>
+									</td>
 									<td><?php ef_term_badges($fee['term']); ?></td>
 									<td><?= esc($fee['academic_year']); ?></td>
 									<td class="text-center">
@@ -292,10 +303,7 @@ $(function () {
 			success: function (res) {
 				if (res.success) {
 					toastada.success(res.success);
-					ids.forEach(function (id) {
-						$('.ef-fee-row[data-id="' + id + '"]').remove();
-					});
-					efApplyFilters();
+					setTimeout(function () { window.location.reload(); }, 600);
 				} else {
 					toastada.error(res.error || 'Delete failed.');
 					$btn.prop('disabled', false);
@@ -313,7 +321,7 @@ $(function () {
 	$(document).on('click', '.delButton', function () {
 		if (!confirm('Delete this extra fee?\n\nThis also permanently removes linked payment records.')) return;
 		const id = $(this).data('id');
-		const $row = $(this).closest('tr');
+		const $btn = $(this).prop('disabled', true);
 		$.ajax({
 			url: '<?= base_url('deleteExtraFee'); ?>/' + id,
 			method: 'POST',
@@ -321,16 +329,15 @@ $(function () {
 			success: function (res) {
 				if (res.success) {
 					toastada.success(res.success);
-					$row.fadeOut(200, function () {
-						$(this).remove();
-						efApplyFilters();
-					});
+					setTimeout(function () { window.location.reload(); }, 600);
 				} else {
 					toastada.error(res.error || 'Delete failed.');
+					$btn.prop('disabled', false);
 				}
 			},
 			error: function (e) {
 				toastada.error((e.responseJSON && e.responseJSON.error) ? e.responseJSON.error : 'Delete failed.');
+				$btn.prop('disabled', false);
 			}
 		});
 	});

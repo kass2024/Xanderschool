@@ -11975,20 +11975,44 @@ public function getApplicationDocs($id = null)
 				->orderBy("extra_fees.title", "ASC")
 				->get()->getResultArray();
 
+		// Class → enrolled student counts for this academic year (amount × students)
+		$classStudentCounts = [];
+		$db = \Config\Database::connect();
+		$countRows = $db->query(
+			"SELECT cr.class AS class_id, COUNT(DISTINCT students.id) AS cnt
+			FROM students
+			INNER JOIN class_records cr ON cr.student = students.id AND cr.status = '1' AND cr.year = ?
+			WHERE students.school_id = ? AND students.status = '1'
+			GROUP BY cr.class",
+			[(int) $academicYear, (int) $school_id]
+		)->getResultArray();
+		foreach ($countRows as $cr) {
+			$classStudentCounts[(int) $cr['class_id']] = (int) $cr['cnt'];
+		}
+
 		$data['feeCount'] = count($data['fees']);
-		$data['feeTotalAmount'] = 0;
+		$data['feeTotalAmount'] = 0.0;
 		$data['classFeeCount'] = 0;
 		$data['studentFeeCount'] = 0;
 		$classIds = [];
-		foreach ($data['fees'] as $fee) {
-			$data['feeTotalAmount'] += (float) ($fee['amount'] ?? 0);
-			if ((int) ($fee['type'] ?? 0) === 0) {
+		foreach ($data['fees'] as &$fee) {
+			$type = (int) ($fee['type'] ?? 0);
+			$unit = (float) ($fee['amount'] ?? 0);
+			if ($type === 0) {
 				$data['classFeeCount']++;
-				$classIds[(int) $fee['type_id']] = true;
+				$classId = (int) ($fee['type_id'] ?? 0);
+				$classIds[$classId] = true;
+				$students = (int) ($classStudentCounts[$classId] ?? 0);
+				$fee['student_count'] = $students;
+				$fee['line_total'] = $unit * $students;
 			} else {
 				$data['studentFeeCount']++;
+				$fee['student_count'] = 1;
+				$fee['line_total'] = $unit;
 			}
+			$data['feeTotalAmount'] += (float) $fee['line_total'];
 		}
+		unset($fee);
 		$data['classCount'] = count($classIds);
 
 		$data['content'] = view("pages/extra_fees_management", $data);
