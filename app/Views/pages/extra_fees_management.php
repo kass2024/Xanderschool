@@ -1,143 +1,338 @@
-<?php $object=new App\Controllers\Home();
+<?php
+/** @var array $fees */
+/** @var array $years */
+/** @var int $selectedYear */
+/** @var string $selectedYearTitle */
+/** @var int $feeCount */
+/** @var float $feeTotalAmount */
+/** @var int $classCount */
+/** @var int $classFeeCount */
+/** @var int $studentFeeCount */
 
-function array_term($terms){
-
-	foreach (explode(",",$terms) as $term){
-
-		if($term ==1){
-			echo lang("app.firstTerm");
-		}
-		if($term ==2){
-			echo lang("app.secondTerm");
-		}
-		if($term ==3){
-			echo lang("app.thirdTerm");
+if (!function_exists('ef_term_badges')) {
+	function ef_term_badges($terms): void
+	{
+		foreach (explode(',', (string) $terms) as $term) {
+			$term = trim($term);
+			if ($term === '') {
+				continue;
+			}
+			$label = \App\Controllers\Home::TermToStr((int) $term);
+			echo '<span class="ef-term-badge t' . esc($term, 'attr') . '">' . esc($label) . '</span>';
 		}
 	}
 }
-?>
-<div class="app-inner-layout app-inner-layout-page">
-	<div class="app-inner-layout__wrapper">
-		<div class="app-inner-layout__content">
-			<div class="tab-content">
-				<div class="container-fluid">
-					<div class="card mb-3">
-						<div class="card-header-tab card-header">
-							<div
-								class="card-header-title font-size-lg text-capitalize font-weight-normal">
-								<i class="header-icon typcn typcn-home-outline text-muted opacity-6"> </i><?=$title;?>
-							</div>
-							<div class="col-sm-2">
-								<select class="form-control select2 " id="academicYearSelect">
-									<option selected disabled>--Academic year filter--</option>
-									<?php
-									foreach ($years as $year):
-										echo "<option value='".$year['id']."'>".$year['title']."</option>";
-									endforeach;
-									?>
-								</select>
-							</div>
-							<div class="btn-actions-pane-right actions-icon-btn">
-								<div class="btn-group dropdown">
-									<button type="button" data-toggle="dropdown" aria-haspopup="true"
-											aria-expanded="false"
-											class="btn-icon btn-icon-only btn btn-link"><i
-											class="typcn typcn-th-menu-outline" style="font-size: 16pt"></i></button>
-									<div tabindex="-1" role="menu" aria-hidden="true"
-										 class="dropdown-menu-right rm-pointers dropdown-menu-shadow dropdown-menu-hover-link dropdown-menu">
-										<h6 tabindex="-1" class="dropdown-header">
-											<?= lang("app.feeMenu");?></h6>
-										<a type="button" tabindex="0" href="javascript:void" class="dropdown-item" data-toggle="modal" data-target="#mdlextrafees"><i
-												class="typcn typcn-plus"> </i><span><?= lang("app.addClassFee");?></span>
-										</a>
-										<a type="button" tabindex="0" href="<?=base_url('extra-fees');?>" class="dropdown-item"><i
-												class="typcn typcn-plus"> </i><span><?= lang("app.addMultipleFee");?></span>
-										</a>
-									</div>
-								</div>
-							</div>
-						</div>
-						<div class="card-body">
-							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
-								<div class="row">
-									<div class="col-sm-12">
-										<table style="width: 100%;" id="example"
-											   class=" table-hover table-striped table-bordered">
-											<thead>
-											<tr role="row">
-												<th><?= lang("app.title");?></th>
-												<th><?= lang("app.sClass");?></th>
-												<th><?= lang("app.amount");?></th>
-												<th><?= lang("app.term");?></th>
-												<th><?= lang("app.academicYear");?></th>
-												<th></th>
-											</tr>
-											</thead>
-											<tbody>
-											<?php foreach ($fees as $fee) { ?>
-												<tr>
-													<td><?= $fee['title']; ?></td>
-													<td><?=$fee['level_name'];?> <?=$fee['code'];?> <?=$fee['classe'];?></td>
 
-													<td><?= $fee['amount']; ?></td>
-													<td><?php array_term( $fee['term']); ?></td>
-													<td><?=$fee['academic_year']; ?></td>
-													<td style="text-align: center"><button data-id="<?= $fee['id']; ?>" class="btn btn-danger delButton btn-sm">Delete</button></td>
-												</tr>
-												<?php
-											}
-											?>
-											</tbody>
-											<tfoot>
-											<tr>
-												<th><?= lang("app.title");?></th>
-												<th><?= lang("app.sClass");?></th>
-												<th><?= lang("app.amount");?></th>
-												<th><?= lang("app.term");?></th>
-												<th><?= lang("app.academicYear");?></th>
-												<th></th>
-											</tr>
-											</tfoot>
-										</table>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
+if (!function_exists('ef_target_label')) {
+	function ef_target_label(array $fee): string
+	{
+		if ((int) ($fee['type'] ?? 0) === 1) {
+			$name = trim((string) ($fee['student_name'] ?? ''));
+			$reg = trim((string) ($fee['regno'] ?? ''));
+			return $reg !== '' ? $reg . ' ' . $name : ($name !== '' ? $name : 'Individual student');
+		}
+		return trim(($fee['level_name'] ?? '') . ' ' . ($fee['code'] ?? '') . ' ' . ($fee['classe'] ?? ''));
+	}
+}
+
+$uniqueClasses = [];
+foreach ($fees as $fee) {
+	if ((int) ($fee['type'] ?? 0) === 0) {
+		$label = ef_target_label($fee);
+		$uniqueClasses[$label] = $label;
+	}
+}
+ksort($uniqueClasses);
+?>
+<link rel="stylesheet" href="<?= base_url('assets/css/extra-fees.css'); ?>?v=2">
+
+<div class="ef-page" id="extraFeesPage">
+	<div class="ef-center">
+
+		<div class="ef-header">
+			<h2><?= esc($title ?? lang('app.extraFees')); ?></h2>
+			<p><?= esc($selectedYearTitle !== '' ? $selectedYearTitle : lang('app.academicYear')); ?></p>
+			<div class="ef-header-actions">
+				<button type="button" class="btn ef-btn-add" data-toggle="modal" data-target="#mdlextrafees">
+					<i class="fa fa-plus-circle"></i> <?= lang('app.addClassFee'); ?>
+				</button>
+				<a href="<?= base_url('extra-fees'); ?>" class="btn ef-btn-secondary">
+					<i class="fa fa-users"></i> <?= lang('app.addMultipleFee'); ?>
+				</a>
 			</div>
 		</div>
+
+		<div class="ef-kpi-grid">
+			<div class="ef-kpi">
+				<div class="ef-kpi-icon blue"><i class="fa fa-list"></i></div>
+				<div class="ef-kpi-value"><?= (int) $feeCount; ?></div>
+				<div class="ef-kpi-label"><?= lang('app.extraFees'); ?></div>
+			</div>
+			<div class="ef-kpi">
+				<div class="ef-kpi-icon green"><i class="fa fa-university"></i></div>
+				<div class="ef-kpi-value"><?= (int) $classFeeCount; ?></div>
+				<div class="ef-kpi-label"><?= lang('app.addClassFee'); ?></div>
+			</div>
+			<div class="ef-kpi">
+				<div class="ef-kpi-icon purple"><i class="fa fa-user"></i></div>
+				<div class="ef-kpi-value"><?= (int) $studentFeeCount; ?></div>
+				<div class="ef-kpi-label">Individual fees</div>
+			</div>
+			<div class="ef-kpi">
+				<div class="ef-kpi-icon orange"><i class="fa fa-coins"></i></div>
+				<div class="ef-kpi-value"><?= number_format((float) $feeTotalAmount); ?></div>
+				<div class="ef-kpi-label"><?= lang('app.amount'); ?> (Rwf)</div>
+			</div>
+		</div>
+
+		<div class="ef-filter-card">
+			<div class="ef-filter-row">
+				<div class="ef-field">
+					<label for="academicYearSelect"><?= lang('app.academicYear'); ?></label>
+					<select class="form-control select2" id="academicYearSelect">
+						<?php foreach ($years as $year) : ?>
+							<option value="<?= (int) $year['id']; ?>"
+								<?= (int) $year['id'] === (int) $selectedYear ? 'selected' : ''; ?>>
+								<?= esc($year['title']); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<?php if (!empty($fees)) : ?>
+				<div class="ef-field">
+					<label for="efTypeFilter">Type</label>
+					<select class="form-control" id="efTypeFilter">
+						<option value="">All types</option>
+						<option value="class">Class fees</option>
+						<option value="student">Individual fees</option>
+					</select>
+				</div>
+				<?php if (!empty($uniqueClasses)) : ?>
+				<div class="ef-field">
+					<label for="efClassFilter"><?= lang('app.sClass'); ?></label>
+					<select class="form-control" id="efClassFilter">
+						<option value="">All classes</option>
+						<?php foreach ($uniqueClasses as $cls) : ?>
+							<option value="<?= esc($cls, 'attr'); ?>"><?= esc($cls); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<?php endif; ?>
+				<div class="ef-field">
+					<label for="efTermFilter"><?= lang('app.term'); ?></label>
+					<select class="form-control" id="efTermFilter">
+						<option value="">All terms</option>
+						<option value="1"><?= lang('app.term1'); ?></option>
+						<option value="2"><?= lang('app.term2'); ?></option>
+						<option value="3"><?= lang('app.term3'); ?></option>
+					</select>
+				</div>
+				<div class="ef-field ef-search-field">
+					<label for="efSearch">Search</label>
+					<input type="text" class="form-control" id="efSearch" placeholder="Search title, class or student…">
+				</div>
+				<?php endif; ?>
+			</div>
+		</div>
+
+		<div class="ef-panel">
+			<div class="ef-panel-head">
+				<h3>Configured extra fees</h3>
+				<span class="ef-badge" id="efVisibleCount"><?= (int) $feeCount; ?> fee<?= $feeCount === 1 ? '' : 's'; ?></span>
+			</div>
+			<?php if (!empty($fees)) : ?>
+			<div class="ef-bulk-bar" id="efBulkBar">
+				<label class="ef-bulk-select-all mb-0">
+					<input type="checkbox" id="efSelectAllVisible"> Select all visible
+				</label>
+				<span class="ef-bulk-count text-muted" id="efSelectedCount">0 selected</span>
+				<button type="button" class="btn btn-danger btn-sm" id="efBulkDeleteBtn" disabled>
+					<i class="fa fa-trash"></i> Delete selected
+				</button>
+			</div>
+			<?php endif; ?>
+			<div class="ef-panel-body">
+				<?php if (empty($fees)) : ?>
+					<div class="ef-empty">
+						<i class="fa fa-inbox"></i>
+						<h4>No extra fees yet</h4>
+						<p>No extra fees configured for <?= esc($selectedYearTitle); ?>. Add a class fee or assign fees to multiple students.</p>
+						<button type="button" class="btn ef-btn-add" data-toggle="modal" data-target="#mdlextrafees">
+							<i class="fa fa-plus"></i> <?= lang('app.addClassFee'); ?>
+						</button>
+					</div>
+				<?php else : ?>
+					<div class="ef-table-wrap">
+						<table id="extraFeesTable" class="table mb-0">
+							<thead>
+							<tr>
+								<th class="ef-col-check text-center" style="width:42px">
+									<span class="sr-only">Select</span>
+								</th>
+								<th><?= lang('app.title'); ?></th>
+								<th>Type</th>
+								<th><?= lang('app.sClass'); ?> / Student</th>
+								<th class="text-right"><?= lang('app.amount'); ?></th>
+								<th><?= lang('app.term'); ?></th>
+								<th><?= lang('app.academicYear'); ?></th>
+								<th class="text-center"><?= lang('app.Actions'); ?></th>
+							</tr>
+							</thead>
+							<tbody>
+							<?php foreach ($fees as $fee) :
+								$isStudent = (int) ($fee['type'] ?? 0) === 1;
+								$target = ef_target_label($fee);
+								$searchText = strtolower($fee['title'] . ' ' . $target . ' ' . ($fee['regno'] ?? ''));
+								$termStr = (string) ($fee['term'] ?? '');
+								?>
+								<tr class="ef-fee-row"
+									data-id="<?= (int) $fee['id']; ?>"
+									data-type="<?= $isStudent ? 'student' : 'class'; ?>"
+									data-class="<?= esc($isStudent ? '' : $target, 'attr'); ?>"
+									data-terms="<?= esc($termStr, 'attr'); ?>"
+									data-search="<?= esc($searchText, 'attr'); ?>">
+									<td class="text-center ef-col-check">
+										<input type="checkbox" class="ef-row-check" value="<?= (int) $fee['id']; ?>" aria-label="Select fee">
+									</td>
+									<td><span class="ef-fee-title"><?= esc($fee['title']); ?></span></td>
+									<td>
+										<span class="ef-target-badge <?= $isStudent ? 'student' : 'class'; ?>">
+											<?= $isStudent ? 'Individual' : 'Class'; ?>
+										</span>
+									</td>
+									<td><?= esc($target); ?></td>
+									<td class="text-right"><span class="ef-amount"><?= number_format((float) $fee['amount']); ?></span></td>
+									<td><?php ef_term_badges($fee['term']); ?></td>
+									<td><?= esc($fee['academic_year']); ?></td>
+									<td class="text-center">
+										<button type="button" class="btn btn-outline-danger btn-sm ef-btn-del delButton" data-id="<?= (int) $fee['id']; ?>">
+											<i class="fa fa-trash"></i>
+										</button>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+							</tbody>
+						</table>
+					</div>
+				<?php endif; ?>
+			</div>
+		</div>
+
 	</div>
 </div>
-<script>
-	$(document).on("change","#academicYearSelect",function (){
-		let val=$(this).val()
-		window.location.href="<?=base_url('extra_fees_management?year=');?>"+val
-	})
-	$(document).on("click", ".delButton", function () {
-		var r = confirm("Are sure you want delete ?")
-		if (r == true) {
-			var id = $(this).data('id')
-			$.ajax({
-				url: "<?php echo base_url('deleteExtraFee') ?>/" + id,
-				method: 'POST',
-				contentType: false,
-				processData: false,
-				cache: false,
-				async: false,
-				success: function (res) {
-					console.log(res)
-					toastada.success(res.success);
-					setTimeout(function () {
-						window.location.reload();
-					}, 1500);
-					return;
-				},
-				error: function (e) {
-					toastada.error(e.responseJSON.error);
-				}
-			})
-		}
-	})
-</script>
 
+<script>
+$(function () {
+	$('#academicYearSelect').on('change', function () {
+		window.location.href = '<?= base_url('extra_fees_management?year='); ?>' + $(this).val();
+	});
+
+	function efSelectedIds() {
+		const ids = [];
+		$('.ef-fee-row:visible .ef-row-check:checked').each(function () {
+			ids.push(parseInt($(this).val(), 10));
+		});
+		return ids.filter(function (id) { return id > 0; });
+	}
+
+	function efUpdateBulkUi() {
+		const ids = efSelectedIds();
+		const n = ids.length;
+		$('#efSelectedCount').text(n + ' selected');
+		$('#efBulkDeleteBtn').prop('disabled', n < 1);
+		const $visible = $('.ef-fee-row:visible .ef-row-check');
+		const allChecked = $visible.length > 0 && $visible.filter(':checked').length === $visible.length;
+		$('#efSelectAllVisible').prop('checked', allChecked);
+	}
+
+	function efApplyFilters() {
+		const type = $('#efTypeFilter').val();
+		const cls = ($('#efClassFilter').val() || '').toLowerCase();
+		const term = $('#efTermFilter').val();
+		const q = ($('#efSearch').val() || '').toLowerCase().trim();
+		let visible = 0;
+		$('.ef-fee-row').each(function () {
+			const $row = $(this);
+			let show = true;
+			if (type && $row.data('type') !== type) show = false;
+			if (show && cls && String($row.data('class') || '').toLowerCase().indexOf(cls) === -1) show = false;
+			if (show && term) {
+				const terms = String($row.data('terms') || '');
+				if (terms.split(',').map(function (t) { return t.trim(); }).indexOf(term) === -1) show = false;
+			}
+			if (show && q && String($row.data('search') || '').indexOf(q) === -1) show = false;
+			$row.toggle(show);
+			if (!show) $row.find('.ef-row-check').prop('checked', false);
+			if (show) visible++;
+		});
+		$('#efVisibleCount').text(visible + ' fee' + (visible === 1 ? '' : 's'));
+		efUpdateBulkUi();
+	}
+
+	$('#efTypeFilter, #efClassFilter, #efTermFilter').on('change', efApplyFilters);
+	$('#efSearch').on('input', efApplyFilters);
+
+	$(document).on('change', '.ef-row-check', efUpdateBulkUi);
+	$('#efSelectAllVisible').on('change', function () {
+		const on = $(this).is(':checked');
+		$('.ef-fee-row:visible .ef-row-check').prop('checked', on);
+		efUpdateBulkUi();
+	});
+
+	$('#efBulkDeleteBtn').on('click', function () {
+		const ids = efSelectedIds();
+		if (!ids.length) return;
+		if (!confirm('Delete ' + ids.length + ' selected extra fee(s)?\n\nThis also permanently removes linked payment records.')) return;
+		const $btn = $(this).prop('disabled', true);
+		$.ajax({
+			url: '<?= base_url('deleteExtraFeesBulk'); ?>',
+			method: 'POST',
+			dataType: 'json',
+			data: { ids: ids },
+			success: function (res) {
+				if (res.success) {
+					toastada.success(res.success);
+					ids.forEach(function (id) {
+						$('.ef-fee-row[data-id="' + id + '"]').remove();
+					});
+					efApplyFilters();
+				} else {
+					toastada.error(res.error || 'Delete failed.');
+					$btn.prop('disabled', false);
+					efUpdateBulkUi();
+				}
+			},
+			error: function (e) {
+				toastada.error((e.responseJSON && e.responseJSON.error) ? e.responseJSON.error : 'Delete failed.');
+				$btn.prop('disabled', false);
+				efUpdateBulkUi();
+			}
+		});
+	});
+
+	$(document).on('click', '.delButton', function () {
+		if (!confirm('Delete this extra fee?\n\nThis also permanently removes linked payment records.')) return;
+		const id = $(this).data('id');
+		const $row = $(this).closest('tr');
+		$.ajax({
+			url: '<?= base_url('deleteExtraFee'); ?>/' + id,
+			method: 'POST',
+			dataType: 'json',
+			success: function (res) {
+				if (res.success) {
+					toastada.success(res.success);
+					$row.fadeOut(200, function () {
+						$(this).remove();
+						efApplyFilters();
+					});
+				} else {
+					toastada.error(res.error || 'Delete failed.');
+				}
+			},
+			error: function (e) {
+				toastada.error((e.responseJSON && e.responseJSON.error) ? e.responseJSON.error : 'Delete failed.');
+			}
+		});
+	});
+});
+</script>

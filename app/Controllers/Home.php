@@ -16702,18 +16702,76 @@ public function assign_card()
 	public
 	function deleteExtraFee($id)
 	{
+		$this->_preset();
+		$schoolId = (int) $this->session->get('soma_school_id');
 		$extraFeesMdl = new ExtraFeesModel();
-		$feesRecordMdl = new FeesRecordModel();
 		try {
-			$verify = $feesRecordMdl->where("fees_type", 1)->where("fees_id", $id)->get(1)->getRow();
-			if ($verify != null) {
-				return $this->response->setStatusCode(400)->setJSON(["error" => "Extra fee records is in use"]);
-			} else {
-				$extraFeesMdl->delete($id);
-				return $this->response->setJSON(array("success" => "Record deleted successfully"));
+			$result = $extraFeesMdl->deleteWithLinkedData((int) $id, $schoolId);
+			if (empty($result['ok'])) {
+				return $this->response->setStatusCode(400)->setJSON([
+					'error' => $result['error'] ?? 'Delete failed.',
+				]);
 			}
+			$msg = 'Extra fee deleted';
+			$p = (int) ($result['payments'] ?? 0);
+			if ($p > 0) {
+				$msg .= ' (also removed ' . $p . ' payment record(s))';
+			}
+			return $this->response->setJSON(['success' => $msg . '.']);
 		} catch (\Exception $e) {
-			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * Bulk-delete extra fees + linked payment records.
+	 */
+	public function deleteExtraFeesBulk()
+	{
+		$this->_preset();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$ids = $this->request->getPost('ids');
+		if (!is_array($ids)) {
+			$raw = trim((string) $this->request->getPost('ids'));
+			$ids = $raw !== '' ? preg_split('/\s*,\s*/', $raw) : [];
+		}
+		$ids = array_values(array_unique(array_filter(array_map('intval', (array) $ids), static function ($id) {
+			return $id > 0;
+		})));
+		if (!$ids) {
+			return $this->response->setJSON(['error' => 'Select at least one extra fee to delete.']);
+		}
+		if (count($ids) > 500) {
+			return $this->response->setJSON(['error' => 'Too many fees selected (max 500).']);
+		}
+
+		$extraFeesMdl = new ExtraFeesModel();
+		$deleted = 0;
+		$payments = 0;
+		$failed = 0;
+		try {
+			foreach ($ids as $id) {
+				$result = $extraFeesMdl->deleteWithLinkedData($id, $schoolId);
+				if (!empty($result['ok'])) {
+					$deleted++;
+					$payments += (int) ($result['payments'] ?? 0);
+				} else {
+					$failed++;
+				}
+			}
+			if ($deleted < 1) {
+				return $this->response->setJSON(['error' => 'No fees were deleted.']);
+			}
+			$msg = $deleted . ' extra fee(s) deleted';
+			if ($payments > 0) {
+				$msg .= ' (also removed ' . $payments . ' payment record(s))';
+			}
+			if ($failed > 0) {
+				$msg .= '. ' . $failed . ' could not be deleted.';
+			}
+			return $this->response->setJSON(['success' => $msg, 'deleted' => $deleted, 'payments' => $payments]);
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
 		}
 	}
 
