@@ -21,6 +21,8 @@ class MenuClearance
 	const FINANCE_FULL_CONTROL_POSTS = [24]; // Director of Finance
 	const CHILD_BUDGET_PREPARE_POSTS = [8, 9]; // Cashier, Accountant
 	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18]; // Head master, DOS, Dean of discipline, Principal, Headmistress
+	/** Budget Dashboard “All branches” / cross-school rollup (master school only). */
+	const BUDGET_CROSS_BRANCH_DASHBOARD_POSTS = [15, 19, 24]; // Principal, Budget Manager, Director of Finance
 
 	/** @deprecated alias — use CHILD_BUDGET_PREPARE_POSTS */
 	const BUDGET_PREPARE_POSTS = self::CHILD_BUDGET_PREPARE_POSTS;
@@ -183,6 +185,18 @@ class MenuClearance
 	public static function hasFinanceFullControl($postId)
 	{
 		return in_array((int) $postId, self::FINANCE_FULL_CONTROL_POSTS, true);
+	}
+
+	/**
+	 * Cross-branch Budget Dashboard (child schools table).
+	 * Head master / Headmistress / Deans / DOS stay school-scoped.
+	 *
+	 * @param int $postId
+	 * @return bool
+	 */
+	public static function canSeeCrossBranchBudgetDashboard($postId)
+	{
+		return in_array((int) $postId, self::BUDGET_CROSS_BRANCH_DASHBOARD_POSTS, true);
 	}
 
 	/**

@@ -11,24 +11,61 @@
 </div>
 <?php } ?>
 
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=4" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=6" rel="stylesheet">
+<style>
+.bd-ai-card{border:1px solid #c5d8f0;border-radius:10px;overflow:hidden;background:#fff;}
+.bd-ai-head{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;background:linear-gradient(90deg,#eef5ff,#f8fbff);}
+.bd-ai-score{font-size:1.6rem;font-weight:700;line-height:1;}
+.bd-ai-badge{display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600;text-transform:uppercase;}
+.bd-ai-badge.high{background:#fde8e8;color:#b42318;}
+.bd-ai-badge.medium{background:#fef3c7;color:#92400e;}
+.bd-ai-badge.low{background:#e7f8ef;color:#067647;}
+.bd-ai-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+@media (max-width:768px){.bd-ai-grid{grid-template-columns:1fr;}}
+.bd-ai-list{margin:0;padding-left:1.1rem;}
+.bd-ai-list li{margin-bottom:.35rem;}
+.bd-ai-follow{background:#f4f8ff;border-left:3px solid #2f6fed;padding:.65rem .85rem;border-radius:0 6px 6px 0;}
+</style>
 
 <div class="bp-hero mb-3">
 	<h2><i class="fa fa-chart-line"></i> Budget Dashboard</h2>
 	<p class="bp-meta mb-0"><?= esc($branch_label ?? 'Your school'); ?> — budget vs used (mirrors Excel SUMMARY sheet).</p>
 </div>
 
+<?php if (!empty($gemini_enabled)) { ?>
+<div class="bd-ai-card mb-4" id="aiPanel">
+	<div class="bd-ai-head">
+		<div>
+			<strong><i class="fa fa-robot text-info"></i> Gemini smart follow-up</strong>
+			<small class="text-muted d-block">Auto analysis of drafts, approvals, spending, and cash requests</small>
+		</div>
+		<button type="button" class="btn btn-sm btn-outline-info" id="btnRunAi"><i class="fa fa-sync"></i> Refresh</button>
+	</div>
+	<div class="card-body" id="aiBody">
+		<p class="text-muted mb-0 small"><i class="fa fa-spinner fa-spin"></i> Preparing smart follow-up…</p>
+	</div>
+</div>
+<?php } ?>
+
 <?php if (!empty($is_central) && !empty($branch_stats)) { ?>
 <div class="alert alert-primary mb-3">
-	<strong>Central overview.</strong> Each branch prepares and approves its own budget; spending requests are checked against that approved budget.
+	<strong>Central overview</strong> (Director of Finance / Budget Manager / Principal). Each branch prepares and approves its own budget; spending requests are checked against that approved budget.
 </div>
 <div class="card mb-3"><div class="card-header">All branches</div><div class="card-body p-0">
-<table class="table table-sm mb-0"><thead><tr><th>Branch</th><th>Draft budgets</th><th>Active requests</th><th>Awaiting payment</th></tr></thead><tbody>
+<table class="table table-sm mb-0"><thead><tr><th>Branch</th><th>Draft</th><th>In approval</th><th>Approved</th><th>Active requests</th><th>Awaiting payment</th></tr></thead><tbody>
 <?php foreach ($branch_stats as $bs) { ?>
 <tr><td><strong><?= esc($bs['display_name']); ?></strong></td>
-<td><?= (int)$bs['draft_budgets']; ?></td><td><?= (int)$bs['pending_cash']; ?></td><td><?= (int)$bs['awaiting_payment']; ?></td></tr>
+<td><?= (int)$bs['draft_budgets']; ?></td>
+<td><?= (int)($bs['submitted_budgets'] ?? 0); ?></td>
+<td><?= (int)($bs['approved_budgets'] ?? 0); ?></td>
+<td><?= (int)$bs['pending_cash']; ?></td>
+<td><?= (int)$bs['awaiting_payment']; ?></td></tr>
 <?php } ?>
 </tbody></table></div></div>
+<?php } elseif (empty($is_central)) { ?>
+<div class="alert alert-light border mb-3 small mb-3">
+	<i class="fa fa-school"></i> Showing <strong>your school only</strong>. Cross-school (all child schools) view is limited to Director of Finance, Budget Manager, and Principal.
+</div>
 <?php } ?>
 
 <?php if (!empty($financials)) {
@@ -71,18 +108,6 @@
 	</div>
 </div>
 <?php } ?>
-<?php } ?>
-
-<?php if (!empty($gemini_enabled) && !empty($financials['budget'])) { ?>
-<div class="card mb-4 border-info" id="aiPanel">
-	<div class="card-header bg-light d-flex justify-content-between align-items-center">
-		<span><i class="fa fa-robot text-info"></i> AI budget analysis <small class="text-muted">(Gemini)</small></span>
-		<button type="button" class="btn btn-sm btn-outline-info" id="btnRunAi"><i class="fa fa-sync"></i> Analyze</button>
-	</div>
-	<div class="card-body" id="aiBody">
-		<p class="text-muted mb-0 small">Click Analyze for insights on overspent lines, cash flow, and approval backlog.</p>
-	</div>
-</div>
 <?php } ?>
 
 <div class="row mb-3">
@@ -183,29 +208,53 @@
 <?php if (!empty($gemini_enabled)) { ?>
 <script>
 (function(){
-	var btn = document.getElementById('btnRunAi');
-	if (!btn) return;
-	btn.addEventListener('click', function(){
+	function esc(s){
+		var d=document.createElement('div');
+		d.textContent=s==null?'':String(s);
+		return d.innerHTML;
+	}
+	function render(a){
+		var score = a.health_score!=null ? a.health_score : '—';
+		var pri = (a.priority||'medium').toLowerCase();
+		var html = '<div class="d-flex align-items-center mb-3">'
+			+'<div class="mr-3"><div class="bd-ai-score">'+(score)+'<small class="text-muted" style="font-size:.75rem;">/100</small></div>'
+			+'<span class="bd-ai-badge '+esc(pri)+'">'+esc(pri)+' priority</span></div>'
+			+'<p class="mb-0">'+esc(a.summary||'')+'</p></div>';
+		html += '<div class="bd-ai-grid">';
+		html += '<div>';
+		if (a.alerts && a.alerts.length) {
+			html += '<p class="mb-1 font-weight-bold small text-danger"><i class="fa fa-exclamation-triangle"></i> Alerts</p><ul class="bd-ai-list small">'+a.alerts.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>';
+		}
+		if (a.branches_to_watch && a.branches_to_watch.length) {
+			html += '<p class="mb-1 mt-3 font-weight-bold small"><i class="fa fa-school"></i> Branches to watch</p><ul class="bd-ai-list small">'+a.branches_to_watch.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>';
+		}
+		html += '</div><div>';
+		if (a.recommendations && a.recommendations.length) {
+			html += '<p class="mb-1 font-weight-bold small"><i class="fa fa-lightbulb"></i> Recommendations</p><ul class="bd-ai-list small">'+a.recommendations.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>';
+		}
+		var follow = a.follow_up_actions || [];
+		if (follow.length) {
+			html += '<div class="bd-ai-follow mt-3"><p class="mb-1 font-weight-bold small"><i class="fa fa-tasks"></i> This week — follow up</p><ul class="bd-ai-list small mb-0">'+follow.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul></div>';
+		}
+		html += '</div></div>';
+		if (a.cashflow_outlook) html += '<p class="small text-muted mt-3 mb-0"><i class="fa fa-chart-line"></i> '+esc(a.cashflow_outlook)+'</p>';
+		return html;
+	}
+	function runAi(){
 		var body = document.getElementById('aiBody');
-		body.innerHTML = '<p class="text-muted"><i class="fa fa-spinner fa-spin"></i> Analyzing budget data…</p>';
+		if (!body) return;
+		body.innerHTML = '<p class="text-muted mb-0 small"><i class="fa fa-spinner fa-spin"></i> Analyzing budgets &amp; cash flow…</p>';
 		fetch('<?= base_url('budget/dashboard_ai_json'); ?>')
 			.then(function(r){ return r.json(); })
 			.then(function(d){
-				if (d.error) { body.innerHTML = '<div class="alert alert-warning mb-0">'+d.error+'</div>'; return; }
-				var a = d.analysis || {};
-				var html = '<p><strong>Health score:</strong> '+(a.health_score||'—')+'/100</p>';
-				html += '<p>'+(a.summary||'')+'</p>';
-				if (a.alerts && a.alerts.length) {
-					html += '<ul class="small mb-2">'+a.alerts.map(function(x){ return '<li>'+x+'</li>'; }).join('')+'</ul>';
-				}
-				if (a.recommendations && a.recommendations.length) {
-					html += '<p class="mb-1"><strong>Recommendations</strong></p><ul class="small mb-0">'+a.recommendations.map(function(x){ return '<li>'+x+'</li>'; }).join('')+'</ul>';
-				}
-				if (a.cashflow_outlook) html += '<p class="small text-muted mt-2 mb-0">'+a.cashflow_outlook+'</p>';
-				body.innerHTML = html;
+				if (d.error) { body.innerHTML = '<div class="alert alert-warning mb-0">'+esc(d.error)+'</div>'; return; }
+				body.innerHTML = render(d.analysis || {});
 			})
 			.catch(function(){ body.innerHTML = '<div class="alert alert-danger mb-0">Could not reach AI service.</div>'; });
-	});
+	}
+	var btn = document.getElementById('btnRunAi');
+	if (btn) btn.addEventListener('click', runAi);
+	<?php if (!empty($gemini_auto)) { ?>runAi();<?php } ?>
 })();
 </script>
 <?php } ?>

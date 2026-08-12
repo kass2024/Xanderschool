@@ -2,6 +2,8 @@
 
 namespace App\Services\Budget;
 
+use App\Services\SchoolHierarchyService;
+
 /**
  * Branch = standalone school scope. Wisdom org is opt-in only (school name contains "wisdom").
  */
@@ -63,16 +65,26 @@ class BranchContextService
 		return $this->displayBranchName($branch, $centralView);
 	}
 
+	protected function homeSchoolId($schoolId)
+	{
+		if (function_exists('school_hierarchy_home_id')) {
+			return school_hierarchy_home_id();
+		}
+		return (int) $schoolId;
+	}
+
 	/**
-	 * Cross-branch central view: only Wisdom org + explicit permission.
+	 * Cross-branch Budget Dashboard: only Principal, Budget Manager, Director of Finance
+	 * when logged in at the master school. Head master / Headmistress / Deans see own school only.
 	 */
 	public function hasCentralDashboard($staffId, $postId, $schoolId)
 	{
-		$perms = new BudgetPermissionService();
-		if (!$perms->can($staffId, $postId, 'budget.view_all_branches')) {
+		if (!\Config\MenuClearance::canSeeCrossBranchBudgetDashboard($postId)) {
 			return false;
 		}
-		return $this->isWisdomSchoolId($schoolId);
+		$homeId = $this->homeSchoolId($schoolId);
+		$hierarchy = new SchoolHierarchyService();
+		return $hierarchy->isMasterSchool($homeId);
 	}
 
 	/** Branch IDs this user may access (always scoped to their org). */
@@ -87,6 +99,17 @@ class BranchContextService
 		$orgId = (int) $branch['organization_id'];
 
 		if ($this->hasCentralDashboard($staffId, $postId, $schoolId)) {
+			$hierarchy = new SchoolHierarchyService();
+			$homeId = $this->homeSchoolId($schoolId);
+			if ($hierarchy->isMasterSchool($homeId)) {
+				$childIds = array_column($hierarchy->childSchools($homeId), 'id');
+				$schoolIds = array_values(array_unique(array_merge([$homeId], $childIds)));
+				return $db->table('branches')->select('id')
+					->where('organization_id', $orgId)
+					->whereIn('school_id', $schoolIds)
+					->where('status', 1)
+					->get()->getResultArray();
+			}
 			return $db->table('branches')->select('id')
 				->where('organization_id', $orgId)->where('status', 1)
 				->get()->getResultArray();

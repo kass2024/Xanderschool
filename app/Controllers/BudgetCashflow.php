@@ -167,6 +167,8 @@ class BudgetCashflow extends Home
 		$data['branch_label'] = $c['branch']
 			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
 			: session('soma_school');
+		$data['gemini_enabled'] = (new GeminiBudgetAnalysisService())->isConfigured();
+		$data['gemini_auto'] = true;
 
 		if ($c['isCentral']) {
 			$data['branch_stats'] = [];
@@ -179,14 +181,36 @@ class BudgetCashflow extends Home
 					'draft_budgets' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'DRAFT')->countAllResults(),
 					'pending_cash' => $db->table('cash_requests')->where('branch_id', $bid)->whereNotIn('status', ['DRAFT','CLOSED','CANCELLED','REJECTED','VOIDED'])->countAllResults(),
 					'awaiting_payment' => $db->table('cash_requests')->where('branch_id', $bid)->where('status', 'FINANCE_AUTHORIZED')->countAllResults(),
+					'submitted_budgets' => $db->table('budgets')->where('branch_id', $bid)->whereIn('status', ['SUBMITTED','PROCUREMENT_REVIEW','BUDGET_MANAGER_REVIEW','DEPUTY_DIRECTOR_REVIEW'])->countAllResults(),
+					'approved_budgets' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'APPROVED')->countAllResults(),
 				];
 			}
+			$branchIds = array_column($branches, 'id');
 			$data['stats'] = [
 				'draft_budgets' => array_sum(array_column($data['branch_stats'], 'draft_budgets')),
 				'pending_cash' => array_sum(array_column($data['branch_stats'], 'pending_cash')),
 				'awaiting_payment' => array_sum(array_column($data['branch_stats'], 'awaiting_payment')),
-				'awaiting_receipt' => $db->table('cash_requests')->whereIn('branch_id', array_column($branches, 'id'))->where('status', 'PAID')->countAllResults(),
+				'awaiting_receipt' => empty($branchIds) ? 0 : $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'PAID')->countAllResults(),
 			];
+			$data['budget_pipeline'] = empty($branchIds) ? [] : [
+				'DRAFT' => $db->table('budgets')->whereIn('branch_id', $branchIds)->where('status', 'DRAFT')->countAllResults(),
+				'SUBMITTED' => $db->table('budgets')->whereIn('branch_id', $branchIds)->where('status', 'SUBMITTED')->countAllResults(),
+				'PROCUREMENT_REVIEW' => $db->table('budgets')->whereIn('branch_id', $branchIds)->where('status', 'PROCUREMENT_REVIEW')->countAllResults(),
+				'BUDGET_MANAGER_REVIEW' => $db->table('budgets')->whereIn('branch_id', $branchIds)->where('status', 'BUDGET_MANAGER_REVIEW')->countAllResults(),
+				'DEPUTY_DIRECTOR_REVIEW' => $db->table('budgets')->whereIn('branch_id', $branchIds)->where('status', 'DEPUTY_DIRECTOR_REVIEW')->countAllResults(),
+				'APPROVED' => $db->table('budgets')->whereIn('branch_id', $branchIds)->where('status', 'APPROVED')->countAllResults(),
+				'RETURNED' => $db->table('budgets')->whereIn('branch_id', $branchIds)->where('status', 'RETURNED')->countAllResults(),
+			];
+			$data['cash_pipeline'] = empty($branchIds) ? [] : [
+				'SUBMITTED' => $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'SUBMITTED')->countAllResults(),
+				'HEADTEACHER_APPROVED' => $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'HEADTEACHER_APPROVED')->countAllResults(),
+				'PROCUREMENT_APPROVED' => $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'PROCUREMENT_APPROVED')->countAllResults(),
+				'BUDGET_APPROVED' => $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'BUDGET_APPROVED')->countAllResults(),
+				'FINANCE_AUTHORIZED' => $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'FINANCE_AUTHORIZED')->countAllResults(),
+				'PAID' => $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'PAID')->countAllResults(),
+			];
+			// Master HQ financial snapshot (own branch) for AI + KPIs when available
+			$data['financials'] = $this->branchFinancialSummary((int) $c['branchId'], $db);
 		} else {
 			$bid = (int) $c['branchId'];
 			$data['stats'] = [
@@ -197,8 +221,6 @@ class BudgetCashflow extends Home
 			];
 			$data['branch_stats'] = [];
 			$data['financials'] = $this->branchFinancialSummary($bid, $db);
-			$data['gemini_enabled'] = (new GeminiBudgetAnalysisService())->isConfigured();
-			// Budget approval pipeline for this school
 			$data['budget_pipeline'] = [
 				'DRAFT' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'DRAFT')->countAllResults(),
 				'SUBMITTED' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'SUBMITTED')->countAllResults(),
@@ -257,12 +279,53 @@ class BudgetCashflow extends Home
 				->whereNotIn('status', ['DRAFT','CLOSED','CANCELLED','REJECTED','VOIDED'])->countAllResults(),
 			'awaiting_payment' => $db->table('cash_requests')->where('branch_id', $c['branchId'])
 				->where('status', 'FINANCE_AUTHORIZED')->countAllResults(),
+			'draft_budgets' => $db->table('budgets')->where('branch_id', $c['branchId'])->where('status', 'DRAFT')->countAllResults(),
 		];
 		$ctx = array_merge($fin, $stats, [
 			'branch_label' => $c['branch']
 				? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
 				: session('soma_school'),
+			'is_central' => !empty($c['isCentral']),
+			'role_hint' => $this->dashboardAiRoleHint((int) $c['postId']),
 		]);
+
+		if (!empty($c['isCentral'])) {
+			$branches = $c['branchCtx']->accessibleBranches($c['staffId'], $c['postId'], $c['schoolId'], true);
+			$branchRollup = [];
+			foreach ($branches as $br) {
+				$bid = (int) $br['id'];
+				$branchRollup[] = [
+					'branch' => $br['display_name'],
+					'draft_budgets' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'DRAFT')->countAllResults(),
+					'in_approval' => $db->table('budgets')->where('branch_id', $bid)->whereIn('status', ['SUBMITTED','PROCUREMENT_REVIEW','BUDGET_MANAGER_REVIEW','DEPUTY_DIRECTOR_REVIEW'])->countAllResults(),
+					'approved' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'APPROVED')->countAllResults(),
+					'active_cash_requests' => $db->table('cash_requests')->where('branch_id', $bid)->whereNotIn('status', ['DRAFT','CLOSED','CANCELLED','REJECTED','VOIDED'])->countAllResults(),
+					'awaiting_payment' => $db->table('cash_requests')->where('branch_id', $bid)->where('status', 'FINANCE_AUTHORIZED')->countAllResults(),
+				];
+			}
+			$ctx['branch_rollup'] = $branchRollup;
+			$ctx['scope'] = 'central_all_branches';
+		} else {
+			$ctx['scope'] = 'single_school';
+			$ctx['budget_pipeline'] = [
+				'DRAFT' => $db->table('budgets')->where('branch_id', $c['branchId'])->where('status', 'DRAFT')->countAllResults(),
+				'SUBMITTED' => $db->table('budgets')->where('branch_id', $c['branchId'])->where('status', 'SUBMITTED')->countAllResults(),
+				'PROCUREMENT_REVIEW' => $db->table('budgets')->where('branch_id', $c['branchId'])->where('status', 'PROCUREMENT_REVIEW')->countAllResults(),
+				'BUDGET_MANAGER_REVIEW' => $db->table('budgets')->where('branch_id', $c['branchId'])->where('status', 'BUDGET_MANAGER_REVIEW')->countAllResults(),
+				'DEPUTY_DIRECTOR_REVIEW' => $db->table('budgets')->where('branch_id', $c['branchId'])->where('status', 'DEPUTY_DIRECTOR_REVIEW')->countAllResults(),
+				'APPROVED' => $db->table('budgets')->where('branch_id', $c['branchId'])->where('status', 'APPROVED')->countAllResults(),
+				'RETURNED' => $db->table('budgets')->where('branch_id', $c['branchId'])->where('status', 'RETURNED')->countAllResults(),
+			];
+			$ctx['cash_pipeline'] = [
+				'SUBMITTED' => $db->table('cash_requests')->where('branch_id', $c['branchId'])->where('status', 'SUBMITTED')->countAllResults(),
+				'HEADTEACHER_APPROVED' => $db->table('cash_requests')->where('branch_id', $c['branchId'])->where('status', 'HEADTEACHER_APPROVED')->countAllResults(),
+				'PROCUREMENT_APPROVED' => $db->table('cash_requests')->where('branch_id', $c['branchId'])->where('status', 'PROCUREMENT_APPROVED')->countAllResults(),
+				'BUDGET_APPROVED' => $db->table('cash_requests')->where('branch_id', $c['branchId'])->where('status', 'BUDGET_APPROVED')->countAllResults(),
+				'FINANCE_AUTHORIZED' => $db->table('cash_requests')->where('branch_id', $c['branchId'])->where('status', 'FINANCE_AUTHORIZED')->countAllResults(),
+				'PAID' => $db->table('cash_requests')->where('branch_id', $c['branchId'])->where('status', 'PAID')->countAllResults(),
+			];
+		}
+
 		$gemini = new GeminiBudgetAnalysisService();
 		if (!$gemini->isConfigured()) {
 			return $this->response->setJSON(['error' => 'AI analysis unavailable — Gemini API key not set.']);
@@ -272,6 +335,22 @@ class BudgetCashflow extends Home
 			return $this->response->setJSON(['error' => $gemini->lastError() ?: 'Analysis failed.']);
 		}
 		return $this->response->setJSON(['success' => true, 'analysis' => $analysis]);
+	}
+
+	/** Short role context for Gemini follow-up tone. */
+	protected function dashboardAiRoleHint($postId)
+	{
+		$map = [
+			24 => 'Director of Finance — prioritize approvals, payment authorization, and branch exceptions.',
+			19 => 'Budget Manager — prioritize availability checks, returns, and schools stuck in budget review.',
+			15 => 'Principal — oversight of all branches; highlight schools needing follow-up.',
+			1 => 'Head master — own-school oversight only; focus on local draft progress and request delays.',
+			18 => 'Headmistress — own-school oversight only.',
+			4 => 'Dean — own-school oversight only.',
+			8 => 'Cashier — preparation and payment processing follow-up.',
+			9 => 'Accountant — preparation and receipt filing follow-up.',
+		];
+		return $map[(int) $postId] ?? 'School finance user — practical next steps for follow-up.';
 	}
 
 	public function download_term_template()
