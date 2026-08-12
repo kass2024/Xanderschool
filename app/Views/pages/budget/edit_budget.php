@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=6" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=8" rel="stylesheet">
 
 <?php
 $statusBadge = $budget['status'] === 'DRAFT' ? 'secondary' : ($budget['status'] === 'APPROVED' ? 'success' : 'warning');
@@ -6,12 +6,14 @@ $canEdit = isset($can_edit) ? (bool) $can_edit : in_array($budget['status'], ['D
 $isFinanceAdjust = !empty($is_finance_adjust);
 $canSubmit = isset($can_submit) ? (bool) $can_submit : ($canEdit && in_array($budget['status'], ['DRAFT', 'RETURNED'], true));
 $canAddLines = !empty($can_add_lines);
+$canManageStructure = $canAddLines && empty($budget_branch_fill);
 $sectionOptions = $section_options ?? ['INCOME', 'OPERATING EXPENSES', 'ADMINISTRATIVE COSTS', 'FINANCE COSTS'];
 $academicYear = $setup['academic_year'] ?? '';
 $branchFillMode = !empty($budget_branch_fill);
+$enrollment = (int) ($setup['enrollment'] ?? 0);
 ?>
 
-<div class="budget-workspace" id="budgetWorkspace" data-budget-id="<?= (int)$budget['id']; ?>">
+<div class="budget-workspace bp-ui-v2" id="budgetWorkspace" data-budget-id="<?= (int)$budget['id']; ?>">
 
 <div class="bp-hero">
 	<div class="d-flex flex-wrap justify-content-between align-items-start">
@@ -26,11 +28,19 @@ $branchFillMode = !empty($budget_branch_fill);
 		</div>
 		<a href="<?= base_url('budget/prepare'); ?>" class="btn btn-sm btn-light"><i class="fa fa-arrow-left"></i> All budgets</a>
 	</div>
-	<div class="bp-kpi-row">
-		<div class="bp-kpi income"><label>Annual income</label><strong id="kpiIncome"><?= number_format((float)$budget['total_income'], 0); ?></strong></div>
-		<div class="bp-kpi expense"><label>Annual expenses</label><strong id="kpiExpense"><?= number_format((float)$budget['total_expenses'], 0); ?></strong></div>
-		<div class="bp-kpi surplus <?= (float)$budget['surplus_deficit'] >= 0 ? 'pos' : 'neg'; ?>"><label>Surplus / deficit</label><strong id="kpiSurplus"><?= number_format((float)$budget['surplus_deficit'], 0); ?></strong></div>
-		<div class="bp-kpi"><label>Completion</label><strong id="kpiProgress">0%</strong></div>
+	<div class="bp-kpi-row bp-kpi-main">
+		<div class="bp-kpi income"><label>Annual income</label><strong id="kpiIncome"><?= number_format((float)$budget['total_income'], 0); ?></strong><small>RWF</small></div>
+		<div class="bp-kpi expense"><label>Annual expenses</label><strong id="kpiExpense"><?= number_format((float)$budget['total_expenses'], 0); ?></strong><small>RWF</small></div>
+		<div class="bp-kpi surplus <?= (float)$budget['surplus_deficit'] >= 0 ? 'pos' : 'neg'; ?>"><label>Surplus / deficit</label><strong id="kpiSurplus"><?= number_format((float)$budget['surplus_deficit'], 0); ?></strong><small>RWF</small></div>
+		<div class="bp-kpi"><label>Completion</label><strong id="kpiProgress">0%</strong><small>lines with amounts</small></div>
+		<?php if ($enrollment > 0) { ?>
+		<div class="bp-kpi"><label>Enrollment</label><strong id="kpiEnrollment"><?= number_format($enrollment); ?></strong><small>students</small></div>
+		<?php } ?>
+	</div>
+	<div class="bp-kpi-row bp-kpi-terms" id="kpiTermStrip">
+		<div class="bp-kpi-term t1"><label>Term I net</label><strong id="kpiT1Net">0</strong></div>
+		<div class="bp-kpi-term t2"><label>Term II net</label><strong id="kpiT2Net">0</strong></div>
+		<div class="bp-kpi-term t3"><label>Term III net</label><strong id="kpiT3Net">0</strong></div>
 	</div>
 	<div class="bp-progress mt-2"><div class="bp-progress-bar" id="progressBar" style="width:0%"></div></div>
 </div>
@@ -121,6 +131,12 @@ $branchFillMode = !empty($budget_branch_fill);
 <?php foreach ($sections as $secKey => $sec) {
 	if (empty($sec['lines'])) continue;
 	$isIncome = !empty($sec['is_income']);
+	$editableInSec = [];
+	foreach ($sec['lines'] as $_ln) {
+		if ((int)($_ln['is_total_row'] ?? 0) !== 1) {
+			$editableInSec[] = (int)$_ln['id'];
+		}
+	}
 ?>
 <div class="bp-section bp-term-section" data-section="<?= esc($secKey); ?>">
 	<div class="bp-section-head <?= $isIncome ? 'income' : 'expense'; ?>">
@@ -132,19 +148,11 @@ $branchFillMode = !empty($budget_branch_fill);
 			<?php } ?>
 		</span>
 	</div>
-	<div class="table-responsive">
-		<table class="table table-sm table-bordered bp-term-table mb-0">
-			<thead class="thead-light">
-				<tr>
-					<th style="min-width:220px;text-align:left">Budget line</th>
-					<th class="text-right" style="width:120px">Term I</th>
-					<th class="text-right" style="width:120px">Term II</th>
-					<th class="text-right" style="width:120px">Term III</th>
-					<th class="text-right" style="width:130px">Annual total</th>
-				</tr>
-			</thead>
-			<tbody>
-			<?php foreach ($sec['lines'] as $ln) {
+	<div class="bp-lines-stack">
+			<?php
+			$editPos = 0;
+			$editCount = count($editableInSec);
+			foreach ($sec['lines'] as $ln) {
 				$lid = (int)$ln['id'];
 				$isTotal = (int)($ln['is_total_row'] ?? 0) === 1;
 				$t1 = (float)($ln['term_1_amount'] ?? 0);
@@ -152,39 +160,66 @@ $branchFillMode = !empty($budget_branch_fill);
 				$t3 = (float)($ln['term_3_amount'] ?? 0);
 				$annual = (float)($ln['annual_amount'] ?? ($t1 + $t2 + $t3));
 				if ($isTotal) { ?>
-				<tr class="table-secondary font-weight-bold total-row" data-section="<?= esc($secKey); ?>">
-					<td><?= esc($ln['category']); ?></td>
-					<td class="text-right term-t1-display">—</td>
-					<td class="text-right term-t2-display">—</td>
-					<td class="text-right term-t3-display">—</td>
-					<td class="text-right line-annual-display"><?= number_format($annual, 0); ?></td>
-				</tr>
+				<div class="bp-line-total total-row" data-section="<?= esc($secKey); ?>">
+					<span><?= esc($ln['category']); ?></span>
+					<strong class="line-annual-display"><?= number_format($annual, 0); ?></strong>
+				</div>
 				<?php continue; }
 				$ro = $canEdit ? '' : 'readonly disabled';
+				$catLower = strtolower(trim((string)($ln['category'] ?? '')));
+				$isSchoolFees = strpos($catLower, 'school fee') !== false;
+				$canMoveUp = $canManageStructure && $editPos > 0;
+				$canMoveDown = $canManageStructure && $editPos < ($editCount - 1);
+				$editPos++;
 			?>
-				<tr class="budget-line" data-line-id="<?= $lid; ?>" data-income="<?= $isIncome ? '1' : '0'; ?>" data-section="<?= esc($secKey); ?>" data-category="<?= esc(strtolower(trim((string)($ln['category'] ?? '')))); ?>">
-					<td>
-						<strong><?= esc($ln['category']); ?></strong>
-						<input type="hidden" class="calc-mode-input" name="lines[<?= $lid; ?>][calculation_mode]" value="term_sum">
-						<input type="text" class="form-control form-control-sm mt-1" name="lines[<?= $lid; ?>][assumptions]" value="<?= esc($ln['assumptions'] ?? ''); ?>" placeholder="Notes (optional)" <?= $ro; ?>>
-					</td>
-					<td><input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-1" name="lines[<?= $lid; ?>][term_1_amount]" value="<?= $t1 > 0 ? esc($t1) : ''; ?>" placeholder="0" <?= $ro; ?>></td>
-					<td><input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-2" name="lines[<?= $lid; ?>][term_2_amount]" value="<?= $t2 > 0 ? esc($t2) : ''; ?>" placeholder="0" <?= $ro; ?>></td>
-					<td><input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-3" name="lines[<?= $lid; ?>][term_3_amount]" value="<?= $t3 > 0 ? esc($t3) : ''; ?>" placeholder="0" <?= $ro; ?>></td>
-					<td class="text-right align-middle"><strong class="line-annual-display"><?= number_format($annual, 0); ?></strong></td>
-				</tr>
+				<article class="budget-line bp-line-entry<?= $isSchoolFees ? ' is-school-fees' : ''; ?>"
+					data-line-id="<?= $lid; ?>"
+					data-income="<?= $isIncome ? '1' : '0'; ?>"
+					data-section="<?= esc($secKey); ?>"
+					data-category="<?= esc($catLower); ?>">
+					<div class="bp-line-top">
+						<div class="bp-line-name">
+							<strong><?= esc($ln['category']); ?></strong>
+							<?php if ($isSchoolFees) { ?><span class="bp-chip auto">Auto</span><?php } ?>
+						</div>
+						<?php if ($canManageStructure) { ?>
+						<div class="bp-line-actions">
+							<button type="button" class="bp-icon-btn btn-move-line" data-dir="up" title="Move up" <?= $canMoveUp ? '' : 'disabled'; ?>><i class="fa fa-arrow-up"></i></button>
+							<button type="button" class="bp-icon-btn btn-move-line" data-dir="down" title="Move down" <?= $canMoveDown ? '' : 'disabled'; ?>><i class="fa fa-arrow-down"></i></button>
+							<?php if (!$isSchoolFees) { ?>
+							<button type="button" class="bp-icon-btn danger btn-delete-line" title="Delete (also removes from child schools)"><i class="fa fa-trash"></i></button>
+							<?php } ?>
+						</div>
+						<?php } ?>
+					</div>
+					<input type="hidden" class="calc-mode-input" name="lines[<?= $lid; ?>][calculation_mode]" value="term_sum">
+					<input type="text" class="form-control form-control-sm bp-line-notes" name="lines[<?= $lid; ?>][assumptions]" value="<?= esc($ln['assumptions'] ?? ''); ?>" placeholder="Notes (optional)" <?= $ro; ?>>
+					<div class="bp-term-grid">
+						<label class="bp-term-field t1"><span>Term I</span>
+							<input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-1" name="lines[<?= $lid; ?>][term_1_amount]" value="<?= $t1 > 0 ? esc($t1) : ''; ?>" placeholder="0" <?= $ro; ?>>
+						</label>
+						<label class="bp-term-field t2"><span>Term II</span>
+							<input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-2" name="lines[<?= $lid; ?>][term_2_amount]" value="<?= $t2 > 0 ? esc($t2) : ''; ?>" placeholder="0" <?= $ro; ?>>
+						</label>
+						<label class="bp-term-field t3"><span>Term III</span>
+							<input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-3" name="lines[<?= $lid; ?>][term_3_amount]" value="<?= $t3 > 0 ? esc($t3) : ''; ?>" placeholder="0" <?= $ro; ?>>
+						</label>
+						<div class="bp-term-annual">
+							<span>Annual</span>
+							<strong class="line-annual-display"><?= number_format($annual, 0); ?></strong>
+						</div>
+					</div>
+				</article>
 			<?php } ?>
-			</tbody>
-			<tfoot class="thead-light">
-				<tr class="font-weight-bold">
-					<td>Section subtotal</td>
-					<td class="text-right section-t1" data-section="<?= esc($secKey); ?>">0</td>
-					<td class="text-right section-t2" data-section="<?= esc($secKey); ?>">0</td>
-					<td class="text-right section-t3" data-section="<?= esc($secKey); ?>">0</td>
-					<td class="text-right" data-section-total-foot="<?= esc($secKey); ?>">0</td>
-				</tr>
-			</tfoot>
-		</table>
+			<div class="bp-section-foot">
+				<span>Section subtotal</span>
+				<span class="bp-foot-terms">
+					<span class="section-t1" data-section="<?= esc($secKey); ?>">0</span>
+					<span class="section-t2" data-section="<?= esc($secKey); ?>">0</span>
+					<span class="section-t3" data-section="<?= esc($secKey); ?>">0</span>
+				</span>
+				<strong data-section-total-foot="<?= esc($secKey); ?>">0</strong>
+			</div>
 	</div>
 </div>
 <?php } ?>
@@ -290,15 +325,18 @@ $branchFillMode = !empty($budget_branch_fill);
 </div>
 <?php } ?>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=7"></script>
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=8"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,
 	canAddLines: <?= $canAddLines ? 'true' : 'false'; ?>,
+	canManageStructure: <?= !empty($canManageStructure) ? 'true' : 'false'; ?>,
 	saveUrl: '<?= base_url('budget/save_budget_lines'); ?>',
 	setupUrl: '<?= base_url('budget/save_budget_setup'); ?>',
 	submitUrl: '<?= base_url('budget/submit_budget'); ?>',
 	addLineUrl: '<?= base_url('budget/add_budget_line'); ?>',
+	deleteLineUrl: '<?= base_url('budget/delete_budget_line'); ?>',
+	moveLineUrl: '<?= base_url('budget/move_budget_line'); ?>',
 	fillExcelUrl: '<?= base_url('budget/fill_budget_from_excel'); ?>',
 	fillSchoolFeesUrl: '<?= base_url('budget/fill_school_fees_income'); ?>',
 	resetEmptyUrl: '<?= base_url('budget/reset_budget_empty_amounts'); ?>',

@@ -1400,6 +1400,240 @@ class BudgetCashflow extends Home
 		]);
 	}
 
+	/**
+	 * Delete a budget line on master and remove matching lines from all child-school budgets.
+	 */
+	public function delete_budget_line()
+	{
+		$this->bootBudget();
+		$c = $this->ctx();
+		if (!$c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_submitted')) {
+			return $this->response->setJSON(['error' => 'Only Director of Finance can delete budget lines.']);
+		}
+		$hierarchy = new SchoolHierarchyService();
+		if (!$hierarchy->canManageBudgetLineStructure($c['schoolId'])) {
+			return $this->response->setJSON(['error' => 'Only the master school can delete shared budget lines.']);
+		}
+		$budgetId = (int) $this->request->getPost('budget_id');
+		$lineId = (int) $this->request->getPost('line_id');
+		$budget = $this->loadEditableBudgetForSave($c, $budgetId);
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Budget not found.']);
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if (!BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId'])) {
+			return $this->response->setJSON(['error' => 'Budget is not editable.']);
+		}
+		$db = \Config\Database::connect();
+		$line = $db->table('budget_lines')->where('id', $lineId)->where('budget_id', $budgetId)->get(1)->getRowArray();
+		if (!$line || (int) ($line['is_total_row'] ?? 0) === 1) {
+			return $this->response->setJSON(['error' => 'Budget line not found.']);
+		}
+		$category = (string) ($line['category'] ?? '');
+		$section = (string) ($line['section_label'] ?? '');
+		if (stripos($category, 'school fee') !== false) {
+			return $this->response->setJSON(['error' => 'School Fees cannot be deleted — it is auto-filled from fees management.']);
+		}
+
+		$db->table('budget_lines')->where('id', $lineId)->delete();
+		$childDeleted = $this->deleteLineFromChildBudgets($c['schoolId'], $section, $category);
+		(new BudgetCalculationService())->recalculateBudgetTotals($budgetId);
+
+		(new FinancialAuditService())->log(
+			'budget',
+			$budgetId,
+			'delete_budget_line',
+			$c['staffId'],
+			['section' => $section, 'category' => $category],
+			['child_deleted' => $childDeleted],
+			$budget['organization_id'] ?? null,
+			$budget['branch_id'] ?? null
+		);
+
+		return $this->response->setJSON([
+			'success' => sprintf(
+				'Deleted “%s”. Removed from %d child-school budget line(s).',
+				$category,
+				$childDeleted
+			),
+			'child_deleted' => $childDeleted,
+		]);
+	}
+
+	/**
+	 * Move a budget line up/down within its section (smart reorder) and sync order to child budgets.
+	 */
+	public function move_budget_line()
+	{
+		$this->bootBudget();
+		$c = $this->ctx();
+		if (!$c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_submitted')) {
+			return $this->response->setJSON(['error' => 'Only Director of Finance can reorder budget lines.']);
+		}
+		$hierarchy = new SchoolHierarchyService();
+		if (!$hierarchy->canManageBudgetLineStructure($c['schoolId'])) {
+			return $this->response->setJSON(['error' => 'Only the master school can reorder shared budget lines.']);
+		}
+		$budgetId = (int) $this->request->getPost('budget_id');
+		$lineId = (int) $this->request->getPost('line_id');
+		$direction = strtolower(trim((string) $this->request->getPost('direction')));
+		if (!in_array($direction, ['up', 'down'], true)) {
+			return $this->response->setJSON(['error' => 'Invalid move direction.']);
+		}
+		$budget = $this->loadEditableBudgetForSave($c, $budgetId);
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Budget not found.']);
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if (!BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId'])) {
+			return $this->response->setJSON(['error' => 'Budget is not editable.']);
+		}
+		$db = \Config\Database::connect();
+		$line = $db->table('budget_lines')->where('id', $lineId)->where('budget_id', $budgetId)->get(1)->getRowArray();
+		if (!$line || (int) ($line['is_total_row'] ?? 0) === 1) {
+			return $this->response->setJSON(['error' => 'Budget line not found.']);
+		}
+		$section = (string) ($line['section_label'] ?? '');
+		$siblings = $db->table('budget_lines')
+			->where('budget_id', $budgetId)
+			->where('section_label', $section)
+			->where('is_total_row', 0)
+			->orderBy('sort_order', 'ASC')
+			->orderBy('id', 'ASC')
+			->get()->getResultArray();
+		$idx = -1;
+		foreach ($siblings as $i => $sib) {
+			if ((int) $sib['id'] === $lineId) {
+				$idx = $i;
+				break;
+			}
+		}
+		if ($idx < 0) {
+			return $this->response->setJSON(['error' => 'Line not in section.']);
+		}
+		$swapIdx = $direction === 'up' ? $idx - 1 : $idx + 1;
+		if ($swapIdx < 0 || $swapIdx >= count($siblings)) {
+			return $this->response->setJSON(['error' => $direction === 'up' ? 'Already at the top of this section.' : 'Already at the bottom of this section.']);
+		}
+		$a = $siblings[$idx];
+		$b = $siblings[$swapIdx];
+		$sortA = (int) ($a['sort_order'] ?? 0);
+		$sortB = (int) ($b['sort_order'] ?? 0);
+		if ($sortA === $sortB) {
+			$sortB = $sortA + ($direction === 'up' ? -1 : 1);
+		}
+		$db->table('budget_lines')->where('id', (int) $a['id'])->update(['sort_order' => $sortB]);
+		$db->table('budget_lines')->where('id', (int) $b['id'])->update(['sort_order' => $sortA]);
+
+		// Re-number section for clean order, then push to children
+		$ordered = $db->table('budget_lines')
+			->where('budget_id', $budgetId)
+			->where('section_label', $section)
+			->where('is_total_row', 0)
+			->orderBy('sort_order', 'ASC')
+			->orderBy('id', 'ASC')
+			->get()->getResultArray();
+		$base = 10;
+		$orderMap = [];
+		foreach ($ordered as $i => $row) {
+			$sort = $base + ($i * 10);
+			$db->table('budget_lines')->where('id', (int) $row['id'])->update(['sort_order' => $sort]);
+			$orderMap[(string) $row['category']] = $sort;
+		}
+		$this->propagateLineOrderToChildBudgets($c['schoolId'], $section, $orderMap);
+
+		return $this->response->setJSON([
+			'success' => 'Line moved ' . $direction . '.',
+			'reload' => true,
+		]);
+	}
+
+	/** Remove matching lines from every child-school budget (all statuses). */
+	protected function deleteLineFromChildBudgets(int $schoolId, string $section, string $category): int
+	{
+		$hierarchy = new SchoolHierarchyService();
+		if ($hierarchy->isChildSchool($schoolId)) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$childIds = array_values(array_filter(array_map(static function ($r) {
+			return (int) ($r['id'] ?? 0);
+		}, $hierarchy->childSchools($schoolId))));
+		if (!$childIds) {
+			return 0;
+		}
+		$branchIds = [];
+		foreach ($db->table('branches')->whereIn('school_id', $childIds)->where('status', 1)->get()->getResultArray() as $br) {
+			$branchIds[] = (int) $br['id'];
+		}
+		if (!$branchIds) {
+			return 0;
+		}
+		$budgetIds = array_map('intval', array_column(
+			$db->table('budgets')->select('id')->whereIn('branch_id', $branchIds)->get()->getResultArray(),
+			'id'
+		));
+		if (!$budgetIds) {
+			return 0;
+		}
+		$deleted = 0;
+		foreach ($budgetIds as $bid) {
+			$q = $db->table('budget_lines')
+				->where('budget_id', $bid)
+				->where('section_label', $section)
+				->where('category', $category)
+				->where('is_total_row', 0);
+			$count = $q->countAllResults(false);
+			if ($count > 0) {
+				$db->table('budget_lines')
+					->where('budget_id', $bid)
+					->where('section_label', $section)
+					->where('category', $category)
+					->where('is_total_row', 0)
+					->delete();
+				$deleted += $count;
+				(new BudgetCalculationService())->recalculateBudgetTotals($bid);
+			}
+		}
+		return $deleted;
+	}
+
+	/**
+	 * @param array<string,int> $orderMap category => sort_order
+	 */
+	protected function propagateLineOrderToChildBudgets(int $schoolId, string $section, array $orderMap): void
+	{
+		$hierarchy = new SchoolHierarchyService();
+		if ($hierarchy->isChildSchool($schoolId) || !$orderMap) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		$childIds = array_values(array_filter(array_map(static function ($r) {
+			return (int) ($r['id'] ?? 0);
+		}, $hierarchy->childSchools($schoolId))));
+		if (!$childIds) {
+			return;
+		}
+		$branchIds = [];
+		foreach ($db->table('branches')->whereIn('school_id', $childIds)->where('status', 1)->get()->getResultArray() as $br) {
+			$branchIds[] = (int) $br['id'];
+		}
+		if (!$branchIds) {
+			return;
+		}
+		foreach ($db->table('budgets')->select('id')->whereIn('branch_id', $branchIds)->get()->getResultArray() as $b) {
+			$bid = (int) $b['id'];
+			foreach ($orderMap as $cat => $sort) {
+				$db->table('budget_lines')
+					->where('budget_id', $bid)
+					->where('section_label', $section)
+					->where('category', $cat)
+					->where('is_total_row', 0)
+					->update(['sort_order' => (int) $sort]);
+			}
+		}
+	}
+
 	/** Copy a new master line into child school DRAFT budgets (structure only). */
 	protected function propagateLineToChildDrafts(int $schoolId, string $section, string $category, string $assumptions = ''): void
 	{

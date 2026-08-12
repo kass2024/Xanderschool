@@ -98,6 +98,9 @@ var BudgetWorkspace = (function () {
 		$('#sumT1Inc').text(fmt(termInc.t1)); $('#sumT1Exp').text(fmt(termExp.t1)); $('#sumT1Net').text(fmt(termInc.t1 - termExp.t1));
 		$('#sumT2Inc').text(fmt(termInc.t2)); $('#sumT2Exp').text(fmt(termExp.t2)); $('#sumT2Net').text(fmt(termInc.t2 - termExp.t2));
 		$('#sumT3Inc').text(fmt(termInc.t3)); $('#sumT3Exp').text(fmt(termExp.t3)); $('#sumT3Net').text(fmt(termInc.t3 - termExp.t3));
+		$('#kpiT1Net').text(fmt(termInc.t1 - termExp.t1));
+		$('#kpiT2Net').text(fmt(termInc.t2 - termExp.t2));
+		$('#kpiT3Net').text(fmt(termInc.t3 - termExp.t3));
 
 		var pct = total ? Math.round((filled / total) * 100) : 0;
 		$('#kpiProgress').text(pct + '%');
@@ -271,6 +274,43 @@ var BudgetWorkspace = (function () {
 				}, 'json').fail(function () {
 					toastada.error('Reset failed.');
 					$btn.prop('disabled', false);
+				});
+			});
+
+			$(document).on('click', '.btn-delete-line', function () {
+				if (!cfg.deleteLineUrl || !cfg.canManageStructure) return;
+				var $row = $(this).closest('.budget-line');
+				var id = $row.data('line-id');
+				var name = $row.find('.bp-line-name strong').text() || 'this line';
+				if (!confirm('Delete “' + name + '”?\n\nThis also removes the same line from all child-school budgets.')) return;
+				var $btn = $(this).prop('disabled', true);
+				$.post(cfg.deleteLineUrl, { budget_id: cfg.budgetId, line_id: id }, function (r) {
+					if (r.error) {
+						toastada.error(r.error);
+						$btn.prop('disabled', false);
+						return;
+					}
+					toastada.success(r.success || 'Deleted');
+					$row.slideUp(180, function () {
+						$(this).remove();
+						refreshUI();
+					});
+				}, 'json').fail(function () {
+					toastada.error('Delete failed.');
+					$btn.prop('disabled', false);
+				});
+			});
+
+			$(document).on('click', '.btn-move-line', function () {
+				if (!cfg.moveLineUrl || !cfg.canManageStructure || $(this).prop('disabled')) return;
+				var dir = $(this).data('dir');
+				var $row = $(this).closest('.budget-line');
+				var id = $row.data('line-id');
+				$.post(cfg.moveLineUrl, { budget_id: cfg.budgetId, line_id: id, direction: dir }, function (r) {
+					if (r.error) { toastada.error(r.error); return; }
+					location.reload();
+				}, 'json').fail(function () {
+					toastada.error('Move failed.');
 				});
 			});
 
