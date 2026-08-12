@@ -20,6 +20,7 @@ use App\Services\Budget\TermBudgetResetService;
 use App\Services\Budget\TermExpensesBudgetImportService;
 use App\Services\Budget\GeminiBudgetAnalysisService;
 use App\Services\Budget\SchoolFeesBudgetProjectionService;
+use App\Services\Budget\BudgetEmptyAmountsService;
 use App\Services\SchoolHierarchyService;
 
 class BudgetCashflow extends Home
@@ -285,16 +286,45 @@ class BudgetCashflow extends Home
 		if (!$hierarchy->canManageBudgetLineStructure($c['schoolId'])) {
 			return $this->response->setJSON(['error' => 'Only the master school may import or add budget line items. Child schools fill amounts on existing lines only.']);
 		}
-		$budgetId = (int) ($this->request->getPost('budget_id') ?? 0);
-		$svc = new BudgetExcelFillService();
-		$result = $svc->fillBranchBudget((int) $c['branchId'], $budgetId ?: null);
-		if (empty($result['success'])) {
-			return $this->response->setJSON(['error' => $result['error'] ?? 'Fill failed.']);
-		}
+		// Structure only — do not import Excel quantities/money. Director fills amounts; School Fees auto-syncs.
 		return $this->response->setJSON([
-			'success' => sprintf('Filled %d budget lines from Excel.', (int) ($result['lines_matched'] ?? 0)),
-			'budget_id' => $result['budget_id'] ?? null,
-			'matched' => $result['lines_matched'] ?? 0,
+			'error' => 'Excel amount import is disabled. Use “Restore empty lines” so all line items appear with blank amounts (School Fees still auto-fills from fees settings).',
+		]);
+	}
+
+	/**
+	 * Restore all template line items and clear amounts (except School Fees projection).
+	 */
+	public function reset_budget_empty_amounts()
+	{
+		$this->bootBudget();
+		$this->denyMenu('budget_prepare');
+		$c = $this->ctx();
+		$budgetId = (int) ($this->request->getPost('budget_id') ?? 0);
+		$budget = $this->loadEditableBudgetForSave($c, $budgetId);
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Budget not found.']);
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if (!BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId'])) {
+			return $this->response->setJSON(['error' => 'Budget is not editable.']);
+		}
+		$db = \Config\Database::connect();
+		$branch = $db->table('branches')->where('id', (int) $budget['branch_id'])->get(1)->getRowArray();
+		$schoolId = (int) ($branch['school_id'] ?? $c['schoolId']);
+		$result = (new BudgetEmptyAmountsService())->resetEmptyExceptSchoolFees($budgetId, $schoolId, (int) $c['staffId']);
+		if (empty($result['success'])) {
+			return $this->response->setJSON(['error' => $result['error'] ?? 'Reset failed.']);
+		}
+		$sf = $result['school_fees']['annual'] ?? ($result['projection']['annual'] ?? 0);
+		return $this->response->setJSON([
+			'success' => sprintf(
+				'Restored %d missing line(s), cleared %d amount line(s). School Fees set to %s RWF from fees × students.',
+				(int) ($result['lines_ensured'] ?? 0),
+				(int) ($result['cleared'] ?? 0),
+				number_format((float) $sf, 0)
+			),
+			'result' => $result,
 		]);
 	}
 
@@ -1005,6 +1035,34 @@ class BudgetCashflow extends Home
 			return redirect()->to(base_url('budget/prepare'))->with('error', 'You cannot open this budget.');
 		}
 		$isFinanceAdjust = BudgetWorkflowService::isFinanceAdjustment($status, $c['perms'], $c['staffId'], $c['postId']);
+		$setup = [];
+		if (!empty($budget['notes'])) {
+			$decoded = json_decode($budget['notes'], true);
+			if (is_array($decoded)) {
+				$setup = $decoded;
+			}
+		}
+		$branchRow = $db->table('branches')->where('id', (int) $budget['branch_id'])->get(1)->getRowArray();
+		$budgetSchoolId = (int) ($branchRow['school_id'] ?? $c['schoolId']);
+
+		// First DoF finance-adjust open: restore full lines, clear false Excel amounts, keep School Fees only
+		$forceEmpty = (int) ($this->request->getGet('reset_empty') ?? 0) === 1;
+		if ($canEdit && $isFinanceAdjust && ($forceEmpty || empty($setup['amounts_cleared_for_dof_at']))) {
+			(new BudgetEmptyAmountsService())->resetEmptyExceptSchoolFees($id, $budgetSchoolId, (int) $c['staffId']);
+			$budget = $db->table('budgets b')
+				->select('b.*, bp.title as period_title, bp.start_date, bp.end_date')
+				->join('budget_periods bp', 'bp.id = b.budget_period_id', 'left')
+				->where('b.id', $id)
+				->get(1)->getRowArray() ?: $budget;
+			$setup = [];
+			if (!empty($budget['notes'])) {
+				$decoded = json_decode($budget['notes'], true);
+				if (is_array($decoded)) {
+					$setup = $decoded;
+				}
+			}
+		}
+
 		$lines = $db->query("
 			SELECT bl.*, btl.line_key
 			FROM budget_lines bl
@@ -1016,14 +1074,6 @@ class BudgetCashflow extends Home
 			$ln['months'] = $calc->decodeMonthlyJson($ln['monthly_json'] ?? null);
 		}
 		unset($ln);
-		$setup = [];
-		if (!empty($budget['notes'])) {
-			$decoded = json_decode($budget['notes'], true);
-			if (is_array($decoded)) {
-				$setup = $decoded;
-			}
-		}
-		$branchRow = $db->table('branches')->where('id', (int) $budget['branch_id'])->get(1)->getRowArray();
 		$data = $this->data;
 		$data['title'] = 'Budget Workspace';
 		$data['page'] = 'budget_prepare';
@@ -1031,7 +1081,7 @@ class BudgetCashflow extends Home
 		$data['lines'] = $lines;
 		$data['sections'] = $calc->groupLinesBySection($lines);
 		$data['branch_label'] = $branchRow
-			? $c['branchCtx']->displaySchoolBranchLabel((int) ($branchRow['school_id'] ?? $c['schoolId']), $branchRow, false)
+			? $c['branchCtx']->displaySchoolBranchLabel($budgetSchoolId, $branchRow, false)
 			: session('soma_school');
 		$data['setup'] = $setup;
 		$data['units'] = ['Student', 'Meal', 'Trip', 'Litre', 'Month', 'Item', 'Employee', 'Vehicle', 'Other'];

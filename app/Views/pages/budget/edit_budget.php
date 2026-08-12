@@ -59,8 +59,15 @@ $branchFillMode = !empty($budget_branch_fill);
 		<?php if ($canEdit) { ?>
 		<?php if ($isFinanceAdjust) { ?>
 		<span class="badge badge-warning mr-2 p-2"><i class="fa fa-user-tie"></i> Finance adjust — status stays <?= esc($budget['status']); ?></span>
+		<button type="button" class="btn btn-outline-danger btn-sm mr-1" id="btnResetEmptyAmounts"
+			title="Restore all line items and clear amounts so you can fill them. School Fees stays from fees × students.">
+			<i class="fa fa-eraser"></i> Restore empty lines
+		</button>
 		<?php } elseif (!$branchFillMode) { ?>
-		<button type="button" class="btn btn-outline-success btn-sm mr-1" id="btnFillExcel"><i class="fa fa-file-excel"></i> Fill from Excel</button>
+		<button type="button" class="btn btn-outline-secondary btn-sm mr-1" id="btnResetEmptyAmounts"
+			title="Restore all line items with blank amounts (School Fees auto-fills).">
+			<i class="fa fa-eraser"></i> Restore empty lines
+		</button>
 		<?php } else { ?>
 		<span class="badge badge-info mr-2 p-2">Branch fill — lines from master; enter your term amounts</span>
 		<?php } ?>
@@ -107,7 +114,7 @@ $branchFillMode = !empty($budget_branch_fill);
 <div class="bp-panel" id="panel-plan">
 <div class="bp-panel-help"><i class="fa fa-table"></i> <strong>Step 2 — Full-year budget by term.</strong> Enter RWF for Term I, Term II and Term III. <em>Annual = T1 + T2 + T3</em><?php if ($branchFillMode) { ?> — amounts reflect your branch only; master school defines the line list.<?php } ?>
 	<?php if ($canEdit) { ?>
-	<small class="d-block mt-1 text-muted"><i class="fa fa-sync"></i> School Fees auto-updates from fees settings × boarding/day students</small>
+	<small class="d-block mt-1 text-muted"><i class="fa fa-sync"></i> School Fees auto-updates from fees settings × boarding/day students. Other lines stay blank until you enter amounts.</small>
 	<?php } ?>
 </div>
 
@@ -283,7 +290,7 @@ $branchFillMode = !empty($budget_branch_fill);
 </div>
 <?php } ?>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=6"></script>
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=7"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,
@@ -294,5 +301,6 @@ $branchFillMode = !empty($budget_branch_fill);
 	addLineUrl: '<?= base_url('budget/add_budget_line'); ?>',
 	fillExcelUrl: '<?= base_url('budget/fill_budget_from_excel'); ?>',
 	fillSchoolFeesUrl: '<?= base_url('budget/fill_school_fees_income'); ?>',
+	resetEmptyUrl: '<?= base_url('budget/reset_budget_empty_amounts'); ?>',
 	redirectUrl: '<?= base_url('budget/prepare'); ?>'
 });</script>

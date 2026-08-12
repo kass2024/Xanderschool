@@ -256,6 +256,24 @@ var BudgetWorkspace = (function () {
 				}, 'json');
 			});
 
+			$('#btnResetEmptyAmounts').on('click', function () {
+				if (!cfg.resetEmptyUrl) return;
+				if (!confirm('Restore all budget line items and clear ALL amounts (except School Fees from fees × students)?\n\nYou can then enter Term I–III amounts yourself.')) return;
+				var $btn = $(this).prop('disabled', true);
+				$.post(cfg.resetEmptyUrl, { budget_id: cfg.budgetId }, function (r) {
+					if (r.error) {
+						toastada.error(r.error);
+						$btn.prop('disabled', false);
+						return;
+					}
+					toastada.success(r.success || 'Lines restored with empty amounts');
+					location.reload();
+				}, 'json').fail(function () {
+					toastada.error('Reset failed.');
+					$btn.prop('disabled', false);
+				});
+			});
+
 			// Silent auto-sync School Fees from fees settings × students (always refresh on open)
 			function autoRefreshSchoolFees() {
 				if (!cfg.fillSchoolFeesUrl || !cfg.canEdit) return;
