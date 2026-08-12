@@ -1,10 +1,12 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=5" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=6" rel="stylesheet">
 
 <?php
 $statusBadge = $budget['status'] === 'DRAFT' ? 'secondary' : ($budget['status'] === 'APPROVED' ? 'success' : 'warning');
 $canEdit = isset($can_edit) ? (bool) $can_edit : in_array($budget['status'], ['DRAFT', 'RETURNED'], true);
 $isFinanceAdjust = !empty($is_finance_adjust);
 $canSubmit = isset($can_submit) ? (bool) $can_submit : ($canEdit && in_array($budget['status'], ['DRAFT', 'RETURNED'], true));
+$canAddLines = !empty($can_add_lines);
+$sectionOptions = $section_options ?? ['INCOME', 'OPERATING EXPENSES', 'ADMINISTRATIVE COSTS', 'FINANCE COSTS'];
 $academicYear = $setup['academic_year'] ?? '';
 $branchFillMode = !empty($budget_branch_fill);
 ?>
@@ -51,13 +53,16 @@ $branchFillMode = !empty($budget_branch_fill);
 <div class="bp-toolbar">
 	<div class="bp-save-status saved" id="saveStatus"><i class="fa fa-check"></i> All changes saved</div>
 	<div>
+		<?php if ($canAddLines) { ?>
+		<button type="button" class="btn btn-outline-warning btn-sm mr-1" id="btnAddBudgetLine" title="Add section title or budget row"><i class="fa fa-plus"></i> Add title / row</button>
+		<?php } ?>
 		<?php if ($canEdit) { ?>
 		<?php if ($isFinanceAdjust) { ?>
-		<span class="badge badge-warning mr-2 p-2"><i class="fa fa-user-tie"></i> Finance adjust — status stays <?= esc($budget['status']); ?>; school submissions still follow verification</span>
+		<span class="badge badge-warning mr-2 p-2"><i class="fa fa-user-tie"></i> Finance adjust — status stays <?= esc($budget['status']); ?></span>
 		<?php } elseif (!$branchFillMode) { ?>
 		<button type="button" class="btn btn-outline-success btn-sm mr-1" id="btnFillExcel"><i class="fa fa-file-excel"></i> Fill from Excel</button>
 		<?php } else { ?>
-		<span class="badge badge-info mr-2 p-2">Branch fill — lines from master; enter your term amounts (totals may differ per school)</span>
+		<span class="badge badge-info mr-2 p-2">Branch fill — lines from master; enter your term amounts</span>
 		<?php } ?>
 		<button type="button" class="btn btn-primary btn-sm" id="btnSave"><i class="fa fa-save"></i> Save</button>
 		<?php if ($canSubmit) { ?>
@@ -109,7 +114,12 @@ $branchFillMode = !empty($budget_branch_fill);
 <div class="bp-section bp-term-section" data-section="<?= esc($secKey); ?>">
 	<div class="bp-section-head <?= $isIncome ? 'income' : 'expense'; ?>">
 		<span><i class="fa fa-<?= $isIncome ? 'arrow-down' : 'arrow-up'; ?>"></i> <?= esc($secKey); ?></span>
-		<span class="bp-section-total" data-section-total="<?= esc($secKey); ?>">0 RWF</span>
+		<span class="d-flex align-items-center">
+			<span class="bp-section-total mr-2" data-section-total="<?= esc($secKey); ?>">0 RWF</span>
+			<?php if ($canAddLines) { ?>
+			<button type="button" class="btn btn-sm btn-light bp-btn-add-line" data-section="<?= esc($secKey); ?>" title="Add row in this section"><i class="fa fa-plus"></i></button>
+			<?php } ?>
+		</span>
 	</div>
 	<div class="table-responsive">
 		<table class="table table-sm table-bordered bp-term-table mb-0">
@@ -204,8 +214,9 @@ $branchFillMode = !empty($budget_branch_fill);
 </table>
 <?php if ($canSubmit) { ?>
 <button type="button" class="btn btn-success btn-block mt-2" id="btnSubmitSummary"><i class="fa fa-paper-plane"></i> Submit budget for approval</button>
+<p class="small text-muted mt-2 mb-0">Child/school budgets stay <strong>DRAFT</strong> until you submit. Approval requires all three: Procurement → Budget Manager → Director of Finance. You only need one amount filled to save; submit needs at least one line with an amount.</p>
 <?php } elseif ($isFinanceAdjust) { ?>
-<div class="alert alert-warning small mt-2 mb-0"><i class="fa fa-info-circle"></i> Changes are saved as a Director of Finance adjustment. Status remains <strong><?= esc($budget['status']); ?></strong>. New school budgets still require Submit → Procurement → Budget Manager → Deputy Director of Finance.</div>
+<div class="alert alert-warning small mt-2 mb-0"><i class="fa fa-info-circle"></i> Director of Finance adjustment — status stays <strong><?= esc($budget['status']); ?></strong>. New submissions still need Procurement, Budget Manager, and Director of Finance.</div>
 <?php } ?>
 </div></div></div>
 </div>
@@ -225,13 +236,58 @@ $branchFillMode = !empty($budget_branch_fill);
 </div>
 </div>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=3"></script>
+<?php if ($canAddLines) { ?>
+<div class="modal fade" id="mdlAddBudgetLine" tabindex="-1" role="dialog">
+	<div class="modal-dialog modal-dialog-centered" role="document">
+		<form class="modal-content bp-add-line-modal" id="frmAddBudgetLine">
+			<div class="modal-header">
+				<h5 class="modal-title"><i class="fa fa-plus-circle text-warning"></i> Add budget title / row</h5>
+				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+			</div>
+			<div class="modal-body">
+				<p class="small text-muted">Director of Finance can add section titles and line items. Amounts are optional — save even a single line.</p>
+				<div class="bp-add-mode mb-3">
+					<button type="button" class="bp-mode-chip is-active" data-mode="line"><i class="fa fa-list"></i> Budget row</button>
+					<button type="button" class="bp-mode-chip" data-mode="section"><i class="fa fa-folder-plus"></i> New section title</button>
+				</div>
+				<input type="hidden" name="mode" id="addLineMode" value="line">
+				<input type="hidden" name="budget_id" value="<?= (int) $budget['id']; ?>">
+				<div class="form-group">
+					<label class="font-weight-bold">Section</label>
+					<select class="form-control" name="section_label" id="addLineSection">
+						<?php foreach ($sectionOptions as $opt) { ?>
+						<option value="<?= esc($opt); ?>"><?= esc($opt); ?></option>
+						<?php } ?>
+					</select>
+					<input type="text" class="form-control mt-2 d-none" id="addLineSectionCustom" placeholder="Or type a new section title…">
+				</div>
+				<div class="form-group" id="addLineTitleWrap">
+					<label class="font-weight-bold">Line title</label>
+					<input type="text" class="form-control" name="category" id="addLineCategory" placeholder="e.g. Laboratory supplies" required>
+				</div>
+				<div class="form-group mb-0">
+					<label class="font-weight-bold">Note <span class="text-muted font-weight-normal">(optional)</span></label>
+					<input type="text" class="form-control" name="assumptions" id="addLineAssumptions" placeholder="Short note for this line">
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-light" data-dismiss="modal">Cancel</button>
+				<button type="submit" class="btn btn-warning" id="btnAddLineSubmit"><i class="fa fa-plus"></i> Add</button>
+			</div>
+		</form>
+	</div>
+</div>
+<?php } ?>
+
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=4"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,
+	canAddLines: <?= $canAddLines ? 'true' : 'false'; ?>,
 	saveUrl: '<?= base_url('budget/save_budget_lines'); ?>',
 	setupUrl: '<?= base_url('budget/save_budget_setup'); ?>',
 	submitUrl: '<?= base_url('budget/submit_budget'); ?>',
+	addLineUrl: '<?= base_url('budget/add_budget_line'); ?>',
 	fillExcelUrl: '<?= base_url('budget/fill_budget_from_excel'); ?>',
 	redirectUrl: '<?= base_url('budget/prepare'); ?>'
 });</script>

@@ -1,7 +1,7 @@
 <div class="card border-0 shadow-sm">
 	<div class="card-header bg-white">
 		<strong><i class="fa fa-tasks text-primary"></i> School budget approval (thin chain)</strong>
-		<p class="small text-muted mb-0">Each school’s prepared budget is approved for that school only: Procurement → Budget Manager → Deputy Director of Finance.</p>
+		<p class="small text-muted mb-0">Each school’s prepared budget stays DRAFT until submit. Mandatory approvals: Procurement → Budget Manager → Director of Finance. All three must approve before the budget is marked APPROVED.</p>
 	</div>
 	<div class="card-body p-0">
 		<?php if (empty($budgets)) { ?>
@@ -23,8 +23,7 @@
 			$labels = [
 				'procurement_review' => ['Procurement OK', 'info'],
 				'budget_review' => ['Budget Manager OK', 'info'],
-				'final_review' => ['Send to Deputy Director', 'primary'],
-				'approve' => ['Final approve', 'success'],
+				'approve' => ['Director of Finance — Final approve', 'success'],
 				'return' => ['Return', 'warning'],
 				'reject' => ['Reject', 'danger'],
 			];

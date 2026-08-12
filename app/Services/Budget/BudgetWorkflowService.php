@@ -8,7 +8,8 @@ class BudgetWorkflowService
 		'DRAFT' => ['submit' => 'SUBMITTED'],
 		'SUBMITTED' => ['procurement_review' => 'PROCUREMENT_REVIEW', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
 		'PROCUREMENT_REVIEW' => ['budget_review' => 'BUDGET_MANAGER_REVIEW', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
-		'BUDGET_MANAGER_REVIEW' => ['final_review' => 'DEPUTY_DIRECTOR_REVIEW', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
+		// Director of Finance final approve (3rd of 3). Legacy DEPUTY_DIRECTOR_REVIEW still approvable.
+		'BUDGET_MANAGER_REVIEW' => ['approve' => 'APPROVED', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
 		'DEPUTY_DIRECTOR_REVIEW' => ['approve' => 'APPROVED', 'reject' => 'REJECTED', 'return' => 'RETURNED'],
 		'RETURNED' => ['submit' => 'SUBMITTED'],
 	];
@@ -18,7 +19,6 @@ class BudgetWorkflowService
 		'submit' => 'budget.submit',
 		'procurement_review' => 'budget.review_procurement',
 		'budget_review' => 'budget.review_budget',
-		'final_review' => 'budget.review_budget',
 		'approve' => 'budget.final_approve',
 		'return' => 'budget.return',
 		'reject' => 'budget.reject',
@@ -27,10 +27,20 @@ class BudgetWorkflowService
 	/** Statuses each review role should see in the Review queue. */
 	private static $reviewQueueByPerm = [
 		'budget.review_procurement' => ['SUBMITTED'],
-		'budget.review_budget' => ['PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW'],
-		'budget.final_approve' => ['DEPUTY_DIRECTOR_REVIEW'],
+		'budget.review_budget' => ['PROCUREMENT_REVIEW'],
+		'budget.final_approve' => ['BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW'],
 		'budget.return' => ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW'],
 	];
+
+	/** Human labels for the mandatory 3-step verification. */
+	public static function approvalChainLabels(): array
+	{
+		return [
+			'procurement_review' => 'Procurement',
+			'budget_review' => 'Budget Manager',
+			'approve' => 'Director of Finance',
+		];
+	}
 
 	private $audit;
 

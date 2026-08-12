@@ -26,7 +26,7 @@ $ctx = $ctx ?? 'full'; // full | prep | execution
 		<div class="bp-phase-num">2</div>
 		<div class="bp-phase-body">
 			<h6>Budget approval chain (per school)</h6>
-			<p class="small text-muted mb-0">Master school defines the shared budget line list; each child school fills its own term amounts. After <em>Submit</em>, every budget must be verified: <em>Procurement</em> → <em>Budget Manager</em> → <em>Deputy Director of Finance</em> (final). Only <strong>APPROVED</strong> budgets can be spent against. <strong>Director of Finance</strong> may edit line amounts on already-submitted or approved budgets without skipping that chain for new submissions.</p>
+			<p class="small text-muted mb-0">Master school defines the shared budget line list (Director of Finance can add section titles and rows). Each child school fills its own term amounts and stays <strong>DRAFT</strong> until submit. After submit, all three must approve: <em>Procurement</em> → <em>Budget Manager</em> → <em>Director of Finance</em>. Only then is the budget <strong>APPROVED</strong>. Approvers and the preparer (e.g. accountant) get SMS and email.</p>
 		</div>
 	</div>
 	<div class="bp-phase">
@@ -40,7 +40,7 @@ $ctx = $ctx ?? 'full'; // full | prep | execution
 		<div class="bp-phase-num">4</div>
 		<div class="bp-phase-body">
 			<h6>Request approval &amp; payment</h6>
-			<p class="small text-muted mb-0">Cash requests flow: Headteacher → Procurement Manager → <strong>Budget Manager</strong> (confirms budget availability) → <strong>Deputy Director of Finance</strong> (authorizes payment) → Accountant pays → receipt filed. Each step is logged with comments.</p>
+			<p class="small text-muted mb-0">Cash requests flow: Headteacher → Procurement Manager → <strong>Budget Manager</strong> (confirms budget availability) → <strong>Director of Finance</strong> (authorizes payment) → Accountant pays → receipt filed. Each step is logged with comments.</p>
 		</div>
 	</div>
 </div>
@@ -53,12 +53,12 @@ $ctx = $ctx ?? 'full'; // full | prep | execution
 			Reviews budget submissions and, on each cash request, confirms the line has sufficient uncommitted funds before payment is authorized.
 		</div>
 		<div class="col-md-6 mb-2">
-			<span class="bp-role-badge finance-dir"><i class="fa fa-stamp"></i> Deputy Director of Finance</span>
-			Final approver for the annual budget and for high-value cash requests; authorizes the accountant to pay after budget availability is confirmed.
+			<span class="bp-role-badge finance-dir"><i class="fa fa-stamp"></i> Director of Finance</span>
+			Final of the three mandatory budget approvals; may also edit submitted/approved amounts and add budget titles/rows. Authorizes payment on cash requests after budget availability is confirmed.
 		</div>
-		<div class="col-md-6 mb-2">
-			<span class="bp-role-badge finance-dir"><i class="fa fa-edit"></i> Director of Finance</span>
-			May edit amounts on submitted or approved school budgets (privileged adjust). Does not replace the verification chain for newly submitted budgets.
+		<div class="col-md-12 mb-2">
+			<span class="bp-role-badge"><i class="fa fa-bell"></i> Notifications</span>
+			On submit, Procurement, Budget Manager, and Director of Finance get in-app, SMS, and email alerts. The preparer (accountant) is notified on submit and when the budget is returned, rejected, or fully approved.
 		</div>
 	</div>
 </div>

@@ -232,6 +232,7 @@ $routes->get('budget/edit_budget/(:num)', 'BudgetCashflow::edit_budget/$1');
 $routes->post('budget/save_budget_lines', 'BudgetCashflow::save_budget_lines');
 $routes->post('budget/save_budget_setup', 'BudgetCashflow::save_budget_setup');
 $routes->post('budget/submit_budget', 'BudgetCashflow::submit_budget');
+$routes->post('budget/add_budget_line', 'BudgetCashflow::add_budget_line');
 $routes->get('budget/budget_review', 'BudgetCashflow::budget_review');
 $routes->post('budget/budget_action', 'BudgetCashflow::budget_action');
 $routes->post('budget/delete_budget', 'BudgetCashflow::delete_budget');

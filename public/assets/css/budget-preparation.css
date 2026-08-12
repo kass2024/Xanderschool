@@ -425,3 +425,13 @@
 .bp-term-table tbody tr.budget-line:hover { background: #f8fafc; }
 .bp-term-table tfoot td { font-size: .85rem; background: #f1f5f9; }
 
+
+/* Director of Finance — add title / row */
+.bp-add-line-modal .modal-header { border-bottom: 1px solid #fef3c7; background: linear-gradient(90deg, #fffbeb, #fff); }
+.bp-add-mode { display: flex; gap: .5rem; }
+.bp-mode-chip { flex: 1; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 10px; padding: .65rem .75rem; font-size: .85rem; font-weight: 600; color: #475569; cursor: pointer; transition: all .15s; }
+.bp-mode-chip:hover { border-color: #f59e0b; color: #92400e; }
+.bp-mode-chip.is-active { background: #fffbeb; border-color: #f59e0b; color: #92400e; box-shadow: 0 0 0 2px rgba(245,158,11,.2); }
+.bp-mode-chip i { margin-right: .35rem; }
+.bp-section-head .bp-btn-add-line { border-radius: 999px; width: 28px; height: 28px; padding: 0; line-height: 1; opacity: .9; }
+.bp-section-head .bp-btn-add-line:hover { opacity: 1; transform: scale(1.05); }

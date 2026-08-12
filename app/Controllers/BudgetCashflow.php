@@ -756,6 +756,9 @@ class BudgetCashflow extends Home
 		$data['is_finance_adjust'] = $isFinanceAdjust;
 		$data['can_submit'] = $canEdit && in_array($status, BudgetWorkflowService::preparerEditableStatuses(), true)
 			&& $c['perms']->can($c['staffId'], $c['postId'], 'budget.submit');
+		$data['can_add_lines'] = $c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_submitted');
+		$sectionKeys = array_keys($data['sections'] ?? []);
+		$data['section_options'] = $sectionKeys ?: ['INCOME', 'OPERATING EXPENSES', 'ADMINISTRATIVE COSTS', 'FINANCE COSTS'];
 		$data['content'] = view('pages/budget/edit_budget', $data);
 		return view('main', $data);
 	}
@@ -900,10 +903,14 @@ class BudgetCashflow extends Home
 		$id = (int) $this->request->getPost('budget_id');
 		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
 		$wf = new BudgetWorkflowService();
-		return $this->response->setJSON($wf->transition($id, 'submit', $c['staffId'], $c['postId'], $this->request->getPost('comment'), [
+		$result = $wf->transition($id, 'submit', $c['staffId'], $c['postId'], $this->request->getPost('comment'), [
 			'perms' => $c['perms'],
 			'allowed_branch_ids' => $branchIds,
-		]));
+		]);
+		if (!empty($result['success']) || !empty($result['status'])) {
+			$this->notifyBudgetWorkflow($id, 'submit', $c);
+		}
+		return $this->response->setJSON($result);
 	}
 
 	public function budget_review()
@@ -925,10 +932,309 @@ class BudgetCashflow extends Home
 		}
 		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
 		$wf = new BudgetWorkflowService();
-		return $this->response->setJSON($wf->transition($id, $action, $c['staffId'], $c['postId'], $this->request->getPost('comment'), [
+		$result = $wf->transition($id, $action, $c['staffId'], $c['postId'], $this->request->getPost('comment'), [
 			'perms' => $c['perms'],
 			'allowed_branch_ids' => $branchIds,
-		]));
+		]);
+		if (!empty($result['success']) || !empty($result['status'])) {
+			$this->notifyBudgetWorkflow($id, $action, $c);
+		}
+		return $this->response->setJSON($result);
+	}
+
+	/**
+	 * Director of Finance: add a budget section title and/or line row.
+	 * Amounts are optional — saving with a single line is allowed.
+	 */
+	public function add_budget_line()
+	{
+		$this->bootBudget();
+		$c = $this->ctx();
+		if (!$c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_submitted')) {
+			return $this->response->setJSON(['error' => 'Only Director of Finance can add budget titles and rows.']);
+		}
+		$budgetId = (int) $this->request->getPost('budget_id');
+		$section = trim((string) $this->request->getPost('section_label'));
+		$category = trim((string) $this->request->getPost('category'));
+		$assumptions = trim((string) $this->request->getPost('assumptions'));
+		$mode = trim((string) $this->request->getPost('mode')) ?: 'line'; // line | section
+
+		if ($section === '') {
+			return $this->response->setJSON(['error' => 'Section title is required.']);
+		}
+		$section = strtoupper($section);
+		if ($mode === 'line' && $category === '') {
+			return $this->response->setJSON(['error' => 'Budget line title is required.']);
+		}
+		if ($mode === 'section' && $category === '') {
+			$category = 'Total ' . ucwords(strtolower($section));
+		}
+
+		$budget = $this->loadEditableBudgetForSave($c, $budgetId);
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Budget not found.']);
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if (!BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId'])
+			&& !in_array($status, BudgetWorkflowService::preparerEditableStatuses(), true)) {
+			return $this->response->setJSON(['error' => 'This budget cannot be edited.']);
+		}
+		// DoF may add lines even on DRAFT (managing master catalog)
+		if (!$c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_submitted')) {
+			return $this->response->setJSON(['error' => 'Not allowed.']);
+		}
+
+		$db = \Config\Database::connect();
+		$this->ensureBudgetLineColumns($db);
+		$maxSort = (int) ($db->table('budget_lines')->selectMax('sort_order')->where('budget_id', $budgetId)->get()->getRowArray()['sort_order'] ?? 0);
+
+		$created = [];
+		// Ensure section exists: if new section, insert a total row placeholder then the editable line
+		$secExists = $db->table('budget_lines')->where('budget_id', $budgetId)->where('section_label', $section)->countAllResults() > 0;
+
+		if ($mode === 'section' || !$secExists) {
+			$totalLabel = 'Total ' . ucwords(strtolower($section));
+			$hasTotal = $db->table('budget_lines')->where('budget_id', $budgetId)
+				->where('section_label', $section)->where('is_total_row', 1)->countAllResults() > 0;
+			if (!$hasTotal) {
+				$maxSort++;
+				$db->table('budget_lines')->insert([
+					'budget_id' => $budgetId,
+					'section_label' => $section,
+					'category' => $totalLabel,
+					'is_total_row' => 1,
+					'is_editable' => 0,
+					'calculation_mode' => 'term_sum',
+					'sort_order' => $maxSort + 100,
+					'term_1_amount' => 0,
+					'term_2_amount' => 0,
+					'term_3_amount' => 0,
+					'annual_amount' => 0,
+					'user_amount' => 0,
+				]);
+				$created[] = ['id' => (int) $db->insertID(), 'category' => $totalLabel, 'is_total_row' => 1];
+			}
+		}
+
+		if ($mode === 'line' || ($mode === 'section' && trim((string) $this->request->getPost('category')) !== '')) {
+			$dup = $db->table('budget_lines')->where('budget_id', $budgetId)
+				->where('section_label', $section)->where('category', $category)->where('is_total_row', 0)->countAllResults();
+			if ($dup > 0) {
+				return $this->response->setJSON(['error' => 'That budget line already exists in this section.']);
+			}
+			// Insert before section total
+			$totalRow = $db->table('budget_lines')->where('budget_id', $budgetId)
+				->where('section_label', $section)->where('is_total_row', 1)->get(1)->getRowArray();
+			$sort = $totalRow ? max(1, (int) $totalRow['sort_order'] - 1) : ($maxSort + 1);
+			$db->table('budget_lines')->insert([
+				'budget_id' => $budgetId,
+				'section_label' => $section,
+				'category' => $category,
+				'is_total_row' => 0,
+				'is_editable' => 1,
+				'calculation_mode' => 'term_sum',
+				'sort_order' => $sort,
+				'assumptions' => $assumptions !== '' ? $assumptions : null,
+				'term_1_amount' => 0,
+				'term_2_amount' => 0,
+				'term_3_amount' => 0,
+				'annual_amount' => 0,
+				'user_amount' => 0,
+			]);
+			$lineId = (int) $db->insertID();
+			$created[] = ['id' => $lineId, 'category' => $category, 'is_total_row' => 0, 'section_label' => $section];
+
+			// Master catalog: push new line structure into child DRAFT budgets
+			$this->propagateLineToChildDrafts($c['schoolId'], $section, $category, $assumptions);
+		}
+
+		(new FinancialAuditService())->log(
+			'budget',
+			$budgetId,
+			'add_budget_line',
+			$c['staffId'],
+			['status' => $status],
+			['section' => $section, 'category' => $category, 'mode' => $mode],
+			$budget['organization_id'] ?? null,
+			$budget['branch_id'] ?? null
+		);
+
+		return $this->response->setJSON([
+			'success' => $mode === 'section' ? 'Section title added.' : 'Budget line added.',
+			'created' => $created,
+			'reload' => true,
+		]);
+	}
+
+	/** Copy a new master line into child school DRAFT budgets (structure only). */
+	protected function propagateLineToChildDrafts(int $schoolId, string $section, string $category, string $assumptions = ''): void
+	{
+		$hierarchy = new SchoolHierarchyService();
+		if ($hierarchy->isChildSchool($schoolId)) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		$childRows = $hierarchy->childSchools($schoolId);
+		$childIds = array_map(static function ($r) {
+			return (int) ($r['id'] ?? 0);
+		}, $childRows);
+		$childIds = array_values(array_filter($childIds));
+		if (!$childIds) {
+			return;
+		}
+		$branchIds = [];
+		foreach ($db->table('branches')->whereIn('school_id', $childIds)->where('status', 1)->get()->getResultArray() as $br) {
+			$branchIds[] = (int) $br['id'];
+		}
+		if (!$branchIds) {
+			return;
+		}
+		$drafts = $db->table('budgets')->whereIn('branch_id', $branchIds)->where('status', 'DRAFT')->get()->getResultArray();
+		foreach ($drafts as $b) {
+			$bid = (int) $b['id'];
+			$exists = $db->table('budget_lines')->where('budget_id', $bid)
+				->where('section_label', $section)->where('category', $category)->where('is_total_row', 0)->countAllResults();
+			if ($exists) {
+				continue;
+			}
+			$secExists = $db->table('budget_lines')->where('budget_id', $bid)->where('section_label', $section)->countAllResults() > 0;
+			if (!$secExists) {
+				$db->table('budget_lines')->insert([
+					'budget_id' => $bid,
+					'section_label' => $section,
+					'category' => 'Total ' . ucwords(strtolower($section)),
+					'is_total_row' => 1,
+					'is_editable' => 0,
+					'calculation_mode' => 'term_sum',
+					'sort_order' => 9000,
+					'term_1_amount' => 0, 'term_2_amount' => 0, 'term_3_amount' => 0,
+					'annual_amount' => 0, 'user_amount' => 0,
+				]);
+			}
+			$totalRow = $db->table('budget_lines')->where('budget_id', $bid)
+				->where('section_label', $section)->where('is_total_row', 1)->get(1)->getRowArray();
+			$sort = $totalRow ? max(1, (int) $totalRow['sort_order'] - 1) : 100;
+			$db->table('budget_lines')->insert([
+				'budget_id' => $bid,
+				'section_label' => $section,
+				'category' => $category,
+				'is_total_row' => 0,
+				'is_editable' => 1,
+				'calculation_mode' => 'term_sum',
+				'sort_order' => $sort,
+				'assumptions' => $assumptions !== '' ? $assumptions : null,
+				'term_1_amount' => 0, 'term_2_amount' => 0, 'term_3_amount' => 0,
+				'annual_amount' => 0, 'user_amount' => 0,
+			]);
+		}
+	}
+
+	/**
+	 * In-app + SMS + email for budget submit / approval steps.
+	 */
+	protected function notifyBudgetWorkflow(int $budgetId, string $action, array $c): void
+	{
+		$db = \Config\Database::connect();
+		$budget = $db->table('budgets b')
+			->select('b.*, br.name as branch_name, br.school_id as branch_school_id')
+			->join('branches br', 'br.id = b.branch_id', 'left')
+			->where('b.id', $budgetId)->get(1)->getRowArray();
+		if (!$budget) {
+			return;
+		}
+		$notify = new BudgetNotificationService();
+		$schoolId = (int) ($budget['branch_school_id'] ?? $c['schoolId']);
+		$title = (string) ($budget['title'] ?? 'Budget');
+		$branchLabel = (string) ($budget['branch_name'] ?? 'School');
+		$status = (string) ($budget['status'] ?? '');
+		$reviewUrl = base_url('budget/prepare?tab=review');
+		$prepareUrl = base_url('budget/prepare');
+
+		$chain = BudgetWorkflowService::approvalChainLabels();
+		$actionLabel = $chain[$action] ?? $action;
+
+		if ($action === 'submit') {
+			$msgTitle = 'Budget submitted for approval';
+			$msgBody = $branchLabel . ' — "' . $title . '" was submitted. Verification required: Procurement → Budget Manager → Director of Finance.';
+			// All 3 approvers
+			foreach ($notify->approverContacts($schoolId) as $staff) {
+				$notify->notifyStaff((int) $staff['id'], $msgTitle, $msgBody, $reviewUrl, (int) $budget['branch_id']);
+				$this->sendBudgetContactAlert($staff, $msgTitle, $msgBody);
+			}
+			// Preparer (accountant / head who prepared)
+			$preparer = $notify->staffById((int) ($budget['prepared_by'] ?? 0));
+			if ($preparer) {
+				$pTitle = 'Your budget was submitted';
+				$pBody = '"' . $title . '" is now awaiting Procurement, Budget Manager, and Director of Finance approval. It stays in review until all three approve.';
+				$notify->notifyStaff((int) $preparer['id'], $pTitle, $pBody, $prepareUrl, (int) $budget['branch_id']);
+				$this->sendBudgetContactAlert($preparer, $pTitle, $pBody);
+			}
+			return;
+		}
+
+		// Step / final outcomes → preparer
+		$preparer = $notify->staffById((int) ($budget['prepared_by'] ?? 0));
+		if (!$preparer) {
+			return;
+		}
+		if ($action === 'approve' && $status === 'APPROVED') {
+			$pTitle = 'Budget approved';
+			$pBody = '"' . $title . '" (' . $branchLabel . ') is fully approved after Procurement, Budget Manager, and Director of Finance.';
+		} elseif ($action === 'return') {
+			$pTitle = 'Budget returned';
+			$pBody = '"' . $title . '" was returned for changes. Status: ' . $status . '.';
+		} elseif ($action === 'reject') {
+			$pTitle = 'Budget rejected';
+			$pBody = '"' . $title . '" was rejected. Status: ' . $status . '.';
+		} else {
+			$pTitle = 'Budget approval update';
+			$pBody = '"' . $title . '" — step completed: ' . $actionLabel . '. Current status: ' . $status . '.';
+		}
+		$notify->notifyStaff((int) $preparer['id'], $pTitle, $pBody, $prepareUrl, (int) $budget['branch_id']);
+		$this->sendBudgetContactAlert($preparer, $pTitle, $pBody);
+
+		// After procurement / budget manager, nudge next role
+		$nextPost = null;
+		if ($action === 'procurement_review') {
+			$nextPost = 19;
+		} elseif ($action === 'budget_review') {
+			$nextPost = 24;
+		}
+		if ($nextPost) {
+			$nTitle = 'Budget awaiting your approval';
+			$nBody = $branchLabel . ' — "' . $title . '" needs your review. Status: ' . $status . '.';
+			foreach ($notify->activeStaffByPost($nextPost, $schoolId) as $staff) {
+				$notify->notifyStaff((int) $staff['id'], $nTitle, $nBody, $reviewUrl, (int) $budget['branch_id']);
+				$this->sendBudgetContactAlert($staff, $nTitle, $nBody);
+			}
+		}
+	}
+
+	protected function sendBudgetContactAlert(array $staff, string $subject, string $body): void
+	{
+		$name = (new BudgetNotificationService())->displayName($staff);
+		$phone = trim((string) ($staff['phone'] ?? ''));
+		$email = trim((string) ($staff['email'] ?? ''));
+		$sms = 'SmartSMS Budget: ' . $subject . ' — ' . $body;
+		if (strlen($sms) > 300) {
+			$sms = substr($sms, 0, 297) . '...';
+		}
+		if ($phone !== '') {
+			$result = null;
+			try {
+				$this->sendSMS($phone, $sms, $result);
+			} catch (\Throwable $e) {
+				// non-fatal
+			}
+		}
+		if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+			$html = '<p>Dear ' . htmlspecialchars($name) . ',</p><p>' . nl2br(htmlspecialchars($body)) . '</p><p>— XanderTech SmartSMS</p>';
+			try {
+				$this->_send_email($email, $subject, $html);
+			} catch (\Throwable $e) {
+				// non-fatal
+			}
+		}
 	}
 
 	public function delete_budget()
