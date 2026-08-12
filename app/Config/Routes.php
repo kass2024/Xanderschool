@@ -221,6 +221,7 @@ $routes->get('budget/periods', 'BudgetCashflow::periods');
 $routes->post('budget/save_period', 'BudgetCashflow::save_period');
 $routes->get('budget/settings', 'BudgetCashflow::settings');
 $routes->post('budget/save_settings', 'BudgetCashflow::save_settings');
+$routes->get('budget/resolve_approval_chain', 'BudgetCashflow::resolve_approval_chain');
 $routes->get('budget/templates', 'BudgetCashflow::templates');
 $routes->get('budget/download_official_template', 'BudgetCashflow::download_official_template');
 $routes->post('budget/install_official_template', 'BudgetCashflow::install_official_template');

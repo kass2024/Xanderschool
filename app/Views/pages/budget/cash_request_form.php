@@ -63,7 +63,14 @@
 		<div class="col-md-4 form-group"><label class="font-weight-bold">Amount (RWF) <span class="text-danger">*</span></label><input type="number" step="0.01" min="1" class="form-control form-control-lg" name="line_amount" id="line_amount" value="<?= esc($lines[0]['amount'] ?? ''); ?>" required></div>
 	</div>
 	<input type="hidden" name="requested_amount" id="requested_amount" value="<?= esc($request['requested_amount'] ?? ''); ?>">
-	<div class="form-group mb-0"><label class="font-weight-bold">Internal notes</label><textarea class="form-control" name="internal_notes" rows="2"><?= esc($request['internal_notes'] ?? ''); ?></textarea></div>
+	<div id="chainPreviewBox" class="bp-kpi-row mt-2 mb-0" style="display:none">
+		<div class="bp-kpi income w-100">
+			<label>Approval chain for this amount</label>
+			<strong class="small d-block" id="chainPreviewLabel">—</strong>
+			<small class="text-muted d-block mt-1" id="chainPreviewSteps"></small>
+		</div>
+	</div>
+	<div class="form-group mb-0 mt-2"><label class="font-weight-bold">Internal notes</label><textarea class="form-control" name="internal_notes" rows="2"><?= esc($request['internal_notes'] ?? ''); ?></textarea></div>
 </div>
 
 <div class="cr-section border-warning">
@@ -213,6 +220,17 @@ function checkAvail() {
 	var cat = $('#budget_line_id option:selected').data('cat');
 	if (cat && !$('#line_description').val()) $('#line_description').val(cat);
 	showAvailability(lid, amt);
+	refreshChainPreview(amt);
+}
+
+function refreshChainPreview(amt) {
+	var $box = $('#chainPreviewBox');
+	if (!amt || amt <= 0) { $box.hide(); return; }
+	$.getJSON('<?= base_url('budget/resolve_approval_chain'); ?>', { amount: amt }, function (r) {
+		$('#chainPreviewLabel').text(r.label || r.chain || '—');
+		$('#chainPreviewSteps').text(r.steps_label || ((r.steps || []).join(' → ')));
+		$box.show();
+	});
 }
 
 $('#budget_id').on('change', loadLines);

@@ -73,17 +73,12 @@ $f = $financials ?? [];
 
 <?php } else { /* audit */ ?>
 <?php if (budget_menu_any(['budget_settings']) && budget_permission_allowed('budget.settings.manage')) { ?>
-<div class="card mb-3"><div class="card-header">Budget settings</div><div class="card-body">
-<form id="frmBudgetSettings">
-<div class="form-row">
-<div class="col-md-3 form-group"><label>Currency</label><input class="form-control" name="default_currency" value="<?= esc($settings['default_currency'] ?? 'RWF'); ?>"></div>
-<div class="col-md-3 form-group"><label>Utilization alert %</label><input type="number" class="form-control" name="budget_utilization_alert_pct" value="<?= esc($settings['budget_utilization_alert_pct'] ?? 80); ?>"></div>
-<div class="col-md-3 form-group"><label>Headteacher approval</label><select class="form-control" name="headteacher_approval_mode"><option value="evidence" <?= ($settings['headteacher_approval_mode'] ?? '') === 'evidence' ? 'selected' : ''; ?>>With evidence</option><option value="always" <?= ($settings['headteacher_approval_mode'] ?? '') === 'always' ? 'selected' : ''; ?>>Always</option></select></div>
-<div class="col-md-3 form-group pt-4"><label><input type="checkbox" name="ai_enabled" value="1" <?= !empty($settings['ai_enabled']) ? 'checked' : ''; ?>> AI suggestions</label></div>
+<div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center">
+	<span>Cash flow settings</span>
+	<a href="<?= base_url('budget/settings'); ?>" class="btn btn-sm btn-primary"><i class="fa fa-sliders-h"></i> Open amount approval settings</a>
 </div>
-<button type="submit" class="btn btn-primary btn-sm">Save settings</button>
-</form></div></div>
-<script>$('#frmBudgetSettings').on('submit',function(e){e.preventDefault();$.post('<?= base_url('budget/save_settings'); ?>',$(this).serialize(),function(r){toastada.success(r.success||'Saved');},'json');});</script>
+<div class="card-body small text-muted mb-0">Configure which approval chain applies by request amount (master school). Example: up to 60,000 RWF → Headmaster → Director of Finance.</div>
+</div>
 <?php } ?>
 
 <div class="card"><div class="card-header">Audit trail</div><div class="card-body p-0">

@@ -21,6 +21,7 @@ use App\Services\Budget\TermExpensesBudgetImportService;
 use App\Services\Budget\GeminiBudgetAnalysisService;
 use App\Services\Budget\SchoolFeesBudgetProjectionService;
 use App\Services\Budget\BudgetEmptyAmountsService;
+use App\Services\Budget\CashRequestApprovalPolicy;
 use App\Services\SchoolHierarchyService;
 
 class BudgetCashflow extends Home
@@ -643,7 +644,31 @@ class BudgetCashflow extends Home
 
 	public function settings()
 	{
-		return redirect()->to(base_url('budget/reports?tab=audit'));
+		$this->bootBudget();
+		$this->denyPerm('budget.settings.manage');
+		$c = $this->ctx();
+		CashRequestApprovalPolicy::ensureSchema();
+		$hier = new SchoolHierarchyService();
+		$isMaster = $hier->isMasterSchool((int) $c['schoolId'])
+			|| !$hier->isChildSchool((int) $c['schoolId']);
+		if (!$isMaster) {
+			return redirect()->to(base_url('budget/dashboard'))
+				->with('error', 'Cash flow approval settings are managed at the master school only.');
+		}
+		$db = \Config\Database::connect();
+		$data = $this->data;
+		$data['title'] = 'Cash flow settings';
+		$data['page'] = 'budget_settings';
+		$data['settings'] = $db->table('budget_settings')
+			->where('organization_id', $c['orgId'])->where('branch_id', null)->get(1)->getRowArray() ?: [];
+		$data['approval_tiers'] = CashRequestApprovalPolicy::loadTiersForOrg((int) $c['orgId']);
+		$data['chain_labels'] = CashRequestApprovalPolicy::chainLabels();
+		$data['is_master'] = true;
+		$data['branch_label'] = $c['branch']
+			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
+			: session('soma_school');
+		$data['content'] = view('pages/budget/settings', $data);
+		return view('main', $data);
 	}
 
 	public function save_settings()
@@ -651,12 +676,60 @@ class BudgetCashflow extends Home
 		$this->bootBudget();
 		$this->denyPerm('budget.settings.manage');
 		$c = $this->ctx();
+		$hier = new SchoolHierarchyService();
+		$isMaster = $hier->isMasterSchool((int) $c['schoolId'])
+			|| !$hier->isChildSchool((int) $c['schoolId']);
+		if (!$isMaster) {
+			return $this->response->setJSON(['error' => 'Only the master school can change cash flow settings.']);
+		}
+		CashRequestApprovalPolicy::ensureSchema();
 		$db = \Config\Database::connect();
+
+		$tiersRaw = $this->request->getPost('approval_tiers_json');
+		if ($tiersRaw === null || $tiersRaw === '') {
+			// Build from repeated fields
+			$maxes = $this->request->getPost('tier_max') ?? [];
+			$chains = $this->request->getPost('tier_chain') ?? [];
+			$labels = $this->request->getPost('tier_label') ?? [];
+			$built = [];
+			if (is_array($maxes)) {
+				foreach ($maxes as $i => $max) {
+					$built[] = [
+						'max_amount' => ($max === '' || $max === null) ? null : (float) $max,
+						'chain' => $chains[$i] ?? CashRequestApprovalPolicy::CHAIN_FULL,
+						'label' => $labels[$i] ?? '',
+					];
+				}
+			}
+			$tiers = CashRequestApprovalPolicy::parseTiers($built);
+		} else {
+			$tiers = CashRequestApprovalPolicy::parseTiers($tiersRaw);
+		}
+		if ($tiers === []) {
+			$tiers = CashRequestApprovalPolicy::defaultTiers();
+		}
+		// Ensure an open-ended full/medium/short catch-all exists
+		$hasOpen = false;
+		foreach ($tiers as $t) {
+			if ($t['max_amount'] === null) {
+				$hasOpen = true;
+				break;
+			}
+		}
+		if (!$hasOpen) {
+			$tiers[] = [
+				'max_amount' => null,
+				'chain' => CashRequestApprovalPolicy::CHAIN_FULL,
+				'label' => 'Standard',
+			];
+		}
+
 		$row = [
 			'default_currency' => $this->request->getPost('default_currency') ?: 'RWF',
 			'headteacher_approval_mode' => $this->request->getPost('headteacher_approval_mode') ?: 'evidence',
 			'ai_enabled' => $this->request->getPost('ai_enabled') ? 1 : 0,
 			'budget_utilization_alert_pct' => (float) $this->request->getPost('budget_utilization_alert_pct') ?: 80,
+			'approval_tiers_json' => json_encode(array_values($tiers)),
 			'updated_by' => $c['staffId'],
 			'updated_at' => date('Y-m-d H:i:s'),
 		];
@@ -669,7 +742,19 @@ class BudgetCashflow extends Home
 			$row['created_at'] = date('Y-m-d H:i:s');
 			$db->table('budget_settings')->insert($row);
 		}
-		return $this->response->setJSON(['success' => 'Settings saved.']);
+		return $this->response->setJSON([
+			'success' => 'Cash flow settings saved.',
+			'tiers' => $tiers,
+		]);
+	}
+
+	public function resolve_approval_chain()
+	{
+		$this->bootBudget();
+		$c = $this->ctx();
+		$amount = (float) ($this->request->getGet('amount') ?? $this->request->getPost('amount') ?? 0);
+		$resolved = CashRequestApprovalPolicy::resolveChain((int) $c['orgId'], $amount);
+		return $this->response->setJSON($resolved);
 	}
 
 	public function templates()
@@ -1926,19 +2011,46 @@ class BudgetCashflow extends Home
 		} elseif ($tab === 'pending') {
 			$postId = $c['postId'];
 			$statusMap = [
-				20 => ['SUBMITTED', 'HEADTEACHER_APPROVED'],
+				20 => ['HEADTEACHER_APPROVED'], // Procurement after HM (full/medium)
 				19 => ['PROCUREMENT_APPROVED'],
 				21 => ['BUDGET_APPROVED'],
 				22 => ['FINANCE_AUTHORIZED'],
-				24 => ['BUDGET_APPROVED', 'FINANCE_AUTHORIZED'],
+				// DoF: full chain at BUDGET_APPROVED; short at HEADTEACHER_APPROVED; medium at PROCUREMENT_APPROVED
+				24 => ['HEADTEACHER_APPROVED', 'PROCUREMENT_APPROVED', 'BUDGET_APPROVED', 'FINANCE_AUTHORIZED'],
 				9 => ['FINANCE_AUTHORIZED', 'PAID'],
 				1 => ['SUBMITTED'],
 				18 => ['SUBMITTED'],
 			];
 			$statuses = $statusMap[$postId] ?? [];
 			if ($statuses) {
-				$data['requests'] = $db->table('cash_requests')->whereIn('status', $statuses)
+				$rows = $db->table('cash_requests')->whereIn('status', $statuses)
 					->whereIn('branch_id', $branchIds)->orderBy('id', 'DESC')->get()->getResultArray();
+				// Filter DoF / Procurement so short-chain items only show to the right role
+				if ((int) $postId === 24) {
+					$rows = array_values(array_filter($rows, static function ($r) {
+						$chain = strtolower((string) ($r['approval_chain'] ?? 'full'));
+						$st = (string) ($r['status'] ?? '');
+						if ($st === 'FINANCE_AUTHORIZED') {
+							return true;
+						}
+						if ($st === 'HEADTEACHER_APPROVED') {
+							return $chain === 'short';
+						}
+						if ($st === 'PROCUREMENT_APPROVED') {
+							return $chain === 'medium';
+						}
+						if ($st === 'BUDGET_APPROVED') {
+							return $chain === 'full' || $chain === '';
+						}
+						return false;
+					}));
+				} elseif ((int) $postId === 20) {
+					$rows = array_values(array_filter($rows, static function ($r) {
+						$chain = strtolower((string) ($r['approval_chain'] ?? 'full'));
+						return $chain !== 'short';
+					}));
+				}
+				$data['requests'] = $rows;
 			}
 		} elseif ($tab === 'payments') {
 			$data['requests'] = $db->table('cash_requests')->whereIn('branch_id', $branchIds)
@@ -1980,6 +2092,8 @@ class BudgetCashflow extends Home
 		$data['is_accountant'] = ((int) $c['postId'] === 9);
 		$data['lines'] = $id ? $db->table('cash_request_lines')->where('cash_request_id', (int)$id)->get()->getResultArray() : [];
 		$data['documents'] = $id ? $db->table('cash_request_documents')->where('cash_request_id', (int)$id)->orderBy('id')->get()->getResultArray() : [];
+		CashRequestApprovalPolicy::ensureSchema();
+		$data['approval_tiers'] = CashRequestApprovalPolicy::loadTiersForOrg((int) $c['orgId']);
 		$data['content'] = view('pages/budget/cash_request_form', $data);
 		return view('main', $data);
 	}
@@ -1989,6 +2103,7 @@ class BudgetCashflow extends Home
 		$this->bootBudget();
 		$this->denyPerm('cash_request.create');
 		$c = $this->ctx();
+		CashRequestApprovalPolicy::ensureSchema();
 		$db = \Config\Database::connect();
 		$id = (int) $this->request->getPost('id');
 		$submitNow = (bool) $this->request->getPost('submit_now');
@@ -2039,6 +2154,7 @@ class BudgetCashflow extends Home
 			'purpose' => trim((string) $this->request->getPost('purpose')),
 			'currency' => 'RWF',
 			'requested_amount' => $amount,
+			'approval_chain' => CashRequestApprovalPolicy::resolveChain((int) $c['orgId'], $amount)['chain'],
 			'payment_method' => $this->request->getPost('payment_method'),
 			'urgency' => $this->request->getPost('urgency') ?: 'normal',
 			'internal_notes' => $this->request->getPost('internal_notes'),
@@ -2142,6 +2258,16 @@ class BudgetCashflow extends Home
 				$data['availability'][$ln['budget_line_id']] = (new BudgetAvailabilityService())->lineAvailability($ln['budget_line_id']);
 			}
 		}
+		CashRequestApprovalPolicy::ensureSchema();
+		$chain = (string) ($req['approval_chain'] ?? 'full');
+		if ($chain === '' || empty($req['approval_chain'])) {
+			$resolved = CashRequestApprovalPolicy::resolveChain((int) ($req['organization_id'] ?? 0), (float) ($req['requested_amount'] ?? 0));
+			$chain = $resolved['chain'];
+		}
+		$data['approval_chain'] = $chain;
+		$data['approval_flow'] = CashRequestApprovalPolicy::flowLabels($chain);
+		$data['approval_steps_label'] = CashRequestApprovalPolicy::chainLabels()[$chain] ?? $chain;
+		$data['wf_actions'] = CashRequestWorkflowService::uiActionsForRequest(array_merge($req, ['approval_chain' => $chain]));
 		$data['content'] = view('pages/budget/cash_request_view', $data);
 		return view('main', $data);
 	}
