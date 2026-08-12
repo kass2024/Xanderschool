@@ -256,54 +256,39 @@ var BudgetWorkspace = (function () {
 				}, 'json');
 			});
 
-			function applySchoolFeesProjection(force) {
+			// Silent auto-sync School Fees from fees settings × students (always refresh on open)
+			function autoRefreshSchoolFees() {
 				if (!cfg.fillSchoolFeesUrl || !cfg.canEdit) return;
 				var $row = $('.budget-line').filter(function () {
 					var cat = String($(this).data('category') || '');
 					return cat.indexOf('school fee') !== -1 || cat === 'fees';
 				}).first();
-				if (!$row.length) {
-					toastada.error('No School Fees income line found on this budget.');
-					return;
-				}
-				var terms = lineTerms($row);
-				if (!force && terms.annual > 0) {
-					if (!confirm('School Fees already has amounts. Overwrite with fees management × student counts?')) return;
-				} else if (force && terms.annual > 0) {
-					return; // auto-fill only when empty
-				}
+				if (!$row.length) return;
 				$.post(cfg.fillSchoolFeesUrl, { budget_id: cfg.budgetId, apply: 1 }, function (r) {
-					if (r.error) { toastada.error(r.error); return; }
-					var p = r.projection || {};
-					$row.find('.inp-term-1').val(p.term_1 > 0 ? p.term_1 : '');
-					$row.find('.inp-term-2').val(p.term_2 > 0 ? p.term_2 : '');
-					$row.find('.inp-term-3').val(p.term_3 > 0 ? p.term_3 : '');
+					if (r.error || !r.projection) return;
+					var p = r.projection;
+					var t1 = p.term_1 > 0 ? p.term_1 : '';
+					var t2 = p.term_2 > 0 ? p.term_2 : '';
+					var t3 = p.term_3 > 0 ? p.term_3 : '';
+					var changed =
+						String($row.find('.inp-term-1').val() || '') !== String(t1) ||
+						String($row.find('.inp-term-2').val() || '') !== String(t2) ||
+						String($row.find('.inp-term-3').val() || '') !== String(t3);
+					$row.find('.inp-term-1').val(t1);
+					$row.find('.inp-term-2').val(t2);
+					$row.find('.inp-term-3').val(t3);
 					if (p.notes) $row.find('input[name*="[assumptions]"]').val(p.notes);
 					if (p.total_students && (!$('#setupEnrollment').val() || parseInt($('#setupEnrollment').val(), 10) === 0)) {
 						$('#setupEnrollment').val(p.total_students);
 					}
-					markDirty();
 					refreshUI();
-					toastada.success(r.message || r.success || 'School Fees filled from fees settings');
-				}, 'json').fail(function () {
-					toastada.error('Could not load school fees projection.');
-				});
+					if (changed) {
+						dirty = false;
+						$('#saveStatus').addClass('saved').html('<i class="fa fa-check"></i> School Fees synced from fees settings');
+					}
+				}, 'json');
 			}
-
-			$('#btnFillSchoolFees, .btn-fill-school-fees-row').on('click', function () {
-				applySchoolFeesProjection(false);
-			});
-
-			// Auto-fill empty School Fees once when opening Step 2
-			if (cfg.canEdit && cfg.fillSchoolFeesUrl) {
-				var $sf = $('.budget-line').filter(function () {
-					var cat = String($(this).data('category') || '');
-					return cat.indexOf('school fee') !== -1;
-				}).first();
-				if ($sf.length && lineTerms($sf).annual === 0) {
-					applySchoolFeesProjection(true);
-				}
-			}
+			autoRefreshSchoolFees();
 
 			if (cfg.canAddLines) {
 				$('#btnAddBudgetLine').on('click', function () { openAddModal(null); });
