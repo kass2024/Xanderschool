@@ -7292,6 +7292,23 @@ public function getApplicationDocs($id = null)
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>
 				";
+			} else if ($type == 11) {
+				// school fees create — boarding/day + per-student amount
+				$mode = (int) ($student['studying_mode'] ?? 1);
+				$modeLabel = self::ModeToStr($mode) ?: ($mode === 0 ? 'Boarding' : 'Day');
+				$modeClass = $mode === 0 ? 'boarding' : 'day';
+				$classId = (int) ($student['class_id'] ?? 0);
+				echo "<tr class='sf-fee-row' data-mode='" . $mode . "' data-class='" . $classId . "'>
+				<td>" . esc($student['regno']) . "</td>
+				<td>" . esc($student['stdnames']) . "
+					<input type='hidden' name='discId[]' value='" . (int)$student['id'] . "'>
+					<input type='hidden' name='classIds[]' value='" . $classId . "'>
+				</td>
+				<td>" . esc($student['level_name'] . " " . $student['title'] . " " . $student['code']) . "</td>
+				<td><span class='mef-mode-badge mef-mode-" . $modeClass . "'>" . esc($modeLabel) . "</span></td>
+				<td><input type='number' required name='amounts[]' class='sf-fee-amt form-control form-control-sm' data-mode='" . $mode . "' min='0' step='1'></td>
+				<td style='text-align:center;'><span class='btn-sm btn-danger sf-remove-row'>" . lang("app.remove") . "</span></td>
+				</tr>";
 			} else if ($type == 10) {
 				// multiple extra fees — show boarding/day and per-student amount
 				$mode = (int) ($student['studying_mode'] ?? 1);
@@ -11408,13 +11425,52 @@ public function getApplicationDocs($id = null)
 		$this->_preset();
 		$school_id = (int) $this->session->get("soma_school_id");
 		$dept = (int) $this->request->getPost("dept");
+
+		$boardingAmt = trim((string) $this->request->getPost("amount_boarding"));
+		$dayAmt = trim((string) $this->request->getPost("amount_day"));
 		$amount = trim((string) $this->request->getPost("amount"));
+		if ($amount === '' || !is_numeric($amount)) {
+			$candidates = [];
+			if ($boardingAmt !== '' && is_numeric($boardingAmt)) {
+				$candidates[] = (float) $boardingAmt;
+			}
+			if ($dayAmt !== '' && is_numeric($dayAmt)) {
+				$candidates[] = (float) $dayAmt;
+			}
+			$amount = !empty($candidates) ? (string) max($candidates) : '';
+		}
+
+		$studentIds = $this->request->getPost("discId");
+		$amounts = $this->request->getPost("amounts");
+		$classIdsPosted = $this->request->getPost("classIds");
+		if (!is_array($studentIds)) {
+			$studentIds = [];
+		}
+		if (!is_array($amounts)) {
+			$amounts = [];
+		}
+		if (!is_array($classIdsPosted)) {
+			$classIdsPosted = [];
+		}
+		$perStudent = [];
+		foreach ($studentIds as $i => $sid) {
+			$sid = (int) $sid;
+			$amt = isset($amounts[$i]) ? trim((string) $amounts[$i]) : '';
+			$cid = isset($classIdsPosted[$i]) ? (int) $classIdsPosted[$i] : 0;
+			if ($sid < 1 || $amt === '' || !is_numeric($amt) || (float) $amt < 0) {
+				continue;
+			}
+			$perStudent[] = [
+				'student_id' => $sid,
+				'amount' => (float) $amt,
+				'class_id' => $cid,
+			];
+		}
 
 		$targets = $this->request->getPost("target");
 		if (!is_array($targets)) {
 			$targets = $targets !== null && $targets !== '' ? [$targets] : [];
 		}
-		// Backward compat: level[] still accepted
 		if (empty($targets)) {
 			$levels = $this->request->getPost("level");
 			if (!is_array($levels)) {
@@ -11439,96 +11495,261 @@ public function getApplicationDocs($id = null)
 		if ($dept <= 0) {
 			return $this->response->setJSON(["error" => lang("app.selectDepartment")]);
 		}
-		if (empty($targets)) {
+		if (empty($targets) && empty($perStudent)) {
 			return $this->response->setJSON(["error" => lang("app.selectClass")]);
 		}
 		if (empty($terms)) {
 			return $this->response->setJSON(["error" => lang("app.selectTerms")]);
 		}
-		if ($amount === '' || !is_numeric($amount) || (float) $amount < 0) {
-			return $this->response->setJSON(["error" => lang("app.amount") . " is required"]);
+		if (empty($perStudent) && ($amount === '' || !is_numeric($amount) || (float) $amount < 0)) {
+			return $this->response->setJSON(["error" => "Enter boarding and/or day amount, or load students and set amounts."]);
 		}
 
 		$schoolFee = new SchoolFeesModel();
 		$schoolFee->ensureSchema();
 		$classMdl = new ClassesModel();
+		$discountMdl = new SchoolFeesDiscountModel();
 		$created = 0;
-		$skipped = 0;
+		$updated = 0;
+		$discounted = 0;
 		$academicYear = (int) $this->data['academic_year'];
 		$createdBy = $this->session->get("soma_id");
 
-		try {
-			foreach ($targets as $rawTarget) {
-				$rawTarget = (string) $rawTarget;
-				$classId = 0;
-				$levelId = 0;
-
-				if (strpos($rawTarget, 'c:') === 0) {
-					$classId = (int) substr($rawTarget, 2);
-					$classRow = $classMdl->select('id, level, department')
-						->where('id', $classId)
+		// Resolve targets → class rows (class-specific when students are used)
+		$classTargets = []; // class_id => ['level'=>, 'department'=>]
+		foreach ($targets as $rawTarget) {
+			$rawTarget = (string) $rawTarget;
+			if (strpos($rawTarget, 'c:') === 0) {
+				$classId = (int) substr($rawTarget, 2);
+				$classRow = $classMdl->select('id, level, department')
+					->where('id', $classId)
+					->where('school_id', $school_id)
+					->where('department', $dept)
+					->get(1)->getRowArray();
+				if ($classRow) {
+					$classTargets[(int) $classRow['id']] = [
+						'level' => (int) $classRow['level'],
+						'department' => (int) $classRow['department'],
+					];
+				}
+			} elseif (strpos($rawTarget, 'l:') === 0 || ctype_digit($rawTarget)) {
+				$levelId = strpos($rawTarget, 'l:') === 0 ? (int) substr($rawTarget, 2) : (int) $rawTarget;
+				if ($levelId <= 0) {
+					continue;
+				}
+				if (!empty($perStudent)) {
+					// Expand level to concrete classes when setting per-student fees
+					$rows = $classMdl->select('id, level, department')
 						->where('school_id', $school_id)
 						->where('department', $dept)
-						->get(1)->getRowArray();
-					if (!$classRow) {
-						continue;
+						->where('level', $levelId)
+						->get()->getResultArray();
+					foreach ($rows as $classRow) {
+						$classTargets[(int) $classRow['id']] = [
+							'level' => (int) $classRow['level'],
+							'department' => (int) $classRow['department'],
+						];
 					}
-					$levelId = (int) $classRow['level'];
-				} elseif (strpos($rawTarget, 'l:') === 0) {
-					$levelId = (int) substr($rawTarget, 2);
 				} else {
-					$levelId = (int) $rawTarget;
+					$classTargets['L' . $levelId] = [
+						'level' => $levelId,
+						'department' => $dept,
+						'class_id' => 0,
+					];
+				}
+			}
+		}
+
+		// Ensure classes from posted students are included
+		foreach ($perStudent as $ps) {
+			$cid = (int) $ps['class_id'];
+			if ($cid > 0 && !isset($classTargets[$cid])) {
+				$classRow = $classMdl->select('id, level, department')
+					->where('id', $cid)
+					->where('school_id', $school_id)
+					->get(1)->getRowArray();
+				if ($classRow) {
+					$classTargets[$cid] = [
+						'level' => (int) $classRow['level'],
+						'department' => (int) $classRow['department'],
+					];
+				}
+			}
+		}
+
+		if (empty($classTargets)) {
+			return $this->response->setJSON(["error" => lang("app.selectClass")]);
+		}
+
+		try {
+			foreach ($classTargets as $key => $meta) {
+				$isLevelOnly = is_string($key) && strpos($key, 'L') === 0;
+				$classId = $isLevelOnly ? 0 : (int) $key;
+				$levelId = (int) $meta['level'];
+				$deptId = (int) $meta['department'];
+
+				$classStudents = [];
+				if (!empty($perStudent)) {
+					if ($isLevelOnly) {
+						$classStudents = $perStudent;
+					} else {
+						$classStudents = array_values(array_filter($perStudent, static function ($ps) use ($classId) {
+							return (int) $ps['class_id'] === $classId;
+						}));
+					}
 				}
 
-				if ($levelId <= 0) {
+				$base = (float) ($amount !== '' && is_numeric($amount) ? $amount : 0);
+				if (!empty($classStudents)) {
+					$maxStudent = max(array_column($classStudents, 'amount'));
+					$base = max($base, (float) $maxStudent);
+				}
+				if ($base < 0) {
 					continue;
 				}
 
 				foreach ($terms as $term) {
-					$builder = $schoolFee->where('school_id', $school_id)
+					$existing = $schoolFee->where('school_id', $school_id)
 						->where('term', $term)
 						->where('academic_year', $academicYear);
 					if ($classId > 0) {
-						$builder->where('class_id', $classId);
+						$existing->where('class_id', $classId);
 					} else {
-						$builder->where('level', $levelId)
-							->where('department', $dept)
+						$existing->where('level', $levelId)
+							->where('department', $deptId)
 							->groupStart()
 								->where('class_id IS NULL', null, false)
 								->orWhere('class_id', 0)
 							->groupEnd();
 					}
-					if ($builder->countAllResults() > 0) {
-						$skipped++;
+					$feeRow = $existing->get(1)->getRowArray();
+					$feeId = 0;
+					if ($feeRow) {
+						$feeId = (int) $feeRow['id'];
+						if (!empty($classStudents) || (float) $feeRow['amount'] != $base) {
+							$schoolFee->update($feeId, ['amount' => $base]);
+							$updated++;
+						}
+					} else {
+						$feeId = (int) $schoolFee->insert([
+							"school_id" => $school_id,
+							"level" => $levelId,
+							"department" => $deptId,
+							"class_id" => $classId > 0 ? $classId : null,
+							"amount" => $base,
+							"term" => $term,
+							"academic_year" => $academicYear,
+							"created_by" => $createdBy,
+						]);
+						$created++;
+					}
+
+					if ($feeId < 1 || empty($classStudents)) {
 						continue;
 					}
 
-					$schoolFee->insert([
-						"school_id" => $school_id,
-						"level" => $levelId,
-						"department" => $dept,
-						"class_id" => $classId > 0 ? $classId : null,
-						"amount" => $amount,
-						"term" => $term,
-						"academic_year" => $academicYear,
-						"created_by" => $createdBy,
-					]);
-					$created++;
+					foreach ($classStudents as $ps) {
+						$sid = (int) $ps['student_id'];
+						$studentAmt = (float) $ps['amount'];
+						$delta = $studentAmt - $base;
+						// Replace prior adjustments so expected = studentAmt
+						\Config\Database::connect()->table('school_fees_discount')
+							->where('student', $sid)
+							->where('feesId', $feeId)
+							->delete();
+						if (abs($delta) > 0.00001) {
+							$discountMdl->insert([
+								'student' => $sid,
+								'feesId' => $feeId,
+								'type' => $delta > 0 ? 1 : 0,
+								'amount' => $delta,
+								'comment' => 'Set from Create Fee (boarding/day)',
+								'operator' => $createdBy,
+								'status' => 1,
+							]);
+							$discounted++;
+						}
+					}
 				}
 			}
 
-			if ($created === 0) {
-				return $this->response->setJSON(["error" => "Fee record(s) already exist for the selected class(es) and term(s)."]);
+			if ($created === 0 && $updated === 0 && $discounted === 0) {
+				return $this->response->setJSON(["error" => "No fees were saved. Check class, terms, and amounts."]);
 			}
 
+			$parts = [];
+			if ($created > 0) {
+				$parts[] = "{$created} created";
+			}
+			if ($updated > 0) {
+				$parts[] = "{$updated} updated";
+			}
+			if ($discounted > 0) {
+				$parts[] = "{$discounted} student amounts set";
+			}
 			$message = lang("app.feeSaved");
-			if ($skipped > 0) {
-				$message .= " ($created saved, $skipped skipped — already exist)";
+			if ($parts) {
+				$message .= ' (' . implode(', ', $parts) . ')';
 			}
 			return $this->response->setJSON(["success" => $message]);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(["error" => "Error: " . $e->getMessage()]);
 		}
+	}
+
+	/**
+	 * Load students for Create Fee modal (boarding/day + per-student amounts).
+	 * GET/POST: dept, target[] (c:ID or l:ID)
+	 */
+	public function get_school_fee_students()
+	{
+		$this->_preset();
+		$school_id = (int) $this->session->get("soma_school_id");
+		$dept = (int) ($this->request->getGet('dept') ?: $this->request->getPost('dept'));
+		$targets = $this->request->getGet('target') ?: $this->request->getPost('target');
+		if (!is_array($targets)) {
+			$targets = $targets !== null && $targets !== '' ? [$targets] : [];
+		}
+		if ($dept <= 0 || empty($targets)) {
+			echo '<tr><td colspan="6" class="text-muted text-center">Select class(es) to load students.</td></tr>';
+			return;
+		}
+
+		$classMdl = new ClassesModel();
+		$classIds = [];
+		foreach ($targets as $rawTarget) {
+			$rawTarget = (string) $rawTarget;
+			if (strpos($rawTarget, 'c:') === 0) {
+				$classIds[] = (int) substr($rawTarget, 2);
+			} elseif (strpos($rawTarget, 'l:') === 0) {
+				$levelId = (int) substr($rawTarget, 2);
+				$rows = $classMdl->select('id')
+					->where('school_id', $school_id)
+					->where('department', $dept)
+					->where('level', $levelId)
+					->get()->getResultArray();
+				foreach ($rows as $r) {
+					$classIds[] = (int) $r['id'];
+				}
+			}
+		}
+		$classIds = array_values(array_unique(array_filter($classIds)));
+		if (empty($classIds)) {
+			echo '<tr><td colspan="6" class="text-muted text-center">No classes found.</td></tr>';
+			return;
+		}
+
+		$html = '';
+		ob_start();
+		foreach ($classIds as $cid) {
+			$this->get_student($cid, 1, 11);
+		}
+		$html = ob_get_clean();
+		if (trim($html) === '' || strpos($html, 'sf-fee-row') === false) {
+			echo '<tr><td colspan="6" class="text-muted text-center">' . lang("app.sorryNoStudents") . '</td></tr>';
+			return;
+		}
+		echo $html;
 	}
 
 	/**

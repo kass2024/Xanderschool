@@ -79,6 +79,45 @@
 									<?= lang("app.dashboard"); ?>
 								</a>
 							</li>
+							<?php
+							helper('qonics');
+							$childSchoolMenu = school_hierarchy_accessible_schools();
+							if (count($childSchoolMenu) > 1) {
+								$activeSchoolId = (int) session('soma_school_id');
+								$homeSchoolId = school_hierarchy_home_id();
+								?>
+							<li>
+								<a href="#">
+									<i class="metismenu-icon typcn typcn-flow-children"></i>
+									Child schools
+									<i class="metismenu-state-icon fa fa-caret-down"></i>
+								</a>
+								<ul class="mm-collapse">
+									<?php foreach ($childSchoolMenu as $cs) {
+										$csid = (int) ($cs['id'] ?? 0);
+										$isActive = $csid === $activeSchoolId;
+										$isHome = $csid === $homeSchoolId;
+										?>
+									<li>
+										<a href="<?= base_url('switch-school/' . $csid); ?>" class="<?= $isActive ? 'font-weight-bold' : ''; ?>">
+											<i class="metismenu-icon"></i>
+											<?= esc($cs['name'] ?? ''); ?>
+											<?php if ($isHome) { ?><small class="text-warning"> (master)</small><?php } ?>
+											<?php if ($isActive && !$isHome) { ?><small class="text-info"> · viewing</small><?php } ?>
+										</a>
+									</li>
+									<?php } ?>
+									<?php if ($activeSchoolId !== $homeSchoolId) { ?>
+									<li>
+										<a href="<?= base_url('reset-school'); ?>">
+											<i class="metismenu-icon typcn typcn-arrow-back"></i>
+											Back to master school
+										</a>
+									</li>
+									<?php } ?>
+								</ul>
+							</li>
+							<?php } ?>
 							<?php if (menu_clearance_group_visible('students')) { ?>
 								<li>
 									<a href="#">
@@ -665,6 +704,14 @@
 													<a href="<?= base_url('fees_entry'); ?>">
 														<i class="metismenu-icon"></i>
 														<?= lang("app.feesEntry"); ?>
+													</a>
+												</li>
+												<?php } ?>
+												<?php if (menu_clearance_allowed('fees_pending_approval')) { ?>
+												<li>
+													<a href="<?= base_url('fees_pending_approval'); ?>">
+														<i class="metismenu-icon"></i>
+														<?= lang("app.feesPendingApproval"); ?>
 													</a>
 												</li>
 												<?php } ?>
@@ -2140,10 +2187,18 @@
 }
 ?>
 <?php if ($page == "School_fees") { ?>
+	<style>
+		.mef-mode-badge{display:inline-block;padding:.2rem .55rem;border-radius:999px;font-size:.75rem;font-weight:600;white-space:nowrap;}
+		.mef-mode-boarding{background:#e0e7ff;color:#3730a3;}
+		.mef-mode-day{background:#ecfdf5;color:#047857;}
+		#mdlfees .sf-students-wrap{max-height:280px;overflow:auto;border:1px solid #e5e7eb;border-radius:6px;}
+		#mdlfees .modal-dialog{max-width:960px;}
+	</style>
 	<div class="modal fade" id="mdlfees" tabindex="-1" role="dialog">
 		<div class="modal-dialog modal-lg" role="document">
 			<div class="modal-content">
 				<form action="<?= base_url('manipulate_school_fee'); ?>" class="autoSubmit validate" id="frmSchoolFee">
+					<input type="hidden" name="amount" id="sf_amount_base" value="">
 					<div class="modal-header">
 						<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.createFee"); ?></h5>
 						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
@@ -2168,16 +2223,21 @@
 									<label><?= lang("app.selectClass"); ?></label>
 									<select class="form-control select2" required name="target[]" id="fee_targets" multiple data-placeholder="<?= lang("app.selectClass"); ?>">
 									</select>
-									<small class="form-text text-muted">Select class(es) — e.g. P4 A, P4 B when multiple exist.</small>
+									<small class="form-text text-muted">Select class(es), then load students to set boarding / day amounts.</small>
 								</div>
 							</div>
 						</div>
 						<div class="row">
 							<div class="col-md-6">
-								<div class="form-group">
-									<label><?= lang("app.amount"); ?></label>
-									<input type="number" min="0" step="1" name="amount" class="form-control" required>
+								<div class="form-group mb-2">
+									<label><?= lang("app.boarding"); ?> <?= lang("app.amount"); ?></label>
+									<input type="number" min="0" step="1" name="amount_boarding" id="sf_amt_boarding" class="form-control" placeholder="Amount for boarding students">
 								</div>
+								<div class="form-group">
+									<label><?= lang("app.day"); ?> <?= lang("app.amount"); ?></label>
+									<input type="number" min="0" step="1" name="amount_day" id="sf_amt_day" class="form-control" placeholder="Amount for day students">
+								</div>
+								<small class="text-muted">These fill matching students. You can still edit any student amount below.</small>
 							</div>
 							<div class="col-md-6">
 								<div class="form-group">
@@ -2192,6 +2252,29 @@
 										<option value="3"><?= lang("app.term3"); ?></option>
 									</select>
 								</div>
+								<button type="button" class="btn btn-outline-primary btn-sm" id="sfLoadStudents">
+									<i class="fa fa-users"></i> Load class students
+								</button>
+							</div>
+						</div>
+						<div class="mt-3">
+							<label class="font-weight-bold"><?= lang("app.studentName"); ?> list</label>
+							<div class="sf-students-wrap">
+								<table class="table table-sm table-hover mb-0">
+									<thead>
+										<tr>
+											<th><?= lang("app.regNo"); ?></th>
+											<th><?= lang("app.studentName"); ?></th>
+											<th><?= lang("app.sClass"); ?></th>
+											<th><?= lang("app.studyingMode"); ?></th>
+											<th><?= lang("app.amount"); ?></th>
+											<th></th>
+										</tr>
+									</thead>
+									<tbody id="sfFeeStudents">
+										<tr class="sf-empty-row"><td colspan="6" class="text-muted text-center">Select class(es) and click <strong>Load class students</strong>.</td></tr>
+									</tbody>
+								</table>
 							</div>
 						</div>
 					</div>
@@ -2241,6 +2324,54 @@
 			}
 		}
 
+		function sfApplyModeAmounts() {
+			var boarding = $('#sf_amt_boarding').val();
+			var day = $('#sf_amt_day').val();
+			if (boarding !== '') {
+				$('#sfFeeStudents .sf-fee-amt[data-mode="0"]').val(boarding);
+			}
+			if (day !== '') {
+				$('#sfFeeStudents .sf-fee-amt[data-mode="1"]').val(day);
+			}
+			sfSyncBaseAmount();
+		}
+
+		function sfSyncBaseAmount() {
+			var vals = [];
+			var b = $('#sf_amt_boarding').val();
+			var d = $('#sf_amt_day').val();
+			if (b !== '' && !isNaN(b)) vals.push(Number(b));
+			if (d !== '' && !isNaN(d)) vals.push(Number(d));
+			$('#sfFeeStudents .sf-fee-amt').each(function () {
+				var v = $(this).val();
+				if (v !== '' && !isNaN(v)) vals.push(Number(v));
+			});
+			$('#sf_amount_base').val(vals.length ? Math.max.apply(null, vals) : '');
+		}
+
+		function sfLoadStudents() {
+			var dept = $('#select_dept').val();
+			var targets = $('#fee_targets').val();
+			if (!dept || !targets || !targets.length) {
+				toastada.warning('Select department and class(es) first.');
+				return;
+			}
+			var $tb = $('#sfFeeStudents');
+			$tb.html('<tr><td colspan="6" class="text-muted text-center"><i class="fa fa-spinner fa-spin"></i> Loading…</td></tr>');
+			$.ajax({
+				url: '<?= base_url('get_school_fee_students'); ?>',
+				type: 'POST',
+				data: { dept: dept, target: targets },
+				success: function (html) {
+					$tb.html(html);
+					sfApplyModeAmounts();
+				},
+				error: function () {
+					$tb.html('<tr><td colspan="6" class="text-danger text-center">Could not load students.</td></tr>');
+				}
+			});
+		}
+
 		$('#mdlfees').on('shown.bs.modal', function () {
 			initFeeModalSelect2();
 			toggleFeeTerms();
@@ -2250,6 +2381,7 @@
 
 		$('#select_dept').on('change', function () {
 			var dept = $(this).val();
+			$('#sfFeeStudents').html('<tr class="sf-empty-row"><td colspan="6" class="text-muted text-center">Select class(es) and click <strong>Load class students</strong>.</td></tr>');
 			if (!dept) {
 				return;
 			}
@@ -2265,6 +2397,51 @@
 					placeholder: '<?= esc(lang("app.selectClass"), "js"); ?>'
 				});
 			});
+		});
+
+		$('#sfLoadStudents').on('click', sfLoadStudents);
+		$('#fee_targets').on('change', function () {
+			// Optional auto-load when classes change and amounts already set
+			if ($('#sf_amt_boarding').val() !== '' || $('#sf_amt_day').val() !== '') {
+				sfLoadStudents();
+			}
+		});
+
+		$('#sf_amt_boarding, #sf_amt_day').on('keyup change', function () {
+			sfApplyModeAmounts();
+		});
+		$(document).on('keyup change', '#sfFeeStudents .sf-fee-amt', sfSyncBaseAmount);
+		$(document).on('click', '#sfFeeStudents .sf-remove-row', function () {
+			$(this).closest('tr').remove();
+			sfSyncBaseAmount();
+		});
+
+		$('#frmSchoolFee').on('submit', function (e) {
+			sfSyncBaseAmount();
+			var hasStudents = $('#sfFeeStudents .sf-fee-row').length > 0;
+			var boarding = $('#sf_amt_boarding').val();
+			var day = $('#sf_amt_day').val();
+			if (!hasStudents && boarding === '' && day === '' && $('#sf_amount_base').val() === '') {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				toastada.error('Enter boarding/day amounts or load students and set amounts.');
+				return false;
+			}
+			if (hasStudents) {
+				var missing = false;
+				$('#sfFeeStudents .sf-fee-amt').each(function () {
+					if ($(this).val() === '' || Number($(this).val()) < 0) {
+						missing = true;
+						return false;
+					}
+				});
+				if (missing) {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+					toastada.error('Fill every student amount (use boarding/day fields to fill quickly).');
+					return false;
+				}
+			}
 		});
 
 	})(jQuery);
@@ -2408,6 +2585,11 @@
 								<div class="col-md-6">
 									<label><?= lang("app.dueDate"); ?></label>
 									<input type="date" name="dueDate" class="form-control" id="feInvoiceDueDate">
+								</div>
+								<div class="col-md-6 mt-3" id="feSlipRefWrap" style="display:none">
+									<label><?= lang("app.slipReference"); ?></label>
+									<input type="text" name="slipRef" class="form-control" id="feInvoiceSlipRef"
+									       maxlength="50" placeholder="<?= lang("app.slipReferencePlaceholder"); ?>">
 								</div>
 							</div>
 						</div>
