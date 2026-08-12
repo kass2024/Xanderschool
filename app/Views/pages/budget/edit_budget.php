@@ -105,7 +105,16 @@ $branchFillMode = !empty($budget_branch_fill);
 
 <!-- THREE-TERM BUDGET GRID -->
 <div class="bp-panel" id="panel-plan">
-<div class="bp-panel-help"><i class="fa fa-table"></i> <strong>Step 2 — Full-year budget by term.</strong> Enter RWF for Term I, Term II and Term III. <em>Annual = T1 + T2 + T3</em><?php if ($branchFillMode) { ?> — amounts reflect your branch only; master school defines the line list.<?php } ?></div>
+<div class="bp-panel-help"><i class="fa fa-table"></i> <strong>Step 2 — Full-year budget by term.</strong> Enter RWF for Term I, Term II and Term III. <em>Annual = T1 + T2 + T3</em><?php if ($branchFillMode) { ?> — amounts reflect your branch only; master school defines the line list.<?php } ?>
+	<?php if ($canEdit) { ?>
+	<span class="d-block mt-1">
+		<button type="button" class="btn btn-sm btn-outline-success" id="btnFillSchoolFees" title="Fill School Fees from fees management × boarding/day students">
+			<i class="fa fa-sync"></i> Auto-fill School Fees from fees settings
+		</button>
+		<small class="text-muted ml-1">Boarding &amp; day rates × enrolled students</small>
+	</span>
+	<?php } ?>
+</div>
 
 <?php foreach ($sections as $secKey => $sec) {
 	if (empty($sec['lines'])) continue;
@@ -151,9 +160,15 @@ $branchFillMode = !empty($budget_branch_fill);
 				<?php continue; }
 				$ro = $canEdit ? '' : 'readonly disabled';
 			?>
-				<tr class="budget-line" data-line-id="<?= $lid; ?>" data-income="<?= $isIncome ? '1' : '0'; ?>" data-section="<?= esc($secKey); ?>">
+				<tr class="budget-line" data-line-id="<?= $lid; ?>" data-income="<?= $isIncome ? '1' : '0'; ?>" data-section="<?= esc($secKey); ?>" data-category="<?= esc(strtolower(trim((string)($ln['category'] ?? '')))); ?>">
 					<td>
 						<strong><?= esc($ln['category']); ?></strong>
+						<?php
+						$catLower = strtolower(trim((string)($ln['category'] ?? '')));
+						$isSchoolFeesLine = $isIncome && (strpos($catLower, 'school fee') !== false || $catLower === 'fees');
+						if ($isSchoolFeesLine && $canEdit) { ?>
+						<button type="button" class="btn btn-link btn-sm p-0 ml-1 btn-fill-school-fees-row" title="Fill from fees management"><i class="fa fa-magic text-success"></i></button>
+						<?php } ?>
 						<input type="hidden" class="calc-mode-input" name="lines[<?= $lid; ?>][calculation_mode]" value="term_sum">
 						<input type="text" class="form-control form-control-sm mt-1" name="lines[<?= $lid; ?>][assumptions]" value="<?= esc($ln['assumptions'] ?? ''); ?>" placeholder="Notes (optional)" <?= $ro; ?>>
 					</td>
@@ -279,7 +294,7 @@ $branchFillMode = !empty($budget_branch_fill);
 </div>
 <?php } ?>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=4"></script>
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=5"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,
@@ -289,5 +304,6 @@ $branchFillMode = !empty($budget_branch_fill);
 	submitUrl: '<?= base_url('budget/submit_budget'); ?>',
 	addLineUrl: '<?= base_url('budget/add_budget_line'); ?>',
 	fillExcelUrl: '<?= base_url('budget/fill_budget_from_excel'); ?>',
+	fillSchoolFeesUrl: '<?= base_url('budget/fill_school_fees_income'); ?>',
 	redirectUrl: '<?= base_url('budget/prepare'); ?>'
 });</script>

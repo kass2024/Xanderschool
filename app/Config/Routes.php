@@ -257,6 +257,7 @@ $routes->get('budget/audit_trail', 'BudgetCashflow::audit_trail');
 $routes->post('budget/scan_session_start', 'BudgetCashflow::scan_session_start');
 $routes->get('budget/scan_session_poll', 'BudgetCashflow::scan_session_poll');
 $routes->post('budget/fill_budget_from_excel', 'BudgetCashflow::fill_budget_from_excel');
+$routes->post('budget/fill_school_fees_income', 'BudgetCashflow::fill_school_fees_income');
 $routes->get('budget/download_term_template', 'BudgetCashflow::download_term_template');
 $routes->post('budget/reset_term_budget', 'BudgetCashflow::reset_term_budget');
 $routes->get('budget/dashboard_ai_json', 'BudgetCashflow::dashboard_ai_json');

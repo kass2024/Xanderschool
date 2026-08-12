@@ -19,6 +19,7 @@ use App\Services\Budget\PaymentService;
 use App\Services\Budget\TermBudgetResetService;
 use App\Services\Budget\TermExpensesBudgetImportService;
 use App\Services\Budget\GeminiBudgetAnalysisService;
+use App\Services\Budget\SchoolFeesBudgetProjectionService;
 use App\Services\SchoolHierarchyService;
 
 class BudgetCashflow extends Home
@@ -244,6 +245,33 @@ class BudgetCashflow extends Home
 		$data['budget_view_only'] = \Config\MenuClearance::isChildBudgetViewOnly($c['postId'], $c['schoolId']);
 		$data['can_prepare_budget'] = \Config\MenuClearance::canPrepareBudgetAtSchool($c['postId'], $c['schoolId'])
 			&& $c['perms']->can($c['staffId'], $c['postId'], 'budget.prepare');
+
+		$feesSvc = new SchoolFeesBudgetProjectionService();
+		$data['fees_projection'] = $feesSvc->projectForSchool((int) $c['schoolId']);
+		$data['fees_projection_branches'] = [];
+		if (!empty($c['isCentral']) && !empty($data['branch_stats'])) {
+			foreach ($c['branchCtx']->accessibleBranches($c['staffId'], $c['postId'], $c['schoolId'], true) as $br) {
+				$sid = (int) ($br['school_id'] ?? 0);
+				if ($sid < 1) {
+					continue;
+				}
+				$fp = $feesSvc->projectForSchool($sid);
+				$data['fees_projection_branches'][] = [
+					'display_name' => $br['display_name'] ?? ('School #' . $sid),
+					'school_id' => $sid,
+					'term_1' => (float) ($fp['term_1'] ?? 0),
+					'term_2' => (float) ($fp['term_2'] ?? 0),
+					'term_3' => (float) ($fp['term_3'] ?? 0),
+					'annual' => (float) ($fp['annual'] ?? 0),
+					'boarding_students' => (int) ($fp['boarding_students'] ?? 0),
+					'day_students' => (int) ($fp['day_students'] ?? 0),
+					'total_students' => (int) ($fp['total_students'] ?? 0),
+					'success' => !empty($fp['success']),
+					'error' => $fp['error'] ?? null,
+				];
+			}
+		}
+
 		$data['content'] = view('pages/budget/dashboard', $data);
 		return view('main', $data);
 	}
@@ -268,6 +296,119 @@ class BudgetCashflow extends Home
 			'budget_id' => $result['budget_id'] ?? null,
 			'matched' => $result['lines_matched'] ?? 0,
 		]);
+	}
+
+	/**
+	 * Project / apply School Fees income from fees management × student counts (boarding/day).
+	 */
+	public function fill_school_fees_income()
+	{
+		$this->bootBudget();
+		$this->denyMenu('budget_prepare');
+		$c = $this->ctx();
+		$budgetId = (int) ($this->request->getPost('budget_id') ?? 0);
+		$apply = (int) ($this->request->getPost('apply') ?? 1) === 1;
+		$db = \Config\Database::connect();
+		$budget = $this->loadEditableBudgetForSave($c, $budgetId);
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Budget not found.']);
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if ($apply && !BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId'])) {
+			return $this->response->setJSON(['error' => 'Budget is not editable.']);
+		}
+
+		$branch = $db->table('branches')->where('id', (int) $budget['branch_id'])->get(1)->getRowArray();
+		$schoolId = (int) ($branch['school_id'] ?? $c['schoolId']);
+		$setup = [];
+		if (!empty($budget['notes'])) {
+			$decoded = json_decode($budget['notes'], true);
+			if (is_array($decoded)) {
+				$setup = $decoded;
+			}
+		}
+		$yearHint = $setup['academic_year'] ?? null;
+		$proj = (new SchoolFeesBudgetProjectionService())->projectForSchool($schoolId, $yearHint);
+		if (empty($proj['success'])) {
+			return $this->response->setJSON([
+				'error' => $proj['error'] ?? 'Could not project school fees.',
+				'projection' => $proj,
+			]);
+		}
+
+		$line = $db->table('budget_lines')
+			->where('budget_id', $budgetId)
+			->where('is_total_row', 0)
+			->groupStart()
+				->like('category', 'School Fee')
+				->orLike('category', 'school fee')
+			->groupEnd()
+			->orderBy('sort_order', 'ASC')
+			->get(1)->getRowArray();
+		if (!$line) {
+			$line = $db->table('budget_lines')
+				->where('budget_id', $budgetId)
+				->where('is_total_row', 0)
+				->where('section_label', 'INCOME')
+				->like('category', 'Fee')
+				->orderBy('sort_order', 'ASC')
+				->get(1)->getRowArray();
+		}
+		if (!$line) {
+			return $this->response->setJSON([
+				'error' => 'No “School Fees” income line found on this budget. Add the line first.',
+				'projection' => $proj,
+			]);
+		}
+
+		$payload = [
+			'success' => true,
+			'message' => sprintf(
+				'School Fees from fees management: T1 %s · T2 %s · T3 %s RWF (%d students).',
+				number_format((float) $proj['term_1'], 0),
+				number_format((float) $proj['term_2'], 0),
+				number_format((float) $proj['term_3'], 0),
+				(int) $proj['total_students']
+			),
+			'line_id' => (int) $line['id'],
+			'projection' => $proj,
+		];
+
+		if (!$apply) {
+			return $this->response->setJSON($payload);
+		}
+
+		$calc = new BudgetCalculationService();
+		$update = [
+			'term_1_amount' => (float) $proj['term_1'],
+			'term_2_amount' => (float) $proj['term_2'],
+			'term_3_amount' => (float) $proj['term_3'],
+			'calculation_mode' => 'term_sum',
+			'user_amount' => (float) $proj['annual'],
+			'assumptions' => (string) ($proj['notes'] ?? ''),
+		];
+		$update['annual_amount'] = $calc->lineAnnualAmount(array_merge($line, $update));
+		$db->table('budget_lines')->where('id', (int) $line['id'])->where('budget_id', $budgetId)->update($update);
+		$totals = $calc->recalculateBudgetTotals($budgetId);
+
+		// Keep setup enrollment in sync when empty
+		if ((int) ($setup['enrollment'] ?? 0) < 1) {
+			$setup['enrollment'] = (int) $proj['total_students'];
+		}
+		$setup['fees_projection_at'] = date('Y-m-d H:i:s');
+		$setup['fees_projection_notes'] = $proj['notes'] ?? '';
+		if (empty($setup['academic_year']) && !empty($proj['academic_year_title'])) {
+			$setup['academic_year'] = $proj['academic_year_title'];
+		}
+		$db->table('budgets')->where('id', $budgetId)->update([
+			'notes' => json_encode($setup),
+			'updated_at' => date('Y-m-d H:i:s'),
+			'updated_by' => $c['staffId'],
+		]);
+
+		$payload['totals'] = $totals;
+		$payload['applied'] = true;
+		return $this->response->setJSON($payload);
 	}
 
 	public function dashboard_ai_json()
@@ -326,6 +467,40 @@ class BudgetCashflow extends Home
 				'FINANCE_AUTHORIZED' => $db->table('cash_requests')->where('branch_id', $c['branchId'])->where('status', 'FINANCE_AUTHORIZED')->countAllResults(),
 				'PAID' => $db->table('cash_requests')->where('branch_id', $c['branchId'])->where('status', 'PAID')->countAllResults(),
 			];
+		}
+
+		$feesProj = (new SchoolFeesBudgetProjectionService())->projectForSchool((int) $c['schoolId']);
+		$ctx['school_fees_projection'] = [
+			'success' => !empty($feesProj['success']),
+			'academic_year' => $feesProj['academic_year_title'] ?? '',
+			'term_1' => (float) ($feesProj['term_1'] ?? 0),
+			'term_2' => (float) ($feesProj['term_2'] ?? 0),
+			'term_3' => (float) ($feesProj['term_3'] ?? 0),
+			'annual' => (float) ($feesProj['annual'] ?? 0),
+			'boarding_students' => (int) ($feesProj['boarding_students'] ?? 0),
+			'day_students' => (int) ($feesProj['day_students'] ?? 0),
+			'total_students' => (int) ($feesProj['total_students'] ?? 0),
+			'classes_used' => (int) ($feesProj['classes_used'] ?? 0),
+			'notes' => $feesProj['notes'] ?? '',
+			'error' => $feesProj['error'] ?? null,
+		];
+		if (!empty($c['isCentral'])) {
+			$feesBranches = [];
+			foreach ($c['branchCtx']->accessibleBranches($c['staffId'], $c['postId'], $c['schoolId'], true) as $br) {
+				$sid = (int) ($br['school_id'] ?? 0);
+				if ($sid < 1) {
+					continue;
+				}
+				$fp = (new SchoolFeesBudgetProjectionService())->projectForSchool($sid);
+				$feesBranches[] = [
+					'branch' => $br['display_name'] ?? '',
+					'annual' => (float) ($fp['annual'] ?? 0),
+					'total_students' => (int) ($fp['total_students'] ?? 0),
+					'boarding' => (int) ($fp['boarding_students'] ?? 0),
+					'day' => (int) ($fp['day_students'] ?? 0),
+				];
+			}
+			$ctx['school_fees_projection']['branches'] = $feesBranches;
 		}
 
 		$gemini = new GeminiBudgetAnalysisService();

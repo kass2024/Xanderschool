@@ -37,12 +37,90 @@
 	<div class="bd-ai-head">
 		<div>
 			<strong><i class="fa fa-robot text-info"></i> Smart follow-up</strong>
-			<small class="text-muted d-block">Auto analysis of drafts, approvals, spending, and cash requests</small>
+			<small class="text-muted d-block">Auto analysis of drafts, approvals, spending, cash requests, and school-fee projection</small>
 		</div>
 		<button type="button" class="btn btn-sm btn-outline-info" id="btnRunAi"><i class="fa fa-sync"></i> Refresh</button>
 	</div>
 	<div class="card-body" id="aiBody">
 		<p class="text-muted mb-0 small"><i class="fa fa-spinner fa-spin"></i> Preparing smart follow-up…</p>
+	</div>
+</div>
+<?php } ?>
+
+<?php
+$fp = $fees_projection ?? null;
+if (is_array($fp)) {
+	$fpOk = !empty($fp['success']);
+?>
+<div class="card mb-4 border-success">
+	<div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center">
+		<span><i class="fa fa-graduation-cap text-success"></i> School fees projection <small class="text-muted">(fees settings × boarding/day students)</small></span>
+		<?php if ($fpOk) { ?>
+		<small class="text-muted"><?= esc($fp['academic_year_title'] ?? ''); ?> · <?= (int)($fp['total_students'] ?? 0); ?> students (<?= (int)($fp['boarding_students'] ?? 0); ?> boarding · <?= (int)($fp['day_students'] ?? 0); ?> day)</small>
+		<?php } ?>
+	</div>
+	<div class="card-body">
+		<?php if (!$fpOk) { ?>
+		<p class="text-muted mb-0 small"><i class="fa fa-info-circle"></i> <?= esc($fp['error'] ?? 'Configure school fees and enroll students to project income.'); ?></p>
+		<?php } else { ?>
+		<div class="bp-kpi-row mb-3">
+			<div class="bp-kpi income"><label>Term I</label><strong><?= number_format((float)$fp['term_1'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
+			<div class="bp-kpi income"><label>Term II</label><strong><?= number_format((float)$fp['term_2'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
+			<div class="bp-kpi income"><label>Term III</label><strong><?= number_format((float)$fp['term_3'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
+			<div class="bp-kpi surplus pos"><label>Annual school fees</label><strong><?= number_format((float)$fp['annual'], 0); ?></strong><small class="text-muted d-block">RWF · T1+T2+T3</small></div>
+		</div>
+		<?php if (!empty($fp['breakdown'])) { ?>
+		<div class="table-responsive">
+			<table class="table table-sm table-hover mb-0">
+				<thead class="thead-light"><tr><th>Class</th><th>Term</th><th class="text-right">Boarding</th><th class="text-right">Day</th><th class="text-right">Total</th></tr></thead>
+				<tbody>
+				<?php foreach (array_slice($fp['breakdown'], 0, 40) as $b) { ?>
+				<tr>
+					<td><?= esc($b['class'] ?? ''); ?></td>
+					<td>T<?= (int)($b['term'] ?? 0); ?></td>
+					<td class="text-right"><?= (int)($b['boarding_students'] ?? 0); ?> × <?= number_format((float)($b['boarding_rate'] ?? 0), 0); ?></td>
+					<td class="text-right"><?= (int)($b['day_students'] ?? 0); ?> × <?= number_format((float)($b['day_rate'] ?? 0), 0); ?></td>
+					<td class="text-right font-weight-bold"><?= number_format((float)($b['total'] ?? 0), 0); ?></td>
+				</tr>
+				<?php } ?>
+				</tbody>
+			</table>
+		</div>
+		<?php if (count($fp['breakdown']) > 40) { ?>
+		<p class="small text-muted mb-0 mt-2">Showing first 40 class/term lines of <?= count($fp['breakdown']); ?>.</p>
+		<?php } ?>
+		<?php } ?>
+		<?php } ?>
+	</div>
+</div>
+<?php } ?>
+
+<?php if (!empty($is_central) && !empty($fees_projection_branches)) { ?>
+<div class="card mb-4">
+	<div class="card-header">School fees projection — all branches</div>
+	<div class="card-body p-0 table-responsive">
+		<table class="table table-sm mb-0">
+			<thead class="thead-light"><tr><th>Branch</th><th class="text-right">Students</th><th class="text-right">Boarding</th><th class="text-right">Day</th><th class="text-right">Term I</th><th class="text-right">Term II</th><th class="text-right">Term III</th><th class="text-right">Annual</th></tr></thead>
+			<tbody>
+			<?php
+			$sumAnnual = 0;
+			foreach ($fees_projection_branches as $fb) {
+				$sumAnnual += (float)($fb['annual'] ?? 0);
+			?>
+			<tr>
+				<td><strong><?= esc($fb['display_name'] ?? ''); ?></strong><?php if (empty($fb['success']) && !empty($fb['error'])) { ?> <small class="text-muted">(<?= esc($fb['error']); ?>)</small><?php } ?></td>
+				<td class="text-right"><?= (int)($fb['total_students'] ?? 0); ?></td>
+				<td class="text-right"><?= (int)($fb['boarding_students'] ?? 0); ?></td>
+				<td class="text-right"><?= (int)($fb['day_students'] ?? 0); ?></td>
+				<td class="text-right"><?= number_format((float)($fb['term_1'] ?? 0), 0); ?></td>
+				<td class="text-right"><?= number_format((float)($fb['term_2'] ?? 0), 0); ?></td>
+				<td class="text-right"><?= number_format((float)($fb['term_3'] ?? 0), 0); ?></td>
+				<td class="text-right font-weight-bold"><?= number_format((float)($fb['annual'] ?? 0), 0); ?></td>
+			</tr>
+			<?php } ?>
+			</tbody>
+			<tfoot class="thead-light"><tr><th colspan="7" class="text-right">Group total</th><th class="text-right"><?= number_format($sumAnnual, 0); ?></th></tr></tfoot>
+		</table>
 	</div>
 </div>
 <?php } ?>

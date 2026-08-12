@@ -102,6 +102,7 @@ class GeminiBudgetAnalysisService
 			'budget_pipeline' => $ctx['budget_pipeline'] ?? null,
 			'cash_pipeline' => $ctx['cash_pipeline'] ?? null,
 			'branch_rollup' => $ctx['branch_rollup'] ?? null,
+			'school_fees_projection' => $ctx['school_fees_projection'] ?? null,
 			'currency' => 'RWF',
 		];
 		return 'You are a school group finance coach for Rwanda TVET/basic schools using Xander School. '
@@ -112,6 +113,7 @@ class GeminiBudgetAnalysisService
 			. 'branches_to_watch (array of school/branch names that need attention — empty if single-school), '
 			. 'cashflow_outlook (one sentence). '
 			. 'Be practical: name stuck approval stages, drafts that need submit, payments waiting, and overspent lines. '
+			. 'Include school fee projection (boarding×rate + day×rate by term) when present — compare to income plan if useful. '
 			. 'Match tone to role_context. Data: '
 			. json_encode($payload, JSON_UNESCAPED_UNICODE);
 	}
