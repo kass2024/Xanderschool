@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=9" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=10" rel="stylesheet">
 
 <?php
 $statusBadge = $budget['status'] === 'DRAFT' ? 'secondary' : ($budget['status'] === 'APPROVED' ? 'success' : 'warning');
@@ -48,15 +48,15 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 <div class="bp-stepper" id="bpStepper">
 	<button type="button" class="bp-step active" data-tab="setup" data-step="1">
 		<span class="bp-step-icon">1</span>
-		<span><span class="bp-step-label">Setup</span><span class="bp-step-desc">Academic year &amp; assumptions</span></span>
+		<span class="bp-step-label">Setup</span>
 	</button>
 	<button type="button" class="bp-step" data-tab="plan" data-step="2">
 		<span class="bp-step-icon">2</span>
-		<span><span class="bp-step-label">Three-term budget</span><span class="bp-step-desc">Term I · II · III amounts</span></span>
+		<span class="bp-step-label">Three-term budget</span>
 	</button>
 	<button type="button" class="bp-step" data-tab="summary" data-step="3">
 		<span class="bp-step-icon">3</span>
-		<span><span class="bp-step-label">Summary &amp; submit</span><span class="bp-step-desc">Review full year</span></span>
+		<span class="bp-step-label">Summary &amp; submit</span>
 	</button>
 </div>
 
@@ -79,7 +79,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 			<i class="fa fa-eraser"></i> Restore empty lines
 		</button>
 		<?php } else { ?>
-		<span class="badge badge-info mr-2 p-2">Branch fill — lines from master; enter your term amounts</span>
+		<span class="badge badge-info mr-2 p-2">Branch fill</span>
 		<?php } ?>
 		<button type="button" class="btn btn-primary btn-sm" id="btnSave"><i class="fa fa-save"></i> Save</button>
 		<?php if ($canSubmit) { ?>
@@ -99,7 +99,6 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 
 <!-- SETUP -->
 <div class="bp-panel active" id="panel-setup">
-<div class="bp-panel-help"><i class="fa fa-info-circle"></i> <strong>Step 1 — Academic year setup.</strong> Record enrollment, opening cash, and planning notes before entering term amounts.</div>
 <div class="bp-setup-grid">
 	<div class="bp-setup-card"><label class="small font-weight-bold text-muted">BRANCH</label><div class="h6 mb-0"><?= esc($branch_label); ?></div></div>
 	<div class="bp-setup-card"><label class="small font-weight-bold text-muted">PERIOD</label><div class="h6 mb-0"><?= esc($budget['period_title'] ?? '—'); ?></div></div>
@@ -122,11 +121,6 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 
 <!-- THREE-TERM BUDGET GRID -->
 <div class="bp-panel" id="panel-plan">
-<div class="bp-panel-help"><i class="fa fa-table"></i> <strong>Step 2 — Full-year budget by term.</strong> Enter RWF for Term I, Term II and Term III. <em>Annual = T1 + T2 + T3</em><?php if ($branchFillMode) { ?> — amounts reflect your branch only; master school defines the line list.<?php } ?>
-	<?php if ($canEdit) { ?>
-	<small class="d-block mt-1 text-muted"><i class="fa fa-sync"></i> School Fees auto-updates from fees settings × boarding/day students. Other lines stay blank until you enter amounts.</small>
-	<?php } ?>
-</div>
 
 <?php foreach ($sections as $secKey => $sec) {
 	if (empty($sec['lines'])) continue;
@@ -243,7 +237,6 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 
 <!-- SUMMARY -->
 <div class="bp-panel" id="panel-summary">
-<div class="bp-panel-help"><i class="fa fa-check-double"></i> <strong>Step 3 — Review full year.</strong> Confirm annual income covers expenses across all three terms, then submit for approval.</div>
 <div class="row">
 <div class="col-lg-6"><div class="card border-0 shadow-sm"><div class="card-body">
 <h6 class="font-weight-bold mb-3">Budget by section (annual)</h6>
@@ -262,9 +255,8 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 </table>
 <?php if ($canSubmit) { ?>
 <button type="button" class="btn btn-success btn-block mt-2" id="btnSubmitSummary"><i class="fa fa-paper-plane"></i> Submit budget for approval</button>
-<p class="small text-muted mt-2 mb-0">Child/school budgets stay <strong>DRAFT</strong> until you submit. Approval requires all three: Procurement → Budget Manager → Director of Finance. You only need one amount filled to save; submit needs at least one line with an amount.</p>
 <?php } elseif ($isFinanceAdjust) { ?>
-<div class="alert alert-warning small mt-2 mb-0"><i class="fa fa-info-circle"></i> Director of Finance adjustment — status stays <strong><?= esc($budget['status']); ?></strong>. New submissions still need Procurement, Budget Manager, and Director of Finance.</div>
+<span class="badge badge-warning p-2 mt-2 d-inline-block"><i class="fa fa-user-tie"></i> Finance adjust — <?= esc($budget['status']); ?></span>
 <?php } ?>
 </div></div></div>
 </div>
@@ -279,7 +271,6 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 
 <div class="bp-sidebar">
 	<?= view('pages/budget/partials/process_guide', ['ctx' => 'prep', 'compact' => true]); ?>
-	<div class="mt-3 small text-muted"><p class="mb-0"><i class="fa fa-info-circle"></i> Cash requests spend against <strong>annual</strong> budget lines after approval.</p></div>
 </div>
 </div>
 </div>
@@ -293,7 +284,6 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
 			</div>
 			<div class="modal-body">
-				<p class="small text-muted">Director of Finance can add section titles and line items. Amounts are optional — save even a single line.</p>
 				<div class="bp-add-mode mb-3">
 					<button type="button" class="bp-mode-chip is-active" data-mode="line"><i class="fa fa-list"></i> Budget row</button>
 					<button type="button" class="bp-mode-chip" data-mode="section"><i class="fa fa-folder-plus"></i> New section title</button>

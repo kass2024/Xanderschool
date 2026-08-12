@@ -92,7 +92,6 @@ foreach ($steps as $s) {
 
 	<div class="cr-section-title"><i class="fa fa-chart-pie"></i> Budget consumption</div>
 
-	<p class="small text-muted mb-2">Each approved request <strong>commits</strong> funds on the budget line. Payment moves amounts from committed to <strong>paid</strong>. Budget Manager checks availability before authorizing.</p>
 
 	<?php foreach ($lines as $ln) {
 
@@ -171,8 +170,6 @@ foreach ($steps as $s) {
 <div class="cr-section">
 
 	<div class="cr-section-title"><i class="fa fa-gavel"></i> Your actions</div>
-
-	<p class="small text-muted">Budget Manager confirms funds exist on the line. Deputy Director of Finance gives final authorization to pay.</p>
 
 	<?php
 

@@ -6,27 +6,20 @@
 
 <div class="bp-hero mb-3">
 	<h2><i class="fa fa-calculator"></i> Prepare Annual Budget</h2>
-	<p class="bp-meta mb-0"><?= esc($branch_label ?? ''); ?> — full-year budget in the browser, split across <strong>Term I, Term II &amp; Term III</strong>. No Excel required.</p>
+	<p class="bp-meta mb-0"><?= esc($branch_label ?? ''); ?></p>
 </div>
 
 <?= view('pages/budget/partials/hub_nav', ['hub' => 'prepare', 'tab' => $tab]); ?>
 
 <?php if ($tab === 'budgets') { ?>
 
-<div class="bp-steps-row mb-3">
-	<div class="bp-step-card"><i class="fa fa-cog d-block"></i><h6>1. Setup</h6><small class="text-muted">Year &amp; assumptions</small></div>
-	<div class="bp-step-card"><i class="fa fa-table d-block"></i><h6>2. Three-term plan</h6><small class="text-muted">Income &amp; expenses per term</small></div>
-	<div class="bp-step-card"><i class="fa fa-paper-plane d-block"></i><h6>3. Submit</h6><small class="text-muted">Approval workflow</small></div>
-</div>
-
 <div class="row mb-4">
 	<div class="col-lg-8">
 		<?php if (\Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESSION['soma_post'] ?? 0)) && function_exists('budget_permission_allowed') && budget_permission_allowed('budget.prepare')) { ?>
-		<button class="btn btn-primary btn-lg shadow-sm" id="btnNewBudget"><i class="fa fa-plus-circle"></i> Start annual budget (3 terms)</button>
+		<button class="btn btn-primary btn-lg shadow-sm" id="btnNewBudget"><i class="fa fa-plus-circle"></i> Start annual budget</button>
 		<?php } elseif (\Config\MenuClearance::isBudgetViewOnlyPost((int) ($_SESSION['soma_post'] ?? 0))) { ?>
-		<div class="alert alert-secondary border"><i class="fa fa-eye"></i> <strong>View only.</strong> Head master and school leaders can monitor budgets after Cashier/Accountant prepare them. Open the <a href="<?= base_url('budget/dashboard'); ?>">Budget Dashboard</a>.</div>
+		<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-outline-secondary"><i class="fa fa-eye"></i> View dashboard</a>
 		<?php } ?>
-		<p class="small text-muted mt-2 mb-0">Opens the online budget grid: INCOME, OPERATING EXPENSES, ADMINISTRATIVE COSTS, and FINANCE COSTS — each line with Term I / II / III amounts.</p>
 	</div>
 </div>
 
@@ -36,7 +29,6 @@
 <div class="bp-empty">
 	<i class="fa fa-file-invoice-dollar d-block"></i>
 	<h5>No annual budget yet</h5>
-	<p class="text-muted mb-3">Prepare your full-year school budget online. Enter amounts for each term; the system totals automatically.</p>
 	<?php if (\Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESSION['soma_post'] ?? 0))) { ?>
 	<button class="btn btn-primary" id="btnNewBudget2">Start annual budget</button>
 	<?php } ?>
@@ -93,7 +85,6 @@ foreach ($budgets as $b) {
 <div class="modal fade" id="mdlBudget"><div class="modal-dialog"><form class="modal-content" id="frmBudget">
 <div class="modal-header bg-primary text-white"><h5 class="modal-title"><i class="fa fa-calendar-check"></i> New annual budget</h5><button type="button" class="close text-white" data-dismiss="modal">&times;</button></div>
 <div class="modal-body">
-	<div class="alert alert-light border small"><i class="fa fa-info-circle text-primary"></i> You will enter budget amounts for <strong>Term I, Term II and Term III</strong>. Annual total = sum of the three terms.</div>
 	<div class="form-group"><label class="font-weight-bold">Budget title</label><input class="form-control" name="title" placeholder="e.g. Annual Budget 2025-26" value="Annual Budget <?= date('Y'); ?>-<?= substr((string)(date('Y')+1), -2); ?>"></div>
 	<div class="form-group"><label class="font-weight-bold">Academic year</label><input class="form-control" name="academic_year" value="<?= date('Y'); ?>-<?= substr((string)(date('Y')+1), -2); ?>" placeholder="2025-26"></div>
 </div>

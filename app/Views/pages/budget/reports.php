@@ -9,7 +9,7 @@ $f = $financials ?? [];
 
 <div class="bp-hero mb-3">
 	<h2><i class="fa fa-chart-bar"></i> Reports</h2>
-	<p class="bp-meta mb-0"><?= esc($branch_label ?? ''); ?> — budget summary, cash flow, and actual spending.</p>
+	<p class="bp-meta mb-0"><?= esc($branch_label ?? ''); ?></p>
 </div>
 
 <?= view('pages/budget/partials/hub_nav', ['hub' => 'reports', 'tab' => $tab]); ?>

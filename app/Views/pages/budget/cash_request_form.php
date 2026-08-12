@@ -4,18 +4,13 @@
 
 <div class="cr-hero">
 	<h4 class="mb-1"><i class="fa fa-file-invoice-dollar"></i> <?= esc($title ?? 'New Cash Request'); ?></h4>
-	<p class="mb-0 small opacity-90">Accountant: link every payment to an <strong>approved budget line</strong>. Attach invoice or quotation before submitting.</p>
-</div>
-
-<div class="cr-flow-steps mb-3">
-	<span class="cr-flow-step active">1. Create &amp; attach docs</span>
-	<span class="cr-flow-step">2. Headteacher / Procurement</span>
-	<span class="cr-flow-step">3. Budget Manager</span>
-	<span class="cr-flow-step">4. Director of Finance → Pay</span>
 </div>
 
 <?php if (empty($budgets)) { ?>
-<div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> No <strong>approved budget</strong> yet. Prepare the annual budget, submit and get it approved first.</div>
+<div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between">
+	<span><i class="fa fa-exclamation-triangle"></i> No approved budget yet</span>
+	<a href="<?= base_url('budget/prepare'); ?>" class="btn btn-sm btn-warning">Prepare budget</a>
+</div>
 <?php } ?>
 
 <form id="frmCR" enctype="multipart/form-data">
@@ -74,7 +69,6 @@
 
 <div class="cr-section border-warning">
 	<div class="cr-section-title"><i class="fa fa-paperclip"></i> Supporting documents <span class="text-danger">*</span> <small class="font-weight-normal text-muted">(required to submit)</small></div>
-	<p class="small text-muted mb-2">Attach invoice, quotation, proforma, delivery note, or memo — then append more from your phone if needed.</p>
 
 	<div class="cr-attach-panel">
 		<div class="cr-doc-zone" id="docZone">

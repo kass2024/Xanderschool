@@ -2,7 +2,6 @@
 
 <div class="bp-hero mb-3">
 	<h2><i class="fa fa-hand-holding-usd"></i> Requests &amp; Approvals</h2>
-	<p class="bp-meta mb-0">Every cash request is checked against your <strong>approved budget</strong> before payment is authorized.</p>
 </div>
 
 <?= view('pages/budget/partials/hub_nav', ['hub' => 'requests', 'tab' => $tab ?? 'all']); ?>
@@ -28,10 +27,6 @@
 </tbody></table></div></div>
 
 <?php } elseif (($tab ?? '') === 'pending') { ?>
-<div class="alert alert-light border small mb-3">
-	<i class="fa fa-info-circle text-primary"></i>
-	Requests waiting for <strong>your role</strong>. Budget Manager sees budget availability; Deputy Director gives final authorization.
-</div>
 <div class="card"><div class="card-body p-0">
 <table class="table table-bordered mb-0"><thead><tr><th>Request #</th><th>Payee</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>
 <?php if (empty($requests)) { ?><tr><td colspan="5" class="text-muted text-center py-4">Nothing pending for you right now.</td></tr><?php } ?>

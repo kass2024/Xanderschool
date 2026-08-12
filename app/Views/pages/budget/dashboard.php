@@ -29,7 +29,7 @@
 
 <div class="bp-hero mb-3">
 	<h2><i class="fa fa-chart-line"></i> Budget Dashboard</h2>
-	<p class="bp-meta mb-0"><?= esc($branch_label ?? 'Your school'); ?> — budget vs used (mirrors Excel SUMMARY sheet).</p>
+	<p class="bp-meta mb-0"><?= esc($branch_label ?? 'Your school'); ?></p>
 </div>
 
 <?php if (!empty($ai_enabled) || !empty($gemini_enabled)) { ?>
@@ -37,7 +37,6 @@
 	<div class="bd-ai-head">
 		<div>
 			<strong><i class="fa fa-robot text-info"></i> Smart follow-up</strong>
-			<small class="text-muted d-block">Auto analysis of drafts, approvals, spending, cash requests, and school-fee projection</small>
 		</div>
 		<button type="button" class="btn btn-sm btn-outline-info" id="btnRunAi"><i class="fa fa-sync"></i> Refresh</button>
 	</div>
@@ -126,9 +125,6 @@ if (is_array($fp)) {
 <?php } ?>
 
 <?php if (!empty($is_central) && !empty($branch_stats)) { ?>
-<div class="alert alert-primary mb-3">
-	<strong>Central overview</strong> (Director of Finance / Budget Manager / Principal). Each branch prepares and approves its own budget; spending requests are checked against that approved budget.
-</div>
 <div class="card mb-3"><div class="card-header">All branches</div><div class="card-body p-0">
 <table class="table table-sm mb-0"><thead><tr><th>Branch</th><th>Draft</th><th>In approval</th><th>Approved</th><th>Active requests</th><th>Awaiting payment</th></tr></thead><tbody>
 <?php foreach ($branch_stats as $bs) { ?>
@@ -140,24 +136,23 @@ if (is_array($fp)) {
 <td><?= (int)$bs['awaiting_payment']; ?></td></tr>
 <?php } ?>
 </tbody></table></div></div>
-<?php } elseif (empty($is_central)) { ?>
-<div class="alert alert-light border mb-3 small mb-3">
-	<i class="fa fa-school"></i> Showing <strong>your school only</strong>. Cross-school (all child schools) view is limited to Director of Finance, Budget Manager, and Principal.
-</div>
 <?php } ?>
 
 <?php if (!empty($financials)) {
 	$f = $financials;
 ?>
 <div class="bp-kpi-row mb-4">
-	<div class="bp-kpi"><label>Total budget (expenses)</label><strong><?= number_format((float)$f['total_budget'], 0); ?></strong><small class="text-muted d-block">RWF · approved plan</small></div>
-	<div class="bp-kpi expense"><label>Total used</label><strong><?= number_format((float)$f['total_actual'], 0); ?></strong><small class="text-muted d-block">RWF · paid + committed / Excel ref</small></div>
+	<div class="bp-kpi"><label>Total budget (expenses)</label><strong><?= number_format((float)$f['total_budget'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
+	<div class="bp-kpi expense"><label>Total used</label><strong><?= number_format((float)$f['total_actual'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
 	<div class="bp-kpi <?= (float)$f['variance'] >= 0 ? 'surplus pos' : 'surplus neg'; ?>"><label>Variance</label><strong><?= number_format((float)$f['variance'], 0); ?></strong><small class="text-muted d-block"><?= (float)$f['variance_pct']; ?>% remaining</small></div>
-	<div class="bp-kpi income"><label>Fee revenue (plan)</label><strong><?= number_format((float)$f['total_income'], 0); ?></strong><small class="text-muted d-block">RWF · income budget</small></div>
-	<div class="bp-kpi"><label>Period</label><strong class="small"><?= esc($f['period_title'] ?: '—'); ?></strong><small class="text-muted d-block">term budget</small></div>
+	<div class="bp-kpi income"><label>Fee revenue (plan)</label><strong><?= number_format((float)$f['total_income'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
+	<div class="bp-kpi"><label>Period</label><strong class="small"><?= esc($f['period_title'] ?: '—'); ?></strong></div>
 </div>
 <?php if (empty($f['budget'])) { ?>
-<div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> No <strong>approved budget</strong> yet. Use <em>Prepare budget → Reset &amp; seed from term template</em> or import your Excel.</div>
+<div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between">
+	<span><i class="fa fa-exclamation-triangle"></i> No approved budget yet</span>
+	<a href="<?= base_url('budget/prepare'); ?>" class="btn btn-sm btn-warning">Prepare budget</a>
+</div>
 <?php } elseif (!empty($f['line_variances'])) { ?>
 <div class="card mb-4">
 	<div class="card-header d-flex justify-content-between align-items-center">
@@ -198,10 +193,7 @@ if (is_array($fp)) {
 <div class="row mb-3">
 	<div class="col-lg-7">
 <?php if (!empty($budget_view_only)) { ?>
-<div class="alert alert-secondary border mb-3">
-	<strong><i class="fa fa-eye"></i> View-only oversight</strong>
-	<span class="d-block small mb-0">You can monitor budget usage and how requests move through approval. Preparing, editing, and approving are reserved for Cashier / Accountant (prepare) and finance approvers.</span>
-</div>
+<span class="badge badge-secondary mb-3 p-2"><i class="fa fa-eye"></i> View only</span>
 <?php } ?>
 
 <?php if (!empty($budget_pipeline) || !empty($cash_pipeline)) { ?>

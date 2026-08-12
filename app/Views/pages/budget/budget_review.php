@@ -1,7 +1,6 @@
 <div class="card border-0 shadow-sm">
 	<div class="card-header bg-white">
-		<strong><i class="fa fa-tasks text-primary"></i> School budget approval (thin chain)</strong>
-		<p class="small text-muted mb-0">Each school’s prepared budget stays DRAFT until submit. Mandatory approvals: Procurement → Budget Manager → Director of Finance. All three must approve before the budget is marked APPROVED.</p>
+		<strong><i class="fa fa-tasks text-primary"></i> Budget approval</strong>
 	</div>
 	<div class="card-body p-0">
 		<?php if (empty($budgets)) { ?>

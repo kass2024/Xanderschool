@@ -186,11 +186,41 @@
 
 
 
-/* Process guide */
+/* Process guide ? action buttons */
 
 .bp-process-guide { background: #fff; border: 1px solid var(--bp-border, #e2e8f0); border-radius: 14px; padding: 1.1rem; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
 
 .bp-process-guide.bp-process-compact { padding: .75rem; }
+
+.bp-action-grid { display: flex; flex-direction: column; gap: .5rem; }
+
+.bp-action-btn {
+	display: flex;
+	align-items: center;
+	gap: .55rem;
+	text-align: left;
+	font-weight: 600;
+	border-radius: 10px;
+	padding: .55rem .75rem;
+	white-space: nowrap;
+}
+
+.bp-action-num {
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: #0d6efd;
+	color: #fff;
+	font-size: .7rem;
+	font-weight: 800;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.bp-action-btn.btn-outline-success .bp-action-num { background: #198754; }
+.bp-action-btn.btn-outline-secondary .bp-action-num { background: #64748b; }
 
 .bp-process-head { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; }
 
