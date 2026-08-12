@@ -67,6 +67,7 @@ use App\Models\IntouchAccount;
 use App\Models\BoardingAttendanceModel;
 use App\Services\ApplicationRegistrationFeeService;
 use CodeIgniter\HTTP\Response;
+use Config\FeesApproval;
 
 use GuzzleHttp\Client;
 
@@ -174,6 +175,12 @@ class Home extends BaseController
 			$this->data['academic_year_id'] = $skl->academic_year_id;
 			$this->data['active_term_id'] = $skl->active_term_id;
 			$this->data['school_id'] = $this->session->get("soma_school_id");
+			helper('qonics');
+			$this->data['soma_home_school_id'] = school_hierarchy_home_id();
+			$this->data['master_child_schools'] = school_hierarchy_accessible_schools();
+			$this->data['is_master_school_user'] = school_hierarchy_can_switch();
+			$this->data['viewing_child_school'] = $this->data['is_master_school_user']
+				&& (int) $this->session->get('soma_school_id') !== (int) $this->data['soma_home_school_id'];
 //			echo $this->data['remaining_sms'];die();
 //			echo "<pre>";var_dump($this->data);die();
 		}
@@ -217,6 +224,62 @@ public function testEmail()
 	{
 		setcookie("lang", $lang, time() + (86400 * 30), "/"); // 86400 = 1 day
 		return $this->response->setJSON(array("success" => "language changed"));
+	}
+
+	/** Central post at master school: view another child school dashboard. */
+	public function switch_school_context($targetId = 0)
+	{
+		if ($this->session->get($this->log_status) == null) {
+			return redirect()->to(base_url('login'));
+		}
+		helper('qonics');
+		$targetId = (int) $targetId;
+		$homeId = school_hierarchy_home_id();
+		$postId = (int) $this->session->get('soma_post');
+		$hierarchy = new \App\Services\SchoolHierarchyService();
+		if (!$hierarchy->canViewSchool($homeId, $postId, $targetId)) {
+			$this->session->setFlashdata('error', 'You cannot access that school dashboard.');
+			return redirect()->to(base_url('dashboard'));
+		}
+		$school = \Config\Database::connect()->table('schools')->where('id', $targetId)->get(1)->getRowArray();
+		if (!$school) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		$this->session->set([
+			'soma_school_id' => $targetId,
+			'soma_school' => $school['name'],
+		]);
+		try {
+			$schema = new \App\Models\BudgetSchemaModel();
+			$schema->ensureSchema();
+			$schema->seedFoundation($targetId, (int) $this->session->get('soma_id'));
+		} catch (\Throwable $e) {
+			// non-fatal
+		}
+		$this->session->setFlashdata('success', 'Now viewing: ' . ($school['name'] ?? 'school'));
+		return redirect()->to(base_url('dashboard'));
+	}
+
+	/** Return to home (master) school context. */
+	public function reset_school_context()
+	{
+		if ($this->session->get($this->log_status) == null) {
+			return redirect()->to(base_url('login'));
+		}
+		helper('qonics');
+		$homeId = school_hierarchy_home_id();
+		if ($homeId < 1) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		$school = \Config\Database::connect()->table('schools')->where('id', $homeId)->get(1)->getRowArray();
+		if ($school) {
+			$this->session->set([
+				'soma_school_id' => $homeId,
+				'soma_school' => $school['name'],
+			]);
+			$this->session->setFlashdata('success', 'Back to master school: ' . ($school['name'] ?? ''));
+		}
+		return redirect()->to(base_url('dashboard'));
 	}
 
 	public function index($type = null)
@@ -1457,6 +1520,11 @@ public function testEmail()
 
 		$this->ensurePedagogicalDocsSchema();
 		$this->ensureStaffCardSchema();
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$matSchema->ensureSchema();
+		$data['required_materials'] = $matSchema->listMaterials($schoolId, true);
+		$data['years'] = (new AcademicYearModel())->select('id,title')->where('school_id', $schoolId)
+			->orderBy('id', 'DESC')->get()->getResultArray();
 		$classMdl = new ClassesModel();
 		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name,f.abbrev as faculty_code")
 				->join("departments d", "d.id=classes.department")
@@ -4217,7 +4285,12 @@ public function attendanceCard()
 			if ($credit < 0) {
 				$credit = 0.0;
 			}
-			$marks = (int) round($credit * 10);
+			$marksRaw = $item['marks'] ?? null;
+			if ($marksRaw !== null && $marksRaw !== '' && is_numeric($marksRaw)) {
+				$marks = max(0, (int) round((float) $marksRaw));
+			} else {
+				$marks = (int) round($credit * 10);
+			}
 			$catTitle = trim((string) ($item['category_title'] ?? 'General')) ?: 'General';
 			$catId = $this->resolveCourseCategoryId($schoolId, $catTitle);
 
@@ -4956,6 +5029,169 @@ public function attendanceCard()
 		return view('main', $data);
 	}
 
+	/** Reset password and reshare login credentials to one or all staff (SMS / email). */
+	public function share_staff_access()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$staffId = (int) ($this->request->getPost('staff_id') ?? 0);
+		$scope = trim((string) ($this->request->getPost('scope') ?? 'single'));
+		$channel = strtolower(trim((string) ($this->request->getPost('channel') ?? 'both')));
+		if (!in_array($channel, ['sms', 'email', 'both'], true)) {
+			return $this->response->setJSON(['error' => 'Invalid channel. Use sms, email, or both.']);
+		}
+
+		$staffMdl = new StaffModel();
+		$targets = [];
+		if ($scope === 'all') {
+			$targets = $staffMdl->where('school_id', $schoolId)
+				->whereIn('status', [1, 2])
+				->findAll();
+		} else {
+			if ($staffId < 1) {
+				return $this->response->setJSON(['error' => 'Staff member not specified.']);
+			}
+			$row = $staffMdl->where('id', $staffId)->where('school_id', $schoolId)->first();
+			if (!$row) {
+				return $this->response->setJSON(['error' => 'Staff not found in this school.']);
+			}
+			$targets = [$row];
+		}
+
+		if (!$targets) {
+			return $this->response->setJSON(['error' => 'No staff to share access with.']);
+		}
+
+		$sentSms = 0;
+		$sentEmail = 0;
+		$failed = [];
+		foreach ($targets as $staff) {
+			$res = $this->shareStaffAccessForStaff($staff, $channel);
+			if (!empty($res['sms'])) {
+				$sentSms++;
+			}
+			if (!empty($res['email'])) {
+				$sentEmail++;
+			}
+			if (!empty($res['errors'])) {
+				$name = trim(($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? ''));
+				$failed[] = $name . ': ' . implode('; ', $res['errors']);
+			}
+		}
+
+		$parts = [];
+		$parts[] = 'Password reset for ' . count($targets) . ' staff';
+		if ($sentSms > 0) {
+			$parts[] = $sentSms . ' SMS sent';
+		}
+		if ($sentEmail > 0) {
+			$parts[] = $sentEmail . ' email(s) sent';
+		}
+		if ($failed) {
+			return $this->response->setJSON([
+				'warning' => implode('. ', $parts) . '. Some deliveries failed.',
+				'failed' => $failed,
+				'sent_sms' => $sentSms,
+				'sent_email' => $sentEmail,
+			]);
+		}
+		if ($sentSms === 0 && $sentEmail === 0) {
+			return $this->response->setJSON(['error' => 'Could not send credentials. Check phone numbers and email addresses.']);
+		}
+		return $this->response->setJSON([
+			'success' => implode('. ', $parts) . '.',
+			'sent_sms' => $sentSms,
+			'sent_email' => $sentEmail,
+		]);
+	}
+
+	/**
+	 * @param array<string, mixed> $staff
+	 * @return array{sms:bool, email:bool, errors:string[]}
+	 */
+	protected function shareStaffAccessForStaff(array $staff, string $channel)
+	{
+		$result = ['sms' => false, 'email' => false, 'errors' => []];
+		$staffId = (int) ($staff['id'] ?? 0);
+		if ($staffId < 1) {
+			$result['errors'][] = 'Invalid staff';
+			return $result;
+		}
+
+		$defaultPassword = $this->random_password();
+		$staffMdl = new StaffModel();
+		$staffMdl->update($staffId, [
+			'password' => password_hash($defaultPassword, PASSWORD_DEFAULT),
+			'reset_exp' => 0,
+		]);
+
+		$fname = (string) ($staff['fname'] ?? '');
+		$lname = (string) ($staff['lname'] ?? '');
+		$email = trim((string) ($staff['email'] ?? ''));
+		$phone = trim((string) ($staff['phone'] ?? ''));
+		$name = trim($fname . ' ' . strtoupper(substr($lname, 0, 1)) . '.');
+		$loginUser = $email !== '' ? $email : $phone;
+		$smsPack = $this->_staffCredentialSms($name, $loginUser, $defaultPassword, true);
+		$smsBody = $smsPack['body'];
+		$smsLogBody = $smsPack['log'];
+
+		if (in_array($channel, ['sms', 'both'], true)) {
+			if ($phone === '') {
+				$result['errors'][] = 'No phone number';
+			} else {
+				$smsResult = null;
+				if ($this->sendSMS($phone, $smsBody, $smsResult)) {
+					$smsCount = (int) ceil(strlen($smsBody) / (defined('PER_SMS') ? PER_SMS : 160));
+					$this->_save_sms(
+						$this->data['active_term'] ?? 0,
+						$phone,
+						$smsLogBody,
+						'Staff access share',
+						$staffId,
+						1,
+						$smsCount
+					);
+					$result['sms'] = true;
+				} else {
+					$this->_save_sms(
+						$this->data['active_term'] ?? 0,
+						$phone,
+						$smsLogBody,
+						'Staff access share',
+						$staffId,
+						1,
+						0,
+						$smsResult
+					);
+					$result['errors'][] = 'SMS failed' . (is_array($smsResult)
+						? ': ' . ($smsResult['content'] ?? json_encode($smsResult))
+						: ($smsResult ? ': ' . $smsResult : ''));
+				}
+			}
+		}
+
+		if (in_array($channel, ['email', 'both'], true)) {
+			if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+				$result['errors'][] = 'No valid email';
+			} else {
+				$mailData = [
+					'name' => $name,
+					'phone' => $phone,
+					'email' => $email,
+					'default_password' => $defaultPassword,
+				];
+				$htmlMsg = view('emails/staff_creation', $mailData);
+				if ($this->_send_email($email, lang('app.welcomeOnSomanet'), $htmlMsg)) {
+					$result['email'] = true;
+				} else {
+					$result['errors'][] = 'Email failed';
+				}
+			}
+		}
+
+		return $result;
+	}
+
 	public function students()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
@@ -5445,6 +5681,7 @@ public function attendanceCard()
 									'soma_email' => $result->email,
 									'soma_id' => $result->id,
 									'soma_school_id' => $result->school_id,
+									'soma_home_school_id' => $result->school_id,
 									'soma_school' => $result->school_name,
 									'soma_post' => $result->post,
 									'soma_post_title' => $result->post_title,
@@ -6928,7 +7165,9 @@ public function getApplicationDocs($id = null)
 			if ($type == 1) {
 				//permission
 				$color = false ? "color:orangered" : "";
+				$photoHtml = student_entry_photo_html($student['photo'] ?? '');
 				echo "<tr class='disc_row' id=" . $student['regno'] . " style='$color'>
+				<td class='student-entry-photo-cell'>" . $photoHtml . "</td>
 				<td>" . $student['regno'] . "</td>
 				<td>" . $student['stdnames'] . "<input type='hidden' value=" . $student['id'] . " name='discId[]'></td>
 				<td>" . $student['level_name'] . " " . $student['title'] . " " . $student['code'] . " </td>
@@ -7054,20 +7293,26 @@ public function getApplicationDocs($id = null)
 				</tr>
 				";
 			} else if ($type == 10) {
-				//multiple extra
+				// multiple extra fees — show boarding/day and per-student amount
+				$mode = (int) ($student['studying_mode'] ?? 1);
+				$modeLabel = self::ModeToStr($mode);
+				$modeClass = $mode === 0 ? 'boarding' : 'day';
 				$color = false ? "color:orangered" : "";
-				echo "<tr class='disc_row' id=" . $student['regno'] . " style='$color'>
-				<td>" . $student['regno'] . "</td>
-				<td>" . $student['stdnames'] . "<input type='hidden' value=" . $student['id'] . " name='discId[]'></td>
-				<td>" . $student['level_name'] . " " . $student['title'] . " " . $student['code'] . " </td>
-				<td><input type='number' required name='amounts[]' class='txt-fees-inputs'> </td>
+				echo "<tr class='disc_row' id=" . $student['regno'] . " style='$color' data-mode='" . $mode . "'>
+				<td>" . esc($student['regno']) . "</td>
+				<td>" . esc($student['stdnames']) . "<input type='hidden' value=" . (int)$student['id'] . " name='discId[]'></td>
+				<td>" . esc($student['level_name'] . " " . $student['title'] . " " . $student['code']) . " </td>
+				<td><span class='mef-mode-badge mef-mode-" . $modeClass . "'>" . esc($modeLabel) . "</span></td>
+				<td><input type='number' required name='amounts[]' class='txt-fees-inputs form-control form-control-sm' data-mode='" . $mode . "' min='0' step='1'> </td>
 				<td style='text-align: center;'>
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>";
 			} else {
-				//discipline
+				//discipline + permission entry (default)
 				$color = $remaining < ($student['discipline_max'] / 2) ? "color:orangered" : "";
+				$photoHtml = student_entry_photo_html($student['photo'] ?? '');
 				echo "<tr class='disc_row' id=" . $student['regno'] . $type . " style='$color'>
+				<td class='student-entry-photo-cell'>" . $photoHtml . "</td>
 				<td>" . $student['regno'] . "</td>
 				<td>" . $student['stdnames'] . "</td>
 				<td>" . $student['level_name'] . " " . $student['title'] . " " . $student['code'] . " </td>
@@ -7295,9 +7540,18 @@ public function getApplicationDocs($id = null)
 		$amounts = $this->request->getPost("amounts[]");
 		$title = $this->request->getPost("title");
 		$created_by = $this->session->get("soma_id");
-		$term = $this->request->getPost("term");
+		$terms = $this->request->getPost("term");
+		if (!is_array($terms)) {
+			$terms = ($terms !== null && $terms !== '') ? [$terms] : [];
+		}
+		$terms = array_values(array_unique(array_filter(array_map('intval', $terms), static function ($t) {
+			return $t >= 1 && $t <= 3;
+		})));
 		$formids = $this->request->getPost("discId[]");
 
+		if (empty($terms)) {
+			return $this->response->setJSON(["error" => lang("app.selectTerms") ?: 'Please select at least one term.']);
+		}
 		if (!is_array($formids)) {
 			//no student selected
 			return $this->response->setJSON(["error" => lang("app.pleaseAddErr")]);
@@ -7312,25 +7566,32 @@ public function getApplicationDocs($id = null)
 		}
 		$aa = 0;
 		foreach ($formids as $formid) {
-			$data = [
-					"type_id" => $formid,
-					"type" => 1,
-					"title" => $title,
-					"school_id" => $school_id,
-					"term" => $term,
-					"amount" => $amounts[$aa],
-					"academic_year" => $this->data['academic_year'],
-					"created_by" => $created_by
-			];
-			$aa++;
-			try {
-				$mdl->save($data);
-			} catch (\Exception $e) {
-				//kugerageza kwerekana abanyeshuri byakunze tukabakura kuri list
-				return $this->response->setJSON(array("error" => lang("app.OopsAction")));
+			$studentAmount = $amounts[$aa];
+			foreach ($terms as $term) {
+				$data = [
+						"type_id" => $formid,
+						"type" => 1,
+						"title" => $title,
+						"school_id" => $school_id,
+						"term" => $term,
+						"amount" => $studentAmount,
+						"academic_year" => $this->data['academic_year'],
+						"created_by" => $created_by
+				];
+				try {
+					$mdl->save($data);
+				} catch (\Exception $e) {
+					return $this->response->setJSON(array("error" => lang("app.OopsAction")));
+				}
 			}
+			$aa++;
 		}
-		return $this->response->setJSON(array("success" => 'Multiple extra fees created'));
+		$termCount = count($terms);
+		$studentCount = count($formids);
+		$msg = $termCount > 1
+			? "Extra fees created for {$studentCount} student(s) across {$termCount} terms"
+			: 'Multiple extra fees created';
+		return $this->response->setJSON(array("success" => $msg));
 	}
 
 	/**
@@ -10993,10 +11254,11 @@ public function getApplicationDocs($id = null)
 		$this->_preset();
 		$data = $this->data;
 		$schoolFee = new SchoolFeesModel();
+		$schoolFee->ensureSchema();
 		$detpModel = new DeptModel();
 		$academicYearMdl = new AcademicYearModel();
-		$school_id = $this->session->get("soma_school_id");
-		$academicYear = isset($_GET['year']) == true ? $_GET['year'] : $this->data['academic_year'];
+		$school_id = (int) $this->session->get("soma_school_id");
+		$selectedYear = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
 		$data['title'] = lang("app.schoolFees");
 		$data['subtitle'] = lang("app.schoolFees");
 		$data['page'] = "School_fees";
@@ -11009,18 +11271,43 @@ public function getApplicationDocs($id = null)
 				->groupBy("departments.id")
 				->get()->getResultArray();
 
-		$data['fees'] = $schoolFee->select("school_fees.id,school_fees.amount,ac.title as academic_year,school_fees.term,l.title,d.code as dept_code")
-				->join("levels l", "l.id=school_fees.level")
-				->join("departments d", "d.id=school_fees.department")
-				->join("academic_year ac", "ac.id=school_fees.academic_year")
-				->where("ac.id", $academicYear)
-				->where("school_fees.school_id", $school_id)
-				->groupBy("school_fees.level")
-				->groupBy("school_fees.department")
-				->groupBy("school_fees.academic_year")
-				->get()->getResultArray();
+		$data['selectedYear'] = $selectedYear;
+		$data['selectedYearTitle'] = '';
+		foreach ($data['years'] as $yearRow) {
+			if ((int) $yearRow['id'] === $selectedYear) {
+				$data['selectedYearTitle'] = $yearRow['title'];
+				break;
+			}
+		}
+
+		$data['fees'] = $schoolFee->listForSchool($school_id, $selectedYear);
+		$data['feeGroups'] = SchoolFeesModel::groupByLevelDept($data['fees']);
+		$data['feeCount'] = count($data['fees']);
+		$data['feeTotalAmount'] = array_sum(array_map(static fn($f) => (float) ($f['amount'] ?? 0), $data['fees']));
+		$data['feeLevelCount'] = count($data['feeGroups']);
 		$data['content'] = view("pages/school_fees_management", $data);
 		return view('main', $data);
+	}
+
+	/**
+	 * JSON list of school fees for the management UI (session-authenticated).
+	 * GET ?year=<academic_year_id> — defaults to current session year.
+	 */
+	public function school_fees_data()
+	{
+		$this->_preset();
+		$school_id = (int) $this->session->get("soma_school_id");
+		$selectedYear = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
+		$schoolFee = new SchoolFeesModel();
+		$rows = $schoolFee->listForSchool($school_id, $selectedYear);
+		$fees = array_map([SchoolFeesModel::class, 'formatRowForApi'], $rows);
+
+		return $this->response->setJSON([
+			'success' => true,
+			'academic_year_id' => $selectedYear,
+			'count' => count($fees),
+			'fees' => $fees,
+		]);
 	}
 
 	public
@@ -11028,6 +11315,7 @@ public function getApplicationDocs($id = null)
 	{
 		$levelModel = new LevelsModel();
 		$school_id = $this->session->get("soma_school_id");
+		$multi = (int) ($this->request->getGet('multi') ?? 0) === 1;
 		$levs = $levelModel->select('levels.id,levels.title')
 				->join("classes c", "c.level=levels.id", "INNER")
 				->join("departments d", "d.id=c.department", "LEFT")
@@ -11035,9 +11323,50 @@ public function getApplicationDocs($id = null)
 				->where("d.id", $dept)
 				->groupBy("levels.id")
 				->get()->getResultArray();
-		echo "<option disabled selected>" . lang("app.selectLevel") . "</option>";
+		if (!$multi) {
+			echo "<option disabled selected>" . lang("app.selectLevel") . "</option>";
+		}
 		foreach ($levs as $data) {
 			echo "<option value='{$data['id']}'>{$data['title']}</option>";
+		}
+	}
+
+	/**
+	 * Fee create modal: list classes with titles (P4 A, P4 B) when multiple exist per level.
+	 */
+	public function get_fee_targets($dept)
+	{
+		$classMdl = new ClassesModel();
+		$school_id = (int) $this->session->get("soma_school_id");
+		$dept = (int) $dept;
+		$classes = $classMdl->select('classes.id, classes.title, classes.level, l.title AS level_title')
+			->join('levels l', 'l.id = classes.level', 'INNER')
+			->where('classes.school_id', $school_id)
+			->where('classes.department', $dept)
+			->orderBy('l.title', 'ASC')
+			->orderBy('classes.title', 'ASC')
+			->get()->getResultArray();
+
+		$byLevel = [];
+		foreach ($classes as $row) {
+			$byLevel[(int) $row['level']][] = $row;
+		}
+
+		foreach ($byLevel as $levelId => $levelClasses) {
+			$count = count($levelClasses);
+			foreach ($levelClasses as $c) {
+				$classTitle = trim((string) ($c['title'] ?? ''));
+				if ($classTitle === '' || $classTitle === '-----') {
+					$label = esc($c['level_title']);
+				} else {
+					$label = esc(trim($c['level_title'] . ' ' . $classTitle));
+				}
+				echo '<option value="c:' . (int) $c['id'] . '">' . $label . '</option>';
+			}
+			if ($count > 1) {
+				$levelTitle = esc($levelClasses[0]['level_title'] ?? '');
+				echo '<option value="l:' . (int) $levelId . '">' . $levelTitle . ' (all classes)</option>';
+			}
 		}
 	}
 
@@ -11077,40 +11406,229 @@ public function getApplicationDocs($id = null)
 	function manipulate_school_fee()
 	{
 		$this->_preset();
-		$school_id = $this->session->get("soma_school_id");
-		$level = $this->request->getPost("level");
-		$dept = $this->request->getPost("dept");
-		$amount = $this->request->getPost("amount");
-		$schoolFee = new SchoolFeesModel();
-		$i = 1;
-		$verify = $schoolFee->where("school_id", $school_id)
-				->where("level", $level)
-				->where("department", $dept)
-				->where("term", $i)
-				->where("academic_year", $this->data['academic_year'])
-				->countAllResults();
-//		var_dump($verify); die();
-		if ($verify > 0) {
-			return $this->response->setJSON(["error" => "Fee record exist"]);
+		$school_id = (int) $this->session->get("soma_school_id");
+		$dept = (int) $this->request->getPost("dept");
+		$amount = trim((string) $this->request->getPost("amount"));
+
+		$targets = $this->request->getPost("target");
+		if (!is_array($targets)) {
+			$targets = $targets !== null && $targets !== '' ? [$targets] : [];
 		}
-		try {
-			while ($i <= 3) {
-				$data = array(
-						"school_id" => $school_id,
-						"level" => $level,
-						"department" => $dept,
-						"amount" => $amount,
-						"term" => $i,
-						"academic_year" => $this->data['academic_year'],
-						"created_by" => $this->session->get("soma_id"));
-				$schoolFee->save($data);
-				$i++;
+		// Backward compat: level[] still accepted
+		if (empty($targets)) {
+			$levels = $this->request->getPost("level");
+			if (!is_array($levels)) {
+				$levels = $levels !== null && $levels !== '' ? [$levels] : [];
 			}
-			return $this->response->setJSON(array("success" => lang("app.feeSaved")));
-		} catch (\Exception $e) {
-			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
+			foreach ($levels as $levelId) {
+				$targets[] = 'l:' . (int) $levelId;
+			}
 		}
 
+		$allTerms = (int) $this->request->getPost("all_terms") === 1;
+		$terms = $this->request->getPost("term");
+		if (!is_array($terms)) {
+			$terms = $terms !== null && $terms !== '' ? [$terms] : [];
+		}
+		if ($allTerms) {
+			$terms = [1, 2, 3];
+		} else {
+			$terms = array_values(array_unique(array_intersect(array_map('intval', $terms), [1, 2, 3])));
+		}
+
+		if ($dept <= 0) {
+			return $this->response->setJSON(["error" => lang("app.selectDepartment")]);
+		}
+		if (empty($targets)) {
+			return $this->response->setJSON(["error" => lang("app.selectClass")]);
+		}
+		if (empty($terms)) {
+			return $this->response->setJSON(["error" => lang("app.selectTerms")]);
+		}
+		if ($amount === '' || !is_numeric($amount) || (float) $amount < 0) {
+			return $this->response->setJSON(["error" => lang("app.amount") . " is required"]);
+		}
+
+		$schoolFee = new SchoolFeesModel();
+		$schoolFee->ensureSchema();
+		$classMdl = new ClassesModel();
+		$created = 0;
+		$skipped = 0;
+		$academicYear = (int) $this->data['academic_year'];
+		$createdBy = $this->session->get("soma_id");
+
+		try {
+			foreach ($targets as $rawTarget) {
+				$rawTarget = (string) $rawTarget;
+				$classId = 0;
+				$levelId = 0;
+
+				if (strpos($rawTarget, 'c:') === 0) {
+					$classId = (int) substr($rawTarget, 2);
+					$classRow = $classMdl->select('id, level, department')
+						->where('id', $classId)
+						->where('school_id', $school_id)
+						->where('department', $dept)
+						->get(1)->getRowArray();
+					if (!$classRow) {
+						continue;
+					}
+					$levelId = (int) $classRow['level'];
+				} elseif (strpos($rawTarget, 'l:') === 0) {
+					$levelId = (int) substr($rawTarget, 2);
+				} else {
+					$levelId = (int) $rawTarget;
+				}
+
+				if ($levelId <= 0) {
+					continue;
+				}
+
+				foreach ($terms as $term) {
+					$builder = $schoolFee->where('school_id', $school_id)
+						->where('term', $term)
+						->where('academic_year', $academicYear);
+					if ($classId > 0) {
+						$builder->where('class_id', $classId);
+					} else {
+						$builder->where('level', $levelId)
+							->where('department', $dept)
+							->groupStart()
+								->where('class_id IS NULL', null, false)
+								->orWhere('class_id', 0)
+							->groupEnd();
+					}
+					if ($builder->countAllResults() > 0) {
+						$skipped++;
+						continue;
+					}
+
+					$schoolFee->insert([
+						"school_id" => $school_id,
+						"level" => $levelId,
+						"department" => $dept,
+						"class_id" => $classId > 0 ? $classId : null,
+						"amount" => $amount,
+						"term" => $term,
+						"academic_year" => $academicYear,
+						"created_by" => $createdBy,
+					]);
+					$created++;
+				}
+			}
+
+			if ($created === 0) {
+				return $this->response->setJSON(["error" => "Fee record(s) already exist for the selected class(es) and term(s)."]);
+			}
+
+			$message = lang("app.feeSaved");
+			if ($skipped > 0) {
+				$message .= " ($created saved, $skipped skipped — already exist)";
+			}
+			return $this->response->setJSON(["success" => $message]);
+		} catch (\Exception $e) {
+			return $this->response->setJSON(["error" => "Error: " . $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * Update one school fee or all terms for a level/dept (same amount).
+	 * POST: fee_id, amount [, apply_all_terms=1]
+	 * POST group mode: level_id, department_id, amount_1, amount_2, amount_3
+	 */
+	public function update_school_fee()
+	{
+		$this->_preset();
+		$school_id = (int) $this->session->get("soma_school_id");
+		$schoolFee = new SchoolFeesModel();
+		$academicYear = (int) $this->data['academic_year'];
+
+		$levelId = (int) $this->request->getPost('level_id');
+		$deptId = (int) $this->request->getPost('department_id');
+		$classId = (int) $this->request->getPost('class_id');
+		if ($levelId > 0 && $deptId > 0) {
+			$updated = 0;
+			try {
+				for ($term = 1; $term <= 3; $term++) {
+					$amount = trim((string) $this->request->getPost('amount_' . $term));
+					if ($amount === '') {
+						continue;
+					}
+					if (!is_numeric($amount) || (float) $amount < 0) {
+						return $this->response->setJSON(['error' => lang('app.amount') . ' is invalid for term ' . $term]);
+					}
+					$builder = $schoolFee->where('school_id', $school_id)
+						->where('term', $term)
+						->where('academic_year', $academicYear);
+					if ($classId > 0) {
+						$builder->where('class_id', $classId);
+					} else {
+						$builder->where('level', $levelId)
+							->where('department', $deptId)
+							->groupStart()
+								->where('class_id IS NULL', null, false)
+								->orWhere('class_id', 0)
+							->groupEnd();
+					}
+					$row = $builder->get(1)->getRowArray();
+					if (!$row) {
+						continue;
+					}
+					$schoolFee->update((int) $row['id'], ['amount' => $amount]);
+					$updated++;
+				}
+				if ($updated === 0) {
+					return $this->response->setJSON(['error' => 'No fee records found to update.']);
+				}
+				return $this->response->setJSON(['success' => lang('app.feeSaved') . " ($updated updated)"]);
+			} catch (\Exception $e) {
+				return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
+			}
+		}
+
+		$feeId = (int) $this->request->getPost('fee_id');
+		$amount = trim((string) $this->request->getPost('amount'));
+		$applyAllTerms = (int) $this->request->getPost('apply_all_terms') === 1;
+
+		if ($feeId <= 0) {
+			return $this->response->setJSON(['error' => 'Fee record not found.']);
+		}
+		if ($amount === '' || !is_numeric($amount) || (float) $amount < 0) {
+			return $this->response->setJSON(['error' => lang('app.amount') . ' is required']);
+		}
+
+		$row = $schoolFee->where('id', $feeId)->where('school_id', $school_id)->get(1)->getRowArray();
+		if (!$row) {
+			return $this->response->setJSON(['error' => 'Fee record not found.']);
+		}
+
+		try {
+			$schoolFee->update($feeId, ['amount' => $amount]);
+			$updated = 1;
+			if ($applyAllTerms) {
+				$others = $schoolFee->where('school_id', $school_id)
+					->where('level', (int) $row['level'])
+					->where('department', (int) $row['department'])
+					->where('academic_year', (int) $row['academic_year'])
+					->where('id !=', $feeId);
+				if (!empty($row['class_id'])) {
+					$others->where('class_id', (int) $row['class_id']);
+				} else {
+					$others->groupStart()
+						->where('class_id IS NULL', null, false)
+						->orWhere('class_id', 0)
+					->groupEnd();
+				}
+				$others = $others->findAll();
+				foreach ($others as $other) {
+					$schoolFee->update((int) $other['id'], ['amount' => $amount]);
+					$updated++;
+				}
+			}
+			return $this->response->setJSON(['success' => lang('app.feeSaved') . ($updated > 1 ? " ($updated terms)" : '')]);
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
+		}
 	}
 
 	public
@@ -11121,7 +11639,7 @@ public function getApplicationDocs($id = null)
 		$classMdl = new ClassesModel();
 		$extraFees = new ExtraFeesModel();
 		$school_id = $this->session->get("soma_school_id");
-		$academicYear = isset($_GET['year']) == true ? $_GET['year'] : $this->data['academic_year'];
+		$academicYear = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
 		$data['title'] = lang("app.extraFees");
 		$data['subtitle'] = lang("app.extraFees");
 		$data['page'] = "Extra_fees";
@@ -11129,6 +11647,14 @@ public function getApplicationDocs($id = null)
 		$data['years'] = $academicYearMdl->select('id,title')
 				->where('school_id', $school_id)
 				->orderBy('title', 'DESC')->get()->getResultArray();
+		$data['selectedYear'] = $academicYear;
+		$data['selectedYearTitle'] = '';
+		foreach ($data['years'] as $yr) {
+			if ((int) $yr['id'] === $academicYear) {
+				$data['selectedYearTitle'] = $yr['title'];
+				break;
+			}
+		}
 		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name
 		,f.type,f.abbrev as faculty_code")
 				->join("departments d", "d.id=classes.department")
@@ -11136,17 +11662,38 @@ public function getApplicationDocs($id = null)
 				->join("faculty f", "f.id=d.faculty_id")
 				->where("classes.school_id", $this->session->get("soma_school_id"))
 				->get()->getResultArray();
-		$data['fees'] = $extraFees->select("extra_fees.id,extra_fees.amount,ac.title as academic_year,extra_fees.title,extra_fees.term,
-												cl.title as classe,d.title as department_name,d.code,l.title as level_name
-												,f.type,f.abbrev as faculty_code")
-				->join("classes cl", "cl.id=extra_fees.type_id AND extra_fees.type=0")
-				->join("departments d", "d.id=cl.department")
+		$data['fees'] = $extraFees->select("extra_fees.id,extra_fees.amount,extra_fees.type,extra_fees.type_id,
+			ac.title as academic_year,extra_fees.title,extra_fees.term,
+			cl.title as classe,d.code,l.title as level_name,
+			CONCAT(st.fname,' ',st.lname) as student_name,st.regno")
+				->join("classes cl", "cl.id=extra_fees.type_id AND extra_fees.type=0", "LEFT")
+				->join("departments d", "d.id=cl.department", "LEFT")
+				->join("levels l", "l.id=cl.level", "LEFT")
+				->join("students st", "st.id=extra_fees.type_id AND extra_fees.type=1", "LEFT")
 				->join("academic_year ac", "ac.id=extra_fees.academic_year")
-				->join("levels l", "l.id=cl.level")
-				->join("faculty f", "f.id=d.faculty_id")
 				->where("extra_fees.school_id", $school_id)
 				->where("extra_fees.academic_year", $academicYear)
+				->orderBy("extra_fees.type", "ASC")
+				->orderBy("l.title", "ASC")
+				->orderBy("extra_fees.title", "ASC")
 				->get()->getResultArray();
+
+		$data['feeCount'] = count($data['fees']);
+		$data['feeTotalAmount'] = 0;
+		$data['classFeeCount'] = 0;
+		$data['studentFeeCount'] = 0;
+		$classIds = [];
+		foreach ($data['fees'] as $fee) {
+			$data['feeTotalAmount'] += (float) ($fee['amount'] ?? 0);
+			if ((int) ($fee['type'] ?? 0) === 0) {
+				$data['classFeeCount']++;
+				$classIds[(int) $fee['type_id']] = true;
+			} else {
+				$data['studentFeeCount']++;
+			}
+		}
+		$data['classCount'] = count($classIds);
+
 		$data['content'] = view("pages/extra_fees_management", $data);
 		return view('main', $data);
 	}
@@ -11233,14 +11780,34 @@ public function getApplicationDocs($id = null)
 	{
 		$this->_preset();
 		$items = $this->request->getPost("items");
-		$student = $this->request->getPost("studentid");
+		$student = (int) $this->request->getPost("studentid");
 		$feesTypes = $this->request->getPost("feeTypes");
 		$amounts = $this->request->getPost("amounts");
 		$modes = $this->request->getPost("modes");
 		$due_date = $this->request->getPost("dueDate");
+		$slipRef = trim((string) $this->request->getPost("slipRef"));
+		$postId = (int) $this->session->get("soma_post");
+		$status = FeesApproval::defaultStatusForPost($postId);
+		$isPending = ($status === FeesApproval::STATUS_PENDING);
 		$feeEntryModel = new FeesRecordModel();
 		$resString = "";
 		$recId = 0;
+
+		if (!is_array($items) || !$items) {
+			return $this->response->setJSON(["error" => lang("app.selectAtLeastOneFeeItem")]);
+		}
+
+		$usesBankSlip = false;
+		foreach ($modes as $mode) {
+			if ((int) $mode === FeesApproval::PAYMENT_MODE_BANK_SLIP) {
+				$usesBankSlip = true;
+				break;
+			}
+		}
+		if ($usesBankSlip && $slipRef === '') {
+			return $this->response->setJSON(["error" => lang("app.slipReferenceRequired")]);
+		}
+
 		try {
 			foreach ($items as $key => $item):
 				$data = [
@@ -11251,7 +11818,19 @@ public function getApplicationDocs($id = null)
 						"due_date" => $due_date,
 						"payment_mode" => $modes[$key],
 						"created_by" => $this->session->get("soma_id")];
+				if (!$isPending) {
+					$data["status"] = FeesApproval::STATUS_APPROVED;
+				}
 				$recId = $feeEntryModel->insert($data);
+				// status=0 is skipped by some insert paths; DB default is 1 — force pending explicitly.
+				if ($isPending && $recId) {
+					\Config\Database::connect()->table('fees_records')
+							->where('id', (int) $recId)
+							->update(['status' => FeesApproval::STATUS_PENDING]);
+				}
+				if ((int) $modes[$key] === FeesApproval::PAYMENT_MODE_BANK_SLIP && $slipRef !== '') {
+					$this->_assignFeeSlipRef($feeEntryModel, (int) $recId, $student, (int) $feesTypes[$key], $slipRef);
+				}
 				if (count($items) - 1 == $key) {
 					$resString .= $recId . ':' . $feesTypes[$key];
 				} else {
@@ -11259,11 +11838,127 @@ public function getApplicationDocs($id = null)
 				}
 
 			endforeach;
-			return $this->response->setJSON(["success" => lang("app.feesRecordSaved"), "id" => $recId,
-					'url' => base_url('printFeesHistory/' . urlencode($resString) . '/' . $student)]);
+			$payload = [
+				"success" => $isPending ? lang("app.feesRecordPending") : lang("app.feesRecordSaved"),
+				"id" => $recId,
+				"pending" => $isPending,
+			];
+			if (!$isPending) {
+				$payload['url'] = base_url('print_fee_receipt/' . urlencode($resString) . '/' . $student . '?autoprint=1');
+				$payload['print_url'] = $payload['url'];
+				$payload['pdf_url'] = base_url('printFeesHistory/' . urlencode($resString) . '/' . $student);
+			}
+			return $this->response->setJSON($payload);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(["error" => "Error: " . $e->getMessage()]);
 		}
+	}
+
+	/**
+	 * Persist bank-slip reference; suffix record id when student+type+ref already exists.
+	 */
+	private function _assignFeeSlipRef(FeesRecordModel $model, int $recordId, int $studentId, int $feesType, string $refNo): void
+	{
+		$baseRef = trim($refNo);
+		if ($baseRef === '') {
+			return;
+		}
+		$finalRef = $baseRef;
+		$dup = $model->where('student_id', $studentId)
+				->where('fees_type', $feesType)
+				->where('refNo', $baseRef)
+				->where('id !=', $recordId)
+				->countAllResults();
+		if ($dup > 0) {
+			$finalRef = $baseRef . '-' . $recordId;
+		}
+		$model->update($recordId, ['refNo' => $finalRef]);
+	}
+
+	public function fees_pending_approval()
+	{
+		$this->_preset();
+		if (!FeesApproval::canApprove((int) $this->session->get('soma_post'))) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		$data = $this->data;
+		$data['title'] = lang('app.feesPendingApproval');
+		$data['subtitle'] = lang('app.feesPendingApproval');
+		$data['page'] = 'fees_pending_approval';
+		$data['content'] = view('pages/fees_pending_approval', $data);
+		return view('main', $data);
+	}
+
+	public function get_pending_fees_ajax()
+	{
+		$this->_preset();
+		if (!FeesApproval::canApprove((int) $this->session->get('soma_post'))) {
+			return $this->response->setJSON(['error' => lang('app.accessDenied')]);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$db = \Config\Database::connect();
+		$rows = $db->table('fees_records fr')
+				->select("fr.id, fr.amount, fr.payment_mode, fr.refNo, fr.created_at as date,
+					CONCAT(s.fname,' ',s.lname) as student_name, s.regno,
+					IF(fr.fees_type=0, 'School fees', CONCAT(ex.title,' (Extra fees)')) as item,
+					CONCAT(st.fname,' ',st.lname) as created_by_name")
+				->join('students s', 's.id=fr.student_id')
+				->join('staffs st', 'st.id=fr.created_by', 'LEFT')
+				->join('extra_fees ex', 'ex.id=fr.fees_id AND fr.fees_type=1', 'LEFT')
+				->where('fr.status', FeesApproval::STATUS_PENDING)
+				->where('s.school_id', $schoolId)
+				->orderBy('fr.id', 'DESC')
+				->get()->getResultArray();
+		foreach ($rows as &$row) {
+			$row['date'] = $row['date'] ? date('d-M-Y H:i', strtotime($row['date'])) : '';
+		}
+		unset($row);
+		return $this->response->setJSON(['rows' => $rows]);
+	}
+
+	public function approve_fee_records()
+	{
+		$this->_preset();
+		if (!FeesApproval::canApprove((int) $this->session->get('soma_post'))) {
+			return $this->response->setJSON(['error' => lang('app.accessDenied')]);
+		}
+		$ids = $this->request->getPost('ids');
+		if (!is_array($ids) || !$ids) {
+			return $this->response->setJSON(['error' => lang('app.selectRecordsToApprove')]);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$feeEntryModel = new FeesRecordModel();
+		$approved = [];
+		$studentId = 0;
+		try {
+			foreach ($ids as $rawId) {
+				$id = (int) $rawId;
+				if ($id <= 0) {
+					continue;
+				}
+				$row = $feeEntryModel->select('fees_records.*, s.school_id')
+						->join('students s', 's.id=fees_records.student_id')
+						->where('fees_records.id', $id)
+						->where('fees_records.status', FeesApproval::STATUS_PENDING)
+						->get(1)->getRowArray();
+				if (!$row || (int) $row['school_id'] !== $schoolId) {
+					continue;
+				}
+				$feeEntryModel->update($id, ['status' => FeesApproval::STATUS_APPROVED]);
+				$approved[] = $id . ':' . $row['fees_type'];
+				$studentId = (int) $row['student_id'];
+			}
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
+		}
+		if (!$approved) {
+			return $this->response->setJSON(['error' => lang('app.noPendingRecordsFound')]);
+		}
+		$resString = implode('-', $approved);
+		return $this->response->setJSON([
+			'success' => lang('app.feesRecordsApproved'),
+			'print_url' => base_url('print_fee_receipt/' . urlencode($resString) . '/' . $studentId . '?autoprint=1'),
+		]);
 	}
 
 	public
@@ -11279,9 +11974,16 @@ public function getApplicationDocs($id = null)
 		$acMdl = new AcademicYearModel();
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
 				->orderBy("id", 'DESC')->get()->getResultArray();
-//		$extrafees=new ExtraFeesModel();
+		$data['selectedYear'] = (int) $this->data['academic_year'];
+		$data['selectedYearTitle'] = '';
+		foreach ($data['years'] as $yr) {
+			if ((int) $yr['id'] === $data['selectedYear']) {
+				$data['selectedYearTitle'] = $yr['title'];
+				break;
+			}
+		}
 		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name,l.id as level_id,
-		,f.type,f.abbrev as faculty_code")
+		f.type,f.abbrev as faculty_code")
 				->join("departments d", "d.id=classes.department")
 				->join("levels l", "l.id=classes.level")
 				->join("faculty f", "f.id=d.faculty_id")
@@ -11289,6 +11991,364 @@ public function getApplicationDocs($id = null)
 				->get()->getResultArray();
 		$data['content'] = view("pages/fees_entry", $data);
 		return view('main', $data);
+	}
+
+	/**
+	 * JSON context for Fees Entry after scan/search (student + class for academic year).
+	 */
+	public function fees_entry_student_context($studentId)
+	{
+		$this->_preset();
+		helper('qonics');
+		$school_id = (int) $this->session->get("soma_school_id");
+		$studentId = (int) $studentId;
+		$year = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
+
+		if ($studentId <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Invalid student.']);
+		}
+
+		$stMdl = new StudentModel();
+		$row = $stMdl->select("
+			students.id, students.regno, students.photo,
+			CONCAT(students.fname,' ',students.lname) AS name,
+			c.id AS class_id, c.title AS class_title,
+			d.code AS dept_code, l.title AS level_name
+		")
+			->join('class_records cr', 'cr.student = students.id AND cr.year = ' . $year, 'INNER')
+			->join('classes c', 'c.id = cr.class', 'INNER')
+			->join('departments d', 'd.id = c.department', 'LEFT')
+			->join('levels l', 'l.id = c.level', 'LEFT')
+			->where('students.id', $studentId)
+			->where('students.school_id', $school_id)
+			->where('students.status', 1)
+			->get(1)->getRowArray();
+
+		if (!$row) {
+			return $this->response->setJSON([
+				'success' => false,
+				'error' => 'Student not found or not enrolled for the selected academic year.',
+			]);
+		}
+
+		$classLabel = trim(($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_title'] ?? ''));
+		$resolved = resolve_profile_photo($row['photo'] ?? null);
+		$photoUrl = $resolved !== null ? profile_photo_url($resolved) : profile_photo_url(null);
+
+		return $this->response->setJSON([
+			'success' => true,
+			'student' => [
+				'id' => (int) $row['id'],
+				'regno' => (string) $row['regno'],
+				'name' => (string) $row['name'],
+				'photo_url' => $photoUrl,
+				'photo_html' => student_entry_photo_html($row['photo'] ?? null),
+				'class_id' => (int) $row['class_id'],
+				'class_label' => $classLabel,
+			],
+			'academic_year_id' => $year,
+		]);
+	}
+
+	public function student_material_check()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!material_check_menu_visible()) {
+			header('location: ' . base_url('dashboard'));
+			die();
+		}
+		$data = $this->data;
+		$school_id = (int) $this->session->get('soma_school_id');
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$matSchema->ensureSchema();
+		$classMdl = new ClassesModel();
+		$acMdl = new AcademicYearModel();
+		$data['title'] = 'Required Material Check';
+		$data['subtitle'] = 'Students';
+		$data['page'] = 'student_material_check';
+		$data['years'] = $acMdl->select('id,title')->where('school_id', $school_id)
+			->orderBy('id', 'DESC')->get()->getResultArray();
+		$data['selectedYear'] = (int) $data['academic_year'];
+		$data['material_check_full_access'] = material_check_full_access();
+		$data['mentor_class_ids'] = material_check_mentor_class_ids($school_id);
+
+		$classQuery = $classMdl->select('classes.id,classes.title,d.code,l.title as level_name')
+			->join('departments d', 'd.id=classes.department')
+			->join('levels l', 'l.id=classes.level')
+			->where('classes.school_id', $school_id);
+		if (!$data['material_check_full_access']) {
+			$allowed = $data['mentor_class_ids'];
+			if (empty($allowed)) {
+				header('location: ' . base_url('dashboard'));
+				die();
+			}
+			$classQuery->whereIn('classes.id', $allowed);
+		}
+		$data['classes'] = $classQuery->get()->getResultArray();
+		$data['content'] = view('pages/student_material_check', $data);
+		return view('main', $data);
+	}
+
+	public function student_material_check_context($studentId)
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!material_check_menu_visible()) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Access denied.']);
+		}
+		$school_id = (int) $this->session->get('soma_school_id');
+		$studentId = (int) $studentId;
+		$year = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
+		if ($studentId <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Invalid student.']);
+		}
+		$stMdl = new StudentModel();
+		$row = $stMdl->select("
+			students.id, students.regno, students.photo,
+			CONCAT(students.fname,' ',students.lname) AS name,
+			c.id AS class_id, c.title AS class_title,
+			d.code AS dept_code, l.title AS level_name
+		")
+			->join('class_records cr', 'cr.student = students.id AND cr.year = ' . $year, 'INNER')
+			->join('classes c', 'c.id = cr.class', 'INNER')
+			->join('departments d', 'd.id = c.department', 'LEFT')
+			->join('levels l', 'l.id = c.level', 'LEFT')
+			->where('students.id', $studentId)
+			->where('students.school_id', $school_id)
+			->where('students.status', 1)
+			->get(1)->getRowArray();
+		if (!$row) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Student not found for this year.']);
+		}
+		$classId = (int) $row['class_id'];
+		if (!material_check_can_access_class($classId, $school_id)) {
+			return $this->response->setJSON([
+				'success' => false,
+				'error' => 'You can only check materials for students in your assigned class.',
+			]);
+		}
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$materials = $matSchema->getStudentChecklist($school_id, $studentId, $classId, $year);
+		$summary = $matSchema->summarizeChecklist($materials);
+		$classLabel = trim(($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_title'] ?? ''));
+		return $this->response->setJSON([
+			'success' => true,
+			'student' => [
+				'id' => (int) $row['id'],
+				'regno' => (string) $row['regno'],
+				'name' => (string) $row['name'],
+				'photo_html' => student_entry_photo_html($row['photo'] ?? null),
+				'class_id' => $classId,
+				'class_label' => $classLabel,
+			],
+			'materials' => $materials,
+			'summary' => $summary,
+		]);
+	}
+
+	public function student_material_class_overview($classId)
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!material_check_menu_visible()) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Access denied.']);
+		}
+		$school_id = (int) $this->session->get('soma_school_id');
+		$classId = (int) $classId;
+		$year = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
+		if ($classId <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Invalid class.']);
+		}
+		if (!material_check_can_access_class($classId, $school_id)) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Access denied for this class.']);
+		}
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$overview = $matSchema->getClassOverview($school_id, $classId, $year);
+		return $this->response->setJSON(['success' => true] + $overview);
+	}
+
+	public function student_material_report_pdf($classId)
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!material_check_menu_visible()) {
+			header('location: ' . base_url('dashboard'));
+			die();
+		}
+		$school_id = (int) $this->session->get('soma_school_id');
+		$classId = (int) $classId;
+		$year = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
+		$filter = strtolower(trim((string) ($this->request->getGet('filter') ?: 'all')));
+		if ($classId <= 0) {
+			header('location: ' . base_url('student_material_check'));
+			die();
+		}
+		if (!material_check_can_access_class($classId, $school_id)) {
+			header('location: ' . base_url('student_material_check'));
+			die();
+		}
+
+		$classMdl = new ClassesModel();
+		$acMdl = new AcademicYearModel();
+		$classRow = $classMdl->select("classes.id,classes.title,d.code as dept_code,l.title as level_name,CONCAT(s.fname,' ',s.lname) as mentor_name")
+			->join('departments d', 'd.id=classes.department')
+			->join('levels l', 'l.id=classes.level')
+			->join('staffs s', 's.id=classes.mentor', 'LEFT')
+			->where('classes.school_id', $school_id)
+			->where('classes.id', $classId)
+			->get(1)->getRowArray();
+		$yearRow = $acMdl->select('id,title')->where('id', $year)->where('school_id', $school_id)->get(1)->getRowArray();
+
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$overview = $matSchema->getClassOverview($school_id, $classId, $year);
+		$students = $matSchema->filterClassStudentsByStatus($overview['students'] ?? [], $filter);
+
+		$filterLabels = [
+			'all' => 'All students',
+			'complete' => 'Fully supplied',
+			'partial' => 'Partially supplied',
+			'missing' => 'Missing materials',
+			'unchecked' => 'Not yet checked',
+		];
+
+		$data = $this->data;
+		$data['class'] = $classRow;
+		$data['year'] = $yearRow;
+		$data['students'] = $students;
+		$data['materials'] = $overview['materials'] ?? [];
+		$data['class_kpi'] = $overview['class_kpi'] ?? [];
+		$data['filter'] = $filter;
+		$data['filter_label'] = $filterLabels[$filter] ?? 'All students';
+		$data['printed_at'] = date('d M Y H:i');
+		$data['class_label'] = trim(($classRow['level_name'] ?? '') . ' ' . ($classRow['dept_code'] ?? '') . ' ' . ($classRow['title'] ?? ''));
+
+		$html = view('pages/reports/student_material_report_pdf', $data);
+		$slug = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $data['class_label']);
+		$filename = 'Material_Report_' . $slug . '_' . date('Y-m-d') . '.pdf';
+
+		$dir = WRITEPATH . 'uploads/material_reports';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0755, true);
+		}
+
+		try {
+			$wk = new Wkhtmltopdf(['path' => $dir]);
+			$wk->setTitle('Required Materials Report');
+			$wk->setHtml($html);
+			$wk->setOrientation(Wkhtmltopdf::ORIENTATION_PORTRAIT);
+			$wk->setPageSize(Wkhtmltopdf::SIZE_A4);
+			$wk->setMargins(['top' => 10, 'bottom' => 10, 'left' => 10, 'right' => 10]);
+			$wk->setOptions(['encoding' => 'UTF-8']);
+			$wk->output(Wkhtmltopdf::MODE_DOWNLOAD, $filename);
+			return $this->response;
+		} catch (\Throwable $e) {
+			return $this->response
+				->setHeader('Content-Type', 'text/html; charset=UTF-8')
+				->setBody($html . '<script>window.onload=function(){window.print();}</script>');
+		}
+	}
+
+	public function save_student_material_check()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!material_check_menu_visible()) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$school_id = (int) $this->session->get('soma_school_id');
+		$staffId = (int) ($this->session->get('soma_id') ?? 0);
+		$studentId = (int) $this->request->getPost('student_id');
+		$classId = (int) $this->request->getPost('class_id');
+		$year = (int) ($this->request->getPost('year') ?: $this->data['academic_year']);
+		$items = json_decode((string) $this->request->getPost('items'), true);
+		if ($studentId <= 0 || !is_array($items)) {
+			return $this->response->setJSON(['error' => 'Invalid data.']);
+		}
+		if (!material_check_can_access_class($classId, $school_id)) {
+			return $this->response->setJSON(['error' => 'You can only save checks for your assigned class.']);
+		}
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$count = $matSchema->saveStudentChecks($school_id, $studentId, $classId, $year, $staffId, $items);
+		return $this->response->setJSON(['success' => "Saved material check ($count items)."]);
+	}
+
+	public function manipulate_required_material()
+	{
+		$this->_preset(1, 3);
+		$school_id = (int) $this->session->get('soma_school_id');
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$matSchema->ensureSchema();
+		$action = (string) $this->request->getPost('action');
+		if ($action === 'add') {
+			$name = trim((string) $this->request->getPost('name'));
+			$unit = trim((string) $this->request->getPost('unit')) ?: 'pcs';
+			if ($name === '') {
+				return $this->response->setJSON(['error' => 'Material name is required.']);
+			}
+			$id = $matSchema->insert([
+				'school_id' => $school_id,
+				'name' => $name,
+				'unit' => $unit,
+				'sort_order' => 0,
+				'active' => 1,
+			]);
+			if (!$id) {
+				return $this->response->setJSON(['error' => 'Could not add material.']);
+			}
+			return $this->response->setJSON([
+				'success' => 'Material added.',
+				'material' => ['id' => (int) $id, 'name' => $name, 'unit' => $unit],
+			]);
+		}
+		if ($action === 'delete') {
+			$id = (int) $this->request->getPost('id');
+			$row = $matSchema->where('school_id', $school_id)->find($id);
+			if (!$row) {
+				return $this->response->setJSON(['error' => 'Material not found.']);
+			}
+			$matSchema->update($id, ['active' => 0]);
+			return $this->response->setJSON(['success' => 'Material removed.']);
+		}
+		return $this->response->setJSON(['error' => 'Unknown action.']);
+	}
+
+	public function get_class_required_materials()
+	{
+		$this->_preset(1, 3);
+		$school_id = (int) $this->session->get('soma_school_id');
+		$classId = (int) $this->request->getGet('class_id');
+		$year = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
+		if ($classId <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Select a class.']);
+		}
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$rows = $matSchema->getClassAssignments($school_id, $classId, $year);
+		$out = [];
+		foreach ($rows as $r) {
+			$out[] = [
+				'material_id' => (int) $r['material_id'],
+				'quantity' => (float) $r['quantity'],
+				'name' => $r['name'],
+				'unit' => $r['unit'],
+			];
+		}
+		return $this->response->setJSON(['success' => true, 'assignments' => $out]);
+	}
+
+	public function save_class_required_materials()
+	{
+		$this->_preset(1, 3);
+		$school_id = (int) $this->session->get('soma_school_id');
+		$classId = (int) $this->request->getPost('class_id');
+		$year = (int) ($this->request->getPost('year') ?: $this->data['academic_year']);
+		$items = json_decode((string) $this->request->getPost('items'), true);
+		if ($classId <= 0 || !is_array($items)) {
+			return $this->response->setJSON(['error' => 'Invalid data.']);
+		}
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$matSchema->saveClassAssignments($school_id, $classId, $year, $items);
+		return $this->response->setJSON(['success' => 'Class material assignment saved.']);
 	}
 
 	public
@@ -11352,6 +12412,102 @@ public function getApplicationDocs($id = null)
 			$i++;
 		}
 
+	}
+
+	/**
+	 * JSON list of school + extra fee lines with balances for bulk invoice entry.
+	 */
+	public function get_fee_invoice_items($year, $student, $class)
+	{
+		$this->_preset();
+		$school_id = (int) $this->session->get('soma_school_id');
+		$year = (int) $year;
+		$student = (int) $student;
+		$class = (int) $class;
+
+		if ($year <= 0 || $student <= 0 || $class <= 0) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Invalid parameters.']);
+		}
+
+		$schoolFees = new SchoolFeesModel();
+		$extraFees = new ExtraFeesModel();
+		$classMdl = new ClassesModel();
+
+		$level = $classMdl->select('classes.id,l.id as level_id, d.id as dept_id')
+			->join('departments d', 'd.id=classes.department')
+			->join('levels l', 'l.id=classes.level')
+			->where('classes.school_id', $school_id)
+			->where('classes.id', $class)
+			->get()->getRowArray();
+
+		if (!$level) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Class not found.']);
+		}
+
+		$items = [];
+
+		$schoolRows = $schoolFees->select('school_fees.id,school_fees.term,(school_fees.amount+coalesce(fd.amount,0)) as amount,sum(fr.amount) as paid')
+			->join('fees_records fr', "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=0 and fr.status=1", 'LEFT')
+			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", 'fd.feesId=school_fees.id', 'LEFT')
+			->where('school_fees.level', $level['level_id'])
+			->where('school_fees.department', $level['dept_id'])
+			->where('school_fees.academic_year', $year)
+			->where('school_fees.school_id', $school_id)
+			->groupBy('school_fees.id,school_fees.term,school_fees.amount,fd.amount')
+			->orderBy('school_fees.term', 'ASC')
+			->get()->getResultArray();
+
+		foreach ($schoolRows as $row) {
+			$expected = (float) ($row['amount'] ?? 0);
+			$paid = (float) ($row['paid'] ?? 0);
+			$remain = max(0, $expected - $paid);
+			if ($remain <= 0) {
+				continue;
+			}
+			$items[] = [
+				'id' => (int) $row['id'],
+				'fee_type' => 0,
+				'category' => lang('app.schoolFees'),
+				'label' => lang('app.schoolFees'),
+				'term' => $this->TermToStr($row['term']),
+				'expected' => $expected,
+				'paid' => $paid,
+				'remain' => $remain,
+			];
+		}
+
+		$extraRows = $extraFees->select('extra_fees.id,extra_fees.title,extra_fees.amount,extra_fees.term,fr.amount as paid')
+			->join("(select fr.fees_id,COALESCE(sum(fr.amount),0) as amount from fees_records fr
+			 where fr.fees_type=1 and fr.status=1 and fr.student_id=$student group by fr.fees_id) fr", 'extra_fees.id=fr.fees_id', 'LEFT')
+			->where("(extra_fees.type_id=$class AND extra_fees.type=0 and extra_fees.academic_year=$year) or (extra_fees.type_id=$student AND extra_fees.type=1 and extra_fees.academic_year=$year)")
+			->where('extra_fees.school_id', $school_id)
+			->orderBy('extra_fees.term', 'ASC')
+			->orderBy('extra_fees.title', 'ASC')
+			->get()->getResultArray();
+
+		foreach ($extraRows as $row) {
+			$expected = (float) ($row['amount'] ?? 0);
+			$paid = (float) ($row['paid'] ?? 0);
+			$remain = max(0, $expected - $paid);
+			if ($remain <= 0) {
+				continue;
+			}
+			$items[] = [
+				'id' => (int) $row['id'],
+				'fee_type' => 1,
+				'category' => lang('app.extraFees'),
+				'label' => (string) $row['title'],
+				'term' => $this->TermToStr($row['term']),
+				'expected' => $expected,
+				'paid' => $paid,
+				'remain' => $remain,
+			];
+		}
+
+		return $this->response->setJSON([
+			'success' => true,
+			'items' => $items,
+		]);
 	}
 
 	public
@@ -13176,6 +14332,230 @@ public function assign_card()
 
 	}
 
+	public function behavior_dashboard_data()
+	{
+		$this->_preset();
+		try {
+			$schoolId = (int) $this->session->get('soma_school_id');
+			$activeTerm = (int) ($this->data['active_term_id'] ?? $this->data['active_term'] ?? 0);
+			$discMax = (int) ($this->data['discipline_max'] ?? 100);
+			$classId = (int) $this->request->getGet('class_id');
+			$studentId = (int) $this->request->getGet('student_id');
+			$from = trim((string) $this->request->getGet('from'));
+			$to = trim((string) $this->request->getGet('to'));
+			$mode = trim((string) $this->request->getGet('mode'));
+			if ($from === '') {
+				$from = date('Y-m-01');
+			}
+			if ($to === '') {
+				$to = date('Y-m-d');
+			}
+			if ($mode !== 'discipline') {
+				$mode = 'permission';
+			}
+
+			$db = \Config\Database::connect();
+
+			if ($mode === 'permission') {
+				return $this->response->setJSON($this->behaviorPermissionDashboardData(
+					$db, $schoolId, $classId, $studentId, $from, $to, $mode
+				));
+			}
+
+			return $this->response->setJSON($this->behaviorDisciplineDashboardData(
+				$db, $schoolId, $activeTerm, $discMax, $classId, $mode
+			));
+		} catch (\Throwable $e) {
+			log_message('error', 'behavior_dashboard_data: ' . $e->getMessage());
+			return $this->response->setJSON(['success' => false, 'error' => 'Unable to load dashboard data.']);
+		}
+	}
+
+	/** @return array<string,mixed> */
+	private function behaviorPermissionDashboardData($db, int $schoolId, int $classId, int $studentId, string $from, string $to, string $mode): array
+	{
+		$now = date('Y-m-d H:i:s');
+		$today = date('Y-m-d');
+
+		$countPerm = function (?callable $extra = null) use ($db, $schoolId, $classId, $studentId) {
+			$b = $db->table('permission p');
+			$b->join('students s', 's.id = p.student_id')->where('s.school_id', $schoolId);
+			if ($classId > 0) {
+				$b->join('class_records cr', 'cr.student = s.id AND cr.status = 1')
+					->where('cr.class', $classId);
+			}
+			if ($studentId > 0) {
+				$b->where('p.student_id', $studentId);
+			}
+			if ($extra !== null) {
+				$extra($b);
+			}
+			return (int) $b->countAllResults();
+		};
+
+		$permListBuilder = $db->table('permission p')
+			->select('p.id, p.destination, p.reason, p.leave_time, p.return_time, p.status, p.created_at,
+				s.id AS student_id, s.fname, s.lname, s.regno,
+				CONCAT(l.title, " ", IFNULL(d.code, ""), " ", c.title) AS class_label')
+			->join('students s', 's.id = p.student_id')
+			->join('class_records cr', 'cr.student = s.id AND cr.status = 1', 'left')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->where('s.school_id', $schoolId)
+			->where('DATE(p.created_at) >=', $from)
+			->where('DATE(p.created_at) <=', $to);
+		if ($classId > 0) {
+			$permListBuilder->where('cr.class', $classId);
+		}
+		if ($studentId > 0) {
+			$permListBuilder->where('p.student_id', $studentId);
+		}
+		$permRows = $permListBuilder->orderBy('p.created_at', 'DESC')->limit(80)->get()->getResultArray();
+
+		$permList = [];
+		foreach ($permRows as $row) {
+			$permList[] = [
+				'id' => (int) $row['id'],
+				'student_id' => (int) $row['student_id'],
+				'student_name' => trim($row['fname'] . ' ' . $row['lname']),
+				'regno' => $row['regno'],
+				'class_label' => trim((string) $row['class_label']),
+				'destination' => $row['destination'],
+				'reason' => $row['reason'],
+				'leave_time' => $row['leave_time'],
+				'return_time' => $row['return_time'],
+				'status' => (string) $row['status'],
+				'created_at' => $row['created_at'],
+				'print_url' => base_url('pages/reports/print_permission/' . (int) $row['id']),
+			];
+		}
+
+		return [
+			'success' => true,
+			'mode' => $mode,
+			'filters' => ['from' => $from, 'to' => $to, 'class_id' => $classId, 'student_id' => $studentId],
+			'kpis' => [
+				'permissions_total' => $countPerm(static function ($b) use ($from, $to) {
+					$b->where('DATE(p.created_at) >=', $from)->where('DATE(p.created_at) <=', $to);
+				}),
+				'permissions_today' => $countPerm(static function ($b) use ($today) {
+					$b->where('DATE(p.created_at)', $today);
+				}),
+				'permissions_unjustified' => $countPerm(static function ($b) {
+					$b->where('p.status', '0');
+				}),
+				'permissions_active' => $countPerm(static function ($b) use ($now) {
+					$b->where('p.leave_time <=', $now)->where('p.return_time >=', $now);
+				}),
+			],
+			'permissions' => $permList,
+		];
+	}
+
+	/** @return array<string,mixed> */
+	private function behaviorDisciplineDashboardData($db, int $schoolId, int $activeTerm, int $discMax, int $classId, string $mode): array
+	{
+		$studentModel = new StudentModel();
+		$discStudents = [];
+		$studentsAtRisk = 0;
+		$discIncidents = 0;
+		$classStudents = 0;
+		$avgRemaining = 0;
+
+		if ($classId > 0) {
+			$students = $studentModel->get_student($classId, 'c.id');
+			$classStudents = count($students);
+			$sumRemaining = 0;
+			foreach ($students as $st) {
+				$max = (int) ($st['discipline_max'] ?? $discMax);
+				$total = (int) ($st['total_marks'] ?? 0);
+				$remaining = max(0, $max - $total);
+				$sumRemaining += $remaining;
+				$atRiskFlag = $remaining < ($max / 2);
+				if ($atRiskFlag) {
+					$studentsAtRisk++;
+				}
+				$discStudents[] = [
+					'student_id' => (int) $st['id'],
+					'regno' => $st['regno'],
+					'student_name' => $st['stdnames'],
+					'class_label' => trim($st['level_name'] . ' ' . $st['title'] . ' ' . $st['code']),
+					'remaining' => $remaining,
+					'discipline_max' => $max,
+					'at_risk' => $atRiskFlag,
+				];
+			}
+			if ($classStudents > 0) {
+				$avgRemaining = round($sumRemaining / $classStudents, 1);
+				$ids = array_column($students, 'id');
+				$discIncidents = (int) $db->table('disciplines')
+					->where('school_id', $schoolId)
+					->where('active_term', $activeTerm)
+					->whereIn('student_id', $ids)
+					->countAllResults();
+			}
+		} else {
+			$riskRow = $db->query(
+				'SELECT COUNT(*) AS cnt FROM (
+					SELECT s.id,
+						COALESCE(sk.discipline_max, ?) AS dmax,
+						COALESCE((SELECT SUM(ds.marks) FROM disciplines ds
+							WHERE ds.student_id = s.id AND ds.active_term = ?), 0) AS deducted
+					FROM students s
+					JOIN class_records cr ON cr.student = s.id AND cr.status = 1
+					JOIN schools sk ON sk.id = s.school_id
+					WHERE s.school_id = ? AND s.status = 1
+				) t WHERE t.deducted > 0 AND (t.dmax - t.deducted) < (t.dmax / 2)',
+				[$discMax, $activeTerm, $schoolId]
+			)->getRowArray();
+			$studentsAtRisk = (int) ($riskRow['cnt'] ?? 0);
+
+			$discIncidents = (int) $db->table('disciplines')
+				->where('school_id', $schoolId)
+				->where('active_term', $activeTerm)
+				->countAllResults();
+		}
+
+		$recentDiscBuilder = $db->table('disciplines ds')
+			->select('ds.id, ds.marks, ds.comment, ds.created_at, s.fname, s.lname, s.regno')
+			->join('students s', 's.id = ds.student_id')
+			->where('ds.school_id', $schoolId)
+			->where('ds.active_term', $activeTerm);
+		if ($classId > 0) {
+			$recentDiscBuilder->join('class_records cr', 'cr.student = s.id AND cr.status = 1')
+				->where('cr.class', $classId);
+		}
+		$recentDisc = $recentDiscBuilder->orderBy('ds.created_at', 'DESC')->limit(12)->get()->getResultArray();
+
+		$recentDiscipline = [];
+		foreach ($recentDisc as $row) {
+			$recentDiscipline[] = [
+				'id' => (int) $row['id'],
+				'student_name' => trim($row['fname'] . ' ' . $row['lname']),
+				'regno' => $row['regno'],
+				'marks' => (int) $row['marks'],
+				'comment' => $row['comment'],
+				'created_at' => $row['created_at'],
+			];
+		}
+
+		return [
+			'success' => true,
+			'mode' => $mode,
+			'filters' => ['class_id' => $classId],
+			'kpis' => [
+				'class_students' => $classStudents,
+				'discipline_avg_remaining' => $avgRemaining,
+				'students_at_risk' => $studentsAtRisk,
+				'discipline_incidents_term' => $discIncidents,
+				'discipline_max' => $discMax,
+			],
+			'discipline_students' => $discStudents,
+			'recent_discipline' => $recentDiscipline,
+		];
+	}
+
 	public
 	function permission_report()
 	{
@@ -14456,7 +15836,7 @@ public function assign_card()
 		$this->_preset();
 		$feesRecordMdl = new FeesRecordModel();
 		$extraFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,1 as type,fees_records.created_at as date,
-		concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.status")
+		concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.status,fees_records.refNo")
 				->join("extra_fees extra", "fees_records.fees_id=extra.id and fees_records.fees_type=1")
 				->join("academic_year ac", "ac.id=extra.academic_year")
 				->where("fees_records.student_id", $student)
@@ -14464,7 +15844,7 @@ public function assign_card()
 				->orderBy("fees_records.id", 'DESC')
 				->get()->getResultArray();
 		$schoolFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,0 as type,fees_records.created_at as date
-		,if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,fees_records.status")
+		,if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,fees_records.status,fees_records.refNo")
 				->join("school_fees sf", "sf.id=fees_records.fees_id and fees_records.fees_type=0")
 				->join("academic_year ac", "ac.id=sf.academic_year")
 				->where("fees_records.student_id", $student)
@@ -14477,53 +15857,13 @@ public function assign_card()
 	public
 	function printFeesHistory($rows = null, $student = null)
 	{
-		if ($rows == null || $student == null) {
+		$this->_preset();
+		$payload = $this->_loadFeeReceiptData($rows, $student);
+		if ($payload === null) {
 			echo "invalid data, please try again later";
 			die();
 		}
-		$this->_preset();
-		$data = $this->data;
-		$feesRecordMdl = new FeesRecordModel();
-		$studentMdl = new StudentModel();
-		$extraFeesData = [];
-		$schoolFeesData = [];
-		foreach (explode("-", $rows) as $item) {
-			$ii = explode(':', urldecode($item));
-			if (count($ii) != 2) {
-				echo "invalid data, please try again later";
-				die();
-			}
-			if ($ii[1] == '1') {
-				//extra
-				$extraFeesData[] = $ii[0];
-			}
-			if ($ii[1] == '0') {
-				//extra
-				$schoolFeesData[] = $ii[0];
-			}
-		}
-		if (count($extraFeesData) > 0) {
-			$extraFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,fees_records.created_at as date,
-			concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode")
-					->join("extra_fees extra", "fees_records.fees_id=extra.id and fees_records.fees_type=1 and fees_records.status=1")
-					->join("academic_year ac", "ac.id=extra.academic_year")
-					->where("fees_records.student_id", $student)
-//				->where("ac.id",$year)
-					->whereIn("fees_records.id", $extraFeesData)
-					->get()->getResultArray();
-		}
-		if (count($schoolFeesData) > 0) {
-			$schoolFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,fees_records.created_at as date,
-			if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode")
-					->join("school_fees sf", "sf.id=fees_records.fees_id and fees_records.fees_type=0 and fees_records.status=1")
-					->join("academic_year ac", "ac.id=sf.academic_year")
-					->where("fees_records.student_id", $student)
-//				->where("ac.id", $year)
-					->whereIn("fees_records.id", $schoolFeesData)
-					->get()->getResultArray();
-		}
-		$data['records'] = array_merge($extraFees ?? [], $schoolFees ?? []);
-		$data['student'] = $studentMdl->get_student($student, 'students.id', null, true, $this->data['academic_year']);
+		$data = array_merge($this->data, $payload);
 		$html = view("toPrint/receipt", $data);
 		try {
 			$mask = FCPATH . "assets/templates/*.html";
@@ -14540,6 +15880,76 @@ public function assign_card()
 		}
 	}
 
+	/**
+	 * HTML receipt — thermal auto-print with A4 fallback (browser print).
+	 */
+	public function print_fee_receipt($rows = null, $student = null)
+	{
+		$this->_preset();
+		$payload = $this->_loadFeeReceiptData($rows, $student);
+		if ($payload === null) {
+			echo 'invalid data, please try again later';
+			return;
+		}
+		$data = array_merge($this->data, $payload);
+		$acMdl = new AcademicYearModel();
+		$yr = $acMdl->select('title')->find($this->data['academic_year']);
+		$data['yearTitle'] = $yr['title'] ?? '';
+		$data['autoprint'] = $this->request->getGet('autoprint') === '1';
+		$data['pdfUrl'] = base_url('printFeesHistory/' . urlencode((string) $rows) . '/' . $student);
+		return view('pages/reports/print_fee_receipt', $data);
+	}
+
+	/**
+	 * @return array{records:array,student:array}|null
+	 */
+	private function _loadFeeReceiptData($rows, $student): ?array
+	{
+		if ($rows === null || $student === null) {
+			return null;
+		}
+		$feesRecordMdl = new FeesRecordModel();
+		$studentMdl = new StudentModel();
+		$extraFeesData = [];
+		$schoolFeesData = [];
+		foreach (explode("-", (string) $rows) as $item) {
+			$ii = explode(':', urldecode($item));
+			if (count($ii) != 2) {
+				return null;
+			}
+			if ($ii[1] == '1') {
+				$extraFeesData[] = $ii[0];
+			}
+			if ($ii[1] == '0') {
+				$schoolFeesData[] = $ii[0];
+			}
+		}
+		$extraFees = [];
+		$schoolFees = [];
+		if (count($extraFeesData) > 0) {
+			$extraFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,fees_records.created_at as date,
+			concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode")
+					->join("extra_fees extra", "fees_records.fees_id=extra.id and fees_records.fees_type=1 and fees_records.status=1")
+					->join("academic_year ac", "ac.id=extra.academic_year")
+					->where("fees_records.student_id", $student)
+					->whereIn("fees_records.id", $extraFeesData)
+					->get()->getResultArray();
+		}
+		if (count($schoolFeesData) > 0) {
+			$schoolFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,fees_records.created_at as date,
+			if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode")
+					->join("school_fees sf", "sf.id=fees_records.fees_id and fees_records.fees_type=0 and fees_records.status=1")
+					->join("academic_year ac", "ac.id=sf.academic_year")
+					->where("fees_records.student_id", $student)
+					->whereIn("fees_records.id", $schoolFeesData)
+					->get()->getResultArray();
+		}
+		return [
+			'records' => array_merge($extraFees, $schoolFees),
+			'student' => $studentMdl->get_student($student, 'students.id', null, true, $this->data['academic_year']),
+		];
+	}
+
 	public
 	function feesReport($pdf)
 	{
@@ -14550,8 +15960,29 @@ public function assign_card()
 		$data['page'] = "students";
 		$classe = $this->request->getGet("c") ?? "-1";
 		$academic = $this->request->getGet("academic") ?? $data['academic_year'];
-		$term = $this->request->getGet("term") ?? $data['term'];
 		$filter = $this->request->getGet("filter") ?? "0";
+		$termGet = $this->request->getGet('term');
+		$termsList = [];
+		if (is_array($termGet)) {
+			foreach ($termGet as $t) {
+				$ti = (int) $t;
+				if ($ti >= 1 && $ti <= 3) {
+					$termsList[] = $ti;
+				}
+			}
+		} elseif ($termGet !== null && $termGet !== '') {
+			$ti = (int) $termGet;
+			if ($ti >= 1 && $ti <= 3) {
+				$termsList[] = $ti;
+			}
+		}
+		$termsList = array_values(array_unique($termsList));
+		sort($termsList);
+		if (empty($termsList)) {
+			$termsList = [(int) $data['term']];
+		}
+		$termsIn = implode(',', $termsList);
+		$term = $termsList[0];
 		$classMdl = new ClassesModel();
 		$school_id = $this->session->get("soma_school_id");
 		$studentMdl = new StudentModel();
@@ -14578,6 +16009,15 @@ public function assign_card()
 					->join("staffs s", "s.id=classes.mentor", "LEFT")
 					->where("classes.school_id", $school_id)
 					->get()->getResultArray();
+
+			if ($pdf != 1 && $pdf != 2 && (int) $classe <= 0 && !empty($data['classes'])) {
+				return redirect()->to(site_url('system-report/fees?' . http_build_query([
+					'c' => $data['classes'][0]['id'],
+					'academic' => $academic,
+					'term' => $termsList,
+					'filter' => $filter,
+				])));
+			}
 		}
 
 		$studentsQuery = $studentMdl->select("concat(students.fname,' ',students.lname) as student,students.id as student_id,
@@ -14589,27 +16029,31 @@ public function assign_card()
 		d.code as dept_code,
 		l.title as level_name,
 		,f.type,f.abbrev as faculty_code,
+		(COALESCE(sf.amount,0) + coalesce(fd.amount,0)) as school_amount,
+		(COALESCE(sum(ex.amount),0) + COALESCE(sum(student.amount),0)) as extra_amount,
 		 (COALESCE(sf.amount,0) + COALESCE(sum(ex.amount),0) + COALESCE(sum(student.amount),0) + coalesce(fd.amount,0)) as amount,
+		(COALESCE(fr.amount,0)) as school_paid,
+		(COALESCE(extraPaid.amount,0) + COALESCE(extraPaidSingle.amount,0)) as extra_paid,
 		(COALESCE(fr.amount,0) + COALESCE(extraPaid.amount,0) + COALESCE(extraPaidSingle.amount,0)) as paid")
 				->join("class_records cr", "cr.student=students.id")
 				->join("classes cl", "cl.id=cr.class")
 				->join("departments d", "d.id=cl.department")
 				->join("levels l", "l.id=cl.level")
 				->join("faculty f", "f.id=d.faculty_id")
-				->join("(select sf.id,sf.level,sf.department,sf.amount from school_fees sf where sf.term=$term and
-			sf.academic_year=$academic and sf.school_id = $school_id group by sf.id) sf", "sf.level=l.id and sf.department=d.id", "LEFT")
-				->join("(select sum(amount) as amount,feesId,student from school_fees_discount group by student,feesId) fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
-				->join("(select ex.id,ex.type_id,ex.amount from extra_fees ex where ex.type=0 and ex.term=$term and
-			ex.academic_year=$academic group by ex.id) ex", "ex.type_id=cl.id", "LEFT")
-				->join("(select ex.id,ex.type_id,ex.amount from extra_fees ex where ex.type=1 and ex.term=$term and
-			ex.academic_year=$academic group by ex.id) student", "student.type_id=students.id", "LEFT")
-				->join("(select fr.student_id,fr.fees_id,sum(fr.amount) as amount from fees_records fr inner join school_fees sc ON sc.id = fr.fees_id
-			where fr.fees_type=0 and fr.status=1 and sc.term=$term and sc.academic_year=$academic and sc.school_id = $school_id group by fr.student_id) fr", "fr.student_id=students.id", "LEFT")
-				->join("(select fr.student_id,fr.fees_id,sum(fr.amount) as amount,ex.type_id,ex.type from fees_records fr inner join extra_fees ex ON ex.id = fr.fees_id
-			where fr.fees_type=1 and fr.status=1 and ex.type_id=$classe and ex.type=0 and ex.term=$term and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaid", "extraPaid.student_id=students.id", "LEFT")
-				->join("(select fr.student_id,fr.fees_id,sum(fr.amount) as amount,ex.type_id,ex.type from fees_records fr
+				->join("(select sum(sf.amount) as amount,sf.level,sf.department from school_fees sf where sf.term IN ($termsIn) and
+			sf.academic_year=$academic and sf.school_id = $school_id group by sf.level,sf.department) sf", "sf.level=l.id and sf.department=d.id", "LEFT")
+				->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $school_id group by fd.student,sf.level,sf.department) fd", "fd.level=l.id and fd.department=d.id AND fd.student=students.id", "LEFT")
+				->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
+			ex.academic_year=$academic and ex.school_id = $school_id group by ex.type_id) ex", "ex.type_id=cl.id", "LEFT")
+				->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=1 and ex.term IN ($termsIn) and
+			ex.academic_year=$academic and ex.school_id = $school_id group by ex.type_id) student", "student.type_id=students.id", "LEFT")
+				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join school_fees sc ON sc.id = fr.fees_id
+			where fr.fees_type=0 and fr.status=1 and sc.term IN ($termsIn) and sc.academic_year=$academic and sc.school_id = $school_id group by fr.student_id) fr", "fr.student_id=students.id", "LEFT")
+				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join extra_fees ex ON ex.id = fr.fees_id
+			where fr.fees_type=1 and fr.status=1 and ex.type_id=$classe and ex.type=0 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaid", "extraPaid.student_id=students.id", "LEFT")
+				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr
 			inner join extra_fees ex ON ex.id = fr.fees_id and ex.type_id = fr.student_id
-			where fr.fees_type=1 and fr.status=1 and ex.type=1 and ex.term=$term and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaidSingle", "extraPaidSingle.student_id=students.id", "LEFT")
+			where fr.fees_type=1 and fr.status=1 and ex.type=1 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaidSingle", "extraPaidSingle.student_id=students.id", "LEFT")
 //			->where("sf.school_id", $school_id)
 				->where("cr.year", $academic)
 				->where("cl.id", $classe)
@@ -14623,13 +16067,80 @@ public function assign_card()
 			$studentsQuery->having("paid", 0, false);
 		}
 		$students = $studentsQuery->get()->getResultArray();
-//		echo '<pre>';var_dump($students);die();
 		$data['students'] = $students;
 		$data['class_id'] = $classe;
 		$data['year_id'] = $academic;
 		$data['term'] = $term;
+		$data['selected_terms'] = $termsList;
 		$data['filter'] = $filter;
 		$data['pdf'] = $pdf;
+		$data['hasResults'] = ((int) $classe > 0);
+		$data['queryParams'] = http_build_query([
+			'c' => $classe,
+			'academic' => $academic,
+			'term' => $termsList,
+			'filter' => $filter,
+		]);
+
+		$totalExpected = 0;
+		$totalSchoolExpected = 0;
+		$totalExtraExpected = 0;
+		$totalPaid = 0;
+		$fullPaid = 0;
+		$partialPaid = 0;
+		$zeroPaid = 0;
+		foreach ($students as $row) {
+			$amt = (float) ($row['amount'] ?? 0);
+			$schoolAmt = (float) ($row['school_amount'] ?? 0);
+			$extraAmt = (float) ($row['extra_amount'] ?? 0);
+			$paid = (float) ($row['paid'] ?? 0);
+			$totalExpected += $amt;
+			$totalSchoolExpected += $schoolAmt;
+			$totalExtraExpected += $extraAmt;
+			$totalPaid += min($paid, $amt);
+			if ($paid <= 0) {
+				$zeroPaid++;
+			} elseif ($paid >= $amt && $amt > 0) {
+				$fullPaid++;
+			} elseif ($paid > 0) {
+				$partialPaid++;
+			}
+		}
+		$data['stats'] = [
+			'total_students' => count($students),
+			'total_expected' => $totalExpected,
+			'total_school_expected' => $totalSchoolExpected,
+			'total_extra_expected' => $totalExtraExpected,
+			'total_paid' => $totalPaid,
+			'total_remain' => max(0, $totalExpected - $totalPaid),
+			'full_paid' => $fullPaid,
+			'partial_paid' => $partialPaid,
+			'zero_paid' => $zeroPaid,
+			'collection_rate' => $totalExpected > 0 ? round(($totalPaid / $totalExpected) * 100, 1) : 0,
+		];
+
+		$data['selectedYearTitle'] = '';
+		foreach ($data['years'] as $yr) {
+			if ((int) $yr['id'] === (int) $academic) {
+				$data['selectedYearTitle'] = $yr['title'];
+				break;
+			}
+		}
+		$data['classLabel'] = '';
+		if (!empty($data['classes'])) {
+			foreach ($data['classes'] as $clRow) {
+				if ((int) $clRow['id'] === (int) $classe) {
+					$data['classLabel'] = trim(($clRow['level_name'] ?? '') . ' ' . ($clRow['dept_code'] ?? '') . ' ' . ($clRow['title'] ?? ''));
+					break;
+				}
+			}
+		}
+		$data['termLabel'] = count($termsList) === 3
+			? 'All terms'
+			: implode(' + ', array_map(function ($t) {
+				return self::TermToStr((int) $t);
+			}, $termsList));
+
 		if ($pdf == 1) {
 			$html = view("pages/systemReports/feesStatementInPdf", $data);
 			try {
@@ -14650,13 +16161,23 @@ public function assign_card()
 			//send sms
 			$all = 0;
 			$sent = 0;
+			$smsStudentId = (int) ($this->request->getGet('student_id') ?? 0);
 			$smsMdl = new SmsModel();
 			$smsRMdl = new SmsRecipientModel();
-			if (count($students) > $this->data['remaining_sms']) {
+			$smsTargets = $students;
+			if ($smsStudentId > 0) {
+				$smsTargets = array_values(array_filter($students, static function ($row) use ($smsStudentId) {
+					return (int) ($row['student_id'] ?? 0) === $smsStudentId;
+				}));
+				if (empty($smsTargets)) {
+					return $this->response->setJSON(['error' => 'Student not found in this report.']);
+				}
+			}
+			if (count($smsTargets) > $this->data['remaining_sms']) {
 				return $this->response->setJSON(['error' => "SMS can not be sent, Remaining balance is " . $this->data['remaining_sms']]);
 			}
 
-			foreach ($students as $student) {
+			foreach ($smsTargets as $student) {
 				$amount = $student['amount'] - $student['paid'];
 				if ($amount > 0) {
 					$phone = '';
@@ -14667,7 +16188,7 @@ public function assign_card()
 					} else if (strlen($student['gd_phone']) > 3) {
 						$phone = $student['gd_phone'];
 					}
-					if ($phone < 5) {
+					if (strlen($phone) < 5) {
 						continue;
 					}
 					$all++;
@@ -14685,6 +16206,9 @@ public function assign_card()
 
 					}
 				}
+			}
+			if ($smsStudentId > 0 && $sent === 0 && $all === 0) {
+				return $this->response->setJSON(['error' => 'No balance due or no valid parent phone for this student.']);
 			}
 			$param = base_url("background_process/2");
 			$command = "curl $param > /dev/null &";
@@ -14790,6 +16314,62 @@ public function assign_card()
 				->where("courses.id", $course)
 				->get()->getRowArray();
 		return $this->response->setJSON($courses);
+	}
+
+	public
+	function deleteSchoolFeeGroup()
+	{
+		$this->_preset();
+		$school_id = (int) $this->session->get("soma_school_id");
+		$levelId = (int) $this->request->getPost('level_id');
+		$deptId = (int) $this->request->getPost('department_id');
+		$classId = (int) $this->request->getPost('class_id');
+		$academicYear = (int) ($this->request->getPost('academic_year') ?: $this->data['academic_year']);
+
+		if ($levelId <= 0 || $deptId <= 0) {
+			return $this->response->setJSON(['error' => 'Invalid fee group.']);
+		}
+
+		$schoolFeesMdl = new SchoolFeesModel();
+		$schoolFeesMdl->ensureSchema();
+		$feesRecordMdl = new FeesRecordModel();
+
+		$builder = $schoolFeesMdl->where('school_id', $school_id)
+			->where('level', $levelId)
+			->where('department', $deptId)
+			->where('academic_year', $academicYear);
+		if ($classId > 0) {
+			$builder->where('class_id', $classId);
+		} else {
+			$builder->groupStart()
+				->where('class_id IS NULL', null, false)
+				->orWhere('class_id', 0)
+			->groupEnd();
+		}
+		$rows = $builder->findAll();
+
+		if (empty($rows)) {
+			return $this->response->setJSON(['error' => 'No fee records found for this row.']);
+		}
+
+		try {
+			foreach ($rows as $row) {
+				$verify = $feesRecordMdl->where('fees_type', 0)->where('fees_id', (int) $row['id'])->get(1)->getRow();
+				if ($verify !== null) {
+					return $this->response->setStatusCode(400)->setJSON([
+						'error' => 'Cannot delete — fee records are already in use for one or more terms.',
+					]);
+				}
+			}
+			foreach ($rows as $row) {
+				$schoolFeesMdl->delete((int) $row['id']);
+			}
+			return $this->response->setJSON([
+				'success' => count($rows) . ' fee record(s) deleted successfully.',
+			]);
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
+		}
 	}
 
 	public

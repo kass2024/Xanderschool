@@ -1,9 +1,21 @@
+<link rel="stylesheet" href="<?= base_url('assets/css/extra-fees.css'); ?>">
 <div class="app-inner-layout app-inner-layout-page">
 	<div class="app-inner-layout__wrapper" style="display: block;padding-left: 20px">
 		<style>
 			.vl {
 				border-left: 3px solid #3ac47d;
 			}
+			.mef-mode-badge {
+				display: inline-block;
+				padding: .2rem .55rem;
+				border-radius: 999px;
+				font-size: .75rem;
+				font-weight: 600;
+				white-space: nowrap;
+			}
+			.mef-mode-boarding { background: #e0e7ff; color: #3730a3; }
+			.mef-mode-day { background: #ecfdf5; color: #047857; }
+			.mef-amount-grid .form-control { margin-bottom: 6px; }
 		</style>
 		<div class="pull-left" style="width: 100%">
 			<div class="col-md-6 col-sm-12 col-lg-4 pull-left">
@@ -29,24 +41,20 @@
 				<div class="col-md-6 col-sm-12 pull-left" style="margin-bottom: 15px">
 					<div style="background:white;padding: 10px;max-height: 500px;overflow: auto;">
 						<table class="table table-hover table-fixed">
-							<!--Table head-->
 							<thead>
 							<tr>
 								<th><?= lang("app.regNo");?>.</th>
 								<th><?= lang("app.studentName");?></th>
 								<th><?= lang("app.sClass");?></th>
+								<th><?= lang("app.studyingMode");?></th>
+								<th><?= lang("app.amount");?></th>
 								<th style="align-content: center;"><?= lang("app.remove");?></th>
 							</tr>
 							</thead>
-							<!--Table head-->
-							<!--Table body-->
 							<tbody id="disciplineTable">
 
 							</tbody>
-							<!--Table body-->
 						</table>
-
-						<!--Table-->
 					</div>
 				</div>
 				<div class="col-md-5 col-sm-12 pull-left">
@@ -61,24 +69,43 @@
 						</div>
 						<div class="row" style="margin-top: 15px;">
 							<div class="col-md-3 pull-left">
-								<label><?= lang("app.selectTerm");?> </label>
+								<label><?= lang("app.selectTerms"); ?> </label>
 							</div>
 							<div class="col-md-9 pull-left">
-								<select class="form-control select2"  required name="term">
-									<option value="1"><?= lang("app.term1"); ?></option>
-									<option value="2"><?= lang("app.term2"); ?></option>
-									<option value="3"><?= lang("app.term3"); ?></option>
-								</select>
+								<div class="mef-term-picker">
+									<label class="mef-term-all">
+										<input type="checkbox" id="mefAllTerms">
+										<span>All terms (same amount)</span>
+									</label>
+									<div class="mef-term-chips" id="mefTermChips">
+										<label class="mef-term-chip t1">
+											<input type="checkbox" name="term[]" value="1" class="mef-term-cb">
+											<span><?= lang("app.term1"); ?></span>
+										</label>
+										<label class="mef-term-chip t2">
+											<input type="checkbox" name="term[]" value="2" class="mef-term-cb">
+											<span><?= lang("app.term2"); ?></span>
+										</label>
+										<label class="mef-term-chip t3">
+											<input type="checkbox" name="term[]" value="3" class="mef-term-cb">
+											<span><?= lang("app.term3"); ?></span>
+										</label>
+									</div>
+									<small class="text-muted d-block mt-1">Select one or more terms — a fee record is created per term for each student.</small>
+								</div>
 							</div>
 						</div>
 						<div class="row" style="margin-top: 15px;">
 							<div class="col-md-3 pull-left">
 								<label><?= lang("app.amount");?></label>
 							</div>
-							<div class="col-md-9 pull-left">
-								<input type="number" id="btn-global-amount" name="amount" required placeholder="Change extra amount for all" class="form-control">
+							<div class="col-md-9 pull-left mef-amount-grid">
+								<label class="small font-weight-bold mb-0"><?= lang("app.boarding"); ?> students</label>
+								<input type="number" id="btn-boarding-amount" min="0" step="1" placeholder="Amount for boarding students" class="form-control">
+								<label class="small font-weight-bold mb-0 mt-2"><?= lang("app.day"); ?> students</label>
+								<input type="number" id="btn-day-amount" min="0" step="1" placeholder="Amount for day students" class="form-control">
+								<p class="text text-muted small mb-0 mt-1">Changing these updates matching students in the list. You can still edit any row amount.</p>
 							</div>
-							<p class="text text-muted">Any changes make on this amount it will update all amount field</p>
 						</div>
 
 						<div class="row" style="margin-top: 15px;">
@@ -95,7 +122,6 @@
 
 						<div class="row" style="margin-top: 20px;">
 							<div class="col-md-12 pull-left">
-
 								<center>
 									<button type="submit" class="btn btn-success btn-lg"
 											style="width: 50%;font-size: 14px;"
@@ -124,12 +150,73 @@
 				$("#reduce_marks").show();
 			}
 		});
-		$("#btn-global-amount").on('keyup',function () {
-			$(".txt-fees-inputs").val($(this).val())
+
+		function mefApplyModeAmounts() {
+			var boarding = $("#btn-boarding-amount").val();
+			var day = $("#btn-day-amount").val();
+			if (boarding !== '') {
+				$(".txt-fees-inputs[data-mode='0']").val(boarding);
+			}
+			if (day !== '') {
+				$(".txt-fees-inputs[data-mode='1']").val(day);
+			}
+		}
+
+		$("#btn-boarding-amount").on('keyup change', function () {
+			$(".txt-fees-inputs[data-mode='0']").val($(this).val());
 		});
-		$("#search_type").prop("checked",false);//reset checkbox
+		$("#btn-day-amount").on('keyup change', function () {
+			$(".txt-fees-inputs[data-mode='1']").val($(this).val());
+		});
+
+		function mefSyncTermChips() {
+			$('.mef-term-chip').each(function () {
+				const on = $(this).find('.mef-term-cb').is(':checked');
+				$(this).toggleClass('active', on);
+			});
+			const allOn = $('.mef-term-cb').length === $('.mef-term-cb:checked').length;
+			$('#mefAllTerms').prop('checked', allOn);
+		}
+
+		$('#mefAllTerms').on('change', function () {
+			$('.mef-term-cb').prop('checked', $(this).is(':checked'));
+			mefSyncTermChips();
+		});
+
+		$(document).on('change', '.mef-term-cb', mefSyncTermChips);
+
+		$('form.autoSubmit.validate').on('submit', function (e) {
+			if ($('.mef-term-cb:checked').length === 0) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				toastada.error('Please select at least one term.');
+				return false;
+			}
+			if ($("#disciplineTable .disc_row").length === 0) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				toastada.error('Please add at least one student.');
+				return false;
+			}
+			var missing = false;
+			$(".txt-fees-inputs").each(function () {
+				if ($(this).val() === '' || Number($(this).val()) < 0) {
+					missing = true;
+					return false;
+				}
+			});
+			if (missing) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				toastada.error('Enter boarding and day amounts (or fill each student amount).');
+				return false;
+			}
+		});
+
+		mefSyncTermChips();
+
+		$("#search_type").prop("checked",false);
 		$("#search_type").on("change", function () {
-			//check if table has unsaved data then notify before clear
 			if ($("#disciplineTable").has(".disc_row").length) {
 				if (!confirm("Remember, while changing option or current work will be cleared")) {
 					var check_status = $("#search_type").is(":checked") ? true : false;
@@ -151,7 +238,7 @@
 					delay: 250,
 					data: function (params) {
 						return {
-							searchTerm: params.term // search term
+							searchTerm: params.term
 						};
 					},
 					processResults: function (response) {
@@ -174,6 +261,8 @@
 		$("#search_class").on('select2:select', function (selection) {
 			formatRepoSelection(selection.params.data, true);
 		});
+
+		window.mefApplyModeAmounts = mefApplyModeAmounts;
 	});
 
 	function formatRepoSelection(repo, isClass = false) {
@@ -187,7 +276,6 @@
 
 			$('input[name^="discId"]').each(function () {
 				if (this.value == id) {
-					//student already exists
 					toastada.warning(repo.text + " <?= lang("app.alreadonList");?>");
 					isError = true;
 					return false;
@@ -201,6 +289,9 @@
 				$("#disciplineTable").html(data);
 			} else {
 				$("#disciplineTable").append(data);
+			}
+			if (typeof window.mefApplyModeAmounts === 'function') {
+				window.mefApplyModeAmounts();
 			}
 		})
 	}

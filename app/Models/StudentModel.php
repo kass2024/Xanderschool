@@ -45,7 +45,7 @@ class StudentModel extends Model
 	{
 
 		$academicYear = $academicYear == 0 ? $_SESSION['soma_academics_year'] : $academicYear;
-		$select       = $select == null ? "students.id,students.regno,students.photo,concat(students.fname,' ',students.lname) as stdnames,ft_phone,mt_phone,gd_phone
+		$select       = $select == null ? "students.id,students.regno,students.photo,students.studying_mode,concat(students.fname,' ',students.lname) as stdnames,ft_phone,mt_phone,gd_phone
 		,c.id as class_id,c.title,d.title as department_name,d.code,l.title as level_name,f.type,f.abbrev as faculty_code,mk.marks as cat_marks
 		,c.level,(select sum(ds.marks) from disciplines ds where students.id=ds.student_id AND ds.active_term = sk.active_term) as total_marks,sk.discipline_max" : $select;
 		$builder      = $this->select($select)
