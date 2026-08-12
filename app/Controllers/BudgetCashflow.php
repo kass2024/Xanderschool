@@ -198,7 +198,28 @@ class BudgetCashflow extends Home
 			$data['branch_stats'] = [];
 			$data['financials'] = $this->branchFinancialSummary($bid, $db);
 			$data['gemini_enabled'] = (new GeminiBudgetAnalysisService())->isConfigured();
+			// Budget approval pipeline for this school
+			$data['budget_pipeline'] = [
+				'DRAFT' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'DRAFT')->countAllResults(),
+				'SUBMITTED' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'SUBMITTED')->countAllResults(),
+				'PROCUREMENT_REVIEW' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'PROCUREMENT_REVIEW')->countAllResults(),
+				'BUDGET_MANAGER_REVIEW' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'BUDGET_MANAGER_REVIEW')->countAllResults(),
+				'DEPUTY_DIRECTOR_REVIEW' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'DEPUTY_DIRECTOR_REVIEW')->countAllResults(),
+				'APPROVED' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'APPROVED')->countAllResults(),
+				'RETURNED' => $db->table('budgets')->where('branch_id', $bid)->where('status', 'RETURNED')->countAllResults(),
+			];
+			$data['cash_pipeline'] = [
+				'SUBMITTED' => $db->table('cash_requests')->where('branch_id', $bid)->where('status', 'SUBMITTED')->countAllResults(),
+				'HEADTEACHER_APPROVED' => $db->table('cash_requests')->where('branch_id', $bid)->where('status', 'HEADTEACHER_APPROVED')->countAllResults(),
+				'PROCUREMENT_APPROVED' => $db->table('cash_requests')->where('branch_id', $bid)->where('status', 'PROCUREMENT_APPROVED')->countAllResults(),
+				'BUDGET_APPROVED' => $db->table('cash_requests')->where('branch_id', $bid)->where('status', 'BUDGET_APPROVED')->countAllResults(),
+				'FINANCE_AUTHORIZED' => $db->table('cash_requests')->where('branch_id', $bid)->where('status', 'FINANCE_AUTHORIZED')->countAllResults(),
+				'PAID' => $db->table('cash_requests')->where('branch_id', $bid)->where('status', 'PAID')->countAllResults(),
+			];
 		}
+		$data['budget_view_only'] = \Config\MenuClearance::isChildBudgetViewOnly($c['postId'], $c['schoolId']);
+		$data['can_prepare_budget'] = \Config\MenuClearance::canPrepareBudgetAtSchool($c['postId'], $c['schoolId'])
+			&& $c['perms']->can($c['staffId'], $c['postId'], 'budget.prepare');
 		$data['content'] = view('pages/budget/dashboard', $data);
 		return view('main', $data);
 	}
@@ -443,6 +464,10 @@ class BudgetCashflow extends Home
 	{
 		$this->denyMenuAny(['budget_prepare', 'budget_periods', 'budget_templates', 'budget_review', 'budget_approved']);
 		$c = $this->ctx();
+		// Child-school leaders: no prepare workspace — send to smart dashboard
+		if (\Config\MenuClearance::isChildBudgetViewOnly($c['postId'], $c['schoolId'])) {
+			return redirect()->to(base_url('budget/dashboard'))->with('error', 'View-only access: use the Budget Dashboard to monitor usage and approval progress.');
+		}
 		$data = $this->data;
 		$db = \Config\Database::connect();
 		$tab = trim((string) $this->request->getGet('tab')) ?: 'budgets';
@@ -561,6 +586,9 @@ class BudgetCashflow extends Home
 		$this->bootBudget();
 		$this->denyPerm('budget.prepare');
 		$c = $this->ctx();
+		if (!\Config\MenuClearance::canPrepareBudgetAtSchool($c['postId'], $c['schoolId'])) {
+			return $this->response->setJSON(['error' => 'On child schools only Cashier or Accountant can prepare the budget.']);
+		}
 		$db = \Config\Database::connect();
 		$periodId = (int) $this->request->getPost('budget_period_id');
 		if ($periodId <= 0) {

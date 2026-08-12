@@ -12,6 +12,151 @@ class MenuClearance
 	const FULL_ACCESS_POSTS = [1, 3, 18]; // Head master, Director of studies, Headmistress
 
 	/**
+	 * Child-school finance defaults (Level clearance + runtime filter).
+	 * Prepare/fill: Cashier + Accountant only.
+	 * View-only dashboard (usage + request/approval progress): school leaders.
+	 * Everyone else: no Finance menu.
+	 */
+	const CHILD_BUDGET_PREPARE_POSTS = [8, 9]; // Cashier, Accountant
+	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18]; // Head master, DOS, Dean of discipline, Principal, Headmistress
+
+	/** Menu keys for leadership view-only budget oversight on child schools. */
+	public static function childBudgetViewKeys()
+	{
+		return [
+			'finance',
+			'budget_cashflow',
+			'budget_dashboard',
+			'budget_reports',
+			'budget_audit',
+			// Read-only visibility of request/approval pipeline (actions still gated by BudgetPermissions)
+			'budget_cash_requests',
+			'budget_pending',
+			'budget_procurement',
+			'budget_availability',
+			'budget_final_approval',
+			'budget_payments',
+			'budget_filing',
+		];
+	}
+
+	/** Menu keys for Cashier/Accountant prepare + fill on child schools. */
+	public static function childBudgetPrepareKeys()
+	{
+		return array_values(array_unique(array_merge(
+			self::budgetMenuKeys(),
+			['finance', 'budget_cashflow']
+		)));
+	}
+
+	/**
+	 * True when key belongs to Finance / Fees / Budget sidebar.
+	 *
+	 * @param string $key
+	 * @return bool
+	 */
+	public static function isFinanceMenuKey($key)
+	{
+		$key = (string) $key;
+		if ($key === 'finance' || $key === 'fees' || $key === 'budget_cashflow') {
+			return true;
+		}
+		if (strpos($key, 'budget_') === 0) {
+			return true;
+		}
+		$feeKeys = self::feeMenuKeys();
+		return in_array($key, $feeKeys, true);
+	}
+
+	/**
+	 * Apply child-school finance policy on top of (possibly full) allowed keys.
+	 * Master / standalone schools are unchanged.
+	 *
+	 * @param string[] $keys
+	 * @param int      $postId
+	 * @param int|null $schoolId
+	 * @return string[]
+	 */
+	public static function applyChildSchoolFinancePolicy(array $keys, $postId, $schoolId = null)
+	{
+		$postId = (int) $postId;
+		$schoolId = (int) $schoolId;
+		if ($schoolId < 1 || !self::isChildSchoolId($schoolId)) {
+			return array_values(array_unique($keys));
+		}
+
+		$nonFinance = array_values(array_filter($keys, static function ($k) {
+			return !self::isFinanceMenuKey($k);
+		}));
+
+		if (in_array($postId, self::CHILD_BUDGET_PREPARE_POSTS, true)) {
+			$extra = self::childBudgetPrepareKeys();
+			if ($postId === 9) {
+				$extra = array_merge($extra, self::feeMenuKeys());
+			}
+			return array_values(array_unique(array_merge($nonFinance, $extra)));
+		}
+
+		if (in_array($postId, self::CHILD_BUDGET_VIEW_POSTS, true)) {
+			return array_values(array_unique(array_merge($nonFinance, self::childBudgetViewKeys())));
+		}
+
+		// All other posts on child schools: no Finance menu at all
+		return $nonFinance;
+	}
+
+	/**
+	 * @param int $schoolId
+	 * @return bool
+	 */
+	public static function isChildSchoolId($schoolId)
+	{
+		$schoolId = (int) $schoolId;
+		if ($schoolId < 1) {
+			return false;
+		}
+		try {
+			return (new \App\Services\SchoolHierarchyService())->isChildSchool($schoolId);
+		} catch (\Throwable $e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Whether this post may prepare/fill budgets at the given school.
+	 *
+	 * @param int $postId
+	 * @param int $schoolId
+	 * @return bool
+	 */
+	public static function canPrepareBudgetAtSchool($postId, $schoolId)
+	{
+		$postId = (int) $postId;
+		$schoolId = (int) $schoolId;
+		if ($schoolId > 0 && self::isChildSchoolId($schoolId)) {
+			return in_array($postId, self::CHILD_BUDGET_PREPARE_POSTS, true);
+		}
+		// Master / standalone: accountant, cashier, leadership, finance roles (existing behaviour)
+		return in_array($postId, [1, 8, 9, 18, 19, 21, 24], true) || self::isFullAccessPost($postId);
+	}
+
+	/**
+	 * View-only budget oversight (no prepare) on child schools.
+	 *
+	 * @param int $postId
+	 * @param int $schoolId
+	 * @return bool
+	 */
+	public static function isChildBudgetViewOnly($postId, $schoolId)
+	{
+		$postId = (int) $postId;
+		$schoolId = (int) $schoolId;
+		return $schoolId > 0
+			&& self::isChildSchoolId($schoolId)
+			&& in_array($postId, self::CHILD_BUDGET_VIEW_POSTS, true);
+	}
+
+	/**
 	 * Menu tree synced from dashboard sidebar (app/Views/main.php).
 	 * Falls back to staticTree() if the view cannot be parsed.
 	 *
@@ -443,14 +588,13 @@ class MenuClearance
 
 		// Staffs / leave_management / settings: was is_allowed(1, 3) only
 
-		// Fees: is_allowed(1, 9, 3)
+		// Fees: is_allowed(1, 9, 3) — Accountant also prepares budget by default
 		if ($postId === 9) {
 			$keys = array_merge($keys, self::feeMenuKeys());
-			$keys = array_merge($keys, self::budgetMenuKeys());
-			$keys[] = 'finance';
+			$keys = array_merge($keys, self::childBudgetPrepareKeys());
 		}
 
-		// Fees pending approval + finance menu for Director / Deputy Director of Finance
+		// Fees pending approval + finance menu for Director / Deputy Director of Finance (master/central)
 		if (in_array($postId, [21, 24], true)) {
 			$keys[] = 'finance';
 			$keys[] = 'fees_pending_approval';
@@ -459,13 +603,20 @@ class MenuClearance
 			$keys = array_merge($keys, self::feeMenuKeys());
 		}
 
-		// Budget & Cash Flow finance roles (incl. Director of Finance)
-		if (in_array($postId, [1, 8, 19, 20, 21, 22, 23, 24], true)) {
+		// Cashier: prepare & fill budget (child-school default; also on master)
+		if ($postId === 8) {
+			$keys = array_merge($keys, self::childBudgetPrepareKeys());
+		}
+
+		// School leaders: view-only budget dashboard (defaults). Full-access posts 1/3/18 already have allKeys().
+		if (in_array($postId, [4, 15], true)) {
+			$keys = array_merge($keys, self::childBudgetViewKeys());
+		}
+
+		// Central finance roles (Budget Manager, Procurement, …) — used mainly at master
+		if (in_array($postId, [19, 20, 21, 22, 23, 24], true)) {
 			$keys = array_merge($keys, self::budgetMenuKeys());
 			$keys[] = 'finance';
-		}
-		if ($postId === 3) {
-			$keys = array_merge($keys, ['budget_dashboard', 'budget_reports', 'budget_audit']);
 		}
 
 		// Asset Management + Library: Store keeper (12), Secretary (7), Librarian (13)

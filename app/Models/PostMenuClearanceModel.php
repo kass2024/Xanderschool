@@ -54,39 +54,49 @@ class PostMenuClearanceModel extends Model
 
 	/**
 	 * Effective allowed keys: full access / DB row / defaults.
+	 * When $schoolId is a child school, Finance/Budget keys follow child-school policy
+	 * (Cashier+Accountant prepare; leaders view-only; others no finance).
 	 *
-	 * @param int $postId
+	 * @param int      $postId
+	 * @param int|null $schoolId Current school (session); null = no child filter (admin UI)
 	 * @return string[]
 	 */
-	public function allowedKeysForPost($postId)
+	public function allowedKeysForPost($postId, $schoolId = null)
 	{
 		$postId = (int) $postId;
 		if (MenuClearance::isFullAccessPost($postId)) {
-			return MenuClearance::allKeys();
-		}
-
-		$this->ensureSchema();
-		$row = $this->where('post_id', $postId)->first();
-		if ($row === null || !is_array($row)) {
-			return self::defaultKeysForPost($postId);
-		}
-
-		$menus = $row['menus'] ?? '';
-		$decoded = is_string($menus) ? json_decode($menus, true) : $menus;
-		if (!is_array($decoded)) {
-			return self::defaultKeysForPost($postId);
-		}
-
-		$keys = [];
-		foreach ($decoded as $k) {
-			if (is_string($k) && $k !== '') {
-				$keys[] = $k;
+			$keys = MenuClearance::allKeys();
+		} else {
+			$this->ensureSchema();
+			$row = $this->where('post_id', $postId)->first();
+			if ($row === null || !is_array($row)) {
+				$keys = self::defaultKeysForPost($postId);
+			} else {
+				$menus = $row['menus'] ?? '';
+				$decoded = is_string($menus) ? json_decode($menus, true) : $menus;
+				if (!is_array($decoded)) {
+					$keys = self::defaultKeysForPost($postId);
+				} else {
+					$keys = [];
+					foreach ($decoded as $k) {
+						if (is_string($k) && $k !== '') {
+							$keys[] = $k;
+						}
+					}
+					$valid = array_flip(MenuClearance::allKeys());
+					$keys = array_values(array_filter($keys, static function ($k) use ($valid) {
+						return isset($valid[$k]);
+					}));
+					$keys[] = 'dashboard';
+					$keys[] = 'profile';
+					$keys = array_values(array_unique($keys));
+				}
 			}
 		}
 
-		// Always keep dashboard + profile
-		$keys[] = 'dashboard';
-		$keys[] = 'profile';
+		if ($schoolId !== null) {
+			$keys = MenuClearance::applyChildSchoolFinancePolicy($keys, $postId, (int) $schoolId);
+		}
 
 		return array_values(array_unique($keys));
 	}

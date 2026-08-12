@@ -36,6 +36,7 @@ if (!function_exists('menu_clearance_allowed')) {
 	{
 		static $cacheKeys = null;
 		static $cachePost = null;
+		static $cacheSchool = null;
 
 		$menuKey = (string) $menuKey;
 		if ($menuKey === 'dashboard' || $menuKey === 'profile') {
@@ -43,13 +44,19 @@ if (!function_exists('menu_clearance_allowed')) {
 		}
 
 		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
-		if ($cacheKeys === null || $cachePost !== $postId) {
+		$schoolId = isset($_SESSION['soma_school_id']) ? (int) $_SESSION['soma_school_id'] : 0;
+		if ($cacheKeys === null || $cachePost !== $postId || $cacheSchool !== $schoolId) {
 			$cachePost = $postId;
+			$cacheSchool = $schoolId;
 			try {
 				$mdl = new \App\Models\PostMenuClearanceModel();
-				$cacheKeys = $mdl->allowedKeysForPost($postId);
+				$cacheKeys = $mdl->allowedKeysForPost($postId, $schoolId);
 			} catch (\Throwable $e) {
-				$cacheKeys = \Config\MenuClearance::defaultKeysForPost($postId);
+				$cacheKeys = \Config\MenuClearance::applyChildSchoolFinancePolicy(
+					\Config\MenuClearance::defaultKeysForPost($postId),
+					$postId,
+					$schoolId
+				);
 			}
 			if (!is_array($cacheKeys)) {
 				$cacheKeys = [];
@@ -70,6 +77,65 @@ if (!function_exists('budget_menu_any')) {
 			}
 		}
 		return false;
+	}
+}
+
+if (!function_exists('school_hierarchy_home_id')) {
+	/** Staff login school (unchanged when viewing a child school). */
+	function school_hierarchy_home_id()
+	{
+		$home = isset($_SESSION['soma_home_school_id']) ? (int) $_SESSION['soma_home_school_id'] : 0;
+		if ($home > 0) {
+			return $home;
+		}
+		return isset($_SESSION['soma_school_id']) ? (int) $_SESSION['soma_school_id'] : 0;
+	}
+}
+
+if (!function_exists('school_hierarchy_can_switch')) {
+	function school_hierarchy_can_switch()
+	{
+		$homeId = school_hierarchy_home_id();
+		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		if ($homeId < 1 || $postId < 1) {
+			return false;
+		}
+		try {
+			return (new \App\Services\SchoolHierarchyService())->canAccessChildSchools($homeId, $postId);
+		} catch (\Throwable $e) {
+			return false;
+		}
+	}
+}
+
+if (!function_exists('school_hierarchy_accessible_schools')) {
+	/** @return array<int, array<string, mixed>> */
+	function school_hierarchy_accessible_schools()
+	{
+		if (!school_hierarchy_can_switch()) {
+			return [];
+		}
+		try {
+			$h = new \App\Services\SchoolHierarchyService();
+			return $h->accessibleSchools(school_hierarchy_home_id(), (int) ($_SESSION['soma_post'] ?? 0));
+		} catch (\Throwable $e) {
+			return [];
+		}
+	}
+}
+
+if (!function_exists('budget_can_manage_line_structure')) {
+	function budget_can_manage_line_structure()
+	{
+		$schoolId = isset($_SESSION['soma_school_id']) ? (int) $_SESSION['soma_school_id'] : 0;
+		if ($schoolId < 1) {
+			return true;
+		}
+		try {
+			return (new \App\Services\SchoolHierarchyService())->canManageBudgetLineStructure($schoolId);
+		} catch (\Throwable $e) {
+			return true;
+		}
 	}
 }
 

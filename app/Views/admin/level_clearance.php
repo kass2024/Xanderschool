@@ -6,7 +6,11 @@
 /** @var array $customByPost */
 /** @var array $defaultsByPost */
 
+/** @var array $masterCentralPosts */
+/** @var array $masterCentralDefaults */
+
 $fullFlip = array_flip($fullAccessPosts ?? []);
+$centralFlip = array_flip($masterCentralPosts ?? []);
 ?>
 <style>
 .lc-wrap { display:flex; gap:1rem; min-height:520px; }
@@ -42,6 +46,10 @@ $fullFlip = array_flip($fullAccessPosts ?? []);
 }
 .lc-group-h .lc-title { flex:1; font-weight:600; font-size:.9rem; }
 .lc-group-body { padding:.4rem .75rem .65rem 2rem; display:none; border-top:1px solid #eee; }
+.lc-sub { margin:.45rem 0 .45rem .5rem; border-color:#eef1f4; }
+.lc-sub > .lc-group-h { background:#fbfcfd; padding:.45rem .65rem; }
+.lc-sub > .lc-group-body { padding-left:1.25rem; }
+.lc-sub .lc-child { padding-left:.25rem; }
 .lc-group.open .lc-group-body { display:block; }
 .lc-group.open .lc-chevron { transform:rotate(90deg); }
 .lc-chevron { transition:transform .15s; color:#888; }
@@ -73,9 +81,48 @@ $fullFlip = array_flip($fullAccessPosts ?? []);
 						<div class="card-body">
 							<p class="text-muted mb-3" style="max-width:720px;">
 								Choose which school-dashboard menus each staff post can open.
-								Head master, Director of studies, and Headmistress always have full access.
-								Posts without a saved override keep the legacy defaults.
+								Head master, Director of studies, and Headmistress always have full access on the master school.
+								Posts without a saved override keep the code defaults.
+								Menu list is synced automatically from the dashboard sidebar
+								(<code>main.php</code>) — <?= (int) count($menuTree ?? []); ?> groups,
+								<?= (int) count(\Config\MenuClearance::allKeys()); ?> keys.
 							</p>
+
+							<div class="alert alert-info mb-3" style="max-width:960px;">
+								<strong><i class="fa fa-school"></i> Child school Finance defaults (automatic)</strong>
+								<ul class="mb-0 mt-2 small">
+									<li><strong>Prepare &amp; fill budget:</strong> #8 Cashier, #9 Accountant only.</li>
+									<li><strong>View-only dashboard</strong> (budget usage + request/approval progress, no prepare/approve actions):
+										#1 Head master, #3 Director of studies, #4 Dean of discipline, #15 Principal, #18 Headmistress.</li>
+									<li><strong>All other posts:</strong> Finance menu is hidden on child schools (even if checked here for master/central roles).</li>
+								</ul>
+								<p class="small mb-0 mt-2 text-muted">This policy applies at login based on whether the school is a child of a master. Resetting a post to defaults updates the master/global checklist; child schools still follow the rules above.</p>
+							</div>
+
+							<div class="card border mb-3" style="max-width:960px;">
+								<div class="card-body py-3">
+									<h6 class="font-weight-bold mb-2"><i class="fa fa-sitemap"></i> Master school — central access posts</h6>
+									<p class="text-muted small mb-2">
+										Staff with these posts, when logged in at a <strong>master</strong> school, can switch to all child school dashboards and use the central budget view.
+										Configure here instead of hard-coded post IDs.
+									</p>
+									<div class="d-flex flex-wrap align-items-center mb-2" id="mcPosts">
+										<?php foreach ($posts as $post):
+											$pid = (int) ($post['id'] ?? 0);
+											$checked = isset($centralFlip[$pid]);
+											?>
+										<label class="mr-3 mb-1" style="font-size:.9rem;">
+											<input type="checkbox" class="mc-post-cb" value="<?= $pid; ?>" <?= $checked ? 'checked' : ''; ?>>
+											#<?= $pid; ?> <?= esc($post['title'] ?? ''); ?>
+										</label>
+										<?php endforeach; ?>
+									</div>
+									<button type="button" class="btn btn-sm btn-outline-secondary" id="mcResetDefaults">Reset defaults</button>
+									<button type="button" class="btn btn-sm btn-primary" id="mcSave"><i class="fa fa-save"></i> Save central posts</button>
+									<span id="mcStatus" class="text-muted small ml-2"></span>
+								</div>
+							</div>
+
 							<div class="lc-wrap">
 								<div class="lc-posts" id="lcPosts">
 									<?php foreach ($posts as $i => $post):
@@ -144,13 +191,78 @@ $fullFlip = array_flip($fullAccessPosts ?? []);
 		return set;
 	}
 
+	function nodeChecked(node, set) {
+		if (node.keys && node.keys.length) {
+			for (var i = 0; i < node.keys.length; i++) {
+				if (set[node.keys[i]]) return true;
+			}
+			return false;
+		}
+		if (node.children && node.children.length) {
+			for (var j = 0; j < node.children.length; j++) {
+				if (nodeChecked(node.children[j], set)) return true;
+			}
+			return !!set[node.key];
+		}
+		return !!set[node.key];
+	}
+
+	function renderNodes(nodes, set, depth, always, rootKey) {
+		var html = '';
+		for (var i = 0; i < nodes.length; i++) {
+			var node = nodes[i];
+			if (node.children && node.children.length) {
+				var subChecked = always || nodeChecked(node, set);
+				html += '<div class="lc-group lc-sub depth-' + depth + '" data-group="' + esc(node.key) + '">';
+				html += '<div class="lc-group-h">';
+				html += '<span class="lc-chevron">&#9654;</span>';
+				html += '<label class="mb-0" onclick="event.stopPropagation();">';
+				html += '<input type="checkbox" class="lc-check lc-parent' + (always ? ' lc-always' : '') + '" data-key="' + esc(node.key) + '"'
+					+ (subChecked ? ' checked' : '')
+					+ (locked || always ? ' disabled' : '')
+					+ '> ' + esc(node.label || node.key);
+				html += '</label>';
+				if (!locked && !always) {
+					html += '<button type="button" class="btn btn-link btn-sm p-0 lc-select-all" data-group="' + esc(node.key) + '">Select all</button>';
+					html += '<button type="button" class="btn btn-link btn-sm p-0 lc-clear-all" data-group="' + esc(node.key) + '">Clear</button>';
+				}
+				html += '</div>';
+				html += '<div class="lc-group-body">' + renderNodes(node.children, set, depth + 1, always, rootKey) + '</div>';
+				html += '</div>';
+				continue;
+			}
+
+			var checked = always;
+			if (!checked && node.keys && node.keys.length) {
+				checked = node.keys.every(function (k) { return !!set[k]; });
+			} else if (!checked) {
+				checked = !!set[node.key];
+			}
+
+			html += '<label class="lc-child">';
+			if (node.keys && node.keys.length) {
+				html += '<input type="checkbox" class="lc-check lc-child-cb lc-grouped-cb" data-keys=\'' + esc(JSON.stringify(node.keys)) + '\''
+					+ (checked ? ' checked' : '')
+					+ (locked || always ? ' disabled' : '')
+					+ '> ' + esc(node.label || node.key);
+			} else {
+				html += '<input type="checkbox" class="lc-check lc-child-cb" data-key="' + esc(node.key) + '"'
+					+ (checked ? ' checked' : '')
+					+ (locked || always ? ' disabled' : '')
+					+ '> ' + esc(node.label || node.key);
+			}
+			html += '</label>';
+		}
+		return html;
+	}
+
 	function renderAccordion(postId) {
 		var set = allowedSet(postId);
 		var html = '';
 		for (var g = 0; g < menuTree.length; g++) {
 			var group = menuTree[g];
 			var always = !!group.always;
-			var parentChecked = always || !!set[group.key];
+			var parentChecked = always || nodeChecked(group, set);
 			var children = group.children || [];
 			html += '<div class="lc-group' + (g < 3 ? ' open' : '') + '" data-group="' + esc(group.key) + '">';
 			html += '<div class="lc-group-h">';
@@ -170,20 +282,7 @@ $fullFlip = array_flip($fullAccessPosts ?? []);
 			}
 			html += '</div>';
 			if (children.length) {
-				html += '<div class="lc-group-body">';
-				for (var c = 0; c < children.length; c++) {
-					var child = children[c];
-					// Parent key doubles as list URL for students/staffs — skip duplicate checkbox
-					if (child.key === group.key) continue;
-					var chChecked = always || !!set[child.key];
-					html += '<label class="lc-child">';
-					html += '<input type="checkbox" class="lc-check lc-child-cb" data-key="' + esc(child.key) + '" data-parent="' + esc(group.key) + '"'
-						+ (chChecked ? ' checked' : '')
-						+ (locked || always ? ' disabled' : '')
-						+ '> ' + esc(child.label);
-					html += '</label>';
-				}
-				html += '</div>';
+				html += '<div class="lc-group-body">' + renderNodes(children, set, 1, always, group.key) + '</div>';
 			}
 			html += '</div>';
 		}
@@ -193,15 +292,19 @@ $fullFlip = array_flip($fullAccessPosts ?? []);
 	function collectMenus() {
 		var keys = {};
 		$('#lcAccordion input.lc-check:checked').each(function () {
+			var grouped = $(this).data('keys');
+			if (grouped && grouped.length) {
+				for (var i = 0; i < grouped.length; i++) keys[grouped[i]] = true;
+				return;
+			}
 			var k = $(this).data('key');
 			if (k) keys[k] = true;
 		});
-		// If any child checked, ensure parent key present
 		$('#lcAccordion .lc-group').each(function () {
 			var $g = $(this);
 			var parentKey = $g.data('group');
 			var anyChild = $g.find('.lc-child-cb:checked').length > 0;
-			var parentOn = $g.find('.lc-parent').is(':checked');
+			var parentOn = $g.find('> .lc-group-h .lc-parent').is(':checked');
 			if (parentOn || anyChild) keys[parentKey] = true;
 		});
 		keys['dashboard'] = true;
@@ -243,7 +346,7 @@ $fullFlip = array_flip($fullAccessPosts ?? []);
 		if (locked) return;
 		var on = $(this).is(':checked');
 		var $g = $(this).closest('.lc-group');
-		$g.find('.lc-child-cb').prop('checked', on);
+		$g.find('.lc-child-cb, .lc-parent').not(this).prop('checked', on);
 	});
 
 	$(document).on('click', '.lc-select-all', function (e) {
@@ -312,6 +415,31 @@ $fullFlip = array_flip($fullAccessPosts ?? []);
 			}
 		}, 'json').fail(function () {
 			$st.text('Reset failed');
+		});
+	});
+
+	var mcDefaults = <?= json_encode($masterCentralDefaults ?? []); ?>;
+	$('#mcResetDefaults').on('click', function () {
+		$('.mc-post-cb').each(function () {
+			var id = parseInt($(this).val(), 10);
+			$(this).prop('checked', mcDefaults.indexOf(id) !== -1);
+		});
+	});
+	$('#mcSave').on('click', function () {
+		var ids = [];
+		$('.mc-post-cb:checked').each(function () { ids.push(parseInt($(this).val(), 10)); });
+		var $st = $('#mcStatus').text('Saving…');
+		$.post('<?= base_url('admin/save_master_central_posts'); ?>', {
+			post_ids: JSON.stringify(ids)
+		}, function (data) {
+			if (data && data.success) {
+				$st.text(data.success);
+				if (window.toastada) toastada.success(data.success);
+			} else {
+				$st.text((data && data.error) || 'Save failed');
+			}
+		}, 'json').fail(function () {
+			$st.text('Save failed');
 		});
 	});
 

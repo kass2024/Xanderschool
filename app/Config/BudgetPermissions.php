@@ -97,24 +97,35 @@ class BudgetPermissions
 	{
 		$postId = (int) $postId;
 		$map = [
-			9 => [ // Accountant
+			9 => [ // Accountant — prepare & fill school budget
 				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.periods.manage',
 				'budget.templates.view', 'cash_request.create', 'cash_request.edit_own',
 				'cash_request.submit', 'cash_request.confirm_receipt', 'cash_request.close',
 				'cash_request.manage_documents', 'budget.view_reports',
 			],
-			1 => [ // Head master — branch budget & cash requests
+			8 => [ // Cashier — prepare & fill school budget + payments
 				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
-				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
-				'cash_request.headteacher_approve', 'cash_request.view_audit',
-			],
-			18 => [ // Headmistress
-				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
-				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
-				'cash_request.headteacher_approve', 'cash_request.view_audit',
-			],
-			8 => [ // Cashier
+				'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
 				'cash_request.process_payment', 'cash_request.manage_documents', 'budget.view_reports',
+			],
+			1 => [ // Head master — prepare on master; child schools forced view-only at runtime
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
+				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
+				'cash_request.headteacher_approve', 'cash_request.view_audit',
+			],
+			18 => [ // Headmistress — same as head master (child view-only at runtime)
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
+				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
+				'cash_request.headteacher_approve', 'cash_request.view_audit',
+			],
+			3 => [ // Director of studies — view reports (child view-only dashboard via menus)
+				'budget.view_reports',
+			],
+			4 => [ // Dean of discipline — view reports
+				'budget.view_reports',
+			],
+			15 => [ // Principal — view reports
+				'budget.view_reports',
 			],
 		];
 		// Dynamic posts seeded at runtime: 19 Budget Manager, 20 Procurement, 21 Deputy Director, 22 Finance Officer, 23 Auditor
