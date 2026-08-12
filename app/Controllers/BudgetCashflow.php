@@ -2001,7 +2001,7 @@ class BudgetCashflow extends Home
 			return $this->response->setJSON(['error' => 'Select an approved budget.']);
 		}
 		if ($budgetLineId <= 0) {
-			return $this->response->setJSON(['error' => 'Select a budget line — every request must link to an expense category.']);
+			return $this->response->setJSON(['error' => 'Select a budget line — every request must link to a budget category.']);
 		}
 		if ($lineAmount <= 0) {
 			return $this->response->setJSON(['error' => 'Enter a valid amount.']);
@@ -2013,13 +2013,9 @@ class BudgetCashflow extends Home
 			return $this->response->setJSON(['error' => 'Budget must be APPROVED before raising cash requests.']);
 		}
 		$bLine = $db->table('budget_lines')->where('id', $budgetLineId)->where('budget_id', $budgetId)
-			->where('is_editable', 1)->get(1)->getRowArray();
+			->where('is_total_row', 0)->get(1)->getRowArray();
 		if (!$bLine) {
 			return $this->response->setJSON(['error' => 'Invalid budget line for this budget.']);
-		}
-		$sec = strtoupper(trim($bLine['section_label'] ?? ''));
-		if ($sec === 'INCOME' || strpos($sec, 'INCOME') === 0) {
-			return $this->response->setJSON(['error' => 'Cash requests must use an expense budget line, not income.']);
 		}
 
 		$availSvc = new BudgetAvailabilityService();
@@ -2306,16 +2302,27 @@ class BudgetCashflow extends Home
 		$this->bootBudget();
 		$db = \Config\Database::connect();
 		$availSvc = new BudgetAvailabilityService();
-		$lines = $db->table('budget_lines')->where('budget_id', (int)$budgetId)->where('is_editable', 1)
-			->orderBy('sort_order')->get()->getResultArray();
+		$calc = new BudgetCalculationService();
+		// All real budget lines (income + expenses) — exclude section total rows only
+		$lines = $db->table('budget_lines')
+			->where('budget_id', (int) $budgetId)
+			->where('is_total_row', 0)
+			->orderBy('sort_order')
+			->get()->getResultArray();
 		$out = [];
 		foreach ($lines as $ln) {
-			$sec = strtoupper(trim($ln['section_label'] ?? ''));
-			if ($sec === 'INCOME' || strpos($sec, 'INCOME') === 0) {
-				continue;
+			// Prefer stored annual; fall back to term/monthly calc if annual was left blank
+			$annual = (float) ($ln['annual_amount'] ?? 0);
+			if ($annual <= 0) {
+				$annual = (float) $calc->lineAnnualAmount($ln);
+				if ($annual > 0 && (float) ($ln['annual_amount'] ?? 0) <= 0) {
+					$db->table('budget_lines')->where('id', (int) $ln['id'])->update(['annual_amount' => $annual]);
+					$ln['annual_amount'] = $annual;
+				}
 			}
 			$ln['availability'] = $availSvc->lineAvailability((int) $ln['id']);
-			$ln['section'] = $ln['section_label'];
+			$ln['section'] = $ln['section_label'] ?? '';
+			$ln['is_income'] = (stripos((string) ($ln['section_label'] ?? ''), 'INCOME') !== false) ? 1 : 0;
 			$out[] = $ln;
 		}
 		return $this->response->setJSON(['lines' => $out]);

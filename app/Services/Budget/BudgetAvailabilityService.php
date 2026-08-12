@@ -11,7 +11,10 @@ class BudgetAvailabilityService
 		if (!$line) {
 			return null;
 		}
-		$approved = (float) $line['annual_amount'];
+		$approved = (float) ($line['annual_amount'] ?? 0);
+		if ($approved <= 0) {
+			$approved = (float) (new BudgetCalculationService())->lineAnnualAmount($line);
+		}
 		$adjustments = 0.0; // extended in adjustments phase
 		$transfersIn = (float) ($db->query(
 			"SELECT COALESCE(SUM(amount),0) AS t FROM budget_transfers WHERE dest_line_id = ? AND status = 'APPROVED'",

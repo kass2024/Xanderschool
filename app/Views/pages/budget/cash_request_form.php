@@ -30,11 +30,10 @@
 		</div>
 		<input type="hidden" name="budget_period_id" id="budget_period_id" value="<?= (int)($request['budget_period_id'] ?? 0); ?>">
 		<div class="col-md-6 form-group mb-0">
-			<label class="font-weight-bold">Expense budget line <span class="text-danger">*</span></label>
+			<label class="font-weight-bold">Budget line <span class="text-danger">*</span></label>
 			<select name="budget_line_id" id="budget_line_id" class="form-control" required <?= empty($budgets) ? 'disabled' : ''; ?>>
 				<option value="">— Select budget first —</option>
 			</select>
-			<small class="text-muted">Only expense categories — amount is checked against this line.</small>
 		</div>
 	</div>
 	<div class="cr-avail-box mt-2" id="availBox" style="display:none">
@@ -182,11 +181,22 @@ function loadLines() {
 	syncPeriod();
 	$.getJSON('<?= base_url('budget/get_budget_lines_json/'); ?>' + bid, function (r) {
 		lineData = {};
-		var h = '<option value="">— Select expense line —</option>';
+		var h = '<option value="">— Select budget line —</option>';
+		var groups = {};
+		var order = [];
 		$.each(r.lines || [], function (i, l) {
 			lineData[l.id] = l.availability || null;
-			var avail = l.availability ? ' — avail. ' + Number(l.availability.available).toLocaleString() + ' RWF' : '';
-			h += '<option value="' + l.id + '" data-cat="' + $('<div>').text(l.category).html() + '">' + l.category + avail + '</option>';
+			var sec = (l.section || l.section_label || 'OTHER').toString();
+			if (!groups[sec]) { groups[sec] = []; order.push(sec); }
+			groups[sec].push(l);
+		});
+		$.each(order, function (i, sec) {
+			h += '<optgroup label="' + $('<div>').text(sec).html() + '">';
+			$.each(groups[sec], function (j, l) {
+				h += '<option value="' + l.id + '" data-cat="' + $('<div>').text(l.category).html() + '">'
+					+ $('<div>').text(l.category).html() + '</option>';
+			});
+			h += '</optgroup>';
 		});
 		$('#budget_line_id').html(h);
 		if (preselectLine) { $('#budget_line_id').val(preselectLine); preselectLine = 0; }
