@@ -22,25 +22,35 @@ class BudgetPermissionService
 		}
 
 		$schoolId = (int) session('soma_school_id');
+		$postId = (int) $postId;
+
+		// Leaders: never prepare/edit/submit budgets (master or child)
+		$prepareKeys = [
+			'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.periods.manage',
+			'budget.templates.upload', 'budget.templates.activate', 'budget.adjust', 'budget.transfer',
+			'budget.edit_submitted',
+		];
+		if (in_array($postId, MenuClearance::CHILD_BUDGET_VIEW_POSTS, true)
+			&& !in_array($postId, MenuClearance::CHILD_BUDGET_PREPARE_POSTS, true)) {
+			$viewOk = ['budget.view_reports', 'budget.export', 'cash_request.view_audit'];
+			if (in_array($permKey, $prepareKeys, true)) {
+				return false;
+			}
+			if (strpos($permKey, 'budget.') === 0 || strpos($permKey, 'cash_request.') === 0) {
+				// On child: strict view-only. On master: allow headteacher cash approve for HM/headmistress only
+				if ($schoolId > 0 && MenuClearance::isChildSchoolId($schoolId)) {
+					return in_array($permKey, $viewOk, true);
+				}
+				if (in_array($permKey, $prepareKeys, true)) {
+					return false;
+				}
+			}
+		}
+
 		if ($schoolId > 0 && MenuClearance::isChildSchoolId($schoolId)) {
-			$postId = (int) $postId;
-			// Child schools: only Cashier + Accountant may prepare/fill/submit budgets
-			$prepareKeys = [
-				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.periods.manage',
-				'budget.templates.upload', 'budget.templates.activate', 'budget.adjust', 'budget.transfer',
-				'budget.edit_submitted',
-			];
 			if (in_array($permKey, $prepareKeys, true)
 				&& !in_array($postId, MenuClearance::CHILD_BUDGET_PREPARE_POSTS, true)) {
 				return false;
-			}
-			// Leadership: view-only — no cash-request / budget action perms
-			if (in_array($postId, MenuClearance::CHILD_BUDGET_VIEW_POSTS, true)
-				&& !in_array($postId, MenuClearance::CHILD_BUDGET_PREPARE_POSTS, true)) {
-				$viewOk = ['budget.view_reports', 'budget.export', 'cash_request.view_audit'];
-				if (strpos($permKey, 'budget.') === 0 || strpos($permKey, 'cash_request.') === 0) {
-					return in_array($permKey, $viewOk, true);
-				}
 			}
 		}
 

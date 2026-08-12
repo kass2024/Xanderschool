@@ -466,7 +466,7 @@ class BudgetCashflow extends Home
 		$c = $this->ctx();
 		// Child-school leaders: no prepare workspace — send to smart dashboard
 		if (\Config\MenuClearance::isChildBudgetViewOnly($c['postId'], $c['schoolId'])) {
-			return redirect()->to(base_url('budget/dashboard'))->with('error', 'View-only access: use the Budget Dashboard to monitor usage and approval progress.');
+			return redirect()->to(base_url('budget/dashboard'))->with('error', 'Head master and school leaders can only view the Budget Dashboard. Cashier or Accountant prepare the budget.');
 		}
 		$data = $this->data;
 		$db = \Config\Database::connect();

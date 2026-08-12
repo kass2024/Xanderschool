@@ -12,15 +12,20 @@ class MenuClearance
 	const FULL_ACCESS_POSTS = [1, 3, 18]; // Head master, Director of studies, Headmistress
 
 	/**
-	 * Child-school finance defaults (Level clearance + runtime filter).
-	 * Prepare/fill: Cashier + Accountant only.
-	 * View-only dashboard (usage + request/approval progress): school leaders.
-	 * Everyone else: no Finance menu.
+	 * Finance / budget role defaults (Level clearance + runtime filter).
+	 * Prepare/fill: Cashier + Accountant only (all schools).
+	 * View-only dashboard: school leaders (all schools — including master).
+	 * Child schools: everyone else loses the Finance menu.
 	 */
 	const CHILD_BUDGET_PREPARE_POSTS = [8, 9]; // Cashier, Accountant
 	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18]; // Head master, DOS, Dean of discipline, Principal, Headmistress
 
-	/** Menu keys for leadership view-only budget oversight on child schools. */
+	/** @deprecated alias — use CHILD_BUDGET_PREPARE_POSTS */
+	const BUDGET_PREPARE_POSTS = self::CHILD_BUDGET_PREPARE_POSTS;
+	/** @deprecated alias — use CHILD_BUDGET_VIEW_POSTS */
+	const BUDGET_VIEW_ONLY_POSTS = self::CHILD_BUDGET_VIEW_POSTS;
+
+	/** Menu keys leaders may see (no prepare). */
 	public static function childBudgetViewKeys()
 	{
 		return [
@@ -29,7 +34,6 @@ class MenuClearance
 			'budget_dashboard',
 			'budget_reports',
 			'budget_audit',
-			// Read-only visibility of request/approval pipeline (actions still gated by BudgetPermissions)
 			'budget_cash_requests',
 			'budget_pending',
 			'budget_procurement',
@@ -40,13 +44,25 @@ class MenuClearance
 		];
 	}
 
-	/** Menu keys for Cashier/Accountant prepare + fill on child schools. */
+	/** Menu keys for Cashier/Accountant prepare + fill. */
 	public static function childBudgetPrepareKeys()
 	{
 		return array_values(array_unique(array_merge(
 			self::budgetMenuKeys(),
 			['finance', 'budget_cashflow']
 		)));
+	}
+
+	/** Prepare-related menu keys that leaders must never get. */
+	public static function budgetPrepareMenuKeys()
+	{
+		return [
+			'budget_prepare',
+			'budget_periods',
+			'budget_templates',
+			'budget_review',
+			'budget_approved',
+		];
 	}
 
 	/**
@@ -69,8 +85,10 @@ class MenuClearance
 	}
 
 	/**
-	 * Apply child-school finance policy on top of (possibly full) allowed keys.
-	 * Master / standalone schools are unchanged.
+	 * Apply finance policy on top of allowed keys.
+	 * - Leaders (1,3,4,15,18): always view-only budget menus (master + child).
+	 * - Cashier/Accountant: prepare menus.
+	 * - Child schools: all other posts lose Finance entirely.
 	 *
 	 * @param string[] $keys
 	 * @param int      $postId
@@ -81,7 +99,25 @@ class MenuClearance
 	{
 		$postId = (int) $postId;
 		$schoolId = (int) $schoolId;
-		if ($schoolId < 1 || !self::isChildSchoolId($schoolId)) {
+		$isChild = $schoolId > 0 && self::isChildSchoolId($schoolId);
+
+		// Always: school leaders = view-only (strip prepare even on master / full-access posts)
+		if (in_array($postId, self::CHILD_BUDGET_VIEW_POSTS, true)) {
+			$nonFinance = array_values(array_filter($keys, static function ($k) {
+				return !self::isFinanceMenuKey($k);
+			}));
+			// Keep fee menus for leaders if they already had them (master full access) — but no budget prepare
+			$feeKeep = [];
+			foreach ($keys as $k) {
+				if (in_array($k, self::feeMenuKeys(), true) || $k === 'fees' || $k === 'fees_pending_approval') {
+					$feeKeep[] = $k;
+				}
+			}
+			return array_values(array_unique(array_merge($nonFinance, self::childBudgetViewKeys(), $feeKeep)));
+		}
+
+		if (!$isChild) {
+			// Master / standalone: non-leaders keep existing keys (Cashier/Accountant/finance roles)
 			return array_values(array_unique($keys));
 		}
 
@@ -97,11 +133,7 @@ class MenuClearance
 			return array_values(array_unique(array_merge($nonFinance, $extra)));
 		}
 
-		if (in_array($postId, self::CHILD_BUDGET_VIEW_POSTS, true)) {
-			return array_values(array_unique(array_merge($nonFinance, self::childBudgetViewKeys())));
-		}
-
-		// All other posts on child schools: no Finance menu at all
+		// Child schools: all other posts — no Finance menu
 		return $nonFinance;
 	}
 
@@ -123,37 +155,33 @@ class MenuClearance
 	}
 
 	/**
-	 * Whether this post may prepare/fill budgets at the given school.
+	 * Whether this post may prepare/fill budgets (Cashier / Accountant only).
 	 *
 	 * @param int $postId
-	 * @param int $schoolId
+	 * @param int $schoolId unused — kept for call-site compatibility
 	 * @return bool
 	 */
-	public static function canPrepareBudgetAtSchool($postId, $schoolId)
+	public static function canPrepareBudgetAtSchool($postId, $schoolId = 0)
 	{
-		$postId = (int) $postId;
-		$schoolId = (int) $schoolId;
-		if ($schoolId > 0 && self::isChildSchoolId($schoolId)) {
-			return in_array($postId, self::CHILD_BUDGET_PREPARE_POSTS, true);
-		}
-		// Master / standalone: accountant, cashier, leadership, finance roles (existing behaviour)
-		return in_array($postId, [1, 8, 9, 18, 19, 21, 24], true) || self::isFullAccessPost($postId);
+		return in_array((int) $postId, self::CHILD_BUDGET_PREPARE_POSTS, true);
 	}
 
 	/**
-	 * View-only budget oversight (no prepare) on child schools.
+	 * View-only budget oversight (no prepare) — Head master and other leaders, any school.
 	 *
 	 * @param int $postId
-	 * @param int $schoolId
+	 * @param int $schoolId unused — kept for call-site compatibility
 	 * @return bool
 	 */
-	public static function isChildBudgetViewOnly($postId, $schoolId)
+	public static function isChildBudgetViewOnly($postId, $schoolId = 0)
 	{
-		$postId = (int) $postId;
-		$schoolId = (int) $schoolId;
-		return $schoolId > 0
-			&& self::isChildSchoolId($schoolId)
-			&& in_array($postId, self::CHILD_BUDGET_VIEW_POSTS, true);
+		return in_array((int) $postId, self::CHILD_BUDGET_VIEW_POSTS, true);
+	}
+
+	/** Alias for clarity. */
+	public static function isBudgetViewOnlyPost($postId)
+	{
+		return self::isChildBudgetViewOnly($postId, 0);
 	}
 
 	/**

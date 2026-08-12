@@ -21,8 +21,10 @@
 
 <div class="row mb-4">
 	<div class="col-lg-8">
-		<?php if (function_exists('budget_permission_allowed') && budget_permission_allowed('budget.prepare')) { ?>
+		<?php if (\Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESSION['soma_post'] ?? 0)) && function_exists('budget_permission_allowed') && budget_permission_allowed('budget.prepare')) { ?>
 		<button class="btn btn-primary btn-lg shadow-sm" id="btnNewBudget"><i class="fa fa-plus-circle"></i> Start annual budget (3 terms)</button>
+		<?php } elseif (\Config\MenuClearance::isBudgetViewOnlyPost((int) ($_SESSION['soma_post'] ?? 0))) { ?>
+		<div class="alert alert-secondary border"><i class="fa fa-eye"></i> <strong>View only.</strong> Head master and school leaders can monitor budgets after Cashier/Accountant prepare them. Open the <a href="<?= base_url('budget/dashboard'); ?>">Budget Dashboard</a>.</div>
 		<?php } ?>
 		<p class="small text-muted mt-2 mb-0">Opens the online budget grid: INCOME, OPERATING EXPENSES, ADMINISTRATIVE COSTS, and FINANCE COSTS — each line with Term I / II / III amounts.</p>
 	</div>
@@ -35,10 +37,16 @@
 	<i class="fa fa-file-invoice-dollar d-block"></i>
 	<h5>No annual budget yet</h5>
 	<p class="text-muted mb-3">Prepare your full-year school budget online. Enter amounts for each term; the system totals automatically.</p>
+	<?php if (\Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESSION['soma_post'] ?? 0))) { ?>
 	<button class="btn btn-primary" id="btnNewBudget2">Start annual budget</button>
+	<?php } ?>
 </div>
 <?php } else { ?>
-<?php foreach ($budgets as $b) {
+<?php
+$postIdSession = (int) ($_SESSION['soma_post'] ?? 0);
+$canPrepareUi = \Config\MenuClearance::canPrepareBudgetAtSchool($postIdSession);
+$viewOnlyUi = \Config\MenuClearance::isBudgetViewOnlyPost($postIdSession);
+foreach ($budgets as $b) {
 	$statusClass = $b['status'] === 'DRAFT' ? 'secondary' : ($b['status'] === 'APPROVED' ? 'success' : 'info');
 ?>
 <div class="bp-budget-card">
@@ -53,17 +61,19 @@
 			$isPreparerEdit = in_array($b['status'], ['DRAFT', 'RETURNED'], true);
 			$isSubmittedPipeline = in_array($b['status'], ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'APPROVED', 'REJECTED'], true);
 			?>
-			<?php if ($isPreparerEdit) { ?>
+			<?php if ($viewOnlyUi) { ?>
+			<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-sm btn-outline-secondary mb-1"><i class="fa fa-eye"></i> View on dashboard</a>
+			<?php } elseif ($canPrepareUi && $isPreparerEdit) { ?>
 			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-primary mb-1"><i class="fa fa-edit"></i> Open budget</a>
 			<?php } elseif ($canFinanceAdjust && $isSubmittedPipeline) { ?>
 			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-warning mb-1" title="Director of Finance — edit submitted / approved budget"><i class="fa fa-edit"></i> Edit</a>
 			<?php } ?>
-			<?php if ($b['status'] === 'APPROVED') { ?>
+			<?php if (!$viewOnlyUi && $b['status'] === 'APPROVED') { ?>
 			<a href="<?= base_url('budget/cash_request_form'); ?>" class="btn btn-sm btn-success mb-1"><i class="fa fa-money-bill"></i> New request</a>
-			<?php } elseif (!$isPreparerEdit && $b['status'] !== 'APPROVED') { ?>
+			<?php } elseif (!$viewOnlyUi && !$isPreparerEdit && $b['status'] !== 'APPROVED') { ?>
 			<a href="<?= base_url('budget/prepare?tab=review'); ?>" class="btn btn-sm btn-outline-info mb-1"><i class="fa fa-tasks"></i> In approval</a>
 			<?php } ?>
-			<?php if (function_exists('budget_permission_allowed') && (budget_permission_allowed('budget.prepare') || budget_permission_allowed('budget.edit_own') || budget_permission_allowed('budget.final_approve') || budget_permission_allowed('budget.edit_submitted'))) { ?>
+			<?php if ($canPrepareUi && function_exists('budget_permission_allowed') && (budget_permission_allowed('budget.prepare') || budget_permission_allowed('budget.edit_own') || budget_permission_allowed('budget.final_approve') || budget_permission_allowed('budget.edit_submitted'))) { ?>
 			<button type="button" class="btn btn-sm btn-outline-danger mb-1 btn-del-budget" data-id="<?= (int)$b['id']; ?>" data-title="<?= esc($b['title']); ?>"><i class="fa fa-trash"></i> Delete</button>
 			<?php } ?>
 		</div>

@@ -89,14 +89,14 @@ $centralFlip = array_flip($masterCentralPosts ?? []);
 							</p>
 
 							<div class="alert alert-info mb-3" style="max-width:960px;">
-								<strong><i class="fa fa-school"></i> Child school Finance defaults (automatic)</strong>
+								<strong><i class="fa fa-school"></i> Finance budget defaults (automatic)</strong>
 								<ul class="mb-0 mt-2 small">
-									<li><strong>Prepare &amp; fill budget:</strong> #8 Cashier, #9 Accountant only.</li>
-									<li><strong>View-only dashboard</strong> (budget usage + request/approval progress, no prepare/approve actions):
-										#1 Head master, #3 Director of studies, #4 Dean of discipline, #15 Principal, #18 Headmistress.</li>
-									<li><strong>All other posts:</strong> Finance menu is hidden on child schools (even if checked here for master/central roles).</li>
+									<li><strong>Prepare &amp; fill budget:</strong> #8 Cashier, #9 Accountant only (all schools).</li>
+									<li><strong>View-only</strong> (usage + approval progress — no Prepare / Start budget):
+										#1 Head master, #3 Director of studies, #4 Dean of discipline, #15 Principal, #18 Headmistress — including on the master school.</li>
+									<li><strong>Child schools — all other posts:</strong> Finance menu is hidden.</li>
 								</ul>
-								<p class="small mb-0 mt-2 text-muted">This policy applies at login based on whether the school is a child of a master. Resetting a post to defaults updates the master/global checklist; child schools still follow the rules above.</p>
+								<p class="small mb-0 mt-2 text-muted">These rules apply at login from the post + school type. Resetting a post updates the checklist; leadership still cannot prepare budgets.</p>
 							</div>
 
 							<div class="card border mb-3" style="max-width:960px;">
