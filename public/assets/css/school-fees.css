@@ -1,0 +1,405 @@
+/* School Fees Management */
+.sf-page {
+  padding: 8px 16px 32px;
+  background: linear-gradient(180deg, #f4f7fb 0%, #eef2f7 100%);
+  min-height: calc(100vh - 120px);
+}
+
+.sf-center {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.sf-header {
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.sf-header h2 {
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px;
+}
+
+.sf-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.sf-header-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sf-btn-add {
+  background: #15803d;
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(21, 128, 61, 0.25);
+}
+
+.sf-btn-add:hover {
+  background: #166534;
+  color: #fff;
+}
+
+.sf-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.sf-kpi {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  border: 1px solid #e8edf3;
+  text-align: center;
+}
+
+.sf-kpi-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+}
+
+.sf-kpi-icon.blue { background: #dbeafe; color: #1d4ed8; }
+.sf-kpi-icon.green { background: #dcfce7; color: #15803d; }
+.sf-kpi-icon.orange { background: #ffedd5; color: #c2410c; }
+
+.sf-kpi-value {
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.1;
+}
+
+.sf-kpi-label {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-top: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sf-filter-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  border: 1px solid #e8edf3;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.sf-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.sf-field label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sf-field select {
+  min-width: 220px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+}
+
+.sf-panel {
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #e8edf3;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+
+.sf-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid #eef2f7;
+  background: #fafbfc;
+}
+
+.sf-panel-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sf-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.sf-panel-body {
+  padding: 0;
+}
+
+.sf-table-wrap {
+  overflow-x: auto;
+}
+
+#schoolFeesTable {
+  width: 100% !important;
+  margin: 0;
+}
+
+#schoolFeesTable thead th {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+#schoolFeesTable tbody td {
+  vertical-align: middle;
+  color: #1e293b;
+  font-size: 0.92rem;
+}
+
+.sf-level-cell {
+  font-weight: 600;
+}
+
+.sf-dept-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.sf-amount {
+  font-weight: 700;
+  color: #15803d;
+  font-variant-numeric: tabular-nums;
+}
+
+.sf-mode-amounts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.sf-mode-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+.sf-mode-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  color: #64748b;
+  min-width: 58px;
+}
+
+.sf-mode-line.boarding .sf-mode-label { color: #4338ca; }
+.sf-mode-line.day .sf-mode-label { color: #047857; }
+.sf-mode-line .sf-amount { font-size: 0.9rem; }
+
+.sf-term-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.sf-term-badge.t1 { background: #dbeafe; color: #1d4ed8; }
+.sf-term-badge.t2 { background: #fef3c7; color: #b45309; }
+.sf-term-badge.t3 { background: #ede9fe; color: #6d28d9; }
+
+.sf-btn-del {
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 0.82rem;
+}
+
+.sf-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: #64748b;
+}
+
+.sf-empty i {
+  font-size: 2.5rem;
+  color: #cbd5e1;
+  margin-bottom: 12px;
+  display: block;
+}
+
+.sf-empty h4 {
+  color: #334155;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.sf-search-field input {
+  min-width: 200px;
+  border-radius: 10px;
+}
+
+.sf-level-pill {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sf-dept-name {
+  margin-left: 4px;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.sf-term-col-h {
+  text-align: center !important;
+  min-width: 130px;
+}
+
+.sf-term-col {
+  text-align: center;
+  vertical-align: middle !important;
+}
+
+.sf-term-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 4px;
+}
+
+.sf-term-cell .sf-amount {
+  font-size: 0.95rem;
+}
+
+.sf-term-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.sf-group-row:hover .sf-term-actions {
+  opacity: 1;
+}
+
+.sf-icon-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #fff;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.sf-icon-btn:hover {
+  background: #f1f5f9;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.sf-icon-btn.danger:hover {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.sf-term-empty {
+  color: #cbd5e1;
+  font-size: 1.1rem;
+}
+
+.sf-term-col.t1 { background: rgba(219, 234, 254, 0.25); }
+.sf-term-col.t2 { background: rgba(254, 243, 199, 0.25); }
+.sf-term-col.t3 { background: rgba(237, 233, 254, 0.25); }
+
+.sf-actions-col,
+.sf-row-actions {
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle !important;
+}
+
+.sf-row-actions .btn {
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 0 2px;
+}
+
+.sf-row-actions .btn-outline-danger:hover {
+  background: #fef2f2;
+}
+
+.sf-edit-meta {
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  line-height: 1.8;
+  border: 1px solid #e8edf3;
+}
+
+#schoolFeesTable tbody tr.sf-group-row:hover {
+  background: #fafbfc;
+}
+
+#schoolFeesTable tbody tr.sf-group-row td {
+  border-top: 1px solid #eef2f7;
+}

@@ -11429,14 +11429,16 @@ public function getApplicationDocs($id = null)
 
 		$boardingAmt = trim((string) $this->request->getPost("amount_boarding"));
 		$dayAmt = trim((string) $this->request->getPost("amount_day"));
+		$boardingVal = ($boardingAmt !== '' && is_numeric($boardingAmt)) ? (float) $boardingAmt : null;
+		$dayVal = ($dayAmt !== '' && is_numeric($dayAmt)) ? (float) $dayAmt : null;
 		$amount = trim((string) $this->request->getPost("amount"));
 		if ($amount === '' || !is_numeric($amount)) {
 			$candidates = [];
-			if ($boardingAmt !== '' && is_numeric($boardingAmt)) {
-				$candidates[] = (float) $boardingAmt;
+			if ($boardingVal !== null) {
+				$candidates[] = $boardingVal;
 			}
-			if ($dayAmt !== '' && is_numeric($dayAmt)) {
-				$candidates[] = (float) $dayAmt;
+			if ($dayVal !== null) {
+				$candidates[] = $dayVal;
 			}
 			$amount = !empty($candidates) ? (string) max($candidates) : '';
 		}
@@ -11538,8 +11540,8 @@ public function getApplicationDocs($id = null)
 				if ($levelId <= 0) {
 					continue;
 				}
-				if (!empty($perStudent)) {
-					// Expand level to concrete classes when setting per-student fees
+				if (!empty($perStudent) || $boardingVal !== null || $dayVal !== null) {
+					// Expand level to concrete classes when setting boarding/day or per-student fees
 					$rows = $classMdl->select('id, level, department')
 						->where('school_id', $school_id)
 						->where('department', $dept)
@@ -11582,6 +11584,32 @@ public function getApplicationDocs($id = null)
 			return $this->response->setJSON(["error" => lang("app.selectClass")]);
 		}
 
+		// If boarding/day set but no student rows posted, auto-fill students by studying mode
+		if (empty($perStudent) && ($boardingVal !== null || $dayVal !== null)) {
+			$stMdl = new StudentModel();
+			foreach ($classTargets as $key => $meta) {
+				if (is_string($key) && strpos($key, 'L') === 0) {
+					continue;
+				}
+				$classIdAuto = (int) $key;
+				$students = $stMdl->get_student($classIdAuto, 'c.id', null, false, $academicYear);
+				foreach ($students as $st) {
+					$mode = (int) ($st['studying_mode'] ?? 1);
+					$amt = ($mode === 0)
+						? ($boardingVal !== null ? $boardingVal : $dayVal)
+						: ($dayVal !== null ? $dayVal : $boardingVal);
+					if ($amt === null) {
+						continue;
+					}
+					$perStudent[] = [
+						'student_id' => (int) $st['id'],
+						'amount' => (float) $amt,
+						'class_id' => $classIdAuto,
+					];
+				}
+			}
+		}
+
 		try {
 			foreach ($classTargets as $key => $meta) {
 				$isLevelOnly = is_string($key) && strpos($key, 'L') === 0;
@@ -11605,9 +11633,20 @@ public function getApplicationDocs($id = null)
 					$maxStudent = max(array_column($classStudents, 'amount'));
 					$base = max($base, (float) $maxStudent);
 				}
+				if ($boardingVal !== null) {
+					$base = max($base, $boardingVal);
+				}
+				if ($dayVal !== null) {
+					$base = max($base, $dayVal);
+				}
 				if ($base < 0) {
 					continue;
 				}
+
+				$feePayloadExtra = [
+					'amount_boarding' => $boardingVal,
+					'amount_day' => $dayVal,
+				];
 
 				foreach ($terms as $term) {
 					$existing = $schoolFee->where('school_id', $school_id)
@@ -11627,12 +11666,12 @@ public function getApplicationDocs($id = null)
 					$feeId = 0;
 					if ($feeRow) {
 						$feeId = (int) $feeRow['id'];
-						if (!empty($classStudents) || (float) $feeRow['amount'] != $base) {
-							$schoolFee->update($feeId, ['amount' => $base]);
-							$updated++;
-						}
+						$schoolFee->update($feeId, array_merge([
+							'amount' => $base,
+						], $feePayloadExtra));
+						$updated++;
 					} else {
-						$feeId = (int) $schoolFee->insert([
+						$feeId = (int) $schoolFee->insert(array_merge([
 							"school_id" => $school_id,
 							"level" => $levelId,
 							"department" => $deptId,
@@ -11641,7 +11680,7 @@ public function getApplicationDocs($id = null)
 							"term" => $term,
 							"academic_year" => $academicYear,
 							"created_by" => $createdBy,
-						]);
+						], $feePayloadExtra));
 						$created++;
 					}
 
@@ -11754,15 +11793,16 @@ public function getApplicationDocs($id = null)
 	}
 
 	/**
-	 * Update one school fee or all terms for a level/dept (same amount).
-	 * POST: fee_id, amount [, apply_all_terms=1]
-	 * POST group mode: level_id, department_id, amount_1, amount_2, amount_3
+	 * Update one school fee or all terms for a level/dept.
+	 * Supports boarding/day amounts (amount_boarding / amount_day).
+	 * POST group mode: level_id, department_id, amount_boarding_N, amount_day_N (or amount_N legacy)
 	 */
 	public function update_school_fee()
 	{
 		$this->_preset();
 		$school_id = (int) $this->session->get("soma_school_id");
 		$schoolFee = new SchoolFeesModel();
+		$schoolFee->ensureSchema();
 		$academicYear = (int) $this->data['academic_year'];
 
 		$levelId = (int) $this->request->getPost('level_id');
@@ -11772,13 +11812,25 @@ public function getApplicationDocs($id = null)
 			$updated = 0;
 			try {
 				for ($term = 1; $term <= 3; $term++) {
-					$amount = trim((string) $this->request->getPost('amount_' . $term));
-					if ($amount === '') {
+					$boarding = trim((string) $this->request->getPost('amount_boarding_' . $term));
+					$day = trim((string) $this->request->getPost('amount_day_' . $term));
+					$legacy = trim((string) $this->request->getPost('amount_' . $term));
+					if ($boarding === '' && $day === '' && $legacy === '') {
 						continue;
 					}
-					if (!is_numeric($amount) || (float) $amount < 0) {
+					$boardingVal = ($boarding !== '' && is_numeric($boarding)) ? (float) $boarding : null;
+					$dayVal = ($day !== '' && is_numeric($day)) ? (float) $day : null;
+					if ($legacy !== '' && is_numeric($legacy) && $boardingVal === null && $dayVal === null) {
+						$boardingVal = (float) $legacy;
+						$dayVal = (float) $legacy;
+					}
+					$baseCandidates = array_filter([$boardingVal, $dayVal], static function ($v) {
+						return $v !== null;
+					});
+					if (empty($baseCandidates)) {
 						return $this->response->setJSON(['error' => lang('app.amount') . ' is invalid for term ' . $term]);
 					}
+					$base = max($baseCandidates);
 					$builder = $schoolFee->where('school_id', $school_id)
 						->where('term', $term)
 						->where('academic_year', $academicYear);
@@ -11796,7 +11848,11 @@ public function getApplicationDocs($id = null)
 					if (!$row) {
 						continue;
 					}
-					$schoolFee->update((int) $row['id'], ['amount' => $amount]);
+					$schoolFee->update((int) $row['id'], [
+						'amount' => $base,
+						'amount_boarding' => $boardingVal,
+						'amount_day' => $dayVal,
+					]);
 					$updated++;
 				}
 				if ($updated === 0) {
@@ -11809,23 +11865,42 @@ public function getApplicationDocs($id = null)
 		}
 
 		$feeId = (int) $this->request->getPost('fee_id');
+		$boarding = trim((string) $this->request->getPost('amount_boarding'));
+		$day = trim((string) $this->request->getPost('amount_day'));
 		$amount = trim((string) $this->request->getPost('amount'));
 		$applyAllTerms = (int) $this->request->getPost('apply_all_terms') === 1;
 
 		if ($feeId <= 0) {
 			return $this->response->setJSON(['error' => 'Fee record not found.']);
 		}
-		if ($amount === '' || !is_numeric($amount) || (float) $amount < 0) {
-			return $this->response->setJSON(['error' => lang('app.amount') . ' is required']);
+
+		$boardingVal = ($boarding !== '' && is_numeric($boarding)) ? (float) $boarding : null;
+		$dayVal = ($day !== '' && is_numeric($day)) ? (float) $day : null;
+		if ($amount !== '' && is_numeric($amount) && $boardingVal === null && $dayVal === null) {
+			$boardingVal = (float) $amount;
+			$dayVal = (float) $amount;
 		}
+		$baseCandidates = array_filter([$boardingVal, $dayVal], static function ($v) {
+			return $v !== null;
+		});
+		if (empty($baseCandidates)) {
+			return $this->response->setJSON(['error' => 'Enter boarding and/or day amount.']);
+		}
+		$base = max($baseCandidates);
 
 		$row = $schoolFee->where('id', $feeId)->where('school_id', $school_id)->get(1)->getRowArray();
 		if (!$row) {
 			return $this->response->setJSON(['error' => 'Fee record not found.']);
 		}
 
+		$payload = [
+			'amount' => $base,
+			'amount_boarding' => $boardingVal,
+			'amount_day' => $dayVal,
+		];
+
 		try {
-			$schoolFee->update($feeId, ['amount' => $amount]);
+			$schoolFee->update($feeId, $payload);
 			$updated = 1;
 			if ($applyAllTerms) {
 				$others = $schoolFee->where('school_id', $school_id)
@@ -11843,7 +11918,7 @@ public function getApplicationDocs($id = null)
 				}
 				$others = $others->findAll();
 				foreach ($others as $other) {
-					$schoolFee->update((int) $other['id'], ['amount' => $amount]);
+					$schoolFee->update((int) $other['id'], $payload);
 					$updated++;
 				}
 			}
