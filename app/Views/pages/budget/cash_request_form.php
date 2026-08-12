@@ -168,7 +168,7 @@ function showAvailability(lineId, amount) {
 	var avail = parseFloat(av.available) || 0;
 	var txt = 'Budgeted: ' + Number(av.revised).toLocaleString() + ' · Paid: ' + Number(av.paid).toLocaleString()
 		+ ' · Committed: ' + Number(av.committed).toLocaleString()
-		+ ' · <strong>Available: ' + Number(avail).toLocaleString() + ' RWF</strong>';
+		+ ' · <strong>Remaining: ' + Number(avail).toLocaleString() + ' RWF</strong>';
 	$('#availText').html(txt);
 	$box.removeClass('warn danger').show();
 	if (amount > avail) $box.addClass('danger');
@@ -193,8 +193,10 @@ function loadLines() {
 		$.each(order, function (i, sec) {
 			h += '<optgroup label="' + $('<div>').text(sec).html() + '">';
 			$.each(groups[sec], function (j, l) {
+				var availNum = l.availability ? Number(l.availability.available) : 0;
+				var avail = ' — remaining ' + availNum.toLocaleString() + ' RWF';
 				h += '<option value="' + l.id + '" data-cat="' + $('<div>').text(l.category).html() + '">'
-					+ $('<div>').text(l.category).html() + '</option>';
+					+ $('<div>').text(l.category).html() + avail + '</option>';
 			});
 			h += '</optgroup>';
 		});
