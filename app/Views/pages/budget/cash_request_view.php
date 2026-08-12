@@ -47,17 +47,31 @@ $wfActions = $wf_actions ?? \App\Services\Budget\CashRequestWorkflowService::uiA
 </div>
 
 <div class="cr-section">
-	<div class="cr-section-title"><i class="fa fa-chart-pie"></i> Budget consumption</div>
-	<?php foreach ($lines as $ln) {
-		$av = !empty($ln['budget_line_id']) ? ($availability[$ln['budget_line_id']] ?? null) : null; ?>
-	<div class="mb-3 p-2 bg-light rounded">
-		<strong><?= esc($ln['description']); ?></strong>: <?= number_format((float)$ln['amount'], 0); ?> RWF
-		<?php if ($av) { ?>
-		<div class="progress mt-2" style="height:8px"><div class="progress-bar bg-success" style="width:<?= min(100, (float)$av['utilization_pct']); ?>%"></div></div>
-		<small class="text-muted">Line budget: <?= number_format($av['revised'], 0); ?> · Remaining: <strong><?= number_format($av['available'], 0); ?></strong> RWF</small>
-		<?php } ?>
+	<div class="cr-section-title"><i class="fa fa-chart-pie"></i> Request items (<?= count($lines); ?>)</div>
+	<div class="table-responsive">
+		<table class="table table-sm mb-0">
+			<thead class="thead-light"><tr><th>Budget line</th><th>Description</th><th class="text-right">Amount</th><th class="text-right">Remaining</th></tr></thead>
+			<tbody>
+			<?php
+			$itemTotal = 0.0;
+			foreach ($lines as $ln) {
+				$itemTotal += (float) ($ln['amount'] ?? 0);
+				$av = !empty($ln['budget_line_id']) ? ($availability[$ln['budget_line_id']] ?? null) : null;
+			?>
+			<tr>
+				<td>
+					<strong><?= esc($ln['budget_category'] ?? '—'); ?></strong>
+					<?php if (!empty($ln['section_label'])) { ?><br><small class="text-muted"><?= esc($ln['section_label']); ?></small><?php } ?>
+				</td>
+				<td><?= esc($ln['description'] ?? ''); ?></td>
+				<td class="text-right"><?= number_format((float)($ln['amount'] ?? 0), 0); ?></td>
+				<td class="text-right"><?= $av ? number_format((float)$av['available'], 0) . ' RWF' : '—'; ?></td>
+			</tr>
+			<?php } ?>
+			</tbody>
+			<tfoot><tr class="font-weight-bold"><td colspan="2" class="text-right">Total</td><td class="text-right"><?= number_format($itemTotal, 0); ?> RWF</td><td></td></tr></tfoot>
+		</table>
 	</div>
-	<?php } ?>
 </div>
 
 <?php if (!empty($documents)) { ?>

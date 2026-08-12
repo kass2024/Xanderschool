@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=5" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=12" rel="stylesheet">
 
 <div class="budget-cr-form">
 
@@ -17,9 +17,14 @@
 <input type="hidden" name="id" value="<?= (int)($request['id'] ?? 0); ?>">
 
 <div class="cr-section">
-	<div class="cr-section-title"><i class="fa fa-link"></i> Budget link <span class="text-danger">*</span></div>
-	<div class="form-row">
-		<div class="col-md-6 form-group mb-md-0">
+	<div class="cr-section-title d-flex flex-wrap justify-content-between align-items-center">
+		<span><i class="fa fa-link"></i> Budget &amp; request items <span class="text-danger">*</span></span>
+		<button type="button" class="btn btn-sm btn-outline-success" id="btnAddItem" <?= empty($budgets) ? 'disabled' : ''; ?>>
+			<i class="fa fa-plus"></i> Add item
+		</button>
+	</div>
+	<div class="form-row mb-3">
+		<div class="col-md-6 form-group mb-0">
 			<label class="font-weight-bold">Approved budget</label>
 			<select name="budget_id" id="budget_id" class="form-control" required <?= empty($budgets) ? 'disabled' : ''; ?>>
 				<?php if (empty($budgets)) { ?><option value="">— No approved budget —</option><?php } ?>
@@ -29,16 +34,37 @@
 			</select>
 		</div>
 		<input type="hidden" name="budget_period_id" id="budget_period_id" value="<?= (int)($request['budget_period_id'] ?? 0); ?>">
-		<div class="col-md-6 form-group mb-0">
-			<label class="font-weight-bold">Budget line <span class="text-danger">*</span></label>
-			<select name="budget_line_id" id="budget_line_id" class="form-control" required <?= empty($budgets) ? 'disabled' : ''; ?>>
-				<option value="">— Select budget first —</option>
-			</select>
+		<div class="col-md-6 d-flex align-items-end">
+			<div class="bp-kpi-row w-100 mb-0" id="itemsKpiStrip">
+				<div class="bp-kpi"><label>Items</label><strong id="kpiItemCount">0</strong></div>
+				<div class="bp-kpi income"><label>Total</label><strong id="kpiItemTotal">0</strong><small>RWF</small></div>
+			</div>
 		</div>
 	</div>
-	<div class="cr-avail-box mt-2" id="availBox" style="display:none">
-		<strong>Line availability:</strong> <span id="availText"></span>
+
+	<div class="table-responsive">
+		<table class="table table-sm cr-items-table mb-0" id="tblRequestItems">
+			<thead class="thead-light">
+				<tr>
+					<th style="min-width:220px">Budget line</th>
+					<th>Description</th>
+					<th style="width:140px">Amount (RWF)</th>
+					<th style="width:150px">Remaining</th>
+					<th style="width:44px"></th>
+				</tr>
+			</thead>
+			<tbody id="requestItemsBody"></tbody>
+		</table>
 	</div>
+	<div id="itemsWarnBox" class="cr-avail-box danger mt-2" style="display:none"></div>
+	<div id="chainPreviewBox" class="bp-kpi-row mt-3 mb-0" style="display:none">
+		<div class="bp-kpi income w-100">
+			<label>Approval chain for this total</label>
+			<strong class="small d-block" id="chainPreviewLabel">—</strong>
+			<small class="text-muted d-block mt-1" id="chainPreviewSteps"></small>
+		</div>
+	</div>
+	<input type="hidden" name="requested_amount" id="requested_amount" value="<?= esc($request['requested_amount'] ?? ''); ?>">
 </div>
 
 <div class="cr-section">
@@ -53,24 +79,8 @@
 		<div class="col-md-6 form-group"><label class="font-weight-bold">Payee name <span class="text-danger">*</span></label><input class="form-control" name="payee_name" value="<?= esc($request['payee_name'] ?? ''); ?>" placeholder="Supplier or staff name" required></div>
 		<div class="col-md-6 form-group"><label class="font-weight-bold">Payee type</label><select name="payee_type" class="form-control"><option value="supplier">Supplier</option><option value="staff">Staff</option><option value="contractor">Contractor</option><option value="other">Other</option></select></div>
 	</div>
-	<div class="form-group mb-0"><label class="font-weight-bold">Purpose / justification <span class="text-danger">*</span></label><textarea class="form-control" name="purpose" rows="2" placeholder="What is this payment for?" required><?= esc($request['purpose'] ?? ''); ?></textarea></div>
-</div>
-
-<div class="cr-section">
-	<div class="cr-section-title"><i class="fa fa-coins"></i> Amount</div>
-	<div class="form-row">
-		<div class="col-md-8 form-group"><label class="font-weight-bold">Description</label><input class="form-control" name="line_description" id="line_description" value="<?= esc($lines[0]['description'] ?? ''); ?>" placeholder="Auto-filled from budget line"></div>
-		<div class="col-md-4 form-group"><label class="font-weight-bold">Amount (RWF) <span class="text-danger">*</span></label><input type="number" step="0.01" min="1" class="form-control form-control-lg" name="line_amount" id="line_amount" value="<?= esc($lines[0]['amount'] ?? ''); ?>" required></div>
-	</div>
-	<input type="hidden" name="requested_amount" id="requested_amount" value="<?= esc($request['requested_amount'] ?? ''); ?>">
-	<div id="chainPreviewBox" class="bp-kpi-row mt-2 mb-0" style="display:none">
-		<div class="bp-kpi income w-100">
-			<label>Approval chain for this amount</label>
-			<strong class="small d-block" id="chainPreviewLabel">—</strong>
-			<small class="text-muted d-block mt-1" id="chainPreviewSteps"></small>
-		</div>
-	</div>
-	<div class="form-group mb-0 mt-2"><label class="font-weight-bold">Internal notes</label><textarea class="form-control" name="internal_notes" rows="2"><?= esc($request['internal_notes'] ?? ''); ?></textarea></div>
+	<div class="form-group"><label class="font-weight-bold">Purpose / justification <span class="text-danger">*</span></label><textarea class="form-control" name="purpose" rows="2" placeholder="What is this payment for?" required><?= esc($request['purpose'] ?? ''); ?></textarea></div>
+	<div class="form-group mb-0"><label class="font-weight-bold">Internal notes</label><textarea class="form-control" name="internal_notes" rows="2"><?= esc($request['internal_notes'] ?? ''); ?></textarea></div>
 </div>
 
 <div class="cr-section border-warning">
@@ -161,80 +171,213 @@
 
 <script>
 var lineData = {};
+var lineOptionsHtml = '<option value="">— Select budget line —</option>';
 var existingDocCount = <?= (int)count($documents ?? []); ?>;
-var preselectLine = <?= (int)($lines[0]['budget_line_id'] ?? 0); ?>;
+var existingItems = <?= json_encode(array_values(array_map(static function ($ln) {
+	return [
+		'budget_line_id' => (int) ($ln['budget_line_id'] ?? 0),
+		'description' => (string) ($ln['description'] ?? ''),
+		'amount' => (float) ($ln['amount'] ?? 0),
+	];
+}, $lines ?? [])), JSON_UNESCAPED_UNICODE); ?>;
+var chainPreviewTimer = null;
 
 function syncPeriod() {
 	$('#budget_period_id').val($('#budget_id option:selected').data('period') || 0);
 }
 
-function showAvailability(lineId, amount) {
-	var av = lineData[lineId];
-	var $box = $('#availBox');
-	if (!av) { $box.hide(); return; }
-	var avail = parseFloat(av.available) || 0;
-	var txt = 'Budgeted: ' + Number(av.revised).toLocaleString() + ' · Paid: ' + Number(av.paid).toLocaleString()
-		+ ' · Committed: ' + Number(av.committed).toLocaleString()
-		+ ' · <strong>Remaining: ' + Number(avail).toLocaleString() + ' RWF</strong>';
-	$('#availText').html(txt);
-	$box.removeClass('warn danger').show();
-	if (amount > avail) $box.addClass('danger');
-	else if (amount > avail * 0.8) $box.addClass('warn');
+function buildLineOptionsHtml(lines) {
+	lineData = {};
+	var h = '<option value="">— Select budget line —</option>';
+	var groups = {};
+	var order = [];
+	$.each(lines || [], function (i, l) {
+		lineData[l.id] = l.availability || null;
+		var sec = (l.section || l.section_label || 'OTHER').toString();
+		if (!groups[sec]) { groups[sec] = []; order.push(sec); }
+		groups[sec].push(l);
+	});
+	$.each(order, function (i, sec) {
+		h += '<optgroup label="' + $('<div>').text(sec).html() + '">';
+		$.each(groups[sec], function (j, l) {
+			var availNum = l.availability ? Number(l.availability.available) : 0;
+			var avail = ' - remaining ' + availNum.toLocaleString() + ' RWF';
+			h += '<option value="' + l.id + '" data-cat="' + $('<div>').text(l.category).html() + '">'
+				+ $('<div>').text(l.category).html() + avail + '</option>';
+		});
+		h += '</optgroup>';
+	});
+	return h;
 }
 
-function loadLines() {
+function addItemRow(preset) {
+	preset = preset || {};
+	var $tr = $('<tr class="cr-item-row">'
+		+ '<td><select name="item_budget_line_id[]" class="form-control form-control-sm item-line" required>' + lineOptionsHtml + '</select></td>'
+		+ '<td><input type="text" name="item_description[]" class="form-control form-control-sm item-desc" placeholder="Item description" value=""></td>'
+		+ '<td><input type="number" step="0.01" min="0.01" name="item_amount[]" class="form-control form-control-sm item-amount" placeholder="0" required></td>'
+		+ '<td class="item-remain small text-muted align-middle">—</td>'
+		+ '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-rm-item" title="Remove item">&times;</button></td>'
+		+ '</tr>');
+	$('#requestItemsBody').append($tr);
+	if (preset.budget_line_id) {
+		$tr.find('.item-line').val(String(preset.budget_line_id));
+	}
+	if (preset.description) {
+		$tr.find('.item-desc').val(preset.description);
+	}
+	if (preset.amount) {
+		$tr.find('.item-amount').val(preset.amount);
+	}
+	refreshItemRow($tr);
+	recalcItems();
+}
+
+function refreshItemRow($tr) {
+	var lid = $tr.find('.item-line').val();
+	var amt = parseFloat($tr.find('.item-amount').val()) || 0;
+	var av = lineData[lid];
+	var $remain = $tr.find('.item-remain');
+	$tr.removeClass('table-danger table-warning');
+	if (!lid || !av) {
+		$remain.text('—').removeClass('text-danger text-warning text-success');
+		return;
+	}
+	var remain = parseFloat(av.available) || 0;
+	// Deduct other rows on same budget line
+	var usedSame = 0;
+	$('#requestItemsBody tr').each(function () {
+		if (this === $tr[0]) return;
+		if (String($(this).find('.item-line').val()) === String(lid)) {
+			usedSame += parseFloat($(this).find('.item-amount').val()) || 0;
+		}
+	});
+	var left = remain - usedSame;
+	$remain.text(Number(left).toLocaleString() + ' RWF');
+	if (amt > left) {
+		$remain.addClass('text-danger').removeClass('text-warning text-success');
+		$tr.addClass('table-danger');
+	} else if (amt > left * 0.8) {
+		$remain.addClass('text-warning').removeClass('text-danger text-success');
+		$tr.addClass('table-warning');
+	} else {
+		$remain.addClass('text-success').removeClass('text-danger text-warning');
+	}
+	var cat = $tr.find('.item-line option:selected').data('cat');
+	var $desc = $tr.find('.item-desc');
+	if (cat && (!$desc.val() || $desc.data('auto') === 1)) {
+		$desc.val(cat).data('auto', 1);
+	}
+}
+
+function recalcItems() {
+	var total = 0;
+	var count = 0;
+	var over = [];
+	var byLine = {};
+	$('#requestItemsBody tr').each(function () {
+		var $tr = $(this);
+		refreshItemRow($tr);
+		var lid = $tr.find('.item-line').val();
+		var amt = parseFloat($tr.find('.item-amount').val()) || 0;
+		if (amt > 0) {
+			total += amt;
+			count += 1;
+		}
+		if (lid) {
+			byLine[lid] = (byLine[lid] || 0) + amt;
+		}
+	});
+	Object.keys(byLine).forEach(function (lid) {
+		var av = lineData[lid];
+		if (!av) return;
+		var remain = parseFloat(av.available) || 0;
+		if (byLine[lid] > remain) {
+			var name = $('#requestItemsBody .item-line').filter(function () {
+				return String($(this).val()) === String(lid);
+			}).first().find('option:selected').text() || ('Line #' + lid);
+			name = String(name).split(' - remaining')[0];
+			over.push(name.trim() + ' needs ' + Number(byLine[lid]).toLocaleString()
+				+ ' but only ' + Number(remain).toLocaleString() + ' RWF remaining');
+		}
+	});
+	$('#kpiItemCount').text(count);
+	$('#kpiItemTotal').text(Number(total).toLocaleString());
+	$('#requested_amount').val(total > 0 ? total : '');
+	if (over.length) {
+		$('#itemsWarnBox').html('<strong>Over budget:</strong> ' + over.join('; ')).show();
+	} else {
+		$('#itemsWarnBox').hide().empty();
+	}
+	refreshChainPreview(total);
+}
+
+function loadLines(done) {
 	var bid = $('#budget_id').val();
-	if (!bid) return;
+	if (!bid) {
+		lineOptionsHtml = '<option value="">— Select budget first —</option>';
+		$('#requestItemsBody .item-line').html(lineOptionsHtml);
+		if (typeof done === 'function') done();
+		return;
+	}
 	syncPeriod();
 	$.getJSON('<?= base_url('budget/get_budget_lines_json/'); ?>' + bid, function (r) {
-		lineData = {};
-		var h = '<option value="">— Select budget line —</option>';
-		var groups = {};
-		var order = [];
-		$.each(r.lines || [], function (i, l) {
-			lineData[l.id] = l.availability || null;
-			var sec = (l.section || l.section_label || 'OTHER').toString();
-			if (!groups[sec]) { groups[sec] = []; order.push(sec); }
-			groups[sec].push(l);
-		});
-		$.each(order, function (i, sec) {
-			h += '<optgroup label="' + $('<div>').text(sec).html() + '">';
-			$.each(groups[sec], function (j, l) {
-				var availNum = l.availability ? Number(l.availability.available) : 0;
-				var avail = ' - remaining ' + availNum.toLocaleString() + ' RWF';
-				h += '<option value="' + l.id + '" data-cat="' + $('<div>').text(l.category).html() + '">'
-					+ $('<div>').text(l.category).html() + avail + '</option>';
+		lineOptionsHtml = buildLineOptionsHtml(r.lines || []);
+		var presets = [];
+		$('#requestItemsBody tr').each(function () {
+			presets.push({
+				budget_line_id: $(this).find('.item-line').val(),
+				description: $(this).find('.item-desc').val(),
+				amount: $(this).find('.item-amount').val()
 			});
-			h += '</optgroup>';
 		});
-		$('#budget_line_id').html(h);
-		if (preselectLine) { $('#budget_line_id').val(preselectLine); preselectLine = 0; }
-		checkAvail();
+		if (!presets.length && existingItems.length) {
+			presets = existingItems.slice();
+			existingItems = [];
+		}
+		$('#requestItemsBody').empty();
+		if (!presets.length) {
+			addItemRow();
+		} else {
+			presets.forEach(function (p) { addItemRow(p); });
+		}
+		recalcItems();
+		if (typeof done === 'function') done();
 	});
-}
-
-function checkAvail() {
-	var lid = $('#budget_line_id').val();
-	var amt = parseFloat($('#line_amount').val()) || 0;
-	$('#requested_amount').val(amt);
-	var cat = $('#budget_line_id option:selected').data('cat');
-	if (cat && !$('#line_description').val()) $('#line_description').val(cat);
-	showAvailability(lid, amt);
-	refreshChainPreview(amt);
 }
 
 function refreshChainPreview(amt) {
 	var $box = $('#chainPreviewBox');
 	if (!amt || amt <= 0) { $box.hide(); return; }
-	$.getJSON('<?= base_url('budget/resolve_approval_chain'); ?>', { amount: amt }, function (r) {
-		$('#chainPreviewLabel').text(r.label || r.chain || '—');
-		$('#chainPreviewSteps').text(r.steps_label || ((r.steps || []).join(' → ')));
-		$box.show();
-	});
+	clearTimeout(chainPreviewTimer);
+	chainPreviewTimer = setTimeout(function () {
+		$.getJSON('<?= base_url('budget/resolve_approval_chain'); ?>', { amount: amt }, function (r) {
+			$('#chainPreviewLabel').text(r.label || r.chain || '—');
+			$('#chainPreviewSteps').text(r.steps_label || ((r.steps || []).join(' → ')));
+			$box.show();
+		});
+	}, 250);
 }
 
-$('#budget_id').on('change', loadLines);
-$('#budget_line_id, #line_amount').on('change input', checkAvail);
+$('#budget_id').on('change', function () { loadLines(); });
+$('#btnAddItem').on('click', function () { addItemRow(); });
+$(document).on('click', '.btn-rm-item', function () {
+	if ($('#requestItemsBody tr').length <= 1) {
+		toastada.error('Keep at least one item.');
+		return;
+	}
+	$(this).closest('tr').remove();
+	recalcItems();
+});
+$(document).on('change', '.item-line', function () {
+	var $tr = $(this).closest('tr');
+	$tr.find('.item-desc').data('auto', 1);
+	recalcItems();
+});
+$(document).on('input', '.item-amount', recalcItems);
+$(document).on('input', '.item-desc', function () {
+	$(this).data('auto', 0);
+});
 loadLines();
 
 $('#docZone').on('click', function () { $('#docInput').click(); });
@@ -364,18 +507,35 @@ function closeDocViewer() {
 $('#crDocViewerClose, #crDocViewerCloseBtn').on('click', closeDocViewer);
 
 function validateSubmit() {
-	if (!$('#budget_line_id').val()) { toastada.error('Select a budget line.'); return false; }
-	if (!$('#line_amount').val() || parseFloat($('#line_amount').val()) <= 0) { toastada.error('Enter amount.'); return false; }
+	var ok = true;
+	var total = 0;
+	var rows = 0;
+	$('#requestItemsBody tr').each(function () {
+		var lid = $(this).find('.item-line').val();
+		var amt = parseFloat($(this).find('.item-amount').val()) || 0;
+		if (!lid || amt <= 0) { ok = false; }
+		if (lid && amt > 0) { total += amt; rows++; }
+	});
+	if (!ok || rows < 1) {
+		toastada.error('Add at least one item with a budget line and amount.');
+		return false;
+	}
+	if ($('#itemsWarnBox').is(':visible')) {
+		toastada.error('One or more items exceed remaining budget.');
+		return false;
+	}
 	var newDocs = ($('#docInput')[0].files && $('#docInput')[0].files.length) || 0;
 	if (newDocs + existingDocCount < 1) {
 		toastada.error('Attach at least one supporting document before submitting.');
 		return false;
 	}
+	$('#requested_amount').val(total);
 	return true;
 }
 
 function postForm(submitNow) {
 	if (submitNow && !validateSubmit()) return;
+	recalcItems();
 	var fd = new FormData(document.getElementById('frmCR'));
 	if (submitNow) fd.append('submit_now', '1');
 	$.ajax({

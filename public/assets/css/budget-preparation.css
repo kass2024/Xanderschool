@@ -417,6 +417,12 @@
 
 .budget-cr-form .cr-flow-step.active { background: #059669; color: #fff; }
 
+.budget-cr-form .cr-items-table th { font-size: .78rem; white-space: nowrap; }
+.budget-cr-form .cr-items-table td { vertical-align: middle; }
+.budget-cr-form .cr-items-table .item-remain { font-weight: 600; }
+.budget-cr-form #itemsKpiStrip { gap: .5rem; }
+.budget-cr-form #itemsKpiStrip .bp-kpi { min-width: 110px; flex: 1; }
+
 
 
 /* Cash request view */

@@ -2107,19 +2107,10 @@ class BudgetCashflow extends Home
 		$db = \Config\Database::connect();
 		$id = (int) $this->request->getPost('id');
 		$submitNow = (bool) $this->request->getPost('submit_now');
-		$lineAmount = (float) $this->request->getPost('line_amount');
-		$amount = (float) ($this->request->getPost('requested_amount') ?: $lineAmount);
 		$budgetId = (int) $this->request->getPost('budget_id');
-		$budgetLineId = (int) $this->request->getPost('budget_line_id');
 
 		if ($budgetId <= 0) {
 			return $this->response->setJSON(['error' => 'Select an approved budget.']);
-		}
-		if ($budgetLineId <= 0) {
-			return $this->response->setJSON(['error' => 'Select a budget line — every request must link to a budget category.']);
-		}
-		if ($lineAmount <= 0) {
-			return $this->response->setJSON(['error' => 'Enter a valid amount.']);
 		}
 
 		$budget = $db->table('budgets')->where('id', $budgetId)->where('branch_id', $c['branchId'])
@@ -2127,19 +2118,93 @@ class BudgetCashflow extends Home
 		if (!$budget) {
 			return $this->response->setJSON(['error' => 'Budget must be APPROVED before raising cash requests.']);
 		}
-		$bLine = $db->table('budget_lines')->where('id', $budgetLineId)->where('budget_id', $budgetId)
-			->where('is_total_row', 0)->get(1)->getRowArray();
-		if (!$bLine) {
-			return $this->response->setJSON(['error' => 'Invalid budget line for this budget.']);
+
+		// Multi-item payload (preferred). Fallback to legacy single-line fields.
+		$lineIds = $this->request->getPost('item_budget_line_id');
+		$lineDescs = $this->request->getPost('item_description');
+		$lineAmounts = $this->request->getPost('item_amount');
+		$items = [];
+		if (is_array($lineIds) && count($lineIds) > 0) {
+			foreach ($lineIds as $i => $lid) {
+				$lid = (int) $lid;
+				$amt = (float) ($lineAmounts[$i] ?? 0);
+				$desc = trim((string) ($lineDescs[$i] ?? ''));
+				if ($lid <= 0 && $amt <= 0 && $desc === '') {
+					continue;
+				}
+				$items[] = [
+					'budget_line_id' => $lid,
+					'amount' => $amt,
+					'description' => $desc,
+				];
+			}
+		} else {
+			$legacyLineId = (int) $this->request->getPost('budget_line_id');
+			$legacyAmount = (float) ($this->request->getPost('line_amount') ?: $this->request->getPost('requested_amount'));
+			$legacyDesc = trim((string) $this->request->getPost('line_description'));
+			if ($legacyLineId > 0 || $legacyAmount > 0) {
+				$items[] = [
+					'budget_line_id' => $legacyLineId,
+					'amount' => $legacyAmount,
+					'description' => $legacyDesc,
+				];
+			}
+		}
+
+		if ($items === []) {
+			return $this->response->setJSON(['error' => 'Add at least one request item with a budget line and amount.']);
 		}
 
 		$availSvc = new BudgetAvailabilityService();
-		$avail = $availSvc->lineAvailability($budgetLineId);
-		if ($submitNow && $avail && $lineAmount > (float) $avail['available']) {
-			return $this->response->setJSON([
-				'error' => 'Amount exceeds available budget on this line (available: '
-					. number_format((float) $avail['available'], 0) . ' RWF).',
-			]);
+		$byLine = [];
+		$total = 0.0;
+		$normalized = [];
+		foreach ($items as $idx => $it) {
+			$lid = (int) ($it['budget_line_id'] ?? 0);
+			$amt = round((float) ($it['amount'] ?? 0), 2);
+			if ($lid <= 0) {
+				return $this->response->setJSON(['error' => 'Item #' . ($idx + 1) . ': select a budget line.']);
+			}
+			if ($amt <= 0) {
+				return $this->response->setJSON(['error' => 'Item #' . ($idx + 1) . ': enter a valid amount.']);
+			}
+			$bLine = $db->table('budget_lines')->where('id', $lid)->where('budget_id', $budgetId)
+				->where('is_total_row', 0)->get(1)->getRowArray();
+			if (!$bLine) {
+				return $this->response->setJSON(['error' => 'Item #' . ($idx + 1) . ': invalid budget line for this budget.']);
+			}
+			$desc = trim((string) ($it['description'] ?? ''));
+			if ($desc === '') {
+				$desc = (string) ($bLine['category'] ?? 'Cash request item');
+			}
+			$normalized[] = [
+				'budget_line_id' => $lid,
+				'description' => $desc,
+				'amount' => $amt,
+				'category' => (string) ($bLine['category'] ?? ''),
+			];
+			$byLine[$lid] = ($byLine[$lid] ?? 0) + $amt;
+			$total += $amt;
+		}
+
+		if ($submitNow) {
+			foreach ($byLine as $lid => $need) {
+				$avail = $availSvc->lineAvailability((int) $lid);
+				$left = $avail ? (float) $avail['available'] : 0.0;
+				if ($need > $left) {
+					$cat = '';
+					foreach ($normalized as $n) {
+						if ((int) $n['budget_line_id'] === (int) $lid) {
+							$cat = $n['category'];
+							break;
+						}
+					}
+					return $this->response->setJSON([
+						'error' => ($cat ?: 'A budget line') . ' exceeds remaining budget (need '
+							. number_format($need, 0) . ' / available ' . number_format($left, 0) . ' RWF).',
+					]);
+				}
+			}
 		}
 
 		$row = [
@@ -2153,8 +2218,8 @@ class BudgetCashflow extends Home
 			'payee_type' => $this->request->getPost('payee_type'),
 			'purpose' => trim((string) $this->request->getPost('purpose')),
 			'currency' => 'RWF',
-			'requested_amount' => $amount,
-			'approval_chain' => CashRequestApprovalPolicy::resolveChain((int) $c['orgId'], $amount)['chain'],
+			'requested_amount' => round($total, 2),
+			'approval_chain' => CashRequestApprovalPolicy::resolveChain((int) $c['orgId'], $total)['chain'],
 			'payment_method' => $this->request->getPost('payment_method'),
 			'urgency' => $this->request->getPost('urgency') ?: 'normal',
 			'internal_notes' => $this->request->getPost('internal_notes'),
@@ -2163,10 +2228,6 @@ class BudgetCashflow extends Home
 		];
 		if ($row['payee_name'] === '' || $row['purpose'] === '') {
 			return $this->response->setJSON(['error' => 'Payee and purpose are required.']);
-		}
-		$lineDesc = trim((string) $this->request->getPost('line_description'));
-		if ($lineDesc === '') {
-			$lineDesc = $bLine['category'] . ' — cash request';
 		}
 
 		$wf = new CashRequestWorkflowService();
@@ -2186,12 +2247,16 @@ class BudgetCashflow extends Home
 		}
 
 		$db->table('cash_request_lines')->where('cash_request_id', $id)->delete();
-		$db->table('cash_request_lines')->insert([
-			'cash_request_id' => $id,
-			'budget_line_id' => $budgetLineId,
-			'description' => $lineDesc,
-			'amount' => $lineAmount,
-		]);
+		$sort = 0;
+		foreach ($normalized as $n) {
+			$db->table('cash_request_lines')->insert([
+				'cash_request_id' => $id,
+				'budget_line_id' => (int) $n['budget_line_id'],
+				'description' => $n['description'],
+				'amount' => $n['amount'],
+				'sort_order' => $sort++,
+			]);
+		}
 
 		$docSvc = new DocumentStorageService();
 		$docType = trim((string) $this->request->getPost('doc_type')) ?: 'invoice';
@@ -2229,9 +2294,15 @@ class BudgetCashflow extends Home
 			if (empty($res['success'])) {
 				return $this->response->setJSON($res);
 			}
-			return $this->response->setJSON(['success' => 'Cash request submitted for approval.', 'id' => $id]);
+			return $this->response->setJSON([
+				'success' => 'Cash request submitted for approval (' . count($normalized) . ' item' . (count($normalized) === 1 ? '' : 's') . ').',
+				'id' => $id,
+			]);
 		}
-		return $this->response->setJSON(['success' => 'Cash request saved as draft.', 'id' => $id]);
+		return $this->response->setJSON([
+			'success' => 'Cash request saved as draft (' . count($normalized) . ' item' . (count($normalized) === 1 ? '' : 's') . ').',
+			'id' => $id,
+		]);
 	}
 
 	public function cash_request_view($id = null)
@@ -2248,7 +2319,13 @@ class BudgetCashflow extends Home
 		$data['title'] = $req['request_no'];
 		$data['page'] = 'budget_cash_requests';
 		$data['request'] = $req;
-		$data['lines'] = $db->table('cash_request_lines')->where('cash_request_id', $id)->get()->getResultArray();
+		$data['lines'] = $db->table('cash_request_lines crl')
+			->select('crl.*, bl.category as budget_category, bl.section_label')
+			->join('budget_lines bl', 'bl.id = crl.budget_line_id', 'left')
+			->where('crl.cash_request_id', $id)
+			->orderBy('crl.sort_order', 'ASC')
+			->orderBy('crl.id', 'ASC')
+			->get()->getResultArray();
 		$data['actions'] = $db->table('cash_request_actions')->where('cash_request_id', $id)->orderBy('id')->get()->getResultArray();
 		$data['payments'] = $db->table('cash_request_payments')->where('cash_request_id', $id)->get()->getResultArray();
 		$data['documents'] = $db->table('cash_request_documents')->where('cash_request_id', $id)->orderBy('id')->get()->getResultArray();
