@@ -19,6 +19,7 @@ use App\Services\Budget\PaymentService;
 use App\Services\Budget\TermBudgetResetService;
 use App\Services\Budget\TermExpensesBudgetImportService;
 use App\Services\Budget\GeminiBudgetAnalysisService;
+use App\Services\SchoolHierarchyService;
 
 class BudgetCashflow extends Home
 {
@@ -207,6 +208,10 @@ class BudgetCashflow extends Home
 		$this->bootBudget();
 		$this->denyPerm('budget.templates.upload');
 		$c = $this->ctx();
+		$hierarchy = new SchoolHierarchyService();
+		if (!$hierarchy->canManageBudgetLineStructure($c['schoolId'])) {
+			return $this->response->setJSON(['error' => 'Only the master school may import or add budget line items. Child schools fill amounts on existing lines only.']);
+		}
 		$budgetId = (int) ($this->request->getPost('budget_id') ?? 0);
 		$svc = new BudgetExcelFillService();
 		$result = $svc->fillBranchBudget((int) $c['branchId'], $budgetId ?: null);
@@ -265,6 +270,10 @@ class BudgetCashflow extends Home
 		$this->bootBudget();
 		$this->denyPerm('budget.templates.upload');
 		$c = $this->ctx();
+		$hierarchy = new SchoolHierarchyService();
+		if (!$hierarchy->canManageBudgetLineStructure($c['schoolId'])) {
+			return $this->response->setJSON(['error' => 'Only the master school may reset or rebuild budget line structure.']);
+		}
 		$confirm = trim((string) $this->request->getPost('confirm'));
 		if ($confirm !== 'RESET') {
 			return $this->response->setJSON(['error' => 'Type RESET to confirm wiping all budget and cash request data for this branch.']);
@@ -592,20 +601,65 @@ class BudgetCashflow extends Home
 			'updated_at' => date('Y-m-d H:i:s'),
 		]);
 		$budgetId = (int) $db->insertID();
-		$import = new BudgetTemplateImportService();
-		foreach ($import->defaultStructure() as $ln) {
-			$db->table('budget_lines')->insert([
-				'budget_id' => $budgetId,
-				'section_label' => $ln['section'],
-				'category' => $ln['normalized_label'],
-				'is_total_row' => $ln['is_total_row'] ? 1 : 0,
-				'is_editable' => $ln['is_editable'] ? 1 : 0,
-				'calculation_mode' => 'term_sum',
-				'sort_order' => $ln['sort_order'],
-			]);
+		$lineCount = $this->seedBudgetLines($db, $budgetId, (int) $c['schoolId']);
+		if ($lineCount === 0) {
+			$db->table('budgets')->where('id', $budgetId)->delete();
+			return $this->response->setJSON(['error' => 'No budget line template from master school. Ask the master school to prepare the annual budget first.']);
 		}
 		$db->transComplete();
 		return $this->response->setJSON(['success' => 'Annual budget workspace ready.', 'budget_id' => $budgetId]);
+	}
+
+	/** Master: default template. Child: copy line structure from master budget (quantities zero). */
+	protected function seedBudgetLines($db, $budgetId, $schoolId)
+	{
+		$hierarchy = new SchoolHierarchyService();
+		if (!$hierarchy->isChildSchool($schoolId)) {
+			$import = new BudgetTemplateImportService();
+			foreach ($import->defaultStructure() as $ln) {
+				$db->table('budget_lines')->insert([
+					'budget_id' => $budgetId,
+					'section_label' => $ln['section'],
+					'category' => $ln['normalized_label'],
+					'is_total_row' => $ln['is_total_row'] ? 1 : 0,
+					'is_editable' => $ln['is_editable'] ? 1 : 0,
+					'calculation_mode' => 'term_sum',
+					'sort_order' => $ln['sort_order'],
+				]);
+			}
+			return count($import->defaultStructure());
+		}
+
+		$masterId = $hierarchy->masterSchoolId($schoolId);
+		if ($masterId < 1) {
+			return 0;
+		}
+		$masterBranch = $db->table('branches')->where('school_id', $masterId)->where('status', 1)
+			->orderBy('id', 'ASC')->get(1)->getRowArray();
+		if (!$masterBranch) {
+			return 0;
+		}
+		$masterBudget = $db->table('budgets')->where('branch_id', (int) $masterBranch['id'])
+			->whereIn('status', ['DRAFT', 'APPROVED', 'RETURNED', 'SUBMITTED'])
+			->orderBy('id', 'DESC')->get(1)->getRowArray();
+		if (!$masterBudget) {
+			return 0;
+		}
+		$masterLines = $db->table('budget_lines')->where('budget_id', (int) $masterBudget['id'])
+			->orderBy('sort_order', 'ASC')->get()->getResultArray();
+		foreach ($masterLines as $ln) {
+			$db->table('budget_lines')->insert([
+				'budget_id' => $budgetId,
+				'section_label' => $ln['section_label'],
+				'category' => $ln['category'],
+				'is_total_row' => (int) ($ln['is_total_row'] ?? 0),
+				'is_editable' => (int) ($ln['is_editable'] ?? 1),
+				'calculation_mode' => $ln['calculation_mode'] ?? 'term_sum',
+				'sort_order' => (int) ($ln['sort_order'] ?? 0),
+				'template_line_id' => $ln['template_line_id'] ?? null,
+			]);
+		}
+		return count($masterLines);
 	}
 
 	protected function ensureAnnualBudgetPeriod(int $orgId, int $branchId, int $staffId): int
@@ -637,19 +691,36 @@ class BudgetCashflow extends Home
 	public function edit_budget($id = null)
 	{
 		$this->denyMenu('budget_prepare');
-		$this->denyPerm('budget.prepare');
 		$c = $this->ctx();
 		$id = (int) $id;
 		$db = \Config\Database::connect();
 		$this->ensureBudgetLineColumns($db);
 		$calc = new BudgetCalculationService();
+		$allowedBranchIds = array_map('intval', array_column(
+			$c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']),
+			'id'
+		));
+		if (!$allowedBranchIds) {
+			$allowedBranchIds = [(int) $c['branchId']];
+		}
 		$budget = $db->table('budgets b')
 			->select('b.*, bp.title as period_title, bp.start_date, bp.end_date')
 			->join('budget_periods bp', 'bp.id = b.budget_period_id', 'left')
-			->where('b.id', $id)->where('b.branch_id', $c['branchId'])->get(1)->getRowArray();
-		if (!$budget || $budget['status'] === 'APPROVED') {
+			->where('b.id', $id)
+			->whereIn('b.branch_id', $allowedBranchIds)
+			->get(1)->getRowArray();
+		if (!$budget) {
 			return redirect()->to(base_url('budget/prepare'));
 		}
+		$status = (string) ($budget['status'] ?? '');
+		$canEdit = BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId']);
+		if (!$canEdit
+			&& !$c['perms']->can($c['staffId'], $c['postId'], 'budget.prepare')
+			&& !$c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_own')
+				&& !$c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_submitted')) {
+			return redirect()->to(base_url('budget/prepare'))->with('error', 'You cannot open this budget.');
+		}
+		$isFinanceAdjust = BudgetWorkflowService::isFinanceAdjustment($status, $c['perms'], $c['staffId'], $c['postId']);
 		$lines = $db->query("
 			SELECT bl.*, btl.line_key
 			FROM budget_lines bl
@@ -668,31 +739,54 @@ class BudgetCashflow extends Home
 				$setup = $decoded;
 			}
 		}
+		$branchRow = $db->table('branches')->where('id', (int) $budget['branch_id'])->get(1)->getRowArray();
 		$data = $this->data;
 		$data['title'] = 'Budget Workspace';
 		$data['page'] = 'budget_prepare';
 		$data['budget'] = $budget;
 		$data['lines'] = $lines;
 		$data['sections'] = $calc->groupLinesBySection($lines);
-		$data['branch_label'] = $c['branch']
-			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
+		$data['branch_label'] = $branchRow
+			? $c['branchCtx']->displaySchoolBranchLabel((int) ($branchRow['school_id'] ?? $c['schoolId']), $branchRow, false)
 			: session('soma_school');
 		$data['setup'] = $setup;
 		$data['units'] = ['Student', 'Meal', 'Trip', 'Litre', 'Month', 'Item', 'Employee', 'Vehicle', 'Other'];
+		$data['budget_branch_fill'] = (new SchoolHierarchyService())->isBudgetBranchFillSchool($c['schoolId']);
+		$data['can_edit'] = $canEdit;
+		$data['is_finance_adjust'] = $isFinanceAdjust;
+		$data['can_submit'] = $canEdit && in_array($status, BudgetWorkflowService::preparerEditableStatuses(), true)
+			&& $c['perms']->can($c['staffId'], $c['postId'], 'budget.submit');
 		$data['content'] = view('pages/budget/edit_budget', $data);
 		return view('main', $data);
+	}
+
+	protected function loadEditableBudgetForSave(array $c, int $budgetId): ?array
+	{
+		$db = \Config\Database::connect();
+		$allowedBranchIds = array_map('intval', array_column(
+			$c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']),
+			'id'
+		));
+		if (!$allowedBranchIds) {
+			$allowedBranchIds = [(int) $c['branchId']];
+		}
+		$budget = $db->table('budgets')->where('id', $budgetId)->whereIn('branch_id', $allowedBranchIds)->get(1)->getRowArray();
+		return $budget ?: null;
 	}
 
 	public function save_budget_setup()
 	{
 		$this->bootBudget();
-		$this->denyPerm('budget.edit_own');
 		$c = $this->ctx();
 		$budgetId = (int) $this->request->getPost('budget_id');
 		$db = \Config\Database::connect();
-		$budget = $db->table('budgets')->where('id', $budgetId)->where('branch_id', $c['branchId'])->get(1)->getRowArray();
-		if (!$budget || !in_array($budget['status'], ['DRAFT', 'RETURNED'], true)) {
-			return $this->response->setJSON(['error' => 'Budget is not editable.']);
+		$budget = $this->loadEditableBudgetForSave($c, $budgetId);
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Budget not found.']);
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if (!BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId'])) {
+			return $this->response->setJSON(['error' => 'Budget is not editable. Only Director of Finance can edit submitted or approved budgets.']);
 		}
 		$setup = [
 			'academic_year' => trim((string) $this->request->getPost('academic_year')),
@@ -713,20 +807,35 @@ class BudgetCashflow extends Home
 			$update['title'] = $title;
 		}
 		$db->table('budgets')->where('id', $budgetId)->update($update);
+		if (BudgetWorkflowService::isFinanceAdjustment($status, $c['perms'], $c['staffId'], $c['postId'])) {
+			(new FinancialAuditService())->log(
+				'budget',
+				$budgetId,
+				'finance_adjust_setup',
+				$c['staffId'],
+				['status' => $status, 'title' => $budget['title'] ?? ''],
+				['status' => $status, 'title' => $title !== '' ? $title : ($budget['title'] ?? '')],
+				$budget['organization_id'] ?? null,
+				$budget['branch_id'] ?? null
+			);
+		}
 		return $this->response->setJSON(['success' => 'Setup saved.', 'setup' => $setup]);
 	}
 
 	public function save_budget_lines()
 	{
 		$this->bootBudget();
-		$this->denyPerm('budget.edit_own');
 		$c = $this->ctx();
 		$budgetId = (int) $this->request->getPost('budget_id');
 		$db = \Config\Database::connect();
 		$this->ensureBudgetLineColumns($db);
-		$budget = $db->table('budgets')->where('id', $budgetId)->get(1)->getRowArray();
-		if (!$budget || $budget['status'] !== 'DRAFT' && $budget['status'] !== 'RETURNED') {
-			return $this->response->setJSON(['error' => 'Budget is not editable.']);
+		$budget = $this->loadEditableBudgetForSave($c, $budgetId);
+		if (!$budget) {
+			return $this->response->setJSON(['error' => 'Budget not found.']);
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if (!BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId'])) {
+			return $this->response->setJSON(['error' => 'Budget is not editable. Only Director of Finance can edit submitted or approved budgets.']);
 		}
 		$lines = $this->request->getPost('lines') ?: [];
 		$calc = new BudgetCalculationService();
@@ -760,7 +869,27 @@ class BudgetCashflow extends Home
 			}
 		}
 		$totals = $calc->recalculateBudgetTotals($budgetId);
-		return $this->response->setJSON(['success' => 'Budget saved.', 'totals' => $totals]);
+		$db->table('budgets')->where('id', $budgetId)->update([
+			'updated_at' => date('Y-m-d H:i:s'),
+			'updated_by' => $c['staffId'],
+		]);
+		$isAdjust = BudgetWorkflowService::isFinanceAdjustment($status, $c['perms'], $c['staffId'], $c['postId']);
+		if ($isAdjust) {
+			(new FinancialAuditService())->log(
+				'budget',
+				$budgetId,
+				'finance_adjust_lines',
+				$c['staffId'],
+				['status' => $status],
+				['status' => $status, 'totals' => $totals],
+				$budget['organization_id'] ?? null,
+				$budget['branch_id'] ?? null
+			);
+		}
+		$msg = $isAdjust
+			? 'Budget adjusted by Director of Finance. Approval status unchanged — verification chain still applies for new submissions.'
+			: 'Budget saved.';
+		return $this->response->setJSON(['success' => $msg, 'totals' => $totals]);
 	}
 
 	public function submit_budget()

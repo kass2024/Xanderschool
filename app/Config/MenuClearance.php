@@ -459,8 +459,8 @@ class MenuClearance
 			$keys = array_merge($keys, self::feeMenuKeys());
 		}
 
-		// Budget & Cash Flow finance roles
-		if (in_array($postId, [1, 8, 19, 20, 21, 22, 23], true)) {
+		// Budget & Cash Flow finance roles (incl. Director of Finance)
+		if (in_array($postId, [1, 8, 19, 20, 21, 22, 23, 24], true)) {
 			$keys = array_merge($keys, self::budgetMenuKeys());
 			$keys[] = 'finance';
 		}

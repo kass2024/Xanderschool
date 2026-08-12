@@ -77,6 +77,49 @@ class BudgetWorkflowService
 		return $out;
 	}
 
+	/** Statuses where preparers may edit (before / after return). */
+	public static function preparerEditableStatuses(): array
+	{
+		return ['DRAFT', 'RETURNED'];
+	}
+
+	/** Statuses already in verification / approved — editable only via budget.edit_submitted (Director of Finance). */
+	public static function financeAdjustableStatuses(): array
+	{
+		return [
+			'SUBMITTED',
+			'PROCUREMENT_REVIEW',
+			'BUDGET_MANAGER_REVIEW',
+			'DEPUTY_DIRECTOR_REVIEW',
+			'APPROVED',
+			'REJECTED',
+		];
+	}
+
+	/**
+	 * Whether the actor may open the budget workspace for editing amounts.
+	 * Preparers: DRAFT / RETURNED. Director of Finance (budget.edit_submitted): submitted & approved.
+	 */
+	public static function canEditBudgetAmounts(string $status, BudgetPermissionService $perms, int $staffId, int $postId): bool
+	{
+		if (in_array($status, self::preparerEditableStatuses(), true)) {
+			return $perms->can($staffId, $postId, 'budget.prepare')
+				|| $perms->can($staffId, $postId, 'budget.edit_own')
+				|| $perms->can($staffId, $postId, 'budget.edit_submitted');
+		}
+		if (in_array($status, self::financeAdjustableStatuses(), true)) {
+			return $perms->can($staffId, $postId, 'budget.edit_submitted');
+		}
+		return false;
+	}
+
+	/** True when save is a privileged finance adjustment (not a draft prepare). */
+	public static function isFinanceAdjustment(string $status, BudgetPermissionService $perms, int $staffId, int $postId): bool
+	{
+		return in_array($status, self::financeAdjustableStatuses(), true)
+			&& $perms->can($staffId, $postId, 'budget.edit_submitted');
+	}
+
 	public function transition($budgetId, $action, $actorId, $postId, $comment = null, ?array $opts = null)
 	{
 		$db = \Config\Database::connect();

@@ -24,6 +24,7 @@ class BudgetPermissions
 		'budget.reject',
 		'budget.return',
 		'budget.adjust',
+		'budget.edit_submitted',
 		'budget.transfer',
 		'budget.view_all_branches',
 		'budget.view_reports',
@@ -68,6 +69,7 @@ class BudgetPermissions
 			'budget.reject' => 'Reject budgets',
 			'budget.return' => 'Return budgets',
 			'budget.adjust' => 'Budget adjustments',
+			'budget.edit_submitted' => 'Edit submitted/approved budgets (Director of Finance)',
 			'budget.transfer' => 'Budget transfers',
 			'budget.view_all_branches' => 'View all branches',
 			'budget.view_reports' => 'View budget reports',
@@ -122,6 +124,14 @@ class BudgetPermissions
 			21 => ['budget.final_approve', 'budget.view_all_branches', 'cash_request.final_approve', 'cash_request.reject', 'cash_request.return', 'budget.view_reports', 'budget.export', 'cash_request.view_audit', 'cash_request.override_budget', 'budget.return', 'budget.reject'],
 			22 => ['cash_request.process_payment', 'cash_request.manage_documents', 'budget.view_reports'],
 			23 => ['cash_request.view_audit', 'budget.view_all_branches', 'budget.view_reports', 'budget.export'],
+			// Director of Finance — may edit already-submitted / approved school budgets
+			24 => [
+				'budget.edit_submitted', 'budget.adjust', 'budget.prepare', 'budget.edit_own',
+				'budget.view_all_branches', 'budget.view_reports', 'budget.export',
+				'budget.final_approve', 'budget.return', 'budget.reject',
+				'cash_request.final_approve', 'cash_request.reject', 'cash_request.return',
+				'cash_request.view_audit', 'cash_request.override_budget',
+			],
 		];
 		return array_values(array_unique(array_merge($map[$postId] ?? [], $dynamic[$postId] ?? [])));
 	}

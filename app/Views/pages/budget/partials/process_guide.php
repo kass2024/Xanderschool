@@ -26,7 +26,7 @@ $ctx = $ctx ?? 'full'; // full | prep | execution
 		<div class="bp-phase-num">2</div>
 		<div class="bp-phase-body">
 			<h6>Budget approval chain (per school)</h6>
-			<p class="small text-muted mb-0">Each school prepares its own annual budget. Thin approval chain: <em>Submit</em> → <em>Procurement</em> → <em>Budget Manager</em> → <em>Deputy Director of Finance</em> (final). Only that school’s <strong>APPROVED</strong> budget can be spent against.</p>
+			<p class="small text-muted mb-0">Master school defines the shared budget line list; each child school fills its own term amounts. After <em>Submit</em>, every budget must be verified: <em>Procurement</em> → <em>Budget Manager</em> → <em>Deputy Director of Finance</em> (final). Only <strong>APPROVED</strong> budgets can be spent against. <strong>Director of Finance</strong> may edit line amounts on already-submitted or approved budgets without skipping that chain for new submissions.</p>
 		</div>
 	</div>
 	<div class="bp-phase">
@@ -55,6 +55,10 @@ $ctx = $ctx ?? 'full'; // full | prep | execution
 		<div class="col-md-6 mb-2">
 			<span class="bp-role-badge finance-dir"><i class="fa fa-stamp"></i> Deputy Director of Finance</span>
 			Final approver for the annual budget and for high-value cash requests; authorizes the accountant to pay after budget availability is confirmed.
+		</div>
+		<div class="col-md-6 mb-2">
+			<span class="bp-role-badge finance-dir"><i class="fa fa-edit"></i> Director of Finance</span>
+			May edit amounts on submitted or approved school budgets (privileged adjust). Does not replace the verification chain for newly submitted budgets.
 		</div>
 	</div>
 </div>

@@ -42,6 +42,9 @@
 				<td class="text-success"><?= number_format((float)($b['total_income'] ?? 0), 0); ?></td>
 				<td class="text-danger"><?= number_format((float)($b['total_expenses'] ?? 0), 0); ?></td>
 				<td class="text-right">
+					<?php if (function_exists('budget_permission_allowed') && budget_permission_allowed('budget.edit_submitted')) { ?>
+					<a href="<?= base_url('budget/edit_budget/' . (int) $b['id']); ?>" class="btn btn-sm btn-warning mb-1"><i class="fa fa-edit"></i> Edit</a>
+					<?php } ?>
 					<?php if (empty($actions)) { ?>
 					<small class="text-muted">Waiting for another role</small>
 					<?php } else {

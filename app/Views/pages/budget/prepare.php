@@ -48,14 +48,22 @@
 			<span class="badge badge-<?= $statusClass; ?>"><?= esc($b['status']); ?></span>
 		</div>
 		<div class="text-right">
-			<?php if (in_array($b['status'], ['DRAFT','RETURNED'], true)) { ?>
+			<?php
+			$canFinanceAdjust = function_exists('budget_permission_allowed') && budget_permission_allowed('budget.edit_submitted');
+			$isPreparerEdit = in_array($b['status'], ['DRAFT', 'RETURNED'], true);
+			$isSubmittedPipeline = in_array($b['status'], ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'APPROVED', 'REJECTED'], true);
+			?>
+			<?php if ($isPreparerEdit) { ?>
 			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-primary mb-1"><i class="fa fa-edit"></i> Open budget</a>
-			<?php } elseif ($b['status'] === 'APPROVED') { ?>
+			<?php } elseif ($canFinanceAdjust && $isSubmittedPipeline) { ?>
+			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-warning mb-1" title="Director of Finance — edit submitted / approved budget"><i class="fa fa-edit"></i> Edit</a>
+			<?php } ?>
+			<?php if ($b['status'] === 'APPROVED') { ?>
 			<a href="<?= base_url('budget/cash_request_form'); ?>" class="btn btn-sm btn-success mb-1"><i class="fa fa-money-bill"></i> New request</a>
-			<?php } elseif (!in_array($b['status'], ['APPROVED'], true)) { ?>
+			<?php } elseif (!$isPreparerEdit && $b['status'] !== 'APPROVED') { ?>
 			<a href="<?= base_url('budget/prepare?tab=review'); ?>" class="btn btn-sm btn-outline-info mb-1"><i class="fa fa-tasks"></i> In approval</a>
 			<?php } ?>
-			<?php if (function_exists('budget_permission_allowed') && (budget_permission_allowed('budget.prepare') || budget_permission_allowed('budget.edit_own') || budget_permission_allowed('budget.final_approve'))) { ?>
+			<?php if (function_exists('budget_permission_allowed') && (budget_permission_allowed('budget.prepare') || budget_permission_allowed('budget.edit_own') || budget_permission_allowed('budget.final_approve') || budget_permission_allowed('budget.edit_submitted'))) { ?>
 			<button type="button" class="btn btn-sm btn-outline-danger mb-1 btn-del-budget" data-id="<?= (int)$b['id']; ?>" data-title="<?= esc($b['title']); ?>"><i class="fa fa-trash"></i> Delete</button>
 			<?php } ?>
 		</div>

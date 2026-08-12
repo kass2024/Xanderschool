@@ -87,6 +87,7 @@ class BudgetSchemaModel extends Model
 			21 => 'Deputy Director of Finance',
 			22 => 'Finance Officer',
 			23 => 'Internal Auditor',
+			24 => 'Director of Finance',
 		];
 		foreach ($newPosts as $id => $title) {
 			$row = $db->table('posts')->where('id', $id)->get(1)->getRowArray();
@@ -110,7 +111,7 @@ class BudgetSchemaModel extends Model
 
 	private function seedPostPermissions($db)
 	{
-		for ($pid = 1; $pid <= 23; $pid++) {
+		for ($pid = 1; $pid <= 24; $pid++) {
 			foreach (\Config\BudgetPermissions::defaultForPost($pid) as $perm) {
 				if ($db->table('post_budget_permissions')->where('post_id', $pid)->where('perm_key', $perm)->countAllResults()) {
 					continue;
