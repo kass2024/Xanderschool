@@ -28,7 +28,7 @@ class GeminiBudgetAnalysisService
 	public function analyzeDashboard(array $context): ?array
 	{
 		if (!$this->isConfigured()) {
-			$this->lastError = 'Gemini API key not configured.';
+			$this->lastError = 'AI service is not configured.';
 			return null;
 		}
 		$prompt = $this->buildPrompt($context);
@@ -138,11 +138,11 @@ class GeminiBudgetAnalysisService
 		$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		curl_close($ch);
 		if ($raw === false || $code >= 400) {
-			throw new \RuntimeException('Gemini HTTP ' . $code);
+			throw new \RuntimeException('AI service HTTP ' . $code);
 		}
 		$data = json_decode($raw, true);
 		if (!is_array($data)) {
-			throw new \RuntimeException('Invalid Gemini response');
+			throw new \RuntimeException('Invalid AI service response');
 		}
 		return $data;
 	}

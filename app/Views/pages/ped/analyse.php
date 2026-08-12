@@ -101,7 +101,7 @@ include __DIR__ . '/_nav.php';
 
 <div class="aiplan-wrap">
 	<?php if (empty($gemini_ready)): ?>
-		<div class="alert alert-warning">Gemini API key is not configured (<code>GOOGLE_AI_API_KEY</code>).</div>
+		<div class="alert alert-warning">AI service is not configured on this server.</div>
 	<?php endif; ?>
 
 	<div class="aiplan-card">
@@ -162,7 +162,7 @@ include __DIR__ . '/_nav.php';
 			</div>
 		</div>
 		<div id="aiplanJobBox" class="aiplan-job-list" style="display:none;"></div>
-		<p class="aiplan-status mt-2 mb-0" id="aiplanStatus">If analysis was already done, it loads from DB without calling Gemini.</p>
+		<p class="aiplan-status mt-2 mb-0" id="aiplanStatus">If analysis was already done, it loads from DB without calling AI.</p>
 
 		<div class="aiplan-progress" id="aiplanProgress" aria-live="polite">
 			<div class="aiplan-progress-head">

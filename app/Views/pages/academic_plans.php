@@ -1,6 +1,6 @@
 <?php
 /**
- * Academic AI Plans — Scheme of Work + Session Plan (TVET) / Lesson Plan (REB)
+ * Pedagogical Documents — Scheme of Work + Session Plan (TVET) / Lesson Plan (REB)
  * @var array $classes
  * @var array $pedagogical_docs
  * @var array $saved_plans
@@ -53,16 +53,16 @@ $yearTitle = $academic_year_title ?? '';
 
 <div class="aiplan-wrap">
 	<div class="aiplan-hero">
-		<h3><i class="fa fa-magic"></i> Academic AI Plans</h3>
+		<h3><i class="fa fa-magic"></i> Pedagogical Documents</h3>
 		<p>
-			Gemini analyzes uploaded <b>curriculum</b> + <b>chronogram</b> (any Word/PDF layout), matches modules to your DB levels &amp; teachers,
-			then generates <b>Scheme of Work</b> and <b>Session Plan</b> (TVET/RTB) or <b>Lesson Plan</b> (REB).
+			AI analyzes uploaded <b>curriculum</b> + <b>chronogram</b> once (smart chunked for large files),
+			saves the result in the <b>database cache</b>, then you generate <b>Scheme of Work</b> / Session or Lesson plans.
 			Year: <b><?= esc($yearTitle); ?></b>
 		</p>
 	</div>
 
 	<?php if (empty($gemini_ready)): ?>
-		<div class="alert alert-warning">Gemini API key is not configured on this server (<code>GOOGLE_AI_API_KEY</code>).</div>
+		<div class="alert alert-warning">AI service is not configured on this server.</div>
 	<?php endif; ?>
 
 	<div class="aiplan-card">
@@ -77,27 +77,31 @@ $yearTitle = $academic_year_title ?? '';
 						$prog = ((int)($c['faculty_type'] ?? 1) === 2) ? 'REB' : 'TVET';
 						$label = trim(($c['level_name'] ?? '') . ' ' . ($c['dept_code'] ?? '') . ' ' . ($c['title'] ?? ''));
 						$flags = ($docs['curriculum'] ? 'Curriculum✓' : 'Curriculum✗') . ' · ' . ($docs['chronogram'] ? 'Chronogram✓' : 'Chronogram✗');
+						$cache = $analysis_cache[$cid] ?? null;
+						$cacheFlag = $cache ? (' · Cached ' . (int)($cache['module_count'] ?? 0) . ' modules') : '';
 						?>
 						<option value="<?= $cid; ?>"
 								data-prog="<?= esc($prog, 'attr'); ?>"
 								data-has-cur="<?= $docs['curriculum'] ? '1' : '0'; ?>"
-								data-has-chr="<?= $docs['chronogram'] ? '1' : '0'; ?>">
-							<?= esc($label); ?> (<?= $prog; ?>) — <?= $flags; ?>
+								data-has-chr="<?= $docs['chronogram'] ? '1' : '0'; ?>"
+								data-has-cache="<?= $cache ? '1' : '0'; ?>"
+								data-cache-modules="<?= (int)($cache['module_count'] ?? 0); ?>">
+							<?= esc($label); ?> (<?= $prog; ?>) — <?= $flags; ?><?= esc($cacheFlag); ?>
 						</option>
 					<?php endforeach; ?>
 				</select>
 			</div>
 			<div class="col-md-4">
 				<button type="button" class="btn btn-primary btn-block" id="btnAnalyzeCurriculum" <?= empty($gemini_ready) ? 'disabled' : ''; ?>>
-					<i class="fa fa-search"></i> Analyze curriculum with AI
+					<i class="fa fa-database"></i> Load analysis (use DB cache)
 				</button>
 				<button type="button" class="btn btn-outline-secondary btn-sm btn-block mt-1" id="btnForceAnalyze" <?= empty($gemini_ready) ? 'disabled' : ''; ?>>
-					Re-analyze (ignore cache)
+					Re-analyze with AI (ignore cache)
 				</button>
 			</div>
 		</div>
-		<p class="aiplan-status mt-2 mb-0" id="aiplanStatus">Upload curriculum &amp; chronogram under School Settings → Pedagogical documents, then analyze.</p>
-		<p class="aiplan-busy mt-2" id="aiplanBusy"><i class="fa fa-spinner fa-spin"></i> Gemini is working — large PDFs can take up to 2 minutes…</p>
+		<p class="aiplan-status mt-2 mb-0" id="aiplanStatus">Select a class — cached analysis loads from DB without calling AI. Use Re-analyze only when curriculum/chronogram changed.</p>
+		<p class="aiplan-busy mt-2" id="aiplanBusy"><i class="fa fa-spinner fa-spin"></i> Smart analyser running — large curricula are processed in chunks (may take a few minutes)…</p>
 	</div>
 
 	<div class="aiplan-card" id="aiplanResultCard" style="display:none;">
@@ -211,14 +215,27 @@ $yearTitle = $academic_year_title ?? '';
 			return;
 		}
 		busy(true);
-		status(force ? 'Re-analyzing with Gemini…' : 'Analyzing curriculum & chronogram…');
+		if (force) {
+			status('Re-analyzing with AI (smart chunked for large curricula)…');
+		} else if ($opt.data('has-cache') == '1' || $opt.data('has-cache') == 1) {
+			status('Loading analysis from database cache…');
+		} else {
+			status('No cache yet — running smart AI analysis once, then saving to DB…');
+		}
 		$.post('<?= base_url('ai_analyze_curriculum'); ?>', { class_id: cid, force: force ? 1 : 0 }, function (res) {
 			busy(false);
 			if (res && res.error) { status(res.error, true); return; }
 			analysis = res.analysis || null;
 			selectedModule = null;
 			selectedTopic = null;
-			status((res.cached ? 'Loaded cached analysis. ' : 'Fresh AI analysis ready. ') + ((analysis.modules || []).length) + ' module(s).');
+			var n = ((analysis && analysis.modules) || []).length;
+			if (res.cached) {
+				status('Loaded from DB cache — ' + n + ' module(s). No AI call.');
+			} else {
+				status('Fresh AI analysis saved to DB — ' + n + ' module(s). Next time will use cache.');
+			}
+			$opt.attr('data-has-cache', '1').data('has-cache', 1);
+			$opt.attr('data-cache-modules', n).data('cache-modules', n);
 			renderModules();
 			$('#aiplanSessionCard').hide();
 		}, 'json').fail(function (xhr) {
@@ -232,7 +249,7 @@ $yearTitle = $academic_year_title ?? '';
 		if (!cid || !mod) return;
 		selectedModule = mod;
 		busy(true);
-		status('Generating Scheme of Work with Gemini…');
+		status('Generating Scheme of Work with AI…');
 		$.post('<?= base_url('ai_generate_scheme_of_work'); ?>', {
 			class_id: cid,
 			module: JSON.stringify(mod)
@@ -288,12 +305,28 @@ $yearTitle = $academic_year_title ?? '';
 		});
 	}
 
+	$('#aiplanClass').on('change', function () {
+		analysis = null;
+		selectedModule = null;
+		$('#aiplanResultCard').hide();
+		var $opt = $('#aiplanClass option:selected');
+		if (!$opt.val()) return;
+		if ($opt.data('has-cache') == '1' || $opt.data('has-cache') == 1) {
+			analyze(false);
+		} else {
+			status('No cached analysis for this class yet. Click “Load analysis” to run AI once and save to DB.');
+		}
+	});
+
 	$('#btnAnalyzeCurriculum').on('click', function () { analyze(false); });
-	$('#btnForceAnalyze').on('click', function () { analyze(true); });
+	$('#btnForceAnalyze').on('click', function () {
+		if (!confirm('Re-run AI on the full curriculum? This ignores the DB cache and may take several minutes for large files.')) return;
+		analyze(true);
+	});
 	$('#btnGenSession').on('click', function () {
 		if (!lastSchemeId || !selectedTopic) return;
 		busy(true);
-		status('Generating plan with Gemini…');
+		status('Generating plan with AI…');
 		$.post('<?= base_url('ai_generate_session_plan'); ?>', {
 			class_id: currentClassId(),
 			scheme_id: lastSchemeId,

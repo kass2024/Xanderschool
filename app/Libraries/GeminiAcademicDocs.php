@@ -2200,7 +2200,7 @@ PROMPT
 
 	/**
 	 * Generate Scheme of Work HTML + structured JSON.
-	 * Default: build from cached curriculum/chronogram (no Gemini credits).
+	 * Default: build from cached curriculum/chronogram (no AI credits).
 	 * Optional $useAi enriches activities/resources when the API is available.
 	 *
 	 * @return array{html:string,json:array,title:string,from_ai:bool}|null
@@ -3151,13 +3151,13 @@ PROMPT;
 	{
 		$this->lastError = '';
 		if (!$this->isConfigured()) {
-			$this->lastError = 'Gemini API key not configured (GOOGLE_AI_API_KEY)';
+			$this->lastError = 'AI service is not configured';
 			return null;
 		}
 		$prompt = $this->safeUtf8($prompt);
 		$parts = array_merge([['text' => $prompt]], $extraParts);
 		if ($parts === []) {
-			$this->lastError = 'Gemini request has no content parts';
+			$this->lastError = 'AI request has no content parts';
 			return null;
 		}
 		$genConfig = [
@@ -3227,7 +3227,7 @@ PROMPT;
 				}
 			}
 		}
-		$this->lastError = $lastErr ?: 'Gemini generation failed';
+		$this->lastError = $lastErr ?: 'AI generation failed';
 		return null;
 	}
 
@@ -3243,11 +3243,11 @@ PROMPT;
 		}
 		$body = json_encode($payload, $flags);
 		if ($body === false || $body === '' || $body === 'null') {
-			throw new \RuntimeException('Failed to encode Gemini payload: ' . json_last_error_msg());
+			throw new \RuntimeException('Failed to encode AI payload: ' . json_last_error_msg());
 		}
 		// Guard: empty contents would trigger Google's "contents is not specified"
 		if (strpos($body, '"contents"') === false) {
-			throw new \RuntimeException('Gemini payload missing contents after JSON encode');
+			throw new \RuntimeException('AI payload missing contents after JSON encode');
 		}
 
 		$ch = curl_init($url);
@@ -3275,7 +3275,7 @@ PROMPT;
 		}
 		$data = json_decode($raw, true);
 		if (!is_array($data)) {
-			throw new \RuntimeException('Invalid JSON from Gemini');
+			throw new \RuntimeException('Invalid JSON from AI service');
 		}
 		if (!empty($data['error']['message'])) {
 			throw new \RuntimeException((string) $data['error']['message']);

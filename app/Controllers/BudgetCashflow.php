@@ -167,8 +167,10 @@ class BudgetCashflow extends Home
 		$data['branch_label'] = $c['branch']
 			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
 			: session('soma_school');
-		$data['gemini_enabled'] = (new GeminiBudgetAnalysisService())->isConfigured();
-		$data['gemini_auto'] = true;
+		$data['ai_enabled'] = (new GeminiBudgetAnalysisService())->isConfigured();
+		$data['ai_auto'] = true;
+		$data['gemini_enabled'] = $data['ai_enabled']; // legacy alias
+		$data['gemini_auto'] = $data['ai_auto'];
 
 		if ($c['isCentral']) {
 			$data['branch_stats'] = [];
@@ -328,7 +330,7 @@ class BudgetCashflow extends Home
 
 		$gemini = new GeminiBudgetAnalysisService();
 		if (!$gemini->isConfigured()) {
-			return $this->response->setJSON(['error' => 'AI analysis unavailable — Gemini API key not set.']);
+			return $this->response->setJSON(['error' => 'AI analysis unavailable — service not configured.']);
 		}
 		$analysis = $gemini->analyzeDashboard($ctx);
 		if (!$analysis) {
@@ -337,7 +339,7 @@ class BudgetCashflow extends Home
 		return $this->response->setJSON(['success' => true, 'analysis' => $analysis]);
 	}
 
-	/** Short role context for Gemini follow-up tone. */
+	/** Short role context for AI follow-up tone. */
 	protected function dashboardAiRoleHint($postId)
 	{
 		$map = [

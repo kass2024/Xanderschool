@@ -32,11 +32,11 @@
 	<p class="bp-meta mb-0"><?= esc($branch_label ?? 'Your school'); ?> — budget vs used (mirrors Excel SUMMARY sheet).</p>
 </div>
 
-<?php if (!empty($gemini_enabled)) { ?>
+<?php if (!empty($ai_enabled) || !empty($gemini_enabled)) { ?>
 <div class="bd-ai-card mb-4" id="aiPanel">
 	<div class="bd-ai-head">
 		<div>
-			<strong><i class="fa fa-robot text-info"></i> Gemini smart follow-up</strong>
+			<strong><i class="fa fa-robot text-info"></i> Smart follow-up</strong>
 			<small class="text-muted d-block">Auto analysis of drafts, approvals, spending, and cash requests</small>
 		</div>
 		<button type="button" class="btn btn-sm btn-outline-info" id="btnRunAi"><i class="fa fa-sync"></i> Refresh</button>
@@ -205,7 +205,7 @@
 	</div>
 </div>
 
-<?php if (!empty($gemini_enabled)) { ?>
+<?php if (!empty($ai_enabled) || !empty($gemini_enabled)) { ?>
 <script>
 (function(){
 	function esc(s){
@@ -254,7 +254,7 @@
 	}
 	var btn = document.getElementById('btnRunAi');
 	if (btn) btn.addEventListener('click', runAi);
-	<?php if (!empty($gemini_auto)) { ?>runAi();<?php } ?>
+	<?php if (!empty($ai_auto) || !empty($gemini_auto)) { ?>runAi();<?php } ?>
 })();
 </script>
 <?php } ?>

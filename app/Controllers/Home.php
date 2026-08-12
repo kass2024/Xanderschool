@@ -859,7 +859,7 @@ public function testEmail()
 			);
 			$anyGemini = false;
 			foreach ($proposals as $p) {
-				if (($p['source'] ?? '') === 'gemini') {
+				if (in_array(($p['source'] ?? ''), ['ai', 'gemini'], true)) {
 					$anyGemini = true;
 					break;
 				}
@@ -881,7 +881,7 @@ public function testEmail()
 					'decorate' => $analysis['decorate'],
 					'keepout_count' => count($analysis['keepouts']),
 				],
-				"source" => $anyGemini ? 'gemini' : 'fallback',
+				"source" => $anyGemini ? 'ai' : 'fallback',
 				"regenerated" => $regenerate,
 			]);
 		} catch (\Throwable $e) {
@@ -2152,7 +2152,8 @@ public function testEmail()
 		}));
 
 		$ai = new GeminiAcademicDocs();
-		$data['gemini_ready'] = $ai->isConfigured();
+		$data['ai_ready'] = $ai->isConfigured();
+		$data['gemini_ready'] = $data['ai_ready']; // legacy alias for views
 
 		$cacheMdl = new AcademicAiAnalysisModel();
 		$cacheRows = $yearId > 0
@@ -2183,7 +2184,7 @@ public function testEmail()
 		return view('main', $data);
 	}
 
-	/** Build DB context for Gemini matching. */
+	/** Build DB context for AI document matching. */
 	private function buildAcademicAiContext(int $schoolId, int $classId, int $yearId): array
 	{
 		$school = (new SchoolModel())->select('id,name,acronym,address,phone,email,website,slogan,head_master')
@@ -2637,7 +2638,7 @@ public function testEmail()
 		$cacheMdl = new AcademicAiAnalysisModel();
 		$cached = $cacheMdl->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->first();
 
-		// Serve DB cache whenever files unchanged AND extract is complete — do NOT re-call Gemini
+		// Serve DB cache whenever files unchanged AND extract is complete — do NOT re-call AI
 		if (!$force && $cached && !empty($cached['analysis_json'])) {
 			$decoded = json_decode($cached['analysis_json'], true);
 			$hashOk = empty($cached['source_hash']) || hash_equals((string) $cached['source_hash'], $sourceHash);
@@ -2684,8 +2685,8 @@ public function testEmail()
 
 		$ai = new GeminiAcademicDocs();
 		if (!$ai->isConfigured()) {
-			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Gemini API key missing', ['status' => 'error']);
-			return ['error' => 'Gemini API key missing on server'];
+			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'AI service is not configured', ['status' => 'error']);
+			return ['error' => 'AI service is not configured on server'];
 		}
 
 		// Resume LO/IC from DB + in-progress snapshot (survives proxy timeout)
@@ -3099,7 +3100,7 @@ public function testEmail()
 		return $this->response->setJSON([
 			'success' => !empty($result['from_ai'])
 				? 'Scheme of Work generated (cache + light AI enrichment)'
-				: 'Scheme of Work built from curriculum cache (no Gemini credits used)',
+				: 'Scheme of Work built from curriculum cache (no AI credits used)',
 			'from_cache' => false,
 			'from_ai' => !empty($result['from_ai']),
 			'plan_id' => $id,

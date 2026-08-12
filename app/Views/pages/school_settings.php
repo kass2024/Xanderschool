@@ -1137,6 +1137,25 @@
 			</div>
 		</div>
 
+		<div class="card ss-acc-item" id="student-required-materials">
+			<div id="headingStudentMaterials" class="b-radius-0 card-header">
+				<button type="button" data-toggle="collapse" data-target="#collapseStudentMaterials" aria-expanded="false"
+						aria-controls="collapseStudentMaterials" class="text-left m-0 p-0 btn btn-link btn-block">
+					<h5 class="m-0 p-0"><span class="ss-acc-ico"><i class="fa fa-clipboard-list"></i></span>Student required materials</h5><i class="fa fa-chevron-down ss-acc-chevron"></i>
+				</button>
+			</div>
+			<div id="collapseStudentMaterials" data-parent="#accordion" class="collapse">
+				<div class="card-body">
+					<?= view('pages/partials/student_required_materials_settings', [
+						'required_materials' => $required_materials ?? [],
+						'classes' => $classes ?? [],
+						'academic_year_id' => $academic_year_id ?? 0,
+						'years' => $years ?? [],
+					]); ?>
+				</div>
+			</div>
+		</div>
+
 		<div class="card ss-acc-item" id="staff-attendance-settings">
 			<div id="headingStaffAttendance" class="b-radius-0 card-header">
 				<button type="button" data-toggle="collapse" data-target="#collapseStaffAttendance" aria-expanded="false"
@@ -1151,7 +1170,33 @@
 			</div>
 		</div>
 
-		
+		<div class="card ss-acc-item" id="timetable-settings">
+			<div id="headingTimetable" class="b-radius-0 card-header">
+				<button type="button" data-toggle="collapse" data-target="#collapseTimetable" aria-expanded="false"
+						aria-controls="collapseTimetable" class="text-left m-0 p-0 btn btn-link btn-block">
+					<h5 class="m-0 p-0"><span class="ss-acc-ico"><i class="fa fa-clock-o"></i></span>Timetable periods &amp; breaks</h5>
+					<i class="fa fa-chevron-down ss-acc-chevron"></i>
+				</button>
+			</div>
+			<div id="collapseTimetable" data-parent="#accordion" class="collapse">
+				<div class="card-body">
+					<?= view('pages/partials/timetable_settings', [
+						'timetable_slots' => $timetable_slots ?? [],
+						'timetable_settings' => $timetable_settings ?? [],
+						'timetable_special_times' => $timetable_special_times ?? [],
+						'timetable_day_labels' => $timetable_day_labels ?? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+						'timetable_day_map' => $timetable_day_map ?? ['Mon' => 0, 'Tue' => 1, 'Wed' => 2, 'Thu' => 3, 'Fri' => 4],
+						'timetable_levels' => $timetable_tracks ?? [],
+						'timetable_level_id' => 0,
+						'timetable_tracks' => $timetable_tracks ?? [],
+						'timetable_track_key' => $timetable_track_key ?? 'all',
+						'timetable_shared' => $timetable_shared ?? true,
+						'timetable_track_labels' => $timetable_track_labels ?? [],
+					]); ?>
+				</div>
+			</div>
+		</div>
+
 		<div class="card ss-acc-item" id="pedagogical-documents">
 			<div id="headingPedagogical" class="b-radius-0 card-header">
 				<button type="button" data-toggle="collapse" data-target="#collapsePedagogical" aria-expanded="false"
@@ -1174,10 +1219,13 @@
 
 <?php
 		$cardTemplates = \App\Libraries\CardLayout::TEMPLATES;
+		$visitorCardTemplates = \App\Libraries\CardLayout::visitorTemplateChoices();
 		$cardFieldLabels = \App\Libraries\CardLayout::FIELDS;
 		$staffFieldLabels = \App\Libraries\CardLayout::STAFF_FIELDS;
+		$visitorFieldLabels = \App\Libraries\CardLayout::VISITOR_FIELDS;
 		$studentDbFieldLabels = \App\Libraries\CardLayout::STUDENT_DB_FIELDS;
 		$staffDbFieldLabels = \App\Libraries\CardLayout::STAFF_DB_FIELDS;
+		$visitorDbFieldLabels = \App\Libraries\CardLayout::VISITOR_DB_FIELDS;
 		$cardTemplate = \App\Libraries\CardLayout::normalizeTemplate($settings['card_template'] ?? 'ocean');
 		$cardOri = \App\Libraries\CardLayout::normalizeOrientation(
 			$settings['card_orientation'] ?? \App\Libraries\CardLayout::preferredOrientation($cardTemplate)
@@ -1188,20 +1236,31 @@
 			$settings['sf_card_orientation'] ?? \App\Libraries\CardLayout::preferredOrientation($sfCardTemplate)
 		);
 		$sfCardBgMode = strtolower($settings['sf_card_bg_mode'] ?? 'manual') === 'smart' ? 'smart' : 'manual';
+		$viCardTemplate = \App\Libraries\CardLayout::normalizeTemplate($settings['vi_card_template'] ?? 'ocean');
+		if (!in_array($viCardTemplate, \App\Libraries\CardLayout::VISITOR_TEMPLATES, true)) {
+			$viCardTemplate = 'ocean';
+		}
+		$viCardOri = 'landscape';
+		$viCardBgMode = strtolower($settings['vi_card_bg_mode'] ?? 'manual') === 'smart' ? 'smart' : 'manual';
 		$hasBkStudent = strlen($settings['card_background'] ?? '') > 4;
 		$hasBkStaff = strlen($settings['sf_card_background'] ?? '') > 4;
+		$hasBkVisitor = strlen($settings['vi_card_background'] ?? '') > 4;
 		$bkStudent = $hasBkStudent ? base_url('assets/images/background/' . $settings['card_background']) : $fallbackImg;
 		$bkStaff = $hasBkStaff ? base_url('assets/images/background/' . $settings['sf_card_background']) : $fallbackImg;
+		$bkVisitor = $hasBkVisitor ? base_url('assets/images/background/' . $settings['vi_card_background']) : $fallbackImg;
 		$previewSchool = esc($settings['name'] ?? 'School', 'attr');
 		$previewMoto = esc($settings['slogan'] ?? 'SmartSMS', 'attr');
 		$previewHead = esc($settings['head_master'] ?? 'Headmaster', 'attr');
 		$photoPlaceholder = base_url('assets/images/white_blank.png');
 		$cardLayoutResolved = \App\Libraries\CardLayout::resolve($settings['card_layout'] ?? null, $cardTemplate, $cardOri);
 		$sfCardLayoutResolved = \App\Libraries\CardLayout::resolveStaff($settings['sf_card_layout'] ?? null, $sfCardTemplate, $sfCardOri);
+		$viCardLayoutResolved = \App\Libraries\CardLayout::resolveVisitor($settings['vi_card_layout'] ?? null, $viCardTemplate, $viCardOri);
 		$cardLayoutJson = json_encode($cardLayoutResolved, JSON_UNESCAPED_UNICODE);
 		$sfCardLayoutJson = json_encode($sfCardLayoutResolved, JSON_UNESCAPED_UNICODE);
+		$viCardLayoutJson = json_encode($viCardLayoutResolved, JSON_UNESCAPED_UNICODE);
 		$defaultsByTpl = [];
 		$staffDefaultsByTpl = [];
+		$visitorDefaultsByTpl = [];
 		foreach (array_keys($cardTemplates) as $tplKey) {
 			$defaultsByTpl[$tplKey] = [
 				'landscape' => \App\Libraries\CardLayout::defaults($tplKey, 'landscape'),
@@ -1212,12 +1271,20 @@
 				'portrait' => \App\Libraries\CardLayout::staffDefaults($tplKey, 'portrait'),
 			];
 		}
+		foreach (array_keys($visitorCardTemplates) as $tplKey) {
+			$visitorDefaultsByTpl[$tplKey] = [
+				'landscape' => \App\Libraries\CardLayout::visitorDefaults($tplKey, 'landscape'),
+			];
+		}
 		$cardDefaultsJson = json_encode($defaultsByTpl, JSON_UNESCAPED_UNICODE);
 		$staffDefaultsJson = json_encode($staffDefaultsByTpl, JSON_UNESCAPED_UNICODE);
+		$visitorDefaultsJson = json_encode($visitorDefaultsByTpl, JSON_UNESCAPED_UNICODE);
 		$cardFieldLabelsJson = json_encode($cardFieldLabels, JSON_UNESCAPED_UNICODE);
 		$staffFieldLabelsJson = json_encode($staffFieldLabels, JSON_UNESCAPED_UNICODE);
+		$visitorFieldLabelsJson = json_encode($visitorFieldLabels, JSON_UNESCAPED_UNICODE);
 		$studentDbFieldLabelsJson = json_encode($studentDbFieldLabels, JSON_UNESCAPED_UNICODE);
 		$staffDbFieldLabelsJson = json_encode($staffDbFieldLabels, JSON_UNESCAPED_UNICODE);
+		$visitorDbFieldLabelsJson = json_encode($visitorDbFieldLabels, JSON_UNESCAPED_UNICODE);
 		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($settings);
 		$studentBrand = [
 			'header1' => $autoHeaders['header1'],
@@ -1237,6 +1304,15 @@
 			'footer_color' => $settings['sf_footer_color'] ?? ($settings['footer_color'] ?? '#000000'),
 			'paint_color' => $settings['sf_paint_color'] ?? ($settings['paint_color'] ?? ($settings['sf_main_color'] ?? ($settings['main_color'] ?? '#1E6FD9'))),
 		];
+		$visitorBrand = [
+			'header1' => $autoHeaders['header1'],
+			'header2' => $autoHeaders['header2'],
+			'capitalize' => (int)($settings['vi_capitalize'] ?? ($settings['capitalize'] ?? 0)),
+			'header_color' => $settings['vi_header_color'] ?? ($settings['header_color'] ?? '#0a66b7'),
+			'main_color' => $settings['vi_main_color'] ?? ($settings['main_color'] ?? '#0a66b7'),
+			'footer_color' => $settings['vi_footer_color'] ?? ($settings['footer_color'] ?? '#000000'),
+			'paint_color' => $settings['vi_paint_color'] ?? ($settings['paint_color'] ?? ($settings['vi_main_color'] ?? ($settings['main_color'] ?? '#1E6FD9'))),
+		];
 		$previewHeader1 = esc($studentBrand['header1'], 'attr');
 		$previewHeader2 = esc($studentBrand['header2'], 'attr');
 		$previewMain = esc($studentBrand['main_color'], 'attr');
@@ -1245,6 +1321,10 @@
 		$sfPreviewHeader2 = esc($staffBrand['header2'], 'attr');
 		$sfPreviewMain = esc($staffBrand['main_color'], 'attr');
 		$sfPreviewPaint = esc($staffBrand['paint_color'], 'attr');
+		$viPreviewHeader1 = esc($visitorBrand['header1'], 'attr');
+		$viPreviewHeader2 = esc($visitorBrand['header2'], 'attr');
+		$viPreviewMain = esc($visitorBrand['main_color'], 'attr');
+		$viPreviewPaint = esc($visitorBrand['paint_color'], 'attr');
 		$sampleStaff = $card_sample_staff ?? null;
 		$staffSampleVals = [
 			'logo' => '',
@@ -1266,6 +1346,21 @@
 			$staffSampleVals['photo_url'] = profile_photo_url($sampleStaff['photo']);
 		}
 		$staffSampleJson = json_encode($staffSampleVals, JSON_UNESCAPED_UNICODE);
+		$visitorSampleVals = [
+			'logo' => '',
+			'school_name' => $settings['name'] ?? 'School',
+			'header1' => $visitorBrand['header1'],
+			'header2' => $visitorBrand['header2'],
+			'badge' => 'VISITOR CARD',
+			'photo' => 'PHOTO',
+			'names' => 'Jane Parent',
+			'relationship' => 'Mother',
+			'student_name' => 'John Student',
+			'student_class' => 'P1 A',
+			'card_uid' => 'A1B2C3D4',
+			'moto' => $settings['slogan'] ?? 'SmartSMS',
+		];
+		$visitorSampleJson = json_encode($visitorSampleVals, JSON_UNESCAPED_UNICODE);
 		$sharedPreview = [
 			'cardTemplates' => $cardTemplates,
 			'fallbackImg' => $fallbackImg,
@@ -1338,13 +1433,42 @@
 							'previewPaint' => $sfPreviewPaint,
 							'brandValues' => $staffBrand,
 						])); ?>
+						<?= view('pages/partials/card_audience_panel', array_merge($sharedPreview, [
+							'audience' => 'visitor',
+							'title' => 'Visitor card',
+							'foldId' => 'foldVisitorCard',
+							'foldOpen' => false,
+							'cardTemplates' => $visitorCardTemplates,
+							'cardTemplate' => $viCardTemplate,
+							'cardOri' => $viCardOri,
+							'cardBgMode' => $viCardBgMode,
+							'hasBk' => $hasBkVisitor,
+							'bkUrl' => $bkVisitor,
+							'bgField' => 'vi_card_background',
+							'imgId' => 'img_backg_vi',
+							'zoneId' => 'dv_select_img_backg_vi',
+							'clrId' => 'clr_bg_vi',
+							'badgeLabel' => 'VISITOR CARD',
+							'layoutJson' => $viCardLayoutJson,
+							'fieldLabelsJson' => $visitorFieldLabelsJson,
+							'defaultsJson' => $visitorDefaultsJson,
+							'sampleValsJson' => $visitorSampleJson,
+							'previewHeader1' => $viPreviewHeader1,
+							'previewHeader2' => $viPreviewHeader2,
+							'previewMain' => $viPreviewMain,
+							'previewPaint' => $viPreviewPaint,
+							'brandValues' => $visitorBrand,
+						])); ?>
 					</div>
-					<script type="application/json" id="ssCardDefaultsBoot"><?= $cardDefaultsJson; ?></script>
-					<script type="application/json" id="ssStaffCardDefaultsBoot"><?= $staffDefaultsJson; ?></script>
-					<script type="application/json" id="ssCardFieldLabels"><?= $cardFieldLabelsJson; ?></script>
-					<script type="application/json" id="ssStaffCardFieldLabels"><?= $staffFieldLabelsJson; ?></script>
-					<script type="application/json" id="ssStudentDbFieldLabels"><?= $studentDbFieldLabelsJson; ?></script>
-					<script type="application/json" id="ssStaffDbFieldLabels"><?= $staffDbFieldLabelsJson; ?></script>
+					<script type="application/json" id="ssCardDefaultsBoot"><?= str_replace('</', '<\/', $cardDefaultsJson); ?></script>
+					<script type="application/json" id="ssStaffCardDefaultsBoot"><?= str_replace('</', '<\/', $staffDefaultsJson); ?></script>
+					<script type="application/json" id="ssVisitorCardDefaultsBoot"><?= str_replace('</', '<\/', $visitorDefaultsJson); ?></script>
+					<script type="application/json" id="ssCardFieldLabels"><?= str_replace('</', '<\/', $cardFieldLabelsJson); ?></script>
+					<script type="application/json" id="ssStaffCardFieldLabels"><?= str_replace('</', '<\/', $staffFieldLabelsJson); ?></script>
+					<script type="application/json" id="ssVisitorCardFieldLabels"><?= str_replace('</', '<\/', $visitorFieldLabelsJson); ?></script>
+					<script type="application/json" id="ssStudentDbFieldLabels"><?= str_replace('</', '<\/', $studentDbFieldLabelsJson); ?></script>
+					<script type="application/json" id="ssStaffDbFieldLabels"><?= str_replace('</', '<\/', $staffDbFieldLabelsJson); ?></script>
+					<script type="application/json" id="ssVisitorDbFieldLabels"><?= str_replace('</', '<\/', $visitorDbFieldLabelsJson); ?></script>
 				</div>
 			</div>
 		</div>
@@ -1639,16 +1763,22 @@
 		}
 		var fieldLabelsGlobal = {};
 		var staffFieldLabelsGlobal = {};
+		var visitorFieldLabelsGlobal = {};
 		var studentDbLabelsGlobal = {};
 		var staffDbLabelsGlobal = {};
+		var visitorDbLabelsGlobal = {};
 		var defaultsMapGlobal = {};
 		var staffDefaultsMapGlobal = {};
+		var visitorDefaultsMapGlobal = {};
 		try { fieldLabelsGlobal = JSON.parse($("#ssCardFieldLabels").text() || "{}"); } catch (e) {}
 		try { staffFieldLabelsGlobal = JSON.parse($("#ssStaffCardFieldLabels").text() || "{}"); } catch (e) {}
+		try { visitorFieldLabelsGlobal = JSON.parse($("#ssVisitorCardFieldLabels").text() || "{}"); } catch (e) {}
 		try { studentDbLabelsGlobal = JSON.parse($("#ssStudentDbFieldLabels").text() || "{}"); } catch (e) {}
 		try { staffDbLabelsGlobal = JSON.parse($("#ssStaffDbFieldLabels").text() || "{}"); } catch (e) {}
+		try { visitorDbLabelsGlobal = JSON.parse($("#ssVisitorDbFieldLabels").text() || "{}"); } catch (e) {}
 		try { defaultsMapGlobal = JSON.parse($("#ssCardDefaultsBoot").text() || "{}"); } catch (e) {}
 		try { staffDefaultsMapGlobal = JSON.parse($("#ssStaffCardDefaultsBoot").text() || "{}"); } catch (e) {}
+		try { visitorDefaultsMapGlobal = JSON.parse($("#ssVisitorCardDefaultsBoot").text() || "{}"); } catch (e) {}
 		var RESERVED_KEYS = ["logo","school_name","header1","header2","badge","moto"];
 
 		function basicInfoVal(target) {
@@ -1682,8 +1812,8 @@
 			$(".card-audience").each(function () {
 				var $aud = $(this);
 				var audience = $aud.data("audience") || "student";
-				var h1Field = audience === "staff" ? "sf_header_text_1" : "header_text_1";
-				var h2Field = audience === "staff" ? "sf_header_text_2" : "header_text_2";
+				var h1Field = audience === "staff" ? "sf_header_text_1" : (audience === "visitor" ? "vi_header_text_1" : "header_text_1");
+				var h2Field = audience === "staff" ? "sf_header_text_2" : (audience === "visitor" ? "vi_header_text_2" : "header_text_2");
 				$aud.find(".ss-header-autofill[data-header-slot='1']").html(h.header1 || '<span class="text-muted">Add phone or email in Basic school info</span>');
 				$aud.find(".ss-header-autofill[data-header-slot='2']").html(h.header2 || '<span class="text-muted">Add website or address in Basic school info</span>');
 				$aud.find(".ss-header-sync[data-target='" + h1Field + "']").val(h.header1).attr("data-value", h.header1).data("value", h.header1);
@@ -1695,11 +1825,13 @@
 			persistHeaderField("header_text_2", h.header2);
 			persistHeaderField("sf_header_text_1", h.header1);
 			persistHeaderField("sf_header_text_2", h.header2);
+			persistHeaderField("vi_header_text_1", h.header1);
+			persistHeaderField("vi_header_text_2", h.header2);
 		}
 
 		function createCardScope($root) {
 			var audience = $root.data("audience") || "student";
-			var prefix = audience === "staff" ? "sf" : "st";
+			var prefix = audience === "staff" ? "sf" : (audience === "visitor" ? "vi" : "st");
 			var $live = $root.find(".card-live-preview").first();
 			var $oriChoice = $root.find(".card-ori-choice").first();
 			var $tplChoice = $root.find(".card-tpl-choice").first();
@@ -1713,12 +1845,12 @@
 			var $imgBg = $root.find(".ss-bg-preview-img").first();
 			var $bgFrame = $root.find("[data-bg-frame]").first();
 			var $clr = $root.find(".btn-clear-bg").first();
-			var oriField = audience === "staff" ? "sf_card_orientation" : "card_orientation";
-			var bgModeField = audience === "staff" ? "sf_card_bg_mode" : "card_bg_mode";
+			var oriField = audience === "staff" ? "sf_card_orientation" : (audience === "visitor" ? "vi_card_orientation" : "card_orientation");
+			var bgModeField = audience === "staff" ? "sf_card_bg_mode" : (audience === "visitor" ? "vi_card_bg_mode" : "card_bg_mode");
 			var oriInputName = prefix + "_card_orientation";
-			var fieldLabels = audience === "staff" ? staffFieldLabelsGlobal : fieldLabelsGlobal;
-			var dbToggleLabels = audience === "staff" ? staffDbLabelsGlobal : studentDbLabelsGlobal;
-			var defaultsMap = audience === "staff" ? staffDefaultsMapGlobal : defaultsMapGlobal;
+			var fieldLabels = audience === "staff" ? staffFieldLabelsGlobal : (audience === "visitor" ? visitorFieldLabelsGlobal : fieldLabelsGlobal);
+			var dbToggleLabels = audience === "staff" ? staffDbLabelsGlobal : (audience === "visitor" ? visitorDbLabelsGlobal : studentDbLabelsGlobal);
+			var defaultsMap = audience === "staff" ? staffDefaultsMapGlobal : (audience === "visitor" ? visitorDefaultsMapGlobal : defaultsMapGlobal);
 			try {
 				var localLabels = JSON.parse($root.find(".card-labels-boot").first().text() || "{}");
 				if (localLabels && Object.keys(localLabels).length) fieldLabels = localLabels;
@@ -1736,7 +1868,7 @@
 				school_name: $live.data("school") || "School",
 				header1: $live.data("header1") || "",
 				header2: $live.data("header2") || "",
-				badge: $live.data("badge") || (audience === "staff" ? "STAFF CARD" : "STUDENT CARD"),
+				badge: $live.data("badge") || (audience === "staff" ? "STAFF CARD" : (audience === "visitor" ? "VISITOR CARD" : "STUDENT CARD")),
 				photo: "PHOTO",
 				names: "Sample Student",
 				regno: "260240001",
@@ -1772,9 +1904,35 @@
 						});
 					}
 				} catch (e) {}
+			} else if (audience === "visitor") {
+				sampleVals = {
+					logo: "",
+					school_name: $live.data("school") || "School",
+					header1: $live.data("header1") || "",
+					header2: $live.data("header2") || "",
+					badge: $live.data("badge") || "VISITOR CARD",
+					photo: "PHOTO",
+					names: "Jane Parent",
+					relationship: "Mother",
+					student_name: "John Student",
+					student_class: "P1 A",
+					card_uid: "A1B2C3D4",
+					moto: $live.data("moto") || "SmartSMS"
+				};
+				try {
+					var fromVisitorDb = JSON.parse($root.find(".card-sample-boot").first().text() || "{}");
+					if (fromVisitorDb && typeof fromVisitorDb === "object") {
+						Object.keys(fromVisitorDb).forEach(function (k) {
+							if (fromVisitorDb[k] !== undefined && fromVisitorDb[k] !== null && fromVisitorDb[k] !== "") {
+								sampleVals[k] = fromVisitorDb[k];
+							}
+						});
+					}
+				} catch (e) {}
 			}
 
 			function currentOrientation() {
+				if (audience === "visitor") return "landscape";
 				return $root.find("input[name='" + oriInputName + "']:checked").val() || "landscape";
 			}
 			function syncBgFrame() {
@@ -1861,6 +2019,11 @@
 				if (audience === "staff" && layoutState.fields && layoutState.fields.post) {
 					layoutState.fields.post.visible = true;
 				}
+				if (audience === "visitor") {
+					["names", "student_name", "student_class", "card_uid", "photo"].forEach(function (reqKey) {
+						if (layoutState.fields[reqKey]) layoutState.fields[reqKey].visible = true;
+					});
+				}
 				renderEditor();
 			}
 			function renderEditor() {
@@ -1872,7 +2035,7 @@
 				sampleVals.header1 = $live.attr("data-header1") || "";
 				sampleVals.header2 = $live.attr("data-header2") || "";
 				sampleVals.moto = $live.attr("data-moto") || sampleVals.moto;
-				var main = $root.find("input[data-target='main_color'], input[data-target='sf_main_color']").val()
+				var main = $root.find("input[data-target='main_color'], input[data-target='sf_main_color'], input[data-target='vi_main_color']").val()
 					|| $live.attr("data-main")
 					|| "#0EA5E9";
 				var paint = $root.find("input.card-paint-color").val()
@@ -1882,7 +2045,9 @@
 				var logoSrc = $("#img_logo").attr("src") || LOGO_FALLBACK;
 				var sigSrc = $("#img_headmaster_signature").attr("src") || "";
 				syncPaintedUi(paint);
-				var labeledKeys = ["names","regno","class","dob","father","phone","mode","post","email","staff_id"];
+				var labeledKeys = audience === "visitor"
+					? ["names", "relationship", "student_name", "student_class", "card_uid"]
+					: ["names", "regno", "class", "dob", "father", "phone", "mode", "post", "email", "staff_id"];
 				Object.keys(fieldLabels).forEach(function (key) {
 					var f = layoutState.fields[key] || { x: 5, y: 5, w: 30, h: 8, visible: true };
 					if (RESERVED_KEYS.indexOf(key) >= 0) f.visible = true;
@@ -1927,6 +2092,11 @@
 					if (audience === "staff" && key === "post") {
 						$cb.prop("checked", true).prop("disabled", true);
 						$lab.append(' <span class="text-danger" style="font-size:.8em;">(required)</span>');
+					}
+					if (audience === "visitor" && (key === "names" || key === "student_name" || key === "student_class" || key === "card_uid" || key === "photo")) {
+						$cb.prop("checked", true).prop("disabled", true);
+						$lab.append(' <span class="text-muted" style="font-size:.8em;">(required)</span>');
+						if (layoutState.fields[key]) layoutState.fields[key].visible = true;
 					}
 					if (key === "names" || key === "photo") {
 						$cb.prop("checked", true).prop("disabled", true);
@@ -1978,7 +2148,8 @@
 			$root.on("change", "[data-toggle-field]", function () {
 				var key = $(this).data("toggle-field");
 				if (!layoutState.fields[key]) return;
-				if (RESERVED_KEYS.indexOf(key) >= 0 || key === "names" || key === "photo" || (audience === "staff" && key === "post")) {
+				if (RESERVED_KEYS.indexOf(key) >= 0 || key === "names" || key === "photo" || (audience === "staff" && key === "post")
+					|| (audience === "visitor" && (key === "student_name" || key === "student_class" || key === "card_uid"))) {
 					$(this).prop("checked", true);
 					layoutState.fields[key].visible = true;
 					return;
@@ -1988,7 +2159,7 @@
 			});
 			$tplChoice.on("click", ".ss-tpl-card", function () {
 				var tpl = $(this).data("template");
-				var ori = $(this).data("orientation") || "landscape";
+				var ori = audience === "visitor" ? "landscape" : ($(this).data("orientation") || "landscape");
 				$tplChoice.find(".ss-tpl-card").removeClass("is-on");
 				$(this).addClass("is-on");
 				$root.find("input[name='" + oriInputName + "'][value='" + ori + "']").prop("checked", true);
@@ -2015,6 +2186,11 @@
 				$status.text("Saving…");
 				if (audience === "staff" && layoutState.fields && layoutState.fields.post) {
 					layoutState.fields.post.visible = true;
+				}
+				if (audience === "visitor") {
+					["names", "student_name", "student_class", "card_uid", "photo"].forEach(function (reqKey) {
+						if (layoutState.fields[reqKey]) layoutState.fields[reqKey].visible = true;
+					});
 				}
 				$.post("<?= base_url('save_card_layout'); ?>", {
 					audience: audience,
@@ -2108,7 +2284,7 @@
 						});
 						$box.show();
 						$regenBtn.show();
-						if (data.source === "gemini") toastada.success(data.success || "Proposals ready");
+						if (data.source === "ai" || data.source === "gemini") toastada.success(data.success || "Proposals ready");
 						else toastada.error(data.success || "Background generation unavailable");
 					} else {
 						$st.text("");
@@ -2168,8 +2344,12 @@
 		}
 
 		$(".card-audience").each(function () {
-			var scope = createCardScope($(this));
-			cardScopes[scope.audience] = scope;
+			try {
+				var scope = createCardScope($(this));
+				cardScopes[scope.audience] = scope;
+			} catch (err) {
+				console.error("Card layout preview init failed:", err);
+			}
 		});
 		refreshCardHeadersFromBasicInfo();
 
@@ -2658,7 +2838,7 @@ $(document).on("click","#btn-remove-discipline",function () {
 <script>
 	$(function () {
 		var $acc = $('#accordion.ss-accordion');
-		if (!$acc.length) return;
+		if (!$acc.length || typeof $.fn.collapse !== 'function') return;
 
 		function isSectionPanel(el) {
 			var $el = $(el);
@@ -2688,8 +2868,13 @@ $(document).on("click","#btn-remove-discipline",function () {
 			});
 		}
 
-		// Belt-and-suspenders: Bootstrap data-parent works with .card > .collapse;
-		// this JS backup closes siblings even if data-parent fails.
+		sectionPanels().each(function () {
+			var $panel = $(this);
+			if (!$panel.data('bs.collapse')) {
+				$panel.collapse({ toggle: false, parent: '#accordion' });
+			}
+		});
+
 		$acc.on('show.bs.collapse', function (e) {
 			if (!isSectionPanel(e.target)) return;
 			closeOtherSections(e.target);
@@ -2700,25 +2885,37 @@ $(document).on("click","#btn-remove-discipline",function () {
 			syncChevrons();
 		});
 
-		// Start all folded (do not leave .show on any section panel)
-		sectionPanels().each(function () {
-			$(this).removeClass('show');
-			if ($(this).data('bs.collapse')) {
-				$(this).collapse('hide');
+		$acc.on('click', '> .ss-acc-item > .card-header [data-toggle="collapse"]', function (e) {
+			e.preventDefault();
+			e.stopPropagation();
+			var targetSel = $(this).attr('data-target') || $(this).data('target');
+			if (!targetSel) return;
+			var $panel = $(targetSel);
+			if (!$panel.length) return;
+			if ($panel.hasClass('show')) {
+				$panel.collapse('hide');
+			} else {
+				closeOtherSections($panel[0]);
+				$panel.collapse('show');
 			}
 		});
+
 		syncChevrons();
 
 		var hashMap = {
+			'#collapseOne2': '#collapseOne2',
+			'#student-required-materials': '#collapseStudentMaterials',
 			'#staff-attendance-settings': '#collapseStaffAttendance',
+			'#timetable-settings': '#collapseTimetable',
 			'#pedagogical-documents': '#collapsePedagogical',
 			'#logo-signatures': '#collapseLogoSig'
 		};
 		var target = hashMap[window.location.hash];
 		if (target && $(target).length) {
+			closeOtherSections(null);
 			$(target).collapse('show');
 			setTimeout(function () {
-				var el = document.querySelector(window.location.hash);
+				var el = document.querySelector(window.location.hash) || document.querySelector(target);
 				if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 			}, 280);
 		}
