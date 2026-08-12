@@ -16629,7 +16629,6 @@ public function assign_card()
 
 		$schoolFeesMdl = new SchoolFeesModel();
 		$schoolFeesMdl->ensureSchema();
-		$feesRecordMdl = new FeesRecordModel();
 
 		$builder = $schoolFeesMdl->where('school_id', $school_id)
 			->where('level', $levelId)
@@ -16650,20 +16649,25 @@ public function assign_card()
 		}
 
 		try {
+			$deleted = 0;
+			$discounts = 0;
+			$payments = 0;
 			foreach ($rows as $row) {
-				$verify = $feesRecordMdl->where('fees_type', 0)->where('fees_id', (int) $row['id'])->get(1)->getRow();
-				if ($verify !== null) {
-					return $this->response->setStatusCode(400)->setJSON([
-						'error' => 'Cannot delete — fee records are already in use for one or more terms.',
+				$result = $schoolFeesMdl->deleteWithLinkedData((int) $row['id'], $school_id);
+				if (empty($result['ok'])) {
+					return $this->response->setJSON([
+						'error' => $result['error'] ?? 'Delete failed for one or more terms.',
 					]);
 				}
+				$deleted++;
+				$discounts += (int) ($result['discounts'] ?? 0);
+				$payments += (int) ($result['payments'] ?? 0);
 			}
-			foreach ($rows as $row) {
-				$schoolFeesMdl->delete((int) $row['id']);
+			$msg = $deleted . ' fee record(s) deleted';
+			if ($discounts > 0 || $payments > 0) {
+				$msg .= ' (also removed ' . $discounts . ' student adjustment(s) and ' . $payments . ' payment record(s))';
 			}
-			return $this->response->setJSON([
-				'success' => count($rows) . ' fee record(s) deleted successfully.',
-			]);
+			return $this->response->setJSON(['success' => $msg . '.']);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
 		}
@@ -16672,18 +16676,26 @@ public function assign_card()
 	public
 	function deleteSchoolFee($id)
 	{
+		$this->_preset();
+		$school_id = (int) $this->session->get("soma_school_id");
 		$schoolFeesMdl = new SchoolFeesModel();
-		$feesRecordMdl = new FeesRecordModel();
+		$schoolFeesMdl->ensureSchema();
 		try {
-			$verify = $feesRecordMdl->where("fees_type", 0)->where("fees_id", $id)->get(1)->getRow();
-			if ($verify != null) {
-				return $this->response->setStatusCode(400)->setJSON(["error" => "School fee records is in use"]);
-			} else {
-				$schoolFeesMdl->delete($id);
-				return $this->response->setJSON(array("success" => "Record deleted successfully"));
+			$result = $schoolFeesMdl->deleteWithLinkedData((int) $id, $school_id);
+			if (empty($result['ok'])) {
+				return $this->response->setStatusCode(400)->setJSON([
+					'error' => $result['error'] ?? 'Delete failed.',
+				]);
 			}
+			$msg = 'Fee deleted';
+			$d = (int) ($result['discounts'] ?? 0);
+			$p = (int) ($result['payments'] ?? 0);
+			if ($d > 0 || $p > 0) {
+				$msg .= ' (also removed ' . $d . ' student adjustment(s) and ' . $p . ' payment record(s))';
+			}
+			return $this->response->setJSON(['success' => $msg . '.']);
 		} catch (\Exception $e) {
-			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
 		}
 	}
 

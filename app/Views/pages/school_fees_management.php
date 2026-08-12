@@ -353,7 +353,7 @@ ksort($uniqueLevels);
 		$(document).off('click.sfDelGroup', '.delGroupBtn').on('click.sfDelGroup', '.delGroupBtn', function () {
 			var $b = $(this);
 			var label = $b.data('label') || 'this row';
-			if (!confirm('Delete all fee terms for ' + label + '?')) {
+			if (!confirm('Delete all fee terms for ' + label + '?\n\nThis also permanently removes linked student adjustments and payment records.')) {
 				return;
 			}
 			$b.prop('disabled', true);
@@ -383,7 +383,7 @@ ksort($uniqueLevels);
 
 		$(document).off('click.sfDel', '.delButton').on('click.sfDel', '.delButton', function (e) {
 			e.stopPropagation();
-			if (!confirm('Delete this fee record?')) return;
+			if (!confirm('Delete this fee record?\n\nThis also permanently removes linked student adjustments and payment records.')) return;
 			var id = $(this).data('id');
 			var $btn = $(this).prop('disabled', true);
 			$.ajax({

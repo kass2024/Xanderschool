@@ -190,4 +190,52 @@ class SchoolFeesModel extends Model
 				->orWhere('class_id', 0)
 			->groupEnd();
 	}
+
+	/**
+	 * Delete a school fee and all linked student adjustments + payment records.
+	 *
+	 * @return array{ok:bool,error?:string,discounts:int,payments:int}
+	 */
+	public function deleteWithLinkedData(int $feeId, int $schoolId): array
+	{
+		$feeId = (int) $feeId;
+		$schoolId = (int) $schoolId;
+		if ($feeId < 1 || $schoolId < 1) {
+			return ['ok' => false, 'error' => 'Invalid fee.', 'discounts' => 0, 'payments' => 0];
+		}
+
+		$row = $this->where('id', $feeId)->where('school_id', $schoolId)->first();
+		if (!$row) {
+			return ['ok' => false, 'error' => 'Fee not found.', 'discounts' => 0, 'payments' => 0];
+		}
+
+		$db = \Config\Database::connect();
+		$db->transStart();
+
+		$discountCount = (int) $db->table('school_fees_discount')->where('feesId', $feeId)->countAllResults();
+		$db->table('school_fees_discount')->where('feesId', $feeId)->delete();
+
+		// fees_type 0 = school fee payments; 2 = school-fee due/invoice rows linked to same fees_id
+		$paymentCount = (int) $db->table('fees_records')
+			->where('fees_id', $feeId)
+			->whereIn('fees_type', [0, 2])
+			->countAllResults();
+		$db->table('fees_records')
+			->where('fees_id', $feeId)
+			->whereIn('fees_type', [0, 2])
+			->delete();
+
+		$this->delete($feeId);
+
+		$db->transComplete();
+		if ($db->transStatus() === false) {
+			return ['ok' => false, 'error' => 'Delete failed. Please try again.', 'discounts' => 0, 'payments' => 0];
+		}
+
+		return [
+			'ok' => true,
+			'discounts' => (int) $discountCount,
+			'payments' => (int) $paymentCount,
+		];
+	}
 }
