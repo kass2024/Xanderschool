@@ -194,7 +194,7 @@ function loadLines() {
 			h += '<optgroup label="' + $('<div>').text(sec).html() + '">';
 			$.each(groups[sec], function (j, l) {
 				var availNum = l.availability ? Number(l.availability.available) : 0;
-				var avail = ' — remaining ' + availNum.toLocaleString() + ' RWF';
+				var avail = ' - remaining ' + availNum.toLocaleString() + ' RWF';
 				h += '<option value="' + l.id + '" data-cat="' + $('<div>').text(l.category).html() + '">'
 					+ $('<div>').text(l.category).html() + avail + '</option>';
 			});
