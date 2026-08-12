@@ -91,12 +91,13 @@ $centralFlip = array_flip($masterCentralPosts ?? []);
 							<div class="alert alert-info mb-3" style="max-width:960px;">
 								<strong><i class="fa fa-school"></i> Finance budget defaults (automatic)</strong>
 								<ul class="mb-0 mt-2 small">
-									<li><strong>Prepare &amp; fill budget:</strong> #8 Cashier, #9 Accountant only (all schools).</li>
+									<li><strong>Full control (everything):</strong> #24 Director of Finance — prepare, edit, approve, cash requests (all schools).</li>
+									<li><strong>Prepare &amp; fill budget:</strong> #8 Cashier, #9 Accountant (all schools).</li>
 									<li><strong>View-only</strong> (usage + approval progress — no Prepare / Start budget):
 										#1 Head master, #3 Director of studies, #4 Dean of discipline, #15 Principal, #18 Headmistress — including on the master school.</li>
 									<li><strong>Child schools — all other posts:</strong> Finance menu is hidden.</li>
 								</ul>
-								<p class="small mb-0 mt-2 text-muted">These rules apply at login from the post + school type. Resetting a post updates the checklist; leadership still cannot prepare budgets.</p>
+								<p class="small mb-0 mt-2 text-muted">These rules apply at login from the post + school type. Resetting a post updates the checklist; leadership still cannot prepare budgets. Director of Finance is never restricted.</p>
 							</div>
 
 							<div class="card border mb-3" style="max-width:960px;">

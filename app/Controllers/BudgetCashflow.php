@@ -587,7 +587,7 @@ class BudgetCashflow extends Home
 		$this->denyPerm('budget.prepare');
 		$c = $this->ctx();
 		if (!\Config\MenuClearance::canPrepareBudgetAtSchool($c['postId'], $c['schoolId'])) {
-			return $this->response->setJSON(['error' => 'On child schools only Cashier or Accountant can prepare the budget.']);
+			return $this->response->setJSON(['error' => 'Only Cashier, Accountant, or Director of Finance can prepare the budget.']);
 		}
 		$db = \Config\Database::connect();
 		$periodId = (int) $this->request->getPost('budget_period_id');

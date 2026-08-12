@@ -47,8 +47,8 @@ class BudgetPermissions
 		'cash_request.override_budget',
 	];
 
-	/** Posts that bypass menu but NOT finance action permissions. */
-	public const FINANCE_FULL_ACCESS_POSTS = [];
+	/** Director of Finance — full budget & cash-request control (all schools). */
+	public const FINANCE_FULL_ACCESS_POSTS = [24];
 
 	public static function labels()
 	{
@@ -135,15 +135,18 @@ class BudgetPermissions
 			21 => ['budget.final_approve', 'budget.view_all_branches', 'cash_request.final_approve', 'cash_request.reject', 'cash_request.return', 'budget.view_reports', 'budget.export', 'cash_request.view_audit', 'cash_request.override_budget', 'budget.return', 'budget.reject'],
 			22 => ['cash_request.process_payment', 'cash_request.manage_documents', 'budget.view_reports'],
 			23 => ['cash_request.view_audit', 'budget.view_all_branches', 'budget.view_reports', 'budget.export'],
-			// Director of Finance — may edit already-submitted / approved school budgets
-			24 => [
-				'budget.edit_submitted', 'budget.adjust', 'budget.prepare', 'budget.edit_own',
-				'budget.view_all_branches', 'budget.view_reports', 'budget.export',
-				'budget.final_approve', 'budget.return', 'budget.reject',
-				'cash_request.final_approve', 'cash_request.reject', 'cash_request.return',
-				'cash_request.view_audit', 'cash_request.override_budget',
-			],
+			// Director of Finance — full control (also granted at runtime via FINANCE_FULL_ACCESS_POSTS)
+			24 => self::ALL,
 		];
+		if (in_array($postId, self::FINANCE_FULL_ACCESS_POSTS, true)) {
+			return self::ALL;
+		}
 		return array_values(array_unique(array_merge($map[$postId] ?? [], $dynamic[$postId] ?? [])));
+	}
+
+	/** @param int $postId */
+	public static function hasFullAccess($postId)
+	{
+		return in_array((int) $postId, self::FINANCE_FULL_ACCESS_POSTS, true);
 	}
 }

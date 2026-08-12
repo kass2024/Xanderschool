@@ -13,10 +13,12 @@ class MenuClearance
 
 	/**
 	 * Finance / budget role defaults (Level clearance + runtime filter).
-	 * Prepare/fill: Cashier + Accountant only (all schools).
+	 * Full control: Director of Finance (#24) — all schools.
+	 * Prepare/fill: Cashier + Accountant (all schools).
 	 * View-only dashboard: school leaders (all schools — including master).
-	 * Child schools: everyone else loses the Finance menu.
+	 * Child schools: everyone else loses the Finance menu (except DoF / prepare / view roles).
 	 */
+	const FINANCE_FULL_CONTROL_POSTS = [24]; // Director of Finance
 	const CHILD_BUDGET_PREPARE_POSTS = [8, 9]; // Cashier, Accountant
 	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18]; // Head master, DOS, Dean of discipline, Principal, Headmistress
 
@@ -86,6 +88,7 @@ class MenuClearance
 
 	/**
 	 * Apply finance policy on top of allowed keys.
+	 * - Director of Finance (#24): full Finance menus (master + child).
 	 * - Leaders (1,3,4,15,18): always view-only budget menus (master + child).
 	 * - Cashier/Accountant: prepare menus.
 	 * - Child schools: all other posts lose Finance entirely.
@@ -100,6 +103,11 @@ class MenuClearance
 		$postId = (int) $postId;
 		$schoolId = (int) $schoolId;
 		$isChild = $schoolId > 0 && self::isChildSchoolId($schoolId);
+
+		// Director of Finance — never strip; ensure full budget menus
+		if (in_array($postId, self::FINANCE_FULL_CONTROL_POSTS, true)) {
+			return array_values(array_unique(array_merge($keys, self::budgetMenuKeys(), ['finance'], self::feeMenuKeys())));
+		}
 
 		// Always: school leaders = view-only (strip prepare even on master / full-access posts)
 		if (in_array($postId, self::CHILD_BUDGET_VIEW_POSTS, true)) {
@@ -155,7 +163,8 @@ class MenuClearance
 	}
 
 	/**
-	 * Whether this post may prepare/fill budgets (Cashier / Accountant only).
+	 * Whether this post may prepare/fill budgets.
+	 * Director of Finance (full control) + Cashier / Accountant.
 	 *
 	 * @param int $postId
 	 * @param int $schoolId unused — kept for call-site compatibility
@@ -163,7 +172,17 @@ class MenuClearance
 	 */
 	public static function canPrepareBudgetAtSchool($postId, $schoolId = 0)
 	{
-		return in_array((int) $postId, self::CHILD_BUDGET_PREPARE_POSTS, true);
+		$postId = (int) $postId;
+		if (in_array($postId, self::FINANCE_FULL_CONTROL_POSTS, true)) {
+			return true;
+		}
+		return in_array($postId, self::CHILD_BUDGET_PREPARE_POSTS, true);
+	}
+
+	/** @param int $postId */
+	public static function hasFinanceFullControl($postId)
+	{
+		return in_array((int) $postId, self::FINANCE_FULL_CONTROL_POSTS, true);
 	}
 
 	/**

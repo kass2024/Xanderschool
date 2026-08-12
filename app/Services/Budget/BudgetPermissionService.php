@@ -12,9 +12,18 @@ class BudgetPermissionService
 		if ($permKey === '') {
 			return false;
 		}
+
+		$postId = (int) $postId;
+
+		// Director of Finance — full control on every school
+		if (MenuClearance::hasFinanceFullControl($postId)
+			|| \Config\BudgetPermissions::hasFullAccess($postId)) {
+			return in_array($permKey, \Config\BudgetPermissions::ALL, true);
+		}
+
 		$db = \Config\Database::connect();
 		$row = $db->table('post_budget_permissions')
-			->where('post_id', (int) $postId)
+			->where('post_id', $postId)
 			->where('perm_key', $permKey)
 			->countAllResults();
 		if ($row <= 0) {
@@ -22,7 +31,6 @@ class BudgetPermissionService
 		}
 
 		$schoolId = (int) session('soma_school_id');
-		$postId = (int) $postId;
 
 		// Leaders: never prepare/edit/submit budgets (master or child)
 		$prepareKeys = [
@@ -49,7 +57,8 @@ class BudgetPermissionService
 
 		if ($schoolId > 0 && MenuClearance::isChildSchoolId($schoolId)) {
 			if (in_array($permKey, $prepareKeys, true)
-				&& !in_array($postId, MenuClearance::CHILD_BUDGET_PREPARE_POSTS, true)) {
+				&& !in_array($postId, MenuClearance::CHILD_BUDGET_PREPARE_POSTS, true)
+				&& !MenuClearance::hasFinanceFullControl($postId)) {
 				return false;
 			}
 		}
