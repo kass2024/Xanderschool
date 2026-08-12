@@ -2446,26 +2446,117 @@ class BudgetCashflow extends Home
 		$data['tab'] = $tab;
 		$data['title'] = 'Budget Reports';
 		$data['page'] = 'budget_reports';
-		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
-		$data['branch_label'] = $c['branch']
-			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
-			: session('soma_school');
-		$bid = (int) $c['branchId'];
-		$data['financials'] = $this->branchFinancialSummary($bid, $db);
+
+		$canMonitorAll = !empty($c['isCentral']);
+		$data['can_monitor_all'] = $canMonitorAll;
+		$data['is_central'] = $canMonitorAll;
+
+		$branchIds = array_column(
+			$c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']),
+			'id'
+		);
+		$branchIds = array_map('intval', $branchIds);
+		$reportBranches = $canMonitorAll
+			? $c['branchCtx']->accessibleBranches($c['staffId'], $c['postId'], $c['schoolId'], true)
+			: [];
+		$data['report_branches'] = $reportBranches;
+
+		$rawBranch = $this->request->getGet('branch_id');
+		$selectedBranchId = 0;
+		$monitorAllSchools = false;
+		if ($canMonitorAll) {
+			if ($rawBranch === null || $rawBranch === '' || $rawBranch === 'all') {
+				$monitorAllSchools = ($tab === 'summary' || $tab === 'actuals' || $tab === 'audit');
+				$selectedBranchId = 0;
+			} else {
+				$selectedBranchId = (int) $rawBranch;
+				if (!$c['branchCtx']->assertBranchAccess($c['staffId'], $c['postId'], $c['schoolId'], $selectedBranchId)) {
+					$selectedBranchId = (int) ($c['branchId'] ?? 0);
+				}
+			}
+			// Detail cashflow needs one school selected
+			if ($tab === 'cashflow' && $selectedBranchId <= 0) {
+				$selectedBranchId = (int) ($c['branchId'] ?? 0);
+				if ($selectedBranchId <= 0 && !empty($reportBranches)) {
+					$selectedBranchId = (int) $reportBranches[0]['id'];
+				}
+				$monitorAllSchools = false;
+			}
+		} else {
+			$selectedBranchId = (int) ($c['branchId'] ?? 0);
+		}
+		$data['selected_branch_id'] = $selectedBranchId;
+		$data['monitor_all_schools'] = $monitorAllSchools;
+
+		$bid = $selectedBranchId > 0 ? $selectedBranchId : (int) ($c['branchId'] ?? 0);
+		$selectedBranchRow = $bid > 0
+			? $db->table('branches')->where('id', $bid)->get(1)->getRowArray()
+			: null;
+		if ($monitorAllSchools) {
+			$data['branch_label'] = 'All child schools';
+		} elseif ($selectedBranchRow) {
+			$data['branch_label'] = $c['branchCtx']->displayBranchName($selectedBranchRow, $canMonitorAll);
+		} else {
+			$data['branch_label'] = $c['branch']
+				? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
+				: session('soma_school');
+		}
+
+		// Multi-school overview (DoF / Principal / Budget Manager at master)
+		$data['school_report_rows'] = [];
+		if ($canMonitorAll && ($monitorAllSchools || $tab === 'summary')) {
+			foreach ($reportBranches as $br) {
+				$brid = (int) $br['id'];
+				$fin = $this->branchFinancialSummary($brid, $db);
+				$data['school_report_rows'][] = [
+					'branch_id' => $brid,
+					'display_name' => $br['display_name'] ?? $br['name'] ?? ('Branch #' . $brid),
+					'total_income' => (float) ($fin['total_income'] ?? 0),
+					'total_budget' => (float) ($fin['total_budget'] ?? 0),
+					'total_actual' => (float) ($fin['total_actual'] ?? 0),
+					'variance' => (float) ($fin['variance'] ?? 0),
+					'period_title' => (string) ($fin['period_title'] ?? ''),
+					'has_budget' => !empty($fin['budget']),
+					'status' => !empty($fin['budget']['status']) ? $fin['budget']['status'] : '—',
+				];
+			}
+		}
+
+		$data['financials'] = $bid > 0 ? $this->branchFinancialSummary($bid, $db) : [
+			'total_budget' => 0, 'total_actual' => 0, 'variance' => 0, 'total_income' => 0, 'budget' => null,
+		];
 		$budgetId = !empty($data['financials']['budget']['id']) ? (int) $data['financials']['budget']['id'] : 0;
 		$data['summary_lines'] = [];
-		if ($budgetId > 0) {
+		if ($budgetId > 0 && !$monitorAllSchools) {
 			$data['summary_lines'] = $db->table('budget_lines')->where('budget_id', $budgetId)
 				->where('is_total_row', 0)->orderBy('sort_order')->get()->getResultArray();
 		}
-		$data['actuals'] = $db->table('cash_request_payments p')
-			->select('p.*, cr.request_no, cr.payee_name, cr.purpose')
+
+		$actualsQ = $db->table('cash_request_payments p')
+			->select('p.*, cr.request_no, cr.payee_name, cr.purpose, br.name as branch_name, br.organization_id')
 			->join('cash_requests cr', 'cr.id = p.cash_request_id')
-			->whereIn('cr.branch_id', $branchIds)
-			->where('p.status', 'completed')
-			->orderBy('p.payment_date', 'DESC')->limit(200)->get()->getResultArray();
+			->join('branches br', 'br.id = cr.branch_id', 'left')
+			->where('p.status', 'completed');
+		if ($canMonitorAll && $selectedBranchId > 0) {
+			$actualsQ->where('cr.branch_id', $selectedBranchId);
+		} elseif ($canMonitorAll) {
+			$actualsQ->whereIn('cr.branch_id', $branchIds ?: [0]);
+		} else {
+			$actualsQ->where('cr.branch_id', (int) $c['branchId']);
+		}
+		$data['actuals'] = $actualsQ->orderBy('p.payment_date', 'DESC')->limit(300)->get()->getResultArray();
+		foreach ($data['actuals'] as &$a) {
+			if (!empty($a['branch_name'])) {
+				$a['branch_name'] = $c['branchCtx']->displayBranchName([
+					'name' => $a['branch_name'],
+					'organization_id' => $a['organization_id'] ?? 0,
+				], $canMonitorAll);
+			}
+		}
+		unset($a);
+
 		$data['cashflow'] = [];
-		if ($budgetId > 0) {
+		if ($budgetId > 0 && !$monitorAllSchools) {
 			$lines = $db->table('budget_lines')->where('budget_id', $budgetId)->where('is_total_row', 0)->get()->getResultArray();
 			$calc = new BudgetCalculationService();
 			$months = BudgetCalculationService::MONTHS;
@@ -2485,8 +2576,13 @@ class BudgetCashflow extends Home
 			}
 		}
 		if ($tab === 'audit' && budget_menu_any(['budget_audit'])) {
-			$data['logs'] = $db->table('financial_audit_logs')->whereIn('branch_id', $branchIds)
-				->orderBy('id', 'DESC')->limit(300)->get()->getResultArray();
+			$logsQ = $db->table('financial_audit_logs')->orderBy('id', 'DESC')->limit(300);
+			if ($canMonitorAll && $selectedBranchId > 0) {
+				$logsQ->where('branch_id', $selectedBranchId);
+			} else {
+				$logsQ->whereIn('branch_id', $branchIds ?: [0]);
+			}
+			$data['logs'] = $logsQ->get()->getResultArray();
 		} else {
 			$data['logs'] = [];
 		}

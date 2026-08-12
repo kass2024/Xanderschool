@@ -5,11 +5,10 @@ $tab = $tab ?? 'budgets';
 
 $tabs = [];
 $base = base_url('budget/prepare');
-if ($hub === 'prepare') {
+	if ($hub === 'prepare') {
 	$tabs = [
-		'budgets' => ['label' => 'My budgets', 'keys' => ['budget_prepare']],
+		'budgets' => ['label' => 'Annual budget', 'keys' => ['budget_prepare']],
 		'periods' => ['label' => 'Periods', 'keys' => ['budget_periods']],
-		'templates' => ['label' => 'Template', 'keys' => ['budget_templates']],
 		'review' => ['label' => 'Review', 'keys' => ['budget_review']],
 		'approved' => ['label' => 'Approved', 'keys' => ['budget_approved']],
 	];
@@ -31,6 +30,7 @@ if ($hub === 'prepare') {
 	];
 	$base = base_url('budget/reports');
 }
+$reportBranchId = $report_branch_id ?? null;
 ?>
 <div class="budget-hub-nav mb-3">
 	<nav class="nav nav-pills flex-wrap">
@@ -44,6 +44,10 @@ if ($hub === 'prepare') {
 				|| ($hub === 'requests' && $key !== 'all')
 				|| ($hub === 'reports' && $key !== 'summary')) {
 				$href = $base . '?tab=' . $key;
+			}
+			if ($hub === 'reports' && $reportBranchId !== null && $reportBranchId !== '') {
+				$sep = (strpos($href, '?') !== false) ? '&' : '?';
+				$href .= $sep . 'branch_id=' . rawurlencode((string) $reportBranchId);
 			}
 		?>
 		<a class="nav-link<?= $active; ?>" href="<?= esc($href); ?>"><?= esc($meta['label']); ?></a>
