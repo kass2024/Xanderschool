@@ -247,7 +247,7 @@ class AttendanceAreaModel extends Model
 	}
 
 	/**
-	 * Latest IN/OUT events for the area today (newest first).
+	 * Latest students scanned in this location today (one row each: IN + OUT).
 	 *
 	 * @return list<array<string,mixed>>
 	 */
@@ -273,31 +273,27 @@ class AttendanceAreaModel extends Model
 			->where('ar.user_type', 0)
 			->where('ar.time_in >=', $todayStart)
 			->where('ar.time_in <=', $todayEnd)
-			->orderBy('ar.id', 'DESC')
-			->limit(20)
+			->orderBy('IF(ar.time_out > 0, ar.time_out, ar.time_in)', 'DESC', false)
+			->limit($limit)
 			->get()
 			->getResultArray();
 
 		$events = [];
 		foreach ($rows as $r) {
 			$name = trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? ''));
-			$base = [
+			$inTs = (int) ($r['time_in'] ?? 0);
+			$outTs = (int) ($r['time_out'] ?? 0);
+			$events[] = [
 				'name' => $name !== '' ? $name : 'Student',
 				'regno' => (string) ($r['regno'] ?? ''),
 				'photo' => $r['photo'] ?? null,
+				'time_in' => $inTs,
+				'time_out' => $outTs,
+				'status' => $outTs > 0 ? 'OUT' : 'IN',
 			];
-			$outTs = (int) ($r['time_out'] ?? 0);
-			if ($outTs > 0) {
-				$events[] = $base + ['status' => 'OUT', 'time' => $outTs];
-			}
-			$events[] = $base + ['status' => 'IN', 'time' => (int) ($r['time_in'] ?? 0)];
 		}
 
-		usort($events, static function ($a, $b) {
-			return (int) $b['time'] <=> (int) $a['time'];
-		});
-
-		return array_slice($events, 0, $limit);
+		return $events;
 	}
 
 	/**

@@ -286,6 +286,7 @@ body {
 
 .recent-row .who { font-weight: 700; font-size: .88rem; line-height: 1.2; }
 .recent-row .meta-s { color: var(--muted); font-size: .75rem; }
+.recent-row .times { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 
 .pill {
 	font-size: .72rem;
@@ -293,9 +294,11 @@ body {
 	padding: 4px 8px;
 	border-radius: 999px;
 	letter-spacing: .03em;
+	white-space: nowrap;
 }
 .pill.in { background: var(--in-bg); color: var(--in); }
 .pill.out { background: var(--out-bg); color: var(--out); }
+.pill.wait { background: #fff7ed; color: #c2410c; }
 
 .picker-card { padding: 22px 24px 24px; }
 .picker-card h2 { margin: 0 0 6px; font-size: 1.35rem; color: var(--brand); }
@@ -528,12 +531,18 @@ document.addEventListener("DOMContentLoaded", function () {
 			return;
 		}
 		recentList.innerHTML = rows.map(function (r) {
-			const cls = r.status === "OUT" ? "out" : "in";
+			const inTime = r.time_in ? escapeHtml(r.time_in) : "—";
+			const outPill = r.time_out
+				? '<span class="pill out">OUT ' + escapeHtml(r.time_out) + '</span>'
+				: '<span class="pill wait">OUT —</span>';
 			return '<div class="recent-row">' +
 				'<img src="' + escapeHtml(r.photo || fallbackPhoto) + '" alt="">' +
 				'<div><div class="who">' + escapeHtml(r.name) + '</div>' +
-				'<div class="meta-s">' + escapeHtml(r.regno ? ("Reg " + r.regno) : "") + (r.time ? " · " + escapeHtml(r.time) : "") + '</div></div>' +
-				'<span class="pill ' + cls + '">' + escapeHtml(r.status) + '</span></div>';
+				'<div class="meta-s">' + escapeHtml(r.regno ? ("Reg " + r.regno) : "") + '</div></div>' +
+				'<div class="times">' +
+					'<span class="pill in">IN ' + inTime + '</span>' +
+					outPill +
+				'</div></div>';
 		}).join("");
 	}
 

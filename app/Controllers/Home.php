@@ -3836,11 +3836,14 @@ public function attendanceCard()
 		$areaMdl = new AttendanceAreaModel();
 		$recent = [];
 		foreach ($areaMdl->recentEvents($schoolId, $areaId, 8) as $ev) {
+			$inTs = (int) ($ev['time_in'] ?? 0);
+			$outTs = (int) ($ev['time_out'] ?? 0);
 			$recent[] = [
 				'name' => $ev['name'],
 				'regno' => $ev['regno'],
 				'status' => $ev['status'],
-				'time' => date('H:i', (int) $ev['time']),
+				'time_in' => $inTs > 0 ? date('H:i', $inTs) : '',
+				'time_out' => $outTs > 0 ? date('H:i', $outTs) : '',
 				'photo' => profile_photo_url($ev['photo'] ?? null),
 			];
 		}
