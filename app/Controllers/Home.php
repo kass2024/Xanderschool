@@ -3681,12 +3681,16 @@ public function scanCard()
         $status = "OUT";
 
     } else {
-
+        $dash = $this->attendanceAreaDashboard($school_id, $areaId);
         return $this->response->setJSON([
             "success" => 0,
-            "message" => "Already checked out of " . $areaName . " today"
+            "message" => "Already checked out of " . $areaName . " today",
+            "kpi" => $dash['kpi'],
+            "recent" => $dash['recent'],
         ]);
     }
+
+    $dash = $this->attendanceAreaDashboard($school_id, $areaId);
 
     // ==========================
     // RESPONSE
@@ -3719,6 +3723,8 @@ public function scanCard()
             "id"   => $areaId,
             "name" => $areaName,
         ],
+        "kpi" => $dash['kpi'],
+        "recent" => $dash['recent'],
     ]);
 }
 	public function manipulate_grade()
@@ -3789,10 +3795,61 @@ public function attendanceCard()
     $schoolId = (int) $this->session->get('soma_school_id');
     $areaMdl = new AttendanceAreaModel();
     return view('attendance_card', [
-        'attendance_areas' => $areaMdl->listAreas($schoolId, true),
+        'attendance_areas' => $areaMdl->todayAreaSummaries($schoolId),
         'settings_url' => base_url('settings') . '#student-inout-areas',
+        'school_name' => $this->data['school_name'] ?? '',
+        'stats_url' => base_url('attendance-card/stats'),
     ]);
 }
+
+	public function attendanceCardStats()
+	{
+		$this->_preset();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$areaId = (int) $this->request->getGet('area');
+		$areaMdl = new AttendanceAreaModel();
+		if ($areaId <= 0) {
+			return $this->response->setJSON([
+				'success' => 1,
+				'areas' => $areaMdl->todayAreaSummaries($schoolId),
+			]);
+		}
+		$area = $areaMdl->getActiveForSchool($schoolId, $areaId);
+		if (!$area) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'Invalid attendance area']);
+		}
+		$dash = $this->attendanceAreaDashboard($schoolId, $areaId);
+		return $this->response->setJSON([
+			'success' => 1,
+			'area' => ['id' => $areaId, 'name' => $area['name']],
+			'kpi' => $dash['kpi'],
+			'recent' => $dash['recent'],
+		]);
+	}
+
+	/**
+	 * @return array{kpi: array, recent: list<array<string,mixed>>}
+	 */
+	private function attendanceAreaDashboard(int $schoolId, int $areaId): array
+	{
+		helper('qonics');
+		$areaMdl = new AttendanceAreaModel();
+		$recent = [];
+		foreach ($areaMdl->recentEvents($schoolId, $areaId, 8) as $ev) {
+			$recent[] = [
+				'name' => $ev['name'],
+				'regno' => $ev['regno'],
+				'status' => $ev['status'],
+				'time' => date('H:i', (int) $ev['time']),
+				'photo' => profile_photo_url($ev['photo'] ?? null),
+			];
+		}
+		return [
+			'kpi' => $areaMdl->todayKpi($schoolId, $areaId),
+			'recent' => $recent,
+		];
+	}
+
 	public function manipulate_intouch($school_id)
 	{
 		$this->_preset();

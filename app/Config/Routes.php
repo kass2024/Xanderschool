@@ -284,6 +284,7 @@ $routes->get('timetable/print_teacher/(:num)', 'TimetableManagement::print_teach
 $routes->get('timetable/pdf_all_classes', 'TimetableManagement::pdf_all_classes');
 $routes->get('timetable/pdf_all_teachers', 'TimetableManagement::pdf_all_teachers');
 
+$routes->get('attendance-card/stats', 'Home::attendanceCardStats');
 $routes->get('attendance-card', 'Home::attendanceCard');
 $routes->post('scan-card', 'Home::scanCard');
 $routes->get('scan-card', 'Home::scanCard');
