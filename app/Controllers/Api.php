@@ -26,6 +26,7 @@ use App\Models\SchoolFeesModel;
 use App\Models\SchoolModel;
 use App\Models\SmsModel;
 use App\Models\SmsRecipientModel;
+use App\Libraries\AttendanceScanService;
 use App\Models\StaffModel;
 use App\Models\StudentModel;
 use App\Models\StudentVisitorModel;
@@ -3697,5 +3698,96 @@ public function permission_card_scan()
 			log_message('error', 'API menu_clearance: ' . $e->getMessage());
 			return $this->response->setJSON(['error' => 'Could not load menu clearance.']);
 		}
+	}
+
+	/**
+	 * Android kiosk: one-shot login + locations + staff faces list.
+	 */
+	public function device_bootstrap()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$model = new StaffModel();
+		$email = trim((string) $this->request->getPost('email'));
+		$password = (string) $this->request->getPost('password');
+		if ($email === '' || strlen($password) < 6) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'Email and password are required.']);
+		}
+		$result = $model->checkUser($email);
+		if ($result == null || !password_verify($password, $result->password)) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'Invalid email or password.']);
+		}
+		if (!in_array((int) $result->status, [1, 2], true)) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'This account is locked.']);
+		}
+		if ((int) ($result->school_status ?? 1) === 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => lang('app.lockedBySomanetAdmin')]);
+		}
+
+		$schoolId = (int) $result->school_id;
+		$payload = AttendanceScanService::bootstrap($schoolId);
+		$payload['operator'] = [
+			'id' => (int) $result->id,
+			'name' => trim((string) $result->fname . ' ' . (string) $result->lname),
+			'post' => (string) ($result->post_title ?? ''),
+			'email' => (string) ($result->email ?? ''),
+		];
+		return $this->response->setJSON($payload);
+	}
+
+	public function device_staff_list()
+	{
+		$schoolId = (int) $this->request->getPost('school_id');
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
+		}
+		return $this->response->setJSON([
+			'success' => 1,
+			'staff' => AttendanceScanService::staffList($schoolId),
+		]);
+	}
+
+	/**
+	 * Card tap — student (needs area_id / location) or staff.
+	 */
+	public function device_scan()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) $this->request->getPost('school_id');
+		$card = trim((string) ($this->request->getPost('card') ?? ''));
+		$areaId = (int) ($this->request->getPost('area_id') ?: $this->request->getPost('area') ?: 0);
+		if ($schoolId <= 0 || $card === '') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'School and card are required']);
+		}
+		return $this->response->setJSON(AttendanceScanService::scanCard($schoolId, $card, $areaId));
+	}
+
+	/**
+	 * Staff face match — same IN/OUT as a staff card tap.
+	 */
+	public function device_face()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) $this->request->getPost('school_id');
+		$staffId = (int) $this->request->getPost('staff_id');
+		if ($schoolId <= 0 || $staffId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'School and staff are required']);
+		}
+		return $this->response->setJSON(AttendanceScanService::scanStaff($schoolId, $staffId));
+	}
+
+	public function device_enroll_face()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) $this->request->getPost('school_id');
+		$staffId = (int) $this->request->getPost('staff_id');
+		$photo = $this->request->getPost('photo');
+		if ($schoolId <= 0 || $staffId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'School and staff are required']);
+		}
+		return $this->response->setJSON(AttendanceScanService::enrollFace(
+			$schoolId,
+			$staffId,
+			is_string($photo) && $photo !== '' ? $photo : null
+		));
 	}
 }

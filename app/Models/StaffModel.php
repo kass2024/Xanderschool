@@ -7,7 +7,7 @@ class StaffModel extends Model
 {
 	protected $table="staffs";
 	protected $allowedFields = ["school_id","fname","lname","phone","email","password","status","lastlogin"
-		,"next_login","post","shift_id","country","city","address","photo","created_by","updated_by","updateVersion","reset_exp"];
+    ,"next_login","post","shift_id","country","city","address","photo","card","face_enrolled","created_by","updated_by","updateVersion","reset_exp"];
 	protected $useTimestamps = true;
 	protected $primaryKey = "id";
 	public function checkUser($email,$key="staffs.email"){
@@ -39,6 +39,81 @@ inner join posts p on st.post = p.id where st.school_id={$_SESSION['soma_school_
 		$data = $this->db->query("SELECT `staffs`.`id`, concat(`staffs`.`id`, ' ',`staffs`.`fname`, ' ', staffs.lname) as text FROM `staffs` WHERE (`staffs`.`fname` LIKE '%{$hint}%' ESCAPE '!' OR  `staffs`.`lname` LIKE '%{$hint}%' ESCAPE '!' OR `staffs`.`email` = '{$hint}')
 AND `staffs`.`school_id`={$_SESSION['soma_school_id']}");
 		return $data->getResultArray();
+	}
+
+	/**
+	 * Any non-locked staff (all roles/posts) may receive an RFID card.
+	 */
+	public function findForCardOperation(int $staffId, int $schoolId): ?object
+	{
+		$staffId = (int) $staffId;
+		$schoolId = (int) $schoolId;
+		if ($staffId <= 0 || $schoolId <= 0) {
+			return null;
+		}
+
+		return $this->select('id, card, status, post')
+			->where('id', $staffId)
+			->where('school_id', $schoolId)
+			->where('status !=', 0)
+			->get(1)->getRow();
+	}
+
+	/**
+	 * Guaranteed DB write for staff RFID card.
+	 */
+	public function persistCard(int $staffId, int $schoolId, string $card, ?int $operator = null): bool
+	{
+		$staffId = (int) $staffId;
+		$schoolId = (int) $schoolId;
+		$card = strtoupper(trim($card));
+		if ($staffId <= 0 || $schoolId <= 0 || $card === '') {
+			return false;
+		}
+
+		$data = [
+			'card' => $card,
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		if ($operator !== null) {
+			$data['updated_by'] = (int) $operator;
+		}
+
+		$db = \Config\Database::connect();
+		$updated = $db->table('staffs')
+			->where('id', $staffId)
+			->where('school_id', $schoolId)
+			->update($data);
+
+		return $updated !== false;
+	}
+
+	/**
+	 * Remove RFID card from a staff member.
+	 */
+	public function clearCard(int $staffId, int $schoolId, ?int $operator = null): bool
+	{
+		$staffId = (int) $staffId;
+		$schoolId = (int) $schoolId;
+		if ($staffId <= 0 || $schoolId <= 0) {
+			return false;
+		}
+
+		$data = [
+			'card' => null,
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		if ($operator !== null) {
+			$data['updated_by'] = (int) $operator;
+		}
+
+		$db = \Config\Database::connect();
+		$updated = $db->table('staffs')
+			->where('id', $staffId)
+			->where('school_id', $schoolId)
+			->update($data);
+
+		return $updated !== false;
 	}
 
 }
