@@ -628,6 +628,14 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
+										<?php if (menu_clearance_allowed('staff-attendance-card') || menu_clearance_allowed('staff-report/monthly') || menu_clearance_allowed('staff-report/individual')) { ?>
+										<li>
+											<a href="<?= base_url('staff-attendance-card'); ?>" target="_blank" rel="noopener noreferrer">
+												<i class="metismenu-icon"></i>
+												<?= lang("app.staffInOutAttendance"); ?>
+											</a>
+										</li>
+										<?php } ?>
 										<?php if (menu_clearance_allowed('staff-report/monthly')) { ?>
 										<li>
 											<a href="<?= base_url('staff-report/monthly'); ?>">

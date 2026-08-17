@@ -358,6 +358,7 @@ class MenuClearance
 				'key' => 'staff_reports',
 				'label' => 'Staff Attendance',
 				'children' => [
+					['key' => 'staff-attendance-card', 'label' => 'Staff IN/OUT Attendance'],
 					['key' => 'staff-report/monthly', 'label' => 'Monthly Report'],
 					['key' => 'staff-report/individual', 'label' => 'Individual Report'],
 				],

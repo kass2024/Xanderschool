@@ -288,6 +288,10 @@ $routes->get('attendance-card/stats', 'Home::attendanceCardStats');
 $routes->get('attendance-card', 'Home::attendanceCard');
 $routes->post('scan-card', 'Home::scanCard');
 $routes->get('scan-card', 'Home::scanCard');
+$routes->get('staff-attendance-card/stats', 'Home::staffAttendanceCardStats');
+$routes->get('staff-attendance-card', 'Home::staffAttendanceCard');
+$routes->post('scan-staff-card', 'Home::scanStaffCard');
+$routes->get('scan-staff-card', 'Home::scanStaffCard');
 $routes->post('manipulate_attendance_area', 'Home::manipulate_attendance_area');
 
 $routes->add('(:any)', 'Home::$1');

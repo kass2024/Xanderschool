@@ -6,6 +6,8 @@ use App\Libraries\Wkhtmltopdf;
 use App\Libraries\WdaReportBuilder;
 use App\Libraries\GeminiCardBackground;
 use App\Libraries\GeminiAcademicDocs;
+use App\Libraries\StaffShiftClock;
+use App\Libraries\CardRegistry;
 use App\Models\AcademicYearModel;
 use App\Models\AcademicPlanModel;
 use App\Models\AcademicAiAnalysisModel;
@@ -3851,6 +3853,156 @@ public function attendanceCard()
 			'kpi' => $areaMdl->todayKpi($schoolId, $areaId),
 			'recent' => $recent,
 		];
+	}
+
+	public function staffAttendanceCard()
+	{
+		$this->_preset();
+		helper('qonics');
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$dash = StaffShiftClock::dashboard($schoolId);
+		return view('staff_attendance_card', [
+			'school_name' => $this->data['school_name'] ?? '',
+			'settings_url' => base_url('settings') . '#staff-attendance-settings',
+			'stats_url' => base_url('staff-attendance-card/stats'),
+			'kpi' => $dash['kpi'],
+			'recent' => $dash['recent'],
+		]);
+	}
+
+	public function staffAttendanceCardStats()
+	{
+		$this->_preset();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$dash = StaffShiftClock::dashboard($schoolId);
+		return $this->response->setJSON([
+			'success' => 1,
+			'kpi' => $dash['kpi'],
+			'recent' => $dash['recent'],
+		]);
+	}
+
+	public function scanStaffCard()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		header('Pragma: no-cache');
+		helper(['card_uid', 'qonics']);
+
+		$schoolId = (int) ($this->session->get('soma_school_id') ?? 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'Please log in']);
+		}
+
+		$cardRaw = trim((string) ($this->request->getPost('card') ?? $this->request->getGet('card') ?? ''));
+		if ($cardRaw === '') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'Card missing']);
+		}
+
+		$owner = CardRegistry::lookup($schoolId, $cardRaw);
+		if ($owner && $owner['type'] === 'student') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'This is a student card. Use Student IN/OUT Attendance.']);
+		}
+		if ($owner && $owner['type'] === 'visitor') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'This is a visitor card.']);
+		}
+		if (!$owner || $owner['type'] !== 'staff') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'Staff card not found']);
+		}
+
+		$db = \Config\Database::connect();
+		$staff = $db->table('staffs s')
+			->select('s.id, s.fname, s.lname, s.photo, s.status, s.shift_id, s.school_id, p.title as post_title, sh.title as shift_title, sh.options as shift_options')
+			->join('posts p', 'p.id = s.post', 'left')
+			->join('shifts sh', 'sh.id = s.shift_id', 'left')
+			->where('s.id', (int) $owner['id'])
+			->where('s.school_id', $schoolId)
+			->where('s.status !=', 0)
+			->get()
+			->getRow();
+
+		if (!$staff) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'Staff card not found']);
+		}
+
+		$time = time();
+		$shift = null;
+		if (!empty($staff->shift_id) && (int) $staff->shift_id > 0) {
+			$shift = [
+				'title' => (string) ($staff->shift_title ?? ''),
+				'options' => $staff->shift_options ?? '[]',
+			];
+		}
+		$window = StaffShiftClock::windowFor($shift, $time);
+		$lookFrom = (int) ($window['look_from'] ?? strtotime('today'));
+		$lookTo = (int) ($window['look_to'] ?? (strtotime('tomorrow') - 1));
+
+		$attendance = $db->table('attendance_records')
+			->where('user_id', (int) $staff->id)
+			->where('user_type', 1)
+			->where('school_id', $schoolId)
+			->where('time_in >=', $lookFrom)
+			->where('time_in <=', $lookTo)
+			->orderBy('id', 'DESC')
+			->get()
+			->getRow();
+
+		$status = 'IN';
+		$verdict = StaffShiftClock::evaluateIn($time, $window);
+		if (!$attendance) {
+			$db->table('attendance_records')->insert([
+				'user_id' => (int) $staff->id,
+				'user_type' => 1,
+				'time_in' => $time,
+				'time_out' => 0,
+				'school_id' => $schoolId,
+				'area_id' => 0,
+				'shift_id' => (int) ($staff->shift_id ?? 0),
+			]);
+		} elseif ((int) $attendance->time_out === 0) {
+			$db->table('attendance_records')
+				->where('id', $attendance->id)
+				->update(['time_out' => $time]);
+			$status = 'OUT';
+			$verdict = StaffShiftClock::evaluateOut($time, $window);
+		} else {
+			$dash = StaffShiftClock::dashboard($schoolId);
+			return $this->response->setJSON([
+				'success' => 0,
+				'message' => 'Already checked out for this shift',
+				'kpi' => $dash['kpi'],
+				'recent' => $dash['recent'],
+			]);
+		}
+
+		$dash = StaffShiftClock::dashboard($schoolId);
+		$shiftHours = '';
+		if (!empty($window['working']) && !empty($window['start_label'])) {
+			$shiftHours = $window['start_label'] . ' – ' . $window['end_label'];
+		} elseif ($shift) {
+			$shiftHours = 'Off day';
+		} else {
+			$shiftHours = 'No shift assigned';
+		}
+
+		return $this->response->setJSON([
+			'success' => 1,
+			'status' => $status,
+			'time' => date('H:i', $time),
+			'verdict' => $verdict,
+			'shift' => [
+				'title' => (string) ($window['title'] ?: ($staff->shift_title ?? 'No shift')),
+				'hours' => $shiftHours,
+				'working' => !empty($window['working']),
+			],
+			'staff' => [
+				'id' => (int) $staff->id,
+				'name' => trim((string) $staff->fname . ' ' . (string) $staff->lname),
+				'post' => (string) ($staff->post_title ?? ''),
+				'photo' => profile_photo_url($staff->photo ?? null),
+			],
+			'kpi' => $dash['kpi'],
+			'recent' => $dash['recent'],
+		]);
 	}
 
 	public function manipulate_intouch($school_id)
