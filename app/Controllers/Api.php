@@ -3734,6 +3734,26 @@ public function permission_card_scan()
 		return $this->response->setJSON($payload);
 	}
 
+	/**
+	 * Open kiosk by school acronym and sync students + staff for offline use.
+	 */
+	public function device_open_school()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$acronym = trim((string) $this->request->getPost('acronym'));
+		return $this->response->setJSON(AttendanceScanService::openByAcronym($acronym));
+	}
+
+	public function device_sync()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) $this->request->getPost('school_id');
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
+		}
+		return $this->response->setJSON(AttendanceScanService::bootstrap($schoolId));
+	}
+
 	public function device_staff_list()
 	{
 		$schoolId = (int) $this->request->getPost('school_id');
@@ -3755,10 +3775,11 @@ public function permission_card_scan()
 		$schoolId = (int) $this->request->getPost('school_id');
 		$card = trim((string) ($this->request->getPost('card') ?? ''));
 		$areaId = (int) ($this->request->getPost('area_id') ?: $this->request->getPost('area') ?: 0);
+		$eventTime = (int) $this->request->getPost('time');
 		if ($schoolId <= 0 || $card === '') {
 			return $this->response->setJSON(['success' => 0, 'message' => 'School and card are required']);
 		}
-		return $this->response->setJSON(AttendanceScanService::scanCard($schoolId, $card, $areaId));
+		return $this->response->setJSON(AttendanceScanService::scanCard($schoolId, $card, $areaId, $eventTime));
 	}
 
 	/**
@@ -3769,10 +3790,11 @@ public function permission_card_scan()
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 		$schoolId = (int) $this->request->getPost('school_id');
 		$staffId = (int) $this->request->getPost('staff_id');
+		$eventTime = (int) $this->request->getPost('time');
 		if ($schoolId <= 0 || $staffId <= 0) {
 			return $this->response->setJSON(['success' => 0, 'message' => 'School and staff are required']);
 		}
-		return $this->response->setJSON(AttendanceScanService::scanStaff($schoolId, $staffId));
+		return $this->response->setJSON(AttendanceScanService::scanStaff($schoolId, $staffId, $eventTime));
 	}
 
 	public function device_enroll_face()

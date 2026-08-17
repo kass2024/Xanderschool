@@ -37,7 +37,7 @@ class AttendanceScanService
 		$db = \Config\Database::connect();
 
 		$school = $db->table('schools sc')
-			->select('sc.id, sc.name, sc.logo, sc.phone, sc.email, at.academic_year')
+			->select('sc.id, sc.name, sc.acronym, sc.logo, sc.phone, sc.email, at.academic_year')
 			->join('active_term at', 'at.id = sc.active_term', 'left')
 			->where('sc.id', $schoolId)
 			->get()
@@ -62,6 +62,7 @@ class AttendanceScanService
 			'school' => [
 				'id' => $schoolId,
 				'name' => (string) ($school['name'] ?? ''),
+				'acronym' => (string) ($school['acronym'] ?? ''),
 				'phone' => (string) ($school['phone'] ?? ''),
 				'email' => (string) ($school['email'] ?? ''),
 				'logo' => $logo,
@@ -69,7 +70,82 @@ class AttendanceScanService
 			],
 			'locations' => $locations,
 			'staff' => self::staffList($schoolId),
+			'students' => self::studentList($schoolId),
 		];
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	public static function openByAcronym(string $acronym): array
+	{
+		$acronym = strtoupper(trim($acronym));
+		if ($acronym === '') {
+			return ['success' => 0, 'message' => 'Enter the school acronym'];
+		}
+		$db = \Config\Database::connect();
+		$row = $db->table('schools')
+			->select('id, name, acronym, status')
+			->where('LOWER(acronym)', strtolower($acronym))
+			->get()
+			->getRowArray();
+		if (!$row) {
+			return ['success' => 0, 'message' => 'No school found for acronym ' . $acronym];
+		}
+		if ((int) ($row['status'] ?? 1) === 0) {
+			return ['success' => 0, 'message' => 'This school is locked'];
+		}
+		return self::bootstrap((int) $row['id']);
+	}
+
+	/**
+	 * @return list<array<string,mixed>>
+	 */
+	public static function studentList(int $schoolId): array
+	{
+		helper('qonics');
+		$db = \Config\Database::connect();
+		$year = self::academicYear($schoolId);
+		$rows = $db->table('students s')
+			->select('s.id, s.fname, s.lname, s.regno, s.card, s.photo')
+			->where('s.school_id', $schoolId)
+			->where('s.status', 1)
+			->orderBy('s.fname', 'ASC')
+			->get()
+			->getResultArray();
+
+		$classes = [];
+		if ($rows !== []) {
+			$ids = [];
+			foreach ($rows as $r) {
+				$ids[] = (int) $r['id'];
+			}
+			$cr = $db->table('class_records cr')
+				->select("cr.student, CONCAT(COALESCE(l.title,''),' ',COALESCE(c.title,'')) AS class_name", false)
+				->join('classes c', 'c.id = cr.class', 'left')
+				->join('levels l', 'l.id = c.level', 'left')
+				->where('cr.year', $year)
+				->whereIn('cr.student', $ids)
+				->get()
+				->getResultArray();
+			foreach ($cr as $c) {
+				$classes[(int) $c['student']] = trim((string) ($c['class_name'] ?? ''));
+			}
+		}
+
+		$out = [];
+		foreach ($rows as $r) {
+			$sid = (int) $r['id'];
+			$out[] = [
+				'id' => $sid,
+				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
+				'regno' => (string) ($r['regno'] ?? ''),
+				'class' => $classes[$sid] ?? '',
+				'card' => (string) ($r['card'] ?? ''),
+				'photo' => profile_photo_url($r['photo'] ?? null),
+			];
+		}
+		return $out;
 	}
 
 	/**
@@ -114,7 +190,7 @@ class AttendanceScanService
 	 *
 	 * @return array<string,mixed>
 	 */
-	public static function scanCard(int $schoolId, string $cardRaw, int $areaId): array
+	public static function scanCard(int $schoolId, string $cardRaw, int $areaId, int $eventTime = 0): array
 	{
 		$owner = CardRegistry::lookup($schoolId, $cardRaw);
 		if (!$owner) {
@@ -124,15 +200,15 @@ class AttendanceScanService
 			return ['success' => 0, 'message' => 'Visitor cards cannot be used here'];
 		}
 		if ($owner['type'] === 'student') {
-			return self::scanStudent($schoolId, (int) $owner['id'], $areaId);
+			return self::scanStudent($schoolId, (int) $owner['id'], $areaId, $eventTime);
 		}
-		return self::scanStaff($schoolId, (int) $owner['id']);
+		return self::scanStaff($schoolId, (int) $owner['id'], $eventTime);
 	}
 
 	/**
 	 * @return array<string,mixed>
 	 */
-	public static function scanStudent(int $schoolId, int $studentId, int $areaId): array
+	public static function scanStudent(int $schoolId, int $studentId, int $areaId, int $eventTime = 0): array
 	{
 		helper('qonics');
 		if ($areaId <= 0) {
@@ -169,10 +245,10 @@ class AttendanceScanService
 			$className = 'Level ' . $class->level . ' ' . $class->title;
 		}
 
-		$time = time();
-		$todayStart = strtotime('today');
-		$todayEnd = strtotime('tomorrow') - 1;
-		$month = date('m-Y');
+		$time = $eventTime > 1000000000 ? $eventTime : time();
+		$todayStart = strtotime('today', $time);
+		$todayEnd = strtotime('tomorrow', $time) - 1;
+		$month = date('m-Y', $time);
 
 		$records = $db->table('attendance_records')
 			->select("GROUP_CONCAT(DATE_FORMAT(FROM_UNIXTIME(time_in),'%d %H:%i'),';',DATE_FORMAT(FROM_UNIXTIME(time_out),'%d %H:%i')) as records", false)
@@ -244,7 +320,7 @@ class AttendanceScanService
 	/**
 	 * @return array<string,mixed>
 	 */
-	public static function scanStaff(int $schoolId, int $staffId): array
+	public static function scanStaff(int $schoolId, int $staffId, int $eventTime = 0): array
 	{
 		helper('qonics');
 		$db = \Config\Database::connect();
@@ -262,7 +338,7 @@ class AttendanceScanService
 			return ['success' => 0, 'message' => 'Staff not found'];
 		}
 
-		$time = time();
+		$time = $eventTime > 1000000000 ? $eventTime : time();
 		$shift = null;
 		if (!empty($staff->shift_id) && (int) $staff->shift_id > 0) {
 			$shift = [
