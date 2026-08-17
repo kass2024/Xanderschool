@@ -358,6 +358,12 @@
 												Session Plan
 											</a>
 										</li>
+										<li>
+											<a href="<?= base_url('timetable/dashboard'); ?>">
+												<i class="metismenu-icon"></i>
+												Timetable Management
+											</a>
+										</li>
 									</ul>
 								</li>
 								<?php
@@ -410,12 +416,6 @@
 											</a>
 										</li>
 										<li>
-											<a href="<?= base_url('student-report/inout/monthly'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.studentInOut"); ?>
-											</a>
-										</li>
-										<li>
 											<a href="<?= base_url('student-report/course/monthly/'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.studentCourse"); ?>
@@ -443,6 +443,12 @@
 											<a href="<?= base_url('student-report/daily/details'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.dailyGeneralAttendance"); ?>
+											</a>
+										</li>
+										<li>
+											<a href="<?= base_url('student-report/inout/monthly'); ?>">
+												<i class="metismenu-icon"></i>
+												<?= lang("app.studentInOut"); ?>
 											</a>
 										</li>
 									</ul>
@@ -1853,8 +1859,9 @@
 		<div class="modal-dialog" role="document">
 			<div class="modal-content">
 				<form action="<?= base_url('manipulate_course_category'); ?>" class="autoSubmit validate">
+					<input type="hidden" name="fId" value="">
 					<div class="modal-header">
-						<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.addNewCourseCategory"); ?></h5>
+						<h5 class="modal-title" id="courseCategoryModalTitle"><?= lang("app.addNewCourseCategory"); ?></h5>
 						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
 							<span aria-hidden="true">×</span>
 						</button>
@@ -3920,6 +3927,19 @@ if ($page == "pendingRegistration") {
 				$("#EditVerdict [name='type']").val(data.type).trigger('change');
 			});
 			return;
+		});
+		$("#addCourseCategory").on("show.bs.modal", function (e) {
+			var trigger = $(e.relatedTarget);
+			var id = trigger.data("id") || "";
+			var title = trigger.data("title") || "";
+			$("#addCourseCategory [name='fId']").val(id);
+			$("#addCourseCategory [name='title']").val(title);
+			$("#courseCategoryModalTitle").text(id ? "<?= lang('app.editCourseCategory'); ?>" : "<?= lang('app.addNewCourseCategory'); ?>");
+		});
+		$("#addCourseCategory").on("hidden.bs.modal", function () {
+			$("#addCourseCategory [name='fId']").val("");
+			$("#addCourseCategory [name='title']").val("");
+			$("#courseCategoryModalTitle").text("<?= lang('app.addNewCourseCategory'); ?>");
 		});
 
 		$("#editLecCourseModal").on("show.bs.modal", function (e) {

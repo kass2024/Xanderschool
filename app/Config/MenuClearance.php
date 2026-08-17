@@ -345,13 +345,13 @@ class MenuClearance
 				'children' => [
 					['key' => 'attendance_record', 'label' => 'Record Attendance'],
 					['key' => 'attendance-card', 'label' => 'Student IN/OUT Attendance'],
-					['key' => 'student-report/inout/monthly', 'label' => 'Student In/Out'],
 					['key' => 'student-report/course/monthly', 'label' => 'Student Course'],
 					['key' => 'student-report/daily/class', 'label' => 'Student Daily Attendance'],
 					['key' => 'student-report/daily/all', 'label' => 'Daily Attendance'],
 					['key' => 'student-report/daily/details', 'label' => 'Daily General Attendance'],
 					['key' => 'student-report/boarding/all', 'label' => 'Boarding Attendance'],
 					['key' => 'student-report/boarding/details', 'label' => 'Boarding General Attendance'],
+					['key' => 'student-report/inout/monthly', 'label' => 'In/Out Report'],
 				],
 			],
 			[

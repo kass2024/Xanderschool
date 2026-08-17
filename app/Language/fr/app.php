@@ -79,7 +79,7 @@ return [
 	"attendance" => " Présence ",
 	"studentAttendance" => " Fréquentation des élèves ",
 	"recordAttendance" => " Record de fréquentation ",
-	"studentInOut" => " Entrée / sortie des élèves ",
+	"studentInOut" => " Rapport entrée / sortie ",
 	"attendanceArea" => " Lieu de présence ",
 	"selectAttendanceArea" => " Sélectionner le lieu de présence ",
 	"pleaseSelectArea" => " Veuillez sélectionner un lieu de présence ",

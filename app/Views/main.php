@@ -555,14 +555,6 @@
 											</a>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('student-report/inout/monthly')) { ?>
-										<li>
-											<a href="<?= base_url('student-report/inout/monthly'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.studentInOut"); ?>
-											</a>
-										</li>
-										<?php } ?>
 										<?php if (menu_clearance_allowed('student-report/course/monthly')) { ?>
 										<li>
 											<a href="<?= base_url('student-report/course/monthly/'); ?>">
@@ -614,6 +606,14 @@
 											<a href="<?= base_url('student-report/boarding/details'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.boardingGeneralAttendance"); ?>
+											</a>
+										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('student-report/inout/monthly')) { ?>
+										<li>
+											<a href="<?= base_url('student-report/inout/monthly'); ?>">
+												<i class="metismenu-icon"></i>
+												<?= lang("app.studentInOut"); ?>
 											</a>
 										</li>
 										<?php } ?>

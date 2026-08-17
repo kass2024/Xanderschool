@@ -81,7 +81,7 @@ return [
    'attendance'                  => 'Attendance',
    'studentAttendance'           => 'Student Attendance',
    'recordAttendance'            => 'Record attendance',
-   'studentInOut'                => 'Student In/Out',
+   'studentInOut'                => 'In/Out Report',
    'attendanceArea'              => 'Attendance location',
    'selectAttendanceArea'        => 'Select attendance location',
    'pleaseSelectArea'            => 'Please select an attendance location',
