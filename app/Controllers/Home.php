@@ -4636,7 +4636,12 @@ public function attendanceCard()
 		$clMdl = new ClassesModel();
 		$data['classes'] = $clMdl->get_classes();
 		$areaMdl = new AttendanceAreaModel();
-		$data['attendance_areas'] = $areaMdl->listAreas((int) $this->session->get("soma_school_id"), false);
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$data['attendance_areas'] = $areaMdl->listAreas($schoolId, false);
+		$yearNow = (int) date('Y');
+		$data['report_years'] = range($yearNow, $yearNow - 2);
+		$data['default_month'] = (int) date('n');
+		$data['default_year'] = $yearNow;
 		$data['show_header'] = true;
 		$data['content'] = view("pages/reports/student_inout_report_monthly", $data);
 		return view('main', $data);
@@ -4646,29 +4651,40 @@ public function attendanceCard()
 	{
 		$this->_preset();
 		$data = $this->data;
-		$month = sprintf("%02d", $this->request->getGet("month")) . "-" . date("Y");
-		$classe = (int) $this->request->getGet("class");
-		$areaId = (int) $this->request->getGet("area");
+		$monthNum = (int) ($this->request->getVar("month") ?: date("n"));
+		$yearNum = (int) ($this->request->getVar("year") ?: date("Y"));
+		if ($monthNum < 1 || $monthNum > 12) {
+			$monthNum = (int) date('n');
+		}
+		if ($yearNum < 2000 || $yearNum > 2100) {
+			$yearNum = (int) date('Y');
+		}
+		$month = sprintf("%02d-%04d", $monthNum, $yearNum);
+		$classe = (int) $this->request->getVar("class");
+		$areaId = (int) $this->request->getVar("area");
 		$schoolId = (int) $this->session->get("soma_school_id");
 		$areaMdl = new AttendanceAreaModel();
-		$area = $areaMdl->getForSchool($schoolId, $areaId);
-		if (!$area) {
-			echo "<h4 style='width:100%;text-align:center;margin-top:15px'>" . lang("app.pleaseSelectArea") . "</h4>";
-			return;
+		$areaLabel = 'All areas';
+		if ($areaId > 0) {
+			$area = $areaMdl->getForSchool($schoolId, $areaId);
+			if (!$area) {
+				echo "<h4 style='width:100%;text-align:center;margin-top:15px'>" . lang("app.pleaseSelectArea") . "</h4>";
+				return;
+			}
+			$areaLabel = (string) $area['name'];
 		}
-		$stMdl = new StudentModel();
-		$data['students'] = $stMdl->select("students.*,(select group_concat(date_format(from_unixtime(time_in),'%d %H:%i'),';',date_format(from_unixtime(time_out),'%d %H:%i'))
-		 from attendance_records where user_type=0 and user_id=students.id and area_id=" . $areaId . " and date_format(from_unixtime(time_in),'%m-%Y')='$month' group by user_id) as records")
-				->join("class_records cr", "cr.student=students.id")
-				->where("cr.class", $classe)
-				->where("cr.year", $this->data['academic_year'])
-				->where("school_id", $schoolId)
-				->groupBy("students.id")
-				->get()->getResultArray();
+		$report = $areaMdl->monthReport(
+			$schoolId,
+			$month,
+			$classe,
+			$areaId,
+			(int) $this->data['academic_year']
+		);
+		$data = array_merge($data, $report);
 		$data['show_header'] = false;
-		$data['month'] = $month;
-		$data['classe'] = (new ClassesModel())->get_class_name($classe);
-		$data['attendance_area'] = $area['name'];
+		$data['classe'] = $classe > 0 ? (new ClassesModel())->get_class_name($classe) : 'All classes';
+		$data['attendance_area'] = $areaLabel;
+		$data['pdf'] = ($pdf === 'true' || $pdf === true);
 		echo view("pages/reports/student_inout_report_monthly", $data);
 	}
 

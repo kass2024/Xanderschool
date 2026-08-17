@@ -299,4 +299,184 @@ class AttendanceAreaModel extends Model
 
 		return array_slice($events, 0, $limit);
 	}
+
+	/**
+	 * Monthly IN/OUT report for class/area filters (0 = all).
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function monthReport(int $schoolId, string $monthYm, int $classId, int $areaId, int $academicYear): array
+	{
+		$this->ensureSchema();
+		$parts = explode('-', $monthYm);
+		$mm = isset($parts[0]) ? (int) $parts[0] : (int) date('n');
+		$yy = isset($parts[1]) ? (int) $parts[1] : (int) date('Y');
+		$lastDay = (int) date('t', strtotime(sprintf('%04d-%02d-01', $yy, $mm)));
+		$monthLabel = date('F Y', strtotime(sprintf('%04d-%02d-01', $yy, $mm)));
+
+		$areas = $this->listAreas($schoolId, false);
+		$areaNames = [];
+		foreach ($areas as $a) {
+			$areaNames[(int) $a['id']] = (string) $a['name'];
+		}
+
+		$db = \Config\Database::connect();
+		$stQ = $db->table('students s')
+			->select("s.id, s.fname, s.lname, s.regno, CONCAT(COALESCE(l.title,''),' ',COALESCE(d.code,''),' ',COALESCE(c.title,'')) AS class_name, c.id AS class_id")
+			->join('class_records cr', 'cr.student = s.id')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->where('s.school_id', $schoolId)
+			->where('cr.year', $academicYear);
+		if ($classId > 0) {
+			$stQ->where('cr.class', $classId);
+		}
+		$students = $stQ->groupBy('s.id, s.fname, s.lname, s.regno, l.title, d.code, c.title, c.id')
+			->orderBy('s.fname', 'ASC')->orderBy('s.lname', 'ASC')->get()->getResultArray();
+
+		$ids = [];
+		foreach ($students as $s) {
+			$ids[] = (int) $s['id'];
+		}
+
+		$recs = [];
+		if ($ids !== [] && $db->tableExists('attendance_records')) {
+			$recQ = $db->table('attendance_records')
+				->select('user_id, area_id, time_in, time_out')
+				->where('school_id', $schoolId)
+				->where('user_type', 0)
+				->where("DATE_FORMAT(FROM_UNIXTIME(time_in),'%m-%Y') = " . $db->escape($monthYm), null, false)
+				->whereIn('user_id', $ids);
+			if ($areaId > 0) {
+				$recQ->where('area_id', $areaId);
+			}
+			$recs = $recQ->orderBy('time_in', 'ASC')->get()->getResultArray();
+		}
+
+		$byStudent = [];
+		$areaStats = [];
+		foreach ($areaNames as $aid => $aname) {
+			if ($areaId > 0 && $aid !== $areaId) {
+				continue;
+			}
+			$areaStats[$aid] = [
+				'id' => $aid,
+				'name' => $aname,
+				'students' => 0,
+				'in_count' => 0,
+				'out_count' => 0,
+				'missing_out' => 0,
+			];
+		}
+
+		$seenAreaStudent = [];
+		$inCount = 0;
+		$outCount = 0;
+		$missingOut = 0;
+		$scannedIds = [];
+		$missingOutRows = [];
+
+		foreach ($recs as $r) {
+			$sid = (int) $r['user_id'];
+			$aid = (int) $r['area_id'];
+			$tin = (int) $r['time_in'];
+			$tout = (int) ($r['time_out'] ?? 0);
+			$day = (int) date('j', $tin);
+			$aname = $areaNames[$aid] ?? ('Area #' . $aid);
+			$byStudent[$sid][$day][] = [
+				'in' => date('H:i', $tin),
+				'out' => $tout > 0 ? date('H:i', $tout) : '',
+				'area_id' => $aid,
+				'area' => $aname,
+			];
+			$inCount++;
+			$scannedIds[$sid] = true;
+			if (!isset($areaStats[$aid])) {
+				$areaStats[$aid] = [
+					'id' => $aid,
+					'name' => $aname,
+					'students' => 0,
+					'in_count' => 0,
+					'out_count' => 0,
+					'missing_out' => 0,
+				];
+			}
+			$areaStats[$aid]['in_count']++;
+			$key = $sid . ':' . $aid;
+			if (!isset($seenAreaStudent[$key])) {
+				$seenAreaStudent[$key] = true;
+				$areaStats[$aid]['students']++;
+			}
+			if ($tout > 0) {
+				$outCount++;
+				$areaStats[$aid]['out_count']++;
+			} else {
+				$missingOut++;
+				$areaStats[$aid]['missing_out']++;
+				$missingOutRows[] = [
+					'student_id' => $sid,
+					'day' => $day,
+					'in' => date('H:i', $tin),
+					'area' => $aname,
+				];
+			}
+		}
+
+		$never = [];
+		$missingNamed = [];
+		$studentMap = [];
+		foreach ($students as &$s) {
+			$sid = (int) $s['id'];
+			$studentMap[$sid] = $s;
+			$s['days'] = $byStudent[$sid] ?? [];
+			$s['visit_days'] = count($s['days']);
+			$s['scanned'] = isset($scannedIds[$sid]);
+			if (!$s['scanned']) {
+				$never[] = [
+					'id' => $sid,
+					'fname' => $s['fname'],
+					'lname' => $s['lname'],
+					'regno' => $s['regno'],
+					'class_name' => $s['class_name'],
+				];
+			}
+		}
+		unset($s);
+
+		foreach ($missingOutRows as $row) {
+			$st = $studentMap[$row['student_id']] ?? null;
+			if (!$st) {
+				continue;
+			}
+			$missingNamed[] = $row + [
+				'fname' => $st['fname'],
+				'lname' => $st['lname'],
+				'regno' => $st['regno'],
+				'class_name' => $st['class_name'],
+			];
+		}
+
+		$total = count($students);
+		$scanned = count($scannedIds);
+		return [
+			'students' => $students,
+			'last_day' => $lastDay,
+			'month_label' => $monthLabel,
+			'month' => $monthYm,
+			'kpi' => [
+				'students' => $total,
+				'scanned' => $scanned,
+				'never' => max(0, $total - $scanned),
+				'in_count' => $inCount,
+				'out_count' => $outCount,
+				'missing_out' => $missingOut,
+				'coverage' => $total > 0 ? (int) round($scanned / $total * 100) : 0,
+			],
+			'area_stats' => array_values($areaStats),
+			'never_scanned' => $never,
+			'missing_out' => $missingNamed,
+			'single_area' => $areaId > 0,
+		];
+	}
 }
