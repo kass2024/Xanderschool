@@ -3812,4 +3812,48 @@ public function permission_card_scan()
 			is_string($photo) && $photo !== '' ? $photo : null
 		));
 	}
+
+	/**
+	 * HeyStar identify-record upload (form or JSON). Always ack so the device does not retry.
+	 */
+	public function heystar_record()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$in = $this->heystarInput();
+		$out = AttendanceScanService::ingestHeyStarRecord($in);
+		return $this->response->setJSON([
+			'result' => 1,
+			'code' => '000',
+			'success' => (int) ($out['success'] ?? 1),
+			'message' => (string) ($out['message'] ?? ''),
+			'status' => (string) ($out['status'] ?? ''),
+		]);
+	}
+
+	public function heystar_heartbeat()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		AttendanceScanService::ingestHeyStarHeartbeat($this->heystarInput());
+		return $this->response->setJSON(['code' => '000']);
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	private function heystarInput(): array
+	{
+		$in = $this->request->getPost() ?: [];
+		if (!is_array($in) || $in === []) {
+			$in = $this->request->getGet() ?: [];
+		}
+		$raw = $this->request->getBody();
+		if (is_string($raw) && $raw !== '') {
+			$json = json_decode($raw, true);
+			if (is_array($json)) {
+				$in = array_merge($in, $json);
+			}
+		}
+		$in['school_id'] = (int) ($in['school_id'] ?? $this->request->getGet('school_id') ?? 0);
+		return $in;
+	}
 }

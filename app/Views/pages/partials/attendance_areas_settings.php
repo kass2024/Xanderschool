@@ -43,6 +43,76 @@ $areas = $attendance_areas ?? [];
 	</div>
 </div>
 
+<?php
+$hs = $heystar_device ?? [];
+$hsIp = (string) ($hs['device_ip'] ?? '');
+$hsKey = (string) ($hs['device_key'] ?? '');
+$hsPwd = (string) ($hs['password'] ?? 'HFSecurity');
+$hsArea = (int) ($hs['area_id'] ?? 0);
+$hsUpload = rtrim(base_url(), '/') . '/api/heystar_record';
+?>
+<hr class="my-4">
+<h6>HeyStar terminal (assigned web cards)</h6>
+<p class="text-muted">
+	Students are identified by the <strong>card number assigned in Xander</strong> (Assign card).
+	Staff use their school photo as a face. Sync only works when this computer can reach the kiosk on the LAN
+	and HeyStar is installed on the terminal.
+</p>
+<form id="hsForm" class="mb-3" style="max-width:560px">
+	<label class="d-block mb-2">Device IP
+		<input type="text" class="form-control" name="device_ip" id="hsIp" value="<?= esc($hsIp); ?>" placeholder="192.168.1.78">
+	</label>
+	<label class="d-block mb-2">Device key
+		<input type="text" class="form-control" name="device_key" id="hsKey" value="<?= esc($hsKey); ?>" placeholder="87cf2ca20392d2494a">
+	</label>
+	<label class="d-block mb-2">Communication password
+		<input type="text" class="form-control" name="password" id="hsPwd" value="<?= esc($hsPwd); ?>">
+	</label>
+	<label class="d-block mb-2">Student location for this kiosk
+		<select class="form-control" name="area_id" id="hsArea">
+			<option value="0">Select location</option>
+			<?php foreach ($areas as $a): ?>
+				<option value="<?= (int) $a['id']; ?>" <?= $hsArea === (int) $a['id'] ? 'selected' : ''; ?>><?= esc($a['name']); ?></option>
+			<?php endforeach; ?>
+		</select>
+	</label>
+	<p class="small text-muted mb-2">Upload URL (set automatically on sync): <code><?= esc($hsUpload); ?></code></p>
+	<button type="button" class="btn btn-secondary" id="hsSave">Save</button>
+	<button type="button" class="btn btn-primary" id="hsSync">Sync assigned cards &amp; staff faces</button>
+	<div id="hsMsg" class="small mt-2"></div>
+</form>
+
+<script>
+$(function () {
+	function hsPayload(action) {
+		return {
+			action: action,
+			device_ip: $('#hsIp').val().trim(),
+			device_key: $('#hsKey').val().trim(),
+			password: $('#hsPwd').val().trim(),
+			area_id: $('#hsArea').val()
+		};
+	}
+	function hsTell(ok, text) {
+		$('#hsMsg').css('color', ok ? '#166534' : '#b91c1c').text(text);
+	}
+	$('#hsSave').on('click', function () {
+		$.post('<?= base_url('manipulate_heystar_device'); ?>', hsPayload('save'), function (res) {
+			hsTell(!!res.success, res.success || res.error || 'Saved');
+		}, 'json');
+	});
+	$('#hsSync').on('click', function () {
+		hsTell(true, 'Syncing…');
+		$.post('<?= base_url('manipulate_heystar_device'); ?>', hsPayload('sync'), function (res) {
+			var extra = (res.errors && res.errors.length) ? (' ' + res.errors.join('; ')) : '';
+			hsTell(!!res.success, (res.message || res.error || 'Done') + extra);
+		}, 'json').fail(function () {
+			hsTell(false, 'Sync failed. Is HeyStar running on the kiosk?');
+		});
+	});
+});
+</script>
+
 <script>
 $(function () {
 	let areas = <?= json_encode(array_map(static function ($a) {

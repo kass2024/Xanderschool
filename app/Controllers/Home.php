@@ -8,6 +8,8 @@ use App\Libraries\GeminiCardBackground;
 use App\Libraries\GeminiAcademicDocs;
 use App\Libraries\StaffShiftClock;
 use App\Libraries\CardRegistry;
+use App\Libraries\HeyStarDeviceStore;
+use App\Libraries\HeyStarSyncService;
 use App\Models\AcademicYearModel;
 use App\Models\AcademicPlanModel;
 use App\Models\AcademicAiAnalysisModel;
@@ -1528,6 +1530,13 @@ public function testEmail()
 		$data['required_materials'] = $matSchema->listMaterials($schoolId, true);
 		$areaMdl = new AttendanceAreaModel();
 		$data['attendance_areas'] = $areaMdl->listAreas($schoolId, true);
+		HeyStarDeviceStore::ensureSchema();
+		$data['heystar_device'] = HeyStarDeviceStore::forSchool($schoolId) ?: [
+			'device_key' => '',
+			'device_ip' => '',
+			'password' => 'HFSecurity',
+			'area_id' => 0,
+		];
 		$data['years'] = (new AcademicYearModel())->select('id,title')->where('school_id', $schoolId)
 			->orderBy('id', 'DESC')->get()->getResultArray();
 		$classMdl = new ClassesModel();
@@ -13004,6 +13013,32 @@ public function getApplicationDocs($id = null)
 			}
 			$areaMdl->update($id, ['active' => 0]);
 			return $this->response->setJSON(['success' => 'Attendance location removed.']);
+		}
+		return $this->response->setJSON(['error' => 'Unknown action.']);
+	}
+
+	public function manipulate_heystar_device()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$action = (string) $this->request->getPost('action');
+		if ($action === 'save') {
+			HeyStarDeviceStore::save($schoolId, [
+				'device_key' => trim((string) $this->request->getPost('device_key')),
+				'device_ip' => trim((string) $this->request->getPost('device_ip')),
+				'password' => trim((string) $this->request->getPost('password')),
+				'area_id' => (int) $this->request->getPost('area_id'),
+			]);
+			return $this->response->setJSON(['success' => 'HeyStar device saved. Assigned web cards will be used on sync.']);
+		}
+		if ($action === 'sync') {
+			HeyStarDeviceStore::save($schoolId, [
+				'device_key' => trim((string) $this->request->getPost('device_key')),
+				'device_ip' => trim((string) $this->request->getPost('device_ip')),
+				'password' => trim((string) $this->request->getPost('password')),
+				'area_id' => (int) $this->request->getPost('area_id'),
+			]);
+			return $this->response->setJSON(HeyStarSyncService::syncSchool($schoolId));
 		}
 		return $this->response->setJSON(['error' => 'Unknown action.']);
 	}

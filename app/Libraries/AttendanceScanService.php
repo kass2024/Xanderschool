@@ -508,4 +508,88 @@ class AttendanceScanService
 			'photo' => profile_photo_url($staff->photo ?? null),
 		];
 	}
+
+	/**
+	 * HeyStar identify-record upload. Card numbers must match cards assigned in the web app.
+	 *
+	 * @param array<string,mixed> $in
+	 * @return array<string,mixed>
+	 */
+	public static function ingestHeyStarRecord(array $in): array
+	{
+		HeyStarDeviceStore::ensureSchema();
+		$ack = ['result' => 1, 'code' => '000'];
+		$schoolId = (int) ($in['school_id'] ?? 0);
+		$deviceKey = trim((string) ($in['deviceKey'] ?? ''));
+		if ($schoolId <= 0 && $deviceKey !== '') {
+			$dev = HeyStarDeviceStore::forDeviceKey($deviceKey);
+			$schoolId = $dev ? (int) $dev['school_id'] : 0;
+		}
+		if ($schoolId <= 0) {
+			return $ack;
+		}
+
+		$recordId = trim((string) ($in['recordId'] ?? ''));
+		if ($recordId !== '' && HeyStarDeviceStore::seenRecord($schoolId, $recordId)) {
+			return $ack;
+		}
+
+		$stranger = (int) ($in['strangerFlag'] ?? 0) === 1;
+		$resultFlag = (int) ($in['resultFlag'] ?? 1);
+		if ($stranger || ($resultFlag !== 0 && $resultFlag !== 1)) {
+			return $ack;
+		}
+
+		$eventTime = (int) ($in['recordTime'] ?? 0);
+		if ($eventTime > 20000000000) {
+			$eventTime = (int) floor($eventTime / 1000);
+		}
+
+		$dev = HeyStarDeviceStore::forSchool($schoolId);
+		$areaId = (int) ($dev['area_id'] ?? 0);
+		if ($areaId <= 0) {
+			$areas = (new AttendanceAreaModel())->listAreas($schoolId, true);
+			$areaId = $areas !== [] ? (int) $areas[0]['id'] : 0;
+		}
+
+		$card = trim((string) ($in['cardNo'] ?? ''));
+		if ($card !== '') {
+			return array_merge($ack, self::scanCard($schoolId, $card, $areaId, $eventTime));
+		}
+
+		$sn = trim((string) ($in['personSn'] ?? ''));
+		if (preg_match('/^S(\d+)$/', $sn, $m)) {
+			return array_merge($ack, self::scanStudent($schoolId, (int) $m[1], $areaId, $eventTime));
+		}
+		if (preg_match('/^T(\d+)$/', $sn, $m)) {
+			return array_merge($ack, self::scanStaff($schoolId, (int) $m[1], $eventTime));
+		}
+
+		return $ack;
+	}
+
+	/**
+	 * @param array<string,mixed> $in
+	 */
+	public static function ingestHeyStarHeartbeat(array $in): void
+	{
+		$schoolId = (int) ($in['school_id'] ?? 0);
+		$deviceKey = trim((string) ($in['deviceKey'] ?? ''));
+		$ip = trim((string) ($in['ip'] ?? ''));
+		if ($schoolId <= 0 && $deviceKey !== '') {
+			$dev = HeyStarDeviceStore::forDeviceKey($deviceKey);
+			$schoolId = $dev ? (int) $dev['school_id'] : 0;
+		}
+		if ($schoolId <= 0) {
+			return;
+		}
+		$data = ['last_seen' => time()];
+		if ($deviceKey !== '') {
+			$data['device_key'] = $deviceKey;
+		}
+		if ($ip !== '') {
+			$data['device_ip'] = $ip;
+		}
+		HeyStarDeviceStore::save($schoolId, $data);
+	}
 }

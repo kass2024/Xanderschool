@@ -1182,6 +1182,7 @@
 				<div class="card-body">
 					<?= view('pages/partials/attendance_areas_settings', [
 						'attendance_areas' => $attendance_areas ?? [],
+						'heystar_device' => $heystar_device ?? [],
 					]); ?>
 				</div>
 			</div>

@@ -293,6 +293,7 @@ $routes->get('staff-attendance-card', 'Home::staffAttendanceCard');
 $routes->post('scan-staff-card', 'Home::scanStaffCard');
 $routes->get('scan-staff-card', 'Home::scanStaffCard');
 $routes->post('manipulate_attendance_area', 'Home::manipulate_attendance_area');
+$routes->post('manipulate_heystar_device', 'Home::manipulate_heystar_device');
 
 $routes->add('(:any)', 'Home::$1');
 $routes->get('/home/editRegno/(:num)', 'Home::editRegno/$1');
