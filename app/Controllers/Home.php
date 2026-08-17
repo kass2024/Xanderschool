@@ -4660,6 +4660,8 @@ public function attendanceCard()
 		$data['page'] = "staff_monthly_report";
 		$acMdl = new AcademicYearModel();
 		$data['years'] = get_years($this->data['school_start_year']);
+		$data['default_month'] = (int) date('n');
+		$data['default_year'] = (int) date('Y');
 		$data['show_header'] = true;
 		$data['content'] = view("pages/reports/staff_report_monthly", $data);
 		return view('main', $data);
@@ -4721,6 +4723,8 @@ public function attendanceCard()
 				->groupBy("staffs.id")
 				->get()->getResultArray();
 		$data['show_header'] = true;
+		$data['default_start'] = date('Y-m-01');
+		$data['default_end'] = date('Y-m-d');
 		$data['content'] = view("pages/reports/staff_report_individual", $data);
 		return view('main', $data);
 	}

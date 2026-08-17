@@ -172,6 +172,24 @@
 }
 .io-st.done { background: #ecfdf5; color: #047857; }
 .io-st.open { background: #ffedd5; color: #c2410c; }
+.io-st.late { background: #fff7ed; color: #c2410c; }
+.io-st.absent { background: #fef2f2; color: #b91c1c; }
+.io-st.leave { background: #e0f2fe; color: #0369a1; }
+.io-st.early { background: #fef3c7; color: #b45309; }
+.io-st.present { background: #ecfdf5; color: #047857; }
+.io-st.nco { background: #ffedd5; color: #c2410c; }
+.io-rate {
+	display: inline-block;
+	min-width: 3.2rem;
+	font-weight: 800;
+	font-variant-numeric: tabular-nums;
+}
+.io-rate.ok { color: #047857; }
+.io-rate.warn { color: #c2410c; }
+.io-rate.bad { color: #b91c1c; }
+.io-profile { margin-bottom: 14px; }
+.io-profile h3 { margin: 0 0 4px; font-size: 1.25rem; }
+.io-profile .meta { color: #64748b; font-size: .9rem; }
 
 @media print {
 	.app-sidebar-wrapper, .app-header, .app-footer, .io-filters, .io-tabs, .io-actions, .hamburger { display: none !important; }
