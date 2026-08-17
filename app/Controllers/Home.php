@@ -15,6 +15,7 @@ use App\Models\ActivityModel;
 use App\Models\AddressModel;
 use App\Models\ApplicationSettingsModel;
 use App\Models\ApplicationTransactionModel;
+use App\Models\AttendanceAreaModel;
 use App\Models\AttendanceRecordsModel;
 use App\Models\BookCategoryModel;
 use App\Models\BookModel;
@@ -1523,6 +1524,8 @@ public function testEmail()
 		$matSchema = new \App\Models\StudentMaterialSchemaModel();
 		$matSchema->ensureSchema();
 		$data['required_materials'] = $matSchema->listMaterials($schoolId, true);
+		$areaMdl = new AttendanceAreaModel();
+		$data['attendance_areas'] = $areaMdl->listAreas($schoolId, true);
 		$data['years'] = (new AcademicYearModel())->select('id,title')->where('school_id', $schoolId)
 			->orderBy('id', 'DESC')->get()->getResultArray();
 		$classMdl = new ClassesModel();
@@ -3512,11 +3515,19 @@ public function scanCard()
     // GET CARD
     // ==========================
     $cardRaw = trim($request->getPost('card') ?? $request->getGet('card'));
+    $areaId = (int) ($request->getPost('area') ?? $request->getGet('area') ?? 0);
 
     if (!$cardRaw) {
         return $this->response->setJSON([
             "success" => 0,
             "message" => "Card missing"
+        ]);
+    }
+
+    if ($areaId <= 0) {
+        return $this->response->setJSON([
+            "success" => 0,
+            "message" => "Select an attendance area first"
         ]);
     }
 
@@ -3568,7 +3579,24 @@ public function scanCard()
     // ==========================
     // SCHOOL
     // ==========================
-    $school_id = $student->school_id;
+    $school_id = (int) $student->school_id;
+    $sessionSchool = (int) ($this->session->get("soma_school_id") ?? 0);
+    if ($sessionSchool > 0 && $school_id !== $sessionSchool) {
+        return $this->response->setJSON([
+            "success" => 0,
+            "message" => "Card not found"
+        ]);
+    }
+
+    $areaMdl = new AttendanceAreaModel();
+    $area = $areaMdl->getActiveForSchool($school_id, $areaId);
+    if (!$area) {
+        return $this->response->setJSON([
+            "success" => 0,
+            "message" => "Invalid attendance area"
+        ]);
+    }
+    $areaName = (string) ($area['name'] ?? '');
 
     $school = $db->table('schools')
         ->select("name,email,phone,logo")
@@ -3606,6 +3634,7 @@ public function scanCard()
         ")
         ->where("user_type", 0)
         ->where("user_id", $student->id)
+        ->where("area_id", $areaId)
         ->where("DATE_FORMAT(FROM_UNIXTIME(time_in),'%m-%Y') = '$month'", null, false)
         ->get()
         ->getRow()
@@ -3622,8 +3651,10 @@ public function scanCard()
     $attendance = $db->table('attendance_records')
         ->where("user_id", $student->id)
         ->where("school_id", $school_id)
+        ->where("area_id", $areaId)
         ->where("time_in >=", $todayStart)
         ->where("time_in <=", $todayEnd)
+        ->orderBy("id", "DESC")
         ->get()
         ->getRow();
 
@@ -3635,12 +3666,13 @@ public function scanCard()
             "time_in"   => $time,
             "time_out"  => 0,
             "school_id" => $school_id,
+            "area_id"   => $areaId,
             "shift_id"  => 1
         ]);
 
         $status = "IN";
 
-    } elseif ($attendance->time_out == 0) {
+    } elseif ((int) $attendance->time_out === 0) {
 
         $db->table('attendance_records')
             ->where("id", $attendance->id)
@@ -3652,7 +3684,7 @@ public function scanCard()
 
         return $this->response->setJSON([
             "success" => 0,
-            "message" => "Already checked out today"
+            "message" => "Already checked out of " . $areaName . " today"
         ]);
     }
 
@@ -3682,7 +3714,11 @@ public function scanCard()
         ],
 
         "month" => $month,
-        "time"  => date("H:i", $time)
+        "time"  => date("H:i", $time),
+        "area"  => [
+            "id"   => $areaId,
+            "name" => $areaName,
+        ],
     ]);
 }
 	public function manipulate_grade()
@@ -3748,8 +3784,14 @@ public function scanCard()
 	}
 public function attendanceCard()
 {
+    $this->_preset();
     helper('qonics');
-    return view('attendance_card');
+    $schoolId = (int) $this->session->get('soma_school_id');
+    $areaMdl = new AttendanceAreaModel();
+    return view('attendance_card', [
+        'attendance_areas' => $areaMdl->listAreas($schoolId, true),
+        'settings_url' => base_url('settings') . '#student-inout-areas',
+    ]);
 }
 	public function manipulate_intouch($school_id)
 	{
@@ -4531,11 +4573,13 @@ public function attendanceCard()
 	{
 		$this->_preset();
 		$data = $this->data;
-		$data['title'] = lang("app.staffMonthlyReport");
-		$data['subtitle'] = lang("app.viewAllMnthlyStaff");
-		$data['page'] = "staff_monthly_report";
+		$data['title'] = lang("app.StudentInOutmonthlyReport");
+		$data['subtitle'] = lang("app.studentInOut");
+		$data['page'] = "student_inout_monthly_report";
 		$clMdl = new ClassesModel();
 		$data['classes'] = $clMdl->get_classes();
+		$areaMdl = new AttendanceAreaModel();
+		$data['attendance_areas'] = $areaMdl->listAreas((int) $this->session->get("soma_school_id"), false);
 		$data['show_header'] = true;
 		$data['content'] = view("pages/reports/student_inout_report_monthly", $data);
 		return view('main', $data);
@@ -4546,19 +4590,28 @@ public function attendanceCard()
 		$this->_preset();
 		$data = $this->data;
 		$month = sprintf("%02d", $this->request->getGet("month")) . "-" . date("Y");
-		$classe = $this->request->getGet("class");
+		$classe = (int) $this->request->getGet("class");
+		$areaId = (int) $this->request->getGet("area");
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$areaMdl = new AttendanceAreaModel();
+		$area = $areaMdl->getForSchool($schoolId, $areaId);
+		if (!$area) {
+			echo "<h4 style='width:100%;text-align:center;margin-top:15px'>" . lang("app.pleaseSelectArea") . "</h4>";
+			return;
+		}
 		$stMdl = new StudentModel();
 		$data['students'] = $stMdl->select("students.*,(select group_concat(date_format(from_unixtime(time_in),'%d %H:%i'),';',date_format(from_unixtime(time_out),'%d %H:%i'))
-		 from attendance_records where user_type=0 and user_id=students.id and date_format(from_unixtime(time_in),'%m-%Y')='$month' group by user_id) as records")
+		 from attendance_records where user_type=0 and user_id=students.id and area_id=" . $areaId . " and date_format(from_unixtime(time_in),'%m-%Y')='$month' group by user_id) as records")
 				->join("class_records cr", "cr.student=students.id")
 				->where("cr.class", $classe)
 				->where("cr.year", $this->data['academic_year'])
-				->where("school_id", $this->session->get("soma_school_id"))
+				->where("school_id", $schoolId)
 				->groupBy("students.id")
 				->get()->getResultArray();
 		$data['show_header'] = false;
 		$data['month'] = $month;
-		$data['classe'] = "";//to be done later
+		$data['classe'] = (new ClassesModel())->get_class_name($classe);
+		$data['attendance_area'] = $area['name'];
 		echo view("pages/reports/student_inout_report_monthly", $data);
 	}
 
@@ -12670,6 +12723,57 @@ public function getApplicationDocs($id = null)
 		$matSchema = new \App\Models\StudentMaterialSchemaModel();
 		$matSchema->saveClassAssignments($school_id, $classId, $year, $items);
 		return $this->response->setJSON(['success' => 'Class material assignment saved.']);
+	}
+
+	public function manipulate_attendance_area()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$areaMdl = new AttendanceAreaModel();
+		$areaMdl->ensureSchema();
+		$action = (string) $this->request->getPost('action');
+		if ($action === 'add') {
+			$name = trim((string) $this->request->getPost('name'));
+			if ($name === '') {
+				return $this->response->setJSON(['error' => 'Area name is required.']);
+			}
+			$dup = $areaMdl->where('school_id', $schoolId)->where('active', 1)->findAll();
+			foreach ($dup as $row) {
+				if (strcasecmp(trim((string) ($row['name'] ?? '')), $name) === 0) {
+					return $this->response->setJSON(['error' => 'That area already exists.']);
+				}
+			}
+			$id = $areaMdl->insert([
+				'school_id' => $schoolId,
+				'name' => $name,
+				'sort_order' => 0,
+				'active' => 1,
+			]);
+			if (!$id) {
+				return $this->response->setJSON(['error' => 'Could not add area.']);
+			}
+			return $this->response->setJSON([
+				'success' => 'Attendance area added.',
+				'area' => ['id' => (int) $id, 'name' => $name],
+			]);
+		}
+		if ($action === 'delete') {
+			$id = (int) $this->request->getPost('id');
+			$row = $areaMdl->where('school_id', $schoolId)->find($id);
+			if (!$row) {
+				return $this->response->setJSON(['error' => 'Area not found.']);
+			}
+			$remaining = $areaMdl->where('school_id', $schoolId)
+				->where('active', 1)
+				->where('id !=', $id)
+				->findAll();
+			if (count($remaining) < 1) {
+				return $this->response->setJSON(['error' => 'Keep at least one attendance area.']);
+			}
+			$areaMdl->update($id, ['active' => 0]);
+			return $this->response->setJSON(['success' => 'Attendance area removed.']);
+		}
+		return $this->response->setJSON(['error' => 'Unknown action.']);
 	}
 
 	public

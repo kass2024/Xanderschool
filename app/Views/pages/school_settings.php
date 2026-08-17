@@ -1170,6 +1170,23 @@
 			</div>
 		</div>
 
+		<div class="card ss-acc-item" id="student-inout-areas">
+			<div id="headingAttendanceAreas" class="b-radius-0 card-header">
+				<button type="button" data-toggle="collapse" data-target="#collapseAttendanceAreas" aria-expanded="false"
+						aria-controls="collapseAttendanceAreas" class="text-left m-0 p-0 btn btn-link btn-block">
+					<h5 class="m-0 p-0"><span class="ss-acc-ico"><i class="fa fa-map-marker"></i></span>Student IN/OUT attendance areas</h5>
+					<i class="fa fa-chevron-down ss-acc-chevron"></i>
+				</button>
+			</div>
+			<div id="collapseAttendanceAreas" data-parent="#accordion" class="collapse">
+				<div class="card-body">
+					<?= view('pages/partials/attendance_areas_settings', [
+						'attendance_areas' => $attendance_areas ?? [],
+					]); ?>
+				</div>
+			</div>
+		</div>
+
 		<div class="card ss-acc-item" id="timetable-settings">
 			<div id="headingTimetable" class="b-radius-0 card-header">
 				<button type="button" data-toggle="collapse" data-target="#collapseTimetable" aria-expanded="false"
@@ -2906,6 +2923,7 @@ $(document).on("click","#btn-remove-discipline",function () {
 			'#collapseOne2': '#collapseOne2',
 			'#student-required-materials': '#collapseStudentMaterials',
 			'#staff-attendance-settings': '#collapseStaffAttendance',
+			'#student-inout-areas': '#collapseAttendanceAreas',
 			'#timetable-settings': '#collapseTimetable',
 			'#pedagogical-documents': '#collapsePedagogical',
 			'#logo-signatures': '#collapseLogoSig'

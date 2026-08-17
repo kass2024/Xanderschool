@@ -24,6 +24,20 @@ if ($show_header) {
 			</select>
 		</div>
 		<div class="col-md-3 pull-left">
+			<select class="select2 form-control" id="select_area" name="area">
+				<option disabled selected><?= lang("app.selectAttendanceArea"); ?> </option>
+				<?php
+				foreach (($attendance_areas ?? []) as $area):
+					$label = $area['name'];
+					if ((int) ($area['active'] ?? 1) !== 1) {
+						$label .= ' (inactive)';
+					}
+					echo "<option value='" . (int) $area['id'] . "'>" . esc($label) . "</option>";
+				endforeach;
+				?>
+			</select>
+		</div>
+		<div class="col-md-3 pull-left">
 			<select class="select2 form-control" id="choose_month" name="months">
 				<option disabled selected><?= lang("app.chooseMonth"); ?> </option>
 				<?php
@@ -48,12 +62,17 @@ if ($show_header) {
 					toastada.warning('<?= lang("app.pleasSelectClass"); ?>');
 					return;
 				}
+				if ($("#select_area").val()==null){
+					toastada.warning('<?= lang("app.pleaseSelectArea"); ?>');
+					return;
+				}
 				if ($("#choose_month").val()==null){
 					toastada.warning('<?= lang("app.pleaseSelectMonth"); ?>');
 					return;
 				}
 				$("#btn_generate").text('<?= lang("app.pleaseWait"); ?>').prop("disabled",true);
 				$("#report_content").load("<?=base_url('student_inout_monthly_report_data/false');?>","class="+$("#select_class").val()
+					+"&area="+$("#select_area").val()
 					+"&month="+$("#choose_month").val(),function () {
 					$("#btn_generate").text('<?= lang("app.generate"); ?>').prop("disabled",false);
 				})
@@ -80,11 +99,12 @@ if ($show_header) {
 						</div>
 					</div>
 					<br>
-					<h4 style="text-decoration: underline;width: 100%;float: left;text-align: center;"><?= lang("app.StudentInOutmonthlyReport"); ?> </h4>
+					<h4 style="text-decoration: underline;width: 100%;float: left;text-align: center;"><?= lang("app.StudentInOutmonthlyReport"); ?><?= !empty($attendance_area) ? ' — ' . esc($attendance_area) : ''; ?> </h4>
 				</div>
 				<div class="col-sm-12">
 					<div class="col-md-6 pull-left">
 						<span><b><?= lang("app.sClass"); ?> : </b><?= $classe; ?></span><br>
+						<span><b><?= lang("app.attendanceArea"); ?> : </b><?= esc($attendance_area ?? ''); ?></span><br>
 						<span><b><?= lang("app.month"); ?> : </b><?= $month; ?></span><br>
 						<span><b><?= lang("app.totalStudents"); ?> : </b> <?= count($students); ?></span><br>
 					</div>

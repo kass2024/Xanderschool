@@ -284,6 +284,11 @@ $routes->get('timetable/print_teacher/(:num)', 'TimetableManagement::print_teach
 $routes->get('timetable/pdf_all_classes', 'TimetableManagement::pdf_all_classes');
 $routes->get('timetable/pdf_all_teachers', 'TimetableManagement::pdf_all_teachers');
 
+$routes->get('attendance-card', 'Home::attendanceCard');
+$routes->post('scan-card', 'Home::scanCard');
+$routes->get('scan-card', 'Home::scanCard');
+$routes->post('manipulate_attendance_area', 'Home::manipulate_attendance_area');
+
 $routes->add('(:any)', 'Home::$1');
 $routes->get('/home/editRegno/(:num)', 'Home::editRegno/$1');
 $routes->post('/home/updateRegno/(:num)', 'Home::updateRegno/$1');
@@ -292,9 +297,6 @@ $routes->get('assign-card', 'Home::assign_card');
 $routes->post('discipline_card_scan', 'Api::discipline_card_scan');
 $routes->post('permission_card_scan', 'Api::permission_card_scan');
 $routes->get('pages/reports/print_permission/(:num)', 'Home::print_permission/$1');
-$routes->get('attendance-card', 'Home::attendanceCard');
-$routes->post('scan-card', 'Home::scanCard');
-$routes->get('scan-card', 'Home::scanCard'); // testing
 
 
 
