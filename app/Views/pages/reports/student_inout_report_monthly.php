@@ -23,7 +23,7 @@ if ($show_header) {
 				<div class="io-field">
 					<label><?= lang("app.attendanceArea"); ?></label>
 					<select class="select2 form-control" id="select_area" name="area">
-						<option value="0" selected>All areas</option>
+						<option value="0" selected>All locations</option>
 						<?php foreach (($attendance_areas ?? []) as $area):
 							$label = $area['name'];
 							if ((int) ($area['active'] ?? 1) !== 1) {
@@ -57,7 +57,7 @@ if ($show_header) {
 			</div>
 		</div>
 		<div id="report_content">
-			<div class="io-empty">Choose class, area, month and year, then Generate. Use <strong>All classes</strong> and <strong>All areas</strong> to track every NFC IN/OUT scan.</div>
+			<div class="io-empty">Choose class, location, month and year, then Generate. Use <strong>All classes</strong> and <strong>All locations</strong> to track every NFC IN/OUT scan.</div>
 		</div>
 	</div>
 	<script>
@@ -219,7 +219,7 @@ foreach ($visits as $vv) {
 						<th>Student</th>
 						<?php if ($showClassCol) : ?><th>Class</th><?php endif; ?>
 						<th>Day</th>
-						<?php if (!$singleArea) : ?><th>Area</th><?php endif; ?>
+						<?php if (!$singleArea) : ?><th>Location</th><?php endif; ?>
 						<th>IN</th>
 						<th>OUT / checkout</th>
 						<th>Duration</th>
@@ -280,7 +280,7 @@ foreach ($visits as $vv) {
 					<th>Student</th>
 					<th>Reg</th>
 					<th>Class</th>
-					<th>Area</th>
+					<th>Location</th>
 					<th>Day</th>
 					<th>IN</th>
 					<th>OUT / checkout</th>

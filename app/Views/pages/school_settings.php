@@ -1174,7 +1174,7 @@
 			<div id="headingAttendanceAreas" class="b-radius-0 card-header">
 				<button type="button" data-toggle="collapse" data-target="#collapseAttendanceAreas" aria-expanded="false"
 						aria-controls="collapseAttendanceAreas" class="text-left m-0 p-0 btn btn-link btn-block">
-					<h5 class="m-0 p-0"><span class="ss-acc-ico"><i class="fa fa-map-marker"></i></span>Student IN/OUT attendance areas</h5>
+					<h5 class="m-0 p-0"><span class="ss-acc-ico"><i class="fa fa-map-marker"></i></span>Student IN/OUT attendance locations</h5>
 					<i class="fa fa-chevron-down ss-acc-chevron"></i>
 				</button>
 			</div>

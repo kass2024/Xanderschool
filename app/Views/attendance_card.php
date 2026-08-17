@@ -366,12 +366,12 @@ $fallbackPhoto = profile_photo_url(null);
 		</div>
 		<div class="meta">
 			<div id="clock">--:--:--</div>
-			<div id="readyLabel">Select an area first</div>
+			<div id="readyLabel">Select a location first</div>
 		</div>
 	</div>
 
 	<div class="kpi-grid" id="kpiGrid" hidden>
-		<div class="kpi inside"><div class="lbl">Inside now</div><div class="val" id="kpiInside">0</div><div class="sub">Still in this area</div></div>
+		<div class="kpi inside"><div class="lbl">Inside now</div><div class="val" id="kpiInside">0</div><div class="sub">Still in this location</div></div>
 		<div class="kpi in"><div class="lbl">Checked IN</div><div class="val" id="kpiIn">0</div><div class="sub">Entries today</div></div>
 		<div class="kpi out"><div class="lbl">Checked OUT</div><div class="val" id="kpiOut">0</div><div class="sub">Exits today</div></div>
 		<div class="kpi scans"><div class="lbl">Card taps</div><div class="val" id="kpiScans">0</div><div class="sub">IN + OUT today</div></div>
@@ -380,10 +380,10 @@ $fallbackPhoto = profile_photo_url(null);
 
 	<div class="picker-card" id="areaGate">
 		<h2><?= lang('app.selectAttendanceArea'); ?></h2>
-		<p>Choose the location, then tap student NFC cards. KPIs update live for that area.</p>
+		<p>Choose the location, then tap student NFC cards. KPIs update live for that location.</p>
 		<?php if (empty($areas)) : ?>
 			<p class="area-empty">
-				No attendance areas are set.
+				No attendance locations are set.
 				<a href="<?= esc($settingsUrl, 'attr'); ?>">Add them in School settings</a>
 				(Library, Cafeteria, School gate, …).
 			</p>
@@ -426,7 +426,7 @@ $fallbackPhoto = profile_photo_url(null);
 		<div class="recent-card">
 			<h3>Today’s activity</h3>
 			<div class="recent-list" id="recentList">
-				<div class="recent-empty">No scans yet in this area today.</div>
+				<div class="recent-empty">No scans yet in this location today.</div>
 			</div>
 		</div>
 	</div>
@@ -524,7 +524,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 	function renderRecent(rows) {
 		if (!rows || !rows.length) {
-			recentList.innerHTML = '<div class="recent-empty">No scans yet in this area today.</div>';
+			recentList.innerHTML = '<div class="recent-empty">No scans yet in this location today.</div>';
 			return;
 		}
 		recentList.innerHTML = rows.map(function (r) {
@@ -580,7 +580,7 @@ document.addEventListener("DOMContentLoaded", function () {
 		scanLayout.hidden = true;
 		kpiGrid.hidden = true;
 		areaBadge.hidden = true;
-		readyLabel.textContent = "Select an area first";
+		readyLabel.textContent = "Select a location first";
 	}
 
 	document.querySelectorAll(".area-tile").forEach(function (btn) {

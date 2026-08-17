@@ -3527,7 +3527,7 @@ public function scanCard()
     if ($areaId <= 0) {
         return $this->response->setJSON([
             "success" => 0,
-            "message" => "Select an attendance area first"
+            "message" => "Select an attendance location first"
         ]);
     }
 
@@ -3593,7 +3593,7 @@ public function scanCard()
     if (!$area) {
         return $this->response->setJSON([
             "success" => 0,
-            "message" => "Invalid attendance area"
+            "message" => "Invalid attendance location"
         ]);
     }
     $areaName = (string) ($area['name'] ?? '');
@@ -3816,7 +3816,7 @@ public function attendanceCard()
 		}
 		$area = $areaMdl->getActiveForSchool($schoolId, $areaId);
 		if (!$area) {
-			return $this->response->setJSON(['success' => 0, 'message' => 'Invalid attendance area']);
+			return $this->response->setJSON(['success' => 0, 'message' => 'Invalid attendance location']);
 		}
 		$dash = $this->attendanceAreaDashboard($schoolId, $areaId);
 		return $this->response->setJSON([
@@ -4664,7 +4664,7 @@ public function attendanceCard()
 		$areaId = (int) $this->request->getVar("area");
 		$schoolId = (int) $this->session->get("soma_school_id");
 		$areaMdl = new AttendanceAreaModel();
-		$areaLabel = 'All areas';
+		$areaLabel = 'All locations';
 		if ($areaId > 0) {
 			$area = $areaMdl->getForSchool($schoolId, $areaId);
 			if (!$area) {
@@ -12808,12 +12808,12 @@ public function getApplicationDocs($id = null)
 		if ($action === 'add') {
 			$name = trim((string) $this->request->getPost('name'));
 			if ($name === '') {
-				return $this->response->setJSON(['error' => 'Area name is required.']);
+				return $this->response->setJSON(['error' => 'Location name is required.']);
 			}
 			$dup = $areaMdl->where('school_id', $schoolId)->where('active', 1)->findAll();
 			foreach ($dup as $row) {
 				if (strcasecmp(trim((string) ($row['name'] ?? '')), $name) === 0) {
-					return $this->response->setJSON(['error' => 'That area already exists.']);
+					return $this->response->setJSON(['error' => 'That location already exists.']);
 				}
 			}
 			$id = $areaMdl->insert([
@@ -12823,10 +12823,10 @@ public function getApplicationDocs($id = null)
 				'active' => 1,
 			]);
 			if (!$id) {
-				return $this->response->setJSON(['error' => 'Could not add area.']);
+				return $this->response->setJSON(['error' => 'Could not add location.']);
 			}
 			return $this->response->setJSON([
-				'success' => 'Attendance area added.',
+				'success' => 'Attendance location added.',
 				'area' => ['id' => (int) $id, 'name' => $name],
 			]);
 		}
@@ -12834,17 +12834,17 @@ public function getApplicationDocs($id = null)
 			$id = (int) $this->request->getPost('id');
 			$row = $areaMdl->where('school_id', $schoolId)->find($id);
 			if (!$row) {
-				return $this->response->setJSON(['error' => 'Area not found.']);
+				return $this->response->setJSON(['error' => 'Location not found.']);
 			}
 			$remaining = $areaMdl->where('school_id', $schoolId)
 				->where('active', 1)
 				->where('id !=', $id)
 				->findAll();
 			if (count($remaining) < 1) {
-				return $this->response->setJSON(['error' => 'Keep at least one attendance area.']);
+				return $this->response->setJSON(['error' => 'Keep at least one attendance location.']);
 			}
 			$areaMdl->update($id, ['active' => 0]);
-			return $this->response->setJSON(['success' => 'Attendance area removed.']);
+			return $this->response->setJSON(['success' => 'Attendance location removed.']);
 		}
 		return $this->response->setJSON(['error' => 'Unknown action.']);
 	}

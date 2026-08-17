@@ -18,18 +18,18 @@ $areas = $attendance_areas ?? [];
 <div id="aaSettings">
 	<p class="text-muted aa-intro">
 		Define locations used on <strong>Student IN/OUT Attendance</strong> (NFC card scanner), for example
-		Library, Cafeteria, School gate. Staff must choose an area before scanning.
-		The monthly in/out report uses the same table for every area — pick the area to filter.
+		Library, Cafeteria, School gate. Staff must choose a location before scanning.
+		The monthly in/out report uses the same layout for every location — pick the location to filter.
 	</p>
 
 	<form id="aaAddForm" class="aa-add-form">
-		<input type="text" class="form-control" id="aaName" placeholder="Area name (e.g. Library)" required maxlength="120">
+		<input type="text" class="form-control" id="aaName" placeholder="Location name (e.g. Library)" required maxlength="120">
 		<button type="submit" class="btn btn-success"><i class="fa fa-plus"></i> Add</button>
 	</form>
 
 	<div class="aa-list" id="aaList">
 		<?php if (empty($areas)) : ?>
-			<p class="aa-empty">No areas yet. Add Library, Cafeteria, or any location above.</p>
+			<p class="aa-empty">No locations yet. Add Library, Cafeteria, or any location above.</p>
 		<?php else : ?>
 			<?php foreach ($areas as $a) : ?>
 				<div class="aa-item" data-id="<?= (int) $a['id']; ?>">
@@ -52,7 +52,7 @@ $(function () {
 	function renderList() {
 		const $el = $('#aaList');
 		if (!areas.length) {
-			$el.html('<p class="aa-empty">No areas yet. Add Library, Cafeteria, or any location above.</p>');
+			$el.html('<p class="aa-empty">No locations yet. Add Library, Cafeteria, or any location above.</p>');
 			return;
 		}
 		let html = '';
@@ -75,21 +75,21 @@ $(function () {
 				$('#aaName').val('');
 				if (window.toastada) toastada.success(res.success);
 			} else if (window.toastada) {
-				toastada.error((res && res.error) || 'Could not add area.');
+				toastada.error((res && res.error) || 'Could not add location.');
 			}
 		}, 'json');
 	});
 
 	$(document).on('click', '.aa-del', function () {
 		const id = $(this).data('id');
-		if (!confirm('Remove this attendance area? Existing scans stay in reports.')) return;
+		if (!confirm('Remove this attendance location? Existing scans stay in reports.')) return;
 		$.post('<?= base_url('manipulate_attendance_area'); ?>', { action: 'delete', id: id }, function (res) {
 			if (res.success) {
 				areas = areas.filter(function (a) { return a.id !== id; });
 				renderList();
 				if (window.toastada) toastada.success(res.success);
 			} else if (window.toastada) {
-				toastada.error((res && res.error) || 'Could not remove area.');
+				toastada.error((res && res.error) || 'Could not remove location.');
 			}
 		}, 'json');
 	});
