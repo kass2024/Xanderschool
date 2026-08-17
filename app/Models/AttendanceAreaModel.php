@@ -376,6 +376,8 @@ class AttendanceAreaModel extends Model
 		$missingOut = 0;
 		$scannedIds = [];
 		$missingOutRows = [];
+		$visits = [];
+		$dayStats = [];
 
 		foreach ($recs as $r) {
 			$sid = (int) $r['user_id'];
@@ -384,12 +386,36 @@ class AttendanceAreaModel extends Model
 			$tout = (int) ($r['time_out'] ?? 0);
 			$day = (int) date('j', $tin);
 			$aname = $areaNames[$aid] ?? ('Area #' . $aid);
+			$inHm = date('H:i', $tin);
+			$outHm = $tout > 0 ? date('H:i', $tout) : '';
+			$dur = '';
+			if ($tout > $tin) {
+				$mins = (int) floor(($tout - $tin) / 60);
+				$dur = $mins >= 60
+					? ((int) floor($mins / 60)) . 'h ' . ($mins % 60) . 'm'
+					: $mins . ' min';
+			}
 			$byStudent[$sid][$day][] = [
-				'in' => date('H:i', $tin),
-				'out' => $tout > 0 ? date('H:i', $tout) : '',
+				'in' => $inHm,
+				'out' => $outHm,
 				'area_id' => $aid,
 				'area' => $aname,
 			];
+			$visits[] = [
+				'student_id' => $sid,
+				'day' => $day,
+				'in' => $inHm,
+				'out' => $outHm,
+				'duration' => $dur,
+				'area_id' => $aid,
+				'area' => $aname,
+				'complete' => $tout > 0,
+			];
+			if (!isset($dayStats[$day])) {
+				$dayStats[$day] = ['day' => $day, 'in_count' => 0, 'out_count' => 0, 'missing_out' => 0, 'students' => []];
+			}
+			$dayStats[$day]['in_count']++;
+			$dayStats[$day]['students'][$sid] = true;
 			$inCount++;
 			$scannedIds[$sid] = true;
 			if (!isset($areaStats[$aid])) {
@@ -411,13 +437,15 @@ class AttendanceAreaModel extends Model
 			if ($tout > 0) {
 				$outCount++;
 				$areaStats[$aid]['out_count']++;
+				$dayStats[$day]['out_count']++;
 			} else {
 				$missingOut++;
 				$areaStats[$aid]['missing_out']++;
+				$dayStats[$day]['missing_out']++;
 				$missingOutRows[] = [
 					'student_id' => $sid,
 					'day' => $day,
-					'in' => date('H:i', $tin),
+					'in' => $inHm,
 					'area' => $aname,
 				];
 			}
@@ -457,10 +485,50 @@ class AttendanceAreaModel extends Model
 			];
 		}
 
+		foreach ($visits as &$v) {
+			$st = $studentMap[$v['student_id']] ?? null;
+			$v['fname'] = $st['fname'] ?? '';
+			$v['lname'] = $st['lname'] ?? '';
+			$v['regno'] = $st['regno'] ?? '';
+			$v['class_name'] = $st['class_name'] ?? '';
+		}
+		unset($v);
+
+		$daysOut = [];
+		foreach ($dayStats as $d => $ds) {
+			$daysOut[] = [
+				'day' => (int) $d,
+				'in_count' => (int) $ds['in_count'],
+				'out_count' => (int) $ds['out_count'],
+				'missing_out' => (int) $ds['missing_out'],
+				'students' => count($ds['students']),
+			];
+		}
+		usort($daysOut, static function ($a, $b) {
+			return $a['day'] <=> $b['day'];
+		});
+		$defaultDay = 0;
+		if ($daysOut !== []) {
+			$today = (int) date('j');
+			$sameMonth = ((int) date('n') === $mm && (int) date('Y') === $yy);
+			$defaultDay = (int) $daysOut[count($daysOut) - 1]['day'];
+			if ($sameMonth) {
+				foreach ($daysOut as $ds) {
+					if ((int) $ds['day'] === $today) {
+						$defaultDay = $today;
+						break;
+					}
+				}
+			}
+		}
+
 		$total = count($students);
 		$scanned = count($scannedIds);
 		return [
 			'students' => $students,
+			'visits' => $visits,
+			'active_days' => $daysOut,
+			'default_day' => $defaultDay,
 			'last_day' => $lastDay,
 			'month_label' => $monthLabel,
 			'month' => $monthYm,

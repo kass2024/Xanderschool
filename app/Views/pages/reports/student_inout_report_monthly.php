@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=2">
 <?php
 if ($show_header) {
 	$months = get_months();
@@ -97,6 +97,25 @@ if ($show_header) {
 				$(".io-pane").attr("hidden", true);
 				$("#" + pane).removeAttr("hidden");
 			});
+			$("#report_content").on("click", ".io-day", function () {
+				var day = String($(this).data("day"));
+				$(".io-day").removeClass("active");
+				$(this).addClass("active");
+				if (day === "all") {
+					$(".io-visit-row").show();
+					$("#ioDayCaption").text("All activity days");
+				} else {
+					$(".io-visit-row").hide();
+					$(".io-visit-row[data-day='" + day + "']").show();
+					$("#ioDayCaption").text("Day " + day);
+				}
+				var $vis = day === "all" ? $(".io-visit-row") : $(".io-visit-row[data-day='" + day + "']");
+				var ins = $vis.length, outs = $vis.filter("[data-out='1']").length;
+				$("#ioDayIn").text(ins);
+				$("#ioDayOut").text(outs);
+				$("#ioDayMiss").text(ins - outs);
+				$("#ioDayEmpty").toggle($vis.length === 0);
+			});
 		});
 	</script>
 	<?php
@@ -105,19 +124,33 @@ if ($show_header) {
 
 $kpi = $kpi ?? [];
 $students = $students ?? [];
+$visits = $visits ?? [];
+$activeDays = $active_days ?? [];
+$defaultDay = (int) ($default_day ?? 0);
 $areaStats = $area_stats ?? [];
-$lastDay = (int) ($last_day ?? 31);
 $singleArea = !empty($single_area);
 $showClassCol = (($classe ?? '') === 'All classes');
 $never = $never_scanned ?? [];
 $missing = $missing_out ?? [];
+$dayKpi = ['in' => 0, 'out' => 0, 'miss' => 0];
+foreach ($visits as $vv) {
+	if ($defaultDay > 0 && (int) $vv['day'] !== $defaultDay) {
+		continue;
+	}
+	$dayKpi['in']++;
+	if (!empty($vv['complete'])) {
+		$dayKpi['out']++;
+	} else {
+		$dayKpi['miss']++;
+	}
+}
 ?>
 <div id="printable">
 	<div class="io-kpi-grid">
 		<div class="io-kpi"><div class="lbl">Students</div><div class="val"><?= (int) ($kpi['students'] ?? 0); ?></div></div>
 		<div class="io-kpi blue"><div class="lbl">Scanned</div><div class="val"><?= (int) ($kpi['scanned'] ?? 0); ?></div></div>
 		<div class="io-kpi in"><div class="lbl">IN taps</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></div>
-		<div class="io-kpi out"><div class="lbl">OUT taps</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></div>
+		<div class="io-kpi out"><div class="lbl">OUT / checkout</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></div>
 		<div class="io-kpi warn"><div class="lbl">Missing OUT</div><div class="val"><?= (int) ($kpi['missing_out'] ?? 0); ?></div></div>
 		<div class="io-kpi"><div class="lbl">Coverage</div><div class="val"><?= (int) ($kpi['coverage'] ?? 0); ?>%</div></div>
 	</div>
@@ -138,7 +171,7 @@ $missing = $missing_out ?? [];
 	<?php endif; ?>
 
 	<div class="io-tabs">
-		<button type="button" class="io-tab active" data-pane="ioPaneGrid">Day grid</button>
+		<button type="button" class="io-tab active" data-pane="ioPaneGrid">Daily IN / OUT</button>
 		<button type="button" class="io-tab" data-pane="ioPaneMissing">Missing OUT (<?= count($missing); ?>)</button>
 		<button type="button" class="io-tab" data-pane="ioPaneNever">Never scanned (<?= count($never); ?>)</button>
 	</div>
@@ -158,63 +191,79 @@ $missing = $missing_out ?? [];
 				</div>
 			</div>
 			<h4><?= lang("app.StudentInOutmonthlyReport"); ?><?= !empty($attendance_area) ? ' — ' . esc($attendance_area) : ''; ?></h4>
-			<?php if (count($students) === 0) : ?>
-				<div class="io-empty">No students found for this filter.</div>
+
+			<?php if (count($activeDays) === 0) : ?>
+				<div class="io-empty">No NFC IN/OUT scans for this filter in <?= esc($month_label ?? ''); ?>.</div>
 			<?php else : ?>
-				<table class="tablepage">
+				<div class="io-daybar">
+					<button type="button" class="io-day<?= $defaultDay === 0 ? ' active' : ''; ?>" data-day="all">All days</button>
+					<?php foreach ($activeDays as $ds) :
+						$d = (int) $ds['day'];
+						?>
+						<button type="button" class="io-day<?= $d === $defaultDay ? ' active' : ''; ?>" data-day="<?= $d; ?>">
+							<?= sprintf('%02d', $d); ?>
+							<small><?= (int) $ds['in_count']; ?> IN</small>
+						</button>
+					<?php endforeach; ?>
+				</div>
+				<div class="io-day-kpis">
+					<div><span class="lbl">Showing</span> <strong id="ioDayCaption"><?= $defaultDay > 0 ? 'Day ' . $defaultDay : 'All activity days'; ?></strong></div>
+					<div class="io-dk"><span class="in">IN</span> <b id="ioDayIn"><?= (int) $dayKpi['in']; ?></b></div>
+					<div class="io-dk"><span class="out">OUT</span> <b id="ioDayOut"><?= (int) $dayKpi['out']; ?></b></div>
+					<div class="io-dk"><span class="miss">No checkout</span> <b id="ioDayMiss"><?= (int) $dayKpi['miss']; ?></b></div>
+				</div>
+				<table class="io-log">
 					<thead>
 					<tr>
 						<th>#</th>
-						<th><?= lang("app.firstName"); ?></th>
-						<th><?= lang("app.lastName"); ?></th>
-						<?php if ($showClassCol) : ?>
-							<th>Class</th>
-						<?php endif; ?>
-						<?php for ($d = 1; $d <= $lastDay; $d++) : ?>
-							<th style="text-align:center;"><?= sprintf('%02d', $d); ?></th>
-						<?php endfor; ?>
+						<th>Student</th>
+						<?php if ($showClassCol) : ?><th>Class</th><?php endif; ?>
+						<th>Day</th>
+						<?php if (!$singleArea) : ?><th>Area</th><?php endif; ?>
+						<th>IN</th>
+						<th>OUT / checkout</th>
+						<th>Duration</th>
+						<th>Status</th>
 					</tr>
 					</thead>
 					<tbody>
 					<?php
 					$n = 1;
-					foreach ($students as $item) :
-						$days = $item['days'] ?? [];
+					foreach ($visits as $v) :
+						$day = (int) $v['day'];
+						$hide = ($defaultDay > 0 && $day !== $defaultDay);
+						$complete = !empty($v['complete']);
 						?>
-						<tr>
-							<td style="text-align:right;"><?= $n; ?></td>
-							<td><?= esc($item['fname'] ?? ''); ?></td>
-							<td><?= esc($item['lname'] ?? ''); ?></td>
-							<?php if ($showClassCol) : ?>
-								<td><?= esc($item['class_name'] ?? ''); ?></td>
-							<?php endif; ?>
-							<?php for ($d = 1; $d <= $lastDay; $d++) :
-								$visits = $days[$d] ?? [];
-								$cls = $visits ? 'td_date' : 'td_date td_empty';
-								$cell = '';
-								foreach ($visits as $v) {
-									$hasOut = ($v['out'] ?? '') !== '';
-									if (!$hasOut) {
-										$cls = 'td_date td_miss';
-									}
-									$cell .= '<span class="io-in">' . esc($v['in']) . '</span>';
-									if ($hasOut) {
-										$cell .= '<br><span class="io-out">-' . esc($v['out']) . '</span>';
-									}
-									if (!$singleArea) {
-										$cell .= '<span class="io-area">' . esc($v['area']) . '</span>';
-									}
-									$cell .= '<br>';
-								}
-								echo "<td class='{$cls}'>{$cell}</td>";
-							endfor; ?>
+						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-day="<?= $day; ?>" data-out="<?= $complete ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
+							<td><?= $n++; ?></td>
+							<td>
+								<strong><?= esc(trim(($v['fname'] ?? '') . ' ' . ($v['lname'] ?? ''))); ?></strong>
+								<div class="io-reg"><?= esc($v['regno'] ?? ''); ?></div>
+							</td>
+							<?php if ($showClassCol) : ?><td><?= esc($v['class_name'] ?? ''); ?></td><?php endif; ?>
+							<td><?= sprintf('%02d', $day); ?></td>
+							<?php if (!$singleArea) : ?><td><?= esc($v['area'] ?? ''); ?></td><?php endif; ?>
+							<td><span class="io-time in"><?= esc($v['in'] ?? '—'); ?></span></td>
+							<td>
+								<?php if ($complete) : ?>
+									<span class="io-time out"><?= esc($v['out']); ?></span>
+								<?php else : ?>
+									<span class="io-time none">No checkout</span>
+								<?php endif; ?>
+							</td>
+							<td><?= $complete ? esc($v['duration'] ?? '') : '—'; ?></td>
+							<td>
+								<?php if ($complete) : ?>
+									<span class="io-st done">Checked out</span>
+								<?php else : ?>
+									<span class="io-st open">Still inside</span>
+								<?php endif; ?>
+							</td>
 						</tr>
-						<?php
-						$n++;
-					endforeach;
-					?>
+					<?php endforeach; ?>
 					</tbody>
 				</table>
+				<div class="io-empty" id="ioDayEmpty" hidden>No scans on this day.</div>
 			<?php endif; ?>
 			<div style="text-align:right;color:#94a3b8;margin-top:8px;font-size:.8rem;"><?= lang("app.generatedbySomanet"); ?></div>
 		</div>
@@ -234,6 +283,7 @@ $missing = $missing_out ?? [];
 					<th>Area</th>
 					<th>Day</th>
 					<th>IN</th>
+					<th>OUT / checkout</th>
 				</tr>
 				</thead>
 				<tbody>
@@ -245,7 +295,8 @@ $missing = $missing_out ?? [];
 						<td><?= esc($row['class_name'] ?? ''); ?></td>
 						<td><?= esc($row['area'] ?? ''); ?></td>
 						<td><?= (int) ($row['day'] ?? 0); ?></td>
-						<td><?= esc($row['in'] ?? ''); ?></td>
+						<td><span class="io-time in"><?= esc($row['in'] ?? ''); ?></span></td>
+						<td><span class="io-time none">No checkout</span></td>
 					</tr>
 				<?php endforeach; ?>
 				</tbody>
