@@ -321,7 +321,7 @@ class AttendanceScanService
 	}
 
 	private const STAFF_MAX_IN_PER_DAY = 2;
-	private const STAFF_MIN_GAP_SECONDS = 2;
+	private const STAFF_MIN_GAP_SECONDS = 0;
 
 	/**
 	 * Staff face/card clock. First detection of the day is IN.
