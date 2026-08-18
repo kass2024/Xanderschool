@@ -54,9 +54,9 @@ $hsUpload = rtrim(base_url(), '/') . '/api/heystar_record';
 <hr class="my-4">
 <h6>HeyStar terminal (assigned web cards)</h6>
 <p class="text-muted">
-	Students are identified by the <strong>card number assigned in Xander</strong> (Assign card).
-	Staff use their school photo as a face. Sync only works when this computer can reach the kiosk on the LAN
-	and HeyStar is installed on the terminal.
+	Students are identified only by the <strong>card assigned in Xander</strong> (Assign card).
+	Staff are identified only by their <strong>school photo as a face</strong> — staff cards are not sent to the terminal.
+	Sync needs the kiosk on the LAN with HeyStar running (port 8090). Both face and card clocks land in the same attendance reports.
 </p>
 <form id="hsForm" class="mb-3" style="max-width:560px">
 	<label class="d-block mb-2">Device IP

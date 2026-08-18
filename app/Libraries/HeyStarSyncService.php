@@ -4,8 +4,8 @@ namespace App\Libraries;
 
 /**
  * Push Xander people to a HeyStar terminal.
- * Students: only those with a card assigned in the web app (cardNo).
- * Staff: face photo from School Settings; cardNo if a staff card was assigned.
+ * Students: assigned web card only (verifyStyle 2).
+ * Staff: school photo as face only (verifyStyle 1). Both write attendance_records.
  */
 class HeyStarSyncService
 {
@@ -64,28 +64,18 @@ class HeyStarSyncService
 
 		helper('qonics');
 		foreach (AttendanceScanService::staffList($schoolId) as $p) {
-			$card = trim((string) ($p['card'] ?? ''));
 			$photoUrl = (string) ($p['photo'] ?? '');
 			$hasFace = $photoUrl !== '' && strpos($photoUrl, 'fallback-avatar') === false;
-			if ($card === '' && !$hasFace) {
+			if (!$hasFace) {
 				continue;
 			}
 			$sn = 'T' . (int) $p['id'];
-			$style = 1;
-			if ($card !== '' && $hasFace) {
-				$style = 0;
-			} elseif ($card !== '' && !$hasFace) {
-				$style = 2;
-			}
 			$body = [
 				'type' => 1,
 				'sn' => $sn,
 				'name' => self::safeName((string) $p['name']),
-				'verifyStyle' => $style,
+				'verifyStyle' => 1,
 			];
-			if ($card !== '') {
-				$body['cardNo'] = $card;
-			}
 			$res = $client->post('person/merge', $body);
 			if (!$client->ok($res)) {
 				$errors[] = $sn . ': ' . (string) ($res['msg'] ?? 'person merge failed');

@@ -186,7 +186,7 @@ class AttendanceScanService
 	}
 
 	/**
-	 * Card tap: student (needs location) or staff (shift clock).
+	 * Card tap: students only. Staff must clock by face.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -199,10 +199,13 @@ class AttendanceScanService
 		if ($owner['type'] === 'visitor') {
 			return ['success' => 0, 'message' => 'Visitor cards cannot be used here'];
 		}
+		if ($owner['type'] === 'staff') {
+			return ['success' => 0, 'kind' => 'staff', 'message' => 'Staff must use face, not card'];
+		}
 		if ($owner['type'] === 'student') {
 			return self::scanStudent($schoolId, (int) $owner['id'], $areaId, $eventTime);
 		}
-		return self::scanStaff($schoolId, (int) $owner['id'], $eventTime);
+		return ['success' => 0, 'message' => 'Card not found'];
 	}
 
 	/**
@@ -552,17 +555,20 @@ class AttendanceScanService
 			$areaId = $areas !== [] ? (int) $areas[0]['id'] : 0;
 		}
 
-		$card = trim((string) ($in['cardNo'] ?? ''));
-		if ($card !== '') {
-			return array_merge($ack, self::scanCard($schoolId, $card, $areaId, $eventTime));
-		}
-
 		$sn = trim((string) ($in['personSn'] ?? ''));
+		if (preg_match('/^T(\d+)$/', $sn, $m)) {
+			return array_merge($ack, self::scanStaff($schoolId, (int) $m[1], $eventTime));
+		}
 		if (preg_match('/^S(\d+)$/', $sn, $m)) {
 			return array_merge($ack, self::scanStudent($schoolId, (int) $m[1], $areaId, $eventTime));
 		}
-		if (preg_match('/^T(\d+)$/', $sn, $m)) {
-			return array_merge($ack, self::scanStaff($schoolId, (int) $m[1], $eventTime));
+
+		$card = trim((string) ($in['cardNo'] ?? ''));
+		if ($card !== '') {
+			$owner = CardRegistry::lookup($schoolId, $card);
+			if ($owner && $owner['type'] === 'student') {
+				return array_merge($ack, self::scanStudent($schoolId, (int) $owner['id'], $areaId, $eventTime));
+			}
 		}
 
 		return $ack;
