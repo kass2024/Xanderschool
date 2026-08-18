@@ -323,7 +323,7 @@ class AttendanceScanService
 	/**
 	 * @return array<string,mixed>
 	 */
-	public static function scanStaff(int $schoolId, int $staffId, int $eventTime = 0): array
+	public static function scanStaff(int $schoolId, int $staffId, int $eventTime = 0, string $wanted = ''): array
 	{
 		helper('qonics');
 		$db = \Config\Database::connect();
@@ -363,9 +363,26 @@ class AttendanceScanService
 			->get()
 			->getRow();
 
+		$wanted = strtoupper(trim($wanted));
+		$open = $attendance && (int) $attendance->time_out === 0;
+		$closed = $attendance && (int) $attendance->time_out !== 0;
 		$status = 'IN';
 		$verdict = StaffShiftClock::evaluateIn($time, $window);
-		if (!$attendance) {
+
+		if ($wanted === 'IN') {
+			if ($open) {
+				return self::staffClockPayload($staff, 'IN', $time, $window, $shift, $verdict, true);
+			}
+			if ($closed) {
+				return [
+					'success' => 0,
+					'kind' => 'staff',
+					'message' => 'Already checked out for this shift',
+					'person' => self::staffPayload($staff),
+					'staff' => self::staffPayload($staff),
+					'time' => date('H:i', $time),
+				];
+			}
 			$db->table('attendance_records')->insert([
 				'user_id' => (int) $staff->id,
 				'user_type' => 1,
@@ -375,7 +392,36 @@ class AttendanceScanService
 				'area_id' => 0,
 				'shift_id' => (int) ($staff->shift_id ?? 0),
 			]);
-		} elseif ((int) $attendance->time_out === 0) {
+		} elseif ($wanted === 'OUT') {
+			if ($open) {
+				$db->table('attendance_records')
+					->where('id', $attendance->id)
+					->update(['time_out' => $time]);
+				$status = 'OUT';
+				$verdict = StaffShiftClock::evaluateOut($time, $window);
+			} elseif ($closed) {
+				return self::staffClockPayload($staff, 'OUT', $time, $window, $shift, StaffShiftClock::evaluateOut($time, $window), true);
+			} else {
+				return [
+					'success' => 0,
+					'kind' => 'staff',
+					'message' => 'Not checked in yet',
+					'person' => self::staffPayload($staff),
+					'staff' => self::staffPayload($staff),
+					'time' => date('H:i', $time),
+				];
+			}
+		} elseif (!$attendance) {
+			$db->table('attendance_records')->insert([
+				'user_id' => (int) $staff->id,
+				'user_type' => 1,
+				'time_in' => $time,
+				'time_out' => 0,
+				'school_id' => $schoolId,
+				'area_id' => 0,
+				'shift_id' => (int) ($staff->shift_id ?? 0),
+			]);
+		} elseif ($open) {
 			$db->table('attendance_records')
 				->where('id', $attendance->id)
 				->update(['time_out' => $time]);
@@ -387,10 +433,23 @@ class AttendanceScanService
 				'kind' => 'staff',
 				'message' => 'Already checked out for this shift',
 				'person' => self::staffPayload($staff),
+				'staff' => self::staffPayload($staff),
 				'time' => date('H:i', $time),
 			];
 		}
 
+		return self::staffClockPayload($staff, $status, $time, $window, $shift, $verdict, false);
+	}
+
+	/**
+	 * @param object $staff
+	 * @param array<string,mixed> $window
+	 * @param array<string,mixed>|null $shift
+	 * @param array<string,mixed> $verdict
+	 * @return array<string,mixed>
+	 */
+	private static function staffClockPayload($staff, string $status, int $time, array $window, $shift, array $verdict, bool $already): array
+	{
 		$shiftHours = '';
 		if (!empty($window['working']) && !empty($window['start_label'])) {
 			$shiftHours = $window['start_label'] . ' – ' . $window['end_label'];
@@ -399,20 +458,23 @@ class AttendanceScanService
 		} else {
 			$shiftHours = 'No shift assigned';
 		}
-
+		$person = self::staffPayload($staff);
 		return [
 			'success' => 1,
 			'kind' => 'staff',
 			'status' => $status,
 			'time' => date('H:i', $time),
-			'message' => $status === 'IN' ? 'Staff IN' : 'Staff OUT',
+			'message' => $already
+				? ('Already ' . $status)
+				: ($status === 'IN' ? 'Staff IN' : 'Staff OUT'),
 			'verdict' => $verdict,
 			'shift' => [
 				'title' => (string) ($window['title'] ?: ($staff->shift_title ?? 'No shift')),
 				'hours' => $shiftHours,
 				'working' => !empty($window['working']),
 			],
-			'person' => self::staffPayload($staff),
+			'person' => $person,
+			'staff' => $person,
 		];
 	}
 
@@ -466,6 +528,33 @@ class AttendanceScanService
 			'message' => 'Face enrolled',
 			'staff_id' => $staffId,
 			'photo' => $photo,
+		];
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	public static function removeFace(int $schoolId, int $staffId): array
+	{
+		self::ensureFaceColumn();
+		$db = \Config\Database::connect();
+		$staff = $db->table('staffs')
+			->select('id')
+			->where('id', $staffId)
+			->where('school_id', $schoolId)
+			->get()
+			->getRow();
+		if (!$staff) {
+			return ['success' => 0, 'message' => 'Staff not found'];
+		}
+		$db->table('staffs')->where('id', $staffId)->where('school_id', $schoolId)->update([
+			'face_enrolled' => 0,
+		]);
+		return [
+			'success' => 1,
+			'message' => 'Face removed. Record a new live face on the kiosk.',
+			'staff_id' => $staffId,
+			'face_enrolled' => 0,
 		];
 	}
 

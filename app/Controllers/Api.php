@@ -3791,10 +3791,11 @@ public function permission_card_scan()
 		$schoolId = (int) $this->request->getPost('school_id');
 		$staffId = (int) $this->request->getPost('staff_id');
 		$eventTime = (int) $this->request->getPost('time');
+		$wanted = strtoupper(trim((string) ($this->request->getPost('status') ?? '')));
 		if ($schoolId <= 0 || $staffId <= 0) {
 			return $this->response->setJSON(['success' => 0, 'message' => 'School and staff are required']);
 		}
-		return $this->response->setJSON(AttendanceScanService::scanStaff($schoolId, $staffId, $eventTime));
+		return $this->response->setJSON(AttendanceScanService::scanStaff($schoolId, $staffId, $eventTime, $wanted));
 	}
 
 	public function device_enroll_face()
@@ -3811,6 +3812,31 @@ public function permission_card_scan()
 			$staffId,
 			is_string($photo) && $photo !== '' ? $photo : null
 		));
+	}
+
+	public function device_unenroll_face()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) $this->request->getPost('school_id');
+		$staffId = (int) $this->request->getPost('staff_id');
+		if ($schoolId <= 0 || $staffId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'School and staff are required']);
+		}
+		return $this->response->setJSON(AttendanceScanService::removeFace($schoolId, $staffId));
+	}
+
+	public function remove_staff_face()
+	{
+		$staffId = (int) $this->request->getPost('staff_id');
+		$schoolId = (int) $this->request->getPost('school_id');
+		if ($staffId <= 0 || $schoolId <= 0) {
+			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid staff or school ID.']);
+		}
+		$out = AttendanceScanService::removeFace($schoolId, $staffId);
+		if (empty($out['success'])) {
+			return $this->response->setStatusCode(404)->setJSON(['error' => (string) ($out['message'] ?? 'Could not remove face.')]);
+		}
+		return $this->response->setJSON(['success' => (string) ($out['message'] ?? 'Face removed.')]);
 	}
 
 	/**

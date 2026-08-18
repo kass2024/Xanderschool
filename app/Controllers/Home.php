@@ -3933,85 +3933,11 @@ public function attendanceCard()
 			return $this->response->setJSON(['success' => 0, 'message' => 'Staff card not found']);
 		}
 
-		$time = time();
-		$shift = null;
-		if (!empty($staff->shift_id) && (int) $staff->shift_id > 0) {
-			$shift = [
-				'title' => (string) ($staff->shift_title ?? ''),
-				'options' => $staff->shift_options ?? '[]',
-			];
-		}
-		$window = StaffShiftClock::windowFor($shift, $time);
-		$lookFrom = (int) ($window['look_from'] ?? strtotime('today'));
-		$lookTo = (int) ($window['look_to'] ?? (strtotime('tomorrow') - 1));
-
-		$attendance = $db->table('attendance_records')
-			->where('user_id', (int) $staff->id)
-			->where('user_type', 1)
-			->where('school_id', $schoolId)
-			->where('time_in >=', $lookFrom)
-			->where('time_in <=', $lookTo)
-			->orderBy('id', 'DESC')
-			->get()
-			->getRow();
-
-		$status = 'IN';
-		$verdict = StaffShiftClock::evaluateIn($time, $window);
-		if (!$attendance) {
-			$db->table('attendance_records')->insert([
-				'user_id' => (int) $staff->id,
-				'user_type' => 1,
-				'time_in' => $time,
-				'time_out' => 0,
-				'school_id' => $schoolId,
-				'area_id' => 0,
-				'shift_id' => (int) ($staff->shift_id ?? 0),
-			]);
-		} elseif ((int) $attendance->time_out === 0) {
-			$db->table('attendance_records')
-				->where('id', $attendance->id)
-				->update(['time_out' => $time]);
-			$status = 'OUT';
-			$verdict = StaffShiftClock::evaluateOut($time, $window);
-		} else {
-			$dash = StaffShiftClock::dashboard($schoolId);
-			return $this->response->setJSON([
-				'success' => 0,
-				'message' => 'Already checked out for this shift',
-				'kpi' => $dash['kpi'],
-				'recent' => $dash['recent'],
-			]);
-		}
-
+		$out = \App\Libraries\AttendanceScanService::scanStaff($schoolId, (int) $staff->id);
 		$dash = StaffShiftClock::dashboard($schoolId);
-		$shiftHours = '';
-		if (!empty($window['working']) && !empty($window['start_label'])) {
-			$shiftHours = $window['start_label'] . ' – ' . $window['end_label'];
-		} elseif ($shift) {
-			$shiftHours = 'Off day';
-		} else {
-			$shiftHours = 'No shift assigned';
-		}
-
-		return $this->response->setJSON([
-			'success' => 1,
-			'status' => $status,
-			'time' => date('H:i', $time),
-			'verdict' => $verdict,
-			'shift' => [
-				'title' => (string) ($window['title'] ?: ($staff->shift_title ?? 'No shift')),
-				'hours' => $shiftHours,
-				'working' => !empty($window['working']),
-			],
-			'staff' => [
-				'id' => (int) $staff->id,
-				'name' => trim((string) $staff->fname . ' ' . (string) $staff->lname),
-				'post' => (string) ($staff->post_title ?? ''),
-				'photo' => profile_photo_url($staff->photo ?? null),
-			],
-			'kpi' => $dash['kpi'],
-			'recent' => $dash['recent'],
-		]);
+		$out['kpi'] = $dash['kpi'];
+		$out['recent'] = $dash['recent'];
+		return $this->response->setJSON($out);
 	}
 
 	public function manipulate_intouch($school_id)
