@@ -320,7 +320,14 @@ class AttendanceScanService
 		];
 	}
 
+	private const STAFF_MAX_IN_PER_DAY = 2;
+	private const STAFF_MIN_GAP_SECONDS = 45;
+
 	/**
+	 * Staff face/card clock. First detection of the day is IN.
+	 * A later detection while still inside is OUT. After OUT they may IN once more.
+	 * Nobody may IN more than twice in a calendar day.
+	 *
 	 * @return array<string,mixed>
 	 */
 	public static function scanStaff(int $schoolId, int $staffId, int $eventTime = 0, string $wanted = ''): array
@@ -350,27 +357,57 @@ class AttendanceScanService
 			];
 		}
 		$window = StaffShiftClock::windowFor($shift, $time);
-		$lookFrom = (int) ($window['look_from'] ?? strtotime('today'));
-		$lookTo = (int) ($window['look_to'] ?? (strtotime('tomorrow') - 1));
+		$todayStart = strtotime('today', $time);
+		$todayEnd = strtotime('tomorrow', $time) - 1;
 
-		$attendance = $db->table('attendance_records')
+		$rows = $db->table('attendance_records')
 			->where('user_id', (int) $staff->id)
 			->where('user_type', 1)
 			->where('school_id', $schoolId)
-			->where('time_in >=', $lookFrom)
-			->where('time_in <=', $lookTo)
-			->orderBy('id', 'DESC')
+			->where('time_in >=', $todayStart)
+			->where('time_in <=', $todayEnd)
+			->orderBy('time_in', 'ASC')
+			->orderBy('id', 'ASC')
 			->get()
-			->getRow();
+			->getResult();
+
+		$inCount = count($rows);
+		$open = null;
+		foreach ($rows as $row) {
+			if ((int) ($row->time_out ?? 0) === 0) {
+				$open = $row;
+			}
+		}
 
 		$wanted = strtoupper(trim($wanted));
 		if ($wanted !== 'IN' && $wanted !== 'OUT') {
 			$wanted = '';
 		}
-		$status = 'IN';
-		$verdict = StaffShiftClock::evaluateIn($time, $window);
 
-		if (!$attendance) {
+		$action = $wanted;
+		if ($action === '') {
+			if ($open) {
+				$action = 'OUT';
+			} elseif ($inCount >= self::STAFF_MAX_IN_PER_DAY) {
+				$action = 'BLOCK';
+			} else {
+				$action = 'IN';
+			}
+		}
+
+		if ($action === 'IN') {
+			if ($open) {
+				return self::staffClockPayload(
+					$staff, 'IN', (int) $open->time_in, $window, $shift,
+					StaffShiftClock::evaluateIn((int) $open->time_in, $window),
+					true, $inCount, 'Already IN'
+				);
+			}
+			if ($inCount >= self::STAFF_MAX_IN_PER_DAY) {
+				return self::staffRejectPayload(
+					$staff, 'Already checked IN twice today', 'IN', $time, $window, $shift, $inCount
+				);
+			}
 			$db->table('attendance_records')->insert([
 				'user_id' => (int) $staff->id,
 				'user_type' => 1,
@@ -380,15 +417,62 @@ class AttendanceScanService
 				'area_id' => 0,
 				'shift_id' => (int) ($staff->shift_id ?? 0),
 			]);
-		} else {
-			$db->table('attendance_records')
-				->where('id', $attendance->id)
-				->update(['time_out' => $time]);
-			$status = 'OUT';
-			$verdict = StaffShiftClock::evaluateOut($time, $window);
+			return self::staffClockPayload(
+				$staff, 'IN', $time, $window, $shift,
+				StaffShiftClock::evaluateIn($time, $window),
+				false, $inCount + 1
+			);
 		}
 
-		return self::staffClockPayload($staff, $status, $time, $window, $shift, $verdict, false);
+		if ($action === 'OUT') {
+			if (!$open) {
+				if ($inCount === 0) {
+					$db->table('attendance_records')->insert([
+						'user_id' => (int) $staff->id,
+						'user_type' => 1,
+						'time_in' => $time,
+						'time_out' => 0,
+						'school_id' => $schoolId,
+						'area_id' => 0,
+						'shift_id' => (int) ($staff->shift_id ?? 0),
+					]);
+					return self::staffClockPayload(
+						$staff, 'IN', $time, $window, $shift,
+						StaffShiftClock::evaluateIn($time, $window),
+						false, 1, 'Staff IN'
+					);
+				}
+				if ($inCount >= self::STAFF_MAX_IN_PER_DAY) {
+					return self::staffRejectPayload(
+						$staff, 'Already checked IN twice today', 'OUT', $time, $window, $shift, $inCount
+					);
+				}
+				return self::staffClockPayload(
+					$staff, 'OUT', $time, $window, $shift,
+					StaffShiftClock::evaluateOut($time, $window),
+					true, $inCount, 'Already OUT'
+				);
+			}
+			if (((int) $open->time_in + self::STAFF_MIN_GAP_SECONDS) > $time) {
+				return self::staffClockPayload(
+					$staff, 'IN', (int) $open->time_in, $window, $shift,
+					StaffShiftClock::evaluateIn((int) $open->time_in, $window),
+					true, $inCount, 'Already IN'
+				);
+			}
+			$db->table('attendance_records')
+				->where('id', $open->id)
+				->update(['time_out' => $time]);
+			return self::staffClockPayload(
+				$staff, 'OUT', $time, $window, $shift,
+				StaffShiftClock::evaluateOut($time, $window),
+				false, $inCount
+			);
+		}
+
+		return self::staffRejectPayload(
+			$staff, 'Already checked IN twice today', 'IN', $time, $window, $shift, $inCount
+		);
 	}
 
 	/**
@@ -398,7 +482,7 @@ class AttendanceScanService
 	 * @param array<string,mixed> $verdict
 	 * @return array<string,mixed>
 	 */
-	private static function staffClockPayload($staff, string $status, int $time, array $window, $shift, array $verdict, bool $already): array
+	private static function staffClockPayload($staff, string $status, int $time, array $window, $shift, array $verdict, bool $already, int $inCount = 0, string $message = ''): array
 	{
 		$shiftHours = '';
 		if (!empty($window['working']) && !empty($window['start_label'])) {
@@ -409,14 +493,18 @@ class AttendanceScanService
 			$shiftHours = 'No shift assigned';
 		}
 		$person = self::staffPayload($staff);
+		if ($message === '') {
+			$message = $already
+				? ('Already ' . $status)
+				: ($status === 'IN' ? 'Staff IN' : 'Staff OUT');
+		}
 		return [
 			'success' => 1,
 			'kind' => 'staff',
 			'status' => $status,
 			'time' => date('H:i', $time),
-			'message' => $already
-				? ('Already ' . $status)
-				: ($status === 'IN' ? 'Staff IN' : 'Staff OUT'),
+			'message' => $message,
+			'in_count' => $inCount,
 			'verdict' => $verdict,
 			'shift' => [
 				'title' => (string) ($window['title'] ?: ($staff->shift_title ?? 'No shift')),
@@ -426,6 +514,23 @@ class AttendanceScanService
 			'person' => $person,
 			'staff' => $person,
 		];
+	}
+
+	/**
+	 * @param object $staff
+	 * @param array<string,mixed> $window
+	 * @param array<string,mixed>|null $shift
+	 * @return array<string,mixed>
+	 */
+	private static function staffRejectPayload($staff, string $message, string $status, int $time, array $window, $shift, int $inCount): array
+	{
+		$out = self::staffClockPayload(
+			$staff, $status, $time, $window, $shift,
+			['code' => 'none', 'label' => '', 'detail' => '', 'minutes' => 0],
+			true, $inCount, $message
+		);
+		$out['success'] = 0;
+		return $out;
 	}
 
 	/**
