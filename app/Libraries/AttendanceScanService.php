@@ -364,25 +364,13 @@ class AttendanceScanService
 			->getRow();
 
 		$wanted = strtoupper(trim($wanted));
-		$open = $attendance && (int) $attendance->time_out === 0;
-		$closed = $attendance && (int) $attendance->time_out !== 0;
+		if ($wanted !== 'IN' && $wanted !== 'OUT') {
+			$wanted = '';
+		}
 		$status = 'IN';
 		$verdict = StaffShiftClock::evaluateIn($time, $window);
 
-		if ($wanted === 'IN') {
-			if ($open) {
-				return self::staffClockPayload($staff, 'IN', $time, $window, $shift, $verdict, true);
-			}
-			if ($closed) {
-				return [
-					'success' => 0,
-					'kind' => 'staff',
-					'message' => 'Already checked out for this shift',
-					'person' => self::staffPayload($staff),
-					'staff' => self::staffPayload($staff),
-					'time' => date('H:i', $time),
-				];
-			}
+		if (!$attendance) {
 			$db->table('attendance_records')->insert([
 				'user_id' => (int) $staff->id,
 				'user_type' => 1,
@@ -392,50 +380,12 @@ class AttendanceScanService
 				'area_id' => 0,
 				'shift_id' => (int) ($staff->shift_id ?? 0),
 			]);
-		} elseif ($wanted === 'OUT') {
-			if ($open) {
-				$db->table('attendance_records')
-					->where('id', $attendance->id)
-					->update(['time_out' => $time]);
-				$status = 'OUT';
-				$verdict = StaffShiftClock::evaluateOut($time, $window);
-			} elseif ($closed) {
-				return self::staffClockPayload($staff, 'OUT', $time, $window, $shift, StaffShiftClock::evaluateOut($time, $window), true);
-			} else {
-				return [
-					'success' => 0,
-					'kind' => 'staff',
-					'message' => 'Not checked in yet',
-					'person' => self::staffPayload($staff),
-					'staff' => self::staffPayload($staff),
-					'time' => date('H:i', $time),
-				];
-			}
-		} elseif (!$attendance) {
-			$db->table('attendance_records')->insert([
-				'user_id' => (int) $staff->id,
-				'user_type' => 1,
-				'time_in' => $time,
-				'time_out' => 0,
-				'school_id' => $schoolId,
-				'area_id' => 0,
-				'shift_id' => (int) ($staff->shift_id ?? 0),
-			]);
-		} elseif ($open) {
+		} else {
 			$db->table('attendance_records')
 				->where('id', $attendance->id)
 				->update(['time_out' => $time]);
 			$status = 'OUT';
 			$verdict = StaffShiftClock::evaluateOut($time, $window);
-		} else {
-			return [
-				'success' => 0,
-				'kind' => 'staff',
-				'message' => 'Already checked out for this shift',
-				'person' => self::staffPayload($staff),
-				'staff' => self::staffPayload($staff),
-				'time' => date('H:i', $time),
-			];
 		}
 
 		return self::staffClockPayload($staff, $status, $time, $window, $shift, $verdict, false);
