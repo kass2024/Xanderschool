@@ -321,7 +321,7 @@ class AttendanceScanService
 	}
 
 	private const STAFF_MAX_IN_PER_DAY = 2;
-	private const STAFF_MIN_GAP_SECONDS = 45;
+	private const STAFF_MIN_GAP_SECONDS = 2;
 
 	/**
 	 * Staff face/card clock. First detection of the day is IN.
@@ -384,80 +384,12 @@ class AttendanceScanService
 			$wanted = '';
 		}
 
-		$action = $wanted;
-		if ($action === '') {
-			if ($open) {
-				$action = 'OUT';
-			} elseif ($inCount >= self::STAFF_MAX_IN_PER_DAY) {
-				$action = 'BLOCK';
-			} else {
-				$action = 'IN';
-			}
-		}
-
-		if ($action === 'IN') {
-			if ($open) {
-				return self::staffClockPayload(
-					$staff, 'IN', (int) $open->time_in, $window, $shift,
-					StaffShiftClock::evaluateIn((int) $open->time_in, $window),
-					true, $inCount, 'Already IN'
-				);
-			}
-			if ($inCount >= self::STAFF_MAX_IN_PER_DAY) {
-				return self::staffRejectPayload(
-					$staff, 'Already checked IN twice today', 'IN', $time, $window, $shift, $inCount
-				);
-			}
-			$db->table('attendance_records')->insert([
-				'user_id' => (int) $staff->id,
-				'user_type' => 1,
-				'time_in' => $time,
-				'time_out' => 0,
-				'school_id' => $schoolId,
-				'area_id' => 0,
-				'shift_id' => (int) ($staff->shift_id ?? 0),
-			]);
-			return self::staffClockPayload(
-				$staff, 'IN', $time, $window, $shift,
-				StaffShiftClock::evaluateIn($time, $window),
-				false, $inCount + 1
-			);
-		}
-
-		if ($action === 'OUT') {
-			if (!$open) {
-				if ($inCount === 0) {
-					$db->table('attendance_records')->insert([
-						'user_id' => (int) $staff->id,
-						'user_type' => 1,
-						'time_in' => $time,
-						'time_out' => 0,
-						'school_id' => $schoolId,
-						'area_id' => 0,
-						'shift_id' => (int) ($staff->shift_id ?? 0),
-					]);
-					return self::staffClockPayload(
-						$staff, 'IN', $time, $window, $shift,
-						StaffShiftClock::evaluateIn($time, $window),
-						false, 1, 'Staff IN'
-					);
-				}
-				if ($inCount >= self::STAFF_MAX_IN_PER_DAY) {
-					return self::staffRejectPayload(
-						$staff, 'Already checked IN twice today', 'OUT', $time, $window, $shift, $inCount
-					);
-				}
-				return self::staffClockPayload(
-					$staff, 'OUT', $time, $window, $shift,
-					StaffShiftClock::evaluateOut($time, $window),
-					true, $inCount, 'Already OUT'
-				);
-			}
+		if ($open) {
 			if (((int) $open->time_in + self::STAFF_MIN_GAP_SECONDS) > $time) {
 				return self::staffClockPayload(
 					$staff, 'IN', (int) $open->time_in, $window, $shift,
 					StaffShiftClock::evaluateIn((int) $open->time_in, $window),
-					true, $inCount, 'Already IN'
+					true, $inCount, 'Already checked IN'
 				);
 			}
 			$db->table('attendance_records')
@@ -466,12 +398,29 @@ class AttendanceScanService
 			return self::staffClockPayload(
 				$staff, 'OUT', $time, $window, $shift,
 				StaffShiftClock::evaluateOut($time, $window),
-				false, $inCount
+				false, $inCount, 'Already checked IN — now OUT'
 			);
 		}
 
-		return self::staffRejectPayload(
-			$staff, 'Already checked IN twice today', 'IN', $time, $window, $shift, $inCount
+		if ($inCount >= self::STAFF_MAX_IN_PER_DAY) {
+			return self::staffRejectPayload(
+				$staff, 'Already checked IN twice today', 'OUT', $time, $window, $shift, $inCount
+			);
+		}
+
+		$db->table('attendance_records')->insert([
+			'user_id' => (int) $staff->id,
+			'user_type' => 1,
+			'time_in' => $time,
+			'time_out' => 0,
+			'school_id' => $schoolId,
+			'area_id' => 0,
+			'shift_id' => (int) ($staff->shift_id ?? 0),
+		]);
+		return self::staffClockPayload(
+			$staff, 'IN', $time, $window, $shift,
+			StaffShiftClock::evaluateIn($time, $window),
+			false, $inCount + 1
 		);
 	}
 
