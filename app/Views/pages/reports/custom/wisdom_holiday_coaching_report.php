@@ -157,9 +157,10 @@ if ($moto === '') {
 }
 $mentorName = trim((string) ($class_teacher ?? ''));
 $mentorPhone = trim((string) ($class_teacher_phone ?? ''));
-$dayFee = $fee_day ?? null;
-$boardFee = $fee_boarding ?? null;
+$dayFee = 180000;
+$boardFee = 600000;
 $schoolPhone = trim((string) ($school_phone ?? ''));
+$dosPhone = '0788605260';
 $pdfMode = !empty($pdf);
 $pdfExportUrl = $pdf_export_url ?? '';
 if (!$pdfMode && $pdfExportUrl !== '') {
@@ -221,7 +222,7 @@ foreach ($studentsList as $student) {
 						</td>
 						<td style="width:22%;text-align:center;">
 							<img src="<?= $schoolLogoUrl; ?>" class="hc-logo" alt="School logo">
-							<div class="hc-phone-box"><?= esc($schoolPhone); ?> DOS</div>
+							<div class="hc-phone-box"><?= esc($dosPhone); ?> DOS</div>
 						</td>
 					</tr>
 				</table>
