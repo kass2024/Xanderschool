@@ -5942,6 +5942,23 @@ public function attendanceCard()
 		return 0 + $v;
 	}
 
+	/** Keep a scored mark within Total Marks (absent -1 is unchanged). */
+	public static function capMarkToOutOf($markVal, $outof)
+	{
+		if (!is_numeric($markVal) || (float) $markVal < 0) {
+			return $markVal;
+		}
+		if (!is_numeric($outof)) {
+			return 0 + $markVal;
+		}
+		$max = 0 + $outof;
+		$v = 0 + $markVal;
+		if ($max >= 0 && $v > $max) {
+			return $max;
+		}
+		return $v;
+	}
+
 	/** Format stored mark for the entry input field. Empty / absent uses placeholder "-", not a value. */
 	public static function displayMarkEntry($stored, $markId = '')
 	{
@@ -9493,8 +9510,8 @@ public function getApplicationDocs($id = null)
 			$i = 0;
 			foreach ($student_id as $std) {
 				$a = $std;
-				$catVal = self::normalizeMarkEntry($Catmarks[$i] ?? '');
-				$examVal = self::normalizeMarkEntry($Exammarks[$i] ?? '');
+				$catVal = self::capMarkToOutOf(self::normalizeMarkEntry($Catmarks[$i] ?? ''), $outof);
+				$examVal = self::capMarkToOutOf(self::normalizeMarkEntry($Exammarks[$i] ?? ''), $outof);
 				$data1 = array(
 						"student_id" => $a,
 						"term" => $term,
@@ -9553,7 +9570,7 @@ public function getApplicationDocs($id = null)
 					$i++;
 					continue;
 				}
-				$markVal = self::normalizeMarkEntry($rawMark);
+				$markVal = self::capMarkToOutOf(self::normalizeMarkEntry($rawMark), $outof);
 				$data = array(
 						"student_id" => $a,
 						"term" => $term,

@@ -6,6 +6,25 @@
 }
 .marks-entry-input::-webkit-input-placeholder { color: #b5b5b5; }
 .marks-entry-input::-moz-placeholder { color: #b5b5b5; opacity: 1; }
+.marks-entry-input.is-over-max {
+	border-color: #dc3545 !important;
+	background: #fff5f5;
+}
+.marks-live-hint {
+	color: #dc3545;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.2;
+	margin-top: 3px;
+	min-height: 0;
+}
+.marks-max-live {
+	display: block;
+	margin-top: 4px;
+	color: #1d4ed8;
+	font-size: 12px;
+	font-weight: 600;
+}
 </style>
 <form action="<?= base_url('manipulate_marks'); ?>" class="validate autoSubmit" id="form"
 	  xmlns="http://www.w3.org/1999/html">
@@ -139,8 +158,9 @@
 							</tr>
 							<tr>
 								<td><?= lang("app.totalMarks"); ?> </td>
-								<td><input type="number" class="form-control" name="outofmarks" required
+								<td><input type="number" min="0" step="any" class="form-control" name="outofmarks" required
 										   id="outofmarks">
+									<small class="marks-max-live" id="marksMaxLive"></small>
 								</td>
 							</tr>
 							<tr>
@@ -319,26 +339,83 @@
 	}
 
 	function bindMarksEntryInputs() {
-		$(document).off("focus.marksEntry", ".marks-entry-input").on("focus.marksEntry", ".marks-entry-input", function () {
+		function marksOutOf() {
+			var n = parseFloat($("#outofmarks").val());
+			return (isNaN(n) || n < 0) ? null : n;
+		}
+		function setMarkHint($input, msg) {
+			var $hint = $input.next(".marks-live-hint");
+			if (!$hint.length) {
+				$hint = $("<div class=\"marks-live-hint\"></div>");
+				$input.after($hint);
+			}
+			$hint.text(msg || "");
+			$input.toggleClass("is-over-max", !!msg);
+		}
+		function checkMarkAgainstTotal($input, capOver) {
+			var raw = String($input.val() == null ? "" : $input.val());
+			if (raw === "-" || raw === "--") {
+				$input.val("");
+				setMarkHint($input, "");
+				return true;
+			}
+			raw = $.trim(raw);
+			if (raw === "") {
+				setMarkHint($input, "");
+				return true;
+			}
+			if (raw === "0" || raw === "0.0") {
+				$input.val("0");
+				setMarkHint($input, "");
+				return true;
+			}
+			if (!isFinite(Number(raw))) {
+				setMarkHint($input, "Enter a number");
+				return false;
+			}
+			var n = Number(raw);
+			var max = marksOutOf();
+			if (max === null) {
+				setMarkHint($input, "Set Total Marks first");
+				return false;
+			}
+			if (n > max) {
+				if (capOver) {
+					$input.val(String(max));
+				}
+				setMarkHint($input, "Cannot be more than " + max);
+				return false;
+			}
+			if (n < 0) {
+				$input.val("");
+				setMarkHint($input, "");
+				return true;
+			}
+			setMarkHint($input, "");
+			return true;
+		}
+		function refreshMarksMaxLive() {
+			var max = marksOutOf();
+			$("#marksMaxLive").text(max === null ? "" : ("Each mark must be 0–" + max));
+			$(".marks-entry-input").each(function () {
+				checkMarkAgainstTotal($(this), true);
+			});
+		}
+		$(document).off(".marksEntry");
+		$(document).on("focus.marksEntry", ".marks-entry-input", function () {
 			var v = String($(this).val()).trim();
 			if (v === "-" || v === "--") {
 				$(this).val("");
 			}
 		});
-		$(document).off("blur.marksEntry", ".marks-entry-input").on("blur.marksEntry", ".marks-entry-input", function () {
-			var v = String($(this).val()).trim();
-			if (v === "" || v === "-" || v === "--") {
-				$(this).val("");
-				return;
-			}
-			if (v === "0" || v === "0.0") {
-				$(this).val("0");
-				return;
-			}
-			if (!isNaN(v) && Number(v) < 0) {
-				$(this).val("");
-			}
+		$(document).on("input.marksEntry", ".marks-entry-input", function () {
+			checkMarkAgainstTotal($(this), true);
 		});
+		$(document).on("blur.marksEntry", ".marks-entry-input", function () {
+			checkMarkAgainstTotal($(this), true);
+		});
+		$(document).off(".marksOutOf").on("input.marksOutOf change.marksOutOf", "#outofmarks", refreshMarksMaxLive);
+		refreshMarksMaxLive();
 	}
 </script>
 
