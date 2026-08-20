@@ -67,7 +67,16 @@
 				?>
 			</select>
 		</div>
-		<div class="form-group col-sm-4 col-md-2 col-lg-2">
+		<?php if (is_wisdom_school()): ?>
+		<div class="form-group col-sm-4 col-md-2 col-lg-2" id="report_type_group">
+			<label><?= lang("app.type"); ?>:</label>
+			<select class="form-control select2" name="report_type" id="select_report_type">
+				<option value="regular"><?= lang("app.resultRecord"); ?></option>
+				<option value="holiday_coaching"><?= lang("app.holidayCoaching"); ?></option>
+			</select>
+		</div>
+		<?php endif; ?>
+		<div class="form-group col-sm-4 col-md-2 col-lg-2" id="report_term_group">
 			<label><?= lang("app.term");?>:</label>
 			<select class="form-control select2" id="select_term" name="term" required>
 				<option selected disabled><?= lang("app.selectTerm");?></option>
@@ -91,15 +100,6 @@
 				} ?>
 			</select>
 		</div>
-		<?php if (is_wisdom_school()): ?>
-		<div class="form-group col-sm-4 col-md-2 col-lg-2">
-			<label><?= lang("app.type"); ?>:</label>
-			<select class="form-control select2" name="report_type" id="select_report_type">
-				<option value="regular"><?= lang("app.resultRecord"); ?></option>
-				<option value="holiday_coaching"><?= lang("app.holidayCoaching"); ?></option>
-			</select>
-		</div>
-		<?php endif; ?>
 		<div class="form-group col-sm-4 col-md-2 col-lg-2" id="studentDiv" style="display: none">
 			<label><?= lang("app.student");?>:</label>
 			<select class="form-control select2" id="select_student" name="student">
@@ -107,7 +107,7 @@
 			</select>
 		</div>
 		<div class="form-group" style="margin-top: 30px">
-			<button class="btn btn-success" id="btn_generate"><?= lang("app.generate");?></button>
+			<button type="button" class="btn btn-success" id="btn_generate"><?= lang("app.generate");?></button>
 			<button type="submit" value="true" name="pdf" class="btn btn-primary"><?= lang("app.export");?></button>
 			<?php
 			if (is_allowed(1, 3)) {
@@ -202,13 +202,19 @@
 		}
 		function syncHolidayReportUi() {
 			var holiday = isHolidayReport();
+			var $term = $("#select_term");
 			$("#form").attr("action", reportTypeBase());
-			$("#select_term").closest(".form-group").toggle(!holiday);
-			$("#select_term").prop("required", !holiday);
-			$("#select_term option[value='4']").prop("disabled", holiday);
-			if (holiday && ($("#select_term").val() === "4" || !$("#select_term").val())) {
-				$("#select_term").val("1").trigger("change");
+			$("#report_term_group").toggle(!holiday);
+			$term.prop("disabled", holiday);
+			$term.prop("required", !holiday);
+			if (holiday) {
+				$term.removeAttr("required");
+				$term.attr("data-parsley-required", "false");
+			} else {
+				$term.attr("required", "required");
+				$term.removeAttr("data-parsley-required");
 			}
+			$("#select_term option[value='4']").prop("disabled", holiday);
 			$("#sms_publish").toggle(!holiday);
 			$("#hcReportBar").toggleClass("is-on", holiday);
 			$("#singleStudentLabel, #useStudent").toggle(!holiday);
@@ -228,7 +234,7 @@
 				$("#select_student").val(null).trigger("change");
 			}
 		}
-		$("#select_report_type").on("change", syncHolidayReportUi);
+		$("#select_report_type").on("change select2:select", syncHolidayReportUi);
 		$("#select_year").on("change", refreshHolidayAssignment);
 		$(".hc-mode-btn").on("click", function () {
 			setReportMode($(this).data("mode"));
@@ -236,10 +242,13 @@
 		syncHolidayReportUi();
 
 		$("#form").on("submit", function (e) {
-			if (isHolidayReport() && !hcReady) {
-				e.preventDefault();
-				if (window.toastada) toastada.error($("#hcAssignStatus").text() || "Assign holiday coaching courses to this class first.");
-				return false;
+			if (isHolidayReport()) {
+				$("#select_term").prop("required", false).prop("disabled", true).removeAttr("required");
+				if (!hcReady) {
+					e.preventDefault();
+					if (window.toastada) toastada.error($("#hcAssignStatus").text() || "Assign holiday coaching courses to this class first.");
+					return false;
+				}
 			}
 		});
 
@@ -247,12 +256,19 @@
 			e.preventDefault();
 			var classe = $("#select_class").val();
 			var year = $("#select_year").val();
-			var term = $("#select_term").val() || "1";
+			var term = $("#select_term").val();
 			var std=$("#select_student").val();
 			var reportType = $("#select_report_type").val() || "regular";
 			if (!classe || !year) {
 				if (window.toastada) toastada.error("Select academic year and class");
 				return;
+			}
+			if (reportType !== "holiday_coaching" && !term) {
+				if (window.toastada) toastada.error("Select term");
+				return;
+			}
+			if (reportType === "holiday_coaching") {
+				term = "1";
 			}
 			if (reportType === "holiday_coaching" && !hcReady) {
 				if (window.toastada) toastada.error($("#hcAssignStatus").text() || "Assign holiday coaching courses to this class first.");
