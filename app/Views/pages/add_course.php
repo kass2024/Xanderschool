@@ -188,6 +188,8 @@ foreach ($classes as $c) {
 	.course-prog-tab.is-active.rtb .tab-count { background: #dcfce7; color: #15803d; }
 	.course-prog-tab.is-active.reb .tab-count { background: #fef3c7; color: #b45309; }
 	.course-prog-tab.is-active.holiday .tab-count { background: #dbeafe; color: #1d4ed8; }
+	.course-group-panel[data-prog-panel="holiday"] th:nth-child(5),
+	.course-group-panel[data-prog-panel="holiday"] td:nth-child(5) { display: none; }
 	.course-panel-meta {
 		padding: .85rem 1.1rem 0;
 		color: #64748b;
@@ -389,7 +391,7 @@ foreach ($classes as $c) {
 	</div>
 </td>
 <td><div class="form-group">
-		<label><?= lang("app.maxPoints"); ?> <small class="text-muted">(default credit×10)</small></label>
+		<label><?= lang("app.maxPoints"); ?> <small id="manualMarksHint" class="text-muted">(default credit×10)</small></label>
 		<input class="form-control" type="number" min="0" step="1" name="marks" id="manualMarks" required minlength="1">
 	</div>
 </td>
@@ -762,7 +764,6 @@ foreach (($categories ?? []) as $cat) {
 			}
 			currentType = String(value);
 			$('#credits').text("<?= lang("app.credits"); ?>");
-			$('#creditDiv').show();
 			var prog = 'tvet';
 			if (currentType === 'holiday') prog = 'holiday';
 			else if (currentType === '2') prog = 'reb';
@@ -770,12 +771,20 @@ foreach (($categories ?? []) as $cat) {
 			$('#createCourseDiv').show();
 			$('#holidayCourseHint').toggle(prog === 'holiday');
 			if (prog === 'holiday') {
+				$('#creditDiv').hide();
+				$('#manualCredit').val(0);
+				$('#manualMarksHint').hide();
+				if (!$('#manualMarks').data('manual-edit')) {
+					$('#manualMarks').val(50);
+				}
 				var holidayCatId = <?= (int) ($holiday_category_id ?? 0); ?>;
 				if (holidayCatId) {
 					$('#category').val(String(holidayCatId)).trigger('change');
 				}
 				switchCourseProg('holiday');
 			} else {
+				$('#creditDiv').show();
+				$('#manualMarksHint').show();
 				switchCourseProg(prog);
 			}
 			$('#smartWrap').removeClass('is-on');

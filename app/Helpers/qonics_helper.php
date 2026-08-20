@@ -1331,6 +1331,18 @@ if (!function_exists('is_holiday_term_choice')) {
 	}
 }
 
+if (!function_exists('default_holiday_coaching_courses')) {
+	function default_holiday_coaching_courses()
+	{
+		return [
+			['title' => 'English', 'code' => 'HC-ENG', 'marks' => 50],
+			['title' => 'Mathematics', 'code' => 'HC-MATH', 'marks' => 50],
+			['title' => 'Science', 'code' => 'HC-SCI', 'marks' => 50],
+			['title' => 'Kinyarwanda', 'code' => 'HC-KIN', 'marks' => 50],
+		];
+	}
+}
+
 if (!function_exists('staff_name_initials')) {
 	function staff_name_initials($fname, $lname = '')
 	{
