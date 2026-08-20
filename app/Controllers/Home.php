@@ -5477,9 +5477,7 @@ public function attendanceCard()
 			return $result;
 		}
 
-		$defaultPassword = method_exists($this, '_smsSafePassword')
-			? $this->_smsSafePassword(8)
-			: $this->random_password();
+		$defaultPassword = $this->random_password();
 		$staffMdl = new StaffModel();
 		$staffMdl->update($staffId, [
 			'password' => password_hash($defaultPassword, PASSWORD_DEFAULT),
@@ -5493,45 +5491,37 @@ public function attendanceCard()
 		$name = trim($fname . ' ' . strtoupper(substr($lname, 0, 1)) . '.');
 		$loginUser = $email !== '' ? $email : $phone;
 		$smsPack = $this->_staffCredentialSms($name, $loginUser, $defaultPassword, true);
-		$smsParts = $smsPack['parts'] ?? [['body' => $smsPack['body'], 'log' => $smsPack['log']]];
+		$smsBody = $smsPack['body'];
+		$smsLogBody = $smsPack['log'];
 
 		if (in_array($channel, ['sms', 'both'], true)) {
 			if ($phone === '') {
 				$result['errors'][] = 'No phone number';
 			} else {
-				$sentParts = 0;
 				$smsResult = null;
-				foreach ($smsParts as $part) {
-					$partResult = null;
-					$ok = $this->sendSMS($phone, $part['body'], $partResult);
-					$failReason = '';
-					if (!$ok) {
-						$smsResult = $partResult;
-						$failReason = is_array($partResult)
-							? (string) ($partResult['content'] ?? json_encode($partResult))
-							: (string) $partResult;
-					} else {
-						$sentParts++;
-					}
+				if ($this->sendSMS($phone, $smsBody, $smsResult)) {
+					$smsCount = (int) ceil(strlen($smsBody) / (defined('PER_SMS') ? PER_SMS : 160));
 					$this->_save_sms(
 						$this->data['active_term'] ?? 0,
 						$phone,
-						$part['log'],
+						$smsLogBody,
 						'Staff access share',
 						$staffId,
 						1,
-						$ok ? 1 : 0,
-						$failReason
+						$smsCount
 					);
-				}
-				if ($sentParts === count($smsParts) && $sentParts > 0) {
 					$result['sms'] = true;
-				} elseif ($sentParts > 0) {
-					$result['sms'] = true;
-					$result['errors'][] = 'Login URL SMS failed' . (is_array($smsResult)
-						? ': ' . ($smsResult['content'] ?? json_encode($smsResult))
-						: ($smsResult ? ': ' . $smsResult : ''));
 				} else {
+					$this->_save_sms(
+						$this->data['active_term'] ?? 0,
+						$phone,
+						$smsLogBody,
+						'Staff access share',
+						$staffId,
+						1,
+						0,
+						$smsResult
+					);
 					$result['errors'][] = 'SMS failed' . (is_array($smsResult)
 						? ': ' . ($smsResult['content'] ?? json_encode($smsResult))
 						: ($smsResult ? ': ' . $smsResult : ''));
