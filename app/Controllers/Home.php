@@ -5924,7 +5924,7 @@ public function attendanceCard()
 	/**
 	 * Marks entry rules:
 	 * - "0" = scored zero (stored as 0)
-	 * - "" / "-" = did not sit test (stored as -1, shown as "-")
+	 * - "" / "-" = did not sit test (stored as -1, shown as empty with placeholder "-")
 	 * Calculations treat -1 as 0.
 	 */
 	public static function normalizeMarkEntry($raw)
@@ -5942,7 +5942,7 @@ public function attendanceCard()
 		return 0 + $v;
 	}
 
-	/** Format stored mark for the entry input field. */
+	/** Format stored mark for the entry input field. Empty / absent uses placeholder "-", not a value. */
 	public static function displayMarkEntry($stored, $markId = '')
 	{
 		$hasRecord = $markId !== null && $markId !== '' && (string) $markId !== '0';
@@ -5950,7 +5950,7 @@ public function attendanceCard()
 			return '';
 		}
 		if ($stored === null || $stored === '' || (is_numeric($stored) && (float) $stored < 0)) {
-			return '-';
+			return '';
 		}
 		if ((float) $stored == 0.0) {
 			return '0';

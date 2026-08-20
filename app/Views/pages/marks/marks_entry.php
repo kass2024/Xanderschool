@@ -1,4 +1,12 @@
 <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/sweetalert2@7.12.15/dist/sweetalert2.min.css'>
+<style>
+.marks-entry-input::placeholder {
+	color: #b5b5b5;
+	opacity: 1;
+}
+.marks-entry-input::-webkit-input-placeholder { color: #b5b5b5; }
+.marks-entry-input::-moz-placeholder { color: #b5b5b5; opacity: 1; }
+</style>
 <form action="<?= base_url('manipulate_marks'); ?>" class="validate autoSubmit" id="form"
 	  xmlns="http://www.w3.org/1999/html">
 	<div class="col-sm-12">
@@ -136,8 +144,13 @@
 								</td>
 							</tr>
 							<tr>
+								<td colspan="2" style="padding-top:6px;">
+									<small class="text-muted">Leave empty (grey <strong>-</strong>) if the student did not sit the test — it counts as 0 in totals. Enter <strong>0</strong> only when they scored zero.</small>
+								</td>
+							</tr>
+							<tr>
 								<td><?= lang("app.dateGiven"); ?> </td>
-								<td><input type="date" class="form-control" name="examDate" required id="examDate"></td>
+								<td><input type="date" class="form-control" name="examDate" required id="examDate" value="<?= date('Y-m-d'); ?>"></td>
 								<td><input type="hidden" class="form-control" name="year" required value="<?=$academic_year_id;?>"></td>
 							</tr>
 							<tr>
@@ -281,9 +294,12 @@
 		$("#dv_marks").html("");
 		// $("#form")[0].reset();
 		$('#outofmarks').val("").prop('disabled', false).prop('readonly', false);
-		$('#examDate').val('');
+		var today = new Date();
+		var yyyy = today.getFullYear();
+		var mm = String(today.getMonth() + 1).padStart(2, '0');
+		var dd = String(today.getDate()).padStart(2, '0');
+		$('#examDate').val(yyyy + '-' + mm + '-' + dd).prop('readonly', false).prop('disabled', false);
 		$('#btn-del-marks').prop('disabled',true);
-		$('#examDate').prop('disabled', false);
 	}
 
 	function populate_marks() {
@@ -298,6 +314,30 @@
 		resetView();
 		$("#export_pdf").prop("href", "<?= base_url(''); ?>get_student_marks/" + mt + ct + id + course + period + term+"/"+$("[name='year']").val() + "?pdf").removeClass("disabled");
 		$("#dv_marks").load("<?= base_url(''); ?>get_student_marks/" + mt + ct + id + course + period + term+"/"+$("[name='year']").val(), function () {
+			bindMarksEntryInputs();
+		});
+	}
+
+	function bindMarksEntryInputs() {
+		$(document).off("focus.marksEntry", ".marks-entry-input").on("focus.marksEntry", ".marks-entry-input", function () {
+			var v = String($(this).val()).trim();
+			if (v === "-" || v === "--") {
+				$(this).val("");
+			}
+		});
+		$(document).off("blur.marksEntry", ".marks-entry-input").on("blur.marksEntry", ".marks-entry-input", function () {
+			var v = String($(this).val()).trim();
+			if (v === "" || v === "-" || v === "--") {
+				$(this).val("");
+				return;
+			}
+			if (v === "0" || v === "0.0") {
+				$(this).val("0");
+				return;
+			}
+			if (!isNaN(v) && Number(v) < 0) {
+				$(this).val("");
+			}
 		});
 	}
 </script>
