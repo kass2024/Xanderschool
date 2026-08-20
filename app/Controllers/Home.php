@@ -2009,6 +2009,32 @@ public function testEmail()
 		$done = true;
 	}
 
+	private function ensureHolidayCoachingCategory(int $schoolId): int
+	{
+		if ($schoolId < 1) {
+			return 0;
+		}
+		$mdl = new CourseCategoryModel();
+		$row = $mdl->select('id,title')->where('school_id', $schoolId)->get()->getResultArray();
+		foreach ($row as $cat) {
+			$title = strtolower(trim((string) ($cat['title'] ?? '')));
+			if ($title === 'holiday coaching' || $title === 'holiday') {
+				return (int) $cat['id'];
+			}
+		}
+		try {
+			$mdl->insert([
+				'school_id' => $schoolId,
+				'title' => 'Holiday Coaching',
+				'status' => 1,
+			]);
+			return (int) $mdl->getInsertID();
+		} catch (\Throwable $e) {
+			log_message('error', 'ensureHolidayCoachingCategory: ' . $e->getMessage());
+			return 0;
+		}
+	}
+
 	private function ensureAcademicPlansSchema(): void
 	{
 		static $done = false;
@@ -4058,7 +4084,7 @@ public function attendanceCard()
 
 		$aiCodeMeta = $this->buildAiCourseCodeMeta($school_id, $yearId);
 		$assignmentTypes = $this->courseAssignmentProgramTypes($school_id, $yearId);
-		$coursesGrouped = ['tvet' => [], 'reb' => []];
+		$coursesGrouped = ['tvet' => [], 'reb' => [], 'holiday' => []];
 		foreach ($data['courses'] as &$courseRow) {
 			try {
 				$meta = $this->classifyCourseProgramAndSource($courseRow, $aiCodeMeta, $assignmentTypes);
@@ -4067,13 +4093,22 @@ public function attendanceCard()
 			}
 			$courseRow['program_type'] = $meta['program_type'];
 			$courseRow['create_source'] = $meta['create_source'];
-			$bucket = ($meta['program_type'] === 'reb') ? 'reb' : 'tvet';
+			if ($meta['program_type'] === 'holiday') {
+				$bucket = 'holiday';
+			} elseif ($meta['program_type'] === 'reb') {
+				$bucket = 'reb';
+			} else {
+				$bucket = 'tvet';
+			}
 			$coursesGrouped[$bucket][] = $courseRow;
 		}
 		unset($courseRow);
 		$data['courses_grouped'] = $coursesGrouped;
 
 		$data['faculty'] = $faculty->get()->getResultArray();
+		if (is_wisdom_school($school_id)) {
+			$this->ensureHolidayCoachingCategory($school_id);
+		}
 		$data['categories'] = $CourseCategory->where("school_id", $school_id)->get()->getResultArray();
 		$data['staffs'] = $staffMdl->where("school_id", $this->session->get("soma_school_id"))->get()->getResultArray();
 
@@ -4238,10 +4273,14 @@ public function attendanceCard()
 	private function classifyCourseProgramAndSource(array $course, array $aiCodeMeta, array $assignmentTypes): array
 	{
 		$code = \App\Libraries\DocumentTextExtractor::cleanModuleCode((string) ($course['code'] ?? ''));
-		$storedProg = strtolower(trim((string) ($course['program_type'] ?? '')));
+		$storedProg = normalize_course_program_type($course['program_type'] ?? '');
 		$storedSource = strtolower(trim((string) ($course['create_source'] ?? '')));
-		$program = ($storedProg === 'reb') ? 'reb' : 'tvet';
+		$program = $storedProg;
 		$source = ($storedSource === 'ai') ? 'ai' : 'manual';
+
+		if ($program === 'holiday') {
+			return ['program_type' => 'holiday', 'create_source' => $source];
+		}
 
 		if ($code !== '' && isset($aiCodeMeta[$code])) {
 			$source = 'ai';
@@ -6530,6 +6569,14 @@ public function attendanceCard()
 		$term = $this->request->getPost("term[]");
 		$CourseRecordModel = new CourseRecordModel();
 		$activityModel = new ActivityModel();
+		$isHolidayCourse = false;
+		if ($course) {
+			$courseRow = (new CourseModel())->select('program_type')->where('id', (int) $course)->get(1)->getRowArray();
+			$isHolidayCourse = is_holiday_course_program($courseRow['program_type'] ?? '');
+			if ($isHolidayCourse && !is_wisdom_school($this->session->get('soma_school_id'))) {
+				return $this->response->setJSON(array("error" => "Holiday coaching courses are only available for Wisdom schools"));
+			}
+		}
 		//check if course is assigned to class
 		$dt = $CourseRecordModel->select("count(id) as cc")->where("course='$course' AND class='$classes' AND year='$year'")->get()->getRow();
 		if ($dt->cc > 0) {
@@ -6537,7 +6584,11 @@ public function attendanceCard()
 			return $this->response->setJSON(array("error" => lang("app.courseAlready")));
 		}
 		if ($id == null) {
-			$term = implode(",", $term);
+			if ($isHolidayCourse) {
+				$term = holiday_course_year_term();
+			} else {
+				$term = is_array($term) ? implode(",", $term) : (string) $term;
+			}
 			$data = array(
 					"course" => $course,
 					"lecturer" => $this->request->getPost("teacher"),
@@ -6599,6 +6650,13 @@ public function attendanceCard()
 			->where("classes.school_id", $schoolId)
 			->orderBy("class_name", "ASC")
 			->get()->getResultArray();
+		foreach ($rows as &$row) {
+			$termVal = trim((string) ($row['term'] ?? ''));
+			if ($termVal === holiday_course_year_term() || $termVal === '') {
+				$row['term'] = 'Academic year';
+			}
+		}
+		unset($row);
 
 		return $this->response->setJSON(["assignments" => $rows, "course_id" => $courseId]);
 	}
@@ -6685,9 +6743,9 @@ public function attendanceCard()
 		} else {
 			$marks = (int) round($credit * 10);
 		}
-		$programType = strtolower(trim((string) $this->request->getPost('program_type')));
-		if ($programType !== 'reb') {
-			$programType = 'tvet';
+		$programType = normalize_course_program_type($this->request->getPost('program_type'));
+		if ($programType === 'holiday' && !is_wisdom_school($this->session->get('soma_school_id'))) {
+			return $this->response->setJSON(array("error" => "Holiday coaching courses are only available for Wisdom schools"));
 		}
 		if ($courseId == 0) {
 			$data = array(
@@ -9232,8 +9290,14 @@ public function getApplicationDocs($id = null)
 					->join("staffs s", "s.id=r.lecturer")
 					->where("courses.school_id", $school_id)
 					->where("r.year", $academic_year)
-					->where("find_in_set($term,r.term) !=0")
 					->groupBy("courses.id");
+			$markType = (int) $this->request->getGet('marktype');
+			if ($markType === holiday_coaching_mark_type()) {
+				$builder->where("courses.program_type", "holiday");
+			} else {
+				$builder->where("find_in_set($term,r.term) !=0");
+				$builder->where("IFNULL(courses.program_type,'') <> 'holiday'");
+			}
 			if (!in_array($this->session->get("soma_post"), [1, 3])) {
 				//filter courses if is not head master or dean of studies
 				$builder->where("s.id", $this->session->get("soma_id"));
@@ -9273,11 +9337,18 @@ public function getApplicationDocs($id = null)
 		$catType = $this->request->getPost("catType") == null ? '' : $this->request->getPost("catType");
 		$outof = $this->request->getPost("outofmarks");
 		$period = $this->request->getPost("period") == null ? 0 : $this->request->getPost("period");
+		$courseProgRow = (new CourseModel())->select('program_type')->where('id', (int) $course_id)->get(1)->getRowArray();
+		$isHolidayCourse = is_holiday_course_program($courseProgRow['program_type'] ?? '');
 		if ((int) $mark_type === holiday_coaching_mark_type()) {
 			if (!is_wisdom_school($this->session->get("soma_school_id"))) {
 				return $this->response->setJSON(array("error" => "Holiday coaching is only available for Wisdom schools"));
 			}
+			if (!$isHolidayCourse) {
+				return $this->response->setJSON(array("error" => "Holiday coaching marks can only be entered on Holiday coaching courses"));
+			}
 			$period = 0;
+		} elseif ($isHolidayCourse) {
+			return $this->response->setJSON(array("error" => "Holiday coaching courses use the Holiday coaching marks type and stay out of CAT/Exam"));
 		}
 		$created_by = $this->session->get("soma_id");
 		if (!is_array($student_id)) {
@@ -9376,6 +9447,27 @@ public function getApplicationDocs($id = null)
 							"id" => $marks_id[$i],
 							"outof" => $outof,
 							"marks" => $markVal);
+				} elseif ((int) $mark_type === holiday_coaching_mark_type()) {
+					$yearTermIds = $this->activeTermIdsForYear((int) $this->session->get("soma_school_id"), (int) $year);
+					$existingQ = $MarksModel->select('id')
+						->where('student_id', $a)
+						->where('course_id', $course_id)
+						->where('class_id', $class)
+						->where('mark_type', $mark_type);
+					if ($yearTermIds !== []) {
+						$existingQ->whereIn('term', $yearTermIds);
+					} else {
+						$existingQ->where('term', $term);
+					}
+					$existingHoliday = $existingQ->get(1)->getRow();
+					if ($existingHoliday) {
+						$data = array(
+							"id" => $existingHoliday->id,
+							"outof" => $outof,
+							"marks" => $markVal,
+							"examDate" => $examDate,
+						);
+					}
 				}
 
 				try {
@@ -10379,16 +10471,24 @@ public function getApplicationDocs($id = null)
 		} else if ($mt == 2 || (int) $mt === holiday_coaching_mark_type()) {
 			$mtInt = (int) $mt;
 			$ownerFilter = '';
-			if ($mtInt === holiday_coaching_mark_type() && !in_array($this->session->get('soma_post'), [1, 3])) {
-				$ownerId = (int) $this->session->get('soma_id');
-				$ownerFilter = " AND m.created_by={$ownerId}";
+			$termFilter = " AND m.term={$active_term}";
+			if ($mtInt === holiday_coaching_mark_type()) {
+				if (!in_array($this->session->get('soma_post'), [1, 3])) {
+					$ownerId = (int) $this->session->get('soma_id');
+					$ownerFilter = " AND m.created_by={$ownerId}";
+				}
+				$yearTermIds = $this->activeTermIdsForYear((int) $this->session->get('soma_school_id'), (int) $year);
+				if ($yearTermIds === []) {
+					$yearTermIds = [(int) $active_term];
+				}
+				$termFilter = " AND m.term IN (" . implode(',', $yearTermIds) . ")";
 			}
 			$marks_sql = "select student_id,m.mark_type,m.created_by,
 														  m.marks,
 														  m.outof,
 														  m.cat_type,
 														  m.id,
-														  m.examDate from marks m where m.mark_type={$mtInt} AND m.course_id=$course AND m.class_id=$class AND m.term={$active_term}{$ownerFilter}";
+														  m.examDate from marks m where m.mark_type={$mtInt} AND m.course_id=$course AND m.class_id=$class{$termFilter}{$ownerFilter}";
 			$students = $StudentModel->select("students.id,
 														  students.regno,
 														  concat(students.fname,' ',students.lname) as name,
@@ -11342,9 +11442,10 @@ public function getApplicationDocs($id = null)
 				->orderBy('courses.title')
 				->groupBy('courses.id');
 		if ($term != 4) {
-			//fetch single term courses
+			//fetch single term courses (holiday coaching courses are year-based and stay out of regular reports)
 			$subjectBuilder->where("find_in_set($term,cr.term)>0");
 		}
+		$subjectBuilder->where("IFNULL(courses.program_type,'') <> 'holiday'");
 		return $subjectBuilder->get()->getResultArray();
 	}
 
@@ -11441,6 +11542,41 @@ public function getApplicationDocs($id = null)
 		return view('main', $data);
 	}
 
+	/** Active term row IDs for a school academic year (holiday coaching is year-wide). */
+	private function activeTermIdsForYear(int $schoolId, int $yearId): array
+	{
+		if ($schoolId < 1 || $yearId < 1) {
+			return [];
+		}
+		$rows = (new ActiveTermModel())->select('id')
+			->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->get()->getResultArray();
+		$ids = [];
+		foreach ($rows as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id > 0) {
+				$ids[] = $id;
+			}
+		}
+		return $ids;
+	}
+
+	/** Holiday coaching courses assigned to a class for an academic year (not term-filtered). */
+	private function getHolidayCourses(int $classId, int $yearId): array
+	{
+		$courseModel = new CourseModel();
+		return $courseModel->select("courses.id,courses.title,courses.code,courses.marks,courses.credit,cs.title as category")
+			->join("course_category cs", "cs.id=courses.category", "left")
+			->join("course_records cr", "cr.course=courses.id")
+			->where("cr.class", $classId)
+			->where("cr.year", $yearId)
+			->where("courses.program_type", "holiday")
+			->orderBy("courses.title")
+			->groupBy("courses.id")
+			->get()->getResultArray();
+	}
+
 	/**
 	 * Wisdom-only holiday coaching report card (own mark type, no period).
 	 */
@@ -11462,22 +11598,40 @@ public function getApplicationDocs($id = null)
 		$class = (int) $class;
 		$year = (int) $year;
 		$term = (int) $term;
-		if ($class < 1 || $year < 1 || $term < 1) {
+		if ($class < 1 || $year < 1) {
 			echo "invalid data, please try again later";
 			die();
 		}
 
+		$yearTermIds = $this->activeTermIdsForYear($school_id, $year);
+		if ($yearTermIds === []) {
+			echo "invalid data, please try again later";
+			die();
+		}
 		$atMdl = new ActiveTermModel();
-		$active_term = $atMdl->select("id")
-			->where("term", $term)
-			->where("academic_year", $year)
-			->where("school_id", $school_id)
-			->get(1)->getRow();
+		$active_term = null;
+		if ($term >= 1) {
+			$active_term = $atMdl->select("id")
+				->where("term", $term)
+				->where("academic_year", $year)
+				->where("school_id", $school_id)
+				->get(1)->getRow();
+		}
+		if ($active_term == null) {
+			$active_term = $atMdl->select("id")
+				->where("academic_year", $year)
+				->where("school_id", $school_id)
+				->orderBy("term", "ASC")
+				->get(1)->getRow();
+		}
 		if ($active_term == null) {
 			echo "invalid data, please try again later";
 			die();
 		}
 		$active_term_id = (int) $active_term->id;
+		if ($term < 1) {
+			$term = 1;
+		}
 		$markType = holiday_coaching_mark_type();
 
 		$classMdl = new ClassesModel();
@@ -11523,7 +11677,7 @@ public function getApplicationDocs($id = null)
 			->join("courses", "courses.id = marks.course_id")
 			->join("staffs st", "st.id = marks.created_by", "left")
 			->where("marks.class_id", $class)
-			->where("marks.term", $active_term_id)
+			->whereIn("marks.term", $yearTermIds)
 			->where("marks.mark_type", $markType)
 			->orderBy("courses.title")
 			->get()->getResultArray();
@@ -11562,7 +11716,7 @@ public function getApplicationDocs($id = null)
 		}
 
 		if ($courseOrder === []) {
-			foreach ($this->get_courses($class, $term, $year) as $core) {
+			foreach ($this->getHolidayCourses($class, $year) as $core) {
 				$courseOrder[(int) $core['id']] = [
 					'id' => (int) $core['id'],
 					'title' => $core['title'],

@@ -138,22 +138,61 @@ class Api extends BaseController
 		}
 		//Get the Active Term Information
 		$schoolMdl = new SchoolModel();
-		$active_term = $schoolMdl->select("schools.active_term, at.use_period")->join('active_term at', 'schools.active_term=at.id')->where('schools.id=' . $school_id)->get()->getResultArray();
+		$active_term = $schoolMdl->select("schools.active_term, at.use_period, at.academic_year")->join('active_term at', 'schools.active_term=at.id')->where('schools.id=' . $school_id)->get()->getResultArray();
 
 		//Name Make sure to save data in tha database
 		$marksRecordModel = new MarksModel();
+		helper('qonics');
+		$markType = (int) ($info['mark_type'] ?? 0);
+		$activeTermId = (int) ($active_term[0]['active_term'] ?? 0);
+		$lookupTerms = [$activeTermId];
+		if ($markType === holiday_coaching_mark_type()) {
+			if (!is_wisdom_school($school_id)) {
+				return $this->response->setJSON(["error" => "Holiday coaching is only available for Wisdom schools", "success" => false]);
+			}
+			$info['period'] = 0;
+			$yearId = (int) ($active_term[0]['academic_year'] ?? 0);
+			if ($yearId > 0) {
+				$yearTerms = (new ActiveTermModel())->select('id')
+					->where('school_id', $school_id)
+					->where('academic_year', $yearId)
+					->get()->getResultArray();
+				$lookupTerms = [];
+				foreach ($yearTerms as $yt) {
+					$tid = (int) ($yt['id'] ?? 0);
+					if ($tid > 0) {
+						$lookupTerms[] = $tid;
+					}
+				}
+				if ($lookupTerms === []) {
+					$lookupTerms = [$activeTermId];
+				}
+			}
+		}
 
-		$old_records = $marksRecordModel->select('id')
-			->where('student_id=' . $info['student_id'])
-			->where('term=' . $active_term[0]['active_term'])
-			->where('course_id=' . $info['course_id'])
-			->where('class_id=' . $info['class_id'])
-			->where('mark_type=' . $info['mark_type'])
-			// ->where('marks='.$info['marks'])
-			->where('outof=' . $info['outof'])
-			->where('created_by=' . $info['created_by'])
-			->get()->getResultArray();
+		$oldQ = $marksRecordModel->select('id')
+			->where('student_id', $info['student_id'])
+			->where('course_id', $info['course_id'])
+			->where('class_id', $info['class_id'])
+			->where('mark_type', $markType)
+			->where('created_by', $info['created_by']);
+		if (count($lookupTerms) === 1) {
+			$oldQ->where('term', $lookupTerms[0]);
+		} else {
+			$oldQ->whereIn('term', $lookupTerms);
+		}
+		$old_records = $oldQ->get()->getResultArray();
 		if (count($old_records) > 0) {
+			if ($markType === holiday_coaching_mark_type()) {
+				$marksRecordModel->save([
+					'id' => $old_records[0]['id'],
+					'marks' => $info['marks'],
+					'outof' => $info['outof'],
+					'examDate' => (new \DateTime($info['examDate']))->getTimestamp(),
+					'period' => 0,
+				]);
+				return $this->response->setJSON(["success" => "true", "message" => "Marks Recorded!"]);
+			}
 			return $this->response->setJSON(["error" => "The Comming information seems to be included before!", "success" => false]);
 		}
 
@@ -230,10 +269,10 @@ class Api extends BaseController
 								$csMdl = new CourseModel();
 								$year = (int) ($result->academic_year ?? 0);
 								$term = (int) ($result->term ?? 0);
-								$coursesData = $csMdl->select("courses.id,courses.title,courses.code,r.class as class_id,courses.marks")
+								$coursesData = $csMdl->select("courses.id,courses.title,courses.code,r.class as class_id,courses.marks,courses.program_type")
 									->join("course_records r", "courses.id=r.course")
 									->where("r.year", $year)
-									->where("find_in_set({$term},r.term)>0")
+									->where("(find_in_set({$term},r.term)>0 OR IFNULL(courses.program_type,'') = 'holiday')")
 									->where("r.lecturer", $result->id)
 									->groupBy("courses.id")
 									->groupBy("r.class")
@@ -316,10 +355,10 @@ class Api extends BaseController
 			return $this->response->setJSON(['error' => 'School not found']);
 		}
 		$csMdl = new CourseModel();
-		$coursesData = $csMdl->select("courses.id,courses.title,courses.code,r.class as class_id,courses.marks")
+		$coursesData = $csMdl->select("courses.id,courses.title,courses.code,r.class as class_id,courses.marks,courses.program_type")
 			->join("course_records r", "courses.id=r.course")
 			->where("r.year", $school->academic_year)
-			->where("find_in_set({$school->term},r.term)>0")
+			->where("(find_in_set({$school->term},r.term)>0 OR IFNULL(courses.program_type,'') = 'holiday')")
 			->where("r.lecturer", $teacher_id)
 			->groupBy("courses.id")
 			->groupBy("r.class")
@@ -485,6 +524,7 @@ public function save_boarding_attendance()
 			->join("course_records r", "courses.id=r.course")
 			->where("r.year", $tt->academic_year)
 			->where("find_in_set({$tt->term},r.term)>0")
+			->where("IFNULL(courses.program_type,'') <> 'holiday'")
 			->where("r.class", $class)
 			->groupBy("courses.id")
 			->get()->getResultArray();

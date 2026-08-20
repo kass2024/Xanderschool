@@ -117,8 +117,10 @@
 		function syncHolidayReportUi() {
 			var holiday = ($("#select_report_type").val() || "regular") === "holiday_coaching";
 			$("#form").attr("action", reportTypeBase());
+			$("#select_term").closest(".form-group").toggle(!holiday);
+			$("#select_term").prop("required", !holiday);
 			$("#select_term option[value='4']").prop("disabled", holiday);
-			if (holiday && $("#select_term").val() === "4") {
+			if (holiday && ($("#select_term").val() === "4" || !$("#select_term").val())) {
 				$("#select_term").val("1").trigger("change");
 			}
 			$("#sms_publish").toggle(!holiday);

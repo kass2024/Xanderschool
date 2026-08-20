@@ -9,7 +9,7 @@
  * @var array $courses_grouped
  */
 $smartByClass = $smart_by_class ?? [];
-$coursesGrouped = $courses_grouped ?? ['tvet' => [], 'reb' => []];
+$coursesGrouped = $courses_grouped ?? ['tvet' => [], 'reb' => [], 'holiday' => []];
 $courseCategoriesJson = [];
 foreach (($categories ?? []) as $cat) {
 	$courseCategoriesJson[] = [
@@ -27,7 +27,7 @@ $renderCourseRows = static function (array $rows): string {
 		$catId = (int) ($course['category_id'] ?? 0);
 		$credit = (string) ($course['credit'] ?? '0');
 		$marks = (string) ($course['marks'] ?? '0');
-		$prog = (($course['program_type'] ?? '') === 'reb') ? 'reb' : 'tvet';
+		$prog = normalize_course_program_type($course['program_type'] ?? 'tvet');
 		$titleEsc = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
 		$codeEsc = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
 		$catEsc = htmlspecialchars($catTitle, ENT_QUOTES, 'UTF-8');
@@ -50,7 +50,7 @@ $renderCourseRows = static function (array $rows): string {
 			. '<td class="course-inline" data-field="credit" title="Double-click to edit">' . htmlspecialchars($credit, ENT_QUOTES, 'UTF-8') . '</td>'
 			. '<td class="course-inline" data-field="marks" title="Double-click to edit">' . htmlspecialchars($marks, ENT_QUOTES, 'UTF-8') . '</td>'
 			. '<td>'
-			. "<label class='typcn typcn-document-add text-primary link' data-id='" . $id . "' data-title='" . $titleEsc . "' data-toggle='modal' data-target='#assignModal'>" . lang('app.assign') . "</label>&nbsp;&nbsp;"
+			. "<label class='typcn typcn-document-add text-primary link' data-id='" . $id . "' data-title='" . $titleEsc . "' data-program-type='" . $prog . "' data-toggle='modal' data-target='#assignModal'>" . lang('app.assign') . "</label>&nbsp;&nbsp;"
 			. "<label class='typcn typcn-delete text-danger link' data-title='" . $titleEsc . "' data-toggle='delete' data-target='" . $id . "' data-href='delete_course/" . $id . "'>" . lang('app.del') . "</label>"
 			. '</td></tr>';
 	}
@@ -82,7 +82,11 @@ foreach ($classes as $c) {
 			<div class="modal-body">
 				<p class="mb-3 text-muted">Choose programme type, then create courses manually or from extracted curriculum.</p>
 				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="1" data-mode="manual"><?= lang("app.wda"); ?> (TVET)</button>
-				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick" data-type="2" data-mode="manual"><?= lang("app.reb"); ?> (REB)</button>
+				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="2" data-mode="manual"><?= lang("app.reb"); ?> (REB)</button>
+				<?php if (is_wisdom_school()): ?>
+				<button type="button" class="btn btn-outline-success btn-block btn-lg course-type-pick" data-type="holiday" data-mode="manual"><?= lang("app.holidayCoaching"); ?></button>
+				<p class="text-muted mt-2 mb-0" style="font-size:.85rem;">Holiday coaching courses stay on their own list and are assigned by academic year (not by term).</p>
+				<?php endif; ?>
 			</div>
 			<div class="modal-footer">
 				<button type="button" class="btn btn-secondary" data-dismiss="modal"><?= lang("app.close"); ?></button>
@@ -183,6 +187,7 @@ foreach ($classes as $c) {
 	}
 	.course-prog-tab.is-active.rtb .tab-count { background: #dcfce7; color: #15803d; }
 	.course-prog-tab.is-active.reb .tab-count { background: #fef3c7; color: #b45309; }
+	.course-prog-tab.is-active.holiday .tab-count { background: #dbeafe; color: #1d4ed8; }
 	.course-panel-meta {
 		padding: .85rem 1.1rem 0;
 		color: #64748b;
@@ -347,6 +352,9 @@ foreach ($classes as $c) {
 <div class="boxed" id="createCourseDiv" style="display: none;">
 <form action="<?= base_url('manipulate_course'); ?>" class="validate autoSubmit" id="manualCourseForm">
 	<input type="hidden" name="program_type" id="manualProgramType" value="tvet">
+	<p id="holidayCourseHint" class="text-muted" style="display:none;margin:8px 10px 0;">
+		Holiday coaching courses are kept separate from REB/TVET and are assigned for the <strong>academic year</strong> (not by term).
+	</p>
 	<table class="table table-striped table-bordered" style="margin: 0">
 		<tbody>
 <tr>
@@ -381,8 +389,8 @@ foreach ($classes as $c) {
 	</div>
 </td>
 <td><div class="form-group">
-		<label><?= lang("app.maxPoints"); ?> <small class="text-muted">(auto = credit×10)</small></label>
-		<input class="form-control" type="number" name="marks" id="manualMarks" required minlength="1" readonly>
+		<label><?= lang("app.maxPoints"); ?> <small class="text-muted">(default credit×10)</small></label>
+		<input class="form-control" type="number" min="0" step="1" name="marks" id="manualMarks" required minlength="1">
 	</div>
 </td>
 
@@ -410,7 +418,22 @@ $groupDefs = [
 		'label' => 'REB',
 	],
 ];
-$defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGrouped['reb']) ? 'reb' : 'tvet');
+if (is_wisdom_school() || !empty($coursesGrouped['holiday'])) {
+	$groupDefs['holiday'] = [
+		'title' => lang('app.holidayCoaching') . ' — academic year (not termly)',
+		'table_id' => 'courseTableHoliday',
+		'tab_class' => 'holiday',
+		'label' => 'Holiday',
+	];
+}
+$defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGrouped['reb']) ? 'reb' : (!empty($coursesGrouped['holiday']) ? 'holiday' : 'tvet'));
+$holiday_category_id = 0;
+foreach (($categories ?? []) as $cat) {
+	if (stripos((string) ($cat['title'] ?? ''), 'holiday') !== false) {
+		$holiday_category_id = (int) $cat['id'];
+		break;
+	}
+}
 ?>
 <div class="course-list-wrap" id="courseListWrap">
 	<div class="course-prog-switch" role="tablist" aria-label="Programme type">
@@ -698,11 +721,14 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 
 		var courseTables = {
 			tvet: null,
-			reb: null
+			reb: null,
+			holiday: null
 		};
 
 		function ensureTable(prog) {
-			var id = prog === 'reb' ? '#courseTableReb' : '#courseTableRtb';
+			var ids = { tvet: '#courseTableRtb', reb: '#courseTableReb', holiday: '#courseTableHoliday' };
+			var id = ids[prog] || '#courseTableRtb';
+			if (!$(id).length) return;
 			if (!courseTables[prog]) {
 				courseTables[prog] = initCourseTable(id);
 			} else if (courseTables[prog] && courseTables[prog].columns) {
@@ -711,7 +737,7 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 		}
 
 		function switchCourseProg(prog) {
-			prog = prog === 'reb' ? 'reb' : 'tvet';
+			if (prog !== 'reb' && prog !== 'holiday') prog = 'tvet';
 			$('.course-prog-tab').removeClass('is-active').attr('aria-selected', 'false');
 			$('.course-prog-tab[data-prog="' + prog + '"]').addClass('is-active').attr('aria-selected', 'true');
 			$('.course-group-panel').removeClass('is-active');
@@ -737,8 +763,21 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 			currentType = String(value);
 			$('#credits').text("<?= lang("app.credits"); ?>");
 			$('#creditDiv').show();
-			$('#manualProgramType').val(currentType === '2' ? 'reb' : 'tvet');
+			var prog = 'tvet';
+			if (currentType === 'holiday') prog = 'holiday';
+			else if (currentType === '2') prog = 'reb';
+			$('#manualProgramType').val(prog);
 			$('#createCourseDiv').show();
+			$('#holidayCourseHint').toggle(prog === 'holiday');
+			if (prog === 'holiday') {
+				var holidayCatId = <?= (int) ($holiday_category_id ?? 0); ?>;
+				if (holidayCatId) {
+					$('#category').val(String(holidayCatId)).trigger('change');
+				}
+				switchCourseProg('holiday');
+			} else {
+				switchCourseProg(prog);
+			}
 			$('#smartWrap').removeClass('is-on');
 			$typeModal.modal("hide");
 			return true;
@@ -802,7 +841,7 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 					$tr.append($('<td></td>').append($('<input type="text" class="form-control form-control-sm smart-code">').val(m.code || '')));
 					$tr.append($('<td></td>').append($('<input type="text" class="form-control form-control-sm smart-cat">').val(m.category_title || 'General')));
 					$tr.append($('<td></td>').append($('<input type="number" step="0.1" min="0" class="form-control form-control-sm credit-input smart-credit">').val(credit)));
-					$tr.append($('<td></td>').append($('<input type="number" class="form-control form-control-sm marks-input smart-marks" readonly>').val(marks)));
+					$tr.append($('<td></td>').append($('<input type="number" min="0" step="1" class="form-control form-control-sm marks-input smart-marks">').val(marks)));
 					$tr.append($('<td></td>').html(status));
 					$tbl.find('tbody').append($tr);
 				});
@@ -831,12 +870,22 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 			$(this).closest('table').find('.smart-row-check:not(:disabled)').prop('checked', on);
 		});
 		$(document).on('input change', '.smart-credit', function () {
+			var $marks = $(this).closest('tr').find('.smart-marks');
+			if ($marks.data('manual-edit')) return;
 			var c = parseFloat($(this).val()) || 0;
-			$(this).closest('tr').find('.smart-marks').val(Math.round(c * 10));
+			$marks.val(Math.round(c * 10));
+		});
+		$(document).on('input', '.smart-marks', function () {
+			$(this).data('manual-edit', true);
+		});
+		$('#manualMarks').on('input', function () {
+			$(this).data('manual-edit', true);
 		});
 		$('#manualCredit').on('input change', function () {
+			var $marks = $('#manualMarks');
+			if ($marks.data('manual-edit')) return;
 			var c = parseFloat($(this).val()) || 0;
-			$('#manualMarks').val(Math.round(c * 10));
+			$marks.val(Math.round(c * 10));
 		});
 
 		$(document).on('click', '.btn-smart-create', function () {
@@ -847,11 +896,14 @@ $defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGroupe
 				var $tr = $(this);
 				if (!$tr.find('.smart-row-check').is(':checked')) return;
 				var credit = parseFloat($tr.find('.smart-credit').val()) || 0;
+				var marks = parseInt($tr.find('.smart-marks').val(), 10);
+				if (isNaN(marks) || marks < 0) marks = Math.round(credit * 10);
 				courses.push({
 					title: $tr.find('.smart-title').val(),
 					code: $tr.find('.smart-code').val(),
 					category_title: $tr.find('.smart-cat').val() || 'General',
-					credit: credit
+					credit: credit,
+					marks: marks
 				});
 			});
 			if (!courses.length) {

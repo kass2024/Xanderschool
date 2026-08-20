@@ -1793,14 +1793,17 @@
 								<input type="text" name="year" class="form-control" readonly
 									   value="<?= $academic_year_title; ?>">
 							</div>
-							<div class="form-group">
+							<div class="form-group" id="assignTermGroup">
 								<label id="mentor"><?= lang("app.term"); ?></label> <i style="color: red;">*</i>
-								<select class="form-control select2" name="term[]" multiple required>
+								<select class="form-control select2" name="term[]" id="assignTermSelect" multiple required>
 									<option value="1"><?= lang("app.term1"); ?> </option>
 									<option value="2"><?= lang("app.term2"); ?> </option>
 									<option value="3"><?= lang("app.term3"); ?> </option>
 								</select>
 							</div>
+							<p id="assignYearTermHint" class="text-muted" style="display:none;">
+								Holiday coaching is assigned for this academic year only — no term selection.
+							</p>
 							<div class="form-group">
 								<label id="mentor"><?= lang("app.subjectTeacher"); ?></label> <i
 										style="color: red;">*</i>
@@ -4019,8 +4022,16 @@ if ($page == "pendingRegistration") {
 			var $btn = $(e.relatedTarget);
 			var id = $btn.data("id");
 			var title = $btn.data("title") || "";
+			var prog = String($btn.data("program-type") || "");
+			var holiday = prog === "holiday";
 			$("#assignModal [name='fId']").val(id).change();
 			$("#assignCourseTitle").text(title);
+			$("#assignTermGroup").toggle(!holiday);
+			$("#assignYearTermHint").toggle(holiday);
+			$("#assignTermSelect").prop("required", !holiday);
+			if (holiday) {
+				$("#assignTermSelect").val(null).trigger("change");
+			}
 			if (typeof window.refreshCourseAssignments === "function") {
 				window.refreshCourseAssignments(id);
 			}
@@ -4058,6 +4069,7 @@ if ($page == "pendingRegistration") {
 				$('[name="period"]').prop("required", false);
 				$("#periodd").hide();
 			}
+			$("#active_term").toggle(mark != 11);
 		})
 
 		$("#editLecCourseModal").on("shown.bs.modal", function (e) {

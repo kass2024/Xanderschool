@@ -1286,6 +1286,35 @@ if (!function_exists('holiday_coaching_mark_type')) {
 	}
 }
 
+if (!function_exists('normalize_course_program_type')) {
+	function normalize_course_program_type($type)
+	{
+		$t = strtolower(trim((string) $type));
+		if ($t === 'holiday' || $t === 'holiday_coaching' || $t === 'coaching') {
+			return 'holiday';
+		}
+		if ($t === 'reb') {
+			return 'reb';
+		}
+		return 'tvet';
+	}
+}
+
+if (!function_exists('is_holiday_course_program')) {
+	function is_holiday_course_program($type)
+	{
+		return normalize_course_program_type($type) === 'holiday';
+	}
+}
+
+/** Stored on course_records.term for year-wide (not termly) holiday coaching assignments. */
+if (!function_exists('holiday_course_year_term')) {
+	function holiday_course_year_term()
+	{
+		return '0';
+	}
+}
+
 if (!function_exists('staff_name_initials')) {
 	function staff_name_initials($fname, $lname = '')
 	{
