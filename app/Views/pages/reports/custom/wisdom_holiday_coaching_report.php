@@ -122,6 +122,14 @@
 	.hc-stamp { margin-top: 8px; text-align: right; font-size: 12.5px; }
 	.hc-stamp img { max-height: 68px; }
 	.ctr { text-align: center; }
+	.hc-toolbar {
+		margin: 0 0 12px;
+		padding: 8px 0;
+		overflow: hidden;
+	}
+	@media print {
+		.hc-toolbar { display: none !important; }
+	}
 </style>
 <?php
 $student_reg = isset($_GET['student']) ? $_GET['student'] : false;
@@ -152,6 +160,17 @@ $mentorPhone = trim((string) ($class_teacher_phone ?? ''));
 $dayFee = $fee_day ?? null;
 $boardFee = $fee_boarding ?? null;
 $schoolPhone = trim((string) ($school_phone ?? ''));
+$pdfMode = !empty($pdf);
+$pdfExportUrl = $pdf_export_url ?? '';
+if (!$pdfMode && $pdfExportUrl !== '') {
+	?>
+	<div class="hc-toolbar">
+		<a href="<?= esc($pdfExportUrl); ?>" class="btn btn-primary" target="_blank">
+			<i class="fa fa-file-pdf"></i> <?= lang('app.export'); ?>
+		</a>
+	</div>
+	<?php
+}
 
 foreach ($studentsList as $student) {
 	if (!isset($student['id'])) {
@@ -262,7 +281,7 @@ foreach ($studentsList as $student) {
 
 				<div class="hc-conduct">Conduct: <?= number_format($conductScore, 0); ?>/<?= $conductMax; ?></div>
 				<div class="hc-comment">
-					<b>Class teacher’s comment</b>
+					<b>Class teacher's comment</b>
 					<span class="hc-dotline"></span>
 					<span class="hc-dotline"></span>
 					<div>Tel <?= $mentorPhone !== '' ? esc($mentorPhone) : '07........'; ?>
@@ -271,7 +290,7 @@ foreach ($studentsList as $student) {
 					</div>
 				</div>
 				<div class="hc-comment">
-					<b>Parent’s comments:</b>
+					<b>Parent's comments:</b>
 					<span class="hc-dotline"></span>
 					<span class="hc-dotline"></span>
 					<div>Tel: ........ &nbsp;&nbsp; sign: ........</div>

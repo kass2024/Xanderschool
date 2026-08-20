@@ -11948,6 +11948,21 @@ public function getApplicationDocs($id = null)
 			$row['out_of'] = $outOf;
 		}
 		unset($row);
+		usort($records, static function ($a, $b) {
+			$pa = (int) ($a['position'] ?? 9999);
+			$pb = (int) ($b['position'] ?? 9999);
+			if ($pa !== $pb) {
+				return $pa <=> $pb;
+			}
+			$ta = (float) ($a['total'] ?? 0);
+			$tb = (float) ($b['total'] ?? 0);
+			if ($ta !== $tb) {
+				return $tb <=> $ta;
+			}
+			$na = strtolower(trim(($a['fname'] ?? '') . ' ' . ($a['lname'] ?? '')));
+			$nb = strtolower(trim(($b['fname'] ?? '') . ' ' . ($b['lname'] ?? '')));
+			return $na <=> $nb;
+		});
 
 		$fact = (int) ($classRow['fac_id'] ?? 0);
 		if ($fact === 3) {
@@ -12004,6 +12019,10 @@ public function getApplicationDocs($id = null)
 		}
 
 		$pdfMode = isset($_GET['pdf']) || (int) $pdf === 1;
+		$pdfQuery = ['pdf' => '1'];
+		if (isset($_GET['student']) && $_GET['student'] !== '' && $_GET['student'] !== false) {
+			$pdfQuery['student'] = $_GET['student'];
+		}
 		$data = $this->data;
 		$data['title'] = lang("app.holidayCoaching");
 		$data['subtitle'] = lang("app.holidayCoaching");
@@ -12012,6 +12031,7 @@ public function getApplicationDocs($id = null)
 		$data['term'] = $term;
 		$data['year'] = $year;
 		$data['pdf'] = $pdfMode;
+		$data['pdf_export_url'] = base_url('holiday_coaching_report/' . $class . '/' . $year . '/' . $term . '/') . '?' . http_build_query($pdfQuery);
 		$data['section_label'] = $section;
 		$data['report_year_label'] = $yearLabel;
 		$data['coaching_start'] = $coachingStart;
