@@ -269,10 +269,11 @@ class AttendanceScanService
 			->where('user_type', 0)
 			->where('time_in >=', $todayStart)
 			->where('time_in <=', $todayEnd)
-			->orderBy('id', 'DESC')
+			->orderBy('id', 'ASC')
 			->get()
 			->getRow();
 
+		// First tap of the day is IN. Every later tap is OUT and overwrites time_out.
 		$status = 'IN';
 		if (!$attendance) {
 			$db->table('attendance_records')->insert([
@@ -284,20 +285,11 @@ class AttendanceScanService
 				'area_id' => $areaId,
 				'shift_id' => 1,
 			]);
-		} elseif ((int) $attendance->time_out === 0) {
+		} else {
 			$db->table('attendance_records')
 				->where('id', $attendance->id)
 				->update(['time_out' => $time]);
 			$status = 'OUT';
-		} else {
-			return [
-				'success' => 0,
-				'kind' => 'student',
-				'message' => 'Already checked out of ' . $areaName . ' today',
-				'person' => self::studentPayload($student, $className, $records->records ?? ''),
-				'area' => ['id' => $areaId, 'name' => $areaName],
-				'time' => date('H:i', $time),
-			];
 		}
 
 		$school = $db->table('schools')->select('name, email, phone, logo')->where('id', $schoolId)->get()->getRow();
