@@ -25,6 +25,123 @@
 	font-size: 12px;
 	font-weight: 600;
 }
+.marks-filters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px 16px;
+	align-items: flex-end;
+	background: #fff;
+	padding: 12px 8px 4px;
+}
+.marks-filters .form-group {
+	width: 100%;
+	max-width: 320px;
+	margin-bottom: 8px;
+}
+.marks-toolbar-table {
+	width: 100%;
+}
+.marks-toolbar-table td {
+	padding: 4px 0;
+	vertical-align: top;
+}
+.marks-entry-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: center;
+}
+.marks-entry-actions .btn {
+	margin: 0;
+}
+#dv_marks {
+	background: #fff;
+	max-height: min(70vh, 640px);
+	overflow: auto;
+	-webkit-overflow-scrolling: touch;
+}
+#dv_marks table {
+	width: 100% !important;
+	margin-bottom: 0;
+}
+#marks_table thead th {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	background: #0ba360;
+	color: #fff;
+	white-space: nowrap;
+}
+#marks_table td,
+#marks_table th {
+	vertical-align: middle;
+}
+#marks_table .sorting,
+#marks_table .sorting_asc,
+#marks_table .sorting_desc {
+	background-image: none !important;
+	padding-right: 8px !important;
+}
+#marks_table .sorting:before,
+#marks_table .sorting:after,
+#marks_table .sorting_asc:before,
+#marks_table .sorting_asc:after,
+#marks_table .sorting_desc:before,
+#marks_table .sorting_desc:after {
+	display: none !important;
+	content: none !important;
+}
+.marks-entry-input {
+	min-height: 42px;
+	font-size: 16px;
+	text-align: center;
+	-moz-appearance: textfield;
+}
+.marks-entry-input::-webkit-outer-spin-button,
+.marks-entry-input::-webkit-inner-spin-button,
+#outofmarks::-webkit-outer-spin-button,
+#outofmarks::-webkit-inner-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
+#outofmarks {
+	-moz-appearance: textfield;
+	min-height: 42px;
+	font-size: 16px;
+}
+.dataTables_wrapper .dataTables_info,
+.dataTables_wrapper .dataTables_filter,
+.dataTables_wrapper .dataTables_paginate,
+.dataTables_wrapper .dataTables_length,
+.dataTables_empty {
+	display: none !important;
+}
+@media (max-width: 767px) {
+	.marks-filters .form-group {
+		max-width: 100%;
+	}
+	#dv_marks {
+		max-height: none;
+		overflow: visible;
+		padding-bottom: 24px;
+	}
+	.col-sm-4,
+	.col-sm-8 {
+		max-width: 100%;
+		flex: 0 0 100%;
+	}
+	#marks_table td:last-child {
+		width: 88px;
+		min-width: 88px;
+	}
+	.marks-entry-input {
+		width: 100%;
+		min-width: 72px;
+	}
+	.marks-entry-actions .btn {
+		flex: 1 1 140px;
+	}
+}
 </style>
 <form action="<?= base_url('manipulate_marks'); ?>" class="validate autoSubmit" id="form"
 	  xmlns="http://www.w3.org/1999/html">
@@ -59,16 +176,16 @@
 	</div>
 	<?php if (!isset($error)) {
 		?>
-		<div class="row" style="background-color: white;">
+		<div class="row marks-filters">
 			<?php
 			$type = $_GET['marktype'];
 			if ($type == 4) {
 				?>
-				<div style="width: 10%;"><input type="checkbox"
+				<div style="width: auto;"><input type="checkbox"
 												id="checkSheet"><label><?= lang("app.uploadExcel"); ?> </label></div>
 			<?php } ?>
-			<div style="margin-top: 20px;">
-				<div class="form-group" style="width: 300px">
+			<div>
+				<div class="form-group">
 					<select class="form-control select2" id="select_course" name="course" required>
 						<option value="" selected disabled><?= lang("app.course"); ?> </option>
 						<?php
@@ -87,8 +204,8 @@
 			if ($type == 1) {
 				?>
 
-				<div style="margin-top: 20px;margin-left: 20px">
-					<div class="form-group" style="width: 300px">
+				<div>
+					<div class="form-group">
 						<select class="form-control select2" id="catype" name="catType">
 							<option selected disabled><?= lang("app.catType"); ?> </option>
 							<option disabled><?= lang("app.quiz"); ?> </option>
@@ -118,8 +235,8 @@
 				</div>
 				<?php
 			} ?>
-			<div style="margin-top: 20px;margin-left: 20px" id="select_class_div">
-				<div class="form-group" style="width: 300px">
+			<div id="select_class_div">
+				<div class="form-group">
 					<select class="form-control select2" name="class_id_name" id="select_class" required>
 						<option selected disabled><?= lang("app.sClass"); ?> </option>
 
@@ -143,7 +260,7 @@
 						$period_str = !isset($_GET['period']) || $_GET['period'] == 0 ? "" : "#" . lang("app.period") . ':' . $_GET['period'];
 						?>
 						<h4 style="width: 100%;float:left;border-bottom: 1px solid #cdcdcd;padding: 10px;"><?= \App\Controllers\Home::marksTypeToStr($_GET['marktype']) . ' ' . $period_str ?></h4>
-						<table style="width:100%">
+						<table class="marks-toolbar-table">
 							<tr>
 								<td><?= lang("app.selectedAcademic"); ?> </td>
 								<td><strong><?= $academic_year ?></strong></td>
@@ -175,7 +292,7 @@
 							</tr>
 							<tr>
 								<td colspan="2">
-									<center>
+									<div class="marks-entry-actions">
 										<button type="submit" class="btn btn-success btn-lg" data-target="reload"
 												disabled><?= lang("app.save"); ?> </button>
 										<?php
@@ -191,13 +308,13 @@
 											<?php
 										}
 										?>
-									</center>
+									</div>
 								</td>
 							</tr>
 						</table>
 					</div>
 				</div>
-				<div class="col-sm-8" style="background-color: white;max-height: 500px;overflow: auto" id="dv_marks">
+				<div class="col-sm-8" id="dv_marks">
 					<h3 style="text-align: center;margin-top: 50px"><?= lang("app.selectCourseAndClass"); ?> </h3>
 				</div>
 			</div>
@@ -339,6 +456,11 @@
 	}
 
 	function bindMarksEntryInputs() {
+		if (window.jQuery && $.fn.DataTable && $('#marks_table').length && $.fn.DataTable.isDataTable('#marks_table')) {
+			$('#marks_table').DataTable().destroy();
+			$('#marks_table').removeClass('dataTable dtr-inline no-footer');
+			$('#marks_table').closest('.dataTables_wrapper').find('.dataTables_info, .dataTables_filter, .dataTables_paginate, .dataTables_empty').remove();
+		}
 		function marksOutOf() {
 			var n = parseFloat($("#outofmarks").val());
 			return (isNaN(n) || n < 0) ? null : n;

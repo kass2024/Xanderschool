@@ -10588,8 +10588,8 @@ public function getApplicationDocs($id = null)
 				<td>" . $student['regno'] . "<input type='hidden' value='" . $student['mark_id'] . "' name='marks_id[]' class='mark_id'>
 				<input type='hidden' value='" . $student['mark_id_ex'] . "' name='marks_id1[]' class='mark_id'></td>
 				<td>" . $student['name'] . "<input type='hidden' value='" . $student['id'] . "' name='discId[]'></td>
-				<td><input type='text'  name='marksC[]' class='form-control marks-entry-input' value='" . $dispC . "' placeholder='-'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
-				<td><input type='text'  name='marksE[]' class='form-control marks-entry-input' value='" . $dispE . "' placeholder='-'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>";
+				<td><input type='text' inputmode='decimal' name='marksC[]' class='form-control marks-entry-input' value='" . $dispC . "' placeholder='-' autocomplete='off' data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
+				<td><input type='text' inputmode='decimal' name='marksE[]' class='form-control marks-entry-input' value='" . $dispE . "' placeholder='-' autocomplete='off' data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td></tr>";
 				$i++;
 			}
 			$html .= '</tbody>
@@ -10608,7 +10608,7 @@ public function getApplicationDocs($id = null)
 			}
 			if (count($cats) > 0) {
 				$html_script .= "<script>
-				$('[type=\"submit\"]').prop(\"disabled\",false);$('#marks_table').dataTable({paging: false});
+				$('[type=\"submit\"]').prop(\"disabled\",false);
 </script>";
 			}
 		} else if ($mt == 2 || (int) $mt === holiday_coaching_mark_type()) {
@@ -10652,6 +10652,7 @@ public function getApplicationDocs($id = null)
 					->orderBy("students.lname")
 					->get()->getResultArray();
 			$html .= "<th>" . lang("app.marks") . "</th>";
+			$html .= '</tr></thead><tbody>';
 			$outof = "";
 			$required = $mt == 9 ? "" : "required";
 			foreach ($students as $student) {
@@ -10664,14 +10665,12 @@ public function getApplicationDocs($id = null)
 				<tr>
 				<td>" . $student['regno'] . "<input type='hidden' value='" . $student['mark_id'] . "' name='marks_id[]' class='mark_id'></td>
 				<td>" . $student['name'] . "<input type='hidden' value='" . $student['id'] . "' name='discId[]'></td>
-				<td><input type='text'  name='marks[]' class='form-control marks-entry-input' value='" . $disp . "' placeholder='-'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
+				<td><input type='text' inputmode='decimal' name='marks[]' class='form-control marks-entry-input' value='" . $disp . "' placeholder='-' autocomplete='off' data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
 				</tr>
 				";
 			}
 			$html .= '</tbody>
 					</table>';
-			$html .= '</tr>
-						</thead><tbody>';
 			if (count($students) > 0 && $outof != '') {
 				$html_script .= "<script>
 //				$('[type=\"submit\"]').prop(\"disabled\",false);
@@ -10683,7 +10682,7 @@ public function getApplicationDocs($id = null)
 			}
 			if (count($students) > 0) {
 				$html_script .= "<script>
-				$('[type=\"submit\"]').prop(\"disabled\",false);$('#marks_table').dataTable({paging: false});
+				$('[type=\"submit\"]').prop(\"disabled\",false);
 </script>";
 			}
 		} else {
@@ -10713,6 +10712,7 @@ public function getApplicationDocs($id = null)
 					->orderBy("students.lname")
 					->get()->getResultArray();
 			$html .= "<th>" . lang("app.marks") . "</th>";
+			$html .= '</tr></thead><tbody>';
 			$outof = "";
 			$required = $mt == 9 ? "" : "required";
 			foreach ($students as $student) {
@@ -10725,14 +10725,12 @@ public function getApplicationDocs($id = null)
 				<tr>
 				<td>" . $student['regno'] . "<input type='hidden' value='" . $student['mark_id'] . "' name='marks_id[]' class='mark_id'></td>
 				<td>" . $student['name'] . "<input type='hidden' value='" . $student['id'] . "' name='discId[]'></td>
-				<td><input type='text'  name='marks[]' class='form-control marks-entry-input' value='" . $disp . "' placeholder='-'  data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
+				<td><input type='text' inputmode='decimal' name='marks[]' class='form-control marks-entry-input' value='" . $disp . "' placeholder='-' autocomplete='off' data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
 				</tr>
 				";
 			}
 			$html .= '</tbody>
 					</table>';
-			$html .= '</tr>
-						</thead><tbody>';
 			if (count($students) > 0 && $outof != '') {
 				$html_script .= "<script>
 //				$('[type=\"submit\"]').prop(\"disabled\",false);
@@ -10744,7 +10742,7 @@ public function getApplicationDocs($id = null)
 			}
 			if (count($students) > 0) {
 				$html_script .= "<script>
-				$('[type=\"submit\"]').prop(\"disabled\",false);$('#marks_table').dataTable({paging: false});
+				$('[type=\"submit\"]').prop(\"disabled\",false);
 </script>";
 			}
 		}
