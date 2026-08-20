@@ -11904,7 +11904,6 @@ public function getApplicationDocs($id = null)
 		$courseOrder = $this->sortHolidayCourseOrder($courseOrder);
 
 		$records = [];
-		$totals = [];
 		foreach ($students as $student) {
 			$sid = (int) $student['id'];
 			$tot = 0;
@@ -11927,33 +11926,9 @@ public function getApplicationDocs($id = null)
 			$student['total'] = $tot;
 			$student['max_total'] = $max;
 			$records[] = $student;
-			$totals[$sid] = $tot;
-		}
-		arsort($totals);
-		$rank = 0;
-		$seen = 0;
-		$last = null;
-		$positions = [];
-		foreach ($totals as $sid => $tot) {
-			$seen++;
-			if ($last === null || (float) $tot !== (float) $last) {
-				$rank = $seen;
-				$last = $tot;
-			}
-			$positions[$sid] = $rank;
 		}
 		$outOf = count($records);
-		foreach ($records as &$row) {
-			$row['position'] = $positions[(int) $row['id']] ?? '';
-			$row['out_of'] = $outOf;
-		}
-		unset($row);
 		usort($records, static function ($a, $b) {
-			$pa = (int) ($a['position'] ?? 9999);
-			$pb = (int) ($b['position'] ?? 9999);
-			if ($pa !== $pb) {
-				return $pa <=> $pb;
-			}
 			$ta = (float) ($a['total'] ?? 0);
 			$tb = (float) ($b['total'] ?? 0);
 			if ($ta !== $tb) {
@@ -11963,6 +11938,11 @@ public function getApplicationDocs($id = null)
 			$nb = strtolower(trim(($b['fname'] ?? '') . ' ' . ($b['lname'] ?? '')));
 			return $na <=> $nb;
 		});
+		foreach ($records as $i => &$row) {
+			$row['position'] = $i + 1;
+			$row['out_of'] = $outOf;
+		}
+		unset($row);
 
 		$fact = (int) ($classRow['fac_id'] ?? 0);
 		if ($fact === 3) {
