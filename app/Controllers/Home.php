@@ -2094,48 +2094,6 @@ public function testEmail()
 				$courseIds[] = $id;
 			}
 		}
-		if ($yearId < 1 || $courseIds === []) {
-			return;
-		}
-		$classMdl = new ClassesModel();
-		$classes = $classMdl->select('id, mentor')->where('school_id', $schoolId)->get()->getResultArray();
-		$firstStaff = (new StaffModel())->select('id')->where('school_id', $schoolId)->orderBy('id', 'ASC')->get(1)->getRowArray();
-		$fallbackTeacher = (int) ($firstStaff['id'] ?? 0);
-		$recMdl = new CourseRecordModel();
-		foreach ($classes as $class) {
-			$classId = (int) ($class['id'] ?? 0);
-			if ($classId < 1) {
-				continue;
-			}
-			$teacher = (int) ($class['mentor'] ?? 0);
-			if ($teacher < 1) {
-				$teacher = $fallbackTeacher;
-			}
-			if ($teacher < 1) {
-				continue;
-			}
-			foreach ($courseIds as $courseId) {
-				$exists = $recMdl->select('id')
-					->where('course', $courseId)
-					->where('class', $classId)
-					->where('year', $yearId)
-					->get(1)->getRowArray();
-				if ($exists) {
-					continue;
-				}
-				try {
-					$recMdl->insert([
-						'course' => $courseId,
-						'lecturer' => $teacher,
-						'class' => $classId,
-						'year' => $yearId,
-						'term' => holiday_course_year_term(),
-					]);
-				} catch (\Throwable $e) {
-					log_message('error', 'ensureDefaultHolidayCourses assign: ' . $e->getMessage());
-				}
-			}
-		}
 	}
 
 	/** Report-card subject order: English, Mathematics, Science, Kinyarwanda. */
@@ -11745,6 +11703,34 @@ public function getApplicationDocs($id = null)
 		return $this->sortHolidayCourses($rows);
 	}
 
+	/** JSON: whether a class has holiday coaching courses assigned for an academic year. */
+	public function holiday_coaching_ready($class = 0, $year = 0)
+	{
+		$this->_preset();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		if (!is_wisdom_school($schoolId)) {
+			return $this->response->setJSON(['ok' => false, 'count' => 0, 'error' => 'Holiday coaching is only available for Wisdom schools']);
+		}
+		$class = (int) $class;
+		$year = (int) $year;
+		if ($class < 1 || $year < 1) {
+			return $this->response->setJSON(['ok' => false, 'count' => 0, 'error' => 'Select academic year and class']);
+		}
+		$courses = $this->getHolidayCourses($class, $year);
+		$titles = [];
+		foreach ($courses as $c) {
+			$titles[] = (string) ($c['title'] ?? '');
+		}
+		return $this->response->setJSON([
+			'ok' => $courses !== [],
+			'count' => count($courses),
+			'courses' => $titles,
+			'error' => $courses === []
+				? 'No holiday coaching courses are assigned to this class for the selected academic year. Assign them first.'
+				: '',
+		]);
+	}
+
 	/**
 	 * Wisdom-only holiday coaching report card (own mark type, no period).
 	 */
@@ -11770,7 +11756,18 @@ public function getApplicationDocs($id = null)
 			echo "invalid data, please try again later";
 			die();
 		}
-		$this->ensureDefaultHolidayCourses($school_id, $year);
+
+		$assignedCourses = $this->getHolidayCourses($class, $year);
+		if ($assignedCourses === []) {
+			$msg = "No holiday coaching courses are assigned to this class for the selected academic year. Assign Holiday coaching courses first, then generate the report.";
+			$data = $this->data;
+			$data['title'] = lang("app.holidayCoaching");
+			$data['subtitle'] = lang("app.holidayCoaching");
+			$data['page'] = "Result_record";
+			$data['content'] = '<div class="alert alert-warning" style="margin:20px"><strong>Holiday coaching report</strong><p style="margin:8px 0 0">'
+				. htmlspecialchars($msg, ENT_QUOTES, 'UTF-8') . '</p></div>';
+			return view('main', $data);
+		}
 
 		$yearTermIds = $this->activeTermIdsForYear($school_id, $year);
 		if ($yearTermIds === []) {
@@ -11852,18 +11849,21 @@ public function getApplicationDocs($id = null)
 			->get()->getResultArray();
 
 		$courseOrder = [];
+		foreach ($assignedCourses as $core) {
+			$courseOrder[(int) $core['id']] = [
+				'id' => (int) $core['id'],
+				'title' => $core['title'],
+				'code' => $core['code'] ?? '',
+				'marks' => $core['marks'],
+			];
+		}
 		$byStudent = [];
 		$examDates = [];
 		foreach ($markRows as $row) {
 			$cid = (int) $row['course_id'];
 			$sid = (int) $row['student_id'];
 			if (!isset($courseOrder[$cid])) {
-				$courseOrder[$cid] = [
-					'id' => $cid,
-					'title' => $row['title'],
-					'code' => $row['code'],
-					'marks' => $row['course_marks'],
-				];
+				continue;
 			}
 			$raw = $row['marks'];
 			$outof = (float) $row['outof'];
@@ -11884,16 +11884,6 @@ public function getApplicationDocs($id = null)
 			}
 		}
 
-		if ($courseOrder === []) {
-			foreach ($this->getHolidayCourses($class, $year) as $core) {
-				$courseOrder[(int) $core['id']] = [
-					'id' => (int) $core['id'],
-					'title' => $core['title'],
-					'code' => $core['code'] ?? '',
-					'marks' => $core['marks'],
-				];
-			}
-		}
 		$courseOrder = $this->sortHolidayCourseOrder($courseOrder);
 
 		$records = [];

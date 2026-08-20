@@ -1,7 +1,56 @@
+<style>
+	.hc-report-bar {
+		display: none;
+		width: 100%;
+		margin: 6px 14px 12px;
+		padding: 12px 14px;
+		border: 1px solid #dbeafe;
+		background: #f8fbff;
+		border-radius: 10px;
+	}
+	.hc-report-bar.is-on { display: block; }
+	.hc-mode {
+		display: inline-flex;
+		border: 1px solid #93c5fd;
+		border-radius: 999px;
+		overflow: hidden;
+		margin-right: 12px;
+		vertical-align: middle;
+	}
+	.hc-mode-btn {
+		appearance: none;
+		border: 0;
+		background: #fff;
+		color: #1e3a8a;
+		font-weight: 700;
+		padding: 7px 14px;
+		cursor: pointer;
+	}
+	.hc-mode-btn.is-on { background: #1d4ed8; color: #fff; }
+	.hc-assign {
+		display: inline-block;
+		margin-top: 8px;
+		font-size: .92rem;
+	}
+	.hc-assign.ok { color: #166534; }
+	.hc-assign.bad { color: #b91c1c; }
+	.hc-assign.wait { color: #64748b; }
+</style>
 <form method="get" target="_blank" action="<?=base_url('student_report_slip');?>" id="form" class="validate" >
 	<div class="row" style="background-color: white;height: auto;padding: 10px">
-		<label style="margin-left: 14px;margin-bottom: 10px;"><?= lang("app.singleStudentReport");?></label>
+		<label style="margin-left: 14px;margin-bottom: 10px;" id="singleStudentLabel"><?= lang("app.singleStudentReport");?></label>
 		<input type="checkbox" id="useStudent" style="margin-left: 14px;margin-bottom: 7px;">
+		<div class="hc-report-bar" id="hcReportBar">
+			<strong>Holiday coaching report</strong>
+			<div style="margin-top:8px;">
+				<span class="hc-mode" role="group" aria-label="Report audience">
+					<button type="button" class="hc-mode-btn is-on" data-mode="class">Whole class</button>
+					<button type="button" class="hc-mode-btn" data-mode="student">Single student</button>
+				</span>
+				<span class="text-muted">Same as other progress reports: generate on screen or export PDF.</span>
+			</div>
+			<div class="hc-assign wait" id="hcAssignStatus">Select academic year and class.</div>
+		</div>
 		<div class="clearfix" style="width: 100%"></div>
 		<div class="form-group col-sm-4 col-md-2 col-lg-2">
 
@@ -106,6 +155,9 @@
 			$.get("<?=base_url();?>get_student/" + classe + isclass + type, function (data) {
 				$("#select_student").html(data);
 			});
+			if (typeof refreshHolidayAssignment === "function") {
+				refreshHolidayAssignment();
+			}
 		});
 
 		function reportTypeBase() {
@@ -114,8 +166,42 @@
 				? "<?=base_url('holiday_coaching_report');?>"
 				: "<?=base_url('student_report_slip');?>";
 		}
+		var hcReady = true;
+		function isHolidayReport() {
+			return ($("#select_report_type").val() || "regular") === "holiday_coaching";
+		}
+		function setHcStatus(kind, text) {
+			$("#hcAssignStatus").removeClass("ok bad wait").addClass(kind).text(text);
+		}
+		function refreshHolidayAssignment() {
+			if (!isHolidayReport()) {
+				hcReady = true;
+				return;
+			}
+			var classe = $("#select_class").val();
+			var year = $("#select_year").val();
+			if (!classe || !year) {
+				hcReady = false;
+				setHcStatus("wait", "Select academic year and class.");
+				return;
+			}
+			setHcStatus("wait", "Checking holiday coaching courses for this class...");
+			hcReady = false;
+			$.getJSON("<?=base_url('holiday_coaching_ready');?>/" + classe + "/" + year, function (data) {
+				hcReady = !!(data && data.ok);
+				if (hcReady) {
+					var names = (data.courses || []).join(", ");
+					setHcStatus("ok", (data.count || 0) + " holiday course(s) assigned" + (names ? ": " + names : "") + ".");
+				} else {
+					setHcStatus("bad", (data && data.error) ? data.error : "No holiday coaching courses assigned to this class.");
+				}
+			}).fail(function () {
+				hcReady = false;
+				setHcStatus("bad", "Could not check holiday course assignments.");
+			});
+		}
 		function syncHolidayReportUi() {
-			var holiday = ($("#select_report_type").val() || "regular") === "holiday_coaching";
+			var holiday = isHolidayReport();
 			$("#form").attr("action", reportTypeBase());
 			$("#select_term").closest(".form-group").toggle(!holiday);
 			$("#select_term").prop("required", !holiday);
@@ -124,17 +210,54 @@
 				$("#select_term").val("1").trigger("change");
 			}
 			$("#sms_publish").toggle(!holiday);
+			$("#hcReportBar").toggleClass("is-on", holiday);
+			$("#singleStudentLabel, #useStudent").toggle(!holiday);
+			if (holiday) {
+				refreshHolidayAssignment();
+			} else {
+				hcReady = true;
+			}
+		}
+		function setReportMode(mode) {
+			var single = mode === "student";
+			$("#useStudent").prop("checked", single);
+			$(".hc-mode-btn").removeClass("is-on");
+			$(".hc-mode-btn[data-mode='" + (single ? "student" : "class") + "']").addClass("is-on");
+			$("#studentDiv").toggle(single);
+			if (!single) {
+				$("#select_student").val(null).trigger("change");
+			}
 		}
 		$("#select_report_type").on("change", syncHolidayReportUi);
+		$("#select_year").on("change", refreshHolidayAssignment);
+		$(".hc-mode-btn").on("click", function () {
+			setReportMode($(this).data("mode"));
+		});
 		syncHolidayReportUi();
+
+		$("#form").on("submit", function (e) {
+			if (isHolidayReport() && !hcReady) {
+				e.preventDefault();
+				if (window.toastada) toastada.error($("#hcAssignStatus").text() || "Assign holiday coaching courses to this class first.");
+				return false;
+			}
+		});
 
 		$("#btn_generate").on("click", function (e) {
 			e.preventDefault();
 			var classe = $("#select_class").val();
 			var year = $("#select_year").val();
-			var term = $("#select_term").val();
+			var term = $("#select_term").val() || "1";
 			var std=$("#select_student").val();
 			var reportType = $("#select_report_type").val() || "regular";
+			if (!classe || !year) {
+				if (window.toastada) toastada.error("Select academic year and class");
+				return;
+			}
+			if (reportType === "holiday_coaching" && !hcReady) {
+				if (window.toastada) toastada.error($("#hcAssignStatus").text() || "Assign holiday coaching courses to this class first.");
+				return;
+			}
 			var base = reportType === "holiday_coaching"
 				? "<?=base_url('holiday_coaching_report/');?>"
 				: "<?=base_url('student_report_slip/');?>";
