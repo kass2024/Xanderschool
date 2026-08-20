@@ -5877,6 +5877,9 @@ public function attendanceCard()
 
 	public static function TermToStr($type)
 	{
+		if (is_holiday_term_choice($type)) {
+			return lang("app.holidayCoaching");
+		}
 		switch ($type) {
 			case 1:
 				return lang("app.term1");
@@ -9261,25 +9264,40 @@ public function getApplicationDocs($id = null)
 		$data['page'] = "marks";
 		$courseModel = new CourseModel();
 		$school_id = $this->session->get("soma_school_id");
+		$sessionTerm = $data['term'];
+		$sessionYear = $data['academic_year'];
 		$term = $this->request->getGet('term');
 		$academic_year = $this->request->getGet('academic_year');
-		$term = $term == null ? $data['term'] : $term;
-		$academic_year = $academic_year == null ? $data['academic_year'] : $academic_year;
+		$term = $term == null ? $sessionTerm : $term;
+		$academic_year = $academic_year == null ? $sessionYear : $academic_year;
+		$markType = (int) $this->request->getGet('marktype');
+		$isHolidayMarks = $markType === holiday_coaching_mark_type() || is_holiday_term_choice($term);
+		if ($isHolidayMarks) {
+			$markType = holiday_coaching_mark_type();
+			$term = holiday_coaching_term_choice();
+		}
 		$data['term'] = $term;
 		$data['academic_year_id'] = $academic_year;
-		$markType = (int) $this->request->getGet('marktype');
-		if ($markType === holiday_coaching_mark_type() && !is_wisdom_school($school_id)) {
+		if ($isHolidayMarks && !is_wisdom_school($school_id)) {
 			$data['error'] = "Holiday coaching is only available for Wisdom schools";
 		}
-		if (!in_array($this->session->get("soma_post"), [1, 3]) && $term != $data['term']) {
+		if (!$isHolidayMarks && !in_array($this->session->get("soma_post"), [1, 3]) && $term != $sessionTerm) {
 			$data['error'] = "you are not allowed to manage marks of selected term";
 		}
-		if (!in_array($this->session->get("soma_post"), [1, 3]) && $academic_year != $data['academic_year']) {
+		if (!in_array($this->session->get("soma_post"), [1, 3]) && $academic_year != $sessionYear) {
 			$data['error'] = "you are not allowed to manage marks of selected academic year";
 		}
 		$atMdl = new ActiveTermModel();
-		$termData = $atMdl->select('active_term.id,ay.title')->join("academic_year ay", "ay.id = active_term.academic_year")->where("term", $term)->where("academic_year", $academic_year)
-				->where('active_term.school_id', $this->session->get("soma_school_id"))->get(1)->getRow();
+		$termQuery = $atMdl->select('active_term.id,ay.title')
+			->join("academic_year ay", "ay.id = active_term.academic_year")
+			->where("academic_year", $academic_year)
+			->where('active_term.school_id', $this->session->get("soma_school_id"));
+		if ($isHolidayMarks) {
+			$termQuery->orderBy("active_term.term", "ASC");
+		} else {
+			$termQuery->where("term", $term);
+		}
+		$termData = $termQuery->get(1)->getRow();
 		if ($termData == null) {
 			$data['error'] = "Invalid term and academic year provided, please try again later";
 		} else {
@@ -9291,8 +9309,7 @@ public function getApplicationDocs($id = null)
 					->where("courses.school_id", $school_id)
 					->where("r.year", $academic_year)
 					->groupBy("courses.id");
-			$markType = (int) $this->request->getGet('marktype');
-			if ($markType === holiday_coaching_mark_type()) {
+			if ($isHolidayMarks) {
 				$builder->where("courses.program_type", "holiday");
 			} else {
 				$builder->where("find_in_set($term,r.term) !=0");
@@ -9318,9 +9335,11 @@ public function getApplicationDocs($id = null)
 		$marks_id = $this->request->getPost("marks_id[]");
 		$year = $this->request->getPost("year");
 		$term = $this->data['active_term'];
-		if ($this->data['term'] != $this->request->getPost("term")) {
+		$postedTerm = $this->request->getPost("term");
+		if (!is_holiday_term_choice($postedTerm) && (int) $this->request->getPost("marktype") !== holiday_coaching_mark_type()
+			&& $this->data['term'] != $postedTerm) {
 			$atMdl = new ActiveTermModel();
-			$termData = $atMdl->select('id')->where("term", $this->request->getPost("term"))
+			$termData = $atMdl->select('id')->where("term", $postedTerm)
 					->where("academic_year", $year)
 					->where('school_id', $this->session->get("soma_school_id"))->get(1)->getRow();
 			if ($termData == null) {
@@ -10346,7 +10365,8 @@ public function getApplicationDocs($id = null)
 		$this->_preset();
 		$active_term = $this->data['active_term'];
 		$year = $yearId ?? $this->data['academic_year'];
-		if (in_array($this->session->get('soma_post'), [1, 3]) && $term != null) {
+		$isHolidayMarks = (int) $mt === holiday_coaching_mark_type() || is_holiday_term_choice($term);
+		if (in_array($this->session->get('soma_post'), [1, 3]) && $term != null && !$isHolidayMarks) {
 			$atMdl = new ActiveTermModel();
 			$at_data = $atMdl->select('id')
 					->where('academic_year', $year)

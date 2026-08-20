@@ -1315,6 +1315,22 @@ if (!function_exists('holiday_course_year_term')) {
 	}
 }
 
+/** Marks Entry "Active term" value for Holiday coaching (not First/Second/Third Term). */
+if (!function_exists('holiday_coaching_term_choice')) {
+	function holiday_coaching_term_choice()
+	{
+		return 'holiday';
+	}
+}
+
+if (!function_exists('is_holiday_term_choice')) {
+	function is_holiday_term_choice($term)
+	{
+		$t = strtolower(trim((string) $term));
+		return $t === holiday_coaching_term_choice() || $t === 'holiday_coaching';
+	}
+}
+
 if (!function_exists('staff_name_initials')) {
 	function staff_name_initials($fname, $lname = '')
 	{

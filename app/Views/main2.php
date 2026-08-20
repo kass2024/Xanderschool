@@ -1160,13 +1160,23 @@
 							<?php
 							if (in_array($_SESSION['soma_post'], [1, 3])) {
 								?>
-								<select class="form-control select2" name="term">
+								<select class="form-control select2" name="term" id="marks_term_select">
 									<option
 											value="1" <?= $term == '1' ? 'selected' : ''; ?>><?= lang("app.term1"); ?> </option>
 									<option
 											value="2" <?= $term == '2' ? 'selected' : ''; ?>><?= lang("app.term2"); ?> </option>
 									<option
 											value="3" <?= $term == '3' ? 'selected' : ''; ?>><?= lang("app.term3"); ?> </option>
+									<?php if (is_wisdom_school()): ?>
+									<option value="holiday"><?= lang("app.holidayCoaching"); ?></option>
+									<?php endif; ?>
+								</select>
+								<?php
+							} else if (is_wisdom_school()) {
+								?>
+								<select class="form-control select2" name="term" id="marks_term_select">
+									<option value="<?= (int) $term; ?>" selected><?= \App\Controllers\Home::TermToStr($term); ?></option>
+									<option value="holiday"><?= lang("app.holidayCoaching"); ?></option>
 								</select>
 								<?php
 							} else {
@@ -1178,7 +1188,7 @@
 							}
 							?>
 						</div>
-						<div class="form-group">
+						<div class="form-group" id="marks_type_group">
 							<label><?= lang("app.type"); ?></label>
 							<select required class="select2" name="marktype" id="marks_type">
 								<option disabled selected><?= lang("app.marksTtype"); ?></option>
@@ -3735,7 +3745,52 @@ if ($page == "pendingRegistration") {
 			}
 		});
 
+		var syncingMarksHoliday = false;
+		function applyMarksHolidayMode(source) {
+			if (syncingMarksHoliday) return;
+			var $term = $("#mdlmarks select[name='term']");
+			var $type = $("#marks_type");
+			if (!$term.length || !$type.length) return;
+			syncingMarksHoliday = true;
+			var termVal = String($term.val() || "");
+			var typeVal = String($type.val() || "");
+			var holiday = false;
+			if (source === "term") {
+				holiday = termVal === "holiday";
+				if (holiday) {
+					$type.val("11").trigger("change.select2");
+				} else if (typeVal === "11") {
+					$type.val("").trigger("change.select2");
+				}
+			} else {
+				holiday = typeVal === "11";
+				if (holiday) {
+					$term.val("holiday").trigger("change.select2");
+				} else if (termVal === "holiday") {
+					var fallback = $term.find("option[value!='holiday']").first().val();
+					$term.val(fallback).trigger("change.select2");
+				}
+			}
+			holiday = String($term.val() || "") === "holiday" || String($type.val() || "") === "11";
+			$("#marks_type_group").toggle(!holiday);
+			$type.prop("required", !holiday);
+			if (holiday) {
+				$('[name="period"]').prop("required", false);
+				$("#periodd").hide();
+			}
+			syncingMarksHoliday = false;
+		}
+		$("#mdlmarks select[name='term']").on("change", function () {
+			applyMarksHolidayMode("term");
+		});
+		$("#mdlmarks form").on("submit", function () {
+			if ($("#mdlmarks select[name='term']").val() === "holiday") {
+				$("#marks_type").prop("required", false).val("11");
+			}
+		});
+
 		$("#marks_type").on("change", function () {
+			applyMarksHolidayMode("type");
 			var mark = $(this).val();
 			if (mark == 1 <?=$periodic == 0 ? ' && false' : ' && true';?>
 		)
@@ -3748,7 +3803,6 @@ if ($page == "pendingRegistration") {
 				$('[name="period"]').prop("required", false);
 				$("#periodd").hide();
 			}
-			$("#active_term").toggle(mark != 11);
 		})
 
 		$("#editLecCourseModal").on("shown.bs.modal", function (e) {
