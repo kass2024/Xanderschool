@@ -1,5 +1,6 @@
 <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/sweetalert2@7.12.15/dist/sweetalert2.min.css'>
 <style>
+.marks-entry-page { width: 100%; max-width: 100%; }
 .marks-entry-input::placeholder {
 	color: #b5b5b5;
 	opacity: 1;
@@ -12,52 +13,138 @@
 }
 .marks-live-hint {
 	color: #dc3545;
-	font-size: 11px;
+	font-size: 12px;
 	font-weight: 600;
-	line-height: 1.2;
-	margin-top: 3px;
-	min-height: 0;
+	line-height: 1.3;
+	margin-top: 4px;
 }
 .marks-max-live {
 	display: block;
-	margin-top: 4px;
+	margin-top: 6px;
 	color: #1d4ed8;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 }
 .marks-filters {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 12px 16px;
-	align-items: flex-end;
+	gap: 12px;
 	background: #fff;
-	padding: 12px 8px 4px;
+	padding: 12px;
+	margin: 0 0 12px;
+	border-radius: 10px;
+	overflow: visible;
 }
-.marks-filters .form-group {
+.marks-filter-item {
+	flex: 1 1 100%;
+	min-width: 0;
 	width: 100%;
-	max-width: 320px;
-	margin-bottom: 8px;
+	margin: 0;
+	position: relative;
 }
-.marks-toolbar-table {
+.marks-filter-item label {
+	display: block;
+	font-weight: 700;
+	font-size: 13px;
+	margin-bottom: 6px;
+	color: #334155;
+}
+.marks-entry-page .select2-container,
+.marks-filters .select2-container {
+	width: 100% !important;
+	display: block;
+}
+.marks-entry-page .select2-container .select2-selection--single {
+	min-height: 44px;
+	padding: 6px 8px;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+}
+.marks-entry-page .select2-selection__rendered {
+	white-space: normal !important;
+	word-break: break-word;
+	line-height: 1.35;
+}
+.marks-entry-page .select2-dropdown,
+.marks-filter-item .select2-dropdown,
+body.marks-entry-body .select2-dropdown {
+	min-width: 100% !important;
+	z-index: 20000 !important;
+}
+.marks-entry-page .select2-results__option,
+body.marks-entry-body .select2-results__option {
+	white-space: normal;
+	word-break: break-word;
+	padding: 10px 12px;
+	font-size: 15px;
+}
+.marks-entry-page .select2-search__field,
+body.marks-entry-body .select2-search__field {
+	width: 100% !important;
+	min-height: 40px;
+	font-size: 16px;
+}
+.marks-entry-grid {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: flex-start;
+}
+.marks-entry-card {
+	background: #fff;
 	width: 100%;
+	border-radius: 10px;
+	padding: 12px;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
-.marks-toolbar-table td {
-	padding: 4px 0;
-	vertical-align: top;
+.marks-entry-card h4 {
+	width: 100%;
+	float: none;
+	border-bottom: 1px solid #e2e8f0;
+	padding: 4px 0 10px;
+	margin: 0 0 12px;
+	font-size: 1.05rem;
+}
+.marks-field {
+	margin-bottom: 12px;
+}
+.marks-field > span,
+.marks-field > label {
+	display: block;
+	font-weight: 700;
+	font-size: 13px;
+	color: #334155;
+	margin-bottom: 6px;
+}
+.marks-field strong { font-size: 15px; }
+.marks-help {
+	display: block;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	padding: 10px 12px;
+	font-size: 13px;
+	line-height: 1.45;
+	color: #475569;
+	margin: 0 0 12px;
 }
 .marks-entry-actions {
 	display: flex;
-	flex-wrap: wrap;
+	flex-direction: column;
 	gap: 8px;
-	justify-content: center;
+	margin-top: 8px;
 }
 .marks-entry-actions .btn {
+	width: 100%;
 	margin: 0;
+	min-height: 46px;
+	font-size: 16px;
 }
 #dv_marks {
 	background: #fff;
-	max-height: min(70vh, 640px);
-	overflow: auto;
+	width: 100%;
+	border-radius: 10px;
+	padding: 8px;
 	-webkit-overflow-scrolling: touch;
 }
 #dv_marks table {
@@ -76,12 +163,6 @@
 #marks_table th {
 	vertical-align: middle;
 }
-#marks_table .sorting,
-#marks_table .sorting_asc,
-#marks_table .sorting_desc {
-	background-image: none !important;
-	padding-right: 8px !important;
-}
 #marks_table .sorting:before,
 #marks_table .sorting:after,
 #marks_table .sorting_asc:before,
@@ -92,10 +173,11 @@
 	content: none !important;
 }
 .marks-entry-input {
-	min-height: 42px;
+	min-height: 44px;
 	font-size: 16px;
 	text-align: center;
 	-moz-appearance: textfield;
+	width: 100%;
 }
 .marks-entry-input::-webkit-outer-spin-button,
 .marks-entry-input::-webkit-inner-spin-button,
@@ -104,10 +186,11 @@
 	-webkit-appearance: none;
 	margin: 0;
 }
-#outofmarks {
+#outofmarks, #examDate {
 	-moz-appearance: textfield;
-	min-height: 42px;
+	min-height: 44px;
 	font-size: 16px;
+	width: 100%;
 }
 .dataTables_wrapper .dataTables_info,
 .dataTables_wrapper .dataTables_filter,
@@ -117,33 +200,50 @@
 	display: none !important;
 }
 @media (max-width: 767px) {
-	.marks-filters .form-group {
-		max-width: 100%;
+	.marks-entry-body .app-header {
+		flex-direction: column !important;
+		align-items: stretch !important;
+		height: auto !important;
+		min-height: 0;
+		gap: 2px;
+		padding: 8px 12px !important;
 	}
+	.marks-entry-body .app-header > div {
+		margin: 0 !important;
+		text-align: left !important;
+		width: 100% !important;
+		max-width: 100% !important;
+	}
+	.marks-entry-body .page-title-heading {
+		font-size: 1.15rem;
+		line-height: 1.25;
+	}
+	.marks-entry-body .page-title-subheading { display: none; }
+	.marks-entry-body .app-header-right { display: none; }
+	.marks-entry-body .app-main__inner {
+		padding-left: 8px !important;
+		padding-right: 8px !important;
+	}
+	#dv_marks { max-height: none; overflow: visible; padding-bottom: 28px; }
+	#marks_table td:last-child { width: 92px; min-width: 92px; }
+}
+@media (min-width: 768px) {
+	.marks-filter-item { flex: 1 1 280px; max-width: 420px; }
+	.marks-entry-grid { flex-wrap: nowrap; }
+	.marks-entry-card { flex: 0 0 340px; width: 340px; }
 	#dv_marks {
-		max-height: none;
-		overflow: visible;
-		padding-bottom: 24px;
+		flex: 1 1 auto;
+		max-height: min(70vh, 640px);
+		overflow: auto;
 	}
-	.col-sm-4,
-	.col-sm-8 {
-		max-width: 100%;
-		flex: 0 0 100%;
+	.marks-entry-actions {
+		flex-direction: row;
+		flex-wrap: wrap;
 	}
-	#marks_table td:last-child {
-		width: 88px;
-		min-width: 88px;
-	}
-	.marks-entry-input {
-		width: 100%;
-		min-width: 72px;
-	}
-	.marks-entry-actions .btn {
-		flex: 1 1 140px;
-	}
+	.marks-entry-actions .btn { flex: 1 1 30%; width: auto; }
 }
 </style>
-<form action="<?= base_url('manipulate_marks'); ?>" class="validate autoSubmit" id="form"
+<form action="<?= base_url('manipulate_marks'); ?>" class="validate autoSubmit marks-entry-page" id="form"
 	  xmlns="http://www.w3.org/1999/html">
 	<div class="col-sm-12">
 		<?php if (isset($_SESSION['success'])) {
@@ -176,72 +276,66 @@
 	</div>
 	<?php if (!isset($error)) {
 		?>
-		<div class="row marks-filters">
+		<div class="marks-filters">
 			<?php
 			$type = $_GET['marktype'];
 			if ($type == 4) {
 				?>
-				<div style="width: auto;"><input type="checkbox"
-												id="checkSheet"><label><?= lang("app.uploadExcel"); ?> </label></div>
-			<?php } ?>
-			<div>
-				<div class="form-group">
-					<select class="form-control select2" id="select_course" name="course" required>
-						<option value="" selected disabled><?= lang("app.course"); ?> </option>
-						<?php
-						foreach ($courses as $course) {
-							?>
-							<option id="course_marks<?= $course['id']; ?>" data-course="<?= $course['marks']; ?>"
-									value="<?= $course['id']; ?>"> <?= $course['title']; ?>
-								-<?= $course['code']; ?></option>
-							<?php
-						} ?>
-					</select>
+				<div class="marks-filter-item">
+					<label class="mb-0">
+						<input type="checkbox" id="checkSheet"> <?= lang("app.uploadExcel"); ?>
+					</label>
 				</div>
+			<?php } ?>
+			<div class="marks-filter-item">
+				<label for="select_course"><?= lang("app.course"); ?></label>
+				<select class="form-control select2" id="select_course" name="course" required>
+					<option value="" selected disabled><?= lang("app.course"); ?> </option>
+					<?php
+					foreach ($courses as $course) {
+						?>
+						<option id="course_marks<?= $course['id']; ?>" data-course="<?= $course['marks']; ?>"
+								value="<?= $course['id']; ?>"> <?= $course['title']; ?>
+							-<?= $course['code']; ?></option>
+						<?php
+					} ?>
+				</select>
 			</div>
 			<?php
 			$type = $_GET['marktype'];
 			if ($type == 1) {
 				?>
-
-				<div>
-					<div class="form-group">
-						<select class="form-control select2" id="catype" name="catType">
-							<option selected disabled><?= lang("app.catType"); ?> </option>
-							<option disabled><?= lang("app.quiz"); ?> </option>
-							<option value="Q1"><?= lang("app.quiz1"); ?> </option>
-							<option value="Q2"><?= lang("app.quiz2"); ?> </option>
-							<option value="Q3"><?= lang("app.quiz3"); ?> </option>
-							<option value="Q4"><?= lang("app.quiz4"); ?> </option>
-							<option value="Q5"><?= lang("app.quiz5"); ?> </option>
-							<option disabled><?= lang("app.test"); ?> </option>
-							<option value="T1"><?= lang("app.test1"); ?> </option>
-							<option value="T2"><?= lang("app.test2"); ?> </option>
-							<option value="T3"><?= lang("app.test3"); ?> </option>
-							<option value="T4"><?= lang("app.test4"); ?> </option>
-							<option value="T5"><?= lang("app.test5"); ?> </option>
-							<option disabled><?= lang("app.homework"); ?> </option>
-							<option value="H1"><?= lang("app.homework1"); ?> </option>
-							<option value="H2"><?= lang("app.homework2"); ?> </option>
-							<option value="H3"><?= lang("app.homework3"); ?> </option>
-							<option value="H4"><?= lang("app.homework4"); ?> </option>
-							<option value="H5"><?= lang("app.homework5"); ?> </option>
-						</select>
-					</div>
-				</div>
-				<?php
-			} else { ?>
-				<div class="col-sm-1" style="margin-top: 20px;display: none;">
+				<div class="marks-filter-item">
+					<label for="catype"><?= lang("app.catType"); ?></label>
+					<select class="form-control select2" id="catype" name="catType">
+						<option selected disabled><?= lang("app.catType"); ?> </option>
+						<option disabled><?= lang("app.quiz"); ?> </option>
+						<option value="Q1"><?= lang("app.quiz1"); ?> </option>
+						<option value="Q2"><?= lang("app.quiz2"); ?> </option>
+						<option value="Q3"><?= lang("app.quiz3"); ?> </option>
+						<option value="Q4"><?= lang("app.quiz4"); ?> </option>
+						<option value="Q5"><?= lang("app.quiz5"); ?> </option>
+						<option disabled><?= lang("app.test"); ?> </option>
+						<option value="T1"><?= lang("app.test1"); ?> </option>
+						<option value="T2"><?= lang("app.test2"); ?> </option>
+						<option value="T3"><?= lang("app.test3"); ?> </option>
+						<option value="T4"><?= lang("app.test4"); ?> </option>
+						<option value="T5"><?= lang("app.test5"); ?> </option>
+						<option disabled><?= lang("app.homework"); ?> </option>
+						<option value="H1"><?= lang("app.homework1"); ?> </option>
+						<option value="H2"><?= lang("app.homework2"); ?> </option>
+						<option value="H3"><?= lang("app.homework3"); ?> </option>
+						<option value="H4"><?= lang("app.homework4"); ?> </option>
+						<option value="H5"><?= lang("app.homework5"); ?> </option>
+					</select>
 				</div>
 				<?php
 			} ?>
-			<div id="select_class_div">
-				<div class="form-group">
-					<select class="form-control select2" name="class_id_name" id="select_class" required>
-						<option selected disabled><?= lang("app.sClass"); ?> </option>
-
-					</select>
-				</div>
+			<div class="marks-filter-item" id="select_class_div">
+				<label for="select_class"><?= lang("app.sClass"); ?></label>
+				<select class="form-control select2" name="class_id_name" id="select_class" required>
+					<option selected disabled><?= lang("app.sClass"); ?> </option>
+				</select>
 			</div>
 			<input type="hidden" value="<?php echo $_GET['marktype']; ?>" name="marktype" id="marktype">
 			<input type="hidden" value="<?php echo isset($_GET['period']) ? $_GET['period'] : ''; ?>" name="period"
@@ -251,72 +345,57 @@
 		<?php
 	}
 	?>
-	<div class="card-body" id="mannualUpload">
-		<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
-			<div class="row">
-				<div class="col-sm-4">
-					<div style="background-color: white;width:100%;">
-						<?php
-						$period_str = !isset($_GET['period']) || $_GET['period'] == 0 ? "" : "#" . lang("app.period") . ':' . $_GET['period'];
+	<div class="card-body" id="mannualUpload" style="padding: 0;">
+		<div class="marks-entry-grid">
+			<div class="marks-entry-card">
+				<?php
+				$period_str = !isset($_GET['period']) || $_GET['period'] == 0 ? "" : "#" . lang("app.period") . ':' . $_GET['period'];
+				?>
+				<h4><?= \App\Controllers\Home::marksTypeToStr($_GET['marktype']) . ' ' . $period_str ?></h4>
+				<div class="marks-field">
+					<span><?= lang("app.selectedAcademic"); ?></span>
+					<strong><?= $academic_year ?></strong>
+				</div>
+				<div class="marks-field">
+					<span><?= lang("app.selectedTerm"); ?></span>
+					<strong><?= \App\Controllers\Home::TermToStr($term) ?></strong>
+				</div>
+				<div class="marks-field">
+					<span><?= lang("app.teacher"); ?></span>
+					<strong><?= $soma_name; ?></strong>
+				</div>
+				<div class="marks-field">
+					<label for="outofmarks"><?= lang("app.totalMarks"); ?></label>
+					<input type="number" min="0" step="any" class="form-control" name="outofmarks" required
+						   id="outofmarks">
+					<small class="marks-max-live" id="marksMaxLive"></small>
+				</div>
+				<p class="marks-help">Leave empty (grey <strong>-</strong>) if the student did not sit the test — it counts as 0 in totals. Enter <strong>0</strong> only when they scored zero.</p>
+				<div class="marks-field">
+					<label for="examDate"><?= lang("app.dateGiven"); ?></label>
+					<input type="date" class="form-control" name="examDate" required id="examDate" value="<?= date('Y-m-d'); ?>">
+					<input type="hidden" class="form-control" name="year" required value="<?=$academic_year_id;?>">
+				</div>
+				<div class="marks-entry-actions">
+					<button type="submit" class="btn btn-success btn-lg" data-target="reload"
+							disabled><?= lang("app.save"); ?> </button>
+					<?php
+					if (is_allowed(1, 3)) {
 						?>
-						<h4 style="width: 100%;float:left;border-bottom: 1px solid #cdcdcd;padding: 10px;"><?= \App\Controllers\Home::marksTypeToStr($_GET['marktype']) . ' ' . $period_str ?></h4>
-						<table class="marks-toolbar-table">
-							<tr>
-								<td><?= lang("app.selectedAcademic"); ?> </td>
-								<td><strong><?= $academic_year ?></strong></td>
-							</tr>
-							<tr>
-								<td><?= lang("app.selectedTerm"); ?> </td>
-								<td><strong><?= \App\Controllers\Home::TermToStr($term) ?></strong></td>
-							</tr>
-							<tr>
-								<td><?= lang("app.teacher"); ?> </td>
-								<td><strong><?= $soma_name; ?></strong></td>
-							</tr>
-							<tr>
-								<td><?= lang("app.totalMarks"); ?> </td>
-								<td><input type="number" min="0" step="any" class="form-control" name="outofmarks" required
-										   id="outofmarks">
-									<small class="marks-max-live" id="marksMaxLive"></small>
-								</td>
-							</tr>
-							<tr>
-								<td colspan="2" style="padding-top:6px;">
-									<small class="text-muted">Leave empty (grey <strong>-</strong>) if the student did not sit the test — it counts as 0 in totals. Enter <strong>0</strong> only when they scored zero.</small>
-								</td>
-							</tr>
-							<tr>
-								<td><?= lang("app.dateGiven"); ?> </td>
-								<td><input type="date" class="form-control" name="examDate" required id="examDate" value="<?= date('Y-m-d'); ?>"></td>
-								<td><input type="hidden" class="form-control" name="year" required value="<?=$academic_year_id;?>"></td>
-							</tr>
-							<tr>
-								<td colspan="2">
-									<div class="marks-entry-actions">
-										<button type="submit" class="btn btn-success btn-lg" data-target="reload"
-												disabled><?= lang("app.save"); ?> </button>
-										<?php
-										if (is_allowed(1, 3)) {
-											?>
-											<a href="<?= base_url('get_student_marks'); ?>"
-											   class="btn btn-primary btn-lg disabled" id="export_pdf"
-											   target="_blank"><i class="fa fa-file-pdf"></i> <?= lang("app.export"); ?>
-											</a>
-											<button class="btn btn-warning btn-lg" type="button" id="btn-del-marks"
-													disabled>
-												<i class="fa fa-trash"></i> <?= lang("app.del"); ?> </button>
-											<?php
-										}
-										?>
-									</div>
-								</td>
-							</tr>
-						</table>
-					</div>
+						<a href="<?= base_url('get_student_marks'); ?>"
+						   class="btn btn-primary btn-lg disabled" id="export_pdf"
+						   target="_blank"><i class="fa fa-file-pdf"></i> <?= lang("app.export"); ?>
+						</a>
+						<button class="btn btn-warning btn-lg" type="button" id="btn-del-marks"
+								disabled>
+							<i class="fa fa-trash"></i> <?= lang("app.del"); ?> </button>
+						<?php
+					}
+					?>
 				</div>
-				<div class="col-sm-8" id="dv_marks">
-					<h3 style="text-align: center;margin-top: 50px"><?= lang("app.selectCourseAndClass"); ?> </h3>
-				</div>
+			</div>
+			<div id="dv_marks">
+				<h3 style="text-align: center;margin: 24px 8px"><?= lang("app.selectCourseAndClass"); ?> </h3>
 			</div>
 		</div>
 	</div>
@@ -362,6 +441,21 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@7.12.15/dist/sweetalert2.all.min.js"></script>
 <script>
 	$(function () {
+		$('body').addClass('marks-entry-body');
+		function initMarksSelect2($scope) {
+			($scope || $('.marks-entry-page')).find('select.select2').each(function () {
+				var $el = $(this);
+				var $parent = $el.closest('.marks-filter-item');
+				if ($el.data('select2')) {
+					$el.select2('destroy');
+				}
+				$el.select2({
+					width: '100%',
+					dropdownParent: $parent.length ? $parent : $el.parent()
+				});
+			});
+		}
+		initMarksSelect2();
 		$('#btn-del-marks').on("click",function (){
 			if(confirm("Do you want to delete current marks?")){
 				console.log("Deleting marks...");
@@ -393,7 +487,11 @@
 			$("#course_marks").val(course_marks);
 			$("#check_course_up").val(val);
 			$("#course_marks_up").val(course_marks);
+			if ($("#select_class").data("select2")) {
+				$("#select_class").select2("destroy");
+			}
 			$("#select_class").load("<?= base_url(); ?>get_class/" + val+"/"+$("[name='year']").val(), function () {
+				initMarksSelect2($("#select_class_div"));
 				populate_marks();
 			});
 		});
