@@ -277,6 +277,7 @@ return [
 	"exam" => "Examen",
 	"catExam" => "Interrogation et Examen",
 	"secondSitting" => " Deuxième séance ",
+	"holidayCoaching" => "Coaching de vacances",
 	"period" => " Période ",
 	"period1" => " Période 1",
 	"period2" => " Période 2",

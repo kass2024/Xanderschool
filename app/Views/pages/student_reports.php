@@ -42,6 +42,15 @@
 				} ?>
 			</select>
 		</div>
+		<?php if (is_wisdom_school()): ?>
+		<div class="form-group col-sm-4 col-md-2 col-lg-2">
+			<label><?= lang("app.type"); ?>:</label>
+			<select class="form-control select2" name="report_type" id="select_report_type">
+				<option value="regular"><?= lang("app.resultRecord"); ?></option>
+				<option value="holiday_coaching"><?= lang("app.holidayCoaching"); ?></option>
+			</select>
+		</div>
+		<?php endif; ?>
 		<div class="form-group col-sm-4 col-md-2 col-lg-2" id="studentDiv" style="display: none">
 			<label><?= lang("app.student");?>:</label>
 			<select class="form-control select2" id="select_student" name="student">
@@ -73,61 +82,13 @@
 	</div>
 </form>
 
+<?php if (!empty($error)): ?>
 <div class="row">
 	<div class="col-sm-12">
-		<div class="card">
-		  <div class="card-body">
-		   	<?php
-		   	if($error){
-		   		?>
-		   		<div class="alert alert-danger"><?= $error ?></div>
-		   		<?php
-		   	}
-		   	?>
-		   	<table class="table table-striped table-hover">
-		   		<thead>
-		   			<tr>
-		   				<th>#</th>
-		   				<th>Date</th>
-		   				<th>Class</th>
-		   				<th>Term</th>
-		   				<th>Status</th>
-		   				<th></th>
-		   			</tr>
-		   		</thead>
-		   		<tbody>
-		   			<?php
-		   			if(count($reports) > 0){
-		   				$counter = 1;
-		   				foreach($reports AS $report){
-		   					?>
-		   					<tr>
-		   						<td><?= $counter++; ?></td>
-		   						<td><?= (new DateTime($report->created_at))->format('Y-m-d') ?></td>
-		   						<td><?= $report->classe->level->title ?> <?= $report->classe->department->code ?> <?= $report->classe->title ?></td>
-		   						<td><?= $report->term ?></td>
-		   						<td><?= $report->status ?></td>
-		   						<td>
-		   							<?php
-		   							if(!is_null($report->report_file)){
-		   								?>
-		   								<a target="_blank" href="/student_report?download=true&report_id=<?= $report->id ?>" class="btn btn-success"><i class="fa fa-download"></i> Download</a>
-		   								<?php
-		   							}
-		   							?>
-		   							<a href="/student_report?delete=true&report_id=<?= $report->id ?>" class="btn btn-danger"><i class="fa fa-trash"></i> Delete</a>
-		   						</td>
-		   					</tr>
-		   					<?php
-		   				}
-		   			}
-		   			?>
-		   		</tbody>
-		   	</table>
-		  </div>
-		</div>
+		<div class="alert alert-danger"><?= esc($error) ?></div>
 	</div>
 </div>
+<?php endif; ?>
 <script>
 	$(function () {
 		$("#useStudent").on("click",function () {
@@ -147,17 +108,38 @@
 			});
 		});
 
+		function reportTypeBase() {
+			var reportType = $("#select_report_type").val() || "regular";
+			return reportType === "holiday_coaching"
+				? "<?=base_url('holiday_coaching_report');?>"
+				: "<?=base_url('student_report_slip');?>";
+		}
+		function syncHolidayReportUi() {
+			var holiday = ($("#select_report_type").val() || "regular") === "holiday_coaching";
+			$("#form").attr("action", reportTypeBase());
+			$("#select_term option[value='4']").prop("disabled", holiday);
+			if (holiday && $("#select_term").val() === "4") {
+				$("#select_term").val("1").trigger("change");
+			}
+			$("#sms_publish").toggle(!holiday);
+		}
+		$("#select_report_type").on("change", syncHolidayReportUi);
+		syncHolidayReportUi();
+
 		$("#btn_generate").on("click", function (e) {
 			e.preventDefault();
 			var classe = $("#select_class").val();
 			var year = $("#select_year").val();
 			var term = $("#select_term").val();
 			var std=$("#select_student").val();
-			// alert(std);
+			var reportType = $("#select_report_type").val() || "regular";
+			var base = reportType === "holiday_coaching"
+				? "<?=base_url('holiday_coaching_report/');?>"
+				: "<?=base_url('student_report_slip/');?>";
 			if(std==null){
-				window.location.href = "<?=base_url('student_report_slip/');?>"+classe+"/"+year+"/"+term+"/";
+				window.location.href = base+classe+"/"+year+"/"+term+"/";
 			}else {
-				window.location.href = "<?=base_url('student_report_slip/');?>"+classe+"/"+year+"/"+term+"/"+"?student="+std;
+				window.location.href = base+classe+"/"+year+"/"+term+"/"+"?student="+std;
 			}
 
 		});

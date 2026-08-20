@@ -1262,3 +1262,69 @@ if (!function_exists('profile_photo_card_cover_src')) {
 		return asset_card_img_src($relative, null, $outW, $outH);
 	}
 }
+
+if (!function_exists('is_wisdom_school')) {
+	/** Wisdom org only — Holiday coaching and related extras. */
+	function is_wisdom_school($schoolId = null)
+	{
+		$schoolId = $schoolId !== null ? (int) $schoolId : (int) ($_SESSION['soma_school_id'] ?? 0);
+		if ($schoolId < 1) {
+			return false;
+		}
+		try {
+			return (new \App\Services\Budget\BranchContextService())->isWisdomSchoolId($schoolId);
+		} catch (\Throwable $e) {
+			return false;
+		}
+	}
+}
+
+if (!function_exists('holiday_coaching_mark_type')) {
+	function holiday_coaching_mark_type()
+	{
+		return 11;
+	}
+}
+
+if (!function_exists('staff_name_initials')) {
+	function staff_name_initials($fname, $lname = '')
+	{
+		$parts = preg_split('/\s+/', trim((string) $fname . ' ' . (string) $lname), -1, PREG_SPLIT_NO_EMPTY);
+		$out = '';
+		foreach ($parts as $p) {
+			$ch = function_exists('mb_substr') ? mb_substr($p, 0, 1) : substr($p, 0, 1);
+			$out .= strtoupper((string) $ch);
+		}
+		return $out;
+	}
+}
+
+if (!function_exists('marks_assessment_types')) {
+	/**
+	 * Marks entry types for web + mobile. Holiday coaching is Wisdom-only and has no period.
+	 *
+	 * @return array<int, array{id:int, academic_type_id:int, title:string, requires_period:bool}>
+	 */
+	function marks_assessment_types($schoolId, $academicTypeId = 1)
+	{
+		$academicTypeId = (int) $academicTypeId;
+		if ($academicTypeId < 1) {
+			$academicTypeId = 1;
+		}
+		$types = [
+			['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'CAT', 'requires_period' => true],
+			['id' => 2, 'academic_type_id' => $academicTypeId, 'title' => 'Exam', 'requires_period' => false],
+			['id' => 3, 'academic_type_id' => $academicTypeId, 'title' => 'Second sitting', 'requires_period' => false],
+			['id' => 9, 'academic_type_id' => $academicTypeId, 'title' => 'Re-assess', 'requires_period' => false],
+		];
+		if (is_wisdom_school($schoolId)) {
+			$types[] = [
+				'id' => holiday_coaching_mark_type(),
+				'academic_type_id' => $academicTypeId,
+				'title' => 'Holiday coaching',
+				'requires_period' => false,
+			];
+		}
+		return $types;
+	}
+}

@@ -276,6 +276,7 @@ return [
    'exam'                        => 'Exam',
    'catExam'                     => 'Cat & Exam',
    'secondSitting'               => 'Second Sitting',
+   'holidayCoaching'             => 'Holiday coaching',
    'period'                      => 'Period',
    'period1'                     => 'Period 1',
    'period2'                     => 'Period 2',

@@ -5769,7 +5769,7 @@ public function attendanceCard()
 
 	public static function marksTypeToStr($type)
 	{
-		switch ($type) {
+		switch ((int) $type) {
 			case 1:
 				return lang("app.cat");
 			case 2:
@@ -5778,6 +5778,8 @@ public function attendanceCard()
 				return lang("app.secondSitting");
 			case 9:
 				return lang("app.reAssess");
+			case 11:
+				return lang("app.holidayCoaching");
 		}
 	}
 
@@ -9207,6 +9209,10 @@ public function getApplicationDocs($id = null)
 		$academic_year = $academic_year == null ? $data['academic_year'] : $academic_year;
 		$data['term'] = $term;
 		$data['academic_year_id'] = $academic_year;
+		$markType = (int) $this->request->getGet('marktype');
+		if ($markType === holiday_coaching_mark_type() && !is_wisdom_school($school_id)) {
+			$data['error'] = "Holiday coaching is only available for Wisdom schools";
+		}
 		if (!in_array($this->session->get("soma_post"), [1, 3]) && $term != $data['term']) {
 			$data['error'] = "you are not allowed to manage marks of selected term";
 		}
@@ -9267,6 +9273,12 @@ public function getApplicationDocs($id = null)
 		$catType = $this->request->getPost("catType") == null ? '' : $this->request->getPost("catType");
 		$outof = $this->request->getPost("outofmarks");
 		$period = $this->request->getPost("period") == null ? 0 : $this->request->getPost("period");
+		if ((int) $mark_type === holiday_coaching_mark_type()) {
+			if (!is_wisdom_school($this->session->get("soma_school_id"))) {
+				return $this->response->setJSON(array("error" => "Holiday coaching is only available for Wisdom schools"));
+			}
+			$period = 0;
+		}
 		$created_by = $this->session->get("soma_id");
 		if (!is_array($student_id)) {
 			return $this->response->setJSON(array("error" => lang("app.pleaseAddErr")));
@@ -10364,13 +10376,19 @@ public function getApplicationDocs($id = null)
 				$('[type=\"submit\"]').prop(\"disabled\",false);$('#marks_table').dataTable({paging: false});
 </script>";
 			}
-		} else if ($mt == 2) {
+		} else if ($mt == 2 || (int) $mt === holiday_coaching_mark_type()) {
+			$mtInt = (int) $mt;
+			$ownerFilter = '';
+			if ($mtInt === holiday_coaching_mark_type() && !in_array($this->session->get('soma_post'), [1, 3])) {
+				$ownerId = (int) $this->session->get('soma_id');
+				$ownerFilter = " AND m.created_by={$ownerId}";
+			}
 			$marks_sql = "select student_id,m.mark_type,m.created_by,
 														  m.marks,
 														  m.outof,
 														  m.cat_type,
 														  m.id,
-														  m.examDate from marks m where m.mark_type=2 AND m.course_id=$course AND m.class_id=$class AND m.term={$active_term}";
+														  m.examDate from marks m where m.mark_type={$mtInt} AND m.course_id=$course AND m.class_id=$class AND m.term={$active_term}{$ownerFilter}";
 			$students = $StudentModel->select("students.id,
 														  students.regno,
 														  concat(students.fname,' ',students.lname) as name,
@@ -11420,6 +11438,276 @@ public function getApplicationDocs($id = null)
 		$data['error'] = '';
 		$data['reports'] = [];
 		$data['content'] = view("pages/student_reports", $data);
+		return view('main', $data);
+	}
+
+	/**
+	 * Wisdom-only holiday coaching report card (own mark type, no period).
+	 */
+	public function holiday_coaching_report($class = null, $year = null, $term = null, $pdf = 0)
+	{
+		ini_set('memory_limit', '4096M');
+		session_write_close();
+		$this->_preset();
+		$school_id = (int) $this->session->get("soma_school_id");
+		if (!is_wisdom_school($school_id)) {
+			echo "Holiday coaching reports are only available for Wisdom schools.";
+			die();
+		}
+		if ($class == null) {
+			$class = $this->request->getGet('class');
+			$term = $this->request->getGet('term');
+			$year = $this->request->getGet('year');
+		}
+		$class = (int) $class;
+		$year = (int) $year;
+		$term = (int) $term;
+		if ($class < 1 || $year < 1 || $term < 1) {
+			echo "invalid data, please try again later";
+			die();
+		}
+
+		$atMdl = new ActiveTermModel();
+		$active_term = $atMdl->select("id")
+			->where("term", $term)
+			->where("academic_year", $year)
+			->where("school_id", $school_id)
+			->get(1)->getRow();
+		if ($active_term == null) {
+			echo "invalid data, please try again later";
+			die();
+		}
+		$active_term_id = (int) $active_term->id;
+		$markType = holiday_coaching_mark_type();
+
+		$classMdl = new ClassesModel();
+		$classRow = $classMdl->select("classes.id, classes.title, classes.mentor,
+				d.title as department_name, d.code, l.title as level_name, f.title as fac_title, f.id as fac_id,
+				concat(s.fname,' ',s.lname) as mentor_name, s.phone as mentor_phone")
+			->join('departments d', 'd.id = classes.department')
+			->join('faculty f', 'f.id = d.faculty_id')
+			->join('levels l', 'l.id = classes.level')
+			->join('staffs s', 's.id = classes.mentor', 'left')
+			->where('classes.id', $class)
+			->get(1)->getRowArray();
+		if (!$classRow) {
+			echo "Class not found";
+			die();
+		}
+
+		$StudentModel = new StudentModel();
+		$students = $StudentModel->select("students.id,students.regno,students.photo,students.fname,students.dob,
+				students.lname,c.id as class_id,c.title,d.title as department_name,d.code,
+				l.title as level_name,f.title as fac_title,f.id as fac_id,
+				group_concat(di.marks,':',di.term) as displine_marks")
+			->join('class_records cr', 'cr.student=students.id')
+			->join('classes c', 'c.id=cr.class')
+			->join('departments d', 'd.id=c.department')
+			->join('levels l', 'l.id=c.level')
+			->join('faculty f', 'f.id=d.faculty_id')
+			->join("(select sum(di.marks) as marks,at.term,di.active_term,di.student_id from disciplines di inner join active_term as at
+				ON at.id = di.active_term where di.school_id={$school_id} group by di.active_term,di.student_id) as di",
+				'di.student_id=students.id AND di.active_term=' . $active_term_id, 'LEFT')
+			->where("c.school_id", $school_id)
+			->where("cr.status", "1")
+			->where("c.id", $class)
+			->where("cr.year", $year)
+			->orderBy("students.fname", "ASC")
+			->groupBy('students.id')
+			->get()->getResultArray();
+
+		$MarksModel = new MarksModel();
+		$markRows = $MarksModel->select("marks.student_id, marks.course_id, marks.marks, marks.outof, marks.examDate,
+				marks.created_by, courses.title, courses.code, courses.marks as course_marks,
+				concat(st.fname,' ',st.lname) as teacher_name")
+			->join("courses", "courses.id = marks.course_id")
+			->join("staffs st", "st.id = marks.created_by", "left")
+			->where("marks.class_id", $class)
+			->where("marks.term", $active_term_id)
+			->where("marks.mark_type", $markType)
+			->orderBy("courses.title")
+			->get()->getResultArray();
+
+		$courseOrder = [];
+		$byStudent = [];
+		$examDates = [];
+		foreach ($markRows as $row) {
+			$cid = (int) $row['course_id'];
+			$sid = (int) $row['student_id'];
+			if (!isset($courseOrder[$cid])) {
+				$courseOrder[$cid] = [
+					'id' => $cid,
+					'title' => $row['title'],
+					'code' => $row['code'],
+					'marks' => $row['course_marks'],
+				];
+			}
+			$raw = $row['marks'];
+			$outof = (float) $row['outof'];
+			$courseMax = (float) $row['course_marks'];
+			$full = $outof > 0 ? $outof : $courseMax;
+			$score = null;
+			if ($raw !== null && $raw !== '' && (float) $raw >= 0) {
+				$score = $outof > 0 ? ((float) $raw / $outof) * $full : (float) $raw;
+			}
+			$byStudent[$sid][$cid] = [
+				'title' => $row['title'],
+				'full_marks' => $full,
+				'score' => $score,
+				'initials' => staff_name_initials($row['teacher_name'] ?? ''),
+			];
+			if (!empty($row['examDate'])) {
+				$examDates[] = (int) $row['examDate'];
+			}
+		}
+
+		if ($courseOrder === []) {
+			foreach ($this->get_courses($class, $term, $year) as $core) {
+				$courseOrder[(int) $core['id']] = [
+					'id' => (int) $core['id'],
+					'title' => $core['title'],
+					'code' => $core['code'] ?? '',
+					'marks' => $core['marks'],
+				];
+			}
+		}
+
+		$records = [];
+		$totals = [];
+		foreach ($students as $student) {
+			$sid = (int) $student['id'];
+			$tot = 0;
+			$max = 0;
+			$coursesOut = [];
+			foreach ($courseOrder as $cid => $meta) {
+				$entry = $byStudent[$sid][$cid] ?? [
+					'title' => $meta['title'],
+					'full_marks' => (float) $meta['marks'],
+					'score' => null,
+					'initials' => '',
+				];
+				$coursesOut[] = $entry;
+				$max += (float) $entry['full_marks'];
+				if ($entry['score'] !== null) {
+					$tot += (float) $entry['score'];
+				}
+			}
+			$student['courses'] = $coursesOut;
+			$student['total'] = $tot;
+			$student['max_total'] = $max;
+			$records[] = $student;
+			$totals[$sid] = $tot;
+		}
+		arsort($totals);
+		$rank = 0;
+		$seen = 0;
+		$last = null;
+		$positions = [];
+		foreach ($totals as $sid => $tot) {
+			$seen++;
+			if ($last === null || (float) $tot !== (float) $last) {
+				$rank = $seen;
+				$last = $tot;
+			}
+			$positions[$sid] = $rank;
+		}
+		$outOf = count($records);
+		foreach ($records as &$row) {
+			$row['position'] = $positions[(int) $row['id']] ?? '';
+			$row['out_of'] = $outOf;
+		}
+		unset($row);
+
+		$fact = (int) ($classRow['fac_id'] ?? 0);
+		if ($fact === 3) {
+			$section = 'PRIMARY SECTION';
+		} elseif ($fact === 19) {
+			$section = 'NURSERY SECTION';
+		} elseif (in_array($fact, [1, 2], true)) {
+			$section = 'SECONDARY SECTION';
+		} else {
+			$section = strtoupper((string) ($classRow['fac_title'] ?? 'SCHOOL')) . ' SECTION';
+		}
+
+		$coachingStart = '';
+		$coachingEnd = '';
+		if ($examDates) {
+			$coachingStart = date('d/m/Y', min($examDates));
+			$coachingEnd = date('d/m/Y', max($examDates));
+		}
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$yearLabel = date('Y');
+		if ($examDates) {
+			$yearLabel = date('Y', max($examDates));
+		} elseif (preg_match('/(20\d{2})/', $yearTitle, $m)) {
+			$yearLabel = $m[1];
+		}
+
+		$feeDay = null;
+		$feeBoard = null;
+		try {
+			$feesMdl = new SchoolFeesModel();
+			$feesMdl->ensureSchema();
+			$feeRows = $feesMdl->select('amount, amount_boarding, amount_day, class_id, level, department, term')
+				->where('school_id', $school_id)
+				->where('academic_year', $year)
+				->where('term', $term)
+				->get()->getResultArray();
+			$picked = null;
+			foreach ($feeRows as $fr) {
+				if ((int) ($fr['class_id'] ?? 0) === $class) {
+					$picked = $fr;
+					break;
+				}
+			}
+			if ($picked === null && $feeRows) {
+				$picked = $feeRows[0];
+			}
+			if ($picked) {
+				$modes = SchoolFeesModel::modeAmounts($picked);
+				$feeDay = $modes['day'];
+				$feeBoard = $modes['boarding'];
+			}
+		} catch (\Throwable $e) {
+			// fees are optional on this card
+		}
+
+		$pdfMode = isset($_GET['pdf']) || (int) $pdf === 1;
+		$data = $this->data;
+		$data['title'] = lang("app.holidayCoaching");
+		$data['subtitle'] = lang("app.holidayCoaching");
+		$data['page'] = "Result_record";
+		$data['students'] = $records;
+		$data['term'] = $term;
+		$data['year'] = $year;
+		$data['pdf'] = $pdfMode;
+		$data['section_label'] = $section;
+		$data['report_year_label'] = $yearLabel;
+		$data['coaching_start'] = $coachingStart;
+		$data['coaching_end'] = $coachingEnd;
+		$data['class_teacher'] = $classRow['mentor_name'] ?? '';
+		$data['class_teacher_phone'] = $classRow['mentor_phone'] ?? '';
+		$data['fee_day'] = $feeDay;
+		$data['fee_boarding'] = $feeBoard;
+		$data['next_term_note'] = '';
+		$view = view("pages/reports/custom/wisdom_holiday_coaching_report", $data);
+		if ($pdfMode) {
+			try {
+				$mask = FCPATH . "assets/templates/*.html";
+				array_map('unlink', glob($mask));
+				$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
+				$wkhtmltopdf->setTitle('Holiday coaching report');
+				$wkhtmltopdf->setHtml(utf8_decode($view));
+				$wkhtmltopdf->setPageSize("A4");
+				$wkhtmltopdf->setOrientation("portrait");
+				$wkhtmltopdf->setMargins(array("top" => 6, "left" => 8, "right" => 8, "bottom" => 6));
+				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "holiday_coaching_report" . time() . ".pdf");
+			} catch (\Exception $e) {
+				echo $e->getMessage();
+			}
+			return;
+		}
+		$data['content'] = $view;
 		return view('main', $data);
 	}
 

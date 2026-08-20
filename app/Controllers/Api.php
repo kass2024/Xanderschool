@@ -257,6 +257,7 @@ class Api extends BaseController
 								$data['classes'] = [];
 							}
 							// Match web marks entry types (Home::marksTypeToStr)
+							helper('qonics');
 							$academicTypeId = 1;
 							if (!empty($result->academic_type)) {
 								$parts = explode(',', (string) $result->academic_type);
@@ -265,12 +266,7 @@ class Api extends BaseController
 									$academicTypeId = 1;
 								}
 							}
-							$data['assessmentTypes'] = [
-								['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'CAT'],
-								['id' => 2, 'academic_type_id' => $academicTypeId, 'title' => 'Exam'],
-								['id' => 3, 'academic_type_id' => $academicTypeId, 'title' => 'Second sitting'],
-								['id' => 9, 'academic_type_id' => $academicTypeId, 'title' => 'Re-assess'],
-							];
+							$data['assessmentTypes'] = marks_assessment_types($result->school_id, $academicTypeId);
 							// Level clearance → Android / mobile menu tiles
 							try {
 								$clearance = new \App\Models\PostMenuClearanceModel();
@@ -344,17 +340,13 @@ class Api extends BaseController
 			$parts = explode(',', (string) $school->academic_type);
 			$academicTypeId = (int) trim($parts[0] ?: '1');
 		}
+		helper('qonics');
 		return $this->response->setJSON([
 			'success' => '1',
 			'use_period' => (int) ($school->use_period ?? 0),
 			'classes' => $classes,
 			'courses' => $coursesData,
-			'assessmentTypes' => [
-				['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'CAT'],
-				['id' => 2, 'academic_type_id' => $academicTypeId, 'title' => 'Exam'],
-				['id' => 3, 'academic_type_id' => $academicTypeId, 'title' => 'Second sitting'],
-				['id' => 9, 'academic_type_id' => $academicTypeId, 'title' => 'Re-assess'],
-			],
+			'assessmentTypes' => marks_assessment_types($school_id, $academicTypeId),
 		]);
 	}
 
