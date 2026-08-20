@@ -1274,7 +1274,9 @@ class Admin extends BaseController
 		$headNames = preg_split('/\s+/', $headMaster, 2);
 		$fname     = $headNames[0] ?? 'Head';
 		$lname     = $headNames[1] ?? 'Master';
-		$defaultPassword = $this->random_password();
+		$defaultPassword = method_exists($this, '_smsSafePassword')
+			? $this->_smsSafePassword(8)
+			: $this->random_password();
 
 		try {
 			if ($staff) {
@@ -1310,8 +1312,7 @@ class Admin extends BaseController
 		$name    = trim($fname . ' ' . strtoupper(substr($lname, 0, 1)) . '.');
 		$loginUser = $email !== '' ? $email : $phone;
 		$smsPack = $this->_staffCredentialSms($name, $loginUser, $defaultPassword, true);
-		$smsBody = $smsPack['body'];
-		$smsLogBody = $smsPack['log'];
+		$smsParts = $smsPack['parts'] ?? [['body' => $smsPack['body'], 'log' => $smsPack['log']]];
 
 		$sentSms   = false;
 		$sentEmail = false;
@@ -1322,16 +1323,30 @@ class Admin extends BaseController
 				$errors[] = 'No phone number';
 			} else {
 				$smsResult = null;
-				if ($this->sendSMS($phone, $smsBody, $smsResult)) {
-					$smsMdl = new SmsModel();
-					$smsMdl->save([
-						'school_id'      => $schoolId,
-						'active_term'    => 0,
-						'content'        => $smsLogBody,
-						'recipient'      => $phone,
-						'recipient_type' => 1,
-					]);
+				$sentParts = 0;
+				foreach ($smsParts as $part) {
+					$partResult = null;
+					if ($this->sendSMS($phone, $part['body'], $partResult)) {
+						$smsMdl = new SmsModel();
+						$smsMdl->save([
+							'school_id'      => $schoolId,
+							'active_term'    => 0,
+							'content'        => $part['log'],
+							'recipient'      => $phone,
+							'recipient_type' => 1,
+						]);
+						$sentParts++;
+					} else {
+						$smsResult = $partResult;
+					}
+				}
+				if ($sentParts === count($smsParts) && $sentParts > 0) {
 					$sentSms = true;
+				} elseif ($sentParts > 0) {
+					$sentSms = true;
+					$errors[] = 'Login URL SMS failed' . (is_array($smsResult)
+						? ': ' . ($smsResult['content'] ?? json_encode($smsResult))
+						: ($smsResult ? ': ' . $smsResult : ''));
 				} else {
 					$errors[] = 'SMS failed' . (is_array($smsResult)
 						? ': ' . ($smsResult['content'] ?? json_encode($smsResult))
