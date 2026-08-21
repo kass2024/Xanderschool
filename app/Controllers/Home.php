@@ -12944,9 +12944,6 @@ public function getApplicationDocs($id = null)
 		$modes = $this->request->getPost("modes");
 		$due_date = $this->request->getPost("dueDate");
 		$slipRef = trim((string) $this->request->getPost("slipRef"));
-		$postId = (int) $this->session->get("soma_post");
-		$status = FeesApproval::defaultStatusForPost($postId);
-		$isPending = ($status === FeesApproval::STATUS_PENDING);
 		$feeEntryModel = new FeesRecordModel();
 		$resString = "";
 		$recId = 0;
@@ -12975,17 +12972,9 @@ public function getApplicationDocs($id = null)
 						"fees_id" => $item,
 						"due_date" => $due_date,
 						"payment_mode" => $modes[$key],
+						"status" => FeesApproval::STATUS_APPROVED,
 						"created_by" => $this->session->get("soma_id")];
-				if (!$isPending) {
-					$data["status"] = FeesApproval::STATUS_APPROVED;
-				}
 				$recId = $feeEntryModel->insert($data);
-				// status=0 is skipped by some insert paths; DB default is 1 — force pending explicitly.
-				if ($isPending && $recId) {
-					\Config\Database::connect()->table('fees_records')
-							->where('id', (int) $recId)
-							->update(['status' => FeesApproval::STATUS_PENDING]);
-				}
 				if ((int) $modes[$key] === FeesApproval::PAYMENT_MODE_BANK_SLIP && $slipRef !== '') {
 					$this->_assignFeeSlipRef($feeEntryModel, (int) $recId, $student, (int) $feesTypes[$key], $slipRef);
 				}
@@ -12996,17 +12985,15 @@ public function getApplicationDocs($id = null)
 				}
 
 			endforeach;
-			$payload = [
-				"success" => $isPending ? lang("app.feesRecordPending") : lang("app.feesRecordSaved"),
+			$printUrl = base_url('print_fee_receipt/' . urlencode($resString) . '/' . $student . '?autoprint=1');
+			return $this->response->setJSON([
+				"success" => lang("app.feesRecordSaved"),
 				"id" => $recId,
-				"pending" => $isPending,
-			];
-			if (!$isPending) {
-				$payload['url'] = base_url('print_fee_receipt/' . urlencode($resString) . '/' . $student . '?autoprint=1');
-				$payload['print_url'] = $payload['url'];
-				$payload['pdf_url'] = base_url('printFeesHistory/' . urlencode($resString) . '/' . $student);
-			}
-			return $this->response->setJSON($payload);
+				"pending" => false,
+				"url" => $printUrl,
+				"print_url" => $printUrl,
+				"pdf_url" => base_url('printFeesHistory/' . urlencode($resString) . '/' . $student),
+			]);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(["error" => "Error: " . $e->getMessage()]);
 		}
@@ -13036,15 +13023,7 @@ public function getApplicationDocs($id = null)
 	public function fees_pending_approval()
 	{
 		$this->_preset();
-		if (!FeesApproval::canApprove((int) $this->session->get('soma_post'))) {
-			return redirect()->to(base_url('dashboard'));
-		}
-		$data = $this->data;
-		$data['title'] = lang('app.feesPendingApproval');
-		$data['subtitle'] = lang('app.feesPendingApproval');
-		$data['page'] = 'fees_pending_approval';
-		$data['content'] = view('pages/fees_pending_approval', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('fees_entry'));
 	}
 
 	public function get_pending_fees_ajax()
@@ -19246,61 +19225,32 @@ public function assign_card()
 	}
 
 	/**
-	 * Split a long SMS into 160-character parts (word-aware) so delivery is charged per part.
-	 * @return string[]
+	 * Send one concatenated SMS (single bubble on the phone) and bill ceil(chars/160) units.
 	 */
-	private function splitSmsParts(string $message, int $limit = 160): array
-	{
-		$message = trim(preg_replace("/[ \t]+/", ' ', str_replace(["\r\n", "\r"], "\n", $message)));
-		if ($message === '') {
-			return [];
-		}
-		$len = mb_strlen($message, 'UTF-8');
-		if ($len <= $limit) {
-			return [$message];
-		}
-		$parts = [];
-		$remaining = $message;
-		while (mb_strlen($remaining, 'UTF-8') > $limit) {
-			$chunk = mb_substr($remaining, 0, $limit, 'UTF-8');
-			$break = mb_strrpos($chunk, ' ', 0, 'UTF-8');
-			if ($break === false || $break < (int) ($limit * 0.5)) {
-				$break = $limit;
-			}
-			$parts[] = trim(mb_substr($remaining, 0, $break, 'UTF-8'));
-			$remaining = trim(mb_substr($remaining, $break, null, 'UTF-8'));
-		}
-		if ($remaining !== '') {
-			$parts[] = $remaining;
-		}
-		return $parts;
-	}
-
 	private function sendChargedSms(string $phone, string $message, int $receiverId = 0, string $subject = 'Admission confirmation'): bool
 	{
 		$phone = trim($phone);
-		if (strlen(preg_replace('/\D/', '', $phone)) < 9) {
+		$message = trim($message);
+		if ($message === '' || strlen(preg_replace('/\D/', '', $phone)) < 9) {
 			return false;
 		}
-		$parts = $this->splitSmsParts($message, defined('PER_SMS') ? (int) PER_SMS : 160);
-		if (!$parts) {
-			return false;
+		$perSms = defined('PER_SMS') ? (int) PER_SMS : 160;
+		$smsCount = (int) ceil(mb_strlen($message, 'UTF-8') / max(1, $perSms));
+		if ($smsCount < 1) {
+			$smsCount = 1;
+		}
+		$smsResult = null;
+		$ok = $this->sendSMS($phone, $message, $smsResult);
+		$fail = '';
+		if (!$ok) {
+			$fail = is_array($smsResult) ? (string) ($smsResult['content'] ?? json_encode($smsResult)) : (string) $smsResult;
+			$smsCount = 0;
 		}
 		$termId = (int) ($this->data['active_term'] ?? 0);
-		$allOk = true;
-		foreach ($parts as $part) {
-			$smsResult = null;
-			$ok = $this->sendSMS($phone, $part, $smsResult);
-			$fail = '';
-			if (!$ok) {
-				$allOk = false;
-				$fail = is_array($smsResult) ? (string) ($smsResult['content'] ?? json_encode($smsResult)) : (string) $smsResult;
-			}
-			if ($termId > 0) {
-				$this->_save_sms($termId, $phone, $part, $subject, $receiverId, 0, $ok ? 1 : 0, $fail);
-			}
+		if ($termId > 0) {
+			$this->_save_sms($termId, $phone, $message, $subject, $receiverId, 0, $smsCount, $fail);
 		}
-		return $allOk;
+		return $ok;
 	}
 
 	private function isNurseryOrPrimaryAdmission(string $levelTitle, string $facultyTitle, string $classTitle, int $facultyType): bool
