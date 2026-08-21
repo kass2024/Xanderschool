@@ -578,24 +578,9 @@
 													<h2 class="fs-title">Student self application</h2>
 												</div>
 											</div>
-											<div class="row">
-												<div class="col-11">
-													<div class="form-check">
-														<input type="checkbox" class="form-check-input" id="confirmBox">
-														<label class="form-check-label" for="confirmBox">Have you paid and have a registration code?</label>
-													</div>
-													<div class="row" id="currentApplicant" style="display: none">
-														<div class="col-sm-12">
-															<div class="form-group">
-																<label class="control-label mb-1">Enter your registration code</label>
-																<input name="code" type="text" class="form-control" placeholder="Enter your code">
-														</div>
-														<input type="button" name="search" id="searchBtn" class="search-button" value="Search"/>
-													</div>
-													</div>
-													<h6 class="newApplicant">Fill this form to start a new application</h6>
-													<hr class="newApplicant">
-													<div class="newApplicant">
+											<h6 class="newApplicant">Fill this form to start a new application</h6>
+											<hr class="newApplicant">
+											<div class="newApplicant">
 														<?php if (!empty($private_link_error)): ?>
 															<div class="alert alert-warning"><?= esc($private_link_error); ?></div>
 														<?php endif; ?>
@@ -782,8 +767,16 @@
 																	</div>
 																	<div class="form-group">
 																		<label class="control-label mb-1">Cell</label>
-																		<select class="form-control" name="cell" id="cellSelect" required>
+																		<select class="form-control address_select" data-target="village" name="cell" id="cellSelect" required>
 																			<option value="" disabled selected>Select cell</option>
+																		</select>
+																	</div>
+																</div>
+																<div class="ss-form-row">
+																	<div class="form-group">
+																		<label class="control-label mb-1">Village</label>
+																		<select class="form-control" name="village" id="villageSelect" required>
+																			<option value="" disabled selected>Select village</option>
 																		</select>
 																	</div>
 																</div>
@@ -1442,9 +1435,14 @@
 					if (target === 'district') {
 						$("[name='sector']").html('<option value="" disabled selected>Select sector</option>');
 						$("#cellSelect").html('<option value="" disabled selected>Select cell</option>');
+						$("#villageSelect").html('<option value="" disabled selected>Select village</option>');
 					}
 					if (target === 'sector') {
 						$("#cellSelect").html('<option value="" disabled selected>Select cell</option>');
+						$("#villageSelect").html('<option value="" disabled selected>Select village</option>');
+					}
+					if (target === 'cell') {
+						$("#villageSelect").html('<option value="" disabled selected>Select village</option>');
 					}
 				});
 			});
@@ -1634,16 +1632,6 @@
 				refreshRegistrationFee();
 			});
 
-			$('#confirmBox').click(function () {
-				if ($(this).is(":checked")) {
-					$("#currentApplicant").show();
-					$(".newApplicant").hide();
-				} else {
-					$(".newApplicant").show();
-					$("#currentApplicant").hide();
-				}
-			});
-
 			let current_fs, next_fs, previous_fs;
 			let opacity;
 			let current = 1;
@@ -1656,17 +1644,9 @@
 			}
 			setProgressBar(current);
 
-			$("#searchBtn").click(function () {
-				const code = $('input[name=code]').val();
-				if (code.length > 5)
-					window.location.href = "<?= base_url('application/'); ?>" + encodeURIComponent(code);
-				else
-					toastada.error("Invalid registration code");
-			});
-
-			$(document).on('submit', '#completeForm', function (event) {
-				current_fs = $(this).parent().parent();
-				next_fs = current_fs.next();
+			let current_fs, next_fs, previous_fs;
+				current_fs = $(this).closest('fieldset');
+				next_fs = current_fs.next('fieldset');
 				event.preventDefault();
 				$.ajax({
 					url: "<?= site_url('completeStudentApplication'); ?>",
@@ -1702,22 +1682,43 @@
 				});
 			});
 
+			function validateFieldset($fieldset) {
+				var valid = true;
+				$fieldset.find('input, select, textarea').each(function () {
+					if (!this.checkValidity()) {
+						this.reportValidity();
+						valid = false;
+						return false;
+					}
+				});
+				return valid;
+			}
+
 			$(".next").click(function () {
-				current_fs = $(this).parent();
-				next_fs = $(this).parent().next();
+				current_fs = $(this).closest('fieldset');
+				next_fs = current_fs.next('fieldset');
+				if (!next_fs.length) {
+					return false;
+				}
 				window.scrollTo(0, 0);
+				if (!validateFieldset(current_fs)) {
+					return false;
+				}
 				if (current == 1) {
-					var names = $('input[name=studentNames]').val();
-					var gender = $('select[name=gender]').val();
-					var phone = $('input[name=phoneNumber]').val();
-					var parentPhone = $('input[name=parentPhoneNumber]').val();
-					var level = $('#levelHidden').val();
-					const data = { names, gender, phone, parentPhone, level };
-					localStorage.setItem('data', JSON.stringify(data));
 					if (!$("#classOptions").val()) {
 						toastada.error("Please select a class first");
 						return false;
 					}
+					if (!$("#villageSelect").val()) {
+						toastada.error("Please select your village");
+						return false;
+					}
+					var names = ($('input[name=firstName]').val() || '') + ' ' + ($('input[name=lastName]').val() || '');
+					var gender = $('select[name=gender]').val();
+					var phone = $('input[name=phoneNumber]').val();
+					var parentPhone = $('input[name=ft_phone]').val() || $('input[name=mt_phone]').val() || '';
+					var level = $('#levelHidden').val();
+					localStorage.setItem('data', JSON.stringify({ names, gender, phone, parentPhone, level }));
 					loadRequiredDocs();
 				}
 				// Documents step validation (dynamic fields)
@@ -1755,8 +1756,11 @@
 			});
 
 			$(".previous").click(function () {
-				current_fs = $(this).parent();
-				previous_fs = $(this).parent().prev();
+				current_fs = $(this).closest('fieldset');
+				previous_fs = current_fs.prev('fieldset');
+				if (!previous_fs.length) {
+					return false;
+				}
 				$("#progressbar li").eq($("fieldset").index(current_fs)).removeClass("active");
 				previous_fs.show();
 				current_fs.animate({opacity: 0}, {
