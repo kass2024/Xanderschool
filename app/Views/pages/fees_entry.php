@@ -1,441 +1,695 @@
-<style>
-	.nav-tabs .nav-link.active {
-		color: #495057;
-		background-color: #fff;
-		border-color: #fff;
-		border-bottom: #d92550 solid 3px;
-	}
-</style>
-<div class="row" style="background-color: white;height: auto;padding: 10px">
-	<div class="form-group col-sm-4 col-md-2 col-lg-2">
-		<label><?= lang("app.year"); ?>:</label>
-		<select class="select2" id="select_year" name="year" required>
-			<option disabled selected><?= lang("app.academicYear"); ?></option>
-			<?php
-			foreach ($years as $year):
-				echo "<option value='{$year['id']}'>{$year['title']}</option>";
-			endforeach;
-			?>
-		</select>
-	</div>
+<link rel="stylesheet" href="<?= base_url('assets/css/fees-entry.css') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>">
 
-	<div class="form-group col-sm-4 col-md-2 col-lg-2">
-		<label><?= lang("app.sClass"); ?>:</label>
-		<select class="form-control select2" name="class" id="select_class" required>
-			<option selected disabled><?= lang("app.selectClass"); ?></option>
-			<?php foreach ($classes as $classe) {
-				?>
-				<option value="<?= $classe['id']; ?>"
-						data-id=""> <?= $classe['level_name']; ?> <?= $classe['code']; ?> <?= $classe['title']; ?></option>
-				<?php
-			}
-			?>
-		</select>
-	</div>
-	<div class="form-group col-sm-4 col-md-2 col-lg-2" id="studentDiv">
-		<label><?= lang("app.student"); ?>:</label>
-		<select class="form-control select2" id="select_student" name="select_student" required>
+<div class="fe-page card-scan-page">
+	<div class="fe-center">
 
+		<div class="fe-layout">
+			<aside class="fe-scan-panel">
+				<?= view('pages/partials/card_scan_search', [
+					'classes' => $classes,
+					'use_lang' => true,
+					'default_mode' => 'card',
+					'student_placeholder' => 'Type student name or reg no...',
+				]) ?>
 
-		</select>
-	</div>
-	<div class="form-group" style="margin-top: 30px">
-		<button class="btn btn-success" id="btn_generate"><?= lang("app.go"); ?></button>
-	</div>
-</div>
-<br>
-<br>
-
-<div class="paidContent" style="display: none">
-	<div style="background-color: white;padding: 10px;margin: 15px 15px;display: flow-root;">
-		<div class="pull-right" style="margin-bottom: 10px">
-			<button class="btn btn-gradient-info btn-lg pull-left" id="btn-add-fees" style="margin-right: 10px">
-				<i class="fa fa-plus"> <?= lang("app.addExtra"); ?></i></button>
-			<button class="btn btn-success btn-lg pull-left" data-toggle="modal" data-target="#mdlfeesEntry"
-					id="btnfees">
-				<i class="fa fa-plus"> <?= lang("app.recordInvoice"); ?></i></button>
-		</div>
-		<div style="width: 100%;float: right">
-			<ul class="nav nav-tabs" id="myTab" role="tablist">
-				<li class="nav-item" style="width: 50%">
-					<a class="nav-link active" id="summary-tab" data-toggle="tab" href="#fees-summary-tab"
-					   role="tab"
-					   aria-controls="home" aria-selected="true" style="font-size: 16px;font-weight: 800">Fees summary
-						report</a>
-				</li>
-				<li class="nav-item" style="width: 50%">
-					<a class="nav-link" id="history-tab" data-toggle="tab" style="font-size: 16px;font-weight: 800"
-					   href="#fees-historical-report-tab"
-					   role="tab"
-					   aria-controls="profile" aria-selected="false">Fees historical report</a>
-				</li>
-			</ul>
-			<div class="tab-content" id="myTabContent">
-				<div class="tab-pane fade show active" id="fees-summary-tab" role="tabpanel"
-					 aria-labelledby="home-tab">
-					<div class="pull-left" style="width: 100%;background-color: white;">
-						<table border="1" style="width: 100%">
-							<th>#</th>
-							<th><?= lang("app.item"); ?></th>
-							<th><?= lang("app.term"); ?></th>
-							<th><?= lang("app.expectedAmount"); ?></th>
-							<th><?= lang("app.paidAmount"); ?></th>
-							<th><?= lang("app.remainAmount"); ?></th>
-							<th><?= lang("app.dueDate"); ?></th>
-							<tbody name="tblfees">
-
-							</tbody>
-						</table>
-					</div>
+				<div class="fe-year-field mt-3">
+					<label for="select_year"><?= lang('app.year') ?></label>
+					<select class="form-control select2" id="select_year" name="year" required>
+						<?php foreach ($years as $year):
+							$yrId = (int) $year['id'];
+							$selected = ($yrId === (int) ($selectedYear ?? 0)) ? ' selected' : '';
+							?>
+							<option value="<?= $yrId ?>"<?= $selected ?>><?= esc($year['title']) ?></option>
+						<?php endforeach; ?>
+					</select>
 				</div>
-				<div class="tab-pane fade" id="fees-historical-report-tab" role="tab-pane"
-					 aria-labelledby="profile-tab">
-					<form action="<?= base_url('printFeesHistory'); ?>" method="post" id="printForm">
-						<div class="pull-right" style="margin-bottom: 10px">
-							<button type="submit" class="btn btn-outline-success btn-lg pull-right">
-								<i class="fa fa-print"></i> Print selected items
+			</aside>
+
+			<main class="fe-workspace">
+				<div class="fe-workspace-card" id="feWorkspaceCard">
+					<div class="fe-student-header" id="feStudentCard">
+						<div class="fe-student-empty">
+							<i class="fa fa-id-card"></i>
+							<p>Scan a student card, search by name, or pick from a class to begin.</p>
+						</div>
+					</div>
+
+					<div class="fe-class-pick" id="feClassPick">
+						<h4><?= lang('app.student') ?> — tap to load fees</h4>
+						<div class="fe-student-chips" id="feClassChips"></div>
+					</div>
+
+					<div class="paidContent fe-fees-section" style="display:none">
+						<div class="fe-actions-bar">
+							<button type="button" class="btn btn-info" id="btn-add-fees">
+								<i class="fa fa-plus"></i> <?= lang('app.addExtra') ?>
+							</button>
+							<button type="button" class="btn btn-success" data-toggle="modal" data-target="#mdlfeesEntry" id="btnfees">
+								<i class="fa fa-plus"></i> <?= lang('app.recordInvoice') ?>
 							</button>
 						</div>
-						<div class="table-responsive">
-							<table class="table" id="historyTable">
-								<thead>
-								<tr style="background-color: #da2953;color: #fff;">
-									<th scope="col"></th>
-									<th scope="col">No</th>
-									<th scope="col">Term</th>
-									<th scope="col">Item</th>
-									<th scope="col">Amount</th>
-									<th scope="col">Payment mode</th>
-									<th scope="col">date</th>
-									<th scope="col"></th>
-								</tr>
-								</thead>
-								<tbody>
 
-								</tbody>
-							</table>
+						<ul class="nav nav-tabs fe-tabs" id="myTab" role="tablist">
+							<li class="nav-item">
+								<a class="nav-link active" id="summary-tab" data-toggle="tab" href="#fees-summary-tab" role="tab">
+									Fees summary
+								</a>
+							</li>
+							<li class="nav-item">
+								<a class="nav-link" id="history-tab" data-toggle="tab" href="#fees-historical-report-tab" role="tab">
+									Payment history
+								</a>
+							</li>
+						</ul>
+
+						<div class="tab-content" id="myTabContent">
+							<div class="tab-pane fade show active" id="fees-summary-tab" role="tabpanel">
+								<div class="fe-table-wrap">
+									<table class="table table-hover mb-0">
+										<thead>
+										<tr>
+											<th>#</th>
+											<th><?= lang('app.item') ?></th>
+											<th><?= lang('app.term') ?></th>
+											<th><?= lang('app.expectedAmount') ?></th>
+											<th><?= lang('app.paidAmount') ?></th>
+											<th><?= lang('app.remainAmount') ?></th>
+											<th><?= lang('app.dueDate') ?></th>
+										</tr>
+										</thead>
+										<tbody name="tblfees"></tbody>
+									</table>
+								</div>
+							</div>
+
+							<div class="tab-pane fade" id="fees-historical-report-tab" role="tabpanel">
+								<form action="<?= base_url('printFeesHistory') ?>" method="post" id="printForm">
+									<div class="fe-actions-bar fe-actions-bar--compact">
+										<button type="submit" class="btn btn-outline-success ml-auto">
+											<i class="fa fa-print"></i> Print selected items
+										</button>
+									</div>
+									<div class="fe-table-wrap">
+										<table class="table table-hover mb-0" id="historyTable">
+											<thead>
+											<tr>
+												<th scope="col"></th>
+												<th scope="col">No</th>
+												<th scope="col">Term</th>
+												<th scope="col">Item</th>
+												<th scope="col">Amount</th>
+												<th scope="col">Payment mode</th>
+												<th scope="col">Reference</th>
+												<th scope="col">Date</th>
+												<th scope="col">Status</th>
+												<th scope="col"></th>
+											</tr>
+											</thead>
+											<tbody></tbody>
+										</table>
+									</div>
+								</form>
+								<a target="_blank" id="printLink" style="display:none"></a>
+							</div>
 						</div>
-					</form>
-					<a target="_blank" id="printLink" style="display: none"></a>
+					</div>
 				</div>
-			</div>
+			</main>
 		</div>
+
+		<!-- Legacy hidden selects — kept for modals and existing fee APIs -->
+		<div class="sr-only" aria-hidden="true" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">
+			<select id="select_class" name="class">
+				<option value=""><?= lang('app.selectClass') ?></option>
+				<?php foreach ($classes as $classe): ?>
+					<option value="<?= (int) $classe['id'] ?>">
+						<?= esc("{$classe['level_name']} {$classe['code']} {$classe['title']}") ?>
+					</option>
+				<?php endforeach; ?>
+			</select>
+			<select id="select_student" name="select_student"></select>
+		</div>
+
 	</div>
 </div>
+
+<script src="<?= base_url('assets/js/card-uid.js') ?>"></script>
 <script>
-	$(function () {
-		let tempInvoice=[]
-		$(document).on("click", ".removeBtn", (e) => {
-			let id = e.currentTarget.dataset.id
-			let type = e.currentTarget.dataset.type
-			$.each(tempInvoice, (index, record) => {
-				if (record.id == id && record.type == type) {
-					tempInvoice.splice(index,1)
-					$(e.currentTarget).parent().parent().remove()
-					return
-				}
-			})
-		})
-		let itemType, itemExtraId, itemTypeText, itemAmount, itemMode, itemSchoolFeesTerm, itemText, itemModeText,itemToSave
-		let tblRow = ''
-		let rowNum = 1
-		$(document).on('submit', '.autoSubmits', (function (e) {
-			e.preventDefault()
-			$("#frmSaveFeesRecords").slideDown();
-			itemType = $("#select_fees_type").val()
-			itemExtraId = $("#ExtrafeeType").val()
-			itemSchoolFeesTerm = $("#schoolfeesType option:selected").val()
-			itemAmount = $("#receivedAmount").val()
-			itemMode = $("#paymentMode option:selected").val()
-			itemModeText = $("#paymentMode option:selected").text()
-			itemTypeText = $("#select_fees_type option:selected").text()
-			if (itemType == 0) {
-				itemText = $("#schoolfeesType option:selected").text()
-				itemToSave=itemSchoolFeesTerm
-				tblRow = '<tr>' +
-					'<td>' + rowNum + '</td>' +
-					'<td><input type="hidden" name="items[]" value="' + itemSchoolFeesTerm + '">' + itemText + '</td>' +
-					'<td><input type="hidden" name="feeTypes[]" value="' + itemType + '">' + itemTypeText + '</td>' +
-					'<td><input type="hidden" name="amounts[]" value="' + itemAmount + '">' + itemAmount + '</td>' +
-					'<td><input type="hidden" name="modes[]" value="' + itemMode + '">' + itemModeText + '</td>' +
-					'<td style="text-align: center"><a class="btn btn-sm btn-danger removeBtn" data-type="'+itemType+'" data-id="'+itemSchoolFeesTerm+'" style="color: #ffffff">Remove</a></td>' +
-					'</tr>'
-			}
-			if (itemType == 1) {
-				itemText = $("#ExtrafeeType option:selected").text()
-				itemToSave=itemExtraId
-				tblRow = '<tr>' +
-					'<td>' + rowNum + '</td>' +
-					'<td><input type="hidden" name="items[]" value="' + itemExtraId + '">' + itemText + '</td>' +
-					'<td><input type="hidden" name="feeTypes[]" value="' + itemType + '">' + itemTypeText + '</td>' +
-					'<td><input type="hidden" name="amounts[]" value="' + itemAmount + '">' + itemAmount + '</td>' +
-					'<td><input type="hidden" name="modes[]" value="' + itemMode + '">' + itemModeText + '</td>' +
-					'<td style="text-align: center"><a class="btn btn-sm btn-danger removeBtn" data-type="'+itemType+'" data-id="'+itemExtraId+'" style="color: #ffffff">Remove</a></td>' +
-					'</tr>'
-			}
+$(function () {
+	let checkedItems = [];
+	let year1, student1, rows1;
+	let cardBuffer = '';
 
-			let verify=true
-			$.each(tempInvoice, (index, record) => {
-				if (record.id == itemToSave && record.type == itemType) {
-					verify=false
-					alert("Item already exit")
-					return 0
-				}
-			})
-			if (verify) {
-				$("#pendingTbl tbody").append(tblRow)
-				$(".autoSubmits")[0].reset()
-				$('.select2').select2();
-				tempInvoice.push({"type": itemType, "id": itemToSave})
-				rowNum++
-			}
-		}))
-		let checkedItems = []
-		$(document).on("change", ".checkedItem", function () {
-			let checked = $(this).val()
-			if ($(this).is(":checked")) {
-				if (checkedItems.indexOf(checked) == -1) {
-					checkedItems.push(checked)
-				}
-			} else {
-				if ((index = checkedItems.indexOf(checked)) !== -1) {
-					checkedItems.splice(index, 1)
-				}
-			}
-			console.log(checkedItems)
-		})
-		$(document).on("click", ".btn-del-fee", function () {
-			const title = $(this).parent('td').children('span').text()
-			const id = $(this).parent('td').data('id')
-			if (confirm("Please confirm Extra fee removal #"+title)){
-				$.post("<?=base_url();?>remove_extra_fee", "id="+id, function (data) {
-					if (data.hasOwnProperty('success')) {
-						toastada.success(data.success);
-						reloadSummaryReport();
-					} else {
-						toastada.error(data.error);
-					}
-				});
-			}
-		})
+	function setScanStatus(text, type) {
+		const $s = $('#cardScanStatus');
+		$s.text(text).removeClass('ok err busy');
+		if (type) $s.addClass(type);
+	}
 
-		$("#printForm").submit(function (e) {
-			let student = $("#select_student").val()
-			var year = $("#select_year").val();
-			e.preventDefault();
-			let form = $(this).serializeArray();
-			form.push({name: "student", value: student})
-			form.push({name: "year", value: year})
-			let rows = checkedItems.join('-')
-			$("#printLink").attr("href", "<?=base_url('printFeesHistory');?>" + "/" + rows + "/" + student)[0].click();
-		})
-		$(".paidContent").hide()
-		$("#select_class").on("change", function () {
-			var classe = $(this).val();
-			var isclass = "/1";
-			var type = "/7/";
-			let academicYear=$('#select_year').val()
-			$.get("<?=base_url();?>get_student/" + classe + isclass + type + academicYear, function (data) {
-				$("[name='select_student']").html(data);
-			});
-		});
+	function renderStudentCard(st) {
+		const html = `
+			<div class="fe-student-photo">${st.photo_html || ''}</div>
+			<div class="fe-student-info">
+				<h3>${st.name || ''}</h3>
+				<div class="fe-meta">
+					<span><strong>Reg:</strong> ${st.regno || ''}</span>
+					<span class="fe-meta-sep">&middot;</span>
+					<span><strong>Class:</strong> ${st.class_label || ''}</span>
+				</div>
+			</div>`;
+		$('#feStudentCard').addClass('has-student').html(html);
+		$('#feWorkspaceCard').addClass('has-fees-ready');
+	}
 
-		$("#btn-add-fees").on("click", function (e) {
-			var std = $("#select_student").val();
-			$.getJSON("<?=base_url();?>get_student_json/" + std, function (data) {
-				if (data.hasOwnProperty('success')) {
-					$("#mdlExtraFeesStudent [name='studentName']").val(data.student.names);
-					$("#mdlExtraFeesStudent [name='studentId']").val(data.student.id);
-					$("#mdlExtraFeesStudent").modal();
-				} else {
-					toastada.error("Invalid student: " + data.message)
-				}
-			});
-		});
-		$(document).on("click",".btn-append-fees", function (e) {
-			var std = $("#select_student").val();
-			const btn = $(this);
-			$.getJSON("<?=base_url();?>get_student_json/" + std, function (data) {
-				if (data.hasOwnProperty('success')) {
-					$("#mdlDiscountFeesStudent [name='studentName']").val(data.student.names);
-					$("#mdlDiscountFeesStudent [name='studentId']").val(data.student.id);
-					$("#mdlDiscountFeesStudent [name='feeId']").val(btn.data('id'));
-					$("#mdlDiscountFeesStudent [name='feeAmount']").val(btn.data('amount'));
-					$("#mdlDiscountFeesStudent").modal();
-				} else {
-					toastada.error("Invalid student: " + data.message)
-				}
-			});
-		});
-		$(document).on("click",".btn-edit-extra-fees", function (e) {
-			var std = $("#select_student").val();
-			const btn = $(this);
-			$.getJSON("<?=base_url();?>get_student_json/" + std, function (data) {
-				if (data.hasOwnProperty('success')) {
-					$("#mdlEditExtraFeesStudent [name='studentName']").val(data.student.names);
-					$("#mdlEditExtraFeesStudent [name='studentId']").val(data.student.id);
-					$("#mdlEditExtraFeesStudent [name='feeId']").val(btn.data('id'));
-					$("#mdlEditExtraFeesStudent [name='feeAmount']").val(btn.data('amount'));
-					$("#mdlEditExtraFeesStudent").modal();
-				} else {
-					toastada.error("Invalid student: " + data.message)
-				}
-			});
-		});
-		$(document).on("blur","#feeNewAmount", function (e) {
-			const amount = $("#feeNewAmount").val() - $("#feeOldAmount").val();
-			$("#spAmountChangeDiscount").hide();
-			$("#spAmountChangeIncrease").hide();
-			if (amount>0) {
-				$("#spAmountChangeIncrease").show();
-			}else {
-				$("#spAmountChangeDiscount").show();
+	function clearStudentCard() {
+		$('#feStudentCard').removeClass('has-student').html(`
+			<div class="fe-student-empty">
+				<i class="fa fa-id-card"></i>
+				<p>Scan a student card, search by name, or pick from a class to begin.</p>
+			</div>`);
+		$('#feWorkspaceCard').removeClass('has-fees-ready');
+		$('.paidContent').hide();
+	}
+
+	function syncHiddenSelects(st) {
+		$('#select_class').val(st.class_id);
+		$('#select_student').html(`<option value="${st.id}" selected>${st.regno} ${st.name}</option>`);
+	}
+
+	function loadStudent(studentId) {
+		const year = $('#select_year').val();
+		if (!studentId || !year) {
+			toastada.error('Select academic year first.');
+			return;
+		}
+		setScanStatus('⏳ Loading student...', 'busy');
+		$.getJSON(`<?= base_url('fees_entry_student_context/') ?>${studentId}?year=${year}`, function (res) {
+			if (!res.success) {
+				setScanStatus('❌ ' + (res.error || 'Student not found'), 'err');
+				toastada.error(res.error || 'Could not load student.');
+				return;
 			}
-			$("#spAmountChange").text(amount);
-		});
-		$("#btn_generate").on("click", function (e) {
+			syncHiddenSelects(res.student);
+			renderStudentCard(res.student);
 			reloadSummaryReport();
+			$('#successAlert').show();
+			setScanStatus('✅ ' + res.student.name + ' loaded', 'ok');
+			$('.fe-student-chip').removeClass('active');
+			$(`.fe-student-chip[data-id="${res.student.id}"]`).addClass('active');
+		}).fail(function () {
+			setScanStatus('⚠️ Network error', 'err');
+			toastada.error('Unable to load student.');
 		});
-		$("#mdlfeesEntry").on("shown.bs.modal", function (e) {
-			var std = $("#select_student").val();
-			$("#mdlfeesEntry [name='studentid']").val(std).change();
-		});
+	}
 
-		$("#select_fees_type").on("change", function () {
-			var schltype = $(this).val();
-			var classe = $("#select_class").val();
-			var year = $("#select_year").val();
-			var std = $("#select_student").val();
-			if (schltype == 1) {
-				$.get("<?=base_url();?>get_extra_fees/" + classe + "/" + std, function (data) {
-					$("[name='ExtrafeeType']").html(data);
-					$("#extrafeesType").show();
-					$("#schoolfeesType").hide();
-				});
-			} else {
-				$.get("<?=base_url();?>get_school_fees/" + year + "/" + std + "/" + classe, function (data) {
-					$("[name='select_term']").html(data);
-					$("#extrafeesType").hide();
-					$("#schoolfeesType").show();
-				});
-				$("#schoolfeesType").show();
-				$("#extrafeesType").hide();
-			}
-
-		});
-		$("#select_fees_term").on("change", function () {
-			var sdt = $("#select_student").val();
-			var term = $(this).val();
-			$.getJSON("<?=base_url();?>get_schoolfees_single_record/" + term + "/" + sdt, function (data) {
-				var remain = data.schlfee_amt - data.paid_amt;
-				var expected = data.schlfee_amt;
-				var paid = data.paid_amt
-				if (expected == paid) {
-					$("#remainDiv").hide();
-					$("#recievedDiv").hide();
-					$("#duedateDiv").hide();
-					$("#btnSave").prop("disabled", true);
-				} else {
-					$("#remainDiv").show();
-					$("#recievedDiv").show();
-					$("#duedateDiv").show();
-					$("#btnSave").prop("disabled", false);
-				}
-				$("#mdlfeesEntry [name='expected_amount']").val(data.schlfee_amt).change();
-				$("#mdlfeesEntry [name='paid_amount']").val(data.paid_amt).change();
-				$("#mdlfeesEntry [name='remain_amount']").val(remain).change();
-			});
-
-		});
-		$("#ExtrafeeType").on("change", function () {
-			let extra = $(this).val();
-			let sdt = $("#studentId").val();
-			$.getJSON("<?=base_url();?>get_extra_single_record/" + extra + "/" + sdt, function (data) {
-				let remain = Number(data.extra_amt - data.paid_amt)
-				let expected = data.extra_amt;
-				let paid = data.paid_amt
-				if (expected == paid) {
-					$("#remainDiv").hide();
-					$("#recievedDiv").hide();
-					$("#duedateDiv").hide();
-					$("#btnSave").prop("disabled", true);
-				} else {
-					$("#remainDiv").show();
-					$("#recievedDiv").show();
-					$("#duedateDiv").show();
-					$("#btnSave").prop("disabled", false);
-				}
-				$("#mdlfeesEntry [name='expected_amount']").val(data.extra_amt).change();
-				$("#mdlfeesEntry [name='paid_amount']").val(data.paid_amt)
-				$("#mdlfeesEntry [name='remain_amount']").val(remain)
-			});
-
-		});
-		let year1, student1, rows1
-		$('#history-tab').on('click', function (e) {
-			year1 = $("#select_year").val()
-			student1 = $("#select_student").val()
-			$("#historyTable tbody").html(" ")
-			$.getJSON("<?=base_url();?>getFeesHistoricalAjax/" + student1 + "/" + year1, (data) => {
-				rows1 = ""
-				$.each(data, (index, record) => {
-					const dt = encodeURIComponent(record.id + ':' + record.type);
-					const style = record.status == -1 ? "color: red;text-decoration: line-through;" : "";
-					rows1 += "<tr style='" + style + "'>" +
-						"<td>" + (record.status == -1 ? '' : "<input type='checkbox' name='toPrint[]' class='checkedItem' value='" + dt + "'>") + "</td>" +
-						"<td>" + (index + 1) + "</td>" +
-						"<td>" + getJsTermToString(record.term) + "</td> " +
-						"<td>" + record.item + "</td> " +
-						"<td>" + record.amount + " Rwf</td>" +
-						"<td>" + paymentModeToString(record.payment_mode) + "</td>" +
-						"<td>" + record.date + "</td>" +
-						"<td>" + (record.status == -1 ? '' : '<button type="button" class="btn btn-warning" id="btn-cancel-invoice" ' +
-							'data-title="' + record.item + ' of ' + getJsTermToString(record.term) + '" data-toggle="delete" ' +
-							'data-target="' + record.id + '"  data-href="cancel_fee_record/' + record.id + '">Cancel invoice</button>') + "</td>" +
-						"</tr>"
-				})
-				$("#historyTable tbody").html(rows1)
-			});
+	function handleCardScan(uid) {
+		setScanStatus('⏳ Checking card...', 'busy');
+		fetch('<?= base_url('api/permission_card_scan') ?>', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: 'card=' + encodeURIComponent(uid) + '&school_id=<?= (int) session('soma_school_id') ?>'
 		})
-	})
-	function reloadSummaryReport() {
-		var classe = $("#select_class").val();
-		var year = $("#select_year").val();
-		var std = $("#select_student").val();
-		// alert(classe);
-		$.get("<?=base_url();?>get_student_fees/" + year + "/" + std + "/" + classe, function (data) {
-			$("[name='tblfees']").html(data);
-			$(".paidContent").show();
+			.then(r => r.json())
+			.then(res => {
+				if (!res.success || res.error) {
+					setScanStatus('❌ ' + (res.error || 'Card not found'), 'err');
+					return;
+				}
+				if (res.student) loadStudent(res.student.id);
+			})
+			.catch(err => setScanStatus('⚠️ ' + err.message, 'err'));
+	}
+
+	$('#search_mode').on('change', function () {
+		$('#successAlert').hide();
+		if ($(this).val() === 'card') setScanStatus('Waiting for card...', '');
+		if ($(this).val() !== 'class') $('#feClassPick').removeClass('visible');
+	});
+
+	$('#select_year').on('change', function () {
+		const sid = $('#select_student').val();
+		if (sid) loadStudent(sid);
+		else clearStudentCard();
+	});
+
+	$('#student_search_input').on('keyup', function () {
+		const term = $(this).val().trim();
+		if (term.length < 2) {
+			$('#student_search_box').hide().empty();
+			return;
+		}
+		$.ajax({
+			url: '<?= base_url('search_student') ?>',
+			type: 'POST',
+			dataType: 'json',
+			data: { searchTerm: term },
+			success: function (data) {
+				let html = '';
+				if (!data.length) {
+					html = "<div class='text-muted text-center p-2'>No students found</div>";
+				} else {
+					data.forEach(st => {
+						html += `<div class='card-scan-student-item student-item' data-id='${st.id}'>${st.text}</div>`;
+					});
+				}
+				$('#student_search_box').html(html).show();
+			}
+		});
+	});
+
+	$(document).on('click', '.student-item', function () {
+		const id = $(this).data('id');
+		$('#student_search_input').val('');
+		$('#student_search_box').hide();
+		loadStudent(id);
+	});
+
+	$('#search_class').on('select2:select', function (e) {
+		const classId = e.params.data.id;
+		const year = $('#select_year').val();
+		$.get(`<?= base_url('get_student/') ?>${classId}/1/7/${year}`, function (html) {
+			const $tmp = $('<select>').html(html);
+			let chips = '';
+			$tmp.find('option').each(function () {
+				const v = $(this).val();
+				const t = $(this).text().trim();
+				if (v && t) {
+					chips += `<button type="button" class="fe-student-chip" data-id="${v}">${t}</button>`;
+				}
+			});
+			$('#feClassChips').html(chips || '<span class="text-muted">No students in this class.</span>');
+			$('#feClassPick').addClass('visible');
+		});
+	});
+
+	$(document).on('click', '.fe-student-chip', function () {
+		loadStudent($(this).data('id'));
+	});
+
+	document.addEventListener('keypress', function (e) {
+		if ($('#search_mode').val() !== 'card') return;
+		if (['receivedAmount', 'reason', 'destination'].includes(document.activeElement.id)) return;
+		if (e.key === 'Enter') {
+			const uid = cardBuffer.trim();
+			cardBuffer = '';
+			if (uid.length >= 4) {
+				handleCardScan((window.CardUid && CardUid.forScan) ? CardUid.forScan(uid) : uid.replace(/[^A-Fa-f0-9]/g, '').toUpperCase());
+			}
+		} else {
+			cardBuffer += e.key;
+		}
+	});
+
+	$('#cardInput').on('focus', function () { $(this).blur(); });
+
+	// ---- smart multi-line invoice modal ----
+
+	function formatRwf(n) {
+		return Number(n || 0).toLocaleString();
+	}
+
+	function feInvoiceUpdateTotal() {
+		let total = 0;
+		let count = 0;
+		$('#feInvoiceBody .fe-inv-check:checked').each(function () {
+			const $row = $(this).closest('tr');
+			const amt = parseFloat($row.find('.fe-inv-amount').val()) || 0;
+			const max = parseFloat($row.data('remain')) || 0;
+			if (amt > 0 && amt <= max + 0.001) {
+				total += amt;
+				count++;
+			}
+		});
+		const mode = $('#feInvoicePaymentMode').val();
+		const slipOk = mode !== '1' || ($('#feInvoiceSlipRef').val() || '').trim().length > 0;
+		$('#feInvoiceTotal').text(formatRwf(total));
+		$('#feSaveCount').text(count > 0 ? '(' + count + ' item' + (count > 1 ? 's' : '') + ')' : '');
+		$('#btnSave').prop('disabled', count === 0 || !mode || !slipOk);
+	}
+
+	function feToggleSlipRef() {
+		const isBank = $('#feInvoicePaymentMode').val() === '1';
+		$('#feSlipRefWrap').toggle(isBank);
+		if (!isBank) {
+			$('#feInvoiceSlipRef').val('');
+		}
+		feInvoiceUpdateTotal();
+	}
+
+	function feInvoiceRenderItems(items) {
+		let html = '';
+		let lastCat = '';
+		items.forEach(function (it) {
+			if (it.category !== lastCat) {
+				html += '<tr class="fe-inv-section"><td colspan="7">' + it.category + '</td></tr>';
+				lastCat = it.category;
+			}
+			html += '<tr class="fe-inv-row" data-id="' + it.id + '" data-type="' + it.fee_type + '" data-remain="' + it.remain + '">' +
+				'<td><input type="checkbox" class="fe-inv-check"></td>' +
+				'<td>' + it.label + '</td>' +
+				'<td>' + it.term + '</td>' +
+				'<td class="text-right">' + formatRwf(it.expected) + '</td>' +
+				'<td class="text-right">' + formatRwf(it.paid) + '</td>' +
+				'<td class="text-right fe-amount-due">' + formatRwf(it.remain) + '</td>' +
+				'<td class="text-right"><input type="number" class="form-control form-control-sm fe-inv-amount text-right" min="1" step="1" max="' + it.remain + '" placeholder="0" disabled></td>' +
+				'</tr>';
+		});
+		$('#feInvoiceBody').html(html);
+	}
+
+	function feInvoiceLoadItems() {
+		const std = $('#select_student').val();
+		const year = $('#select_year').val();
+		const classe = $('#select_class').val();
+		if (!std || !year || !classe) {
+			toastada.error('Select a student first.');
+			$('#mdlfeesEntry').modal('hide');
+			return;
+		}
+		$('#studentId').val(std);
+		$('#feInvoiceLoading').show();
+		$('#feInvoiceEmpty').hide();
+		$('#feInvoiceWrap').hide();
+		$('#btnSave').prop('disabled', true);
+		$('#feInvoicePaymentMode').val('');
+		$('#feInvoiceDueDate').val('');
+		$('#feInvoiceSlipRef').val('');
+		feToggleSlipRef();
+
+		$.getJSON('<?= base_url('get_fee_invoice_items/') ?>' + year + '/' + std + '/' + classe, function (res) {
+			$('#feInvoiceLoading').hide();
+			if (!res.success) {
+				toastada.error(res.error || 'Could not load items.');
+				return;
+			}
+			if (!res.items || !res.items.length) {
+				$('#feInvoiceEmpty').show();
+				return;
+			}
+			feInvoiceRenderItems(res.items);
+			$('#feInvoiceWrap').show();
+			feInvoiceUpdateTotal();
+		}).fail(function () {
+			$('#feInvoiceLoading').hide();
+			toastada.error('Unable to load invoice items.');
 		});
 	}
 
-	function getJsTermToString(term) {
-		switch (term) {
-			case '1':
-				return "First term"
-			case '2':
-				return "Second term"
-			case '3':
-				return "Third term"
-			default:
-				return term
+	$('#mdlfeesEntry').on('shown.bs.modal', feInvoiceLoadItems);
+
+	$(document).on('change', '.fe-inv-check', function () {
+		const $row = $(this).closest('tr');
+		const $amt = $row.find('.fe-inv-amount');
+		if ($(this).is(':checked')) {
+			$amt.prop('disabled', false);
+			if (!$amt.val()) {
+				$amt.val($row.data('remain'));
+			}
+			$amt.focus().select();
+		} else {
+			$amt.prop('disabled', true).val('');
 		}
+		feInvoiceUpdateTotal();
+	});
+
+	$(document).on('input', '.fe-inv-amount', feInvoiceUpdateTotal);
+
+	$('#feInvoicePaymentMode').on('change', feToggleSlipRef);
+	$('#feInvoiceSlipRef').on('input', feInvoiceUpdateTotal);
+
+	$('#feInvSelectAll').on('click', function () {
+		$('#feInvoiceBody .fe-inv-check').each(function () {
+			$(this).prop('checked', true).trigger('change');
+		});
+	});
+
+	$('#feInvFillBalance').on('click', function () {
+		$('#feInvoiceBody .fe-inv-check:checked').each(function () {
+			const $row = $(this).closest('tr');
+			$row.find('.fe-inv-amount').val($row.data('remain'));
+		});
+		feInvoiceUpdateTotal();
+	});
+
+	$('#frmSaveFeesRecords').on('submit', function (e) {
+		e.preventDefault();
+		const mode = $('#feInvoicePaymentMode').val();
+		if (!mode) {
+			toastada.error('Select payment mode.');
+			return;
+		}
+		const slipRef = ($('#feInvoiceSlipRef').val() || '').trim();
+		if (mode === '1' && !slipRef) {
+			toastada.error('<?= esc(lang('app.slipReferenceRequired')); ?>');
+			return;
+		}
+		const payload = {
+			studentid: $('#studentId').val(),
+			dueDate: $('#feInvoiceDueDate').val(),
+			slipRef: slipRef,
+			'items[]': [],
+			'feeTypes[]': [],
+			'amounts[]': [],
+			'modes[]': []
+		};
+		let hasError = false;
+		let count = 0;
+		$('#feInvoiceBody .fe-inv-row').each(function () {
+			const $cb = $(this).find('.fe-inv-check');
+			if (!$cb.is(':checked')) return;
+			const amount = parseFloat($(this).find('.fe-inv-amount').val()) || 0;
+			const max = parseFloat($(this).data('remain')) || 0;
+			if (amount <= 0) return;
+			if (amount > max + 0.001) {
+				toastada.error('Amount exceeds balance for ' + $(this).find('td').eq(1).text());
+				hasError = true;
+				return false;
+			}
+			payload['items[]'].push($(this).data('id'));
+			payload['feeTypes[]'].push($(this).data('type'));
+			payload['amounts[]'].push(amount);
+			payload['modes[]'].push(mode);
+			count++;
+		});
+		if (hasError || count === 0) {
+			if (!hasError) toastada.error('Select at least one item with a valid amount.');
+			return;
+		}
+		const $btn = $('#btnSave');
+		const btnHtml = $btn.html();
+		$btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving…');
+		$.ajax({
+			url: '<?= base_url('manipulate_fee_entry') ?>',
+			type: 'POST',
+			data: payload,
+			traditional: true,
+			dataType: 'json',
+			success: function (data) {
+			$btn.prop('disabled', false).html(btnHtml);
+			if (data.error) {
+				toastada.error(data.error);
+				return;
+			}
+			toastada.success(data.success);
+			$('#mdlfeesEntry').modal('hide');
+			reloadSummaryReport();
+			if (data.url || data.print_url) {
+				const w = window.open(data.url || data.print_url, '_blank', 'width=420,height=720');
+				if (w) w.focus();
+			}
+			},
+			error: function () {
+				toastada.error('Save failed. Please try again.');
+			},
+			complete: function () {
+				$btn.prop('disabled', false).html(btnHtml);
+			}
+		});
+	});
+
+	// ---- other fee entry handlers ----
+
+	$(document).on('change', '.checkedItem', function () {
+		let checked = $(this).val();
+		if ($(this).is(':checked')) {
+			if (checkedItems.indexOf(checked) === -1) checkedItems.push(checked);
+		} else {
+			const index = checkedItems.indexOf(checked);
+			if (index !== -1) checkedItems.splice(index, 1);
+		}
+	});
+
+	$(document).on('click', '.btn-del-fee', function () {
+		const title = $(this).parent('td').children('span').text();
+		const id = $(this).parent('td').data('id');
+		if (confirm('Please confirm Extra fee removal #' + title)) {
+			$.post('<?= base_url('remove_extra_fee') ?>', 'id=' + id, function (data) {
+				if (data.hasOwnProperty('success')) {
+					toastada.success(data.success);
+					reloadSummaryReport();
+				} else {
+					toastada.error(data.error);
+				}
+			});
+		}
+	});
+
+	$('#printForm').submit(function (e) {
+		e.preventDefault();
+		const student = $('#select_student').val();
+		const selected = [];
+		$('#historyTable .checkedItem:checked').each(function () {
+			selected.push(decodeURIComponent($(this).val()));
+		});
+		if (!selected.length) {
+			toastada.error('Select at least one approved payment to print.');
+			return;
+		}
+		const rows = selected.join('-');
+		$('#printLink').attr('href', '<?= base_url('printFeesHistory') ?>/' + rows + '/' + student)[0].click();
+	});
+
+	$('#btn-add-fees').on('click', function () {
+		var std = $('#select_student').val();
+		if (!std) { toastada.error('Select a student first.'); return; }
+		$.getJSON('<?= base_url('get_student_json/') ?>' + std, function (data) {
+			if (data.hasOwnProperty('success')) {
+				$('#mdlExtraFeesStudent [name="studentName"]').val(data.student.names);
+				$('#mdlExtraFeesStudent [name="studentId"]').val(data.student.id);
+				$('#mdlExtraFeesStudent').modal();
+			} else {
+				toastada.error('Invalid student: ' + data.message);
+			}
+		});
+	});
+
+	$(document).on('click', '.btn-append-fees', function () {
+		var std = $('#select_student').val();
+		const btn = $(this);
+		$.getJSON('<?= base_url('get_student_json/') ?>' + std, function (data) {
+			if (data.hasOwnProperty('success')) {
+				$('#mdlDiscountFeesStudent [name="studentName"]').val(data.student.names);
+				$('#mdlDiscountFeesStudent [name="studentId"]').val(data.student.id);
+				$('#mdlDiscountFeesStudent [name="feeId"]').val(btn.data('id'));
+				$('#mdlDiscountFeesStudent [name="feeAmount"]').val(btn.data('amount'));
+				$('#mdlDiscountFeesStudent').modal();
+			} else {
+				toastada.error('Invalid student: ' + data.message);
+			}
+		});
+	});
+
+	$(document).on('click', '.btn-edit-extra-fees', function () {
+		var std = $('#select_student').val();
+		const btn = $(this);
+		$.getJSON('<?= base_url('get_student_json/') ?>' + std, function (data) {
+			if (data.hasOwnProperty('success')) {
+				$('#mdlEditExtraFeesStudent [name="studentName"]').val(data.student.names);
+				$('#mdlEditExtraFeesStudent [name="studentId"]').val(data.student.id);
+				$('#mdlEditExtraFeesStudent [name="feeId"]').val(btn.data('id'));
+				$('#mdlEditExtraFeesStudent [name="feeAmount"]').val(btn.data('amount'));
+				$('#mdlEditExtraFeesStudent').modal();
+			} else {
+				toastada.error('Invalid student: ' + data.message);
+			}
+		});
+	});
+
+	$(document).on('blur', '#feeNewAmount', function () {
+		const amount = $('#feeNewAmount').val() - $('#feeOldAmount').val();
+		$('#spAmountChangeDiscount').hide();
+		$('#spAmountChangeIncrease').hide();
+		if (amount > 0) {
+			$('#spAmountChangeIncrease').show();
+		} else {
+			$('#spAmountChangeDiscount').show();
+		}
+		$('#spAmountChange').text(amount);
+	});
+
+	function reloadSummaryReport() {
+		var classe = $('#select_class').val();
+		var year = $('#select_year').val();
+		var std = $('#select_student').val();
+		if (!classe || !year || !std) return;
+		$.get('<?= base_url('get_student_fees/') ?>' + year + '/' + std + '/' + classe, function (data) {
+			$('[name="tblfees"]').html(data);
+			$('.paidContent').show();
+			loadPaymentHistory();
+		});
 	}
 
-	function paymentModeToString(mode) {
-		switch (mode) {
-			case '1':
-				return "Bank slip"
-			case '2':
-				return "Cash"
-			case '3':
-				return "Cheque"
-			case '4':
-				return "MTN Momo"
-			case '5':
-				return "Airtel Money"
-			default:
-				return mode
+	function loadPaymentHistory() {
+		const studentId = $('#select_student').val();
+		const year = $('#select_year').val();
+		if (!studentId || !year) {
+			$('#historyTable tbody').html('');
+			return;
 		}
+		$.getJSON('<?= base_url('getFeesHistoricalAjax/') ?>' + studentId + '/' + year, function (data) {
+			let rows1 = '';
+			checkedItems = [];
+			$.each(data, function (index, record) {
+				const dt = encodeURIComponent(record.id + ':' + record.type);
+				const statusNum = parseInt(record.status, 10);
+				const isCancelled = statusNum === -1;
+				const canPrint = !isCancelled;
+				let style = '';
+				if (isCancelled) style = 'color:red;text-decoration:line-through;';
+				const refCell = record.refNo ? record.refNo : '—';
+				let statusCell = isCancelled ? '—' : "<span class='badge badge-success'><?= esc(lang('app.feeStatusApproved')); ?></span>";
+				let actions = '';
+				if (canPrint) {
+					const printUrl = '<?= base_url('print_fee_receipt/') ?>' + dt + '/' + studentId + '?autoprint=1';
+					actions = "<button type='button' class='btn btn-sm btn-success btn-print-receipt' data-url='" + printUrl + "'>" +
+						"<i class='fa fa-print'></i> <?= esc(lang('app.printReceipt')); ?></button>";
+				}
+				rows1 += "<tr style='" + style + "'>" +
+					'<td>' + (canPrint ? "<input type='checkbox' name='toPrint[]' class='checkedItem' value='" + dt + "'>" : '') + '</td>' +
+					'<td>' + (index + 1) + '</td>' +
+					'<td>' + getJsTermToString(record.term) + '</td> ' +
+					'<td>' + record.item + '</td> ' +
+					'<td>' + record.amount + ' Rwf</td>' +
+					'<td>' + paymentModeToString(record.payment_mode) + '</td>' +
+					'<td>' + refCell + '</td>' +
+					'<td>' + record.date + '</td>' +
+					'<td>' + statusCell + '</td>' +
+					'<td>' + actions + '</td>' +
+					'</tr>';
+			});
+			$('#historyTable tbody').html(rows1);
+		});
 	}
+
+	$(document).on('click', '.btn-print-receipt', function () {
+		const url = $(this).data('url');
+		if (url) {
+			const w = window.open(url, '_blank', 'width=420,height=720');
+			if (w) w.focus();
+		}
+	});
+
+	$('a[href="#fees-historical-report-tab"]').on('shown.bs.tab', loadPaymentHistory);
+});
+
+function getJsTermToString(term) {
+	switch (term) {
+		case '1': return 'First term';
+		case '2': return 'Second term';
+		case '3': return 'Third term';
+		default: return term;
+	}
+}
+
+function paymentModeToString(mode) {
+	switch (mode) {
+		case '1': return 'Bank slip';
+		case '2': return 'Cash';
+		case '3': return 'Cheque';
+		case '4': return 'MTN Momo';
+		case '5': return 'Airtel Money';
+		default: return mode;
+	}
+}
 </script>

@@ -119,7 +119,7 @@ class MenuClearance
 			// Keep fee menus for leaders if they already had them (master full access) — but no budget prepare
 			$feeKeep = [];
 			foreach ($keys as $k) {
-				if (in_array($k, self::feeMenuKeys(), true) || $k === 'fees' || $k === 'fees_pending_approval') {
+				if (in_array($k, self::feeMenuKeys(), true) || $k === 'fees') {
 					$feeKeep[] = $k;
 				}
 			}
@@ -137,7 +137,7 @@ class MenuClearance
 
 		if (in_array($postId, self::CHILD_BUDGET_PREPARE_POSTS, true)) {
 			$extra = self::childBudgetPrepareKeys();
-			if ($postId === 9) {
+			if (in_array($postId, [8, 9], true)) {
 				$extra = array_merge($extra, self::feeMenuKeys());
 			}
 			return array_values(array_unique(array_merge($nonFinance, $extra)));
@@ -384,7 +384,6 @@ class MenuClearance
 				'label' => 'Fees Management',
 				'children' => [
 					['key' => 'fees_entry', 'label' => 'Fees Entry'],
-					['key' => 'fees_pending_approval', 'label' => 'Pending Fees Approval'],
 					['key' => 'school_fees_management', 'label' => 'School Fees Management'],
 					['key' => 'extra_fees_management', 'label' => 'Extra Fees Management'],
 					['key' => 'transport_fees_management', 'label' => 'Transport Fees Management'],
@@ -650,24 +649,17 @@ class MenuClearance
 
 		// Staffs / leave_management / settings: was is_allowed(1, 3) only
 
-		// Fees: is_allowed(1, 9, 3) — Accountant also prepares budget by default
-		if ($postId === 9) {
+		// Fees: Accountant and Cashier record and print receipts immediately
+		if (in_array($postId, [8, 9], true)) {
 			$keys = array_merge($keys, self::feeMenuKeys());
 			$keys = array_merge($keys, self::childBudgetPrepareKeys());
 		}
 
-		// Fees pending approval + finance menu for Director / Deputy Director of Finance (master/central)
 		if (in_array($postId, [21, 24], true)) {
 			$keys[] = 'finance';
-			$keys[] = 'fees_pending_approval';
 		}
 		if ($postId === 24) {
 			$keys = array_merge($keys, self::feeMenuKeys());
-		}
-
-		// Cashier: prepare & fill budget (child-school default; also on master)
-		if ($postId === 8) {
-			$keys = array_merge($keys, self::childBudgetPrepareKeys());
 		}
 
 		// School leaders: view-only budget dashboard (defaults). Full-access posts 1/3/18 already have allKeys().

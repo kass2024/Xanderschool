@@ -715,14 +715,6 @@
 													</a>
 												</li>
 												<?php } ?>
-												<?php if (menu_clearance_allowed('fees_pending_approval')) { ?>
-												<li>
-													<a href="<?= base_url('fees_pending_approval'); ?>">
-														<i class="metismenu-icon"></i>
-														<?= lang("app.feesPendingApproval"); ?>
-													</a>
-												</li>
-												<?php } ?>
 												<?php if (menu_clearance_allowed('school_fees_management')) { ?>
 												<li>
 													<a href="<?= base_url('school_fees_management'); ?>">
