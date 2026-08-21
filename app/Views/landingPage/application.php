@@ -269,9 +269,8 @@
 	#progressbar li.active:after {
 		background: linear-gradient(135deg, var(--app-cyan), var(--app-cyan-d));
 	}
-	#progressbar #payment:before,
+	#progressbar #family:before,
 	#progressbar #personal:before,
-	#progressbar #complete:before,
 	#progressbar #confirm:before,
 	#progressbar #documents:before {
 		font-family: inherit;
@@ -446,6 +445,7 @@
 	}
 	.ss-search-field input { padding-left: 2.35rem !important; }
 	.ss-app .registration-data .form-group { margin-bottom: .85rem; }
+	.ss-app .registration-data.is-visible { display: block !important; }
 	@media (max-width: 768px) {
 		.ss-app {
 			padding: calc(64px + .85rem) .65rem 2.5rem;
@@ -558,9 +558,8 @@
 							<!-- progressbar -->
 							<ul id="progressbar">
 								<li id="personal" class="active"><strong>Personal</strong></li>
-								<li id="payment" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Family</strong></li>
+								<li id="family" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Family</strong></li>
 								<li id="documents" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Documents</strong></li>
-								<li id="complete" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Payment</strong></li>
 								<li id="confirm" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Finish</strong></li>
 							</ul>
 
@@ -570,6 +569,9 @@
 									  action="<?= site_url('manipulateStudentSelfRegistration'); ?>"
 									  class="validates" enctype="multipart/form-data">
 									<input type="hidden" name="religion" value="Not specified">
+									<input type="hidden" name="applicationId" value="">
+									<input type="hidden" name="applicationSettings" value="">
+									<input type="hidden" name="paymentMethod" value="deferred">
 									<input type="hidden" id="registration_fee_mode" value="flat">
 									<!-- STEP 1: PERSONAL -->
 									<fieldset>
@@ -927,104 +929,20 @@
 											<div class="form-group" style="display:none;">
 												<input type="file" name="documents[]" id="legacyDocuments" class="form-control" multiple accept=".pdf,.jpg,.jpeg,.png">
 											</div>
-										</div>
-										<div class="fieldset-actions">
-										<input type="button" name="next" class="next action-button" value="Next"/>
-										<input type="button" name="previous" class="previous action-button-previous" value="Previous"/>
-										</div>
-									</fieldset>
 
-									<!-- STEP 4: PAYMENT -->
-									<fieldset>
-										<div class="form-card">
-											<div class="reg-fee-box" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
-												<h5 class="fs-title" style="font-size:16px;margin:0 0 10px;">Registration fee summary</h5>
-												<div id="paymentClassBanner" class="ss-hint-box" style="margin-bottom:12px;display:none;">
-													<strong>Selected class:</strong> <span id="payment_class_label">—</span>
-												</div>
-												<table style="width:100%;font-size:14px;margin:0;">
-													<tr>
-														<td style="padding:4px 0;">Registration fee <small class="text-muted" id="payment_fee_note"></small></td>
-														<td style="padding:4px 0;text-align:right;"><strong id="registration_amount">—</strong></td>
-													</tr>
-													<tr class="fee-row-gateway" id="rowServiceCharges">
-														<td style="padding:4px 0;color:#64748b;">Service charges</td>
-														<td style="padding:4px 0;text-align:right;color:#64748b;" id="registration_charges">—</td>
-													</tr>
-													<tr class="fee-row-gateway fee-row-platform" id="rowPlatformFee" style="display:none;">
-														<td style="padding:4px 0;color:#64748b;">Platform fee</td>
-														<td style="padding:4px 0;text-align:right;color:#64748b;" id="registration_platform">—</td>
-													</tr>
-													<tr style="border-top:1px solid #cbd5e1;">
-														<td style="padding:8px 0 0;font-weight:700;">Total due</td>
-														<td style="padding:8px 0 0;text-align:right;font-weight:700;color:#0f766e;" id="registration_due">—</td>
-													</tr>
-												</table>
-												<input type="hidden" id="fee_raw_registration" value="0">
-												<input type="hidden" id="fee_raw_charges" value="0">
-												<input type="hidden" id="fee_raw_platform" value="0">
-												<input type="hidden" id="fee_platform_enabled" value="0">
-												<div id="payment_bypass_note" class="alert alert-warning" style="display:none;margin:12px 0 0;padding:10px;border-radius:8px;font-size:13px;">
-													<strong>Live MOMO is unavailable right now.</strong>
-													You can still submit and upload another payment proof (bank slip, receipt, etc.), or ask the school to enable MoPay and set the MOMO receive number in Basic Settings.
-												</div>
-												<div id="payment_momo_ready_note" class="alert alert-info" style="display:none;margin:12px 0 0;padding:10px;border-radius:8px;font-size:13px;background:#ecfeff;border-color:#a5f3fc;color:#155e75;">
-													Approve the MTN MOMO prompt on your phone. The school receives the registration fee on the MOMO number configured in Basic Settings.
-												</div>
-												</div>
-												<input type="hidden" name="applicationId">
-												<input type="hidden" name="applicationSettings">
-											<input type="hidden" id="payment_bypass_flag" value="0">
-
-											<div class="form-group">
-												<label class="control-label mb-2">How will you pay?</label>
-												<div class="form-check" style="margin-bottom:8px;">
-													<input class="form-check-input" type="radio" name="paymentMethod" id="payMethodMomo" value="momo" checked>
-													<label class="form-check-label" for="payMethodMomo">Live payment with MTN MOMO</label>
+											<div class="ss-hint-box">
+												Registration fee is collected when the school <strong>approves</strong> your application. You can submit now without paying.
 											</div>
-												<div class="form-check">
-													<input class="form-check-input" type="radio" name="paymentMethod" id="payMethodProof" value="proof">
-													<label class="form-check-label" for="payMethodProof">Other payment — attach proof (receipt / bank slip)</label>
-												</div>
-											</div>
-
-											<div id="payPanelMomo" class="form-group has-success">
-												<label class="control-label mb-1">
-													MOMO phone number
-													<span style="font-size: 10px;color: red !important;" id="momo_phone_hint">*Phone that will be charged via MTN MOMO</span>
-												</label>
-												<input id="cc-name" name="momoPhoneNumber" type="number" class="form-control">
-											</div>
-
-											<div id="payPanelProof" class="form-group" style="display:none;">
-												<label class="control-label mb-1">Payment proof (PDF, JPG, PNG) <span class="text-danger">*</span></label>
-												<input type="file" name="paymentProof" id="paymentProof" class="form-control" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
-												<small class="text-muted d-block">This file will appear under Uploaded documents for school review.</small>
-												<small class="text-muted d-block" id="preview-paymentProof" style="margin-top:6px;"></small>
-												<label class="control-label mb-1" style="margin-top:10px;">Contact phone</label>
-												<input name="proofPhoneNumber" type="number" class="form-control" placeholder="Phone we can reach you on">
-											</div>
-
 											<div class="form-group">
 												<div class="form-check">
 													<input type="checkbox" class="form-check-input" name="confirm" id="exampleCheck1" onchange="agreeTerms()">
 													<label class="form-check-label" for="exampleCheck1">I agree to the <a href="#">terms &amp; conditions</a></label>
 												</div>
-												<div class="row justify-content-center">
-													<button type="submit" class="btn btn-md btn-info" id="btn-pay" disabled>Submit application</button>
-												</div>
-												<div id="pending" class="payment_pending">
-													<div class="row row justify-content-center">
-														<div class="col-10">
-															<p>Complete payment on your phone and continue with your application, if you didn't receive payment popup dial *182*7*1#</p>
-															<img src="<?= base_url('assets/images/loading.gif'); ?>" alt="Pending">
-														</div>
-													</div>
-												</div>
 											</div>
 										</div>
 										<div class="fieldset-actions">
-										<input type="button" name="previous" class="previous action-button-previous finalPrev" value="Previous"/>
+										<input type="button" name="previous" class="previous action-button-previous" value="Previous"/>
+										<button type="submit" class="action-button" id="btn-pay" disabled>Submit application</button>
 										</div>
 									</fieldset>
 								</form>
@@ -1079,8 +997,6 @@
 
 	<!-- Main inline script (safe: jQuery is now present) -->
 	<script type="text/javascript">
-		let checkInterval;
-
 		function ssBootApplication($) {
 			if (window.__ssAppBooted) return;
 			window.__ssAppBooted = true;
@@ -1109,93 +1025,28 @@
 				});
 			})();
 
-			$("[name='phoneNumber']").change(function () {
-				$("[name='momoPhoneNumber']").val($(this).val());
-				$("[name='proofPhoneNumber']").val($(this).val());
-			});
+			function getSchoolIdForReg() {
+				var locked = parseInt($("#locked_school_id").val(), 10) || 0;
+				if (locked > 0) return locked;
+				return parseInt($("#schoolOptions").val(), 10) || 0;
+			}
 
-			function formatRwf(n) {
-				n = parseInt(n, 10) || 0;
-				return n.toLocaleString('en-US') + ' Rwf';
-			}
-			function syncFeeSummary() {
-				var method = $("input[name='paymentMethod']:checked").val() || 'momo';
-				var fee = parseInt($("#fee_raw_registration").val(), 10) || 0;
-				var charges = parseInt($("#fee_raw_charges").val(), 10) || 0;
-				var platform = parseInt($("#fee_raw_platform").val(), 10) || 0;
-				var platformOn = parseInt($("#fee_platform_enabled").val(), 10) === 1 && platform > 0;
-				$("#registration_amount").text(fee > 0 ? formatRwf(fee) : '—');
-				if (method === 'proof') {
-					$(".fee-row-gateway").hide();
-					$("#registration_due").text(fee > 0 ? formatRwf(fee) : '—');
-				} else {
-					if (charges > 0) {
-						$("#rowServiceCharges").show();
-						$("#registration_charges").text(formatRwf(charges));
-					} else {
-						$("#rowServiceCharges").hide();
+			function missingRequiredDocs() {
+				var missing = null;
+				var $inputs = $("#dynamicDocsContainer .app-doc-input");
+				$inputs.each(function () {
+					if ($(this).attr('data-required') === '1') {
+						if (!this.files || !this.files[0]) {
+							missing = $(this).attr('data-label') || this.name;
+							return false;
+						}
 					}
-					if (platformOn) {
-						$("#rowPlatformFee").show();
-						$("#registration_platform").text(formatRwf(platform));
-					} else {
-						$("#rowPlatformFee").hide();
-						platform = 0;
-					}
-					$("#registration_due").text(fee > 0 || charges > 0 || platform > 0 ? formatRwf(fee + charges + platform) : '—');
-				}
-			}
-			function syncPaymentMethodUI() {
-				var method = $("input[name='paymentMethod']:checked").val() || 'momo';
-				var bypass = $("#payment_bypass_flag").val() === '1';
-				$("#pending").hide();
-				if (method === 'proof') {
-					$("#payPanelMomo").hide();
-					$("#payPanelProof").show();
-					$("[name='momoPhoneNumber']").prop('required', false);
-					$("#btn-pay").text("Submit with payment proof");
-				} else {
-					$("#payPanelProof").hide();
-					$("#payPanelMomo").show();
-					$("[name='momoPhoneNumber']").prop('required', true);
-					if (bypass) {
-						$("#btn-pay").text("Submit application");
-						$("#momo_phone_hint").text("*Contact / MOMO phone for your application");
-					} else {
-						$("#btn-pay").text("Pay with MOMO");
-						$("#momo_phone_hint").text("*Phone that will be charged via MTN MOMO");
-					}
-				}
-				syncFeeSummary();
-			}
-			$("input[name='paymentMethod']").on('change', syncPaymentMethodUI);
-			syncPaymentMethodUI();
-
-			(function bindPaymentProofPreview() {
-				var inp = document.getElementById('paymentProof');
-				var out = document.getElementById('preview-paymentProof');
-				if (!inp) return;
-				inp.addEventListener('change', function () {
-					if (!this.files || !this.files[0]) { if (out) out.textContent = ''; return; }
-					var f = this.files[0];
-					var ok = ['application/pdf','image/jpeg','image/png'].indexOf(f.type) !== -1;
-					if (!ok) {
-						this.value = '';
-						if (out) out.innerHTML = '<span style="color:#be2626;">Invalid file type. Use PDF/JPG/PNG.</span>';
-						return;
-					}
-					if (f.size > 5 * 1024 * 1024) {
-						this.value = '';
-						if (out) out.innerHTML = '<span style="color:#be2626;">File too large. Max 5 MB.</span>';
-						return;
-					}
-					if (out) out.textContent = 'Selected: ' + f.name + ' (' + Math.round(f.size/1024) + ' KB)';
 				});
-			})();
+				return missing;
+			}
 
 			$('#autoSave').on('submit', function (e) {
 				e.preventDefault();
-				// Auto-fill visitors from family fields when left blank (Excel parity)
 				var father = ($('#father').val() || '').trim();
 				var ftPhone = ($('#ft_phone').val() || '').trim();
 				var mother = ($('#mother').val() || '').trim();
@@ -1224,25 +1075,20 @@
 				$('#parentPhoneHidden').val(primaryPhone);
 				var relMap = { 'Father': '1', 'Mother': '2', 'Guardian': '3', 'Sibling': '3', 'Relative': '3', 'Other': '3' };
 				$('#relationshipHidden').val(relMap[v1r] || (mother && !father ? '2' : '1'));
-				var method = $("input[name='paymentMethod']:checked").val() || 'momo';
-				if (method === 'proof') {
-					var pf = document.getElementById('paymentProof');
-					if (!pf || !pf.files || !pf.files[0]) {
-						toastada.error("Please attach payment proof");
-						return;
-					}
-				} else {
-					var momo = $("[name='momoPhoneNumber']").val();
-					if (!momo || String(momo).length < 9) {
-						toastada.error("Please enter a valid MOMO phone number");
-						return;
-					}
+				var missingDoc = missingRequiredDocs();
+				if (missingDoc) {
+					toastada.error("Please upload: " + missingDoc);
+					return;
 				}
-				let btn = $(this).find("[type='submit']");
-				$(".finalPrev").hide();
+				if (!$("#exampleCheck1").is(":checked")) {
+					toastada.error("Please agree to the terms & conditions");
+					return;
+				}
+				var btn = $(this).find("[type='submit']");
 				btn.text("Please wait...").prop("disabled", true);
-				let formData = new FormData(this);
-				formData.set('paymentMethod', method);
+				var formData = new FormData(this);
+				formData.set('paymentMethod', 'deferred');
+				formData.set('school', String(getSchoolIdForReg()));
 				$.ajax({
 					type: 'POST',
 					url: $(this).attr('action'),
@@ -1251,40 +1097,19 @@
 					contentType: false,
 					processData: false,
 					success: function (res) {
-						if (res && res.success) {
-							$("[name='applicationId']").val(res.applicationId);
-							// Payment gateway bypass / proof upload: go straight to finish / code URL
-							if ((res.payment_bypass || res.payment_proof) && res.code) {
-								toastada.success(res.success || "Application submitted");
-								window.location.href = "<?= site_url('application'); ?>/" + res.code;
-								return;
-							}
-							$("#pending").show();
-							btn.hide();
-							setTimeout(function () {
-								$("#loading").hide();
-								toastada.error("Payment failed, timeout");
-								syncPaymentMethodUI();
-								btn.prop("disabled", false).show();
-								$("#pending").hide();
-								clearInterval(checkInterval);
-							}, 1000 * 60 * 5);
-							checkInterval = setInterval(function () {
-								checkPendingPayment(res.applicationId, btn);
-							}, 3000);
+						if (res && res.success && res.code) {
+							toastada.success(res.success || "Application submitted");
+							window.location.href = "<?= site_url('application'); ?>/" + res.code;
+							return;
 						}
 						if (res && res.error) {
 							toastada.error("Registration failed, " + res.error);
-							syncPaymentMethodUI();
-							btn.prop("disabled", false).show();
-							$("#loading").hide();
+							btn.prop("disabled", false).text("Submit application");
 						}
 					},
 					error: function () {
-						toastada.error("Payment failed, system error");
-						syncPaymentMethodUI();
-						btn.prop("disabled", false).show();
-						$("#loading").hide();
+						toastada.error("Could not submit application. Please try again.");
+						btn.prop("disabled", false).text("Submit application");
 					}
 				});
 			});
@@ -1298,7 +1123,7 @@
 			}
 
 			function showRegistrationForm() {
-				$(".registration-data").stop(true, true).css("display", "block");
+				$(".registration-data").stop(true, true).addClass("is-visible").css("display", "block");
 				$(".action-button.newApplicant").css("display", "inline-flex");
 			}
 
@@ -1335,25 +1160,10 @@
 						$(".requirement-doc").hide();
 					}
 					$("[name='applicationSettings']").val(data.settings_id);
-					$("#fee_raw_registration").val(parseInt(data.settings_fees_raw, 10) || 0);
-					$("#fee_raw_charges").val(parseInt(data.settings_charges_raw, 10) || 0);
-					$("#fee_raw_platform").val(parseInt(data.settings_platform_raw, 10) || 0);
-					$("#fee_platform_enabled").val(parseInt(data.settings_platform_enabled, 10) === 1 ? "1" : "0");
-					$("#registration_amount").text(data.settings_fees || "—");
-					var bypass = parseInt(data.payment_bypass, 10) === 1;
-					$("#payment_bypass_flag").val(bypass ? "1" : "0");
-					if (bypass) {
-						$("#payment_bypass_note").show();
-						$("#payment_momo_ready_note").hide();
-					} else {
-						$("#payment_bypass_note").hide();
-						$("#payment_momo_ready_note").show();
-					}
-					syncPaymentMethodUI();
-					$("#dynamicDocsContainer").html("<p class=\"text-muted\">Choose faculty and level to load required documents.</p>");
-					$("#docsHintText").text("Select a faculty and level — required uploads will appear here.");
+					$("#dynamicDocsContainer").html("<p class=\"text-muted\">Choose faculty and class to load required documents.</p>");
+					$("#docsHintText").text("Select a faculty and class — required uploads will appear here.");
 					var options = "<option disabled selected>-- Choose faculty --</option>";
-					$.each(data.faculties, function (i, obj) {
+					$.each(data.faculties || [], function (i, obj) {
 						options += "<option value='" + obj.id + "'>" + obj.name + "</option>";
 					});
 					$("#facultyOptions").html(options);
@@ -1412,7 +1222,7 @@
 				$(".registration-error").hide();
 
 				if (!program) {
-					$(".registration-data").hide();
+					$(".registration-data").removeClass("is-visible").hide();
 					$(".action-button.newApplicant").hide();
 					return;
 				}
@@ -1481,59 +1291,8 @@
 				});
 			});
 
-			function getSchoolIdForReg() {
-				var locked = parseInt($("#locked_school_id").val(), 10) || 0;
-				return locked > 0 ? locked : ($("#schoolOptions").val() || 0);
-			}
-
-			function applyClassFee(fee) {
-				fee = parseInt(fee, 10) || 0;
-				$("#fee_raw_registration").val(fee);
-				$("#registration_amount").text(fee > 0 ? formatRwf(fee) : '—');
-				syncPaymentMethodUI();
-			}
-
-			function refreshPaymentFeeFromClass() {
-				var $opt = $("#classOptions").find(":selected");
-				var fee = parseInt($opt.data("fee"), 10);
-				if (isNaN(fee) || fee < 0) {
-					fee = parseInt($("#fee_raw_registration").val(), 10) || 0;
-				}
-				var classText = ($opt.text() || "").trim();
-				if (classText && $opt.val()) {
-					var classLabel = classText.split("—")[0].trim();
-					$("#payment_class_label").text(classLabel);
-					$("#paymentClassBanner").show();
-					$("#payment_fee_note").text("(for " + classLabel + ")");
-				} else {
-					$("#paymentClassBanner").hide();
-					$("#payment_fee_note").text("");
-				}
-				applyClassFee(fee);
-			}
-
 			function refreshRegistrationFee() {
-				var feeMode = $("#registration_fee_mode").val() || "flat";
-				if (feeMode === "department") {
-					var deptId = $("#departmentOptions").val();
-					var studyMode = $("[name='studingMode']").val();
-					var schoolId = getSchoolIdForReg();
-					if (!deptId || studyMode === "" || studyMode === null || !schoolId) {
-						return;
-					}
-					$.getJSON("<?= site_url('getRegistrationFeeByDepartment'); ?>/" + schoolId + "/" + deptId + "/" + studyMode, function (data) {
-						if (data && data.success) {
-							applyClassFee(data.fee);
-							if (data.description) {
-								$("#payment_class_label").text(data.description);
-								$("#paymentClassBanner").show();
-								$("#payment_fee_note").text("(for " + data.description + ")");
-							}
-						}
-					});
-					return;
-				}
-				refreshPaymentFeeFromClass();
+				return;
 			}
 
 			$("#schoolOptions").on("change", function () {
@@ -1596,7 +1355,7 @@
 			function loadRequiredDocs() {
 				var facultyId = $("#facultyOptions").val();
 				var levelId = $("#levelHidden").val();
-				var schoolId = $("#schoolOptions").val();
+				var schoolId = getSchoolIdForReg();
 				if (!facultyId || !levelId) {
 					$("#dynamicDocsContainer").html('<p class="text-muted" id="docsEmptyMsg">Choose school, faculty and class on the Personal step to load the correct document list.</p>');
 					return;
@@ -1616,28 +1375,37 @@
 			// --- Faculty -> Departments
 			$("#facultyOptions").on("change", function () {
 				let id = $(this).val();
-				let school_id = $("#schoolOptions").val();
+				let school_id = getSchoolIdForReg();
 				let options = '<option disabled selected>-- Choose department --</option>';
 				$("#departmentOptions").html(options);
 				$("#classOptions").html('<option disabled selected value="">— Choose department first —</option>');
 				$("#levelHidden").val('');
 				$("#dynamicDocsContainer").html('<p class="text-muted">Choose a class to load required documents.</p>');
+				if (!id || !school_id) {
+					notifyError("Please choose school program first so faculty can load.");
+					return;
+				}
 				$.getJSON("<?= site_url('getDepartmentBySchool'); ?>/" + id + "/" + school_id, function (data) {
-					if (Array.isArray(data)) {
+					if (Array.isArray(data) && data.length) {
 						$.each(data, function (i, obj) {
 							options += "<option value='" + obj.id + "'>" + obj.name + "</option>";
 						});
 						$("#departmentOptions").html(options);
+					} else if (data && data.error) {
+						notifyError(data.error);
+					} else {
+						notifyError("No departments found for this faculty.");
 					}
 				}).fail(function(xhr){
 					console.error('Departments load failed:', xhr.status, xhr.responseText);
+					notifyError("Could not load departments. Please try again.");
 				});
 			});
 
 			// --- Department -> Classes (school-specific)
 			$("#departmentOptions").on("change", function () {
 				let deptId = $(this).val();
-				let school_id = $("#schoolOptions").val();
+				let school_id = getSchoolIdForReg();
 				let options = '<option disabled selected value="">— Select class —</option>';
 				$("#classOptions").html(options);
 				$("#levelHidden").val('');
@@ -1654,8 +1422,8 @@
 					}
 				}).fail(function(xhr){
 					console.error('Classes load failed:', xhr.status, xhr.responseText);
+					notifyError("Could not load classes. Please try again.");
 				});
-				refreshRegistrationFee();
 			});
 
 			$("#classOptions").on("change", function () {
@@ -1663,13 +1431,12 @@
 				var levelId = $opt.data('level') || '';
 				$("#levelHidden").val(levelId);
 				loadRequiredDocs();
-				refreshRegistrationFee();
 			});
 
 			let current_fs, next_fs, previous_fs;
 			let opacity;
 			let current = 1;
-			let steps = $("fieldset").length;
+			let steps = $("#autoSave > fieldset").length;
 
 			function setProgressBar(curStep) {
 				var percent = parseFloat(100 / steps) * curStep;
@@ -1677,44 +1444,6 @@
 				$(".progress-bar").css("width", percent + "%");
 			}
 			setProgressBar(current);
-
-			let current_fs, next_fs, previous_fs;
-				current_fs = $(this).closest('fieldset');
-				next_fs = current_fs.next('fieldset');
-				event.preventDefault();
-				$.ajax({
-					url: "<?= site_url('completeStudentApplication'); ?>",
-					method: 'POST',
-					data: new FormData(this),
-					contentType: false,
-					processData: false,
-					cache: false,
-					async: false,
-					success: function (data) {
-						var json = null;
-						try {
-							json = JSON.parse(data);
-							if (json.error) {
-								console.log("json.error");
-							} else {
-								alert("json.success");
-								$('#completeForm')[0].reset();
-								$("#progressbar li").eq($("fieldset").index(next_fs)).addClass("active");
-								next_fs.show();
-								current_fs.animate({opacity: 0}, {
-									step: function (now) {
-										opacity = 1 - now;
-										current_fs.css({ 'display': 'none', 'position': 'relative' });
-										next_fs.css({'opacity': opacity});
-									},
-									duration: 500
-								});
-								setProgressBar(4);
-							}
-						} catch (e) { console.log(e); }
-					}
-				});
-			});
 
 			function validateFieldset($fieldset) {
 				var valid = true;
@@ -1754,27 +1483,6 @@
 					var level = $('#levelHidden').val();
 					localStorage.setItem('data', JSON.stringify({ names, gender, phone, parentPhone, level }));
 					loadRequiredDocs();
-				}
-				// Documents step validation (dynamic fields)
-				if (current == 3) {
-					var missing = null;
-					$("#dynamicDocsContainer .app-doc-input").each(function () {
-						if ($(this).attr('data-required') === '1') {
-							if (!this.files || !this.files[0]) {
-								missing = $(this).attr('data-label') || this.name;
-								return false;
-							}
-						}
-					});
-					if (missing) {
-						toastada.error("Please upload: " + missing);
-						return false;
-					}
-					if (!$("#dynamicDocsContainer .app-doc-input").length) {
-						toastada.error("Please select faculty and class so required documents can load");
-						return false;
-					}
-					refreshRegistrationFee();
 				}
 				$("#progressbar li").eq($("#autoSave > fieldset").index(next_fs)).addClass("active");
 				next_fs.css("display", "block");
@@ -1817,23 +1525,6 @@
 		}
 		ssStartApplication();
 		window.addEventListener('load', ssStartApplication);
-
-		function checkPendingPayment(applicationId, btn) {
-			$.getJSON('<?= site_url('get_registration_status'); ?>', 'applicationId=' + applicationId, function (data) {
-				if (data && data.success) {
-					clearInterval(checkInterval);
-					window.location.href = "<?= base_url('application/'); ?>" + data.code;
-				}
-				if (data && data.error) {
-					$("#loading").hide();
-					toastada.error("Payment failed, timeout");
-					btn.text("Pay").prop("disabled", false).show();
-					$("#pending").hide();
-					clearInterval(checkInterval);
-					toastada.error(data.error);
-				}
-			});
-		}
 
 		function agreeTerms(){
 			$("#btn-pay").prop("disabled", !$("#exampleCheck1").is(":checked"));

@@ -18340,55 +18340,57 @@ public function assign_card()
 	{
 		$mdl = new FacultyModel();
 		$appMdl = new ApplicationSettingsModel();
-		$settings = $appMdl->select('id,start_date,end_date,requirement_document,registration_fees,fee_mode,babyeyi_required')
-				->where('school_id', $school)
-				->orderBy('id', 'desc')
-				->get(1)->getRow();
-		if ($settings == null) {
-			return $this->response->setJSON(["error" => "Online application not available for this school. Ask the school to configure registration fees in Settings."]);
+		$settingsRow = $appMdl->forSchool($school);
+		$settings = (object) $settingsRow;
+
+		$loadFaculties = static function (int $programFilter) use ($mdl, $school): array {
+			$builder = $mdl->select("faculty.id,faculty.title as name")
+					->join("departments d", "d.faculty_id=faculty.id")
+					->join("classes c", "c.department=d.id")
+					->where("c.school_id", $school);
+			if ($programFilter === 1 || $programFilter === 2) {
+				$builder->where("faculty.type", $programFilter);
+			}
+			return $builder
+					->groupBy("faculty.id")
+					->orderBy("faculty.title", "ASC")
+					->get()->getResultArray() ?: [];
+		};
+
+		$faculty = $loadFaculties($program);
+		if (count($faculty) === 0 && ($program === 1 || $program === 2)) {
+			$faculty = $loadFaculties(0);
 		}
-		$builder = $mdl->select("faculty.id,faculty.title as name")
-				->join("departments d", "d.faculty_id=faculty.id")
-				->join("classes c", "c.department=d.id")
-				->where("c.school_id", $school);
-		// REB=2 (general), RTB/WDA=1 (TVET) — never mix programs
-		if ($program === 1 || $program === 2) {
-			$builder->where("faculty.type", $program);
+		if (count($faculty) === 0) {
+			return $this->response->setJSON(["error" => "No Faculty found for the selected school program. Create faculties, departments and classes in School Settings first."]);
 		}
-		$faculty = $builder
-				->groupBy("faculty.id")
-				->orderBy("faculty.title", "ASC")
-				->get()->getResultArray();
-		if ($faculty == null) {
-			return $this->response->setJSON(["error" => "No Faculty found for the selected school program"]);
-		} else {
-			$fee = (int) $settings->registration_fees;
-			$feeMode = $settings->fee_mode ?? 'flat';
-			$gatewayFees = $this->getRegistrationGatewayFees();
-			$charges = (int) $gatewayFees['service_fee'];
-			$platform = (int) $gatewayFees['platform_fee'];
-			$total = $fee + $charges + $platform;
-			$data['success'] = 1;
-			$data['fee_mode'] = $feeMode;
-			$data['requirement_document'] = $settings->requirement_document;
-			$data['has_requirement_document'] = strlen(trim((string) $settings->requirement_document)) > 3;
-			$data['settings_fees'] = number_format($fee) . ' Rwf';
-			$data['settings_fees_raw'] = $fee;
-			$data['settings_charges'] = number_format($charges) . ' Rwf';
-			$data['settings_charges_raw'] = $charges;
-			$data['settings_platform'] = number_format($platform) . ' Rwf';
-			$data['settings_platform_raw'] = $platform;
-			$data['settings_platform_enabled'] = $platform > 0 ? 1 : 0;
-			$data['settings_total'] = number_format($total) . ' Rwf';
-			$data['settings_total_raw'] = $total;
-			$data['babyeyi_required'] = (int) ($settings->babyeyi_required ?? 1);
-			$data['settings_id'] = $settings->id;
-			$data['payment_bypass'] = $this->isRegistrationMopayLive() ? 0 : 1;
-			$data['mopay_configured'] = \App\Services\Mopay\MopayGatewayClient::make()->isConfigured() ? 1 : 0;
-			$data['program'] = $program;
-			$data['faculties'] = $faculty;
-			return $this->response->setJSON($data);
-		}
+
+		$fee = (int) ($settings->registration_fees ?? 0);
+		$feeMode = $settings->fee_mode ?? 'flat';
+		$gatewayFees = $this->getRegistrationGatewayFees();
+		$charges = (int) $gatewayFees['service_fee'];
+		$platform = (int) $gatewayFees['platform_fee'];
+		$total = $fee + $charges + $platform;
+		$data['success'] = 1;
+		$data['fee_mode'] = $feeMode;
+		$data['requirement_document'] = $settings->requirement_document ?? '';
+		$data['has_requirement_document'] = strlen(trim((string) ($settings->requirement_document ?? ''))) > 3;
+		$data['settings_fees'] = number_format($fee) . ' Rwf';
+		$data['settings_fees_raw'] = $fee;
+		$data['settings_charges'] = number_format($charges) . ' Rwf';
+		$data['settings_charges_raw'] = $charges;
+		$data['settings_platform'] = number_format($platform) . ' Rwf';
+		$data['settings_platform_raw'] = $platform;
+		$data['settings_platform_enabled'] = $platform > 0 ? 1 : 0;
+		$data['settings_total'] = number_format($total) . ' Rwf';
+		$data['settings_total_raw'] = $total;
+		$data['babyeyi_required'] = (int) ($settings->babyeyi_required ?? 1);
+		$data['settings_id'] = $settings->id;
+		$data['payment_bypass'] = 1;
+		$data['mopay_configured'] = 0;
+		$data['program'] = $program;
+		$data['faculties'] = $faculty;
+		return $this->response->setJSON($data);
 	}
 
 	public
@@ -18552,21 +18554,14 @@ public function assign_card()
         return $this->response->setJSON(["error" => "Error: School not available"]);
     }
 
-    // Live MoPay when configured and not forced offline; otherwise allow proof / bypass.
-    $paymentBypass = !$this->isRegistrationMopayLive();
-    $paymentMethod = strtolower(trim((string) $this->request->getPost('paymentMethod')));
-    if ($paymentMethod !== 'proof') {
-        $paymentMethod = 'momo';
-    }
-
-    if ($paymentMethod === 'momo' && !$paymentBypass && strlen(trim((string) $schoolData->mtn_momo_phone)) < 5) {
-        return $this->response->setJSON([
-            "error" => "School MOMO receive number is not set. Ask the school to configure MOMO account in Basic Settings.",
-        ]);
-    }
+    // Payment is collected later when the school approves the application.
 
     $applicationSettings = $this->request->getPost("applicationSettings");
-    if (strlen($applicationSettings) == 0) {
+    if (strlen((string) $applicationSettings) == 0) {
+        $created = $settingsMdl->forSchool((int) $school);
+        $applicationSettings = (string) ($created['id'] ?? '');
+    }
+    if (strlen((string) $applicationSettings) == 0) {
         return $this->response->setJSON(["error" => "Invalid data, please try again or reload the page"]);
     }
 
@@ -18680,19 +18675,6 @@ public function assign_card()
         $registrationFee = (int) $settingsData->registration_fees;
     }
 
-    // ---- Payment phone normalization (2507XXXXXXXX)
-    $momoPhone = $this->request->getPost("momoPhoneNumber");
-    if ($paymentMethod === 'proof') {
-        $proofPhone = $this->request->getPost('proofPhoneNumber');
-        if (strlen(trim((string) $proofPhone)) >= 9) {
-            $momoPhone = $proofPhone;
-        } elseif (strlen(trim((string) $studentPhone)) >= 9) {
-            $momoPhone = $studentPhone;
-        }
-    }
-    $mopayClient = \App\Services\Mopay\MopayGatewayClient::make();
-    $momoPhone = $mopayClient->normalizeMsisdn((string) $momoPhone);
-
     $code = uniqid();
 
     $studentData = [
@@ -18799,161 +18781,51 @@ public function assign_card()
             }
         }
 
-        $paymentProofPath = null;
-        if ($paymentMethod === 'proof') {
-            $paymentProofPath = $savePath('paymentProof', 'payment_proof');
-            if ($paymentProofPath === null) {
-                return $this->response->setJSON([
-                    'error' => 'Payment proof is required (PDF, JPG or PNG)',
-                ]);
-            }
-        }
-
         $toUpdate = [];
         if ($savedByField['report1'] !== null) { $toUpdate['report1'] = $savedByField['report1']; }
         if ($savedByField['report2'] !== null) { $toUpdate['report2'] = $savedByField['report2']; }
         if ($savedByField['report3'] !== null) { $toUpdate['report3'] = $savedByField['report3']; }
-        if ($paymentProofPath !== null) { $toUpdate['documents'] = $paymentProofPath; }
 
         if (!empty($toUpdate)) {
             $toUpdate['id'] = $applicationId;
             $studentAppModel->save($toUpdate);
         }
-        // ===== /NEW attachments =====
 
-        $txId         = $mopayClient->newTransactionId('XSCHREG');
-        $gatewayFees  = $this->getRegistrationGatewayFees();
-        $charges      = (int) $gatewayFees['service_fee'];
-        $SomaCharges  = (int) $gatewayFees['platform_fee'];
-        // Proof uploads: school registration fee only (no MOMO service / platform charges)
-        $totalAmount  = $paymentMethod === 'proof'
-            ? $registrationFee
-            : ($registrationFee + $charges + $SomaCharges);
         $studentNames = trim($firstName . ' ' . $lastName);
         $levelName    = $levelRow ? (string) $levelRow->title : '';
         $schoolName   = (string) $schoolData->name;
 
-        // Offline / other payment with attached proof
-        if ($paymentMethod === 'proof') {
-            $studentAppModel->save([
-                'id' => $applicationId,
-                'status' => 1,
-            ]);
-            $transMdl->save([
-                'applicationId'  => $applicationId,
-                'transaction_id' => $txId,
-                'amount'         => $totalAmount,
-                'momo_ref'       => '',
-                'status'         => 200,
-                'response_body'  => json_encode([
-                    'payment_method' => 'proof',
-                    'payment_proof'  => $paymentProofPath,
-                    'registration_fee' => $registrationFee,
-                    'charges'        => 0,
-                    'platform_fee'   => 0,
-                    'note'           => 'Applicant uploaded payment proof — registration fee only (no gateway charges)',
-                ]),
-            ]);
-            $this->notifyParentOfApplication(
-                (string) $parentPhone,
-                (string) $parentEmail,
-                (string) $parentNames,
-                $studentNames,
-                $schoolName,
-                $levelName,
-                $code
-            );
-            return $this->response->setJSON([
-                'success'        => 'Application submitted with payment proof',
-                'applicationId'  => $applicationId,
-                'code'           => $code,
-                'payment_proof'  => 1,
-            ]);
-        }
-
-        // Bypass live MOMO when payment API is not configured yet.
-        if ($paymentBypass) {
-            $studentAppModel->save([
-                'id' => $applicationId,
-                'status' => 1, // treat as completed so Finish flow continues
-            ]);
-            $transMdl->save([
-                'applicationId'  => $applicationId,
-                'transaction_id' => $txId,
-                'amount'         => $totalAmount,
-                'momo_ref'       => '',
-                'status'         => 200,
-                'response_body'  => json_encode(['bypass' => true, 'payment_method' => 'momo', 'note' => 'Payment API disabled — pending real gateway']),
-            ]);
-            $this->notifyParentOfApplication(
-                (string) $parentPhone,
-                (string) $parentEmail,
-                (string) $parentNames,
-                $studentNames,
-                $schoolName,
-                $levelName,
-                $code
-            );
-            return $this->response->setJSON([
-                'success'       => 'Application submitted (payment gateway coming soon)',
-                'applicationId' => $applicationId,
-                'code'          => $code,
-                'payment_bypass'=> 1,
-            ]);
-        }
-
-        if (strlen($momoPhone) < 12) {
-            return $this->response->setJSON([
-                'error' => 'Please enter a valid MTN MOMO phone number (e.g. 07XXXXXXXX)',
-                'applicationId' => $applicationId,
-            ]);
-        }
-
-        $input = (object)[
-            'schoolPhone'           => $schoolData->mtn_momo_phone,
-            'phone'                 => $momoPhone,
-            'grossAmount'           => $totalAmount,
-            'schoolAmount'          => $registrationFee,
-            'chargesAmount'         => $charges,
-            'somanetChargesAmount'  => $SomaCharges
-        ];
-
-        $applicant = (object)[
-            'names' => $firstName . " " . $lastName,
-            'code'  => $code
-        ];
-
-        try {
-            $payResult = $this->registrationPayment($txId, $input, $applicant);
-            $txId = (string) ($payResult['transaction_id'] ?? $txId);
-            $momoRef = (string) ($payResult['momo_ref'] ?? '');
-        } catch (\Exception $e) {
-            return $this->response->setJSON([
-                'error' => $e->getMessage(),
-                'applicationId' => $applicationId,
-            ]);
-        }
-
+        $studentAppModel->save([
+            'id' => $applicationId,
+            'status' => 0,
+        ]);
         $transMdl->save([
             'applicationId'  => $applicationId,
-            'transaction_id' => $txId,
-            'amount'         => $totalAmount,
-            'momo_ref'       => $momoRef,
-            'status'         => 202,
+            'transaction_id' => 'DEFERRED-' . $code,
+            'amount'         => $registrationFee,
+            'momo_ref'       => '',
+            'status'         => 0,
             'response_body'  => json_encode([
-                'payment_method' => 'mopay',
-                'flow' => $payResult['flow'] ?? '',
-                'payer' => $momoPhone,
-                'receiver' => $mopayClient->normalizeMsisdn((string) $schoolData->mtn_momo_phone),
-                'raw' => $payResult['raw'] ?? '',
+                'payment_method' => 'deferred',
+                'registration_fee' => $registrationFee,
+                'note' => 'Payment collected when the school approves the application',
             ]),
         ]);
-
+        $this->notifyParentOfApplication(
+            (string) $parentPhone,
+            (string) $parentEmail,
+            (string) $parentNames,
+            $studentNames,
+            $schoolName,
+            $levelName,
+            $code
+        );
         return $this->response->setJSON([
-            "success"       => 'payment request send',
-            'applicationId' => $applicationId
+            'success'        => 'Application submitted. Registration fee will be collected when the school approves.',
+            'applicationId'  => $applicationId,
+            'code'           => $code,
+            'payment_bypass' => 1,
         ]);
-
 
     } catch (\Exception $e) {
         return $this->response->setJSON(["error" => "Error: " . $e->getMessage()]);
