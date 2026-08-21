@@ -1081,7 +1081,9 @@
 	<script type="text/javascript">
 		let checkInterval;
 
-		$(document).ready(function () {
+		function ssBootApplication($) {
+			if (window.__ssAppBooted) return;
+			window.__ssAppBooted = true;
 			(function initNationalitySearch() {
 				var $search = $('#nationalitySearch');
 				var $select = $('#nationalitySelect');
@@ -1287,10 +1289,22 @@
 				});
 			});
 
+			function notifyError(msg) {
+				if (window.toastada && toastada.error) {
+					toastada.error(msg);
+				} else {
+					alert(msg);
+				}
+			}
+
 			function showRegistrationForm() {
-				$(".registration-data").stop(true, true).show();
-				$(".registration-error").hide();
-				$(".action-button.newApplicant").show();
+				$(".registration-data").stop(true, true).css("display", "block");
+				$(".action-button.newApplicant").css("display", "inline-flex");
+			}
+
+			function showRegistrationError(msg) {
+				$(".registration-error").show();
+				$(".registration-error p").text(msg || "Could not load classes for this school.");
 			}
 
 			function setClassPanelLoading(loading) {
@@ -1347,11 +1361,14 @@
 					$("#registration_fee_mode").val(data.fee_mode || "flat");
 				} else if (data && data.error) {
 					$(".requirement-doc").hide();
-					$(".action-button.newApplicant").hide();
-					$(".registration-data").hide();
-					$(".registration-error").show();
-					$(".registration-error p").text(data.error);
+					showRegistrationForm();
+					showRegistrationError(data.error);
+					notifyError(data.error);
 				}
+			}
+
+			function facultyApi(schoolId, program) {
+				return "<?= site_url('getFacultyBySchool'); ?>/" + schoolId + "/" + program;
 			}
 
 			function loadRegistrationForSchool(schoolId, program) {
@@ -1359,18 +1376,36 @@
 				program = parseInt(program, 10) || 0;
 				if (!schoolId || !program) return;
 				setClassPanelLoading(true);
+				$(".registration-error").hide();
 				showRegistrationForm();
-				$.getJSON("<?= site_url('getFacultyBySchool'); ?>/" + schoolId + "/" + program, function (data) {
-					applyFacultyResponse(data);
-				}).fail(function (xhr) {
-					setClassPanelLoading(false);
+				function applyOrFallback(data) {
+					if (data && data.success && data.faculties && data.faculties.length) {
+						applyFacultyResponse(data);
+						return;
+					}
+					$.getJSON(facultyApi(schoolId, 0), function (allData) {
+						if (allData && allData.success && allData.faculties && allData.faculties.length) {
+							applyFacultyResponse(allData);
+							return;
+						}
+						applyFacultyResponse(data || allData || { error: "No classes found for this school program" });
+					}).fail(function () {
+						applyFacultyResponse(data || { error: "Could not load classes for this school. Please try again." });
+					});
+				}
+				$.getJSON(facultyApi(schoolId, program), applyOrFallback).fail(function (xhr) {
 					console.error("Faculties load failed:", xhr.status, xhr.responseText);
-					toastada.error("Could not load classes for this school. Please try again.");
+					$.getJSON(facultyApi(schoolId, 0), applyOrFallback).fail(function () {
+						setClassPanelLoading(false);
+						showRegistrationForm();
+						showRegistrationError("Could not load classes for this school. Please try again.");
+						notifyError("Could not load classes for this school. Please try again.");
+					});
 				});
 			}
 
 			// --- Program -> Schools (show form immediately; load classes in parallel)
-			$("#schoolProgram").on("change", function () {
+			$(document).on("change", "#schoolProgram", function () {
 				let program = $(this).val();
 				let lockedId = parseInt($("#locked_school_id").val(), 10) || 0;
 				resetClassSchoolFields();
@@ -1774,7 +1809,14 @@
 			});
 
 			$(".submit").click(function () { return false; });
-		});
+		}
+
+		function ssStartApplication() {
+			if (window.__ssAppBooted || typeof window.jQuery === 'undefined') return;
+			window.jQuery(ssBootApplication);
+		}
+		ssStartApplication();
+		window.addEventListener('load', ssStartApplication);
 
 		function checkPendingPayment(applicationId, btn) {
 			$.getJSON('<?= site_url('get_registration_status'); ?>', 'applicationId=' + applicationId, function (data) {
