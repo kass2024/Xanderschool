@@ -271,8 +271,7 @@
 	}
 	#progressbar #family:before,
 	#progressbar #personal:before,
-	#progressbar #confirm:before,
-	#progressbar #documents:before {
+	#progressbar #confirm:before {
 		font-family: inherit;
 		content: counter(step);
 	}
@@ -559,7 +558,6 @@
 							<ul id="progressbar">
 								<li id="personal" class="active"><strong>Personal</strong></li>
 								<li id="family" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Family</strong></li>
-								<li id="documents" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Documents</strong></li>
 								<li id="confirm" class="<?= isset($applicationId) ? 'active' : ''; ?>"><strong>Finish</strong></li>
 							</ul>
 
@@ -906,43 +904,8 @@
 											</div>
 										</div>
 										<div class="fieldset-actions">
-										<input type="button" name="next" class="next action-button" value="Next"/>
 										<input type="button" name="previous" class="previous action-button-previous" value="Previous"/>
-										</div>
-									</fieldset>
-
-									<!-- STEP 3: DOCUMENTS (dynamic by faculty + level) -->
-									<fieldset>
-										<div class="form-card">
-											<h6 class="fs-title">Upload required documents</h6>
-											<p class="text-muted">Accepted types: PDF, JPG, PNG. Max 5 MB per file.</p>
-
-											<div id="docsHint" class="alert alert-info" style="padding:10px; border-radius:8px;">
-												<i class="fa fa-info-circle"></i>
-												<span id="docsHintText">Select a faculty and level first — required uploads will appear here.</span>
-											</div>
-
-											<div id="dynamicDocsContainer">
-												<p class="text-muted" id="docsEmptyMsg">Choose school, faculty and level on the Personal step to load the correct document list.</p>
-											</div>
-
-											<div class="form-group" style="display:none;">
-												<input type="file" name="documents[]" id="legacyDocuments" class="form-control" multiple accept=".pdf,.jpg,.jpeg,.png">
-											</div>
-
-											<div class="ss-hint-box">
-												Registration fee is collected when the school <strong>approves</strong> your application. You can submit now without paying.
-											</div>
-											<div class="form-group">
-												<div class="form-check">
-													<input type="checkbox" class="form-check-input" name="confirm" id="exampleCheck1" onchange="agreeTerms()">
-													<label class="form-check-label" for="exampleCheck1">I agree to the <a href="#">terms &amp; conditions</a></label>
-												</div>
-											</div>
-										</div>
-										<div class="fieldset-actions">
-										<input type="button" name="previous" class="previous action-button-previous" value="Previous"/>
-										<button type="submit" class="action-button" id="btn-pay" disabled>Submit application</button>
+										<button type="submit" class="action-button" id="btn-pay">Submit application</button>
 										</div>
 									</fieldset>
 								</form>
@@ -1031,20 +994,6 @@
 				return parseInt($("#schoolOptions").val(), 10) || 0;
 			}
 
-			function missingRequiredDocs() {
-				var missing = null;
-				var $inputs = $("#dynamicDocsContainer .app-doc-input");
-				$inputs.each(function () {
-					if ($(this).attr('data-required') === '1') {
-						if (!this.files || !this.files[0]) {
-							missing = $(this).attr('data-label') || this.name;
-							return false;
-						}
-					}
-				});
-				return missing;
-			}
-
 			$('#autoSave').on('submit', function (e) {
 				e.preventDefault();
 				var father = ($('#father').val() || '').trim();
@@ -1075,15 +1024,6 @@
 				$('#parentPhoneHidden').val(primaryPhone);
 				var relMap = { 'Father': '1', 'Mother': '2', 'Guardian': '3', 'Sibling': '3', 'Relative': '3', 'Other': '3' };
 				$('#relationshipHidden').val(relMap[v1r] || (mother && !father ? '2' : '1'));
-				var missingDoc = missingRequiredDocs();
-				if (missingDoc) {
-					toastada.error("Please upload: " + missingDoc);
-					return;
-				}
-				if (!$("#exampleCheck1").is(":checked")) {
-					toastada.error("Please agree to the terms & conditions");
-					return;
-				}
 				var btn = $(this).find("[type='submit']");
 				btn.text("Please wait...").prop("disabled", true);
 				var formData = new FormData(this);
@@ -1531,7 +1471,7 @@
 		window.addEventListener('load', ssStartApplication);
 
 		function agreeTerms(){
-			$("#btn-pay").prop("disabled", !$("#exampleCheck1").is(":checked"));
+			return;
 		}
 	</script>
 </section>

@@ -86,7 +86,7 @@ $APP_BASE          = rtrim(base_url(), '/');
                           <th>Parent type</th>
                           <th>Parent name</th>
                           <th>Parent phone</th>
-                          <th>Payment status</th>
+                          <th>Status</th>
                           <th>Application - code</th>
                           <th>Actions</th>
                         </tr>
@@ -97,7 +97,7 @@ $APP_BASE          = rtrim(base_url(), '/');
                             $id        = (int)($pending['id'] ?? 0);
                             $status    = (string)($pending['status'] ?? '0');
                             $applicant = trim(($pending['applicant'] ?? (($pending['fname'] ?? '') . ' ' . ($pending['lname'] ?? ''))));
-                            $payLabel  = $status === '0' ? 'Pay on approval' : ($status === '2' ? 'Failed' : 'Received');
+                            $payLabel  = 'Pending approval';
                           ?>
                           <tr data-id="<?= $id ?>" data-applicant="<?= esc($applicant) ?>" data-status="<?= esc($status) ?>">
                             <td><?= $key + 1 ?></td>
@@ -112,7 +112,6 @@ $APP_BASE          = rtrim(base_url(), '/');
                             <td><?= esc($pending['code']) ?></td>
                             <td class="text-center">
                               <div class="pending-actions">
-                                <button type="button" class="btn btn-sm btn-info docsBtn" data-id="<?= $id ?>" data-name="<?= esc($applicant) ?>">Docs</button>
                                 <button type="button" class="btn btn-sm btn-success approveBtn" data-id="<?= $id ?>" data-name="<?= esc($applicant) ?>">Approve</button>
                                 <button type="button" class="btn btn-sm btn-warning rejectBtn" data-id="<?= $id ?>" data-name="<?= esc($applicant) ?>">Reject</button>
                                 <button type="button" class="btn btn-sm btn-danger deleteBtn" data-id="<?= $id ?>" data-name="<?= esc($applicant) ?>">Delete</button>
@@ -131,7 +130,7 @@ $APP_BASE          = rtrim(base_url(), '/');
                           <th>Parent type</th>
                           <th>Parent name</th>
                           <th>Parent phone</th>
-                          <th>Payment status</th>
+                          <th>Status</th>
                           <th>Application - code</th>
                           <th>Actions</th>
                         </tr>

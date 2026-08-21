@@ -18775,26 +18775,12 @@ public function assign_card()
             return $publicRel . $basename; // relative public path for DB
         };
 
-        // Resolve required docs from faculty + level (REB vs TVET) — no Babyeyi upload on form
-        $facRow = (new FacultyModel())->select('id,title,type')->where('id', $fac)->get(1)->getRow();
         $levelRow = (new LevelsModel())->select('id,title')->where('id', $level)->get(1)->getRow();
-        $docPack = $this->resolveApplicationDocRequirements(
-            $facRow ? (int) $facRow->type : 1,
-            $facRow ? (string) $facRow->title : '',
-            $levelRow ? (string) $levelRow->title : ''
-        );
         $savedByField = [
             'report1' => $savePath('report1', 'report1'),
             'report2' => $savePath('report2', 'report2'),
             'report3' => $savePath('report3', 'report3'),
         ];
-        foreach ($docPack['docs'] as $docReq) {
-            if (!empty($docReq['required']) && empty($savedByField[$docReq['field']])) {
-                return $this->response->setJSON([
-                    'error' => $docReq['label'] . ' is required',
-                ]);
-            }
-        }
 
         $toUpdate = [];
         if ($savedByField['report1'] !== null) { $toUpdate['report1'] = $savedByField['report1']; }
@@ -18812,19 +18798,7 @@ public function assign_card()
 
         $studentAppModel->save([
             'id' => $applicationId,
-            'status' => 0,
-        ]);
-        $transMdl->save([
-            'applicationId'  => $applicationId,
-            'transaction_id' => 'DEFERRED-' . $code,
-            'amount'         => $registrationFee,
-            'momo_ref'       => '',
-            'status'         => 0,
-            'response_body'  => json_encode([
-                'payment_method' => 'deferred',
-                'registration_fee' => $registrationFee,
-                'note' => 'Payment collected when the school approves the application',
-            ]),
+            'status' => 1,
         ]);
         $this->notifyParentOfApplication(
             (string) $parentPhone,
@@ -18836,7 +18810,7 @@ public function assign_card()
             $code
         );
         return $this->response->setJSON([
-            'success'        => 'Application submitted. Registration fee will be collected when the school approves.',
+            'success'        => 'Application submitted. The school will review and approve it.',
             'applicationId'  => $applicationId,
             'code'           => $code,
             'payment_bypass' => 1,
@@ -19271,6 +19245,96 @@ public function assign_card()
 		]);
 	}
 
+	/**
+	 * Split a long SMS into 160-character parts (word-aware) so delivery is charged per part.
+	 * @return string[]
+	 */
+	private function splitSmsParts(string $message, int $limit = 160): array
+	{
+		$message = trim(preg_replace("/[ \t]+/", ' ', str_replace(["\r\n", "\r"], "\n", $message)));
+		if ($message === '') {
+			return [];
+		}
+		$len = mb_strlen($message, 'UTF-8');
+		if ($len <= $limit) {
+			return [$message];
+		}
+		$parts = [];
+		$remaining = $message;
+		while (mb_strlen($remaining, 'UTF-8') > $limit) {
+			$chunk = mb_substr($remaining, 0, $limit, 'UTF-8');
+			$break = mb_strrpos($chunk, ' ', 0, 'UTF-8');
+			if ($break === false || $break < (int) ($limit * 0.5)) {
+				$break = $limit;
+			}
+			$parts[] = trim(mb_substr($remaining, 0, $break, 'UTF-8'));
+			$remaining = trim(mb_substr($remaining, $break, null, 'UTF-8'));
+		}
+		if ($remaining !== '') {
+			$parts[] = $remaining;
+		}
+		return $parts;
+	}
+
+	private function sendChargedSms(string $phone, string $message, int $receiverId = 0, string $subject = 'Admission confirmation'): bool
+	{
+		$phone = trim($phone);
+		if (strlen(preg_replace('/\D/', '', $phone)) < 9) {
+			return false;
+		}
+		$parts = $this->splitSmsParts($message, defined('PER_SMS') ? (int) PER_SMS : 160);
+		if (!$parts) {
+			return false;
+		}
+		$termId = (int) ($this->data['active_term'] ?? 0);
+		$allOk = true;
+		foreach ($parts as $part) {
+			$smsResult = null;
+			$ok = $this->sendSMS($phone, $part, $smsResult);
+			$fail = '';
+			if (!$ok) {
+				$allOk = false;
+				$fail = is_array($smsResult) ? (string) ($smsResult['content'] ?? json_encode($smsResult)) : (string) $smsResult;
+			}
+			if ($termId > 0) {
+				$this->_save_sms($termId, $phone, $part, $subject, $receiverId, 0, $ok ? 1 : 0, $fail);
+			}
+		}
+		return $allOk;
+	}
+
+	private function isNurseryOrPrimaryAdmission(string $levelTitle, string $facultyTitle, string $classTitle, int $facultyType): bool
+	{
+		if ($facultyType === 1) {
+			return false; // RTB / TVET uses high-school template
+		}
+		$hay = strtolower($levelTitle . ' ' . $facultyTitle . ' ' . $classTitle);
+		if (preg_match('/\b(s[1-6]|senior|ordinary|advanced|o\s*level|a\s*level|tvet|wda|rtb)\b/', $hay)) {
+			return false;
+		}
+		return (bool) preg_match('/\b(nursery|baby|middle class|top class|n[123]|primary|p[1-6])\b/', $hay);
+	}
+
+	private function buildAdmissionSms(string $studentName, string $classLabel, string $modeLabel, string $studentId, bool $nurseryOrPrimary): string
+	{
+		$studentName = trim($studentName) !== '' ? trim($studentName) : 'Student';
+		$classLabel = trim($classLabel) !== '' ? trim($classLabel) : 'your class';
+		$modeLabel = trim($modeLabel) !== '' ? trim($modeLabel) : 'Day';
+		$studentId = trim($studentId) !== '' ? trim($studentId) : '-';
+		if ($nurseryOrPrimary) {
+			return "May God bless you!\n"
+				. "Dear {$studentName},\n"
+				. "Congratulations! Your admission to {$classLabel} - {$modeLabel} at Wisdom School has been successfully confirmed.\n"
+				. "Student ID: {$studentId}\n"
+				. "Welcome to the Wisdom School family, where every child is inspired to learn, grow, and excel. We wish you a joyful and successful academic journey.";
+		}
+		return "May God bless you!\n"
+			. "Dear {$studentName},\n"
+			. "Congratulations! You have been successfully admitted to {$classLabel} - {$modeLabel} at Wisdom High School.\n"
+			. "Student ID: {$studentId}\n"
+			. "Welcome to the Wisdom High School family - a community committed to knowledge, character, excellence, and purpose. We wish you an inspiring and successful academic journey.";
+	}
+
 	public
 	function manipulateApproveStudentsRegistration()
 	{
@@ -19361,10 +19425,39 @@ public function assign_card()
 					(int) $this->session->get('soma_id')
 				);
 				$classData = ["student" => $studentId, "year" => $this->data['academic_year'], "class" => $classId, "status" => 1];
-				$applicationMdl->save(["id" => $applicationId, "admitted" => 1]);
+				$applicationMdl->save(["id" => $applicationId, "admitted" => 1, "status" => 1]);
 				$classRecordMdl->save($classData);
-				$message = "{$application['lname']} {$application['fname']} wamaze guhabwa umwanya wasabye koresha app yitwa SOMANET CODE YAWE {$regNo} ";
-				$this->sendSMS($application['phoneNumber'], $message, $result);
+
+				$classInfo = $classMdl->select('classes.title, levels.title as level_name, faculty.title as faculty_name, faculty.type as faculty_type')
+					->join('levels', 'levels.id = classes.level', 'left')
+					->join('departments', 'departments.id = classes.department', 'left')
+					->join('faculty', 'faculty.id = departments.faculty_id', 'left')
+					->where('classes.id', $classId)
+					->get(1)->getRowArray();
+				$classLabel = trim(($classInfo['level_name'] ?? '') . ' ' . ($classInfo['title'] ?? ''));
+				if ($classLabel === '') {
+					$classLabel = (string) ($classInfo['title'] ?? 'your class');
+				}
+				$modeLabel = ((int) ($application['studyingMode'] ?? 0) === 1) ? 'Day' : 'Boarding';
+				$studentName = trim(($application['fname'] ?? '') . ' ' . ($application['lname'] ?? ''));
+				$facultyType = (int) ($classInfo['faculty_type'] ?? 0);
+				$nurseryOrPrimary = $this->isNurseryOrPrimaryAdmission(
+					(string) ($classInfo['level_name'] ?? ''),
+					(string) ($classInfo['faculty_name'] ?? ''),
+					(string) ($classInfo['title'] ?? ''),
+					$facultyType
+				);
+				$message = $this->buildAdmissionSms($studentName, $classLabel, $modeLabel, (string) $regNo, $nurseryOrPrimary);
+				$phones = [];
+				foreach ([(string) ($application['phoneNumber'] ?? ''), (string) ($application['parentPhoneNumber'] ?? '')] as $ph) {
+					$key = preg_replace('/\D/', '', $ph);
+					if (strlen($key) >= 9 && !isset($phones[$key])) {
+						$phones[$key] = $ph;
+					}
+				}
+				foreach ($phones as $ph) {
+					$this->sendChargedSms($ph, $message, (int) $studentId, 'Admission confirmation');
+				}
 			}
 			return $this->response->setJSON(array("success" => "Applicant approved successfully"));
 		} catch (\Exception $e) {
@@ -19476,16 +19569,14 @@ public function assign_card()
 					->get(1)->getRow();
 			if ($appData == null) {
 				$data['error'] = "oops, Invalid registration code";
+			} else if ((int) $appData->status === 2) {
+				$data['error'] = "oops, Your registration could not be completed";
+			} else if ((int) $appData->status === 3) {
+				$data['error'] = "This application was not accepted. Please contact the school.";
 			} else {
-				if ($appData->status == 0) {
-					$data['error'] = "oops, Your registration payment did not succeed";
-				} else if ($appData->status == 2) {
-					$data['error'] = "oops, Your registration payment failed";
-				} else {
-					// Documents already collected on the Documents step during registration
+					// Application received — documents and payment are handled by the school
 					$data['application'] = $appData;
 					$data['applicationId'] = $appData->id;
-				}
 			}
 		} else {
 			// Private school registration link: /application?school={id}
