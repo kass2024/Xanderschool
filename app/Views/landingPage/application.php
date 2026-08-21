@@ -20,7 +20,7 @@
 	}
 	.ss-app .progress-card {
 		margin: 0 auto !important;
-		max-width: 720px;
+		max-width: min(1100px, 100%);
 		width: 100%;
 		float: none !important;
 	}
@@ -52,6 +52,7 @@
 		position: relative;
 	}
 	#msform fieldset:not(:first-of-type) { display: none; }
+	#msform form > fieldset:not(:first-of-type) { display: none; }
 	.form-card { text-align: left; }
 
 	.ss-app .fs-title {
@@ -782,10 +783,8 @@
 																</div>
 															</div>
 														</div><!-- /.registration-data -->
-													</div><!-- /.newApplicant -->
-												</div>
-											</div>
-										</div>
+											</div><!-- /.newApplicant -->
+										</div><!-- /.form-card -->
 										<div class="fieldset-actions">
 										<input type="button" name="next" class="next action-button newApplicant" value="Next" style="display:none;"/>
 										</div>
@@ -1742,8 +1741,8 @@
 					}
 					refreshRegistrationFee();
 				}
-				$("#progressbar li").eq($("fieldset").index(next_fs)).addClass("active");
-				next_fs.show();
+				$("#progressbar li").eq($("#autoSave > fieldset").index(next_fs)).addClass("active");
+				next_fs.css("display", "block");
 				current_fs.animate({opacity: 0}, {
 					step: function (now) {
 						opacity = 1 - now;
@@ -1761,8 +1760,8 @@
 				if (!previous_fs.length) {
 					return false;
 				}
-				$("#progressbar li").eq($("fieldset").index(current_fs)).removeClass("active");
-				previous_fs.show();
+				$("#progressbar li").eq($("#autoSave > fieldset").index(current_fs)).removeClass("active");
+				previous_fs.css("display", "block");
 				current_fs.animate({opacity: 0}, {
 					step: function (now) {
 						opacity = 1 - now;
