@@ -6281,7 +6281,7 @@ public function attendanceCard()
 			$school_id = $this->session->get("soma_school_id");
 			$classMdl = new ClassesModel();
 			$classData = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name
-											,f.type,f.abbrev as faculty_code")
+											,f.type,f.title as faculty_name,f.abbrev as faculty_code")
 					->join("departments d", "d.id=classes.department")
 					->join("levels l", "l.id=classes.level")
 					->join("faculty f", "f.id=d.faculty_id")
@@ -6299,42 +6299,33 @@ public function attendanceCard()
 			//create class record
 			$classRecordMdl = new ClassRecordModel();
 			$classRecordMdl->save(array("student" => $id, "year" => $this->data['academic_year'], "class" => $class));
-			$msg = "{$this->data['school_name']} irakumenyesha ko {$fname} {$lname} yanditswe neza muri {$classData->level_name} {$classData->code} {$classData->title}";
-			if (strlen($ft_phone) > 3) {
-//				if ($this->_send_sms($ft_phone, $msg, $result, $this->data['remaining_sms'], $this->data['school_acronym'])) {
-//					//save sent sms
-//					$sms_count = (int)ceil(strlen($msg) / PER_SMS);
-//					$this->_save_sms($this->data['active_term'], $ft_phone, $msg, lang("app.studentRegistration"), $id, 1, $sms_count);
-//				} else {
-//					$this->_save_sms($this->data['active_term'], $ft_phone, $msg, lang("app.studentRegistration"), $id, 1, 0);
-//				}
-                if ($this->sendSMS($ft_phone, $msg, $result)) {
-                    //save sent sms
-                    $sms_count = (int)ceil(strlen($msg) / PER_SMS);
-                    $this->_save_sms($this->data['active_term'], $ft_phone, $msg, lang("app.studentRegistration"), $id, 1, $sms_count);
-                } else {
-                    $this->_save_sms($this->data['active_term'], $ft_phone, $msg, lang("app.studentRegistration"), $id, 1, 0);
-                }
-			}
-			if (strlen($mt_phone) > 3) {
-				if ($this->sendSMS($mt_phone, $msg)) {
-					//save sent sms
-					$sms_count = (int)ceil(strlen($msg) / PER_SMS);
-					$this->_save_sms($this->data['active_term'], $mt_phone, $msg, lang("app.studentRegistration"), $id, 1, $sms_count);
-				} else {
-					$this->_save_sms($this->data['active_term'], $mt_phone, $msg, lang("app.studentRegistration"), $id, 1, 0);
+			$smsNote = '';
+			try {
+				$smsResult = $this->dispatchAdmissionSmsForStudent([
+					'id' => $id,
+					'fname' => $fname,
+					'lname' => $lname,
+					'regno' => $regno,
+					'phone' => '',
+					'studying_mode' => $mode,
+					'father' => $father,
+					'ft_phone' => $ft_phone,
+					'mother' => $mother,
+					'mt_phone' => $mt_phone,
+					'guardian' => $guardian,
+					'gd_phone' => $gd_phone,
+					'class_title' => (string) ($classData->title ?? ''),
+					'level_name' => (string) ($classData->level_name ?? ''),
+					'faculty_name' => (string) ($classData->faculty_name ?? ''),
+					'faculty_type' => (int) ($classData->type ?? 0),
+				]);
+				if (!empty($smsResult['ok'])) {
+					$smsNote = ' Admission SMS sent.';
 				}
+			} catch (\Exception $smsEx) {
+				$smsNote = '';
 			}
-			if (strlen($gd_phone) > 3) {
-				if ($this->sendSMS($gd_phone, $msg, $result)) {
-					//save sent sms
-					$sms_count = (int)ceil(strlen($msg) / PER_SMS);
-					$this->_save_sms($this->data['active_term'], $gd_phone, $msg, lang("app.studentRegistration"), $id, 1, $sms_count);
-				} else {
-					$this->_save_sms($this->data['active_term'], $gd_phone, $msg, lang("app.studentRegistration"), $id, 1, 0);
-				}
-			}
-			return $this->response->setJSON(array("success" => $fname . lang("app.enrolledSuccessfully") . " <strong>" . $regno . "</strong>"));
+			return $this->response->setJSON(array("success" => $fname . lang("app.enrolledSuccessfully") . " <strong>" . $regno . "</strong>" . $smsNote));
 		} catch (\Exception $e) {
 //			var_dump($e);
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
