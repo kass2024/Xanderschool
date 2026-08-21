@@ -61,6 +61,16 @@
 .btn-send-admission-sms { white-space:nowrap; }
 .st-sms-check { width:16px; height:16px; cursor:pointer; }
 #admissionSmsAlert { margin: 8px 0 12px; }
+.admission-sms-approved {
+	display: inline-block;
+	font-size: 12px;
+	font-weight: 700;
+	padding: 5px 10px;
+	border-radius: 999px;
+	background: #16a34a;
+	color: #fff;
+	vertical-align: middle;
+}
 </style>
 <div class="app-inner-layout app-inner-layout-page">
 	<div class="app-inner-layout__wrapper">
@@ -157,6 +167,7 @@
 						if (count($students) == 0)
 							return;
 						$visitorsNoCardMap = $visitors_no_card_map ?? [];
+						$admission_sms_map = $admission_sms_map ?? [];
 						?>
 						<div class="card-body">
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
@@ -211,6 +222,7 @@
 														. '<i class="fa fa-id-card"></i> '
 														. $noCard . ' no card</span>';
 												}
+												$smsApproved = !empty($admission_sms_map[(int)$student['id']]);
 												?>
 												<tr>
 													<td><input type="checkbox" class="st-sms-check" value="<?= (int) $student['id']; ?>"></td>
@@ -224,10 +236,14 @@
 													<td><?= $parent; ?></td>
 													<td><?= $visitorCell; ?></td>
 													<td>
+														<?php if ($smsApproved): ?>
+															<span class="admission-sms-approved" data-id="<?= (int) $student['id']; ?>">Approved</span>
+														<?php else: ?>
 														<button type="button"
 																class="btn btn-sm btn-primary btn-send-admission-sms"
 																data-id="<?= (int) $student['id']; ?>"
 																title="Send admission confirmation SMS">Approve</button>
+														<?php endif; ?>
 														<label class="typcn typcn-delete text-danger link"
 															   data-toggle="delete"
 															   data-title="Student #<?= $student['fname']; ?>"
@@ -309,12 +325,25 @@
 			.show();
 	}
 
+	function markApproved(ids) {
+		ids = ids || [];
+		var dt = tableApi();
+		ids.forEach(function (id) {
+			id = parseInt(id, 10);
+			if (!id) {
+				return;
+			}
+			var $btns = dt ? dt.$('.btn-send-admission-sms[data-id="' + id + '"]') : $('.btn-send-admission-sms[data-id="' + id + '"]');
+			$btns.replaceWith('<span class="admission-sms-approved" data-id="' + id + '">Approved</span>');
+		});
+	}
+
 	function sendSms(ids, $btn) {
 		if (!ids.length) {
 			showAlert('warning', 'Select at least one student.');
 			return;
 		}
-		var label = $btn ? $btn.text() : '';
+		var isRowBtn = $btn && $btn.hasClass('btn-send-admission-sms');
 		if ($btn) {
 			$btn.prop('disabled', true).text('Sending…');
 		}
@@ -328,16 +357,20 @@
 		}).done(function (res) {
 			if (res && res.success) {
 				showAlert('success', res.message || 'Admission SMS sent.');
+				markApproved(res.sentIds && res.sentIds.length ? res.sentIds : ids);
 			} else {
 				showAlert('danger', (res && (res.error || res.message)) || 'SMS was not sent.');
+				if (isRowBtn) {
+					$btn.prop('disabled', false).text('Approve');
+				}
 			}
-		}).fail(function (xhr) {
+		}).fail(function () {
 			showAlert('danger', 'Could not send SMS. Please try again.');
-		}).always(function () {
-			$('#btnSendAdmissionSmsSelected').prop('disabled', false);
-			if ($btn) {
-				$btn.prop('disabled', false).text(label || 'Approve');
+			if (isRowBtn) {
+				$btn.prop('disabled', false).text('Approve');
 			}
+		}).always(function () {
+			$('#btnSendAdmissionSmsSelected').prop('disabled', false).text('Send to selected');
 		});
 	}
 

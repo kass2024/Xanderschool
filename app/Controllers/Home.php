@@ -5591,9 +5591,11 @@ public function attendanceCard()
 		$visitorMdl->ensureSchema();
 		$data['visitors_no_card_total'] = $visitorMdl->countActiveWithoutCard($school_id);
 		$data['visitors_no_card_map'] = [];
+		$data['admission_sms_map'] = [];
 		if (!empty($data['students'])) {
 			$ids = array_column($data['students'], 'id');
 			$data['visitors_no_card_map'] = $visitorMdl->countActiveWithoutCardByStudents($school_id, $ids);
+			$data['admission_sms_map'] = $this->admissionSmsDeliveredMap($school_id, $ids);
 		}
 
 		$data['content'] = view("pages/students", $data);
@@ -19289,6 +19291,31 @@ public function assign_card()
 		return ['ok' => true, 'error' => ''];
 	}
 
+	private function admissionSmsDeliveredMap(int $schoolId, array $studentIds): array
+	{
+		$map = [];
+		$studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds))));
+		if ($schoolId <= 0 || $studentIds === []) {
+			return $map;
+		}
+		$smsRMdl = new SmsRecipientModel();
+		$rows = $smsRMdl->select('sms_record_recipients.receiver_id')
+			->join('sms_records s', 's.id = sms_record_recipients.sms_record_id')
+			->where('s.school_id', $schoolId)
+			->where('s.subject', 'Admission confirmation')
+			->where('sms_record_recipients.status', 1)
+			->whereIn('sms_record_recipients.receiver_id', $studentIds)
+			->groupBy('sms_record_recipients.receiver_id')
+			->get()->getResultArray();
+		foreach ($rows as $row) {
+			$id = (int) ($row['receiver_id'] ?? 0);
+			if ($id > 0) {
+				$map[$id] = true;
+			}
+		}
+		return $map;
+	}
+
 	private function sendChargedSms(string $phone, string $message, int $receiverId = 0, string $subject = 'Admission confirmation'): bool
 	{
 		$phone = trim($phone);
@@ -19524,6 +19551,7 @@ public function assign_card()
 		}
 
 		$sentStudents = 0;
+		$sentIds = [];
 		$issues = [];
 		foreach ($ids as $id) {
 			if (!isset($found[$id])) {
@@ -19533,6 +19561,7 @@ public function assign_card()
 			$result = $this->dispatchAdmissionSmsForStudent($found[$id]);
 			if (!empty($result['ok'])) {
 				$sentStudents++;
+				$sentIds[] = $id;
 			} elseif (!empty($result['error'])) {
 				$issues[] = $result['error'];
 			}
@@ -19545,6 +19574,7 @@ public function assign_card()
 		return $this->response->setJSON([
 			'success' => $sentStudents > 0,
 			'sent' => $sentStudents,
+			'sentIds' => $sentIds,
 			'failed' => count($issues),
 			'message' => $message,
 			'error' => $sentStudents > 0 ? null : ($issues[0] ?? 'No SMS sent.'),
