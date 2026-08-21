@@ -18432,9 +18432,19 @@ public function assign_card()
 			->join('departments', 'departments.id = classes.department', 'left')
 			->where('classes.school_id', $school)
 			->where('classes.department', $department)
+			->groupStart()
+				->notLike('classes.title', 'holiday')
+				->notLike('levels.title', 'holiday')
+			->groupEnd()
 			->orderBy('levels.id', 'ASC')
 			->orderBy('classes.title', 'ASC')
 			->get()->getResultArray();
+		if ($classes) {
+			$classes = array_values(array_filter($classes, static function ($cls) {
+				$hay = strtolower(trim(($cls['level_name'] ?? '') . ' ' . ($cls['title'] ?? '')));
+				return strpos($hay, 'holiday') === false;
+			}));
+		}
 		if (!$classes) {
 			return $this->response->setJSON(['error' => 'No classes found for this department. Create classes in School Settings first.']);
 		}
@@ -18654,12 +18664,17 @@ public function assign_card()
     if ($classId <= 0) {
         return $this->response->setJSON(['error' => 'Please select a class for this school.']);
     }
-    $classRow = (new ClassesModel())->select('id,level,department,school_id,title')
-        ->where('id', $classId)
-        ->where('school_id', $school)
+    $classRow = (new ClassesModel())->select('classes.id,classes.level,classes.department,classes.school_id,classes.title,levels.title as level_name')
+        ->join('levels', 'levels.id = classes.level', 'left')
+        ->where('classes.id', $classId)
+        ->where('classes.school_id', $school)
         ->get(1)->getRow();
     if (!$classRow) {
         return $this->response->setJSON(['error' => 'Invalid class selected for this school']);
+    }
+    $classLabel = strtolower(trim(($classRow->level_name ?? '') . ' ' . ($classRow->title ?? '')));
+    if (strpos($classLabel, 'holiday') !== false) {
+        return $this->response->setJSON(['error' => 'Holiday classes are not available for online registration. Please choose a regular class.']);
     }
     $level = (string) $classRow->level;
     $dept = (string) $classRow->department;

@@ -1414,6 +1414,10 @@
 				$.getJSON("<?= site_url('getClassesByDepartment'); ?>/" + deptId + "/" + school_id, function (data) {
 					if (data && data.success && data.classes) {
 						$.each(data.classes, function (i, obj) {
+							var label = String(obj.label || '');
+							if (/holiday/i.test(label)) {
+								return;
+							}
 							options += "<option value='" + obj.id + "' data-level='" + obj.level + "' data-fee='" + obj.fee + "'>" + obj.label + "</option>";
 						});
 						$("#classOptions").html(options);
