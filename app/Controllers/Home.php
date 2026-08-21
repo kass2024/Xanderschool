@@ -6268,35 +6268,13 @@ public function attendanceCard()
 		$village = $this->request->getPost("village");
 		$class = $this->request->getPost("class");
 		$mode = $this->request->getPost("mode");
-		$religion = $this->request->getPost("religion");
-		$father = $this->request->getPost("father");
-		$ft_phone = $this->request->getPost("father_phone");
-		$mother = $this->request->getPost("mother");
-		$mt_phone = $this->request->getPost("mother_phone");
-		$guardian = $this->request->getPost("guardian");
-		$gd_phone = $this->request->getPost("guardian_phone");
-		$isParent = false;
-		$isParentPhone = false;
-		if (strlen($father) > 3)
-			$isParent = true;
-		if (strlen($ft_phone) > 3)
-			$isParentPhone = true;
-
-		if (strlen($mother) > 3)
-			$isParent = true;
-		if (strlen($mt_phone) > 3)
-			$isParentPhone = true;
-
-		if (strlen($guardian) > 3)
-			$isParent = true;
-		if (strlen($gd_phone) > 3)
-			$isParentPhone = true;
-		if (!$isParent) {
-			return $this->response->setJSON(array("error" => lang("app.oneParentRequired")));
-		}
-		if (!$isParentPhone) {
-			return $this->response->setJSON(array("error" => lang("app.oneParentPhoneRequired")));
-		}
+		$religion = trim((string) $this->request->getPost("religion"));
+		$father = trim((string) $this->request->getPost("father"));
+		$ft_phone = trim((string) $this->request->getPost("father_phone"));
+		$mother = trim((string) $this->request->getPost("mother"));
+		$mt_phone = trim((string) $this->request->getPost("mother_phone"));
+		$guardian = trim((string) $this->request->getPost("guardian"));
+		$gd_phone = trim((string) $this->request->getPost("guardian_phone"));
 //		return $this->response->setJSON(array("error"=>"Error: ".$dob));
 		$studentMdl = new StudentModel();
 		try {

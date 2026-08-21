@@ -137,8 +137,8 @@
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.religion"); ?></label>
-											<select class="form-control select2" name="religion">
-												<option selected disabled><?= lang("app.selectReligion"); ?></option>
+											<select class="form-control select2" name="religion" data-parsley-required="false">
+												<option value="" selected><?= lang("app.selectReligion"); ?></option>
 												<option><?= lang("app.islam"); ?></option>
 												<option><?= lang("app.catholics"); ?></option>
 												<option><?= lang("app.adventist"); ?></option>
@@ -152,31 +152,34 @@
 									<div class="main-card mb-3 card" style="padding: 20px">
 										<div class="form-group">
 											<label><?= lang("app.fatherNames"); ?></label>
-											<input type="text" class="form-control" name="father"/>
+											<input type="text" class="form-control" name="father" data-parsley-required="false"/>
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.fPhoneNumber"); ?></label>
 											<input type="text" class="form-control" name="father_phone"
+												   data-parsley-required="false"
 												   data-parsley-lenght="[10,13]"
 												   data-parsley-lenght-message="<?= lang("app.fphonenotvalid");?>"/>
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.motherNames"); ?></label>
-											<input type="text" class="form-control" name="mother"/>
+											<input type="text" class="form-control" name="mother" data-parsley-required="false"/>
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.motherPhoneNumber"); ?></label>
 											<input type="text" class="form-control" name="mother_phone"
+												   data-parsley-required="false"
 												   data-parsley-lenght="[10,13]"
 												   data-parsley-lenght-message="<?= lang("app.fphonenotvalid");?>"/>
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.guardiaNames");?></label>
-											<input type="text" class="form-control" name="guardian"/>
+											<input type="text" class="form-control" name="guardian" data-parsley-required="false"/>
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.guardianPhoneNumber"); ?></label>
 											<input type="text" class="form-control" name="guardian_phone"
+												   data-parsley-required="false"
 												   data-parsley-lenght="[10,13]"
 												   data-parsley-lenght-message="<?= lang("app.fphonenotvalid");?>"/>
 										</div>
