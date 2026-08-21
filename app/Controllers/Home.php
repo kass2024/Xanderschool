@@ -19227,6 +19227,68 @@ public function assign_card()
 	/**
 	 * Send one concatenated SMS (single bubble on the phone) and bill ceil(chars/160) units.
 	 */
+	private function collectStudentAdmissionPhones(array $student): array
+	{
+		$phones = [];
+		$add = static function ($ph) use (&$phones) {
+			$ph = trim((string) $ph);
+			$key = preg_replace('/\D/', '', $ph);
+			if (strlen($key) >= 9 && !isset($phones[$key])) {
+				$phones[$key] = $ph;
+			}
+		};
+		$add($student['phone'] ?? '');
+		$father = trim((string) ($student['father'] ?? ''));
+		$mother = trim((string) ($student['mother'] ?? ''));
+		$guardian = trim((string) ($student['guardian'] ?? ''));
+		if (strlen($father) > 3) {
+			$add($student['ft_phone'] ?? '');
+		} elseif (strlen($mother) > 3) {
+			$add($student['mt_phone'] ?? '');
+		} elseif (strlen($guardian) > 3) {
+			$add($student['gd_phone'] ?? '');
+		} else {
+			$add($student['ft_phone'] ?? '');
+			$add($student['mt_phone'] ?? '');
+			$add($student['gd_phone'] ?? '');
+		}
+		return $phones;
+	}
+
+	private function dispatchAdmissionSmsForStudent(array $st): array
+	{
+		$name = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? ''));
+		$classLabel = trim(($st['level_name'] ?? '') . ' ' . ($st['class_title'] ?? ''));
+		if ($classLabel === '') {
+			$classLabel = (string) ($st['class_title'] ?? 'your class');
+		}
+		$modeLabel = ((int) ($st['studying_mode'] ?? 0) === 1) ? 'Day' : 'Boarding';
+		$regNo = (string) ($st['regno'] ?? '');
+		$nurseryOrPrimary = $this->isNurseryOrPrimaryAdmission(
+			(string) ($st['level_name'] ?? ''),
+			(string) ($st['faculty_name'] ?? ''),
+			(string) ($st['class_title'] ?? ''),
+			(int) ($st['faculty_type'] ?? 0)
+		);
+		$message = $this->buildAdmissionSms($name, $classLabel, $modeLabel, $regNo, $nurseryOrPrimary);
+		$phones = $this->collectStudentAdmissionPhones($st);
+		if (empty($phones)) {
+			$who = $name !== '' ? $name : ('#' . (int) ($st['id'] ?? 0));
+			return ['ok' => false, 'error' => $who . ': no valid phone number.'];
+		}
+		$any = false;
+		foreach ($phones as $ph) {
+			if ($this->sendChargedSms($ph, $message, (int) ($st['id'] ?? 0), 'Admission confirmation')) {
+				$any = true;
+			}
+		}
+		if (!$any) {
+			$who = $name !== '' ? $name : ('#' . (int) ($st['id'] ?? 0));
+			return ['ok' => false, 'error' => $who . ': SMS could not be sent.'];
+		}
+		return ['ok' => true, 'error' => ''];
+	}
+
 	private function sendChargedSms(string $phone, string $message, int $receiverId = 0, string $subject = 'Admission confirmation'): bool
 	{
 		$phone = trim($phone);
@@ -19413,6 +19475,80 @@ public function assign_card()
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}
+	}
+
+	/**
+	 * Resend the level-based admission confirmation SMS to enrolled students (one or many).
+	 */
+	public function sendStudentAdmissionSms()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		@ini_set('max_execution_time', '300');
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$yearId = (int) ($this->request->getPost('year') ?: ($this->data['academic_year_id'] ?? 0));
+		$ids = $this->request->getPost('studentIds');
+		if (is_string($ids) && $ids !== '') {
+			$ids = preg_split('/[,\s]+/', $ids);
+		}
+		if (!is_array($ids) || $ids === []) {
+			$single = $this->request->getPost('studentId');
+			$ids = ($single !== null && $single !== '') ? [$single] : [];
+		}
+		$ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+		if ($ids === []) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Select at least one student.']);
+		}
+		if (count($ids) > 500) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Too many students selected (max 500).']);
+		}
+
+		$studentMdl = new StudentModel();
+		$builder = $studentMdl->select('students.id, students.fname, students.lname, students.regno, students.phone,
+				students.studying_mode, students.father, students.ft_phone, students.mother, students.mt_phone,
+				students.guardian, students.gd_phone, c.title as class_title, l.title as level_name,
+				f.title as faculty_name, f.type as faculty_type')
+			->join('class_records cr', 'cr.student=students.id')
+			->join('classes c', 'c.id=cr.class')
+			->join('departments d', 'd.id=c.department')
+			->join('levels l', 'l.id=c.level')
+			->join('faculty f', 'f.id=d.faculty_id', 'left')
+			->where('students.school_id', $schoolId)
+			->whereIn('students.id', $ids);
+		if ($yearId > 0) {
+			$builder->where('cr.year', $yearId);
+		}
+		$rows = $builder->get()->getResultArray();
+		$found = [];
+		foreach ($rows as $row) {
+			$found[(int) $row['id']] = $row;
+		}
+
+		$sentStudents = 0;
+		$issues = [];
+		foreach ($ids as $id) {
+			if (!isset($found[$id])) {
+				$issues[] = "Student #{$id} was not found in this school/year.";
+				continue;
+			}
+			$result = $this->dispatchAdmissionSmsForStudent($found[$id]);
+			if (!empty($result['ok'])) {
+				$sentStudents++;
+			} elseif (!empty($result['error'])) {
+				$issues[] = $result['error'];
+			}
+		}
+
+		$message = "Admission SMS sent for {$sentStudents} student(s).";
+		if ($issues !== []) {
+			$message .= ' Issues: ' . implode(' ', array_slice($issues, 0, 8));
+		}
+		return $this->response->setJSON([
+			'success' => $sentStudents > 0,
+			'sent' => $sentStudents,
+			'failed' => count($issues),
+			'message' => $message,
+			'error' => $sentStudents > 0 ? null : ($issues[0] ?? 'No SMS sent.'),
+		]);
 	}
 
 	/**
