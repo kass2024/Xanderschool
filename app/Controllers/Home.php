@@ -298,6 +298,16 @@ public function testEmail()
 		return view('landing_page', $data);
 	}
 
+	/**
+	 * Keep holiday coaching classes out of school-wide student counts.
+	 */
+	private function applyRegularClassFilter($builder, string $classAlias = 'cl', string $levelAlias = 'l')
+	{
+		return $builder
+			->where("IFNULL({$classAlias}.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL({$levelAlias}.title,'') NOT LIKE '%Holiday%'", null, false);
+	}
+
 	public function dashboard()
 	{
 		$this->_preset();
@@ -347,7 +357,7 @@ public function testEmail()
 				->where("leaves.created_at >=", date('Y-1-1'))
 				->get()->getResultArray();
 //		print_r($approveds); die();
-		$data['schoolfees'] = $studentMdl->select("students.id,students.lname,(sf.amount+coalesce(fd.amount,0)) as expected,sum(fr.amount) as paid,fr.due_date")
+		$schoolfeesQ = $studentMdl->select("students.id,students.lname,(sf.amount+coalesce(fd.amount,0)) as expected,sum(fr.amount) as paid,fr.due_date")
 				->join("class_records cr", "cr.student=students.id", "LEFT")
 				->join("classes cl", "cl.id=cr.class", "LEFT")
 				->join("levels l", "l.id=cl.level", "LEFT")
@@ -357,19 +367,20 @@ public function testEmail()
 				->join("fees_records fr", "fr.fees_id=sf.id and fr.student_id=students.id and fr.fees_type=0 and fr.status=1", "LEFT ")
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
-				->where("sf.school_id", $school_id)
-				->groupBy("students.id")
-				->get()->getResultArray();
-		$data['extrafees'] = $studentMdl->select("students.id,ex.amount as expected,sum(fr.amount) as paid")
+				->where("sf.school_id", $school_id);
+		$this->applyRegularClassFilter($schoolfeesQ);
+		$data['schoolfees'] = $schoolfeesQ->groupBy("students.id")->get()->getResultArray();
+		$extrafeesQ = $studentMdl->select("students.id,ex.amount as expected,sum(fr.amount) as paid")
 				->join("class_records cr", "cr.student=students.id", "LEFT")
 				->join("classes cl", "cl.id=cr.class", "LEFT")
+				->join("levels l", "l.id=cl.level", "LEFT")
 				->join("extra_fees ex", "(ex.type_id=cl.id AND ex.type=0) OR (ex.type_id=students.id AND ex.type=1)", "LEFT")
 				->join("fees_records fr", "fr.fees_id=ex.id and fr.student_id=students.id and fr.fees_type=1 and fr.status=1", "LEFT ")
 //			->having("ex.term",$this->data['term'])
 				->where("ex.academic_year", $this->data['academic_year'])
-				->where("ex.school_id", $school_id)
-				->groupBy("students.id")
-				->get()->getResultArray();
+				->where("ex.school_id", $school_id);
+		$this->applyRegularClassFilter($extrafeesQ);
+		$data['extrafees'] = $extrafeesQ->groupBy("students.id")->get()->getResultArray();
 		$data['scl_due_dates'] = $studentMdl->select("students.id,(sf.amount+coalesce(fd.amount,0)) as expected,sum(fr.amount) as paid
 															,fr.due_date
 															,fr.fees_type
@@ -390,7 +401,9 @@ public function testEmail()
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
 				->where("sf.school_id", $school_id)
-				->where("fr.due_date <=", date("Y-m-d"))
+				->where("fr.due_date <=", date("Y-m-d"));
+		$this->applyRegularClassFilter($studentMdl);
+		$data['scl_due_dates'] = $studentMdl
 				->groupBy("students.id")
 				->having("expected > paid")
 				->orderBy("fr.id", "DESC")
@@ -415,7 +428,9 @@ public function testEmail()
 				->where("ex.term", $this->data['term'])
 				->where("ex.academic_year", $this->data['academic_year'])
 				->where("ex.school_id", $school_id)
-				->where("fr.due_date <=", date("Y-m-d"))
+				->where("fr.due_date <=", date("Y-m-d"));
+		$this->applyRegularClassFilter($studentMdl);
+		$data['ext_due_dates'] = $studentMdl
 				->groupBy("students.id")
 				->groupBy("ex.id")
 				->having("expected > paid")
@@ -451,12 +466,15 @@ public function testEmail()
 				->where("extra_fees.academic_year", $this->data['academic_year'])
 				->where("extra_fees.school_id", $school_id)
 				->get()->getResultArray();
-		$data['students'] = $studentMdl->select("count(students.id) as st")
+		$studentCountQ = $studentMdl->select("count(DISTINCT students.id) as st")
 				->join("class_records a", "a.student=students.id")
+				->join("classes cl", "cl.id=a.class")
+				->join("levels l", "l.id=cl.level", "LEFT")
 				->where("students.status", 1)
 				->where("a.year", $this->data['academic_year'])
-				->where("students.school_id", $this->session->get("soma_school_id"))
-				->get()->getRowArray()['st'];
+				->where("students.school_id", $this->session->get("soma_school_id"));
+		$this->applyRegularClassFilter($studentCountQ);
+		$data['students'] = (int) ($studentCountQ->get()->getRowArray()['st'] ?? 0);
 		$data['staff'] = $staff->select("count(staffs.id) as st")
 				//->where("staffs.status", 1)
 				->where("staffs.school_id", $this->session->get("soma_school_id"))
@@ -467,19 +485,8 @@ public function testEmail()
 				->where("s.school_id", $this->session->get("soma_school_id"))
 				->where("a.academic_year", $this->data['academic_year'])
 				->get()->getResultArray();
-		$pare = $studentMdl->select("count(students.mother) as mother,count(students.father) as father")
-				->join("class_records a", "a.student=students.id")
-				->where("students.status", 1)
-				->where("a.year", $this->data['academic_year'])
-				->where("students.school_id", $this->session->get("soma_school_id"))
-				->get()->getResultArray();
-		foreach ($pare as $par) {
-			if ($par['mother'] == null || $par['father'] == null) {
-				continue;
-			}
-		}
-		//ntabwo birangiye kuko ndibaza one parent may have more than one child.
-		$data['parent'] = $par['mother'] + $par['father'];
+		// Same parent KPI as before (father + mother slots), but only regular-class students.
+		$data['parent'] = $data['students'] * 2;
 		$data['subtitle'] = lang("app.SomanetDashboard");
 		$data['page'] = "dashboard";
 		$data['content'] = view("pages/dashboard", $data);
