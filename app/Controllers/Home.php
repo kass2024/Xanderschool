@@ -314,6 +314,27 @@ public function testEmail()
 		return strpos($hay, 'holiday') !== false;
 	}
 
+	private function isStreamDepartmentTitle(?string $title): bool
+	{
+		return strtolower(trim((string) $title)) === 'stream';
+	}
+
+	/** Stream one / Stream two class names used by the Stream department. */
+	private function isStreamTrackClass(array $row): bool
+	{
+		$hay = strtolower(trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '')));
+		return (bool) preg_match('/\bstream\s*(one|two|1|2)\b/', $hay);
+	}
+
+	private function isSeniorLetterClass(array $row): bool
+	{
+		$hay = strtolower(trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '')));
+		if (preg_match('/stream/i', $hay)) {
+			return false;
+		}
+		return (bool) preg_match('/\bs[1-6]\b/', $hay);
+	}
+
 	private function classDisplayName(array $row): string
 	{
 		return trim(($row['level_name'] ?? '') . ' ' . ($row['code'] ?? $row['dept_code'] ?? '') . ' ' . ($row['title'] ?? ''));
@@ -18656,7 +18677,11 @@ public function assign_card()
 			return $this->response->setJSON(['error' => 'Online registration not configured for this school']);
 		}
 		$classMdl = new ClassesModel();
-		$classes = $classMdl->select('classes.id, classes.title, classes.level, classes.department, levels.title as level_name, departments.title as dept_name')
+		$deptRow = (new DeptModel())->select('title')->find($department);
+		$deptTitle = is_array($deptRow) ? (string) ($deptRow['title'] ?? '') : '';
+		$isStreamDept = $this->isStreamDepartmentTitle($deptTitle);
+		$select = 'classes.id, classes.title, classes.level, classes.department, levels.title as level_name, departments.title as dept_name';
+		$classes = $classMdl->select($select)
 			->join('levels', 'levels.id = classes.level', 'left')
 			->join('departments', 'departments.id = classes.department', 'left')
 			->where('classes.school_id', $school)
@@ -18669,9 +18694,61 @@ public function assign_card()
 			->orderBy('classes.title', 'ASC')
 			->get()->getResultArray();
 		if ($classes) {
-			$classes = array_values(array_filter($classes, static function ($cls) {
+			$classes = array_values(array_filter($classes, function ($cls) {
 				$hay = strtolower(trim(($cls['level_name'] ?? '') . ' ' . ($cls['title'] ?? '')));
 				return strpos($hay, 'holiday') === false;
+			}));
+		}
+		if ($isStreamDept) {
+			$classes = array_values(array_filter($classes, function ($cls) {
+				return $this->isStreamTrackClass($cls) && !$this->isSeniorLetterClass($cls);
+			}));
+			$extra = $classMdl->select($select)
+				->join('levels', 'levels.id = classes.level', 'left')
+				->join('departments', 'departments.id = classes.department', 'left')
+				->where('classes.school_id', $school)
+				->groupStart()
+					->like('levels.title', 'stream')
+					->orLike('classes.title', 'stream')
+				->groupEnd()
+				->groupStart()
+					->notLike('classes.title', 'holiday')
+					->notLike('levels.title', 'holiday')
+				->groupEnd()
+				->orderBy('levels.id', 'ASC')
+				->get()->getResultArray();
+			$seen = [];
+			foreach ($classes as $cls) {
+				$seen[(int) $cls['id']] = true;
+			}
+			foreach ($extra as $cls) {
+				if (!$this->isStreamTrackClass($cls) || $this->isSeniorLetterClass($cls)) {
+					continue;
+				}
+				$id = (int) $cls['id'];
+				if ($id < 1 || isset($seen[$id])) {
+					continue;
+				}
+				$seen[$id] = true;
+				$classes[] = $cls;
+			}
+			usort($classes, static function ($a, $b) {
+				$ta = strtolower(trim(($a['level_name'] ?? '') . ' ' . ($a['title'] ?? '')));
+				$tb = strtolower(trim(($b['level_name'] ?? '') . ' ' . ($b['title'] ?? '')));
+				$rank = static function ($t) {
+					if (preg_match('/stream\s*(one|1)\b/', $t)) {
+						return 1;
+					}
+					if (preg_match('/stream\s*(two|2)\b/', $t)) {
+						return 2;
+					}
+					return 9;
+				};
+				return $rank($ta) <=> $rank($tb);
+			});
+		} else {
+			$classes = array_values(array_filter($classes, function ($cls) {
+				return !$this->isStreamTrackClass($cls);
 			}));
 		}
 		if (!$classes) {

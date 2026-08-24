@@ -1351,12 +1351,22 @@
 				$("#levelHidden").val('');
 				$("#dynamicDocsContainer").html('<p class="text-muted">Choose a class to load required documents.</p>');
 				if (!deptId || !school_id) return;
+				var deptName = String($("#departmentOptions option:selected").text() || '');
+				var streamDept = /^\s*stream\s*$/i.test(deptName);
 				$.getJSON("<?= site_url('getClassesByDepartment'); ?>/" + deptId + "/" + school_id, function (data) {
 					if (data && data.success && data.classes) {
 						$.each(data.classes, function (i, obj) {
 							var label = String(obj.label || '');
 							if (/holiday/i.test(label)) {
 								return;
+							}
+							if (streamDept) {
+								if (!/\bstream\s*(one|two|1|2)\b/i.test(label)) {
+									return;
+								}
+								if (/\bs[1-6]\b/i.test(label) && !/stream/i.test(label)) {
+									return;
+								}
 							}
 							options += "<option value='" + obj.id + "' data-level='" + obj.level + "' data-fee='" + obj.fee + "'>" + obj.label + "</option>";
 						});
