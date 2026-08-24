@@ -1108,7 +1108,7 @@ return [
 	"momo" => "MTN Momo",
 	"airtelMoney" => "Airtel Money",
 	"studentPic" => "Photos d'étudiants",
-	"studentPicSub" => "Téléchargement de photos d'élèves",
+	"studentPicSub" => "Télécharger des fichiers ou capturer une photo avec la webcam USB",
 	"feesRecordCancelled" => "Dossier d'honoraires annulé",
 	"feesRecordSaved" => "Enregistrement des frais enregistré",
 	"studentRegistration" => "Inscription étudiante",

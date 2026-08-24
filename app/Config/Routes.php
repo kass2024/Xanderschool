@@ -79,6 +79,7 @@ $routes->get('/messaging/parents', 'Home::messaging_parents');
 $routes->get('/messaging/history', 'Home::messaging_history');
 $routes->add('/student-cards', 'Home::student_cards');
 $routes->add('/student-photo', 'Home::student_photo');
+$routes->post('/save_live_student_photo', 'Home::save_live_student_photo');
 $routes->add('/staff-cards', 'Home::staff_cards');
 $routes->get('/register-student', 'Home::add_student');
 $routes->get('/get-single-package/(:any)', 'Admin::get_single_package/$1');

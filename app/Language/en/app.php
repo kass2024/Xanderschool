@@ -1121,7 +1121,7 @@ return [
    'momo'                        => 'MTN Momo',
    'airtelMoney'                 => 'Airtel Money',
    'studentPic'                  => 'Student pictures',
-   'studentPicSub'               => 'Student pictures upload',
+   'studentPicSub'               => 'Upload files or capture a live USB camera photo',
    'feesRecordCancelled'         => 'Fees record cancelled',
    'feesRecordSaved'             => 'Fees record saved',
    'feesRecordPending'           => 'Fees record saved — pending Director of Finance approval',

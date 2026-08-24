@@ -786,8 +786,165 @@ public function testEmail()
 		$data['title'] = lang("app.studentPic");
 		$data['subtitle'] = lang("app.studentPicSub");
 		$data['page'] = "student_pic";
-		$data['content'] = view("pages/students_picture", array());
+		$data['content'] = view("pages/students_picture", $this->photoStudioPayload());
 		return view('main', $data);
+	}
+
+	/**
+	 * Classes + enrolled students for the live photo studio (current academic year).
+	 */
+	private function photoStudioPayload(): array
+	{
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$yearId = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
+		$classMdl = new ClassesModel();
+		$allClasses = $classMdl->select("classes.id,classes.title,d.code as dept_code,l.title as level_name")
+			->join("departments d", "d.id=classes.department")
+			->join("levels l", "l.id=classes.level")
+			->where("classes.school_id", $schoolId)
+			->orderBy("l.title")
+			->orderBy("classes.title")
+			->get()->getResultArray();
+		$classes = [];
+		foreach ($allClasses as $row) {
+			$hay = strtolower(trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '') . ' ' . ($row['dept_code'] ?? '')));
+			if (strpos($hay, 'holiday') !== false) {
+				continue;
+			}
+			$classes[] = [
+				'id' => (int) $row['id'],
+				'label' => trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '') . ' ' . ($row['dept_code'] ?? '')),
+			];
+		}
+		$stMdl = new StudentModel();
+		$builder = $stMdl->select("students.id,students.regno,students.photo,students.fname,students.lname,c.id as class_id,
+			concat(students.fname,' ',students.lname) as name,concat(l.title,' ',d.code,' ',c.title) as class")
+			->join('class_records cr', 'cr.student=students.id')
+			->join('classes c', 'c.id=cr.class')
+			->join('departments d', 'd.id=c.department')
+			->join('levels l', 'l.id=c.level')
+			->where('students.status', '1')
+			->where('students.school_id', $schoolId)
+			->orderBy('students.fname')
+			->orderBy('students.lname');
+		if ($yearId > 0) {
+			$builder->where('cr.year', $yearId);
+		}
+		$rows = $builder->get()->getResultArray();
+		$unique = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['id'] ?? 0);
+			if ($sid <= 0 || isset($unique[$sid])) {
+				continue;
+			}
+			$resolved = resolve_profile_photo($row['photo'] ?? '');
+			$unique[$sid] = [
+				'id' => $sid,
+				'name' => trim((string) ($row['name'] ?? '')),
+				'regno' => (string) ($row['regno'] ?? ''),
+				'class' => trim((string) ($row['class'] ?? '')),
+				'class_id' => (int) ($row['class_id'] ?? 0),
+				'has_photo' => $resolved !== null,
+				'photo' => $resolved !== null ? profile_photo_url($resolved) : '',
+			];
+		}
+		return [
+			'photo_students' => array_values($unique),
+			'photo_classes' => $classes,
+			'photo_placeholder' => profile_photo_url(null),
+		];
+	}
+
+	public function save_live_student_photo()
+	{
+		$this->_preset(1, 3);
+		$studentId = (int) $this->request->getPost('student');
+		$photo = (string) $this->request->getPost('photo');
+		if ($studentId <= 0 || $photo === '') {
+			return $this->response->setJSON(['error' => lang('app.fatalErrorRestart')]);
+		}
+		if (strpos($photo, 'base64,') !== false) {
+			$photo = substr($photo, strpos($photo, 'base64,') + 7);
+		}
+		$photo = preg_replace('/\s+/', '', $photo);
+		$decoded = base64_decode($photo, true);
+		if ($decoded === false || strlen($decoded) < 200) {
+			return $this->response->setJSON(['error' => lang('app.ImagenotSaved')]);
+		}
+		if (strlen($decoded) > 8 * 1024 * 1024) {
+			return $this->response->setJSON(['error' => lang('app.fileSizeBigger') . ' (max 8MB)']);
+		}
+		$isJpeg = strncmp($decoded, "\xFF\xD8\xFF", 3) === 0;
+		$isPng = strncmp($decoded, "\x89PNG", 4) === 0;
+		if (!$isJpeg && !$isPng) {
+			return $this->response->setJSON(['error' => lang('app.fileNotAllowed')]);
+		}
+
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$stMdl = new StudentModel();
+		$student = $stMdl->select('id,photo,fname,lname,regno')
+			->where('id', $studentId)
+			->where('school_id', $schoolId)
+			->where('status', '1')
+			->get(1)->getRow();
+		if ($student === null) {
+			return $this->response->setJSON(['error' => lang('app.opsStudentNotFound')]);
+		}
+
+		$profilePath = FCPATH . 'assets/images/profile/';
+		if (!is_dir($profilePath)) {
+			@mkdir($profilePath, 0775, true);
+		}
+		if (!is_writable($profilePath)) {
+			@chmod($profilePath, 0775);
+		}
+
+		$name = make_profile_photo_name('jpg');
+		$saved = false;
+		if (function_exists('imagecreatefromstring')) {
+			$im = @imagecreatefromstring($decoded);
+			if ($im) {
+				$w = imagesx($im);
+				$h = imagesy($im);
+				$maxW = 720;
+				$maxH = 960;
+				if ($w > $maxW || $h > $maxH) {
+					$scale = min($maxW / max(1, $w), $maxH / max(1, $h));
+					$nw = max(1, (int) round($w * $scale));
+					$nh = max(1, (int) round($h * $scale));
+					$dst = imagecreatetruecolor($nw, $nh);
+					imagecopyresampled($dst, $im, 0, 0, 0, 0, $nw, $nh, $w, $h);
+					imagedestroy($im);
+					$im = $dst;
+				}
+				imageinterlace($im, true);
+				$saved = imagejpeg($im, $profilePath . $name, 90);
+				imagedestroy($im);
+			}
+		}
+		if (!$saved && file_put_contents($profilePath . $name, $decoded) === false) {
+			return $this->response->setJSON(['error' => lang('app.ImagenotSaved')]);
+		}
+
+		try {
+			$stMdl->save(['id' => $studentId, 'photo' => $name]);
+		} catch (\Exception $e) {
+			@unlink($profilePath . $name);
+			return $this->response->setJSON(['error' => lang('app.photoNotSaved')]);
+		}
+
+		$old = trim((string) ($student->photo ?? ''));
+		if ($old !== '' && $old !== $name && is_file($profilePath . $old)) {
+			@unlink($profilePath . $old);
+		}
+
+		return $this->response->setJSON([
+			'success' => lang('app.photoUploaded'),
+			'photo' => $name,
+			'url' => profile_photo_url($name),
+			'student' => $studentId,
+			'name' => trim($student->fname . ' ' . $student->lname),
+		]);
 	}
 
 	public function generate_cards()
