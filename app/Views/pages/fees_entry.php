@@ -322,18 +322,14 @@ $(function () {
 			}
 		});
 		const mode = $('#feInvoicePaymentMode').val();
-		const slipOk = mode !== '1' || ($('#feInvoiceSlipRef').val() || '').trim().length > 0;
+		const slipOk = ($('#feInvoiceSlipRef').val() || '').trim().length > 0;
 		$('#feInvoiceTotal').text(formatRwf(total));
 		$('#feSaveCount').text(count > 0 ? '(' + count + ' item' + (count > 1 ? 's' : '') + ')' : '');
 		$('#btnSave').prop('disabled', count === 0 || !mode || !slipOk);
 	}
 
 	function feToggleSlipRef() {
-		const isBank = $('#feInvoicePaymentMode').val() === '1';
-		$('#feSlipRefWrap').toggle(isBank);
-		if (!isBank) {
-			$('#feInvoiceSlipRef').val('');
-		}
+		$('#feSlipRefWrap').show();
 		feInvoiceUpdateTotal();
 	}
 
@@ -440,7 +436,7 @@ $(function () {
 			return;
 		}
 		const slipRef = ($('#feInvoiceSlipRef').val() || '').trim();
-		if (mode === '1' && !slipRef) {
+		if (!slipRef) {
 			toastada.error('<?= esc(lang('app.slipReferenceRequired')); ?>');
 			return;
 		}

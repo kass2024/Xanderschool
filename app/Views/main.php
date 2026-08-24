@@ -2598,7 +2598,7 @@
 									<label><?= lang("app.dueDate"); ?></label>
 									<input type="date" name="dueDate" class="form-control" id="feInvoiceDueDate">
 								</div>
-								<div class="col-md-6 mt-3" id="feSlipRefWrap" style="display:none">
+								<div class="col-md-6 mt-3" id="feSlipRefWrap">
 									<label><?= lang("app.slipReference"); ?></label>
 									<input type="text" name="slipRef" class="form-control" id="feInvoiceSlipRef"
 									       maxlength="50" placeholder="<?= lang("app.slipReferencePlaceholder"); ?>">

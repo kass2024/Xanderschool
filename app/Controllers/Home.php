@@ -13131,14 +13131,7 @@ public function getApplicationDocs($id = null)
 			return $this->response->setJSON(["error" => lang("app.selectAtLeastOneFeeItem")]);
 		}
 
-		$usesBankSlip = false;
-		foreach ($modes as $mode) {
-			if ((int) $mode === FeesApproval::PAYMENT_MODE_BANK_SLIP) {
-				$usesBankSlip = true;
-				break;
-			}
-		}
-		if ($usesBankSlip && $slipRef === '') {
+		if ($slipRef === '') {
 			return $this->response->setJSON(["error" => lang("app.slipReferenceRequired")]);
 		}
 
@@ -13154,7 +13147,7 @@ public function getApplicationDocs($id = null)
 						"status" => FeesApproval::STATUS_APPROVED,
 						"created_by" => $this->session->get("soma_id")];
 				$recId = $feeEntryModel->insert($data);
-				if ((int) $modes[$key] === FeesApproval::PAYMENT_MODE_BANK_SLIP && $slipRef !== '') {
+				if ($slipRef !== '') {
 					$this->_assignFeeSlipRef($feeEntryModel, (int) $recId, $student, (int) $feesTypes[$key], $slipRef);
 				}
 				if (count($items) - 1 == $key) {
@@ -19594,7 +19587,7 @@ public function assign_card()
 		if ($studentId < 1 || $payments === []) {
 			return ['ok' => false, 'error' => lang('app.selectAtLeastOneFeeItem')];
 		}
-		if ($paymentMode === FeesApproval::PAYMENT_MODE_BANK_SLIP && $slipRef === '') {
+		if ($slipRef === '') {
 			return ['ok' => false, 'error' => lang('app.slipReferenceRequired')];
 		}
 
@@ -19702,7 +19695,7 @@ public function assign_card()
 			if ($recId < 1) {
 				return ['ok' => false, 'error' => 'Could not save payment for item #' . ($idx + 1) . '.'];
 			}
-			if ($paymentMode === FeesApproval::PAYMENT_MODE_BANK_SLIP && $slipRef !== '') {
+			if ($slipRef !== '') {
 				$this->_assignFeeSlipRef($feeEntryModel, $recId, $studentId, $feeType, $slipRef);
 			}
 			$receiptParts[] = $recId . ':' . $feeType;
@@ -20008,7 +20001,7 @@ public function assign_card()
 		if ($paymentMode < 1) {
 			return $this->response->setJSON(["error" => lang("app.selectPaymentMode")]);
 		}
-		if ($paymentMode === FeesApproval::PAYMENT_MODE_BANK_SLIP && $slipRef === '') {
+		if ($slipRef === '') {
 			return $this->response->setJSON(["error" => lang("app.slipReferenceRequired")]);
 		}
 

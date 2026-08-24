@@ -610,7 +610,7 @@ foreach ($pendings as $p) {
               <label><?= lang('app.dueDate') ?></label>
               <input type="date" class="form-control" id="feInvoiceDueDate">
             </div>
-            <div class="col-md-4" id="feSlipRefWrap" style="display:none">
+            <div class="col-md-4" id="feSlipRefWrap">
               <label><?= lang('app.slipReference') ?></label>
               <input type="text" class="form-control" id="feInvoiceSlipRef" maxlength="50" placeholder="<?= lang('app.slipReferencePlaceholder') ?>">
             </div>
@@ -946,17 +946,13 @@ foreach ($pendings as $p) {
       }
     });
     var mode = $('#feInvoicePaymentMode').val();
-    var slipOk = mode !== '1' || ($('#feInvoiceSlipRef').val() || '').trim().length > 0;
+    var slipOk = ($('#feInvoiceSlipRef').val() || '').trim().length > 0;
     $('#feInvoiceTotal').text(formatRwf(total));
     $('#approveConfirmBtn').prop('disabled', count === 0 || !mode || !slipOk || !$('#approveClassId').val());
   }
 
   function feToggleSlipRef() {
-    var isBank = $('#feInvoicePaymentMode').val() === '1';
-    $('#feSlipRefWrap').toggle(isBank);
-    if (!isBank) {
-      $('#feInvoiceSlipRef').val('');
-    }
+    $('#feSlipRefWrap').show();
     feInvoiceUpdateTotal();
   }
 
@@ -1162,7 +1158,7 @@ foreach ($pendings as $p) {
     var mode = $('#feInvoicePaymentMode').val();
     if (!mode) { showAlert($('#approveAlert'), 'danger', 'Select payment mode.'); return; }
     var slipRef = ($('#feInvoiceSlipRef').val() || '').trim();
-    if (mode === '1' && !slipRef) {
+    if (!slipRef) {
       showAlert($('#approveAlert'), 'danger', <?= json_encode(lang('app.slipReferenceRequired')) ?>);
       return;
     }
