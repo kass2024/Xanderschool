@@ -27,8 +27,163 @@ $APP_BASE          = rtrim(base_url(), '/');
   .modal, .modal *{ pointer-events:auto !important; }
   .app-inner-layout__content{ transform:none !important; }
 
-  .pending-actions{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;max-width:220px;margin:0 auto;}
+  .pending-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:240px;margin:0 auto;}
   .pending-actions .btn{min-width:72px;font-size:12px;padding:4px 8px;}
+  .pending-mobile{display:none;}
+  .pending-search-wrap{display:none;}
+  .pending-page{overflow-x:hidden;}
+
+  .pending-card{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:14px;
+    padding:14px;
+    margin-bottom:12px;
+    box-shadow:0 4px 14px rgba(15,23,42,.05);
+  }
+  .pending-card-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+    margin-bottom:10px;
+  }
+  .pending-card-head h3{
+    margin:0 0 6px;
+    font-size:1.05rem;
+    font-weight:800;
+    color:#0b1f4a;
+    line-height:1.25;
+    word-break:break-word;
+  }
+  .pending-num{
+    flex-shrink:0;
+    min-width:32px;
+    height:32px;
+    border-radius:999px;
+    background:#eff6ff;
+    color:#1d4ed8;
+    font-weight:800;
+    font-size:.82rem;
+    display:grid;
+    place-items:center;
+  }
+  .pending-status{
+    display:inline-block;
+    background:#fef3c7;
+    color:#92400e;
+    font-size:.72rem;
+    font-weight:700;
+    padding:3px 8px;
+    border-radius:999px;
+  }
+  .pending-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px 10px;
+    margin:0 0 12px;
+  }
+  .pending-grid div{
+    min-width:0;
+    background:#f8fafc;
+    border-radius:10px;
+    padding:8px 10px;
+  }
+  .pending-grid dt{
+    margin:0;
+    font-size:.68rem;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:#64748b;
+  }
+  .pending-grid dd{
+    margin:2px 0 0;
+    font-size:.9rem;
+    font-weight:600;
+    color:#0f172a;
+    word-break:break-word;
+  }
+  .pending-grid .span-2{grid-column:1 / -1;}
+  .pending-card .pending-actions{
+    max-width:none;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+  }
+  .pending-card .pending-actions .btn{
+    min-width:0;
+    min-height:42px;
+    font-size:.86rem;
+    font-weight:700;
+    padding:8px 10px;
+  }
+  .pending-card .pending-actions .deleteBtn{grid-column:1 / -1;}
+  .pending-empty{text-align:center;color:#64748b;padding:28px 12px;}
+
+  @media (max-width:767.98px){
+    .app-inner-layout__content .container-fluid{padding-left:10px;padding-right:10px;}
+    .pending-page .card-header{padding:12px 14px;}
+    .pending-page .card-body{padding:12px 10px 16px;}
+    .pending-desktop{display:none !important;}
+    .pending-page .dataTables_wrapper{display:none !important;}
+    .pending-mobile{display:block;}
+    .pending-search-wrap{display:block;margin-bottom:12px;}
+    .pending-search-wrap input{
+      width:100%;
+      min-height:44px;
+      border:1.5px solid #e2e8f0;
+      border-radius:12px;
+      padding:10px 14px;
+      font-size:16px;
+    }
+    #approveRegistrationModal .modal-dialog,
+    #pendingDocsModal .modal-dialog,
+    #rejectRegistrationModal .modal-dialog,
+    #deleteRegistrationModal .modal-dialog{
+      margin:8px;
+      max-width:calc(100% - 16px);
+    }
+    #approveRegistrationModal .modal-body{padding:12px;}
+    .fe-invoice-toolbar{display:flex;flex-wrap:wrap;gap:8px;}
+    .fe-invoice-toolbar .btn{flex:1 1 46%;}
+    .fe-invoice-hint{flex-basis:100%;}
+    .fe-invoice-table-wrap{overflow:visible;}
+    #feInvoiceTable thead{display:none;}
+    #feInvoiceTable tbody tr.fe-inv-section td{
+      display:block;
+      background:#eef2ff;
+      font-weight:700;
+      border:0;
+    }
+    #feInvoiceTable tbody tr.fe-inv-row{
+      display:block;
+      border:1px solid #e2e8f0;
+      border-radius:10px;
+      margin-bottom:10px;
+      padding:8px;
+      background:#fff;
+    }
+    #feInvoiceTable tbody tr.fe-inv-row td{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      border:0;
+      padding:4px 0;
+    }
+    #feInvoiceTable tbody tr.fe-inv-row td:nth-child(1)::before{content:"Pay";font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;}
+    #feInvoiceTable tbody tr.fe-inv-row td:nth-child(2)::before{content:"Item";font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;}
+    #feInvoiceTable tbody tr.fe-inv-row td:nth-child(3)::before{content:"Term";font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;}
+    #feInvoiceTable tbody tr.fe-inv-row td:nth-child(4)::before{content:"Expected";font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;}
+    #feInvoiceTable tbody tr.fe-inv-row td:nth-child(5)::before{content:"Paid";font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;}
+    #feInvoiceTable tbody tr.fe-inv-row td:nth-child(6)::before{content:"Remain";font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;}
+    #feInvoiceTable tbody tr.fe-inv-row td:nth-child(7)::before{content:"Receive";font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;}
+    #feInvoiceTable tfoot tr{display:block;}
+    #feInvoiceTable tfoot td{display:flex;justify-content:space-between;border:0;}
+    .fe-invoice-meta .col-md-4{margin-bottom:10px;}
+    .pending-actions .btn{min-height:40px;}
+  }
 
   #pendingDocsModal .modal-dialog{max-width:960px;}
   .docs-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:1rem;}
@@ -73,7 +228,7 @@ $APP_BASE          = rtrim(base_url(), '/');
     <div class="app-inner-layout__content">
       <div class="tab-content">
         <div class="container-fluid">
-          <div class="card mb-3">
+          <div class="card mb-3 pending-page">
             <div class="card-header-tab card-header">
               <div class="card-header-title font-size-lg text-capitalize font-weight-normal">
                 <i class="header-icon typcn typcn-home-outline text-muted opacity-6"></i>
@@ -82,6 +237,10 @@ $APP_BASE          = rtrim(base_url(), '/');
             </div>
 
             <div class="card-body">
+              <div class="pending-search-wrap">
+                <input type="search" id="pendingMobileSearch" placeholder="Search applicant, parent, phone, class…" autocomplete="off">
+              </div>
+              <div class="pending-desktop">
               <div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
                 <div class="row">
                   <div class="col-sm-12">
@@ -148,6 +307,79 @@ $APP_BASE          = rtrim(base_url(), '/');
                     </table>
                   </div>
                 </div>
+              </div>
+              </div>
+              <div class="pending-mobile" id="pendingCards">
+                <?php if (empty($pendings)): ?>
+                  <div class="pending-empty">No pending applications.</div>
+                <?php else: ?>
+                  <?php foreach ($pendings as $key => $pending): ?>
+                    <?php
+                      $id        = (int)($pending['id'] ?? 0);
+                      $status    = (string)($pending['status'] ?? '0');
+                      $applicant = trim(($pending['applicant'] ?? (($pending['fname'] ?? '') . ' ' . ($pending['lname'] ?? ''))));
+                      $gender    = (string)($pending['gender'] ?? '—');
+                      $level     = (string)($pending['level'] ?? '—');
+                      $mode      = (string)($pending['mode'] ?? $pending['studyingMode'] ?? '—');
+                      $ptype     = parentType($pending['parentType'] ?? '');
+                      $pname     = (string)($pending['parentNames'] ?? '—');
+                      $pphone    = (string)($pending['parentPhoneNumber'] ?? '—');
+                      $code      = (string)($pending['code'] ?? '—');
+                      $payLabel  = 'Pending approval';
+                      $searchHay = strtolower(trim($applicant.' '.$gender.' '.$level.' '.$mode.' '.$ptype.' '.$pname.' '.$pphone.' '.$code));
+                    ?>
+                    <article class="pending-card" data-id="<?= $id ?>" data-search="<?= esc($searchHay) ?>">
+                      <div class="pending-card-head">
+                        <div>
+                          <h3><?= esc($applicant !== '' ? $applicant : 'Applicant') ?></h3>
+                          <span class="pending-status"><?= esc($payLabel) ?></span>
+                        </div>
+                        <span class="pending-num"><?= $key + 1 ?></span>
+                      </div>
+                      <dl class="pending-grid">
+                        <div>
+                          <dt>Gender</dt>
+                          <dd><?= esc($gender) ?></dd>
+                        </div>
+                        <div>
+                          <dt>Level</dt>
+                          <dd><?= esc($level) ?></dd>
+                        </div>
+                        <div>
+                          <dt>Studying mode</dt>
+                          <dd><?= esc($mode) ?></dd>
+                        </div>
+                        <div>
+                          <dt>Parent type</dt>
+                          <dd><?= esc($ptype) ?></dd>
+                        </div>
+                        <div class="span-2">
+                          <dt>Parent name</dt>
+                          <dd><?= esc($pname !== '' ? $pname : '—') ?></dd>
+                        </div>
+                        <div class="span-2">
+                          <dt>Parent phone</dt>
+                          <dd>
+                            <?php if ($pphone !== '' && $pphone !== '—'): ?>
+                              <a href="tel:<?= esc($pphone) ?>"><?= esc($pphone) ?></a>
+                            <?php else: ?>
+                              —
+                            <?php endif; ?>
+                          </dd>
+                        </div>
+                        <div class="span-2">
+                          <dt>Application code</dt>
+                          <dd><?= esc($code) ?></dd>
+                        </div>
+                      </dl>
+                      <div class="pending-actions">
+                        <button type="button" class="btn btn-success approveBtn" data-id="<?= $id ?>" data-name="<?= esc($applicant) ?>">Approve</button>
+                        <button type="button" class="btn btn-warning rejectBtn" data-id="<?= $id ?>" data-name="<?= esc($applicant) ?>">Reject</button>
+                        <button type="button" class="btn btn-danger deleteBtn" data-id="<?= $id ?>" data-name="<?= esc($applicant) ?>">Delete</button>
+                      </div>
+                    </article>
+                  <?php endforeach; ?>
+                <?php endif; ?>
               </div>
             </div>
           </div>
@@ -525,6 +757,7 @@ $APP_BASE          = rtrim(base_url(), '/');
 
   function removePendingRow(appId) {
     $('tr[data-id="'+appId+'"]').fadeOut(400, function(){ $(this).remove(); });
+    $('.pending-card[data-id="'+appId+'"]').fadeOut(400, function(){ $(this).remove(); });
   }
 
   // DOCS
@@ -957,6 +1190,14 @@ $APP_BASE          = rtrim(base_url(), '/');
     }).fail(function(){
       showAlert($('#deleteAlert'), 'danger', 'Server error during delete.');
       $('#deleteConfirmBtn').prop('disabled', false).text('Delete permanently');
+    });
+  });
+
+  $('#pendingMobileSearch').on('input', function () {
+    var q = String($(this).val() || '').toLowerCase().trim();
+    $('#pendingCards .pending-card').each(function () {
+      var hay = String($(this).data('search') || $(this).text()).toLowerCase();
+      $(this).toggle(!q || hay.indexOf(q) !== -1);
     });
   });
 
