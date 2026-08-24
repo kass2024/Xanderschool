@@ -18,6 +18,26 @@ $APPROVE_POST_API  = site_url('manipulateApproveStudentsRegistration');
 $REJECT_POST_API   = site_url('rejectApplicationRegistration');
 $DELETE_POST_API   = site_url('deleteApplicationRegistration');
 $APP_BASE          = rtrim(base_url(), '/');
+
+$totalPending = count($pendings);
+$boardingN = 0;
+$dayN = 0;
+$maleN = 0;
+$femaleN = 0;
+foreach ($pendings as $p) {
+	$mode = strtolower((string) ($p['mode'] ?? $p['studyingMode'] ?? ''));
+	if (strpos($mode, 'board') !== false) {
+		$boardingN++;
+	} else {
+		$dayN++;
+	}
+	$g = strtoupper(substr((string) ($p['gender'] ?? ''), 0, 1));
+	if ($g === 'M') {
+		$maleN++;
+	} else {
+		$femaleN++;
+	}
+}
 ?>
 <link rel="stylesheet" href="<?= base_url('assets/css/fees-entry.css') ?>">
 <style>
@@ -32,6 +52,51 @@ $APP_BASE          = rtrim(base_url(), '/');
   .pending-mobile{display:none;}
   .pending-search-wrap{display:none;}
   .pending-page{overflow-x:hidden;}
+  .pending-kpi{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:8px;
+    margin:0 0 12px;
+  }
+  .pending-kpi-item{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    padding:10px 12px;
+    box-shadow:0 4px 12px rgba(15,23,42,.04);
+    min-width:0;
+  }
+  .pending-kpi-item span{
+    display:block;
+    font-size:1.35rem;
+    font-weight:800;
+    color:#0b1f4a;
+    line-height:1.1;
+  }
+  .pending-kpi-item small{
+    display:block;
+    margin-top:2px;
+    font-size:.68rem;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    color:#64748b;
+  }
+  .pending-kpi-item.is-total span{color:#1d4ed8;}
+  .pending-kpi-item.is-board span{color:#0f766e;}
+  .pending-kpi-item.is-day span{color:#b45309;}
+  .pending-kpi-split{
+    display:flex;
+    align-items:baseline;
+    gap:6px;
+  }
+  .pending-kpi-split span{font-size:1.15rem;}
+  .pending-kpi-split em{
+    font-style:normal;
+    font-size:.78rem;
+    font-weight:700;
+    color:#94a3b8;
+  }
 
   .pending-card{
     background:#fff;
@@ -123,6 +188,9 @@ $APP_BASE          = rtrim(base_url(), '/');
 
   @media (max-width:767.98px){
     .app-inner-layout__content .container-fluid{padding-left:10px;padding-right:10px;}
+    .pending-kpi{grid-template-columns:1fr 1fr;margin-bottom:10px;}
+    .pending-kpi-item{padding:8px 10px;}
+    .pending-kpi-item span{font-size:1.2rem;}
     .pending-page .card-header{padding:12px 14px;}
     .pending-page .card-body{padding:12px 10px 16px;}
     .pending-desktop{display:none !important;}
@@ -228,6 +296,27 @@ $APP_BASE          = rtrim(base_url(), '/');
     <div class="app-inner-layout__content">
       <div class="tab-content">
         <div class="container-fluid">
+          <div class="pending-kpi" id="pendingKpi">
+            <div class="pending-kpi-item is-total">
+              <span id="kpiTotal"><?= (int) $totalPending ?></span>
+              <small>Total pending</small>
+            </div>
+            <div class="pending-kpi-item is-board">
+              <span id="kpiBoard"><?= (int) $boardingN ?></span>
+              <small>Boarding</small>
+            </div>
+            <div class="pending-kpi-item is-day">
+              <span id="kpiDay"><?= (int) $dayN ?></span>
+              <small>Day</small>
+            </div>
+            <div class="pending-kpi-item">
+              <div class="pending-kpi-split">
+                <span id="kpiMale"><?= (int) $maleN ?></span><em>M</em>
+                <span id="kpiFemale"><?= (int) $femaleN ?></span><em>F</em>
+              </div>
+              <small>Gender</small>
+            </div>
+          </div>
           <div class="card mb-3 pending-page">
             <div class="card-header-tab card-header">
               <div class="card-header-title font-size-lg text-capitalize font-weight-normal">
@@ -268,7 +357,7 @@ $APP_BASE          = rtrim(base_url(), '/');
                             $applicant = trim(($pending['applicant'] ?? (($pending['fname'] ?? '') . ' ' . ($pending['lname'] ?? ''))));
                             $payLabel  = 'Pending approval';
                           ?>
-                          <tr data-id="<?= $id ?>" data-applicant="<?= esc($applicant) ?>" data-status="<?= esc($status) ?>">
+                          <tr data-id="<?= $id ?>" data-applicant="<?= esc($applicant) ?>" data-status="<?= esc($status) ?>" data-mode="<?= esc($pending['mode'] ?? $pending['studyingMode'] ?? '') ?>" data-gender="<?= esc($pending['gender'] ?? '') ?>">
                             <td><?= $key + 1 ?></td>
                             <td><?= esc($applicant) ?></td>
                             <td><?= esc($pending['gender']) ?></td>
@@ -328,7 +417,7 @@ $APP_BASE          = rtrim(base_url(), '/');
                       $payLabel  = 'Pending approval';
                       $searchHay = strtolower(trim($applicant.' '.$gender.' '.$level.' '.$mode.' '.$ptype.' '.$pname.' '.$pphone.' '.$code));
                     ?>
-                    <article class="pending-card" data-id="<?= $id ?>" data-search="<?= esc($searchHay) ?>">
+                    <article class="pending-card" data-id="<?= $id ?>" data-search="<?= esc($searchHay) ?>" data-mode="<?= esc($mode) ?>" data-gender="<?= esc($gender) ?>">
                       <div class="pending-card-head">
                         <div>
                           <h3><?= esc($applicant !== '' ? $applicant : 'Applicant') ?></h3>
@@ -755,9 +844,29 @@ $APP_BASE          = rtrim(base_url(), '/');
     a.remove();
   });
 
+  function bumpKpi(sel, delta) {
+    var $el = $(sel);
+    var n = parseInt($el.text(), 10) || 0;
+    $el.text(Math.max(0, n + delta));
+  }
   function removePendingRow(appId) {
-    $('tr[data-id="'+appId+'"]').fadeOut(400, function(){ $(this).remove(); });
-    $('.pending-card[data-id="'+appId+'"]').fadeOut(400, function(){ $(this).remove(); });
+    var $card = $('.pending-card[data-id="'+appId+'"]');
+    var $row = $('tr[data-id="'+appId+'"]');
+    var mode = String($card.data('mode') || $row.data('mode') || '').toLowerCase();
+    var gender = String($card.data('gender') || $row.data('gender') || '').toLowerCase();
+    bumpKpi('#kpiTotal', -1);
+    if (mode.indexOf('board') !== -1) {
+      bumpKpi('#kpiBoard', -1);
+    } else {
+      bumpKpi('#kpiDay', -1);
+    }
+    if (gender.charAt(0) === 'm') {
+      bumpKpi('#kpiMale', -1);
+    } else {
+      bumpKpi('#kpiFemale', -1);
+    }
+    $row.fadeOut(400, function(){ $(this).remove(); });
+    $card.fadeOut(400, function(){ $(this).remove(); });
   }
 
   // DOCS
