@@ -308,6 +308,125 @@ public function testEmail()
 			->where("IFNULL({$levelAlias}.title,'') NOT LIKE '%Holiday%'", null, false);
 	}
 
+	private function classLooksLikeHoliday(array $row): bool
+	{
+		$hay = strtolower(trim(($row['title'] ?? '') . ' ' . ($row['level_name'] ?? '') . ' ' . ($row['level_title'] ?? '')));
+		return strpos($hay, 'holiday') !== false;
+	}
+
+	private function classDisplayName(array $row): string
+	{
+		return trim(($row['level_name'] ?? '') . ' ' . ($row['code'] ?? $row['dept_code'] ?? '') . ' ' . ($row['title'] ?? ''));
+	}
+
+	private function fetchClassForSchool(int $schoolId, int $classId): ?array
+	{
+		if ($schoolId < 1 || $classId < 1) {
+			return null;
+		}
+		$classMdl = new ClassesModel();
+		$row = $classMdl->select("classes.id, classes.title, d.code, d.code as dept_code, l.title as level_name")
+			->join("departments d", "d.id=classes.department")
+			->join("levels l", "l.id=classes.level")
+			->where("classes.id", $classId)
+			->where("classes.school_id", $schoolId)
+			->get()->getRowArray();
+		return $row ?: null;
+	}
+
+	/**
+	 * Move one student to another class for a year. Enrollment changes; student-owned
+	 * records (marks, fees, attendance, visitors, etc.) stay on the student.
+	 *
+	 * @return array{ok:bool,error?:string,from?:string,to?:string}
+	 */
+	private function moveStudentEnrollment(int $schoolId, int $studentId, int $fromClassId, int $toClassId, $yearId): array
+	{
+		if ($schoolId < 1 || $studentId < 1 || $fromClassId < 1 || $toClassId < 1) {
+			return ['ok' => false, 'error' => 'Missing student or class.'];
+		}
+		if ((int) $fromClassId === (int) $toClassId) {
+			return ['ok' => false, 'error' => 'Choose a different class.'];
+		}
+
+		$studentMdl = new StudentModel();
+		$student = $studentMdl->select('id, fname, lname, regno')
+			->where('id', $studentId)
+			->where('school_id', $schoolId)
+			->get()->getRowArray();
+		if (!$student) {
+			return ['ok' => false, 'error' => 'Student was not found in this school.'];
+		}
+
+		$fromClass = $this->fetchClassForSchool($schoolId, $fromClassId);
+		$toClass = $this->fetchClassForSchool($schoolId, $toClassId);
+		if (!$fromClass || !$toClass) {
+			return ['ok' => false, 'error' => 'Class was not found in this school.'];
+		}
+		if ($this->classLooksLikeHoliday($toClass)) {
+			return ['ok' => false, 'error' => 'Students cannot be moved into a holiday class from this list.'];
+		}
+
+		$db = \Config\Database::connect();
+		$crTable = $db->table('class_records');
+		$source = $crTable->where('student', $studentId)
+			->where('year', $yearId)
+			->where('class', $fromClassId)
+			->get()->getRowArray();
+		if (!$source) {
+			$name = trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? ''));
+			return ['ok' => false, 'error' => ($name !== '' ? $name : 'Student') . ' is not in the selected class for this year.'];
+		}
+
+		$dest = $db->table('class_records')
+			->where('student', $studentId)
+			->where('year', $yearId)
+			->where('class', $toClassId)
+			->get()->getRowArray();
+
+		$db->transStart();
+
+		if ($dest && (int) $dest['id'] !== (int) $source['id']) {
+			$db->table('class_records')->where('id', (int) $source['id'])->delete();
+		} else {
+			$db->table('class_records')->where('id', (int) $source['id'])->update(['class' => $toClassId]);
+		}
+
+		if ($db->tableExists('marks')) {
+			$db->table('marks')
+				->where('student_id', $studentId)
+				->where('class_id', $fromClassId)
+				->update(['class_id' => $toClassId]);
+		}
+		if ($db->tableExists('student_material_checks')) {
+			$db->table('student_material_checks')
+				->where('student_id', $studentId)
+				->where('class_id', $fromClassId)
+				->where('academic_year', $yearId)
+				->update(['class_id' => $toClassId]);
+		}
+
+		$uvMdl = new UpdateVersionModel();
+		$update_v = 1;
+		$update_v_data = $uvMdl->select('version')->where('type', 'student')->where('school_id', $schoolId)->get(1)->getRow();
+		if ($update_v_data != null) {
+			$update_v = $update_v_data->version;
+		}
+		$studentMdl->where('id', $studentId)->where('school_id', $schoolId)->set(['updateVersion' => $update_v])->update();
+
+		$db->transComplete();
+		if ($db->transStatus() === false) {
+			return ['ok' => false, 'error' => 'Could not move ' . trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? '')) . '.'];
+		}
+
+		return [
+			'ok' => true,
+			'from' => $this->classDisplayName($fromClass),
+			'to' => $this->classDisplayName($toClass),
+			'name' => trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? '')),
+		];
+	}
+
 	public function dashboard()
 	{
 		$this->_preset();
@@ -15936,21 +16055,99 @@ public function assign_card()
 	function change_student_class()
 	{
 		$this->_preset();
-		$data = $this->data;
-		$classeModel = new ClassRecordModel();
-		$id = $this->request->getPost("fId");
-		$class = $this->request->getPost("classe");
-
-		$data = [
-				"id" => $id,
-				"class" => $class
-		];
-		try {
-			$classeModel->save($data);
-			return $this->response->setJSON(["success" => lang("app.classChanged")]);
-		} catch (\Exception $e) {
-			return $this->response->setJSON(["error" => "Error: " . $e->getMessage()]);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$toClass = (int) $this->request->getPost('classe');
+		$recordId = (int) $this->request->getPost('fId');
+		if ($recordId < 1 || $toClass < 1) {
+			return $this->response->setJSON(['error' => 'Select a class.']);
 		}
+
+		$classRecordModel = new ClassRecordModel();
+		$source = $classRecordModel->select('class_records.id, class_records.student, class_records.class, class_records.year')
+			->join('students s', 's.id=class_records.student')
+			->where('class_records.id', $recordId)
+			->where('s.school_id', $schoolId)
+			->get()->getRowArray();
+		if (!$source) {
+			return $this->response->setJSON(['error' => 'Student class record was not found.']);
+		}
+
+		$result = $this->moveStudentEnrollment(
+			$schoolId,
+			(int) $source['student'],
+			(int) $source['class'],
+			$toClass,
+			$source['year']
+		);
+		if (empty($result['ok'])) {
+			return $this->response->setJSON(['error' => $result['error'] ?? 'Could not change class.']);
+		}
+		return $this->response->setJSON(['success' => lang('app.classChanged')]);
+	}
+
+	/**
+	 * Students Lists: move one or many students to another class, keeping their records.
+	 */
+	public function move_students_class()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$fromClass = (int) $this->request->getPost('fromClass');
+		$toClass = (int) $this->request->getPost('toClass');
+		$yearId = $this->request->getPost('year');
+		if ($yearId === null || $yearId === '') {
+			$yearId = $this->data['academic_year'] ?? 0;
+		}
+
+		$ids = $this->request->getPost('studentIds');
+		if (is_string($ids) && $ids !== '') {
+			$ids = preg_split('/[,\s]+/', $ids);
+		}
+		if (!is_array($ids) || $ids === []) {
+			$single = $this->request->getPost('studentId');
+			$ids = ($single !== null && $single !== '') ? [$single] : [];
+		}
+		$ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+		if ($ids === []) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Select at least one student.']);
+		}
+		if (count($ids) > 500) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Too many students selected (max 500).']);
+		}
+		if ($fromClass < 1 || $toClass < 1) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Choose the current class and the destination class.']);
+		}
+
+		$moved = 0;
+		$movedNames = [];
+		$issues = [];
+		$toLabel = '';
+		foreach ($ids as $id) {
+			$result = $this->moveStudentEnrollment($schoolId, $id, $fromClass, $toClass, $yearId);
+			if (!empty($result['ok'])) {
+				$moved++;
+				if (!empty($result['name'])) {
+					$movedNames[] = $result['name'];
+				}
+				$toLabel = $result['to'] ?? $toLabel;
+			} else {
+				$issues[] = $result['error'] ?? ('Could not move student #' . $id);
+			}
+		}
+
+		$message = $moved === 1
+			? ('Moved ' . ($movedNames[0] ?? '1 student') . ' to ' . trim($toLabel) . '.')
+			: ('Moved ' . $moved . ' student(s) to ' . trim($toLabel) . '.');
+		if ($issues !== []) {
+			$message .= ' Issues: ' . implode(' ', array_slice($issues, 0, 8));
+		}
+		return $this->response->setJSON([
+			'success' => $moved > 0,
+			'moved' => $moved,
+			'failed' => count($issues),
+			'message' => $message,
+			'error' => $moved > 0 ? null : ($issues[0] ?? 'No students were moved.'),
+		]);
 	}
 
 	public

@@ -61,6 +61,16 @@
 .btn-send-admission-sms { white-space:nowrap; }
 .st-sms-check { width:16px; height:16px; cursor:pointer; }
 #admissionSmsAlert { margin: 8px 0 12px; }
+.btn-move-student { white-space:nowrap; }
+#moveStudentClassModal .move-note {
+	font-size: 13px;
+	color: #475569;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	padding: 10px 12px;
+	margin-bottom: 14px;
+}
 .admission-sms-approved {
 	display: inline-block;
 	font-size: 12px;
@@ -168,6 +178,13 @@
 							return;
 						$visitorsNoCardMap = $visitors_no_card_map ?? [];
 						$admission_sms_map = $admission_sms_map ?? [];
+						$currentClassLabel = '';
+						foreach ($classes as $cRow) {
+							if ((string) $cRow['id'] === (string) $class_id) {
+								$currentClassLabel = trim(($cRow['level_name'] ?? '') . ' ' . ($cRow['dept_code'] ?? '') . ' ' . ($cRow['title'] ?? ''));
+								break;
+							}
+						}
 						?>
 						<div class="card-body">
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
@@ -176,6 +193,9 @@
 										<div class="col-sm-12">
 											<div id="admissionSmsAlert" class="alert d-none" role="alert"></div>
 											<div class="st-sms-actions pull-right">
+												<button type="button" id="btnMoveStudentsSelected" class="btn btn-secondary">
+													<i class="fa fa-exchange-alt"></i> Move selected
+												</button>
 												<button type="button" id="btnSendAdmissionSmsSelected" class="btn btn-info">
 													<i class="fa fa-paper-plane"></i> Send to selected
 												</button>
@@ -236,6 +256,11 @@
 													<td><?= $parent; ?></td>
 													<td><?= $visitorCell; ?></td>
 													<td>
+														<button type="button"
+																class="btn btn-sm btn-outline-secondary btn-move-student"
+																data-id="<?= (int) $student['id']; ?>"
+																data-name="<?= esc($student['fname'] . ' ' . $student['lname']); ?>"
+																title="Move to another class">Move</button>
 														<?php if ($smsApproved): ?>
 															<span class="admission-sms-approved" data-id="<?= (int) $student['id']; ?>">Approved</span>
 														<?php else: ?>
@@ -282,10 +307,52 @@
 		</div>
 	</div>
 </div>
+<div class="modal fade" id="moveStudentClassModal" tabindex="-1" role="dialog" aria-labelledby="moveStudentClassTitle">
+	<div class="modal-dialog" role="document">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="moveStudentClassTitle">Move to another class</h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+					<span aria-hidden="true">&times;</span>
+				</button>
+			</div>
+			<div class="modal-body">
+				<div id="moveStudentModalAlert" class="alert d-none" role="alert"></div>
+				<div class="move-note">
+					Marks, paid fees, attendance, visitors, cards and other student records stay with the student.
+					Only the class enrollment for this academic year changes.
+				</div>
+				<p id="moveStudentSummary" style="font-weight:600;margin-bottom:12px;"></p>
+				<div class="form-group">
+					<label>From</label>
+					<input type="text" class="form-control" value="<?= esc($currentClassLabel); ?>" readonly>
+				</div>
+				<div class="form-group">
+					<label>To class</label>
+					<select id="moveStudentToClass" class="form-control" style="width:100%">
+						<option value="">Select destination class</option>
+						<?php foreach ($classes as $classe): ?>
+							<?php if ((string) $classe['id'] === (string) $class_id) { continue; } ?>
+							<option value="<?= (int) $classe['id']; ?>">
+								<?= esc(trim(($classe['level_name'] ?? '') . ' ' . ($classe['dept_code'] ?? '') . ' ' . ($classe['title'] ?? ''))); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+				<button type="button" class="btn btn-primary" id="btnConfirmMoveStudents">Move</button>
+			</div>
+		</div>
+	</div>
+</div>
 <script>
 (function ($) {
 	var SMS_API = "<?= site_url('sendStudentAdmissionSms'); ?>";
+	var MOVE_API = "<?= site_url('move_students_class'); ?>";
 	var YEAR_ID = "<?= (int) $academic_year; ?>";
+	var FROM_CLASS = <?= (int) $class_id; ?>;
 	var csrfName = $('meta[name="csrf-token-name"]').attr('content');
 	var csrfHash = $('meta[name="csrf-token-value"]').attr('content');
 
@@ -402,6 +469,89 @@
 			return;
 		}
 		sendSms([id], $(this));
+	});
+
+	var pendingMoveIds = [];
+
+	function showMoveModalAlert(kind, msg) {
+		var $el = $('#moveStudentModalAlert');
+		$el.removeClass('d-none alert-info alert-danger alert-success alert-warning')
+			.addClass('alert-' + kind)
+			.text(msg)
+			.show();
+	}
+
+	function openMoveModal(ids, names) {
+		pendingMoveIds = ids || [];
+		var summary = pendingMoveIds.length === 1
+			? ('Move ' + (names && names[0] ? names[0] : 'this student') + ' to another class.')
+			: ('Move ' + pendingMoveIds.length + ' selected students to another class.');
+		$('#moveStudentSummary').text(summary);
+		$('#moveStudentToClass').val('');
+		$('#moveStudentModalAlert').addClass('d-none').text('');
+		$('#moveStudentClassModal').modal('show');
+	}
+
+	function submitMove() {
+		var toClass = parseInt($('#moveStudentToClass').val(), 10);
+		if (!pendingMoveIds.length) {
+			showMoveModalAlert('warning', 'Select at least one student.');
+			return;
+		}
+		if (!toClass) {
+			showMoveModalAlert('warning', 'Choose the destination class.');
+			return;
+		}
+		var $btn = $('#btnConfirmMoveStudents');
+		$btn.prop('disabled', true).text('Moving…');
+		showMoveModalAlert('info', 'Moving student(s)…');
+		$.ajax({
+			url: MOVE_API,
+			type: 'POST',
+			dataType: 'json',
+			data: withCsrf({
+				studentIds: pendingMoveIds.join(','),
+				fromClass: FROM_CLASS,
+				toClass: toClass,
+				year: YEAR_ID
+			})
+		}).done(function (res) {
+			if (res && res.success) {
+				$('#moveStudentClassModal').modal('hide');
+				showAlert('success', res.message || 'Students moved.');
+				window.setTimeout(function () {
+					window.location.reload();
+				}, 700);
+			} else {
+				showMoveModalAlert('danger', (res && (res.error || res.message)) || 'Could not move students.');
+			}
+		}).fail(function () {
+			showMoveModalAlert('danger', 'Could not move students. Please try again.');
+		}).always(function () {
+			$btn.prop('disabled', false).text('Move');
+		});
+	}
+
+	$(document).on('click', '#btnMoveStudentsSelected', function () {
+		var ids = selectedIds();
+		if (!ids.length) {
+			showAlert('warning', 'Select students first, then click Move selected.');
+			return;
+		}
+		openMoveModal(ids);
+	});
+
+	$(document).on('click', '.btn-move-student', function () {
+		var id = parseInt($(this).data('id'), 10);
+		var name = $(this).data('name') || '';
+		if (!id) {
+			return;
+		}
+		openMoveModal([id], [name]);
+	});
+
+	$(document).on('click', '#btnConfirmMoveStudents', function () {
+		submitMove();
 	});
 })(jQuery);
 </script>
