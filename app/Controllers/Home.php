@@ -5569,14 +5569,24 @@ public function attendanceCard()
 			$yearId = $activeYearId > 0 ? (string) $activeYearId : "-1";
 		}
 		$classMdl = new ClassesModel();
-		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
+		$allClasses = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
 		,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf")
 				->join("departments d", "d.id=classes.department")
 				->join("levels l", "l.id=classes.level")
 				->join("faculty f", "f.id=d.faculty_id")
 				->join("staffs s", "s.id=classes.mentor", "LEFT")
 				->where("classes.school_id", $school_id)
+				->notLike('classes.title', 'Holiday')
+				->notLike('l.title', 'Holiday')
 				->get()->getResultArray();
+		$data['classes'] = array_values(array_filter($allClasses, static function ($row) {
+			$hay = strtolower(trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '') . ' ' . ($row['dept_code'] ?? '')));
+			return strpos($hay, 'holiday') === false;
+		}));
+		$classIds = array_map('strval', array_column($data['classes'], 'id'));
+		if ($classe !== '-1' && !in_array((string) $classe, $classIds, true)) {
+			$classe = '-1';
+		}
 		$acMdl = new AcademicYearModel();
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)->get()->getResultArray();
 		$studentMdl = new StudentModel();
