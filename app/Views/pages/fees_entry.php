@@ -84,7 +84,7 @@
 							</div>
 
 							<div class="tab-pane fade" id="fees-historical-report-tab" role="tabpanel">
-								<form action="<?= base_url('printFeesHistory') ?>" method="post" id="printForm">
+								<form action="<?= base_url('print_fee_receipt') ?>" method="get" id="printForm">
 									<div class="fe-actions-bar fe-actions-bar--compact">
 										<button type="submit" class="btn btn-outline-success ml-auto">
 											<i class="fa fa-print"></i> Print selected items
@@ -535,19 +535,31 @@ $(function () {
 		}
 	});
 
+	function openFeeThermalReceipt(rows, studentId) {
+		if (!rows || !studentId) {
+			return;
+		}
+		const printUrl = '<?= base_url('print_fee_receipt/') ?>' + encodeURIComponent(rows) + '/' + studentId + '?autoprint=1';
+		const w = window.open(printUrl, '_blank', 'width=420,height=720');
+		if (w) {
+			w.focus();
+		} else {
+			$('#printLink').attr('href', printUrl)[0].click();
+		}
+	}
+
 	$('#printForm').submit(function (e) {
 		e.preventDefault();
 		const student = $('#select_student').val();
 		const selected = [];
 		$('#historyTable .checkedItem:checked').each(function () {
-			selected.push(decodeURIComponent($(this).val()));
+			selected.push($(this).val());
 		});
 		if (!selected.length) {
 			toastada.error('Select at least one approved payment to print.');
 			return;
 		}
-		const rows = selected.join('-');
-		$('#printLink').attr('href', '<?= base_url('printFeesHistory') ?>/' + rows + '/' + student)[0].click();
+		openFeeThermalReceipt(selected.join('-'), student);
 	});
 
 	$('#btn-add-fees').on('click', function () {
@@ -631,7 +643,7 @@ $(function () {
 			let rows1 = '';
 			checkedItems = [];
 			$.each(data, function (index, record) {
-				const dt = encodeURIComponent(record.id + ':' + record.type);
+				const rowKey = String(record.id) + ':' + String(record.type);
 				const statusNum = parseInt(record.status, 10);
 				const isCancelled = statusNum === -1;
 				const canPrint = !isCancelled;
@@ -641,12 +653,11 @@ $(function () {
 				let statusCell = isCancelled ? '—' : "<span class='badge badge-success'><?= esc(lang('app.feeStatusApproved')); ?></span>";
 				let actions = '';
 				if (canPrint) {
-					const printUrl = '<?= base_url('print_fee_receipt/') ?>' + dt + '/' + studentId + '?autoprint=1';
-					actions = "<button type='button' class='btn btn-sm btn-success btn-print-receipt' data-url='" + printUrl + "'>" +
+					actions = "<button type='button' class='btn btn-sm btn-success btn-print-receipt' data-rows='" + rowKey + "'>" +
 						"<i class='fa fa-print'></i> <?= esc(lang('app.printReceipt')); ?></button>";
 				}
 				rows1 += "<tr style='" + style + "'>" +
-					'<td>' + (canPrint ? "<input type='checkbox' name='toPrint[]' class='checkedItem' value='" + dt + "'>" : '') + '</td>' +
+					'<td>' + (canPrint ? "<input type='checkbox' name='toPrint[]' class='checkedItem' value='" + rowKey + "'>" : '') + '</td>' +
 					'<td>' + (index + 1) + '</td>' +
 					'<td>' + getJsTermToString(record.term) + '</td> ' +
 					'<td>' + record.item + '</td> ' +
@@ -663,11 +674,7 @@ $(function () {
 	}
 
 	$(document).on('click', '.btn-print-receipt', function () {
-		const url = $(this).data('url');
-		if (url) {
-			const w = window.open(url, '_blank', 'width=420,height=720');
-			if (w) w.focus();
-		}
+		openFeeThermalReceipt($(this).attr('data-rows'), $('#select_student').val());
 	});
 
 	$('a[href="#fees-historical-report-tab"]').on('shown.bs.tab', loadPaymentHistory);
