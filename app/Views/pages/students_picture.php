@@ -160,59 +160,94 @@
 	}
 	.sp-live-box, .sp-edit-box {
 		position: relative;
-		background: #0b1220;
 		border-radius: 18px;
 		overflow: hidden;
-		min-height: 420px;
+		min-height: 460px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 	}
-	#spVideo, #spEditCanvas {
-		max-width: 100%;
-		max-height: 520px;
-		display: block;
-	}
-	#spVideo { transform: scaleX(-1); width: 100%; height: 100%; object-fit: cover; }
-	.sp-guide {
-		pointer-events: none;
-		position: absolute;
-		inset: 0;
+	.sp-live-box {
+		flex-direction: column;
+		justify-content: flex-end;
+		align-items: center;
+		padding: 18px 18px 54px;
 		background:
-			radial-gradient(ellipse 42% 58% at 50% 46%, transparent 58%, rgba(0,0,0,.42) 59%);
+			radial-gradient(ellipse at 50% 18%, #ffffff 0%, #f3f6fb 42%, #e8eef6 100%);
 	}
-	.sp-guide::after {
+	.sp-square-stage {
+		position: relative;
+		width: min(82%, 400px);
+		aspect-ratio: 1 / 1;
+		border-radius: 18px;
+		overflow: hidden;
+		background: #fff;
+		border: 3px solid #10b981;
+		box-shadow:
+			0 0 0 8px rgba(16, 185, 129, 0.14),
+			0 18px 36px rgba(15, 23, 42, 0.12);
+	}
+	.sp-square-stage::before,
+	.sp-square-stage::after {
 		content: "";
 		position: absolute;
-		left: 50%;
-		top: 46%;
-		width: 42%;
-		height: 58%;
-		transform: translate(-50%, -50%);
-		border: 2px solid rgba(255,255,255,.7);
-		border-radius: 50%;
-		box-shadow: 0 0 0 1px rgba(16,185,129,.35);
+		width: 22px;
+		height: 22px;
+		z-index: 2;
+		pointer-events: none;
+		border: 3px solid #fff;
+	}
+	.sp-square-stage::before {
+		top: 10px;
+		left: 10px;
+		border-right: 0;
+		border-bottom: 0;
+		border-radius: 4px 0 0 0;
+	}
+	.sp-square-stage::after {
+		right: 10px;
+		bottom: 10px;
+		border-left: 0;
+		border-top: 0;
+		border-radius: 0 0 4px 0;
+	}
+	#spVideo {
+		transform: scaleX(-1);
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		object-position: center 58%;
+		display: block;
+		background: #fff;
+	}
+	#spEditCanvas {
+		display: block;
+		max-width: 100%;
 	}
 	.sp-live-hint {
 		position: absolute;
-		left: 0; right: 0; bottom: 12px;
+		left: 0; right: 0; bottom: 14px;
 		text-align: center;
-		color: #e5e7eb;
+		color: #334155;
 		font-size: 12px;
+		font-weight: 600;
 		z-index: 2;
 	}
-	.sp-edit-box { background: #111827; }
+	.sp-edit-box {
+		background: #f8fafc;
+	}
 	.sp-edit-frame {
-		width: 240px;
-		height: 320px;
-		border-radius: 12px;
+		width: 280px;
+		height: 280px;
+		border-radius: 16px;
 		overflow: hidden;
-		box-shadow: 0 12px 40px rgba(0,0,0,.35);
-		background: #000;
+		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+		background: #fff;
+		border: 1px solid #e5e7eb;
 		cursor: grab;
 	}
 	.sp-edit-frame:active { cursor: grabbing; }
-	#spEditCanvas { width: 240px; height: 320px; }
+	#spEditCanvas { width: 280px; height: 280px; }
 	.sp-actions {
 		display: flex;
 		flex-wrap: wrap;
@@ -295,13 +330,14 @@
 				<div class="sp-selected" id="spPicked">Pick a student on the left, then capture a live portrait.</div>
 				<div class="sp-stage">
 					<div class="sp-live-box">
-						<video id="spVideo" autoplay playsinline muted></video>
-						<div class="sp-guide"></div>
-						<div class="sp-live-hint">Center the face in the oval · 3:4 ID crop</div>
+						<div class="sp-square-stage">
+							<video id="spVideo" autoplay playsinline muted></video>
+						</div>
+						<div class="sp-live-hint">Center the face in the square · saved on a white background</div>
 					</div>
 					<div class="sp-edit-box">
 						<div class="sp-edit-frame" id="spFrame">
-							<canvas id="spEditCanvas" width="600" height="800"></canvas>
+							<canvas id="spEditCanvas" width="800" height="800"></canvas>
 						</div>
 					</div>
 				</div>
@@ -318,7 +354,7 @@
 					<div><label>Brightness</label><input type="range" id="spBright" min="70" max="140" value="105"></div>
 					<div><label>Contrast</label><input type="range" id="spContrast" min="80" max="140" value="108"></div>
 					<div><label>Saturation</label><input type="range" id="spSaturate" min="70" max="150" value="112"></div>
-					<div><label>Warmth</label><input type="range" id="spWarmth" min="-40" max="40" value="8"></div>
+					<div><label>Warmth</label><input type="range" id="spWarmth" min="-40" max="40" value="0"></div>
 					<div><label>Smoothness</label><input type="range" id="spSmooth" min="0" max="40" value="8"></div>
 				</div>
 			</div>
@@ -357,12 +393,17 @@
 		var dragging = false;
 		var dragStart = { x: 0, y: 0 };
 		var STORAGE_KEY = 'xander_student_photo_camera';
+		var CROP_POS_X = 0.5;
+		var CROP_POS_Y = 0.58;
 		var video = document.getElementById('spVideo');
 		var canvas = document.getElementById('spEditCanvas');
 		var ctx = canvas.getContext('2d');
 		var listEl = document.getElementById('spStudents');
 		var cameraSel = document.getElementById('spCamera');
 		var statusEl = document.getElementById('spCamStatus');
+		var segmenter = null;
+		var segmenterLoading = null;
+		var segmentJob = 0;
 
 		function setStatus(text, kind) {
 			statusEl.textContent = text;
@@ -475,6 +516,7 @@
 				var label = (track && track.label) ? track.label : 'USB camera';
 				setStatus(label + ' ready', 'ok');
 				$('#spCapture').prop('disabled', !selected);
+				loadSelfieSegmenter();
 				return fillCameras(currentId).then(function (cams) {
 					var preferred = cameraSel.value;
 					if (!preferredSwitchDone && preferred && currentId && preferred !== currentId) {
@@ -498,26 +540,122 @@
 			});
 		}
 
-		function captureFrame() {
-			if (!stream || !selected) return;
-			var vw = video.videoWidth || 1280;
-			var vh = video.videoHeight || 720;
+		function loadSelfieSegmenter() {
+			if (segmenter) return Promise.resolve(segmenter);
+			if (segmenterLoading) return segmenterLoading;
+			segmenterLoading = new Promise(function (resolve) {
+				function create() {
+					try {
+						segmenter = new window.SelfieSegmentation({
+							locateFile: function (file) {
+								return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/' + file;
+							}
+						});
+						segmenter.setOptions({ modelSelection: 1, selfieMode: false });
+						resolve(segmenter);
+					} catch (e) {
+						resolve(null);
+					}
+				}
+				if (window.SelfieSegmentation) {
+					create();
+					return;
+				}
+				var s = document.createElement('script');
+				s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js';
+				s.crossOrigin = 'anonymous';
+				s.onload = create;
+				s.onerror = function () { resolve(null); };
+				document.head.appendChild(s);
+			});
+			return segmenterLoading;
+		}
+
+		function paintWhiteBackground(srcCanvas) {
+			return loadSelfieSegmenter().then(function (seg) {
+				if (!seg) return srcCanvas;
+				return new Promise(function (resolve) {
+					var job = ++segmentJob;
+					var finished = false;
+					var timer = setTimeout(function () {
+						if (!finished && job === segmentJob) {
+							finished = true;
+							resolve(srcCanvas);
+						}
+					}, 5000);
+					seg.onResults(function (results) {
+						if (finished || job !== segmentJob) return;
+						finished = true;
+						clearTimeout(timer);
+						var out = document.createElement('canvas');
+						out.width = srcCanvas.width;
+						out.height = srcCanvas.height;
+						var c = out.getContext('2d');
+						c.fillStyle = '#ffffff';
+						c.fillRect(0, 0, out.width, out.height);
+						c.save();
+						c.filter = 'blur(2px)';
+						c.drawImage(results.segmentationMask, 0, 0, out.width, out.height);
+						c.filter = 'none';
+						c.globalCompositeOperation = 'source-in';
+						c.drawImage(srcCanvas, 0, 0, out.width, out.height);
+						c.restore();
+						c.globalCompositeOperation = 'destination-over';
+						c.fillStyle = '#ffffff';
+						c.fillRect(0, 0, out.width, out.height);
+						resolve(out);
+					});
+					seg.send({ image: srcCanvas });
+				});
+			});
+		}
+
+		function drawMirroredSquare(videoEl, size) {
+			var vw = videoEl.videoWidth || size;
+			var vh = videoEl.videoHeight || size;
+			var scale = Math.max(size / vw, size / vh);
+			var sw = size / scale;
+			var sh = size / scale;
+			var sx = (vw - sw) * CROP_POS_X;
+			var sy = (vh - sh) * CROP_POS_Y;
 			var tmp = document.createElement('canvas');
-			tmp.width = vw;
-			tmp.height = vh;
+			tmp.width = size;
+			tmp.height = size;
 			var tctx = tmp.getContext('2d');
-			tctx.translate(vw, 0);
+			tctx.fillStyle = '#ffffff';
+			tctx.fillRect(0, 0, size, size);
+			tctx.save();
+			tctx.translate(size, 0);
 			tctx.scale(-1, 1);
-			tctx.drawImage(video, 0, 0, vw, vh);
+			tctx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, size, size);
+			tctx.restore();
+			return tmp;
+		}
+
+		function useCaptured(imgCanvas) {
 			captured = new Image();
 			captured.onload = function () {
 				rotation = 0;
 				pan = { x: 0, y: 0 };
-				$('#spZoom').val(120);
+				$('#spZoom').val(110);
 				drawEdit();
 				$('#spRetake, #spRotate, #spSave').prop('disabled', false);
+				$('#spCapture').prop('disabled', !stream);
 			};
-			captured.src = tmp.toDataURL('image/jpeg', 0.95);
+			captured.src = imgCanvas.toDataURL('image/jpeg', 0.95);
+		}
+
+		function captureFrame() {
+			if (!stream || !selected) return;
+			$('#spCapture').prop('disabled', true);
+			setStatus('Preparing white background…', 'warn');
+			var square = drawMirroredSquare(video, 800);
+			paintWhiteBackground(square).then(function (out) {
+				useCaptured(out);
+				setStatus('Ready to crop & save', 'ok');
+			}).catch(function () {
+				useCaptured(square);
+			});
 		}
 
 		function sliderVals() {
@@ -532,10 +670,10 @@
 		}
 
 		function drawEdit() {
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
 			if (!captured) {
-				ctx.fillStyle = '#111827';
-				ctx.fillRect(0, 0, canvas.width, canvas.height);
-				ctx.fillStyle = '#9ca3af';
+				ctx.fillStyle = '#94a3b8';
 				ctx.font = '28px sans-serif';
 				ctx.textAlign = 'center';
 				ctx.fillText('Capture to crop & enhance', canvas.width / 2, canvas.height / 2);
@@ -543,9 +681,7 @@
 			}
 			var v = sliderVals();
 			ctx.save();
-			ctx.fillStyle = '#000';
-			ctx.fillRect(0, 0, canvas.width, canvas.height);
-			ctx.filter = 'brightness(' + v.bright + '%) contrast(' + v.contrast + '%) saturate(' + v.saturate + '%) blur(' + (v.smooth / 18) + 'px)';
+			ctx.filter = 'brightness(' + v.bright + '%) contrast(' + v.contrast + '%) saturate(' + v.saturate + '%) blur(' + (v.smooth / 22) + 'px)';
 			ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y);
 			ctx.rotate(rotation * Math.PI / 180);
 			var base = Math.max(canvas.width / captured.width, canvas.height / captured.height) * v.zoom;
@@ -555,10 +691,10 @@
 			ctx.restore();
 			if (v.warmth !== 0) {
 				ctx.save();
-				ctx.globalCompositeOperation = v.warmth > 0 ? 'soft-light' : 'multiply';
+				ctx.globalCompositeOperation = 'soft-light';
 				ctx.fillStyle = v.warmth > 0
-					? 'rgba(255,176,80,' + (Math.abs(v.warmth) / 140) + ')'
-					: 'rgba(90,140,255,' + (Math.abs(v.warmth) / 180) + ')';
+					? 'rgba(255,196,120,' + (Math.abs(v.warmth) / 160) + ')'
+					: 'rgba(160,196,255,' + (Math.abs(v.warmth) / 180) + ')';
 				ctx.fillRect(0, 0, canvas.width, canvas.height);
 				ctx.restore();
 			}
@@ -628,16 +764,16 @@
 			$('#spBright').val(108);
 			$('#spContrast').val(114);
 			$('#spSaturate').val(118);
-			$('#spWarmth').val(10);
-			$('#spSmooth').val(10);
+			$('#spWarmth').val(0);
+			$('#spSmooth').val(6);
 			drawEdit();
 		});
 		$('#spResetEdit').on('click', function () {
-			$('#spZoom').val(120);
+			$('#spZoom').val(110);
 			$('#spBright').val(105);
 			$('#spContrast').val(108);
 			$('#spSaturate').val(112);
-			$('#spWarmth').val(8);
+			$('#spWarmth').val(0);
 			$('#spSmooth').val(8);
 			pan = { x: 0, y: 0 };
 			rotation = 0;
