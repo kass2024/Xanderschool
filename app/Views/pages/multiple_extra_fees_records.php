@@ -38,6 +38,7 @@
 		</div>
 		<div style="margin-top: 15px;width: 100%;float:left;">
 			<form action="<?= base_url('manipulate_multiple_fees'); ?>" class="autoSubmit validate" method="POST">
+				<input type="hidden" name="classIds[]" id="mef_class_id" value="">
 				<div class="col-md-6 col-sm-12 pull-left" style="margin-bottom: 15px">
 					<div style="background:white;padding: 10px;max-height: 500px;overflow: auto;">
 						<table class="table table-hover table-fixed">
@@ -101,10 +102,10 @@
 							</div>
 							<div class="col-md-9 pull-left mef-amount-grid">
 								<label class="small font-weight-bold mb-0"><?= lang("app.boarding"); ?> students</label>
-								<input type="number" id="btn-boarding-amount" min="0" step="1" placeholder="Amount for boarding students" class="form-control">
+								<input type="number" id="btn-boarding-amount" name="amount_boarding" min="0" step="1" placeholder="Amount for boarding students" class="form-control">
 								<label class="small font-weight-bold mb-0 mt-2"><?= lang("app.day"); ?> students</label>
-								<input type="number" id="btn-day-amount" min="0" step="1" placeholder="Amount for day students" class="form-control">
-								<p class="text text-muted small mb-0 mt-1">Changing these updates matching students in the list. You can still edit any row amount.</p>
+								<input type="number" id="btn-day-amount" name="amount_day" min="0" step="1" placeholder="Amount for day students" class="form-control">
+								<p class="text text-muted small mb-0 mt-1">Changing these updates matching students in the list. You can still save for an empty class.</p>
 							</div>
 						</div>
 
@@ -192,11 +193,28 @@
 				toastada.error('Please select at least one term.');
 				return false;
 			}
-			if ($("#disciplineTable .disc_row").length === 0) {
-				e.preventDefault();
-				e.stopImmediatePropagation();
-				toastada.error('Please add at least one student.');
-				return false;
+			var useClass = $('#search_type').is(':checked');
+			var classId = $('#mef_class_id').val() || $('#search_class').val();
+			if (classId) {
+				$('#mef_class_id').val(classId);
+			}
+			var hasStudents = $("#disciplineTable .disc_row").length > 0;
+			var boarding = $("#btn-boarding-amount").val();
+			var day = $("#btn-day-amount").val();
+			if (!hasStudents) {
+				if (!useClass || !classId) {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+					toastada.error('Select a class (Use classes) or add at least one student.');
+					return false;
+				}
+				if (boarding === '' && day === '') {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+					toastada.error('Enter boarding and/or day amount. Students are not required.');
+					return false;
+				}
+				return;
 			}
 			var missing = false;
 			$(".txt-fees-inputs").each(function () {
@@ -227,6 +245,9 @@
 			}
 			$("#search_student_dv").toggle();
 			$("#search_class_dv").toggle();
+			if (!$("#search_type").is(":checked")) {
+				$("#mef_class_id").val('');
+			}
 
 		});
 		$(document).ready(function () {
@@ -259,6 +280,7 @@
 			formatRepoSelection(selection.params.data);
 		});
 		$("#search_class").on('select2:select', function (selection) {
+			$('#mef_class_id').val(selection.params.data.id);
 			formatRepoSelection(selection.params.data, true);
 		});
 

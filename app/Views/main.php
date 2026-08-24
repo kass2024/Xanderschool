@@ -2235,7 +2235,7 @@
 									<label><?= lang("app.selectClass"); ?></label>
 									<select class="form-control select2" required name="target[]" id="fee_targets" multiple data-placeholder="<?= lang("app.selectClass"); ?>">
 									</select>
-									<small class="form-text text-muted">Select class(es), then load students to set boarding / day amounts.</small>
+									<small class="form-text text-muted">Select class(es) and enter boarding/day amounts. Students are optional — you can save fees even if the class is empty.</small>
 								</div>
 							</div>
 						</div>
@@ -2249,7 +2249,7 @@
 									<label><?= lang("app.day"); ?> <?= lang("app.amount"); ?></label>
 									<input type="number" min="0" step="1" name="amount_day" id="sf_amt_day" class="form-control" placeholder="Amount for day students">
 								</div>
-								<small class="text-muted">These fill matching students. You can still edit any student amount below.</small>
+								<small class="text-muted">These amounts are saved for the class. Loading students is optional if you want per-student amounts.</small>
 							</div>
 							<div class="col-md-6">
 								<div class="form-group">

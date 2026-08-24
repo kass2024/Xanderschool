@@ -7759,6 +7759,11 @@ public function getApplicationDocs($id = null)
 		$key = $isClass == 0 ? "students.id" : "c.id";
 		$students = $StudentModel->get_student($id, $key, null, false, $academicYear);
 		if (count($students) < 1) {
+			if ((int) $type === 10) {
+				echo "<tr class='mef-empty-class'><td colspan='6' class='text-muted text-center'>No students in this class yet. Extra fees will still be saved for the class.</td></tr>"
+					. "<input type='hidden' name='classIds[]' value='" . (int) $id . "'>";
+				return;
+			}
 			echo "<center><h3>" . lang("app.sorryNoStudents") . "</h3></center><script>$(function() {
 		  $('#class_text').text('');
 		});</script>";
@@ -7923,7 +7928,7 @@ public function getApplicationDocs($id = null)
 				$color = false ? "color:orangered" : "";
 				echo "<tr class='disc_row' id=" . $student['regno'] . " style='$color' data-mode='" . $mode . "'>
 				<td>" . esc($student['regno']) . "</td>
-				<td>" . esc($student['stdnames']) . "<input type='hidden' value=" . (int)$student['id'] . " name='discId[]'></td>
+				<td>" . esc($student['stdnames']) . "<input type='hidden' value='" . (int)$student['id'] . "' name='discId[]'></td>
 				<td>" . esc($student['level_name'] . " " . $student['title'] . " " . $student['code']) . " </td>
 				<td><span class='mef-mode-badge mef-mode-" . $modeClass . "'>" . esc($modeLabel) . "</span></td>
 				<td><input type='number' required name='amounts[]' class='txt-fees-inputs form-control form-control-sm' data-mode='" . $mode . "' min='0' step='1'> </td>
@@ -8158,10 +8163,14 @@ public function getApplicationDocs($id = null)
 		ini_set("memory_limit", -1);
 		ini_set("max_execution_time", -1);
 		$mdl = new ExtraFeesModel();
+		$mdl->ensureSchema();
 		$school_id = $this->session->get("soma_school_id");
 		$amount = $this->request->getPost("amount");
 		$amounts = $this->request->getPost("amounts[]");
-		$title = $this->request->getPost("title");
+		if (!is_array($amounts)) {
+			$amounts = $this->request->getPost("amounts");
+		}
+		$title = trim((string) $this->request->getPost("title"));
 		$created_by = $this->session->get("soma_id");
 		$terms = $this->request->getPost("term");
 		if (!is_array($terms)) {
@@ -8171,25 +8180,49 @@ public function getApplicationDocs($id = null)
 			return $t >= 1 && $t <= 3;
 		})));
 		$formids = $this->request->getPost("discId[]");
+		if (!is_array($formids)) {
+			$formids = $this->request->getPost("discId");
+		}
+		$classIds = $this->request->getPost("classIds");
+		if (!is_array($classIds)) {
+			$classIds = $this->request->getPost("classIds[]");
+		}
+		if (!is_array($classIds)) {
+			$classIds = $classIds !== null && $classIds !== '' ? [$classIds] : [];
+		}
+		$classIds = array_values(array_unique(array_filter(array_map('intval', $classIds))));
+		$boardingAmt = trim((string) $this->request->getPost("amount_boarding"));
+		$dayAmt = trim((string) $this->request->getPost("amount_day"));
+		$boardingVal = ($boardingAmt !== '' && is_numeric($boardingAmt)) ? (float) $boardingAmt : null;
+		$dayVal = ($dayAmt !== '' && is_numeric($dayAmt)) ? (float) $dayAmt : null;
 
 		if (empty($terms)) {
 			return $this->response->setJSON(["error" => lang("app.selectTerms") ?: 'Please select at least one term.']);
 		}
+		if ($title === '') {
+			return $this->response->setJSON(["error" => 'Enter extra fees title.']);
+		}
 		if (!is_array($formids)) {
-			//no student selected
-			return $this->response->setJSON(["error" => lang("app.pleaseAddErr")]);
+			$formids = [];
 		}
 		if (!is_array($amounts)) {
-			//no amount available
-			return $this->response->setJSON(["error" => "No amount available"]);
+			$amounts = [];
 		}
-
 		if (!$this->verify_password(true)) {
 			return $this->response->setJSON(["error" => 'Invalid password, please try again']);
 		}
+
+		$hasStudents = count($formids) > 0;
+		if (!$hasStudents && empty($classIds)) {
+			return $this->response->setJSON(["error" => lang("app.pleaseAddErr")]);
+		}
+		if (!$hasStudents && $boardingVal === null && $dayVal === null) {
+			return $this->response->setJSON(["error" => "Enter boarding and/or day amount for this class."]);
+		}
+
 		$aa = 0;
 		foreach ($formids as $formid) {
-			$studentAmount = $amounts[$aa];
+			$studentAmount = $amounts[$aa] ?? $amount;
 			foreach ($terms as $term) {
 				$data = [
 						"type_id" => $formid,
@@ -8209,11 +8242,69 @@ public function getApplicationDocs($id = null)
 			}
 			$aa++;
 		}
+
+		$classSaved = 0;
+		foreach ($classIds as $classId) {
+			if ($classId < 1) {
+				continue;
+			}
+			$baseCandidates = array_filter([$boardingVal, $dayVal], static function ($v) {
+				return $v !== null;
+			});
+			if (empty($baseCandidates) && $hasStudents) {
+				$numericAmounts = array_map('floatval', $amounts);
+				if ($numericAmounts) {
+					$baseCandidates[] = max($numericAmounts);
+				}
+			}
+			if (empty($baseCandidates)) {
+				continue;
+			}
+			$base = max($baseCandidates);
+			foreach ($terms as $term) {
+				$existing = $mdl->where('school_id', $school_id)
+					->where('title', $title)
+					->where('academic_year', $this->data['academic_year'])
+					->where('type_id', $classId)
+					->where('type', 0)
+					->where('term', $term)
+					->get(1)->getRowArray();
+				$payload = [
+					'school_id' => $school_id,
+					'title' => $title,
+					'academic_year' => $this->data['academic_year'],
+					'type_id' => $classId,
+					'type' => 0,
+					'term' => $term,
+					'amount' => $base,
+					'amount_boarding' => $boardingVal,
+					'amount_day' => $dayVal,
+					'created_by' => $created_by,
+				];
+				try {
+					if ($existing) {
+						$mdl->update((int) $existing['id'], $payload);
+					} else {
+						$mdl->insert($payload);
+					}
+					$classSaved++;
+				} catch (\Exception $e) {
+					return $this->response->setJSON(["error" => lang("app.OopsAction")]);
+				}
+			}
+		}
+
 		$termCount = count($terms);
 		$studentCount = count($formids);
-		$msg = $termCount > 1
-			? "Extra fees created for {$studentCount} student(s) across {$termCount} terms"
-			: 'Multiple extra fees created';
+		if ($studentCount > 0 && $classSaved > 0) {
+			$msg = "Extra fees saved for {$studentCount} student(s) and the class";
+		} elseif ($studentCount > 0) {
+			$msg = $termCount > 1
+				? "Extra fees created for {$studentCount} student(s) across {$termCount} terms"
+				: 'Multiple extra fees created';
+		} else {
+			$msg = 'Extra fees saved for the class (no students required)';
+		}
 		return $this->response->setJSON(array("success" => $msg));
 	}
 
@@ -12823,7 +12914,11 @@ public function getApplicationDocs($id = null)
 		}
 		$html = ob_get_clean();
 		if (trim($html) === '' || strpos($html, 'sf-fee-row') === false) {
-			echo '<tr><td colspan="6" class="text-muted text-center">' . lang("app.sorryNoStudents") . '</td></tr>';
+			$hiddens = '';
+			foreach ($classIds as $cid) {
+				$hiddens .= '<input type="hidden" name="classIds[]" value="' . (int) $cid . '">';
+			}
+			echo '<tr class="sf-empty-row"><td colspan="6" class="text-muted text-center">No students in this class yet. You can still save boarding/day amounts for the class.</td></tr>' . $hiddens;
 			return;
 		}
 		echo $html;
@@ -19514,6 +19609,16 @@ public function assign_card()
 		return max(0, (float) $amount);
 	}
 
+	private function extraFeeAmountForMode(array $row, int $studyingMode): float
+	{
+		$modes = ExtraFeesModel::modeAmounts($row);
+		$amount = ($studyingMode === 0) ? $modes['boarding'] : $modes['day'];
+		if ($amount === null) {
+			$amount = $modes['legacy'];
+		}
+		return max(0, (float) $amount);
+	}
+
 	/**
 	 * Pick the best school-fee row per term for a class that the applicant is not enrolled in yet.
 	 *
@@ -19589,7 +19694,8 @@ public function assign_card()
 
 		if ($classId > 0) {
 			$extraFees = new ExtraFeesModel();
-			$extraRows = $extraFees->select('extra_fees.id,extra_fees.title,extra_fees.amount,extra_fees.term')
+			$extraFees->ensureSchema();
+			$extraRows = $extraFees->select('extra_fees.id,extra_fees.title,extra_fees.amount,extra_fees.amount_boarding,extra_fees.amount_day,extra_fees.term')
 				->where('extra_fees.school_id', $schoolId)
 				->where('extra_fees.academic_year', $year)
 				->where('extra_fees.type', 0)
@@ -19597,11 +19703,14 @@ public function assign_card()
 				->orderBy('extra_fees.term', 'ASC')
 				->orderBy('extra_fees.title', 'ASC')
 				->get()->getResultArray();
+			$seenKeys = [];
 			foreach ($extraRows as $row) {
-				$expected = (float) ($row['amount'] ?? 0);
+				$expected = $this->extraFeeAmountForMode($row, $studyingMode);
 				if ($expected <= 0) {
 					continue;
 				}
+				$key = strtolower(trim((string) $row['title'])) . '|' . (int) $row['term'];
+				$seenKeys[$key] = true;
 				$items[] = [
 					'id' => (int) $row['id'],
 					'fee_type' => 1,
@@ -19612,6 +19721,42 @@ public function assign_card()
 					'expected' => $expected,
 					'paid' => 0,
 					'remain' => $expected,
+				];
+			}
+
+			$db = \Config\Database::connect();
+			$year = (int) $year;
+			$classmates = $db->query(
+				"SELECT ef.title, ef.term, MAX(ef.amount) AS amount
+				 FROM extra_fees ef
+				 INNER JOIN class_records cr ON cr.student = ef.type_id AND cr.class = ? AND cr.year = ?
+				 WHERE ef.school_id = ? AND ef.academic_year = ? AND ef.type = 1
+				 GROUP BY ef.title, ef.term
+				 ORDER BY ef.term ASC, ef.title ASC",
+				[$classId, $year, $schoolId, $year]
+			)->getResultArray();
+			foreach ($classmates as $row) {
+				$key = strtolower(trim((string) $row['title'])) . '|' . (int) $row['term'];
+				if (isset($seenKeys[$key])) {
+					continue;
+				}
+				$expected = (float) ($row['amount'] ?? 0);
+				if ($expected <= 0) {
+					continue;
+				}
+				$seenKeys[$key] = true;
+				$items[] = [
+					'id' => 0,
+					'fee_type' => 1,
+					'category' => lang('app.extraFees'),
+					'label' => (string) $row['title'],
+					'term' => $this->TermToStr($row['term']),
+					'term_id' => (int) $row['term'],
+					'expected' => $expected,
+					'paid' => 0,
+					'remain' => $expected,
+					'is_new' => true,
+					'title' => (string) $row['title'],
 				];
 			}
 		}
@@ -19832,6 +19977,19 @@ public function assign_card()
 		if ($defaultClassId === null && count($classes) >= 1) {
 			$defaultClassId = (int) $classes[0]['id'];
 			$defaultClassLabel = trim(($classes[0]['level_name'] ?? '') . ' ' . ($classes[0]['title'] ?? '') . ' (' . ($classes[0]['department_name'] ?? '') . ')');
+		}
+
+		if ($defaultClassId === null && $appClassId > 0) {
+			$direct = $classMdl->select("classes.id,classes.title,d.title as department_name,l.title as level_name")
+					->join("departments d", "d.id=classes.department", "left")
+					->join("levels l", "l.id=classes.level", "left")
+					->where("classes.id", $appClassId)
+					->where("classes.school_id", $schoolId)
+					->get(1)->getRowArray();
+			if ($direct) {
+				$defaultClassId = $appClassId;
+				$defaultClassLabel = trim(($direct['level_name'] ?? '') . ' ' . ($direct['title'] ?? '') . ' (' . ($direct['department_name'] ?? '') . ')');
+			}
 		}
 
 		$studyingMode = (int) ($data['studyingMode'] ?? 1);
