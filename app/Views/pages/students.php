@@ -472,6 +472,7 @@
 	});
 
 	var pendingMoveIds = [];
+	var moveInFlight = false;
 
 	function showMoveModalAlert(kind, msg) {
 		var $el = $('#moveStudentModalAlert');
@@ -493,6 +494,9 @@
 	}
 
 	function submitMove() {
+		if (moveInFlight) {
+			return;
+		}
 		var toClass = parseInt($('#moveStudentToClass').val(), 10);
 		if (!pendingMoveIds.length) {
 			showMoveModalAlert('warning', 'Select at least one student.');
@@ -502,6 +506,7 @@
 			showMoveModalAlert('warning', 'Choose the destination class.');
 			return;
 		}
+		moveInFlight = true;
 		var $btn = $('#btnConfirmMoveStudents');
 		$btn.prop('disabled', true).text('Moving…');
 		showMoveModalAlert('info', 'Moving student(s)…');
@@ -523,9 +528,11 @@
 					window.location.reload();
 				}, 700);
 			} else {
+				moveInFlight = false;
 				showMoveModalAlert('danger', (res && (res.error || res.message)) || 'Could not move students.');
 			}
 		}).fail(function () {
+			moveInFlight = false;
 			showMoveModalAlert('danger', 'Could not move students. Please try again.');
 		}).always(function () {
 			$btn.prop('disabled', false).text('Move');

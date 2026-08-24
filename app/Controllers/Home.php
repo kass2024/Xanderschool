@@ -334,11 +334,53 @@ public function testEmail()
 		return $row ?: null;
 	}
 
+	private function normalizePersonName(string $fname, string $lname): string
+	{
+		$s = strtolower(trim($fname . ' ' . $lname));
+		$s = preg_replace('/[^a-z0-9 ]+/', ' ', $s) ?? $s;
+		$s = preg_replace('/\s+/', ' ', $s) ?? $s;
+		return trim($s);
+	}
+
+	private function studentPhoneKeys(array $row): array
+	{
+		$out = [];
+		foreach (['ft_phone', 'mt_phone', 'gd_phone'] as $key) {
+			$digits = preg_replace('/\D+/', '', (string) ($row[$key] ?? '')) ?? '';
+			if (strlen($digits) >= 9) {
+				$out[] = substr($digits, -9);
+			}
+		}
+		return array_values(array_unique($out));
+	}
+
+	private function studentsLookLikeSamePerson(array $a, array $b): bool
+	{
+		$na = $this->normalizePersonName((string) ($a['fname'] ?? ''), (string) ($a['lname'] ?? ''));
+		$nb = $this->normalizePersonName((string) ($b['fname'] ?? ''), (string) ($b['lname'] ?? ''));
+		if ($na === '' || $nb === '') {
+			return false;
+		}
+		if ($na === $nb) {
+			return true;
+		}
+		$pct = 0;
+		similar_text($na, $nb, $pct);
+		$dist = levenshtein($na, $nb);
+		$closeName = $pct >= 82 || ($dist <= 3 && strlen($na) >= 8 && strlen($nb) >= 8);
+		if (!$closeName) {
+			return false;
+		}
+		$phonesA = $this->studentPhoneKeys($a);
+		$phonesB = $this->studentPhoneKeys($b);
+		return $phonesA !== [] && $phonesB !== [] && array_intersect($phonesA, $phonesB) !== [];
+	}
+
 	/**
 	 * Move one student to another class for a year. Enrollment changes; student-owned
 	 * records (marks, fees, attendance, visitors, etc.) stay on the student.
 	 *
-	 * @return array{ok:bool,error?:string,from?:string,to?:string}
+	 * @return array{ok:bool,error?:string,from?:string,to?:string,name?:string}
 	 */
 	private function moveStudentEnrollment(int $schoolId, int $studentId, int $fromClassId, int $toClassId, $yearId): array
 	{
@@ -350,7 +392,7 @@ public function testEmail()
 		}
 
 		$studentMdl = new StudentModel();
-		$student = $studentMdl->select('id, fname, lname, regno')
+		$student = $studentMdl->select('id, fname, lname, regno, ft_phone, mt_phone, gd_phone')
 			->where('id', $studentId)
 			->where('school_id', $schoolId)
 			->get()->getRowArray();
@@ -368,42 +410,64 @@ public function testEmail()
 		}
 
 		$db = \Config\Database::connect();
-		$crTable = $db->table('class_records');
-		$source = $crTable->where('student', $studentId)
-			->where('year', $yearId)
-			->where('class', $fromClassId)
-			->get()->getRowArray();
+		$yearKey = (string) $yearId;
+		$source = $db->query(
+			'SELECT id, student, class, year FROM class_records WHERE student = ? AND year = ? AND class = ? LIMIT 1',
+			[$studentId, $yearKey, $fromClassId]
+		)->getRowArray();
 		if (!$source) {
 			$name = trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? ''));
 			return ['ok' => false, 'error' => ($name !== '' ? $name : 'Student') . ' is not in the selected class for this year.'];
 		}
 
-		$dest = $db->table('class_records')
-			->where('student', $studentId)
-			->where('year', $yearId)
-			->where('class', $toClassId)
-			->get()->getRowArray();
+		$dest = $db->query(
+			'SELECT id, student, class, year FROM class_records WHERE student = ? AND year = ? AND class = ? LIMIT 1',
+			[$studentId, $yearKey, $toClassId]
+		)->getRowArray();
 
 		$db->transStart();
 
 		if ($dest && (int) $dest['id'] !== (int) $source['id']) {
-			$db->table('class_records')->where('id', (int) $source['id'])->delete();
+			$db->query('DELETE FROM class_records WHERE id = ?', [(int) $source['id']]);
 		} else {
-			$db->table('class_records')->where('id', (int) $source['id'])->update(['class' => $toClassId]);
+			$db->query('UPDATE class_records SET class = ? WHERE id = ?', [$toClassId, (int) $source['id']]);
+		}
+
+		// Same person already sitting in the destination class (different student id / regno).
+		$classmates = $db->query(
+			'SELECT s.id, s.fname, s.lname, s.regno, s.ft_phone, s.mt_phone, s.gd_phone, cr.id AS cr_id
+			 FROM class_records cr
+			 JOIN students s ON s.id = cr.student
+			 WHERE cr.class = ? AND cr.year = ? AND s.school_id = ? AND s.id <> ?',
+			[$toClassId, $yearKey, $schoolId, $studentId]
+		)->getResultArray();
+		foreach ($classmates as $mate) {
+			if (!$this->studentsLookLikeSamePerson($student, $mate)) {
+				continue;
+			}
+			$db->query('DELETE FROM class_records WHERE id = ?', [(int) $mate['cr_id']]);
+		}
+
+		// Never keep two enrollment rows for the same student in the same class/year.
+		$dupRows = $db->query(
+			'SELECT id FROM class_records WHERE student = ? AND year = ? AND class = ? ORDER BY id ASC',
+			[$studentId, $yearKey, $toClassId]
+		)->getResultArray();
+		if (count($dupRows) > 1) {
+			array_shift($dupRows);
+			foreach ($dupRows as $extra) {
+				$db->query('DELETE FROM class_records WHERE id = ?', [(int) $extra['id']]);
+			}
 		}
 
 		if ($db->tableExists('marks')) {
-			$db->table('marks')
-				->where('student_id', $studentId)
-				->where('class_id', $fromClassId)
-				->update(['class_id' => $toClassId]);
+			$db->query('UPDATE marks SET class_id = ? WHERE student_id = ? AND class_id = ?', [$toClassId, $studentId, $fromClassId]);
 		}
 		if ($db->tableExists('student_material_checks')) {
-			$db->table('student_material_checks')
-				->where('student_id', $studentId)
-				->where('class_id', $fromClassId)
-				->where('academic_year', $yearId)
-				->update(['class_id' => $toClassId]);
+			$db->query(
+				'UPDATE student_material_checks SET class_id = ? WHERE student_id = ? AND class_id = ? AND academic_year = ?',
+				[$toClassId, $studentId, $fromClassId, $yearKey]
+			);
 		}
 
 		$uvMdl = new UpdateVersionModel();
@@ -412,7 +476,7 @@ public function testEmail()
 		if ($update_v_data != null) {
 			$update_v = $update_v_data->version;
 		}
-		$studentMdl->where('id', $studentId)->where('school_id', $schoolId)->set(['updateVersion' => $update_v])->update();
+		$db->query('UPDATE students SET updateVersion = ? WHERE id = ? AND school_id = ?', [$update_v, $studentId, $schoolId]);
 
 		$db->transComplete();
 		if ($db->transStatus() === false) {
@@ -5716,7 +5780,15 @@ public function attendanceCard()
 		$acMdl = new AcademicYearModel();
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)->get()->getResultArray();
 		$studentMdl = new StudentModel();
-		$data['students'] = $studentMdl->get_student_simple("c.id = $classe and cr.year=$yearId", null);
+		$list = $studentMdl->get_student_simple("c.id = $classe and cr.year=$yearId", null);
+		$unique = [];
+		foreach ($list as $row) {
+			$sid = (int) ($row['id'] ?? 0);
+			if ($sid > 0) {
+				$unique[$sid] = $row;
+			}
+		}
+		$data['students'] = array_values($unique);
 		$data['class_id'] = $classe;
 		$data['academic_year'] = $yearId;
 		$data['active_year_id'] = $activeYearId;
