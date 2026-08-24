@@ -19,6 +19,7 @@ $REJECT_POST_API   = site_url('rejectApplicationRegistration');
 $DELETE_POST_API   = site_url('deleteApplicationRegistration');
 $APP_BASE          = rtrim(base_url(), '/');
 ?>
+<link rel="stylesheet" href="<?= base_url('assets/css/fees-entry.css') ?>">
 <style>
   .modal{position:fixed !important; z-index:20050 !important;}
   .modal-backdrop{z-index:20040 !important;}
@@ -56,6 +57,15 @@ $APP_BASE          = rtrim(base_url(), '/');
   .docs-preview-body iframe,.docs-preview-body img{max-width:100%;max-height:420px;border:0;border-radius:6px;}
   .docs-preview-empty{text-align:center;color:#6b7280;padding:24px;}
   .docs-preview-empty i{font-size:42px;display:block;margin-bottom:10px;opacity:.45;}
+
+  #approveRegistrationModal .modal-dialog{max-width:1100px;}
+  .pr-place-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px;}
+  @media (max-width:767px){.pr-place-grid{grid-template-columns:1fr 1fr;}}
+  .pr-place-chip{border:1px solid #e3e6ef;border-radius:8px;padding:8px 10px;background:#f8fafc;}
+  .pr-place-chip span{display:block;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.03em;}
+  .pr-place-chip strong{font-size:13px;}
+  .pr-add-panel{border:1px dashed #cbd5e1;border-radius:8px;padding:12px;margin-bottom:12px;background:#f8fafc;display:none;}
+  .pr-add-panel.show{display:block;}
 </style>
 
 <div class="app-inner-layout app-inner-layout-page">
@@ -181,28 +191,114 @@ $APP_BASE          = rtrim(base_url(), '/');
   </div>
 </div>
 
-<!-- APPROVE MODAL -->
+<!-- APPROVE + FEE RECORD MODAL -->
 <div class="modal fade" id="approveRegistrationModal" tabindex="-1" role="dialog" aria-labelledby="approveRegistrationLabel" aria-hidden="true">
-  <div class="modal-dialog" role="document">
-    <div class="modal-content">
+  <div class="modal-dialog modal-xl" role="document">
+    <div class="modal-content fe-invoice-modal">
       <div class="modal-header">
-        <h5 class="modal-title" id="approveRegistrationLabel">Approve application</h5>
+        <h5 class="modal-title" id="approveRegistrationLabel">Record fees &amp; approve</h5>
         <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
       </div>
       <div class="modal-body">
         <div id="approveAlert" class="alert d-none"></div>
-        <p>Are you sure you want to approve <strong id="approveName"></strong>?</p>
-        <div class="form-group mb-0">
-          <label class="text-muted mb-1">Placement (from registration)</label>
-          <div id="approveStructure" class="border rounded p-2 bg-light" style="font-size:14px;">Loading…</div>
-          <small class="form-text text-muted">Class is taken from the faculty, department and level already chosen on the application form.</small>
+        <p class="mb-2">Record payment for <strong id="approveName"></strong> using the class and studying mode from the application, then approve.</p>
+        <div class="pr-place-grid" id="approveStructure">
+          <div class="pr-place-chip"><span>Level</span><strong>—</strong></div>
+          <div class="pr-place-chip"><span>Class</span><strong>—</strong></div>
+          <div class="pr-place-chip"><span>Studying mode</span><strong>—</strong></div>
+          <div class="pr-place-chip"><span>Year</span><strong>—</strong></div>
         </div>
         <input type="hidden" id="approveAppId" value="">
         <input type="hidden" id="approveClassId" value="">
+
+        <div id="feInvoiceLoading" class="fe-invoice-loading">
+          <i class="fa fa-spinner fa-spin"></i> Loading payable items…
+        </div>
+
+        <div id="feInvoiceWrap" style="display:none">
+          <div class="fe-invoice-toolbar">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="feInvSelectAll">Select all</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="feInvFillBalance">Fill full balance</button>
+            <button type="button" class="btn btn-sm btn-info" id="prAddSchoolFeeBtn"><i class="fa fa-plus"></i> Add school fees</button>
+            <button type="button" class="btn btn-sm btn-info" id="prAddExtraFeeBtn"><i class="fa fa-plus"></i> <?= lang('app.addExtra') ?></button>
+            <span class="fe-invoice-hint">Fees follow the class and boarding/day chosen on the registration form.</span>
+          </div>
+
+          <div id="prAddFeePanel" class="pr-add-panel">
+            <div class="form-row">
+              <div class="form-group col-md-3 mb-2" id="prAddTitleWrap">
+                <label>Item title</label>
+                <input type="text" class="form-control form-control-sm" id="prAddTitle" placeholder="e.g. Uniform">
+              </div>
+              <div class="form-group col-md-3 mb-2">
+                <label><?= lang('app.term') ?></label>
+                <select class="form-control form-control-sm" id="prAddTerm">
+                  <option value="1"><?= lang('app.term1') ?></option>
+                  <option value="2"><?= lang('app.term2') ?></option>
+                  <option value="3"><?= lang('app.term3') ?></option>
+                </select>
+              </div>
+              <div class="form-group col-md-3 mb-2">
+                <label><?= lang('app.expectedAmount') ?></label>
+                <input type="number" min="1" step="1" class="form-control form-control-sm" id="prAddAmount" placeholder="0">
+              </div>
+              <div class="form-group col-md-3 mb-2 d-flex align-items-end">
+                <button type="button" class="btn btn-sm btn-primary mr-2" id="prAddFeeSave">Add item</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="prAddFeeCancel">Cancel</button>
+              </div>
+            </div>
+            <small class="text-muted" id="prAddFeeHint"></small>
+          </div>
+
+          <div class="table-responsive fe-invoice-table-wrap">
+            <table class="table table-sm table-hover mb-0" id="feInvoiceTable">
+              <thead>
+                <tr>
+                  <th style="width:36px"></th>
+                  <th><?= lang('app.item') ?></th>
+                  <th><?= lang('app.term') ?></th>
+                  <th class="text-right"><?= lang('app.expectedAmount') ?></th>
+                  <th class="text-right"><?= lang('app.paidAmount') ?></th>
+                  <th class="text-right"><?= lang('app.remainAmount') ?></th>
+                  <th class="text-right" style="min-width:120px"><?= lang('app.receivedAmount') ?></th>
+                </tr>
+              </thead>
+              <tbody id="feInvoiceBody"></tbody>
+              <tfoot>
+                <tr class="fe-invoice-total-row">
+                  <td colspan="6" class="text-right"><strong>Total to pay</strong></td>
+                  <td class="text-right"><strong id="feInvoiceTotal">0</strong> Rwf</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div class="row fe-invoice-meta">
+            <div class="col-md-4">
+              <label><?= lang('app.paymentMode') ?></label>
+              <select class="form-control" id="feInvoicePaymentMode" required>
+                <option value="" disabled selected><?= lang('app.selectPaymentMode') ?></option>
+                <option value="1"><?= lang('app.bankSlip') ?></option>
+                <option value="2"><?= lang('app.cash') ?></option>
+                <option value="3"><?= lang('app.cheque') ?></option>
+                <option value="4"><?= lang('app.momo') ?></option>
+                <option value="5"><?= lang('app.airtelMoney') ?></option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label><?= lang('app.dueDate') ?></label>
+              <input type="date" class="form-control" id="feInvoiceDueDate">
+            </div>
+            <div class="col-md-4" id="feSlipRefWrap" style="display:none">
+              <label><?= lang('app.slipReference') ?></label>
+              <input type="text" class="form-control" id="feInvoiceSlipRef" maxlength="50" placeholder="<?= lang('app.slipReferencePlaceholder') ?>">
+            </div>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-success" id="approveConfirmBtn">Yes, approve</button>
+        <button type="button" class="btn btn-success" id="approveConfirmBtn" disabled>Save payment &amp; approve</button>
       </div>
     </div>
   </div>
@@ -265,6 +361,15 @@ $APP_BASE          = rtrim(base_url(), '/');
   function withCsrf(data){ data = data || {}; if(csrfName && csrfHash){ data[csrfName] = csrfHash; } return data; }
 
   var currentDocs = [];
+  var TERM_LABELS = {
+    1: <?= json_encode(lang('app.term1')) ?>,
+    2: <?= json_encode(lang('app.term2')) ?>,
+    3: <?= json_encode(lang('app.term3')) ?>
+  };
+  var invoiceItems = [];
+  var schoolFeeTerms = {};
+  var addFeeKind = 'extra';
+  var newItemSeq = 0;
 
   function fileUrl(rel) {
     if (!rel) return null;
@@ -471,6 +576,149 @@ $APP_BASE          = rtrim(base_url(), '/');
     .always(function () { $('#pendingDocsModal').modal('show'); });
   });
 
+  function formatRwf(n) {
+    return Number(n || 0).toLocaleString();
+  }
+
+  function renderPlacement(res) {
+    var s = (res && res.structure) || {};
+    var classLabel = res.defaultClassLabel || [s.level, s.faculty, s.dpt].filter(Boolean).join(' / ') || '—';
+    $('#approveStructure').html(
+      '<div class="pr-place-chip"><span>Level</span><strong>' + (s.level || '—') + '</strong></div>' +
+      '<div class="pr-place-chip"><span>Class</span><strong>' + classLabel + '</strong></div>' +
+      '<div class="pr-place-chip"><span>Studying mode</span><strong>' + (res.modeLabel || '—') + '</strong></div>' +
+      '<div class="pr-place-chip"><span>Year</span><strong>' + (res.academicYearTitle || '—') + '</strong></div>'
+    );
+  }
+
+  function feInvoiceUpdateTotal() {
+    var total = 0;
+    var count = 0;
+    $('#feInvoiceBody .fe-inv-check:checked').each(function () {
+      var $row = $(this).closest('tr');
+      var amt = parseFloat($row.find('.fe-inv-amount').val()) || 0;
+      var max = parseFloat($row.data('remain')) || 0;
+      if (amt > 0 && amt <= max + 0.001) {
+        total += amt;
+        count++;
+      }
+    });
+    var mode = $('#feInvoicePaymentMode').val();
+    var slipOk = mode !== '1' || ($('#feInvoiceSlipRef').val() || '').trim().length > 0;
+    $('#feInvoiceTotal').text(formatRwf(total));
+    $('#approveConfirmBtn').prop('disabled', count === 0 || !mode || !slipOk || !$('#approveClassId').val());
+  }
+
+  function feToggleSlipRef() {
+    var isBank = $('#feInvoicePaymentMode').val() === '1';
+    $('#feSlipRefWrap').toggle(isBank);
+    if (!isBank) {
+      $('#feInvoiceSlipRef').val('');
+    }
+    feInvoiceUpdateTotal();
+  }
+
+  function hideAddFeePanel() {
+    $('#prAddFeePanel').removeClass('show');
+    $('#prAddTitle').val('');
+    $('#prAddAmount').val('');
+  }
+
+  function feInvoiceRenderItems(items) {
+    invoiceItems = items || [];
+    var html = '';
+    var lastCat = '';
+    invoiceItems.forEach(function (it, idx) {
+      if (it.category !== lastCat) {
+        html += '<tr class="fe-inv-section"><td colspan="7">' + it.category + '</td></tr>';
+        lastCat = it.category;
+      }
+      html += '<tr class="fe-inv-row" data-index="' + idx + '" data-id="' + (it.id || 0) + '" data-type="' + it.fee_type + '" data-remain="' + it.remain + '">' +
+        '<td><input type="checkbox" class="fe-inv-check"></td>' +
+        '<td>' + (it.label || '') + (it.is_new ? ' <span class="badge badge-info">New</span>' : '') + '</td>' +
+        '<td>' + (it.term || '') + '</td>' +
+        '<td class="text-right">' + formatRwf(it.expected) + '</td>' +
+        '<td class="text-right">' + formatRwf(it.paid) + '</td>' +
+        '<td class="text-right fe-amount-due">' + formatRwf(it.remain) + '</td>' +
+        '<td class="text-right"><input type="number" class="form-control form-control-sm fe-inv-amount text-right" min="1" step="1" max="' + it.remain + '" placeholder="0" disabled></td>' +
+        '</tr>';
+    });
+    if (!invoiceItems.length) {
+      html = '<tr><td colspan="7" class="text-center text-muted py-3">No fee items yet. Add school fees or extra fees for this class.</td></tr>';
+    }
+    $('#feInvoiceBody').html(html);
+    feInvoiceUpdateTotal();
+  }
+
+  function showAddFeePanel(kind) {
+    addFeeKind = kind;
+    $('#prAddTitleWrap').toggle(kind === 'extra');
+    $('#prAddFeeHint').text(kind === 'school'
+      ? 'Adds school fees for this registration class and studying mode (boarding or day).'
+      : 'Adds an extra fee for this student if it is not already listed.');
+    $('#prAddFeePanel').addClass('show');
+    if (kind === 'extra') {
+      $('#prAddTitle').focus();
+    } else {
+      $('#prAddAmount').focus();
+    }
+  }
+
+  function addInvoiceItem() {
+    var term = parseInt($('#prAddTerm').val(), 10) || 1;
+    var amount = parseFloat($('#prAddAmount').val()) || 0;
+    var title = ($('#prAddTitle').val() || '').trim();
+    if (amount <= 0) {
+      showAlert($('#approveAlert'), 'danger', 'Enter an expected amount greater than 0.');
+      return;
+    }
+    if (addFeeKind === 'extra' && !title) {
+      showAlert($('#approveAlert'), 'danger', 'Enter a title for the extra fee.');
+      return;
+    }
+    if (addFeeKind === 'school') {
+      var exists = invoiceItems.some(function (it) {
+        return parseInt(it.fee_type, 10) === 0 && parseInt(it.term_id, 10) === term;
+      });
+      if (exists) {
+        showAlert($('#approveAlert'), 'danger', 'School fees for that term are already listed. Edit the received amount on the existing row.');
+        return;
+      }
+      var existingMeta = schoolFeeTerms[term] || schoolFeeTerms[String(term)];
+      invoiceItems.push({
+        id: existingMeta ? existingMeta.id : 0,
+        fee_type: 0,
+        category: <?= json_encode(lang('app.schoolFees')) ?>,
+        label: <?= json_encode(lang('app.schoolFees')) ?>,
+        term: TERM_LABELS[term] || ('Term ' + term),
+        term_id: term,
+        expected: amount,
+        paid: 0,
+        remain: amount,
+        is_new: true,
+        title: <?= json_encode(lang('app.schoolFees')) ?>
+      });
+    } else {
+      newItemSeq += 1;
+      invoiceItems.push({
+        id: 0,
+        fee_type: 1,
+        category: <?= json_encode(lang('app.extraFees')) ?>,
+        label: title,
+        term: TERM_LABELS[term] || ('Term ' + term),
+        term_id: term,
+        expected: amount,
+        paid: 0,
+        remain: amount,
+        is_new: true,
+        title: title
+      });
+    }
+    hideAddFeePanel();
+    $('#approveAlert').addClass('d-none').text('');
+    feInvoiceRenderItems(invoiceItems);
+  }
+
   // APPROVE
   $(document).on('click', '.approveBtn', function () {
     var appId = $(this).data('id') || '';
@@ -479,40 +727,88 @@ $APP_BASE          = rtrim(base_url(), '/');
     $('#approveClassId').val('');
     $('#approveName').text(name);
     $('#approveAlert').addClass('d-none').removeClass('alert-success alert-danger').text('');
-    $('#approveStructure').text('Loading placement…');
-    $('#approveConfirmBtn').prop('disabled', true).text('Yes, approve');
+    $('#approveStructure').html('<div class="pr-place-chip"><span>Placement</span><strong>Loading…</strong></div>');
+    $('#approveConfirmBtn').prop('disabled', true).text('Save payment & approve');
+    $('#feInvoiceLoading').show();
+    $('#feInvoiceWrap').hide();
+    $('#feInvoicePaymentMode').val('');
+    $('#feInvoiceDueDate').val('');
+    $('#feInvoiceSlipRef').val('');
+    hideAddFeePanel();
+    invoiceItems = [];
+    schoolFeeTerms = {};
+    feToggleSlipRef();
 
     ajaxWithIndexFallback({
       url: APPROVE_INFO_API + '/' + encodeURIComponent(appId),
       method: 'GET',
       dataType: 'json'
     }).done(function(res){
+      $('#feInvoiceLoading').hide();
       if(res && res.structure){
-        var s = res.structure;
-        var classLabel = res.defaultClassLabel || (s.level + ' / ' + s.faculty + ' / ' + s.dpt);
-        $('#approveStructure').html(
-          '<div><strong>Level:</strong> ' + (s.level || '—') + '</div>' +
-          '<div><strong>Faculty:</strong> ' + (s.faculty || '—') + '</div>' +
-          '<div><strong>Department:</strong> ' + (s.dpt || '—') + '</div>' +
-          '<div><strong>Class:</strong> ' + classLabel + '</div>'
-        );
+        renderPlacement(res);
         if (res.defaultClassId) {
           $('#approveClassId').val(res.defaultClassId);
-          $('#approveConfirmBtn').prop('disabled', false);
         } else {
           showAlert($('#approveAlert'), 'danger', 'No matching class found for this registration. Create the class for this level/department first.');
         }
+        schoolFeeTerms = res.schoolFeeTerms || {};
+        if (res.currentTerm) {
+          $('#prAddTerm').val(String(res.currentTerm));
+        }
+        feInvoiceRenderItems(res.items || []);
+        $('#feInvoiceWrap').show();
+        feInvoiceUpdateTotal();
       } else {
-        $('#approveStructure').text('Could not load placement.');
+        $('#approveStructure').html('<div class="pr-place-chip"><span>Placement</span><strong>Could not load</strong></div>');
         showAlert($('#approveAlert'), 'danger', (res && res.error) ? res.error : 'Failed to load application placement.');
       }
     }).fail(function(){
-      $('#approveStructure').text('Failed to load placement.');
+      $('#feInvoiceLoading').hide();
+      $('#approveStructure').html('<div class="pr-place-chip"><span>Placement</span><strong>Failed to load</strong></div>');
       showAlert($('#approveAlert'), 'danger', 'Failed to load application placement.');
     });
 
     $('#approveRegistrationModal').modal('show');
   });
+
+  $(document).on('change', '#approveRegistrationModal .fe-inv-check', function () {
+    var $row = $(this).closest('tr');
+    var $amt = $row.find('.fe-inv-amount');
+    if ($(this).is(':checked')) {
+      $amt.prop('disabled', false);
+      if (!$amt.val()) {
+        $amt.val($row.data('remain'));
+      }
+      $amt.focus().select();
+    } else {
+      $amt.prop('disabled', true).val('');
+    }
+    feInvoiceUpdateTotal();
+  });
+
+  $(document).on('input', '#approveRegistrationModal .fe-inv-amount', feInvoiceUpdateTotal);
+  $('#feInvoicePaymentMode').on('change', feToggleSlipRef);
+  $('#feInvoiceSlipRef').on('input', feInvoiceUpdateTotal);
+
+  $('#feInvSelectAll').on('click', function () {
+    $('#feInvoiceBody .fe-inv-check').each(function () {
+      $(this).prop('checked', true).trigger('change');
+    });
+  });
+
+  $('#feInvFillBalance').on('click', function () {
+    $('#feInvoiceBody .fe-inv-check:checked').each(function () {
+      var $row = $(this).closest('tr');
+      $row.find('.fe-inv-amount').val($row.data('remain'));
+    });
+    feInvoiceUpdateTotal();
+  });
+
+  $('#prAddSchoolFeeBtn').on('click', function () { showAddFeePanel('school'); });
+  $('#prAddExtraFeeBtn').on('click', function () { showAddFeePanel('extra'); });
+  $('#prAddFeeCancel').on('click', hideAddFeePanel);
+  $('#prAddFeeSave').on('click', addInvoiceItem);
 
   $(document).on('click', '#approveConfirmBtn', function (e) {
     e.preventDefault(); e.stopPropagation();
@@ -521,28 +817,80 @@ $APP_BASE          = rtrim(base_url(), '/');
     if (!appId) { showAlert($('#approveAlert'), 'danger', 'Missing application id.'); return; }
     if (!classId) { showAlert($('#approveAlert'), 'danger', 'No class matched from registration.'); return; }
 
-    $('#approveConfirmBtn').prop('disabled', true).text('Approving…');
+    var mode = $('#feInvoicePaymentMode').val();
+    if (!mode) { showAlert($('#approveAlert'), 'danger', 'Select payment mode.'); return; }
+    var slipRef = ($('#feInvoiceSlipRef').val() || '').trim();
+    if (mode === '1' && !slipRef) {
+      showAlert($('#approveAlert'), 'danger', <?= json_encode(lang('app.slipReferenceRequired')) ?>);
+      return;
+    }
+
+    var payments = [];
+    var hasError = false;
+    $('#feInvoiceBody .fe-inv-row').each(function () {
+      var $cb = $(this).find('.fe-inv-check');
+      if (!$cb.is(':checked')) return;
+      var idx = parseInt($(this).data('index'), 10);
+      var item = invoiceItems[idx];
+      if (!item) return;
+      var amount = parseFloat($(this).find('.fe-inv-amount').val()) || 0;
+      var max = parseFloat($(this).data('remain')) || 0;
+      if (amount <= 0) return;
+      if (amount > max + 0.001) {
+        showAlert($('#approveAlert'), 'danger', 'Amount exceeds balance for ' + (item.label || 'item') + '.');
+        hasError = true;
+        return false;
+      }
+      payments.push({
+        id: item.id || 0,
+        fee_type: item.fee_type,
+        amount: amount,
+        expected: item.expected,
+        term_id: item.term_id,
+        title: item.title || item.label || ''
+      });
+    });
+    if (hasError) return;
+    if (!payments.length) {
+      showAlert($('#approveAlert'), 'danger', 'Select at least one item and enter the received amount.');
+      return;
+    }
+
+    $('#approveConfirmBtn').prop('disabled', true).text('Saving payment…');
     ajaxWithIndexFallback({
       url: APPROVE_POST_API,
       method: 'POST',
       dataType: 'json',
-      data: withCsrf({ applicationId: appId, classId: classId })
+      data: withCsrf({
+        applicationId: appId,
+        classId: classId,
+        paymentMode: mode,
+        dueDate: $('#feInvoiceDueDate').val(),
+        slipRef: slipRef,
+        payments: JSON.stringify(payments)
+      })
     })
     .done(function (res) {
       if (res && res.success) {
-        showAlert($('#approveAlert'), 'success', res.success || 'Applicant approved successfully.');
+        showAlert($('#approveAlert'), 'success', res.success || 'Payment recorded and applicant approved.');
+        if (res.url || res.print_url) {
+          try {
+            var w = window.open(res.url || res.print_url, '_blank', 'width=420,height=720');
+            if (w) w.focus();
+          } catch (_) {}
+        }
         setTimeout(function(){
           $('#approveRegistrationModal').modal('hide');
           removePendingRow(appId);
         }, 700);
       } else {
         showAlert($('#approveAlert'), 'danger', (res && (res.error||res.message)) ? (res.error||res.message) : 'Approval failed.');
-        $('#approveConfirmBtn').prop('disabled', false).text('Yes, approve');
+        $('#approveConfirmBtn').prop('disabled', false).text('Save payment & approve');
       }
     })
     .fail(function () {
       showAlert($('#approveAlert'), 'danger', 'Server error during approval.');
-      $('#approveConfirmBtn').prop('disabled', false).text('Yes, approve');
+      $('#approveConfirmBtn').prop('disabled', false).text('Save payment & approve');
     });
   });
 

@@ -19145,12 +19145,295 @@ public function assign_card()
 		}
 	}
 
-	public
+	/**
+	 * School-fee expected amount for a boarding (0) or day (1) applicant.
+	 */
+	private function schoolFeeAmountForMode(array $row, int $studyingMode): float
+	{
+		$modes = SchoolFeesModel::modeAmounts($row);
+		$amount = ($studyingMode === 0) ? $modes['boarding'] : $modes['day'];
+		if ($amount === null) {
+			$amount = $modes['legacy'];
+		}
+		return max(0, (float) $amount);
+	}
+
+	/**
+	 * Pick the best school-fee row per term for a class that the applicant is not enrolled in yet.
+	 *
+	 * @return array<int,array>
+	 */
+	private function schoolFeesForApplicationClass(int $schoolId, int $year, int $classId, int $levelId, int $deptId): array
+	{
+		$schoolFees = new SchoolFeesModel();
+		$schoolFees->ensureSchema();
+		$rows = $schoolFees->select('id, amount, amount_boarding, amount_day, term, class_id, level, department')
+			->where('school_id', $schoolId)
+			->where('academic_year', $year)
+			->groupStart()
+				->where('class_id', $classId)
+				->orGroupStart()
+					->where('level', $levelId)
+					->where('department', $deptId)
+				->groupEnd()
+			->groupEnd()
+			->orderBy('term', 'ASC')
+			->get()->getResultArray();
+
+		$byTerm = [];
+		foreach ($rows as $row) {
+			$term = (int) ($row['term'] ?? 0);
+			if ($term < 1) {
+				continue;
+			}
+			$isClass = $classId > 0 && (int) ($row['class_id'] ?? 0) === $classId;
+			if (!isset($byTerm[$term])) {
+				$byTerm[$term] = $row;
+				continue;
+			}
+			$existingIsClass = $classId > 0 && (int) ($byTerm[$term]['class_id'] ?? 0) === $classId;
+			if ($isClass && !$existingIsClass) {
+				$byTerm[$term] = $row;
+			}
+		}
+		return $byTerm;
+	}
+
+	/**
+	 * Invoice lines from the class + studying mode chosen on the application (no student yet).
+	 *
+	 * @return array{items:array,schoolFeeTerms:array}
+	 */
+	private function pendingApplicationFeeInvoiceItems(int $schoolId, int $year, int $classId, int $levelId, int $deptId, int $studyingMode): array
+	{
+		$items = [];
+		$schoolFeeTerms = [];
+		$byTerm = $this->schoolFeesForApplicationClass($schoolId, $year, $classId, $levelId, $deptId);
+		foreach ($byTerm as $term => $row) {
+			$expected = $this->schoolFeeAmountForMode($row, $studyingMode);
+			$schoolFeeTerms[(int) $term] = [
+				'id' => (int) $row['id'],
+				'expected' => $expected,
+			];
+			if ($expected <= 0) {
+				continue;
+			}
+			$items[] = [
+				'id' => (int) $row['id'],
+				'fee_type' => 0,
+				'category' => lang('app.schoolFees'),
+				'label' => lang('app.schoolFees'),
+				'term' => $this->TermToStr($term),
+				'term_id' => (int) $term,
+				'expected' => $expected,
+				'paid' => 0,
+				'remain' => $expected,
+			];
+		}
+
+		if ($classId > 0) {
+			$extraFees = new ExtraFeesModel();
+			$extraRows = $extraFees->select('extra_fees.id,extra_fees.title,extra_fees.amount,extra_fees.term')
+				->where('extra_fees.school_id', $schoolId)
+				->where('extra_fees.academic_year', $year)
+				->where('extra_fees.type', 0)
+				->where('extra_fees.type_id', $classId)
+				->orderBy('extra_fees.term', 'ASC')
+				->orderBy('extra_fees.title', 'ASC')
+				->get()->getResultArray();
+			foreach ($extraRows as $row) {
+				$expected = (float) ($row['amount'] ?? 0);
+				if ($expected <= 0) {
+					continue;
+				}
+				$items[] = [
+					'id' => (int) $row['id'],
+					'fee_type' => 1,
+					'category' => lang('app.extraFees'),
+					'label' => (string) $row['title'],
+					'term' => $this->TermToStr($row['term']),
+					'term_id' => (int) $row['term'],
+					'expected' => $expected,
+					'paid' => 0,
+					'remain' => $expected,
+				];
+			}
+		}
+
+		return ['items' => $items, 'schoolFeeTerms' => $schoolFeeTerms];
+	}
+
+	private function applySchoolFeeModeDiscount(int $feeId, int $studentId, float $baseAmount, float $modeAmount, int $operatorId): void
+	{
+		$delta = $modeAmount - $baseAmount;
+		$db = \Config\Database::connect();
+		$db->table('school_fees_discount')
+			->where('student', $studentId)
+			->where('feesId', $feeId)
+			->delete();
+		if (abs($delta) <= 0.00001) {
+			return;
+		}
+		(new SchoolFeesDiscountModel())->insert([
+			'student' => $studentId,
+			'feesId' => $feeId,
+			'type' => $delta > 0 ? 1 : 0,
+			'amount' => $delta,
+			'comment' => 'Set from pending registration approval (boarding/day)',
+			'operator' => $operatorId,
+			'status' => 1,
+		]);
+	}
+
+	/**
+	 * Create or update school/extra fee rows, then save payments the same way as finance.
+	 *
+	 * @param array<int,array<string,mixed>> $payments
+	 * @return array{ok:bool,error?:string,receipt?:string}
+	 */
+	private function recordPendingRegistrationPayments(
+		int $studentId,
+		int $schoolId,
+		int $year,
+		int $classId,
+		int $levelId,
+		int $deptId,
+		int $studyingMode,
+		array $payments,
+		string $dueDate,
+		string $slipRef,
+		int $paymentMode,
+		int $createdBy
+	): array {
+		if ($studentId < 1 || $payments === []) {
+			return ['ok' => false, 'error' => lang('app.selectAtLeastOneFeeItem')];
+		}
+		if ($paymentMode === FeesApproval::PAYMENT_MODE_BANK_SLIP && $slipRef === '') {
+			return ['ok' => false, 'error' => lang('app.slipReferenceRequired')];
+		}
+
+		$schoolFeeMdl = new SchoolFeesModel();
+		$schoolFeeMdl->ensureSchema();
+		$extraFeeMdl = new ExtraFeesModel();
+		$feeEntryModel = new FeesRecordModel();
+		$receiptParts = [];
+
+		foreach ($payments as $idx => $pay) {
+			if (!is_array($pay)) {
+				continue;
+			}
+			$received = (float) ($pay['amount'] ?? 0);
+			if ($received <= 0) {
+				return ['ok' => false, 'error' => 'Enter a received amount greater than 0 for each selected item.'];
+			}
+			$feeType = (int) ($pay['fee_type'] ?? 0);
+			$feeId = (int) ($pay['id'] ?? 0);
+			$term = (int) ($pay['term_id'] ?? ($pay['term'] ?? 0));
+			$expected = (float) ($pay['expected'] ?? $received);
+			$title = trim((string) ($pay['title'] ?? $pay['label'] ?? ''));
+
+			if ($feeType === 0) {
+				$existing = $feeId > 0 ? $schoolFeeMdl->where('id', $feeId)->where('school_id', $schoolId)->get(1)->getRowArray() : null;
+				if (!$existing && $term >= 1 && $term <= 3) {
+					$byTerm = $this->schoolFeesForApplicationClass($schoolId, $year, $classId, $levelId, $deptId);
+					$existing = $byTerm[$term] ?? null;
+				}
+				if ($existing) {
+					$feeId = (int) $existing['id'];
+					$modeField = $studyingMode === 0 ? 'amount_boarding' : 'amount_day';
+					$update = [];
+					$currentMode = $this->schoolFeeAmountForMode($existing, $studyingMode);
+					if ($currentMode <= 0 && $expected > 0) {
+						$update[$modeField] = $expected;
+					}
+					if ($update) {
+						$schoolFeeMdl->update($feeId, $update);
+						$existing = array_merge($existing, $update);
+					}
+					$modeAmount = $this->schoolFeeAmountForMode($existing, $studyingMode);
+					if ($modeAmount <= 0) {
+						$modeAmount = $expected > 0 ? $expected : $received;
+					}
+					$this->applySchoolFeeModeDiscount($feeId, $studentId, (float) ($existing['amount'] ?? 0), $modeAmount, $createdBy);
+				} else {
+					if ($term < 1 || $term > 3) {
+						return ['ok' => false, 'error' => 'Select a term for the new school fees item.'];
+					}
+					$feeId = (int) $schoolFeeMdl->insert([
+						'school_id' => $schoolId,
+						'level' => $levelId,
+						'department' => $deptId,
+						'class_id' => $classId > 0 ? $classId : null,
+						'amount' => $expected > 0 ? $expected : $received,
+						'amount_boarding' => $studyingMode === 0 ? ($expected > 0 ? $expected : $received) : null,
+						'amount_day' => $studyingMode === 1 ? ($expected > 0 ? $expected : $received) : null,
+						'term' => $term,
+						'academic_year' => $year,
+						'created_by' => $createdBy,
+					]);
+				}
+			} else {
+				if ($feeId > 0) {
+					$row = $extraFeeMdl->where('id', $feeId)->where('school_id', $schoolId)->get(1)->getRowArray();
+					if (!$row) {
+						$feeId = 0;
+					}
+				}
+				if ($feeId < 1) {
+					if ($title === '') {
+						return ['ok' => false, 'error' => 'Enter a title for the extra fee item.'];
+					}
+					if ($term < 1 || $term > 3) {
+						$term = (int) ($this->data['term'] ?? 1);
+					}
+					$feeId = (int) $extraFeeMdl->insert([
+						'school_id' => $schoolId,
+						'title' => $title,
+						'academic_year' => $year,
+						'type_id' => $studentId,
+						'type' => 1,
+						'term' => $term,
+						'amount' => $expected > 0 ? $expected : $received,
+						'created_by' => $createdBy,
+					]);
+				}
+			}
+
+			if ($feeId < 1) {
+				return ['ok' => false, 'error' => 'Could not save fee item #' . ($idx + 1) . '.'];
+			}
+
+			$recId = (int) $feeEntryModel->insert([
+				'student_id' => $studentId,
+				'fees_type' => $feeType,
+				'amount' => $received,
+				'fees_id' => $feeId,
+				'due_date' => $dueDate,
+				'payment_mode' => $paymentMode,
+				'status' => FeesApproval::STATUS_APPROVED,
+				'created_by' => $createdBy,
+			]);
+			if ($recId < 1) {
+				return ['ok' => false, 'error' => 'Could not save payment for item #' . ($idx + 1) . '.'];
+			}
+			if ($paymentMode === FeesApproval::PAYMENT_MODE_BANK_SLIP && $slipRef !== '') {
+				$this->_assignFeeSlipRef($feeEntryModel, $recId, $studentId, $feeType, $slipRef);
+			}
+			$receiptParts[] = $recId . ':' . $feeType;
+		}
+
+		if ($receiptParts === []) {
+			return ['ok' => false, 'error' => lang('app.selectAtLeastOneFeeItem')];
+		}
+		return ['ok' => true, 'receipt' => implode('-', $receiptParts)];
+	}
+
 	function getApproveStudentInformation($application)
 	{
 		$this->_preset();
 		$applicationMdl = new StudentApplicationModel();
 		$classMdl = new ClassesModel();
+		$schoolId = (int) $this->session->get("soma_school_id");
 		$data = $applicationMdl->select("applications.id,
 		l.title as level,
 		l.id as levelId,
@@ -19158,6 +19441,10 @@ public function assign_card()
 		f.id as facultyId,
 		d.title as dpt,
 		d.id as dptId,
+		applications.studyingMode,
+		applications.class_id as appClassId,
+		applications.parentPhoneNumber,
+		concat(applications.fname,' ',applications.lname) as applicant
 		")->join("levels l", "l.id=applications.level")
 				->join("faculty f", "f.id=applications.faculty_id")
 				->join("departments d", "d.id=applications.department_id")
@@ -19172,26 +19459,51 @@ public function assign_card()
 				->join("departments d", "d.id=classes.department and d.id={$data['dptId']}")
 				->join("levels l", "l.id=classes.level and l.id={$data['levelId']}")
 				->join("faculty f", "f.id=d.faculty_id and f.id={$data['facultyId']}")
-				->where("classes.school_id", $this->session->get("soma_school_id"))
+				->where("classes.school_id", $schoolId)
 				->orderBy("classes.title", "ASC")
 				->get()->getResultArray();
 
 		$defaultClassId = null;
 		$defaultClassLabel = null;
-		if (count($classes) === 1) {
-			$defaultClassId = (int) $classes[0]['id'];
-			$defaultClassLabel = trim(($classes[0]['level_name'] ?? '') . ' ' . ($classes[0]['title'] ?? '') . ' (' . ($classes[0]['department_name'] ?? '') . ')');
-		} elseif (count($classes) > 1) {
-			// Prefer first class; registration already fixed level/dept
+		$appClassId = (int) ($data['appClassId'] ?? 0);
+		foreach ($classes as $cl) {
+			if ($appClassId > 0 && (int) $cl['id'] === $appClassId) {
+				$defaultClassId = $appClassId;
+				$defaultClassLabel = trim(($cl['level_name'] ?? '') . ' ' . ($cl['title'] ?? '') . ' (' . ($cl['department_name'] ?? '') . ')');
+				break;
+			}
+		}
+		if ($defaultClassId === null && count($classes) >= 1) {
 			$defaultClassId = (int) $classes[0]['id'];
 			$defaultClassLabel = trim(($classes[0]['level_name'] ?? '') . ' ' . ($classes[0]['title'] ?? '') . ' (' . ($classes[0]['department_name'] ?? '') . ')');
 		}
+
+		$studyingMode = (int) ($data['studyingMode'] ?? 1);
+		$year = (int) ($this->data['academic_year'] ?? 0);
+		$invoice = $defaultClassId
+			? $this->pendingApplicationFeeInvoiceItems(
+				$schoolId,
+				$year,
+				(int) $defaultClassId,
+				(int) $data['levelId'],
+				(int) $data['dptId'],
+				$studyingMode
+			)
+			: ['items' => [], 'schoolFeeTerms' => []];
 
 		return $this->response->setJSON([
 			"structure" => $data,
 			"classes" => $classes,
 			"defaultClassId" => $defaultClassId,
 			"defaultClassLabel" => $defaultClassLabel,
+			"studyingMode" => $studyingMode,
+			"modeLabel" => $studyingMode === 1 ? 'Day' : 'Boarding',
+			"academicYear" => $year,
+			"academicYearTitle" => (string) ($this->data['academic_year_title'] ?? ''),
+			"currentTerm" => (int) ($this->data['term'] ?? 1),
+			"parentPhone" => (string) ($data['parentPhoneNumber'] ?? ''),
+			"items" => $invoice['items'],
+			"schoolFeeTerms" => $invoice['schoolFeeTerms'],
 		]);
 	}
 
@@ -19354,6 +19666,14 @@ public function assign_card()
 		$classMdl = new ClassesModel();
 		$applicationId = $this->request->getPost("applicationId");
 		$classId = $this->request->getPost("classId");
+		$paymentsRaw = $this->request->getPost("payments");
+		$payments = is_string($paymentsRaw) ? json_decode($paymentsRaw, true) : $paymentsRaw;
+		if (!is_array($payments)) {
+			$payments = [];
+		}
+		$paymentMode = (int) $this->request->getPost("paymentMode");
+		$dueDate = trim((string) $this->request->getPost("dueDate"));
+		$slipRef = trim((string) $this->request->getPost("slipRef"));
 		$application = $applicationMdl->select("id,fname,lname,
 		gender,phoneNumber,parentType,parentPhoneNumber,parentNames,dateOfBirth,
 		level,studyingMode,faculty_id,department_id,schoolId,class_id,cell_id,village_id,medical_status,
@@ -19383,6 +19703,27 @@ public function assign_card()
 		}
 		if (empty($classId)) {
 			return $this->response->setJSON(["error" => "No matching class found for this application's level and department. Create the class first."]);
+		}
+
+		$validPayments = [];
+		foreach ($payments as $pay) {
+			if (!is_array($pay)) {
+				continue;
+			}
+			$received = (float) ($pay['amount'] ?? 0);
+			if ($received <= 0) {
+				continue;
+			}
+			$validPayments[] = $pay;
+		}
+		if ($validPayments === []) {
+			return $this->response->setJSON(["error" => "Record at least one payment before approving this application."]);
+		}
+		if ($paymentMode < 1) {
+			return $this->response->setJSON(["error" => lang("app.selectPaymentMode")]);
+		}
+		if ($paymentMode === FeesApproval::PAYMENT_MODE_BANK_SLIP && $slipRef === '') {
+			return $this->response->setJSON(["error" => lang("app.slipReferenceRequired")]);
 		}
 
 		$regNo = $this->_generate_regno(true);
@@ -19423,52 +19764,98 @@ public function assign_card()
 			$studentData['guardian'] = $application['parentNames'];
 			$studentData['gd_phone'] = $application['parentPhoneNumber'];
 		}
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$createdBy = (int) $this->session->get("soma_id");
+		$year = (int) ($this->data['academic_year'] ?? 0);
+		$printUrl = '';
+		$db = \Config\Database::connect();
 		try {
+			$db->transStart();
 			$studentId = $studentMdl->insert($studentData);
 			if ($studentId > 0) {
 				$this->_syncStudentVisitors(
-					(int) $this->session->get('soma_school_id'),
+					$schoolId,
 					(int) $studentId,
 					$this->_visitorRowsFromData($application),
-					(int) $this->session->get('soma_id')
+					$createdBy
 				);
-				$classData = ["student" => $studentId, "year" => $this->data['academic_year'], "class" => $classId, "status" => 1];
+				$classData = ["student" => $studentId, "year" => $year, "class" => $classId, "status" => 1];
 				$applicationMdl->save(["id" => $applicationId, "admitted" => 1, "status" => 1]);
 				$classRecordMdl->save($classData);
 
-				$classInfo = $classMdl->select('classes.title, levels.title as level_name, faculty.title as faculty_name, faculty.type as faculty_type')
-					->join('levels', 'levels.id = classes.level', 'left')
-					->join('departments', 'departments.id = classes.department', 'left')
-					->join('faculty', 'faculty.id = departments.faculty_id', 'left')
-					->where('classes.id', $classId)
-					->get(1)->getRowArray();
-				$classLabel = trim(($classInfo['level_name'] ?? '') . ' ' . ($classInfo['title'] ?? ''));
-				if ($classLabel === '') {
-					$classLabel = (string) ($classInfo['title'] ?? 'your class');
-				}
-				$modeLabel = ((int) ($application['studyingMode'] ?? 0) === 1) ? 'Day' : 'Boarding';
-				$studentName = trim(($application['fname'] ?? '') . ' ' . ($application['lname'] ?? ''));
-				$facultyType = (int) ($classInfo['faculty_type'] ?? 0);
-				$nurseryOrPrimary = $this->isNurseryOrPrimaryAdmission(
-					(string) ($classInfo['level_name'] ?? ''),
-					(string) ($classInfo['faculty_name'] ?? ''),
-					(string) ($classInfo['title'] ?? ''),
-					$facultyType
+				$feeResult = $this->recordPendingRegistrationPayments(
+					(int) $studentId,
+					$schoolId,
+					$year,
+					(int) $classId,
+					(int) $application['level'],
+					(int) $application['department_id'],
+					(int) ($application['studyingMode'] ?? 1),
+					$validPayments,
+					$dueDate,
+					$slipRef,
+					$paymentMode,
+					$createdBy
 				);
-				$message = $this->buildAdmissionSms($studentName, $classLabel, $modeLabel, (string) $regNo, $nurseryOrPrimary);
-				$phones = [];
-				foreach ([(string) ($application['phoneNumber'] ?? ''), (string) ($application['parentPhoneNumber'] ?? '')] as $ph) {
-					$key = preg_replace('/\D/', '', $ph);
-					if (strlen($key) >= 9 && !isset($phones[$key])) {
-						$phones[$key] = $ph;
-					}
+				if (empty($feeResult['ok'])) {
+					$db->transRollback();
+					return $this->response->setJSON(["error" => $feeResult['error'] ?? 'Could not record payment.']);
 				}
-				foreach ($phones as $ph) {
-					$this->sendChargedSms($ph, $message, (int) $studentId, 'Admission confirmation');
+				if (!empty($feeResult['receipt'])) {
+					$printUrl = base_url('print_fee_receipt/' . urlencode($feeResult['receipt']) . '/' . $studentId . '?autoprint=1');
 				}
 			}
-			return $this->response->setJSON(array("success" => "Applicant approved successfully"));
+			$db->transComplete();
+			if ($db->transStatus() === false || !($studentId > 0)) {
+				return $this->response->setJSON(["error" => "Approval failed. Please try again."]);
+			}
+
+			$classInfo = $classMdl->select('classes.title, levels.title as level_name, faculty.title as faculty_name, faculty.type as faculty_type')
+				->join('levels', 'levels.id = classes.level', 'left')
+				->join('departments', 'departments.id = classes.department', 'left')
+				->join('faculty', 'faculty.id = departments.faculty_id', 'left')
+				->where('classes.id', $classId)
+				->get(1)->getRowArray();
+			$classLabel = trim(($classInfo['level_name'] ?? '') . ' ' . ($classInfo['title'] ?? ''));
+			if ($classLabel === '') {
+				$classLabel = (string) ($classInfo['title'] ?? 'your class');
+			}
+			$modeLabel = ((int) ($application['studyingMode'] ?? 0) === 1) ? 'Day' : 'Boarding';
+			$studentName = trim(($application['fname'] ?? '') . ' ' . ($application['lname'] ?? ''));
+			$facultyType = (int) ($classInfo['faculty_type'] ?? 0);
+			$nurseryOrPrimary = $this->isNurseryOrPrimaryAdmission(
+				(string) ($classInfo['level_name'] ?? ''),
+				(string) ($classInfo['faculty_name'] ?? ''),
+				(string) ($classInfo['title'] ?? ''),
+				$facultyType
+			);
+			$paidTotal = 0;
+			foreach ($validPayments as $pay) {
+				$paidTotal += (float) ($pay['amount'] ?? 0);
+			}
+			$message = $this->buildAdmissionSms($studentName, $classLabel, $modeLabel, (string) $regNo, $nurseryOrPrimary);
+			if ($paidTotal > 0) {
+				$message .= "\nPayment received: " . number_format($paidTotal, 0, '.', ',') . " Rwf.";
+			}
+			$phones = [];
+			foreach ([(string) ($application['phoneNumber'] ?? ''), (string) ($application['parentPhoneNumber'] ?? '')] as $ph) {
+				$key = preg_replace('/\D/', '', $ph);
+				if (strlen($key) >= 9 && !isset($phones[$key])) {
+					$phones[$key] = $ph;
+				}
+			}
+			foreach ($phones as $ph) {
+				$this->sendChargedSms($ph, $message, (int) $studentId, 'Admission confirmation');
+			}
+			return $this->response->setJSON([
+				"success" => "Payment recorded and applicant approved successfully.",
+				"url" => $printUrl,
+				"print_url" => $printUrl,
+			]);
 		} catch (\Exception $e) {
+			if ($db->transStatus() !== false) {
+				$db->transRollback();
+			}
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}
 	}
