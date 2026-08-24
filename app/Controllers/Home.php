@@ -906,21 +906,20 @@ public function testEmail()
 			if ($im) {
 				$w = imagesx($im);
 				$h = imagesy($im);
-				$maxW = 800;
-				$maxH = 800;
-				if ($w > $maxW || $h > $maxH) {
-					$scale = min($maxW / max(1, $w), $maxH / max(1, $h));
-					$nw = max(1, (int) round($w * $scale));
-					$nh = max(1, (int) round($h * $scale));
-					$dst = imagecreatetruecolor($nw, $nh);
-					$white = imagecolorallocate($dst, 255, 255, 255);
-					imagefill($dst, 0, 0, $white);
-					imagecopyresampled($dst, $im, 0, 0, 0, 0, $nw, $nh, $w, $h);
-					imagedestroy($im);
-					$im = $dst;
-				}
+				$target = 1200;
+				$dst = imagecreatetruecolor($target, $target);
+				$white = imagecolorallocate($dst, 255, 255, 255);
+				imagefill($dst, 0, 0, $white);
+				$scale = min($target / max(1, $w), $target / max(1, $h));
+				$nw = max(1, (int) round($w * $scale));
+				$nh = max(1, (int) round($h * $scale));
+				$ox = (int) (($target - $nw) / 2);
+				$oy = (int) (($target - $nh) / 2);
+				imagecopyresampled($dst, $im, $ox, $oy, 0, 0, $nw, $nh, $w, $h);
+				imagedestroy($im);
+				$im = $dst;
 				imageinterlace($im, true);
-				$saved = imagejpeg($im, $profilePath . $name, 90);
+				$saved = imagejpeg($im, $profilePath . $name, 92);
 				imagedestroy($im);
 			}
 		}

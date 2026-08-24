@@ -179,44 +179,64 @@
 		position: relative;
 		width: min(82%, 400px);
 		aspect-ratio: 1 / 1;
-		border-radius: 18px;
+		border-radius: 8px;
 		overflow: hidden;
 		background: #fff;
-		border: 3px solid #10b981;
+		border: 3px solid #0f766e;
 		box-shadow:
-			0 0 0 8px rgba(16, 185, 129, 0.14),
+			0 0 0 8px rgba(15, 118, 110, 0.12),
 			0 18px 36px rgba(15, 23, 42, 0.12);
 	}
-	.sp-square-stage::before,
-	.sp-square-stage::after {
-		content: "";
+	.sp-visa-guide {
 		position: absolute;
-		width: 22px;
-		height: 22px;
-		z-index: 2;
+		inset: 0;
 		pointer-events: none;
-		border: 3px solid #fff;
+		z-index: 3;
 	}
-	.sp-square-stage::before {
-		top: 10px;
-		left: 10px;
-		border-right: 0;
-		border-bottom: 0;
-		border-radius: 4px 0 0 0;
+	.sp-visa-oval {
+		position: absolute;
+		left: 50%;
+		top: 12%;
+		width: 54%;
+		height: 62%;
+		transform: translateX(-50%);
+		border: 2px solid rgba(15, 118, 110, 0.95);
+		border-radius: 50%;
+		box-shadow: 0 0 0 400px rgba(255, 255, 255, 0.38);
 	}
-	.sp-square-stage::after {
-		right: 10px;
-		bottom: 10px;
-		border-left: 0;
-		border-top: 0;
-		border-radius: 0 0 4px 0;
+	.sp-visa-eyes {
+		position: absolute;
+		left: 10%;
+		right: 10%;
+		top: 38%;
+		border-top: 2px dashed #2563eb;
 	}
+	.sp-visa-chin {
+		position: absolute;
+		left: 18%;
+		right: 18%;
+		top: 74%;
+		border-top: 1px dotted rgba(15, 23, 42, 0.35);
+	}
+	.sp-visa-label {
+		position: absolute;
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: .02em;
+		text-transform: uppercase;
+		padding: 1px 6px;
+		border-radius: 999px;
+		background: rgba(255,255,255,.88);
+	}
+	.sp-visa-label-eyes { top: 33%; right: 8px; color: #1d4ed8; }
+	.sp-visa-label-head { top: 13%; left: 8px; color: #0f766e; }
+	.sp-visa-label-chin { top: 75%; right: 8px; color: #475569; }
 	#spVideo {
 		transform: scaleX(-1);
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		object-position: center 58%;
+		object-position: center 45%;
 		display: block;
 		background: #fff;
 	}
@@ -237,9 +257,10 @@
 		background: #f8fafc;
 	}
 	.sp-edit-frame {
+		position: relative;
 		width: 280px;
 		height: 280px;
-		border-radius: 16px;
+		border-radius: 8px;
 		overflow: hidden;
 		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
 		background: #fff;
@@ -247,6 +268,12 @@
 		cursor: grab;
 	}
 	.sp-edit-frame:active { cursor: grabbing; }
+	.sp-edit-frame .sp-visa-oval {
+		box-shadow: none;
+		border-color: rgba(15, 118, 110, 0.55);
+	}
+	.sp-edit-frame .sp-visa-eyes { border-top-color: rgba(37, 99, 235, 0.55); }
+	.sp-edit-frame .sp-visa-label { display: none; }
 	#spEditCanvas { width: 280px; height: 280px; }
 	.sp-actions {
 		display: flex;
@@ -332,12 +359,24 @@
 					<div class="sp-live-box">
 						<div class="sp-square-stage">
 							<video id="spVideo" autoplay playsinline muted></video>
+							<div class="sp-visa-guide">
+								<div class="sp-visa-oval"></div>
+								<div class="sp-visa-eyes"></div>
+								<div class="sp-visa-chin"></div>
+								<span class="sp-visa-label sp-visa-label-head">Head</span>
+								<span class="sp-visa-label sp-visa-label-eyes">Eyes</span>
+								<span class="sp-visa-label sp-visa-label-chin">Shoulders</span>
+							</div>
 						</div>
-						<div class="sp-live-hint">Center the face in the square · saved on a white background</div>
+						<div class="sp-live-hint">US visa framing: eyes on the blue line, head inside the oval, white background</div>
 					</div>
 					<div class="sp-edit-box">
 						<div class="sp-edit-frame" id="spFrame">
-							<canvas id="spEditCanvas" width="800" height="800"></canvas>
+							<canvas id="spEditCanvas" width="1200" height="1200"></canvas>
+							<div class="sp-visa-guide">
+								<div class="sp-visa-oval"></div>
+								<div class="sp-visa-eyes"></div>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -350,12 +389,12 @@
 					<button type="button" class="sp-btn sp-btn-ghost" id="spResetEdit">Reset edits</button>
 				</div>
 				<div class="sp-sliders">
-					<div><label>Zoom</label><input type="range" id="spZoom" min="100" max="280" value="120"></div>
-					<div><label>Brightness</label><input type="range" id="spBright" min="70" max="140" value="105"></div>
-					<div><label>Contrast</label><input type="range" id="spContrast" min="80" max="140" value="108"></div>
-					<div><label>Saturation</label><input type="range" id="spSaturate" min="70" max="150" value="112"></div>
-					<div><label>Warmth</label><input type="range" id="spWarmth" min="-40" max="40" value="0"></div>
-					<div><label>Smoothness</label><input type="range" id="spSmooth" min="0" max="40" value="8"></div>
+					<div><label>Zoom</label><input type="range" id="spZoom" min="100" max="180" value="100"></div>
+					<div><label>Brightness</label><input type="range" id="spBright" min="90" max="120" value="102"></div>
+					<div><label>Contrast</label><input type="range" id="spContrast" min="90" max="120" value="104"></div>
+					<div><label>Saturation</label><input type="range" id="spSaturate" min="90" max="120" value="100"></div>
+					<div><label>Warmth</label><input type="range" id="spWarmth" min="-20" max="20" value="0"></div>
+					<div><label>Smoothness</label><input type="range" id="spSmooth" min="0" max="12" value="0"></div>
 				</div>
 			</div>
 		</div>
@@ -393,8 +432,9 @@
 		var dragging = false;
 		var dragStart = { x: 0, y: 0 };
 		var STORAGE_KEY = 'xander_student_photo_camera';
-		var CROP_POS_X = 0.5;
-		var CROP_POS_Y = 0.58;
+		var VISA_SIZE = 1200;
+		var VISA_HEAD_RATIO = 0.60;
+		var VISA_EYE_FROM_TOP = 0.38;
 		var video = document.getElementById('spVideo');
 		var canvas = document.getElementById('spEditCanvas');
 		var ctx = canvas.getContext('2d');
@@ -404,6 +444,9 @@
 		var segmenter = null;
 		var segmenterLoading = null;
 		var segmentJob = 0;
+		var faceDetector = null;
+		var faceDetectorLoading = null;
+		var faceJob = 0;
 
 		function setStatus(text, kind) {
 			statusEl.textContent = text;
@@ -517,6 +560,7 @@
 				setStatus(label + ' ready', 'ok');
 				$('#spCapture').prop('disabled', !selected);
 				loadSelfieSegmenter();
+				loadFaceDetector();
 				return fillCameras(currentId).then(function (cams) {
 					var preferred = cameraSel.value;
 					if (!preferredSwitchDone && preferred && currentId && preferred !== currentId) {
@@ -571,6 +615,158 @@
 			return segmenterLoading;
 		}
 
+		function loadFaceDetector() {
+			if (faceDetector) return Promise.resolve(faceDetector);
+			if (faceDetectorLoading) return faceDetectorLoading;
+			faceDetectorLoading = new Promise(function (resolve) {
+				function create() {
+					try {
+						faceDetector = new window.FaceDetection({
+							locateFile: function (file) {
+								return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/' + file;
+							}
+						});
+						faceDetector.setOptions({ model: 'short', minDetectionConfidence: 0.55 });
+						resolve(faceDetector);
+					} catch (e) {
+						resolve(null);
+					}
+				}
+				if (window.FaceDetection) {
+					create();
+					return;
+				}
+				var s = document.createElement('script');
+				s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/face_detection.js';
+				s.crossOrigin = 'anonymous';
+				s.onload = create;
+				s.onerror = function () { resolve(null); };
+				document.head.appendChild(s);
+			});
+			return faceDetectorLoading;
+		}
+
+		function relVal(v, size) {
+			if (v == null || isNaN(v)) return 0;
+			return v > 1 ? v : v * size;
+		}
+
+		function parseFace(detection, w, h) {
+			var box = detection.boundingBox
+				|| (detection.locationData && detection.locationData.relativeBoundingBox)
+				|| {};
+			var bw, bh, xMin, yMin;
+			if (box.xMin != null || box.xmin != null) {
+				xMin = relVal(box.xMin != null ? box.xMin : box.xmin, w);
+				yMin = relVal(box.yMin != null ? box.yMin : box.ymin, h);
+				bw = relVal(box.width, w);
+				bh = relVal(box.height, h);
+			} else {
+				bw = relVal(box.width, w);
+				bh = relVal(box.height, h);
+				xMin = relVal(box.xCenter != null ? box.xCenter : box.xcenter, w) - bw / 2;
+				yMin = relVal(box.yCenter != null ? box.yCenter : box.ycenter, h) - bh / 2;
+			}
+			var pts = detection.landmarks || detection.keypoints || [];
+			function pt(i) {
+				var p = pts[i];
+				if (!p) return null;
+				return { x: relVal(p.x, w), y: relVal(p.y, h) };
+			}
+			var rightEye = pt(0);
+			var leftEye = pt(1);
+			var eyesX, eyesY;
+			if (rightEye && leftEye) {
+				eyesX = (rightEye.x + leftEye.x) / 2;
+				eyesY = (rightEye.y + leftEye.y) / 2;
+			} else {
+				eyesX = xMin + bw / 2;
+				eyesY = yMin + bh * 0.42;
+			}
+			return {
+				xMin: xMin,
+				yMin: yMin,
+				width: bw,
+				height: bh,
+				eyesX: eyesX,
+				eyesY: eyesY,
+				chinY: yMin + bh,
+				hairY: yMin - bh * 0.42
+			};
+		}
+
+		function detectFace(srcCanvas) {
+			return loadFaceDetector().then(function (fd) {
+				if (!fd) return null;
+				return new Promise(function (resolve) {
+					var job = ++faceJob;
+					var finished = false;
+					var timer = setTimeout(function () {
+						if (!finished && job === faceJob) {
+							finished = true;
+							resolve(null);
+						}
+					}, 4000);
+					fd.onResults(function (results) {
+						if (finished || job !== faceJob) return;
+						finished = true;
+						clearTimeout(timer);
+						var det = results.detections && results.detections[0];
+						resolve(det ? parseFace(det, srcCanvas.width, srcCanvas.height) : null);
+					});
+					fd.send({ image: srcCanvas });
+				});
+			});
+		}
+
+		function visaCrop(srcCanvas, face) {
+			var W = srcCanvas.width;
+			var H = srcCanvas.height;
+			var crop;
+			var cropX;
+			var cropY;
+			if (face) {
+				var headH = Math.max(80, face.chinY - face.hairY);
+				crop = headH / VISA_HEAD_RATIO;
+				crop = Math.min(crop, Math.min(W, H));
+				cropX = face.eyesX - crop / 2;
+				cropY = face.eyesY - crop * VISA_EYE_FROM_TOP;
+			} else {
+				crop = Math.min(W, H);
+				cropX = (W - crop) / 2;
+				cropY = (H - crop) * 0.35;
+			}
+			cropX = Math.max(0, Math.min(W - crop, cropX));
+			cropY = Math.max(0, Math.min(H - crop, cropY));
+			var out = document.createElement('canvas');
+			out.width = VISA_SIZE;
+			out.height = VISA_SIZE;
+			var o = out.getContext('2d');
+			o.fillStyle = '#ffffff';
+			o.fillRect(0, 0, VISA_SIZE, VISA_SIZE);
+			o.imageSmoothingEnabled = true;
+			o.imageSmoothingQuality = 'high';
+			o.drawImage(srcCanvas, cropX, cropY, crop, crop, 0, 0, VISA_SIZE, VISA_SIZE);
+			return out;
+		}
+
+		function captureFullFrame() {
+			var vw = video.videoWidth || VISA_SIZE;
+			var vh = video.videoHeight || VISA_SIZE;
+			var tmp = document.createElement('canvas');
+			tmp.width = vw;
+			tmp.height = vh;
+			var tctx = tmp.getContext('2d');
+			tctx.fillStyle = '#ffffff';
+			tctx.fillRect(0, 0, vw, vh);
+			tctx.save();
+			tctx.translate(vw, 0);
+			tctx.scale(-1, 1);
+			tctx.drawImage(video, 0, 0, vw, vh);
+			tctx.restore();
+			return tmp;
+		}
+
 		function paintWhiteBackground(srcCanvas) {
 			return loadSelfieSegmenter().then(function (seg) {
 				if (!seg) return srcCanvas;
@@ -610,34 +806,12 @@
 			});
 		}
 
-		function drawMirroredSquare(videoEl, size) {
-			var vw = videoEl.videoWidth || size;
-			var vh = videoEl.videoHeight || size;
-			var scale = Math.max(size / vw, size / vh);
-			var sw = size / scale;
-			var sh = size / scale;
-			var sx = (vw - sw) * CROP_POS_X;
-			var sy = (vh - sh) * CROP_POS_Y;
-			var tmp = document.createElement('canvas');
-			tmp.width = size;
-			tmp.height = size;
-			var tctx = tmp.getContext('2d');
-			tctx.fillStyle = '#ffffff';
-			tctx.fillRect(0, 0, size, size);
-			tctx.save();
-			tctx.translate(size, 0);
-			tctx.scale(-1, 1);
-			tctx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, size, size);
-			tctx.restore();
-			return tmp;
-		}
-
 		function useCaptured(imgCanvas) {
 			captured = new Image();
 			captured.onload = function () {
 				rotation = 0;
 				pan = { x: 0, y: 0 };
-				$('#spZoom').val(110);
+				$('#spZoom').val(100);
 				drawEdit();
 				$('#spRetake, #spRotate, #spSave').prop('disabled', false);
 				$('#spCapture').prop('disabled', !stream);
@@ -648,13 +822,20 @@
 		function captureFrame() {
 			if (!stream || !selected) return;
 			$('#spCapture').prop('disabled', true);
-			setStatus('Preparing white background…', 'warn');
-			var square = drawMirroredSquare(video, 800);
-			paintWhiteBackground(square).then(function (out) {
+			setStatus('Fitting US visa composition…', 'warn');
+			var full = captureFullFrame();
+			detectFace(full).then(function (face) {
+				if (!face) {
+					toastErr('Align the head in the oval, eyes on the blue line, then capture again.');
+				}
+				var cropped = visaCrop(full, face);
+				return paintWhiteBackground(cropped);
+			}).then(function (out) {
 				useCaptured(out);
-				setStatus('Ready to crop & save', 'ok');
+				setStatus('Visa photo ready', 'ok');
 			}).catch(function () {
-				useCaptured(square);
+				useCaptured(visaCrop(full, null));
+				setStatus('Captured — check framing', 'warn');
 			});
 		}
 
@@ -676,7 +857,7 @@
 				ctx.fillStyle = '#94a3b8';
 				ctx.font = '28px sans-serif';
 				ctx.textAlign = 'center';
-				ctx.fillText('Capture to crop & enhance', canvas.width / 2, canvas.height / 2);
+				ctx.fillText('Capture a visa-style ID photo', canvas.width / 2, canvas.height / 2);
 				return;
 			}
 			var v = sliderVals();
@@ -701,7 +882,7 @@
 		}
 
 		function exportPhoto() {
-			return canvas.toDataURL('image/jpeg', 0.92);
+			return canvas.toDataURL('image/jpeg', 0.95);
 		}
 
 		function savePhoto() {
@@ -761,20 +942,20 @@
 		$('#spRotate').on('click', function () { rotation = (rotation + 90) % 360; drawEdit(); });
 		$('#spSave').on('click', savePhoto);
 		$('#spAuto').on('click', function () {
-			$('#spBright').val(108);
-			$('#spContrast').val(114);
-			$('#spSaturate').val(118);
+			$('#spBright').val(103);
+			$('#spContrast').val(106);
+			$('#spSaturate').val(100);
 			$('#spWarmth').val(0);
-			$('#spSmooth').val(6);
+			$('#spSmooth').val(0);
 			drawEdit();
 		});
 		$('#spResetEdit').on('click', function () {
-			$('#spZoom').val(110);
-			$('#spBright').val(105);
-			$('#spContrast').val(108);
-			$('#spSaturate').val(112);
+			$('#spZoom').val(100);
+			$('#spBright').val(102);
+			$('#spContrast').val(104);
+			$('#spSaturate').val(100);
 			$('#spWarmth').val(0);
-			$('#spSmooth').val(8);
+			$('#spSmooth').val(0);
 			pan = { x: 0, y: 0 };
 			rotation = 0;
 			drawEdit();
@@ -798,7 +979,7 @@
 			if (!captured) return;
 			e.preventDefault();
 			var z = parseInt($('#spZoom').val(), 10) + (e.deltaY > 0 ? -8 : 8);
-			$('#spZoom').val(Math.max(100, Math.min(280, z)));
+			$('#spZoom').val(Math.max(100, Math.min(180, z)));
 			drawEdit();
 		}, { passive: false });
 		window.addEventListener('beforeunload', stopCamera);
