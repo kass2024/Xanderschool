@@ -1609,7 +1609,6 @@ public function testEmail()
 		$classMdl = new ClassesModel();
 		$data['title'] = lang("app.addNewClass");
 		$faculty->ensureSpecialNursingAnp();
-		$faculty->ensureSpecialNursingAnpClasses((int) $this->session->get('soma_school_id'));
 		$data['classes'] = $classMdl->get_classes();
 		$data['faculty'] = $faculty->get()->getResultArray();
 		$data['staffs'] = $staffMdl->where("school_id", $this->session->get("soma_school_id"))->get()->getResultArray();

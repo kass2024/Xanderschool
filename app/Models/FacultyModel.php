@@ -13,11 +13,11 @@ class FacultyModel extends Model
 	public const TYPE_TVET = 1;
 	public const TYPE_REB = 2;
 	public const TYPE_SPECIAL = 3;
-	public const SPECIAL_TITLE = 'Nursing';
+	public const SPECIAL_TITLE = 'Nursing ANP';
 	public const SPECIAL_CODE = 'ANP';
 
 	/**
-	 * Ensure the Special educational path exists with Nursing faculty + ANP department.
+	 * Ensure the Special educational path exists with faculty + department both named Nursing ANP.
 	 *
 	 * @return array{faculty: array<string,mixed>, department: array<string,mixed>}
 	 */
@@ -77,7 +77,7 @@ class FacultyModel extends Model
 		$dept = $deptTable->where('faculty_id', $facId)
 			->groupStart()
 				->where('title', self::SPECIAL_TITLE)
-				->orWhere('title', 'Nursing ANP')
+				->orWhere('title', 'Nursing')
 				->orWhere('code', self::SPECIAL_CODE)
 			->groupEnd()
 			->get(1)->getRowArray();
