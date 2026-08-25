@@ -3896,6 +3896,16 @@ public function permission_card_scan()
 	}
 
 	/**
+	 * HeyStar registered-person / manual face upload. Always ack.
+	 */
+	public function heystar_person()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		AttendanceScanService::ingestHeyStarPerson($this->heystarInput());
+		return $this->response->setJSON(['result' => 1, 'code' => '000']);
+	}
+
+	/**
 	 * @return array<string,mixed>
 	 */
 	private function heystarInput(): array

@@ -52,11 +52,14 @@ $hsArea = (int) ($hs['area_id'] ?? 0);
 $hsUpload = rtrim(base_url(), '/') . '/api/heystar_record';
 ?>
 <hr class="my-4">
-<h6>HeyStar terminal (assigned web cards)</h6>
+<h6>HeyStar terminal (staff faces on the VPS)</h6>
 <p class="text-muted">
-	Students are identified only by the <strong>card assigned in Xander</strong> (Assign card).
-	Staff are identified only by their <strong>school photo as a face</strong> — staff cards are not sent to the terminal.
-	Sync needs the kiosk on the LAN with HeyStar running (port 8090). Both face and card clocks land in the same attendance reports.
+	<strong>Sync</strong> sends every staff name to the stock HeyStar app (no APK change).
+	Assign faces later on the terminal (User Management → Face). Those JPEGs upload to this school server
+	(<code>/api/heystar_person</code> and clock snapshots) and are reused for verification.
+	Students still use the <strong>card assigned in Xander</strong>.
+	The Xander kiosk APK can also <strong>Refresh staff from this VPS</strong>, record a live face, and save it here.
+	Sync to HeyStar :8090 needs a PC on the school LAN (the VPS cannot open 192.168.x.x).
 </p>
 <form id="hsForm" class="mb-3" style="max-width:560px">
 	<label class="d-block mb-2">Device IP
@@ -78,7 +81,7 @@ $hsUpload = rtrim(base_url(), '/') . '/api/heystar_record';
 	</label>
 	<p class="small text-muted mb-2">Upload URL (set automatically on sync): <code><?= esc($hsUpload); ?></code></p>
 	<button type="button" class="btn btn-secondary" id="hsSave">Save</button>
-	<button type="button" class="btn btn-primary" id="hsSync">Sync assigned cards &amp; staff faces</button>
+	<button type="button" class="btn btn-primary" id="hsSync">Sync staff names &amp; enrolled VPS faces</button>
 	<div id="hsMsg" class="small mt-2"></div>
 </form>
 

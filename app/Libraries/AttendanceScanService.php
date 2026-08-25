@@ -171,6 +171,11 @@ class AttendanceScanService
 
 		$out = [];
 		foreach ($rows as $r) {
+			$enrolled = $hasFace ? (int) ($r['face_enrolled'] ?? 0) : 0;
+			$photo = profile_photo_url($r['photo'] ?? null);
+			$verify = ($enrolled === 1 && $photo !== '' && strpos($photo, 'fallback-avatar') === false)
+				? $photo
+				: '';
 			$out[] = [
 				'id' => (int) $r['id'],
 				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
@@ -178,8 +183,9 @@ class AttendanceScanService
 				'shift' => (string) ($r['shift_title'] ?? ''),
 				'shift_id' => (int) ($r['shift_id'] ?? 0),
 				'card' => (string) ($r['card'] ?? ''),
-				'photo' => profile_photo_url($r['photo'] ?? null),
-				'face_enrolled' => $hasFace ? (int) ($r['face_enrolled'] ?? 0) : 0,
+				'photo' => $photo,
+				'verify_photo' => $verify,
+				'face_enrolled' => $enrolled,
 			];
 		}
 		return $out;
@@ -493,23 +499,9 @@ class AttendanceScanService
 			return ['success' => 0, 'message' => 'Staff not found'];
 		}
 
-		$filename = null;
-		if ($photoBase64) {
-			$raw = $photoBase64;
-			if (strpos($raw, ',') !== false) {
-				$raw = substr($raw, strpos($raw, ',') + 1);
-			}
-			$decoded = base64_decode($raw, true);
-			if ($decoded !== false && strlen($decoded) > 100) {
-				$filename = 'face_staff_' . $staffId . '_' . uniqid() . '.jpg';
-				$dir = FCPATH . 'assets/images/profile/';
-				if (!is_dir($dir)) {
-					@mkdir($dir, 0775, true);
-				}
-				if (file_put_contents($dir . $filename, $decoded) === false) {
-					$filename = null;
-				}
-			}
+		$filename = self::storeFaceJpeg($staffId, $photoBase64);
+		if ($photoBase64 && $filename === null) {
+			return ['success' => 0, 'message' => 'Could not save the face photo on the server'];
 		}
 
 		$data = ['face_enrolled' => 1];
@@ -521,10 +513,86 @@ class AttendanceScanService
 		$photo = $filename ? profile_photo_url($filename) : profile_photo_url($staff->photo ?? null);
 		return [
 			'success' => 1,
-			'message' => 'Face enrolled',
+			'message' => 'Face enrolled and saved on the school server',
 			'staff_id' => $staffId,
+			'face_enrolled' => 1,
 			'photo' => $photo,
+			'verify_photo' => $photo,
 		];
+	}
+
+	/**
+	 * Save a capture only when this staff does not already have a VPS face.
+	 */
+	public static function enrollFaceIfMissing(int $schoolId, int $staffId, ?string $photoBase64): bool
+	{
+		if ($schoolId <= 0 || $staffId <= 0 || !is_string($photoBase64) || trim($photoBase64) === '') {
+			return false;
+		}
+		self::ensureFaceColumn();
+		$db = \Config\Database::connect();
+		$row = $db->table('staffs')
+			->select('id, face_enrolled')
+			->where('id', $staffId)
+			->where('school_id', $schoolId)
+			->where('status !=', 0)
+			->get()
+			->getRowArray();
+		if (!$row || (int) ($row['face_enrolled'] ?? 0) === 1) {
+			return false;
+		}
+		$out = self::enrollFace($schoolId, $staffId, $photoBase64);
+		return !empty($out['success']);
+	}
+
+	/**
+	 * @return string|null stored filename
+	 */
+	private static function storeFaceJpeg(int $staffId, ?string $photoBase64): ?string
+	{
+		$raw = self::decodeImageBase64($photoBase64);
+		if ($raw === null) {
+			return null;
+		}
+		$filename = 'face_staff_' . $staffId . '_' . uniqid('', true) . '.jpg';
+		$dir = FCPATH . 'assets/images/profile/';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0775, true);
+		}
+		if (file_put_contents($dir . $filename, $raw) === false) {
+			return null;
+		}
+		return $filename;
+	}
+
+	public static function decodeImageBase64(?string $photoBase64): ?string
+	{
+		if (!is_string($photoBase64)) {
+			return null;
+		}
+		$raw = trim($photoBase64);
+		if ($raw === '') {
+			return null;
+		}
+		if (strpos($raw, ',') !== false) {
+			$raw = substr($raw, strpos($raw, ',') + 1);
+		}
+		$decoded = base64_decode($raw, true);
+		if ($decoded === false || strlen($decoded) < 100) {
+			return null;
+		}
+		return $decoded;
+	}
+
+	public static function payloadImage(array $in): string
+	{
+		foreach (['checkImgBase64', 'imgBase64', 'photo', 'faceImg', 'check_img_base64'] as $key) {
+			$v = $in[$key] ?? '';
+			if (is_string($v) && trim($v) !== '') {
+				return $v;
+			}
+		}
+		return '';
 	}
 
 	/**
@@ -642,7 +710,9 @@ class AttendanceScanService
 
 		$sn = trim((string) ($in['personSn'] ?? ''));
 		if (preg_match('/^T(\d+)$/', $sn, $m)) {
-			return array_merge($ack, self::scanStaff($schoolId, (int) $m[1], $eventTime));
+			$staffId = (int) $m[1];
+			self::enrollFaceIfMissing($schoolId, $staffId, self::payloadImage($in));
+			return array_merge($ack, self::scanStaff($schoolId, $staffId, $eventTime));
 		}
 		if (preg_match('/^S(\d+)$/', $sn, $m)) {
 			return array_merge($ack, self::scanStudent($schoolId, (int) $m[1], $areaId, $eventTime));
@@ -656,6 +726,37 @@ class AttendanceScanService
 			}
 		}
 
+		return $ack;
+	}
+
+	/**
+	 * HeyStar registered-person upload (type 3). Manual face on the terminal
+	 * is stored on the VPS when the payload includes a JPEG.
+	 *
+	 * @param array<string,mixed> $in
+	 */
+	public static function ingestHeyStarPerson(array $in): array
+	{
+		HeyStarDeviceStore::ensureSchema();
+		$ack = ['result' => 1, 'code' => '000'];
+		$schoolId = (int) ($in['school_id'] ?? 0);
+		$deviceKey = trim((string) ($in['deviceKey'] ?? ''));
+		if ($schoolId <= 0 && $deviceKey !== '') {
+			$dev = HeyStarDeviceStore::forDeviceKey($deviceKey);
+			$schoolId = $dev ? (int) $dev['school_id'] : 0;
+		}
+		if ($schoolId <= 0) {
+			return $ack;
+		}
+
+		$sn = trim((string) ($in['personSn'] ?? $in['sn'] ?? ''));
+		if (!preg_match('/^T(\d+)$/', $sn, $m)) {
+			return $ack;
+		}
+		$img = self::payloadImage($in);
+		if ($img !== '') {
+			self::enrollFaceIfMissing($schoolId, (int) $m[1], $img);
+		}
 		return $ack;
 	}
 

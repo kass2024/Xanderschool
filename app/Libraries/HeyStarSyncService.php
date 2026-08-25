@@ -3,9 +3,9 @@
 namespace App\Libraries;
 
 /**
- * Push Xander people to a HeyStar terminal.
- * Students: assigned web card only (verifyStyle 2).
- * Staff: school photo as face only (verifyStyle 1). Both write attendance_records.
+ * Push Xander people to a stock HeyStar terminal (LAN :8090).
+ * Staff names go first; VPS-enrolled faces are pushed when present.
+ * Manual faces assigned on the terminal POST back to the VPS.
  */
 class HeyStarSyncService
 {
@@ -19,11 +19,22 @@ class HeyStarSyncService
 			return ['success' => 0, 'message' => 'Save the HeyStar device IP in School Settings first.'];
 		}
 		$client = new HeyStarClient((string) $dev['device_ip'], (string) ($dev['password'] ?? 'HFSecurity'));
+		$base = rtrim(base_url(), '/');
+		$upload = $base . '/api/heystar_record?school_id=' . $schoolId;
+		$heartbeat = $base . '/api/heystar_heartbeat?school_id=' . $schoolId;
+		$personUrl = $base . '/api/heystar_person?school_id=' . $schoolId;
 
-		$upload = rtrim(base_url(), '/') . '/api/heystar_record?school_id=' . $schoolId;
 		$client->post('device/setUploadUrl', [
-			['type' => 1, 'url' => rtrim(base_url(), '/') . '/api/heystar_heartbeat?school_id=' . $schoolId],
+			['type' => 1, 'url' => $heartbeat],
 			['type' => 2, 'url' => $upload],
+			['type' => 3, 'url' => $personUrl],
+		]);
+		$client->post('device/setSevConfig', [
+			'sevUploadDevHeartbeatUrl' => $heartbeat,
+			'sevUploadRecRecordUrl' => $upload,
+			'sevUploadRegPersonUrl' => $personUrl,
+			'sevUploadRecSnapshotEnable' => 1,
+			'sevUploadRecStrangerDataEnable' => 0,
 		]);
 		$client->post('device/setPciConfig', [
 			'pciLedAlwaysEnable' => 1,
@@ -64,49 +75,48 @@ class HeyStarSyncService
 
 		helper('qonics');
 		foreach (AttendanceScanService::staffList($schoolId) as $p) {
-			$photoUrl = (string) ($p['photo'] ?? '');
-			$hasFace = $photoUrl !== '' && strpos($photoUrl, 'fallback-avatar') === false;
-			if (!$hasFace) {
-				continue;
-			}
 			$sn = 'T' . (int) $p['id'];
-			$body = [
+			$res = $client->post('person/merge', [
 				'type' => 1,
 				'sn' => $sn,
 				'name' => self::safeName((string) $p['name']),
 				'verifyStyle' => 1,
-			];
-			$res = $client->post('person/merge', $body);
+			]);
 			if (!$client->ok($res)) {
 				$errors[] = $sn . ': ' . (string) ($res['msg'] ?? 'person merge failed');
 				continue;
 			}
 			$staff++;
-			if ($hasFace) {
-				$b64 = self::photoBase64((string) ($p['photo'] ?? ''));
-				if ($b64 !== '') {
-					$face = $client->post('face/merge', [
-						'personSn' => $sn,
-						'imgUrl' => strtok($photoUrl, '?') ?: $photoUrl,
-						'imgBase64' => $b64,
-					]);
-					if ($client->ok($face)) {
-						$faces++;
-					} else {
-						$errors[] = $sn . ' face: ' . (string) ($face['msg'] ?? 'face merge failed');
-					}
-				}
+
+			$verifyUrl = (string) ($p['verify_photo'] ?? '');
+			if ($verifyUrl === '' || (int) ($p['face_enrolled'] ?? 0) !== 1) {
+				continue;
+			}
+			$b64 = self::photoBase64($verifyUrl);
+			if ($b64 === '') {
+				continue;
+			}
+			$face = $client->post('face/merge', [
+				'personSn' => $sn,
+				'imgUrl' => strtok($verifyUrl, '?') ?: $verifyUrl,
+				'imgBase64' => $b64,
+			]);
+			if ($client->ok($face)) {
+				$faces++;
+			} else {
+				$errors[] = $sn . ' face: ' . (string) ($face['msg'] ?? 'face merge failed');
 			}
 		}
 
 		return [
 			'success' => 1,
-			'message' => "Synced {$students} student cards and {$staff} staff ({$faces} faces) to HeyStar.",
+			'message' => "Synced {$students} student cards and {$staff} staff ({$faces} VPS faces) to HeyStar. Assign remaining faces on the terminal — they save back to the school server.",
 			'students' => $students,
 			'staff' => $staff,
 			'faces' => $faces,
 			'errors' => array_slice($errors, 0, 12),
 			'upload_url' => $upload,
+			'person_url' => $personUrl,
 		];
 	}
 
