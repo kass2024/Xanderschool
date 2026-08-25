@@ -522,6 +522,19 @@ class AttendanceScanService
 	}
 
 	/**
+	 * Store a HeyStar camera JPEG on the VPS. First capture enrolls; later
+	 * captures refresh the same staff photo so verification stays HeyStar-sourced.
+	 */
+	public static function enrollFaceFromHeyStar(int $schoolId, int $staffId, ?string $photoBase64): bool
+	{
+		if ($schoolId <= 0 || $staffId <= 0 || !is_string($photoBase64) || trim($photoBase64) === '') {
+			return false;
+		}
+		$out = self::enrollFace($schoolId, $staffId, $photoBase64);
+		return !empty($out['success']);
+	}
+
+	/**
 	 * Save a capture only when this staff does not already have a VPS face.
 	 */
 	public static function enrollFaceIfMissing(int $schoolId, int $staffId, ?string $photoBase64): bool
@@ -538,11 +551,13 @@ class AttendanceScanService
 			->where('status !=', 0)
 			->get()
 			->getRowArray();
-		if (!$row || (int) ($row['face_enrolled'] ?? 0) === 1) {
+		if (!$row) {
 			return false;
 		}
-		$out = self::enrollFace($schoolId, $staffId, $photoBase64);
-		return !empty($out['success']);
+		if ((int) ($row['face_enrolled'] ?? 0) === 1) {
+			return false;
+		}
+		return self::enrollFaceFromHeyStar($schoolId, $staffId, $photoBase64);
 	}
 
 	/**
@@ -554,7 +569,7 @@ class AttendanceScanService
 		if ($raw === null) {
 			return null;
 		}
-		$filename = 'face_staff_' . $staffId . '_' . uniqid('', true) . '.jpg';
+		$filename = 'face_staff_' . $staffId . '.jpg';
 		$dir = FCPATH . 'assets/images/profile/';
 		if (!is_dir($dir)) {
 			@mkdir($dir, 0775, true);
@@ -711,7 +726,7 @@ class AttendanceScanService
 		$sn = trim((string) ($in['personSn'] ?? ''));
 		if (preg_match('/^T(\d+)$/', $sn, $m)) {
 			$staffId = (int) $m[1];
-			self::enrollFaceIfMissing($schoolId, $staffId, self::payloadImage($in));
+			self::enrollFaceFromHeyStar($schoolId, $staffId, self::payloadImage($in));
 			return array_merge($ack, self::scanStaff($schoolId, $staffId, $eventTime));
 		}
 		if (preg_match('/^S(\d+)$/', $sn, $m)) {
@@ -755,7 +770,7 @@ class AttendanceScanService
 		}
 		$img = self::payloadImage($in);
 		if ($img !== '') {
-			self::enrollFaceIfMissing($schoolId, (int) $m[1], $img);
+			self::enrollFaceFromHeyStar($schoolId, (int) $m[1], $img);
 		}
 		return $ack;
 	}

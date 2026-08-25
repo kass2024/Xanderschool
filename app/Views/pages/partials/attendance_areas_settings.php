@@ -49,18 +49,26 @@ $hsIp = (string) ($hs['device_ip'] ?? '');
 $hsKey = (string) ($hs['device_key'] ?? '');
 $hsPwd = (string) ($hs['password'] ?? 'HFSecurity');
 $hsArea = (int) ($hs['area_id'] ?? 0);
-$hsUpload = rtrim(base_url(), '/') . '/api/heystar_record';
+$hsSchoolId = (int) ($school_id ?? session()->get('soma_school_id') ?? 0);
+$hsBase = rtrim(base_url(), '/');
+$hsRecord = $hsBase . '/api/heystar_record?school_id=' . $hsSchoolId;
+$hsPerson = $hsBase . '/api/heystar_person?school_id=' . $hsSchoolId;
+$hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 ?>
 <hr class="my-4">
-<h6>HeyStar terminal (staff faces on the VPS)</h6>
+<h6>HeyStar terminal (faces captured here, stored on the VPS)</h6>
 <p class="text-muted">
-	<strong>Sync</strong> sends every staff name to the stock HeyStar app (no APK change).
-	Assign faces later on the terminal (User Management → Face). Those JPEGs upload to this school server
-	(<code>/api/heystar_person</code> and clock snapshots) and are reused for verification.
-	Students still use the <strong>card assigned in Xander</strong>.
-	The Xander kiosk APK can also <strong>Refresh staff from this VPS</strong>, record a live face, and save it here.
-	Sync to HeyStar :8090 needs a PC on the school LAN (the VPS cannot open 192.168.x.x).
+	Use <strong>only the stock HeyStar app</strong> for staff faces — not the Xander kiosk.
+	Sync sends staff <em>names</em> to the terminal. Capture each face in HeyStar
+	(User Management → Face). The terminal then POSTs the camera JPEG to this VPS for verification and reports.
+	Students still use the card assigned in Xander.
 </p>
+<ol class="small text-muted pl-3 mb-3">
+	<li>On HeyStar: Settings (password 123456) → Communication → LAN + HTTP.</li>
+	<li>Paste the three VPS URLs below (identification record, heartbeat, registered person). Turn <strong>snapshot upload</strong> on.</li>
+	<li>Save device IP here, then Sync staff names (from a PC on the school LAN, or after the URLs are set the device already talks to the VPS).</li>
+	<li>On HeyStar, open each staff member and register their face. First successful face clock stores that photo on the VPS.</li>
+</ol>
 <form id="hsForm" class="mb-3" style="max-width:560px">
 	<label class="d-block mb-2">Device IP
 		<input type="text" class="form-control" name="device_ip" id="hsIp" value="<?= esc($hsIp); ?>" placeholder="192.168.1.78">
@@ -71,7 +79,7 @@ $hsUpload = rtrim(base_url(), '/') . '/api/heystar_record';
 	<label class="d-block mb-2">Communication password
 		<input type="text" class="form-control" name="password" id="hsPwd" value="<?= esc($hsPwd); ?>">
 	</label>
-	<label class="d-block mb-2">Student location for this kiosk
+	<label class="d-block mb-2">Student location for this terminal
 		<select class="form-control" name="area_id" id="hsArea">
 			<option value="0">Select location</option>
 			<?php foreach ($areas as $a): ?>
@@ -79,9 +87,14 @@ $hsUpload = rtrim(base_url(), '/') . '/api/heystar_record';
 			<?php endforeach; ?>
 		</select>
 	</label>
-	<p class="small text-muted mb-2">Upload URL (set automatically on sync): <code><?= esc($hsUpload); ?></code></p>
+	<p class="small mb-1">Identification record (clock + face photo):</p>
+	<code class="d-block small mb-2" style="word-break:break-all"><?= esc($hsRecord); ?></code>
+	<p class="small mb-1">Heartbeat:</p>
+	<code class="d-block small mb-2" style="word-break:break-all"><?= esc($hsBeat); ?></code>
+	<p class="small mb-1">Registered person (after you add a face on the terminal):</p>
+	<code class="d-block small mb-2" style="word-break:break-all"><?= esc($hsPerson); ?></code>
 	<button type="button" class="btn btn-secondary" id="hsSave">Save</button>
-	<button type="button" class="btn btn-primary" id="hsSync">Sync staff names &amp; enrolled VPS faces</button>
+	<button type="button" class="btn btn-primary" id="hsSync">Sync staff names to HeyStar</button>
 	<div id="hsMsg" class="small mt-2"></div>
 </form>
 

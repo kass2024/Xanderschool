@@ -1183,6 +1183,7 @@
 					<?= view('pages/partials/attendance_areas_settings', [
 						'attendance_areas' => $attendance_areas ?? [],
 						'heystar_device' => $heystar_device ?? [],
+						'school_id' => $school_id ?? 0,
 					]); ?>
 				</div>
 			</div>

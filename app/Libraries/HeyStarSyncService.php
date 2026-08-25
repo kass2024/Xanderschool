@@ -4,8 +4,7 @@ namespace App\Libraries;
 
 /**
  * Push Xander people to a stock HeyStar terminal (LAN :8090).
- * Staff names go first; VPS-enrolled faces are pushed when present.
- * Manual faces assigned on the terminal POST back to the VPS.
+ * Staff names only — faces are captured on HeyStar and uploaded to the VPS.
  */
 class HeyStarSyncService
 {
@@ -50,7 +49,6 @@ class HeyStarSyncService
 
 		$students = 0;
 		$staff = 0;
-		$faces = 0;
 		$errors = [];
 
 		foreach (AttendanceScanService::studentList($schoolId) as $p) {
@@ -87,33 +85,14 @@ class HeyStarSyncService
 				continue;
 			}
 			$staff++;
-
-			$verifyUrl = (string) ($p['verify_photo'] ?? '');
-			if ($verifyUrl === '' || (int) ($p['face_enrolled'] ?? 0) !== 1) {
-				continue;
-			}
-			$b64 = self::photoBase64($verifyUrl);
-			if ($b64 === '') {
-				continue;
-			}
-			$face = $client->post('face/merge', [
-				'personSn' => $sn,
-				'imgUrl' => strtok($verifyUrl, '?') ?: $verifyUrl,
-				'imgBase64' => $b64,
-			]);
-			if ($client->ok($face)) {
-				$faces++;
-			} else {
-				$errors[] = $sn . ' face: ' . (string) ($face['msg'] ?? 'face merge failed');
-			}
 		}
 
 		return [
 			'success' => 1,
-			'message' => "Synced {$students} student cards and {$staff} staff ({$faces} VPS faces) to HeyStar. Assign remaining faces on the terminal — they save back to the school server.",
+			'message' => "Synced {$students} student cards and {$staff} staff names. Capture faces on HeyStar — snapshots upload to the VPS.",
 			'students' => $students,
 			'staff' => $staff,
-			'faces' => $faces,
+			'faces' => 0,
 			'errors' => array_slice($errors, 0, 12),
 			'upload_url' => $upload,
 			'person_url' => $personUrl,
@@ -127,26 +106,5 @@ class HeyStarSyncService
 			return 'Person';
 		}
 		return mb_substr($name, 0, 60);
-	}
-
-	private static function photoBase64(string $url): string
-	{
-		$path = parse_url($url, PHP_URL_PATH);
-		$file = '';
-		if (is_string($path) && $path !== '') {
-			$base = basename($path);
-			$resolved = function_exists('resolve_profile_photo') ? resolve_profile_photo($base) : $base;
-			if ($resolved) {
-				$file = FCPATH . 'assets/images/profile/' . $resolved;
-			}
-		}
-		if ($file === '' || !is_file($file)) {
-			return '';
-		}
-		$raw = @file_get_contents($file);
-		if ($raw === false || strlen($raw) < 80) {
-			return '';
-		}
-		return base64_encode($raw);
 	}
 }
