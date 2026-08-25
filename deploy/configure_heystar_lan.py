@@ -184,7 +184,8 @@ def main() -> int:
             "device/setCstConfig",
             {
                 "attendance_direction_enable": False,
-                "recognize_result_countdown": 3500,
+                "recognize_result_countdown": 5000,
+                "evt_show_image_duration": 5000,
             },
         ),
     ]

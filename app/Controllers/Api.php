@@ -3886,7 +3886,9 @@ public function permission_card_scan()
 		$status = strtoupper((string) ($out['status'] ?? ''));
 		$name = trim((string) (($out['person']['name'] ?? $out['staff']['name'] ?? '')));
 		$already = !empty($out['already']);
-		$line = trim($name . ' ' . $status);
+		$label = $status === 'OUT' ? 'CLOCK OUT' : 'CLOCK IN';
+		$spoken = $status === 'OUT' ? 'Clock out' : 'Clock in';
+		$line = trim($label . ' ' . $name);
 		return $this->response->setJSON([
 			'result' => 1,
 			'code' => '000',
@@ -3894,8 +3896,8 @@ public function permission_card_scan()
 			'message' => (string) ($out['message'] ?? ''),
 			'status' => $status,
 			'already' => $already ? 1 : 0,
-			'ttsContent' => ($already || $line === '') ? '' : $line,
-			'displayContent' => ($already || $line === '') ? '' : $line,
+			'ttsContent' => ($already || $status === '') ? '' : $spoken,
+			'displayContent' => ($already || $status === '') ? '' : ($line !== '' ? $line : $label),
 		]);
 	}
 

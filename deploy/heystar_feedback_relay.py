@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,11 +26,26 @@ LISTEN = os.environ.get("HEYSTAR_RELAY_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HEYSTAR_RELAY_PORT", "8787"))
 
 
+def keep_speaker_loud() -> None:
+    while True:
+        try:
+            subprocess.run(
+                ["adb", "shell", "tinymix", "0", "SPK"],
+                timeout=8,
+                capture_output=True,
+            )
+        except Exception:
+            pass
+        time.sleep(40)
+
+
 def announce(name: str, status: str) -> None:
     status = "OUT" if str(status).upper() == "OUT" else "IN"
+    label = "CLOCK OUT" if status == "OUT" else "CLOCK IN"
+    spoken = "Clock out" if status == "OUT" else "Clock in"
     safe = " ".join("".join(ch if ch.isalnum() or ch == " " else " " for ch in (name or "")).split())
-    line = " ".join(part for part in (safe, status) if part) or status
-    content = json.dumps({"ttsContent": line, "displayContent": line})
+    display = f"{label} {safe}".strip() if safe else label
+    content = json.dumps({"ttsContent": spoken, "displayContent": display})
     body = json.dumps({"type": 4, "content": content}).encode("utf-8")
     auth = "Basic " + b64encode(f"admin:{PASSWORD}".encode()).decode()
     req = urllib.request.Request(
@@ -83,7 +101,9 @@ class Handler(BaseHTTPRequestHandler):
             name = str((payload.get("person") or {}).get("name") or "")
             if not name:
                 line = str(payload.get("displayContent") or payload.get("ttsContent") or "")
-                name = line.replace(" IN", "").replace(" OUT", "").strip()
+                for token in ("CLOCK OUT", "CLOCK IN", "Clock out", "Clock in", " OUT", " IN"):
+                    line = line.replace(token, "")
+                name = line.strip()
         except Exception:
             payload = {}
 
@@ -98,6 +118,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    threading.Thread(target=keep_speaker_loud, daemon=True).start()
     httpd = ThreadingHTTPServer((LISTEN, PORT), Handler)
     print("heystar feedback relay", f"http://{LISTEN}:{PORT}/record", "->", VPS, "device", DEVICE_IP)
     httpd.serve_forever()

@@ -63,19 +63,18 @@ class HeyStarClient
 	public function announceClock(string $name, string $status): array
 	{
 		$status = strtoupper(trim($status)) === 'OUT' ? 'OUT' : 'IN';
+		$label = $status === 'OUT' ? 'CLOCK OUT' : 'CLOCK IN';
+		$spoken = $status === 'OUT' ? 'Clock out' : 'Clock in';
 		$safe = trim(preg_replace('/[^A-Za-z0-9 ]+/', ' ', $name) ?? '');
 		$safe = trim(preg_replace('/\s+/', ' ', $safe) ?? '');
-		$line = trim($safe . ' ' . $status);
-		if ($line === '') {
-			$line = $status;
-		}
+		$display = $safe !== '' ? ($label . ' ' . $safe) : $label;
 		$content = json_encode([
-			'ttsContent' => $line,
-			'displayContent' => $line,
+			'ttsContent' => $spoken,
+			'displayContent' => $display,
 		], JSON_UNESCAPED_UNICODE);
 		return $this->post('device/output', [
 			'type' => 4,
-			'content' => is_string($content) ? $content : ('{"ttsContent":"' . $status . '","displayContent":"' . $status . '"}'),
+			'content' => is_string($content) ? $content : ('{"ttsContent":"' . $spoken . '","displayContent":"' . $label . '"}'),
 		], 2);
 	}
 
