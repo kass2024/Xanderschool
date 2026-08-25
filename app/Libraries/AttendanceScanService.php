@@ -569,21 +569,14 @@ class AttendanceScanService
 			return ['success' => 0, 'message' => 'Staff not found'];
 		}
 
-		$filename = self::storeFaceJpeg($staffId, $photoBase64);
-		if ($photoBase64 && $filename === null) {
-			return ['success' => 0, 'message' => 'Could not save the face photo on the server'];
-		}
+		$db->table('staffs')->where('id', $staffId)->where('school_id', $schoolId)->update([
+			'face_enrolled' => 1,
+		]);
 
-		$data = ['face_enrolled' => 1];
-		if ($filename) {
-			$data['photo'] = $filename;
-		}
-		$db->table('staffs')->where('id', $staffId)->where('school_id', $schoolId)->update($data);
-
-		$photo = $filename ? profile_photo_url($filename) : profile_photo_url($staff->photo ?? null);
+		$photo = profile_photo_url($staff->photo ?? null);
 		return [
 			'success' => 1,
-			'message' => 'Face enrolled and saved on the school server',
+			'message' => 'Face marked enrolled. Upload the staff card photo on View Staff.',
 			'staff_id' => $staffId,
 			'face_enrolled' => 1,
 			'photo' => $photo,
@@ -592,16 +585,22 @@ class AttendanceScanService
 	}
 
 	/**
-	 * Store a HeyStar camera JPEG on the VPS. First capture enrolls; later
-	 * captures refresh the same staff photo so verification stays HeyStar-sourced.
+	 * Terminal camera JPEGs are not staff profile photos (those are for cards).
+	 * Only mark that a live face exists on the device.
 	 */
 	public static function enrollFaceFromHeyStar(int $schoolId, int $staffId, ?string $photoBase64): bool
 	{
-		if ($schoolId <= 0 || $staffId <= 0 || !is_string($photoBase64) || trim($photoBase64) === '') {
+		if ($schoolId <= 0 || $staffId <= 0) {
 			return false;
 		}
-		$out = self::enrollFace($schoolId, $staffId, $photoBase64);
-		return !empty($out['success']);
+		self::ensureFaceColumn();
+		$db = \Config\Database::connect();
+		$n = $db->table('staffs')
+			->where('id', $staffId)
+			->where('school_id', $schoolId)
+			->where('status !=', 0)
+			->update(['face_enrolled' => 1]);
+		return $n >= 0;
 	}
 
 	/**
@@ -789,7 +788,7 @@ class AttendanceScanService
 		$sn = trim((string) ($in['personSn'] ?? ''));
 		if (preg_match('/^T(\d+)$/', $sn, $m)) {
 			$staffId = (int) $m[1];
-			self::enrollFaceFromHeyStar($schoolId, $staffId, self::payloadImage($in));
+			self::enrollFaceFromHeyStar($schoolId, $staffId, null);
 			// Ignore device Check-In/Out/Break direction. First look = IN, later looks
 			// overwrite OUT (same as the web staff scanner). Shift is used for late/overtime.
 			$clock = self::scanStaff($schoolId, $staffId, $eventTime);
@@ -807,8 +806,8 @@ class AttendanceScanService
 	}
 
 	/**
-	 * HeyStar registered-person upload (type 3). Manual face on the terminal
-	 * is stored on the VPS when the payload includes a JPEG.
+	 * HeyStar registered-person upload (type 3). Face stays on the terminal;
+	 * staff card photos are uploaded on Xander, never from this camera JPEG.
 	 *
 	 * @param array<string,mixed> $in
 	 */
@@ -830,10 +829,7 @@ class AttendanceScanService
 		if (!preg_match('/^T(\d+)$/', $sn, $m)) {
 			return $ack;
 		}
-		$img = self::payloadImage($in);
-		if ($img !== '') {
-			self::enrollFaceFromHeyStar($schoolId, (int) $m[1], $img);
-		}
+		self::enrollFaceFromHeyStar($schoolId, (int) $m[1], null);
 		return $ack;
 	}
 

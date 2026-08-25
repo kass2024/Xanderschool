@@ -911,6 +911,9 @@ if (!function_exists('resolve_profile_photo')) {
 		if ($base === '' || $base === '.' || $base === '..') {
 			return null;
 		}
+		if (preg_match('/^face_staff_\d+\.(jpe?g|png)$/i', $base)) {
+			return null;
+		}
 		$dir = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR;
 		if (is_file($dir . $base)) {
 			return $base;

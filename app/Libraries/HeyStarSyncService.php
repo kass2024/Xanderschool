@@ -106,7 +106,7 @@ class HeyStarSyncService
 		HeyStarDeviceStore::markStaffSynced($schoolId);
 		return [
 			'success' => 1,
-			'message' => "Branded HeyStar as {$brand['name']}. Synced {$staff} staff names. Capture faces on the terminal — photos upload to the VPS.",
+			'message' => "Branded HeyStar as {$brand['name']}. Synced {$staff} staff names. Capture faces on the terminal. Staff card photos are uploaded on Xander, not from the camera.",
 			'staff' => $staff,
 			'school' => $brand['name'],
 			'errors' => array_slice($errors, 0, 12),

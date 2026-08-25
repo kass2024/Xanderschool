@@ -69,7 +69,9 @@
 		<div class="boxed" style="background-color: white;display: flow-root;">
 			<h4><?= lang("app.staffPhoto");?></h4>
 			<?php
-			$photo = strlen($staff['photo']) > 4 ? base_url('assets/images/profile/' . $staff['photo']) : '';
+			helper('qonics');
+			$resolved = resolve_profile_photo($staff['photo'] ?? '');
+			$photo = $resolved !== null ? profile_photo_url($resolved) : profile_photo_url(null);
 			?>
 			<img src="<?=$photo;?>" id="img_photo" style="width: 100px;height: 100px;border-radius: 50%;background: #FFFFFF;float:left;border: 1px solid #4C5B5C;">
 			<input type="file" id="in_student_photo" style="display: none;overflow: hidden">
@@ -205,7 +207,7 @@
 				toastada.error('<?= lang("app.allowedOnly");?>')
 				return;
 			}
-			if (upload.getSize()> 512*1024){
+			if (upload.getSize()> 5*1024*1024){
 				toastada.error('<?= lang("app.sizeNeeded");?>');
 				return;
 			}
