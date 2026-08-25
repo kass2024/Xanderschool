@@ -62,7 +62,9 @@ class HeyStarSyncService
 		$client->post('device/setPciConfig', [
 			'pciLedAlwaysEnable' => 0,
 			'pciLedColorStranger' => 1,
-			'pciRelayOut' => 0,
+			'pciRelayOut' => 1,
+			'pciRelayMode' => 1,
+			'pciRelayDelay' => 2000,
 		]);
 		$client->post('device/setRecModeConfig', [
 			'recModeCardEnable' => 0,
@@ -176,19 +178,17 @@ class HeyStarSyncService
 		}
 		$uiRes = $client->post('device/setUiConfig', $ui, 60);
 		$recRes = $client->post('device/setRecConfig', [
-			'recSucTtsMode' => 100,
-			'recSucTtsCustom' => '{name}',
-			'recSucDisplayMode' => 100,
-			'recSucDisplayCustom' => '{name}',
+			'recSucTtsMode' => 2,
+			'recSucDisplayMode' => 1,
 			'recRecordUploadMode' => 2,
 			'recRecordSave' => 1,
 			'recStrangerEnable' => 1,
-			'recIsStrangerTimes' => 2,
-			'recStrangerTtsMode' => 100,
-			'recStrangerTtsCustom' => 'Not found',
-			'recStrangerDisplayMode' => 100,
-			'recStrangerDisplayCustom' => 'Not found',
+			'recIsStrangerTimes' => 1,
+			'recStrangerTtsMode' => 2,
+			'recStrangerDisplayMode' => 1,
 			'recStrangerOpenDoor' => 0,
+			'recNoPerTtsMode' => 2,
+			'recNotBioTtsMode' => 2,
 		], 25);
 		return ['name' => $name, 'ui' => $uiRes, 'rec' => $recRes];
 	}

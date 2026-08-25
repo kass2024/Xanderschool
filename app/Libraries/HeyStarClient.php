@@ -64,11 +64,10 @@ class HeyStarClient
 	{
 		$status = strtoupper(trim($status)) === 'OUT' ? 'OUT' : 'IN';
 		$label = $status === 'OUT' ? 'CLOCK OUT' : 'CLOCK IN';
-		$spoken = $status === 'OUT' ? 'Clock out' : 'Clock in';
 		$content = json_encode([
 			'displayContent' => $label,
-			'ttsContent' => $spoken,
 		], JSON_UNESCAPED_UNICODE);
+		$this->post('device/output', ['type' => 1], 2);
 		return $this->post('device/output', [
 			'type' => 4,
 			'content' => is_string($content) ? $content : '{"displayContent":"' . $label . '"}',

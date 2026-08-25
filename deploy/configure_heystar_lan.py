@@ -148,7 +148,9 @@ def main() -> int:
             {
                 "pciLedAlwaysEnable": 0,
                 "pciLedColorStranger": 1,
-                "pciRelayOut": 0,
+                "pciRelayOut": 1,
+                "pciRelayMode": 1,
+                "pciRelayDelay": 2000,
             },
         ),
         (
@@ -163,19 +165,17 @@ def main() -> int:
         (
             "device/setRecConfig",
             {
-                "recSucTtsMode": 100,
-                "recSucTtsCustom": "{name}",
-                "recSucDisplayMode": 100,
-                "recSucDisplayCustom": "{name}",
+                "recSucTtsMode": 2,
+                "recSucDisplayMode": 1,
                 "recRecordUploadMode": 2,
                 "recRecordSave": 1,
                 "recStrangerEnable": 1,
-                "recIsStrangerTimes": 2,
-                "recStrangerTtsMode": 100,
-                "recStrangerTtsCustom": "Not found",
-                "recStrangerDisplayMode": 100,
-                "recStrangerDisplayCustom": "Not found",
+                "recIsStrangerTimes": 1,
+                "recStrangerTtsMode": 2,
+                "recStrangerDisplayMode": 1,
                 "recStrangerOpenDoor": 0,
+                "recNoPerTtsMode": 2,
+                "recNotBioTtsMode": 2,
             },
         ),
         (
@@ -217,7 +217,7 @@ def main() -> int:
     print("urls", record)
     print("LED: always-on OFF, stranger RED, match uses device green")
     print("camera always ready: Select Direction overlay OFF; first look IN, later looks overwrite OUT")
-    print("voice: Android TTS name + CLOCK IN/OUT overlay; staff names auto-sync from Xander")
+    print("voice: built-in name on green, built-in not-registered on red; access relay ON for match")
     return 0
 
 

@@ -136,9 +136,9 @@ def announce(status: str) -> None:
     status = "OUT" if str(status).upper() == "OUT" else "IN"
     label = "CLOCK OUT" if status == "OUT" else "CLOCK IN"
     speaker_on()
-    spoken = "Clock out" if status == "OUT" else "Clock in"
-    content = json.dumps({"displayContent": label, "ttsContent": spoken})
+    content = json.dumps({"displayContent": label})
     try:
+        device_cgi("device/output", {"type": 1}, timeout=1.5)
         device_cgi("device/output", {"type": 4, "content": content}, timeout=1.5)
         print("announce", label)
     except Exception as exc:
@@ -317,21 +317,34 @@ def device_persons() -> dict:
 def apply_voice_config() -> None:
     try:
         device_cgi(
-            "device/setRecConfig",
+            "device/setPciConfig",
             {
-                "recSucTtsMode": 100,
-                "recSucTtsCustom": "{name}",
-                "recSucDisplayMode": 100,
-                "recSucDisplayCustom": "{name}",
-                "recRecordUploadMode": 2,
-                "recRecordSave": 1,
-                "recStrangerEnable": 1,
-                "recIsStrangerTimes": 2,
-                "recStrangerTtsMode": 100,
-                "recStrangerTtsCustom": "Not found",
+                "pciLedAlwaysEnable": 0,
+                "pciLedColorStranger": 1,
+                "pciRelayOut": 1,
+                "pciRelayMode": 1,
+                "pciRelayDelay": 2000,
             },
             timeout=12,
         )
+        device_cgi(
+            "device/setRecConfig",
+            {
+                "recSucTtsMode": 2,
+                "recSucDisplayMode": 1,
+                "recRecordUploadMode": 2,
+                "recRecordSave": 1,
+                "recStrangerEnable": 1,
+                "recIsStrangerTimes": 1,
+                "recStrangerTtsMode": 2,
+                "recStrangerDisplayMode": 1,
+                "recStrangerOpenDoor": 0,
+                "recNoPerTtsMode": 2,
+                "recNotBioTtsMode": 2,
+            },
+            timeout=12,
+        )
+        print("io+voice: relay ON, built-in green/red TTS")
     except Exception as exc:
         print("voice cfg", exc)
 
