@@ -314,9 +314,42 @@ public function testEmail()
 		return strpos($hay, 'holiday') !== false;
 	}
 
-	private function isStreamDepartmentTitle(?string $title): bool
+	private function isStreamDepartmentTitle(?string $title, ?string $code = null): bool
 	{
-		return strtolower(trim((string) $title)) === 'stream';
+		$c = strtoupper(trim((string) $code));
+		if (in_array($c, ['STR', 'ST1', 'ST2'], true)) {
+			return true;
+		}
+		$t = strtolower(trim((string) $title));
+		return (bool) preg_match('/^stream(\s*(one|two|1|2))?$/', $t);
+	}
+
+	/** 1 = Stream 1, 2 = Stream 2, 0 = generic Stream (both tracks). */
+	private function streamDepartmentTrack(?string $title, ?string $code = null): int
+	{
+		$hay = strtolower(trim((string) $title . ' ' . (string) $code));
+		if (preg_match('/\b(st2|stream\s*(two|2))\b/', $hay)) {
+			return 2;
+		}
+		if (preg_match('/\b(st1|stream\s*(one|1))\b/', $hay)) {
+			return 1;
+		}
+		return 0;
+	}
+
+	private function classMatchesStreamTrack(array $row, int $track): bool
+	{
+		if (!$this->isStreamTrackClass($row) || $this->isSeniorLetterClass($row)) {
+			return false;
+		}
+		if ($track === 0) {
+			return true;
+		}
+		$hay = strtolower(trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '')));
+		if ($track === 1) {
+			return (bool) preg_match('/stream\s*(one|1)\b/', $hay);
+		}
+		return (bool) preg_match('/stream\s*(two|2)\b/', $hay);
 	}
 
 	/** Stream one / Stream two class names used by the Stream department. */
@@ -18930,9 +18963,11 @@ public function assign_card()
 			return $this->response->setJSON(['error' => 'Online registration not configured for this school']);
 		}
 		$classMdl = new ClassesModel();
-		$deptRow = (new DeptModel())->select('title')->find($department);
+		$deptRow = (new DeptModel())->select('title, code')->find($department);
 		$deptTitle = is_array($deptRow) ? (string) ($deptRow['title'] ?? '') : '';
-		$isStreamDept = $this->isStreamDepartmentTitle($deptTitle);
+		$deptCode = is_array($deptRow) ? (string) ($deptRow['code'] ?? '') : '';
+		$isStreamDept = $this->isStreamDepartmentTitle($deptTitle, $deptCode);
+		$streamTrack = $this->streamDepartmentTrack($deptTitle, $deptCode);
 		$select = 'classes.id, classes.title, classes.level, classes.department, levels.title as level_name, departments.title as dept_name';
 		$classes = $classMdl->select($select)
 			->join('levels', 'levels.id = classes.level', 'left')
@@ -18953,8 +18988,8 @@ public function assign_card()
 			}));
 		}
 		if ($isStreamDept) {
-			$classes = array_values(array_filter($classes, function ($cls) {
-				return $this->isStreamTrackClass($cls) && !$this->isSeniorLetterClass($cls);
+			$classes = array_values(array_filter($classes, function ($cls) use ($streamTrack) {
+				return $this->classMatchesStreamTrack($cls, $streamTrack);
 			}));
 			$extra = $classMdl->select($select)
 				->join('levels', 'levels.id = classes.level', 'left')
@@ -18975,7 +19010,7 @@ public function assign_card()
 				$seen[(int) $cls['id']] = true;
 			}
 			foreach ($extra as $cls) {
-				if (!$this->isStreamTrackClass($cls) || $this->isSeniorLetterClass($cls)) {
+				if (!$this->classMatchesStreamTrack($cls, $streamTrack)) {
 					continue;
 				}
 				$id = (int) $cls['id'];
