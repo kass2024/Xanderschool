@@ -56,18 +56,16 @@ $hsPerson = $hsBase . '/api/heystar_person?school_id=' . $hsSchoolId;
 $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 ?>
 <hr class="my-4">
-<h6>HeyStar terminal (faces captured here, stored on the VPS)</h6>
+<h6>HeyStar terminal (staff face only)</h6>
 <p class="text-muted">
-	Use <strong>only the stock HeyStar app</strong> for staff faces — not the Xander kiosk.
-	Sync sends staff <em>names</em> to the terminal. Capture each face in HeyStar
-	(User Management → Face). The terminal then POSTs the camera JPEG to this VPS for verification and reports.
-	Students still use the card assigned in Xander.
+	This terminal is for <strong>staff face attendance only</strong>. Students are not synced and are not clocked here.
+	Sync sends staff names. Capture each face in HeyStar (User Management → Face). The camera JPEG is stored on the VPS and clocks go to staff IN/OUT reports.
 </p>
 <ol class="small text-muted pl-3 mb-3">
 	<li>On HeyStar: Settings (password 123456) → Communication → LAN + HTTP.</li>
-	<li>Paste the three VPS URLs below (identification record, heartbeat, registered person). Turn <strong>snapshot upload</strong> on.</li>
-	<li>Save device IP here, then Sync staff names (from a PC on the school LAN, or after the URLs are set the device already talks to the VPS).</li>
-	<li>On HeyStar, open each staff member and register their face. First successful face clock stores that photo on the VPS.</li>
+	<li>Paste the three VPS URLs below. Turn <strong>snapshot upload</strong> on. Identification mode: face on, card off.</li>
+	<li>Save the device IP here, then Sync staff names from a PC on the school LAN.</li>
+	<li>On HeyStar, register a face for each staff member, then stand in front of the camera to clock IN/OUT.</li>
 </ol>
 <form id="hsForm" class="mb-3" style="max-width:560px">
 	<label class="d-block mb-2">Device IP
@@ -79,14 +77,7 @@ $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 	<label class="d-block mb-2">Communication password
 		<input type="text" class="form-control" name="password" id="hsPwd" value="<?= esc($hsPwd); ?>">
 	</label>
-	<label class="d-block mb-2">Student location for this terminal
-		<select class="form-control" name="area_id" id="hsArea">
-			<option value="0">Select location</option>
-			<?php foreach ($areas as $a): ?>
-				<option value="<?= (int) $a['id']; ?>" <?= $hsArea === (int) $a['id'] ? 'selected' : ''; ?>><?= esc($a['name']); ?></option>
-			<?php endforeach; ?>
-		</select>
-	</label>
+	<input type="hidden" name="area_id" id="hsArea" value="0">
 	<p class="small mb-1">Identification record (clock + face photo):</p>
 	<code class="d-block small mb-2" style="word-break:break-all"><?= esc($hsRecord); ?></code>
 	<p class="small mb-1">Heartbeat:</p>
@@ -123,7 +114,7 @@ $(function () {
 			var extra = (res.errors && res.errors.length) ? (' ' + res.errors.join('; ')) : '';
 			hsTell(!!res.success, (res.message || res.error || 'Done') + extra);
 		}, 'json').fail(function () {
-			hsTell(false, 'Sync failed. Is HeyStar running on the kiosk?');
+			hsTell(false, 'Sync failed. Is HeyStar running on the terminal (port 8090)?');
 		});
 	});
 });

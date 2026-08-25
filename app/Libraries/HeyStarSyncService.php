@@ -5,6 +5,7 @@ namespace App\Libraries;
 /**
  * Push Xander people to a stock HeyStar terminal (LAN :8090).
  * Staff names only — faces are captured on HeyStar and uploaded to the VPS.
+ * Students are not sent to the terminal.
  */
 class HeyStarSyncService
 {
@@ -41,35 +42,14 @@ class HeyStarSyncService
 			'pciRelayOut' => 0,
 		]);
 		$client->post('device/setRecModeConfig', [
-			'recModeCardEnable' => 1,
+			'recModeCardEnable' => 0,
 			'recModeFaceEnable' => 1,
 			'recModeFingerEnable' => 0,
 			'recModePalmEnable' => 0,
 		]);
 
-		$students = 0;
 		$staff = 0;
 		$errors = [];
-
-		foreach (AttendanceScanService::studentList($schoolId) as $p) {
-			$card = trim((string) ($p['card'] ?? ''));
-			if ($card === '') {
-				continue;
-			}
-			$sn = 'S' . (int) $p['id'];
-			$res = $client->post('person/merge', [
-				'type' => 1,
-				'sn' => $sn,
-				'name' => self::safeName((string) $p['name']),
-				'cardNo' => $card,
-				'verifyStyle' => 2,
-			]);
-			if ($client->ok($res)) {
-				$students++;
-			} else {
-				$errors[] = $sn . ': ' . (string) ($res['msg'] ?? 'person merge failed');
-			}
-		}
 
 		helper('qonics');
 		foreach (AttendanceScanService::staffList($schoolId) as $p) {
@@ -89,10 +69,8 @@ class HeyStarSyncService
 
 		return [
 			'success' => 1,
-			'message' => "Synced {$students} student cards and {$staff} staff names. Capture faces on HeyStar — snapshots upload to the VPS.",
-			'students' => $students,
+			'message' => "Synced {$staff} staff names. Capture faces on HeyStar — photos upload to the VPS.",
 			'staff' => $staff,
-			'faces' => 0,
 			'errors' => array_slice($errors, 0, 12),
 			'upload_url' => $upload,
 			'person_url' => $personUrl,

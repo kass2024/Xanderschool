@@ -681,7 +681,7 @@ class AttendanceScanService
 	}
 
 	/**
-	 * HeyStar identify-record upload. Card numbers must match cards assigned in the web app.
+	 * HeyStar identify-record upload. Staff face only (personSn T{id}).
 	 *
 	 * @param array<string,mixed> $in
 	 * @return array<string,mixed>
@@ -716,29 +716,11 @@ class AttendanceScanService
 			$eventTime = (int) floor($eventTime / 1000);
 		}
 
-		$dev = HeyStarDeviceStore::forSchool($schoolId);
-		$areaId = (int) ($dev['area_id'] ?? 0);
-		if ($areaId <= 0) {
-			$areas = (new AttendanceAreaModel())->listAreas($schoolId, true);
-			$areaId = $areas !== [] ? (int) $areas[0]['id'] : 0;
-		}
-
 		$sn = trim((string) ($in['personSn'] ?? ''));
 		if (preg_match('/^T(\d+)$/', $sn, $m)) {
 			$staffId = (int) $m[1];
 			self::enrollFaceFromHeyStar($schoolId, $staffId, self::payloadImage($in));
 			return array_merge($ack, self::scanStaff($schoolId, $staffId, $eventTime));
-		}
-		if (preg_match('/^S(\d+)$/', $sn, $m)) {
-			return array_merge($ack, self::scanStudent($schoolId, (int) $m[1], $areaId, $eventTime));
-		}
-
-		$card = trim((string) ($in['cardNo'] ?? ''));
-		if ($card !== '') {
-			$owner = CardRegistry::lookup($schoolId, $card);
-			if ($owner && $owner['type'] === 'student') {
-				return array_merge($ack, self::scanStudent($schoolId, (int) $owner['id'], $areaId, $eventTime));
-			}
 		}
 
 		return $ack;
