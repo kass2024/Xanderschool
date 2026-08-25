@@ -40,8 +40,8 @@ WHERE f.type = 3
 	WHERE l.faculty_id = f.id AND l.title = v.title
 );
 
-INSERT INTO `classes` (`school_id`, `level`, `department`, `title`, `mentor`, `created_by`, `created_at`, `updated_at`)
-SELECT 27, l.id, d.id, '', COALESCE((SELECT s.id FROM staffs s WHERE s.school_id = 27 ORDER BY s.id LIMIT 1), 0), 0, NOW(), NOW()
+INSERT INTO `classes` (`school_id`, `level`, `department`, `title`, `mentor`, `created_by`, `updated_by`, `created_at`, `updated_at`)
+SELECT 27, l.id, d.id, '', COALESCE((SELECT s.id FROM staffs s WHERE s.school_id = 27 ORDER BY s.id LIMIT 1), 0), 0, 0, NOW(), NOW()
 FROM `faculty` f
 JOIN `departments` d ON d.faculty_id = f.id AND d.code = 'ANP'
 JOIN `levels` l ON l.faculty_id = f.id AND l.title IN ('Year 1', 'Year 2', 'Year 3')

@@ -173,13 +173,12 @@ class FacultyModel extends Model
 				'level' => $levelId,
 				'department' => $deptId,
 				'title' => '',
+				'mentor' => $mentorId,
 				'created_by' => 0,
+				'updated_by' => 0,
 				'created_at' => $now,
 				'updated_at' => $now,
 			];
-			if ($mentorId > 0) {
-				$row['mentor'] = $mentorId;
-			}
 			$db->table('classes')->insert($row);
 			$created++;
 		}
