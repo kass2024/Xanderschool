@@ -33,6 +33,7 @@ STATE_FILE = Path(__file__).with_name("heystar_clock_state.json")
 QUEUE_FILE = Path(__file__).with_name("heystar_upload_queue.jsonl")
 
 state_lock = threading.Lock()
+cgi_lock = threading.Lock()
 clock_state: dict = {}
 
 
@@ -48,8 +49,9 @@ def device_cgi(path: str, body, timeout: int = 8):
             "Authorization": auth,
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8", "replace"))
+    with cgi_lock:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace"))
 
 
 AUDIO_SH = (
@@ -193,7 +195,7 @@ def poll_device_records() -> None:
             time.sleep(4)
 
     while True:
-        time.sleep(0.4)
+        time.sleep(0.7)
         try:
             now_ms = int(time.time() * 1000)
             rows = fetch_records(now_ms - 180000, now_ms + 60000, 8, 0)
