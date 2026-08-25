@@ -1,4 +1,4 @@
--- Special educational path: Nursing faculty + ANP department + Year 1–3 classes
+-- Special educational path: Nursing faculty + ANP department + S4–S6 classes
 SET NAMES utf8mb4;
 
 INSERT INTO `faculty` (`title`, `abbrev`, `type`, `status`)
@@ -26,13 +26,28 @@ JOIN `faculty` f ON f.id = d.faculty_id
 SET d.title = 'Nursing', d.code = 'ANP'
 WHERE f.type = 3;
 
+UPDATE `levels` l
+JOIN `faculty` f ON f.id = l.faculty_id AND f.type = 3
+SET l.title = 'S4', l.type = 3
+WHERE l.title IN ('Year 1', 'year 1');
+
+UPDATE `levels` l
+JOIN `faculty` f ON f.id = l.faculty_id AND f.type = 3
+SET l.title = 'S5', l.type = 3
+WHERE l.title IN ('Year 2', 'year 2');
+
+UPDATE `levels` l
+JOIN `faculty` f ON f.id = l.faculty_id AND f.type = 3
+SET l.title = 'S6', l.type = 3
+WHERE l.title IN ('Year 3', 'year 3');
+
 INSERT INTO `levels` (`title`, `type`, `faculty_id`, `status`)
 SELECT v.title, 3, f.id, 1
 FROM `faculty` f
 CROSS JOIN (
-	SELECT 'Year 1' AS title
-	UNION ALL SELECT 'Year 2'
-	UNION ALL SELECT 'Year 3'
+	SELECT 'S4' AS title
+	UNION ALL SELECT 'S5'
+	UNION ALL SELECT 'S6'
 ) v
 WHERE f.type = 3
   AND NOT EXISTS (
@@ -44,7 +59,7 @@ INSERT INTO `classes` (`school_id`, `level`, `department`, `title`, `mentor`, `c
 SELECT 27, l.id, d.id, '', COALESCE((SELECT s.id FROM staffs s WHERE s.school_id = 27 ORDER BY s.id LIMIT 1), 0), 0, 0, NOW(), NOW()
 FROM `faculty` f
 JOIN `departments` d ON d.faculty_id = f.id AND d.code = 'ANP'
-JOIN `levels` l ON l.faculty_id = f.id AND l.title IN ('Year 1', 'Year 2', 'Year 3')
+JOIN `levels` l ON l.faculty_id = f.id AND l.title IN ('S4', 'S5', 'S6')
 WHERE f.type = 3
   AND NOT EXISTS (
 	SELECT 1 FROM `classes` c

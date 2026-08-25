@@ -111,7 +111,31 @@ class FacultyModel extends Model
 			}
 		}
 
-		foreach (['Year 1', 'Year 2', 'Year 3'] as $title) {
+		$rename = ['Year 1' => 'S4', 'Year 2' => 'S5', 'Year 3' => 'S6'];
+		foreach ($rename as $from => $to) {
+			$fromRow = $db->table('levels')
+				->where('faculty_id', $facId)
+				->where('title', $from)
+				->get(1)->getRowArray();
+			if (!$fromRow) {
+				continue;
+			}
+			$toRow = $db->table('levels')
+				->where('faculty_id', $facId)
+				->where('title', $to)
+				->get(1)->getRowArray();
+			if (!$toRow) {
+				$db->table('levels')->where('id', (int) $fromRow['id'])->update([
+					'title' => $to,
+					'type' => self::TYPE_SPECIAL,
+				]);
+				continue;
+			}
+			$db->table('classes')->where('level', (int) $fromRow['id'])->update(['level' => (int) $toRow['id']]);
+			$db->table('levels')->where('id', (int) $fromRow['id'])->delete();
+		}
+
+		foreach (['S4', 'S5', 'S6'] as $title) {
 			$exists = $db->table('levels')
 				->where('faculty_id', $facId)
 				->where('title', $title)
@@ -133,7 +157,7 @@ class FacultyModel extends Model
 		];
 	}
 
-	/** Create Year 1–3 Nursing (ANP) classes for a school if they are missing. */
+	/** Create S4–S6 Nursing (ANP) classes for a school if they are missing. */
 	public function ensureSpecialNursingAnpClasses(int $schoolId): int
 	{
 		if ($schoolId < 1) {
@@ -151,6 +175,7 @@ class FacultyModel extends Model
 		$levels = $db->table('levels')->select('id')
 			->where('faculty_id', $facId)
 			->where('type', self::TYPE_SPECIAL)
+			->whereIn('title', ['S4', 'S5', 'S6'])
 			->orderBy('title', 'ASC')
 			->get()->getResultArray();
 		$now = date('Y-m-d H:i:s');
