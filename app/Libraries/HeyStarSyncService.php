@@ -51,7 +51,7 @@ class HeyStarSyncService
 		// staff shift (same toggle as the web scanner), not Check-In / Check-Out taps.
 		$client->post('device/setCstConfig', [
 			'attendance_direction_enable' => false,
-			'recognize_result_countdown' => 1500,
+			'recognize_result_countdown' => 3500,
 		]);
 		$brand = self::applySchoolBranding($client, $schoolId);
 
@@ -89,6 +89,39 @@ class HeyStarSyncService
 	}
 
 	/**
+	 * Speak and show IN/OUT on the terminal when this PHP host can reach it (school LAN).
+	 */
+	public static function announceClock(int $schoolId, string $name, string $status): void
+	{
+		$status = strtoupper(trim($status));
+		if ($status !== 'IN' && $status !== 'OUT') {
+			return;
+		}
+		$dev = HeyStarDeviceStore::forSchool($schoolId);
+		if (!$dev) {
+			return;
+		}
+		$ip = trim((string) ($dev['device_ip'] ?? ''));
+		if ($ip === '') {
+			return;
+		}
+		$serverAddr = (string) ($_SERVER['SERVER_ADDR'] ?? '');
+		$phpOnSchoolLan = $serverAddr !== '' && (
+			(bool) preg_match('/^10\./', $serverAddr)
+			|| (bool) preg_match('/^192\.168\./', $serverAddr)
+		);
+		if (HeyStarClient::isPrivateIp($ip) && !$phpOnSchoolLan) {
+			return;
+		}
+		try {
+			$client = new HeyStarClient($ip, (string) ($dev['password'] ?? '123456'));
+			$client->announceClock($name, $status);
+		} catch (\Throwable $e) {
+			return;
+		}
+	}
+
+	/**
 	 * School name + logo on the stock HeyStar UI (official setUiConfig, no APK rebuild).
 	 *
 	 * @return array{name:string,ui:array<string,mixed>,rec:array<string,mixed>}
@@ -123,12 +156,14 @@ class HeyStarSyncService
 		}
 		$uiRes = $client->post('device/setUiConfig', $ui, 60);
 		$recRes = $client->post('device/setRecConfig', [
-			'recSucTtsMode' => 2,
+			'recSucTtsMode' => 100,
+			'recSucTtsCustom' => '{name}',
 			'recSucDisplayMode' => 100,
 			'recSucDisplayCustom' => '{name}',
 			'recStrangerEnable' => 1,
 			'recIsStrangerTimes' => 2,
-			'recStrangerTtsMode' => 2,
+			'recStrangerTtsMode' => 100,
+			'recStrangerTtsCustom' => 'Not found',
 			'recStrangerDisplayMode' => 100,
 			'recStrangerDisplayCustom' => 'Not found',
 			'recStrangerOpenDoor' => 0,

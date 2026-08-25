@@ -368,13 +368,9 @@ class AttendanceScanService
 		];
 	}
 
-	private const STAFF_MAX_IN_PER_DAY = 2;
-	private const STAFF_MIN_GAP_SECONDS = 0;
-
 	/**
-	 * Staff face/card clock. First detection of the day is IN.
-	 * A later detection while still inside is OUT. After OUT they may IN once more.
-	 * Nobody may IN more than twice in a calendar day.
+	 * Staff face/card clock. Same rule as the web staff scanner:
+	 * first look of the calendar day is IN; every later look is OUT and overwrites time_out.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -408,7 +404,7 @@ class AttendanceScanService
 		$todayStart = strtotime('today', $time);
 		$todayEnd = strtotime('tomorrow', $time) - 1;
 
-		$rows = $db->table('attendance_records')
+		$attendance = $db->table('attendance_records')
 			->where('user_id', (int) $staff->id)
 			->where('user_type', 1)
 			->where('school_id', $schoolId)
@@ -417,58 +413,32 @@ class AttendanceScanService
 			->orderBy('time_in', 'ASC')
 			->orderBy('id', 'ASC')
 			->get()
-			->getResult();
+			->getRow();
 
-		$inCount = count($rows);
-		$open = null;
-		foreach ($rows as $row) {
-			if ((int) ($row->time_out ?? 0) === 0) {
-				$open = $row;
-			}
-		}
-
-		$wanted = strtoupper(trim($wanted));
-		if ($wanted !== 'IN' && $wanted !== 'OUT') {
-			$wanted = '';
-		}
-
-		if ($open) {
-			if (((int) $open->time_in + self::STAFF_MIN_GAP_SECONDS) > $time) {
-				return self::staffClockPayload(
-					$staff, 'IN', (int) $open->time_in, $window, $shift,
-					StaffShiftClock::evaluateIn((int) $open->time_in, $window),
-					true, $inCount, 'Already checked IN'
-				);
-			}
-			$db->table('attendance_records')
-				->where('id', $open->id)
-				->update(['time_out' => $time]);
+		if (!$attendance) {
+			$db->table('attendance_records')->insert([
+				'user_id' => (int) $staff->id,
+				'user_type' => 1,
+				'time_in' => $time,
+				'time_out' => 0,
+				'school_id' => $schoolId,
+				'area_id' => 0,
+				'shift_id' => (int) ($staff->shift_id ?? 0),
+			]);
 			return self::staffClockPayload(
-				$staff, 'OUT', $time, $window, $shift,
-				StaffShiftClock::evaluateOut($time, $window),
-				false, $inCount, 'Already checked IN — now OUT'
+				$staff, 'IN', $time, $window, $shift,
+				StaffShiftClock::evaluateIn($time, $window),
+				false, 1
 			);
 		}
 
-		if ($inCount >= self::STAFF_MAX_IN_PER_DAY) {
-			return self::staffRejectPayload(
-				$staff, 'Already checked IN twice today', 'OUT', $time, $window, $shift, $inCount
-			);
-		}
-
-		$db->table('attendance_records')->insert([
-			'user_id' => (int) $staff->id,
-			'user_type' => 1,
-			'time_in' => $time,
-			'time_out' => 0,
-			'school_id' => $schoolId,
-			'area_id' => 0,
-			'shift_id' => (int) ($staff->shift_id ?? 0),
-		]);
+		$db->table('attendance_records')
+			->where('id', $attendance->id)
+			->update(['time_out' => $time]);
 		return self::staffClockPayload(
-			$staff, 'IN', $time, $window, $shift,
-			StaffShiftClock::evaluateIn($time, $window),
-			false, $inCount + 1
+			$staff, 'OUT', $time, $window, $shift,
+			StaffShiftClock::evaluateOut($time, $window),
+			false, 1, 'Staff OUT'
 		);
 	}
 
@@ -511,23 +481,6 @@ class AttendanceScanService
 			'person' => $person,
 			'staff' => $person,
 		];
-	}
-
-	/**
-	 * @param object $staff
-	 * @param array<string,mixed> $window
-	 * @param array<string,mixed>|null $shift
-	 * @return array<string,mixed>
-	 */
-	private static function staffRejectPayload($staff, string $message, string $status, int $time, array $window, $shift, int $inCount): array
-	{
-		$out = self::staffClockPayload(
-			$staff, $status, $time, $window, $shift,
-			['code' => 'none', 'label' => '', 'detail' => '', 'minutes' => 0],
-			true, $inCount, $message
-		);
-		$out['success'] = 0;
-		return $out;
 	}
 
 	/**
@@ -770,9 +723,15 @@ class AttendanceScanService
 		if (preg_match('/^T(\d+)$/', $sn, $m)) {
 			$staffId = (int) $m[1];
 			self::enrollFaceFromHeyStar($schoolId, $staffId, self::payloadImage($in));
-			// Ignore device Check-In/Out/Break direction. Clock like the web staff
-			// scanner: first look = IN, next = OUT, using the staff shift window.
-			return array_merge($ack, self::scanStaff($schoolId, $staffId, $eventTime));
+			// Ignore device Check-In/Out/Break direction. First look = IN, later looks
+			// overwrite OUT (same as the web staff scanner). Shift is used for late/overtime.
+			$clock = self::scanStaff($schoolId, $staffId, $eventTime);
+			HeyStarSyncService::announceClock(
+				$schoolId,
+				(string) (($clock['person']['name'] ?? $clock['staff']['name'] ?? '')),
+				(string) ($clock['status'] ?? '')
+			);
+			return array_merge($ack, $clock);
 		}
 
 		return $ack;

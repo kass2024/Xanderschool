@@ -56,4 +56,35 @@ class HeyStarClient
 	{
 		return (string) ($res['code'] ?? '') === '000';
 	}
+
+	/**
+	 * Show IN/OUT on the live camera and speak it (LAN HTTP device/output type 4).
+	 */
+	public function announceClock(string $name, string $status): array
+	{
+		$status = strtoupper(trim($status)) === 'OUT' ? 'OUT' : 'IN';
+		$safe = trim(preg_replace('/[^A-Za-z0-9 ]+/', ' ', $name) ?? '');
+		$safe = trim(preg_replace('/\s+/', ' ', $safe) ?? '');
+		$line = trim($safe . ' ' . $status);
+		if ($line === '') {
+			$line = $status;
+		}
+		$content = json_encode([
+			'ttsContent' => $line,
+			'displayContent' => $line,
+		], JSON_UNESCAPED_UNICODE);
+		return $this->post('device/output', [
+			'type' => 4,
+			'content' => is_string($content) ? $content : ('{"ttsContent":"' . $status . '","displayContent":"' . $status . '"}'),
+		], 2);
+	}
+
+	public static function isPrivateIp(string $ip): bool
+	{
+		$ip = trim($ip);
+		if ($ip === '127.0.0.1' || $ip === '::1') {
+			return true;
+		}
+		return (bool) preg_match('/^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $ip);
+	}
 }

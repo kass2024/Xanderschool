@@ -115,9 +115,14 @@ def main() -> int:
         except Exception as e:
             print("logo skip", e)
 
-    record = f"{WEB_BASE}/api/heystar_record?school_id={SCHOOL_ID}"
+    record_vps = f"{WEB_BASE}/api/heystar_record?school_id={SCHOOL_ID}"
     person = f"{WEB_BASE}/api/heystar_person?school_id={SCHOOL_ID}"
     beat = f"{WEB_BASE}/api/heystar_heartbeat?school_id={SCHOOL_ID}"
+    relay = os.environ.get("HEYSTAR_RELAY", "").rstrip("/")
+    record = f"{relay}/record?school_id={SCHOOL_ID}" if relay else record_vps
+    if relay:
+        print("record relay", record, "->", record_vps)
+
 
     steps = [
         (
@@ -158,12 +163,14 @@ def main() -> int:
         (
             "device/setRecConfig",
             {
-                "recSucTtsMode": 2,
+                "recSucTtsMode": 100,
+                "recSucTtsCustom": "{name}",
                 "recSucDisplayMode": 100,
                 "recSucDisplayCustom": "{name}",
                 "recStrangerEnable": 1,
                 "recIsStrangerTimes": 2,
-                "recStrangerTtsMode": 2,
+                "recStrangerTtsMode": 100,
+                "recStrangerTtsCustom": "Not found",
                 "recStrangerDisplayMode": 100,
                 "recStrangerDisplayCustom": "Not found",
                 "recStrangerOpenDoor": 0,
@@ -177,7 +184,7 @@ def main() -> int:
             "device/setCstConfig",
             {
                 "attendance_direction_enable": False,
-                "recognize_result_countdown": 1500,
+                "recognize_result_countdown": 3500,
             },
         ),
     ]
@@ -206,7 +213,8 @@ def main() -> int:
     print("merged staff", merged, "errors", errors[:8])
     print("urls", record)
     print("LED: always-on OFF, stranger RED, match uses device green")
-    print("camera always ready: Select Direction overlay OFF; IN/OUT follows Xander staff shift")
+    print("camera always ready: Select Direction overlay OFF; first look IN, later looks overwrite OUT")
+    print("voice: custom TTS on match; IN/OUT spoken and shown after the Xander clock")
     return 0
 
 

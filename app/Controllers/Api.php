@@ -3883,12 +3883,17 @@ public function permission_card_scan()
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 		$in = $this->heystarInput();
 		$out = AttendanceScanService::ingestHeyStarRecord($in);
+		$status = strtoupper((string) ($out['status'] ?? ''));
+		$name = trim((string) (($out['person']['name'] ?? $out['staff']['name'] ?? '')));
+		$line = trim($name . ' ' . $status);
 		return $this->response->setJSON([
 			'result' => 1,
 			'code' => '000',
 			'success' => (int) ($out['success'] ?? 1),
 			'message' => (string) ($out['message'] ?? ''),
-			'status' => (string) ($out['status'] ?? ''),
+			'status' => $status,
+			'ttsContent' => $line !== '' ? $line : $status,
+			'displayContent' => $line !== '' ? $line : $status,
 		]);
 	}
 
