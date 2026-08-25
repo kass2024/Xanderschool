@@ -18,7 +18,30 @@ class HeyStarSyncService
 		if (!$dev || trim((string) ($dev['device_ip'] ?? '')) === '') {
 			return ['success' => 0, 'message' => 'Save the HeyStar device IP in School Settings first.'];
 		}
-		$client = new HeyStarClient((string) $dev['device_ip'], (string) ($dev['password'] ?? '123456'));
+		$ip = trim((string) $dev['device_ip']);
+		if (HeyStarClient::isPrivateIp($ip) && !self::phpOnSchoolLan()) {
+			HeyStarDeviceStore::requestStaffSync($schoolId);
+			$count = count(AttendanceScanService::staffList($schoolId));
+			return [
+				'success' => 1,
+				'queued' => 1,
+				'staff' => $count,
+				'message' => "Sync queued for {$count} staff. The school-LAN helper pushes names to the terminal as soon as it is online. New staff are auto-synced — no extra tap needed.",
+				'errors' => [],
+			];
+		}
+		$client = new HeyStarClient($ip, (string) ($dev['password'] ?? '123456'));
+		$ping = $client->post('device/getConfig', ['type' => 1], 4);
+		if (!$client->ok($ping) && (string) ($ping['code'] ?? '') === 'ERR') {
+			HeyStarDeviceStore::requestStaffSync($schoolId);
+			return [
+				'success' => 1,
+				'queued' => 1,
+				'staff' => 0,
+				'message' => 'Terminal not reachable from this server. Names are queued and will auto-sync on the school LAN.',
+				'errors' => [(string) ($ping['msg'] ?? 'unreachable')],
+			];
+		}
 		$base = rtrim(base_url(), '/');
 		$upload = $base . '/api/heystar_record?school_id=' . $schoolId;
 		$heartbeat = $base . '/api/heystar_heartbeat?school_id=' . $schoolId;
@@ -78,6 +101,7 @@ class HeyStarSyncService
 			$staff++;
 		}
 
+		HeyStarDeviceStore::markStaffSynced($schoolId);
 		return [
 			'success' => 1,
 			'message' => "Branded HeyStar as {$brand['name']}. Synced {$staff} staff names. Capture faces on the terminal — photos upload to the VPS.",
@@ -106,12 +130,7 @@ class HeyStarSyncService
 		if ($ip === '') {
 			return;
 		}
-		$serverAddr = (string) ($_SERVER['SERVER_ADDR'] ?? '');
-		$phpOnSchoolLan = $serverAddr !== '' && (
-			(bool) preg_match('/^10\./', $serverAddr)
-			|| (bool) preg_match('/^192\.168\./', $serverAddr)
-		);
-		if (HeyStarClient::isPrivateIp($ip) && !$phpOnSchoolLan) {
+		if (HeyStarClient::isPrivateIp($ip) && !self::phpOnSchoolLan()) {
 			return;
 		}
 		try {
@@ -157,19 +176,50 @@ class HeyStarSyncService
 		}
 		$uiRes = $client->post('device/setUiConfig', $ui, 60);
 		$recRes = $client->post('device/setRecConfig', [
-			'recSucTtsMode' => 2,
+			'recSucTtsMode' => 100,
+			'recSucTtsCustom' => '{name}',
 			'recSucDisplayMode' => 100,
 			'recSucDisplayCustom' => '{name}',
 			'recRecordUploadMode' => 2,
 			'recRecordSave' => 1,
 			'recStrangerEnable' => 1,
 			'recIsStrangerTimes' => 2,
-			'recStrangerTtsMode' => 2,
+			'recStrangerTtsMode' => 100,
+			'recStrangerTtsCustom' => 'Not found',
 			'recStrangerDisplayMode' => 100,
 			'recStrangerDisplayCustom' => 'Not found',
 			'recStrangerOpenDoor' => 0,
 		], 25);
 		return ['name' => $name, 'ui' => $uiRes, 'rec' => $recRes];
+	}
+
+	public static function phpOnSchoolLan(): bool
+	{
+		$serverAddr = (string) ($_SERVER['SERVER_ADDR'] ?? '');
+		return $serverAddr !== '' && (
+			(bool) preg_match('/^10\./', $serverAddr)
+			|| (bool) preg_match('/^192\.168\./', $serverAddr)
+		);
+	}
+
+	/**
+	 * @return list<array{id:int,sn:string,name:string}>
+	 */
+	public static function staffRoster(int $schoolId): array
+	{
+		$out = [];
+		foreach (AttendanceScanService::staffList($schoolId) as $p) {
+			$id = (int) ($p['id'] ?? 0);
+			if ($id <= 0) {
+				continue;
+			}
+			$out[] = [
+				'id' => $id,
+				'sn' => 'T' . $id,
+				'name' => self::safeName((string) ($p['name'] ?? '')),
+			];
+		}
+		return $out;
 	}
 
 	private static function schoolLogoBase64(string $stored): string

@@ -163,14 +163,16 @@ def main() -> int:
         (
             "device/setRecConfig",
             {
-                "recSucTtsMode": 2,
+                "recSucTtsMode": 100,
+                "recSucTtsCustom": "{name}",
                 "recSucDisplayMode": 100,
                 "recSucDisplayCustom": "{name}",
                 "recRecordUploadMode": 2,
                 "recRecordSave": 1,
                 "recStrangerEnable": 1,
                 "recIsStrangerTimes": 2,
-                "recStrangerTtsMode": 2,
+                "recStrangerTtsMode": 100,
+                "recStrangerTtsCustom": "Not found",
                 "recStrangerDisplayMode": 100,
                 "recStrangerDisplayCustom": "Not found",
                 "recStrangerOpenDoor": 0,
@@ -215,7 +217,7 @@ def main() -> int:
     print("urls", record)
     print("LED: always-on OFF, stranger RED, match uses device green")
     print("camera always ready: Select Direction overlay OFF; first look IN, later looks overwrite OUT")
-    print("voice: built-in announce-name; CLOCK IN/OUT overlay is local and works offline")
+    print("voice: Android TTS name + CLOCK IN/OUT overlay; staff names auto-sync from Xander")
     return 0
 
 

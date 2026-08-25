@@ -52,21 +52,39 @@ def device_cgi(path: str, body, timeout: int = 8):
         return json.loads(resp.read().decode("utf-8", "replace"))
 
 
+AUDIO_SH = (
+    "tinymix 0 SPK;"
+    "settings put system volume_music 15;"
+    "settings put system volume_ring 7;"
+    "settings put system volume_alarm 7;"
+    "settings put system volume_notification 7;"
+    "settings put secure tts_default_synth com.google.android.tts;"
+    "settings put global dock_audio_media_enabled 0"
+)
+
+
 def speaker_on() -> None:
     try:
         subprocess.run(
-            ["adb", "shell", "tinymix", "0", "SPK"],
-            timeout=8,
+            ["adb", "shell", AUDIO_SH],
+            timeout=10,
             capture_output=True,
         )
     except Exception:
-        pass
+        try:
+            subprocess.run(
+                ["adb", "shell", "tinymix", "0", "SPK"],
+                timeout=8,
+                capture_output=True,
+            )
+        except Exception:
+            pass
 
 
 def keep_speaker_loud() -> None:
     while True:
         speaker_on()
-        time.sleep(3)
+        time.sleep(2)
 
 
 def today() -> str:
@@ -255,6 +273,111 @@ def retry_uploads() -> None:
             print("retry", exc)
 
 
+def vps_get(path: str, timeout: int = 20):
+    url = VPS + path
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
+
+
+def vps_post(path: str, body: dict, timeout: int = 20):
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        path if path.startswith("http") else (VPS + path),
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
+
+
+def device_persons() -> dict:
+    found = {}
+    index = 1
+    while index <= 30:
+        j = device_cgi("person/findList", {"index": index, "length": 40}, timeout=12)
+        rows = j.get("data") or []
+        if isinstance(rows, dict):
+            rows = [rows]
+        if not rows:
+            break
+        for row in rows:
+            sn = str(row.get("sn") or "").strip()
+            if sn:
+                found[sn] = str(row.get("name") or "").strip()
+        if len(rows) < 40:
+            break
+        index += 1
+    return found
+
+
+def apply_voice_config() -> None:
+    try:
+        device_cgi(
+            "device/setRecConfig",
+            {
+                "recSucTtsMode": 100,
+                "recSucTtsCustom": "{name}",
+                "recSucDisplayMode": 100,
+                "recSucDisplayCustom": "{name}",
+                "recRecordUploadMode": 2,
+                "recRecordSave": 1,
+                "recStrangerEnable": 1,
+                "recIsStrangerTimes": 2,
+                "recStrangerTtsMode": 100,
+                "recStrangerTtsCustom": "Not found",
+            },
+            timeout=12,
+        )
+    except Exception as exc:
+        print("voice cfg", exc)
+
+
+def sync_staff_once() -> int:
+    payload = vps_get(f"/api/heystar_staff?school_id={SCHOOL_ID}")
+    staff = payload.get("staff") or []
+    existing = {}
+    try:
+        existing = device_persons()
+    except Exception as exc:
+        print("person list", exc)
+        return 0
+    merged = 0
+    for person in staff:
+        sn = str(person.get("sn") or "")
+        name = str(person.get("name") or "Person")[:60]
+        if not sn.startswith("T"):
+            continue
+        if existing.get(sn) == name:
+            continue
+        res = device_cgi(
+            "person/merge",
+            {"type": 1, "sn": sn, "name": name, "verifyStyle": 1},
+            timeout=10,
+        )
+        if str(res.get("code") or "") == "000":
+            merged += 1
+            print("staff merge", sn, name)
+    try:
+        vps_post("/api/heystar_staff_synced", {"school_id": int(SCHOOL_ID)})
+    except Exception:
+        pass
+    return merged
+
+
+def sync_staff_loop() -> None:
+    time.sleep(4)
+    apply_voice_config()
+    while True:
+        try:
+            n = sync_staff_once()
+            print("staff sync merged", n)
+        except Exception as exc:
+            print("staff sync", exc)
+        time.sleep(25)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         print("relay", self.address_string(), fmt % args)
@@ -303,6 +426,7 @@ def main() -> int:
     threading.Thread(target=keep_speaker_loud, daemon=True).start()
     threading.Thread(target=poll_device_records, daemon=True).start()
     threading.Thread(target=retry_uploads, daemon=True).start()
+    threading.Thread(target=sync_staff_loop, daemon=True).start()
     httpd = ThreadingHTTPServer((LISTEN, PORT), Handler)
     print("heystar overlay+offline", f"http://{LISTEN}:{PORT}/record", "device", f"{DEVICE_IP}:{DEVICE_PORT}")
     httpd.serve_forever()

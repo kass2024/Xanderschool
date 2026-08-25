@@ -7040,6 +7040,7 @@ public function attendanceCard()
 				$update_v = $update_v_data->version;
 			$id = $staffMdl->insert(array("school_id" => $school_id, "fname" => $fname, "lname" => $lname, "phone" => $phone, "email" => $email, "password" => password_hash($default_password, PASSWORD_DEFAULT)
 			, "status" => 2, "post" => $post, "shift_id" => $shift > 0 ? $shift : 0, "country" => $country, "city" => $city, "address" => $address, "updateVersion" => $update_v));
+			HeyStarDeviceStore::requestStaffSync((int) $school_id);
 			$name = $fname . " " . strtoupper(substr($lname, 0, 1)) . ".";
 			//send notification EMAIL and SMS
 			$msg = lang("app.dear") . " $name" . lang("app.accountIsCreated") . ", \nEmail: "
@@ -9160,6 +9161,9 @@ public function getApplicationDocs($id = null)
 			$i++;
 		}
 
+		if ($imported > 0) {
+			HeyStarDeviceStore::requestStaffSync((int) $school_id);
+		}
 		$msg = $imported . ' staff imported successfully';
 		if ($skipped > 0) {
 			$msg .= ' (' . $skipped . ' skipped — duplicate email or invalid privilege)';

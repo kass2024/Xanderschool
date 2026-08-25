@@ -70,7 +70,7 @@ $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 <ol class="small text-muted pl-3 mb-3">
 	<li>On HeyStar: Settings (password 123456) → Communication → LAN + HTTP.</li>
 	<li>Paste the three VPS URLs below (they include the school ID). Turn <strong>snapshot upload</strong> on. Identification mode: face on, card off.</li>
-	<li>Save the device IP here, then Sync staff names from a PC on the school LAN.</li>
+	<li>Save the device IP here. Names auto-sync from the school LAN. Use Sync staff names to force a full refresh.</li>
 	<li>On HeyStar, register a face for each staff member. Leave the live camera on — do not tap Check-In / Check-Out. IN/OUT follows the same staff-shift rules as the web scanner.</li>
 </ol>
 <div class="small" style="max-width:640px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem">
@@ -79,7 +79,7 @@ $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 		<li><strong>Daily IN/OUT:</strong> stand still in front of the camera. One <strong>IN</strong> per day. Wait <strong>5 minutes</strong> after IN before the next look can be <strong>OUT</strong>. Later looks overwrite the out time. The screen shows IN or OUT and the terminal speaks it. Green = found. Red = not found.</li>
 		<li><strong>First-time face:</strong> HeyStar Settings (password <code>123456</code>) → User Management → pick the staff name → register face (look at the camera until it saves).</li>
 		<li><strong>School:</strong> this terminal uses the School ID below. WISDOM SCHOOL RWANDA is <strong>27</strong>. Clocks appear on Staff IN/OUT reports on the web.</li>
-		<li><strong>New staff:</strong> add them on Xander first, then tap <em>Sync staff names to HeyStar</em> from a PC on the school Wi‑Fi, then register their face on the terminal.</li>
+		<li><strong>New staff:</strong> add them on Xander. Names auto-sync to this terminal when the school network is up. Then register their face on the terminal.</li>
 	</ol>
 	<p class="mb-0 text-muted">Keep the terminal on the school Wi‑Fi so clocks upload to the VPS. Card tap is for students on the other Xander app, not this HeyStar.
 		<a href="<?= base_url('heystar-staff-guide.html'); ?>" target="_blank" rel="noopener">Open full guide</a>
@@ -150,11 +150,23 @@ $(function () {
 	});
 	$('#hsSync').on('click', function () {
 		hsTell(true, 'Syncing…');
-		$.post('<?= base_url('manipulate_heystar_device'); ?>', hsPayload('sync'), function (res) {
-			var extra = (res.errors && res.errors.length) ? (' ' + res.errors.join('; ')) : '';
-			hsTell(!!res.success, (res.message || res.error || 'Done') + extra);
-		}, 'json').fail(function () {
-			hsTell(false, 'Sync failed. Is HeyStar running on the terminal (port 8090)?');
+		$.ajax({
+			url: '<?= base_url('manipulate_heystar_device'); ?>',
+			type: 'POST',
+			data: hsPayload('sync'),
+			dataType: 'json',
+			timeout: 25000,
+			success: function (res) {
+				var extra = (res.errors && res.errors.length) ? (' ' + res.errors.join('; ')) : '';
+				hsTell(!!res.success, (res.message || res.error || 'Done') + extra);
+			},
+			error: function (_xhr, status) {
+				if (status === 'timeout') {
+					hsTell(true, 'Sync is queued. New staff will appear on the terminal automatically on the school network.');
+					return;
+				}
+				hsTell(false, 'Sync failed. Is HeyStar running on the terminal (port 8090)?');
+			}
 		});
 	});
 });

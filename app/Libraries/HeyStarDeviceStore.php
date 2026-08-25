@@ -32,7 +32,29 @@ class HeyStarDeviceStore
 			PRIMARY KEY (`id`),
 			UNIQUE KEY `uk_heystar_rec` (`school_id`, `record_id`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		if (!$db->fieldExists('staff_sync_requested', 'heystar_devices')) {
+			$db->query('ALTER TABLE `heystar_devices` ADD COLUMN `staff_sync_requested` INT UNSIGNED NOT NULL DEFAULT 0');
+		}
+		if (!$db->fieldExists('staff_sync_done', 'heystar_devices')) {
+			$db->query('ALTER TABLE `heystar_devices` ADD COLUMN `staff_sync_done` INT UNSIGNED NOT NULL DEFAULT 0');
+		}
 		$ready = true;
+	}
+
+	public static function requestStaffSync(int $schoolId): void
+	{
+		if ($schoolId <= 0) {
+			return;
+		}
+		self::save($schoolId, ['staff_sync_requested' => time()]);
+	}
+
+	public static function markStaffSynced(int $schoolId): void
+	{
+		if ($schoolId <= 0) {
+			return;
+		}
+		self::save($schoolId, ['staff_sync_done' => time()]);
 	}
 
 	/**
@@ -87,6 +109,12 @@ class HeyStarDeviceStore
 		];
 		if (isset($data['last_seen'])) {
 			$row['last_seen'] = (int) $data['last_seen'];
+		}
+		if (isset($data['staff_sync_requested'])) {
+			$row['staff_sync_requested'] = (int) $data['staff_sync_requested'];
+		}
+		if (isset($data['staff_sync_done'])) {
+			$row['staff_sync_done'] = (int) $data['staff_sync_done'];
 		}
 		if ($existing) {
 			$db->table('heystar_devices')->where('id', $existing['id'])->update($row);

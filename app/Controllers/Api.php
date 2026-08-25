@@ -27,6 +27,8 @@ use App\Models\SchoolModel;
 use App\Models\SmsModel;
 use App\Models\SmsRecipientModel;
 use App\Libraries\AttendanceScanService;
+use App\Libraries\HeyStarDeviceStore;
+use App\Libraries\HeyStarSyncService;
 use App\Models\StaffModel;
 use App\Models\StudentModel;
 use App\Models\StudentVisitorModel;
@@ -3945,6 +3947,40 @@ public function permission_card_scan()
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 		AttendanceScanService::ingestHeyStarPerson($this->heystarInput());
 		return $this->response->setJSON(['result' => 1, 'code' => '000']);
+	}
+
+	/**
+	 * Staff roster for the school-LAN helper (auto-sync names to HeyStar).
+	 */
+	public function heystar_staff()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$in = $this->heystarInput();
+		$schoolId = (int) ($in['school_id'] ?? 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'staff' => []]);
+		}
+		HeyStarDeviceStore::ensureSchema();
+		$dev = HeyStarDeviceStore::forSchool($schoolId);
+		$requested = (int) ($dev['staff_sync_requested'] ?? 0);
+		$done = (int) ($dev['staff_sync_done'] ?? 0);
+		return $this->response->setJSON([
+			'success' => 1,
+			'school_id' => $schoolId,
+			'staff' => HeyStarSyncService::staffRoster($schoolId),
+			'need_sync' => ($requested === 0 || $requested >= $done) ? 1 : 0,
+			'sync_requested' => $requested,
+			'sync_done' => $done,
+		]);
+	}
+
+	public function heystar_staff_synced()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$in = $this->heystarInput();
+		$schoolId = (int) ($in['school_id'] ?? 0);
+		HeyStarDeviceStore::markStaffSynced($schoolId);
+		return $this->response->setJSON(['code' => '000', 'success' => 1]);
 	}
 
 	/**
