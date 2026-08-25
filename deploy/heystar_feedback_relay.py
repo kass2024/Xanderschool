@@ -8,13 +8,16 @@ records on the device and retries upload when the network is back.
 from __future__ import annotations
 
 import json
+import math
 import os
+import struct
 import subprocess
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import wave
 from base64 import b64encode
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -31,6 +34,10 @@ SCHOOL_ID = os.environ.get("HEYSTAR_SCHOOL_ID", "27")
 OUT_AFTER_IN = 300
 STATE_FILE = Path(__file__).with_name("heystar_clock_state.json")
 QUEUE_FILE = Path(__file__).with_name("heystar_upload_queue.jsonl")
+BEEP_OK = Path(__file__).with_name("heystar_ok.wav")
+BEEP_BAD = Path(__file__).with_name("heystar_bad.wav")
+REMOTE_OK = "/data/local/tmp/heystar_ok.wav"
+REMOTE_BAD = "/data/local/tmp/heystar_bad.wav"
 
 state_lock = threading.Lock()
 cgi_lock = threading.Lock()
@@ -55,12 +62,11 @@ def device_cgi(path: str, body, timeout: int = 8):
 
 
 AUDIO_SH = (
-    "tinymix 0 SPK;"
+    "tinymix 0 RING_SPK;"
     "settings put system volume_music 15;"
     "settings put system volume_ring 7;"
     "settings put system volume_alarm 7;"
     "settings put system volume_notification 7;"
-    "settings put secure tts_default_synth com.google.android.tts;"
     "settings put global dock_audio_media_enabled 0"
 )
 
@@ -75,7 +81,7 @@ def speaker_on() -> None:
     except Exception:
         try:
             subprocess.run(
-                ["adb", "shell", "tinymix", "0", "SPK"],
+                ["adb", "shell", "tinymix", "0", "RING_SPK"],
                 timeout=8,
                 capture_output=True,
             )
@@ -87,6 +93,54 @@ def keep_speaker_loud() -> None:
     while True:
         speaker_on()
         time.sleep(2)
+
+
+def write_beep(path: Path, freq: float, seconds: float = 0.45) -> None:
+    sr = 44100
+    n = int(sr * seconds)
+    with wave.open(str(path), "w") as wav:
+        wav.setnchannels(2)
+        wav.setsampwidth(2)
+        wav.setframerate(sr)
+        frames = bytearray()
+        fade = 900
+        for i in range(n):
+            env = 1.0
+            if i < fade:
+                env = i / fade
+            elif i > n - fade:
+                env = max(0.0, (n - i) / fade)
+            sample = int(0.95 * 32767 * env * math.sin(2 * math.pi * freq * i / sr))
+            frames += struct.pack("<hh", sample, sample)
+        wav.writeframes(bytes(frames))
+
+
+def ensure_beeps() -> None:
+    write_beep(BEEP_OK, 880, 0.4)
+    write_beep(BEEP_BAD, 220, 0.55)
+    try:
+        subprocess.run(["adb", "push", str(BEEP_OK), REMOTE_OK], timeout=15, capture_output=True)
+        subprocess.run(["adb", "push", str(BEEP_BAD), REMOTE_BAD], timeout=15, capture_output=True)
+        print("beeps pushed")
+    except Exception as exc:
+        print("beep push", exc)
+
+
+def play_beep(kind: str) -> None:
+    remote = REMOTE_OK if kind == "ok" else REMOTE_BAD
+
+    def _run() -> None:
+        try:
+            subprocess.run(["adb", "shell", "tinymix", "0", "RING_SPK"], timeout=6, capture_output=True)
+            subprocess.run(
+                ["adb", "shell", "tinyplay", remote, "-D", "0", "-d", "0"],
+                timeout=8,
+                capture_output=True,
+            )
+        except Exception as exc:
+            print("beep", kind, exc)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def today() -> str:
@@ -136,6 +190,7 @@ def announce(status: str) -> None:
     status = "OUT" if str(status).upper() == "OUT" else "IN"
     label = "CLOCK OUT" if status == "OUT" else "CLOCK IN"
     speaker_on()
+    play_beep("ok")
     content = json.dumps({"displayContent": label})
     try:
         device_cgi("device/output", {"type": 1}, timeout=1.5)
@@ -199,16 +254,23 @@ def poll_device_records() -> None:
         try:
             now_ms = int(time.time() * 1000)
             rows = fetch_records(now_ms - 180000, now_ms + 60000, 8, 0)
-            fresh = []
+            batch = []
+            max_id = last_id
             for row in rows:
                 rid = int(row.get("id") or 0)
+                if rid <= last_id:
+                    continue
+                max_id = max(max_id, rid)
+                batch.append(row)
+            last_id = max_id
+            batch.sort(key=lambda r: int(r.get("id") or 0))
+            for row in batch:
                 sn = str(row.get("personSn") or "")
-                if rid > last_id and sn.startswith("T"):
-                    fresh.append(row)
-                    last_id = max(last_id, rid)
-            fresh.sort(key=lambda r: int(r.get("id") or 0))
-            for row in fresh:
-                sn = str(row.get("personSn") or "")
+                stranger = int(row.get("strangerFlag") or 0) == 1 or int(row.get("resultFlag") or 1) == 2
+                if stranger or not sn.startswith("T"):
+                    play_beep("bad")
+                    print("announce RED")
+                    continue
                 name = str(row.get("personName") or "")
                 with state_lock:
                     status, already = decide(sn, record_ts(row), name)
@@ -438,6 +500,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    ensure_beeps()
+    play_beep("ok")
     threading.Thread(target=keep_speaker_loud, daemon=True).start()
     threading.Thread(target=poll_device_records, daemon=True).start()
     threading.Thread(target=retry_uploads, daemon=True).start()
