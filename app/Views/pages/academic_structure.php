@@ -223,9 +223,9 @@
 			$('#levelBadge').text('all TVET');
 			$('#facHint').text('TVET sector');
 		} else if (program === 3) {
-			$('#asNote').html('<strong>Special:</strong> Faculty and department are both <strong>Nursing ANP</strong>. Choose the level when creating a class.');
+			$('#asNote').html('<strong>Special:</strong> Faculty and department are both <strong>Nursing</strong> (code <strong>ANP</strong>). Choose Year 1–3 when creating a class.');
 			$('#levelBadge').text('per faculty');
-			$('#facHint').text('Special path (Nursing ANP)');
+			$('#facHint').text('Special path (Nursing / ANP)');
 		} else {
 			$('#asNote').html('<strong>REB:</strong> All departments under a faculty share the same levels (e.g. S4–S6). Choose the level when creating a class.');
 			$('#levelBadge').text('per faculty');
