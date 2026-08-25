@@ -602,6 +602,7 @@
 																<option disabled selected>-- Choose program --</option>
 																<option value="2">REB</option>
 																<option value="1">RTB</option>
+																<option value="3">Special</option>
 															</select>
 														</div>
 														<div class="form-group" id="schoolSelectWrap" <?= $lockedSchoolId > 0 ? 'style="display:none;"' : ''; ?>>

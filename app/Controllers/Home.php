@@ -314,14 +314,42 @@ public function testEmail()
 		return strpos($hay, 'holiday') !== false;
 	}
 
-	private function isStreamDepartmentTitle(?string $title): bool
+	private function isStreamDepartmentTitle(?string $title, ?string $code = null): bool
 	{
+		$c = strtoupper(trim((string) $code));
+		if (in_array($c, ['STR', 'ST1', 'ST2'], true)) {
+			return true;
+		}
 		$t = strtolower(trim((string) $title));
-		if ($t === '') {
+		return (bool) preg_match('/^stream(\s*(one|two|1|2))?$/', $t);
+	}
+
+	/** 1 = Stream 1, 2 = Stream 2, 0 = generic Stream (both tracks). */
+	private function streamDepartmentTrack(?string $title, ?string $code = null): int
+	{
+		$hay = strtolower(trim((string) $title . ' ' . (string) $code));
+		if (preg_match('/\b(st2|stream\s*(two|2))\b/', $hay)) {
+			return 2;
+		}
+		if (preg_match('/\b(st1|stream\s*(one|1))\b/', $hay)) {
+			return 1;
+		}
+		return 0;
+	}
+
+	private function classMatchesStreamTrack(array $row, int $track): bool
+	{
+		if (!$this->isStreamTrackClass($row) || $this->isSeniorLetterClass($row)) {
 			return false;
 		}
-		return $t === 'stream'
-			|| (bool) preg_match('/^stream\s*(one|two|1|2)$/', $t);
+		if ($track === 0) {
+			return true;
+		}
+		$hay = strtolower(trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '')));
+		if ($track === 1) {
+			return (bool) preg_match('/stream\s*(one|1)\b/', $hay);
+		}
+		return (bool) preg_match('/stream\s*(two|2)\b/', $hay);
 	}
 
 	/** Stream one / Stream two class names used by the Stream department. */
@@ -1551,6 +1579,7 @@ public function testEmail()
 		$staffMdl = new StaffModel();
 		$classMdl = new ClassesModel();
 		$data['title'] = lang("app.addNewClass");
+		$faculty->ensureSpecialNursingAnp();
 		$data['classes'] = $classMdl->get_classes();
 		$data['faculty'] = $faculty->get()->getResultArray();
 		$data['staffs'] = $staffMdl->where("school_id", $this->session->get("soma_school_id"))->get()->getResultArray();
@@ -1596,8 +1625,12 @@ public function testEmail()
 		$db = \Config\Database::connect();
 		$program = (int) $program;
 
+		if ($program === FacultyModel::TYPE_SPECIAL) {
+			(new FacultyModel())->ensureSpecialNursingAnp();
+		}
+
 		$facBuilder = $db->table('faculty')->select('id, title, abbrev, type, status')->orderBy('title', 'ASC');
-		if ($program === 1 || $program === 2) {
+		if (in_array($program, [FacultyModel::TYPE_TVET, FacultyModel::TYPE_REB, FacultyModel::TYPE_SPECIAL], true)) {
 			$facBuilder->where('type', $program);
 		}
 		$faculties = $facBuilder->get()->getResultArray();
@@ -1648,9 +1681,9 @@ public function testEmail()
 				];
 			}
 
-			// REB: levels belong to faculty (shared by all its departments)
+			// REB + Special: levels belong to faculty (shared by all its departments)
 			$facLevels = [];
-			if ((int) $fac['type'] === 2) {
+			if (in_array((int) $fac['type'], [FacultyModel::TYPE_REB, FacultyModel::TYPE_SPECIAL], true)) {
 				$facLevels = $db->table('levels')->select('id, title, type, faculty_id, department_id, status')
 					->where('faculty_id', $fac['id'])
 					->orderBy('title', 'ASC')
@@ -1687,8 +1720,8 @@ public function testEmail()
 		if ($title === '') {
 			return $this->response->setJSON(['error' => 'Faculty name is required']);
 		}
-		if ($type !== 1 && $type !== 2) {
-			return $this->response->setJSON(['error' => 'Type must be REB (2) or TVET (1)']);
+		if (!in_array($type, [FacultyModel::TYPE_TVET, FacultyModel::TYPE_REB, FacultyModel::TYPE_SPECIAL], true)) {
+			return $this->response->setJSON(['error' => 'Type must be TVET (1), REB (2), or Special (3)']);
 		}
 		$row = [
 			'title' => $title,
@@ -1770,8 +1803,8 @@ public function testEmail()
 		if ($facType === 1 && preg_match('/\b(senior|s4|s5|s6)\b/i', $title)) {
 			return $this->response->setJSON(['error' => 'TVET uses Level 1–5 only (not Senior)']);
 		}
-		if ($facType === 2 && $facultyId <= 0) {
-			return $this->response->setJSON(['error' => 'Select a faculty first — REB levels are shared by all departments under that faculty']);
+		if ($facType !== FacultyModel::TYPE_TVET && $facultyId <= 0) {
+			return $this->response->setJSON(['error' => 'Select a faculty first — levels are shared by all departments under that faculty']);
 		}
 
 		$row = [
@@ -6290,13 +6323,15 @@ public function attendanceCard()
 
 	public static function typeToStr($type)
 	{
-		switch ($type) {
+		switch ((int) $type) {
 			case 1:
 				return lang("app.sWDA");
 			case 2:
 				return lang("app.sREB");
-//			case 3: return "CAMBRIDGE";
+			case 3:
+				return lang("app.sSpecial");
 		}
+		return '';
 	}
 
 	public static function marksTypeToStr($type)
@@ -7145,11 +7180,18 @@ public function attendanceCard()
 
 	public function get_faculty($val)
 	{
-		$faculty = new facultyModel();
+		$faculty = new FacultyModel();
+		if ((int) $val === FacultyModel::TYPE_SPECIAL) {
+			$faculty->ensureSpecialNursingAnp();
+		}
 		$faculities = $faculty->where("type", $val)->get()->getResultArray();
-		echo "<option selected disabled>" . lang("app.select") . "</option>";
+		$autoSelect = ((int) $val === FacultyModel::TYPE_SPECIAL && count($faculities) === 1);
+		if (!$autoSelect) {
+			echo "<option selected disabled>" . lang("app.select") . "</option>";
+		}
 		foreach ($faculities as $data) {
-			echo "<option value='{$data['id']}'>{$data['title']}</option>";
+			$sel = $autoSelect ? ' selected' : '';
+			echo "<option value='{$data['id']}'{$sel}>{$data['title']}</option>";
 		}
 
 	}
@@ -7158,9 +7200,14 @@ public function attendanceCard()
 	{
 		$dept = new DeptModel();
 		$depts = $dept->where("faculty_id", $val)->get()->getResultArray();
-		echo "<option selected disabled>" . lang("app.select") . "</option>";
+		$fac = (new FacultyModel())->select('type')->where('id', (int) $val)->get(1)->getRowArray();
+		$autoSelect = $fac && (int) ($fac['type'] ?? 0) === FacultyModel::TYPE_SPECIAL && count($depts) === 1;
+		if (!$autoSelect) {
+			echo "<option selected disabled>" . lang("app.select") . "</option>";
+		}
 		foreach ($depts as $data) {
-			echo "<option value='{$data['id']}'>{$data['code']}-{$data['title']}</option>";
+			$sel = $autoSelect ? ' selected' : '';
+			echo "<option value='{$data['id']}'{$sel}>{$data['code']}-{$data['title']}</option>";
 		}
 	}
 
@@ -18856,7 +18903,7 @@ public function assign_card()
 					->join("departments d", "d.faculty_id=faculty.id")
 					->join("classes c", "c.department=d.id")
 					->where("c.school_id", $school);
-			if ($programFilter === 1 || $programFilter === 2) {
+			if (in_array($programFilter, [1, 2, 3], true)) {
 				$builder->where("faculty.type", $programFilter);
 			}
 			return $builder
@@ -18866,7 +18913,7 @@ public function assign_card()
 		};
 
 		$faculty = $loadFaculties($program);
-		if (count($faculty) === 0 && ($program === 1 || $program === 2)) {
+		if (count($faculty) === 0 && in_array($program, [1, 2, 3], true)) {
 			$faculty = $loadFaculties(0);
 		}
 		if (count($faculty) === 0) {
@@ -18935,9 +18982,11 @@ public function assign_card()
 			return $this->response->setJSON(['error' => 'Online registration not configured for this school']);
 		}
 		$classMdl = new ClassesModel();
-		$deptRow = (new DeptModel())->select('title')->find($department);
+		$deptRow = (new DeptModel())->select('title, code')->find($department);
 		$deptTitle = is_array($deptRow) ? (string) ($deptRow['title'] ?? '') : '';
-		$isStreamDept = $this->isStreamDepartmentTitle($deptTitle);
+		$deptCode = is_array($deptRow) ? (string) ($deptRow['code'] ?? '') : '';
+		$isStreamDept = $this->isStreamDepartmentTitle($deptTitle, $deptCode);
+		$streamTrack = $this->streamDepartmentTrack($deptTitle, $deptCode);
 		$select = 'classes.id, classes.title, classes.level, classes.department, levels.title as level_name, departments.title as dept_name';
 		$classes = $classMdl->select($select)
 			->join('levels', 'levels.id = classes.level', 'left')
@@ -18958,8 +19007,8 @@ public function assign_card()
 			}));
 		}
 		if ($isStreamDept) {
-			$classes = array_values(array_filter($classes, function ($cls) {
-				return $this->isStreamTrackClass($cls) && !$this->isSeniorLetterClass($cls);
+			$classes = array_values(array_filter($classes, function ($cls) use ($streamTrack) {
+				return $this->classMatchesStreamTrack($cls, $streamTrack);
 			}));
 			$extra = $classMdl->select($select)
 				->join('levels', 'levels.id = classes.level', 'left')
@@ -18980,7 +19029,7 @@ public function assign_card()
 				$seen[(int) $cls['id']] = true;
 			}
 			foreach ($extra as $cls) {
-				if (!$this->isStreamTrackClass($cls) || $this->isSeniorLetterClass($cls)) {
+				if (!$this->classMatchesStreamTrack($cls, $streamTrack)) {
 					continue;
 				}
 				$id = (int) $cls['id'];

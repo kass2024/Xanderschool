@@ -682,8 +682,12 @@ class Admin extends BaseController
 		$db = \Config\Database::connect();
 		$program = (int) $program;
 
+		if ($program === FacultyModel::TYPE_SPECIAL) {
+			(new FacultyModel())->ensureSpecialNursingAnp();
+		}
+
 		$facBuilder = $db->table('faculty')->select('id, title, abbrev, type, status')->orderBy('title', 'ASC');
-		if ($program === 1 || $program === 2) {
+		if (in_array($program, [FacultyModel::TYPE_TVET, FacultyModel::TYPE_REB, FacultyModel::TYPE_SPECIAL], true)) {
 			$facBuilder->where('type', $program);
 		}
 		$faculties = $facBuilder->get()->getResultArray();
@@ -733,7 +737,7 @@ class Admin extends BaseController
 				];
 			}
 			$facLevels = [];
-			if ((int) $fac['type'] === 2) {
+			if (in_array((int) $fac['type'], [FacultyModel::TYPE_REB, FacultyModel::TYPE_SPECIAL], true)) {
 				$facLevels = $db->table('levels')->select('id, title, type, faculty_id, department_id, status')
 					->where('faculty_id', $fac['id'])
 					->orderBy('title', 'ASC')
@@ -769,8 +773,8 @@ class Admin extends BaseController
 		if ($title === '') {
 			return $this->response->setJSON(['error' => 'Faculty name is required']);
 		}
-		if ($type !== 1 && $type !== 2) {
-			return $this->response->setJSON(['error' => 'Type must be REB (2) or TVET (1)']);
+		if (!in_array($type, [FacultyModel::TYPE_TVET, FacultyModel::TYPE_REB, FacultyModel::TYPE_SPECIAL], true)) {
+			return $this->response->setJSON(['error' => 'Type must be TVET (1), REB (2), or Special (3)']);
 		}
 		$row = [
 			'title' => $title,
@@ -852,8 +856,8 @@ class Admin extends BaseController
 		if ($facType === 1 && preg_match('/\b(senior|s4|s5|s6)\b/i', $title)) {
 			return $this->response->setJSON(['error' => 'TVET uses Level 1–5 only (not Senior)']);
 		}
-		if ($facType === 2 && $facultyId <= 0) {
-			return $this->response->setJSON(['error' => 'Select a faculty first — REB levels are shared by all departments under that faculty']);
+		if ($facType !== FacultyModel::TYPE_TVET && $facultyId <= 0) {
+			return $this->response->setJSON(['error' => 'Select a faculty first — levels are shared by all departments under that faculty']);
 		}
 
 		$row = [

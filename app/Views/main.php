@@ -2795,6 +2795,7 @@ if ($page == "add_classes") {
 										<option selected disabled><?= lang("app.selectFaculty"); ?></option>
 										<option value="1"><?= lang("app.wda"); ?></option>
 										<option value="2"><?= lang("app.reb"); ?></option>
+										<option value="3"><?= lang("app.special"); ?></option>
 									</select>
 								</div>
 								<div class="col-sm-12" id="select_faculty">
