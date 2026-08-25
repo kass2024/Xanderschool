@@ -47,6 +47,12 @@ class HeyStarSyncService
 			'recModeFingerEnable' => 0,
 			'recModePalmEnable' => 0,
 		]);
+		// Keep the live camera always ready. IN/OUT is decided on Xander from the
+		// staff shift (same toggle as the web scanner), not Check-In / Check-Out taps.
+		$client->post('device/setCstConfig', [
+			'attendance_direction_enable' => false,
+			'recognize_result_countdown' => 1500,
+		]);
 		$brand = self::applySchoolBranding($client, $schoolId);
 
 		$staff = 0;
@@ -119,7 +125,7 @@ class HeyStarSyncService
 		$recRes = $client->post('device/setRecConfig', [
 			'recSucTtsMode' => 2,
 			'recSucDisplayMode' => 100,
-			'recSucDisplayCustom' => '{name} IN',
+			'recSucDisplayCustom' => '{name}',
 			'recStrangerEnable' => 1,
 			'recIsStrangerTimes' => 2,
 			'recStrangerTtsMode' => 2,

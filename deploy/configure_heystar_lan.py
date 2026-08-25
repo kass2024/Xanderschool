@@ -160,7 +160,7 @@ def main() -> int:
             {
                 "recSucTtsMode": 2,
                 "recSucDisplayMode": 100,
-                "recSucDisplayCustom": "{name} IN",
+                "recSucDisplayCustom": "{name}",
                 "recStrangerEnable": 1,
                 "recIsStrangerTimes": 2,
                 "recStrangerTtsMode": 2,
@@ -172,6 +172,13 @@ def main() -> int:
         (
             "device/setUiConfig",
             ui,
+        ),
+        (
+            "device/setCstConfig",
+            {
+                "attendance_direction_enable": False,
+                "recognize_result_countdown": 1500,
+            },
         ),
     ]
     for path, body in steps:
@@ -199,6 +206,7 @@ def main() -> int:
     print("merged staff", merged, "errors", errors[:8])
     print("urls", record)
     print("LED: always-on OFF, stranger RED, match uses device green")
+    print("camera always ready: Select Direction overlay OFF; IN/OUT follows Xander staff shift")
     return 0
 
 

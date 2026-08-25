@@ -770,6 +770,8 @@ class AttendanceScanService
 		if (preg_match('/^T(\d+)$/', $sn, $m)) {
 			$staffId = (int) $m[1];
 			self::enrollFaceFromHeyStar($schoolId, $staffId, self::payloadImage($in));
+			// Ignore device Check-In/Out/Break direction. Clock like the web staff
+			// scanner: first look = IN, next = OUT, using the staff shift window.
 			return array_merge($ack, self::scanStaff($schoolId, $staffId, $eventTime));
 		}
 
