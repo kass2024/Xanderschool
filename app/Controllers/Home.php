@@ -359,6 +359,35 @@ public function testEmail()
 		return (bool) preg_match('/\bstream\s*(one|two|1|2)\b/', $hay);
 	}
 
+	/**
+	 * When Stream 1/2 has no classes of its own, reuse Stream-named classes from related depts.
+	 */
+	private function streamFallbackClassAllowed(array $row, int $track): bool
+	{
+		$dept = strtolower(trim((string) ($row['dept_name'] ?? '')));
+		$isSt1 = (bool) preg_match('/^stream\s*(1|one)$/', $dept);
+		$isSt2 = (bool) preg_match('/^stream\s*(2|two)$/', $dept);
+		if ($track === 1) {
+			if ($isSt1) {
+				return true;
+			}
+			if ($isSt2) {
+				return false;
+			}
+			return $this->classMatchesStreamTrack($row, 1) || !$this->isStreamTrackClass($row);
+		}
+		if ($track === 2) {
+			if ($isSt2) {
+				return true;
+			}
+			if ($isSt1) {
+				return false;
+			}
+			return $this->classMatchesStreamTrack($row, 2) || !$this->isStreamTrackClass($row);
+		}
+		return true;
+	}
+
 	private function isSeniorLetterClass(array $row): bool
 	{
 		$hay = strtolower(trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '')));
@@ -18958,8 +18987,32 @@ public function assign_card()
 				->where("departments.faculty_id", $faculty)
 				->groupBy("departments.id")
 				->orderBy("departments.title", "ASC")
-				->get()->getResultArray();
-		if ($data == null) {
+				->get()->getResultArray() ?: [];
+		$streamDepts = (new DeptModel())->select("departments.id,departments.title as name")
+				->where("departments.faculty_id", $faculty)
+				->groupStart()
+					->whereIn('departments.code', ['STR', 'ST1', 'ST2'])
+					->orWhere("departments.title", "Stream")
+					->orWhere("departments.title", "Stream 1")
+					->orWhere("departments.title", "Stream 2")
+				->groupEnd()
+				->get()->getResultArray() ?: [];
+		$seen = [];
+		foreach ($data as $row) {
+			$seen[(int) ($row['id'] ?? 0)] = true;
+		}
+		foreach ($streamDepts as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id < 1 || isset($seen[$id])) {
+				continue;
+			}
+			$seen[$id] = true;
+			$data[] = $row;
+		}
+		usort($data, static function ($a, $b) {
+			return strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+		});
+		if ($data == null || $data === []) {
 			return $this->response->setStatusCode("400")->setJSON(["error" => "No data found"]);
 		} else {
 			return $this->response->setJSON($data);
@@ -19007,51 +19060,67 @@ public function assign_card()
 			}));
 		}
 		if ($isStreamDept) {
-			$classes = array_values(array_filter($classes, function ($cls) use ($streamTrack) {
-				return $this->classMatchesStreamTrack($cls, $streamTrack);
-			}));
-			$extra = $classMdl->select($select)
-				->join('levels', 'levels.id = classes.level', 'left')
-				->join('departments', 'departments.id = classes.department', 'left')
-				->where('classes.school_id', $school)
-				->groupStart()
-					->like('levels.title', 'stream')
-					->orLike('classes.title', 'stream')
-				->groupEnd()
-				->groupStart()
-					->notLike('classes.title', 'holiday')
-					->notLike('levels.title', 'holiday')
-				->groupEnd()
-				->orderBy('levels.id', 'ASC')
-				->get()->getResultArray();
-			$seen = [];
-			foreach ($classes as $cls) {
-				$seen[(int) $cls['id']] = true;
-			}
-			foreach ($extra as $cls) {
-				if (!$this->classMatchesStreamTrack($cls, $streamTrack)) {
-					continue;
+			// Stream 1 / Stream 2 / Stream: show this department's classes like PCM/MEG.
+			// Only fall back to name-based Stream one/two classes when the department has none.
+			if (!$classes) {
+				$streamDeptIds = array_values(array_filter(array_map('intval', array_column(
+					(new DeptModel())->select('id')
+						->groupStart()
+							->whereIn('code', ['STR', 'ST1', 'ST2'])
+							->orWhere('title', 'Stream')
+							->orWhere('title', 'Stream 1')
+							->orWhere('title', 'Stream 2')
+						->groupEnd()
+						->findAll() ?: [],
+					'id'
+				))));
+				$extra = [];
+				if ($streamDeptIds) {
+					$extra = (new ClassesModel())->select($select)
+						->join('levels', 'levels.id = classes.level', 'left')
+						->join('departments', 'departments.id = classes.department', 'left')
+						->where('classes.school_id', $school)
+						->whereIn('classes.department', $streamDeptIds)
+						->groupStart()
+							->notLike('classes.title', 'holiday')
+							->notLike('levels.title', 'holiday')
+						->groupEnd()
+						->orderBy('levels.id', 'ASC')
+						->get()->getResultArray() ?: [];
 				}
-				$id = (int) $cls['id'];
-				if ($id < 1 || isset($seen[$id])) {
-					continue;
+				$seen = [];
+				foreach ($extra as $cls) {
+					if ($this->classLooksLikeHoliday($cls)) {
+						continue;
+					}
+					if (!$this->streamFallbackClassAllowed($cls, $streamTrack)) {
+						continue;
+					}
+					$id = (int) $cls['id'];
+					if ($id < 1 || isset($seen[$id])) {
+						continue;
+					}
+					$seen[$id] = true;
+					$classes[] = $cls;
 				}
-				$seen[$id] = true;
-				$classes[] = $cls;
 			}
 			usort($classes, static function ($a, $b) {
 				$ta = strtolower(trim(($a['level_name'] ?? '') . ' ' . ($a['title'] ?? '')));
 				$tb = strtolower(trim(($b['level_name'] ?? '') . ' ' . ($b['title'] ?? '')));
 				$rank = static function ($t) {
-					if (preg_match('/stream\s*(one|1)\b/', $t)) {
+					if (preg_match('/s4\b|stream\s*(one|1)\b/', $t)) {
 						return 1;
 					}
-					if (preg_match('/stream\s*(two|2)\b/', $t)) {
+					if (preg_match('/s5\b|stream\s*(two|2)\b/', $t)) {
 						return 2;
+					}
+					if (preg_match('/s6\b|stream\s*(three|3)\b/', $t)) {
+						return 3;
 					}
 					return 9;
 				};
-				return $rank($ta) <=> $rank($tb);
+				$cmp = $rank($ta) <=> $rank($tb);
+				return $cmp !== 0 ? $cmp : strcasecmp($ta, $tb);
 			});
 		} else {
 			$classes = array_values(array_filter($classes, function ($cls) {
