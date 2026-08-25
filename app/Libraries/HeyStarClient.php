@@ -12,18 +12,18 @@ class HeyStarClient
 	/** @var string */
 	private $password;
 
-	public function __construct(string $deviceIp, string $password = 'HFSecurity')
+	public function __construct(string $deviceIp, string $password = '123456')
 	{
 		$ip = trim($deviceIp);
 		$this->base = 'http://' . $ip . ':8090/cgi-bin/js';
-		$this->password = $password !== '' ? $password : 'HFSecurity';
+		$this->password = $password !== '' ? $password : '123456';
 	}
 
 	/**
 	 * @param array<string,mixed>|list<mixed> $body
 	 * @return array<string,mixed>
 	 */
-	public function post(string $path, $body): array
+	public function post(string $path, $body, int $timeout = 25): array
 	{
 		$url = $this->base . '/' . ltrim($path, '/');
 		$payload = json_encode($body);
@@ -36,7 +36,7 @@ class HeyStarClient
 			CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
 			CURLOPT_POSTFIELDS => $payload,
 			CURLOPT_CONNECTTIMEOUT => 5,
-			CURLOPT_TIMEOUT => 25,
+			CURLOPT_TIMEOUT => $timeout,
 		]);
 		$raw = curl_exec($ch);
 		$err = curl_error($ch);

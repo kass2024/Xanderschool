@@ -92,6 +92,56 @@ class AttendanceScanService
 		if (!$row) {
 			return ['success' => 0, 'message' => 'No school found for acronym ' . $acronym];
 		}
+		return self::openSchoolRow($row);
+	}
+
+	/**
+	 * Open kiosk / HeyStar by numeric school id (WISDOM SCHOOL RWANDA is typically 27).
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function openBySchoolId(int $schoolId): array
+	{
+		if ($schoolId <= 0) {
+			return ['success' => 0, 'message' => 'Enter the school ID'];
+		}
+		$row = \Config\Database::connect()->table('schools')
+			->select('id, name, acronym, status')
+			->where('id', $schoolId)
+			->get()
+			->getRowArray();
+		if (!$row) {
+			return ['success' => 0, 'message' => 'No school found for ID ' . $schoolId];
+		}
+		return self::openSchoolRow($row);
+	}
+
+	/**
+	 * @return int School id, or 0 if not found
+	 */
+	public static function wisdomSchoolId(): int
+	{
+		$db = \Config\Database::connect();
+		foreach (['WISDOM SCHOOL RWANDA', 'Wisdom School Rwanda'] as $name) {
+			$row = $db->table('schools')->select('id')->where('name', $name)->get()->getRowArray();
+			if ($row) {
+				return (int) $row['id'];
+			}
+		}
+		$row = $db->table('schools')
+			->select('id')
+			->like('name', 'WISDOM SCHOOL RWANDA', 'both')
+			->get()
+			->getRowArray();
+		return $row ? (int) $row['id'] : 0;
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 * @return array<string,mixed>
+	 */
+	private static function openSchoolRow(array $row): array
+	{
 		if ((int) ($row['status'] ?? 1) === 0) {
 			return ['success' => 0, 'message' => 'This school is locked'];
 		}

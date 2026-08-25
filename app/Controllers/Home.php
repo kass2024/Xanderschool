@@ -1970,9 +1970,10 @@ public function testEmail()
 		$data['heystar_device'] = HeyStarDeviceStore::forSchool($schoolId) ?: [
 			'device_key' => '',
 			'device_ip' => '',
-			'password' => 'HFSecurity',
+			'password' => '123456',
 			'area_id' => 0,
 		];
+		$data['wisdom_school_id'] = \App\Libraries\AttendanceScanService::wisdomSchoolId();
 		$data['years'] = (new AcademicYearModel())->select('id,title')->where('school_id', $schoolId)
 			->orderBy('id', 'DESC')->get()->getResultArray();
 		$classMdl = new ClassesModel();
@@ -14069,7 +14070,22 @@ public function getApplicationDocs($id = null)
 	public function manipulate_heystar_device()
 	{
 		$this->_preset(1, 3);
-		$schoolId = (int) $this->session->get('soma_school_id');
+		$sessionSchool = (int) $this->session->get('soma_school_id');
+		$schoolId = (int) $this->request->getPost('school_id') ?: $sessionSchool;
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['error' => 'Enter a school ID.']);
+		}
+		$school = \Config\Database::connect()->table('schools')
+			->select('id, name, status')
+			->where('id', $schoolId)
+			->get()
+			->getRowArray();
+		if (!$school) {
+			return $this->response->setJSON(['error' => 'No school found for ID ' . $schoolId]);
+		}
+		if ((int) ($school['status'] ?? 1) === 0) {
+			return $this->response->setJSON(['error' => 'This school is locked.']);
+		}
 		$action = (string) $this->request->getPost('action');
 		if ($action === 'save') {
 			HeyStarDeviceStore::save($schoolId, [
@@ -14078,7 +14094,11 @@ public function getApplicationDocs($id = null)
 				'password' => trim((string) $this->request->getPost('password')),
 				'area_id' => (int) $this->request->getPost('area_id'),
 			]);
-			return $this->response->setJSON(['success' => 'HeyStar device saved. Assigned web cards will be used on sync.']);
+			return $this->response->setJSON([
+				'success' => 'HeyStar device saved for ' . (string) ($school['name'] ?? ('school ' . $schoolId)) . '. Assigned web cards will be used on sync.',
+				'school_id' => $schoolId,
+				'school' => (string) ($school['name'] ?? ''),
+			]);
 		}
 		if ($action === 'sync') {
 			HeyStarDeviceStore::save($schoolId, [
@@ -14087,7 +14107,10 @@ public function getApplicationDocs($id = null)
 				'password' => trim((string) $this->request->getPost('password')),
 				'area_id' => (int) $this->request->getPost('area_id'),
 			]);
-			return $this->response->setJSON(HeyStarSyncService::syncSchool($schoolId));
+			$out = HeyStarSyncService::syncSchool($schoolId);
+			$out['school_id'] = $schoolId;
+			$out['school'] = (string) ($school['name'] ?? ($out['school'] ?? ''));
+			return $this->response->setJSON($out);
 		}
 		return $this->response->setJSON(['error' => 'Unknown action.']);
 	}

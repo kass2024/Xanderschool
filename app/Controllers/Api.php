@@ -3772,7 +3772,11 @@ public function permission_card_scan()
 	public function device_open_school()
 	{
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-		$acronym = trim((string) $this->request->getPost('acronym'));
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		if ($schoolId > 0) {
+			return $this->response->setJSON(AttendanceScanService::openBySchoolId($schoolId));
+		}
+		$acronym = trim((string) ($this->request->getPost('acronym') ?: $this->request->getGet('acronym') ?: ''));
 		return $this->response->setJSON(AttendanceScanService::openByAcronym($acronym));
 	}
 

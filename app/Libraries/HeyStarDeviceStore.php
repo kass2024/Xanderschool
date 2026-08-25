@@ -16,7 +16,7 @@ class HeyStarDeviceStore
 			`school_id` INT UNSIGNED NOT NULL,
 			`device_key` VARCHAR(64) NOT NULL DEFAULT '',
 			`device_ip` VARCHAR(64) NOT NULL DEFAULT '',
-			`password` VARCHAR(120) NOT NULL DEFAULT 'HFSecurity',
+			`password` VARCHAR(120) NOT NULL DEFAULT '123456',
 			`area_id` INT UNSIGNED NOT NULL DEFAULT 0,
 			`last_seen` INT UNSIGNED NOT NULL DEFAULT 0,
 			`updated_at` DATETIME NULL DEFAULT NULL,
@@ -81,7 +81,7 @@ class HeyStarDeviceStore
 			'school_id' => $schoolId,
 			'device_key' => trim((string) ($data['device_key'] ?? ($existing['device_key'] ?? ''))),
 			'device_ip' => trim((string) ($data['device_ip'] ?? ($existing['device_ip'] ?? ''))),
-			'password' => trim((string) ($data['password'] ?? ($existing['password'] ?? 'HFSecurity'))),
+			'password' => trim((string) ($data['password'] ?? ($existing['password'] ?? '123456'))),
 			'area_id' => (int) ($data['area_id'] ?? ($existing['area_id'] ?? 0)),
 			'updated_at' => $now,
 		];

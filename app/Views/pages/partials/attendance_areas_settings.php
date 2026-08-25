@@ -47,9 +47,13 @@ $areas = $attendance_areas ?? [];
 $hs = $heystar_device ?? [];
 $hsIp = (string) ($hs['device_ip'] ?? '');
 $hsKey = (string) ($hs['device_key'] ?? '');
-$hsPwd = (string) ($hs['password'] ?? 'HFSecurity');
+$hsPwd = (string) ($hs['password'] ?? '123456');
 $hsArea = (int) ($hs['area_id'] ?? 0);
 $hsSchoolId = (int) ($school_id ?? session()->get('soma_school_id') ?? 0);
+$hsWisdomId = (int) ($wisdom_school_id ?? 0);
+if ($hsSchoolId < 1 && $hsWisdomId > 0) {
+	$hsSchoolId = $hsWisdomId;
+}
 $hsBase = rtrim(base_url(), '/');
 $hsRecord = $hsBase . '/api/heystar_record?school_id=' . $hsSchoolId;
 $hsPerson = $hsBase . '/api/heystar_person?school_id=' . $hsSchoolId;
@@ -58,16 +62,24 @@ $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 <hr class="my-4">
 <h6>HeyStar terminal (staff face only)</h6>
 <p class="text-muted">
-	This terminal is for <strong>staff face attendance only</strong>. Students are not synced and are not clocked here.
-	Sync sends staff names. Capture each face in HeyStar (User Management → Face). The camera JPEG is stored on the VPS and clocks go to staff IN/OUT reports.
+	This terminal is <strong>staff face only</strong>. Enter the <strong>school ID</strong> so clocks and
+	staff names go to the right school. Sync sends staff names and puts your
+	<strong>school name and logo</strong> on the HeyStar screen (official UI API — the licensed APK is not rebuilt).
+	Green LED = staff found, red LED = not found. Capture each face in HeyStar. The camera JPEG is stored on the VPS and clocks go to staff IN/OUT reports.
 </p>
 <ol class="small text-muted pl-3 mb-3">
 	<li>On HeyStar: Settings (password 123456) → Communication → LAN + HTTP.</li>
-	<li>Paste the three VPS URLs below. Turn <strong>snapshot upload</strong> on. Identification mode: face on, card off.</li>
+	<li>Paste the three VPS URLs below (they include the school ID). Turn <strong>snapshot upload</strong> on. Identification mode: face on, card off.</li>
 	<li>Save the device IP here, then Sync staff names from a PC on the school LAN.</li>
 	<li>On HeyStar, register a face for each staff member, then stand in front of the camera to clock IN/OUT.</li>
 </ol>
 <form id="hsForm" class="mb-3" style="max-width:560px">
+	<label class="d-block mb-2">School ID
+		<input type="number" class="form-control" name="school_id" id="hsSchoolId" min="1" step="1" value="<?= (int) $hsSchoolId; ?>" placeholder="27">
+	</label>
+	<?php if ($hsWisdomId > 0) : ?>
+		<button type="button" class="btn btn-outline-secondary btn-sm mb-3" id="hsWisdom">Use WISDOM SCHOOL RWANDA (ID <?= (int) $hsWisdomId; ?>)</button>
+	<?php endif; ?>
 	<label class="d-block mb-2">Device IP
 		<input type="text" class="form-control" name="device_ip" id="hsIp" value="<?= esc($hsIp); ?>" placeholder="192.168.1.78">
 	</label>
@@ -79,11 +91,11 @@ $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 	</label>
 	<input type="hidden" name="area_id" id="hsArea" value="0">
 	<p class="small mb-1">Identification record (clock + face photo):</p>
-	<code class="d-block small mb-2" style="word-break:break-all"><?= esc($hsRecord); ?></code>
+	<code class="d-block small mb-2" id="hsRecordUrl" style="word-break:break-all"><?= esc($hsRecord); ?></code>
 	<p class="small mb-1">Heartbeat:</p>
-	<code class="d-block small mb-2" style="word-break:break-all"><?= esc($hsBeat); ?></code>
+	<code class="d-block small mb-2" id="hsBeatUrl" style="word-break:break-all"><?= esc($hsBeat); ?></code>
 	<p class="small mb-1">Registered person (after you add a face on the terminal):</p>
-	<code class="d-block small mb-2" style="word-break:break-all"><?= esc($hsPerson); ?></code>
+	<code class="d-block small mb-2" id="hsPersonUrl" style="word-break:break-all"><?= esc($hsPerson); ?></code>
 	<button type="button" class="btn btn-secondary" id="hsSave">Save</button>
 	<button type="button" class="btn btn-primary" id="hsSync">Sync staff names to HeyStar</button>
 	<div id="hsMsg" class="small mt-2"></div>
@@ -91,9 +103,20 @@ $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 
 <script>
 $(function () {
+	var hsBase = <?= json_encode($hsBase); ?>;
+	function hsSchoolId() {
+		return parseInt($('#hsSchoolId').val(), 10) || 0;
+	}
+	function hsRefreshUrls() {
+		var id = hsSchoolId();
+		$('#hsRecordUrl').text(hsBase + '/api/heystar_record?school_id=' + id);
+		$('#hsBeatUrl').text(hsBase + '/api/heystar_heartbeat?school_id=' + id);
+		$('#hsPersonUrl').text(hsBase + '/api/heystar_person?school_id=' + id);
+	}
 	function hsPayload(action) {
 		return {
 			action: action,
+			school_id: hsSchoolId(),
 			device_ip: $('#hsIp').val().trim(),
 			device_key: $('#hsKey').val().trim(),
 			password: $('#hsPwd').val().trim(),
@@ -103,6 +126,11 @@ $(function () {
 	function hsTell(ok, text) {
 		$('#hsMsg').css('color', ok ? '#166534' : '#b91c1c').text(text);
 	}
+	$('#hsSchoolId').on('input change', hsRefreshUrls);
+	$('#hsWisdom').on('click', function () {
+		$('#hsSchoolId').val(<?= (int) $hsWisdomId; ?>);
+		hsRefreshUrls();
+	});
 	$('#hsSave').on('click', function () {
 		$.post('<?= base_url('manipulate_heystar_device'); ?>', hsPayload('save'), function (res) {
 			hsTell(!!res.success, res.success || res.error || 'Saved');

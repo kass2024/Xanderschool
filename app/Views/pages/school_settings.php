@@ -1184,6 +1184,7 @@
 						'attendance_areas' => $attendance_areas ?? [],
 						'heystar_device' => $heystar_device ?? [],
 						'school_id' => $school_id ?? 0,
+						'wisdom_school_id' => $wisdom_school_id ?? 0,
 					]); ?>
 				</div>
 			</div>

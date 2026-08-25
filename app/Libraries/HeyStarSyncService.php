@@ -18,7 +18,7 @@ class HeyStarSyncService
 		if (!$dev || trim((string) ($dev['device_ip'] ?? '')) === '') {
 			return ['success' => 0, 'message' => 'Save the HeyStar device IP in School Settings first.'];
 		}
-		$client = new HeyStarClient((string) $dev['device_ip'], (string) ($dev['password'] ?? 'HFSecurity'));
+		$client = new HeyStarClient((string) $dev['device_ip'], (string) ($dev['password'] ?? '123456'));
 		$base = rtrim(base_url(), '/');
 		$upload = $base . '/api/heystar_record?school_id=' . $schoolId;
 		$heartbeat = $base . '/api/heystar_heartbeat?school_id=' . $schoolId;
@@ -37,7 +37,7 @@ class HeyStarSyncService
 			'sevUploadRecStrangerDataEnable' => 0,
 		]);
 		$client->post('device/setPciConfig', [
-			'pciLedAlwaysEnable' => 1,
+			'pciLedAlwaysEnable' => 0,
 			'pciLedColorStranger' => 1,
 			'pciRelayOut' => 0,
 		]);
@@ -47,9 +47,13 @@ class HeyStarSyncService
 			'recModeFingerEnable' => 0,
 			'recModePalmEnable' => 0,
 		]);
+		$brand = self::applySchoolBranding($client, $schoolId);
 
 		$staff = 0;
 		$errors = [];
+		if (!$client->ok($brand['ui'] ?? [])) {
+			$errors[] = 'School UI: ' . (string) (($brand['ui']['msg'] ?? 'branding failed'));
+		}
 
 		helper('qonics');
 		foreach (AttendanceScanService::staffList($schoolId) as $p) {
@@ -69,12 +73,87 @@ class HeyStarSyncService
 
 		return [
 			'success' => 1,
-			'message' => "Synced {$staff} staff names. Capture faces on HeyStar — photos upload to the VPS.",
+			'message' => "Branded HeyStar as {$brand['name']}. Synced {$staff} staff names. Capture faces on the terminal — photos upload to the VPS.",
 			'staff' => $staff,
+			'school' => $brand['name'],
 			'errors' => array_slice($errors, 0, 12),
 			'upload_url' => $upload,
 			'person_url' => $personUrl,
 		];
+	}
+
+	/**
+	 * School name + logo on the stock HeyStar UI (official setUiConfig, no APK rebuild).
+	 *
+	 * @return array{name:string,ui:array<string,mixed>,rec:array<string,mixed>}
+	 */
+	public static function applySchoolBranding(HeyStarClient $client, int $schoolId): array
+	{
+		$db = \Config\Database::connect();
+		$school = $db->table('schools')
+			->select('name, acronym, logo')
+			->where('id', $schoolId)
+			->get()
+			->getRowArray() ?: [];
+		$name = trim((string) ($school['name'] ?? ''));
+		if ($name === '') {
+			$name = trim((string) ($school['acronym'] ?? ''));
+		}
+		if ($name === '') {
+			$name = 'School';
+		}
+		$name = mb_substr($name, 0, 48);
+
+		$ui = [
+			'uiCompanyName' => $name,
+			'uiShowIp' => 0,
+			'uiShowSn' => 0,
+			'uiShowPersonCount' => 1,
+			'uiScreensaverWait' => 90,
+		];
+		$logo = self::schoolLogoBase64((string) ($school['logo'] ?? ''));
+		if ($logo !== '') {
+			$ui['uiCompanyLogo'] = $logo;
+		}
+		$uiRes = $client->post('device/setUiConfig', $ui, 60);
+		$recRes = $client->post('device/setRecConfig', [
+			'recSucTtsMode' => 2,
+			'recSucDisplayMode' => 100,
+			'recSucDisplayCustom' => '{name} IN',
+			'recStrangerEnable' => 1,
+			'recIsStrangerTimes' => 2,
+			'recStrangerTtsMode' => 2,
+			'recStrangerDisplayMode' => 100,
+			'recStrangerDisplayCustom' => 'Not found',
+			'recStrangerOpenDoor' => 0,
+		]);
+		return ['name' => $name, 'ui' => $uiRes, 'rec' => $recRes];
+	}
+
+	private static function schoolLogoBase64(string $stored): string
+	{
+		$candidates = [];
+		$stored = trim($stored);
+		if ($stored !== '') {
+			$candidates[] = FCPATH . 'assets/images/logo/' . basename($stored);
+		}
+		$candidates[] = FCPATH . 'assets/images/fallback-logo.png';
+		$candidates[] = FCPATH . 'assets/images/logo.jpeg';
+		$candidates[] = FCPATH . 'assets/images/smartsms-logo-web.png';
+		foreach ($candidates as $file) {
+			if (!is_file($file)) {
+				continue;
+			}
+			$raw = @file_get_contents($file);
+			if ($raw === false || strlen($raw) < 80) {
+				continue;
+			}
+			if (strlen($raw) > 900000) {
+				continue;
+			}
+			return base64_encode($raw);
+		}
+		return '';
 	}
 
 	private static function safeName(string $name): string
