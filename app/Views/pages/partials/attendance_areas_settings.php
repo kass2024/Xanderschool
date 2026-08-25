@@ -73,6 +73,18 @@ $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 	<li>Save the device IP here, then Sync staff names from a PC on the school LAN.</li>
 	<li>On HeyStar, register a face for each staff member, then stand in front of the camera to clock IN/OUT.</li>
 </ol>
+<div class="small" style="max-width:640px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem">
+	<strong>How to use (staff face clock)</strong>
+	<ol class="mb-2 pl-3 mt-2">
+		<li><strong>Daily IN/OUT:</strong> stand still in front of the camera. Green light = found and clocked. Red light = not found.</li>
+		<li><strong>First-time face:</strong> HeyStar Settings (password <code>123456</code>) → User Management → pick the staff name → register face (look at the camera until it saves).</li>
+		<li><strong>School:</strong> this terminal uses the School ID below. WISDOM SCHOOL RWANDA is <strong>27</strong>. Clocks appear on Staff IN/OUT reports on the web.</li>
+		<li><strong>New staff:</strong> add them on Xander first, then tap <em>Sync staff names to HeyStar</em> from a PC on the school Wi‑Fi, then register their face on the terminal.</li>
+	</ol>
+	<p class="mb-0 text-muted">Keep the terminal on the school Wi‑Fi so clocks upload to the VPS. Card tap is for students on the other Xander app, not this HeyStar.
+		<a href="<?= base_url('heystar-staff-guide.html'); ?>" target="_blank" rel="noopener">Open full guide</a>
+	</p>
+</div>
 <form id="hsForm" class="mb-3" style="max-width:560px">
 	<label class="d-block mb-2">School ID
 		<input type="number" class="form-control" name="school_id" id="hsSchoolId" min="1" step="1" value="<?= (int) $hsSchoolId; ?>" placeholder="27">

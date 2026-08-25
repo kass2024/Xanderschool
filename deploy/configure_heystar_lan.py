@@ -22,7 +22,7 @@ SCHOOL_ID = int(os.environ.get("HEYSTAR_SCHOOL_ID", "27"))
 WEB_BASE = os.environ.get(
     "HEYSTAR_WEB", "https://schoolmis.xanderglobalacademy.com"
 ).rstrip("/")
-TIMEOUT = 25
+TIMEOUT = 60
 
 
 def auth_header(password: str) -> str:
@@ -96,6 +96,25 @@ def main() -> int:
     staff = bootstrap.get("staff") or []
     print("school", school.get("id"), name, "staff", len(staff))
 
+    ui = {
+        "uiCompanyName": name,
+        "uiShowIp": 0,
+        "uiShowSn": 0,
+        "uiShowPersonCount": 1,
+        "uiScreensaverWait": 90,
+    }
+    logo_url = str(school.get("logo") or "").strip()
+    if logo_url:
+        try:
+            req = urllib.request.Request(logo_url)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read()
+            if 80 < len(raw) < 900000:
+                ui["uiCompanyLogo"] = b64encode(raw).decode("ascii")
+                print("logo bytes", len(raw))
+        except Exception as e:
+            print("logo skip", e)
+
     record = f"{WEB_BASE}/api/heystar_record?school_id={SCHOOL_ID}"
     person = f"{WEB_BASE}/api/heystar_person?school_id={SCHOOL_ID}"
     beat = f"{WEB_BASE}/api/heystar_heartbeat?school_id={SCHOOL_ID}"
@@ -152,13 +171,7 @@ def main() -> int:
         ),
         (
             "device/setUiConfig",
-            {
-                "uiCompanyName": name,
-                "uiShowIp": 0,
-                "uiShowSn": 0,
-                "uiShowPersonCount": 1,
-                "uiScreensaverWait": 90,
-            },
+            ui,
         ),
     ]
     for path, body in steps:
