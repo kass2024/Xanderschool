@@ -178,7 +178,9 @@ class HeyStarSyncService
 		}
 		$uiRes = $client->post('device/setUiConfig', $ui, 60);
 		$recRes = $client->post('device/setRecConfig', [
-			'recRank' => 3,
+			'recRank' => 2,
+			'recThreshold1vN' => 72,
+			'recThreshold1v1' => 65,
 			'recSucTtsMode' => 2,
 			'recSucDisplayMode' => 1,
 			'recRecordUploadMode' => 2,

@@ -66,7 +66,7 @@ $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 	staff names go to the right school. Sync sends staff names and puts your
 	<strong>school name and logo</strong> on the HeyStar screen (official UI API — the licensed APK is not rebuilt).
 	Green LED = staff found, red LED = not found. Capture each face in HeyStar. The camera JPEG is stored on the VPS and clocks go to staff IN/OUT reports.
-	<strong>Binocular 3D liveness is on</strong> so a printed photo or phone video of a face must not clock attendance — only a live person in front of the camera.
+	<strong>Live-face liveness is on</strong> (monocular anti-spoof, match score 72). A real enrolled person should clock; a printed photo should still fail.
 </p>
 <ol class="small text-muted pl-3 mb-3">
 	<li>On HeyStar: Settings (password 123456) → Communication → LAN + HTTP.</li>

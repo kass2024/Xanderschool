@@ -408,7 +408,9 @@ def apply_voice_config() -> None:
         device_cgi(
             "device/setRecConfig",
             {
-                "recRank": 3,
+                "recRank": 2,
+                "recThreshold1vN": 72,
+                "recThreshold1v1": 65,
                 "recSucTtsMode": 2,
                 "recSucDisplayMode": 1,
                 "recRecordUploadMode": 2,
@@ -424,7 +426,7 @@ def apply_voice_config() -> None:
             },
             timeout=12,
         )
-        print("io+voice: relay ON, binocular 3D liveness, built-in green/red TTS")
+        print("io+voice: relay ON, monocular liveness, match threshold 72, built-in green/red TTS")
     except Exception as exc:
         print("voice cfg", exc)
 

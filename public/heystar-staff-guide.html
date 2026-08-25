@@ -25,7 +25,7 @@
 	<p class="sub">Staff face attendance on the HeyStar terminal — school ID <strong>27</strong></p>
 
 	<div class="card">
-		The screen should show the <strong>school name and logo</strong> and a live camera that is always ready. Do <strong>not</strong> tap Check-In / Check-Out. This machine is for <strong>staff faces only</strong>. Students use the Xander card scanner, not this camera. A printed photo or phone video of a face is <strong>not</strong> attendance — binocular 3D liveness must reject it.
+		The screen should show the <strong>school name and logo</strong> and a live camera that is always ready. Do <strong>not</strong> tap Check-In / Check-Out. This machine is for <strong>staff faces only</strong>. Students use the Xander card scanner, not this camera. Stand in front of the camera as a live person. A printed photo should not clock attendance.
 	</div>
 
 	<h2>1. Clock IN or OUT (every day)</h2>
@@ -52,8 +52,8 @@
 		<li><span class="light r"></span><strong>Red</strong> — face not in this school’s list, not enrolled yet, or a photo/video instead of a live person.</li>
 	</ul>
 
-	<h2>4. Anti-cheat (3D liveness)</h2>
-	<p>The IR/depth camera is set to <strong>binocular liveness</strong>. Only a real person looking at the terminal can clock. Holding up a printed picture or a phone screen of a registered face must fail (red / “do not use photos”).</p>
+	<h2>4. Anti-cheat (liveness)</h2>
+	<p>Liveness is set to <strong>monocular anti-spoof</strong> with a tighter face-match score (72). A real enrolled person should get green. A printed picture should fail.</p>
 
 	<h2>5. School ID</h2>
 	<p>This terminal fetches and clocks <strong>WISDOM SCHOOL RWANDA</strong> using school ID <code>27</code> (acronym <code>WSR</code>).</p>
