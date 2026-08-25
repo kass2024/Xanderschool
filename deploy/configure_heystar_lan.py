@@ -165,6 +165,7 @@ def main() -> int:
         (
             "device/setRecConfig",
             {
+                "recRank": 3,
                 "recSucTtsMode": 2,
                 "recSucDisplayMode": 1,
                 "recRecordUploadMode": 2,
@@ -176,6 +177,7 @@ def main() -> int:
                 "recStrangerOpenDoor": 0,
                 "recNoPerTtsMode": 2,
                 "recNotBioTtsMode": 2,
+                "recNotBioDisplayMode": 1,
             },
         ),
         (
@@ -218,6 +220,7 @@ def main() -> int:
     print("LED: always-on OFF, stranger RED, match uses device green")
     print("camera always ready: Select Direction overlay OFF; first look IN, later looks overwrite OUT")
     print("voice: built-in name on green, built-in not-registered on red; access relay ON for match")
+    print("liveness: binocular 3D (recRank=3) — printed photos and videos must be rejected")
     return 0
 
 

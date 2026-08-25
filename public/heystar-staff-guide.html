@@ -25,7 +25,7 @@
 	<p class="sub">Staff face attendance on the HeyStar terminal — school ID <strong>27</strong></p>
 
 	<div class="card">
-		The screen should show the <strong>school name and logo</strong> and a live camera that is always ready. Do <strong>not</strong> tap Check-In / Check-Out. This machine is for <strong>staff faces only</strong>. Students use the Xander card scanner, not this camera.
+		The screen should show the <strong>school name and logo</strong> and a live camera that is always ready. Do <strong>not</strong> tap Check-In / Check-Out. This machine is for <strong>staff faces only</strong>. Students use the Xander card scanner, not this camera. A printed photo or phone video of a face is <strong>not</strong> attendance — binocular 3D liveness must reject it.
 	</div>
 
 	<h2>1. Clock IN or OUT (every day)</h2>
@@ -49,14 +49,17 @@
 	<h2>3. Lights</h2>
 	<ul>
 		<li><span class="light g"></span><strong>Green</strong> — staff found, clock saved to Xander.</li>
-		<li><span class="light r"></span><strong>Red</strong> — face not in this school’s list (or not enrolled yet).</li>
+		<li><span class="light r"></span><strong>Red</strong> — face not in this school’s list, not enrolled yet, or a photo/video instead of a live person.</li>
 	</ul>
 
-	<h2>4. School ID</h2>
+	<h2>4. Anti-cheat (3D liveness)</h2>
+	<p>The IR/depth camera is set to <strong>binocular liveness</strong>. Only a real person looking at the terminal can clock. Holding up a printed picture or a phone screen of a registered face must fail (red / “do not use photos”).</p>
+
+	<h2>5. School ID</h2>
 	<p>This terminal fetches and clocks <strong>WISDOM SCHOOL RWANDA</strong> using school ID <code>27</code> (acronym <code>WSR</code>).</p>
 	<p>To point the same machine at another school later: enter that school’s ID in Xander School Settings, save, then Sync from the school LAN.</p>
 
-	<h2>5. If something fails</h2>
+	<h2>6. If something fails</h2>
 	<ul>
 		<li><strong>Always red:</strong> face not registered, or staff was added on the web after the last sync. Sync again, then register the face.</li>
 		<li><strong>Green but no report:</strong> check school Wi‑Fi. Clocks upload to <code>schoolmis.xanderglobalacademy.com</code> with <code>school_id=27</code>.</li>

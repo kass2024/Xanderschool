@@ -61,12 +61,17 @@ def device_cgi(path: str, body, timeout: int = 8):
             return json.loads(resp.read().decode("utf-8", "replace"))
 
 
+# Same SMDT unmute the card app uses (ISmdtManagerNew on smdtserver).
 AUDIO_SH = (
-    "tinymix 0 RING_SPK;"
+    "service call smdtserver 216 i32 0;"
+    "service call smdtserver 108 i32 0;"
+    "service call smdtserver 102 i32 15;"
+    "service call smdtserver 104 i32 0 i32 15;"
+    "am broadcast -n com.xander.student/.SoundBridgeReceiver -a com.xander.student.SOUND_PREP;"
+    "tinymix 0 SPK;"
     "settings put system volume_music 15;"
     "settings put system volume_ring 7;"
     "settings put system volume_alarm 7;"
-    "settings put system volume_notification 7;"
     "settings put global dock_audio_media_enabled 0"
 )
 
@@ -92,7 +97,7 @@ def speaker_on() -> None:
 def keep_speaker_loud() -> None:
     while True:
         speaker_on()
-        time.sleep(2)
+        time.sleep(20)
 
 
 def write_beep(path: Path, freq: float, seconds: float = 0.45) -> None:
@@ -127,16 +132,27 @@ def ensure_beeps() -> None:
 
 
 def play_beep(kind: str) -> None:
-    remote = REMOTE_OK if kind == "ok" else REMOTE_BAD
+    action = "com.xander.student.SOUND_OK" if kind == "ok" else "com.xander.student.SOUND_FAIL"
 
     def _run() -> None:
         try:
-            subprocess.run(["adb", "shell", "tinymix", "0", "RING_SPK"], timeout=6, capture_output=True)
-            subprocess.run(
-                ["adb", "shell", "tinyplay", remote, "-D", "0", "-d", "0"],
+            subprocess.run(["adb", "shell", AUDIO_SH], timeout=12, capture_output=True)
+            r = subprocess.run(
+                [
+                    "adb",
+                    "shell",
+                    "am",
+                    "broadcast",
+                    "-n",
+                    "com.xander.student/.SoundBridgeReceiver",
+                    "-a",
+                    action,
+                ],
                 timeout=8,
                 capture_output=True,
+                text=True,
             )
+            print("beep", kind, (r.stdout or r.stderr or "").strip())
         except Exception as exc:
             print("beep", kind, exc)
 
@@ -392,6 +408,7 @@ def apply_voice_config() -> None:
         device_cgi(
             "device/setRecConfig",
             {
+                "recRank": 3,
                 "recSucTtsMode": 2,
                 "recSucDisplayMode": 1,
                 "recRecordUploadMode": 2,
@@ -403,10 +420,11 @@ def apply_voice_config() -> None:
                 "recStrangerOpenDoor": 0,
                 "recNoPerTtsMode": 2,
                 "recNotBioTtsMode": 2,
+                "recNotBioDisplayMode": 1,
             },
             timeout=12,
         )
-        print("io+voice: relay ON, built-in green/red TTS")
+        print("io+voice: relay ON, binocular 3D liveness, built-in green/red TTS")
     except Exception as exc:
         print("voice cfg", exc)
 
