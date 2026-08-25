@@ -24,6 +24,23 @@ DEVICE_IP = os.environ.get("HEYSTAR_IP", "10.151.53.95")
 PASSWORD = os.environ.get("HEYSTAR_PASSWORD", "123456")
 LISTEN = os.environ.get("HEYSTAR_RELAY_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HEYSTAR_RELAY_PORT", "8787"))
+SCHOOL_ID = os.environ.get("HEYSTAR_SCHOOL_ID", "27")
+
+
+def device_cgi(path: str, body, timeout: int = 8):
+    data = json.dumps(body).encode("utf-8")
+    auth = "Basic " + b64encode(f"admin:{PASSWORD}".encode()).decode()
+    req = urllib.request.Request(
+        f"http://{DEVICE_IP}:8090/cgi-bin/js/{path.lstrip('/')}",
+        data=data,
+        method="POST",
+        headers={
+            "Content-Type": "application/json; charset=UTF-8",
+            "Authorization": auth,
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
 
 
 def keep_speaker_loud() -> None:
@@ -46,22 +63,82 @@ def announce(name: str, status: str) -> None:
     safe = " ".join("".join(ch if ch.isalnum() or ch == " " else " " for ch in (name or "")).split())
     display = f"{label} {safe}".strip() if safe else label
     content = json.dumps({"ttsContent": spoken, "displayContent": display})
-    body = json.dumps({"type": 4, "content": content}).encode("utf-8")
-    auth = "Basic " + b64encode(f"admin:{PASSWORD}".encode()).decode()
-    req = urllib.request.Request(
-        f"http://{DEVICE_IP}:8090/cgi-bin/js/device/output",
-        data=body,
-        method="POST",
-        headers={
-            "Content-Type": "application/json; charset=UTF-8",
-            "Authorization": auth,
-        },
-    )
     try:
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            resp.read()
+        device_cgi("device/output", {"type": 4, "content": content}, timeout=2)
+        print("announce", display)
     except Exception as exc:
         print("announce fail", exc)
+
+
+def peek_clock(sn: str) -> dict:
+    url = f"{VPS}/api/heystar_last_clock?school_id={SCHOOL_ID}&sn={urllib.parse.quote(sn)}"
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
+
+
+def poll_device_records() -> None:
+    last_id = 0
+    last_shown = {}
+    try:
+        now_ms = int(time.time() * 1000)
+        j = device_cgi(
+            "record/findList",
+            {
+                "startTime": now_ms - 86400000,
+                "endTime": now_ms + 60000,
+                "index": 1,
+                "length": 5,
+                "order": 0,
+                "recordType": 1,
+            },
+        )
+        rows = j.get("data") or []
+        if isinstance(rows, dict):
+            rows = [rows]
+        for row in rows:
+            last_id = max(last_id, int(row.get("id") or 0))
+        print("poll start last_id", last_id)
+    except Exception as exc:
+        print("poll init", exc)
+
+    while True:
+        time.sleep(0.8)
+        try:
+            now_ms = int(time.time() * 1000)
+            j = device_cgi(
+                "record/findList",
+                {
+                    "startTime": now_ms - 120000,
+                    "endTime": now_ms + 60000,
+                    "index": 1,
+                    "length": 5,
+                    "order": 0,
+                    "recordType": 1,
+                },
+            )
+            rows = j.get("data") or []
+            if isinstance(rows, dict):
+                rows = [rows]
+            for row in reversed(rows):
+                rid = int(row.get("id") or 0)
+                sn = str(row.get("personSn") or "")
+                if rid <= last_id or not sn.startswith("T"):
+                    continue
+                last_id = max(last_id, rid)
+                time.sleep(0.4)
+                peek = peek_clock(sn)
+                status = str(peek.get("status") or "")
+                if status not in ("IN", "OUT") or peek.get("already"):
+                    continue
+                now = time.time()
+                prev = last_shown.get(sn)
+                if prev and prev[0] == status and (now - prev[1]) < 8:
+                    continue
+                last_shown[sn] = (status, now)
+                announce(str(peek.get("name") or row.get("personName") or ""), status)
+        except Exception as exc:
+            print("poll", exc)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -119,6 +196,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> int:
     threading.Thread(target=keep_speaker_loud, daemon=True).start()
+    threading.Thread(target=poll_device_records, daemon=True).start()
     httpd = ThreadingHTTPServer((LISTEN, PORT), Handler)
     print("heystar feedback relay", f"http://{LISTEN}:{PORT}/record", "->", VPS, "device", DEVICE_IP)
     httpd.serve_forever()

@@ -458,6 +458,57 @@ class AttendanceScanService
 	}
 
 	/**
+	 * Read today's staff clock without writing a new IN/OUT.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function staffTodayClock(int $schoolId, int $staffId): array
+	{
+		$empty = ['success' => 0, 'status' => '', 'already' => false, 'person' => ['name' => '']];
+		if ($schoolId <= 0 || $staffId <= 0) {
+			return $empty;
+		}
+		helper('qonics');
+		$db = \Config\Database::connect();
+		$staff = $db->table('staffs s')
+			->select('s.id, s.fname, s.lname, s.photo, s.status, s.shift_id, s.school_id, p.title as post_title, sh.title as shift_title, sh.options as shift_options')
+			->join('posts p', 'p.id = s.post', 'left')
+			->join('shifts sh', 'sh.id = s.shift_id', 'left')
+			->where('s.id', $staffId)
+			->where('s.school_id', $schoolId)
+			->where('s.status !=', 0)
+			->get()
+			->getRow();
+		if (!$staff) {
+			return $empty;
+		}
+		$time = time();
+		$todayStart = strtotime('today', $time);
+		$todayEnd = strtotime('tomorrow', $time) - 1;
+		$attendance = $db->table('attendance_records')
+			->where('user_id', (int) $staff->id)
+			->where('user_type', 1)
+			->where('school_id', $schoolId)
+			->where('time_in >=', $todayStart)
+			->where('time_in <=', $todayEnd)
+			->orderBy('time_in', 'ASC')
+			->orderBy('id', 'ASC')
+			->get()
+			->getRow();
+		$person = self::staffPayload($staff);
+		if (!$attendance) {
+			return ['success' => 1, 'status' => '', 'already' => false, 'person' => $person];
+		}
+		$outTs = (int) ($attendance->time_out ?? 0);
+		if ($outTs > 0) {
+			return ['success' => 1, 'status' => 'OUT', 'already' => false, 'person' => $person];
+		}
+		$timeIn = (int) $attendance->time_in;
+		$waiting = ($timeIn + self::STAFF_OUT_AFTER_IN_SECONDS) > $time;
+		return ['success' => 1, 'status' => 'IN', 'already' => $waiting, 'person' => $person];
+	}
+
+	/**
 	 * @param object $staff
 	 * @param array<string,mixed> $window
 	 * @param array<string,mixed>|null $shift

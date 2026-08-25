@@ -3909,6 +3909,35 @@ public function permission_card_scan()
 	}
 
 	/**
+	 * Read last staff clock today (no new IN/OUT). Used by the LAN HeyStar overlay.
+	 */
+	public function heystar_last_clock()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$in = $this->heystarInput();
+		$schoolId = (int) ($in['school_id'] ?? 0);
+		$sn = trim((string) ($in['sn'] ?? $in['personSn'] ?? ''));
+		$staffId = 0;
+		if (preg_match('/^T(\d+)$/', $sn, $m)) {
+			$staffId = (int) $m[1];
+		} else {
+			$staffId = (int) ($in['staff_id'] ?? 0);
+		}
+		$out = AttendanceScanService::staffTodayClock($schoolId, $staffId);
+		$status = strtoupper((string) ($out['status'] ?? ''));
+		$name = trim((string) (($out['person']['name'] ?? '')));
+		$already = !empty($out['already']);
+		$label = $status === 'OUT' ? 'CLOCK OUT' : 'CLOCK IN';
+		return $this->response->setJSON([
+			'success' => (int) ($out['success'] ?? 0),
+			'status' => $status,
+			'already' => $already ? 1 : 0,
+			'name' => $name,
+			'label' => ($status === 'IN' || $status === 'OUT') ? $label : '',
+		]);
+	}
+
+	/**
 	 * HeyStar registered-person / manual face upload. Always ack.
 	 */
 	public function heystar_person()
