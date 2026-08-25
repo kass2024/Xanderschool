@@ -3885,6 +3885,7 @@ public function permission_card_scan()
 		$out = AttendanceScanService::ingestHeyStarRecord($in);
 		$status = strtoupper((string) ($out['status'] ?? ''));
 		$name = trim((string) (($out['person']['name'] ?? $out['staff']['name'] ?? '')));
+		$already = !empty($out['already']);
 		$line = trim($name . ' ' . $status);
 		return $this->response->setJSON([
 			'result' => 1,
@@ -3892,8 +3893,9 @@ public function permission_card_scan()
 			'success' => (int) ($out['success'] ?? 1),
 			'message' => (string) ($out['message'] ?? ''),
 			'status' => $status,
-			'ttsContent' => $line !== '' ? $line : $status,
-			'displayContent' => $line !== '' ? $line : $status,
+			'already' => $already ? 1 : 0,
+			'ttsContent' => ($already || $line === '') ? '' : $line,
+			'displayContent' => ($already || $line === '') ? '' : $line,
 		]);
 	}
 

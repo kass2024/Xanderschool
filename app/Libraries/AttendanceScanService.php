@@ -368,9 +368,12 @@ class AttendanceScanService
 		];
 	}
 
+	private const STAFF_OUT_AFTER_IN_SECONDS = 300;
+
 	/**
 	 * Staff face/card clock. Same rule as the web staff scanner:
-	 * first look of the calendar day is IN; every later look is OUT and overwrites time_out.
+	 * one IN per calendar day; OUT is allowed only 5 minutes after IN,
+	 * and later looks overwrite time_out.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -432,6 +435,18 @@ class AttendanceScanService
 			);
 		}
 
+		$timeIn = (int) $attendance->time_in;
+		$alreadyOut = (int) ($attendance->time_out ?? 0) > 0;
+		if (!$alreadyOut && ($timeIn + self::STAFF_OUT_AFTER_IN_SECONDS) > $time) {
+			$wait = $timeIn + self::STAFF_OUT_AFTER_IN_SECONDS - $time;
+			$mins = max(1, (int) ceil($wait / 60));
+			return self::staffClockPayload(
+				$staff, 'IN', $timeIn, $window, $shift,
+				StaffShiftClock::evaluateIn($timeIn, $window),
+				true, 1, 'Already checked IN — wait ' . $mins . ' min to check OUT'
+			);
+		}
+
 		$db->table('attendance_records')
 			->where('id', $attendance->id)
 			->update(['time_out' => $time]);
@@ -471,6 +486,7 @@ class AttendanceScanService
 			'status' => $status,
 			'time' => date('H:i', $time),
 			'message' => $message,
+			'already' => $already,
 			'in_count' => $inCount,
 			'verdict' => $verdict,
 			'shift' => [
@@ -726,11 +742,13 @@ class AttendanceScanService
 			// Ignore device Check-In/Out/Break direction. First look = IN, later looks
 			// overwrite OUT (same as the web staff scanner). Shift is used for late/overtime.
 			$clock = self::scanStaff($schoolId, $staffId, $eventTime);
-			HeyStarSyncService::announceClock(
-				$schoolId,
-				(string) (($clock['person']['name'] ?? $clock['staff']['name'] ?? '')),
-				(string) ($clock['status'] ?? '')
-			);
+			if (empty($clock['already'])) {
+				HeyStarSyncService::announceClock(
+					$schoolId,
+					(string) (($clock['person']['name'] ?? $clock['staff']['name'] ?? '')),
+					(string) ($clock['status'] ?? '')
+				);
+			}
 			return array_merge($ack, $clock);
 		}
 

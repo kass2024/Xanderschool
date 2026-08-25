@@ -76,7 +76,7 @@ $hsBeat = $hsBase . '/api/heystar_heartbeat?school_id=' . $hsSchoolId;
 <div class="small" style="max-width:640px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem">
 	<strong>How to use (staff face clock)</strong>
 	<ol class="mb-2 pl-3 mt-2">
-		<li><strong>Daily IN/OUT:</strong> stand still in front of the camera (always ready — no Check-In/Out buttons). First look of the day is <strong>IN</strong>. Every later look is <strong>OUT</strong> and overwrites the last out time (same as the web staff scanner, including the staff shift). The screen shows IN or OUT and the terminal speaks it. Green = found. Red = not found.</li>
+		<li><strong>Daily IN/OUT:</strong> stand still in front of the camera. One <strong>IN</strong> per day. Wait <strong>5 minutes</strong> after IN before the next look can be <strong>OUT</strong>. Later looks overwrite the out time. The screen shows IN or OUT and the terminal speaks it. Green = found. Red = not found.</li>
 		<li><strong>First-time face:</strong> HeyStar Settings (password <code>123456</code>) → User Management → pick the staff name → register face (look at the camera until it saves).</li>
 		<li><strong>School:</strong> this terminal uses the School ID below. WISDOM SCHOOL RWANDA is <strong>27</strong>. Clocks appear on Staff IN/OUT reports on the web.</li>
 		<li><strong>New staff:</strong> add them on Xander first, then tap <em>Sync staff names to HeyStar</em> from a PC on the school Wi‑Fi, then register their face on the terminal.</li>

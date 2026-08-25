@@ -87,7 +87,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             payload = {}
 
-        if status in ("IN", "OUT"):
+        if status in ("IN", "OUT") and not payload.get("already"):
             announce(name, status)
 
         self.send_response(code if 200 <= code < 600 else 200)
