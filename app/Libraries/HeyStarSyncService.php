@@ -51,8 +51,8 @@ class HeyStarSyncService
 		// staff shift (same toggle as the web scanner), not Check-In / Check-Out taps.
 		$client->post('device/setCstConfig', [
 			'attendance_direction_enable' => false,
-			'recognize_result_countdown' => 5000,
-			'evt_show_image_duration' => 5000,
+			'recognize_result_countdown' => 2200,
+			'evt_show_image_duration' => 2200,
 		]);
 		$brand = self::applySchoolBranding($client, $schoolId);
 
@@ -157,14 +157,14 @@ class HeyStarSyncService
 		}
 		$uiRes = $client->post('device/setUiConfig', $ui, 60);
 		$recRes = $client->post('device/setRecConfig', [
-			'recSucTtsMode' => 100,
-			'recSucTtsCustom' => '{name}',
+			'recSucTtsMode' => 2,
 			'recSucDisplayMode' => 100,
 			'recSucDisplayCustom' => '{name}',
+			'recRecordUploadMode' => 2,
+			'recRecordSave' => 1,
 			'recStrangerEnable' => 1,
 			'recIsStrangerTimes' => 2,
-			'recStrangerTtsMode' => 100,
-			'recStrangerTtsCustom' => 'Not found',
+			'recStrangerTtsMode' => 2,
 			'recStrangerDisplayMode' => 100,
 			'recStrangerDisplayCustom' => 'Not found',
 			'recStrangerOpenDoor' => 0,
