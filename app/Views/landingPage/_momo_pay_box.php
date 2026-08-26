@@ -4,7 +4,15 @@ $momoPayName = trim((string) ($momo_pay_name ?? ''));
 $variant = (string) ($momo_pay_variant ?? 'form');
 $locked = !empty($momo_pay_locked);
 $visible = $momoPayCode !== '';
-$boxClass = 'ss-momo-pay-box ss-momo-pay-' . ($variant === 'success' ? 'success' : ($variant === 'end' ? 'end' : 'inline'));
+$variantClass = 'inline';
+if ($variant === 'success') {
+	$variantClass = 'success';
+} elseif ($variant === 'end') {
+	$variantClass = 'end';
+} elseif ($variant === 'top') {
+	$variantClass = 'top';
+}
+$boxClass = 'ss-momo-pay-box ss-momo-pay-' . $variantClass;
 ?>
 <div class="<?= esc($boxClass, 'attr'); ?>"
 	 data-locked="<?= $locked ? '1' : '0'; ?>"
@@ -15,6 +23,8 @@ $boxClass = 'ss-momo-pay-box ss-momo-pay-' . ($variant === 'success' ? 'success'
 			Pay the registration amount using this merchant code so the school can confirm your application:
 		<?php elseif ($variant === 'end'): ?>
 			Use this MoMo Pay merchant code to pay the amount shown on this form:
+		<?php elseif ($variant === 'top'): ?>
+			Pay registration with this MoMo Pay merchant:
 		<?php else: ?>
 			Pay the amount above using MoMo Pay:
 		<?php endif; ?>

@@ -320,6 +320,12 @@
 		margin: 0 0 1.1rem;
 		box-shadow: 0 10px 28px rgba(245, 158, 11, .18);
 	}
+	.ss-momo-pay-top {
+		margin: .15rem 0 1.15rem;
+		padding: 16px 16px 14px;
+		border-width: 3px;
+		animation: ssMomoPulse 1.8s ease-in-out 2;
+	}
 	.ss-momo-pay-end {
 		margin-top: 1.25rem;
 		padding: 18px 18px 16px;
@@ -700,6 +706,12 @@
 																<br><small>You opened this school's private registration link.</small>
 															</div>
 														<?php endif; ?>
+														<?= view('landingPage/_momo_pay_box', [
+															'momo_pay_code' => $momo_pay_code ?? '',
+															'momo_pay_name' => $momo_pay_name ?? '',
+															'momo_pay_variant' => 'top',
+															'momo_pay_locked' => (int) ($locked_school_id ?? 0) > 0,
+														]); ?>
 														<div class="form-group">
 															<label class="control-label mb-1">School program</label>
 															<select class="form-control" name="schoolProgram" id="schoolProgram">
