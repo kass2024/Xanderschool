@@ -20220,6 +20220,7 @@ public function assign_card()
 
 	/**
 	 * Invoice lines from the class + studying mode chosen on the application (no student yet).
+	 * Pending approval records Registration extra fees only — school fees and other extras stay hidden.
 	 *
 	 * @return array{items:array,schoolFeeTerms:array}
 	 */
@@ -20227,29 +20228,6 @@ public function assign_card()
 	{
 		$items = [];
 		$schoolFeeTerms = [];
-		$byTerm = $this->schoolFeesForApplicationClass($schoolId, $year, $classId, $levelId, $deptId);
-		foreach ($byTerm as $term => $row) {
-			$expected = $this->schoolFeeAmountForMode($row, $studyingMode);
-			$schoolFeeTerms[(int) $term] = [
-				'id' => (int) $row['id'],
-				'expected' => $expected,
-			];
-			if ($expected <= 0) {
-				continue;
-			}
-			$items[] = [
-				'id' => (int) $row['id'],
-				'fee_type' => 0,
-				'category' => lang('app.schoolFees'),
-				'label' => lang('app.schoolFees'),
-				'term' => $this->TermToStr($term),
-				'term_id' => (int) $term,
-				'expected' => $expected,
-				'paid' => 0,
-				'remain' => $expected,
-			];
-		}
-
 		if ($classId > 0) {
 			$extraFees = new ExtraFeesModel();
 			$extraFees->ensureSchema();
@@ -20263,6 +20241,9 @@ public function assign_card()
 				->get()->getResultArray();
 			$seenKeys = [];
 			foreach ($extraRows as $row) {
+				if (!ExtraFeesModel::isRegistrationTitle($row['title'] ?? '')) {
+					continue;
+				}
 				$expected = $this->extraFeeAmountForMode($row, $studyingMode);
 				if ($expected <= 0) {
 					continue;
@@ -20294,6 +20275,9 @@ public function assign_card()
 				[$classId, $year, $schoolId, $year]
 			)->getResultArray();
 			foreach ($classmates as $row) {
+				if (!ExtraFeesModel::isRegistrationTitle($row['title'] ?? '')) {
+					continue;
+				}
 				$key = strtolower(trim((string) $row['title'])) . '|' . (int) $row['term'];
 				if (isset($seenKeys[$key])) {
 					continue;
@@ -20391,6 +20375,9 @@ public function assign_card()
 			$term = (int) ($pay['term_id'] ?? ($pay['term'] ?? 0));
 			$expected = (float) ($pay['expected'] ?? $received);
 			$title = trim((string) ($pay['title'] ?? $pay['label'] ?? ''));
+			if ($feeType === 0 || ($feeType === 1 && !ExtraFeesModel::isRegistrationTitle($title))) {
+				continue;
+			}
 
 			if ($feeType === 0) {
 				$existing = $feeId > 0 ? $schoolFeeMdl->where('id', $feeId)->where('school_id', $schoolId)->get(1)->getRowArray() : null;

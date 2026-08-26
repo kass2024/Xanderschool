@@ -558,9 +558,7 @@ foreach ($pendings as $p) {
           <div class="fe-invoice-toolbar">
             <button type="button" class="btn btn-sm btn-outline-primary" id="feInvSelectAll">Select all</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="feInvFillBalance">Fill full balance</button>
-            <button type="button" class="btn btn-sm btn-info" id="prAddSchoolFeeBtn"><i class="fa fa-plus"></i> Add school fees</button>
-            <button type="button" class="btn btn-sm btn-info" id="prAddExtraFeeBtn"><i class="fa fa-plus"></i> <?= lang('app.addExtra') ?></button>
-            <span class="fe-invoice-hint">Fees follow the class and boarding/day chosen on the registration form.</span>
+            <span class="fe-invoice-hint">Only the Registration fee is recorded at approval. School fees and other extras stay on Fees entry.</span>
           </div>
 
           <div id="prAddFeePanel" class="pr-add-panel">
@@ -980,8 +978,13 @@ foreach ($pendings as $p) {
     $('#prAddAmount').val('');
   }
 
+  function isRegistrationFeeItem(it) {
+    var label = String((it && (it.label || it.title)) || '').toLowerCase();
+    return /regist/.test(label);
+  }
+
   function feInvoiceRenderItems(items) {
-    invoiceItems = items || [];
+    invoiceItems = (items || []).filter(isRegistrationFeeItem);
     var html = '';
     var lastCat = '';
     invoiceItems.forEach(function (it, idx) {
@@ -1000,9 +1003,12 @@ foreach ($pendings as $p) {
         '</tr>';
     });
     if (!invoiceItems.length) {
-      html = '<tr><td colspan="7" class="text-center text-muted py-3">No fee items yet. Add school fees or extra fees for this class.</td></tr>';
+      html = '<tr><td colspan="7" class="text-center text-muted py-3">No registration fee found for this class.</td></tr>';
     }
     $('#feInvoiceBody').html(html);
+    $('#feInvoiceBody .fe-inv-check').each(function () {
+      $(this).prop('checked', true).trigger('change');
+    });
     feInvoiceUpdateTotal();
   }
 
