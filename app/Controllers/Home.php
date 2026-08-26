@@ -20116,7 +20116,7 @@ public function assign_card()
 		$data['subtitle'] = lang("app.pendingRegistration");
 		$data['page'] = "pendingRegistration";
 		$data['pendings'] = $applicationMdl->select("applications.id,concat(fname,' ',lname) as applicant,
-		if(gender='M','Male','Famele') as gender,
+		if(gender='M','Male','Female') as gender,
 		phoneNumber,parentType,
 		parentPhoneNumber,parentNames,dateOfBirth,l.title as level,l.id as level_id,
 		applications.studyingMode,applications.class_id,applications.department_id,
