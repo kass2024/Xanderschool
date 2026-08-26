@@ -13445,6 +13445,7 @@ public function getApplicationDocs($id = null)
 			$academicYear,
 			(int) ($this->session->get('soma_id') ?: 0)
 		);
+		$extraFees->absorbDuplicateStudentRegistrationFees((int) $school_id, $academicYear);
 		$data['title'] = lang("app.extraFees");
 		$data['subtitle'] = lang("app.extraFees");
 		$data['page'] = "Extra_fees";
@@ -14472,7 +14473,19 @@ public function getApplicationDocs($id = null)
 						</tr>";
 			$i++;
 		}
+		$classExtraKeys = [];
 		foreach ($extraFeesx as $extraffe) {
+			if ((int) ($extraffe['type'] ?? 0) === 0) {
+				$classExtraKeys[strtolower(trim((string) ($extraffe['title'] ?? ''))) . '|' . (int) ($extraffe['term'] ?? 0)] = true;
+			}
+		}
+		foreach ($extraFeesx as $extraffe) {
+			if ((int) ($extraffe['type'] ?? 0) === 1 && ExtraFeesModel::isRegistrationTitle($extraffe['title'] ?? '')) {
+				$key = strtolower(trim((string) ($extraffe['title'] ?? ''))) . '|' . (int) ($extraffe['term'] ?? 0);
+				if (isset($classExtraKeys[$key])) {
+					continue;
+				}
+			}
 			$extrapaid = $extraffe['amount'] - $extraffe['paidextra'];
 			$delBtn = (empty($extraffe['paidextra']) && $extraffe['type'] == 1) ? '<a class="fa fa-trash btn-del-fee" style="color: orangered" href="#"></a>' : '';
 			$editBtn = ($extraffe['type'] == 1) ? "<a data-id='{$extraffe['id']}' data-amount='{$extraffe['amount']}'
@@ -14565,7 +14578,19 @@ public function getApplicationDocs($id = null)
 			->orderBy('extra_fees.title', 'ASC')
 			->get()->getResultArray();
 
+		$classExtraKeys = [];
 		foreach ($extraRows as $row) {
+			if ((int) ($row['type'] ?? 0) === 0) {
+				$classExtraKeys[strtolower(trim((string) ($row['title'] ?? ''))) . '|' . (int) ($row['term'] ?? 0)] = true;
+			}
+		}
+		foreach ($extraRows as $row) {
+			if ((int) ($row['type'] ?? 0) === 1 && ExtraFeesModel::isRegistrationTitle($row['title'] ?? '')) {
+				$key = strtolower(trim((string) ($row['title'] ?? ''))) . '|' . (int) ($row['term'] ?? 0);
+				if (isset($classExtraKeys[$key])) {
+					continue;
+				}
+			}
 			$expected = ((int) ($row['type'] ?? 0) === 1)
 				? (float) ($row['amount'] ?? 0)
 				: ExtraFeesModel::expectedForMode($row, $studyingMode);
@@ -18161,7 +18186,9 @@ public function assign_card()
 		$school_id = $this->session->get("soma_school_id");
 		$studentMdl = new StudentModel();
 		$acMdl = new AcademicYearModel();
-		(new ExtraFeesModel())->ensureSchema();
+		$extraFeesMdl = new ExtraFeesModel();
+		$extraFeesMdl->ensureSchema();
+		$extraFeesMdl->absorbDuplicateStudentRegistrationFees((int) $school_id, (int) $academic);
 		(new SchoolFeesModel())->ensureSchema();
 		if ($pdf == 1) {
 			$data['years'] = $acMdl->select('id,title')->where("id", $academic)->get()->getRowArray();
@@ -18222,7 +18249,15 @@ public function assign_card()
 				->join("(select sum(COALESCE(ex.amount_boarding, ex.amount)) as boarding_amount, sum(COALESCE(ex.amount_day, ex.amount)) as day_amount,ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
 			ex.academic_year=$academic and ex.school_id = $school_id group by ex.type_id) ex", "ex.type_id=cl.id", "LEFT")
 				->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=1 and ex.term IN ($termsIn) and
-			ex.academic_year=$academic and ex.school_id = $school_id group by ex.type_id) student", "student.type_id=students.id", "LEFT")
+			ex.academic_year=$academic and ex.school_id = $school_id
+			AND NOT EXISTS (
+				SELECT 1 FROM extra_fees cx
+				INNER JOIN class_records crx ON crx.student = ex.type_id AND crx.year = ex.academic_year
+				WHERE cx.school_id = ex.school_id AND cx.academic_year = ex.academic_year
+					AND cx.term = ex.term AND cx.type = 0 AND cx.type_id = crx.class
+					AND LOWER(cx.title) = LOWER(ex.title)
+			)
+			group by ex.type_id) student", "student.type_id=students.id", "LEFT")
 				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join school_fees sc ON sc.id = fr.fees_id
 			where fr.fees_type=0 and fr.status=1 and sc.term IN ($termsIn) and sc.academic_year=$academic and sc.school_id = $school_id group by fr.student_id) fr", "fr.student_id=students.id", "LEFT")
 				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join extra_fees ex ON ex.id = fr.fees_id
@@ -18484,7 +18519,14 @@ public function assign_card()
 				->join("school_fees sf", "sf.level=cl.level and sf.department=cl.department and sf.term=$term and sf.academic_year=$academic", "LEFT")
 				->join("(select sum(amount) as amount,feesId,student from school_fees_discount group by student,feesId) fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
 				->join("extra_fees ex", "ex.type_id=cl.id and ex.type=0 and ex.academic_year=$academic and ex.term=$term", "LEFT")
-				->join("(select ex.id,ex.type_id,COALESCE(sum(ex.amount),0) as amount from extra_fees ex where ex.type=1 and ex.term=$term and ex.academic_year=$academic) student", "student.type_id=students.id", "LEFT")
+				->join("(select ex.id,ex.type_id,COALESCE(sum(ex.amount),0) as amount from extra_fees ex where ex.type=1 and ex.term=$term and ex.academic_year=$academic
+					AND NOT EXISTS (
+						SELECT 1 FROM extra_fees cx
+						INNER JOIN class_records crx ON crx.student = ex.type_id AND crx.year = ex.academic_year
+						WHERE cx.school_id = ex.school_id AND cx.academic_year = ex.academic_year
+							AND cx.term = ex.term AND cx.type = 0 AND cx.type_id = crx.class
+							AND LOWER(cx.title) = LOWER(ex.title)
+					)) student", "student.type_id=students.id", "LEFT")
 				->join("fees_records fr", "fr.fees_id=sf.id and fr.fees_type=0 and fr.student_id=students.id and fr.status=1", "LEFT")
 				->join("(select fr.student_id,fr.fees_id,fr.amount from fees_records fr where fr.fees_type=1 and fr.status=1) extraPaid", "extraPaid.student_id=students.id and (extraPaid.fees_id=ex.id || extraPaid.fees_id=student.id)", "LEFT")
 				->groupBy("students.id");
@@ -20358,6 +20400,7 @@ public function assign_card()
 			$year,
 			(int) ($this->session->get('soma_id') ?: 0)
 		);
+		$extraFeesMdl->absorbDuplicateStudentRegistrationFees((int) $school_id, $year);
 		$classMdl = new ClassesModel();
 		foreach ($data['pendings'] as &$pending) {
 			$mode = (int) ($pending['studyingMode'] ?? 1);
@@ -20721,14 +20764,24 @@ public function assign_card()
 					]);
 				}
 			} else {
+				if ($term < 1 || $term > 3) {
+					$term = (int) ($this->data['term'] ?? 1);
+				}
 				if ($feeId > 0) {
 					$row = $extraFeeMdl->where('id', $feeId)->where('school_id', $schoolId)->get(1)->getRowArray();
 					if (!$row) {
 						$feeId = 0;
 					} else {
+						if ((int) ($row['type'] ?? 0) === 1) {
+							$classFee = $extraFeeMdl->findClassFeeByTitle($schoolId, $year, $classId, (string) ($row['title'] ?? $title), $term);
+							if ($classFee) {
+								$feeId = (int) $classFee['id'];
+								$row = $classFee;
+							}
+						}
 						$modeField = $studyingMode === 0 ? 'amount_boarding' : 'amount_day';
 						$currentMode = ExtraFeesModel::expectedForMode($row, $studyingMode);
-						if ($currentMode <= 0 && $expected > 0) {
+						if ($currentMode <= 0 && $expected > 0 && (int) ($row['type'] ?? 0) === 0) {
 							$extraFeeMdl->update($feeId, [$modeField => $expected]);
 						}
 					}
@@ -20737,19 +20790,21 @@ public function assign_card()
 					if ($title === '') {
 						return ['ok' => false, 'error' => 'Enter a title for the extra fee item.'];
 					}
-					if ($term < 1 || $term > 3) {
-						$term = (int) ($this->data['term'] ?? 1);
+					$classFee = $extraFeeMdl->findClassFeeByTitle($schoolId, $year, $classId, $title, $term);
+					if ($classFee) {
+						$feeId = (int) $classFee['id'];
+					} else {
+						$feeId = (int) $extraFeeMdl->insert([
+							'school_id' => $schoolId,
+							'title' => $title,
+							'academic_year' => $year,
+							'type_id' => $studentId,
+							'type' => 1,
+							'term' => $term,
+							'amount' => $expected > 0 ? $expected : $received,
+							'created_by' => $createdBy,
+						]);
 					}
-					$feeId = (int) $extraFeeMdl->insert([
-						'school_id' => $schoolId,
-						'title' => $title,
-						'academic_year' => $year,
-						'type_id' => $studentId,
-						'type' => 1,
-						'term' => $term,
-						'amount' => $expected > 0 ? $expected : $received,
-						'created_by' => $createdBy,
-					]);
 				}
 			}
 

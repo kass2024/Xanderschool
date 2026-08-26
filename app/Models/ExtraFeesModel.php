@@ -114,6 +114,90 @@ class ExtraFeesModel extends Model
 		return (bool) preg_match('/^stream(\s*(one|two|1|2))?$/', $t);
 	}
 
+	/**
+	 * Class extra fee with the same title and term (used instead of a per-student copy).
+	 */
+	public function findClassFeeByTitle(int $schoolId, int $yearId, int $classId, string $title, int $term): ?array
+	{
+		if ($schoolId < 1 || $yearId < 1 || $classId < 1 || $term < 1 || $title === '') {
+			return null;
+		}
+		$row = $this->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('type', 0)
+			->where('type_id', $classId)
+			->where('term', $term)
+			->where('title', $title)
+			->get(1)->getRowArray();
+		if ($row) {
+			return $row;
+		}
+		$want = strtolower(trim($title));
+		$candidates = $this->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('type', 0)
+			->where('type_id', $classId)
+			->where('term', $term)
+			->get()->getResultArray();
+		foreach ($candidates as $candidate) {
+			if (strtolower(trim((string) ($candidate['title'] ?? ''))) === $want) {
+				return $candidate;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Move payments from per-student Registration extras onto the class extra, then delete the copies.
+	 * Stops boarding 50,000 + leftover student 50,000 from showing as 100,000.
+	 */
+	public function absorbDuplicateStudentRegistrationFees(int $schoolId, int $yearId = 0): int
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$sql = "SELECT ex_s.id AS student_fee_id, ex_c.id AS class_fee_id, ex_s.title
+			FROM extra_fees ex_s
+			INNER JOIN class_records cr ON cr.student = ex_s.type_id AND cr.year = ex_s.academic_year
+			INNER JOIN extra_fees ex_c ON ex_c.school_id = ex_s.school_id
+				AND ex_c.academic_year = ex_s.academic_year
+				AND ex_c.term = ex_s.term
+				AND ex_c.type = 0
+				AND ex_c.type_id = cr.class
+				AND LOWER(ex_c.title) = LOWER(ex_s.title)
+			WHERE ex_s.school_id = ?
+				AND ex_s.type = 1";
+		$params = [$schoolId];
+		if ($yearId > 0) {
+			$sql .= " AND ex_s.academic_year = ?";
+			$params[] = $yearId;
+		}
+		$sql .= " ORDER BY ex_s.id ASC, cr.id ASC";
+		$rows = $db->query($sql, $params)->getResultArray();
+		$seen = [];
+		$removed = 0;
+		foreach ($rows as $row) {
+			$studentFeeId = (int) ($row['student_fee_id'] ?? 0);
+			$classFeeId = (int) ($row['class_fee_id'] ?? 0);
+			if ($studentFeeId < 1 || $classFeeId < 1 || isset($seen[$studentFeeId])) {
+				continue;
+			}
+			if (!self::isRegistrationTitle($row['title'] ?? '')) {
+				continue;
+			}
+			$seen[$studentFeeId] = true;
+			$db->table('fees_records')
+				->where('fees_type', 1)
+				->where('fees_id', $studentFeeId)
+				->update(['fees_id' => $classFeeId]);
+			$this->delete($studentFeeId);
+			$removed++;
+		}
+		return $removed;
+	}
+
 	public function upsertClassModeFee(
 		int $schoolId,
 		int $yearId,
