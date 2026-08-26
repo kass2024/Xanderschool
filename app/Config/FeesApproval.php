@@ -19,6 +19,17 @@ class FeesApproval
 	const PAYMENT_MODE_BANK_SLIP = 1;
 
 	/**
+	 * Browser number inputs with min=1 used to save dummy 1 RWF rows as "paid".
+	 *
+	 * @param mixed $amount
+	 * @return bool
+	 */
+	public static function isRealPaymentAmount($amount)
+	{
+		return (float) $amount >= 2;
+	}
+
+	/**
 	 * @param int $postId
 	 * @return bool
 	 */

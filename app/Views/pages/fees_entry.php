@@ -349,7 +349,7 @@ $(function () {
 				'<td class="text-right">' + formatRwf(it.expected) + '</td>' +
 				'<td class="text-right">' + formatRwf(it.paid) + '</td>' +
 				'<td class="text-right fe-amount-due">' + formatRwf(it.remain) + '</td>' +
-				'<td class="text-right"><input type="number" class="form-control form-control-sm fe-inv-amount text-right" min="1" step="1" max="' + it.remain + '" placeholder="0" disabled></td>' +
+				'<td class="text-right"><input type="number" class="form-control form-control-sm fe-inv-amount text-right" min="0" step="1" max="' + it.remain + '" placeholder="0" disabled></td>' +
 				'</tr>';
 		});
 		$('#feInvoiceBody').html(html);
@@ -457,7 +457,7 @@ $(function () {
 			if (!$cb.is(':checked')) return;
 			const amount = parseFloat($(this).find('.fe-inv-amount').val()) || 0;
 			const max = parseFloat($(this).data('remain')) || 0;
-			if (amount <= 0) return;
+			if (amount < 2) return;
 			if (amount > max + 0.001) {
 				toastada.error('Amount exceeds balance for ' + $(this).find('td').eq(1).text());
 				hasError = true;

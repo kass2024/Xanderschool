@@ -13724,17 +13724,23 @@ public function getApplicationDocs($id = null)
 		}
 
 		try {
+			$savedAny = false;
 			foreach ($items as $key => $item):
+				$payAmount = (float) ($amounts[$key] ?? 0);
+				if (!FeesApproval::isRealPaymentAmount($payAmount)) {
+					continue;
+				}
 				$data = [
 						"student_id" => $student,
 						"fees_type" => $feesTypes[$key],
-						"amount" => $amounts[$key],
+						"amount" => $payAmount,
 						"fees_id" => $item,
 						"due_date" => $due_date,
 						"payment_mode" => $modes[$key],
 						"status" => FeesApproval::STATUS_APPROVED,
 						"created_by" => $this->session->get("soma_id")];
 				$recId = $feeEntryModel->insert($data);
+				$savedAny = true;
 				if ($slipRef !== '') {
 					$this->_assignFeeSlipRef($feeEntryModel, (int) $recId, $student, (int) $feesTypes[$key], $slipRef);
 				}
@@ -13746,10 +13752,13 @@ public function getApplicationDocs($id = null)
 				$this->logFinanceAction('fee_record', 'fees_record', (int) $recId, [
 					'student_id' => $student,
 					'subject' => 'Fee payment recorded',
-					'details' => ['amount' => $amounts[$key] ?? 0, 'fees_type' => $feesTypes[$key] ?? 0],
+					'details' => ['amount' => $payAmount, 'fees_type' => $feesTypes[$key] ?? 0],
 				]);
 
 			endforeach;
+			if (!$savedAny) {
+				return $this->response->setJSON(["error" => "Paid amount cannot be 1. Enter the real amount or leave it unpaid."]);
+			}
 			$printUrl = base_url('print_fee_receipt/' . urlencode($resString) . '/' . $student . '?autoprint=1');
 			return $this->response->setJSON([
 				"success" => lang("app.feesRecordSaved"),
@@ -18259,12 +18268,12 @@ public function assign_card()
 			)
 			group by ex.type_id) student", "student.type_id=students.id", "LEFT")
 				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join school_fees sc ON sc.id = fr.fees_id
-			where fr.fees_type=0 and fr.status=1 and sc.term IN ($termsIn) and sc.academic_year=$academic and sc.school_id = $school_id group by fr.student_id) fr", "fr.student_id=students.id", "LEFT")
+			where fr.fees_type=0 and fr.status=1 and fr.amount > 1 and sc.term IN ($termsIn) and sc.academic_year=$academic and sc.school_id = $school_id group by fr.student_id) fr", "fr.student_id=students.id", "LEFT")
 				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join extra_fees ex ON ex.id = fr.fees_id
-			where fr.fees_type=1 and fr.status=1 and ex.type_id=$classe and ex.type=0 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaid", "extraPaid.student_id=students.id", "LEFT")
+			where fr.fees_type=1 and fr.status=1 and fr.amount > 1 and ex.type_id=$classe and ex.type=0 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaid", "extraPaid.student_id=students.id", "LEFT")
 				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr
 			inner join extra_fees ex ON ex.id = fr.fees_id and ex.type_id = fr.student_id
-			where fr.fees_type=1 and fr.status=1 and ex.type=1 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaidSingle", "extraPaidSingle.student_id=students.id", "LEFT")
+			where fr.fees_type=1 and fr.status=1 and fr.amount > 1 and ex.type=1 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaidSingle", "extraPaidSingle.student_id=students.id", "LEFT")
 //			->where("sf.school_id", $school_id)
 				->where("cr.year", $academic)
 				->where("cl.id", $classe)
@@ -20713,6 +20722,9 @@ public function assign_card()
 			$received = (float) ($pay['amount'] ?? 0);
 			if ($received <= 0) {
 				return ['ok' => false, 'error' => 'Enter a received amount greater than 0 for each selected item.'];
+			}
+			if (!FeesApproval::isRealPaymentAmount($received)) {
+				return ['ok' => false, 'error' => 'Paid amount cannot be 1. Enter the real amount or leave the item unchecked.'];
 			}
 			$feeType = (int) ($pay['fee_type'] ?? 0);
 			$feeId = (int) ($pay['id'] ?? 0);

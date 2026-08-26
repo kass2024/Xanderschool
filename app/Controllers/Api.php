@@ -38,6 +38,7 @@ use App\Models\TransportRecordModel;
 use App\Models\UpdateVersionModel;
 use App\Models\MarksModel;
 use App\Models\BoardingAttendanceModel;
+use Config\FeesApproval;
 use CodeIgniter\HTTP\Response;
 
 class Api extends BaseController
@@ -2004,6 +2005,9 @@ public function get_boarding_classes()
 				$amount = trim((string)($amounts[$key] ?? '0'));
 				$mode = (int)($modes[$key] ?? 2);
 				if ($feesId < 1 || $amount === '' || !preg_match('/^[0-9]+(\.[0-9]{1,2})?$/', $amount)) {
+					continue;
+				}
+				if (!FeesApproval::isRealPaymentAmount($amount)) {
 					continue;
 				}
 				$recId = $feeEntryModel->insert([
@@ -3974,6 +3978,31 @@ public function permission_card_scan()
 		]);
 	}
 
+	/**
+	 * Uploaded staff-card JPEG for HeyStar IN/OUT display. Never a terminal snapshot.
+	 */
+	public function heystar_staff_photo()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$in = $this->heystarInput();
+		$schoolId = (int) ($in['school_id'] ?? 0);
+		$sn = trim((string) ($in['sn'] ?? $in['personSn'] ?? ''));
+		$staffId = 0;
+		if (preg_match('/^T(\d+)$/', $sn, $m)) {
+			$staffId = (int) $m[1];
+		} else {
+			$staffId = (int) ($in['staff_id'] ?? 0);
+		}
+		$jpeg = AttendanceScanService::staffUploadedPhotoJpeg($schoolId, $staffId);
+		if ($jpeg === null || $jpeg === '') {
+			return $this->response->setStatusCode(404)->setBody('');
+		}
+		return $this->response
+			->setHeader('Content-Type', 'image/jpeg')
+			->setHeader('Content-Length', (string) strlen($jpeg))
+			->setBody($jpeg);
+	}
+
 	public function heystar_staff_synced()
 	{
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -4000,6 +4029,9 @@ public function permission_card_scan()
 			}
 		}
 		$in['school_id'] = (int) ($in['school_id'] ?? $this->request->getGet('school_id') ?? 0);
+		if (empty($in['sn'])) {
+			$in['sn'] = (string) ($this->request->getGet('sn') ?? '');
+		}
 		return $in;
 	}
 }

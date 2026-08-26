@@ -1066,7 +1066,7 @@ foreach ($pendings as $p) {
         '<td class="text-right">' + formatRwf(it.expected) + '</td>' +
         '<td class="text-right">' + formatRwf(it.paid) + '</td>' +
         '<td class="text-right fe-amount-due">' + formatRwf(it.remain) + '</td>' +
-        '<td class="text-right"><input type="number" class="form-control form-control-sm fe-inv-amount text-right" min="1" step="1" max="' + it.remain + '" placeholder="0" disabled></td>' +
+        '<td class="text-right"><input type="number" class="form-control form-control-sm fe-inv-amount text-right" min="0" step="1" max="' + it.remain + '" placeholder="0" disabled></td>' +
         '</tr>';
     });
     if (!invoiceItems.length) {
@@ -1264,7 +1264,7 @@ foreach ($pendings as $p) {
       if (!item) return;
       var amount = parseFloat($(this).find('.fe-inv-amount').val()) || 0;
       var max = parseFloat($(this).data('remain')) || 0;
-      if (amount <= 0) return;
+      if (amount < 2) return;
       if (amount > max + 0.001) {
         showAlert($('#approveAlert'), 'danger', 'Amount exceeds balance for ' + (item.label || 'item') + '.');
         hasError = true;
