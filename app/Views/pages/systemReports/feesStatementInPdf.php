@@ -69,10 +69,10 @@ function getJsTermToString($term){
 				<span><b><?= lang("app.phone"); ?> </b>  : <?= $school_phone; ?></span><br>
 			</div>
 			<div class="pull-right" style="padding:5px;">
-				<span><b>Academic year:</b>  <?=$years['title']; ?></span><br>
-				<span><b>Term: </b> <?= getJsTermToString($term); ?></span><br>
-				<span><b>Class:  </b> <?php echo $classe['level_name']." ".$classe['dept_code']." ".$classe['title']?></span><br>
-				<span><b>Class mentor:</b> <?=$classe['mentor_name'];?></span><br>
+				<span><b>Academic year:</b>  <?= esc($selectedYearTitle ?? ($years['title'] ?? '')); ?></span><br>
+				<span><b>Term: </b> <?= esc($termLabel ?? getJsTermToString($term)); ?></span><br>
+				<span><b>Class:  </b> <?= esc(!empty($classLabel) ? $classLabel : trim(($classe['level_name'] ?? '') . ' ' . ($classe['dept_code'] ?? '') . ' ' . ($classe['title'] ?? ''))); ?></span><br>
+				<span><b>Class mentor:</b> <?= esc(is_array($classe) ? (string) ($classe['mentor_name'] ?? '—') : '—'); ?></span><br>
 				<span><b>Total listed students: </b> <?= count($students); ?></span><br>
 			</div>
 		</div>

@@ -18199,37 +18199,30 @@ public function assign_card()
 		$extraFeesMdl->ensureSchema();
 		$extraFeesMdl->absorbDuplicateStudentRegistrationFees((int) $school_id, (int) $academic);
 		(new SchoolFeesModel())->ensureSchema();
-		if ($pdf == 1) {
-			$data['years'] = $acMdl->select('id,title')->where("id", $academic)->get()->getRowArray();
-			$data['classe'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
+		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
+				->orderBy("id", 'DESC')->get()->getResultArray();
+		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
 		,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf")
-					->join("departments d", "d.id=classes.department")
-					->join("levels l", "l.id=classes.level")
-					->join("faculty f", "f.id=d.faculty_id")
-					->join("staffs s", "s.id=classes.mentor", "LEFT")
-					->where("classes.school_id", $school_id)
-					->where("classes.id", $classe)
-					->get()->getRowArray();
-		} else {
-			$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
-					->orderBy("id", 'DESC')->get()->getResultArray();
-			$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
-		,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf")
-					->join("departments d", "d.id=classes.department")
-					->join("levels l", "l.id=classes.level")
-					->join("faculty f", "f.id=d.faculty_id")
-					->join("staffs s", "s.id=classes.mentor", "LEFT")
-					->where("classes.school_id", $school_id)
-					->get()->getResultArray();
-
-			if ($pdf != 1 && $pdf != 2 && (int) $classe <= 0 && !empty($data['classes'])) {
-				return redirect()->to(site_url('system-report/fees?' . http_build_query([
-					'c' => $data['classes'][0]['id'],
-					'academic' => $academic,
-					'term' => $termsList,
-					'filter' => $filter,
-				])));
+				->join("departments d", "d.id=classes.department")
+				->join("levels l", "l.id=classes.level")
+				->join("faculty f", "f.id=d.faculty_id")
+				->join("staffs s", "s.id=classes.mentor", "LEFT")
+				->where("classes.school_id", $school_id)
+				->get()->getResultArray();
+		$data['classe'] = null;
+		foreach ($data['classes'] as $clRow) {
+			if ((int) ($clRow['id'] ?? 0) === (int) $classe) {
+				$data['classe'] = $clRow;
+				break;
 			}
+		}
+		if ($pdf != 1 && $pdf != 2 && (int) $classe <= 0 && !empty($data['classes'])) {
+			return redirect()->to(site_url('system-report/fees?' . http_build_query([
+				'c' => $data['classes'][0]['id'],
+				'academic' => $academic,
+				'term' => $termsList,
+				'filter' => $filter,
+			])));
 		}
 
 		$studentsQuery = $studentMdl->select("concat(students.fname,' ',students.lname) as student,students.id as student_id,
@@ -18392,8 +18385,11 @@ public function assign_card()
 
 		$data['selectedYearTitle'] = '';
 		foreach ($data['years'] as $yr) {
-			if ((int) $yr['id'] === (int) $academic) {
-				$data['selectedYearTitle'] = $yr['title'];
+			if (!is_array($yr)) {
+				continue;
+			}
+			if ((int) ($yr['id'] ?? 0) === (int) $academic) {
+				$data['selectedYearTitle'] = (string) ($yr['title'] ?? '');
 				break;
 			}
 		}
@@ -18413,18 +18409,28 @@ public function assign_card()
 			}, $termsList));
 
 		if ($pdf == 1) {
-			$html = view("pages/systemReports/feesStatementInPdf", $data);
+			$yearRow = [
+				'id' => (int) $academic,
+				'title' => (string) ($data['selectedYearTitle'] ?? ''),
+			];
+			$html = view("pages/systemReports/feesStatementInPdf", array_merge($data, [
+				'years' => $yearRow,
+				'title' => lang('app.feesReport'),
+			]));
 			try {
 				$mask = FCPATH . "assets/templates/*.html";
-				array_map('unlink', glob($mask));//clear previous cards
+				$oldHtml = glob($mask);
+				if (is_array($oldHtml)) {
+					array_map('unlink', $oldHtml);
+				}
 				$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
-				$wkhtmltopdf->setTitle($data['title']);
+				$wkhtmltopdf->setTitle(lang('app.feesReport'));
 				$wkhtmltopdf->setHtml($html);
 				$wkhtmltopdf->setPageSize("A4");
 				$wkhtmltopdf->setOrientation("portrait");
 				//					$wkhtmltopdf->setOptions(array("page-width" => "278px", "page-height" => "430px"));
 				$wkhtmltopdf->setMargins(array("top" => 1, "left" => 0, "right" => 0, "bottom" => 1));
-				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, $data['title'] . "_" . time() . ".pdf");
+				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "fees_report_" . time() . ".pdf");
 			} catch (\Exception $e) {
 				echo $e->getMessage();
 			}
