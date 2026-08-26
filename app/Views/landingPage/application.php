@@ -831,7 +831,7 @@
 																	<div class="ss-panel-head" style="margin:0 0 8px;padding:0;border:0;background:transparent"><i class="fa fa-money"></i> Amount to pay</div>
 																	<p class="text-muted" id="regFeeMode" style="margin:0 0 4px;font-size:.85rem"></p>
 																	<strong id="regFeeAmount" style="font-size:1.25rem">0 Rwf</strong>
-																	<p class="text-muted" style="margin:6px 0 0;font-size:.82rem">Based on boarding or day extra fees for the selected class. Recorded in the fees report after approval.</p>
+																	<p class="text-muted" style="margin:6px 0 0;font-size:.82rem">Registration fee for the studying mode you selected. Pay this amount with MoMo Pay below.</p>
 																</div>
 																<?= view('landingPage/_momo_pay_box', [
 																	'momo_pay_code' => $momo_pay_code ?? '',
@@ -1444,25 +1444,60 @@
 				});
 			});
 
-			function refreshRegistrationFee() {
-				var $opt = $("#classOptions").find(':selected');
-				var mode = String($("[name='studingMode']").val() || '');
-				var classId = $("#classOptions").val();
-				if (!classId || (mode !== '0' && mode !== '1')) {
-					$("#regFeeBox").hide();
-					return;
-				}
-				var boarding = parseFloat($opt.data('extra-boarding') || 0) || 0;
-				var day = parseFloat($opt.data('extra-day') || 0) || 0;
-				var amount = mode === '0' ? boarding : day;
-				var label = mode === '0' ? 'Boarding' : 'Day';
-				if (amount <= 0) {
-					$("#regFeeBox").hide();
-					return;
-				}
-				$("#regFeeMode").text(label + ' extra fees for the selected class');
-				$("#regFeeAmount").text(amount.toLocaleString() + ' Rwf');
+			function showRegFee(amount, desc) {
+				$("#regFeeMode").text(desc);
+				$("#regFeeAmount").text(Number(amount || 0).toLocaleString() + ' Rwf');
 				$("#regFeeBox").show();
+			}
+
+			var feeReqSeq = 0;
+			function refreshRegistrationFee() {
+				var mode = String($("[name='studingMode']").val() || '');
+				var classId = parseInt($("#classOptions").val(), 10) || 0;
+				var deptId = parseInt($("#departmentOptions").val(), 10) || 0;
+				var schoolId = getSchoolIdForReg();
+				var label = mode === '0' ? 'Boarding' : (mode === '1' ? 'Day' : '');
+				if (mode !== '0' && mode !== '1') {
+					$("#regFeeBox").hide();
+					return;
+				}
+				var $opt = $("#classOptions").find(':selected');
+				var cached = parseFloat(mode === '0'
+					? ($opt.attr('data-extra-boarding') || $opt.data('extraBoarding') || 0)
+					: ($opt.attr('data-extra-day') || $opt.data('extraDay') || 0)) || 0;
+				if (cached > 0) {
+					showRegFee(cached, label + ' registration fee');
+					return;
+				}
+				var url = null;
+				if (schoolId && classId) {
+					url = "<?= site_url('getRegistrationFeeByClass'); ?>/" + schoolId + "/" + classId + "/" + mode;
+				} else if (schoolId && deptId) {
+					url = "<?= site_url('getRegistrationFeeByDepartment'); ?>/" + schoolId + "/" + deptId + "/" + mode;
+				}
+				$("#regFeeBox").show();
+				if (!url) {
+					$("#regFeeMode").text('Choose faculty, department and class above — then the ' + label.toLowerCase() + ' registration amount will appear here.');
+					$("#regFeeAmount").text('—');
+					return;
+				}
+				var req = ++feeReqSeq;
+				$("#regFeeMode").text('Loading ' + label.toLowerCase() + ' registration fee…');
+				$("#regFeeAmount").text('…');
+				$.getJSON(url, function (data) {
+					if (req !== feeReqSeq) return;
+					var fee = parseFloat(data && data.fee) || 0;
+					if (fee > 0) {
+						showRegFee(fee, (data.description || label) + ' registration fee');
+					} else {
+						$("#regFeeMode").text(label + ' registration fee is not set for this class yet.');
+						$("#regFeeAmount").text('0 Rwf');
+					}
+				}).fail(function () {
+					if (req !== feeReqSeq) return;
+					$("#regFeeMode").text('Could not load the registration fee. Try choosing the class again.');
+					$("#regFeeAmount").text('—');
+				});
 			}
 
 			$("#schoolOptions").on("change", function () {

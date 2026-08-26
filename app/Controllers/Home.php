@@ -19395,6 +19395,53 @@ public function assign_card()
 	}
 
 	/**
+	 * Registration fee for a class + boarding/day (online registration form).
+	 */
+	public function getRegistrationFeeByClass(int $school, int $classId, int $studyingMode): Response
+	{
+		$studyingMode = ((int) $studyingMode === 1) ? 1 : 0;
+		$yearId = 0;
+		$at = (new ActiveTermModel())->select('academic_year')
+			->where('school_id', $school)
+			->orderBy('id', 'DESC')
+			->get(1)->getRowArray();
+		if ($at) {
+			$yearId = (int) ($at['academic_year'] ?? 0);
+		}
+		$extraMdl = new ExtraFeesModel();
+		$extraMdl->ensureSchema();
+		$fee = $yearId > 0
+			? $extraMdl->registrationAmountForClass((int) $school, $yearId, (int) $classId, $studyingMode)
+			: 0.0;
+		if ($fee <= 0) {
+			$feeSvc = new ApplicationRegistrationFeeService();
+			$feeSvc->ensureSchema();
+			$appMdl = new ApplicationSettingsModel();
+			$settings = $appMdl->select('id,registration_fees,fee_mode')
+				->where('school_id', $school)
+				->orderBy('id', 'desc')
+				->get(1)->getRow();
+			if ($settings) {
+				$classRow = (new ClassesModel())->select('id,level,department')->where('id', $classId)->get(1)->getRowArray();
+				$fee = (float) $feeSvc->resolveFee(
+					(int) $settings->id,
+					(int) $classId,
+					(int) ($classRow['level'] ?? 0),
+					(int) ($classRow['department'] ?? 0),
+					$studyingMode
+				);
+			}
+		}
+		$modeLabel = $studyingMode === 1 ? 'Day' : 'Boarding';
+		return $this->response->setJSON([
+			'success' => 1,
+			'fee' => (float) $fee,
+			'fee_label' => number_format((float) $fee) . ' Rwf',
+			'description' => $modeLabel,
+		]);
+	}
+
+	/**
 	 * Registration fee for department + day/boarding (online registration payment step).
 	 */
 	public function getRegistrationFeeByDepartment(int $school, int $department, int $studyingMode): Response
@@ -19414,6 +19461,31 @@ public function assign_card()
 			->where('departments.id', $department)
 			->get(1)->getRowArray();
 		$fee = $feeSvc->resolveFee((int) $settings->id, null, null, $department, $studyingMode);
+		if ($fee <= 0) {
+			$yearId = 0;
+			$at = (new ActiveTermModel())->select('academic_year')
+				->where('school_id', $school)
+				->orderBy('id', 'DESC')
+				->get(1)->getRowArray();
+			if ($at) {
+				$yearId = (int) ($at['academic_year'] ?? 0);
+			}
+			if ($yearId > 0) {
+				$extraMdl = new ExtraFeesModel();
+				$extraMdl->ensureSchema();
+				$classIds = (new ClassesModel())->select('id')
+					->where('school_id', $school)
+					->where('department', $department)
+					->findColumn('id') ?: [];
+				foreach ($classIds as $cid) {
+					$amt = $extraMdl->registrationAmountForClass((int) $school, $yearId, (int) $cid, $studyingMode);
+					if ($amt > 0) {
+						$fee = $amt;
+						break;
+					}
+				}
+			}
+		}
 		$modeLabel = ((int) $studyingMode === 1) ? 'Day' : 'Boarding';
 		$deptLabel = trim(($deptRow['faculty_name'] ?? '') . ' · ' . ($deptRow['dept_name'] ?? ''));
 		return $this->response->setJSON([
