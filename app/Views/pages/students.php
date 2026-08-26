@@ -59,6 +59,7 @@
 .st-visitor-badge i { font-size: 10px; }
 .st-sms-actions { display:flex; gap:8px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
 .btn-send-admission-sms { white-space:nowrap; }
+.btn-resend-admission-sms { white-space:nowrap; }
 .st-sms-check { width:16px; height:16px; cursor:pointer; }
 #admissionSmsAlert { margin: 8px 0 12px; }
 .btn-move-student { white-space:nowrap; }
@@ -269,6 +270,12 @@
 																data-id="<?= (int) $student['id']; ?>"
 																title="Send admission confirmation SMS">Approve</button>
 														<?php endif; ?>
+														<button type="button"
+																class="btn btn-sm btn-outline-info btn-resend-admission-sms"
+																data-id="<?= (int) $student['id']; ?>"
+																title="Resend admission confirmation SMS">
+															<i class="fa fa-paper-plane"></i> Resend
+														</button>
 														<label class="typcn typcn-delete text-danger link"
 															   data-toggle="delete"
 															   data-title="Student #<?= $student['fname']; ?>"
@@ -410,12 +417,16 @@
 			showAlert('warning', 'Select at least one student.');
 			return;
 		}
-		var isRowBtn = $btn && $btn.hasClass('btn-send-admission-sms');
+		var isApproveBtn = $btn && $btn.hasClass('btn-send-admission-sms');
+		var isResendBtn = $btn && $btn.hasClass('btn-resend-admission-sms');
+		var origHtml = $btn ? $btn.html() : '';
 		if ($btn) {
-			$btn.prop('disabled', true).text('Sending…');
+			$btn.prop('disabled', true).html(isResendBtn
+				? '<i class="fa fa-spinner fa-spin"></i> Sending…'
+				: 'Sending…');
 		}
 		$('#btnSendAdmissionSmsSelected').prop('disabled', true);
-		showAlert('info', 'Sending admission SMS…');
+		showAlert('info', isResendBtn ? 'Resending admission SMS…' : 'Sending admission SMS…');
 		$.ajax({
 			url: SMS_API,
 			type: 'POST',
@@ -423,21 +434,24 @@
 			data: withCsrf({ studentIds: ids, year: YEAR_ID })
 		}).done(function (res) {
 			if (res && res.success) {
-				showAlert('success', res.message || 'Admission SMS sent.');
+				showAlert('success', res.message || (isResendBtn ? 'Admission SMS resent.' : 'Admission SMS sent.'));
 				markApproved(res.sentIds && res.sentIds.length ? res.sentIds : ids);
 			} else {
 				showAlert('danger', (res && (res.error || res.message)) || 'SMS was not sent.');
-				if (isRowBtn) {
+				if (isApproveBtn) {
 					$btn.prop('disabled', false).text('Approve');
 				}
 			}
 		}).fail(function () {
 			showAlert('danger', 'Could not send SMS. Please try again.');
-			if (isRowBtn) {
+			if (isApproveBtn) {
 				$btn.prop('disabled', false).text('Approve');
 			}
 		}).always(function () {
 			$('#btnSendAdmissionSmsSelected').prop('disabled', false).text('Send to selected');
+			if (isResendBtn && $btn && $btn.length) {
+				$btn.prop('disabled', false).html(origHtml);
+			}
 		});
 	}
 
@@ -466,6 +480,17 @@
 			return;
 		}
 		if (!confirm('Send the admission confirmation SMS for this student?')) {
+			return;
+		}
+		sendSms([id], $(this));
+	});
+
+	$(document).on('click', '.btn-resend-admission-sms', function () {
+		var id = parseInt($(this).data('id'), 10);
+		if (!id) {
+			return;
+		}
+		if (!confirm('Resend the admission confirmation SMS for this student?')) {
 			return;
 		}
 		sendSms([id], $(this));
