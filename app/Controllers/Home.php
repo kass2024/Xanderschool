@@ -19294,14 +19294,21 @@ public function assign_card()
 			$cls['label'] = $label;
 			$cls['fee'] = $fee;
 			$cls['fee_label'] = number_format($fee) . ' Rwf';
-			$board = 0.0;
-			$day = 0.0;
+			$boardByTerm = [];
+			$dayByTerm = [];
 			foreach ($extraByClass[(int) $cls['id']] ?? [] as $er) {
-				$board += ExtraFeesModel::expectedForMode($er, 0);
-				$day += ExtraFeesModel::expectedForMode($er, 1);
+				if (!ExtraFeesModel::isRegistrationTitle($er['title'] ?? '')) {
+					continue;
+				}
+				$term = (int) ($er['term'] ?? 0);
+				if (isset($boardByTerm[$term])) {
+					continue;
+				}
+				$boardByTerm[$term] = ExtraFeesModel::expectedForMode($er, 0);
+				$dayByTerm[$term] = ExtraFeesModel::expectedForMode($er, 1);
 			}
-			$cls['extra_boarding'] = $board;
-			$cls['extra_day'] = $day;
+			$cls['extra_boarding'] = (float) ($boardByTerm[1] ?? (reset($boardByTerm) ?: 0));
+			$cls['extra_day'] = (float) ($dayByTerm[1] ?? (reset($dayByTerm) ?: 0));
 		}
 		unset($cls);
 		return $this->response->setJSON([
@@ -19973,7 +19980,6 @@ public function assign_card()
 			$year,
 			(int) ($this->session->get('soma_id') ?: 0)
 		);
-		(new SchoolFeesModel())->ensureSchema();
 		$classMdl = new ClassesModel();
 		foreach ($data['pendings'] as &$pending) {
 			$mode = (int) ($pending['studyingMode'] ?? 1);
@@ -19989,14 +19995,9 @@ public function assign_card()
 					->get(1)->getRowArray();
 				$classId = (int) ($match['id'] ?? 0);
 			}
-			$invoice = $classId > 0
-				? $this->pendingApplicationFeeInvoiceItems($school_id, $year, $classId, $levelId, $deptId, $mode)
-				: ['items' => []];
-			$due = 0.0;
-			foreach ($invoice['items'] as $item) {
-				$due += (float) ($item['expected'] ?? 0);
-			}
-			$pending['fee_due'] = $due;
+			$pending['fee_due'] = $classId > 0
+				? $extraFeesMdl->registrationAmountForClass((int) $school_id, $year, $classId, $mode)
+				: 0.0;
 		}
 		unset($pending);
 		$data['content'] = view("pages/pendingRegistrations", $data);

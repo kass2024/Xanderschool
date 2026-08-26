@@ -341,7 +341,7 @@ foreach ($pendings as $p) {
                           <th>Gender</th>
                           <th>Level</th>
                           <th>Studying mode</th>
-                          <th>To pay</th>
+                          <th>Registration</th>
                           <th>Parent type</th>
                           <th>Parent name</th>
                           <th>Parent phone</th>
@@ -395,7 +395,7 @@ foreach ($pendings as $p) {
                           <th>Gender</th>
                           <th>Level</th>
                           <th>Studying mode</th>
-                          <th>To pay</th>
+                          <th>Registration</th>
                           <th>Parent type</th>
                           <th>Parent name</th>
                           <th>Parent phone</th>
@@ -450,7 +450,7 @@ foreach ($pendings as $p) {
                           <dd><?= esc($mode) ?></dd>
                         </div>
                         <div>
-                          <dt>To pay</dt>
+                          <dt>Registration</dt>
                           <dd>
                             <?php $due = (float) ($pending['fee_due'] ?? 0); ?>
                             <?= $due > 0 ? number_format($due) . ' Rwf' : '—'; ?>

@@ -54,6 +54,47 @@ class ExtraFeesModel extends Model
 		return max(0, (float) $amount);
 	}
 
+	public static function isRegistrationTitle(?string $title): bool
+	{
+		return (bool) preg_match('/regist/', strtolower(trim((string) $title)));
+	}
+
+	/**
+	 * One-time Registration extra fee for a class (term 1 preferred). Ignores school fees and other extras.
+	 */
+	public function registrationAmountForClass(int $schoolId, int $yearId, int $classId, int $studyingMode): float
+	{
+		if ($schoolId < 1 || $yearId < 1 || $classId < 1) {
+			return 0;
+		}
+		$this->ensureSchema();
+		$rows = $this->select('title, term, amount, amount_boarding, amount_day')
+			->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('type', 0)
+			->where('type_id', $classId)
+			->orderBy('term', 'ASC')
+			->get()->getResultArray();
+		$byTerm = [];
+		foreach ($rows as $row) {
+			if (!self::isRegistrationTitle($row['title'] ?? '')) {
+				continue;
+			}
+			$amt = self::expectedForMode($row, $studyingMode);
+			if ($amt <= 0) {
+				continue;
+			}
+			$term = (int) ($row['term'] ?? 0);
+			if (!isset($byTerm[$term])) {
+				$byTerm[$term] = $amt;
+			}
+		}
+		if (isset($byTerm[1])) {
+			return (float) $byTerm[1];
+		}
+		return $byTerm ? (float) reset($byTerm) : 0.0;
+	}
+
 	public static function isTrackRegistrationDepartment(?string $title, ?string $code = null): bool
 	{
 		$c = strtoupper(trim((string) $code));
