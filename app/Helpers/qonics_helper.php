@@ -52,10 +52,13 @@ if (!function_exists('menu_clearance_allowed')) {
 				$mdl = new \App\Models\PostMenuClearanceModel();
 				$cacheKeys = $mdl->allowedKeysForPost($postId, $schoolId);
 			} catch (\Throwable $e) {
-				$cacheKeys = \Config\MenuClearance::applyChildSchoolFinancePolicy(
-					\Config\MenuClearance::defaultKeysForPost($postId),
-					$postId,
-					$schoolId
+				$cacheKeys = \Config\MenuClearance::applyFeeOperatorPolicy(
+					\Config\MenuClearance::applyChildSchoolFinancePolicy(
+						\Config\MenuClearance::defaultKeysForPost($postId),
+						$postId,
+						$schoolId
+					),
+					$postId
 				);
 			}
 			if (!is_array($cacheKeys)) {
@@ -64,6 +67,20 @@ if (!function_exists('menu_clearance_allowed')) {
 		}
 
 		return in_array($menuKey, $cacheKeys, true);
+	}
+}
+
+if (!function_exists('can_manage_fees')) {
+	function can_manage_fees()
+	{
+		return \Config\MenuClearance::canManageFees((int) ($_SESSION['soma_post'] ?? 0));
+	}
+}
+
+if (!function_exists('can_act_on_fees_report')) {
+	function can_act_on_fees_report()
+	{
+		return \Config\MenuClearance::canActOnFeesReport((int) ($_SESSION['soma_post'] ?? 0));
 	}
 }
 

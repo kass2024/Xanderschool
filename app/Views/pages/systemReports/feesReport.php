@@ -37,6 +37,7 @@ if (!function_exists('fr_payment_status')) {
 	}
 }
 
+$canFeesActions = !empty($canFeesActions);
 $qp = $queryParams ?? '';
 $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 ?>
@@ -185,7 +186,7 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 				</div>
 			</div>
 
-			<?php if ($filter != '1') : ?>
+			<?php if ($filter != '1' && $canFeesActions) : ?>
 			<div class="fr-sms-bar">
 				<div class="fr-sms-group">
 					<button type="button" class="btn btn-info btn-sm" id="btn-send-fees-sms-all">
@@ -227,7 +228,7 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 						<th class="text-right">Balance</th>
 						<th>Status</th>
 						<th><?= lang('app.recordedBy'); ?></th>
-						<?php if ($filter != '1') : ?><th></th><?php endif; ?>
+						<?php if ($filter != '1' && $canFeesActions) : ?><th></th><?php endif; ?>
 					</tr>
 					</thead>
 					<tbody>
@@ -273,7 +274,7 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 									<span class="text-muted">—</span>
 								<?php endif; ?>
 							</td>
-							<?php if ($filter != '1') : ?>
+							<?php if ($filter != '1' && $canFeesActions) : ?>
 							<td class="text-right">
 								<?php if ($st['remain'] > 0) : ?>
 									<button type="button" class="btn btn-link btn-sm fr-btn-sms-row p-0" data-student-id="<?= $sid; ?>" title="Send balance SMS">
@@ -298,6 +299,7 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 $(function () {
 	const $form = $('#view_students_form');
 	const smsBaseUrl = <?= json_encode($smsBaseUrl); ?>;
+	const canFeesActions = <?= $canFeesActions ? 'true' : 'false'; ?>;
 
 	function frSyncTermChips() {
 		$('.fr-term-chip').each(function () {
@@ -353,6 +355,7 @@ $(function () {
 		});
 	});
 
+	if (canFeesActions) {
 	function frResolveStudentIdFromSearch() {
 		const raw = $('#frSmsSearch').val().trim();
 		if (!raw) return 0;
@@ -401,5 +404,6 @@ $(function () {
 	$(document).on('click', '.fr-btn-sms-row', function () {
 		frSendSms(parseInt($(this).data('student-id'), 10) || 0, $(this));
 	});
+	}
 });
 </script>

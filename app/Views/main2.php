@@ -519,7 +519,7 @@
 							}
 							?>
 							<?php
-							if (is_allowed(1, 9, 3)) {
+							if (can_manage_fees() || can_act_on_fees_report() || menu_clearance_allowed('system-report/fees')) {
 								?>
 								<li class="app-sidebar__heading"><?= lang("app.feesManagement"); ?></li>
 								<li>
@@ -530,6 +530,7 @@
 									</a>
 
 									<ul class="mm-collapse">
+										<?php if (can_manage_fees()) { ?>
 										<li>
 											<a href="<?= base_url('fees_entry'); ?>">
 												<i class="metismenu-icon"></i>
@@ -548,18 +549,7 @@
 												<?= lang("app.extraFeesManagement"); ?>
 											</a>
 										</li>
-										<li>
-											<a href="<?= base_url('transport_fees_management'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.transportFeesManagement"); ?>
-											</a>
-										</li>
-										<li>
-											<a href="<?= base_url('finance_records'); ?>">
-												<i class="metismenu-icon"></i>
-												Self service transactions
-											</a>
-										</li>
+										<?php } ?>
 										<li>
 											<a href="<?= base_url('system-report/fees'); ?>">
 												<i class="metismenu-icon"></i>
@@ -570,6 +560,8 @@
 								</li>
 								<?php
 							}
+							?>
+							<?php
 							if (is_allowed(1, 7, 13, 3)) {
 								?>
 								<li class="app-sidebar__heading"><?= lang("app.libraryManagement"); ?></li>

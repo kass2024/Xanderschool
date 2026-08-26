@@ -97,6 +97,7 @@ class PostMenuClearanceModel extends Model
 		if ($schoolId !== null) {
 			$keys = MenuClearance::applyChildSchoolFinancePolicy($keys, $postId, (int) $schoolId);
 		}
+		$keys = MenuClearance::applyFeeOperatorPolicy($keys, $postId);
 
 		return array_values(array_unique($keys));
 	}

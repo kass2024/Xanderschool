@@ -21,6 +21,10 @@ class MenuClearance
 	const FINANCE_FULL_CONTROL_POSTS = [24]; // Director of Finance
 	const CHILD_BUDGET_PREPARE_POSTS = [8, 9]; // Cashier, Accountant
 	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18]; // Head master, DOS, Dean of discipline, Principal, Headmistress
+	/** Fees Entry + school/extra fee settings. */
+	const FEE_OPERATOR_POSTS = [8, 9, 24]; // Cashier, Accountant, Director of Finance
+	/** Fees report only (no entry, no settings, no SMS). */
+	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 15, 18];
 	/** Budget Dashboard “All branches” / cross-school rollup (master school only). */
 	const BUDGET_CROSS_BRANCH_DASHBOARD_POSTS = [15, 19, 24]; // Principal, Budget Manager, Director of Finance
 
@@ -116,14 +120,8 @@ class MenuClearance
 			$nonFinance = array_values(array_filter($keys, static function ($k) {
 				return !self::isFinanceMenuKey($k);
 			}));
-			// Keep fee menus for leaders if they already had them (master full access) — but no budget prepare
-			$feeKeep = [];
-			foreach ($keys as $k) {
-				if (in_array($k, self::feeMenuKeys(), true) || $k === 'fees') {
-					$feeKeep[] = $k;
-				}
-			}
-			return array_values(array_unique(array_merge($nonFinance, self::childBudgetViewKeys(), $feeKeep)));
+			// Leaders: fees report only — not Fees Entry or fee settings
+			return array_values(array_unique(array_merge($nonFinance, self::childBudgetViewKeys(), self::feeReportOnlyKeys())));
 		}
 
 		if (!$isChild) {
@@ -215,6 +213,63 @@ class MenuClearance
 	public static function isBudgetViewOnlyPost($postId)
 	{
 		return self::isChildBudgetViewOnly($postId, 0);
+	}
+
+	/** Fees Entry, school fees settings, extra fees settings. */
+	public static function feeOperatorMenuKeys()
+	{
+		return ['fees_entry', 'school_fees_management', 'extra_fees_management', 'extra_fees_entry'];
+	}
+
+	/** Sidebar keys for view-only fees report. */
+	public static function feeReportOnlyKeys()
+	{
+		return ['finance', 'fees', 'system-report/fees'];
+	}
+
+	public static function canManageFees($postId)
+	{
+		return in_array((int) $postId, self::FEE_OPERATOR_POSTS, true);
+	}
+
+	public static function canViewFeesReport($postId)
+	{
+		$postId = (int) $postId;
+		return self::canManageFees($postId) || in_array($postId, self::FEE_REPORT_VIEW_POSTS, true);
+	}
+
+	/** SMS and other write actions on the fees report. */
+	public static function canActOnFeesReport($postId)
+	{
+		return self::canManageFees($postId);
+	}
+
+	/**
+	 * Director of Finance / Cashier / Accountant: full fee menus.
+	 * Headmaster / Principal / Headmistress / DOS / Dean: fees report only.
+	 * Everyone else: no fee entry or settings.
+	 *
+	 * @param string[] $keys
+	 * @param int      $postId
+	 * @return string[]
+	 */
+	public static function applyFeeOperatorPolicy(array $keys, $postId)
+	{
+		$postId = (int) $postId;
+		$operatorKeys = self::feeOperatorMenuKeys();
+		if (self::canManageFees($postId)) {
+			return array_values(array_unique(array_merge($keys, ['finance', 'fees'], self::feeMenuKeys())));
+		}
+		$keys = array_values(array_filter($keys, static function ($k) use ($operatorKeys) {
+			return !in_array($k, $operatorKeys, true);
+		}));
+		if (self::canViewFeesReport($postId)) {
+			return array_values(array_unique(array_merge($keys, self::feeReportOnlyKeys())));
+		}
+		$keys = array_values(array_filter($keys, static function ($k) {
+			return $k !== 'system-report/fees';
+		}));
+		return $keys;
 	}
 
 	/**

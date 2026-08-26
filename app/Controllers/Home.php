@@ -74,6 +74,7 @@ use App\Models\BoardingAttendanceModel;
 use App\Services\ApplicationRegistrationFeeService;
 use CodeIgniter\HTTP\Response;
 use Config\FeesApproval;
+use Config\MenuClearance;
 
 use GuzzleHttp\Client;
 
@@ -12763,6 +12764,7 @@ public function getApplicationDocs($id = null)
 	function school_fees_management()
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator();
 		$data = $this->data;
 		$schoolFee = new SchoolFeesModel();
 		$schoolFee->ensureSchema();
@@ -12807,6 +12809,7 @@ public function getApplicationDocs($id = null)
 	public function school_fees_data()
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$school_id = (int) $this->session->get("soma_school_id");
 		$selectedYear = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
 		$schoolFee = new SchoolFeesModel();
@@ -12917,6 +12920,7 @@ public function getApplicationDocs($id = null)
 	function manipulate_school_fee()
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$school_id = (int) $this->session->get("soma_school_id");
 		$dept = (int) $this->request->getPost("dept");
 
@@ -13429,6 +13433,7 @@ public function getApplicationDocs($id = null)
 	function extra_fees_management()
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator();
 		$data = $this->data;
 		$classMdl = new ClassesModel();
 		$extraFees = new ExtraFeesModel();
@@ -13531,6 +13536,7 @@ public function getApplicationDocs($id = null)
 	function manipulate_extra_fee($type = 0)
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$ExtraFeesModel = new ExtraFeesModel();
 		$ExtraFeesModel->ensureSchema();
 		$school_id = (int) $this->session->get("soma_school_id");
@@ -13657,6 +13663,7 @@ public function getApplicationDocs($id = null)
 	function manipulate_fee_discount()
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$student = $this->request->getPost("studentId");
 		$oldAmount = $this->request->getPost("feeAmount");
 		$newAmount = $this->request->getPost("feeNewAmount");
@@ -13695,6 +13702,7 @@ public function getApplicationDocs($id = null)
 	function manipulate_fee_entry()
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$items = $this->request->getPost("items");
 		$student = (int) $this->request->getPost("studentid");
 		$feesTypes = $this->request->getPost("feeTypes");
@@ -13826,6 +13834,25 @@ public function getApplicationDocs($id = null)
 		return $payload;
 	}
 
+	private function denyUnlessFeeOperator($asJson = false): void
+	{
+		$post = (int) $this->session->get('soma_post');
+		if (MenuClearance::canManageFees($post)) {
+			return;
+		}
+		if ($asJson || $this->request->isAJAX()) {
+			$this->response->setJSON(['error' => lang('app.accessDenied')])->send();
+			exit;
+		}
+		$this->session->setFlashdata('error', lang('app.accessDenied'));
+		if (MenuClearance::canViewFeesReport($post)) {
+			header('location: ' . base_url('system-report/fees'));
+		} else {
+			header('location: ' . base_url('dashboard'));
+		}
+		die();
+	}
+
 	public function fees_pending_approval()
 	{
 		$this->_preset();
@@ -13912,6 +13939,7 @@ public function getApplicationDocs($id = null)
 	function fees_entry()
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator();
 		$data = $this->data;
 		$school_id = $this->session->get("soma_school_id");
 		$data['title'] = lang("app.feesEntry");
@@ -13946,6 +13974,7 @@ public function getApplicationDocs($id = null)
 	public function fees_entry_student_context($studentId)
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		helper('qonics');
 		$school_id = (int) $this->session->get("soma_school_id");
 		$studentId = (int) $studentId;
@@ -14401,6 +14430,7 @@ public function getApplicationDocs($id = null)
 	function get_student_fees($year, $student, $class)
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$school_id = $this->session->get("soma_school_id");
 		$schoolFees = new SchoolFeesModel();
 		$extraFees = new ExtraFeesModel();
@@ -17964,6 +17994,7 @@ public function assign_card()
 	function getFeesHistoricalAjax($student = 0, $year = 0)
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$feesRecordMdl = new FeesRecordModel();
 		$extraFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,1 as type,fees_records.created_at as date,
 		concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,
@@ -18092,7 +18123,12 @@ public function assign_card()
 	function feesReport($pdf)
 	{
 		$this->_preset(1, 3, 4, 5, 6);
+		$canFeesActions = MenuClearance::canActOnFeesReport((int) $this->session->get('soma_post'));
+		if ((int) $pdf === 2 && !$canFeesActions) {
+			return $this->response->setJSON(['error' => lang('app.accessDenied')]);
+		}
 		$data = $this->data;
+		$data['canFeesActions'] = $canFeesActions;
 		$data['title'] = lang("app.studentsLists");
 		$data['subtitle'] = lang("app.viewAllStudent");
 		$data['page'] = "students";
@@ -18511,6 +18547,7 @@ public function assign_card()
 	function deleteSchoolFeeGroup()
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$school_id = (int) $this->session->get("soma_school_id");
 		$levelId = (int) $this->request->getPost('level_id');
 		$deptId = (int) $this->request->getPost('department_id');
@@ -18571,6 +18608,7 @@ public function assign_card()
 	function deleteSchoolFee($id)
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$school_id = (int) $this->session->get("soma_school_id");
 		$schoolFeesMdl = new SchoolFeesModel();
 		$schoolFeesMdl->ensureSchema();
@@ -18597,6 +18635,7 @@ public function assign_card()
 	function deleteExtraFee($id)
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$extraFeesMdl = new ExtraFeesModel();
 		try {
@@ -18623,6 +18662,7 @@ public function assign_card()
 	public function deleteExtraFeesBulk()
 	{
 		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$ids = $this->request->getPost('ids');
 		if (!is_array($ids)) {
