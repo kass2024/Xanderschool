@@ -3959,6 +3959,16 @@ public function testEmail()
 		}
 
 		$settingsId = (int) ($current['id'] ?? 0);
+		$appMdl->ensureMomoPayColumns();
+		$momoCode = strtoupper(trim((string) $this->request->getPost('momo_pay_code')));
+		$momoName = trim((string) $this->request->getPost('momo_pay_name'));
+		if ($momoCode === '') {
+			$defaults = $appMdl->defaultMomoPayForSchool($schoolId);
+			$momoCode = $defaults['code'];
+			if ($momoName === '') {
+				$momoName = $defaults['name'];
+			}
+		}
 		$payload = [
 			'id' => $settingsId,
 			'school_id' => $schoolId,
@@ -3969,6 +3979,8 @@ public function testEmail()
 			'babyeyi_required' => $babyeyi,
 			'requirement_document' => $current['requirement_document'] ?? '',
 			'operator' => (int) ($this->session->get('soma_id') ?: 0),
+			'momo_pay_code' => $momoCode,
+			'momo_pay_name' => $momoName,
 		];
 		try {
 			$appMdl->save($payload);
@@ -18986,9 +18998,15 @@ public function assign_card()
 		string $studentNames,
 		string $schoolName,
 		string $levelName,
-		string $code
+		string $code,
+		string $momoPayCode = '',
+		string $momoPayName = ''
 	): void {
-		$sms = "Dear {$parentNames}, application for {$studentNames} at {$schoolName} ({$levelName}) was received. Registration code: {$code}. Keep this code. - XanderTech SmartSMS";
+		$sms = "Dear {$parentNames}, application for {$studentNames} at {$schoolName} ({$levelName}) was received. Registration code: {$code}.";
+		if ($momoPayCode !== '') {
+			$sms .= " Pay via MoMo Pay {$momoPayCode}" . ($momoPayName !== '' ? " ({$momoPayName})" : '') . ".";
+		}
+		$sms .= " Keep this code. - XanderTech SmartSMS";
 		$smsResult = '';
 		if (strlen(preg_replace('/\D/', '', $parentPhone)) >= 9) {
 			try {
@@ -19004,8 +19022,16 @@ public function assign_card()
 			$html = '<p>Dear ' . $e($parentNames) . ',</p>'
 				. '<p>We received the online application for <strong>' . $e($studentNames) . '</strong> '
 				. 'at <strong>' . $e($schoolName) . '</strong> (Level: ' . $e($levelName) . ').</p>'
-				. '<p>Your registration code is: <strong style="font-size:18px;">' . $e($code) . '</strong></p>'
-				. '<p>Please keep this code. You may need it to complete remaining steps.</p>'
+				. '<p>Your registration code is: <strong style="font-size:18px;">' . $e($code) . '</strong></p>';
+			if ($momoPayCode !== '') {
+				$html .= '<p style="background:#fff7cc;border:2px solid #f59e0b;padding:12px 14px;border-radius:10px;">'
+					. '<strong>Pay with MoMo Pay</strong><br>'
+					. 'Code: <strong style="font-size:20px;">' . $e($momoPayCode) . '</strong><br>'
+					. 'Names: <strong>' . $e($momoPayName !== '' ? $momoPayName : $schoolName) . '</strong><br>'
+					. 'Dial *182*8*1# then enter this code and the amount to pay.'
+					. '</p>';
+			}
+			$html .= '<p>Please keep this code. You may need it to complete remaining steps.</p>'
 				. '<p>Thank you,<br>XanderTech SmartSMS<br>' . $e($schoolName) . '</p>';
 			try {
 				$this->_send_email($parentEmail, 'Application received — ' . $schoolName, $html);
@@ -19101,6 +19127,9 @@ public function assign_card()
 		$data['settings_total_raw'] = $total;
 		$data['babyeyi_required'] = (int) ($settings->babyeyi_required ?? 1);
 		$data['settings_id'] = $settings->id;
+		$momoPay = $appMdl->momoPayForSchool($school);
+		$data['momo_pay_code'] = $momoPay['code'];
+		$data['momo_pay_name'] = $momoPay['name'];
 		$data['payment_bypass'] = 1;
 		$data['mopay_configured'] = 0;
 		$data['program'] = $program;
@@ -19646,6 +19675,7 @@ public function assign_card()
         $studentNames = trim($firstName . ' ' . $lastName);
         $levelName    = $levelRow ? (string) $levelRow->title : '';
         $schoolName   = (string) $schoolData->name;
+        $momoPay      = $settingsMdl->momoPayForSchool((int) $school);
 
         $studentAppModel->save([
             'id' => $applicationId,
@@ -19658,7 +19688,9 @@ public function assign_card()
             $studentNames,
             $schoolName,
             $levelName,
-            $code
+            $code,
+            $momoPay['code'],
+            $momoPay['name']
         );
         return $this->response->setJSON([
             'success'        => 'Application submitted. The school will review and approve it.',
@@ -21030,9 +21062,12 @@ public function assign_card()
 		$data['subtitle'] = lang("app.SchoolManagementSystem");
 		$data['locked_school_id'] = 0;
 		$data['locked_school_name'] = '';
+		$data['momo_pay_code'] = '';
+		$data['momo_pay_name'] = '';
+		$appSetMdl = new ApplicationSettingsModel();
 		if ($code != null) {
 			$appMdl = new StudentApplicationModel();
-			$appData = $appMdl->select('fname,lname,gender,phoneNumber,code,id,status')
+			$appData = $appMdl->select('fname,lname,gender,phoneNumber,code,id,status,schoolId')
 					->where('code', $code)
 					->get(1)->getRow();
 			if ($appData == null) {
@@ -21045,6 +21080,9 @@ public function assign_card()
 					// Application received — documents and payment are handled by the school
 					$data['application'] = $appData;
 					$data['applicationId'] = $appData->id;
+					$pay = $appSetMdl->momoPayForSchool((int) ($appData->schoolId ?? 0));
+					$data['momo_pay_code'] = $pay['code'];
+					$data['momo_pay_name'] = $pay['name'];
 			}
 		} else {
 			// Private school registration link: /application?school={id}
@@ -21053,13 +21091,16 @@ public function assign_card()
 				$schoolRow = (new SchoolModel())->select('id,name,status')
 					->where('id', $lockSchoolId)
 					->get(1)->getRow();
-				$appOk = (new ApplicationSettingsModel())->select('id')
+				$appOk = $appSetMdl->select('id')
 					->where('school_id', $lockSchoolId)
 					->orderBy('id', 'desc')
 					->get(1)->getRow();
 				if ($schoolRow != null && (int) ($schoolRow->status ?? 1) !== 0 && $appOk != null) {
 					$data['locked_school_id'] = (int) $schoolRow->id;
 					$data['locked_school_name'] = (string) $schoolRow->name;
+					$pay = $appSetMdl->momoPayForSchool((int) $schoolRow->id);
+					$data['momo_pay_code'] = $pay['code'];
+					$data['momo_pay_name'] = $pay['name'];
 				} else {
 					$data['private_link_error'] = 'This school registration link is not available. Ask the school to configure online registration settings.';
 				}

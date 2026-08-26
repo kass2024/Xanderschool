@@ -1101,6 +1101,22 @@
 								</label>
 								<small class="text-muted">When checked, applicants must upload Babyeyi before paying.</small>
 							</div>
+							<div class="form-group" style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:12px 14px;">
+								<label style="font-weight:700;color:#92400e;">MoMo Pay on the registration form</label>
+								<p class="text-muted" style="font-size:.85rem;margin-bottom:.65rem;">Shown at the end of the public application form and on the success page.</p>
+								<div class="form-row">
+									<div class="form-group col-md-5 mb-2">
+										<label>MoMo Pay code</label>
+										<input type="text" class="form-control" id="app_momo_pay_code" maxlength="32"
+											   value="<?= esc($appSet['momo_pay_code'] ?? '', 'attr'); ?>" placeholder="059010">
+									</div>
+									<div class="form-group col-md-7 mb-2">
+										<label>MoMo Pay names</label>
+										<input type="text" class="form-control" id="app_momo_pay_name" maxlength="120"
+											   value="<?= esc($appSet['momo_pay_name'] ?? '', 'attr'); ?>" placeholder="WISDOM SCHOOL">
+									</div>
+								</div>
+							</div>
 							<button type="button" class="btn btn-success" id="btn_save_app_reg">
 								<i class="fa fa-save"></i> Save registration settings
 							</button>
@@ -2719,7 +2735,9 @@ $(document).on("click","#btn-remove-discipline",function () {
 				department_fees: JSON.stringify(departmentFees),
 				start_date: $("#app_reg_start").val(),
 				end_date: $("#app_reg_end").val(),
-				babyeyi_required: $("#app_babyeyi_required").is(":checked") ? 1 : 0
+				babyeyi_required: $("#app_babyeyi_required").is(":checked") ? 1 : 0,
+				momo_pay_code: $("#app_momo_pay_code").val(),
+				momo_pay_name: $("#app_momo_pay_name").val()
 			}, function (data) {
 				if (data && data.success) {
 					$st.text(data.success);

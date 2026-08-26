@@ -312,6 +312,110 @@
 		padding: 16px 18px !important;
 		margin-bottom: 1.1rem !important;
 	}
+	.ss-momo-pay-box {
+		background: linear-gradient(180deg, #FFFBEB 0%, #FEF3C7 100%);
+		border: 2px solid #F59E0B;
+		border-radius: 16px;
+		padding: 16px 18px;
+		margin: 0 0 1.1rem;
+		box-shadow: 0 10px 28px rgba(245, 158, 11, .18);
+	}
+	.ss-momo-pay-end {
+		margin-top: 1.25rem;
+		padding: 18px 18px 16px;
+		border-width: 3px;
+		animation: ssMomoPulse 1.8s ease-in-out 2;
+	}
+	.ss-momo-pay-success {
+		max-width: 520px;
+		margin: 18px auto 0;
+		text-align: left;
+		border-width: 3px;
+		padding: 20px 18px 16px;
+		animation: ssMomoPulse 1.8s ease-in-out 3;
+	}
+	@keyframes ssMomoPulse {
+		0%, 100% { box-shadow: 0 10px 28px rgba(245, 158, 11, .18); }
+		50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, .28); }
+	}
+	.ss-momo-pay-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: .45rem;
+		background: #F59E0B;
+		color: #1C1917;
+		font-weight: 800;
+		font-size: .78rem;
+		letter-spacing: .06em;
+		text-transform: uppercase;
+		padding: 5px 10px;
+		border-radius: 999px;
+		margin-bottom: .65rem;
+	}
+	.ss-momo-pay-lead {
+		margin: 0 0 .85rem;
+		font-size: .92rem;
+		color: #78350F;
+		font-weight: 600;
+		line-height: 1.4;
+	}
+	.ss-momo-pay-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: .75rem;
+	}
+	@media (max-width: 640px) {
+		.ss-momo-pay-grid { grid-template-columns: 1fr; }
+	}
+	.ss-momo-pay-item {
+		background: #fff;
+		border: 1px solid #FCD34D;
+		border-radius: 12px;
+		padding: 12px 14px;
+	}
+	.ss-momo-pay-label {
+		display: block;
+		font-size: .72rem;
+		font-weight: 700;
+		letter-spacing: .04em;
+		text-transform: uppercase;
+		color: #92400E;
+		margin-bottom: 4px;
+	}
+	.ss-momo-pay-code {
+		display: block;
+		font-size: 1.7rem;
+		line-height: 1.15;
+		letter-spacing: .08em;
+		color: #0B1220;
+		font-weight: 800;
+	}
+	.ss-momo-pay-name {
+		display: block;
+		font-size: 1.15rem;
+		line-height: 1.25;
+		color: #0B1220;
+		font-weight: 800;
+		text-transform: uppercase;
+	}
+	.ss-momo-pay-copy {
+		margin-top: 8px;
+		border: 0;
+		background: #0B1220;
+		color: #fff;
+		border-radius: 8px;
+		padding: 6px 10px;
+		font-size: .78rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+	.ss-momo-pay-copy:hover { background: #1e293b; }
+	.ss-momo-pay-hint {
+		margin: .85rem 0 0;
+		font-size: .82rem;
+		color: #92400E;
+		line-height: 1.45;
+	}
 	.ss-app .text-muted { color: var(--app-muted) !important; }
 	.ss-app .text-danger { color: #DC2626 !important; }
 
@@ -706,6 +810,12 @@
 																	<strong id="regFeeAmount" style="font-size:1.25rem">0 Rwf</strong>
 																	<p class="text-muted" style="margin:6px 0 0;font-size:.82rem">Based on boarding or day extra fees for the selected class. Recorded in the fees report after approval.</p>
 																</div>
+																<?= view('landingPage/_momo_pay_box', [
+																	'momo_pay_code' => $momo_pay_code ?? '',
+																	'momo_pay_name' => $momo_pay_name ?? '',
+																	'momo_pay_variant' => 'inline',
+																	'momo_pay_locked' => (int) ($locked_school_id ?? 0) > 0,
+																]); ?>
 																<div class="form-group">
 																	<label class="control-label mb-1">Nationality</label>
 																	<div class="ss-nationality-wrap">
@@ -909,6 +1019,12 @@
 													<input name="email" type="email" class="form-control" placeholder="parent@email.com" autocomplete="email">
 												</div>
 											</div>
+											<?= view('landingPage/_momo_pay_box', [
+												'momo_pay_code' => $momo_pay_code ?? '',
+												'momo_pay_name' => $momo_pay_name ?? '',
+												'momo_pay_variant' => 'end',
+												'momo_pay_locked' => (int) ($locked_school_id ?? 0) > 0,
+											]); ?>
 										</div>
 										<div class="fieldset-actions">
 										<input type="button" name="previous" class="previous action-button-previous" value="Previous"/>
@@ -929,8 +1045,17 @@
 												<div class="col-11 text-center">
 													<h5 class="purple-text text-center" style="margin-bottom:16px;">
 														Your application is successfully received.<br>
-														If you don't get an SMS within 24 hours, please contact us:
+														Pay now with <strong>MoMo Pay</strong> using the highlighted details below.
 													</h5>
+													<?= view('landingPage/_momo_pay_box', [
+														'momo_pay_code' => $momo_pay_code ?? '',
+														'momo_pay_name' => $momo_pay_name ?? '',
+														'momo_pay_variant' => 'success',
+														'momo_pay_locked' => true,
+													]); ?>
+													<p class="text-muted" style="margin:14px 0 10px;font-size:.9rem;">
+														If you don't get an SMS within 24 hours, please contact us:
+													</p>
 													<div class="reg-success-contact" style="text-align:left;max-width:420px;margin:0 auto;background:#0b1f3a;color:#e8eef7;border-radius:12px;padding:16px 18px;">
 														<div style="font-weight:700;letter-spacing:.06em;color:#d97706;margin-bottom:10px;">CONTACT</div>
 														<div style="margin-bottom:8px;">
@@ -1000,6 +1125,43 @@
 				if (locked > 0) return locked;
 				return parseInt($("#schoolOptions").val(), 10) || 0;
 			}
+
+			function applyMomoPay(code, name) {
+				code = String(code || '').trim();
+				name = String(name || '').trim();
+				var $boxes = $(".ss-momo-pay-box");
+				if (!code) {
+					$boxes.each(function () {
+						if ($(this).data("locked") != "1" && $(this).data("locked") != 1) {
+							$(this).hide();
+						}
+					});
+					return;
+				}
+				$boxes.find(".ss-momo-pay-code").text(code);
+				$boxes.find(".ss-momo-pay-name").text(name || "—");
+				$boxes.find(".ss-momo-pay-copy").attr("data-copy", code);
+				$boxes.show();
+			}
+
+			$(document).on("click", ".ss-momo-pay-copy", function (e) {
+				e.preventDefault();
+				var code = String($(this).attr("data-copy") || $(this).closest(".ss-momo-pay-box").find(".ss-momo-pay-code").first().text() || "").trim();
+				if (!code) return;
+				var $btn = $(this);
+				var done = function () {
+					var prev = $btn.text();
+					$btn.text("Copied");
+					setTimeout(function () { $btn.text(prev || "Copy code"); }, 1400);
+				};
+				if (navigator.clipboard && navigator.clipboard.writeText) {
+					navigator.clipboard.writeText(code).then(done).catch(function () {
+						window.prompt("Copy MoMo Pay code", code);
+					});
+				} else {
+					window.prompt("Copy MoMo Pay code", code);
+				}
+			});
 
 			$('#autoSave').on('submit', function (e) {
 				e.preventDefault();
@@ -1107,6 +1269,7 @@
 						$(".requirement-doc").hide();
 					}
 					$("[name='applicationSettings']").val(data.settings_id);
+					applyMomoPay(data.momo_pay_code, data.momo_pay_name);
 					$("#dynamicDocsContainer").html("<p class=\"text-muted\">Choose faculty and class to load required documents.</p>");
 					$("#docsHintText").text("Select a faculty and class — required uploads will appear here.");
 					var options = "<option disabled selected>-- Choose faculty --</option>";
