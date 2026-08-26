@@ -85,6 +85,7 @@ function getJsTermToString($term){
 					<th><?= lang("app.no"); ?></th>
 					<th><?= lang("app.regNo"); ?></th>
 					<th><?= lang("app.names"); ?></th>
+					<th><?= lang("app.slipReference"); ?></th>
 					<th><?= lang("app.mode"); ?></th>
 					<th><?= lang("app.gender"); ?></th>
 					<th>Expected amount</th>
@@ -114,6 +115,7 @@ function getJsTermToString($term){
 						<td><?= $a; ?></td>
 						<td><?= $student['regno']; ?></td>
 						<td><?= $student['student']; ?></td>
+						<td><?= esc(trim((string) ($student['ref_nos'] ?? '')) !== '' ? $student['ref_nos'] : '—'); ?></td>
 						<td><?= \App\Controllers\Home::ModeToStr($student['studying_mode']); ?></td>
 						<td><?= $student['sex']; ?></td>
 						<td><?= number_format($student['amount']); ?></td>

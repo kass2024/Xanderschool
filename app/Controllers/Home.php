@@ -18029,6 +18029,45 @@ public function assign_card()
 			$studentsQuery->having("paid", 0, false);
 		}
 		$students = $studentsQuery->get()->getResultArray();
+		$refMap = [];
+		$studentIds = array_values(array_unique(array_filter(array_map('intval', array_column($students, 'student_id')))));
+		if ($studentIds !== []) {
+			$db = \Config\Database::connect();
+			$refRows = $db->table('fees_records fr')
+				->select("fr.student_id, GROUP_CONCAT(DISTINCT fr.refNo ORDER BY fr.id SEPARATOR ', ') AS ref_nos", false)
+				->join('school_fees sc', 'sc.id = fr.fees_id AND fr.fees_type = 0', 'left')
+				->join('extra_fees ex', 'ex.id = fr.fees_id AND fr.fees_type = 1', 'left')
+				->where('fr.status', 1)
+				->whereIn('fr.student_id', $studentIds)
+				->where('fr.refNo !=', '')
+				->groupStart()
+					->groupStart()
+						->where('fr.fees_type', 0)
+						->whereIn('sc.term', $termsList)
+						->where('sc.academic_year', (int) $academic)
+						->where('sc.school_id', (int) $school_id)
+					->groupEnd()
+					->orGroupStart()
+						->where('fr.fees_type', 1)
+						->whereIn('ex.term', $termsList)
+						->where('ex.academic_year', (int) $academic)
+						->where('ex.school_id', (int) $school_id)
+					->groupEnd()
+				->groupEnd()
+				->groupBy('fr.student_id')
+				->get()->getResultArray();
+			foreach ($refRows as $refRow) {
+				$id = (int) ($refRow['student_id'] ?? 0);
+				$refs = trim((string) ($refRow['ref_nos'] ?? ''));
+				if ($id > 0 && $refs !== '') {
+					$refMap[$id] = $refs;
+				}
+			}
+		}
+		foreach ($students as &$stRow) {
+			$stRow['ref_nos'] = $refMap[(int) ($stRow['student_id'] ?? 0)] ?? '';
+		}
+		unset($stRow);
 		$data['students'] = $students;
 		$data['class_id'] = $classe;
 		$data['year_id'] = $academic;
