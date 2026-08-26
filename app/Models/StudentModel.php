@@ -23,6 +23,7 @@ class StudentModel extends Model
 		'nationality',
 		'father',
 		'ft_phone',
+		'father_nid',
 		'mother',
 		'mt_phone',
 		'guardian',
@@ -40,6 +41,21 @@ class StudentModel extends Model
 	protected $primaryKey    = 'id';
 	protected $createdField  = 'created_at';
 	protected $updatedField  = 'updated_at';
+
+	/** @var bool */
+	private static $fatherNidReady = false;
+
+	public function ensureFatherNidColumn(): void
+	{
+		if (self::$fatherNidReady) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists($this->table) && !$db->fieldExists('father_nid', $this->table)) {
+			$db->query("ALTER TABLE `students` ADD COLUMN `father_nid` VARCHAR(32) NULL DEFAULT NULL AFTER `ft_phone`");
+		}
+		self::$fatherNidReady = true;
+	}
 
 	public function get_student($val = null, $key = 'students.id', $select = null, $single = false, $academicYear = 0)
 	{

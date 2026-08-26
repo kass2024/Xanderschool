@@ -6088,6 +6088,7 @@ public function attendanceCard()
 		$data = $this->data;
 		$data['title'] = lang("app.viewStudent");
 		$studentMdl = new StudentModel();
+		$studentMdl->ensureFatherNidColumn();
 		$active_term = new ActiveTermModel();
 		$classModel = new ClassesModel();
 		$data['academic'] = $active_term->select("active_term.*")
@@ -6740,6 +6741,10 @@ public function attendanceCard()
 		$religion = trim((string) $this->request->getPost("religion"));
 		$father = trim((string) $this->request->getPost("father"));
 		$ft_phone = trim((string) $this->request->getPost("father_phone"));
+		$father_nid = trim((string) $this->request->getPost("father_nid"));
+		if (strlen($father_nid) > 32) {
+			$father_nid = substr($father_nid, 0, 32);
+		}
 		$mother = trim((string) $this->request->getPost("mother"));
 		$mt_phone = trim((string) $this->request->getPost("mother_phone"));
 		$guardian = trim((string) $this->request->getPost("guardian"));
@@ -6747,6 +6752,7 @@ public function attendanceCard()
 //		return $this->response->setJSON(array("error"=>"Error: ".$dob));
 		$studentMdl = new StudentModel();
 		try {
+			$studentMdl->ensureFatherNidColumn();
 			$school_id = $this->session->get("soma_school_id");
 			$classMdl = new ClassesModel();
 			$classData = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name
@@ -6763,7 +6769,7 @@ public function attendanceCard()
 				$update_v = $update_v_data->version;
 			$dt = array("school_id" => $school_id, "fname" => $fname, "lname" => $lname, "email" => $email, "regno" => $regno, "sex" => $sex, "status" => "1"
 			, "dob" => $dob, "village_id" => $village, "studying_mode" => $mode, "religion" => $religion, "nationality" => $nationality, "father" => $father, "ft_phone" => $ft_phone
-			, "mother" => $mother, "mt_phone" => $mt_phone, "guardian" => $guardian, "gd_phone" => $gd_phone, "created_by" => $this->session->get("soma_id"), "updateVersion" => $update_v);
+			, "father_nid" => $father_nid, "mother" => $mother, "mt_phone" => $mt_phone, "guardian" => $guardian, "gd_phone" => $gd_phone, "created_by" => $this->session->get("soma_id"), "updateVersion" => $update_v);
 			$id = $studentMdl->insert($dt);
 			//create class record
 			$classRecordMdl = new ClassRecordModel();
@@ -6866,6 +6872,7 @@ public function attendanceCard()
 			$update_v = $update_v_data->version;
 		$data = array("id" => $id, $target => $val, "updateVersion" => $update_v);
 		$stMdl = new StudentModel();
+		$stMdl->ensureFatherNidColumn();
 		try {
 			$stMdl->save($data);
 			switch ($type) {
@@ -19531,6 +19538,10 @@ public function assign_card()
     $villageId     = (int) $this->request->getPost('village');
     $father        = trim((string) $this->request->getPost('father'));
     $ftPhone       = trim((string) $this->request->getPost('ft_phone'));
+    $fatherNid     = trim((string) $this->request->getPost('father_nid'));
+    if (strlen($fatherNid) > 32) {
+        $fatherNid = substr($fatherNid, 0, 32);
+    }
     $mother        = trim((string) $this->request->getPost('mother'));
     $mtPhone       = trim((string) $this->request->getPost('mt_phone'));
     $guardian      = trim((string) $this->request->getPost('guardian'));
@@ -19633,6 +19644,7 @@ public function assign_card()
         "class_id"           => $classId > 0 ? $classId : null,
         "father"             => $father,
         "ft_phone"           => $ftPhone,
+        "father_nid"         => $fatherNid,
         "mother"             => $mother,
         "mt_phone"           => $mtPhone,
         "guardian"           => $guardian,
@@ -20729,6 +20741,7 @@ public function assign_card()
 		$applicationMdl = new StudentApplicationModel();
 		$applicationMdl->ensureVisitorColumns();
 		$studentMdl = new StudentModel();
+		$studentMdl->ensureFatherNidColumn();
 		$classRecordMdl = new ClassRecordModel();
 		$classMdl = new ClassesModel();
 		$applicationId = $this->request->getPost("applicationId");
@@ -20744,7 +20757,7 @@ public function assign_card()
 		$application = $applicationMdl->select("id,fname,lname,
 		gender,phoneNumber,parentType,parentPhoneNumber,parentNames,dateOfBirth,
 		level,studyingMode,faculty_id,department_id,schoolId,class_id,cell_id,village_id,medical_status,
-		nationality,religion,father,ft_phone,mother,mt_phone,guardian,gd_phone,
+		nationality,religion,father,ft_phone,father_nid,mother,mt_phone,guardian,gd_phone,
 		visitor1_names,visitor1_phone,visitor1_relationship,
 		visitor2_names,visitor2_phone,visitor2_relationship")
 				->where("id", $applicationId)
@@ -20814,6 +20827,7 @@ public function assign_card()
 				"village_id" => $villageId,
 				"father" => trim((string) ($application['father'] ?? '')),
 				"ft_phone" => trim((string) ($application['ft_phone'] ?? '')),
+				"father_nid" => trim((string) ($application['father_nid'] ?? '')),
 				"mother" => trim((string) ($application['mother'] ?? '')),
 				"mt_phone" => trim((string) ($application['mt_phone'] ?? '')),
 				"guardian" => trim((string) ($application['guardian'] ?? '')),

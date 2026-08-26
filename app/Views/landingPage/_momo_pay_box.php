@@ -44,4 +44,7 @@ $boxClass = 'ss-momo-pay-box ss-momo-pay-' . $variantClass;
 		On MTN: dial <strong>*182*8*1#</strong>, enter code <strong class="ss-momo-pay-code"><?= esc($momoPayCode); ?></strong>,
 		confirm the name <strong class="ss-momo-pay-name"><?= esc($momoPayName !== '' ? $momoPayName : '—'); ?></strong>, then enter the amount.
 	</p>
+	<p class="ss-momo-pay-note">
+		Please send your payment proof to the school official who assisted you.
+	</p>
 </div>

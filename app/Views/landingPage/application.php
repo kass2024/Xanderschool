@@ -422,6 +422,17 @@
 		color: #92400E;
 		line-height: 1.45;
 	}
+	.ss-momo-pay-note {
+		margin: .75rem 0 0;
+		padding: 9px 12px;
+		background: #fff;
+		border: 1px dashed #F59E0B;
+		border-radius: 8px;
+		color: #9A3412;
+		font-size: .85rem;
+		font-weight: 600;
+		line-height: 1.4;
+	}
 	.ss-app .text-muted { color: var(--app-muted) !important; }
 	.ss-app .text-danger { color: #DC2626 !important; }
 
@@ -846,6 +857,10 @@
 																		</select>
 																	</div>
 																</div>
+																<div class="form-group">
+																	<label class="control-label mb-1">Father national ID <span class="text-muted" style="font-weight:500;font-size:.8rem;">(optional)</span></label>
+																	<input name="father_nid" id="father_nid" type="text" class="form-control" maxlength="32" placeholder="National ID number" autocomplete="off">
+																</div>
 															</div>
 
 															<div class="ss-panel">
@@ -937,6 +952,10 @@
 													<div class="form-group">
 														<label class="control-label mb-1">Father phone</label>
 														<input name="ft_phone" id="ft_phone" type="tel" inputmode="tel" class="form-control" placeholder="0780000000">
+													</div>
+													<div class="form-group">
+														<label class="control-label mb-1">Father national ID <span class="text-muted" style="font-weight:500;font-size:.8rem;">(optional)</span></label>
+														<input type="text" id="father_nid_family" class="form-control" maxlength="32" placeholder="National ID number" autocomplete="off">
 													</div>
 												</div>
 											</div>
@@ -1175,8 +1194,20 @@
 				}
 			});
 
+			$(document).on('input', '#father_nid, #father_nid_family', function () {
+				var v = $(this).val();
+				if (this.id === 'father_nid') {
+					$('#father_nid_family').val(v);
+				} else {
+					$('#father_nid').val(v);
+				}
+			});
+
 			$('#autoSave').on('submit', function (e) {
 				e.preventDefault();
+				var fatherNid = ($('#father_nid').val() || '').trim() || ($('#father_nid_family').val() || '').trim();
+				$('#father_nid').val(fatherNid);
+				$('#father_nid_family').val(fatherNid);
 				var father = ($('#father').val() || '').trim();
 				var ftPhone = ($('#ft_phone').val() || '').trim();
 				var mother = ($('#mother').val() || '').trim();

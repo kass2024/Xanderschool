@@ -48,8 +48,14 @@
 				</div>
 				<div class="form-group">
 					<label><?= lang("app.dob");?>:</label>
-					<span data-value="<?= $student['dob']; ?>" data-target="dob"
-						  class="spedit">&nbsp;<?= $student['dob']; ?></span>
+					<?php
+					$dobDisplay = trim((string) ($student['dob'] ?? ''));
+					if ($dobDisplay === '' || $dobDisplay === '0000-00-00' || strpos($dobDisplay, '0000') === 0) {
+						$dobDisplay = '—';
+					}
+					?>
+					<span data-value="<?= esc($student['dob']); ?>" data-target="dob"
+						  class="spedit">&nbsp;<?= esc($dobDisplay); ?></span>
 				</div>
 				<div class="form-group">
 					<label><?= lang("app.nationality");?>:</label>
@@ -76,13 +82,25 @@
 		<div class="boxed" style="background-color: white;display: flow-root;">
 			<h4><?= lang("app.studentPhoto");?></h4>
 			<?php
-			$photo = strlen($student['photo']) > 4 ? base_url('assets/images/profile/' . $student['photo']) : '';
+			$hasPhoto = strlen(trim((string) ($student['photo'] ?? ''))) > 4;
+			$photo = $hasPhoto ? base_url('assets/images/profile/' . $student['photo']) : '';
 			?>
-			<img src="<?=$photo;?>" id="img_photo" style="width: 100px;height: 100px;border-radius: 50%;background: #FFFFFF;float:left;border: 1px solid #4C5B5C;">
-			<input type="file" id="in_student_photo" style="display: none;overflow: hidden">
-			<div style="border: 1px dashed #bababa;float: left;width: calc(100% - 110px);margin-left: 10px;height: 100px;cursor: pointer;text-align: center;" id="dv_select_img">
-				<p style="margin: 30px 0 0;font-weight: 600;"><?= lang("app.uploadPhoto");?></p>
-				<label class="text-muted" style="font-style: italic;font-size: 10pt;"><?= lang("app.sizeNeeded");?></label>
+			<div style="position:relative;float:left;width:100px;height:100px;">
+				<img src="<?= esc($photo); ?>" id="img_photo" alt="" style="width:100px;height:100px;border-radius:50%;background:#FFFFFF;border:1px solid #4C5B5C;object-fit:cover;display:block;">
+				<button type="button" id="btn_remove_photo" title="<?= esc(lang('app.removePhoto')); ?>"
+					style="position:absolute;top:0;right:0;width:24px;height:24px;border:none;border-radius:50%;background:#dc3545;color:#fff;font-size:12px;line-height:24px;padding:0;cursor:pointer;<?= $hasPhoto ? '' : 'display:none;'; ?>">
+					<i class="fa fa-times"></i>
+				</button>
+			</div>
+			<input type="file" id="in_student_photo" accept="image/jpeg,image/jpg,image/png" style="display:none;overflow:hidden">
+			<div style="border:1px dashed #bababa;float:left;width:calc(100% - 110px);margin-left:10px;height:100px;cursor:pointer;text-align:center;" id="dv_select_img">
+				<p style="margin:30px 0 0;font-weight:600;"><?= lang("app.uploadPhoto");?></p>
+				<label class="text-muted" style="font-style:italic;font-size:10pt;"><?= lang("app.sizeNeeded");?></label>
+			</div>
+			<div style="clear:both;padding-top:8px;">
+				<button type="button" id="btn_remove_photo_link" class="btn btn-sm btn-outline-danger" style="<?= $hasPhoto ? '' : 'display:none;'; ?>">
+					<i class="fa fa-trash"></i> <?= lang("app.removePhoto"); ?>
+				</button>
 			</div>
 		</div>
 	</div>
@@ -113,6 +131,11 @@
 						<label><?= lang("app.fPhoneNumber");?></label>
 						<span data-value="<?= $student['ft_phone']; ?>" data-target="ft_phone"
 							  class="spedit">&nbsp;<?= $student['ft_phone']; ?></span>
+					</div>
+					<div class="form-group">
+						<label><?= lang("app.fatherNationalId");?>:</label>
+						<span data-value="<?= esc($student['father_nid'] ?? '', 'attr'); ?>" data-target="father_nid"
+							  class="spedit">&nbsp;<?= esc($student['father_nid'] ?? ''); ?></span>
 					</div>
 					<hr>
 					<h4><?= lang("app.mother");?></h4>
@@ -384,6 +407,34 @@
 		$(document).on("click","#dv_select_img",function () {
 			$("#in_student_photo")[0].click();
 		});
+		function toggleStudentPhotoRemove(show) {
+			$("#btn_remove_photo, #btn_remove_photo_link").toggle(!!show);
+		}
+		function removeStudentPhoto() {
+			if (!confirm("<?= esc(lang('app.removePhotoConfirm'), 'js'); ?>")) {
+				return;
+			}
+			var id = $("#student_section").data("id");
+			$.post(window.base_url + "remove_student_photo", { id: id }, function (data) {
+				if (data.hasOwnProperty("error")) {
+					toastada.error(data.error);
+				} else if (data.hasOwnProperty("success")) {
+					$("#img_photo").prop("src", "");
+					$("#in_student_photo").val("");
+					toggleStudentPhotoRemove(false);
+					toastada.success(data.success);
+				} else {
+					toastada.error("<?= lang("app.fatalErr");?>");
+				}
+			}, "json").fail(function () {
+				toastada.error("<?= lang("app.systemErr");?>");
+			});
+		}
+		$("#btn_remove_photo, #btn_remove_photo_link").on("click", function (e) {
+			e.preventDefault();
+			e.stopPropagation();
+			removeStudentPhoto();
+		});
 		$("#in_student_photo").on("change", function (e) {
 			var file = $(this)[0].files[0];
 			var upload = new Upload(file);
@@ -392,7 +443,7 @@
 				toastada.error("<?= lang("app.allowedOnly")?>")
 				return;
 			}
-			if (upload.getSize()> 512*1024){
+			if (upload.getSize()> 5*1024*1024){
 				toastada.error("<?= lang("app.sizeNeeded")?>");
 				return;
 			}
@@ -477,6 +528,7 @@
 					img.prop("src","");
 				}else if (data.hasOwnProperty("success")){
 					toastada.success(data.success);
+					toggleStudentPhotoRemove(true);
 				}else{
 					toastada.error("<?= lang("app.fatalErr");?>");
 					img.prop("src","");

@@ -246,6 +246,7 @@ return [
    'otherChristians'             => 'Other christians',
    'fatherNames'                 => 'Father names',
    'fPhoneNumber'                => 'Father Phone number',
+   'fatherNationalId'            => 'Father national ID',
    'fphonenotvalid'              => 'Phone number is not valid',
    'motherNames'                 => 'Mother names',
    'motherPhoneNumber'           => 'Mother Phone number',

@@ -162,6 +162,11 @@
 												   data-parsley-lenght-message="<?= lang("app.fphonenotvalid");?>"/>
 										</div>
 										<div class="form-group">
+											<label><?= lang("app.fatherNationalId"); ?> <small class="text-muted">(optional)</small></label>
+											<input type="text" class="form-control" name="father_nid" maxlength="32"
+												   data-parsley-required="false"/>
+										</div>
+										<div class="form-group">
 											<label><?= lang("app.motherNames"); ?></label>
 											<input type="text" class="form-control" name="mother" data-parsley-required="false"/>
 										</div>

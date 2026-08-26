@@ -247,6 +247,7 @@ return [
 	"otherChristians" => " Autres chrétiens ",
 	"fatherNames" => " Noms du père ",
 	"fPhoneNumber" => " Numéro de téléphone du père ",
+	"fatherNationalId" => "Carte d'identité du père",
 	"fphonenotvalid" => " Le numéro de téléphone n'est pas valide ",
 	"motherNames" => " Noms de la  mère ",
 	"motherPhoneNumber" => " Numéro de téléphone de la mère ",
