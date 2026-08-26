@@ -44,7 +44,7 @@ foreach ($fees as $fee) {
 }
 ksort($uniqueClasses);
 ?>
-<link rel="stylesheet" href="<?= base_url('assets/css/extra-fees.css'); ?>?v=2">
+<link rel="stylesheet" href="<?= base_url('assets/css/extra-fees.css'); ?>?v=3">
 
 <div class="ef-page" id="extraFeesPage">
 	<div class="ef-center">
@@ -157,7 +157,7 @@ ksort($uniqueClasses);
 					<div class="ef-empty">
 						<i class="fa fa-inbox"></i>
 						<h4>No extra fees yet</h4>
-						<p>No extra fees configured for <?= esc($selectedYearTitle); ?>. Add a class fee or assign fees to multiple students.</p>
+						<p>No extra fees configured for <?= esc($selectedYearTitle); ?>. Add a class fee with boarding/day amounts, or assign fees to multiple students. Software Development, Accounting and Stream registration fees are created automatically.</p>
 						<button type="button" class="btn ef-btn-add" data-toggle="modal" data-target="#mdlextrafees">
 							<i class="fa fa-plus"></i> <?= lang('app.addClassFee'); ?>
 						</button>
@@ -185,9 +185,13 @@ ksort($uniqueClasses);
 								$target = ef_target_label($fee);
 								$searchText = strtolower($fee['title'] . ' ' . $target . ' ' . ($fee['regno'] ?? ''));
 								$termStr = (string) ($fee['term'] ?? '');
+								$modes = \App\Models\ExtraFeesModel::modeAmounts($fee);
 								$unitAmt = (float) ($fee['amount'] ?? 0);
 								$stuCount = (int) ($fee['student_count'] ?? ($isStudent ? 1 : 0));
 								$lineTotal = (float) ($fee['line_total'] ?? $unitAmt);
+								$boardAmt = $modes['boarding'];
+								$dayAmt = $modes['day'];
+								$splitModes = !$isStudent && $boardAmt !== null && $dayAmt !== null && abs((float) $boardAmt - (float) $dayAmt) > 0.00001;
 								?>
 								<tr class="ef-fee-row"
 									data-id="<?= (int) $fee['id']; ?>"
@@ -206,9 +210,20 @@ ksort($uniqueClasses);
 									</td>
 									<td><?= esc($target); ?></td>
 									<td class="text-right">
+										<?php if ($splitModes) { ?>
+										<span class="ef-mode-amt board"><?= number_format((float) $boardAmt); ?> boarding</span>
+										<span class="ef-mode-amt day"><?= number_format((float) $dayAmt); ?> day</span>
+										<?php } else { ?>
 										<span class="ef-amount"><?= number_format($lineTotal); ?></span>
+										<?php } ?>
 										<?php if (!$isStudent) { ?>
-										<small class="d-block text-muted" style="font-size:.72rem"><?= number_format($unitAmt); ?> × <?= $stuCount; ?> student<?= $stuCount === 1 ? '' : 's'; ?></small>
+										<small class="d-block text-muted" style="font-size:.72rem">
+											<?php if (!$splitModes) { ?>
+												<?= number_format($unitAmt); ?> × <?= $stuCount; ?> student<?= $stuCount === 1 ? '' : 's'; ?>
+											<?php } else { ?>
+												Saved for the class<?= $stuCount > 0 ? ' · ' . $stuCount . ' student' . ($stuCount === 1 ? '' : 's') : ' · no students yet'; ?>
+											<?php } ?>
+										</small>
 										<?php } elseif ($stuCount > 0) { ?>
 										<small class="d-block text-muted" style="font-size:.72rem">1 student</small>
 										<?php } ?>

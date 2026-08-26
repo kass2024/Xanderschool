@@ -341,6 +341,7 @@ foreach ($pendings as $p) {
                           <th>Gender</th>
                           <th>Level</th>
                           <th>Studying mode</th>
+                          <th>To pay</th>
                           <th>Parent type</th>
                           <th>Parent name</th>
                           <th>Parent phone</th>
@@ -363,6 +364,15 @@ foreach ($pendings as $p) {
                             <td><?= esc($pending['gender']) ?></td>
                             <td><?= esc($pending['level']) ?></td>
                             <td><?= esc($pending['mode'] ?? $pending['studyingMode'] ?? '') ?></td>
+                            <td>
+                              <?php $due = (float) ($pending['fee_due'] ?? 0); ?>
+                              <?php if ($due > 0): ?>
+                                <strong><?= number_format($due); ?></strong>
+                                <small class="d-block text-muted"><?= esc($pending['mode'] ?? ''); ?></small>
+                              <?php else: ?>
+                                <span class="text-muted">—</span>
+                              <?php endif; ?>
+                            </td>
                             <td><?= esc(parentType($pending['parentType'])) ?></td>
                             <td><?= esc($pending['parentNames']) ?></td>
                             <td><?= esc($pending['parentPhoneNumber']) ?></td>
@@ -385,6 +395,7 @@ foreach ($pendings as $p) {
                           <th>Gender</th>
                           <th>Level</th>
                           <th>Studying mode</th>
+                          <th>To pay</th>
                           <th>Parent type</th>
                           <th>Parent name</th>
                           <th>Parent phone</th>
@@ -437,6 +448,13 @@ foreach ($pendings as $p) {
                         <div>
                           <dt>Studying mode</dt>
                           <dd><?= esc($mode) ?></dd>
+                        </div>
+                        <div>
+                          <dt>To pay</dt>
+                          <dd>
+                            <?php $due = (float) ($pending['fee_due'] ?? 0); ?>
+                            <?= $due > 0 ? number_format($due) . ' Rwf' : '—'; ?>
+                          </dd>
                         </div>
                         <div>
                           <dt>Parent type</dt>

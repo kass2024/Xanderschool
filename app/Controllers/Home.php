@@ -13311,8 +13311,14 @@ public function getApplicationDocs($id = null)
 		$data = $this->data;
 		$classMdl = new ClassesModel();
 		$extraFees = new ExtraFeesModel();
+		$extraFees->ensureSchema();
 		$school_id = $this->session->get("soma_school_id");
 		$academicYear = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
+		$extraFees->ensureTrackRegistrationFees(
+			(int) $school_id,
+			$academicYear,
+			(int) ($this->session->get('soma_id') ?: 0)
+		);
 		$data['title'] = lang("app.extraFees");
 		$data['subtitle'] = lang("app.extraFees");
 		$data['page'] = "Extra_fees";
@@ -13328,14 +13334,14 @@ public function getApplicationDocs($id = null)
 				break;
 			}
 		}
-		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name
+		$data['classes'] = $classMdl->select("classes.id,classes.department as department_id,classes.title,d.title as department_name,d.code,l.title as level_name
 		,f.type,f.abbrev as faculty_code")
 				->join("departments d", "d.id=classes.department")
 				->join("levels l", "l.id=classes.level")
 				->join("faculty f", "f.id=d.faculty_id")
 				->where("classes.school_id", $this->session->get("soma_school_id"))
 				->get()->getResultArray();
-		$data['fees'] = $extraFees->select("extra_fees.id,extra_fees.amount,extra_fees.type,extra_fees.type_id,
+		$data['fees'] = $extraFees->select("extra_fees.id,extra_fees.amount,extra_fees.amount_boarding,extra_fees.amount_day,extra_fees.type,extra_fees.type_id,
 			ac.title as academic_year,extra_fees.title,extra_fees.term,
 			cl.title as classe,d.code,l.title as level_name,
 			CONCAT(st.fname,' ',st.lname) as student_name,st.regno")
@@ -13373,7 +13379,10 @@ public function getApplicationDocs($id = null)
 		$classIds = [];
 		foreach ($data['fees'] as &$fee) {
 			$type = (int) ($fee['type'] ?? 0);
-			$unit = (float) ($fee['amount'] ?? 0);
+			$modes = ExtraFeesModel::modeAmounts($fee);
+			$unit = (float) ($modes['legacy'] > 0 ? $modes['legacy'] : max((float) ($modes['boarding'] ?? 0), (float) ($modes['day'] ?? 0)));
+			$fee['amount_boarding'] = $modes['boarding'];
+			$fee['amount_day'] = $modes['day'];
 			if ($type === 0) {
 				$data['classFeeCount']++;
 				$classId = (int) ($fee['type_id'] ?? 0);
@@ -13400,7 +13409,8 @@ public function getApplicationDocs($id = null)
 	{
 		$this->_preset();
 		$ExtraFeesModel = new ExtraFeesModel();
-		$school_id = $this->session->get("soma_school_id");
+		$ExtraFeesModel->ensureSchema();
+		$school_id = (int) $this->session->get("soma_school_id");
 		$id = $this->request->getPost("feeId");
 		if (!empty($id)) {
 			$amount = $this->request->getPost("feeNewAmount");
@@ -13411,27 +13421,113 @@ public function getApplicationDocs($id = null)
 			}
 			return $this->response->setJSON(array("success" => lang("app.feeSaved")));
 		}
-		$amount = $this->request->getPost("amount");
-		$title = $this->request->getPost("title");
-		$classe = $this->request->getPost("classe");
-		$typeId = $this->request->getPost($type == 1 ? "studentId" : "classe");
-		$data = array(
+
+		$title = trim((string) $this->request->getPost("title"));
+		if ($title === '') {
+			return $this->response->setJSON(["error" => "Enter extra fees title."]);
+		}
+		$terms = $this->request->getPost("term");
+		if (!is_array($terms)) {
+			$terms = $this->request->getPost("term[]");
+		}
+		if (!is_array($terms)) {
+			$terms = ($terms !== null && $terms !== '') ? [$terms] : [];
+		}
+		$terms = array_values(array_unique(array_filter(array_map('intval', $terms), static function ($t) {
+			return $t >= 1 && $t <= 3;
+		})));
+		if ($terms === []) {
+			return $this->response->setJSON(["error" => lang("app.selectTerms") ?: 'Please select at least one term.']);
+		}
+
+		if ((int) $type === 1) {
+			$amount = $this->request->getPost("amount");
+			$typeId = $this->request->getPost("studentId");
+			$data = [
 				"school_id" => $school_id,
 				"title" => $title,
 				"academic_year" => $this->data['academic_year'],
 				"type_id" => $typeId,
-				"type" => $type,
+				"type" => 1,
 				"amount" => $amount,
-				"created_by" => $this->session->get("soma_id"));
-		foreach ($this->request->getPost("term[]") as $term) {
-			$data['term'] = $term;
-			try {
-				$ExtraFeesModel->save($data);
-			} catch (\Exception $e) {
-				return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
+				"created_by" => $this->session->get("soma_id"),
+			];
+			foreach ($terms as $term) {
+				$data['term'] = $term;
+				try {
+					$ExtraFeesModel->save($data);
+				} catch (\Exception $e) {
+					return $this->response->setJSON(["error" => "Error: " . $e->getMessage()]);
+				}
+			}
+			return $this->response->setJSON(["success" => lang("app.feeSaved")]);
+		}
+
+		$boardingAmt = trim((string) $this->request->getPost("amount_boarding"));
+		$dayAmt = trim((string) $this->request->getPost("amount_day"));
+		$legacyAmt = trim((string) $this->request->getPost("amount"));
+		$boardingVal = ($boardingAmt !== '' && is_numeric($boardingAmt)) ? (float) $boardingAmt : null;
+		$dayVal = ($dayAmt !== '' && is_numeric($dayAmt)) ? (float) $dayAmt : null;
+		if ($boardingVal === null && $dayVal === null && $legacyAmt !== '' && is_numeric($legacyAmt)) {
+			$boardingVal = (float) $legacyAmt;
+			$dayVal = (float) $legacyAmt;
+		}
+		if ($boardingVal === null && $dayVal === null) {
+			return $this->response->setJSON(["error" => "Enter boarding and day amounts. Extra fees can be saved even if the class has no students."]);
+		}
+
+		$classId = (int) $this->request->getPost("classe");
+		if ($classId < 1) {
+			return $this->response->setJSON(["error" => lang("app.selectClass") ?: 'Select a class.']);
+		}
+		$classIds = [$classId];
+		if ((int) $this->request->getPost("apply_department") === 1) {
+			$classRow = (new ClassesModel())->select('department')->find($classId);
+			$deptId = (int) ($classRow['department'] ?? 0);
+			if ($deptId > 0) {
+				$siblings = (new ClassesModel())->select('id, title')
+					->where('school_id', $school_id)
+					->where('department', $deptId)
+					->findAll();
+				foreach ($siblings as $sib) {
+					if ($this->classLooksLikeHoliday($sib)) {
+						continue;
+					}
+					$sid = (int) ($sib['id'] ?? 0);
+					if ($sid > 0) {
+						$classIds[] = $sid;
+					}
+				}
 			}
 		}
-		return $this->response->setJSON(array("success" => lang("app.feeSaved")));
+		$classIds = array_values(array_unique($classIds));
+		$createdBy = (int) $this->session->get("soma_id");
+		$year = (int) $this->data['academic_year'];
+		$saved = 0;
+		foreach ($classIds as $cid) {
+			foreach ($terms as $term) {
+				$idSaved = $ExtraFeesModel->upsertClassModeFee(
+					$school_id,
+					$year,
+					(int) $cid,
+					$title,
+					(int) $term,
+					$boardingVal,
+					$dayVal,
+					$createdBy
+				);
+				if ($idSaved > 0) {
+					$saved++;
+				}
+			}
+		}
+		$n = count($classIds);
+		return $this->response->setJSON([
+			"success" => $n > 1
+				? "Extra fees saved for {$n} classes (students not required)."
+				: "Extra fees saved for the class (students not required).",
+			"saved" => $saved,
+		]);
 	}
 
 	public
@@ -14212,6 +14308,10 @@ public function getApplicationDocs($id = null)
 			return $this->response->setJSON(['success' => false, 'error' => 'Class not found.']);
 		}
 
+		$studentRow = (new StudentModel())->select('studying_mode')->find($student);
+		$studyingMode = (int) ($studentRow['studying_mode'] ?? 1);
+		$extraFees->ensureSchema();
+
 		$items = [];
 
 		$schoolRows = $schoolFees->select('school_fees.id,school_fees.term,(school_fees.amount+coalesce(fd.amount,0)) as amount,sum(fr.amount) as paid')
@@ -14244,7 +14344,7 @@ public function getApplicationDocs($id = null)
 			];
 		}
 
-		$extraRows = $extraFees->select('extra_fees.id,extra_fees.title,extra_fees.amount,extra_fees.term,fr.amount as paid')
+		$extraRows = $extraFees->select('extra_fees.id,extra_fees.title,extra_fees.type,extra_fees.amount,extra_fees.amount_boarding,extra_fees.amount_day,extra_fees.term,fr.amount as paid')
 			->join("(select fr.fees_id,COALESCE(sum(fr.amount),0) as amount from fees_records fr
 			 where fr.fees_type=1 and fr.status=1 and fr.student_id=$student group by fr.fees_id) fr", 'extra_fees.id=fr.fees_id', 'LEFT')
 			->where("(extra_fees.type_id=$class AND extra_fees.type=0 and extra_fees.academic_year=$year) or (extra_fees.type_id=$student AND extra_fees.type=1 and extra_fees.academic_year=$year)")
@@ -14254,7 +14354,9 @@ public function getApplicationDocs($id = null)
 			->get()->getResultArray();
 
 		foreach ($extraRows as $row) {
-			$expected = (float) ($row['amount'] ?? 0);
+			$expected = ((int) ($row['type'] ?? 0) === 1)
+				? (float) ($row['amount'] ?? 0)
+				: ExtraFeesModel::expectedForMode($row, $studyingMode);
 			$paid = (float) ($row['paid'] ?? 0);
 			$remain = max(0, $expected - $paid);
 			if ($remain <= 0) {
@@ -17833,6 +17935,8 @@ public function assign_card()
 		$school_id = $this->session->get("soma_school_id");
 		$studentMdl = new StudentModel();
 		$acMdl = new AcademicYearModel();
+		(new ExtraFeesModel())->ensureSchema();
+		(new SchoolFeesModel())->ensureSchema();
 		if ($pdf == 1) {
 			$data['years'] = $acMdl->select('id,title')->where("id", $academic)->get()->getRowArray();
 			$data['classe'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
@@ -17876,8 +17980,8 @@ public function assign_card()
 		l.title as level_name,
 		,f.type,f.abbrev as faculty_code,
 		(COALESCE(sf.amount,0) + coalesce(fd.amount,0)) as school_amount,
-		(COALESCE(sum(ex.amount),0) + COALESCE(sum(student.amount),0)) as extra_amount,
-		 (COALESCE(sf.amount,0) + COALESCE(sum(ex.amount),0) + COALESCE(sum(student.amount),0) + coalesce(fd.amount,0)) as amount,
+		((CASE WHEN students.studying_mode = 0 THEN COALESCE(ex.boarding_amount,0) ELSE COALESCE(ex.day_amount,0) END) + COALESCE(student.amount,0)) as extra_amount,
+		 (COALESCE(sf.amount,0) + (CASE WHEN students.studying_mode = 0 THEN COALESCE(ex.boarding_amount,0) ELSE COALESCE(ex.day_amount,0) END) + COALESCE(student.amount,0) + coalesce(fd.amount,0)) as amount,
 		(COALESCE(fr.amount,0)) as school_paid,
 		(COALESCE(extraPaid.amount,0) + COALESCE(extraPaidSingle.amount,0)) as extra_paid,
 		(COALESCE(fr.amount,0) + COALESCE(extraPaid.amount,0) + COALESCE(extraPaidSingle.amount,0)) as paid")
@@ -17889,7 +17993,7 @@ public function assign_card()
 				->join("(select sum(sf.amount) as amount,sf.level,sf.department from school_fees sf where sf.term IN ($termsIn) and
 			sf.academic_year=$academic and sf.school_id = $school_id group by sf.level,sf.department) sf", "sf.level=l.id and sf.department=d.id", "LEFT")
 				->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $school_id group by fd.student,sf.level,sf.department) fd", "fd.level=l.id and fd.department=d.id AND fd.student=students.id", "LEFT")
-				->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
+				->join("(select sum(COALESCE(ex.amount_boarding, ex.amount)) as boarding_amount, sum(COALESCE(ex.amount_day, ex.amount)) as day_amount,ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
 			ex.academic_year=$academic and ex.school_id = $school_id group by ex.type_id) ex", "ex.type_id=cl.id", "LEFT")
 				->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=1 and ex.term IN ($termsIn) and
 			ex.academic_year=$academic and ex.school_id = $school_id group by ex.type_id) student", "student.type_id=students.id", "LEFT")
@@ -19158,6 +19262,29 @@ public function assign_card()
 			return $this->response->setJSON(['error' => 'No classes found for this department. Create classes in School Settings first.']);
 		}
 		$settingsId = (int) $settings->id;
+		$at = (new ActiveTermModel())->select('academic_year')
+			->where('school_id', $school)
+			->orderBy('id', 'DESC')
+			->get(1)->getRowArray();
+		$yearId = (int) ($at['academic_year'] ?? 0);
+		$extraByClass = [];
+		if ($yearId > 0) {
+			$extraMdl = new ExtraFeesModel();
+			$extraMdl->ensureSchema();
+			$extraMdl->ensureTrackRegistrationFees((int) $school, $yearId, 0);
+			$classIds = array_values(array_filter(array_map('intval', array_column($classes, 'id'))));
+			if ($classIds) {
+				$extraRows = $extraMdl->select('id,type_id,title,amount,amount_boarding,amount_day,term')
+					->where('school_id', $school)
+					->where('academic_year', $yearId)
+					->where('type', 0)
+					->whereIn('type_id', $classIds)
+					->get()->getResultArray();
+				foreach ($extraRows as $er) {
+					$extraByClass[(int) $er['type_id']][] = $er;
+				}
+			}
+		}
 		foreach ($classes as &$cls) {
 			$fee = $feeSvc->resolveFee($settingsId, (int) $cls['id'], (int) $cls['level']);
 			$label = trim(($cls['level_name'] ?? '') . ' ' . ($cls['title'] ?? ''));
@@ -19167,6 +19294,14 @@ public function assign_card()
 			$cls['label'] = $label;
 			$cls['fee'] = $fee;
 			$cls['fee_label'] = number_format($fee) . ' Rwf';
+			$board = 0.0;
+			$day = 0.0;
+			foreach ($extraByClass[(int) $cls['id']] ?? [] as $er) {
+				$board += ExtraFeesModel::expectedForMode($er, 0);
+				$day += ExtraFeesModel::expectedForMode($er, 1);
+			}
+			$cls['extra_boarding'] = $board;
+			$cls['extra_day'] = $day;
 		}
 		unset($cls);
 		return $this->response->setJSON([
@@ -19821,13 +19956,49 @@ public function assign_card()
 		$data['pendings'] = $applicationMdl->select("applications.id,concat(fname,' ',lname) as applicant,
 		if(gender='M','Male','Famele') as gender,
 		phoneNumber,parentType,
-		parentPhoneNumber,parentNames,dateOfBirth,l.title as level,if(studyingMode=0,'Boarding','Day') mode,applications.status,code,admitted")
+		parentPhoneNumber,parentNames,dateOfBirth,l.title as level,l.id as level_id,
+		applications.studyingMode,applications.class_id,applications.department_id,
+		if(studyingMode=0,'Boarding','Day') mode,applications.status,code,admitted")
 				->join("levels l", "l.id=applications.level")
 				->where("admitted", 0)
 				->where("applications.status !=", '3')
 				->where("schoolId", $school_id)
 				->orderBy('applications.id', 'DESC')
 				->get()->getResultArray();
+		$year = (int) ($this->data['academic_year'] ?? 0);
+		$extraFeesMdl = new ExtraFeesModel();
+		$extraFeesMdl->ensureSchema();
+		$extraFeesMdl->ensureTrackRegistrationFees(
+			(int) $school_id,
+			$year,
+			(int) ($this->session->get('soma_id') ?: 0)
+		);
+		(new SchoolFeesModel())->ensureSchema();
+		$classMdl = new ClassesModel();
+		foreach ($data['pendings'] as &$pending) {
+			$mode = (int) ($pending['studyingMode'] ?? 1);
+			$classId = (int) ($pending['class_id'] ?? 0);
+			$levelId = (int) ($pending['level_id'] ?? 0);
+			$deptId = (int) ($pending['department_id'] ?? 0);
+			if ($classId < 1 && $levelId > 0 && $deptId > 0) {
+				$match = $classMdl->select('id')
+					->where('school_id', $school_id)
+					->where('department', $deptId)
+					->where('level', $levelId)
+					->orderBy('title', 'ASC')
+					->get(1)->getRowArray();
+				$classId = (int) ($match['id'] ?? 0);
+			}
+			$invoice = $classId > 0
+				? $this->pendingApplicationFeeInvoiceItems($school_id, $year, $classId, $levelId, $deptId, $mode)
+				: ['items' => []];
+			$due = 0.0;
+			foreach ($invoice['items'] as $item) {
+				$due += (float) ($item['expected'] ?? 0);
+			}
+			$pending['fee_due'] = $due;
+		}
+		unset($pending);
 		$data['content'] = view("pages/pendingRegistrations", $data);
 		return view('main', $data);
 	}
@@ -19919,12 +20090,7 @@ public function assign_card()
 
 	private function extraFeeAmountForMode(array $row, int $studyingMode): float
 	{
-		$modes = ExtraFeesModel::modeAmounts($row);
-		$amount = ($studyingMode === 0) ? $modes['boarding'] : $modes['day'];
-		if ($amount === null) {
-			$amount = $modes['legacy'];
-		}
-		return max(0, (float) $amount);
+		return ExtraFeesModel::expectedForMode($row, $studyingMode);
 	}
 
 	/**
@@ -20124,6 +20290,7 @@ public function assign_card()
 		$schoolFeeMdl = new SchoolFeesModel();
 		$schoolFeeMdl->ensureSchema();
 		$extraFeeMdl = new ExtraFeesModel();
+		$extraFeeMdl->ensureSchema();
 		$feeEntryModel = new FeesRecordModel();
 		$receiptParts = [];
 
@@ -20186,6 +20353,12 @@ public function assign_card()
 					$row = $extraFeeMdl->where('id', $feeId)->where('school_id', $schoolId)->get(1)->getRowArray();
 					if (!$row) {
 						$feeId = 0;
+					} else {
+						$modeField = $studyingMode === 0 ? 'amount_boarding' : 'amount_day';
+						$currentMode = ExtraFeesModel::expectedForMode($row, $studyingMode);
+						if ($currentMode <= 0 && $expected > 0) {
+							$extraFeeMdl->update($feeId, [$modeField => $expected]);
+						}
 					}
 				}
 				if ($feeId < 1) {

@@ -260,6 +260,15 @@
   white-space: nowrap;
 }
 
+.ef-mode-amt {
+  display: block;
+  font-weight: 700;
+  font-size: 0.86rem;
+  line-height: 1.25;
+}
+.ef-mode-amt.board { color: #0f766e; }
+.ef-mode-amt.day { color: #b45309; }
+
 .ef-bulk-bar {
   display: flex;
   flex-wrap: wrap;

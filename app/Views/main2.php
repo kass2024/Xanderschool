@@ -2076,12 +2076,23 @@
 									}
 									?>
 								</select>
+								<label class="mt-2 mb-0" style="font-weight:500">
+									<input type="checkbox" name="apply_department" value="1">
+									Apply to all classes in this department (even if empty)
+								</label>
 							</div>
 						</div>
 						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
 							<div class="form-group">
-								<label><?= lang("app.amount"); ?>:</label>
-								<input type="text" name="amount" class="form-control">
+								<label><?= lang("app.boarding"); ?> amount</label>
+								<input type="number" min="0" step="1" name="amount_boarding" class="form-control" placeholder="e.g. 50000">
+							</div>
+						</div>
+						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
+							<div class="form-group">
+								<label><?= lang("app.day"); ?> amount</label>
+								<input type="number" min="0" step="1" name="amount_day" class="form-control" placeholder="e.g. 30000">
+								<small class="text-muted">Students are not required. Boarding and day amounts are used on registration, pending approval, and the fees report.</small>
 							</div>
 						</div>
 						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">

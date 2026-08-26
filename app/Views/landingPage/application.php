@@ -700,6 +700,12 @@
 																		<input id="studentPhone" name="phoneNumber" placeholder="Parent phone if none" type="tel" inputmode="tel" required class="form-control" autocomplete="tel">
 																	</div>
 																</div>
+																<div class="reg-fee-box" id="regFeeBox" style="display:none">
+																	<div class="ss-panel-head" style="margin:0 0 8px;padding:0;border:0;background:transparent"><i class="fa fa-money"></i> Amount to pay</div>
+																	<p class="text-muted" id="regFeeMode" style="margin:0 0 4px;font-size:.85rem"></p>
+																	<strong id="regFeeAmount" style="font-size:1.25rem">0 Rwf</strong>
+																	<p class="text-muted" style="margin:6px 0 0;font-size:.82rem">Based on boarding or day extra fees for the selected class. Recorded in the fees report after approval.</p>
+																</div>
 																<div class="form-group">
 																	<label class="control-label mb-1">Nationality</label>
 																	<div class="ss-nationality-wrap">
@@ -1233,7 +1239,24 @@
 			});
 
 			function refreshRegistrationFee() {
-				return;
+				var $opt = $("#classOptions").find(':selected');
+				var mode = String($("[name='studingMode']").val() || '');
+				var classId = $("#classOptions").val();
+				if (!classId || (mode !== '0' && mode !== '1')) {
+					$("#regFeeBox").hide();
+					return;
+				}
+				var boarding = parseFloat($opt.data('extra-boarding') || 0) || 0;
+				var day = parseFloat($opt.data('extra-day') || 0) || 0;
+				var amount = mode === '0' ? boarding : day;
+				var label = mode === '0' ? 'Boarding' : 'Day';
+				if (amount <= 0) {
+					$("#regFeeBox").hide();
+					return;
+				}
+				$("#regFeeMode").text(label + ' extra fees for the selected class');
+				$("#regFeeAmount").text(amount.toLocaleString() + ' Rwf');
+				$("#regFeeBox").show();
 			}
 
 			$("#schoolOptions").on("change", function () {
@@ -1351,6 +1374,7 @@
 				$("#classOptions").html(options);
 				$("#levelHidden").val('');
 				$("#dynamicDocsContainer").html('<p class="text-muted">Choose a class to load required documents.</p>');
+				$("#regFeeBox").hide();
 				if (!deptId || !school_id) return;
 				$.getJSON("<?= site_url('getClassesByDepartment'); ?>/" + deptId + "/" + school_id, function (data) {
 					if (data && data.success && data.classes) {
@@ -1359,9 +1383,10 @@
 							if (/holiday/i.test(label)) {
 								return;
 							}
-							options += "<option value='" + obj.id + "' data-level='" + obj.level + "' data-fee='" + obj.fee + "'>" + obj.label + "</option>";
+							options += "<option value='" + obj.id + "' data-level='" + obj.level + "' data-fee='" + obj.fee + "' data-extra-boarding='" + (obj.extra_boarding || 0) + "' data-extra-day='" + (obj.extra_day || 0) + "'>" + obj.label + "</option>";
 						});
 						$("#classOptions").html(options);
+						refreshRegistrationFee();
 					} else if (data && data.error) {
 						toastada.error(data.error);
 					}
@@ -1376,6 +1401,7 @@
 				var levelId = $opt.data('level') || '';
 				$("#levelHidden").val(levelId);
 				loadRequiredDocs();
+				refreshRegistrationFee();
 			});
 
 			let current_fs, next_fs, previous_fs;
