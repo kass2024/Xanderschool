@@ -289,6 +289,24 @@ foreach ($pendings as $p) {
   .pr-place-chip strong{font-size:13px;}
   .pr-add-panel{border:1px dashed #cbd5e1;border-radius:8px;padding:12px;margin-bottom:12px;background:#f8fafc;display:none;}
   .pr-add-panel.show{display:block;}
+  .pending-actor-bar{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+    background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:10px 14px;margin:0 0 12px;
+  }
+  .pending-actor-bar strong{color:#1d4ed8;}
+  .pending-recent{
+    background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;margin:0 0 12px;
+  }
+  .pending-recent h6{margin:0 0 8px;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;}
+  .pending-recent-list{list-style:none;margin:0;padding:0;}
+  .pending-recent-list li{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;padding:5px 0;border-top:1px solid #f1f5f9;font-size:.85rem;}
+  .pending-recent-list li:first-child{border-top:0;}
+  .pending-recent-list .act{font-weight:700;}
+  .pending-recent-list .act.approved{color:#15803d;}
+  .pending-recent-list .act.rejected{color:#b45309;}
+  .pending-recent-list .act.deleted{color:#b91c1c;}
+  .pending-recent-list .who{color:#1e293b;font-weight:600;}
+  .pending-recent-list .when{margin-left:auto;color:#94a3b8;font-size:.75rem;}
 </style>
 
 <div class="app-inner-layout app-inner-layout-page">
@@ -296,6 +314,35 @@ foreach ($pendings as $p) {
     <div class="app-inner-layout__content">
       <div class="tab-content">
         <div class="container-fluid">
+          <div class="pending-actor-bar">
+            <div>
+              <?= esc(lang('app.actingAs')); ?>:
+              <strong><?= esc($financeActorName ?? session('soma_name') ?? 'Staff'); ?></strong>
+              <span class="text-muted"> — approve, reject, and delete are saved under this name.</span>
+            </div>
+          </div>
+          <div class="pending-recent" id="pendingRecentWrap"<?= empty($recentFinanceActions) ? ' style="display:none"' : ''; ?>>
+            <h6><?= esc(lang('app.recentFinanceActions')); ?></h6>
+            <ul class="pending-recent-list" id="pendingRecentList">
+              <?php foreach (($recentFinanceActions ?? []) as $act):
+                $actKey = strtolower((string) ($act['action'] ?? ''));
+                $actClass = 'approved';
+                $actLabel = 'Recorded';
+                if (strpos($actKey, 'approve') !== false) { $actClass = 'approved'; $actLabel = 'Approved'; }
+                elseif (strpos($actKey, 'reject') !== false) { $actClass = 'rejected'; $actLabel = 'Rejected'; }
+                elseif (strpos($actKey, 'delete') !== false) { $actClass = 'deleted'; $actLabel = 'Deleted'; }
+                elseif (strpos($actKey, 'fee') !== false) { $actClass = 'approved'; $actLabel = 'Fee recorded'; }
+                $when = !empty($act['created_at']) ? date('d-M H:i', strtotime($act['created_at'])) : '';
+              ?>
+                <li>
+                  <span class="act <?= esc($actClass); ?>"><?= esc($actLabel); ?></span>
+                  <span><?= esc($act['subject'] ?? ''); ?></span>
+                  <span class="who"><?= esc($act['staff_name'] ?? ''); ?></span>
+                  <span class="when"><?= esc($when); ?></span>
+                </li>
+              <?php endforeach; ?>
+            </ul>
+          </div>
           <div class="pending-kpi" id="pendingKpi">
             <div class="pending-kpi-item is-total">
               <span id="kpiTotal"><?= (int) $totalPending ?></span>
@@ -707,6 +754,26 @@ foreach ($pendings as $p) {
   var schoolFeeTerms = {};
   var addFeeKind = 'extra';
   var newItemSeq = 0;
+  var financeActorName = <?= json_encode($financeActorName ?? session('soma_name') ?? 'Staff'); ?>;
+
+  function prependRecentAction(label, subject, actor, cls) {
+    var $wrap = $('#pendingRecentWrap');
+    var $list = $('#pendingRecentList');
+    if (!$list.length) return;
+    $wrap.show();
+    var now = new Date();
+    var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var when = pad(now.getDate()) + '-' + months[now.getMonth()] + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+    var html = '<li>' +
+      '<span class="act ' + (cls || 'approved') + '">' + $('<div>').text(label || '').html() + '</span>' +
+      '<span>' + $('<div>').text(subject || '').html() + '</span>' +
+      '<span class="who">' + $('<div>').text(actor || financeActorName).html() + '</span>' +
+      '<span class="when">' + when + '</span>' +
+      '</li>';
+    $list.prepend(html);
+    $list.find('li').slice(15).remove();
+  }
 
   function fileUrl(rel) {
     if (!rel) return null;
@@ -1244,6 +1311,7 @@ foreach ($pendings as $p) {
         setTimeout(function(){
           $('#approveRegistrationModal').modal('hide');
           removePendingRow(appId);
+          prependRecentAction(res.action_label || 'Approved', res.subject || $('#approveName').text(), res.actor || financeActorName, 'approved');
         }, 700);
       } else {
         showAlert($('#approveAlert'), 'danger', (res && (res.error||res.message)) ? (res.error||res.message) : 'Approval failed.');
@@ -1279,6 +1347,7 @@ foreach ($pendings as $p) {
       if (res && res.success) {
         $('#rejectRegistrationModal').modal('hide');
         removePendingRow(appId);
+        prependRecentAction(res.action_label || 'Rejected', res.subject || $('#rejectName').text(), res.actor || financeActorName, 'rejected');
       } else {
         showAlert($('#rejectAlert'), 'danger', (res && res.error) ? res.error : 'Reject failed.');
         $('#rejectConfirmBtn').prop('disabled', false).text('Yes, reject');
@@ -1312,6 +1381,7 @@ foreach ($pendings as $p) {
       if (res && res.success) {
         $('#deleteRegistrationModal').modal('hide');
         removePendingRow(appId);
+        prependRecentAction(res.action_label || 'Deleted', res.subject || $('#deleteName').text(), res.actor || financeActorName, 'deleted');
       } else {
         showAlert($('#deleteAlert'), 'danger', (res && res.error) ? res.error : 'Delete failed.');
         $('#deleteConfirmBtn').prop('disabled', false).text('Delete permanently');

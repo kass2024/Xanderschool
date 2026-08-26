@@ -102,6 +102,7 @@
 												<th scope="col">Payment mode</th>
 												<th scope="col">Reference</th>
 												<th scope="col">Date</th>
+												<th scope="col"><?= esc(lang('app.recordedBy')); ?></th>
 												<th scope="col">Status</th>
 												<th scope="col"></th>
 											</tr>
@@ -661,6 +662,7 @@ $(function () {
 					'<td>' + paymentModeToString(record.payment_mode) + '</td>' +
 					'<td>' + refCell + '</td>' +
 					'<td>' + record.date + '</td>' +
+					'<td>' + (record.recorded_by_name || '—') + '</td>' +
 					'<td>' + statusCell + '</td>' +
 					'<td>' + actions + '</td>' +
 					'</tr>';

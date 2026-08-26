@@ -42,6 +42,7 @@ use App\Models\DocumentsModel;
 use App\Models\ExtraFeesModel;
 use App\Models\FacultyModel;
 use App\Models\FeesRecordModel;
+use App\Models\FinanceAuditLogModel;
 use App\Models\GradeModel;
 use App\Models\LeaveModel;
 use App\Models\LevelsModel;
@@ -13464,12 +13465,14 @@ public function getApplicationDocs($id = null)
 		$data['fees'] = $extraFees->select("extra_fees.id,extra_fees.amount,extra_fees.amount_boarding,extra_fees.amount_day,extra_fees.type,extra_fees.type_id,
 			ac.title as academic_year,extra_fees.title,extra_fees.term,
 			cl.title as classe,d.code,l.title as level_name,
-			CONCAT(st.fname,' ',st.lname) as student_name,st.regno")
+			CONCAT(st.fname,' ',st.lname) as student_name,st.regno,
+			TRIM(CONCAT(COALESCE(sf.fname,''),' ',COALESCE(sf.lname,''))) as created_by_name")
 				->join("classes cl", "cl.id=extra_fees.type_id AND extra_fees.type=0", "LEFT")
 				->join("departments d", "d.id=cl.department", "LEFT")
 				->join("levels l", "l.id=cl.level", "LEFT")
 				->join("students st", "st.id=extra_fees.type_id AND extra_fees.type=1", "LEFT")
 				->join("academic_year ac", "ac.id=extra_fees.academic_year")
+				->join("staffs sf", "sf.id=extra_fees.created_by", "LEFT")
 				->where("extra_fees.school_id", $school_id)
 				->where("extra_fees.academic_year", $academicYear)
 				->orderBy("extra_fees.type", "ASC")
@@ -13731,6 +13734,11 @@ public function getApplicationDocs($id = null)
 				} else {
 					$resString .= $recId . ':' . $feesTypes[$key] . '-';
 				}
+				$this->logFinanceAction('fee_record', 'fees_record', (int) $recId, [
+					'student_id' => $student,
+					'subject' => 'Fee payment recorded',
+					'details' => ['amount' => $amounts[$key] ?? 0, 'fees_type' => $feesTypes[$key] ?? 0],
+				]);
 
 			endforeach;
 			$printUrl = base_url('print_fee_receipt/' . urlencode($resString) . '/' . $student . '?autoprint=1');
@@ -13766,6 +13774,56 @@ public function getApplicationDocs($id = null)
 			$finalRef = $baseRef . '-' . $recordId;
 		}
 		$model->update($recordId, ['refNo' => $finalRef]);
+	}
+
+	private function financeActorId(): int
+	{
+		return (int) ($this->session->get('soma_id') ?: 0);
+	}
+
+	private function financeActorName(): string
+	{
+		$name = trim((string) $this->session->get('soma_name'));
+		return $name !== '' ? $name : 'Staff';
+	}
+
+	private function logFinanceAction(string $action, string $entityType, int $entityId, array $meta = []): void
+	{
+		try {
+			$mdl = new FinanceAuditLogModel();
+			$mdl->ensureSchema();
+			$details = $meta['details'] ?? null;
+			if (is_array($details)) {
+				$details = json_encode($details);
+			}
+			$mdl->insert([
+				'school_id' => (int) $this->session->get('soma_school_id'),
+				'staff_id' => $this->financeActorId(),
+				'staff_name' => $this->financeActorName(),
+				'action' => $action,
+				'entity_type' => $entityType,
+				'entity_id' => $entityId > 0 ? $entityId : null,
+				'student_id' => !empty($meta['student_id']) ? (int) $meta['student_id'] : null,
+				'subject' => isset($meta['subject']) ? substr((string) $meta['subject'], 0, 255) : null,
+				'details' => $details,
+			]);
+		} catch (\Throwable $e) {
+			log_message('error', 'finance audit log failed: ' . $e->getMessage());
+		}
+	}
+
+	private function stampApplicationProcessor(StudentApplicationModel $mdl, int $applicationId, string $action): array
+	{
+		$mdl->ensureAuditColumns();
+		$at = date('Y-m-d H:i:s');
+		$payload = [
+			'id' => $applicationId,
+			'processed_by' => $this->financeActorId(),
+			'processed_at' => $at,
+			'processed_action' => $action,
+		];
+		$mdl->save($payload);
+		return $payload;
 	}
 
 	public function fees_pending_approval()
@@ -13832,6 +13890,10 @@ public function getApplicationDocs($id = null)
 				$feeEntryModel->update($id, ['status' => FeesApproval::STATUS_APPROVED]);
 				$approved[] = $id . ':' . $row['fees_type'];
 				$studentId = (int) $row['student_id'];
+				$this->logFinanceAction('fee_approve', 'fees_record', $id, [
+					'student_id' => $studentId,
+					'subject' => 'Fee record approved',
+				]);
 			}
 		} catch (\Exception $e) {
 			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
@@ -17904,17 +17966,21 @@ public function assign_card()
 		$this->_preset();
 		$feesRecordMdl = new FeesRecordModel();
 		$extraFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,1 as type,fees_records.created_at as date,
-		concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.status,fees_records.refNo")
+		concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,
+		TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 				->join("extra_fees extra", "fees_records.fees_id=extra.id and fees_records.fees_type=1")
 				->join("academic_year ac", "ac.id=extra.academic_year")
+				->join("staffs st", "st.id=fees_records.created_by", "LEFT")
 				->where("fees_records.student_id", $student)
 				->where("ac.id", $year)
 				->orderBy("fees_records.id", 'DESC')
 				->get()->getResultArray();
 		$schoolFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,0 as type,fees_records.created_at as date
-		,if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,fees_records.status,fees_records.refNo")
+		,if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,
+		TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 				->join("school_fees sf", "sf.id=fees_records.fees_id and fees_records.fees_type=0")
 				->join("academic_year ac", "ac.id=sf.academic_year")
+				->join("staffs st", "st.id=fees_records.created_by", "LEFT")
 				->where("fees_records.student_id", $student)
 				->where("ac.id", $year)
 				->orderBy("fees_records.id", 'DESC')
@@ -17996,18 +18062,22 @@ public function assign_card()
 		$schoolFees = [];
 		if (count($extraFeesData) > 0) {
 			$extraFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,fees_records.created_at as date,
-			concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode")
+			concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,
+			TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 					->join("extra_fees extra", "fees_records.fees_id=extra.id and fees_records.fees_type=1 and fees_records.status=1")
 					->join("academic_year ac", "ac.id=extra.academic_year")
+					->join("staffs st", "st.id=fees_records.created_by", "LEFT")
 					->where("fees_records.student_id", $student)
 					->whereIn("fees_records.id", $extraFeesData)
 					->get()->getResultArray();
 		}
 		if (count($schoolFeesData) > 0) {
 			$schoolFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,fees_records.created_at as date,
-			if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode")
+			if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,
+			TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 					->join("school_fees sf", "sf.id=fees_records.fees_id and fees_records.fees_type=0 and fees_records.status=1")
 					->join("academic_year ac", "ac.id=sf.academic_year")
+					->join("staffs st", "st.id=fees_records.created_by", "LEFT")
 					->where("fees_records.student_id", $student)
 					->whereIn("fees_records.id", $schoolFeesData)
 					->get()->getResultArray();
@@ -18138,16 +18208,19 @@ public function assign_card()
 		}
 		$students = $studentsQuery->get()->getResultArray();
 		$refMap = [];
+		$actorMap = [];
 		$studentIds = array_values(array_unique(array_filter(array_map('intval', array_column($students, 'student_id')))));
 		if ($studentIds !== []) {
 			$db = \Config\Database::connect();
 			$refRows = $db->table('fees_records fr')
-				->select("fr.student_id, GROUP_CONCAT(DISTINCT fr.refNo ORDER BY fr.id SEPARATOR ', ') AS ref_nos", false)
+				->select("fr.student_id,
+					GROUP_CONCAT(DISTINCT NULLIF(fr.refNo, '') ORDER BY fr.id SEPARATOR ', ') AS ref_nos,
+					GROUP_CONCAT(DISTINCT NULLIF(TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))), '') ORDER BY fr.id SEPARATOR ', ') AS recorded_by_names", false)
 				->join('school_fees sc', 'sc.id = fr.fees_id AND fr.fees_type = 0', 'left')
 				->join('extra_fees ex', 'ex.id = fr.fees_id AND fr.fees_type = 1', 'left')
+				->join('staffs st', 'st.id = fr.created_by', 'left')
 				->where('fr.status', 1)
 				->whereIn('fr.student_id', $studentIds)
-				->where('fr.refNo !=', '')
 				->groupStart()
 					->groupStart()
 						->where('fr.fees_type', 0)
@@ -18166,14 +18239,23 @@ public function assign_card()
 				->get()->getResultArray();
 			foreach ($refRows as $refRow) {
 				$id = (int) ($refRow['student_id'] ?? 0);
+				if ($id < 1) {
+					continue;
+				}
 				$refs = trim((string) ($refRow['ref_nos'] ?? ''));
-				if ($id > 0 && $refs !== '') {
+				if ($refs !== '') {
 					$refMap[$id] = $refs;
+				}
+				$actors = trim((string) ($refRow['recorded_by_names'] ?? ''));
+				if ($actors !== '') {
+					$actorMap[$id] = $actors;
 				}
 			}
 		}
 		foreach ($students as &$stRow) {
-			$stRow['ref_nos'] = $refMap[(int) ($stRow['student_id'] ?? 0)] ?? '';
+			$sid = (int) ($stRow['student_id'] ?? 0);
+			$stRow['ref_nos'] = $refMap[$sid] ?? '';
+			$stRow['recorded_by_names'] = $actorMap[$sid] ?? '';
 		}
 		unset($stRow);
 		$data['students'] = $students;
@@ -20256,6 +20338,12 @@ public function assign_card()
 				: 0.0;
 		}
 		unset($pending);
+		$applicationMdl->ensureAuditColumns();
+		$data['financeActorName'] = $this->financeActorName();
+		$auditMdl = new FinanceAuditLogModel();
+		$data['recentFinanceActions'] = $auditMdl->recentForSchool((int) $school_id, 15, [
+			'application_approve', 'application_reject', 'application_delete', 'fee_record',
+		]);
 		$data['content'] = view("pages/pendingRegistrations", $data);
 		return view('main', $data);
 	}
@@ -21021,7 +21109,14 @@ public function assign_card()
 					$createdBy
 				);
 				$classData = ["student" => $studentId, "year" => $year, "class" => $classId, "status" => 1];
-				$applicationMdl->save(["id" => $applicationId, "admitted" => 1, "status" => 1]);
+				$applicationMdl->save([
+					"id" => $applicationId,
+					"admitted" => 1,
+					"status" => 1,
+					"processed_by" => $createdBy,
+					"processed_at" => date('Y-m-d H:i:s'),
+					"processed_action" => "approved",
+				]);
 				$classRecordMdl->save($classData);
 
 				$feeResult = $this->recordPendingRegistrationPayments(
@@ -21088,10 +21183,18 @@ public function assign_card()
 			foreach ($phones as $ph) {
 				$this->sendChargedSms($ph, $message, (int) $studentId, 'Admission confirmation');
 			}
+			$this->logFinanceAction('application_approve', 'application', (int) $applicationId, [
+				'student_id' => (int) $studentId,
+				'subject' => $studentName,
+				'details' => ['regno' => $regNo, 'paid' => $paidTotal],
+			]);
 			return $this->response->setJSON([
 				"success" => "Payment recorded and applicant approved successfully.",
 				"url" => $printUrl,
 				"print_url" => $printUrl,
+				"actor" => $this->financeActorName(),
+				"action_label" => "Approved",
+				"subject" => $studentName,
 			]);
 		} catch (\Exception $e) {
 			if ($db->transStatus() !== false) {
@@ -21190,6 +21293,7 @@ public function assign_card()
 			return $this->response->setJSON(['success' => false, 'error' => 'Invalid application.']);
 		}
 		$applicationMdl = new StudentApplicationModel();
+		$applicationMdl->ensureAuditColumns();
 		$row = $applicationMdl->where('id', $applicationId)
 			->where('schoolId', $school_id)
 			->where('admitted', 0)
@@ -21197,11 +21301,24 @@ public function assign_card()
 		if (!$row) {
 			return $this->response->setJSON(['success' => false, 'error' => 'Application not found or already processed.']);
 		}
+		$subject = trim(($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''));
 		$applicationMdl->save([
 			'id' => $applicationId,
 			'status' => '3',
+			'processed_by' => $this->financeActorId(),
+			'processed_at' => date('Y-m-d H:i:s'),
+			'processed_action' => 'rejected',
 		]);
-		return $this->response->setJSON(['success' => true, 'message' => 'Application rejected.']);
+		$this->logFinanceAction('application_reject', 'application', $applicationId, [
+			'subject' => $subject,
+		]);
+		return $this->response->setJSON([
+			'success' => true,
+			'message' => 'Application rejected.',
+			'actor' => $this->financeActorName(),
+			'action_label' => 'Rejected',
+			'subject' => $subject,
+		]);
 	}
 
 	/**
@@ -21235,8 +21352,19 @@ public function assign_card()
 			}
 			@rmdir($uploadDir);
 		}
+		$subject = trim(($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''));
+		$this->logFinanceAction('application_delete', 'application', $applicationId, [
+			'subject' => $subject !== '' ? $subject : ('Application #' . $applicationId),
+			'details' => ['code' => $row['code'] ?? ''],
+		]);
 		$applicationMdl->delete($applicationId);
-		return $this->response->setJSON(['success' => true, 'message' => 'Application deleted.']);
+		return $this->response->setJSON([
+			'success' => true,
+			'message' => 'Application deleted.',
+			'actor' => $this->financeActorName(),
+			'action_label' => 'Deleted',
+			'subject' => $subject,
+		]);
 	}
 
 	public

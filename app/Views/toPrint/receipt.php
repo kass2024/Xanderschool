@@ -62,6 +62,17 @@
 			<div class="info"><strong>Academic year : </strong><span><?= date('Y') - 1; ?> - <?= date('Y'); ?></span>
 			</div>
 			<div class="info"><strong>Date: </strong><span><?= date('d-m-Y'); ?></span></div>
+			<?php
+			$receiptActors = [];
+			foreach ($records as $r) {
+				$nm = trim((string) ($r['recorded_by_name'] ?? ''));
+				if ($nm !== '') {
+					$receiptActors[$nm] = $nm;
+				}
+			}
+			if ($receiptActors !== []) : ?>
+			<div class="info"><strong>Recorded by: </strong><span><?= esc(implode(', ', $receiptActors)); ?></span></div>
+			<?php endif; ?>
 		</div>
 
 		<div class="mainDiv">

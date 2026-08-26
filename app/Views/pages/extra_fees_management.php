@@ -176,6 +176,7 @@ ksort($uniqueClasses);
 								<th class="text-right"><?= lang('app.amount'); ?></th>
 								<th><?= lang('app.term'); ?></th>
 								<th><?= lang('app.academicYear'); ?></th>
+								<th><?= lang('app.recordedBy'); ?></th>
 								<th class="text-center"><?= lang('app.Actions'); ?></th>
 							</tr>
 							</thead>
@@ -183,7 +184,7 @@ ksort($uniqueClasses);
 							<?php foreach ($fees as $fee) :
 								$isStudent = (int) ($fee['type'] ?? 0) === 1;
 								$target = ef_target_label($fee);
-								$searchText = strtolower($fee['title'] . ' ' . $target . ' ' . ($fee['regno'] ?? ''));
+								$searchText = strtolower($fee['title'] . ' ' . $target . ' ' . ($fee['regno'] ?? '') . ' ' . ($fee['created_by_name'] ?? ''));
 								$termStr = (string) ($fee['term'] ?? '');
 								$modes = \App\Models\ExtraFeesModel::modeAmounts($fee);
 								$unitAmt = (float) ($fee['amount'] ?? 0);
@@ -230,6 +231,7 @@ ksort($uniqueClasses);
 									</td>
 									<td><?php ef_term_badges($fee['term']); ?></td>
 									<td><?= esc($fee['academic_year']); ?></td>
+									<td><?= esc(trim((string) ($fee['created_by_name'] ?? '')) !== '' ? $fee['created_by_name'] : '—'); ?></td>
 									<td class="text-center">
 										<button type="button" class="btn btn-outline-danger btn-sm ef-btn-del delButton" data-id="<?= (int) $fee['id']; ?>">
 											<i class="fa fa-trash"></i>

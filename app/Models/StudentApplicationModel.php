@@ -64,6 +64,10 @@ class StudentApplicationModel extends Model
         'mt_phone',
         'guardian',
         'gd_phone',
+
+        'processed_by',
+        'processed_at',
+        'processed_action',
     ];
 
     // Your table has created_at (timestamp default current_timestamp) and updated_at (datetime)
@@ -118,6 +122,22 @@ class StudentApplicationModel extends Model
                 $db->query("ALTER TABLE `applications` ADD COLUMN `{$name}` {$def}");
             }
         }
+        $this->ensureAuditColumns();
         self::$visitorColumnsReady = true;
+    }
+
+    public function ensureAuditColumns(): void
+    {
+        $db = \Config\Database::connect();
+        $audit = [
+            'processed_by' => 'INT NULL DEFAULT NULL',
+            'processed_at' => 'DATETIME NULL DEFAULT NULL',
+            'processed_action' => 'VARCHAR(32) NULL DEFAULT NULL',
+        ];
+        foreach ($audit as $name => $def) {
+            if (!$db->fieldExists($name, 'applications')) {
+                $db->query("ALTER TABLE `applications` ADD COLUMN `{$name}` {$def}");
+            }
+        }
     }
 }

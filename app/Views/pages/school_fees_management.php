@@ -146,8 +146,11 @@ ksort($uniqueLevels);
 																<span class="sf-amount"><?= $modes['day'] !== null ? number_format((float) $modes['day']) : '—'; ?></span>
 															</div>
 														</div>
+														<?php if (!empty($termFee['created_by_name'])) : ?>
+															<small class="d-block text-muted" style="font-size:.68rem;margin-top:4px;"><?= esc(lang('app.recordedBy')); ?>: <?= esc($termFee['created_by_name']); ?></small>
+														<?php endif; ?>
 														<div class="sf-term-actions">
-															<button type="button" class="sf-icon-btn editFeeBtn" title="<?= lang('app.editFee'); ?>"
+															<button type="button" class="sf-icon-btn editFeeBtn" title="<?= lang('app.editFee'); ?><?= !empty($termFee['created_by_name']) ? ' · ' . lang('app.recordedBy') . ': ' . $termFee['created_by_name'] : ''; ?>"
 																data-id="<?= (int) $termFee['id']; ?>"
 																data-amount="<?= esc((float) ($termFee['amount'] ?? 0), 'attr'); ?>"
 																data-boarding="<?= esc($modes['boarding'] !== null ? (float) $modes['boarding'] : '', 'attr'); ?>"

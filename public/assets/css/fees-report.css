@@ -28,6 +28,15 @@
   font-size: 0.92rem;
 }
 
+.fr-logged-as {
+  margin-top: 6px !important;
+  font-size: 0.8rem !important;
+}
+
+.fr-logged-as strong {
+  color: #1d4ed8;
+}
+
 .fr-kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -495,6 +504,19 @@
   height: 100%;
   background: #22c55e;
   border-radius: 999px;
+}
+
+.fr-actor {
+  display: inline-block;
+  max-width: 180px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1e3a5f;
+  line-height: 1.25;
+}
+
+.fr-actor-cell {
+  white-space: normal;
 }
 
 .fr-empty {

@@ -54,6 +54,9 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 					Choose filters below — report updates automatically
 				<?php endif; ?>
 			</p>
+			<?php $actor = trim((string) (session('soma_name') ?? '')); if ($actor !== '') : ?>
+				<p class="fr-logged-as"><?= esc(lang('app.actingAs')); ?>: <strong><?= esc($actor); ?></strong></p>
+			<?php endif; ?>
 		</header>
 
 		<div class="fr-filter-card" id="frFilterCard">
@@ -223,6 +226,7 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 						<th class="text-right">Paid</th>
 						<th class="text-right">Balance</th>
 						<th>Status</th>
+						<th><?= lang('app.recordedBy'); ?></th>
 						<?php if ($filter != '1') : ?><th></th><?php endif; ?>
 					</tr>
 					</thead>
@@ -235,7 +239,8 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 						$st = fr_payment_status($amt, $paid);
 						$pct = $amt > 0 ? min(100, round(($paid / $amt) * 100)) : 0;
 						$refs = trim((string) ($student['ref_nos'] ?? ''));
-						$search = strtolower($student['student'] . ' ' . $student['regno'] . ' ' . $refs);
+						$actors = trim((string) ($student['recorded_by_names'] ?? ''));
+						$search = strtolower($student['student'] . ' ' . $student['regno'] . ' ' . $refs . ' ' . $actors);
 						$sid = (int) $student['student_id'];
 						?>
 						<tr data-search="<?= esc($search, 'attr'); ?>" data-student-id="<?= $sid; ?>" data-regno="<?= esc($student['regno'], 'attr'); ?>" data-name="<?= esc($student['student'], 'attr'); ?>">
@@ -261,6 +266,13 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 							</td>
 							<td class="text-right fr-amount-remain"><?= $st['remain'] > 0 ? number_format($st['remain']) : '—'; ?></td>
 							<td><span class="fr-badge <?= esc($st['class']); ?>"><?= esc($st['label']); ?></span></td>
+							<td class="fr-actor-cell">
+								<?php if ($actors !== '') : ?>
+									<span class="fr-actor"><?= esc($actors); ?></span>
+								<?php else : ?>
+									<span class="text-muted">—</span>
+								<?php endif; ?>
+							</td>
 							<?php if ($filter != '1') : ?>
 							<td class="text-right">
 								<?php if ($st['remain'] > 0) : ?>

@@ -91,6 +91,7 @@ function getJsTermToString($term){
 					<th>Expected amount</th>
 					<th>Paid amount</th>
 					<th>Payment status</th>
+					<th>Recorded by</th>
 				</tr>
 				<tbody>
 				<?php
@@ -121,6 +122,7 @@ function getJsTermToString($term){
 						<td><?= number_format($student['amount']); ?></td>
 						<td><?= number_format($student['paid']); ?></td>
 						<td><?= moneyStatement($student['amount'], $student['paid']); ?></td>
+						<td><?= esc(trim((string) ($student['recorded_by_names'] ?? '')) !== '' ? $student['recorded_by_names'] : '—'); ?></td>
 					</tr>
 					<?php
 					$a++;

@@ -55,12 +55,14 @@ class SchoolFeesModel extends Model
 			d.title AS dept_title,
 			c.title AS class_title,
 			ac.title AS academic_year_title,
-			school_fees.academic_year AS academic_year_id
+			school_fees.academic_year AS academic_year_id,
+			TRIM(CONCAT(COALESCE(stf.fname,''),' ',COALESCE(stf.lname,''))) AS created_by_name
 		")
 			->join("levels l", "l.id = school_fees.level", "LEFT")
 			->join("departments d", "d.id = school_fees.department", "LEFT")
 			->join("classes c", "c.id = school_fees.class_id", "LEFT")
 			->join("academic_year ac", "ac.id = school_fees.academic_year", "LEFT")
+			->join("staffs stf", "stf.id = school_fees.created_by", "LEFT")
 			->where("school_fees.school_id", $schoolId)
 			->where("school_fees.academic_year", $academicYearId)
 			->orderBy("l.title", "ASC")
