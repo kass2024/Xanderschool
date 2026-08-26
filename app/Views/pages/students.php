@@ -82,6 +82,27 @@
 	color: #fff;
 	vertical-align: middle;
 }
+#classEditModal .modal-dialog { max-width: 96vw; width: 96vw; margin: 12px auto; }
+#classEditModal .modal-body { padding: 10px 14px 14px; }
+#classEditModal .ce-toolbar {
+	display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;
+}
+#classEditModal .ce-toolbar input[type="search"] { max-width: 280px; }
+#classEditWrap { overflow: auto; max-height: calc(100vh - 220px); border: 1px solid #e2e8f0; border-radius: 8px; }
+#classEditTable { margin: 0; font-size: 12px; min-width: 1680px; }
+#classEditTable thead th {
+	position: sticky; top: 0; z-index: 2; background: #f8fafc; white-space: nowrap;
+	font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: #475569;
+}
+#classEditTable td { vertical-align: middle; padding: 4px 6px; }
+#classEditTable .form-control, #classEditTable select.form-control { height: 30px; padding: 2px 6px; font-size: 12px; }
+#classEditTable .ce-regno { font-weight: 700; white-space: nowrap; }
+#classEditTable tr.ce-dirty { background: #fffbeb; }
+#classEditTable tr.ce-saved { background: #ecfdf5; }
+#classEditTable .ce-w-name { min-width: 120px; }
+#classEditTable .ce-w-phone { min-width: 110px; }
+#classEditTable .ce-w-nid { min-width: 130px; }
+#classEditAlert { margin-bottom: 8px; }
 </style>
 <div class="app-inner-layout app-inner-layout-page">
 	<div class="app-inner-layout__wrapper">
@@ -194,6 +215,9 @@
 										<div class="col-sm-12">
 											<div id="admissionSmsAlert" class="alert d-none" role="alert"></div>
 											<div class="st-sms-actions pull-right">
+												<button type="button" id="btnEditClassStudents" class="btn btn-warning">
+													<i class="fa fa-edit"></i> Edit class
+												</button>
 												<button type="button" id="btnMoveStudentsSelected" class="btn btn-secondary">
 													<i class="fa fa-exchange-alt"></i> Move selected
 												</button>
@@ -314,6 +338,84 @@
 		</div>
 	</div>
 </div>
+<?php
+$classEditStudents = [];
+foreach ($students as $st) {
+	$dob = (string) ($st['dob'] ?? '');
+	if ($dob === '0000-00-00' || strpos($dob, '0000') === 0) {
+		$dob = '';
+	} elseif (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $dob, $m)) {
+		$dob = $m[3] . '-' . $m[2] . '-' . $m[1];
+	}
+	$classEditStudents[] = [
+		'id' => (int) $st['id'],
+		'regno' => (string) ($st['regno'] ?? ''),
+		'fname' => (string) ($st['fname'] ?? ''),
+		'lname' => (string) ($st['lname'] ?? ''),
+		'sex' => (string) ($st['sex'] ?? ''),
+		'dob' => $dob,
+		'studying_mode' => (string) ($st['studying_mode'] ?? '0'),
+		'phone' => (string) ($st['phone'] ?? ''),
+		'nationality' => (string) ($st['nationality'] ?? ''),
+		'religion' => (string) ($st['religion'] ?? ''),
+		'father' => (string) ($st['father'] ?? ''),
+		'ft_phone' => (string) ($st['ft_phone'] ?? ''),
+		'father_nid' => (string) ($st['father_nid'] ?? ''),
+		'mother' => (string) ($st['mother'] ?? ''),
+		'mt_phone' => (string) ($st['mt_phone'] ?? ''),
+		'guardian' => (string) ($st['guardian'] ?? ''),
+		'gd_phone' => (string) ($st['gd_phone'] ?? ''),
+	];
+}
+?>
+<div class="modal fade" id="classEditModal" tabindex="-1" role="dialog" aria-labelledby="classEditTitle">
+	<div class="modal-dialog" role="document">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="classEditTitle">Edit class — <?= esc($currentClassLabel); ?></h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+			</div>
+			<div class="modal-body">
+				<div id="classEditAlert" class="alert d-none" role="alert"></div>
+				<div class="ce-toolbar">
+					<input type="search" class="form-control form-control-sm" id="classEditSearch" placeholder="Filter by name, reg no, parent…">
+					<span class="text-muted" id="classEditCount"></span>
+					<span class="text-muted">Change a cell and it saves automatically. Or use Save all.</span>
+				</div>
+				<div id="classEditWrap">
+					<table class="table table-sm table-bordered table-hover mb-0" id="classEditTable">
+						<thead>
+						<tr>
+							<th>#</th>
+							<th>Reg no</th>
+							<th>First name</th>
+							<th>Last name</th>
+							<th>Sex</th>
+							<th>Birth date</th>
+							<th>Mode</th>
+							<th>Student phone</th>
+							<th>Nationality</th>
+							<th>Religion</th>
+							<th>Father names</th>
+							<th>Father phone</th>
+							<th>Father national ID</th>
+							<th>Mother names</th>
+							<th>Mother phone</th>
+							<th>Guardian names</th>
+							<th>Guardian phone</th>
+						</tr>
+						</thead>
+						<tbody></tbody>
+					</table>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+				<button type="button" class="btn btn-primary" id="btnSaveClassStudents">Save all</button>
+			</div>
+		</div>
+	</div>
+</div>
 <div class="modal fade" id="moveStudentClassModal" tabindex="-1" role="dialog" aria-labelledby="moveStudentClassTitle">
 	<div class="modal-dialog" role="document">
 		<div class="modal-content">
@@ -358,8 +460,18 @@
 (function ($) {
 	var SMS_API = "<?= site_url('sendStudentAdmissionSms'); ?>";
 	var MOVE_API = "<?= site_url('move_students_class'); ?>";
+	var EDIT_FIELD_API = "<?= site_url('edit_student/text'); ?>";
+	var SAVE_CLASS_API = "<?= site_url('saveClassStudents'); ?>";
 	var YEAR_ID = "<?= (int) $academic_year; ?>";
 	var FROM_CLASS = <?= (int) $class_id; ?>;
+	var CLASS_STUDENTS = <?= json_encode($classEditStudents ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+	var RELIGIONS = <?= json_encode([
+		lang('app.islam'),
+		lang('app.catholics'),
+		lang('app.adventist'),
+		lang('app.jehovahWitness'),
+		lang('app.otherChristians'),
+	]); ?>;
 	var csrfName = $('meta[name="csrf-token-name"]').attr('content');
 	var csrfHash = $('meta[name="csrf-token-value"]').attr('content');
 
@@ -584,6 +696,201 @@
 
 	$(document).on('click', '#btnConfirmMoveStudents', function () {
 		submitMove();
+	});
+
+	function ceEsc(s) {
+		return String(s == null ? '' : s)
+			.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;');
+	}
+
+	function ceOpt(value, selected, label) {
+		return '<option value="' + ceEsc(value) + '"' + (String(selected) === String(value) ? ' selected' : '') + '>' + ceEsc(label) + '</option>';
+	}
+
+	function ceInput(id, field, value, extraClass, type) {
+		type = type || 'text';
+		return '<input type="' + type + '" class="form-control ce-field ' + (extraClass || '') + '" data-id="' + id + '" data-field="' + field + '" data-orig="' + ceEsc(value) + '" value="' + ceEsc(value) + '">';
+	}
+
+	function ceOrig($el) {
+		return String($el.attr('data-orig') == null ? '' : $el.attr('data-orig'));
+	}
+
+	function ceSyncFromDom() {
+		$('#classEditTable .ce-field').each(function () {
+			var $el = $(this);
+			var id = parseInt($el.attr('data-id'), 10);
+			var field = $el.attr('data-field');
+			if (!id || !field) {
+				return;
+			}
+			var val = String($el.val() == null ? '' : $el.val());
+			for (var i = 0; i < CLASS_STUDENTS.length; i++) {
+				if (CLASS_STUDENTS[i].id === id) {
+					CLASS_STUDENTS[i][field] = val;
+					break;
+				}
+			}
+		});
+	}
+
+	function renderClassEditRows(filter) {
+		filter = String(filter || '').toLowerCase().trim();
+		var html = '';
+		var shown = 0;
+		CLASS_STUDENTS.forEach(function (st) {
+			var hay = [st.regno, st.fname, st.lname, st.father, st.mother, st.guardian, st.ft_phone, st.father_nid].join(' ').toLowerCase();
+			if (filter && hay.indexOf(filter) === -1) {
+				return;
+			}
+			shown++;
+			var relOpts = '<option value=""></option>';
+			RELIGIONS.forEach(function (r) {
+				relOpts += ceOpt(r, st.religion, r);
+			});
+			if (st.religion && RELIGIONS.indexOf(st.religion) === -1) {
+				relOpts += ceOpt(st.religion, st.religion, st.religion);
+			}
+			html += '<tr data-id="' + st.id + '">' +
+				'<td>' + shown + '</td>' +
+				'<td class="ce-regno">' + ceEsc(st.regno) + '</td>' +
+				'<td class="ce-w-name">' + ceInput(st.id, 'fname', st.fname, 'ce-w-name') + '</td>' +
+				'<td class="ce-w-name">' + ceInput(st.id, 'lname', st.lname, 'ce-w-name') + '</td>' +
+				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="sex" data-orig="' + ceEsc(st.sex) + '">' +
+					ceOpt('F', st.sex, 'F') + ceOpt('M', st.sex, 'M') + '</select></td>' +
+				'<td>' + ceInput(st.id, 'dob', st.dob, '', 'date') + '</td>' +
+				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="studying_mode" data-orig="' + ceEsc(st.studying_mode) + '">' +
+					ceOpt('0', st.studying_mode, 'Boarding') + ceOpt('1', st.studying_mode, 'Day') + '</select></td>' +
+				'<td class="ce-w-phone">' + ceInput(st.id, 'phone', st.phone, 'ce-w-phone') + '</td>' +
+				'<td>' + ceInput(st.id, 'nationality', st.nationality) + '</td>' +
+				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="religion" data-orig="' + ceEsc(st.religion) + '">' + relOpts + '</select></td>' +
+				'<td class="ce-w-name">' + ceInput(st.id, 'father', st.father, 'ce-w-name') + '</td>' +
+				'<td class="ce-w-phone">' + ceInput(st.id, 'ft_phone', st.ft_phone, 'ce-w-phone') + '</td>' +
+				'<td class="ce-w-nid">' + ceInput(st.id, 'father_nid', st.father_nid, 'ce-w-nid') + '</td>' +
+				'<td class="ce-w-name">' + ceInput(st.id, 'mother', st.mother, 'ce-w-name') + '</td>' +
+				'<td class="ce-w-phone">' + ceInput(st.id, 'mt_phone', st.mt_phone, 'ce-w-phone') + '</td>' +
+				'<td class="ce-w-name">' + ceInput(st.id, 'guardian', st.guardian, 'ce-w-name') + '</td>' +
+				'<td class="ce-w-phone">' + ceInput(st.id, 'gd_phone', st.gd_phone, 'ce-w-phone') + '</td>' +
+				'</tr>';
+		});
+		$('#classEditTable tbody').html(html || '<tr><td colspan="17" class="text-center text-muted py-3">No students match.</td></tr>');
+		$('#classEditCount').text(shown + ' of ' + CLASS_STUDENTS.length + ' students');
+	}
+
+	function ceShowAlert(kind, msg) {
+		var $el = $('#classEditAlert');
+		$el.removeClass('d-none alert-info alert-danger alert-success alert-warning')
+			.addClass('alert-' + kind)
+			.text(msg)
+			.show();
+	}
+
+	function ceCollectChanged() {
+		var byId = {};
+		$('#classEditTable .ce-field').each(function () {
+			var $el = $(this);
+			var orig = ceOrig($el);
+			var val = String($el.val() == null ? '' : $el.val());
+			if (val === orig) {
+				return;
+			}
+			var id = parseInt($el.attr('data-id'), 10);
+			var field = $el.attr('data-field');
+			if (!id || !field) {
+				return;
+			}
+			if (!byId[id]) {
+				byId[id] = { id: id };
+			}
+			byId[id][field] = val;
+		});
+		return Object.keys(byId).map(function (k) { return byId[k]; });
+	}
+
+	function ceSaveField($el) {
+		var orig = ceOrig($el);
+		var val = String($el.val() == null ? '' : $el.val());
+		if (val === orig) {
+			return;
+		}
+		var id = parseInt($el.attr('data-id'), 10);
+		var field = $el.attr('data-field');
+		if (!id || !field) {
+			return;
+		}
+		$el.prop('disabled', true);
+		$.ajax({
+			url: EDIT_FIELD_API,
+			type: 'POST',
+			dataType: 'json',
+			data: withCsrf({ id: id, target: field, val: val })
+		}).done(function (res) {
+			if (res && res.success) {
+				$el.attr('data-orig', val);
+				$el.closest('tr').removeClass('ce-dirty').addClass('ce-saved');
+				CLASS_STUDENTS.forEach(function (st) {
+					if (st.id === id) { st[field] = val; }
+				});
+			} else {
+				ceShowAlert('danger', (res && (res.error || res.msg)) || 'Could not save.');
+			}
+		}).fail(function () {
+			ceShowAlert('danger', 'Could not save. Please try again.');
+		}).always(function () {
+			$el.prop('disabled', false);
+		});
+	}
+
+	$(document).on('click', '#btnEditClassStudents', function () {
+		$('#classEditAlert').addClass('d-none').text('');
+		$('#classEditSearch').val('');
+		renderClassEditRows('');
+		$('#classEditModal').modal('show');
+	});
+
+	$(document).on('input', '#classEditSearch', function () {
+		ceSyncFromDom();
+		renderClassEditRows($(this).val());
+	});
+
+	$(document).on('change', '#classEditTable .ce-field', function () {
+		var $el = $(this);
+		var orig = ceOrig($el);
+		var val = String($el.val() == null ? '' : $el.val());
+		$el.closest('tr').toggleClass('ce-dirty', val !== orig).removeClass('ce-saved');
+		ceSaveField($el);
+	});
+
+	$(document).on('click', '#btnSaveClassStudents', function () {
+		var rows = ceCollectChanged();
+		if (!rows.length) {
+			ceShowAlert('info', 'No unsaved changes.');
+			return;
+		}
+		var $btn = $(this);
+		$btn.prop('disabled', true).text('Saving…');
+		$.ajax({
+			url: SAVE_CLASS_API,
+			type: 'POST',
+			dataType: 'json',
+			data: withCsrf({ students: JSON.stringify(rows) })
+		}).done(function (res) {
+			if (res && res.success) {
+				ceShowAlert('success', res.message || 'Saved.');
+				$('#classEditTable .ce-field').each(function () {
+					$(this).attr('data-orig', $(this).val());
+				});
+				ceSyncFromDom();
+				$('#classEditTable tr').removeClass('ce-dirty').addClass('ce-saved');
+			} else {
+				ceShowAlert('danger', (res && res.error) || 'Could not save.');
+			}
+		}).fail(function () {
+			ceShowAlert('danger', 'Could not save. Please try again.');
+		}).always(function () {
+			$btn.prop('disabled', false).text('Save all');
+		});
 	});
 })(jQuery);
 </script>

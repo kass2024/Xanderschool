@@ -6039,6 +6039,7 @@ public function attendanceCard()
 		$acMdl = new AcademicYearModel();
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)->get()->getResultArray();
 		$studentMdl = new StudentModel();
+		$studentMdl->ensureFatherNidColumn();
 		$list = $studentMdl->get_student_simple("c.id = $classe and cr.year=$yearId", null);
 		$unique = [];
 		foreach ($list as $row) {
@@ -6864,15 +6865,33 @@ public function attendanceCard()
 		if ($target == 'sex' && !in_array($val, ['F', 'M'])) {
 			return $this->response->setJSON(["error" => "Sex must be F or M", "msg" => "Sex must be F or M"]);
 		}
+		if ($target == 'studying_mode' && !in_array((string) $val, ['0', '1'], true)) {
+			return $this->response->setJSON(["error" => "Invalid studying mode", "msg" => "Invalid studying mode"]);
+		}
+		if ($target === 'father_nid' && is_string($val) && strlen($val) > 32) {
+			$val = substr($val, 0, 32);
+		}
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$stMdl = new StudentModel();
+		$stMdl->ensureFatherNidColumn();
+		$owned = $stMdl->select('id')->where('id', (int) $id)->where('school_id', $schoolId)->get(1)->getRowArray();
+		if (!$owned) {
+			return $this->response->setJSON(["error" => lang("app.pleaseProvide"), "msg" => lang("app.pleaseProvide")]);
+		}
+		$allowed = [
+			'fname', 'lname', 'sex', 'dob', 'studying_mode', 'phone', 'email', 'nationality', 'religion',
+			'father', 'ft_phone', 'father_nid', 'mother', 'mt_phone', 'guardian', 'gd_phone',
+		];
+		if (!in_array($target, $allowed, true)) {
+			return $this->response->setJSON(["error" => lang("app.pleaseProvide"), "msg" => lang("app.pleaseProvide")]);
+		}
 		//echo "id:$id,target: $target,val: $val";die();
 		$uvMdl = new UpdateVersionModel();
 		$update_v = 1;
-		$update_v_data = $uvMdl->select("version")->where("type", "student")->where("school_id", $this->session->get("soma_school_id"))->get(1)->getRow();
+		$update_v_data = $uvMdl->select("version")->where("type", "student")->where("school_id", $schoolId)->get(1)->getRow();
 		if ($update_v_data != null)
 			$update_v = $update_v_data->version;
 		$data = array("id" => $id, $target => $val, "updateVersion" => $update_v);
-		$stMdl = new StudentModel();
-		$stMdl->ensureFatherNidColumn();
 		try {
 			$stMdl->save($data);
 			switch ($type) {
@@ -6890,6 +6909,88 @@ public function attendanceCard()
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}
+	}
+
+	/**
+	 * Save one or many student profile fields from the class edit modal.
+	 */
+	public function saveClassStudents()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$raw = $this->request->getPost('students');
+		if (is_string($raw) && $raw !== '') {
+			$decoded = json_decode($raw, true);
+			$raw = is_array($decoded) ? $decoded : [];
+		}
+		if (!is_array($raw) || $raw === []) {
+			return $this->response->setJSON(['success' => false, 'error' => 'No student changes to save.']);
+		}
+		$allowed = [
+			'fname', 'lname', 'sex', 'dob', 'studying_mode', 'phone', 'email', 'nationality', 'religion',
+			'father', 'ft_phone', 'father_nid', 'mother', 'mt_phone', 'guardian', 'gd_phone',
+		];
+		$stMdl = new StudentModel();
+		$stMdl->ensureFatherNidColumn();
+		$uvMdl = new UpdateVersionModel();
+		$update_v = 1;
+		$update_v_data = $uvMdl->select('version')->where('type', 'student')->where('school_id', $schoolId)->get(1)->getRow();
+		if ($update_v_data != null) {
+			$update_v = $update_v_data->version;
+		}
+		$saved = 0;
+		$failed = [];
+		foreach ($raw as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$id = (int) ($row['id'] ?? 0);
+			if ($id < 1) {
+				continue;
+			}
+			$owned = $stMdl->select('id')->where('id', $id)->where('school_id', $schoolId)->get(1)->getRowArray();
+			if (!$owned) {
+				$failed[] = '#' . $id;
+				continue;
+			}
+			$patch = ['id' => $id, 'updateVersion' => $update_v];
+			foreach ($allowed as $field) {
+				if (!array_key_exists($field, $row)) {
+					continue;
+				}
+				$val = is_string($row[$field]) ? trim($row[$field]) : $row[$field];
+				if ($field === 'sex' && !in_array((string) $val, ['F', 'M', ''], true)) {
+					continue;
+				}
+				if ($field === 'studying_mode' && !in_array((string) $val, ['0', '1'], true)) {
+					continue;
+				}
+				if ($field === 'father_nid' && is_string($val) && strlen($val) > 32) {
+					$val = substr($val, 0, 32);
+				}
+				$patch[$field] = $val;
+			}
+			if (count($patch) <= 2) {
+				continue;
+			}
+			try {
+				$stMdl->save($patch);
+				$saved++;
+			} catch (\Exception $e) {
+				$failed[] = (string) ($row['regno'] ?? ('#' . $id));
+			}
+		}
+		if ($saved < 1) {
+			return $this->response->setJSON([
+				'success' => false,
+				'error' => $failed ? ('Could not save: ' . implode(', ', $failed)) : 'No student changes to save.',
+			]);
+		}
+		$msg = $saved . ' student' . ($saved === 1 ? '' : 's') . ' saved.';
+		if ($failed) {
+			$msg .= ' Skipped: ' . implode(', ', $failed);
+		}
+		return $this->response->setJSON(['success' => true, 'saved' => $saved, 'message' => $msg]);
 	}
 
 	public function edit_staff($type = "text", $link = "s")
