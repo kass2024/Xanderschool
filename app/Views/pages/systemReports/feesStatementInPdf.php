@@ -1,3 +1,9 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="UTF-8">
+<title><?= esc($title ?? 'Fees report'); ?></title>
 <style>
 	.tablepage {
 		width: 100%;
@@ -56,6 +62,8 @@ function getJsTermToString($term){
 	}
 }
 ?>
+</head>
+<body>
 <div style="margin-top: 15px;width: 100%;float:left;">
 	<div class="col-md-12 col-sm-12 pull-left" style="margin-bottom: 15px;width: 100%">
 		<div style="margin-bottom:15px;border: solid 1px black;width: 100%;display: flow-root">
@@ -72,7 +80,7 @@ function getJsTermToString($term){
 				<span><b>Academic year:</b>  <?= esc($selectedYearTitle ?? ($years['title'] ?? '')); ?></span><br>
 				<span><b>Term: </b> <?= esc($termLabel ?? getJsTermToString($term)); ?></span><br>
 				<span><b>Class:  </b> <?= esc(!empty($classLabel) ? $classLabel : trim(($classe['level_name'] ?? '') . ' ' . ($classe['dept_code'] ?? '') . ' ' . ($classe['title'] ?? ''))); ?></span><br>
-				<span><b>Class mentor:</b> <?= esc(is_array($classe) ? (string) ($classe['mentor_name'] ?? '—') : '—'); ?></span><br>
+				<span><b>Class mentor:</b> <?= esc(is_array($classe) ? (string) ($classe['mentor_name'] ?? '-') : '-'); ?></span><br>
 				<span><b>Total listed students: </b> <?= count($students); ?></span><br>
 			</div>
 		</div>
@@ -116,13 +124,13 @@ function getJsTermToString($term){
 						<td><?= $a; ?></td>
 						<td><?= $student['regno']; ?></td>
 						<td><?= $student['student']; ?></td>
-						<td><?= esc(trim((string) ($student['ref_nos'] ?? '')) !== '' ? $student['ref_nos'] : '—'); ?></td>
+						<td><?= esc(trim((string) ($student['ref_nos'] ?? '')) !== '' ? $student['ref_nos'] : '-'); ?></td>
 						<td><?= \App\Controllers\Home::ModeToStr($student['studying_mode']); ?></td>
 						<td><?= $student['sex']; ?></td>
 						<td><?= number_format($student['amount']); ?></td>
 						<td><?= number_format($student['paid']); ?></td>
 						<td><?= moneyStatement($student['amount'], $student['paid']); ?></td>
-						<td><?= esc(trim((string) ($student['recorded_by_names'] ?? '')) !== '' ? $student['recorded_by_names'] : '—'); ?></td>
+						<td><?= esc(trim((string) ($student['recorded_by_names'] ?? '')) !== '' ? $student['recorded_by_names'] : '-'); ?></td>
 					</tr>
 					<?php
 					$a++;
@@ -137,5 +145,6 @@ function getJsTermToString($term){
 		</div>
 	</div>
 </div>
-</div>
+</body>
+</html>
 

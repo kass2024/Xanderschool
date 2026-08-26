@@ -18428,7 +18428,7 @@ public function assign_card()
 				$wkhtmltopdf->setHtml($html);
 				$wkhtmltopdf->setPageSize("A4");
 				$wkhtmltopdf->setOrientation("portrait");
-				//					$wkhtmltopdf->setOptions(array("page-width" => "278px", "page-height" => "430px"));
+				$wkhtmltopdf->setOptions(array('encoding' => 'UTF-8'));
 				$wkhtmltopdf->setMargins(array("top" => 1, "left" => 0, "right" => 0, "bottom" => 1));
 				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "fees_report_" . time() . ".pdf");
 			} catch (\Exception $e) {
