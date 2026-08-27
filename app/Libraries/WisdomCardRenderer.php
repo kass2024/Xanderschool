@@ -126,7 +126,7 @@ class WisdomCardRenderer
 		$this->fillPoly($im, [[8.3, 0], [22.9, 0], [20.4, 8.2], [5.3, 8.2]], $teal);
 		$this->fillPoly($im, [[5.3, 8.0], [99.4, 8.0], [93.8, 23.6], [0.0, 23.6]], $teal);
 		$this->fillPoly($im, [[16.8, 8.0], [21.9, 8.0], [16.7, 23.6], [14.8, 23.6]], $navy);
-		$this->fillPoly($im, [[37.2, 36.2], [76.8, 36.2], [72.6, 47.4], [40.6, 47.4]], $navy);
+		$this->fillPoly($im, [[24.6, 36.2], [76.8, 36.2], [72.6, 47.4], [30.0, 47.4]], $navy);
 		$this->fillPoly($im, [[0, 79.5], [7.0, 79.5], [1.4, 96.2], [0, 96.2]], $navy);
 		$this->fillPoly($im, [[5.2, 84.8], [39.6, 84.8], [35.8, 95.4], [1.6, 95.4]], $teal);
 		$this->fillPoly($im, [[40.6, 84.8], [41.7, 84.8], [38.1, 95.4], [37.0, 95.4]], $teal);
@@ -172,9 +172,9 @@ class WisdomCardRenderer
 	/** @param resource|\GdImage $im */
 	private function drawBadge($im, string $text, int $white): void
 	{
-		$x = (int) round(self::W * 0.395);
+		$x = (int) round(self::W * 0.36);
 		$y = (int) round(self::H * 0.362);
-		$w = (int) round(self::W * 0.32);
+		$w = (int) round(self::W * 0.36);
 		$h = (int) round(self::H * 0.108);
 		$size = $this->fitSize($text, $w, (int) round($h * 0.58), 36, 16);
 		$this->drawCentered($im, $text, $size, $x, $y, $w, $h, $white);
@@ -183,9 +183,9 @@ class WisdomCardRenderer
 	/** @param resource|\GdImage $im */
 	private function drawInfo($im, string $name, string $class, string $year, int $navy): void
 	{
-		$x = (int) round(self::W * 0.395);
+		$x = (int) round(self::W * 0.355);
 		$y = (int) round(self::H * 0.495);
-		$w = (int) round(self::W * 0.575);
+		$w = (int) round(self::W * 0.62);
 		$rowH = (int) round(self::H * 0.082);
 		$rows = [
 			['NAME', $name !== '' ? $name : '—'],
@@ -210,7 +210,7 @@ class WisdomCardRenderer
 			$rowY = $y + $i * $rowH;
 			$this->drawText($im, $row[0], $labelSize, $x, $rowY, $labelW + 4, $rowH, $navy, 'left');
 			$this->drawText($im, $colon, $labelSize, $x + $labelW, $rowY, $colonW + 4, $rowH, $navy, 'left');
-			$valSize = $this->fitSize($row[1], $valueMaxW, (int) round($rowH * 0.62), $labelSize, 16);
+			$valSize = $this->fitSize($row[1], $valueMaxW, (int) round($rowH * 0.62), $labelSize, 12);
 			$this->drawText($im, $row[1], $valSize, $valueX, $rowY, $valueMaxW, $rowH, $navy, 'left');
 		}
 	}
@@ -265,7 +265,7 @@ class WisdomCardRenderer
 		if (!$src) {
 			return;
 		}
-		$circle = $this->coverCircle($src, $d, 0.28);
+		$circle = $this->coverCircle($src, $d + 4, 0.28);
 		imagedestroy($src);
 		if (!$circle) {
 			return;
@@ -298,8 +298,10 @@ class WisdomCardRenderer
 			$sy = (int) max(0, ($sh - $sw) * $biasY);
 		}
 		$side = max(1, min($side, $sw - $sx, $sh - $sy));
-		$sq = $this->truecolor($size, $size, false);
+		$sq = $this->truecolor($size, $size, true);
+		imagealphablending($sq, true);
 		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $side, $side);
+		imagealphablending($sq, false);
 		$this->applyCircleMask($sq);
 		return $sq;
 	}

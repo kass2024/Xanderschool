@@ -41,9 +41,9 @@ d.polygon(
     fill=NAVY,
 )
 
-# --- STUDENT ID CARD navy ribbon (starts to the right of the photo) ---
+# --- STUDENT ID CARD navy ribbon (tucks under the photo circle) ---
 d.polygon(
-    [P(37.2, 36.2), P(76.8, 36.2), P(72.6, 47.4), P(40.6, 47.4)],
+    [P(24.6, 36.2), P(76.8, 36.2), P(72.6, 47.4), P(30.0, 47.4)],
     fill=NAVY,
 )
 
