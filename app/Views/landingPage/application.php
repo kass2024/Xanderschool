@@ -857,10 +857,6 @@
 																		</select>
 																	</div>
 																</div>
-																<div class="form-group">
-																	<label class="control-label mb-1">Father national ID <span class="text-muted" style="font-weight:500;font-size:.8rem;">(optional)</span></label>
-																	<input name="father_nid" id="father_nid" type="text" class="form-control" maxlength="32" placeholder="National ID number" autocomplete="off">
-																</div>
 															</div>
 
 															<div class="ss-panel">
@@ -956,7 +952,7 @@
 												</div>
 												<div class="form-group">
 													<label class="control-label mb-1">Father national ID <span class="text-muted" style="font-weight:500;font-size:.8rem;">(optional)</span></label>
-													<input type="text" id="father_nid_family" class="form-control" maxlength="32" placeholder="National ID number" autocomplete="off">
+													<input name="father_nid" id="father_nid" type="text" class="form-control" maxlength="32" placeholder="National ID number" autocomplete="off">
 												</div>
 											</div>
 
@@ -1202,20 +1198,8 @@
 				}
 			});
 
-			$(document).on('input', '#father_nid, #father_nid_family', function () {
-				var v = $(this).val();
-				if (this.id === 'father_nid') {
-					$('#father_nid_family').val(v);
-				} else {
-					$('#father_nid').val(v);
-				}
-			});
-
 			$('#autoSave').on('submit', function (e) {
 				e.preventDefault();
-				var fatherNid = ($('#father_nid').val() || '').trim() || ($('#father_nid_family').val() || '').trim();
-				$('#father_nid').val(fatherNid);
-				$('#father_nid_family').val(fatherNid);
 				var father = ($('#father').val() || '').trim();
 				var ftPhone = ($('#ft_phone').val() || '').trim();
 				var mother = ($('#mother').val() || '').trim();
