@@ -332,6 +332,29 @@ class CardLayout
 		return $year;
 	}
 
+	/**
+	 * Wisdom printed school name from the student's path.
+	 * Nursery / Primary → Wisdom School Musanze; otherwise Wisdom High School.
+	 */
+	public static function wisdomCardSchoolName(array $student): string
+	{
+		$hay = strtolower(trim(implode(' ', [
+			(string) ($student['faculty_title'] ?? ''),
+			(string) ($student['level_faculty_title'] ?? ''),
+			(string) ($student['dept_title'] ?? ''),
+			(string) ($student['level_title'] ?? ''),
+			(string) ($student['class'] ?? ''),
+		])));
+		$hay = preg_replace('/\s+/', ' ', $hay) ?? $hay;
+		if (preg_match('/\b(nurs(?:e|ery|ary)|maternelle|baby|primary|primaire)\b/', $hay)) {
+			return 'WISDOM SCHOOL MUSANZE';
+		}
+		if (preg_match('/\b(p[1-6]|pp[1-3]?|reception|kindergarten|\bkg\b)\b/', $hay)) {
+			return 'WISDOM SCHOOL MUSANZE';
+		}
+		return 'WISDOM HIGH SCHOOL';
+	}
+
 	/** Mix a hex color with white (ratio 0..1, higher = lighter). */
 	public static function tint(string $hex, float $ratio): string
 	{
@@ -368,7 +391,7 @@ class CardLayout
 	{
 		$fixed = self::isFixedChrome($template);
 		$reserved = $fixed
-			? ['logo', 'school_name', 'badge', 'header1']
+			? ['logo', 'school_name', 'badge', 'header1', 'photo', 'names', 'class', 'regno']
 			: self::RESERVED_FIELDS;
 		foreach ($reserved as $key) {
 			if (!isset($fields[$key]) && isset($defaults[$key])) {
@@ -798,19 +821,19 @@ class CardLayout
 	private static function layoutWisdom(): array
 	{
 		return [
-			'logo' => self::f(3.4, 2.2, 15.2, 24.1),
-			'school_name' => self::f(20.5, 8.4, 66.5, 13.6),
-			'header1' => self::f(38.2, 66.4, 58, 7.4),
-			'header2' => self::f(38.2, 74, 58, 6, false),
-			'badge' => self::f(36.0, 36.8, 32.5, 9.4),
-			'photo' => self::f(6.3, 32.5, 28.2, 44.7),
-			'names' => self::f(38.2, 50.2, 58, 7.8),
-			'class' => self::f(38.2, 58.4, 58, 7.4),
-			'regno' => self::f(6.2, 85.4, 31.5, 9.4),
-			'dob' => self::f(38.2, 74, 58, 6, false),
-			'father' => self::f(38.2, 74, 58, 6, false),
-			'phone' => self::f(38.2, 74, 58, 6, false),
-			'mode' => self::f(38.2, 74, 58, 6, false),
+			'logo' => self::f(3.6, 2.4, 16.8, 26.6),
+			'school_name' => self::f(21.5, 8.2, 65.0, 13.8),
+			'header1' => self::f(42.8, 66.2, 54.5, 7.6),
+			'header2' => self::f(42.8, 74, 54.5, 6, false),
+			'badge' => self::f(38.5, 36.6, 31.5, 9.6),
+			'photo' => self::f(6.6, 33.8, 25.2, 40.0),
+			'names' => self::f(42.8, 49.6, 54.5, 8.0),
+			'class' => self::f(42.8, 58.0, 54.5, 7.6),
+			'regno' => self::f(6.0, 85.2, 32.0, 9.6),
+			'dob' => self::f(42.8, 74, 54.5, 6, false),
+			'father' => self::f(42.8, 74, 54.5, 6, false),
+			'phone' => self::f(42.8, 74, 54.5, 6, false),
+			'mode' => self::f(42.8, 74, 54.5, 6, false),
 			'moto' => self::f(0, 92, 100, 8, false),
 		];
 	}

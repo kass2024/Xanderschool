@@ -202,7 +202,7 @@ $brandFields = is_array($brandFields ?? null) ? $brandFields : [];
 						</div>
 						</div>
 						<div class="card-wisdom-note" style="display:none;">
-							<i class="fa fa-id-card"></i> Wisdom Ribbon is a fixed landscape ID. Logo, school name, photo, name, class, academic year, and ID stay dynamic. Colors and chrome match the school artwork.
+							<i class="fa fa-id-card"></i> Wisdom Ribbon prints at CR80 RFID size (85.6×54 mm). Nursery/Primary cards show <b>Wisdom School Musanze</b>; all other classes show <b>Wisdom High School</b>.
 						</div>
 					</div>
 

@@ -1092,11 +1092,14 @@ public function testEmail()
 				'enable-local-file-access' => null,
 				'disable-smart-shrinking' => null,
 				'enable-javascript' => null,
-				'javascript-delay' => 500,
+				'javascript-delay' => 400,
 				'no-stop-slow-scripts' => null,
 				'encoding' => 'UTF-8',
 				'page-width' => $pageW,
 				'page-height' => $pageH,
+				'dpi' => 300,
+				'image-dpi' => 300,
+				'image-quality' => 100,
 			));
 			$wkhtmltopdf->setMargins(array("top" => 0, "left" => 0, "right" => 0, "bottom" => 0));
 			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "students_card_" . time() . ".pdf");

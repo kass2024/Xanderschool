@@ -45,12 +45,12 @@ $tintMid = CardLayout::tint($paint, 0.55);
 $wisdomTeal = CardLayout::WISDOM_TEAL;
 $wisdomNavy = CardLayout::WISDOM_NAVY;
 $wisdomChromeSrc = $isWisdom
-	? asset_card_img_src(CardLayout::WISDOM_CHROME, null, 1400, 900)
+	? asset_card_img_src(CardLayout::WISDOM_CHROME, null, 1800, 1200)
 	: '';
 
 $logoSrc = !empty($logo)
-	? asset_card_img_src('assets/images/logo/' . $logo, 'assets/images/fallback-logo.png', 480, 320)
-	: asset_card_img_src(null, 'assets/images/fallback-logo.png', 480, 320);
+	? asset_card_img_src('assets/images/logo/' . $logo, 'assets/images/fallback-logo.png', $isWisdom ? 1000 : 480, $isWisdom ? 1000 : 320)
+	: asset_card_img_src(null, 'assets/images/fallback-logo.png', $isWisdom ? 1000 : 480, $isWisdom ? 1000 : 320);
 $sigSrc = !empty($headmaster_signature)
 	? asset_card_img_src('assets/images/signatures/' . $headmaster_signature, null, 320, 120)
 	: '';
@@ -80,7 +80,12 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 };
 ?>
 <style>
-	html, body { margin: 0; padding: 0; }
+	@page { size: <?= $cardWmm; ?>mm <?= $cardHmm; ?>mm; margin: 0; }
+	html, body {
+		margin: 0; padding: 0;
+		width: <?= $cardWmm; ?>mm;
+		height: <?= $cardHmm; ?>mm;
+	}
 	.page-break { height: 0; page-break-after: always; margin: 0; border: 0; }
 	.card {
 		width: <?= $cardWmm; ?>mm;
@@ -179,18 +184,22 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		background: #ffffff;
 		border-radius: 50%;
 		-webkit-border-radius: 50%;
-		border: 0.35mm solid <?= $wisdomTeal; ?>;
-		padding: 0.4mm;
+		border: 0.25mm solid <?= $wisdomTeal; ?>;
+		padding: 0.3mm;
+		overflow: hidden;
 	}
 	.card.is-wisdom .cf-logo img {
 		width: 100%; height: 100%;
+		max-width: 100%; max-height: 100%;
 		object-fit: contain;
-		border-radius: 50%;
-		-webkit-border-radius: 50%;
+		-webkit-object-fit: contain;
+		display: block;
+		border: 0;
+		image-rendering: auto;
 	}
 	.card.is-wisdom .cf-photo {
 		background: #ffffff;
-		border: 1.7mm solid <?= $wisdomTeal; ?>;
+		border: 1.5mm solid <?= $wisdomTeal; ?>;
 		border-radius: 50%;
 		-webkit-border-radius: 50%;
 		overflow: hidden;
@@ -198,27 +207,34 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	.card.is-wisdom .cf-photo img {
 		width: 100%; height: 100%;
 		object-fit: cover;
-		border-radius: 50%;
-		-webkit-border-radius: 50%;
+		display: block;
+		border: 0;
 	}
 	.card.is-wisdom .w-school {
 		color: #ffffff;
 		font-weight: 700;
-		letter-spacing: 0.06em;
+		letter-spacing: 0.04em;
 		text-transform: uppercase;
+		overflow: visible;
 	}
 	.card.is-wisdom .w-badge {
 		color: #ffffff;
 		font-weight: 700;
-		letter-spacing: 0.08em;
+		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		background: transparent;
+		overflow: visible;
 	}
 	.card.is-wisdom .w-id {
 		color: #ffffff;
 		font-weight: 700;
-		letter-spacing: 0.04em;
+		letter-spacing: 0.03em;
 		text-transform: uppercase;
+		overflow: visible;
+	}
+	.card.is-wisdom .w-info-wrap {
+		overflow: visible;
+		padding-left: 1.2mm;
 	}
 	.card.is-wisdom .w-info {
 		border-collapse: collapse;
@@ -231,13 +247,13 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	.card.is-wisdom .w-info td {
 		vertical-align: middle;
 		padding: 0;
-		line-height: 1.15;
+		line-height: 1.2;
 		white-space: nowrap;
 		height: 33%;
 	}
-	.card.is-wisdom .w-info .k { padding-right: 1.1mm; width: 1%; }
-	.card.is-wisdom .w-info .c { padding-right: 1.5mm; }
-	.card.is-wisdom .w-info .v { overflow: hidden; }
+	.card.is-wisdom .w-info .k { padding-right: 1.2mm; width: 1%; }
+	.card.is-wisdom .w-info .c { padding-right: 1.6mm; }
+	.card.is-wisdom .w-info .v { overflow: visible; }
 </style>
 <script>
 (function () {
@@ -267,7 +283,8 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	$photoPxW = max(180, (int) round($cardWmm * ((float)($photoField['w'] ?? 36) / 100) * 12));
 	$photoPxH = max(220, (int) round($cardHmm * ((float)($photoField['h'] ?? 30) / 100) * 12));
 	if ($isWisdom) {
-		$photoPxW = $photoPxH = max($photoPxW, $photoPxH, 320);
+		$photoPxW = $photoPxH = max($photoPxW, $photoPxH, 480);
+		$schoolName = $fmt(CardLayout::wisdomCardSchoolName($student));
 	}
 	$photoSrc = profile_photo_card_cover_src($student['photo'] ?? '', $photoPxW, $photoPxH);
 	if ($photoSrc === '') {
@@ -333,43 +350,43 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			</div>
 		<?php endif; ?>
 		<?php if ($isWisdom):
-			$logoF = $fields['logo'] ?? ['x' => 3.4, 'y' => 2.2, 'w' => 15.2, 'h' => 24.1];
-			$schoolF = $fields['school_name'] ?? ['x' => 20.5, 'y' => 8.4, 'w' => 66.5, 'h' => 13.6];
-			$badgeF = $fields['badge'] ?? ['x' => 36.0, 'y' => 36.8, 'w' => 32.5, 'h' => 9.4];
-			$photoF = $fields['photo'] ?? ['x' => 6.3, 'y' => 32.5, 'w' => 28.2, 'h' => 44.7];
-			$namesF = $fields['names'] ?? ['x' => 38.2, 'y' => 50.2, 'w' => 58, 'h' => 7.8];
-			$classF = $fields['class'] ?? ['x' => 38.2, 'y' => 58.4, 'w' => 58, 'h' => 7.4];
-			$yearF = $fields['header1'] ?? ['x' => 38.2, 'y' => 66.4, 'w' => 58, 'h' => 7.4];
-			$idF = $fields['regno'] ?? ['x' => 6.2, 'y' => 85.4, 'w' => 31.5, 'h' => 9.4];
-			$schoolFs = $fit($schoolName, $schoolF, 4.6, 2.2, 0.52);
-			$badgeFs = $fit($cardTitle, $badgeF, 2.6, 1.6, 0.55);
+			$logoF = $fields['logo'] ?? ['x' => 3.6, 'y' => 2.4, 'w' => 16.8, 'h' => 26.6];
+			$schoolF = $fields['school_name'] ?? ['x' => 21.5, 'y' => 8.2, 'w' => 65.0, 'h' => 13.8];
+			$badgeF = $fields['badge'] ?? ['x' => 38.5, 'y' => 36.6, 'w' => 31.5, 'h' => 9.6];
+			$photoF = $fields['photo'] ?? ['x' => 6.6, 'y' => 33.8, 'w' => 25.2, 'h' => 40.0];
+			$namesF = $fields['names'] ?? ['x' => 42.8, 'y' => 49.6, 'w' => 54.5, 'h' => 8.0];
+			$classF = $fields['class'] ?? ['x' => 42.8, 'y' => 58.0, 'w' => 54.5, 'h' => 7.6];
+			$yearF = $fields['header1'] ?? ['x' => 42.8, 'y' => 66.2, 'w' => 54.5, 'h' => 7.6];
+			$idF = $fields['regno'] ?? ['x' => 6.0, 'y' => 85.2, 'w' => 32.0, 'h' => 9.6];
+			$schoolFs = $fit($schoolName, $schoolF, 3.8, 2.0, 0.50);
+			$badgeFs = $fit($cardTitle, $badgeF, 2.5, 1.6, 0.55);
 			$idText = 'ID NO: ' . ($regno !== '' ? $regno : '—');
-			$idFs = $fit($idText, $idF, 2.7, 1.6, 0.50);
-			$rowFs = 2.35;
-			$infoY = (float) ($namesF['y'] ?? 50.2);
-			$infoH = ((float) ($yearF['y' ] ?? 66.4) + (float) ($yearF['h'] ?? 7.4)) - $infoY;
-			$infoF = ['x' => $namesF['x'] ?? 38.2, 'y' => $infoY, 'w' => $namesF['w'] ?? 58, 'h' => $infoH];
+			$idFs = $fit($idText, $idF, 2.6, 1.6, 0.50);
+			$rowFs = 2.2;
+			$infoY = (float) ($namesF['y'] ?? 49.6);
+			$infoH = ((float) ($yearF['y'] ?? 66.2) + (float) ($yearF['h'] ?? 7.6)) - $infoY;
+			$infoF = ['x' => $namesF['x'] ?? 42.8, 'y' => $infoY, 'w' => $namesF['w'] ?? 54.5, 'h' => $infoH];
 		?>
-			<div class="cf-logo" style="<?= CardLayout::boxStyle($logoF, 4); ?>">
+			<div class="cf-logo" style="<?= CardLayout::boxStyle($logoF, 5); ?>">
 				<?php if ($logoSrc): ?><img src="<?= $logoSrc; ?>" alt=""><?php endif; ?>
 			</div>
-			<div class="cf-center w-school" data-max="4.60" data-min="2.0" style="<?= CardLayout::boxStyle($schoolF, 3); ?>font-size:<?= number_format($schoolFs, 2, '.', ''); ?>mm;">
+			<div class="cf-center w-school" data-max="3.80" data-min="1.8" style="<?= CardLayout::boxStyle($schoolF, 4); ?>overflow:visible;font-size:<?= number_format($schoolFs, 2, '.', ''); ?>mm;">
 				<span class="val"><?= esc($schoolName); ?></span>
 			</div>
-			<div class="cf-photo" style="<?= CardLayout::boxStyle($photoF, 4); ?>">
+			<div class="cf-photo" style="<?= CardLayout::boxStyle($photoF, 3); ?>">
 				<img src="<?= $photoSrc; ?>" alt="">
 			</div>
-			<div class="cf-center w-badge" data-max="2.80" data-min="1.4" style="<?= CardLayout::boxStyle($badgeF, 3); ?>font-size:<?= number_format($badgeFs, 2, '.', ''); ?>mm;">
+			<div class="cf-center w-badge" data-max="2.60" data-min="1.4" style="<?= CardLayout::boxStyle($badgeF, 4); ?>overflow:visible;font-size:<?= number_format($badgeFs, 2, '.', ''); ?>mm;">
 				<?= esc($cardTitle); ?>
 			</div>
-			<div style="<?= CardLayout::boxStyle($infoF, 3); ?>">
+			<div class="w-info-wrap" style="<?= CardLayout::boxStyle($infoF, 5); ?>overflow:visible;">
 				<table class="w-info" style="font-size:<?= number_format($rowFs, 2, '.', ''); ?>mm;">
 					<tr><td class="k">NAME</td><td class="c">:</td><td class="v"><?= esc($fullName !== '' ? $fullName : '—'); ?></td></tr>
 					<tr><td class="k">CLASS</td><td class="c">:</td><td class="v"><?= esc($classLabel !== '' ? $classLabel : '—'); ?></td></tr>
 					<tr><td class="k">ACADEMIC YEAR</td><td class="c">:</td><td class="v"><?= esc($values['header1']); ?></td></tr>
 				</table>
 			</div>
-			<div class="cf-center w-id" data-max="2.80" data-min="1.5" style="<?= CardLayout::boxStyle($idF, 3); ?>font-size:<?= number_format($idFs, 2, '.', ''); ?>mm;">
+			<div class="cf-center w-id" data-max="2.70" data-min="1.5" style="<?= CardLayout::boxStyle($idF, 4); ?>overflow:visible;font-size:<?= number_format($idFs, 2, '.', ''); ?>mm;">
 				<?= esc($idText); ?>
 			</div>
 		<?php else: ?>
