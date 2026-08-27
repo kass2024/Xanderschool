@@ -62,8 +62,10 @@ class StudentApplicationModel extends Model
         'father_nid',
         'mother',
         'mt_phone',
+        'mother_nid',
         'guardian',
         'gd_phone',
+        'guardian_nid',
 
         'processed_by',
         'processed_at',
@@ -114,8 +116,10 @@ class StudentApplicationModel extends Model
             'father_nid' => 'VARCHAR(32) NULL DEFAULT NULL',
             'mother' => 'VARCHAR(150) NULL DEFAULT NULL',
             'mt_phone' => 'VARCHAR(50) NULL DEFAULT NULL',
+            'mother_nid' => 'VARCHAR(32) NULL DEFAULT NULL',
             'guardian' => 'VARCHAR(150) NULL DEFAULT NULL',
             'gd_phone' => 'VARCHAR(50) NULL DEFAULT NULL',
+            'guardian_nid' => 'VARCHAR(32) NULL DEFAULT NULL',
         ];
         foreach ($columns as $name => $def) {
             if (!$db->fieldExists($name, 'applications')) {

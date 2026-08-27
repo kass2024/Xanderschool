@@ -178,6 +178,11 @@
 												   data-parsley-lenght-message="<?= lang("app.fphonenotvalid");?>"/>
 										</div>
 										<div class="form-group">
+											<label><?= lang("app.motherNationalId"); ?> <small class="text-muted">(optional)</small></label>
+											<input type="text" class="form-control" name="mother_nid" maxlength="32"
+												   data-parsley-required="false"/>
+										</div>
+										<div class="form-group">
 											<label><?= lang("app.guardiaNames");?></label>
 											<input type="text" class="form-control" name="guardian" data-parsley-required="false"/>
 										</div>
@@ -187,6 +192,11 @@
 												   data-parsley-required="false"
 												   data-parsley-lenght="[10,13]"
 												   data-parsley-lenght-message="<?= lang("app.fphonenotvalid");?>"/>
+										</div>
+										<div class="form-group">
+											<label><?= lang("app.guardianNationalId"); ?> <small class="text-muted">(optional)</small></label>
+											<input type="text" class="form-control" name="guardian_nid" maxlength="32"
+												   data-parsley-required="false"/>
 										</div>
 									</div>
 								</div>

@@ -26,8 +26,10 @@ class StudentModel extends Model
 		'father_nid',
 		'mother',
 		'mt_phone',
+		'mother_nid',
 		'guardian',
 		'gd_phone',
+		'guardian_nid',
 		'card',
 		'transport_money',
 		'wallet_pin',
@@ -51,8 +53,17 @@ class StudentModel extends Model
 			return;
 		}
 		$db = \Config\Database::connect();
-		if ($db->tableExists($this->table) && !$db->fieldExists('father_nid', $this->table)) {
-			$db->query("ALTER TABLE `students` ADD COLUMN `father_nid` VARCHAR(32) NULL DEFAULT NULL AFTER `ft_phone`");
+		if ($db->tableExists($this->table)) {
+			$columns = [
+				'father_nid' => 'VARCHAR(32) NULL DEFAULT NULL AFTER `ft_phone`',
+				'mother_nid' => 'VARCHAR(32) NULL DEFAULT NULL AFTER `mt_phone`',
+				'guardian_nid' => 'VARCHAR(32) NULL DEFAULT NULL AFTER `gd_phone`',
+			];
+			foreach ($columns as $name => $def) {
+				if (!$db->fieldExists($name, $this->table)) {
+					$db->query("ALTER TABLE `{$this->table}` ADD COLUMN `{$name}` {$def}");
+				}
+			}
 		}
 		self::$fatherNidReady = true;
 	}

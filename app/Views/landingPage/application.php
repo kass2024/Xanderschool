@@ -953,10 +953,10 @@
 														<label class="control-label mb-1">Father phone</label>
 														<input name="ft_phone" id="ft_phone" type="tel" inputmode="tel" class="form-control" placeholder="0780000000">
 													</div>
-													<div class="form-group">
-														<label class="control-label mb-1">Father national ID <span class="text-muted" style="font-weight:500;font-size:.8rem;">(optional)</span></label>
-														<input type="text" id="father_nid_family" class="form-control" maxlength="32" placeholder="National ID number" autocomplete="off">
-													</div>
+												</div>
+												<div class="form-group">
+													<label class="control-label mb-1">Father national ID <span class="text-muted" style="font-weight:500;font-size:.8rem;">(optional)</span></label>
+													<input type="text" id="father_nid_family" class="form-control" maxlength="32" placeholder="National ID number" autocomplete="off">
 												</div>
 											</div>
 
@@ -972,6 +972,10 @@
 														<input name="mt_phone" id="mt_phone" type="tel" inputmode="tel" class="form-control" placeholder="0780000000">
 													</div>
 												</div>
+												<div class="form-group">
+													<label class="control-label mb-1">Mother national ID <span class="text-muted" style="font-weight:500;font-size:.8rem;">(optional)</span></label>
+													<input name="mother_nid" id="mother_nid" type="text" class="form-control" maxlength="32" placeholder="National ID number" autocomplete="off">
+												</div>
 											</div>
 
 											<div class="ss-panel">
@@ -985,6 +989,10 @@
 														<label class="control-label mb-1">Guardian phone</label>
 														<input name="gd_phone" id="gd_phone" type="tel" inputmode="tel" class="form-control" placeholder="0780000000">
 													</div>
+												</div>
+												<div class="form-group">
+													<label class="control-label mb-1">Guardian national ID <span class="text-muted" style="font-weight:500;font-size:.8rem;">(optional)</span></label>
+													<input name="guardian_nid" id="guardian_nid" type="text" class="form-control" maxlength="32" placeholder="National ID number" autocomplete="off">
 												</div>
 											</div>
 

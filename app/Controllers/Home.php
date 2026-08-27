@@ -6781,8 +6781,16 @@ public function attendanceCard()
 		}
 		$mother = trim((string) $this->request->getPost("mother"));
 		$mt_phone = trim((string) $this->request->getPost("mother_phone"));
+		$mother_nid = trim((string) $this->request->getPost("mother_nid"));
+		if (strlen($mother_nid) > 32) {
+			$mother_nid = substr($mother_nid, 0, 32);
+		}
 		$guardian = trim((string) $this->request->getPost("guardian"));
 		$gd_phone = trim((string) $this->request->getPost("guardian_phone"));
+		$guardian_nid = trim((string) $this->request->getPost("guardian_nid"));
+		if (strlen($guardian_nid) > 32) {
+			$guardian_nid = substr($guardian_nid, 0, 32);
+		}
 //		return $this->response->setJSON(array("error"=>"Error: ".$dob));
 		$studentMdl = new StudentModel();
 		try {
@@ -6803,7 +6811,7 @@ public function attendanceCard()
 				$update_v = $update_v_data->version;
 			$dt = array("school_id" => $school_id, "fname" => $fname, "lname" => $lname, "email" => $email, "regno" => $regno, "sex" => $sex, "status" => "1"
 			, "dob" => $dob, "village_id" => $village, "studying_mode" => $mode, "religion" => $religion, "nationality" => $nationality, "father" => $father, "ft_phone" => $ft_phone
-			, "father_nid" => $father_nid, "mother" => $mother, "mt_phone" => $mt_phone, "guardian" => $guardian, "gd_phone" => $gd_phone, "created_by" => $this->session->get("soma_id"), "updateVersion" => $update_v);
+			, "father_nid" => $father_nid, "mother" => $mother, "mt_phone" => $mt_phone, "mother_nid" => $mother_nid, "guardian" => $guardian, "gd_phone" => $gd_phone, "guardian_nid" => $guardian_nid, "created_by" => $this->session->get("soma_id"), "updateVersion" => $update_v);
 			$id = $studentMdl->insert($dt);
 			//create class record
 			$classRecordMdl = new ClassRecordModel();
@@ -6901,7 +6909,7 @@ public function attendanceCard()
 		if ($target == 'studying_mode' && !in_array((string) $val, ['0', '1'], true)) {
 			return $this->response->setJSON(["error" => "Invalid studying mode", "msg" => "Invalid studying mode"]);
 		}
-		if ($target === 'father_nid' && is_string($val) && strlen($val) > 32) {
+		if (in_array($target, ['father_nid', 'mother_nid', 'guardian_nid'], true) && is_string($val) && strlen($val) > 32) {
 			$val = substr($val, 0, 32);
 		}
 		$schoolId = (int) $this->session->get("soma_school_id");
@@ -6913,7 +6921,7 @@ public function attendanceCard()
 		}
 		$allowed = [
 			'fname', 'lname', 'sex', 'dob', 'studying_mode', 'phone', 'email', 'nationality', 'religion',
-			'father', 'ft_phone', 'father_nid', 'mother', 'mt_phone', 'guardian', 'gd_phone',
+			'father', 'ft_phone', 'father_nid', 'mother', 'mt_phone', 'mother_nid', 'guardian', 'gd_phone', 'guardian_nid',
 		];
 		if (!in_array($target, $allowed, true)) {
 			return $this->response->setJSON(["error" => lang("app.pleaseProvide"), "msg" => lang("app.pleaseProvide")]);
@@ -6961,7 +6969,7 @@ public function attendanceCard()
 		}
 		$allowed = [
 			'fname', 'lname', 'sex', 'dob', 'studying_mode', 'phone', 'email', 'nationality', 'religion',
-			'father', 'ft_phone', 'father_nid', 'mother', 'mt_phone', 'guardian', 'gd_phone',
+			'father', 'ft_phone', 'father_nid', 'mother', 'mt_phone', 'mother_nid', 'guardian', 'gd_phone', 'guardian_nid',
 		];
 		$stMdl = new StudentModel();
 		$stMdl->ensureFatherNidColumn();
@@ -6998,7 +7006,7 @@ public function attendanceCard()
 				if ($field === 'studying_mode' && !in_array((string) $val, ['0', '1'], true)) {
 					continue;
 				}
-				if ($field === 'father_nid' && is_string($val) && strlen($val) > 32) {
+				if (in_array($field, ['father_nid', 'mother_nid', 'guardian_nid'], true) && is_string($val) && strlen($val) > 32) {
 					$val = substr($val, 0, 32);
 				}
 				$patch[$field] = $val;
@@ -19927,8 +19935,16 @@ public function assign_card()
     }
     $mother        = trim((string) $this->request->getPost('mother'));
     $mtPhone       = trim((string) $this->request->getPost('mt_phone'));
+    $motherNid     = trim((string) $this->request->getPost('mother_nid'));
+    if (strlen($motherNid) > 32) {
+        $motherNid = substr($motherNid, 0, 32);
+    }
     $guardian      = trim((string) $this->request->getPost('guardian'));
     $gdPhone       = trim((string) $this->request->getPost('gd_phone'));
+    $guardianNid   = trim((string) $this->request->getPost('guardian_nid'));
+    if (strlen($guardianNid) > 32) {
+        $guardianNid = substr($guardianNid, 0, 32);
+    }
 
     // ---- Parent / visitor information
     $visitor1Names = trim((string) $this->request->getPost('visitor1Names'));
@@ -20030,8 +20046,10 @@ public function assign_card()
         "father_nid"         => $fatherNid,
         "mother"             => $mother,
         "mt_phone"           => $mtPhone,
+        "mother_nid"         => $motherNid,
         "guardian"           => $guardian,
         "gd_phone"           => $gdPhone,
+        "guardian_nid"       => $guardianNid,
         "parentNames"        => $parentNames,
         "parentType"         => $relationship,
         "status"             => 0,
@@ -21149,7 +21167,7 @@ public function assign_card()
 		$application = $applicationMdl->select("id,fname,lname,
 		gender,phoneNumber,parentType,parentPhoneNumber,parentNames,dateOfBirth,
 		level,studyingMode,faculty_id,department_id,schoolId,class_id,cell_id,village_id,medical_status,
-		nationality,religion,father,ft_phone,father_nid,mother,mt_phone,guardian,gd_phone,
+		nationality,religion,father,ft_phone,father_nid,mother,mt_phone,mother_nid,guardian,gd_phone,guardian_nid,
 		visitor1_names,visitor1_phone,visitor1_relationship,
 		visitor2_names,visitor2_phone,visitor2_relationship")
 				->where("id", $applicationId)
@@ -21222,8 +21240,10 @@ public function assign_card()
 				"father_nid" => trim((string) ($application['father_nid'] ?? '')),
 				"mother" => trim((string) ($application['mother'] ?? '')),
 				"mt_phone" => trim((string) ($application['mt_phone'] ?? '')),
+				"mother_nid" => trim((string) ($application['mother_nid'] ?? '')),
 				"guardian" => trim((string) ($application['guardian'] ?? '')),
 				"gd_phone" => trim((string) ($application['gd_phone'] ?? '')),
+				"guardian_nid" => trim((string) ($application['guardian_nid'] ?? '')),
 				"status" => 1,
 				"studying_mode" => $application['studyingMode'],
 				"created_by" => $this->session->get("soma_id")];

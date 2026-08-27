@@ -363,8 +363,10 @@ foreach ($students as $st) {
 		'father_nid' => (string) ($st['father_nid'] ?? ''),
 		'mother' => (string) ($st['mother'] ?? ''),
 		'mt_phone' => (string) ($st['mt_phone'] ?? ''),
+		'mother_nid' => (string) ($st['mother_nid'] ?? ''),
 		'guardian' => (string) ($st['guardian'] ?? ''),
 		'gd_phone' => (string) ($st['gd_phone'] ?? ''),
+		'guardian_nid' => (string) ($st['guardian_nid'] ?? ''),
 	];
 }
 ?>
@@ -401,8 +403,10 @@ foreach ($students as $st) {
 							<th>Father national ID</th>
 							<th>Mother names</th>
 							<th>Mother phone</th>
+							<th>Mother national ID</th>
 							<th>Guardian names</th>
 							<th>Guardian phone</th>
+							<th>Guardian national ID</th>
 						</tr>
 						</thead>
 						<tbody></tbody>
@@ -740,7 +744,7 @@ foreach ($students as $st) {
 		var html = '';
 		var shown = 0;
 		CLASS_STUDENTS.forEach(function (st) {
-			var hay = [st.regno, st.fname, st.lname, st.father, st.mother, st.guardian, st.ft_phone, st.father_nid].join(' ').toLowerCase();
+			var hay = [st.regno, st.fname, st.lname, st.father, st.mother, st.guardian, st.ft_phone, st.father_nid, st.mother_nid, st.guardian_nid].join(' ').toLowerCase();
 			if (filter && hay.indexOf(filter) === -1) {
 				return;
 			}
@@ -770,11 +774,13 @@ foreach ($students as $st) {
 				'<td class="ce-w-nid">' + ceInput(st.id, 'father_nid', st.father_nid, 'ce-w-nid') + '</td>' +
 				'<td class="ce-w-name">' + ceInput(st.id, 'mother', st.mother, 'ce-w-name') + '</td>' +
 				'<td class="ce-w-phone">' + ceInput(st.id, 'mt_phone', st.mt_phone, 'ce-w-phone') + '</td>' +
+				'<td class="ce-w-nid">' + ceInput(st.id, 'mother_nid', st.mother_nid, 'ce-w-nid') + '</td>' +
 				'<td class="ce-w-name">' + ceInput(st.id, 'guardian', st.guardian, 'ce-w-name') + '</td>' +
 				'<td class="ce-w-phone">' + ceInput(st.id, 'gd_phone', st.gd_phone, 'ce-w-phone') + '</td>' +
+				'<td class="ce-w-nid">' + ceInput(st.id, 'guardian_nid', st.guardian_nid, 'ce-w-nid') + '</td>' +
 				'</tr>';
 		});
-		$('#classEditTable tbody').html(html || '<tr><td colspan="17" class="text-center text-muted py-3">No students match.</td></tr>');
+		$('#classEditTable tbody').html(html || '<tr><td colspan="19" class="text-center text-muted py-3">No students match.</td></tr>');
 		$('#classEditCount').text(shown + ' of ' + CLASS_STUDENTS.length + ' students');
 	}
 

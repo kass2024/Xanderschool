@@ -141,13 +141,18 @@
 					<h4><?= lang("app.mother");?></h4>
 					<div class="form-group">
 						<label><?= lang("app.motherNames");?>:</label>
-						<span data-value="<?= $student['mother']; ?>" data-target="father"
-							  class="spedit">&nbsp;<?= $student['father']; ?></span>
+						<span data-value="<?= $student['mother']; ?>" data-target="mother"
+							  class="spedit">&nbsp;<?= $student['mother']; ?></span>
 					</div>
 					<div class="form-group">
 						<label><?= lang("app.motherPhoneNumber");?>:</label>
 						<span data-value="<?= $student['mt_phone']; ?>" data-target="mt_phone"
 							  class="spedit">&nbsp;<?= $student['mt_phone']; ?></span>
+					</div>
+					<div class="form-group">
+						<label><?= lang("app.motherNationalId");?>:</label>
+						<span data-value="<?= esc($student['mother_nid'] ?? '', 'attr'); ?>" data-target="mother_nid"
+							  class="spedit">&nbsp;<?= esc($student['mother_nid'] ?? ''); ?></span>
 					</div>
 					<hr>
 					<h4><?= lang("app.guardian");?></h4>
@@ -160,6 +165,11 @@
 						<label><?= lang("app.guardianPhoneNumber");?>:</label>
 						<span data-value="<?= $student['gd_phone']; ?>" data-target="gd_phone"
 							  class="spedit">&nbsp;<?= $student['gd_phone']; ?></span>
+					</div>
+					<div class="form-group">
+						<label><?= lang("app.guardianNationalId");?>:</label>
+						<span data-value="<?= esc($student['guardian_nid'] ?? '', 'attr'); ?>" data-target="guardian_nid"
+							  class="spedit">&nbsp;<?= esc($student['guardian_nid'] ?? ''); ?></span>
 					</div>
 				</div>
 				<div class="tab-pane" id="tab-class" role="tabpanel">
