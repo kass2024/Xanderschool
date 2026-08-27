@@ -684,6 +684,81 @@
 	.ss-editor-canvas .ss-ed-item[data-key="header2"] .ss-ed-label {
 		display: none;
 	}
+	.ss-editor-canvas.is-wisdom {
+		background: #f8f8f8 !important;
+		border-radius: 8px;
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item {
+		background: transparent !important;
+		border-color: transparent;
+		box-shadow: none;
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item.is-active {
+		border: 1px dashed rgba(0,130,142,.7);
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="logo"] {
+		border-radius: 50% !important;
+		border: 2px solid #00828E !important;
+		background: #fff !important;
+		padding: 2px;
+		overflow: hidden;
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="logo"] img {
+		width: 100%; height: 100%;
+		object-fit: contain;
+		border-radius: 50%;
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="photo"] {
+		border-radius: 50% !important;
+		border: 5px solid #00828E !important;
+		background: #fff !important;
+		padding: 0;
+		overflow: hidden;
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="school_name"] {
+		color: #fff !important;
+		font-weight: 800;
+		letter-spacing: .06em;
+		text-transform: uppercase;
+		display: flex; align-items: center; justify-content: center;
+		border: 0 !important;
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="badge"] {
+		left: auto !important;
+		width: auto !important;
+		background: transparent !important;
+		color: #fff !important;
+		border: 0 !important;
+		border-radius: 0 !important;
+		font-weight: 800;
+		letter-spacing: .08em;
+		text-transform: uppercase;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="regno"] {
+		color: #fff !important;
+		font-weight: 800;
+		text-transform: uppercase;
+		display: flex; align-items: center; justify-content: center;
+		border: 0 !important;
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="names"],
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="class"],
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="header1"] {
+		color: #04496B !important;
+		font-weight: 800;
+		text-transform: uppercase;
+		border: 0 !important;
+		display: flex; align-items: center;
+	}
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="names"] .ss-ed-label,
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="class"] .ss-ed-label,
+	.ss-editor-canvas.is-wisdom .ss-ed-item[data-key="header1"] .ss-ed-label {
+		display: inline;
+		color: #04496B;
+		font-weight: 800;
+		margin-right: 4px;
+	}
 	.ss-shared-brand .ss-color-row {
 		display: flex;
 		align-items: center;
@@ -1433,7 +1508,6 @@
 							'imgId' => 'img_backg',
 							'zoneId' => 'dv_select_img_backg',
 							'clrId' => 'clr_bg',
-							'badgeLabel' => 'STUDENT CARD',
 							'layoutJson' => $cardLayoutJson,
 							'fieldLabelsJson' => $cardFieldLabelsJson,
 							'defaultsJson' => $cardDefaultsJson,
@@ -1443,6 +1517,8 @@
 							'previewMain' => $previewMain,
 							'previewPaint' => $previewPaint,
 							'brandValues' => $studentBrand,
+							'previewYear' => $academic_year_title ?? date('Y'),
+							'badgeLabel' => $cardTemplate === 'wisdom' ? 'STUDENT ID CARD' : 'STUDENT CARD',
 						])); ?>
 						<?= view('pages/partials/card_audience_panel', array_merge($sharedPreview, [
 							'audience' => 'staff',
@@ -1505,6 +1581,7 @@
 					<script type="application/json" id="ssStudentDbFieldLabels"><?= str_replace('</', '<\/', $studentDbFieldLabelsJson); ?></script>
 					<script type="application/json" id="ssStaffDbFieldLabels"><?= str_replace('</', '<\/', $staffDbFieldLabelsJson); ?></script>
 					<script type="application/json" id="ssVisitorDbFieldLabels"><?= str_replace('</', '<\/', $visitorDbFieldLabelsJson); ?></script>
+					<script type="application/json" id="ssWisdomChromeUrl"><?= json_encode(base_url(\App\Libraries\CardLayout::WISDOM_CHROME), JSON_UNESCAPED_SLASHES); ?></script>
 				</div>
 			</div>
 		</div>
@@ -1977,9 +2054,11 @@
 			}
 			function syncCanvasSize() {
 				var ori = currentOrientation();
+				var tpl = currentTpl();
 				$canvas
 					.toggleClass("is-portrait", ori === "portrait")
 					.toggleClass("is-landscape", ori !== "portrait")
+					.toggleClass("is-wisdom", tpl === "wisdom")
 					.removeClass("is-ocean is-geo");
 				syncBgFrame();
 			}
@@ -1988,6 +2067,9 @@
 			}
 			function isPaintedTpl(tpl) {
 				return String($tplChoice.find(".ss-tpl-card[data-template='" + tpl + "']").data("painted") || "") === "1";
+			}
+			function isWisdomTpl(tpl) {
+				return (tpl || currentTpl()) === "wisdom";
 			}
 			function tintHex(hex, ratio) {
 				hex = String(hex || "#1E6FD9").replace("#", "");
@@ -2002,12 +2084,16 @@
 				return out;
 			}
 			function syncPaintedUi(paintColor) {
-				var painted = isPaintedTpl(currentTpl());
+				var tpl = currentTpl();
+				var painted = isPaintedTpl(tpl);
+				var wisdom = isWisdomTpl(tpl);
 				$root.find(".card-painted-note").toggle(painted);
+				$root.find(".card-painted-curve").toggle(painted && !wisdom);
+				$root.find(".card-wisdom-note").toggle(wisdom);
 				$root.find(".card-bg-tools").toggle(!painted);
 				$root.find(".ss-bg-previews").toggle(!painted);
 				var $paint = $canvas.find(".ss-ed-paint");
-				if (!painted) {
+				if (!painted || wisdom) {
 					$paint.remove();
 					return;
 				}
@@ -2030,6 +2116,18 @@
 				);
 			}
 			function refreshEditorBg() {
+				if (isWisdomTpl(currentTpl())) {
+					var chrome = "";
+					try { chrome = JSON.parse($("#ssWisdomChromeUrl").text() || "\"\""); } catch (e) { chrome = ""; }
+					$liveBg.css({
+						"background-image": chrome ? "url('" + String(chrome).replace(/'/g, "%27") + "')" : "none",
+						"background-size": "100% 100%",
+						"background-position": "center",
+						"background-repeat": "no-repeat",
+						"background-color": "#f8f8f8"
+					});
+					return;
+				}
 				if (isPaintedTpl(currentTpl())) {
 					// Painted template: built-in design only, never a background image
 					$liveBg.css({ "background-image": "none", "background-color": "#ffffff" });
@@ -2081,23 +2179,39 @@
 				var logoSrc = $("#img_logo").attr("src") || LOGO_FALLBACK;
 				var sigSrc = $("#img_headmaster_signature").attr("src") || "";
 				syncPaintedUi(paint);
+				var wisdom = isWisdomTpl(currentTpl());
+				if (wisdom) {
+					sampleVals.badge = "STUDENT ID CARD";
+					sampleVals.header1 = ($live.attr("data-year") || sampleVals.header1 || "2025/2026").replace(/[-–—]/g, "/");
+					if (sampleVals.header1.toUpperCase().indexOf("A.Y") === 0) {
+						sampleVals.header1 = sampleVals.header1.replace(/^A\.Y\s*/i, "");
+					}
+				}
 				var labeledKeys = audience === "visitor"
 					? ["names", "relationship", "student_name", "student_class", "card_uid"]
 					: ["names", "regno", "class", "dob", "father", "phone", "mode", "post", "email", "staff_id"];
+				var wisdomHide = ["header2", "moto", "dob", "father", "phone", "mode"];
 				Object.keys(fieldLabels).forEach(function (key) {
 					var f = layoutState.fields[key] || { x: 5, y: 5, w: 30, h: 8, visible: true };
-					if (RESERVED_KEYS.indexOf(key) >= 0) f.visible = true;
+					if (wisdom && wisdomHide.indexOf(key) >= 0) {
+						f.visible = false;
+					} else if (RESERVED_KEYS.indexOf(key) >= 0 && !wisdom) {
+						f.visible = true;
+					} else if (wisdom && (key === "logo" || key === "school_name" || key === "badge" || key === "header1" || key === "photo" || key === "names" || key === "class" || key === "regno")) {
+						f.visible = true;
+					}
 					if (audience === "staff" && key === "post") f.visible = true;
-					// Card title bar always fills parent edge-to-edge
-					if (key === "badge") {
+					// Card title bar always fills parent edge-to-edge (except Wisdom ribbon)
+					if (key === "badge" && !wisdom) {
 						f.x = 0;
 						f.w = 100;
 					}
 					layoutState.fields[key] = f;
 					var $item = $('<div class="ss-ed-item"></div>').attr("data-key", key);
 					if (!f.visible) $item.addClass("is-hidden");
+					if (wisdom && !f.visible) return;
 					$item.css({ left: f.x + "%", top: f.y + "%", width: f.w + "%", height: f.h + "%" });
-					if (key === "badge") {
+					if (key === "badge" && !wisdom) {
 						$item.css({ left: "0%", width: "100%", borderRadius: 0 });
 					}
 					if (key === "logo") {
@@ -2105,9 +2219,22 @@
 						$item.html('<img src="' + lsrc + '" alt="Logo">');
 					} else if (key === "photo") {
 						var photoSrc = sampleVals.photo_url || FALLBACK;
-						$item.html('<img src="' + photoSrc + '" alt="Photo">').css("border-color", main);
-					} else if (key === "badge" || key === "moto") {
+						$item.html('<img src="' + photoSrc + '" alt="Photo">').css("border-color", wisdom ? "#00828E" : main);
+					} else if (key === "badge") {
+						$item.text(sampleVals[key] || fieldLabels[key]);
+						if (!wisdom) $item.css("background", main);
+					} else if (key === "moto") {
 						$item.text(sampleVals[key] || fieldLabels[key]).css("background", main);
+					} else if (wisdom && key === "header1") {
+						$item.html('<span class="ss-ed-label">ACADEMIC YEAR :</span> ' + (sampleVals.header1 || "—"));
+					} else if (wisdom && key === "school_name") {
+						$item.text(sampleVals[key] || "—");
+					} else if (wisdom && key === "names") {
+						$item.html('<span class="ss-ed-label">NAME :</span> ' + (sampleVals.names || ""));
+					} else if (wisdom && key === "class") {
+						$item.html('<span class="ss-ed-label">CLASS :</span> ' + (sampleVals.class || ""));
+					} else if (wisdom && key === "regno") {
+						$item.text("ID NO: " + (sampleVals.regno || "—"));
 					} else if (key === "header1" || key === "header2") {
 						$item.text(sampleVals[key] || "—").css({ fontWeight: 600, letterSpacing: ".02em" });
 					} else if (key === "school_name") {
@@ -2119,6 +2246,9 @@
 					}
 					$items.append($item);
 				});
+				if (wisdom) {
+					$toggles.append('<div style="width:100%;font-size:.82rem;color:#64748b;margin-bottom:.35rem;">Wisdom Ribbon fields are fixed to the artwork. Save template to use this design.</div>');
+				} else {
 				$toggles.append('<div style="width:100%;font-size:.82rem;color:#64748b;margin-bottom:.35rem;">Show DB fields (untick to hide). Header text 1/2 &amp; school motto stay on.</div>');
 				Object.keys(dbToggleLabels).forEach(function (key) {
 					var f = layoutState.fields[key] || { visible: true };
@@ -2141,6 +2271,7 @@
 					}
 					$toggles.append($lab);
 				});
+				}
 				bindDrag();
 			}
 			function bindDrag() {
@@ -2163,6 +2294,7 @@
 				});
 				$(document).off(".ssdragmove." + audience).on("mousemove.ssdragmove." + audience + " touchmove.ssdragmove." + audience, function (ev) {
 					if (!dragging) return;
+					if (isWisdomTpl(currentTpl())) return;
 					if (dragging.key === "header1" || dragging.key === "header2" || dragging.key === "moto" || dragging.key === "badge") {
 						return; // reserved full-bleed / header slots stay fixed
 					}
@@ -2195,7 +2327,7 @@
 			});
 			$tplChoice.on("click", ".ss-tpl-card", function () {
 				var tpl = $(this).data("template");
-				var ori = audience === "visitor" ? "landscape" : ($(this).data("orientation") || "landscape");
+				var ori = audience === "visitor" || tpl === "wisdom" ? "landscape" : ($(this).data("orientation") || "landscape");
 				$tplChoice.find(".ss-tpl-card").removeClass("is-on");
 				$(this).addClass("is-on");
 				$root.find("input[name='" + oriInputName + "'][value='" + ori + "']").prop("checked", true);
@@ -2207,6 +2339,7 @@
 			$root.on("change", "input[name='" + oriInputName + "']", function () {
 				var ori = $(this).val();
 				var tpl = layoutState.template || ($tplChoice.find(".ss-tpl-card.is-on").data("template")) || "ocean";
+				if (tpl === "wisdom") ori = "landscape";
 				$oriChoice.find("label").removeClass("is-on");
 				$(this).closest("label").addClass("is-on");
 				applyTemplateDefaults(tpl, ori);

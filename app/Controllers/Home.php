@@ -1029,9 +1029,11 @@ public function testEmail()
 				->where("id", $this->session->get("soma_school_id"))
 				->get(1)->getRow();
 		$cardTemplate = \App\Libraries\CardLayout::normalizeTemplate($skData->card_template ?? 'ocean');
-		$orientation = \App\Libraries\CardLayout::normalizeOrientation(
-			$skData->card_orientation ?: \App\Libraries\CardLayout::preferredOrientation($cardTemplate)
-		);
+		$orientation = \App\Libraries\CardLayout::isFixedChrome($cardTemplate)
+			? 'landscape'
+			: \App\Libraries\CardLayout::normalizeOrientation(
+				$skData->card_orientation ?: \App\Libraries\CardLayout::preferredOrientation($cardTemplate)
+			);
 		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($skData);
 		$data['year'] = $this->data['academic_year'];
 		$data['theyear'] = $this->data['academic_year_title'];

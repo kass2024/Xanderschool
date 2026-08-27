@@ -151,6 +151,10 @@ class CardLayout
 	public const CR80_W_MM = 85.6;
 	public const CR80_H_MM = 54.0;
 
+	public const WISDOM_CHROME = 'assets/images/cards/wisdom_landscape_chrome.png';
+	public const WISDOM_TEAL = '#00828E';
+	public const WISDOM_NAVY = '#04496B';
+
 	/** @var array<string,array{label:string,desc:string,orientation:string,accent:string,painted?:bool}> */
 	public const TEMPLATES = [
 		'ribbon' => [
@@ -164,6 +168,13 @@ class CardLayout
 			'desc' => 'Landscape CR80 — header texts + motto footer',
 			'orientation' => 'landscape',
 			'accent' => '#0EA5E9',
+		],
+		'wisdom' => [
+			'label' => 'Wisdom Ribbon',
+			'desc' => 'Landscape CR80 — teal/navy geometric student ID',
+			'orientation' => 'landscape',
+			'accent' => '#00828E',
+			'painted' => true,
 		],
 	];
 
@@ -300,6 +311,27 @@ class CardLayout
 		return !empty(self::TEMPLATES[$template]['painted']);
 	}
 
+	/** Fixed-chrome templates (geometry + palette locked; fields still dynamic). */
+	public static function isFixedChrome(string $template): bool
+	{
+		return self::normalizeTemplate($template) === 'wisdom';
+	}
+
+	/** Academic year as printed on the Wisdom ID (2025/2026). */
+	public static function formatAcademicYear(?string $year): string
+	{
+		$year = trim((string) $year);
+		if ($year === '') {
+			return '';
+		}
+		if (stripos($year, 'A.Y') === 0) {
+			$year = trim(substr($year, 3));
+		}
+		$year = preg_replace('/\s+/', '', $year) ?? $year;
+		$year = str_replace(['–', '—', '-'], '/', $year);
+		return $year;
+	}
+
 	/** Mix a hex color with white (ratio 0..1, higher = lighter). */
 	public static function tint(string $hex, float $ratio): string
 	{
@@ -332,9 +364,13 @@ class CardLayout
 	}
 
 	/** Force reserved header texts + motto footer on every resolve. */
-	private static function enforceReserved(array $fields, array $defaults): array
+	private static function enforceReserved(array $fields, array $defaults, string $template = 'ocean'): array
 	{
-		foreach (self::RESERVED_FIELDS as $key) {
+		$fixed = self::isFixedChrome($template);
+		$reserved = $fixed
+			? ['logo', 'school_name', 'badge', 'header1']
+			: self::RESERVED_FIELDS;
+		foreach ($reserved as $key) {
 			if (!isset($fields[$key]) && isset($defaults[$key])) {
 				$fields[$key] = $defaults[$key];
 			}
@@ -342,6 +378,15 @@ class CardLayout
 				continue;
 			}
 			$fields[$key]['visible'] = true;
+			if ($fixed) {
+				if (isset($defaults[$key])) {
+					$fields[$key]['x'] = $defaults[$key]['x'];
+					$fields[$key]['y'] = $defaults[$key]['y'];
+					$fields[$key]['w'] = $defaults[$key]['w'];
+					$fields[$key]['h'] = $defaults[$key]['h'];
+				}
+				continue;
+			}
 			// Keep moto pinned to footer band from template defaults
 			if ($key === 'moto' && isset($defaults['moto'])) {
 				$fields[$key]['x'] = $defaults['moto']['x'];
@@ -378,9 +423,13 @@ class CardLayout
 	{
 		$template = self::normalizeTemplate($template);
 		$orientation = self::normalizeOrientation($orientation);
+		if ($template === 'wisdom') {
+			$orientation = 'landscape';
+		}
 		$map = [
 			'ribbon' => self::layoutRibbon(),
 			'ocean' => self::layoutOcean(),
+			'wisdom' => self::layoutWisdom(),
 		];
 		$fields = $map[$template] ?? self::layoutOcean();
 		// Drop legacy keys no longer in FIELDS
@@ -419,7 +468,7 @@ class CardLayout
 		$fields['post']['visible'] = true;
 		$fields['names']['visible'] = true;
 		$fields['photo']['visible'] = true;
-		$fields = self::enforceReserved($fields, $fields);
+		$fields = self::enforceReserved($fields, $fields, $base['template']);
 		return [
 			'template' => $base['template'],
 			'orientation' => $base['orientation'],
@@ -464,7 +513,7 @@ class CardLayout
 				$fields[$hidden]['visible'] = false;
 			}
 		}
-		$fields = self::enforceReserved($fields, $fields);
+		$fields = self::enforceReserved($fields, $fields, $template);
 		return [
 			'template' => $template,
 			'orientation' => 'landscape',
@@ -516,7 +565,7 @@ class CardLayout
 				'visible' => array_key_exists('visible', $cfg) ? (bool) $cfg['visible'] : (bool) $fields[$key]['visible'],
 			];
 		}
-		$fields = self::enforceReserved($fields, $defaults['fields']);
+		$fields = self::enforceReserved($fields, $defaults['fields'], $template);
 		foreach (['names', 'relationship'] as $hidden) {
 			if (isset($fields[$hidden])) {
 				$fields[$hidden]['visible'] = false;
@@ -544,7 +593,9 @@ class CardLayout
 			}
 		}
 		$template = self::normalizeTemplate($saved['template'] ?? $fallbackTemplate);
-		if (!empty($saved['orientation'])) {
+		if ($template === 'wisdom') {
+			$orientation = 'landscape';
+		} elseif (!empty($saved['orientation'])) {
 			$orientation = self::normalizeOrientation($saved['orientation']);
 		} elseif ($orientation) {
 			$orientation = self::normalizeOrientation($orientation);
@@ -567,7 +618,7 @@ class CardLayout
 				];
 			}
 		}
-		$fields = self::enforceReserved($fields, $defaults['fields']);
+		$fields = self::enforceReserved($fields, $defaults['fields'], $template);
 		return ['template' => $template, 'fields' => $fields, 'orientation' => $orientation];
 	}
 
@@ -586,7 +637,9 @@ class CardLayout
 			}
 		}
 		$template = self::normalizeTemplate($saved['template'] ?? $fallbackTemplate);
-		if (!empty($saved['orientation'])) {
+		if ($template === 'wisdom') {
+			$orientation = 'landscape';
+		} elseif (!empty($saved['orientation'])) {
 			$orientation = self::normalizeOrientation($saved['orientation']);
 		} else {
 			$orientation = self::normalizeOrientation($orientation ?: self::preferredOrientation($template));
@@ -616,7 +669,7 @@ class CardLayout
 			];
 		}
 		$fields['post']['visible'] = true;
-		$fields = self::enforceReserved($fields, $defaults['fields']);
+		$fields = self::enforceReserved($fields, $defaults['fields'], $template);
 		return ['template' => $template, 'fields' => $fields, 'orientation' => $orientation];
 	}
 
@@ -735,6 +788,30 @@ class CardLayout
 			'phone' => self::f(29, 63, 67, 6.5),
 			'mode' => self::f(29, 70.5, 67, 6.5, false),
 			'moto' => self::f(0, 88, 100, 12),
+		];
+	}
+
+	/**
+	 * Landscape Wisdom Ribbon — measured from the school FRONT artwork.
+	 * header1 is the Academic Year row (not tel/email).
+	 */
+	private static function layoutWisdom(): array
+	{
+		return [
+			'logo' => self::f(3.4, 2.2, 15.2, 24.1),
+			'school_name' => self::f(20.5, 8.4, 66.5, 13.6),
+			'header1' => self::f(38.2, 66.4, 58, 7.4),
+			'header2' => self::f(38.2, 74, 58, 6, false),
+			'badge' => self::f(36.0, 36.8, 32.5, 9.4),
+			'photo' => self::f(6.3, 32.5, 28.2, 44.7),
+			'names' => self::f(38.2, 50.2, 58, 7.8),
+			'class' => self::f(38.2, 58.4, 58, 7.4),
+			'regno' => self::f(6.2, 85.4, 31.5, 9.4),
+			'dob' => self::f(38.2, 74, 58, 6, false),
+			'father' => self::f(38.2, 74, 58, 6, false),
+			'phone' => self::f(38.2, 74, 58, 6, false),
+			'mode' => self::f(38.2, 74, 58, 6, false),
+			'moto' => self::f(0, 92, 100, 8, false),
 		];
 	}
 }
