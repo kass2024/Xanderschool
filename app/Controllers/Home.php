@@ -1071,6 +1071,32 @@ public function testEmail()
 			return redirect()->to("student-cards");
 		}
 		$data['students'] = $printable;
+		if (\App\Libraries\CardLayout::isFixedChrome($cardTemplate)
+			&& \App\Libraries\WisdomCardRenderer::isAvailable()
+		) {
+			try {
+				helper('qonics');
+				$renderer = new \App\Libraries\WisdomCardRenderer();
+				$jpegs = [];
+				foreach ($printable as $student) {
+					$jpeg = $renderer->renderJpeg($student, [
+						'logo' => $skData->logo ?? '',
+						'year' => $data['theyear'] ?? ($data['year'] ?? ''),
+					]);
+					if (is_string($jpeg) && strlen($jpeg) > 100) {
+						$jpegs[] = $jpeg;
+					}
+				}
+				if (count($jpegs) === 0) {
+					throw new \RuntimeException('Wisdom card renderer produced no pages');
+				}
+				$pdf = \App\Libraries\Cr80ImagePdf::fromJpegs($jpegs);
+				\App\Libraries\Cr80ImagePdf::stream($pdf, 'students_card_' . time() . '.pdf');
+				return;
+			} catch (\Throwable $e) {
+				log_message('error', 'Wisdom GD card PDF failed: ' . $e->getMessage());
+			}
+		}
 		$html = view("templates/student_card_smart", $data);
 		try {
 			$tplDir = FCPATH . 'assets/templates/';

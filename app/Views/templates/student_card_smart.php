@@ -251,9 +251,9 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		white-space: nowrap;
 		height: 33%;
 	}
-	.card.is-wisdom .w-info .k { padding-right: 1.2mm; width: 1%; }
+	.card.is-wisdom .w-info .k { padding-right: 1.2mm; width: 1%; white-space: nowrap; }
 	.card.is-wisdom .w-info .c { padding-right: 1.6mm; }
-	.card.is-wisdom .w-info .v { overflow: visible; }
+	.card.is-wisdom .w-info .v { overflow: visible; white-space: nowrap; }
 </style>
 <script>
 (function () {
