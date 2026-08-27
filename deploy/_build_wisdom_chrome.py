@@ -30,9 +30,9 @@ d.polygon(
     [P(8.3, 0), P(22.9, 0), P(20.4, 8.2), P(5.3, 8.2)],
     fill=TEAL,
 )
-# Main teal header banner (slanted right)
+# Main teal header banner (slanted right, full enough for the school name)
 d.polygon(
-    [P(5.3, 8.0), P(91.1, 8.0), P(85.6, 23.6), P(0.0, 23.6)],
+    [P(5.3, 8.0), P(99.4, 8.0), P(93.8, 23.6), P(0.0, 23.6)],
     fill=TEAL,
 )
 # Navy strip visible around the logo (right of logo circle)

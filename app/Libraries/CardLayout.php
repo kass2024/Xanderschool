@@ -822,7 +822,7 @@ class CardLayout
 	{
 		return [
 			'logo' => self::f(3.6, 2.4, 16.8, 26.6),
-			'school_name' => self::f(20.5, 8.2, 68.0, 14.2),
+			'school_name' => self::f(21.5, 8.2, 66.0, 14.2),
 			'header1' => self::f(39.5, 66.2, 57.5, 7.6),
 			'header2' => self::f(39.5, 74, 57.5, 6, false),
 			'badge' => self::f(39.5, 36.2, 35.5, 10.8),

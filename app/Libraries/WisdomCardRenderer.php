@@ -124,7 +124,7 @@ class WisdomCardRenderer
 		$this->fillPoly($im, [[0, 5.8], [56.2, 5.2], [54.0, 8.2], [0, 8.6]], $navy);
 		$this->fillPoly($im, [[0, 5.8], [6.2, 5.8], [0.4, 23.6], [0, 23.6]], $navy);
 		$this->fillPoly($im, [[8.3, 0], [22.9, 0], [20.4, 8.2], [5.3, 8.2]], $teal);
-		$this->fillPoly($im, [[5.3, 8.0], [91.1, 8.0], [85.6, 23.6], [0.0, 23.6]], $teal);
+		$this->fillPoly($im, [[5.3, 8.0], [99.4, 8.0], [93.8, 23.6], [0.0, 23.6]], $teal);
 		$this->fillPoly($im, [[16.8, 8.0], [21.9, 8.0], [16.7, 23.6], [14.8, 23.6]], $navy);
 		$this->fillPoly($im, [[37.2, 36.2], [76.8, 36.2], [72.6, 47.4], [40.6, 47.4]], $navy);
 		$this->fillPoly($im, [[0, 79.5], [7.0, 79.5], [1.4, 96.2], [0, 96.2]], $navy);
@@ -160,12 +160,12 @@ class WisdomCardRenderer
 		if ($text === '') {
 			return;
 		}
-		// Teal banner inner area — after the logo, before the right slant.
-		$x = (int) round(self::W * 0.205);
+		// After the logo; leave a clear gap before the teal banner's right slant.
+		$x = (int) round(self::W * 0.215);
 		$y = (int) round(self::H * 0.082);
-		$w = (int) round(self::W * 0.68);
+		$w = (int) round(self::W * 0.66);
 		$h = (int) round(self::H * 0.142);
-		$size = $this->fitSize($text, $w, (int) round($h * 0.78), 104, 28);
+		$size = $this->fitSize($text, $w, (int) round($h * 0.70), 86, 28);
 		$this->drawCentered($im, $text, $size, $x, $y, $w, $h, $white);
 	}
 
