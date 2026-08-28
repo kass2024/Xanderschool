@@ -95,6 +95,46 @@ class ExtraFeesModel extends Model
 		return $byTerm ? (float) reset($byTerm) : 0.0;
 	}
 
+	/**
+	 * Registration extra fee for a student: class setting first, then any per-student Registration extra.
+	 */
+	public function registrationAmountForStudent(int $schoolId, int $yearId, int $studentId, int $classId, int $studyingMode): float
+	{
+		$amt = $this->registrationAmountForClass($schoolId, $yearId, $classId, $studyingMode);
+		if ($amt > 0) {
+			return $amt;
+		}
+		if ($schoolId < 1 || $yearId < 1 || $studentId < 1) {
+			return 0.0;
+		}
+		$this->ensureSchema();
+		$rows = $this->select('title, term, amount, amount_boarding, amount_day')
+			->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('type', 1)
+			->where('type_id', $studentId)
+			->orderBy('term', 'ASC')
+			->get()->getResultArray();
+		$byTerm = [];
+		foreach ($rows as $row) {
+			if (!self::isRegistrationTitle($row['title'] ?? '')) {
+				continue;
+			}
+			$fee = self::expectedForMode($row, $studyingMode);
+			if ($fee <= 0) {
+				continue;
+			}
+			$term = (int) ($row['term'] ?? 0);
+			if (!isset($byTerm[$term])) {
+				$byTerm[$term] = $fee;
+			}
+		}
+		if (isset($byTerm[1])) {
+			return (float) $byTerm[1];
+		}
+		return $byTerm ? (float) reset($byTerm) : 0.0;
+	}
+
 	public static function isTrackRegistrationDepartment(?string $title, ?string $code = null): bool
 	{
 		$c = strtoupper(trim((string) $code));

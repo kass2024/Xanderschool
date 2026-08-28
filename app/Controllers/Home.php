@@ -6829,6 +6829,7 @@ public function attendanceCard()
 			try {
 				$smsResult = $this->dispatchAdmissionSmsForStudent([
 					'id' => $id,
+					'school_id' => $school_id,
 					'fname' => $fname,
 					'lname' => $lname,
 					'regno' => $regno,
@@ -6840,10 +6841,12 @@ public function attendanceCard()
 					'mt_phone' => $mt_phone,
 					'guardian' => $guardian,
 					'gd_phone' => $gd_phone,
+					'class_id' => (int) $class,
 					'class_title' => (string) ($classData->title ?? ''),
 					'level_name' => (string) ($classData->level_name ?? ''),
 					'faculty_name' => (string) ($classData->faculty_name ?? ''),
 					'faculty_type' => (int) ($classData->type ?? 0),
+					'academic_year' => (int) ($this->data['academic_year'] ?? 0),
 				]);
 				if (!empty($smsResult['ok'])) {
 					$smsNote = ' Admission SMS sent.';
@@ -21075,7 +21078,8 @@ public function assign_card()
 			(string) ($st['class_title'] ?? ''),
 			(int) ($st['faculty_type'] ?? 0)
 		);
-		$message = $this->buildAdmissionSms($name, $classLabel, $modeLabel, $regNo, $nurseryOrPrimary);
+		$registrationFee = $this->resolveAdmissionRegistrationFee($st);
+		$message = $this->buildAdmissionSms($name, $classLabel, $modeLabel, $regNo, $nurseryOrPrimary, $registrationFee);
 		$phones = $this->collectStudentAdmissionPhones($st);
 		if (empty($phones)) {
 			$who = $name !== '' ? $name : ('#' . (int) ($st['id'] ?? 0));
@@ -21157,24 +21161,72 @@ public function assign_card()
 		return (bool) preg_match('/\b(nursery|baby|middle class|top class|n[123]|primary|p[1-6])\b/', $hay);
 	}
 
-	private function buildAdmissionSms(string $studentName, string $classLabel, string $modeLabel, string $studentId, bool $nurseryOrPrimary): string
+	/**
+	 * Registration extra-fee amount for admission SMS (class setting, then student extra, then paid fallback).
+	 */
+	private function resolveAdmissionRegistrationFee(array $st, float $fallback = 0): float
+	{
+		$schoolId = (int) ($st['school_id'] ?? $this->session->get('soma_school_id') ?? 0);
+		$yearId = (int) ($st['academic_year'] ?? $st['year'] ?? 0);
+		if ($yearId < 1) {
+			$yearId = (int) ($this->data['academic_year'] ?? $this->data['academic_year_id'] ?? 0);
+		}
+		$classId = (int) ($st['class_id'] ?? 0);
+		$studentId = (int) ($st['id'] ?? 0);
+		$mode = (int) ($st['studying_mode'] ?? 1);
+		$amt = 0.0;
+		if ($schoolId > 0 && $yearId > 0) {
+			$extraMdl = new ExtraFeesModel();
+			$amt = $extraMdl->registrationAmountForStudent($schoolId, $yearId, $studentId, $classId, $mode);
+		}
+		if ($amt > 0) {
+			return $amt;
+		}
+		if ($studentId > 0) {
+			$db = \Config\Database::connect();
+			$rows = $db->table('fees_records fr')
+				->select('fr.amount, ex.title')
+				->join('extra_fees ex', 'ex.id = fr.fees_id')
+				->where('fr.student_id', $studentId)
+				->where('fr.fees_type', 1)
+				->where('fr.status', 1)
+				->get()->getResultArray();
+			$paid = 0.0;
+			foreach ($rows as $row) {
+				if (ExtraFeesModel::isRegistrationTitle($row['title'] ?? '')) {
+					$paid += (float) ($row['amount'] ?? 0);
+				}
+			}
+			if ($paid > 0) {
+				return $paid;
+			}
+		}
+		return max(0, $fallback);
+	}
+
+	private function buildAdmissionSms(string $studentName, string $classLabel, string $modeLabel, string $studentId, bool $nurseryOrPrimary, float $registrationFee = 0): string
 	{
 		$studentName = trim($studentName) !== '' ? trim($studentName) : 'Student';
 		$classLabel = trim($classLabel) !== '' ? trim($classLabel) : 'your class';
 		$modeLabel = trim($modeLabel) !== '' ? trim($modeLabel) : 'Day';
 		$studentId = trim($studentId) !== '' ? trim($studentId) : '-';
 		if ($nurseryOrPrimary) {
-			return "May God bless you!\n"
+			$msg = "May God bless you!\n"
 				. "Dear {$studentName},\n"
 				. "Congratulations! Your admission to {$classLabel} - {$modeLabel} at Wisdom School has been successfully confirmed.\n"
 				. "Student ID: {$studentId}\n"
 				. "Welcome to the Wisdom School family, where every child is inspired to learn, grow, and excel. We wish you a joyful and successful academic journey.";
+		} else {
+			$msg = "May God bless you!\n"
+				. "Dear {$studentName},\n"
+				. "Congratulations! You have been successfully admitted to {$classLabel} - {$modeLabel} at Wisdom High School.\n"
+				. "Student ID: {$studentId}\n"
+				. "Welcome to the Wisdom High School family - a community committed to knowledge, character, excellence, and purpose. We wish you an inspiring and successful academic journey.";
 		}
-		return "May God bless you!\n"
-			. "Dear {$studentName},\n"
-			. "Congratulations! You have been successfully admitted to {$classLabel} - {$modeLabel} at Wisdom High School.\n"
-			. "Student ID: {$studentId}\n"
-			. "Welcome to the Wisdom High School family - a community committed to knowledge, character, excellence, and purpose. We wish you an inspiring and successful academic journey.";
+		if ($registrationFee > 0) {
+			$msg .= "\nPayment received: " . number_format($registrationFee, 0, '.', ',') . " Rwf.";
+		}
+		return $msg;
 	}
 
 	public
@@ -21366,10 +21418,14 @@ public function assign_card()
 			foreach ($validPayments as $pay) {
 				$paidTotal += (float) ($pay['amount'] ?? 0);
 			}
-			$message = $this->buildAdmissionSms($studentName, $classLabel, $modeLabel, (string) $regNo, $nurseryOrPrimary);
-			if ($paidTotal > 0) {
-				$message .= "\nPayment received: " . number_format($paidTotal, 0, '.', ',') . " Rwf.";
-			}
+			$registrationFee = $this->resolveAdmissionRegistrationFee([
+				'id' => (int) $studentId,
+				'school_id' => $schoolId,
+				'class_id' => (int) $classId,
+				'studying_mode' => (int) ($application['studyingMode'] ?? 1),
+				'academic_year' => $year,
+			], $paidTotal);
+			$message = $this->buildAdmissionSms($studentName, $classLabel, $modeLabel, (string) $regNo, $nurseryOrPrimary, $registrationFee);
 			$phones = [];
 			foreach ([(string) ($application['phoneNumber'] ?? ''), (string) ($application['parentPhoneNumber'] ?? '')] as $ph) {
 				$key = preg_replace('/\D/', '', $ph);
@@ -21409,7 +21465,7 @@ public function assign_card()
 		$this->_preset(1, 3, 4, 5, 6);
 		@ini_set('max_execution_time', '300');
 		$schoolId = (int) $this->session->get('soma_school_id');
-		$yearId = (int) ($this->request->getPost('year') ?: ($this->data['academic_year_id'] ?? 0));
+		$yearId = (int) ($this->request->getPost('year') ?: ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0));
 		$ids = $this->request->getPost('studentIds');
 		if (is_string($ids) && $ids !== '') {
 			$ids = preg_split('/[,\s]+/', $ids);
@@ -21427,9 +21483,9 @@ public function assign_card()
 		}
 
 		$studentMdl = new StudentModel();
-		$builder = $studentMdl->select('students.id, students.fname, students.lname, students.regno, students.phone,
+		$builder = $studentMdl->select('students.id, students.school_id, students.fname, students.lname, students.regno, students.phone,
 				students.studying_mode, students.father, students.ft_phone, students.mother, students.mt_phone,
-				students.guardian, students.gd_phone, c.title as class_title, l.title as level_name,
+				students.guardian, students.gd_phone, c.id as class_id, c.title as class_title, l.title as level_name,
 				f.title as faculty_name, f.type as faculty_type')
 			->join('class_records cr', 'cr.student=students.id')
 			->join('classes c', 'c.id=cr.class')
@@ -21455,7 +21511,9 @@ public function assign_card()
 				$issues[] = "Student #{$id} was not found in this school/year.";
 				continue;
 			}
-			$result = $this->dispatchAdmissionSmsForStudent($found[$id]);
+			$result = $this->dispatchAdmissionSmsForStudent(array_merge($found[$id], [
+				'academic_year' => $yearId,
+			]));
 			if (!empty($result['ok'])) {
 				$sentStudents++;
 				$sentIds[] = $id;
