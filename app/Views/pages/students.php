@@ -147,6 +147,12 @@
 #classEditTable .ce-w-phone { min-width: 114px; }
 #classEditTable .ce-w-nid { min-width: 134px; }
 #classEditAlert { margin-bottom: 8px; }
+#classEditAlert.alert-success {
+	background: #dcfce7; border-color: #86efac; color: #166534;
+	font-weight: 700; border-radius: 10px; padding: 10px 14px;
+}
+#classEditAlert.alert-success i { margin-right: 6px; }
+#btnSaveClassStudents.btn-success { min-width: 130px; font-weight: 700; }
 .ce-mode-toggle {
 	display: inline-flex; border: 1px solid #cbd5e1; border-radius: 999px; overflow: hidden;
 	background: #fff; min-width: 168px;
@@ -779,6 +785,7 @@ foreach ($students as $st) {
 	var ceSaving = {};
 	var ceAllowHide = false;
 	var ceFlushing = false;
+	var ceClosingAfterSave = false;
 
 	function ceEsc(s) {
 		return String(s == null ? '' : s)
@@ -937,6 +944,9 @@ foreach ($students as $st) {
 	}
 
 	function ceRefreshHints() {
+		if (ceClosingAfterSave) {
+			return;
+		}
 		var dirty = ceDirtyCount();
 		var busy = Object.keys(ceSaving).length;
 		var $hint = $('#classEditDirtyHint');
@@ -1053,8 +1063,30 @@ foreach ($students as $st) {
 		var $el = $('#classEditAlert');
 		$el.removeClass('d-none alert-info alert-danger alert-success alert-warning')
 			.addClass('alert-' + kind)
-			.text(msg)
-			.show();
+			.empty();
+		if (kind === 'success') {
+			$el.append($('<i class="fa fa-check-circle"></i>')).append(document.createTextNode(' ' + msg));
+		} else {
+			$el.text(msg);
+		}
+		$el.show();
+	}
+
+	function ceFinishSaveAllSuccess(msg) {
+		ceClosingAfterSave = true;
+		var $btn = $('#btnSaveClassStudents');
+		$btn.prop('disabled', true).removeClass('btn-primary').addClass('btn-success').text('Saved ✓');
+		ceShowAlert('success', msg || 'Saved successfully.');
+		ceSetStatus('ok', 'Saved successfully — closing…');
+		window.setTimeout(function () {
+			ceAllowHide = true;
+			$('#classEditModal').modal('hide');
+			showAlert('success', msg || 'Class student info saved.');
+			window.setTimeout(function () {
+				ceClosingAfterSave = false;
+				$btn.prop('disabled', false).removeClass('btn-success').addClass('btn-primary').text('Save all');
+			}, 400);
+		}, 850);
 	}
 
 	function ceSaveField($el) {
@@ -1126,10 +1158,10 @@ foreach ($students as $st) {
 		ceSyncFromDom();
 		var rows = ceDirtyRows();
 		if (!rows.length) {
-			ceShowAlert('success', 'All student info is already saved.');
+			ceShowAlert('success', 'Saved successfully.');
 			ceSetStatus('ok', 'All student info saved');
 			if (done) {
-				done(true);
+				done(true, 'Saved successfully.');
 			}
 			return;
 		}
@@ -1160,10 +1192,10 @@ foreach ($students as $st) {
 					});
 					ceMarkRow(row.id);
 				});
-				ceShowAlert('success', res.message || 'Saved.');
+				ceShowAlert('success', res.message || 'Saved successfully.');
 				ceRefreshHints();
 				if (done) {
-					done(true);
+					done(true, res.message || 'Saved successfully.');
 				}
 			} else {
 				ceShowAlert('danger', (res && res.error) || 'Could not save.');
@@ -1183,12 +1215,16 @@ foreach ($students as $st) {
 				done(false);
 			}
 		}).always(function () {
-			$btn.prop('disabled', false);
-			ceRefreshHints();
+			if (!ceClosingAfterSave) {
+				$btn.prop('disabled', false);
+				ceRefreshHints();
+			}
 		});
 	}
 
 	$(document).on('click', '#btnEditClassStudents', function () {
+		ceClosingAfterSave = false;
+		$('#btnSaveClassStudents').prop('disabled', false).removeClass('btn-success').addClass('btn-primary').text('Save all');
 		ceInitOrig();
 		$('#classEditAlert').addClass('d-none').text('');
 		$('#classEditSearch').val('');
@@ -1249,8 +1285,16 @@ foreach ($students as $st) {
 	});
 
 	$(document).on('click', '#btnSaveClassStudents', function () {
+		var $btn = $(this);
+		if ($btn.prop('disabled') || ceClosingAfterSave) {
+			return;
+		}
 		ceWhenIdle().done(function () {
-			ceSaveAll();
+			ceSaveAll(function (ok, msg) {
+				if (ok) {
+					ceFinishSaveAllSuccess(msg || 'Saved successfully.');
+				}
+			});
 		});
 	});
 
