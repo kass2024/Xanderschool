@@ -6489,12 +6489,20 @@ public function attendanceCard()
 
 	public static function ModeToStr($type)
 	{
-		switch ($type) {
-			case 0:
-				return lang("app.boarding");
-			case 1:
-				return lang("app.day");
+		$raw = is_string($type) ? trim($type) : $type;
+		if ($raw === null || $raw === '') {
+			return lang("app.boarding");
 		}
+		if (is_string($raw) && strcasecmp($raw, 'Day') === 0) {
+			return lang("app.day");
+		}
+		if (is_string($raw) && strcasecmp($raw, 'Boarding') === 0) {
+			return lang("app.boarding");
+		}
+		if ((string) $raw === '1' || $raw === 1) {
+			return lang("app.day");
+		}
+		return lang("app.boarding");
 	}
 
 	public static function TermToStr($type)
@@ -6906,9 +6914,6 @@ public function attendanceCard()
 		if ($target == 'sex' && !in_array($val, ['F', 'M'])) {
 			return $this->response->setJSON(["error" => "Sex must be F or M", "msg" => "Sex must be F or M"]);
 		}
-		if ($target == 'studying_mode' && !in_array((string) $val, ['0', '1'], true)) {
-			return $this->response->setJSON(["error" => "Invalid studying mode", "msg" => "Invalid studying mode"]);
-		}
 		if (in_array($target, ['father_nid', 'mother_nid', 'guardian_nid'], true) && is_string($val) && strlen($val) > 32) {
 			$val = substr($val, 0, 32);
 		}
@@ -6926,7 +6931,16 @@ public function attendanceCard()
 		if (!in_array($target, $allowed, true)) {
 			return $this->response->setJSON(["error" => lang("app.pleaseProvide"), "msg" => lang("app.pleaseProvide")]);
 		}
-		//echo "id:$id,target: $target,val: $val";die();
+		if ($target === 'studying_mode') {
+			$mode = $stMdl->normalizeStudyingMode($val);
+			$stMdl->updateStudyingModeByStudentId((int) $id, $mode, $schoolId);
+			$label = $mode === 0 ? lang('app.boarding') : lang('app.day');
+			return $this->response->setJSON([
+				'success' => lang('app.studentDataSaved'),
+				'result' => '&nbsp;' . $label,
+				'mode' => $mode,
+			]);
+		}
 		$uvMdl = new UpdateVersionModel();
 		$update_v = 1;
 		$update_v_data = $uvMdl->select("version")->where("type", "student")->where("school_id", $schoolId)->get(1)->getRow();
@@ -6960,6 +6974,9 @@ public function attendanceCard()
 		$this->_preset(1, 3, 4, 5, 6);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$raw = $this->request->getPost('students');
+		if ($raw === null || $raw === '') {
+			$raw = $this->request->getPost('studentsJson');
+		}
 		if (is_string($raw) && $raw !== '') {
 			$decoded = json_decode($raw, true);
 			$raw = is_array($decoded) ? $decoded : [];
@@ -6968,7 +6985,7 @@ public function attendanceCard()
 			return $this->response->setJSON(['success' => false, 'error' => 'No student changes to save.']);
 		}
 		$allowed = [
-			'fname', 'lname', 'sex', 'dob', 'studying_mode', 'phone', 'email', 'nationality', 'religion',
+			'fname', 'lname', 'sex', 'dob', 'phone', 'email', 'nationality', 'religion',
 			'father', 'ft_phone', 'father_nid', 'mother', 'mt_phone', 'mother_nid', 'guardian', 'gd_phone', 'guardian_nid',
 		];
 		$stMdl = new StudentModel();
@@ -6995,6 +7012,8 @@ public function attendanceCard()
 				continue;
 			}
 			$patch = ['id' => $id, 'updateVersion' => $update_v];
+			$hasMode = array_key_exists('studying_mode', $row);
+			$modeVal = $hasMode ? $stMdl->normalizeStudyingMode($row['studying_mode']) : null;
 			foreach ($allowed as $field) {
 				if (!array_key_exists($field, $row)) {
 					continue;
@@ -7003,22 +7022,27 @@ public function attendanceCard()
 				if ($field === 'sex' && !in_array((string) $val, ['F', 'M', ''], true)) {
 					continue;
 				}
-				if ($field === 'studying_mode' && !in_array((string) $val, ['0', '1'], true)) {
-					continue;
-				}
 				if (in_array($field, ['father_nid', 'mother_nid', 'guardian_nid'], true) && is_string($val) && strlen($val) > 32) {
 					$val = substr($val, 0, 32);
 				}
 				$patch[$field] = $val;
 			}
-			if (count($patch) <= 2) {
-				continue;
-			}
+			$did = false;
 			try {
-				$stMdl->save($patch);
-				$saved++;
+				if (count($patch) > 2) {
+					$stMdl->save($patch);
+					$did = true;
+				}
+				if ($hasMode) {
+					$stMdl->updateStudyingModeByStudentId($id, $modeVal, $schoolId);
+					$did = true;
+				}
 			} catch (\Exception $e) {
 				$failed[] = (string) ($row['regno'] ?? ('#' . $id));
+				continue;
+			}
+			if ($did) {
+				$saved++;
 			}
 		}
 		if ($saved < 1) {

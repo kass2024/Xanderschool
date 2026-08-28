@@ -262,15 +262,15 @@ AND `students`.`school_id`={$school}");
 	public function updateStudyingModeByStudentId(int $studentId, $mode, ?int $schoolId = null): bool
 	{
 		$mode = $this->normalizeStudyingMode($mode);
-
-		if ($schoolId === null) {
-			return (bool) $this->update($studentId, ['studying_mode' => $mode]);
+		$builder = $this->db->table($this->table);
+		$builder->where('id', $studentId);
+		if ($schoolId !== null) {
+			$builder->where('school_id', $schoolId);
 		}
-
-		// Scoped by school
-		return (bool) $this->where(['id' => $studentId, 'school_id' => $schoolId])
-			->set(['studying_mode' => $mode])
-			->update();
+		return (bool) $builder->update([
+			'studying_mode' => $mode,
+			'updated_at' => date('Y-m-d H:i:s'),
+		]);
 	}
 
 	/**

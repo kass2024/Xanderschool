@@ -82,27 +82,85 @@
 	color: #fff;
 	vertical-align: middle;
 }
-#classEditModal .modal-dialog { max-width: 96vw; width: 96vw; margin: 12px auto; }
-#classEditModal .modal-body { padding: 10px 14px 14px; }
+#classEditModal .modal-dialog { max-width: 96vw; width: 96vw; margin: 10px auto; }
+#classEditModal .modal-content {
+	border: 0; border-radius: 16px; overflow: hidden;
+	box-shadow: 0 24px 64px rgba(15, 23, 42, .28);
+}
+#classEditModal .modal-header {
+	background: linear-gradient(135deg, #0f172a, #1d4ed8 62%, #2563eb);
+	color: #fff; border: 0; padding: 16px 20px; align-items: center;
+}
+#classEditModal .modal-header .close { color: #fff; opacity: .85; text-shadow: none; }
+#classEditModal .modal-title { font-weight: 700; font-size: 18px; }
+#classEditModal .ce-subtitle { display:block; font-size:12px; font-weight:500; opacity:.85; margin-top:3px; }
+#classEditModal .modal-body { padding: 14px 16px 10px; background: #f8fafc; }
+#classEditModal .modal-footer {
+	background: #fff; border-top: 1px solid #e2e8f0; padding: 10px 16px;
+	display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+}
 #classEditModal .ce-toolbar {
-	display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;
+	display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;
 }
-#classEditModal .ce-toolbar input[type="search"] { max-width: 280px; }
-#classEditWrap { overflow: auto; max-height: calc(100vh - 220px); border: 1px solid #e2e8f0; border-radius: 8px; }
-#classEditTable { margin: 0; font-size: 12px; min-width: 1680px; }
+#classEditModal .ce-toolbar input[type="search"] {
+	max-width: 320px; border-radius: 999px; border-color: #cbd5e1; padding-left: 14px;
+}
+#classEditCount, #classEditDirtyHint {
+	font-size: 12px; font-weight: 600; color: #475569; background: #fff;
+	border: 1px solid #e2e8f0; border-radius: 999px; padding: 4px 10px;
+}
+#classEditDirtyHint.ce-has-dirty { color: #b45309; background: #fffbeb; border-color: #fcd34d; }
+#classEditStatus {
+	display: flex; align-items: center; gap: 8px; font-size: 13px; color: #334155; font-weight: 600;
+}
+#classEditStatus .ce-dot {
+	width: 9px; height: 9px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.18);
+}
+#classEditStatus.ce-busy .ce-dot { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.2); }
+#classEditStatus.ce-err .ce-dot { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.2); }
+#classEditWrap {
+	overflow: auto; max-height: calc(100vh - 250px); border: 1px solid #dbe3ef; border-radius: 12px;
+	background: #fff;
+}
+#classEditTable { margin: 0; font-size: 12px; min-width: 1780px; }
 #classEditTable thead th {
-	position: sticky; top: 0; z-index: 2; background: #f8fafc; white-space: nowrap;
-	font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: #475569;
+	position: sticky; top: 0; z-index: 3; background: #0f172a; color: #e2e8f0; white-space: nowrap;
+	font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-color: #1e293b; padding: 8px 8px;
 }
-#classEditTable td { vertical-align: middle; padding: 4px 6px; }
-#classEditTable .form-control, #classEditTable select.form-control { height: 30px; padding: 2px 6px; font-size: 12px; }
-#classEditTable .ce-regno { font-weight: 700; white-space: nowrap; }
+#classEditTable thead th.ce-grp-student { background: #1e3a8a; }
+#classEditTable thead th.ce-grp-mode { background: #0f766e; }
+#classEditTable thead th.ce-grp-father { background: #1d4ed8; }
+#classEditTable thead th.ce-grp-mother { background: #7c3aed; }
+#classEditTable thead th.ce-grp-guardian { background: #0369a1; }
+#classEditTable td { vertical-align: middle; padding: 6px 7px; }
+#classEditTable .form-control, #classEditTable select.form-control {
+	height: 32px; padding: 3px 8px; font-size: 12px; border-radius: 8px; border-color: #cbd5e1;
+}
+#classEditTable .form-control:focus, #classEditTable select.form-control:focus {
+	border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+}
+#classEditTable .ce-regno { font-weight: 800; white-space: nowrap; color: #0f172a; }
 #classEditTable tr.ce-dirty { background: #fffbeb; }
 #classEditTable tr.ce-saved { background: #ecfdf5; }
-#classEditTable .ce-w-name { min-width: 120px; }
-#classEditTable .ce-w-phone { min-width: 110px; }
-#classEditTable .ce-w-nid { min-width: 130px; }
+#classEditTable tr.ce-saving { background: #eff6ff; }
+#classEditTable .ce-w-name { min-width: 124px; }
+#classEditTable .ce-w-phone { min-width: 114px; }
+#classEditTable .ce-w-nid { min-width: 134px; }
 #classEditAlert { margin-bottom: 8px; }
+.ce-mode-toggle {
+	display: inline-flex; border: 1px solid #cbd5e1; border-radius: 999px; overflow: hidden;
+	background: #fff; min-width: 168px;
+}
+.ce-mode-toggle button {
+	flex: 1; border: 0; background: transparent; padding: 6px 10px; font-size: 11px; font-weight: 800;
+	cursor: pointer; color: #64748b; letter-spacing: .02em; white-space: nowrap;
+}
+.ce-mode-toggle button.active[data-value="0"] { background: #2563eb; color: #fff; }
+.ce-mode-toggle button.active[data-value="1"] { background: #d97706; color: #fff; }
+.ce-row-mark { font-size: 11px; color: #94a3b8; }
+.ce-row-mark.saved { color: #16a34a; }
+.ce-row-mark.busy { color: #2563eb; }
+#btnSaveClassStudents { min-width: 130px; font-weight: 700; }
 </style>
 <div class="app-inner-layout app-inner-layout-page">
 	<div class="app-inner-layout__wrapper">
@@ -269,13 +327,13 @@
 												}
 												$smsApproved = !empty($admission_sms_map[(int)$student['id']]);
 												?>
-												<tr>
+												<tr data-student-id="<?= (int) $student['id']; ?>">
 													<td><input type="checkbox" class="st-sms-check" value="<?= (int) $student['id']; ?>"></td>
 													<td><?= $a; ?></td>
 													<td><a href="<?= base_url('student/' . $student['id']); ?>"
 														   class="link"><?= $student['regno']; ?></a></td>
-													<td><?= $student['fname'] . ' ' . $student['lname']; ?></td>
-													<td><?= \App\Controllers\Home::ModeToStr($student['studying_mode']); ?></td>
+													<td class="ce-list-names"><?= $student['fname'] . ' ' . $student['lname']; ?></td>
+													<td class="ce-list-mode"><?= \App\Controllers\Home::ModeToStr($student['studying_mode']); ?></td>
 													<td><?= $student['sex']; ?></td>
 													<td><?= $student['level'] . ' ' . $student['dept_code'] . ' ' . $student['class']; ?></td>
 													<td><?= $parent; ?></td>
@@ -347,14 +405,20 @@ foreach ($students as $st) {
 	} elseif (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $dob, $m)) {
 		$dob = $m[3] . '-' . $m[2] . '-' . $m[1];
 	}
+	$modeRaw = strtolower(trim((string) ($st['studying_mode'] ?? '0')));
+	$modeNorm = ($modeRaw === '1' || $modeRaw === 'day') ? '1' : '0';
+	$sexNorm = strtoupper(trim((string) ($st['sex'] ?? '')));
+	if ($sexNorm !== 'F' && $sexNorm !== 'M') {
+		$sexNorm = '';
+	}
 	$classEditStudents[] = [
 		'id' => (int) $st['id'],
 		'regno' => (string) ($st['regno'] ?? ''),
 		'fname' => (string) ($st['fname'] ?? ''),
 		'lname' => (string) ($st['lname'] ?? ''),
-		'sex' => (string) ($st['sex'] ?? ''),
+		'sex' => $sexNorm,
 		'dob' => $dob,
-		'studying_mode' => (string) ($st['studying_mode'] ?? '0'),
+		'studying_mode' => $modeNorm,
 		'phone' => (string) ($st['phone'] ?? ''),
 		'nationality' => (string) ($st['nationality'] ?? ''),
 		'religion' => (string) ($st['religion'] ?? ''),
@@ -371,42 +435,45 @@ foreach ($students as $st) {
 }
 ?>
 <div class="modal fade" id="classEditModal" tabindex="-1" role="dialog" aria-labelledby="classEditTitle">
-	<div class="modal-dialog" role="document">
+	<div class="modal-dialog modal-dialog-centered" role="document">
 		<div class="modal-content">
 			<div class="modal-header">
-				<h5 class="modal-title" id="classEditTitle">Edit class — <?= esc($currentClassLabel); ?></h5>
+				<div>
+					<h5 class="modal-title" id="classEditTitle">Edit class — <?= esc($currentClassLabel); ?></h5>
+					<span class="ce-subtitle">Click outside a cell to auto-save. Study mode (Boarding / Day) saves instantly. Works for every school.</span>
+				</div>
 				<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
 			</div>
 			<div class="modal-body">
 				<div id="classEditAlert" class="alert d-none" role="alert"></div>
 				<div class="ce-toolbar">
 					<input type="search" class="form-control form-control-sm" id="classEditSearch" placeholder="Filter by name, reg no, parent…">
-					<span class="text-muted" id="classEditCount"></span>
-					<span class="text-muted">Change a cell and it saves automatically. Or use Save all.</span>
+					<span id="classEditCount"></span>
+					<span id="classEditDirtyHint">All saved</span>
 				</div>
 				<div id="classEditWrap">
 					<table class="table table-sm table-bordered table-hover mb-0" id="classEditTable">
 						<thead>
 						<tr>
-							<th>#</th>
-							<th>Reg no</th>
-							<th>First name</th>
-							<th>Last name</th>
-							<th>Sex</th>
-							<th>Birth date</th>
-							<th>Mode</th>
-							<th>Student phone</th>
-							<th>Nationality</th>
-							<th>Religion</th>
-							<th>Father names</th>
-							<th>Father phone</th>
-							<th>Father national ID</th>
-							<th>Mother names</th>
-							<th>Mother phone</th>
-							<th>Mother national ID</th>
-							<th>Guardian names</th>
-							<th>Guardian phone</th>
-							<th>Guardian national ID</th>
+							<th class="ce-grp-student">#</th>
+							<th class="ce-grp-student">Reg no</th>
+							<th class="ce-grp-student">First name</th>
+							<th class="ce-grp-student">Last name</th>
+							<th class="ce-grp-student">Sex</th>
+							<th class="ce-grp-student">Birth date</th>
+							<th class="ce-grp-mode">Study mode</th>
+							<th class="ce-grp-student">Student phone</th>
+							<th class="ce-grp-student">Nationality</th>
+							<th class="ce-grp-student">Religion</th>
+							<th class="ce-grp-father">Father names</th>
+							<th class="ce-grp-father">Father phone</th>
+							<th class="ce-grp-father">Father national ID</th>
+							<th class="ce-grp-mother">Mother names</th>
+							<th class="ce-grp-mother">Mother phone</th>
+							<th class="ce-grp-mother">Mother national ID</th>
+							<th class="ce-grp-guardian">Guardian names</th>
+							<th class="ce-grp-guardian">Guardian phone</th>
+							<th class="ce-grp-guardian">Guardian national ID</th>
 						</tr>
 						</thead>
 						<tbody></tbody>
@@ -414,8 +481,11 @@ foreach ($students as $st) {
 				</div>
 			</div>
 			<div class="modal-footer">
-				<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-				<button type="button" class="btn btn-primary" id="btnSaveClassStudents">Save all</button>
+				<div id="classEditStatus"><span class="ce-dot"></span><span id="classEditStatusText">Ready — leave a cell to save it</span></div>
+				<div>
+					<button type="button" class="btn btn-secondary" data-dismiss="modal">Done</button>
+					<button type="button" class="btn btn-primary" id="btnSaveClassStudents">Save all</button>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -469,6 +539,9 @@ foreach ($students as $st) {
 	var YEAR_ID = "<?= (int) $academic_year; ?>";
 	var FROM_CLASS = <?= (int) $class_id; ?>;
 	var CLASS_STUDENTS = <?= json_encode($classEditStudents ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+	var MODE_BOARDING = <?= json_encode(lang('app.boarding')); ?>;
+	var MODE_DAY = <?= json_encode(lang('app.day')); ?>;
+	var CE_FIELDS = ['fname','lname','sex','dob','studying_mode','phone','nationality','religion','father','ft_phone','father_nid','mother','mt_phone','mother_nid','guardian','gd_phone','guardian_nid'];
 	var RELIGIONS = <?= json_encode([
 		lang('app.islam'),
 		lang('app.catholics'),
@@ -702,10 +775,39 @@ foreach ($students as $st) {
 		submitMove();
 	});
 
+	var ceOrigMap = {};
+	var ceSaving = {};
+	var ceAllowHide = false;
+	var ceFlushing = false;
+
 	function ceEsc(s) {
 		return String(s == null ? '' : s)
 			.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 			.replace(/"/g, '&quot;');
+	}
+
+	function ceNormMode(v) {
+		v = String(v == null ? '' : v).trim().toLowerCase();
+		if (v === '1' || v === 'day') {
+			return '1';
+		}
+		return '0';
+	}
+
+	function ceNormField(field, v) {
+		v = String(v == null ? '' : v);
+		if (field === 'studying_mode') {
+			return ceNormMode(v);
+		}
+		if (field === 'sex') {
+			v = v.trim().toUpperCase();
+			return (v === 'F' || v === 'M') ? v : '';
+		}
+		return v;
+	}
+
+	function ceModeLabel(v) {
+		return ceNormMode(v) === '1' ? MODE_DAY : MODE_BOARDING;
 	}
 
 	function ceOpt(value, selected, label) {
@@ -714,11 +816,49 @@ foreach ($students as $st) {
 
 	function ceInput(id, field, value, extraClass, type) {
 		type = type || 'text';
-		return '<input type="' + type + '" class="form-control ce-field ' + (extraClass || '') + '" data-id="' + id + '" data-field="' + field + '" data-orig="' + ceEsc(value) + '" value="' + ceEsc(value) + '">';
+		return '<input type="' + type + '" class="form-control ce-field ' + (extraClass || '') + '" data-id="' + id + '" data-field="' + field + '" value="' + ceEsc(value) + '">';
 	}
 
-	function ceOrig($el) {
-		return String($el.attr('data-orig') == null ? '' : $el.attr('data-orig'));
+	function ceModeToggle(id, value) {
+		var mode = ceNormMode(value);
+		return '<div class="ce-mode-toggle ce-field" data-id="' + id + '" data-field="studying_mode" tabindex="0">' +
+			'<button type="button" data-value="0"' + (mode === '0' ? ' class="active"' : '') + '>' + ceEsc(MODE_BOARDING) + '</button>' +
+			'<button type="button" data-value="1"' + (mode === '1' ? ' class="active"' : '') + '>' + ceEsc(MODE_DAY) + '</button>' +
+			'</div>';
+	}
+
+	function ceRead($el) {
+		if ($el.hasClass('ce-mode-toggle')) {
+			var active = $el.find('button.active').attr('data-value');
+			return ceNormMode(active);
+		}
+		return String($el.val() == null ? '' : $el.val());
+	}
+
+	function ceFindStudent(id) {
+		for (var i = 0; i < CLASS_STUDENTS.length; i++) {
+			if (CLASS_STUDENTS[i].id === id) {
+				return CLASS_STUDENTS[i];
+			}
+		}
+		return null;
+	}
+
+	function ceSnapshot(st) {
+		var snap = {};
+		CE_FIELDS.forEach(function (field) {
+			snap[field] = ceNormField(field, st[field]);
+		});
+		return snap;
+	}
+
+	function ceInitOrig() {
+		ceOrigMap = {};
+		CLASS_STUDENTS.forEach(function (st) {
+			st.studying_mode = ceNormMode(st.studying_mode);
+			st.sex = ceNormField('sex', st.sex);
+			ceOrigMap[st.id] = ceSnapshot(st);
+		});
 	}
 
 	function ceSyncFromDom() {
@@ -729,21 +869,145 @@ foreach ($students as $st) {
 			if (!id || !field) {
 				return;
 			}
-			var val = String($el.val() == null ? '' : $el.val());
-			for (var i = 0; i < CLASS_STUDENTS.length; i++) {
-				if (CLASS_STUDENTS[i].id === id) {
-					CLASS_STUDENTS[i][field] = val;
+			var st = ceFindStudent(id);
+			if (st) {
+				st[field] = ceNormField(field, ceRead($el));
+			}
+		});
+	}
+
+	function ceDirtyCount() {
+		var n = 0;
+		CLASS_STUDENTS.forEach(function (st) {
+			var orig = ceOrigMap[st.id] || {};
+			for (var i = 0; i < CE_FIELDS.length; i++) {
+				var field = CE_FIELDS[i];
+				if (ceNormField(field, st[field]) !== ceNormField(field, orig[field])) {
+					n++;
 					break;
 				}
 			}
 		});
+		return n;
+	}
+
+	function ceDirtyRows() {
+		var rows = [];
+		CLASS_STUDENTS.forEach(function (st) {
+			var orig = ceOrigMap[st.id] || {};
+			var patch = { id: st.id, regno: st.regno };
+			var changed = false;
+			CE_FIELDS.forEach(function (field) {
+				var cur = ceNormField(field, st[field]);
+				var old = ceNormField(field, orig[field]);
+				if (cur !== old) {
+					patch[field] = cur;
+					changed = true;
+				}
+			});
+			if (changed) {
+				rows.push(patch);
+			}
+		});
+		return rows;
+	}
+
+	function ceMarkRow(id) {
+		var $tr = $('#classEditTable tr[data-id="' + id + '"]');
+		if (!$tr.length) {
+			return;
+		}
+		var st = ceFindStudent(id);
+		var orig = ceOrigMap[id] || {};
+		var dirty = false;
+		if (st) {
+			CE_FIELDS.forEach(function (field) {
+				if (ceNormField(field, st[field]) !== ceNormField(field, orig[field])) {
+					dirty = true;
+				}
+			});
+		}
+		var busy = false;
+		Object.keys(ceSaving).forEach(function (k) {
+			if (k.indexOf(id + ':') === 0) {
+				busy = true;
+			}
+		});
+		$tr.toggleClass('ce-dirty', dirty && !busy).toggleClass('ce-saving', busy).toggleClass('ce-saved', !dirty && !busy);
+	}
+
+	function ceRefreshHints() {
+		var dirty = ceDirtyCount();
+		var busy = Object.keys(ceSaving).length;
+		var $hint = $('#classEditDirtyHint');
+		if (dirty) {
+			$hint.addClass('ce-has-dirty').text(dirty + ' unsaved student' + (dirty === 1 ? '' : 's'));
+		} else {
+			$hint.removeClass('ce-has-dirty').text('All saved');
+		}
+		$('#btnSaveClassStudents').text(dirty ? ('Save all (' + dirty + ')') : 'Save all');
+		var $st = $('#classEditStatus');
+		$st.removeClass('ce-busy ce-err');
+		if (busy) {
+			$st.addClass('ce-busy');
+			$('#classEditStatusText').text('Saving…');
+		} else if (dirty) {
+			$('#classEditStatusText').text('Click outside a cell to save, or Save all');
+		} else {
+			$('#classEditStatusText').text('All student info saved');
+		}
+	}
+
+	function ceSetStatus(kind, msg) {
+		var $st = $('#classEditStatus');
+		$st.removeClass('ce-busy ce-err');
+		if (kind === 'busy') {
+			$st.addClass('ce-busy');
+		} else if (kind === 'err') {
+			$st.addClass('ce-err');
+		}
+		$('#classEditStatusText').text(msg);
+	}
+
+	function ceUpdateListRow(id, field, val) {
+		var $row = $('#example tbody tr[data-student-id="' + id + '"]');
+		if (!$row.length) {
+			var dt = tableApi();
+			if (dt) {
+				dt.rows().every(function () {
+					var $n = $(this.node());
+					if (parseInt($n.attr('data-student-id'), 10) === id) {
+						$row = $n;
+					}
+				});
+			}
+		}
+		if (!$row.length) {
+			return;
+		}
+		if (field === 'studying_mode') {
+			$row.find('.ce-list-mode').text(ceModeLabel(val));
+		}
+		if (field === 'fname' || field === 'lname') {
+			var st = ceFindStudent(id);
+			if (st) {
+				$row.find('.ce-list-names').text($.trim((st.fname || '') + ' ' + (st.lname || '')));
+			}
+		}
 	}
 
 	function renderClassEditRows(filter) {
 		filter = String(filter || '').toLowerCase().trim();
 		var html = '';
 		var shown = 0;
+		var boarding = 0;
+		var day = 0;
 		CLASS_STUDENTS.forEach(function (st) {
+			if (ceNormMode(st.studying_mode) === '1') {
+				day++;
+			} else {
+				boarding++;
+			}
 			var hay = [st.regno, st.fname, st.lname, st.father, st.mother, st.guardian, st.ft_phone, st.father_nid, st.mother_nid, st.guardian_nid].join(' ').toLowerCase();
 			if (filter && hay.indexOf(filter) === -1) {
 				return;
@@ -761,14 +1025,13 @@ foreach ($students as $st) {
 				'<td class="ce-regno">' + ceEsc(st.regno) + '</td>' +
 				'<td class="ce-w-name">' + ceInput(st.id, 'fname', st.fname, 'ce-w-name') + '</td>' +
 				'<td class="ce-w-name">' + ceInput(st.id, 'lname', st.lname, 'ce-w-name') + '</td>' +
-				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="sex" data-orig="' + ceEsc(st.sex) + '">' +
-					ceOpt('F', st.sex, 'F') + ceOpt('M', st.sex, 'M') + '</select></td>' +
+				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="sex">' +
+					'<option value=""></option>' + ceOpt('F', st.sex, 'F') + ceOpt('M', st.sex, 'M') + '</select></td>' +
 				'<td>' + ceInput(st.id, 'dob', st.dob, '', 'date') + '</td>' +
-				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="studying_mode" data-orig="' + ceEsc(st.studying_mode) + '">' +
-					ceOpt('0', st.studying_mode, 'Boarding') + ceOpt('1', st.studying_mode, 'Day') + '</select></td>' +
+				'<td>' + ceModeToggle(st.id, st.studying_mode) + '</td>' +
 				'<td class="ce-w-phone">' + ceInput(st.id, 'phone', st.phone, 'ce-w-phone') + '</td>' +
 				'<td>' + ceInput(st.id, 'nationality', st.nationality) + '</td>' +
-				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="religion" data-orig="' + ceEsc(st.religion) + '">' + relOpts + '</select></td>' +
+				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="religion">' + relOpts + '</select></td>' +
 				'<td class="ce-w-name">' + ceInput(st.id, 'father', st.father, 'ce-w-name') + '</td>' +
 				'<td class="ce-w-phone">' + ceInput(st.id, 'ft_phone', st.ft_phone, 'ce-w-phone') + '</td>' +
 				'<td class="ce-w-nid">' + ceInput(st.id, 'father_nid', st.father_nid, 'ce-w-nid') + '</td>' +
@@ -781,7 +1044,9 @@ foreach ($students as $st) {
 				'</tr>';
 		});
 		$('#classEditTable tbody').html(html || '<tr><td colspan="19" class="text-center text-muted py-3">No students match.</td></tr>');
-		$('#classEditCount').text(shown + ' of ' + CLASS_STUDENTS.length + ' students');
+		$('#classEditCount').text(shown + ' of ' + CLASS_STUDENTS.length + ' · ' + boarding + ' ' + MODE_BOARDING + ' · ' + day + ' ' + MODE_DAY);
+		CLASS_STUDENTS.forEach(function (st) { ceMarkRow(st.id); });
+		ceRefreshHints();
 	}
 
 	function ceShowAlert(kind, msg) {
@@ -792,40 +1057,30 @@ foreach ($students as $st) {
 			.show();
 	}
 
-	function ceCollectChanged() {
-		var byId = {};
-		$('#classEditTable .ce-field').each(function () {
-			var $el = $(this);
-			var orig = ceOrig($el);
-			var val = String($el.val() == null ? '' : $el.val());
-			if (val === orig) {
-				return;
-			}
-			var id = parseInt($el.attr('data-id'), 10);
-			var field = $el.attr('data-field');
-			if (!id || !field) {
-				return;
-			}
-			if (!byId[id]) {
-				byId[id] = { id: id };
-			}
-			byId[id][field] = val;
-		});
-		return Object.keys(byId).map(function (k) { return byId[k]; });
-	}
-
 	function ceSaveField($el) {
-		var orig = ceOrig($el);
-		var val = String($el.val() == null ? '' : $el.val());
-		if (val === orig) {
-			return;
-		}
 		var id = parseInt($el.attr('data-id'), 10);
 		var field = $el.attr('data-field');
 		if (!id || !field) {
 			return;
 		}
-		$el.prop('disabled', true);
+		var val = ceNormField(field, ceRead($el));
+		var orig = ceOrigMap[id] ? ceNormField(field, ceOrigMap[id][field]) : '';
+		var st = ceFindStudent(id);
+		if (st) {
+			st[field] = val;
+		}
+		ceMarkRow(id);
+		ceRefreshHints();
+		if (val === orig) {
+			return;
+		}
+		var key = id + ':' + field;
+		if (ceSaving[key]) {
+			return;
+		}
+		ceSaving[key] = true;
+		ceMarkRow(id);
+		ceSetStatus('busy', 'Saving ' + (st && st.fname ? st.fname : 'student') + '…');
 		$.ajax({
 			url: EDIT_FIELD_API,
 			type: 'POST',
@@ -833,22 +1088,108 @@ foreach ($students as $st) {
 			data: withCsrf({ id: id, target: field, val: val })
 		}).done(function (res) {
 			if (res && res.success) {
-				$el.attr('data-orig', val);
-				$el.closest('tr').removeClass('ce-dirty').addClass('ce-saved');
-				CLASS_STUDENTS.forEach(function (st) {
-					if (st.id === id) { st[field] = val; }
-				});
+				if (!ceOrigMap[id]) {
+					ceOrigMap[id] = {};
+				}
+				ceOrigMap[id][field] = val;
+				ceUpdateListRow(id, field, val);
+				ceMarkRow(id);
+				ceRefreshHints();
 			} else {
 				ceShowAlert('danger', (res && (res.error || res.msg)) || 'Could not save.');
+				ceSetStatus('err', 'Could not save. Use Save all to retry.');
 			}
 		}).fail(function () {
-			ceShowAlert('danger', 'Could not save. Please try again.');
+			ceShowAlert('danger', 'Could not save. Please try again or use Save all.');
+			ceSetStatus('err', 'Could not save. Use Save all to retry.');
 		}).always(function () {
-			$el.prop('disabled', false);
+			delete ceSaving[key];
+			ceMarkRow(id);
+			ceRefreshHints();
+		});
+	}
+
+	function ceWhenIdle() {
+		var d = $.Deferred();
+		function tick() {
+			if (Object.keys(ceSaving).length === 0) {
+				d.resolve();
+			} else {
+				window.setTimeout(tick, 80);
+			}
+		}
+		tick();
+		return d.promise();
+	}
+
+	function ceSaveAll(done) {
+		ceSyncFromDom();
+		var rows = ceDirtyRows();
+		if (!rows.length) {
+			ceShowAlert('success', 'All student info is already saved.');
+			ceSetStatus('ok', 'All student info saved');
+			if (done) {
+				done(true);
+			}
+			return;
+		}
+		var $btn = $('#btnSaveClassStudents');
+		$btn.prop('disabled', true).text('Saving…');
+		ceSetStatus('busy', 'Saving ' + rows.length + ' student' + (rows.length === 1 ? '' : 's') + '…');
+		$.ajax({
+			url: SAVE_CLASS_API,
+			type: 'POST',
+			dataType: 'json',
+			data: withCsrf({ students: JSON.stringify(rows), studentsJson: JSON.stringify(rows) })
+		}).done(function (res) {
+			if (res && res.success) {
+				rows.forEach(function (row) {
+					var st = ceFindStudent(row.id);
+					if (!st) {
+						return;
+					}
+					if (!ceOrigMap[row.id]) {
+						ceOrigMap[row.id] = {};
+					}
+					CE_FIELDS.forEach(function (field) {
+						if (Object.prototype.hasOwnProperty.call(row, field)) {
+							st[field] = ceNormField(field, row[field]);
+							ceOrigMap[row.id][field] = st[field];
+							ceUpdateListRow(row.id, field, st[field]);
+						}
+					});
+					ceMarkRow(row.id);
+				});
+				ceShowAlert('success', res.message || 'Saved.');
+				ceRefreshHints();
+				if (done) {
+					done(true);
+				}
+			} else {
+				ceShowAlert('danger', (res && res.error) || 'Could not save.');
+				ceSetStatus('err', 'Save all failed. Please try again.');
+				if (done) {
+					done(false);
+				}
+			}
+		}).fail(function (xhr) {
+			var msg = 'Could not save. Please try again.';
+			if (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) {
+				msg = xhr.responseJSON.error || xhr.responseJSON.message;
+			}
+			ceShowAlert('danger', msg);
+			ceSetStatus('err', 'Save all failed. Please try again.');
+			if (done) {
+				done(false);
+			}
+		}).always(function () {
+			$btn.prop('disabled', false);
+			ceRefreshHints();
 		});
 	}
 
 	$(document).on('click', '#btnEditClassStudents', function () {
+		ceInitOrig();
 		$('#classEditAlert').addClass('d-none').text('');
 		$('#classEditSearch').val('');
 		renderClassEditRows('');
@@ -860,42 +1201,82 @@ foreach ($students as $st) {
 		renderClassEditRows($(this).val());
 	});
 
-	$(document).on('change', '#classEditTable .ce-field', function () {
+	$(document).on('input', '#classEditTable input.ce-field', function () {
 		var $el = $(this);
-		var orig = ceOrig($el);
-		var val = String($el.val() == null ? '' : $el.val());
-		$el.closest('tr').toggleClass('ce-dirty', val !== orig).removeClass('ce-saved');
-		ceSaveField($el);
+		var id = parseInt($el.attr('data-id'), 10);
+		var field = $el.attr('data-field');
+		var st = ceFindStudent(id);
+		if (st && field) {
+			st[field] = ceNormField(field, ceRead($el));
+		}
+		ceMarkRow(id);
+		ceRefreshHints();
+	});
+
+	$(document).on('change', '#classEditTable select.ce-field', function () {
+		ceSaveField($(this));
+	});
+
+	$(document).on('focusout', '#classEditTable .ce-field', function (e) {
+		var $el = $(this);
+		if ($el.hasClass('ce-mode-toggle')) {
+			return;
+		}
+		window.setTimeout(function () {
+			ceSaveField($el);
+		}, 40);
+	});
+
+	$(document).on('click', '#classEditTable .ce-mode-toggle button', function (e) {
+		e.preventDefault();
+		e.stopPropagation();
+		var $btn = $(this);
+		var $wrap = $btn.closest('.ce-mode-toggle');
+		$wrap.find('button').removeClass('active');
+		$btn.addClass('active');
+		ceSaveField($wrap);
+	});
+
+	$(document).on('mousedown', '#classEditModal', function (e) {
+		var $t = $(e.target);
+		if ($t.closest('.ce-field, .ce-mode-toggle button').length) {
+			return;
+		}
+		var $active = $('#classEditTable input.ce-field:focus, #classEditTable select.ce-field:focus');
+		if ($active.length) {
+			ceSaveField($active);
+		}
 	});
 
 	$(document).on('click', '#btnSaveClassStudents', function () {
-		var rows = ceCollectChanged();
-		if (!rows.length) {
-			ceShowAlert('info', 'No unsaved changes.');
+		ceWhenIdle().done(function () {
+			ceSaveAll();
+		});
+	});
+
+	$('#classEditModal').on('hide.bs.modal', function (e) {
+		if (ceAllowHide) {
+			ceAllowHide = false;
 			return;
 		}
-		var $btn = $(this);
-		$btn.prop('disabled', true).text('Saving…');
-		$.ajax({
-			url: SAVE_CLASS_API,
-			type: 'POST',
-			dataType: 'json',
-			data: withCsrf({ students: JSON.stringify(rows) })
-		}).done(function (res) {
-			if (res && res.success) {
-				ceShowAlert('success', res.message || 'Saved.');
-				$('#classEditTable .ce-field').each(function () {
-					$(this).attr('data-orig', $(this).val());
-				});
-				ceSyncFromDom();
-				$('#classEditTable tr').removeClass('ce-dirty').addClass('ce-saved');
-			} else {
-				ceShowAlert('danger', (res && res.error) || 'Could not save.');
-			}
-		}).fail(function () {
-			ceShowAlert('danger', 'Could not save. Please try again.');
-		}).always(function () {
-			$btn.prop('disabled', false).text('Save all');
+		ceSyncFromDom();
+		if (ceFlushing) {
+			e.preventDefault();
+			return;
+		}
+		if (!ceDirtyCount() && Object.keys(ceSaving).length === 0) {
+			return;
+		}
+		e.preventDefault();
+		ceFlushing = true;
+		ceWhenIdle().done(function () {
+			ceSaveAll(function (ok) {
+				ceFlushing = false;
+				if (ok) {
+					ceAllowHide = true;
+					$('#classEditModal').modal('hide');
+				}
+			});
 		});
 	});
 })(jQuery);
