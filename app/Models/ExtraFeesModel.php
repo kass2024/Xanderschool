@@ -114,6 +114,26 @@ class ExtraFeesModel extends Model
 		return (bool) preg_match('/^stream(\s*(one|two|1|2))?$/', $t);
 	}
 
+	public static function isPrimaryRegistrationClass(?string $levelName, ?string $classTitle = null, ?string $deptTitle = null, ?string $deptCode = null): bool
+	{
+		$hay = strtolower(trim(implode(' ', array_filter([
+			(string) $levelName,
+			(string) $classTitle,
+			(string) $deptTitle,
+			(string) $deptCode,
+		]))));
+		if ($hay === '' || strpos($hay, 'holiday') !== false) {
+			return false;
+		}
+		if (preg_match('/\bp[.\s\-]*[1-6][a-z]?\b/', $hay)) {
+			return true;
+		}
+		if (preg_match('/primary\s*(one|two|three|four|five|six|[1-6])/', $hay)) {
+			return true;
+		}
+		return strpos($hay, 'primary') !== false;
+	}
+
 	/**
 	 * Class extra fee with the same title and term (used instead of a per-student copy).
 	 */
@@ -242,7 +262,9 @@ class ExtraFeesModel extends Model
 	}
 
 	/**
-	 * Class extra fees for Software Development, Accounting and Stream even when empty.
+	 * Class extra fees for Software Development, Accounting, Stream and Primary (P1–P6).
+	 * Track (SOD/ACC/Stream): boarding 50,000 / day 30,000.
+	 * Primary: boarding 50,000 / day 10,000.
 	 */
 	public function ensureTrackRegistrationFees(
 		int $schoolId,
@@ -265,12 +287,26 @@ class ExtraFeesModel extends Model
 			->where('c.school_id', $schoolId)
 			->get()->getResultArray();
 		$saved = 0;
+		$primaryBoard = 50000.0;
+		$primaryDay = 10000.0;
 		foreach ($classes as $cls) {
-			$hay = strtolower(trim(($cls['title'] ?? '') . ' ' . ($cls['level_name'] ?? '')));
+			$hay = strtolower(trim(($cls['title'] ?? '') . ' ' . ($cls['level_name'] ?? '') . ' ' . ($cls['dept_title'] ?? '')));
 			if (strpos($hay, 'holiday') !== false) {
 				continue;
 			}
-			if (!self::isTrackRegistrationDepartment($cls['dept_title'] ?? '', $cls['dept_code'] ?? '')) {
+			$boardAmt = $boarding;
+			$dayAmt = $day;
+			if (self::isTrackRegistrationDepartment($cls['dept_title'] ?? '', $cls['dept_code'] ?? '')) {
+				// keep track defaults
+			} elseif (self::isPrimaryRegistrationClass(
+				$cls['level_name'] ?? '',
+				$cls['title'] ?? '',
+				$cls['dept_title'] ?? '',
+				$cls['dept_code'] ?? ''
+			)) {
+				$boardAmt = $primaryBoard;
+				$dayAmt = $primaryDay;
+			} else {
 				continue;
 			}
 			$id = $this->upsertClassModeFee(
@@ -279,8 +315,8 @@ class ExtraFeesModel extends Model
 				(int) $cls['id'],
 				$title,
 				$term,
-				$boarding,
-				$day,
+				$boardAmt,
+				$dayAmt,
 				$createdBy
 			);
 			if ($id > 0) {

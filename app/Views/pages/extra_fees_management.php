@@ -36,13 +36,22 @@ if (!function_exists('ef_target_label')) {
 }
 
 $uniqueClasses = [];
+foreach ($classes ?? [] as $cRow) {
+	$label = trim(($cRow['level_name'] ?? '') . ' ' . ($cRow['code'] ?? '') . ' ' . ($cRow['title'] ?? ''));
+	if ($label === '' || stripos($label, 'holiday') !== false) {
+		continue;
+	}
+	$uniqueClasses[$label] = $label;
+}
 foreach ($fees as $fee) {
 	if ((int) ($fee['type'] ?? 0) === 0) {
 		$label = ef_target_label($fee);
-		$uniqueClasses[$label] = $label;
+		if ($label !== '' && stripos($label, 'holiday') === false) {
+			$uniqueClasses[$label] = $label;
+		}
 	}
 }
-ksort($uniqueClasses);
+uksort($uniqueClasses, 'strnatcasecmp');
 ?>
 <link rel="stylesheet" href="<?= base_url('assets/css/extra-fees.css'); ?>?v=3">
 
@@ -157,7 +166,7 @@ ksort($uniqueClasses);
 					<div class="ef-empty">
 						<i class="fa fa-inbox"></i>
 						<h4>No extra fees yet</h4>
-						<p>No extra fees configured for <?= esc($selectedYearTitle); ?>. Add a class fee with boarding/day amounts, or assign fees to multiple students. Software Development, Accounting and Stream registration fees are created automatically.</p>
+						<p>No extra fees configured for <?= esc($selectedYearTitle); ?>. Add a class fee with boarding/day amounts, or assign fees to multiple students. Primary (P1–P6), Software Development, Accounting and Stream registration fees are created automatically.</p>
 						<button type="button" class="btn ef-btn-add" data-toggle="modal" data-target="#mdlextrafees">
 							<i class="fa fa-plus"></i> <?= lang('app.addClassFee'); ?>
 						</button>
