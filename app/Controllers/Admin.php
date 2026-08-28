@@ -34,13 +34,17 @@ class Admin extends BaseController
 	public function _preset()
 	{
 		$this->session->set('return_url', current_url());
-		if ($this->session->get($this->log_status) === null)
+		if ($this->session->get($this->log_status) === null || $this->session->get('t_lock_status') !== null)
 		{
-			header('location: ' . base_url('admin/login'));
-			die();
-		}
-		else if ($this->session->get('t_lock_status') !== null)
-		{
+			$accept = strtolower($this->request->getHeaderLine('Accept'));
+			$xhr    = strtolower($this->request->getHeaderLine('X-Requested-With'));
+			$wantsJson = strpos($accept, 'application/json') !== false
+				|| $xhr === 'xmlhttprequest'
+				|| $this->request->isAJAX();
+			if ($wantsJson) {
+				$this->response->setStatusCode(401)->setJSON(['error' => 'Admin session expired. Please login again.'])->send();
+				exit;
+			}
 			header('location: ' . base_url('admin/login'));
 			die();
 		}
@@ -1244,6 +1248,16 @@ class Admin extends BaseController
 	public function share_school_access()
 	{
 		$this->_preset();
+		try {
+			return $this->_share_school_access_inner();
+		} catch (\Throwable $e) {
+			log_message('error', 'share_school_access: {msg}', ['msg' => $e->getMessage()]);
+			return $this->response->setJSON(['error' => 'Could not share access: ' . $e->getMessage()]);
+		}
+	}
+
+	private function _share_school_access_inner()
+	{
 		$schoolId = (int) ($this->request->getPost('school_id') ?? 0);
 		$channel  = strtolower(trim((string) ($this->request->getPost('channel') ?? 'both')));
 		if (! in_array($channel, ['sms', 'email', 'both'], true)) {
@@ -1264,9 +1278,6 @@ class Admin extends BaseController
 		$phone = trim((string) ($school['phone'] ?? ''));
 		$email = trim((string) ($school['email'] ?? ''));
 		$headMaster = trim((string) ($school['head_master'] ?? ''));
-		if ($headMaster === '') {
-			return $this->response->setJSON(['error' => 'This school has no headmaster name on record.']);
-		}
 
 		$staffMdl = new StaffModel();
 		$staff    = $staffMdl->where('school_id', $schoolId)
@@ -1275,25 +1286,33 @@ class Admin extends BaseController
 			->orderBy('id', 'ASC')
 			->first();
 
+		if ($headMaster === '' && $staff) {
+			$headMaster = trim(($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? ''));
+		}
+		if ($headMaster === '') {
+			$headMaster = 'Head Master';
+		}
+
 		$headNames = preg_split('/\s+/', $headMaster, 2);
 		$fname     = $headNames[0] ?? 'Head';
 		$lname     = $headNames[1] ?? 'Master';
-		$defaultPassword = $this->random_password();
+		if ($staff) {
+			$fname = trim((string) ($staff['fname'] ?? '')) !== '' ? trim((string) $staff['fname']) : $fname;
+			$lname = trim((string) ($staff['lname'] ?? '')) !== '' ? trim((string) $staff['lname']) : $lname;
+			$phone = $phone !== '' ? $phone : trim((string) ($staff['phone'] ?? ''));
+			$email = $email !== '' ? $email : trim((string) ($staff['email'] ?? ''));
+		}
+
+		$defaultPassword = $this->_smsSafePassword(8);
 
 		try {
 			if ($staff) {
 				$staffId = (int) $staff['id'];
 				$staffMdl->update($staffId, [
-					'fname'     => $fname,
-					'lname'     => $lname,
-					'phone'     => $phone !== '' ? $phone : ($staff['phone'] ?? ''),
-					'email'     => $email !== '' ? $email : ($staff['email'] ?? ''),
 					'password'  => password_hash($defaultPassword, PASSWORD_DEFAULT),
 					'reset_exp' => 0,
 					'status'    => 2,
 				]);
-				$phone = $phone !== '' ? $phone : trim((string) ($staff['phone'] ?? ''));
-				$email = $email !== '' ? $email : trim((string) ($staff['email'] ?? ''));
 			} else {
 				$staffId = (int) $staffMdl->insert([
 					'school_id'  => $schoolId,
@@ -1307,7 +1326,7 @@ class Admin extends BaseController
 					'created_by' => $this->session->get('soma_admin_id'),
 				]);
 			}
-		} catch (\Exception $e) {
+		} catch (\Throwable $e) {
 			return $this->response->setJSON(['error' => 'Could not reset password: ' . $e->getMessage()]);
 		}
 
@@ -1327,14 +1346,18 @@ class Admin extends BaseController
 			} else {
 				$smsResult = null;
 				if ($this->sendSMS($phone, $smsBody, $smsResult)) {
-					$smsMdl = new SmsModel();
-					$smsMdl->save([
-						'school_id'      => $schoolId,
-						'active_term'    => 0,
-						'content'        => $smsLogBody,
-						'recipient'      => $phone,
-						'recipient_type' => 1,
-					]);
+					try {
+						$smsMdl = new SmsModel();
+						$smsMdl->save([
+							'school_id'      => $schoolId,
+							'active_term'    => 0,
+							'content'        => $smsLogBody,
+							'recipient_type' => 1,
+							'subject'        => 'School access share',
+						]);
+					} catch (\Throwable $e) {
+						log_message('error', 'share_school_access SMS log: {msg}', ['msg' => $e->getMessage()]);
+					}
 					$sentSms = true;
 				} else {
 					$errors[] = 'SMS failed' . (is_array($smsResult)
@@ -1356,10 +1379,11 @@ class Admin extends BaseController
 					'default_password' => $defaultPassword,
 				];
 				$htmlMsg = view('emails/school_creation', $mailData);
-				if ($this->_send_email($email, 'XanderTech SmartSMS login credentials', $htmlMsg)) {
+				$emailError = null;
+				if ($this->_send_email($email, 'XanderTech SmartSMS login credentials', $htmlMsg, $emailError)) {
 					$sentEmail = true;
 				} else {
-					$errors[] = 'Email failed';
+					$errors[] = 'Email failed' . ($emailError ? ': ' . $emailError : '');
 				}
 			}
 		}
@@ -1381,8 +1405,9 @@ class Admin extends BaseController
 			]);
 		}
 		if (! $sentSms && ! $sentEmail) {
+			$detail = $errors ? implode('; ', $errors) : 'Check phone number and email address.';
 			return $this->response->setJSON([
-				'error'  => 'Could not send credentials. Check phone number and email address.',
+				'error'  => 'Could not send credentials. ' . $detail,
 				'failed' => $errors,
 			]);
 		}

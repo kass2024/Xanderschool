@@ -132,6 +132,42 @@ class BaseController extends Controller
 		$pass = implode($password);
 		return $pass;
 	}
+
+	/** GSM-7 safe password so credential SMS stays on the 160-char alphabet. */
+	protected function _smsSafePassword(int $length = 8): string
+	{
+		$alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+		$max = strlen($alphabet) - 1;
+		$out = '';
+		for ($i = 0; $i < $length; $i++) {
+			$out .= $alphabet[random_int(0, $max)];
+		}
+		return $out;
+	}
+
+	/** Package remaining + extra SMS (never negative). */
+	protected function _sms_balance($sms_limit, $sms_usage, $extra_sms): int
+	{
+		return max(0, (int) $sms_limit - (int) $sms_usage) + max(0, (int) $extra_sms);
+	}
+
+	/** Compact SMS for staff credentials (user + password, no login URL). */
+	protected function _staffCredentialSms(string $name, string $loginUser, string $password, bool $isReset = false): array
+	{
+		$intro = $isReset
+			? lang('app.dear') . ' ' . $name . ', SmartSMS login reset.'
+			: lang('app.dear') . ' ' . $name . lang('app.accountIsCreated');
+		$body = trim(preg_replace('/\s+/', ' ', $intro))
+			. ' User: ' . $loginUser
+			. '. ' . lang('app.password') . ': ' . $password
+			. '. ' . lang('app.thankyou');
+		$logBody = trim(preg_replace('/\s+/', ' ', $intro))
+			. ' User: ' . $loginUser
+			. '. ' . lang('app.password') . ': **********'
+			. '. ' . lang('app.thankyou');
+		return ['body' => $body, 'log' => $logBody];
+	}
+
 	/**
 	 * Write email/SMS debug lines to writable/logs/comms-YYYY-mm-dd.log
 	 * Enabled when DEBUG_COMMS=1 in .env (default on for easier troubleshooting).
@@ -160,8 +196,27 @@ class BaseController extends Controller
 		@file_put_contents($dir . '/comms-' . date('Y-m-d') . '.log', $line, FILE_APPEND);
 	}
 
-	function _send_sms($phone,$message,&$result,$remaining_sms,$school_acronym="SOMANET", $school_id=null){
-		$this->_comms_debug('SMS', 'intouch:_send_sms start', [
+	protected function _normalize_rw_phone($phone): string
+	{
+		$phone = preg_replace('/\D+/', '', (string) $phone);
+		if ($phone === '') {
+			return '';
+		}
+		if (substr($phone, 0, 3) === '250') {
+			return $phone;
+		}
+		if ($phone[0] === '0') {
+			return '250' . substr($phone, 1);
+		}
+		if (strlen($phone) === 9) {
+			return '250' . $phone;
+		}
+		return '25' . $phone;
+	}
+
+	function _send_sms($phone, $message, &$result, $remaining_sms, $school_acronym = "SOMANET", $school_id = null)
+	{
+		$this->_comms_debug('SMS', '_send_sms start (SwiftQOM)', [
 			'phone_raw' => $phone,
 			'remaining_sms' => $remaining_sms,
 			'sender' => $school_acronym,
@@ -169,146 +224,99 @@ class BaseController extends Controller
 			'msg_len' => strlen((string) $message),
 		]);
 
-		//check if we have custom account to be used for the transaction
-		$username = "jean.methode";
-		$password = "jean.methode";
-
-		$check_balance = true;
-
-		if(!is_null($school_id)){
-			//Check if the school has an account
-			$intouchAccount = new IntouchAccount();
-
-			$info = $intouchAccount->where('school_id', $school_id)->first();
-
-			if($info && trim($info['username']) && trim($info['password'])){
-				$username = $info['username'];
-				$password = $info['password'];
-				$check_balance = false;
-				$this->_comms_debug('SMS', 'intouch: using school custom account', ['school_id' => $school_id, 'username' => $username]);
-			}
-		}
-		if ($check_balance && $remaining_sms<=0 ){
-			$result=array("code"=>200,"content"=>"SMS limit reached, contact SOMANET admin");
-			$this->_comms_debug('SMS', 'intouch: blocked — SMS limit reached', ['remaining_sms' => $remaining_sms]);
-			return false;
-		}
-		$phone = str_replace("+","",$phone);
-		$phone = substr( $phone, 0, 3 )=="250"?$phone:"25".$phone;
-		$this->_comms_debug('SMS', 'intouch: normalized phone', ['phone' => $phone]);
-
-		$this->curl = \Config\Services::curlrequest();
-		try {
-			$response = $this->curl->setAuth($username, $password)
-				->request("POST",SMS_API,[
-					'form_params' => [
-						'sender' => $school_acronym,
-						'recipients' => $phone,
-						'message' => $message
-					],'verify' => false,'http_errors' => false
-				]);
-		} catch (\Throwable $e) {
-			$result = ['code' => 500, 'content' => $e->getMessage()];
-			$this->_comms_debug('SMS', 'intouch: HTTP exception', ['error' => $e->getMessage()]);
+		if ($remaining_sms <= 0) {
+			$result = ["code" => 200, "content" => "SMS limit reached, contact SOMANET admin"];
+			$this->_comms_debug('SMS', 'blocked — SMS limit reached', ['remaining_sms' => $remaining_sms]);
 			return false;
 		}
 
-		$code = $response->getStatusCode();
-		$body = $response->getBody();
-		$res = json_decode($body,true);
-		$this->_comms_debug('SMS', 'intouch: provider response', [
-			'http_code' => $code,
-			'body' => mb_substr((string) $body, 0, 500),
-		]);
-
-		if ($code==200){
-			if (is_array($res) && ($res['success'] ?? false) == true){
-				$this->_comms_debug('SMS', 'intouch: SUCCESS', ['phone' => $phone]);
-				return true;
-			}
-			$result = $res['response'][0]['errors']['error'] ?? ($res['detail'] ?? 'Unknown SMS error');
-			$this->_comms_debug('SMS', 'intouch: FAIL business', ['result' => $result]);
-		}else{
-			$result = is_array($res) ? ($res["detail"] ?? $body) : $body;
-			$this->_comms_debug('SMS', 'intouch: FAIL http', ['result' => $result]);
-		}
-		return false;
+		return $this->sendSMS($phone, $message, $result, $school_acronym);
 	}
-    
-    public function sendSMS($phone, $message, &$result, $sender = "SWIFTQOM"): bool
+
+	public function sendSMS($phone, $message, &$result, $sender = null): bool
 	{
-		$smsType = env('sms.type', getenv('sms.type') ?: '');
+		$smsConfig = config('Sms');
+		$smsType = $smsConfig->type;
+		$sender = $sender ?: $smsConfig->swiftqomSender;
+
 		$this->_comms_debug('SMS', 'sendSMS start', [
 			'sms.type' => $smsType,
 			'phone_raw' => $phone,
 			'sender' => $sender,
 			'msg_len' => strlen((string) $message),
-			'has_swiftqom_key' => env('sms.swiftqom.key', getenv('sms.swiftqom.key') ?: '') !== '',
+			'endpoint' => $smsConfig->swiftqomUrl,
+			'has_swiftqom_key' => $smsConfig->swiftqomKey !== '',
 		]);
 
-		$phone = str_replace("+","",$phone);
-		$phone = substr( $phone, 0, 3 )=="250"?$phone:"25".$phone;
-		$curl = \Config\Services::curlrequest();
-
-		if ($smsType == 'swiftqom') {
-			$data = [
-				"phone" => $phone,
-				"sender_id" => $sender,
-				"message" => $message,
-			];
-			$apiKey = env('sms.swiftqom.key', getenv('sms.swiftqom.key') ?: '');
-			$this->_comms_debug('SMS', 'swiftqom: request prepared', [
-				'phone' => $phone,
-				'sender_id' => $sender,
-				'api_key_prefix' => $apiKey !== '' ? substr($apiKey, 0, 6) . '…' : '(empty)',
-			]);
-
-			try {
-				$req = $curl
-					->request("POST", "https://swiftqom.io/api/dev/api/v1/send_sms", [
-						'headers' => [
-							'x-api-key' => $apiKey,
-						],
-						'json' => $data,
-						'verify' => false,
-						'http_errors' => false,
-					]);
-			} catch (\Throwable $e) {
-				$result = ["code" => 500, "content" => $e->getMessage()];
-				$this->_comms_debug('SMS', 'swiftqom: HTTP exception', ['error' => $e->getMessage()]);
-				return false;
-			}
-
-			$httpCode = $req->getStatusCode();
-			$res = $req->getBody();
-			$this->_comms_debug('SMS', 'swiftqom: provider response', [
-				'http_code' => $httpCode,
-				'body' => mb_substr((string) $res, 0, 500),
-			]);
-
-			$resData = json_decode($res);
-			if ($resData === null && json_last_error() !== JSON_ERROR_NONE) {
-				$result = ["code" => 500, "content" => 'Sms send failed, please try again later'];
-				$this->_comms_debug('SMS', 'swiftqom: invalid JSON response', ['json_error' => json_last_error_msg()]);
-				return false;
-			} else if (isset($resData->status)) {
-				if ($resData->status == 200) {
-					$this->_comms_debug('SMS', 'swiftqom: SUCCESS', ['phone' => $phone]);
-					return true;
-				} else {
-					$result = ["code" => 400, "content" => $resData->message ?? 'SMS failed'];
-					$this->_comms_debug('SMS', 'swiftqom: FAIL business', ['result' => $result]);
-					return false;
-				}
-			} else {
-				$result = ["code" => 500, "content" => 'Sms send failed, please try again later'];
-				$this->_comms_debug('SMS', 'swiftqom: FAIL missing status', ['result' => $result]);
-				return false;
-			}
+		$phone = $this->_normalize_rw_phone($phone);
+		if ($phone === '') {
+			$result = ["code" => 400, "content" => 'Invalid phone number'];
+			$this->_comms_debug('SMS', 'invalid phone', ['phone_raw' => $phone]);
+			return false;
 		}
 
-		$result = ["code" => 500, "content" => "Unsupported sms.type [{$smsType}] in .env"];
-		$this->_comms_debug('SMS', 'sendSMS: unsupported provider', ['sms.type' => $smsType]);
+		if ($smsType !== 'swiftqom') {
+			$result = ["code" => 500, "content" => "Unsupported sms.type [{$smsType}]"];
+			$this->_comms_debug('SMS', 'sendSMS: unsupported provider', ['sms.type' => $smsType]);
+			return false;
+		}
+
+		$apiKey = $smsConfig->swiftqomKey;
+		if ($apiKey === '') {
+			$result = ["code" => 500, "content" => 'SwiftQOM API key not configured'];
+			$this->_comms_debug('SMS', 'swiftqom: missing API key', []);
+			return false;
+		}
+
+		$data = [
+			'phone' => $phone,
+			'sender_id' => $sender,
+			'message' => $message,
+		];
+		$this->_comms_debug('SMS', 'swiftqom: request prepared', [
+			'phone' => $phone,
+			'sender_id' => $sender,
+			'api_key_prefix' => substr($apiKey, 0, 6) . '…',
+		]);
+
+		$curl = \Config\Services::curlrequest();
+		try {
+			$req = $curl->request('POST', $smsConfig->swiftqomUrl, [
+				'headers' => [
+					'x-api-key' => $apiKey,
+					'Content-Type' => 'application/json',
+				],
+				'json' => $data,
+				'verify' => false,
+				'http_errors' => false,
+			]);
+		} catch (\Throwable $e) {
+			$result = ["code" => 500, "content" => $e->getMessage()];
+			$this->_comms_debug('SMS', 'swiftqom: HTTP exception', ['error' => $e->getMessage()]);
+			return false;
+		}
+
+		$httpCode = $req->getStatusCode();
+		$res = $req->getBody();
+		$this->_comms_debug('SMS', 'swiftqom: provider response', [
+			'http_code' => $httpCode,
+			'body' => mb_substr((string) $res, 0, 500),
+		]);
+
+		$resData = json_decode($res);
+		if ($resData === null && json_last_error() !== JSON_ERROR_NONE) {
+			$result = ["code" => 500, "content" => 'Sms send failed, please try again later'];
+			$this->_comms_debug('SMS', 'swiftqom: invalid JSON response', ['json_error' => json_last_error_msg()]);
+			return false;
+		}
+
+		if (isset($resData->status) && (int) $resData->status === 200) {
+			$this->_comms_debug('SMS', 'swiftqom: SUCCESS', ['phone' => $phone]);
+			return true;
+		}
+
+		$result = ["code" => 400, "content" => $resData->message ?? 'SMS failed'];
+		$this->_comms_debug('SMS', 'swiftqom: FAIL', ['result' => $result]);
 		return false;
 	}
 
@@ -316,7 +324,7 @@ class BaseController extends Controller
 	 * Send email via SMTP settings from .env (SMTP_*).
 	 * Used by school creation, staff creation, password reset, etc.
 	 */
-	public function _send_email($toEmail, $subject, $msgBody)
+	public function _send_email($toEmail, $subject, $msgBody, &$error = null)
 	{
 		$host     = env('SMTP_HOST', '');
 		$port     = (int) env('SMTP_PORT', 465);
@@ -325,6 +333,7 @@ class BaseController extends Controller
 		$from     = env('SMTP_FROM_EMAIL', $user);
 		$fromName = env('SMTP_FROM_NAME', 'XanderTech SmartSMS');
 		$crypto   = strtolower((string) env('SMTP_ENCRYPTION', ''));
+		$error    = null;
 
 		$this->_comms_debug('EMAIL', 'start', [
 			'to' => $toEmail,
@@ -339,6 +348,7 @@ class BaseController extends Controller
 		]);
 
 		if ($host === '' || $user === '' || $pass === '' || $from === '') {
+			$error = 'SMTP not configured';
 			$this->_comms_debug('EMAIL', 'FAIL missing SMTP config', [
 				'has_host' => $host !== '',
 				'has_user' => $user !== '',
@@ -393,8 +403,11 @@ class BaseController extends Controller
 			$mail->send();
 			$this->_comms_debug('EMAIL', 'SUCCESS', ['to' => $toEmail, 'subject' => $subject]);
 			return true;
-		} catch (Exception $e) {
-			$err = $mail->ErrorInfo ?: $e->getMessage();
+		} catch (\Throwable $e) {
+			$err = (isset($mail) && $mail instanceof PHPMailer && $mail->ErrorInfo)
+				? $mail->ErrorInfo
+				: $e->getMessage();
+			$error = $err;
 			$this->_comms_debug('EMAIL', 'FAIL', ['to' => $toEmail, 'error' => $err]);
 			log_message('error', 'Mailer Error to {to}: {err}', [
 				'to'  => $toEmail,

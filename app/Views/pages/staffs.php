@@ -463,9 +463,22 @@
 
 			return fetch('<?= base_url('share_staff_access'); ?>', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+					'Accept': 'application/json',
+					'X-Requested-With': 'XMLHttpRequest'
+				},
+				credentials: 'same-origin',
 				body: body
-			}).then(function (r) { return r.json(); }).then(function (res) {
+			}).then(function (r) {
+				return r.text().then(function (text) {
+					var res;
+					try { res = JSON.parse(text); } catch (e) {
+						throw new Error('Server returned an invalid response (' + r.status + ').');
+					}
+					return res;
+				});
+			}).then(function (res) {
 				if (res.success) {
 					return Swal.fire(Object.assign({}, ssaSwalBase, {
 						customClass: Object.assign({}, ssaSwalBase.customClass, { popup: 'ssa-swal ssa-swal--compact' }),

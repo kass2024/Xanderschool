@@ -72,7 +72,7 @@ class Api extends BaseController
 
 	public function index()
 	{
-		echo "Welcome on IOTXAD API";
+		echo "Welcome on XanderTech SmartSMS API";
 	}
 
 	private function _preset($school_id)
@@ -99,8 +99,7 @@ class Api extends BaseController
 		$this->data['sms_limit'] = $skl->sms_limit;
 		$this->data['sms_usage'] = $skl->sms_usage;
 		$this->data['school_acronym'] = $skl->acronym;
-//		$this->data['remaining_sms'] = $skl->sms_limit - $skl->sms_usage + $skl->extra_sms;
-		$this->data['remaining_sms'] = $skl->extra_sms;
+		$this->data['remaining_sms'] = $this->_sms_balance($skl->sms_limit, $skl->sms_usage, $skl->extra_sms);
 		$this->data['active_term'] = $skl->active_term;
 		$this->data['discipline_max'] = $skl->discipline_max;
         // Set language from GET parameter, session, or default to 'en'
@@ -1755,9 +1754,7 @@ public function get_boarding_classes()
 			->join("packages p", "p.id=schools.package")
 			->join("active_term at", "at.id=schools.active_term", "LEFT")
 			->where("schools.id", $school_id)->get()->getRow();
-//		if (($skl->sms_limit-$skl->sms_usage)<=0 && $skl->extra_sms>0){
-		if ($skl->extra_sms > 0) {
-			//decrement extra sms
+		if (($skl->sms_limit - $skl->sms_usage) <= 0 && $skl->extra_sms > 0) {
 			$schoolMdl->where("id", $school_id)->decrement("extra_sms", $sms_count);
 		}
 		$smsMdl = new SmsModel();

@@ -65,6 +65,8 @@
 												}
 												$hmName = htmlspecialchars(trim((string) ($school['head_master'] ?? '')), ENT_QUOTES, 'UTF-8');
 												$schoolName = htmlspecialchars((string) ($school['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+												$remainSms = max(0, (int) ($school['sms_limit'] ?? 0) - (int) ($school['sms_usage'] ?? 0))
+													+ max(0, (int) ($school['extra_sms'] ?? 0));
 												?>
 											<tr>
 												<td></td>
@@ -78,7 +80,7 @@
 													   data-target="#changeScklpackage" data-id="<?=$school['id'];?>"
 													   style="color:#112d81;font-size: 14pt"></i>
 												</td>
-												<td><?=($school['sms_limit']-$school['sms_usage']);?></td>
+												<td><?=$remainSms;?></td>
 												<td><?=$school['country'];?></td>
 												<td><?=$groupLabel;?></td>
 												<td><?=$status;?> </td>
@@ -218,9 +220,27 @@
 
 		return fetch(shareUrl, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+				'Accept': 'application/json',
+				'X-Requested-With': 'XMLHttpRequest'
+			},
+			credentials: 'same-origin',
 			body: 'school_id=' + encodeURIComponent(schoolId) + '&channel=' + encodeURIComponent(channel)
-		}).then(function (r) { return r.json(); }).then(function (res) {
+		}).then(function (r) {
+			return r.text().then(function (text) {
+				var res;
+				try { res = JSON.parse(text); } catch (e) {
+					throw new Error(r.status === 401 || /login/i.test(text)
+						? 'Please login to the admin panel again.'
+						: 'Server returned an invalid response (' + r.status + ').');
+				}
+				if (!r.ok && res.error) {
+					return res;
+				}
+				return res;
+			});
+		}).then(function (res) {
 			if (res.success) {
 				return Swal.fire(Object.assign({}, ssaSwalBase, {
 					customClass: Object.assign({}, ssaSwalBase.customClass, { popup: 'ssa-swal ssa-swal--compact' }),

@@ -21,9 +21,19 @@ class SchoolModel extends Model{
 		'discipline_signature',    // ✅ added
 		'card_background',
 		'sf_card_background',
+		'sf_card_template',
+		'sf_card_orientation',
+		'sf_card_bg_mode',
+		'sf_card_layout',
+		'card_design',
+		'card_orientation',
+		'card_bg_mode',
+		'card_template',
+		'card_layout',
 		'website',
 		'pobox',
 		'package',
+		'extra_sms',
 		'active_term',
 		'status',
 		'discipline_max',
@@ -33,7 +43,15 @@ class SchoolModel extends Model{
 		'header_color',
 		'main_color',
 		'footer_color',
+		'paint_color',
 		'capitalize',
+		'sf_header_text_1',
+		'sf_header_text_2',
+		'sf_header_color',
+		'sf_main_color',
+		'sf_footer_color',
+		'sf_paint_color',
+		'sf_capitalize',
 		'in_time',
 		'leave_time',
 		'tolerance',
@@ -49,7 +67,7 @@ class SchoolModel extends Model{
 	{
 		$data = $this->db->table($this->table)
 			->select('schools.*,pk.title as package_title,
-			at.sms_usage,pk.sms_limit,at.use_period,at.term')
+			at.sms_usage,pk.sms_limit,at.use_period,at.locked_periods,at.term')
 			->join('active_term as at', 'at.id=schools.active_term', 'left')
 			->join('packages as pk', 'pk.id=schools.package');
 		if ($val !== null)

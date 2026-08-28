@@ -147,8 +147,7 @@ class Home extends BaseController
 			$this->data['academicYearSuggestion'] = $suggestions;
 			$this->data['sms_limit'] = $skl->sms_limit;
 			$this->data['sms_usage'] = $skl->sms_usage;
-//			$this->data['remaining_sms'] = $skl->sms_limit - $skl->sms_usage + $skl->extra_sms;
-			$this->data['remaining_sms'] = $skl->extra_sms;
+			$this->data['remaining_sms'] = $this->_sms_balance($skl->sms_limit, $skl->sms_usage, $skl->extra_sms);
 			$this->data['active_term'] = $skl->active_term;
 			$this->data['term'] = $skl->term;
 			$this->data['academic_year'] = $skl->academic_year;
@@ -5959,7 +5958,9 @@ public function attendanceCard()
 			return $result;
 		}
 
-		$defaultPassword = $this->random_password();
+		$defaultPassword = method_exists($this, '_smsSafePassword')
+			? $this->_smsSafePassword(8)
+			: $this->random_password();
 		$staffMdl = new StaffModel();
 		$staffMdl->update($staffId, [
 			'password' => password_hash($defaultPassword, PASSWORD_DEFAULT),
@@ -8505,6 +8506,15 @@ public function getApplicationDocs($id = null)
 		$termMdl = new TermModel();
 		$school_id = $this->session->get("soma_school_id");
 		$termMdl->incrementSMS($term_id, $smsCount);
+		if ($smsCount > 0 && (string) $fail === '') {
+			$limit = (int) ($this->data['sms_limit'] ?? 0);
+			$usage = (int) ($this->data['sms_usage'] ?? 0);
+			if ($limit - $usage <= 0) {
+				$schoolMdl = new SchoolModel();
+				$schoolMdl->where("id", $school_id)->decrement("extra_sms", $smsCount);
+			}
+			$this->data['sms_usage'] = $usage + $smsCount;
+		}
 		$id = $smsMdl->insert(array("school_id" => $school_id, "active_term" => $term_id,
 				"content" => $msg, "subject" => $subject, "recipient_type" => $type));
 		$status = strlen($fail) > 3 ? 2 : 1;
@@ -10068,8 +10078,7 @@ public function getApplicationDocs($id = null)
 		if (count($pendings) > 0) {
 			foreach ($pendings as $pending) {
 				try {
-//					$pending['remaining_sms'] = $pending['sms_limit'] - $pending['sms_usage'] + $pending['extra_sms'];
-					$pending['remaining_sms'] = $pending['extra_sms'];
+					$pending['remaining_sms'] = $this->_sms_balance($pending['sms_limit'], $pending['sms_usage'], $pending['extra_sms']);
 
 					// $school_account = $this->request->getGet('school_id');
 					if ($school_account) {
