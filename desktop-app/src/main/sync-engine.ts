@@ -224,7 +224,7 @@ function resetLocalData(conn: Database): void {
   const objects = conn
     .prepare(
       `SELECT type, name FROM sqlite_master
-       WHERE (type = 'table' AND name NOT LIKE '_sync_%')
+       WHERE (type = 'table' AND name NOT LIKE '_sync_%' AND name NOT LIKE 'sqlite_%')
           OR (type = 'trigger' AND name LIKE 'trg_%')`,
     )
     .all() as Array<{ type: string; name: string }>;
