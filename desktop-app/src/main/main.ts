@@ -93,9 +93,9 @@ function overlayScript(state: {
           'color:#fff',
           'font:12px/1.2 Segoe UI,sans-serif',
           'box-shadow:0 8px 24px rgba(11,31,74,.28)',
-          'pointer-events:none',
+          'pointer-events:auto',
         ].join(';');
-        el.innerHTML = '<span data-chip-dot style="width:8px;height:8px;border-radius:50%;background:${dot};display:inline-block"></span><span data-chip-label></span>';
+        el.innerHTML = '<span data-chip-dot style="width:8px;height:8px;border-radius:50%;background:${dot};display:inline-block"></span><span data-chip-label></span><button data-chip-reconnect style="border:0;border-radius:5px;padding:3px 7px;background:#fff;color:#0b1f4a;font:11px Segoe UI,sans-serif;cursor:pointer">Reconnect</button>';
         document.body.appendChild(el);
         window.addEventListener('online', function () {
           if (window.desktopAPI && window.desktopAPI.networkChanged) window.desktopAPI.networkChanged(true);
@@ -108,6 +108,10 @@ function overlayScript(state: {
       if (lab) lab.textContent = ${JSON.stringify(label)};
       var d = el.querySelector('[data-chip-dot]');
       if (d) d.style.background = ${JSON.stringify(dot)};
+      var reconnect = el.querySelector('[data-chip-reconnect]');
+      if (reconnect) reconnect.onclick = function () {
+        if (window.desktopAPI && window.desktopAPI.logout) window.desktopAPI.logout();
+      };
     })();
   `;
 }
