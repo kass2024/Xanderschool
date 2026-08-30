@@ -34,11 +34,15 @@ class DesktopSync extends BaseController
 		'sectors',
 		'cells',
 		'villages',
+		'soma_cell',
+		'soma_village',
 		'ubudehe',
 		'permissions',
 		'type_permission',
 		'master_central_posts',
 		'course_category',
+		'budget_permissions',
+		'post_budget_permissions',
 	];
 
 	public function health()
@@ -176,18 +180,6 @@ class DesktopSync extends BaseController
 		}
 		$full = (string) $this->request->getGet('full') === '1';
 		$timeCol = in_array('updated_at', $fields, true) ? 'updated_at' : (in_array('created_at', $fields, true) ? 'created_at' : '');
-		if (! $full && $updatedSince !== '' && $timeCol === '') {
-			return $this->response->setJSON([
-				'ok' => true,
-				'table' => $table,
-				'pk' => $pk,
-				'count' => 0,
-				'rows' => [],
-				'next_after_id' => 0,
-				'has_more' => false,
-				'skipped' => true,
-			]);
-		}
 		if (! $full && $updatedSince !== '' && $timeCol !== '') {
 			$timestamp = strtotime($updatedSince);
 			if ($timestamp === false) {
@@ -295,6 +287,30 @@ class DesktopSync extends BaseController
 		]);
 	}
 
+	public function photo()
+	{
+		$auth = $this->requireToken();
+		if ($auth instanceof ResponseInterface) {
+			return $auth;
+		}
+		$name = basename(trim((string) $this->request->getGet('name')));
+		if ($name === '' || $name === '.' || $name === '..' || ! preg_match('/^[A-Za-z0-9._-]+$/', $name)) {
+			return $this->fail('Invalid photo name.', 422);
+		}
+		$path = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR . $name;
+		if (! is_file($path)) {
+			return $this->fail('Photo not found.', 404);
+		}
+		$mime = function_exists('mime_content_type') ? mime_content_type($path) : 'application/octet-stream';
+		if (! in_array($mime, ['image/jpeg', 'image/png'], true)) {
+			return $this->fail('Unsupported photo type.', 415);
+		}
+		return $this->response
+			->setHeader('Content-Type', $mime)
+			->setHeader('Content-Length', (string) filesize($path))
+			->setBody((string) file_get_contents($path));
+	}
+
 	public function push()
 	{
 		$auth = $this->requireToken();
@@ -391,6 +407,23 @@ class DesktopSync extends BaseController
 						throw new \RuntimeException('New row is outside this school');
 					}
 					$db->table($table)->insert($clean);
+				}
+				if ($table === 'students' && isset($change['photo_base64'], $clean['photo'])) {
+					$name = basename(trim((string) $clean['photo']));
+					$encoded = preg_replace('/\s+/', '', (string) $change['photo_base64']);
+					$image = base64_decode($encoded, true);
+					$isJpeg = is_string($image) && strncmp($image, "\xFF\xD8\xFF", 3) === 0;
+					$isPng = is_string($image) && strncmp($image, "\x89PNG", 4) === 0;
+					if ($name === '' || ! preg_match('/^[A-Za-z0-9._-]+$/', $name) || $image === false || strlen($image) > 8 * 1024 * 1024 || (! $isJpeg && ! $isPng)) {
+						throw new \RuntimeException('Invalid student photo');
+					}
+					$profilePath = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR;
+					if (! is_dir($profilePath)) {
+						@mkdir($profilePath, 0775, true);
+					}
+					if (file_put_contents($profilePath . $name, $image) === false) {
+						throw new \RuntimeException('Student photo could not be saved');
+					}
 				}
 				$applied++;
 			} catch (\Throwable $e) {
@@ -564,23 +597,49 @@ class DesktopSync extends BaseController
 			$builder->where('school_id', $sid);
 			return true;
 		}
+		if (in_array('schoolId', $fields, true)) {
+			$builder->where('schoolId', $sid);
+			return true;
+		}
 		if ($table === 'schools') {
 			$builder->where('id', $sid);
+			return true;
+		}
+		if (in_array('branch_id', $fields, true) && $db->tableExists('branches')) {
+			if (in_array('organization_id', $fields, true)) {
+				$builder->groupStart()
+					->where("branch_id IN (SELECT id FROM branches WHERE school_id = {$sid})", null, false)
+					->orWhere("organization_id IN (SELECT organization_id FROM branches WHERE school_id = {$sid} AND organization_id IS NOT NULL)", null, false)
+					->groupEnd();
+			} else {
+				$builder->where("branch_id IN (SELECT id FROM branches WHERE school_id = {$sid})", null, false);
+			}
+			return true;
+		}
+		if (in_array('organization_id', $fields, true) && $db->tableExists('branches')) {
+			$builder->where("organization_id IN (SELECT organization_id FROM branches WHERE school_id = {$sid} AND organization_id IS NOT NULL)");
+			return true;
+		}
+		if ($table === 'organizations' && $db->tableExists('branches')) {
+			$builder->where("id IN (SELECT organization_id FROM branches WHERE school_id = {$sid} AND organization_id IS NOT NULL)");
 			return true;
 		}
 		if (in_array($table, self::GLOBAL_TABLES, true)) {
 			return true;
 		}
-		if (in_array('student_id', $fields, true) && $db->tableExists('students')) {
-			$builder->where("student_id IN (SELECT id FROM students WHERE school_id = {$sid})");
+		if ((in_array('student_id', $fields, true) || in_array('student', $fields, true)) && $db->tableExists('students')) {
+			$column = in_array('student_id', $fields, true) ? 'student_id' : 'student';
+			$builder->where("{$column} IN (SELECT id FROM students WHERE school_id = {$sid})");
 			return true;
 		}
-		if (in_array('class_id', $fields, true) && $db->tableExists('classes')) {
-			$builder->where("class_id IN (SELECT id FROM classes WHERE school_id = {$sid})");
+		if ((in_array('class_id', $fields, true) || in_array('class', $fields, true)) && $db->tableExists('classes')) {
+			$column = in_array('class_id', $fields, true) ? 'class_id' : 'class';
+			$builder->where("{$column} IN (SELECT id FROM classes WHERE school_id = {$sid})");
 			return true;
 		}
-		if (in_array('staff_id', $fields, true) && $db->tableExists('staffs')) {
-			$builder->where("staff_id IN (SELECT id FROM staffs WHERE school_id = {$sid})");
+		if ((in_array('staff_id', $fields, true) || in_array('lecturer', $fields, true)) && $db->tableExists('staffs')) {
+			$column = in_array('staff_id', $fields, true) ? 'staff_id' : 'lecturer';
+			$builder->where("{$column} IN (SELECT id FROM staffs WHERE school_id = {$sid})");
 			return true;
 		}
 		if ($table === 'departments' && $db->tableExists('classes')) {
@@ -603,6 +662,34 @@ class DesktopSync extends BaseController
 			$builder->where("user_id IN (SELECT id FROM staffs WHERE school_id = {$sid})");
 			return true;
 		}
+		if (in_array('budget_id', $fields, true) && $db->tableExists('budgets')) {
+			$builder->where("budget_id IN (SELECT id FROM budgets WHERE branch_id IN (SELECT id FROM branches WHERE school_id = {$sid}))");
+			return true;
+		}
+		if (in_array('budget_period_id', $fields, true) && $db->tableExists('budget_periods')) {
+			$builder->where("budget_period_id IN (SELECT id FROM budget_periods WHERE branch_id IN (SELECT id FROM branches WHERE school_id = {$sid}))");
+			return true;
+		}
+		if (in_array('cash_request_id', $fields, true) && $db->tableExists('cash_requests')) {
+			$builder->where("cash_request_id IN (SELECT id FROM cash_requests WHERE branch_id IN (SELECT id FROM branches WHERE school_id = {$sid}))");
+			return true;
+		}
+		if (in_array('applicationId', $fields, true) && $db->tableExists('applications')) {
+			$builder->where("applicationId IN (SELECT id FROM applications WHERE schoolId = {$sid})");
+			return true;
+		}
+		if (in_array('template_id', $fields, true) && $db->tableExists('budget_templates')) {
+			$builder->where("template_id IN (SELECT id FROM budget_templates WHERE organization_id IN (SELECT organization_id FROM branches WHERE school_id = {$sid} AND organization_id IS NOT NULL))");
+			return true;
+		}
+		if (in_array('version_id', $fields, true) && $db->tableExists('budget_template_versions')) {
+			$builder->where("version_id IN (SELECT id FROM budget_template_versions WHERE template_id IN (SELECT id FROM budget_templates WHERE organization_id IN (SELECT organization_id FROM branches WHERE school_id = {$sid} AND organization_id IS NOT NULL)))");
+			return true;
+		}
+		if (in_array('payment_id', $fields, true) && $db->tableExists('cash_request_payments')) {
+			$builder->where("payment_id IN (SELECT id FROM cash_request_payments WHERE cash_request_id IN (SELECT id FROM cash_requests WHERE branch_id IN (SELECT id FROM branches WHERE school_id = {$sid})))");
+			return true;
+		}
 		return null;
 	}
 
@@ -615,12 +702,24 @@ class DesktopSync extends BaseController
 			return false;
 		}
 		return in_array('school_id', $fields, true)
+			|| in_array('schoolId', $fields, true)
 			|| in_array('student_id', $fields, true)
+			|| in_array('student', $fields, true)
 			|| in_array('class_id', $fields, true)
+			|| in_array('class', $fields, true)
 			|| in_array('staff_id', $fields, true)
+			|| in_array('lecturer', $fields, true)
 			|| in_array('department_id', $fields, true)
 			|| in_array('parent_id', $fields, true)
-			|| in_array('user_id', $fields, true);
+			|| in_array('user_id', $fields, true)
+			|| in_array('branch_id', $fields, true)
+			|| in_array('organization_id', $fields, true)
+			|| in_array('budget_id', $fields, true)
+			|| in_array('budget_period_id', $fields, true)
+			|| in_array('cash_request_id', $fields, true)
+			|| in_array('template_id', $fields, true)
+			|| in_array('version_id', $fields, true)
+			|| in_array('payment_id', $fields, true);
 	}
 
 	private function insertBelongsToSchool($db, string $table, array $fields, array $row, int $schoolId): bool
@@ -630,11 +729,23 @@ class DesktopSync extends BaseController
 		}
 		$relations = [
 			'student_id' => 'students',
+			'student' => 'students',
 			'class_id' => 'classes',
+			'class' => 'classes',
 			'staff_id' => 'staffs',
+			'lecturer' => 'staffs',
 			'department_id' => 'classes',
 			'parent_id' => 'students',
 			'user_id' => 'staffs',
+			'branch_id' => 'branches',
+			'organization_id' => 'organizations',
+			'budget_id' => 'budgets',
+			'budget_period_id' => 'budget_periods',
+			'cash_request_id' => 'cash_requests',
+			'applicationId' => 'applications',
+			'template_id' => 'budget_templates',
+			'version_id' => 'budget_template_versions',
+			'payment_id' => 'cash_request_payments',
 		];
 		$checked = false;
 		foreach ($relations as $field => $parentTable) {

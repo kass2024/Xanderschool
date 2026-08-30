@@ -3,7 +3,7 @@ import { createServer } from 'net';
 import { appendFileSync } from 'fs';
 import { join } from 'path';
 import http from 'http';
-import { findPhpExe, publicDir, rewriteScript, sqlitePath, writableDir } from './paths';
+import { findPhpExe, profileDir, publicDir, rewriteScript, sqlitePath, writableDir } from './paths';
 
 let phpProcess: ChildProcess | null = null;
 let activePort = 0;
@@ -85,6 +85,7 @@ export async function startPhpServer(): Promise<string> {
       XANDER_DESKTOP: '1',
       XANDER_SQLITE_PATH: sqlitePath(),
       XANDER_WRITEPATH: writableDir(),
+      XANDER_PROFILE_DIR: profileDir(),
       XANDER_BASE_URL: `http://127.0.0.1:${port}/`,
     },
   });

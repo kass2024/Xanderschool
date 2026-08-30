@@ -954,7 +954,10 @@ public function testEmail()
 			return $this->response->setJSON(['error' => lang('app.opsStudentNotFound')]);
 		}
 
-		$profilePath = FCPATH . 'assets/images/profile/';
+		$desktopProfileDir = trim((string) getenv('XANDER_PROFILE_DIR'));
+		$profilePath = $desktopProfileDir !== ''
+			? rtrim($desktopProfileDir, '/\\') . DIRECTORY_SEPARATOR
+			: FCPATH . 'assets/images/profile/';
 		if (!is_dir($profilePath)) {
 			@mkdir($profilePath, 0775, true);
 		}

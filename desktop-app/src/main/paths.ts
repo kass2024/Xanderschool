@@ -39,11 +39,15 @@ export function dataDir(): string {
 export function writableDir(): string {
   const dir = join(userDataDir(), 'writable');
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  for (const sub of ['cache', 'logs', 'session', 'uploads', 'desktop']) {
+  for (const sub of ['cache', 'logs', 'session', 'uploads', 'desktop', 'profile']) {
     const p = join(dir, sub);
     if (!existsSync(p)) mkdirSync(p, { recursive: true });
   }
   return dir;
+}
+
+export function profileDir(): string {
+  return join(writableDir(), 'profile');
 }
 
 export function sqlitePath(): string {

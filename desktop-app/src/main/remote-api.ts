@@ -177,7 +177,44 @@ export async function remoteIds(
 export async function remotePush(
   base: string,
   token: string,
-  changes: Array<{ table: string; op: string; pk?: unknown; row?: Record<string, unknown> }>,
+  changes: Array<{ table: string; op: string; pk?: unknown; row?: Record<string, unknown>; photo_base64?: string }>,
 ): Promise<{ ok: boolean; applied: number; errors: unknown[] }> {
   return requestJson('POST', `${normalizeBase(base)}/api/desktop/push`, { changes }, token, 120000);
+}
+
+export async function remoteProfilePhoto(base: string, token: string, name: string): Promise<Buffer | null> {
+  return new Promise((resolve, reject) => {
+    const q = new URLSearchParams({ name });
+    const req = net.request({
+      method: 'GET',
+      url: `${normalizeBase(base)}/api/desktop/photo?${q.toString()}`,
+    });
+    req.setHeader('Accept', 'image/jpeg,image/png');
+    req.setHeader('Authorization', `Bearer ${token}`);
+    const timer = setTimeout(() => {
+      req.abort();
+      reject(new Error('Photo request timed out'));
+    }, 120000);
+    req.on('response', (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      res.on('end', () => {
+        clearTimeout(timer);
+        if (res.statusCode === 404) {
+          resolve(null);
+          return;
+        }
+        if ((res.statusCode ?? 500) < 200 || (res.statusCode ?? 500) >= 300) {
+          reject(new Error(`Remote photo returned HTTP ${res.statusCode}`));
+          return;
+        }
+        resolve(Buffer.concat(chunks));
+      });
+    });
+    req.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    req.end();
+  });
 }

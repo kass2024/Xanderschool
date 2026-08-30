@@ -7,6 +7,18 @@ $uri = urldecode((string) (parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PAT
 $doc = __DIR__;
 $path = $doc . str_replace('/', DIRECTORY_SEPARATOR, $uri);
 
+if (preg_match('#^/assets/images/profile/([A-Za-z0-9._-]+)$#', $uri, $match)) {
+	$profileDir = rtrim((string) getenv('XANDER_PROFILE_DIR'), '/\\');
+	$profilePath = $profileDir . DIRECTORY_SEPARATOR . $match[1];
+	if ($profileDir !== '' && is_file($profilePath)) {
+		$mime = function_exists('mime_content_type') ? mime_content_type($profilePath) : 'application/octet-stream';
+		header('Content-Type: ' . ($mime ?: 'application/octet-stream'));
+		header('Content-Length: ' . (string) filesize($profilePath));
+		readfile($profilePath);
+		exit;
+	}
+}
+
 if ($uri !== '/' && is_file($path)) {
 	return false;
 }

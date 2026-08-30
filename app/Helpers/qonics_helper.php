@@ -931,21 +931,28 @@ if (!function_exists('resolve_profile_photo')) {
 		if (preg_match('/^face_staff_\d+\.(jpe?g|png)$/i', $base)) {
 			return null;
 		}
-		$dir = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR;
-		if (is_file($dir . $base)) {
-			return $base;
+		$dirs = [];
+		$desktopDir = trim((string) getenv('XANDER_PROFILE_DIR'));
+		if ($desktopDir !== '') {
+			$dirs[] = rtrim($desktopDir, '/\\') . DIRECTORY_SEPARATOR;
 		}
-		// Truncated name often has no extension; match prefix on disk.
-		$matches = glob($dir . $base . '*') ?: [];
-		$matches = array_values(array_filter($matches, 'is_file'));
-		if (count($matches) === 1) {
-			return basename($matches[0]);
-		}
-		if (count($matches) > 1) {
-			usort($matches, static function ($a, $b) {
-				return filemtime($b) <=> filemtime($a);
-			});
-			return basename($matches[0]);
+		$dirs[] = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR;
+		foreach ($dirs as $dir) {
+			if (is_file($dir . $base)) {
+				return $base;
+			}
+			// Truncated name often has no extension; match prefix on disk.
+			$matches = glob($dir . $base . '*') ?: [];
+			$matches = array_values(array_filter($matches, 'is_file'));
+			if (count($matches) === 1) {
+				return basename($matches[0]);
+			}
+			if (count($matches) > 1) {
+				usort($matches, static function ($a, $b) {
+					return filemtime($b) <=> filemtime($a);
+				});
+				return basename($matches[0]);
+			}
 		}
 		return null;
 	}
@@ -956,7 +963,13 @@ if (!function_exists('profile_photo_url')) {
 	{
 		$resolved = resolve_profile_photo($stored);
 		if ($resolved !== null) {
-			$path = FCPATH . 'assets/images/profile/' . $resolved;
+			$desktopDir = trim((string) getenv('XANDER_PROFILE_DIR'));
+			$path = $desktopDir !== ''
+				? rtrim($desktopDir, '/\\') . DIRECTORY_SEPARATOR . $resolved
+				: FCPATH . 'assets/images/profile/' . $resolved;
+			if (!is_file($path)) {
+				$path = FCPATH . 'assets/images/profile/' . $resolved;
+			}
 			return base_url('assets/images/profile/' . $resolved) . '?v=' . (@filemtime($path) ?: time());
 		}
 		if ($fallback !== null) {

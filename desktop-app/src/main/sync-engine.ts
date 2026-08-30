@@ -1,7 +1,9 @@
 import { createRequire } from 'module';
-import { sqlitePath } from './paths';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { profileDir, sqlitePath } from './paths';
 import {
   remoteIds,
+  remoteProfilePhoto,
   remotePull,
   remotePush,
   remoteSchema,
@@ -14,6 +16,33 @@ const require = createRequire(import.meta.url);
 type Database = import('better-sqlite3').Database;
 
 let db: Database | null = null;
+
+async function syncProfilePhotos(
+  remoteUrl: string,
+  token: string,
+  names: Set<string>,
+  onProgress?: (p: SyncProgress) => void,
+): Promise<void> {
+  const validNames = [...names].filter((name) => {
+    const safe = name.trim();
+    return safe !== '' && safe === safe.replace(/[^a-zA-Z0-9._-]/g, '') && safe !== '.' && safe !== '..';
+  });
+  let completed = 0;
+  for (const name of validNames) {
+    const destination = `${profileDir()}/${name}`;
+    if (!existsSync(destination)) {
+      const image = await remoteProfilePhoto(remoteUrl, token, name);
+      if (image && image.length > 0) writeFileSync(destination, image);
+    }
+    completed += 1;
+    onProgress?.({
+      stage: 'pull',
+      current: completed,
+      total: validNames.length,
+      message: `Syncing student photos (${completed}/${validNames.length})`,
+    });
+  }
+}
 
 function openDb(): Database {
   if (db) return db;
@@ -36,6 +65,7 @@ function openDb(): Database {
       created_at TEXT NOT NULL
     );
   `);
+  setApplying(db, false);
   return db;
 }
 
@@ -270,7 +300,24 @@ async function pushPending(
       return { table: table.name, op, pk: group.latest.row_pk };
     }
     const row = localRow(conn, table, group.latest.row_pk);
-    return { table: table.name, op, pk: group.latest.row_pk, row: row || { [tablePk(table)]: group.latest.row_pk } };
+    const change: { table: string; op: string; pk: string; row: Record<string, unknown>; photo_base64?: string } = {
+      table: table.name,
+      op,
+      pk: group.latest.row_pk,
+      row: row || { [tablePk(table)]: group.latest.row_pk },
+    };
+    if (table.name === 'students' && typeof change.row.photo === 'string') {
+      const name = change.row.photo.trim();
+      if (name && name === name.replace(/[^a-zA-Z0-9._-]/g, '')) {
+        try {
+          const file = `${profileDir()}/${name}`;
+          if (existsSync(file)) change.photo_base64 = readFileSync(file).toString('base64');
+        } catch {
+          /* the row can still sync without its optional asset */
+        }
+      }
+    }
+    return change;
   });
 
   onProgress?.({
@@ -330,6 +377,7 @@ async function reconcileDeletes(
   while (true) {
     const page = await remoteIds(remoteUrl, token, table.name, afterId);
     if (!page.ok) throw new Error(`Failed to reconcile ${table.name}`);
+    if (page.skipped) return 0;
     for (const id of page.ids || []) remote.add(String(id));
     afterId = page.next_after_id || afterId;
     if (!page.has_more || !(page.ids || []).length) break;
@@ -381,6 +429,7 @@ export async function initialSync(
       const table = tables[i];
       let afterId = 0;
       let pulled = 0;
+      const photoNames = new Set<string>();
       onProgress({
         stage: 'pull',
         table: table.name,
@@ -394,6 +443,11 @@ export async function initialSync(
         if (page.rows?.length) {
           upsertRows(conn, table, page.rows);
           pulled += page.rows.length;
+          if (table.name === 'students') {
+            for (const row of page.rows) {
+              if (typeof row.photo === 'string') photoNames.add(row.photo);
+            }
+          }
         }
         afterId = page.next_after_id || afterId;
         onProgress({
@@ -406,6 +460,9 @@ export async function initialSync(
         if (!page.has_more || !page.rows?.length) break;
       }
       installTriggers(conn, table);
+      if (table.name === 'students' && photoNames.size) {
+        await syncProfilePhotos(remoteUrl, token, photoNames, onProgress);
+      }
     }
 
     const now = new Date().toISOString();
@@ -435,7 +492,10 @@ export async function incrementalSync(
     for (let i = 0; i < tables.length; i++) {
       const table = tables[i];
       createTable(conn, table);
-      let afterId = 0;
+      const hasTimestamp = table.columns.some((column) => column.name === 'updated_at' || column.name === 'created_at');
+      const highWaterKey = `after_id:${table.name}`;
+      let afterId = full ? 0 : Number(getMeta(conn, highWaterKey) || 0);
+      const photoNames = new Set<string>();
       onProgress?.({
         stage: 'pull',
         table: table.name,
@@ -444,16 +504,32 @@ export async function incrementalSync(
         message: `${full ? 'Refreshing' : 'Checking'} ${table.name}…`,
       });
       while (true) {
-        const page = await remotePull(remoteUrl, token, table.name, afterId, full ? undefined : since || undefined, full);
+        const page = await remotePull(
+          remoteUrl,
+          token,
+          table.name,
+          afterId,
+          full || !hasTimestamp ? undefined : since || undefined,
+          full,
+        );
         if (!page.ok) throw new Error(page.error || `Failed to pull ${table.name}`);
         if (page.rows?.length) {
           upsertRows(conn, table, page.rows);
           pulled += page.rows.length;
+          if (table.name === 'students') {
+            for (const row of page.rows) {
+              if (typeof row.photo === 'string') photoNames.add(row.photo);
+            }
+          }
         }
         afterId = page.next_after_id || afterId;
+        if (!full && !hasTimestamp && afterId > 0) setMeta(conn, highWaterKey, String(afterId));
         if (!page.has_more || !page.rows?.length) break;
       }
       installTriggers(conn, table);
+      if (table.name === 'students' && photoNames.size) {
+        await syncProfilePhotos(remoteUrl, token, photoNames, onProgress);
+      }
       if (full) await reconcileDeletes(conn, remoteUrl, token, table);
     }
   } finally {

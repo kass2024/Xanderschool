@@ -131,6 +131,8 @@ $routes->get('api/desktop/health', 'DesktopSync::health');
 $routes->post('api/desktop/login', 'DesktopSync::login');
 $routes->get('api/desktop/schema', 'DesktopSync::schema');
 $routes->get('api/desktop/pull', 'DesktopSync::pull');
+$routes->get('api/desktop/ids', 'DesktopSync::ids');
+$routes->get('api/desktop/photo', 'DesktopSync::photo');
 $routes->post('api/desktop/push', 'DesktopSync::push');
 $routes->get('desktop_sync/status', 'DesktopSync::localStatus');
 $routes->post('desktop_sync/tick', 'DesktopSync::localTick');

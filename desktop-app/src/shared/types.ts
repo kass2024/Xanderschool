@@ -11,6 +11,7 @@ export interface DesktopSettings {
   schoolId: number;
   schoolName: string;
   lastSyncAt: string | null;
+  provisioned: boolean;
 }
 
 export interface SyncProgress {

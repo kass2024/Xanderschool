@@ -46,7 +46,7 @@ function emitState(): void {
     phase,
     online,
     localUrl: localBaseUrl(),
-    settings: settings.token ? { ...settings, password: '' } : null,
+    settings: settings.token && settings.provisioned ? { ...settings, password: '' } : null,
     progress,
     pending: pendingCount(),
     lastSyncAt: settings.lastSyncAt,
@@ -196,7 +196,7 @@ async function probeOnline(): Promise<boolean> {
 async function runBackgroundSync(full = false): Promise<void> {
   if (syncing) return;
   const settings = loadSettings();
-  if (!settings.token) return;
+  if (!settings.token || !settings.provisioned) return;
   const isOn = await probeOnline();
   emitState();
   injectOverlay();
@@ -336,7 +336,7 @@ app.whenReady().then(async () => {
   session.fromPartition('persist:xander-school').setPermissionRequestHandler((_wc, _perm, cb) => cb(true));
   createWindow();
   const settings = loadSettings();
-  if (settings.token) {
+  if (settings.token && settings.provisioned) {
     try {
       await bootReadyApp();
     } catch (e) {
@@ -400,6 +400,7 @@ ipcMain.handle('desktop:login', async (_e, payload: LoginPayload) => {
       schoolId: result.school.id,
       schoolName: result.school.name,
       lastSyncAt: null as string | null,
+      provisioned: false,
     };
     saveSettings(settings);
     progress = { stage: 'schema', current: 0, total: 1, message: 'Downloading school data…' };
@@ -410,6 +411,7 @@ ipcMain.handle('desktop:login', async (_e, payload: LoginPayload) => {
     });
     closeDb();
     settings.lastSyncAt = new Date().toISOString();
+    settings.provisioned = true;
     saveSettings(settings);
     await bootReadyApp();
     return { ok: true };
