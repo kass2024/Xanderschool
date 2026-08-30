@@ -297,7 +297,20 @@ class DesktopSync extends BaseController
 		if ($name === '' || $name === '.' || $name === '..' || ! preg_match('/^[A-Za-z0-9._-]+$/', $name)) {
 			return $this->fail('Invalid photo name.', 422);
 		}
+		$db = \Config\Database::connect();
+		if (! $db->tableExists('students') || $db->table('students')
+			->where('school_id', (int) $auth['school_id'])
+			->like('photo', $name, 'after')
+			->countAllResults() < 1) {
+			return $this->fail('Photo not found.', 404);
+		}
 		$path = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR . $name;
+		if (! is_file($path)) {
+			$matches = array_values(array_filter(glob($path . '*') ?: [], 'is_file'));
+			if (count($matches) === 1) {
+				$path = $matches[0];
+			}
+		}
 		if (! is_file($path)) {
 			return $this->fail('Photo not found.', 404);
 		}
