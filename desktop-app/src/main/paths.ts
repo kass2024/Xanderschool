@@ -21,6 +21,8 @@ export function publicDir(): string {
 }
 
 export function rewriteScript(): string {
+  const desktop = join(publicDir(), 'desktop-router.php');
+  if (existsSync(desktop)) return desktop;
   return join(schoolRoot(), 'system', 'Commands', 'Server', 'rewrite.php');
 }
 

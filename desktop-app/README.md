@@ -10,6 +10,8 @@ Folder: `desktop-app/` (same Electron + electron-vite + electron-builder + bette
 - Local PHP server serving the real school system
 - SQLite database in the user data folder
 - Background pull/push against `https://schoolmis.xanderglobalacademy.com` (URL is configurable)
+- Two-way sync: local inserts/updates/deletes queue offline, upload when online, and full syncs reconcile server-side deletions
+- Local data is isolated per Windows user and the saved password is protected with Windows-backed Electron encryption
 - Works fully while offline; queued changes upload later
 
 ## Dev
@@ -33,7 +35,7 @@ powershell -ExecutionPolicy Bypass -File .\build-exe.ps1
 
 Output:
 
-- `release/Xander School-Setup-1.0.0.exe`
-- `release/Xander School-Portable-1.0.0.exe`
+- `release/Xander School-Setup-1.0.4.exe`
+- `release/Xander School-Portable-1.0.4.exe`
 
-The server must already expose `/api/desktop/*` (deployed with this repo) so the first download and later sync can run.
+The server must already expose `/api/desktop/*` (deployed with this repo) so the first download and later sync can run. The build bundles portable PHP, so the installed app does not require XAMPP.

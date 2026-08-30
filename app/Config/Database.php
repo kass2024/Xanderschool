@@ -125,7 +125,8 @@ class Database extends \CodeIgniter\Database\Config
 				@mkdir($dir, 0775, true);
 			}
 			$this->sqlite['database'] = $sqlitePath;
-			$this->sqlite['DBDebug']  = (ENVIRONMENT !== 'production');
+			$this->sqlite['DBDebug']  = true;
+			$this->sqlite['busyTimeout'] = 60000;
 			$this->defaultGroup = 'sqlite';
 		}
 

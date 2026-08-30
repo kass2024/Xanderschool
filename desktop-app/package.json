@@ -1,12 +1,12 @@
 {
   "name": "xander-school-desktop",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Xander School offline desktop app with SQLite sync",
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "package": "electron-builder",
+    "package": "npm run build && electron-builder",
     "dist": "npm run dist:win",
     "dist:win": "npm run build && electron-builder --win",
     "dist:portable": "npm run build && electron-builder --win portable",
@@ -78,12 +78,9 @@
         "to": "school/system"
       },
       {
-        "from": "../writable",
-        "to": "school/writable-skel",
-        "filter": [
-          "**/index.html",
-          "**/.htaccess"
-        ]
+        "from": "../deploy",
+        "to": "school/deploy",
+        "filter": ["**/*.sql"]
       },
       {
         "from": "php-runtime",

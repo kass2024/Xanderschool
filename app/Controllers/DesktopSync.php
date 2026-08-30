@@ -22,6 +22,24 @@ class DesktopSync extends BaseController
 		'sqlite_sequence',
 		'sqlite_master',
 	];
+	/** Shared lookup tables with no school_id — copy in full. */
+	private const GLOBAL_TABLES = [
+		'packages',
+		'posts',
+		'faculty',
+		'levels',
+		'countries',
+		'provinces',
+		'districts',
+		'sectors',
+		'cells',
+		'villages',
+		'ubudehe',
+		'permissions',
+		'type_permission',
+		'master_central_posts',
+		'course_category',
+	];
 
 	public function health()
 	{
@@ -104,9 +122,11 @@ class DesktopSync extends BaseController
 		$db = \Config\Database::connect();
 		$tables = [];
 		foreach ($this->listTables($db) as $table) {
+			$fields = $db->getFieldNames($table);
 			$tables[] = [
 				'name' => $table,
 				'columns' => $this->describeTable($db, $table),
+				'writable' => $this->isWritableTable($table, $fields),
 			];
 		}
 		return $this->response->setJSON([
@@ -139,15 +159,41 @@ class DesktopSync extends BaseController
 		}
 
 		$fields = $db->getFieldNames($table);
-		$pk = $this->primaryKey($fields);
+		$pk = $this->primaryKey($db, $table, $fields);
 		$builder = $db->table($table);
-		if (in_array('school_id', $fields, true)) {
-			$builder->where('school_id', (int) $auth['school_id']);
-		} elseif ($table === 'schools') {
-			$builder->where('id', (int) $auth['school_id']);
+		$scope = $this->applyScope($builder, $db, $table, $fields, (int) $auth['school_id']);
+		if ($scope === null) {
+			return $this->response->setJSON([
+				'ok' => true,
+				'table' => $table,
+				'pk' => $pk,
+				'count' => 0,
+				'rows' => [],
+				'next_after_id' => 0,
+				'has_more' => false,
+				'skipped' => true,
+			]);
 		}
+		$full = (string) $this->request->getGet('full') === '1';
 		$timeCol = in_array('updated_at', $fields, true) ? 'updated_at' : (in_array('created_at', $fields, true) ? 'created_at' : '');
-		if ($updatedSince !== '' && $timeCol !== '') {
+		if (! $full && $updatedSince !== '' && $timeCol === '') {
+			return $this->response->setJSON([
+				'ok' => true,
+				'table' => $table,
+				'pk' => $pk,
+				'count' => 0,
+				'rows' => [],
+				'next_after_id' => 0,
+				'has_more' => false,
+				'skipped' => true,
+			]);
+		}
+		if (! $full && $updatedSince !== '' && $timeCol !== '') {
+			$timestamp = strtotime($updatedSince);
+			if ($timestamp === false) {
+				return $this->fail('Invalid updated_since value.', 422);
+			}
+			$updatedSince = date('Y-m-d H:i:s', $timestamp);
 			$builder->where($timeCol . ' >=', $updatedSince);
 			if ($pk !== '' && $afterId > 0) {
 				$builder->where($pk . ' >', $afterId);
@@ -173,6 +219,79 @@ class DesktopSync extends BaseController
 			'rows' => $rows,
 			'next_after_id' => $next,
 			'has_more' => count($rows) >= $limit,
+			'skipped' => false,
+			'scoped' => $scope,
+		]);
+	}
+
+	public function ids()
+	{
+		$auth = $this->requireToken();
+		if ($auth instanceof ResponseInterface) {
+			return $auth;
+		}
+		$table = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $this->request->getGet('table'));
+		$afterId = (int) $this->request->getGet('after_id');
+		$limit = (int) $this->request->getGet('limit');
+		if ($limit < 1 || $limit > 5000) {
+			$limit = 2000;
+		}
+		if ($table === '' || in_array($table, self::SKIP_TABLES, true)) {
+			return $this->fail('Invalid table.', 422);
+		}
+		$db = \Config\Database::connect();
+		if (! $db->tableExists($table)) {
+			return $this->fail('Table not found.', 404);
+		}
+		$fields = $db->getFieldNames($table);
+		$pk = $this->primaryKey($db, $table, $fields);
+		if ($pk === '') {
+			return $this->response->setJSON([
+				'ok' => true,
+				'table' => $table,
+				'pk' => '',
+				'ids' => [],
+				'next_after_id' => 0,
+				'has_more' => false,
+				'skipped' => true,
+			]);
+		}
+		$builder = $db->table($table);
+		$scope = $this->applyScope($builder, $db, $table, $fields, (int) $auth['school_id']);
+		if ($scope === null) {
+			return $this->response->setJSON([
+				'ok' => true,
+				'table' => $table,
+				'pk' => $pk,
+				'ids' => [],
+				'next_after_id' => 0,
+				'has_more' => false,
+				'skipped' => true,
+			]);
+		}
+		$builder->select($pk);
+		if ($afterId > 0) {
+			$builder->where($pk . ' >', $afterId);
+		}
+		$builder->orderBy($pk, 'ASC');
+		$rows = $builder->limit($limit)->get()->getResultArray();
+		$ids = [];
+		foreach ($rows as $row) {
+			$ids[] = $row[$pk] ?? null;
+		}
+		$next = 0;
+		if ($rows) {
+			$last = end($rows);
+			$next = (int) ($last[$pk] ?? 0);
+		}
+		return $this->response->setJSON([
+			'ok' => true,
+			'table' => $table,
+			'pk' => $pk,
+			'ids' => $ids,
+			'next_after_id' => $next,
+			'has_more' => count($rows) >= $limit,
+			'skipped' => false,
 		]);
 	}
 
@@ -189,6 +308,9 @@ class DesktopSync extends BaseController
 		$changes = $body['changes'] ?? [];
 		if (! is_array($changes)) {
 			return $this->fail('Invalid payload.', 422);
+		}
+		if (count($changes) > 500) {
+			return $this->fail('Too many changes in one request.', 422);
 		}
 
 		$db = \Config\Database::connect();
@@ -207,18 +329,27 @@ class DesktopSync extends BaseController
 				continue;
 			}
 			$fields = $db->getFieldNames($table);
+			$pk = $this->primaryKey($db, $table, $fields);
+			if (! $this->isWritableTable($table, $fields)) {
+				$errors[] = ['index' => $i, 'table' => $table, 'error' => 'Table is read-only for desktop sync'];
+				continue;
+			}
+			if (! in_array($op, ['upsert', 'delete'], true)) {
+				$errors[] = ['index' => $i, 'table' => $table, 'error' => 'Unsupported operation'];
+				continue;
+			}
 			if (in_array('school_id', $fields, true) && is_array($row)) {
 				$row['school_id'] = (int) $auth['school_id'];
 			}
 			try {
 				if ($op === 'delete') {
-					$pk = $this->primaryKey($fields);
 					if ($pk === '' || $pkVal === null || $pkVal === '') {
 						throw new \RuntimeException('Missing primary key for delete');
 					}
 					$del = $db->table($table)->where($pk, $pkVal);
-					if (in_array('school_id', $fields, true)) {
-						$del->where('school_id', (int) $auth['school_id']);
+					$scope = $this->applyScope($del, $db, $table, $fields, (int) $auth['school_id']);
+					if ($scope === null) {
+						throw new \RuntimeException('Change is outside this school');
 					}
 					$del->delete();
 					$applied++;
@@ -236,22 +367,29 @@ class DesktopSync extends BaseController
 				if ($clean === []) {
 					throw new \RuntimeException('No matching columns');
 				}
-				$pk = $this->primaryKey($fields);
 				$exists = false;
 				if ($pk !== '' && isset($clean[$pk]) && $clean[$pk] !== '' && $clean[$pk] !== null) {
-					$exists = $db->table($table)->where($pk, $clean[$pk])->countAllResults() > 0;
+					$target = $db->table($table)->where($pk, $clean[$pk]);
+					$scope = $this->applyScope($target, $db, $table, $fields, (int) $auth['school_id']);
+					if ($scope === null) {
+						throw new \RuntimeException('Change is outside this school');
+					}
+					$exists = $target->countAllResults() > 0;
 				}
 				if ($exists) {
 					$id = $clean[$pk];
 					unset($clean[$pk]);
 					$upd = $db->table($table)->where($pk, $id);
-					if (in_array('school_id', $fields, true)) {
-						$upd->where('school_id', (int) $auth['school_id']);
+					if ($this->applyScope($upd, $db, $table, $fields, (int) $auth['school_id']) === null) {
+						throw new \RuntimeException('Change is outside this school');
 					}
 					if ($clean !== []) {
 						$upd->update($clean);
 					}
 				} else {
+					if (! $this->insertBelongsToSchool($db, $table, $fields, $clean, (int) $auth['school_id'])) {
+						throw new \RuntimeException('New row is outside this school');
+					}
 					$db->table($table)->insert($clean);
 				}
 				$applied++;
@@ -398,9 +536,122 @@ class DesktopSync extends BaseController
 		return $cols;
 	}
 
-	private function primaryKey(array $fields): string
+	private function primaryKey($db, string $table, array $fields): string
 	{
+		try {
+			foreach ($db->getFieldData($table) as $f) {
+				if (! empty($f->primary_key)) {
+					return (string) $f->name;
+				}
+			}
+		} catch (\Throwable $e) {
+			// fall through
+		}
 		return in_array('id', $fields, true) ? 'id' : ($fields[0] ?? '');
+	}
+
+	/**
+	 * Restrict a pull/ids query to this school. Returns true if filtered or global,
+	 * null if the table should not be copied (other tenants' data).
+	 */
+	private function applyScope($builder, $db, string $table, array $fields, int $schoolId): ?bool
+	{
+		$sid = (int) $schoolId;
+		if ($sid < 1) {
+			return null;
+		}
+		if (in_array('school_id', $fields, true)) {
+			$builder->where('school_id', $sid);
+			return true;
+		}
+		if ($table === 'schools') {
+			$builder->where('id', $sid);
+			return true;
+		}
+		if (in_array($table, self::GLOBAL_TABLES, true)) {
+			return true;
+		}
+		if (in_array('student_id', $fields, true) && $db->tableExists('students')) {
+			$builder->where("student_id IN (SELECT id FROM students WHERE school_id = {$sid})");
+			return true;
+		}
+		if (in_array('class_id', $fields, true) && $db->tableExists('classes')) {
+			$builder->where("class_id IN (SELECT id FROM classes WHERE school_id = {$sid})");
+			return true;
+		}
+		if (in_array('staff_id', $fields, true) && $db->tableExists('staffs')) {
+			$builder->where("staff_id IN (SELECT id FROM staffs WHERE school_id = {$sid})");
+			return true;
+		}
+		if ($table === 'departments' && $db->tableExists('classes')) {
+			$builder->where("id IN (SELECT department FROM classes WHERE school_id = {$sid})");
+			return true;
+		}
+		if (in_array('department_id', $fields, true) && $db->tableExists('classes')) {
+			$builder->where("department_id IN (SELECT department FROM classes WHERE school_id = {$sid})");
+			return true;
+		}
+		if (in_array('parent_id', $fields, true) && $db->tableExists('students')) {
+			$builder->where("parent_id IN (SELECT parent_id FROM students WHERE school_id = {$sid} AND parent_id IS NOT NULL AND parent_id <> 0)");
+			return true;
+		}
+		if ($table === 'parents' && $db->tableExists('students')) {
+			$builder->where("id IN (SELECT parent_id FROM students WHERE school_id = {$sid} AND parent_id IS NOT NULL AND parent_id <> 0)");
+			return true;
+		}
+		if (in_array('user_id', $fields, true) && $db->tableExists('staffs')) {
+			$builder->where("user_id IN (SELECT id FROM staffs WHERE school_id = {$sid})");
+			return true;
+		}
+		return null;
+	}
+
+	private function isWritableTable(string $table, array $fields): bool
+	{
+		if (in_array($table, self::SKIP_TABLES, true) || in_array($table, self::GLOBAL_TABLES, true)) {
+			return false;
+		}
+		if ($table === 'schools') {
+			return false;
+		}
+		return in_array('school_id', $fields, true)
+			|| in_array('student_id', $fields, true)
+			|| in_array('class_id', $fields, true)
+			|| in_array('staff_id', $fields, true)
+			|| in_array('department_id', $fields, true)
+			|| in_array('parent_id', $fields, true)
+			|| in_array('user_id', $fields, true);
+	}
+
+	private function insertBelongsToSchool($db, string $table, array $fields, array $row, int $schoolId): bool
+	{
+		if (in_array('school_id', $fields, true)) {
+			return (int) ($row['school_id'] ?? 0) === $schoolId;
+		}
+		$relations = [
+			'student_id' => 'students',
+			'class_id' => 'classes',
+			'staff_id' => 'staffs',
+			'department_id' => 'classes',
+			'parent_id' => 'students',
+			'user_id' => 'staffs',
+		];
+		$checked = false;
+		foreach ($relations as $field => $parentTable) {
+			if (! in_array($field, $fields, true) || ! isset($row[$field]) || $row[$field] === '' || $row[$field] === null) {
+				continue;
+			}
+			if (! $db->tableExists($parentTable)) {
+				return false;
+			}
+			$parentFields = $db->getFieldNames($parentTable);
+			$parent = $db->table($parentTable)->where('id', $row[$field]);
+			if ($this->applyScope($parent, $db, $parentTable, $parentFields, $schoolId) === null || $parent->countAllResults() < 1) {
+				return false;
+			}
+			$checked = true;
+		}
+		return $checked;
 	}
 
 	private function fail(string $message, int $code)

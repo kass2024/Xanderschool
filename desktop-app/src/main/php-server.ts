@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { createServer } from 'net';
+import { appendFileSync } from 'fs';
+import { join } from 'path';
 import http from 'http';
 import { findPhpExe, publicDir, rewriteScript, sqlitePath, writableDir } from './paths';
 
@@ -28,8 +30,17 @@ function waitForHttp(url: string, timeoutMs = 25000): Promise<void> {
   return new Promise((resolve, reject) => {
     const tick = () => {
       const req = http.get(url, (res) => {
+        const code = res.statusCode ?? 0;
         res.resume();
-        resolve();
+        if (code >= 200 && code < 400) {
+          resolve();
+          return;
+        }
+        if (Date.now() - start > timeoutMs) {
+          reject(new Error(`Local school server returned HTTP ${code} for ${url}`));
+          return;
+        }
+        setTimeout(tick, 400);
       });
       req.on('error', () => {
         if (Date.now() - start > timeoutMs) {
@@ -64,6 +75,7 @@ export async function startPhpServer(): Promise<string> {
   const args = ['-d', 'display_errors=0', '-S', `127.0.0.1:${port}`, '-t', pub, router];
   if (php.ini) args.unshift('-c', php.ini);
 
+  const logFile = join(writableDir(), 'php-server.log');
   phpProcess = spawn(php.exe, args, {
     cwd: pub,
     windowsHide: true,
@@ -76,6 +88,15 @@ export async function startPhpServer(): Promise<string> {
       XANDER_BASE_URL: `http://127.0.0.1:${port}/`,
     },
   });
+  const log = (buf: Buffer) => {
+    try {
+      appendFileSync(logFile, buf);
+    } catch {
+      /* ignore */
+    }
+  };
+  phpProcess.stdout?.on('data', log);
+  phpProcess.stderr?.on('data', log);
 
   phpProcess.on('exit', () => {
     if (activePort === port) {

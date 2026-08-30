@@ -1,6 +1,7 @@
 import { createRequire } from 'module';
 import { sqlitePath } from './paths';
 import {
+  remoteIds,
   remotePull,
   remotePush,
   remoteSchema,
@@ -20,7 +21,7 @@ function openDb(): Database {
   db = new Database(sqlitePath());
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
-  db.pragma('busy_timeout = 8000');
+  db.pragma('busy_timeout = 60000');
   db.pragma('foreign_keys = OFF');
   db.pragma('temp_store = MEMORY');
   db.exec(`
@@ -75,24 +76,47 @@ function getMeta(conn: Database, k: string): string | null {
   return row?.v ?? null;
 }
 
+function tablePk(table: SchemaTable): string {
+  return table.columns.find((c) => c.primary_key)?.name || table.columns.find((c) => c.name === 'id')?.name || '';
+}
+
 function createTable(conn: Database, table: SchemaTable): void {
   if (!table.columns.length) return;
   const pkCols = table.columns.filter((c) => c.primary_key).map((c) => c.name);
-  const hasId = table.columns.some((c) => c.name === 'id');
   const lines = table.columns.map((c) => {
     const pk = pkCols.length === 1 && c.primary_key;
     return `${quoteIdent(c.name)} ${sqliteType(c.type, pk)}${pk ? ' PRIMARY KEY' : ''}`;
   });
-  conn.exec(`CREATE TABLE IF NOT EXISTS ${quoteIdent(table.name)} (${lines.join(', ')})`);
-  if (hasId && pkCols.length === 0) {
-    // already created without PK; leave as-is
+  const exists = conn
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(table.name);
+  if (!exists) {
+    conn.exec(`CREATE TABLE ${quoteIdent(table.name)} (${lines.join(', ')})`);
+    return;
+  }
+
+  const existing = new Set(
+    (conn.prepare(`PRAGMA table_info(${quoteIdent(table.name)})`).all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
+  );
+  for (const column of table.columns) {
+    if (!existing.has(column.name)) {
+      conn.exec(`ALTER TABLE ${quoteIdent(table.name)} ADD COLUMN ${quoteIdent(column.name)} ${sqliteType(column.type, false)}`);
+    }
   }
 }
 
 function installTriggers(conn: Database, table: SchemaTable): void {
-  const pk = table.columns.find((c) => c.primary_key)?.name || (table.columns.some((c) => c.name === 'id') ? 'id' : '');
+  const pk = tablePk(table);
   if (!pk) return;
   const safe = table.name.replace(/[^a-zA-Z0-9_]/g, '');
+  if (table.writable === false) {
+    conn.exec(`DROP TRIGGER IF EXISTS trg_${safe}_ai`);
+    conn.exec(`DROP TRIGGER IF EXISTS trg_${safe}_au`);
+    conn.exec(`DROP TRIGGER IF EXISTS trg_${safe}_ad`);
+    return;
+  }
   const when = `WHEN COALESCE((SELECT v FROM _sync_meta WHERE k = 'applying'), '0') != '1'`;
   conn.exec(`DROP TRIGGER IF EXISTS trg_${safe}_ai`);
   conn.exec(`DROP TRIGGER IF EXISTS trg_${safe}_au`);
@@ -125,20 +149,19 @@ function installTriggers(conn: Database, table: SchemaTable): void {
 
 function upsertRows(conn: Database, table: SchemaTable, rows: Array<Record<string, unknown>>): void {
   if (!rows.length) return;
-  const cols = table.columns.map((c) => c.name).filter((n) => Object.prototype.hasOwnProperty.call(rows[0], n) || true);
   const present = table.columns.map((c) => c.name);
   const names = present.map(quoteIdent).join(',');
   const placeholders = present.map((n) => `@${n}`).join(',');
-  const pk = table.columns.find((c) => c.primary_key)?.name || 'id';
-  const updates = present
-    .filter((n) => n !== pk)
-    .map((n) => `${quoteIdent(n)}=excluded.${quoteIdent(n)}`)
-    .join(',');
-  const sql =
-    updates.length > 0
-      ? `INSERT INTO ${quoteIdent(table.name)} (${names}) VALUES (${placeholders}) ON CONFLICT(${quoteIdent(pk)}) DO UPDATE SET ${updates}`
-      : `INSERT OR REPLACE INTO ${quoteIdent(table.name)} (${names}) VALUES (${placeholders})`;
-  const stmt = conn.prepare(sql);
+  const pk = tablePk(table);
+  const updateColumns = present.filter((name) => name !== pk);
+  const update = pk && updateColumns.length
+    ? conn.prepare(
+        `UPDATE ${quoteIdent(table.name)} SET ${updateColumns
+          .map((name) => `${quoteIdent(name)} = @${name}`)
+          .join(', ')} WHERE ${quoteIdent(pk)} = @__pk`,
+      )
+    : null;
+  const insert = conn.prepare(`INSERT OR REPLACE INTO ${quoteIdent(table.name)} (${names}) VALUES (${placeholders})`);
   const tx = conn.transaction((batch: Array<Record<string, unknown>>) => {
     for (const row of batch) {
       const params: Record<string, unknown> = {};
@@ -146,7 +169,8 @@ function upsertRows(conn: Database, table: SchemaTable, rows: Array<Record<strin
         const v = row[n];
         params[n] = v === undefined ? null : v;
       }
-      stmt.run(params);
+      const updated = pk && update ? update.run({ ...params, __pk: params[pk] }).changes > 0 : false;
+      if (!updated) insert.run(params);
     }
   });
   tx(rows);
@@ -162,6 +186,174 @@ export function pendingCount(): number {
   }
 }
 
+function syncTables(schema: { tables: SchemaTable[] }): SchemaTable[] {
+  return schema.tables.filter((table) => table.name && !table.name.startsWith('_') && table.columns.length > 0);
+}
+
+function resetLocalData(conn: Database): void {
+  const objects = conn
+    .prepare(
+      `SELECT type, name FROM sqlite_master
+       WHERE (type = 'table' AND name NOT LIKE '_sync_%')
+          OR (type = 'trigger' AND name LIKE 'trg_%')`,
+    )
+    .all() as Array<{ type: string; name: string }>;
+  for (const object of objects) {
+    conn.exec(`DROP ${object.type === 'trigger' ? 'TRIGGER' : 'TABLE'} IF EXISTS ${quoteIdent(object.name)}`);
+  }
+  conn.exec(`DELETE FROM _sync_queue; DELETE FROM _sync_meta;`);
+}
+
+type PendingItem = {
+  id: number;
+  table_name: string;
+  row_pk: string;
+  op: string;
+};
+
+function readPending(conn: Database, limit = 400): PendingItem[] {
+  return conn
+    .prepare(
+      `SELECT id, table_name, row_pk, op FROM _sync_queue
+       WHERE status = 'pending' ORDER BY id LIMIT ${Math.max(1, Math.floor(limit))}`,
+    )
+    .all() as PendingItem[];
+}
+
+function localRow(conn: Database, table: SchemaTable, rowPk: string): Record<string, unknown> | undefined {
+  const pk = tablePk(table);
+  if (!pk) return undefined;
+  return conn
+    .prepare(`SELECT * FROM ${quoteIdent(table.name)} WHERE ${quoteIdent(pk)} = ?`)
+    .get(rowPk) as Record<string, unknown> | undefined;
+}
+
+async function pushPending(
+  conn: Database,
+  remoteUrl: string,
+  token: string,
+  tables: SchemaTable[],
+  onProgress?: (p: SyncProgress) => void,
+): Promise<number> {
+  const pending = readPending(conn);
+  if (!pending.length) return 0;
+
+  const byKey = new Map<string, { latest: PendingItem; items: PendingItem[] }>();
+  for (const item of pending) {
+    const key = `${item.table_name}\u0000${item.row_pk}`;
+    const group = byKey.get(key);
+    if (group) {
+      group.latest = item;
+      group.items.push(item);
+    } else {
+      byKey.set(key, { latest: item, items: [item] });
+    }
+  }
+
+  const tableMap = new Map(tables.map((table) => [table.name, table]));
+  const groups = [...byKey.values()].filter((group) => tableMap.has(group.latest.table_name));
+  const ignored = groups.filter((group) => tableMap.get(group.latest.table_name)?.writable === false);
+  if (ignored.length) {
+    const markIgnored = conn.prepare(`UPDATE _sync_queue SET status = 'ignored', error = ? WHERE id = ?`);
+    conn.transaction(() => {
+      for (const group of ignored) {
+        for (const item of group.items) markIgnored.run('Table is read-only for desktop sync', item.id);
+      }
+    })();
+  }
+  const writableGroups = groups.filter((group) => tableMap.get(group.latest.table_name)?.writable !== false);
+  if (!writableGroups.length) return 0;
+  const changes = writableGroups.map((group) => {
+    const table = tableMap.get(group.latest.table_name)!;
+    const op = group.latest.op === 'delete' ? 'delete' : 'upsert';
+    if (op === 'delete') {
+      return { table: table.name, op, pk: group.latest.row_pk };
+    }
+    const row = localRow(conn, table, group.latest.row_pk);
+    return { table: table.name, op, pk: group.latest.row_pk, row: row || { [tablePk(table)]: group.latest.row_pk } };
+  });
+
+  onProgress?.({
+    stage: 'push',
+    current: 0,
+    total: changes.length,
+    message: `Uploading ${changes.length} local change(s)…`,
+  });
+  const result = await remotePush(remoteUrl, token, changes);
+  if (!result.ok) throw new Error('Remote server rejected the local changes.');
+
+  const failed = new Map<number, string>();
+  for (const error of result.errors || []) {
+    if (typeof error === 'object' && error !== null && 'index' in error) {
+      const index = Number(error.index);
+      if (Number.isInteger(index)) {
+        failed.set(index, 'message' in error && typeof error.message === 'string' ? error.message : 'Remote rejected change');
+      }
+    }
+  }
+  const successful = writableGroups.filter((_group, index) => !failed.has(index));
+  const markSynced = conn.prepare(`UPDATE _sync_queue SET status = 'synced', error = NULL WHERE id = ?`);
+  const markFailed = conn.prepare(`UPDATE _sync_queue SET status = 'pending', error = ? WHERE id = ?`);
+  conn.transaction(() => {
+    writableGroups.forEach((group, index) => {
+      for (const item of group.items) {
+        if (failed.has(index)) markFailed.run(failed.get(index), item.id);
+        else markSynced.run(item.id);
+      }
+    });
+  })();
+
+  if (successful.length) setMeta(conn, 'last_push', new Date().toISOString());
+  if (failed.size) {
+    onProgress?.({
+      stage: 'push',
+      current: successful.length,
+      total: changes.length,
+      message: `${successful.length} change(s) uploaded; ${failed.size} will retry`,
+    });
+  }
+  return typeof result.applied === 'number' ? result.applied : successful.length;
+}
+
+async function reconcileDeletes(
+  conn: Database,
+  remoteUrl: string,
+  token: string,
+  table: SchemaTable,
+): Promise<number> {
+  const pk = tablePk(table);
+  const pkColumn = table.columns.find((column) => column.name === pk);
+  if (!pk || !pkColumn || !/int|decimal|numeric|bigint/i.test(pkColumn.type)) return 0;
+
+  const remote = new Set<string>();
+  let afterId = 0;
+  while (true) {
+    const page = await remoteIds(remoteUrl, token, table.name, afterId);
+    if (!page.ok) throw new Error(`Failed to reconcile ${table.name}`);
+    for (const id of page.ids || []) remote.add(String(id));
+    afterId = page.next_after_id || afterId;
+    if (!page.has_more || !(page.ids || []).length) break;
+  }
+
+  const pendingKeys = new Set(
+    readPending(conn, 100000)
+      .filter((item) => item.table_name === table.name)
+      .map((item) => item.row_pk),
+  );
+  const local = conn
+    .prepare(`SELECT ${quoteIdent(pk)} AS row_pk FROM ${quoteIdent(table.name)}`)
+    .all() as Array<{ row_pk: string | number }>;
+  const remove = conn.prepare(`DELETE FROM ${quoteIdent(table.name)} WHERE ${quoteIdent(pk)} = ?`);
+  let deleted = 0;
+  for (const row of local) {
+    const id = String(row.row_pk);
+    if (!remote.has(id) && !pendingKeys.has(id)) {
+      deleted += remove.run(row.row_pk).changes;
+    }
+  }
+  return deleted;
+}
+
 export async function initialSync(
   remoteUrl: string,
   token: string,
@@ -170,104 +362,73 @@ export async function initialSync(
   const conn = openDb();
   onProgress({ stage: 'schema', current: 0, total: 1, message: 'Downloading school schema…' });
   const schema = await remoteSchema(remoteUrl, token);
-  const tables = schema.tables.filter((t) => t.name && !t.name.startsWith('_'));
+  const tables = syncTables(schema);
+  resetLocalData(conn);
   setApplying(conn, true);
-  tables.forEach((t, i) => {
-    onProgress({
-      stage: 'schema',
-      table: t.name,
-      current: i + 1,
-      total: tables.length,
-      message: `Preparing ${t.name}`,
+  try {
+    tables.forEach((table, index) => {
+      onProgress({
+        stage: 'schema',
+        table: table.name,
+        current: index + 1,
+        total: tables.length,
+        message: `Preparing ${table.name}`,
+      });
+      createTable(conn, table);
     });
-    createTable(conn, t);
-  });
 
-  for (let i = 0; i < tables.length; i++) {
-    const table = tables[i];
-    let afterId = 0;
-    let pulled = 0;
-    onProgress({
-      stage: 'pull',
-      table: table.name,
-      current: i + 1,
-      total: tables.length,
-      message: `Syncing ${table.name}…`,
-    });
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const page = await remotePull(remoteUrl, token, table.name, afterId);
-      if (!page.ok) throw new Error(page.error || `Failed to pull ${table.name}`);
-      if (page.rows?.length) {
-        upsertRows(conn, table, page.rows);
-        pulled += page.rows.length;
-      }
-      afterId = page.next_after_id || afterId;
+    for (let i = 0; i < tables.length; i++) {
+      const table = tables[i];
+      let afterId = 0;
+      let pulled = 0;
       onProgress({
         stage: 'pull',
         table: table.name,
         current: i + 1,
         total: tables.length,
-        message: `Syncing ${table.name} (${pulled} rows)`,
+        message: `Syncing ${table.name}…`,
       });
-      if (!page.has_more || !page.rows?.length) break;
+      while (true) {
+        const page = await remotePull(remoteUrl, token, table.name, afterId, undefined, true);
+        if (!page.ok) throw new Error(page.error || `Failed to pull ${table.name}`);
+        if (page.rows?.length) {
+          upsertRows(conn, table, page.rows);
+          pulled += page.rows.length;
+        }
+        afterId = page.next_after_id || afterId;
+        onProgress({
+          stage: 'pull',
+          table: table.name,
+          current: i + 1,
+          total: tables.length,
+          message: `Syncing ${table.name} (${pulled} rows)`,
+        });
+        if (!page.has_more || !page.rows?.length) break;
+      }
+      installTriggers(conn, table);
     }
-    installTriggers(conn, table);
-  }
 
-  const now = new Date().toISOString();
-  setMeta(conn, 'last_pull', now);
-  setMeta(conn, 'last_full_sync', now);
-  setApplying(conn, false);
+    const now = new Date().toISOString();
+    setMeta(conn, 'last_pull', now);
+    setMeta(conn, 'last_full_sync', now);
+  } finally {
+    setApplying(conn, false);
+  }
 }
 
 export async function incrementalSync(
   remoteUrl: string,
   token: string,
   onProgress?: (p: SyncProgress) => void,
+  full = false,
 ): Promise<{ pushed: number; pulled: number }> {
   const conn = openDb();
   let pushed = 0;
   let pulled = 0;
 
-  const pending = conn
-    .prepare(`SELECT id, table_name, row_pk, op FROM _sync_queue WHERE status = 'pending' ORDER BY id LIMIT 200`)
-    .all() as Array<{ id: number; table_name: string; row_pk: string; op: string }>;
-
-  if (pending.length) {
-    onProgress?.({
-      stage: 'push',
-      current: 0,
-      total: pending.length,
-      message: `Uploading ${pending.length} local change(s)…`,
-    });
-    const changes = pending.map((item) => {
-      if (item.op === 'delete') {
-        return { table: item.table_name, op: 'delete', pk: item.row_pk };
-      }
-      let row: Record<string, unknown> = { id: item.row_pk };
-      try {
-        const found = conn.prepare(`SELECT * FROM ${quoteIdent(item.table_name)} WHERE id = ?`).get(item.row_pk) as
-          | Record<string, unknown>
-          | undefined;
-        if (found) row = found;
-      } catch {
-        /* table may use a different pk */
-      }
-      return { table: item.table_name, op: 'upsert', pk: item.row_pk, row };
-    });
-    const res = await remotePush(remoteUrl, token, changes);
-    const mark = conn.prepare(`UPDATE _sync_queue SET status = 'synced' WHERE id = ?`);
-    const tx = conn.transaction(() => {
-      for (const item of pending) mark.run(item.id);
-    });
-    tx();
-    pushed = res.applied ?? pending.length;
-    setMeta(conn, 'last_push', new Date().toISOString());
-  }
-
   const schema = await remoteSchema(remoteUrl, token);
-  const tables = schema.tables.filter((t) => t.name && !t.name.startsWith('_'));
+  const tables = syncTables(schema);
+  pushed = await pushPending(conn, remoteUrl, token, tables, onProgress);
   const since = getMeta(conn, 'last_pull') || '';
   setApplying(conn, true);
   try {
@@ -280,12 +441,11 @@ export async function incrementalSync(
         table: table.name,
         current: i + 1,
         total: tables.length,
-        message: `Refreshing ${table.name}…`,
+        message: `${full ? 'Refreshing' : 'Checking'} ${table.name}…`,
       });
-      // eslint-disable-next-line no-constant-condition
       while (true) {
-        const page = await remotePull(remoteUrl, token, table.name, afterId, since || undefined);
-        if (!page.ok) break;
+        const page = await remotePull(remoteUrl, token, table.name, afterId, full ? undefined : since || undefined, full);
+        if (!page.ok) throw new Error(page.error || `Failed to pull ${table.name}`);
         if (page.rows?.length) {
           upsertRows(conn, table, page.rows);
           pulled += page.rows.length;
@@ -294,10 +454,13 @@ export async function incrementalSync(
         if (!page.has_more || !page.rows?.length) break;
       }
       installTriggers(conn, table);
+      if (full) await reconcileDeletes(conn, remoteUrl, token, table);
     }
   } finally {
     setApplying(conn, false);
   }
-  setMeta(conn, 'last_pull', new Date().toISOString());
+  const now = new Date().toISOString();
+  setMeta(conn, 'last_pull', now);
+  if (full) setMeta(conn, 'last_full_sync', now);
   return { pushed, pulled };
 }

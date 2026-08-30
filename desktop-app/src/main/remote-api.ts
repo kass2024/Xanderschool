@@ -11,6 +11,7 @@ export interface RemoteLoginResult {
 
 export interface SchemaTable {
   name: string;
+  writable?: boolean;
   columns: Array<{
     name: string;
     type: string;
@@ -49,11 +50,25 @@ function requestJson<T>(
       res.on('end', () => {
         clearTimeout(timer);
         const text = Buffer.concat(chunks).toString('utf-8');
+        let parsed: unknown;
         try {
-          resolve(JSON.parse(text) as T);
+          parsed = JSON.parse(text);
         } catch {
           reject(new Error(text.slice(0, 240) || `HTTP ${res.statusCode}`));
+          return;
         }
+        if ((res.statusCode ?? 500) < 200 || (res.statusCode ?? 500) >= 300) {
+          const message =
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            'error' in parsed &&
+            typeof parsed.error === 'string'
+              ? parsed.error
+              : `Remote server returned HTTP ${res.statusCode}`;
+          reject(new Error(message));
+          return;
+        }
+        resolve(parsed as T);
       });
     });
     req.on('error', (err) => {
@@ -103,6 +118,7 @@ export async function remotePull(
   table: string,
   afterId: number,
   updatedSince?: string,
+  full = false,
 ): Promise<{
   ok: boolean;
   table: string;
@@ -111,6 +127,7 @@ export async function remotePull(
   rows: Array<Record<string, unknown>>;
   next_after_id: number;
   has_more: boolean;
+  skipped?: boolean;
   error?: string;
 }> {
   const q = new URLSearchParams({
@@ -118,10 +135,39 @@ export async function remotePull(
     after_id: String(afterId),
     limit: '400',
   });
-  if (updatedSince) q.set('updated_since', updatedSince);
+  if (full) q.set('full', '1');
+  else if (updatedSince) q.set('updated_since', updatedSince);
   return requestJson(
     'GET',
     `${normalizeBase(base)}/api/desktop/pull?${q.toString()}`,
+    undefined,
+    token,
+    120000,
+  );
+}
+
+export async function remoteIds(
+  base: string,
+  token: string,
+  table: string,
+  afterId: number,
+): Promise<{
+  ok: boolean;
+  table: string;
+  pk: string;
+  ids: Array<string | number>;
+  next_after_id: number;
+  has_more: boolean;
+  skipped?: boolean;
+}> {
+  const q = new URLSearchParams({
+    table,
+    after_id: String(afterId),
+    limit: '2000',
+  });
+  return requestJson(
+    'GET',
+    `${normalizeBase(base)}/api/desktop/ids?${q.toString()}`,
     undefined,
     token,
     120000,

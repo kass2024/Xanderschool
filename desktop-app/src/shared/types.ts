@@ -6,6 +6,7 @@ export interface DesktopSettings {
   remoteUrl: string;
   token: string;
   email: string;
+  password: string;
   staffName: string;
   schoolId: number;
   schoolName: string;

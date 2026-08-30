@@ -38,7 +38,7 @@ class SqliteCompat
 	{
 		@$sqlite->exec('PRAGMA journal_mode = WAL');
 		@$sqlite->exec('PRAGMA synchronous = NORMAL');
-		@$sqlite->exec('PRAGMA busy_timeout = 8000');
+		@$sqlite->exec('PRAGMA busy_timeout = 60000');
 		@$sqlite->exec('PRAGMA foreign_keys = OFF');
 		@$sqlite->exec('PRAGMA temp_store = MEMORY');
 		@$sqlite->exec('PRAGMA cache_size = -80000');
@@ -189,25 +189,110 @@ class SqliteCompat
 		$sqlite->createFunction('SLEEP', static function () {
 			return 0;
 		}, 1);
+		$sqlite->createFunction('DATABASE', static function () {
+			return 'main';
+		}, 0);
 	}
 
 	public static function rewrite(string $sql): string
 	{
+		$trim = ltrim($sql);
+
+		if (preg_match('/^SHOW\s+(INDEX|INDEXES|KEYS)\s+FROM/i', $trim)) {
+			return 'SELECT NULL AS `Key_name` WHERE 0';
+		}
+		if (preg_match('/^SHOW\s+COLUMNS\s+FROM\s+`?([A-Za-z0-9_]+)`?/i', $trim, $m)) {
+			$table = str_replace("'", "''", $m[1]);
+			return "SELECT name AS Field, type AS Type, CASE WHEN notnull = 0 THEN 'YES' ELSE 'NO' END AS `Null`, '' AS `Key`, dflt_value AS `Default`, '' AS Extra FROM pragma_table_info('{$table}')";
+		}
+		if (preg_match('/^SHOW\s+TABLES/i', $trim)) {
+			return "SELECT name AS `Tables_in_db` FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+		}
+		if (preg_match('/^ALTER\s+TABLE.+\s+ADD\s+(UNIQUE\s+)?(KEY|INDEX|FULLTEXT)/i', $trim)) {
+			return 'SELECT 1 WHERE 0';
+		}
+		if (preg_match('/^ALTER\s+TABLE.+\s+DROP\s+(INDEX|KEY)/i', $trim)) {
+			return 'SELECT 1 WHERE 0';
+		}
+
+		if (preg_match('/information_schema\.COLUMNS/i', $sql) && preg_match("/TABLE_NAME\s*=\s*'([^']+)'/i", $sql, $tm) && preg_match("/COLUMN_NAME\s*=\s*'([^']+)'/i", $sql, $cm)) {
+			$table = str_replace("'", "''", $tm[1]);
+			$col = str_replace("'", "''", $cm[1]);
+			return "SELECT COUNT(*) AS c FROM pragma_table_info('{$table}') WHERE name = '{$col}'";
+		}
+
 		$sql = preg_replace('/\s+AFTER\s+`[^`]+`/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+AFTER\s+[A-Za-z0-9_]+/i', '', $sql) ?? $sql;
+		$sql = preg_replace('/\s+FIRST\b/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+UNSIGNED/i', '', $sql) ?? $sql;
+		$sql = preg_replace('/\s+ZEROFILL/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+AUTO_INCREMENT/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+ENGINE\s*=\s*\w+/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+DEFAULT CHARSET\s*=\s*\w+/i', '', $sql) ?? $sql;
+		$sql = preg_replace('/\s+DEFAULT CHARACTER SET\s+\w+/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+CHARACTER SET\s+\w+/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+COLLATE\s+\w+/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+COMMENT\s+\'(?:\\\\\'|[^\'])*\'/i', '', $sql) ?? $sql;
+		$sql = preg_replace('/\s+ON\s+UPDATE\s+CURRENT_TIMESTAMP(?:\(\))?/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/TINYINT\s*\(\s*\d+\s*\)/i', 'INTEGER', $sql) ?? $sql;
-		$sql = preg_replace('/INT\s*\(\s*\d+\s*\)/i', 'INTEGER', $sql) ?? $sql;
+		$sql = preg_replace('/SMALLINT\s*\(\s*\d+\s*\)/i', 'INTEGER', $sql) ?? $sql;
+		$sql = preg_replace('/MEDIUMINT\s*\(\s*\d+\s*\)/i', 'INTEGER', $sql) ?? $sql;
 		$sql = preg_replace('/BIGINT\s*\(\s*\d+\s*\)/i', 'INTEGER', $sql) ?? $sql;
+		$sql = preg_replace('/INT\s*\(\s*\d+\s*\)/i', 'INTEGER', $sql) ?? $sql;
+		$sql = preg_replace('/ENUM\s*\([^)]+\)/i', 'TEXT', $sql) ?? $sql;
+		$sql = preg_replace('/SET\s*\([^)]+\)/i', 'TEXT', $sql) ?? $sql;
+		$sql = preg_replace('/(?:DECIMAL|NUMERIC|DOUBLE|FLOAT)\s*\(\s*\d+\s*,\s*\d+\s*\)/i', 'REAL', $sql) ?? $sql;
+		$sql = preg_replace('/\bLONGTEXT\b/i', 'TEXT', $sql) ?? $sql;
+		$sql = preg_replace('/\bMEDIUMTEXT\b/i', 'TEXT', $sql) ?? $sql;
+		$sql = preg_replace('/\bTINYTEXT\b/i', 'TEXT', $sql) ?? $sql;
 		$sql = preg_replace('/^INSERT\s+IGNORE\b/i', 'INSERT OR IGNORE', $sql) ?? $sql;
+		$sql = preg_replace('/^REPLACE\s+INTO\b/i', 'INSERT OR REPLACE INTO', $sql) ?? $sql;
 		$sql = preg_replace('/\bTRUE\b/i', '1', $sql) ?? $sql;
 		$sql = preg_replace('/\bFALSE\b/i', '0', $sql) ?? $sql;
+		$sql = preg_replace('/DATE_SUB\s*\(\s*NOW\s*\(\s*\)\s*,\s*INTERVAL\s+(\d+)\s+MINUTE\s*\)/i', "datetime('now', '-$1 minutes')", $sql) ?? $sql;
+		$sql = preg_replace('/DATE_SUB\s*\(\s*NOW\s*\(\s*\)\s*,\s*INTERVAL\s+(\d+)\s+DAY\s*\)/i', "datetime('now', '-$1 days')", $sql) ?? $sql;
+		$sql = preg_replace('/\s+ORDER\s+BY\s+[A-Za-z0-9_`.]+\s+SEPARATOR\s+/i', ', ', $sql) ?? $sql;
+		$sql = preg_replace('/\s+SEPARATOR\s+/i', ', ', $sql) ?? $sql;
+
+		if (preg_match('/^\s*CREATE\s+TABLE/i', $sql)) {
+			$sql = self::rewriteCreateTable($sql);
+		}
+
+		return $sql;
+	}
+
+	/**
+	 * SQLite allows only one ADD COLUMN per ALTER TABLE.
+	 *
+	 * @return list<string>
+	 */
+	public static function expandStatements(string $sql): array
+	{
+		if (! preg_match('/^\s*ALTER\s+TABLE\s+(`?[A-Za-z0-9_]+`?)\s+(ADD\s+COLUMN\b.+)$/is', $sql, $m)) {
+			return [$sql];
+		}
+		$table = $m[1];
+		$rest = trim($m[2]);
+		if (! preg_match('/,\s*ADD\s+COLUMN\b/i', $rest)) {
+			return [$sql];
+		}
+		$chunks = preg_split('/,\s*(?=ADD\s+COLUMN\b)/i', $rest) ?: [$rest];
+		$out = [];
+		foreach ($chunks as $chunk) {
+			$out[] = 'ALTER TABLE ' . $table . ' ' . trim($chunk);
+		}
+		return $out;
+	}
+
+	private static function rewriteCreateTable(string $sql): string
+	{
+		$sql = preg_replace('/\s+UNIQUE\s+KEY\s+`?[\w]+`?\s*/i', ' UNIQUE ', $sql) ?? $sql;
+		$sql = preg_replace('/\s+UNIQUE\s+INDEX\s+`?[\w]+`?\s*/i', ' UNIQUE ', $sql) ?? $sql;
+		$sql = preg_replace('/\s+USING\s+(?:BTREE|HASH)/i', '', $sql) ?? $sql;
+		$sql = preg_replace('/,\s*(?:CONSTRAINT\s+`?[\w]+`?\s*)?(?:FULLTEXT\s+|SPATIAL\s+)?KEY\s+(?:`?[\w]+`?\s*)?\([^)]+\)/i', '', $sql) ?? $sql;
+		$sql = preg_replace('/,\s*(?:FULLTEXT\s+|SPATIAL\s+)?INDEX\s+(?:`?[\w]+`?\s*)?\([^)]+\)/i', '', $sql) ?? $sql;
+		$sql = preg_replace('/,\s*CONSTRAINT\s+`?[\w]+`?\s*FOREIGN\s+KEY\s*\([^)]+\)\s*REFERENCES\s+`?[\w]+`?\s*\([^)]+\)(?:\s+ON\s+DELETE\s+\w+)?(?:\s+ON\s+UPDATE\s+\w+)?/i', '', $sql) ?? $sql;
+		$sql = preg_replace('/,(\s*\))/', '$1', $sql) ?? $sql;
 		return $sql;
 	}
 
@@ -220,5 +305,13 @@ class SqliteCompat
 			'%T' => 'H:i:s', '%r' => 'h:i:s A',
 		];
 		return strtr($fmt, $map);
+	}
+
+	public static function fontAwesomeHref(): string
+	{
+		if (self::isDesktop()) {
+			return base_url('assets/vendor/fontawesome/css/all.min.css');
+		}
+		return 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.11.2/css/all.css';
 	}
 }

@@ -19,5 +19,6 @@ npx electron-builder --win
 
 Write-Host ""
 Write-Host "Done. Files are in desktop-app\release\" -ForegroundColor Cyan
-Write-Host "  Xander School-Setup-1.0.0.exe     (installer)" -ForegroundColor White
-Write-Host "  Xander School-Portable-1.0.0.exe   (no install)" -ForegroundColor White
+$version = (Get-Content ".\package.json" -Raw | ConvertFrom-Json).version
+Write-Host "  Xander School-Setup-$version.exe     (installer)" -ForegroundColor White
+Write-Host "  Xander School-Portable-$version.exe   (no install)" -ForegroundColor White
