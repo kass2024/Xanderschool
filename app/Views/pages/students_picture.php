@@ -169,76 +169,43 @@
 	}
 	.sp-live-box {
 		flex-direction: column;
-		justify-content: flex-end;
+		justify-content: center;
 		align-items: center;
-		padding: 18px 18px 54px;
-		background:
-			radial-gradient(ellipse at 50% 18%, #ffffff 0%, #f3f6fb 42%, #e8eef6 100%);
+		padding: 16px 16px 48px;
+		background: #0f172a;
 	}
 	.sp-square-stage {
 		position: relative;
-		width: min(82%, 400px);
-		aspect-ratio: 1 / 1;
-		border-radius: 8px;
+		width: 100%;
+		max-width: 720px;
+		aspect-ratio: 4 / 3;
+		border-radius: 14px;
 		overflow: hidden;
-		background: #fff;
-		border: 3px solid #0f766e;
-		box-shadow:
-			0 0 0 8px rgba(15, 118, 110, 0.12),
-			0 18px 36px rgba(15, 23, 42, 0.12);
+		background: #000;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		box-shadow: 0 18px 40px rgba(2, 6, 23, 0.35);
 	}
-	.sp-visa-guide {
+	.sp-hd-badge {
 		position: absolute;
-		inset: 0;
-		pointer-events: none;
-		z-index: 3;
-	}
-	.sp-visa-oval {
-		position: absolute;
-		left: 50%;
-		top: 12%;
-		width: 54%;
-		height: 62%;
-		transform: translateX(-50%);
-		border: 2px solid rgba(15, 118, 110, 0.95);
-		border-radius: 50%;
-		box-shadow: 0 0 0 400px rgba(255, 255, 255, 0.38);
-	}
-	.sp-visa-eyes {
-		position: absolute;
-		left: 10%;
-		right: 10%;
-		top: 38%;
-		border-top: 2px dashed #2563eb;
-	}
-	.sp-visa-chin {
-		position: absolute;
-		left: 18%;
-		right: 18%;
-		top: 74%;
-		border-top: 1px dotted rgba(15, 23, 42, 0.35);
-	}
-	.sp-visa-label {
-		position: absolute;
+		top: 12px;
+		left: 12px;
+		z-index: 2;
 		font-size: 10px;
-		font-weight: 700;
-		letter-spacing: .02em;
-		text-transform: uppercase;
-		padding: 1px 6px;
-		border-radius: 999px;
-		background: rgba(255,255,255,.88);
+		font-weight: 800;
+		letter-spacing: .08em;
+		padding: 4px 8px;
+		border-radius: 6px;
+		background: rgba(15, 23, 42, 0.72);
+		color: #fff;
 	}
-	.sp-visa-label-eyes { top: 33%; right: 8px; color: #1d4ed8; }
-	.sp-visa-label-head { top: 13%; left: 8px; color: #0f766e; }
-	.sp-visa-label-chin { top: 75%; right: 8px; color: #475569; }
 	#spVideo {
 		transform: scaleX(-1);
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		object-position: center 45%;
+		object-position: center center;
 		display: block;
-		background: #fff;
+		background: #000;
 	}
 	#spEditCanvas {
 		display: block;
@@ -248,7 +215,7 @@
 		position: absolute;
 		left: 0; right: 0; bottom: 14px;
 		text-align: center;
-		color: #334155;
+		color: #cbd5e1;
 		font-size: 12px;
 		font-weight: 600;
 		z-index: 2;
@@ -268,12 +235,6 @@
 		cursor: grab;
 	}
 	.sp-edit-frame:active { cursor: grabbing; }
-	.sp-edit-frame .sp-visa-oval {
-		box-shadow: none;
-		border-color: rgba(15, 118, 110, 0.55);
-	}
-	.sp-edit-frame .sp-visa-eyes { border-top-color: rgba(37, 99, 235, 0.55); }
-	.sp-edit-frame .sp-visa-label { display: none; }
 	#spEditCanvas { width: 280px; height: 280px; }
 	.sp-actions {
 		display: flex;
@@ -359,24 +320,13 @@
 					<div class="sp-live-box">
 						<div class="sp-square-stage">
 							<video id="spVideo" autoplay playsinline muted></video>
-							<div class="sp-visa-guide">
-								<div class="sp-visa-oval"></div>
-								<div class="sp-visa-eyes"></div>
-								<div class="sp-visa-chin"></div>
-								<span class="sp-visa-label sp-visa-label-head">Head</span>
-								<span class="sp-visa-label sp-visa-label-eyes">Eyes</span>
-								<span class="sp-visa-label sp-visa-label-chin">Shoulders</span>
-							</div>
+							<span class="sp-hd-badge">HD</span>
 						</div>
-						<div class="sp-live-hint">US visa framing: eyes on the blue line, head inside the oval, white background</div>
+						<div class="sp-live-hint">HD live preview — click Capture when ready</div>
 					</div>
 					<div class="sp-edit-box">
 						<div class="sp-edit-frame" id="spFrame">
-							<canvas id="spEditCanvas" width="1200" height="1200"></canvas>
-							<div class="sp-visa-guide">
-								<div class="sp-visa-oval"></div>
-								<div class="sp-visa-eyes"></div>
-							</div>
+							<canvas id="spEditCanvas" width="1600" height="1600"></canvas>
 						</div>
 					</div>
 				</div>
@@ -432,21 +382,13 @@
 		var dragging = false;
 		var dragStart = { x: 0, y: 0 };
 		var STORAGE_KEY = 'xander_student_photo_camera';
-		var VISA_SIZE = 1200;
-		var VISA_HEAD_RATIO = 0.60;
-		var VISA_EYE_FROM_TOP = 0.38;
+		var PHOTO_SIZE = 1600;
 		var video = document.getElementById('spVideo');
 		var canvas = document.getElementById('spEditCanvas');
 		var ctx = canvas.getContext('2d');
 		var listEl = document.getElementById('spStudents');
 		var cameraSel = document.getElementById('spCamera');
 		var statusEl = document.getElementById('spCamStatus');
-		var segmenter = null;
-		var segmenterLoading = null;
-		var segmentJob = 0;
-		var faceDetector = null;
-		var faceDetectorLoading = null;
-		var faceJob = 0;
 
 		function setStatus(text, kind) {
 			statusEl.textContent = text;
@@ -547,8 +489,8 @@
 			stopCamera();
 			var deviceId = cameraSel.value;
 			var videoConstraints = deviceId
-				? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-				: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } };
+				? { deviceId: { exact: deviceId }, width: { ideal: 1920, min: 1280 }, height: { ideal: 1080, min: 720 } }
+				: { facingMode: 'user', width: { ideal: 1920, min: 1280 }, height: { ideal: 1080, min: 720 } };
 			setStatus('Starting camera…', 'warn');
 			navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints }).then(function (s) {
 				stream = s;
@@ -559,8 +501,6 @@
 				var label = (track && track.label) ? track.label : 'USB camera';
 				setStatus(label + ' ready', 'ok');
 				$('#spCapture').prop('disabled', !selected);
-				loadSelfieSegmenter();
-				loadFaceDetector();
 				return fillCameras(currentId).then(function (cams) {
 					var preferred = cameraSel.value;
 					if (!preferredSwitchDone && preferred && currentId && preferred !== currentId) {
@@ -584,226 +524,41 @@
 			});
 		}
 
-		function loadSelfieSegmenter() {
-			if (segmenter) return Promise.resolve(segmenter);
-			if (segmenterLoading) return segmenterLoading;
-			segmenterLoading = new Promise(function (resolve) {
-				function create() {
-					try {
-						segmenter = new window.SelfieSegmentation({
-							locateFile: function (file) {
-								return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/' + file;
-							}
-						});
-						segmenter.setOptions({ modelSelection: 1, selfieMode: false });
-						resolve(segmenter);
-					} catch (e) {
-						resolve(null);
-					}
-				}
-				if (window.SelfieSegmentation) {
-					create();
-					return;
-				}
-				var s = document.createElement('script');
-				s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js';
-				s.crossOrigin = 'anonymous';
-				s.onload = create;
-				s.onerror = function () { resolve(null); };
-				document.head.appendChild(s);
-			});
-			return segmenterLoading;
-		}
-
-		function loadFaceDetector() {
-			if (faceDetector) return Promise.resolve(faceDetector);
-			if (faceDetectorLoading) return faceDetectorLoading;
-			faceDetectorLoading = new Promise(function (resolve) {
-				function create() {
-					try {
-						faceDetector = new window.FaceDetection({
-							locateFile: function (file) {
-								return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/' + file;
-							}
-						});
-						faceDetector.setOptions({ model: 'short', minDetectionConfidence: 0.55 });
-						resolve(faceDetector);
-					} catch (e) {
-						resolve(null);
-					}
-				}
-				if (window.FaceDetection) {
-					create();
-					return;
-				}
-				var s = document.createElement('script');
-				s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/face_detection.js';
-				s.crossOrigin = 'anonymous';
-				s.onload = create;
-				s.onerror = function () { resolve(null); };
-				document.head.appendChild(s);
-			});
-			return faceDetectorLoading;
-		}
-
-		function relVal(v, size) {
-			if (v == null || isNaN(v)) return 0;
-			return v > 1 ? v : v * size;
-		}
-
-		function parseFace(detection, w, h) {
-			var box = detection.boundingBox
-				|| (detection.locationData && detection.locationData.relativeBoundingBox)
-				|| {};
-			var bw, bh, xMin, yMin;
-			if (box.xMin != null || box.xmin != null) {
-				xMin = relVal(box.xMin != null ? box.xMin : box.xmin, w);
-				yMin = relVal(box.yMin != null ? box.yMin : box.ymin, h);
-				bw = relVal(box.width, w);
-				bh = relVal(box.height, h);
-			} else {
-				bw = relVal(box.width, w);
-				bh = relVal(box.height, h);
-				xMin = relVal(box.xCenter != null ? box.xCenter : box.xcenter, w) - bw / 2;
-				yMin = relVal(box.yCenter != null ? box.yCenter : box.ycenter, h) - bh / 2;
-			}
-			var pts = detection.landmarks || detection.keypoints || [];
-			function pt(i) {
-				var p = pts[i];
-				if (!p) return null;
-				return { x: relVal(p.x, w), y: relVal(p.y, h) };
-			}
-			var rightEye = pt(0);
-			var leftEye = pt(1);
-			var eyesX, eyesY;
-			if (rightEye && leftEye) {
-				eyesX = (rightEye.x + leftEye.x) / 2;
-				eyesY = (rightEye.y + leftEye.y) / 2;
-			} else {
-				eyesX = xMin + bw / 2;
-				eyesY = yMin + bh * 0.42;
-			}
-			return {
-				xMin: xMin,
-				yMin: yMin,
-				width: bw,
-				height: bh,
-				eyesX: eyesX,
-				eyesY: eyesY,
-				chinY: yMin + bh,
-				hairY: yMin - bh * 0.42
-			};
-		}
-
-		function detectFace(srcCanvas) {
-			return loadFaceDetector().then(function (fd) {
-				if (!fd) return null;
-				return new Promise(function (resolve) {
-					var job = ++faceJob;
-					var finished = false;
-					var timer = setTimeout(function () {
-						if (!finished && job === faceJob) {
-							finished = true;
-							resolve(null);
-						}
-					}, 4000);
-					fd.onResults(function (results) {
-						if (finished || job !== faceJob) return;
-						finished = true;
-						clearTimeout(timer);
-						var det = results.detections && results.detections[0];
-						resolve(det ? parseFace(det, srcCanvas.width, srcCanvas.height) : null);
-					});
-					fd.send({ image: srcCanvas });
-				});
-			});
-		}
-
-		function visaCrop(srcCanvas, face) {
-			var W = srcCanvas.width;
-			var H = srcCanvas.height;
-			var crop;
-			var cropX;
-			var cropY;
-			if (face) {
-				var headH = Math.max(80, face.chinY - face.hairY);
-				crop = headH / VISA_HEAD_RATIO;
-				crop = Math.min(crop, Math.min(W, H));
-				cropX = face.eyesX - crop / 2;
-				cropY = face.eyesY - crop * VISA_EYE_FROM_TOP;
-			} else {
-				crop = Math.min(W, H);
-				cropX = (W - crop) / 2;
-				cropY = (H - crop) * 0.35;
-			}
-			cropX = Math.max(0, Math.min(W - crop, cropX));
-			cropY = Math.max(0, Math.min(H - crop, cropY));
-			var out = document.createElement('canvas');
-			out.width = VISA_SIZE;
-			out.height = VISA_SIZE;
-			var o = out.getContext('2d');
-			o.fillStyle = '#ffffff';
-			o.fillRect(0, 0, VISA_SIZE, VISA_SIZE);
-			o.imageSmoothingEnabled = true;
-			o.imageSmoothingQuality = 'high';
-			o.drawImage(srcCanvas, cropX, cropY, crop, crop, 0, 0, VISA_SIZE, VISA_SIZE);
-			return out;
-		}
-
 		function captureFullFrame() {
-			var vw = video.videoWidth || VISA_SIZE;
-			var vh = video.videoHeight || VISA_SIZE;
+			var vw = video.videoWidth || PHOTO_SIZE;
+			var vh = video.videoHeight || PHOTO_SIZE;
 			var tmp = document.createElement('canvas');
 			tmp.width = vw;
 			tmp.height = vh;
 			var tctx = tmp.getContext('2d');
-			tctx.fillStyle = '#ffffff';
+			tctx.fillStyle = '#111827';
 			tctx.fillRect(0, 0, vw, vh);
 			tctx.save();
 			tctx.translate(vw, 0);
 			tctx.scale(-1, 1);
+			tctx.imageSmoothingEnabled = true;
+			tctx.imageSmoothingQuality = 'high';
 			tctx.drawImage(video, 0, 0, vw, vh);
 			tctx.restore();
 			return tmp;
 		}
 
-		function paintWhiteBackground(srcCanvas) {
-			return loadSelfieSegmenter().then(function (seg) {
-				if (!seg) return srcCanvas;
-				return new Promise(function (resolve) {
-					var job = ++segmentJob;
-					var finished = false;
-					var timer = setTimeout(function () {
-						if (!finished && job === segmentJob) {
-							finished = true;
-							resolve(srcCanvas);
-						}
-					}, 5000);
-					seg.onResults(function (results) {
-						if (finished || job !== segmentJob) return;
-						finished = true;
-						clearTimeout(timer);
-						var out = document.createElement('canvas');
-						out.width = srcCanvas.width;
-						out.height = srcCanvas.height;
-						var c = out.getContext('2d');
-						c.fillStyle = '#ffffff';
-						c.fillRect(0, 0, out.width, out.height);
-						c.save();
-						c.filter = 'blur(2px)';
-						c.drawImage(results.segmentationMask, 0, 0, out.width, out.height);
-						c.filter = 'none';
-						c.globalCompositeOperation = 'source-in';
-						c.drawImage(srcCanvas, 0, 0, out.width, out.height);
-						c.restore();
-						c.globalCompositeOperation = 'destination-over';
-						c.fillStyle = '#ffffff';
-						c.fillRect(0, 0, out.width, out.height);
-						resolve(out);
-					});
-					seg.send({ image: srcCanvas });
-				});
-			});
+		function squareCrop(srcCanvas) {
+			var W = srcCanvas.width;
+			var H = srcCanvas.height;
+			var crop = Math.min(W, H);
+			var cropX = (W - crop) / 2;
+			var cropY = (H - crop) / 2;
+			var out = document.createElement('canvas');
+			out.width = PHOTO_SIZE;
+			out.height = PHOTO_SIZE;
+			var o = out.getContext('2d');
+			o.fillStyle = '#ffffff';
+			o.fillRect(0, 0, PHOTO_SIZE, PHOTO_SIZE);
+			o.imageSmoothingEnabled = true;
+			o.imageSmoothingQuality = 'high';
+			o.drawImage(srcCanvas, cropX, cropY, crop, crop, 0, 0, PHOTO_SIZE, PHOTO_SIZE);
+			return out;
 		}
 
 		function useCaptured(imgCanvas) {
@@ -822,21 +577,14 @@
 		function captureFrame() {
 			if (!stream || !selected) return;
 			$('#spCapture').prop('disabled', true);
-			setStatus('Fitting US visa composition…', 'warn');
-			var full = captureFullFrame();
-			detectFace(full).then(function (face) {
-				if (!face) {
-					toastErr('Align the head in the oval, eyes on the blue line, then capture again.');
-				}
-				var cropped = visaCrop(full, face);
-				return paintWhiteBackground(cropped);
-			}).then(function (out) {
-				useCaptured(out);
-				setStatus('Visa photo ready', 'ok');
-			}).catch(function () {
-				useCaptured(visaCrop(full, null));
-				setStatus('Captured — check framing', 'warn');
-			});
+			try {
+				useCaptured(squareCrop(captureFullFrame()));
+				setStatus('Photo captured', 'ok');
+			} catch (e) {
+				setStatus('Capture failed', 'err');
+				toastErr('Could not capture the photo. Try Start camera again.');
+				$('#spCapture').prop('disabled', !stream);
+			}
 		}
 
 		function sliderVals() {
@@ -857,7 +605,7 @@
 				ctx.fillStyle = '#94a3b8';
 				ctx.font = '28px sans-serif';
 				ctx.textAlign = 'center';
-				ctx.fillText('Capture a visa-style ID photo', canvas.width / 2, canvas.height / 2);
+				ctx.fillText('Capture a student photo', canvas.width / 2, canvas.height / 2);
 				return;
 			}
 			var v = sliderVals();
