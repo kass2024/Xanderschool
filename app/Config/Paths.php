@@ -50,6 +50,14 @@ class Paths
 	 */
 	public $writableDirectory = __DIR__ . '/../../writable';
 
+	public function __construct()
+	{
+		$wp = getenv('XANDER_WRITEPATH');
+		if (is_string($wp) && $wp !== '') {
+			$this->writableDirectory = $wp;
+		}
+	}
+
 	/*
 	 * ---------------------------------------------------------------
 	 * TESTS DIRECTORY NAME

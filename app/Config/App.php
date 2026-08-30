@@ -5,6 +5,19 @@ use CodeIgniter\Config\BaseConfig;
 class App extends BaseConfig
 {
 
+	public function __construct()
+	{
+		parent::__construct();
+		$url = getenv('XANDER_BASE_URL');
+		if (is_string($url) && $url !== '') {
+			$this->baseURL = rtrim($url, '/') . '/';
+			$this->forceGlobalSecureRequests = false;
+			$this->indexPage = '';
+			$this->sessionExpiration = 60 * 60 * 24 * 14;
+			$this->cookieSecure = false;
+		}
+	}
+
 	/*
 	|--------------------------------------------------------------------------
 	| Base Site URL

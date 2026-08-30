@@ -81,9 +81,53 @@ class Database extends \CodeIgniter\Database\Config
 
 	//--------------------------------------------------------------------
 
+	/**
+	 * Local SQLite used by the Windows desktop app (no MySQL install).
+	 *
+	 * @var array
+	 */
+	public $sqlite = [
+		'DSN'      => '',
+		'hostname' => '',
+		'username' => '',
+		'password' => '',
+		'database' => '',
+		'DBDriver' => '\App\Database\SQLiteDesktop',
+		'DBPrefix' => '',
+		'pConnect' => false,
+		'DBDebug'  => true,
+		'cacheOn'  => false,
+		'cacheDir' => '',
+		'charset'  => 'utf8',
+		'DBCollat' => '',
+		'swapPre'  => '',
+		'encrypt'  => false,
+		'compress' => false,
+		'strictOn' => false,
+		'failover' => [],
+		'port'     => 3306,
+		'foreignKeys' => false,
+		'busyTimeout' => 8000,
+	];
+
 	public function __construct()
 	{
 		parent::__construct();
+
+		$desktop = getenv('XANDER_DESKTOP');
+		if ($desktop === '1' || $desktop === 'true') {
+			$sqlitePath = getenv('XANDER_SQLITE_PATH');
+			if (! is_string($sqlitePath) || $sqlitePath === '') {
+				$sqlitePath = WRITEPATH . 'desktop/xander-school.db';
+			}
+			$dir = dirname($sqlitePath);
+			if (! is_dir($dir)) {
+				@mkdir($dir, 0775, true);
+			}
+			$this->sqlite['database'] = $sqlitePath;
+			$this->sqlite['DBDebug']  = (ENVIRONMENT !== 'production');
+			$this->defaultGroup = 'sqlite';
+		}
 
 		// Ensure that we always set the database group to 'tests' if
 		// we are currently running an automated test suite, so that

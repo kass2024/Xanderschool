@@ -151,3 +151,25 @@ nb-configuration.xml
 public/assets/images/signatures/
 /public/somanet_app.apk
 /public/somanet_attandance_app.apk
+deploy/heystar_photos/
+deploy/heystar_photo_state.json
+deploy/heystar_ok.wav
+deploy/heystar_bad.wav
+
+# Desktop app build artifacts
+desktop-app/node_modules/
+desktop-app/out/
+desktop-app/release/
+desktop-app/php-runtime/*.exe
+desktop-app/php-runtime/*.dll
+desktop-app/php-runtime/*.zip
+desktop-app/php-runtime/*.lib
+desktop-app/php-runtime/*.phar
+desktop-app/php-runtime/*.bat
+desktop-app/php-runtime/ext/
+desktop-app/php-runtime/extras/
+desktop-app/php-runtime/lib/
+desktop-app/php-runtime/dev/
+desktop-app/php-runtime/*.txt
+!desktop-app/php-runtime/README.md
+

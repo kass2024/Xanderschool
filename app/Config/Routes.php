@@ -127,6 +127,14 @@ $routes->add('/class-deliberation', 'Home::classDeliberation');
 $routes->add('/application/?(:any)', 'Home::studentApplication/$1');
 $routes->add('/student-marks/?(:any)', 'Home::global_student_marks/$1');
 $routes->get('/extra-fees/?(:any)', 'Home::multiple_extra_fees_records/$1');
+$routes->get('api/desktop/health', 'DesktopSync::health');
+$routes->post('api/desktop/login', 'DesktopSync::login');
+$routes->get('api/desktop/schema', 'DesktopSync::schema');
+$routes->get('api/desktop/pull', 'DesktopSync::pull');
+$routes->post('api/desktop/push', 'DesktopSync::push');
+$routes->get('desktop_sync/status', 'DesktopSync::localStatus');
+$routes->post('desktop_sync/tick', 'DesktopSync::localTick');
+
 $routes->add('api', 'Api::index');
 $routes->add('api/(:any)', 'Api::$1');
 // ✅ Add this line before the wildcard

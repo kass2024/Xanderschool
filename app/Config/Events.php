@@ -1,6 +1,7 @@
 <?php namespace Config;
 
 use CodeIgniter\Events\Events;
+use Config\Services;
 
 /*
  * --------------------------------------------------------------------
@@ -18,6 +19,12 @@ use CodeIgniter\Events\Events;
  * Example:
  *      Events::on('create', [$myInstance, 'myMethod']);
  */
+
+Events::on('post_controller_constructor', static function () {
+	if (getenv('XANDER_DESKTOP') === '1' || getenv('XANDER_DESKTOP') === 'true') {
+		\App\Libraries\SqliteCompat::install();
+	}
+});
 
 Events::on('pre_system', function () {
 	while (\ob_get_level() > 0)
