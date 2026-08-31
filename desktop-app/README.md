@@ -35,7 +35,7 @@ powershell -ExecutionPolicy Bypass -File .\build-exe.ps1
 
 Output:
 
-- `release/Xander School-Setup-1.0.4.exe`
-- `release/Xander School-Portable-1.0.4.exe`
+- `release/Xander School-Setup-1.0.5.exe`
+- `release/Xander School-Portable-1.0.5.exe`
 
 The server must already expose `/api/desktop/*` (deployed with this repo) so the first download and later sync can run. The build bundles portable PHP, so the installed app does not require XAMPP.
