@@ -234,6 +234,13 @@ class SqliteCompat
 		$sql = preg_replace('/\s+COLLATE\s+\w+/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+COMMENT\s+\'(?:\\\\\'|[^\'])*\'/i', '', $sql) ?? $sql;
 		$sql = preg_replace('/\s+ON\s+UPDATE\s+CURRENT_TIMESTAMP(?:\(\))?/i', '', $sql) ?? $sql;
+		$sql = preg_replace_callback(
+			'/GROUP_CONCAT\s*\(\s*DISTINCT\s+(.*?)\s+ORDER\s+BY\s+[^)]*?\s+SEPARATOR\s+((?:\'(?:\'\'|[^\'])*\'|"(?:""|[^"])*"))\s*\)/is',
+			static function (array $match): string {
+				return "REPLACE(GROUP_CONCAT(DISTINCT {$match[1]}), ',', {$match[2]})";
+			},
+			$sql,
+		) ?? $sql;
 		$sql = preg_replace('/TINYINT\s*\(\s*\d+\s*\)/i', 'INTEGER', $sql) ?? $sql;
 		$sql = preg_replace('/SMALLINT\s*\(\s*\d+\s*\)/i', 'INTEGER', $sql) ?? $sql;
 		$sql = preg_replace('/MEDIUMINT\s*\(\s*\d+\s*\)/i', 'INTEGER', $sql) ?? $sql;
