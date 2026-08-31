@@ -127,6 +127,11 @@ function default_dob(string $classLabel): string
     return sprintf('%d-01-01', $years[$classLabel] ?? 2000);
 }
 
+function normalized_year_title(string $title): string
+{
+    return preg_replace('/[^0-9]/', '', $title) ?? '';
+}
+
 function regno(\CodeIgniter\Database\BaseConnection $db, int &$next): string
 {
     do {
@@ -240,11 +245,32 @@ if (!$school || (int) $school['id'] !== TARGET_SCHOOL_ID
     exit(1);
 }
 
-$year = $db->table('academic_year')
+$year = null;
+$activeTerm = $db->table('active_term')
+    ->where('id', (int) ($school['active_term'] ?? 0))
     ->where('school_id', TARGET_SCHOOL_ID)
-    ->where('title', ACADEMIC_YEAR_TITLE)
     ->get(1)
     ->getRowArray();
+$years = $db->table('academic_year')
+    ->where('school_id', TARGET_SCHOOL_ID)
+    ->orderBy('id', 'ASC')
+    ->get()
+    ->getResultArray();
+foreach ($years as $candidate) {
+    if ((int) ($activeTerm['academic_year'] ?? 0) === (int) $candidate['id']
+        && normalized_year_title((string) $candidate['title']) === normalized_year_title(ACADEMIC_YEAR_TITLE)) {
+        $year = $candidate;
+        break;
+    }
+}
+if (!$year) {
+    foreach ($years as $candidate) {
+        if (normalized_year_title((string) $candidate['title']) === normalized_year_title(ACADEMIC_YEAR_TITLE)) {
+            $year = $candidate;
+            break;
+        }
+    }
+}
 
 $now = date('Y-m-d H:i:s');
 $db->transStart();
