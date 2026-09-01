@@ -2493,12 +2493,21 @@ public function testEmail()
 		$saved = [];
 		$hadZip = false;
 		$groupSuffix = count($classIds) > 1 ? ('g' . count($classIds)) : (string) $classId;
+		// Block only dangerous executables/scripts; allow docs, images, archives, etc.
+		$blockedExt = [
+			'php', 'phtml', 'php3', 'php4', 'php5', 'phar', 'cgi', 'pl', 'py', 'rb',
+			'sh', 'bash', 'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'dll', 'jsp',
+			'asp', 'aspx', 'htaccess', 'pht', 'shtml',
+		];
 		foreach ($files as $i => $file) {
-			$ext = strtolower($file->getClientExtension());
-			if (!in_array($ext, ['pdf', 'doc', 'docx', 'zip'], true)) {
-				return $this->response->setJSON(['error' => 'Only PDF, Word, or ZIP are allowed']);
+			$ext = strtolower(preg_replace('/[^a-z0-9]+/', '', (string) $file->getClientExtension()));
+			if ($ext === '') {
+				$ext = 'bin';
 			}
-			$maxMb = $ext === 'zip' ? 80 : 20;
+			if (in_array($ext, $blockedExt, true)) {
+				return $this->response->setJSON(['error' => 'This file type is not allowed for security reasons']);
+			}
+			$maxMb = in_array($ext, ['zip', 'rar', '7z'], true) ? 80 : 40;
 			if ($file->getSize() > $maxMb * 1024 * 1024) {
 				return $this->response->setJSON(['error' => "File too large (max {$maxMb}MB): " . $file->getClientName()]);
 			}

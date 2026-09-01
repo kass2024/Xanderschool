@@ -82,7 +82,7 @@ $renderDocCell = static function (array $docs, array $classIds, $type, $uploadLa
 		   data-class-ids="<?= esc($idsAttr, 'attr'); ?>"
 		   data-type="<?= esc($type, 'attr'); ?>"
 		   multiple
-		   accept=".pdf,.doc,.docx,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip">
+		   accept="*/*">
 	<?php
 };
 
