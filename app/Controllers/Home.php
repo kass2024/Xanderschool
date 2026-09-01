@@ -2012,7 +2012,7 @@ public function testEmail()
 		$data['years'] = (new AcademicYearModel())->select('id,title')->where('school_id', $schoolId)
 			->orderBy('id', 'DESC')->get()->getResultArray();
 		$classMdl = new ClassesModel();
-		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name,f.abbrev as faculty_code")
+		$data['classes'] = $classMdl->select("classes.id,classes.title,d.id as department_id,d.title as department_name,d.code as dept_code,l.title as level_name,f.type as faculty_type,f.abbrev as faculty_code")
 				->join("departments d", "d.id=classes.department")
 				->join("levels l", "l.id=classes.level")
 				->join("faculty f", "f.id=d.faculty_id")
@@ -2031,6 +2031,7 @@ public function testEmail()
 				->orderBy('id', 'DESC')
 				->findAll();
 		}
+		$data['pedagogical_rows'] = $this->buildPedagogicalUploadRows($data['classes']);
 
 		$ttSchema = new \App\Models\TimetableSchemaModel();
 		$ttSchema->ensureSchema();
@@ -2137,6 +2138,216 @@ public function testEmail()
 			// ignore
 		}
 	}
+
+
+	/**
+	 * Resolve REB/TVET pedagogical upload target for a class.
+	 * REB groups: lower_primary (P1–P3), upper_primary (P4–P6), o_level (S1–S3),
+	 * a_level by department, nursery as one group. TVET stays per-class.
+	 *
+	 * @param array<string,mixed> $class
+	 * @return array{key:string,label:string,mode:string,doc_labels:array{primary:string,secondary:string}}
+	 */
+	private function resolvePedagogicalUploadTarget(array $class): array
+	{
+		$cid = (int) ($class['id'] ?? 0);
+		$facType = (int) ($class['faculty_type'] ?? 0);
+		$level = strtolower(trim((string) ($class['level_name'] ?? '')));
+		$title = strtolower(trim((string) ($class['title'] ?? '')));
+		$hay = trim($level . ' ' . $title);
+		$display = $this->classDisplayName($class);
+		$tvetLabels = ['primary' => 'Curriculum', 'secondary' => 'Chronogram'];
+		$rebLabels = ['primary' => 'Syllabus', 'secondary' => 'Weeks breakdown'];
+
+		$isTvetNamed = (bool) preg_match('/\b(level\s*[1-5]|year\s*[1-3])\b/', $hay)
+			&& !preg_match('/\b(p[1-6]|s[1-6]|n[1-3]|primary|senior|ordinary)\b/', $hay);
+		if ($facType === FacultyModel::TYPE_TVET || $facType === FacultyModel::TYPE_SPECIAL || $isTvetNamed) {
+			return [
+				'key' => 'tvet_' . $cid,
+				'label' => $display,
+				'mode' => 'tvet',
+				'doc_labels' => $tvetLabels,
+			];
+		}
+
+		if (preg_match('/\bn[1-3]\b/', $hay) || preg_match('/\bnursery\b/', $hay)
+			|| preg_match('/\b(baby|middle|top)\s*class\b/', $hay)) {
+			return [
+				'key' => 'nursery',
+				'label' => 'Nursery',
+				'mode' => 'reb',
+				'doc_labels' => $rebLabels,
+			];
+		}
+		if (preg_match('/\bp[1-3]\b/', $hay) || preg_match('/\blower\s*primary\b/', $hay)) {
+			return [
+				'key' => 'lower_primary',
+				'label' => 'Lower Primary',
+				'mode' => 'reb',
+				'doc_labels' => $rebLabels,
+			];
+		}
+		if (preg_match('/\bp[4-6]\b/', $hay) || preg_match('/\bupper\s*primary\b/', $hay)) {
+			return [
+				'key' => 'upper_primary',
+				'label' => 'Upper Primary',
+				'mode' => 'reb',
+				'doc_labels' => $rebLabels,
+			];
+		}
+		if (preg_match('/\bs[1-3]\b/', $hay) || preg_match('/\bo[\s\'’-]*level\b/', $hay)
+			|| preg_match('/\bordinary\b/', $hay)) {
+			return [
+				'key' => 'o_level',
+				'label' => 'O Level',
+				'mode' => 'reb',
+				'doc_labels' => $rebLabels,
+			];
+		}
+		if (preg_match('/\bs[4-6]\b/', $hay) || preg_match('/\ba[\s\'’-]*level\b/', $hay)
+			|| preg_match('/\bsenior\s*[4-6]\b/', $hay)) {
+			$deptId = (int) ($class['department_id'] ?? 0);
+			$deptCode = trim((string) ($class['dept_code'] ?? $class['code'] ?? ''));
+			$deptName = trim((string) ($class['department_name'] ?? ''));
+			$deptLabel = $deptCode !== '' ? $deptCode : ($deptName !== '' ? $deptName : 'Department');
+			return [
+				'key' => 'a_level_' . ($deptId > 0 ? $deptId : ('c' . $cid)),
+				'label' => 'A Level · ' . $deptLabel,
+				'mode' => 'reb',
+				'doc_labels' => $rebLabels,
+			];
+		}
+
+		// Other REB (or unknown) classes: keep Syllabus wording, upload per class
+		if ($facType === FacultyModel::TYPE_REB) {
+			return [
+				'key' => 'reb_' . $cid,
+				'label' => $display,
+				'mode' => 'reb',
+				'doc_labels' => $rebLabels,
+			];
+		}
+
+		return [
+			'key' => 'tvet_' . $cid,
+			'label' => $display,
+			'mode' => 'tvet',
+			'doc_labels' => $tvetLabels,
+		];
+	}
+
+	/**
+	 * Build UI upload rows: REB grouped bands, TVET per class.
+	 *
+	 * @param list<array<string,mixed>> $classes
+	 * @return list<array<string,mixed>>
+	 */
+	private function buildPedagogicalUploadRows(array $classes): array
+	{
+		$groups = [];
+		foreach ($classes as $class) {
+			if ($this->classLooksLikeHoliday($class)) {
+				continue;
+			}
+			$cid = (int) ($class['id'] ?? 0);
+			if ($cid <= 0) {
+				continue;
+			}
+			$target = $this->resolvePedagogicalUploadTarget($class);
+			$key = $target['key'];
+			if (!isset($groups[$key])) {
+				$groups[$key] = [
+					'key' => $key,
+					'label' => $target['label'],
+					'mode' => $target['mode'],
+					'doc_labels' => $target['doc_labels'],
+					'class_ids' => [],
+					'member_labels' => [],
+				];
+			}
+			$groups[$key]['class_ids'][] = $cid;
+			$member = $this->classDisplayName($class);
+			if ($member !== '' && !in_array($member, $groups[$key]['member_labels'], true)) {
+				$groups[$key]['member_labels'][] = $member;
+			}
+		}
+
+		$order = [
+			'nursery' => 10,
+			'lower_primary' => 20,
+			'upper_primary' => 30,
+			'o_level' => 40,
+		];
+		$rows = array_values($groups);
+		usort($rows, static function ($a, $b) use ($order) {
+			$ka = $a['key'];
+			$kb = $b['key'];
+			$oa = $order[$ka] ?? ($a['mode'] === 'reb' ? (strpos($ka, 'a_level_') === 0 ? 50 : 60) : 100);
+			$ob = $order[$kb] ?? ($b['mode'] === 'reb' ? (strpos($kb, 'a_level_') === 0 ? 50 : 60) : 100);
+			if ($oa !== $ob) {
+				return $oa <=> $ob;
+			}
+			return strcasecmp((string) $a['label'], (string) $b['label']);
+		});
+		return $rows;
+	}
+
+	/**
+	 * Parse and validate class_ids for pedagogical upload (fan-out to REB groups).
+	 *
+	 * @return list<int>|null null on validation error (JSON already sent)
+	 */
+	private function resolvePedagogicalUploadClassIds(int $schoolId, int $primaryClassId)
+	{
+		$raw = $this->request->getPost('class_ids');
+		$ids = [];
+		if (is_array($raw)) {
+			foreach ($raw as $v) {
+				$n = (int) $v;
+				if ($n > 0) {
+					$ids[] = $n;
+				}
+			}
+		} else {
+			foreach (explode(',', (string) $raw) as $part) {
+				$n = (int) trim($part);
+				if ($n > 0) {
+					$ids[] = $n;
+				}
+			}
+		}
+		if ($primaryClassId > 0) {
+			array_unshift($ids, $primaryClassId);
+		}
+		$ids = array_values(array_unique($ids));
+		if ($ids === []) {
+			return null;
+		}
+
+		$classMdl = new ClassesModel();
+		$found = $classMdl->select('classes.id')
+			->where('classes.school_id', $schoolId)
+			->whereIn('classes.id', $ids)
+			->get()->getResultArray();
+		$foundIds = array_map(static function ($r) {
+			return (int) $r['id'];
+		}, $found);
+		sort($foundIds);
+		$wanted = $ids;
+		sort($wanted);
+		if ($foundIds !== $wanted) {
+			return null;
+		}
+		// Keep primary first for package path naming
+		$ordered = [$primaryClassId > 0 ? $primaryClassId : $ids[0]];
+		foreach ($ids as $id) {
+			if (!in_array($id, $ordered, true)) {
+				$ordered[] = $id;
+			}
+		}
+		return $ordered;
+	}
+
 
 	private function ensurePeriodLocksSchema()
 	{
@@ -2250,10 +2461,11 @@ public function testEmail()
 			return $this->response->setJSON(['error' => 'Invalid document type']);
 		}
 
-		$class = (new ClassesModel())->where('id', $classId)->where('school_id', $schoolId)->first();
-		if (!$class) {
+		$classIds = $this->resolvePedagogicalUploadClassIds($schoolId, $classId);
+		if ($classIds === null || $classIds === []) {
 			return $this->response->setJSON(['error' => 'Class not found']);
 		}
+		$classId = $classIds[0];
 
 		// Support one or many files in the same request
 		$files = $this->request->getFileMultiple('documents');
@@ -2280,6 +2492,7 @@ public function testEmail()
 		$mdl = new ClassPedagogicalDocModel();
 		$saved = [];
 		$hadZip = false;
+		$groupSuffix = count($classIds) > 1 ? ('g' . count($classIds)) : (string) $classId;
 		foreach ($files as $i => $file) {
 			$ext = strtolower($file->getClientExtension());
 			if (!in_array($ext, ['pdf', 'doc', 'docx', 'zip'], true)) {
@@ -2290,21 +2503,30 @@ public function testEmail()
 				return $this->response->setJSON(['error' => "File too large (max {$maxMb}MB): " . $file->getClientName()]);
 			}
 
-			$newName = 'ped_' . $schoolId . '_' . $classId . '_y' . $yearId . '_' . $docType . '_' . time() . '_' . $i . '_' . bin2hex(random_bytes(2)) . '.' . $ext;
+			$newName = 'ped_' . $schoolId . '_' . $groupSuffix . '_y' . $yearId . '_' . $docType . '_' . time() . '_' . $i . '_' . bin2hex(random_bytes(2)) . '.' . $ext;
 			$file->move($dir, $newName);
 
+			$primaryPkgDir = null;
 			if ($ext === 'zip') {
 				$hadZip = true;
-				$pkgDir = $dir . '/pkg_' . $schoolId . '_' . $classId . '_y' . $yearId
-					. ($docType === 'chronogram' ? '_chr' : '');
-				$this->wipeDir($pkgDir);
-				@mkdir($pkgDir, 0755, true);
-				$zip = new \ZipArchive();
-				if ($zip->open($dir . '/' . $newName) === true) {
-					$zip->extractTo($pkgDir);
-					$zip->close();
+				$chrSuffix = $docType === 'chronogram' ? '_chr' : '';
+				foreach ($classIds as $idx => $targetClassId) {
+					$pkgDir = $dir . '/pkg_' . $schoolId . '_' . $targetClassId . '_y' . $yearId . $chrSuffix;
+					if ($idx === 0) {
+						$this->wipeDir($pkgDir);
+						@mkdir($pkgDir, 0755, true);
+						$zip = new \ZipArchive();
+						if ($zip->open($dir . '/' . $newName) === true) {
+							$zip->extractTo($pkgDir);
+							$zip->close();
+						}
+						$this->expandNestedZipsInDir($pkgDir);
+						$primaryPkgDir = $pkgDir;
+					} elseif ($primaryPkgDir && is_dir($primaryPkgDir)) {
+						$this->wipeDir($pkgDir);
+						$this->copyDirRecursive($primaryPkgDir, $pkgDir);
+					}
 				}
-				$this->expandNestedZipsInDir($pkgDir);
 			}
 
 			$payload = [
@@ -2317,31 +2539,59 @@ public function testEmail()
 
 			if ($replaceId > 0) {
 				$old = $mdl->where('id', $replaceId)->where('school_id', $schoolId)
-					->where('class_id', $classId)->where('doc_type', $docType)
+					->whereIn('class_id', $classIds)->where('doc_type', $docType)
 					->where('academic_year', $yearId)->first();
 				if (!$old) {
 					@unlink($dir . '/' . $newName);
 					return $this->response->setJSON(['error' => 'Document to replace not found']);
 				}
-				$oldPath = $dir . '/' . $old['file_name'];
-				if (is_file($oldPath)) {
+				$oldName = (string) ($old['file_name'] ?? '');
+				$siblings = $mdl->where('school_id', $schoolId)
+					->where('doc_type', $docType)
+					->where('academic_year', $yearId)
+					->where('file_name', $oldName)
+					->whereIn('class_id', $classIds)
+					->findAll();
+				if ($siblings === []) {
+					$siblings = [$old];
+				}
+				$oldPath = $dir . '/' . $oldName;
+				if (is_file($oldPath) && $oldName !== $newName) {
 					@unlink($oldPath);
 				}
-				$mdl->update($old['id'], $payload);
+				$updatedIds = [];
+				foreach ($siblings as $sib) {
+					$mdl->update((int) $sib['id'], $payload);
+					$updatedIds[] = (int) $sib['class_id'];
+				}
+				foreach ($classIds as $targetClassId) {
+					if (in_array($targetClassId, $updatedIds, true)) {
+						continue;
+					}
+					$mdl->insert(array_merge($payload, [
+						'school_id' => $schoolId,
+						'class_id' => $targetClassId,
+						'doc_type' => $docType,
+					]));
+				}
 				$saved[] = $newName;
 			} else {
-				$mdl->insert(array_merge($payload, [
-					'school_id' => $schoolId,
-					'class_id' => $classId,
-					'doc_type' => $docType,
-				]));
+				foreach ($classIds as $targetClassId) {
+					$mdl->insert(array_merge($payload, [
+						'school_id' => $schoolId,
+						'class_id' => $targetClassId,
+						'doc_type' => $docType,
+					]));
+				}
 				$saved[] = $newName;
 			}
 		}
 
 		$count = count($saved);
-		$msg = $count . ' ' . $docType . ' file' . ($count === 1 ? '' : 's')
-			. ' saved for academic year ' . ($this->data['academic_year_title'] ?? $yearId);
+		$typeLabel = $docType === 'chronogram' ? 'weeks breakdown / chronogram' : 'syllabus / curriculum';
+		$scope = count($classIds) > 1 ? ('across ' . count($classIds) . ' classes') : 'for this class';
+		$msg = $count . ' ' . $typeLabel . ' file' . ($count === 1 ? '' : 's')
+			. ' saved ' . $scope . ' · academic year ' . ($this->data['academic_year_title'] ?? $yearId);
 		if ($hadZip) {
 			$msg .= ' (ZIP package extracted)';
 		}
@@ -2349,10 +2599,12 @@ public function testEmail()
 		// Invalidate stale AI cache so next Analyse re-runs with new files
 		try {
 			$cacheMdl = new AcademicAiAnalysisModel();
-			$cached = $cacheMdl->where('school_id', $schoolId)->where('class_id', $classId)
-				->where('academic_year', $yearId)->first();
-			if ($cached) {
-				$cacheMdl->update($cached['id'], ['source_hash' => 'invalidated_after_upload_' . time()]);
+			foreach ($classIds as $targetClassId) {
+				$cached = $cacheMdl->where('school_id', $schoolId)->where('class_id', $targetClassId)
+					->where('academic_year', $yearId)->first();
+				if ($cached) {
+					$cacheMdl->update($cached['id'], ['source_hash' => 'invalidated_after_upload_' . time()]);
+				}
 			}
 		} catch (\Throwable $e) {
 			// non-fatal
@@ -2362,7 +2614,30 @@ public function testEmail()
 			'success' => $msg,
 			'files' => $saved,
 			'academic_year' => $yearId,
+			'class_ids' => $classIds,
 		]);
+	}
+
+	/** Recursively copy a directory tree. */
+	private function copyDirRecursive(string $src, string $dst): void
+	{
+		if (!is_dir($src)) {
+			return;
+		}
+		@mkdir($dst, 0755, true);
+		$it = new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator($src, \FilesystemIterator::SKIP_DOTS),
+			\RecursiveIteratorIterator::SELF_FIRST
+		);
+		foreach ($it as $item) {
+			/** @var \SplFileInfo $item */
+			$target = $dst . DIRECTORY_SEPARATOR . $it->getSubPathName();
+			if ($item->isDir()) {
+				@mkdir($target, 0755, true);
+			} else {
+				@copy($item->getPathname(), $target);
+			}
+		}
 	}
 
 	/** Recursively delete a directory. */
@@ -2432,11 +2707,23 @@ public function testEmail()
 		if ($yearId > 0 && (int) ($row['academic_year'] ?? 0) !== $yearId) {
 			return $this->response->setJSON(['error' => 'This document belongs to another academic year']);
 		}
-		$path = FCPATH . 'assets/documents/pedagogical/' . $row['file_name'];
+		$fileName = (string) ($row['file_name'] ?? '');
+		// Shared REB group uploads: remove every class row pointing at the same file
+		$siblings = $mdl->where('school_id', $schoolId)
+			->where('academic_year', (int) ($row['academic_year'] ?? $yearId))
+			->where('doc_type', $row['doc_type'])
+			->where('file_name', $fileName)
+			->findAll();
+		if ($siblings === []) {
+			$siblings = [$row];
+		}
+		$path = FCPATH . 'assets/documents/pedagogical/' . $fileName;
 		if (is_file($path)) {
 			@unlink($path);
 		}
-		$mdl->delete($id);
+		foreach ($siblings as $sib) {
+			$mdl->delete((int) $sib['id']);
+		}
 		return $this->response->setJSON(['success' => 'Document deleted for current academic year']);
 	}
 

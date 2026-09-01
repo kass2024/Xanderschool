@@ -1,8 +1,10 @@
 <?php
 $classes = $classes ?? [];
 $pedDocs = $pedagogical_docs ?? [];
+$pedRows = $pedagogical_rows ?? [];
 $yearTitle = $academic_year_title ?? 'Current year';
 $yearId = (int) ($academic_year_id ?? 0);
+
 $byClass = [];
 foreach ($pedDocs as $doc) {
 	$cid = (int) $doc['class_id'];
@@ -16,11 +18,33 @@ foreach ($pedDocs as $doc) {
 	}
 }
 
-$renderDocCell = function (array $docs, $cid, $type, $uploadLabel) {
+/** Merge & dedupe docs shared across a REB group (same file_name). */
+$mergeDocs = static function (array $classIds, string $type) use ($byClass): array {
+	$seen = [];
+	$out = [];
+	foreach ($classIds as $cid) {
+		$cid = (int) $cid;
+		$list = $byClass[$cid][$type] ?? [];
+		foreach ($list as $doc) {
+			$fn = (string) ($doc['file_name'] ?? '');
+			$key = $fn !== '' ? $fn : ('id:' . (int) ($doc['id'] ?? 0));
+			if (isset($seen[$key])) {
+				continue;
+			}
+			$seen[$key] = true;
+			$out[] = $doc;
+		}
+	}
+	return $out;
+};
+
+$renderDocCell = static function (array $docs, array $classIds, $type, $uploadLabel) {
+	$primaryId = (int) ($classIds[0] ?? 0);
+	$idsAttr = implode(',', array_map('intval', $classIds));
 	?>
 	<div class="ped-file-list">
 		<?php if ($docs === []): ?>
-			<span class="ped-empty">No files for this academic year</span>
+			<span class="ped-empty">No files yet</span>
 		<?php else: ?>
 			<?php foreach ($docs as $doc): ?>
 				<div class="ped-file-row">
@@ -30,7 +54,10 @@ $renderDocCell = function (array $docs, $cid, $type, $uploadLabel) {
 					</a>
 					<div class="ped-actions">
 						<button type="button" class="btn btn-outline-primary btn-sm ped-replace"
-								data-class="<?= $cid; ?>" data-type="<?= esc($type, 'attr'); ?>" data-replace-id="<?= (int) $doc['id']; ?>">
+								data-class="<?= $primaryId; ?>"
+								data-class-ids="<?= esc($idsAttr, 'attr'); ?>"
+								data-type="<?= esc($type, 'attr'); ?>"
+								data-replace-id="<?= (int) $doc['id']; ?>">
 							<i class="fa fa-refresh"></i> Replace
 						</button>
 						<button type="button" class="btn btn-outline-danger btn-sm ped-delete"
@@ -44,26 +71,114 @@ $renderDocCell = function (array $docs, $cid, $type, $uploadLabel) {
 	</div>
 	<div class="ped-actions ped-add-wrap">
 		<button type="button" class="btn btn-primary btn-sm ped-add"
-				data-class="<?= $cid; ?>" data-type="<?= esc($type, 'attr'); ?>">
-			<i class="fa fa-plus"></i> <?= esc($docs === [] ? $uploadLabel : 'Add more files'); ?>
+				data-class="<?= $primaryId; ?>"
+				data-class-ids="<?= esc($idsAttr, 'attr'); ?>"
+				data-type="<?= esc($type, 'attr'); ?>">
+			<i class="fa fa-plus"></i> <?= esc($docs === [] ? $uploadLabel : 'Add more'); ?>
 		</button>
-		<span class="ped-multi-hint">Select multiple files at once</span>
 	</div>
-	<input type="file" class="ped-upload-input" data-class="<?= $cid; ?>" data-type="<?= esc($type, 'attr'); ?>" multiple
+	<input type="file" class="ped-upload-input"
+		   data-class="<?= $primaryId; ?>"
+		   data-class-ids="<?= esc($idsAttr, 'attr'); ?>"
+		   data-type="<?= esc($type, 'attr'); ?>"
+		   multiple
 		   accept=".pdf,.doc,.docx,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip">
+	<?php
+};
+
+$rebRows = [];
+$tvetRows = [];
+foreach ($pedRows as $row) {
+	if (($row['mode'] ?? '') === 'reb') {
+		$rebRows[] = $row;
+	} else {
+		$tvetRows[] = $row;
+	}
+}
+// Fallback if controller did not build rows (older cache): one row per class as TVET
+if ($pedRows === [] && $classes !== []) {
+	foreach ($classes as $class) {
+		$cid = (int) ($class['id'] ?? 0);
+		if ($cid <= 0) {
+			continue;
+		}
+		$label = trim(($class['level_name'] ?? '') . ' ' . ($class['dept_code'] ?? $class['code'] ?? '') . ' ' . ($class['title'] ?? ''));
+		$tvetRows[] = [
+			'key' => 'tvet_' . $cid,
+			'label' => $label,
+			'mode' => 'tvet',
+			'doc_labels' => ['primary' => 'Curriculum', 'secondary' => 'Chronogram'],
+			'class_ids' => [$cid],
+			'member_labels' => [$label],
+		];
+	}
+}
+
+$renderSection = static function (string $title, string $badge, array $rows, string $colA, string $colB, $mergeDocs, $renderDocCell) {
+	if ($rows === []) {
+		return;
+	}
+	?>
+	<div class="ped-section">
+		<div class="ped-section-head">
+			<span class="ped-section-badge ped-badge-<?= esc($badge, 'attr'); ?>"><?= esc($title); ?></span>
+		</div>
+		<div class="table-responsive">
+			<table class="ped-table">
+				<thead>
+				<tr>
+					<th style="width:26%;">Group / Class</th>
+					<th style="width:37%;"><?= esc($colA); ?></th>
+					<th><?= esc($colB); ?></th>
+				</tr>
+				</thead>
+				<tbody>
+				<?php foreach ($rows as $row):
+					$classIds = array_map('intval', $row['class_ids'] ?? []);
+					if ($classIds === []) {
+						continue;
+					}
+					$labels = $row['doc_labels'] ?? ['primary' => $colA, 'secondary' => $colB];
+					$cur = $mergeDocs($classIds, 'curriculum');
+					$chr = $mergeDocs($classIds, 'chronogram');
+					$members = $row['member_labels'] ?? [];
+					$showMembers = count($members) > 1 || (count($members) === 1 && $members[0] !== ($row['label'] ?? ''));
+					?>
+					<tr>
+						<td>
+							<span class="ped-class-name"><?= esc($row['label'] ?? ''); ?></span>
+							<?php if ($showMembers): ?>
+								<span class="ped-class-meta"><?= esc(implode(' · ', $members)); ?></span>
+							<?php endif; ?>
+						</td>
+						<td><?php $renderDocCell($cur, $classIds, 'curriculum', 'Upload ' . strtolower($labels['primary'] ?? $colA)); ?></td>
+						<td><?php $renderDocCell($chr, $classIds, 'chronogram', 'Upload ' . strtolower($labels['secondary'] ?? $colB)); ?></td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+	</div>
 	<?php
 };
 ?>
 <style>
-	.ped-intro { color:#64748b; margin:0 0 .85rem; font-size:.92rem; }
 	.ped-year-banner {
-		display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;
-		margin:0 0 1rem; padding:.75rem 1rem; border-radius:12px;
+		display:flex; align-items:center; gap:.65rem; flex-wrap:wrap;
+		margin:0 0 1.1rem; padding:.65rem 1rem; border-radius:12px;
 		background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%);
-		border:1px solid #93c5fd; color:#1e3a8a;
+		border:1px solid #93c5fd; color:#1e3a8a; font-size:.92rem;
 	}
 	.ped-year-banner strong { color:#1d4ed8; }
-	.ped-year-banner .ped-year-note { font-size:.82rem; color:#3b82f6; }
+	.ped-section { margin-bottom:1.35rem; }
+	.ped-section:last-child { margin-bottom:0; }
+	.ped-section-head { margin:0 0 .55rem; }
+	.ped-section-badge {
+		display:inline-flex; align-items:center; font-size:.72rem; font-weight:700;
+		letter-spacing:.04em; text-transform:uppercase; padding:.28rem .7rem; border-radius:999px;
+	}
+	.ped-badge-reb { background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; }
+	.ped-badge-tvet { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
 	.ped-table { width:100%; border-collapse:separate; border-spacing:0; }
 	.ped-table th {
 		background:#f8fafc; color:#475569; font-size:.78rem; text-transform:uppercase;
@@ -75,7 +190,7 @@ $renderDocCell = function (array $docs, $cid, $type, $uploadLabel) {
 	}
 	.ped-table tr:hover td { background:#f8fafc; }
 	.ped-class-name { font-weight:650; }
-	.ped-class-meta { display:block; color:#94a3b8; font-size:.78rem; font-weight:500; margin-top:.15rem; }
+	.ped-class-meta { display:block; color:#94a3b8; font-size:.78rem; font-weight:500; margin-top:.2rem; line-height:1.35; }
 	.ped-file-list { display:flex; flex-direction:column; gap:.55rem; }
 	.ped-file-row {
 		display:flex; flex-wrap:wrap; align-items:center; gap:.45rem;
@@ -92,68 +207,25 @@ $renderDocCell = function (array $docs, $cid, $type, $uploadLabel) {
 	.ped-actions { display:flex; flex-wrap:wrap; gap:.35rem; align-items:center; }
 	.ped-actions .btn { font-size:.78rem; padding:.25rem .55rem; }
 	.ped-add-wrap { margin-top:.55rem; }
-	.ped-multi-hint { font-size:.75rem; color:#94a3b8; }
 	.ped-upload-input { display:none; }
 </style>
 
 <div class="ped-year-banner">
-	<div>
-		Academic year: <strong><?= esc($yearTitle); ?></strong>
-		<?php if ($yearId > 0): ?>
-			<span class="text-muted" style="font-size:.8rem;">(ID <?= $yearId; ?>)</span>
-		<?php endif; ?>
-	</div>
-	<div class="ped-year-note">Documents belong only to this year. Switch academic year to start a new set.</div>
+	Academic year: <strong><?= esc($yearTitle); ?></strong>
+	<?php if ($yearId > 0): ?>
+		<span class="text-muted" style="font-size:.8rem;">(ID <?= $yearId; ?>)</span>
+	<?php endif; ?>
 </div>
-
-<p class="ped-intro">
-	Upload the <strong>full RTB curriculum package</strong> for each class — not only the General Information PDF.<br>
-	Include all of these (select multiple files, or ZIP the whole folder):
-	<strong>Curriculum General Information</strong> +
-	<strong>Specific Modules</strong> +
-	<strong>General Modules</strong> +
-	<strong>CCM / Complementary Modules</strong>,
-	plus the <strong>chronogram</strong>.<br>
-	Example folder: <code>RQF LEVEL 4 SoftWare_Development curriculum PDF</code>
-	(with subfolders <code>Specific Modules</code>, <code>General Modules</code>, <code>CCM Modules-1</code>).<br>
-	Accepted: PDF or Word (.doc/.docx). ZIP of the whole package is best.
-</p>
 
 <?php if ($yearId <= 0): ?>
 	<div class="alert alert-warning">No active academic year found. Set an active term first.</div>
-<?php elseif (empty($classes)): ?>
+<?php elseif ($rebRows === [] && $tvetRows === []): ?>
 	<div class="alert alert-light border">No classes found. Create classes first, then return here to upload documents.</div>
 <?php else: ?>
-<div class="table-responsive">
-	<table class="ped-table">
-		<thead>
-		<tr>
-			<th style="width:22%;">Class</th>
-			<th style="width:39%;">Curriculum (multiple files)</th>
-			<th>Chronogram (multiple files)</th>
-		</tr>
-		</thead>
-		<tbody>
-		<?php foreach ($classes as $class):
-			$cid = (int) $class['id'];
-			$label = trim(($class['level_name'] ?? '') . ' ' . ($class['dept_code'] ?? $class['code'] ?? '') . ' ' . ($class['title'] ?? ''));
-			$docs = $byClass[$cid] ?? ['curriculum' => [], 'chronogram' => []];
-			?>
-			<tr data-class-id="<?= $cid; ?>">
-				<td>
-					<span class="ped-class-name"><?= esc($label); ?></span>
-					<span class="ped-class-meta">ID <?= $cid; ?>
-						· Cur <?= count($docs['curriculum']); ?>
-						· Chr <?= count($docs['chronogram']); ?>
-					</span>
-				</td>
-				<td><?php $renderDocCell($docs['curriculum'], $cid, 'curriculum', 'Upload curriculum'); ?></td>
-				<td><?php $renderDocCell($docs['chronogram'], $cid, 'chronogram', 'Upload chronogram'); ?></td>
-			</tr>
-		<?php endforeach; ?>
-		</tbody>
-	</table>
-</div>
+	<?php
+	$renderSection('REB', 'reb', $rebRows, 'Syllabus', 'Weeks breakdown', $mergeDocs, $renderDocCell);
+	$renderSection('RTB / TVET', 'tvet', $tvetRows, 'Curriculum', 'Chronogram', $mergeDocs, $renderDocCell);
+	?>
 <?php endif; ?>
 
 <script>
@@ -161,35 +233,39 @@ $(function () {
 	var uploading = false;
 	var pendingReplaceId = 0;
 
-	function findInput(cls, type) {
+	function findInput(cls, type, classIds) {
+		var ids = String(classIds || '');
 		return $('.ped-upload-input').filter(function () {
 			return String($(this).data('class')) === String(cls)
-				&& String($(this).data('type')) === String(type);
+				&& String($(this).data('type')) === String(type)
+				&& String($(this).data('class-ids') || $(this).attr('data-class-ids') || '') === ids;
 		}).first();
 	}
 
 	$(document).off('click.pedAdd').on('click.pedAdd', '.ped-add', function () {
 		pendingReplaceId = 0;
 		var $btn = $(this);
-		findInput($btn.data('class'), $btn.data('type')).trigger('click');
+		findInput($btn.data('class'), $btn.data('type'), $btn.attr('data-class-ids') || $btn.data('class-ids')).trigger('click');
 	});
 
 	$(document).off('click.pedReplace').on('click.pedReplace', '.ped-replace', function () {
 		var $btn = $(this);
 		pendingReplaceId = parseInt($btn.data('replace-id') || '0', 10) || 0;
-		findInput($btn.data('class'), $btn.data('type')).trigger('click');
+		findInput($btn.data('class'), $btn.data('type'), $btn.attr('data-class-ids') || $btn.data('class-ids')).trigger('click');
 	});
 
 	$(document).off('change.pedUpload').on('change.pedUpload', '.ped-upload-input', function () {
 		var input = this;
 		if (!input.files || !input.files.length || uploading) return;
 		uploading = true;
+		var $input = $(input);
 		var fd = new FormData();
 		for (var i = 0; i < input.files.length; i++) {
 			fd.append('documents[]', input.files[i]);
 		}
-		fd.append('class_id', $(input).data('class'));
-		fd.append('doc_type', $(input).data('type'));
+		fd.append('class_id', $input.data('class'));
+		fd.append('class_ids', $input.attr('data-class-ids') || $input.data('class-ids') || $input.data('class'));
+		fd.append('doc_type', $input.data('type'));
 		if (pendingReplaceId > 0) {
 			fd.append('replace_id', pendingReplaceId);
 		}
@@ -213,10 +289,15 @@ $(function () {
 					alert((res && res.error) || 'Upload failed');
 				}
 			},
-			error: function () {
+			error: function (xhr) {
 				uploading = false;
 				input.value = '';
-				alert('Upload failed');
+				var msg = 'Upload failed';
+				try {
+					var j = xhr.responseJSON || JSON.parse(xhr.responseText || '{}');
+					if (j && j.error) msg = j.error;
+				} catch (e) {}
+				alert(msg);
 			}
 		});
 	});

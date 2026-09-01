@@ -1321,6 +1321,7 @@
 					<?= view('pages/partials/pedagogical_documents', [
 						'classes' => $classes ?? [],
 						'pedagogical_docs' => $pedagogical_docs ?? [],
+						'pedagogical_rows' => $pedagogical_rows ?? [],
 						'academic_year_title' => $academic_year_title ?? '',
 						'academic_year_id' => $academic_year_id ?? ($academic_year ?? 0),
 					]); ?>
