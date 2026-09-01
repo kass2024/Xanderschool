@@ -31,7 +31,7 @@ if (preg_match('/<body[^>]*>([\s\S]*)<\/body>/i', $html, $m)) {
 	<div class="sow-edit-card">
 		<h5 class="mb-2">Edit before download</h5>
 		<p class="sow-hint">
-			Click any cell or text to edit inline. Save to update the database cache, then download Word or PDF.
+			Click any cell or text to edit inline. Save to update the database, then download Word or landscape PDF (school header included for REB schemes).
 		</p>
 		<div class="form-group">
 			<label>Title</label>

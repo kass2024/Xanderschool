@@ -12,8 +12,8 @@ namespace App\Libraries;
 class GeminiAcademicDocs
 {
 	/** Posts allowed to use academic AI plans */
-	public const ALLOWED_POSTS = [1, 3, 5, 6, 13, 15, 17, 18];
-	// Headmaster, DoS, Patron, Matron, Librarian, Principal, IT Support, Headmistress
+	public const ALLOWED_POSTS = [1, 3, 5, 6, 13, 15, 17, 18, 25, 26];
+	// Headmaster, DoS, Patron, Matron, Librarian, Principal, IT Support, Headmistress, Head Teacher, Deputy Head Teacher
 
 	/** @var string */
 	private $lastError = '';
@@ -226,8 +226,16 @@ class GeminiAcademicDocs
 		}
 
 		$curriculumChars = mb_strlen($combinedText, 'UTF-8');
-		if ($curriculumChars < 400 && $pdfFiles === []) {
-			$this->lastError = 'Curriculum files have no readable text and no usable PDF for AI vision. Re-upload the full package (General Information + Specific + General + CCM module PDFs, or one ZIP).';
+		$hasVisionFiles = $pdfFiles !== [];
+		foreach ($packFiles as $f) {
+			$e = strtolower(pathinfo((string) ($f['path'] ?? ''), PATHINFO_EXTENSION));
+			if (in_array($e, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true)) {
+				$hasVisionFiles = true;
+				break;
+			}
+		}
+		if ($curriculumChars < 400 && !$hasVisionFiles) {
+			$this->lastError = 'Curriculum/syllabus files have no readable text and no usable PDF/image for AI vision. Re-upload the full package.';
 			$this->reportProgress(0, $this->lastError, ['status' => 'error']);
 			return null;
 		}
@@ -261,6 +269,22 @@ class GeminiAcademicDocs
 			$this->lastError = 'Chronogram file is empty or unreadable — upload a PDF/Word chronogram for weekly hour distribution';
 			$this->reportProgress(0, 'Chronogram unreadable', ['status' => 'error']);
 			return null;
+		}
+
+		// REB (general education): syllabus + weeks breakdown — separate path (not RTB module codes)
+		$facType = (int) ($dbContext['class']['faculty_type'] ?? 0);
+		$levelHay = strtolower(trim((string) (($dbContext['class']['level_name'] ?? '') . ' ' . ($dbContext['class']['title'] ?? ''))));
+		$isReb = $facType === 2
+			|| (bool) preg_match('/\b(p[1-6]|s[1-6]|n[1-3]|nursery|primary|ordinary|senior|o[\s\'-]*level|a[\s\'-]*level)\b/', $levelHay);
+		if ($isReb) {
+			return $this->analyzeRebSyllabusAndWeeks(
+				$combinedText,
+				$chrText,
+				$chr,
+				$dbContext,
+				$packFiles,
+				$chronoPacks
+			);
 		}
 
 		$chronoTitles = DocumentTextExtractor::parseChronogramModuleTitles($chrText);
@@ -2405,7 +2429,7 @@ PROMPT
 		}
 
 		$meta = [
-			'layout' => 'js_fundamentals_v1',
+			'layout' => strtolower($programType) === 'reb' ? 'reb_unit_plan_v1' : 'js_fundamentals_v1',
 			'sector' => $sector,
 			'trade' => $trade,
 			'rqf_level' => (string) ($rqf ?? ''),
@@ -2414,6 +2438,7 @@ PROMPT
 			'module_code' => $code,
 			'module_title' => $titleRaw,
 			'learning_hours' => $learningHours,
+			'periods_per_week' => $module['periods_per_week'] ?? $learningHours,
 			'number_of_classes' => 1,
 			'date' => $startDate,
 			'class_name' => $className,
@@ -2423,6 +2448,11 @@ PROMPT
 			'head_teacher' => (string) ($school['head_master'] ?? ($dbContext['head_teacher'] ?? '________________')),
 			'generated_by' => 'cache',
 		];
+		if (strtolower($programType) === 'reb') {
+			$integrated = [];
+		} else {
+			// keep existing integrated below
+		}
 
 		$topics = [];
 		foreach ($rows as $r) {
@@ -2443,13 +2473,15 @@ PROMPT
 		$projectDate = $lastSlot
 			? ($this->formatSchemeDay((string) ($lastSlot['date_to'] ?: $lastSlot['date_from'])) ?: ('Week ' . (int) ($lastSlot['week'] ?? '')))
 			: '';
-		$integrated = [
-			'date' => $projectDate,
-			'task' => 'Integrated Project: Develop a practical application covering the module learning outcomes — including key indicative contents of '
-				. trim($code . ' ' . $titleRaw) . '.',
-			'consumables' => $this->defaultSchemeResources($module, true),
-			'place' => $this->defaultSchemePlace($module, true),
-		];
+		if (strtolower($programType) !== 'reb') {
+			$integrated = [
+				'date' => $projectDate,
+				'task' => 'Integrated Project: Develop a practical application covering the module learning outcomes — including key indicative contents of '
+					. trim($code . ' ' . $titleRaw) . '.',
+				'consumables' => $this->defaultSchemeResources($module, true),
+				'place' => $this->defaultSchemePlace($module, true),
+			];
+		}
 
 		$data = [
 			'title' => 'SCHEME OF WORK',
@@ -2506,7 +2538,7 @@ PROMPT
 					];
 				}
 			}
-			$out[] = ['lo_code' => $loCode, 'lo_title' => $loTitle, 'ics' => $ics];
+			$out[] = ['lo_code' => $loCode, 'lo_title' => $loTitle, 'ics' => $ics, 'key_competence' => trim((string) ($lo['key_competence'] ?? $lo['key_unit_competence'] ?? ''))];
 		}
 		return $out;
 	}
@@ -2617,10 +2649,10 @@ PROMPT
 					'term' => (int) (($groupSlots[0]['term'] ?? 0) ?: 1),
 					'week' => (int) (($groupSlots[0]['week'] ?? 0) ?: ($gi + 1)),
 					'date' => str_replace('<br>', ' ', $dateHtml),
-					'date_html' => $dateHtml,
+					'date_html' => $dateHtml !== '' ? $dateHtml : ('Week ' . (int) (($groupSlots[0]['week'] ?? 0) ?: ($gi + 1))),
 					'lo_code' => (string) ($g['lo_code'] ?? ''),
 					'lo_title' => (string) ($g['lo_title'] ?? ''),
-					'lo_display' => $loDisplay,
+					'lo_display' => $loDisplay !== '' ? $loDisplay : trim(($g['lo_code'] ?? '') . ' ' . ($g['lo_title'] ?? '')),
 					'ic_code' => (string) ($ic['ic_code'] ?? ''),
 					'ic_title' => (string) ($ic['ic_title'] ?? ''),
 					'ic_display' => $icDisplay,
@@ -2630,8 +2662,15 @@ PROMPT
 					'assessment' => $pack['assessment'],
 					'place' => $pack['place'],
 					'observation' => '',
+					'objectives' => (string) ($g['lo_title'] ?? ''),
+					'key_competence' => (string) ($g['key_competence'] ?? ''),
 					'lo_group_index' => $gi,
 				];
+				if (strtolower($programType) === 'reb' && $dateHtml === '' && !empty($groupSlots[0]['date_from'])) {
+					$row['date_html'] = 'Week ' . (int) ($groupSlots[0]['week'] ?? ($gi + 1)) . "\n"
+						. $this->formatSchemeWeekRange((string) ($groupSlots[0]['date_from'] ?? ''), (string) ($groupSlots[0]['date_to'] ?? ''), (int) ($groupSlots[0]['week'] ?? 0));
+					$row['date'] = str_replace("\n", ' ', $row['date_html']);
+				}
 				$tableRows[] = $row;
 				$rows[] = $row;
 			}
@@ -2947,6 +2986,297 @@ PROMPT
 			}
 		}
 		return $text;
+	}
+
+	/**
+	 * REB path: syllabus + weeks breakdown → subjects/units for ONE target class (e.g. P6 from P4–P6 pack).
+	 *
+	 * @param list<array<string,mixed>> $packFiles
+	 * @param list<array<string,mixed>> $chronoPacks
+	 * @return array<string,mixed>|null
+	 */
+	private function analyzeRebSyllabusAndWeeks(
+		string $syllabusText,
+		string $weeksText,
+		array $chrExtract,
+		array $dbContext,
+		array $packFiles,
+		array $chronoPacks
+	): ?array {
+		$grade = $this->detectRebTargetGrade($dbContext);
+		$classLabel = trim((string) (($dbContext['class']['level_name'] ?? '') . ' ' . ($dbContext['class']['dept_code'] ?? '') . ' ' . ($dbContext['class']['title'] ?? '')));
+		$this->reportProgress(20, 'REB analysis for ' . ($grade !== '' ? $grade : $classLabel) . ' — reading syllabus & weeks breakdown…', [
+			'target_grade' => $grade,
+			'program' => 'reb',
+		]);
+
+		$parts = [[
+			'text' => "TARGET CLASS / GRADE (extract ONLY content for this grade — split multi-grade packages):\n"
+				. ($grade !== '' ? $grade : $classLabel) . "\n"
+				. "CLASS CONTEXT:\n" . json_encode($dbContext['class'] ?? [], JSON_UNESCAPED_UNICODE) . "\n"
+				. "DB COURSES FOR THIS CLASS:\n" . json_encode($dbContext['courses'] ?? [], JSON_UNESCAPED_UNICODE) . "\n\n"
+				. "=== SYLLABUS TEXT ===\n" . mb_substr($syllabusText, 0, 90000, 'UTF-8') . "\n\n"
+				. "=== WEEKS BREAKDOWN TEXT ===\n" . mb_substr($weeksText, 0, 40000, 'UTF-8'),
+		]];
+
+		// Attach first syllabus PDF/image + weeks image/PDF for vision when text is thin
+		$syllabusChars = mb_strlen($syllabusText, 'UTF-8');
+		$weeksChars = mb_strlen($weeksText, 'UTF-8');
+		foreach ($packFiles as $f) {
+			$ex = DocumentTextExtractor::extract($f['path']);
+			$ext = strtolower((string) ($ex['ext'] ?? ''));
+			$bytes = (string) ($ex['bytes'] ?? '');
+			if ($bytes === '' || strlen($bytes) > 8 * 1024 * 1024) {
+				continue;
+			}
+			$mime = 'application/pdf';
+			if (in_array($ext, ['jpg', 'jpeg'], true)) {
+				$mime = 'image/jpeg';
+			} elseif ($ext === 'png') {
+				$mime = 'image/png';
+			} elseif ($ext === 'webp') {
+				$mime = 'image/webp';
+			} elseif ($ext !== 'pdf') {
+				continue;
+			}
+			if ($syllabusChars < 3000 || in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+				$parts[] = ['inlineData' => ['mimeType' => $mime, 'data' => base64_encode($bytes)]];
+			}
+			if (count($parts) >= 4) {
+				break;
+			}
+		}
+		foreach ($chronoPacks as $cp) {
+			$ex = DocumentTextExtractor::extract($cp['path']);
+			$ext = strtolower((string) ($ex['ext'] ?? ''));
+			$bytes = (string) ($ex['bytes'] ?? '');
+			if ($bytes === '' || strlen($bytes) > 8 * 1024 * 1024) {
+				continue;
+			}
+			$mime = 'application/pdf';
+			if (in_array($ext, ['jpg', 'jpeg'], true)) {
+				$mime = 'image/jpeg';
+			} elseif ($ext === 'png') {
+				$mime = 'image/png';
+			} elseif ($ext === 'webp') {
+				$mime = 'image/webp';
+			} elseif ($ext !== 'pdf' && $weeksChars >= 2000) {
+				continue;
+			} elseif ($ext !== 'pdf') {
+				continue;
+			}
+			$parts[] = ['inlineData' => ['mimeType' => $mime, 'data' => base64_encode($bytes)]];
+			break;
+		}
+
+		$this->reportProgress(40, 'AI extracting REB subjects/units for ' . ($grade !== '' ? $grade : 'class') . '…');
+		$prompt = $this->promptRebAnalyze($dbContext, $grade);
+		$inventory = $this->generateJson($prompt, $parts, 16384, 4096);
+		if (!is_array($inventory) || empty($inventory['modules']) || !is_array($inventory['modules'])) {
+			$this->lastError = 'REB syllabus analysis returned no subjects. Check syllabus + weeks breakdown pair for this class.';
+			$this->reportProgress(0, $this->lastError, ['status' => 'error']);
+			return null;
+		}
+
+		$modules = [];
+		foreach ($inventory['modules'] as $i => $m) {
+			if (!is_array($m)) {
+				continue;
+			}
+			$title = trim((string) ($m['title'] ?? ''));
+			if ($title === '') {
+				continue;
+			}
+			$code = strtoupper(trim((string) ($m['code'] ?? '')));
+			if ($code === '' || DocumentTextExtractor::isValidRtbModuleCode($code)) {
+				// Build a stable subject code from title (never invent RTB-looking codes)
+				$code = $this->rebSubjectCode($title, $i + 1);
+			}
+			$los = [];
+			foreach ($m['learning_outcomes'] ?? [] as $li => $lo) {
+				if (!is_array($lo)) {
+					continue;
+				}
+				$loTitle = trim((string) ($lo['title'] ?? $lo['name'] ?? ''));
+				if ($loTitle === '') {
+					continue;
+				}
+				$loCode = trim((string) ($lo['code'] ?? ('UNIT' . ($li + 1))));
+				$ics = [];
+				$rawIcs = $lo['indicative_contents'] ?? ($lo['lessons'] ?? ($lo['topics'] ?? []));
+				if (!is_array($rawIcs) || $rawIcs === []) {
+					$ics[] = [
+						'code' => 'L' . ($li + 1) . '.1',
+						'title' => $loTitle,
+						'hours' => isset($lo['hours']) ? (float) $lo['hours'] : null,
+					];
+				} else {
+					foreach ($rawIcs as $ii => $ic) {
+						if (is_string($ic)) {
+							$ics[] = ['code' => 'L' . ($li + 1) . '.' . ($ii + 1), 'title' => trim($ic), 'hours' => null];
+							continue;
+						}
+						if (!is_array($ic)) {
+							continue;
+						}
+						$ics[] = [
+							'code' => trim((string) ($ic['code'] ?? ('L' . ($li + 1) . '.' . ($ii + 1)))),
+							'title' => trim((string) ($ic['title'] ?? $ic['name'] ?? '')),
+							'hours' => isset($ic['hours']) ? (float) $ic['hours'] : (isset($ic['periods']) ? (float) $ic['periods'] : null),
+						];
+					}
+				}
+				$los[] = [
+					'code' => $loCode,
+					'title' => $loTitle,
+					'indicative_contents' => $ics,
+					'key_competence' => trim((string) ($lo['key_competence'] ?? $lo['key_unit_competence'] ?? '')),
+				];
+			}
+			$slots = [];
+			foreach ($m['chronogram_slots'] ?? [] as $s) {
+				if (!is_array($s)) {
+					continue;
+				}
+				$slots[] = [
+					'week' => (int) ($s['week'] ?? 0),
+					'term' => (int) ($s['term'] ?? 0),
+					'date_from' => (string) ($s['date_from'] ?? $s['date'] ?? ''),
+					'date_to' => (string) ($s['date_to'] ?? ''),
+					'periods' => (float) ($s['periods'] ?? $s['hours'] ?? 0),
+				];
+			}
+			$modules[] = [
+				'code' => $code,
+				'title' => $title,
+				'rqf_level' => null,
+				'learning_hours' => isset($m['learning_hours']) ? (float) $m['learning_hours'] : (isset($m['periods_per_week']) ? (float) $m['periods_per_week'] * 12 : null),
+				'periods_per_week' => isset($m['periods_per_week']) ? (float) $m['periods_per_week'] : null,
+				'credits' => null,
+				'module_type' => 'subject',
+				'target_grade' => $grade,
+				'learning_outcomes' => $los,
+				'chronogram_slots' => $slots,
+				'matched_course_id' => null,
+				'teacher_name' => '',
+			];
+		}
+
+		if ($modules === []) {
+			$this->lastError = 'No REB subjects extracted for ' . ($grade !== '' ? $grade : 'this class');
+			$this->reportProgress(0, $this->lastError, ['status' => 'error']);
+			return null;
+		}
+
+		$this->reportProgress(85, 'Matching REB subjects to class courses…', ['module_count' => count($modules)]);
+		$analysis = [
+			'program_type' => 'reb',
+			'qualification_title' => (string) ($inventory['qualification_title'] ?? 'REB Competence-Based Curriculum'),
+			'sector' => (string) ($inventory['sector'] ?? 'General Education'),
+			'trade' => (string) ($inventory['trade'] ?? ''),
+			'detected_rqf_level' => null,
+			'target_grade' => $grade,
+			'modules' => $modules,
+			'chronogram' => is_array($inventory['chronogram'] ?? null) ? $inventory['chronogram'] : [
+				'school_year_label' => (string) ($dbContext['academic_year_title'] ?? ''),
+				'weeks' => [],
+			],
+			'notes' => (string) ($inventory['notes'] ?? ('REB analysis for ' . ($grade !== '' ? $grade : $classLabel))),
+		];
+		$analysis = $this->matchToDb($analysis, $dbContext);
+		$this->reportProgress(100, 'REB syllabus analysis complete — ' . count($analysis['modules']) . ' subject(s) for ' . ($grade !== '' ? $grade : 'class'), [
+			'status' => 'done',
+			'module_count' => count($analysis['modules']),
+			'target_grade' => $grade,
+		]);
+		$analysis['_source_text'] = mb_substr($syllabusText, 0, 20000, 'UTF-8');
+		$analysis['_chronogram_text'] = mb_substr($weeksText, 0, 12000, 'UTF-8');
+		return $analysis;
+	}
+
+	/** @param array<string,mixed> $dbContext */
+	private function detectRebTargetGrade(array $dbContext): string
+	{
+		$hay = strtolower(trim((string) (($dbContext['class']['level_name'] ?? '') . ' ' . ($dbContext['class']['title'] ?? ''))));
+		if (preg_match('/\b(p[1-6]|s[1-6]|n[1-3])\b/', $hay, $m)) {
+			return strtoupper($m[1]);
+		}
+		return '';
+	}
+
+	private function rebSubjectCode(string $title, int $index): string
+	{
+		$t = strtoupper(preg_replace('/[^A-Z0-9]+/i', ' ', $title) ?? '');
+		$words = array_values(array_filter(explode(' ', $t)));
+		$skip = ['AND', 'OF', 'THE', 'FOR', 'IN', 'TO', 'A', 'AN'];
+		$parts = [];
+		foreach ($words as $w) {
+			if (in_array($w, $skip, true)) {
+				continue;
+			}
+			$parts[] = substr($w, 0, 3);
+			if (count($parts) >= 3) {
+				break;
+			}
+		}
+		$code = implode('', $parts);
+		if (strlen($code) < 3) {
+			$code = 'SUB' . $index;
+		}
+		return substr($code, 0, 12);
+	}
+
+	/** @param array<string,mixed> $dbContext */
+	private function promptRebAnalyze(array $dbContext, string $grade): string
+	{
+		$target = $grade !== '' ? $grade : 'the selected class';
+		$classJson = json_encode($dbContext['class'] ?? [], JSON_UNESCAPED_UNICODE);
+		$coursesJson = json_encode($dbContext['courses'] ?? [], JSON_UNESCAPED_UNICODE);
+		return <<<PROMPT
+You are an expert Rwanda REB (general education) curriculum analyst.
+
+CRITICAL: Syllabus packages and weeks breakdowns are often SHARED across a band (e.g. P4–P6 Upper Primary, or S1–S3 O Level).
+You MUST extract content ONLY for TARGET GRADE: {$target}.
+Ignore units/lessons clearly labelled for other grades.
+
+Documents:
+- SYLLABUS (may be PDF/Word/image): subjects, units, lessons, learning objectives, key unit competences, periods.
+- WEEKS BREAKDOWN (may be image/PDF/Word): weekly schedule / dates / periods — treat this as the chronogram.
+
+CLASS: {$classJson}
+DB COURSES FOR THIS CLASS: {$coursesJson}
+
+For EACH subject taught at {$target}:
+1. title (e.g. Social and Religious Studies, Mathematics)
+2. short code (e.g. SRS, MATH) — NOT TVET codes like SWD…
+3. periods_per_week when known
+4. learning_outcomes = UNITS (UNIT 1: …) with nested indicative_contents = lesson titles / topics
+5. include key_competence on each unit when present
+6. chronogram_slots: week, term, date_from, date_to, periods for that subject from weeks breakdown
+
+Return ONLY JSON:
+{
+  "program_type": "reb",
+  "qualification_title": string,
+  "sector": "General Education",
+  "trade": string,
+  "target_grade": "{$target}",
+  "modules": [
+    {
+      "code": string,
+      "title": string,
+      "periods_per_week": number|null,
+      "learning_hours": number|null,
+      "learning_outcomes": [
+        {"code":"UNIT 1","title":string,"key_competence":string,"indicative_contents":[{"code":string,"title":string,"hours":number|null}]}
+      ],
+      "chronogram_slots": [{"week":number,"term":number,"date_from":string,"date_to":string,"periods":number}]
+    }
+  ],
+  "chronogram": {"school_year_label":string,"weeks":[{"week":number,"term":number,"date_from":string,"date_to":string,"modules":[{"code":string,"periods":number}]}]},
+  "notes": string
+}
+PROMPT;
 	}
 
 	private function promptAnalyze(array $ctx): string
@@ -3372,20 +3702,29 @@ PROMPT;
 		if (!is_array($modules)) {
 			$modules = [];
 		}
+		$isReb = strtolower((string) ($analysis['program_type'] ?? '')) === 'reb';
 
 		foreach ($modules as &$mod) {
-			$mod['code'] = DocumentTextExtractor::cleanModuleCode((string) ($mod['code'] ?? ''));
-			$mod['title'] = DocumentTextExtractor::cleanModuleTitle((string) ($mod['title'] ?? ''));
+			if ($isReb) {
+				$codeKeep = strtoupper(preg_replace('/[^A-Z0-9]/', '', (string) ($mod['code'] ?? '')) ?? '');
+				$mod['code'] = $codeKeep !== '' ? substr($codeKeep, 0, 16) : $this->rebSubjectCode((string) ($mod['title'] ?? 'SUB'), 1);
+				$mod['title'] = trim(preg_replace('/\s+/', ' ', (string) ($mod['title'] ?? '')) ?? '');
+			} else {
+				$mod['code'] = DocumentTextExtractor::cleanModuleCode((string) ($mod['code'] ?? ''));
+				$mod['title'] = DocumentTextExtractor::cleanModuleTitle((string) ($mod['title'] ?? ''));
+			}
 			$code = strtoupper(trim((string) ($mod['code'] ?? '')));
 			$title = strtolower(trim((string) ($mod['title'] ?? '')));
 			$rqf = $mod['rqf_level'] ?? $analysis['detected_rqf_level'] ?? null;
 			$best = null;
 			$bestScore = 0.0;
 			foreach ($courses as $c) {
-				$cCode = DocumentTextExtractor::cleanModuleCode((string) ($c['code'] ?? ''));
+				$cCode = $isReb
+					? strtoupper(preg_replace('/[^A-Z0-9]/', '', (string) ($c['code'] ?? '')) ?? '')
+					: DocumentTextExtractor::cleanModuleCode((string) ($c['code'] ?? ''));
 				$cTitle = strtolower(trim((string) ($c['title'] ?? '')));
 				$score = 0.0;
-				if ($code !== '' && $cCode !== '' && ($code === $cCode || $this->moduleCodesCompatible($code, $cCode))) {
+				if ($code !== '' && $cCode !== '' && ($code === $cCode || (!$isReb && $this->moduleCodesCompatible($code, $cCode)))) {
 					$score += 0.75;
 				} elseif ($code !== '' && $cCode !== '' && (strpos($cCode, $code) !== false || strpos($code, $cCode) !== false)) {
 					$score += 0.55;
@@ -3441,6 +3780,9 @@ PROMPT;
 
 	private function fallbackSchemeHtml(array $data, array $ctx, string $programType): string
 	{
+		if (strtolower($programType) === 'reb') {
+			return $this->fallbackRebSchemeHtml($data, $ctx);
+		}
 		$school = is_array($ctx['school'] ?? null) ? $ctx['school'] : [];
 		$meta = is_array($data['meta'] ?? null) ? $data['meta'] : [];
 		$schoolName = esc($school['name'] ?? 'School');
@@ -3556,6 +3898,136 @@ h1{text-align:center;font-size:18px;margin:8px 0 14px;letter-spacing:1px}
 <td>Prepared by: {$trainer}, Trainer</td>
 <td>Verified by: {$dos}, DOS</td>
 <td>Approved by: {$head}, Head teacher</td>
+</tr></table>
+</body></html>";
+	}
+
+	/** REB Scheme of Work HTML matching FORMAT OF UNIT PLAN/SCHEME OF WORK sample (landscape). */
+	private function fallbackRebSchemeHtml(array $data, array $ctx): string
+	{
+		$school = is_array($ctx['school'] ?? null) ? $ctx['school'] : [];
+		$meta = is_array($data['meta'] ?? null) ? $data['meta'] : [];
+		$schoolName = esc($school['name'] ?? 'School');
+		$address = esc($school['address'] ?? '');
+		$email = esc($school['email'] ?? '');
+		$tel = esc($school['phone'] ?? '');
+		$year = esc($meta['school_year'] ?? ($ctx['academic_year_title'] ?? ''));
+		$subject = esc(trim(($meta['module_code'] ?? '') . ' ' . ($meta['module_title'] ?? '')));
+		$className = esc($meta['class_name'] ?? '');
+		$teacher = esc($meta['trainer'] ?? '');
+		$periods = esc((string) ($meta['periods_per_week'] ?? $meta['learning_hours'] ?? ''));
+		$dos = esc($meta['dos_name'] ?? '________________');
+		$head = esc($meta['head_teacher'] ?? ($school['head_master'] ?? '________________'));
+		$logoHtml = '';
+		$logo = (string) ($school['logo'] ?? '');
+		if ($logo !== '') {
+			$logoPath = FCPATH . 'assets/images/logo/' . ltrim($logo, '/');
+			if (is_file($logoPath)) {
+				$logoHtml = '<img class="logo" src="' . esc($logoPath, 'attr') . '" alt="">';
+			} else {
+				$logoHtml = '<img class="logo" src="' . esc(base_url('assets/images/logo/' . ltrim($logo, '/')), 'attr') . '" alt="">';
+			}
+		}
+
+		$rows = is_array($data['rows'] ?? null) ? $data['rows'] : [];
+		$byTerm = [];
+		foreach ($rows as $r) {
+			$t = (int) ($r['term'] ?? 1);
+			if ($t < 1) {
+				$t = 1;
+			}
+			$byTerm[$t][] = $r;
+		}
+		if ($byTerm === []) {
+			$byTerm[1] = [];
+		}
+		ksort($byTerm);
+
+		$roman = [1 => 'I', 2 => 'II', 3 => 'III', 4 => 'IV'];
+		$body = '';
+		foreach ($byTerm as $termNo => $termRows) {
+			$label = 'TERM ' . ($roman[$termNo] ?? (string) $termNo);
+			$body .= '<div class="term">' . esc($label) . '</div>';
+			$body .= '<table class="sow"><thead><tr>'
+				. '<th style="width:11%">Week No + Dates</th>'
+				. '<th style="width:12%">UNIT</th>'
+				. '<th style="width:14%">Lesson title + Evaluation</th>'
+				. '<th style="width:22%">Learning objectives + Key unit competence</th>'
+				. '<th style="width:18%">Teaching methods &amp; techniques &amp; Evaluation procedures</th>'
+				. '<th style="width:14%">Resources &amp; References</th>'
+				. '<th style="width:9%">Observations</th>'
+				. '</tr></thead><tbody>';
+			if ($termRows === []) {
+				$body .= '<tr><td colspan="7" class="muted">No weeks mapped yet — re-run Analyse Syllabus &amp; Weeks breakdown.</td></tr>';
+			}
+			foreach ($termRows as $r) {
+				$weekCell = trim((string) ($r['date_html'] ?? $r['date'] ?? ''));
+				if ($weekCell === '' && !empty($r['week'])) {
+					$weekCell = 'Week ' . (int) $r['week'];
+				}
+				$unit = trim((string) ($r['lo_display'] ?? (($r['lo_code'] ?? '') . ' ' . ($r['lo_title'] ?? ''))));
+				$lesson = trim((string) ($r['ic_display'] ?? (($r['ic_code'] ?? '') . ' ' . ($r['ic_title'] ?? ''))));
+				$objectives = trim((string) ($r['objectives'] ?? $r['lo_title'] ?? ''));
+				$key = trim((string) ($r['key_competence'] ?? ''));
+				if ($key !== '') {
+					$objectives .= ($objectives !== '' ? "\n" : '') . 'Key unit competence: ' . $key;
+				}
+				$methods = trim((string) ($r['activities'] ?? ''));
+				$eval = trim((string) ($r['assessment'] ?? ''));
+				if ($eval !== '') {
+					$methods .= ($methods !== '' ? "\n" : '') . $eval;
+				}
+				$resources = trim((string) ($r['resources'] ?? ''));
+				$obs = trim((string) ($r['observation'] ?? ''));
+				$body .= '<tr>'
+					. '<td>' . nl2br(esc($weekCell)) . '</td>'
+					. '<td>' . nl2br(esc($unit)) . '</td>'
+					. '<td>' . nl2br(esc($lesson)) . '</td>'
+					. '<td>' . nl2br(esc($objectives)) . '</td>'
+					. '<td>' . nl2br(esc($methods)) . '</td>'
+					. '<td>' . nl2br(esc($resources)) . '</td>'
+					. '<td>' . nl2br(esc($obs)) . '</td>'
+					. '</tr>';
+			}
+			$body .= '</tbody></table>';
+		}
+
+		return "<!DOCTYPE html><html><head><meta charset='utf-8'><title>SCHEME OF WORK</title>
+<style>
+@page{size:A4 landscape;margin:10mm}
+body{font-family:DejaVu Sans,Arial,sans-serif;font-size:10px;color:#111;margin:10px}
+.header{display:flex;align-items:center;gap:14px;border-bottom:2px solid #0f766e;padding-bottom:8px;margin-bottom:10px}
+.logo{height:54px;width:auto;max-width:90px;object-fit:contain}
+.brand{flex:1}
+.brand h2{margin:0;font-size:15px;text-transform:uppercase;color:#0f172a;letter-spacing:.02em}
+.brand .meta-line{margin:2px 0 0;color:#475569;font-size:10px}
+h1{text-align:center;font-size:15px;margin:8px 0 6px;letter-spacing:.04em}
+.sub{text-align:center;font-size:11px;margin:0 0 10px;color:#334155}
+.info{width:100%;border-collapse:collapse;margin-bottom:10px}
+.info td{border:1px solid #94a3b8;padding:4px 6px;vertical-align:top}
+.term{font-weight:700;font-size:12px;margin:12px 0 6px;color:#0f766e}
+.sow{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:8px}
+.sow th,.sow td{border:1px solid #334155;padding:4px 5px;vertical-align:top;font-size:9.5px}
+.sow th{background:#ecfdf5;color:#065f46;font-size:9px;text-transform:none}
+.muted{color:#64748b;font-style:italic;text-align:center}
+.foot{width:100%;margin-top:18px;border-collapse:collapse}
+.foot td{border:none;padding:8px 4px;width:33%;vertical-align:top}
+</style></head><body>
+<div class='header'>{$logoHtml}<div class='brand'>
+<h2>{$schoolName}</h2>
+<div class='meta-line'>" . trim($address . ($tel !== '' ? ' · Tel: ' . $tel : '') . ($email !== '' ? ' · ' . $email : '')) . "</div>
+</div></div>
+<h1>FORMAT OF UNIT PLAN / SCHEME OF WORK</h1>
+<p class='sub'>Academic year: <b>{$year}</b></p>
+<table class='info'>
+<tr><td><b>Subject:</b> {$subject}</td><td><b>Teacher's name:</b> {$teacher}</td><td><b>Class:</b> {$className}</td></tr>
+<tr><td colspan='2'><b>Number of periods per week:</b> {$periods}</td><td><b>School year:</b> {$year}</td></tr>
+</table>
+{$body}
+<table class='foot'><tr>
+<td>Prepared by:<br>{$teacher}</td>
+<td>Verified by:<br>{$dos} (DOS)</td>
+<td>Approved by:<br>{$head} (Head teacher)</td>
 </tr></table>
 </body></html>";
 	}

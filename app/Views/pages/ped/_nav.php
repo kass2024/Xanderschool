@@ -2,6 +2,15 @@
 /** Shared Pedagogical Documents sub-nav */
 $section = $ped_section ?? ($section ?? 'analyse');
 $yearTitle = $academic_year_title ?? '';
+$hasReb = false;
+foreach ($classes ?? [] as $c) {
+	if ((int) ($c['faculty_type'] ?? 0) === 2) {
+		$hasReb = true;
+		break;
+	}
+}
+$analyseLabel = $hasReb ? '1. Analyse Syllabus & Weeks breakdown' : '1. Analyse Curriculum & Chronogram';
+$sessionLabel = $hasReb ? '3. Lesson Plan' : '3. Session Plan';
 ?>
 <style>
 	.ped-hero {
@@ -22,7 +31,7 @@ $yearTitle = $academic_year_title ?? '';
 	<p><?= esc($subtitle ?? ''); ?> · Year: <b><?= esc($yearTitle); ?></b></p>
 </div>
 <div class="ped-tabs">
-	<a class="<?= $section === 'analyse' ? 'is-on' : ''; ?>" href="<?= base_url('ped_analyse'); ?>">1. Analyse Curriculum &amp; Chronogram</a>
+	<a class="<?= $section === 'analyse' ? 'is-on' : ''; ?>" href="<?= base_url('ped_analyse'); ?>"><?= esc($analyseLabel); ?></a>
 	<a class="<?= $section === 'scheme' ? 'is-on' : ''; ?>" href="<?= base_url('ped_scheme_of_work'); ?>">2. Scheme of Work</a>
-	<a class="<?= $section === 'session' ? 'is-on' : ''; ?>" href="<?= base_url('ped_session_plan'); ?>">3. Session Plan</a>
+	<a class="<?= $section === 'session' ? 'is-on' : ''; ?>" href="<?= base_url('ped_session_plan'); ?>"><?= esc($sessionLabel); ?></a>
 </div>

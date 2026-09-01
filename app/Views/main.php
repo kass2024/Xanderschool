@@ -9,7 +9,7 @@
 	<meta name="viewport"
 		  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
 	<meta name="description" content="XanderTech Smart School Management System (SmartSMS)">
-	<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.11.2/css/all.css" rel="stylesheet">
+	<link href="<?= \App\Libraries\SqliteCompat::fontAwesomeHref(); ?>" rel="stylesheet">
 	<link href="<?= base_url(); ?>assets/plugins/typicons/font/typicons.min.css" rel="stylesheet">
 	<link rel="stylesheet" type="text/css" href="<?= base_url('assets/plugins/select2/css/select2.min.css'); ?>">
 	<meta name="msapplication-tap-highlight" content="no">
@@ -468,7 +468,7 @@
 										<li>
 											<a href="<?= base_url('ped_analyse'); ?>">
 												<i class="metismenu-icon"></i>
-												Analyse Curriculum &amp; Chronogram
+												Analyse Syllabus &amp; Weeks / Curriculum
 											</a>
 										</li>
 										<?php } ?>
@@ -484,7 +484,7 @@
 										<li>
 											<a href="<?= base_url('ped_session_plan'); ?>">
 												<i class="metismenu-icon"></i>
-												Session Plan
+												Session / Lesson Plan
 											</a>
 										</li>
 										<?php } ?>
@@ -1346,7 +1346,7 @@
 						<div class="form-group">
 							<label><?= lang("app.year"); ?></label>
 							<?php
-							if (in_array($_SESSION['soma_post'], [1, 3])) {
+							if (\Config\MenuClearance::isFullAccessPost($_SESSION['soma_post'])) {
 								?>
 								<select class="form-control select2" name="academic_year">
 									<?php
@@ -1387,7 +1387,7 @@
 						<div class="form-group" id="active_term">
 							<label><?= lang("app.activeTerm"); ?></label>
 							<?php
-							if (in_array($_SESSION['soma_post'], [1, 3])) {
+							if (\Config\MenuClearance::isFullAccessPost($_SESSION['soma_post'])) {
 								?>
 								<select class="form-control select2" name="term" id="marks_term_select">
 									<option
@@ -2603,6 +2603,7 @@
 										<option value="3"><?= lang("app.cheque"); ?></option>
 										<option value="4"><?= lang("app.momo"); ?></option>
 										<option value="5"><?= lang("app.airtelMoney"); ?></option>
+										<option value="6"><?= lang("app.transfer"); ?></option>
 									</select>
 								</div>
 								<div class="col-md-6">

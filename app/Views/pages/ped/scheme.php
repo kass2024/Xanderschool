@@ -32,11 +32,23 @@ foreach ($analysis_cache ?? [] as $cid => $row) {
 </style>
 
 <div class="aiplan-wrap">
+	<?php
+	$hasReb = false;
+	foreach ($classes ?? [] as $c) {
+		if ((int) ($c['faculty_type'] ?? 0) === 2) { $hasReb = true; break; }
+	}
+	?>
 	<div class="aiplan-card">
 		<h5>Select class</h5>
 		<p class="text-muted" style="font-size:.88rem;">
-			Schemes follow the <b>Javascript Fundamentals</b> sample layout (header + meta + one table per Learning Outcome with IC hours and chronogram dates).
-			Built from the curriculum DB cache — no AI credits by default. Edit inline, then download Word or PDF.
+			<?php if ($hasReb): ?>
+				REB schemes follow the <b>Unit Plan / Scheme of Work</b> sample (Week · Unit · Lesson · Objectives · Methods · Resources).
+				Analyse Syllabus + Weeks breakdown <b>per class</b> first (shared Upper Primary packs are split for P4/P5/P6).
+				Then generate per subject, edit on the web, save, and download landscape PDF with school header.
+			<?php else: ?>
+				Schemes follow the <b>Javascript Fundamentals</b> sample layout (header + meta + one table per Learning Outcome with IC hours and chronogram dates).
+				Built from the curriculum DB cache — no AI credits by default. Edit inline, then download Word or PDF.
+			<?php endif; ?>
 		</p>
 		<select id="sowClass" class="form-control">
 			<option value="">— Choose class —</option>
@@ -55,11 +67,11 @@ foreach ($analysis_cache ?? [] as $cid => $row) {
 			<label class="mb-0 mr-3"><input type="checkbox" id="sowForce"> Force re-generate (replace cache)</label>
 			<label class="mb-0"><input type="checkbox" id="sowUseAi" <?= !empty($gemini_ready) ? '' : 'disabled'; ?>> Optional AI polish (uses AI credits)</label>
 		</div>
-		<p class="aiplan-status mt-2 mb-0" id="sowStatus">If analysis is missing, go to Analyse Curriculum &amp; Chronogram first.</p>
+		<p class="aiplan-status mt-2 mb-0" id="sowStatus"><?= !empty($hasReb) ? 'If analysis is missing, run Analyse Syllabus & Weeks breakdown first.' : 'If analysis is missing, go to Analyse Curriculum & Chronogram first.'; ?></p>
 		<p class="aiplan-busy mt-2" id="sowBusy"><i class="fa fa-spinner fa-spin"></i> Building Scheme of Work…</p>
 		<div id="sowNeedAnalyse" class="alert alert-warning mt-2" style="display:none;">
 			No cached analysis for this class.
-			<a href="<?= base_url('ped_analyse'); ?>">Run Analyse Curriculum &amp; Chronogram</a> first.
+			<a href="<?= base_url('ped_analyse'); ?>"><?= !empty($hasReb) ? 'Run Analyse Syllabus & Weeks breakdown' : 'Run Analyse Curriculum & Chronogram'; ?></a> first.
 		</div>
 	</div>
 
