@@ -77,6 +77,15 @@ $renderDocCell = static function (array $docs, array $classIds, $type, $uploadLa
 			<i class="fa fa-plus"></i> <?= esc($docs === [] ? $uploadLabel : 'Add more'); ?>
 		</button>
 	</div>
+	<div class="ped-progress" hidden>
+		<div class="ped-progress-meta">
+			<span class="ped-progress-name">Uploading…</span>
+			<span class="ped-progress-pct">0%</span>
+		</div>
+		<div class="ped-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+			<div class="ped-progress-fill"></div>
+		</div>
+	</div>
 	<input type="file" class="ped-upload-input"
 		   data-class="<?= $primaryId; ?>"
 		   data-class-ids="<?= esc($idsAttr, 'attr'); ?>"
@@ -208,6 +217,26 @@ $renderSection = static function (string $title, string $badge, array $rows, str
 	.ped-actions .btn { font-size:.78rem; padding:.25rem .55rem; }
 	.ped-add-wrap { margin-top:.55rem; }
 	.ped-upload-input { display:none; }
+	.ped-progress {
+		margin-top:.65rem; padding:.55rem .65rem; background:#eff6ff;
+		border:1px solid #bfdbfe; border-radius:10px;
+	}
+	.ped-progress[hidden] { display:none !important; }
+	.ped-progress-meta {
+		display:flex; justify-content:space-between; align-items:baseline; gap:.5rem;
+		margin-bottom:.4rem; font-size:.78rem; color:#1e40af; font-weight:600;
+	}
+	.ped-progress-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+	.ped-progress-pct { flex-shrink:0; font-variant-numeric:tabular-nums; }
+	.ped-progress-track {
+		height:8px; background:#dbeafe; border-radius:999px; overflow:hidden;
+	}
+	.ped-progress-fill {
+		height:100%; width:0%; background:#2563eb; border-radius:999px;
+		transition:width .12s linear;
+	}
+	.ped-progress.is-done .ped-progress-fill { background:#059669; }
+	.ped-cell-busy .ped-add, .ped-cell-busy .ped-replace { pointer-events:none; opacity:.55; }
 </style>
 
 <div class="ped-year-banner">
@@ -242,6 +271,34 @@ $(function () {
 		}).first();
 	}
 
+	function cellOf($el) {
+		return $el.closest('td');
+	}
+
+	function formatBytes(n) {
+		n = Number(n) || 0;
+		if (n < 1024) return n + ' B';
+		if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+		return (n / 1048576).toFixed(1) + ' MB';
+	}
+
+	function setProgress($cell, pct, label, done) {
+		var $bar = $cell.find('.ped-progress');
+		pct = Math.max(0, Math.min(100, Math.round(pct)));
+		$bar.removeAttr('hidden').toggleClass('is-done', !!done);
+		$bar.find('.ped-progress-fill').css('width', pct + '%');
+		$bar.find('.ped-progress-track').attr('aria-valuenow', pct);
+		$bar.find('.ped-progress-pct').text(pct + '%');
+		if (label) $bar.find('.ped-progress-name').text(label);
+	}
+
+	function hideProgress($cell) {
+		var $bar = $cell.find('.ped-progress');
+		$bar.attr('hidden', true).removeClass('is-done');
+		$bar.find('.ped-progress-fill').css('width', '0%');
+		$cell.removeClass('ped-cell-busy');
+	}
+
 	$(document).off('click.pedAdd').on('click.pedAdd', '.ped-add', function () {
 		pendingReplaceId = 0;
 		var $btn = $(this);
@@ -259,10 +316,19 @@ $(function () {
 		if (!input.files || !input.files.length || uploading) return;
 		uploading = true;
 		var $input = $(input);
+		var $cell = cellOf($input);
+		$cell.addClass('ped-cell-busy');
+		var names = [];
+		var totalBytes = 0;
 		var fd = new FormData();
 		for (var i = 0; i < input.files.length; i++) {
 			fd.append('documents[]', input.files[i]);
+			names.push(input.files[i].name);
+			totalBytes += input.files[i].size || 0;
 		}
+		var label = names.length === 1 ? names[0] : (names.length + ' files');
+		if (totalBytes) label += ' · ' + formatBytes(totalBytes);
+		setProgress($cell, 0, 'Uploading ' + label, false);
 		fd.append('class_id', $input.data('class'));
 		fd.append('class_ids', $input.attr('data-class-ids') || $input.data('class-ids') || $input.data('class'));
 		fd.append('doc_type', $input.data('type'));
@@ -277,21 +343,35 @@ $(function () {
 			processData: false,
 			contentType: false,
 			dataType: 'json',
+			xhr: function () {
+				var xhr = $.ajaxSettings.xhr();
+				if (xhr.upload) {
+					xhr.upload.addEventListener('progress', function (e) {
+						if (!e.lengthComputable) return;
+						var pct = Math.round((e.loaded / e.total) * 100);
+						var stage = pct >= 100 ? 'Saving ' : 'Uploading ';
+						setProgress($cell, pct, stage + label, pct >= 100);
+					});
+				}
+				return xhr;
+			},
 			success: function (res) {
 				uploading = false;
 				input.value = '';
 				if (res && res.success) {
+					setProgress($cell, 100, 'Saved', true);
 					if (window.toastada) toastada.success(res.success);
-					else alert(res.success);
 					window.location.hash = '#pedagogical-documents';
 					window.location.reload();
 				} else {
+					hideProgress($cell);
 					alert((res && res.error) || 'Upload failed');
 				}
 			},
 			error: function (xhr) {
 				uploading = false;
 				input.value = '';
+				hideProgress($cell);
 				var msg = 'Upload failed';
 				try {
 					var j = xhr.responseJSON || JSON.parse(xhr.responseText || '{}');
