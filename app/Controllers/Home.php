@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Libraries\Wkhtmltopdf;
 use App\Libraries\WdaReportBuilder;
+use App\Libraries\FeesReportHelper;
+use App\Libraries\FeeInstallmentService;
 use App\Libraries\GeminiCardBackground;
 use App\Libraries\GeminiAcademicDocs;
 use App\Libraries\StaffShiftClock;
@@ -703,6 +705,22 @@ public function testEmail()
 				->having("expected > paid")
 				->orderBy("fr.id", "DESC")
 				->get()->getResultArray();
+
+		(new FeesRecordModel())->ensureSchema();
+		$data['installment_due_dates'] = FeeInstallmentService::dueInstallments(
+			(int) $school_id,
+			(int) $this->data['academic_year'],
+			(int) $this->data['term']
+		);
+		$remKey = 'fee_inst_rem_' . date('Ymd');
+		if (!$this->session->get($remKey)) {
+			FeeInstallmentService::sendDueReminders(
+				(int) $school_id,
+				(int) ($this->data['active_term_id'] ?? 0),
+				(int) ($this->data['remaining_sms'] ?? 0)
+			);
+			$this->session->set($remKey, 1);
+		}
 
 		$data['attend_day_array'] = "[" . $this->get_attend_week(1) . ",
 							 " . $this->get_attend_week(2) . ",
@@ -1419,6 +1437,34 @@ public function testEmail()
 		]);
 	}
 
+	private function ensureUseGradingSchema(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists('schools') && !$db->fieldExists('use_grading_system', 'schools')) {
+			$db->query("ALTER TABLE `schools` ADD COLUMN `use_grading_system` TINYINT(1) NOT NULL DEFAULT 1");
+		}
+		$done = true;
+	}
+
+	/**
+	 * Whether the school uses mention/color grading on report slips.
+	 * Defaults to true (legacy behavior). Safe if column is missing.
+	 */
+	private function schoolUsesGradingSystem(?int $schoolId = null): bool
+	{
+		$this->ensureUseGradingSchema();
+		$schoolId = $schoolId ?: (int) $this->session->get('soma_school_id');
+		if ($schoolId <= 0) {
+			return true;
+		}
+		$row = (new SchoolModel())->select('use_grading_system')->where('id', $schoolId)->get(1)->getRowArray();
+		return (int) ($row['use_grading_system'] ?? 1) === 1;
+	}
+
 	private function ensureStaffCardSchema()
 	{
 		static $done = false;
@@ -1432,6 +1478,9 @@ public function testEmail()
 		}
 		$fields = $db->getFieldNames('schools');
 		$alters = [];
+		if (!in_array('use_grading_system', $fields, true)) {
+			$alters[] = "ADD COLUMN `use_grading_system` TINYINT(1) NOT NULL DEFAULT 1";
+		}
 		if (!in_array('sf_card_template', $fields, true)) {
 			$alters[] = "ADD COLUMN `sf_card_template` VARCHAR(32) DEFAULT 'ocean'";
 		}
@@ -1928,12 +1977,17 @@ public function testEmail()
 	{
 		$this->_preset(1, 3);
 		$this->ensurePeriodLocksSchema();
+		$this->ensureUseGradingSchema();
 		$data = $this->data;
 		$settingsMdl = new SchoolModel();
 		$faculityModel = new FacultyModel();
 		$grade = new GradeModel();
 		$schoolId = (int) $this->session->get("soma_school_id");
 		$data['settings'] = $settingsMdl->getSchool(array("schools.id" => $schoolId))->getRowArray();
+		if (!isset($data['settings']['use_grading_system'])) {
+			$data['settings']['use_grading_system'] = 1;
+		}
+		$data['use_grading_system'] = (int) ($data['settings']['use_grading_system'] ?? 1) === 1;
 		$data['faculities'] = $data['faculty'] = $faculityModel->get()->getResultArray();
 		$nurseryFaculty = null;
 		foreach ($data['faculities'] as $fac) {
@@ -2597,7 +2651,13 @@ public function testEmail()
 		}
 
 		$count = count($saved);
-		$typeLabel = $docType === 'chronogram' ? 'weeks breakdown / chronogram' : 'syllabus / curriculum';
+		$uploadClass = (new ClassesModel())->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.id as level_id,l.title as level_name,f.type as faculty_type,f.abbrev as faculty_code,f.title as faculty_title")
+			->join('departments d', 'd.id=classes.department')
+			->join('levels l', 'l.id=classes.level')
+			->join('faculty f', 'f.id=d.faculty_id')
+			->where('classes.id', $classId)->where('classes.school_id', $schoolId)->first();
+		$uploadLabels = is_array($uploadClass) ? ($this->resolvePedagogicalUploadTarget($uploadClass)['doc_labels'] ?? ['primary' => 'Curriculum', 'secondary' => 'Chronogram']) : ['primary' => 'Curriculum', 'secondary' => 'Chronogram'];
+		$typeLabel = $docType === 'chronogram' ? $uploadLabels['secondary'] : $uploadLabels['primary'];
 		$scope = count($classIds) > 1 ? ('across ' . count($classIds) . ' classes') : 'for this class';
 		$msg = $count . ' ' . $typeLabel . ' file' . ($count === 1 ? '' : 's')
 			. ' saved ' . $scope . ' · academic year ' . ($this->data['academic_year_title'] ?? $yearId);
@@ -3008,10 +3068,7 @@ public function testEmail()
 	{
 		$hasReb = $this->schoolHasRebClasses();
 		$title = $hasReb ? 'Analyse Syllabus & Weeks breakdown' : 'Analyse Curriculum & Chronogram';
-		$sub = $hasReb
-			? 'Extract subjects/units from Syllabus and map Weeks breakdown per class (shared P1–P3 / P4–P6 packs are split per class).'
-			: 'Extract courses from curriculum and map chronogram weeks/hours (cached in DB).';
-		return $this->renderPedagogicalPage('analyse', $title, $sub);
+		return $this->renderPedagogicalPage('analyse', $title, '');
 	}
 
 	public function ped_scheme_of_work()
@@ -3221,6 +3278,66 @@ public function testEmail()
 	 * Queue one or more classes for background analyse (one-by-one worker).
 	 * Skips classes missing curriculum/chronogram at enqueue time.
 	 */
+
+	public function ai_analysis_preview()
+	{
+		$this->requireAcademicPlanAccess();
+		$this->ensurePedagogicalDocsSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$classId = (int) ($this->request->getGet('class_id') ?: $this->request->getPost('class_id'));
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		if ($classId <= 0 || $yearId <= 0) {
+			return $this->response->setJSON(['error' => 'Class and academic year required']);
+		}
+		$row = (new AcademicAiAnalysisModel())
+			->where('school_id', $schoolId)
+			->where('class_id', $classId)
+			->where('academic_year', $yearId)
+			->first();
+		if (!$row) {
+			return $this->response->setJSON(['error' => 'No cached analysis for this class. Run Analyse first.']);
+		}
+		$analysis = json_decode($row['analysis_json'] ?? '', true);
+		if (!is_array($analysis) || empty($analysis['modules'])) {
+			return $this->response->setJSON(['error' => 'Cached analysis is empty. Re-run Analyse.']);
+		}
+		$ctx = $this->buildAcademicAiContext($schoolId, $classId, $yearId);
+		$classLabel = trim((string) (($ctx['class']['level_name'] ?? '') . ' ' . ($ctx['class']['dept_code'] ?? '') . ' ' . ($ctx['class']['title'] ?? '')));
+		$subjects = [];
+		foreach ($analysis['modules'] as $m) {
+			if (!is_array($m)) {
+				continue;
+			}
+			$los = is_array($m['learning_outcomes'] ?? null) ? $m['learning_outcomes'] : [];
+			$icCount = 0;
+			$weeks = is_array($m['chronogram_slots'] ?? null) ? count($m['chronogram_slots']) : 0;
+			foreach ($los as $lo) {
+				if (!is_array($lo)) {
+					continue;
+				}
+				$icCount += count(is_array($lo['indicative_contents'] ?? null) ? $lo['indicative_contents'] : []);
+			}
+			$subjects[] = [
+				'code' => (string) ($m['code'] ?? ''),
+				'title' => (string) ($m['title'] ?? ''),
+				'units' => count($los),
+				'lessons' => $icCount,
+				'weeks' => $weeks,
+				'periods_per_week' => $m['periods_per_week'] ?? null,
+				'learning_outcomes' => $los,
+			];
+		}
+		return $this->response->setJSON([
+			'class_id' => $classId,
+			'class_label' => $classLabel,
+			'program_type' => (string) ($analysis['program_type'] ?? 'reb'),
+			'target_grade' => (string) ($analysis['target_grade'] ?? ''),
+			'module_count' => count($subjects),
+			'updated_at' => $row['updated_at'] ?? '',
+			'subjects' => $subjects,
+			'chronogram' => $analysis['chronogram'] ?? null,
+		]);
+	}
 	public function ai_analyze_queue()
 	{
 		$this->requireAcademicPlanAccess();
@@ -3266,6 +3383,17 @@ public function testEmail()
 			}
 		}
 
+		$classReb = [];
+		$rebRows = (new ClassesModel())->select('classes.id, f.type as faculty_type')
+			->join('departments d', 'd.id=classes.department')
+			->join('faculty f', 'f.id=d.faculty_id')
+			->where('classes.school_id', $schoolId)
+			->whereIn('classes.id', $classIds)
+			->findAll();
+		foreach ($rebRows as $cr) {
+			$classReb[(int) $cr['id']] = ((int) ($cr['faculty_type'] ?? 0) === 2);
+		}
+
 		$batchId = bin2hex(random_bytes(8));
 		$jobMdl = new AcademicAiJobModel();
 		$now = date('Y-m-d H:i:s');
@@ -3283,8 +3411,8 @@ public function testEmail()
 				'status' => $ready ? 'pending' : 'skipped',
 				'skip_reason' => $ready ? null : (
 					empty($hasCur[$cid]) && empty($hasChr[$cid])
-						? 'Missing curriculum and chronogram uploads'
-						: (empty($hasCur[$cid]) ? 'Missing curriculum upload' : 'Missing chronogram upload')
+						? (!empty($classReb[$cid]) ? 'Missing Syllabus and Weeks breakdown uploads' : 'Missing curriculum and chronogram uploads')
+						: (empty($hasCur[$cid]) ? (!empty($classReb[$cid]) ? 'Missing Syllabus upload' : 'Missing curriculum upload') : (!empty($classReb[$cid]) ? 'Missing Weeks breakdown upload' : 'Missing chronogram upload'))
 				),
 				'error_text' => null,
 				'result_meta' => null,
@@ -3473,8 +3601,8 @@ public function testEmail()
 		@ini_set('max_execution_time', '0');
 		@set_time_limit(0);
 		$result = $this->processNextAiAnalyseJob();
-		// Chain: if more pending, spawn background for the rest
 		$pending = (new AcademicAiJobModel())->where('status', 'pending')->countAllResults();
+		$result['pending_remaining'] = $pending;
 		if ($pending > 0) {
 			$this->spawnAiAnalyseWorker();
 		}
@@ -3502,10 +3630,10 @@ public function testEmail()
 		}
 		$log = $logDir . DIRECTORY_SEPARATOR . 'worker.log';
 
-		if (is_file($script)) {
+		if (is_file($spark)) {
+			$run = escapeshellarg($php) . ' ' . escapeshellarg($spark) . ' process:ai-analyse-jobs 5';
+		} elseif (is_file($script)) {
 			$run = escapeshellarg($php) . ' ' . escapeshellarg($script);
-		} elseif (is_file($spark)) {
-			$run = escapeshellarg($php) . ' ' . escapeshellarg($spark) . ' process:ai-analyse-jobs 30';
 		} else {
 			return ['started' => false, 'error' => 'Worker script missing'];
 		}
@@ -3526,6 +3654,7 @@ public function testEmail()
 	 */
 	private function runAiAnalyzeCurriculum(int $schoolId, int $classId, int $yearId, bool $force, array $ctx, int $createdBy = 0)
 	{
+		$isRebClass = ((int) ($ctx['class']['faculty_type'] ?? 0) === 2);
 		$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'Checking uploaded documents…', ['status' => 'running']);
 
 		$pedMdl = new ClassPedagogicalDocModel();
@@ -3551,15 +3680,13 @@ public function testEmail()
 			}
 		}
 		if ($curricula === []) {
-			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'No curriculum uploaded', ['status' => 'error']);
-			$isRebClass = ((int) ($ctx['class']['faculty_type'] ?? 0) === 2);
+			$this->writeAiProgress($schoolId, $classId, $yearId, 0, $isRebClass ? 'No Syllabus uploaded' : 'No curriculum uploaded', ['status' => 'error']);
 			return ['error' => $isRebClass
 				? 'Upload at least one Syllabus file for this class in School Settings > Pedagogical documents.'
 				: 'Upload at least one curriculum file for this class in School Settings > Pedagogical documents.'];
 		}
 		if ($chronograms === []) {
-			$this->writeAiProgress($schoolId, $classId, $yearId, 0, 'No chronogram uploaded', ['status' => 'error']);
-			$isRebClass = ((int) ($ctx['class']['faculty_type'] ?? 0) === 2);
+			$this->writeAiProgress($schoolId, $classId, $yearId, 0, $isRebClass ? 'No Weeks breakdown uploaded' : 'No chronogram uploaded', ['status' => 'error']);
 			return ['error' => $isRebClass
 				? 'Upload Weeks breakdown together with the Syllabus (they must go in a pair) in School Settings > Pedagogical documents.'
 				: 'Upload at least one chronogram for this class in School Settings > Pedagogical documents (needed to map weeks & hours).'];
@@ -3601,10 +3728,11 @@ public function testEmail()
 					}
 				}
 				$incomplete = $stats['lo_count'] === 0 && ($pkgPdfCount >= 3 || count($curricula) >= 3);
+				$rebTooFewSubjects = ((int) ($ctx['class']['faculty_type'] ?? 0) === 2) && count($curricula) >= 2 && $stats['module_count'] < count($curricula);
 				$hoursMissing = $stats['chronogram_slots'] === 0 && $stats['module_count'] > 0;
 				// Partial extract: some LO but not all modules — continue from resume
 				$partialResume = $stats['lo_count'] > 0 && $stats['lo_count'] < max(3, (int) ($stats['module_count'] * 0.5));
-				if (!$incomplete && !$hoursMissing && !$partialResume) {
+				if (!$incomplete && !$rebTooFewSubjects && !$hoursMissing && !$partialResume) {
 					$this->writeAiProgress($schoolId, $classId, $yearId, 100, 'Loaded from database cache', ['status' => 'done', 'cached' => true]);
 					return [
 						'success' => 'Loaded from database cache (no AI call)',
@@ -3754,7 +3882,7 @@ public function testEmail()
 		]);
 
 		return [
-			'success' => 'Full curriculum + chronogram analysis saved to database',
+			'success' => $isRebClass ? 'Full Syllabus + Weeks breakdown analysis saved to database' : 'Full curriculum + chronogram analysis saved to database',
 			'analysis' => $analysis,
 			'cached' => false,
 			'module_count' => $stats['module_count'],
@@ -3997,8 +4125,11 @@ public function testEmail()
 		if ($existing && !$force) {
 			$json = json_decode($existing['content_json'] ?? '', true) ?: [];
 			$layout = (string) (($json['meta']['layout'] ?? '') ?: '');
-			// Rebuild if older layout (pre Javascript-Fundamentals sample)
-			if ($layout === 'js_fundamentals_v1') {
+			$rowCount = count($json['rows'] ?? []);
+			$slotCount = count($module['chronogram_slots'] ?? []);
+			$malformedReb = $layout === 'reb_unit_plan_v1' && $rowCount <= 1 && $slotCount > 1;
+			// Rebuild if cached layout OK; regenerate malformed REB (weeks stacked)
+			if (($layout === 'js_fundamentals_v1' || $layout === 'reb_unit_plan_v1') && !$malformedReb) {
 				return $this->response->setJSON([
 					'success' => 'Loaded Scheme of Work from database cache',
 					'from_cache' => true,
@@ -4691,6 +4822,10 @@ public function scanCard()
 		$color = $this->request->getPost("color");
 		$schoolId = (int) $this->session->get("soma_school_id");
 
+		if (!$this->schoolUsesGradingSystem($schoolId)) {
+			return $this->response->setJSON(['error' => 'Grading system is disabled. Enable it first to add mentions.']);
+		}
+
 		// Always lock educational path to Nursery
 		$facMdl = new FacultyModel();
 		$nursery = $facMdl->like('title', 'Nursery', 'both')->first();
@@ -4737,6 +4872,32 @@ public function scanCard()
 					'color' => $data['color'],
 					'title' => $nursery['title'] ?? 'Nursery',
 				],
+			]);
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * Toggle whether school report slips use mention/color grades (Yes)
+	 * or normal marks-based reports (No).
+	 */
+	public function manipulate_grading_system()
+	{
+		$this->_preset(1, 3);
+		$this->ensureUseGradingSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$raw = $this->request->getPost('use_grading_system');
+		$enabled = in_array((string) $raw, ['1', 'yes', 'true', 'on'], true) ? 1 : 0;
+		try {
+			$sklMdl = new SchoolModel();
+			$sklMdl->save([
+				'id' => $schoolId,
+				'use_grading_system' => $enabled,
+			]);
+			return $this->response->setJSON([
+				'success' => lang('app.gradingSystemSaved'),
+				'use_grading_system' => $enabled,
 			]);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
@@ -12088,7 +12249,11 @@ public function getApplicationDocs($id = null)
 		$data['page'] = "Result_record";
 		$data['class_id'] = $class;
 		$data['school_id'] = $school_id;
-		$data['grades'] = $gradesMdl->select("color_title,max_point,min_point,color")->where("school_id", $school_id)->get()->getResultArray();
+		$useGrading = $this->schoolUsesGradingSystem((int) $school_id);
+		$data['use_grading_system'] = $useGrading;
+		$data['grades'] = $useGrading
+			? $gradesMdl->select("color_title,max_point,min_point,color")->where("school_id", $school_id)->get()->getResultArray()
+			: [];
 		$students = $StudentModel->select("students.id,students.regno,
 														students.photo,students.fname,students.dob,
 														students.lname,c.id as class_id,
@@ -12381,7 +12546,11 @@ public function getApplicationDocs($id = null)
 			$data['students'] = $records;
 			$fact = count($data['students']) > 0 ? $data['students'][0]["fac_id"] : 0;
 			$gradeMdl = new GradeModel();
-			$data['grades'] = $gradeMdl->select("color_title,max_point,min_point,color")->where("faculty_id", $fact)->where("school_id", $school_id)->get()->getResultArray();
+			$useGrading = $this->schoolUsesGradingSystem((int) $school_id);
+			$data['use_grading_system'] = $useGrading;
+			$data['grades'] = $useGrading
+				? $gradeMdl->select("color_title,max_point,min_point,color")->where("faculty_id", $fact)->where("school_id", $school_id)->get()->getResultArray()
+				: [];
 			if (isset($_GET['publish']) && $this->request->getGet("publish") == "sms") {
 				$smsRMdl = new SmsRecipientModel();
 				$smsMdl = new SmsModel();
@@ -14114,6 +14283,22 @@ public function getApplicationDocs($id = null)
 //		echo $term; die();
 	}
 
+
+	/**
+	 * Daily cron: queue SMS for installment promises that are due.
+	 */
+	public function fee_installment_reminders()
+	{
+		$this->_preset();
+		$school_id = (int) $this->session->get('soma_school_id');
+		(new FeesRecordModel())->ensureSchema();
+		$result = FeeInstallmentService::sendDueReminders(
+			$school_id,
+			(int) ($this->data['active_term_id'] ?? 0),
+			(int) ($this->data['remaining_sms'] ?? 0)
+		);
+		return $this->response->setJSON(['success' => true, 'result' => $result]);
+	}
 	public
 	function manipulate_fee_entry()
 	{
@@ -14124,9 +14309,13 @@ public function getApplicationDocs($id = null)
 		$feesTypes = $this->request->getPost("feeTypes");
 		$amounts = $this->request->getPost("amounts");
 		$modes = $this->request->getPost("modes");
-		$due_date = $this->request->getPost("dueDate");
+		$due_date = trim((string) $this->request->getPost("dueDate"));
+		$promisedDate = trim((string) $this->request->getPost("promisedDate"));
 		$slipRef = trim((string) $this->request->getPost("slipRef"));
 		$feeEntryModel = new FeesRecordModel();
+		$feeEntryModel->ensureSchema();
+		$studentRow = (new StudentModel())->select('studying_mode')->find($student);
+		$studyingMode = (int) ($studentRow['studying_mode'] ?? 1);
 		$resString = "";
 		$recId = 0;
 
@@ -14145,19 +14334,31 @@ public function getApplicationDocs($id = null)
 				if (!FeesApproval::isRealPaymentAmount($payAmount)) {
 					continue;
 				}
+				$remain = FeeInstallmentService::lineBalance($student, (int) $feesTypes[$key], (int) $item, $studyingMode);
+				$isInstallment = $payAmount < ($remain - 0.01);
+				if ($isInstallment && $promisedDate === '') {
+					return $this->response->setJSON(["error" => "Promised payment date is required for installment payments."]);
+				}
+				$rowDue = $due_date !== '' ? $due_date : date('Y-m-d');
+				if ($isInstallment) {
+					$rowDue = $promisedDate;
+				}
 				$data = [
 						"student_id" => $student,
 						"fees_type" => $feesTypes[$key],
 						"amount" => $payAmount,
 						"fees_id" => $item,
-						"due_date" => $due_date,
+						"due_date" => $rowDue,
+						"is_installment" => $isInstallment ? 1 : 0,
+						"promised_date" => $isInstallment ? $promisedDate : null,
+						"reminder_sent_at" => null,
 						"payment_mode" => $modes[$key],
 						"status" => FeesApproval::STATUS_APPROVED,
 						"created_by" => $this->session->get("soma_id")];
 				$recId = $feeEntryModel->insert($data);
 				$savedAny = true;
 				if ($slipRef !== '') {
-					$this->_assignFeeSlipRef($feeEntryModel, (int) $recId, $student, (int) $feesTypes[$key], $slipRef);
+					$this->_assignFeeSlipRef($feeEntryModel, (int) $recId, $student, (int) $feesTypes[$key], $slipRef, (int) $item);
 				}
 				if (count($items) - 1 == $key) {
 					$resString .= $recId . ':' . $feesTypes[$key];
@@ -14191,15 +14392,20 @@ public function getApplicationDocs($id = null)
 	/**
 	 * Persist bank-slip reference; suffix record id when student+type+ref already exists.
 	 */
-	private function _assignFeeSlipRef(FeesRecordModel $model, int $recordId, int $studentId, int $feesType, string $refNo): void
+	private function _assignFeeSlipRef(FeesRecordModel $model, int $recordId, int $studentId, int $feesType, string $refNo, int $feesId = 0): void
 	{
 		$baseRef = trim($refNo);
 		if ($baseRef === '') {
 			return;
 		}
+		if ($feesId < 1) {
+			$row = $model->find($recordId);
+			$feesId = (int) ($row['fees_id'] ?? 0);
+		}
 		$finalRef = $baseRef;
 		$dup = $model->where('student_id', $studentId)
 				->where('fees_type', $feesType)
+				->where('fees_id', $feesId)
 				->where('refNo', $baseRef)
 				->where('id !=', $recordId)
 				->countAllResults();
@@ -14375,6 +14581,8 @@ public function getApplicationDocs($id = null)
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
 				->orderBy("id", 'DESC')->get()->getResultArray();
 		$data['selectedYear'] = (int) $this->data['academic_year'];
+		$data['currentTerm'] = (int) ($this->data['term'] ?? 1);
+		(new FeesRecordModel())->ensureSchema();
 		$data['selectedYearTitle'] = '';
 		foreach ($data['years'] as $yr) {
 			if ((int) $yr['id'] === $data['selectedYear']) {
@@ -14960,6 +15168,10 @@ public function getApplicationDocs($id = null)
 		$studentRow = (new StudentModel())->select('studying_mode')->find($student);
 		$studyingMode = (int) ($studentRow['studying_mode'] ?? 1);
 		$extraFees->ensureSchema();
+		$termFilter = (int) ($this->request->getGet('term') ?? 0);
+		if ($termFilter < 1 || $termFilter > 3) {
+			$termFilter = (int) ($this->data['term'] ?? 1);
+		}
 
 		$items = [];
 
@@ -14970,6 +15182,7 @@ public function getApplicationDocs($id = null)
 			->where('school_fees.department', $level['dept_id'])
 			->where('school_fees.academic_year', $year)
 			->where('school_fees.school_id', $school_id)
+			->where('school_fees.term', $termFilter)
 			->groupBy('school_fees.id,school_fees.term,school_fees.amount,fd.amount')
 			->orderBy('school_fees.term', 'ASC')
 			->get()->getResultArray();
@@ -14997,6 +15210,7 @@ public function getApplicationDocs($id = null)
 			->join("(select fr.fees_id,COALESCE(sum(fr.amount),0) as amount from fees_records fr
 			 where fr.fees_type=1 and fr.status=1 and fr.student_id=$student group by fr.fees_id) fr", 'extra_fees.id=fr.fees_id', 'LEFT')
 			->where("(extra_fees.type_id=$class AND extra_fees.type=0 and extra_fees.academic_year=$year) or (extra_fees.type_id=$student AND extra_fees.type=1 and extra_fees.academic_year=$year)")
+			->where('extra_fees.term', $termFilter)
 			->where('extra_fees.school_id', $school_id)
 			->orderBy('extra_fees.term', 'ASC')
 			->orderBy('extra_fees.title', 'ASC')
@@ -18584,6 +18798,8 @@ public function assign_card()
 		$classe = $this->request->getGet("c") ?? "-1";
 		$academic = $this->request->getGet("academic") ?? $data['academic_year'];
 		$filter = $this->request->getGet("filter") ?? "0";
+		$reportType = FeesReportHelper::normalizeReportType($this->request->getGet('rtype'));
+		$needsClass = FeesReportHelper::needsClassFilter($reportType);
 		$termGet = $this->request->getGet('term');
 		$termsList = [];
 		if (is_array($termGet)) {
@@ -18617,13 +18833,14 @@ public function assign_card()
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
 				->orderBy("id", 'DESC')->get()->getResultArray();
 		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
-		,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf")
+		,f.type as faculty_type,f.abbrev as faculty_code,f.title as faculty_title,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf")
 				->join("departments d", "d.id=classes.department")
 				->join("levels l", "l.id=classes.level")
 				->join("faculty f", "f.id=d.faculty_id")
 				->join("staffs s", "s.id=classes.mentor", "LEFT")
 				->where("classes.school_id", $school_id)
 				->get()->getResultArray();
+		$data['classes'] = FeesReportHelper::filterReportClasses($data['classes']);
 		$data['classe'] = null;
 		foreach ($data['classes'] as $clRow) {
 			if ((int) ($clRow['id'] ?? 0) === (int) $classe) {
@@ -18631,61 +18848,29 @@ public function assign_card()
 				break;
 			}
 		}
-		if ($pdf != 1 && $pdf != 2 && (int) $classe <= 0 && !empty($data['classes'])) {
+		if ($needsClass && (int) $classe > 0 && empty($data['classe']) && !empty($data['classes'])) {
 			return redirect()->to(site_url('system-report/fees?' . http_build_query([
 				'c' => $data['classes'][0]['id'],
 				'academic' => $academic,
 				'term' => $termsList,
 				'filter' => $filter,
+				'rtype' => $reportType,
+			])));
+		}
+		if ($pdf != 1 && $pdf != 2 && $needsClass && (int) $classe <= 0 && !empty($data['classes'])) {
+			return redirect()->to(site_url('system-report/fees?' . http_build_query([
+				'c' => $data['classes'][0]['id'],
+				'academic' => $academic,
+				'term' => $termsList,
+				'filter' => $filter,
+				'rtype' => $reportType,
 			])));
 		}
 
-		$studentsQuery = $studentMdl->select("concat(students.fname,' ',students.lname) as student,students.id as student_id,
-		students.studying_mode,ft_phone,mt_phone,gd_phone,
-		students.regno,
-		students.sex,
-		cl.id,cl.title as class,
-		d.title as department_name,
-		d.code as dept_code,
-		l.title as level_name,
-		,f.type,f.abbrev as faculty_code,
-		(COALESCE(sf.amount,0) + coalesce(fd.amount,0)) as school_amount,
-		((CASE WHEN students.studying_mode = 0 THEN COALESCE(ex.boarding_amount,0) ELSE COALESCE(ex.day_amount,0) END) + COALESCE(student.amount,0)) as extra_amount,
-		 (COALESCE(sf.amount,0) + (CASE WHEN students.studying_mode = 0 THEN COALESCE(ex.boarding_amount,0) ELSE COALESCE(ex.day_amount,0) END) + COALESCE(student.amount,0) + coalesce(fd.amount,0)) as amount,
-		(COALESCE(fr.amount,0)) as school_paid,
-		(COALESCE(extraPaid.amount,0) + COALESCE(extraPaidSingle.amount,0)) as extra_paid,
-		(COALESCE(fr.amount,0) + COALESCE(extraPaid.amount,0) + COALESCE(extraPaidSingle.amount,0)) as paid")
-				->join("class_records cr", "cr.student=students.id")
-				->join("classes cl", "cl.id=cr.class")
-				->join("departments d", "d.id=cl.department")
-				->join("levels l", "l.id=cl.level")
-				->join("faculty f", "f.id=d.faculty_id")
-				->join("(select sum(sf.amount) as amount,sf.level,sf.department from school_fees sf where sf.term IN ($termsIn) and
-			sf.academic_year=$academic and sf.school_id = $school_id group by sf.level,sf.department) sf", "sf.level=l.id and sf.department=d.id", "LEFT")
-				->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $school_id group by fd.student,sf.level,sf.department) fd", "fd.level=l.id and fd.department=d.id AND fd.student=students.id", "LEFT")
-				->join("(select sum(COALESCE(ex.amount_boarding, ex.amount)) as boarding_amount, sum(COALESCE(ex.amount_day, ex.amount)) as day_amount,ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
-			ex.academic_year=$academic and ex.school_id = $school_id group by ex.type_id) ex", "ex.type_id=cl.id", "LEFT")
-				->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=1 and ex.term IN ($termsIn) and
-			ex.academic_year=$academic and ex.school_id = $school_id
-			AND NOT EXISTS (
-				SELECT 1 FROM extra_fees cx
-				INNER JOIN class_records crx ON crx.student = ex.type_id AND crx.year = ex.academic_year
-				WHERE cx.school_id = ex.school_id AND cx.academic_year = ex.academic_year
-					AND cx.term = ex.term AND cx.type = 0 AND cx.type_id = crx.class
-					AND LOWER(cx.title) = LOWER(ex.title)
-			)
-			group by ex.type_id) student", "student.type_id=students.id", "LEFT")
-				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join school_fees sc ON sc.id = fr.fees_id
-			where fr.fees_type=0 and fr.status=1 and fr.amount > 1 and sc.term IN ($termsIn) and sc.academic_year=$academic and sc.school_id = $school_id group by fr.student_id) fr", "fr.student_id=students.id", "LEFT")
-				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join extra_fees ex ON ex.id = fr.fees_id
-			where fr.fees_type=1 and fr.status=1 and fr.amount > 1 and ex.type_id=$classe and ex.type=0 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaid", "extraPaid.student_id=students.id", "LEFT")
-				->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr
-			inner join extra_fees ex ON ex.id = fr.fees_id and ex.type_id = fr.student_id
-			where fr.fees_type=1 and fr.status=1 and fr.amount > 1 and ex.type=1 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $school_id group by fr.student_id) extraPaidSingle", "extraPaidSingle.student_id=students.id", "LEFT")
-//			->where("sf.school_id", $school_id)
-				->where("cr.year", $academic)
-				->where("cl.id", $classe)
-				->groupBy("students.id");
+		$students = [];
+		if ($needsClass && (int) $classe > 0) {
+		$studentsQuery = FeesReportHelper::studentsQuery($studentMdl, (int) $classe, (int) $school_id, (int) $academic, $termsIn, $termsList);
+
 		if ($filter == 1) {
 			$studentsQuery->having("paid", "amount", false);
 		} else if ($filter == 2) {
@@ -18695,71 +18880,54 @@ public function assign_card()
 			$studentsQuery->having("paid", 0, false);
 		}
 		$students = $studentsQuery->get()->getResultArray();
-		$refMap = [];
-		$actorMap = [];
-		$studentIds = array_values(array_unique(array_filter(array_map('intval', array_column($students, 'student_id')))));
-		if ($studentIds !== []) {
-			$db = \Config\Database::connect();
-			$refRows = $db->table('fees_records fr')
-				->select("fr.student_id,
-					GROUP_CONCAT(DISTINCT NULLIF(fr.refNo, '') ORDER BY fr.id SEPARATOR ', ') AS ref_nos,
-					GROUP_CONCAT(DISTINCT NULLIF(TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))), '') ORDER BY fr.id SEPARATOR ', ') AS recorded_by_names", false)
-				->join('school_fees sc', 'sc.id = fr.fees_id AND fr.fees_type = 0', 'left')
-				->join('extra_fees ex', 'ex.id = fr.fees_id AND fr.fees_type = 1', 'left')
-				->join('staffs st', 'st.id = fr.created_by', 'left')
-				->where('fr.status', 1)
-				->whereIn('fr.student_id', $studentIds)
-				->groupStart()
-					->groupStart()
-						->where('fr.fees_type', 0)
-						->whereIn('sc.term', $termsList)
-						->where('sc.academic_year', (int) $academic)
-						->where('sc.school_id', (int) $school_id)
-					->groupEnd()
-					->orGroupStart()
-						->where('fr.fees_type', 1)
-						->whereIn('ex.term', $termsList)
-						->where('ex.academic_year', (int) $academic)
-						->where('ex.school_id', (int) $school_id)
-					->groupEnd()
-				->groupEnd()
-				->groupBy('fr.student_id')
-				->get()->getResultArray();
-			foreach ($refRows as $refRow) {
-				$id = (int) ($refRow['student_id'] ?? 0);
-				if ($id < 1) {
-					continue;
-				}
-				$refs = trim((string) ($refRow['ref_nos'] ?? ''));
-				if ($refs !== '') {
-					$refMap[$id] = $refs;
-				}
-				$actors = trim((string) ($refRow['recorded_by_names'] ?? ''));
-				if ($actors !== '') {
-					$actorMap[$id] = $actors;
-				}
-			}
 		}
-		foreach ($students as &$stRow) {
-			$sid = (int) ($stRow['student_id'] ?? 0);
-			$stRow['ref_nos'] = $refMap[$sid] ?? '';
-			$stRow['recorded_by_names'] = $actorMap[$sid] ?? '';
+
+		$incomeSummary = [];
+		if ($reportType === FeesReportHelper::TYPE_INCOME_SUMMARY) {
+			$incomeSummary = FeesReportHelper::buildIncomeSummary(
+				$data['classes'],
+				$studentMdl,
+				(int) $school_id,
+				(int) $academic,
+				$termsIn,
+				$termsList
+			);
 		}
-		unset($stRow);
+		$withDetailed = ($reportType === FeesReportHelper::TYPE_DETAILED);
+		$withLastPayment = ($reportType === FeesReportHelper::TYPE_CLASS_BALANCE);
+		$enriched = FeesReportHelper::enrichStudents(
+			$students,
+			(int) $school_id,
+			(int) $academic,
+			$termsList,
+			(int) $classe,
+			$withDetailed,
+			$withLastPayment
+		);
+		$students = $enriched['students'];
 		$data['students'] = $students;
+		$data['extraFeeColumns'] = $enriched['extraFeeColumns'];
+		$data['incomeSummary'] = $incomeSummary;
+		$data['reportType'] = $reportType;
+		$data['reportTypeLabels'] = FeesReportHelper::reportTypeLabels();
 		$data['class_id'] = $classe;
 		$data['year_id'] = $academic;
 		$data['term'] = $term;
 		$data['selected_terms'] = $termsList;
 		$data['filter'] = $filter;
 		$data['pdf'] = $pdf;
-		$data['hasResults'] = ((int) $classe > 0);
-		$data['queryParams'] = http_build_query([
-			'c' => $classe,
+		$data['hasResults'] = ($reportType === FeesReportHelper::TYPE_INCOME_SUMMARY)
+			? !empty($data['classes'])
+			: ((int) $classe > 0);
+		$data['queryParams'] = http_build_query(array_filter([
+			'c' => $needsClass ? $classe : null,
 			'academic' => $academic,
 			'term' => $termsList,
 			'filter' => $filter,
-		]);
+			'rtype' => $reportType !== FeesReportHelper::TYPE_DETAILED ? $reportType : null,
+		], static function ($v) {
+			return $v !== null && $v !== '';
+		}));
 
 		$totalExpected = 0;
 		$totalSchoolExpected = 0;
@@ -18768,22 +18936,33 @@ public function assign_card()
 		$fullPaid = 0;
 		$partialPaid = 0;
 		$zeroPaid = 0;
-		foreach ($students as $row) {
-			$amt = (float) ($row['amount'] ?? 0);
-			$schoolAmt = (float) ($row['school_amount'] ?? 0);
-			$extraAmt = (float) ($row['extra_amount'] ?? 0);
-			$paid = (float) ($row['paid'] ?? 0);
-			$totalExpected += $amt;
-			$totalSchoolExpected += $schoolAmt;
-			$totalExtraExpected += $extraAmt;
-			$totalPaid += min($paid, $amt);
-			if ($paid <= 0) {
-				$zeroPaid++;
-			} elseif ($paid >= $amt && $amt > 0) {
-				$fullPaid++;
-			} elseif ($paid > 0) {
-				$partialPaid++;
+		if ($reportType === FeesReportHelper::TYPE_INCOME_SUMMARY) {
+			$incomeGrand = FeesReportHelper::summarizeIncomeRows($incomeSummary);
+			$totalExpected = (float) ($incomeGrand['total_due'] ?? 0);
+			$totalPaid = (float) ($incomeGrand['total_paid'] ?? 0);
+			$totalRemain = (float) ($incomeGrand['balance'] ?? 0);
+		} else {
+			foreach ($students as $row) {
+				$amt = (float) ($row['amount'] ?? 0);
+				$schoolAmt = max(0, (float) ($row['school_amount'] ?? 0));
+				$extraAmt = max(0, (float) ($row['extra_amount'] ?? 0));
+				$paid = (float) ($row['paid'] ?? 0);
+				$norm = FeesReportHelper::normalizeCollectionAmounts($amt, $paid);
+				$amt = $norm['due'];
+				$paid = $norm['paid'];
+				$totalExpected += $amt;
+				$totalSchoolExpected += $schoolAmt;
+				$totalExtraExpected += $extraAmt;
+				$totalPaid += $paid;
+				if ($paid <= 0) {
+					$zeroPaid++;
+				} elseif ($paid >= $amt && $amt > 0) {
+					$fullPaid++;
+				} elseif ($paid > 0) {
+					$partialPaid++;
+				}
 			}
+			$totalRemain = max(0, $totalExpected - $totalPaid);
 		}
 		$data['stats'] = [
 			'total_students' => count($students),
@@ -18791,11 +18970,11 @@ public function assign_card()
 			'total_school_expected' => $totalSchoolExpected,
 			'total_extra_expected' => $totalExtraExpected,
 			'total_paid' => $totalPaid,
-			'total_remain' => max(0, $totalExpected - $totalPaid),
+			'total_remain' => $totalRemain ?? max(0, $totalExpected - $totalPaid),
 			'full_paid' => $fullPaid,
 			'partial_paid' => $partialPaid,
 			'zero_paid' => $zeroPaid,
-			'collection_rate' => $totalExpected > 0 ? round(($totalPaid / $totalExpected) * 100, 1) : 0,
+			'collection_rate' => $totalExpected > 0 ? min(100, round(max(0, $totalPaid / $totalExpected) * 100, 1)) : 0,
 		];
 
 		$data['selectedYearTitle'] = '';
@@ -18828,9 +19007,21 @@ public function assign_card()
 				'id' => (int) $academic,
 				'title' => (string) ($data['selectedYearTitle'] ?? ''),
 			];
-			$html = view("pages/systemReports/feesStatementInPdf", array_merge($data, [
+			$pdfView = 'pages/systemReports/feesStatementInPdf';
+			$pdfTitle = lang('app.feesReport');
+			$orientation = 'Landscape';
+			if ($reportType === FeesReportHelper::TYPE_CLASS_BALANCE) {
+				$pdfView = 'pages/systemReports/feesClassBalanceInPdf';
+				$pdfTitle = 'Class balance list';
+				$orientation = 'Portrait';
+			} elseif ($reportType === FeesReportHelper::TYPE_INCOME_SUMMARY) {
+				$pdfView = 'pages/systemReports/feesIncomeSummaryInPdf';
+				$pdfTitle = 'Summary of income';
+				$orientation = 'Portrait';
+			}
+			$html = view($pdfView, array_merge($data, [
 				'years' => $yearRow,
-				'title' => lang('app.feesReport'),
+				'title' => $pdfTitle,
 			]));
 			try {
 				$mask = FCPATH . "assets/templates/*.html";
@@ -18839,17 +19030,20 @@ public function assign_card()
 					array_map('unlink', $oldHtml);
 				}
 				$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
-				$wkhtmltopdf->setTitle(lang('app.feesReport'));
+				$wkhtmltopdf->setTitle($pdfTitle);
 				$wkhtmltopdf->setHtml($html);
 				$wkhtmltopdf->setPageSize("A4");
-				$wkhtmltopdf->setOrientation("portrait");
+				$wkhtmltopdf->setOrientation($orientation);
 				$wkhtmltopdf->setOptions(array('encoding' => 'UTF-8'));
-				$wkhtmltopdf->setMargins(array("top" => 1, "left" => 0, "right" => 0, "bottom" => 1));
+				$wkhtmltopdf->setMargins(array("top" => 6, "left" => 6, "right" => 6, "bottom" => 6));
 				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "fees_report_" . time() . ".pdf");
 			} catch (\Exception $e) {
 				echo $e->getMessage();
 			}
 		} else if ($pdf == 2) {
+			if (!$needsClass || (int) $classe <= 0) {
+				return $this->response->setJSON(['error' => 'SMS is available for class reports only.']);
+			}
 			//send sms
 			$all = 0;
 			$sent = 0;

@@ -37,6 +37,7 @@ class SchoolModel extends Model{
 		'active_term',
 		'status',
 		'discipline_max',
+		'use_grading_system',
 		'created_by',
 		'header_text_1',
 		'header_text_2',

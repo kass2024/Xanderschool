@@ -274,6 +274,8 @@ foreach ($students
 									$cm4         = strlen($mCat4) === 0 ? '-' : number_format($mCat4, 1);
 									$em4         = strlen($mEx4) === 0 ? '-' : number_format($mEx4, 1);
 									$tm4         = (strlen($mEx4) === 0 && strlen($mCat4) === 0) ? '-' : number_format($total4, 1);
+									$useGrades = !empty($use_grading_system) && !empty($grades);
+									if ($useGrades) {
 									echo "<td  style='background-color: " . grade_color($grades, $cat1Perc) . "'></td>
 								      <td  style='background-color: " . grade_color($grades, $ex1Perc) . "'></td>
 								      <td  style='background-color: " . grade_color($grades, $total1Perc) . "' class='bold-right'></td>
@@ -287,6 +289,21 @@ foreach ($students
 								      <td  style='background-color: " . grade_color($grades, $ex4Perc) . "'></td>
 								      <td  style='background-color: " . grade_color($grades, $total4Perc) . "'></td>
 									  </tr>";
+									} else {
+									echo "<td class='colscenter'>" . $cm1 . "</td>
+								      <td class='colscenter'>" . $em1 . "</td>
+								      <td class='colscenter bold-right'>" . $tm1 . "</td>
+									  <td class='colscenter'>" . $cm2 . "</td>
+								      <td class='colscenter'>" . $em2 . "</td>
+								      <td class='colscenter bold-right'>" . $tm2 . "</td>
+									  <td class='colscenter'>" . $cm3 . "</td>
+								      <td class='colscenter'>" . $em3 . "</td>
+								      <td class='colscenter bold-right'>" . $tm3 . "</td>
+									  <td class='colscenter'>" . $cm4 . "</td>
+								      <td class='colscenter'>" . $em4 . "</td>
+								      <td class='colscenter'>" . $tm4 . "</td>
+									  </tr>";
+									}
 									$cat              += $core['marks'];
 									$exam             += $core['marks'];
 									$total             = $cat + $exam;
@@ -313,11 +330,13 @@ foreach ($students
 									$total2GEchec = ($totalExam2Column + $totalCat2Column) < $cat ? 'fail' : '';
 									$total3GEchec = ($totalExam3Column + $totalCat3Column) < $cat ? 'fail' : '';
 									$total4GEchec = ($totalExam4Column + $totalCat4Column) < $cat ? 'fail' : '';
+									$useGrades = !empty($use_grading_system) && !empty($grades);
 									?>
 									<td colspan="4" class="bold-right"><b><?= lang('app.genTot'); ?> </b></td>
 									<td class="colscenter"><?= $cat; ?></td>
 									<td class="colscenter"><?= $exam; ?></td>
 									<td class="colscenter bold-right"><?= ($cat + $exam); ?></td>
+									<?php if ($useGrades): ?>
 									<td style='background-color: <?= grade_color($grades, $totalCat1Column * 100 / $cat); ?>'></td>
 									<td style='background-color: <?= grade_color($grades, $totalExam1Column * 100 / $exam); ?>'></td>
 									<td style='background-color: <?= grade_color($grades, ($totalExam1Column + $totalCat1Column) * 100 / ($cat + $exam)); ?>'
@@ -333,6 +352,20 @@ foreach ($students
 									<td style='background-color: <?= grade_color($grades, $totalCat4Column * 100 / ($cat * 3)); ?>'></td>
 									<td style='background-color: <?= grade_color($grades, $totalExam4Column * 100 / ($exam * 3)); ?>'></td>
 									<td style='background-color: <?= grade_color($grades, ($totalExam4Column + $totalCat4Column) * 100 / (($cat + $exam) * 3)); ?>'></td>
+									<?php else: ?>
+									<td class="colscenter"><?= number_format($totalCat1Column, 1); ?></td>
+									<td class="colscenter"><?= number_format($totalExam1Column, 1); ?></td>
+									<td class="colscenter bold-right"><?= number_format($totalExam1Column + $totalCat1Column, 1); ?></td>
+									<td class="colscenter"><?= number_format($totalCat2Column, 1); ?></td>
+									<td class="colscenter"><?= number_format($totalExam2Column, 1); ?></td>
+									<td class="colscenter bold-right"><?= number_format($totalExam2Column + $totalCat2Column, 1); ?></td>
+									<td class="colscenter"><?= number_format($totalCat3Column, 1); ?></td>
+									<td class="colscenter"><?= number_format($totalExam3Column, 1); ?></td>
+									<td class="colscenter bold-right"><?= number_format($totalExam3Column + $totalCat3Column, 1); ?></td>
+									<td class="colscenter"><?= number_format($totalCat4Column, 1); ?></td>
+									<td class="colscenter"><?= number_format($totalExam4Column, 1); ?></td>
+									<td class="colscenter"><?= number_format($totalExam4Column + $totalCat4Column, 1); ?></td>
+									<?php endif; ?>
 								</tr>
 								<tr style="background-color: #f5e1b9">
 									<td colspan="7"><b><?= lang('app.per'); ?> </b></td>
@@ -341,7 +374,7 @@ foreach ($students
 									$perc2 = ($totalExam2Column + $totalCat2Column) * 100 / $total;
 									$perc3 = ($totalExam3Column + $totalCat3Column) * 100 / $total;
 									$perc4 = ($perc1 + $perc2 + $perc3) / 3;
-									if ($school_id === 42)
+									if ($useGrades && $school_id === 42)
 									{
 										?>
 										<td colspan="3"
@@ -399,6 +432,7 @@ foreach ($students
 												<!--											<div class="cols4">-->
 												<!--												<strong>Colors:</strong>-->
 												<!--											</div>-->
+												<?php if (!empty($use_grading_system)): ?>
 												<?php foreach ($grades as $grade): ?>
 													<div class="cols4" style="text-align: center;">
 														<div style="background-color:<?= $grade['color'] ?>;border: solid black 2px;">
@@ -408,6 +442,7 @@ foreach ($students
 															- <?= $grade['min_point']; ?></strong>
 													</div>
 												<?php endforeach; ?>
+												<?php endif; ?>
 											</div>
 											<?php
 											if (! $isFinalClass)

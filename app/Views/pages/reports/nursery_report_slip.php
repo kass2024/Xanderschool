@@ -199,9 +199,20 @@ foreach ($students as $student)
 										$total_row_cat  = $datas['marks'] / $core['marks'] * 100;
 										$total_row_exam = $datas['exam_marks'] / $core['marks'] * 100;
 										$total_row      = $total / ($core['marks'] * 2) * 100;
-										echo "<td  style='background-color: " . grade_color($grades, $total_row_cat) . "'></td>
+										$useGrades = !empty($use_grading_system) && !empty($grades);
+										if ($useGrades) {
+											echo "<td  style='background-color: " . grade_color($grades, $total_row_cat) . "'></td>
 									      <td style='background-color: " . grade_color($grades, $total_row_exam) . "' ></td>
 										  <td style='background-color: " . grade_color($grades, $total_row) . "' ></td></tr>";
+										} else {
+											$catMark = ($datas['marks'] === null || $datas['marks'] === '') ? '-' : number_format((float) $datas['marks'], 1);
+											$exMark = ($datas['exam_marks'] === null || $datas['exam_marks'] === '') ? '-' : number_format((float) $datas['exam_marks'], 1);
+											$totMark = (($datas['marks'] === null || $datas['marks'] === '') && ($datas['exam_marks'] === null || $datas['exam_marks'] === ''))
+												? '-' : number_format((float) $total, 1);
+											echo "<td class='colscenter'>" . $catMark . "</td>
+									      <td class='colscenter'>" . $exMark . "</td>
+										  <td class='colscenter'>" . $totMark . "</td></tr>";
+										}
 
 										$cat  += $core['marks'];
 										$exam += $core['marks'];
@@ -222,16 +233,23 @@ foreach ($students as $student)
 										$generalTotalCat  = $totalCatColumn / $countX;
 										$generalTotalExam = $totalExamColumn / $countX;
 										$generalTotal     = $totalCatColumn + $totalExamColumn;
+										$useGrades = !empty($use_grading_system) && !empty($grades);
 										?>
+										<?php if ($useGrades): ?>
 										<td colspan="3"
 											style='text-align: center;background-color: <?=grade_color($grades, $generalTotal * 100 / $total);?>'></td>
+										<?php else: ?>
+										<td class="colscenter"><?= number_format($totalCatColumn, 1); ?></td>
+										<td class="colscenter"><?= number_format($totalExamColumn, 1); ?></td>
+										<td class="colscenter"><?= number_format($generalTotal, 1); ?></td>
+										<?php endif; ?>
 									</tr>
 									<tr>
 										<td colspan="4" width="40%"> <?= lang('app.per'); ?> </td>
 										<td colspan="3" class="colscenter"></td>
 
 										<?php
-										if ($school_id == 42)
+										if ($useGrades && $school_id == 42)
 										{
 											?>
 										<td colspan="3"
@@ -266,6 +284,7 @@ foreach ($students as $student)
 <!--													<div class="cols4">-->
 <!--														<strong>Colors:</strong>-->
 <!--													</div>-->
+													<?php if (!empty($use_grading_system)): ?>
 													<?php foreach ($grades as $grade): ?>
 														<div class="cols4" style="text-align: center;">
 															<div style="background-color:<?= $grade['color'] ?>;border: solid black 2px;">
@@ -275,6 +294,7 @@ foreach ($students as $student)
 																- <?= $grade['min_point']; ?></strong>
 														</div>
 													<?php endforeach; ?>
+													<?php endif; ?>
 												</div>
 
 											</div>

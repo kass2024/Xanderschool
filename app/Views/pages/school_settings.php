@@ -1596,6 +1596,23 @@
 			</div>
 			<div id="collapseOne3" data-parent="#accordion" class="collapse">
 				<div class="card-body">
+					<?php $useGradingOn = !empty($use_grading_system) || (int) ($settings['use_grading_system'] ?? 1) === 1; ?>
+					<div class="col-sm-12 mb-3" style="clear:both;">
+						<label class="d-block"><b><?= lang("app.useGradingSystem"); ?></b></label>
+						<div class="btn-group btn-group-toggle" data-toggle="buttons" id="gradingSystemToggle">
+							<label class="btn btn-outline-success <?= $useGradingOn ? 'active' : ''; ?>">
+								<input type="radio" name="use_grading_system_ui" value="1" autocomplete="off" <?= $useGradingOn ? 'checked' : ''; ?>>
+								<?= lang("app.useGradingYes"); ?>
+							</label>
+							<label class="btn btn-outline-secondary <?= !$useGradingOn ? 'active' : ''; ?>">
+								<input type="radio" name="use_grading_system_ui" value="0" autocomplete="off" <?= !$useGradingOn ? 'checked' : ''; ?>>
+								<?= lang("app.useGradingNo"); ?>
+							</label>
+						</div>
+						<p class="text-muted mt-2 mb-0" style="font-size:.82rem;"><?= lang("app.gradingSystemHint"); ?></p>
+						<span id="gradingSystemSaveStatus" class="text-muted ml-2" style="font-size:.82rem;"></span>
+					</div>
+					<div id="gradeMentionsPanel" style="<?= $useGradingOn ? '' : 'display:none;'; ?>">
 					<form method="POST" action="<?= base_url('manipulate_grade'); ?>" id="gradeMentionForm" class="validate">
 					<div class="col-sm-12 col-md-6 col-lg-5" style="float:left;">
 						<?php
@@ -1673,6 +1690,7 @@
 								</tbody>
 							</table>
 						</div>
+					</div>
 					</div>
 				</div>
 			</div>
@@ -2929,6 +2947,42 @@ $(document).on("click","#btn-remove-discipline",function () {
 </script>
  <script>
 	 $(function () {
+		 var gradingSaveUrl = <?= json_encode(base_url('manipulate_grading_system')); ?>;
+		 function setGradeMentionsVisible(on) {
+			 if (on) {
+				 $("#gradeMentionsPanel").show();
+			 } else {
+				 $("#gradeMentionsPanel").hide();
+			 }
+		 }
+		 $("#gradingSystemToggle input[name='use_grading_system_ui']").on("change", function () {
+			 var val = $(this).val();
+			 var on = val === "1";
+			 setGradeMentionsVisible(on);
+			 var $status = $("#gradingSystemSaveStatus");
+			 $status.text("Saving…");
+			 $.ajax({
+				 url: gradingSaveUrl,
+				 type: "POST",
+				 dataType: "json",
+				 data: { use_grading_system: val },
+				 success: function (data) {
+					 if (data && data.error) {
+						 $status.text("");
+						 if (window.toastada) toastada.error(data.error);
+						 return;
+					 }
+					 $status.text("Saved");
+					 if (window.toastada) toastada.success((data && data.success) ? data.success : "Saved");
+					 setTimeout(function () { $status.text(""); }, 2500);
+				 },
+				 error: function () {
+					 $status.text("");
+					 if (window.toastada) toastada.error("System error — try again");
+				 }
+			 });
+		 });
+
 		 $("#custom").spectrum({
 			 color: "#22c55e",
 			 preferredFormat: "hex",
