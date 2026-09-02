@@ -71,7 +71,50 @@ class AttendanceScanService
 			'locations' => $locations,
 			'staff' => self::staffList($schoolId),
 			'students' => self::studentList($schoolId),
+			'attendance_today' => self::studentAttendanceToday($schoolId),
 		];
+	}
+
+	/**
+	 * Today's student IN/OUT per location for kiosk two-way sync.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	public static function studentAttendanceToday(int $schoolId): array
+	{
+		$db = \Config\Database::connect();
+		$todayStart = strtotime('today');
+		$todayEnd = strtotime('tomorrow') - 1;
+		$day = date('Y-m-d');
+		$rows = $db->table('attendance_records')
+			->select('user_id, area_id, time_in, time_out')
+			->where('school_id', $schoolId)
+			->where('user_type', 0)
+			->where('time_in >=', $todayStart)
+			->where('time_in <=', $todayEnd)
+			->orderBy('id', 'ASC')
+			->get()
+			->getResultArray();
+
+		$out = [];
+		foreach ($rows as $r) {
+			$areaId = (int) ($r['area_id'] ?? 0);
+			$studentId = (int) ($r['user_id'] ?? 0);
+			if ($studentId <= 0 || $areaId <= 0) {
+				continue;
+			}
+			$status = ((int) ($r['time_out'] ?? 0) > 0) ? 'OUT' : 'IN';
+			$key = $studentId . ':' . $areaId;
+			$out[$key] = [
+				'student_id' => $studentId,
+				'area_id' => $areaId,
+				'status' => $status,
+				'day' => $day,
+				'time_in' => (int) ($r['time_in'] ?? 0),
+				'time_out' => (int) ($r['time_out'] ?? 0),
+			];
+		}
+		return array_values($out);
 	}
 
 	/**
@@ -223,8 +266,9 @@ class AttendanceScanService
 		foreach ($rows as $r) {
 			$enrolled = $hasFace ? (int) ($r['face_enrolled'] ?? 0) : 0;
 			$photo = profile_photo_url($r['photo'] ?? null);
-			$verify = ($enrolled === 1 && $photo !== '' && strpos($photo, 'fallback-avatar') === false)
-				? $photo
+			$cardPhoto = self::staffUploadedPhotoUrl($r['photo'] ?? null);
+			$verify = ($enrolled === 1 && $cardPhoto !== '')
+				? $cardPhoto
 				: '';
 			$out[] = [
 				'id' => (int) $r['id'],
@@ -233,7 +277,8 @@ class AttendanceScanService
 				'shift' => (string) ($r['shift_title'] ?? ''),
 				'shift_id' => (int) ($r['shift_id'] ?? 0),
 				'card' => (string) ($r['card'] ?? ''),
-				'photo' => $photo,
+				'photo' => $cardPhoto !== '' ? $cardPhoto : $photo,
+				'card_photo' => $cardPhoto,
 				'verify_photo' => $verify,
 				'face_enrolled' => $enrolled,
 			];
@@ -310,7 +355,7 @@ class AttendanceScanService
 		$month = date('m-Y', $time);
 
 		$records = $db->table('attendance_records')
-			->select("GROUP_CONCAT(DATE_FORMAT(FROM_UNIXTIME(time_in),'%d %H:%i'),';',DATE_FORMAT(FROM_UNIXTIME(time_out),'%d %H:%i')) as records", false)
+			->select("GROUP_CONCAT(CONCAT(DATE_FORMAT(FROM_UNIXTIME(time_in),'%d %H:%i'),';',DATE_FORMAT(FROM_UNIXTIME(time_out),'%d %H:%i'))) as records", false)
 			->where('user_type', 0)
 			->where('user_id', $student->id)
 			->where('area_id', $areaId)
@@ -741,12 +786,89 @@ class AttendanceScanService
 	 */
 	private static function staffPayload($staff): array
 	{
+		$photo = self::staffUploadedPhotoUrl((string) ($staff->photo ?? ''));
 		return [
 			'id' => (int) $staff->id,
 			'name' => trim((string) $staff->fname . ' ' . (string) $staff->lname),
 			'post' => (string) ($staff->post_title ?? ''),
-			'photo' => profile_photo_url($staff->photo ?? null),
+			'photo' => $photo !== '' ? $photo : profile_photo_url($staff->photo ?? null),
+			'card_photo' => $photo,
 		];
+	}
+
+	/**
+	 * Uploaded View Staff / card photo only (never a HeyStar camera JPEG or placeholder).
+	 */
+	public static function staffUploadedPhotoUrl(?string $stored): string
+	{
+		helper('qonics');
+		$resolved = resolve_profile_photo($stored);
+		if ($resolved === null) {
+			return '';
+		}
+		$url = profile_photo_url($resolved);
+		if ($url === '' || strpos($url, 'fallback-avatar') !== false || strpos($url, 'no_image') !== false) {
+			return '';
+		}
+		return $url;
+	}
+
+	public static function staffUploadedPhotoPath(int $schoolId, int $staffId): ?string
+	{
+		helper('qonics');
+		$db = \Config\Database::connect();
+		$row = $db->table('staffs')
+			->select('photo')
+			->where('id', $staffId)
+			->where('school_id', $schoolId)
+			->where('status !=', 0)
+			->get()
+			->getRowArray();
+		if (!$row) {
+			return null;
+		}
+		$resolved = resolve_profile_photo($row['photo'] ?? '');
+		if ($resolved === null) {
+			return null;
+		}
+		$path = FCPATH . 'assets/images/profile/' . $resolved;
+		return is_file($path) ? $path : null;
+	}
+
+	public static function staffUploadedPhotoJpeg(int $schoolId, int $staffId, int $maxEdge = 360): ?string
+	{
+		$path = self::staffUploadedPhotoPath($schoolId, $staffId);
+		if ($path === null) {
+			return null;
+		}
+		$raw = @file_get_contents($path);
+		if ($raw === false || strlen($raw) < 80) {
+			return null;
+		}
+		if (!function_exists('imagecreatefromstring')) {
+			return $raw;
+		}
+		$img = @imagecreatefromstring($raw);
+		if ($img === false) {
+			return $raw;
+		}
+		$w = imagesx($img);
+		$h = imagesy($img);
+		if ($w < 1 || $h < 1) {
+			imagedestroy($img);
+			return $raw;
+		}
+		$scale = min(1.0, $maxEdge / max($w, $h));
+		$nw = max(1, (int) round($w * $scale));
+		$nh = max(1, (int) round($h * $scale));
+		$out = imagecreatetruecolor($nw, $nh);
+		imagecopyresampled($out, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+		ob_start();
+		imagejpeg($out, null, 82);
+		$jpeg = ob_get_clean();
+		imagedestroy($img);
+		imagedestroy($out);
+		return is_string($jpeg) && $jpeg !== '' ? $jpeg : $raw;
 	}
 
 	/**
@@ -796,7 +918,8 @@ class AttendanceScanService
 				HeyStarSyncService::announceClock(
 					$schoolId,
 					(string) (($clock['person']['name'] ?? $clock['staff']['name'] ?? '')),
-					(string) ($clock['status'] ?? '')
+					(string) ($clock['status'] ?? ''),
+					$staffId
 				);
 			}
 			return array_merge($ack, $clock);
