@@ -213,6 +213,9 @@ return [
    'status'                      => 'Status',
    'active'                      => 'Active',
    'locked'                      => 'Locked',
+   'fromRegistration'            => 'From registration',
+   'fromRegistrationLink'        => 'Reg. link approved',
+   'registeredFromLinkApproved'  => 'Student registered and approved from registration link.',
    'saveDepartment'              => 'Save Department',
    'cancel'                      => 'Cancel',
 //Dashboard  add student

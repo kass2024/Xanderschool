@@ -6575,6 +6575,8 @@ public function attendanceCard()
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)->get()->getResultArray();
 		$studentMdl = new StudentModel();
 		$studentMdl->ensureFatherNidColumn();
+		$studentMdl->ensureFromRegistrationColumns();
+		$studentMdl->backfillFromRegistration($school_id);
 		$list = $studentMdl->get_student_simple("c.id = $classe and cr.year=$yearId", null);
 		$unique = [];
 		foreach ($list as $row) {
@@ -6609,11 +6611,14 @@ public function attendanceCard()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
 		$Mdl = new StudentModel();
+		$Mdl->ensureFromRegistrationColumns();
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$Mdl->backfillFromRegistration($schoolId);
 		$data = $this->data;
 		$data['page'] = "Dismissed";
 		$data['title'] = lang("app.DismissedStudents");
 		$data['subtitle'] = lang("app.DismissedStudents");
-		$data['students'] = $Mdl->where("school_id", $this->session->get("soma_school_id"))->where("status", 0)->get()->getResultArray();
+		$data['students'] = $Mdl->where("school_id", $schoolId)->where("status", 0)->get()->getResultArray();
 		$data['content'] = view("pages/dismissedStudent", $data);
 		return view('main', $data);
 	}
@@ -6625,6 +6630,7 @@ public function attendanceCard()
 		$data['title'] = lang("app.viewStudent");
 		$studentMdl = new StudentModel();
 		$studentMdl->ensureFatherNidColumn();
+		$studentMdl->ensureFromRegistrationColumns();
 		$active_term = new ActiveTermModel();
 		$classModel = new ClassesModel();
 		$data['academic'] = $active_term->select("active_term.*")
@@ -9347,9 +9353,10 @@ public function getApplicationDocs($id = null)
 		}
 		$name = $classes->classe;
 		$StudentModel = new StudentModel();
+		$StudentModel->ensureFromRegistrationColumns();
 		$students = $StudentModel->select("students.id,
 														  students.regno,
-														  students.fname,students.lname,students.regno,students.sex,students.studying_mode,students.dob,students.nationality,students.religion")
+														  students.fname,students.lname,students.regno,students.sex,students.studying_mode,students.dob,students.nationality,students.religion,students.from_registration")
 				->join("class_records cr", "students.id=cr.student")
 				->where("cr.class", $id)
 				->where("cr.year", $yearId)
@@ -9368,6 +9375,7 @@ public function getApplicationDocs($id = null)
 		$worksheet->getCell('E1')->setValue(lang("app.academicYear") . ": " . $this->data['academic_year_title']);
 
 		$worksheet->getCell('G1')->setValue($this->TermTostr($this->data['term']));
+		$worksheet->getCell('J5')->setValue(lang("app.fromRegistration"));
 		$i = 6;
 		foreach ($students as $student) {
 			$dob = $student['dob'] == "0000-00-00" ? "" : $student['dob'];
@@ -9380,6 +9388,7 @@ public function getApplicationDocs($id = null)
 			$worksheet->getCell('G' . $i)->setValue($dob);
 			$worksheet->getCell('H' . $i)->setValue($student['nationality']);
 			$worksheet->getCell('I' . $i)->setValue($student['religion']);
+			$worksheet->getCell('J' . $i)->setValue(!empty($student['from_registration']) ? lang("app.yes") : '');
 			$i++;
 		}
 		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xls');
@@ -21771,6 +21780,7 @@ public function assign_card()
 		$applicationMdl->ensureVisitorColumns();
 		$studentMdl = new StudentModel();
 		$studentMdl->ensureFatherNidColumn();
+		$studentMdl->ensureFromRegistrationColumns();
 		$classRecordMdl = new ClassRecordModel();
 		$classMdl = new ClassesModel();
 		$applicationId = $this->request->getPost("applicationId");
@@ -21864,6 +21874,8 @@ public function assign_card()
 				"gd_phone" => trim((string) ($application['gd_phone'] ?? '')),
 				"guardian_nid" => trim((string) ($application['guardian_nid'] ?? '')),
 				"status" => 1,
+				"from_registration" => 1,
+				"application_id" => (int) $applicationId,
 				"studying_mode" => $application['studyingMode'],
 				"created_by" => $this->session->get("soma_id")];
 		if (empty($studentData['father']) && (int) ($application['parentType'] ?? 0) === 1) {
@@ -21976,7 +21988,7 @@ public function assign_card()
 				'details' => ['regno' => $regNo, 'paid' => $paidTotal],
 			]);
 			return $this->response->setJSON([
-				"success" => "Payment recorded and applicant approved successfully.",
+				"success" => lang("app.registeredFromLinkApproved"),
 				"url" => $printUrl,
 				"print_url" => $printUrl,
 				"actor" => $this->financeActorName(),

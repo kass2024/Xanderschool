@@ -77,6 +77,16 @@
 				<label><?= lang("app.option");?>: <?= $student['dept_title']; ?></label><br/>
 				<label><?= lang("app.sClass");?>: <?= $student['level'].' '.$student['dept_code'].' '.$student['class']; ?></label><br/>
 				<label><?= lang("app.studyingMode");?>: <?= \App\Controllers\Home::ModeToStr($student['studying_mode']); ?></label><br/>
+				<?php if (!empty($student['from_registration'])): ?>
+					<label>
+						<span class="badge badge-pill"
+							  style="background:#0d9488;color:#fff;font-weight:700;"
+							  title="<?= esc(lang('app.registeredFromLinkApproved')); ?>">
+							<?= esc(lang('app.fromRegistration')); ?>
+						</span>
+						<span style="font-weight:500;color:#0f766e;margin-left:4px;"><?= esc(lang('app.registeredFromLinkApproved')); ?></span>
+					</label><br/>
+				<?php endif; ?>
 			</div>
 		</div>
 		<div class="boxed" style="background-color: white;display: flow-root;">

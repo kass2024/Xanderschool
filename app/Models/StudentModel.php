@@ -35,6 +35,8 @@ class StudentModel extends Model
 		'wallet_pin',
 		'wallet_balance',
 		'status',
+		'from_registration',
+		'application_id',
 		'created_by',
 		'updated_by',
 		'updateVersion',
@@ -46,6 +48,9 @@ class StudentModel extends Model
 
 	/** @var bool */
 	private static $fatherNidReady = false;
+
+	/** @var bool */
+	private static $fromRegistrationReady = false;
 
 	public function ensureFatherNidColumn(): void
 	{
@@ -66,6 +71,121 @@ class StudentModel extends Model
 			}
 		}
 		self::$fatherNidReady = true;
+	}
+
+	/**
+	 * Ensure students.from_registration + application_id exist (registration-link approvals).
+	 */
+	public function ensureFromRegistrationColumns(): void
+	{
+		if (self::$fromRegistrationReady) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists($this->table)) {
+			if (!$db->fieldExists('from_registration', $this->table)) {
+				$db->query("ALTER TABLE `{$this->table}` ADD COLUMN `from_registration` TINYINT(1) NOT NULL DEFAULT 0");
+			}
+			if (!$db->fieldExists('application_id', $this->table)) {
+				$db->query("ALTER TABLE `{$this->table}` ADD COLUMN `application_id` INT NULL DEFAULT NULL");
+			}
+		}
+		self::$fromRegistrationReady = true;
+	}
+
+	/**
+	 * Backfill from_registration for students that match already-approved applications.
+	 * Match: school + fname + lname + (student/parent phone when available). Only updates from_registration=0.
+	 */
+	public function backfillFromRegistration(int $schoolId): int
+	{
+		$this->ensureFromRegistrationColumns();
+		if ($schoolId < 1) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('applications')) {
+			return 0;
+		}
+
+		$apps = $db->table('applications')
+			->select('id, fname, lname, phoneNumber, parentPhoneNumber, ft_phone, mt_phone, gd_phone')
+			->where('schoolId', $schoolId)
+			->where('admitted', 1)
+			->groupStart()
+				->where('processed_action', 'approved')
+				->orWhere('processed_action', null)
+				->orWhere('processed_action', '')
+			->groupEnd()
+			->get()
+			->getResultArray();
+		if ($apps === []) {
+			return 0;
+		}
+
+		$updated = 0;
+		foreach ($apps as $app) {
+			$fname = trim((string) ($app['fname'] ?? ''));
+			$lname = trim((string) ($app['lname'] ?? ''));
+			if ($fname === '' || $lname === '') {
+				continue;
+			}
+			$appPhones = [];
+			foreach (['phoneNumber', 'parentPhoneNumber', 'ft_phone', 'mt_phone', 'gd_phone'] as $pk) {
+				$digits = preg_replace('/\D/', '', (string) ($app[$pk] ?? ''));
+				if (strlen($digits) >= 9) {
+					$appPhones[$digits] = true;
+				}
+			}
+
+			$candidates = $db->table($this->table)
+				->select('id, phone, ft_phone, mt_phone, gd_phone')
+				->where('school_id', $schoolId)
+				->where('fname', $fname)
+				->where('lname', $lname)
+				->where('from_registration', 0)
+				->get()
+				->getResultArray();
+
+			foreach ($candidates as $st) {
+				$match = true;
+				if ($appPhones !== []) {
+					$match = false;
+					foreach (['phone', 'ft_phone', 'mt_phone', 'gd_phone'] as $pk) {
+						$digits = preg_replace('/\D/', '', (string) ($st[$pk] ?? ''));
+						if (strlen($digits) >= 9 && isset($appPhones[$digits])) {
+							$match = true;
+							break;
+						}
+					}
+					// If student has no usable phone, still allow name-only match for this school.
+					if (!$match) {
+						$hasStudentPhone = false;
+						foreach (['phone', 'ft_phone', 'mt_phone', 'gd_phone'] as $pk) {
+							if (strlen(preg_replace('/\D/', '', (string) ($st[$pk] ?? ''))) >= 9) {
+								$hasStudentPhone = true;
+								break;
+							}
+						}
+						if (!$hasStudentPhone) {
+							$match = true;
+						}
+					}
+				}
+				if (!$match) {
+					continue;
+				}
+				$db->table($this->table)
+					->where('id', (int) $st['id'])
+					->where('from_registration', 0)
+					->update([
+						'from_registration' => 1,
+						'application_id' => (int) $app['id'],
+					]);
+				$updated++;
+			}
+		}
+		return $updated;
 	}
 
 	public function get_student($val = null, $key = 'students.id', $select = null, $single = false, $academicYear = 0)

@@ -82,6 +82,18 @@
 	color: #fff;
 	vertical-align: middle;
 }
+.st-from-reg-badge {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 700;
+	padding: 3px 9px;
+	border-radius: 999px;
+	background: #0d9488;
+	color: #fff;
+	vertical-align: middle;
+	white-space: nowrap;
+	margin-left: 4px;
+}
 #classEditModal .modal-dialog { max-width: 96vw; width: 96vw; margin: 10px auto; }
 #classEditModal .modal-content {
 	border: 0; border-radius: 16px; overflow: hidden;
@@ -370,6 +382,12 @@
 															   data-target="<?= $student['id']; ?>"
 															   data-href="delete_student"><?= lang("app.del");?></label> |
 														<?=$status;?>
+														<?php if (!empty($student['from_registration'])): ?>
+															<span class="st-from-reg-badge"
+																  title="<?= esc(lang('app.registeredFromLinkApproved')); ?>">
+																<?= esc(lang('app.fromRegistration')); ?>
+															</span>
+														<?php endif; ?>
 													</td>
 												</tr>
 												<?php

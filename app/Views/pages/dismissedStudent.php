@@ -53,6 +53,13 @@
 													<td><?= $parent; ?></td>
 													<td>
 														<?=$status;?>
+														<?php if (!empty($student['from_registration'])): ?>
+															<span class="badge badge-pill"
+																  style="background:#0d9488;color:#fff;font-weight:700;margin-left:4px;"
+																  title="<?= esc(lang('app.registeredFromLinkApproved')); ?>">
+																<?= esc(lang('app.fromRegistration')); ?>
+															</span>
+														<?php endif; ?>
 													</td>
 												</tr>
 												<?php

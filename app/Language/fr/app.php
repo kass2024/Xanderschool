@@ -214,6 +214,9 @@ return [
 	"status" => "Status",
 	"active" => "Actif",
 	"locked" => "vérouillé",
+	"fromRegistration" => "Via inscription",
+	"fromRegistrationLink" => "Lien d'inscription approuvé",
+	"registeredFromLinkApproved" => "Élève inscrit et approuvé via le lien d'inscription.",
 	"saveDepartment" => " Enregistrer le département ",
 	"cancel" => "Annuler",
 //Dashboard  add student
