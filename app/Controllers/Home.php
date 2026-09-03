@@ -14935,13 +14935,23 @@ public function getApplicationDocs($id = null)
 	{
 		$this->_preset(1, 3);
 		$school_id = (int) $this->session->get('soma_school_id');
-		$classId = (int) $this->request->getGet('class_id');
+		$classIds = $this->request->getGet('class_ids');
+		if (is_string($classIds) && $classIds !== '') {
+			$decoded = json_decode($classIds, true);
+			$classIds = is_array($decoded) ? $decoded : preg_split('/\s*,\s*/', $classIds);
+		}
+		if (!is_array($classIds) || $classIds === []) {
+			$single = (int) $this->request->getGet('class_id');
+			$classIds = $single > 0 ? [$single] : [];
+		}
+		$classIds = array_values(array_unique(array_filter(array_map('intval', $classIds))));
 		$year = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
-		if ($classId <= 0) {
-			return $this->response->setJSON(['success' => false, 'error' => 'Select a class.']);
+		if ($classIds === []) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Select at least one class.']);
 		}
 		$matSchema = new \App\Models\StudentMaterialSchemaModel();
-		$rows = $matSchema->getClassAssignments($school_id, $classId, $year);
+		// Use first selected class as the editable template when assigning to several classes.
+		$rows = $matSchema->getClassAssignments($school_id, $classIds[0], $year);
 		$out = [];
 		foreach ($rows as $r) {
 			$out[] = [
@@ -14951,22 +14961,37 @@ public function getApplicationDocs($id = null)
 				'unit' => $r['unit'],
 			];
 		}
-		return $this->response->setJSON(['success' => true, 'assignments' => $out]);
+		return $this->response->setJSON([
+			'success' => true,
+			'assignments' => $out,
+			'class_ids' => $classIds,
+			'template_class_id' => $classIds[0],
+		]);
 	}
 
 	public function save_class_required_materials()
 	{
 		$this->_preset(1, 3);
 		$school_id = (int) $this->session->get('soma_school_id');
-		$classId = (int) $this->request->getPost('class_id');
+		$classIds = $this->request->getPost('class_ids');
+		if (is_string($classIds) && $classIds !== '') {
+			$decoded = json_decode($classIds, true);
+			$classIds = is_array($decoded) ? $decoded : preg_split('/\s*,\s*/', $classIds);
+		}
+		if (!is_array($classIds) || $classIds === []) {
+			$single = (int) $this->request->getPost('class_id');
+			$classIds = $single > 0 ? [$single] : [];
+		}
+		$classIds = array_values(array_unique(array_filter(array_map('intval', $classIds))));
 		$year = (int) ($this->request->getPost('year') ?: $this->data['academic_year']);
 		$items = json_decode((string) $this->request->getPost('items'), true);
-		if ($classId <= 0 || !is_array($items)) {
-			return $this->response->setJSON(['error' => 'Invalid data.']);
+		if ($classIds === [] || !is_array($items)) {
+			return $this->response->setJSON(['error' => 'Select at least one class and provide items.']);
 		}
 		$matSchema = new \App\Models\StudentMaterialSchemaModel();
-		$matSchema->saveClassAssignments($school_id, $classId, $year, $items);
-		return $this->response->setJSON(['success' => 'Class material assignment saved.']);
+		$saved = $matSchema->saveClassAssignmentsForClasses($school_id, $classIds, $year, $items);
+		$label = $saved === 1 ? '1 class' : ($saved . ' classes');
+		return $this->response->setJSON(['success' => "Material assignment saved for $label."]);
 	}
 
 	public function manipulate_attendance_area()
