@@ -102,7 +102,25 @@ class HostelSchemaModel extends Model
 	public function normalizeGender(string $gender): string
 	{
 		$g = strtoupper(trim($gender));
-		return $g === 'F' ? 'F' : 'M';
+		return $g === 'F' || $g === 'FEMALE' ? 'F' : 'M';
+	}
+
+	/**
+	 * Normalize student sex from DB/UI variants (M, F, Male, Female, …) to M|F|''.
+	 */
+	public function normalizeStudentSex($sex): string
+	{
+		$g = strtoupper(trim((string) $sex));
+		if ($g === '') {
+			return '';
+		}
+		if ($g === 'F' || $g === 'FEMALE' || $g === 'GIRL' || $g === 'WOMAN') {
+			return 'F';
+		}
+		if ($g === 'M' || $g === 'MALE' || $g === 'BOY' || $g === 'MAN') {
+			return 'M';
+		}
+		return '';
 	}
 
 	public function isBoardingStudent(array $student): bool
@@ -154,7 +172,7 @@ class HostelSchemaModel extends Model
 			return ['ok' => false, 'error' => 'Day students cannot be allocated to a hostel.'];
 		}
 
-		$sex = strtoupper(trim((string) ($student['sex'] ?? '')));
+		$sex = $this->normalizeStudentSex($student['sex'] ?? '');
 		$hostelGender = $this->normalizeGender((string) $hostel['gender']);
 		if ($sex !== '' && $sex !== $hostelGender) {
 			return [
@@ -236,6 +254,7 @@ class HostelSchemaModel extends Model
 			->join('hostel_allocations ha', 'ha.student_id = students.id AND ha.academic_year = ' . (int) $yearId . ' AND ha.school_id = ' . (int) $schoolId, 'left')
 			->join('hostels h', 'h.id = ha.hostel_id', 'left')
 			->where('cr.year', $yearId)
+			->where('cr.status', 1)
 			->where('students.school_id', $schoolId)
 			->where('students.status', 1)
 			->where('students.studying_mode', self::MODE_BOARDING);
@@ -250,11 +269,21 @@ class HostelSchemaModel extends Model
 			$b->where('ha.id IS NULL', null, false);
 		}
 
-		return $b->orderBy('l.title', 'ASC')
+		$rows = $b->orderBy('l.title', 'ASC')
 			->orderBy('d.code', 'ASC')
 			->orderBy('c.title', 'ASC')
 			->orderBy('students.fname', 'ASC')
 			->get()->getResultArray();
+
+		// One row per student (duplicate class_records / holiday classes).
+		$byId = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['id'] ?? 0);
+			if ($sid > 0 && !isset($byId[$sid])) {
+				$byId[$sid] = $row;
+			}
+		}
+		return array_values($byId);
 	}
 
 	/**
@@ -287,10 +316,10 @@ class HostelSchemaModel extends Model
 		$errors = [];
 
 		foreach ($candidates as $st) {
-			$sex = strtoupper(trim((string) ($st['sex'] ?? '')));
+			$sex = $this->normalizeStudentSex($st['sex'] ?? '');
 			if ($sex !== 'M' && $sex !== 'F') {
 				$skipped++;
-				$errors[] = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? '')) . ': missing gender';
+				$errors[] = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? '')) . ': missing or unrecognized gender';
 				continue;
 			}
 			$picked = null;
