@@ -119,7 +119,13 @@
 	}
 
 	$(document).ready(function () {
-		$('#classTable').DataTable({ searching: true, pageLength: 25 });
+		// Keep server pedagogical order (Nursery → Primary → O'Level → A'Level → Special → TVET/RTB)
+		$('#classTable').DataTable({
+			searching: true,
+			pageLength: 25,
+			order: [],
+			columnDefs: [{ orderable: true, targets: '_all' }]
+		});
 	});
 
 	$(function () {
