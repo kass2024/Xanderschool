@@ -1,0 +1,1212 @@
+/* Student Required Materials — settings + check */
+
+
+
+.srm-settings .srm-intro { margin-bottom: 1rem; font-size: 0.9rem; }
+
+
+
+.srm-card {
+
+  background: #fff;
+
+  border: 1px solid #e2e8f0;
+
+  border-radius: 14px;
+
+  padding: 16px 18px;
+
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+
+}
+
+
+
+.srm-card h6 {
+
+  font-weight: 700;
+
+  margin-bottom: 12px;
+
+  color: #0f172a;
+
+}
+
+
+
+.srm-add-form { margin-bottom: 12px; }
+
+.srm-mat-list { max-height: 360px; overflow-y: auto; }
+
+
+
+.srm-mat-item {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  padding: 8px 10px;
+
+  border-bottom: 1px solid #f1f5f9;
+
+}
+
+
+
+.srm-mat-item:last-child { border-bottom: none; }
+
+.srm-empty { font-size: 0.88rem; padding: 12px 0; }
+
+
+
+/* ── Material check page ── */
+
+.smc-page {
+
+  padding: 8px 16px 32px;
+
+  background: linear-gradient(180deg, #f4f7fb 0%, #eef2f7 100%);
+
+  min-height: calc(100vh - 120px);
+
+}
+
+
+
+.smc-center { max-width: 1320px; margin: 0 auto; }
+
+
+
+.smc-layout {
+
+  display: grid;
+
+  grid-template-columns: minmax(280px, 320px) 1fr;
+
+  gap: 16px;
+
+  align-items: start;
+
+}
+
+
+
+@media (max-width: 991px) {
+
+  .smc-layout { grid-template-columns: 1fr; }
+
+}
+
+
+
+.smc-scan-panel {
+
+  background: #fff;
+
+  border-radius: 14px;
+
+  border: 1px solid #e2e8f0;
+
+  padding: 14px;
+
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+
+  position: sticky;
+
+  top: 12px;
+
+}
+
+
+
+.smc-workspace-card {
+
+  background: #fff;
+
+  border: 1px solid #e2e8f0;
+
+  border-radius: 16px;
+
+  overflow: hidden;
+
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+
+}
+
+
+
+.smc-scope-banner {
+
+  background: #eff6ff;
+
+  border: 1px solid #bfdbfe;
+
+  color: #1e40af;
+
+  border-radius: 10px;
+
+  padding: 10px 14px;
+
+  margin-bottom: 12px;
+
+  font-size: 0.88rem;
+
+}
+
+
+
+.smc-scope-banner i { margin-right: 6px; }
+
+
+
+.smc-year-field label {
+
+  font-size: 0.72rem;
+
+  font-weight: 700;
+
+  text-transform: uppercase;
+
+  color: #475569;
+
+  letter-spacing: 0.03em;
+
+}
+
+
+
+/* Dashboard header + KPIs */
+
+.smc-dash {
+
+  padding: 18px 20px 14px;
+
+  border-bottom: 1px solid #eef2f7;
+
+  background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
+
+}
+
+
+
+.smc-dash-head {
+
+  display: flex;
+
+  justify-content: space-between;
+
+  align-items: flex-start;
+
+  gap: 12px;
+
+  margin-bottom: 14px;
+
+  flex-wrap: wrap;
+
+}
+
+
+
+.smc-dash-head h2 {
+
+  margin: 0 0 4px;
+
+  font-size: 1.2rem;
+
+  font-weight: 800;
+
+  color: #0f172a;
+
+}
+
+
+
+.smc-dash-head p {
+
+  margin: 0;
+
+  font-size: 0.86rem;
+
+  color: #64748b;
+
+}
+
+
+
+.smc-meta-chip {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 6px;
+
+  background: #f1f5f9;
+
+  color: #475569;
+
+  font-size: 0.78rem;
+
+  font-weight: 600;
+
+  padding: 6px 12px;
+
+  border-radius: 999px;
+
+}
+
+
+
+.smc-kpi-grid {
+
+  display: grid;
+
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+
+  gap: 10px;
+
+}
+
+
+
+.smc-kpi-card {
+
+  background: #fff;
+
+  border: 1px solid #e8edf3;
+
+  border-radius: 12px;
+
+  padding: 12px 10px;
+
+  text-align: center;
+
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+}
+
+
+
+.smc-kpi-card:hover {
+
+  transform: translateY(-1px);
+
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+
+}
+
+
+
+.smc-kpi-icon {
+
+  width: 34px;
+
+  height: 34px;
+
+  border-radius: 10px;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  font-size: 0.95rem;
+
+  margin-bottom: 6px;
+
+}
+
+
+
+.smc-kpi-icon.blue { background: #dbeafe; color: #1d4ed8; }
+
+.smc-kpi-icon.green { background: #dcfce7; color: #15803d; }
+
+.smc-kpi-icon.orange { background: #ffedd5; color: #c2410c; }
+
+.smc-kpi-icon.red { background: #fee2e2; color: #b91c1c; }
+
+.smc-kpi-icon.indigo { background: #e0e7ff; color: #4338ca; }
+
+.smc-kpi-icon.purple { background: #ede9fe; color: #6d28d9; }
+
+.smc-kpi-icon.slate { background: #f1f5f9; color: #64748b; }
+
+
+
+.smc-kpi-value {
+
+  font-size: 1.35rem;
+
+  font-weight: 800;
+
+  color: #0f172a;
+
+  line-height: 1.1;
+
+}
+
+
+
+.smc-kpi-label {
+
+  font-size: 0.68rem;
+
+  color: #64748b;
+
+  margin-top: 3px;
+
+  font-weight: 700;
+
+  text-transform: uppercase;
+
+  letter-spacing: 0.04em;
+
+}
+
+
+
+.smc-progress-card {
+
+  margin-top: 14px;
+
+  padding: 12px 14px;
+
+  background: #f8fafc;
+
+  border-radius: 12px;
+
+  border: 1px solid #e2e8f0;
+
+}
+
+
+
+.smc-progress-head {
+
+  display: flex;
+
+  justify-content: space-between;
+
+  align-items: center;
+
+  margin-bottom: 8px;
+
+  font-size: 0.84rem;
+
+  font-weight: 600;
+
+  color: #334155;
+
+}
+
+
+
+.smc-progress-bar {
+
+  height: 10px;
+
+  background: #e2e8f0;
+
+  border-radius: 999px;
+
+  overflow: hidden;
+
+}
+
+
+
+.smc-progress-fill {
+
+  height: 100%;
+
+  background: linear-gradient(90deg, #15803d, #22c55e);
+
+  border-radius: 999px;
+
+  transition: width 0.4s ease;
+
+  width: 0;
+
+}
+
+
+
+/* Body: roster + detail */
+
+.smc-body {
+
+  display: block;
+
+}
+
+
+
+.smc-body.has-roster {
+
+  display: grid;
+
+  grid-template-columns: minmax(260px, 340px) 1fr;
+
+  min-height: 480px;
+
+}
+
+
+
+@media (max-width: 1100px) {
+
+  .smc-body.has-roster { grid-template-columns: 1fr; }
+
+}
+
+
+
+/* Student roster */
+
+.smc-roster {
+
+  border-right: 1px solid #eef2f7;
+
+  display: flex;
+
+  flex-direction: column;
+
+  background: #fafbfc;
+
+  min-height: 400px;
+
+}
+
+
+
+@media (max-width: 1100px) {
+
+  .smc-roster {
+
+    border-right: none;
+
+    border-bottom: 1px solid #eef2f7;
+
+    max-height: 320px;
+
+  }
+
+}
+
+
+
+.smc-roster-head {
+
+  padding: 14px 14px 10px;
+
+  border-bottom: 1px solid #eef2f7;
+
+  background: #fff;
+
+}
+
+.smc-roster-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.smc-roster-head h3 {
+
+  margin: 0;
+
+  font-size: 0.82rem;
+
+  font-weight: 800;
+
+  text-transform: uppercase;
+
+  letter-spacing: 0.04em;
+
+  color: #475569;
+
+}
+
+
+
+.smc-roster-head h3 i { margin-right: 6px; color: #6366f1; }
+
+.smc-roster-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.smc-roster-filter {
+
+  border-radius: 8px;
+
+  font-size: 0.84rem;
+  max-width: 220px;
+  flex: 1 1 160px;
+
+}
+
+.smc-hostel {
+  font-size: 0.78rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+
+
+.smc-roster-table-wrap {
+
+  flex: 1;
+
+  overflow-y: auto;
+
+  max-height: calc(100vh - 380px);
+
+}
+
+
+
+.smc-roster-table thead th {
+
+  position: sticky;
+
+  top: 0;
+
+  z-index: 2;
+
+  background: #f8fafc;
+
+  font-size: 0.68rem;
+
+  text-transform: uppercase;
+
+  font-weight: 700;
+
+  color: #64748b;
+
+  border-bottom: 2px solid #e2e8f0;
+
+  padding: 8px 10px;
+
+}
+
+
+
+.smc-roster-table tbody td {
+
+  padding: 9px 10px;
+
+  font-size: 0.84rem;
+
+  vertical-align: middle;
+
+  border-top: 1px solid #f1f5f9;
+
+}
+
+
+
+.smc-roster-row {
+
+  cursor: pointer;
+
+  transition: background 0.12s ease;
+
+}
+
+
+
+.smc-roster-row:hover { background: #eff6ff; }
+
+
+
+.smc-roster-row.active {
+
+  background: #dbeafe;
+
+  box-shadow: inset 3px 0 0 #2563eb;
+
+}
+
+
+
+.smc-roster-row .smc-reg {
+
+  font-family: ui-monospace, monospace;
+
+  font-size: 0.78rem;
+
+  color: #64748b;
+
+}
+
+
+
+.smc-roster-row .smc-name {
+
+  font-weight: 600;
+
+  color: #0f172a;
+
+}
+
+
+
+.smc-roster-foot {
+
+  padding: 8px 14px;
+
+  font-size: 0.75rem;
+
+  color: #94a3b8;
+
+  border-top: 1px solid #eef2f7;
+
+  background: #fff;
+
+}
+
+
+
+/* Status pills */
+
+.smc-pill {
+
+  display: inline-block;
+
+  font-size: 0.68rem;
+
+  font-weight: 700;
+
+  padding: 3px 9px;
+
+  border-radius: 999px;
+
+  white-space: nowrap;
+
+}
+
+
+
+.smc-pill.complete { background: #dcfce7; color: #15803d; }
+
+.smc-pill.partial { background: #fef3c7; color: #b45309; }
+
+.smc-pill.missing { background: #fee2e2; color: #b91c1c; }
+
+.smc-pill.unchecked { background: #f1f5f9; color: #64748b; }
+
+.smc-pill.none { background: #e2e8f0; color: #475569; }
+
+
+
+/* Detail panel */
+
+.smc-detail {
+
+  display: flex;
+
+  flex-direction: column;
+
+  min-width: 0;
+
+}
+
+
+
+.smc-student-hero {
+
+  padding: 18px 20px;
+
+  border-bottom: 1px solid #eef2f7;
+
+  min-height: 100px;
+
+}
+
+
+
+.smc-student-empty {
+
+  text-align: center;
+
+  padding: 28px 16px;
+
+  color: #94a3b8;
+
+}
+
+
+
+.smc-empty-icon {
+
+  width: 56px;
+
+  height: 56px;
+
+  margin: 0 auto 12px;
+
+  border-radius: 14px;
+
+  background: #f1f5f9;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  font-size: 1.5rem;
+
+  color: #94a3b8;
+
+}
+
+
+
+.smc-student-empty h3 {
+
+  margin: 0 0 6px;
+
+  font-size: 1rem;
+
+  font-weight: 700;
+
+  color: #64748b;
+
+}
+
+
+
+.smc-student-empty p {
+
+  margin: 0;
+
+  font-size: 0.88rem;
+
+  max-width: 360px;
+
+  margin-inline: auto;
+
+}
+
+
+
+.smc-student-hero.has-student {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 16px;
+
+  background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+
+}
+
+
+
+.smc-hero-photo img,
+
+.smc-hero-photo .student-entry-photo-placeholder,
+
+.smc-photo-ph {
+
+  width: 68px;
+
+  height: 68px;
+
+  border-radius: 14px;
+
+  object-fit: cover;
+
+  border: 2px solid #e2e8f0;
+
+}
+
+
+
+.smc-photo-ph {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  background: #f1f5f9;
+
+  color: #94a3b8;
+
+  font-size: 1.4rem;
+
+}
+
+
+
+.smc-hero-info { flex: 1; min-width: 0; }
+
+
+
+.smc-hero-top {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 10px;
+
+  flex-wrap: wrap;
+
+  margin-bottom: 6px;
+
+}
+
+
+
+.smc-hero-top h3 {
+
+  margin: 0;
+
+  font-size: 1.15rem;
+
+  font-weight: 800;
+
+  color: #0f172a;
+
+}
+
+
+
+.smc-hero-meta {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  gap: 14px;
+
+  font-size: 0.84rem;
+
+  color: #64748b;
+
+}
+
+
+
+.smc-hero-meta i {
+
+  margin-right: 5px;
+
+  color: #94a3b8;
+
+}
+
+
+
+/* Check section */
+
+.smc-check-section {
+
+  padding: 16px 20px 20px;
+
+  flex: 1;
+
+}
+
+
+
+.smc-student-kpi {
+
+  margin-bottom: 14px;
+
+}
+
+
+
+.smc-table-wrap {
+
+  overflow-x: auto;
+
+  border: 1px solid #e2e8f0;
+
+  border-radius: 12px;
+
+}
+
+
+
+.smc-mat-table thead th {
+
+  background: #f8fafc;
+
+  font-size: 0.68rem;
+
+  text-transform: uppercase;
+
+  font-weight: 700;
+
+  color: #475569;
+
+  border-bottom: 2px solid #e2e8f0;
+
+  padding: 10px 12px;
+
+}
+
+
+
+.smc-mat-table tbody td {
+
+  padding: 10px 12px;
+
+  vertical-align: middle;
+
+}
+
+
+
+.smc-mat-name {
+
+  display: block;
+
+  font-weight: 700;
+
+  color: #0f172a;
+
+}
+
+
+
+.smc-num {
+
+  font-weight: 700;
+
+  font-variant-numeric: tabular-nums;
+
+}
+
+
+
+.smc-brought {
+
+  max-width: 88px;
+
+  margin: 0 auto;
+
+  text-align: center;
+
+  font-weight: 700;
+
+  border-radius: 8px;
+
+  border-color: #cbd5e1;
+
+}
+
+
+
+.smc-brought:focus {
+
+  border-color: #2563eb;
+
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+
+}
+
+
+
+.smc-actions {
+
+  margin-top: 16px;
+
+  text-align: right;
+
+}
+
+
+
+.smc-actions .btn-lg {
+  border-radius: 10px;
+  font-weight: 700;
+  padding: 10px 22px;
+}
+
+/* Status filter pills (on Students roster) */
+.smc-filter-pill {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.smc-filter-pill:hover { border-color: #93c5fd; background: #eff6ff; }
+
+.smc-filter-pill.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.smc-filter-count {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-right: 6px;
+  font-weight: 800;
+}
+
+/* Item totals by class / hostel */
+.smc-item-totals {
+  margin: 0 20px 16px;
+  padding: 16px 18px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.smc-item-totals-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.smc-item-totals-head h3 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.smc-item-totals-head h3 i {
+  color: #ea580c;
+  margin-right: 6px;
+}
+
+.smc-item-totals-head p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.smc-item-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: #f1f5f9;
+  border-radius: 10px;
+}
+
+.smc-item-tab {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.smc-item-tab.is-active {
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.smc-item-totals-body {
+  margin-bottom: 12px;
+}
+
+.smc-item-totals-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.smc-totals-table-wrap {
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.smc-totals-table thead th {
+  background: #f8fafc;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #64748b;
+  border-bottom: 2px solid #e2e8f0;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.smc-totals-table tbody td {
+  padding: 9px 10px;
+  font-size: 0.82rem;
+  vertical-align: middle;
+  border-top: 1px solid #f1f5f9;
+}
+
+.smc-qty-ok { color: #15803d; font-weight: 700; }
+.smc-qty-miss { color: #b91c1c; font-weight: 700; }
+
+.smc-done-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.smc-hostel-block {
+  margin-bottom: 14px;
+}
+
+.smc-hostel-block:last-child {
+  margin-bottom: 0;
+}
+
+.smc-hostel-block-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.smc-hostel-block-head strong {
+  font-size: 0.88rem;
+  color: #0f172a;
+}
+
+.smc-hostel-block-head strong i {
+  color: #6366f1;
+  margin-right: 6px;
+}
+
+.smc-hostel-block-head span {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+

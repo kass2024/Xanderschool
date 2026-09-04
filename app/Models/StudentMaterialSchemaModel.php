@@ -230,8 +230,15 @@ class StudentMaterialSchemaModel extends Model
 		$materialIds = array_map(static fn ($a) => (int) $a['material_id'], $assignments);
 
 		$students = $db->table('class_records cr')
-			->select('students.id, students.regno, CONCAT(students.fname," ",students.lname) AS name')
+			->select('students.id, students.regno, CONCAT(students.fname," ",students.lname) AS name,
+				ha.hostel_id, h.name AS hostel_name')
 			->join('students', 'students.id = cr.student')
+			->join(
+				'hostel_allocations ha',
+				'ha.student_id = students.id AND ha.academic_year = ' . (int) $yearId . ' AND ha.school_id = ' . (int) $schoolId,
+				'left'
+			)
+			->join('hostels h', 'h.id = ha.hostel_id', 'left')
 			->where('cr.class', $classId)
 			->where('cr.year', $yearId)
 			->where('students.school_id', $schoolId)
@@ -255,6 +262,8 @@ class StudentMaterialSchemaModel extends Model
 					'id' => (int) $s['id'],
 					'regno' => (string) $s['regno'],
 					'name' => (string) $s['name'],
+					'hostel_id' => isset($s['hostel_id']) && $s['hostel_id'] !== null ? (int) $s['hostel_id'] : null,
+					'hostel_name' => (string) ($s['hostel_name'] ?? ''),
 					'overall' => 'none',
 					'complete' => 0,
 					'partial' => 0,
@@ -270,6 +279,8 @@ class StudentMaterialSchemaModel extends Model
 				'class_kpi' => $classKpi,
 				'material_count' => 0,
 				'materials' => [],
+				'item_totals' => [],
+				'hostel_totals' => $this->buildHostelTotals([], $list),
 			];
 		}
 
@@ -344,6 +355,8 @@ class StudentMaterialSchemaModel extends Model
 				'id' => $sid,
 				'regno' => (string) $s['regno'],
 				'name' => (string) $s['name'],
+				'hostel_id' => isset($s['hostel_id']) && $s['hostel_id'] !== null ? (int) $s['hostel_id'] : null,
+				'hostel_name' => (string) ($s['hostel_name'] ?? ''),
 				'overall' => $overall,
 				'complete' => $complete,
 				'partial' => $partial,
@@ -361,12 +374,113 @@ class StudentMaterialSchemaModel extends Model
 			'quantity' => (float) $a['quantity'],
 		], $assignments);
 
+		$itemTotals = $this->buildItemTotals($assignments, $list);
+		$hostelTotals = $this->buildHostelTotals($assignments, $list);
+
 		return [
 			'students' => $list,
 			'class_kpi' => $classKpi,
 			'material_count' => $materialCount,
 			'materials' => $materials,
+			'item_totals' => $itemTotals,
+			'hostel_totals' => $hostelTotals,
 		];
+	}
+
+	/**
+	 * Per-item totals across the class.
+	 *
+	 * @param list<array> $assignments
+	 * @param list<array> $students
+	 * @return list<array>
+	 */
+	public function buildItemTotals(array $assignments, array $students): array
+	{
+		$n = count($students);
+		$out = [];
+		foreach ($assignments as $a) {
+			$mid = (int) $a['material_id'];
+			$reqEach = (float) $a['quantity'];
+			$row = [
+				'material_id' => $mid,
+				'name' => (string) $a['name'],
+				'unit' => (string) $a['unit'],
+				'qty_each' => $reqEach,
+				'students' => $n,
+				'required_total' => $reqEach * $n,
+				'brought_total' => 0.0,
+				'missing_total' => 0.0,
+				'students_complete' => 0,
+				'students_partial' => 0,
+				'students_missing' => 0,
+			];
+			foreach ($students as $st) {
+				foreach (($st['items'] ?? []) as $it) {
+					if ((int) ($it['material_id'] ?? 0) !== $mid) {
+						continue;
+					}
+					$row['brought_total'] += (float) ($it['brought'] ?? 0);
+					$row['missing_total'] += (float) ($it['missing_qty'] ?? 0);
+					$status = (string) ($it['status'] ?? 'missing');
+					if ($status === 'complete') {
+						$row['students_complete']++;
+					} elseif ($status === 'partial') {
+						$row['students_partial']++;
+					} else {
+						$row['students_missing']++;
+					}
+				}
+			}
+			$out[] = $row;
+		}
+		return $out;
+	}
+
+	/**
+	 * Per-hostel item totals for students in this class.
+	 *
+	 * @param list<array> $assignments
+	 * @param list<array> $students
+	 * @return list<array>
+	 */
+	public function buildHostelTotals(array $assignments, array $students): array
+	{
+		$groups = [];
+		foreach ($students as $st) {
+			$hid = $st['hostel_id'] ?? null;
+			$key = $hid === null || $hid === '' ? 'none' : (string) (int) $hid;
+			if (!isset($groups[$key])) {
+				$groups[$key] = [
+					'hostel_id' => $key === 'none' ? null : (int) $key,
+					'hostel_name' => $key === 'none' ? 'Not allocated' : (string) ($st['hostel_name'] ?? 'Hostel'),
+					'students' => [],
+				];
+			}
+			if ($key !== 'none' && $groups[$key]['hostel_name'] === 'Hostel' && !empty($st['hostel_name'])) {
+				$groups[$key]['hostel_name'] = (string) $st['hostel_name'];
+			}
+			$groups[$key]['students'][] = $st;
+		}
+
+		$out = [];
+		foreach ($groups as $g) {
+			$out[] = [
+				'hostel_id' => $g['hostel_id'],
+				'hostel_name' => $g['hostel_name'],
+				'student_count' => count($g['students']),
+				'item_totals' => $this->buildItemTotals($assignments, $g['students']),
+			];
+		}
+		usort($out, static function ($a, $b) {
+			if ($a['hostel_id'] === null) {
+				return 1;
+			}
+			if ($b['hostel_id'] === null) {
+				return -1;
+			}
+			return strcasecmp((string) $a['hostel_name'], (string) $b['hostel_name']);
+		});
+		return $out;
 	}
 
 	public function filterClassStudentsByStatus(array $students, string $filter): array
@@ -375,7 +489,13 @@ class StudentMaterialSchemaModel extends Model
 		if ($filter === '' || $filter === 'all') {
 			return $students;
 		}
-		return array_values(array_filter($students, static fn ($s) => ($s['overall'] ?? '') === $filter));
+		return array_values(array_filter($students, static function ($s) use ($filter) {
+			$overall = (string) ($s['overall'] ?? '');
+			if ($filter === 'unchecked') {
+				return $overall === 'unchecked' || $overall === 'none';
+			}
+			return $overall === $filter;
+		}));
 	}
 
 	public function saveStudentChecks(int $schoolId, int $studentId, int $classId, int $yearId, int $staffId, array $items): int
