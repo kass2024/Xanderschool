@@ -526,8 +526,8 @@ foreach ($students as $st) {
 			<div class="modal-body">
 				<div id="moveStudentModalAlert" class="alert d-none" role="alert"></div>
 				<div class="move-note">
-					Marks, paid fees, attendance, visitors, cards and other student records stay with the student.
-					Only the class enrollment for this academic year changes.
+					The student keeps all personal records (marks, paid fees, discipline, permissions, attendance, visitors, cards).
+					Class enrollment updates for this year, and class-linked fees/marks are remapped to the new class where possible.
 				</div>
 				<p id="moveStudentSummary" style="font-weight:600;margin-bottom:12px;"></p>
 				<div class="form-group">
