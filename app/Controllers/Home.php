@@ -1065,7 +1065,7 @@ public function testEmail()
 				->where("id", $this->session->get("soma_school_id"))
 				->get(1)->getRow();
 
-		// Always use Wisdom Ribbon for student card generation (ignore school settings template).
+		// Always use Wisdom High School PNG template (ignore school settings card design).
 		$cardTemplate = 'wisdom';
 		$orientation = 'landscape';
 		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($skData);
@@ -1076,7 +1076,7 @@ public function testEmail()
 		$data['school_name'] = $skData->name;
 		$data['header1'] = $autoHeaders['header1'];
 		$data['header2'] = $autoHeaders['header2'];
-		$data['background'] = $skData->card_background;
+		$data['background'] = 'student_pass_template.png';
 		$data['header_color'] = $skData->header_color;
 		$data['main_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
 		$data['paint_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
@@ -1090,8 +1090,13 @@ public function testEmail()
 
 		$ids = implode(",", $safeIds);
 		$students = $stMdl->get_student_simple2("students.id in (" . $ids . ")");
-		// No photo required — print name + registration number on Wisdom Ribbon.
-		$printable = is_array($students) ? array_values($students) : [];
+		// Photo required — card template includes circular photo.
+		$printable = [];
+		foreach ((array) $students as $student) {
+			if (resolve_profile_photo($student['photo'] ?? '') !== null) {
+				$printable[] = $student;
+			}
+		}
 		if (count($printable) === 0) {
 			return redirect()->to("student-cards");
 		}
@@ -8738,16 +8743,36 @@ public function getApplicationDocs($id = null)
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>";
 			} else if ($type == 2) {
-				// Student card list — Wisdom Ribbon; name + regno only; photo not required.
+				// Student card list — PNG template; photo required for print.
 				$sid = (int) $student['id'];
-				$printUrl = base_url('generate_cards') . '?student_id=' . $sid;
-				echo "<tr class='disc_row' id='" . esc($student['regno'] . $type, 'attr') . "' data-student-id='" . $sid . "'>
-				<td>" . esc($student['regno']) . "<input type='hidden' value='" . $sid . "' name='stId[]'></td>
+				$resolved = resolve_profile_photo($student['photo'] ?? '');
+				$hasPhoto = $resolved !== null;
+				if ($hasPhoto && trim((string) $student['photo']) !== $resolved) {
+					try {
+						$StudentModel->update($sid, ['photo' => $resolved]);
+					} catch (\Throwable $e) {
+						// non-fatal
+					}
+				}
+				$hidden = $hasPhoto
+					? "<input type='hidden' value='" . $sid . "' name='stId[]'>"
+					: '';
+				if ($hasPhoto) {
+					$photoUrl = profile_photo_url($resolved);
+					$photoHtml = "<img src='" . esc($photoUrl, 'attr') . "' alt='' style='width:60px;height:60px;object-fit:cover;border-radius:4px;' />" . $hidden;
+				} else {
+					$photoHtml = "<span style='display:inline-block;width:60px;height:60px;background:#f1f3f5;border-radius:4px;' title='No photo'></span>";
+				}
+				$printBtn = $hasPhoto
+					? "<a class='btn btn-sm btn-dark' href='" . esc(base_url('generate_cards') . '?student_id=' . $sid, 'attr') . "' target='_blank' rel='noopener'><i class='fa fa-print'></i> Print card</a>"
+					: '<span class="text-muted small">No photo</span>';
+				$color = $hasPhoto ? '' : 'color:orangered';
+				echo "<tr class='disc_row' style='$color' id='" . esc($student['regno'] . $type, 'attr') . "' data-student-id='" . $sid . "' data-has-photo='" . ($hasPhoto ? '1' : '0') . "'>
+				<td>" . esc($student['regno']) . "</td>
 				<td>" . esc($student['stdnames']) . "</td>
 				<td>" . esc($student['level_name'] . " " . $student['title'] . " " . $student['code']) . " </td>
-				<td style='text-align:center;white-space:nowrap;'>
-					<a class='btn btn-sm btn-dark' href='" . esc($printUrl, 'attr') . "' target='_blank' rel='noopener'><i class='fa fa-print'></i> Print card</a>
-				</td>
+				<td>" . $photoHtml . "</td>
+				<td style='text-align:center;white-space:nowrap;'>" . $printBtn . "</td>
 				<td style='text-align: center;'>
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>";

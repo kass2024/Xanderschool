@@ -287,7 +287,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		$schoolName = $fmt(CardLayout::wisdomCardSchoolName($student));
 	}
 	$photoSrc = profile_photo_card_cover_src($student['photo'] ?? '', $photoPxW, $photoPxH);
-	if ($photoSrc === '' && !$isWisdom) {
+	if ($photoSrc === '') {
 		continue;
 	}
 	$phone = strlen(trim($student['ft_phone'] ?? '')) > 4 ? $student['ft_phone']
@@ -335,9 +335,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	}
 ?>
 	<div class="card<?= $isWisdom ? ' is-wisdom' : ''; ?>">
-		<?php if ($isWisdom && $wisdomChromeSrc !== ''): ?>
-			<img class="card-bg" src="<?= $wisdomChromeSrc; ?>" alt="">
-		<?php elseif ($bgSrc !== ''): ?>
+		<?php if (!$isWisdom && $bgSrc !== ''): ?>
 			<img class="card-bg" src="<?= $bgSrc; ?>" alt="">
 		<?php endif; ?>
 		<?php if ($isPainted && !$isWisdom): ?>
@@ -350,30 +348,31 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			</div>
 		<?php endif; ?>
 		<?php if ($isWisdom):
-			$logoF = $fields['logo'] ?? ['x' => 3.6, 'y' => 2.4, 'w' => 16.8, 'h' => 26.6];
-			$schoolF = $fields['school_name'] ?? ['x' => 21.5, 'y' => 8.2, 'w' => 65.0, 'h' => 13.8];
-			$badgeF = $fields['badge'] ?? ['x' => 38.5, 'y' => 36.6, 'w' => 31.5, 'h' => 9.6];
-			$namesF = ['x' => 8.0, 'y' => 48.0, 'w' => 86.0, 'h' => 12.0];
+			$photoF = $fields['photo'] ?? ['x' => 6.6, 'y' => 33.8, 'w' => 25.2, 'h' => 40.0];
+			$namesF = $fields['names'] ?? ['x' => 42.8, 'y' => 49.6, 'w' => 54.5, 'h' => 8.0];
+			$yearF = $fields['header1'] ?? ['x' => 42.8, 'y' => 66.2, 'w' => 54.5, 'h' => 7.6];
 			$idF = $fields['regno'] ?? ['x' => 6.0, 'y' => 85.2, 'w' => 32.0, 'h' => 9.6];
-			$schoolFs = $fit($schoolName, $schoolF, 3.8, 2.0, 0.50);
-			$badgeFs = $fit($cardTitle, $badgeF, 2.5, 1.6, 0.55);
 			$idText = 'ID NO: ' . ($regno !== '' ? $regno : '—');
 			$idFs = $fit($idText, $idF, 2.6, 1.6, 0.50);
-			$rowFs = 2.8;
-			$infoF = $namesF;
+			$rowFs = 2.2;
+			$infoY = (float) ($namesF['y'] ?? 49.6);
+			$infoH = ((float) ($yearF['y'] ?? 66.2) + (float) ($yearF['h'] ?? 7.6)) - $infoY;
+			$infoF = ['x' => $namesF['x'] ?? 42.8, 'y' => $infoY, 'w' => $namesF['w'] ?? 54.5, 'h' => $infoH];
+			$tplBg = asset_card_img_src('assets/images/background/student_pass_template.png', CardLayout::WISDOM_CHROME, 1800, 1200);
 		?>
-			<div class="cf-logo" style="<?= CardLayout::boxStyle($logoF, 5); ?>">
-				<?php if ($logoSrc): ?><img src="<?= $logoSrc; ?>" alt=""><?php endif; ?>
-			</div>
-			<div class="cf-center w-school" data-max="3.80" data-min="1.8" style="<?= CardLayout::boxStyle($schoolF, 4); ?>overflow:visible;font-size:<?= number_format($schoolFs, 2, '.', ''); ?>mm;">
-				<span class="val"><?= esc($schoolName); ?></span>
-			</div>
-			<div class="cf-center w-badge" data-max="2.60" data-min="1.4" style="<?= CardLayout::boxStyle($badgeF, 4); ?>overflow:visible;font-size:<?= number_format($badgeFs, 2, '.', ''); ?>mm;">
-				<?= esc($cardTitle); ?>
+			<?php if ($tplBg): ?>
+			<img class="card-bg" src="<?= $tplBg; ?>" alt="">
+			<?php elseif ($wisdomChromeSrc !== ''): ?>
+			<img class="card-bg" src="<?= $wisdomChromeSrc; ?>" alt="">
+			<?php endif; ?>
+			<div class="cf-photo" style="<?= CardLayout::boxStyle($photoF, 3); ?>">
+				<img src="<?= $photoSrc; ?>" alt="">
 			</div>
 			<div class="w-info-wrap" style="<?= CardLayout::boxStyle($infoF, 5); ?>overflow:visible;">
 				<table class="w-info" style="font-size:<?= number_format($rowFs, 2, '.', ''); ?>mm;">
 					<tr><td class="k">NAME</td><td class="c">:</td><td class="v"><?= esc($fullName !== '' ? $fullName : '—'); ?></td></tr>
+					<tr><td class="k">CLASS</td><td class="c">:</td><td class="v"><?= esc($classLabel !== '' ? $classLabel : '—'); ?></td></tr>
+					<tr><td class="k">ACADEMIC YEAR</td><td class="c">:</td><td class="v"><?= esc($values['header1']); ?></td></tr>
 				</table>
 			</div>
 			<div class="cf-center w-id" data-max="2.70" data-min="1.5" style="<?= CardLayout::boxStyle($idF, 4); ?>overflow:visible;font-size:<?= number_format($idFs, 2, '.', ''); ?>mm;">

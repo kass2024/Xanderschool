@@ -3,18 +3,23 @@
 namespace App\Libraries;
 
 /**
- * Rasterize Wisdom landscape student IDs with GD.
- * wkhtmltopdf cannot clip border-radius, so photo/logo circles and text
- * are painted onto a 1712×1080 bitmap (20 px/mm CR80) then embedded in PDF.
+ * Rasterize student ID cards onto the fixed Wisdom High School PNG template.
+ * Photo (circle) + NAME / CLASS / ACADEMIC YEAR / ID NO overlays.
+ * Output: 1712×1080 JPEG (20 px/mm CR80) for Cr80ImagePdf.
  */
 class WisdomCardRenderer
 {
 	public const W = 1712;
 	public const H = 1080;
 
+	/** Source artwork size (student_pass_template.png). */
+	private const SRC_W = 1011;
+	private const SRC_H = 639;
+
+	public const TEMPLATE = 'assets/images/background/student_pass_template.png';
+
 	private const TEAL = [0, 130, 142];
 	private const NAVY = [4, 73, 107];
-	private const BG = [248, 248, 248];
 
 	/** @var string */
 	private $font;
@@ -49,8 +54,6 @@ class WisdomCardRenderer
 	}
 
 	/**
-	 * Wisdom Ribbon card: school chrome + student name + registration code only (no photo).
-	 *
 	 * @param array<string,mixed> $student
 	 * @param array<string,mixed> $ctx
 	 * @return resource|\GdImage|null
@@ -61,176 +64,69 @@ class WisdomCardRenderer
 			return null;
 		}
 
-		$im = $this->baseCanvas();
+		$photoPath = $this->profilePath($student['photo'] ?? '');
+		if ($photoPath === null) {
+			return null;
+		}
+
+		$im = $this->baseFromTemplate();
+		if ($im === null) {
+			return null;
+		}
 		imagealphablending($im, true);
 
 		$white = imagecolorallocate($im, 255, 255, 255);
 		$navy = imagecolorallocate($im, self::NAVY[0], self::NAVY[1], self::NAVY[2]);
 		$teal = imagecolorallocate($im, self::TEAL[0], self::TEAL[1], self::TEAL[2]);
 
-		$schoolName = $this->upper(CardLayout::wisdomCardSchoolName($student));
 		$fullName = $this->upper(trim((string) ($student['name'] ?? ($student['stdnames'] ?? ''))));
+		$classLabel = $this->upper(trim((string) ($student['class'] ?? '')));
+		$year = $this->upper(CardLayout::formatAcademicYear((string) ($ctx['year'] ?? '')));
 		$idNo = trim((string) ($student['regno'] ?? ''));
 		if ($idNo === '') {
 			$idNo = trim((string) ($student['card'] ?? ''));
 		}
 		$idNo = $this->upper($idNo);
 
-		$this->drawSchoolName($im, $schoolName, $white);
-		$this->drawBadge($im, 'STUDENT ID CARD', $white);
-		$this->drawInfo($im, $fullName, $navy);
-		$this->drawIdBar($im, $idNo !== '' ? $idNo : '—', $white);
-
-		$logoPath = $this->logoPath((string) ($ctx['logo'] ?? ''));
-		$this->pasteLogo($im, $logoPath, $teal, $white);
+		$this->pastePhoto($im, $photoPath, $teal);
+		$this->drawFieldValues($im, $fullName, $classLabel, $year, $navy);
+		$this->drawIdBar($im, $idNo !== '' ? $idNo : '—', $navy, $white);
 
 		return $im;
 	}
 
-	/** @return resource|\GdImage */
-	private function baseCanvas()
+	/** @return resource|\GdImage|null */
+	private function baseFromTemplate()
 	{
-		$chrome = $this->assetPath(CardLayout::WISDOM_CHROME);
-		if ($chrome !== null) {
-			$src = $this->loadImage($chrome);
-			if ($src) {
-				if (imagesx($src) === self::W && imagesy($src) === self::H) {
-					return $src;
-				}
-				$im = imagecreatetruecolor(self::W, self::H);
-				imagecopyresampled($im, $src, 0, 0, 0, 0, self::W, self::H, imagesx($src), imagesy($src));
-				imagedestroy($src);
-				return $im;
-			}
+		$path = $this->assetPath(self::TEMPLATE);
+		if ($path === null) {
+			// Fallback to older chrome asset if present
+			$path = $this->assetPath(CardLayout::WISDOM_CHROME);
 		}
-		return $this->drawChrome();
-	}
-
-	/** @return resource|\GdImage */
-	private function drawChrome()
-	{
+		if ($path === null) {
+			return null;
+		}
+		$src = $this->loadImage($path);
+		if (!$src) {
+			return null;
+		}
+		if (imagesx($src) === self::W && imagesy($src) === self::H) {
+			return $src;
+		}
 		$im = imagecreatetruecolor(self::W, self::H);
-		$bg = imagecolorallocate($im, self::BG[0], self::BG[1], self::BG[2]);
-		$teal = imagecolorallocate($im, self::TEAL[0], self::TEAL[1], self::TEAL[2]);
-		$navy = imagecolorallocate($im, self::NAVY[0], self::NAVY[1], self::NAVY[2]);
-		imagefill($im, 0, 0, $bg);
-
-		$this->fillPoly($im, [[0, 5.8], [56.2, 5.2], [54.0, 8.2], [0, 8.6]], $navy);
-		$this->fillPoly($im, [[0, 5.8], [6.2, 5.8], [0.4, 23.6], [0, 23.6]], $navy);
-		$this->fillPoly($im, [[8.3, 0], [22.9, 0], [20.4, 8.2], [5.3, 8.2]], $teal);
-		$this->fillPoly($im, [[5.3, 8.0], [99.4, 8.0], [93.8, 23.6], [0.0, 23.6]], $teal);
-		$this->fillPoly($im, [[16.8, 8.0], [21.9, 8.0], [16.7, 23.6], [14.8, 23.6]], $navy);
-		$this->fillPoly($im, [[24.6, 36.2], [76.8, 36.2], [72.6, 47.4], [30.0, 47.4]], $navy);
-		$this->fillPoly($im, [[0, 79.5], [7.0, 79.5], [1.4, 96.2], [0, 96.2]], $navy);
-		$this->fillPoly($im, [[5.2, 84.8], [39.6, 84.8], [35.8, 95.4], [1.6, 95.4]], $teal);
-		$this->fillPoly($im, [[40.6, 84.8], [41.7, 84.8], [38.1, 95.4], [37.0, 95.4]], $teal);
-		$this->fillPoly($im, [[43.0, 84.8], [44.9, 84.8], [41.2, 95.4], [39.3, 95.4]], $teal);
-		$this->fillPoly($im, [[46.3, 84.8], [48.9, 84.8], [45.2, 95.4], [42.6, 95.4]], $teal);
+		imagecopyresampled($im, $src, 0, 0, 0, 0, self::W, self::H, imagesx($src), imagesy($src));
+		imagedestroy($src);
 		return $im;
 	}
 
-	/**
-	 * @param array<int,array{0:float,1:float}> $pctPts
-	 * @param resource|\GdImage $im
-	 */
-	private function fillPoly($im, array $pctPts, int $color): void
+	private function sx(float $x): int
 	{
-		$xy = [];
-		foreach ($pctPts as $p) {
-			$xy[] = (int) round($p[0] / 100.0 * self::W);
-			$xy[] = (int) round($p[1] / 100.0 * self::H);
-		}
-		$n = (int) (count($xy) / 2);
-		if (PHP_VERSION_ID >= 80000) {
-			imagefilledpolygon($im, $xy, $color);
-		} else {
-			imagefilledpolygon($im, $xy, $n, $color);
-		}
+		return (int) round($x / self::SRC_W * self::W);
 	}
 
-	/** @param resource|\GdImage $im */
-	private function drawSchoolName($im, string $text, int $white): void
+	private function sy(float $y): int
 	{
-		if ($text === '') {
-			return;
-		}
-		// After the logo; leave a clear gap before the teal banner's right slant.
-		$x = (int) round(self::W * 0.215);
-		$y = (int) round(self::H * 0.082);
-		$w = (int) round(self::W * 0.66);
-		$h = (int) round(self::H * 0.142);
-		$size = $this->fitSize($text, $w, (int) round($h * 0.70), 86, 28);
-		$this->drawCentered($im, $text, $size, $x, $y, $w, $h, $white);
-	}
-
-	/** @param resource|\GdImage $im */
-	private function drawBadge($im, string $text, int $white): void
-	{
-		$x = (int) round(self::W * 0.36);
-		$y = (int) round(self::H * 0.362);
-		$w = (int) round(self::W * 0.36);
-		$h = (int) round(self::H * 0.108);
-		$size = $this->fitSize($text, $w, (int) round($h * 0.58), 36, 16);
-		$this->drawCentered($im, $text, $size, $x, $y, $w, $h, $white);
-	}
-
-	/** @param resource|\GdImage $im */
-	private function drawInfo($im, string $name, int $navy): void
-	{
-		// Use former photo + info width — no photo on this pass style.
-		$x = (int) round(self::W * 0.08);
-		$y = (int) round(self::H * 0.48);
-		$w = (int) round(self::W * 0.86);
-		$rowH = (int) round(self::H * 0.12);
-		$label = 'NAME';
-		$value = $name !== '' ? $name : '—';
-		$labelSize = 34.0;
-		$labelW = $this->measure($labelSize, $label)['w'];
-		$colon = ' :';
-		$colonW = $this->measure($labelSize, $colon)['w'];
-		$gap = (int) round(self::W * 0.012);
-		$valueX = $x + $labelW + $colonW + $gap;
-		$valueMaxW = max(40, $x + $w - $valueX);
-		$this->drawText($im, $label, $labelSize, $x, $y, $labelW + 4, $rowH, $navy, 'left');
-		$this->drawText($im, $colon, $labelSize, $x + $labelW, $y, $colonW + 4, $rowH, $navy, 'left');
-		$valSize = $this->fitSize($value, $valueMaxW, (int) round($rowH * 0.72), 40, 16);
-		$this->drawText($im, $value, $valSize, $valueX, $y, $valueMaxW, $rowH, $navy, 'left');
-	}
-
-	/** @param resource|\GdImage $im */
-	private function drawIdBar($im, string $idNo, int $white): void
-	{
-		$text = 'ID NO: ' . $idNo;
-		$x = (int) round(self::W * 0.055);
-		$y = (int) round(self::H * 0.848);
-		$w = (int) round(self::W * 0.32);
-		$h = (int) round(self::H * 0.102);
-		$size = $this->fitSize($text, $w, (int) round($h * 0.52), 30, 14);
-		$this->drawCentered($im, $text, $size, $x, $y, $w, $h, $white);
-	}
-
-	/**
-	 * @param resource|\GdImage $im
-	 */
-	private function pasteLogo($im, ?string $path, int $teal, int $white): void
-	{
-		$d = (int) round(self::H * 0.248);
-		$cx = (int) round(self::W * 0.118);
-		$cy = (int) round(self::H * 0.155);
-		$ring = (int) round(self::W * 0.0045);
-		imagefilledellipse($im, $cx, $cy, $d + $ring * 2, $d + $ring * 2, $teal);
-		imagefilledellipse($im, $cx, $cy, $d, $d, $white);
-
-		$src = $path ? $this->loadImage($path) : null;
-		$circle = $src ? $this->containCircle($src, $d - 8) : null;
-		if ($src) {
-			imagedestroy($src);
-		}
-		if ($circle) {
-			$cd = imagesx($circle);
-			imagecopy($im, $circle, $cx - (int) ($cd / 2), $cy - (int) ($cd / 2), 0, 0, $cd, $cd);
-			imagedestroy($circle);
-		}
+		return (int) round($y / self::SRC_H * self::H);
 	}
 
 	/**
@@ -238,10 +134,11 @@ class WisdomCardRenderer
 	 */
 	private function pastePhoto($im, string $path, int $teal): void
 	{
-		$d = (int) round(min(self::W * 0.252, self::H * 0.40));
-		$cx = (int) round(self::W * 0.066 + $d / 2);
-		$cy = (int) round(self::H * 0.338 + $d / 2);
-		$ring = (int) round(self::W * 0.0175);
+		// Measured on 1011×639 artwork
+		$cx = $this->sx(179.5);
+		$cy = $this->sy(299.5);
+		$d = $this->sx(248);
+		$ring = $this->sx(14);
 
 		$src = $this->loadImage($path);
 		if (!$src) {
@@ -257,6 +154,46 @@ class WisdomCardRenderer
 		$cd = imagesx($circle);
 		imagecopy($im, $circle, $cx - (int) ($cd / 2), $cy - (int) ($cd / 2), 0, 0, $cd, $cd);
 		imagedestroy($circle);
+	}
+
+	/**
+	 * Fill values next to baked-in NAME / CLASS / ACADEMIC YEAR labels.
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	private function drawFieldValues($im, string $name, string $class, string $year, int $navy): void
+	{
+		$rowH = $this->sy(36);
+		$rows = [
+			// [y, valueX, valueW, text] — valueX clears each baked-in label
+			[$this->sy(332), $this->sx(480), $this->sx(490), $name !== '' ? $name : '—'],
+			[$this->sy(372), $this->sx(490), $this->sx(480), $class !== '' ? $class : '—'],
+			[$this->sy(412), $this->sx(600), $this->sx(370), $year !== '' ? $year : '—'],
+		];
+		foreach ($rows as $row) {
+			[$y, $valueX, $valueW, $val] = $row;
+			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.72), 36, 14);
+			$this->drawText($im, $val, $size, $valueX, $y, $valueW, $rowH, $navy, 'left');
+		}
+	}
+
+	/**
+	 * Cover sample ID text on the footer bar, then draw real ID NO.
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	private function drawIdBar($im, string $idNo, int $navy, int $white): void
+	{
+		// Cover navy ribbon + leftover sample "ID NO: …" on the teal footer.
+		$x = $this->sx(40);
+		$y = $this->sy(490);
+		$w = $this->sx(380);
+		$h = $this->sy(90);
+		imagefilledrectangle($im, $x, $y, $x + $w, $y + $h, $navy);
+
+		$text = 'ID NO: ' . $idNo;
+		$size = $this->fitSize($text, $w - 16, (int) round($h * 0.42), 34, 14);
+		$this->drawCentered($im, $text, $size, $x, $y, $w, $h, $white);
 	}
 
 	/**
@@ -283,30 +220,6 @@ class WisdomCardRenderer
 		$sq = $this->truecolor($size, $size, true);
 		imagealphablending($sq, true);
 		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $side, $side);
-		imagealphablending($sq, false);
-		$this->applyCircleMask($sq);
-		return $sq;
-	}
-
-	/**
-	 * @param resource|\GdImage $src
-	 * @return resource|\GdImage|null
-	 */
-	private function containCircle($src, int $size)
-	{
-		$sw = imagesx($src);
-		$sh = imagesy($src);
-		if ($sw < 2 || $sh < 2) {
-			return null;
-		}
-		$scale = min($size / $sw, $size / $sh);
-		$nw = max(1, (int) round($sw * $scale));
-		$nh = max(1, (int) round($sh * $scale));
-		$ox = (int) floor(($size - $nw) / 2);
-		$oy = (int) floor(($size - $nh) / 2);
-		$sq = $this->truecolor($size, $size, true);
-		imagealphablending($sq, true);
-		imagecopyresampled($sq, $src, $ox, $oy, 0, 0, $nw, $nh, $sw, $sh);
 		imagealphablending($sq, false);
 		$this->applyCircleMask($sq);
 		return $sq;
@@ -374,6 +287,8 @@ class WisdomCardRenderer
 		$tx = $align === 'center'
 			? $x + (int) round(($w - $m['w']) / 2) - $m['box'][0]
 			: $x - $m['box'][0];
+		$ty = $y + (int) round(($h + ($m['box'][1] - $m['box'][7])) / 2) - $m['box'][1];
+		// Baseline: center vertically using box height
 		$ty = $y + (int) round(($h - ($m['box'][1] + $m['box'][7])) / 2);
 		imagettftext($im, $size, 0, $tx, $ty, $color, $this->font, $text);
 	}
@@ -449,18 +364,6 @@ class WisdomCardRenderer
 			return null;
 		}
 		return $this->assetPath('assets/images/profile/' . $base);
-	}
-
-	private function logoPath(string $logo): ?string
-	{
-		$logo = trim($logo);
-		if ($logo !== '') {
-			$p = $this->assetPath('assets/images/logo/' . basename($logo));
-			if ($p) {
-				return $p;
-			}
-		}
-		return $this->assetPath('assets/images/fallback-logo.png');
 	}
 
 	private function assetPath(string $relative): ?string

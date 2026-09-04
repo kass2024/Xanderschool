@@ -6,7 +6,7 @@
 			}
 		</style>
 		<div class="pull-left mb-2" style="width: 100%">
-			<small class="text-muted">Wisdom Ribbon · student name + registration number (no photo) · settings template ignored</small>
+			<small class="text-muted">Wisdom High School template · photo + name, class, academic year, ID no · settings design ignored</small>
 		</div>
 		<div class="pull-left" style="width: 100%">
 			<div class="col-md-6 col-sm-12 col-lg-4 pull-left">
@@ -39,6 +39,7 @@
 								<th><?= lang("app.regNo");?></th>
 								<th><?= lang("app.studentName");?></th>
 								<th><?= lang("app.sClass");?></th>
+								<th><?= lang("app.photo");?></th>
 								<th>Print</th>
 								<th style="align-content: center;"><?= lang("app.remove");?></th>
 							</tr>
@@ -50,8 +51,10 @@
 							</tbody>
 							<!--Table body-->
 						</table>
-						<label><strong><?= lang("app.legend");?>: </strong>
-							Each card shows student name and registration number on the Wisdom Ribbon template.
+						<label><strong><?= lang("app.legend");?>: </strong><span class="badge badge-primary"
+															  style="background-color: orangered !important;"> </span>
+							<?= lang("app.notBePrinted");?>
+
 						</label>
 						<!--Table-->
 					</div>
@@ -151,7 +154,6 @@
 
 			$('input[name^="discId"]').each(function () {
 				if (this.value == id) {
-					//student already exists
 					toastada.warning(repo.text + "<?= lang("app.alreadonList");?>");
 					isError = true;
 					return false;
