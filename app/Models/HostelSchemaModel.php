@@ -386,4 +386,84 @@ class HostelSchemaModel extends Model
 		}
 		return array_values($byId);
 	}
+
+	/**
+	 * School-wide student lookup: class + hostel for the selected year.
+	 *
+	 * @return list<array>
+	 */
+	public function searchStudentsWithPlacement(int $schoolId, int $yearId, string $query, int $limit = 25): array
+	{
+		$this->ensureSchema();
+		$q = trim($query);
+		if ($q === '' || strlen($q) < 2) {
+			return [];
+		}
+		$limit = max(1, min(50, $limit));
+		$db = \Config\Database::connect();
+		$like = '%' . $q . '%';
+
+		$rows = $db->table('students s')
+			->select('s.id, s.regno, s.fname, s.lname, s.sex, s.studying_mode,
+				c.title AS class_title, l.title AS level_name, d.code AS dept_code,
+				ha.hostel_id, h.name AS hostel_name, h.gender AS hostel_gender')
+			->join(
+				'class_records cr',
+				'cr.student = s.id AND cr.year = ' . (int) $yearId . ' AND cr.status = 1',
+				'left'
+			)
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join(
+				'hostel_allocations ha',
+				'ha.student_id = s.id AND ha.academic_year = ' . (int) $yearId . ' AND ha.school_id = ' . (int) $schoolId,
+				'left'
+			)
+			->join('hostels h', 'h.id = ha.hostel_id', 'left')
+			->where('s.school_id', $schoolId)
+			->where('s.status', 1)
+			->groupStart()
+				->like('s.regno', $q)
+				->orLike('s.fname', $q)
+				->orLike('s.lname', $q)
+				->orWhere("CONCAT(IFNULL(s.fname,''), ' ', IFNULL(s.lname,'')) LIKE " . $db->escape($like), null, false)
+				->orWhere("CONCAT(IFNULL(s.lname,''), ' ', IFNULL(s.fname,'')) LIKE " . $db->escape($like), null, false)
+			->groupEnd()
+			->orderBy('s.fname', 'ASC')
+			->orderBy('s.lname', 'ASC')
+			->limit($limit * 3)
+			->get()->getResultArray();
+
+		$byId = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['id'] ?? 0);
+			if ($sid <= 0 || isset($byId[$sid])) {
+				continue;
+			}
+			$label = trim(preg_replace(
+				'/\s+/',
+				' ',
+				trim(($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_title'] ?? ''))
+			) ?: '');
+			$mode = (int) ($row['studying_mode'] ?? 1);
+			$byId[$sid] = [
+				'id' => $sid,
+				'regno' => (string) ($row['regno'] ?? ''),
+				'fname' => (string) ($row['fname'] ?? ''),
+				'lname' => (string) ($row['lname'] ?? ''),
+				'sex' => (string) ($row['sex'] ?? ''),
+				'studying_mode' => $mode,
+				'mode_label' => $mode === self::MODE_BOARDING ? 'Boarding' : 'Day',
+				'class_label' => $label !== '' ? $label : 'No class',
+				'hostel_id' => isset($row['hostel_id']) && $row['hostel_id'] !== null ? (int) $row['hostel_id'] : null,
+				'hostel_name' => (string) ($row['hostel_name'] ?? ''),
+				'hostel_gender' => (string) ($row['hostel_gender'] ?? ''),
+			];
+			if (count($byId) >= $limit) {
+				break;
+			}
+		}
+		return array_values($byId);
+	}
 }

@@ -15438,6 +15438,24 @@ public function getApplicationDocs($id = null)
 		]);
 	}
 
+	public function hostel_student_search()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->request->getGet('year') ?: ($this->data['academic_year'] ?? 0));
+		$q = trim((string) ($this->request->getGet('q') ?? ''));
+		$mdl = new \App\Models\HostelSchemaModel();
+		$rows = $mdl->searchStudentsWithPlacement($schoolId, $year, $q);
+		return $this->response->setJSON([
+			'success' => true,
+			'students' => $rows,
+		]);
+	}
+
 	public function manipulate_attendance_area()
 	{
 		$this->_preset(1, 3);

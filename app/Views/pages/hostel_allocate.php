@@ -26,6 +26,24 @@ $yearId = (int) ($academic_year_id ?? 0);
 		</div>
 	</div>
 
+	<div class="hst-card mb-3 hst-search-card">
+		<h6><i class="fa fa-search"></i> Find student (class &amp; hostel)</h6>
+		<p class="text-muted small mb-2">Search any student in the school by name or registration number for the selected academic year.</p>
+		<div class="form-row align-items-end">
+			<div class="col-md-9">
+				<label class="small font-weight-bold">Student</label>
+				<input type="search" class="form-control form-control-sm" id="hstFindQ"
+					placeholder="Type name or regno…" autocomplete="off">
+			</div>
+			<div class="col-md-3">
+				<button type="button" class="btn btn-primary btn-sm btn-block" id="hstFindBtn">
+					<i class="fa fa-search"></i> Search
+				</button>
+			</div>
+		</div>
+		<div id="hstFindResult" class="hst-find-result" style="display:none;"></div>
+	</div>
+
 	<div class="row">
 		<div class="col-lg-4">
 			<div class="hst-card">
@@ -213,6 +231,79 @@ $yearId = (int) ($academic_year_id ?? 0);
 	if ($.fn.select2) {
 		$('#hstOneStudent, #hstClassSelect, #hstAutoClass').select2({ width: '100%', allowClear: true, placeholder: 'Select…' });
 	}
+
+	var findTimer = null;
+	function runStudentFind() {
+		var q = $.trim($('#hstFindQ').val() || '');
+		var $box = $('#hstFindResult');
+		if (q.length < 2) {
+			$box.html('<p class="text-muted mb-0">Type at least 2 characters.</p>').show();
+			return;
+		}
+		$box.html('<p class="text-muted mb-0">Searching…</p>').show();
+		$.getJSON('<?= base_url('hostel_student_search'); ?>', { year: yearId(), q: q }).done(function (res) {
+			if (res.error) {
+				$box.html('<p class="text-danger mb-0">' + esc(res.error) + '</p>');
+				return;
+			}
+			var rows = res.students || [];
+			if (!rows.length) {
+				$box.html('<p class="text-muted mb-0">No students found.</p>');
+				return;
+			}
+			var html = '<ul class="hst-find-list">';
+			rows.forEach(function (s) {
+				var name = $.trim((s.regno ? s.regno + ' — ' : '') + (s.fname || '') + ' ' + (s.lname || ''));
+				var cls = s.class_label || 'No class';
+				var hostel = s.hostel_name
+					? s.hostel_name
+					: (parseInt(s.studying_mode, 10) === 0 ? 'Not allocated' : 'No hostel (day)');
+				html += '<li>' +
+					'<div class="hst-find-main">' +
+						'<span class="hst-find-name">' + esc(name) + '</span>' +
+						'<span class="hst-find-meta">Class: <strong>' + esc(cls) + '</strong></span>' +
+						'<span class="hst-find-meta">Hostel: <strong>' + esc(hostel) + '</strong>' +
+							(s.mode_label ? ' · ' + esc(s.mode_label) : '') + '</span>' +
+					'</div>' +
+					(s.hostel_id
+						? '<button type="button" class="btn btn-link btn-sm hst-find-goto" data-hostel="' + s.hostel_id + '">Open</button>'
+						: '') +
+				'</li>';
+			});
+			html += '</ul>';
+			$box.html(html);
+		}).fail(function () {
+			$box.html('<p class="text-danger mb-0">Search failed.</p>');
+		});
+	}
+
+	$('#hstFindBtn').on('click', runStudentFind);
+	$('#hstFindQ').on('keydown', function (e) {
+		if (e.key === 'Enter' || e.keyCode === 13) {
+			e.preventDefault();
+			runStudentFind();
+		}
+	}).on('input', function () {
+		clearTimeout(findTimer);
+		findTimer = setTimeout(function () {
+			var q = $.trim($('#hstFindQ').val() || '');
+			if (q.length >= 2) {
+				runStudentFind();
+			}
+		}, 350);
+	});
+
+	$(document).on('click', '.hst-find-goto', function () {
+		var hid = parseInt($(this).data('hostel'), 10) || 0;
+		if (!hid) {
+			return;
+		}
+		var $item = $('.hst-occ-item[data-id="' + hid + '"]');
+		if ($item.length) {
+			$item.trigger('click');
+			$('html, body').animate({ scrollTop: $item.offset().top - 80 }, 250);
+		}
+	});
 
 	function loadCandidates() {
 		$.getJSON('<?= base_url('hostel_candidates'); ?>', { year: yearId() }).done(function (res) {
