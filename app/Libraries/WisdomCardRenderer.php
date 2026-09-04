@@ -329,11 +329,11 @@ class WisdomCardRenderer
 			$sy = (int) max(0, ($sh - $sw) * $biasY);
 		}
 		$side = max(1, min($side, $sw - $sx, $sh - $sy));
-		// Zoom ~28% into the cover square so faces fill the ring better.
-		$zoom = 0.72;
+		// Photos from live studio are already framed to the ID circle — keep full square.
+		$zoom = 0.98;
 		$crop = max(1, (int) round($side * $zoom));
 		$sx += (int) round(($side - $crop) / 2);
-		$sy += (int) round(($side - $crop) * 0.35);
+		$sy += (int) round(($side - $crop) * 0.28);
 		$sx = max(0, min($sx, $sw - $crop));
 		$sy = max(0, min($sy, $sh - $crop));
 		$sq = imagecreatetruecolor($size, $size);

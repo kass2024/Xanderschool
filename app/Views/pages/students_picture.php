@@ -176,20 +176,43 @@
 	}
 	.sp-square-stage {
 		position: relative;
-		width: 100%;
-		max-width: 720px;
-		aspect-ratio: 4 / 3;
-		border-radius: 14px;
+		width: min(100%, 520px);
+		aspect-ratio: 1 / 1;
+		border-radius: 18px;
 		overflow: hidden;
 		background: #000;
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		box-shadow: 0 18px 40px rgba(2, 6, 23, 0.35);
 	}
+	/* Same circle as Wisdom ID card photo hole (inscribed in the square). */
+	.sp-circle-guide {
+		position: absolute;
+		inset: 4%;
+		border-radius: 50%;
+		z-index: 2;
+		pointer-events: none;
+		box-shadow:
+			0 0 0 2px #00828e,
+			0 0 0 5px rgba(255, 255, 255, 0.85),
+			0 0 0 9999px rgba(15, 23, 42, 0.55);
+	}
+	.sp-circle-guide::after {
+		content: '';
+		position: absolute;
+		left: 12%;
+		right: 12%;
+		bottom: 10%;
+		height: 22%;
+		border: 2px dashed rgba(255, 255, 255, 0.35);
+		border-top: 0;
+		border-radius: 0 0 50% 50% / 0 0 100% 100%;
+		opacity: .7;
+	}
 	.sp-hd-badge {
 		position: absolute;
 		top: 12px;
 		left: 12px;
-		z-index: 2;
+		z-index: 3;
 		font-size: 10px;
 		font-weight: 800;
 		letter-spacing: .08em;
@@ -203,7 +226,7 @@
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		object-position: center center;
+		object-position: center 28%;
 		display: block;
 		background: #000;
 	}
@@ -215,10 +238,11 @@
 		position: absolute;
 		left: 0; right: 0; bottom: 14px;
 		text-align: center;
-		color: #cbd5e1;
+		color: #e2e8f0;
 		font-size: 12px;
 		font-weight: 600;
-		z-index: 2;
+		z-index: 3;
+		text-shadow: 0 1px 2px rgba(0,0,0,.55);
 	}
 	.sp-edit-box {
 		background: #f8fafc;
@@ -227,11 +251,14 @@
 		position: relative;
 		width: 280px;
 		height: 280px;
-		border-radius: 8px;
+		border-radius: 50%;
 		overflow: hidden;
-		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+		box-shadow:
+			0 0 0 3px #00828e,
+			0 0 0 6px #fff,
+			0 12px 32px rgba(15, 23, 42, 0.18);
 		background: #fff;
-		border: 1px solid #e5e7eb;
+		border: 0;
 		cursor: grab;
 	}
 	.sp-edit-frame:active { cursor: grabbing; }
@@ -320,12 +347,13 @@
 					<div class="sp-live-box">
 						<div class="sp-square-stage">
 							<video id="spVideo" autoplay playsinline muted></video>
-							<span class="sp-hd-badge">HD</span>
+							<div class="sp-circle-guide" aria-hidden="true"></div>
+							<span class="sp-hd-badge">ID circle</span>
 						</div>
-						<div class="sp-live-hint">HD live preview — click Capture when ready</div>
+						<div class="sp-live-hint">Fit the face inside the circle — same size as the student ID card</div>
 					</div>
 					<div class="sp-edit-box">
-						<div class="sp-edit-frame" id="spFrame">
+						<div class="sp-edit-frame" id="spFrame" title="Card photo circle preview">
 							<canvas id="spEditCanvas" width="1600" height="1600"></canvas>
 						</div>
 					</div>
@@ -383,6 +411,10 @@
 		var dragStart = { x: 0, y: 0 };
 		var STORAGE_KEY = 'xander_student_photo_camera';
 		var PHOTO_SIZE = 1600;
+		/** Inset of the ID-card circle inside the square stage (matches .sp-circle-guide inset 4%). */
+		var CIRCLE_INSET = 0.04;
+		/** Face bias inside the square (matches WisdomCardRenderer coverSquare bias). */
+		var FACE_BIAS_Y = 0.28;
 		var video = document.getElementById('spVideo');
 		var canvas = document.getElementById('spEditCanvas');
 		var ctx = canvas.getContext('2d');
@@ -543,12 +575,26 @@
 			return tmp;
 		}
 
+		/**
+		 * Crop the same square that fills the on-screen ID circle guide.
+		 * Stage is 1:1 with object-fit:cover → center square of the frame,
+		 * then inset to the circle ring and bias slightly toward the face.
+		 */
 		function squareCrop(srcCanvas) {
 			var W = srcCanvas.width;
 			var H = srcCanvas.height;
-			var crop = Math.min(W, H);
-			var cropX = (W - crop) / 2;
-			var cropY = (H - crop) / 2;
+			var side = Math.min(W, H);
+			var baseX = (W - side) / 2;
+			var baseY = (H - side) / 2;
+			// Match CSS circle inset so capture == what is inside the guide.
+			var insetPx = side * CIRCLE_INSET;
+			var crop = Math.max(2, side - insetPx * 2);
+			// Slight upward bias so head/shoulders fill the card circle.
+			var cropX = baseX + (side - crop) / 2;
+			var cropY = baseY + (side - crop) * FACE_BIAS_Y;
+			cropX = Math.max(0, Math.min(cropX, W - crop));
+			cropY = Math.max(0, Math.min(cropY, H - crop));
+
 			var out = document.createElement('canvas');
 			out.width = PHOTO_SIZE;
 			out.height = PHOTO_SIZE;
@@ -605,11 +651,15 @@
 				ctx.fillStyle = '#94a3b8';
 				ctx.font = '28px sans-serif';
 				ctx.textAlign = 'center';
-				ctx.fillText('Capture a student photo', canvas.width / 2, canvas.height / 2);
+				ctx.fillText('ID card circle preview', canvas.width / 2, canvas.height / 2);
 				return;
 			}
 			var v = sliderVals();
 			ctx.save();
+			// Clip to circle so the editor matches the card photo hole.
+			ctx.beginPath();
+			ctx.arc(canvas.width / 2, canvas.height / 2, canvas.width / 2, 0, Math.PI * 2);
+			ctx.clip();
 			ctx.filter = 'brightness(' + v.bright + '%) contrast(' + v.contrast + '%) saturate(' + v.saturate + '%) blur(' + (v.smooth / 22) + 'px)';
 			ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y);
 			ctx.rotate(rotation * Math.PI / 180);
@@ -620,6 +670,9 @@
 			ctx.restore();
 			if (v.warmth !== 0) {
 				ctx.save();
+				ctx.beginPath();
+				ctx.arc(canvas.width / 2, canvas.height / 2, canvas.width / 2, 0, Math.PI * 2);
+				ctx.clip();
 				ctx.globalCompositeOperation = 'soft-light';
 				ctx.fillStyle = v.warmth > 0
 					? 'rgba(255,196,120,' + (Math.abs(v.warmth) / 160) + ')'
