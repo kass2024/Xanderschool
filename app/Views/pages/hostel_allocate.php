@@ -83,16 +83,23 @@ foreach ($hostels as $h) {
 						$pct = min(100, (int) round(($occ / $max) * 100));
 						$gender = strtoupper((string) ($h['gender'] ?? 'M')) === 'F' ? 'F' : 'M';
 						?>
-						<button type="button" class="hst-occ-item" data-id="<?= (int) $h['id']; ?>" data-gender="<?= $gender; ?>">
+						<button type="button" class="hst-occ-item<?= !empty($h['is_mixed']) ? ' is-mixed' : ''; ?>"
+							data-id="<?= (int) $h['id']; ?>" data-gender="<?= $gender; ?>"
+							data-mixed="<?= !empty($h['is_mixed']) ? '1' : '0'; ?>">
 							<div class="hst-occ-top">
 								<span class="hst-occ-name"><?= esc($h['name']); ?></span>
+								<?php if (!empty($h['is_mixed'])) : ?>
+									<span class="hst-mixed-badge">Mixed</span>
+								<?php endif; ?>
 								<span class="hst-gender-badge hst-gender-<?= $gender === 'F' ? 'f' : 'm'; ?>">
 									<?= $gender === 'F' ? 'Female' : 'Male'; ?>
 								</span>
 								<span class="hst-occ-beds"><?= $occ; ?> / <?= (int) $h['max_beds']; ?></span>
 							</div>
 							<?php if (!empty($h['level_label'])) : ?>
-								<div class="hst-occ-level"><i class="fa fa-graduation-cap"></i> <?= esc($h['level_label']); ?></div>
+								<div class="hst-occ-level<?= !empty($h['is_mixed']) ? ' is-mixed' : ''; ?>">
+									<i class="fa fa-graduation-cap"></i> <?= esc($h['level_label']); ?>
+								</div>
 							<?php elseif ($separateByLevel && $occ === 0) : ?>
 								<div class="hst-occ-level is-empty">Open for any single level</div>
 							<?php endif; ?>
@@ -106,6 +113,12 @@ foreach ($hostels as $h) {
 				<div class="hst-residents-title">
 					<h6>Residents</h6>
 					<span id="hstResidentsCount"></span>
+				</div>
+				<div id="hstUnmixBar" class="hst-unmix-bar" style="display:none;">
+					<p class="mb-2">This hostel mixes different levels. Relocate extras to other same-gender hostels (majority level stays here).</p>
+					<button type="button" class="hst-btn hst-btn-warn" id="hstUnmixBtn">
+						<i class="fa fa-exchange"></i> Relocate / Unmix levels
+					</button>
 				</div>
 				<div id="hstResidentsBody" class="hst-residents-body"></div>
 			</div>
@@ -227,9 +240,11 @@ foreach ($hostels as $h) {
 			'name' => (string) ($h['name'] ?? ''),
 			'gender' => strtoupper((string) ($h['gender'] ?? 'M')) === 'F' ? 'F' : 'M',
 			'free_beds' => (int) ($h['free_beds'] ?? 0),
+			'is_mixed' => !empty($h['is_mixed']),
 		];
 	}, $hostels), JSON_UNESCAPED_UNICODE); ?>;
 	var currentHostelId = 0;
+	var currentHostelMixed = false;
 	var findTimer = null;
 	var findReq = null;
 	var findSeq = 0;
@@ -522,17 +537,24 @@ foreach ($hostels as $h) {
 	$(document).on('click', '.hst-occ-item', function () {
 		var id = parseInt($(this).data('id'), 10) || 0;
 		currentHostelId = id;
+		currentHostelMixed = String($(this).data('mixed')) === '1';
 		$('.hst-occ-item').removeClass('is-active');
 		$(this).addClass('is-active');
 		$('#hstResidentsBody').html('<p class="text-muted mb-0">Loading…</p>');
+		$('#hstUnmixBar').toggle(currentHostelMixed);
 		$('#hstResidents').show();
 		$.getJSON('<?= base_url('hostel_residents'); ?>', { hostel_id: id, year: yearId() }).done(function (res) {
 			var rows = res.students || [];
 			var moves = sameGenderHostels(id);
+			if (res.is_mixed) {
+				currentHostelMixed = true;
+				$('#hstUnmixBar').show();
+			}
 			$('#hstResidentsCount').text(rows.length + (rows.length === 1 ? ' student' : ' students'));
 			var html = '';
 			if (!rows.length) {
 				html = '<p class="text-muted mb-0">No residents yet.</p>';
+				$('#hstUnmixBar').hide();
 			} else {
 				html = '<ul class="hst-resident-list">';
 				rows.forEach(function (s) {
@@ -541,13 +563,15 @@ foreach ($hostels as $h) {
 					var moveHtml = '';
 					if (moves.length) {
 						moveHtml = '<select class="form-control form-control-sm hst-move-sel" data-student="' + s.id + '" title="Move to another hostel">' +
-							'<option value="">Move…</option>';
+							'<option value="">Relocate…</option>';
 						moves.forEach(function (h) {
 							moveHtml += '<option value="' + h.id + '">' + esc(h.name) +
 								(h.free_beds > 0 ? ' (' + h.free_beds + ' free)' : ' (full)') +
 								'</option>';
 						});
 						moveHtml += '</select>';
+					} else {
+						moveHtml = '<span class="hst-no-move" title="Add another same-gender hostel to relocate">No other hostel</span>';
 					}
 					html += '<li>' +
 						'<div class="hst-resident-main">' +
@@ -563,6 +587,35 @@ foreach ($hostels as $h) {
 				html += '</ul>';
 			}
 			$('#hstResidentsBody').html(html);
+		});
+	});
+
+	$('#hstUnmixBtn').on('click', function () {
+		if (!currentHostelId) {
+			return;
+		}
+		if (!confirm('Relocate students from other levels out of this hostel? The largest level group stays here.')) {
+			return;
+		}
+		var $btn = $(this).prop('disabled', true);
+		$.post('<?= base_url('hostel_unmix'); ?>', {
+			hostel_id: currentHostelId,
+			year: yearId()
+		}).done(function (res) {
+			if (res.error && !(res.moved > 0)) {
+				toast(res.error, false);
+				$btn.prop('disabled', false);
+				return;
+			}
+			var msg = res.success || 'Relocation finished.';
+			if (res.errors && res.errors.length) {
+				msg += ' ' + res.errors.slice(0, 3).join(' | ');
+			}
+			toast(msg, !(res.skipped > 0));
+			setTimeout(reloadPage, 900);
+		}).fail(function () {
+			toast('Relocation failed.', false);
+			$btn.prop('disabled', false);
 		});
 	});
 

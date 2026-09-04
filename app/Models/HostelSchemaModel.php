@@ -247,6 +247,7 @@ class HostelSchemaModel extends Model
 				: implode(', ', array_values(array_unique(array_map(static function ($l) {
 					return (string) ($l['level_title'] ?? '');
 				}, $levels))));
+			$h['is_mixed'] = count($levels) > 1;
 		}
 		unset($h);
 		return $hostels;
@@ -562,7 +563,7 @@ class HostelSchemaModel extends Model
 		$db = \Config\Database::connect();
 		$rows = $db->table('hostel_allocations ha')
 			->select('students.id, students.regno, students.fname, students.lname, students.sex,
-				c.title AS class_title, l.title AS level_name, d.code AS dept_code')
+				c.title AS class_title, l.id AS level_id, l.title AS level_name, d.code AS dept_code')
 			->join('students', 'students.id = ha.student_id')
 			->join(
 				'class_records cr',
@@ -588,11 +589,209 @@ class HostelSchemaModel extends Model
 				'/\s+/',
 				' ',
 				trim(($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_title'] ?? ''))
-			) ?? '');
+			) ?: '');
 			$row['class_label'] = $label;
+			$row['level_id'] = (int) ($row['level_id'] ?? 0);
 			$byId[$sid] = $row;
 		}
 		return array_values($byId);
+	}
+
+	/**
+	 * Relocate students so this hostel keeps one level (majority stays).
+	 * Others move to empty / same-level hostels of the same gender.
+	 *
+	 * @return array{ok:bool,moved:int,kept:int,skipped:int,kept_level?:string,errors:list<string>,message?:string}
+	 */
+	public function unmixHostel(int $schoolId, int $hostelId, int $yearId, int $staffId): array
+	{
+		$this->ensureSchema();
+		$hostel = $this->where('school_id', $schoolId)->where('active', 1)->find($hostelId);
+		if (!$hostel) {
+			return ['ok' => false, 'moved' => 0, 'kept' => 0, 'skipped' => 0, 'errors' => ['Hostel not found.']];
+		}
+
+		$gender = $this->normalizeGender((string) $hostel['gender']);
+		$residents = $this->listHostelResidents($schoolId, $hostelId, $yearId);
+		if ($residents === []) {
+			return ['ok' => true, 'moved' => 0, 'kept' => 0, 'skipped' => 0, 'errors' => [], 'message' => 'Hostel is empty.'];
+		}
+
+		$byLevel = [];
+		$unknown = [];
+		foreach ($residents as $st) {
+			$lvl = $this->getStudentLevel($schoolId, (int) $st['id'], $yearId);
+			$lid = $lvl ? (int) $lvl['level_id'] : 0;
+			$title = $lvl ? (string) $lvl['level_title'] : 'Unknown';
+			if ($lid <= 0) {
+				$unknown[] = $st;
+				continue;
+			}
+			if (!isset($byLevel[$lid])) {
+				$byLevel[$lid] = ['title' => $title, 'students' => []];
+			}
+			$byLevel[$lid]['students'][] = $st;
+		}
+
+		if (count($byLevel) <= 1 && $unknown === []) {
+			$only = $byLevel !== [] ? reset($byLevel)['title'] : '';
+			return [
+				'ok' => true,
+				'moved' => 0,
+				'kept' => count($residents),
+				'skipped' => 0,
+				'kept_level' => $only,
+				'errors' => [],
+				'message' => 'Hostel is already a single level.',
+			];
+		}
+
+		// Keep the largest level group in this hostel.
+		$keepLevelId = 0;
+		$keepTitle = '';
+		$keepCount = -1;
+		foreach ($byLevel as $lid => $group) {
+			$n = count($group['students']);
+			if ($n > $keepCount) {
+				$keepCount = $n;
+				$keepLevelId = (int) $lid;
+				$keepTitle = (string) $group['title'];
+			}
+		}
+
+		$hostels = $this->listHostelsWithOccupancy($schoolId, $yearId);
+		$destinations = [];
+		foreach ($hostels as $h) {
+			$hid = (int) $h['id'];
+			if ($hid === $hostelId) {
+				continue;
+			}
+			if ($this->normalizeGender((string) $h['gender']) !== $gender) {
+				continue;
+			}
+			$levelIds = [];
+			foreach (($h['resident_levels'] ?? []) as $lvl) {
+				$levelIds[] = (int) ($lvl['level_id'] ?? 0);
+			}
+			$destinations[] = [
+				'id' => $hid,
+				'name' => (string) $h['name'],
+				'free' => (int) $h['free_beds'],
+				'level_ids' => array_values(array_filter($levelIds)),
+			];
+		}
+
+		$moved = 0;
+		$skipped = 0;
+		$errors = [];
+		$kept = $keepLevelId > 0 ? count($byLevel[$keepLevelId]['students']) : 0;
+
+		$toMove = [];
+		foreach ($byLevel as $lid => $group) {
+			if ((int) $lid === $keepLevelId) {
+				continue;
+			}
+			foreach ($group['students'] as $st) {
+				$toMove[] = [
+					'student' => $st,
+					'level_id' => (int) $lid,
+					'level_title' => (string) $group['title'],
+				];
+			}
+		}
+		foreach ($unknown as $st) {
+			$toMove[] = [
+				'student' => $st,
+				'level_id' => 0,
+				'level_title' => 'Unknown',
+			];
+		}
+
+		// Claim empty destinations per level so different levels don't refill one empty hostel.
+		$emptyClaimedByLevel = [];
+
+		foreach ($toMove as $item) {
+			$st = $item['student'];
+			$sid = (int) $st['id'];
+			$name = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? ''));
+			$levelId = (int) $item['level_id'];
+			$picked = null;
+			$pickedScore = 999;
+
+			foreach ($destinations as $i => $d) {
+				if ($d['free'] <= 0) {
+					continue;
+				}
+				$ids = $d['level_ids'];
+				$score = null;
+				if ($levelId > 0) {
+					if ($ids !== []) {
+						$compatible = true;
+						foreach ($ids as $existing) {
+							if ((int) $existing !== $levelId) {
+								$compatible = false;
+								break;
+							}
+						}
+						if ($compatible) {
+							$score = 0; // same level already
+						}
+					} elseif (!isset($emptyClaimedByLevel[$d['id']]) || (int) $emptyClaimedByLevel[$d['id']] === $levelId) {
+						$score = 1; // empty / claimed for this level
+					}
+				} elseif ($ids === [] && !isset($emptyClaimedByLevel[$d['id']])) {
+					$score = 1;
+				}
+				if ($score !== null && $score < $pickedScore) {
+					$picked = $i;
+					$pickedScore = $score;
+					if ($score === 0) {
+						break;
+					}
+				}
+			}
+
+			if ($picked === null) {
+				$skipped++;
+				$errors[] = $name . ' (' . $item['level_title'] . '): no free same-gender hostel for this level. Add another '
+					. ($gender === 'F' ? 'female' : 'male') . ' hostel or move manually.';
+				continue;
+			}
+
+			$destId = $destinations[$picked]['id'];
+			$res = $this->allocateStudent($schoolId, $destId, $sid, $yearId, $staffId);
+			if (!$res['ok']) {
+				$skipped++;
+				$errors[] = $name . ': ' . ($res['error'] ?? 'move failed');
+				continue;
+			}
+
+			$moved++;
+			$destinations[$picked]['free']--;
+			if ($levelId > 0) {
+				if ($destinations[$picked]['level_ids'] === []) {
+					$emptyClaimedByLevel[$destId] = $levelId;
+				}
+				if (!in_array($levelId, $destinations[$picked]['level_ids'], true)) {
+					$destinations[$picked]['level_ids'][] = $levelId;
+				}
+			}
+		}
+
+		$msg = "Kept {$keepTitle} in this hostel. Relocated {$moved} student(s).";
+		if ($skipped > 0) {
+			$msg .= " Could not move {$skipped}.";
+		}
+
+		return [
+			'ok' => $skipped === 0,
+			'moved' => $moved,
+			'kept' => $kept,
+			'skipped' => $skipped,
+			'kept_level' => $keepTitle,
+			'errors' => array_slice($errors, 0, 40),
+			'message' => $msg,
+		];
 	}
 
 	/**

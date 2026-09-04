@@ -15438,15 +15438,56 @@ public function getApplicationDocs($id = null)
 				'lname' => (string) ($r['lname'] ?? ''),
 				'sex' => (string) ($r['sex'] ?? ''),
 				'class_label' => (string) ($r['class_label'] ?? ''),
+				'level_id' => (int) ($r['level_id'] ?? 0),
 				'level_name' => (string) ($r['level_name'] ?? ''),
 				'dept_code' => (string) ($r['dept_code'] ?? ''),
 				'class_title' => (string) ($r['class_title'] ?? ''),
 			];
 		}
+		$levelNames = [];
+		foreach ($out as $s) {
+			$ln = trim((string) ($s['level_name'] ?? ''));
+			if ($ln !== '') {
+				$levelNames[$ln] = true;
+			}
+		}
 		return $this->response->setJSON([
 			'success' => true,
 			'hostel_id' => $hostelId,
 			'students' => $out,
+			'is_mixed' => count($levelNames) > 1,
+		]);
+	}
+
+	public function hostel_unmix()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$staffId = (int) ($this->session->get('soma_id') ?? 0);
+		$hostelId = (int) $this->request->getPost('hostel_id');
+		$year = (int) ($this->request->getPost('year') ?: ($this->data['academic_year'] ?? 0));
+		if ($hostelId <= 0) {
+			return $this->response->setJSON(['error' => 'Select a hostel.']);
+		}
+		$mdl = new \App\Models\HostelSchemaModel();
+		$result = $mdl->unmixHostel($schoolId, $hostelId, $year, $staffId);
+		if (!empty($result['errors']) && (int) ($result['moved'] ?? 0) === 0 && empty($result['message'])) {
+			return $this->response->setJSON([
+				'error' => $result['errors'][0] ?? 'Could not relocate students.',
+				'errors' => $result['errors'],
+			]);
+		}
+		return $this->response->setJSON([
+			'success' => $result['message'] ?? 'Relocation finished.',
+			'moved' => (int) ($result['moved'] ?? 0),
+			'kept' => (int) ($result['kept'] ?? 0),
+			'skipped' => (int) ($result['skipped'] ?? 0),
+			'kept_level' => (string) ($result['kept_level'] ?? ''),
+			'errors' => $result['errors'] ?? [],
 		]);
 	}
 

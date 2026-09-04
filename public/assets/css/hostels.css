@@ -460,6 +460,52 @@
 	font-weight: 500;
 }
 
+.hst-occ-level.is-mixed,
+.hst-occ-item.is-mixed .hst-occ-level {
+	color: #b45309;
+}
+
+.hst-occ-item.is-mixed {
+	border-color: #fdba74;
+	background: #fff7ed;
+}
+
+.hst-mixed-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 0.68rem;
+	font-weight: 800;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	background: #ffedd5;
+	color: #c2410c;
+	border: 1px solid #fdba74;
+}
+
+.hst-unmix-bar {
+	margin-bottom: 12px;
+	padding: 12px;
+	border-radius: 12px;
+	background: #fff7ed;
+	border: 1px solid #fed7aa;
+	color: #9a3412;
+	font-size: 0.84rem;
+}
+
+.hst-btn-warn {
+	background: linear-gradient(135deg, #ea580c, #f59e0b);
+	color: #fff;
+	margin-top: 4px;
+}
+
+.hst-no-move {
+	font-size: 0.72rem;
+	color: #94a3b8;
+	white-space: nowrap;
+}
+
 .hst-rule-banner {
 	display: flex;
 	align-items: flex-start;
