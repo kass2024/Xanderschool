@@ -5,6 +5,9 @@
 				border-left: 3px solid #3ac47d;
 			}
 		</style>
+		<div class="pull-left mb-2" style="width: 100%">
+			<small class="text-muted">Wisdom Ribbon · student name + registration number (no photo) · settings template ignored</small>
+		</div>
 		<div class="pull-left" style="width: 100%">
 			<div class="col-md-6 col-sm-12 col-lg-4 pull-left">
 				<input type="checkbox" name="sms" value="1" id="search_type"> <label for="search_type"><?= lang("app.Uses");?></label>
@@ -36,7 +39,7 @@
 								<th><?= lang("app.regNo");?></th>
 								<th><?= lang("app.studentName");?></th>
 								<th><?= lang("app.sClass");?></th>
-								<th><?= lang("app.photo");?></th>
+								<th>Print</th>
 								<th style="align-content: center;"><?= lang("app.remove");?></th>
 							</tr>
 							</thead>
@@ -47,10 +50,8 @@
 							</tbody>
 							<!--Table body-->
 						</table>
-						<label><strong><?= lang("app.legend");?>: </strong><span class="badge badge-primary"
-															  style="background-color: orangered !important;"> </span>
-							<?= lang("app.notBePrinted");?>
-
+						<label><strong><?= lang("app.legend");?>: </strong>
+							Each card shows student name and registration number on the Wisdom Ribbon template.
 						</label>
 						<!--Table-->
 					</div>
@@ -127,6 +128,7 @@
 		});
 		$(document).on('click', '#removerow', function () {
 			$(this).closest('tr').remove();
+			count_students();
 		});
 		$("#search_student").on('select2:select', function (selection) {
 			formatRepoSelection(selection.params.data);
@@ -155,6 +157,13 @@
 					return false;
 				}
 			});
+			$("#studentsTable tbody tr.disc_row").each(function () {
+				if (String($(this).attr("data-student-id")) === String(id)) {
+					toastada.warning(repo.text + "<?= lang("app.alreadonList");?>");
+					isError = true;
+					return false;
+				}
+			});
 		}
 		if (isError)
 			return;
@@ -169,13 +178,12 @@
 	}
 
 	function count_students() {
-		var images = $("[name='stId[]'").length;
-		if (images==0){
-			$("#btn_generate").prop("disabled",true);
-		}else{
-			$("#btn_generate").prop("disabled",false);
+		var images = $("input[name='stId[]']").length;
+		if (images == 0) {
+			$("#btn_generate").prop("disabled", true);
+		} else {
+			$("#btn_generate").prop("disabled", false);
 		}
 		$("#btn_generate span").text(images);
 	}
 </script>
-

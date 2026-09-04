@@ -49,6 +49,8 @@ class WisdomCardRenderer
 	}
 
 	/**
+	 * Wisdom Ribbon card: school chrome + student name + registration code only (no photo).
+	 *
 	 * @param array<string,mixed> $student
 	 * @param array<string,mixed> $ctx
 	 * @return resource|\GdImage|null
@@ -56,11 +58,6 @@ class WisdomCardRenderer
 	public function render(array $student, array $ctx = [])
 	{
 		if (!function_exists('imagecreatetruecolor') || !is_file($this->font)) {
-			return null;
-		}
-
-		$photoPath = $this->profilePath($student['photo'] ?? '');
-		if ($photoPath === null) {
 			return null;
 		}
 
@@ -72,9 +69,7 @@ class WisdomCardRenderer
 		$teal = imagecolorallocate($im, self::TEAL[0], self::TEAL[1], self::TEAL[2]);
 
 		$schoolName = $this->upper(CardLayout::wisdomCardSchoolName($student));
-		$fullName = $this->upper(trim((string) ($student['name'] ?? '')));
-		$classLabel = $this->upper(trim((string) ($student['class'] ?? '')));
-		$year = $this->upper(CardLayout::formatAcademicYear((string) ($ctx['year'] ?? '')));
+		$fullName = $this->upper(trim((string) ($student['name'] ?? ($student['stdnames'] ?? ''))));
 		$idNo = trim((string) ($student['regno'] ?? ''));
 		if ($idNo === '') {
 			$idNo = trim((string) ($student['card'] ?? ''));
@@ -83,12 +78,11 @@ class WisdomCardRenderer
 
 		$this->drawSchoolName($im, $schoolName, $white);
 		$this->drawBadge($im, 'STUDENT ID CARD', $white);
-		$this->drawInfo($im, $fullName, $classLabel, $year, $navy);
+		$this->drawInfo($im, $fullName, $navy);
 		$this->drawIdBar($im, $idNo !== '' ? $idNo : '—', $white);
 
 		$logoPath = $this->logoPath((string) ($ctx['logo'] ?? ''));
 		$this->pasteLogo($im, $logoPath, $teal, $white);
-		$this->pastePhoto($im, $photoPath, $teal);
 
 		return $im;
 	}
@@ -181,38 +175,26 @@ class WisdomCardRenderer
 	}
 
 	/** @param resource|\GdImage $im */
-	private function drawInfo($im, string $name, string $class, string $year, int $navy): void
+	private function drawInfo($im, string $name, int $navy): void
 	{
-		$x = (int) round(self::W * 0.355);
-		$y = (int) round(self::H * 0.495);
-		$w = (int) round(self::W * 0.62);
-		$rowH = (int) round(self::H * 0.082);
-		$rows = [
-			['NAME', $name !== '' ? $name : '—'],
-			['CLASS', $class !== '' ? $class : '—'],
-			['ACADEMIC YEAR', $year !== '' ? $year : '—'],
-		];
-		$labelSize = 28.0;
-		$labelW = 0;
-		foreach ($rows as $row) {
-			$m = $this->measure($labelSize, $row[0]);
-			if ($m['w'] > $labelW) {
-				$labelW = $m['w'];
-			}
-		}
+		// Use former photo + info width — no photo on this pass style.
+		$x = (int) round(self::W * 0.08);
+		$y = (int) round(self::H * 0.48);
+		$w = (int) round(self::W * 0.86);
+		$rowH = (int) round(self::H * 0.12);
+		$label = 'NAME';
+		$value = $name !== '' ? $name : '—';
+		$labelSize = 34.0;
+		$labelW = $this->measure($labelSize, $label)['w'];
 		$colon = ' :';
 		$colonW = $this->measure($labelSize, $colon)['w'];
 		$gap = (int) round(self::W * 0.012);
 		$valueX = $x + $labelW + $colonW + $gap;
 		$valueMaxW = max(40, $x + $w - $valueX);
-
-		foreach ($rows as $i => $row) {
-			$rowY = $y + $i * $rowH;
-			$this->drawText($im, $row[0], $labelSize, $x, $rowY, $labelW + 4, $rowH, $navy, 'left');
-			$this->drawText($im, $colon, $labelSize, $x + $labelW, $rowY, $colonW + 4, $rowH, $navy, 'left');
-			$valSize = $this->fitSize($row[1], $valueMaxW, (int) round($rowH * 0.62), $labelSize, 12);
-			$this->drawText($im, $row[1], $valSize, $valueX, $rowY, $valueMaxW, $rowH, $navy, 'left');
-		}
+		$this->drawText($im, $label, $labelSize, $x, $y, $labelW + 4, $rowH, $navy, 'left');
+		$this->drawText($im, $colon, $labelSize, $x + $labelW, $y, $colonW + 4, $rowH, $navy, 'left');
+		$valSize = $this->fitSize($value, $valueMaxW, (int) round($rowH * 0.72), 40, 16);
+		$this->drawText($im, $value, $valSize, $valueX, $y, $valueMaxW, $rowH, $navy, 'left');
 	}
 
 	/** @param resource|\GdImage $im */

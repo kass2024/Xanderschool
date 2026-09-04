@@ -1038,22 +1038,36 @@ public function testEmail()
 		set_time_limit(0);
 		ini_set("memory_limit", -1);
 		ini_set("max_execution_time", -1);
-		$ids = $this->request->getPost("stId");
-		if (!isset($ids) || count($ids) == 0) {
+
+		$ids = $this->request->getPost("stId") ?: $this->request->getGet("stId");
+		$studentId = (int) ($this->request->getGet('student_id') ?: $this->request->getPost('student_id') ?: 0);
+		if (!is_array($ids)) {
+			$idsRaw = trim((string) ($ids ?? ''));
+			if ($idsRaw !== '' && strpos($idsRaw, ',') !== false) {
+				$ids = array_filter(array_map('trim', explode(',', $idsRaw)));
+			} else {
+				$ids = ($idsRaw !== '') ? [$idsRaw] : [];
+			}
+		}
+		$safeIds = array_values(array_unique(array_filter(array_map('intval', (array) $ids))));
+		if ($studentId > 0) {
+			$safeIds[] = $studentId;
+			$safeIds = array_values(array_unique($safeIds));
+		}
+		if (count($safeIds) === 0) {
 			return redirect()->to("student-cards");
 		}
+
 		$stMdl = new StudentModel();
 		$sklMdl = new SchoolModel();
 		$this->ensureStaffCardSchema();
 		$skData = $sklMdl->select("name,card_design,card_orientation,card_bg_mode,card_template,card_layout,logo,slogan,card_background,header_text_1,header_text_2,header_color,main_color,footer_color,paint_color,capitalize,headmaster_signature,head_master,phone,email,address,website,pobox")
 				->where("id", $this->session->get("soma_school_id"))
 				->get(1)->getRow();
-		$cardTemplate = \App\Libraries\CardLayout::normalizeTemplate($skData->card_template ?? 'ocean');
-		$orientation = \App\Libraries\CardLayout::isFixedChrome($cardTemplate)
-			? 'landscape'
-			: \App\Libraries\CardLayout::normalizeOrientation(
-				$skData->card_orientation ?: \App\Libraries\CardLayout::preferredOrientation($cardTemplate)
-			);
+
+		// Always use Wisdom Ribbon for student card generation (ignore school settings template).
+		$cardTemplate = 'wisdom';
+		$orientation = 'landscape';
 		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($skData);
 		$data['year'] = $this->data['academic_year'];
 		$data['theyear'] = $this->data['academic_year_title'];
@@ -1064,36 +1078,26 @@ public function testEmail()
 		$data['header2'] = $autoHeaders['header2'];
 		$data['background'] = $skData->card_background;
 		$data['header_color'] = $skData->header_color;
-		$data['main_color'] = $skData->main_color ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate);
-		$data['paint_color'] = $skData->paint_color ?: ($skData->main_color ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate));
+		$data['main_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
+		$data['paint_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
 		$data['capitalize'] = $skData->capitalize;
 		$data['footer_color'] = $skData->footer_color;
 		$data['orientation'] = $orientation;
 		$data['headmaster_signature'] = $skData->headmaster_signature ?? '';
 		$data['head_master'] = $skData->head_master ?? '';
 		$data['card_template'] = $cardTemplate;
-		$data['card_layout'] = $skData->card_layout ?? null;
-		$safeIds = array_map('intval', (array)$ids);
-		$safeIds = array_values(array_filter($safeIds));
-		if (count($safeIds) === 0) {
-			return redirect()->to("student-cards");
-		}
+		$data['card_layout'] = null;
+
 		$ids = implode(",", $safeIds);
 		$students = $stMdl->get_student_simple2("students.id in (" . $ids . ")");
-		// Only print cards for students with a real uploaded photo (no fallback).
-		$printable = [];
-		foreach ($students as $student) {
-			if (resolve_profile_photo($student['photo'] ?? '') !== null) {
-				$printable[] = $student;
-			}
-		}
+		// No photo required — print name + registration number on Wisdom Ribbon.
+		$printable = is_array($students) ? array_values($students) : [];
 		if (count($printable) === 0) {
 			return redirect()->to("student-cards");
 		}
 		$data['students'] = $printable;
-		if (\App\Libraries\CardLayout::isFixedChrome($cardTemplate)
-			&& \App\Libraries\WisdomCardRenderer::isAvailable()
-		) {
+
+		if (\App\Libraries\WisdomCardRenderer::isAvailable()) {
 			try {
 				helper('qonics');
 				$renderer = new \App\Libraries\WisdomCardRenderer();
@@ -1129,10 +1133,8 @@ public function testEmail()
 			$wkhtmltopdf = new Wkhtmltopdf(array('path' => $tplDir));
 			$wkhtmltopdf->setTitle(lang("app.studentCards"));
 			$wkhtmltopdf->setHtml($html);
-			// Exact CR80 size. Always Portrait + page-width/height — Landscape orientation
-			// swaps dimensions in wkhtmltopdf and produced tall/portrait PDFs for landscape cards.
-			$pageW = $orientation === 'portrait' ? '54mm' : '85.6mm';
-			$pageH = $orientation === 'portrait' ? '85.6mm' : '54mm';
+			$pageW = '85.6mm';
+			$pageH = '54mm';
 			$wkhtmltopdf->setOrientation("Portrait");
 			$wkhtmltopdf->setOptions(array(
 				'enable-local-file-access' => null,
@@ -8736,30 +8738,16 @@ public function getApplicationDocs($id = null)
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>";
 			} else if ($type == 2) {
-				//student card preview — no photo fallback; only printable students get stId[]
-				$resolved = resolve_profile_photo($student['photo'] ?? '');
-				$hasPhoto = $resolved !== null;
-				// Heal truncated DB values when we can match the file on disk.
-				if ($hasPhoto && trim((string)$student['photo']) !== $resolved) {
-					try {
-						$StudentModel->update((int)$student['id'], ['photo' => $resolved]);
-					} catch (\Throwable $e) {
-						// non-fatal; preview still works via resolve
-					}
-				}
-				if ($hasPhoto) {
-					$photoUrl = profile_photo_url($resolved);
-					$photoHtml = "<img src='" . esc($photoUrl, 'attr') . "' alt='' style='width:60px;height:60px;object-fit:cover;border-radius:4px;' />"
-						. "<input type='hidden' value='" . (int)$student['id'] . "' name='stId[]'>";
-				} else {
-					$photoHtml = "<span style='display:inline-block;width:60px;height:60px;background:#f1f3f5;border-radius:4px;' title='No photo'></span>";
-				}
-				$color = $hasPhoto ? "" : "color:orangered";
-				echo "<tr class='disc_row' style='$color' id='" . esc($student['regno'] . $type, 'attr') . "'>
-				<td>" . esc($student['regno']) . "</td>
+				// Student card list — Wisdom Ribbon; name + regno only; photo not required.
+				$sid = (int) $student['id'];
+				$printUrl = base_url('generate_cards') . '?student_id=' . $sid;
+				echo "<tr class='disc_row' id='" . esc($student['regno'] . $type, 'attr') . "' data-student-id='" . $sid . "'>
+				<td>" . esc($student['regno']) . "<input type='hidden' value='" . $sid . "' name='stId[]'></td>
 				<td>" . esc($student['stdnames']) . "</td>
 				<td>" . esc($student['level_name'] . " " . $student['title'] . " " . $student['code']) . " </td>
-				<td>" . $photoHtml . "</td>
+				<td style='text-align:center;white-space:nowrap;'>
+					<a class='btn btn-sm btn-dark' href='" . esc($printUrl, 'attr') . "' target='_blank' rel='noopener'><i class='fa fa-print'></i> Print card</a>
+				</td>
 				<td style='text-align: center;'>
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>";
