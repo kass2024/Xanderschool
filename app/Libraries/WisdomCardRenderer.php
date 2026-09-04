@@ -112,9 +112,7 @@ class WisdomCardRenderer
 
 		$this->pastePhoto($im, $photoPath, $teal);
 		$this->drawFieldValues($im, $fullName, $classLabel, $year, $navy);
-		// High-school artwork uses a teal ID ribbon; primary uses navy.
-		$idBg = $this->templateRel === self::TEMPLATE_PRIMARY ? $navy : $teal;
-		$this->drawIdBar($im, $idNo !== '' ? $idNo : '—', $idBg, $white);
+		$this->drawIdBar($im, $idNo !== '' ? $idNo : '—', $white);
 
 		return $im;
 	}
@@ -369,22 +367,21 @@ class WisdomCardRenderer
 	}
 
 	/**
-	 * Cover sample ID text on the footer bar, then draw real ID NO.
+	 * Write the registration number onto the template's existing "ID NO:" ribbon.
+	 * Does not paint a background — the teal banner + "ID NO:" label are already in the artwork.
 	 *
 	 * @param resource|\GdImage $im
 	 */
-	private function drawIdBar($im, string $idNo, int $navy, int $white): void
+	private function drawIdBar($im, string $idNo, int $white): void
 	{
-		// Cover navy ribbon + leftover sample "ID NO: …" on the teal footer.
-		$x = $this->sx(40);
-		$y = $this->sy(490);
-		$w = $this->sx(380);
-		$h = $this->sy(90);
-		imagefilledrectangle($im, $x, $y, $x + $w, $y + $h, $navy);
+		// Artwork already prints "ID NO:" — place only the value after the label, inside the ribbon.
+		$x = $this->sx(228);
+		$y = $this->sy(538);
+		$w = $this->sx(200);
+		$h = $this->sy(42);
 
-		$text = 'ID NO: ' . $idNo;
-		$size = $this->fitSize($text, $w - 16, (int) round($h * 0.42), 34, 14);
-		$this->drawCentered($im, $text, $size, $x, $y, $w, $h, $white);
+		$size = $this->fitSize($idNo, $w - 8, (int) round($h * 0.78), 28, 12);
+		$this->drawText($im, $idNo, $size, $x, $y, $w, $h, $white, 'left');
 	}
 
 	/**

@@ -351,8 +351,8 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			$photoF = $fields['photo'] ?? ['x' => 6.6, 'y' => 33.8, 'w' => 25.2, 'h' => 40.0];
 			$namesF = $fields['names'] ?? ['x' => 42.8, 'y' => 49.6, 'w' => 54.5, 'h' => 8.0];
 			$yearF = $fields['header1'] ?? ['x' => 42.8, 'y' => 66.2, 'w' => 54.5, 'h' => 7.6];
-			$idF = $fields['regno'] ?? ['x' => 6.0, 'y' => 85.2, 'w' => 32.0, 'h' => 9.6];
-			$idText = 'ID NO: ' . ($regno !== '' ? $regno : '—');
+			$idF = $fields['regno'] ?? ['x' => 22.5, 'y' => 84.2, 'w' => 19.8, 'h' => 6.6];
+			$idText = $regno !== '' ? $regno : '—';
 			$idFs = $fit($idText, $idF, 2.6, 1.6, 0.50);
 			$rowFs = 2.2;
 			$infoY = (float) ($namesF['y'] ?? 49.6);
