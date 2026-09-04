@@ -334,14 +334,15 @@
 			</div>
 			<div class="sp-cam-card">
 				<div class="sp-cam-toolbar">
-					<h3>USB webcam studio</h3>
+					<h3>Live camera studio</h3>
 					<div class="sp-tools">
-						<select id="spCamera" title="Choose USB camera"></select>
+						<select id="spCamera" title="Choose Canon EOS / USB webcam"></select>
 						<button type="button" class="sp-btn sp-btn-primary" id="spStartCam"><i class="fa fa-play"></i> Start camera</button>
 						<button type="button" class="sp-btn sp-btn-ghost" id="spStopCam">Stop</button>
 						<span class="sp-status warn" id="spCamStatus">Camera idle</span>
 					</div>
 				</div>
+				<p class="sp-live-hint" style="margin:0 0 8px;">Uses browser camera access. Canon Rebel T6 / EOS 1300D appears after EOS Webcam Utility is installed and the camera is connected over USB.</p>
 				<div class="sp-selected" id="spPicked">Pick a student on the left, then capture a live portrait.</div>
 				<div class="sp-stage">
 					<div class="sp-live-box">
@@ -429,11 +430,60 @@
 		function toastOk(msg) { if (window.toastada) toastada.success(msg); }
 		function toastErr(msg) { if (window.toastada) toastada.error(msg); else alert(msg); }
 
+		function isCanonLabel(label) {
+			var l = (label || '').toLowerCase();
+			return /canon|eos\b|rebel|1300d|eos webcam|webcam utility/.test(l);
+		}
+
+		function isPreferredUsbLabel(label) {
+			var l = (label || '').toLowerCase();
+			return /osmo|dji|usb|logitech|lifecam|external|c920|c922|hd pro/.test(l);
+		}
+
 		function cameraScore(label) {
 			var l = (label || '').toLowerCase();
-			if (/osmo|dji|usb|logitech|lifecam|external|c920|c922|hd pro/.test(l)) return 100;
+			// Canon EOS Webcam Utility / Rebel T6 / 1300D first when present.
+			if (isCanonLabel(l)) return 200;
+			if (isPreferredUsbLabel(l)) return 100;
 			if (/integrated|internal|facetime|ir camera|infrared|metadata/.test(l)) return 1;
 			return 50;
+		}
+
+		function displayCameraLabel(label, index) {
+			var raw = label || ('Camera ' + (index + 1));
+			if (isCanonLabel(raw) && !/canon|eos/i.test(raw)) {
+				return 'Canon / EOS — ' + raw;
+			}
+			if (isCanonLabel(raw)) {
+				return raw;
+			}
+			return raw;
+		}
+
+		function pickPreferredDeviceId(cams, preferredId) {
+			var saved = preferredId || localStorage.getItem(STORAGE_KEY) || '';
+			if (saved && cams.some(function (c) { return c.deviceId === saved; })) {
+				// If a Canon camera is available and saved was not Canon, prefer Canon.
+				var canon = cams.find(function (c) { return isCanonLabel(c.label); });
+				var savedCam = cams.find(function (c) { return c.deviceId === saved; });
+				if (canon && savedCam && !isCanonLabel(savedCam.label)) {
+					return canon.deviceId;
+				}
+				return saved;
+			}
+			var canonFirst = cams.find(function (c) { return isCanonLabel(c.label); });
+			if (canonFirst) return canonFirst.deviceId;
+			return cams[0] ? cams[0].deviceId : '';
+		}
+
+		function assertSecureCameraContext() {
+			var ok = window.isSecureContext || location.protocol === 'https:'
+				|| location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+			if (!ok) {
+				setStatus('Camera needs HTTPS (or localhost)', 'err');
+				toastErr('Camera access requires HTTPS in production (localhost is OK for development).');
+			}
+			return ok;
 		}
 
 		function filteredStudents() {
@@ -497,32 +547,41 @@
 				var cams = devices.filter(function (d) { return d.kind === 'videoinput'; });
 				cams.sort(function (a, b) { return cameraScore(b.label) - cameraScore(a.label); });
 				var html = cams.map(function (d, i) {
-					var label = d.label || ('Camera ' + (i + 1));
+					var label = displayCameraLabel(d.label, i);
 					return '<option value="' + d.deviceId + '">' + $('<div>').text(label).html() + '</option>';
 				}).join('');
 				cameraSel.innerHTML = html || '<option value="">No camera found</option>';
-				var saved = preferredId || localStorage.getItem(STORAGE_KEY) || '';
-				if (saved && cams.some(function (c) { return c.deviceId === saved; })) {
-					cameraSel.value = saved;
-				} else if (cams[0]) {
-					cameraSel.value = cams[0].deviceId;
-				}
+				var pick = pickPreferredDeviceId(cams, preferredId);
+				if (pick) cameraSel.value = pick;
 				return cams;
 			});
 		}
 
 		var preferredSwitchDone = false;
 		function startCamera() {
+			if (!assertSecureCameraContext()) return;
 			if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
 				setStatus('Browser cannot access a camera', 'err');
-				toastErr('This browser cannot access a USB webcam.');
+				toastErr('This browser cannot access a camera (getUserMedia missing).');
 				return;
 			}
 			stopCamera();
 			var deviceId = cameraSel.value;
+			// Prefer high resolution when the device exposes it (Canon Webcam Utility / USB cams).
+			// Avoid hard mins that reject some Canon modes — OverconstrainedError still has a fallback.
 			var videoConstraints = deviceId
-				? { deviceId: { exact: deviceId }, width: { ideal: 1920, min: 1280 }, height: { ideal: 1080, min: 720 } }
-				: { facingMode: 'user', width: { ideal: 1920, min: 1280 }, height: { ideal: 1080, min: 720 } };
+				? {
+					deviceId: { exact: deviceId },
+					width: { ideal: 1920 },
+					height: { ideal: 1080 },
+					frameRate: { ideal: 30 }
+				}
+				: {
+					facingMode: 'user',
+					width: { ideal: 1920 },
+					height: { ideal: 1080 },
+					frameRate: { ideal: 30 }
+				};
 			setStatus('Starting camera…', 'warn');
 			navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints }).then(function (s) {
 				stream = s;
@@ -530,8 +589,10 @@
 				var track = s.getVideoTracks()[0];
 				var currentId = (track && track.getSettings && track.getSettings().deviceId) || deviceId || '';
 				localStorage.setItem(STORAGE_KEY, currentId);
-				var label = (track && track.label) ? track.label : 'USB camera';
-				setStatus(label + ' ready', 'ok');
+				var label = (track && track.label) ? track.label : 'Camera';
+				var settings = (track && track.getSettings) ? track.getSettings() : {};
+				var res = (settings.width && settings.height) ? (' · ' + settings.width + '×' + settings.height) : '';
+				setStatus((isCanonLabel(label) ? 'Canon ready' : 'Camera ready') + ': ' + label + res, 'ok');
 				$('#spCapture').prop('disabled', !selected);
 				return fillCameras(currentId).then(function (cams) {
 					var preferred = cameraSel.value;
@@ -543,9 +604,10 @@
 				});
 			}).catch(function (err) {
 				setStatus('Camera blocked or not found', 'err');
-				var msg = 'Could not start the USB camera. Allow camera permission, then pick OsmoPocket3 / USB webcam.';
+				var msg = 'Could not start the camera. Allow permission, then pick Canon EOS / OsmoPocket3 / USB webcam.';
 				if (err && err.name === 'NotAllowedError') msg = 'Camera permission denied. Allow camera access for this site.';
-				if (err && err.name === 'NotFoundError') msg = 'No webcam found. Connect the USB camera and click Start camera.';
+				if (err && err.name === 'NotFoundError') msg = 'No camera found. Connect Canon (EOS Webcam Utility) or a USB webcam, then click Start camera.';
+				if (err && err.name === 'NotReadableError') msg = 'Camera is already in use by another app (EOS Utility, Zoom, etc.). Close it and try again.';
 				if (err && err.name === 'OverconstrainedError' && deviceId) {
 					preferredSwitchDone = true;
 					cameraSel.value = '';
@@ -689,7 +751,11 @@
 		function savePhoto() {
 			if (!selected || !captured) return;
 			$('#spSave').prop('disabled', true).text('Saving…');
-			$.post(studio.saveUrl, { student: selected.id, photo: exportPhoto() }, function (data) {
+			var payload = { student: selected.id, photo: exportPhoto() };
+			var csrfName = $('meta[name="csrf-token-name"]').attr('content');
+			var csrfHash = $('meta[name="csrf-token-value"]').attr('content');
+			if (csrfName && csrfHash) payload[csrfName] = csrfHash;
+			$.post(studio.saveUrl, payload, function (data) {
 				$('#spSave').prop('disabled', false).html('<i class="fa fa-save"></i> Save photo');
 				if (data && data.error) {
 					toastErr(data.error);
@@ -787,10 +853,21 @@
 
 		renderList();
 		drawEdit();
+		if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+			navigator.mediaDevices.addEventListener('devicechange', function () {
+				fillCameras(cameraSel.value).then(function (cams) {
+					if (!cams.length) setStatus('No camera listed — connect Canon/USB and Start', 'warn');
+					else setStatus(cams.length + ' camera(s) found', 'ok');
+				});
+			});
+		}
 		if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
 			fillCameras().then(function (cams) {
 				if (!cams.length) setStatus('No camera listed yet — click Start camera', 'warn');
-				else setStatus(cams.length + ' camera(s) found', 'ok');
+				else {
+					var hasCanon = cams.some(function (c) { return isCanonLabel(c.label); });
+					setStatus(cams.length + ' camera(s) found' + (hasCanon ? ' · Canon detected' : ''), 'ok');
+				}
 				startCamera();
 			});
 		} else {
