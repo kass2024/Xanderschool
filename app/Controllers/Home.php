@@ -14886,6 +14886,11 @@ public function getApplicationDocs($id = null)
 			$classQuery->whereIn('classes.id', $allowed);
 		}
 		$data['classes'] = $classQuery->get()->getResultArray();
+		$data['checker'] = [
+			'id' => (int) ($this->session->get('soma_id') ?? 0),
+			'name' => trim((string) ($this->session->get('soma_name') ?? '')),
+			'post' => trim((string) ($this->session->get('soma_post_title') ?? '')),
+		];
 		$data['content'] = view('pages/student_material_check', $data);
 		return view('main', $data);
 	}
@@ -14931,6 +14936,7 @@ public function getApplicationDocs($id = null)
 		$matSchema = new \App\Models\StudentMaterialSchemaModel();
 		$materials = $matSchema->getStudentChecklist($school_id, $studentId, $classId, $year);
 		$summary = $matSchema->summarizeChecklist($materials);
+		$lastCheck = $matSchema->latestCheckMetaFromChecklist($materials);
 		$classLabel = trim(($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_title'] ?? ''));
 		return $this->response->setJSON([
 			'success' => true,
@@ -14941,9 +14947,14 @@ public function getApplicationDocs($id = null)
 				'photo_html' => student_entry_photo_html($row['photo'] ?? null),
 				'class_id' => $classId,
 				'class_label' => $classLabel,
+				'checked_by' => $lastCheck['checked_by'] ?? null,
+				'checked_at' => $lastCheck['checked_at'] ?? null,
+				'checker_name' => $lastCheck['checker_name'] ?? '',
+				'checker_post' => $lastCheck['checker_post'] ?? '',
 			],
 			'materials' => $materials,
 			'summary' => $summary,
+			'last_check' => $lastCheck,
 		]);
 	}
 
@@ -15070,7 +15081,42 @@ public function getApplicationDocs($id = null)
 		}
 		$matSchema = new \App\Models\StudentMaterialSchemaModel();
 		$count = $matSchema->saveStudentChecks($school_id, $studentId, $classId, $year, $staffId, $items);
-		return $this->response->setJSON(['success' => "Saved material check ($count items)."]);
+		$staffName = trim((string) ($this->session->get('soma_name') ?? ''));
+		$staffPost = trim((string) ($this->session->get('soma_post_title') ?? ''));
+		$who = $staffName !== '' ? $staffName : 'Staff';
+		if ($staffPost !== '') {
+			$who .= ' · ' . $staffPost;
+		}
+		return $this->response->setJSON([
+			'success' => "Saved material check ($count items) by $who.",
+			'checker' => [
+				'id' => $staffId,
+				'name' => $staffName,
+				'post' => $staffPost,
+			],
+		]);
+	}
+
+	public function student_material_student_search()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!material_check_menu_visible()) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->request->getGet('year') ?: ($this->data['academic_year'] ?? 0));
+		$q = trim((string) ($this->request->getGet('q') ?? ''));
+		$allowed = null;
+		if (!material_check_full_access()) {
+			$allowed = material_check_mentor_class_ids($schoolId);
+		}
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$rows = $matSchema->searchStudents($schoolId, $year, $q, $allowed);
+		return $this->response->setJSON([
+			'success' => true,
+			'students' => $rows,
+		]);
 	}
 
 	public function manipulate_required_material()

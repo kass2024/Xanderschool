@@ -88,8 +88,9 @@ function smrPdfStatusLabel(string $st): string
 		<tr>
 			<th style="width:28px">#</th>
 			<th style="width:72px">Reg no</th>
-			<th style="width:130px">Student name</th>
-			<th style="width:62px">Status</th>
+			<th style="width:120px">Student name</th>
+			<th style="width:58px">Status</th>
+			<th style="width:110px">Checked by</th>
 			<?php foreach ($materials as $m) : ?>
 				<th style="text-align:center"><?= esc($m['name']) ?><br><small>(<?= esc($m['unit']) ?>)</small></th>
 			<?php endforeach; ?>
@@ -104,12 +105,18 @@ function smrPdfStatusLabel(string $st): string
 			foreach ($st['items'] ?? [] as $it) {
 				$byMat[(int) $it['material_id']] = $it;
 			}
+			$checkerBits = array_filter([
+				trim((string) ($st['checker_name'] ?? '')),
+				trim((string) ($st['checker_post'] ?? '')),
+			]);
+			$checkerLine = $checkerBits ? implode(' · ', $checkerBits) : '—';
 			?>
 			<tr>
 				<td><?= $n ?></td>
 				<td><?= esc($st['regno'] ?? '') ?></td>
 				<td><?= esc($st['name'] ?? '') ?></td>
 				<td class="st-<?= esc($overall, 'attr') ?>"><?= esc(smrPdfStatusLabel($overall)) ?></td>
+				<td class="missing-col"><?= esc($checkerLine) ?><?php if (!empty($st['checked_at'])) : ?><br><small><?= esc($st['checked_at']) ?></small><?php endif; ?></td>
 				<?php foreach ($materials as $m) :
 					$it = $byMat[(int) $m['material_id']] ?? null;
 					$brought = $it ? (float) $it['brought'] : 0;

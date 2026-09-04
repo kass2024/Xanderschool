@@ -165,9 +165,15 @@ class StudentMaterialSchemaModel extends Model
 			->where('academic_year', $yearId)
 			->get()->getResultArray();
 		$byMat = [];
+		$staffIds = [];
 		foreach ($checks as $c) {
 			$byMat[(int) $c['material_id']] = $c;
+			$cb = (int) ($c['checked_by'] ?? 0);
+			if ($cb > 0) {
+				$staffIds[$cb] = $cb;
+			}
 		}
+		$staffMeta = $this->resolveStaffMeta(array_values($staffIds));
 
 		$list = [];
 		foreach ($assignments as $a) {
@@ -181,6 +187,8 @@ class StudentMaterialSchemaModel extends Model
 			} elseif ($brought > 0) {
 				$status = 'partial';
 			}
+			$cb = isset($byMat[$mid]) ? (int) ($byMat[$mid]['checked_by'] ?? 0) : 0;
+			$meta = $cb > 0 ? ($staffMeta[$cb] ?? null) : null;
 			$list[] = [
 				'material_id' => $mid,
 				'name' => $a['name'],
@@ -191,9 +199,195 @@ class StudentMaterialSchemaModel extends Model
 				'status' => $status,
 				'notes' => $byMat[$mid]['notes'] ?? '',
 				'check_id' => isset($byMat[$mid]) ? (int) $byMat[$mid]['id'] : 0,
+				'checked_by' => $cb > 0 ? $cb : null,
+				'checked_at' => isset($byMat[$mid]['checked_at']) ? (string) $byMat[$mid]['checked_at'] : null,
+				'checker_name' => $meta['name'] ?? '',
+				'checker_post' => $meta['post'] ?? '',
 			];
 		}
 		return $list;
+	}
+
+	/**
+	 * Latest check activity for a student (who / when).
+	 *
+	 * @param list<array> $checklist
+	 * @return array{checked_by:?int,checked_at:?string,checker_name:string,checker_post:string}|null
+	 */
+	public function latestCheckMetaFromChecklist(array $checklist): ?array
+	{
+		$best = null;
+		$bestTs = '';
+		foreach ($checklist as $row) {
+			$at = (string) ($row['checked_at'] ?? '');
+			if ($at === '') {
+				continue;
+			}
+			if ($best === null || strcmp($at, $bestTs) > 0) {
+				$bestTs = $at;
+				$best = [
+					'checked_by' => isset($row['checked_by']) && $row['checked_by'] ? (int) $row['checked_by'] : null,
+					'checked_at' => $at,
+					'checker_name' => (string) ($row['checker_name'] ?? ''),
+					'checker_post' => (string) ($row['checker_post'] ?? ''),
+				];
+			}
+		}
+		return $best;
+	}
+
+	/**
+	 * @param list<int> $staffIds
+	 * @return array<int, array{name:string,post:string}>
+	 */
+	public function resolveStaffMeta(array $staffIds): array
+	{
+		$staffIds = array_values(array_unique(array_filter(array_map('intval', $staffIds))));
+		if ($staffIds === []) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		$rows = $db->table('staffs s')
+			->select('s.id, CONCAT(s.fname," ",s.lname) AS name, p.title AS post_title')
+			->join('posts p', 'p.id = s.post', 'left')
+			->whereIn('s.id', $staffIds)
+			->get()->getResultArray();
+		$out = [];
+		foreach ($rows as $r) {
+			$out[(int) $r['id']] = [
+				'name' => trim((string) ($r['name'] ?? '')),
+				'post' => trim((string) ($r['post_title'] ?? '')),
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * Recent material-check activity for a class (for accountant / headmaster audit).
+	 *
+	 * @return list<array>
+	 */
+	public function getClassRecentActivity(int $schoolId, int $classId, int $yearId, int $limit = 25): array
+	{
+		$this->ensureSchema();
+		$limit = max(1, min(50, $limit));
+		$db = \Config\Database::connect();
+		$rows = $db->query(
+			'SELECT smc.student_id, smc.checked_by, smc.checked_at,
+				MAX(CONCAT(st.fname, " ", st.lname)) AS student_name,
+				MAX(st.regno) AS regno,
+				MAX(CONCAT(sf.fname, " ", sf.lname)) AS checker_name,
+				MAX(p.title) AS checker_post,
+				COUNT(*) AS items_checked
+			FROM student_material_checks smc
+			INNER JOIN students st ON st.id = smc.student_id
+			LEFT JOIN staffs sf ON sf.id = smc.checked_by
+			LEFT JOIN posts p ON p.id = sf.post
+			WHERE smc.school_id = ?
+				AND smc.class_id = ?
+				AND smc.academic_year = ?
+				AND smc.checked_by IS NOT NULL
+				AND smc.checked_at IS NOT NULL
+			GROUP BY smc.student_id, smc.checked_by, smc.checked_at
+			ORDER BY smc.checked_at DESC
+			LIMIT ' . (int) $limit,
+			[$schoolId, $classId, $yearId]
+		)->getResultArray();
+
+		$out = [];
+		foreach ($rows as $r) {
+			$out[] = [
+				'student_id' => (int) $r['student_id'],
+				'student_name' => (string) ($r['student_name'] ?? ''),
+				'regno' => (string) ($r['regno'] ?? ''),
+				'checked_by' => (int) ($r['checked_by'] ?? 0),
+				'checked_at' => (string) ($r['checked_at'] ?? ''),
+				'checker_name' => (string) ($r['checker_name'] ?? ''),
+				'checker_post' => (string) ($r['checker_post'] ?? ''),
+				'items_checked' => (int) ($r['items_checked'] ?? 0),
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * School-wide live search for material check (name / regno + class).
+	 *
+	 * @param list<int>|null $allowedClassIds null = all classes
+	 * @return list<array>
+	 */
+	public function searchStudents(int $schoolId, int $yearId, string $query, ?array $allowedClassIds = null, int $limit = 20): array
+	{
+		$this->ensureSchema();
+		$q = trim($query);
+		if ($q === '' || strlen($q) < 2) {
+			return [];
+		}
+		$limit = max(1, min(40, $limit));
+		$db = \Config\Database::connect();
+		$like = '%' . $q . '%';
+
+		$b = $db->table('students s')
+			->select('s.id, s.regno, s.fname, s.lname, c.id AS class_id, c.title AS class_title,
+				l.title AS level_name, d.code AS dept_code, h.name AS hostel_name')
+			->join(
+				'class_records cr',
+				'cr.student = s.id AND cr.year = ' . (int) $yearId . ' AND cr.status = 1',
+				'inner'
+			)
+			->join('classes c', 'c.id = cr.class', 'inner')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join(
+				'hostel_allocations ha',
+				'ha.student_id = s.id AND ha.academic_year = ' . (int) $yearId . ' AND ha.school_id = ' . (int) $schoolId,
+				'left'
+			)
+			->join('hostels h', 'h.id = ha.hostel_id', 'left')
+			->where('s.school_id', $schoolId)
+			->where('s.status', 1)
+			->groupStart()
+				->like('s.regno', $q)
+				->orLike('s.fname', $q)
+				->orLike('s.lname', $q)
+				->orWhere("CONCAT(IFNULL(s.fname,''), ' ', IFNULL(s.lname,'')) LIKE " . $db->escape($like), null, false)
+			->groupEnd();
+
+		if ($allowedClassIds !== null) {
+			$ids = array_values(array_filter(array_map('intval', $allowedClassIds)));
+			if ($ids === []) {
+				return [];
+			}
+			$b->whereIn('c.id', $ids);
+		}
+
+		$rows = $b->orderBy('s.fname', 'ASC')->orderBy('s.lname', 'ASC')->limit($limit * 2)->get()->getResultArray();
+		$out = [];
+		$seen = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['id'] ?? 0);
+			if ($sid <= 0 || isset($seen[$sid])) {
+				continue;
+			}
+			$seen[$sid] = true;
+			$label = trim(preg_replace(
+				'/\s+/',
+				' ',
+				trim(($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_title'] ?? ''))
+			) ?: '');
+			$out[] = [
+				'id' => $sid,
+				'regno' => (string) ($row['regno'] ?? ''),
+				'name' => trim(($row['fname'] ?? '') . ' ' . ($row['lname'] ?? '')),
+				'class_id' => (int) ($row['class_id'] ?? 0),
+				'class_label' => $label !== '' ? $label : 'No class',
+				'hostel_name' => (string) ($row['hostel_name'] ?? ''),
+			];
+			if (count($out) >= $limit) {
+				break;
+			}
+		}
+		return $out;
 	}
 
 	public function summarizeChecklist(array $materials): array
@@ -281,11 +475,13 @@ class StudentMaterialSchemaModel extends Model
 				'materials' => [],
 				'item_totals' => [],
 				'hostel_totals' => $this->buildHostelTotals([], $list),
+				'recent_activity' => $this->getClassRecentActivity($schoolId, $classId, $yearId),
 			];
 		}
 
 		$studentIds = array_map(static fn ($s) => (int) $s['id'], $students);
 		$checks = [];
+		$staffIds = [];
 		if (!empty($studentIds)) {
 			$rows = $db->table('student_material_checks')
 				->whereIn('student_id', $studentIds)
@@ -294,8 +490,13 @@ class StudentMaterialSchemaModel extends Model
 				->get()->getResultArray();
 			foreach ($rows as $c) {
 				$checks[(int) $c['student_id']][(int) $c['material_id']] = $c;
+				$cb = (int) ($c['checked_by'] ?? 0);
+				if ($cb > 0) {
+					$staffIds[$cb] = $cb;
+				}
 			}
 		}
+		$staffMeta = $this->resolveStaffMeta(array_values($staffIds));
 
 		$list = [];
 		foreach ($students as $s) {
@@ -303,6 +504,8 @@ class StudentMaterialSchemaModel extends Model
 			$complete = $partial = $missing = 0;
 			$items = [];
 			$missingParts = [];
+			$lastAt = '';
+			$lastBy = null;
 			foreach ($assignments as $a) {
 				$mid = (int) $a['material_id'];
 				$req = (float) $a['quantity'];
@@ -330,6 +533,14 @@ class StudentMaterialSchemaModel extends Model
 				if ($itemStatus !== 'complete') {
 					$missingParts[] = $a['name'] . ' (' . $missingQty . ' ' . $a['unit'] . ')';
 				}
+				if (isset($checks[$sid][$mid]['checked_at'])) {
+					$at = (string) $checks[$sid][$mid]['checked_at'];
+					if ($at !== '' && ($lastAt === '' || strcmp($at, $lastAt) > 0)) {
+						$lastAt = $at;
+						$cb = (int) ($checks[$sid][$mid]['checked_by'] ?? 0);
+						$lastBy = $cb > 0 ? $cb : null;
+					}
+				}
 			}
 
 			$overall = 'missing';
@@ -351,6 +562,7 @@ class StudentMaterialSchemaModel extends Model
 				$classKpi['missing']++;
 			}
 
+			$meta = $lastBy ? ($staffMeta[$lastBy] ?? null) : null;
 			$list[] = [
 				'id' => $sid,
 				'regno' => (string) $s['regno'],
@@ -364,6 +576,10 @@ class StudentMaterialSchemaModel extends Model
 				'material_count' => $materialCount,
 				'missing_summary' => $overall === 'complete' ? 'All supplied' : (implode(', ', $missingParts) ?: '—'),
 				'items' => $items,
+				'checked_by' => $lastBy,
+				'checked_at' => $lastAt !== '' ? $lastAt : null,
+				'checker_name' => $meta['name'] ?? '',
+				'checker_post' => $meta['post'] ?? '',
 			];
 		}
 
@@ -384,6 +600,7 @@ class StudentMaterialSchemaModel extends Model
 			'materials' => $materials,
 			'item_totals' => $itemTotals,
 			'hostel_totals' => $hostelTotals,
+			'recent_activity' => $this->getClassRecentActivity($schoolId, $classId, $yearId),
 		];
 	}
 
