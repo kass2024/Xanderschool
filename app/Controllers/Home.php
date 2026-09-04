@@ -18932,6 +18932,7 @@ public function assign_card()
 		$academic = $this->request->getGet("academic") ?? $data['academic_year'];
 		$filter = $this->request->getGet("filter") ?? "0";
 		$reportType = FeesReportHelper::normalizeReportType($this->request->getGet('rtype'));
+		$feesScope = FeesReportHelper::normalizeFeesScope($this->request->getGet('fscope'));
 		$needsClass = FeesReportHelper::needsClassFilter($reportType);
 		$termGet = $this->request->getGet('term');
 		$termsList = [];
@@ -18982,27 +18983,35 @@ public function assign_card()
 			}
 		}
 		if ($needsClass && (int) $classe > 0 && empty($data['classe']) && !empty($data['classes'])) {
-			return redirect()->to(site_url('system-report/fees?' . http_build_query([
+			$redir = [
 				'c' => $data['classes'][0]['id'],
 				'academic' => $academic,
 				'term' => $termsList,
 				'filter' => $filter,
 				'rtype' => $reportType,
-			])));
+			];
+			if ($feesScope !== FeesReportHelper::FEES_BOTH) {
+				$redir['fscope'] = $feesScope;
+			}
+			return redirect()->to(site_url('system-report/fees?' . http_build_query($redir)));
 		}
 		if ($pdf != 1 && $pdf != 2 && $needsClass && (int) $classe <= 0 && !empty($data['classes'])) {
-			return redirect()->to(site_url('system-report/fees?' . http_build_query([
+			$redir = [
 				'c' => $data['classes'][0]['id'],
 				'academic' => $academic,
 				'term' => $termsList,
 				'filter' => $filter,
 				'rtype' => $reportType,
-			])));
+			];
+			if ($feesScope !== FeesReportHelper::FEES_BOTH) {
+				$redir['fscope'] = $feesScope;
+			}
+			return redirect()->to(site_url('system-report/fees?' . http_build_query($redir)));
 		}
 
 		$students = [];
 		if ($needsClass && (int) $classe > 0) {
-		$studentsQuery = FeesReportHelper::studentsQuery($studentMdl, (int) $classe, (int) $school_id, (int) $academic, $termsIn, $termsList);
+		$studentsQuery = FeesReportHelper::studentsQuery($studentMdl, (int) $classe, (int) $school_id, (int) $academic, $termsIn, $termsList, $feesScope);
 
 		if ($filter == 1) {
 			$studentsQuery->having("paid", "amount", false);
@@ -19023,7 +19032,8 @@ public function assign_card()
 				(int) $school_id,
 				(int) $academic,
 				$termsIn,
-				$termsList
+				$termsList,
+				$feesScope
 			);
 		}
 		$withDetailed = ($reportType === FeesReportHelper::TYPE_DETAILED);
@@ -19035,7 +19045,8 @@ public function assign_card()
 			$termsList,
 			(int) $classe,
 			$withDetailed,
-			$withLastPayment
+			$withLastPayment,
+			$feesScope
 		);
 		$students = $enriched['students'];
 		$data['students'] = $students;
@@ -19043,6 +19054,8 @@ public function assign_card()
 		$data['incomeSummary'] = $incomeSummary;
 		$data['reportType'] = $reportType;
 		$data['reportTypeLabels'] = FeesReportHelper::reportTypeLabels();
+		$data['feesScope'] = $feesScope;
+		$data['feesScopeLabels'] = FeesReportHelper::feesScopeLabels();
 		$data['class_id'] = $classe;
 		$data['year_id'] = $academic;
 		$data['term'] = $term;
@@ -19058,6 +19071,7 @@ public function assign_card()
 			'term' => $termsList,
 			'filter' => $filter,
 			'rtype' => $reportType !== FeesReportHelper::TYPE_DETAILED ? $reportType : null,
+			'fscope' => $feesScope !== FeesReportHelper::FEES_BOTH ? $feesScope : null,
 		], static function ($v) {
 			return $v !== null && $v !== '';
 		}));

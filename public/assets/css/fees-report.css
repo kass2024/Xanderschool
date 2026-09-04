@@ -6,7 +6,7 @@
 }
 
 .fr-center {
-  max-width: 1280px;
+  max-width: 1480px;
   margin: 0 auto;
 }
 
@@ -368,6 +368,12 @@
 .fr-status-pill.pill-full:not(.active) { border-color: #86efac; color: #166534; }
 .fr-status-pill.pill-partial:not(.active) { border-color: #fcd34d; color: #92400e; }
 .fr-status-pill.pill-zero:not(.active) { border-color: #fca5a5; color: #991b1b; }
+.fr-status-pill.pill-school:not(.active) { border-color: #93c5fd; color: #1e40af; }
+.fr-status-pill.pill-extra:not(.active) { border-color: #c4b5fd; color: #5b21b6; }
+
+.fr-field-fees-scope .fr-status-pills {
+  flex-wrap: wrap;
+}
 
 .fr-btn-view {
   background: #15803d;
@@ -536,3 +542,318 @@
   color: #475569;
   font-weight: 700;
 }
+
+.fr-detail-table th.fr-extra-col,
+.fr-detail-table td.fr-extra-col {
+  min-width: 88px;
+  white-space: nowrap;
+  background: #faf5ff;
+}
+
+.fr-detail-table thead th.fr-extra-col {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #6d28d9;
+  vertical-align: bottom;
+}
+
+.fr-extra-amt {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.fr-extra-paid {
+  font-size: 0.68rem;
+  color: #15803d;
+  margin-top: 1px;
+  font-weight: 600;
+}
+
+.fr-extra-unpaid {
+  font-size: 0.68rem;
+  color: #b91c1c;
+  margin-top: 1px;
+  font-weight: 700;
+}
+
+.fr-fee-cell {
+  display: inline-block;
+  min-width: 72px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  line-height: 1.2;
+}
+
+.fr-fee-unpaid {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+}
+
+.fr-fee-unpaid .fr-extra-amt {
+  color: #9f1239;
+}
+
+.fr-fee-partial {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.fr-fee-partial .fr-extra-amt {
+  color: #9a3412;
+}
+
+.fr-fee-paid {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.fr-fee-paid .fr-extra-amt {
+  color: #166534;
+}
+
+.fr-detail-table td.fr-amount-school .fr-fee-unpaid,
+.fr-detail-table td.fr-amount-extra .fr-fee-unpaid {
+  background: #fff1f2;
+}
+
+.fr-pay {
+  display: inline-block;
+  max-width: 140px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #0f766e;
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+  border-radius: 6px;
+  padding: 2px 7px;
+  line-height: 1.3;
+}
+
+.fr-pay-cell {
+  white-space: normal;
+}
+
+.fr-field-hidden {
+  display: none !important;
+}
+
+/* Class balance list */
+.fr-balance-table th.fr-th-no,
+.fr-balance-table th.fr-th-names,
+.fr-balance-table th.fr-th-dates {
+  background: #fecaca;
+  color: #7f1d1d;
+}
+
+.fr-balance-table th.fr-th-due {
+  background: #93c5fd;
+  color: #1e3a8a;
+}
+
+.fr-balance-table th.fr-th-paid {
+  background: #fdba74;
+  color: #9a3412;
+}
+
+.fr-balance-table th.fr-th-bal {
+  background: #fca5a5;
+  color: #991b1b;
+}
+
+.fr-balance-name {
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.fr-balance-cell.has-balance {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.fr-balance-total td {
+  background: #f1f5f9;
+  font-weight: 700;
+}
+
+/* Income summary */
+.fr-income-banner {
+  text-align: center;
+  background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%);
+  border: 1px solid #f9a8d4;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.fr-income-banner-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #831843;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fr-income-banner-meta {
+  margin-top: 4px;
+  font-size: 0.88rem;
+  color: #9d174d;
+}
+
+.fr-income-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.fr-income-kpi {
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  text-align: center;
+}
+
+.fr-income-kpi .lbl {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.fr-income-kpi .val {
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.fr-income-kpi.due { background: #dbeafe; border-color: #93c5fd; color: #1e3a8a; }
+.fr-income-kpi.paid { background: #dcfce7; border-color: #86efac; color: #166534; }
+.fr-income-kpi.bal { background: #ffedd5; border-color: #fdba74; color: #9a3412; }
+.fr-income-kpi.pct { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
+
+.fr-income-wrap {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.fr-income-table {
+  margin: 0;
+}
+
+.fr-income-table th {
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  border: none;
+  padding: 10px 12px;
+}
+
+.fr-income-table th.fr-th-class { background: #fecaca; color: #7f1d1d; }
+.fr-income-table th.fr-th-due { background: #93c5fd; color: #1e3a8a; }
+.fr-income-table th.fr-th-paid { background: #fdba74; color: #9a3412; }
+.fr-income-table th.fr-th-bal { background: #fca5a5; color: #991b1b; }
+.fr-income-table th.fr-th-pct { background: #86efac; color: #14532d; }
+
+.fr-income-table td {
+  padding: 9px 12px;
+  border-color: #e2e8f0;
+  vertical-align: middle;
+}
+
+.fr-income-section-head td {
+  font-weight: 800;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 12px;
+  border-top: 2px solid #cbd5e1;
+}
+
+.fr-income-section-head.fr-section-nursery td { background: #fef2f2; color: #991b1b; }
+.fr-income-section-head.fr-section-primary td { background: #eff6ff; color: #1d4ed8; }
+.fr-income-section-head.fr-section-reb td { background: #ecfeff; color: #0e7490; }
+.fr-income-section-head.fr-section-rtb td { background: #fff7ed; color: #c2410c; }
+
+.fr-income-row:nth-child(even) td { background: #fafafa; }
+
+.fr-income-class {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.fr-section-nursery .fr-income-row .fr-income-class { color: #9f1239; }
+.fr-section-primary .fr-income-row .fr-income-class { color: #1d4ed8; }
+.fr-section-reb .fr-income-row .fr-income-class { color: #0e7490; font-weight: 800; }
+.fr-section-rtb .fr-income-row .fr-income-class { color: #c2410c; font-weight: 800; }
+
+.fr-num-due { color: #1e40af; font-weight: 600; }
+.fr-num-paid { color: #15803d; font-weight: 600; }
+.fr-num-bal.has-balance { color: #b91c1c; font-weight: 800; }
+.fr-num-bal.overpaid { color: #a16207; font-weight: 700; }
+
+.fr-pct-badge {
+  display: inline-block;
+  min-width: 72px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.fr-pct-badge.pct-full { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+.fr-pct-badge.pct-good { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; }
+.fr-pct-badge.pct-partial { background: #ffedd5; color: #c2410c; border: 1px solid #fdba74; }
+.fr-pct-badge.pct-zero { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+
+.fr-income-subtotal td {
+  font-weight: 800;
+  font-size: 0.88rem;
+  border-top: 2px solid #94a3b8;
+}
+
+.fr-income-subtotal.fr-section-nursery td:first-child {
+  background: #374151;
+  color: #fff;
+}
+
+.fr-income-subtotal.fr-section-primary td:first-child,
+.fr-income-subtotal.fr-section-reb td:first-child {
+  background: #0891b2;
+  color: #fff;
+}
+
+.fr-income-subtotal.fr-section-rtb td:first-child {
+  background: #ea580c;
+  color: #fff;
+}
+
+.fr-income-subtotal td:nth-child(n+2) {
+  background: #fef08a !important;
+  color: #713f12 !important;
+}
+
+.fr-income-section-head.fr-section-anp td { background: #f5f3ff; color: #5b21b6; }
+
+.fr-income-subtotal.fr-section-anp td:first-child {
+  background: #5b21b6;
+  color: #fff;
+}
+
+.fr-section-anp .fr-income-row .fr-income-class { color: #6d28d9; font-weight: 800; }
+
+.fr-balance-table {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+.fr-balance-table tbody tr:nth-child(even) td {
+  background: #fafafa;
+}
+

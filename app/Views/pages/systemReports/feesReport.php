@@ -13,6 +13,11 @@
 /** @var string $classLabel */
 /** @var string $termLabel */
 /** @var string $queryParams */
+/** @var string $reportType */
+/** @var array $reportTypeLabels */
+/** @var array $incomeSummary */
+/** @var string $feesScope */
+/** @var array $feesScopeLabels */
 
 $stats = $stats ?? [
 	'total_students' => 0, 'total_expected' => 0, 'total_school_expected' => 0,
@@ -37,8 +42,59 @@ if (!function_exists('fr_payment_status')) {
 	}
 }
 
+if (!function_exists('fr_fee_item_cell')) {
+	/**
+	 * Render one fee amount cell with unpaid highlighting.
+	 */
+	function fr_fee_item_cell(float $expected, float $paid): string
+	{
+		if ($expected <= 0 && $paid <= 0) {
+			return '—';
+		}
+		$unpaid = max(0, $expected - $paid);
+		$state = 'none';
+		if ($expected > 0 && $unpaid <= 0) {
+			$state = 'paid';
+		} elseif ($paid > 0 && $unpaid > 0) {
+			$state = 'partial';
+		} elseif ($unpaid > 0) {
+			$state = 'unpaid';
+		}
+		$html = '<div class="fr-fee-cell fr-fee-' . $state . '">';
+		$html .= '<div class="fr-extra-amt">' . number_format($expected) . '</div>';
+		if ($state === 'paid') {
+			$html .= '<div class="fr-extra-paid">paid ' . number_format($paid) . '</div>';
+		} elseif ($state === 'partial') {
+			$html .= '<div class="fr-extra-paid">paid ' . number_format($paid) . '</div>';
+			$html .= '<div class="fr-extra-unpaid">unpaid ' . number_format($unpaid) . '</div>';
+		} elseif ($state === 'unpaid') {
+			$html .= '<div class="fr-extra-unpaid">unpaid ' . number_format($unpaid) . '</div>';
+		}
+		$html .= '</div>';
+		return $html;
+	}
+}
+
 $canFeesActions = !empty($canFeesActions);
 $qp = $queryParams ?? '';
+$reportType = $reportType ?? 'detailed';
+$reportTypeLabels = $reportTypeLabels ?? [
+	'detailed' => 'Detailed fees report',
+	'class_balance' => 'Class balance list',
+	'income_summary' => 'Summary of income',
+];
+$feesScope = $feesScope ?? 'both';
+$feesScopeLabels = $feesScopeLabels ?? [
+	'both' => 'Both',
+	'school' => 'School fees',
+	'extra' => 'Extra fees',
+];
+$showSchoolFees = ($feesScope !== 'extra');
+$showExtraFees = ($feesScope !== 'school');
+$incomeSummary = $incomeSummary ?? [];
+$isDetailed = ($reportType === 'detailed');
+$isClassBalance = ($reportType === 'class_balance');
+$isIncomeSummary = ($reportType === 'income_summary');
 $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 ?>
 <link rel="stylesheet" href="<?= base_url('assets/css/fees-report.css'); ?>">
@@ -50,7 +106,14 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 			<h2><?= esc(lang('app.feesReport')); ?></h2>
 			<p>
 				<?php if ($hasResults) : ?>
-					<?= esc($classLabel); ?> · <?= esc($selectedYearTitle); ?> · <?= esc($termLabel); ?>
+					<?php if ($isIncomeSummary) : ?>
+						School-wide · <?= esc($selectedYearTitle); ?> · <?= esc($termLabel); ?>
+					<?php else : ?>
+						<?= esc($classLabel); ?> · <?= esc($selectedYearTitle); ?> · <?= esc($termLabel); ?>
+					<?php endif; ?>
+					<?php if ($feesScope !== 'both') : ?>
+						· <?= esc($feesScopeLabels[$feesScope] ?? $feesScope); ?> only
+					<?php endif; ?>
 				<?php else : ?>
 					Choose filters below — report updates automatically
 				<?php endif; ?>
@@ -64,8 +127,18 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 			<form id="view_students_form" method="get" action="<?= base_url('system-report/fees'); ?>">
 				<div class="fr-filter-row">
 					<div class="fr-field">
+						<label for="frReportType">Report type</label>
+						<select class="form-control select2" id="frReportType" name="rtype">
+							<?php foreach ($reportTypeLabels as $rtypeKey => $rtypeLabel) : ?>
+								<option value="<?= esc($rtypeKey, 'attr'); ?>" <?= $reportType === $rtypeKey ? 'selected' : ''; ?>>
+									<?= esc($rtypeLabel); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+					</div>
+					<div class="fr-field<?= $isIncomeSummary ? ' fr-field-hidden' : ''; ?>" id="frClassField">
 						<label for="choose_class"><?= lang('app.sClass'); ?></label>
-						<select class="form-control select2" id="choose_class" name="c" required>
+						<select class="form-control select2" id="choose_class" name="c"<?= $isIncomeSummary ? '' : ' required'; ?>>
 							<?php if ((int) $class_id <= 0) : ?>
 								<option value="" disabled selected><?= lang('app.chooseClass'); ?></option>
 							<?php endif; ?>
@@ -109,7 +182,16 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 							</div>
 						</div>
 					</div>
-					<div class="fr-field">
+					<div class="fr-field fr-field-fees-scope">
+						<label>Fees type</label>
+						<input type="hidden" name="fscope" id="frFeesScopeInput" value="<?= esc($feesScope); ?>">
+						<div class="fr-status-pills" id="frFeesScopePills" role="group" aria-label="Fees type filter">
+							<button type="button" class="fr-status-pill pill-all<?= $feesScope === 'both' ? ' active' : ''; ?>" data-fscope="both">Both</button>
+							<button type="button" class="fr-status-pill pill-school<?= $feesScope === 'school' ? ' active active-green' : ''; ?>" data-fscope="school">School fees</button>
+							<button type="button" class="fr-status-pill pill-extra<?= $feesScope === 'extra' ? ' active active-amber' : ''; ?>" data-fscope="extra">Extra fees</button>
+						</div>
+					</div>
+					<div class="fr-field<?= $isIncomeSummary ? ' fr-field-hidden' : ''; ?>" id="frFilterStatusField">
 						<label>Payment status</label>
 						<input type="hidden" name="filter" id="frFilterInput" value="<?= esc($filter); ?>">
 						<div class="fr-status-pills" id="frStatusPills" role="group" aria-label="Payment status filter">
@@ -133,22 +215,27 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 			</div>
 		<?php else : ?>
 
+		<?php if (!$isIncomeSummary) : ?>
 		<div class="fr-kpi-grid">
 			<div class="fr-kpi">
 				<div class="fr-kpi-icon blue"><i class="fa fa-users"></i></div>
 				<div class="fr-kpi-value"><?= (int) $stats['total_students']; ?></div>
 				<div class="fr-kpi-label">Students</div>
 			</div>
+			<?php if ($showSchoolFees) : ?>
 			<div class="fr-kpi">
 				<div class="fr-kpi-icon indigo"><i class="fa fa-school"></i></div>
 				<div class="fr-kpi-value"><?= number_format((float) ($stats['total_school_expected'] ?? 0)); ?></div>
 				<div class="fr-kpi-label">School fees (Rwf)</div>
 			</div>
+			<?php endif; ?>
+			<?php if ($showExtraFees) : ?>
 			<div class="fr-kpi">
 				<div class="fr-kpi-icon purple"><i class="fa fa-plus-circle"></i></div>
 				<div class="fr-kpi-value"><?= number_format((float) ($stats['total_extra_expected'] ?? 0)); ?></div>
 				<div class="fr-kpi-label">Extra fees (Rwf)</div>
 			</div>
+			<?php endif; ?>
 			<div class="fr-kpi">
 				<div class="fr-kpi-icon green"><i class="fa fa-check-circle"></i></div>
 				<div class="fr-kpi-value"><?= number_format((float) $stats['total_paid']); ?></div>
@@ -166,6 +253,7 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 			</div>
 		</div>
 
+		<?php if ($isDetailed) : ?>
 		<div class="fr-progress-card">
 			<div class="fr-progress-head">
 				<span>Collection rate</span>
@@ -175,16 +263,143 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 				<div class="fr-progress-fill" style="width:<?= min(100, (float) $stats['collection_rate']); ?>%"></div>
 			</div>
 		</div>
+		<?php endif; ?>
+		<?php endif; ?>
 
 		<div class="fr-panel">
 			<div class="fr-panel-head">
-				<h3><?= (int) $stats['total_students']; ?> students · <?= esc($classLabel); ?></h3>
+				<h3>
+					<?php if ($isIncomeSummary) : ?>
+						Summary of income · <?= esc($selectedYearTitle); ?> · <?= esc($termLabel); ?>
+					<?php elseif ($isClassBalance) : ?>
+						<?= (int) $stats['total_students']; ?> students · <?= esc($classLabel); ?> · Balance list
+					<?php else : ?>
+						<?= (int) $stats['total_students']; ?> students · <?= esc($classLabel); ?>
+					<?php endif; ?>
+				</h3>
 				<div class="fr-actions">
 					<a href="<?= base_url('system-report/fees/1?' . $qp); ?>" target="_blank" class="btn btn-danger">
 						<i class="fa fa-file-pdf"></i> Export PDF
 					</a>
 				</div>
 			</div>
+
+			<?php if ($isClassBalance) : ?>
+			<div class="fr-search-row">
+				<input type="text" class="form-control" id="frSearch" placeholder="Filter by name…" style="max-width:320px;">
+			</div>
+			<div class="fr-table-wrap">
+				<table class="table mb-0 fr-balance-table" id="frFeesTable">
+					<thead>
+					<tr>
+						<th class="fr-th-no">NO</th>
+						<th class="fr-th-names">NAMES</th>
+						<th class="fr-th-dates">DATES</th>
+						<th class="fr-th-due text-right">TOTAL FEES DUE</th>
+						<th class="fr-th-paid text-right">TOTAL PAID</th>
+						<th class="fr-th-bal text-right">BALANCES</th>
+					</tr>
+					</thead>
+					<tbody>
+					<?php $a = 1; foreach ($students as $student) :
+						$norm = \App\Libraries\FeesReportHelper::normalizeCollectionAmounts(
+							(float) ($student['amount'] ?? 0),
+							(float) ($student['paid'] ?? 0)
+						);
+						$amt = $norm['due'];
+						$paid = $norm['paid'];
+						$balance = $norm['balance'];
+						$dateStr = \App\Libraries\FeesReportHelper::formatPaymentDate($student['last_payment'] ?? '');
+						$search = strtolower($student['student'] ?? '');
+						?>
+						<tr data-search="<?= esc($search, 'attr'); ?>">
+							<td><?= $a++; ?></td>
+							<td class="fr-balance-name"><?= esc(strtoupper($student['student'] ?? '')); ?></td>
+							<td><?= $dateStr !== '' ? esc($dateStr) : '—'; ?></td>
+							<td class="text-right"><?= number_format($amt); ?></td>
+							<td class="text-right"><?= number_format($paid); ?></td>
+							<td class="text-right fr-balance-cell<?= $balance > 0 ? ' has-balance' : ''; ?>"><?= number_format($balance); ?></td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+					<tfoot>
+					<tr class="fr-balance-total">
+						<td colspan="3"><strong>TOTAL</strong></td>
+						<td class="text-right"><strong><?= number_format((float) ($stats['total_expected'] ?? 0)); ?></strong></td>
+						<td class="text-right"><strong><?= number_format((float) ($stats['total_paid'] ?? 0)); ?></strong></td>
+						<td class="text-right"><strong><?= number_format((float) ($stats['total_remain'] ?? 0)); ?></strong></td>
+					</tr>
+					</tfoot>
+				</table>
+			</div>
+
+			<?php elseif ($isIncomeSummary) : ?>
+			<div class="fr-income-banner">
+				<div class="fr-income-banner-title">Summary of income<?= $feesScope !== 'both' ? ' · ' . esc($feesScopeLabels[$feesScope] ?? $feesScope) : ''; ?></div>
+				<div class="fr-income-banner-meta"><?= esc($selectedYearTitle); ?> · <?= esc($termLabel); ?></div>
+			</div>
+			<div class="fr-income-kpi-row">
+				<div class="fr-income-kpi due">
+					<span class="lbl">Total due</span>
+					<span class="val"><?= number_format((float) ($stats['total_expected'] ?? 0)); ?></span>
+				</div>
+				<div class="fr-income-kpi paid">
+					<span class="lbl">Total paid</span>
+					<span class="val"><?= number_format((float) ($stats['total_paid'] ?? 0)); ?></span>
+				</div>
+				<div class="fr-income-kpi bal">
+					<span class="lbl">Balance</span>
+					<span class="val"><?= number_format((float) ($stats['total_remain'] ?? 0)); ?></span>
+				</div>
+				<div class="fr-income-kpi pct">
+					<span class="lbl">Collection</span>
+					<span class="val"><?= esc(\App\Libraries\FeesReportHelper::formatPercent((float) ($stats['collection_rate'] ?? 0))); ?></span>
+				</div>
+			</div>
+			<div class="fr-table-wrap fr-income-wrap">
+				<table class="table mb-0 fr-income-table" id="frIncomeTable">
+					<thead>
+					<tr>
+						<th class="fr-th-class">CLASS</th>
+						<th class="fr-th-due text-right">TOTAL DUE</th>
+						<th class="fr-th-paid text-right">TOTAL PAID</th>
+						<th class="fr-th-bal text-right">BALANCE</th>
+						<th class="fr-th-pct text-right">PERCENTAGES</th>
+					</tr>
+					</thead>
+					<tbody>
+					<?php
+					$lastSection = '';
+					foreach ($incomeSummary as $row) :
+						$isSub = !empty($row['is_subtotal']);
+						$section = (string) ($row['section'] ?? '');
+						if (!$isSub && $section !== '' && $section !== $lastSection) :
+							$lastSection = $section;
+							?>
+							<tr class="fr-income-section-head fr-section-<?= esc($section, 'attr'); ?>">
+								<td colspan="5"><?= esc(\App\Libraries\FeesReportHelper::sectionHeadingLabel($section)); ?></td>
+							</tr>
+						<?php endif;
+						$pct = (float) ($row['percent'] ?? 0);
+						$balance = max(0, (float) ($row['balance'] ?? 0));
+						$pctLevel = \App\Libraries\FeesReportHelper::percentLevel($pct);
+						$rowClass = ($isSub ? 'fr-income-subtotal' : 'fr-income-row') . ' fr-section-' . $section;
+						?>
+						<tr class="<?= esc($rowClass, 'attr'); ?>">
+							<td class="fr-income-class"><?= esc($row['class_label'] ?? ''); ?></td>
+							<td class="text-right fr-num-due"><?= number_format((float) ($row['total_due'] ?? 0)); ?></td>
+							<td class="text-right fr-num-paid"><?= number_format((float) ($row['total_paid'] ?? 0)); ?></td>
+							<td class="text-right fr-num-bal<?= $balance > 0 ? ' has-balance' : ''; ?>"><?= number_format($balance); ?></td>
+							<td class="text-right">
+								<span class="fr-pct-badge pct-<?= esc($pctLevel, 'attr'); ?>"><?= esc(\App\Libraries\FeesReportHelper::formatPercent($pct)); ?></span>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+			</div>
+
+			<?php else : ?>
 
 			<?php if ($filter != '1' && $canFeesActions) : ?>
 			<div class="fr-sms-bar">
@@ -215,15 +430,23 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 			</div>
 
 			<div class="fr-table-wrap">
-				<table class="table mb-0" id="frFeesTable">
+				<table class="table mb-0 fr-detail-table" id="frFeesTable">
 					<thead>
 					<tr>
 						<th>#</th>
 						<th><?= lang('app.regNo'); ?></th>
 						<th><?= lang('app.names'); ?></th>
 						<th><?= lang('app.slipReference'); ?></th>
+						<th>Payment method</th>
+						<?php if ($showSchoolFees) : ?>
 						<th class="text-right">School fees</th>
-						<th class="text-right">Extra fees</th>
+						<?php endif; ?>
+						<?php if ($showExtraFees) : ?>
+						<?php foreach (($extraFeeColumns ?? []) as $feeTitle) : ?>
+							<th class="text-right fr-extra-col"><?= esc($feeTitle); ?></th>
+						<?php endforeach; ?>
+						<th class="text-right">Extra total</th>
+						<?php endif; ?>
 						<th class="text-right">Paid</th>
 						<th class="text-right">Balance</th>
 						<th>Status</th>
@@ -241,7 +464,9 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 						$pct = $amt > 0 ? min(100, round(($paid / $amt) * 100)) : 0;
 						$refs = trim((string) ($student['ref_nos'] ?? ''));
 						$actors = trim((string) ($student['recorded_by_names'] ?? ''));
-						$search = strtolower($student['student'] . ' ' . $student['regno'] . ' ' . $refs . ' ' . $actors);
+						$payModes = trim((string) ($student['payment_modes'] ?? ''));
+						$breakdown = $student['extra_breakdown'] ?? [];
+						$search = strtolower($student['student'] . ' ' . $student['regno'] . ' ' . $refs . ' ' . $actors . ' ' . $payModes);
 						$sid = (int) $student['student_id'];
 						?>
 						<tr data-search="<?= esc($search, 'attr'); ?>" data-student-id="<?= $sid; ?>" data-regno="<?= esc($student['regno'], 'attr'); ?>" data-name="<?= esc($student['student'], 'attr'); ?>">
@@ -259,8 +484,25 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 									—
 								<?php endif; ?>
 							</td>
-							<td class="text-right fr-amount-school"><?= number_format($schoolAmt); ?></td>
-							<td class="text-right fr-amount-extra"><?= number_format($extraAmt); ?></td>
+							<td class="fr-pay-cell">
+								<?php if ($payModes !== '') : ?>
+									<span class="fr-pay"><?= esc($payModes); ?></span>
+								<?php else : ?>
+									<span class="text-muted">—</span>
+								<?php endif; ?>
+							</td>
+							<?php if ($showSchoolFees) : ?>
+							<td class="text-right fr-amount-school"><?= fr_fee_item_cell($schoolAmt, (float) ($student['school_paid'] ?? 0)); ?></td>
+							<?php endif; ?>
+							<?php if ($showExtraFees) : ?>
+							<?php foreach (($extraFeeColumns ?? []) as $feeTitle) :
+								$exp = (float) ($breakdown[$feeTitle]['expected'] ?? 0);
+								$feePaid = (float) ($breakdown[$feeTitle]['paid'] ?? 0);
+								?>
+								<td class="text-right fr-extra-col"><?= fr_fee_item_cell($exp, $feePaid); ?></td>
+							<?php endforeach; ?>
+							<td class="text-right fr-amount-extra"><?= fr_fee_item_cell($extraAmt, (float) ($student['extra_paid'] ?? 0)); ?></td>
+							<?php endif; ?>
 							<td class="text-right fr-amount-paid">
 								<?= number_format($paid); ?>
 								<span class="fr-mini-bar" title="<?= $pct; ?>%"><span style="width:<?= $pct; ?>%"></span></span>
@@ -288,6 +530,8 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 					</tbody>
 				</table>
 			</div>
+
+			<?php endif; ?>
 		</div>
 
 		<?php endif; ?>
@@ -309,9 +553,22 @@ $(function () {
 		$('#frAllTerms').prop('checked', allOn);
 	}
 
+	function frIsIncomeSummary() {
+		return $('#frReportType').val() === 'income_summary';
+	}
+
+	function frToggleClassField() {
+		const income = frIsIncomeSummary();
+		$('#frClassField, #frFilterStatusField').toggleClass('fr-field-hidden', income);
+		$('#choose_class').prop('required', !income).prop('disabled', income);
+	}
+
 	function frLoadReport() {
-		const cls = $('#choose_class').val();
-		if (!cls) return;
+		frToggleClassField();
+		if (!frIsIncomeSummary()) {
+			const cls = $('#choose_class').val();
+			if (!cls) return;
+		}
 		if ($('.fr-term-cb:checked').length === 0) {
 			toastada.error('Select at least one term.');
 			return;
@@ -332,7 +589,9 @@ $(function () {
 	});
 
 	frSyncTermChips();
+	frToggleClassField();
 
+	$('#frReportType').on('change', frLoadReport);
 	$form.find('select[name="c"], select[name="academic"]').on('change', frLoadReport);
 
 	$('#frStatusPills .fr-status-pill').on('click', function () {
@@ -347,6 +606,17 @@ $(function () {
 		frLoadReport();
 	});
 
+	$('#frFeesScopePills .fr-status-pill').on('click', function () {
+		const s = String($(this).data('fscope') || 'both');
+		if ($('#frFeesScopeInput').val() === s) return;
+		$('#frFeesScopeInput').val(s);
+		$('#frFeesScopePills .fr-status-pill').removeClass('active active-green active-amber active-red');
+		$(this).addClass('active');
+		if (s === 'school') $(this).addClass('active-green');
+		if (s === 'extra') $(this).addClass('active-amber');
+		frLoadReport();
+	});
+
 	$('#frSearch').on('input', function () {
 		const q = $(this).val().toLowerCase().trim();
 		$('#frFeesTable tbody tr').each(function () {
@@ -355,7 +625,7 @@ $(function () {
 		});
 	});
 
-	if (canFeesActions) {
+	if (canFeesActions && !frIsIncomeSummary()) {
 	function frResolveStudentIdFromSearch() {
 		const raw = $('#frSmsSearch').val().trim();
 		if (!raw) return 0;
