@@ -1211,13 +1211,31 @@ public function testEmail()
 		$stMdl = new StudentModel();
 		$sklMdl = new SchoolModel();
 		$this->ensureStaffCardSchema();
+		$schoolId = (int) $this->session->get("soma_school_id");
 		$skData = $sklMdl->select("name,card_design,card_orientation,card_bg_mode,card_template,card_layout,logo,slogan,card_background,header_text_1,header_text_2,header_color,main_color,footer_color,paint_color,capitalize,headmaster_signature,head_master,phone,email,address,website,pobox")
-				->where("id", $this->session->get("soma_school_id"))
+				->where("id", $schoolId)
 				->get(1)->getRow();
 
-		// Always use Wisdom High School PNG template (ignore school settings card design).
-		$cardTemplate = 'wisdom';
-		$orientation = 'landscape';
+		helper('qonics');
+		// Wisdom schools: fixed pass PNGs (high school / primary). Others: school settings.
+		$useWisdomPass = is_wisdom_school($schoolId);
+		if ($useWisdomPass) {
+			$cardTemplate = 'wisdom';
+			$orientation = 'landscape';
+			$data['background'] = 'student_pass_template.png';
+			$data['card_layout'] = null;
+			$data['main_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
+			$data['paint_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
+		} else {
+			$cardTemplate = \App\Libraries\CardLayout::normalizeTemplate($skData->card_template ?? 'ocean');
+			$orientation = \App\Libraries\CardLayout::normalizeOrientation(
+				$skData->card_orientation ?: \App\Libraries\CardLayout::preferredOrientation($cardTemplate)
+			);
+			$data['background'] = $skData->card_background;
+			$data['card_layout'] = $skData->card_layout ?? null;
+			$data['main_color'] = $skData->main_color ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate);
+			$data['paint_color'] = $skData->paint_color ?: ($skData->main_color ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate));
+		}
 		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($skData);
 		$data['year'] = $this->data['academic_year'];
 		$data['theyear'] = $this->data['academic_year_title'];
@@ -1226,24 +1244,20 @@ public function testEmail()
 		$data['school_name'] = $skData->name;
 		$data['header1'] = $autoHeaders['header1'];
 		$data['header2'] = $autoHeaders['header2'];
-		$data['background'] = 'student_pass_template.png';
 		$data['header_color'] = $skData->header_color;
-		$data['main_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
-		$data['paint_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
 		$data['capitalize'] = $skData->capitalize;
 		$data['footer_color'] = $skData->footer_color;
 		$data['orientation'] = $orientation;
 		$data['headmaster_signature'] = $skData->headmaster_signature ?? '';
 		$data['head_master'] = $skData->head_master ?? '';
 		$data['card_template'] = $cardTemplate;
-		$data['card_layout'] = null;
 
 		$ids = implode(",", $safeIds);
 		$students = $stMdl->get_student_simple2("students.id in (" . $ids . ")");
-		// Photo required — card template includes circular photo.
+		// Wisdom pass PNGs need a circular photo; other templates keep prior behavior via smart view.
 		$printable = [];
 		foreach ((array) $students as $student) {
-			if (resolve_profile_photo($student['photo'] ?? '') !== null) {
+			if (!$useWisdomPass || resolve_profile_photo($student['photo'] ?? '') !== null) {
 				$printable[] = $student;
 			}
 		}
@@ -1252,15 +1266,15 @@ public function testEmail()
 		}
 		$data['students'] = $printable;
 
-		if (\App\Libraries\WisdomCardRenderer::isAvailable()) {
+		if ($useWisdomPass && \App\Libraries\WisdomCardRenderer::isAvailable()) {
 			try {
-				helper('qonics');
 				$renderer = new \App\Libraries\WisdomCardRenderer();
 				$jpegs = [];
 				foreach ($printable as $student) {
 					$jpeg = $renderer->renderJpeg($student, [
 						'logo' => $skData->logo ?? '',
 						'year' => $data['theyear'] ?? ($data['year'] ?? ''),
+						'template' => \App\Libraries\WisdomCardRenderer::templateForStudent($student),
 					]);
 					if (is_string($jpeg) && strlen($jpeg) > 100) {
 						$jpegs[] = $jpeg;

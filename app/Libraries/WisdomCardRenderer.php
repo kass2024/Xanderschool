@@ -3,20 +3,22 @@
 namespace App\Libraries;
 
 /**
- * Rasterize student ID cards onto the fixed Wisdom High School PNG template.
+ * Rasterize student ID cards onto Wisdom pass PNGs (high school or primary).
  * Photo (circle) + NAME / CLASS / ACADEMIC YEAR / ID NO overlays.
  * Output: 1712×1080 JPEG (20 px/mm CR80) for Cr80ImagePdf.
+ * Wisdom schools only — caller must gate with is_wisdom_school().
  */
 class WisdomCardRenderer
 {
 	public const W = 1712;
 	public const H = 1080;
 
-	/** Source artwork size (student_pass_template.png). */
+	/** Source artwork size (both pass templates are 1011×639). */
 	private const SRC_W = 1011;
 	private const SRC_H = 639;
 
 	public const TEMPLATE = 'assets/images/background/student_pass_template.png';
+	public const TEMPLATE_PRIMARY = 'assets/images/background/wisdom_primary_pass_template.png';
 
 	private const TEAL = [0, 130, 142];
 	private const NAVY = [4, 73, 107];
@@ -24,9 +26,18 @@ class WisdomCardRenderer
 	/** @var string */
 	private $font;
 
+	/** @var string Relative asset path for the current render. */
+	private $templateRel;
+
 	public function __construct(?string $fontPath = null)
 	{
 		$this->font = $fontPath ?: self::resolveFont();
+		$this->templateRel = self::TEMPLATE;
+	}
+
+	public static function templateForStudent(array $student): string
+	{
+		return CardLayout::isWisdomPrimaryStudent($student) ? self::TEMPLATE_PRIMARY : self::TEMPLATE;
 	}
 
 	public static function isAvailable(): bool
@@ -68,6 +79,11 @@ class WisdomCardRenderer
 		if ($photoPath === null) {
 			return null;
 		}
+
+		$forced = trim((string) ($ctx['template'] ?? ''));
+		$this->templateRel = $forced !== ''
+			? $forced
+			: self::templateForStudent($student);
 
 		$im = $this->baseFromTemplate();
 		if ($im === null) {
@@ -238,7 +254,10 @@ class WisdomCardRenderer
 	/** @return resource|\GdImage|null */
 	private function baseFromTemplate()
 	{
-		$path = $this->assetPath(self::TEMPLATE);
+		$path = $this->assetPath($this->templateRel ?: self::TEMPLATE);
+		if ($path === null && $this->templateRel === self::TEMPLATE_PRIMARY) {
+			$path = $this->assetPath(self::TEMPLATE);
+		}
 		if ($path === null) {
 			$path = $this->assetPath(CardLayout::WISDOM_CHROME);
 		}

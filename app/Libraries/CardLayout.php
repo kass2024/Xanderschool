@@ -338,14 +338,7 @@ class CardLayout
 	 */
 	public static function wisdomCardSchoolName(array $student): string
 	{
-		$hay = strtolower(trim(implode(' ', [
-			(string) ($student['faculty_title'] ?? ''),
-			(string) ($student['level_faculty_title'] ?? ''),
-			(string) ($student['dept_title'] ?? ''),
-			(string) ($student['level_title'] ?? ''),
-			(string) ($student['class'] ?? ''),
-		])));
-		$hay = preg_replace('/\s+/', ' ', $hay) ?? $hay;
+		$hay = self::wisdomStudentPathHaystack($student);
 		if (preg_match('/\b(nurs(?:e|ery|ary)|maternelle|baby|primary|primaire)\b/', $hay)) {
 			return 'WISDOM SCHOOL MUSANZE';
 		}
@@ -353,6 +346,32 @@ class CardLayout
 			return 'WISDOM SCHOOL MUSANZE';
 		}
 		return 'WISDOM HIGH SCHOOL';
+	}
+
+	/**
+	 * True for Wisdom primary (P1–P6) students — use primary pass PNG.
+	 * Nursery / secondary are excluded.
+	 */
+	public static function isWisdomPrimaryStudent(array $student): bool
+	{
+		$hay = self::wisdomStudentPathHaystack($student);
+		if (preg_match('/\b(nurs(?:e|ery|ary)|maternelle|baby\s*class|middle\s*class|top\s*class|\bn[1-3]\b)\b/', $hay)) {
+			return false;
+		}
+		return (bool) preg_match('/\b(primary|primaire|p[1-6])\b/', $hay);
+	}
+
+	/** @param array<string,mixed> $student */
+	private static function wisdomStudentPathHaystack(array $student): string
+	{
+		$hay = strtolower(trim(implode(' ', [
+			(string) ($student['faculty_title'] ?? ''),
+			(string) ($student['level_faculty_title'] ?? ''),
+			(string) ($student['dept_title'] ?? ''),
+			(string) ($student['level_title'] ?? ''),
+			(string) ($student['class'] ?? ''),
+		])));
+		return preg_replace('/\s+/', ' ', $hay) ?? $hay;
 	}
 
 	/** Mix a hex color with white (ratio 0..1, higher = lighter). */
