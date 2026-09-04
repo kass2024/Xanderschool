@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/student-materials.css') ?>?v=3">
+<link rel="stylesheet" href="<?= base_url('assets/css/student-materials.css') ?>?v=4">
 <link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>">
 
 <?php
@@ -16,11 +16,9 @@ if ($checkerPost !== '') {
 		<section class="smc-hero">
 			<div class="smc-hero-top">
 				<div>
-					<div class="smc-hero-kicker"><i class="fa fa-clipboard-check"></i> Supply desk</div>
 					<h4>Required material check</h4>
-					<p class="smc-hero-sub">Live-search any student, or pick a class. Every save is stamped with your staff post so accountants and the headmaster can see who checked.</p>
 				</div>
-				<div class="smc-actor-badge" title="Logged-in staff performing checks">
+				<div class="smc-actor-badge">
 					<span class="smc-actor-label">Checking as</span>
 					<strong><?= esc($checkerLabel) ?></strong>
 				</div>
@@ -29,8 +27,8 @@ if ($checkerPost !== '') {
 			<div class="smc-live-search">
 				<div class="smc-live-search-shell" id="smcFindShell">
 					<i class="fa fa-search" aria-hidden="true"></i>
-					<input type="search" id="smcFindQ" placeholder="Start typing a name or registration number…"
-						autocomplete="off" spellcheck="false" aria-label="Live search students">
+					<input type="search" id="smcFindQ" placeholder="Search name or reg no…"
+						autocomplete="off" spellcheck="false" aria-label="Search students">
 					<span class="smc-live-spin" id="smcFindSpin" aria-hidden="true"><i class="fa fa-circle-o-notch"></i></span>
 					<button type="button" class="smc-live-clear" id="smcFindClear" title="Clear" aria-label="Clear search">
 						<i class="fa fa-times"></i>
@@ -42,8 +40,6 @@ if ($checkerPost !== '') {
 
 		<?php if ($mentorOnly && !empty($classes)) : ?>
 			<div class="smc-scope-banner">
-				<i class="fa fa-info-circle"></i>
-				Class mentor mode — you can check materials only for:
 				<strong><?= esc(implode(', ', array_map(static function ($c) {
 					return trim(($c['level_name'] ?? '') . ' ' . ($c['title'] ?? ''));
 				}, $classes))); ?></strong>
@@ -56,7 +52,7 @@ if ($checkerPost !== '') {
 					'classes' => $classes,
 					'use_lang' => true,
 					'default_mode' => 'class',
-					'student_placeholder' => 'Type student name or reg no...',
+					'student_placeholder' => 'Name or reg no…',
 				]) ?>
 				<div class="smc-year-field mt-3">
 					<label for="smcYear"><?= lang('app.academicYear') ?></label>
@@ -76,15 +72,15 @@ if ($checkerPost !== '') {
 					<div class="smc-dash" id="smcDash" style="display:none;">
 						<div class="smc-dash-head">
 							<div>
-								<h2 id="smcDashTitle">Class overview</h2>
-								<p id="smcDashSub">Material supply status for all students</p>
+								<h2 id="smcDashTitle">—</h2>
+								<p id="smcDashSub"></p>
 							</div>
 							<div class="smc-dash-meta" id="smcDashMeta"></div>
 						</div>
 						<div class="smc-kpi-grid" id="smcClassKpi"></div>
 						<div class="smc-progress-card" id="smcClassProgress" style="display:none;">
 							<div class="smc-progress-head">
-								<span>Class completion rate</span>
+								<span>Completion</span>
 								<strong id="smcProgressPct">0%</strong>
 							</div>
 							<div class="smc-progress-bar"><div class="smc-progress-fill" id="smcProgressFill"></div></div>
@@ -94,7 +90,6 @@ if ($checkerPost !== '') {
 							<div class="smc-item-totals-head">
 								<div>
 									<h3><i class="fa fa-cubes"></i> Item totals</h3>
-									<p>Required vs brought for each material — by class and by hostel.</p>
 								</div>
 								<div class="smc-item-tabs">
 									<button type="button" class="smc-item-tab is-active" data-totals="class">By class</button>
@@ -111,8 +106,7 @@ if ($checkerPost !== '') {
 
 						<div class="smc-activity" id="smcActivity" style="display:none;">
 							<div class="smc-activity-head">
-								<h3><i class="fa fa-history"></i> Check activity</h3>
-								<p>Who saved material checks for this class (visible to accountant, headmaster, and managers).</p>
+								<h3><i class="fa fa-history"></i> Activity</h3>
 							</div>
 							<div id="smcActivityBody" class="smc-activity-body"></div>
 						</div>
@@ -123,7 +117,7 @@ if ($checkerPost !== '') {
 							<div class="smc-roster-head">
 								<div class="smc-roster-title-row">
 									<h3><i class="fa fa-users"></i> Students</h3>
-									<input type="search" class="form-control form-control-sm smc-roster-filter" id="smcRosterFilter" placeholder="Filter by name or reg no…" autocomplete="off">
+									<input type="search" class="form-control form-control-sm smc-roster-filter" id="smcRosterFilter" placeholder="Filter…" autocomplete="off">
 								</div>
 								<div class="smc-roster-filters" id="smcRosterFilters"></div>
 							</div>
@@ -149,8 +143,6 @@ if ($checkerPost !== '') {
 							<div class="smc-student-hero" id="smcStudentCard">
 								<div class="smc-student-empty">
 									<div class="smc-empty-icon"><i class="fa fa-clipboard-check"></i></div>
-									<h3>Ready to check materials</h3>
-									<p>Use live search above, select a class student, or scan a card.</p>
 								</div>
 							</div>
 
@@ -173,9 +165,8 @@ if ($checkerPost !== '') {
 								</div>
 								<div class="smc-actions">
 									<button type="button" class="btn btn-success btn-lg" id="smcSaveBtn">
-										<i class="fa fa-save"></i> Save material check
+										<i class="fa fa-save"></i> Save
 									</button>
-									<span class="smc-save-as" id="smcSaveAs">Will be recorded as <?= esc($checkerLabel) ?></span>
 								</div>
 							</div>
 						</section>
@@ -322,7 +313,7 @@ $(function () {
 			);
 		});
 		if (!n) {
-			$tb.html('<tr><td colspan="6" class="text-muted text-center py-4">No students match your filter.</td></tr>');
+			$tb.html('<tr><td colspan="6" class="text-muted text-center py-4">No matches</td></tr>');
 		}
 	}
 
@@ -357,9 +348,7 @@ $(function () {
 		currentStudent = null;
 		$('#smcStudentCard').removeClass('has-student').html(
 			'<div class="smc-student-empty">' +
-			'<div class="smc-empty-icon"><i class="fa fa-clipboard-check"></i></div>' +
-			'<h3>Ready to check materials</h3>' +
-			'<p>Use live search above, select a class student, or scan a card.</p></div>'
+			'<div class="smc-empty-icon"><i class="fa fa-clipboard-check"></i></div></div>'
 		);
 		$('#smcCheckSection').hide();
 		$('#smcLastCheck').hide().empty();
@@ -391,7 +380,7 @@ $(function () {
 
 	function renderItemTotalsTable(rows) {
 		if (!rows || !rows.length) {
-			return '<p class="text-muted mb-0">No required materials assigned to this class yet.</p>';
+			return '<p class="text-muted mb-0">No materials</p>';
 		}
 		let html = '<div class="smc-totals-table-wrap"><table class="table table-sm mb-0 smc-totals-table"><thead><tr>' +
 			'<th>Item</th><th class="text-right">Each</th><th class="text-right">Students</th>' +
@@ -419,7 +408,7 @@ $(function () {
 		if (itemTotalsView === 'hostel') {
 			const groups = classHostelTotals || [];
 			if (!groups.length) {
-				$body.html('<p class="text-muted mb-0">No hostel data for this class yet.</p>');
+				$body.html('<p class="text-muted mb-0">No hostel data</p>');
 			} else {
 				let html = '';
 				groups.forEach(function (g) {
@@ -443,7 +432,7 @@ $(function () {
 	function renderActivity(rows) {
 		const $box = $('#smcActivityBody');
 		if (!rows || !rows.length) {
-			$box.html('<p class="text-muted mb-0">No saved checks yet for this class.</p>');
+			$box.html('<p class="text-muted mb-0">No activity yet</p>');
 			$('#smcActivity').show();
 			return;
 		}
@@ -516,7 +505,7 @@ $(function () {
 			renderSmartReport(res.students || [], res.class_kpi || {}, res.materials || [], res.item_totals || [], res.hostel_totals || [], res.recent_activity || []);
 			showRoster(true);
 			clearStudent();
-			setScanStatus('Select a student from the list', 'ok');
+			setScanStatus('', 'ok');
 		}).fail(function () {
 			setScanStatus('Could not load class', 'err');
 		});
@@ -525,7 +514,7 @@ $(function () {
 	function renderChecklist(items, summary) {
 		const $tb = $('#smcMatTable tbody').empty();
 		if (!items.length) {
-			$tb.html('<tr><td colspan="5" class="text-muted text-center py-4">No materials assigned to this class. Configure them in School Settings.</td></tr>');
+			$tb.html('<tr><td colspan="5" class="text-muted text-center py-4">No materials</td></tr>');
 			$('#smcSummary').html('');
 			$('#smcCheckSection').show();
 			return;
@@ -638,6 +627,10 @@ $(function () {
 	}
 
 	function renderFindEmpty(msg) {
+		if (!msg) {
+			$('#smcFindResult').empty();
+			return;
+		}
 		$('#smcFindResult').html('<div class="smc-find-hint">' + esc(msg) + '</div>');
 	}
 
@@ -656,7 +649,7 @@ $(function () {
 		}
 		if (q.length < 2) {
 			setFindBusy(false);
-			renderFindEmpty('Keep typing… at least 2 characters.');
+			$box.empty();
 			return;
 		}
 		const seq = ++findSeq;
@@ -673,7 +666,7 @@ $(function () {
 			}
 			const rows = res.students || [];
 			if (!rows.length) {
-				renderFindEmpty('No students match “' + q + '”.');
+				renderFindEmpty('No matches');
 				return;
 			}
 			let html = '<ul class="smc-find-list">';
@@ -695,7 +688,7 @@ $(function () {
 			$box.html(html);
 		}).fail(function (_xhr, status) {
 			if (status === 'abort' || seq !== findSeq) return;
-			renderFindEmpty('Search failed. Try again.');
+			renderFindEmpty('Search failed');
 		}).always(function () {
 			if (seq === findSeq) {
 				setFindBusy(false);
