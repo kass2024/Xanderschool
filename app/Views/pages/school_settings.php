@@ -1247,6 +1247,22 @@
 			</div>
 		</div>
 
+		<div class="card ss-acc-item" id="hostels-settings">
+			<div id="headingHostels" class="b-radius-0 card-header">
+				<button type="button" data-toggle="collapse" data-target="#collapseHostels" aria-expanded="false"
+						aria-controls="collapseHostels" class="text-left m-0 p-0 btn btn-link btn-block">
+					<h5 class="m-0 p-0"><span class="ss-acc-ico"><i class="fa fa-bed"></i></span>Hostels</h5><i class="fa fa-chevron-down ss-acc-chevron"></i>
+				</button>
+			</div>
+			<div id="collapseHostels" data-parent="#accordion" class="collapse">
+				<div class="card-body">
+					<?= view('pages/partials/hostels_settings', [
+						'hostels' => $hostels ?? [],
+					]); ?>
+				</div>
+			</div>
+		</div>
+
 		<div class="card ss-acc-item" id="staff-attendance-settings">
 			<div id="headingStaffAttendance" class="b-radius-0 card-header">
 				<button type="button" data-toggle="collapse" data-target="#collapseStaffAttendance" aria-expanded="false"
@@ -3131,6 +3147,7 @@ $(document).on("click","#btn-remove-discipline",function () {
 		var hashMap = {
 			'#collapseOne2': '#collapseOne2',
 			'#student-required-materials': '#collapseStudentMaterials',
+			'#hostels-settings': '#collapseHostels',
 			'#staff-attendance-settings': '#collapseStaffAttendance',
 			'#student-inout-areas': '#collapseAttendanceAreas',
 			'#timetable-settings': '#collapseTimetable',

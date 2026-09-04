@@ -9,7 +9,7 @@ namespace Config;
 class MenuClearance
 {
 	/** Posts that always have full menu access (cannot be restricted). */
-	const FULL_ACCESS_POSTS = [1, 3, 18]; // Head master, Director of studies, Headmistress
+	const FULL_ACCESS_POSTS = [1, 3, 18, 25, 26]; // Head master, DoS, Headmistress, Head Teacher, Deputy Head Teacher
 
 	/**
 	 * Finance / budget role defaults (Level clearance + runtime filter).
@@ -20,11 +20,11 @@ class MenuClearance
 	 */
 	const FINANCE_FULL_CONTROL_POSTS = [24]; // Director of Finance
 	const CHILD_BUDGET_PREPARE_POSTS = [8, 9]; // Cashier, Accountant
-	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18]; // Head master, DOS, Dean of discipline, Principal, Headmistress
+	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26]; // Head master, DOS, Dean, Principal, Headmistress, Head Teacher, Deputy Head Teacher
 	/** Fees Entry + school/extra fee settings. */
 	const FEE_OPERATOR_POSTS = [8, 9, 24]; // Cashier, Accountant, Director of Finance
 	/** Fees report only (no entry, no settings, no SMS). */
-	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 15, 18];
+	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26];
 	/** Budget Dashboard “All branches” / cross-school rollup (master school only). */
 	const BUDGET_CROSS_BRANCH_DASHBOARD_POSTS = [15, 19, 24]; // Principal, Budget Manager, Director of Finance
 
@@ -317,6 +317,7 @@ class MenuClearance
 					['key' => 'student-photo', 'label' => 'Student Photo'],
 					['key' => 'assign-card', 'label' => 'Assign Card'],
 					['key' => 'student_material_check', 'label' => 'Required Material Check'],
+					['key' => 'hostel_allocate', 'label' => 'Hostel'],
 				],
 			],
 			[

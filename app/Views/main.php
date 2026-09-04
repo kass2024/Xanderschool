@@ -190,6 +190,14 @@
 											</a>
 										</li>
 										<?php } ?>
+										<?php if (menu_clearance_allowed('hostel_allocate')) { ?>
+										<li>
+											<a href="<?= base_url('hostel_allocate'); ?>">
+												<i class="metismenu-icon"></i>
+												Hostel
+											</a>
+										</li>
+										<?php } ?>
 									</ul>
 								</li>
 							<?php } ?>
@@ -2560,6 +2568,16 @@
 						</div>
 
 						<div id="feInvoiceWrap" style="display:none">
+							<div class="row fe-invoice-meta mb-2">
+								<div class="col-md-4">
+									<label><?= lang("app.term"); ?></label>
+									<select class="form-control" id="feInvoiceTerm">
+										<option value="1"<?= ((int) ($currentTerm ?? 1) === 1) ? ' selected' : ''; ?>><?= lang("app.firstTerm"); ?></option>
+										<option value="2"<?= ((int) ($currentTerm ?? 1) === 2) ? ' selected' : ''; ?>><?= lang("app.secondTerm"); ?></option>
+										<option value="3"<?= ((int) ($currentTerm ?? 1) === 3) ? ' selected' : ''; ?>><?= lang("app.thirdTerm"); ?></option>
+									</select>
+								</div>
+							</div>
 							<div class="fe-invoice-toolbar">
 								<button type="button" class="btn btn-sm btn-outline-primary" id="feInvSelectAll">
 									Select all
@@ -2609,6 +2627,11 @@
 								<div class="col-md-6">
 									<label><?= lang("app.dueDate"); ?></label>
 									<input type="date" name="dueDate" class="form-control" id="feInvoiceDueDate">
+								</div>
+								<div class="col-md-6 mt-3" id="fePromisedDateWrap" style="display:none">
+									<label>Promised payment date <span class="text-danger">*</span></label>
+									<input type="date" name="promisedDate" class="form-control" id="feInvoicePromisedDate">
+									<small class="text-muted">Required when paying less than full balance (installment).</small>
 								</div>
 								<div class="col-md-6 mt-3" id="feSlipRefWrap">
 									<label><?= lang("app.slipReference"); ?></label>

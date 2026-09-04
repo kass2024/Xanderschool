@@ -1,0 +1,115 @@
+/* Hostels — settings + allocation */
+
+.hst-settings .hst-intro,
+.hst-alloc-page .text-muted { font-size: 0.9rem; }
+
+.hst-card {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 14px;
+	padding: 16px 18px;
+	box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+	margin-bottom: 0;
+}
+
+.hst-card h6 {
+	font-weight: 700;
+	margin-bottom: 12px;
+	color: #0f172a;
+}
+
+.hst-add-form { margin-bottom: 14px; }
+
+.hst-gender-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+
+.hst-gender-m {
+	background: #e0f2fe;
+	color: #075985;
+}
+
+.hst-gender-f {
+	background: #fce7f3;
+	color: #9d174d;
+}
+
+.hst-alloc-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-end;
+	gap: 16px;
+	margin-bottom: 16px;
+	flex-wrap: wrap;
+}
+
+.hst-year-pick { min-width: 180px; }
+
+.hst-occ-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-height: 420px;
+	overflow-y: auto;
+}
+
+.hst-occ-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	text-align: left;
+	border: 1px solid #e2e8f0;
+	background: #f8fafc;
+	border-radius: 10px;
+	padding: 10px 12px;
+	cursor: pointer;
+}
+
+.hst-occ-item.is-active,
+.hst-occ-item:hover {
+	border-color: #38bdf8;
+	background: #f0f9ff;
+}
+
+.hst-occ-name {
+	flex: 1;
+	font-weight: 600;
+	color: #0f172a;
+}
+
+.hst-occ-beds {
+	font-size: 0.85rem;
+	color: #475569;
+	white-space: nowrap;
+}
+
+.hst-resident-list {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	max-height: 260px;
+	overflow-y: auto;
+}
+
+.hst-resident-list li {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 6px 0;
+	border-bottom: 1px solid #f1f5f9;
+	font-size: 0.9rem;
+}
+
+.hst-auto-result {
+	margin-top: 12px;
+	padding: 10px 12px;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	font-size: 0.9rem;
+}

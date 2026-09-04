@@ -2224,6 +2224,9 @@ public function testEmail()
 		$matSchema = new \App\Models\StudentMaterialSchemaModel();
 		$matSchema->ensureSchema();
 		$data['required_materials'] = $matSchema->listMaterials($schoolId, true);
+		$hostelSchema = new \App\Models\HostelSchemaModel();
+		$hostelSchema->ensureSchema();
+		$data['hostels'] = $hostelSchema->listHostels($schoolId, true);
 		$areaMdl = new AttendanceAreaModel();
 		$data['attendance_areas'] = $areaMdl->listAreas($schoolId, true);
 		HeyStarDeviceStore::ensureSchema();
@@ -15170,6 +15173,261 @@ public function getApplicationDocs($id = null)
 		$saved = $matSchema->saveClassAssignmentsForClasses($school_id, $classIds, $year, $items);
 		$label = $saved === 1 ? '1 class' : ($saved . ' classes');
 		return $this->response->setJSON(['success' => "Material assignment saved for $label."]);
+	}
+
+	public function manipulate_hostel()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$mdl = new \App\Models\HostelSchemaModel();
+		$mdl->ensureSchema();
+		$action = (string) $this->request->getPost('action');
+		if ($action === 'add') {
+			$name = trim((string) $this->request->getPost('name'));
+			$maxBeds = max(1, (int) $this->request->getPost('max_beds'));
+			$gender = $mdl->normalizeGender((string) $this->request->getPost('gender'));
+			if ($name === '') {
+				return $this->response->setJSON(['error' => 'Hostel name is required.']);
+			}
+			foreach ($mdl->listHostels($schoolId, true) as $row) {
+				if (strcasecmp(trim((string) ($row['name'] ?? '')), $name) === 0) {
+					return $this->response->setJSON(['error' => 'That hostel name already exists.']);
+				}
+			}
+			$id = $mdl->insert([
+				'school_id' => $schoolId,
+				'name' => $name,
+				'max_beds' => $maxBeds,
+				'gender' => $gender,
+				'sort_order' => 0,
+				'active' => 1,
+			]);
+			if (!$id) {
+				return $this->response->setJSON(['error' => 'Could not add hostel.']);
+			}
+			return $this->response->setJSON([
+				'success' => 'Hostel added.',
+				'hostel' => [
+					'id' => (int) $id,
+					'name' => $name,
+					'max_beds' => $maxBeds,
+					'gender' => $gender,
+				],
+			]);
+		}
+		if ($action === 'delete') {
+			$id = (int) $this->request->getPost('id');
+			$row = $mdl->where('school_id', $schoolId)->find($id);
+			if (!$row) {
+				return $this->response->setJSON(['error' => 'Hostel not found.']);
+			}
+			$year = (int) ($this->data['academic_year'] ?? 0);
+			$db = \Config\Database::connect();
+			$db->table('hostel_allocations')
+				->where('school_id', $schoolId)
+				->where('hostel_id', $id)
+				->delete();
+			$mdl->update($id, ['active' => 0]);
+			return $this->response->setJSON(['success' => 'Hostel removed.']);
+		}
+		return $this->response->setJSON(['error' => 'Unknown action.']);
+	}
+
+	public function hostel_allocate()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$mdl = new \App\Models\HostelSchemaModel();
+		$mdl->ensureSchema();
+		$year = (int) ($this->request->getGet('year') ?: ($this->data['academic_year'] ?? 0));
+		$data = $this->data;
+		$data['title'] = 'Hostel allocation';
+		$data['page'] = 'hostel_allocate';
+		$data['academic_year_id'] = $year;
+		$data['years'] = (new AcademicYearModel())->select('id,title')->where('school_id', $schoolId)
+			->orderBy('id', 'DESC')->get()->getResultArray();
+		$data['hostels'] = $mdl->listHostelsWithOccupancy($schoolId, $year);
+		$classMdl = new ClassesModel();
+		$data['classes'] = $classMdl->select('classes.id,classes.title,d.id as department_id,d.code as dept_code,l.title as level_name')
+			->join('departments d', 'd.id=classes.department', 'left')
+			->join('levels l', 'l.id=classes.level', 'left')
+			->where('classes.school_id', $schoolId)
+			->orderBy('l.title', 'ASC')
+			->orderBy('classes.title', 'ASC')
+			->get()->getResultArray();
+		$db = \Config\Database::connect();
+		$data['departments'] = $db->table('departments d')
+			->select('d.id, d.title, d.code')
+			->join('classes c', 'c.department = d.id')
+			->where('c.school_id', $schoolId)
+			->groupBy('d.id, d.title, d.code')
+			->orderBy('d.code', 'ASC')
+			->orderBy('d.title', 'ASC')
+			->get()->getResultArray();
+		$data['content'] = view('pages/hostel_allocate', $data);
+		return view('main', $data);
+	}
+
+	public function hostel_candidates()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->request->getGet('year') ?: ($this->data['academic_year'] ?? 0));
+		$mdl = new \App\Models\HostelSchemaModel();
+		$rows = $mdl->listBoardingCandidates($schoolId, $year);
+		$out = [];
+		foreach ($rows as $r) {
+			$out[] = [
+				'id' => (int) $r['id'],
+				'regno' => (string) ($r['regno'] ?? ''),
+				'fname' => (string) ($r['fname'] ?? ''),
+				'lname' => (string) ($r['lname'] ?? ''),
+				'sex' => (string) ($r['sex'] ?? ''),
+				'level_name' => (string) ($r['level_name'] ?? ''),
+				'class_title' => (string) ($r['class_title'] ?? ''),
+				'hostel_name' => (string) ($r['hostel_name'] ?? ''),
+			];
+		}
+		return $this->response->setJSON(['success' => true, 'students' => $out]);
+	}
+
+	public function hostel_assign()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$staffId = (int) ($this->session->get('soma_id') ?? 0);
+		$studentId = (int) $this->request->getPost('student_id');
+		$hostelId = (int) $this->request->getPost('hostel_id');
+		$year = (int) ($this->request->getPost('year') ?: ($this->data['academic_year'] ?? 0));
+		$mdl = new \App\Models\HostelSchemaModel();
+		$res = $mdl->allocateStudent($schoolId, $hostelId, $studentId, $year, $staffId);
+		if (!$res['ok']) {
+			return $this->response->setJSON(['error' => $res['error'] ?? 'Allocation failed.']);
+		}
+		return $this->response->setJSON(['success' => 'Student allocated to hostel.']);
+	}
+
+	public function hostel_assign_class()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$staffId = (int) ($this->session->get('soma_id') ?? 0);
+		$classId = (int) $this->request->getPost('class_id');
+		$hostelId = (int) $this->request->getPost('hostel_id');
+		$year = (int) ($this->request->getPost('year') ?: ($this->data['academic_year'] ?? 0));
+		if ($classId <= 0 || $hostelId <= 0) {
+			return $this->response->setJSON(['error' => 'Select class and hostel.']);
+		}
+		$mdl = new \App\Models\HostelSchemaModel();
+		$candidates = $mdl->listBoardingCandidates($schoolId, $year, $classId, null, false);
+		$ok = 0;
+		$fail = 0;
+		$daySkipped = 0;
+		$errors = [];
+		foreach ($candidates as $st) {
+			$res = $mdl->allocateStudent($schoolId, $hostelId, (int) $st['id'], $year, $staffId);
+			if ($res['ok']) {
+				$ok++;
+			} else {
+				$fail++;
+				$msg = $res['error'] ?? 'failed';
+				if (stripos($msg, 'Day students') !== false) {
+					$daySkipped++;
+				} else {
+					$errors[] = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? '')) . ': ' . $msg;
+				}
+			}
+		}
+		return $this->response->setJSON([
+			'success' => "Allocated $ok boarding student(s). Failed: $fail.",
+			'allocated' => $ok,
+			'failed' => $fail,
+			'errors' => array_slice($errors, 0, 20),
+		]);
+	}
+
+	public function hostel_auto_allocate()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$staffId = (int) ($this->session->get('soma_id') ?? 0);
+		$year = (int) ($this->request->getPost('year') ?: ($this->data['academic_year'] ?? 0));
+		$classId = (int) $this->request->getPost('class_id');
+		$deptId = (int) $this->request->getPost('department_id');
+		$mdl = new \App\Models\HostelSchemaModel();
+		$result = $mdl->autoAllocate(
+			$schoolId,
+			$year,
+			$staffId,
+			$classId > 0 ? $classId : null,
+			$deptId > 0 ? $deptId : null
+		);
+		return $this->response->setJSON([
+			'success' => 'Auto-allocated ' . $result['allocated'] . ' boarding student(s). Skipped: ' . $result['skipped'] . '.',
+			'allocated' => $result['allocated'],
+			'skipped' => $result['skipped'],
+			'errors' => $result['errors'],
+		]);
+	}
+
+	public function hostel_unassign()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$studentId = (int) $this->request->getPost('student_id');
+		$year = (int) ($this->request->getPost('year') ?: ($this->data['academic_year'] ?? 0));
+		$mdl = new \App\Models\HostelSchemaModel();
+		$mdl->unallocateStudent($schoolId, $studentId, $year);
+		return $this->response->setJSON(['success' => 'Student removed from hostel.']);
+	}
+
+	public function hostel_residents()
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return $this->response->setJSON(['error' => 'Access denied.']);
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$hostelId = (int) $this->request->getGet('hostel_id');
+		$year = (int) ($this->request->getGet('year') ?: ($this->data['academic_year'] ?? 0));
+		$mdl = new \App\Models\HostelSchemaModel();
+		$rows = $mdl->listHostelResidents($schoolId, $hostelId, $year);
+		$out = [];
+		foreach ($rows as $r) {
+			$out[] = [
+				'id' => (int) $r['id'],
+				'regno' => (string) ($r['regno'] ?? ''),
+				'fname' => (string) ($r['fname'] ?? ''),
+				'lname' => (string) ($r['lname'] ?? ''),
+				'sex' => (string) ($r['sex'] ?? ''),
+			];
+		}
+		return $this->response->setJSON(['success' => true, 'students' => $out]);
 	}
 
 	public function manipulate_attendance_area()
