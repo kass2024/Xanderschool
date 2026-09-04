@@ -82,6 +82,9 @@ class WisdomCardRenderer
 		$fullName = $this->upper(trim((string) ($student['name'] ?? ($student['stdnames'] ?? ''))));
 		$classLabel = $this->upper(trim((string) ($student['class'] ?? '')));
 		$year = $this->upper(CardLayout::formatAcademicYear((string) ($ctx['year'] ?? '')));
+		// Keep year as 2026/2027 — drop trailing term suffix if present.
+		$year = preg_replace('#/+TERM\s*\d*$#i', '', $year) ?? $year;
+		$year = rtrim($year, '/');
 		$idNo = trim((string) ($student['regno'] ?? ''));
 		if ($idNo === '') {
 			$idNo = trim((string) ($student['card'] ?? ''));
@@ -95,12 +98,148 @@ class WisdomCardRenderer
 		return $im;
 	}
 
+	/**
+	 * Detect the inner photo hole on the already-scaled card canvas.
+	 * Returns [cx, cy, diameter] in output pixels.
+	 *
+	 * @param resource|\GdImage $im
+	 * @return array{0:int,1:int,2:int}
+	 */
+	private function detectPhotoHole($im): array
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		$guessCx = (int) round($w * 0.205);
+		$y0 = (int) round($h * 0.35);
+		$y1 = (int) round($h * 0.72);
+
+		$bestW = 0;
+		$bestY = (int) round($h * 0.54);
+		$bestL = 0;
+		$bestR = 0;
+		for ($y = $y0; $y < $y1; $y++) {
+			$l = $guessCx;
+			while ($l > (int) ($w * 0.04) && !$this->isTealRingPixel($im, $l, $y)) {
+				$l--;
+			}
+			$r = $guessCx;
+			while ($r < (int) ($w * 0.42) && !$this->isTealRingPixel($im, $r, $y)) {
+				$r++;
+			}
+			if (!$this->isTealRingPixel($im, $l, $y) || !$this->isTealRingPixel($im, $r, $y)) {
+				continue;
+			}
+			$l++;
+			$r--;
+			$span = $r - $l + 1;
+			// Photo hole: left edge inside left slab, right edge before ID banner.
+			if ($span > $bestW && $l > (int) ($w * 0.07) && $l < (int) ($w * 0.12) && $r > (int) ($w * 0.28) && $r < (int) ($w * 0.36)) {
+				$bestW = $span;
+				$bestY = $y;
+				$bestL = $l;
+				$bestR = $r;
+			}
+		}
+
+		if ($bestW < 100) {
+			// Fallback measured on 1011×639 artwork.
+			return [$this->sx(207.3), $this->sy(353), $this->sx(266)];
+		}
+
+		$cx = (int) round(($bestL + $bestR) / 2);
+		// Refine cy: equal chord widths above/below equator.
+		$target = (int) round($bestW * 0.92);
+		$yTop = $bestY;
+		$yBot = $bestY;
+		for ($y = $bestY; $y >= $y0; $y--) {
+			$span = $this->holeSpanAt($im, $cx, $y, $w);
+			if ($span < $target) {
+				$yTop = $y;
+				break;
+			}
+		}
+		for ($y = $bestY; $y < $y1; $y++) {
+			$span = $this->holeSpanAt($im, $cx, $y, $w);
+			if ($span < $target) {
+				$yBot = $y;
+				break;
+			}
+		}
+		$cy = (int) round(($yTop + $yBot) / 2);
+		// Template ring sits slightly below the widest chord midpoint.
+		$cy += (int) round($bestW * 0.025);
+		// Oversized so photo tucks under the teal ring (covers white inner stroke).
+		$d = (int) round($bestW * 1.10);
+		return [$cx, $cy, max(2, $d)];
+	}
+
+	/** @param resource|\GdImage $im */
+	private function isTealRingPixel($im, int $x, int $y): bool
+	{
+		$rgb = imagecolorat($im, $x, $y);
+		$r = ($rgb >> 16) & 0xFF;
+		$g = ($rgb >> 8) & 0xFF;
+		$b = $rgb & 0xFF;
+		return $r <= 25 && $g >= 105 && $g <= 160 && $b >= 115 && $b <= 175;
+	}
+
+	/** @param resource|\GdImage $im */
+	private function holeSpanAt($im, int $cx, int $y, int $w): int
+	{
+		$l = $cx;
+		while ($l > (int) ($w * 0.04) && !$this->isTealRingPixel($im, $l, $y)) {
+			$l--;
+		}
+		$r = $cx;
+		while ($r < (int) ($w * 0.42) && !$this->isTealRingPixel($im, $r, $y)) {
+			$r++;
+		}
+		if (!$this->isTealRingPixel($im, $l, $y) || !$this->isTealRingPixel($im, $r, $y)) {
+			return 0;
+		}
+		return ($r - 1) - ($l + 1) + 1;
+	}
+
+	/**
+	 * @param resource|\GdImage $im
+	 */
+	private function pastePhoto($im, string $path, int $teal): void
+	{
+		[$cx, $cy, $d] = $this->detectPhotoHole($im);
+
+		$src = $this->loadImage($path);
+		if (!$src) {
+			return;
+		}
+		$square = $this->coverSquare($src, max(2, $d), 0.22);
+		imagedestroy($src);
+		if (!$square) {
+			return;
+		}
+
+		// Opaque circle paint — truecolor RGB ints (no imagecolorallocate / alpha gaps).
+		$r = $d / 2.0;
+		$r2 = $r * $r;
+		$x0 = $cx - (int) ($d / 2);
+		$y0 = $cy - (int) ($d / 2);
+		for ($yy = 0; $yy < $d; $yy++) {
+			$dy = $yy + 0.5 - $r;
+			for ($xx = 0; $xx < $d; $xx++) {
+				$dx = $xx + 0.5 - $r;
+				if (($dx * $dx + $dy * $dy) > $r2) {
+					continue;
+				}
+				imagesetpixel($im, $x0 + $xx, $y0 + $yy, imagecolorat($square, $xx, $yy) & 0xFFFFFF);
+			}
+		}
+		imagedestroy($square);
+	}
+
 	/** @return resource|\GdImage|null */
 	private function baseFromTemplate()
 	{
 		$path = $this->assetPath(self::TEMPLATE);
 		if ($path === null) {
-			// Fallback to older chrome asset if present
 			$path = $this->assetPath(CardLayout::WISDOM_CHROME);
 		}
 		if ($path === null) {
@@ -130,51 +269,76 @@ class WisdomCardRenderer
 	}
 
 	/**
-	 * @param resource|\GdImage $im
-	 */
-	private function pastePhoto($im, string $path, int $teal): void
-	{
-		// Measured on 1011×639 artwork
-		$cx = $this->sx(179.5);
-		$cy = $this->sy(299.5);
-		$d = $this->sx(248);
-		$ring = $this->sx(14);
-
-		$src = $this->loadImage($path);
-		if (!$src) {
-			return;
-		}
-		$circle = $this->coverCircle($src, $d + 4, 0.28);
-		imagedestroy($src);
-		if (!$circle) {
-			return;
-		}
-
-		imagefilledellipse($im, $cx, $cy, $d + $ring * 2, $d + $ring * 2, $teal);
-		$cd = imagesx($circle);
-		imagecopy($im, $circle, $cx - (int) ($cd / 2), $cy - (int) ($cd / 2), 0, 0, $cd, $cd);
-		imagedestroy($circle);
-	}
-
-	/**
-	 * Fill values next to baked-in NAME / CLASS / ACADEMIC YEAR labels.
+	 * Wipe template sample labels/values and redraw aligned "LABEL : VALUE" rows.
 	 *
 	 * @param resource|\GdImage $im
 	 */
 	private function drawFieldValues($im, string $name, string $class, string $year, int $navy): void
 	{
+		// Clear full info block (labels + values) on the white card face.
+		$clearX = $this->sx(360);
+		$clearY = $this->sy(320);
+		$clearW = $this->sx(620);
+		$clearH = $this->sy(130);
+		$bg = imagecolorallocate($im, 248, 248, 248);
+		imagefilledrectangle($im, $clearX, $clearY, $clearX + $clearW, $clearY + $clearH, $bg);
+
+		$labelX = $this->sx(368);
+		// Colon column after longest label "ACADEMIC YEAR".
+		$colonX = $this->sx(560);
+		$valueX = $this->sx(575);
+		$valueW = $this->sx(400);
 		$rowH = $this->sy(36);
+		$labelSize = 22.0;
+
 		$rows = [
-			// [y, valueX, valueW, text] — valueX clears each baked-in label
-			[$this->sy(332), $this->sx(480), $this->sx(490), $name !== '' ? $name : '—'],
-			[$this->sy(372), $this->sx(490), $this->sx(480), $class !== '' ? $class : '—'],
-			[$this->sy(412), $this->sx(600), $this->sx(370), $year !== '' ? $year : '—'],
+			[$this->sy(328), 'NAME', $name !== '' ? $name : '—'],
+			[$this->sy(368), 'CLASS', $class !== '' ? $class : '—'],
+			[$this->sy(408), 'ACADEMIC YEAR', $year !== '' ? $year : '—'],
 		];
 		foreach ($rows as $row) {
-			[$y, $valueX, $valueW, $val] = $row;
-			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.72), 36, 14);
+			[$y, $label, $val] = $row;
+			$this->drawText($im, $label, $labelSize, $labelX, $y, $this->sx(200), $rowH, $navy, 'left');
+			$this->drawText($im, ':', $labelSize, $colonX, $y, $this->sx(20), $rowH, $navy, 'left');
+			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.78), 28, 12);
 			$this->drawText($im, $val, $size, $valueX, $y, $valueW, $rowH, $navy, 'left');
 		}
+	}
+
+	/**
+	 * Cover-crop to an opaque square for reliable circle painting.
+	 * Slight zoom so the subject fills the circle (less backdrop crescent).
+	 *
+	 * @param resource|\GdImage $src
+	 * @return resource|\GdImage|null
+	 */
+	private function coverSquare($src, int $size, float $biasY)
+	{
+		$sw = imagesx($src);
+		$sh = imagesy($src);
+		if ($sw < 2 || $sh < 2) {
+			return null;
+		}
+		if ($sw >= $sh) {
+			$side = $sh;
+			$sx = (int) max(0, ($sw - $sh) / 2);
+			$sy = 0;
+		} else {
+			$side = $sw;
+			$sx = 0;
+			$sy = (int) max(0, ($sh - $sw) * $biasY);
+		}
+		$side = max(1, min($side, $sw - $sx, $sh - $sy));
+		// Zoom ~28% into the cover square so faces fill the ring better.
+		$zoom = 0.72;
+		$crop = max(1, (int) round($side * $zoom));
+		$sx += (int) round(($side - $crop) / 2);
+		$sy += (int) round(($side - $crop) * 0.35);
+		$sx = max(0, min($sx, $sw - $crop));
+		$sy = max(0, min($sy, $sh - $crop));
+		$sq = imagecreatetruecolor($size, $size);
+		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $crop, $crop);
+		return $sq;
 	}
 
 	/**
@@ -285,11 +449,11 @@ class WisdomCardRenderer
 	{
 		$m = $this->measure($size, $text);
 		$tx = $align === 'center'
-			? $x + (int) round(($w - $m['w']) / 2) - $m['box'][0]
-			: $x - $m['box'][0];
-		$ty = $y + (int) round(($h + ($m['box'][1] - $m['box'][7])) / 2) - $m['box'][1];
-		// Baseline: center vertically using box height
-		$ty = $y + (int) round(($h - ($m['box'][1] + $m['box'][7])) / 2);
+			? $x + (int) round(($w - $m['w']) / 2) - (int) $m['box'][0]
+			: $x - (int) $m['box'][0];
+		// imagettftext Y is baseline: center glyph box inside [y, y+h]
+		$textH = max(1, $m['h']);
+		$ty = $y + (int) round(($h - $textH) / 2) + (int) abs($m['box'][7]);
 		imagettftext($im, $size, 0, $tx, $ty, $color, $this->font, $text);
 	}
 
