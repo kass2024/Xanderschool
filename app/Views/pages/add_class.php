@@ -137,7 +137,9 @@
 			}
 			titleOldHtml = titleSp.html();
 			titleId = titleSp.data('id');
-			titleSp.html("<input type='text' class='form-control form-control-sm class-title-input' value='" + String(titleVal).replace(/'/g, '&#39;') + "'>");
+			var editVal = String(titleVal);
+			if (editVal === '-----') editVal = '';
+			titleSp.html("<input type='text' class='form-control form-control-sm class-title-input' value='" + editVal.replace(/'/g, '&#39;') + "' placeholder='Optional (e.g. A, B)'>");
 			titleSp.find('.class-title-input').focus().select();
 		});
 
@@ -150,20 +152,25 @@
 			if (e.type === 'keydown') e.preventDefault();
 
 			var $input = $(this);
+			if ($input.data('saving')) return;
 			var val = $.trim($input.val());
-			if (val === titleVal) {
+			var prev = String(titleVal == null ? '' : titleVal).trim();
+			// Empty and ----- are the same "cleared" title in the list view.
+			var sameCleared = (val === '' || val === '-----') && (prev === '' || prev === '-----');
+			if (val === prev || sameCleared) {
 				titleSp.html(titleOldHtml);
 				return;
 			}
-			if (val === '') {
-				titleSp.html(titleOldHtml);
-				if (window.toastada) toastada.error('Class title cannot be empty');
-				return;
-			}
-			titleSp.html('&nbsp;' + $('<div>').text(val).html());
-			titleSp.data('value', val);
-			$.post("<?= base_url('manipulateClassChanges'); ?>", { key: titleId, value: val, field: 'title' })
+			$input.data('saving', true);
+			var display = (val === '' || val === '-----') ? '-----' : val;
+			var saveVal = (val === '-----') ? '' : val;
+			titleSp.html('&nbsp;' + $('<div>').text(display).html());
+			titleSp.data('value', display);
+			$.post("<?= base_url('manipulateClassChanges'); ?>", { key: titleId, value: saveVal, field: 'title' })
 				.done(function (res) {
+					var shown = (res && res.display_title) ? res.display_title : display;
+					titleSp.html('&nbsp;' + $('<div>').text(shown).html());
+					titleSp.data('value', shown);
 					if (window.toastada) toastada.success(res.success);
 					else if (typeof toastMsg === 'function') toastMsg(1, res.success);
 				})

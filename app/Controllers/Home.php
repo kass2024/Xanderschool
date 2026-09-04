@@ -19916,48 +19916,61 @@ public function assign_card()
 	public
 	function manipulateClassChanges(): Response
 	{
-		$this->_preset();
-		$Mdl = new ClassesModel();
-		$class = (int) $this->request->getPost("key");
-		$value = $this->request->getPost("value");
-		$field = trim((string) $this->request->getPost("field"));
-		if ($class <= 0) {
-			return $this->response->setStatusCode(400)->setJSON(["error" => "Invalid class"]);
-		}
-		if ($field === 'mentor') {
-			$mentorId = (int) $value;
-			if ($mentorId <= 0) {
-				return $this->response->setStatusCode(400)->setJSON(["error" => "Select a staff member"]);
-			}
-			$staff = (new StaffModel())->where('id', $mentorId)
-				->where('school_id', (int) $this->session->get('soma_school_id'))
-				->get(1)->getRowArray();
-			if (!$staff) {
-				return $this->response->setStatusCode(400)->setJSON(["error" => "Staff not found in this school"]);
-			}
-			$data = [
-				"id" => $class,
-				"mentor" => $mentorId,
-				"updated_by" => (int) $this->session->get('soma_id'),
-			];
-			$successMsg = "Class mentor updated to " . trim($staff['fname'] . ' ' . $staff['lname']);
-		} else {
-			$title = trim((string) $value);
-			if ($title === '') {
-				return $this->response->setStatusCode(400)->setJSON(["error" => "Class title cannot be empty"]);
-			}
-			$data = [
-				"id" => $class,
-				"title" => $title,
-				"updated_by" => (int) $this->session->get('soma_id'),
-			];
-			$successMsg = "Class title updated";
-		}
 		try {
-			$Mdl->save($data);
-			return $this->response->setJSON(["success" => $successMsg]);
-		} catch (\Exception $e) {
-			return $this->response->setStatusCode(400)->setJSON(["error" => "Error: " . $e->getMessage()]);
+			$this->_preset();
+			$Mdl = new ClassesModel();
+			$class = (int) $this->request->getPost("key");
+			$value = $this->request->getPost("value");
+			$field = trim((string) $this->request->getPost("field"));
+			$schoolId = (int) $this->session->get('soma_school_id');
+			if ($class <= 0) {
+				return $this->response->setStatusCode(400)->setJSON(["error" => "Invalid class"]);
+			}
+			$existing = $Mdl->where('id', $class)->where('school_id', $schoolId)->get(1)->getRowArray();
+			if (!$existing) {
+				return $this->response->setStatusCode(400)->setJSON(["error" => "Class not found"]);
+			}
+			if ($field === 'mentor') {
+				$mentorId = (int) $value;
+				if ($mentorId <= 0) {
+					return $this->response->setStatusCode(400)->setJSON(["error" => "Select a staff member"]);
+				}
+				$staff = (new StaffModel())->where('id', $mentorId)
+					->where('school_id', $schoolId)
+					->get(1)->getRowArray();
+				if (!$staff) {
+					return $this->response->setStatusCode(400)->setJSON(["error" => "Staff not found in this school"]);
+				}
+				$data = [
+					"id" => $class,
+					"mentor" => $mentorId,
+					"updated_by" => (int) $this->session->get('soma_id'),
+				];
+				$successMsg = "Class mentor updated to " . trim($staff['fname'] . ' ' . $staff['lname']);
+				$payloadExtra = ["title" => (string) ($existing['title'] ?? ''), "display_title" => ((string) ($existing['title'] ?? '') === '' ? '-----' : (string) $existing['title'])];
+			} else {
+				// Empty title is allowed (shown as ----- in class list).
+				$title = trim((string) $value);
+				if ($title === '-----') {
+					$title = '';
+				}
+				$data = [
+					"id" => $class,
+					"title" => $title,
+					"updated_by" => (int) $this->session->get('soma_id'),
+				];
+				$successMsg = $title === '' ? "Class title cleared" : "Class title updated";
+				$payloadExtra = ["title" => $title, "display_title" => ($title === '' ? '-----' : $title)];
+			}
+			if ($Mdl->save($data) === false) {
+				$errors = $Mdl->errors();
+				$msg = is_array($errors) && $errors ? implode('; ', $errors) : 'Could not save class changes';
+				return $this->response->setStatusCode(400)->setJSON(["error" => $msg]);
+			}
+			return $this->response->setJSON(array_merge(["success" => $successMsg], $payloadExtra));
+		} catch (\Throwable $e) {
+			log_message('error', 'manipulateClassChanges: ' . $e->getMessage());
+			return $this->response->setStatusCode(400)->setJSON(["error" => "Could not save class changes"]);
 		}
 	}
 
