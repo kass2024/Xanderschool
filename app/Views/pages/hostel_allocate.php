@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=2">
 
 <?php
 $hostels = $hostels ?? [];
@@ -6,82 +6,118 @@ $classes = $classes ?? [];
 $departments = $departments ?? [];
 $years = $years ?? [];
 $yearId = (int) ($academic_year_id ?? 0);
+
+$totalBeds = 0;
+$totalOcc = 0;
+$totalFree = 0;
+foreach ($hostels as $h) {
+	$totalBeds += (int) ($h['max_beds'] ?? 0);
+	$totalOcc += (int) ($h['occupied'] ?? 0);
+	$totalFree += (int) ($h['free_beds'] ?? 0);
+}
 ?>
 
 <div class="hst-alloc-page" id="hstAllocPage">
-	<div class="hst-alloc-head">
-		<div>
-			<h4 class="mb-1"><i class="fa fa-bed"></i> Hostel allocation</h4>
-			<p class="text-muted mb-0">Allocate boarding students only. Day scholars cannot be assigned to a hostel.</p>
-		</div>
-		<div class="hst-year-pick">
-			<label class="small font-weight-bold mb-0">Academic year</label>
-			<select class="form-control form-control-sm" id="hstYear">
-				<?php foreach ($years as $yr) : ?>
-					<option value="<?= (int) $yr['id']; ?>" <?= (int) $yr['id'] === $yearId ? 'selected' : ''; ?>>
-						<?= esc($yr['title']); ?>
-					</option>
-				<?php endforeach; ?>
-			</select>
-		</div>
-	</div>
-
-	<div class="hst-card mb-3 hst-search-card">
-		<h6><i class="fa fa-search"></i> Find student (class &amp; hostel)</h6>
-		<p class="text-muted small mb-2">Search any student in the school by name or registration number for the selected academic year.</p>
-		<div class="form-row align-items-end">
-			<div class="col-md-9">
-				<label class="small font-weight-bold">Student</label>
-				<input type="search" class="form-control form-control-sm" id="hstFindQ"
-					placeholder="Type name or regno…" autocomplete="off">
+	<section class="hst-hero">
+		<div class="hst-hero-top">
+			<div>
+				<div class="hst-hero-kicker"><i class="fa fa-bed"></i> Boarding housing</div>
+				<h4>Hostel allocation</h4>
+				<p class="hst-hero-sub">Live-search any student to see class and hostel. Allocate boarding students only — day scholars stay unassigned.</p>
 			</div>
-			<div class="col-md-3">
-				<button type="button" class="btn btn-primary btn-sm btn-block" id="hstFindBtn">
-					<i class="fa fa-search"></i> Search
+			<div class="hst-year-pick">
+				<label for="hstYear">Academic year</label>
+				<select class="form-control form-control-sm" id="hstYear">
+					<?php foreach ($years as $yr) : ?>
+						<option value="<?= (int) $yr['id']; ?>" <?= (int) $yr['id'] === $yearId ? 'selected' : ''; ?>>
+							<?= esc($yr['title']); ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+		</div>
+
+		<?php if (!empty($hostels)) : ?>
+			<div class="hst-stat-row">
+				<div class="hst-stat-chip"><strong><?= count($hostels); ?></strong> hostels</div>
+				<div class="hst-stat-chip"><strong><?= (int) $totalOcc; ?></strong> / <?= (int) $totalBeds; ?> beds used</div>
+				<div class="hst-stat-chip"><strong><?= (int) $totalFree; ?></strong> free</div>
+			</div>
+		<?php endif; ?>
+
+		<div class="hst-live-search">
+			<div class="hst-live-search-shell" id="hstFindShell">
+				<i class="fa fa-search" aria-hidden="true"></i>
+				<input type="search" id="hstFindQ" placeholder="Start typing a name or registration number…"
+					autocomplete="off" spellcheck="false" aria-label="Live search students">
+				<span class="hst-live-spin" id="hstFindSpin" aria-hidden="true"><i class="fa fa-circle-o-notch"></i></span>
+				<button type="button" class="hst-live-clear" id="hstFindClear" title="Clear" aria-label="Clear search">
+					<i class="fa fa-times"></i>
 				</button>
 			</div>
+			<div id="hstFindResult" class="hst-find-result" aria-live="polite"></div>
 		</div>
-		<div id="hstFindResult" class="hst-find-result" style="display:none;"></div>
-	</div>
+	</section>
 
-	<div class="row">
-		<div class="col-lg-4">
-			<div class="hst-card">
-				<h6><i class="fa fa-building"></i> Hostels occupancy</h6>
-				<div id="hstOccList" class="hst-occ-list">
-					<?php if (empty($hostels)) : ?>
-						<p class="text-muted mb-0">No hostels configured. Add them in <strong>Settings → Hostels</strong>.</p>
-					<?php else : ?>
-						<?php foreach ($hostels as $h) : ?>
-							<button type="button" class="hst-occ-item" data-id="<?= (int) $h['id']; ?>">
-								<span class="hst-occ-name"><?= esc($h['name']); ?></span>
-								<span class="hst-gender-badge hst-gender-<?= strtoupper((string) $h['gender']) === 'F' ? 'f' : 'm'; ?>">
-									<?= strtoupper((string) $h['gender']) === 'F' ? 'Female' : 'Male'; ?>
-								</span>
-								<span class="hst-occ-beds"><?= (int) ($h['occupied'] ?? 0); ?> / <?= (int) $h['max_beds']; ?></span>
-							</button>
-						<?php endforeach; ?>
-					<?php endif; ?>
-				</div>
-				<div id="hstResidents" class="hst-residents" style="display:none;">
-					<h6 class="mt-3">Residents</h6>
-					<div id="hstResidentsBody" class="hst-residents-body"></div>
-				</div>
+	<div class="hst-grid">
+		<aside class="hst-card">
+			<div class="hst-panel-head">
+				<h6 class="hst-panel-title mb-0"><i class="fa fa-building-o"></i> Hostels</h6>
 			</div>
-		</div>
+			<div id="hstOccList" class="hst-occ-list">
+				<?php if (empty($hostels)) : ?>
+					<p class="text-muted mb-0">No hostels configured. Add them in <strong>Settings → Hostels</strong>.</p>
+				<?php else : ?>
+					<?php foreach ($hostels as $h) :
+						$occ = (int) ($h['occupied'] ?? 0);
+						$max = max(1, (int) ($h['max_beds'] ?? 1));
+						$pct = min(100, (int) round(($occ / $max) * 100));
+						$gender = strtoupper((string) ($h['gender'] ?? 'M')) === 'F' ? 'F' : 'M';
+						?>
+						<button type="button" class="hst-occ-item" data-id="<?= (int) $h['id']; ?>" data-gender="<?= $gender; ?>">
+							<div class="hst-occ-top">
+								<span class="hst-occ-name"><?= esc($h['name']); ?></span>
+								<span class="hst-gender-badge hst-gender-<?= $gender === 'F' ? 'f' : 'm'; ?>">
+									<?= $gender === 'F' ? 'Female' : 'Male'; ?>
+								</span>
+								<span class="hst-occ-beds"><?= $occ; ?> / <?= (int) $h['max_beds']; ?></span>
+							</div>
+							<div class="hst-occ-meter" aria-hidden="true"><span style="width:<?= $pct; ?>%"></span></div>
+						</button>
+					<?php endforeach; ?>
+				<?php endif; ?>
+			</div>
 
-		<div class="col-lg-8">
-			<div class="hst-card mb-3">
-				<h6><i class="fa fa-user-plus"></i> Allocate one student</h6>
+			<div id="hstResidents" class="hst-residents" style="display:none;">
+				<div class="hst-residents-title">
+					<h6>Residents</h6>
+					<span id="hstResidentsCount"></span>
+				</div>
+				<div id="hstResidentsBody" class="hst-residents-body"></div>
+			</div>
+		</aside>
+
+		<section class="hst-card hst-tools">
+			<div class="hst-panel-head">
+				<h6 class="hst-panel-title mb-0"><i class="fa fa-sliders"></i> Allocate</h6>
+			</div>
+
+			<div class="hst-tabs" role="tablist">
+				<button type="button" class="hst-tab is-active" data-tab="one">One student</button>
+				<button type="button" class="hst-tab" data-tab="class">By class</button>
+				<button type="button" class="hst-tab" data-tab="auto">Auto fill</button>
+			</div>
+
+			<div class="hst-tab-pane is-active" id="hstPaneOne" data-pane="one">
 				<div class="form-row align-items-end">
-					<div class="col-md-5">
-						<label class="small font-weight-bold">Student (boarding only)</label>
+					<div class="col-md-5 mb-2 mb-md-0">
+						<label class="hst-field-label" for="hstOneStudent">Student (boarding)</label>
 						<select class="form-control form-control-sm select2" id="hstOneStudent" data-placeholder="Search boarding student…">
 							<option value=""></option>
 						</select>
 					</div>
-					<div class="col-md-4">
-						<label class="small font-weight-bold">Hostel</label>
+					<div class="col-md-4 mb-2 mb-md-0">
+						<label class="hst-field-label" for="hstOneHostel">Hostel</label>
 						<select class="form-control form-control-sm" id="hstOneHostel">
 							<option value="">Select hostel…</option>
 							<?php foreach ($hostels as $h) : ?>
@@ -92,18 +128,17 @@ $yearId = (int) ($academic_year_id ?? 0);
 						</select>
 					</div>
 					<div class="col-md-3">
-						<button type="button" class="btn btn-primary btn-sm btn-block" id="hstOneAssign">
+						<button type="button" class="hst-btn hst-btn-primary" id="hstOneAssign">
 							<i class="fa fa-check"></i> Allocate
 						</button>
 					</div>
 				</div>
 			</div>
 
-			<div class="hst-card mb-3">
-				<h6><i class="fa fa-users"></i> Allocate by class</h6>
+			<div class="hst-tab-pane" id="hstPaneClass" data-pane="class">
 				<div class="form-row align-items-end">
-					<div class="col-md-5">
-						<label class="small font-weight-bold">Class</label>
+					<div class="col-md-5 mb-2 mb-md-0">
+						<label class="hst-field-label" for="hstClassSelect">Class</label>
 						<select class="form-control form-control-sm select2" id="hstClassSelect">
 							<option value="">Select class…</option>
 							<?php foreach ($classes as $cl) : ?>
@@ -113,8 +148,8 @@ $yearId = (int) ($academic_year_id ?? 0);
 							<?php endforeach; ?>
 						</select>
 					</div>
-					<div class="col-md-4">
-						<label class="small font-weight-bold">Hostel</label>
+					<div class="col-md-4 mb-2 mb-md-0">
+						<label class="hst-field-label" for="hstClassHostel">Hostel</label>
 						<select class="form-control form-control-sm" id="hstClassHostel">
 							<option value="">Select hostel…</option>
 							<?php foreach ($hostels as $h) : ?>
@@ -125,20 +160,19 @@ $yearId = (int) ($academic_year_id ?? 0);
 						</select>
 					</div>
 					<div class="col-md-3">
-						<button type="button" class="btn btn-primary btn-sm btn-block" id="hstClassAssign">
+						<button type="button" class="hst-btn hst-btn-primary" id="hstClassAssign">
 							<i class="fa fa-check"></i> Allocate class
 						</button>
 					</div>
 				</div>
-				<p class="text-muted small mt-2 mb-0">Only boarding students in the class are allocated; day scholars are skipped.</p>
+				<p class="hst-tool-note">Only boarding students in the class are allocated; day scholars are skipped.</p>
 			</div>
 
-			<div class="hst-card">
-				<h6><i class="fa fa-magic"></i> Auto-allocate boarding students</h6>
-				<p class="text-muted small">Fills free beds by gender. Optionally limit by department or class. Already allocated students are left unchanged.</p>
+			<div class="hst-tab-pane" id="hstPaneAuto" data-pane="auto">
+				<p class="hst-tool-note mt-0 mb-3">Fills free beds by gender. Optionally limit by department or class. Already allocated students stay unchanged.</p>
 				<div class="form-row align-items-end">
-					<div class="col-md-4">
-						<label class="small font-weight-bold">Department (optional)</label>
+					<div class="col-md-4 mb-2 mb-md-0">
+						<label class="hst-field-label" for="hstAutoDept">Department</label>
 						<select class="form-control form-control-sm" id="hstAutoDept">
 							<option value="0">All departments</option>
 							<?php foreach ($departments as $d) : ?>
@@ -148,8 +182,8 @@ $yearId = (int) ($academic_year_id ?? 0);
 							<?php endforeach; ?>
 						</select>
 					</div>
-					<div class="col-md-4">
-						<label class="small font-weight-bold">Class (optional)</label>
+					<div class="col-md-4 mb-2 mb-md-0">
+						<label class="hst-field-label" for="hstAutoClass">Class</label>
 						<select class="form-control form-control-sm select2" id="hstAutoClass">
 							<option value="0">All classes</option>
 							<?php foreach ($classes as $cl) : ?>
@@ -160,14 +194,14 @@ $yearId = (int) ($academic_year_id ?? 0);
 						</select>
 					</div>
 					<div class="col-md-4">
-						<button type="button" class="btn btn-success btn-sm btn-block" id="hstAutoRun">
+						<button type="button" class="hst-btn hst-btn-accent" id="hstAutoRun">
 							<i class="fa fa-bolt"></i> Auto allocate
 						</button>
 					</div>
 				</div>
 				<div id="hstAutoResult" class="hst-auto-result" style="display:none;"></div>
 			</div>
-		</div>
+		</section>
 	</div>
 </div>
 
@@ -182,6 +216,9 @@ $yearId = (int) ($academic_year_id ?? 0);
 		];
 	}, $hostels), JSON_UNESCAPED_UNICODE); ?>;
 	var currentHostelId = 0;
+	var findTimer = null;
+	var findReq = null;
+	var findSeq = 0;
 
 	function toast(msg, ok) {
 		if (typeof toastr !== 'undefined') {
@@ -200,8 +237,7 @@ $yearId = (int) ($academic_year_id ?? 0);
 	}
 
 	function reloadPage() {
-		var y = yearId();
-		window.location = '<?= base_url('hostel_allocate'); ?>?year=' + y;
+		window.location = '<?= base_url('hostel_allocate'); ?>?year=' + yearId();
 	}
 
 	function sameGenderHostels(fromId) {
@@ -226,71 +262,131 @@ $yearId = (int) ($academic_year_id ?? 0);
 		return $.trim([s.level_name, s.dept_code, s.class_title].filter(Boolean).join(' '));
 	}
 
-	$('#hstYear').on('change', reloadPage);
-
-	if ($.fn.select2) {
-		$('#hstOneStudent, #hstClassSelect, #hstAutoClass').select2({ width: '100%', allowClear: true, placeholder: 'Select…' });
+	function setFindBusy(on) {
+		$('#hstFindSpin').toggleClass('is-on', !!on);
 	}
 
-	var findTimer = null;
-	function runStudentFind() {
+	function syncFindClear() {
+		var has = $.trim($('#hstFindQ').val() || '').length > 0;
+		$('#hstFindClear').toggleClass('is-on', has);
+	}
+
+	function renderFindEmpty(msg) {
+		$('#hstFindResult').html('<div class="hst-find-hint">' + esc(msg) + '</div>');
+	}
+
+	function runStudentFind(immediate) {
 		var q = $.trim($('#hstFindQ').val() || '');
 		var $box = $('#hstFindResult');
-		if (q.length < 2) {
-			$box.html('<p class="text-muted mb-0">Type at least 2 characters.</p>').show();
+		syncFindClear();
+
+		if (findReq && findReq.abort) {
+			findReq.abort();
+			findReq = null;
+		}
+
+		if (q.length === 0) {
+			setFindBusy(false);
+			$box.empty();
 			return;
 		}
-		$box.html('<p class="text-muted mb-0">Searching…</p>').show();
-		$.getJSON('<?= base_url('hostel_student_search'); ?>', { year: yearId(), q: q }).done(function (res) {
+		if (q.length < 2) {
+			setFindBusy(false);
+			renderFindEmpty('Keep typing… at least 2 characters.');
+			return;
+		}
+
+		var seq = ++findSeq;
+		setFindBusy(true);
+		findReq = $.ajax({
+			url: '<?= base_url('hostel_student_search'); ?>',
+			dataType: 'json',
+			data: { year: yearId(), q: q }
+		}).done(function (res) {
+			if (seq !== findSeq) {
+				return;
+			}
 			if (res.error) {
-				$box.html('<p class="text-danger mb-0">' + esc(res.error) + '</p>');
+				renderFindEmpty(res.error);
 				return;
 			}
 			var rows = res.students || [];
 			if (!rows.length) {
-				$box.html('<p class="text-muted mb-0">No students found.</p>');
+				renderFindEmpty('No students match “' + q + '”.');
 				return;
 			}
 			var html = '<ul class="hst-find-list">';
 			rows.forEach(function (s) {
-				var name = $.trim((s.regno ? s.regno + ' — ' : '') + (s.fname || '') + ' ' + (s.lname || ''));
+				var name = $.trim((s.fname || '') + ' ' + (s.lname || ''));
+				var regno = s.regno || '';
 				var cls = s.class_label || 'No class';
-				var hostel = s.hostel_name
-					? s.hostel_name
-					: (parseInt(s.studying_mode, 10) === 0 ? 'Not allocated' : 'No hostel (day)');
+				var isBoard = parseInt(s.studying_mode, 10) === 0;
+				var hostelPill;
+				if (s.hostel_name) {
+					hostelPill = '<span class="hst-pill hst-pill-hostel"><i class="fa fa-bed"></i> ' + esc(s.hostel_name) + '</span>';
+				} else if (isBoard) {
+					hostelPill = '<span class="hst-pill hst-pill-empty"><i class="fa fa-exclamation-circle"></i> Not allocated</span>';
+				} else {
+					hostelPill = '<span class="hst-pill hst-pill-day"><i class="fa fa-sun-o"></i> Day scholar</span>';
+				}
 				html += '<li>' +
 					'<div class="hst-find-main">' +
-						'<span class="hst-find-name">' + esc(name) + '</span>' +
-						'<span class="hst-find-meta">Class: <strong>' + esc(cls) + '</strong></span>' +
-						'<span class="hst-find-meta">Hostel: <strong>' + esc(hostel) + '</strong>' +
-							(s.mode_label ? ' · ' + esc(s.mode_label) : '') + '</span>' +
+						'<span class="hst-find-name">' + esc(name) +
+							(regno ? ' <span style="font-weight:500;color:#64748b">· ' + esc(regno) + '</span>' : '') +
+						'</span>' +
+						'<div class="hst-find-pills">' +
+							'<span class="hst-pill"><i class="fa fa-graduation-cap"></i> ' + esc(cls) + '</span>' +
+							hostelPill +
+							(s.mode_label ? '<span class="hst-pill">' + esc(s.mode_label) + '</span>' : '') +
+						'</div>' +
 					'</div>' +
 					(s.hostel_id
-						? '<button type="button" class="btn btn-link btn-sm hst-find-goto" data-hostel="' + s.hostel_id + '">Open</button>'
+						? '<button type="button" class="hst-find-goto" data-hostel="' + s.hostel_id + '">Open hostel</button>'
 						: '') +
 				'</li>';
 			});
 			html += '</ul>';
 			$box.html(html);
-		}).fail(function () {
-			$box.html('<p class="text-danger mb-0">Search failed.</p>');
+		}).fail(function (xhr, status) {
+			if (status === 'abort' || seq !== findSeq) {
+				return;
+			}
+			renderFindEmpty('Search failed. Try again.');
+		}).always(function () {
+			if (seq === findSeq) {
+				setFindBusy(false);
+				findReq = null;
+			}
 		});
 	}
 
-	$('#hstFindBtn').on('click', runStudentFind);
-	$('#hstFindQ').on('keydown', function (e) {
-		if (e.key === 'Enter' || e.keyCode === 13) {
-			e.preventDefault();
-			runStudentFind();
-		}
-	}).on('input', function () {
+	function scheduleFind() {
 		clearTimeout(findTimer);
 		findTimer = setTimeout(function () {
-			var q = $.trim($('#hstFindQ').val() || '');
-			if (q.length >= 2) {
-				runStudentFind();
+			runStudentFind(false);
+		}, 180);
+	}
+
+	$('#hstYear').on('change', reloadPage);
+
+	$('#hstFindQ')
+		.on('focus', function () { $('#hstFindShell').addClass('is-focused'); })
+		.on('blur', function () { $('#hstFindShell').removeClass('is-focused'); })
+		.on('input', scheduleFind)
+		.on('keydown', function (e) {
+			if (e.key === 'Escape' || e.keyCode === 27) {
+				$('#hstFindQ').val('');
+				syncFindClear();
+				$('#hstFindResult').empty();
+				setFindBusy(false);
 			}
-		}, 350);
+		});
+
+	$('#hstFindClear').on('click', function () {
+		$('#hstFindQ').val('').focus();
+		syncFindClear();
+		$('#hstFindResult').empty();
+		setFindBusy(false);
 	});
 
 	$(document).on('click', '.hst-find-goto', function () {
@@ -301,9 +397,25 @@ $yearId = (int) ($academic_year_id ?? 0);
 		var $item = $('.hst-occ-item[data-id="' + hid + '"]');
 		if ($item.length) {
 			$item.trigger('click');
-			$('html, body').animate({ scrollTop: $item.offset().top - 80 }, 250);
+			$('html, body').animate({ scrollTop: Math.max(0, $item.offset().top - 90) }, 280);
 		}
 	});
+
+	$('.hst-tab').on('click', function () {
+		var tab = $(this).data('tab');
+		$('.hst-tab').removeClass('is-active');
+		$(this).addClass('is-active');
+		$('.hst-tab-pane').removeClass('is-active');
+		$('.hst-tab-pane[data-pane="' + tab + '"]').addClass('is-active');
+	});
+
+	if ($.fn.select2) {
+		$('#hstOneStudent, #hstClassSelect, #hstAutoClass').select2({
+			width: '100%',
+			allowClear: true,
+			placeholder: 'Select…'
+		});
+	}
 
 	function loadCandidates() {
 		$.getJSON('<?= base_url('hostel_candidates'); ?>', { year: yearId() }).done(function (res) {
@@ -379,10 +491,10 @@ $yearId = (int) ($academic_year_id ?? 0);
 				toast(res.error, false);
 				return;
 			}
-			var html = '<strong>' + (res.success || 'Done') + '</strong>';
+			var html = '<strong>' + esc(res.success || 'Done') + '</strong>';
 			if (res.errors && res.errors.length) {
 				html += '<ul class="mb-0 mt-2">' + res.errors.map(function (e) {
-					return '<li>' + $('<div>').text(e).html() + '</li>';
+					return '<li>' + esc(e) + '</li>';
 				}).join('') + '</ul>';
 			}
 			$('#hstAutoResult').html(html).show();
@@ -398,9 +510,12 @@ $yearId = (int) ($academic_year_id ?? 0);
 		currentHostelId = id;
 		$('.hst-occ-item').removeClass('is-active');
 		$(this).addClass('is-active');
+		$('#hstResidentsBody').html('<p class="text-muted mb-0">Loading…</p>');
+		$('#hstResidents').show();
 		$.getJSON('<?= base_url('hostel_residents'); ?>', { hostel_id: id, year: yearId() }).done(function (res) {
 			var rows = res.students || [];
 			var moves = sameGenderHostels(id);
+			$('#hstResidentsCount').text(rows.length + (rows.length === 1 ? ' student' : ' students'));
 			var html = '';
 			if (!rows.length) {
 				html = '<p class="text-muted mb-0">No residents yet.</p>';
@@ -434,7 +549,6 @@ $yearId = (int) ($academic_year_id ?? 0);
 				html += '</ul>';
 			}
 			$('#hstResidentsBody').html(html);
-			$('#hstResidents').show();
 		});
 	});
 
