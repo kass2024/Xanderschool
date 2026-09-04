@@ -1,13 +1,32 @@
 <?php
 /** @var array $hostels */
+/** @var array $hostel_settings */
 $hostels = $hostels ?? [];
+$hostelSettings = $hostel_settings ?? ['separate_by_level' => false];
+$separateByLevel = !empty($hostelSettings['separate_by_level']);
 ?>
-<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=3">
 
 <div class="hst-settings" id="hstSettings">
 	<p class="text-muted hst-intro">
 		Create hostels with a name, maximum beds, and gender (Male or Female). Only boarding students can later be allocated to these hostels.
 	</p>
+
+	<div class="hst-card mb-3">
+		<h6><i class="fa fa-shield"></i> Allocation rules</h6>
+		<p class="text-muted small mb-3">
+			Control whether students from different school levels (Nursery, Primary, O Level, A Level, ANP, etc.) may share the same hostel.
+		</p>
+		<label class="hst-rule-toggle <?= $separateByLevel ? 'is-on' : ''; ?>" id="hstLevelRuleLabel">
+			<input type="checkbox" id="hstSeparateByLevel" <?= $separateByLevel ? 'checked' : ''; ?>>
+			<span class="hst-rule-switch" aria-hidden="true"></span>
+			<span class="hst-rule-copy">
+				<strong>Keep levels separate in each hostel</strong>
+				<small>When ON, a Primary student cannot be placed with A Level / O Level / Nursery / ANP (or any other different level) in the same hostel. When OFF, mixing is allowed.</small>
+			</span>
+		</label>
+		<div id="hstRuleSaveMsg" class="hst-rule-msg" style="display:none;"></div>
+	</div>
 
 	<div class="hst-card">
 		<h6><i class="fa fa-bed"></i> Hostel catalog</h6>
@@ -93,6 +112,30 @@ $hostels = $hostels ?? [];
 		$tb.find('.hst-empty-row').remove();
 		return $tb;
 	}
+
+	function saveLevelRule() {
+		var on = $('#hstSeparateByLevel').is(':checked');
+		$('#hstLevelRuleLabel').toggleClass('is-on', on);
+		var $msg = $('#hstRuleSaveMsg');
+		$msg.text('Saving…').removeClass('is-ok is-err').show();
+		$.post('<?= base_url('manipulate_hostel'); ?>', {
+			action: 'save_settings',
+			separate_by_level: on ? 1 : 0
+		}).done(function (res) {
+			if (res.error) {
+				$msg.text(res.error).addClass('is-err');
+				toast(res.error, false);
+				return;
+			}
+			$msg.text(res.success || 'Rule saved.').addClass('is-ok');
+			toast(res.success || 'Rule saved.', true);
+		}).fail(function () {
+			$msg.text('Could not save rule.').addClass('is-err');
+			toast('Could not save rule.', false);
+		});
+	}
+
+	$('#hstSeparateByLevel').on('change', saveLevelRule);
 
 	$('#hstAddForm').on('submit', function (e) {
 		e.preventDefault();

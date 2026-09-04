@@ -1258,6 +1258,7 @@
 				<div class="card-body">
 					<?= view('pages/partials/hostels_settings', [
 						'hostels' => $hostels ?? [],
+						'hostel_settings' => $hostel_settings ?? ['separate_by_level' => false],
 					]); ?>
 				</div>
 			</div>

@@ -2227,6 +2227,7 @@ public function testEmail()
 		$hostelSchema = new \App\Models\HostelSchemaModel();
 		$hostelSchema->ensureSchema();
 		$data['hostels'] = $hostelSchema->listHostels($schoolId, true);
+		$data['hostel_settings'] = $hostelSchema->getSchoolSettings($schoolId);
 		$areaMdl = new AttendanceAreaModel();
 		$data['attendance_areas'] = $areaMdl->listAreas($schoolId, true);
 		HeyStarDeviceStore::ensureSchema();
@@ -15230,6 +15231,16 @@ public function getApplicationDocs($id = null)
 			$mdl->update($id, ['active' => 0]);
 			return $this->response->setJSON(['success' => 'Hostel removed.']);
 		}
+		if ($action === 'save_settings') {
+			$separate = (int) $this->request->getPost('separate_by_level') === 1;
+			$mdl->saveSchoolSettings($schoolId, ['separate_by_level' => $separate]);
+			return $this->response->setJSON([
+				'success' => $separate
+					? 'Levels will be kept separate in each hostel.'
+					: 'Level mixing in hostels is now allowed.',
+				'settings' => ['separate_by_level' => $separate],
+			]);
+		}
 		return $this->response->setJSON(['error' => 'Unknown action.']);
 	}
 
@@ -15251,6 +15262,7 @@ public function getApplicationDocs($id = null)
 		$data['years'] = (new AcademicYearModel())->select('id,title')->where('school_id', $schoolId)
 			->orderBy('id', 'DESC')->get()->getResultArray();
 		$data['hostels'] = $mdl->listHostelsWithOccupancy($schoolId, $year);
+		$data['hostel_settings'] = $mdl->getSchoolSettings($schoolId);
 		$classMdl = new ClassesModel();
 		$data['classes'] = $classMdl->select('classes.id,classes.title,d.id as department_id,d.code as dept_code,l.title as level_name')
 			->join('departments d', 'd.id=classes.department', 'left')

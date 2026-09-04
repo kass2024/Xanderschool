@@ -59,7 +59,153 @@ class HostelSchemaModel extends Model
 			KEY `idx_ha_year` (`school_id`, `academic_year`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+		$db->query("CREATE TABLE IF NOT EXISTS `hostel_settings` (
+			`school_id` INT UNSIGNED NOT NULL,
+			`separate_by_level` TINYINT(1) NOT NULL DEFAULT 0,
+			`updated_at` DATETIME NULL DEFAULT NULL,
+			PRIMARY KEY (`school_id`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 		self::$schemaReady = true;
+	}
+
+	/**
+	 * @return array{separate_by_level:bool}
+	 */
+	public function getSchoolSettings(int $schoolId): array
+	{
+		$this->ensureSchema();
+		$db = \Config\Database::connect();
+		$row = $db->table('hostel_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
+		return [
+			'separate_by_level' => (int) ($row['separate_by_level'] ?? 0) === 1,
+		];
+	}
+
+	public function saveSchoolSettings(int $schoolId, array $settings): void
+	{
+		$this->ensureSchema();
+		$db = \Config\Database::connect();
+		$payload = [
+			'school_id' => $schoolId,
+			'separate_by_level' => !empty($settings['separate_by_level']) ? 1 : 0,
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		$exists = $db->table('hostel_settings')->where('school_id', $schoolId)->countAllResults();
+		if ($exists) {
+			$db->table('hostel_settings')->where('school_id', $schoolId)->update($payload);
+		} else {
+			$db->table('hostel_settings')->insert($payload);
+		}
+	}
+
+	/**
+	 * Active class level for a student in a year.
+	 *
+	 * @return array{level_id:int,level_title:string}|null
+	 */
+	public function getStudentLevel(int $schoolId, int $studentId, int $yearId): ?array
+	{
+		$db = \Config\Database::connect();
+		$row = $db->table('class_records cr')
+			->select('l.id AS level_id, l.title AS level_title')
+			->join('classes c', 'c.id = cr.class')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('students s', 's.id = cr.student')
+			->where('cr.student', $studentId)
+			->where('cr.year', $yearId)
+			->where('cr.status', 1)
+			->where('s.school_id', $schoolId)
+			->orderBy('cr.id', 'DESC')
+			->get(1)->getRowArray();
+		if (!$row || empty($row['level_id'])) {
+			return null;
+		}
+		return [
+			'level_id' => (int) $row['level_id'],
+			'level_title' => (string) ($row['level_title'] ?? ''),
+		];
+	}
+
+	/**
+	 * Distinct levels already living in a hostel for the year.
+	 *
+	 * @return list<array{level_id:int,level_title:string}>
+	 */
+	public function getHostelResidentLevels(int $schoolId, int $hostelId, int $yearId): array
+	{
+		$db = \Config\Database::connect();
+		$rows = $db->table('hostel_allocations ha')
+			->select('l.id AS level_id, l.title AS level_title')
+			->join('students s', 's.id = ha.student_id')
+			->join(
+				'class_records cr',
+				'cr.student = s.id AND cr.year = ' . (int) $yearId . ' AND cr.status = 1',
+				'left'
+			)
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('ha.school_id', $schoolId)
+			->where('ha.hostel_id', $hostelId)
+			->where('ha.academic_year', $yearId)
+			->where('l.id IS NOT NULL', null, false)
+			->groupBy('l.id, l.title')
+			->orderBy('l.title', 'ASC')
+			->get()->getResultArray();
+
+		$out = [];
+		foreach ($rows as $row) {
+			$lid = (int) ($row['level_id'] ?? 0);
+			if ($lid > 0) {
+				$out[] = [
+					'level_id' => $lid,
+					'level_title' => (string) ($row['level_title'] ?? ''),
+				];
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @return array{ok:bool,error?:string}
+	 */
+	public function assertLevelCompatible(
+		int $schoolId,
+		int $hostelId,
+		int $studentId,
+		int $yearId
+	): array {
+		$settings = $this->getSchoolSettings($schoolId);
+		if (empty($settings['separate_by_level'])) {
+			return ['ok' => true];
+		}
+
+		$studentLevel = $this->getStudentLevel($schoolId, $studentId, $yearId);
+		if ($studentLevel === null) {
+			return ['ok' => true];
+		}
+
+		$residentLevels = $this->getHostelResidentLevels($schoolId, $hostelId, $yearId);
+		if ($residentLevels === []) {
+			return ['ok' => true];
+		}
+
+		foreach ($residentLevels as $lvl) {
+			if ((int) $lvl['level_id'] !== (int) $studentLevel['level_id']) {
+				$names = array_values(array_unique(array_map(static function ($r) {
+					return (string) ($r['level_title'] ?? '');
+				}, $residentLevels)));
+				$names = array_values(array_filter($names));
+				$hostelLevels = $names !== [] ? implode(', ', $names) : 'another level';
+				$studentTitle = $studentLevel['level_title'] !== '' ? $studentLevel['level_title'] : 'this level';
+				return [
+					'ok' => false,
+					'error' => "Level mixing is blocked: this hostel already has {$hostelLevels} students. "
+						. "Cannot add a {$studentTitle} student. Change the setting in Settings → Hostels to allow mixing.",
+				];
+			}
+		}
+		return ['ok' => true];
 	}
 
 	public function listHostels(int $schoolId, bool $activeOnly = true): array
@@ -94,6 +240,13 @@ class HostelSchemaModel extends Model
 			$h['occupied'] = $byId[$hid] ?? 0;
 			$h['free_beds'] = max(0, (int) $h['max_beds'] - $h['occupied']);
 			$h['gender_label'] = strtoupper((string) $h['gender']) === 'F' ? 'Female' : 'Male';
+			$levels = $this->getHostelResidentLevels($schoolId, $hid, $yearId);
+			$h['resident_levels'] = $levels;
+			$h['level_label'] = $levels === []
+				? ''
+				: implode(', ', array_values(array_unique(array_map(static function ($l) {
+					return (string) ($l['level_title'] ?? '');
+				}, $levels))));
 		}
 		unset($h);
 		return $hostels;
@@ -194,6 +347,11 @@ class HostelSchemaModel extends Model
 		$willOccupyNew = !$existing || (int) $existing['hostel_id'] !== $hostelId;
 		if ($willOccupyNew && $occupied >= (int) $hostel['max_beds']) {
 			return ['ok' => false, 'error' => 'Hostel is full (max ' . (int) $hostel['max_beds'] . ' beds).'];
+		}
+
+		$levelCheck = $this->assertLevelCompatible($schoolId, $hostelId, $studentId, $yearId);
+		if (!$levelCheck['ok']) {
+			return ['ok' => false, 'error' => $levelCheck['error'] ?? 'Level mixing is not allowed in this hostel.'];
 		}
 
 		$now = date('Y-m-d H:i:s');
@@ -300,14 +458,20 @@ class HostelSchemaModel extends Model
 	): array {
 		$candidates = $this->listBoardingCandidates($schoolId, $yearId, $classId, $departmentId, true);
 		$hostels = $this->listHostelsWithOccupancy($schoolId, $yearId);
+		$separateLevels = !empty($this->getSchoolSettings($schoolId)['separate_by_level']);
 
 		$pools = ['M' => [], 'F' => []];
 		foreach ($hostels as $h) {
 			$g = $this->normalizeGender((string) $h['gender']);
+			$levelIds = [];
+			foreach (($h['resident_levels'] ?? []) as $lvl) {
+				$levelIds[] = (int) ($lvl['level_id'] ?? 0);
+			}
 			$pools[$g][] = [
 				'id' => (int) $h['id'],
 				'name' => (string) $h['name'],
 				'free' => (int) $h['free_beds'],
+				'level_ids' => array_values(array_filter($levelIds)),
 			];
 		}
 
@@ -317,31 +481,75 @@ class HostelSchemaModel extends Model
 
 		foreach ($candidates as $st) {
 			$sex = $this->normalizeStudentSex($st['sex'] ?? '');
+			$name = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? ''));
 			if ($sex !== 'M' && $sex !== 'F') {
 				$skipped++;
-				$errors[] = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? '')) . ': missing or unrecognized gender';
+				$errors[] = $name . ': missing or unrecognized gender';
 				continue;
 			}
-			$picked = null;
-			foreach ($pools[$sex] as $i => $h) {
-				if ($h['free'] > 0) {
-					$picked = $i;
+
+			$studentLevelId = 0;
+			if ($separateLevels) {
+				$lvl = $this->getStudentLevel($schoolId, (int) $st['id'], $yearId);
+				$studentLevelId = $lvl ? (int) $lvl['level_id'] : 0;
+			}
+
+			// Prefer hostels already holding this level, then empty hostels, then others.
+			$indices = array_keys($pools[$sex]);
+			usort($indices, static function ($a, $b) use ($pools, $sex, $studentLevelId, $separateLevels) {
+				$ha = $pools[$sex][$a];
+				$hb = $pools[$sex][$b];
+				$score = static function ($h) use ($studentLevelId, $separateLevels) {
+					if ($h['free'] <= 0) {
+						return 1000;
+					}
+					if (!$separateLevels || $studentLevelId <= 0) {
+						return 0;
+					}
+					$ids = $h['level_ids'];
+					if ($ids === []) {
+						return 1; // empty — good second choice
+					}
+					if (count($ids) === 1 && (int) $ids[0] === $studentLevelId) {
+						return 0; // same level — best
+					}
+					return 500; // incompatible / mixed
+				};
+				return $score($ha) <=> $score($hb);
+			});
+
+			$placed = false;
+			$lastError = 'no free ' . ($sex === 'F' ? 'female' : 'male') . ' hostel bed';
+			foreach ($indices as $i) {
+				if ($pools[$sex][$i]['free'] <= 0) {
+					continue;
+				}
+				if ($separateLevels && $studentLevelId > 0) {
+					$ids = $pools[$sex][$i]['level_ids'];
+					foreach ($ids as $existingLevelId) {
+						if ((int) $existingLevelId !== $studentLevelId) {
+							$lastError = 'no free same-level hostel bed';
+							continue 2;
+						}
+					}
+				}
+				$hostelId = $pools[$sex][$i]['id'];
+				$res = $this->allocateStudent($schoolId, $hostelId, (int) $st['id'], $yearId, $staffId);
+				if ($res['ok']) {
+					$allocated++;
+					$pools[$sex][$i]['free']--;
+					if ($separateLevels && $studentLevelId > 0
+						&& !in_array($studentLevelId, $pools[$sex][$i]['level_ids'], true)) {
+						$pools[$sex][$i]['level_ids'][] = $studentLevelId;
+					}
+					$placed = true;
 					break;
 				}
+				$lastError = $res['error'] ?? 'failed';
 			}
-			if ($picked === null) {
+			if (!$placed) {
 				$skipped++;
-				$errors[] = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? '')) . ': no free ' . ($sex === 'F' ? 'female' : 'male') . ' hostel bed';
-				continue;
-			}
-			$hostelId = $pools[$sex][$picked]['id'];
-			$res = $this->allocateStudent($schoolId, $hostelId, (int) $st['id'], $yearId, $staffId);
-			if ($res['ok']) {
-				$allocated++;
-				$pools[$sex][$picked]['free']--;
-			} else {
-				$skipped++;
-				$errors[] = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? '')) . ': ' . ($res['error'] ?? 'failed');
+				$errors[] = $name . ': ' . $lastError;
 			}
 		}
 

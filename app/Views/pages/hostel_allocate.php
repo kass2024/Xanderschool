@@ -6,6 +6,8 @@ $classes = $classes ?? [];
 $departments = $departments ?? [];
 $years = $years ?? [];
 $yearId = (int) ($academic_year_id ?? 0);
+$hostelSettings = $hostel_settings ?? ['separate_by_level' => false];
+$separateByLevel = !empty($hostelSettings['separate_by_level']);
 
 $totalBeds = 0;
 $totalOcc = 0;
@@ -23,7 +25,7 @@ foreach ($hostels as $h) {
 			<div>
 				<div class="hst-hero-kicker"><i class="fa fa-bed"></i> Boarding housing</div>
 				<h4>Hostel allocation</h4>
-				<p class="hst-hero-sub">Live-search any student to see class and hostel. Allocate boarding students only — day scholars stay unassigned.</p>
+				<p class="hst-hero-sub">Live-search any student to see class and hostel. Allocate boarding students only — day scholars stay unassigned.<?= $separateByLevel ? ' <strong>Level separation is ON</strong> — different levels cannot share a hostel.' : ''; ?></p>
 			</div>
 			<div class="hst-year-pick">
 				<label for="hstYear">Academic year</label>
@@ -42,6 +44,13 @@ foreach ($hostels as $h) {
 				<div class="hst-stat-chip"><strong><?= count($hostels); ?></strong> hostels</div>
 				<div class="hst-stat-chip"><strong><?= (int) $totalOcc; ?></strong> / <?= (int) $totalBeds; ?> beds used</div>
 				<div class="hst-stat-chip"><strong><?= (int) $totalFree; ?></strong> free</div>
+			</div>
+		<?php endif; ?>
+
+		<?php if ($separateByLevel) : ?>
+			<div class="hst-rule-banner">
+				<i class="fa fa-shield"></i>
+				<span>Mixing levels is blocked (Nursery, Primary, O Level, A Level, ANP, …). Change this in <strong>Settings → Hostels</strong>.</span>
 			</div>
 		<?php endif; ?>
 
@@ -82,6 +91,11 @@ foreach ($hostels as $h) {
 								</span>
 								<span class="hst-occ-beds"><?= $occ; ?> / <?= (int) $h['max_beds']; ?></span>
 							</div>
+							<?php if (!empty($h['level_label'])) : ?>
+								<div class="hst-occ-level"><i class="fa fa-graduation-cap"></i> <?= esc($h['level_label']); ?></div>
+							<?php elseif ($separateByLevel && $occ === 0) : ?>
+								<div class="hst-occ-level is-empty">Open for any single level</div>
+							<?php endif; ?>
 							<div class="hst-occ-meter" aria-hidden="true"><span style="width:<?= $pct; ?>%"></span></div>
 						</button>
 					<?php endforeach; ?>
