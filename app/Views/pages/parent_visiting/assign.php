@@ -54,7 +54,7 @@ $fallbackAvatar = base_url('assets/images/fallback-avatar.png');
 .pv-class-head .meta { font-size: .78rem; color: #64748b; }
 .pv-class-body { padding: 0; }
 .pv-student-row {
-	display: grid; grid-template-columns: 36px 1fr 100px 90px 120px; gap: 10px; align-items: center;
+	display: grid; grid-template-columns: 36px 1fr 100px 90px 220px; gap: 10px; align-items: center;
 	padding: 12px 18px; border-bottom: 1px solid #f1f5f9; transition: background .15s;
 }
 .pv-student-row:last-child { border-bottom: none; }
@@ -68,6 +68,13 @@ $fallbackAvatar = base_url('assets/images/fallback-avatar.png');
 	padding: 7px 14px; font-size: .78rem; font-weight: 600; cursor: pointer;
 }
 .pv-btn-manage:hover { background: #132a5c; color: #fff; }
+.pv-btn-print {
+	background: #fef3c7; color: #92400e; border: none; border-radius: 10px;
+	padding: 7px 12px; font-size: .78rem; font-weight: 600; cursor: pointer; text-decoration: none;
+	display: inline-block;
+}
+.pv-btn-print:hover { background: #fde68a; color: #78350f; text-decoration: none; }
+.pv-row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 
 .pv-overlay {
 	position: fixed; inset: 0; background: rgba(11,31,74,.45); z-index: 9990;
@@ -99,10 +106,7 @@ $fallbackAvatar = base_url('assets/images/fallback-avatar.png');
 	position: relative; transition: border-color .2s, box-shadow .2s;
 }
 .pv-visitor-card.has-card { border-color: rgba(212,175,55,.5); }
-.pv-visitor-card img {
-	width: 72px; height: 72px; border-radius: 50%; object-fit: cover; border: 3px solid #fff;
-	box-shadow: 0 4px 12px rgba(0,0,0,.1); display: block; margin: 0 auto 10px;
-}
+.pv-visitor-card img { display: none !important; }
 .pv-visitor-card .v-name { font-weight: 700; text-align: center; font-size: .9rem; color: var(--pv-navy); }
 .pv-visitor-card .v-meta { text-align: center; font-size: .75rem; color: #64748b; margin-top: 4px; }
 .pv-visitor-card .v-card-tag {
@@ -124,14 +128,9 @@ $fallbackAvatar = base_url('assets/images/fallback-avatar.png');
 	background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 16px; padding: 18px;
 }
 .pv-form-card h6 { font-weight: 700; color: var(--pv-navy); margin: 0 0 14px; }
-.pv-form-grid { display: grid; grid-template-columns: 100px 1fr; gap: 16px; }
-.pv-photo-box {
-	width: 100px; height: 100px; border-radius: 50%; border: 2px dashed #cbd5e1;
-	display: flex; align-items: center; justify-content: center; overflow: hidden;
-	cursor: pointer; background: #fff; position: relative;
-}
-.pv-photo-box img { width: 100%; height: 100%; object-fit: cover; }
-#pvPhotoInput { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.pv-form-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.pv-photo-box { display: none !important; }
+#pvPhotoInput { display: none !important; }
 .pv-fields { display: grid; gap: 10px; }
 .pv-fields input, .pv-fields select {
 	border-radius: 10px; border: 1.5px solid #e2e8f0; padding: 10px 12px; font-size: .88rem;
@@ -184,11 +183,12 @@ $fallbackAvatar = base_url('assets/images/fallback-avatar.png');
 	.pv-photo-box { margin: 0 auto; }
 }
 </style>
+<link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>">
 
 <div class="container-fluid mt-3 pv-page">
 	<div class="pv-hero">
 		<h4><i class="fa fa-users"></i> Assign Parent Visitors</h4>
-		<p class="mb-0 opacity-75" style="font-size:.9rem;">Register guardians, upload photos, assign RFID cards — grouped by class.</p>
+		<p class="mb-0 opacity-75" style="font-size:.9rem;">Register guardians, assign RFID cards, and print visitor passes — grouped by class.</p>
 		<div class="pv-stats">
 			<div class="pv-stat"><b><?= $totalStudents ?></b><span>Students</span></div>
 			<div class="pv-stat"><b><?= $readyCount ?></b><span>Ready (<?= $minVisitors ?>+ visitors)</span></div>
@@ -259,13 +259,19 @@ $fallbackAvatar = base_url('assets/images/fallback-avatar.png');
 									<?php endif; ?>
 								</div>
 								<div class="text-end">
-									<button type="button" class="pv-btn-manage manageBtn"
-											data-id="<?= (int)$s['id'] ?>"
-											data-name="<?= esc($s['name']) ?>"
-											data-class="<?= esc($className) ?>"
-											data-regno="<?= esc($s['regno'] ?? '') ?>">
-										<i class="fa fa-user-friends"></i> Manage
-									</button>
+									<div class="pv-row-actions">
+										<a class="pv-btn-print" href="<?= base_url('generate_visitor_cards') ?>?student_id=<?= (int)$s['id'] ?>"
+										   target="_blank" rel="noopener" title="Print visitor pass">
+											<i class="fa fa-print"></i> Print card
+										</a>
+										<button type="button" class="pv-btn-manage manageBtn"
+												data-id="<?= (int)$s['id'] ?>"
+												data-name="<?= esc($s['name']) ?>"
+												data-class="<?= esc($className) ?>"
+												data-regno="<?= esc($s['regno'] ?? '') ?>">
+											<i class="fa fa-user-friends"></i> Manage
+										</button>
+									</div>
 								</div>
 							</div>
 						<?php endforeach; ?>
@@ -297,10 +303,8 @@ $fallbackAvatar = base_url('assets/images/fallback-avatar.png');
 					<input type="hidden" id="pvClearCard" name="clear_card" value="0">
 					<input type="hidden" id="pvSkipCard" name="skip_card" value="0">
 					<div class="pv-form-grid">
-						<label class="pv-photo-box" for="pvPhotoInput" title="Upload visitor photo">
-							<img id="pvPhotoPreview" src="<?= $fallbackAvatar ?>" alt="">
-							<input type="file" id="pvPhotoInput" name="photo" accept="image/jpeg,image/png,image/jpg">
-						</label>
+						<input type="file" id="pvPhotoInput" name="photo" accept="image/jpeg,image/png,image/jpg" style="display:none">
+						<img id="pvPhotoPreview" src="<?= $fallbackAvatar ?>" alt="" style="display:none">
 						<div class="pv-fields">
 							<input type="text" id="pvNames" name="names" placeholder="Full names *" maxlength="150">
 							<input type="text" id="pvPhone" name="phone" placeholder="Phone number" maxlength="50">
@@ -320,12 +324,13 @@ $fallbackAvatar = base_url('assets/images/fallback-avatar.png');
 							</label>
 
 							<div id="pvCardSection" class="pv-card-section">
-								<div class="pv-card-row">
-									<input type="text" id="pvCard" placeholder="Scan card — UID appears here" autocomplete="off" readonly>
+								<div class="card-scan-panel pv-card-scan-panel">
+									<img class="card-scan-icon" src="<?= base_url('assets/images/rfid.png') ?>" alt="RFID Reader">
+									<input type="text" id="pvCard" class="form-control card-scan-input mt-2"
+										   placeholder="Tap your card..." autocomplete="off" readonly>
 									<input type="hidden" id="pvCardHidden" name="card" value="">
-									<button type="button" class="pv-scan-btn" id="pvScanBtn"><i class="fa fa-wifi"></i> Scan</button>
+									<div id="pvCardScanStatus" class="card-scan-status">Tap your card on the reader...</div>
 								</div>
-								<small class="text-muted">Click Scan, then swipe the card on your USB reader. Card UID is filled automatically.</small>
 								<div id="pvCardInfo" class="pv-card-info d-none"></div>
 								<select id="pvExistingCard" class="form-control mt-2" style="border-radius:10px;height:38px;font-size:.85rem;">
 									<option value="">— Or pick an already assigned card —</option>
@@ -352,7 +357,6 @@ document.addEventListener("DOMContentLoaded", function () {
 	const MIN_VISITORS = <?= (int)$minVisitors ?>;
 	let cardSharing = <?= (int)$settings['card_sharing'] ?>;
 	let currentStudentId = 0;
-	let scanMode = false;
 	let assignCardOnlyMode = false;
 	let assignCardVisitorId = 0;
 	let cardBuffer = "";
@@ -445,8 +449,8 @@ document.addEventListener("DOMContentLoaded", function () {
 	}
 	function closeDrawer() {
 		document.getElementById("pvOverlay").classList.remove("open");
-		scanMode = false;
-		updateScanBtn();
+		assignCardOnlyMode = false;
+		assignCardVisitorId = 0;
 	}
 
 	let cardGroups = [];
@@ -471,12 +475,24 @@ document.addEventListener("DOMContentLoaded", function () {
 			: '<i class="fa fa-save"></i> Save visitor &amp; card';
 	}
 
+	function setCardScanStatus(text, type) {
+		const el = document.getElementById("pvCardScanStatus");
+		if (!el) return;
+		el.textContent = text;
+		el.className = "card-scan-status" + (type ? " " + type : "");
+	}
+
 	function setCardValue(card, isCanonical) {
 		const val = (card || "").trim().toUpperCase();
 		document.getElementById("pvCard").value = val;
 		document.getElementById("pvCardHidden").value = val;
 		cardFromPicker = !!isCanonical;
-		if (!val) cardReady = false;
+		if (!val) {
+			cardReady = false;
+			setCardScanStatus("Tap your card on the reader...", "");
+		} else {
+			setCardScanStatus("Card UID: " + val, "ok");
+		}
 		updateSaveButtons();
 	}
 
@@ -488,6 +504,7 @@ document.addEventListener("DOMContentLoaded", function () {
 		document.getElementById("pvSkipCard").value = "0";
 		setCardValue("", false);
 		document.getElementById("pvPhotoPreview").src = FALLBACK_AVATAR;
+		document.getElementById("pvPhotoInput").value = "";
 		document.getElementById("pvFormTitle").innerHTML = '<i class="fa fa-user-plus"></i> Add visitor';
 		document.getElementById("pvClearCardBtn").classList.add("d-none");
 		document.getElementById("pvKeepCardWrap").classList.add("d-none");
@@ -499,8 +516,7 @@ document.addEventListener("DOMContentLoaded", function () {
 		cardFromPicker = false;
 		cardReady = false;
 		setCardSectionEnabled(true);
-		scanMode = false;
-		updateScanBtn();
+		setCardScanStatus("Tap your card on the reader...", "");
 	}
 	document.getElementById("pvResetForm").addEventListener("click", resetForm);
 
@@ -509,34 +525,19 @@ document.addEventListener("DOMContentLoaded", function () {
 		updateSaveButtons();
 	});
 
-	document.getElementById("pvPhotoInput").addEventListener("change", function () {
-		const f = this.files && this.files[0];
-		if (!f) return;
-		if (f.size > 5 * 1024 * 1024) { notify("error", "Photo must be 5 MB or less."); this.value = ""; return; }
-		const reader = new FileReader();
-		reader.onload = function (e) { document.getElementById("pvPhotoPreview").src = e.target.result; };
-		reader.readAsDataURL(f);
-	});
-	document.querySelector(".pv-photo-box").addEventListener("click", function () {
-		document.getElementById("pvPhotoInput").click();
-	});
-
-	document.getElementById("pvScanBtn").addEventListener("click", function () {
-		scanMode = !scanMode;
-		cardBuffer = "";
-		updateScanBtn();
-		if (scanMode) {
-			document.getElementById("pvCard").focus();
-			notify("warn", "Scan mode ON — swipe card on reader.");
+	function drawerCardScanActive() {
+		const overlay = document.getElementById("pvOverlay");
+		if (!overlay || !overlay.classList.contains("open")) return false;
+		if (document.getElementById("pvCardSection").classList.contains("disabled")) return false;
+		const tag = (document.activeElement && document.activeElement.tagName) ? document.activeElement.tagName.toLowerCase() : "";
+		if ((tag === "input" || tag === "textarea" || tag === "select") && document.activeElement.id !== "pvCard") {
+			if (!document.activeElement.readOnly) return false;
 		}
-	});
-	function updateScanBtn() {
-		const btn = document.getElementById("pvScanBtn");
-		btn.classList.toggle("active", scanMode);
-		btn.innerHTML = scanMode ? '<i class="fa fa-stop"></i> Stop' : '<i class="fa fa-wifi"></i> Scan';
+		return true;
 	}
 
 	function normalizeUID(uid) {
+		// Storage form — same as student assign-card (CardUid.toStorage).
 		return (window.CardUid && CardUid.toStorage) ? CardUid.toStorage(uid) : uid.trim().toUpperCase();
 	}
 
@@ -559,18 +560,40 @@ document.addEventListener("DOMContentLoaded", function () {
 		document.getElementById("pvFormTitle").innerHTML = '<i class="fa fa-id-card"></i> Assign card to ' + escHtml(v.names);
 		setCardValue("", false);
 		setCardSectionEnabled(true);
-		scanMode = true;
+		setCardScanStatus("Waiting for card — swipe on reader...", "busy");
 		cardBuffer = "";
-		updateScanBtn();
 		document.getElementById("pvCardSection").scrollIntoView({ behavior: "smooth", block: "center" });
-		notify("warn", "Scan mode ON — swipe card for " + (v.names || "visitor") + ".");
+		notify("warn", "Swipe card on reader for " + (v.names || "visitor") + ".");
+	}
+
+	function removeVisitorCard(v) {
+		if (!v || !v.id) return;
+		if (!confirm("Remove RFID card from " + (v.names || "this visitor") + "?")) return;
+		const fd = new FormData();
+		fd.set("visitor_id", String(v.id));
+		fd.set("student_id", String(currentStudentId));
+		fd.set("names", v.names || "Visitor");
+		fd.set("clear_card", "1");
+		fd.set("skip_card", "1");
+		fetch("<?= base_url('parent_visiting/save_visitor') ?>", { method: "POST", body: fd })
+			.then(parseJsonResponse)
+			.then(function (res) {
+				if (res.success) {
+					notify("success", "Card removed.");
+					resetForm();
+					loadVisitors(currentStudentId);
+				} else {
+					notify("error", res.error || "Could not remove card.");
+				}
+			})
+			.catch(function (e) { notify("error", e.message); });
 	}
 
 	function assignCardOnly(cardRaw) {
 		const body = new URLSearchParams({
 			visitor_id: String(assignCardVisitorId),
 			card: cardRaw,
-			card_picked: "1"
+			card_picked: "0"
 		});
 		return fetch("<?= base_url('parent_visiting/assign_card') ?>", {
 			method: "POST",
@@ -581,38 +604,39 @@ document.addEventListener("DOMContentLoaded", function () {
 
 	function handleCardCapture(uid) {
 		if (!uid || uid.length < 4) return;
+		setCardScanStatus("Processing card...", "busy");
 		const normalized = normalizeUID(uid);
-		setCardValue(normalized, true);
-		scanMode = false;
-		updateScanBtn();
 
 		if (assignCardOnlyMode && assignCardVisitorId > 0) {
 			assignCardOnly(normalized).then(function (res) {
 				assignCardOnlyMode = false;
 				assignCardVisitorId = 0;
 				if (res.success) {
-					const saved = res.card || raw;
-					setCardValue(saved, true);
+					const saved = res.card || normalized;
+					setCardValue(saved, false);
+					setCardScanStatus("✅ Card assigned: " + saved, "ok");
 					notify("success", "Card assigned: " + saved);
 					resetForm();
 					loadVisitors(currentStudentId);
 				} else {
+					setCardScanStatus("❌ " + (res.error || "Could not assign"), "err");
 					notify("error", res.error || "Could not assign card.");
-					lookupCard(normalized, true);
+					setCardValue(normalized, false);
+					lookupCard(normalized, false);
 				}
-			}).catch(function (e) { notify("error", e.message); });
+			}).catch(function (e) {
+				setCardScanStatus("⚠️ " + e.message, "err");
+				notify("error", e.message);
+			});
 			return;
 		}
 
-		lookupCard(normalized, true);
+		setCardValue(normalized, false);
+		lookupCard(normalized, false);
 	}
 
 	document.addEventListener("keypress", function (e) {
-		if (!scanMode && !assignCardOnlyMode) return;
-		const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
-		if ((tag === "input" || tag === "textarea" || tag === "select") && e.target.id !== "pvCard") {
-			if (!e.target.readOnly) return;
-		}
+		if (!drawerCardScanActive() && !assignCardOnlyMode) return;
 		if (e.key === "Enter") {
 			const uid = cardBuffer.trim();
 			cardBuffer = "";
@@ -660,11 +684,14 @@ document.addEventListener("DOMContentLoaded", function () {
 					info.classList.remove("d-none");
 					return;
 				}
-				if (res.card) setCardValue(res.card, true);
+				if (res.card) setCardValue(res.card, !!fromPicker);
 				const holders = res.holders || [];
 				const maxPer = (res.settings && res.settings.max_per_card) ? res.settings.max_per_card : 2;
 				cardReady = res.allowed !== false;
-				if (holders.length === 0) {
+				if (res.allowed === false) {
+					info.className = "pv-card-info blocked";
+					info.textContent = res.blocked_reason || "This card cannot be used for visitors.";
+				} else if (holders.length === 0) {
 					info.className = "pv-card-info";
 					info.textContent = "Card is free — can be assigned to this visitor.";
 				} else if (res.allowed) {
@@ -680,6 +707,8 @@ document.addEventListener("DOMContentLoaded", function () {
 				updateSaveButtons();
 				if (res.card && res.allowed !== false) {
 					notify("success", "Card ready: " + res.card);
+				} else if (res.allowed === false) {
+					notify("error", res.blocked_reason || "This card cannot be used for visitors.");
 				}
 			})
 			.catch(function () {
@@ -766,14 +795,15 @@ document.addEventListener("DOMContentLoaded", function () {
 				visitors.forEach(function (v) {
 					const hasCard = !!(v.card && v.card.length);
 					html += '<div class="pv-visitor-card' + (hasCard ? ' has-card' : '') + '">' +
-						'<img src="' + escHtml(v.photo_url || FALLBACK_AVATAR) + '" alt="">' +
 						'<div class="v-name">' + escHtml(v.names) + '</div>' +
 						'<div class="v-meta">' + escHtml(v.relationship || "—") + '<br>' + escHtml(v.phone || "") + '</div>' +
 						'<div class="text-center"><span class="v-card-tag' + (hasCard ? '' : ' none') + '">' +
 						(hasCard ? '<i class="fa fa-id-card"></i> <code>' + escHtml(v.card) + '</code>' : 'No card assigned') + '</span></div>' +
 						'<div class="pv-visitor-actions">' +
 						(hasCard
-							? '<button type="button" class="pv-btn-view-card viewCardBtn" data-card="' + escHtml(v.card) + '"><i class="fa fa-eye"></i> View card</button>'
+							? '<button type="button" class="pv-btn-card changeCardBtn" data-id="' + v.id + '"><i class="fa fa-arrow-repeat"></i> Change</button>'
+							+ '<button type="button" class="pv-btn-del removeCardBtn" data-id="' + v.id + '"><i class="fa fa-trash"></i> Remove card</button>'
+							+ '<button type="button" class="pv-btn-view-card viewCardBtn" data-card="' + escHtml(v.card) + '"><i class="fa fa-eye"></i> UID</button>'
 							: '<button type="button" class="pv-btn-card assignCardBtn" data-id="' + v.id + '"><i class="fa fa-wifi"></i> Assign card</button>') +
 						'<button type="button" class="pv-btn-edit editVisitorBtn" data-id="' + v.id + '"><i class="fa fa-edit"></i> Edit</button>' +
 						'<button type="button" class="pv-btn-del delVisitorBtn" data-id="' + v.id + '"><i class="fa fa-trash"></i></button>' +
@@ -788,11 +818,18 @@ document.addEventListener("DOMContentLoaded", function () {
 						if (v) editVisitor(v);
 					});
 				});
-				list.querySelectorAll(".assignCardBtn").forEach(function (b) {
+				list.querySelectorAll(".assignCardBtn, .changeCardBtn").forEach(function (b) {
 					b.addEventListener("click", function () {
 						const vid = parseInt(b.dataset.id, 10);
 						const v = loadedVisitors.find(function (x) { return parseInt(x.id, 10) === vid; });
 						if (v) startAssignCard(v);
+					});
+				});
+				list.querySelectorAll(".removeCardBtn").forEach(function (b) {
+					b.addEventListener("click", function () {
+						const vid = parseInt(b.dataset.id, 10);
+						const v = loadedVisitors.find(function (x) { return parseInt(x.id, 10) === vid; });
+						if (v) removeVisitorCard(v);
 					});
 				});
 				list.querySelectorAll(".viewCardBtn").forEach(function (b) {
@@ -848,13 +885,11 @@ document.addEventListener("DOMContentLoaded", function () {
 		const cardVal = document.getElementById("pvCardHidden").value.trim();
 		if (withCard && !cardVal) {
 			notify("error", "Scan a card first, or use “Save visitor only”.");
-			scanMode = true;
-			updateScanBtn();
+			setCardScanStatus("Tap your card on the reader...", "busy");
 			return;
 		}
 
-		scanMode = false;
-		updateScanBtn();
+		assignCardOnlyMode = false;
 
 		const keepCard = document.getElementById("pvKeepCard").checked;
 		// When a card is scanned and validated, always save it unless editing details-only.

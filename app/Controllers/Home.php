@@ -16120,36 +16120,90 @@ public function assign_card()
 	}
 
 	/**
-	 * HTML table row for visitor card print picker.
+	 * HTML table row for visitor card print picker (no photo).
 	 */
 	private function renderVisitorPrintRow(array $row): string
 	{
 		$hasCard = trim((string) ($row['card'] ?? '')) !== '';
-		$resolved = resolve_profile_photo($row['photo'] ?? '');
-		$photoUrl = profile_photo_url($resolved);
-		$photoHtml = $resolved
-			? "<img src='" . esc($photoUrl, 'attr') . "' alt='' style='width:48px;height:48px;object-fit:cover;border-radius:4px;' />"
-			: "<span style='display:inline-block;width:48px;height:48px;background:#f1f5f9;border-radius:4px;'></span>";
-		$hidden = $hasCard ? "<input type='hidden' name='viId[]' value='" . (int) $row['id'] . "'>" : '';
+		$studentId = (int) ($row['student_id'] ?? 0);
+		$regno = trim((string) ($row['student_regno'] ?? ''));
+		$hidden = "<input type='hidden' name='viId[]' value='" . (int) $row['id'] . "'>";
 		$color = $hasCard ? '' : 'color:orangered';
 		$classLabel = trim((string) ($row['student_class'] ?? ''));
 		if ($classLabel === '') {
 			$classLabel = '—';
 		}
+		$printUrl = base_url('generate_visitor_cards') . '?student_id=' . $studentId;
+		$printBtn = $studentId > 0
+			? "<a class='btn btn-sm btn-dark' href='" . esc($printUrl, 'attr') . "' target='_blank' rel='noopener'><i class='fa fa-print'></i> Print</a>"
+			: '';
 
-		return "<tr class='disc_row pv-visitor-row' data-visitor-id='" . (int) $row['id'] . "' data-student-id='" . (int) ($row['student_id'] ?? 0) . "' data-has-card='" . ($hasCard ? '1' : '0') . "' style='{$color}'>"
+		return "<tr class='disc_row pv-visitor-row' data-visitor-id='" . (int) $row['id'] . "' data-student-id='" . $studentId . "' data-has-card='" . ($hasCard ? '1' : '0') . "' style='{$color}'>"
 			. '<td>' . esc($row['names']) . $hidden . '</td>'
 			. '<td>' . esc($row['relationship'] ?? '') . '</td>'
 			. '<td>' . esc($row['student_name']) . '</td>'
 			. '<td>' . esc($classLabel) . '</td>'
-			. '<td><code>' . esc($hasCard ? $row['card'] : 'NOT ASSIGNED') . '</code></td>'
-			. '<td>' . $photoHtml . '</td>'
+			. '<td><code>' . esc($regno !== '' ? $regno : ($hasCard ? $row['card'] : '—')) . '</code></td>'
+			. '<td style="text-align:center;white-space:nowrap;">' . $printBtn . '</td>'
 			. "<td style='text-align:center;'><span class='btn-sm btn-danger' id='removerow'>" . lang('app.remove') . "</span></td>"
 			. '</tr>';
 	}
 
 	/**
-	 * Load visitor rows eligible for card PDF (must have RFID card assigned).
+	 * Build one visitor-pass card payload per student (name + regno only).
+	 *
+	 * @param int[] $studentIds
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function fetchStudentsForVisitorPass(array $studentIds, int $schoolId, int $year, int $classId = 0): array
+	{
+		$db = \Config\Database::connect();
+		$sql = "
+			SELECT s.id AS student_id,
+				s.regno AS student_regno,
+				CONCAT(s.fname, ' ', s.lname) AS student_name,
+				TRIM(CONCAT(COALESCE(l.title, ''), ' ', COALESCE(d.code, ''), ' ', COALESCE(c.title, ''))) AS student_class
+			FROM students s
+			LEFT JOIN class_records cr ON cr.student = s.id AND cr.year = ?
+			LEFT JOIN classes c ON c.id = cr.class
+			LEFT JOIN departments d ON d.id = c.department
+			LEFT JOIN levels l ON l.id = c.level
+			WHERE s.school_id = ? AND s.status = 1
+		";
+		$params = [$year, $schoolId];
+
+		if ($classId > 0) {
+			$sql .= ' AND c.id = ?';
+			$params[] = $classId;
+		} else {
+			$studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds))));
+			if (empty($studentIds)) {
+				return [];
+			}
+			$sql .= ' AND s.id IN (' . implode(',', $studentIds) . ')';
+		}
+
+		$sql .= ' ORDER BY student_class ASC, student_name ASC';
+		$rows = $db->query($sql, $params)->getResultArray();
+
+		$cards = [];
+		$seen = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['student_id'] ?? 0);
+			if ($sid <= 0 || isset($seen[$sid])) {
+				continue;
+			}
+			$seen[$sid] = true;
+			$classLabel = trim((string) ($row['student_class'] ?? ''));
+			$row['student_class'] = $classLabel !== '' ? $classLabel : '—';
+			$cards[] = $row;
+		}
+
+		return $cards;
+	}
+
+	/**
+	 * Load visitor rows and collapse to unique students for pass PDF.
 	 *
 	 * @param int[] $visitorIds
 	 * @return array<int, array<string, mixed>>
@@ -16158,12 +16212,8 @@ public function assign_card()
 	{
 		$db = \Config\Database::connect();
 		$sql = "
-			SELECT sv.id, sv.names, sv.relationship, sv.photo, sv.card,
-				s.photo AS student_photo,
+			SELECT sv.id, sv.names, sv.relationship, sv.photo, sv.card, sv.student_id,
 				s.regno AS student_regno,
-				s.father AS student_father,
-				s.mother AS student_mother,
-				s.dob AS student_dob,
 				CONCAT(s.fname, ' ', s.lname) AS student_name,
 				TRIM(CONCAT(COALESCE(l.title, ''), ' ', COALESCE(d.code, ''), ' ', COALESCE(c.title, ''))) AS student_class
 			FROM student_visitors sv
@@ -16190,21 +16240,28 @@ public function assign_card()
 		$sql .= ' ORDER BY student_class ASC, student_name ASC, sv.names ASC';
 		$rows = $db->query($sql, $params)->getResultArray();
 
-		$visitors = [];
+		$cards = [];
+		$seen = [];
 		foreach ($rows as $row) {
-			if (trim((string) ($row['card'] ?? '')) === '') {
+			$sid = (int) ($row['student_id'] ?? 0);
+			if ($sid <= 0 || isset($seen[$sid])) {
 				continue;
 			}
+			$seen[$sid] = true;
 			$classLabel = trim((string) ($row['student_class'] ?? ''));
-			$row['student_class'] = $classLabel !== '' ? $classLabel : '—';
-			$visitors[] = $row;
+			$cards[] = [
+				'student_id' => $sid,
+				'student_name' => $row['student_name'] ?? '',
+				'student_regno' => $row['student_regno'] ?? '',
+				'student_class' => $classLabel !== '' ? $classLabel : '—',
+			];
 		}
 
-		return $visitors;
+		return $cards;
 	}
 
 	/**
-	 * Generate landscape PDF visitor cards.
+	 * Generate portrait visitor-pass PDFs (student name + regno on template).
 	 */
 	public function generate_visitor_cards()
 	{
@@ -16216,6 +16273,7 @@ public function assign_card()
 		$school_id = (int) $this->session->get('soma_school_id');
 		$year = (int) ($this->data['academic_year'] ?? date('Y'));
 		$classId = (int) ($this->request->getGet('class_id') ?: $this->request->getPost('class_id') ?: $this->request->getVar('class_id'));
+		$studentId = (int) ($this->request->getGet('student_id') ?: $this->request->getPost('student_id') ?: $this->request->getVar('student_id'));
 
 		$ids = $this->request->getGet('ids') ?: $this->request->getVar('viId');
 		if (!is_array($ids)) {
@@ -16228,9 +16286,24 @@ public function assign_card()
 		}
 		$safeIds = array_values(array_unique(array_filter(array_map('intval', $ids))));
 
-		if ($classId <= 0 && count($safeIds) === 0) {
+		$studentIdsRaw = $this->request->getGet('student_ids') ?: $this->request->getPost('student_ids');
+		$safeStudentIds = [];
+		if (is_array($studentIdsRaw)) {
+			$safeStudentIds = array_values(array_unique(array_filter(array_map('intval', $studentIdsRaw))));
+		} else {
+			$studentIdsCsv = trim((string) ($studentIdsRaw ?? ''));
+			if ($studentIdsCsv !== '') {
+				$safeStudentIds = array_values(array_unique(array_filter(array_map('intval', explode(',', $studentIdsCsv)))));
+			}
+		}
+		if ($studentId > 0) {
+			$safeStudentIds[] = $studentId;
+			$safeStudentIds = array_values(array_unique($safeStudentIds));
+		}
+
+		if ($classId <= 0 && count($safeIds) === 0 && count($safeStudentIds) === 0) {
 			session_write_close();
-			return $this->response->setStatusCode(400)->setBody('No visitors selected for printing.');
+			return $this->response->setStatusCode(400)->setBody('No students selected for printing.');
 		}
 
 		$this->ensureStaffCardSchema();
@@ -16243,9 +16316,17 @@ public function assign_card()
 			return $this->response->setStatusCode(404)->setBody('School not found.');
 		}
 
-		$visitors = $this->fetchPrintableVisitors($safeIds, $school_id, $year, $classId);
+		if (count($safeStudentIds) > 0) {
+			$visitors = $this->fetchStudentsForVisitorPass($safeStudentIds, $school_id, $year, 0);
+		} elseif ($classId > 0 && count($safeIds) === 0) {
+			// Class batch: one pass per student in the class
+			$visitors = $this->fetchStudentsForVisitorPass([], $school_id, $year, $classId);
+		} else {
+			$visitors = $this->fetchPrintableVisitors($safeIds, $school_id, $year, $classId);
+		}
+
 		if (empty($visitors)) {
-			return $this->response->setStatusCode(400)->setBody('No printable visitors with assigned RFID cards for this selection.');
+			return $this->response->setStatusCode(400)->setBody('No students found for this selection.');
 		}
 
 		$cardTemplate = \App\Libraries\CardLayout::normalizeTemplate($skData->vi_card_template ?? 'ocean');
@@ -16253,6 +16334,11 @@ public function assign_card()
 			$cardTemplate = 'ocean';
 		}
 		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($skData);
+
+		$bgFile = trim((string) ($skData->vi_card_background ?? ''));
+		if ($bgFile === '' || !is_file(FCPATH . 'assets/images/background/' . $bgFile)) {
+			$bgFile = 'visitor_pass_template.png';
+		}
 
 		$data = [
 			'year' => $this->data['academic_year'],
@@ -16262,7 +16348,7 @@ public function assign_card()
 			'school_name' => $skData->name,
 			'header1' => $autoHeaders['header1'],
 			'header2' => $autoHeaders['header2'],
-			'background' => $skData->vi_card_background,
+			'background' => $bgFile,
 			'header_color' => $skData->vi_header_color ?: $skData->header_color,
 			'main_color' => ($skData->vi_main_color ?: $skData->main_color) ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate),
 			'paint_color' => ($skData->vi_paint_color ?: ($skData->vi_main_color ?: $skData->main_color))
@@ -16270,10 +16356,10 @@ public function assign_card()
 			'capitalize' => $skData->vi_capitalize !== null && $skData->vi_capitalize !== ''
 				? $skData->vi_capitalize : $skData->capitalize,
 			'footer_color' => $skData->vi_footer_color ?: $skData->footer_color,
-			'orientation' => 'landscape',
+			'orientation' => 'portrait',
 			'card_template' => $cardTemplate,
 			'card_layout' => $skData->vi_card_layout ?? null,
-			'card_badge' => 'VISITOR CARD',
+			'card_badge' => 'VISITOR PASS',
 			'school_phone' => $skData->phone ?? '',
 			'school_email' => $skData->email ?? '',
 			'school_website' => $skData->website ?? '',
@@ -16296,8 +16382,8 @@ public function assign_card()
 			$wkhtmltopdf = new Wkhtmltopdf(['path' => $tplDir]);
 			$wkhtmltopdf->setTitle('Visitor cards');
 			$wkhtmltopdf->setHtml($html);
-			$pageW = '85.6mm';
-			$pageH = '54mm';
+			$pageW = '54mm';
+			$pageH = '91.7mm';
 			$wkhtmltopdf->setOrientation('Portrait');
 			$wkhtmltopdf->setOptions([
 				'enable-local-file-access' => null,
