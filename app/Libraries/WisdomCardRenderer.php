@@ -374,14 +374,13 @@ class WisdomCardRenderer
 	 */
 	private function drawIdBar($im, string $idNo, int $white): void
 	{
-		// Artwork already prints "ID NO:" — place only the value after the label, inside the ribbon.
-		$x = $this->sx(228);
-		$y = $this->sy(538);
-		$w = $this->sx(200);
-		$h = $this->sy(42);
-
-		$size = $this->fitSize($idNo, $w - 8, (int) round($h * 0.78), 28, 12);
-		$this->drawText($im, $idNo, $size, $x, $y, $w, $h, $white, 'left');
+		// Artwork already prints "ID NO:" — draw only the value on the same baseline/size as that label.
+		// Tuned on the scaled CR80 canvas (1712×1080) for both primary and high-school pass PNGs.
+		$x = (int) round(158 / self::SRC_W * self::W); // small gap after the colon
+		$baseline = (int) round(585 / self::SRC_H * self::H); // ~989px
+		$maxW = (int) round(250 / self::SRC_W * self::W);
+		$size = $this->fitSize($idNo, $maxW, 42, 34, 20);
+		imagettftext($im, $size, 0, $x, $baseline, $white, $this->font, $idNo);
 	}
 
 	/**
