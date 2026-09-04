@@ -155,6 +155,16 @@ $yearId = (int) ($academic_year_id ?? 0);
 
 <script>
 (function ($) {
+	var HST_HOSTELS = <?= json_encode(array_map(static function ($h) {
+		return [
+			'id' => (int) $h['id'],
+			'name' => (string) ($h['name'] ?? ''),
+			'gender' => strtoupper((string) ($h['gender'] ?? 'M')) === 'F' ? 'F' : 'M',
+			'free_beds' => (int) ($h['free_beds'] ?? 0),
+		];
+	}, $hostels), JSON_UNESCAPED_UNICODE); ?>;
+	var currentHostelId = 0;
+
 	function toast(msg, ok) {
 		if (typeof toastr !== 'undefined') {
 			ok ? toastr.success(msg) : toastr.error(msg);
@@ -167,9 +177,35 @@ $yearId = (int) ($academic_year_id ?? 0);
 		return parseInt($('#hstYear').val(), 10) || 0;
 	}
 
+	function esc(s) {
+		return $('<div>').text(s == null ? '' : String(s)).html();
+	}
+
 	function reloadPage() {
 		var y = yearId();
 		window.location = '<?= base_url('hostel_allocate'); ?>?year=' + y;
+	}
+
+	function sameGenderHostels(fromId) {
+		var from = null;
+		HST_HOSTELS.forEach(function (h) {
+			if (h.id === fromId) {
+				from = h;
+			}
+		});
+		if (!from) {
+			return [];
+		}
+		return HST_HOSTELS.filter(function (h) {
+			return h.id !== fromId && h.gender === from.gender;
+		});
+	}
+
+	function classLabel(s) {
+		if (s.class_label) {
+			return String(s.class_label);
+		}
+		return $.trim([s.level_name, s.dept_code, s.class_title].filter(Boolean).join(' '));
 	}
 
 	$('#hstYear').on('change', reloadPage);
@@ -267,24 +303,77 @@ $yearId = (int) ($academic_year_id ?? 0);
 	});
 
 	$(document).on('click', '.hst-occ-item', function () {
-		var id = $(this).data('id');
+		var id = parseInt($(this).data('id'), 10) || 0;
+		currentHostelId = id;
 		$('.hst-occ-item').removeClass('is-active');
 		$(this).addClass('is-active');
 		$.getJSON('<?= base_url('hostel_residents'); ?>', { hostel_id: id, year: yearId() }).done(function (res) {
 			var rows = res.students || [];
+			var moves = sameGenderHostels(id);
 			var html = '';
 			if (!rows.length) {
 				html = '<p class="text-muted mb-0">No residents yet.</p>';
 			} else {
 				html = '<ul class="hst-resident-list">';
 				rows.forEach(function (s) {
-					html += '<li><span>' + $('<div>').text((s.regno || '') + ' ' + (s.fname || '') + ' ' + (s.lname || '')).html() +
-						'</span><button type="button" class="btn btn-link btn-sm text-danger hst-unassign" data-student="' + s.id + '">Remove</button></li>';
+					var name = $.trim((s.regno || '') + ' ' + (s.fname || '') + ' ' + (s.lname || ''));
+					var cls = classLabel(s);
+					var moveHtml = '';
+					if (moves.length) {
+						moveHtml = '<select class="form-control form-control-sm hst-move-sel" data-student="' + s.id + '" title="Move to another hostel">' +
+							'<option value="">Move…</option>';
+						moves.forEach(function (h) {
+							moveHtml += '<option value="' + h.id + '">' + esc(h.name) +
+								(h.free_beds > 0 ? ' (' + h.free_beds + ' free)' : ' (full)') +
+								'</option>';
+						});
+						moveHtml += '</select>';
+					}
+					html += '<li>' +
+						'<div class="hst-resident-main">' +
+							'<span class="hst-resident-name">' + esc(name) + '</span>' +
+							(cls ? '<span class="hst-resident-class">' + esc(cls) + '</span>' : '') +
+						'</div>' +
+						'<div class="hst-resident-actions">' +
+							moveHtml +
+							'<button type="button" class="btn btn-link btn-sm text-danger hst-unassign" data-student="' + s.id + '">Remove</button>' +
+						'</div>' +
+					'</li>';
 				});
 				html += '</ul>';
 			}
 			$('#hstResidentsBody').html(html);
 			$('#hstResidents').show();
+		});
+	});
+
+	$(document).on('change', '.hst-move-sel', function () {
+		var $sel = $(this);
+		var sid = parseInt($sel.data('student'), 10) || 0;
+		var hid = parseInt($sel.val(), 10) || 0;
+		if (!sid || !hid) {
+			return;
+		}
+		var label = $sel.find('option:selected').text();
+		if (!confirm('Move this student to ' + label + '?')) {
+			$sel.val('');
+			return;
+		}
+		$.post('<?= base_url('hostel_assign'); ?>', {
+			student_id: sid,
+			hostel_id: hid,
+			year: yearId()
+		}).done(function (res) {
+			if (res.error) {
+				toast(res.error, false);
+				$sel.val('');
+				return;
+			}
+			toast(res.success || 'Student moved.', true);
+			reloadPage();
+		}).fail(function () {
+			toast('Move failed.', false);
+			$sel.val('');
 		});
 	});
 

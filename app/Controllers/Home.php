@@ -15425,9 +15425,17 @@ public function getApplicationDocs($id = null)
 				'fname' => (string) ($r['fname'] ?? ''),
 				'lname' => (string) ($r['lname'] ?? ''),
 				'sex' => (string) ($r['sex'] ?? ''),
+				'class_label' => (string) ($r['class_label'] ?? ''),
+				'level_name' => (string) ($r['level_name'] ?? ''),
+				'dept_code' => (string) ($r['dept_code'] ?? ''),
+				'class_title' => (string) ($r['class_title'] ?? ''),
 			];
 		}
-		return $this->response->setJSON(['success' => true, 'students' => $out]);
+		return $this->response->setJSON([
+			'success' => true,
+			'hostel_id' => $hostelId,
+			'students' => $out,
+		]);
 	}
 
 	public function manipulate_attendance_area()

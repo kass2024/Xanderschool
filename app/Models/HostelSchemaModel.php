@@ -352,11 +352,15 @@ class HostelSchemaModel extends Model
 	{
 		$this->ensureSchema();
 		$db = \Config\Database::connect();
-		return $db->table('hostel_allocations ha')
+		$rows = $db->table('hostel_allocations ha')
 			->select('students.id, students.regno, students.fname, students.lname, students.sex,
 				c.title AS class_title, l.title AS level_name, d.code AS dept_code')
 			->join('students', 'students.id = ha.student_id')
-			->join('class_records cr', 'cr.student = students.id AND cr.year = ' . (int) $yearId, 'left')
+			->join(
+				'class_records cr',
+				'cr.student = students.id AND cr.year = ' . (int) $yearId . ' AND cr.status = 1',
+				'left'
+			)
 			->join('classes c', 'c.id = cr.class', 'left')
 			->join('levels l', 'l.id = c.level', 'left')
 			->join('departments d', 'd.id = c.department', 'left')
@@ -365,5 +369,21 @@ class HostelSchemaModel extends Model
 			->where('ha.academic_year', $yearId)
 			->orderBy('students.fname', 'ASC')
 			->get()->getResultArray();
+
+		$byId = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['id'] ?? 0);
+			if ($sid <= 0 || isset($byId[$sid])) {
+				continue;
+			}
+			$label = trim(preg_replace(
+				'/\s+/',
+				' ',
+				trim(($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_title'] ?? ''))
+			) ?? '');
+			$row['class_label'] = $label;
+			$byId[$sid] = $row;
+		}
+		return array_values($byId);
 	}
 }
