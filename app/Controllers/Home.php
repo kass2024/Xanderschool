@@ -8061,14 +8061,14 @@ public function attendanceCard()
 		$classMdl = new ClassesModel();
 		$school_id = $this->session->get("soma_school_id");
 		$data['title'] = lang("app.manageCourse");
-		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code as dept_code,l.title as level_name
-		,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf")
-				->join("departments d", "d.id=classes.department")
-				->join("levels l", "l.id=classes.level")
-				->join("faculty f", "f.id=d.faculty_id")
-				->join("staffs s", "s.id=classes.mentor", "LEFT")
-				->where("classes.school_id", $school_id)
-				->get()->getResultArray();
+		// Pedagogical order (Nursery → Primary → O'Level → A'Level…); hide Holiday sections
+		$classes = $classMdl->get_classes();
+		$data['classes'] = array_values(array_filter($classes, static function ($row) {
+			$title = strtolower(trim((string) ($row['title'] ?? '')));
+			$dept = strtolower(trim((string) ($row['department_name'] ?? '')));
+			return $title !== 'holiday' && strpos($title, 'holiday') === false
+				&& strpos($dept, 'holiday') === false;
+		}));
 		$data['courses'] = $courseModel->select("courses.id,courses.title,courses.code,courses.marks,courses.credit,cs.title as category")
 				->join("course_category cs", "cs.id=courses.category")
 				->where("courses.school_id", $school_id)
@@ -8076,6 +8076,7 @@ public function attendanceCard()
 		$data['faculty'] = $faculty->get()->getResultArray();
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
 				->orderBy("id", 'DESC')->get()->getResultArray();
+		$data['active_academic_year'] = (int) ($this->data['academic_year'] ?? $this->session->get('soma_academics_year') ?? 0);
 		$data['categories'] = $CourseCategory->get()->getResultArray();
 		$data['staffs'] = $staffMdl->where("school_id", $school_id)->get()->getResultArray();
 		$data['subtitle'] = lang("app.manageCourse");
@@ -16348,9 +16349,9 @@ public function assign_card()
 		}
 		$autoHeaders = \App\Libraries\CardLayout::composeHeaderLines($skData);
 
-		$bgFile = trim((string) ($skData->vi_card_background ?? ''));
-		if ($bgFile === '' || !is_file(FCPATH . 'assets/images/background/' . $bgFile)) {
-			$bgFile = 'visitor_pass_template.png';
+		$bgFile = 'visitor_pass_template.png';
+		if (!is_file(FCPATH . 'assets/images/background/' . $bgFile)) {
+			$bgFile = trim((string) ($skData->vi_card_background ?? ''));
 		}
 
 		$data = [
@@ -16366,8 +16367,7 @@ public function assign_card()
 			'main_color' => ($skData->vi_main_color ?: $skData->main_color) ?: \App\Libraries\CardLayout::defaultAccent($cardTemplate),
 			'paint_color' => ($skData->vi_paint_color ?: ($skData->vi_main_color ?: $skData->main_color))
 				?: \App\Libraries\CardLayout::defaultAccent($cardTemplate),
-			'capitalize' => $skData->vi_capitalize !== null && $skData->vi_capitalize !== ''
-				? $skData->vi_capitalize : $skData->capitalize,
+			'capitalize' => 1,
 			'footer_color' => $skData->vi_footer_color ?: $skData->footer_color,
 			'orientation' => 'portrait',
 			'card_template' => $cardTemplate,
