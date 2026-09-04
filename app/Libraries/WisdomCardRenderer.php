@@ -17,8 +17,11 @@ class WisdomCardRenderer
 	private const SRC_W = 1011;
 	private const SRC_H = 639;
 
-	public const TEMPLATE = 'assets/images/background/student_pass_template.png';
+	/** Non-primary Wisdom classes (nursery / O-level / A-level / etc.). */
+	public const TEMPLATE = 'assets/images/background/wisdom_high_school_pass_template.png';
 	public const TEMPLATE_PRIMARY = 'assets/images/background/wisdom_primary_pass_template.png';
+	/** Legacy fallback if the high-school PNG is missing. */
+	public const TEMPLATE_LEGACY = 'assets/images/background/student_pass_template.png';
 
 	private const TEAL = [0, 130, 142];
 	private const NAVY = [4, 73, 107];
@@ -109,7 +112,9 @@ class WisdomCardRenderer
 
 		$this->pastePhoto($im, $photoPath, $teal);
 		$this->drawFieldValues($im, $fullName, $classLabel, $year, $navy);
-		$this->drawIdBar($im, $idNo !== '' ? $idNo : '—', $navy, $white);
+		// High-school artwork uses a teal ID ribbon; primary uses navy.
+		$idBg = $this->templateRel === self::TEMPLATE_PRIMARY ? $navy : $teal;
+		$this->drawIdBar($im, $idNo !== '' ? $idNo : '—', $idBg, $white);
 
 		return $im;
 	}
@@ -257,6 +262,9 @@ class WisdomCardRenderer
 		$path = $this->assetPath($this->templateRel ?: self::TEMPLATE);
 		if ($path === null && $this->templateRel === self::TEMPLATE_PRIMARY) {
 			$path = $this->assetPath(self::TEMPLATE);
+		}
+		if ($path === null) {
+			$path = $this->assetPath(self::TEMPLATE_LEGACY);
 		}
 		if ($path === null) {
 			$path = $this->assetPath(CardLayout::WISDOM_CHROME);

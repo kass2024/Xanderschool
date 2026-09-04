@@ -1222,7 +1222,7 @@ public function testEmail()
 		if ($useWisdomPass) {
 			$cardTemplate = 'wisdom';
 			$orientation = 'landscape';
-			$data['background'] = 'student_pass_template.png';
+			$data['background'] = 'wisdom_high_school_pass_template.png';
 			$data['card_layout'] = null;
 			$data['main_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
 			$data['paint_color'] = \App\Libraries\CardLayout::defaultAccent($cardTemplate);
