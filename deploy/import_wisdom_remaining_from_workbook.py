@@ -45,6 +45,13 @@ TVET_SUBJECTS = {
     "MATH&ROBOTICS CHALLENGE",
 }
 
+NON_EXAM_SUBJECTS = {
+    "CHINESE",
+    "FRENCH",
+    "KISWAHILI",
+    "SPORT",
+}
+
 SUBJECT_TITLES = {
     "BIOLOGY": "Biology",
     "CHEM": "Chemistry",
@@ -195,11 +202,12 @@ def subject_program(subject: str) -> str:
 
 def subject_code(subject: str, credit: int, program: str) -> str:
     base = SUBJECT_BASE_CODES.get(normalize_name(subject), re.sub(r"[^A-Z0-9]+", "", normalize_name(subject))[:8] or "SUBJ")
-    return f"{'TV' if program == 'tvet' else 'RB'}-{base}{credit}"
+    prefix = "SP" if program == "special" else ("TV" if program == "tvet" else "RB")
+    return f"{prefix}-{base}{credit}"
 
 
-def category_title(program: str) -> str:
-    return "TVET Subjects" if program == "tvet" else "Secondary Subjects"
+def category_title(subject: str) -> str:
+    return "Non-Examinable Subjects" if normalize_name(subject) in NON_EXAM_SUBJECTS else "Examinable Subjects"
 
 
 def workbook_entries(path: Path) -> list[TeacherEntry]:
@@ -436,7 +444,7 @@ def build_course_maps(rows: list[dict[str, str]]) -> tuple[dict[str, dict[str, s
     for row in rows:
         if row["code"]:
             by_code[row["code"]] = row
-        if row["code"].startswith("RB-") or row["code"].startswith("TV-") or row.get("create_source") == CREATE_SOURCE:
+        if row["code"].startswith("RB-") or row["code"].startswith("TV-") or row["code"].startswith("SP-") or row.get("create_source") == CREATE_SOURCE:
             by_key[(normalize_name(row["title"]), row["program_type"] or "tvet", int(float(row["credit"] or 0)))] = row
     return by_code, by_key
 
@@ -445,6 +453,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Import Wisdom Rwanda remaining teachers/courses from workbook")
     parser.add_argument("--workbook", default=str(DEFAULT_WORKBOOK))
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--purge-existing", action="store_true")
     args = parser.parse_args()
 
     workbook = Path(args.workbook)
@@ -456,6 +465,15 @@ def main() -> int:
     db = RemoteDb(HOST, USER, PASSWORD)
     try:
         ensure_meta_columns(db)
+        if args.purge_existing:
+            if args.dry_run:
+                print("WOULD purge prior xlsx_import course assignments/courses and remove empty temporary categories")
+            else:
+                db.execute_many([
+                    "DELETE cr FROM course_records cr INNER JOIN courses c ON c.id = cr.course WHERE c.school_id = 27 AND (c.create_source = 'xlsx_import' OR c.code LIKE 'RB-%' OR c.code LIKE 'TV-%' OR c.code LIKE 'SP-%')",
+                    "DELETE FROM courses WHERE school_id = 27 AND (create_source = 'xlsx_import' OR code LIKE 'RB-%' OR code LIKE 'TV-%' OR code LIKE 'SP-%')",
+                    "DELETE cc FROM course_category cc LEFT JOIN courses c ON c.category = cc.id WHERE cc.school_id = 27 AND cc.title IN ('Secondary Subjects','TVET Subjects') AND c.id IS NULL",
+                ], chunk_size=3)
         class_rows = load_classes(db)
         staff_rows = load_staff(db)
         category_cache = {row["title"]: int(row["id"]) for row in load_categories(db)}
@@ -463,7 +481,10 @@ def main() -> int:
         assignment_rows = load_assignments(db)
 
         class_map = canonical_class_map(class_rows)
-        class_programs = {int(r["id"]): ("tvet" if int(r["faculty_type"] or 0) in {1, 3} else "reb") for r in class_rows}
+        class_programs = {
+            int(r["id"]): ("special" if int(r["faculty_type"] or 0) == 3 else ("tvet" if int(r["faculty_type"] or 0) == 1 else "reb"))
+            for r in class_rows
+        }
         password_hash = php_password_hash(DEFAULT_PASSWORD)
 
         staff_create = staff_update = 0
@@ -556,7 +577,7 @@ def main() -> int:
             if key in seen_course_keys:
                 continue
             seen_course_keys.add(key)
-            cat_id = category_cache.get(category_title(program)) or ensure_category(db, category_cache, category_title(program), args.dry_run)
+            cat_id = category_cache.get(category_title(title)) or ensure_category(db, category_cache, category_title(title), args.dry_run)
             code = subject_code(title, credit, program)
             course = courses_by_code.get(code) or courses_by_key.get(key)
             if course:

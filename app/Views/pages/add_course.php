@@ -9,7 +9,7 @@
  * @var array $courses_grouped
  */
 $smartByClass = $smart_by_class ?? [];
-$coursesGrouped = $courses_grouped ?? ['tvet' => [], 'reb' => [], 'holiday' => []];
+$coursesGrouped = $courses_grouped ?? ['tvet' => [], 'reb' => [], 'special' => [], 'holiday' => []];
 $courseCategoriesJson = [];
 foreach (($categories ?? []) as $cat) {
 	$courseCategoriesJson[] = [
@@ -56,10 +56,10 @@ $renderCourseRows = static function (array $rows): string {
 	}
 	return $html;
 };
-$classesByType = ['1' => [], '2' => []];
+$classesByType = ['1' => [], '2' => [], '3' => []];
 foreach ($classes as $c) {
 	$ft = (string) ((int) ($c['faculty_type'] ?? $c['type'] ?? 1));
-	if ($ft !== '2') {
+	if (!in_array($ft, ['1', '2', '3'], true)) {
 		$ft = '1';
 	}
 	$classesByType[$ft][] = $c;
@@ -83,6 +83,7 @@ foreach ($classes as $c) {
 				<p class="mb-3 text-muted">Choose programme type, then create courses manually or from extracted curriculum.</p>
 				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="1" data-mode="manual"><?= lang("app.wda"); ?> (TVET)</button>
 				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="2" data-mode="manual"><?= lang("app.reb"); ?> (REB)</button>
+				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="3" data-mode="manual">Special (ANP)</button>
 				<?php if (is_wisdom_school()): ?>
 				<button type="button" class="btn btn-outline-success btn-block btn-lg course-type-pick" data-type="holiday" data-mode="manual"><?= lang("app.holidayCoaching"); ?></button>
 				<p class="text-muted mt-2 mb-0" style="font-size:.85rem;">Holiday coaching courses stay on their own list and are assigned by academic year (not by term).</p>
@@ -105,7 +106,8 @@ foreach ($classes as $c) {
 			<div class="modal-body">
 				<p class="text-muted mb-3">Show extracted courses for classes of this type.</p>
 				<button type="button" class="btn btn-outline-primary btn-block btn-lg smart-type-pick mb-2" data-type="1"><?= lang("app.wda"); ?> (TVET)</button>
-				<button type="button" class="btn btn-outline-primary btn-block btn-lg smart-type-pick" data-type="2"><?= lang("app.reb"); ?> (REB)</button>
+				<button type="button" class="btn btn-outline-primary btn-block btn-lg smart-type-pick mb-2" data-type="2"><?= lang("app.reb"); ?> (REB)</button>
+				<button type="button" class="btn btn-outline-primary btn-block btn-lg smart-type-pick" data-type="3">Special (ANP)</button>
 			</div>
 		</div>
 	</div>
@@ -187,6 +189,7 @@ foreach ($classes as $c) {
 	}
 	.course-prog-tab.is-active.rtb .tab-count { background: #dcfce7; color: #15803d; }
 	.course-prog-tab.is-active.reb .tab-count { background: #fef3c7; color: #b45309; }
+	.course-prog-tab.is-active.special .tab-count { background: #ede9fe; color: #6d28d9; }
 	.course-prog-tab.is-active.holiday .tab-count { background: #dbeafe; color: #1d4ed8; }
 	.course-group-panel[data-prog-panel="holiday"] th:nth-child(5),
 	.course-group-panel[data-prog-panel="holiday"] td:nth-child(5) { display: none; }
@@ -419,6 +422,12 @@ $groupDefs = [
 		'tab_class' => 'reb',
 		'label' => 'REB',
 	],
+	'special' => [
+		'title' => 'Special (ANP)',
+		'table_id' => 'courseTableSpecial',
+		'tab_class' => 'special',
+		'label' => 'Special',
+	],
 ];
 if (is_wisdom_school() || !empty($coursesGrouped['holiday'])) {
 	$groupDefs['holiday'] = [
@@ -428,7 +437,7 @@ if (is_wisdom_school() || !empty($coursesGrouped['holiday'])) {
 		'label' => 'Holiday',
 	];
 }
-$defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGrouped['reb']) ? 'reb' : (!empty($coursesGrouped['holiday']) ? 'holiday' : 'tvet'));
+$defaultProg = !empty($coursesGrouped['tvet']) ? 'tvet' : (!empty($coursesGrouped['reb']) ? 'reb' : (!empty($coursesGrouped['special']) ? 'special' : (!empty($coursesGrouped['holiday']) ? 'holiday' : 'tvet')));
 $holiday_category_id = 0;
 foreach (($categories ?? []) as $cat) {
 	if (stripos((string) ($cat['title'] ?? ''), 'holiday') !== false) {
@@ -724,11 +733,12 @@ foreach (($categories ?? []) as $cat) {
 		var courseTables = {
 			tvet: null,
 			reb: null,
+			special: null,
 			holiday: null
 		};
 
 		function ensureTable(prog) {
-			var ids = { tvet: '#courseTableRtb', reb: '#courseTableReb', holiday: '#courseTableHoliday' };
+			var ids = { tvet: '#courseTableRtb', reb: '#courseTableReb', special: '#courseTableSpecial', holiday: '#courseTableHoliday' };
 			var id = ids[prog] || '#courseTableRtb';
 			if (!$(id).length) return;
 			if (!courseTables[prog]) {
@@ -739,7 +749,7 @@ foreach (($categories ?? []) as $cat) {
 		}
 
 		function switchCourseProg(prog) {
-			if (prog !== 'reb' && prog !== 'holiday') prog = 'tvet';
+			if (prog !== 'reb' && prog !== 'special' && prog !== 'holiday') prog = 'tvet';
 			$('.course-prog-tab').removeClass('is-active').attr('aria-selected', 'false');
 			$('.course-prog-tab[data-prog="' + prog + '"]').addClass('is-active').attr('aria-selected', 'true');
 			$('.course-group-panel').removeClass('is-active');
@@ -767,6 +777,7 @@ foreach (($categories ?? []) as $cat) {
 			var prog = 'tvet';
 			if (currentType === 'holiday') prog = 'holiday';
 			else if (currentType === '2') prog = 'reb';
+			else if (currentType === '3') prog = 'special';
 			$('#manualProgramType').val(prog);
 			$('#createCourseDiv').show();
 			$('#holidayCourseHint').toggle(prog === 'holiday');
@@ -817,7 +828,7 @@ foreach (($categories ?? []) as $cat) {
 			var list = classesByType[type] || [];
 			var $box = $('#smartClassList').empty();
 			var shown = 0;
-			$('#smartTypeLabel').text(type === '2' ? 'REB (General Education)' : 'TVET (Rwanda TVET Board)');
+			$('#smartTypeLabel').text(type === '2' ? 'REB (General Education)' : (type === '3' ? 'Special (ANP)' : 'TVET (Rwanda TVET Board)'));
 			list.forEach(function (c) {
 				var pack = smartByClass[String(c.id)] || smartByClass[c.id];
 				if (!pack || !pack.modules || !pack.modules.length) return;
@@ -828,7 +839,7 @@ foreach (($categories ?? []) as $cat) {
 					'<div class="smart-class-head">'
 					+ '<div><strong>' + $('<div>').text(classLabel(c)).html() + '</strong>'
 					+ '<div class="smart-class-meta">' + pack.modules.length + ' extracted · ' + pending + ' new</div></div>'
-					+ '<div><span class="smart-badge">' + (type === '2' ? 'REB' : 'TVET') + '</span> '
+					+ '<div><span class="smart-badge">' + (type === '2' ? 'REB' : (type === '3' ? 'SPECIAL' : 'TVET')) + '</span> '
 					+ '<i class="fa fa-chevron-down"></i></div></div>'
 				);
 				var $body = $('<div class="smart-class-body"></div>');
@@ -927,7 +938,7 @@ foreach (($categories ?? []) as $cat) {
 				dataType: 'json',
 				data: {
 					class_id: classId,
-					program_type: currentType === '2' ? 'reb' : 'tvet',
+					program_type: currentType === '2' ? 'reb' : (currentType === '3' ? 'special' : 'tvet'),
 					courses: JSON.stringify(courses)
 				}
 			}).done(function (res) {

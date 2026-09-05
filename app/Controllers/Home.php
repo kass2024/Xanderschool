@@ -5340,7 +5340,7 @@ public function attendanceCard()
 
 		$aiCodeMeta = $this->buildAiCourseCodeMeta($school_id, $yearId);
 		$assignmentTypes = $this->courseAssignmentProgramTypes($school_id, $yearId);
-		$coursesGrouped = ['tvet' => [], 'reb' => [], 'holiday' => []];
+		$coursesGrouped = ['tvet' => [], 'reb' => [], 'special' => [], 'holiday' => []];
 		foreach ($data['courses'] as &$courseRow) {
 			try {
 				$meta = $this->classifyCourseProgramAndSource($courseRow, $aiCodeMeta, $assignmentTypes);
@@ -5351,6 +5351,8 @@ public function attendanceCard()
 			$courseRow['create_source'] = $meta['create_source'];
 			if ($meta['program_type'] === 'holiday') {
 				$bucket = 'holiday';
+			} elseif ($meta['program_type'] === 'special') {
+				$bucket = 'special';
 			} elseif ($meta['program_type'] === 'reb') {
 				$bucket = 'reb';
 			} else {
@@ -5546,9 +5548,11 @@ public function attendanceCard()
 		$cid = (int) ($course['id'] ?? 0);
 		if ($cid > 0 && isset($assignmentTypes[$cid])) {
 			$types = array_values(array_unique(array_map('intval', $assignmentTypes[$cid])));
-			if (in_array(2, $types, true) && !in_array(1, $types, true)) {
+			if (in_array(3, $types, true) && !in_array(1, $types, true) && !in_array(2, $types, true)) {
+				$program = 'special';
+			} elseif (in_array(2, $types, true) && !in_array(1, $types, true) && !in_array(3, $types, true)) {
 				$program = 'reb';
-			} elseif (in_array(1, $types, true) && !in_array(2, $types, true)) {
+			} elseif (in_array(1, $types, true) && !in_array(2, $types, true) && !in_array(3, $types, true)) {
 				$program = 'tvet';
 			}
 		} elseif ($source === 'manual' && $code !== '' && preg_match('/^(SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3}$/', $code)) {

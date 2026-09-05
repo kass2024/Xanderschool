@@ -1326,6 +1326,9 @@ if (!function_exists('normalize_course_program_type')) {
 		if ($t === 'holiday' || $t === 'holiday_coaching' || $t === 'coaching') {
 			return 'holiday';
 		}
+		if ($t === 'special' || $t === 'anp') {
+			return 'special';
+		}
 		if ($t === 'reb') {
 			return 'reb';
 		}
