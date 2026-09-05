@@ -60,14 +60,12 @@ class DesktopSync extends BaseController
 		$email = trim((string) $this->request->getPost('email'));
 		$password = (string) $this->request->getPost('password');
 		$device = trim((string) $this->request->getPost('device_name'));
-		$fullSync = (int) $this->request->getPost('full_sync') === 1;
 		if ($email === '' || $password === '') {
 			$body = $this->request->getJSON(true);
 			if (is_array($body)) {
 				$email = trim((string) ($body['email'] ?? $email));
 				$password = (string) ($body['password'] ?? $password);
 				$device = trim((string) ($body['device_name'] ?? $device));
-				$fullSync = (int) ($body['full_sync'] ?? 0) === 1;
 			}
 		}
 		if ($email === '' || strlen($password) < 6) {
@@ -94,7 +92,7 @@ class DesktopSync extends BaseController
 		$now = date('Y-m-d H:i:s');
 		$db->table('desktop_sync_tokens')->insert([
 			'staff_id' => (int) $result->id,
-			'school_id' => $fullSync ? 0 : (int) $result->school_id,
+			'school_id' => (int) $result->school_id,
 			'token_hash' => $hash,
 			'device_name' => $device !== '' ? substr($device, 0, 120) : 'Xander School Desktop',
 			'last_seen' => $now,
@@ -106,7 +104,6 @@ class DesktopSync extends BaseController
 			'ok' => true,
 			'token' => $token,
 			'expires_at' => $expires,
-			'full_sync' => $fullSync,
 			'staff' => [
 				'id' => (int) $result->id,
 				'name' => trim($result->fname . ' ' . $result->lname),
