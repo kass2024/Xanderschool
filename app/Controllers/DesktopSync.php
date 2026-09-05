@@ -52,6 +52,8 @@ class DesktopSync extends BaseController
 		'extra_fees',
 		'cash_requests',
 		'cash_request_payments',
+		'budgets',
+		'budget_periods',
 	];
 
 	public function health()

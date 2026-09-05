@@ -26,6 +26,8 @@ const IDENTITY_TABLES = new Set([
   'extra_fees',
   'cash_requests',
   'cash_request_payments',
+  'budgets',
+  'budget_periods',
 ]);
 
 type PendingGroup = { latest: PendingItem; items: PendingItem[] };
@@ -52,6 +54,8 @@ const REMAP_RULES: RemapRule[] = [
   { parentTable: 'required_materials', childField: 'material_id' },
   { parentTable: 'cash_requests', childField: 'cash_request_id' },
   { parentTable: 'cash_request_payments', childField: 'payment_id' },
+  { parentTable: 'budgets', childField: 'budget_id' },
+  { parentTable: 'budget_periods', childField: 'budget_period_id' },
 ];
 
 async function syncProfilePhotos(
