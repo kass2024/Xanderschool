@@ -1,5 +1,6 @@
 import { createRequire } from 'module';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { randomUUID } from 'crypto';
 import { profileDir, sqlitePath } from './paths';
 import {
   remoteIds,
@@ -16,6 +17,42 @@ const require = createRequire(import.meta.url);
 type Database = import('better-sqlite3').Database;
 
 let db: Database | null = null;
+
+const IDENTITY_TABLES = new Set([
+  'students',
+  'hostels',
+  'required_materials',
+  'school_fees',
+  'extra_fees',
+  'cash_requests',
+  'cash_request_payments',
+]);
+
+type PendingGroup = { latest: PendingItem; items: PendingItem[] };
+
+type RemoteAck = {
+  index: number;
+  table: string;
+  op: string;
+  local_pk?: string | number | null;
+  remote_pk?: string | number | null;
+  sync_key?: string | null;
+};
+
+type RemapRule = {
+  parentTable: string;
+  childField: string;
+  extraWhere?: string;
+};
+
+const REMAP_RULES: RemapRule[] = [
+  { parentTable: 'students', childField: 'student_id' },
+  { parentTable: 'students', childField: 'student' },
+  { parentTable: 'hostels', childField: 'hostel_id' },
+  { parentTable: 'required_materials', childField: 'material_id' },
+  { parentTable: 'cash_requests', childField: 'cash_request_id' },
+  { parentTable: 'cash_request_payments', childField: 'payment_id' },
+];
 
 async function syncProfilePhotos(
   remoteUrl: string,
@@ -106,8 +143,25 @@ function getMeta(conn: Database, k: string): string | null {
   return row?.v ?? null;
 }
 
+function withApplying<T>(conn: Database, fn: () => T): T {
+  setApplying(conn, true);
+  try {
+    return fn();
+  } finally {
+    setApplying(conn, false);
+  }
+}
+
 function tablePk(table: SchemaTable): string {
   return table.columns.find((c) => c.primary_key)?.name || table.columns.find((c) => c.name === 'id')?.name || '';
+}
+
+function hasColumn(table: SchemaTable, name: string): boolean {
+  return table.columns.some((column) => column.name === name);
+}
+
+function supportsIdentity(table: SchemaTable): boolean {
+  return IDENTITY_TABLES.has(table.name) && hasColumn(table, 'sync_key');
 }
 
 function createTable(conn: Database, table: SchemaTable): void {
@@ -382,17 +436,8 @@ function localRow(conn: Database, table: SchemaTable, rowPk: string): Record<str
     .get(rowPk) as Record<string, unknown> | undefined;
 }
 
-async function pushPending(
-  conn: Database,
-  remoteUrl: string,
-  token: string,
-  tables: SchemaTable[],
-  onProgress?: (p: SyncProgress) => void,
-): Promise<number> {
-  const pending = readPending(conn);
-  if (!pending.length) return 0;
-
-  const byKey = new Map<string, { latest: PendingItem; items: PendingItem[] }>();
+function groupPending(pending: PendingItem[], tableMap: Map<string, SchemaTable>): PendingGroup[] {
+  const byKey = new Map<string, PendingGroup>();
   for (const item of pending) {
     const key = `${item.table_name}\u0000${item.row_pk}`;
     const group = byKey.get(key);
@@ -403,31 +448,103 @@ async function pushPending(
       byKey.set(key, { latest: item, items: [item] });
     }
   }
+  return [...byKey.values()].filter((group) => tableMap.has(group.latest.table_name));
+}
 
-  const tableMap = new Map(tables.map((table) => [table.name, table]));
-  const groups = [...byKey.values()].filter((group) => tableMap.has(group.latest.table_name));
-  const ignored = groups.filter((group) => tableMap.get(group.latest.table_name)?.writable === false);
-  if (ignored.length) {
-    const markIgnored = conn.prepare(`UPDATE _sync_queue SET status = 'ignored', error = ? WHERE id = ?`);
-    conn.transaction(() => {
-      for (const group of ignored) {
-        for (const item of group.items) markIgnored.run('Table is read-only for desktop sync', item.id);
+function sortGroups(groups: PendingGroup[], tableOrder: Map<string, number>): PendingGroup[] {
+  return [...groups].sort((a, b) => {
+    const ta = tableOrder.get(a.latest.table_name) ?? 9999;
+    const tb = tableOrder.get(b.latest.table_name) ?? 9999;
+    return ta - tb || a.items[0].id - b.items[0].id;
+  });
+}
+
+function ensureLocalSyncKey(conn: Database, table: SchemaTable, rowPk: string): Record<string, unknown> | undefined {
+  const row = localRow(conn, table, rowPk);
+  if (!row || !supportsIdentity(table)) return row;
+  const syncKey = typeof row.sync_key === 'string' ? row.sync_key.trim() : '';
+  if (syncKey !== '') return row;
+  const pk = tablePk(table);
+  const generated = `${table.name}:${randomUUID()}`;
+  withApplying(conn, () => {
+    conn.prepare(
+      `UPDATE ${quoteIdent(table.name)} SET ${quoteIdent('sync_key')} = ? WHERE ${quoteIdent(pk)} = ?`,
+    ).run(generated, rowPk);
+  });
+  return localRow(conn, table, rowPk);
+}
+
+function remapLocalIdentity(
+  conn: Database,
+  tables: SchemaTable[],
+  table: SchemaTable,
+  localPk: string | number,
+  remotePk: string | number,
+): void {
+  if (String(localPk) === String(remotePk)) return;
+  const pk = tablePk(table);
+  if (!pk) return;
+
+  withApplying(conn, () => {
+    const targetExists = conn
+      .prepare(`SELECT 1 FROM ${quoteIdent(table.name)} WHERE ${quoteIdent(pk)} = ?`)
+      .get(remotePk);
+
+    if (targetExists) {
+      conn.prepare(`DELETE FROM ${quoteIdent(table.name)} WHERE ${quoteIdent(pk)} = ?`).run(localPk);
+    } else {
+      conn.prepare(`UPDATE ${quoteIdent(table.name)} SET ${quoteIdent(pk)} = ? WHERE ${quoteIdent(pk)} = ?`).run(remotePk, localPk);
+    }
+
+    conn.prepare(`UPDATE _sync_queue SET row_pk = ? WHERE table_name = ? AND row_pk = ?`).run(remotePk, table.name, localPk);
+
+    for (const childTable of tables) {
+      for (const rule of REMAP_RULES) {
+        if (rule.parentTable !== table.name || !hasColumn(childTable, rule.childField)) continue;
+        const sql = [
+          `UPDATE ${quoteIdent(childTable.name)}`,
+          `SET ${quoteIdent(rule.childField)} = ?`,
+          `WHERE ${quoteIdent(rule.childField)} = ?`,
+          rule.extraWhere ? `AND ${rule.extraWhere}` : '',
+        ].filter(Boolean).join(' ');
+        conn.prepare(sql).run(remotePk, localPk);
       }
-    })();
-  }
-  const writableGroups = groups.filter((group) => tableMap.get(group.latest.table_name)?.writable !== false);
-  if (!writableGroups.length) return 0;
-  const changes = writableGroups.map((group) => {
+      if (table.name === 'school_fees' && childTable.name === 'fees_records' && hasColumn(childTable, 'fees_id') && hasColumn(childTable, 'fees_type')) {
+        conn.prepare(
+          `UPDATE ${quoteIdent(childTable.name)} SET ${quoteIdent('fees_id')} = ? WHERE ${quoteIdent('fees_id')} = ? AND ${quoteIdent('fees_type')} IN (0, 2)`,
+        ).run(remotePk, localPk);
+      }
+      if (table.name === 'extra_fees' && childTable.name === 'fees_records' && hasColumn(childTable, 'fees_id') && hasColumn(childTable, 'fees_type')) {
+        conn.prepare(
+          `UPDATE ${quoteIdent(childTable.name)} SET ${quoteIdent('fees_id')} = ? WHERE ${quoteIdent('fees_id')} = ? AND ${quoteIdent('fees_type')} = 1`,
+        ).run(remotePk, localPk);
+      }
+    }
+  });
+}
+
+async function pushGroupBatch(
+  conn: Database,
+  remoteUrl: string,
+  token: string,
+  tables: SchemaTable[],
+  groups: PendingGroup[],
+  onProgress?: (p: SyncProgress) => void,
+): Promise<number> {
+  if (!groups.length) return 0;
+  const tableMap = new Map(tables.map((table) => [table.name, table]));
+  const changes = groups.map((group) => {
     const table = tableMap.get(group.latest.table_name)!;
-    const row = localRow(conn, table, group.latest.row_pk);
+    const preparedRow = group.latest.op === 'delete' ? undefined : ensureLocalSyncKey(conn, table, group.latest.row_pk);
     const op = group.latest.op === 'delete'
       ? 'delete'
-      : table.name === 'hostels' && row && Number(row.active ?? 1) === 0
+      : table.name === 'hostels' && preparedRow && Number(preparedRow.active ?? 1) === 0
         ? 'delete'
         : 'upsert';
     if (op === 'delete') {
       return { table: table.name, op, pk: group.latest.row_pk };
     }
+    const row = preparedRow || localRow(conn, table, group.latest.row_pk);
     const change: { table: string; op: string; pk: string; row: Record<string, unknown>; photo_base64?: string } = {
       table: table.name,
       op,
@@ -473,11 +590,22 @@ async function pushPending(
       }
     }
   }
-  const successful = writableGroups.filter((_group, index) => !failed.has(index));
+
+  for (const ack of (result.acks || []) as RemoteAck[]) {
+    const index = Number(ack.index);
+    if (!Number.isInteger(index) || failed.has(index)) continue;
+    const group = groups[index];
+    const table = tableMap.get(group.latest.table_name);
+    if (!group || !table || !supportsIdentity(table)) continue;
+    if (ack.local_pk === undefined || ack.local_pk === null || ack.remote_pk === undefined || ack.remote_pk === null) continue;
+    remapLocalIdentity(conn, tables, table, ack.local_pk, ack.remote_pk);
+  }
+
+  const successful = groups.filter((_group, index) => !failed.has(index));
   const markSynced = conn.prepare(`UPDATE _sync_queue SET status = 'synced', error = NULL WHERE id = ?`);
   const markFailed = conn.prepare(`UPDATE _sync_queue SET status = 'pending', error = ? WHERE id = ?`);
   conn.transaction(() => {
-    writableGroups.forEach((group, index) => {
+    groups.forEach((group, index) => {
       for (const item of group.items) {
         if (failed.has(index)) markFailed.run(failed.get(index), item.id);
         else markSynced.run(item.id);
@@ -495,6 +623,61 @@ async function pushPending(
     });
   }
   return typeof result.applied === 'number' ? result.applied : successful.length;
+}
+
+async function pushPending(
+  conn: Database,
+  remoteUrl: string,
+  token: string,
+  tables: SchemaTable[],
+  onProgress?: (p: SyncProgress) => void,
+): Promise<number> {
+  const pending = readPending(conn);
+  if (!pending.length) return 0;
+  const tableMap = new Map(tables.map((table) => [table.name, table]));
+  const tableOrder = new Map(tables.map((table, index) => [table.name, index]));
+  const groups = groupPending(pending, tableMap);
+  const ignored = groups.filter((group) => tableMap.get(group.latest.table_name)?.writable === false);
+  if (ignored.length) {
+    const markIgnored = conn.prepare(`UPDATE _sync_queue SET status = 'ignored', error = ? WHERE id = ?`);
+    conn.transaction(() => {
+      for (const group of ignored) {
+        for (const item of group.items) markIgnored.run('Table is read-only for desktop sync', item.id);
+      }
+    })();
+  }
+  const writableGroups = sortGroups(
+    groups.filter((group) => tableMap.get(group.latest.table_name)?.writable !== false),
+    tableOrder,
+  );
+  if (!writableGroups.length) return 0;
+
+  const parentIdentityGroups = writableGroups.filter((group) => {
+    if (group.latest.op === 'delete') return false;
+    const table = tableMap.get(group.latest.table_name);
+    return !!table && supportsIdentity(table);
+  });
+  const processedKeys = new Set(parentIdentityGroups.map((group) => `${group.latest.table_name}\u0000${group.latest.row_pk}`));
+
+  let applied = 0;
+  if (parentIdentityGroups.length) {
+    applied += await pushGroupBatch(conn, remoteUrl, token, tables, parentIdentityGroups, onProgress);
+  }
+
+  const remainingGroups = sortGroups(
+    groupPending(readPending(conn), tableMap).filter((group) => {
+      const table = tableMap.get(group.latest.table_name);
+      if (!table || table.writable === false) return false;
+      return !processedKeys.has(`${group.latest.table_name}\u0000${group.latest.row_pk}`);
+    }),
+    tableOrder,
+  );
+
+  if (remainingGroups.length) {
+    applied += await pushGroupBatch(conn, remoteUrl, token, tables, remainingGroups, onProgress);
+  }
+
+  return applied;
 }
 
 async function reconcileDeletes(
@@ -614,6 +797,7 @@ export async function incrementalSync(
 
   const schema = await remoteSchema(remoteUrl, token);
   const tables = syncTables(schema);
+  tables.forEach((table) => createTable(conn, table));
   pushed = await pushPending(conn, remoteUrl, token, tables, onProgress);
   const since = getMeta(conn, 'last_pull') || '';
   setApplying(conn, true);

@@ -44,6 +44,15 @@ class DesktopSync extends BaseController
 		'budget_permissions',
 		'post_budget_permissions',
 	];
+	private const IDENTITY_SYNC_TABLES = [
+		'students',
+		'hostels',
+		'required_materials',
+		'school_fees',
+		'extra_fees',
+		'cash_requests',
+		'cash_request_payments',
+	];
 
 	public function health()
 	{
@@ -127,6 +136,7 @@ class DesktopSync extends BaseController
 		try {
 			(new \App\Models\StudentMaterialSchemaModel())->ensureSchema();
 			(new \App\Models\HostelSchemaModel())->ensureSchema();
+			$this->ensureIdentitySchema();
 		} catch (\Throwable $e) {
 			log_message('error', 'Desktop schema ensure failed: ' . $e->getMessage());
 		}
@@ -358,7 +368,9 @@ class DesktopSync extends BaseController
 		}
 
 		$db = \Config\Database::connect();
+		$this->ensureIdentitySchema();
 		$applied = 0;
+		$acks = [];
 		$errors = [];
 		foreach ($changes as $i => $change) {
 			if (! is_array($change)) {
@@ -404,10 +416,12 @@ class DesktopSync extends BaseController
 							$payload['updated_at'] = date('Y-m-d H:i:s');
 						}
 						$del->update($payload);
+						$acks[] = ['index' => $i, 'table' => $table, 'op' => $op, 'local_pk' => $pkVal, 'remote_pk' => $pkVal];
 						$applied++;
 						continue;
 					}
 					$del->delete();
+					$acks[] = ['index' => $i, 'table' => $table, 'op' => $op, 'local_pk' => $pkVal, 'remote_pk' => $pkVal];
 					$applied++;
 					continue;
 				}
@@ -423,9 +437,19 @@ class DesktopSync extends BaseController
 				if ($clean === []) {
 					throw new \RuntimeException('No matching columns');
 				}
+				$syncKey = $this->normalizedSyncKey($table, $clean, $fields);
 				$exists = false;
 				$existingRow = null;
-				if ($pk !== '' && isset($clean[$pk]) && $clean[$pk] !== '' && $clean[$pk] !== null) {
+				if ($syncKey !== '') {
+					$target = $db->table($table)->where('sync_key', $syncKey);
+					$scope = $this->applyScope($target, $db, $table, $fields, (int) $auth['school_id']);
+					if ($scope === null) {
+						throw new \RuntimeException('Change is outside this school');
+					}
+					$existingRow = $target->get(1)->getRowArray();
+					$exists = ! empty($existingRow);
+				}
+				if (! $exists && $syncKey === '' && $pk !== '' && isset($clean[$pk]) && $clean[$pk] !== '' && $clean[$pk] !== null) {
 					$target = $db->table($table)->where($pk, $clean[$pk]);
 					$scope = $this->applyScope($target, $db, $table, $fields, (int) $auth['school_id']);
 					if ($scope === null) {
@@ -434,9 +458,13 @@ class DesktopSync extends BaseController
 					$existingRow = $target->get(1)->getRowArray();
 					$exists = ! empty($existingRow);
 				}
+				$remotePk = $pkVal;
 				if ($exists) {
-					$id = $clean[$pk];
+					$id = $existingRow[$pk] ?? $clean[$pk];
 					unset($clean[$pk]);
+					if ($syncKey !== '') {
+						$clean['sync_key'] = $syncKey;
+					}
 					$clean = $this->mergeSafeUpsert($table, $existingRow ?: [], $clean);
 					$upd = $db->table($table)->where($pk, $id);
 					if ($this->applyScope($upd, $db, $table, $fields, (int) $auth['school_id']) === null) {
@@ -445,11 +473,21 @@ class DesktopSync extends BaseController
 					if ($clean !== []) {
 						$upd->update($clean);
 					}
+					$remotePk = $id;
 				} else {
 					if (! $this->insertBelongsToSchool($db, $table, $fields, $clean, (int) $auth['school_id'])) {
 						throw new \RuntimeException('New row is outside this school');
 					}
+					if ($syncKey !== '' && $pk !== '' && isset($clean[$pk])) {
+						unset($clean[$pk]);
+					}
+					if ($syncKey !== '') {
+						$clean['sync_key'] = $syncKey;
+					}
 					$db->table($table)->insert($clean);
+					$remotePk = $pk !== '' && isset($clean[$pk]) && $clean[$pk] !== '' && $clean[$pk] !== null
+						? $clean[$pk]
+						: $db->insertID();
 				}
 				if ($table === 'students' && isset($change['photo_base64'], $clean['photo'])) {
 					$name = basename(trim((string) $clean['photo']));
@@ -468,6 +506,14 @@ class DesktopSync extends BaseController
 						throw new \RuntimeException('Student photo could not be saved');
 					}
 				}
+				$acks[] = [
+					'index' => $i,
+					'table' => $table,
+					'op' => $op,
+					'local_pk' => $pkVal,
+					'remote_pk' => $remotePk,
+					'sync_key' => $syncKey !== '' ? $syncKey : null,
+				];
 				$applied++;
 			} catch (\Throwable $e) {
 				$errors[] = ['index' => $i, 'table' => $table, 'error' => $e->getMessage()];
@@ -477,6 +523,7 @@ class DesktopSync extends BaseController
 		return $this->response->setJSON([
 			'ok' => true,
 			'applied' => $applied,
+			'acks' => $acks,
 			'errors' => $errors,
 		]);
 	}
@@ -815,6 +862,56 @@ class DesktopSync extends BaseController
 			'school_fees',
 			'extra_fees',
 		], true);
+	}
+
+	private function ensureIdentitySchema(): void
+	{
+		$db = \Config\Database::connect();
+		foreach (self::IDENTITY_SYNC_TABLES as $table) {
+			if (! $db->tableExists($table)) {
+				continue;
+			}
+			if ($this->columnExists($db, $table, 'sync_key')) {
+				continue;
+			}
+			try {
+				$db->query(sprintf(
+					'ALTER TABLE `%s` ADD COLUMN `sync_key` VARCHAR(64) NULL DEFAULT NULL',
+					$table
+				));
+			} catch (\Throwable $e) {
+				if (! $this->columnExists($db, $table, 'sync_key')) {
+					throw $e;
+				}
+			}
+		}
+	}
+
+	private function isIdentityManagedTable(string $table): bool
+	{
+		return in_array($table, self::IDENTITY_SYNC_TABLES, true);
+	}
+
+	private function normalizedSyncKey(string $table, array $clean, array $fields): string
+	{
+		if (! $this->isIdentityManagedTable($table) || ! in_array('sync_key', $fields, true)) {
+			return '';
+		}
+		$value = trim((string) ($clean['sync_key'] ?? ''));
+		if ($value === '' || strlen($value) > 64 || ! preg_match('/^[A-Za-z0-9:_-]+$/', $value)) {
+			return '';
+		}
+		return $value;
+	}
+
+	private function columnExists($db, string $table, string $column): bool
+	{
+		foreach ($db->getFieldData($table) as $field) {
+			if (($field->name ?? '') === $column) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

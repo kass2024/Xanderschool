@@ -183,7 +183,19 @@ export async function remotePush(
   base: string,
   token: string,
   changes: Array<{ table: string; op: string; pk?: unknown; row?: Record<string, unknown>; photo_base64?: string }>,
-): Promise<{ ok: boolean; applied: number; errors: unknown[] }> {
+): Promise<{
+  ok: boolean;
+  applied: number;
+  errors: unknown[];
+  acks?: Array<{
+    index: number;
+    table: string;
+    op: string;
+    local_pk?: string | number | null;
+    remote_pk?: string | number | null;
+    sync_key?: string | null;
+  }>;
+}> {
   return requestJson('POST', `${normalizeBase(base)}/api/desktop/push`, { changes }, token, 120000);
 }
 
