@@ -983,6 +983,97 @@ public function sync($option, $school_id)
                 }
                 break;
 
+            // -------------------------
+            // REQUIRED MATERIALS (catalog)
+            // -------------------------
+            case "required_materials":
+                $matSchema = new \App\Models\StudentMaterialSchemaModel();
+                $matSchema->ensureSchema();
+                $db = \Config\Database::connect();
+                $dt = $db->table('required_materials')
+                    ->select('*, unix_timestamp(updated_at) as updated_at1')
+                    ->where('school_id', $school_id)
+                    ->where('unix_timestamp(updated_at) >', (int) $updatedAt)
+                    ->orderBy('id', 'ASC')
+                    ->get(500)->getResultArray();
+                foreach ($dt as $item) {
+                    $data['materials'][] = $item;
+                }
+                break;
+
+            // -------------------------
+            // CLASS REQUIRED MATERIALS
+            // -------------------------
+            case "class_required_materials":
+                $matSchema = new \App\Models\StudentMaterialSchemaModel();
+                $matSchema->ensureSchema();
+                $db = \Config\Database::connect();
+                $dt = $db->table('class_required_materials')
+                    ->select('*, unix_timestamp(updated_at) as updated_at1')
+                    ->where('school_id', $school_id)
+                    ->where('unix_timestamp(updated_at) >', (int) $updatedAt)
+                    ->orderBy('id', 'ASC')
+                    ->get(1000)->getResultArray();
+                foreach ($dt as $item) {
+                    $data['assignments'][] = $item;
+                }
+                break;
+
+            // -------------------------
+            // STUDENT MATERIAL CHECKS
+            // -------------------------
+            case "student_material_checks":
+                $matSchema = new \App\Models\StudentMaterialSchemaModel();
+                $matSchema->ensureSchema();
+                $db = \Config\Database::connect();
+                $dt = $db->table('student_material_checks')
+                    ->select('*, unix_timestamp(COALESCE(updated_at, checked_at)) as updated_at1')
+                    ->where('school_id', $school_id)
+                    ->where('unix_timestamp(COALESCE(updated_at, checked_at)) >', (int) $updatedAt)
+                    ->orderBy('id', 'ASC')
+                    ->get(1000)->getResultArray();
+                foreach ($dt as $item) {
+                    $data['checks'][] = $item;
+                }
+                break;
+
+            // -------------------------
+            // HOSTELS
+            // -------------------------
+            case "hostels":
+                $hostelSchema = new \App\Models\HostelSchemaModel();
+                $hostelSchema->ensureSchema();
+                $db = \Config\Database::connect();
+                $dt = $db->table('hostels')
+                    ->select('*, unix_timestamp(updated_at) as updated_at1')
+                    ->where('school_id', $school_id)
+                    ->where('unix_timestamp(updated_at) >', (int) $updatedAt)
+                    ->orderBy('sort_order', 'ASC')
+                    ->orderBy('name', 'ASC')
+                    ->get(500)->getResultArray();
+                foreach ($dt as $item) {
+                    $data['hostels'][] = $item;
+                }
+                break;
+
+            // -------------------------
+            // HOSTEL ALLOCATIONS
+            // -------------------------
+            case "hostel_allocations":
+                $hostelSchema = new \App\Models\HostelSchemaModel();
+                $hostelSchema->ensureSchema();
+                $db = \Config\Database::connect();
+                $dt = $db->table('hostel_allocations')
+                    ->select('*, unix_timestamp(updated_at) as updated_at1')
+                    ->where('school_id', $school_id)
+                    ->where('unix_timestamp(updated_at) >', (int) $updatedAt)
+                    ->orderBy('id', 'ASC')
+                    ->get(1000)->getResultArray();
+                foreach ($dt as $item) {
+                    $data['allocations'][] = $item;
+                }
+                break;
+
             default:
                 $data['error'] = "Invalid sync option";
                 break;
@@ -1708,6 +1799,92 @@ public function check_school($option)
 						$ids[] = $localId !== '' ? $localId : (string)$feeEntryModel->getInsertID();
 					} catch (\Exception $e) {
 						log_message('error', 'fees_records upload failed: ' . $e->getMessage());
+						return $this->response->setJSON([
+							'error' => lang("app.failedSaveRecords") . $e->getMessage(),
+						]);
+					}
+				}
+				return $this->response->setJSON([
+					'success' => '1',
+					'ids' => $ids,
+				]);
+
+			case "material_checks":
+				$matSchema = new \App\Models\StudentMaterialSchemaModel();
+				$matSchema->ensureSchema();
+				$ids = [];
+				foreach ($records as $info) {
+					try {
+						$localId = (string) ($info['id'] ?? '');
+						$studentId = (int) ($info['student_id'] ?? 0);
+						$classId = (int) ($info['class_id'] ?? 0);
+						$yearId = (int) ($info['academic_year'] ?? 0);
+						$staffId = (int) ($info['checked_by'] ?? 0);
+						$items = $info['items'] ?? null;
+						if (!is_array($items) && isset($info['material_id'])) {
+							$items = [[
+								'material_id' => (int) ($info['material_id'] ?? 0),
+								'quantity_required' => (float) ($info['quantity_required'] ?? 0),
+								'quantity_brought' => (float) ($info['quantity_brought'] ?? 0),
+								'notes' => (string) ($info['notes'] ?? ''),
+							]];
+						}
+						if ($studentId < 1 || $yearId < 1 || !is_array($items) || $items === []) {
+							continue;
+						}
+						$matSchema->saveStudentChecks((int) $school_id, $studentId, $classId, $yearId, $staffId, $items);
+						if ($localId !== '') {
+							$ids[] = $localId;
+						}
+					} catch (\Exception $e) {
+						log_message('error', 'material_checks upload failed: ' . $e->getMessage());
+						return $this->response->setJSON([
+							'error' => lang("app.failedSaveRecords") . $e->getMessage(),
+						]);
+					}
+				}
+				return $this->response->setJSON([
+					'success' => '1',
+					'ids' => $ids,
+				]);
+
+			case "hostel_allocations":
+				$hostelSchema = new \App\Models\HostelSchemaModel();
+				$hostelSchema->ensureSchema();
+				$ids = [];
+				foreach ($records as $info) {
+					try {
+						$localId = (string) ($info['id'] ?? '');
+						$studentId = (int) ($info['student_id'] ?? 0);
+						$hostelId = (int) ($info['hostel_id'] ?? 0);
+						$yearId = (int) ($info['academic_year'] ?? 0);
+						$staffId = (int) ($info['allocated_by'] ?? 0);
+						$action = strtolower((string) ($info['action'] ?? 'assign'));
+						if ($studentId < 1 || $yearId < 1) {
+							continue;
+						}
+						if ($action === 'unassign') {
+							$hostelSchema->unallocateStudent((int) $school_id, $studentId, $yearId);
+							if ($localId !== '') {
+								$ids[] = $localId;
+							}
+							continue;
+						}
+						if ($hostelId < 1) {
+							continue;
+						}
+						$res = $hostelSchema->allocateStudent((int) $school_id, $hostelId, $studentId, $yearId, $staffId);
+						if (!empty($res['ok']) && $localId !== '') {
+							$ids[] = $localId;
+						} elseif (empty($res['ok'])) {
+							log_message('error', 'hostel_allocations upload skipped: ' . ($res['error'] ?? 'failed'));
+							// Still ack local id so offline queue does not loop forever on validation errors
+							if ($localId !== '') {
+								$ids[] = $localId;
+							}
+						}
+					} catch (\Exception $e) {
+						log_message('error', 'hostel_allocations upload failed: ' . $e->getMessage());
 						return $this->response->setJSON([
 							'error' => lang("app.failedSaveRecords") . $e->getMessage(),
 						]);
