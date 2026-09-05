@@ -197,6 +197,24 @@ async function probeOnline(): Promise<boolean> {
   return online;
 }
 
+async function refreshDesktopToken(): Promise<void> {
+  const settings = loadSettings();
+  if (!settings.remoteUrl || !settings.email || !settings.password) {
+    return;
+  }
+  const result = await remoteLogin(settings.remoteUrl, settings.email, settings.password, 'Xander School Desktop');
+  if (!result.ok || !result.token) {
+    throw new Error(result.error || 'Desktop sign-in failed');
+  }
+  settings.token = result.token;
+  if (result.staff?.name) settings.staffName = result.staff.name;
+  if (result.school) {
+    settings.schoolId = result.school.id;
+    settings.schoolName = result.school.name;
+  }
+  saveSettings(settings);
+}
+
 async function runBackgroundSync(full = false): Promise<void> {
   if (syncing) return;
   const settings = loadSettings();
@@ -269,26 +287,48 @@ async function networkTick(): Promise<void> {
   }
 }
 
-async function bootReadyApp(): Promise<void> {
+async function bootReadyApp(skipStartupSync = false): Promise<void> {
   phase = 'starting';
   phpReady = false;
   emitState();
   closeDb();
   const url = await startPhpServer();
   phpReady = true;
+  const canSync = await probeOnline();
+  emitState();
+  if (!skipStartupSync && canSync) {
+    phase = 'syncing';
+    progress = { stage: 'login', current: 0, total: 1, message: 'Refreshing desktop access…' };
+    emitState();
+    await refreshDesktopToken();
+    const settings = loadSettings();
+    progress = { stage: 'pull', current: 0, total: 1, message: 'Syncing full server data before login…' };
+    emitState();
+    const result = await incrementalSync(settings.remoteUrl, settings.token, (p) => {
+      progress = p;
+      emitState();
+    }, true);
+    closeDb();
+    settings.lastSyncAt = new Date().toISOString();
+    saveSettings(settings);
+    lastError = null;
+    progress = {
+      stage: 'idle',
+      current: 1,
+      total: 1,
+      message: `Startup sync finished (↑${result.pushed} ↓${result.pulled})`,
+    };
+  }
   phase = 'ready';
   autoLoginArmed = true;
   await showSchool('/login');
   emitState();
-  void probeOnline().then(() => {
-    emitState();
-    injectOverlay();
-  });
+  injectOverlay();
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = setInterval(() => {
     void networkTick();
   }, NETWORK_CHECK_MS);
-  void networkTick();
+  if (!canSync) void networkTick();
   void url;
 }
 
@@ -342,7 +382,7 @@ app.whenReady().then(async () => {
   const settings = loadSettings();
   if (settings.token && settings.provisioned) {
     try {
-      await bootReadyApp();
+      await bootReadyApp(true);
     } catch (e) {
       phase = 'error';
       lastError = e instanceof Error ? e.message : String(e);

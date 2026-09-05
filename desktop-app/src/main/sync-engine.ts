@@ -217,7 +217,117 @@ export function pendingCount(): number {
 }
 
 function syncTables(schema: { tables: SchemaTable[] }): SchemaTable[] {
-  return schema.tables.filter((table) => table.name && !table.name.startsWith('_') && table.columns.length > 0);
+  const tables = schema.tables.filter((table) => table.name && !table.name.startsWith('_') && table.columns.length > 0);
+  const fallback: Record<string, number> = {
+    students: 1,
+    classes: 2,
+    staffs: 3,
+    fees_records: 7,
+    school_fees: 5,
+    extra_fees: 6,
+    cash_requests: 8,
+    required_materials: 14,
+    class_required_materials: 15,
+    student_material_checks: 16,
+    hostels: 17,
+    hostel_allocations: 18,
+  };
+  return tables.sort((a, b) => {
+    const pa = a.priority ?? fallback[a.name] ?? 100;
+    const pb = b.priority ?? fallback[b.name] ?? 100;
+    return pa - pb || a.name.localeCompare(b.name);
+  });
+}
+
+const GLOBAL_TABLES = new Set([
+  'packages',
+  'posts',
+  'faculty',
+  'levels',
+  'countries',
+  'provinces',
+  'districts',
+  'sectors',
+  'cells',
+  'villages',
+  'soma_cell',
+  'soma_village',
+  'ubudehe',
+  'permissions',
+  'type_permission',
+  'master_central_posts',
+  'course_category',
+  'budget_permissions',
+  'post_budget_permissions',
+  'schools',
+]);
+
+function isGlobalTable(table: SchemaTable): boolean {
+  return GLOBAL_TABLES.has(table.name);
+}
+
+function schoolList(conn: Database): Array<{ id: number; name: string }> {
+  try {
+    return conn
+      .prepare(`SELECT id, name FROM "schools" ORDER BY name ASC`)
+      .all() as Array<{ id: number; name: string }>;
+  } catch {
+    return [];
+  }
+}
+
+async function pullFullTable(
+  conn: Database,
+  remoteUrl: string,
+  token: string,
+  table: SchemaTable,
+  progress: { current: number; total: number; label: string },
+  onProgress: (p: SyncProgress) => void,
+  scopeSchoolId?: number,
+): Promise<void> {
+  let afterId = 0;
+  let pulled = 0;
+  const photoNames = new Set<string>();
+  onProgress({
+    stage: 'pull',
+    table: table.name,
+    current: progress.current,
+    total: progress.total,
+    message: `${progress.label}: ${table.name}`,
+  });
+  while (true) {
+    const page = await remotePull(remoteUrl, token, table.name, afterId, undefined, true, scopeSchoolId);
+    if (!page.ok) throw new Error(page.error || `Failed to pull ${table.name}`);
+    if (page.rows?.length) {
+      upsertRows(conn, table, page.rows);
+      pulled += page.rows.length;
+      if (table.name === 'students') {
+        for (const row of page.rows) {
+          if (typeof row.photo === 'string') photoNames.add(row.photo);
+        }
+      }
+    }
+    afterId = page.next_after_id || afterId;
+    onProgress({
+      stage: 'pull',
+      table: table.name,
+      current: progress.current,
+      total: progress.total,
+      message: `${progress.label}: ${table.name} (${pulled} rows)`,
+    });
+    if (!page.has_more || !page.rows?.length) break;
+  }
+  installTriggers(conn, table);
+  if (table.name === 'students' && photoNames.size) {
+    await syncProfilePhotos(remoteUrl, token, photoNames, (p) =>
+      onProgress({
+        ...p,
+        current: progress.current,
+        total: progress.total,
+        message: `${progress.label}: ${p.message}`,
+      }),
+    );
+  }
 }
 
 function resetLocalData(conn: Database): void {
@@ -424,44 +534,38 @@ export async function initialSync(
       });
       createTable(conn, table);
     });
+    const schoolTable = tables.find((table) => table.name === 'schools');
+    const globalTables = tables.filter((table) => table !== schoolTable && isGlobalTable(table));
+    const tenantTables = tables.filter((table) => table !== schoolTable && !isGlobalTable(table));
+    const schoolsProgressBase = globalTables.length + (schoolTable ? 1 : 0);
 
-    for (let i = 0; i < tables.length; i++) {
-      const table = tables[i];
-      let afterId = 0;
-      let pulled = 0;
-      const photoNames = new Set<string>();
-      onProgress({
-        stage: 'pull',
-        table: table.name,
-        current: i + 1,
-        total: tables.length,
-        message: `Syncing ${table.name}…`,
-      });
-      while (true) {
-        const page = await remotePull(remoteUrl, token, table.name, afterId, undefined, true);
-        if (!page.ok) throw new Error(page.error || `Failed to pull ${table.name}`);
-        if (page.rows?.length) {
-          upsertRows(conn, table, page.rows);
-          pulled += page.rows.length;
-          if (table.name === 'students') {
-            for (const row of page.rows) {
-              if (typeof row.photo === 'string') photoNames.add(row.photo);
-            }
-          }
-        }
-        afterId = page.next_after_id || afterId;
-        onProgress({
-          stage: 'pull',
-          table: table.name,
-          current: i + 1,
-          total: tables.length,
-          message: `Syncing ${table.name} (${pulled} rows)`,
-        });
-        if (!page.has_more || !page.rows?.length) break;
-      }
-      installTriggers(conn, table);
-      if (table.name === 'students' && photoNames.size) {
-        await syncProfilePhotos(remoteUrl, token, photoNames, onProgress);
+    if (schoolTable) {
+      await pullFullTable(conn, remoteUrl, token, schoolTable, {
+        current: 1,
+        total: Math.max(1, schoolsProgressBase),
+        label: 'Syncing schools list',
+      }, onProgress);
+    }
+
+    for (let i = 0; i < globalTables.length; i++) {
+      await pullFullTable(conn, remoteUrl, token, globalTables[i], {
+        current: (schoolTable ? 1 : 0) + i + 1,
+        total: Math.max(1, schoolsProgressBase),
+        label: 'Syncing shared data',
+      }, onProgress);
+    }
+
+    const schools = schoolList(conn);
+    const totalSchoolSteps = Math.max(1, schools.length * Math.max(1, tenantTables.length));
+    let schoolStep = 0;
+    for (const school of schools) {
+      for (const table of tenantTables) {
+        schoolStep += 1;
+        await pullFullTable(conn, remoteUrl, token, table, {
+          current: schoolStep,
+          total: totalSchoolSteps,
+          label: `School ${schoolStep > 0 ? Math.ceil(schoolStep / Math.max(1, tenantTables.length)) : 1}/${Math.max(1, schools.length)} - ${school.name}`,
+        }, onProgress, school.id);
       }
     }
 
@@ -535,6 +639,9 @@ export async function incrementalSync(
   } finally {
     setApplying(conn, false);
   }
+  // Second push after pull — heals cases where local finance/material totals were ahead
+  const pushedAgain = await pushPending(conn, remoteUrl, token, tables, onProgress);
+  pushed += pushedAgain;
   const now = new Date().toISOString();
   setMeta(conn, 'last_pull', now);
   if (full) setMeta(conn, 'last_full_sync', now);

@@ -122,6 +122,7 @@ export async function remotePull(
   afterId: number,
   updatedSince?: string,
   full = false,
+  scopeSchoolId?: number,
 ): Promise<{
   ok: boolean;
   table: string;
@@ -138,6 +139,7 @@ export async function remotePull(
     after_id: String(afterId),
     limit: '400',
   });
+  if (scopeSchoolId && scopeSchoolId > 0) q.set('scope_school_id', String(scopeSchoolId));
   if (full) q.set('full', '1');
   else if (updatedSince) q.set('updated_since', updatedSince);
   return requestJson(
@@ -154,6 +156,7 @@ export async function remoteIds(
   token: string,
   table: string,
   afterId: number,
+  scopeSchoolId?: number,
 ): Promise<{
   ok: boolean;
   table: string;
@@ -168,6 +171,7 @@ export async function remoteIds(
     after_id: String(afterId),
     limit: '2000',
   });
+  if (scopeSchoolId && scopeSchoolId > 0) q.set('scope_school_id', String(scopeSchoolId));
   return requestJson(
     'GET',
     `${normalizeBase(base)}/api/desktop/ids?${q.toString()}`,

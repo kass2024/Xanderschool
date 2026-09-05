@@ -161,6 +161,7 @@ class DesktopSync extends BaseController
 		if ($auth instanceof ResponseInterface) {
 			return $auth;
 		}
+		$scopeSchoolId = $this->resolveScopeSchoolId($auth);
 		$table = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $this->request->getGet('table'));
 		$afterId = (int) $this->request->getGet('after_id');
 		$updatedSince = trim((string) $this->request->getGet('updated_since'));
@@ -180,7 +181,7 @@ class DesktopSync extends BaseController
 		$fields = $db->getFieldNames($table);
 		$pk = $this->primaryKey($db, $table, $fields);
 		$builder = $db->table($table);
-		$scope = $this->applyScope($builder, $db, $table, $fields, (int) $auth['school_id']);
+		$scope = $this->applyScope($builder, $db, $table, $fields, $scopeSchoolId);
 		if ($scope === null) {
 			return $this->response->setJSON([
 				'ok' => true,
@@ -237,6 +238,7 @@ class DesktopSync extends BaseController
 		if ($auth instanceof ResponseInterface) {
 			return $auth;
 		}
+		$scopeSchoolId = $this->resolveScopeSchoolId($auth);
 		$table = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $this->request->getGet('table'));
 		$afterId = (int) $this->request->getGet('after_id');
 		$limit = (int) $this->request->getGet('limit');
@@ -264,7 +266,7 @@ class DesktopSync extends BaseController
 			]);
 		}
 		$builder = $db->table($table);
-		$scope = $this->applyScope($builder, $db, $table, $fields, (int) $auth['school_id']);
+		$scope = $this->applyScope($builder, $db, $table, $fields, $scopeSchoolId);
 		if ($scope === null) {
 			return $this->response->setJSON([
 				'ok' => true,
@@ -572,6 +574,16 @@ class DesktopSync extends BaseController
 			UNIQUE KEY `token_hash` (`token_hash`),
 			KEY `school_id` (`school_id`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+	}
+
+	private function resolveScopeSchoolId(array $auth): int
+	{
+		$tokenSchoolId = (int) ($auth['school_id'] ?? 0);
+		if ($tokenSchoolId !== 0) {
+			return $tokenSchoolId;
+		}
+		$requested = (int) $this->request->getGet('scope_school_id');
+		return $requested > 0 ? $requested : 0;
 	}
 
 	private function listTables($db): array
