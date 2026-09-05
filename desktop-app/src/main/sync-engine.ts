@@ -239,6 +239,13 @@ function syncTables(schema: { tables: SchemaTable[] }): SchemaTable[] {
   });
 }
 
+function shouldReconcileDeletes(table: SchemaTable): boolean {
+  // Never auto-delete writable business records from the offline app during a full refresh.
+  // Pull/upsert still keeps remote edits flowing down, but destructive reconcile is limited
+  // to shared read-only reference data so locally entered records are not lost.
+  return table.writable === false;
+}
+
 const GLOBAL_TABLES = new Set([
   'packages',
   'posts',
@@ -444,7 +451,14 @@ async function pushPending(
     if (typeof error === 'object' && error !== null && 'index' in error) {
       const index = Number(error.index);
       if (Number.isInteger(index)) {
-        failed.set(index, 'message' in error && typeof error.message === 'string' ? error.message : 'Remote rejected change');
+        failed.set(
+          index,
+          'message' in error && typeof error.message === 'string'
+            ? error.message
+            : 'error' in error && typeof error.error === 'string'
+              ? error.error
+              : 'Remote rejected change',
+        );
       }
     }
   }
@@ -634,7 +648,7 @@ export async function incrementalSync(
       if (table.name === 'students' && photoNames.size) {
         await syncProfilePhotos(remoteUrl, token, photoNames, onProgress);
       }
-      if (full) await reconcileDeletes(conn, remoteUrl, token, table);
+      if (full && shouldReconcileDeletes(table)) await reconcileDeletes(conn, remoteUrl, token, table);
     }
   } finally {
     setApplying(conn, false);

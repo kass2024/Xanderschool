@@ -1,6 +1,6 @@
 {
   "name": "xander-school-desktop",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "Xander School offline desktop app with SQLite sync",
   "main": "out/main/main.js",
   "scripts": {
