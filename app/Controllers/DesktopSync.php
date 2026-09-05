@@ -60,12 +60,14 @@ class DesktopSync extends BaseController
 		$email = trim((string) $this->request->getPost('email'));
 		$password = (string) $this->request->getPost('password');
 		$device = trim((string) $this->request->getPost('device_name'));
+		$fullSync = (int) $this->request->getPost('full_sync') === 1;
 		if ($email === '' || $password === '') {
 			$body = $this->request->getJSON(true);
 			if (is_array($body)) {
 				$email = trim((string) ($body['email'] ?? $email));
 				$password = (string) ($body['password'] ?? $password);
 				$device = trim((string) ($body['device_name'] ?? $device));
+				$fullSync = (int) ($body['full_sync'] ?? 0) === 1;
 			}
 		}
 		if ($email === '' || strlen($password) < 6) {
@@ -92,7 +94,7 @@ class DesktopSync extends BaseController
 		$now = date('Y-m-d H:i:s');
 		$db->table('desktop_sync_tokens')->insert([
 			'staff_id' => (int) $result->id,
-			'school_id' => (int) $result->school_id,
+			'school_id' => $fullSync ? 0 : (int) $result->school_id,
 			'token_hash' => $hash,
 			'device_name' => $device !== '' ? substr($device, 0, 120) : 'Xander School Desktop',
 			'last_seen' => $now,
@@ -104,6 +106,7 @@ class DesktopSync extends BaseController
 			'ok' => true,
 			'token' => $token,
 			'expires_at' => $expires,
+			'full_sync' => $fullSync,
 			'staff' => [
 				'id' => (int) $result->id,
 				'name' => trim($result->fname . ' ' . $result->lname),
@@ -310,10 +313,11 @@ class DesktopSync extends BaseController
 			return $this->fail('Invalid photo name.', 422);
 		}
 		$db = \Config\Database::connect();
-		if (! $db->tableExists('students') || $db->table('students')
-			->where('school_id', (int) $auth['school_id'])
-			->like('photo', $name, 'after')
-			->countAllResults() < 1) {
+		$photoLookup = $db->table('students')->like('photo', $name, 'after');
+		if ((int) $auth['school_id'] > 0) {
+			$photoLookup->where('school_id', (int) $auth['school_id']);
+		}
+		if (! $db->tableExists('students') || $photoLookup->countAllResults() < 1) {
 			return $this->fail('Photo not found.', 404);
 		}
 		$path = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR . $name;
@@ -621,6 +625,9 @@ class DesktopSync extends BaseController
 	private function applyScope($builder, $db, string $table, array $fields, int $schoolId): ?bool
 	{
 		$sid = (int) $schoolId;
+		if ($sid === 0) {
+			return true;
+		}
 		if ($sid < 1) {
 			return null;
 		}
@@ -835,6 +842,9 @@ class DesktopSync extends BaseController
 
 	private function insertBelongsToSchool($db, string $table, array $fields, array $row, int $schoolId): bool
 	{
+		if ($schoolId === 0) {
+			return true;
+		}
 		if (in_array('school_id', $fields, true)) {
 			return (int) ($row['school_id'] ?? 0) === $schoolId;
 		}

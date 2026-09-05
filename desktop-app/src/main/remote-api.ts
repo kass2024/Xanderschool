@@ -4,6 +4,7 @@ export interface RemoteLoginResult {
   ok: boolean;
   token?: string;
   expires_at?: string;
+  full_sync?: boolean;
   staff?: { id: number; name: string; email: string; post_title: string };
   school?: { id: number; name: string };
   error?: string;
@@ -12,6 +13,7 @@ export interface RemoteLoginResult {
 export interface SchemaTable {
   name: string;
   writable?: boolean;
+  priority?: number;
   columns: Array<{
     name: string;
     type: string;
@@ -105,6 +107,7 @@ export async function remoteLogin(
     email,
     password,
     device_name: deviceName,
+    full_sync: 1,
   });
 }
 

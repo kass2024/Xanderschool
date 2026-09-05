@@ -22,10 +22,10 @@ let showingSchool = false;
 let lastLightSyncAt = 0;
 let lastFullSyncAt = 0;
 
-const NETWORK_CHECK_MS = 8000;
-const LIGHT_SYNC_MS = 20_000;
-const PENDING_SYNC_MS = 8_000;
-const FULL_SYNC_MS = 10 * 60_000;
+const NETWORK_CHECK_MS = 5000;
+const LIGHT_SYNC_MS = 15_000;
+const PENDING_SYNC_MS = 4_000;
+const FULL_SYNC_MS = 5 * 60_000;
 
 function getPreloadPath(): string {
   const mjs = join(__dirname, '../preload/preload.mjs');
@@ -407,7 +407,7 @@ ipcMain.handle('desktop:login', async (_e, payload: LoginPayload) => {
       provisioned: false,
     };
     saveSettings(settings);
-    progress = { stage: 'schema', current: 0, total: 1, message: 'Downloading school data…' };
+    progress = { stage: 'schema', current: 0, total: 1, message: 'Downloading full server data…' };
     emitState();
     await initialSync(remoteUrl, result.token, (p) => {
       progress = p;
