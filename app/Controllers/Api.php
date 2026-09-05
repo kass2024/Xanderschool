@@ -1038,21 +1038,32 @@ public function sync($option, $school_id)
                 break;
 
             // -------------------------
-            // HOSTELS
+            // HOSTELS (with occupancy for active academic year)
             // -------------------------
             case "hostels":
                 $hostelSchema = new \App\Models\HostelSchemaModel();
                 $hostelSchema->ensureSchema();
-                $db = \Config\Database::connect();
-                $dt = $db->table('hostels')
-                    ->select('*, unix_timestamp(updated_at) as updated_at1')
-                    ->where('school_id', $school_id)
-                    ->where('unix_timestamp(updated_at) >', (int) $updatedAt)
-                    ->orderBy('sort_order', 'ASC')
-                    ->orderBy('name', 'ASC')
-                    ->get(500)->getResultArray();
-                foreach ($dt as $item) {
-                    $data['hostels'][] = $item;
+                $yearId = (int) ($this->request->getGet('year') ?: ($this->data['academic_year'] ?? 0));
+                if ($yearId > 0) {
+                    $dt = $hostelSchema->listHostelsWithOccupancy((int) $school_id, $yearId);
+                    foreach ($dt as $item) {
+                        $item['updated_at1'] = !empty($item['updated_at'])
+                            ? (int) strtotime((string) $item['updated_at'])
+                            : time();
+                        $data['hostels'][] = $item;
+                    }
+                } else {
+                    $db = \Config\Database::connect();
+                    $dt = $db->table('hostels')
+                        ->select('*, unix_timestamp(updated_at) as updated_at1')
+                        ->where('school_id', $school_id)
+                        ->where('unix_timestamp(updated_at) >', (int) $updatedAt)
+                        ->orderBy('sort_order', 'ASC')
+                        ->orderBy('name', 'ASC')
+                        ->get(500)->getResultArray();
+                    foreach ($dt as $item) {
+                        $data['hostels'][] = $item;
+                    }
                 }
                 break;
 
@@ -1101,6 +1112,85 @@ public function sync($option, $school_id)
         ]);
     }
 }
+
+	/**
+	 * Mobile: class material overview (same data as web student_material_class_overview).
+	 * GET: school_id, class_id, year (academic_year).
+	 */
+	public function get_material_class_overview($school_id = null, $class_id = null)
+	{
+		$schoolId = (int) ($school_id ?? $this->request->getGet('school_id') ?? $this->request->getPost('school_id') ?? 0);
+		$classId = (int) ($class_id ?? $this->request->getGet('class_id') ?? $this->request->getPost('class_id') ?? 0);
+		$yearId = (int) ($this->request->getGet('year') ?? $this->request->getPost('year')
+			?? $this->request->getGet('academic_year') ?? $this->request->getPost('academic_year') ?? 0);
+		if ($schoolId < 1 || $classId < 1 || $yearId < 1) {
+			return $this->response->setStatusCode(400)->setJSON([
+				'success' => false,
+				'error' => 'school_id, class_id and year are required.',
+			]);
+		}
+		try {
+			$schema = new \App\Models\StudentMaterialSchemaModel();
+			$schema->ensureSchema();
+			$overview = $schema->getClassOverview($schoolId, $classId, $yearId);
+			return $this->response->setJSON([
+				'success' => true,
+				'class_id' => $classId,
+				'academic_year' => $yearId,
+				'overview' => $overview,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON([
+				'success' => false,
+				'error' => $e->getMessage(),
+			]);
+		}
+	}
+
+	/**
+	 * Mobile: hostel dashboard with occupancy (same as web hostel_allocate).
+	 * GET: school_id, year (academic_year).
+	 */
+	public function get_hostel_dashboard($school_id = null)
+	{
+		$schoolId = (int) ($school_id ?? $this->request->getGet('school_id') ?? $this->request->getPost('school_id') ?? 0);
+		$yearId = (int) ($this->request->getGet('year') ?? $this->request->getPost('year')
+			?? $this->request->getGet('academic_year') ?? $this->request->getPost('academic_year') ?? 0);
+		if ($schoolId < 1) {
+			return $this->response->setStatusCode(400)->setJSON([
+				'success' => false,
+				'error' => 'school_id is required.',
+			]);
+		}
+		try {
+			if ($yearId < 1) {
+				$this->_preset($schoolId);
+				$yearId = (int) ($this->data['academic_year'] ?? 0);
+			}
+			$schema = new \App\Models\HostelSchemaModel();
+			$schema->ensureSchema();
+			$hostels = $schema->listHostelsWithOccupancy($schoolId, $yearId);
+			$totalBeds = 0;
+			$totalOcc = 0;
+			foreach ($hostels as $h) {
+				$totalBeds += (int) ($h['max_beds'] ?? 0);
+				$totalOcc += (int) ($h['occupied'] ?? 0);
+			}
+			return $this->response->setJSON([
+				'success' => true,
+				'academic_year' => $yearId,
+				'hostels' => $hostels,
+				'total_beds' => $totalBeds,
+				'total_occupied' => $totalOcc,
+				'free_beds' => max(0, $totalBeds - $totalOcc),
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON([
+				'success' => false,
+				'error' => $e->getMessage(),
+			]);
+		}
+	}
 
 
 	/**
