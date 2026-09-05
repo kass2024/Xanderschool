@@ -66,7 +66,7 @@ export async function startPhpServer(): Promise<string> {
   const php = findPhpExe();
   if (!php) {
     throw new Error(
-      'PHP was not found. Install XAMPP PHP or run npm run fetch-php inside desktop-app, then retry.',
+      'Bundled PHP runtime was not found. Reinstall the desktop app or run npm run fetch-php before packaging.',
     );
   }
   const port = await findFreePort();

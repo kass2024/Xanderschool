@@ -59,14 +59,23 @@ export function settingsPath(): string {
 }
 
 export function findPhpExe(): { exe: string; ini?: string } | null {
-  const bundled = join(
-    app.isPackaged ? process.resourcesPath : join(here, '../..'),
-    'php-runtime',
-    'php.exe',
-  );
-  const bundledIni = join(dirname(bundled), 'php.ini');
-  if (existsSync(bundled)) {
-    return { exe: bundled, ini: existsSync(bundledIni) ? bundledIni : undefined };
+  const bundledCandidates = app.isPackaged
+    ? [
+        join(process.resourcesPath, 'php-runtime', 'php.exe'),
+        join(dirname(process.execPath), 'resources', 'php-runtime', 'php.exe'),
+        join(dirname(process.execPath), '..', 'resources', 'php-runtime', 'php.exe'),
+      ]
+    : [join(join(here, '../..'), 'php-runtime', 'php.exe')];
+
+  for (const bundled of bundledCandidates) {
+    const bundledIni = join(dirname(bundled), 'php.ini');
+    if (existsSync(bundled)) {
+      return { exe: bundled, ini: existsSync(bundledIni) ? bundledIni : undefined };
+    }
+  }
+
+  if (app.isPackaged) {
+    return null;
   }
 
   const candidates = [
