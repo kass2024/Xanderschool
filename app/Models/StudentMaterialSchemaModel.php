@@ -760,4 +760,63 @@ class StudentMaterialSchemaModel extends Model
 		}
 		return $saved;
 	}
+
+	/**
+	 * Mobile upload: never lose progress — keep the higher quantity_brought.
+	 */
+	public function saveStudentChecksFromMobile(int $schoolId, int $studentId, int $classId, int $yearId, int $staffId, array $items): int
+	{
+		$this->ensureSchema();
+		$db = \Config\Database::connect();
+		$now = date('Y-m-d H:i:s');
+		$saved = 0;
+
+		foreach ($items as $item) {
+			$matId = (int) ($item['material_id'] ?? 0);
+			$req = (float) ($item['quantity_required'] ?? 0);
+			$brought = max(0, (float) ($item['quantity_brought'] ?? 0));
+			$notes = trim((string) ($item['notes'] ?? ''));
+			if ($notes === 'null') {
+				$notes = '';
+			}
+			if ($matId <= 0) {
+				continue;
+			}
+
+			$existing = $db->table('student_material_checks')
+				->where('student_id', $studentId)
+				->where('material_id', $matId)
+				->where('academic_year', $yearId)
+				->get(1)->getRowArray();
+
+			if ($existing) {
+				$brought = max($brought, (float) ($existing['quantity_brought'] ?? 0));
+			}
+			if ($req > 0 && $brought > $req) {
+				$brought = $req;
+			}
+
+			$payload = [
+				'school_id' => $schoolId,
+				'student_id' => $studentId,
+				'class_id' => $classId,
+				'material_id' => $matId,
+				'academic_year' => $yearId,
+				'quantity_required' => $req,
+				'quantity_brought' => $brought,
+				'notes' => $notes !== '' ? $notes : null,
+				'checked_by' => $staffId > 0 ? $staffId : null,
+				'checked_at' => $now,
+				'updated_at' => $now,
+			];
+
+			if ($existing) {
+				$db->table('student_material_checks')->where('id', $existing['id'])->update($payload);
+			} else {
+				$db->table('student_material_checks')->insert($payload);
+			}
+			$saved++;
+		}
+		return $saved;
+	}
 }

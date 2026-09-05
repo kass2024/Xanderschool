@@ -1916,13 +1916,14 @@ public function check_school($option)
 								'material_id' => (int) ($info['material_id'] ?? 0),
 								'quantity_required' => (float) ($info['quantity_required'] ?? 0),
 								'quantity_brought' => (float) ($info['quantity_brought'] ?? 0),
-								'notes' => (string) ($info['notes'] ?? ''),
+								'notes' => (string) (($info['notes'] ?? '') === 'null' ? '' : ($info['notes'] ?? '')),
 							]];
 						}
 						if ($studentId < 1 || $yearId < 1 || !is_array($items) || $items === []) {
 							continue;
 						}
-						$matSchema->saveStudentChecks((int) $school_id, $studentId, $classId, $yearId, $staffId, $items);
+						// Mobile is source of truth for this endpoint: never reduce brought on conflict
+						$matSchema->saveStudentChecksFromMobile((int) $school_id, $studentId, $classId, $yearId, $staffId, $items);
 						if ($localId !== '') {
 							$ids[] = $localId;
 						}
