@@ -123,6 +123,13 @@ class DesktopSync extends BaseController
 		if ($auth instanceof ResponseInterface) {
 			return $auth;
 		}
+		// Ensure newer feature tables exist so desktop can sync them offline
+		try {
+			(new \App\Models\StudentMaterialSchemaModel())->ensureSchema();
+			(new \App\Models\HostelSchemaModel())->ensureSchema();
+		} catch (\Throwable $e) {
+			log_message('error', 'Desktop schema ensure failed: ' . $e->getMessage());
+		}
 		$db = \Config\Database::connect();
 		$tables = [];
 		foreach ($this->listTables($db) as $table) {
@@ -131,8 +138,13 @@ class DesktopSync extends BaseController
 				'name' => $table,
 				'columns' => $this->describeTable($db, $table),
 				'writable' => $this->isWritableTable($table, $fields),
+				'priority' => $this->syncPriority($table),
 			];
 		}
+		usort($tables, static function (array $a, array $b): int {
+			return ($a['priority'] ?? 100) <=> ($b['priority'] ?? 100)
+				?: strcmp((string) $a['name'], (string) $b['name']);
+		});
 		return $this->response->setJSON([
 			'ok' => true,
 			'school_id' => (int) $auth['school_id'],
@@ -372,6 +384,9 @@ class DesktopSync extends BaseController
 			}
 			try {
 				if ($op === 'delete') {
+					if ($this->isFinanceProtectedTable($table)) {
+						throw new \RuntimeException('Finance records cannot be deleted via desktop sync');
+					}
 					if ($pk === '' || $pkVal === null || $pkVal === '') {
 						throw new \RuntimeException('Missing primary key for delete');
 					}
@@ -397,17 +412,20 @@ class DesktopSync extends BaseController
 					throw new \RuntimeException('No matching columns');
 				}
 				$exists = false;
+				$existingRow = null;
 				if ($pk !== '' && isset($clean[$pk]) && $clean[$pk] !== '' && $clean[$pk] !== null) {
 					$target = $db->table($table)->where($pk, $clean[$pk]);
 					$scope = $this->applyScope($target, $db, $table, $fields, (int) $auth['school_id']);
 					if ($scope === null) {
 						throw new \RuntimeException('Change is outside this school');
 					}
-					$exists = $target->countAllResults() > 0;
+					$existingRow = $target->get(1)->getRowArray();
+					$exists = ! empty($existingRow);
 				}
 				if ($exists) {
 					$id = $clean[$pk];
 					unset($clean[$pk]);
+					$clean = $this->mergeSafeUpsert($table, $existingRow ?: [], $clean);
 					$upd = $db->table($table)->where($pk, $id);
 					if ($this->applyScope($upd, $db, $table, $fields, (int) $auth['school_id']) === null) {
 						throw new \RuntimeException('Change is outside this school');
@@ -732,7 +750,87 @@ class DesktopSync extends BaseController
 			|| in_array('cash_request_id', $fields, true)
 			|| in_array('template_id', $fields, true)
 			|| in_array('version_id', $fields, true)
-			|| in_array('payment_id', $fields, true);
+			|| in_array('payment_id', $fields, true)
+			|| in_array('hostel_id', $fields, true)
+			|| in_array('material_id', $fields, true);
+	}
+
+	/** Lower = sync earlier (finance + students first). */
+	private function syncPriority(string $table): int
+	{
+		$map = [
+			'students' => 1,
+			'classes' => 2,
+			'staffs' => 3,
+			'academic_year' => 4,
+			'school_fees' => 5,
+			'extra_fees' => 6,
+			'fees_records' => 7,
+			'cash_requests' => 8,
+			'cash_request_payments' => 9,
+			'cash_request_approvals' => 10,
+			'budgets' => 11,
+			'budget_periods' => 12,
+			'budget_lines' => 13,
+			'required_materials' => 14,
+			'class_required_materials' => 15,
+			'student_material_checks' => 16,
+			'hostels' => 17,
+			'hostel_allocations' => 18,
+			'hostel_settings' => 19,
+		];
+		return $map[$table] ?? 100;
+	}
+
+	private function isFinanceProtectedTable(string $table): bool
+	{
+		return in_array($table, [
+			'fees_records',
+			'cash_request_payments',
+			'school_fees',
+			'extra_fees',
+		], true);
+	}
+
+	/**
+	 * Keep local/online finance & material progress from going backwards on conflict.
+	 *
+	 * @param array<string,mixed> $existing
+	 * @param array<string,mixed> $incoming
+	 * @return array<string,mixed>
+	 */
+	private function mergeSafeUpsert(string $table, array $existing, array $incoming): array
+	{
+		if ($table === 'student_material_checks') {
+			$ex = (float) ($existing['quantity_brought'] ?? 0);
+			$in = (float) ($incoming['quantity_brought'] ?? 0);
+			$incoming['quantity_brought'] = max($ex, $in);
+			return $incoming;
+		}
+		if ($table === 'fees_records') {
+			$ex = (float) ($existing['amount'] ?? 0);
+			$in = (float) ($incoming['amount'] ?? 0);
+			// Never shrink a fee payment amount via sync conflict
+			$incoming['amount'] = max($ex, $in);
+			return $incoming;
+		}
+		if (in_array($table, ['extra_fees', 'school_fees'], true)) {
+			foreach (['paid', 'expected'] as $col) {
+				if (array_key_exists($col, $existing) || array_key_exists($col, $incoming)) {
+					$ex = (float) ($existing[$col] ?? 0);
+					$in = (float) ($incoming[$col] ?? 0);
+					// Prefer the higher paid/expected so offline posts are not lost
+					if ($col === 'paid') {
+						$incoming[$col] = max($ex, $in);
+					}
+				}
+			}
+			if (isset($incoming['expected'], $incoming['paid'])) {
+				$incoming['balance'] = max(0, (float) $incoming['expected'] - (float) $incoming['paid']);
+			}
+			return $incoming;
+		}
+		return $incoming;
 	}
 
 	private function insertBelongsToSchool($db, string $table, array $fields, array $row, int $schoolId): bool
