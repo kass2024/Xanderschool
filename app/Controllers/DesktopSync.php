@@ -398,6 +398,15 @@ class DesktopSync extends BaseController
 					if ($scope === null) {
 						throw new \RuntimeException('Change is outside this school');
 					}
+					if ($table === 'hostels' && in_array('active', $fields, true)) {
+						$payload = ['active' => 0];
+						if (in_array('updated_at', $fields, true)) {
+							$payload['updated_at'] = date('Y-m-d H:i:s');
+						}
+						$del->update($payload);
+						$applied++;
+						continue;
+					}
 					$del->delete();
 					$applied++;
 					continue;

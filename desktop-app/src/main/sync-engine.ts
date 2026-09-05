@@ -419,11 +419,15 @@ async function pushPending(
   if (!writableGroups.length) return 0;
   const changes = writableGroups.map((group) => {
     const table = tableMap.get(group.latest.table_name)!;
-    const op = group.latest.op === 'delete' ? 'delete' : 'upsert';
+    const row = localRow(conn, table, group.latest.row_pk);
+    const op = group.latest.op === 'delete'
+      ? 'delete'
+      : table.name === 'hostels' && row && Number(row.active ?? 1) === 0
+        ? 'delete'
+        : 'upsert';
     if (op === 'delete') {
       return { table: table.name, op, pk: group.latest.row_pk };
     }
-    const row = localRow(conn, table, group.latest.row_pk);
     const change: { table: string; op: string; pk: string; row: Record<string, unknown>; photo_base64?: string } = {
       table: table.name,
       op,
