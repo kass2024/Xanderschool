@@ -246,6 +246,13 @@ function shouldReconcileDeletes(table: SchemaTable): boolean {
   return table.writable === false;
 }
 
+function shouldUseLiveFullPull(table: SchemaTable): boolean {
+  // Legacy school data is not consistent about touching updated_at on every edit.
+  // For writable tenant tables, use a stronger pull path during background sync so
+  // remote edits show up on the desktop even when timestamp-based deltas are incomplete.
+  return table.writable !== false && !isGlobalTable(table);
+}
+
 const GLOBAL_TABLES = new Set([
   'packages',
   'posts',
@@ -609,17 +616,18 @@ export async function incrementalSync(
   try {
     for (let i = 0; i < tables.length; i++) {
       const table = tables[i];
+      const forceFullPull = full || shouldUseLiveFullPull(table);
       createTable(conn, table);
       const hasTimestamp = table.columns.some((column) => column.name === 'updated_at' || column.name === 'created_at');
       const highWaterKey = `after_id:${table.name}`;
-      let afterId = full ? 0 : Number(getMeta(conn, highWaterKey) || 0);
+      let afterId = forceFullPull ? 0 : Number(getMeta(conn, highWaterKey) || 0);
       const photoNames = new Set<string>();
       onProgress?.({
         stage: 'pull',
         table: table.name,
         current: i + 1,
         total: tables.length,
-        message: `${full ? 'Refreshing' : 'Checking'} ${table.name}…`,
+        message: `${forceFullPull ? 'Refreshing' : 'Checking'} ${table.name}…`,
       });
       while (true) {
         const page = await remotePull(
@@ -627,8 +635,8 @@ export async function incrementalSync(
           token,
           table.name,
           afterId,
-          full || !hasTimestamp ? undefined : since || undefined,
-          full,
+          forceFullPull || !hasTimestamp ? undefined : since || undefined,
+          forceFullPull,
         );
         if (!page.ok) throw new Error(page.error || `Failed to pull ${table.name}`);
         if (page.rows?.length) {
@@ -641,14 +649,14 @@ export async function incrementalSync(
           }
         }
         afterId = page.next_after_id || afterId;
-        if (!full && !hasTimestamp && afterId > 0) setMeta(conn, highWaterKey, String(afterId));
+        if (!forceFullPull && !hasTimestamp && afterId > 0) setMeta(conn, highWaterKey, String(afterId));
         if (!page.has_more || !page.rows?.length) break;
       }
       installTriggers(conn, table);
       if (table.name === 'students' && photoNames.size) {
         await syncProfilePhotos(remoteUrl, token, photoNames, onProgress);
       }
-      if (full && shouldReconcileDeletes(table)) await reconcileDeletes(conn, remoteUrl, token, table);
+      if (forceFullPull && shouldReconcileDeletes(table)) await reconcileDeletes(conn, remoteUrl, token, table);
     }
   } finally {
     setApplying(conn, false);
