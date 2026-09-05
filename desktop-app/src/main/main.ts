@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, net, session, shell } from 'electron';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { pathToFileURL } from 'url';
 import type { DesktopState, LoginPayload, SyncProgress } from '../shared/types';
 import { loadSettings, saveSettings, clearSettings } from './settings';
 import { remoteHealth, remoteLogin } from './remote-api';
@@ -135,8 +136,15 @@ async function showRenderer(): Promise<void> {
   showingSchool = false;
   if (!mainWindow) return;
   const dev = rendererUrl();
-  if (dev) await mainWindow.loadURL(dev);
-  else await mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+  if (dev) {
+    if (mainWindow.webContents.getURL() === dev) return;
+    await mainWindow.loadURL(dev);
+    return;
+  }
+  const target = pathToFileURL(join(__dirname, '../renderer/index.html')).toString();
+  const current = mainWindow.webContents.getURL();
+  if (current === target || current.startsWith(`${target}#`)) return;
+  await mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
 }
 
 async function showSchool(path = '/dashboard'): Promise<void> {
