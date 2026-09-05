@@ -15268,13 +15268,7 @@ public function getApplicationDocs($id = null)
 			if (!$row) {
 				return $this->response->setJSON(['error' => 'Hostel not found.']);
 			}
-			$year = (int) ($this->data['academic_year'] ?? 0);
-			$db = \Config\Database::connect();
-			$db->table('hostel_allocations')
-				->where('school_id', $schoolId)
-				->where('hostel_id', $id)
-				->delete();
-			$mdl->update($id, ['active' => 0]);
+			$mdl->removeHostel($schoolId, $id);
 			return $this->response->setJSON(['success' => 'Hostel removed.']);
 		}
 		if ($action === 'save_settings') {

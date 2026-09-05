@@ -298,10 +298,10 @@ function syncTables(schema: { tables: SchemaTable[] }): SchemaTable[] {
 }
 
 function shouldReconcileDeletes(table: SchemaTable): boolean {
-  // Never auto-delete writable business records from the offline app during a full refresh.
-  // Pull/upsert still keeps remote edits flowing down, but destructive reconcile is limited
-  // to shared read-only reference data so locally entered records are not lost.
-  return table.writable === false;
+  // During a full refresh, remove rows that no longer exist on the server so
+  // web-side deletes also disappear locally. Pending local rows are protected
+  // in reconcileDeletes(), so unsynced offline work is not discarded.
+  return !isGlobalTable(table);
 }
 
 function shouldUseLiveFullPull(table: SchemaTable): boolean {

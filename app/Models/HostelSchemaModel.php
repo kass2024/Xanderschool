@@ -99,6 +99,29 @@ class HostelSchemaModel extends Model
 		}
 	}
 
+	public function removeHostel(int $schoolId, int $hostelId): bool
+	{
+		$this->ensureSchema();
+		$hostel = $this->where('school_id', $schoolId)->find($hostelId);
+		if (!$hostel) {
+			return false;
+		}
+
+		$db = \Config\Database::connect();
+		$db->table('hostel_allocations')
+			->where('school_id', $schoolId)
+			->where('hostel_id', $hostelId)
+			->delete();
+
+		$payload = ['active' => 0];
+		if (array_key_exists('updated_at', $hostel)) {
+			$payload['updated_at'] = date('Y-m-d H:i:s');
+		}
+
+		$this->update($hostelId, $payload);
+		return true;
+	}
+
 	/**
 	 * Active class level for a student in a year.
 	 *

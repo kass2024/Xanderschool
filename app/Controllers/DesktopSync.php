@@ -413,11 +413,10 @@ class DesktopSync extends BaseController
 						throw new \RuntimeException('Change is outside this school');
 					}
 					if ($table === 'hostels' && in_array('active', $fields, true)) {
-						$payload = ['active' => 0];
-						if (in_array('updated_at', $fields, true)) {
-							$payload['updated_at'] = date('Y-m-d H:i:s');
+						$removed = (new \App\Models\HostelSchemaModel())->removeHostel((int) $auth['school_id'], (int) $pkVal);
+						if (! $removed) {
+							throw new \RuntimeException('Hostel not found.');
 						}
-						$del->update($payload);
 						$acks[] = ['index' => $i, 'table' => $table, 'op' => $op, 'local_pk' => $pkVal, 'remote_pk' => $pkVal];
 						$applied++;
 						continue;
