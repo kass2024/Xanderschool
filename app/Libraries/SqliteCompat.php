@@ -186,6 +186,16 @@ class SqliteCompat
 		$sqlite->createFunction('SHA1', static function ($v) {
 			return sha1((string) $v);
 		}, 1);
+		$sqlite->createFunction('REGEXP', static function ($pattern, $value) {
+			$pattern = (string) $pattern;
+			$value = (string) ($value ?? '');
+			if ($pattern === '') {
+				return 0;
+			}
+			$regex = '~' . str_replace('~', '\~', $pattern) . '~iu';
+			$result = @preg_match($regex, $value);
+			return $result === 1 ? 1 : 0;
+		}, 2);
 		$sqlite->createFunction('SLEEP', static function () {
 			return 0;
 		}, 1);
