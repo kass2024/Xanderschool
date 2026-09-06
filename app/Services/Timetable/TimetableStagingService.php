@@ -7,6 +7,9 @@ namespace App\Services\Timetable;
  */
 class TimetableStagingService
 {
+	/** @var array<string,array<string,mixed>> */
+	private $assignmentMeta = [];
+
 	/** @return string */
 	private function assignmentKey(int $courseRecordId, int $classId, int $courseId, int $staffId): string
 	{
@@ -197,6 +200,7 @@ class TimetableStagingService
 		$db = \Config\Database::connect();
 		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
 		$days = \App\Models\TimetableSchemaModel::weekDaysFromSettings($settings);
+		$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
 
 		$builder = $db->table('timetable_entries')
 			->where('schedule_id', $scheduleId)
@@ -222,49 +226,18 @@ class TimetableStagingService
 			->where('slot_id >', 0)
 			->get()->getResultArray();
 
-		$classBusy = [];
-		$staffBusy = [];
-		foreach ($scheduled as $entry) {
-			$key = (int) $entry['day_of_week'] . ':' . (int) $entry['slot_id'];
-			$classBusy[(int) $entry['class_id'] . ':' . $key] = true;
-			if ((int) ($entry['staff_id'] ?? 0) > 0) {
-				$staffBusy[(int) $entry['staff_id'] . ':' . $key] = true;
-			}
-		}
+		$state = $this->buildScheduleState($scheduled);
+		usort($parking, function (array $a, array $b) use ($days, $schema, $schoolId, $state): int {
+			return $this->countDirectCandidates($a, $days, $schema, $schoolId, $state)
+				<=> $this->countDirectCandidates($b, $days, $schema, $schoolId, $state);
+		});
 
 		$placed = 0;
 		foreach ($parking as $entry) {
-			$classId = (int) ($entry['class_id'] ?? 0);
-			$staffId = (int) ($entry['staff_id'] ?? 0);
-			$trackKey = $schema->trackForClass($schoolId, $classId);
-			$slots = array_values(array_filter(
-				$schema->teachingSlots($schoolId, $trackKey),
-				static fn ($s) => empty($s['is_break'])
-			));
-			$blocked = $schema->specialTimesMap($schoolId, $trackKey);
-			$found = null;
-
-			foreach ($days as $day) {
-				foreach ($slots as $slot) {
-					$slotId = (int) ($slot['id'] ?? 0);
-					if ($slotId <= 0) {
-						continue;
-					}
-					$key = $day . ':' . $slotId;
-					if (!empty($blocked[$key])) {
-						continue;
-					}
-					if (!empty($classBusy[$classId . ':' . $key])) {
-						continue;
-					}
-					if ($staffId > 0 && !empty($staffBusy[$staffId . ':' . $key])) {
-						continue;
-					}
-					$found = ['day' => $day, 'slot_id' => $slotId];
-					break 2;
-				}
+			$found = $this->findBestDirectPlacement($entry, $days, $schema, $schoolId, $state);
+			if ($found === null) {
+				$found = $this->placeByRelocatingOneBlocker($db, $entry, $days, $schema, $schoolId, $state);
 			}
-
 			if ($found === null) {
 				continue;
 			}
@@ -273,14 +246,271 @@ class TimetableStagingService
 				'day_of_week' => $found['day'],
 				'slot_id' => $found['slot_id'],
 			]);
-			$key = $found['day'] . ':' . $found['slot_id'];
-			$classBusy[$classId . ':' . $key] = true;
-			if ($staffId > 0) {
-				$staffBusy[$staffId . ':' . $key] = true;
-			}
+			$entry['day_of_week'] = $found['day'];
+			$entry['slot_id'] = $found['slot_id'];
+			$this->addScheduledEntry($state, $entry);
 			$placed++;
 		}
 
 		return $placed;
+	}
+
+	/** @return array<string,array<string,mixed>> */
+	private function loadAssignmentMeta(int $scheduleId, int $schoolId): array
+	{
+		$db = \Config\Database::connect();
+		$schedule = $db->table('timetable_schedules')->where('id', $scheduleId)->get(1)->getRowArray();
+		$year = (int) ($schedule['academic_year'] ?? 0);
+		$term = (int) ($schedule['term'] ?? 0);
+		if ($year <= 0 || $term <= 0) {
+			return [];
+		}
+
+		$rows = $db->table('course_records cr')
+			->select('cr.id AS course_record_id, cr.class AS class_id, cr.course AS course_id, cr.lecturer, c.credit, c.title AS course_title')
+			->join('classes cl', 'cl.id = cr.class')
+			->join('courses c', 'c.id = cr.course')
+			->where('cl.school_id', $schoolId)
+			->where('cr.year', $year)
+			->where("find_in_set($term, cr.term) >", 0, false)
+			->get()->getResultArray();
+
+		$out = [];
+		foreach ($rows as $row) {
+			$out[$this->assignmentKey(
+				(int) ($row['course_record_id'] ?? 0),
+				(int) ($row['class_id'] ?? 0),
+				(int) ($row['course_id'] ?? 0),
+				(int) ($row['lecturer'] ?? 0)
+			)] = $row;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $scheduled
+	 * @return array<string,mixed>
+	 */
+	private function buildScheduleState(array $scheduled): array
+	{
+		$state = [
+			'by_id' => [],
+			'class_busy' => [],
+			'staff_busy' => [],
+			'subject_day_count' => [],
+			'class_day_usage' => [],
+		];
+		foreach ($scheduled as $entry) {
+			$this->addScheduledEntry($state, $entry);
+		}
+		return $state;
+	}
+
+	/** @param array<string,mixed> $state */
+	private function addScheduledEntry(array &$state, array $entry): void
+	{
+		$entryId = (int) ($entry['id'] ?? 0);
+		$day = (int) ($entry['day_of_week'] ?? -1);
+		$slotId = (int) ($entry['slot_id'] ?? 0);
+		if ($entryId <= 0 || $day < 0 || $slotId <= 0) {
+			return;
+		}
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$staffId = (int) ($entry['staff_id'] ?? 0);
+		$key = $day . ':' . $slotId;
+		$state['by_id'][$entryId] = $entry;
+		$state['class_busy'][$classId . ':' . $key] = $entryId;
+		if ($staffId > 0) {
+			$state['staff_busy'][$staffId . ':' . $key] = $entryId;
+		}
+		$subjectKey = $classId . ':' . (int) ($entry['course_id'] ?? 0) . ':' . $day;
+		$state['subject_day_count'][$subjectKey] = (int) ($state['subject_day_count'][$subjectKey] ?? 0) + 1;
+		$state['class_day_usage'][$classId . ':' . $day] = (int) ($state['class_day_usage'][$classId . ':' . $day] ?? 0) + 1;
+	}
+
+	/** @param array<string,mixed> $state */
+	private function removeScheduledEntry(array &$state, array $entry): void
+	{
+		$entryId = (int) ($entry['id'] ?? 0);
+		$day = (int) ($entry['day_of_week'] ?? -1);
+		$slotId = (int) ($entry['slot_id'] ?? 0);
+		if ($entryId <= 0 || $day < 0 || $slotId <= 0) {
+			return;
+		}
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$staffId = (int) ($entry['staff_id'] ?? 0);
+		$key = $day . ':' . $slotId;
+		unset($state['by_id'][$entryId], $state['class_busy'][$classId . ':' . $key]);
+		if ($staffId > 0) {
+			unset($state['staff_busy'][$staffId . ':' . $key]);
+		}
+		$subjectKey = $classId . ':' . (int) ($entry['course_id'] ?? 0) . ':' . $day;
+		$state['subject_day_count'][$subjectKey] = max(0, (int) ($state['subject_day_count'][$subjectKey] ?? 0) - 1);
+		$state['class_day_usage'][$classId . ':' . $day] = max(0, (int) ($state['class_day_usage'][$classId . ':' . $day] ?? 0) - 1);
+	}
+
+	/** @param array<string,mixed> $state */
+	private function countDirectCandidates(array $entry, array $days, \App\Models\TimetableSchemaModel $schema, int $schoolId, array $state): int
+	{
+		$count = 0;
+		foreach ($this->candidateSlots($entry, $days, $schema, $schoolId, $state, false) as $_candidate) {
+			$count++;
+		}
+		return $count;
+	}
+
+	/**
+	 * @param array<string,mixed> $state
+	 * @return array{day:int,slot_id:int}|null
+	 */
+	private function findBestDirectPlacement(array $entry, array $days, \App\Models\TimetableSchemaModel $schema, int $schoolId, array $state): ?array
+	{
+		$candidates = $this->candidateSlots($entry, $days, $schema, $schoolId, $state, false);
+		return $candidates[0] ?? null;
+	}
+
+	/**
+	 * @param array<string,mixed> $state
+	 * @return array{day:int,slot_id:int}|null
+	 */
+	private function placeByRelocatingOneBlocker(
+		\CodeIgniter\Database\BaseConnection $db,
+		array $entry,
+		array $days,
+		\App\Models\TimetableSchemaModel $schema,
+		int $schoolId,
+		array &$state
+	): ?array {
+		$candidates = $this->candidateSlots($entry, $days, $schema, $schoolId, $state, true);
+		foreach ($candidates as $candidate) {
+			$blockers = $candidate['blockers'] ?? [];
+			if (count($blockers) !== 1) {
+				continue;
+			}
+			$blockerId = (int) $blockers[0];
+			$blocker = $state['by_id'][$blockerId] ?? null;
+			if (!is_array($blocker)) {
+				continue;
+			}
+			$this->removeScheduledEntry($state, $blocker);
+			$relocation = $this->findBestDirectPlacement($blocker, $days, $schema, $schoolId, $state);
+			if ($relocation === null) {
+				$this->addScheduledEntry($state, $blocker);
+				continue;
+			}
+			$db->table('timetable_entries')->where('id', $blockerId)->update([
+				'day_of_week' => $relocation['day'],
+				'slot_id' => $relocation['slot_id'],
+			]);
+			$blocker['day_of_week'] = $relocation['day'];
+			$blocker['slot_id'] = $relocation['slot_id'];
+			$this->addScheduledEntry($state, $blocker);
+			return ['day' => (int) $candidate['day'], 'slot_id' => (int) $candidate['slot_id']];
+		}
+		return null;
+	}
+
+	/**
+	 * @param array<string,mixed> $state
+	 * @return list<array{day:int,slot_id:int,score:int,blockers?:list<int>}>
+	 */
+	private function candidateSlots(
+		array $entry,
+		array $days,
+		\App\Models\TimetableSchemaModel $schema,
+		int $schoolId,
+		array $state,
+		bool $allowSingleBlocker
+	): array {
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$staffId = (int) ($entry['staff_id'] ?? 0);
+		$trackKey = $schema->trackForClass($schoolId, $classId);
+		$slots = array_values(array_filter(
+			$schema->teachingSlots($schoolId, $trackKey),
+			static fn ($s) => empty($s['is_break'])
+		));
+		$blocked = $schema->specialTimesMap($schoolId, $trackKey);
+		$candidates = [];
+
+		usort($days, function ($a, $b) use ($state, $classId, $entry): int {
+			$subA = $this->subjectDayCountForState($state, $entry, (int) $a);
+			$subB = $this->subjectDayCountForState($state, $entry, (int) $b);
+			if ($subA !== $subB) {
+				return $subA <=> $subB;
+			}
+			return (int) ($state['class_day_usage'][$classId . ':' . $a] ?? 0)
+				<=> (int) ($state['class_day_usage'][$classId . ':' . $b] ?? 0);
+		});
+
+		foreach ($days as $day) {
+			if ($this->wouldExceedSubjectDayLimit($state, $entry, (int) $day)) {
+				continue;
+			}
+			foreach ($slots as $slot) {
+				$slotId = (int) ($slot['id'] ?? 0);
+				if ($slotId <= 0) {
+					continue;
+				}
+				$key = $day . ':' . $slotId;
+				if (!empty($blocked[$key])) {
+					continue;
+				}
+				$classBlocker = (int) ($state['class_busy'][$classId . ':' . $key] ?? 0);
+				$staffBlocker = ($staffId > 0) ? (int) ($state['staff_busy'][$staffId . ':' . $key] ?? 0) : 0;
+				$blockers = array_values(array_unique(array_filter([$classBlocker, $staffBlocker])));
+				if ($blockers !== [] && (!$allowSingleBlocker || count($blockers) > 1)) {
+					continue;
+				}
+				$candidates[] = [
+					'day' => (int) $day,
+					'slot_id' => $slotId,
+					'score' => $this->scoreCandidate($state, $entry, (int) $day, $slotId, count($blockers)),
+					'blockers' => $blockers,
+				];
+			}
+		}
+
+		usort($candidates, static function (array $a, array $b): int {
+			return $a['score'] <=> $b['score'];
+		});
+		return $candidates;
+	}
+
+	/** @param array<string,mixed> $state */
+	private function scoreCandidate(array $state, array $entry, int $day, int $slotId, int $blockerCount): int
+	{
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$score = $blockerCount * 1000;
+		$score += $this->subjectDayCountForState($state, $entry, $day) * 300;
+		$score += (int) ($state['class_day_usage'][$classId . ':' . $day] ?? 0) * 80;
+		$score += $slotId;
+		return $score;
+	}
+
+	/** @param array<string,mixed> $state */
+	private function subjectDayCountForState(array $state, array $entry, int $day): int
+	{
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$courseId = (int) ($entry['course_id'] ?? 0);
+		return (int) ($state['subject_day_count'][$classId . ':' . $courseId . ':' . $day] ?? 0);
+	}
+
+	/** @param array<string,mixed> $state */
+	private function wouldExceedSubjectDayLimit(array $state, array $entry, int $day): bool
+	{
+		$hours = TimetableGeneratorService::weeklyHoursFromCourse($this->metaForEntry($entry));
+		$maxPerDay = ($hours > 0 && $hours <= 2) ? 1 : 2;
+		return $this->subjectDayCountForState($state, $entry, $day) + 1 > $maxPerDay;
+	}
+
+	/** @return array<string,mixed> */
+	private function metaForEntry(array $entry): array
+	{
+		$key = $this->keyFromEntry($entry);
+		return $this->assignmentMeta[$key] ?? [
+			'course_title' => '',
+			'credit' => 0,
+		];
 	}
 }
