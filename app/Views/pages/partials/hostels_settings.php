@@ -74,7 +74,7 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 					<th style="width:130px">Level group</th>
 					<th style="width:110px">Max beds</th>
 					<th style="width:110px">Gender</th>
-					<th style="width:70px"></th>
+					<th style="width:150px">Actions</th>
 				</tr>
 				</thead>
 				<tbody id="hstTbody">
@@ -98,10 +98,10 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 								</span>
 							</td>
 							<td class="text-center">
-								<button type="button" class="btn btn-link btn-sm text-primary hst-edit" data-id="<?= (int) $h['id']; ?>" title="Edit">
-									<i class="fa fa-pencil"></i>
+								<button type="button" class="btn btn-outline-primary btn-sm hst-edit" data-id="<?= (int) $h['id']; ?>" title="Edit">
+									<i class="fa fa-edit"></i> Edit
 								</button>
-								<button type="button" class="btn btn-link btn-sm text-danger hst-del" data-id="<?= (int) $h['id']; ?>" title="Remove">
+								<button type="button" class="btn btn-outline-danger btn-sm hst-del" data-id="<?= (int) $h['id']; ?>" title="Remove">
 									<i class="fa fa-trash"></i>
 								</button>
 							</td>
@@ -158,8 +158,8 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 
 	function actionButtons(id) {
 		return '' +
-			'<button type="button" class="btn btn-link btn-sm text-primary hst-edit" data-id="' + id + '" title="Edit"><i class="fa fa-pencil"></i></button>' +
-			'<button type="button" class="btn btn-link btn-sm text-danger hst-del" data-id="' + id + '" title="Remove"><i class="fa fa-trash"></i></button>';
+			'<button type="button" class="btn btn-outline-primary btn-sm hst-edit mr-1" data-id="' + id + '" title="Edit"><i class="fa fa-edit"></i> Edit</button>' +
+			'<button type="button" class="btn btn-outline-danger btn-sm hst-del" data-id="' + id + '" title="Remove"><i class="fa fa-trash"></i></button>';
 	}
 
 	function rowHtml(h) {
@@ -197,8 +197,8 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 				'</select>' +
 			'</td>' +
 			'<td class="text-center">' +
-				'<button type="button" class="btn btn-link btn-sm text-success hst-save" data-id="' + id + '" title="Save"><i class="fa fa-save"></i></button>' +
-				'<button type="button" class="btn btn-link btn-sm text-muted hst-cancel" data-id="' + id + '" title="Cancel"><i class="fa fa-times"></i></button>' +
+				'<button type="button" class="btn btn-success btn-sm hst-save mr-1" data-id="' + id + '" title="Save"><i class="fa fa-save"></i> Save</button>' +
+				'<button type="button" class="btn btn-secondary btn-sm hst-cancel" data-id="' + id + '" title="Cancel"><i class="fa fa-times"></i></button>' +
 			'</td>';
 	}
 
