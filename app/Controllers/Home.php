@@ -15237,8 +15237,12 @@ public function getApplicationDocs($id = null)
 			$name = trim((string) $this->request->getPost('name'));
 			$maxBeds = max(1, (int) $this->request->getPost('max_beds'));
 			$gender = $mdl->normalizeGender((string) $this->request->getPost('gender'));
+			$levelGroup = $mdl->normalizeLevelGroup((string) $this->request->getPost('level_group'));
 			if ($name === '') {
 				return $this->response->setJSON(['error' => 'Hostel name is required.']);
+			}
+			if ($levelGroup === '') {
+				return $this->response->setJSON(['error' => 'Select the hostel level group.']);
 			}
 			foreach ($mdl->listHostels($schoolId, true) as $row) {
 				if (strcasecmp(trim((string) ($row['name'] ?? '')), $name) === 0) {
@@ -15250,6 +15254,7 @@ public function getApplicationDocs($id = null)
 				'name' => $name,
 				'max_beds' => $maxBeds,
 				'gender' => $gender,
+				'level_group' => $levelGroup,
 				'sort_order' => 0,
 				'active' => 1,
 			]);
@@ -15263,6 +15268,8 @@ public function getApplicationDocs($id = null)
 					'name' => $name,
 					'max_beds' => $maxBeds,
 					'gender' => $gender,
+					'level_group' => $levelGroup,
+					'level_group_label' => $mdl->levelGroupLabel($levelGroup),
 				],
 			]);
 		}
@@ -15489,17 +15496,23 @@ public function getApplicationDocs($id = null)
 			];
 		}
 		$levelNames = [];
+		$levelGroups = [];
+		$groupLabeler = new \App\Models\HostelSchemaModel();
 		foreach ($out as $s) {
 			$ln = trim((string) ($s['level_name'] ?? ''));
 			if ($ln !== '') {
 				$levelNames[$ln] = true;
+			}
+			$group = $groupLabeler->resolveLevelGroupFromTitle($ln);
+			if ($group !== '') {
+				$levelGroups[$group] = true;
 			}
 		}
 		return $this->response->setJSON([
 			'success' => true,
 			'hostel_id' => $hostelId,
 			'students' => $out,
-			'is_mixed' => count($levelNames) > 1,
+			'is_mixed' => count($levelGroups) > 1 || (count($levelGroups) === 0 && count($levelNames) > 1),
 		]);
 	}
 

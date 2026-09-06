@@ -15,14 +15,14 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 	<div class="hst-card mb-3">
 		<h6><i class="fa fa-shield"></i> Allocation rules</h6>
 		<p class="text-muted small mb-3">
-			Control whether students from different school levels (Nursery, Primary, O Level, A Level, ANP, etc.) may share the same hostel.
+			Control whether students from different school groups may share the same hostel. Nursery stays separate, Primary stays separate, and every other level is treated as High School.
 		</p>
 		<label class="hst-rule-toggle <?= $separateByLevel ? 'is-on' : ''; ?>" id="hstLevelRuleLabel">
 			<input type="checkbox" id="hstSeparateByLevel" <?= $separateByLevel ? 'checked' : ''; ?>>
 			<span class="hst-rule-switch" aria-hidden="true"></span>
 			<span class="hst-rule-copy">
 				<strong>Keep levels separate in each hostel</strong>
-				<small>When ON, a Primary student cannot be placed with A Level / O Level / Nursery / ANP (or any other different level) in the same hostel. When OFF, mixing is allowed.</small>
+				<small>When ON, Nursery, Primary, and High School students cannot mix in the same hostel. For WISDOM SCHOOL RWANDA, O Level, A Level, ANP, and all other non-primary/non-nursery levels are treated as High School.</small>
 			</span>
 		</label>
 		<div id="hstRuleSaveMsg" class="hst-rule-msg" style="display:none;"></div>
@@ -30,24 +30,35 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 
 	<div class="hst-card">
 		<h6><i class="fa fa-bed"></i> Hostel catalog</h6>
+		<p class="text-muted small mb-3">
+			Create hostels by gender and level group, for example <strong>Primary Girls Hostel</strong> or <strong>High School Boys Hostel</strong>.
+		</p>
 		<form id="hstAddForm" class="hst-add-form">
 			<div class="form-row align-items-end">
-				<div class="col-md-4">
+				<div class="col-md-3">
 					<label class="small font-weight-bold">Hostel name</label>
-					<input type="text" class="form-control form-control-sm" id="hstName" placeholder="e.g. Hope Hostel" required maxlength="160">
+					<input type="text" class="form-control form-control-sm" id="hstName" placeholder="e.g. Primary Girls Hostel" required maxlength="160">
 				</div>
 				<div class="col-md-2">
 					<label class="small font-weight-bold">Max beds</label>
 					<input type="number" class="form-control form-control-sm" id="hstBeds" min="1" max="9999" value="40" required>
 				</div>
 				<div class="col-md-3">
+					<label class="small font-weight-bold">Level group</label>
+					<select class="form-control form-control-sm" id="hstLevelGroup" required>
+						<option value="nursery">Nursery</option>
+						<option value="primary">Primary</option>
+						<option value="high_school" selected>High School</option>
+					</select>
+				</div>
+				<div class="col-md-2">
 					<label class="small font-weight-bold">Gender</label>
 					<select class="form-control form-control-sm" id="hstGender" required>
 						<option value="M">Male</option>
 						<option value="F">Female</option>
 					</select>
 				</div>
-				<div class="col-md-3">
+				<div class="col-md-2">
 					<button type="submit" class="btn btn-success btn-sm btn-block">
 						<i class="fa fa-plus"></i> Add hostel
 					</button>
@@ -60,6 +71,7 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 				<thead>
 				<tr>
 					<th>Name</th>
+					<th style="width:130px">Level group</th>
 					<th style="width:110px">Max beds</th>
 					<th style="width:110px">Gender</th>
 					<th style="width:70px"></th>
@@ -67,11 +79,12 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 				</thead>
 				<tbody id="hstTbody">
 				<?php if (empty($hostels)) : ?>
-					<tr class="hst-empty-row"><td colspan="4" class="text-muted text-center">No hostels yet. Add the first one above.</td></tr>
+					<tr class="hst-empty-row"><td colspan="5" class="text-muted text-center">No hostels yet. Add the first one above.</td></tr>
 				<?php else : ?>
 					<?php foreach ($hostels as $h) : ?>
 						<tr data-id="<?= (int) $h['id']; ?>">
 							<td><strong><?= esc($h['name']); ?></strong></td>
+							<td><?= esc($h['level_group_label'] ?? ''); ?></td>
 							<td><?= (int) $h['max_beds']; ?></td>
 							<td>
 								<span class="hst-gender-badge hst-gender-<?= strtoupper((string) $h['gender']) === 'F' ? 'f' : 'm'; ?>">
@@ -105,6 +118,27 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 	function genderBadge(g) {
 		var isF = String(g).toUpperCase() === 'F';
 		return '<span class="hst-gender-badge hst-gender-' + (isF ? 'f' : 'm') + '">' + (isF ? 'Female' : 'Male') + '</span>';
+	}
+
+	function levelGroupLabel(group) {
+		group = String(group || '').toLowerCase();
+		if (group === 'nursery') {
+			return 'Nursery';
+		}
+		if (group === 'primary') {
+			return 'Primary';
+		}
+		return 'High School';
+	}
+
+	function syncHostelNameSuggestion() {
+		var $name = $('#hstName');
+		if ($.trim($name.val()).length) {
+			return;
+		}
+		var gender = ($('#hstGender').val() || 'M') === 'F' ? 'Girls' : 'Boys';
+		var group = levelGroupLabel($('#hstLevelGroup').val() || 'high_school');
+		$name.attr('placeholder', group + ' ' + gender + ' Hostel');
 	}
 
 	function ensureTableBody() {
@@ -141,6 +175,7 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 		e.preventDefault();
 		var name = $.trim($('#hstName').val() || '');
 		var beds = parseInt($('#hstBeds').val(), 10) || 0;
+		var levelGroup = $('#hstLevelGroup').val() || 'high_school';
 		var gender = $('#hstGender').val() || 'M';
 		if (!name || beds < 1) {
 			toast('Enter hostel name and max beds.', false);
@@ -150,6 +185,7 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 			action: 'add',
 			name: name,
 			max_beds: beds,
+			level_group: levelGroup,
 			gender: gender
 		}).done(function (res) {
 			if (res.error) {
@@ -161,12 +197,16 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 			$tb.append(
 				'<tr data-id="' + h.id + '">' +
 				'<td><strong>' + $('<div>').text(h.name || name).html() + '</strong></td>' +
+				'<td>' + $('<div>').text(h.level_group_label || levelGroupLabel(h.level_group || levelGroup)).html() + '</td>' +
 				'<td>' + (h.max_beds || beds) + '</td>' +
 				'<td>' + genderBadge(h.gender || gender) + '</td>' +
 				'<td class="text-center"><button type="button" class="btn btn-link btn-sm text-danger hst-del" data-id="' + h.id + '"><i class="fa fa-trash"></i></button></td>' +
 				'</tr>'
 			);
 			$('#hstName').val('');
+			$('#hstLevelGroup').val('high_school');
+			$('#hstGender').val('M');
+			syncHostelNameSuggestion();
 			toast(res.success || 'Hostel added.', true);
 		}).fail(function () {
 			toast('Could not add hostel.', false);
@@ -186,12 +226,15 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 			}
 			$row.remove();
 			if (!$('#hstTbody tr').length) {
-				$('#hstTbody').append('<tr class="hst-empty-row"><td colspan="4" class="text-muted text-center">No hostels yet. Add the first one above.</td></tr>');
+				$('#hstTbody').append('<tr class="hst-empty-row"><td colspan="5" class="text-muted text-center">No hostels yet. Add the first one above.</td></tr>');
 			}
 			toast(res.success || 'Hostel removed.', true);
 		}).fail(function () {
 			toast('Could not remove hostel.', false);
 		});
 	});
+
+	$('#hstLevelGroup, #hstGender').on('change', syncHostelNameSuggestion);
+	syncHostelNameSuggestion();
 })(jQuery);
 </script>

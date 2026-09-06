@@ -25,7 +25,7 @@ foreach ($hostels as $h) {
 			<div>
 				<div class="hst-hero-kicker"><i class="fa fa-bed"></i> Boarding housing</div>
 				<h4>Hostel allocation</h4>
-				<p class="hst-hero-sub">Live-search any student to see class and hostel. Allocate boarding students only — day scholars stay unassigned.<?= $separateByLevel ? ' <strong>Level separation is ON</strong> — different levels cannot share a hostel.' : ''; ?></p>
+				<p class="hst-hero-sub">Live-search any student to see class and hostel. Allocate boarding students only — day scholars stay unassigned.<?= $separateByLevel ? ' <strong>Level separation is ON</strong> — Nursery, Primary, and High School students cannot share a hostel.' : ''; ?></p>
 			</div>
 			<div class="hst-year-pick">
 				<label for="hstYear">Academic year</label>
@@ -50,7 +50,7 @@ foreach ($hostels as $h) {
 		<?php if ($separateByLevel) : ?>
 			<div class="hst-rule-banner">
 				<i class="fa fa-shield"></i>
-				<span>Mixing levels is blocked (Nursery, Primary, O Level, A Level, ANP, …). Change this in <strong>Settings → Hostels</strong>.</span>
+				<span>Mixing levels is blocked. Nursery stays separate, Primary stays separate, and all other levels are treated as High School. Change this in <strong>Settings → Hostels</strong>.</span>
 			</div>
 		<?php endif; ?>
 
@@ -149,7 +149,7 @@ foreach ($hostels as $h) {
 							<option value="">Select hostel…</option>
 							<?php foreach ($hostels as $h) : ?>
 								<option value="<?= (int) $h['id']; ?>" data-gender="<?= esc($h['gender']); ?>">
-									<?= esc($h['name']); ?> (<?= strtoupper((string) $h['gender']) === 'F' ? 'Female' : 'Male'; ?>, <?= (int) ($h['free_beds'] ?? 0); ?> free)
+									<?= esc($h['name']); ?> (<?= strtoupper((string) $h['gender']) === 'F' ? 'Female' : 'Male'; ?><?= !empty($h['level_group_label']) ? ', ' . esc($h['level_group_label']) : ''; ?>, <?= (int) ($h['free_beds'] ?? 0); ?> free)
 								</option>
 							<?php endforeach; ?>
 						</select>
@@ -181,7 +181,7 @@ foreach ($hostels as $h) {
 							<option value="">Select hostel…</option>
 							<?php foreach ($hostels as $h) : ?>
 								<option value="<?= (int) $h['id']; ?>">
-									<?= esc($h['name']); ?> (<?= strtoupper((string) $h['gender']) === 'F' ? 'Female' : 'Male'; ?>)
+									<?= esc($h['name']); ?> (<?= strtoupper((string) $h['gender']) === 'F' ? 'Female' : 'Male'; ?><?= !empty($h['level_group_label']) ? ' - ' . esc($h['level_group_label']) : ''; ?>)
 								</option>
 							<?php endforeach; ?>
 						</select>
@@ -239,6 +239,7 @@ foreach ($hostels as $h) {
 			'id' => (int) $h['id'],
 			'name' => (string) ($h['name'] ?? ''),
 			'gender' => strtoupper((string) ($h['gender'] ?? 'M')) === 'F' ? 'F' : 'M',
+			'level_group' => (string) ($h['level_group'] ?? ''),
 			'free_beds' => (int) ($h['free_beds'] ?? 0),
 			'is_mixed' => !empty($h['is_mixed']),
 		];

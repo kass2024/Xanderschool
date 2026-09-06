@@ -13,7 +13,7 @@ class HostelSchemaModel extends Model
 	protected $table = 'hostels';
 	protected $primaryKey = 'id';
 	protected $returnType = 'array';
-	protected $allowedFields = ['school_id', 'name', 'max_beds', 'gender', 'sort_order', 'active'];
+	protected $allowedFields = ['school_id', 'name', 'max_beds', 'gender', 'level_group', 'sort_order', 'active'];
 	protected $useTimestamps = true;
 
 	/** @var bool */
@@ -36,6 +36,7 @@ class HostelSchemaModel extends Model
 			`name` VARCHAR(160) NOT NULL,
 			`max_beds` INT UNSIGNED NOT NULL DEFAULT 1,
 			`gender` CHAR(1) NOT NULL DEFAULT 'M',
+			`level_group` VARCHAR(30) NOT NULL DEFAULT '',
 			`sort_order` INT NOT NULL DEFAULT 0,
 			`active` TINYINT(1) NOT NULL DEFAULT 1,
 			`created_at` DATETIME NULL DEFAULT NULL,
@@ -66,7 +67,57 @@ class HostelSchemaModel extends Model
 			PRIMARY KEY (`school_id`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+		$columns = array_map('strtolower', $db->getFieldNames('hostels'));
+		if (!in_array('level_group', $columns, true)) {
+			$db->query("ALTER TABLE `hostels` ADD COLUMN `level_group` VARCHAR(30) NOT NULL DEFAULT '' AFTER `gender`");
+		}
+
 		self::$schemaReady = true;
+	}
+
+	public function normalizeLevelGroup(?string $group): string
+	{
+		$group = strtolower(trim((string) $group));
+		if (in_array($group, ['nursery', 'nursary'], true)) {
+			return 'nursery';
+		}
+		if ($group === 'primary') {
+			return 'primary';
+		}
+		if (in_array($group, ['high_school', 'high school', 'secondary', 'olevel', 'a level', 'o level', 'anp'], true)) {
+			return 'high_school';
+		}
+		return '';
+	}
+
+	public function levelGroupLabel(?string $group): string
+	{
+		$group = $this->normalizeLevelGroup($group);
+		if ($group === 'nursery') {
+			return 'Nursery';
+		}
+		if ($group === 'primary') {
+			return 'Primary';
+		}
+		if ($group === 'high_school') {
+			return 'High School';
+		}
+		return '';
+	}
+
+	public function resolveLevelGroupFromTitle(?string $title): string
+	{
+		$title = strtolower(trim((string) $title));
+		if ($title === '') {
+			return '';
+		}
+		if (strpos($title, 'nurs') !== false) {
+			return 'nursery';
+		}
+		if (strpos($title, 'primary') !== false || preg_match('/\bp[1-6]\b/', $title)) {
+			return 'primary';
+		}
+		return 'high_school';
 	}
 
 	/**
@@ -125,7 +176,7 @@ class HostelSchemaModel extends Model
 	/**
 	 * Active class level for a student in a year.
 	 *
-	 * @return array{level_id:int,level_title:string}|null
+	 * @return array{level_id:int,level_title:string,level_group:string}|null
 	 */
 	public function getStudentLevel(int $schoolId, int $studentId, int $yearId): ?array
 	{
@@ -147,13 +198,14 @@ class HostelSchemaModel extends Model
 		return [
 			'level_id' => (int) $row['level_id'],
 			'level_title' => (string) ($row['level_title'] ?? ''),
+			'level_group' => $this->resolveLevelGroupFromTitle((string) ($row['level_title'] ?? '')),
 		];
 	}
 
 	/**
 	 * Distinct levels already living in a hostel for the year.
 	 *
-	 * @return list<array{level_id:int,level_title:string}>
+	 * @return list<array{level_id:int,level_title:string,level_group:string}>
 	 */
 	public function getHostelResidentLevels(int $schoolId, int $hostelId, int $yearId): array
 	{
@@ -183,6 +235,7 @@ class HostelSchemaModel extends Model
 				$out[] = [
 					'level_id' => $lid,
 					'level_title' => (string) ($row['level_title'] ?? ''),
+					'level_group' => $this->resolveLevelGroupFromTitle((string) ($row['level_title'] ?? '')),
 				];
 			}
 		}
@@ -198,13 +251,24 @@ class HostelSchemaModel extends Model
 		int $studentId,
 		int $yearId
 	): array {
-		$settings = $this->getSchoolSettings($schoolId);
-		if (empty($settings['separate_by_level'])) {
+		$studentLevel = $this->getStudentLevel($schoolId, $studentId, $yearId);
+		if ($studentLevel === null) {
 			return ['ok' => true];
 		}
 
-		$studentLevel = $this->getStudentLevel($schoolId, $studentId, $yearId);
-		if ($studentLevel === null) {
+		$hostel = $this->where('school_id', $schoolId)->find($hostelId);
+		$hostelGroup = $this->normalizeLevelGroup((string) ($hostel['level_group'] ?? ''));
+		$studentGroup = $this->normalizeLevelGroup((string) ($studentLevel['level_group'] ?? ''));
+		if ($hostelGroup !== '' && $studentGroup !== '' && $hostelGroup !== $studentGroup) {
+			return [
+				'ok' => false,
+				'error' => 'This hostel is reserved for ' . $this->levelGroupLabel($hostelGroup)
+					. ' students only. Cannot add a ' . $this->levelGroupLabel($studentGroup) . ' student.',
+			];
+		}
+
+		$settings = $this->getSchoolSettings($schoolId);
+		if (empty($settings['separate_by_level'])) {
 			return ['ok' => true];
 		}
 
@@ -214,13 +278,16 @@ class HostelSchemaModel extends Model
 		}
 
 		foreach ($residentLevels as $lvl) {
-			if ((int) $lvl['level_id'] !== (int) $studentLevel['level_id']) {
-				$names = array_values(array_unique(array_map(static function ($r) {
-					return (string) ($r['level_title'] ?? '');
+			$residentGroup = $this->normalizeLevelGroup((string) ($lvl['level_group'] ?? ''));
+			if ($residentGroup !== '' && $studentGroup !== '' && $residentGroup !== $studentGroup) {
+				$names = array_values(array_unique(array_map(function ($r) {
+					$group = (string) ($r['level_group'] ?? '');
+					return $group !== '' ? $this->levelGroupLabel($group) : (string) ($r['level_title'] ?? '');
 				}, $residentLevels)));
 				$names = array_values(array_filter($names));
 				$hostelLevels = $names !== [] ? implode(', ', $names) : 'another level';
-				$studentTitle = $studentLevel['level_title'] !== '' ? $studentLevel['level_title'] : 'this level';
+				$studentTitle = $studentGroup !== '' ? $this->levelGroupLabel($studentGroup)
+					: ($studentLevel['level_title'] !== '' ? $studentLevel['level_title'] : 'this level');
 				return [
 					'ok' => false,
 					'error' => "Level mixing is blocked: this hostel already has {$hostelLevels} students. "
@@ -263,14 +330,23 @@ class HostelSchemaModel extends Model
 			$h['occupied'] = $byId[$hid] ?? 0;
 			$h['free_beds'] = max(0, (int) $h['max_beds'] - $h['occupied']);
 			$h['gender_label'] = strtoupper((string) $h['gender']) === 'F' ? 'Female' : 'Male';
+			$h['level_group'] = $this->normalizeLevelGroup((string) ($h['level_group'] ?? ''));
+			$h['level_group_label'] = $this->levelGroupLabel($h['level_group']);
 			$levels = $this->getHostelResidentLevels($schoolId, $hid, $yearId);
 			$h['resident_levels'] = $levels;
-			$h['level_label'] = $levels === []
-				? ''
-				: implode(', ', array_values(array_unique(array_map(static function ($l) {
-					return (string) ($l['level_title'] ?? '');
-				}, $levels))));
-			$h['is_mixed'] = count($levels) > 1;
+			$residentGroups = array_values(array_unique(array_filter(array_map(function ($l) {
+				return $this->normalizeLevelGroup((string) ($l['level_group'] ?? ''));
+			}, $levels))));
+			if ($h['level_group_label'] !== '') {
+				$h['level_label'] = $h['level_group_label'];
+			} else {
+				$h['level_label'] = $residentGroups === []
+					? ''
+					: implode(', ', array_map(function ($group) {
+						return $this->levelGroupLabel($group);
+					}, $residentGroups));
+			}
+			$h['is_mixed'] = count($residentGroups) > 1;
 		}
 		unset($h);
 		return $hostels;
@@ -496,6 +572,10 @@ class HostelSchemaModel extends Model
 				'name' => (string) $h['name'],
 				'free' => (int) $h['free_beds'],
 				'level_ids' => array_values(array_filter($levelIds)),
+				'level_group' => $this->normalizeLevelGroup((string) ($h['level_group'] ?? '')),
+				'resident_groups' => array_values(array_unique(array_filter(array_map(function ($lvl) {
+					return $this->normalizeLevelGroup((string) ($lvl['level_group'] ?? ''));
+				}, $h['resident_levels'] ?? [])))),
 			];
 		}
 
@@ -512,29 +592,30 @@ class HostelSchemaModel extends Model
 				continue;
 			}
 
-			$studentLevelId = 0;
-			if ($separateLevels) {
-				$lvl = $this->getStudentLevel($schoolId, (int) $st['id'], $yearId);
-				$studentLevelId = $lvl ? (int) $lvl['level_id'] : 0;
-			}
+			$lvl = $this->getStudentLevel($schoolId, (int) $st['id'], $yearId);
+			$studentLevelId = $lvl ? (int) $lvl['level_id'] : 0;
+			$studentGroup = $lvl ? $this->normalizeLevelGroup((string) ($lvl['level_group'] ?? '')) : '';
 
 			// Prefer hostels already holding this level, then empty hostels, then others.
 			$indices = array_keys($pools[$sex]);
-			usort($indices, static function ($a, $b) use ($pools, $sex, $studentLevelId, $separateLevels) {
+			usort($indices, function ($a, $b) use ($pools, $sex, $studentLevelId, $studentGroup, $separateLevels) {
 				$ha = $pools[$sex][$a];
 				$hb = $pools[$sex][$b];
-				$score = static function ($h) use ($studentLevelId, $separateLevels) {
+				$score = function ($h) use ($studentLevelId, $studentGroup, $separateLevels) {
 					if ($h['free'] <= 0) {
 						return 1000;
+					}
+					if ($studentGroup !== '' && $h['level_group'] !== '' && $h['level_group'] !== $studentGroup) {
+						return 900;
 					}
 					if (!$separateLevels || $studentLevelId <= 0) {
 						return 0;
 					}
-					$ids = $h['level_ids'];
-					if ($ids === []) {
+					$groups = $h['resident_groups'];
+					if ($groups === []) {
 						return 1; // empty — good second choice
 					}
-					if (count($ids) === 1 && (int) $ids[0] === $studentLevelId) {
+					if ($studentGroup !== '' && count($groups) === 1 && (string) $groups[0] === $studentGroup) {
 						return 0; // same level — best
 					}
 					return 500; // incompatible / mixed
@@ -548,10 +629,15 @@ class HostelSchemaModel extends Model
 				if ($pools[$sex][$i]['free'] <= 0) {
 					continue;
 				}
+				if ($studentGroup !== '' && $pools[$sex][$i]['level_group'] !== ''
+					&& $pools[$sex][$i]['level_group'] !== $studentGroup) {
+					$lastError = 'no free hostel reserved for ' . $this->levelGroupLabel($studentGroup);
+					continue;
+				}
 				if ($separateLevels && $studentLevelId > 0) {
-					$ids = $pools[$sex][$i]['level_ids'];
-					foreach ($ids as $existingLevelId) {
-						if ((int) $existingLevelId !== $studentLevelId) {
+					$groups = $pools[$sex][$i]['resident_groups'];
+					foreach ($groups as $existingGroup) {
+						if ($studentGroup !== '' && (string) $existingGroup !== $studentGroup) {
 							$lastError = 'no free same-level hostel bed';
 							continue 2;
 						}
@@ -562,9 +648,9 @@ class HostelSchemaModel extends Model
 				if ($res['ok']) {
 					$allocated++;
 					$pools[$sex][$i]['free']--;
-					if ($separateLevels && $studentLevelId > 0
-						&& !in_array($studentLevelId, $pools[$sex][$i]['level_ids'], true)) {
-						$pools[$sex][$i]['level_ids'][] = $studentLevelId;
+					if ($separateLevels && $studentGroup !== ''
+						&& !in_array($studentGroup, $pools[$sex][$i]['resident_groups'], true)) {
+						$pools[$sex][$i]['resident_groups'][] = $studentGroup;
 					}
 					$placed = true;
 					break;
@@ -646,14 +732,20 @@ class HostelSchemaModel extends Model
 			$lvl = $this->getStudentLevel($schoolId, (int) $st['id'], $yearId);
 			$lid = $lvl ? (int) $lvl['level_id'] : 0;
 			$title = $lvl ? (string) $lvl['level_title'] : 'Unknown';
+			$group = $lvl ? $this->normalizeLevelGroup((string) ($lvl['level_group'] ?? '')) : '';
 			if ($lid <= 0) {
 				$unknown[] = $st;
 				continue;
 			}
-			if (!isset($byLevel[$lid])) {
-				$byLevel[$lid] = ['title' => $title, 'students' => []];
+			$key = $group !== '' ? $group : ('level_' . $lid);
+			if (!isset($byLevel[$key])) {
+				$byLevel[$key] = [
+					'title' => $group !== '' ? $this->levelGroupLabel($group) : $title,
+					'students' => [],
+					'group' => $group,
+				];
 			}
-			$byLevel[$lid]['students'][] = $st;
+			$byLevel[$key]['students'][] = $st;
 		}
 
 		if (count($byLevel) <= 1 && $unknown === []) {
@@ -671,13 +763,15 @@ class HostelSchemaModel extends Model
 
 		// Keep the largest level group in this hostel.
 		$keepLevelId = 0;
+		$keepKey = '';
 		$keepTitle = '';
 		$keepCount = -1;
 		foreach ($byLevel as $lid => $group) {
 			$n = count($group['students']);
 			if ($n > $keepCount) {
 				$keepCount = $n;
-				$keepLevelId = (int) $lid;
+				$keepKey = (string) $lid;
+				$keepLevelId = is_numeric((string) $lid) ? (int) $lid : 0;
 				$keepTitle = (string) $group['title'];
 			}
 		}
@@ -701,24 +795,29 @@ class HostelSchemaModel extends Model
 				'name' => (string) $h['name'],
 				'free' => (int) $h['free_beds'],
 				'level_ids' => array_values(array_filter($levelIds)),
+				'level_group' => $this->normalizeLevelGroup((string) ($h['level_group'] ?? '')),
+				'resident_groups' => array_values(array_unique(array_filter(array_map(function ($lvl) {
+					return $this->normalizeLevelGroup((string) ($lvl['level_group'] ?? ''));
+				}, $h['resident_levels'] ?? [])))),
 			];
 		}
 
 		$moved = 0;
 		$skipped = 0;
 		$errors = [];
-		$kept = $keepLevelId > 0 ? count($byLevel[$keepLevelId]['students']) : 0;
+		$kept = ($keepKey !== '' && isset($byLevel[$keepKey])) ? count($byLevel[$keepKey]['students']) : 0;
 
 		$toMove = [];
 		foreach ($byLevel as $lid => $group) {
-			if ((int) $lid === $keepLevelId) {
+			if ((string) $lid === $keepKey) {
 				continue;
 			}
 			foreach ($group['students'] as $st) {
 				$toMove[] = [
 					'student' => $st,
-					'level_id' => (int) $lid,
+					'level_id' => is_numeric((string) $lid) ? (int) $lid : 0,
 					'level_title' => (string) $group['title'],
+					'level_group' => (string) ($group['group'] ?? ''),
 				];
 			}
 		}
@@ -738,6 +837,7 @@ class HostelSchemaModel extends Model
 			$sid = (int) $st['id'];
 			$name = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? ''));
 			$levelId = (int) $item['level_id'];
+			$levelGroup = $this->normalizeLevelGroup((string) ($item['level_group'] ?? ''));
 			$picked = null;
 			$pickedScore = 999;
 
@@ -746,12 +846,16 @@ class HostelSchemaModel extends Model
 					continue;
 				}
 				$ids = $d['level_ids'];
+				$residentGroups = $d['resident_groups'];
 				$score = null;
-				if ($levelId > 0) {
-					if ($ids !== []) {
+				if ($levelId > 0 || $levelGroup !== '') {
+					if ($levelGroup !== '' && $d['level_group'] !== '' && $d['level_group'] !== $levelGroup) {
+						continue;
+					}
+					if ($residentGroups !== []) {
 						$compatible = true;
-						foreach ($ids as $existing) {
-							if ((int) $existing !== $levelId) {
+						foreach ($residentGroups as $existing) {
+							if ($levelGroup !== '' && (string) $existing !== $levelGroup) {
 								$compatible = false;
 								break;
 							}
@@ -759,10 +863,10 @@ class HostelSchemaModel extends Model
 						if ($compatible) {
 							$score = 0; // same level already
 						}
-					} elseif (!isset($emptyClaimedByLevel[$d['id']]) || (int) $emptyClaimedByLevel[$d['id']] === $levelId) {
+					} elseif (!isset($emptyClaimedByLevel[$d['id']]) || (string) $emptyClaimedByLevel[$d['id']] === $levelGroup) {
 						$score = 1; // empty / claimed for this level
 					}
-				} elseif ($ids === [] && !isset($emptyClaimedByLevel[$d['id']])) {
+				} elseif ($residentGroups === [] && !isset($emptyClaimedByLevel[$d['id']])) {
 					$score = 1;
 				}
 				if ($score !== null && $score < $pickedScore) {
@@ -791,12 +895,12 @@ class HostelSchemaModel extends Model
 
 			$moved++;
 			$destinations[$picked]['free']--;
-			if ($levelId > 0) {
-				if ($destinations[$picked]['level_ids'] === []) {
-					$emptyClaimedByLevel[$destId] = $levelId;
+			if ($levelId > 0 || $levelGroup !== '') {
+				if ($destinations[$picked]['resident_groups'] === []) {
+					$emptyClaimedByLevel[$destId] = $levelGroup;
 				}
-				if (!in_array($levelId, $destinations[$picked]['level_ids'], true)) {
-					$destinations[$picked]['level_ids'][] = $levelId;
+				if ($levelGroup !== '' && !in_array($levelGroup, $destinations[$picked]['resident_groups'], true)) {
+					$destinations[$picked]['resident_groups'][] = $levelGroup;
 				}
 			}
 		}
