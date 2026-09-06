@@ -255,6 +255,54 @@ class TimetableStagingService
 		return $placed;
 	}
 
+	/**
+	 * Remove any class-slot or teacher-slot collisions, then try to place the extra rows legally.
+	 *
+	 * @return array{moved_to_parking:int,replaced:int,remaining_conflicts:int}
+	 */
+	public function normalizeScheduleConflicts(
+		int $scheduleId,
+		int $schoolId,
+		\App\Models\TimetableSchemaModel $schema,
+		int $filterClassId = 0,
+		int $filterStaffId = 0,
+		int $maxPasses = 4
+	): array {
+		$db = \Config\Database::connect();
+		$totalMoved = 0;
+		$totalReplaced = 0;
+		$remaining = 0;
+
+		for ($pass = 0; $pass < $maxPasses; $pass++) {
+			$scheduled = $this->scheduledEntries($scheduleId, $schoolId, $filterClassId, $filterStaffId);
+			$idsToParking = $this->collectConflictEntryIds($scheduled);
+			$remaining = count($idsToParking);
+			if ($idsToParking === []) {
+				$remaining = 0;
+				break;
+			}
+
+			$db->table('timetable_entries')
+				->whereIn('id', $idsToParking)
+				->update([
+					'day_of_week' => -1,
+					'slot_id' => 0,
+				]);
+			$totalMoved += count($idsToParking);
+			$totalReplaced += $this->autoPlaceStaging($scheduleId, $schoolId, $schema, $filterClassId, $filterStaffId);
+		}
+
+		$remaining = count($this->collectConflictEntryIds(
+			$this->scheduledEntries($scheduleId, $schoolId, $filterClassId, $filterStaffId)
+		));
+
+		return [
+			'moved_to_parking' => $totalMoved,
+			'replaced' => $totalReplaced,
+			'remaining_conflicts' => $remaining,
+		];
+	}
+
 	/** @return array<string,array<string,mixed>> */
 	private function loadAssignmentMeta(int $scheduleId, int $schoolId): array
 	{
@@ -512,5 +560,71 @@ class TimetableStagingService
 			'course_title' => '',
 			'credit' => 0,
 		];
+	}
+
+	/**
+	 * @return list<array<string,mixed>>
+	 */
+	private function scheduledEntries(int $scheduleId, int $schoolId, int $filterClassId = 0, int $filterStaffId = 0): array
+	{
+		$builder = \Config\Database::connect()->table('timetable_entries')
+			->where('schedule_id', $scheduleId)
+			->where('school_id', $schoolId)
+			->where('entry_type', 'lesson')
+			->where('day_of_week >=', 0)
+			->where('slot_id >', 0);
+		if ($filterClassId > 0) {
+			$builder->where('class_id', $filterClassId);
+		}
+		if ($filterStaffId > 0) {
+			$builder->where('staff_id', $filterStaffId);
+		}
+		return $builder->orderBy('id', 'ASC')->get()->getResultArray();
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $scheduled
+	 * @return list<int>
+	 */
+	private function collectConflictEntryIds(array $scheduled): array
+	{
+		$byClassSlot = [];
+		$byTeacherSlot = [];
+		foreach ($scheduled as $entry) {
+			$entryId = (int) ($entry['id'] ?? 0);
+			$classId = (int) ($entry['class_id'] ?? 0);
+			$staffId = (int) ($entry['staff_id'] ?? 0);
+			$day = (int) ($entry['day_of_week'] ?? -1);
+			$slotId = (int) ($entry['slot_id'] ?? 0);
+			if ($entryId <= 0 || $classId <= 0 || $day < 0 || $slotId <= 0) {
+				continue;
+			}
+			$byClassSlot[$classId . ':' . $day . ':' . $slotId][] = $entry;
+			if ($staffId > 0) {
+				$byTeacherSlot[$staffId . ':' . $day . ':' . $slotId][] = $entry;
+			}
+		}
+
+		$ids = [];
+		foreach ($byClassSlot as $group) {
+			if (count($group) <= 1) {
+				continue;
+			}
+			$drop = array_slice($group, 1);
+			foreach ($drop as $entry) {
+				$ids[(int) $entry['id']] = (int) $entry['id'];
+			}
+		}
+		foreach ($byTeacherSlot as $group) {
+			if (count($group) <= 1) {
+				continue;
+			}
+			$drop = array_slice($group, 1);
+			foreach ($drop as $entry) {
+				$ids[(int) $entry['id']] = (int) $entry['id'];
+			}
+		}
+
+		return array_values($ids);
 	}
 }

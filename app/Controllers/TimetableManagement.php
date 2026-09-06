@@ -518,6 +518,7 @@ class TimetableManagement extends Home
 		$stagingSvc = new TimetableStagingService();
 		$stagingCreated = $stagingSvc->reconcile($scheduleId, $schoolId, $assignments);
 		$stagingSvc->autoPlaceStaging($scheduleId, $schoolId, $schema);
+		$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
 
 		return [
 			'entries' => $allEntries,
