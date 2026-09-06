@@ -79,14 +79,14 @@ $nameW = 44.8;
 $nameH = 13.2;
 
 $codeX = 17.5;
-$codeY = 51.0;
+$codeY = 63.9;
 $codeW = 33.0;
 $codeH = 4.5;
 
 $barcodeX = 5.5;
-$barcodeY = 62.4;
+$barcodeY = 50.6;
 $barcodeW = 43.2;
-$barcodeH = 11.2;
+$barcodeH = 13.2;
 ?>
 <style>
 	@page { size: <?= number_format($cardW, 1, '.', ''); ?>mm <?= number_format($cardH, 1, '.', ''); ?>mm; margin: 0; }
@@ -134,17 +134,7 @@ $barcodeH = 11.2;
 	.barcode-svg {
 		display: block;
 		width: 100%;
-		height: 8.2mm;
-	}
-	.barcode-note {
-		display: block;
-		margin-top: .55mm;
-		font-size: 1.35mm;
-		line-height: 1.2;
-		font-weight: 700;
-		letter-spacing: 0.08em;
-		text-align: center;
-		color: rgba(255,255,255,0.82);
+		height: 10.6mm;
 	}
 </style>
 
@@ -182,7 +172,6 @@ foreach ($cards as $i => $visitor):
 	<div class="abs barcode-shell" style="left:<?= number_format($barcodeX, 1, '.', ''); ?>mm;top:<?= number_format($barcodeY, 1, '.', ''); ?>mm;
 		width:<?= number_format($barcodeW, 1, '.', ''); ?>mm;height:<?= number_format($barcodeH, 1, '.', ''); ?>mm;">
 		<div class="barcode-svg"><?= $barcodeMarkup; ?></div>
-		<span class="barcode-note">BARCODE PREVIEW ONLY</span>
 	</div>
 </div>
 <?php if ($i < count($cards) - 1): ?>
