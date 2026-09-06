@@ -45,6 +45,15 @@ TVET_SUBJECTS = {
     "MATH&ROBOTICS CHALLENGE",
 }
 
+SPECIAL_SUBJECTS = {
+    "F.N",
+    "FN",
+    "CLINICAL ATTACHMENT",
+    "MEDICAL PATHOLOGY",
+    "MAEDICAL PATHOLOGY",
+    "SURGICAL PATHOLOGY",
+}
+
 NON_EXAM_SUBJECTS = {
     "CHINESE",
     "FRENCH",
@@ -56,6 +65,7 @@ SUBJECT_TITLES = {
     "BIOLOGY": "Biology",
     "CHEM": "Chemistry",
     "CHINESE": "Chinese",
+    "CLINICAL ATTACHMENT": "Clinical Attachment",
     "COMPUTER SCIENCE": "Computer Science",
     "CRATE A BUSINESS": "Create a Business",
     "DEV GAME IN VUE": "Dev Game in Vue",
@@ -72,11 +82,14 @@ SUBJECT_TITLES = {
     "KISWAHILI": "Kiswahili",
     "MANAGT ACCOUNTING": "Management Accounting",
     "MATHEMATICS": "Mathematics",
+    "MAEDICAL PATHOLOGY": "Medical Pathology",
     "MATH&ROBOTICS CHALLENGE": "Math & Robotics Challenge",
+    "MEDICAL PATHOLOGY": "Medical Pathology",
     "MCH": "MCH",
     "PHARMACOLOGY": "Pharmacology",
     "PHYSICS": "Physics",
     "SPORT": "Sport",
+    "SURGICAL PATHOLOGY": "Surgical Pathology",
 }
 
 SUBJECT_BASE_CODES = {
@@ -223,6 +236,9 @@ def workbook_entries(path: Path) -> list[TeacherEntry]:
         review_map[normalize_name(teacher)] = {"phone": normalize_phone(phone), "email": normalize_email(email)}
 
     entries: list[TeacherEntry] = []
+    current_teacher = ""
+    current_phone = ""
+    current_email = ""
     current: TeacherEntry | None = None
     started = False
     for row in ws.iter_rows(values_only=True):
@@ -234,11 +250,18 @@ def workbook_entries(path: Path) -> list[TeacherEntry]:
             continue
         if vals[1]:
             review_info = review_map.get(normalize_name(vals[1]), {})
+            current_teacher = vals[1]
+            current_phone = review_info.get("phone") or normalize_phone(vals[6])
+            current_email = review_info.get("email") or normalize_email(vals[7])
+            current = None
+        if vals[2]:
+            if not current_teacher:
+                continue
             current = TeacherEntry(
-                teacher=vals[1],
+                teacher=current_teacher,
                 subject=vals[2],
-                phone=review_info.get("phone") or normalize_phone(vals[6]),
-                email=review_info.get("email") or normalize_email(vals[7]),
+                phone=current_phone,
+                email=current_email,
                 classes=[],
             )
             entries.append(current)
@@ -395,7 +418,7 @@ def pick(keys: list[str], classes: dict[str, list[dict[str, str]]], include_empt
 
 def classes_for_label(label: str, subject: str, classes: dict[str, list[dict[str, str]]]) -> list[int]:
     raw = normalize_name(label).replace(" ", "")
-    tvet = subject_program(subject) == "tvet"
+    special = normalize_name(subject) in {normalize_name(s) for s in SPECIAL_SUBJECTS}
     direct = {"S1A", "S1B", "S1C", "S2A", "S2B", "S2C", "S3A", "S3B", "S3C", "S4ACC", "S5ACC", "S4ANP", "S5ANP", "S6ANP", "S6GE", "LEVEL3SOD", "LEVEL4SOD", "LEVEL5SOD"}
     if raw in direct:
         return pick([raw], classes, include_empty=True)
@@ -419,6 +442,7 @@ def classes_for_label(label: str, subject: str, classes: dict[str, list[dict[str
         "S5SREAMIANDII": ["S5ST1", "S5ST2"],
         "S6ANPANDGE": ["S6ANP", "S6GE"],
         "S6ANPANDPCB": ["S6ANP", "S6PCB"],
+        "LEVEL345SOD": ["LEVEL3SOD", "LEVEL4SOD", "LEVEL5SOD"],
         "SOD": ["LEVEL3SOD", "LEVEL4SOD", "LEVEL5SOD"],
     }
     if raw in alias_map:
@@ -430,11 +454,11 @@ def classes_for_label(label: str, subject: str, classes: dict[str, list[dict[str
     if raw == "S3":
         return pick(["S3A", "S3B", "S3C"], classes, include_empty=False)
     if raw == "S4":
-        return pick(["S4ANP"] if tvet else ["S4ACC", "S4ST1", "S4ST2"], classes, include_empty=False)
+        return pick(["S4ANP"] if special else ["S4ACC", "S4ST1", "S4ST2"], classes, include_empty=False)
     if raw == "S5":
-        return pick(["S5ANP"] if tvet else ["S5ACC", "S5ST1", "S5ST2"], classes, include_empty=False)
+        return pick(["S5ANP"] if special else ["S5ACC", "S5ST1", "S5ST2"], classes, include_empty=False)
     if raw == "S6":
-        return pick(["S6ANP"] if tvet else ["S6GE", "S6STR", "S6MCE", "S6PCB", "S6MCB", "S6MPC", "S6MEG", "S6MPG", "S6PCM"], classes, include_empty=False)
+        return pick(["S6ANP"] if special else ["S6GE", "S6STR", "S6MCE", "S6PCB", "S6MCB", "S6MPC", "S6MEG", "S6MPG", "S6PCM"], classes, include_empty=False)
     return []
 
 
