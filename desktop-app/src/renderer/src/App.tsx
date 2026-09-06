@@ -138,8 +138,9 @@ export default function App() {
           <form onSubmit={onLogin} className="w-full max-w-md bg-white rounded-xl border border-[#d5ebe5] p-8">
             <h1 className="text-xl font-semibold text-[#0f3d34]">Xander School Desktop</h1>
             <p className="mt-2 text-sm text-[#3d5c56] leading-relaxed">
-              Full school system on this PC with SQLite. When the internet is back, changes sync to the server
-              automatically.
+              Full school system on this PC with SQLite. When internet is available, saves go to the live server and
+              remain copied on this PC. When internet is down, work stays local and syncs automatically when the
+              connection returns.
             </p>
             <label className="block mt-6 text-xs font-medium text-[#0f3d34]">School server</label>
             <input

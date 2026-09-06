@@ -11,6 +11,7 @@ import { sqlitePath, userDataDir } from './paths';
 
 let mainWindow: BrowserWindow | null = null;
 let syncTimer: ReturnType<typeof setInterval> | null = null;
+let syncSoonTimer: ReturnType<typeof setTimeout> | null = null;
 let online = false;
 let wasOnline = false;
 let phase: DesktopState['phase'] = 'setup';
@@ -22,11 +23,13 @@ let autoLoginArmed = false;
 let showingSchool = false;
 let lastLightSyncAt = 0;
 let lastFullSyncAt = 0;
+let syncSoonFull = false;
 
 const NETWORK_CHECK_MS = 5000;
 const LIGHT_SYNC_MS = 15_000;
-const PENDING_SYNC_MS = 4_000;
+const PENDING_SYNC_MS = 1_500;
 const FULL_SYNC_MS = 5 * 60_000;
+const MUTATION_SYNC_DEBOUNCE_MS = 900;
 
 function getPreloadPath(): string {
   const mjs = join(__dirname, '../preload/preload.mjs');
@@ -69,10 +72,10 @@ function overlayScript(state: {
   const label = !state.online
     ? 'Offline · saved on this PC'
     : state.syncing
-      ? 'Online · syncing…'
+      ? 'Online · saving to live server…'
       : state.pending > 0
-        ? `Online · ${state.pending} waiting`
-        : 'Online · auto-sync';
+        ? `Online · ${state.pending} waiting for live sync`
+        : 'Online · live sync on';
   return `
     (function () {
       var id = 'xander-desktop-chip';
@@ -130,6 +133,37 @@ function injectOverlay(): void {
       }),
     )
     .catch(() => undefined);
+}
+
+function isLocalDesktopRequest(url: string): boolean {
+  return /^http:\/\/127\.0\.0\.1:\d+\//i.test(url);
+}
+
+function isMutatingRequest(method: string): boolean {
+  return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase());
+}
+
+function scheduleBackgroundSync(delayMs = MUTATION_SYNC_DEBOUNCE_MS, full = false): void {
+  syncSoonFull = syncSoonFull || full;
+  if (syncSoonTimer) return;
+  syncSoonTimer = setTimeout(() => {
+    syncSoonTimer = null;
+    const nextFull = syncSoonFull;
+    syncSoonFull = false;
+    void runBackgroundSync(nextFull);
+  }, Math.max(0, delayMs));
+}
+
+function installMutationSyncHooks(): void {
+  const partition = session.fromPartition('persist:xander-school');
+  partition.webRequest.onCompleted((details) => {
+    if (!phpReady || syncing) return;
+    if (!isLocalDesktopRequest(details.url)) return;
+    if (!isMutatingRequest(details.method)) return;
+    if ((details.statusCode ?? 0) < 200 || (details.statusCode ?? 0) >= 400) return;
+    if (details.url.includes('/api/desktop/')) return;
+    scheduleBackgroundSync();
+  });
 }
 
 async function showRenderer(): Promise<void> {
@@ -385,7 +419,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  session.fromPartition('persist:xander-school').setPermissionRequestHandler((_wc, _perm, cb) => cb(true));
+  const partition = session.fromPartition('persist:xander-school');
+  partition.setPermissionRequestHandler((_wc, _perm, cb) => cb(true));
+  installMutationSyncHooks();
   createWindow();
   const settings = loadSettings();
   if (settings.token && settings.provisioned) {
@@ -410,6 +446,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   if (syncTimer) clearInterval(syncTimer);
+  if (syncSoonTimer) clearTimeout(syncSoonTimer);
   closeDb();
   void stopPhpServer();
 });
@@ -487,6 +524,7 @@ ipcMain.handle('desktop:sync-now', async () => {
 
 ipcMain.handle('desktop:network-changed', async (_e, isOn: boolean) => {
   if (isOn) {
+    scheduleBackgroundSync(250, true);
     void networkTick();
   } else {
     online = false;
