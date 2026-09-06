@@ -305,7 +305,13 @@ class HostelSchemaModel extends Model
 		if ($activeOnly) {
 			$b->where('active', 1);
 		}
-		return $b->orderBy('sort_order', 'ASC')->orderBy('name', 'ASC')->findAll();
+		$hostels = $b->orderBy('sort_order', 'ASC')->orderBy('name', 'ASC')->findAll();
+		foreach ($hostels as &$hostel) {
+			$hostel['level_group'] = $this->normalizeLevelGroup((string) ($hostel['level_group'] ?? ''));
+			$hostel['level_group_label'] = $this->levelGroupLabel((string) ($hostel['level_group'] ?? ''));
+		}
+		unset($hostel);
+		return $hostels;
 	}
 
 	public function listHostelsWithOccupancy(int $schoolId, int $yearId): array
