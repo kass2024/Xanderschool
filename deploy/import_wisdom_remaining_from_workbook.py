@@ -235,14 +235,14 @@ def workbook_entries(path: Path) -> list[TeacherEntry]:
             continue
         review_map[normalize_name(teacher)] = {"phone": normalize_phone(phone), "email": normalize_email(email)}
 
-    entries: list[TeacherEntry] = []
+    entries_map: dict[tuple[str, str], TeacherEntry] = {}
     current_teacher = ""
     current_phone = ""
     current_email = ""
-    current: TeacherEntry | None = None
+    current_subject = ""
     started = False
-    for row in ws.iter_rows(values_only=True):
-        vals = [(str(v).strip() if v is not None else "") for v in row[:8]]
+    for row_idx in range(1, ws.max_row + 1):
+        vals = [(str(ws.cell(row_idx, col).value).strip() if ws.cell(row_idx, col).value is not None else "") for col in range(1, 9)]
         if vals[0] == "S/N":
             started = True
             continue
@@ -253,21 +253,30 @@ def workbook_entries(path: Path) -> list[TeacherEntry]:
             current_teacher = vals[1]
             current_phone = review_info.get("phone") or normalize_phone(vals[6])
             current_email = review_info.get("email") or normalize_email(vals[7])
-            current = None
+            current_subject = ""
         if vals[2]:
-            if not current_teacher:
-                continue
-            current = TeacherEntry(
+            current_subject = subject_title(vals[2])
+        elif not current_subject:
+            continue
+        if not vals[2] and not vals[1] and vals[5] and row_idx < ws.max_row and ws.cell(row_idx + 1, 2).value is not None:
+            current_subject = ""
+            continue
+        if not current_teacher or not current_subject or not vals[3]:
+            continue
+        key = (normalize_name(current_teacher), normalize_name(current_subject))
+        entry = entries_map.get(key)
+        if entry is None:
+            entry = TeacherEntry(
                 teacher=current_teacher,
-                subject=vals[2],
+                subject=current_subject,
                 phone=current_phone,
                 email=current_email,
                 classes=[],
             )
-            entries.append(current)
-        if current and vals[3]:
-            current.classes.append((vals[3], int(float(vals[4])) if vals[4] else 0))
-    return entries
+            entries_map[key] = entry
+        periods = int(float(vals[4])) if vals[4] else 0
+        entry.classes.append((vals[3], periods))
+    return list(entries_map.values())
 
 
 class RemoteDb:
@@ -462,6 +471,31 @@ def classes_for_label(label: str, subject: str, classes: dict[str, list[dict[str
     return []
 
 
+def label_specificity(label: str) -> int:
+    raw = normalize_name(label).replace(" ", "")
+    if raw in {"S1A", "S1B", "S1C", "S2A", "S2B", "S2C", "S3A", "S3B", "S3C", "S4ACC", "S5ACC", "S4ANP", "S5ANP", "S6ANP", "S6GE", "LEVEL3SOD", "LEVEL4SOD", "LEVEL5SOD"}:
+        return 100
+    if raw in {"S4STREAMI", "S4STREAMII", "S5STREAMI", "S5STREAMII", "S4STREMII"}:
+        return 90
+    if "AND" in raw or raw.endswith("III") or raw == "S1S6" or raw == "LEVEL345SOD" or raw == "SOD":
+        return 40
+    if raw in {"S2", "S3", "S4", "S5", "S6"}:
+        return 30
+    return 70
+
+
+def choose_better_candidate(current: dict[str, object], challenger: dict[str, object]) -> dict[str, object]:
+    cur_spec = int(current.get("specificity", 0))
+    new_spec = int(challenger.get("specificity", 0))
+    if new_spec != cur_spec:
+        return challenger if new_spec > cur_spec else current
+    cur_load = int(current.get("subject_load", 0))
+    new_load = int(challenger.get("subject_load", 0))
+    if new_load != cur_load:
+        return challenger if new_load > cur_load else current
+    return current
+
+
 def build_course_maps(rows: list[dict[str, str]]) -> tuple[dict[str, dict[str, str]], dict[tuple[str, str, int], dict[str, str]]]:
     by_code: dict[str, dict[str, str]] = {}
     by_key: dict[tuple[str, str, int], dict[str, str]] = {}
@@ -575,7 +609,14 @@ def main() -> int:
                 raise RuntimeError(f"Could not resolve teacher after staff phase: {entry.teacher}")
             teacher_ids[entry.teacher] = match_id
 
-        planned: list[tuple[str, str, int, int, str]] = []
+        teacher_subject_loads: dict[tuple[str, str], int] = defaultdict(int)
+        for entry in entries:
+            title = subject_title(entry.subject)
+            for _raw_class, periods in entry.classes:
+                if periods > 0:
+                    teacher_subject_loads[(normalize_name(entry.teacher), normalize_name(title))] += periods
+
+        planned_candidates: list[dict[str, object]] = []
         for entry in entries:
             title = subject_title(entry.subject)
             for raw_class, periods in entry.classes:
@@ -586,12 +627,55 @@ def main() -> int:
                 if periods <= 0:
                     continue
                 for class_id in class_ids:
-                    planned.append((entry.teacher, title, periods, class_id, class_programs.get(class_id, subject_program(entry.subject))))
+                    planned_candidates.append({
+                        "teacher_name": entry.teacher,
+                        "title": title,
+                        "credit": periods,
+                        "class_id": class_id,
+                        "program": class_programs.get(class_id, subject_program(entry.subject)),
+                        "raw_label": raw_class,
+                        "specificity": label_specificity(raw_class),
+                        "subject_load": teacher_subject_loads[(normalize_name(entry.teacher), normalize_name(title))],
+                    })
 
         if unresolved:
             for item in unresolved:
                 print("UNRESOLVED", item)
             return 1
+
+        winners: dict[tuple[str, int, str, int], dict[str, object]] = {}
+        for cand in planned_candidates:
+            pair_key = (
+                normalize_name(str(cand["title"])),
+                int(cand["credit"]),
+                str(cand["program"]),
+                int(cand["class_id"]),
+            )
+            existing_cand = winners.get(pair_key)
+            if existing_cand is None:
+                winners[pair_key] = cand
+                continue
+            chosen = choose_better_candidate(existing_cand, cand)
+            if chosen is not existing_cand:
+                conflicts.append(
+                    f"{cand['title']} class={cand['class_id']} workbook={existing_cand['teacher_name']} ({existing_cand['raw_label']}) vs {cand['teacher_name']} ({cand['raw_label']}) -> chose {cand['teacher_name']}"
+                )
+                winners[pair_key] = cand
+            elif existing_cand["teacher_name"] != cand["teacher_name"]:
+                conflicts.append(
+                    f"{cand['title']} class={cand['class_id']} workbook={existing_cand['teacher_name']} ({existing_cand['raw_label']}) vs {cand['teacher_name']} ({cand['raw_label']}) -> kept {existing_cand['teacher_name']}"
+                )
+
+        planned = [
+            (
+                str(cand["teacher_name"]),
+                str(cand["title"]),
+                int(cand["credit"]),
+                int(cand["class_id"]),
+                str(cand["program"]),
+            )
+            for cand in winners.values()
+        ]
 
         courses_by_code, courses_by_key = build_course_maps(course_rows)
         course_sql: list[str] = []
