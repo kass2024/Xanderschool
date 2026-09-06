@@ -551,6 +551,83 @@ class HostelSchemaModel extends Model
 	}
 
 	/**
+	 * @param array{id:int,free:int,level_group:string,resident_groups:array,class_counts:array<int,int>} $hostel
+	 */
+	private function hostelCanTakeStudent(array $hostel, string $studentGroup, bool $separateLevels): bool
+	{
+		if ((int) ($hostel['free'] ?? 0) <= 0) {
+			return false;
+		}
+		if ($studentGroup !== '' && (string) ($hostel['level_group'] ?? '') !== ''
+			&& (string) $hostel['level_group'] !== $studentGroup) {
+			return false;
+		}
+		if (!$separateLevels || $studentGroup === '') {
+			return true;
+		}
+		foreach (($hostel['resident_groups'] ?? []) as $existingGroup) {
+			if ((string) $existingGroup !== $studentGroup) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * @param list<array{id:int,name:string,free:int,level_ids:list<int>,level_group:string,resident_groups:list<string>,class_counts:array<int,int>}> $hostels
+	 * @return list<int>
+	 */
+	private function rankHostelIndicesForStudent(
+		array $hostels,
+		int $classId,
+		string $studentGroup,
+		bool $separateLevels,
+		array $preferredHostelIds
+	): array {
+		$preferredIndexOrder = [];
+		foreach ($preferredHostelIds as $preferredHostelId) {
+			foreach ($hostels as $idx => $hostel) {
+				if ((int) ($hostel['id'] ?? 0) === (int) $preferredHostelId) {
+					$preferredIndexOrder[] = (int) $idx;
+					break;
+				}
+			}
+		}
+
+		$indices = array_keys($hostels);
+		usort($indices, function ($a, $b) use ($hostels, $classId, $studentGroup, $separateLevels, $preferredIndexOrder) {
+			$score = function ($idx) use ($hostels, $classId, $studentGroup, $separateLevels, $preferredIndexOrder) {
+				$h = $hostels[$idx];
+				if (!$this->hostelCanTakeStudent($h, $studentGroup, $separateLevels)) {
+					return [1000, 1000, 1000, 1000];
+				}
+
+				$preferredPos = array_search($idx, $preferredIndexOrder, true);
+				$classCount = (int) (($h['class_counts'] ?? [])[$classId] ?? 0);
+				$groupCount = count($h['resident_groups'] ?? []);
+
+				if ($preferredPos !== false) {
+					return [0, (int) $preferredPos, 0 - $classCount, 0 - (int) ($h['free'] ?? 0)];
+				}
+				if ($classCount > 0) {
+					return [1, 0, 0 - $classCount, 0 - (int) ($h['free'] ?? 0)];
+				}
+				if ($groupCount === 0) {
+					return [2, 0, 0, 0 - (int) ($h['free'] ?? 0)];
+				}
+				if ($studentGroup !== '' && $groupCount === 1 && in_array($studentGroup, $h['resident_groups'] ?? [], true)) {
+					return [3, 0, 0, 0 - (int) ($h['free'] ?? 0)];
+				}
+				return [4, 0, 0, 0 - (int) ($h['free'] ?? 0)];
+			};
+
+			return $score($a) <=> $score($b);
+		});
+
+		return array_values(array_map('intval', $indices));
+	}
+
+	/**
 	 * Auto-allocate unallocated boarding students into matching-gender hostels with free beds.
 	 *
 	 * @return array{allocated:int,skipped:int,errors:list<string>}
@@ -570,6 +647,13 @@ class HostelSchemaModel extends Model
 		foreach ($hostels as $h) {
 			$g = $this->normalizeGender((string) $h['gender']);
 			$levelIds = [];
+			$classCounts = [];
+			foreach ($this->listHostelResidents($schoolId, (int) $h['id'], $yearId) as $resident) {
+				$residentClassId = (int) ($resident['class_id'] ?? 0);
+				if ($residentClassId > 0) {
+					$classCounts[$residentClassId] = (int) ($classCounts[$residentClassId] ?? 0) + 1;
+				}
+			}
 			foreach (($h['resident_levels'] ?? []) as $lvl) {
 				$levelIds[] = (int) ($lvl['level_id'] ?? 0);
 			}
@@ -582,16 +666,19 @@ class HostelSchemaModel extends Model
 				'resident_groups' => array_values(array_unique(array_filter(array_map(function ($lvl) {
 					return $this->normalizeLevelGroup((string) ($lvl['level_group'] ?? ''));
 				}, $h['resident_levels'] ?? [])))),
+				'class_counts' => $classCounts,
 			];
 		}
 
 		$allocated = 0;
 		$skipped = 0;
 		$errors = [];
+		$classHostelOrder = ['M' => [], 'F' => []];
 
 		foreach ($candidates as $st) {
 			$sex = $this->normalizeStudentSex($st['sex'] ?? '');
 			$name = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? ''));
+			$classId = (int) ($st['class_id'] ?? 0);
 			if ($sex !== 'M' && $sex !== 'F') {
 				$skipped++;
 				$errors[] = $name . ': missing or unrecognized gender';
@@ -602,52 +689,41 @@ class HostelSchemaModel extends Model
 			$studentLevelId = $lvl ? (int) $lvl['level_id'] : 0;
 			$studentGroup = $lvl ? $this->normalizeLevelGroup((string) ($lvl['level_group'] ?? '')) : '';
 
-			// Prefer hostels already holding this level, then empty hostels, then others.
-			$indices = array_keys($pools[$sex]);
-			usort($indices, function ($a, $b) use ($pools, $sex, $studentLevelId, $studentGroup, $separateLevels) {
-				$ha = $pools[$sex][$a];
-				$hb = $pools[$sex][$b];
-				$score = function ($h) use ($studentLevelId, $studentGroup, $separateLevels) {
-					if ($h['free'] <= 0) {
-						return 1000;
+			$preferredHostelIds = [];
+			if ($classId > 0) {
+				$preferredHostelIds = $classHostelOrder[$sex][$classId] ?? [];
+				if ($preferredHostelIds === []) {
+					foreach ($pools[$sex] as $poolHostel) {
+						if ((int) (($poolHostel['class_counts'] ?? [])[$classId] ?? 0) > 0
+							&& $this->hostelCanTakeStudent($poolHostel, $studentGroup, $separateLevels)) {
+							$preferredHostelIds[] = (int) $poolHostel['id'];
+						}
 					}
-					if ($studentGroup !== '' && $h['level_group'] !== '' && $h['level_group'] !== $studentGroup) {
-						return 900;
+					if ($preferredHostelIds !== []) {
+						$classHostelOrder[$sex][$classId] = array_values(array_unique($preferredHostelIds));
 					}
-					if (!$separateLevels || $studentLevelId <= 0) {
-						return 0;
-					}
-					$groups = $h['resident_groups'];
-					if ($groups === []) {
-						return 1; // empty — good second choice
-					}
-					if ($studentGroup !== '' && count($groups) === 1 && (string) $groups[0] === $studentGroup) {
-						return 0; // same level — best
-					}
-					return 500; // incompatible / mixed
-				};
-				return $score($ha) <=> $score($hb);
-			});
+				}
+			}
+
+			$indices = $this->rankHostelIndicesForStudent(
+				$pools[$sex],
+				$classId,
+				$studentGroup,
+				$separateLevels,
+				$preferredHostelIds
+			);
 
 			$placed = false;
 			$lastError = 'no free ' . ($sex === 'F' ? 'female' : 'male') . ' hostel bed';
 			foreach ($indices as $i) {
-				if ($pools[$sex][$i]['free'] <= 0) {
-					continue;
-				}
-				if ($studentGroup !== '' && $pools[$sex][$i]['level_group'] !== ''
-					&& $pools[$sex][$i]['level_group'] !== $studentGroup) {
-					$lastError = 'no free hostel reserved for ' . $this->levelGroupLabel($studentGroup);
-					continue;
-				}
-				if ($separateLevels && $studentLevelId > 0) {
-					$groups = $pools[$sex][$i]['resident_groups'];
-					foreach ($groups as $existingGroup) {
-						if ($studentGroup !== '' && (string) $existingGroup !== $studentGroup) {
-							$lastError = 'no free same-level hostel bed';
-							continue 2;
-						}
+				if (!$this->hostelCanTakeStudent($pools[$sex][$i], $studentGroup, $separateLevels)) {
+					if ($studentGroup !== '' && ($pools[$sex][$i]['level_group'] ?? '') !== ''
+						&& ($pools[$sex][$i]['level_group'] ?? '') !== $studentGroup) {
+						$lastError = 'no free hostel reserved for ' . $this->levelGroupLabel($studentGroup);
+					} elseif ($separateLevels && $studentLevelId > 0) {
+						$lastError = 'no free same-level hostel bed';
 					}
+					continue;
 				}
 				$hostelId = $pools[$sex][$i]['id'];
 				$res = $this->allocateStudent($schoolId, $hostelId, (int) $st['id'], $yearId, $staffId);
@@ -657,6 +733,15 @@ class HostelSchemaModel extends Model
 					if ($separateLevels && $studentGroup !== ''
 						&& !in_array($studentGroup, $pools[$sex][$i]['resident_groups'], true)) {
 						$pools[$sex][$i]['resident_groups'][] = $studentGroup;
+					}
+					if ($classId > 0) {
+						$pools[$sex][$i]['class_counts'][$classId] = (int) ($pools[$sex][$i]['class_counts'][$classId] ?? 0) + 1;
+						if (!isset($classHostelOrder[$sex][$classId])) {
+							$classHostelOrder[$sex][$classId] = [];
+						}
+						if (!in_array((int) $hostelId, $classHostelOrder[$sex][$classId], true)) {
+							$classHostelOrder[$sex][$classId][] = (int) $hostelId;
+						}
 					}
 					$placed = true;
 					break;
@@ -678,7 +763,7 @@ class HostelSchemaModel extends Model
 		$db = \Config\Database::connect();
 		$rows = $db->table('hostel_allocations ha')
 			->select('students.id, students.regno, students.fname, students.lname, students.sex,
-				c.title AS class_title, l.id AS level_id, l.title AS level_name, d.code AS dept_code')
+				cr.class AS class_id, c.title AS class_title, l.id AS level_id, l.title AS level_name, d.code AS dept_code')
 			->join('students', 'students.id = ha.student_id')
 			->join(
 				'class_records cr',

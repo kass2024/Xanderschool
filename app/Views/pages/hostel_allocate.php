@@ -196,7 +196,7 @@ foreach ($hostels as $h) {
 			</div>
 
 			<div class="hst-tab-pane" id="hstPaneAuto" data-pane="auto">
-				<p class="hst-tool-note mt-0 mb-3">Fills free beds by gender. Optionally limit by department or class. Already allocated students stay unchanged.</p>
+				<p class="hst-tool-note mt-0 mb-3">Fills free beds by gender and level group. Auto fill now keeps students from the same class in the same hostel first, then moves overflow to the next appropriate hostel when beds finish.</p>
 				<div class="form-row align-items-end">
 					<div class="col-md-4 mb-2 mb-md-0">
 						<label class="hst-field-label" for="hstAutoDept">Department</label>
