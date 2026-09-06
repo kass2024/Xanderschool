@@ -15282,6 +15282,51 @@ public function getApplicationDocs($id = null)
 			$mdl->removeHostel($schoolId, $id);
 			return $this->response->setJSON(['success' => 'Hostel removed.']);
 		}
+		if ($action === 'update') {
+			$id = (int) $this->request->getPost('id');
+			$row = $mdl->where('school_id', $schoolId)->find($id);
+			if (!$row) {
+				return $this->response->setJSON(['error' => 'Hostel not found.']);
+			}
+
+			$name = trim((string) $this->request->getPost('name'));
+			$maxBeds = max(1, (int) $this->request->getPost('max_beds'));
+			$gender = $mdl->normalizeGender((string) $this->request->getPost('gender'));
+			$levelGroup = $mdl->normalizeLevelGroup((string) $this->request->getPost('level_group'));
+
+			if ($name === '') {
+				return $this->response->setJSON(['error' => 'Hostel name is required.']);
+			}
+			if ($levelGroup === '') {
+				return $this->response->setJSON(['error' => 'Select the hostel level group.']);
+			}
+			foreach ($mdl->listHostels($schoolId, true) as $other) {
+				if ((int) ($other['id'] ?? 0) !== $id
+					&& strcasecmp(trim((string) ($other['name'] ?? '')), $name) === 0) {
+					return $this->response->setJSON(['error' => 'That hostel name already exists.']);
+				}
+			}
+
+			$mdl->update($id, [
+				'name' => $name,
+				'max_beds' => $maxBeds,
+				'gender' => $gender,
+				'level_group' => $levelGroup,
+				'updated_at' => date('Y-m-d H:i:s'),
+			]);
+
+			return $this->response->setJSON([
+				'success' => 'Hostel updated.',
+				'hostel' => [
+					'id' => $id,
+					'name' => $name,
+					'max_beds' => $maxBeds,
+					'gender' => $gender,
+					'level_group' => $levelGroup,
+					'level_group_label' => $mdl->levelGroupLabel($levelGroup),
+				],
+			]);
+		}
 		if ($action === 'save_settings') {
 			$separate = (int) $this->request->getPost('separate_by_level') === 1;
 			$mdl->saveSchoolSettings($schoolId, ['separate_by_level' => $separate]);
