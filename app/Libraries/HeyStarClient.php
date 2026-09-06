@@ -58,15 +58,68 @@ class HeyStarClient
 	}
 
 	/**
+	 * Read registered people from the device without changing anything.
+	 *
+	 * @return array{ok:bool,people:array<int,array<string,mixed>>,pages:int,error:string}
+	 */
+	public function listPersons(string $deviceKey, int $pageSize = 100): array
+	{
+		$deviceKey = trim($deviceKey);
+		if ($deviceKey === '') {
+			return ['ok' => false, 'people' => [], 'pages' => 0, 'error' => 'Missing device key'];
+		}
+		$pageSize = max(1, min(200, $pageSize));
+		$page = 1;
+		$pages = 0;
+		$people = [];
+		$seen = [];
+		while ($page <= 100) {
+			$res = $this->post('person/findList', [
+				'deviceKey' => $deviceKey,
+				'index' => $page,
+				'length' => $pageSize,
+			], 20);
+			if (! $this->ok($res)) {
+				return [
+					'ok' => false,
+					'people' => $people,
+					'pages' => $pages,
+					'error' => (string) ($res['msg'] ?? 'person list failed'),
+				];
+			}
+			$rows = $this->extractPersonRows($res);
+			$pages++;
+			$countBefore = count($people);
+			foreach ($rows as $row) {
+				$sn = trim((string) ($row['sn'] ?? $row['personSn'] ?? $row['workNo'] ?? $row['s'] ?? ''));
+				if ($sn !== '' && isset($seen[$sn])) {
+					continue;
+				}
+				if ($sn !== '') {
+					$seen[$sn] = true;
+				}
+				$people[] = $row;
+			}
+			$reportedTotal = $this->extractPositiveInt($res, ['total', 'count', 'dataCount', 'recordsTotal', 'totalCount']);
+			if ($reportedTotal > 0 && count($people) >= $reportedTotal) {
+				break;
+			}
+			if (count($rows) < $pageSize || count($people) === $countBefore) {
+				break;
+			}
+			$page++;
+		}
+		return ['ok' => true, 'people' => $people, 'pages' => $pages, 'error' => ''];
+	}
+
+	/**
 	 * Show CLOCK IN/OUT on the live camera (LAN HTTP device/output type 4).
 	 */
 	public function announceClock(string $name, string $status): array
 	{
 		$status = strtoupper(trim($status)) === 'OUT' ? 'OUT' : 'IN';
 		$label = $status === 'OUT' ? 'CLOCK OUT' : 'CLOCK IN';
-		$content = json_encode([
-			'displayContent' => $label,
-		], JSON_UNESCAPED_UNICODE);
+		$content = json_encode(['displayContent' => $label], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 		$this->post('device/output', ['type' => 1], 2);
 		return $this->post('device/output', [
 			'type' => 4,
@@ -81,5 +134,60 @@ class HeyStarClient
 			return true;
 		}
 		return (bool) preg_match('/^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $ip);
+	}
+
+	/**
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function extractPersonRows(array $res): array
+	{
+		$candidates = [
+			$res['data'] ?? null,
+			$res['rows'] ?? null,
+			$res['list'] ?? null,
+			$res['records'] ?? null,
+			isset($res['data']) && is_array($res['data']) ? ($res['data']['rows'] ?? $res['data']['list'] ?? $res['data']['records'] ?? null) : null,
+		];
+		foreach ($candidates as $candidate) {
+			if (! is_array($candidate) || $candidate === []) {
+				continue;
+			}
+			if ($this->isListOfArrays($candidate)) {
+				return $candidate;
+			}
+		}
+		return [];
+	}
+
+	/**
+	 * @param mixed $value
+	 */
+	private function isListOfArrays($value): bool
+	{
+		if (! is_array($value)) {
+			return false;
+		}
+		foreach ($value as $row) {
+			if (! is_array($row)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * @param list<string> $keys
+	 */
+	private function extractPositiveInt(array $res, array $keys): int
+	{
+		foreach ($keys as $key) {
+			if (isset($res[$key]) && is_numeric($res[$key]) && (int) $res[$key] > 0) {
+				return (int) $res[$key];
+			}
+			if (isset($res['data']) && is_array($res['data']) && isset($res['data'][$key]) && is_numeric($res['data'][$key]) && (int) $res['data'][$key] > 0) {
+				return (int) $res['data'][$key];
+			}
+		}
+		return 0;
 	}
 }

@@ -32,6 +32,11 @@ class HeyStarSyncService
 		}
 		$client = new HeyStarClient($ip, (string) ($dev['password'] ?? '123456'));
 		$ping = $client->post('device/getConfig', ['type' => 1], 4);
+		$deviceKey = self::resolveDeviceKey($dev, $ping);
+		if ($deviceKey !== '' && $deviceKey !== (string) ($dev['device_key'] ?? '')) {
+			HeyStarDeviceStore::save($schoolId, ['device_key' => $deviceKey]);
+			$dev['device_key'] = $deviceKey;
+		}
 		if (!$client->ok($ping) && (string) ($ping['code'] ?? '') === 'ERR') {
 			HeyStarDeviceStore::requestStaffSync($schoolId);
 			return [
@@ -78,18 +83,57 @@ class HeyStarSyncService
 			'attendance_direction_enable' => false,
 			'recognize_result_countdown' => 2200,
 			'evt_show_image_duration' => 2200,
+			'delay_for_light_close' => 86400000,
+			'idle_time_for_lcd' => 0,
+			'ir_led_always_enable' => true,
+			'ir_always_enable' => true,
+			'ir_led_enable' => true,
+			'ir_light_enable' => true,
+			'night_ir_enable' => true,
+			'camera_ir_enable' => true,
+			'infrared_enable' => true,
+			'keep_light_on' => true,
+			'ir_led_mode' => 1,
+			'ir_live_threshold' => 1,
 		]);
 		$brand = self::applySchoolBranding($client, $schoolId);
 
 		$staff = 0;
+		$skipped = 0;
+		$deviceOnly = 0;
+		$devicePeople = [];
+		$deviceSnMap = [];
 		$errors = [];
 		if (!$client->ok($brand['ui'] ?? [])) {
 			$errors[] = 'School UI: ' . (string) (($brand['ui']['msg'] ?? 'branding failed'));
 		}
+		if ($deviceKey !== '') {
+			$list = $client->listPersons($deviceKey, 100);
+			if ($list['ok']) {
+				$devicePeople = $list['people'];
+				foreach ($devicePeople as $person) {
+					$sn = self::devicePersonSn($person);
+					if ($sn !== '') {
+						$deviceSnMap[$sn] = true;
+					}
+				}
+			} else {
+				$errors[] = 'Could not compare with device list: ' . (string) ($list['error'] ?? 'unknown error');
+			}
+		}
 
 		helper('qonics');
-		foreach (AttendanceScanService::staffList($schoolId) as $p) {
+		$roster = self::staffRoster($schoolId);
+		$onlineSnMap = [];
+		foreach ($roster as $person) {
+			$onlineSnMap['T' . (int) ($person['id'] ?? 0)] = true;
+		}
+		foreach ($roster as $p) {
 			$sn = 'T' . (int) $p['id'];
+			if (isset($deviceSnMap[$sn])) {
+				$skipped++;
+				continue;
+			}
 			$res = $client->post('person/merge', [
 				'type' => 1,
 				'sn' => $sn,
@@ -102,12 +146,28 @@ class HeyStarSyncService
 			}
 			$staff++;
 		}
+		foreach (array_keys($deviceSnMap) as $sn) {
+			if (!preg_match('/^T\d+$/', $sn)) {
+				continue;
+			}
+			$staffId = (int) substr($sn, 1);
+			if ($staffId <= 0) {
+				continue;
+			}
+			if (!isset($onlineSnMap[$sn])) {
+				$deviceOnly++;
+			}
+		}
 
 		HeyStarDeviceStore::markStaffSynced($schoolId);
 		return [
 			'success' => 1,
-			'message' => "Branded HeyStar as {$brand['name']}. Synced {$staff} staff names. Capture faces on the terminal. Staff card photos are uploaded on Xander, not from the camera.",
+			'message' => self::buildSyncMessage($brand['name'], $staff, $skipped, count($devicePeople), $deviceOnly, $deviceKey !== ''),
 			'staff' => $staff,
+			'skipped_existing' => $skipped,
+			'device_existing' => count($devicePeople),
+			'device_only' => $deviceOnly,
+			'compared' => $deviceKey !== '' ? 1 : 0,
 			'school' => $brand['name'],
 			'errors' => array_slice($errors, 0, 12),
 			'upload_url' => $upload,
@@ -118,7 +178,7 @@ class HeyStarSyncService
 	/**
 	 * Speak and show IN/OUT on the terminal when this PHP host can reach it (school LAN).
 	 */
-	public static function announceClock(int $schoolId, string $name, string $status): void
+	public static function announceClock(int $schoolId, string $name, string $status, int $staffId = 0): void
 	{
 		$status = strtoupper(trim($status));
 		if ($status !== 'IN' && $status !== 'OUT') {
@@ -170,7 +230,8 @@ class HeyStarSyncService
 			'uiShowIp' => 0,
 			'uiShowSn' => 0,
 			'uiShowPersonCount' => 1,
-			'uiScreensaverWait' => 90,
+			'uiScreensaverWait' => 86400,
+			'uiScreenSaverEnable' => 0,
 		];
 		$logo = self::schoolLogoBase64((string) ($school['logo'] ?? ''));
 		if ($logo !== '') {
@@ -178,7 +239,7 @@ class HeyStarSyncService
 		}
 		$uiRes = $client->post('device/setUiConfig', $ui, 60);
 		$recRes = $client->post('device/setRecConfig', [
-			'recRank' => 2,
+			'recRank' => 1,
 			'recThreshold1vN' => 72,
 			'recThreshold1v1' => 65,
 			'recSucTtsMode' => 2,
@@ -191,7 +252,7 @@ class HeyStarSyncService
 			'recStrangerDisplayMode' => 1,
 			'recStrangerOpenDoor' => 0,
 			'recNoPerTtsMode' => 2,
-			'recNotBioTtsMode' => 2,
+			'recNotBioTtsMode' => 1,
 			'recNotBioDisplayMode' => 1,
 		], 25);
 		return ['name' => $name, 'ui' => $uiRes, 'rec' => $recRes];
@@ -221,6 +282,7 @@ class HeyStarSyncService
 				'id' => $id,
 				'sn' => 'T' . $id,
 				'name' => self::safeName((string) ($p['name'] ?? '')),
+				'has_photo' => trim((string) ($p['card_photo'] ?? '')) !== '' ? 1 : 0,
 			];
 		}
 		return $out;
@@ -259,5 +321,64 @@ class HeyStarSyncService
 			return 'Person';
 		}
 		return mb_substr($name, 0, 60);
+	}
+
+	private static function resolveDeviceKey(array $deviceRow, array $ping): string
+	{
+		$stored = trim((string) ($deviceRow['device_key'] ?? ''));
+		if ($stored !== '') {
+			return $stored;
+		}
+		return trim(self::searchDeviceKey($ping));
+	}
+
+	/**
+	 * @param mixed $value
+	 */
+	private static function searchDeviceKey($value): string
+	{
+		if (!is_array($value)) {
+			return '';
+		}
+		foreach (['deviceKey', 'sn', 'devSn', 'serialNo', 'serial', 'device_sn'] as $key) {
+			$hit = trim((string) ($value[$key] ?? ''));
+			if ($hit !== '') {
+				return $hit;
+			}
+		}
+		foreach ($value as $item) {
+			$hit = self::searchDeviceKey($item);
+			if ($hit !== '') {
+				return $hit;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * @param array<string,mixed> $person
+	 */
+	private static function devicePersonSn(array $person): string
+	{
+		foreach (['sn', 'personSn', 'workNo', 's'] as $key) {
+			$value = trim((string) ($person[$key] ?? ''));
+			if ($value !== '') {
+				return $value;
+			}
+		}
+		return '';
+	}
+
+	private static function buildSyncMessage(string $schoolName, int $added, int $skipped, int $deviceCount, int $deviceOnly, bool $compared): string
+	{
+		if (!$compared) {
+			return "Branded HeyStar as {$schoolName}. Synced {$added} staff names. Existing enrolled faces on the terminal were not removed. Capture faces on the terminal. Staff card photos are uploaded on Xander, not from the camera.";
+		}
+		$message = "Branded HeyStar as {$schoolName}. Compared {$deviceCount} existing people on the terminal with the online staff roster, added {$added} missing staff, and left {$skipped} existing online staff entries untouched so their faces stay as they are.";
+		if ($deviceOnly > 0) {
+			$message .= " {$deviceOnly} device-only people were left untouched.";
+		}
+		$message .= ' Capture faces on the terminal. Staff card photos are uploaded on Xander, not from the camera.';
+		return $message;
 	}
 }
