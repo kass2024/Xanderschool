@@ -8,8 +8,9 @@ helper('qonics');
 
 $cardW = 54.0;
 $cardH = 91.7; // 591×1004 template
-$canvasScale = 0.965;
-$canvasTop = 0.7;
+$canvasScale = 0.985;
+$canvasLeft = 0.4;
+$canvasTop = 0.4;
 
 $useCaps = !empty($capitalize);
 $fmt = static function ($v) use ($useCaps) {
@@ -111,12 +112,12 @@ $barcodeH = 13.2;
 	.card * { box-sizing: border-box; margin: 0; padding: 0; }
 	.card-canvas {
 		position: absolute;
-		left: 50%;
+		left: <?= number_format($canvasLeft, 2, '.', ''); ?>mm;
 		top: <?= number_format($canvasTop, 2, '.', ''); ?>mm;
 		width: <?= number_format($cardW, 1, '.', ''); ?>mm;
 		height: <?= number_format($cardH, 1, '.', ''); ?>mm;
-		transform: translateX(-50%) scale(<?= number_format($canvasScale, 3, '.', ''); ?>);
-		transform-origin: top center;
+		transform: scale(<?= number_format($canvasScale, 3, '.', ''); ?>);
+		transform-origin: top left;
 	}
 	.card-bg {
 		position: absolute; left: 0; top: 0; width: 100%; height: 100%;
