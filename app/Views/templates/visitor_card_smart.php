@@ -78,9 +78,9 @@ $nameY = 31.8;
 $nameW = 44.8;
 $nameH = 13.2;
 
-$codeX = 17.5;
-$codeY = 63.9;
-$codeW = 33.0;
+$codeX = 12.6;
+$codeY = 61.2;
+$codeW = 37.8;
 $codeH = 4.5;
 
 $barcodeX = 5.5;
@@ -148,7 +148,8 @@ foreach ($cards as $i => $visitor):
 		$studentReg = '—';
 	}
 	$fsName = $fitLine($studentName, $nameW, $nameH, 3.35, 1.15);
-	$fsCode = $fitLine($studentReg, $codeW, $codeH, 3.2, 1.6);
+	$codeLabel = 'CODE: ' . $studentReg;
+	$fsCode = $fitLine($codeLabel, $codeW, $codeH, 2.9, 1.45);
 	$barcodeMarkup = $barcodeSvg($studentReg);
 ?>
 <div class="card">
@@ -162,11 +163,11 @@ foreach ($cards as $i => $visitor):
 		font-size:<?= number_format($fsName, 2, '.', ''); ?>mm;
 		font-weight:800;color:#f8fafc;text-align:center;"><?= esc($studentName); ?></p>
 
-	<!-- CODE = student registration number -->
+	<!-- CODE = current student code -->
 	<p class="abs" style="left:<?= number_format($codeX, 1, '.', ''); ?>mm;top:<?= number_format($codeY, 1, '.', ''); ?>mm;
 		width:<?= number_format($codeW, 1, '.', ''); ?>mm;height:<?= number_format($codeH, 1, '.', ''); ?>mm;
 		font-size:<?= number_format($fsCode, 2, '.', ''); ?>mm;line-height:<?= number_format($codeH, 1, '.', ''); ?>mm;
-		font-weight:800;color:#facc15;letter-spacing:0.04em;text-align:left;"><?= esc($studentReg); ?></p>
+		font-weight:800;color:#facc15;letter-spacing:0.03em;text-align:left;"><?= esc($codeLabel); ?></p>
 
 	<!-- Visual barcode only: uses the same student code, but does not activate scanning logic. -->
 	<div class="abs barcode-shell" style="left:<?= number_format($barcodeX, 1, '.', ''); ?>mm;top:<?= number_format($barcodeY, 1, '.', ''); ?>mm;
