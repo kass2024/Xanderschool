@@ -5337,6 +5337,42 @@ public function attendanceCard()
 				->where("courses.school_id", $school_id)
 				->orderBy('courses.title', 'ASC')
 				->get()->getResultArray();
+		$courseAssignmentsMap = [];
+		if ($yearId > 0) {
+			$assignmentRows = \Config\Database::connect()->table('course_records cr')
+				->select('cr.course AS course_id, cl.id AS class_id, cl.title AS class_title, l.title AS level_name, d.code AS dept_code')
+				->join('classes cl', 'cl.id = cr.class')
+				->join('levels l', 'l.id = cl.level', 'left')
+				->join('departments d', 'd.id = cl.department', 'left')
+				->where('cl.school_id', $school_id)
+				->where('cr.year', $yearId)
+				->orderBy('l.id', 'ASC')
+				->orderBy('d.code', 'ASC')
+				->orderBy('cl.title', 'ASC')
+				->get()->getResultArray();
+			foreach ($assignmentRows as $assignmentRow) {
+				$courseId = (int) ($assignmentRow['course_id'] ?? 0);
+				if ($courseId <= 0) {
+					continue;
+				}
+				$label = trim(
+					(string) ($assignmentRow['level_name'] ?? '') . ' '
+					. (string) ($assignmentRow['dept_code'] ?? '') . ' '
+					. (string) ($assignmentRow['class_title'] ?? '')
+				);
+				$label = preg_replace('/\s+/', ' ', $label ?? '') ?: '';
+				if ($label === '') {
+					continue;
+				}
+				if (!isset($courseAssignmentsMap[$courseId])) {
+					$courseAssignmentsMap[$courseId] = [];
+				}
+				$courseAssignmentsMap[$courseId][$label] = $label;
+			}
+		}
+		$data['course_assignments_map'] = array_map(static function (array $labels): array {
+			return array_values($labels);
+		}, $courseAssignmentsMap);
 
 		$aiCodeMeta = $this->buildAiCourseCodeMeta($school_id, $yearId);
 		$assignmentTypes = $this->courseAssignmentProgramTypes($school_id, $yearId);
@@ -8308,7 +8344,7 @@ public function attendanceCard()
 			echo "<tr>
 				<th>" . lang("app.title") . "</th>
 				<th>" . lang("app.category") . "</th>
-				<th>" . lang("app.maxMarks") . "</th>
+				<th>Periods / Week</th>
 				<th>" . lang("app.term") . "</th>
 				<th>" . lang("app.lecturer") . "</th>
 			     </tr>";
@@ -8323,7 +8359,8 @@ public function attendanceCard()
 				data-name='" . $course['title'] . "' data-id='" . $course['id'] . "'> <i class='fa fa-pencil-alt'></i></a>
 				</td>
 				<td>" . $course['category'] . "</td>
-				<td>" . $course['marks'] . "</td>
+				<td>" . ((int) ($course['credit'] ?? 0)) . " period(s)/week"
+				. "<div style='font-size:11px;color:#64748b'>Marks: " . ((int) ($course['marks'] ?? 0)) . "</div></td>
 				<td>" . $term . " <a class='link' data-toggle='modal' data-target='#editTermModal'
 				data-name='" . $course['class'] . "' data-id='" . $course['record_id'] . "'> <i class='fa fa-pencil-alt'></i></a>
 				</td>

@@ -7,9 +7,11 @@
  * @var array $staffs
  * @var array $smart_by_class
  * @var array $courses_grouped
+ * @var array $course_assignments_map
  */
 $smartByClass = $smart_by_class ?? [];
 $coursesGrouped = $courses_grouped ?? ['tvet' => [], 'reb' => [], 'special' => [], 'holiday' => []];
+$courseAssignmentsMap = $course_assignments_map ?? [];
 $courseCategoriesJson = [];
 foreach (($categories ?? []) as $cat) {
 	$courseCategoriesJson[] = [
@@ -17,7 +19,7 @@ foreach (($categories ?? []) as $cat) {
 		'title' => (string) ($cat['title'] ?? ''),
 	];
 }
-$renderCourseRows = static function (array $rows): string {
+$renderCourseRows = static function (array $rows) use ($courseAssignmentsMap): string {
 	$html = '';
 	foreach ($rows as $course) {
 		$id = (int) ($course['id'] ?? 0);
@@ -28,6 +30,14 @@ $renderCourseRows = static function (array $rows): string {
 		$credit = (string) ($course['credit'] ?? '0');
 		$marks = (string) ($course['marks'] ?? '0');
 		$prog = normalize_course_program_type($course['program_type'] ?? 'tvet');
+		$assignedClasses = $courseAssignmentsMap[$id] ?? [];
+		$assignedHtml = '<span class="text-muted">Not assigned</span>';
+		if ($assignedClasses !== []) {
+			$assignedHtml = '';
+			foreach ($assignedClasses as $classLabel) {
+				$assignedHtml .= '<span class="course-class-pill">' . htmlspecialchars((string) $classLabel, ENT_QUOTES, 'UTF-8') . '</span> ';
+			}
+		}
 		$titleEsc = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
 		$codeEsc = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
 		$catEsc = htmlspecialchars($catTitle, ENT_QUOTES, 'UTF-8');
@@ -47,8 +57,9 @@ $renderCourseRows = static function (array $rows): string {
 			. '<td class="course-inline" data-field="code" title="Double-click to edit">' . $codeEsc . '</td>'
 			. '<td class="course-inline" data-field="category" title="Double-click to edit">' . $catEsc . '</td>'
 			. '<td><span class="course-source-badge ' . $sourceClass . '">' . $sourceLabel . '</span></td>'
-			. '<td class="course-inline" data-field="credit" title="Double-click to edit">' . htmlspecialchars($credit, ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td class="course-inline" data-field="credit" title="Double-click to edit">' . htmlspecialchars($credit, ENT_QUOTES, 'UTF-8') . '<div class="course-credit-note">period(s) / week</div></td>'
 			. '<td class="course-inline" data-field="marks" title="Double-click to edit">' . htmlspecialchars($marks, ENT_QUOTES, 'UTF-8') . '</td>'
+			. '<td class="course-assigned-cell">' . trim($assignedHtml) . '</td>'
 			. '<td>'
 			. "<label class='typcn typcn-document-add text-primary link' data-id='" . $id . "' data-title='" . $titleEsc . "' data-program-type='" . $prog . "' data-toggle='modal' data-target='#assignModal'>" . lang('app.assign') . "</label>&nbsp;&nbsp;"
 			. "<label class='typcn typcn-delete text-danger link' data-title='" . $titleEsc . "' data-toggle='delete' data-target='" . $id . "' data-href='delete_course/" . $id . "'>" . lang('app.del') . "</label>"
@@ -212,6 +223,26 @@ foreach ($classes as $c) {
 	}
 	.course-source-badge.source-ai { background: #dbeafe; color: #1d4ed8; }
 	.course-source-badge.source-manual { background: #f3f4f6; color: #374151; }
+	.course-credit-note {
+		font-size: .72rem;
+		color: #64748b;
+		margin-top: .15rem;
+		line-height: 1.2;
+	}
+	.course-class-pill {
+		display: inline-block;
+		margin: 0 .25rem .25rem 0;
+		padding: .18rem .5rem;
+		border-radius: 999px;
+		background: #eef2ff;
+		color: #3730a3;
+		font-size: .78rem;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+	.course-assigned-cell {
+		min-width: 240px;
+	}
 	.course-inline {
 		cursor: pointer;
 		position: relative;
@@ -475,7 +506,7 @@ foreach (($categories ?? []) as $cat) {
 		<div class="course-panel-meta">
 			<strong><?= esc($groupDef['title']); ?></strong>
 			— <?= count($rows); ?> course(s) · <?= $manualCount; ?> manual · <?= $aiCount; ?> AI
-			<span class="inline-hint">Double-click Title, Code, Category, Credits or Marks to edit inline. Editing Credits resets Marks to credit × 10.</span>
+			<span class="inline-hint">Credits here mean weekly periods. Example: credit 3 = the course should appear 3 times per week. Double-click Title, Code, Category, Credits or Marks to edit inline.</span>
 		</div>
 		<div class="course-group-body">
 			<table class="table table-hover table-striped table-bordered course-list-table" id="<?= esc($groupDef['table_id']); ?>" style="width:100%">
@@ -485,8 +516,9 @@ foreach (($categories ?? []) as $cat) {
 					<th><?= lang("app.code"); ?></th>
 					<th><?= lang("app.category"); ?></th>
 					<th>Source</th>
-					<th><?= lang("app.credits"); ?></th>
+					<th>Periods / Week</th>
 					<th><?= lang("app.marks"); ?></th>
+					<th>Assigned Classes</th>
 					<th><?= lang("app.use"); ?></th>
 				</tr>
 				</thead>
