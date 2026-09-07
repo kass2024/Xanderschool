@@ -4463,7 +4463,7 @@ public function permission_card_scan()
 		}
 		$owner = \App\Libraries\CardRegistry::lookup($schoolId, $card);
 		if ($owner && ($owner['type'] ?? '') === 'visitor') {
-			return $this->response->setJSON($this->processVisitorScan($schoolId, $card, 'android', null));
+			return $this->response->setJSON($this->processVisitorScan((int) ($owner['school_id'] ?? $schoolId), $card, 'android', null));
 		}
 		return $this->response->setJSON(AttendanceScanService::scanCard($schoolId, $card, $areaId, $eventTime));
 	}

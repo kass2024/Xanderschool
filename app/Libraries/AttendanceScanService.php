@@ -10,6 +10,44 @@ use App\Models\AttendanceAreaModel;
  */
 class AttendanceScanService
 {
+	/**
+	 * @return list<int>
+	 */
+	private static function scopeSchoolIds(int $schoolId): array
+	{
+		$schoolId = (int) $schoolId;
+		if ($schoolId <= 0) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		$scope = [$schoolId];
+		try {
+			if ($db->fieldExists('is_master', 'schools') && $db->fieldExists('master_school_id', 'schools')) {
+				$row = $db->table('schools')
+					->select('is_master')
+					->where('id', $schoolId)
+					->get()
+					->getRowArray();
+				if (!empty($row['is_master'])) {
+					$children = $db->table('schools')
+						->select('id')
+						->where('master_school_id', $schoolId)
+						->get()
+						->getResultArray();
+					foreach ($children as $child) {
+						$childId = (int) ($child['id'] ?? 0);
+						if ($childId > 0) {
+							$scope[] = $childId;
+						}
+					}
+				}
+			}
+		} catch (\Throwable $e) {
+			// Fall back to the requested school only when hierarchy metadata is unavailable.
+		}
+		return array_values(array_unique(array_filter(array_map('intval', $scope))));
+	}
+
 	public static function ensureFaceColumn(): void
 	{
 		static $ready = false;
@@ -85,12 +123,16 @@ class AttendanceScanService
 	public static function studentAttendanceToday(int $schoolId): array
 	{
 		$db = \Config\Database::connect();
+		$scopeSchoolIds = self::scopeSchoolIds($schoolId);
+		if ($scopeSchoolIds === []) {
+			return [];
+		}
 		$todayStart = strtotime('today');
 		$todayEnd = strtotime('tomorrow') - 1;
 		$day = date('Y-m-d');
 		$rows = $db->table('attendance_records')
 			->select('user_id, area_id, time_in, time_out')
-			->where('school_id', $schoolId)
+			->whereIn('school_id', $scopeSchoolIds)
 			->where('user_type', 0)
 			->where('time_in >=', $todayStart)
 			->where('time_in <=', $todayEnd)
@@ -200,10 +242,14 @@ class AttendanceScanService
 	{
 		helper('qonics');
 		$db = \Config\Database::connect();
+		$scopeSchoolIds = self::scopeSchoolIds($schoolId);
+		if ($scopeSchoolIds === []) {
+			return [];
+		}
 		$year = self::academicYear($schoolId);
 		$rows = $db->table('students s')
-			->select('s.id, s.fname, s.lname, s.regno, s.card, s.photo')
-			->where('s.school_id', $schoolId)
+			->select('s.id, s.school_id, s.fname, s.lname, s.regno, s.card, s.photo')
+			->whereIn('s.school_id', $scopeSchoolIds)
 			->where('s.status', 1)
 			->orderBy('s.fname', 'ASC')
 			->get()
@@ -233,6 +279,7 @@ class AttendanceScanService
 			$sid = (int) $r['id'];
 			$out[] = [
 				'id' => $sid,
+				'school_id' => (int) ($r['school_id'] ?? $schoolId),
 				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
 				'regno' => (string) ($r['regno'] ?? ''),
 				'class' => $classes[$sid] ?? '',
@@ -251,13 +298,17 @@ class AttendanceScanService
 		self::ensureFaceColumn();
 		helper('qonics');
 		$db = \Config\Database::connect();
+		$scopeSchoolIds = self::scopeSchoolIds($schoolId);
+		if ($scopeSchoolIds === []) {
+			return [];
+		}
 		$hasFace = $db->fieldExists('face_enrolled', 'staffs');
 		$faceSelect = $hasFace ? ', s.face_enrolled' : '';
 		$rows = $db->table('staffs s')
-			->select('s.id, s.fname, s.lname, s.photo, s.card, s.shift_id, s.status, p.title as post_title, sh.title as shift_title' . $faceSelect)
+			->select('s.id, s.school_id, s.fname, s.lname, s.photo, s.card, s.shift_id, s.status, p.title as post_title, sh.title as shift_title' . $faceSelect)
 			->join('posts p', 'p.id = s.post', 'left')
 			->join('shifts sh', 'sh.id = s.shift_id', 'left')
-			->where('s.school_id', $schoolId)
+			->whereIn('s.school_id', $scopeSchoolIds)
 			->where('s.status !=', 0)
 			->orderBy('s.fname', 'ASC')
 			->orderBy('s.lname', 'ASC')
@@ -274,6 +325,7 @@ class AttendanceScanService
 				: '';
 			$out[] = [
 				'id' => (int) $r['id'],
+				'school_id' => (int) ($r['school_id'] ?? $schoolId),
 				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
 				'post' => (string) ($r['post_title'] ?? ''),
 				'shift' => (string) ($r['shift_title'] ?? ''),
@@ -295,12 +347,16 @@ class AttendanceScanService
 	{
 		helper('qonics');
 		$db = \Config\Database::connect();
+		$scopeSchoolIds = self::scopeSchoolIds($schoolId);
+		if ($scopeSchoolIds === []) {
+			return [];
+		}
 		$year = self::academicYear($schoolId);
 		$rows = $db->table('student_visitors sv')
-			->select("sv.id, sv.student_id, sv.names, sv.phone, sv.relationship, sv.card, sv.photo,
+			->select("sv.id, sv.school_id, sv.student_id, sv.names, sv.phone, sv.relationship, sv.card, sv.photo,
 				CONCAT(s.fname, ' ', s.lname) AS student_name, s.regno")
 			->join('students s', 's.id = sv.student_id AND s.school_id = sv.school_id', 'left')
-			->where('sv.school_id', $schoolId)
+			->whereIn('sv.school_id', $scopeSchoolIds)
 			->where('sv.status', 1)
 			->where("TRIM(COALESCE(sv.card, '')) <> ''", null, false)
 			->orderBy('sv.names', 'ASC')
@@ -336,6 +392,7 @@ class AttendanceScanService
 			$sid = (int) ($r['student_id'] ?? 0);
 			$out[] = [
 				'id' => (int) $r['id'],
+				'school_id' => (int) ($r['school_id'] ?? $schoolId),
 				'student_id' => $sid,
 				'names' => trim((string) ($r['names'] ?? '')),
 				'phone' => (string) ($r['phone'] ?? ''),
@@ -356,10 +413,14 @@ class AttendanceScanService
 	public static function visitorVisitsToday(int $schoolId): array
 	{
 		$db = \Config\Database::connect();
+		$scopeSchoolIds = self::scopeSchoolIds($schoolId);
+		if ($scopeSchoolIds === []) {
+			return [];
+		}
 		$today = date('Y-m-d');
 		$rows = $db->table('visitor_visits')
 			->select('visitor_id, student_id, card, time_in, time_out')
-			->where('school_id', $schoolId)
+			->whereIn('school_id', $scopeSchoolIds)
 			->where('visit_date', $today)
 			->orderBy('id', 'ASC')
 			->get()
@@ -403,7 +464,8 @@ class AttendanceScanService
 			return ['success' => 0, 'kind' => 'staff', 'message' => 'Staff must use face, not card'];
 		}
 		if ($owner['type'] === 'student') {
-			return self::scanStudent($schoolId, (int) $owner['id'], $areaId, $eventTime);
+			$ownerSchoolId = (int) ($owner['school_id'] ?? $schoolId);
+			return self::scanStudent($ownerSchoolId, (int) $owner['id'], $areaId, $eventTime);
 		}
 		return ['success' => 0, 'message' => 'Card not found'];
 	}

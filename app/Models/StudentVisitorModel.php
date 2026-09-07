@@ -173,6 +173,45 @@ class StudentVisitorModel extends Model
 	}
 
 	/**
+	 * @return list<int>
+	 */
+	private function scopeSchoolIds(int $schoolId): array
+	{
+		$schoolId = (int) $schoolId;
+		if ($schoolId <= 0) {
+			return [];
+		}
+
+		$db = \Config\Database::connect();
+		$scope = [$schoolId];
+		try {
+			if ($db->fieldExists('is_master', 'schools') && $db->fieldExists('master_school_id', 'schools')) {
+				$row = $db->table('schools')
+					->select('is_master')
+					->where('id', $schoolId)
+					->get()
+					->getRowArray();
+				if (!empty($row['is_master'])) {
+					$children = $db->table('schools')
+						->select('id')
+						->where('master_school_id', $schoolId)
+						->get()
+						->getResultArray();
+					foreach ($children as $child) {
+						$childId = (int) ($child['id'] ?? 0);
+						if ($childId > 0) {
+							$scope[] = $childId;
+						}
+					}
+				}
+			}
+		} catch (\Throwable $e) {
+			// Keep single-school behavior if hierarchy metadata is unavailable.
+		}
+		return array_values(array_unique(array_filter(array_map('intval', $scope))));
+	}
+
+	/**
 	 *
 	 * @param int $schoolId
 	 * @param string $card
@@ -187,14 +226,20 @@ class StudentVisitorModel extends Model
 			return [];
 		}
 
+		$scopeSchoolIds = $this->scopeSchoolIds((int) $schoolId);
+		if ($scopeSchoolIds === []) {
+			return [];
+		}
+
 		$db = \Config\Database::connect();
 		$placeholders = implode(',', array_fill(0, count($matchCards), '?'));
-		$params = array_merge([(int) $schoolId], $matchCards);
+		$scopePlaceholders = implode(',', array_fill(0, count($scopeSchoolIds), '?'));
+		$params = array_merge($scopeSchoolIds, $matchCards);
 		$sql = "SELECT sv.id, sv.names, sv.student_id, sv.card, sv.relationship, sv.status, sv.photo,
-				CONCAT(st.fname, ' ', st.lname) AS student_name
+				sv.school_id, CONCAT(st.fname, ' ', st.lname) AS student_name
 			FROM student_visitors sv
 			INNER JOIN students st ON st.id = sv.student_id AND st.school_id = sv.school_id AND st.status = 1
-			WHERE sv.school_id = ? AND sv.status = 1
+			WHERE sv.school_id IN ({$scopePlaceholders}) AND sv.status = 1
 			AND UPPER(TRIM(sv.card)) IN ({$placeholders})";
 		if ($excludeVisitorId > 0) {
 			$sql .= ' AND sv.id != ?';
