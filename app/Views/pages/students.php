@@ -43,6 +43,82 @@
 	font-weight: 600;
 	text-decoration: underline;
 }
+.students-live-search {
+	display: inline-block;
+	position: relative;
+	width: min(100%, 360px);
+	margin: 18px 10px 0 0;
+	vertical-align: top;
+}
+.students-live-search .form-control {
+	height: 38px;
+	padding-right: 38px;
+	border-radius: 10px;
+	border: 1px solid #cbd5e1;
+}
+.students-live-search .search-icon {
+	position: absolute;
+	right: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	color: #64748b;
+	pointer-events: none;
+}
+.students-live-search-results {
+	position: absolute;
+	top: calc(100% + 6px);
+	left: 0;
+	right: 0;
+	z-index: 1050;
+	display: none;
+	max-height: 420px;
+	overflow: auto;
+	background: #fff;
+	border: 1px solid #dbe3ef;
+	border-radius: 12px;
+	box-shadow: 0 18px 40px rgba(15, 23, 42, .16);
+}
+.students-live-search-results.is-open { display: block; }
+.students-live-search-state {
+	padding: 12px 14px;
+	font-size: 13px;
+	color: #64748b;
+}
+.students-live-search-item {
+	display: block;
+	padding: 12px 14px;
+	border-bottom: 1px solid #eef2f7;
+	text-decoration: none;
+	color: #0f172a;
+}
+.students-live-search-item:last-child { border-bottom: 0; }
+.students-live-search-item:hover,
+.students-live-search-item:focus {
+	background: #eff6ff;
+	color: #1d4ed8;
+	text-decoration: none;
+}
+.students-live-search-name {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-weight: 700;
+}
+.students-live-search-meta {
+	margin-top: 4px;
+	font-size: 12px;
+	color: #64748b;
+}
+.students-live-search-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: #e0f2fe;
+	color: #075985;
+	font-size: 11px;
+	font-weight: 700;
+}
 .st-visitor-badge {
 	display: inline-flex;
 	align-items: center;
@@ -213,6 +289,18 @@
 										endforeach;
 										?>
 									</select>
+								</div>
+								<div class="students-live-search">
+									<input
+										type="search"
+										id="studentLiveSearch"
+										class="form-control"
+										placeholder="Search student by name or reg no"
+										autocomplete="off">
+									<i class="fa fa-search search-icon"></i>
+									<div id="studentLiveSearchResults" class="students-live-search-results">
+										<div class="students-live-search-state">Type at least 2 letters to search students.</div>
+									</div>
 								</div>
 								<button type="submit" value="true" class="btn btn-primary">
 									<?= lang("app.viewStudents"); ?>
@@ -556,6 +644,7 @@ foreach ($students as $st) {
 </div>
 <script>
 (function ($) {
+	var LIVE_SEARCH_API = "<?= site_url('students_live_search'); ?>";
 	var SMS_API = "<?= site_url('sendStudentAdmissionSms'); ?>";
 	var MOVE_API = "<?= site_url('move_students_class'); ?>";
 	var EDIT_FIELD_API = "<?= site_url('edit_student/text'); ?>";
@@ -582,6 +671,76 @@ foreach ($students as $st) {
 			data[csrfName] = csrfHash;
 		}
 		return data;
+	}
+
+	var liveSearchXhr = null;
+	var liveSearchTimer = null;
+
+	function liveSearchState(html) {
+		$('#studentLiveSearchResults')
+			.html('<div class="students-live-search-state">' + html + '</div>')
+			.addClass('is-open');
+	}
+
+	function liveSearchClose() {
+		$('#studentLiveSearchResults').removeClass('is-open');
+	}
+
+	function liveSearchRender(items) {
+		if (!items || !items.length) {
+			liveSearchState('No matching students found.');
+			return;
+		}
+		var html = '';
+		items.forEach(function (item) {
+			html += '<a class="students-live-search-item" href="' + ceEsc(item.url || '#') + '">' +
+				'<div class="students-live-search-name">' +
+					'<span>' + ceEsc(item.name || '') + '</span>' +
+					(item.mode ? '<span class="students-live-search-badge">' + ceEsc(item.mode) + '</span>' : '') +
+				'</div>' +
+				'<div class="students-live-search-meta">' +
+					(item.regno ? ceEsc(item.regno) : 'No reg no') +
+					(item.class_label ? ' · ' + ceEsc(item.class_label) : '') +
+					(item.gender ? ' · ' + ceEsc(item.gender) : '') +
+				'</div>' +
+			'</a>';
+		});
+		$('#studentLiveSearchResults').html(html).addClass('is-open');
+	}
+
+	function runLiveSearch(query) {
+		query = String(query || '').trim();
+		if (liveSearchXhr) {
+			liveSearchXhr.abort();
+			liveSearchXhr = null;
+		}
+		if (query.length < 2) {
+			if (query.length) {
+				liveSearchState('Type at least 2 letters to search students.');
+			} else {
+				liveSearchClose();
+			}
+			return;
+		}
+		liveSearchState('Searching students...');
+		liveSearchXhr = $.ajax({
+			url: LIVE_SEARCH_API,
+			type: 'GET',
+			dataType: 'json',
+			data: {
+				q: query,
+				c: $('#choose_class').val() || '',
+				y: $('#choose_year').val() || YEAR_ID
+			}
+		}).done(function (res) {
+			liveSearchRender(res && res.students ? res.students : []);
+		}).fail(function (xhr, status) {
+			if (status !== 'abort') {
+				liveSearchState('Could not search right now.');
+			}
+		}).always(function () {
+			liveSearchXhr = null;
+		});
 	}
 
 	function tableApi() {
@@ -673,6 +832,35 @@ foreach ($students as $st) {
 		var dt = tableApi();
 		var $boxes = dt ? dt.$('input.st-sms-check') : $('#example tbody input.st-sms-check');
 		$boxes.prop('checked', checked);
+	});
+
+	$(document).on('input', '#studentLiveSearch', function () {
+		var query = $(this).val();
+		window.clearTimeout(liveSearchTimer);
+		liveSearchTimer = window.setTimeout(function () {
+			runLiveSearch(query);
+		}, 220);
+	});
+
+	$(document).on('focus', '#studentLiveSearch', function () {
+		var query = $(this).val();
+		if (String(query || '').trim().length >= 2) {
+			runLiveSearch(query);
+		}
+	});
+
+	$(document).on('click', function (e) {
+		if ($(e.target).closest('.students-live-search').length) {
+			return;
+		}
+		liveSearchClose();
+	});
+
+	$(document).on('change', '#choose_class, #choose_year', function () {
+		var query = $('#studentLiveSearch').val();
+		if (String(query || '').trim().length >= 2) {
+			runLiveSearch(query);
+		}
 	});
 
 	$(document).on('click', '#btnSendAdmissionSmsSelected', function () {

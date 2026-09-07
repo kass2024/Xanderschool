@@ -6822,6 +6822,79 @@ public function attendanceCard()
 		return view('main', $data);
 	}
 
+	public function students_live_search()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$query = trim((string) $this->request->getGet('q'));
+		$classId = (int) ($this->request->getGet('c') ?? 0);
+		$yearId = (int) ($this->request->getGet('y') ?? 0);
+		$activeYearId = (int) ($this->data['academic_year_id'] ?? 0);
+		if ($yearId < 1) {
+			$yearId = $activeYearId;
+		}
+
+		if ($schoolId < 1 || strlen($query) < 2) {
+			return $this->response->setJSON(['students' => []]);
+		}
+
+		$db = \Config\Database::connect();
+		$builder = $db->table('students');
+		$builder->select("
+			students.id,
+			students.regno,
+			students.fname,
+			students.lname,
+			students.sex,
+			students.photo,
+			students.studying_mode,
+			l.title AS level_name,
+			d.code AS dept_code,
+			c.title AS class_name
+		");
+		$builder->join('class_records cr', 'cr.student = students.id');
+		$builder->join('classes c', 'c.id = cr.class');
+		$builder->join('departments d', 'd.id = c.department', 'left');
+		$builder->join('levels l', 'l.id = c.level', 'left');
+		$builder->where('students.school_id', $schoolId);
+		$builder->where('students.status', 1);
+		if ($yearId > 0) {
+			$builder->where('cr.year', $yearId);
+		}
+		if ($classId > 0) {
+			$builder->where('cr.class', $classId);
+		}
+
+		$escapedQuery = $db->escapeLikeString($query);
+		$escapedFullNameLike = $db->escape('%' . $escapedQuery . '%');
+		$builder->groupStart()
+			->like('students.fname', $query)
+			->orLike('students.lname', $query)
+			->orLike('students.regno', $query)
+			->orWhere("CONCAT(students.fname, ' ', students.lname) LIKE {$escapedFullNameLike} ESCAPE '!'")
+			->groupEnd();
+		$builder->orderBy('students.fname', 'ASC');
+		$builder->orderBy('students.lname', 'ASC');
+		$builder->groupBy('students.id');
+		$builder->limit(12);
+
+		$rows = $builder->get()->getResultArray();
+		$students = [];
+		foreach ($rows as $row) {
+			$students[] = [
+				'id' => (int) ($row['id'] ?? 0),
+				'regno' => (string) ($row['regno'] ?? ''),
+				'name' => trim((string) (($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''))),
+				'gender' => (string) ($row['sex'] ?? ''),
+				'mode' => self::ModeToStr($row['studying_mode'] ?? 0),
+				'class_label' => trim((string) (($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_name'] ?? ''))),
+				'url' => base_url('student/' . (int) ($row['id'] ?? 0)),
+			];
+		}
+
+		return $this->response->setJSON(['students' => $students]);
+	}
+
 	public function dismissedStudent()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
