@@ -8429,15 +8429,15 @@ public function attendanceCard()
 					$term .= "<label style='border: 1px dashed rgba(6,22,7,0.95);padding: 2px;border-radius: 3px;margin-right: 4px'>" . $this->TermToStr($t) . "</label>";
 				}
 				echo "<tr>
-				<td>" . $course['title'] . " <a class='link' data-toggle='modal' data-target='#editCourseModal'
-				data-name='" . $course['title'] . "' data-id='" . $course['id'] . "'> <i class='fa fa-pencil-alt'></i></a>
+				<td>" . $course['title'] . " <a href='javascript:void(0)' class='link btn-edit-course-meta'
+				data-id='" . $course['id'] . "'> <i class='fa fa-pencil-alt'></i></a>
 				</td>
-				<td>" . $course['category'] . " <a class='link' data-toggle='modal' data-target='#editCourseModal'
-				data-name='" . $course['title'] . "' data-id='" . $course['id'] . "'><i class='fa fa-pencil-alt'></i></a></td>
+				<td>" . $course['category'] . " <a href='javascript:void(0)' class='link btn-edit-course-meta'
+				data-id='" . $course['id'] . "'><i class='fa fa-pencil-alt'></i></a></td>
 				<td>" . $creditLabel . " period(s)/week"
 				. "<div style='font-size:11px;color:#64748b'>Marks: " . ((int) ($course['marks'] ?? 0)) . "</div>
-				<a class='link' data-toggle='modal' data-target='#editCourseModal'
-				data-name='" . $course['title'] . "' data-id='" . $course['id'] . "'><i class='fa fa-pencil-alt'></i></a></td>
+				<a href='javascript:void(0)' class='link btn-edit-course-meta'
+				data-id='" . $course['id'] . "'><i class='fa fa-pencil-alt'></i></a></td>
 				<td>" . $term . " <a class='link' data-toggle='modal' data-target='#editTermModal'
 				data-name='" . $course['class'] . "' data-id='" . $course['record_id'] . "'> <i class='fa fa-pencil-alt'></i></a>
 				</td>

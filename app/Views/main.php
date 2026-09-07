@@ -4401,8 +4401,19 @@ if ($page == "pendingRegistration") {
 					toastada.error("System server error, please try again later");
 			});
 		});
+		$(document).on("click", ".btn-edit-course-meta", function (e) {
+			e.preventDefault();
+			e.stopPropagation();
+			$("#editCourseModal").data("course-id", $(this).data("id")).modal("show");
+		});
 		$("#editCourseModal").on("show.bs.modal", function (e) {
 			var id = $(e.relatedTarget).data("id");
+			if (!id) {
+				id = $(this).data("course-id");
+			}
+			if (!id) {
+				return;
+			}
 			$.getJSON("<?=base_url();?>getSingleCourseAjax/" + id, function (data) {
 				$("#editCourseModal [name='courseId']").val(data.id).change();
 				$("#editCourseModal [name='title']").val(data.title).change();
@@ -4415,6 +4426,9 @@ if ($page == "pendingRegistration") {
 				$("#editCourseModal [name='marks']").val(marks).data('manual-edit', true).change();
 			});
 			return;
+		});
+		$("#editCourseModal").on("hidden.bs.modal", function () {
+			$(this).removeData("course-id");
 		});
 		$(document).on('input change', '#editCourseModal [name="credit"]', function () {
 			var $marks = $("#editCourseModal [name='marks']");
