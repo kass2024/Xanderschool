@@ -217,6 +217,9 @@ if (!function_exists('_is_allowed')) {
 if (!function_exists('material_check_full_access')) {
 	function material_check_full_access()
 	{
+		if (function_exists('menu_clearance_allowed') && menu_clearance_allowed('student_material_check')) {
+			return true;
+		}
 		$postId = (int) ($_SESSION['soma_post'] ?? 0);
 		if (in_array($postId, \Config\StudentMaterialPermissions::FULL_ACCESS_POST_IDS, true)) {
 			return true;
