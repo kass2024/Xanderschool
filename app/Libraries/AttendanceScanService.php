@@ -302,7 +302,7 @@ class AttendanceScanService
 			->join('students s', 's.id = sv.student_id AND s.school_id = sv.school_id', 'left')
 			->where('sv.school_id', $schoolId)
 			->where('sv.status', 1)
-			->where('TRIM(COALESCE(sv.card, "")) !=', '', false)
+			->where("TRIM(COALESCE(sv.card, '')) <> ''", null, false)
 			->orderBy('sv.names', 'ASC')
 			->get()
 			->getResultArray();
