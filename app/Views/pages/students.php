@@ -295,11 +295,11 @@
 										type="search"
 										id="studentLiveSearch"
 										class="form-control"
-										placeholder="Global search for whole school"
+										placeholder="Global search in current active academic year"
 										autocomplete="off">
 									<i class="fa fa-search search-icon"></i>
 									<div id="studentLiveSearchResults" class="students-live-search-results">
-										<div class="students-live-search-state">Global school search: click to load the first 50 students, then type to filter.</div>
+										<div class="students-live-search-state">Global search in current active academic year: click to load the first 50 students, then type to filter.</div>
 									</div>
 								</div>
 								<button type="submit" value="true" class="btn btn-primary">
@@ -373,7 +373,7 @@
 						<div class="card-body">
 							<?php if (count($students) === 0): ?>
 								<div class="alert alert-info" style="margin-bottom: 16px;">
-									Use the top box for a <strong>global whole-school search</strong>. Choose a class and click <strong>View students</strong> only when you want the class table below and its own table search.
+									Use the top box for a <strong>global search in the current active academic year</strong>. Choose a class and click <strong>View students</strong> only when you want the class table below and its own table search.
 								</div>
 							<?php else: ?>
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
