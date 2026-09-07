@@ -101,7 +101,7 @@ $(function () {
                             }
                             return;
                         }
-                        if (target == "stay-course-page") {
+                        if (btn.is("[data-stay-course-page='1']") || target == "stay-course-page") {
                             toastada.success(data.success);
                             var $modal = form.closest(".modal");
                             if ($modal.length) {
