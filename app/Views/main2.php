@@ -1660,7 +1660,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="reload">
+								data-target="<?= $page == 'manage_Course' ? 'stay-course-page' : 'reload'; ?>">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -1731,7 +1731,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="reload">
+								data-target="stay-course-page">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -1774,7 +1774,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="reload">
+								data-target="stay-course-page">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -1815,7 +1815,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="reload">
+								data-target="stay-course-page">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -4003,6 +4003,9 @@ if ($page == "pendingRegistration") {
 			return false;
 		};
 		$(document).on("click", ".btn-edit-course-meta", function (e) {
+			if ($(this).data("target") === "#editCourseModal") {
+				return true;
+			}
 			e.preventDefault();
 			e.stopPropagation();
 			return window.openCourseEditorFromId($(this).data("id"));

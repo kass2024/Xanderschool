@@ -2,6 +2,23 @@ var base_url = null;
 $(function () {
     var active_btn = null;
     window.base_url = $("body").data("url");
+
+    // System-wide modal fix: layout wrappers create stacking contexts that put
+    // .modal-backdrop (on body) above nested .modal elements. Keep modals on body.
+    function ensureModalsOnBody() {
+        $(".modal").each(function () {
+            if (this.parentNode !== document.body) {
+                $(this).appendTo(document.body);
+            }
+        });
+    }
+    ensureModalsOnBody();
+    $(document).on("show.bs.modal", ".modal", function () {
+        if (this.parentNode !== document.body) {
+            $(this).appendTo(document.body);
+        }
+    });
+
     $(".validate").parsley();
     $(".select2").select2();
     // $(".select3").select2(
@@ -30,53 +47,110 @@ $(function () {
     $(".autoSubmit").on("submit", function (e) {
         e.preventDefault();
         var form = $(this);
-        // var btn = $(this).find("[type='submit']");
-        var btn = active_btn;
-        var btn_txt = btn.text();
-        btn.text("Please wait...").prop("disabled", true);
-        $.post(form.prop("action"), $(this).serialize(), function (data) {
-            btn.text(btn_txt).prop("disabled", false);
-            if (data.hasOwnProperty("error")) {
-                toastada.error(data.error);
-                // alert(data.error);
-            } else if (data.hasOwnProperty("success")) {
-                if (btn.data("target")) {
-                    toastada.success(data.success);
-                    var target=btn.data("target");
-                    if (target.startsWith("#")){
-                        //try close modal
-                        $(target).modal('hide');
-                        return;
-                    }
-                    if (target == "reload"){
-                        setTimeout(function () {
-                            window.location.reload();
-                        }, 1500);
-                        return;
-                    }
-                    if (target == "open" && data.hasOwnProperty("url")){
-                        $("#anchorID").prop("href",data.url);
-                        setTimeout(function () {
-                            $("#anchorID")[0].click();
-                            window.location.reload();
-                        }, 1500);
-                        return;
-                    }
-                    setTimeout(function () {
-                        window.location.href = btn.data("target");
-                    }, 1500);
-                } else {
-                    toastada.success(data.success);
-                    form.trigger("reset");
+        // Prefer the submit button the user clicked; fallback to the first submit in this form.
+        // This prevents JS freezes when the form is submitted via Enter key (active_btn stays null).
+        var btn = (active_btn && active_btn.length && active_btn.closest(form).length)
+            ? active_btn
+            : form.find("[type='submit']").first();
+
+        var originalBtnHtml = (btn && btn.length) ? btn.html() : null;
+
+        if (btn && btn.length) {
+            btn.prop("disabled", true);
+            btn.html('<i class="fa fa-spinner fa-spin" aria-hidden="true"></i> Please wait...');
+        }
+
+        var hasFile = form.find("input[type='file']").filter(function () {
+            return this.files && this.files.length > 0;
+        }).length > 0;
+        var useMultipart = hasFile || (form.attr("enctype") || "").toLowerCase().indexOf("multipart") >= 0;
+
+        var ajaxOpts = {
+            url: form.prop("action"),
+            type: "POST",
+            dataType: "json",
+            success: function (data) {
+                if (btn && btn.length && originalBtnHtml !== null) {
+                    btn.html(originalBtnHtml).prop("disabled", false);
                 }
-            } else {
-                toastada.error("Fatal error occurred, if the problem persist please contact system admin");
+                if (data.hasOwnProperty("error")) {
+                    toastada.error(data.error);
+                    // alert(data.error);
+                } else if (data.hasOwnProperty("success")) {
+                    if (btn.data("target")) {
+                        toastada.success(data.success);
+                        var target=btn.data("target");
+                        if (target.startsWith("#")){
+                            //try close modal
+                            $(target).modal('hide');
+                            return;
+                        }
+                        if (target == "reload"){
+                            setTimeout(function () {
+                                window.location.reload();
+                            }, 1500);
+                            return;
+                        }
+                        if (target == "stay-assign") {
+                            toastada.success(data.success);
+                            form.find("[name='classes']").val(null).trigger("change");
+                            form.find("[name='teacher']").val(null).trigger("change");
+                            form.find("[name='term[]']").val(null).trigger("change");
+                            if (typeof window.refreshCourseAssignments === "function") {
+                                window.refreshCourseAssignments(data.course_id || form.find("[name='fId']").val());
+                            }
+                            return;
+                        }
+                        if (target == "stay-course-page") {
+                            toastada.success(data.success);
+                            var $modal = form.closest(".modal");
+                            if ($modal.length) {
+                                $modal.modal("hide");
+                            }
+                            if (typeof window.refreshManageCourseTable === "function") {
+                                setTimeout(function () {
+                                    window.refreshManageCourseTable();
+                                }, 150);
+                            }
+                            return;
+                        }
+                        if (target == "open" && data.hasOwnProperty("url")){
+                            $("#anchorID").prop("href",data.url);
+                            setTimeout(function () {
+                                $("#anchorID")[0].click();
+                                window.location.reload();
+                            }, 1500);
+                            return;
+                        }
+                        setTimeout(function () {
+                            window.location.href = btn.data("target");
+                        }, 1500);
+                    } else {
+                        toastada.success(data.success);
+                        form.trigger("reset");
+                    }
+                } else {
+                    toastada.error("Fatal error occurred, if the problem persist please contact system admin");
+                }
+            },
+            error: function () {
+                //unknown error
+                if (btn && btn.length && originalBtnHtml !== null) {
+                    btn.html(originalBtnHtml).prop("disabled", false);
+                }
+                toastada.error("System server error, please try again later");
             }
-        }).fail(function () {
-            //unknown error
-            btn.text(btn_txt).prop("disabled", false);
-            toastada.error("System server error, please try again later");
-        });
+        };
+
+        if (useMultipart) {
+            ajaxOpts.data = new FormData(form[0]);
+            ajaxOpts.processData = false;
+            ajaxOpts.contentType = false;
+        } else {
+            ajaxOpts.data = form.serialize();
+        }
+
+        $.ajax(ajaxOpts);
     });
     $(document).on("click", "[data-toggle='refresh']", function () {
         var target = $(this).data("target");

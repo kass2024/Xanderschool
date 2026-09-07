@@ -125,4 +125,8 @@ function get_courses()
 			})
 	}
 	}
+
+	window.refreshManageCourseTable = function () {
+		get_courses();
+	};
 </script>
