@@ -500,6 +500,13 @@ $(function () {
 				toastada.error(res.error || 'Could not load class.');
 				return;
 			}
+			if ((res.material_count || 0) <= 0) {
+				showRoster(false);
+				clearStudent();
+				setScanStatus('No materials set for this class', 'err');
+				toastada.error('No required materials set for this class.');
+				return;
+			}
 			renderClassKpi(res.class_kpi || {}, res.material_count || 0, classLabel);
 			renderRoster(res.students || []);
 			renderSmartReport(res.students || [], res.class_kpi || {}, res.materials || [], res.item_totals || [], res.hostel_totals || [], res.recent_activity || []);
