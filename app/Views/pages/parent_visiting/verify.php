@@ -25,6 +25,13 @@
     display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 999px;
     background: rgba(0,0,0,.06); font-family: monospace; font-size: .95rem; letter-spacing: .06em;
   }
+  .pv-visitor-photo {
+    width: 96px; height: 96px; border-radius: 50%; object-fit: cover;
+    border: 3px solid rgba(255,255,255,.85); box-shadow: 0 4px 14px rgba(0,0,0,.15);
+    margin: 14px auto 0; display: block;
+  }
+  .pv-result.allowed .pv-visitor-photo { border-color: #28a745; }
+  .pv-result.denied .pv-visitor-photo { border-color: #dc3545; }
 </style>
 
 <div class="container-fluid mt-4">
@@ -49,10 +56,10 @@
       <div id="scanDetails" class="mt-3 d-none">
         <table class="table table-bordered table-sm mb-0">
           <tr><th style="width:40%">Card UID</th><td id="dCard"><code></code></td></tr>
-          <tr><th>Visitor</th><td id="dVisitor"></td></tr>
-          <tr><th>Relationship</th><td id="dRel"></td></tr>
-          <tr><th>Student</th><td id="dStudent"></td></tr>
-          <tr><th>Class</th><td id="dClass"></td></tr>
+          <tr><th>Allowed visitor(s)</th><td id="dVisitor"></td></tr>
+          <tr><th>Relationship(s)</th><td id="dRel"></td></tr>
+          <tr><th>Student(s) to visit</th><td id="dStudent"></td></tr>
+          <tr><th>Class(es)</th><td id="dClass"></td></tr>
           <tr><th>Action</th><td id="dAction"></td></tr>
           <tr><th>Time</th><td id="dTime"></td></tr>
         </table>
@@ -77,9 +84,12 @@ document.addEventListener("DOMContentLoaded", function () {
     return (window.CardUid && CardUid.toStorage) ? CardUid.toStorage(uid) : String(uid || "").trim().toUpperCase();
   }
 
-  function setResult(state, title, meta, cardUid) {
+  function setResult(state, title, meta, cardUid, photoUrl) {
     resultBox.className = "pv-result " + state;
     let html = '<div class="pv-status">' + title + '</div><div class="pv-meta">' + meta + '</div>';
+    if (photoUrl) {
+      html += '<img src="' + photoUrl + '" alt="Visitor" class="pv-visitor-photo">';
+    }
     if (cardUid) {
       html += '<div class="pv-card-badge"><i class="fa fa-id-card"></i> ' + cardUid + '</div>';
     }
@@ -105,6 +115,39 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
+  function visitorPhotoUrl(res) {
+    if (!res) return null;
+    if (res.visitor && res.visitor.photo && res.visitor.photo_url) {
+      return res.visitor.photo_url;
+    }
+    if (Array.isArray(res.visitors)) {
+      for (const visitor of res.visitors) {
+        if (visitor && visitor.photo && visitor.photo_url) {
+          return visitor.photo_url;
+        }
+      }
+    }
+    return null;
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function renderList(items, formatter) {
+    if (!Array.isArray(items) || !items.length) {
+      return "—";
+    }
+    return "<ul class=\"mb-0 pl-3\">" + items.map(function (item) {
+      return "<li>" + formatter(item) + "</li>";
+    }).join("") + "</ul>";
+  }
+
   function scanCard(card) {
     busy = true;
     setResult("idle", "SCANNING...", "Looking up visitor card");
@@ -122,13 +165,14 @@ document.addEventListener("DOMContentLoaded", function () {
       .then(function (res) {
         busy = false;
         const storedCard = (res.visitor && res.visitor.card) || res.card || card;
+        const photoUrl = visitorPhotoUrl(res);
         if (!res.allowed) {
-          setResult("denied", "DENIED", res.error || "Visitor not allowed", storedCard);
+          setResult("denied", "DENIED", res.error || "Visitor not allowed", storedCard, photoUrl);
           fillDetails(res, false, storedCard);
           return;
         }
-        const actionLabel = (res.action === "out") ? "CHECKED OUT" : "CHECKED IN";
-        setResult("allowed", "ALLOWED", actionLabel + " — " + (res.message || ""), storedCard);
+        const actionLabel = (res.action === "out") ? "CHECKED OUT" : (res.action === "mixed" ? "UPDATED" : "CHECKED IN");
+        setResult("allowed", "ALLOWED", actionLabel + " — " + (res.message || ""), storedCard, photoUrl);
         fillDetails(res, true, storedCard);
       })
       .catch(function (err) {
@@ -138,14 +182,30 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   function fillDetails(res, ok, cardUid) {
+    const visitors = Array.isArray(res.visitors) && res.visitors.length
+      ? res.visitors
+      : ((res.visitor && (res.visitor.names || res.visitor.relationship)) ? [res.visitor] : []);
+    const students = Array.isArray(res.students) && res.students.length
+      ? res.students
+      : ((res.student && (res.student.name || res.student.class)) ? [res.student] : []);
+
     details.classList.remove("d-none");
     document.getElementById("dCard").innerHTML = '<code>' + (cardUid || "—") + '</code>';
-    document.getElementById("dVisitor").textContent = (res.visitor && res.visitor.names) || "—";
-    document.getElementById("dRel").textContent = (res.visitor && res.visitor.relationship) || "—";
-    document.getElementById("dStudent").textContent = (res.student && res.student.name) || "—";
-    document.getElementById("dClass").textContent = (res.student && res.student.class) || "—";
+    document.getElementById("dVisitor").innerHTML = renderList(visitors, function (visitor) {
+      return escapeHtml((visitor && visitor.names) || "—");
+    });
+    document.getElementById("dRel").innerHTML = renderList(visitors, function (visitor) {
+      return escapeHtml((visitor && visitor.relationship) || "—");
+    });
+    document.getElementById("dStudent").innerHTML = renderList(students, function (student) {
+      const regno = (student && student.regno) ? " <code>(" + escapeHtml(student.regno) + ")</code>" : "";
+      return escapeHtml((student && student.name) || "—") + regno;
+    });
+    document.getElementById("dClass").innerHTML = renderList(students, function (student) {
+      return escapeHtml((student && student.class) || "—");
+    });
     document.getElementById("dAction").textContent = ok
-      ? ((res.action === "out" ? "OUT" : "IN") + (res.too_soon ? " (already in)" : ""))
+      ? ((res.action === "out" ? "OUT" : (res.action === "mixed" ? "UPDATED" : "IN")) + (res.too_soon ? " (some already in)" : ""))
       : "DENIED";
     document.getElementById("dTime").textContent = res.time_label || new Date().toLocaleString();
   }

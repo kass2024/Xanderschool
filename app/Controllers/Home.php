@@ -17637,26 +17637,11 @@ public function assign_card()
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
+		$year = (int) ($this->data['academic_year'] ?? date('Y'));
+		$db = \Config\Database::connect();
 
 		$matches = $visitorMdl->findByCard($schoolId, $cardRaw);
-		if (count($matches) > 1) {
-			$options = [];
-			foreach ($matches as $m) {
-				$options[] = $this->parentVisitingFormatVisitor($m);
-			}
-			return [
-				'allowed' => false,
-				'success' => false,
-				'pick_visitor' => true,
-				'visitors' => $options,
-				'card' => $card,
-				'error' => 'Multiple visitors use this card. Select who is visiting.',
-			];
-		}
-
-		$visitor = $matches[0] ?? null;
-
-		if (!$visitor) {
+		if (empty($matches)) {
 			return [
 				'allowed' => false,
 				'success' => false,
@@ -17666,16 +17651,26 @@ public function assign_card()
 			];
 		}
 
-		if ((int) ($visitor['status'] ?? 0) !== 1) {
-			$inactive = $this->parentVisitingFormatVisitor($visitor);
+		$activeVisitors = [];
+		$firstInactive = null;
+		foreach ($matches as $match) {
+			if ((int) ($match['status'] ?? 0) === 1) {
+				$activeVisitors[] = $match;
+			} elseif ($firstInactive === null) {
+				$firstInactive = $match;
+			}
+		}
+
+		if (empty($activeVisitors) && $firstInactive) {
+			$inactive = $this->parentVisitingFormatVisitor($firstInactive);
 			return [
 				'allowed' => false,
 				'success' => false,
 				'error' => 'Visitor is inactive and cannot visit.',
 				'visitor' => [
-					'id' => (int) $visitor['id'],
-					'names' => $visitor['names'],
-					'relationship' => $visitor['relationship'] ?? '',
+					'id' => (int) $firstInactive['id'],
+					'names' => $firstInactive['names'],
+					'relationship' => $firstInactive['relationship'] ?? '',
 					'photo' => trim((string) ($inactive['photo'] ?? '')),
 					'photo_url' => $inactive['photo_url'] ?? '',
 				],
@@ -17683,22 +17678,50 @@ public function assign_card()
 			];
 		}
 
-		$year = (int) ($this->data['academic_year'] ?? date('Y'));
-		$db = \Config\Database::connect();
-		$student = $db->table('students s')
-			->select("s.id, s.status, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
-				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class")
-			->join('class_records cr', 'cr.student = s.id AND cr.year = ' . (int) $year, 'left')
-			->join('classes c', 'c.id = cr.class', 'left')
-			->join('departments d', 'd.id = c.department', 'left')
-			->join('levels l', 'l.id = c.level', 'left')
-			->where('s.id', (int) $visitor['student_id'])
-			->where('s.school_id', $schoolId)
-			->groupBy('s.id')
-			->get(1)->getRowArray();
+		$studentIds = [];
+		foreach ($activeVisitors as $visitor) {
+			$studentId = (int) ($visitor['student_id'] ?? 0);
+			if ($studentId > 0) {
+				$studentIds[$studentId] = $studentId;
+			}
+		}
 
-		if (!$student || (int) ($student['status'] ?? 0) !== 1) {
-			$visitorMdl->purgeForStudent($schoolId, (int) $visitor['student_id']);
+		$studentRows = [];
+		if (!empty($studentIds)) {
+			$studentRows = $db->table('students s')
+				->select("s.id, s.status, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
+					CONCAT(l.title, ' ', d.code, ' ', c.title) AS class")
+				->join('class_records cr', 'cr.student = s.id AND cr.year = ' . (int) $year, 'left')
+				->join('classes c', 'c.id = cr.class', 'left')
+				->join('departments d', 'd.id = c.department', 'left')
+				->join('levels l', 'l.id = c.level', 'left')
+				->where('s.school_id', $schoolId)
+				->whereIn('s.id', array_values($studentIds))
+				->groupBy('s.id')
+				->get()->getResultArray();
+		}
+
+		$studentsById = [];
+		foreach ($studentRows as $studentRow) {
+			if ((int) ($studentRow['status'] ?? 0) !== 1) {
+				continue;
+			}
+			$studentsById[(int) $studentRow['id']] = $studentRow;
+		}
+
+		$validVisitors = [];
+		foreach ($activeVisitors as $visitor) {
+			$studentId = (int) ($visitor['student_id'] ?? 0);
+			if (isset($studentsById[$studentId])) {
+				$validVisitors[] = $visitor;
+				continue;
+			}
+			if ($studentId > 0) {
+				$visitorMdl->purgeForStudent($schoolId, $studentId);
+			}
+		}
+
+		if (empty($validVisitors)) {
 			return [
 				'allowed' => false,
 				'success' => false,
@@ -17708,27 +17731,16 @@ public function assign_card()
 		}
 
 		$visitMdl = new VisitorVisitModel();
-		$toggle = $visitMdl->toggleVisitToday($visitor, $schoolId, $card, $source, $operator, 'Visiting day verification');
-
-		$timeLabel = date('Y-m-d H:i:s');
-		if (!empty($toggle['visit'])) {
-			$v = $toggle['visit'];
-			if (($toggle['action'] ?? '') === 'out' && !empty($v['time_out'])) {
-				$timeLabel = date('Y-m-d H:i:s', (int) $v['time_out']);
-			} elseif (!empty($v['time_in'])) {
-				$timeLabel = date('Y-m-d H:i:s', (int) $v['time_in']);
-			}
-		}
-
-		$formattedVisitor = $this->parentVisitingFormatVisitor($visitor);
-
-		return [
-			'allowed' => true,
-			'success' => true,
-			'action' => $toggle['action'] ?? 'in',
-			'too_soon' => !empty($toggle['too_soon']),
-			'message' => $toggle['message'] ?? 'Visit recorded.',
-			'visitor' => [
+		$toggles = [];
+		$formattedVisitors = [];
+		$formattedStudents = [];
+		$primaryVisitor = null;
+		$primaryStudent = null;
+		foreach ($validVisitors as $visitor) {
+			$toggle = $visitMdl->toggleVisitToday($visitor, $schoolId, $card, $source, $operator, 'Visiting day verification');
+			$toggles[] = $toggle;
+			$formattedVisitor = $this->parentVisitingFormatVisitor($visitor);
+			$formattedVisitors[] = [
 				'id' => (int) $visitor['id'],
 				'names' => $visitor['names'],
 				'relationship' => $visitor['relationship'] ?? '',
@@ -17736,14 +17748,76 @@ public function assign_card()
 				'card' => strtoupper(trim((string) ($visitor['card'] ?? ''))),
 				'photo' => trim((string) ($formattedVisitor['photo'] ?? '')),
 				'photo_url' => $formattedVisitor['photo_url'] ?? '',
-			],
-			'student' => [
-				'id' => (int) ($student['id'] ?? $visitor['student_id']),
-				'name' => $student['name'] ?? '',
-				'regno' => $student['regno'] ?? '',
-				'class' => $student['class'] ?? '',
-			],
-			'visit' => $toggle['visit'] ?? null,
+			];
+			if ($primaryVisitor === null) {
+				$primaryVisitor = end($formattedVisitors);
+			}
+
+			$studentId = (int) ($visitor['student_id'] ?? 0);
+			if (isset($studentsById[$studentId]) && !isset($formattedStudents[$studentId])) {
+				$student = $studentsById[$studentId];
+				$formattedStudents[$studentId] = [
+					'id' => $studentId,
+					'name' => $student['name'] ?? '',
+					'regno' => $student['regno'] ?? '',
+					'class' => $student['class'] ?? '',
+				];
+				if ($primaryStudent === null) {
+					$primaryStudent = $formattedStudents[$studentId];
+				}
+			}
+		}
+
+		$actions = [];
+		$tooSoon = false;
+		$timeLabel = date('Y-m-d H:i:s');
+		$latestTs = 0;
+		foreach ($toggles as $toggle) {
+			$action = (string) ($toggle['action'] ?? 'in');
+			$actions[$action] = true;
+			$tooSoon = $tooSoon || !empty($toggle['too_soon']);
+			if (empty($toggle['visit'])) {
+				continue;
+			}
+			$v = $toggle['visit'];
+			$candidateTs = 0;
+			if ($action === 'out' && !empty($v['time_out'])) {
+				$candidateTs = (int) $v['time_out'];
+			} elseif (!empty($v['time_in'])) {
+				$candidateTs = (int) $v['time_in'];
+			}
+			if ($candidateTs > $latestTs) {
+				$latestTs = $candidateTs;
+			}
+		}
+		if ($latestTs > 0) {
+			$timeLabel = date('Y-m-d H:i:s', $latestTs);
+		}
+
+		$action = count($actions) === 1 ? (string) array_key_first($actions) : 'mixed';
+		$visitorCount = count($formattedVisitors);
+		$studentCount = count($formattedStudents);
+		$message = $action === 'mixed'
+			? "Visits updated for {$visitorCount} allowed visitor(s) linked to {$studentCount} student(s)."
+			: (($action === 'out')
+				? "Visit OUT recorded for {$visitorCount} allowed visitor(s) linked to {$studentCount} student(s)."
+				: "Visit IN recorded for {$visitorCount} allowed visitor(s) linked to {$studentCount} student(s).");
+		if ($tooSoon) {
+			$message .= ' Some visitor records were already checked IN.';
+		}
+
+		return [
+			'allowed' => true,
+			'success' => true,
+			'action' => $action,
+			'too_soon' => $tooSoon,
+			'message' => $message,
+			'visitor' => $primaryVisitor,
+			'visitors' => array_values($formattedVisitors),
+			'student' => $primaryStudent,
+			'students' => array_values($formattedStudents),
+			'visit' => $toggles[0]['visit'] ?? null,
+			'visits' => $toggles,
 			'time_label' => $timeLabel,
 			'card' => $card,
 		];
