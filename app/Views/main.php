@@ -2048,42 +2048,6 @@
 		</div>
 	</div>
 
-	<!-- edit course name-->
-	<div class="modal fade" id="editCourseModal" tabindex="-1" role="dialog">
-		<div class="modal-dialog" role="document">
-			<div class="modal-content">
-				<form action="<?= base_url('change_course_data/title'); ?>" class="autoSubmit validate">
-					<div class="modal-header">
-						<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.editCourse"); ?></h5>
-						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
-							<span aria-hidden="true">×</span>
-						</button>
-					</div>
-					<div class="modal-body">
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-
-							<div class="form-group">
-								<label><?= lang("app.course"); ?> </label> <i style="color: red;">*</i>
-								<input type="hidden" name="fId">
-								<input type="text" class="form-control" name="courseName"
-									   placeholder="Edit course title">
-							</div>
-
-						</div>
-					</div>
-					<div class="modal-footer">
-						<label style="position: absolute;left: 20px;"><?= lang("app.youAreDone"); ?></label>
-						<button type="button" class="btn btn-secondary"
-								data-dismiss="modal"><?= lang("app.close"); ?></button>
-						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= base_url('manage_courses'); ?>">
-							<?= lang("app.save"); ?>
-						</button>
-					</div>
-				</form>
-			</div>
-		</div>
-	</div>
 	<?php
 }
 ?>
@@ -4361,13 +4325,6 @@ if ($page == "pendingRegistration") {
 				}
 				$("#editTermModal [name='Term[]']").val(Values).trigger('change');
 			});
-			return;
-		});
-		$("#editCourseModal").on("show.bs.modal", function (e) {
-			var id = $(e.relatedTarget).data("id");
-			var course = $(e.relatedTarget).data("name");
-			$("#editCourseModal [name='fId']").val(id);
-			$("#editCourseModal [name='courseName']").val(course);
 			return;
 		});
 		$("#changeVerdictModal").on("show.bs.modal", function (e) {
