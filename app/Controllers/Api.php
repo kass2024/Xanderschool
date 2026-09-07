@@ -1192,6 +1192,199 @@ public function sync($option, $school_id)
 		}
 	}
 
+	/**
+	 * Mobile: material-check context for one student (same data as web student_material_check_context).
+	 * GET: school_id, student_id, year (academic_year).
+	 */
+	public function get_material_student_context($school_id = null, $student_id = null)
+	{
+		$schoolId = (int) ($school_id ?? $this->request->getGet('school_id') ?? $this->request->getPost('school_id') ?? 0);
+		$studentId = (int) ($student_id ?? $this->request->getGet('student_id') ?? $this->request->getPost('student_id') ?? 0);
+		$yearId = (int) ($this->request->getGet('year') ?? $this->request->getPost('year')
+			?? $this->request->getGet('academic_year') ?? $this->request->getPost('academic_year') ?? 0);
+		if ($schoolId < 1 || $studentId < 1 || $yearId < 1) {
+			return $this->response->setStatusCode(400)->setJSON([
+				'success' => false,
+				'error' => 'school_id, student_id and year are required.',
+			]);
+		}
+		try {
+			$stMdl = new StudentModel();
+			$row = $stMdl->select("
+				students.id, students.regno, students.photo,
+				CONCAT(students.fname,' ',students.lname) AS name,
+				c.id AS class_id, c.title AS class_title,
+				d.code AS dept_code, l.title AS level_name
+			")
+				->join('class_records cr', 'cr.student = students.id AND cr.year = ' . $yearId, 'INNER')
+				->join('classes c', 'c.id = cr.class', 'INNER')
+				->join('departments d', 'd.id = c.department', 'LEFT')
+				->join('levels l', 'l.id = c.level', 'LEFT')
+				->where('students.id', $studentId)
+				->where('students.school_id', $schoolId)
+				->where('students.status', 1)
+				->get(1)->getRowArray();
+			if (!$row) {
+				return $this->response->setStatusCode(404)->setJSON([
+					'success' => false,
+					'error' => 'Student not found for this year.',
+				]);
+			}
+
+			$classId = (int) ($row['class_id'] ?? 0);
+			$schema = new \App\Models\StudentMaterialSchemaModel();
+			$schema->ensureSchema();
+			$materials = $schema->getStudentChecklist($schoolId, $studentId, $classId, $yearId);
+			$summary = $schema->summarizeChecklist($materials);
+			$lastCheck = $schema->latestCheckMetaFromChecklist($materials);
+			$classLabel = trim(($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_title'] ?? ''));
+
+			return $this->response->setJSON([
+				'success' => true,
+				'student' => [
+					'id' => (int) $row['id'],
+					'regno' => (string) ($row['regno'] ?? ''),
+					'name' => (string) ($row['name'] ?? ''),
+					'photo' => (string) ($row['photo'] ?? ''),
+					'class_id' => $classId,
+					'class_label' => $classLabel,
+					'checked_by' => $lastCheck['checked_by'] ?? null,
+					'checked_at' => $lastCheck['checked_at'] ?? null,
+					'checker_name' => $lastCheck['checker_name'] ?? '',
+					'checker_post' => $lastCheck['checker_post'] ?? '',
+				],
+				'materials' => $materials,
+				'summary' => $summary,
+				'last_check' => $lastCheck,
+				'academic_year' => $yearId,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON([
+				'success' => false,
+				'error' => $e->getMessage(),
+			]);
+		}
+	}
+
+	/**
+	 * Mobile: live search students for material check.
+	 * GET: school_id, year (academic_year), q.
+	 */
+	public function search_material_students($school_id = null)
+	{
+		$schoolId = (int) ($school_id ?? $this->request->getGet('school_id') ?? $this->request->getPost('school_id') ?? 0);
+		$yearId = (int) ($this->request->getGet('year') ?? $this->request->getPost('year')
+			?? $this->request->getGet('academic_year') ?? $this->request->getPost('academic_year') ?? 0);
+		$q = trim((string) ($this->request->getGet('q') ?? $this->request->getPost('q') ?? ''));
+		if ($schoolId < 1 || $yearId < 1) {
+			return $this->response->setStatusCode(400)->setJSON([
+				'success' => false,
+				'error' => 'school_id and year are required.',
+			]);
+		}
+		try {
+			$schema = new \App\Models\StudentMaterialSchemaModel();
+			$schema->ensureSchema();
+			$rows = $schema->searchStudents($schoolId, $yearId, $q, null, 20);
+			foreach ($rows as &$row) {
+				$classId = (int) ($row['class_id'] ?? 0);
+				$studentId = (int) ($row['id'] ?? 0);
+				$checklist = ($classId > 0 && $studentId > 0)
+					? $schema->getStudentChecklist($schoolId, $studentId, $classId, $yearId)
+					: [];
+				$summary = $schema->summarizeChecklist($checklist);
+				$row['overall'] = (string) ($summary['overall'] ?? 'none');
+			}
+			unset($row);
+
+			return $this->response->setJSON([
+				'success' => true,
+				'students' => $rows,
+				'academic_year' => $yearId,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON([
+				'success' => false,
+				'error' => $e->getMessage(),
+			]);
+		}
+	}
+
+	/**
+	 * Mobile: boarding students for hostel allocation pickers.
+	 * GET: school_id, year (academic_year), class_id (optional), department_id (optional), unallocated_only=1|0.
+	 */
+	public function get_hostel_candidates($school_id = null)
+	{
+		$schoolId = (int) ($school_id ?? $this->request->getGet('school_id') ?? $this->request->getPost('school_id') ?? 0);
+		$yearId = (int) ($this->request->getGet('year') ?? $this->request->getPost('year')
+			?? $this->request->getGet('academic_year') ?? $this->request->getPost('academic_year') ?? 0);
+		$classId = (int) ($this->request->getGet('class_id') ?? $this->request->getPost('class_id') ?? 0);
+		$departmentId = (int) ($this->request->getGet('department_id') ?? $this->request->getPost('department_id') ?? 0);
+		$unallocatedOnly = (int) ($this->request->getGet('unallocated_only') ?? $this->request->getPost('unallocated_only') ?? 0) === 1;
+		if ($schoolId < 1 || $yearId < 1) {
+			return $this->response->setStatusCode(400)->setJSON([
+				'success' => false,
+				'error' => 'school_id and year are required.',
+			]);
+		}
+		try {
+			$schema = new \App\Models\HostelSchemaModel();
+			$schema->ensureSchema();
+			$students = $schema->listBoardingCandidates(
+				$schoolId,
+				$yearId,
+				$classId > 0 ? $classId : null,
+				$departmentId > 0 ? $departmentId : null,
+				$unallocatedOnly
+			);
+			return $this->response->setJSON([
+				'success' => true,
+				'students' => $students,
+				'academic_year' => $yearId,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON([
+				'success' => false,
+				'error' => $e->getMessage(),
+			]);
+		}
+	}
+
+	/**
+	 * Mobile: residents of one hostel.
+	 * GET: school_id, hostel_id, year (academic_year).
+	 */
+	public function get_hostel_residents($school_id = null, $hostel_id = null)
+	{
+		$schoolId = (int) ($school_id ?? $this->request->getGet('school_id') ?? $this->request->getPost('school_id') ?? 0);
+		$hostelId = (int) ($hostel_id ?? $this->request->getGet('hostel_id') ?? $this->request->getPost('hostel_id') ?? 0);
+		$yearId = (int) ($this->request->getGet('year') ?? $this->request->getPost('year')
+			?? $this->request->getGet('academic_year') ?? $this->request->getPost('academic_year') ?? 0);
+		if ($schoolId < 1 || $hostelId < 1 || $yearId < 1) {
+			return $this->response->setStatusCode(400)->setJSON([
+				'success' => false,
+				'error' => 'school_id, hostel_id and year are required.',
+			]);
+		}
+		try {
+			$schema = new \App\Models\HostelSchemaModel();
+			$schema->ensureSchema();
+			$rows = $schema->listHostelResidents($schoolId, $hostelId, $yearId);
+			return $this->response->setJSON([
+				'success' => true,
+				'students' => $rows,
+				'count' => count($rows),
+				'academic_year' => $yearId,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON([
+				'success' => false,
+				'error' => $e->getMessage(),
+			]);
+		}
+	}
+
 
 	/**
 	 * Android / API: list all configured school fees for a school.
