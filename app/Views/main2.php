@@ -1646,7 +1646,7 @@
 								</select>
 							</div>
 							<div class="form-group">
-								<label id="mentor">Hours / week</label> <i style="color: red;">*</i>
+								<label id="mentor">Periods / Week</label> <i style="color: red;">*</i>
 								<input type="number" step="0.1" min="0" name="credit" class="form-control">
 							</div>
 							<div class="form-group">
@@ -2187,6 +2187,7 @@
 									<option value="3"><?= lang("app.cheque"); ?></option>
 									<option value="4"><?= lang("app.momo"); ?></option>
 									<option value="5"><?= lang("app.airtelMoney"); ?></option>
+									<option value="6"><?= lang("app.transfer"); ?></option>
 								</select>
 							</div>
 							<button type="submit" class="btn btn-success btn-sm float-right"

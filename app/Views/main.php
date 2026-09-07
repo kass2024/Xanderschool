@@ -1870,7 +1870,7 @@
 								</select>
 							</div>
 							<div class="form-group">
-								<label id="mentor"><?= lang("app.credits"); ?></label> <i style="color: red;">*</i>
+								<label id="mentor">Periods / Week</label> <i style="color: red;">*</i>
 								<input type="number" step="0.1" min="0" name="credit" class="form-control" id="editHours">
 							</div>
 							<div class="form-group">
