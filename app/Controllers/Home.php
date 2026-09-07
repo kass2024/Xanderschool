@@ -6827,12 +6827,7 @@ public function attendanceCard()
 		$this->_preset(1, 3, 4, 5, 6);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$query = trim((string) $this->request->getGet('q'));
-		$classId = (int) ($this->request->getGet('c') ?? 0);
-		$yearId = (int) ($this->request->getGet('y') ?? 0);
 		$activeYearId = (int) ($this->data['academic_year_id'] ?? 0);
-		if ($yearId < 1) {
-			$yearId = $activeYearId;
-		}
 
 		if ($schoolId < 1) {
 			return $this->response->setJSON(['students' => []]);
@@ -6858,11 +6853,8 @@ public function attendanceCard()
 		$builder->join('levels l', 'l.id = c.level', 'left');
 		$builder->where('students.school_id', $schoolId);
 		$builder->where('students.status', 1);
-		if ($yearId > 0) {
-			$builder->where('cr.year', $yearId);
-		}
-		if ($classId > 0) {
-			$builder->where('cr.class', $classId);
+		if ($activeYearId > 0) {
+			$builder->where('cr.year', $activeYearId);
 		}
 
 		if ($query !== '') {

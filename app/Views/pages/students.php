@@ -295,11 +295,11 @@
 										type="search"
 										id="studentLiveSearch"
 										class="form-control"
-										placeholder="Search student by name or reg no"
+										placeholder="Global search for whole school"
 										autocomplete="off">
 									<i class="fa fa-search search-icon"></i>
 									<div id="studentLiveSearchResults" class="students-live-search-results">
-										<div class="students-live-search-state">Click the search box to load the first 50 students, or type to filter smarter.</div>
+										<div class="students-live-search-state">Global school search: click to load the first 50 students, then type to filter.</div>
 									</div>
 								</div>
 								<button type="submit" value="true" class="btn btn-primary">
@@ -373,7 +373,7 @@
 						<div class="card-body">
 							<?php if (count($students) === 0): ?>
 								<div class="alert alert-info" style="margin-bottom: 16px;">
-									Choose a class and click <strong>View students</strong> to load the table below. The live search box above already works across students and shows the first 50 matches.
+									Use the top box for a <strong>global whole-school search</strong>. Choose a class and click <strong>View students</strong> only when you want the class table below and its own table search.
 								</div>
 							<?php else: ?>
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
@@ -724,9 +724,7 @@ foreach ($students as $st) {
 			type: 'GET',
 			dataType: 'json',
 			data: {
-				q: query,
-				c: $('#choose_class').val() || '',
-				y: $('#choose_year').val() || YEAR_ID
+				q: query
 			}
 		}).done(function (res) {
 			liveSearchRender(res && res.students ? res.students : []);
@@ -847,10 +845,6 @@ foreach ($students as $st) {
 			return;
 		}
 		liveSearchClose();
-	});
-
-	$(document).on('change', '#choose_class, #choose_year', function () {
-		runLiveSearch($('#studentLiveSearch').val());
 	});
 
 	$(document).on('click', '#btnSendAdmissionSmsSelected', function () {
