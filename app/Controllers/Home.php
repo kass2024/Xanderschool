@@ -8085,6 +8085,9 @@ public function attendanceCard()
 		$classes = null;
 		$status = $this->request->getPost("status");
 		$id = $this->request->getPost('fid');
+		if ($id === null || $id === '') {
+			$id = $this->request->getPost('fId');
+		}
 
 		if ($status == 1) {
 			$course = $this->request->getPost("fId");
@@ -8430,18 +8433,21 @@ public function attendanceCard()
 				}
 				echo "<tr>
 				<td>" . $course['title'] . " <a href='javascript:void(0)' class='link btn-edit-course-meta'
-				data-id='" . $course['id'] . "' onclick='return window.openCourseEditorFromId(" . (int) $course['id'] . ");'> <i class='fa fa-pencil-alt'></i></a>
+				data-toggle='modal' data-target='#editCourseModal'
+				data-id='" . $course['id'] . "'> <i class='fa fa-pencil-alt'></i></a>
 				</td>
 				<td>" . $course['category'] . " <a href='javascript:void(0)' class='link btn-edit-course-meta'
-				data-id='" . $course['id'] . "' onclick='return window.openCourseEditorFromId(" . (int) $course['id'] . ");'><i class='fa fa-pencil-alt'></i></a></td>
+				data-toggle='modal' data-target='#editCourseModal'
+				data-id='" . $course['id'] . "'><i class='fa fa-pencil-alt'></i></a></td>
 				<td>" . $creditLabel . " period(s)/week"
 				. "<div style='font-size:11px;color:#64748b'>Marks: " . ((int) ($course['marks'] ?? 0)) . "</div>
 				<a href='javascript:void(0)' class='link btn-edit-course-meta'
-				data-id='" . $course['id'] . "' onclick='return window.openCourseEditorFromId(" . (int) $course['id'] . ");'><i class='fa fa-pencil-alt'></i></a></td>
-				<td>" . $term . " <a class='link' data-toggle='modal' data-target='#editTermModal'
+				data-toggle='modal' data-target='#editCourseModal'
+				data-id='" . $course['id'] . "'><i class='fa fa-pencil-alt'></i></a></td>
+				<td>" . $term . " <a href='javascript:void(0)' class='link' data-toggle='modal' data-target='#editTermModal'
 				data-name='" . $course['class'] . "' data-id='" . $course['record_id'] . "'> <i class='fa fa-pencil-alt'></i></a>
 				</td>
-				<td>" . $course['mentor_name'] . " <a class='link' data-toggle='modal' data-target='#editLecCourseModal'  data-id='" . $course['record_id'] . "'><i class='fa fa-pencil-alt'></i></a></td>
+				<td>" . $course['mentor_name'] . " <a href='javascript:void(0)' class='link' data-toggle='modal' data-target='#editLecCourseModal'  data-id='" . $course['record_id'] . "'><i class='fa fa-pencil-alt'></i></a></td>
 				<td style='text-align: center;'>
 				<label class='typcn typcn-delete text-danger link' data-title='" . $course['title'] . " to class' data-toggle='delete'
 																		   data-target='" . $course['id'] . "'  data-href='delete_course_assign/" . $course['record_id'] . "'>" . lang("app.del") . "</label></td>

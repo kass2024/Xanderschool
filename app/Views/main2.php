@@ -1756,7 +1756,7 @@
 							<div class="form-group">
 								<label id="mentor"><?= lang("app.subjectTeacher"); ?></label> <i
 										style="color: red;">*</i>
-								<input type="hidden" name="fid" value="">
+								<input type="hidden" name="fId" value="">
 								<select class="form-control select2" name="teacher">
 									<option selected disabled><?= lang("app.selectSubject"); ?></option>
 									<?php
@@ -3748,7 +3748,7 @@ if ($page == "pendingRegistration") {
 
 		$("#editLecCourseModal").on("shown.bs.modal", function (e) {
 			var id = $(e.relatedTarget).data("id");
-			$("#editLecCourseModal [name='fid']").val(id).change();
+			$("#editLecCourseModal [name='fId']").val(id).change();
 		});
 		$("#select_dept").on("change", function () {
 			var dept = $(this).val();
@@ -3913,7 +3913,7 @@ if ($page == "pendingRegistration") {
 				// alert(data.class_id);
 				$("#editTermModal [name='fId']").val(data.id).change();
 				var Values = new Array();
-				for (i = 0; i <= data.term.length; i++) {
+				for (var i = 0; i < data.term.length; i++) {
 					Values.push(data.term[i]);
 				}
 				$("#editTermModal [name='Term[]']").val(Values).trigger('change');
