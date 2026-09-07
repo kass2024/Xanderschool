@@ -6834,7 +6834,7 @@ public function attendanceCard()
 			$yearId = $activeYearId;
 		}
 
-		if ($schoolId < 1 || strlen($query) < 2) {
+		if ($schoolId < 1) {
 			return $this->response->setJSON(['students' => []]);
 		}
 
@@ -6865,18 +6865,23 @@ public function attendanceCard()
 			$builder->where('cr.class', $classId);
 		}
 
-		$escapedQuery = $db->escapeLikeString($query);
-		$escapedFullNameLike = $db->escape('%' . $escapedQuery . '%');
-		$builder->groupStart()
-			->like('students.fname', $query)
-			->orLike('students.lname', $query)
-			->orLike('students.regno', $query)
-			->orWhere("CONCAT(students.fname, ' ', students.lname) LIKE {$escapedFullNameLike} ESCAPE '!'")
-			->groupEnd();
+		if ($query !== '') {
+			$escapedQuery = $db->escapeLikeString($query);
+			$escapedFullNameLike = $db->escape('%' . $escapedQuery . '%');
+			$builder->groupStart()
+				->like('students.fname', $query)
+				->orLike('students.lname', $query)
+				->orLike('students.regno', $query)
+				->orLike('students.ft_phone', $query)
+				->orLike('students.mt_phone', $query)
+				->orLike('students.gd_phone', $query)
+				->orWhere("CONCAT(students.fname, ' ', students.lname) LIKE {$escapedFullNameLike} ESCAPE '!'")
+				->groupEnd();
+		}
 		$builder->orderBy('students.fname', 'ASC');
 		$builder->orderBy('students.lname', 'ASC');
 		$builder->groupBy('students.id');
-		$builder->limit(12);
+		$builder->limit(50);
 
 		$rows = $builder->get()->getResultArray();
 		$students = [];

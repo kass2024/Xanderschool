@@ -299,7 +299,7 @@
 										autocomplete="off">
 									<i class="fa fa-search search-icon"></i>
 									<div id="studentLiveSearchResults" class="students-live-search-results">
-										<div class="students-live-search-state">Type at least 2 letters to search students.</div>
+										<div class="students-live-search-state">Click the search box to load the first 50 students, or type to filter smarter.</div>
 									</div>
 								</div>
 								<button type="submit" value="true" class="btn btn-primary">
@@ -360,8 +360,6 @@
 							?>
 						</div>
 						<?php
-						if (count($students) == 0)
-							return;
 						$visitorsNoCardMap = $visitors_no_card_map ?? [];
 						$admission_sms_map = $admission_sms_map ?? [];
 						$currentClassLabel = '';
@@ -373,6 +371,11 @@
 						}
 						?>
 						<div class="card-body">
+							<?php if (count($students) === 0): ?>
+								<div class="alert alert-info" style="margin-bottom: 16px;">
+									Choose a class and click <strong>View students</strong> to load the table below. The live search box above already works across students and shows the first 50 matches.
+								</div>
+							<?php else: ?>
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
 								<div class="row">
 									<div class="col-sm-12">
@@ -501,6 +504,7 @@
 									</div>
 								</div>
 							</div>
+							<?php endif; ?>
 						</div>
 					</div>
 				</div>
@@ -714,15 +718,7 @@ foreach ($students as $st) {
 			liveSearchXhr.abort();
 			liveSearchXhr = null;
 		}
-		if (query.length < 2) {
-			if (query.length) {
-				liveSearchState('Type at least 2 letters to search students.');
-			} else {
-				liveSearchClose();
-			}
-			return;
-		}
-		liveSearchState('Searching students...');
+		liveSearchState(query.length ? 'Searching students...' : 'Loading first 50 students...');
 		liveSearchXhr = $.ajax({
 			url: LIVE_SEARCH_API,
 			type: 'GET',
@@ -843,10 +839,7 @@ foreach ($students as $st) {
 	});
 
 	$(document).on('focus', '#studentLiveSearch', function () {
-		var query = $(this).val();
-		if (String(query || '').trim().length >= 2) {
-			runLiveSearch(query);
-		}
+		runLiveSearch($(this).val());
 	});
 
 	$(document).on('click', function (e) {
@@ -857,10 +850,7 @@ foreach ($students as $st) {
 	});
 
 	$(document).on('change', '#choose_class, #choose_year', function () {
-		var query = $('#studentLiveSearch').val();
-		if (String(query || '').trim().length >= 2) {
-			runLiveSearch(query);
-		}
+		runLiveSearch($('#studentLiveSearch').val());
 	});
 
 	$(document).on('click', '#btnSendAdmissionSmsSelected', function () {
