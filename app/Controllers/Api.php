@@ -4461,6 +4461,10 @@ public function permission_card_scan()
 		if ($schoolId <= 0 || $card === '') {
 			return $this->response->setJSON(['success' => 0, 'message' => 'School and card are required']);
 		}
+		$owner = \App\Libraries\CardRegistry::lookup($schoolId, $card);
+		if ($owner && ($owner['type'] ?? '') === 'visitor') {
+			return $this->response->setJSON($this->processVisitorScan($schoolId, $card, 'android', null));
+		}
 		return $this->response->setJSON(AttendanceScanService::scanCard($schoolId, $card, $areaId, $eventTime));
 	}
 
