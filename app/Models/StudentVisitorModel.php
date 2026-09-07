@@ -33,7 +33,7 @@ class StudentVisitorModel extends Model
 		}
 
 		$db = \Config\Database::connect();
-
+		try {
 		$db->query("CREATE TABLE IF NOT EXISTS `student_visitors` (
 			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
 			`school_id` INT UNSIGNED NOT NULL,
@@ -90,6 +90,8 @@ class StudentVisitorModel extends Model
 			KEY `idx_vv_visitor` (`visitor_id`),
 			KEY `idx_vv_student` (`student_id`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		} catch (\Throwable $e) {
+		}
 
 		self::$schemaReady = true;
 	}
@@ -141,7 +143,36 @@ class StudentVisitorModel extends Model
 	}
 
 	/**
-	 * Active visitors holding a card (both byte orders).
+	 * Persist RFID card on a visitor row (guaranteed DB write).
+	 */
+	public function persistCard(int $visitorId, int $schoolId, string $card, ?int $operator = null): bool
+	{
+		$this->ensureSchema();
+		$visitorId = (int) $visitorId;
+		$schoolId = (int) $schoolId;
+		$card = strtoupper(trim($card));
+		if ($visitorId <= 0 || $schoolId <= 0 || $card === '') {
+			return false;
+		}
+
+		$data = [
+			'card' => $card,
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		if ($operator !== null) {
+			$data['updated_by'] = (int) $operator;
+		}
+
+		$db = \Config\Database::connect();
+		$updated = $db->table('student_visitors')
+			->where('id', $visitorId)
+			->where('school_id', $schoolId)
+			->update($data);
+
+		return $updated !== false && $db->affectedRows() >= 0;
+	}
+
+	/**
 	 *
 	 * @param int $schoolId
 	 * @param string $card
@@ -180,20 +211,14 @@ class StudentVisitorModel extends Model
 	 */
 	private function findStudentCardOwner($schoolId, $card)
 	{
-		helper('card_uid');
-		$variants = card_uid_lookup_variants($card);
-		if (empty($variants)) {
-			return null;
+		$owner = \App\Libraries\CardRegistry::lookup((int) $schoolId, (string) $card);
+		if ($owner && $owner['type'] === 'student') {
+			return [
+				'id' => (int) $owner['id'],
+				'name' => (string) $owner['name'],
+			];
 		}
-		$db = \Config\Database::connect();
-		$placeholders = implode(',', array_fill(0, count($variants), '?'));
-		$params = array_merge([(int) $schoolId], $variants);
-		return $db->query(
-			"SELECT id, CONCAT(fname, ' ', lname) AS name FROM students
-			WHERE school_id = ? AND card IS NOT NULL AND TRIM(card) <> ''
-			AND UPPER(TRIM(card)) IN ({$placeholders}) LIMIT 1",
-			$params
-		)->getRowArray();
+		return null;
 	}
 
 	/**
@@ -203,23 +228,14 @@ class StudentVisitorModel extends Model
 	 */
 	private function findStaffCardOwner($schoolId, $card)
 	{
-		$db = \Config\Database::connect();
-		if (!$db->tableExists('staffs') || !$db->fieldExists('card', 'staffs')) {
-			return null;
+		$owner = \App\Libraries\CardRegistry::lookup((int) $schoolId, (string) $card);
+		if ($owner && $owner['type'] === 'staff') {
+			return [
+				'id' => (int) $owner['id'],
+				'name' => (string) $owner['name'],
+			];
 		}
-		helper('card_uid');
-		$variants = card_uid_lookup_variants($card);
-		if (empty($variants)) {
-			return null;
-		}
-		$placeholders = implode(',', array_fill(0, count($variants), '?'));
-		$params = array_merge([(int) $schoolId], $variants);
-		return $db->query(
-			"SELECT id, CONCAT(fname, ' ', lname) AS name FROM staffs
-			WHERE school_id = ? AND card IS NOT NULL AND TRIM(card) <> ''
-			AND UPPER(TRIM(card)) IN ({$placeholders}) LIMIT 1",
-			$params
-		)->getRowArray();
+		return null;
 	}
 
 	/**
@@ -254,6 +270,7 @@ class StudentVisitorModel extends Model
 				'type' => 'student',
 				'id' => (int) $student['id'],
 				'name' => $student['name'],
+				'error' => 'This card is assigned to student: ' . $student['name'] . '. Student cards cannot be used for visitors.',
 			];
 		}
 
@@ -263,6 +280,7 @@ class StudentVisitorModel extends Model
 				'type' => 'staff',
 				'id' => (int) $staff['id'],
 				'name' => $staff['name'],
+				'error' => 'This card is assigned to staff member: ' . $staff['name'] . '. Staff cards cannot be used for visitors.',
 			];
 		}
 
@@ -370,6 +388,175 @@ class StudentVisitorModel extends Model
 	public function findByCard($schoolId, $card)
 	{
 		return $this->getCardHolders($schoolId, $card, 0);
+	}
+
+	/**
+	 * Expand a scan result to include students that appear to share the same
+	 * visitors, using both students-table parent info and visitor rows.
+	 *
+	 * @param int $schoolId
+	 * @param array<int,array<string,mixed>> $seedVisitors
+	 * @return array{student_ids:array<int,int>,visitors:array<int,array<string,mixed>>}
+	 */
+	public function expandSharedVisitGroup(int $schoolId, array $seedVisitors): array
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		if ($schoolId <= 0 || empty($seedVisitors)) {
+			return ['student_ids' => [], 'visitors' => []];
+		}
+
+		$db = \Config\Database::connect();
+		$studentRows = $db->table('students')
+			->select('id, status, father, ft_phone, mother, mt_phone, guardian, gd_phone')
+			->where('school_id', $schoolId)
+			->where('status', 1)
+			->get()->getResultArray();
+		$visitorRows = $db->table('student_visitors')
+			->select('id, school_id, student_id, names, phone, relationship, photo, card, status')
+			->where('school_id', $schoolId)
+			->where('status', 1)
+			->get()->getResultArray();
+
+		$studentsById = [];
+		foreach ($studentRows as $row) {
+			$studentsById[(int) $row['id']] = $row;
+		}
+
+		$visitorsByStudent = [];
+		foreach ($visitorRows as $row) {
+			$studentId = (int) ($row['student_id'] ?? 0);
+			if ($studentId <= 0) {
+				continue;
+			}
+			if (!isset($visitorsByStudent[$studentId])) {
+				$visitorsByStudent[$studentId] = [];
+			}
+			$visitorsByStudent[$studentId][] = $row;
+		}
+
+		$studentIds = [];
+		foreach ($seedVisitors as $visitor) {
+			$studentId = (int) ($visitor['student_id'] ?? 0);
+			if ($studentId > 0 && isset($studentsById[$studentId])) {
+				$studentIds[$studentId] = $studentId;
+			}
+		}
+
+		$changed = true;
+		while ($changed) {
+			$changed = false;
+			$parentKeys = [];
+			$visitorKeys = [];
+
+			foreach ($studentIds as $studentId) {
+				if (isset($studentsById[$studentId])) {
+					foreach ($this->studentParentKeys($studentsById[$studentId]) as $key) {
+						$parentKeys[$key] = true;
+					}
+				}
+				foreach ($visitorsByStudent[$studentId] ?? [] as $visitorRow) {
+					foreach ($this->visitorIdentityKeys($visitorRow) as $key) {
+						$visitorKeys[$key] = true;
+					}
+				}
+			}
+
+			foreach ($studentsById as $candidateId => $studentRow) {
+				if (isset($studentIds[$candidateId])) {
+					continue;
+				}
+				$matched = false;
+				foreach ($this->studentParentKeys($studentRow) as $key) {
+					if (isset($parentKeys[$key])) {
+						$matched = true;
+						break;
+					}
+				}
+				if (!$matched) {
+					foreach ($visitorsByStudent[$candidateId] ?? [] as $visitorRow) {
+						foreach ($this->visitorIdentityKeys($visitorRow) as $key) {
+							if (isset($visitorKeys[$key])) {
+								$matched = true;
+								break 2;
+							}
+						}
+					}
+				}
+				if ($matched) {
+					$studentIds[$candidateId] = $candidateId;
+					$changed = true;
+				}
+			}
+		}
+
+		$visitors = [];
+		foreach ($studentIds as $studentId) {
+			foreach ($visitorsByStudent[$studentId] ?? [] as $visitorRow) {
+				$visitors[(int) $visitorRow['id']] = $visitorRow;
+			}
+		}
+
+		return [
+			'student_ids' => array_values($studentIds),
+			'visitors' => array_values($visitors),
+		];
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 * @return array<int,string>
+	 */
+	private function studentParentKeys(array $row): array
+	{
+		$pairs = [
+			[$row['father'] ?? '', $row['ft_phone'] ?? ''],
+			[$row['mother'] ?? '', $row['mt_phone'] ?? ''],
+			[$row['guardian'] ?? '', $row['gd_phone'] ?? ''],
+		];
+		$keys = [];
+		foreach ($pairs as [$name, $phone]) {
+			$nameKey = $this->normalizeMatchName((string) $name);
+			$phoneKey = $this->normalizeMatchPhone((string) $phone);
+			if ($nameKey !== '' && $phoneKey !== '') {
+				$keys[] = $nameKey . '|' . $phoneKey;
+			}
+		}
+		return array_values(array_unique($keys));
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 * @return array<int,string>
+	 */
+	private function visitorIdentityKeys(array $row): array
+	{
+		$nameKey = $this->normalizeMatchName((string) ($row['names'] ?? ''));
+		$phoneKey = $this->normalizeMatchPhone((string) ($row['phone'] ?? ''));
+		$relKey = self::normalizeRelationship((string) ($row['relationship'] ?? ''));
+		$relKey = strtolower($relKey);
+		$keys = [];
+		if ($nameKey !== '' && $phoneKey !== '') {
+			$keys[] = $nameKey . '|' . $phoneKey;
+			if ($relKey !== '') {
+				$keys[] = $nameKey . '|' . $phoneKey . '|' . $relKey;
+			}
+		}
+		return array_values(array_unique($keys));
+	}
+
+	private function normalizeMatchName(string $value): string
+	{
+		$value = strtolower(trim($value));
+		$value = preg_replace('/\s+/', ' ', $value);
+		$value = preg_replace('/[^a-z0-9 ]/', '', $value);
+		return trim((string) $value);
+	}
+
+	private function normalizeMatchPhone(string $value): string
+	{
+		$value = preg_replace('/\D+/', '', $value);
+		return trim((string) $value);
 	}
 
 	/**

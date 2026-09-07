@@ -17678,11 +17678,20 @@ public function assign_card()
 			];
 		}
 
+		$resolvedGroup = $visitorMdl->expandSharedVisitGroup($schoolId, $activeVisitors);
 		$studentIds = [];
-		foreach ($activeVisitors as $visitor) {
-			$studentId = (int) ($visitor['student_id'] ?? 0);
+		foreach (($resolvedGroup['student_ids'] ?? []) as $studentId) {
+			$studentId = (int) $studentId;
 			if ($studentId > 0) {
 				$studentIds[$studentId] = $studentId;
+			}
+		}
+		if (empty($studentIds)) {
+			foreach ($activeVisitors as $visitor) {
+				$studentId = (int) ($visitor['student_id'] ?? 0);
+				if ($studentId > 0) {
+					$studentIds[$studentId] = $studentId;
+				}
 			}
 		}
 
@@ -17732,6 +17741,10 @@ public function assign_card()
 
 		$visitMdl = new VisitorVisitModel();
 		$toggles = [];
+		$displayVisitors = $resolvedGroup['visitors'] ?? [];
+		if (empty($displayVisitors)) {
+			$displayVisitors = $validVisitors;
+		}
 		$formattedVisitors = [];
 		$formattedStudents = [];
 		$primaryVisitor = null;
@@ -17739,8 +17752,14 @@ public function assign_card()
 		foreach ($validVisitors as $visitor) {
 			$toggle = $visitMdl->toggleVisitToday($visitor, $schoolId, $card, $source, $operator, 'Visiting day verification');
 			$toggles[] = $toggle;
+		}
+		foreach ($displayVisitors as $visitor) {
+			$studentId = (int) ($visitor['student_id'] ?? 0);
+			if (!isset($studentsById[$studentId])) {
+				continue;
+			}
 			$formattedVisitor = $this->parentVisitingFormatVisitor($visitor);
-			$formattedVisitors[] = [
+			$formattedVisitors[(int) $visitor['id']] = [
 				'id' => (int) $visitor['id'],
 				'names' => $visitor['names'],
 				'relationship' => $visitor['relationship'] ?? '',
@@ -17750,21 +17769,22 @@ public function assign_card()
 				'photo_url' => $formattedVisitor['photo_url'] ?? '',
 			];
 			if ($primaryVisitor === null) {
-				$primaryVisitor = end($formattedVisitors);
+				$primaryVisitor = $formattedVisitors[(int) $visitor['id']];
 			}
-
-			$studentId = (int) ($visitor['student_id'] ?? 0);
-			if (isset($studentsById[$studentId]) && !isset($formattedStudents[$studentId])) {
-				$student = $studentsById[$studentId];
-				$formattedStudents[$studentId] = [
-					'id' => $studentId,
-					'name' => $student['name'] ?? '',
-					'regno' => $student['regno'] ?? '',
-					'class' => $student['class'] ?? '',
-				];
-				if ($primaryStudent === null) {
-					$primaryStudent = $formattedStudents[$studentId];
-				}
+		}
+		foreach ($studentIds as $studentId) {
+			if (!isset($studentsById[$studentId]) || isset($formattedStudents[$studentId])) {
+				continue;
+			}
+			$student = $studentsById[$studentId];
+			$formattedStudents[$studentId] = [
+				'id' => $studentId,
+				'name' => $student['name'] ?? '',
+				'regno' => $student['regno'] ?? '',
+				'class' => $student['class'] ?? '',
+			];
+			if ($primaryStudent === null) {
+				$primaryStudent = $formattedStudents[$studentId];
 			}
 		}
 
