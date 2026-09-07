@@ -796,7 +796,11 @@ class MenuClearance
 			'permission' => self::groupVisibleForKeys($allowedKeys, 'permissions')
 				|| $has('permission_entry') || $has('permission_record'),
 			'students' => self::groupVisibleForKeys($allowedKeys, 'students')
-				|| $has('register-student') || $has('students'),
+				|| $has('register-student') || $has('students')
+				|| $has('assign-card') || $has('student-photo')
+				|| $has('student-cards') || $has('pendingRegistrations')
+				|| $has('dismissedStudent') || $has('student_material_check')
+				|| $has('hostel_allocate'),
 			'attendance' => $has('attendance_record') || $has('marks_entry')
 				|| self::groupVisibleForKeys($allowedKeys, 'marks'),
 			'daily_attendance' => $has('attendance_record') || $has('attendance-card'),
