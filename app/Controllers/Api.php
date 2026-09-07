@@ -1114,6 +1114,49 @@ public function sync($option, $school_id)
 }
 
 	/**
+	 * Mobile: regular classes for material check with full labels.
+	 * GET: school_id
+	 */
+	public function get_material_classes($school_id = null)
+	{
+		$schoolId = (int) ($school_id ?? $this->request->getGet('school_id') ?? $this->request->getPost('school_id') ?? 0);
+		if ($schoolId < 1) {
+			return $this->response->setStatusCode(400)->setJSON([
+				'success' => false,
+				'error' => 'school_id is required.',
+			]);
+		}
+		try {
+			$classMdl = new ClassesModel();
+			$rows = $classMdl->select("classes.id, classes.title, d.code AS dept_code, l.title AS level_name")
+				->join("departments d", "d.id=classes.department", "LEFT")
+				->join("levels l", "l.id=classes.level", "LEFT")
+				->where("classes.school_id", $schoolId)
+				->where("IFNULL(classes.title,'') NOT LIKE '%Holiday%'", null, false)
+				->where("IFNULL(l.title,'') NOT LIKE '%Holiday%'", null, false)
+				->orderBy("l.title", "ASC")
+				->orderBy("d.code", "ASC")
+				->orderBy("classes.title", "ASC")
+				->get()->getResultArray();
+
+			$classes = array_map(static function (array $row): array {
+				$row['label'] = trim(($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['title'] ?? ''));
+				return $row;
+			}, $rows);
+
+			return $this->response->setJSON([
+				'success' => true,
+				'classes' => $classes,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON([
+				'success' => false,
+				'error' => $e->getMessage(),
+			]);
+		}
+	}
+
+	/**
 	 * Mobile: class material overview (same data as web student_material_class_overview).
 	 * GET: school_id, class_id, year (academic_year).
 	 */
@@ -2096,6 +2139,7 @@ public function check_school($option)
 				$matSchema = new \App\Models\StudentMaterialSchemaModel();
 				$matSchema->ensureSchema();
 				$ids = [];
+				$notifyStudents = [];
 				foreach ($records as $info) {
 					try {
 						$localId = (string) ($info['id'] ?? '');
@@ -2117,6 +2161,13 @@ public function check_school($option)
 						}
 						// Mobile is source of truth for this endpoint: never reduce brought on conflict
 						$matSchema->saveStudentChecksFromMobile((int) $school_id, $studentId, $classId, $yearId, $staffId, $items);
+						if ($studentId > 0 && $classId > 0) {
+							$notifyStudents[$studentId] = [
+								'student_id' => $studentId,
+								'class_id' => $classId,
+								'year_id' => $yearId,
+							];
+						}
 						if ($localId !== '') {
 							$ids[] = $localId;
 						}
@@ -2125,6 +2176,25 @@ public function check_school($option)
 						return $this->response->setJSON([
 							'error' => lang("app.failedSaveRecords") . $e->getMessage(),
 						]);
+					}
+				}
+				foreach ($notifyStudents as $notify) {
+					$smsPayload = $this->getStudentMaterialCheckSmsPayload(
+						(int) $school_id,
+						(int) $notify['student_id'],
+						(int) $notify['class_id'],
+						(int) $notify['year_id']
+					);
+					if (!$smsPayload) {
+						continue;
+					}
+					$smsResult = [];
+					$smsCount = (int) ceil(strlen((string) $smsPayload['message']) / PER_SMS);
+					if ($this->sendSMS($smsPayload['phone'], $smsPayload['message'], $smsResult)) {
+						$this->_save_sms($this->data['active_term'], $smsPayload['phone'], $smsPayload['message'], 0, (int) $school_id, "Material Check", (int) $notify['student_id'], $smsCount);
+					} else {
+						$fail = is_array($smsResult) ? (string) ($smsResult['content'] ?? 'SMS failed') : (string) $smsResult;
+						$this->_save_sms($this->data['active_term'], $smsPayload['phone'], $smsPayload['message'], 0, (int) $school_id, "Material Check", (int) $notify['student_id'], 0, $fail);
 					}
 				}
 				return $this->response->setJSON([

@@ -459,6 +459,43 @@ class BaseController extends Controller
 		}
 		return array("parent_name"=>$name,"phone"=>$phone,"name"=>$st_dt->fname.' '.$st_dt->lname);
 	}
+
+	protected function getStudentMaterialCheckSmsPayload(int $schoolId, int $studentId, int $classId, int $yearId): ?array
+	{
+		if ($schoolId < 1 || $studentId < 1 || $classId < 1 || $yearId < 1) {
+			return null;
+		}
+		$parent = $this->_get_parent_phone($studentId);
+		$phone = trim((string) ($parent['phone'] ?? ''));
+		if (strlen(preg_replace('/\D+/', '', $phone)) < 9) {
+			return null;
+		}
+
+		$studentName = trim((string) ($parent['name'] ?? ''));
+		$classLabel = trim((string) ((new ClassesModel())->get_class_name($classId) ?? ''));
+		$matSchema = new \App\Models\StudentMaterialSchemaModel();
+		$matSchema->ensureSchema();
+		$materials = $matSchema->getStudentChecklist($schoolId, $studentId, $classId, $yearId);
+		$summary = $matSchema->summarizeChecklist($materials);
+		$total = (int) ($summary['total'] ?? count($materials));
+		if ($total < 1) {
+			return null;
+		}
+
+		$complete = (int) ($summary['complete'] ?? 0);
+		$partial = (int) ($summary['partial'] ?? 0);
+		$missing = (int) ($summary['missing'] ?? 0);
+		$studentLabel = $studentName !== '' ? $studentName : 'your child';
+		$classPart = $classLabel !== '' ? " ({$classLabel})" : '';
+		$message = "Babyeyi, igenzura ry'ibikoresho bya {$studentLabel}{$classPart} ryarakozwe. "
+			. "Byuzuye: {$complete}/{$total}, Igice: {$partial}, Bibura: {$missing}. Murakoze.";
+
+		return [
+			'phone' => $phone,
+			'student_name' => $studentName,
+			'message' => $message,
+		];
+	}
 	public function get_discipline_msg($name,$marks,$reason){
 		return "Babyeyi dufatanyije kurera, umwana wanyu {$name} akuweho amanota {$marks} y'imyitwarire kubera {$reason}.\nMurakoze";
 

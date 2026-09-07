@@ -14917,7 +14917,9 @@ public function getApplicationDocs($id = null)
 		$classQuery = $classMdl->select('classes.id,classes.title,d.code,l.title as level_name')
 			->join('departments d', 'd.id=classes.department')
 			->join('levels l', 'l.id=classes.level')
-			->where('classes.school_id', $school_id);
+			->where('classes.school_id', $school_id)
+			->where("IFNULL(classes.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(l.title,'') NOT LIKE '%Holiday%'", null, false);
 		if (!$data['material_check_full_access']) {
 			$allowed = $data['mentor_class_ids'];
 			if (empty($allowed)) {
@@ -14926,7 +14928,10 @@ public function getApplicationDocs($id = null)
 			}
 			$classQuery->whereIn('classes.id', $allowed);
 		}
-		$data['classes'] = $classQuery->get()->getResultArray();
+		$data['classes'] = array_map(static function (array $row): array {
+			$row['label'] = trim(($row['level_name'] ?? '') . ' ' . ($row['code'] ?? '') . ' ' . ($row['title'] ?? ''));
+			return $row;
+		}, $classQuery->get()->getResultArray());
 		$data['checker'] = [
 			'id' => (int) ($this->session->get('soma_id') ?? 0),
 			'name' => trim((string) ($this->session->get('soma_name') ?? '')),
@@ -15125,11 +15130,26 @@ public function getApplicationDocs($id = null)
 		$staffName = trim((string) ($this->session->get('soma_name') ?? ''));
 		$staffPost = trim((string) ($this->session->get('soma_post_title') ?? ''));
 		$who = $staffName !== '' ? $staffName : 'Staff';
+		$smsState = 'No parent phone found.';
 		if ($staffPost !== '') {
 			$who .= ' · ' . $staffPost;
 		}
+		$smsPayload = $this->getStudentMaterialCheckSmsPayload($school_id, $studentId, $classId, $year);
+		if ($smsPayload) {
+			$smsResult = [];
+			$smsCount = (int) ceil(strlen((string) $smsPayload['message']) / PER_SMS);
+			if ($this->sendSMS($smsPayload['phone'], $smsPayload['message'], $smsResult)) {
+				$this->_save_sms($this->data['active_term'], $smsPayload['phone'], $smsPayload['message'], "Material Check", $studentId, 0, $smsCount);
+				$smsState = 'SMS sent to first available parent number.';
+			} else {
+				$fail = is_array($smsResult) ? (string) ($smsResult['content'] ?? 'SMS failed') : (string) $smsResult;
+				$this->_save_sms($this->data['active_term'], $smsPayload['phone'], $smsPayload['message'], "Material Check", $studentId, 0, 0, $fail);
+				$smsState = 'SMS failed: ' . $fail;
+			}
+		}
 		return $this->response->setJSON([
 			'success' => "Saved material check ($count items) by $who.",
+			'sms_status' => $smsState,
 			'checker' => [
 				'id' => $staffId,
 				'name' => $staffName,
