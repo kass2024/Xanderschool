@@ -3994,10 +3994,18 @@ if ($page == "pendingRegistration") {
 					toastada.error("System server error, please try again later");
 			});
 		});
+		window.openCourseEditorFromId = function (id) {
+			var $modal = $("#editCourseModal");
+			if (!$modal.length || !id) {
+				return false;
+			}
+			$modal.data("course-id", id).modal("show");
+			return false;
+		};
 		$(document).on("click", ".btn-edit-course-meta", function (e) {
 			e.preventDefault();
 			e.stopPropagation();
-			$("#editCourseModal").data("course-id", $(this).data("id")).modal("show");
+			return window.openCourseEditorFromId($(this).data("id"));
 		});
 		$("#editCourseModal").on("show.bs.modal", function (e) {
 			var id = $(e.relatedTarget).data("id");

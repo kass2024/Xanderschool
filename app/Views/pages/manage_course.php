@@ -4,20 +4,31 @@
 <select class="select2" id="choose_class" name="classes">
 	<option disabled selected><?= lang("app.selectClass"); ?></option>
 	<?php
-		foreach ($classes as $classe):
-		echo "<option value='{$classe['id']}'>{$classe['level_name']} {$classe['dept_code']} {$classe['title']}</option>";
-		endforeach;
-		?>
+	foreach ($classes as $classe):
+		$deptCode = $classe['dept_code'] ?? ($classe['code'] ?? '');
+		echo "<option value='{$classe['id']}'>{$classe['level_name']} {$deptCode} {$classe['title']}</option>";
+	endforeach;
+	?>
 </select>
 </form>
 </div>
 <div class="cols-md-4">
-<form style="width: 125px; margin-left: 12px;" class="pull-left" id="chooseClass">
+<form style="width: 125px; margin-left: 12px;" class="pull-left" id="chooseYear">
 <select class="select2" id="select_year" name="year">
+	<?php
+	$activeYear = (int) ($active_academic_year ?? 0);
+	$yearIds = array_map(static function ($y) {
+		return (int) ($y['id'] ?? 0);
+	}, $years ?? []);
+	$hasActive = $activeYear > 0 && in_array($activeYear, $yearIds, true);
+	if (!$hasActive):
+	?>
 	<option disabled selected><?= lang("app.academicYear"); ?></option>
 	<?php
+	endif;
 	foreach ($years as $year):
-		echo "<option value='{$year['id']}'>{$year['title']}</option>";
+		$selected = ((int) $year['id'] === $activeYear) ? ' selected' : '';
+		echo "<option value='{$year['id']}'{$selected}>{$year['title']}</option>";
 	endforeach;
 	?>
 </select>
@@ -25,11 +36,11 @@
 </div>
 
 <div class="cols-md-4 pull-right">
-<button class="btn btn-success btn-lg" style="margin-right: 10px;display: none;" id="addNewCourse" data-toggle='modal' data-target='#addCourseModal' "><i class="fa fa-plus"></i> <?= lang("app.addNewCourse"); ?></button>
+<button class="btn btn-success btn-lg" style="margin-right: 10px;display: none;" id="addNewCourse" data-toggle='modal' data-target='#addCourseModal'><i class="fa fa-plus"></i> <?= lang("app.addNewCourse"); ?></button>
 </div>
 <div class="boxed" style="margin-top: 50px;">
-	<table class="table table-striped table-bordered" style="margin: 0" name="ctlTable">
-		<tbody>
+	<table class="table table-striped table-bordered" style="margin: 0">
+		<tbody id="ctlTableBody">
 
 
 		</tbody>
@@ -46,8 +57,6 @@
 		$('#classTable').DataTable({
 			"searching": false
 		});
-
-
 });
 
 </script>
@@ -62,21 +71,19 @@
 
 		$("#choose_class").on("change",function (e) {
         		var id =$("#choose_class").val();
-        		// alert(id);
           		$("#addCourseModal [name='fId']").val(id).change();
   			});
 
-
+		// Active year is pre-selected; load courses once a class is chosen
 	})
 
 function get_courses()
 	{
 		var value = $("#choose_class").val();
 		var year = $("#select_year").val();
-		// alert(year);
 		if (value!=null && year!=null) {
 		$.get("<?=base_url();?>get_course/"+value+"/"+year,function (data) {
-				$("[name='ctlTable']").html(data);
+				$("#ctlTableBody").html(data);
 				$("#addNewCourse").show();
 			})
 	}
