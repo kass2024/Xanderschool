@@ -1520,7 +1520,7 @@
 	<?php
 }
 ?>
-<?php if ($page == "add_course") {
+<?php if ($page == "add_course" || $page == "manage_Course") {
 	?>
 	<div class="modal fade" id="assignModal" tabindex="-1" role="dialog">
 		<div class="modal-dialog modal-lg" role="document">
@@ -1660,7 +1660,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= base_url('add_course'); ?>">
+								data-target="reload">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -1731,7 +1731,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= base_url('manage_courses'); ?>">
+								data-target="reload">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -1774,7 +1774,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= base_url('manage_courses'); ?>">
+								data-target="reload">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -1815,7 +1815,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= base_url('manage_courses'); ?>">
+								data-target="reload">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
