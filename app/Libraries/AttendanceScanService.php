@@ -72,6 +72,8 @@ class AttendanceScanService
 			'staff' => self::staffList($schoolId),
 			'students' => self::studentList($schoolId),
 			'attendance_today' => self::studentAttendanceToday($schoolId),
+			'visitors' => self::visitorList($schoolId),
+			'visitor_visits_today' => self::visitorVisitsToday($schoolId),
 		];
 	}
 
@@ -284,6 +286,103 @@ class AttendanceScanService
 			];
 		}
 		return $out;
+	}
+
+	/**
+	 * @return list<array<string,mixed>>
+	 */
+	public static function visitorList(int $schoolId): array
+	{
+		helper('qonics');
+		$db = \Config\Database::connect();
+		$year = self::academicYear($schoolId);
+		$rows = $db->table('student_visitors sv')
+			->select("sv.id, sv.student_id, sv.names, sv.phone, sv.relationship, sv.card, sv.photo,
+				CONCAT(s.fname, ' ', s.lname) AS student_name, s.regno")
+			->join('students s', 's.id = sv.student_id AND s.school_id = sv.school_id', 'left')
+			->where('sv.school_id', $schoolId)
+			->where('sv.status', 1)
+			->where('TRIM(COALESCE(sv.card, "")) !=', '', false)
+			->orderBy('sv.names', 'ASC')
+			->get()
+			->getResultArray();
+
+		$classes = [];
+		if ($rows !== []) {
+			$ids = [];
+			foreach ($rows as $r) {
+				$sid = (int) ($r['student_id'] ?? 0);
+				if ($sid > 0) {
+					$ids[$sid] = $sid;
+				}
+			}
+			if ($ids !== []) {
+				$cr = $db->table('class_records cr')
+					->select("cr.student, CONCAT(COALESCE(l.title,''),' ',COALESCE(c.title,'')) AS class_name", false)
+					->join('classes c', 'c.id = cr.class', 'left')
+					->join('levels l', 'l.id = c.level', 'left')
+					->where('cr.year', $year)
+					->whereIn('cr.student', array_values($ids))
+					->get()
+					->getResultArray();
+				foreach ($cr as $c) {
+					$classes[(int) $c['student']] = trim((string) ($c['class_name'] ?? ''));
+				}
+			}
+		}
+
+		$out = [];
+		foreach ($rows as $r) {
+			$sid = (int) ($r['student_id'] ?? 0);
+			$out[] = [
+				'id' => (int) $r['id'],
+				'student_id' => $sid,
+				'names' => trim((string) ($r['names'] ?? '')),
+				'phone' => (string) ($r['phone'] ?? ''),
+				'relationship' => (string) ($r['relationship'] ?? ''),
+				'card' => (string) ($r['card'] ?? ''),
+				'photo' => profile_photo_url($r['photo'] ?? null),
+				'student_name' => (string) ($r['student_name'] ?? ''),
+				'student_regno' => (string) ($r['regno'] ?? ''),
+				'student_class' => $classes[$sid] ?? '',
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * @return list<array<string,mixed>>
+	 */
+	public static function visitorVisitsToday(int $schoolId): array
+	{
+		$db = \Config\Database::connect();
+		$today = date('Y-m-d');
+		$rows = $db->table('visitor_visits')
+			->select('visitor_id, student_id, card, time_in, time_out')
+			->where('school_id', $schoolId)
+			->where('visit_date', $today)
+			->orderBy('id', 'ASC')
+			->get()
+			->getResultArray();
+
+		$out = [];
+		foreach ($rows as $r) {
+			$visitorId = (int) ($r['visitor_id'] ?? 0);
+			if ($visitorId <= 0) {
+				continue;
+			}
+			$status = ((int) ($r['time_out'] ?? 0) > 0) ? 'OUT' : 'IN';
+			$out[$visitorId] = [
+				'visitor_id' => $visitorId,
+				'student_id' => (int) ($r['student_id'] ?? 0),
+				'card' => (string) ($r['card'] ?? ''),
+				'status' => $status,
+				'day' => $today,
+				'time_in' => (int) ($r['time_in'] ?? 0),
+				'time_out' => (int) ($r['time_out'] ?? 0),
+			];
+		}
+		return array_values($out);
 	}
 
 	/**
