@@ -138,6 +138,74 @@
 .btn-resend-admission-sms { white-space:nowrap; }
 .st-sms-check { width:16px; height:16px; cursor:pointer; }
 #admissionSmsAlert { margin: 8px 0 12px; }
+.students-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 12px;
+	width: 100%;
+}
+.students-toolbar-field {
+	flex: 1 1 220px;
+	min-width: 0;
+	margin-top: 18px;
+}
+.students-toolbar-field .select2,
+.students-toolbar-field .select2-container {
+	width: 100% !important;
+}
+.students-toolbar .students-live-search {
+	display: block;
+	flex: 1 1 280px;
+	width: auto;
+	min-width: 0;
+	margin-right: 0;
+}
+.students-toolbar-submit {
+	margin-top: 18px;
+	flex: 0 0 auto;
+	min-height: 38px;
+	white-space: nowrap;
+}
+@media (max-width: 991.98px) {
+	.card-header-tab.card-header {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.btn-actions-pane-right.actions-icon-btn {
+		margin-top: 12px;
+		align-self: flex-end;
+	}
+}
+@media (max-width: 767.98px) {
+	.students-toolbar-field,
+	.students-toolbar .students-live-search,
+	.students-toolbar-submit,
+	.students-active-year,
+	.students-visitor-alert {
+		flex: 1 1 100%;
+		width: 100%;
+	}
+	#view_students_form .btn.btn-primary {
+		width: 100%;
+	}
+	.students-active-year,
+	.students-visitor-alert {
+		margin-left: 0;
+		margin-right: 0;
+	}
+	.students-live-search-results {
+		max-height: 300px;
+	}
+	.st-sms-actions {
+		justify-content: stretch;
+	}
+	.st-sms-actions .btn,
+	.st-sms-actions a.btn {
+		width: 100%;
+	}
+}
 .btn-move-student { white-space:nowrap; }
 #moveStudentClassModal .move-note {
 	font-size: 13px;
@@ -267,8 +335,8 @@
 								class="card-header-title font-size-lg text-capitalize font-weight-normal">
 								<i class="header-icon typcn typcn-home-outline text-muted opacity-6"> </i><?= $title; ?>
 							</div>
-							<form id="view_students_form" style="width: 100%">
-								<div class="form-group col-sm-3" style="margin-top: 18px;display: inline-block">
+							<form id="view_students_form" class="students-toolbar">
+								<div class="form-group col-sm-3 students-toolbar-field">
 									<select class="select2" id="choose_class" name="c">
 										<option disabled <?= ($class_id == '-1' || $class_id === '') ? 'selected' : '' ?>><?= lang("app.chooseClass"); ?></option>
 										<?php
@@ -278,7 +346,7 @@
 										?>
 									</select>
 								</div>
-								<div class="form-group col-sm-3" style="margin-top: 18px;display: inline-block">
+								<div class="form-group col-sm-3 students-toolbar-field">
 									<select class="select2" id="choose_year" name="y">
 										<option disabled <?= ($academic_year == '-1' || $academic_year === '') ? 'selected' : '' ?>><?= lang("app.academicYear"); ?></option>
 										<?php
@@ -302,7 +370,7 @@
 										<div class="students-live-search-state">Global search in current active academic year: click to load the first 50 students, then type to filter.</div>
 									</div>
 								</div>
-								<button type="submit" value="true" class="btn btn-primary">
+								<button type="submit" value="true" class="btn btn-primary students-toolbar-submit">
 									<?= lang("app.viewStudents"); ?>
 								</button>
 							</form>
