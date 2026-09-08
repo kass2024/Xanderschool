@@ -1884,8 +1884,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= $page == 'manage_Course' ? current_url() : 'reload'; ?>"
-								<?= $page == 'manage_Course' ? 'data-stay-course-page="1"' : ''; ?>>
+								data-target="reload">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -1956,7 +1955,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= current_url(); ?>" data-stay-course-page="1">
+								data-target="reload">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -1999,7 +1998,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= current_url(); ?>" data-stay-course-page="1">
+								data-target="reload">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -2040,7 +2039,7 @@
 						<button type="button" class="btn btn-secondary"
 								data-dismiss="modal"><?= lang("app.close"); ?></button>
 						<button type="submit" class="btn btn-gradient-primary"
-								data-target="<?= current_url(); ?>" data-stay-course-page="1">
+								data-target="reload">
 							<?= lang("app.save"); ?>
 						</button>
 					</div>
@@ -3936,7 +3935,7 @@ if ($page == "pendingRegistration") {
 <script type="application/javascript" src="<?= base_url('assets/js/parsley-extra-validators.js'); ?>"></script>
 <script type="application/javascript" src="<?= base_url('assets/plugins/select2/js/select2.min.js'); ?>"></script>
 <script src="<?= base_url('assets/js/inputmask.bundle.min.js'); ?>"></script>
-<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js?v=stay-course-2"></script>
+<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js?v=stay-assign-1"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.js"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.min.js"></script>
 <script src="<?= base_url(); ?>assets/js/jquery.flot.js"></script>
