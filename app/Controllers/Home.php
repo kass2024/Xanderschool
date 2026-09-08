@@ -8252,6 +8252,7 @@ public function attendanceCard()
 	public function get_posts()
 	{
 		$postsMdl = new PostsModel();
+		$postsMdl->ensureLeadershipPosts();
 		$posts = $postsMdl->orderBy("title", "ASC")->get()->getResultArray();
 		echo "<option selected disabled>" . lang("app.selectPrevilagies") . "</option>";
 		foreach ($posts as $data) {
