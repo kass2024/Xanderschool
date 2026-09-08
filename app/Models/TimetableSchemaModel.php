@@ -349,12 +349,20 @@ class TimetableSchemaModel extends Model
 	{
 		$this->ensureTrackSlots($schoolId, $trackKey);
 		$this->sanitizeTrackSlots($schoolId, $trackKey);
-		return \Config\Database::connect()->table('timetable_slots')
+		$trackKey = TimetableTrack::normalize($trackKey);
+		$slots = \Config\Database::connect()->table('timetable_slots')
 			->where('school_id', $schoolId)
-			->where('track_key', TimetableTrack::normalize($trackKey))
+			->where('track_key', $trackKey)
 			->where('is_break', 0)
 			->orderBy('sort_order', 'ASC')
 			->get()->getResultArray();
+		$reservedLabels = self::reservedActivitySlotLabels($trackKey);
+		if ($reservedLabels !== []) {
+			$slots = array_values(array_filter($slots, static function (array $slot) use ($reservedLabels): bool {
+				return !in_array((string) ($slot['label'] ?? ''), $reservedLabels, true);
+			}));
+		}
+		return $slots;
 	}
 
 	/** @return list<array<string,mixed>> */
@@ -543,6 +551,16 @@ class TimetableSchemaModel extends Model
 			['day' => 6, 'slot_label' => '15', 'label' => 'PREPS', 'color' => 'green'],
 			['day' => 6, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
 		];
+	}
+
+	/** @return list<string> */
+	private static function reservedActivitySlotLabels(string $trackKey): array
+	{
+		$trackKey = TimetableTrack::normalize($trackKey);
+		if (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
+			return ['10', '11', '12', '13', '14', '15', '16'];
+		}
+		return [];
 	}
 
 	/** @return list<string> */
