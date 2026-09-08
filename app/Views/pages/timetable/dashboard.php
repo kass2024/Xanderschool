@@ -253,15 +253,25 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		var id = currentId();
 		if (!id) return;
 		$('#ttPreviewBody').html('<div class="p-5 text-center"><i class="fa fa-spinner fa-spin fa-2x text-muted"></i><div class="mt-2 text-muted">Loading timetable…</div></div>');
-		$.getJSON('<?= site_url('timetable/preview'); ?>/' + id + '?mode=' + mode, function (r) {
-			if (r.error) {
-				$('#ttPreviewBody').html('<div class="alert alert-warning m-3">' + r.error + '</div>');
+		$.ajax({
+			url: '<?= site_url('timetable/preview'); ?>/' + id + '?mode=' + mode,
+			dataType: 'json',
+			timeout: 90000
+		}).done(function (r) {
+			if (!r || r.error) {
+				$('#ttPreviewBody').html('<div class="alert alert-warning m-3">' + ((r && r.error) ? r.error : 'No preview data') + '</div>');
 				return;
 			}
 			$('#ttPreviewBody').html(r.html || '<div class="alert alert-warning m-3">No preview data</div>');
 			if (window.TtLiveEdit) TtLiveEdit.init($('#ttPreviewBody'));
-		}).fail(function () {
-			$('#ttPreviewBody').html('<div class="alert alert-danger m-3">Could not load preview</div>');
+		}).fail(function (xhr) {
+			var detail = '';
+			if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
+				detail = xhr.responseJSON.error;
+			} else if (xhr && xhr.status) {
+				detail = 'HTTP ' + xhr.status + (xhr.statusText ? ' ' + xhr.statusText : '');
+			}
+			$('#ttPreviewBody').html('<div class="alert alert-danger m-3">Could not load preview' + (detail ? ': ' + detail : '') + '. Try <strong>Generate smart timetable</strong> again.</div>');
 		});
 	}
 
@@ -301,9 +311,15 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			if (r.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-0"><strong>AI tip:</strong> ' + r.ai_tip.replace(/\n/g, '<br>') + '</div>';
 			$('#generateResult').html(html);
 			setTimeout(function () { location.reload(); }, 1500);
-		}, 'json').fail(function () {
+		}, 'json').fail(function (xhr) {
 			$btn.prop('disabled', false);
-			$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">Generation failed — check course assignments.</div>');
+			var msg = 'Generation failed — check course assignments.';
+			if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
+				msg = xhr.responseJSON.error;
+			} else if (xhr && xhr.status) {
+				msg = 'Generation failed (HTTP ' + xhr.status + '). Please try again.';
+			}
+			$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">' + msg + '</div>');
 		});
 	});
 

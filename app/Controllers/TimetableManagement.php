@@ -377,59 +377,52 @@ class TimetableManagement extends Home
 		$term = (int) ($this->request->getPost('term') ?: $this->data['term']);
 		$useGemini = (bool) $this->request->getPost('use_gemini');
 
-		$result = $this->runGeneration($schoolId, $staffId, $schema, $year, $term);
-		if ($result === null) {
-			return $this->response->setJSON(['error' => 'No course assignments found. Assign courses to classes first.']);
-		}
-
-		$aiTip = null;
-		$gemini = new GeminiTimetable();
-		if ($useGemini && $gemini->isConfigured()) {
-			if ($result['warnings'] !== []) {
-				$aiTip = $gemini->suggestFixes($result['warnings'], [
-					'school_id' => $schoolId,
-					'year' => $year,
-					'term' => $term,
-					'entries' => count($result['entries']),
-				]);
-			} else {
-				// Quality review even when generation had no hard warnings.
-				$db = \Config\Database::connect();
-				$sample = $db->table('timetable_entries te')
-					->select('te.day_of_week, te.class_id, c.title AS course_title, c.credit, COUNT(*) AS periods')
-					->join('courses c', 'c.id = te.course_id', 'left')
-					->where('te.schedule_id', (int) $result['schedule_id'])
-					->where('te.day_of_week >=', 0)
-					->where('te.slot_id >', 0)
-					->groupBy('te.class_id, te.day_of_week, te.course_id, c.title, c.credit')
-					->having('periods >', 1)
-					->orderBy('c.credit', 'ASC')
-					->limit(25)
-					->get()->getResultArray();
-				$aiTip = $gemini->reviewQuality($sample, [
-					'school_id' => $schoolId,
-					'year' => $year,
-					'term' => $term,
-					'entries' => count($result['entries']),
-					'rule' => '2 periods/week must be on different days',
-				]);
+		try {
+			$result = $this->runGeneration($schoolId, $staffId, $schema, $year, $term);
+			if ($result === null) {
+				return $this->response->setJSON(['error' => 'No course assignments found. Assign courses to classes first.']);
 			}
-		}
 
-		return $this->response->setJSON([
-			'success' => 'Timetable generated with ' . count($result['entries']) . ' lesson slots'
-				. (!empty($result['staging_created']) ? ' and ' . (int) $result['staging_created'] . ' unscheduled in parking lot.' : '.'),
-			'warnings' => $result['warnings'],
-			'ai_tip' => $aiTip,
-			'schedule_id' => $result['schedule_id'],
-			'staging_created' => (int) ($result['staging_created'] ?? 0),
-		]);
+			$aiTip = $this->buildGenerationAiTip($useGemini, $schoolId, $year, $term, $result);
+
+			return $this->response->setJSON([
+				'success' => 'Timetable generated with ' . count($result['entries']) . ' lesson slots'
+					. (!empty($result['staging_created']) ? ' and ' . (int) $result['staging_created'] . ' unscheduled in parking lot.' : '.'),
+				'warnings' => $result['warnings'],
+				'ai_tip' => $aiTip,
+				'schedule_id' => $result['schedule_id'],
+				'staging_created' => (int) ($result['staging_created'] ?? 0),
+			]);
+		} catch (\Throwable $e) {
+			log_message('error', 'Timetable generate failed: {msg}', ['msg' => $e->getMessage()]);
+			return $this->response->setJSON([
+				'error' => 'Generation failed. The system auto-tried to repair the timetable state but still hit an error. Please review course assignments and try again.',
+				'detail' => ENVIRONMENT !== 'production' ? $e->getMessage() : null,
+			]);
+		}
 	}
 
 	/**
 	 * @return array{entries:list<array<string,mixed>>,warnings:list<string>,schedule_id:int}|null
 	 */
 	private function runGeneration(int $schoolId, int $staffId, TimetableSchemaModel $schema, int $year, int $term): ?array
+	{
+		try {
+			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term);
+		} catch (\Throwable $e) {
+			log_message('error', 'Timetable generation primary pass failed for school {school}, retrying after repair: {msg}', [
+				'school' => $schoolId,
+				'msg' => $e->getMessage(),
+			]);
+			$this->repairGenerationState($schoolId, $schema);
+			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term);
+		}
+	}
+
+	/**
+	 * @return array{entries:list<array<string,mixed>>,warnings:list<string>,schedule_id:int,staging_created:int}|null
+	 */
+	private function runGenerationOnce(int $schoolId, int $staffId, TimetableSchemaModel $schema, int $year, int $term): ?array
 	{
 		$db = \Config\Database::connect();
 		$assignments = $this->loadAssignments($schoolId, $year, $term);
@@ -475,6 +468,7 @@ class TimetableManagement extends Home
 			$allWarnings = array_merge($allWarnings, $result['warnings']);
 		}
 
+		$db->transStart();
 		$existing = $db->table('timetable_schedules')
 			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
 			->get(1)->getRowArray();
@@ -519,6 +513,10 @@ class TimetableManagement extends Home
 		$stagingCreated = $stagingSvc->reconcile($scheduleId, $schoolId, $assignments);
 		$stagingSvc->autoPlaceStaging($scheduleId, $schoolId, $schema);
 		$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
+		$db->transComplete();
+		if ($db->transStatus() === false) {
+			throw new \RuntimeException('Database transaction failed while saving the timetable.');
+		}
 
 		return [
 			'entries' => $allEntries,
@@ -526,6 +524,68 @@ class TimetableManagement extends Home
 			'schedule_id' => $scheduleId,
 			'staging_created' => $stagingCreated,
 		];
+	}
+
+	/**
+	 * @param array{entries:list<array<string,mixed>>,warnings:list<string>,schedule_id:int,staging_created:int} $result
+	 */
+	private function buildGenerationAiTip(bool $useGemini, int $schoolId, int $year, int $term, array $result): ?string
+	{
+		if (!$useGemini) {
+			return null;
+		}
+
+		try {
+			$gemini = new GeminiTimetable();
+			if (!$gemini->isConfigured()) {
+				return null;
+			}
+
+			if ($result['warnings'] !== []) {
+				return $gemini->suggestFixes($result['warnings'], [
+					'school_id' => $schoolId,
+					'year' => $year,
+					'term' => $term,
+					'entries' => count($result['entries']),
+				]);
+			}
+
+			$db = \Config\Database::connect();
+			$sample = $db->table('timetable_entries te')
+				->select('te.day_of_week, te.class_id, c.title AS course_title, c.credit, COUNT(*) AS periods')
+				->join('courses c', 'c.id = te.course_id', 'left')
+				->where('te.schedule_id', (int) $result['schedule_id'])
+				->where('te.day_of_week >=', 0)
+				->where('te.slot_id >', 0)
+				->groupBy('te.class_id, te.day_of_week, te.course_id, c.title, c.credit')
+				->having('periods >', 1)
+				->orderBy('c.credit', 'ASC')
+				->limit(25)
+				->get()->getResultArray();
+			return $gemini->reviewQuality($sample, [
+				'school_id' => $schoolId,
+				'year' => $year,
+				'term' => $term,
+				'entries' => count($result['entries']),
+				'rule' => '2 periods/week must be on different days',
+			]);
+		} catch (\Throwable $e) {
+			log_message('error', 'Timetable AI tip failed: {msg}', ['msg' => $e->getMessage()]);
+			return null;
+		}
+	}
+
+	private function repairGenerationState(int $schoolId, TimetableSchemaModel $schema): void
+	{
+		$schema->ensureSchema();
+		$schema->repairOrphanEntrySlots($schoolId);
+		$schema->ensureTrackSlots($schoolId, TimetableTrack::ALL);
+		if (!$schema->isSharedSchedule($schoolId)) {
+			foreach (TimetableTrack::tracksForSchool($schoolId) as $track) {
+				$schema->ensureTrackSlots($schoolId, $track);
+				$schema->sanitizeTrackSlots($schoolId, $track);
+			}
+		}
 	}
 
 	private function ensureTimetableGenerated(int $schoolId, TimetableSchemaModel $schema): void
