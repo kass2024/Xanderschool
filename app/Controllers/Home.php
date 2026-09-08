@@ -16582,7 +16582,9 @@ public function assign_card()
 			->join('levels l', 'l.id = c.level', 'left')
 			->where('students.school_id', $school_id)
 			->where('students.status', 1)
-			->where('cr.year', $year)
+			->where('cr.year', $year);
+		$this->applyRegularClassFilter($students, 'c', 'l');
+		$students = $students
 			->groupBy('students.id')
 			->orderBy('students.fname', 'ASC')
 			->orderBy('students.lname', 'ASC')
