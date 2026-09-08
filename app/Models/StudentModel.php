@@ -37,6 +37,9 @@ class StudentModel extends Model
 		'status',
 		'from_registration',
 		'application_id',
+		'photo_taken_by_id',
+		'photo_taken_by',
+		'photo_taken_at',
 		'created_by',
 		'updated_by',
 		'updateVersion',
@@ -51,6 +54,9 @@ class StudentModel extends Model
 
 	/** @var bool */
 	private static $fromRegistrationReady = false;
+
+	/** @var bool */
+	private static $photoAuditReady = false;
 
 	public function ensureFatherNidColumn(): void
 	{
@@ -91,6 +97,27 @@ class StudentModel extends Model
 			}
 		}
 		self::$fromRegistrationReady = true;
+	}
+
+	public function ensurePhotoAuditColumns(): void
+	{
+		if (self::$photoAuditReady) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists($this->table)) {
+			$columns = [
+				'photo_taken_by_id' => 'INT NULL DEFAULT NULL AFTER `photo`',
+				'photo_taken_by' => 'VARCHAR(120) NULL DEFAULT NULL AFTER `photo_taken_by_id`',
+				'photo_taken_at' => 'DATETIME NULL DEFAULT NULL AFTER `photo_taken_by`',
+			];
+			foreach ($columns as $name => $def) {
+				if (!$db->fieldExists($name, $this->table)) {
+					$db->query("ALTER TABLE `{$this->table}` ADD COLUMN `{$name}` {$def}");
+				}
+			}
+		}
+		self::$photoAuditReady = true;
 	}
 
 	/**

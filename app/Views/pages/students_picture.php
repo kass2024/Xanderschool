@@ -393,6 +393,7 @@
 		'students' => $photo_students ?? [],
 		'placeholder' => $photo_placeholder ?? '',
 		'saveUrl' => base_url('save_live_student_photo'),
+		'currentUser' => $photo_operator_name ?? '',
 	], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 
 	Dropzone.autoDiscover = false;
@@ -523,8 +524,10 @@
 			selected = students.find(function (s) { return String(s.id) === String(id); }) || null;
 			renderList();
 			if (selected) {
+				var takenBy = selected.photo_taken_by || studio.currentUser || 'Current user';
 				$('#spPicked').html('Selected: <strong>' + $('<div>').text(selected.name).html()
-					+ '</strong> &nbsp; ' + $('<div>').text(selected.regno + ' · ' + selected.class).html());
+					+ '</strong><br><span class="text-muted">' + $('<div>').text(selected.regno + ' · ' + selected.class).html()
+					+ '</span><br><span class="text-muted">Taken by: <strong>' + $('<div>').text(takenBy).html() + '</strong></span>');
 				$('#spCapture').prop('disabled', !stream);
 			}
 		}
@@ -767,6 +770,8 @@
 						if (s.id === selected.id) {
 							s.has_photo = true;
 							s.photo = data.url || s.photo;
+							s.photo_taken_by = data.taken_by || studio.currentUser || s.photo_taken_by || '';
+							s.photo_taken_at = data.taken_at || s.photo_taken_at || '';
 						}
 						return s;
 					});

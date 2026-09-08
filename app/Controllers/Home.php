@@ -1029,6 +1029,12 @@ public function testEmail()
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$yearId = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
 		$classMdl = new ClassesModel();
+		$stMdl = new StudentModel();
+		$stMdl->ensurePhotoAuditColumns();
+		$operatorName = trim((string) $this->session->get('soma_fname') . ' ' . (string) $this->session->get('soma_lname'));
+		if ($operatorName === '') {
+			$operatorName = trim((string) $this->session->get('soma_name'));
+		}
 		$allClasses = $classMdl->select("classes.id,classes.title,d.code as dept_code,l.title as level_name")
 			->join("departments d", "d.id=classes.department")
 			->join("levels l", "l.id=classes.level")
@@ -1047,8 +1053,7 @@ public function testEmail()
 				'label' => trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '') . ' ' . ($row['dept_code'] ?? '')),
 			];
 		}
-		$stMdl = new StudentModel();
-		$builder = $stMdl->select("students.id,students.regno,students.photo,students.fname,students.lname,c.id as class_id,
+		$builder = $stMdl->select("students.id,students.regno,students.photo,students.photo_taken_by,students.photo_taken_at,students.fname,students.lname,c.id as class_id,
 			concat(students.fname,' ',students.lname) as name,concat(l.title,' ',d.code,' ',c.title) as class")
 			->join('class_records cr', 'cr.student=students.id')
 			->join('classes c', 'c.id=cr.class')
@@ -1077,12 +1082,15 @@ public function testEmail()
 				'class_id' => (int) ($row['class_id'] ?? 0),
 				'has_photo' => $resolved !== null,
 				'photo' => $resolved !== null ? profile_photo_url($resolved) : '',
+				'photo_taken_by' => trim((string) ($row['photo_taken_by'] ?? '')),
+				'photo_taken_at' => (string) ($row['photo_taken_at'] ?? ''),
 			];
 		}
 		return [
 			'photo_students' => array_values($unique),
 			'photo_classes' => $classes,
 			'photo_placeholder' => profile_photo_url(null),
+			'photo_operator_name' => $operatorName,
 		];
 	}
 
@@ -1113,6 +1121,15 @@ public function testEmail()
 
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$stMdl = new StudentModel();
+		$stMdl->ensurePhotoAuditColumns();
+		$operatorId = (int) $this->session->get('soma_id');
+		$operatorName = trim((string) $this->session->get('soma_fname') . ' ' . (string) $this->session->get('soma_lname'));
+		if ($operatorName === '') {
+			$operatorName = trim((string) $this->session->get('soma_name'));
+		}
+		if ($operatorName === '') {
+			$operatorName = 'System user';
+		}
 		$student = $stMdl->select('id,photo,fname,lname,regno')
 			->where('id', $studentId)
 			->where('school_id', $schoolId)
@@ -1161,8 +1178,15 @@ public function testEmail()
 			return $this->response->setJSON(['error' => lang('app.ImagenotSaved')]);
 		}
 
+		$takenAt = date('Y-m-d H:i:s');
 		try {
-			$stMdl->save(['id' => $studentId, 'photo' => $name]);
+			$stMdl->save([
+				'id' => $studentId,
+				'photo' => $name,
+				'photo_taken_by_id' => $operatorId > 0 ? $operatorId : null,
+				'photo_taken_by' => $operatorName,
+				'photo_taken_at' => $takenAt,
+			]);
 		} catch (\Exception $e) {
 			@unlink($profilePath . $name);
 			return $this->response->setJSON(['error' => lang('app.photoNotSaved')]);
@@ -1179,6 +1203,8 @@ public function testEmail()
 			'url' => profile_photo_url($name),
 			'student' => $studentId,
 			'name' => trim($student->fname . ' ' . $student->lname),
+			'taken_by' => $operatorName,
+			'taken_at' => $takenAt,
 		]);
 	}
 
