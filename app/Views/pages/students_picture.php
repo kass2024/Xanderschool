@@ -369,11 +369,14 @@
 				</div>
 				<div class="sp-sliders">
 					<div><label>Zoom</label><input type="range" id="spZoom" min="100" max="180" value="100"></div>
-					<div><label>Brightness</label><input type="range" id="spBright" min="90" max="120" value="102"></div>
-					<div><label>Contrast</label><input type="range" id="spContrast" min="90" max="120" value="104"></div>
-					<div><label>Saturation</label><input type="range" id="spSaturate" min="90" max="120" value="100"></div>
-					<div><label>Warmth</label><input type="range" id="spWarmth" min="-20" max="20" value="0"></div>
-					<div><label>Smoothness</label><input type="range" id="spSmooth" min="0" max="12" value="0"></div>
+					<div><label>Exposure</label><input type="range" id="spExposure" min="-150" max="150" value="0"></div>
+					<div><label>Temperature</label><input type="range" id="spTemperature" min="-25" max="25" value="0"></div>
+					<div><label>Tint</label><input type="range" id="spTint" min="-15" max="15" value="0"></div>
+					<div><label>Highlights</label><input type="range" id="spHighlights" min="-60" max="20" value="0"></div>
+					<div><label>Shadows</label><input type="range" id="spShadows" min="-20" max="70" value="0"></div>
+					<div><label>Contrast</label><input type="range" id="spContrast" min="-15" max="25" value="0"></div>
+					<div><label>Saturation</label><input type="range" id="spSaturation" min="-10" max="15" value="0"></div>
+					<div><label>Vibrance</label><input type="range" id="spVibrance" min="0" max="25" value="0"></div>
 				</div>
 			</div>
 		</div>
@@ -420,6 +423,10 @@
 		var video = document.getElementById('spVideo');
 		var canvas = document.getElementById('spEditCanvas');
 		var ctx = canvas.getContext('2d');
+		var workCanvas = document.createElement('canvas');
+		workCanvas.width = PHOTO_SIZE;
+		workCanvas.height = PHOTO_SIZE;
+		var workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
 		var listEl = document.getElementById('spStudents');
 		var cameraSel = document.getElementById('spCamera');
 		var statusEl = document.getElementById('spCamStatus');
@@ -692,11 +699,16 @@
 		}
 
 		function applyAutoEnhance() {
-			$('#spBright').val(103);
-			$('#spContrast').val(106);
-			$('#spSaturate').val(100);
-			$('#spWarmth').val(0);
-			$('#spSmooth').val(0);
+			if (!captured) return;
+			var preset = analyzeAutoAdjustments();
+			$('#spExposure').val(preset.exposure);
+			$('#spTemperature').val(preset.temperature);
+			$('#spTint').val(preset.tint);
+			$('#spHighlights').val(preset.highlights);
+			$('#spShadows').val(preset.shadows);
+			$('#spContrast').val(preset.contrast);
+			$('#spSaturation').val(preset.saturation);
+			$('#spVibrance').val(preset.vibrance);
 			drawEdit();
 		}
 
@@ -719,12 +731,173 @@
 		function sliderVals() {
 			return {
 				zoom: parseInt($('#spZoom').val(), 10) / 100,
-				bright: parseInt($('#spBright').val(), 10),
+				exposure: parseInt($('#spExposure').val(), 10) / 100,
+				temperature: parseInt($('#spTemperature').val(), 10),
+				tint: parseInt($('#spTint').val(), 10),
+				highlights: parseInt($('#spHighlights').val(), 10),
+				shadows: parseInt($('#spShadows').val(), 10),
 				contrast: parseInt($('#spContrast').val(), 10),
-				saturate: parseInt($('#spSaturate').val(), 10),
-				warmth: parseInt($('#spWarmth').val(), 10),
-				smooth: parseInt($('#spSmooth').val(), 10)
+				saturation: parseInt($('#spSaturation').val(), 10),
+				vibrance: parseInt($('#spVibrance').val(), 10)
 			};
+		}
+
+		function clamp(v, min, max) {
+			return Math.max(min, Math.min(max, v));
+		}
+
+		function resetAdjustmentSliders() {
+			$('#spExposure').val(0);
+			$('#spTemperature').val(0);
+			$('#spTint').val(0);
+			$('#spHighlights').val(0);
+			$('#spShadows').val(0);
+			$('#spContrast').val(0);
+			$('#spSaturation').val(0);
+			$('#spVibrance').val(0);
+		}
+
+		function drawBaseTo(context, targetCanvas, zoom) {
+			context.fillStyle = '#ffffff';
+			context.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
+			context.save();
+			context.beginPath();
+			context.arc(targetCanvas.width / 2, targetCanvas.height / 2, targetCanvas.width / 2, 0, Math.PI * 2);
+			context.clip();
+			context.translate(targetCanvas.width / 2 + pan.x, targetCanvas.height / 2 + pan.y);
+			context.rotate(rotation * Math.PI / 180);
+			var base = Math.max(targetCanvas.width / captured.width, targetCanvas.height / captured.height) * zoom;
+			var dw = captured.width * base;
+			var dh = captured.height * base;
+			context.drawImage(captured, -dw / 2, -dh / 2, dw, dh);
+			context.restore();
+		}
+
+		function analyzeAutoAdjustments() {
+			var sample = document.createElement('canvas');
+			sample.width = 240;
+			sample.height = 240;
+			var sampleCtx = sample.getContext('2d', { willReadFrequently: true });
+			drawBaseTo(sampleCtx, sample, 1);
+			var data = sampleCtx.getImageData(0, 0, sample.width, sample.height).data;
+			var count = 0;
+			var lumSum = 0;
+			var lumSq = 0;
+			var shadowCount = 0;
+			var highlightCount = 0;
+			var satSum = 0;
+			var rSum = 0;
+			var gSum = 0;
+			var bSum = 0;
+			for (var i = 0; i < data.length; i += 4) {
+				if (data[i + 3] < 10) continue;
+				var r = data[i];
+				var g = data[i + 1];
+				var b = data[i + 2];
+				var lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+				var maxc = Math.max(r, g, b);
+				var minc = Math.min(r, g, b);
+				var sat = maxc === 0 ? 0 : (maxc - minc) / maxc;
+				lumSum += lum;
+				lumSq += lum * lum;
+				satSum += sat;
+				rSum += r;
+				gSum += g;
+				bSum += b;
+				if (lum < 0.22) shadowCount++;
+				if (lum > 0.82) highlightCount++;
+				count++;
+			}
+			if (!count) {
+				return {
+					exposure: 0,
+					temperature: 0,
+					tint: 0,
+					highlights: 0,
+					shadows: 0,
+					contrast: 0,
+					saturation: 0,
+					vibrance: 0
+				};
+			}
+			var avgLum = lumSum / count;
+			var avgSat = satSum / count;
+			var stdLum = Math.sqrt(Math.max(0, (lumSq / count) - (avgLum * avgLum)));
+			var avgR = rSum / count;
+			var avgG = gSum / count;
+			var avgB = bSum / count;
+			var shadowRatio = shadowCount / count;
+			var highlightRatio = highlightCount / count;
+			return {
+				exposure: clamp(Math.round((0.58 - avgLum) * 180), -150, 150),
+				temperature: clamp(Math.round((avgB - avgR) * 0.10), -25, 25),
+				tint: clamp(Math.round((((avgR + avgB) / 2) - avgG) * 0.08), -15, 15),
+				highlights: clamp(Math.round((0.05 - highlightRatio) * 300), -60, 20),
+				shadows: clamp(Math.round((shadowRatio - 0.08) * 260), -20, 70),
+				contrast: clamp(Math.round((0.22 - stdLum) * 120), -15, 25),
+				saturation: clamp(Math.round((0.18 - avgSat) * 50), -10, 15),
+				vibrance: clamp(Math.round((0.26 - avgSat) * 90 + Math.max(0, shadowRatio - 0.10) * 20), 0, 25)
+			};
+		}
+
+		function applyCorrectionPixels(imageData, v) {
+			var data = imageData.data;
+			var exposureMul = Math.pow(2, v.exposure * 0.55);
+			var contrast = v.contrast * 2.8;
+			var contrastFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+			for (var i = 0; i < data.length; i += 4) {
+				if (data[i + 3] < 10) continue;
+				var r = data[i];
+				var g = data[i + 1];
+				var b = data[i + 2];
+
+				r *= exposureMul;
+				g *= exposureMul;
+				b *= exposureMul;
+
+				var lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+				if (v.highlights !== 0 && lum > 0.55) {
+					var hp = (lum - 0.55) / 0.45;
+					var hAdjust = v.highlights * hp * 1.6;
+					r += hAdjust;
+					g += hAdjust;
+					b += hAdjust;
+				}
+				if (v.shadows !== 0 && lum < 0.5) {
+					var sp = (0.5 - lum) / 0.5;
+					var sAdjust = v.shadows * sp * 1.25;
+					r += sAdjust;
+					g += sAdjust;
+					b += sAdjust;
+				}
+
+				r += (v.temperature * 1.5) + (v.tint * 0.9);
+				g += (-v.tint * 1.2);
+				b += (-v.temperature * 1.5) + (v.tint * 0.4);
+
+				r = contrastFactor * (r - 128) + 128;
+				g = contrastFactor * (g - 128) + 128;
+				b = contrastFactor * (b - 128) + 128;
+
+				var avg = (r + g + b) / 3;
+				var satFactor = 1 + (v.saturation / 100);
+				r = avg + (r - avg) * satFactor;
+				g = avg + (g - avg) * satFactor;
+				b = avg + (b - avg) * satFactor;
+
+				var maxc = Math.max(r, g, b);
+				var minc = Math.min(r, g, b);
+				var localSat = maxc === 0 ? 0 : (maxc - minc) / maxc;
+				var vibBoost = (v.vibrance / 100) * (1 - localSat);
+				r = avg + (r - avg) * (1 + vibBoost);
+				g = avg + (g - avg) * (1 + vibBoost);
+				b = avg + (b - avg) * (1 + vibBoost);
+
+				data[i] = clamp(Math.round(r), 0, 255);
+				data[i + 1] = clamp(Math.round(g), 0, 255);
+				data[i + 2] = clamp(Math.round(b), 0, 255);
+			}
+			return imageData;
 		}
 
 		function drawEdit() {
@@ -738,31 +911,10 @@
 				return;
 			}
 			var v = sliderVals();
-			ctx.save();
-			// Clip to circle so the editor matches the card photo hole.
-			ctx.beginPath();
-			ctx.arc(canvas.width / 2, canvas.height / 2, canvas.width / 2, 0, Math.PI * 2);
-			ctx.clip();
-			ctx.filter = 'brightness(' + v.bright + '%) contrast(' + v.contrast + '%) saturate(' + v.saturate + '%) blur(' + (v.smooth / 22) + 'px)';
-			ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y);
-			ctx.rotate(rotation * Math.PI / 180);
-			var base = Math.max(canvas.width / captured.width, canvas.height / captured.height) * v.zoom;
-			var dw = captured.width * base;
-			var dh = captured.height * base;
-			ctx.drawImage(captured, -dw / 2, -dh / 2, dw, dh);
-			ctx.restore();
-			if (v.warmth !== 0) {
-				ctx.save();
-				ctx.beginPath();
-				ctx.arc(canvas.width / 2, canvas.height / 2, canvas.width / 2, 0, Math.PI * 2);
-				ctx.clip();
-				ctx.globalCompositeOperation = 'soft-light';
-				ctx.fillStyle = v.warmth > 0
-					? 'rgba(255,196,120,' + (Math.abs(v.warmth) / 160) + ')'
-					: 'rgba(160,196,255,' + (Math.abs(v.warmth) / 180) + ')';
-				ctx.fillRect(0, 0, canvas.width, canvas.height);
-				ctx.restore();
-			}
+			drawBaseTo(workCtx, workCanvas, v.zoom);
+			var img = workCtx.getImageData(0, 0, workCanvas.width, workCanvas.height);
+			workCtx.putImageData(applyCorrectionPixels(img, v), 0, 0);
+			ctx.drawImage(workCanvas, 0, 0);
 		}
 
 		function exportPhoto() {
@@ -834,11 +986,7 @@
 		$('#spAuto').on('click', applyAutoEnhance);
 		$('#spResetEdit').on('click', function () {
 			$('#spZoom').val(100);
-			$('#spBright').val(102);
-			$('#spContrast').val(104);
-			$('#spSaturate').val(100);
-			$('#spWarmth').val(0);
-			$('#spSmooth').val(0);
+			resetAdjustmentSliders();
 			pan = { x: 0, y: 0 };
 			rotation = 0;
 			drawEdit();
