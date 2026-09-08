@@ -511,10 +511,12 @@
 				var sel = selected && selected.id === s.id ? ' selected' : '';
 				var has = s.has_photo ? ' has-photo' : '';
 				var src = s.photo || studio.placeholder;
+				var takenBy = s.photo_taken_by || studio.currentUser || 'Current user';
 				return '<button type="button" class="sp-student' + sel + has + '" data-id="' + s.id + '">'
 					+ '<img class="sp-av" src="' + src + '" alt="">'
 					+ '<span><div class="who">' + $('<div>').text(s.name).html() + '</div>'
-					+ '<div class="meta">' + $('<div>').text((s.regno || '') + ' · ' + (s.class || '')).html() + '</div></span>'
+					+ '<div class="meta">' + $('<div>').text((s.regno || '') + ' · ' + (s.class || '')).html() + '</div>'
+					+ '<div class="meta">Taken by: ' + $('<div>').text(takenBy).html() + '</div></span>'
 					+ '<span class="sp-badge">' + (s.has_photo ? 'Has photo' : 'No photo') + '</span>'
 					+ '</button>';
 			}).join('');
@@ -524,10 +526,9 @@
 			selected = students.find(function (s) { return String(s.id) === String(id); }) || null;
 			renderList();
 			if (selected) {
-				var takenBy = selected.photo_taken_by || studio.currentUser || 'Current user';
 				$('#spPicked').html('Selected: <strong>' + $('<div>').text(selected.name).html()
 					+ '</strong><br><span class="text-muted">' + $('<div>').text(selected.regno + ' · ' + selected.class).html()
-					+ '</span><br><span class="text-muted">Taken by: <strong>' + $('<div>').text(takenBy).html() + '</strong></span>');
+					+ '</span>');
 				$('#spCapture').prop('disabled', !stream);
 			}
 		}
