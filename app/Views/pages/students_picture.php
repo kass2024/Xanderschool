@@ -511,12 +511,16 @@
 				var sel = selected && selected.id === s.id ? ' selected' : '';
 				var has = s.has_photo ? ' has-photo' : '';
 				var src = s.photo || studio.placeholder;
-				var takenBy = s.photo_taken_by || studio.currentUser || 'Current user';
+				var takenByHtml = '';
+				if (s.has_photo) {
+					var takenBy = s.photo_taken_by || 'Not recorded';
+					takenByHtml = '<div class="meta">Taken by: ' + $('<div>').text(takenBy).html() + '</div>';
+				}
 				return '<button type="button" class="sp-student' + sel + has + '" data-id="' + s.id + '">'
 					+ '<img class="sp-av" src="' + src + '" alt="">'
 					+ '<span><div class="who">' + $('<div>').text(s.name).html() + '</div>'
 					+ '<div class="meta">' + $('<div>').text((s.regno || '') + ' · ' + (s.class || '')).html() + '</div>'
-					+ '<div class="meta">Taken by: ' + $('<div>').text(takenBy).html() + '</div></span>'
+					+ takenByHtml + '</span>'
 					+ '<span class="sp-badge">' + (s.has_photo ? 'Has photo' : 'No photo') + '</span>'
 					+ '</button>';
 			}).join('');
@@ -673,7 +677,7 @@
 			return out;
 		}
 
-		function useCaptured(imgCanvas) {
+		function useCaptured(imgCanvas, onReady) {
 			captured = new Image();
 			captured.onload = function () {
 				rotation = 0;
@@ -682,16 +686,29 @@
 				drawEdit();
 				$('#spRetake, #spRotate, #spSave').prop('disabled', false);
 				$('#spCapture').prop('disabled', !stream);
+				if (typeof onReady === 'function') onReady();
 			};
 			captured.src = imgCanvas.toDataURL('image/jpeg', 0.95);
+		}
+
+		function applyAutoEnhance() {
+			$('#spBright').val(103);
+			$('#spContrast').val(106);
+			$('#spSaturate').val(100);
+			$('#spWarmth').val(0);
+			$('#spSmooth').val(0);
+			drawEdit();
 		}
 
 		function captureFrame() {
 			if (!stream || !selected) return;
 			$('#spCapture').prop('disabled', true);
 			try {
-				useCaptured(squareCrop(captureFullFrame()));
-				setStatus('Photo captured', 'ok');
+				useCaptured(squareCrop(captureFullFrame()), function () {
+					applyAutoEnhance();
+					setStatus('Photo captured, saving…', 'ok');
+					savePhoto();
+				});
 			} catch (e) {
 				setStatus('Capture failed', 'err');
 				toastErr('Could not capture the photo. Try Start camera again.');
@@ -814,14 +831,7 @@
 		});
 		$('#spRotate').on('click', function () { rotation = (rotation + 90) % 360; drawEdit(); });
 		$('#spSave').on('click', savePhoto);
-		$('#spAuto').on('click', function () {
-			$('#spBright').val(103);
-			$('#spContrast').val(106);
-			$('#spSaturate').val(100);
-			$('#spWarmth').val(0);
-			$('#spSmooth').val(0);
-			drawEdit();
-		});
+		$('#spAuto').on('click', applyAutoEnhance);
 		$('#spResetEdit').on('click', function () {
 			$('#spZoom').val(100);
 			$('#spBright').val(102);
