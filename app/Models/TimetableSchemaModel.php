@@ -577,6 +577,20 @@ class TimetableSchemaModel extends Model
 	}
 
 	/** @param array<string,mixed>|null $settings */
+	public static function dayLabelsForTrack(?array $settings, string $trackKey): array
+	{
+		$days = self::weekDaysForTrack($settings, $trackKey);
+		$map = [0 => 'Mon', 1 => 'Tue', 2 => 'Wed', 3 => 'Thu', 4 => 'Fri', 5 => 'Sat', 6 => 'Sun'];
+		$labels = [];
+		foreach ($days as $day) {
+			if (isset($map[$day])) {
+				$labels[] = $map[$day];
+			}
+		}
+		return $labels;
+	}
+
+	/** @param array<string,mixed>|null $settings */
 	public static function dayMapFromSettings(?array $settings): array
 	{
 		$map = ['Mon' => 0, 'Tue' => 1, 'Wed' => 2, 'Thu' => 3, 'Fri' => 4];
@@ -590,6 +604,20 @@ class TimetableSchemaModel extends Model
 	}
 
 	/** @param array<string,mixed>|null $settings */
+	public static function dayMapForTrack(?array $settings, string $trackKey): array
+	{
+		$labels = self::dayLabelsForTrack($settings, $trackKey);
+		$fullMap = ['Mon' => 0, 'Tue' => 1, 'Wed' => 2, 'Thu' => 3, 'Fri' => 4, 'Sat' => 5, 'Sun' => 6];
+		$map = [];
+		foreach ($labels as $label) {
+			if (isset($fullMap[$label])) {
+				$map[$label] = $fullMap[$label];
+			}
+		}
+		return $map;
+	}
+
+	/** @param array<string,mixed>|null $settings */
 	public static function weekDaysFromSettings(?array $settings): array
 	{
 		$days = [0, 1, 2, 3, 4];
@@ -598,6 +626,17 @@ class TimetableSchemaModel extends Model
 		}
 		if (!empty($settings['include_sunday'])) {
 			$days[] = 6;
+		}
+		return $days;
+	}
+
+	/** @param array<string,mixed>|null $settings @return list<int> */
+	public static function weekDaysForTrack(?array $settings, string $trackKey): array
+	{
+		$trackKey = TimetableTrack::normalize($trackKey);
+		$days = self::weekDaysFromSettings($settings);
+		if (in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
+			$days = array_values(array_filter($days, static fn (int $day): bool => $day !== 6));
 		}
 		return $days;
 	}

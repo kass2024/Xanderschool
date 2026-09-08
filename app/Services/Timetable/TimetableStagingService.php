@@ -10,6 +10,9 @@ class TimetableStagingService
 	/** @var array<string,array<string,mixed>> */
 	private $assignmentMeta = [];
 
+	/** @var array<string,mixed>|null */
+	private $timetableSettings = null;
+
 	/** @return string */
 	private function assignmentKey(int $courseRecordId, int $classId, int $courseId, int $staffId): string
 	{
@@ -199,6 +202,7 @@ class TimetableStagingService
 
 		$db = \Config\Database::connect();
 		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
+		$this->timetableSettings = $settings;
 		$days = \App\Models\TimetableSchemaModel::weekDaysFromSettings($settings);
 		$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
 
@@ -491,6 +495,7 @@ class TimetableStagingService
 		$classId = (int) ($entry['class_id'] ?? 0);
 		$staffId = (int) ($entry['staff_id'] ?? 0);
 		$trackKey = $schema->trackForClass($schoolId, $classId);
+		$days = \App\Models\TimetableSchemaModel::weekDaysForTrack($this->timetableSettings, $trackKey);
 		$slots = array_values(array_filter(
 			$schema->teachingSlots($schoolId, $trackKey),
 			static fn ($s) => empty($s['is_break'])

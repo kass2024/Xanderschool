@@ -88,7 +88,6 @@ if (!$schema->isSharedSchedule($schoolId)) {
 }
 
 $settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
-$days = TimetableSchemaModel::weekDaysFromSettings($settings);
 $generator = new TimetableGeneratorService();
 $allEntries = [];
 $byTrack = [];
@@ -98,6 +97,7 @@ foreach ($assignments as $assignment) {
 }
 $reset = true;
 foreach ($byTrack as $trackKey => $trackAssignments) {
+	$days = TimetableSchemaModel::weekDaysForTrack($settings, (string) $trackKey);
 	$blocked = $schema->specialTimesMap($schoolId, $trackKey);
 	$result = $generator->generate(
 		$trackAssignments,

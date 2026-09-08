@@ -439,7 +439,6 @@ class TimetableManagement extends Home
 		}
 
 		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
-		$days = TimetableSchemaModel::weekDaysFromSettings($settings);
 
 		$generator = new TimetableGeneratorService();
 		$allEntries = [];
@@ -453,6 +452,7 @@ class TimetableManagement extends Home
 
 		$reset = true;
 		foreach ($byTrack as $trackKey => $trackAssignments) {
+			$days = TimetableSchemaModel::weekDaysForTrack($settings, (string) $trackKey);
 			$blocked = [];
 			foreach ($schema->specialTimesMap($schoolId, $trackKey) as $key => $row) {
 				$blocked[$key] = true;
@@ -850,6 +850,9 @@ class TimetableManagement extends Home
 					->join('departments d', 'd.id = c.department', 'left')
 					->where('c.id', $entityId)->get(1)->getRowArray();
 				$trackKey = $schema->trackForClass($schoolId, $entityId);
+				$dayLabels = TimetableSchemaModel::dayLabelsForTrack($settings, $trackKey);
+				$dayMap = TimetableSchemaModel::dayMapForTrack($settings, $trackKey);
+				$labelByDay = array_flip($dayMap);
 				$title = TimetableClassLabel::fromRow($class ?: []);
 				$subtitle = 'Class timetable';
 			} else {
@@ -875,6 +878,25 @@ class TimetableManagement extends Home
 			if ($tracks === []) {
 				$tracks = [TimetableTrack::ALL];
 			}
+			$teacherDays = [];
+			foreach ($tracks as $tk) {
+				foreach (TimetableSchemaModel::weekDaysForTrack($settings, (string) $tk) as $day) {
+					$teacherDays[$day] = true;
+				}
+			}
+			ksort($teacherDays);
+			$allDayMap = [0 => 'Mon', 1 => 'Tue', 2 => 'Wed', 3 => 'Thu', 4 => 'Fri', 5 => 'Sat', 6 => 'Sun'];
+			$dayLabels = [];
+			$dayMap = [];
+			foreach (array_keys($teacherDays) as $day) {
+				if (!isset($allDayMap[$day])) {
+					continue;
+				}
+				$label = $allDayMap[$day];
+				$dayLabels[] = $label;
+				$dayMap[$label] = (int) $day;
+			}
+			$labelByDay = array_flip($dayMap);
 			$slots = $this->unionSlotsForTracks($schema, $schoolId, $tracks);
 			$specialMap = [];
 			foreach ($tracks as $tk) {
