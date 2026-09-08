@@ -263,7 +263,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 				return;
 			}
 			$('#ttPreviewBody').html(r.html || '<div class="alert alert-warning m-3">No preview data</div>');
-			if (window.TtLiveEdit) TtLiveEdit.init($('#ttPreviewBody'));
+			if (r.editable && window.TtLiveEdit) TtLiveEdit.init($('#ttPreviewBody'));
 		}).fail(function (xhr) {
 			var detail = '';
 			if (xhr && xhr.responseJSON && xhr.responseJSON.error) {

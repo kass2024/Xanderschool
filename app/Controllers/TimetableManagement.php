@@ -97,7 +97,7 @@ class TimetableManagement extends Home
 		$data['preview_class_id'] = !empty($data['classes']) ? (int) $data['classes'][0]['id'] : 0;
 		if ($data['preview_class_id'] > 0 && !empty($data['schedule'])) {
 			try {
-				$data['preview_data'] = $this->buildGridView($schoolId, $schema, 'class', $data['preview_class_id'], true);
+				$data['preview_data'] = $this->buildGridView($schoolId, $schema, 'class', $data['preview_class_id'], false, false);
 			} catch (\Throwable $e) {
 				log_message('error', 'Timetable dashboard preview failed: {msg}', ['msg' => $e->getMessage()]);
 				$data['preview_data'] = null;
@@ -289,11 +289,12 @@ class TimetableManagement extends Home
 		try {
 			@ini_set('memory_limit', '512M');
 			@set_time_limit(120);
-			$data = $this->buildGridView($schoolId, $schema, $mode, $entityId, true);
+			$data = $this->buildGridView($schoolId, $schema, $mode, $entityId, false, false);
 			$html = view('pages/timetable/_grid_body', $data);
 			return $this->response->setJSON([
 				'title' => $data['title'] ?? 'Timetable',
 				'html' => $html,
+				'editable' => !empty($data['editable']),
 			]);
 		} catch (\Throwable $e) {
 			log_message('error', 'Timetable preview failed [{mode}:{id}]: {msg}', [
@@ -794,7 +795,14 @@ class TimetableManagement extends Home
 	}
 
 	/** @return array<string,mixed> */
-	private function buildGridView(int $schoolId, TimetableSchemaModel $schema, string $mode, int $entityId, bool $editable = false): array
+	private function buildGridView(
+		int $schoolId,
+		TimetableSchemaModel $schema,
+		string $mode,
+		int $entityId,
+		bool $editable = false,
+		bool $includeInteractiveData = true
+	): array
 	{
 		$db = \Config\Database::connect();
 		$data = $this->data;
@@ -944,7 +952,7 @@ class TimetableManagement extends Home
 		$data['conflict_entry_ids'] = [];
 		$data['staging_remaining'] = 0;
 
-		if ($schedule && $entityId > 0) {
+		if ($includeInteractiveData && $schedule && $entityId > 0) {
 			try {
 				$assignments = $this->loadAssignments($schoolId, $year, $term);
 				$staging = new TimetableStagingService();
