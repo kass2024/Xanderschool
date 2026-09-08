@@ -600,18 +600,18 @@ class TimetableStagingService
 		$builder = \Config\Database::connect()->table('timetable_entries')
 			->select('timetable_entries.*, ts.start_time, ts.end_time')
 			->join('timetable_slots ts', 'ts.id = timetable_entries.slot_id', 'left')
-			->where('schedule_id', $scheduleId)
-			->where('school_id', $schoolId)
-			->where('entry_type', 'lesson')
-			->where('day_of_week >=', 0)
-			->where('slot_id >', 0);
+			->where('timetable_entries.schedule_id', $scheduleId)
+			->where('timetable_entries.school_id', $schoolId)
+			->where('timetable_entries.entry_type', 'lesson')
+			->where('timetable_entries.day_of_week >=', 0)
+			->where('timetable_entries.slot_id >', 0);
 		if ($filterClassId > 0) {
-			$builder->where('class_id', $filterClassId);
+			$builder->where('timetable_entries.class_id', $filterClassId);
 		}
 		if ($filterStaffId > 0) {
-			$builder->where('staff_id', $filterStaffId);
+			$builder->where('timetable_entries.staff_id', $filterStaffId);
 		}
-		return $builder->orderBy('id', 'ASC')->get()->getResultArray();
+		return $builder->orderBy('timetable_entries.id', 'ASC')->get()->getResultArray();
 	}
 
 	/**
