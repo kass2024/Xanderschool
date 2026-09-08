@@ -321,8 +321,14 @@ class TimetableStagingService
 		}
 
 		$rows = $db->table('course_records cr')
-			->select('cr.id AS course_record_id, cr.class AS class_id, cr.course AS course_id, cr.lecturer, c.credit, c.title AS course_title')
+			->select('cr.id AS course_record_id, cr.class AS class_id, cr.course AS course_id, cr.lecturer, c.credit, c.title AS course_title,
+				l.title AS level_title, l.faculty_id AS level_faculty_id,
+				f.title AS faculty_title, f.abbrev AS faculty_abbrev, f.type AS faculty_type,
+				d.faculty_id AS dept_faculty_id')
 			->join('classes cl', 'cl.id = cr.class')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
 			->join('courses c', 'c.id = cr.course')
 			->where('cl.school_id', $schoolId)
 			->where('cr.year', $year)
@@ -331,6 +337,7 @@ class TimetableStagingService
 
 		$out = [];
 		foreach ($rows as $row) {
+			$row['track_key'] = \App\Libraries\TimetableTrack::resolveFromRow($row);
 			$out[$this->assignmentKey(
 				(int) ($row['course_record_id'] ?? 0),
 				(int) ($row['class_id'] ?? 0),
@@ -582,8 +589,9 @@ class TimetableStagingService
 	/** @param array<string,mixed> $state */
 	private function wouldExceedSubjectDayLimit(array $state, array $entry, int $day): bool
 	{
-		$hours = TimetableGeneratorService::weeklyHoursFromCourse($this->metaForEntry($entry));
-		$maxPerDay = ($hours > 0 && $hours <= 2) ? 1 : 2;
+		$meta = $this->metaForEntry($entry);
+		$hours = TimetableGeneratorService::weeklyHoursFromCourse($meta);
+		$maxPerDay = $this->maxPerDayForEntry($meta, $hours);
 		return $this->subjectDayCountForState($state, $entry, $day) + 1 > $maxPerDay;
 	}
 
@@ -594,7 +602,26 @@ class TimetableStagingService
 		return $this->assignmentMeta[$key] ?? [
 			'course_title' => '',
 			'credit' => 0,
+			'track_key' => '',
 		];
+	}
+
+	private function maxPerDayForEntry(array $meta, int $hours): int
+	{
+		if ($this->requiresSpreadAcrossDays($meta)) {
+			return 1;
+		}
+		return ($hours > 0 && $hours <= 2) ? 1 : 2;
+	}
+
+	private function requiresSpreadAcrossDays(array $meta): bool
+	{
+		$track = strtolower(trim((string) ($meta['track_key'] ?? '')));
+		if (!in_array($track, ['primary', 'nursery'], true)) {
+			return false;
+		}
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($meta['course_title'] ?? ''))));
+		return strpos($title, 'mathematics') === false && preg_match('/\bmath\b/', $title) !== 1;
 	}
 
 	/**

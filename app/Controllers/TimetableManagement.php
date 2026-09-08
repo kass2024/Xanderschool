@@ -447,6 +447,7 @@ class TimetableManagement extends Home
 		foreach ($assignments as $assignment) {
 			$classId = (int) ($assignment['class_id'] ?? 0);
 			$track = $schema->trackForClass($schoolId, $classId);
+			$assignment['_track_key'] = $track;
 			$byTrack[$track][] = $assignment;
 		}
 

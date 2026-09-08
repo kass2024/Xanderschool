@@ -93,6 +93,7 @@ $allEntries = [];
 $byTrack = [];
 foreach ($assignments as $assignment) {
 	$track = $schema->trackForClass($schoolId, (int) $assignment['class_id']);
+	$assignment['_track_key'] = $track;
 	$byTrack[$track][] = $assignment;
 }
 $reset = true;

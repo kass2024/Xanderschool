@@ -161,7 +161,7 @@ class TimetableGeneratorService
 
 		foreach ($assignments as $row) {
 			$hours = self::weeklyHoursFromCourse($row);
-			$blocks = self::distributeWeeklyHours($hours);
+			$blocks = $this->lessonBlocksForCourse($row, $hours);
 			foreach ($blocks as $blockSize) {
 				$lessonNeeds[] = [
 					'assignment' => $row,
@@ -228,8 +228,7 @@ class TimetableGeneratorService
 		$staffId = (int) ($row['lecturer'] ?? 0);
 		$courseId = (int) ($row['course_id'] ?? 0);
 		$subjectKey = $classId . ':' . $courseId;
-		// 1–2 periods/week: at most one lesson that day. 3+: allow a double (max 2).
-		$maxPerDay = ($weeklyHours > 0 && $weeklyHours <= 2) ? 1 : 2;
+		$maxPerDay = $this->maxPerDayForCourse($row, $weeklyHours);
 
 		$candidates = [];
 		$orderedDays = $this->days;
@@ -315,7 +314,7 @@ class TimetableGeneratorService
 		$staffId = (int) ($row['lecturer'] ?? 0);
 		$courseId = (int) ($row['course_id'] ?? 0);
 		$subjectKey = $classId . ':' . $courseId;
-		$maxPerDay = ($weeklyHours > 0 && $weeklyHours <= 2) ? 1 : 2;
+		$maxPerDay = $this->maxPerDayForCourse($row, $weeklyHours);
 		$count = 0;
 
 		foreach ($this->days as $day) {
@@ -419,5 +418,45 @@ class TimetableGeneratorService
 	private function busyStaffKey(int $staffId, int $day, int $slotId): string
 	{
 		return 't' . $staffId . 'd' . $day . 's' . $slotId;
+	}
+
+	/** @return list<int> */
+	private function lessonBlocksForCourse(array $row, int $hours): array
+	{
+		if ($hours <= 0) {
+			return [];
+		}
+		if ($this->requiresSpreadAcrossDays($row)) {
+			return array_fill(0, $hours, 1);
+		}
+		return self::distributeWeeklyHours($hours);
+	}
+
+	private function maxPerDayForCourse(array $row, int $weeklyHours): int
+	{
+		if ($this->requiresSpreadAcrossDays($row)) {
+			return 1;
+		}
+		return ($weeklyHours > 0 && $weeklyHours <= 2) ? 1 : 2;
+	}
+
+	private function requiresSpreadAcrossDays(array $row): bool
+	{
+		if (!$this->isPrimaryOrNursery($row)) {
+			return false;
+		}
+		return !$this->isMathematicsCourse((string) ($row['course_title'] ?? ''));
+	}
+
+	private function isPrimaryOrNursery(array $row): bool
+	{
+		$track = strtolower(trim((string) ($row['_track_key'] ?? $row['track_key'] ?? '')));
+		return in_array($track, ['primary', 'nursery'], true);
+	}
+
+	private function isMathematicsCourse(string $title): bool
+	{
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', $title)));
+		return $title !== '' && (strpos($title, 'mathematics') !== false || preg_match('/\bmath\b/', $title) === 1);
 	}
 }
