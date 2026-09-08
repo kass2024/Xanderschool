@@ -229,7 +229,10 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	var teacherBase = '<?= site_url('timetable/teacher'); ?>';
 	var printClassBase = '<?= site_url('timetable/print_class'); ?>';
 	var printTeacherBase = '<?= site_url('timetable/print_teacher'); ?>';
+	var jobStatusBase = '<?= site_url('timetable/generate_status'); ?>';
 	var hasSchedule = <?= $hasSchedule ? 'true' : 'false'; ?>;
+	var activeJob = <?= json_encode($active_generation_job ?? null, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+	var pollTimer = null;
 
 	function currentMode() { return $('#previewMode').val(); }
 	function currentId() {
@@ -252,7 +255,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		var mode = currentMode();
 		var id = currentId();
 		if (!id) return;
-		$('#ttPreviewBody').html('<div class="p-5 text-center"><i class="fa fa-spinner fa-spin fa-2x text-muted"></i><div class="mt-2 text-muted">Loading timetable…</div></div>');
+		$('#ttPreviewBody').html('<div class="p-5 text-center"><i class="fa fa-spinner fa-spin fa-2x text-muted"></i><div class="mt-2 text-muted">Loading timetable...</div></div>');
 		$.ajax({
 			url: '<?= site_url('timetable/preview'); ?>/' + id + '?mode=' + mode,
 			dataType: 'json',
@@ -275,6 +278,55 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		});
 	}
 
+	function stopJobPolling() {
+		if (pollTimer) {
+			clearTimeout(pollTimer);
+			pollTimer = null;
+		}
+	}
+
+	function renderJobState(job) {
+		if (!job) return;
+		var $btn = $('#btnGenerateTimetable');
+		var status = job.status || '';
+		var html = '';
+		if (status === 'queued' || status === 'running') {
+			$btn.prop('disabled', true);
+			html = '<div class="alert alert-info py-2 mb-0"><i class="fa fa-spinner fa-spin"></i> '
+				+ (job.message || 'Generating timetable in background...') + '</div>';
+		} else if (status === 'done') {
+			$btn.prop('disabled', false);
+			html = '<div class="alert alert-success py-2 mb-0">' + (job.message || 'Timetable generated.') + '</div>';
+			if (job.warnings && job.warnings.length) {
+				html += '<ul class="text-warning mt-2 mb-0 pl-3 small">' + job.warnings.slice(0, 5).map(function (w) { return '<li>' + w + '</li>'; }).join('') + '</ul>';
+			}
+			if (job.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-0"><strong>AI tip:</strong> ' + String(job.ai_tip).replace(/\n/g, '<br>') + '</div>';
+		} else if (status === 'failed') {
+			$btn.prop('disabled', false);
+			html = '<div class="alert alert-danger py-2 mb-0">' + (job.message || 'Generation failed.') + '</div>';
+		}
+		if (html) $('#generateResult').html(html);
+	}
+
+	function pollJob(jobId) {
+		if (!jobId) return;
+		stopJobPolling();
+		$.getJSON(jobStatusBase + '/' + encodeURIComponent(jobId), function (job) {
+			activeJob = job || null;
+			renderJobState(activeJob);
+			if (job && (job.status === 'queued' || job.status === 'running')) {
+				pollTimer = setTimeout(function () { pollJob(jobId); }, 3000);
+				return;
+			}
+			if (job && job.status === 'done') {
+				setTimeout(function () { location.reload(); }, 1200);
+			}
+		}).fail(function () {
+			$('#btnGenerateTimetable').prop('disabled', false);
+			$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">Could not read timetable job status.</div>');
+		});
+	}
+
 	$('#previewMode').on('change', function () { syncEntityOptions(); loadPreview(); });
 	$('#previewClass, #previewTeacher').on('change', loadPreview);
 
@@ -293,24 +345,20 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 	$('#btnGenerateTimetable').on('click', function () {
 		var $btn = $(this).prop('disabled', true);
-		$('#generateResult').html('<span class="text-primary"><i class="fa fa-spinner fa-spin"></i> Generating…</span>');
+		$('#generateResult').html('<span class="text-primary"><i class="fa fa-spinner fa-spin"></i> Starting background generation…</span>');
 		$.post('<?= site_url('timetable/generate'); ?>', {
 			academic_year: <?= (int) ($academic_year ?? 0); ?>,
 			term: <?= (int) ($term ?? 1); ?>,
 			use_gemini: $('#useAiTips').is(':checked') ? 1 : 0
 		}, function (r) {
-			$btn.prop('disabled', false);
 			if (r.error) {
+				$btn.prop('disabled', false);
 				$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">' + r.error + '</div>');
 				return;
 			}
-			var html = '<div class="alert alert-success py-2 mb-0">' + r.success + '</div>';
-			if (r.warnings && r.warnings.length) {
-				html += '<ul class="text-warning mt-2 mb-0 pl-3 small">' + r.warnings.slice(0, 5).map(function (w) { return '<li>' + w + '</li>'; }).join('') + '</ul>';
-			}
-			if (r.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-0"><strong>AI tip:</strong> ' + r.ai_tip.replace(/\n/g, '<br>') + '</div>';
-			$('#generateResult').html(html);
-			setTimeout(function () { location.reload(); }, 1500);
+			activeJob = r || null;
+			renderJobState(activeJob);
+			if (r && r.job_id) pollJob(r.job_id);
 		}, 'json').fail(function (xhr) {
 			$btn.prop('disabled', false);
 			var msg = 'Generation failed — check course assignments.';
@@ -325,5 +373,9 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 	syncEntityOptions();
 	if (hasSchedule) loadPreview();
+	if (activeJob && activeJob.id && (activeJob.status === 'queued' || activeJob.status === 'running')) {
+		renderJobState(activeJob);
+		pollJob(activeJob.id);
+	}
 })();
 </script>

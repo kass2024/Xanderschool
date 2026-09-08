@@ -47,6 +47,7 @@ class TimetableManagement extends Home
 
 		$year = (int) ($data['academic_year'] ?? 0);
 		$term = (int) ($data['term'] ?? 1);
+		$data['active_generation_job'] = $this->findExistingTimetableJob($schoolId, $year, $term);
 
 		$data['classes'] = $this->fetchClassRows($db, $schoolId);
 
@@ -377,30 +378,53 @@ class TimetableManagement extends Home
 		$year = (int) ($this->request->getPost('academic_year') ?: $this->data['academic_year']);
 		$term = (int) ($this->request->getPost('term') ?: $this->data['term']);
 		$useGemini = (bool) $this->request->getPost('use_gemini');
-
-		try {
-			$result = $this->runGeneration($schoolId, $staffId, $schema, $year, $term);
-			if ($result === null) {
-				return $this->response->setJSON(['error' => 'No course assignments found. Assign courses to classes first.']);
-			}
-
-			$aiTip = $this->buildGenerationAiTip($useGemini, $schoolId, $year, $term, $result);
-
+		if ($this->countAssignments($schoolId, $year, $term) <= 0) {
+			return $this->response->setJSON(['error' => 'No course assignments found. Assign courses to classes first.']);
+		}
+		$existing = $this->findExistingTimetableJob($schoolId, $year, $term);
+		if (is_array($existing) && in_array((string) ($existing['status'] ?? ''), ['queued', 'running'], true)) {
 			return $this->response->setJSON([
-				'success' => 'Timetable generated with ' . count($result['entries']) . ' lesson slots'
-					. (!empty($result['staging_created']) ? ' and ' . (int) $result['staging_created'] . ' unscheduled in parking lot.' : '.'),
-				'warnings' => $result['warnings'],
-				'ai_tip' => $aiTip,
-				'schedule_id' => $result['schedule_id'],
-				'staging_created' => (int) ($result['staging_created'] ?? 0),
-			]);
-		} catch (\Throwable $e) {
-			log_message('error', 'Timetable generate failed: {msg}', ['msg' => $e->getMessage()]);
-			return $this->response->setJSON([
-				'error' => 'Generation failed. The system auto-tried to repair the timetable state but still hit an error. Please review course assignments and try again.',
-				'detail' => ENVIRONMENT !== 'production' ? $e->getMessage() : null,
+				'queued' => true,
+				'job_id' => $existing['id'],
+				'status' => $existing['status'],
+				'message' => $existing['message'] ?? 'Timetable generation is already running.',
 			]);
 		}
+
+		$jobId = $this->createTimetableJob([
+			'school_id' => $schoolId,
+			'staff_id' => $staffId,
+			'academic_year' => $year,
+			'term' => $term,
+			'use_gemini' => $useGemini ? 1 : 0,
+		]);
+		$spawn = $this->spawnTimetableWorker($jobId);
+		if (empty($spawn['started'])) {
+			$this->updateTimetableJob($jobId, [
+				'status' => 'failed',
+				'message' => $spawn['error'] ?? 'Could not start timetable worker.',
+				'finished_at' => date('Y-m-d H:i:s'),
+			]);
+			return $this->response->setJSON(['error' => 'Could not start timetable background worker.']);
+		}
+
+		return $this->response->setJSON([
+			'queued' => true,
+			'job_id' => $jobId,
+			'status' => 'queued',
+			'message' => 'Timetable generation started in the background.',
+		]);
+	}
+
+	public function generation_status($jobId = '')
+	{
+		$this->denyMenu('timetable_dashboard');
+		list($schoolId) = $this->bootTimetable();
+		$job = $this->readTimetableJob((string) $jobId);
+		if (!$job || (int) ($job['school_id'] ?? 0) !== $schoolId) {
+			return $this->response->setStatusCode(404)->setJSON(['error' => 'Generation job not found.']);
+		}
+		return $this->response->setJSON($job);
 	}
 
 	/**
@@ -587,6 +611,210 @@ class TimetableManagement extends Home
 				$schema->ensureTrackSlots($schoolId, $track);
 				$schema->sanitizeTrackSlots($schoolId, $track);
 			}
+		}
+	}
+
+	private function timetableJobDir(): string
+	{
+		$dir = WRITEPATH . 'timetable_jobs';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0755, true);
+		}
+		return $dir;
+	}
+
+	private function timetableJobPath(string $jobId): string
+	{
+		$safe = preg_replace('/[^A-Za-z0-9_\-]/', '', $jobId);
+		return $this->timetableJobDir() . DIRECTORY_SEPARATOR . $safe . '.json';
+	}
+
+	/** @return array<string,mixed>|null */
+	private function readTimetableJob(string $jobId): ?array
+	{
+		$file = $this->timetableJobPath($jobId);
+		if (!is_file($file)) {
+			return null;
+		}
+		$data = json_decode((string) file_get_contents($file), true);
+		return is_array($data) ? $data : null;
+	}
+
+	/** @param array<string,mixed> $job */
+	private function writeTimetableJob(array $job): void
+	{
+		if (empty($job['id'])) {
+			return;
+		}
+		file_put_contents($this->timetableJobPath((string) $job['id']), json_encode($job, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+	}
+
+	/** @param array<string,mixed> $payload */
+	private function createTimetableJob(array $payload): string
+	{
+		$this->cleanupOldTimetableJobs();
+		$jobId = date('YmdHis') . '_' . bin2hex(random_bytes(4));
+		$job = [
+			'id' => $jobId,
+			'status' => 'queued',
+			'message' => 'Queued for generation.',
+			'created_at' => date('Y-m-d H:i:s'),
+			'started_at' => null,
+			'finished_at' => null,
+			'success' => null,
+			'warnings' => [],
+			'ai_tip' => null,
+			'schedule_id' => 0,
+			'staging_created' => 0,
+		] + $payload;
+		$this->writeTimetableJob($job);
+		return $jobId;
+	}
+
+	/** @param array<string,mixed> $patch */
+	private function updateTimetableJob(string $jobId, array $patch): ?array
+	{
+		$job = $this->readTimetableJob($jobId);
+		if (!$job) {
+			return null;
+		}
+		$job = array_merge($job, $patch);
+		$this->writeTimetableJob($job);
+		return $job;
+	}
+
+	/** @return array<string,mixed>|null */
+	private function findExistingTimetableJob(int $schoolId, int $year, int $term): ?array
+	{
+		foreach (glob($this->timetableJobDir() . DIRECTORY_SEPARATOR . '*.json') ?: [] as $file) {
+			$data = json_decode((string) @file_get_contents($file), true);
+			if (!is_array($data)) {
+				continue;
+			}
+			$status = (string) ($data['status'] ?? '');
+			if ((int) ($data['school_id'] ?? 0) !== $schoolId
+				|| (int) ($data['academic_year'] ?? 0) !== $year
+				|| (int) ($data['term'] ?? 0) !== $term
+				|| !in_array($status, ['queued', 'running'], true)) {
+				continue;
+			}
+			return $data;
+		}
+		return null;
+	}
+
+	private function cleanupOldTimetableJobs(): void
+	{
+		$cutoff = time() - 86400;
+		foreach (glob($this->timetableJobDir() . DIRECTORY_SEPARATOR . '*.json') ?: [] as $file) {
+			if (@filemtime($file) !== false && (int) @filemtime($file) < $cutoff) {
+				@unlink($file);
+			}
+		}
+	}
+
+	private function spawnTimetableWorker(string $jobId): array
+	{
+		$root = defined('ROOTPATH') ? ROOTPATH : (FCPATH . '..' . DIRECTORY_SEPARATOR);
+		$spark = rtrim($root, '/\\') . DIRECTORY_SEPARATOR . 'spark';
+		$php = 'php';
+		if (defined('PHP_BINARY') && PHP_BINARY
+			&& stripos(PHP_BINARY, 'cgi') === false
+			&& stripos(PHP_BINARY, 'fpm') === false) {
+			$php = PHP_BINARY;
+		}
+		if (!is_file($spark)) {
+			return ['started' => false, 'error' => 'spark not found'];
+		}
+		$logDir = WRITEPATH . 'timetable_jobs';
+		if (!is_dir($logDir)) {
+			@mkdir($logDir, 0755, true);
+		}
+		$log = $logDir . DIRECTORY_SEPARATOR . 'worker.log';
+		$run = escapeshellarg($php) . ' ' . escapeshellarg($spark) . ' process:timetable-jobs ' . escapeshellarg($jobId);
+		$isWin = (DIRECTORY_SEPARATOR === '\\');
+		if ($isWin) {
+			$cmd = 'start /B "" ' . $run . ' >> ' . escapeshellarg($log) . ' 2>&1';
+			@pclose(@popen($cmd, 'r'));
+			return ['started' => true, 'command' => $cmd];
+		}
+		$cmd = 'nohup ' . $run . ' >> ' . escapeshellarg($log) . ' 2>&1 &';
+		@exec($cmd);
+		return ['started' => true, 'command' => $cmd];
+	}
+
+	/** @return array<string,mixed> */
+	public function processTimetableJobById(string $jobId): array
+	{
+		$job = $this->readTimetableJob($jobId);
+		if (!$job) {
+			return ['ok' => false, 'error' => 'Job not found'];
+		}
+		if (in_array((string) ($job['status'] ?? ''), ['done', 'failed'], true)) {
+			return ['ok' => true, 'already_finished' => true, 'job_id' => $jobId];
+		}
+
+		$lock = $this->timetableJobPath($jobId) . '.lock';
+		$fh = @fopen($lock, 'c+');
+		if (!$fh || !flock($fh, LOCK_EX | LOCK_NB)) {
+			return ['ok' => false, 'busy' => true, 'job_id' => $jobId];
+		}
+
+		try {
+			$schoolId = (int) ($job['school_id'] ?? 0);
+			$staffId = (int) ($job['staff_id'] ?? 0);
+			$year = (int) ($job['academic_year'] ?? 0);
+			$term = (int) ($job['term'] ?? 1);
+			$useGemini = !empty($job['use_gemini']);
+			$schema = new TimetableSchemaModel();
+			$this->updateTimetableJob($jobId, [
+				'status' => 'running',
+				'message' => 'Generating timetable in background...',
+				'started_at' => date('Y-m-d H:i:s'),
+			]);
+			$schema->ensureSchema();
+			$result = $this->runGeneration($schoolId, $staffId, $schema, $year, $term);
+			if ($result === null) {
+				$this->updateTimetableJob($jobId, [
+					'status' => 'failed',
+					'success' => false,
+					'message' => 'No course assignments found. Assign courses to classes first.',
+					'finished_at' => date('Y-m-d H:i:s'),
+				]);
+				return ['ok' => false, 'job_id' => $jobId, 'error' => 'No assignments'];
+			}
+			$aiTip = $this->buildGenerationAiTip($useGemini, $schoolId, $year, $term, $result);
+			$this->updateTimetableJob($jobId, [
+				'status' => 'done',
+				'success' => true,
+				'message' => 'Timetable generated with ' . count($result['entries']) . ' lesson slots'
+					. (!empty($result['staging_created']) ? ' and ' . (int) $result['staging_created'] . ' unscheduled in parking lot.' : '.'),
+				'warnings' => $result['warnings'],
+				'ai_tip' => $aiTip,
+				'schedule_id' => (int) ($result['schedule_id'] ?? 0),
+				'staging_created' => (int) ($result['staging_created'] ?? 0),
+				'finished_at' => date('Y-m-d H:i:s'),
+			]);
+			return ['ok' => true, 'job_id' => $jobId];
+		} catch (\Throwable $e) {
+			log_message('error', 'Timetable background job failed [{job}]: {msg}', [
+				'job' => $jobId,
+				'msg' => $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+			]);
+			$this->updateTimetableJob($jobId, [
+				'status' => 'failed',
+				'success' => false,
+				'message' => 'Generation failed after background retry. Please review timetable assignments and try again.',
+				'detail' => ENVIRONMENT !== 'production' ? $e->getMessage() : null,
+				'finished_at' => date('Y-m-d H:i:s'),
+			]);
+			return ['ok' => false, 'job_id' => $jobId, 'error' => $e->getMessage()];
+		} finally {
+			if ($fh) {
+				flock($fh, LOCK_UN);
+				fclose($fh);
+			}
+			@unlink($lock);
 		}
 	}
 
@@ -811,7 +1039,6 @@ class TimetableManagement extends Home
 		$term = (int) ($data['term'] ?? 1);
 
 		$schema->repairOrphanEntrySlots($schoolId);
-		$this->ensureTimetableGenerated($schoolId, $schema);
 
 		$schedule = $db->table('timetable_schedules')
 			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)

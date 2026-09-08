@@ -288,6 +288,7 @@ $routes->post('timetable/check_move', 'TimetableManagement::check_move');
 $routes->post('timetable/move_entry', 'TimetableManagement::move_entry');
 $routes->get('timetable/preview/(:num)', 'TimetableManagement::preview_grid/$1');
 $routes->post('timetable/generate', 'TimetableManagement::generate');
+$routes->get('timetable/generate_status/(:segment)', 'TimetableManagement::generation_status/$1');
 $routes->get('timetable/class/(:num)', 'TimetableManagement::class_timetable/$1');
 $routes->get('timetable/teacher/(:num)', 'TimetableManagement::teacher_timetable/$1');
 $routes->get('timetable/print_class/(:num)', 'TimetableManagement::print_class/$1');
