@@ -219,11 +219,13 @@ class TimetableStagingService
 			return 0;
 		}
 
-		$scheduled = $db->table('timetable_entries')
+		$scheduled = $db->table('timetable_entries te')
+			->select('te.*, ts.start_time, ts.end_time')
+			->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
 			->where('schedule_id', $scheduleId)
-			->where('entry_type', 'lesson')
-			->where('day_of_week >=', 0)
-			->where('slot_id >', 0)
+			->where('te.entry_type', 'lesson')
+			->where('te.day_of_week >=', 0)
+			->where('te.slot_id >', 0)
 			->get()->getResultArray();
 
 		$state = $this->buildScheduleState($scheduled);
@@ -346,6 +348,7 @@ class TimetableStagingService
 			'by_id' => [],
 			'class_busy' => [],
 			'staff_busy' => [],
+			'staff_time' => [],
 			'subject_day_count' => [],
 			'class_day_usage' => [],
 		];
@@ -371,6 +374,14 @@ class TimetableStagingService
 		$state['class_busy'][$classId . ':' . $key] = $entryId;
 		if ($staffId > 0) {
 			$state['staff_busy'][$staffId . ':' . $key] = $entryId;
+			$range = $this->entryTimeRange($entry);
+			if ($range !== null) {
+				$state['staff_time'][$staffId][$day][] = [
+					'id' => $entryId,
+					'start' => $range['start'],
+					'end' => $range['end'],
+				];
+			}
 		}
 		$subjectKey = $classId . ':' . (int) ($entry['course_id'] ?? 0) . ':' . $day;
 		$state['subject_day_count'][$subjectKey] = (int) ($state['subject_day_count'][$subjectKey] ?? 0) + 1;
@@ -392,6 +403,12 @@ class TimetableStagingService
 		unset($state['by_id'][$entryId], $state['class_busy'][$classId . ':' . $key]);
 		if ($staffId > 0) {
 			unset($state['staff_busy'][$staffId . ':' . $key]);
+			if (!empty($state['staff_time'][$staffId][$day])) {
+				$state['staff_time'][$staffId][$day] = array_values(array_filter(
+					$state['staff_time'][$staffId][$day],
+					static fn (array $row): bool => (int) ($row['id'] ?? 0) !== $entryId
+				));
+			}
 		}
 		$subjectKey = $classId . ':' . (int) ($entry['course_id'] ?? 0) . ':' . $day;
 		$state['subject_day_count'][$subjectKey] = max(0, (int) ($state['subject_day_count'][$subjectKey] ?? 0) - 1);
@@ -500,13 +517,26 @@ class TimetableStagingService
 				if ($slotId <= 0) {
 					continue;
 				}
+				$range = $this->slotTimeRange($slot);
+				if ($range === null) {
+					continue;
+				}
 				$key = $day . ':' . $slotId;
 				if (!empty($blocked[$key])) {
 					continue;
 				}
 				$classBlocker = (int) ($state['class_busy'][$classId . ':' . $key] ?? 0);
-				$staffBlocker = ($staffId > 0) ? (int) ($state['staff_busy'][$staffId . ':' . $key] ?? 0) : 0;
-				$blockers = array_values(array_unique(array_filter([$classBlocker, $staffBlocker])));
+				$blockers = array_values(array_unique(array_filter([$classBlocker])));
+				if ($staffId > 0) {
+					$slotStaffBlocker = (int) ($state['staff_busy'][$staffId . ':' . $key] ?? 0);
+					if ($slotStaffBlocker > 0) {
+						$blockers[] = $slotStaffBlocker;
+					}
+					foreach ($this->staffTimeConflictIds($state, $staffId, (int) $day, $range['start'], $range['end']) as $staffBlockerId) {
+						$blockers[] = $staffBlockerId;
+					}
+				}
+				$blockers = array_values(array_unique(array_filter($blockers)));
 				if ($blockers !== [] && (!$allowSingleBlocker || count($blockers) > 1)) {
 					continue;
 				}
@@ -568,6 +598,8 @@ class TimetableStagingService
 	private function scheduledEntries(int $scheduleId, int $schoolId, int $filterClassId = 0, int $filterStaffId = 0): array
 	{
 		$builder = \Config\Database::connect()->table('timetable_entries')
+			->select('timetable_entries.*, ts.start_time, ts.end_time')
+			->join('timetable_slots ts', 'ts.id = timetable_entries.slot_id', 'left')
 			->where('schedule_id', $scheduleId)
 			->where('school_id', $schoolId)
 			->where('entry_type', 'lesson')
@@ -589,7 +621,7 @@ class TimetableStagingService
 	private function collectConflictEntryIds(array $scheduled): array
 	{
 		$byClassSlot = [];
-		$byTeacherSlot = [];
+		$teacherDayRows = [];
 		foreach ($scheduled as $entry) {
 			$entryId = (int) ($entry['id'] ?? 0);
 			$classId = (int) ($entry['class_id'] ?? 0);
@@ -601,7 +633,7 @@ class TimetableStagingService
 			}
 			$byClassSlot[$classId . ':' . $day . ':' . $slotId][] = $entry;
 			if ($staffId > 0) {
-				$byTeacherSlot[$staffId . ':' . $day . ':' . $slotId][] = $entry;
+				$teacherDayRows[$staffId . ':' . $day][] = $entry;
 			}
 		}
 
@@ -615,16 +647,78 @@ class TimetableStagingService
 				$ids[(int) $entry['id']] = (int) $entry['id'];
 			}
 		}
-		foreach ($byTeacherSlot as $group) {
+		foreach ($teacherDayRows as $group) {
 			if (count($group) <= 1) {
 				continue;
 			}
-			$drop = array_slice($group, 1);
-			foreach ($drop as $entry) {
-				$ids[(int) $entry['id']] = (int) $entry['id'];
+			usort($group, function (array $a, array $b): int {
+				$c = $this->timeToMinutes((string) ($a['start_time'] ?? '00:00')) <=> $this->timeToMinutes((string) ($b['start_time'] ?? '00:00'));
+				return $c !== 0 ? $c : ((int) ($a['id'] ?? 0) <=> (int) ($b['id'] ?? 0));
+			});
+			$active = [];
+			foreach ($group as $entry) {
+				$entryId = (int) ($entry['id'] ?? 0);
+				$start = $this->timeToMinutes((string) ($entry['start_time'] ?? '00:00'));
+				$end = $this->timeToMinutes((string) ($entry['end_time'] ?? '00:00'));
+				$active = array_values(array_filter($active, static function (array $row) use ($start): bool {
+					return (int) ($row['end'] ?? 0) > $start;
+				}));
+				foreach ($active as $other) {
+					$ids[$entryId] = $entryId;
+					$ids[(int) ($other['id'] ?? 0)] = (int) ($other['id'] ?? 0);
+				}
+				$active[] = ['id' => $entryId, 'end' => $end];
 			}
 		}
 
 		return array_values($ids);
+	}
+
+	/** @return array{start:int,end:int}|null */
+	private function entryTimeRange(array $entry): ?array
+	{
+		$start = trim((string) ($entry['start_time'] ?? ''));
+		$end = trim((string) ($entry['end_time'] ?? ''));
+		if ($start === '' || $end === '') {
+			return null;
+		}
+		return [
+			'start' => $this->timeToMinutes($start),
+			'end' => $this->timeToMinutes($end),
+		];
+	}
+
+	/** @param array<string,mixed> $slot @return array{start:int,end:int}|null */
+	private function slotTimeRange(array $slot): ?array
+	{
+		$start = trim((string) ($slot['start_time'] ?? ''));
+		$end = trim((string) ($slot['end_time'] ?? ''));
+		if ($start === '' || $end === '') {
+			return null;
+		}
+		return [
+			'start' => $this->timeToMinutes($start),
+			'end' => $this->timeToMinutes($end),
+		];
+	}
+
+	/** @param array<string,mixed> $state @return list<int> */
+	private function staffTimeConflictIds(array $state, int $staffId, int $day, int $start, int $end): array
+	{
+		$ids = [];
+		foreach ($state['staff_time'][$staffId][$day] ?? [] as $row) {
+			$otherStart = (int) ($row['start'] ?? 0);
+			$otherEnd = (int) ($row['end'] ?? 0);
+			if ($start < $otherEnd && $otherStart < $end) {
+				$ids[] = (int) ($row['id'] ?? 0);
+			}
+		}
+		return array_values(array_unique(array_filter($ids)));
+	}
+
+	private function timeToMinutes(string $time): int
+	{
+		$parts = explode(':', substr($time, 0, 8));
+		return ((int) ($parts[0] ?? 0)) * 60 + (int) ($parts[1] ?? 0);
 	}
 }
