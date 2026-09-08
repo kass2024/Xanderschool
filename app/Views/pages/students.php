@@ -440,9 +440,6 @@
 						?>
 						<div class="card-body">
 							<?php if (count($students) === 0): ?>
-								<div class="alert alert-info" style="margin-bottom: 16px;">
-									Use the top box for a <strong>global search in the current active academic year</strong>. Choose a class and click <strong>View students</strong> only when you want the class table below and its own table search.
-								</div>
 							<?php else: ?>
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
 								<div class="row">
