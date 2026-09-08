@@ -64,6 +64,36 @@ $template = [
 	['label' => '16', 'start' => '20:00:00', 'end' => '21:00:00', 'break' => 0, 'break_label' => null],
 ];
 
+$specials = [
+	['day' => 0, 'slot_label' => '13', 'label' => 'Assembly', 'color' => 'orange'],
+	['day' => 0, 'slot_label' => '15', 'label' => 'PREPS', 'color' => 'green'],
+	['day' => 0, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+	['day' => 1, 'slot_label' => '13', 'label' => 'PERSONAL ADMIN', 'color' => 'gray'],
+	['day' => 1, 'slot_label' => '14', 'label' => 'CHAPEL', 'color' => 'yellow'],
+	['day' => 1, 'slot_label' => '15', 'label' => 'PREPS', 'color' => 'green'],
+	['day' => 1, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+	['day' => 2, 'slot_label' => '15', 'label' => 'DEBATE', 'color' => 'yellow'],
+	['day' => 2, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+	['day' => 3, 'slot_label' => '15', 'label' => 'PREPS', 'color' => 'green'],
+	['day' => 3, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+	['day' => 4, 'slot_label' => '10', 'label' => 'CPD', 'color' => 'gray'],
+	['day' => 4, 'slot_label' => '11', 'label' => 'TESTS/HW', 'color' => 'gray'],
+	['day' => 4, 'slot_label' => '12', 'label' => 'TESTS/HW', 'color' => 'gray'],
+	['day' => 4, 'slot_label' => '15', 'label' => 'SABBATH', 'color' => 'blue'],
+	['day' => 4, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+	['day' => 6, 'slot_label' => '9', 'label' => 'CO-CURR.', 'color' => 'purple'],
+	['day' => 6, 'slot_label' => '10', 'label' => 'CO-CURR.', 'color' => 'purple'],
+	['day' => 6, 'slot_label' => '11', 'label' => 'ACTIVITIES', 'color' => 'purple'],
+	['day' => 6, 'slot_label' => '12', 'label' => 'ACTIVITIES', 'color' => 'purple'],
+	['day' => 6, 'slot_label' => '15', 'label' => 'PREPS', 'color' => 'green'],
+	['day' => 6, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+];
+
 echo 'School: ' . ($school['name'] ?? SCHOOL_ID) . PHP_EOL;
 echo 'Mode: ' . ($dryRun ? 'DRY-RUN' : 'APPLY') . PHP_EOL . PHP_EOL;
 
@@ -111,6 +141,7 @@ foreach ($tracks as $trackKey) {
 	}
 
 	$keepIds = [];
+	$slotIdByLabel = [];
 	foreach ($template as $i => $slot) {
 		$payload = [
 			'school_id' => SCHOOL_ID,
@@ -127,9 +158,16 @@ foreach ($tracks as $trackKey) {
 			$id = (int) $rows[$i]['id'];
 			$db->table('timetable_slots')->where('id', $id)->update($payload);
 			$keepIds[] = $id;
+			if ((int) $slot['break'] === 0) {
+				$slotIdByLabel[(string) $slot['label']] = $id;
+			}
 		} else {
 			$db->table('timetable_slots')->insert($payload);
-			$keepIds[] = (int) $db->insertID();
+			$newId = (int) $db->insertID();
+			$keepIds[] = $newId;
+			if ((int) $slot['break'] === 0) {
+				$slotIdByLabel[(string) $slot['label']] = $newId;
+			}
 		}
 	}
 
@@ -147,7 +185,29 @@ foreach ($tracks as $trackKey) {
 		}
 	}
 
-	echo 'Applied ' . count($template) . " slots." . PHP_EOL . PHP_EOL;
+	$db->table('timetable_special_times')
+		->where('school_id', SCHOOL_ID)
+		->where('track_key', $trackKey)
+		->delete();
+	$order = 0;
+	foreach ($specials as $special) {
+		$slotId = $slotIdByLabel[$special['slot_label']] ?? 0;
+		if ($slotId <= 0) {
+			continue;
+		}
+		$db->table('timetable_special_times')->insert([
+			'school_id' => SCHOOL_ID,
+			'track_key' => $trackKey,
+			'level_id' => 0,
+			'day_of_week' => $special['day'],
+			'slot_id' => $slotId,
+			'label' => $special['label'],
+			'color' => $special['color'],
+			'sort_order' => $order++,
+		]);
+	}
+
+	echo 'Applied ' . count($template) . ' slots and ' . count($specials) . " special activities." . PHP_EOL . PHP_EOL;
 }
 
 echo "Done." . PHP_EOL;

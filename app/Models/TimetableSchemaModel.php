@@ -415,6 +415,7 @@ class TimetableSchemaModel extends Model
 	{
 		$this->ensureSchema();
 		$this->ensureSpecialTimesTable();
+		$this->ensureTrackSpecialTimes($schoolId, $trackKey);
 		$db = \Config\Database::connect();
 		return $db->table('timetable_special_times st')
 			->select('st.*, ts.label AS slot_label, ts.start_time, ts.end_time')
@@ -457,6 +458,91 @@ class TimetableSchemaModel extends Model
 			UNIQUE KEY `school_track_day_slot` (`school_id`,`track_key`,`day_of_week`,`slot_id`),
 			KEY `school_id` (`school_id`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+	}
+
+	private function ensureTrackSpecialTimes(int $schoolId, string $trackKey): void
+	{
+		$trackKey = TimetableTrack::normalize($trackKey);
+		if (!in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
+			return;
+		}
+
+		$db = \Config\Database::connect();
+		$exists = (int) $db->table('timetable_special_times')
+			->where('school_id', $schoolId)
+			->where('track_key', $trackKey)
+			->countAllResults();
+		if ($exists > 0) {
+			return;
+		}
+
+		$slots = $db->table('timetable_slots')
+			->select('id, label')
+			->where('school_id', $schoolId)
+			->where('track_key', $trackKey)
+			->where('is_break', 0)
+			->orderBy('sort_order', 'ASC')
+			->get()->getResultArray();
+		if ($slots === []) {
+			return;
+		}
+
+		$slotIdByLabel = [];
+		foreach ($slots as $slot) {
+			$slotIdByLabel[(string) ($slot['label'] ?? '')] = (int) ($slot['id'] ?? 0);
+		}
+
+		$order = 0;
+		foreach (self::secondarySpecialTemplate() as $row) {
+			$slotId = $slotIdByLabel[$row['slot_label']] ?? 0;
+			if ($slotId <= 0) {
+				continue;
+			}
+			$db->table('timetable_special_times')->insert([
+				'school_id' => $schoolId,
+				'track_key' => $trackKey,
+				'level_id' => 0,
+				'day_of_week' => $row['day'],
+				'slot_id' => $slotId,
+				'label' => $row['label'],
+				'color' => $row['color'],
+				'sort_order' => $order++,
+			]);
+		}
+	}
+
+	/** @return list<array{day:int,slot_label:string,label:string,color:string}> */
+	private static function secondarySpecialTemplate(): array
+	{
+		return [
+			['day' => 0, 'slot_label' => '13', 'label' => 'Assembly', 'color' => 'orange'],
+			['day' => 0, 'slot_label' => '15', 'label' => 'PREPS', 'color' => 'green'],
+			['day' => 0, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+			['day' => 1, 'slot_label' => '13', 'label' => 'PERSONAL ADMIN', 'color' => 'gray'],
+			['day' => 1, 'slot_label' => '14', 'label' => 'CHAPEL', 'color' => 'yellow'],
+			['day' => 1, 'slot_label' => '15', 'label' => 'PREPS', 'color' => 'green'],
+			['day' => 1, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+			['day' => 2, 'slot_label' => '15', 'label' => 'DEBATE', 'color' => 'yellow'],
+			['day' => 2, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+			['day' => 3, 'slot_label' => '15', 'label' => 'PREPS', 'color' => 'green'],
+			['day' => 3, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+			['day' => 4, 'slot_label' => '10', 'label' => 'CPD', 'color' => 'gray'],
+			['day' => 4, 'slot_label' => '11', 'label' => 'TESTS/HW', 'color' => 'gray'],
+			['day' => 4, 'slot_label' => '12', 'label' => 'TESTS/HW', 'color' => 'gray'],
+			['day' => 4, 'slot_label' => '15', 'label' => 'SABBATH', 'color' => 'blue'],
+			['day' => 4, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+
+			['day' => 6, 'slot_label' => '9', 'label' => 'CO-CURR.', 'color' => 'purple'],
+			['day' => 6, 'slot_label' => '10', 'label' => 'CO-CURR.', 'color' => 'purple'],
+			['day' => 6, 'slot_label' => '11', 'label' => 'ACTIVITIES', 'color' => 'purple'],
+			['day' => 6, 'slot_label' => '12', 'label' => 'ACTIVITIES', 'color' => 'purple'],
+			['day' => 6, 'slot_label' => '15', 'label' => 'PREPS', 'color' => 'green'],
+			['day' => 6, 'slot_label' => '16', 'label' => 'SUPPER', 'color' => 'gray'],
+		];
 	}
 
 	/** @return list<string> */
