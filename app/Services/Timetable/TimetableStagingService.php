@@ -555,7 +555,7 @@ class TimetableStagingService
 				$candidates[] = [
 					'day' => (int) $day,
 					'slot_id' => $slotId,
-					'score' => $this->scoreCandidate($state, $entry, (int) $day, $slotId, count($blockers)),
+					'score' => $this->scoreCandidate($state, $entry, (int) $day, $slotId, count($blockers), $range),
 					'blockers' => $blockers,
 				];
 			}
@@ -568,14 +568,113 @@ class TimetableStagingService
 	}
 
 	/** @param array<string,mixed> $state */
-	private function scoreCandidate(array $state, array $entry, int $day, int $slotId, int $blockerCount): int
-	{
+	private function scoreCandidate(
+		array $state,
+		array $entry,
+		int $day,
+		int $slotId,
+		int $blockerCount,
+		?array $candidateRange = null
+	): int {
 		$classId = (int) ($entry['class_id'] ?? 0);
+		$courseId = (int) ($entry['course_id'] ?? 0);
+		$meta = $this->metaForEntry($entry);
+		$hours = TimetableGeneratorService::weeklyHoursFromCourse($meta);
+		$track = strtolower(trim((string) ($meta['track_key'] ?? '')));
+		$secondaryMulti = !in_array($track, ['primary', 'nursery'], true) && $hours >= 3;
+
 		$score = $blockerCount * 1000;
-		$score += $this->subjectDayCountForState($state, $entry, $day) * 300;
+		$sameDay = $this->subjectDayCountForState($state, $entry, $day);
+
+		if ($secondaryMulti) {
+			// Complete a double when this subject already has one period today.
+			if ($sameDay === 1) {
+				$score -= 900;
+				if ($candidateRange !== null && $this->rangeTouchesExistingSubjectPeriod($state, $entry, $day, $candidateRange)) {
+					$score -= 700;
+				}
+			} else {
+				$score += $sameDay * 300;
+			}
+
+			$occupied = $this->occupiedSubjectDays($state, $classId, $courseId);
+			if ($sameDay === 0) {
+				if ($occupied === []) {
+					$score += in_array($day, [0, 2, 4], true) ? -50 : 40;
+				}
+				foreach ($occupied as $od) {
+					$dist = abs($day - (int) $od);
+					if ($dist === 1) {
+						$score += 2500;
+					} else {
+						$score -= min(40, $dist * 12);
+					}
+				}
+			}
+		} else {
+			$score += $sameDay * 300;
+		}
+
 		$score += (int) ($state['class_day_usage'][$classId . ':' . $day] ?? 0) * 80;
 		$score += $slotId;
 		return $score;
+	}
+
+	/**
+	 * @param array<string,mixed> $state
+	 * @return list<int>
+	 */
+	private function occupiedSubjectDays(array $state, int $classId, int $courseId): array
+	{
+		$out = [];
+		foreach ($state['subject_day_count'] ?? [] as $key => $count) {
+			if ((int) $count <= 0) {
+				continue;
+			}
+			$parts = explode(':', (string) $key);
+			if (count($parts) !== 3) {
+				continue;
+			}
+			if ((int) $parts[0] === $classId && (int) $parts[1] === $courseId) {
+				$out[] = (int) $parts[2];
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @param array<string,mixed> $state
+	 * @param array{start:int,end:int} $range
+	 */
+	private function rangeTouchesExistingSubjectPeriod(array $state, array $entry, int $day, array $range): bool
+	{
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$courseId = (int) ($entry['course_id'] ?? 0);
+		foreach ($state['by_id'] ?? [] as $row) {
+			if ((int) ($row['class_id'] ?? 0) !== $classId || (int) ($row['course_id'] ?? 0) !== $courseId) {
+				continue;
+			}
+			if ((int) ($row['day_of_week'] ?? -1) !== $day) {
+				continue;
+			}
+			$start = (string) ($row['start_time'] ?? '');
+			$end = (string) ($row['end_time'] ?? '');
+			if ($start === '' || $end === '') {
+				continue;
+			}
+			$existing = [
+				'start' => $this->timeToMinutes($start),
+				'end' => $this->timeToMinutes($end),
+			];
+			$gap = min(
+				abs($range['end'] - $existing['start']),
+				abs($existing['end'] - $range['start'])
+			);
+			if ($gap <= 25) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** @param array<string,mixed> $state */

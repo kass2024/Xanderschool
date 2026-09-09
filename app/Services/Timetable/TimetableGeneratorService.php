@@ -209,6 +209,18 @@ class TimetableGeneratorService
 				foreach ($placed as $entry) {
 					$entries[] = $entry;
 				}
+			} elseif ((int) $need['block_size'] === 2) {
+				// Keep periods in the generator (with double-completion scoring)
+				// instead of dumping them to parking as isolated singles.
+				array_unshift($lessonNeeds, [
+					'assignment' => $need['assignment'],
+					'block_size' => 1,
+					'hours' => (int) $need['hours'],
+				], [
+					'assignment' => $need['assignment'],
+					'block_size' => 1,
+					'hours' => (int) $need['hours'],
+				]);
 			} else {
 				$this->warnings[] = 'Could not place ' . ($need['assignment']['course_title'] ?? 'course')
 					. ' (' . ($need['assignment']['class_title'] ?? '') . ') — ' . $need['block_size'] . ' period(s)';
@@ -374,6 +386,14 @@ class TimetableGeneratorService
 		// Anchor multi-hour secondary courses on Mon/Wed/Fri so later blocks can gap.
 		if ($gapCourse && $occupied === []) {
 			$score += in_array($day, [0, 2, 4], true) ? -70 : 55;
+		}
+
+		// Prefer completing a same-day pair (turn two singles into a double).
+		if ($gapCourse) {
+			$onThisDay = (int) ($this->subjectDayCount[$subjectKey . ':' . $day] ?? 0);
+			if ($onThisDay === 1) {
+				$score -= 900;
+			}
 		}
 
 		foreach ($occupied as $d) {
