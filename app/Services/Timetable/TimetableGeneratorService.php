@@ -6,9 +6,9 @@ namespace App\Services\Timetable;
  * Constraint-based timetable generator (aSc-style weekly grid).
  *
  * Primary/Nursery: mostly one period per day (math may cluster).
- * Secondary (O/A Level, RTB, Special): 2h → singles on different days;
- * 3h+ → at least one adjacent double, with subject blocks on non-adjacent days
- * (e.g. Mon+Wed, not Mon+Tue).
+ * Secondary (O/A Level, RTB, Special): applies SecondaryTimetableCriteria —
+ * doubles for 3+ hours, non-adjacent days, PE end-of-day, Math/Physics/ANP
+ * morning bias, teacher windows, clinical mornings, combined classes.
  */
 class TimetableGeneratorService
 {
@@ -44,6 +44,12 @@ class TimetableGeneratorService
 
 	/** @var list<string> */
 	private $warnings = [];
+
+	/** @var SecondaryTimetableCriteria|null */
+	private $secondaryCriteria = null;
+
+	/** @var array<int,array<string,mixed>> */
+	private $assignmentByClassCourse = [];
 
 	public static function distributeWeeklyHours(int $hours): array
 	{
@@ -145,6 +151,17 @@ class TimetableGeneratorService
 			$this->warnings = [];
 		}
 
+		$this->secondaryCriteria = new SecondaryTimetableCriteria();
+		$this->secondaryCriteria->hydrateFromAssignments($assignments);
+		$this->assignmentByClassCourse = [];
+		foreach ($assignments as $row) {
+			$classId = (int) ($row['class_id'] ?? 0);
+			$courseId = (int) ($row['course_id'] ?? 0);
+			if ($classId > 0 && $courseId > 0) {
+				$this->assignmentByClassCourse[$classId . ':' . $courseId] = $row;
+			}
+		}
+
 		$this->teachingSlots = $teachingSlots;
 		$this->days = $days;
 		$this->blocked = $blocked;
@@ -163,6 +180,16 @@ class TimetableGeneratorService
 		$lessonNeeds = [];
 		/** @var array<string,int> */
 		$placedByAssignment = [];
+
+		// Combined subjects first so paired classes claim the same slots together.
+		usort($assignments, function (array $a, array $b): int {
+			$pa = $this->secondaryCriteria && $this->secondaryCriteria->combinePartner($a) ? 0 : 1;
+			$pb = $this->secondaryCriteria && $this->secondaryCriteria->combinePartner($b) ? 0 : 1;
+			if ($pa !== $pb) {
+				return $pa <=> $pb;
+			}
+			return 0;
+		});
 
 		foreach ($assignments as $row) {
 			$hours = self::weeklyHoursFromCourse($row);
@@ -230,6 +257,10 @@ class TimetableGeneratorService
 					$entries[] = $entry;
 				}
 				$placedByAssignment[$assignKey] = $already + count($placed);
+				$partnerExtra = $this->placeCombinePartnerCopies($need['assignment'], $placed, $placedByAssignment);
+				foreach ($partnerExtra as $entry) {
+					$entries[] = $entry;
+				}
 			} elseif ($blockSize === 2 && $remaining >= 2) {
 				// Keep periods in the generator (with double-completion scoring)
 				// instead of dumping them to parking as isolated singles.
@@ -261,6 +292,106 @@ class TimetableGeneratorService
 	public function warnings(): array
 	{
 		return $this->warnings;
+	}
+
+	/**
+	 * Mirror a placed lesson onto its combine-partner class (same day/slots).
+	 *
+	 * @param list<array<string,mixed>> $placed
+	 * @param array<string,int> $placedByAssignment
+	 * @return list<array<string,mixed>>
+	 */
+	private function placeCombinePartnerCopies(array $row, array $placed, array &$placedByAssignment): array
+	{
+		if ($this->secondaryCriteria === null || $placed === []) {
+			return [];
+		}
+		$partner = $this->secondaryCriteria->combinePartner($row);
+		if ($partner === null) {
+			return [];
+		}
+		$partnerKey = $this->assignmentQuotaKey($partner);
+		$quota = self::weeklyHoursFromCourse($partner);
+		$already = (int) ($placedByAssignment[$partnerKey] ?? 0);
+		$room = max(0, $quota - $already);
+		if ($room <= 0) {
+			return [];
+		}
+
+		$classId = (int) ($partner['class_id'] ?? 0);
+		$staffId = (int) ($partner['lecturer'] ?? 0);
+		$courseId = (int) ($partner['course_id'] ?? 0);
+		$subjectKey = $classId . ':' . $courseId;
+		$out = [];
+		$day = (int) ($placed[0]['day_of_week'] ?? -1);
+		$slotIds = [];
+		foreach ($placed as $entry) {
+			$slotIds[] = (int) ($entry['slot_id'] ?? 0);
+		}
+		$slotIds = array_values(array_filter($slotIds));
+		if ($day < 0 || $slotIds === [] || count($slotIds) > $room) {
+			return [];
+		}
+		// Partner class must be free; same teacher may already be marked busy from primary — allow if same staff.
+		$primaryStaff = (int) ($row['lecturer'] ?? 0);
+		foreach ($slotIds as $slotId) {
+			if (!empty($this->blocked[$day . ':' . $slotId])) {
+				return [];
+			}
+			if (isset($this->classBusy[$this->busyKey($classId, $day, $slotId)])) {
+				return [];
+			}
+			if ($staffId > 0 && $staffId !== $primaryStaff && $this->staffHasTimeConflict($staffId, $day, $slotId)) {
+				return [];
+			}
+			if (!$this->criteriaAllowsSlot($partner, $day, $slotId)) {
+				return [];
+			}
+		}
+
+		foreach ($slotIds as $slotId) {
+			$this->classBusy[$this->busyKey($classId, $day, $slotId)] = true;
+			$this->classDayUsage[$classId . ':' . $day] = (int) ($this->classDayUsage[$classId . ':' . $day] ?? 0) + 1;
+			$this->globalDayUsage[$day] = (int) ($this->globalDayUsage[$day] ?? 0) + 1;
+			if ($staffId > 0 && $staffId !== $primaryStaff) {
+				$this->staffBusy[$this->busyStaffKey($staffId, $day, $slotId)] = true;
+				$range = $this->slotTimeRange($slotId);
+				if ($range !== null) {
+					$this->staffTimeBookings[$staffId][$day][] = $range;
+				}
+			}
+			$out[] = [
+				'class_id' => $classId,
+				'staff_id' => $staffId,
+				'course_id' => $courseId,
+				'course_record_id' => (int) ($partner['course_record_id'] ?? 0),
+				'day_of_week' => $day,
+				'slot_id' => $slotId,
+				'entry_type' => 'lesson',
+			];
+		}
+		$this->subjectDayCount[$subjectKey . ':' . $day] =
+			(int) ($this->subjectDayCount[$subjectKey . ':' . $day] ?? 0) + count($slotIds);
+		$placedByAssignment[$partnerKey] = $already + count($out);
+
+		return $out;
+	}
+
+	private function criteriaAllowsSlot(array $row, int $day, int $slotId): bool
+	{
+		if ($this->secondaryCriteria === null || !SecondaryTimetableCriteria::isSecondaryTrack($row)) {
+			return true;
+		}
+		$times = $this->slotTimes[$slotId] ?? null;
+		$start = $times['start'] ?? null;
+		$end = $times['end'] ?? null;
+		if ($this->secondaryCriteria->clinicalBlocksClass($row, $day, $start, $end)) {
+			return false;
+		}
+		if (!$this->secondaryCriteria->teacherAllows($row, $day, $start, $end)) {
+			return false;
+		}
+		return true;
 	}
 
 	/** @return list<array<string,mixed>>|null */
@@ -389,7 +520,10 @@ class TimetableGeneratorService
 							continue;
 						}
 						$slotIds = [$slotA, $slotB];
-						if (!$this->slotsFree($classId, $staffId, $day, $slotIds)) {
+						if (!$this->slotsFree($classId, $staffId, $day, $slotIds, $row)) {
+							continue;
+						}
+						if (!$this->combinePartnerSlotsFree($row, $day, $slotIds)) {
 							continue;
 						}
 						$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $j, $weeklyHours, $row);
@@ -407,7 +541,10 @@ class TimetableGeneratorService
 				}
 
 				$slotIds = [(int) $this->teachingSlots[$i]['id']];
-				if (!$this->slotsFree($classId, $staffId, $day, $slotIds)) {
+				if (!$this->slotsFree($classId, $staffId, $day, $slotIds, $row)) {
+					continue;
+				}
+				if (!$this->combinePartnerSlotsFree($row, $day, $slotIds)) {
 					continue;
 				}
 
@@ -470,7 +607,43 @@ class TimetableGeneratorService
 			}
 		}
 
+		if ($this->secondaryCriteria !== null) {
+			$slot = $this->teachingSlots[$slotIndex] ?? null;
+			$score += $this->secondaryCriteria->morningScoreDelta(
+				$row,
+				isset($slot['start_time']) ? (string) $slot['start_time'] : null,
+				isset($slot['end_time']) ? (string) $slot['end_time'] : null
+			);
+		}
+
 		return $score;
+	}
+
+	/** @param list<int> $slotIds */
+	private function combinePartnerSlotsFree(array $row, int $day, array $slotIds): bool
+	{
+		if ($this->secondaryCriteria === null) {
+			return true;
+		}
+		$partner = $this->secondaryCriteria->combinePartner($row);
+		if ($partner === null) {
+			return true;
+		}
+		$partnerClass = (int) ($partner['class_id'] ?? 0);
+		$partnerStaff = (int) ($partner['lecturer'] ?? 0);
+		$primaryStaff = (int) ($row['lecturer'] ?? 0);
+		foreach ($slotIds as $slotId) {
+			if (isset($this->classBusy[$this->busyKey($partnerClass, $day, (int) $slotId)])) {
+				return false;
+			}
+			if (!$this->criteriaAllowsSlot($partner, $day, (int) $slotId)) {
+				return false;
+			}
+			if ($partnerStaff > 0 && $partnerStaff !== $primaryStaff && $this->staffHasTimeConflict($partnerStaff, $day, (int) $slotId)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private function countPlacementCandidates(array $row, int $blockSize, int $weeklyHours = 0): int
@@ -494,7 +667,7 @@ class TimetableGeneratorService
 	}
 
 	/** @param list<int> $slotIds */
-	private function slotsFree(int $classId, int $staffId, int $day, array $slotIds): bool
+	private function slotsFree(int $classId, int $staffId, int $day, array $slotIds, array $row = []): bool
 	{
 		foreach ($slotIds as $slotId) {
 			if (!empty($this->blocked[$day . ':' . $slotId])) {
@@ -504,6 +677,9 @@ class TimetableGeneratorService
 				return false;
 			}
 			if ($staffId > 0 && $this->staffHasTimeConflict($staffId, $day, $slotId)) {
+				return false;
+			}
+			if ($row !== [] && !$this->criteriaAllowsSlot($row, $day, (int) $slotId)) {
 				return false;
 			}
 		}
@@ -604,6 +780,12 @@ class TimetableGeneratorService
 
 	private function maxPerDayForCourse(array $row, int $weeklyHours): int
 	{
+		if ($this->secondaryCriteria !== null) {
+			$peMax = $this->secondaryCriteria->peMaxPerDay($row, $weeklyHours);
+			if ($peMax !== null) {
+				return $peMax;
+			}
+		}
 		if ($this->requiresSpreadAcrossDays($row)) {
 			return 1;
 		}

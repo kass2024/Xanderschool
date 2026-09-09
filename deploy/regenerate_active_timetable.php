@@ -40,10 +40,15 @@ echo "School {$schoolId}, year {$year}, term {$term}\n";
 $assignments = $db->table('course_records cr')
 	->select('cr.id AS course_record_id, cr.course AS course_id, cr.lecturer, cr.class AS class_id,
 		c.title AS course_title, c.code AS course_code, c.credit, c.marks, c.program_type,
-		cc.title AS category_title, cl.title AS class_title')
+		cc.title AS category_title, cl.title AS class_title, l.title AS level_name,
+		d.code AS dept_code, d.title AS dept_title,
+		CONCAT(s.fname, " ", s.lname) AS teacher_name')
 	->join('courses c', 'c.id = cr.course')
 	->join('course_category cc', 'cc.id = c.category', 'left')
 	->join('classes cl', 'cl.id = cr.class')
+	->join('levels l', 'l.id = cl.level', 'left')
+	->join('departments d', 'd.id = cl.department', 'left')
+	->join('staffs s', 's.id = cr.lecturer', 'left')
 	->where('cl.school_id', $schoolId)
 	->where('cr.year', $year)
 	->where("find_in_set($term, cr.term) > 0", null, false)

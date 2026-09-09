@@ -13,6 +13,9 @@ class TimetableStagingService
 	/** @var array<string,mixed>|null */
 	private $timetableSettings = null;
 
+	/** @var SecondaryTimetableCriteria|null */
+	private $secondaryCriteria = null;
+
 	/** @return string */
 	private function assignmentKey(int $courseRecordId, int $classId, int $courseId, int $staffId): string
 	{
@@ -241,6 +244,8 @@ class TimetableStagingService
 		$this->timetableSettings = $settings;
 		$days = \App\Models\TimetableSchemaModel::weekDaysFromSettings($settings);
 		$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
+		$this->secondaryCriteria = new SecondaryTimetableCriteria();
+		$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
 
 		$builder = $db->table('timetable_entries')
 			->where('schedule_id', $scheduleId)
@@ -376,14 +381,17 @@ class TimetableStagingService
 
 		$rows = $db->table('course_records cr')
 			->select('cr.id AS course_record_id, cr.class AS class_id, cr.course AS course_id, cr.lecturer, c.credit, c.title AS course_title,
-				l.title AS level_title, l.faculty_id AS level_faculty_id,
+				l.title AS level_title, l.title AS level_name, l.faculty_id AS level_faculty_id,
 				f.title AS faculty_title, f.abbrev AS faculty_abbrev, f.type AS faculty_type,
-				d.faculty_id AS dept_faculty_id')
+				d.faculty_id AS dept_faculty_id, d.code AS dept_code, d.title AS dept_title,
+				cl.title AS class_title,
+				CONCAT(s.fname, " ", s.lname) AS teacher_name')
 			->join('classes cl', 'cl.id = cr.class')
 			->join('levels l', 'l.id = cl.level', 'left')
 			->join('departments d', 'd.id = cl.department', 'left')
 			->join('faculty f', 'f.id = d.faculty_id', 'left')
 			->join('courses c', 'c.id = cr.course')
+			->join('staffs s', 's.id = cr.lecturer', 'left')
 			->where('cl.school_id', $schoolId)
 			->where('cr.year', $year)
 			->where("find_in_set($term, cr.term) >", 0, false)
@@ -591,6 +599,18 @@ class TimetableStagingService
 				if (!empty($blocked[$key])) {
 					continue;
 				}
+				$meta = $this->metaForEntry($entry);
+				$meta['_track_key'] = $trackKey;
+				if ($this->secondaryCriteria !== null) {
+					$start = (string) ($slot['start_time'] ?? '');
+					$end = (string) ($slot['end_time'] ?? '');
+					if ($this->secondaryCriteria->clinicalBlocksClass($meta, (int) $day, $start, $end)) {
+						continue;
+					}
+					if (!$this->secondaryCriteria->teacherAllows($meta, (int) $day, $start, $end)) {
+						continue;
+					}
+				}
 				$classBlocker = (int) ($state['class_busy'][$classId . ':' . $key] ?? 0);
 				$blockers = array_values(array_unique(array_filter([$classBlocker])));
 				if ($staffId > 0) {
@@ -695,6 +715,16 @@ class TimetableStagingService
 
 		$score += (int) ($state['class_day_usage'][$classId . ':' . $day] ?? 0) * 80;
 		$score += $peSport ? 0 : $slotId;
+		if ($this->secondaryCriteria !== null && $candidateRange !== null) {
+			$startH = intdiv((int) $candidateRange['start'], 60);
+			$startM = ((int) $candidateRange['start']) % 60;
+			$endH = intdiv((int) $candidateRange['end'], 60);
+			$endM = ((int) $candidateRange['end']) % 60;
+			$start = sprintf('%02d:%02d:00', $startH, $startM);
+			$end = sprintf('%02d:%02d:00', $endH, $endM);
+			$meta['_track_key'] = $track;
+			$score += $this->secondaryCriteria->morningScoreDelta($meta, $start, $end);
+		}
 		return $score;
 	}
 
@@ -785,6 +815,12 @@ class TimetableStagingService
 
 	private function maxPerDayForEntry(array $meta, int $hours): int
 	{
+		if ($this->secondaryCriteria !== null) {
+			$peMax = $this->secondaryCriteria->peMaxPerDay($meta, $hours);
+			if ($peMax !== null) {
+				return $peMax;
+			}
+		}
 		if ($this->requiresSpreadAcrossDays($meta)) {
 			return 1;
 		}
