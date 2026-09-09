@@ -622,8 +622,19 @@ class TimetableManagement extends Home
 			// Skip very fresh running jobs that may still be actively working.
 			if ($status === 'running') {
 				$started = strtotime((string) ($data['started_at'] ?? '')) ?: 0;
-				if ($started > 0 && (time() - $started) < 180) {
+				$lock = $this->timetableJobPath((string) ($data['id'] ?? '')) . '.lock';
+				$hasLock = is_file($lock);
+				if ($started > 0 && (time() - $started) < 180 && $hasLock) {
 					continue;
+				}
+				// Stale "running" with no lock — reclaim for processing.
+				if (!$hasLock) {
+					$data['status'] = 'queued';
+					$this->updateTimetableJob((string) $data['id'], [
+						'status' => 'queued',
+						'message' => 'Requeued after stalled worker.',
+						'started_at' => null,
+					]);
 				}
 			}
 			$jobs[] = $data;
