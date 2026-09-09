@@ -524,7 +524,7 @@ class TimetableStagingService
 			if ($this->wouldExceedSubjectDayLimit($state, $entry, (int) $day)) {
 				continue;
 			}
-			foreach ($slots as $slot) {
+			foreach ($slots as $slotIndex => $slot) {
 				$slotId = (int) ($slot['id'] ?? 0);
 				if ($slotId <= 0) {
 					continue;
@@ -555,7 +555,16 @@ class TimetableStagingService
 				$candidates[] = [
 					'day' => (int) $day,
 					'slot_id' => $slotId,
-					'score' => $this->scoreCandidate($state, $entry, (int) $day, $slotId, count($blockers), $range),
+					'score' => $this->scoreCandidate(
+						$state,
+						$entry,
+						(int) $day,
+						$slotId,
+						count($blockers),
+						$range,
+						(int) $slotIndex,
+						count($slots)
+					),
 					'blockers' => $blockers,
 				];
 			}
@@ -574,7 +583,9 @@ class TimetableStagingService
 		int $day,
 		int $slotId,
 		int $blockerCount,
-		?array $candidateRange = null
+		?array $candidateRange = null,
+		int $slotIndex = 0,
+		int $slotCount = 0
 	): int {
 		$classId = (int) ($entry['class_id'] ?? 0);
 		$courseId = (int) ($entry['course_id'] ?? 0);
@@ -582,9 +593,19 @@ class TimetableStagingService
 		$hours = TimetableGeneratorService::weeklyHoursFromCourse($meta);
 		$track = strtolower(trim((string) ($meta['track_key'] ?? '')));
 		$secondaryMulti = !in_array($track, ['primary', 'nursery'], true) && $hours >= 3;
+		$peSport = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''));
 
 		$score = $blockerCount * 1000;
 		$sameDay = $this->subjectDayCountForState($state, $entry, $day);
+
+		if ($peSport && $slotCount > 0) {
+			// Strongly prefer last teaching periods of the day.
+			$score += ($slotCount - 1 - $slotIndex) * 500;
+			$lateStart = max(0, $slotCount - 2);
+			if ($slotIndex < $lateStart) {
+				$score += 3000;
+			}
+		}
 
 		if ($secondaryMulti) {
 			// Complete a double when this subject already has one period today.
@@ -616,7 +637,7 @@ class TimetableStagingService
 		}
 
 		$score += (int) ($state['class_day_usage'][$classId . ':' . $day] ?? 0) * 80;
-		$score += $slotId;
+		$score += $peSport ? 0 : $slotId;
 		return $score;
 	}
 
