@@ -44,6 +44,9 @@ $renderCourseRows = static function (array $rows) use ($courseAssignmentsMap): s
 		$source = (($course['create_source'] ?? '') === 'ai') ? 'ai' : 'manual';
 		$sourceLabel = $source === 'ai' ? 'AI' : 'Manual';
 		$sourceClass = $source === 'ai' ? 'source-ai' : 'source-manual';
+		$crossBadge = ($prog === 'cross')
+			? ' <span class="course-source-badge source-cross" title="Shown under RTB, REB and Special">Cross-cutting</span>'
+			: '';
 		$html .= '<tr class="course-row"'
 			. ' data-id="' . $id . '"'
 			. ' data-title="' . $titleEsc . '"'
@@ -53,7 +56,7 @@ $renderCourseRows = static function (array $rows) use ($courseAssignmentsMap): s
 			. ' data-credit="' . htmlspecialchars($credit, ENT_QUOTES, 'UTF-8') . '"'
 			. ' data-marks="' . htmlspecialchars($marks, ENT_QUOTES, 'UTF-8') . '"'
 			. ' data-program-type="' . $prog . '">'
-			. '<td class="course-inline" data-field="title" title="Double-click to edit">' . $titleEsc . '</td>'
+			. '<td class="course-inline" data-field="title" title="Double-click to edit">' . $titleEsc . $crossBadge . '</td>'
 			. '<td class="course-inline" data-field="code" title="Double-click to edit">' . $codeEsc . '</td>'
 			. '<td class="course-inline" data-field="category" title="Double-click to edit">' . $catEsc . '</td>'
 			. '<td><span class="course-source-badge ' . $sourceClass . '">' . $sourceLabel . '</span></td>'
@@ -95,6 +98,7 @@ foreach ($classes as $c) {
 				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="1" data-mode="manual"><?= lang("app.wda"); ?> (TVET)</button>
 				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="2" data-mode="manual"><?= lang("app.reb"); ?> (REB)</button>
 				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="3" data-mode="manual">Special (ANP)</button>
+				<button type="button" class="btn btn-outline-info btn-block btn-lg course-type-pick mb-2" data-type="cross" data-mode="manual">Cross-cutting (RTB + REB + Special)</button>
 				<?php if (is_wisdom_school()): ?>
 				<button type="button" class="btn btn-outline-success btn-block btn-lg course-type-pick" data-type="holiday" data-mode="manual"><?= lang("app.holidayCoaching"); ?></button>
 				<p class="text-muted mt-2 mb-0" style="font-size:.85rem;">Holiday coaching courses stay on their own list and are assigned by academic year (not by term).</p>
@@ -223,6 +227,7 @@ foreach ($classes as $c) {
 	}
 	.course-source-badge.source-ai { background: #dbeafe; color: #1d4ed8; }
 	.course-source-badge.source-manual { background: #f3f4f6; color: #374151; }
+	.course-source-badge.source-cross { background: #ecfdf5; color: #047857; margin-left: 6px; }
 	.course-credit-note {
 		font-size: .72rem;
 		color: #64748b;
@@ -808,6 +813,7 @@ foreach (($categories ?? []) as $cat) {
 			$('#credits').text("<?= lang("app.credits"); ?>");
 			var prog = 'tvet';
 			if (currentType === 'holiday') prog = 'holiday';
+			else if (currentType === 'cross') prog = 'cross';
 			else if (currentType === '2') prog = 'reb';
 			else if (currentType === '3') prog = 'special';
 			$('#manualProgramType').val(prog);
@@ -828,7 +834,8 @@ foreach (($categories ?? []) as $cat) {
 			} else {
 				$('#creditDiv').show();
 				$('#manualMarksHint').show();
-				switchCourseProg(prog);
+				// Cross-cutting courses are listed under all three programme tabs; default to RTB.
+				switchCourseProg(prog === 'cross' ? 'tvet' : prog);
 			}
 			$('#smartWrap').removeClass('is-on');
 			$typeModal.modal("hide");

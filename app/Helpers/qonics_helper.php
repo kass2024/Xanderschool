@@ -547,6 +547,8 @@ if (!function_exists('paymentModeToString')) {
 				return lang("app.momo");
 			case '5':
 				return lang("app.airtelMoney");
+			case '6':
+				return lang("app.transfer");
 			default:
 				return $mode;
 		}
@@ -1329,6 +1331,9 @@ if (!function_exists('normalize_course_program_type')) {
 		if ($t === 'holiday' || $t === 'holiday_coaching' || $t === 'coaching') {
 			return 'holiday';
 		}
+		if ($t === 'cross' || $t === 'crosscutting' || $t === 'cross_cutting' || $t === 'all') {
+			return 'cross';
+		}
 		if ($t === 'special' || $t === 'anp') {
 			return 'special';
 		}
@@ -1343,6 +1348,35 @@ if (!function_exists('is_holiday_course_program')) {
 	function is_holiday_course_program($type)
 	{
 		return normalize_course_program_type($type) === 'holiday';
+	}
+}
+
+if (!function_exists('is_cross_cutting_course_program')) {
+	function is_cross_cutting_course_program($type)
+	{
+		return normalize_course_program_type($type) === 'cross';
+	}
+}
+
+/** Chinese / Sport (and similar) are shared across RTB, REB, and Special. */
+if (!function_exists('is_known_cross_cutting_course')) {
+	function is_known_cross_cutting_course($title, $code = '')
+	{
+		$code = strtoupper(trim((string) $code));
+		$title = strtoupper(trim((string) $title));
+		if ($code !== '' && in_array($code, ['CHN', 'PES', 'PE', 'SPORT'], true)) {
+			return true;
+		}
+		if ($title === '') {
+			return false;
+		}
+		if (strpos($title, 'CHINESE') !== false) {
+			return true;
+		}
+		if (preg_match('/\bSPORT\b|PHYSICAL\s+EDUCATION|PHYSICA\s+EDUCATION/', $title)) {
+			return true;
+		}
+		return false;
 	}
 }
 

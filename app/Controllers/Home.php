@@ -5412,15 +5412,19 @@ public function attendanceCard()
 			$courseRow['program_type'] = $meta['program_type'];
 			$courseRow['create_source'] = $meta['create_source'];
 			if ($meta['program_type'] === 'holiday') {
-				$bucket = 'holiday';
+				$coursesGrouped['holiday'][] = $courseRow;
+			} elseif ($meta['program_type'] === 'cross') {
+				// Cross-cutting courses appear under RTB, REB, and Special.
+				$coursesGrouped['tvet'][] = $courseRow;
+				$coursesGrouped['reb'][] = $courseRow;
+				$coursesGrouped['special'][] = $courseRow;
 			} elseif ($meta['program_type'] === 'special') {
-				$bucket = 'special';
+				$coursesGrouped['special'][] = $courseRow;
 			} elseif ($meta['program_type'] === 'reb') {
-				$bucket = 'reb';
+				$coursesGrouped['reb'][] = $courseRow;
 			} else {
-				$bucket = 'tvet';
+				$coursesGrouped['tvet'][] = $courseRow;
 			}
-			$coursesGrouped[$bucket][] = $courseRow;
 		}
 		unset($courseRow);
 		if (!empty($coursesGrouped['holiday'])) {
@@ -5602,23 +5606,38 @@ public function attendanceCard()
 			return ['program_type' => 'holiday', 'create_source' => $source];
 		}
 
-		if ($code !== '' && isset($aiCodeMeta[$code])) {
-			$source = 'ai';
-			$program = ($aiCodeMeta[$code]['program_type'] === 'reb') ? 'reb' : 'tvet';
-		}
+		$knownCross = is_known_cross_cutting_course($course['title'] ?? '', $course['code'] ?? '')
+			|| is_known_cross_cutting_course($course['title'] ?? '', $code);
 
 		$cid = (int) ($course['id'] ?? 0);
+		$assignmentFacultyTypes = [];
 		if ($cid > 0 && isset($assignmentTypes[$cid])) {
-			$types = array_values(array_unique(array_map('intval', $assignmentTypes[$cid])));
-			if (in_array(3, $types, true) && !in_array(1, $types, true) && !in_array(2, $types, true)) {
-				$program = 'special';
-			} elseif (in_array(2, $types, true) && !in_array(1, $types, true) && !in_array(3, $types, true)) {
-				$program = 'reb';
-			} elseif (in_array(1, $types, true) && !in_array(2, $types, true) && !in_array(3, $types, true)) {
+			$assignmentFacultyTypes = array_values(array_unique(array_map('intval', $assignmentTypes[$cid])));
+			$assignmentFacultyTypes = array_values(array_filter($assignmentFacultyTypes, static function ($t) {
+				return in_array($t, [1, 2, 3], true);
+			}));
+		}
+		$spansPrograms = count($assignmentFacultyTypes) >= 2;
+
+		if ($knownCross || $program === 'cross' || $spansPrograms) {
+			$program = 'cross';
+		} else {
+			if ($code !== '' && isset($aiCodeMeta[$code])) {
+				$source = 'ai';
+				$program = ($aiCodeMeta[$code]['program_type'] === 'reb') ? 'reb' : 'tvet';
+			}
+
+			if ($assignmentFacultyTypes !== []) {
+				if (in_array(3, $assignmentFacultyTypes, true) && !in_array(1, $assignmentFacultyTypes, true) && !in_array(2, $assignmentFacultyTypes, true)) {
+					$program = 'special';
+				} elseif (in_array(2, $assignmentFacultyTypes, true) && !in_array(1, $assignmentFacultyTypes, true) && !in_array(3, $assignmentFacultyTypes, true)) {
+					$program = 'reb';
+				} elseif (in_array(1, $assignmentFacultyTypes, true) && !in_array(2, $assignmentFacultyTypes, true) && !in_array(3, $assignmentFacultyTypes, true)) {
+					$program = 'tvet';
+				}
+			} elseif ($source === 'manual' && $code !== '' && preg_match('/^(SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3}$/', $code)) {
 				$program = 'tvet';
 			}
-		} elseif ($source === 'manual' && $code !== '' && preg_match('/^(SWD|GEN|CCM|ICT)[A-Z]{0,6}\d{3}$/', $code)) {
-			$program = 'tvet';
 		}
 
 		if ($cid > 0 && ($source !== $storedSource || $program !== $storedProg)) {
