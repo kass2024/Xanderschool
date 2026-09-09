@@ -17141,7 +17141,7 @@ public function assign_card()
 				?: \App\Libraries\CardLayout::defaultAccent($cardTemplate),
 			'capitalize' => 1,
 			'footer_color' => $skData->vi_footer_color ?: $skData->footer_color,
-			'orientation' => 'portrait',
+			'orientation' => 'landscape',
 			'card_template' => $cardTemplate,
 			'card_layout' => $skData->vi_card_layout ?? null,
 			'card_badge' => 'VISITOR PASS',
@@ -17167,9 +17167,10 @@ public function assign_card()
 			$wkhtmltopdf = new Wkhtmltopdf(['path' => $tplDir]);
 			$wkhtmltopdf->setTitle('Visitor cards');
 			$wkhtmltopdf->setHtml($html);
-			$pageW = '54mm';
-			$pageH = '91.7mm';
-			$wkhtmltopdf->setOrientation('Portrait');
+			// Landscape CR80 matching visitor_pass_template.png (1011×638)
+			$pageW = '85.6mm';
+			$pageH = '54mm';
+			$wkhtmltopdf->setOrientation('Landscape');
 			$wkhtmltopdf->setOptions([
 				'enable-local-file-access' => null,
 				'disable-smart-shrinking' => null,
