@@ -21,7 +21,7 @@ class HeyStarSyncService
 		$ip = trim((string) $dev['device_ip']);
 		if (HeyStarClient::isPrivateIp($ip) && !self::phpOnSchoolLan()) {
 			HeyStarDeviceStore::requestStaffSync($schoolId);
-			$count = count(AttendanceScanService::staffList($schoolId));
+			$count = count(self::staffRoster($schoolId));
 			return [
 				'success' => 1,
 				'queued' => 1,
@@ -268,21 +268,39 @@ class HeyStarSyncService
 	}
 
 	/**
-	 * @return list<array{id:int,sn:string,name:string}>
+	 * HeyStar staff for one school only (never expands master→child campuses).
+	 *
+	 * @return list<array{id:int,sn:string,name:string,has_photo:int}>
 	 */
 	public static function staffRoster(int $schoolId): array
 	{
+		$schoolId = (int) $schoolId;
+		if ($schoolId <= 0) {
+			return [];
+		}
+		helper('qonics');
+		$db = \Config\Database::connect();
+		$rows = $db->table('staffs s')
+			->select('s.id, s.fname, s.lname, s.photo')
+			->where('s.school_id', $schoolId)
+			->where('s.status !=', 0)
+			->orderBy('s.fname', 'ASC')
+			->orderBy('s.lname', 'ASC')
+			->get()
+			->getResultArray();
 		$out = [];
-		foreach (AttendanceScanService::staffList($schoolId) as $p) {
+		foreach ($rows as $p) {
 			$id = (int) ($p['id'] ?? 0);
 			if ($id <= 0) {
 				continue;
 			}
+			$name = trim((string) ($p['fname'] ?? '') . ' ' . (string) ($p['lname'] ?? ''));
+			$cardPhoto = (string) AttendanceScanService::staffUploadedPhotoUrl($p['photo'] ?? null);
 			$out[] = [
 				'id' => $id,
 				'sn' => 'T' . $id,
-				'name' => self::safeName((string) ($p['name'] ?? '')),
-				'has_photo' => trim((string) ($p['card_photo'] ?? '')) !== '' ? 1 : 0,
+				'name' => self::safeName($name),
+				'has_photo' => $cardPhoto !== '' ? 1 : 0,
 			];
 		}
 		return $out;

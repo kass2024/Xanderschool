@@ -113,6 +113,48 @@ class HeyStarClient
 	}
 
 	/**
+	 * Delete people by work numbers (sn). Does not clear the whole device.
+	 *
+	 * @param list<string> $sns
+	 * @return array{ok:bool,error:string,raw:array<string,mixed>}
+	 */
+	public function deletePersons(string $deviceKey, array $sns): array
+	{
+		$deviceKey = trim($deviceKey);
+		$clean = [];
+		foreach ($sns as $sn) {
+			$sn = trim((string) $sn);
+			if ($sn !== '') {
+				$clean[$sn] = true;
+			}
+		}
+		$sns = array_keys($clean);
+		if ($deviceKey === '' || $sns === []) {
+			return ['ok' => false, 'error' => 'Missing device key or work numbers', 'raw' => []];
+		}
+		// Device LAN API expects work numbers in the `sn` field.
+		$res = $this->post('person/delete', [
+			'deviceKey' => $deviceKey,
+			'sn' => $sns,
+		], 30);
+		if ($this->ok($res)) {
+			return ['ok' => true, 'error' => '', 'raw' => $res];
+		}
+		$res2 = $this->post('person/delete', [
+			'deviceKey' => $deviceKey,
+			'sn' => implode(',', $sns),
+		], 30);
+		if ($this->ok($res2)) {
+			return ['ok' => true, 'error' => '', 'raw' => $res2];
+		}
+		return [
+			'ok' => false,
+			'error' => (string) ($res2['msg'] ?? $res['msg'] ?? 'person delete failed'),
+			'raw' => $res2 ?: $res,
+		];
+	}
+
+	/**
 	 * Show CLOCK IN/OUT on the live camera (LAN HTTP device/output type 4).
 	 */
 	public function announceClock(string $name, string $status): array
