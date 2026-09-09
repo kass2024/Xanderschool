@@ -4,8 +4,11 @@ namespace App\Services\Timetable;
 
 /**
  * Constraint-based timetable generator (aSc-style weekly grid).
- * Spreads weekly periods across days: 2h → two singles on different days;
- * 3h → 2+1; 4h+ → doubles of 2 where possible (never dump a 2h course on one day).
+ *
+ * Primary/Nursery: mostly one period per day (math may cluster).
+ * Secondary (O/A Level, RTB, Special): 2h → singles on different days;
+ * 3h+ → at least one adjacent double, with subject blocks on non-adjacent days
+ * (e.g. Mon+Wed, not Mon+Tue).
  */
 class TimetableGeneratorService
 {
@@ -55,7 +58,7 @@ class TimetableGeneratorService
 		if ($hours === 2) {
 			return [1, 1];
 		}
-		// Prefer one double + singles for odd counts (e.g. 3 → 2+1, 5 → 2+2+1).
+		// 3+ hours: prefer adjacent doubles (2+1, 2+2, 2+2+1, …).
 		$blocks = [];
 		$remaining = $hours;
 		while ($remaining >= 2) {
@@ -229,38 +232,25 @@ class TimetableGeneratorService
 		$courseId = (int) ($row['course_id'] ?? 0);
 		$subjectKey = $classId . ':' . $courseId;
 		$maxPerDay = $this->maxPerDayForCourse($row, $weeklyHours);
+		$occupiedDays = $this->subjectOccupiedDays($subjectKey);
+		$enforceGap = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupiedDays !== [];
 
-		$candidates = [];
-		$orderedDays = $this->days;
-		usort($orderedDays, function ($a, $b) use ($classId) {
-			$ua = (int) ($this->classDayUsage[$classId . ':' . $a] ?? 0);
-			$ub = (int) ($this->classDayUsage[$classId . ':' . $b] ?? 0);
-			if ($ua !== $ub) {
-				return $ua <=> $ub;
-			}
-			return (int) ($this->globalDayUsage[$a] ?? 0) <=> (int) ($this->globalDayUsage[$b] ?? 0);
-		});
-
-		foreach ($orderedDays as $day) {
-			$already = (int) ($this->subjectDayCount[$subjectKey . ':' . $day] ?? 0);
-			if ($already + $blockSize > $maxPerDay) {
-				continue;
-			}
-			for ($i = 0; $i < count($this->teachingSlots); $i++) {
-				if ($blockSize === 2 && $i + 1 >= count($this->teachingSlots)) {
-					continue;
-				}
-				$slotIds = $blockSize === 2
-					? [(int) $this->teachingSlots[$i]['id'], (int) $this->teachingSlots[$i + 1]['id']]
-					: [(int) $this->teachingSlots[$i]['id']];
-
-				if (!$this->slotsFree($classId, $staffId, $day, $slotIds)) {
-					continue;
-				}
-
-				$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $i, $weeklyHours);
-				$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
-			}
+		$candidates = $this->collectPlacementCandidates(
+			$row,
+			$blockSize,
+			$weeklyHours,
+			$maxPerDay,
+			$enforceGap
+		);
+		// Soft fallback if non-adjacent days are fully blocked.
+		if ($candidates === [] && $enforceGap) {
+			$candidates = $this->collectPlacementCandidates(
+				$row,
+				$blockSize,
+				$weeklyHours,
+				$maxPerDay,
+				false
+			);
 		}
 
 		if ($candidates === []) {
@@ -291,17 +281,93 @@ class TimetableGeneratorService
 		return $out;
 	}
 
-	private function scorePlacement(int $classId, int $staffId, int $courseId, int $day, int $slotIndex, int $weeklyHours = 0): int
-	{
+	/**
+	 * @return list<array{score:int,day:int,slot_ids:list<int>}>
+	 */
+	private function collectPlacementCandidates(
+		array $row,
+		int $blockSize,
+		int $weeklyHours,
+		int $maxPerDay,
+		bool $enforceNonAdjacentDays
+	): array {
+		$classId = (int) ($row['class_id'] ?? 0);
+		$staffId = (int) ($row['lecturer'] ?? 0);
+		$courseId = (int) ($row['course_id'] ?? 0);
+		$subjectKey = $classId . ':' . $courseId;
+		$occupiedDays = $this->subjectOccupiedDays($subjectKey);
+		$candidates = [];
+
+		$orderedDays = $this->days;
+		usort($orderedDays, function ($a, $b) use ($classId) {
+			$ua = (int) ($this->classDayUsage[$classId . ':' . $a] ?? 0);
+			$ub = (int) ($this->classDayUsage[$classId . ':' . $b] ?? 0);
+			if ($ua !== $ub) {
+				return $ua <=> $ub;
+			}
+			return (int) ($this->globalDayUsage[$a] ?? 0) <=> (int) ($this->globalDayUsage[$b] ?? 0);
+		});
+
+		foreach ($orderedDays as $day) {
+			$already = (int) ($this->subjectDayCount[$subjectKey . ':' . $day] ?? 0);
+			if ($already + $blockSize > $maxPerDay) {
+				continue;
+			}
+			if ($enforceNonAdjacentDays && $this->dayTouchesOccupiedDays($day, $occupiedDays)) {
+				continue;
+			}
+			for ($i = 0; $i < count($this->teachingSlots); $i++) {
+				if ($blockSize === 2) {
+					if ($i + 1 >= count($this->teachingSlots)) {
+						continue;
+					}
+					$slotA = (int) $this->teachingSlots[$i]['id'];
+					$slotB = (int) $this->teachingSlots[$i + 1]['id'];
+					if (!$this->slotsTemporallyAdjacent($slotA, $slotB)) {
+						continue;
+					}
+					$slotIds = [$slotA, $slotB];
+				} else {
+					$slotIds = [(int) $this->teachingSlots[$i]['id']];
+				}
+
+				if (!$this->slotsFree($classId, $staffId, $day, $slotIds)) {
+					continue;
+				}
+
+				$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $i, $weeklyHours, $row);
+				$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
+			}
+		}
+
+		return $candidates;
+	}
+
+	private function scorePlacement(
+		int $classId,
+		int $staffId,
+		int $courseId,
+		int $day,
+		int $slotIndex,
+		int $weeklyHours = 0,
+		array $row = []
+	): int {
 		$score = (int) ($this->classDayUsage[$classId . ':' . $day] ?? 0) * 80;
 		$score += (int) ($this->globalDayUsage[$day] ?? 0) * 15;
 		$score += $slotIndex;
 
 		$subjectKey = $classId . ':' . $courseId;
 		$sameDayPenalty = ($weeklyHours > 0 && $weeklyHours <= 2) ? 200 : 40;
-		foreach ($this->days as $d) {
-			if ((int) ($this->subjectDayCount[$subjectKey . ':' . $d] ?? 0) > 0) {
-				$score += ($d === $day) ? $sameDayPenalty : -5;
+		$occupied = $this->subjectOccupiedDays($subjectKey);
+		foreach ($occupied as $d) {
+			if ($d === $day) {
+				$score += $sameDayPenalty;
+				continue;
+			}
+			$score -= 5;
+			if ($this->requiresNonAdjacentDays($row, $weeklyHours) && $this->isCalendarAdjacentDay($day, $d)) {
+				// Strongly prefer gap days (Mon↔Wed) over neighbour days (Mon↔Tue).
+				$score += 500;
 			}
 		}
 
@@ -310,31 +376,14 @@ class TimetableGeneratorService
 
 	private function countPlacementCandidates(array $row, int $blockSize, int $weeklyHours = 0): int
 	{
-		$classId = (int) ($row['class_id'] ?? 0);
-		$staffId = (int) ($row['lecturer'] ?? 0);
-		$courseId = (int) ($row['course_id'] ?? 0);
-		$subjectKey = $classId . ':' . $courseId;
 		$maxPerDay = $this->maxPerDayForCourse($row, $weeklyHours);
-		$count = 0;
-
-		foreach ($this->days as $day) {
-			$already = (int) ($this->subjectDayCount[$subjectKey . ':' . $day] ?? 0);
-			if ($already + $blockSize > $maxPerDay) {
-				continue;
-			}
-			for ($i = 0; $i < count($this->teachingSlots); $i++) {
-				if ($blockSize === 2 && $i + 1 >= count($this->teachingSlots)) {
-					continue;
-				}
-				$slotIds = $blockSize === 2
-					? [(int) $this->teachingSlots[$i]['id'], (int) $this->teachingSlots[$i + 1]['id']]
-					: [(int) $this->teachingSlots[$i]['id']];
-				if ($this->slotsFree($classId, $staffId, $day, $slotIds)) {
-					$count++;
-				}
-			}
+		$subjectKey = (int) ($row['class_id'] ?? 0) . ':' . (int) ($row['course_id'] ?? 0);
+		$occupied = $this->subjectOccupiedDays($subjectKey);
+		$enforce = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupied !== [];
+		$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce));
+		if ($count === 0 && $enforce) {
+			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, false));
 		}
-
 		return $count;
 	}
 
@@ -410,6 +459,18 @@ class TimetableGeneratorService
 		return $aStart < $bEnd && $bStart < $aEnd;
 	}
 
+	/** True when two teaching slots touch in clock time (no break/lunch between). */
+	private function slotsTemporallyAdjacent(int $slotA, int $slotB): bool
+	{
+		$a = $this->slotTimeRange($slotA);
+		$b = $this->slotTimeRange($slotB);
+		if ($a === null || $b === null) {
+			return true;
+		}
+		// Allow tiny gaps (bell change) but reject lunch/break gaps.
+		return abs($a['end'] - $b['start']) <= 5 || abs($b['end'] - $a['start']) <= 5;
+	}
+
 	private function busyKey(int $classId, int $day, int $slotId): string
 	{
 		return 'c' . $classId . 'd' . $day . 's' . $slotId;
@@ -446,6 +507,40 @@ class TimetableGeneratorService
 			return false;
 		}
 		return !$this->isMathematicsCourse((string) ($row['course_title'] ?? ''));
+	}
+
+	/** Secondary classes with 3+ weekly periods: doubles + non-adjacent days. */
+	private function requiresNonAdjacentDays(array $row, int $weeklyHours): bool
+	{
+		return !$this->isPrimaryOrNursery($row) && $weeklyHours >= 3;
+	}
+
+	/** @return list<int> */
+	private function subjectOccupiedDays(string $subjectKey): array
+	{
+		$out = [];
+		foreach ($this->days as $day) {
+			if ((int) ($this->subjectDayCount[$subjectKey . ':' . $day] ?? 0) > 0) {
+				$out[] = (int) $day;
+			}
+		}
+		return $out;
+	}
+
+	/** @param list<int> $occupied */
+	private function dayTouchesOccupiedDays(int $day, array $occupied): bool
+	{
+		foreach ($occupied as $od) {
+			if ((int) $od === $day || $this->isCalendarAdjacentDay($day, (int) $od)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private function isCalendarAdjacentDay(int $a, int $b): bool
+	{
+		return abs($a - $b) === 1;
 	}
 
 	private function isPrimaryOrNursery(array $row): bool
