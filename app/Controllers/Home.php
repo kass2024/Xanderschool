@@ -17251,6 +17251,25 @@ public function assign_card()
 			while (ob_get_level() > 0) {
 				ob_end_clean();
 			}
+
+			// Prefer flat JPEG pages for DataCard printers (template + text baked in).
+			// Layered wkhtml HTML often drops the background artwork on plastic printers.
+			if (\App\Libraries\VisitorCardRenderer::isAvailable()) {
+				$renderer = new \App\Libraries\VisitorCardRenderer();
+				$jpegs = [];
+				foreach ($visitors as $visitor) {
+					$jpeg = $renderer->renderJpeg($visitor);
+					if (is_string($jpeg) && strlen($jpeg) > 100) {
+						$jpegs[] = $jpeg;
+					}
+				}
+				if (count($jpegs) > 0) {
+					$pdf = \App\Libraries\Cr80ImagePdf::fromJpegs($jpegs);
+					\App\Libraries\Cr80ImagePdf::stream($pdf, 'visitor_cards_' . time() . '.pdf');
+					return;
+				}
+			}
+
 			$html = view('templates/visitor_card_smart', $data);
 			$tplDir = FCPATH . 'assets/templates/';
 			$imgDir = $tplDir . '_card_img';
