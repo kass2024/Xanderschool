@@ -3874,9 +3874,11 @@ public function permission_card_scan()
 		$matches = $visitorMdl->findByCard($schoolId, $cardRaw);
 		if (empty($matches)) {
 			return [
+				'kind' => 'visitor',
 				'allowed' => false,
-				'success' => false,
+				'success' => 0,
 				'error' => 'No visitor registered for this card.',
+				'message' => 'No visitor registered for this card.',
 				'card' => $card,
 				'card_tried' => card_uid_lookup_variants($cardRaw),
 			];
@@ -3894,9 +3896,11 @@ public function permission_card_scan()
 
 		if (empty($activeVisitors) && $firstInactive) {
 			return [
+				'kind' => 'visitor',
 				'allowed' => false,
-				'success' => false,
+				'success' => 0,
 				'error' => 'Visitor is inactive and cannot visit.',
+				'message' => 'Visitor is inactive and cannot visit.',
 				'visitor' => [
 					'id' => (int) $firstInactive['id'],
 					'names' => $firstInactive['names'],
@@ -3906,7 +3910,12 @@ public function permission_card_scan()
 			];
 		}
 
-		$resolvedGroup = $visitorMdl->expandSharedVisitGroup($schoolId, $activeVisitors);
+		$resolvedGroup = ['student_ids' => [], 'visitors' => $activeVisitors];
+		// expandSharedVisitGroup loads the whole school — too slow for kiosk/Android.
+		// Keep sibling expansion on interactive web verify only.
+		if (!in_array(strtolower((string) $source), ['android', 'device', 'kiosk'], true)) {
+			$resolvedGroup = $visitorMdl->expandSharedVisitGroup($schoolId, $activeVisitors);
+		}
 		$studentIds = [];
 		foreach (($resolvedGroup['student_ids'] ?? []) as $studentId) {
 			$studentId = (int) $studentId;
@@ -3926,7 +3935,7 @@ public function permission_card_scan()
 		$studentRows = [];
 		if (!empty($studentIds)) {
 			$studentRows = $db->table('students s')
-				->select("s.id, s.status, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
+				->select("s.id, s.status, s.photo, CONCAT(s.fname, ' ', s.lname) AS name, s.regno,
 					CONCAT(l.title, ' ', d.code, ' ', c.title) AS class")
 				->join('class_records cr', 'cr.student = s.id', 'left')
 				->join('classes c', 'c.id = cr.class', 'left')
@@ -3960,9 +3969,11 @@ public function permission_card_scan()
 
 		if (empty($validVisitors)) {
 			return [
+				'kind' => 'visitor',
 				'allowed' => false,
-				'success' => false,
+				'success' => 0,
 				'error' => 'Student no longer exists. Visitor card and records were removed.',
+				'message' => 'Student no longer exists. Visitor card and records were removed.',
 				'card' => $card,
 			];
 		}
@@ -3997,16 +4008,22 @@ public function permission_card_scan()
 				$primaryVisitor = $formattedVisitors[(int) $visitor['id']];
 			}
 		}
+		$photoBase = rtrim(base_url(), '/') . '/';
 		foreach ($studentIds as $studentId) {
 			if (!isset($studentsById[$studentId]) || isset($formattedStudents[$studentId])) {
 				continue;
 			}
 			$student = $studentsById[$studentId];
+			$photo = trim((string) ($student['photo'] ?? ''));
+			if ($photo !== '' && strpos($photo, 'http') !== 0) {
+				$photo = $photoBase . ltrim($photo, '/');
+			}
 			$formattedStudents[$studentId] = [
 				'id' => $studentId,
 				'name' => $student['name'] ?? '',
 				'regno' => $student['regno'] ?? '',
 				'class' => $student['class'] ?? '',
+				'photo' => $photo,
 			];
 			if ($primaryStudent === null) {
 				$primaryStudent = $formattedStudents[$studentId];
@@ -4048,12 +4065,13 @@ public function permission_card_scan()
 				? "Visit OUT recorded for {$visitorCount} allowed visitor(s) linked to {$studentCount} student(s)."
 				: "Visit IN recorded for {$visitorCount} allowed visitor(s) linked to {$studentCount} student(s).");
 		if ($tooSoon) {
-			$message .= ' Some visitor records were already checked IN.';
+			$message .= ' Already checked IN.';
 		}
 
 		return [
+			'kind' => 'visitor',
 			'allowed' => true,
-			'success' => true,
+			'success' => 1,
 			'action' => $action,
 			'too_soon' => $tooSoon,
 			'message' => $message,

@@ -255,35 +255,17 @@ class TimetableGeneratorService
 		$occupiedDays = $this->subjectOccupiedDays($subjectKey);
 		$enforceGap = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupiedDays !== [];
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
+		$windows = $peSport ? [3, 4, 6, 0] : [0];
 
-		$candidates = $this->collectPlacementCandidates(
-			$row,
-			$blockSize,
-			$weeklyHours,
-			$maxPerDay,
-			$enforceGap,
-			$peSport
-		);
-		// Soft fallback if non-adjacent days are fully blocked.
-		if ($candidates === [] && $enforceGap) {
-			$candidates = $this->collectPlacementCandidates(
-				$row,
-				$blockSize,
-				$weeklyHours,
-				$maxPerDay,
-				false,
-				$peSport
-			);
-		}
-		// PE: if end-of-day slots are taken, allow earlier slots as last resort.
-		if ($candidates === [] && $peSport) {
+		$candidates = [];
+		foreach ($windows as $window) {
 			$candidates = $this->collectPlacementCandidates(
 				$row,
 				$blockSize,
 				$weeklyHours,
 				$maxPerDay,
 				$enforceGap,
-				false
+				$window
 			);
 			if ($candidates === [] && $enforceGap) {
 				$candidates = $this->collectPlacementCandidates(
@@ -292,8 +274,11 @@ class TimetableGeneratorService
 					$weeklyHours,
 					$maxPerDay,
 					false,
-					false
+					$window
 				);
+			}
+			if ($candidates !== []) {
+				break;
 			}
 		}
 
@@ -326,6 +311,7 @@ class TimetableGeneratorService
 	}
 
 	/**
+	 * @param int $endOfDayWindow 0 = any slot; N = only last N teaching periods
 	 * @return list<array{score:int,day:int,slot_ids:list<int>}>
 	 */
 	private function collectPlacementCandidates(
@@ -334,7 +320,7 @@ class TimetableGeneratorService
 		int $weeklyHours,
 		int $maxPerDay,
 		bool $enforceNonAdjacentDays,
-		bool $endOfDayOnly = false
+		int $endOfDayWindow = 0
 	): array {
 		$classId = (int) ($row['class_id'] ?? 0);
 		$staffId = (int) ($row['lecturer'] ?? 0);
@@ -344,8 +330,11 @@ class TimetableGeneratorService
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$candidates = [];
 		$slotCount = count($this->teachingSlots);
-		// Last teaching periods of the day (after lunch on secondary grids).
-		$lateStartIndex = $slotCount > 0 ? max(0, $slotCount - 3) : 0;
+		$reserveLate = $slotCount > 0 ? max(0, $slotCount - 3) : 0;
+		$lateStartIndex = 0;
+		if ($endOfDayWindow > 0 && $slotCount > 0) {
+			$lateStartIndex = max(0, $slotCount - max($endOfDayWindow, $blockSize));
+		}
 
 		$orderedDays = $this->days;
 		usort($orderedDays, function ($a, $b) use ($classId) {
@@ -366,14 +355,12 @@ class TimetableGeneratorService
 				continue;
 			}
 			for ($i = 0; $i < $slotCount; $i++) {
-				if ($endOfDayOnly && $i < $lateStartIndex) {
+				if ($endOfDayWindow > 0 && $i < $lateStartIndex) {
 					continue;
 				}
 				if ($blockSize === 2) {
-					// Prefer consecutive teaching slots; also allow any clock-adjacent pair
-					// (e.g. across a short tea break) so doubles still form.
 					for ($j = $i + 1; $j < $slotCount; $j++) {
-						if ($endOfDayOnly && $j < $lateStartIndex) {
+						if ($endOfDayWindow > 0 && $j < $lateStartIndex) {
 							continue;
 						}
 						$slotA = (int) $this->teachingSlots[$i]['id'];
@@ -386,15 +373,13 @@ class TimetableGeneratorService
 							continue;
 						}
 						$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $j, $weeklyHours, $row);
-						// Slightly prefer true back-to-back over short-break doubles.
 						if ($j !== $i + 1) {
 							$score += 15;
 						}
 						if ($peSport) {
-							$score += ($slotCount - 1 - $j) * 600;
-						} elseif ($j >= $lateStartIndex) {
-							// Keep end-of-day slots freer for PE/Sport.
-							$score += 180;
+							$score += ($slotCount - 1 - $j) * 800;
+						} elseif ($j >= $reserveLate) {
+							$score += 900;
 						}
 						$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
 					}
@@ -408,9 +393,9 @@ class TimetableGeneratorService
 
 				$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $i, $weeklyHours, $row);
 				if ($peSport) {
-					$score += ($slotCount - 1 - $i) * 600;
-				} elseif ($i >= $lateStartIndex) {
-					$score += 180;
+					$score += ($slotCount - 1 - $i) * 800;
+				} elseif ($i >= $reserveLate) {
+					$score += 900;
 				}
 				$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
 			}
@@ -475,17 +460,17 @@ class TimetableGeneratorService
 		$occupied = $this->subjectOccupiedDays($subjectKey);
 		$enforce = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupied !== [];
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
-		$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $peSport));
-		if ($count === 0 && $peSport) {
-			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, false));
-		}
-		if ($count === 0 && $enforce) {
-			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, false, $peSport));
-			if ($count === 0 && $peSport) {
-				$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, false, false));
+		$windows = $peSport ? [3, 4, 6, 0] : [0];
+		foreach ($windows as $window) {
+			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $window));
+			if ($count === 0 && $enforce) {
+				$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, false, $window));
+			}
+			if ($count > 0) {
+				return $count;
 			}
 		}
-		return $count;
+		return 0;
 	}
 
 	/** @param list<int> $slotIds */

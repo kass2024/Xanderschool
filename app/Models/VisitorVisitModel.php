@@ -24,8 +24,7 @@ class VisitorVisitModel extends Model
 	protected $useTimestamps = true;
 
 	/**
-	 * Record visit IN or OUT for today (toggle like attendance).
-	 * Returns result array with action, visit, message.
+	 * One IN per visitor per day. Later taps set/overwrite OUT (not a second IN).
 	 *
 	 * @param array $visitor Row with at least id, student_id, names, card, status
 	 * @param int $schoolId
@@ -43,64 +42,64 @@ class VisitorVisitModel extends Model
 		$now = time();
 		$today = date('Y-m-d', $now);
 
-		$open = $this->where('school_id', $schoolId)
+		// Any visit row for this visitor today (open or already checked out).
+		$todayVisit = $this->where('school_id', $schoolId)
 			->where('visitor_id', $visitorId)
 			->where('visit_date', $today)
-			->where('time_out', 0)
 			->orderBy('id', 'DESC')
 			->first();
 
-		if ($open) {
-			// Require at least 2 minutes between IN and OUT to avoid double-scan
-			$timeIn = (int) ($open['time_in'] ?? 0);
-			if ($timeIn > 0 && ($now - $timeIn) < 120) {
-				return [
-					'success' => true,
-					'action' => 'in',
-					'too_soon' => true,
-					'visit' => $open,
-					'message' => 'Already checked IN. Wait a moment before OUT.',
-				];
-			}
-
-			$this->save([
-				'id' => (int) $open['id'],
-				'time_out' => $now,
-				'updated_at' => date('Y-m-d H:i:s'),
+		if (!$todayVisit) {
+			$id = $this->insert([
+				'school_id' => $schoolId,
+				'visitor_id' => $visitorId,
+				'student_id' => $studentId,
+				'card' => $card,
+				'visit_date' => $today,
+				'time_in' => $now,
+				'time_out' => 0,
+				'source' => $source,
+				'operator' => $operator,
+				'notes' => $notes,
 			]);
 
-			$visit = $this->find((int) $open['id']);
+			$visit = $this->find($id);
 
 			return [
 				'success' => true,
-				'action' => 'out',
+				'action' => 'in',
 				'too_soon' => false,
 				'visit' => $visit,
-				'message' => 'Visit OUT recorded.',
+				'message' => 'Visit IN recorded.',
 			];
 		}
 
-		$id = $this->insert([
-			'school_id' => $schoolId,
-			'visitor_id' => $visitorId,
-			'student_id' => $studentId,
-			'card' => $card,
-			'visit_date' => $today,
-			'time_in' => $now,
-			'time_out' => 0,
-			'source' => $source,
-			'operator' => $operator,
-			'notes' => $notes,
+		$timeIn = (int) ($todayVisit['time_in'] ?? 0);
+		// Short debounce only — avoid flipping IN→OUT on the same double-tap.
+		if ($timeIn > 0 && (int) ($todayVisit['time_out'] ?? 0) === 0 && ($now - $timeIn) < 3) {
+			return [
+				'success' => true,
+				'action' => 'in',
+				'too_soon' => true,
+				'visit' => $todayVisit,
+				'message' => 'Already checked IN.',
+			];
+		}
+
+		$this->save([
+			'id' => (int) $todayVisit['id'],
+			'time_out' => $now,
+			'updated_at' => date('Y-m-d H:i:s'),
 		]);
 
-		$visit = $this->find($id);
+		$visit = $this->find((int) $todayVisit['id']);
 
 		return [
 			'success' => true,
-			'action' => 'in',
+			'action' => 'out',
 			'too_soon' => false,
 			'visit' => $visit,
-			'message' => 'Visit IN recorded.',
+			'message' => 'Visit OUT recorded.',
 		];
 	}
 }
