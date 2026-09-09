@@ -318,19 +318,29 @@ class TimetableGeneratorService
 			}
 			for ($i = 0; $i < count($this->teachingSlots); $i++) {
 				if ($blockSize === 2) {
-					if ($i + 1 >= count($this->teachingSlots)) {
-						continue;
+					// Prefer consecutive teaching slots; also allow any clock-adjacent pair
+					// (e.g. across a short tea break) so doubles still form.
+					for ($j = $i + 1; $j < count($this->teachingSlots); $j++) {
+						$slotA = (int) $this->teachingSlots[$i]['id'];
+						$slotB = (int) $this->teachingSlots[$j]['id'];
+						if (!$this->slotsTemporallyAdjacent($slotA, $slotB)) {
+							continue;
+						}
+						$slotIds = [$slotA, $slotB];
+						if (!$this->slotsFree($classId, $staffId, $day, $slotIds)) {
+							continue;
+						}
+						$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $i, $weeklyHours, $row);
+						// Slightly prefer true back-to-back over short-break doubles.
+						if ($j !== $i + 1) {
+							$score += 15;
+						}
+						$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
 					}
-					$slotA = (int) $this->teachingSlots[$i]['id'];
-					$slotB = (int) $this->teachingSlots[$i + 1]['id'];
-					if (!$this->slotsTemporallyAdjacent($slotA, $slotB)) {
-						continue;
-					}
-					$slotIds = [$slotA, $slotB];
-				} else {
-					$slotIds = [(int) $this->teachingSlots[$i]['id']];
+					continue;
 				}
 
+				$slotIds = [(int) $this->teachingSlots[$i]['id']];
 				if (!$this->slotsFree($classId, $staffId, $day, $slotIds)) {
 					continue;
 				}
@@ -359,15 +369,23 @@ class TimetableGeneratorService
 		$subjectKey = $classId . ':' . $courseId;
 		$sameDayPenalty = ($weeklyHours > 0 && $weeklyHours <= 2) ? 200 : 40;
 		$occupied = $this->subjectOccupiedDays($subjectKey);
+		$gapCourse = $this->requiresNonAdjacentDays($row, $weeklyHours);
+
+		// Anchor multi-hour secondary courses on Mon/Wed/Fri so later blocks can gap.
+		if ($gapCourse && $occupied === []) {
+			$score += in_array($day, [0, 2, 4], true) ? -70 : 55;
+		}
+
 		foreach ($occupied as $d) {
 			if ($d === $day) {
 				$score += $sameDayPenalty;
 				continue;
 			}
-			$score -= 5;
-			if ($this->requiresNonAdjacentDays($row, $weeklyHours) && $this->isCalendarAdjacentDay($day, $d)) {
+			$dist = abs($day - (int) $d);
+			$score -= min(30, $dist * 10);
+			if ($gapCourse && $dist === 1) {
 				// Strongly prefer gap days (Mon↔Wed) over neighbour days (Mon↔Tue).
-				$score += 500;
+				$score += 5000;
 			}
 		}
 
@@ -459,7 +477,10 @@ class TimetableGeneratorService
 		return $aStart < $bEnd && $bStart < $aEnd;
 	}
 
-	/** True when two teaching slots touch in clock time (no break/lunch between). */
+	/**
+	 * True when two teaching slots form a usable double.
+	 * Allows short changeover/tea break (<=25 min) but not lunch (>=45 min).
+	 */
 	private function slotsTemporallyAdjacent(int $slotA, int $slotB): bool
 	{
 		$a = $this->slotTimeRange($slotA);
@@ -467,8 +488,8 @@ class TimetableGeneratorService
 		if ($a === null || $b === null) {
 			return true;
 		}
-		// Allow tiny gaps (bell change) but reject lunch/break gaps.
-		return abs($a['end'] - $b['start']) <= 5 || abs($b['end'] - $a['start']) <= 5;
+		$gap = min(abs($a['end'] - $b['start']), abs($b['end'] - $a['start']));
+		return $gap <= 25;
 	}
 
 	private function busyKey(int $classId, int $day, int $slotId): string
