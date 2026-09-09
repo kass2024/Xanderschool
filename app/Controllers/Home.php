@@ -8222,13 +8222,55 @@ public function attendanceCard()
 
 		try {
 			$CourseRecordModel->save($data);
+			$regen = $this->queueTimetableRegenAfterAssignmentChange('course_assignment_saved');
 
 			return $this->response->setJSON([
 				"success" => lang("app.courseAssignedSuccess"),
 				"course_id" => (int) $course,
+				"timetable_regen" => $regen,
 			]);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(["error" => "Error: " . $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * After course assign/unassign/teacher change, queue background timetable regen.
+	 *
+	 * @return array<string,mixed>
+	 */
+	protected function queueTimetableRegenAfterAssignmentChange(string $reason = 'course_assignment_changed'): array
+	{
+		try {
+			$schoolId = (int) ($this->session->get('soma_school_id') ?? 0);
+			$staffId = (int) ($this->session->get('soma_id') ?? 0);
+			$year = (int) ($this->data['academic_year'] ?? $this->session->get('soma_academics_year') ?? 0);
+			$term = (int) ($this->data['term'] ?? 0);
+			if ($schoolId <= 0) {
+				return ['skipped' => true, 'reason' => 'no_school'];
+			}
+			if ($year <= 0 || $term <= 0) {
+				$db = \Config\Database::connect();
+				$active = $db->table('schools s')
+					->select('at.academic_year, at.term')
+					->join('active_term at', 'at.id = s.active_term', 'left')
+					->where('s.id', $schoolId)
+					->get(1)->getRowArray();
+				if ($year <= 0) {
+					$year = (int) ($active['academic_year'] ?? 0);
+				}
+				if ($term <= 0) {
+					$term = (int) ($active['term'] ?? 0);
+				}
+			}
+			if ($year <= 0 || $term <= 0) {
+				return ['skipped' => true, 'reason' => 'no_active_term'];
+			}
+			$ctl = new TimetableManagement();
+			return $ctl->queueBackgroundGeneration($schoolId, $staffId, $year, $term, $reason, false);
+		} catch (\Throwable $e) {
+			log_message('error', 'queueTimetableRegenAfterAssignmentChange failed: {msg}', ['msg' => $e->getMessage()]);
+			return ['error' => $e->getMessage()];
 		}
 	}
 
@@ -8563,8 +8605,12 @@ public function attendanceCard()
 //				return $this->response->setJSON(array("error" => "Error: This record has marks, can not be deleted"));
 //			}
 			$CourseRecordModel->delete($id);
+			$regen = $this->queueTimetableRegenAfterAssignmentChange('course_assignment_deleted');
 
-			return $this->response->setJSON(array("success" => lang("app.recordDeleted")));
+			return $this->response->setJSON([
+				"success" => lang("app.recordDeleted"),
+				"timetable_regen" => $regen,
+			]);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}

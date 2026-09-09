@@ -47,7 +47,11 @@ class TimetableManagement extends Home
 
 		$year = (int) ($data['academic_year'] ?? 0);
 		$term = (int) ($data['term'] ?? 1);
+		if ($this->isTimetableStale($schoolId, $year, $term)) {
+			$this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'dashboard_stale', false);
+		}
 		$data['active_generation_job'] = $this->findExistingTimetableJob($schoolId, $year, $term);
+		$data['timetable_stale'] = $this->isTimetableStale($schoolId, $year, $term);
 
 		$data['classes'] = $this->fetchClassRows($db, $schoolId);
 
@@ -381,22 +385,55 @@ class TimetableManagement extends Home
 		if ($this->countAssignments($schoolId, $year, $term) <= 0) {
 			return $this->response->setJSON(['error' => 'No course assignments found. Assign courses to classes first.']);
 		}
+		$result = $this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'manual', $useGemini);
+		if (!empty($result['error']) && empty($result['queued']) && empty($result['job_id'])) {
+			return $this->response->setJSON(['error' => $result['error']]);
+		}
+		return $this->response->setJSON($result);
+	}
+
+	/**
+	 * Queue (or reuse) a background timetable regeneration for a school/year/term.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function queueBackgroundGeneration(
+		int $schoolId,
+		int $staffId,
+		int $year,
+		int $term,
+		string $reason = 'manual',
+		bool $useGemini = false
+	): array {
+		if ($schoolId <= 0 || $year <= 0 || $term <= 0) {
+			return ['error' => 'Invalid school/year/term for timetable regeneration.'];
+		}
+		(new TimetableSchemaModel())->ensureSchema();
+		$this->markTimetableDirty($schoolId, $year, $term);
+
+		if ($this->countAssignments($schoolId, $year, $term) <= 0) {
+			return ['error' => 'No course assignments found. Assign courses to classes first.'];
+		}
+
 		$existing = $this->findExistingTimetableJob($schoolId, $year, $term);
 		if (is_array($existing) && in_array((string) ($existing['status'] ?? ''), ['queued', 'running'], true)) {
-			return $this->response->setJSON([
+			return [
 				'queued' => true,
 				'job_id' => $existing['id'],
 				'status' => $existing['status'],
 				'message' => $existing['message'] ?? 'Timetable generation is already running.',
-			]);
+				'reason' => $reason,
+			];
 		}
 
 		$jobId = $this->createTimetableJob([
 			'school_id' => $schoolId,
-			'staff_id' => $staffId,
+			'staff_id' => $staffId > 0 ? $staffId : 0,
 			'academic_year' => $year,
 			'term' => $term,
 			'use_gemini' => $useGemini ? 1 : 0,
+			'reason' => $reason,
+			'message' => 'Queued after ' . $reason . '.',
 		]);
 		$spawn = $this->spawnTimetableWorker($jobId);
 		if (empty($spawn['started'])) {
@@ -405,15 +442,163 @@ class TimetableManagement extends Home
 				'message' => $spawn['error'] ?? 'Could not start timetable worker.',
 				'finished_at' => date('Y-m-d H:i:s'),
 			]);
-			return $this->response->setJSON(['error' => 'Could not start timetable background worker.']);
+			return ['error' => 'Could not start timetable background worker.', 'job_id' => $jobId];
 		}
 
-		return $this->response->setJSON([
+		return [
 			'queued' => true,
 			'job_id' => $jobId,
 			'status' => 'queued',
 			'message' => 'Timetable generation started in the background.',
-		]);
+			'reason' => $reason,
+		];
+	}
+
+	public function markTimetableDirty(int $schoolId, int $year, int $term): void
+	{
+		if ($schoolId <= 0 || $year <= 0 || $term <= 0) {
+			return;
+		}
+		try {
+			$db = \Config\Database::connect();
+			(new TimetableSchemaModel())->ensureSchema();
+			$existing = $db->table('timetable_schedules')
+				->where('school_id', $schoolId)
+				->where('academic_year', $year)
+				->where('term', $term)
+				->orderBy('id', 'DESC')
+				->get(1)->getRowArray();
+			if ($existing) {
+				$db->table('timetable_schedules')->where('id', (int) $existing['id'])->update([
+					'needs_regen' => 1,
+				]);
+			}
+		} catch (\Throwable $e) {
+			log_message('error', 'markTimetableDirty failed: {msg}', ['msg' => $e->getMessage()]);
+		}
+	}
+
+	public function assignmentsFingerprint(int $schoolId, int $year, int $term): string
+	{
+		$db = \Config\Database::connect();
+		$rows = $db->table('course_records cr')
+			->select('cr.id, cr.course, cr.class, cr.lecturer, cr.term, COALESCE(c.credit,0) AS credit')
+			->join('courses c', 'c.id = cr.course', 'left')
+			->join('classes cl', 'cl.id = cr.class')
+			->where('cl.school_id', $schoolId)
+			->where('cr.year', $year)
+			->where("find_in_set($term, cr.term) > 0", null, false)
+			->orderBy('cr.id', 'ASC')
+			->get()->getResultArray();
+		$parts = [];
+		foreach ($rows as $row) {
+			$parts[] = implode(':', [
+				(int) ($row['id'] ?? 0),
+				(int) ($row['course'] ?? 0),
+				(int) ($row['class'] ?? 0),
+				(int) ($row['lecturer'] ?? 0),
+				trim((string) ($row['term'] ?? '')),
+				(string) ($row['credit'] ?? '0'),
+			]);
+		}
+		return hash('sha256', implode('|', $parts));
+	}
+
+	public function isTimetableStale(int $schoolId, int $year, int $term): bool
+	{
+		if ($schoolId <= 0 || $year <= 0 || $term <= 0) {
+			return false;
+		}
+		if ($this->countAssignments($schoolId, $year, $term) <= 0) {
+			return false;
+		}
+		$db = \Config\Database::connect();
+		$schedule = $db->table('timetable_schedules')
+			->where('school_id', $schoolId)
+			->where('academic_year', $year)
+			->where('term', $term)
+			->orderBy('id', 'DESC')
+			->get(1)->getRowArray();
+		if (!$schedule) {
+			return true;
+		}
+		if (!empty($schedule['needs_regen'])) {
+			return true;
+		}
+		$current = $this->assignmentsFingerprint($schoolId, $year, $term);
+		$stored = trim((string) ($schedule['assignments_hash'] ?? ''));
+		return $stored === '' || !hash_equals($stored, $current);
+	}
+
+	/**
+	 * Cron / CLI: queue regeneration for schools whose assignments changed.
+	 *
+	 * @return array{queued:int,skipped:int,schools:list<array<string,mixed>>}
+	 */
+	public function autoRegenerateStaleSchools(?int $onlySchoolId = null): array
+	{
+		$db = \Config\Database::connect();
+		(new TimetableSchemaModel())->ensureSchema();
+		$builder = $db->table('schools s')
+			->select('s.id AS school_id, at.academic_year, at.term, s.active_term')
+			->join('active_term at', 'at.id = s.active_term', 'inner')
+			->where('s.status', 1)
+			->where('at.academic_year >', 0)
+			->where('at.term >', 0);
+		if ($onlySchoolId !== null && $onlySchoolId > 0) {
+			$builder->where('s.id', $onlySchoolId);
+		}
+		$schools = $builder->get()->getResultArray();
+		$queued = 0;
+		$skipped = 0;
+		$details = [];
+		foreach ($schools as $row) {
+			$schoolId = (int) ($row['school_id'] ?? 0);
+			$year = (int) ($row['academic_year'] ?? 0);
+			$term = (int) ($row['term'] ?? 0);
+			if ($schoolId <= 0 || $year <= 0 || $term <= 0) {
+				$skipped++;
+				continue;
+			}
+			if (!$this->isTimetableStale($schoolId, $year, $term)) {
+				$skipped++;
+				continue;
+			}
+			$result = $this->queueBackgroundGeneration($schoolId, 0, $year, $term, 'cron_auto_regen', false);
+			$details[] = [
+				'school_id' => $schoolId,
+				'year' => $year,
+				'term' => $term,
+				'result' => $result,
+			];
+			if (!empty($result['queued']) || !empty($result['job_id'])) {
+				$queued++;
+			} else {
+				$skipped++;
+			}
+		}
+		$this->respawnOrphanQueuedJobs();
+		return ['queued' => $queued, 'skipped' => $skipped, 'schools' => $details];
+	}
+
+	/** Re-spawn jobs left in queued state (worker spawn may have failed). */
+	private function respawnOrphanQueuedJobs(): void
+	{
+		foreach (glob($this->timetableJobDir() . DIRECTORY_SEPARATOR . '*.json') ?: [] as $file) {
+			$data = json_decode((string) @file_get_contents($file), true);
+			if (!is_array($data) || (string) ($data['status'] ?? '') !== 'queued') {
+				continue;
+			}
+			$created = strtotime((string) ($data['created_at'] ?? '')) ?: 0;
+			if ($created > 0 && (time() - $created) < 45) {
+				continue;
+			}
+			$jobId = (string) ($data['id'] ?? '');
+			if ($jobId === '') {
+				continue;
+			}
+			$this->spawnTimetableWorker($jobId);
+		}
 	}
 
 	public function generation_status($jobId = '')
@@ -499,6 +684,7 @@ class TimetableManagement extends Home
 			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
 			->get(1)->getRowArray();
 
+		$fingerprint = $this->assignmentsFingerprint($schoolId, $year, $term);
 		$scheduleId = 0;
 		if ($existing) {
 			$scheduleId = (int) $existing['id'];
@@ -507,6 +693,8 @@ class TimetableManagement extends Home
 				'status' => 'published',
 				'generated_by' => $staffId,
 				'generated_at' => date('Y-m-d H:i:s'),
+				'assignments_hash' => $fingerprint,
+				'needs_regen' => 0,
 			]);
 		} else {
 			$db->table('timetable_schedules')->insert([
@@ -517,6 +705,8 @@ class TimetableManagement extends Home
 				'status' => 'published',
 				'generated_by' => $staffId,
 				'generated_at' => date('Y-m-d H:i:s'),
+				'assignments_hash' => $fingerprint,
+				'needs_regen' => 0,
 			]);
 			$scheduleId = (int) $db->insertID();
 		}
@@ -830,6 +1020,13 @@ class TimetableManagement extends Home
 			return;
 		}
 
+		// Keep previews in sync when course assignments change.
+		if ($this->isTimetableStale($schoolId, $year, $term)) {
+			$staffId = (int) $this->session->get('soma_id');
+			$this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'preview_stale', false);
+			return;
+		}
+
 		$schedule = $db->table('timetable_schedules')
 			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
 			->orderBy('id', 'DESC')->get(1)->getRowArray();
@@ -852,7 +1049,7 @@ class TimetableManagement extends Home
 		}
 
 		$staffId = (int) $this->session->get('soma_id');
-		$this->runGeneration($schoolId, $staffId, $schema, $year, $term);
+		$this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'empty_schedule', false);
 	}
 
 	public function class_timetable($classId = 0)

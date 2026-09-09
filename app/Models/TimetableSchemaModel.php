@@ -35,7 +35,31 @@ class TimetableSchemaModel extends Model
 			}
 		}
 		$this->ensureTrackColumns();
+		$this->ensureScheduleMetaColumns();
 		self::$ready = true;
+	}
+
+	private function ensureScheduleMetaColumns(): void
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('timetable_schedules')) {
+			return;
+		}
+		$fields = $db->getFieldNames('timetable_schedules');
+		if (!in_array('assignments_hash', $fields, true)) {
+			try {
+				$db->query("ALTER TABLE `timetable_schedules` ADD COLUMN `assignments_hash` varchar(64) DEFAULT NULL AFTER `generated_at`");
+			} catch (\Throwable $e) {
+				// column may exist
+			}
+		}
+		if (!in_array('needs_regen', $fields, true)) {
+			try {
+				$db->query("ALTER TABLE `timetable_schedules` ADD COLUMN `needs_regen` tinyint(1) NOT NULL DEFAULT 0 AFTER `assignments_hash`");
+			} catch (\Throwable $e) {
+				// column may exist
+			}
+		}
 	}
 
 	private function ensureTrackColumns(): void

@@ -11,6 +11,13 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 ?>
 
 <div class="tt-dashboard">
+	<?php if (!empty($timetable_stale) || (!empty($active_generation_job) && in_array((string) ($active_generation_job['status'] ?? ''), ['queued', 'running'], true))): ?>
+	<div class="alert alert-info mb-3">
+		<strong>Updating timetable…</strong>
+		New course assignments (for example Religion) are being regenerated into the weekly grid.
+		Refresh this page in a minute to see the updated teacher timetable.
+	</div>
+	<?php endif; ?>
 	<div class="tt-dash-hero mb-4">
 		<div class="tt-dash-hero-text">
 			<h4 class="mb-1">Smart Timetable Workspace</h4>
