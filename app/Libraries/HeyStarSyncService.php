@@ -64,8 +64,10 @@ class HeyStarSyncService
 			'sevUploadRecSnapshotEnable' => 1,
 			'sevUploadRecStrangerDataEnable' => 0,
 		]);
+		// Official LAN API: pciLedAlwaysEnable = fill light always on (night IR).
+		// Do not use undocumented ir_* keys — they do not control the fill light.
 		$client->post('device/setPciConfig', [
-			'pciLedAlwaysEnable' => 0,
+			'pciLedAlwaysEnable' => 1,
 			'pciLedColorStranger' => 1,
 			'pciRelayOut' => 1,
 			'pciRelayMode' => 1,
@@ -77,24 +79,22 @@ class HeyStarSyncService
 			'recModeFingerEnable' => 0,
 			'recModePalmEnable' => 0,
 		]);
+		// Night-friendly recognition: face on, no liveness reject, slightly lower threshold.
+		$client->post('device/setRecConfig', [
+			'recThreshold1vN' => 55,
+			'recThreshold1v1' => 50,
+			'recInterval' => 2,
+			'recDistance' => 0,
+			'recRank' => 1,
+			'recStrangerEnable' => 0,
+		]);
 		// Keep the live camera always ready. IN/OUT is decided on Xander from the
 		// staff shift (same toggle as the web scanner), not Check-In / Check-Out taps.
 		$client->post('device/setCstConfig', [
 			'attendance_direction_enable' => false,
 			'recognize_result_countdown' => 2200,
 			'evt_show_image_duration' => 2200,
-			'delay_for_light_close' => 86400000,
 			'idle_time_for_lcd' => 0,
-			'ir_led_always_enable' => true,
-			'ir_always_enable' => true,
-			'ir_led_enable' => true,
-			'ir_light_enable' => true,
-			'night_ir_enable' => true,
-			'camera_ir_enable' => true,
-			'infrared_enable' => true,
-			'keep_light_on' => true,
-			'ir_led_mode' => 1,
-			'ir_live_threshold' => 1,
 		]);
 		$brand = self::applySchoolBranding($client, $schoolId);
 
