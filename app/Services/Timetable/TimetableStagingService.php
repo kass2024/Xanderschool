@@ -600,11 +600,14 @@ class TimetableStagingService
 
 		if ($peSport && $slotCount > 0) {
 			// Strongly prefer last teaching periods of the day.
-			$score += ($slotCount - 1 - $slotIndex) * 500;
-			$lateStart = max(0, $slotCount - 2);
+			$score += ($slotCount - 1 - $slotIndex) * 600;
+			$lateStart = max(0, $slotCount - 3);
 			if ($slotIndex < $lateStart) {
-				$score += 3000;
+				$score += 4000;
 			}
+		} elseif ($slotCount > 0 && $slotIndex >= max(0, $slotCount - 3)) {
+			// Leave end-of-day freer for PE when staging non-PE subjects.
+			$score += 150;
 		}
 
 		if ($secondaryMulti) {

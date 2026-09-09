@@ -186,8 +186,8 @@ class TimetableGeneratorService
 				) ? 1 : 0;
 			}
 			usort($lessonNeeds, static function ($a, $b) {
-				// Place PE/Sport after other subjects so last-of-day slots stay free longer.
-				$pe = (int) ($a['is_pe'] ?? 0) <=> (int) ($b['is_pe'] ?? 0);
+				// Place PE/Sport first so it can claim end-of-day slots before others fill them.
+				$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
 				if ($pe !== 0) {
 					return $pe;
 				}
@@ -344,7 +344,8 @@ class TimetableGeneratorService
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$candidates = [];
 		$slotCount = count($this->teachingSlots);
-		$lateStartIndex = $slotCount > 0 ? max(0, $slotCount - max(2, $blockSize)) : 0;
+		// Last teaching periods of the day (after lunch on secondary grids).
+		$lateStartIndex = $slotCount > 0 ? max(0, $slotCount - 3) : 0;
 
 		$orderedDays = $this->days;
 		usort($orderedDays, function ($a, $b) use ($classId) {
@@ -389,9 +390,11 @@ class TimetableGeneratorService
 						if ($j !== $i + 1) {
 							$score += 15;
 						}
-						// Prefer the latest possible PE double (ending at last period).
 						if ($peSport) {
-							$score += ($slotCount - 1 - $j) * 400;
+							$score += ($slotCount - 1 - $j) * 600;
+						} elseif ($j >= $lateStartIndex) {
+							// Keep end-of-day slots freer for PE/Sport.
+							$score += 180;
 						}
 						$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
 					}
@@ -405,7 +408,9 @@ class TimetableGeneratorService
 
 				$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $i, $weeklyHours, $row);
 				if ($peSport) {
-					$score += ($slotCount - 1 - $i) * 400;
+					$score += ($slotCount - 1 - $i) * 600;
+				} elseif ($i >= $lateStartIndex) {
+					$score += 180;
 				}
 				$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
 			}
