@@ -17167,16 +17167,20 @@ public function assign_card()
 			$wkhtmltopdf = new Wkhtmltopdf(['path' => $tplDir]);
 			$wkhtmltopdf->setTitle('Visitor cards');
 			$wkhtmltopdf->setHtml($html);
-			// Landscape CR80 matching visitor_pass_template.png (1011×638)
+			// CR80 landscape size. Keep Orientation=Portrait so wkhtmltopdf does NOT
+			// swap page-width/page-height (Landscape would clip the right side).
 			$pageW = '85.6mm';
 			$pageH = '54mm';
-			$wkhtmltopdf->setOrientation('Landscape');
+			$wkhtmltopdf->setOrientation('Portrait');
 			$wkhtmltopdf->setOptions([
 				'enable-local-file-access' => null,
 				'disable-smart-shrinking' => null,
 				'encoding' => 'UTF-8',
 				'page-width' => $pageW,
 				'page-height' => $pageH,
+				'dpi' => 300,
+				'image-dpi' => 300,
+				'image-quality' => 100,
 				'zoom' => '1',
 			]);
 			$wkhtmltopdf->setMargins(['top' => 0, 'left' => 0, 'right' => 0, 'bottom' => 0]);

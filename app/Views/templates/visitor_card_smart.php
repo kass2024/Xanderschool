@@ -1,6 +1,6 @@
 <?php
 /**
- * Landscape visitor pass — full-bleed VISIT.png template (CR80).
+ * Landscape visitor pass — full-bleed VISIT.png template (CR80 85.6×54mm).
  * Dynamic fields only: visited student name (below VISITED STUDENT:) + registration number (after CODE:).
  * No photo.
  */
@@ -8,9 +8,6 @@ helper('qonics');
 
 $cardW = 85.6;
 $cardH = 54.0; // 1011×638 template
-$canvasScale = 0.988;
-$canvasLeft = 0.25;
-$canvasTop = 0.25;
 
 $useCaps = !empty($capitalize);
 $fmt = static function ($v) use ($useCaps) {
@@ -23,8 +20,8 @@ $bgFile = 'visitor_pass_template.png';
 $bgSrc = asset_card_img_src(
 	'assets/images/background/' . $bgFile,
 	'assets/images/background/visitor_pass_template.png',
-	2000,
-	1300
+	2022,
+	1276
 );
 
 $fitLine = static function (string $text, float $boxWmm, float $boxHmm, float $maxMm, float $minMm = 1.2): float {
@@ -66,7 +63,7 @@ $barcodeSvg = static function (string $value): string {
 	$bars[] = '<rect x="' . ($x + 2) . '" y="2" width="2" height="22" fill="#111827"/>';
 	$width = $x + 6;
 	return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' . $width . ' 26" preserveAspectRatio="none">'
-		. '<rect width="' . $width . '" height="26" rx="2" ry="2" fill="rgba(255,255,255,0.96)"/>'
+		. '<rect width="' . $width . '" height="26" fill="#ffffff"/>'
 		. implode('', $bars)
 		. '</svg>';
 };
@@ -77,19 +74,19 @@ $barcodeSvg = static function (string $value): string {
  * - Barcode artwork ~x=245–759, y=297–358 (overlaid with dynamic bars).
  * - "CODE:" ~x=243–323, y=378–400; regno starts immediately after the colon.
  */
-$nameX = 5.8;
-$nameY = 15.9;
-$nameW = 74.0;
-$nameH = 8.2;
+$nameX = 5.5;
+$nameY = 15.8;
+$nameW = 74.6;
+$nameH = 8.4;
 
-$barcodeX = 20.5;
-$barcodeY = 24.9;
-$barcodeW = 44.0;
-$barcodeH = 5.8;
+$barcodeX = 20.4;
+$barcodeY = 24.8;
+$barcodeW = 44.2;
+$barcodeH = 5.6;
 
-$codeX = 28.0;
+$codeX = 27.8;
 $codeY = 32.0;
-$codeW = 40.0;
+$codeW = 42.0;
 $codeH = 3.4;
 ?>
 <style>
@@ -98,7 +95,8 @@ $codeH = 3.4;
 		margin: 0; padding: 0;
 		width: <?= number_format($cardW, 1, '.', ''); ?>mm;
 		height: <?= number_format($cardH, 1, '.', ''); ?>mm;
-		background: #111;
+		background: #000;
+		overflow: hidden;
 	}
 	.page-break { page-break-after: always; height: 0; margin: 0; padding: 0; }
 	.card {
@@ -108,41 +106,32 @@ $codeH = 3.4;
 		overflow: hidden;
 		box-sizing: border-box;
 		font-family: DejaVu Sans, Arial, Helvetica, sans-serif;
-		background: #111;
+		background: #000;
 	}
 	.card * { box-sizing: border-box; margin: 0; padding: 0; }
-	.card-canvas {
-		position: absolute;
-		left: <?= number_format($canvasLeft, 2, '.', ''); ?>mm;
-		top: <?= number_format($canvasTop, 2, '.', ''); ?>mm;
+	.card-bg {
+		position: absolute; left: 0; top: 0;
 		width: <?= number_format($cardW, 1, '.', ''); ?>mm;
 		height: <?= number_format($cardH, 1, '.', ''); ?>mm;
-		transform: scale(<?= number_format($canvasScale, 3, '.', ''); ?>);
-		transform-origin: top left;
-	}
-	.card-bg {
-		position: absolute; left: 0; top: 0; width: 100%; height: 100%;
-		object-fit: fill; display: block; z-index: 0;
+		display: block; z-index: 0;
+		border: 0;
 	}
 	.abs {
 		position: absolute; z-index: 2; overflow: hidden;
 		white-space: nowrap;
 	}
 	.name-block {
-		display: flex;
-		align-items: flex-start;
-		justify-content: center;
+		display: block;
 		text-align: center;
 		white-space: normal;
 		overflow-wrap: anywhere;
 		word-break: break-word;
 		line-height: 1.08;
-		padding: 0 .8mm;
+		padding: 0 .6mm;
 	}
 	.barcode-shell {
 		background: #ffffff;
-		border-radius: 1.2mm;
-		padding: .35mm .6mm;
+		padding: .2mm .4mm;
 	}
 	.barcode-svg {
 		display: block;
@@ -160,21 +149,20 @@ foreach ($cards as $i => $visitor):
 	if ($studentReg === '') {
 		$studentReg = '—';
 	}
-	$fsName = $fitLine($studentName, $nameW, $nameH, 3.6, 1.35);
-	$fsCode = $fitLine($studentReg, $codeW, $codeH, 3.1, 1.6);
+	$fsName = $fitLine($studentName, $nameW, $nameH, 3.4, 1.35);
+	$fsCode = $fitLine($studentReg, $codeW, $codeH, 3.0, 1.6);
 	$barcodeMarkup = $barcodeSvg($studentReg);
 ?>
 <div class="card">
-	<div class="card-canvas">
 	<?php if ($bgSrc): ?>
-	<img class="card-bg" src="<?= $bgSrc; ?>" alt="">
+	<img class="card-bg" src="<?= $bgSrc; ?>" width="<?= number_format($cardW, 1, '.', ''); ?>mm" height="<?= number_format($cardH, 1, '.', ''); ?>mm" alt="">
 	<?php endif; ?>
 
 	<!-- Visited student name (below VISITED STUDENT: title) -->
 	<p class="abs name-block" style="left:<?= number_format($nameX, 1, '.', ''); ?>mm;top:<?= number_format($nameY, 1, '.', ''); ?>mm;
 		width:<?= number_format($nameW, 1, '.', ''); ?>mm;height:<?= number_format($nameH, 1, '.', ''); ?>mm;
 		font-size:<?= number_format($fsName, 2, '.', ''); ?>mm;
-		font-weight:800;color:#f8fafc;text-align:center;"><?= esc($studentName); ?></p>
+		font-weight:800;color:#f8fafc;"><?= esc($studentName); ?></p>
 
 	<!-- Visual barcode only: uses the same student code, but does not activate scanning logic. -->
 	<div class="abs barcode-shell" style="left:<?= number_format($barcodeX, 1, '.', ''); ?>mm;top:<?= number_format($barcodeY, 1, '.', ''); ?>mm;
@@ -187,7 +175,6 @@ foreach ($cards as $i => $visitor):
 		width:<?= number_format($codeW, 1, '.', ''); ?>mm;height:<?= number_format($codeH, 1, '.', ''); ?>mm;
 		font-size:<?= number_format($fsCode, 2, '.', ''); ?>mm;line-height:<?= number_format($codeH, 1, '.', ''); ?>mm;
 		font-weight:800;color:#f59e0b;letter-spacing:0.04em;text-align:left;"><?= esc($studentReg); ?></p>
-	</div>
 </div>
 <?php if ($i < count($cards) - 1): ?>
 <div class="page-break"></div>
