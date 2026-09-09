@@ -255,7 +255,8 @@ class TimetableGeneratorService
 		$occupiedDays = $this->subjectOccupiedDays($subjectKey);
 		$enforceGap = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupiedDays !== [];
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
-		$windows = $peSport ? [3, 4, 6, 0] : [0];
+		// Prefer last periods first; widen only if the PE teacher/class has no free late slot.
+		$windows = $peSport ? [2, 3, 4, 5, 6, 7, 0] : [0];
 
 		$candidates = [];
 		foreach ($windows as $window) {
