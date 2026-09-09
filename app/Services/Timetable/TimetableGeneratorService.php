@@ -460,7 +460,7 @@ class TimetableGeneratorService
 		$occupied = $this->subjectOccupiedDays($subjectKey);
 		$enforce = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupied !== [];
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
-		$windows = $peSport ? [3, 4, 6, 0] : [0];
+		$windows = $peSport ? [2, 3, 4, 5, 6, 7, 0] : [0];
 		foreach ($windows as $window) {
 			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $window));
 			if ($count === 0 && $enforce) {
