@@ -161,6 +161,8 @@ class TimetableGeneratorService
 
 		$entries = [];
 		$lessonNeeds = [];
+		/** @var array<string,int> */
+		$placedByAssignment = [];
 
 		foreach ($assignments as $row) {
 			$hours = self::weeklyHoursFromCourse($row);
@@ -212,12 +214,23 @@ class TimetableGeneratorService
 			});
 
 			$need = array_shift($lessonNeeds);
-			$placed = $this->placeLesson($need['assignment'], (int) $need['block_size'], (int) $need['hours']);
+			$assignKey = $this->assignmentQuotaKey($need['assignment']);
+			$quota = max(0, (int) $need['hours']);
+			$already = (int) ($placedByAssignment[$assignKey] ?? 0);
+			$remaining = $quota - $already;
+			if ($remaining <= 0) {
+				continue;
+			}
+
+			// Cap block size so we never place more periods than credit/weekly_hours.
+			$blockSize = min((int) $need['block_size'], $remaining);
+			$placed = $this->placeLesson($need['assignment'], $blockSize, (int) $need['hours']);
 			if ($placed) {
 				foreach ($placed as $entry) {
 					$entries[] = $entry;
 				}
-			} elseif ((int) $need['block_size'] === 2) {
+				$placedByAssignment[$assignKey] = $already + count($placed);
+			} elseif ($blockSize === 2 && $remaining >= 2) {
 				// Keep periods in the generator (with double-completion scoring)
 				// instead of dumping them to parking as isolated singles.
 				array_unshift($lessonNeeds, [
@@ -229,9 +242,15 @@ class TimetableGeneratorService
 					'block_size' => 1,
 					'hours' => (int) $need['hours'],
 				]);
+			} elseif ($blockSize === 2 && $remaining === 1) {
+				array_unshift($lessonNeeds, [
+					'assignment' => $need['assignment'],
+					'block_size' => 1,
+					'hours' => (int) $need['hours'],
+				]);
 			} else {
 				$this->warnings[] = 'Could not place ' . ($need['assignment']['course_title'] ?? 'course')
-					. ' (' . ($need['assignment']['class_title'] ?? '') . ') — ' . $need['block_size'] . ' period(s)';
+					. ' (' . ($need['assignment']['class_title'] ?? '') . ') — ' . $blockSize . ' period(s)';
 			}
 		}
 
@@ -637,6 +656,17 @@ class TimetableGeneratorService
 	{
 		$track = strtolower(trim((string) ($row['_track_key'] ?? $row['track_key'] ?? '')));
 		return in_array($track, ['primary', 'nursery'], true);
+	}
+
+	private function assignmentQuotaKey(array $row): string
+	{
+		$cr = (int) ($row['course_record_id'] ?? 0);
+		if ($cr > 0) {
+			return 'cr:' . $cr;
+		}
+		return 'c:' . (int) ($row['class_id'] ?? 0)
+			. ':' . (int) ($row['course_id'] ?? 0)
+			. ':' . (int) ($row['lecturer'] ?? 0);
 	}
 
 	private function isMathematicsCourse(string $title): bool

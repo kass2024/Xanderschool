@@ -89,14 +89,25 @@ class TimetableStagingService
 
 		$scheduled = [];
 		$staged = [];
+		/** @var array<string,list<int>> */
+		$scheduledIds = [];
+		/** @var array<string,list<int>> */
+		$stagedIds = [];
 		foreach ($entries as $entry) {
 			$key = $this->keyFromEntry($entry);
 			$day = (int) ($entry['day_of_week'] ?? 0);
 			$slotId = (int) ($entry['slot_id'] ?? 0);
+			$id = (int) ($entry['id'] ?? 0);
 			if ($day >= 0 && $slotId > 0) {
 				$scheduled[$key] = ($scheduled[$key] ?? 0) + 1;
+				if ($id > 0) {
+					$scheduledIds[$key][] = $id;
+				}
 			} elseif ($day === -1 && $slotId === 0) {
 				$staged[$key] = ($staged[$key] ?? 0) + 1;
+				if ($id > 0) {
+					$stagedIds[$key][] = $id;
+				}
 			}
 		}
 
@@ -104,7 +115,32 @@ class TimetableStagingService
 		foreach ($filtered as $assignment) {
 			$key = $this->keyFromAssignment($assignment);
 			$needed = TimetableGeneratorService::weeklyHoursFromCourse($assignment);
-			$have = (int) ($scheduled[$key] ?? 0) + (int) ($staged[$key] ?? 0);
+			$haveScheduled = (int) ($scheduled[$key] ?? 0);
+			$haveStaged = (int) ($staged[$key] ?? 0);
+
+			// Never keep more grid periods than the course credit / weekly allocation.
+			if ($haveScheduled > $needed && !empty($scheduledIds[$key])) {
+				$surplus = $haveScheduled - $needed;
+				$toDelete = array_slice($scheduledIds[$key], -$surplus);
+				if ($toDelete !== []) {
+					$db->table('timetable_entries')->whereIn('id', $toDelete)->delete();
+					$haveScheduled = $needed;
+					$scheduled[$key] = $haveScheduled;
+				}
+			}
+
+			$allowedStaged = max(0, $needed - $haveScheduled);
+			if ($haveStaged > $allowedStaged && !empty($stagedIds[$key])) {
+				$surplus = $haveStaged - $allowedStaged;
+				$toDelete = array_slice($stagedIds[$key], -$surplus);
+				if ($toDelete !== []) {
+					$db->table('timetable_entries')->whereIn('id', $toDelete)->delete();
+					$haveStaged = $allowedStaged;
+					$staged[$key] = $haveStaged;
+				}
+			}
+
+			$have = $haveScheduled + $haveStaged;
 			$deficit = $needed - $have;
 			if ($deficit <= 0) {
 				continue;
@@ -233,6 +269,13 @@ class TimetableStagingService
 			->get()->getResultArray();
 
 		$state = $this->buildScheduleState($scheduled);
+		/** @var array<string,int> */
+		$scheduledByKey = [];
+		foreach ($scheduled as $row) {
+			$key = $this->keyFromEntry($row);
+			$scheduledByKey[$key] = ($scheduledByKey[$key] ?? 0) + 1;
+		}
+
 		usort($parking, function (array $a, array $b) use ($days, $schema, $schoolId, $state): int {
 			return $this->countDirectCandidates($a, $days, $schema, $schoolId, $state)
 				<=> $this->countDirectCandidates($b, $days, $schema, $schoolId, $state);
@@ -240,6 +283,16 @@ class TimetableStagingService
 
 		$placed = 0;
 		foreach ($parking as $entry) {
+			$key = $this->keyFromEntry($entry);
+			$meta = $this->metaForEntry($entry);
+			$needed = TimetableGeneratorService::weeklyHoursFromCourse($meta);
+			$have = (int) ($scheduledByKey[$key] ?? 0);
+			if ($needed > 0 && $have >= $needed) {
+				// Drop surplus parking — already at allocated weekly periods.
+				$db->table('timetable_entries')->where('id', (int) $entry['id'])->delete();
+				continue;
+			}
+
 			$found = $this->findBestDirectPlacement($entry, $days, $schema, $schoolId, $state);
 			if ($found === null) {
 				$found = $this->placeByRelocatingOneBlocker($db, $entry, $days, $schema, $schoolId, $state);
@@ -255,6 +308,7 @@ class TimetableStagingService
 			$entry['day_of_week'] = $found['day'];
 			$entry['slot_id'] = $found['slot_id'];
 			$this->addScheduledEntry($state, $entry);
+			$scheduledByKey[$key] = $have + 1;
 			$placed++;
 		}
 
