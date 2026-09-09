@@ -632,6 +632,27 @@ class TimetableManagement extends Home
 			return strcmp((string) ($a['created_at'] ?? ''), (string) ($b['created_at'] ?? ''));
 		});
 
+		// One job per school/year/term — avoid racing regenerations.
+		$unique = [];
+		foreach ($jobs as $job) {
+			$key = (int) ($job['school_id'] ?? 0) . ':' . (int) ($job['academic_year'] ?? 0) . ':' . (int) ($job['term'] ?? 0);
+			if (isset($unique[$key])) {
+				// Mark older duplicates done-skipped so they don't clog the queue.
+				$dupId = (string) ($job['id'] ?? '');
+				if ($dupId !== '') {
+					$this->updateTimetableJob($dupId, [
+						'status' => 'done',
+						'success' => true,
+						'message' => 'Skipped duplicate queue; newer/older sibling job covers this school.',
+						'finished_at' => date('Y-m-d H:i:s'),
+					]);
+				}
+				continue;
+			}
+			$unique[$key] = $job;
+		}
+		$jobs = array_values($unique);
+
 		$processed = 0;
 		$failed = 0;
 		$busy = 0;
