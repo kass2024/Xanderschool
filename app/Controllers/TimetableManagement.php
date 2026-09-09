@@ -601,6 +601,70 @@ class TimetableManagement extends Home
 		}
 	}
 
+	/**
+	 * Process queued/running-stuck timetable jobs in-process (cron-safe in Docker).
+	 *
+	 * @return array{processed:int,failed:int,busy:int,jobs:list<array<string,mixed>>}
+	 */
+	public function processQueuedTimetableJobs(int $limit = 5): array
+	{
+		$limit = max(1, min(20, $limit));
+		$jobs = [];
+		foreach (glob($this->timetableJobDir() . DIRECTORY_SEPARATOR . '*.json') ?: [] as $file) {
+			$data = json_decode((string) @file_get_contents($file), true);
+			if (!is_array($data)) {
+				continue;
+			}
+			$status = (string) ($data['status'] ?? '');
+			if (!in_array($status, ['queued', 'running'], true)) {
+				continue;
+			}
+			// Skip very fresh running jobs that may still be actively working.
+			if ($status === 'running') {
+				$started = strtotime((string) ($data['started_at'] ?? '')) ?: 0;
+				if ($started > 0 && (time() - $started) < 180) {
+					continue;
+				}
+			}
+			$jobs[] = $data;
+		}
+		usort($jobs, static function ($a, $b) {
+			return strcmp((string) ($a['created_at'] ?? ''), (string) ($b['created_at'] ?? ''));
+		});
+
+		$processed = 0;
+		$failed = 0;
+		$busy = 0;
+		$details = [];
+		foreach (array_slice($jobs, 0, $limit) as $job) {
+			$jobId = (string) ($job['id'] ?? '');
+			if ($jobId === '') {
+				continue;
+			}
+			$result = $this->processTimetableJobById($jobId);
+			$details[] = [
+				'job_id' => $jobId,
+				'ok' => !empty($result['ok']),
+				'status' => (string) (($this->readTimetableJob($jobId)['status'] ?? '')),
+				'result' => $result,
+			];
+			if (!empty($result['busy'])) {
+				$busy++;
+			} elseif (!empty($result['ok'])) {
+				$processed++;
+			} else {
+				$failed++;
+			}
+		}
+
+		return [
+			'processed' => $processed,
+			'failed' => $failed,
+			'busy' => $busy,
+			'jobs' => $details,
+		];
+	}
+
 	public function generation_status($jobId = '')
 	{
 		$this->denyMenu('timetable_dashboard');
@@ -930,6 +994,8 @@ class TimetableManagement extends Home
 		}
 		$cmd = 'nohup ' . $run . ' >> ' . escapeshellarg($log) . ' 2>&1 &';
 		@exec($cmd);
+		// Docker/FPM environments often swallow detached workers; also try a short sync fallback
+		// only when an immediate inline process is requested by callers (cron handles the rest).
 		return ['started' => true, 'command' => $cmd];
 	}
 

@@ -30,3 +30,15 @@ foreach (($result['schools'] ?? []) as $row) {
 		. ' t' . (int) ($row['term'] ?? 0)
 		. ' -> ' . $job . PHP_EOL;
 }
+
+// Docker/FPM often cannot detach workers; process queued jobs in this same cron run.
+$processed = $ctl->processQueuedTimetableJobs(3);
+echo 'processed=' . (int) ($processed['processed'] ?? 0)
+	. ' failed=' . (int) ($processed['failed'] ?? 0)
+	. ' busy=' . (int) ($processed['busy'] ?? 0) . PHP_EOL;
+foreach (($processed['jobs'] ?? []) as $jobRow) {
+	echo 'job ' . ($jobRow['job_id'] ?? '?')
+		. ' status=' . ($jobRow['status'] ?? '?')
+		. ' ok=' . (!empty($jobRow['ok']) ? '1' : '0')
+		. PHP_EOL;
+}

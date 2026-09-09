@@ -44,5 +44,13 @@ class AutoRegenerateTimetables extends BaseCommand
 				. ' → ' . $job
 			);
 		}
+
+		$processed = $ctl->processQueuedTimetableJobs(5);
+		CLI::write(
+			'Processed jobs: ok=' . (int) ($processed['processed'] ?? 0)
+			. ' failed=' . (int) ($processed['failed'] ?? 0)
+			. ' busy=' . (int) ($processed['busy'] ?? 0),
+			'green'
+		);
 	}
 }
