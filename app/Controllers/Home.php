@@ -8106,25 +8106,30 @@ public function attendanceCard()
 	public function manipulate_assign_course()
 	{
 		$this->_preset();
-		$data = $this->data;
 		$course = null;
 		$classes = null;
-		$status = $this->request->getPost("status");
-		$id = $this->request->getPost('fid');
-		if ($id === null || $id === '') {
-			$id = $this->request->getPost('fId');
+		$status = (int) $this->request->getPost("status");
+		$isNewAssign = ($status === 1 || $status === 2);
+		// New assign forms send fId as course/class id. Teacher-edit forms send fId/fid as course_records.id.
+		$recordId = 0;
+		if ($isNewAssign) {
+			if ($status === 1) {
+				$course = $this->request->getPost("fId");
+				$classes = $this->request->getPost("classes");
+			} else {
+				$course = $this->request->getPost("classes");
+				$classes = $this->request->getPost("fId");
+			}
+		} else {
+			$recordId = (int) ($this->request->getPost('fid') ?: $this->request->getPost('fId'));
 		}
 
-		if ($status == 1) {
-			$course = $this->request->getPost("fId");
-			$classes = $this->request->getPost("classes");
-		}
-		if ($status == 2) {
-			$course = $this->request->getPost("classes");
-			$classes = $this->request->getPost("fId");
-		}
 		$year = $this->data['academic_year'];
-		$term = $this->request->getPost("term[]");
+		$term = $this->request->getPost("term");
+		if ($term === null) {
+			$term = $this->request->getPost("term[]");
+		}
+		$teacherId = (int) $this->request->getPost("teacher");
 		$CourseRecordModel = new CourseRecordModel();
 		$activityModel = new ActivityModel();
 		$isHolidayCourse = false;
@@ -8135,51 +8140,76 @@ public function attendanceCard()
 				return $this->response->setJSON(array("error" => "Holiday coaching courses are only available for Wisdom schools"));
 			}
 		}
-		//check if course is assigned to class
-		$dt = $CourseRecordModel->select("count(id) as cc")->where("course='$course' AND class='$classes' AND year='$year'")->get()->getRow();
-		if ($dt->cc > 0) {
-			//course already assigned to teacher
-			return $this->response->setJSON(array("error" => lang("app.courseAlready")));
-		}
-		if ($id == null) {
+
+		if ($isNewAssign) {
+			$courseId = (int) $course;
+			$classId = (int) $classes;
+			if ($courseId <= 0 || $classId <= 0) {
+				return $this->response->setJSON(["error" => "Please select both course and class."]);
+			}
+			if ($teacherId <= 0) {
+				return $this->response->setJSON(["error" => "Please select a subject teacher."]);
+			}
+			$dt = $CourseRecordModel->select("count(id) as cc")
+				->where("course", $courseId)
+				->where("class", $classId)
+				->where("year", $year)
+				->get()->getRow();
+			if ($dt && (int) $dt->cc > 0) {
+				return $this->response->setJSON(["error" => lang("app.courseAlready")]);
+			}
 			if ($isHolidayCourse) {
 				$term = holiday_course_year_term();
 			} else {
 				$term = is_array($term) ? implode(",", $term) : (string) $term;
 			}
-			$data = array(
-					"course" => $course,
-					"lecturer" => $this->request->getPost("teacher"),
-					"class" => $classes,
-					"year" => $year,
-					"term" => $term);
+			if (trim((string) $term) === '') {
+				return $this->response->setJSON(["error" => "Please select at least one term."]);
+			}
+			$data = [
+				"course" => $courseId,
+				"lecturer" => $teacherId,
+				"class" => $classId,
+				"year" => $year,
+				"term" => $term,
+			];
 		} else {
-			//get teachers name, for history
-			$old_data = $CourseRecordModel->select("concat(st.fname,' ',st.lname) as name,cs.title")->join("staffs st", "st.id=course_records.lecturer")
-					->join("courses cs", "cs.id=course_records.course")
-					->where("course_records.id", $id)->get(1)->getRow();
+			if ($recordId <= 0) {
+				return $this->response->setJSON(["error" => "Invalid assignment record."]);
+			}
+			if ($teacherId <= 0) {
+				return $this->response->setJSON(["error" => "Please select a subject teacher."]);
+			}
+			$old_data = $CourseRecordModel->select("concat(st.fname,' ',st.lname) as name,cs.title,course_records.course")
+				->join("staffs st", "st.id=course_records.lecturer", "left")
+				->join("courses cs", "cs.id=course_records.course")
+				->where("course_records.id", $recordId)->get(1)->getRow();
+			if (!$old_data) {
+				return $this->response->setJSON(["error" => "Assignment not found."]);
+			}
 			$stMdl = new StaffModel();
-			$new_teacher = $stMdl->select("concat(fname,' ',lname) as name")->where("id", $this->request->getPost("teacher"))->get(1)->getRow();
-			$data = array(
-					"id" => $id,
-					"lecturer" => $this->request->getPost("teacher"));
-			$activity = array(
-					"school_id" => $this->session->get("soma_school_id"),
-					"activity" => lang("app.thisSubject") . " <strong>" . $old_data->title . "</strong>" . lang("app.isMovedFrom") . " " . $old_data->name . lang("app.andAssignedTo") . $new_teacher->name
-			);
+			$new_teacher = $stMdl->select("concat(fname,' ',lname) as name")->where("id", $teacherId)->get(1)->getRow();
+			$data = [
+				"id" => $recordId,
+				"lecturer" => $teacherId,
+			];
+			$activity = [
+				"school_id" => $this->session->get("soma_school_id"),
+				"activity" => lang("app.thisSubject") . " <strong>" . $old_data->title . "</strong>" . lang("app.isMovedFrom") . " " . ($old_data->name ?? '') . lang("app.andAssignedTo") . ($new_teacher->name ?? ''),
+			];
 			$activityModel->save($activity);
-
+			$course = (int) ($old_data->course ?? 0);
 		}
 
 		try {
 			$CourseRecordModel->save($data);
 
-			return $this->response->setJSON(array(
+			return $this->response->setJSON([
 				"success" => lang("app.courseAssignedSuccess"),
 				"course_id" => (int) $course,
-			));
+			]);
 		} catch (\Exception $e) {
-			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
+			return $this->response->setJSON(["error" => "Error: " . $e->getMessage()]);
 		}
 	}
 
@@ -17964,8 +17994,9 @@ public function assign_card()
 		}
 
 		return [
+			'kind' => 'visitor',
 			'allowed' => true,
-			'success' => true,
+			'success' => 1,
 			'action' => $action,
 			'too_soon' => $tooSoon,
 			'message' => $message,
