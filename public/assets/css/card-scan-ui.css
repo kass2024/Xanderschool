@@ -1,0 +1,681 @@
+/* Shared RFID scan UI — Permission, Discipline, Assign Card, Visitor registration */
+
+.card-scan-page .card-scan-search-col {
+	max-width: 440px;
+	margin-bottom: 12px;
+}
+
+/* ── Smart segmented tabs (replaces dropdown) ── */
+.card-scan-tabs-wrap {
+	background: #eef2f7;
+	border-radius: 12px;
+	padding: 5px;
+	margin-bottom: 14px;
+	box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.card-scan-tabs {
+	display: flex;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	gap: 4px;
+}
+
+.card-scan-tabs li {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+.card-scan-tab {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 3px;
+	padding: 10px 6px 9px;
+	border: none;
+	border-radius: 9px;
+	background: transparent;
+	color: #64748b;
+	font-size: 0.72rem;
+	font-weight: 600;
+	line-height: 1.2;
+	cursor: pointer;
+	transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.card-scan-tab-icon {
+	font-size: 1.05rem;
+	line-height: 1;
+	opacity: 0.85;
+}
+
+.card-scan-tab-label {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 100%;
+	padding: 0 2px;
+}
+
+.card-scan-tab:hover {
+	color: #334155;
+	background: rgba(255, 255, 255, 0.55);
+}
+
+.card-scan-tab.active {
+	background: #fff;
+	color: #0b1f4a;
+	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+	transform: translateY(-1px);
+}
+
+.card-scan-tab.active .card-scan-tab-icon {
+	color: #d92550;
+	opacity: 1;
+}
+
+.card-scan-tab-body {
+	min-height: 52px;
+}
+
+.card-scan-tab-panel {
+	display: none;
+	animation: cardScanTabIn 0.22s ease;
+}
+
+.card-scan-tab-panel.active {
+	display: block;
+}
+
+@keyframes cardScanTabIn {
+	from { opacity: 0; transform: translateY(4px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+.card-scan-field {
+	border-radius: 9px !important;
+	border: 1.5px solid #e2e8f0 !important;
+	min-height: 42px;
+}
+
+.card-scan-field:focus {
+	border-color: #d92550 !important;
+	box-shadow: 0 0 0 3px rgba(217, 37, 80, 0.12) !important;
+}
+
+.card-scan-mode-select {
+	border-radius: 8px;
+	font-weight: 600;
+}
+
+.card-scan-panel {
+	text-align: center;
+	background: #f8f9fa;
+	border-radius: 10px;
+	padding: 18px 16px;
+	border: 1px dashed #cbd5e1;
+	margin-top: 0;
+}
+
+.card-scan-panel .card-scan-icon {
+	width: 100%;
+	max-width: 260px;
+	height: auto;
+	display: block;
+	margin: 0 auto 12px;
+	opacity: 0.95;
+	animation: cardScanPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes cardScanPulse {
+	0%, 100% { transform: scale(1); opacity: 0.9; }
+	50% { transform: scale(1.04); opacity: 1; }
+}
+
+.card-scan-input {
+	background: #fff !important;
+	border: 1px solid #ced4da !important;
+	text-align: center;
+	font-weight: 700;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.card-scan-status {
+	font-size: 13px;
+	color: #6c757d;
+	margin-top: 8px;
+	min-height: 20px;
+	transition: color 0.25s ease;
+}
+
+.card-scan-status.ok { color: #198754; font-weight: 600; }
+.card-scan-status.err { color: #dc3545; font-weight: 600; }
+.card-scan-status.busy { color: #0d6efd; }
+
+.card-scan-success-alert {
+	display: none;
+	margin-top: 10px;
+	background: #d4edda;
+	border: 1px solid #c3e6cb;
+	color: #155724;
+	border-radius: 6px;
+	padding: 8px 12px;
+	font-size: 14px;
+}
+
+.card-scan-student-box {
+	background: #fff;
+	border: 1px solid #ced4da;
+	border-radius: 8px;
+	padding: 6px;
+	margin-top: 6px;
+	max-height: 230px;
+	overflow-y: auto;
+	display: none;
+}
+
+.card-scan-student-item {
+	display: flex;
+	align-items: center;
+	padding: 6px 8px;
+	border-bottom: 1px solid #f1f1f1;
+	cursor: pointer;
+}
+
+.card-scan-student-item:hover { background: #f8f9fa; }
+
+.card-scan-workspace {
+	margin-top: 12px;
+	width: 100%;
+	float: left;
+}
+
+.card-scan-table-wrap,
+.card-scan-form-wrap {
+	background: #fff;
+	padding: 12px;
+	border-radius: 10px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.card-scan-table-wrap {
+	max-height: 520px;
+	overflow: auto;
+	margin-bottom: 15px;
+}
+
+.card-scan-form-wrap .btn-save-main {
+	width: 50%;
+	min-width: 140px;
+	font-size: 14px;
+}
+
+.card-scan-uid-badge {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	letter-spacing: 0.04em;
+	font-size: 0.82rem;
+}
+
+.card-scan-actions {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	justify-content: flex-end;
+}
+
+.card-scan-actions .btn {
+	font-size: 0.78rem;
+	padding: 4px 10px;
+}
+
+/* Staff list — card + delete actions without overflow */
+.staff-actions-col {
+	min-width: 168px;
+	white-space: nowrap;
+}
+
+.staff-actions-cell {
+	min-width: 168px;
+	max-width: 220px;
+	white-space: normal !important;
+	vertical-align: middle !important;
+}
+
+.staff-actions-wrap {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+}
+
+.staff-card-btns {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	width: 100%;
+}
+
+.staff-card-btns .btn {
+	font-size: 0.72rem;
+	padding: 3px 8px;
+	line-height: 1.3;
+	white-space: nowrap;
+}
+
+.staff-delete-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	font-size: 0.76rem;
+	color: #dc3545 !important;
+	cursor: pointer;
+	margin: 0;
+	padding: 0;
+	white-space: nowrap;
+}
+
+.staff-delete-link:hover {
+	color: #a71d2a !important;
+	text-decoration: underline;
+}
+
+/* Staff list export bar */
+.staff-list-header {
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.staff-list-header-actions {
+	display: flex !important;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.staff-export-bar {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.staff-export-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+	border-radius: 8px;
+	padding: 6px 12px;
+	line-height: 1.2;
+	white-space: nowrap;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+	transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.staff-export-btn:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 3px 8px rgba(15, 23, 42, 0.12);
+	text-decoration: none;
+}
+
+.staff-export-excel {
+	background: #157347;
+	border-color: #146c43;
+	color: #fff !important;
+}
+
+.staff-export-excel:hover {
+	background: #146c43;
+	color: #fff !important;
+}
+
+.staff-export-pdf {
+	background: #b02a37;
+	border-color: #a02833;
+	color: #fff !important;
+}
+
+.staff-export-pdf:hover {
+	background: #a02833;
+	color: #fff !important;
+}
+
+@media (max-width: 576px) {
+	.staff-list-header-actions {
+		width: 100%;
+		justify-content: space-between;
+	}
+
+	.staff-export-bar {
+		flex: 1 1 auto;
+	}
+
+	.staff-export-btn {
+		flex: 1 1 auto;
+		justify-content: center;
+		min-height: 36px;
+	}
+}
+
+#example td.staff-actions-cell {
+	overflow: visible;
+}
+
+.card-scan-modal-box {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	z-index: 9999;
+	width: min(420px, 94vw);
+	background: #fff;
+	border-radius: 12px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+	overflow: hidden;
+}
+
+.card-scan-modal-head {
+	background: linear-gradient(135deg, #dc3545, #c82333);
+	color: #fff;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 10px 14px;
+}
+
+.card-scan-modal-body { padding: 16px; text-align: center; }
+
+.card-scan-modal-foot {
+	padding: 10px 14px;
+	border-top: 1px solid #eee;
+	text-align: right;
+}
+
+.pv-card-scan-panel.card-scan-panel {
+	margin-top: 0;
+	background: #fff;
+	border-color: #e2e8f0;
+}
+
+.pv-card-scan-panel .card-scan-status { text-align: center; }
+
+@media (max-width: 576px) {
+	.card-scan-tab-label {
+		font-size: 0.62rem;
+	}
+	.card-scan-tab {
+		padding: 8px 4px 7px;
+	}
+	.card-scan-tab-icon {
+		font-size: 0.95rem;
+	}
+}
+
+/* ── Assign card — grouped by class ── */
+.assign-card-page .ac-class-block {
+	background: #fff;
+	border: 1px solid #eef2f7;
+	border-radius: 12px;
+	margin-bottom: 14px;
+	overflow: hidden;
+	box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+
+.assign-card-page .ac-class-head {
+	background: #f8fafc;
+	padding: 12px 16px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	border-bottom: 1px solid #eef2f7;
+	cursor: pointer;
+	user-select: none;
+}
+
+.assign-card-page .ac-class-head h5 {
+	margin: 0;
+	font-size: 0.95rem;
+	font-weight: 700;
+	color: #0b1f4a;
+}
+
+.assign-card-page .ac-class-head .meta {
+	font-size: 0.78rem;
+	color: #64748b;
+}
+
+.assign-card-page .ac-class-body {
+	padding: 0;
+}
+
+.assign-card-page .ac-chevron {
+	transition: transform 0.2s ease;
+}
+
+.assign-card-page .fa-rotate-180 {
+	transform: rotate(180deg);
+}
+
+.assign-card-page .ac-students-table thead th {
+	font-size: 0.78rem;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: #64748b;
+}
+
+.assign-card-page .ac-search-wrap .form-control {
+	border-radius: 0 9px 9px 0 !important;
+}
+
+/* ── Discipline entry page ── */
+.disc-entry-page .disc-entry-inner {
+	max-width: 1180px;
+	margin: 0 auto;
+	padding: 0 16px 28px;
+}
+
+.disc-entry-page .disc-entry-search {
+	max-width: 480px;
+	margin: 0 auto 18px;
+}
+
+.disc-entry-page .disc-entry-flash {
+	display: none;
+	margin: 0 auto 16px;
+	max-width: 1180px;
+	background: #d1fae5;
+	border: 1px solid #6ee7b7;
+	color: #065f46;
+	border-radius: 10px;
+	padding: 10px 16px;
+	font-size: 0.92rem;
+	font-weight: 600;
+	text-align: center;
+	animation: discFlashIn 0.3s ease;
+}
+
+.disc-entry-page .disc-entry-flash .fa {
+	margin-right: 6px;
+}
+
+@keyframes discFlashIn {
+	from { opacity: 0; transform: translateY(-6px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+.disc-entry-page .disc-entry-grid {
+	display: grid;
+	grid-template-columns: 1fr 420px;
+	gap: 20px;
+	align-items: start;
+}
+
+.disc-entry-page .disc-entry-panel {
+	background: #fff;
+	border: 1px solid #eef2f7;
+	border-radius: 12px;
+	box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
+	padding: 18px 20px;
+}
+
+.disc-entry-page .disc-entry-panel-title {
+	margin: 0 0 14px;
+	font-size: 0.95rem;
+	font-weight: 700;
+	color: #0b1f4a;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.disc-entry-page .disc-entry-panel-title .fa {
+	color: #d92550;
+	font-size: 0.9rem;
+}
+
+.disc-entry-page .disc-entry-table-wrap {
+	max-height: 480px;
+	overflow: auto;
+	border: 1px solid #eef2f7;
+	border-radius: 8px;
+	margin-bottom: 12px;
+}
+
+.disc-entry-page .disc-entry-table-wrap thead th {
+	font-size: 0.76rem;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: #64748b;
+	background: #f8fafc;
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+
+.disc-entry-page .disc-empty-row td {
+	text-align: center;
+	color: #94a3b8;
+	padding: 32px 16px !important;
+	font-size: 0.88rem;
+	line-height: 1.5;
+}
+
+.disc-entry-page .disc-empty-row .fa {
+	display: block;
+	font-size: 1.6rem;
+	margin-bottom: 8px;
+	opacity: 0.5;
+}
+
+.disc-entry-page .disc-entry-legend {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px 18px;
+	font-size: 0.82rem;
+	color: #64748b;
+	padding-top: 4px;
+}
+
+.disc-entry-page .disc-entry-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.disc-entry-page .disc-entry-legend-dot {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.disc-entry-page .disc-entry-legend-dot--warn {
+	background: orangered;
+}
+
+.disc-entry-page .disc-entry-legend-dot--normal {
+	background: #334155;
+}
+
+.disc-entry-page .disc-form-group {
+	margin-bottom: 14px;
+}
+
+.disc-entry-page .disc-form-group > label {
+	display: block;
+	font-size: 0.78rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: #64748b;
+	margin-bottom: 5px;
+}
+
+.disc-entry-page .disc-form-group .form-control,
+.disc-entry-page .disc-form-group .select2-container {
+	border-radius: 9px !important;
+}
+
+.disc-entry-page .disc-marks-input {
+	max-width: 100px;
+}
+
+.disc-entry-page .disc-form-check {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding-top: 4px;
+}
+
+.disc-entry-page .disc-form-check label {
+	margin: 0;
+	font-size: 0.88rem;
+	font-weight: 500;
+	color: #334155;
+	text-transform: none;
+	letter-spacing: 0;
+}
+
+.disc-entry-page .disc-form-actions {
+	text-align: center;
+	margin-top: 18px;
+	padding-top: 14px;
+	border-top: 1px solid #eef2f7;
+}
+
+.disc-entry-page .disc-form-actions .btn-save-main {
+	width: 100%;
+	font-size: 0.95rem;
+	padding: 10px 20px;
+}
+
+@media (max-width: 992px) {
+	.disc-entry-page .disc-entry-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* Student photo in discipline / permission entry tables */
+.student-entry-photo-cell {
+	width: 52px;
+	text-align: center;
+	vertical-align: middle !important;
+}
+
+img.student-entry-photo {
+	width: 44px;
+	height: 44px;
+	object-fit: cover;
+	border-radius: 50%;
+	border: 2px solid #e2e8f0;
+	background: #f1f5f9;
+	display: inline-block;
+}

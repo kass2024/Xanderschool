@@ -6,11 +6,26 @@
 			<div class="tab-content">
 				<div class="container-fluid">
 					<div class="card mb-3">
-						<div class="card-header-tab card-header">
+						<div class="card-header-tab card-header staff-list-header">
 							<div class="card-header-title font-size-lg text-capitalize font-weight-normal">
 								<i class="header-icon typcn typcn-home-outline text-muted opacity-6"> </i><?=$title;?>
 							</div>
-							<div class="btn-actions-pane-right actions-icon-btn">
+							<div class="btn-actions-pane-right actions-icon-btn staff-list-header-actions">
+								<div class="staff-export-bar" role="group" aria-label="Export staff list">
+									<a href="<?= base_url('export_staff_list_excel'); ?>"
+									   class="btn btn-sm staff-export-btn staff-export-excel"
+									   title="Download full staff list as Excel">
+										<i class="fa fa-file-excel"></i>
+										<span>Excel</span>
+									</a>
+									<a href="<?= base_url('export_staff_list_pdf'); ?>"
+									   class="btn btn-sm staff-export-btn staff-export-pdf"
+									   target="_blank"
+									   title="Open printable PDF staff list">
+										<i class="fa fa-file-pdf"></i>
+										<span>PDF</span>
+									</a>
+								</div>
 								<div class="btn-group dropdown">
 									<button type="button" data-toggle="dropdown" aria-haspopup="true"
 											aria-expanded="false"
@@ -28,6 +43,10 @@
 										<a href="javascript:void(0)" class="dropdown-item btn-share-all-staff" data-channel="sms"><i class="fa fa-sms"></i> Reset &amp; share via SMS</a>
 										<a href="javascript:void(0)" class="dropdown-item btn-share-all-staff" data-channel="email"><i class="fa fa-envelope"></i> Reset &amp; share via Email</a>
 										<a href="javascript:void(0)" class="dropdown-item btn-share-all-staff" data-channel="both"><i class="fa fa-share-alt"></i> Reset &amp; share via SMS + Email</a>
+										<div class="dropdown-divider"></div>
+										<h6 tabindex="-1" class="dropdown-header">Export list</h6>
+										<a href="<?= base_url('export_staff_list_excel'); ?>" class="dropdown-item"><i class="fa fa-file-excel"></i> Export Excel</a>
+										<a href="<?= base_url('export_staff_list_pdf'); ?>" class="dropdown-item" target="_blank"><i class="fa fa-file-pdf"></i> Export PDF</a>
 									</div>
 								</div>
 							</div>

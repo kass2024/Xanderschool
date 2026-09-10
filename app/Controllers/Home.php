@@ -6630,6 +6630,90 @@ public function attendanceCard()
 		return view('main', $data);
 	}
 
+	/**
+	 * Shared staff rows for Excel/PDF export (includes NO FACE; excludes post & Methode staff).
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function staffListForExport(): array
+	{
+		$this->ensureStaffRfidColumn();
+		$staffMdl = new StaffModel();
+		$rows = $staffMdl->select("staffs.*,shf.title as shift_title")
+			->join("shifts shf", "shf.id=staffs.shift_id", "left")
+			->where("staffs.school_id", $this->session->get("soma_school_id"))
+			->orderBy("staffs.fname", "ASC")
+			->orderBy("staffs.lname", "ASC")
+			->get()->getResultArray();
+
+		return \App\Libraries\StaffListExporter::filterForExport($rows);
+	}
+
+	/** @return array{name:string,slogan:string,address:string,pobox:string,phone:string,email:string,website:string,logo:string} */
+	private function schoolMetaForStaffExport(): array
+	{
+		return [
+			'name' => (string) ($this->data['school_name'] ?? 'School'),
+			'slogan' => (string) ($this->data['school_moto'] ?? ''),
+			'address' => (string) ($this->data['school_address'] ?? ''),
+			'pobox' => (string) ($this->data['school_pobox'] ?? ''),
+			'phone' => (string) ($this->data['school_phone'] ?? ''),
+			'email' => (string) ($this->data['school_email'] ?? ''),
+			'website' => (string) ($this->data['school_website'] ?? ''),
+			'logo' => (string) ($this->data['school_logo'] ?? ''),
+		];
+	}
+
+	public function export_staff_list_excel()
+	{
+		$this->_preset(1, 3);
+		$school = $this->schoolMetaForStaffExport();
+		$staffs = $this->staffListForExport();
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+
+		$spreadsheet = \App\Libraries\StaffListExporter::buildExcel($school, $staffs, $yearTitle, $termLabel);
+		$filename = \App\Libraries\StaffListExporter::exportFilename($school['name'], 'xlsx');
+		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
+
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
+		header('Cache-Control: max-age=0');
+		$writer->save('php://output');
+		exit;
+	}
+
+	public function export_staff_list_pdf()
+	{
+		$this->_preset(1, 3);
+		$school = $this->schoolMetaForStaffExport();
+		$staffs = $this->staffListForExport();
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+
+		$html = view('pages/reports/staff_list_export_pdf', [
+			'school' => $school,
+			'staffs' => $staffs,
+			'year_title' => $yearTitle,
+			'term_label' => $termLabel,
+			'printed_at' => date('d M Y H:i'),
+		]);
+
+		try {
+			$mask = FCPATH . 'assets/templates/*.html';
+			array_map('unlink', glob($mask) ?: []);
+			$wkhtmltopdf = new Wkhtmltopdf(['path' => FCPATH . 'assets/templates/']);
+			$wkhtmltopdf->setTitle('Staff List');
+			$wkhtmltopdf->setHtml($html);
+			$wkhtmltopdf->setOrientation('Landscape');
+			$wkhtmltopdf->setMargins(['top' => 8, 'left' => 8, 'right' => 8, 'bottom' => 8]);
+			$filename = \App\Libraries\StaffListExporter::exportFilename($school['name'], 'pdf');
+			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, $filename);
+		} catch (\Exception $e) {
+			echo $e->getMessage();
+		}
+	}
+
 	/** Reset password and reshare login credentials to one or all staff (SMS / email). */
 	public function share_staff_access()
 	{
