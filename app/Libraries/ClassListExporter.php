@@ -98,23 +98,23 @@ class ClassListExporter
 
 	/**
 	 * @param list<array<string,mixed>> $classes
-	 * @return array{classes:int,students:int,unassigned:int}
+	 * @return array{classes:int,students:int,mentors:int}
 	 */
 	public static function totals(array $classes): array
 	{
 		$students = 0;
-		$unassigned = 0;
+		$mentors = 0;
 		foreach ($classes as $class) {
 			$students += (int) ($class['students'] ?? 0);
-			if (trim((string) ($class['mentor_name'] ?? '')) === '') {
-				$unassigned++;
+			if (trim((string) ($class['mentor_name'] ?? '')) !== '') {
+				$mentors++;
 			}
 		}
 
 		return [
 			'classes' => count($classes),
 			'students' => $students,
-			'unassigned' => $unassigned,
+			'mentors' => $mentors,
 		];
 	}
 

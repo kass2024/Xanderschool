@@ -78,7 +78,7 @@ $contact = array_filter([
 	<tr>
 		<td><span class="val"><?= (int) $totals['classes'] ?></span>Classes</td>
 		<td><span class="val"><?= (int) $totals['students'] ?></span>Students</td>
-		<td><span class="val"><?= (int) $totals['unassigned'] ?></span>No stream teacher</td>
+		<td><span class="val"><?= (int) $totals['mentors'] ?></span>Stream teachers</td>
 	</tr>
 </table>
 
