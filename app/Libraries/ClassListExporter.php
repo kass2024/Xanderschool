@@ -11,7 +11,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
  * Smart class list Excel/PDF export.
- * Columns: Class name (Level+title), Stream teacher, Students — no type/faculty/courses.
+ * Columns: Class name (Level + dept code + title), Stream teacher, Students — no type/faculty/courses.
  */
 class ClassListExporter
 {
@@ -50,21 +50,43 @@ class ClassListExporter
 	}
 
 	/**
-	 * Concatenate level + stream title (e.g. P6A, S1B, Middle Class A).
+	 * Display name matching class creation: Level + department code + stream title.
+	 * Examples: P6A, S1B, S4 MCB, S5 PCB A, Middle Class A.
 	 *
 	 * @param array<string,mixed> $class
 	 */
 	public static function className(array $class): string
 	{
 		$level = trim((string) ($class['level_name'] ?? ''));
+		$code = trim((string) ($class['code'] ?? $class['dept_code'] ?? ''));
 		$title = trim((string) ($class['title'] ?? ''));
-		if ($title === '' || $title === '-----') {
+		if ($title === '-----') {
+			$title = '';
+		}
+
+		// Combination / TVET classes store the option in department code (e.g. MCB).
+		if ($code !== '') {
+			$parts = [];
+			if ($level !== '') {
+				$parts[] = $level;
+			}
+			$parts[] = $code;
+			if ($title !== '') {
+				$parts[] = preg_match('/^[A-Za-z0-9]{1,3}$/', $title)
+					? strtoupper($title)
+					: $title;
+			}
+
+			return implode(' ', $parts);
+		}
+
+		if ($title === '') {
 			return $level !== '' ? $level : '—';
 		}
 		if ($level === '') {
 			return $title;
 		}
-		// Single-letter / short stream codes → P6A, S2B
+		// Nursery / Primary / O-Level streams → P6A, S2B
 		if (preg_match('/^[A-Za-z0-9]{1,3}$/', $title)) {
 			return $level . strtoupper($title);
 		}

@@ -57,7 +57,7 @@
 		</a>
 	</div>
 </div>
-<p class="class-inline-hint"><i class="fa fa-info-circle"></i> Double-click <strong>Title</strong> to rename. Use the <i class="typcn typcn-edit"></i> icon to change <strong>Mentor</strong>. Export uses <strong>Class name</strong> (Level+title), <strong>Stream teacher</strong>, and <strong>Students</strong> only.</p>
+<p class="class-inline-hint"><i class="fa fa-info-circle"></i> Double-click <strong>Title</strong> to rename. Use the <i class="typcn typcn-edit"></i> icon to change <strong>Mentor</strong>. Export uses <strong>Class name</strong> (Level + code + title, e.g. P6A or S4 MCB), <strong>Stream teacher</strong>, and <strong>Students</strong> only.</p>
 
 <div class="boxed">
 	<table class="table table-striped table-bordered" id="classTable" style="margin: 0; text-align:center;">
