@@ -6991,14 +6991,16 @@ public function attendanceCard()
 			];
 		}
 
-		$schoolName = (string) ($this->data['school_name'] ?? 'School');
+		$school = $this->schoolMetaForStaffExport();
+		$schoolName = (string) ($school['name'] ?? 'School');
 		$yearTitle = '';
 		$yearRow = (new AcademicYearModel())->select('title')->where('id', $yearId)->where('school_id', $schoolId)->first();
 		if ($yearRow) {
 			$yearTitle = (string) ($yearRow['title'] ?? '');
 		}
+		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
 
-		$spreadsheet = \App\Libraries\SmartStudentSheetsExporter::build($sheets);
+		$spreadsheet = \App\Libraries\SmartStudentSheetsExporter::build($school, $sheets, $yearTitle, $termLabel);
 		$filename = \App\Libraries\SmartStudentSheetsExporter::exportFilename($schoolName, $yearTitle);
 		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
 

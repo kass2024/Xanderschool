@@ -6,16 +6,19 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
  * Smart student list: one workbook, one sheet per class (Level+title).
- * Columns: #, Names, Gender, Studying.
+ * Each sheet has school header + columns: #, Names, Gender, Studying.
  */
 class SmartStudentSheetsExporter
 {
 	private const BRAND = '012F6B';
+	private const BRAND_LIGHT = 'E8F0FA';
 	private const ALT_ROW = 'F7FAFD';
+	private const LAST_COL = 'D';
 
 	/** @return list<string> */
 	public static function columnHeaders(): array
@@ -46,7 +49,6 @@ class SmartStudentSheetsExporter
 	 */
 	public static function sheetTitle(string $className, array &$used): string
 	{
-		// Excel forbids: \ / ? * [ ] :
 		$base = str_replace(['\\', '/', '?', '*', '[', ']', ':'], ' ', $className);
 		$base = trim((string) preg_replace('/\s+/', ' ', $base));
 		if ($base === '') {
@@ -89,10 +91,15 @@ class SmartStudentSheetsExporter
 	}
 
 	/**
+	 * @param array<string,mixed> $school
 	 * @param list<array{class:array<string,mixed>,students:list<array<string,mixed>>}> $sheets
 	 */
-	public static function build(array $sheets): Spreadsheet
-	{
+	public static function build(
+		array $school,
+		array $sheets,
+		string $yearTitle = '',
+		string $termLabel = ''
+	): Spreadsheet {
 		$spreadsheet = new Spreadsheet();
 		$usedTitles = [];
 		$first = true;
@@ -110,13 +117,13 @@ class SmartStudentSheetsExporter
 				$sheet = $spreadsheet->createSheet();
 			}
 			$sheet->setTitle($title);
-			self::fillSheet($sheet, $className, $students);
+			self::fillSheet($sheet, $school, $className, $students, $yearTitle, $termLabel);
 		}
 
 		if ($first) {
 			$sheet = $spreadsheet->getActiveSheet();
 			$sheet->setTitle('No classes');
-			self::fillSheet($sheet, 'No classes', []);
+			self::fillSheet($sheet, $school, 'No classes', [], $yearTitle, $termLabel);
 		}
 
 		$spreadsheet->setActiveSheetIndex(0);
@@ -125,30 +132,53 @@ class SmartStudentSheetsExporter
 	}
 
 	/**
+	 * @param array<string,mixed> $school
 	 * @param list<array<string,mixed>> $students
 	 */
-	private static function fillSheet(Worksheet $sheet, string $className, array $students): void
-	{
-		$headers = self::columnHeaders();
-		$lastCol = 'D';
+	private static function fillSheet(
+		Worksheet $sheet,
+		array $school,
+		string $className,
+		array $students,
+		string $yearTitle,
+		string $termLabel
+	): void {
+		$lastCol = self::LAST_COL;
+		$headerEnd = self::writeSchoolHeader($sheet, $school);
 
-		$sheet->mergeCells("A1:{$lastCol}1");
-		$sheet->setCellValue('A1', $className);
-		$sheet->getStyle("A1:{$lastCol}1")->applyFromArray([
+		$titleRow = $headerEnd + 2;
+		$infoRow = $titleRow + 1;
+		$headerRow = $infoRow + 2;
+		$dataStart = $headerRow + 1;
+
+		$sheet->mergeCells("A{$titleRow}:{$lastCol}{$titleRow}");
+		$sheet->setCellValue("A{$titleRow}", strtoupper($className));
+		$sheet->getStyle("A{$titleRow}:{$lastCol}{$titleRow}")->applyFromArray([
 			'font' => ['bold' => true, 'size' => 14, 'color' => ['rgb' => self::BRAND]],
-			'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
+			'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
 		]);
-		$sheet->getRowDimension(1)->setRowHeight(24);
+		$sheet->getRowDimension($titleRow)->setRowHeight(24);
 
-		$sheet->mergeCells("A2:{$lastCol}2");
-		$sheet->setCellValue('A2', 'Students: ' . count($students) . '   |   Exported: ' . date('d M Y H:i'));
-		$sheet->getStyle("A2:{$lastCol}2")->applyFromArray([
-			'font' => ['size' => 10, 'color' => ['rgb' => '64748B']],
+		$metaParts = array_filter([
+			'Academic Year: ' . ($yearTitle !== '' ? $yearTitle : '—'),
+			$termLabel !== '' ? $termLabel : null,
+			'Students: ' . count($students),
+			'Exported: ' . date('d M Y H:i'),
 		]);
+		$sheet->mergeCells("A{$infoRow}:{$lastCol}{$infoRow}");
+		$sheet->setCellValue("A{$infoRow}", implode('   |   ', $metaParts));
+		$sheet->getStyle("A{$infoRow}:{$lastCol}{$infoRow}")->applyFromArray([
+			'font' => ['size' => 10, 'color' => ['rgb' => '334155']],
+			'fill' => [
+				'fillType' => Fill::FILL_SOLID,
+				'startColor' => ['rgb' => self::BRAND_LIGHT],
+			],
+			'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'wrapText' => true],
+		]);
+		$sheet->getRowDimension($infoRow)->setRowHeight(22);
 
-		$headerRow = 4;
 		$col = 1;
-		foreach ($headers as $header) {
+		foreach (self::columnHeaders() as $header) {
 			$sheet->setCellValueByColumnAndRow($col, $headerRow, $header);
 			$col++;
 		}
@@ -167,9 +197,9 @@ class SmartStudentSheetsExporter
 			],
 		]);
 		$sheet->getRowDimension($headerRow)->setRowHeight(22);
-		$sheet->freezePane('A5');
+		$sheet->freezePane('A' . $dataStart);
 
-		$row = $headerRow + 1;
+		$row = $dataStart;
 		$num = 1;
 		foreach ($students as $student) {
 			$values = self::rowValues($student, $num);
@@ -190,29 +220,124 @@ class SmartStudentSheetsExporter
 			$num++;
 		}
 
-		if ($row > $headerRow + 1) {
+		if ($row > $dataStart) {
 			$lastData = $row - 1;
-			$sheet->getStyle('A' . ($headerRow + 1) . ":{$lastCol}{$lastData}")->applyFromArray([
+			$sheet->getStyle("A{$dataStart}:{$lastCol}{$lastData}")->applyFromArray([
 				'borders' => [
 					'allBorders' => ['borderStyle' => Border::BORDER_HAIR, 'color' => ['rgb' => 'E2E8F0']],
 				],
 				'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
 			]);
-			$sheet->getStyle('A' . ($headerRow + 1) . ":A{$lastData}")
+			$sheet->getStyle("A{$dataStart}:A{$lastData}")
 				->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-			$sheet->getStyle('C' . ($headerRow + 1) . ":D{$lastData}")
+			$sheet->getStyle("C{$dataStart}:D{$lastData}")
 				->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 		} else {
-			$sheet->mergeCells("A5:{$lastCol}5");
-			$sheet->setCellValue('A5', 'No students in this class.');
-			$sheet->getStyle('A5')->applyFromArray([
+			$sheet->mergeCells("A{$dataStart}:{$lastCol}{$dataStart}");
+			$sheet->setCellValue("A{$dataStart}", 'No students in this class.');
+			$sheet->getStyle("A{$dataStart}")->applyFromArray([
 				'font' => ['italic' => true, 'color' => ['rgb' => '64748B']],
 			]);
 		}
 
-		$sheet->getColumnDimension('A')->setWidth(5);
+		$sheet->getColumnDimension('A')->setWidth(12);
 		$sheet->getColumnDimension('B')->setWidth(32);
 		$sheet->getColumnDimension('C')->setWidth(10);
 		$sheet->getColumnDimension('D')->setWidth(14);
+	}
+
+	/**
+	 * @param array<string,mixed> $school
+	 */
+	private static function writeSchoolHeader(Worksheet $sheet, array $school): int
+	{
+		$lastCol = self::LAST_COL;
+		$name = trim((string) ($school['name'] ?? 'School'));
+		$slogan = trim((string) ($school['slogan'] ?? ''));
+		$address = trim((string) ($school['address'] ?? ''));
+		$pobox = trim((string) ($school['pobox'] ?? ''));
+		$phone = trim((string) ($school['phone'] ?? ''));
+		$email = trim((string) ($school['email'] ?? ''));
+		$website = trim((string) ($school['website'] ?? ''));
+
+		$contact = array_filter([
+			$address !== '' ? $address : null,
+			$pobox !== '' ? 'P.O. Box ' . $pobox : null,
+			$phone !== '' ? 'Tel: ' . $phone : null,
+			$email !== '' ? 'Email: ' . $email : null,
+			$website !== '' ? $website : null,
+		]);
+
+		$sheet->getRowDimension(1)->setRowHeight(36);
+
+		$sheet->mergeCells("B1:{$lastCol}1");
+		$sheet->setCellValue('B1', strtoupper($name));
+		$sheet->getStyle("B1:{$lastCol}1")->applyFromArray([
+			'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => self::BRAND]],
+			'alignment' => [
+				'horizontal' => Alignment::HORIZONTAL_LEFT,
+				'vertical' => Alignment::VERTICAL_CENTER,
+				'indent' => 1,
+			],
+		]);
+
+		$row = 2;
+		if ($slogan !== '') {
+			$sheet->mergeCells("B{$row}:{$lastCol}{$row}");
+			$sheet->setCellValue("B{$row}", $slogan);
+			$sheet->getStyle("B{$row}:{$lastCol}{$row}")->applyFromArray([
+				'font' => ['italic' => true, 'size' => 10, 'color' => ['rgb' => '475569']],
+				'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'indent' => 1],
+			]);
+			$sheet->getRowDimension($row)->setRowHeight(18);
+			$row++;
+		}
+
+		if ($contact !== []) {
+			$sheet->mergeCells("B{$row}:{$lastCol}{$row}");
+			$sheet->setCellValue("B{$row}", implode('  •  ', $contact));
+			$sheet->getStyle("B{$row}:{$lastCol}{$row}")->applyFromArray([
+				'font' => ['size' => 9, 'color' => ['rgb' => '64748B']],
+				'alignment' => ['wrapText' => true, 'horizontal' => Alignment::HORIZONTAL_LEFT, 'indent' => 1],
+			]);
+			$sheet->getRowDimension($row)->setRowHeight(20);
+			$row++;
+		}
+
+		self::placeLogo($sheet, $school);
+
+		$sheet->getStyle("A1:{$lastCol}{$row}")->applyFromArray([
+			'borders' => [
+				'bottom' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => self::BRAND]],
+			],
+		]);
+
+		return $row;
+	}
+
+	/**
+	 * @param array<string,mixed> $school
+	 */
+	private static function placeLogo(Worksheet $sheet, array $school): void
+	{
+		$logoFile = trim((string) ($school['logo'] ?? ''));
+		if ($logoFile === '') {
+			return;
+		}
+		$logoPath = FCPATH . 'assets/images/logo/' . $logoFile;
+		if (!is_file($logoPath)) {
+			return;
+		}
+		try {
+			$drawing = new Drawing();
+			$drawing->setPath($logoPath);
+			$drawing->setCoordinates('A1');
+			$drawing->setHeight(52);
+			$drawing->setOffsetX(2);
+			$drawing->setOffsetY(4);
+			$drawing->setWorksheet($sheet);
+		} catch (\Throwable $e) {
+			// skip broken logo
+		}
 	}
 }
