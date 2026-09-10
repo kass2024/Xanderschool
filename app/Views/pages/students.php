@@ -47,7 +47,7 @@
 	display: inline-block;
 	position: relative;
 	width: min(100%, 360px);
-	margin: 18px 10px 0 0;
+	margin: 0;
 	vertical-align: top;
 }
 .students-live-search .form-control {
@@ -133,7 +133,6 @@
 	white-space: nowrap;
 }
 .st-visitor-badge i { font-size: 10px; }
-.st-sms-actions { display:flex; gap:8px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
 .btn-send-admission-sms { white-space:nowrap; }
 .btn-resend-admission-sms { white-space:nowrap; }
 .st-sms-check { width:16px; height:16px; cursor:pointer; }
@@ -141,14 +140,17 @@
 .students-toolbar {
 	display: flex;
 	flex-wrap: wrap;
-	align-items: flex-start;
-	gap: 12px;
+	align-items: flex-end;
+	gap: 10px 12px;
 	width: 100%;
+	flex: 1 1 auto;
+	min-width: 0;
 }
 .students-toolbar-field {
-	flex: 1 1 220px;
+	flex: 1 1 180px;
 	min-width: 0;
-	margin-top: 18px;
+	margin: 0;
+	max-width: 280px;
 }
 .students-toolbar-field .select2,
 .students-toolbar-field .select2-container {
@@ -156,44 +158,110 @@
 }
 .students-toolbar .students-live-search {
 	display: block;
-	flex: 1 1 280px;
+	flex: 1 1 220px;
 	width: auto;
 	min-width: 0;
-	margin-right: 0;
+	max-width: 360px;
+	margin: 0;
 }
 .students-toolbar-submit {
-	margin-top: 18px;
+	margin: 0;
 	flex: 0 0 auto;
 	min-height: 38px;
 	white-space: nowrap;
 }
+.students-meta-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: 8px;
+	width: 100%;
+	margin-top: 10px;
+}
+.students-meta-row .students-active-year,
+.students-meta-row .students-visitor-alert {
+	margin: 0;
+	flex: 1 1 240px;
+	min-width: 0;
+}
+.students-table-scroll {
+	width: 100%;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+}
+.students-table-scroll table {
+	min-width: 920px;
+}
+.card-header.students-list-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 10px 16px;
+}
+.card-header.students-list-header .card-header-title {
+	flex: 0 0 auto;
+	margin-right: 8px;
+}
+.card-header.students-list-header .btn-actions-pane-right {
+	margin-left: auto;
+	flex: 0 0 auto;
+}
+.st-sms-actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	margin-bottom: 10px;
+}
+.st-sms-actions .btn,
+.st-sms-actions a.btn {
+	flex: 0 0 auto;
+}
+@media (max-width: 1366px) {
+	.students-toolbar-field {
+		flex: 1 1 160px;
+		max-width: none;
+	}
+	.students-toolbar .students-live-search {
+		flex: 1 1 200px;
+		max-width: none;
+	}
+	.students-meta-row .students-active-year,
+	.students-meta-row .students-visitor-alert {
+		flex: 1 1 calc(50% - 8px);
+	}
+}
 @media (max-width: 991.98px) {
-	.card-header-tab.card-header {
-		display: flex;
+	.card-header.students-list-header {
 		flex-direction: column;
 		align-items: stretch;
 	}
-	.btn-actions-pane-right.actions-icon-btn {
-		margin-top: 12px;
+	.card-header.students-list-header .btn-actions-pane-right {
+		margin-left: 0;
 		align-self: flex-end;
+	}
+	.students-toolbar {
+		width: 100%;
+	}
+	.students-toolbar-field,
+	.students-toolbar .students-live-search {
+		flex: 1 1 calc(50% - 8px);
+		max-width: none;
 	}
 }
 @media (max-width: 767.98px) {
 	.students-toolbar-field,
 	.students-toolbar .students-live-search,
 	.students-toolbar-submit,
-	.students-active-year,
-	.students-visitor-alert {
+	.students-meta-row .students-active-year,
+	.students-meta-row .students-visitor-alert {
 		flex: 1 1 100%;
 		width: 100%;
+		max-width: none;
 	}
 	#view_students_form .btn.btn-primary {
 		width: 100%;
-	}
-	.students-active-year,
-	.students-visitor-alert {
-		margin-left: 0;
-		margin-right: 0;
 	}
 	.students-live-search-results {
 		max-height: 300px;
@@ -203,7 +271,8 @@
 	}
 	.st-sms-actions .btn,
 	.st-sms-actions a.btn {
-		width: 100%;
+		flex: 1 1 calc(50% - 8px);
+		text-align: center;
 	}
 }
 .btn-move-student { white-space:nowrap; }
@@ -330,13 +399,13 @@
 			<div class="tab-content">
 				<div class="container-fluid">
 					<div class="card mb-3">
-						<div class="card-header-tab card-header">
+						<div class="card-header-tab card-header students-list-header">
 							<div
 								class="card-header-title font-size-lg text-capitalize font-weight-normal">
 								<i class="header-icon typcn typcn-home-outline text-muted opacity-6"> </i><?= $title; ?>
 							</div>
 							<form id="view_students_form" class="students-toolbar">
-								<div class="form-group col-sm-3 students-toolbar-field">
+								<div class="form-group students-toolbar-field">
 									<select class="select2" id="choose_class" name="c">
 										<option disabled <?= ($class_id == '-1' || $class_id === '') ? 'selected' : '' ?>><?= lang("app.chooseClass"); ?></option>
 										<?php
@@ -346,7 +415,7 @@
 										?>
 									</select>
 								</div>
-								<div class="form-group col-sm-3 students-toolbar-field">
+								<div class="form-group students-toolbar-field">
 									<select class="select2" id="choose_year" name="y">
 										<option disabled <?= ($academic_year == '-1' || $academic_year === '') ? 'selected' : '' ?>><?= lang("app.academicYear"); ?></option>
 										<?php
@@ -373,22 +442,12 @@
 								<button type="submit" value="true" class="btn btn-primary students-toolbar-submit">
 									<?= lang("app.viewStudents"); ?>
 								</button>
+								<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? '')))); ?>"
+								   class="btn btn-success students-toolbar-submit"
+								   title="One workbook with a sheet per class (Names, Gender, Studying)">
+									<i class="fa fa-file-excel"></i> <?= lang("app.exporttoExcel"); ?>
+								</a>
 							</form>
-							<?php if (!empty($active_year_title)): ?>
-								<div class="students-active-year">
-									<i class="fa fa-calendar-check-o"></i>
-									<span>Active academic year: <strong><?= esc($active_year_title) ?></strong><?php if (!empty($active_term_label)): ?> — <?= esc($active_term_label) ?><?php endif; ?></span>
-								</div>
-							<?php endif; ?>
-							<?php if (!empty($visitors_no_card_total) && (int)$visitors_no_card_total > 0): ?>
-								<div class="students-visitor-alert">
-									<span class="counter"><?= (int) $visitors_no_card_total ?></span>
-									<span>
-										visitor<?= (int)$visitors_no_card_total === 1 ? '' : 's' ?> registered without RFID card.
-										<a href="<?= base_url('parent_visiting/assign') ?>">Assign cards →</a>
-									</span>
-								</div>
-							<?php endif; ?>
 							<div class="btn-actions-pane-right actions-icon-btn">
 								<div class="btn-group dropdown">
 									<button type="button" data-toggle="dropdown" aria-haspopup="true"
@@ -403,8 +462,31 @@
 										   class="dropdown-item"><i
 												class="typcn typcn-plus"> </i><span><?= lang("app.AddnewStudent"); ?></span>
 										</a>
+										<div class="dropdown-divider"></div>
+										<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) $academic_year)); ?>"
+										   class="dropdown-item"
+										   title="One workbook, one sheet per class">
+											<i class="fa fa-file-excel"></i> Smart Excel (all classes)
+										</a>
 									</div>
 								</div>
+							</div>
+							<div class="students-meta-row">
+								<?php if (!empty($active_year_title)): ?>
+									<div class="students-active-year">
+										<i class="fa fa-calendar-check-o"></i>
+										<span>Active academic year: <strong><?= esc($active_year_title) ?></strong><?php if (!empty($active_term_label)): ?> — <?= esc($active_term_label) ?><?php endif; ?></span>
+									</div>
+								<?php endif; ?>
+								<?php if (!empty($visitors_no_card_total) && (int)$visitors_no_card_total > 0): ?>
+									<div class="students-visitor-alert">
+										<span class="counter"><?= (int) $visitors_no_card_total ?></span>
+										<span>
+											visitor<?= (int)$visitors_no_card_total === 1 ? '' : 's' ?> registered without RFID card.
+											<a href="<?= base_url('parent_visiting/assign') ?>">Assign cards →</a>
+										</span>
+									</div>
+								<?php endif; ?>
 							</div>
 						</div>
 						<div class="col-sm-12">
@@ -456,11 +538,14 @@
 												<button type="button" id="btnSendAdmissionSmsSelected" class="btn btn-info">
 													<i class="fa fa-paper-plane"></i> Send to selected
 												</button>
-												<a href="<?=base_url('export_student_list/'.$class_id.'/'.$academic_year);?>" target="_blank" class="btn btn-success">
-													<?= lang("app.exporttoExcel"); ?>
+												<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) $academic_year)); ?>"
+												   class="btn btn-success"
+												   title="One workbook with a sheet per class (Names, Gender, Studying)">
+													<i class="fa fa-file-excel"></i> <?= lang("app.exporttoExcel"); ?>
 												</a>
 											</div>
 										</div>
+										<div class="students-table-scroll">
 										<table style="width: 100%;" id="example"
 											   class="table table-hover table-striped table-bordered dataTable dtr-inline"
 											   role="grid" aria-describedby="example_info">
@@ -566,6 +651,7 @@
 											</tr>
 											</tfoot>
 										</table>
+										</div>
 									</div>
 								</div>
 							</div>

@@ -6937,6 +6937,76 @@ public function attendanceCard()
 		}
 	}
 
+	/**
+	 * Smart multi-sheet student workbook: one sheet per class (Level+title).
+	 * Columns: Names, Gender, Studying.
+	 */
+	public function export_smart_student_list()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$yearId = (int) ($this->request->getGet('y') ?? 0);
+		if ($yearId < 1) {
+			$yearId = (int) ($this->data['academic_year_id'] ?? 0);
+		}
+		if ($yearId < 1) {
+			echo 'No academic year selected.';
+			return;
+		}
+
+		$classMdl = new ClassesModel();
+		$allClasses = $classMdl->get_classes();
+		$classes = array_values(array_filter($allClasses, function ($class) {
+			return !$this->classLooksLikeHoliday($class);
+		}));
+
+		$studentMdl = new StudentModel();
+		$sheets = [];
+		foreach ($classes as $class) {
+			$classId = (int) ($class['id'] ?? 0);
+			if ($classId < 1) {
+				continue;
+			}
+			$students = $studentMdl->select('students.id, students.fname, students.lname, students.sex, students.studying_mode')
+				->join('class_records cr', 'students.id=cr.student')
+				->where('cr.class', $classId)
+				->where('cr.year', $yearId)
+				->where('students.status', 1)
+				->groupBy('students.id')
+				->orderBy('students.fname', 'ASC')
+				->orderBy('students.lname', 'ASC')
+				->get()->getResultArray();
+			$unique = [];
+			foreach ($students as $row) {
+				$sid = (int) ($row['id'] ?? 0);
+				if ($sid > 0) {
+					$unique[$sid] = $row;
+				}
+			}
+			$sheets[] = [
+				'class' => $class,
+				'students' => array_values($unique),
+			];
+		}
+
+		$schoolName = (string) ($this->data['school_name'] ?? 'School');
+		$yearTitle = '';
+		$yearRow = (new AcademicYearModel())->select('title')->where('id', $yearId)->where('school_id', $schoolId)->first();
+		if ($yearRow) {
+			$yearTitle = (string) ($yearRow['title'] ?? '');
+		}
+
+		$spreadsheet = \App\Libraries\SmartStudentSheetsExporter::build($sheets);
+		$filename = \App\Libraries\SmartStudentSheetsExporter::exportFilename($schoolName, $yearTitle);
+		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
+
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
+		header('Cache-Control: max-age=0');
+		$writer->save('php://output');
+		exit;
+	}
+
 	/** Reset password and reshare login credentials to one or all staff (SMS / email). */
 	public function share_staff_access()
 	{
