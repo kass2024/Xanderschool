@@ -1,48 +1,4 @@
 <style>
-.students-active-year {
-	display: inline-flex;
-	align-items: center;
-	gap: 8px;
-	margin: 14px 0 0 4px;
-	padding: 8px 14px;
-	background: linear-gradient(135deg, #eff6ff, #dbeafe);
-	border: 1px solid #93c5fd;
-	border-radius: 10px;
-	font-size: 13px;
-	font-weight: 600;
-	color: #1e40af;
-}
-.students-active-year i { opacity: .85; }
-.students-visitor-alert {
-	display: inline-flex;
-	align-items: center;
-	gap: 10px;
-	margin: 10px 0 0 4px;
-	padding: 10px 16px;
-	background: #fffbeb;
-	border: 1px solid #fcd34d;
-	border-radius: 10px;
-	font-size: 13px;
-	color: #92400e;
-}
-.students-visitor-alert .counter {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-width: 28px;
-	height: 28px;
-	padding: 0 8px;
-	border-radius: 999px;
-	background: #f59e0b;
-	color: #fff;
-	font-weight: 700;
-	font-size: 14px;
-}
-.students-visitor-alert a {
-	color: #b45309;
-	font-weight: 600;
-	text-decoration: underline;
-}
 .students-live-search {
 	display: inline-block;
 	position: relative;
@@ -170,20 +126,6 @@
 	min-height: 38px;
 	white-space: nowrap;
 }
-.students-meta-row {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: stretch;
-	gap: 8px;
-	width: 100%;
-	margin-top: 10px;
-}
-.students-meta-row .students-active-year,
-.students-meta-row .students-visitor-alert {
-	margin: 0;
-	flex: 1 1 240px;
-	min-width: 0;
-}
 .students-table-scroll {
 	width: 100%;
 	overflow-x: auto;
@@ -227,10 +169,6 @@
 		flex: 1 1 200px;
 		max-width: none;
 	}
-	.students-meta-row .students-active-year,
-	.students-meta-row .students-visitor-alert {
-		flex: 1 1 calc(50% - 8px);
-	}
 }
 @media (max-width: 991.98px) {
 	.card-header.students-list-header {
@@ -253,9 +191,7 @@
 @media (max-width: 767.98px) {
 	.students-toolbar-field,
 	.students-toolbar .students-live-search,
-	.students-toolbar-submit,
-	.students-meta-row .students-active-year,
-	.students-meta-row .students-visitor-alert {
+	.students-toolbar-submit {
 		flex: 1 1 100%;
 		width: 100%;
 		max-width: none;
@@ -470,23 +406,6 @@
 										</a>
 									</div>
 								</div>
-							</div>
-							<div class="students-meta-row">
-								<?php if (!empty($active_year_title)): ?>
-									<div class="students-active-year">
-										<i class="fa fa-calendar-check-o"></i>
-										<span>Active academic year: <strong><?= esc($active_year_title) ?></strong><?php if (!empty($active_term_label)): ?> — <?= esc($active_term_label) ?><?php endif; ?></span>
-									</div>
-								<?php endif; ?>
-								<?php if (!empty($visitors_no_card_total) && (int)$visitors_no_card_total > 0): ?>
-									<div class="students-visitor-alert">
-										<span class="counter"><?= (int) $visitors_no_card_total ?></span>
-										<span>
-											visitor<?= (int)$visitors_no_card_total === 1 ? '' : 's' ?> registered without RFID card.
-											<a href="<?= base_url('parent_visiting/assign') ?>">Assign cards →</a>
-										</span>
-									</div>
-								<?php endif; ?>
 							</div>
 						</div>
 						<div class="col-sm-12">
