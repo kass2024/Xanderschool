@@ -683,8 +683,9 @@ foreach ($students as $st) {
 			<div class="modal-body">
 				<div id="moveStudentModalAlert" class="alert d-none" role="alert"></div>
 				<div class="move-note">
-					The student keeps all personal records (marks, paid fees, discipline, permissions, attendance, visitors, cards).
-					Class enrollment updates for this year, and class-linked fees/marks are remapped to the new class where possible.
+					Move transfers the student with related records: marks, paid fees (school &amp; extra), photos, cards,
+					visitors, discipline, permissions, attendance, material checks, and application class.
+					Class-linked fees and marks are remapped to the destination class (matching fees are created when needed).
 				</div>
 				<p id="moveStudentSummary" style="font-weight:600;margin-bottom:12px;"></p>
 				<div class="form-group">

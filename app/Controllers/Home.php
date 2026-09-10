@@ -423,8 +423,9 @@ public function testEmail()
 
 	/**
 	 * Remap class-scoped academic/finance links when a student changes class.
-	 * Student-owned rows (discipline, permissions, daily attendance, visitors, cards)
-	 * stay on student_id and need no remap.
+	 * Photos, cards, visitors, discipline, and permissions stay on student_id.
+	 * When a look-alike duplicate is found in the destination class, owned rows
+	 * are merged onto the kept student via mergeStudentOwnedRecordsOnMove().
 	 */
 	private function remapStudentRecordsOnClassMove(
 		\CodeIgniter\Database\BaseConnection $db,
@@ -436,70 +437,133 @@ public function testEmail()
 		array $fromClass,
 		array $toClass
 	): void {
-		// Academics: marks follow the new class; remap course_id when destination has a matching course.
-		if ($db->tableExists('marks')) {
-			$db->query(
-				'UPDATE marks SET class_id = ? WHERE student_id = ? AND class_id = ?',
-				[$toClassId, $studentId, $fromClassId]
-			);
-			if ($db->tableExists('course_records') && $db->tableExists('courses')) {
+		// Any student+class_id table for this enrollment year / class.
+		$classScoped = [
+			['marks', 'student_id', 'class_id', null],
+			['student_material_checks', 'student_id', 'class_id', 'academic_year'],
+		];
+		foreach ($classScoped as [$table, $studentCol, $classCol, $yearCol]) {
+			if (!$db->tableExists($table) || !$db->fieldExists($classCol, $table) || !$db->fieldExists($studentCol, $table)) {
+				continue;
+			}
+			if ($yearCol && $db->fieldExists($yearCol, $table)) {
 				$db->query(
-					'UPDATE marks m
-					 INNER JOIN courses c_old ON c_old.id = m.course_id
-					 INNER JOIN course_records cr_new ON cr_new.class = ? AND cr_new.year = ?
-					 INNER JOIN courses c_new ON c_new.id = cr_new.course
-					 SET m.course_id = c_new.id
-					 WHERE m.student_id = ? AND m.class_id = ?
-					   AND c_old.id <> c_new.id
-					   AND (
-						 (c_old.code IS NOT NULL AND c_old.code <> \'\' AND LOWER(TRIM(c_old.code)) = LOWER(TRIM(c_new.code)))
-						 OR LOWER(TRIM(c_old.title)) = LOWER(TRIM(c_new.title))
-					   )',
-					[$toClassId, $yearKey, $studentId, $toClassId]
+					"UPDATE {$table} SET {$classCol} = ? WHERE {$studentCol} = ? AND {$classCol} = ? AND {$yearCol} = ?",
+					[$toClassId, $studentId, $fromClassId, $yearKey]
+				);
+			} else {
+				$db->query(
+					"UPDATE {$table} SET {$classCol} = ? WHERE {$studentCol} = ? AND {$classCol} = ?",
+					[$toClassId, $studentId, $fromClassId]
 				);
 			}
 		}
 
-		if ($db->tableExists('student_material_checks')) {
+		// Marks: remap course_id onto destination class courses when titles/codes match.
+		if ($db->tableExists('marks') && $db->tableExists('course_records') && $db->tableExists('courses')) {
 			$db->query(
-				'UPDATE student_material_checks SET class_id = ? WHERE student_id = ? AND class_id = ? AND academic_year = ?',
-				[$toClassId, $studentId, $fromClassId, $yearKey]
+				'UPDATE marks m
+				 INNER JOIN courses c_old ON c_old.id = m.course_id
+				 INNER JOIN course_records cr_new ON cr_new.class = ? AND cr_new.year = ?
+				 INNER JOIN courses c_new ON c_new.id = cr_new.course
+				 SET m.course_id = c_new.id
+				 WHERE m.student_id = ? AND m.class_id = ?
+				   AND c_old.id <> c_new.id
+				   AND (
+					 (c_old.code IS NOT NULL AND c_old.code <> \'\' AND LOWER(TRIM(c_old.code)) = LOWER(TRIM(c_new.code)))
+					 OR LOWER(TRIM(c_old.title)) = LOWER(TRIM(c_new.title))
+				   )',
+				[$toClassId, $yearKey, $studentId, $toClassId]
 			);
 		}
 
-		// Finance: class-level extra fee payments → matching fee on destination class (same title+term+year).
-		if ($db->tableExists('fees_records') && $db->tableExists('extra_fees')) {
-			$oldExtras = $db->query(
-				'SELECT id, LOWER(TRIM(title)) AS tkey, term, academic_year
-				 FROM extra_fees
-				 WHERE school_id = ? AND type = 0 AND type_id = ? AND academic_year = ?',
-				[$schoolId, $fromClassId, $yearKey]
-			)->getResultArray();
-			$newExtras = $db->query(
-				'SELECT id, LOWER(TRIM(title)) AS tkey, term, academic_year
-				 FROM extra_fees
-				 WHERE school_id = ? AND type = 0 AND type_id = ? AND academic_year = ?',
-				[$schoolId, $toClassId, $yearKey]
-			)->getResultArray();
-			$newMap = [];
-			foreach ($newExtras as $ex) {
-				$key = ($ex['tkey'] ?? '') . '|' . (int) ($ex['term'] ?? 0);
-				if ($key !== '|0' && !isset($newMap[$key])) {
-					$newMap[$key] = (int) $ex['id'];
-				}
+		// Deliberation history for this student/class.
+		if ($db->tableExists('deliberation_records')) {
+			if ($db->fieldExists('oldClass', 'deliberation_records') && $db->fieldExists('studentId', 'deliberation_records')) {
+				$db->query(
+					'UPDATE deliberation_records SET oldClass = ? WHERE studentId = ? AND oldClass = ?',
+					[$toClassId, $studentId, $fromClassId]
+				);
 			}
-			foreach ($oldExtras as $ex) {
-				$oldId = (int) ($ex['id'] ?? 0);
-				$key = ($ex['tkey'] ?? '') . '|' . (int) ($ex['term'] ?? 0);
-				$newId = $newMap[$key] ?? 0;
-				if ($oldId < 1 || $newId < 1 || $oldId === $newId) {
+			if ($db->fieldExists('newClass', 'deliberation_records') && $db->fieldExists('studentId', 'deliberation_records')) {
+				$db->query(
+					'UPDATE deliberation_records SET newClass = ? WHERE studentId = ? AND newClass = ?',
+					[$toClassId, $studentId, $fromClassId]
+				);
+			}
+		}
+
+		// Finance: class-level extra fee payments → matching fee on destination (create if missing).
+		if ($db->tableExists('fees_records') && $db->tableExists('extra_fees')) {
+			$paidOldIds = $db->query(
+				'SELECT DISTINCT fr.fees_id
+				 FROM fees_records fr
+				 INNER JOIN extra_fees ef ON ef.id = fr.fees_id
+				 WHERE fr.student_id = ? AND fr.fees_type = 1
+				   AND ef.school_id = ? AND ef.type = 0 AND ef.type_id = ? AND ef.academic_year = ?',
+				[$studentId, $schoolId, $fromClassId, $yearKey]
+			)->getResultArray();
+			foreach ($paidOldIds as $paid) {
+				$oldId = (int) ($paid['fees_id'] ?? 0);
+				if ($oldId < 1) {
 					continue;
 				}
-				$db->query(
-					'UPDATE fees_records SET fees_id = ?
-					 WHERE student_id = ? AND fees_type = 1 AND fees_id = ?',
-					[$newId, $studentId, $oldId]
-				);
+				$oldFee = $db->query('SELECT * FROM extra_fees WHERE id = ? LIMIT 1', [$oldId])->getRowArray();
+				if (!$oldFee) {
+					continue;
+				}
+				$title = trim((string) ($oldFee['title'] ?? ''));
+				$term = (int) ($oldFee['term'] ?? 0);
+				$newId = 0;
+				$match = $db->query(
+					'SELECT id FROM extra_fees
+					 WHERE school_id = ? AND type = 0 AND type_id = ? AND academic_year = ?
+					   AND LOWER(TRIM(title)) = LOWER(?) AND term = ?
+					 LIMIT 1',
+					[$schoolId, $toClassId, $yearKey, $title, $term]
+				)->getRowArray();
+				if ($match) {
+					$newId = (int) $match['id'];
+				} else {
+					$matchLoose = $db->query(
+						'SELECT id FROM extra_fees
+						 WHERE school_id = ? AND type = 0 AND type_id = ? AND academic_year = ?
+						   AND LOWER(TRIM(title)) = LOWER(?)
+						 ORDER BY ABS(term - ?) ASC, id ASC
+						 LIMIT 1',
+						[$schoolId, $toClassId, $yearKey, $title, $term]
+					)->getRowArray();
+					if ($matchLoose) {
+						$newId = (int) $matchLoose['id'];
+					}
+				}
+				if ($newId < 1) {
+					$insert = [
+						'school_id' => $schoolId,
+						'title' => $title !== '' ? $title : ('Fee ' . $oldId),
+						'academic_year' => $yearKey,
+						'type_id' => $toClassId,
+						'type' => 0,
+						'term' => $term > 0 ? $term : 1,
+						'amount' => $oldFee['amount'] ?? 0,
+						'created_by' => (int) ($oldFee['created_by'] ?? 0),
+					];
+					if ($db->fieldExists('amount_boarding', 'extra_fees')) {
+						$insert['amount_boarding'] = $oldFee['amount_boarding'] ?? null;
+					}
+					if ($db->fieldExists('amount_day', 'extra_fees')) {
+						$insert['amount_day'] = $oldFee['amount_day'] ?? null;
+					}
+					$db->table('extra_fees')->insert($insert);
+					$newId = (int) $db->insertID();
+				}
+				if ($newId > 0 && $newId !== $oldId) {
+					$db->query(
+						'UPDATE fees_records SET fees_id = ?
+						 WHERE student_id = ? AND fees_type = 1 AND fees_id = ?',
+						[$newId, $studentId, $oldId]
+					);
+				}
 			}
 		}
 
@@ -568,6 +632,95 @@ public function testEmail()
 		}
 	}
 
+	/**
+	 * When a look-alike duplicate student already sits in the destination class,
+	 * pull their owned records onto the kept student so fees/marks/photos/cards are not left behind.
+	 */
+	private function mergeStudentOwnedRecordsOnMove(
+		\CodeIgniter\Database\BaseConnection $db,
+		int $schoolId,
+		int $fromStudentId,
+		int $toStudentId
+	): void {
+		if ($fromStudentId < 1 || $toStudentId < 1 || $fromStudentId === $toStudentId) {
+			return;
+		}
+
+		$studentIdTables = [
+			['fees_records', 'student_id'],
+			['marks', 'student_id'],
+			['disciplines', 'student_id'],
+			['permission', 'student_id'],
+			['student_material_checks', 'student_id'],
+			['student_visitors', 'student_id'],
+			['hostel_allocations', 'student_id'],
+			['course_attendance_records', 'student_id'],
+			['school_fees_discount', 'student'],
+			['deliberation_records', 'studentId'],
+		];
+		foreach ($studentIdTables as [$table, $col]) {
+			if (!$db->tableExists($table) || !$db->fieldExists($col, $table)) {
+				continue;
+			}
+			try {
+				$db->query("UPDATE {$table} SET {$col} = ? WHERE {$col} = ?", [$toStudentId, $fromStudentId]);
+			} catch (\Throwable $e) {
+				// Unique conflicts: leave conflicting rows on the duplicate; enrollment is still removed.
+				log_message('warning', '[moveStudent] merge ' . $table . ': ' . $e->getMessage());
+			}
+		}
+
+		if ($db->tableExists('attendance_records') && $db->fieldExists('user_id', 'attendance_records')) {
+			$db->query(
+				'UPDATE attendance_records SET user_id = ? WHERE user_id = ? AND user_type = 0 AND school_id = ?',
+				[$toStudentId, $fromStudentId, $schoolId]
+			);
+		}
+
+		// Photo / card / wallet: keep destination values; fill blanks from duplicate.
+		$fromCols = ['photo', 'card', 'wallet_balance'];
+		foreach (['photo_taken_by_id', 'photo_taken_by', 'photo_taken_at', 'wallet_pin', 'transport_money'] as $extraCol) {
+			if ($db->fieldExists($extraCol, 'students')) {
+				$fromCols[] = $extraCol;
+			}
+		}
+		$colList = implode(', ', $fromCols);
+		$from = $db->query(
+			"SELECT {$colList} FROM students WHERE id = ? AND school_id = ? LIMIT 1",
+			[$fromStudentId, $schoolId]
+		)->getRowArray();
+		$to = $db->query(
+			'SELECT photo, card, wallet_balance FROM students WHERE id = ? AND school_id = ? LIMIT 1',
+			[$toStudentId, $schoolId]
+		)->getRowArray();
+		if ($from && $to) {
+			$patch = [];
+			if (trim((string) ($to['photo'] ?? '')) === '' && trim((string) ($from['photo'] ?? '')) !== '') {
+				$patch['photo'] = $from['photo'];
+				foreach (['photo_taken_by_id', 'photo_taken_by', 'photo_taken_at'] as $photoCol) {
+					if (array_key_exists($photoCol, $from)) {
+						$patch[$photoCol] = $from[$photoCol];
+					}
+				}
+			}
+			if (trim((string) ($to['card'] ?? '')) === '' && trim((string) ($from['card'] ?? '')) !== '') {
+				$patch['card'] = $from['card'];
+			}
+			if ((float) ($to['wallet_balance'] ?? 0) <= 0 && (float) ($from['wallet_balance'] ?? 0) > 0) {
+				$patch['wallet_balance'] = $from['wallet_balance'];
+				if (!empty($from['wallet_pin'])) {
+					$patch['wallet_pin'] = $from['wallet_pin'];
+				}
+			}
+			if (isset($from['transport_money']) && (float) ($from['transport_money'] ?? 0) > 0) {
+				$patch['transport_money'] = $from['transport_money'];
+			}
+			if ($patch !== []) {
+				$db->table('students')->where('id', $toStudentId)->where('school_id', $schoolId)->update($patch);
+			}
+		}
+	}
+
 	private function normalizePersonName(string $fname, string $lname): string
 	{
 		$s = strtolower(trim($fname . ' ' . $lname));
@@ -612,8 +765,9 @@ public function testEmail()
 
 	/**
 	 * Move one student to another class for a year.
-	 * Enrollment changes; class-bound academics/finance are remapped; student-owned
-	 * records (discipline, permissions, attendance, visitors, cards) stay on the student.
+	 * Enrollment changes; class-bound academics/finance are remapped; photos/cards/
+	 * visitors/discipline stay on the student. Look-alike duplicates in the destination
+	 * class have their owned records merged onto the kept student.
 	 *
 	 * @return array{ok:bool,error?:string,from?:string,to?:string,name?:string}
 	 */
@@ -680,6 +834,7 @@ public function testEmail()
 			if (!$this->studentsLookLikeSamePerson($student, $mate)) {
 				continue;
 			}
+			$this->mergeStudentOwnedRecordsOnMove($db, $schoolId, (int) $mate['id'], $studentId);
 			$db->query('DELETE FROM class_records WHERE id = ?', [(int) $mate['cr_id']]);
 		}
 
