@@ -47,9 +47,7 @@ class TimetableManagement extends Home
 
 		$year = (int) ($data['academic_year'] ?? 0);
 		$term = (int) ($data['term'] ?? 1);
-		if ($this->isTimetableStale($schoolId, $year, $term)) {
-			$this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'dashboard_stale', false);
-		}
+		// Manual generate only — do not auto-queue when assignments changed.
 		$data['active_generation_job'] = $this->findExistingTimetableJob($schoolId, $year, $term);
 		$data['timetable_stale'] = $this->isTimetableStale($schoolId, $year, $term);
 
@@ -433,13 +431,17 @@ class TimetableManagement extends Home
 			'term' => $term,
 			'use_gemini' => $useGemini ? 1 : 0,
 			'reason' => $reason,
-			'message' => 'Queued after ' . $reason . '.',
+			'message' => 'Queued — preparing nursery, primary, and secondary stages…',
+			'progress' => 0,
+			'stage' => 'queued',
+			'stages' => [],
 		]);
 		$spawn = $this->spawnTimetableWorker($jobId);
 		if (empty($spawn['started'])) {
 			$this->updateTimetableJob($jobId, [
 				'status' => 'failed',
 				'message' => $spawn['error'] ?? 'Could not start timetable worker.',
+				'progress' => 0,
 				'finished_at' => date('Y-m-d H:i:s'),
 			]);
 			return ['error' => 'Could not start timetable background worker.', 'job_id' => $jobId];
@@ -449,7 +451,8 @@ class TimetableManagement extends Home
 			'queued' => true,
 			'job_id' => $jobId,
 			'status' => 'queued',
-			'message' => 'Timetable generation started in the background.',
+			'message' => 'Smart generation started (nursery → primary → secondary).',
+			'progress' => 0,
 			'reason' => $reason,
 		];
 	}
@@ -531,54 +534,19 @@ class TimetableManagement extends Home
 	}
 
 	/**
-	 * Cron / CLI: queue regeneration for schools whose assignments changed.
+	 * Auto-regen cron is disabled — use Timetable → Generate smart timetable.
 	 *
-	 * @return array{queued:int,skipped:int,schools:list<array<string,mixed>>}
+	 * @return array{queued:int,skipped:int,disabled:bool,schools:list<array<string,mixed>>}
 	 */
 	public function autoRegenerateStaleSchools(?int $onlySchoolId = null): array
 	{
-		$db = \Config\Database::connect();
-		(new TimetableSchemaModel())->ensureSchema();
-		$builder = $db->table('schools s')
-			->select('s.id AS school_id, at.academic_year, at.term, s.active_term')
-			->join('active_term at', 'at.id = s.active_term', 'inner')
-			->where('s.status', 1)
-			->where('at.academic_year >', 0)
-			->where('at.term >', 0);
-		if ($onlySchoolId !== null && $onlySchoolId > 0) {
-			$builder->where('s.id', $onlySchoolId);
-		}
-		$schools = $builder->get()->getResultArray();
-		$queued = 0;
-		$skipped = 0;
-		$details = [];
-		foreach ($schools as $row) {
-			$schoolId = (int) ($row['school_id'] ?? 0);
-			$year = (int) ($row['academic_year'] ?? 0);
-			$term = (int) ($row['term'] ?? 0);
-			if ($schoolId <= 0 || $year <= 0 || $term <= 0) {
-				$skipped++;
-				continue;
-			}
-			if (!$this->isTimetableStale($schoolId, $year, $term)) {
-				$skipped++;
-				continue;
-			}
-			$result = $this->queueBackgroundGeneration($schoolId, 0, $year, $term, 'cron_auto_regen', false);
-			$details[] = [
-				'school_id' => $schoolId,
-				'year' => $year,
-				'term' => $term,
-				'result' => $result,
-			];
-			if (!empty($result['queued']) || !empty($result['job_id'])) {
-				$queued++;
-			} else {
-				$skipped++;
-			}
-		}
-		$this->respawnOrphanQueuedJobs();
-		return ['queued' => $queued, 'skipped' => $skipped, 'schools' => $details];
+		return [
+			'queued' => 0,
+			'skipped' => 0,
+			'disabled' => true,
+			'message' => 'Automatic timetable regeneration is disabled. Generate from the Timetable dashboard.',
+			'schools' => [],
+		];
 	}
 
 	/** Re-spawn jobs left in queued state (worker spawn may have failed). */
@@ -711,24 +679,34 @@ class TimetableManagement extends Home
 	/**
 	 * @return array{entries:list<array<string,mixed>>,warnings:list<string>,schedule_id:int}|null
 	 */
-	private function runGeneration(int $schoolId, int $staffId, TimetableSchemaModel $schema, int $year, int $term): ?array
+	private function runGeneration(int $schoolId, int $staffId, TimetableSchemaModel $schema, int $year, int $term, ?string $jobId = null): ?array
 	{
 		try {
-			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term);
+			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term, $jobId);
 		} catch (\Throwable $e) {
 			log_message('error', 'Timetable generation primary pass failed for school {school}, retrying after repair: {msg}', [
 				'school' => $schoolId,
 				'msg' => $e->getMessage(),
 			]);
 			$this->repairGenerationState($schoolId, $schema);
-			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term);
+			if ($jobId) {
+				$this->updateTimetableJob($jobId, [
+					'message' => 'Retrying after repair…',
+					'progress' => 5,
+					'stage' => 'retry',
+				]);
+			}
+			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term, $jobId);
 		}
 	}
 
 	/**
+	 * Smart generation: nursery alone → primary alone → secondary/other alone,
+	 * each with its own period template and placement rules.
+	 *
 	 * @return array{entries:list<array<string,mixed>>,warnings:list<string>,schedule_id:int,staging_created:int}|null
 	 */
-	private function runGenerationOnce(int $schoolId, int $staffId, TimetableSchemaModel $schema, int $year, int $term): ?array
+	private function runGenerationOnce(int $schoolId, int $staffId, TimetableSchemaModel $schema, int $year, int $term, ?string $jobId = null): ?array
 	{
 		$db = \Config\Database::connect();
 		$assignments = $this->loadAssignments($schoolId, $year, $term);
@@ -745,9 +723,6 @@ class TimetableManagement extends Home
 
 		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
 
-		$generator = new TimetableGeneratorService();
-		$allEntries = [];
-		$allWarnings = [];
 		$byTrack = [];
 		foreach ($assignments as $assignment) {
 			$classId = (int) ($assignment['class_id'] ?? 0);
@@ -756,24 +731,105 @@ class TimetableManagement extends Home
 			$byTrack[$track][] = $assignment;
 		}
 
-		$reset = true;
-		foreach ($byTrack as $trackKey => $trackAssignments) {
-			$days = TimetableSchemaModel::weekDaysForTrack($settings, (string) $trackKey);
-			$blocked = [];
-			foreach ($schema->specialTimesMap($schoolId, $trackKey) as $key => $row) {
-				$blocked[$key] = true;
-			}
-			$result = $generator->generate(
-				$trackAssignments,
-				$schema->teachingSlots($schoolId, $trackKey),
-				$days,
-				$blocked,
-				$reset
-			);
-			$reset = false;
-			$allEntries = array_merge($allEntries, $result['entries']);
-			$allWarnings = array_merge($allWarnings, $result['warnings']);
+		$orderedTracks = TimetableTrack::orderTracksForGeneration(array_keys($byTrack));
+		/** @var array<string,list<string>> */
+		$phaseTracks = [];
+		foreach ($orderedTracks as $trackKey) {
+			$phase = TimetableTrack::generationPhaseKey($trackKey);
+			$phaseTracks[$phase][] = $trackKey;
 		}
+		$phaseKeys = array_keys($phaseTracks);
+		$phaseCount = max(1, count($phaseKeys));
+
+		$stages = [];
+		foreach ($phaseKeys as $phaseKey) {
+			$stages[] = [
+				'key' => $phaseKey,
+				'label' => TimetableTrack::generationPhaseLabel($phaseKey),
+				'status' => 'pending',
+			];
+		}
+		$stages[] = [
+			'key' => 'save',
+			'label' => 'Saving schedule',
+			'status' => 'pending',
+		];
+
+		$this->reportGenerationProgress($jobId, [
+			'status' => 'running',
+			'message' => 'Preparing smart generation (nursery → primary → secondary)…',
+			'progress' => 2,
+			'stage' => 'prepare',
+			'stages' => $stages,
+		]);
+
+		$allEntries = [];
+		$allWarnings = [];
+		$phaseIndex = 0;
+
+		foreach ($phaseTracks as $phaseKey => $tracks) {
+			$phaseLabel = TimetableTrack::generationPhaseLabel($phaseKey);
+			$stages = $this->markGenerationStage($stages, $phaseKey, 'running');
+			$basePct = (int) round(5 + ($phaseIndex / $phaseCount) * 75);
+			$this->reportGenerationProgress($jobId, [
+				'message' => 'Generating ' . $phaseLabel . ' timetable…',
+				'progress' => $basePct,
+				'stage' => $phaseKey,
+				'stages' => $stages,
+			]);
+
+			// Fresh placement state per phase so nursery / primary / secondary stay independent.
+			$generator = new TimetableGeneratorService();
+			$reset = true;
+			$phaseEntries = 0;
+			foreach ($tracks as $trackKey) {
+				$trackAssignments = $byTrack[$trackKey] ?? [];
+				if ($trackAssignments === []) {
+					continue;
+				}
+				$days = TimetableSchemaModel::weekDaysForTrack($settings, (string) $trackKey);
+				$blocked = [];
+				foreach ($schema->specialTimesMap($schoolId, $trackKey) as $key => $row) {
+					$blocked[$key] = true;
+				}
+				$trackLabel = TimetableTrack::labels()[$trackKey] ?? $trackKey;
+				$this->reportGenerationProgress($jobId, [
+					'message' => 'Generating ' . $phaseLabel . ' — ' . $trackLabel . '…',
+					'progress' => min(85, $basePct + 3),
+					'stage' => $phaseKey,
+					'stages' => $stages,
+				]);
+				$result = $generator->generate(
+					$trackAssignments,
+					$schema->teachingSlots($schoolId, $trackKey),
+					$days,
+					$blocked,
+					$reset
+				);
+				$reset = false;
+				$phaseEntries += count($result['entries']);
+				$allEntries = array_merge($allEntries, $result['entries']);
+				$allWarnings = array_merge($allWarnings, $result['warnings']);
+			}
+
+			$stages = $this->markGenerationStage($stages, $phaseKey, 'done');
+			$phaseIndex++;
+			$donePct = (int) round(5 + ($phaseIndex / $phaseCount) * 75);
+			$this->reportGenerationProgress($jobId, [
+				'message' => $phaseLabel . ' done (' . $phaseEntries . ' lesson slots).',
+				'progress' => $donePct,
+				'stage' => $phaseKey,
+				'stages' => $stages,
+			]);
+		}
+
+		$stages = $this->markGenerationStage($stages, 'save', 'running');
+		$this->reportGenerationProgress($jobId, [
+			'message' => 'Saving timetable and resolving parking lot…',
+			'progress' => 88,
+			'stage' => 'save',
+			'stages' => $stages,
+		]);
 
 		$db->transStart();
 		$existing = $db->table('timetable_schedules')
@@ -830,12 +886,43 @@ class TimetableManagement extends Home
 			throw new \RuntimeException('Database transaction failed while saving the timetable.');
 		}
 
+		$stages = $this->markGenerationStage($stages, 'save', 'done');
+		$this->reportGenerationProgress($jobId, [
+			'message' => 'Schedule saved.',
+			'progress' => 96,
+			'stage' => 'save',
+			'stages' => $stages,
+		]);
+
 		return [
 			'entries' => $allEntries,
 			'warnings' => $allWarnings,
 			'schedule_id' => $scheduleId,
 			'staging_created' => $stagingCreated,
 		];
+	}
+
+	/** @param array<string,mixed> $patch */
+	private function reportGenerationProgress(?string $jobId, array $patch): void
+	{
+		if ($jobId === null || $jobId === '') {
+			return;
+		}
+		$this->updateTimetableJob($jobId, $patch);
+	}
+
+	/**
+	 * @param list<array{key:string,label:string,status:string}> $stages
+	 * @return list<array{key:string,label:string,status:string}>
+	 */
+	private function markGenerationStage(array $stages, string $key, string $status): array
+	{
+		foreach ($stages as $i => $stage) {
+			if (($stage['key'] ?? '') === $key) {
+				$stages[$i]['status'] = $status;
+			}
+		}
+		return $stages;
 	}
 
 	/**
@@ -944,6 +1031,9 @@ class TimetableManagement extends Home
 			'id' => $jobId,
 			'status' => 'queued',
 			'message' => 'Queued for generation.',
+			'progress' => 0,
+			'stage' => 'queued',
+			'stages' => [],
 			'created_at' => date('Y-m-d H:i:s'),
 			'started_at' => null,
 			'finished_at' => null,
@@ -1057,16 +1147,19 @@ class TimetableManagement extends Home
 			$schema = new TimetableSchemaModel();
 			$this->updateTimetableJob($jobId, [
 				'status' => 'running',
-				'message' => 'Generating timetable in background...',
+				'message' => 'Starting smart generation (nursery → primary → secondary)…',
+				'progress' => 1,
+				'stage' => 'starting',
 				'started_at' => date('Y-m-d H:i:s'),
 			]);
 			$schema->ensureSchema();
-			$result = $this->runGeneration($schoolId, $staffId, $schema, $year, $term);
+			$result = $this->runGeneration($schoolId, $staffId, $schema, $year, $term, $jobId);
 			if ($result === null) {
 				$this->updateTimetableJob($jobId, [
 					'status' => 'failed',
 					'success' => false,
 					'message' => 'No course assignments found. Assign courses to classes first.',
+					'progress' => 0,
 					'finished_at' => date('Y-m-d H:i:s'),
 				]);
 				return ['ok' => false, 'job_id' => $jobId, 'error' => 'No assignments'];
@@ -1077,6 +1170,8 @@ class TimetableManagement extends Home
 				'success' => true,
 				'message' => 'Timetable generated with ' . count($result['entries']) . ' lesson slots'
 					. (!empty($result['staging_created']) ? ' and ' . (int) $result['staging_created'] . ' unscheduled in parking lot.' : '.'),
+				'progress' => 100,
+				'stage' => 'done',
 				'warnings' => $result['warnings'],
 				'ai_tip' => $aiTip,
 				'schedule_id' => (int) ($result['schedule_id'] ?? 0),
@@ -1093,6 +1188,7 @@ class TimetableManagement extends Home
 				'status' => 'failed',
 				'success' => false,
 				'message' => 'Generation failed after background retry. Please review timetable assignments and try again.',
+				'progress' => 0,
 				'detail' => ENVIRONMENT !== 'production' ? $e->getMessage() : null,
 				'finished_at' => date('Y-m-d H:i:s'),
 			]);
@@ -1118,10 +1214,8 @@ class TimetableManagement extends Home
 			return;
 		}
 
-		// Keep previews in sync when course assignments change.
+		// Do not auto-queue. Stale/empty schedules are fixed via Generate smart timetable.
 		if ($this->isTimetableStale($schoolId, $year, $term)) {
-			$staffId = (int) $this->session->get('soma_id');
-			$this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'preview_stale', false);
 			return;
 		}
 
@@ -1141,13 +1235,6 @@ class TimetableManagement extends Home
 		if ($scheduledCount > 0) {
 			return;
 		}
-
-		if ($schedule) {
-			$db->table('timetable_entries')->where('schedule_id', (int) $schedule['id'])->delete();
-		}
-
-		$staffId = (int) $this->session->get('soma_id');
-		$this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'empty_schedule', false);
 	}
 
 	public function class_timetable($classId = 0)

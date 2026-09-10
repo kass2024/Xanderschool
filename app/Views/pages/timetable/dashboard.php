@@ -11,11 +11,16 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 ?>
 
 <div class="tt-dashboard">
-	<?php if (!empty($timetable_stale) || (!empty($active_generation_job) && in_array((string) ($active_generation_job['status'] ?? ''), ['queued', 'running'], true))): ?>
+	<?php if (!empty($timetable_stale) && (empty($active_generation_job) || !in_array((string) ($active_generation_job['status'] ?? ''), ['queued', 'running'], true))): ?>
+	<div class="alert alert-warning mb-3">
+		<strong>Timetable out of date.</strong>
+		Manage Course assignments (teachers, classes, or credits) changed.
+		Click <strong>Generate smart timetable</strong> to rebuild nursery, primary, and secondary separately.
+	</div>
+	<?php elseif (!empty($active_generation_job) && in_array((string) ($active_generation_job['status'] ?? ''), ['queued', 'running'], true)): ?>
 	<div class="alert alert-info mb-3">
-		<strong>Updating timetable…</strong>
-		New course assignments (for example Religion) are being regenerated into the weekly grid.
-		Refresh this page in a minute to see the updated teacher timetable.
+		<strong>Generating timetable…</strong>
+		Nursery, primary, and secondary stages are running. Progress updates below.
 	</div>
 	<?php endif; ?>
 	<div class="tt-dash-hero mb-4">
@@ -112,6 +117,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 					<button type="button" class="btn btn-primary btn-lg btn-block" id="btnGenerateTimetable" <?= !$stepAssignments ? 'disabled' : ''; ?>>
 						Generate smart timetable
 					</button>
+					<p class="small text-muted mt-2 mb-0">Builds nursery, primary, then secondary/other levels separately using current Manage Course data.</p>
 					<div id="generateResult" class="mt-3 small"></div>
 				</div>
 			</div>
@@ -296,14 +302,36 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		if (!job) return;
 		var $btn = $('#btnGenerateTimetable');
 		var status = job.status || '';
+		var pct = Math.max(0, Math.min(100, parseInt(job.progress, 10) || 0));
 		var html = '';
 		if (status === 'queued' || status === 'running') {
 			$btn.prop('disabled', true);
-			html = '<div class="alert alert-info py-2 mb-0"><i class="fa fa-spinner fa-spin"></i> '
-				+ (job.message || 'Generating timetable in background...') + '</div>';
+			if (status === 'queued' && pct < 1) pct = 2;
+			if (status === 'running' && pct < 3) pct = 3;
+			html = '<div class="tt-gen-progress">'
+				+ '<div class="d-flex justify-content-between align-items-center mb-1">'
+				+ '<span><i class="fa fa-spinner fa-spin text-primary"></i> '
+				+ (job.message || 'Generating timetable…') + '</span>'
+				+ '<strong>' + pct + '%</strong></div>'
+				+ '<div class="progress mb-2" style="height:10px;">'
+				+ '<div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" '
+				+ 'style="width:' + pct + '%;" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"></div></div>';
+			if (job.stages && job.stages.length) {
+				html += '<ul class="list-unstyled mb-0 small">';
+				job.stages.forEach(function (s) {
+					var icon = 'fa-circle-o text-muted';
+					var cls = 'text-muted';
+					if (s.status === 'running') { icon = 'fa-spinner fa-spin text-primary'; cls = 'text-primary font-weight-bold'; }
+					else if (s.status === 'done') { icon = 'fa-check-circle text-success'; cls = 'text-success'; }
+					html += '<li class="' + cls + '"><i class="fa ' + icon + '"></i> ' + (s.label || s.key) + '</li>';
+				});
+				html += '</ul>';
+			}
+			html += '</div>';
 		} else if (status === 'done') {
 			$btn.prop('disabled', false);
-			html = '<div class="alert alert-success py-2 mb-0">' + (job.message || 'Timetable generated.') + '</div>';
+			html = '<div class="progress mb-2" style="height:8px;"><div class="progress-bar bg-success" style="width:100%;"></div></div>'
+				+ '<div class="alert alert-success py-2 mb-0">' + (job.message || 'Timetable generated.') + '</div>';
 			if (job.warnings && job.warnings.length) {
 				html += '<ul class="text-warning mt-2 mb-0 pl-3 small">' + job.warnings.slice(0, 5).map(function (w) { return '<li>' + w + '</li>'; }).join('') + '</ul>';
 			}
@@ -322,7 +350,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			activeJob = job || null;
 			renderJobState(activeJob);
 			if (job && (job.status === 'queued' || job.status === 'running')) {
-				pollTimer = setTimeout(function () { pollJob(jobId); }, 3000);
+				pollTimer = setTimeout(function () { pollJob(jobId); }, 1500);
 				return;
 			}
 			if (job && job.status === 'done') {

@@ -8235,7 +8235,8 @@ public function attendanceCard()
 	}
 
 	/**
-	 * After course assign/unassign/teacher change, queue background timetable regen.
+	 * After course assign/unassign/teacher/credit change, mark timetable dirty.
+	 * Generation is manual (no cron / no silent background regen).
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -8243,7 +8244,6 @@ public function attendanceCard()
 	{
 		try {
 			$schoolId = (int) ($this->session->get('soma_school_id') ?? 0);
-			$staffId = (int) ($this->session->get('soma_id') ?? 0);
 			$year = (int) ($this->data['academic_year'] ?? $this->session->get('soma_academics_year') ?? 0);
 			$term = (int) ($this->data['term'] ?? 0);
 			if ($schoolId <= 0) {
@@ -8267,7 +8267,13 @@ public function attendanceCard()
 				return ['skipped' => true, 'reason' => 'no_active_term'];
 			}
 			$ctl = new TimetableManagement();
-			return $ctl->queueBackgroundGeneration($schoolId, $staffId, $year, $term, $reason, false);
+			$ctl->markTimetableDirty($schoolId, $year, $term);
+			return [
+				'marked_dirty' => true,
+				'needs_manual_generate' => true,
+				'reason' => $reason,
+				'message' => 'Course assignments changed. Open Timetable and click Generate smart timetable.',
+			];
 		} catch (\Throwable $e) {
 			log_message('error', 'queueTimetableRegenAfterAssignmentChange failed: {msg}', ['msg' => $e->getMessage()]);
 			return ['error' => $e->getMessage()];
@@ -8442,7 +8448,11 @@ public function attendanceCard()
 		}
 		try {
 			$courseModel->save($data);
-			return $this->response->setJSON(array("success" => lang("app.courseSaved")));
+			$regen = $this->queueTimetableRegenAfterAssignmentChange('course_credit_or_title_saved');
+			return $this->response->setJSON([
+				'success' => lang('app.courseSaved'),
+				'timetable_regen' => $regen,
+			]);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}

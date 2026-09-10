@@ -111,6 +111,66 @@ class TimetableTrack
 		return $row ? self::resolveFromRow($row) : self::ALL;
 	}
 
+	/** Nursery / primary / everything else — generation runs each phase alone. */
+	public static function generationPhaseKey(string $track): string
+	{
+		$track = self::normalize($track);
+		if ($track === self::NURSERY) {
+			return 'nursery';
+		}
+		if ($track === self::PRIMARY) {
+			return 'primary';
+		}
+		return 'secondary';
+	}
+
+	public static function generationPhaseLabel(string $phaseKey): string
+	{
+		switch (strtolower(trim($phaseKey))) {
+			case 'nursery':
+				return 'Nursery';
+			case 'primary':
+				return 'Primary';
+			case 'secondary':
+				return 'Secondary / other levels';
+			default:
+				return 'Timetable';
+		}
+	}
+
+	/**
+	 * Preferred generation order: nursery → primary → remaining tracks.
+	 *
+	 * @param list<string> $trackKeys
+	 * @return list<string>
+	 */
+	public static function orderTracksForGeneration(array $trackKeys): array
+	{
+		$priority = [
+			self::NURSERY => 10,
+			self::PRIMARY => 20,
+			self::O_LEVEL => 30,
+			self::A_LEVEL => 40,
+			self::SPECIAL => 50,
+			self::RTB => 60,
+			self::ALL => 70,
+		];
+		$unique = [];
+		foreach ($trackKeys as $key) {
+			$unique[self::normalize((string) $key)] = true;
+		}
+		$keys = array_keys($unique);
+		usort($keys, static function (string $a, string $b) use ($priority): int {
+			$pa = $priority[$a] ?? 90;
+			$pb = $priority[$b] ?? 90;
+			if ($pa !== $pb) {
+				return $pa <=> $pb;
+			}
+			return strcmp($a, $b);
+		});
+		return $keys;
+	}
+
 	/** @return list<string> tracks used by classes in this school */
 	public static function tracksForSchool(int $schoolId): array
 	{
