@@ -703,6 +703,45 @@ class TimetableGeneratorService
 		return false;
 	}
 
+	/**
+	 * Keep other levels' lessons busy so a level-only regenerate cannot double-book teachers.
+	 *
+	 * @param list<array<string,mixed>> $entries
+	 * @param array<int,array{start:string,end:string}> $slotTimesById
+	 */
+	public function seedBusyFromEntries(array $entries, array $slotTimesById = []): void
+	{
+		foreach ($slotTimesById as $slotId => $times) {
+			$id = (int) $slotId;
+			if ($id <= 0) {
+				continue;
+			}
+			$this->slotTimes[$id] = [
+				'start' => (string) ($times['start'] ?? '00:00:00'),
+				'end' => (string) ($times['end'] ?? '00:00:00'),
+			];
+		}
+		foreach ($entries as $entry) {
+			$day = (int) ($entry['day_of_week'] ?? -1);
+			$slotId = (int) ($entry['slot_id'] ?? 0);
+			if ($day < 0 || $slotId <= 0) {
+				continue;
+			}
+			if (!isset($this->slotTimes[$slotId]) && !empty($entry['start_time'])) {
+				$this->slotTimes[$slotId] = [
+					'start' => (string) $entry['start_time'],
+					'end' => (string) ($entry['end_time'] ?? '00:00:00'),
+				];
+			}
+			$this->markBusy(
+				(int) ($entry['class_id'] ?? 0),
+				(int) ($entry['staff_id'] ?? 0),
+				$day,
+				$slotId
+			);
+		}
+	}
+
 	private function markBusy(int $classId, int $staffId, int $day, int $slotId): void
 	{
 		$this->classBusy[$this->busyKey($classId, $day, $slotId)] = true;

@@ -124,6 +124,21 @@ class TimetableTrack
 		return 'secondary';
 	}
 
+	/** @return list<string> */
+	public static function generationPhaseKeys(): array
+	{
+		return ['nursery', 'primary', 'secondary'];
+	}
+
+	public static function normalizeGenerationPhase(?string $phase): string
+	{
+		$phase = strtolower(trim((string) $phase));
+		if (in_array($phase, self::generationPhaseKeys(), true)) {
+			return $phase;
+		}
+		return 'all';
+	}
+
 	public static function generationPhaseLabel(string $phaseKey): string
 	{
 		switch (strtolower(trim($phaseKey))) {
@@ -132,7 +147,9 @@ class TimetableTrack
 			case 'primary':
 				return 'Primary';
 			case 'secondary':
-				return 'Secondary / other levels';
+				return 'Secondary / other';
+			case 'all':
+				return 'All levels';
 			default:
 				return 'Timetable';
 		}

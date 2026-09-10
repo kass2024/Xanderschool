@@ -60,6 +60,13 @@ class TimetableSchemaModel extends Model
 				// column may exist
 			}
 		}
+		if (!in_array('generated_phases', $fields, true)) {
+			try {
+				$db->query("ALTER TABLE `timetable_schedules` ADD COLUMN `generated_phases` longtext NULL AFTER `needs_regen`");
+			} catch (\Throwable $e) {
+				// column may exist
+			}
+		}
 	}
 
 	private function ensureTrackColumns(): void

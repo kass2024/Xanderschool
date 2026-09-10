@@ -15,7 +15,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	<div class="alert alert-warning mb-3">
 		<strong>Timetable out of date.</strong>
 		Manage Course assignments (teachers, classes, or credits) changed.
-		Click <strong>Generate smart timetable</strong> to rebuild nursery, primary, and secondary separately.
+		Click a level tile below (or <strong>Generate all levels</strong>) to rebuild from Manage Course.
 	</div>
 	<?php elseif (!empty($active_generation_job) && in_array((string) ($active_generation_job['status'] ?? ''), ['queued', 'running'], true)): ?>
 	<div class="alert alert-info mb-3">
@@ -101,28 +101,66 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	</div>
 
 	<div class="row mb-4">
-		<div class="col-lg-4 mb-3 mb-lg-0">
-			<div class="card tt-gen-card h-100">
-				<div class="card-header bg-primary text-white"><strong><i class="fa fa-magic"></i> Generate timetable</strong></div>
+		<div class="col-lg-5 mb-3 mb-lg-0">
+			<div class="card tt-gen-card tt-gen-card-pro h-100">
+				<div class="card-header tt-gen-head">
+					<div>
+						<strong><i class="fa fa-magic"></i> Generate by level</strong>
+						<div class="tt-gen-sub">Pick Nursery, Primary, or Secondary — each builds alone</div>
+					</div>
+				</div>
 				<div class="card-body">
 					<?php if (!$stepAssignments): ?>
 						<div class="alert alert-warning py-2 small mb-3">
-							No course assignments for this term. Assign courses under <strong>Manage Course</strong>, or ask admin to run the test seed script.
+							No course assignments for this term. Assign courses under <strong>Manage Course</strong> first.
 						</div>
 					<?php endif; ?>
-					<div class="form-check mb-3">
-						<input type="checkbox" class="form-check-input" id="useAiTips" checked>
-						<label class="form-check-label" for="useAiTips">AI tips if conflicts occur</label>
+
+					<div class="tt-level-grid mb-3">
+						<?php foreach (($generation_levels ?? []) as $lvl):
+							$status = (string) ($lvl['status'] ?? 'pending');
+							$disabled = !$stepAssignments || (int) ($lvl['assignments'] ?? 0) <= 0;
+							$statusLabel = [
+								'generated' => 'Generated',
+								'stale' => 'Needs update',
+								'pending' => 'Not generated',
+								'empty' => 'No courses',
+							][$status] ?? 'Not generated';
+							?>
+							<button type="button"
+								class="tt-level-tile status-<?= esc($status); ?> btn-generate-level"
+								data-phase="<?= esc($lvl['key']); ?>"
+								<?= $disabled ? 'disabled' : ''; ?>>
+								<span class="tt-level-tile-top">
+									<span class="tt-level-name"><?= esc($lvl['label']); ?></span>
+									<span class="tt-level-badge"><?= esc($statusLabel); ?></span>
+								</span>
+								<span class="tt-level-meta">
+									<?= (int) ($lvl['classes'] ?? 0); ?> classes · <?= (int) ($lvl['assignments'] ?? 0); ?> courses
+									<?php if (!empty($lvl['generated_at']) && $status === 'generated'): ?>
+										· <?= esc(date('M j, H:i', strtotime((string) $lvl['generated_at']))); ?>
+									<?php endif; ?>
+								</span>
+								<span class="tt-level-cta"><i class="fa fa-bolt"></i> Generate</span>
+							</button>
+						<?php endforeach; ?>
 					</div>
-					<button type="button" class="btn btn-primary btn-lg btn-block" id="btnGenerateTimetable" <?= !$stepAssignments ? 'disabled' : ''; ?>>
-						Generate smart timetable
-					</button>
-					<p class="small text-muted mt-2 mb-0">Builds nursery, primary, then secondary/other levels separately using current Manage Course data.</p>
-					<div id="generateResult" class="mt-3 small"></div>
+
+					<div class="tt-gen-options mb-3">
+						<label class="tt-ai-toggle mb-0">
+							<input type="checkbox" id="useAiTips" checked>
+							<span>Use Gemini to fix teacher collisions</span>
+						</label>
+						<button type="button" class="btn btn-outline-primary btn-sm" id="btnGenerateAll" <?= !$stepAssignments ? 'disabled' : ''; ?>>
+							Generate all levels
+						</button>
+					</div>
+
+					<div id="generateResult" class="tt-gen-result small"></div>
 				</div>
 			</div>
 		</div>
-		<div class="col-lg-8">
+		<div class="col-lg-7">
 			<div class="card h-100">
 				<div class="card-header d-flex justify-content-between align-items-center">
 					<strong><i class="fa fa-calendar"></i> School day structure</strong>
@@ -298,26 +336,33 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		}
 	}
 
+	function setGenerating(busy) {
+		$('.btn-generate-level, #btnGenerateAll').prop('disabled', !!busy);
+		if (!busy) {
+			$('.btn-generate-level').each(function () {
+				if ($(this).hasClass('status-empty')) $(this).prop('disabled', true);
+			});
+		}
+	}
+
 	function renderJobState(job) {
 		if (!job) return;
-		var $btn = $('#btnGenerateTimetable');
 		var status = job.status || '';
 		var pct = Math.max(0, Math.min(100, parseInt(job.progress, 10) || 0));
 		var html = '';
 		if (status === 'queued' || status === 'running') {
-			$btn.prop('disabled', true);
-			if (status === 'queued' && pct < 1) pct = 2;
-			if (status === 'running' && pct < 3) pct = 3;
+			setGenerating(true);
+			if (status === 'queued' && pct < 1) pct = 1;
 			html = '<div class="tt-gen-progress">'
 				+ '<div class="d-flex justify-content-between align-items-center mb-1">'
 				+ '<span><i class="fa fa-spinner fa-spin text-primary"></i> '
-				+ (job.message || 'Generating timetable…') + '</span>'
+				+ (job.message || 'Generating…') + '</span>'
 				+ '<strong>' + pct + '%</strong></div>'
 				+ '<div class="progress mb-2" style="height:10px;">'
 				+ '<div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" '
-				+ 'style="width:' + pct + '%;" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"></div></div>';
+				+ 'style="width:' + pct + '%;"></div></div>';
 			if (job.stages && job.stages.length) {
-				html += '<ul class="list-unstyled mb-0 small">';
+				html += '<ul class="list-unstyled mb-0 small tt-gen-stages">';
 				job.stages.forEach(function (s) {
 					var icon = 'fa-circle-o text-muted';
 					var cls = 'text-muted';
@@ -329,15 +374,15 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			}
 			html += '</div>';
 		} else if (status === 'done') {
-			$btn.prop('disabled', false);
+			setGenerating(false);
 			html = '<div class="progress mb-2" style="height:8px;"><div class="progress-bar bg-success" style="width:100%;"></div></div>'
 				+ '<div class="alert alert-success py-2 mb-0">' + (job.message || 'Timetable generated.') + '</div>';
 			if (job.warnings && job.warnings.length) {
 				html += '<ul class="text-warning mt-2 mb-0 pl-3 small">' + job.warnings.slice(0, 5).map(function (w) { return '<li>' + w + '</li>'; }).join('') + '</ul>';
 			}
-			if (job.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-0"><strong>AI tip:</strong> ' + String(job.ai_tip).replace(/\n/g, '<br>') + '</div>';
+			if (job.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-0"><strong>AI:</strong> ' + String(job.ai_tip).replace(/\n/g, '<br>') + '</div>';
 		} else if (status === 'failed') {
-			$btn.prop('disabled', false);
+			setGenerating(false);
 			html = '<div class="alert alert-danger py-2 mb-0">' + (job.message || 'Generation failed.') + '</div>';
 		}
 		if (html) $('#generateResult').html(html);
@@ -350,15 +395,44 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			activeJob = job || null;
 			renderJobState(activeJob);
 			if (job && (job.status === 'queued' || job.status === 'running')) {
-				pollTimer = setTimeout(function () { pollJob(jobId); }, 1500);
+				pollTimer = setTimeout(function () { pollJob(jobId); }, 1200);
 				return;
 			}
 			if (job && job.status === 'done') {
-				setTimeout(function () { location.reload(); }, 1200);
+				setTimeout(function () { location.reload(); }, 1000);
 			}
 		}).fail(function () {
-			$('#btnGenerateTimetable').prop('disabled', false);
+			setGenerating(false);
 			$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">Could not read timetable job status.</div>');
+		});
+	}
+
+	function startGenerate(phase) {
+		setGenerating(true);
+		$('#generateResult').html('<div class="tt-gen-progress"><span class="text-primary"><i class="fa fa-spinner fa-spin"></i> Starting…</span></div>');
+		$.post('<?= site_url('timetable/generate'); ?>', {
+			academic_year: <?= (int) ($academic_year ?? 0); ?>,
+			term: <?= (int) ($term ?? 1); ?>,
+			use_gemini: $('#useAiTips').is(':checked') ? 1 : 0,
+			phase: phase || 'all'
+		}, function (r) {
+			if (r.error) {
+				setGenerating(false);
+				$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">' + r.error + '</div>');
+				return;
+			}
+			activeJob = r || null;
+			renderJobState(activeJob);
+			if (r && r.job_id) pollJob(r.job_id);
+		}, 'json').fail(function (xhr) {
+			setGenerating(false);
+			var msg = 'Generation failed — check course assignments.';
+			if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
+				msg = xhr.responseJSON.error;
+			} else if (xhr && xhr.status) {
+				msg = 'Generation failed (HTTP ' + xhr.status + '). Please try again.';
+			}
+			$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">' + msg + '</div>');
 		});
 	}
 
@@ -378,32 +452,11 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		window.location = url;
 	});
 
-	$('#btnGenerateTimetable').on('click', function () {
-		var $btn = $(this).prop('disabled', true);
-		$('#generateResult').html('<span class="text-primary"><i class="fa fa-spinner fa-spin"></i> Starting background generation…</span>');
-		$.post('<?= site_url('timetable/generate'); ?>', {
-			academic_year: <?= (int) ($academic_year ?? 0); ?>,
-			term: <?= (int) ($term ?? 1); ?>,
-			use_gemini: $('#useAiTips').is(':checked') ? 1 : 0
-		}, function (r) {
-			if (r.error) {
-				$btn.prop('disabled', false);
-				$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">' + r.error + '</div>');
-				return;
-			}
-			activeJob = r || null;
-			renderJobState(activeJob);
-			if (r && r.job_id) pollJob(r.job_id);
-		}, 'json').fail(function (xhr) {
-			$btn.prop('disabled', false);
-			var msg = 'Generation failed — check course assignments.';
-			if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
-				msg = xhr.responseJSON.error;
-			} else if (xhr && xhr.status) {
-				msg = 'Generation failed (HTTP ' + xhr.status + '). Please try again.';
-			}
-			$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">' + msg + '</div>');
-		});
+	$(document).on('click', '.btn-generate-level', function () {
+		startGenerate($(this).data('phase') || 'all');
+	});
+	$('#btnGenerateAll').on('click', function () {
+		startGenerate('all');
 	});
 
 	syncEntityOptions();
