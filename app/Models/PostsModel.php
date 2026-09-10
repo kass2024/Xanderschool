@@ -16,6 +16,9 @@ class PostsModel extends Model
 	public const HEAD_TEACHER_ID = 25;
 	public const DEPUTY_HEAD_TEACHER_ID = 26;
 	public const PHOTO_GRAPHER_ID = 27;
+	public const CHIEF_ACCOUNTANT_ID = 28;
+	/** Same menu/budget rights as Head master (#1). */
+	public const DIRECTOR_ID = 29;
 
 	/** Ensure built-in system posts exist and restricted ones get a starter clearance row. */
 	public function ensureLeadershipPosts(): void
@@ -30,6 +33,8 @@ class PostsModel extends Model
 			self::HEAD_TEACHER_ID => 'Head Teacher',
 			self::DEPUTY_HEAD_TEACHER_ID => 'Deputy Head Teacher',
 			self::PHOTO_GRAPHER_ID => 'Photo Grapher',
+			self::CHIEF_ACCOUNTANT_ID => 'Chief Accountant',
+			self::DIRECTOR_ID => 'Director',
 		];
 		foreach ($wanted as $id => $title) {
 			$byTitle = $db->table('posts')->where('title', $title)->get(1)->getRowArray();

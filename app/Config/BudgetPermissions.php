@@ -103,6 +103,12 @@ class BudgetPermissions
 				'cash_request.submit', 'cash_request.confirm_receipt', 'cash_request.close',
 				'cash_request.manage_documents', 'budget.view_reports',
 			],
+			28 => [ // Chief Accountant — same prepare/fill as Accountant
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.periods.manage',
+				'budget.templates.view', 'cash_request.create', 'cash_request.edit_own',
+				'cash_request.submit', 'cash_request.confirm_receipt', 'cash_request.close',
+				'cash_request.manage_documents', 'budget.view_reports',
+			],
 			8 => [ // Cashier — prepare & fill school budget + payments
 				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
 				'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
@@ -114,6 +120,21 @@ class BudgetPermissions
 				'cash_request.headteacher_approve', 'cash_request.view_audit',
 			],
 			18 => [ // Headmistress — same as head master (child view-only at runtime)
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
+				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
+				'cash_request.headteacher_approve', 'cash_request.view_audit',
+			],
+			25 => [ // Head Teacher — same as head master
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
+				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
+				'cash_request.headteacher_approve', 'cash_request.view_audit',
+			],
+			26 => [ // Deputy Head Teacher — same as head master
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
+				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
+				'cash_request.headteacher_approve', 'cash_request.view_audit',
+			],
+			29 => [ // Director — same as head master
 				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
 				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
 				'cash_request.headteacher_approve', 'cash_request.view_audit',

@@ -9,7 +9,7 @@ namespace Config;
 class MenuClearance
 {
 	/** Posts that always have full menu access (cannot be restricted). */
-	const FULL_ACCESS_POSTS = [1, 3, 18, 25, 26]; // Head master, DoS, Headmistress, Head Teacher, Deputy Head Teacher
+	const FULL_ACCESS_POSTS = [1, 3, 18, 25, 26, 29]; // Head master, DoS, Headmistress, Head Teacher, Deputy Head Teacher, Director
 
 	/**
 	 * Finance / budget role defaults (Level clearance + runtime filter).
@@ -19,12 +19,12 @@ class MenuClearance
 	 * Child schools: everyone else loses the Finance menu (except DoF / prepare / view roles).
 	 */
 	const FINANCE_FULL_CONTROL_POSTS = [24]; // Director of Finance
-	const CHILD_BUDGET_PREPARE_POSTS = [8, 9]; // Cashier, Accountant
-	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26]; // Head master, DOS, Dean, Principal, Headmistress, Head Teacher, Deputy Head Teacher
+	const CHILD_BUDGET_PREPARE_POSTS = [8, 9, 28]; // Cashier, Accountant, Chief Accountant
+	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26, 29]; // Head master, DOS, Dean, Principal, Headmistress, Head Teacher, Deputy Head Teacher, Director
 	/** Fees Entry + school/extra fee settings. */
-	const FEE_OPERATOR_POSTS = [8, 9, 24]; // Cashier, Accountant, Director of Finance
+	const FEE_OPERATOR_POSTS = [8, 9, 24, 28]; // Cashier, Accountant, Director of Finance, Chief Accountant
 	/** Fees report only (no entry, no settings, no SMS). */
-	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26];
+	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26, 29];
 	/** Budget Dashboard “All branches” / cross-school rollup (master school only). */
 	const BUDGET_CROSS_BRANCH_DASHBOARD_POSTS = [15, 19, 24]; // Principal, Budget Manager, Director of Finance
 
@@ -135,7 +135,7 @@ class MenuClearance
 
 		if (in_array($postId, self::CHILD_BUDGET_PREPARE_POSTS, true)) {
 			$extra = self::childBudgetPrepareKeys();
-			if (in_array($postId, [8, 9], true)) {
+			if (in_array($postId, [8, 9, 28], true)) {
 				$extra = array_merge($extra, self::feeMenuKeys());
 			}
 			return array_values(array_unique(array_merge($nonFinance, $extra)));
@@ -706,8 +706,8 @@ class MenuClearance
 		// Staffs / leave_management / settings: was is_allowed(1, 3) only
 
 		// Fees: Accountant and Cashier record and print receipts immediately
-		if (in_array($postId, [8, 9], true)) {
-			$keys = array_merge($keys, self::feeMenuKeys());
+			if (in_array($postId, [8, 9, 28], true)) {
+				$keys = array_merge($keys, self::feeMenuKeys());
 			$keys = array_merge($keys, self::childBudgetPrepareKeys());
 		}
 
