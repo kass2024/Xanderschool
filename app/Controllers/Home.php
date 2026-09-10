@@ -1890,7 +1890,10 @@ public function testEmail()
 		$classMdl = new ClassesModel();
 		$data['title'] = lang("app.addNewClass");
 		$faculty->ensureSpecialNursingAnp();
-		$data['classes'] = $classMdl->get_classes();
+		$allClasses = $classMdl->get_classes();
+		$data['classes'] = array_values(array_filter($allClasses, function ($class) {
+			return !$this->classLooksLikeHoliday($class);
+		}));
 		$data['faculty'] = $faculty->get()->getResultArray();
 		$data['staffs'] = $staffMdl->where("school_id", $this->session->get("soma_school_id"))->get()->getResultArray();
 		$data['subtitle'] = lang("app.CreatenewClass");
