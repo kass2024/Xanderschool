@@ -381,9 +381,21 @@ class TimetableSchemaModel extends Model
 			->orderBy('sort_order', 'ASC')
 			->get()->getResultArray();
 		$reservedLabels = self::reservedActivitySlotLabels($trackKey);
-		if ($reservedLabels !== []) {
-			$slots = array_values(array_filter($slots, static function (array $slot) use ($reservedLabels): bool {
-				return !in_array((string) ($slot['label'] ?? ''), $reservedLabels, true);
+		$secondaryDayEnd = self::secondaryTeachingDayEndTime($trackKey);
+		if ($reservedLabels !== [] || $secondaryDayEnd !== null) {
+			$slots = array_values(array_filter($slots, static function (array $slot) use ($reservedLabels, $secondaryDayEnd): bool {
+				$label = (string) ($slot['label'] ?? '');
+				if ($reservedLabels !== [] && in_array($label, $reservedLabels, true)) {
+					return false;
+				}
+				// Non-primary/nursery: no course lessons after 15:40.
+				if ($secondaryDayEnd !== null) {
+					$end = substr((string) ($slot['end_time'] ?? '00:00:00'), 0, 8);
+					if ($end > $secondaryDayEnd) {
+						return false;
+					}
+				}
+				return true;
 			}));
 		}
 		return $slots;
@@ -582,9 +594,21 @@ class TimetableSchemaModel extends Model
 	{
 		$trackKey = TimetableTrack::normalize($trackKey);
 		if (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
-			return ['10', '11', '12', '13', '14', '15', '16'];
+			// Periods 12–16 are activities/preps after the 15:40 teaching cutoff.
+			// Periods 10–11 (through 15:40) remain teachable.
+			return ['12', '13', '14', '15', '16'];
 		}
 		return [];
+	}
+
+	/** Secondary teaching day ends at 15:40 (inclusive). */
+	private static function secondaryTeachingDayEndTime(string $trackKey): ?string
+	{
+		$trackKey = TimetableTrack::normalize($trackKey);
+		if (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
+			return '15:40:00';
+		}
+		return null;
 	}
 
 	/** @return list<string> */
