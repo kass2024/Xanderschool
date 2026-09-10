@@ -111,7 +111,7 @@ class TimetableTrack
 		return $row ? self::resolveFromRow($row) : self::ALL;
 	}
 
-	/** Nursery / primary / everything else — generation runs each phase alone. */
+	/** Nursery / primary / high school (O/A/RTB/Special). */
 	public static function generationPhaseKey(string $track): string
 	{
 		$track = self::normalize($track);
@@ -121,18 +121,21 @@ class TimetableTrack
 		if ($track === self::PRIMARY) {
 			return 'primary';
 		}
-		return 'secondary';
+		return 'high_school';
 	}
 
 	/** @return list<string> */
 	public static function generationPhaseKeys(): array
 	{
-		return ['nursery', 'primary', 'secondary'];
+		return ['nursery', 'primary', 'high_school'];
 	}
 
 	public static function normalizeGenerationPhase(?string $phase): string
 	{
 		$phase = strtolower(trim((string) $phase));
+		if ($phase === 'secondary' || $phase === 'highschool') {
+			$phase = 'high_school';
+		}
 		if (in_array($phase, self::generationPhaseKeys(), true)) {
 			return $phase;
 		}
@@ -146,12 +149,27 @@ class TimetableTrack
 				return 'Nursery';
 			case 'primary':
 				return 'Primary';
+			case 'high_school':
 			case 'secondary':
-				return 'Secondary / other';
+				return 'High school';
 			case 'all':
 				return 'All levels';
 			default:
 				return 'Timetable';
+		}
+	}
+
+	public static function generationPhaseHint(string $phaseKey): string
+	{
+		switch (self::normalizeGenerationPhase($phaseKey)) {
+			case 'nursery':
+				return 'Baby / Middle / Top class';
+			case 'primary':
+				return 'P1 – P6';
+			case 'high_school':
+				return 'O Level · A Level · RTB · Special';
+			default:
+				return 'Nursery → Primary → High school';
 		}
 	}
 

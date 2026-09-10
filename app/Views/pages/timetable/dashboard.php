@@ -15,7 +15,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	<div class="alert alert-warning mb-3">
 		<strong>Timetable out of date.</strong>
 		Manage Course assignments (teachers, classes, or credits) changed.
-		Click a level tile below (or <strong>Generate all levels</strong>) to rebuild from Manage Course.
+		Click a level below (Nursery, Primary, or High school) to rebuild from Manage Course.
 	</div>
 	<?php elseif (!empty($active_generation_job) && in_array((string) ($active_generation_job['status'] ?? ''), ['queued', 'running'], true)): ?>
 	<div class="alert alert-info mb-3">
@@ -106,7 +106,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 				<div class="card-header tt-gen-head">
 					<div>
 						<strong><i class="fa fa-magic"></i> Generate by level</strong>
-						<div class="tt-gen-sub">Pick Nursery, Primary, or Secondary — each builds alone</div>
+						<div class="tt-gen-sub">Nursery · Primary · High school — each builds alone</div>
 					</div>
 				</div>
 				<div class="card-body">
@@ -123,25 +123,30 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 							$statusLabel = [
 								'generated' => 'Generated',
 								'stale' => 'Needs update',
-								'pending' => 'Not generated',
+								'pending' => 'Ready',
 								'empty' => 'No courses',
-							][$status] ?? 'Not generated';
+							][$status] ?? 'Ready';
+							$icon = (string) ($lvl['icon'] ?? 'fa-calendar');
 							?>
 							<button type="button"
 								class="tt-level-tile status-<?= esc($status); ?> btn-generate-level"
 								data-phase="<?= esc($lvl['key']); ?>"
 								<?= $disabled ? 'disabled' : ''; ?>>
-								<span class="tt-level-tile-top">
-									<span class="tt-level-name"><?= esc($lvl['label']); ?></span>
-									<span class="tt-level-badge"><?= esc($statusLabel); ?></span>
+								<span class="tt-level-icon"><i class="fa <?= esc($icon); ?>"></i></span>
+								<span class="tt-level-body">
+									<span class="tt-level-tile-top">
+										<span class="tt-level-name"><?= esc($lvl['label']); ?></span>
+										<span class="tt-level-badge"><?= esc($statusLabel); ?></span>
+									</span>
+									<span class="tt-level-hint"><?= esc($lvl['hint'] ?? ''); ?></span>
+									<span class="tt-level-meta">
+										<?= (int) ($lvl['classes'] ?? 0); ?> classes · <?= (int) ($lvl['assignments'] ?? 0); ?> courses
+										<?php if (!empty($lvl['generated_at']) && $status === 'generated'): ?>
+											· <?= esc(date('M j, H:i', strtotime((string) $lvl['generated_at']))); ?>
+										<?php endif; ?>
+									</span>
 								</span>
-								<span class="tt-level-meta">
-									<?= (int) ($lvl['classes'] ?? 0); ?> classes · <?= (int) ($lvl['assignments'] ?? 0); ?> courses
-									<?php if (!empty($lvl['generated_at']) && $status === 'generated'): ?>
-										· <?= esc(date('M j, H:i', strtotime((string) $lvl['generated_at']))); ?>
-									<?php endif; ?>
-								</span>
-								<span class="tt-level-cta"><i class="fa fa-bolt"></i> Generate</span>
+								<span class="tt-level-cta"><?= $status === 'generated' || $status === 'stale' ? 'Regenerate' : 'Generate'; ?> <i class="fa fa-arrow-right"></i></span>
 							</button>
 						<?php endforeach; ?>
 					</div>
@@ -149,10 +154,10 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 					<div class="tt-gen-options mb-3">
 						<label class="tt-ai-toggle mb-0">
 							<input type="checkbox" id="useAiTips" checked>
-							<span>Use Gemini to fix teacher collisions</span>
+							<span>Gemini collision fix</span>
 						</label>
-						<button type="button" class="btn btn-outline-primary btn-sm" id="btnGenerateAll" <?= !$stepAssignments ? 'disabled' : ''; ?>>
-							Generate all levels
+						<button type="button" class="btn btn-primary btn-sm" id="btnGenerateAll" <?= !$stepAssignments ? 'disabled' : ''; ?>>
+							Generate all
 						</button>
 					</div>
 
@@ -395,7 +400,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			activeJob = job || null;
 			renderJobState(activeJob);
 			if (job && (job.status === 'queued' || job.status === 'running')) {
-				pollTimer = setTimeout(function () { pollJob(jobId); }, 1200);
+				pollTimer = setTimeout(function () { pollJob(jobId); }, 900);
 				return;
 			}
 			if (job && job.status === 'done') {
@@ -409,26 +414,50 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 	function startGenerate(phase) {
 		setGenerating(true);
-		$('#generateResult').html('<div class="tt-gen-progress"><span class="text-primary"><i class="fa fa-spinner fa-spin"></i> Starting…</span></div>');
-		$.post('<?= site_url('timetable/generate'); ?>', {
-			academic_year: <?= (int) ($academic_year ?? 0); ?>,
-			term: <?= (int) ($term ?? 1); ?>,
-			use_gemini: $('#useAiTips').is(':checked') ? 1 : 0,
-			phase: phase || 'all'
-		}, function (r) {
-			if (r.error) {
+		var label = phase === 'nursery' ? 'Nursery' : (phase === 'primary' ? 'Primary' : (phase === 'high_school' || phase === 'secondary' ? 'High school' : 'All levels'));
+		$('#generateResult').html(
+			'<div class="tt-gen-progress">'
+			+ '<div class="d-flex justify-content-between align-items-center mb-1">'
+			+ '<span><i class="fa fa-spinner fa-spin text-primary"></i> Queuing ' + label + '…</span>'
+			+ '<strong>3%</strong></div>'
+			+ '<div class="progress mb-0" style="height:10px;">'
+			+ '<div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" style="width:3%;"></div></div></div>'
+		);
+		$.ajax({
+			url: '<?= site_url('timetable/generate'); ?>',
+			method: 'POST',
+			dataType: 'json',
+			timeout: 30000,
+			data: {
+				academic_year: <?= (int) ($academic_year ?? 0); ?>,
+				term: <?= (int) ($term ?? 1); ?>,
+				use_gemini: $('#useAiTips').is(':checked') ? 1 : 0,
+				phase: phase || 'all'
+			}
+		}).done(function (r) {
+			if (r && r.error) {
 				setGenerating(false);
 				$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">' + r.error + '</div>');
 				return;
 			}
 			activeJob = r || null;
+			if (activeJob && !activeJob.status) activeJob.status = 'queued';
+			if (activeJob && !activeJob.progress) activeJob.progress = 3;
+			if (activeJob && !activeJob.message) activeJob.message = 'Generating ' + label + '…';
 			renderJobState(activeJob);
-			if (r && r.job_id) pollJob(r.job_id);
-		}, 'json').fail(function (xhr) {
+			if (r && r.job_id) {
+				pollJob(r.job_id);
+			} else {
+				setGenerating(false);
+				$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">No generation job was created.</div>');
+			}
+		}).fail(function (xhr) {
 			setGenerating(false);
 			var msg = 'Generation failed — check course assignments.';
 			if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
 				msg = xhr.responseJSON.error;
+			} else if (xhr && xhr.statusText === 'timeout') {
+				msg = 'Server took too long to queue the job. Refresh and try again.';
 			} else if (xhr && xhr.status) {
 				msg = 'Generation failed (HTTP ' + xhr.status + '). Please try again.';
 			}

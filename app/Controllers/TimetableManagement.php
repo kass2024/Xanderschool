@@ -390,12 +390,13 @@ class TimetableManagement extends Home
 				'error' => 'No course assignments found for ' . TimetableTrack::generationPhaseLabel($phase) . '.',
 			]);
 		}
+		// Release session lock so status polling is not blocked while the worker runs.
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			@session_write_close();
+		}
 		$result = $this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'manual', $useGemini, $phase);
 		if (!empty($result['error']) && empty($result['queued']) && empty($result['job_id'])) {
 			return $this->response->setJSON(['error' => $result['error']]);
-		}
-		if (!empty($result['job_id'])) {
-			$this->kickTimetableJobAsync((string) $result['job_id']);
 		}
 		return $this->response->setJSON($result);
 	}
@@ -427,14 +428,15 @@ class TimetableManagement extends Home
 
 		$existing = $this->findExistingTimetableJob($schoolId, $year, $term);
 		if (is_array($existing) && in_array((string) ($existing['status'] ?? ''), ['queued', 'running'], true)) {
-			$this->kickTimetableJobAsync((string) $existing['id']);
+			$this->spawnTimetableWorker((string) $existing['id']);
 			return [
 				'queued' => true,
 				'job_id' => $existing['id'],
 				'status' => $existing['status'],
 				'message' => $existing['message'] ?? 'Timetable generation is already running.',
-				'progress' => (int) ($existing['progress'] ?? 0),
+				'progress' => max(1, (int) ($existing['progress'] ?? 0)),
 				'phase' => $existing['phase'] ?? 'all',
+				'stages' => $existing['stages'] ?? [],
 				'reason' => $reason,
 			];
 		}
@@ -449,26 +451,18 @@ class TimetableManagement extends Home
 			'phase' => $phase,
 			'reason' => $reason,
 			'message' => 'Queued — ' . $phaseLabel . '…',
-			'progress' => 1,
+			'progress' => 3,
 			'stage' => 'queued',
 			'stages' => [],
 		]);
-		$spawn = $this->spawnTimetableWorker($jobId);
-		$this->kickTimetableJobAsync($jobId);
-		if (empty($spawn['started'])) {
-			// Still process via async kick / status poll.
-			log_message('warning', 'Timetable worker spawn failed for {job}: {err}', [
-				'job' => $jobId,
-				'err' => $spawn['error'] ?? 'unknown',
-			]);
-		}
+		$this->spawnTimetableWorker($jobId);
 
 		return [
 			'queued' => true,
 			'job_id' => $jobId,
 			'status' => 'queued',
-			'message' => 'Generating ' . $phaseLabel . '…',
-			'progress' => 1,
+			'message' => 'Starting ' . $phaseLabel . '…',
+			'progress' => 3,
 			'phase' => $phase,
 			'reason' => $reason,
 		];
@@ -686,20 +680,55 @@ class TimetableManagement extends Home
 	{
 		$this->denyMenu('timetable_dashboard');
 		list($schoolId) = $this->bootTimetable();
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			@session_write_close();
+		}
 		$job = $this->readTimetableJob((string) $jobId);
 		if (!$job || (int) ($job['school_id'] ?? 0) !== $schoolId) {
 			return $this->response->setStatusCode(404)->setJSON(['error' => 'Generation job not found.']);
 		}
 		$status = (string) ($job['status'] ?? '');
 		if (in_array($status, ['queued', 'running'], true)) {
-			$this->kickTimetableJobAsync((string) $jobId);
-			// Re-read after possible sync progress from a prior kick.
+			// Re-spawn worker if still idle; never process inline here (that freezes the % UI).
+			$created = strtotime((string) ($job['created_at'] ?? '')) ?: time();
+			$started = strtotime((string) ($job['started_at'] ?? '')) ?: 0;
+			$idleQueued = $status === 'queued' && (time() - $created) >= 1;
+			$staleRunning = $status === 'running' && $started > 0 && (time() - $started) >= 90
+				&& !is_file($this->timetableJobPath((string) $jobId) . '.lock');
+			if ($idleQueued || $staleRunning) {
+				$this->spawnTimetableWorker((string) $jobId);
+			}
 			$fresh = $this->readTimetableJob((string) $jobId);
 			if (is_array($fresh)) {
 				$job = $fresh;
 			}
 		}
 		return $this->response->setJSON($job);
+	}
+
+	/**
+	 * Background worker entry (no login). Protected by HMAC token.
+	 */
+	public function run_job($jobId = '')
+	{
+		@ignore_user_abort(true);
+		@set_time_limit(0);
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			@session_write_close();
+		}
+		$jobId = preg_replace('/[^A-Za-z0-9_\-]/', '', (string) $jobId);
+		$token = (string) ($this->request->getGet('token') ?? $this->request->getPost('token') ?? '');
+		if ($jobId === '' || !hash_equals($this->timetableJobToken($jobId), $token)) {
+			return $this->response->setStatusCode(403)->setBody('forbidden');
+		}
+		$result = $this->processTimetableJobById($jobId);
+		return $this->response->setJSON($result);
+	}
+
+	private function timetableJobToken(string $jobId): string
+	{
+		$key = (string) (env('encryption.key') ?: env('app.baseURL') ?: 'xander-school-timetable');
+		return hash_hmac('sha256', $jobId, $key);
 	}
 
 	/**
@@ -1085,6 +1114,10 @@ class TimetableManagement extends Home
 			if (is_array($decoded)) {
 				$meta = $decoded;
 			}
+			// Migrate legacy "secondary" key → high_school
+			if (!empty($meta['secondary']) && empty($meta['high_school'])) {
+				$meta['high_school'] = $meta['secondary'];
+			}
 		}
 		$db = \Config\Database::connect();
 		$cards = [];
@@ -1119,6 +1152,8 @@ class TimetableManagement extends Home
 			$cards[] = [
 				'key' => $phase,
 				'label' => TimetableTrack::generationPhaseLabel($phase),
+				'hint' => TimetableTrack::generationPhaseHint($phase),
+				'icon' => $phase === 'nursery' ? 'fa-child' : ($phase === 'primary' ? 'fa-book' : 'fa-graduation-cap'),
 				'status' => $status,
 				'assignments' => $assignCount,
 				'classes' => $classCount,
@@ -1439,60 +1474,58 @@ class TimetableManagement extends Home
 		$root = defined('ROOTPATH') ? ROOTPATH : (FCPATH . '..' . DIRECTORY_SEPARATOR);
 		$spark = rtrim($root, '/\\') . DIRECTORY_SEPARATOR . 'spark';
 		$php = 'php';
+		foreach (['/usr/local/bin/php', '/usr/bin/php'] as $bin) {
+			if (is_file($bin)) {
+				$php = $bin;
+				break;
+			}
+		}
 		if (defined('PHP_BINARY') && PHP_BINARY
 			&& stripos(PHP_BINARY, 'cgi') === false
 			&& stripos(PHP_BINARY, 'fpm') === false) {
 			$php = PHP_BINARY;
-		}
-		if (!is_file($spark)) {
-			return ['started' => false, 'error' => 'spark not found'];
 		}
 		$logDir = WRITEPATH . 'timetable_jobs';
 		if (!is_dir($logDir)) {
 			@mkdir($logDir, 0755, true);
 		}
 		$log = $logDir . DIRECTORY_SEPARATOR . 'worker.log';
-		$run = escapeshellarg($php) . ' ' . escapeshellarg($spark) . ' process:timetable-jobs ' . escapeshellarg($jobId);
 		$isWin = (DIRECTORY_SEPARATOR === '\\');
-		if ($isWin) {
-			$cmd = 'start /B "" ' . $run . ' >> ' . escapeshellarg($log) . ' 2>&1';
-			@pclose(@popen($cmd, 'r'));
-			return ['started' => true, 'command' => $cmd];
+
+		// Prefer spark CLI worker (true background, progress file updates while UI polls).
+		if (is_file($spark)) {
+			$run = escapeshellarg($php) . ' ' . escapeshellarg($spark) . ' process:timetable-jobs ' . escapeshellarg($jobId);
+			if ($isWin) {
+				$cmd = 'start /B "" ' . $run . ' >> ' . escapeshellarg($log) . ' 2>&1';
+				@pclose(@popen($cmd, 'r'));
+			} else {
+				$cmd = 'nohup ' . $run . ' >> ' . escapeshellarg($log) . ' 2>&1 & echo $!';
+				@exec($cmd);
+			}
 		}
-		$cmd = 'nohup ' . $run . ' >> ' . escapeshellarg($log) . ' 2>&1 &';
-		@exec($cmd);
-		return ['started' => true, 'command' => $cmd];
+
+		// Loopback HTTP runner as backup (HMAC-protected).
+		$token = $this->timetableJobToken($jobId);
+		$basePath = parse_url((string) (env('app.baseURL') ?: '/'), PHP_URL_PATH);
+		$basePath = is_string($basePath) ? rtrim($basePath, '/') : '';
+		$url = 'http://127.0.0.1' . $basePath . '/timetable/run_job/' . rawurlencode($jobId) . '?token=' . rawurlencode($token);
+		if ($isWin) {
+			@pclose(@popen('start /B curl -s -m 900 ' . escapeshellarg($url) . ' >> ' . escapeshellarg($log) . ' 2>&1', 'r'));
+		} else {
+			@exec('nohup curl -s -m 900 ' . escapeshellarg($url) . ' >> ' . escapeshellarg($log) . ' 2>&1 &');
+			// If curl is missing, fall back to PHP stream in background.
+			@exec('nohup ' . escapeshellarg($php) . ' -r ' . escapeshellarg('@file_get_contents(' . var_export($url, true) . ');') . ' >> ' . escapeshellarg($log) . ' 2>&1 &');
+		}
+
+		return ['started' => true, 'job_id' => $jobId];
 	}
 
 	/**
-	 * Docker/FPM often cannot detach CLI workers. Finish the HTTP response, then process.
+	 * @deprecated Use spawnTimetableWorker — shutdown kicks block the generate HTTP response.
 	 */
 	private function kickTimetableJobAsync(string $jobId): void
 	{
-		if ($jobId === '') {
-			return;
-		}
-		$flag = '_tt_job_kick_' . $jobId;
-		if (!empty($GLOBALS[$flag])) {
-			return;
-		}
-		$GLOBALS[$flag] = true;
-		register_shutdown_function(static function () use ($jobId): void {
-			@ignore_user_abort(true);
-			@set_time_limit(0);
-			if (function_exists('fastcgi_finish_request')) {
-				@fastcgi_finish_request();
-			}
-			try {
-				$ctl = new TimetableManagement();
-				$ctl->processTimetableJobById($jobId);
-			} catch (\Throwable $e) {
-				log_message('error', 'kickTimetableJobAsync failed [{job}]: {msg}', [
-					'job' => $jobId,
-					'msg' => $e->getMessage(),
-				]);
-			}
-		});
+		$this->spawnTimetableWorker($jobId);
 	}
 
 	/** @return array<string,mixed> */
