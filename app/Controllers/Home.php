@@ -6944,6 +6944,8 @@ public function attendanceCard()
 	public function export_smart_student_list()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
+		@ini_set('memory_limit', '512M');
+		@set_time_limit(300);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$yearId = (int) ($this->request->getGet('y') ?? 0);
 		if ($yearId < 1) {

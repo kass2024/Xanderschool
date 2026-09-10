@@ -2,7 +2,6 @@
 
 namespace App\Libraries;
 
-use App\Controllers\Home;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
@@ -47,17 +46,20 @@ class SmartStudentSheetsExporter
 	 */
 	public static function sheetTitle(string $className, array &$used): string
 	{
-		$base = preg_replace('/[\\\\\\\/\?\*\[\]:]+/', ' ', $className);
-		$base = trim(preg_replace('/\s+/', ' ', (string) $base));
+		// Excel forbids: \ / ? * [ ] :
+		$base = str_replace(['\\', '/', '?', '*', '[', ']', ':'], ' ', $className);
+		$base = trim((string) preg_replace('/\s+/', ' ', $base));
 		if ($base === '') {
 			$base = 'Class';
 		}
-		$base = mb_substr($base, 0, 31);
+		$base = function_exists('mb_substr') ? mb_substr($base, 0, 31) : substr($base, 0, 31);
 		$title = $base;
 		$i = 2;
 		while (isset($used[strtolower($title)])) {
 			$suffix = ' (' . $i . ')';
-			$title = mb_substr($base, 0, max(1, 31 - strlen($suffix))) . $suffix;
+			$max = max(1, 31 - strlen($suffix));
+			$cut = function_exists('mb_substr') ? mb_substr($base, 0, $max) : substr($base, 0, $max);
+			$title = $cut . $suffix;
 			$i++;
 		}
 		$used[strtolower($title)] = 1;
@@ -74,11 +76,16 @@ class SmartStudentSheetsExporter
 		$names = trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? ''));
 		$gender = strtoupper(trim((string) ($student['sex'] ?? '')));
 		if ($gender === '') {
-			$gender = '—';
+			$gender = '-';
 		}
-		$mode = Home::ModeToStr($student['studying_mode'] ?? 0);
+		$modeRaw = $student['studying_mode'] ?? 0;
+		if ((string) $modeRaw === '1' || $modeRaw === 1 || (is_string($modeRaw) && strcasecmp($modeRaw, 'Day') === 0)) {
+			$mode = 'Day';
+		} else {
+			$mode = 'Boarding';
+		}
 
-		return [$num, $names !== '' ? $names : '—', $gender, $mode];
+		return [$num, $names !== '' ? $names : '-', $gender, $mode];
 	}
 
 	/**
@@ -198,7 +205,9 @@ class SmartStudentSheetsExporter
 		} else {
 			$sheet->mergeCells("A5:{$lastCol}5");
 			$sheet->setCellValue('A5', 'No students in this class.');
-			$sheet->getStyle('A5')->getFont()->setItalic(true)->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('64748B'));
+			$sheet->getStyle('A5')->applyFromArray([
+				'font' => ['italic' => true, 'color' => ['rgb' => '64748B']],
+			]);
 		}
 
 		$sheet->getColumnDimension('A')->setWidth(5);
