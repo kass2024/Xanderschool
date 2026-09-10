@@ -126,39 +126,71 @@
 	min-height: 38px;
 	white-space: nowrap;
 }
-.students-table-scroll {
+.st-sms-actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	justify-content: flex-start;
+	flex-wrap: wrap;
+	clear: both;
 	width: 100%;
-	overflow-x: auto;
-	-webkit-overflow-scrolling: touch;
+	margin: 0 0 14px;
+	padding: 10px 0 4px;
+	float: none !important;
+	position: relative;
+	z-index: 1;
 }
-.students-table-scroll table {
-	min-width: 920px;
+.st-sms-actions.pull-right {
+	float: none !important;
+}
+.students-actions-bar {
+	display: block;
+	width: 100%;
+	clear: both;
+	margin: 0 0 8px;
+	overflow: hidden;
+}
+.st-sms-actions .btn,
+.st-sms-actions a.btn {
+	flex: 0 0 auto;
+	position: relative;
+	z-index: 1;
 }
 .card-header.students-list-header {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: flex-start;
 	gap: 10px 16px;
+	overflow: visible;
 }
 .card-header.students-list-header .card-header-title {
-	flex: 0 0 auto;
+	flex: 0 1 auto;
 	margin-right: 8px;
+	max-width: 100%;
+}
+.card-header.students-list-header .students-toolbar {
+	flex: 1 1 520px;
+	width: auto;
+	max-width: 100%;
 }
 .card-header.students-list-header .btn-actions-pane-right {
 	margin-left: auto;
 	flex: 0 0 auto;
 }
-.st-sms-actions {
-	display: flex;
-	gap: 8px;
-	align-items: center;
-	justify-content: flex-end;
-	flex-wrap: wrap;
-	margin-bottom: 10px;
+.card-body .dataTables_wrapper {
+	clear: both;
 }
-.st-sms-actions .btn,
-.st-sms-actions a.btn {
-	flex: 0 0 auto;
+.card-body .dataTables_wrapper > .row:first-child {
+	margin-bottom: 8px;
+}
+.students-table-scroll {
+	width: 100%;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	clear: both;
+}
+.students-table-scroll table {
+	min-width: 920px;
 }
 @media (max-width: 1366px) {
 	.students-toolbar-field {
@@ -445,9 +477,9 @@
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
 								<div class="row">
 									<div class="col-sm-12">
-										<div class="col-sm-12">
+										<div class="students-actions-bar">
 											<div id="admissionSmsAlert" class="alert d-none" role="alert"></div>
-											<div class="st-sms-actions pull-right">
+											<div class="st-sms-actions">
 												<button type="button" id="btnEditClassStudents" class="btn btn-warning">
 													<i class="fa fa-edit"></i> Edit class
 												</button>
@@ -457,11 +489,6 @@
 												<button type="button" id="btnSendAdmissionSmsSelected" class="btn btn-info">
 													<i class="fa fa-paper-plane"></i> Send to selected
 												</button>
-												<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) $academic_year)); ?>"
-												   class="btn btn-success"
-												   title="One workbook with a sheet per class (Names, Gender, Studying)">
-													<i class="fa fa-file-excel"></i> <?= lang("app.exporttoExcel"); ?>
-												</a>
 											</div>
 										</div>
 										<div class="students-table-scroll">
