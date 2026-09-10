@@ -1,6 +1,14 @@
 <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.20/css/dataTables.bootstrap4.min.css">
+<link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>">
 <style>
 	.class-inline-hint { font-size: 12px; color: #64748b; margin: 0 0 10px 10px; }
+	.class-toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px;
+		margin: 0 10px 8px;
+	}
 	.class-title-spedit {
 		min-width: 40px;
 		cursor: pointer;
@@ -31,8 +39,25 @@
 		height: 32px;
 	}
 </style>
-<button class="btn btn-success btn-lg" data-toggle="modal" data-target="#exampleModal" style="margin-left: 10px"><?= lang("app.addNewClass");?></button>
-<p class="class-inline-hint"><i class="fa fa-info-circle"></i> Double-click <strong>Title</strong> to rename. Use the <i class="typcn typcn-edit"></i> icon to change <strong>Mentor</strong>.</p>
+<div class="class-toolbar">
+	<button class="btn btn-success btn-lg" data-toggle="modal" data-target="#exampleModal"><?= lang("app.addNewClass");?></button>
+	<div class="staff-export-bar" role="group" aria-label="Export smart class list">
+		<a href="<?= base_url('export_class_list_excel'); ?>"
+		   class="btn btn-sm staff-export-btn staff-export-excel"
+		   title="Download smart class list (Class name · Stream teacher · Students)">
+			<i class="fa fa-file-excel"></i>
+			<span>Excel</span>
+		</a>
+		<a href="<?= base_url('export_class_list_pdf'); ?>"
+		   class="btn btn-sm staff-export-btn staff-export-pdf"
+		   target="_blank"
+		   title="Open printable smart class list PDF">
+			<i class="fa fa-file-pdf"></i>
+			<span>PDF</span>
+		</a>
+	</div>
+</div>
+<p class="class-inline-hint"><i class="fa fa-info-circle"></i> Double-click <strong>Title</strong> to rename. Use the <i class="typcn typcn-edit"></i> icon to change <strong>Mentor</strong>. Export uses <strong>Class name</strong> (Level+title), <strong>Stream teacher</strong>, and <strong>Students</strong> only.</p>
 
 <div class="boxed">
 	<table class="table table-striped table-bordered" id="classTable" style="margin: 0; text-align:center;">

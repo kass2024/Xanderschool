@@ -6872,6 +6872,71 @@ public function attendanceCard()
 		}
 	}
 
+	/**
+	 * Smart class list for Excel/PDF (holiday classes excluded).
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function classListForExport(): array
+	{
+		$classMdl = new ClassesModel();
+		$allClasses = $classMdl->get_classes();
+
+		return array_values(array_filter($allClasses, function ($class) {
+			return !$this->classLooksLikeHoliday($class);
+		}));
+	}
+
+	public function export_class_list_excel()
+	{
+		$this->_preset(1, 3);
+		$school = $this->schoolMetaForStaffExport();
+		$classes = $this->classListForExport();
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+
+		$spreadsheet = \App\Libraries\ClassListExporter::buildExcel($school, $classes, $yearTitle, $termLabel);
+		$filename = \App\Libraries\ClassListExporter::exportFilename($school['name'], 'xlsx');
+		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
+
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
+		header('Cache-Control: max-age=0');
+		$writer->save('php://output');
+		exit;
+	}
+
+	public function export_class_list_pdf()
+	{
+		$this->_preset(1, 3);
+		$school = $this->schoolMetaForStaffExport();
+		$classes = $this->classListForExport();
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+
+		$html = view('pages/reports/class_list_export_pdf', [
+			'school' => $school,
+			'classes' => $classes,
+			'year_title' => $yearTitle,
+			'term_label' => $termLabel,
+			'printed_at' => date('d M Y H:i'),
+		]);
+
+		try {
+			$mask = FCPATH . 'assets/templates/*.html';
+			array_map('unlink', glob($mask) ?: []);
+			$wkhtmltopdf = new Wkhtmltopdf(['path' => FCPATH . 'assets/templates/']);
+			$wkhtmltopdf->setTitle('Class List');
+			$wkhtmltopdf->setHtml($html);
+			$wkhtmltopdf->setOrientation('Portrait');
+			$wkhtmltopdf->setMargins(['top' => 10, 'left' => 10, 'right' => 10, 'bottom' => 10]);
+			$filename = \App\Libraries\ClassListExporter::exportFilename($school['name'], 'pdf');
+			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, $filename);
+		} catch (\Exception $e) {
+			echo $e->getMessage();
+		}
+	}
+
 	/** Reset password and reshare login credentials to one or all staff (SMS / email). */
 	public function share_staff_access()
 	{
