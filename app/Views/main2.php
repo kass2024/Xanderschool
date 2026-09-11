@@ -461,15 +461,15 @@
 									</a>
 									<ul class="mm-collapse">
 										<li>
-											<a href="<?= base_url('staff-attendance-card'); ?>" target="_blank" rel="noopener noreferrer">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.staffInOutAttendance"); ?>
-											</a>
-										</li>
-										<li>
 											<a href="<?= base_url('staff-report/individual'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.individualReport"); ?>
+											</a>
+										</li>
+										<li>
+											<a href="<?= base_url('staff-attendance-card'); ?>" target="_blank" rel="noopener noreferrer">
+												<i class="metismenu-icon"></i>
+												<?= lang("app.staffInOutAttendance"); ?>
 											</a>
 										</li>
 									</ul>

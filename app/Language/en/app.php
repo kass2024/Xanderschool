@@ -92,7 +92,7 @@ return [
    'dailyAttendance'             => 'Daily attendance',
    'boardingAttendance'             => 'Boarding attendance',
    'staffAttendance'             => 'Staff Attendance',
-   'staffInOutAttendance'        => 'Staff IN/OUT Attendance',
+   'staffInOutAttendance'        => 'Record Attendance With card',
    'monthlyReport'               => 'Monthly Report',
    'individualReport'            => 'Attendance Report',
    'hrDept'                      => 'HR DEPARTMENT',

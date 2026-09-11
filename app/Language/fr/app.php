@@ -90,7 +90,7 @@ return [
 	"dailyAttendance" => " Fréquentation quotidienne ",
 	"boardingAttendance" => "Présence internes",
 	"staffAttendance" => " Présence du personnel ",
-	"staffInOutAttendance" => " Entrée / sortie du personnel ",
+	"staffInOutAttendance" => "Enregistrer la présence avec carte",
 	"monthlyReport" => " Rapport mensuel ",
 	"individualReport" => "Rapport de présence",
 	"hrDept" => " DÉPARTEMENTS DES RESSOURCES HUMAINES ",
