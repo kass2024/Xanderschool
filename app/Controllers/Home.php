@@ -8452,7 +8452,6 @@ public function attendanceCard()
 	public function manipulate_shift()
 	{
 		$this->_preset();
-		$data = $this->data;
 		$shiftMdl = new ShiftModel();
 		$hours = $this->request->getPost('hours');
 		if ($hours == null) {
@@ -8464,20 +8463,37 @@ public function attendanceCard()
 			$weekday = substr($hour, 0, 1);
 			if (in_array($weekday, $arr)) {
 				return $this->response->setJSON(array("error" => lang("app.weekdayDuplicate") . " <strong>$weekday</strong>"));
-				break;
 			}
 			$arr[$a] = $weekday;
 			$a++;
 		}
-		$hourss = json_encode($hours);
-		$data = array(
-				"school_id" => $this->session->get("soma_school_id"),
-				"title" => $this->request->getPost("title"),
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$title = trim((string) $this->request->getPost("title"));
+		if ($title === '') {
+			return $this->response->setJSON(array("error" => "Shift title is required."));
+		}
+		$hourss = json_encode(array_values($hours));
+		$id = (int) $this->request->getPost("id");
+		try {
+			if ($id > 0) {
+				$existing = $shiftMdl->where("id", $id)->where("school_id", $schoolId)->first();
+				if ($existing === null) {
+					return $this->response->setJSON(array("error" => "Shift not found."));
+				}
+				$shiftMdl->save([
+					"id" => $id,
+					"title" => $title,
+					"options" => $hourss,
+				]);
+				return $this->response->setJSON(array("success" => "Shift updated successfully."));
+			}
+			$shiftMdl->save([
+				"school_id" => $schoolId,
+				"title" => $title,
 				"options" => $hourss,
 				"status" => '1',
-				"created_by" => $this->session->get("soma_id"));
-		try {
-			$shiftMdl->save($data);
+				"created_by" => $this->session->get("soma_id"),
+			]);
 			return $this->response->setJSON(array("success" => lang("app.shiftSaved")));
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));

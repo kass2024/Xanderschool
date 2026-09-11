@@ -10,6 +10,10 @@
 		float: right;
 		color: orangered;
 	}
+	.shift-actions label {
+		margin-right: 10px;
+		cursor: pointer;
+	}
 </style>
 <div class="app-inner-layout app-inner-layout-page">
 	<div class="app-inner-layout__wrapper">
@@ -32,7 +36,7 @@
 										 class="dropdown-menu-right rm-pointers dropdown-menu-shadow dropdown-menu-hover-link dropdown-menu">
 										<h6 tabindex="-1" class="dropdown-header">
 											<?= lang("app.sShiftMenu"); ?></h6>
-										<a type="button" tabindex="0" href="javascript:void" class="dropdown-item" data-toggle="modal" data-target="#mdlAddShift"><i
+										<a type="button" tabindex="0" href="javascript:void" class="dropdown-item btn-add-shift" data-toggle="modal" data-target="#mdlAddShift"><i
 												class="typcn typcn-plus"> </i><span><?= lang("app.addNewShift"); ?></span>
 										</a>
 									</div>
@@ -95,7 +99,12 @@
 												<td><label class="badge badge-success" style="font-size: 14pt"> <?=$shift['staffs'];?></label></td>
 												<td><?=$shift['created_at'];?></td>
 												<td><?=$status;?></td>
-												<td>
+												<td class="shift-actions">
+													<label class="typcn typcn-edit text-primary link btn-edit-shift"
+														   data-toggle="modal" data-target="#mdlAddShift"
+														   data-id="<?= (int) $shift['id']; ?>"
+														   data-title="<?= esc($shift['title'], 'attr'); ?>"
+														   data-options="<?= esc($shift['options'], 'attr'); ?>"><?= lang("app.edit"); ?></label>
 													<label class="typcn typcn-delete text-danger link" data-toggle="delete" data-title="shift #<?=$shift['title'];?>"
 														   data-target="<?=$shift['id'];?>" data-href="delete_shift"><?= lang("app.del"); ?></label>
 												</td>
@@ -130,7 +139,66 @@
 
 <script>
 	$(function () {
-		var hourview = $(".hours-view");
+		function optionText($select, value) {
+			var exact = $select.find("option").filter(function () {
+				return String($(this).val()) === String(value);
+			}).first();
+			if (exact.length) {
+				return exact.text();
+			}
+			var num = parseFloat(value);
+			var match = $select.find("option").filter(function () {
+				return Math.abs(parseFloat($(this).val()) - num) < 0.001;
+			}).first();
+			return match.length ? match.text() : String(value);
+		}
+		function resetShiftModal() {
+			var $m = $("#mdlAddShift");
+			$m.find("#shift_edit_id").val("");
+			$m.find("[name='title']").val("");
+			$m.find(".hours-view").empty();
+			$m.find("#mdlAddShiftTitle").text("<?= esc(lang('app.newShift'), 'js'); ?>");
+		}
+		function fillShiftModal(id, title, optionsRaw) {
+			resetShiftModal();
+			var $m = $("#mdlAddShift");
+			var hours = [];
+			try {
+				hours = typeof optionsRaw === "string" ? JSON.parse(optionsRaw) : (optionsRaw || []);
+			} catch (e) {
+				hours = [];
+			}
+			if (!Array.isArray(hours)) {
+				hours = [];
+			}
+			$m.find("#shift_edit_id").val(id);
+			$m.find("[name='title']").val(title);
+			$m.find("#mdlAddShiftTitle").text("<?= esc(lang('app.edit'), 'js'); ?> shift");
+			var hourview = $m.find(".hours-view");
+			var weekday = $m.find(".weekday");
+			var open = $m.find(".hours-start");
+			var close = $m.find(".hours-end");
+			hours.forEach(function (hour) {
+				var parts = String(hour).split(/\s+/);
+				if (parts.length < 3) {
+					return;
+				}
+				var dayVal = parts[0];
+				var openVal = parts[1];
+				var closeVal = parts[2];
+				hourview.append(
+					"<div class='hours'><span class='dayy'>" + optionText(weekday, dayVal) + "</span><span class='openn'>" + optionText(open, openVal) + " </span><span>-</span>" +
+					"<span class='closee'> " + optionText(close, closeVal) + " </span><a href='javascript:void(0)' class='remove-hours'>Remove</a>" +
+					"<input name='hours[]' value='" + dayVal + " " + openVal + " " + closeVal + "' type='hidden'> </div>"
+				);
+			});
+		}
+		$(".btn-add-shift").on("click", resetShiftModal);
+		$(document).on("click", ".btn-edit-shift", function () {
+			fillShiftModal($(this).data("id"), $(this).attr("data-title"), $(this).attr("data-options"));
+		});
+
+		var hourview = $("#mdlAddShift .hours-view");
 		$(".addhours").click(function () {
 			var weekday = $(this).closest(".add-hours").children().children(".weekday");
 			var open = $(this).closest(".add-hours").children().children(".hours-start");

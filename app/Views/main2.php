@@ -1225,9 +1225,10 @@
 	<div class="modal fade" id="mdlAddShift" tabindex="-1" role="dialog">
 		<div class="modal-dialog" role="document">
 			<div class="modal-content">
-				<form action="<?= base_url('manipulate_shift'); ?>" class="autoSubmit validate">
+				<form action="<?= base_url('manipulate_shift'); ?>" class="autoSubmit validate" id="frmShift">
+					<input type="hidden" name="id" id="shift_edit_id" value="">
 					<div class="modal-header">
-						<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.newShift"); ?></h5>
+						<h5 class="modal-title" id="mdlAddShiftTitle"><?= lang("app.newShift"); ?></h5>
 						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
 							<span aria-hidden="true">×</span>
 						</button>
