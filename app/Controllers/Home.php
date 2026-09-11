@@ -311,6 +311,29 @@ public function testEmail()
 			->where("IFNULL({$levelAlias}.title,'') NOT LIKE '%Holiday%'", null, false);
 	}
 
+	/**
+	 * Distinct active students in non-holiday classes for the academic year (dashboard "Total Students").
+	 */
+	private function countActiveStudentsThisYear(?int $yearId = null, ?int $schoolId = null): int
+	{
+		$yearId = $yearId ?? (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
+		$schoolId = $schoolId ?? (int) $this->session->get('soma_school_id');
+		if ($yearId < 1 || $schoolId < 1) {
+			return 0;
+		}
+		$studentMdl = new StudentModel();
+		$q = $studentMdl->select('count(DISTINCT students.id) as st')
+			->join('class_records a', 'a.student=students.id')
+			->join('classes cl', 'cl.id=a.class')
+			->join('levels l', 'l.id=cl.level', 'LEFT')
+			->where('students.status', 1)
+			->where('a.year', $yearId)
+			->where('students.school_id', $schoolId);
+		$this->applyRegularClassFilter($q);
+
+		return (int) ($q->get()->getRowArray()['st'] ?? 0);
+	}
+
 	private function classLooksLikeHoliday(array $row): bool
 	{
 		$hay = strtolower(trim(($row['title'] ?? '') . ' ' . ($row['level_name'] ?? '') . ' ' . ($row['level_title'] ?? '')));
@@ -1056,15 +1079,7 @@ public function testEmail()
 				->where("extra_fees.academic_year", $this->data['academic_year'])
 				->where("extra_fees.school_id", $school_id)
 				->get()->getResultArray();
-		$studentCountQ = $studentMdl->select("count(DISTINCT students.id) as st")
-				->join("class_records a", "a.student=students.id")
-				->join("classes cl", "cl.id=a.class")
-				->join("levels l", "l.id=cl.level", "LEFT")
-				->where("students.status", 1)
-				->where("a.year", $this->data['academic_year'])
-				->where("students.school_id", $this->session->get("soma_school_id"));
-		$this->applyRegularClassFilter($studentCountQ);
-		$data['students'] = (int) ($studentCountQ->get()->getRowArray()['st'] ?? 0);
+		$data['students'] = $this->countActiveStudentsThisYear();
 		$data['staff'] = $staff->select("count(staffs.id) as st")
 				//->where("staffs.status", 1)
 				->where("staffs.school_id", $this->session->get("soma_school_id"))
@@ -6189,15 +6204,33 @@ public function attendanceCard()
 		$data['title'] = lang("app.staffIndividualReport");
 		$data['subtitle'] = lang("app.viewAllIndividualStaff");
 		$data['page'] = "staff_individual_report";
+		$bounds = \App\Libraries\StaffAttendanceReport::academicYearBounds($data['academic_year_title'] ?? '');
+		$months = \App\Libraries\StaffAttendanceReport::academicYearMonths($bounds);
+		[$defaultStart, $defaultEnd] = \App\Libraries\StaffAttendanceReport::clampToAcademicYear(
+			date('Y-m-01'),
+			date('Y-m-d'),
+			$bounds
+		);
+		$defaultMonth = date('Y-m', strtotime($defaultEnd));
+		$monthValues = array_column($months, 'value');
+		if (!in_array($defaultMonth, $monthValues, true) && $months !== []) {
+			$defaultMonth = $months[count($months) - 1]['value'];
+		}
 		$staffMdl = new StaffModel();
-		$data['staffs'] = $staffMdl->select("staffs.id,concat(staffs.fname,' ',staffs.lname) as name")
-				->join("shifts sh", "sh.id=staffs.shift_id")
+		$data['staffs'] = $staffMdl->select("staffs.id,concat(staffs.fname,' ',staffs.lname) as name,sh.title as shift_title")
+				->join("shifts sh", "sh.id=staffs.shift_id", "LEFT")
 				->where("staffs.school_id", $this->session->get("soma_school_id"))
+				->where("staffs.status !=", 0)
 				->groupBy("staffs.id")
+				->orderBy("staffs.fname")
+				->orderBy("staffs.lname")
 				->get()->getResultArray();
+		$data['ay_bounds'] = $bounds;
+		$data['ay_months'] = $months;
+		$data['default_start'] = $defaultStart;
+		$data['default_end'] = $defaultEnd;
+		$data['default_month'] = $defaultMonth;
 		$data['show_header'] = true;
-		$data['default_start'] = date('Y-m-01');
-		$data['default_end'] = date('Y-m-d');
 		$data['content'] = view("pages/reports/staff_report_individual", $data);
 		return view('main', $data);
 	}
@@ -6206,34 +6239,53 @@ public function attendanceCard()
 	{
 		$this->_preset();
 		$data = $this->data;
-		$staff = $this->request->getGet("staff");
-		$date1 = $this->request->getGet("date1");
+		$bounds = \App\Libraries\StaffAttendanceReport::academicYearBounds($data['academic_year_title'] ?? '');
+		$periodMode = strtolower(trim((string) $this->request->getGet('period_mode')));
+		if (!in_array($periodMode, ['range', 'month'], true)) {
+			$periodMode = 'range';
+		}
+		$reportType = strtolower(trim((string) $this->request->getGet('report_type')));
+		if (!in_array($reportType, ['overall', 'absent', 'individual'], true)) {
+			$reportType = 'overall';
+		}
+		if ($periodMode === 'month') {
+			$ym = trim((string) $this->request->getGet('month_key'));
+			if (!preg_match('/^\d{4}-\d{2}$/', $ym)) {
+				$ym = date('Y-m');
+			}
+			$date1 = $ym . '-01';
+			$date2 = date('Y-m-t', strtotime($date1));
+		} else {
+			$date1 = (string) $this->request->getGet('date1');
+			$date2 = (string) $this->request->getGet('date2');
+		}
+		[$date1, $date2] = \App\Libraries\StaffAttendanceReport::clampToAcademicYear($date1, $date2, $bounds);
 		$date1_unix = strtotime($date1);
-		$date2 = $this->request->getGet("date2");
 		$date2_unix = strtotime($date2) + 86399;
+		$staff = (int) $this->request->getGet('staff');
 		$staffMdl = new StaffModel();
 		$staffBuilder = $staffMdl->select("staffs.*,sh.options,sh.title,p.title as post_title,lv.fromDate as leave_start,lv.toDate as leave_end")
-				->join("shifts sh", "sh.id=staffs.shift_id")
+				->join("shifts sh", "sh.id=staffs.shift_id", "LEFT")
 				->join("leaves lv", "lv.requested_by=staffs.id and lv.status=1 and (lv.fromDate>='$date1_unix' OR lv.toDate<='$date2_unix')", "LEFT")
-				->join("posts p", "p.id=staffs.post")
-				->where("staffs.school_id", $this->session->get("soma_school_id"));
-		if ($staff != 0) {
+				->join("posts p", "p.id=staffs.post", "LEFT")
+				->where("staffs.school_id", $this->session->get("soma_school_id"))
+				->where("staffs.status !=", 0)
+				->orderBy("sh.title")
+				->orderBy("staffs.fname")
+				->orderBy("staffs.lname");
+		if ($reportType === 'individual' && $staff > 0) {
+			$staffBuilder->where("staffs.id", $staff);
+		} elseif ($staff > 0 && $reportType !== 'overall') {
 			$staffBuilder->where("staffs.id", $staff);
 		}
 		$staffs = $staffBuilder->get()->getResultArray();
 		$data['staffs'] = $staffs;
-		$attMdl = new AttendanceRecordsModel();
-//		$data["records"] = $attMdl->select("time_in,coalesce(time_out,0) as time_out")
-//			->where("user_id", $staffs['id'])
-//			->where("user_type", 1)
-//			->where("time_in>='$date1_unix' and time_in<='$date2_unix'")
-//			->groupBy("user_id")
-//			->groupBy("date_format(from_unixtime(time_in),'%d-%m-%Y')")
-//			->orderBy("time_in", "ASC")
-//			->get()->getResultArray();
 		$data['show_header'] = false;
 		$data['date1'] = $date1;
 		$data['date2'] = $date2;
+		$data['report_type'] = $reportType;
+		$data['period_mode'] = $periodMode;
+		$data['ay_bounds'] = $bounds;
 		$data['reportType'] = 0;
 		$data['pdf'] = false;
 		if ($pdf == 'true') {
@@ -6246,7 +6298,6 @@ public function attendanceCard()
 				$wkhtmltopdf->setTitle(lang("app.Staffattendancereport"));
 				$wkhtmltopdf->setHtml($html);
 				$wkhtmltopdf->setOrientation("portrait");
-//					$wkhtmltopdf->setOptions(array("page-width" => "278px", "page-height" => "430px"));
 				$wkhtmltopdf->setMargins(array("top" => 0, "left" => 0, "right" => 0, "bottom" => 0));
 				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "staff_report_individual" . time() . ".pdf");
 			} catch (\Exception $e) {
@@ -6894,8 +6945,15 @@ public function attendanceCard()
 		$classes = $this->classListForExport();
 		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
 		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+		$uniqueStudents = $this->countActiveStudentsThisYear();
 
-		$spreadsheet = \App\Libraries\ClassListExporter::buildExcel($school, $classes, $yearTitle, $termLabel);
+		$spreadsheet = \App\Libraries\ClassListExporter::buildExcel(
+			$school,
+			$classes,
+			$yearTitle,
+			$termLabel,
+			$uniqueStudents
+		);
 		$filename = \App\Libraries\ClassListExporter::exportFilename($school['name'], 'xlsx');
 		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
 
@@ -6913,12 +6971,14 @@ public function attendanceCard()
 		$classes = $this->classListForExport();
 		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
 		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+		$uniqueStudents = $this->countActiveStudentsThisYear();
 
 		$html = view('pages/reports/class_list_export_pdf', [
 			'school' => $school,
 			'classes' => $classes,
 			'year_title' => $yearTitle,
 			'term_label' => $termLabel,
+			'unique_students' => $uniqueStudents,
 			'printed_at' => date('d M Y H:i'),
 		]);
 

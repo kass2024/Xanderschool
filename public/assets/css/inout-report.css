@@ -191,6 +191,35 @@
 .io-profile h3 { margin: 0 0 4px; font-size: 1.25rem; }
 .io-profile .meta { color: #64748b; font-size: .9rem; }
 
+.io-ay-banner {
+	width: 100%;
+	margin-bottom: 12px;
+	padding: 10px 12px;
+	border-radius: 10px;
+	background: #f0f9ff;
+	border: 1px solid #bae6fd;
+	color: #0c4a6e;
+	font-size: .88rem;
+}
+.io-ay-banner span { color: #0369a1; margin-left: 6px; }
+.io-shift-block {
+	background: #fff;
+	border: 1px solid #e8edf3;
+	border-radius: 14px;
+	padding: 14px 16px;
+	margin-bottom: 14px;
+}
+.io-shift-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin-bottom: 10px;
+}
+.io-shift-head strong { font-size: 1.05rem; color: #0f172a; }
+.io-shift-head span { color: #64748b; font-size: .85rem; font-weight: 650; }
+
 @media print {
 	.app-sidebar-wrapper, .app-header, .app-footer, .io-filters, .io-tabs, .io-actions, .hamburger { display: none !important; }
 	.app-main-outer, .app-main-inner, .io-page { padding: 0 !important; margin: 0 !important; }

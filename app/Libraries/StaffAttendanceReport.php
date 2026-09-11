@@ -231,6 +231,144 @@ class StaffAttendanceReport
 	}
 
 	/**
+	 * Parse academic year title (e.g. 2026-2027) into inclusive calendar bounds.
+	 * Rwanda school years run Sep–Aug.
+	 *
+	 * @return array{start:string,end:string,y1:int,y2:int,label:string}
+	 */
+	public static function academicYearBounds(?string $title): array
+	{
+		$label = trim((string) $title);
+		$y1 = (int) date('Y');
+		$y2 = $y1 + 1;
+		if (preg_match('/(\d{4})\s*[-–\/]\s*(\d{4})/', $label, $m)) {
+			$y1 = (int) $m[1];
+			$y2 = (int) $m[2];
+			if ($y2 < $y1) {
+				$y2 = $y1 + 1;
+			}
+		} elseif (preg_match('/(\d{4})/', $label, $m)) {
+			$y1 = (int) $m[1];
+			$y2 = $y1 + 1;
+		}
+		return [
+			'start' => sprintf('%04d-09-01', $y1),
+			'end' => sprintf('%04d-08-31', $y2),
+			'y1' => $y1,
+			'y2' => $y2,
+			'label' => $label !== '' ? $label : sprintf('%d-%d', $y1, $y2),
+		];
+	}
+
+	/**
+	 * Months that fall inside the academic year window (for month picker).
+	 *
+	 * @param array{start:string,end:string} $bounds
+	 * @return list<array{value:string,label:string,year:int,month:int}>
+	 */
+	public static function academicYearMonths(array $bounds): array
+	{
+		$out = [];
+		$cursor = new \DateTime(substr($bounds['start'], 0, 7) . '-01');
+		$last = new \DateTime(substr($bounds['end'], 0, 7) . '-01');
+		while ($cursor <= $last) {
+			$out[] = [
+				'value' => $cursor->format('Y-m'),
+				'label' => $cursor->format('F Y'),
+				'year' => (int) $cursor->format('Y'),
+				'month' => (int) $cursor->format('n'),
+			];
+			$cursor->modify('+1 month');
+		}
+		return $out;
+	}
+
+	/**
+	 * Clamp a date range into the academic year (and not past today for end).
+	 *
+	 * @param array{start:string,end:string} $bounds
+	 * @return array{0:string,1:string}
+	 */
+	public static function clampToAcademicYear(string $date1, string $date2, array $bounds): array
+	{
+		$start = $bounds['start'];
+		$end = $bounds['end'];
+		$today = date('Y-m-d');
+		if ($end > $today) {
+			$end = $today;
+		}
+		if ($date1 === '' || $date1 < $start) {
+			$date1 = $start;
+		}
+		if ($date1 > $end) {
+			$date1 = $start;
+		}
+		if ($date2 === '' || $date2 > $end) {
+			$date2 = $end;
+		}
+		if ($date2 < $date1) {
+			$date2 = $date1;
+		}
+		return [$date1, $date2];
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $rows
+	 * @return array<string,list<array<string,mixed>>>
+	 */
+	public static function groupByShift(array $rows): array
+	{
+		$groups = [];
+		foreach ($rows as $row) {
+			$key = trim((string) ($row['shift'] ?? ''));
+			if ($key === '') {
+				$key = 'Unassigned shift';
+			}
+			$groups[$key][] = $row;
+		}
+		ksort($groups, SORT_NATURAL | SORT_FLAG_CASE);
+		return $groups;
+	}
+
+	/**
+	 * @param list<int> $staffIds
+	 * @return array<int,list<array{in:int,out:int}>>
+	 */
+	public static function loadClocksByStaff(array $staffIds, int $fromUnix, int $toUnix): array
+	{
+		$out = [];
+		$staffIds = array_values(array_filter(array_map('intval', $staffIds)));
+		if ($staffIds === []) {
+			return $out;
+		}
+		$db = \Config\Database::connect();
+		$chunks = array_chunk($staffIds, 200);
+		foreach ($chunks as $chunk) {
+			$rows = $db->table('attendance_records')
+				->select('user_id, time_in, COALESCE(time_out, 0) AS time_out')
+				->where('user_type', 1)
+				->whereIn('user_id', $chunk)
+				->where('time_in >=', $fromUnix)
+				->where('time_in <=', $toUnix)
+				->orderBy('time_in', 'ASC')
+				->get()
+				->getResultArray();
+			$seen = [];
+			foreach ($rows as $rec) {
+				$uid = (int) $rec['user_id'];
+				$inTs = (int) $rec['time_in'];
+				$key = $uid . ':' . date('Y-m-d', $inTs);
+				if (isset($seen[$key])) {
+					continue;
+				}
+				$seen[$key] = true;
+				$out[$uid][] = ['in' => $inTs, 'out' => (int) $rec['time_out']];
+			}
+		}
+		return $out;
+	}
+
+	/**
 	 * @param array<string,mixed> $staff
 	 * @return list<array{in:int,out:int}>
 	 */
