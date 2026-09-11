@@ -96,12 +96,27 @@ class BaseController extends Controller
 				$crMdl =  new ClassRecordModel();
 				$id = $this->request->getPost("data");
 				$record_id = $this->request->getPost("record_id");
-				if (strlen($id)==0 || strlen($record_id)==0){
-					return $this->response->setJSON(array("error"=>"Error occurred: please provide all required data $id | $record_id "));
+				if (strlen($id)==0){
+					return $this->response->setJSON(array("error"=>"Error occurred: please provide student id"));
 				}
 				try {
 					$stMdl->save(array("id" => $id, "status" => $value));
-					$crMdl->save(array("id" => $record_id, "status" => $value));
+					$db = \Config\Database::connect();
+					// If a real class_records.id was provided, update it first
+					if (strlen($record_id) > 0) {
+						$exists = $db->table('class_records')
+							->where('id', (int) $record_id)
+							->where('student', (int) $id)
+							->countAllResults();
+						if ($exists > 0) {
+							$crMdl->save(array("id" => $record_id, "status" => $value));
+						}
+					}
+					// Always heal ALL class records for this student (fixes Dismissed page unlock
+					// which incorrectly posts student id as record_id).
+					$db->table('class_records')
+						->where('student', (int) $id)
+						->update(['status' => (int) $value]);
 					return $this->response->setJSON(array("success"=>"Student status changed"));
 				}catch (\Exception $e){
 					return $this->response->setJSON(array("error"=>"Error occurred: ".$e->getMessage()));
