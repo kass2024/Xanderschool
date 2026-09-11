@@ -58,6 +58,10 @@ class StaffAttendanceReport
 			if (empty($window['working'])) {
 				continue;
 			}
+			// Check-in after shift end does not count as present (treat as absent day).
+			if (!empty($window['end_ts']) && $inTs > ((int) $window['end_ts'] + StaffShiftClock::GRACE_SECONDS)) {
+				continue;
+			}
 			$clockIn++;
 			$present++;
 			$inEval = StaffShiftClock::evaluateIn($inTs, $window);
@@ -68,14 +72,16 @@ class StaffAttendanceReport
 				$ontime++;
 			}
 			$outEval = null;
+			// Never honour checkout recorded before shift end — treat as no checkout.
+			if ($outTs > 0 && !empty($window['end_ts'])
+				&& $outTs < ((int) $window['end_ts'] - StaffShiftClock::GRACE_SECONDS)) {
+				$outTs = 0;
+			}
 			if ($outTs > 0) {
 				$clockOut++;
 				$workedSec += max(0, $outTs - $inTs);
 				$outEval = StaffShiftClock::evaluateOut($outTs, $window);
-				if ($outEval['code'] === 'early_leave') {
-					$earlyCount++;
-					$earlyMin += (int) $outEval['minutes'];
-				} elseif ($outEval['code'] === 'overtime') {
+				if ($outEval['code'] === 'overtime') {
 					$overtimeMin += (int) $outEval['minutes'];
 				}
 			} else {
@@ -89,7 +95,7 @@ class StaffAttendanceReport
 				'out' => $outTs > 0 ? date('H:i', $outTs) : '',
 				'duration' => $outTs > 0 ? self::formatDuration($outTs - $inTs) : '—',
 				'late_min' => (int) ($inEval['code'] === 'late' ? $inEval['minutes'] : 0),
-				'early_min' => (int) (($outEval['code'] ?? '') === 'early_leave' ? $outEval['minutes'] : 0),
+				'early_min' => 0,
 				'shift' => trim(($window['start_label'] ?? '') . '–' . ($window['end_label'] ?? ''), '–'),
 				'code' => self::dayCode($inEval, $outEval, $outTs),
 				'label_status' => self::dayStatus($inEval, $outEval, $outTs),

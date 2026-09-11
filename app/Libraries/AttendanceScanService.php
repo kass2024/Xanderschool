@@ -625,6 +625,18 @@ class AttendanceScanService
 			->getRow();
 
 		if (!$attendance) {
+			// Check-in after shift end does not count as attendance.
+			if (!empty($window['working']) && !empty($window['end_ts'])
+				&& $time > ((int) $window['end_ts'] + StaffShiftClock::GRACE_SECONDS)) {
+				$payload = self::staffClockPayload(
+					$staff, 'IN', $time, $window, $shift,
+					['code' => 'rejected', 'label' => 'Rejected', 'detail' => 'After shift end', 'minutes' => 0],
+					false, 0,
+					'Shift already ended (' . ($window['end_label'] ?? '') . ') — attendance not recorded'
+				);
+				$payload['success'] = 0;
+				return $payload;
+			}
 			$db->table('attendance_records')->insert([
 				'user_id' => (int) $staff->id,
 				'user_type' => 1,
@@ -650,6 +662,18 @@ class AttendanceScanService
 				$staff, 'IN', $timeIn, $window, $shift,
 				StaffShiftClock::evaluateIn($timeIn, $window),
 				true, 1, 'Already checked IN — wait ' . $mins . ' min to check OUT'
+			);
+		}
+
+		// Never record checkout before shift end time.
+		if (!empty($window['working']) && !empty($window['end_ts'])
+			&& $time < ((int) $window['end_ts'] - StaffShiftClock::GRACE_SECONDS)) {
+			$mins = (int) round((((int) $window['end_ts']) - $time) / 60);
+			return self::staffClockPayload(
+				$staff, 'IN', $timeIn, $window, $shift,
+				StaffShiftClock::evaluateIn($timeIn, $window),
+				true, 1,
+				'Checkout not allowed before shift end (' . ($window['end_label'] ?? '') . ') — ' . $mins . ' min remaining'
 			);
 		}
 
