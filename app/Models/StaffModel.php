@@ -12,11 +12,13 @@ class StaffModel extends Model
 	protected $primaryKey = "id";
 	public function checkUser($email,$key="staffs.email"){
 		$res = $this->select("staffs.id,staffs.photo,staffs.school_id,fname,lname,staffs.email,password,staffs.status,post
-		,p.title as post_title,sc.name as school_name,sc.status as school_status,sc.active_term,at.academic_year,at.term,at.use_period")
+		,p.title as post_title,sc.name as school_name,sc.status as school_status,sc.active_term,at.academic_year,at.term,at.use_period
+		,ay.title as academic_year_title")
 			->where($key,$email)
 			->join("posts p","p.id=staffs.post","inner")
 			->join("schools sc","sc.id=staffs.school_id","inner")
 			->join("active_term at","sc.active_term=at.id","left")
+			->join("academic_year ay","ay.id=at.academic_year","left")
 			->get();
 		return $res->getRow();
 	}

@@ -252,6 +252,7 @@ class Api extends BaseController
 								'soma_term' => $result->active_term ?? 0,
 								'soma_term_number' => $result->term ?? 0,
 								'soma_academic' => $result->academic_year ?? 0,
+								'soma_academic_title' => trim((string) ($result->academic_year_title ?? '')),
 								'soma_school_id' => $result->school_id,
 								'soma_home_school_id' => $result->school_id,
 								'soma_school' => $result->school_name ?? '',
@@ -267,6 +268,18 @@ class Api extends BaseController
 								'classes' => [],
 								'assessmentTypes' => [],
 							];
+							if ($data['soma_academic_title'] === '' && !empty($data['soma_academic'])) {
+								try {
+									$ay = (new AcademicYearModel())
+										->select('title')
+										->where('id', (int) $data['soma_academic'])
+										->get(1)
+										->getRowArray();
+									$data['soma_academic_title'] = trim((string) ($ay['title'] ?? ''));
+								} catch (\Throwable $e) {
+									log_message('error', 'API login academic year title: ' . $e->getMessage());
+								}
+							}
 							try {
 								$csMdl = new CourseModel();
 								$year = (int) ($result->academic_year ?? 0);
