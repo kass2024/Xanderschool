@@ -767,6 +767,7 @@ public function get_students($class, $academicYear, $termId = null)
     // Boarding: include counts if $termId is passed
     if (!empty($termId)) {
         $students = $csMdl->select('students.id, 
+                                    cr.id as record_id,
                                     regno, 
                                     CONCAT(students.fname," ",students.lname) as name, 
                                     photo,
@@ -779,19 +780,32 @@ public function get_students($class, $academicYear, $termId = null)
             ->join('class_records cr', 'cr.student = students.id')
             ->where('cr.class', $class)
             ->where('students.status', 1)
+            ->groupStart()
+                ->where('cr.status', 1)
+                ->orWhere('cr.status', null)
+            ->groupEnd()
             ->where('cr.year', $academicYear)
+            ->orderBy('students.fname', 'ASC')
+            ->orderBy('students.lname', 'ASC')
             ->get()
             ->getResultArray();
     } else {
         // Daily: no count column
         $students = $csMdl->select('students.id, 
+                                    cr.id as record_id,
                                     regno, 
                                     CONCAT(students.fname," ",students.lname) as name, 
                                     photo')
             ->join('class_records cr', 'cr.student = students.id')
             ->where('cr.class', $class)
             ->where('students.status', 1)
+            ->groupStart()
+                ->where('cr.status', 1)
+                ->orWhere('cr.status', null)
+            ->groupEnd()
             ->where('cr.year', $academicYear)
+            ->orderBy('students.fname', 'ASC')
+            ->orderBy('students.lname', 'ASC')
             ->get()
             ->getResultArray();
     }
@@ -2606,6 +2620,66 @@ public function get_boarding_classes()
 		}
 		$data['success'] = "1";
 		return $this->response->setJSON($data);
+	}
+
+	/**
+	 * Mark a student inactive (dismissed). Appears under Dismissed Students on web
+	 * and is excluded from Android attendance lists (status = 0).
+	 */
+	public function dismiss_student()
+	{
+		$schoolId = (int) $this->request->getPost('school_id');
+		$studentId = (int) $this->request->getPost('student_id');
+		$recordId = (int) $this->request->getPost('record_id');
+		$year = (int) $this->request->getPost('year');
+		$classId = (int) $this->request->getPost('class');
+
+		if ($schoolId < 1 || $studentId < 1) {
+			return $this->response->setJSON(['error' => 'Missing school or student']);
+		}
+
+		$stMdl = new StudentModel();
+		$student = $stMdl->select('id, school_id, status')
+			->where('id', $studentId)
+			->where('school_id', $schoolId)
+			->get(1)
+			->getRowArray();
+		if ($student == null) {
+			return $this->response->setJSON(['error' => 'Student not found in this school']);
+		}
+
+		$db = \Config\Database::connect();
+		$db->transStart();
+		try {
+			$stMdl->save(['id' => $studentId, 'status' => 0]);
+
+			$crMdl = new ClassRecordModel();
+			if ($recordId > 0) {
+				$crMdl->save(['id' => $recordId, 'status' => 0]);
+			} else {
+				$builder = $db->table('class_records')
+					->where('student', $studentId);
+				if ($year > 0) {
+					$builder->where('year', $year);
+				}
+				if ($classId > 0) {
+					$builder->where('class', $classId);
+				}
+				$builder->update(['status' => 0]);
+			}
+		} catch (\Exception $e) {
+			$db->transRollback();
+			return $this->response->setJSON(['error' => 'Failed to dismiss student: ' . $e->getMessage()]);
+		}
+		$db->transComplete();
+		if ($db->transStatus() === false) {
+			return $this->response->setJSON(['error' => 'Failed to dismiss student']);
+		}
+
+		return $this->response->setJSON([
+			'success' => '1',
+			'message' => 'Student marked inactive and moved to dismissed list',
+		]);
 	}
 
 	public function get_leave($school_id, $user_id)
