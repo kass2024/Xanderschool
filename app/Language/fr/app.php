@@ -92,7 +92,7 @@ return [
 	"staffAttendance" => " Présence du personnel ",
 	"staffInOutAttendance" => " Entrée / sortie du personnel ",
 	"monthlyReport" => " Rapport mensuel ",
-	"individualReport" => " Rapport individuel ",
+	"individualReport" => "Rapport de présence",
 	"hrDept" => " DÉPARTEMENTS DES RESSOURCES HUMAINES ",
 	"addStaff" => " Ajouter un nouveau personnel ",
 	"allStaffs" => " Voir tout le personnel ",

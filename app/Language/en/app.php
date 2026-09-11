@@ -94,7 +94,7 @@ return [
    'staffAttendance'             => 'Staff Attendance',
    'staffInOutAttendance'        => 'Staff IN/OUT Attendance',
    'monthlyReport'               => 'Monthly Report',
-   'individualReport'            => 'Individual Report',
+   'individualReport'            => 'Attendance Report',
    'hrDept'                      => 'HR DEPARTMENT',
    'addStaff'                    => 'Add new staff',
    'allStaffs'                   => 'View all staffs',

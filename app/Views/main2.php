@@ -467,12 +467,6 @@
 											</a>
 										</li>
 										<li>
-											<a href="<?= base_url('staff-report/monthly'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.monthlyReport"); ?>
-											</a>
-										</li>
-										<li>
 											<a href="<?= base_url('staff-report/individual'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.individualReport"); ?>
