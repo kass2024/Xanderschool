@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=4">
+<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=5">
 <?php
 if ($show_header) {
 	$defaultStart = $default_start ?? date('Y-m-01');
@@ -72,7 +72,7 @@ if ($show_header) {
 		<div id="report_content">
 			<div class="io-empty">
 				Choose <strong>Overall</strong> for all staff summaries by shift, <strong>Absent staff</strong> for absentees in the period,
-				or <strong>Individual</strong> for day-by-day detail. Period is limited to the active academic year.
+				or <strong>Individual</strong> for day-by-day detail (one staff, or <strong>View all staffs</strong> for everyone). Period is limited to the active academic year.
 			</div>
 		</div>
 	</div>
@@ -94,10 +94,6 @@ if ($show_header) {
 
 			$("#btn_generate").on("click", function (e) {
 				e.preventDefault();
-				if ($("#report_type").val() === "individual" && $("#select_staff").val() === "0") {
-					toastada.warning("Select a staff member for the individual report.");
-					return;
-				}
 				if ($("#period_mode").val() === "month") {
 					if (!$("#month_key").val()) {
 						toastada.warning("<?= lang("app.pleaseSelectMonth"); ?>");
@@ -179,7 +175,7 @@ $rateClass = static function ($pct) {
 $reportTitles = [
 	'overall' => 'Overall attendance report',
 	'absent' => 'Absent staff report',
-	'individual' => 'Individual attendance report',
+	'individual' => count($summaries) > 1 ? 'Individual attendance report — all staff' : 'Individual attendance report',
 ];
 $reportTitle = $reportTitles[$reportType] ?? 'Attendance report';
 $renderSummaryTable = static function (array $list, $rateClass) {
@@ -300,7 +296,7 @@ $renderSummaryTable = static function (array $list, $rateClass) {
 		<?php endif; ?>
 	<?php else : ?>
 		<?php foreach ($summaries as $si => $sum) : ?>
-			<div class="io-letter" style="margin-bottom:18px;">
+			<div class="io-letter io-staff-detail<?= $si < count($summaries) - 1 ? ' io-staff-break' : ''; ?>" style="margin-bottom:18px;">
 				<div class="io-profile">
 					<h3><?= esc($sum['name']); ?></h3>
 					<div class="meta">

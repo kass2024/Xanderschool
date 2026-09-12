@@ -225,4 +225,5 @@
 	.app-main-outer, .app-main-inner, .io-page { padding: 0 !important; margin: 0 !important; }
 	.io-letter, .io-kpi, .io-area-card { box-shadow: none; }
 	.io-area-card { cursor: default; }
+	.io-staff-break { page-break-after: always; break-after: page; }
 }
