@@ -48,8 +48,17 @@ class TimetableGeneratorService
 	/** @var SecondaryTimetableCriteria|null */
 	private $secondaryCriteria = null;
 
+	/** @var list<array<string,mixed>> */
+	private $customRules = [];
+
 	/** @var array<int,array<string,mixed>> */
 	private $assignmentByClassCourse = [];
+
+	/** @param list<array<string,mixed>> $rules */
+	public function setCustomRules(array $rules): void
+	{
+		$this->customRules = $rules;
+	}
 
 	public static function distributeWeeklyHours(int $hours): array
 	{
@@ -153,6 +162,7 @@ class TimetableGeneratorService
 
 		$this->secondaryCriteria = new SecondaryTimetableCriteria();
 		$this->secondaryCriteria->hydrateFromAssignments($assignments);
+		$this->secondaryCriteria->hydrateCustomRules($this->customRules);
 		$this->assignmentByClassCourse = [];
 		foreach ($assignments as $row) {
 			$classId = (int) ($row['class_id'] ?? 0);
@@ -306,10 +316,27 @@ class TimetableGeneratorService
 		if ($this->secondaryCriteria === null || $placed === []) {
 			return [];
 		}
-		$partner = $this->secondaryCriteria->combinePartner($row);
-		if ($partner === null) {
+		$partners = $this->secondaryCriteria->combinePartners($row);
+		if ($partners === []) {
 			return [];
 		}
+		$out = [];
+		foreach ($partners as $partner) {
+			$copies = $this->copyPlacedToPartner($row, $partner, $placed, $placedByAssignment);
+			foreach ($copies as $entry) {
+				$out[] = $entry;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $placed
+	 * @param array<string,int> $placedByAssignment
+	 * @return list<array<string,mixed>>
+	 */
+	private function copyPlacedToPartner(array $row, array $partner, array $placed, array &$placedByAssignment): array
+	{
 		$partnerKey = $this->assignmentQuotaKey($partner);
 		$quota = self::weeklyHoursFromCourse($partner);
 		$already = (int) ($placedByAssignment[$partnerKey] ?? 0);
@@ -332,7 +359,6 @@ class TimetableGeneratorService
 		if ($day < 0 || $slotIds === [] || count($slotIds) > $room) {
 			return [];
 		}
-		// Partner class must be free; same teacher may already be marked busy from primary — allow if same staff.
 		$primaryStaff = (int) ($row['lecturer'] ?? 0);
 		foreach ($slotIds as $slotId) {
 			if (!empty($this->blocked[$day . ':' . $slotId])) {
@@ -405,8 +431,9 @@ class TimetableGeneratorService
 		$occupiedDays = $this->subjectOccupiedDays($subjectKey);
 		$enforceGap = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupiedDays !== [];
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
-		// Prefer last periods first; widen only if the PE teacher/class has no free late slot.
-		$windows = $peSport ? [2, 3, 4, 5, 6, 7, 0] : [0];
+		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
+		// Prefer last periods first; widen only if the PE / last-hour course has no free late slot.
+		$windows = $lastHour ? [2, 3, 4, 5, 6, 7, 0] : [0];
 
 		$candidates = [];
 		foreach ($windows as $window) {
@@ -479,6 +506,7 @@ class TimetableGeneratorService
 		$subjectKey = $classId . ':' . $courseId;
 		$occupiedDays = $this->subjectOccupiedDays($subjectKey);
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
+		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
 		$candidates = [];
 		$slotCount = count($this->teachingSlots);
 		$reserveLate = $slotCount > 0 ? max(0, $slotCount - 3) : 0;
@@ -530,7 +558,7 @@ class TimetableGeneratorService
 						if ($j !== $i + 1) {
 							$score += 15;
 						}
-						if ($peSport) {
+						if ($lastHour) {
 							$score += ($slotCount - 1 - $j) * 800;
 						} elseif ($j >= $reserveLate) {
 							$score += 900;
@@ -549,7 +577,7 @@ class TimetableGeneratorService
 				}
 
 				$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $i, $weeklyHours, $row);
-				if ($peSport) {
+				if ($lastHour) {
 					$score += ($slotCount - 1 - $i) * 800;
 				} elseif ($i >= $reserveLate) {
 					$score += 900;
@@ -573,8 +601,9 @@ class TimetableGeneratorService
 		$score = (int) ($this->classDayUsage[$classId . ':' . $day] ?? 0) * 80;
 		$score += (int) ($this->globalDayUsage[$day] ?? 0) * 15;
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
-		// Non-PE: slight preference for earlier slots. PE: handled via late-slot bonus in collect.
-		$score += $peSport ? 0 : $slotIndex;
+		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
+		// Non-last-hour: slight preference for earlier slots.
+		$score += $lastHour ? 0 : $slotIndex;
 
 		$subjectKey = $classId . ':' . $courseId;
 		$sameDayPenalty = ($weeklyHours > 0 && $weeklyHours <= 2) ? 200 : 40;
@@ -625,22 +654,24 @@ class TimetableGeneratorService
 		if ($this->secondaryCriteria === null) {
 			return true;
 		}
-		$partner = $this->secondaryCriteria->combinePartner($row);
-		if ($partner === null) {
+		$partners = $this->secondaryCriteria->combinePartners($row);
+		if ($partners === []) {
 			return true;
 		}
-		$partnerClass = (int) ($partner['class_id'] ?? 0);
-		$partnerStaff = (int) ($partner['lecturer'] ?? 0);
 		$primaryStaff = (int) ($row['lecturer'] ?? 0);
-		foreach ($slotIds as $slotId) {
-			if (isset($this->classBusy[$this->busyKey($partnerClass, $day, (int) $slotId)])) {
-				return false;
-			}
-			if (!$this->criteriaAllowsSlot($partner, $day, (int) $slotId)) {
-				return false;
-			}
-			if ($partnerStaff > 0 && $partnerStaff !== $primaryStaff && $this->staffHasTimeConflict($partnerStaff, $day, (int) $slotId)) {
-				return false;
+		foreach ($partners as $partner) {
+			$partnerClass = (int) ($partner['class_id'] ?? 0);
+			$partnerStaff = (int) ($partner['lecturer'] ?? 0);
+			foreach ($slotIds as $slotId) {
+				if (isset($this->classBusy[$this->busyKey($partnerClass, $day, (int) $slotId)])) {
+					return false;
+				}
+				if (!$this->criteriaAllowsSlot($partner, $day, (int) $slotId)) {
+					return false;
+				}
+				if ($partnerStaff > 0 && $partnerStaff !== $primaryStaff && $this->staffHasTimeConflict($partnerStaff, $day, (int) $slotId)) {
+					return false;
+				}
 			}
 		}
 		return true;

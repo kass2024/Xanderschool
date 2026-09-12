@@ -24,10 +24,61 @@ class SecondaryTimetableCriteria
 	/** @var list<string> */
 	private $anpMorningTeachers = [];
 
+	/** @var array<int,list<array{day:int,start:int,end:int,scope:?string}>> */
+	private $windowsByStaffId = [];
+
+	/** @var array<int,list<int>> staff_id => allowed days (empty = any) */
+	private $allowedDaysByStaffId = [];
+
+	/** @var array<string,list<int>> teacher name needle => blocked days */
+	private $blockedDaysByName = [];
+
+	/** @var list<array<string,mixed>> */
+	private $customRules = [];
+
 	public function __construct()
 	{
 		$this->teacherWindows = $this->defaultTeacherWindows();
-		$this->anpMorningTeachers = ['rinea', 'yaliette', 'yaliet', 'margueritte', 'marguerite'];
+		$this->anpMorningTeachers = ['rinea', 'linear', 'yaliette', 'yaliet', 'valiette', 'valiet', 'margueritte', 'marguerite'];
+		$this->blockedDaysByName = [
+			'alice' => [0], // Alice must not teach on Monday
+		];
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $rules
+	 */
+	public function hydrateCustomRules(array $rules): void
+	{
+		$this->customRules = $rules;
+		$this->windowsByStaffId = [];
+		$this->allowedDaysByStaffId = [];
+		foreach ($rules as $rule) {
+			if (empty($rule['enabled']) && isset($rule['enabled'])) {
+				continue;
+			}
+			$type = (string) ($rule['rule_type'] ?? '');
+			$staffId = (int) ($rule['teacher_id'] ?? 0);
+			$days = $this->decodeDays($rule['days'] ?? null);
+			if ($type === 'teacher_window' && $staffId > 0 && $days !== []) {
+				$start = $this->timeToMinutes((string) ($rule['start_time'] ?? '00:00'));
+				$end = $this->timeToMinutes((string) ($rule['end_time'] ?? '00:00'));
+				if ($end <= $start) {
+					continue;
+				}
+				foreach ($days as $day) {
+					$this->windowsByStaffId[$staffId][] = [
+						'day' => $day,
+						'start' => $start,
+						'end' => $end,
+						'scope' => null,
+					];
+				}
+			}
+			if ($type === 'teacher_days' && $staffId > 0 && $days !== []) {
+				$this->allowedDaysByStaffId[$staffId] = $days;
+			}
+		}
 	}
 
 	/**
@@ -78,8 +129,33 @@ class SecondaryTimetableCriteria
 		return TimetableGeneratorService::distributeWeeklyHours($hours);
 	}
 
+	public function prefersLastHour(array $row): bool
+	{
+		$courseId = (int) ($row['course_id'] ?? 0);
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$classId = (int) ($row['class_id'] ?? 0);
+		foreach ($this->customRules as $rule) {
+			if (($rule['rule_type'] ?? '') !== 'last_hour') {
+				continue;
+			}
+			if (!$this->ruleMatchesRow($rule, $courseId, $staffId, $classId)) {
+				continue;
+			}
+			return true;
+		}
+		return false;
+	}
+
 	public function prefersMorning(array $row): bool
 	{
+		$courseId = (int) ($row['course_id'] ?? 0);
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$classId = (int) ($row['class_id'] ?? 0);
+		foreach ($this->customRules as $rule) {
+			if (($rule['rule_type'] ?? '') === 'morning' && $this->ruleMatchesRow($rule, $courseId, $staffId, $classId)) {
+				return true;
+			}
+		}
 		if (!self::isSecondaryTrack($row)) {
 			return false;
 		}
@@ -131,12 +207,40 @@ class SecondaryTimetableCriteria
 			return true;
 		}
 		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+		$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+
+		if ($staffId > 0 && isset($this->allowedDaysByStaffId[$staffId]) && !in_array($day, $this->allowedDaysByStaffId[$staffId], true)) {
+			return false;
+		}
+		if ($staffId > 0 && !empty($this->windowsByStaffId[$staffId])) {
+			$dayWindows = array_values(array_filter($this->windowsByStaffId[$staffId], static function (array $w) use ($day): bool {
+				return (int) $w['day'] === $day;
+			}));
+			if ($dayWindows === []) {
+				return false;
+			}
+			$ok = false;
+			foreach ($dayWindows as $w) {
+				if ($start >= (int) $w['start'] && $end <= (int) $w['end']) {
+					$ok = true;
+					break;
+				}
+			}
+			if (!$ok) {
+				return false;
+			}
+		}
+
 		if ($teacher === '') {
 			return true;
 		}
-
-		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
-		$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+		foreach ($this->blockedDaysByName as $needle => $blocked) {
+			if ($needle !== '' && strpos($teacher, $needle) !== false && in_array($day, $blocked, true)) {
+				return false;
+			}
+		}
 
 		foreach ($this->anpMorningTeachers as $needle) {
 			if (strpos($teacher, $needle) !== false) {
@@ -233,62 +337,56 @@ class SecondaryTimetableCriteria
 	 *
 	 * @return array<string,mixed>|null
 	 */
-	public function combinePartner(array $row): ?array
+	/**
+	 * @return list<array<string,mixed>>
+	 */
+	public function combinePartners(array $row): array
 	{
 		if (!self::isSecondaryTrack($row)) {
-			return null;
+			return [];
 		}
 		$classId = (int) ($row['class_id'] ?? 0);
 		$meta = $this->classMeta[(string) $classId] ?? null;
 		if ($meta === null) {
-			return null;
+			return [];
 		}
 		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
 		if ($subject === '') {
-			return null;
+			return [];
 		}
-
-		$pairs = $this->combinePairsForSubject($subject);
 		$level = $meta['level'];
 		$dept = $meta['dept'];
-		$partnerDept = null;
-		foreach ($pairs as $pair) {
-			if (($pair['level'] ?? '') !== $level) {
-				continue;
-			}
-			$a = $pair['a'];
-			$b = $pair['b'];
-			if ($dept === $a) {
-				$partnerDept = $b;
-				break;
-			}
-			if ($dept === $b) {
-				$partnerDept = $a;
-				break;
-			}
+		$wantedDepts = $this->combineDeptsFor($subject, $level, $dept);
+		if ($wantedDepts === []) {
+			return [];
 		}
-		if ($partnerDept === null) {
-			return null;
-		}
-
+		$out = [];
+		$seen = [];
 		foreach ($this->assignmentsByKey as $cand) {
 			$cid = (int) ($cand['class_id'] ?? 0);
-			if ($cid === $classId) {
+			if ($cid === $classId || isset($seen[$cid])) {
 				continue;
 			}
 			$cm = $this->classMeta[(string) $cid] ?? null;
 			if ($cm === null) {
 				continue;
 			}
-			if (($cm['level'] ?? '') !== $level || ($cm['dept'] ?? '') !== $partnerDept) {
+			if (($cm['level'] ?? '') !== $level || !in_array((string) ($cm['dept'] ?? ''), $wantedDepts, true)) {
 				continue;
 			}
 			if ($this->normalizeSubject((string) ($cand['course_title'] ?? '')) !== $subject) {
 				continue;
 			}
-			return $cand;
+			$seen[$cid] = true;
+			$out[] = $cand;
 		}
-		return null;
+		return $out;
+	}
+
+	public function combinePartner(array $row): ?array
+	{
+		$partners = $this->combinePartners($row);
+		return $partners[0] ?? null;
 	}
 
 	/** PE: at most one period per class day (spread across week). */
@@ -330,7 +428,42 @@ class SecondaryTimetableCriteria
 				['level' => 'S5', 'a' => 'ST1', 'b' => 'ST2'],
 			];
 		}
+		if ($subject === 'economics') {
+			return [
+				['level' => 'S6', 'a' => 'MCE', 'b' => 'MEG'],
+			];
+		}
+		if ($subject === 'entrepreneurship') {
+			return [
+				['level' => 'S5', 'a' => 'ST1', 'b' => 'ST2'],
+			];
+		}
 		return [];
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function combineDeptsFor(string $subject, string $level, string $dept): array
+	{
+		if ($subject === 'entrepreneurship' && $level === 'S6') {
+			$group = ['MCE', 'MPG', 'PCB', 'MCB', 'MEG', 'MPC'];
+			return in_array($dept, $group, true) ? array_values(array_filter($group, static function ($d) use ($dept) {
+				return $d !== $dept;
+			})) : [];
+		}
+		$wanted = [];
+		foreach ($this->combinePairsForSubject($subject) as $pair) {
+			if (($pair['level'] ?? '') !== $level) {
+				continue;
+			}
+			if ($dept === ($pair['a'] ?? '')) {
+				$wanted[] = (string) $pair['b'];
+			} elseif ($dept === ($pair['b'] ?? '')) {
+				$wanted[] = (string) $pair['a'];
+			}
+		}
+		return array_values(array_unique($wanted));
 	}
 
 	private function normalizeSubject(string $title): string
@@ -351,7 +484,47 @@ class SecondaryTimetableCriteria
 		if (strpos($t, 'mathematics') !== false || preg_match('/\bmath\b/', $t)) {
 			return 'mathematics';
 		}
+		if (strpos($t, 'econ') !== false) {
+			return 'economics';
+		}
+		if (strpos($t, 'entrepreneur') !== false) {
+			return 'entrepreneurship';
+		}
 		return $t;
+	}
+
+	private function ruleMatchesRow(array $rule, int $courseId, int $staffId, int $classId): bool
+	{
+		$rc = (int) ($rule['course_id'] ?? 0);
+		$rt = (int) ($rule['teacher_id'] ?? 0);
+		$rl = (int) ($rule['class_id'] ?? 0);
+		if ($rc > 0 && $rc !== $courseId) {
+			return false;
+		}
+		if ($rt > 0 && $rt !== $staffId) {
+			return false;
+		}
+		if ($rl > 0 && $rl !== $classId) {
+			return false;
+		}
+		return $rc > 0 || $rt > 0 || $rl > 0;
+	}
+
+	/** @return list<int> */
+	private function decodeDays($raw): array
+	{
+		if (is_array($raw)) {
+			return array_values(array_unique(array_map('intval', $raw)));
+		}
+		$s = trim((string) $raw);
+		if ($s === '') {
+			return [];
+		}
+		$decoded = json_decode($s, true);
+		if (is_array($decoded)) {
+			return array_values(array_unique(array_map('intval', $decoded)));
+		}
+		return array_values(array_unique(array_map('intval', explode(',', $s))));
 	}
 
 	private function normalizeLevel(string $level): string

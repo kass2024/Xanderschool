@@ -10,6 +10,7 @@ use App\Models\ClassesModel;
 use App\Models\StaffModel;
 use App\Models\TimetableSchemaModel;
 use App\Services\Timetable\TimetableConflictService;
+use App\Services\Timetable\TimetableCriteriaStore;
 use App\Services\Timetable\TimetableGeneratorService;
 use App\Services\Timetable\TimetableStagingService;
 
@@ -50,7 +51,6 @@ class TimetableManagement extends Home
 		// Manual generate only — do not auto-queue when assignments changed.
 		$data['active_generation_job'] = $this->findExistingTimetableJob($schoolId, $year, $term);
 		$data['timetable_stale'] = $this->isTimetableStale($schoolId, $year, $term);
-		$data['generation_levels'] = $this->buildGenerationLevelCards($schoolId, $year, $term, $schema, $data['schedule'] ?? null);
 
 		$data['classes'] = $this->fetchClassRows($db, $schoolId);
 
@@ -68,6 +68,11 @@ class TimetableManagement extends Home
 			->where('term', $term)
 			->orderBy('id', 'DESC')
 			->get(1)->getRowArray();
+		$data['generation_levels'] = $this->buildGenerationLevelCards($schoolId, $year, $term, $schema, $data['schedule'] ?? null);
+		$data['last_generation_job'] = $this->findLastFinishedTimetableJob($schoolId, $year, $term);
+		$criteriaStore = new TimetableCriteriaStore();
+		$data['custom_criteria'] = $criteriaStore->listForSchool($schoolId);
+		$data['criteria_courses'] = $this->uniqueAssignmentCourses($this->loadAssignments($schoolId, $year, $term));
 
 		$data['staff_with_timetable'] = 0;
 		if (!empty($data['schedule'])) {
@@ -372,6 +377,24 @@ class TimetableManagement extends Home
 		]);
 
 		return $this->response->setJSON(['success' => 'Timetable updated.']);
+	}
+
+	public function save_criteria()
+	{
+		$this->denyMenu('timetable_dashboard');
+		list($schoolId) = $this->bootTimetable();
+		$store = new TimetableCriteriaStore();
+		$result = $store->save($schoolId, $this->request->getPost() ?: []);
+		return $this->response->setJSON($result);
+	}
+
+	public function delete_criteria()
+	{
+		$this->denyMenu('timetable_dashboard');
+		list($schoolId) = $this->bootTimetable();
+		$id = (int) $this->request->getPost('id');
+		$ok = (new TimetableCriteriaStore())->delete($schoolId, $id);
+		return $this->response->setJSON($ok ? ['success' => true] : ['error' => 'Could not delete rule.']);
 	}
 
 	public function generate()
@@ -890,6 +913,7 @@ class TimetableManagement extends Home
 			]);
 
 			$generator = new TimetableGeneratorService();
+			$generator->setCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
 			if ($keepBusyEntries !== []) {
 				$generator->seedBusyFromEntries($keepBusyEntries, $slotTimesById);
 			}
@@ -1070,6 +1094,8 @@ class TimetableManagement extends Home
 			]);
 		}
 
+		$collisionReport = $this->buildCollisionReport($scheduleId, $schoolId, $schema, $allWarnings, $geminiTip);
+
 		return [
 			'entries' => $allEntries,
 			'warnings' => $allWarnings,
@@ -1077,6 +1103,7 @@ class TimetableManagement extends Home
 			'staging_created' => $stagingCreated,
 			'phase' => $phase,
 			'ai_collision_tip' => $geminiTip,
+			'collision_report' => $collisionReport,
 		];
 	}
 
@@ -1439,6 +1466,59 @@ class TimetableManagement extends Home
 		return $job;
 	}
 
+	/**
+	 * @param list<string> $warnings
+	 * @return array<string,mixed>
+	 */
+	private function buildCollisionReport(int $scheduleId, int $schoolId, TimetableSchemaModel $schema, array $warnings, ?string $geminiTip): array
+	{
+		$checker = new TimetableConflictService();
+		$summary = $checker->summarizeConflicts($checker->findScheduleConflicts($scheduleId, $schoolId, $schema));
+		$summary['warnings'] = array_values(array_slice($warnings, 0, 40));
+		$summary['ai_tip'] = $geminiTip;
+		$summary['ok'] = ((int) ($summary['total'] ?? 0)) === 0;
+		return $summary;
+	}
+
+	/** @param list<array<string,mixed>> $assignments */
+	private function uniqueAssignmentCourses(array $assignments): array
+	{
+		$out = [];
+		foreach ($assignments as $row) {
+			$id = (int) ($row['course_id'] ?? 0);
+			if ($id <= 0 || isset($out[$id])) {
+				continue;
+			}
+			$out[$id] = [
+				'id' => $id,
+				'title' => (string) ($row['course_title'] ?? 'Course'),
+			];
+		}
+		return array_values($out);
+	}
+
+	/** @return array<string,mixed>|null */
+	private function findLastFinishedTimetableJob(int $schoolId, int $year, int $term): ?array
+	{
+		$best = null;
+		foreach (glob($this->timetableJobDir() . DIRECTORY_SEPARATOR . '*.json') ?: [] as $file) {
+			$data = json_decode((string) @file_get_contents($file), true);
+			if (!is_array($data) || (string) ($data['status'] ?? '') !== 'done') {
+				continue;
+			}
+			if ((int) ($data['school_id'] ?? 0) !== $schoolId
+				|| (int) ($data['academic_year'] ?? 0) !== $year
+				|| (int) ($data['term'] ?? 0) !== $term) {
+				continue;
+			}
+			$stamp = (string) ($data['finished_at'] ?? $data['created_at'] ?? '');
+			if ($best === null || $stamp > (string) ($best['finished_at'] ?? $best['created_at'] ?? '')) {
+				$best = $data;
+			}
+		}
+		return $best;
+	}
+
 	/** @return array<string,mixed>|null */
 	private function findExistingTimetableJob(int $schoolId, int $year, int $term): ?array
 	{
@@ -1578,16 +1658,19 @@ class TimetableManagement extends Home
 				$aiTip = trim((string) ($aiTip ?? '') . "\n" . $result['ai_collision_tip']);
 			}
 			$phaseLabel = TimetableTrack::generationPhaseLabel((string) ($result['phase'] ?? $phase));
+			$hits = (int) (($result['collision_report']['total'] ?? 0));
 			$this->updateTimetableJob($jobId, [
 				'status' => 'done',
 				'success' => true,
 				'message' => $phaseLabel . ' generated — ' . count($result['entries']) . ' lesson slots'
-					. (!empty($result['staging_created']) ? ' (' . (int) $result['staging_created'] . ' in parking lot)' : '') . '.',
+					. (!empty($result['staging_created']) ? ' (' . (int) $result['staging_created'] . ' in parking lot)' : '')
+					. ($hits > 0 ? '. ' . $hits . ' collision' . ($hits === 1 ? '' : 's') . ' still need a move.' : '. No teacher/class collisions.'),
 				'progress' => 100,
 				'stage' => 'done',
 				'phase' => $result['phase'] ?? $phase,
 				'warnings' => $result['warnings'],
 				'ai_tip' => $aiTip !== '' ? $aiTip : null,
+				'collision_report' => $result['collision_report'] ?? null,
 				'schedule_id' => (int) ($result['schedule_id'] ?? 0),
 				'staging_created' => (int) ($result['staging_created'] ?? 0),
 				'finished_at' => date('Y-m-d H:i:s'),

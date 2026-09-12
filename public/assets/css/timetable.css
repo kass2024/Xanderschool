@@ -296,6 +296,12 @@
 .tt-gen-result:empty { display: none; }
 .tt-gen-stages { margin-top: 6px; }
 .tt-gen-stages li { margin-bottom: 2px; }
+.tt-criteria-box {
+	border: 1px dashed #94a3b8; border-radius: 12px; padding: 12px; background: #fff;
+}
+.tt-criteria-list { padding-left: 18px; }
+.tt-collision-list li { margin-bottom: 8px; }
+.tt-day-checks label { font-weight: 600; color: #334155; }
 
 @media print {
 	body { margin: 0; }

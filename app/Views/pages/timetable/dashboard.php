@@ -156,9 +156,72 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 							<input type="checkbox" id="useAiTips" checked>
 							<span>Gemini collision fix</span>
 						</label>
+						<button type="button" class="btn btn-outline-secondary btn-sm" id="btnToggleCriteria">
+							Special criteria
+						</button>
 						<button type="button" class="btn btn-primary btn-sm" id="btnGenerateAll" <?= !$stepAssignments ? 'disabled' : ''; ?>>
 							Generate all
 						</button>
+					</div>
+
+					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
+						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
+						<p class="small text-muted mb-2">Document rules (combined classes, Alice not Monday, teacher windows, PE last hour, mornings) are always applied. Add extra rules below.</p>
+						<form id="ttCriteriaForm" class="tt-criteria-form">
+							<div class="form-row">
+								<div class="col-md-4 mb-2">
+									<select name="rule_type" id="ttRuleType" class="form-control form-control-sm">
+										<option value="last_hour">Put course / teacher at last hour</option>
+										<option value="teacher_window">Teacher only on days + time range</option>
+										<option value="teacher_days">Teacher only on specific days</option>
+										<option value="morning">Prefer morning</option>
+									</select>
+								</div>
+								<div class="col-md-4 mb-2">
+									<select name="teacher_id" class="form-control form-control-sm">
+										<option value="0">Any teacher</option>
+										<?php foreach ($staffs as $s): ?>
+											<option value="<?= (int) $s['id']; ?>"><?= esc(trim($s['fname'] . ' ' . $s['lname'])); ?></option>
+										<?php endforeach; ?>
+									</select>
+								</div>
+								<div class="col-md-4 mb-2">
+									<select name="course_id" class="form-control form-control-sm">
+										<option value="0">Any course</option>
+										<?php foreach (($criteria_courses ?? []) as $c): ?>
+											<option value="<?= (int) $c['id']; ?>"><?= esc($c['title']); ?></option>
+										<?php endforeach; ?>
+									</select>
+								</div>
+							</div>
+							<div class="tt-day-checks mb-2">
+								<?php foreach (($day_labels ?? ['Mon','Tue','Wed','Thu','Fri']) as $di => $dl): ?>
+									<label class="small mr-2 mb-0"><input type="checkbox" name="days[]" value="<?= (int) $di; ?>"> <?= esc($dl); ?></label>
+								<?php endforeach; ?>
+							</div>
+							<div class="form-row">
+								<div class="col-5 mb-2"><input type="time" name="start_time" class="form-control form-control-sm" placeholder="From"></div>
+								<div class="col-5 mb-2"><input type="time" name="end_time" class="form-control form-control-sm" placeholder="To"></div>
+								<div class="col-12 mb-2"><input type="text" name="note" class="form-control form-control-sm" placeholder="Note (optional)"></div>
+							</div>
+							<button type="submit" class="btn btn-sm btn-success">Save rule</button>
+						</form>
+						<ul id="ttCriteriaList" class="tt-criteria-list small mb-0 mt-2">
+							<?php foreach (($custom_criteria ?? []) as $rule):
+								$days = json_decode((string) ($rule['days'] ?? '[]'), true);
+								$dayTxt = is_array($days) && $days !== [] ? implode(',', array_map(static function ($d) {
+									return ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(int) $d] ?? $d;
+								}, $days)) : 'any day';
+								?>
+								<li data-id="<?= (int) $rule['id']; ?>">
+									<strong><?= esc(str_replace('_', ' ', (string) $rule['rule_type'])); ?></strong>
+									· <?= esc($dayTxt); ?>
+									<?php if (!empty($rule['start_time'])): ?> <?= esc($rule['start_time']); ?>–<?= esc($rule['end_time']); ?><?php endif; ?>
+									<?php if (!empty($rule['note'])): ?> — <?= esc($rule['note']); ?><?php endif; ?>
+									<button type="button" class="btn btn-link btn-sm text-danger p-0 ml-1 tt-del-rule" data-id="<?= (int) $rule['id']; ?>">remove</button>
+								</li>
+							<?php endforeach; ?>
+						</ul>
 					</div>
 
 					<div id="generateResult" class="tt-gen-result small"></div>
@@ -288,7 +351,44 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	var jobStatusBase = '<?= site_url('timetable/generate_status'); ?>';
 	var hasSchedule = <?= $hasSchedule ? 'true' : 'false'; ?>;
 	var activeJob = <?= json_encode($active_generation_job ?? null, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+	var lastJob = <?= json_encode($last_generation_job ?? null, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 	var pollTimer = null;
+	var saveCriteriaUrl = '<?= site_url('timetable/save_criteria'); ?>';
+	var deleteCriteriaUrl = '<?= site_url('timetable/delete_criteria'); ?>';
+
+	function esc(s) {
+		return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+			return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);
+		});
+	}
+
+	function renderCollisionReport(report) {
+		if (!report) return '';
+		var html = '';
+		var total = parseInt(report.total, 10) || 0;
+		if (total <= 0) {
+			html += '<div class="alert alert-success py-2 mb-2">No two teachers share a class period, and no teacher is double-booked.</div>';
+		} else {
+			html += '<div class="alert alert-warning py-2 mb-2"><strong>' + total + ' collision' + (total === 1 ? '' : 's') + ' after AI check.</strong> '
+				+ (report.two_teachers ? (report.two_teachers + ' two-teachers-in-one-class. ') : '')
+				+ (report.teacher ? (report.teacher + ' teacher double-book. ') : '')
+				+ (report.class ? (report.class + ' class double-lesson.') : '')
+				+ '</div>';
+			html += '<ol class="tt-collision-list mb-2 pl-3">';
+			(report.items || []).slice(0, 30).forEach(function (item) {
+				html += '<li><div>' + esc(item.message || '') + '</div>'
+					+ (item.fix ? '<div class="text-muted">Fix: ' + esc(item.fix) + '</div>' : '')
+					+ '</li>';
+			});
+			html += '</ol>';
+		}
+		if (report.warnings && report.warnings.length) {
+			html += '<div class="small text-warning mb-1">Unplaced lessons</div><ul class="pl-3 mb-2">';
+			report.warnings.slice(0, 12).forEach(function (w) { html += '<li>' + esc(w) + '</li>'; });
+			html += '</ul>';
+		}
+		return html;
+	}
 
 	function currentMode() { return $('#previewMode').val(); }
 	function currentId() {
@@ -381,11 +481,10 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		} else if (status === 'done') {
 			setGenerating(false);
 			html = '<div class="progress mb-2" style="height:8px;"><div class="progress-bar bg-success" style="width:100%;"></div></div>'
-				+ '<div class="alert alert-success py-2 mb-0">' + (job.message || 'Timetable generated.') + '</div>';
-			if (job.warnings && job.warnings.length) {
-				html += '<ul class="text-warning mt-2 mb-0 pl-3 small">' + job.warnings.slice(0, 5).map(function (w) { return '<li>' + w + '</li>'; }).join('') + '</ul>';
-			}
-			if (job.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-0"><strong>AI:</strong> ' + String(job.ai_tip).replace(/\n/g, '<br>') + '</div>';
+				+ '<div class="alert alert-success py-2 mb-2">' + esc(job.message || 'Timetable generated.') + '</div>';
+			html += renderCollisionReport(job.collision_report);
+			if (job.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-2"><strong>AI:</strong> ' + esc(job.ai_tip).replace(/\n/g, '<br>') + '</div>';
+			html += '<button type="button" class="btn btn-sm btn-outline-primary" id="btnRefreshPreview">Refresh preview</button>';
 		} else if (status === 'failed') {
 			setGenerating(false);
 			html = '<div class="alert alert-danger py-2 mb-0">' + (job.message || 'Generation failed.') + '</div>';
@@ -404,7 +503,8 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 				return;
 			}
 			if (job && job.status === 'done') {
-				setTimeout(function () { location.reload(); }, 1000);
+				hasSchedule = true;
+				loadPreview();
 			}
 		}).fail(function () {
 			setGenerating(false);
@@ -487,12 +587,41 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	$('#btnGenerateAll').on('click', function () {
 		startGenerate('all');
 	});
+	$('#btnToggleCriteria').on('click', function () {
+		var box = document.getElementById('ttCriteriaBox');
+		if (box) box.hidden = !box.hidden;
+	});
+	$('#ttCriteriaForm').on('submit', function (e) {
+		e.preventDefault();
+		$.ajax({
+			url: saveCriteriaUrl,
+			method: 'POST',
+			dataType: 'json',
+			data: $(this).serialize()
+		}).done(function (r) {
+			if (r && r.error) { alert(r.error); return; }
+			alert('Rule saved. Generate again to apply it.');
+			location.reload();
+		}).fail(function () { alert('Could not save rule.'); });
+	});
+	$(document).on('click', '.tt-del-rule', function () {
+		var id = $(this).data('id');
+		$.post(deleteCriteriaUrl, { id: id }, function (r) {
+			if (r && r.success) location.reload();
+		}, 'json');
+	});
+	$(document).on('click', '#btnRefreshPreview', function () {
+		hasSchedule = true;
+		loadPreview();
+	});
 
 	syncEntityOptions();
 	if (hasSchedule) loadPreview();
 	if (activeJob && activeJob.id && (activeJob.status === 'queued' || activeJob.status === 'running')) {
 		renderJobState(activeJob);
 		pollJob(activeJob.id);
+	} else if (lastJob && lastJob.collision_report) {
+		renderJobState(lastJob);
 	}
 })();
 </script>
