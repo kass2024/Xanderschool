@@ -33,6 +33,7 @@ use App\Models\StaffModel;
 use App\Models\StudentModel;
 use App\Models\StudentVisitorModel;
 use App\Models\VisitorVisitModel;
+use App\Models\GateVisitModel;
 use App\Models\TermModel;
 use App\Models\TransportRecordModel;
 use App\Models\UpdateVersionModel;
@@ -4774,5 +4775,96 @@ public function permission_card_scan()
 			$in['sn'] = (string) ($this->request->getGet('sn') ?? '');
 		}
 		return $in;
+	}
+
+	/**
+	 * Daily gate visitor tablet — resolve school by acronym and keep it on the device.
+	 */
+	public function gate_open_school()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$acronym = trim((string) ($this->request->getPost('acronym') ?: $this->request->getGet('acronym') ?: ''));
+		if ($acronym === '') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'School acronym is required.']);
+		}
+		$sklMdl = new SchoolModel();
+		$row = $sklMdl->select('id,name,acronym,logo,status')
+			->where('LOWER(acronym)', strtolower($acronym))
+			->get()->getRowArray();
+		if (!$row) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'School acronym was not found.']);
+		}
+		if ((int) ($row['status'] ?? 1) === 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'This school is locked.']);
+		}
+		$model = new GateVisitModel();
+		$model->ensureSchema();
+		$board = $model->todayBoard((int) $row['id']);
+		return $this->response->setJSON([
+			'success' => 1,
+			'school' => [
+				'id' => (int) $row['id'],
+				'name' => (string) $row['name'],
+				'acronym' => (string) $row['acronym'],
+				'logo' => (string) ($row['logo'] ?? ''),
+			],
+			'board' => $board,
+		]);
+	}
+
+	public function gate_lookup_card()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		$card = trim((string) ($this->request->getPost('card') ?: $this->request->getGet('card') ?: ''));
+		$model = new GateVisitModel();
+		return $this->response->setJSON($model->lookupCard($schoolId, $card));
+	}
+
+	public function gate_checkin()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: 0);
+		$model = new GateVisitModel();
+		$result = $model->checkIn($schoolId, [
+			'names' => $this->request->getPost('names'),
+			'phone' => $this->request->getPost('phone'),
+			'reason' => $this->request->getPost('reason'),
+			'materials' => $this->request->getPost('materials'),
+			'card' => $this->request->getPost('card'),
+			'source' => 'android',
+		]);
+		if (!empty($result['success'])) {
+			$result['board'] = $model->todayBoard($schoolId);
+		}
+		return $this->response->setJSON($result);
+	}
+
+	public function gate_checkout()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: 0);
+		$card = trim((string) ($this->request->getPost('card') ?: ''));
+		$model = new GateVisitModel();
+		$result = $model->checkOut($schoolId, $card);
+		if (!empty($result['success'])) {
+			$result['board'] = $model->todayBoard($schoolId);
+		}
+		return $this->response->setJSON($result);
+	}
+
+	public function gate_today()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => false, 'message' => 'school_id is required']);
+		}
+		$model = new GateVisitModel();
+		$board = $model->todayBoard($schoolId);
+		return $this->response->setJSON([
+			'success' => true,
+			'board' => $board,
+		]);
 	}
 }

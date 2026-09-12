@@ -147,6 +147,9 @@ class CardRegistry
 		if ($forType === 'visitor') {
 			return "This card is already assigned to {$who}: {$owner['name']}. Visitor cards cannot share UIDs with students or staff.";
 		}
+		if ($forType === 'gate') {
+			return "This card is already assigned to {$who}: {$owner['name']}. Daily visitor cards cannot share UIDs with students, staff, or parent visitors.";
+		}
 		return "This card is already assigned to {$who}: {$owner['name']}.";
 	}
 

@@ -1161,4 +1161,7 @@ return [
    "assessmentComprehensive"  	=> 'Comprehensive Assessment',
    "assessmentReAssessement"   	=> 'Re-assessment',
    	"noStudentsFound"    		=> "Aucun un élève est trouvée",
+	"dailyVisitors"        		=> "Visiteurs journaliers",
+	"dailyVisitorsInside"  		=> "Présents maintenant",
+	"dailyVisitorsReport"  		=> "Registre des visiteurs",
 ];

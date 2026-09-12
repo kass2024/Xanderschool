@@ -166,6 +166,11 @@ $routes->post('parent_visiting/scan', 'Home::parent_visiting_scan');
 $routes->get('parent_visiting/students', 'Home::parent_visiting_students_json');
 $routes->get('parent_visiting/student_visitors/(:num)', 'Home::parent_visiting_student_visitors/$1');
 
+// Daily gate visitors (independent from parent visiting)
+$routes->get('daily_visitors/inside', 'DailyVisitors::inside');
+$routes->get('daily_visitors/report', 'DailyVisitors::report');
+$routes->get('daily_visitors/inside_json', 'DailyVisitors::inside_json');
+
 // Asset Management (Phase 1+)
 $routes->get('asset_management/dashboard', 'AssetManagement::dashboard');
 $routes->get('asset_management/assets', 'AssetManagement::assets');

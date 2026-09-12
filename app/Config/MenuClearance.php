@@ -362,6 +362,14 @@ class MenuClearance
 				],
 			],
 			[
+				'key' => 'daily_visitors',
+				'label' => 'Daily visitors',
+				'children' => [
+					['key' => 'daily_visitors/inside', 'label' => 'Currently inside'],
+					['key' => 'daily_visitors/report', 'label' => 'Visitor register'],
+				],
+			],
+			[
 				'key' => 'marks',
 				'label' => 'Marks',
 				'children' => [
@@ -684,6 +692,7 @@ class MenuClearance
 		if (in_array($postId, [4, 5, 6], true)) {
 			$keys = array_merge($keys, self::groupKeys('permissions'));
 			$keys = array_merge($keys, self::groupKeys('parent_visiting'));
+			$keys = array_merge($keys, self::groupKeys('daily_visitors'));
 		}
 
 		// Pedagogical: is_allowed(1, 3, 5, 6, 13, 15, 17, 18)

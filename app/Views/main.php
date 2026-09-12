@@ -349,6 +349,33 @@
 									</ul>
 								</li>
 							<?php } ?>
+							<?php if (menu_clearance_group_visible('daily_visitors')) { ?>
+								<li>
+									<a href="#">
+										<i class="metismenu-icon pe-7s-id"></i>
+										<?= lang("app.dailyVisitors"); ?>
+										<i class="metismenu-state-icon fa fa-caret-down"></i>
+									</a>
+									<ul class="mm-collapse fa-com">
+										<?php if (menu_clearance_allowed('daily_visitors/inside')) { ?>
+										<li>
+											<a href="<?= base_url('daily_visitors/inside'); ?>">
+												<i class="metismenu-icon"></i>
+												<?= lang("app.dailyVisitorsInside"); ?>
+											</a>
+										</li>
+										<?php } ?>
+										<?php if (menu_clearance_allowed('daily_visitors/report')) { ?>
+										<li>
+											<a href="<?= base_url('daily_visitors/report'); ?>">
+												<i class="metismenu-icon"></i>
+												<?= lang("app.dailyVisitorsReport"); ?>
+											</a>
+										</li>
+										<?php } ?>
+									</ul>
+								</li>
+							<?php } ?>
 							<?php if (menu_clearance_group_visible('marks')) { ?>
 							<li class="app-sidebar__heading"><?= lang("app.marks"); ?></li>
 							<li>
