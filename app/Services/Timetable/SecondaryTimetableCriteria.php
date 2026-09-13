@@ -477,9 +477,9 @@ class SecondaryTimetableCriteria
 		$level = $meta['level'];
 		$dept = $meta['dept'];
 		$wantedDepts = $this->combineDeptsFor($subject, $level, $dept);
-		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-		$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
-		$family = $this->combineFamily($meta);
+		if ($wantedDepts === []) {
+			return [];
+		}
 		$out = [];
 		$seen = [];
 		foreach ($this->assignmentsByKey as $cand) {
@@ -491,17 +491,10 @@ class SecondaryTimetableCriteria
 			if ($cm === null) {
 				continue;
 			}
-			if ($this->normalizeSubject((string) ($cand['course_title'] ?? '')) !== $subject) {
+			if (($cm['level'] ?? '') !== $level || !in_array((string) ($cm['dept'] ?? ''), $wantedDepts, true)) {
 				continue;
 			}
-			$deptMatch = ($cm['level'] ?? '') === $level && $wantedDepts !== []
-				&& in_array((string) ($cm['dept'] ?? ''), $wantedDepts, true);
-			$sectionMatch = $staffId > 0
-				&& $staffId === (int) ($cand['lecturer'] ?? $cand['staff_id'] ?? 0)
-				&& $hours === TimetableGeneratorService::weeklyHoursFromCourse($cand)
-				&& $family !== ''
-				&& $family === $this->combineFamily($cm);
-			if (!$deptMatch && !$sectionMatch) {
+			if ($this->normalizeSubject((string) ($cand['course_title'] ?? '')) !== $subject) {
 				continue;
 			}
 			$seen[$cid] = true;
@@ -728,21 +721,6 @@ class SecondaryTimetableCriteria
 			return array_values(array_unique(array_map('intval', $decoded)));
 		}
 		return array_values(array_unique(array_map('intval', explode(',', $s))));
-	}
-
-	/** Same-level parallel sections (S1 A + S1 B) share one teacher sitting. */
-	private function combineFamily(array $meta): string
-	{
-		$level = (string) ($meta['level'] ?? '');
-		if ($level === '') {
-			return '';
-		}
-		$dept = strtoupper(trim((string) ($meta['dept'] ?? '')));
-		$special = ['ANP', 'ST1', 'ST2', 'MPC', 'MCE', 'PCB', 'HCB', 'GE', 'MCB', 'MEG', 'MPG', 'ACC', 'SOD', 'PCM'];
-		if ($dept !== '' && in_array($dept, $special, true)) {
-			return $level . '|' . $dept;
-		}
-		return $level . '|CORE';
 	}
 
 	private function normalizeLevel(string $level): string
