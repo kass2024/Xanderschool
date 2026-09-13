@@ -157,14 +157,90 @@ class TimetableSchemaModel extends Model
 	}
 
 	/**
-	 * Apply the primary 1-hour slot template to an existing track (updates rows by sort_order).
+	 * Apply the school-day slot template to an existing track (updates rows by sort_order).
+	 * Special-time cells stay on the same slot ids.
 	 */
 	public function applyPrimarySlotTemplate(int $schoolId, string $trackKey = TimetableTrack::ALL): int
+	{
+		$trackKey = TimetableTrack::normalize($trackKey);
+		$lessonsEndAt1540 = in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true);
+
+		return $this->applySlotTemplatePreservingSpecials(
+			$schoolId,
+			$trackKey,
+			self::schoolDaySlotTemplate($lessonsEndAt1540)
+		);
+	}
+
+	/**
+	 * Copy O Level / A Level / TVET bells onto Primary and Nursery.
+	 * Sunday stays off. Special activities are kept on the existing slot ids.
+	 * Teaching periods that cross 15:40 are clipped so lessons end at 15:40.
+	 */
+	public function alignPrimaryNurseryWithOtherClasses(int $schoolId): int
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		if ($schoolId <= 0) {
+			return 0;
+		}
+
+		$sourceKey = $this->firstSeniorTrackWithSlots($schoolId);
+		$template = $sourceKey !== null
+			? $this->slotsAsTemplate($schoolId, $sourceKey)
+			: self::schoolDaySlotTemplate(true);
+		if ($template === []) {
+			$template = self::schoolDaySlotTemplate(true);
+		}
+		$template = self::clipTemplateLessonsToEnd($template, self::secondaryLessonEndClock());
+
+		$updated = 0;
+		foreach ([TimetableTrack::PRIMARY, TimetableTrack::NURSERY] as $trackKey) {
+			$updated += $this->applySlotTemplatePreservingSpecials($schoolId, $trackKey, $template);
+		}
+
+		return $updated;
+	}
+
+	public function clipJuniorLessonEnds(int $schoolId, string $trackKey): int
+	{
+		$trackKey = TimetableTrack::normalize($trackKey);
+		if (!in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
+			return 0;
+		}
+		$this->ensureSchema();
+		$lessonEnd = self::secondaryLessonEndClock();
+		$db = \Config\Database::connect();
+		$rows = $db->table('timetable_slots')
+			->where('school_id', $schoolId)
+			->where('track_key', $trackKey)
+			->where('is_break', 0)
+			->get()
+			->getResultArray();
+		$updated = 0;
+		foreach ($rows as $row) {
+			$start = self::slotClock((string) ($row['start_time'] ?? ''));
+			$end = self::slotClock((string) ($row['end_time'] ?? ''));
+			if ($start < $lessonEnd && $end > $lessonEnd) {
+				$db->table('timetable_slots')->where('id', (int) $row['id'])->update([
+					'end_time' => $lessonEnd,
+				]);
+				$updated++;
+			}
+		}
+
+		return $updated;
+	}
+
+	/**
+	 * @param list<array{label:string,start:string,end:string,break:int,break_label:?string}> $template
+	 */
+	public function applySlotTemplatePreservingSpecials(int $schoolId, string $trackKey, array $template): int
 	{
 		$this->ensureSchema();
 		$schoolId = (int) $schoolId;
 		$trackKey = TimetableTrack::normalize($trackKey);
-		if ($schoolId <= 0) {
+		if ($schoolId <= 0 || $template === []) {
 			return 0;
 		}
 
@@ -175,7 +251,6 @@ class TimetableSchemaModel extends Model
 			->orderBy('sort_order', 'ASC')
 			->get()->getResultArray();
 
-		$template = self::primarySlotTemplate();
 		if ($rows === []) {
 			$this->insertSlotSet($schoolId, $trackKey, $template);
 			return count($template);
@@ -183,37 +258,30 @@ class TimetableSchemaModel extends Model
 
 		$updated = 0;
 		foreach ($template as $i => $slot) {
-			if (!isset($rows[$i])) {
-				$db->table('timetable_slots')->insert([
-					'school_id' => $schoolId,
-					'track_key' => $trackKey,
-					'level_id' => 0,
-					'sort_order' => $i,
-					'label' => $slot['label'],
-					'start_time' => $slot['start'],
-					'end_time' => $slot['end'],
-					'is_break' => $slot['break'],
-					'break_label' => $slot['break_label'],
-				]);
-				$updated++;
-				continue;
-			}
-			$row = $rows[$i];
-			$db->table('timetable_slots')->where('id', (int) $row['id'])->update([
+			$payload = [
 				'sort_order' => $i,
 				'label' => $slot['label'],
 				'start_time' => $slot['start'],
 				'end_time' => $slot['end'],
 				'is_break' => $slot['break'],
 				'break_label' => $slot['break_label'],
-			]);
+			];
+			if (!isset($rows[$i])) {
+				$payload['school_id'] = $schoolId;
+				$payload['track_key'] = $trackKey;
+				$payload['level_id'] = 0;
+				$db->table('timetable_slots')->insert($payload);
+				$updated++;
+				continue;
+			}
+			$db->table('timetable_slots')->where('id', (int) $rows[$i]['id'])->update($payload);
 			$updated++;
 		}
 
-		// Remove extra trailing rows beyond the default template
 		if (count($rows) > count($template)) {
 			$extraIds = array_map(static fn ($r) => (int) $r['id'], array_slice($rows, count($template)));
 			if ($extraIds !== []) {
+				$db->table('timetable_special_times')->whereIn('slot_id', $extraIds)->delete();
 				$db->table('timetable_slots')->whereIn('id', $extraIds)->delete();
 			}
 		}
@@ -240,9 +308,9 @@ class TimetableSchemaModel extends Model
 		}
 
 		if ($trackKey === TimetableTrack::ALL) {
-			$this->insertSlotSet($schoolId, $trackKey, self::primarySlotTemplate());
-		} elseif ($trackKey === TimetableTrack::NURSERY) {
-			$this->insertSlotSet($schoolId, $trackKey, self::nurserySlotTemplate());
+			$this->insertSlotSet($schoolId, $trackKey, self::schoolDaySlotTemplate(true));
+		} elseif (in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
+			$this->insertSlotSet($schoolId, $trackKey, self::schoolDaySlotTemplate(true));
 		} elseif (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
 			$this->insertSlotSet($schoolId, $trackKey, self::secondarySlotTemplate());
 		} else {
@@ -268,37 +336,94 @@ class TimetableSchemaModel extends Model
 	}
 
 	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
+	private static function schoolDaySlotTemplate(bool $lessonsEndAt1540 = false): array
+	{
+		$lastEnd = $lessonsEndAt1540 ? '15:40:00' : '16:30:00';
+
+		return [
+			['label' => '1', 'start' => '07:30:00', 'end' => '08:30:00', 'break' => 0, 'break_label' => null],
+			['label' => '2', 'start' => '08:30:00', 'end' => '09:30:00', 'break' => 0, 'break_label' => null],
+			['label' => '3', 'start' => '09:30:00', 'end' => '10:30:00', 'break' => 0, 'break_label' => null],
+			['label' => 'BREAK TIME', 'start' => '10:30:00', 'end' => '11:00:00', 'break' => 1, 'break_label' => 'BREAK TIME'],
+			['label' => '4', 'start' => '11:00:00', 'end' => '12:00:00', 'break' => 0, 'break_label' => null],
+			['label' => 'LUNCH TIME', 'start' => '12:00:00', 'end' => '13:10:00', 'break' => 1, 'break_label' => 'LUNCH TIME'],
+			['label' => '5', 'start' => '13:10:00', 'end' => '14:10:00', 'break' => 0, 'break_label' => null],
+			['label' => '6', 'start' => '14:10:00', 'end' => '15:10:00', 'break' => 0, 'break_label' => null],
+			['label' => 'WATER BREAK', 'start' => '15:10:00', 'end' => '15:30:00', 'break' => 1, 'break_label' => 'WATER BREAK'],
+			['label' => '7', 'start' => '15:30:00', 'end' => $lastEnd, 'break' => 0, 'break_label' => null],
+		];
+	}
+
+	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
 	private static function primarySlotTemplate(): array
 	{
-		return [
-			['label' => '1', 'start' => '08:00:00', 'end' => '09:00:00', 'break' => 0, 'break_label' => null],
-			['label' => '2', 'start' => '09:00:00', 'end' => '10:00:00', 'break' => 0, 'break_label' => null],
-			['label' => '3', 'start' => '10:00:00', 'end' => '11:00:00', 'break' => 0, 'break_label' => null],
-			['label' => '4', 'start' => '11:00:00', 'end' => '12:00:00', 'break' => 0, 'break_label' => null],
-			['label' => 'BREAK 1', 'start' => '12:00:00', 'end' => '12:20:00', 'break' => 1, 'break_label' => 'BREAK 1'],
-			['label' => '5', 'start' => '12:20:00', 'end' => '13:20:00', 'break' => 0, 'break_label' => null],
-			['label' => '6', 'start' => '13:20:00', 'end' => '14:20:00', 'break' => 0, 'break_label' => null],
-			['label' => '7', 'start' => '14:20:00', 'end' => '15:20:00', 'break' => 0, 'break_label' => null],
-			['label' => 'BREAK 2', 'start' => '15:20:00', 'end' => '16:20:00', 'break' => 1, 'break_label' => 'BREAK 2'],
-			['label' => '8', 'start' => '16:20:00', 'end' => '17:20:00', 'break' => 0, 'break_label' => null],
-		];
+		return self::schoolDaySlotTemplate(true);
 	}
 
 	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
 	private static function nurserySlotTemplate(): array
 	{
-		return [
-			['label' => '1', 'start' => '08:00:00', 'end' => '08:30:00', 'break' => 0, 'break_label' => null],
-			['label' => '2', 'start' => '08:30:00', 'end' => '09:00:00', 'break' => 0, 'break_label' => null],
-			['label' => '3', 'start' => '09:00:00', 'end' => '09:30:00', 'break' => 0, 'break_label' => null],
-			['label' => '4', 'start' => '09:30:00', 'end' => '10:00:00', 'break' => 0, 'break_label' => null],
-			['label' => 'SNACK', 'start' => '10:00:00', 'end' => '10:20:00', 'break' => 1, 'break_label' => 'SNACK BREAK'],
-			['label' => '5', 'start' => '10:20:00', 'end' => '10:50:00', 'break' => 0, 'break_label' => null],
-			['label' => '6', 'start' => '10:50:00', 'end' => '11:20:00', 'break' => 0, 'break_label' => null],
-			['label' => '7', 'start' => '11:20:00', 'end' => '11:50:00', 'break' => 0, 'break_label' => null],
-			['label' => 'LUNCH', 'start' => '11:50:00', 'end' => '12:30:00', 'break' => 1, 'break_label' => 'LUNCH'],
-			['label' => '8', 'start' => '12:30:00', 'end' => '13:00:00', 'break' => 0, 'break_label' => null],
-		];
+		return self::schoolDaySlotTemplate(true);
+	}
+
+	private function firstSeniorTrackWithSlots(int $schoolId): ?string
+	{
+		$db = \Config\Database::connect();
+		foreach ([TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::RTB, TimetableTrack::SPECIAL, TimetableTrack::ALL] as $key) {
+			$count = (int) $db->table('timetable_slots')
+				->where('school_id', $schoolId)
+				->where('track_key', $key)
+				->countAllResults();
+			if ($count > 0) {
+				return $key;
+			}
+		}
+
+		return null;
+	}
+
+	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
+	private function slotsAsTemplate(int $schoolId, string $trackKey): array
+	{
+		$rows = \Config\Database::connect()->table('timetable_slots')
+			->where('school_id', $schoolId)
+			->where('track_key', TimetableTrack::normalize($trackKey))
+			->orderBy('sort_order', 'ASC')
+			->get()
+			->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$out[] = [
+				'label' => (string) ($row['label'] ?? ''),
+				'start' => self::slotClock((string) ($row['start_time'] ?? '08:00:00')),
+				'end' => self::slotClock((string) ($row['end_time'] ?? '09:00:00')),
+				'break' => !empty($row['is_break']) ? 1 : 0,
+				'break_label' => $row['break_label'] ?? null,
+			];
+		}
+
+		return $out;
+	}
+
+	/**
+	 * @param list<array{label:string,start:string,end:string,break:int,break_label:?string}> $template
+	 * @return list<array{label:string,start:string,end:string,break:int,break_label:?string}>
+	 */
+	private static function clipTemplateLessonsToEnd(array $template, string $lessonEnd): array
+	{
+		foreach ($template as &$slot) {
+			if (!empty($slot['break'])) {
+				continue;
+			}
+			$start = self::slotClock((string) ($slot['start'] ?? ''));
+			$end = self::slotClock((string) ($slot['end'] ?? ''));
+			if ($start < $lessonEnd && $end > $lessonEnd) {
+				$slot['end'] = $lessonEnd;
+			}
+		}
+		unset($slot);
+
+		return $template;
 	}
 
 	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
@@ -397,17 +522,17 @@ class TimetableSchemaModel extends Model
 				->get()->getResultArray();
 		}
 		$reservedLabels = self::reservedActivitySlotLabels($trackKey);
-		$secondaryDayEnd = self::secondaryTeachingDayEndTime($trackKey);
-		if ($reservedLabels !== [] || $secondaryDayEnd !== null) {
-			$slots = array_values(array_filter($slots, static function (array $slot) use ($reservedLabels, $secondaryDayEnd): bool {
+		$lessonDayEnd = self::secondaryTeachingDayEndTime($trackKey);
+		if ($reservedLabels !== [] || $lessonDayEnd !== null) {
+			$slots = array_values(array_filter($slots, static function (array $slot) use ($reservedLabels, $lessonDayEnd): bool {
 				$label = (string) ($slot['label'] ?? '');
 				if ($reservedLabels !== [] && in_array($label, $reservedLabels, true)) {
 					return false;
 				}
-				// Non-primary/nursery: no course lessons after 15:40.
-				if ($secondaryDayEnd !== null) {
-					$end = substr((string) ($slot['end_time'] ?? '00:00:00'), 0, 8);
-					if ($end > $secondaryDayEnd) {
+				// Regular lessons stop at 15:40 for every category.
+				if ($lessonDayEnd !== null) {
+					$end = self::slotClock((string) ($slot['end_time'] ?? '00:00:00'));
+					if ($end > $lessonDayEnd) {
 						return false;
 					}
 				}
@@ -617,14 +742,10 @@ class TimetableSchemaModel extends Model
 		return [];
 	}
 
-	/** Secondary teaching day ends at 15:40 (inclusive). */
+	/** Teaching day ends at 15:40 (inclusive) for every category. */
 	private static function secondaryTeachingDayEndTime(string $trackKey): ?string
 	{
-		$trackKey = TimetableTrack::normalize($trackKey);
-		if (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
-			return self::secondaryLessonEndClock();
-		}
-		return null;
+		return self::secondaryLessonEndClock();
 	}
 
 	public static function secondaryLessonEndClock(): string

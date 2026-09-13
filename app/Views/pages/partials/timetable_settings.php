@@ -69,7 +69,7 @@ $colorOptions = [
 
 	<div class="tab-content">
 		<div class="tab-pane fade show active" id="ttTabPeriods" role="tabpanel">
-			<p class="text-muted mb-3">Define bell periods and breaks for the selected category. Primary, nursery, and secondary-style categories can use different time allocations.</p>
+			<p class="text-muted mb-3">Define bell periods and breaks. Primary and nursery use the same bells as the other classes, without Sunday. Regular lessons stop at 15:40. Special activities stay on the weekly grid.</p>
 
 			<form id="timetableSlotsForm">
 				<input type="hidden" name="track_key" id="ttTrackKeyPeriods" value="<?= esc($selectedTrack); ?>">
@@ -115,7 +115,7 @@ $colorOptions = [
 							<input type="checkbox" id="includeSunday" name="include_sunday" value="1" autocomplete="off" <?= $includeSunday || !in_array($selectedTrack, ['primary', 'nursery'], true) ? 'checked' : ''; ?> <?= in_array($selectedTrack, ['primary', 'nursery'], true) ? 'disabled' : ''; ?>> Sunday
 						</label>
 					</div>
-					<p class="small text-muted mb-0 mt-2">These rows are the only bell periods used on every day, including Sunday. Sunday is on for high school / TVET only. Generation never fills Sunday unless you save a <strong>Teach on Sunday</strong> special criterion first, and that rule never adds a period. Primary and nursery stay Monday–Friday (plus Saturday if you enable it).</p>
+					<p class="small text-muted mb-0 mt-2">These rows are the only bell periods used on every day. Sunday is for high school / TVET only and stays off for primary and nursery. Generation never fills Sunday unless you save a <strong>Teach on Sunday</strong> special criterion first. Regular lessons end at 15:40. Special activities already saved on primary and nursery are kept.</p>
 				</div>
 				<button type="submit" class="btn btn-primary">Save periods</button>
 			</form>
