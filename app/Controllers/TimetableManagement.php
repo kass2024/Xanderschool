@@ -2184,19 +2184,42 @@ class TimetableManagement extends Home
 		return $this->outputTimetablePdf([$data], 'Teacher_' . $slug, null, false);
 	}
 
-	public function pdf_all_classes()
+	public function pdf_all_classes($phase = 'all')
 	{
 		$this->denyMenu('timetable_dashboard');
 		list($schoolId, , $schema) = $this->bootTimetable();
+		$phase = TimetableTrack::normalizeGenerationPhase(
+			$phase !== '' && $phase !== null ? $phase : $this->request->getGet('phase')
+		);
+		$label = TimetableTrack::generationPhaseLabel($phase);
 		$db = \Config\Database::connect();
 		$sheets = [];
 		foreach ($this->fetchClassRows($db, $schoolId) as $class) {
-			$grid = $this->buildGridView($schoolId, $schema, 'class', (int) $class['id']);
+			$classId = (int) ($class['id'] ?? 0);
+			if ($phase !== 'all' && TimetableTrack::generationPhaseForClassId($classId) !== $phase) {
+				continue;
+			}
+			$grid = $this->buildGridView($schoolId, $schema, 'class', $classId);
 			if (!empty($grid['schedule'])) {
 				$sheets[] = $grid;
 			}
 		}
-		return $this->outputTimetablePdf($sheets, 'All_Class_Timetables', 'All class timetables');
+		if ($sheets === []) {
+			$this->session->setFlashdata('error', 'No ' . $label . ' class timetables to export yet.');
+			return redirect()->to(site_url('timetable/dashboard'));
+		}
+		$prefix = 'All_Class_Timetables';
+		if ($phase === 'nursery') {
+			$prefix = 'Nursery_Class_Timetables';
+		} elseif ($phase === 'primary') {
+			$prefix = 'Primary_Class_Timetables';
+		} elseif ($phase === 'high_school') {
+			$prefix = 'High_School_Class_Timetables';
+		}
+		$cover = $phase === 'all'
+			? 'All class timetables'
+			: $label . ' class timetables';
+		return $this->outputTimetablePdf($sheets, $prefix, $cover);
 	}
 
 	public function pdf_all_teachers()

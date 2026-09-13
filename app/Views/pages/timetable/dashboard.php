@@ -302,17 +302,39 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	<?php if ($hasSchedule): ?>
 	<div class="card mb-4 tt-export-card">
 		<div class="card-header"><strong><i class="fa fa-file-pdf-o"></i> Export all timetables (PDF)</strong></div>
-		<div class="card-body d-flex flex-wrap align-items-center" style="gap:10px;">
-			<a href="<?= site_url('timetable/pdf_all_classes'); ?>" class="btn btn-primary">
-				<i class="fa fa-download"></i> All class timetables (<?= (int) ($class_count ?? 0); ?>)
-			</a>
-			<a href="<?= site_url('timetable/pdf_all_teachers'); ?>" class="btn btn-info">
-				<i class="fa fa-download"></i> All teacher / staff timetables (<?= (int) ($staff_count ?? 0); ?>)
-			</a>
-			<a href="<?= site_url('timetable/pdf_unplaced'); ?>" class="btn btn-warning">
-				<i class="fa fa-file-pdf-o"></i> Unplaced periods summary
-			</a>
-			<span class="text-muted small">One PDF per export — landscape A4, full week grid with department/combination labels.</span>
+		<div class="card-body">
+			<div class="d-flex flex-wrap align-items-center mb-2" style="gap:10px;">
+				<a href="<?= site_url('timetable/pdf_all_classes'); ?>" class="btn btn-primary">
+					<i class="fa fa-download"></i> All class timetables (<?= (int) ($class_count ?? 0); ?>)
+				</a>
+				<a href="<?= site_url('timetable/pdf_all_teachers'); ?>" class="btn btn-info">
+					<i class="fa fa-download"></i> All teacher / staff timetables (<?= (int) ($staff_count ?? 0); ?>)
+				</a>
+				<a href="<?= site_url('timetable/pdf_unplaced'); ?>" class="btn btn-warning">
+					<i class="fa fa-file-pdf-o"></i> Unplaced periods summary
+				</a>
+			</div>
+			<div class="small font-weight-bold mb-1">Class PDFs by level</div>
+			<div class="d-flex flex-wrap align-items-center" style="gap:10px;">
+				<?php foreach (($generation_levels ?? []) as $lvl):
+					$lvlKey = (string) ($lvl['key'] ?? '');
+					$lvlCount = (int) ($lvl['classes'] ?? 0);
+					$lvlHref = site_url('timetable/pdf_all_classes/' . rawurlencode($lvlKey));
+					?>
+					<?php if ($lvlCount > 0): ?>
+						<a href="<?= esc($lvlHref); ?>" class="btn btn-outline-primary">
+							<i class="fa <?= esc($lvl['icon'] ?? 'fa-download'); ?>"></i>
+							<?= esc($lvl['label'] ?? $lvlKey); ?>
+							(<?= $lvlCount; ?>)
+						</a>
+					<?php else: ?>
+						<button type="button" class="btn btn-outline-secondary" disabled>
+							<?= esc($lvl['label'] ?? $lvlKey); ?> (0)
+						</button>
+					<?php endif; ?>
+				<?php endforeach; ?>
+				<span class="text-muted small">Nursery, Primary, or High school (all remaining classes). One landscape A4 PDF each.</span>
+			</div>
 		</div>
 	</div>
 	<?php endif; ?>

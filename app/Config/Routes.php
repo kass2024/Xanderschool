@@ -312,6 +312,7 @@ $routes->get('timetable/teacher/(:num)', 'TimetableManagement::teacher_timetable
 $routes->get('timetable/print_class/(:num)', 'TimetableManagement::print_class/$1');
 $routes->get('timetable/print_teacher/(:num)', 'TimetableManagement::print_teacher/$1');
 $routes->get('timetable/pdf_all_classes', 'TimetableManagement::pdf_all_classes');
+$routes->get('timetable/pdf_all_classes/(:segment)', 'TimetableManagement::pdf_all_classes/$1');
 $routes->get('timetable/pdf_all_teachers', 'TimetableManagement::pdf_all_teachers');
 $routes->get('timetable/pdf_unplaced', 'TimetableManagement::pdf_unplaced');
 $routes->get('timetable/pdf_unplaced/(:segment)', 'TimetableManagement::pdf_unplaced/$1');
