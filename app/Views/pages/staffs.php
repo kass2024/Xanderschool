@@ -60,6 +60,7 @@
 											<thead>
 											<tr role="row">
 												<th><?= lang("app.names");?></th>
+												<th>Courses / Periods</th>
 												<th><?= lang("app.phone");?></th>
 												<th><?= lang("app.email");?></th>
 												<th>RFID card</th>
@@ -90,9 +91,32 @@
 												$hasCard = !empty($staff['card']);
 												$hasFace = !empty($staff['face_enrolled']);
 												$staffName = esc($staff['fname'].' '.$staff['lname']);
+												$taughtCourses = (int) ($staff['taught_courses'] ?? 0);
+												$taughtPeriods = (int) ($staff['taught_periods'] ?? 0);
+												$hasLoad = $taughtCourses > 0;
 												?>
-											<tr data-id="<?=$staff['id'];?>">
-												<td><a href="<?=base_url('staff/'.$staff['id']);?>" class="link"><?=$staffName;?></a></td>
+											<tr data-id="<?=$staff['id'];?>" class="<?= $hasLoad ? 'staff-has-courses' : ''; ?>">
+												<td>
+													<div class="staff-name-cell">
+														<a href="<?=base_url('staff/'.$staff['id']);?>" class="link"><?=$staffName;?></a>
+														<?php if ($hasLoad): ?>
+														<span class="staff-load-pills" title="<?= $taughtCourses; ?> assigned course<?= $taughtCourses === 1 ? '' : 's'; ?>, <?= $taughtPeriods; ?> weekly period<?= $taughtPeriods === 1 ? '' : 's'; ?>">
+															<span class="staff-load-pill staff-load-courses"><?= $taughtCourses; ?> course<?= $taughtCourses === 1 ? '' : 's'; ?></span>
+															<span class="staff-load-pill staff-load-periods"><?= $taughtPeriods; ?> period<?= $taughtPeriods === 1 ? '' : 's'; ?></span>
+														</span>
+														<?php endif; ?>
+													</div>
+												</td>
+												<td data-order="<?= $taughtPeriods; ?>" class="staff-teaching-col">
+													<?php if ($hasLoad): ?>
+													<span class="staff-load-pills">
+														<span class="staff-load-pill staff-load-courses"><?= $taughtCourses; ?></span>
+														<span class="staff-load-pill staff-load-periods"><?= $taughtPeriods; ?></span>
+													</span>
+													<?php else: ?>
+													<span class="text-muted small">—</span>
+													<?php endif; ?>
+												</td>
 												<td><?=$staff['phone'];?></td>
 												<td><?=$staff['email'];?></td>
 												<td><?=$cardCell;?></td>

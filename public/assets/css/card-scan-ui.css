@@ -363,6 +363,51 @@
 	}
 }
 
+.staff-name-cell {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 8px;
+}
+
+.staff-load-pills {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 5px;
+}
+
+.staff-load-pill {
+	display: inline-flex;
+	align-items: center;
+	font-size: 11px;
+	font-weight: 800;
+	letter-spacing: 0.01em;
+	line-height: 1;
+	padding: 4px 8px;
+	border-radius: 999px;
+	white-space: nowrap;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.staff-load-courses {
+	background: #0b57d0;
+	color: #fff;
+}
+
+.staff-load-periods {
+	background: #c2410c;
+	color: #fff;
+}
+
+tr.staff-has-courses > td:first-child {
+	background: #eef4ff;
+}
+
+#example td.staff-teaching-col {
+	white-space: nowrap;
+}
+
 #example td.staff-actions-cell {
 	overflow: visible;
 }

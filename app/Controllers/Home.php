@@ -6841,6 +6841,10 @@ public function attendanceCard()
 				->join("shifts shf", "shf.id=staffs.shift_id", "left")
 				->where("staffs.school_id", $this->session->get("soma_school_id"))
 				->get()->getResultArray();
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$yearId = (int) ($data['academic_year'] ?? $data['academic_year_id'] ?? 0);
+		$term = (int) ($data['term'] ?? 0);
+		$data['staffs'] = \App\Libraries\StaffTeachingLoad::attach($data['staffs'], $schoolId, $yearId, $term);
 		$data['content'] = view("pages/staffs", $data);
 		return view('main', $data);
 	}
