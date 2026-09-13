@@ -2167,7 +2167,10 @@ class TimetableManagement extends Home
 	{
 		$this->denyMenu('timetable_dashboard');
 		list($schoolId, , $schema) = $this->bootTimetable();
-		$data = $this->buildGridView($schoolId, $schema, 'class', (int) $classId, false, false);
+		$data = $this->gridBodyViewData(
+			$this->buildGridView($schoolId, $schema, 'class', (int) $classId, false, false),
+			true
+		);
 		$slug = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $data['title'] ?? 'class');
 		return $this->outputTimetablePdf([$data], 'Class_' . $slug, null, false);
 	}
@@ -2176,7 +2179,10 @@ class TimetableManagement extends Home
 	{
 		$this->denyMenu('timetable_dashboard');
 		list($schoolId, , $schema) = $this->bootTimetable();
-		$data = $this->buildGridView($schoolId, $schema, 'teacher', (int) $staffId, false, false);
+		$data = $this->gridBodyViewData(
+			$this->buildGridView($schoolId, $schema, 'teacher', (int) $staffId, false, false),
+			true
+		);
 		$slug = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $data['title'] ?? 'teacher');
 		return $this->outputTimetablePdf([$data], 'Teacher_' . $slug, null, false);
 	}
@@ -2184,39 +2190,59 @@ class TimetableManagement extends Home
 	public function pdf_all_classes($phase = 'all')
 	{
 		$this->denyMenu('timetable_dashboard');
-		list($schoolId, , $schema) = $this->bootTimetable();
-		$phase = TimetableTrack::normalizeGenerationPhase(
-			$phase !== '' && $phase !== null ? $phase : $this->request->getGet('phase')
-		);
-		$label = TimetableTrack::generationPhaseLabel($phase);
-		$db = \Config\Database::connect();
-		$sheets = [];
-		foreach ($this->fetchClassRows($db, $schoolId) as $class) {
-			$classId = (int) ($class['id'] ?? 0);
-			if ($phase !== 'all' && TimetableTrack::generationPhaseForClassId($classId) !== $phase) {
-				continue;
+		try {
+			@ini_set('memory_limit', '512M');
+			@set_time_limit(180);
+			list($schoolId, , $schema) = $this->bootTimetable();
+			$phase = TimetableTrack::normalizeGenerationPhase(
+				$phase !== '' && $phase !== null ? $phase : $this->request->getGet('phase')
+			);
+			$label = TimetableTrack::generationPhaseLabel($phase);
+			$db = \Config\Database::connect();
+			$sheets = [];
+			foreach ($this->fetchClassRows($db, $schoolId) as $class) {
+				$classId = (int) ($class['id'] ?? 0);
+				if ($classId <= 0) {
+					continue;
+				}
+				if ($phase !== 'all' && TimetableTrack::generationPhaseForClassId($classId) !== $phase) {
+					continue;
+				}
+				try {
+					$grid = $this->buildGridView($schoolId, $schema, 'class', $classId, false, false);
+					if (!empty($grid['schedule'])) {
+						$sheets[] = $this->gridBodyViewData($grid, true);
+					}
+				} catch (\Throwable $e) {
+					log_message('error', 'Timetable class PDF skipped [{id}]: {msg}', [
+						'id' => $classId,
+						'msg' => $e->getMessage(),
+					]);
+				}
 			}
-			$grid = $this->buildGridView($schoolId, $schema, 'class', $classId, false, false);
-			if (!empty($grid['schedule'])) {
-				$sheets[] = $grid;
+			if ($sheets === []) {
+				$this->session->setFlashdata('error', 'No ' . $label . ' class timetables to export yet.');
+				return redirect()->to(site_url('timetable/dashboard'));
 			}
-		}
-		if ($sheets === []) {
-			$this->session->setFlashdata('error', 'No ' . $label . ' class timetables to export yet.');
+			$prefix = 'All_Class_Timetables';
+			if ($phase === 'nursery') {
+				$prefix = 'Nursery_Class_Timetables';
+			} elseif ($phase === 'primary') {
+				$prefix = 'Primary_Class_Timetables';
+			} elseif ($phase === 'high_school') {
+				$prefix = 'High_School_Class_Timetables';
+			}
+			$cover = $phase === 'all'
+				? 'All class timetables'
+				: $label . ' class timetables';
+			return $this->outputTimetablePdf($sheets, $prefix, $cover);
+		} catch (\Throwable $e) {
+			log_message('error', 'Timetable level PDF failed: {msg}', [
+				'msg' => $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+			]);
+			$this->session->setFlashdata('error', 'Could not build the class PDF. ' . $e->getMessage());
 			return redirect()->to(site_url('timetable/dashboard'));
 		}
-		$prefix = 'All_Class_Timetables';
-		if ($phase === 'nursery') {
-			$prefix = 'Nursery_Class_Timetables';
-		} elseif ($phase === 'primary') {
-			$prefix = 'Primary_Class_Timetables';
-		} elseif ($phase === 'high_school') {
-			$prefix = 'High_School_Class_Timetables';
-		}
-		$cover = $phase === 'all'
-			? 'All class timetables'
-			: $label . ' class timetables';
-		return $this->outputTimetablePdf($sheets, $prefix, $cover);
 	}
 
 	public function pdf_all_teachers()
@@ -2234,7 +2260,7 @@ class TimetableManagement extends Home
 		foreach ($staffs as $staff) {
 			$grid = $this->buildGridView($schoolId, $schema, 'teacher', (int) $staff['id'], false, false);
 			if (!empty($grid['schedule'])) {
-				$sheets[] = $grid;
+				$sheets[] = $this->gridBodyViewData($grid, true);
 			}
 		}
 		return $this->outputTimetablePdf($sheets, 'All_Teacher_Timetables', 'All teacher / staff timetables');
@@ -2699,7 +2725,12 @@ class TimetableManagement extends Home
 		}
 
 		foreach ($specialMap as $key => $special) {
-			list($dayNum, $slotId) = array_map('intval', explode(':', $key, 2));
+			$parts = explode(':', (string) $key, 2);
+			if (count($parts) < 2) {
+				continue;
+			}
+			$dayNum = (int) $parts[0];
+			$slotId = (int) $parts[1];
 			$dayLabel = $labelByDay[$dayNum] ?? null;
 			if ($dayLabel === null) {
 				continue;
@@ -2734,8 +2765,8 @@ class TimetableManagement extends Home
 		if (strlen($logo) > 4) {
 			$logoUrl = base_url('assets/images/logo/' . $logo);
 			$path = FCPATH . 'assets/images/logo/' . $logo;
-			if (is_file($path)) {
-				$mime = mime_content_type($path) ?: 'image/png';
+			if (is_file($path) && filesize($path) > 0 && filesize($path) < 400000) {
+				$mime = @mime_content_type($path) ?: 'image/png';
 				$logoDataUri = 'data:' . $mime . ';base64,' . base64_encode((string) file_get_contents($path));
 			}
 		}
@@ -3094,12 +3125,17 @@ class TimetableManagement extends Home
 			exit;
 		}
 
-		$body = $this->renderPdfBody($sheets, $coverTitle, $includeCover);
-		$html = view('pages/timetable/_pdf_document', [
-			'doc_title' => $filenamePrefix,
-			'inline_css' => $this->inlineTimetableCss(),
-			'body' => $body,
-		]);
+		try {
+			$body = $this->renderPdfBody($sheets, $coverTitle, $includeCover);
+			$html = view('pages/timetable/_pdf_document', [
+				'doc_title' => $filenamePrefix,
+				'inline_css' => $this->inlineTimetableCss(),
+				'body' => $body,
+			]);
+		} catch (\Throwable $e) {
+			log_message('error', 'Timetable PDF HTML failed: {msg}', ['msg' => $e->getMessage()]);
+			throw $e;
+		}
 
 		$dir = WRITEPATH . 'uploads/timetables';
 		if (!is_dir($dir)) {

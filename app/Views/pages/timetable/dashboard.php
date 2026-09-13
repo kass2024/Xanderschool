@@ -408,6 +408,22 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 <script src="<?= base_url('assets/js/timetable-live-edit.js'); ?>"></script>
 <script src="<?= base_url('assets/js/timetable-live-pick.js'); ?>"></script>
+<?php
+$ttJsonFlags = JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
+if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+	$ttJsonFlags |= JSON_INVALID_UTF8_SUBSTITUTE;
+}
+$ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
+	if (!is_array($job)) {
+		return 'null';
+	}
+	if (isset($job['collision_report']['items']) && is_array($job['collision_report']['items'])) {
+		$job['collision_report']['items'] = array_values(array_slice($job['collision_report']['items'], 0, 25));
+	}
+	$json = json_encode($job, $ttJsonFlags);
+	return $json === false ? 'null' : $json;
+};
+?>
 <script>
 (function () {
 	var classBase = '<?= site_url('timetable/class'); ?>';
@@ -417,8 +433,8 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	var jobStatusBase = '<?= site_url('timetable/generate_status'); ?>';
 	var discardJobUrl = '<?= site_url('timetable/discard_generation'); ?>';
 	var hasSchedule = <?= $hasSchedule ? 'true' : 'false'; ?>;
-	var activeJob = <?= json_encode($active_generation_job ?? null, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-	var lastJob = <?= json_encode($last_generation_job ?? null, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+	var activeJob = <?= $ttEncodeJob($active_generation_job ?? null); ?>;
+	var lastJob = <?= $ttEncodeJob($last_generation_job ?? null); ?>;
 	var pollTimer = null;
 	var pollFails = 0;
 	var saveCriteriaUrl = '<?= site_url('timetable/save_criteria'); ?>';
