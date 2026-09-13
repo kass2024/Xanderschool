@@ -166,7 +166,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Uwamahoro / Izabayo Patience: Tuesday full day and Friday after lunch only. Nursery and primary use the same course-period fill, no-collision parking, and any extra rules you add below.</p>
+						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Izabayo Patience: Tuesday full day and Friday after lunch only. Nursery and primary use the same course-period fill, no-collision parking, and any extra rules you add below.</p>
 						<form id="ttCriteriaForm" class="tt-criteria-form">
 							<div class="form-row">
 								<div class="col-md-4 mb-2">

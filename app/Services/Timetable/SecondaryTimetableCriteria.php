@@ -685,9 +685,9 @@ class SecondaryTimetableCriteria
 			],
 			'linear' => $linear,
 			'rinea' => $linear,
-			// Tuesday all teaching day; Friday after lunch only.
-			'uwamahoro patience' => $patienceTueFri,
+			// IZABAYO PATIENCE: Tuesday all teaching day; Friday after lunch only.
 			'izabayo patience' => $patienceTueFri,
+			'patience izabayo' => $patienceTueFri,
 		];
 	}
 
