@@ -413,6 +413,60 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
+	 * Days this teacher may teach, or null when they may use the whole week.
+	 *
+	 * @return list<int>|null
+	 */
+	public function restrictedTeachingDays(array $row): ?array
+	{
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		if ($staffId > 0 && isset($this->allowedDaysByStaffId[$staffId]) && $this->allowedDaysByStaffId[$staffId] !== []) {
+			return array_values(array_unique(array_map('intval', $this->allowedDaysByStaffId[$staffId])));
+		}
+		if ($staffId > 0 && !empty($this->windowsByStaffId[$staffId])) {
+			$days = [];
+			foreach ($this->windowsByStaffId[$staffId] as $window) {
+				$days[(int) ($window['day'] ?? -1)] = true;
+			}
+			unset($days[-1]);
+			return $days === [] ? null : array_map('intval', array_keys($days));
+		}
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
+		if ($teacher === '') {
+			return null;
+		}
+		$windows = $this->windowsForTeacher($teacher);
+		if ($windows === []) {
+			return null;
+		}
+		$days = [];
+		foreach ($windows as $window) {
+			$days[(int) ($window['day'] ?? -1)] = true;
+		}
+		unset($days[-1]);
+		return $days === [] ? null : array_map('intval', array_keys($days));
+	}
+
+	/** Raise the daily cap so weekly Manage Course periods can still fit on a short teacher window. */
+	public function packedDailyCap(array $row, int $weeklyHours, int $fallback): int
+	{
+		$peMax = $this->peMaxPerDay($row, $weeklyHours);
+		if ($peMax !== null) {
+			return $peMax;
+		}
+		if ($weeklyHours <= 0) {
+			return $fallback;
+		}
+		$days = $this->restrictedTeachingDays($row);
+		if ($days === null || $days === []) {
+			return $fallback;
+		}
+		$n = count($days);
+		$pack = (int) ceil($weeklyHours / max(1, $n));
+		return max($fallback, $pack, $weeklyHours);
+	}
+
+	/**
 	 * @return list<array{level:string,a:string,b:string}>
 	 */
 	private function combinePairsForSubject(string $subject): array

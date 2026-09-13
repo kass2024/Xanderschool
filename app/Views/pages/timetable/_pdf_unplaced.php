@@ -79,25 +79,36 @@ if ($byClass === [] && !empty($courses)) {
 					<th>Needed</th>
 					<th>Placed</th>
 					<th>Missed</th>
-					<th>Where it can still go</th>
+					<th>Issue / where it can still go</th>
 				</tr>
 			</thead>
 			<tbody>
 			<?php foreach (($group['items'] ?? []) as $row): ?>
 				<tr>
-					<td><?= esc($row['course'] ?? ''); ?></td>
+					<td>
+						<strong><?= esc($row['course'] ?? ''); ?></strong>
+						<?php if (!empty($row['code'])): ?>
+							<div class="small"><?= esc($row['code']); ?></div>
+						<?php endif; ?>
+						<?php if (!empty($row['dept'])): ?>
+							<div class="small"><?= esc($row['dept']); ?></div>
+						<?php endif; ?>
+					</td>
 					<td><?= esc($row['teacher'] ?? ''); ?></td>
-					<td><?= (int) ($row['needed'] ?? 0); ?></td>
+					<td><?= (int) ($row['needed'] ?? 0); ?><?php if (!empty($row['credit'])): ?> <span class="small">/ credit <?= (int) $row['credit']; ?></span><?php endif; ?></td>
 					<td><?= (int) ($row['placed'] ?? 0); ?></td>
 					<td class="warn"><?= (int) ($row['missed'] ?? 0); ?></td>
 					<td>
-						<?php if (!empty($row['suggestions'])): ?>
-							<?= esc(implode('; ', $row['suggestions'])); ?>
-						<?php else: ?>
-							<span class="warn">No legal empty slot — keep parked (do not overlap).</span>
+						<?php if (!empty($row['window'])): ?>
+							<div class="small"><?= esc($row['window']); ?></div>
 						<?php endif; ?>
 						<?php if (!empty($row['reason'])): ?>
-							<div class="small"><?= esc($row['reason']); ?></div>
+							<div><?= esc($row['reason']); ?></div>
+						<?php endif; ?>
+						<?php if (!empty($row['suggestions'])): ?>
+							<div class="small">Free slots: <?= esc(implode('; ', $row['suggestions'])); ?></div>
+						<?php else: ?>
+							<span class="warn">No legal empty slot — keep parked (do not overlap).</span>
 						<?php endif; ?>
 					</td>
 				</tr>

@@ -471,6 +471,72 @@ class TimetableStagingService
 	}
 
 	/**
+	 * Place remaining Manage Course periods into any legal free slot (morning or afternoon).
+	 */
+	public function fillWeeklyPeriodGaps(
+		int $scheduleId,
+		int $schoolId,
+		\App\Models\TimetableSchemaModel $schema
+	): int {
+		if ($scheduleId <= 0 || $schoolId <= 0) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
+		$this->timetableSettings = $settings;
+		$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
+		$this->secondaryCriteria = new SecondaryTimetableCriteria();
+		$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
+		$this->secondaryCriteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
+
+		$days = \App\Models\TimetableSchemaModel::weekDaysFromSettings($settings);
+		$scheduled = $this->scheduledEntries($scheduleId, $schoolId);
+		$state = $this->buildScheduleState($scheduled);
+		$parking = $db->table('timetable_entries')
+			->where('schedule_id', $scheduleId)
+			->where('school_id', $schoolId)
+			->where('entry_type', 'lesson')
+			->where('day_of_week', -1)
+			->where('slot_id', 0)
+			->orderBy('id')
+			->get()->getResultArray();
+		if ($parking === []) {
+			return 0;
+		}
+
+		$scheduledByKey = [];
+		foreach ($scheduled as $row) {
+			$key = $this->keyFromEntry($row);
+			$scheduledByKey[$key] = ($scheduledByKey[$key] ?? 0) + 1;
+		}
+
+		$placed = 0;
+		foreach ($parking as $entry) {
+			$key = $this->keyFromEntry($entry);
+			$meta = $this->metaForEntry($entry);
+			$needed = TimetableGeneratorService::weeklyHoursFromCourse($meta);
+			$have = (int) ($scheduledByKey[$key] ?? 0);
+			if ($needed > 0 && $have >= $needed) {
+				continue;
+			}
+			$found = $this->findBestDirectPlacement($entry, $days, $schema, $schoolId, $state, true);
+			if ($found === null) {
+				continue;
+			}
+			$db->table('timetable_entries')->where('id', (int) $entry['id'])->update([
+				'day_of_week' => $found['day'],
+				'slot_id' => $found['slot_id'],
+			]);
+			$entry['day_of_week'] = $found['day'];
+			$entry['slot_id'] = $found['slot_id'];
+			$this->addScheduledEntry($state, $entry);
+			$scheduledByKey[$key] = $have + 1;
+			$placed++;
+		}
+		return $placed;
+	}
+
+	/**
 	 * @param list<array<string,mixed>> $parked
 	 * @param list<array<string,mixed>> $placed
 	 * @param array<string,mixed> $state
@@ -737,9 +803,15 @@ class TimetableStagingService
 	 * @param array<string,mixed> $state
 	 * @return array{day:int,slot_id:int}|null
 	 */
-	private function findBestDirectPlacement(array $entry, array $days, \App\Models\TimetableSchemaModel $schema, int $schoolId, array $state): ?array
-	{
-		$candidates = $this->candidateSlots($entry, $days, $schema, $schoolId, $state, false);
+	private function findBestDirectPlacement(
+		array $entry,
+		array $days,
+		\App\Models\TimetableSchemaModel $schema,
+		int $schoolId,
+		array $state,
+		bool $ignoreDayLimit = false
+	): ?array {
+		$candidates = $this->candidateSlots($entry, $days, $schema, $schoolId, $state, false, $ignoreDayLimit);
 		return $candidates[0] ?? null;
 	}
 
@@ -794,7 +866,8 @@ class TimetableStagingService
 		\App\Models\TimetableSchemaModel $schema,
 		int $schoolId,
 		array $state,
-		bool $allowSingleBlocker
+		bool $allowSingleBlocker,
+		bool $ignoreDayLimit = false
 	): array {
 		$classId = (int) ($entry['class_id'] ?? 0);
 		$staffId = (int) ($entry['staff_id'] ?? 0);
@@ -818,7 +891,7 @@ class TimetableStagingService
 		});
 
 		foreach ($days as $day) {
-			if ($this->wouldExceedSubjectDayLimit($state, $entry, (int) $day)) {
+			if (!$ignoreDayLimit && $this->wouldExceedSubjectDayLimit($state, $entry, (int) $day)) {
 				continue;
 			}
 			foreach ($slots as $slotIndex => $slot) {
@@ -1063,7 +1136,11 @@ class TimetableStagingService
 		if ($this->requiresSpreadAcrossDays($meta)) {
 			return 1;
 		}
-		return ($hours > 0 && $hours <= 2) ? 1 : 2;
+		$fallback = ($hours > 0 && $hours <= 2) ? 1 : 2;
+		if ($this->secondaryCriteria !== null) {
+			return $this->secondaryCriteria->packedDailyCap($meta, $hours, $fallback);
+		}
+		return $fallback;
 	}
 
 	private function requiresSpreadAcrossDays(array $meta): bool

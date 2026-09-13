@@ -963,7 +963,11 @@ class TimetableGeneratorService
 		if ($this->requiresSpreadAcrossDays($row)) {
 			return 1;
 		}
-		return ($weeklyHours > 0 && $weeklyHours <= 2) ? 1 : 2;
+		$fallback = ($weeklyHours > 0 && $weeklyHours <= 2) ? 1 : 2;
+		if ($this->secondaryCriteria !== null) {
+			return $this->secondaryCriteria->packedDailyCap($row, $weeklyHours, $fallback);
+		}
+		return $fallback;
 	}
 
 	private function requiresSpreadAcrossDays(array $row): bool
@@ -978,7 +982,16 @@ class TimetableGeneratorService
 	/** Secondary classes with 3+ weekly periods: doubles + non-adjacent days. */
 	private function requiresNonAdjacentDays(array $row, int $weeklyHours): bool
 	{
-		return !$this->isPrimaryOrNursery($row) && $weeklyHours >= 3;
+		if ($this->isPrimaryOrNursery($row) || $weeklyHours < 3) {
+			return false;
+		}
+		if ($this->secondaryCriteria !== null) {
+			$days = $this->secondaryCriteria->restrictedTeachingDays($row);
+			if (is_array($days) && count($days) < 3) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** @return list<int> */

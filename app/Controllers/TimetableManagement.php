@@ -1059,6 +1059,7 @@ class TimetableManagement extends Home
 			'stages' => $stages,
 		]);
 		$stagingSvc->fillMorningGaps($scheduleId, $schoolId, $schema);
+		$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
 		$this->reportGenerationProgress($jobId, [
 			'message' => 'Clearing collisions without overlaps…',
 			'progress' => 84,
@@ -1067,6 +1068,7 @@ class TimetableManagement extends Home
 		]);
 		$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
 		$stagingSvc->fillMorningGaps($scheduleId, $schoolId, $schema);
+		$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
 		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 		$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 
@@ -1151,6 +1153,7 @@ class TimetableManagement extends Home
 			}
 			$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
 			$stagingSvc->fillMorningGaps($scheduleId, $schoolId, $schema);
+			$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
 			$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 			$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 			$stages = $this->markGenerationStage($stages, 'gemini', 'done');

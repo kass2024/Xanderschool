@@ -492,11 +492,16 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 				var inner = '<ul class="pl-3 mb-0 small">';
 				items.forEach(function (row) {
 					inner += '<li><strong>' + esc(row.course || 'Lesson') + '</strong>'
+						+ (row.code ? ' (' + esc(row.code) + ')' : '')
 						+ ' with ' + esc(row.teacher || 'Unassigned')
 						+ ' — ' + (row.placed || 0) + '/' + (row.needed || 0) + ' placed'
-						+ ', <strong>' + (row.missed || 0) + ' parked</strong>'
-						+ (row.suggestions && row.suggestions.length ? '. Try: ' + esc(row.suggestions.join('; ')) : '. No legal empty slot.')
-						+ '</li>';
+						+ ', <strong>' + (row.missed || 0) + ' parked</strong>';
+					if (row.window) inner += '<div class="text-muted">' + esc(row.window) + '</div>';
+					if (row.reason) inner += '<div>' + esc(row.reason) + '</div>';
+					inner += (row.suggestions && row.suggestions.length
+						? '<div class="text-muted">Free slots: ' + esc(row.suggestions.join('; ')) + '</div>'
+						: '<div class="text-muted">No legal empty slot.</div>');
+					inner += '</li>';
 				});
 				return inner + '</ul>';
 			});

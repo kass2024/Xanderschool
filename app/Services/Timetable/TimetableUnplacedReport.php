@@ -88,19 +88,37 @@ class TimetableUnplacedReport
 				$classBusy,
 				$staffBusy
 			);
+			$allowedDays = $criteria->restrictedTeachingDays($row);
+			$dayNames = [];
+			if (is_array($allowedDays)) {
+				foreach ($allowedDays as $d) {
+					$dayNames[] = self::DAY_LABELS[(int) $d] ?? ('Day ' . $d);
+				}
+			}
+			$windowNote = $dayNames === []
+				? 'Any teaching day'
+				: ('Teacher window: ' . implode(', ', $dayNames) . ' only');
+			$reason = $suggestions === []
+				? 'No legal empty slot for both this class and this teacher'
+					. ($dayNames !== [] ? ' on ' . implode('/', $dayNames) : '')
+					. '. Parked so nothing overlaps. Check Manage Course load or free a listed class period.'
+				: 'Weekly periods are short. Free slots still exist — remaining hours stayed parked. '
+					. 'Try the listed slots or regenerate after this fix so they auto-fill.';
 			$courseRow = [
 				'level' => TimetableTrack::generationPhaseLabel(TimetableTrack::generationPhaseKey($track)),
 				'class_id' => $classId,
 				'class' => TimetableClassLabel::fromRow($row) ?: (string) ($row['class_title'] ?? 'Class'),
 				'course' => (string) ($row['course_title'] ?? 'Course'),
+				'code' => (string) ($row['course_code'] ?? ''),
+				'credit' => (int) round((float) ($row['credit'] ?? $needed)),
+				'dept' => (string) ($row['dept_code'] ?? $row['dept_title'] ?? ''),
 				'teacher' => trim((string) ($row['teacher_name'] ?? '')) ?: 'Unassigned',
 				'needed' => $needed,
 				'placed' => $placed,
 				'missed' => $missed,
 				'suggestions' => $suggestions,
-				'reason' => $suggestions === []
-					? 'No free slot for both class and teacher (criteria / availability / full grid). Parked to avoid a collision.'
-					: 'Placed as many periods as possible without colliding. Remaining hours are parked — drag onto a listed free slot.',
+				'window' => $windowNote,
+				'reason' => $reason,
 			];
 			$courses[] = $courseRow;
 
@@ -217,7 +235,7 @@ class TimetableUnplacedReport
 				$time = substr($start, 0, 5);
 				$out[] = (self::DAY_LABELS[(int) $day] ?? ('Day ' . $day))
 					. ' · ' . ($label !== '' ? $label : $time);
-				if (count($out) >= 8) {
+				if (count($out) >= 16) {
 					return $out;
 				}
 			}
@@ -228,12 +246,8 @@ class TimetableUnplacedReport
 	/** @param array<string,mixed> $row */
 	private function assignmentKey(array $row): string
 	{
-		$cr = (int) ($row['course_record_id'] ?? 0);
-		if ($cr > 0) {
-			return 'cr:' . $cr;
-		}
 		return 'c:' . (int) ($row['class_id'] ?? 0)
-			. ':' . (int) ($row['course_id'] ?? 0)
+			. ':' . (int) ($row['course_id'] ?? $row['course'] ?? 0)
 			. ':' . (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 	}
 }
