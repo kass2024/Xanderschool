@@ -72,22 +72,6 @@ class TimetableManagement extends Home
 		);
 		$data['generation_levels'] = $this->buildGenerationLevelCards($schoolId, $year, $term, $schema, $data['schedule'] ?? null);
 		$data['last_generation_job'] = $this->findLastFinishedTimetableJob($schoolId, $year, $term);
-		if (!empty($data['last_generation_job']) && !empty($data['schedule']['id'])) {
-			$last = $data['last_generation_job'];
-			$warnings = is_array($last['collision_report']['warnings'] ?? null)
-				? $last['collision_report']['warnings']
-				: [];
-			$last['collision_report'] = $this->buildCollisionReport(
-				(int) $data['schedule']['id'],
-				$schoolId,
-				$schema,
-				$warnings,
-				$last['ai_tip'] ?? ($last['collision_report']['ai_tip'] ?? null),
-				$this->loadAssignments($schoolId, $year, $term),
-				$db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray()
-			);
-			$data['last_generation_job'] = $last;
-		}
 		$criteriaStore = new TimetableCriteriaStore();
 		$data['custom_criteria'] = $criteriaStore->listForSchool($schoolId);
 		$data['criteria_courses'] = $this->uniqueAssignmentCourses($this->loadAssignments($schoolId, $year, $term));
@@ -125,7 +109,9 @@ class TimetableManagement extends Home
 		$data['preview_class_id'] = !empty($data['classes']) ? (int) $data['classes'][0]['id'] : 0;
 		if ($data['preview_class_id'] > 0 && !empty($data['schedule'])) {
 			try {
-				$data['preview_data'] = $this->buildGridView($schoolId, $schema, 'class', $data['preview_class_id'], false, false);
+				$data['preview_data'] = $this->gridBodyViewData(
+					$this->buildGridView($schoolId, $schema, 'class', $data['preview_class_id'], false, false)
+				);
 			} catch (\Throwable $e) {
 				log_message('error', 'Timetable dashboard preview failed: {msg}', ['msg' => $e->getMessage()]);
 				$data['preview_data'] = null;
@@ -325,12 +311,23 @@ class TimetableManagement extends Home
 			@ini_set('memory_limit', '512M');
 			@set_time_limit(120);
 			$data = $this->buildGridView($schoolId, $schema, $mode, $entityId, false, false);
-			$html = view('pages/timetable/_grid_body', $data);
-			return $this->response->setJSON([
+			$html = view('pages/timetable/_grid_body', $this->gridBodyViewData($data, false));
+			$payload = [
 				'title' => $data['title'] ?? 'Timetable',
 				'html' => $html,
-				'editable' => !empty($data['editable']),
-			]);
+				'editable' => false,
+			];
+			$flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+			if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+				$flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+			}
+			$json = json_encode($payload, $flags);
+			if ($json === false) {
+				return $this->response->setJSON(['error' => 'Could not encode timetable preview.']);
+			}
+			return $this->response
+				->setHeader('Content-Type', 'application/json; charset=UTF-8')
+				->setBody($json);
 		} catch (\Throwable $e) {
 			log_message('error', 'Timetable preview failed [{mode}:{id}]: {msg}', [
 				'mode' => $mode,
@@ -2170,7 +2167,7 @@ class TimetableManagement extends Home
 	{
 		$this->denyMenu('timetable_dashboard');
 		list($schoolId, , $schema) = $this->bootTimetable();
-		$data = $this->buildGridView($schoolId, $schema, 'class', (int) $classId);
+		$data = $this->buildGridView($schoolId, $schema, 'class', (int) $classId, false, false);
 		$slug = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $data['title'] ?? 'class');
 		return $this->outputTimetablePdf([$data], 'Class_' . $slug, null, false);
 	}
@@ -2179,7 +2176,7 @@ class TimetableManagement extends Home
 	{
 		$this->denyMenu('timetable_dashboard');
 		list($schoolId, , $schema) = $this->bootTimetable();
-		$data = $this->buildGridView($schoolId, $schema, 'teacher', (int) $staffId);
+		$data = $this->buildGridView($schoolId, $schema, 'teacher', (int) $staffId, false, false);
 		$slug = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $data['title'] ?? 'teacher');
 		return $this->outputTimetablePdf([$data], 'Teacher_' . $slug, null, false);
 	}
@@ -2199,7 +2196,7 @@ class TimetableManagement extends Home
 			if ($phase !== 'all' && TimetableTrack::generationPhaseForClassId($classId) !== $phase) {
 				continue;
 			}
-			$grid = $this->buildGridView($schoolId, $schema, 'class', $classId);
+			$grid = $this->buildGridView($schoolId, $schema, 'class', $classId, false, false);
 			if (!empty($grid['schedule'])) {
 				$sheets[] = $grid;
 			}
@@ -2235,7 +2232,7 @@ class TimetableManagement extends Home
 			->orderBy('id', 'DESC')->get(1)->getRowArray();
 		$staffs = $this->fetchTimetableStaffRows($db, $schoolId, $year, $term, (int) ($schedule['id'] ?? 0));
 		foreach ($staffs as $staff) {
-			$grid = $this->buildGridView($schoolId, $schema, 'teacher', (int) $staff['id']);
+			$grid = $this->buildGridView($schoolId, $schema, 'teacher', (int) $staff['id'], false, false);
 			if (!empty($grid['schedule'])) {
 				$sheets[] = $grid;
 			}
@@ -2389,11 +2386,17 @@ class TimetableManagement extends Home
 	): array
 	{
 		$db = \Config\Database::connect();
-		$data = $this->data;
+		$data = $includeInteractiveData ? $this->data : [
+			'academic_year' => (int) ($this->data['academic_year'] ?? 0),
+			'term' => (int) ($this->data['term'] ?? 1),
+			'school_name' => $this->data['school_name'] ?? '',
+		];
 		$year = (int) ($data['academic_year'] ?? 0);
 		$term = (int) ($data['term'] ?? 1);
 
-		$schema->repairOrphanEntrySlots($schoolId);
+		if ($includeInteractiveData) {
+			$schema->repairOrphanEntrySlots($schoolId);
+		}
 
 		$schedule = $db->table('timetable_schedules')
 			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
@@ -2541,15 +2544,19 @@ class TimetableManagement extends Home
 		$data['generated_at'] = $schedule['generated_at'] ?? null;
 		$data['track_key'] = $trackKey;
 
-		$data['classes'] = $this->fetchClassRows($db, $schoolId);
-
-		$data['staffs'] = $this->fetchTimetableStaffRows(
-			$db,
-			$schoolId,
-			$year,
-			$term,
-			(int) ($schedule['id'] ?? 0)
-		);
+		if ($includeInteractiveData) {
+			$data['classes'] = $this->fetchClassRows($db, $schoolId);
+			$data['staffs'] = $this->fetchTimetableStaffRows(
+				$db,
+				$schoolId,
+				$year,
+				$term,
+				(int) ($schedule['id'] ?? 0)
+			);
+		} else {
+			$data['classes'] = [];
+			$data['staffs'] = [];
+		}
 
 		$data['school_name'] = $this->data['school_name'] ?? '';
 		$data['editable'] = $editable && !empty($schedule);
@@ -2616,6 +2623,29 @@ class TimetableManagement extends Home
 		}
 
 		return $data;
+	}
+
+	/** @param array<string,mixed> $data @return array<string,mixed> */
+	private function gridBodyViewData(array $data, bool $forPdf = false): array
+	{
+		return [
+			'title' => $data['title'] ?? 'Timetable',
+			'subtitle' => $data['subtitle'] ?? '',
+			'grid' => $data['grid'] ?? [],
+			'day_labels' => $data['day_labels'] ?? [],
+			'day_map' => $data['day_map'] ?? [],
+			'mode' => $data['mode'] ?? 'class',
+			'editable' => !empty($data['editable']),
+			'for_pdf' => $forPdf,
+			'schedule' => $data['schedule'] ?? null,
+			'schedule_id' => (int) ($data['schedule_id'] ?? 0),
+			'school_name' => $data['school_name'] ?? '',
+			'generated_at' => $data['generated_at'] ?? null,
+			'staging_entries' => $data['staging_entries'] ?? [],
+			'conflict_entry_ids' => $data['conflict_entry_ids'] ?? [],
+			'staging_remaining' => (int) ($data['staging_remaining'] ?? 0),
+			'letterhead' => $data['letterhead'] ?? null,
+		];
 	}
 
 	/** @param list<string> $tracks @return list<array<string,mixed>> */

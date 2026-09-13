@@ -424,6 +424,9 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	var saveCriteriaUrl = '<?= site_url('timetable/save_criteria'); ?>';
 	var deleteCriteriaUrl = '<?= site_url('timetable/delete_criteria'); ?>';
 	var unplacedPdfBase = '<?= site_url('timetable/pdf_unplaced'); ?>';
+	var previewXhr = null;
+	var hasServerPreview = <?= !empty($preview_data) ? 'true' : 'false'; ?>;
+	var initialPreviewClassId = '<?= (int) ($preview_class_id ?? 0); ?>';
 
 	function esc(s) {
 		return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -573,16 +576,23 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		$('#previewTeacherPick').toggleClass('d-none', !teacher);
 	}
 
-	function loadPreview() {
+	function loadPreview(force) {
 		if (!hasSchedule) return;
 		var mode = currentMode();
 		var id = currentId();
 		if (!id) return;
+		if (!force && hasServerPreview && mode === 'class' && String(id) === String(initialPreviewClassId)
+			&& $('#ttPreviewBody .tt-sheet').length) {
+			return;
+		}
+		if (previewXhr && previewXhr.readyState !== 4) {
+			previewXhr.abort();
+		}
 		$('#ttPreviewBody').html('<div class="p-5 text-center"><i class="fa fa-spinner fa-spin fa-2x text-muted"></i><div class="mt-2 text-muted">Loading timetable...</div></div>');
-		$.ajax({
+		previewXhr = $.ajax({
 			url: '<?= site_url('timetable/preview'); ?>/' + id + '?mode=' + mode,
 			dataType: 'json',
-			timeout: 90000
+			timeout: 60000
 		}).done(function (r) {
 			if (!r || r.error) {
 				$('#ttPreviewBody').html('<div class="alert alert-warning m-3">' + ((r && r.error) ? r.error : 'No preview data') + '</div>');
@@ -590,12 +600,17 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			}
 			$('#ttPreviewBody').html(r.html || '<div class="alert alert-warning m-3">No preview data</div>');
 			if (r.editable && window.TtLiveEdit) TtLiveEdit.init($('#ttPreviewBody'));
-		}).fail(function (xhr) {
+		}).fail(function (xhr, textStatus) {
+			if (textStatus === 'abort') return;
 			var detail = '';
-			if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
+			if (textStatus === 'timeout') {
+				detail = 'the server took too long';
+			} else if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
 				detail = xhr.responseJSON.error;
 			} else if (xhr && xhr.status) {
 				detail = 'HTTP ' + xhr.status + (xhr.statusText ? ' ' + xhr.statusText : '');
+			} else if (textStatus) {
+				detail = textStatus;
 			}
 			$('#ttPreviewBody').html('<div class="alert alert-danger m-3">Could not load preview' + (detail ? ': ' + detail : '') + '. Try <strong>Generate smart timetable</strong> again.</div>');
 		});
@@ -687,7 +702,8 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			}
 			if (job && job.status === 'done') {
 				hasSchedule = true;
-				loadPreview();
+				hasServerPreview = false;
+				loadPreview(true);
 			}
 		}).fail(function (xhr) {
 			pollFails += 1;
@@ -855,14 +871,14 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	});
 	$(document).on('click', '#btnRefreshPreview', function () {
 		hasSchedule = true;
-		loadPreview();
+		loadPreview(true);
 	});
 
 	if (window.TtLivePick) {
 		TtLivePick.init('#previewClassPick, #previewTeacherPick');
 	}
 	syncEntityOptions();
-	if (hasSchedule) loadPreview();
+	if (hasSchedule && !hasServerPreview) loadPreview();
 	if (activeJob && activeJob.id && (activeJob.status === 'queued' || activeJob.status === 'running')) {
 		renderJobState(activeJob);
 		pollJob(activeJob.id);
