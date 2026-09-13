@@ -10,7 +10,7 @@ use App\Models\SchoolHierarchyModel;
 class SchoolHierarchyService
 {
 	/** Default central posts (used until configured in Level clearance). */
-	const DEFAULT_CENTRAL_POSTS = [1, 3, 18, 21, 24, 25, 29]; // + Director (same tier as Head master)
+	const DEFAULT_CENTRAL_POSTS = [1, 3, 18, 21, 24, 25, 29, 30]; // + Director / Deputy Director (same tier as Head master)
 
 	/** @deprecated Use MasterCentralPostModel::centralPostIds() */
 	const CENTRAL_POSTS = self::DEFAULT_CENTRAL_POSTS;

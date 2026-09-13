@@ -7,8 +7,8 @@ namespace Config;
  */
 class StudentMaterialPermissions
 {
-	/** Head master, DoS, Headmistress, Accountant, Head Teacher, Deputy Head Teacher (post ids). */
-	const FULL_ACCESS_POST_IDS = [1, 3, 9, 18, 25, 26];
+	/** Head master, DoS, Headmistress, Accountant, Head Teacher, Deputy Head Teacher, Director, Deputy Director. */
+	const FULL_ACCESS_POST_IDS = [1, 3, 9, 18, 25, 26, 29, 30];
 
 	/** Post title keywords (case-insensitive substring match). */
 	const FULL_ACCESS_TITLE_KEYWORDS = [
@@ -19,6 +19,7 @@ class StudentMaterialPermissions
 		'headteacher',
 		'deputy head teacher',
 		'deputy headteacher',
+		'deputy director',
 		'dean of discipline',
 		'head of discipline',
 		'matron',

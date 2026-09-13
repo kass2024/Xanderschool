@@ -19,6 +19,8 @@ class PostsModel extends Model
 	public const CHIEF_ACCOUNTANT_ID = 28;
 	/** Same menu/budget rights as Head master (#1). */
 	public const DIRECTOR_ID = 29;
+	/** Academic Deputy Director — same menu/budget rights as Director / Head master. Not finance post #21. */
+	public const DEPUTY_DIRECTOR_ID = 30;
 
 	/** Ensure built-in system posts exist and restricted ones get a starter clearance row. */
 	public function ensureLeadershipPosts(): void
@@ -35,6 +37,7 @@ class PostsModel extends Model
 			self::PHOTO_GRAPHER_ID => 'Photo Grapher',
 			self::CHIEF_ACCOUNTANT_ID => 'Chief Accountant',
 			self::DIRECTOR_ID => 'Director',
+			self::DEPUTY_DIRECTOR_ID => 'Deputy Director',
 		];
 		foreach ($wanted as $id => $title) {
 			$byTitle = $db->table('posts')->where('title', $title)->get(1)->getRowArray();

@@ -139,6 +139,11 @@ class BudgetPermissions
 				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
 				'cash_request.headteacher_approve', 'cash_request.view_audit',
 			],
+			30 => [ // Deputy Director (academic) — same as head master; not finance post #21
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.templates.view',
+				'budget.view_reports', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
+				'cash_request.headteacher_approve', 'cash_request.view_audit',
+			],
 			3 => [ // Director of studies — view reports (child view-only dashboard via menus)
 				'budget.view_reports',
 			],
