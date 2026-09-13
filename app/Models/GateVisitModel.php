@@ -189,8 +189,8 @@ class GateVisitModel extends Model
 		if ($names === '' || mb_strlen($names) < 2) {
 			return ['success' => false, 'message' => 'Visitor name is required.'];
 		}
-		if ($idNumber === '') {
-			return ['success' => false, 'message' => 'Visitor identification number is required.'];
+		if ($phone === '') {
+			return ['success' => false, 'message' => 'Visitor phone is required.'];
 		}
 		if ($reason === '') {
 			return ['success' => false, 'message' => 'Reason of visit is required.'];
