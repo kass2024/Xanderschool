@@ -71,6 +71,20 @@ class TimetableManagement extends Home
 			->get(1)->getRowArray();
 		$data['generation_levels'] = $this->buildGenerationLevelCards($schoolId, $year, $term, $schema, $data['schedule'] ?? null);
 		$data['last_generation_job'] = $this->findLastFinishedTimetableJob($schoolId, $year, $term);
+		if (!empty($data['last_generation_job']) && !empty($data['schedule']['id'])) {
+			$last = $data['last_generation_job'];
+			$warnings = is_array($last['collision_report']['warnings'] ?? null)
+				? $last['collision_report']['warnings']
+				: [];
+			$last['collision_report'] = $this->buildCollisionReport(
+				(int) $data['schedule']['id'],
+				$schoolId,
+				$schema,
+				$warnings,
+				$last['ai_tip'] ?? ($last['collision_report']['ai_tip'] ?? null)
+			);
+			$data['last_generation_job'] = $last;
+		}
 		$criteriaStore = new TimetableCriteriaStore();
 		$data['custom_criteria'] = $criteriaStore->listForSchool($schoolId);
 		$data['criteria_courses'] = $this->uniqueAssignmentCourses($this->loadAssignments($schoolId, $year, $term));
@@ -2534,9 +2548,10 @@ class TimetableManagement extends Home
 		// Build the PDF on download so generation is not blocked by wkhtmltopdf.
 		$pdf = null;
 		$courses = [];
-		foreach (array_slice($full['courses'] ?? [], 0, 40) as $row) {
+		foreach (array_slice($full['courses'] ?? [], 0, 80) as $row) {
 			$courses[] = [
 				'level' => $row['level'] ?? '',
+				'class_id' => (int) ($row['class_id'] ?? 0),
 				'class' => $row['class'] ?? '',
 				'course' => $row['course'] ?? '',
 				'teacher' => $row['teacher'] ?? '',
@@ -2546,13 +2561,37 @@ class TimetableManagement extends Home
 				'suggestions' => array_slice($row['suggestions'] ?? [], 0, 4),
 			];
 		}
+		$byClass = [];
+		foreach (array_slice($full['by_class'] ?? [], 0, 40) as $group) {
+			$items = [];
+			foreach (array_slice($group['items'] ?? [], 0, 20) as $item) {
+				$items[] = [
+					'course' => $item['course'] ?? '',
+					'teacher' => $item['teacher'] ?? '',
+					'needed' => (int) ($item['needed'] ?? 0),
+					'placed' => (int) ($item['placed'] ?? 0),
+					'missed' => (int) ($item['missed'] ?? 0),
+					'suggestions' => array_slice($item['suggestions'] ?? [], 0, 4),
+				];
+			}
+			$byClass[] = [
+				'class' => $group['class'] ?? 'Class',
+				'class_id' => (int) ($group['class_id'] ?? 0),
+				'level' => $group['level'] ?? '',
+				'missed' => (int) ($group['missed'] ?? 0),
+				'courses' => (int) ($group['courses'] ?? count($items)),
+				'items' => $items,
+			];
+		}
 		return [
 			'report' => [
 				'missed_periods' => (int) ($full['missed_periods'] ?? 0),
 				'missed_courses' => (int) ($full['missed_courses'] ?? 0),
 				'missed_teachers' => (int) ($full['missed_teachers'] ?? 0),
+				'missed_classes' => (int) ($full['missed_classes'] ?? count($byClass)),
 				'phase_label' => (string) ($full['phase_label'] ?? ''),
 				'courses' => $courses,
+				'by_class' => $byClass,
 			],
 			'full' => $full,
 			'pdf' => $pdf,
@@ -2597,6 +2636,7 @@ class TimetableManagement extends Home
 			'missed_teachers' => (int) ($report['missed_teachers'] ?? 0),
 			'courses' => $report['courses'] ?? [],
 			'teachers' => $report['teachers'] ?? [],
+			'by_class' => $report['by_class'] ?? [],
 		]);
 	}
 

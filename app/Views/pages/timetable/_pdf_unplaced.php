@@ -7,6 +7,7 @@
 body { font-family: DejaVu Sans, Arial, Helvetica, sans-serif; font-size: 11px; color: #1f2933; margin: 0; }
 h1 { font-size: 18px; margin: 0 0 4px; }
 h2 { font-size: 13px; margin: 18px 0 8px; border-bottom: 1px solid #d2d6dc; padding-bottom: 4px; }
+h3 { font-size: 12px; margin: 14px 0 6px; color: #1f2933; }
 .meta { color: #52606d; margin-bottom: 14px; }
 .kpis { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
 .kpis td { background: #f5f7fa; border: 1px solid #e4e7eb; padding: 8px 10px; width: 33%; }
@@ -40,45 +41,70 @@ table.grid th { background: #e4e7eb; }
 	</tr>
 </table>
 
-<?php if (empty($courses)): ?>
+<?php
+$byClass = $by_class ?? [];
+if ($byClass === [] && !empty($courses)) {
+	$grouped = [];
+	foreach ($courses as $row) {
+		$label = trim((string) ($row['class'] ?? '')) ?: 'Class';
+		if (!isset($grouped[$label])) {
+			$grouped[$label] = [
+				'class' => $label,
+				'level' => (string) ($row['level'] ?? ''),
+				'missed' => 0,
+				'items' => [],
+			];
+		}
+		$grouped[$label]['missed'] += (int) ($row['missed'] ?? 0);
+		$grouped[$label]['items'][] = $row;
+	}
+	ksort($grouped, SORT_NATURAL | SORT_FLAG_CASE);
+	$byClass = array_values($grouped);
+}
+?>
+<?php if (empty($courses) && empty($byClass)): ?>
 	<p class="ok"><strong>Every Manage Course period was placed.</strong> Nothing is waiting in the parking lot.</p>
 <?php else: ?>
-	<h2>Courses that missed a slot</h2>
-	<table class="grid">
-		<thead>
-			<tr>
-				<th>Level</th>
-				<th>Class</th>
-				<th>Course</th>
-				<th>Teacher</th>
-				<th>Needed</th>
-				<th>Placed</th>
-				<th>Missed</th>
-				<th>Where it can still go</th>
-			</tr>
-		</thead>
-		<tbody>
-		<?php foreach ($courses as $row): ?>
-			<tr>
-				<td><?= esc($row['level'] ?? ''); ?></td>
-				<td><?= esc($row['class'] ?? ''); ?></td>
-				<td><?= esc($row['course'] ?? ''); ?></td>
-				<td><?= esc($row['teacher'] ?? ''); ?></td>
-				<td><?= (int) ($row['needed'] ?? 0); ?></td>
-				<td><?= (int) ($row['placed'] ?? 0); ?></td>
-				<td class="warn"><?= (int) ($row['missed'] ?? 0); ?></td>
-				<td>
-					<?php if (!empty($row['suggestions'])): ?>
-						<?= esc(implode('; ', $row['suggestions'])); ?>
-					<?php else: ?>
-						<span class="warn">No legal empty slot — keep parked (do not overlap).</span>
-					<?php endif; ?>
-					<div class="small"><?= esc($row['reason'] ?? ''); ?></div>
-				</td>
-			</tr>
-		<?php endforeach; ?>
-		</tbody>
-	</table>
+	<h2>Unplaced lessons by class</h2>
+	<?php foreach ($byClass as $group): ?>
+		<h3><?= esc($group['class'] ?? 'Class'); ?>
+			<span class="small"> — <?= (int) ($group['missed'] ?? 0); ?> period(s) parked
+			<?php if (!empty($group['level'])): ?> · <?= esc($group['level']); ?><?php endif; ?></span>
+		</h3>
+		<table class="grid">
+			<thead>
+				<tr>
+					<th>Lesson</th>
+					<th>Teacher</th>
+					<th>Needed</th>
+					<th>Placed</th>
+					<th>Missed</th>
+					<th>Where it can still go</th>
+				</tr>
+			</thead>
+			<tbody>
+			<?php foreach (($group['items'] ?? []) as $row): ?>
+				<tr>
+					<td><?= esc($row['course'] ?? ''); ?></td>
+					<td><?= esc($row['teacher'] ?? ''); ?></td>
+					<td><?= (int) ($row['needed'] ?? 0); ?></td>
+					<td><?= (int) ($row['placed'] ?? 0); ?></td>
+					<td class="warn"><?= (int) ($row['missed'] ?? 0); ?></td>
+					<td>
+						<?php if (!empty($row['suggestions'])): ?>
+							<?= esc(implode('; ', $row['suggestions'])); ?>
+						<?php else: ?>
+							<span class="warn">No legal empty slot — keep parked (do not overlap).</span>
+						<?php endif; ?>
+						<?php if (!empty($row['reason'])): ?>
+							<div class="small"><?= esc($row['reason']); ?></div>
+						<?php endif; ?>
+					</td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+	<?php endforeach; ?>
 
 	<h2>Teachers with parked periods</h2>
 	<table class="grid">

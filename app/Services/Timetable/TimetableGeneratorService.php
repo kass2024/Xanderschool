@@ -2,6 +2,8 @@
 
 namespace App\Services\Timetable;
 
+use App\Libraries\TimetableClassLabel;
+
 /**
  * Constraint-based timetable generator (aSc-style weekly grid).
  *
@@ -290,8 +292,13 @@ class TimetableGeneratorService
 					'hours' => (int) $need['hours'],
 				]);
 			} else {
-				$this->warnings[] = 'Could not place ' . ($need['assignment']['course_title'] ?? 'course')
-					. ' (' . ($need['assignment']['class_title'] ?? '') . ') — ' . $blockSize . ' period(s)';
+				$assignment = $need['assignment'];
+				$classLabel = TimetableClassLabel::fromRow($assignment);
+				$teacher = trim((string) ($assignment['teacher_name'] ?? ''));
+				$this->warnings[] = 'Could not place ' . ($assignment['course_title'] ?? 'course')
+					. ' in ' . ($classLabel !== '' ? $classLabel : 'class')
+					. ($teacher !== '' ? ' (' . $teacher . ')' : '')
+					. ' — ' . $blockSize . ' period(s)';
 			}
 		}
 

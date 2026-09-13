@@ -46,7 +46,7 @@ class TimetableClassLabel
 			$row['level_name'] ?? $row['level'] ?? '',
 			$row['class_title'] ?? $row['title'] ?? '',
 			$row['dept_code'] ?? $row['code'] ?? '',
-			$row['dept_name'] ?? $row['department_name'] ?? ''
+			$row['dept_name'] ?? $row['dept_title'] ?? $row['department_name'] ?? ''
 		);
 	}
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services\Timetable;
 
+use App\Libraries\TimetableClassLabel;
 use App\Models\TimetableSchemaModel;
 
 /**
@@ -69,9 +70,11 @@ class TimetableConflictService
 
 		if ($staffId > 0) {
 			$staffRows = $db->table('timetable_entries te')
-				->select('te.id, te.slot_id, c.title AS course_title, cl.title AS class_title')
+				->select('te.id, te.slot_id, c.title AS course_title, cl.title AS class_title, l.title AS level_name, d.code AS dept_code, d.title AS dept_title')
 				->join('courses c', 'c.id = te.course_id', 'left')
 				->join('classes cl', 'cl.id = te.class_id', 'left')
+				->join('levels l', 'l.id = cl.level', 'left')
+				->join('departments d', 'd.id = cl.department', 'left')
 				->where('te.schedule_id', $scheduleId)
 				->where('te.staff_id', $staffId)
 				->where('te.day_of_week', $day)
@@ -85,12 +88,13 @@ class TimetableConflictService
 			foreach ($staffRows as $row) {
 				$otherSlotId = (int) ($row['slot_id'] ?? 0);
 				if ($otherSlotId === $slotId) {
-					$conflicts[] = [
-						'type' => 'teacher',
-						'message' => 'Teacher is already teaching ' . ($row['course_title'] ?? 'a lesson')
-							. ' (' . ($row['class_title'] ?? '') . ') in this period.',
-						'entry_id' => (int) $row['id'],
-					];
+						$conflicts[] = [
+							'type' => 'teacher',
+							'message' => 'Teacher is already teaching ' . ($row['course_title'] ?? 'a lesson')
+								. ' in ' . $this->classLabel($row) . ' in this period.',
+							'entry_id' => (int) $row['id'],
+							'class' => $this->classLabel($row),
+						];
 					continue;
 				}
 				$otherSlot = $db->table('timetable_slots')->where('id', $otherSlotId)->get(1)->getRowArray();
@@ -102,8 +106,10 @@ class TimetableConflictService
 				if ($newStart < $oEnd && $oStart < $newEnd) {
 					$conflicts[] = [
 						'type' => 'teacher_time',
-						'message' => 'Teacher time overlap with ' . ($row['course_title'] ?? 'another class') . '.',
+						'message' => 'Teacher time overlap with ' . ($row['course_title'] ?? 'another class')
+							. ' in ' . $this->classLabel($row) . '.',
 						'entry_id' => (int) $row['id'],
+						'class' => $this->classLabel($row),
 					];
 				}
 			}
@@ -117,9 +123,11 @@ class TimetableConflictService
 	{
 		$db = \Config\Database::connect();
 		$entries = $db->table('timetable_entries te')
-			->select('te.*, c.title AS course_title, cl.title AS class_title, ts.start_time, ts.end_time, ts.label AS slot_label, CONCAT(s.fname, " ", s.lname) AS teacher_name')
+			->select('te.*, c.title AS course_title, cl.title AS class_title, l.title AS level_name, d.code AS dept_code, d.title AS dept_title, ts.start_time, ts.end_time, ts.label AS slot_label, CONCAT(s.fname, " ", s.lname) AS teacher_name')
 			->join('courses c', 'c.id = te.course_id', 'left')
 			->join('classes cl', 'cl.id = te.class_id', 'left')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
 			->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
 			->join('staffs s', 's.id = te.staff_id', 'left')
 			->where('te.schedule_id', $scheduleId)
@@ -140,6 +148,7 @@ class TimetableConflictService
 			$classId = (int) ($entry['class_id'] ?? 0);
 			$staffId = (int) ($entry['staff_id'] ?? 0);
 			$when = $this->whenLabel($day, $entry);
+			$className = $this->classLabel($entry);
 
 			$ck = $classId . ':' . $day . ':' . $slotId;
 			if ($classId > 0) {
@@ -151,16 +160,16 @@ class TimetableConflictService
 						'entry_id' => $id,
 						'other_id' => (int) $other['id'],
 						'class_id' => $classId,
+						'class' => $className,
 						'day' => $day,
 						'slot_id' => $slotId,
 						'message' => $sameTeacher
-							? trim($entry['class_title'] ?? 'Class') . ' has two lessons on ' . $when
+							? $className . ' has two lessons on ' . $when
 								. ': ' . ($other['course_title'] ?? 'lesson') . ' and ' . ($entry['course_title'] ?? 'lesson') . '.'
-							: 'Two teachers in the same class on ' . $when . ' — '
+							: 'Two teachers in ' . $className . ' on ' . $when . ' — '
 								. trim((string) ($other['teacher_name'] ?? 'Teacher')) . ' (' . ($other['course_title'] ?? '') . ')'
-								. ' and ' . trim((string) ($entry['teacher_name'] ?? 'Teacher')) . ' (' . ($entry['course_title'] ?? '') . ')'
-								. ' in ' . ($entry['class_title'] ?? 'class') . '.',
-						'fix' => 'Open the class timetable, drag one of these two lessons to a free period so only one teacher is in the room.',
+								. ' and ' . trim((string) ($entry['teacher_name'] ?? 'Teacher')) . ' (' . ($entry['course_title'] ?? '') . ').',
+						'fix' => 'Open the ' . $className . ' timetable, drag one of these two lessons to a free period so only one teacher is in the room.',
 					];
 				} else {
 					$classMap[$ck] = $entry;
@@ -180,11 +189,13 @@ class TimetableConflictService
 							'entry_id' => $id,
 							'other_id' => (int) $other['id'],
 							'class_id' => $classId,
+							'class' => $className,
+							'other_class' => (string) ($other['class'] ?? ''),
 							'day' => $day,
 							'slot_id' => $slotId,
 							'message' => trim((string) ($entry['teacher_name'] ?? 'Teacher')) . ' is double-booked on ' . $when
-								. ': ' . ($other['course'] ?? 'lesson') . ' (' . ($other['class'] ?? '') . ')'
-								. ' and ' . ($entry['course_title'] ?? 'lesson') . ' (' . ($entry['class_title'] ?? '') . ').',
+								. ': ' . ($other['course'] ?? 'lesson') . ' in ' . ($other['class'] ?: 'a class')
+								. ' and ' . ($entry['course_title'] ?? 'lesson') . ' in ' . $className . '.',
 							'fix' => 'Move one of this teacher’s lessons to another free period on their teacher timetable.',
 						];
 					}
@@ -195,7 +206,7 @@ class TimetableConflictService
 					'start' => $range['start'],
 					'end' => $range['end'],
 					'course' => $entry['course_title'] ?? '',
-					'class' => $entry['class_title'] ?? '',
+					'class' => $className,
 				];
 			}
 		}
@@ -232,6 +243,13 @@ class TimetableConflictService
 			'teacher' => $counts['teacher'],
 			'items' => $items,
 		];
+	}
+
+	/** @param array<string,mixed> $row */
+	private function classLabel(array $row): string
+	{
+		$label = TimetableClassLabel::fromRow($row);
+		return $label !== '' ? $label : 'Class';
 	}
 
 	private function whenLabel(int $day, array $entry): string

@@ -90,6 +90,7 @@ class TimetableUnplacedReport
 			);
 			$courseRow = [
 				'level' => TimetableTrack::generationPhaseLabel(TimetableTrack::generationPhaseKey($track)),
+				'class_id' => $classId,
 				'class' => TimetableClassLabel::fromRow($row) ?: (string) ($row['class_title'] ?? 'Class'),
 				'course' => (string) ($row['course_title'] ?? 'Course'),
 				'teacher' => trim((string) ($row['teacher_name'] ?? '')) ?: 'Unassigned',
@@ -118,11 +119,35 @@ class TimetableUnplacedReport
 		}
 
 		usort($courses, static function (array $a, array $b): int {
-			return ($b['missed'] <=> $a['missed']) ?: strcasecmp($a['class'], $b['class']);
+			return strcasecmp($a['class'], $b['class']) ?: ($b['missed'] <=> $a['missed']);
 		});
 		$teacherList = array_values($teachers);
 		usort($teacherList, static function (array $a, array $b): int {
 			return ($b['missed'] <=> $a['missed']) ?: strcasecmp($a['teacher'], $b['teacher']);
+		});
+
+		$byClass = [];
+		foreach ($courses as $courseRow) {
+			$label = trim((string) ($courseRow['class'] ?? '')) ?: 'Class';
+			$cid = (int) ($courseRow['class_id'] ?? 0);
+			$key = $cid > 0 ? ('id:' . $cid) : ('n:' . strtolower($label));
+			if (!isset($byClass[$key])) {
+				$byClass[$key] = [
+					'class' => $label,
+					'class_id' => $cid,
+					'level' => (string) ($courseRow['level'] ?? ''),
+					'missed' => 0,
+					'courses' => 0,
+					'items' => [],
+				];
+			}
+			$byClass[$key]['missed'] += (int) ($courseRow['missed'] ?? 0);
+			$byClass[$key]['courses']++;
+			$byClass[$key]['items'][] = $courseRow;
+		}
+		$classList = array_values($byClass);
+		usort($classList, static function (array $a, array $b): int {
+			return strcasecmp($a['class'], $b['class']);
 		});
 
 		return [
@@ -133,9 +158,11 @@ class TimetableUnplacedReport
 			'generated_at' => date('Y-m-d H:i'),
 			'missed_courses' => count($courses),
 			'missed_teachers' => count($teacherList),
+			'missed_classes' => count($classList),
 			'missed_periods' => $missedPeriods,
 			'courses' => $courses,
 			'teachers' => $teacherList,
+			'by_class' => $classList,
 		];
 	}
 

@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/timetable.css'); ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/timetable.css'); ?>?v=unplaced-class-1">
 
 <?php
 $hasSchedule = !empty($schedule);
@@ -367,7 +367,38 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		});
 	}
 
-	function renderCollisionReport(report) {
+	function groupByClass(items, classKey) {
+		var groups = {};
+		var order = [];
+		(items || []).forEach(function (item) {
+			var name = String((item && (item[classKey] || item.class)) || '').trim() || 'Class not identified';
+			if (!groups[name]) {
+				groups[name] = [];
+				order.push(name);
+			}
+			groups[name].push(item);
+		});
+		order.sort(function (a, b) { return a.localeCompare(b); });
+		return order.map(function (name) { return { class: name, items: groups[name] }; });
+	}
+
+	function renderClassGroups(groups, renderItems) {
+		var html = '<div class="tt-scroll-box">';
+		(groups || []).forEach(function (group) {
+			var count = (group.items || []).length;
+			html += '<div class="tt-class-group">'
+				+ '<div class="tt-class-group-title">' + esc(group.class || 'Class')
+				+ ' <span class="tt-class-group-count">' + count + ' lesson' + (count === 1 ? '' : 's')
+				+ (group.missed ? ' · ' + group.missed + ' parked' : '')
+				+ '</span></div>'
+				+ renderItems(group.items || [])
+				+ '</div>';
+		});
+		html += '</div>';
+		return html;
+	}
+
+	function renderCollisionReport(report, hasUnplaced) {
 		if (!report) return '';
 		var html = '';
 		var total = parseInt(report.total, 10) || 0;
@@ -379,18 +410,21 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 				+ (report.teacher ? (report.teacher + ' teacher double-book. ') : '')
 				+ (report.class ? (report.class + ' class double-lesson.') : '')
 				+ '</div>';
-			html += '<ol class="tt-collision-list mb-2 pl-3">';
-			(report.items || []).slice(0, 30).forEach(function (item) {
-				html += '<li><div>' + esc(item.message || '') + '</div>'
-					+ (item.fix ? '<div class="text-muted">Fix: ' + esc(item.fix) + '</div>' : '')
-					+ '</li>';
+			html += renderClassGroups(groupByClass(report.items || [], 'class'), function (items) {
+				var inner = '<ol class="tt-collision-list mb-0 pl-3">';
+				items.forEach(function (item) {
+					inner += '<li><div>' + esc(item.message || '') + '</div>'
+						+ (item.fix ? '<div class="text-muted">Fix: ' + esc(item.fix) + '</div>' : '')
+						+ '</li>';
+				});
+				return inner + '</ol>';
 			});
-			html += '</ol>';
 		}
-		if (report.warnings && report.warnings.length) {
-			html += '<div class="small text-warning mb-1">Unplaced lessons</div><ul class="pl-3 mb-2">';
-			report.warnings.slice(0, 12).forEach(function (w) { html += '<li>' + esc(w) + '</li>'; });
-			html += '</ul>';
+		if (!hasUnplaced && report.warnings && report.warnings.length) {
+			html += '<div class="small font-weight-bold text-warning mb-1">Unplaced lessons</div>';
+			html += '<div class="tt-scroll-box"><ul class="pl-3 mb-0">';
+			report.warnings.forEach(function (w) { html += '<li>' + esc(w) + '</li>'; });
+			html += '</ul></div>';
 		}
 		return html;
 	}
@@ -404,18 +438,29 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		} else {
 			html += '<div class="alert alert-warning py-2 mb-2"><strong>' + missed + ' period' + (missed === 1 ? '' : 's')
 				+ ' could not be placed without a collision.</strong> '
+				+ (function () {
+					var classCount = parseInt(report.missed_classes, 10);
+					if (!classCount) classCount = groupByClass(report.courses || [], 'class').length;
+					return classCount + ' class' + (classCount === 1 ? '' : 'es') + ', ';
+				})()
 				+ (report.missed_courses || 0) + ' course' + ((report.missed_courses || 0) === 1 ? '' : 's') + ', '
 				+ (report.missed_teachers || 0) + ' teacher' + ((report.missed_teachers || 0) === 1 ? '' : 's')
-				+ '. They stay parked — download the PDF for free slots.</div>';
-			html += '<ul class="pl-3 mb-2 small">';
-			(report.courses || []).slice(0, 12).forEach(function (row) {
-				html += '<li><strong>' + esc(row.class || '') + '</strong> — ' + esc(row.course || '')
-					+ ' (' + esc(row.teacher || '') + '): ' + (row.placed || 0) + '/' + (row.needed || 0)
-					+ ' placed'
-					+ (row.suggestions && row.suggestions.length ? '. Try: ' + esc(row.suggestions.join('; ')) : '. No legal empty slot.')
-					+ '</li>';
+				+ '. Grouped by class below — they stay parked.</div>';
+			var groups = report.by_class && report.by_class.length
+				? report.by_class
+				: groupByClass(report.courses || [], 'class');
+			html += renderClassGroups(groups, function (items) {
+				var inner = '<ul class="pl-3 mb-0 small">';
+				items.forEach(function (row) {
+					inner += '<li><strong>' + esc(row.course || 'Lesson') + '</strong>'
+						+ ' with ' + esc(row.teacher || 'Unassigned')
+						+ ' — ' + (row.placed || 0) + '/' + (row.needed || 0) + ' placed'
+						+ ', <strong>' + (row.missed || 0) + ' parked</strong>'
+						+ (row.suggestions && row.suggestions.length ? '. Try: ' + esc(row.suggestions.join('; ')) : '. No legal empty slot.')
+						+ '</li>';
+				});
+				return inner + '</ul>';
 			});
-			html += '</ul>';
 		}
 		var href = unplacedPdfBase + (jobId ? '/' + encodeURIComponent(jobId) : '');
 		html += '<a class="btn btn-sm btn-warning mb-2" href="' + href + '" target="_blank">'
@@ -516,7 +561,8 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			setGenerating(false);
 			html = '<div class="progress mb-2" style="height:8px;"><div class="progress-bar bg-success" style="width:100%;"></div></div>'
 				+ '<div class="alert alert-success py-2 mb-2">' + esc(job.message || 'Timetable generated.') + '</div>';
-			html += renderCollisionReport(job.collision_report);
+			var hasUnplaced = !!(job.unplaced_report && ((job.unplaced_report.courses && job.unplaced_report.courses.length) || (parseInt(job.unplaced_report.missed_periods, 10) || 0) > 0));
+			html += renderCollisionReport(job.collision_report, hasUnplaced);
 			html += renderUnplacedReport(job.unplaced_report, job.id || job.job_id, job.unplaced_pdf);
 			if (job.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-2"><strong>AI:</strong> ' + esc(job.ai_tip).replace(/\n/g, '<br>') + '</div>';
 			html += '<button type="button" class="btn btn-sm btn-outline-primary" id="btnRefreshPreview">Refresh preview</button>';
@@ -666,7 +712,8 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	if (activeJob && activeJob.id && (activeJob.status === 'queued' || activeJob.status === 'running')) {
 		renderJobState(activeJob);
 		pollJob(activeJob.id);
-	} else if (lastJob && lastJob.collision_report) {
+	} else if (lastJob && (lastJob.collision_report || lastJob.unplaced_report)) {
+		if (!lastJob.status) lastJob.status = 'done';
 		renderJobState(lastJob);
 	}
 })();
