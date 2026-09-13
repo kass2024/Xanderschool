@@ -574,7 +574,7 @@ class AttendanceScanService
 		];
 	}
 
-	private const STAFF_OUT_AFTER_IN_SECONDS = 300;
+	public const STAFF_OUT_AFTER_IN_SECONDS = 300;
 
 	/**
 	 * Staff face/card clock. Same rule as the web staff scanner:
@@ -688,13 +688,85 @@ class AttendanceScanService
 	}
 
 	/**
+	 * Same IN/OUT gates as scanStaff(), without writing a record.
+	 * Used by the face kiosk and the gate tablet cache.
+	 *
+	 * @param object|null $attendance
+	 * @param array<string,mixed>|null $shift
+	 * @return array{status:string,already:bool,can_out:bool,message:string,time_in:int,time_out:int}
+	 */
+	public static function previewStaffClock($attendance, $shift, int $time = 0): array
+	{
+		$time = $time > 1000000000 ? $time : time();
+		$empty = [
+			'status' => '',
+			'already' => false,
+			'can_out' => false,
+			'message' => '',
+			'time_in' => 0,
+			'time_out' => 0,
+		];
+		if (!$attendance) {
+			return $empty;
+		}
+		$timeIn = (int) ($attendance->time_in ?? 0);
+		$timeOut = (int) ($attendance->time_out ?? 0);
+		if ($timeIn <= 0) {
+			return $empty;
+		}
+		if ($timeOut > 0) {
+			return [
+				'status' => 'OUT',
+				'already' => false,
+				'can_out' => false,
+				'message' => '',
+				'time_in' => $timeIn,
+				'time_out' => $timeOut,
+			];
+		}
+		$window = StaffShiftClock::windowFor($shift, $time);
+		if (($timeIn + self::STAFF_OUT_AFTER_IN_SECONDS) > $time) {
+			$wait = $timeIn + self::STAFF_OUT_AFTER_IN_SECONDS - $time;
+			$mins = max(1, (int) ceil($wait / 60));
+			return [
+				'status' => 'IN',
+				'already' => true,
+				'can_out' => false,
+				'message' => 'Already checked IN — wait ' . $mins . ' min to check OUT',
+				'time_in' => $timeIn,
+				'time_out' => 0,
+			];
+		}
+		if (!empty($window['working']) && !empty($window['end_ts'])
+			&& $time < ((int) $window['end_ts'] - StaffShiftClock::GRACE_SECONDS)) {
+			$mins = (int) round((((int) $window['end_ts']) - $time) / 60);
+			return [
+				'status' => 'IN',
+				'already' => true,
+				'can_out' => false,
+				'message' => 'Checkout not allowed before shift end (' . ($window['end_label'] ?? '') . ') — ' . $mins . ' min remaining',
+				'time_in' => $timeIn,
+				'time_out' => 0,
+			];
+		}
+		return [
+			'status' => 'IN',
+			'already' => false,
+			'can_out' => true,
+			'message' => '',
+			'time_in' => $timeIn,
+			'time_out' => 0,
+		];
+	}
+
+	/**
 	 * Read today's staff clock without writing a new IN/OUT.
 	 *
 	 * @return array<string,mixed>
 	 */
 	public static function staffTodayClock(int $schoolId, int $staffId): array
 	{
-		$empty = ['success' => 0, 'status' => '', 'already' => false, 'person' => ['name' => '']];
+		$empty = ['success' => 0, 'status' => '', 'already' => false, 'can_out' => false, 'person' => ['name' => '']];
 		if ($schoolId <= 0 || $staffId <= 0) {
 			return $empty;
 		}
@@ -725,17 +797,22 @@ class AttendanceScanService
 			->orderBy('id', 'ASC')
 			->get()
 			->getRow();
-		$person = self::staffPayload($staff);
-		if (!$attendance) {
-			return ['success' => 1, 'status' => '', 'already' => false, 'person' => $person];
+		$shift = null;
+		if (!empty($staff->shift_id) && (int) $staff->shift_id > 0) {
+			$shift = [
+				'title' => (string) ($staff->shift_title ?? ''),
+				'options' => $staff->shift_options ?? '[]',
+			];
 		}
-		$outTs = (int) ($attendance->time_out ?? 0);
-		if ($outTs > 0) {
-			return ['success' => 1, 'status' => 'OUT', 'already' => false, 'person' => $person];
-		}
-		$timeIn = (int) $attendance->time_in;
-		$waiting = ($timeIn + self::STAFF_OUT_AFTER_IN_SECONDS) > $time;
-		return ['success' => 1, 'status' => 'IN', 'already' => $waiting, 'person' => $person];
+		$preview = self::previewStaffClock($attendance, $shift, $time);
+		return [
+			'success' => 1,
+			'status' => $preview['status'],
+			'already' => !empty($preview['already']),
+			'can_out' => !empty($preview['can_out']),
+			'message' => (string) ($preview['message'] ?? ''),
+			'person' => self::staffPayload($staff),
+		];
 	}
 
 	/**
@@ -768,6 +845,7 @@ class AttendanceScanService
 			'time' => date('H:i', $time),
 			'message' => $message,
 			'already' => $already,
+			'can_out' => false,
 			'in_count' => $inCount,
 			'verdict' => $verdict,
 			'shift' => [

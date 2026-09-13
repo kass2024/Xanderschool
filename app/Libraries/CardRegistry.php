@@ -94,34 +94,50 @@ class CardRegistry
 		$db = \Config\Database::connect();
 		$out = [];
 
-		$insideStaff = [];
+		$clocks = [];
 		if ($db->tableExists('attendance_records')) {
-			$open = $db->table('attendance_records')
-				->select('user_id')
+			$attRows = $db->table('attendance_records')
+				->select('user_id, time_in, time_out')
 				->whereIn('school_id', $scopeSchoolIds)
 				->where('user_type', 1)
 				->where('time_in >=', strtotime('today'))
-				->where('time_out', 0)
+				->where('time_in <=', strtotime('tomorrow') - 1)
+				->orderBy('time_in', 'ASC')
+				->orderBy('id', 'ASC')
 				->get()->getResultArray();
-			foreach ($open as $row) {
-				$insideStaff[(int) ($row['user_id'] ?? 0)] = true;
+			foreach ($attRows as $row) {
+				$sid = (int) ($row['user_id'] ?? 0);
+				if ($sid > 0 && !isset($clocks[$sid])) {
+					$clocks[$sid] = $row;
+				}
 			}
 		}
 
 		if ($db->fieldExists('card', 'staffs')) {
 			$rows = $db->table('staffs s')
-				->select('s.id, s.fname, s.lname, s.card, s.photo, p.title as post_title')
+				->select('s.id, s.fname, s.lname, s.card, s.photo, s.shift_id, p.title as post_title, sh.title as shift_title, sh.options as shift_options')
 				->join('posts p', 'p.id = s.post', 'left')
+				->join('shifts sh', 'sh.id = s.shift_id', 'left')
 				->whereIn('s.school_id', $scopeSchoolIds)
 				->where('s.status !=', 0)
 				->where("TRIM(COALESCE(s.card, '')) <> ''", null, false)
 				->get()->getResultArray();
+			$now = time();
 			foreach ($rows as $r) {
 				$card = strtoupper(trim((string) ($r['card'] ?? '')));
 				if ($card === '') {
 					continue;
 				}
 				$staffId = (int) $r['id'];
+				$shift = null;
+				if (!empty($r['shift_id']) && (int) $r['shift_id'] > 0) {
+					$shift = [
+						'title' => (string) ($r['shift_title'] ?? ''),
+						'options' => $r['shift_options'] ?? '[]',
+					];
+				}
+				$att = isset($clocks[$staffId]) ? (object) $clocks[$staffId] : null;
+				$preview = AttendanceScanService::previewStaffClock($att, $shift, $now);
 				$out[] = [
 					'kind' => 'staff',
 					'id' => $staffId,
@@ -129,7 +145,10 @@ class CardRegistry
 					'post' => (string) ($r['post_title'] ?? ''),
 					'card' => $card,
 					'card_variants' => card_uid_lookup_variants($card),
-					'last_status' => !empty($insideStaff[$staffId]) ? 'IN' : '',
+					'last_status' => (string) ($preview['status'] ?? ''),
+					'can_out' => !empty($preview['can_out']) ? 1 : 0,
+					'already' => !empty($preview['already']) ? 1 : 0,
+					'clock_message' => (string) ($preview['message'] ?? ''),
 					'photo' => profile_photo_url($r['photo'] ?? null),
 				];
 			}
