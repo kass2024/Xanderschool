@@ -111,7 +111,7 @@ class TimetableTrack
 		return $row ? self::resolveFromRow($row) : self::ALL;
 	}
 
-	/** Nursery / primary / high school (O/A/RTB/Special). */
+	/** Nursery / primary / high school (O/A/RTB/Special). Shared "all" bells are not a class level. */
 	public static function generationPhaseKey(string $track): string
 	{
 		$track = self::normalize($track);
@@ -122,6 +122,15 @@ class TimetableTrack
 			return 'primary';
 		}
 		return 'high_school';
+	}
+
+	/** Classify a class: nursery, primary, or high school (every remaining class). */
+	public static function generationPhaseForClassId(int $classId): string
+	{
+		if ($classId <= 0) {
+			return 'high_school';
+		}
+		return self::generationPhaseKey(self::resolveForClassId($classId));
 	}
 
 	/** @return list<string> */
@@ -167,7 +176,7 @@ class TimetableTrack
 			case 'primary':
 				return 'P1 – P6';
 			case 'high_school':
-				return 'O Level · A Level · RTB · Special';
+				return 'All remaining classes (O Level · A Level · TVET · Special)';
 			default:
 				return 'Nursery → Primary → High school';
 		}
