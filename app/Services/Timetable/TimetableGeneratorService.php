@@ -405,19 +405,16 @@ class TimetableGeneratorService
 
 	private function criteriaAllowsSlot(array $row, int $day, int $slotId): bool
 	{
-		if ($this->secondaryCriteria === null || !SecondaryTimetableCriteria::isSecondaryTrack($row)) {
+		if ($this->secondaryCriteria === null) {
 			return true;
 		}
 		$times = $this->slotTimes[$slotId] ?? null;
-		$start = $times['start'] ?? null;
-		$end = $times['end'] ?? null;
-		if ($this->secondaryCriteria->clinicalBlocksClass($row, $day, $start, $end)) {
-			return false;
-		}
-		if (!$this->secondaryCriteria->teacherAllows($row, $day, $start, $end)) {
-			return false;
-		}
-		return true;
+		return $this->secondaryCriteria->slotAllowed(
+			$row,
+			$day,
+			$times['start'] ?? null,
+			$times['end'] ?? null
+		);
 	}
 
 	/** @return list<array<string,mixed>>|null */
@@ -864,10 +861,11 @@ class TimetableGeneratorService
 
 	private function requiresSpreadAcrossDays(array $row): bool
 	{
-		if (!$this->isPrimaryOrNursery($row)) {
-			return false;
+		// Document: 2-period subjects stay as two singles; PE at most one period per day.
+		if ($this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''))) {
+			return true;
 		}
-		return !$this->isMathematicsCourse((string) ($row['course_title'] ?? ''));
+		return self::weeklyHoursFromCourse($row) === 2;
 	}
 
 	/** Secondary classes with 3+ weekly periods: doubles + non-adjacent days. */

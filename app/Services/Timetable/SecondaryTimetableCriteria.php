@@ -39,7 +39,7 @@ class SecondaryTimetableCriteria
 	public function __construct()
 	{
 		$this->teacherWindows = $this->defaultTeacherWindows();
-		$this->anpMorningTeachers = ['rinea', 'linear', 'yaliette', 'yaliet', 'valiette', 'valiet', 'margueritte', 'marguerite'];
+		$this->anpMorningTeachers = ['rinea', 'linear', 'yaliette', 'yaliet', 'valiette', 'valiet', 'varlette', 'varliette', 'margueritte', 'marguerite'];
 		$this->blockedDaysByName = [
 			'alice' => [0], // Alice must not teach on Monday
 		];
@@ -199,13 +199,24 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
-	 * Hard: teacher named windows + ANP Tue–Thu for named ANP teachers.
+	 * Hard slot gate used by generation and parking for every track.
+	 * Custom teacher days/windows apply school-wide; document windows, Alice,
+	 * clinical, and ANP class mornings apply to high school only.
+	 */
+	public function slotAllowed(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
+	{
+		if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
+			return false;
+		}
+		return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+	}
+
+	/**
+	 * Hard: saved teacher windows/days (all tracks) + document named windows (high school).
+	 * ANP *classes* only on Tuesday–Thursday mornings; named ANP teachers keep their own windows.
 	 */
 	public function teacherAllows(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
-		if (!self::isSecondaryTrack($row)) {
-			return true;
-		}
 		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
@@ -233,21 +244,24 @@ class SecondaryTimetableCriteria
 			}
 		}
 
+		if (!self::isSecondaryTrack($row)) {
+			return true;
+		}
+
+		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+		if ($meta && ($meta['dept'] ?? '') === 'ANP') {
+			// ANP teaching is required Tuesday–Thursday, mornings only.
+			if (!in_array($day, [1, 2, 3], true) || !$this->isMorningSlotByTimes($slotStart, $slotEnd)) {
+				return false;
+			}
+		}
+
 		if ($teacher === '') {
 			return true;
 		}
 		foreach ($this->blockedDaysByName as $needle => $blocked) {
 			if ($needle !== '' && strpos($teacher, $needle) !== false && in_array($day, $blocked, true)) {
 				return false;
-			}
-		}
-
-		foreach ($this->anpMorningTeachers as $needle) {
-			if (strpos($teacher, $needle) !== false) {
-				// ANP teaching required Tuesday–Thursday only.
-				if (!in_array($day, [1, 2, 3], true)) {
-					return false;
-				}
 			}
 		}
 
@@ -614,6 +628,16 @@ class SecondaryTimetableCriteria
 	private function defaultTeacherWindows(): array
 	{
 		// Day: Mon=0 … Fri=4. Times in minutes from midnight.
+		$vallette = [
+			['day' => 0, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
+			['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
+			['day' => 3, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
+			['day' => 4, 'start' => 8 * 60 + 30, 'end' => 12 * 60, 'scope' => null],
+		];
+		$linear = [
+			['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
+			['day' => 4, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
+		];
 		return [
 			'innocent' => [
 				['day' => 0, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null],
@@ -627,24 +651,21 @@ class SecondaryTimetableCriteria
 			'olivier' => [
 				['day' => 4, 'start' => 7 * 60, 'end' => 10 * 60, 'scope' => null],
 			],
-			'varlette' => [
-				['day' => 0, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
-				['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
-				['day' => 3, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
-			],
-			'varliette' => [
-				['day' => 4, 'start' => 8 * 60 + 30, 'end' => 12 * 60, 'scope' => null],
-			],
+			'varlette' => $vallette,
+			'varliette' => $vallette,
+			'vallette' => $vallette,
+			'valiette' => $vallette,
+			'yaliette' => $vallette,
+			'yaliet' => $vallette,
+			'valiet' => $vallette,
 			'margueritte' => [
 				['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
 			],
 			'marguerite' => [
 				['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
 			],
-			'linear' => [
-				['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
-				['day' => 4, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
-			],
+			'linear' => $linear,
+			'rinea' => $linear,
 		];
 	}
 

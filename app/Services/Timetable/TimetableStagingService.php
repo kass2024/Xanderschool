@@ -607,10 +607,7 @@ class TimetableStagingService
 				if ($this->secondaryCriteria !== null) {
 					$start = (string) ($slot['start_time'] ?? '');
 					$end = (string) ($slot['end_time'] ?? '');
-					if ($this->secondaryCriteria->clinicalBlocksClass($meta, (int) $day, $start, $end)) {
-						continue;
-					}
-					if (!$this->secondaryCriteria->teacherAllows($meta, (int) $day, $start, $end)) {
+					if (!$this->secondaryCriteria->slotAllowed($meta, (int) $day, $start, $end)) {
 						continue;
 					}
 				}
@@ -669,13 +666,14 @@ class TimetableStagingService
 		$meta = $this->metaForEntry($entry);
 		$hours = TimetableGeneratorService::weeklyHoursFromCourse($meta);
 		$track = strtolower(trim((string) ($meta['track_key'] ?? '')));
-		$secondaryMulti = !in_array($track, ['primary', 'nursery'], true) && $hours >= 3;
+		$useDoubles = $hours >= 3;
 		$peSport = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''));
+		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($meta));
 
 		$score = $blockerCount * 1000;
 		$sameDay = $this->subjectDayCountForState($state, $entry, $day);
 
-		if ($peSport && $slotCount > 0) {
+		if ($lastHour && $slotCount > 0) {
 			// Strongly prefer last teaching periods of the day.
 			$score += ($slotCount - 1 - $slotIndex) * 800;
 			$lateStart = max(0, $slotCount - 3);
@@ -687,7 +685,7 @@ class TimetableStagingService
 			$score += 900;
 		}
 
-		if ($secondaryMulti) {
+		if ($useDoubles) {
 			// Complete a double when this subject already has one period today.
 			if ($sameDay === 1) {
 				$score -= 900;

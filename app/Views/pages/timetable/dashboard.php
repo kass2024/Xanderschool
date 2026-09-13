@@ -166,7 +166,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">Document rules (combined classes, Alice not Monday, teacher windows, PE last hour, mornings) are always applied. Add extra rules below.</p>
+						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Nursery and primary use the same course-period fill, no-collision parking, and any extra rules you add below.</p>
 						<form id="ttCriteriaForm" class="tt-criteria-form">
 							<div class="form-row">
 								<div class="col-md-4 mb-2">
@@ -283,6 +283,9 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			<a href="<?= site_url('timetable/pdf_all_teachers'); ?>" class="btn btn-info">
 				<i class="fa fa-download"></i> All teacher / staff timetables (<?= (int) ($staff_count ?? 0); ?>)
 			</a>
+			<a href="<?= site_url('timetable/pdf_unplaced'); ?>" class="btn btn-warning">
+				<i class="fa fa-file-pdf-o"></i> Unplaced periods summary
+			</a>
 			<span class="text-muted small">One PDF per export — landscape A4, full week grid with department/combination labels.</span>
 		</div>
 	</div>
@@ -356,6 +359,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	var pollFails = 0;
 	var saveCriteriaUrl = '<?= site_url('timetable/save_criteria'); ?>';
 	var deleteCriteriaUrl = '<?= site_url('timetable/delete_criteria'); ?>';
+	var unplacedPdfBase = '<?= site_url('timetable/pdf_unplaced'); ?>';
 
 	function esc(s) {
 		return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -388,6 +392,35 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			report.warnings.slice(0, 12).forEach(function (w) { html += '<li>' + esc(w) + '</li>'; });
 			html += '</ul>';
 		}
+		return html;
+	}
+
+	function renderUnplacedReport(report, jobId, pdfName) {
+		if (!report) return '';
+		var missed = parseInt(report.missed_periods, 10) || 0;
+		var html = '';
+		if (missed <= 0) {
+			html += '<div class="alert alert-success py-2 mb-2">Every Manage Course period was placed. Nothing is waiting in the parking lot.</div>';
+		} else {
+			html += '<div class="alert alert-warning py-2 mb-2"><strong>' + missed + ' period' + (missed === 1 ? '' : 's')
+				+ ' could not be placed without a collision.</strong> '
+				+ (report.missed_courses || 0) + ' course' + ((report.missed_courses || 0) === 1 ? '' : 's') + ', '
+				+ (report.missed_teachers || 0) + ' teacher' + ((report.missed_teachers || 0) === 1 ? '' : 's')
+				+ '. They stay parked — download the PDF for free slots.</div>';
+			html += '<ul class="pl-3 mb-2 small">';
+			(report.courses || []).slice(0, 12).forEach(function (row) {
+				html += '<li><strong>' + esc(row.class || '') + '</strong> — ' + esc(row.course || '')
+					+ ' (' + esc(row.teacher || '') + '): ' + (row.placed || 0) + '/' + (row.needed || 0)
+					+ ' placed'
+					+ (row.suggestions && row.suggestions.length ? '. Try: ' + esc(row.suggestions.join('; ')) : '. No legal empty slot.')
+					+ '</li>';
+			});
+			html += '</ul>';
+		}
+		var href = unplacedPdfBase + (jobId ? '/' + encodeURIComponent(jobId) : '');
+		html += '<a class="btn btn-sm btn-warning mb-2" href="' + href + '" target="_blank">'
+			+ '<i class="fa fa-file-pdf-o"></i> Download unplaced-periods PDF'
+			+ (pdfName ? '' : '') + '</a>';
 		return html;
 	}
 
@@ -484,6 +517,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			html = '<div class="progress mb-2" style="height:8px;"><div class="progress-bar bg-success" style="width:100%;"></div></div>'
 				+ '<div class="alert alert-success py-2 mb-2">' + esc(job.message || 'Timetable generated.') + '</div>';
 			html += renderCollisionReport(job.collision_report);
+			html += renderUnplacedReport(job.unplaced_report, job.id || job.job_id, job.unplaced_pdf);
 			if (job.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-2"><strong>AI:</strong> ' + esc(job.ai_tip).replace(/\n/g, '<br>') + '</div>';
 			html += '<button type="button" class="btn btn-sm btn-outline-primary" id="btnRefreshPreview">Refresh preview</button>';
 		} else if (status === 'failed') {

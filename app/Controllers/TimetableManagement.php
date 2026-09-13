@@ -13,6 +13,7 @@ use App\Services\Timetable\TimetableConflictService;
 use App\Services\Timetable\TimetableCriteriaStore;
 use App\Services\Timetable\TimetableGeneratorService;
 use App\Services\Timetable\TimetableStagingService;
+use App\Services\Timetable\TimetableUnplacedReport;
 
 class TimetableManagement extends Home
 {
@@ -1108,6 +1109,12 @@ class TimetableManagement extends Home
 		}
 
 		$collisionReport = $this->buildCollisionReport($scheduleId, $schoolId, $schema, $allWarnings, $geminiTip);
+		try {
+			$unplaced = $this->buildUnplacedSummary($scheduleId, $schoolId, $schema, $phaseAssignments, $phase, $year, $term);
+		} catch (\Throwable $e) {
+			log_message('error', 'Unplaced timetable summary failed: {msg}', ['msg' => $e->getMessage()]);
+			$unplaced = ['report' => ['missed_periods' => 0, 'missed_courses' => 0, 'missed_teachers' => 0, 'courses' => []], 'pdf' => null];
+		}
 
 		return [
 			'entries' => $allEntries,
@@ -1117,6 +1124,8 @@ class TimetableManagement extends Home
 			'phase' => $phase,
 			'ai_collision_tip' => $geminiTip,
 			'collision_report' => $collisionReport,
+			'unplaced_report' => $unplaced['report'],
+			'unplaced_pdf' => $unplaced['pdf'],
 		];
 	}
 
@@ -1672,18 +1681,22 @@ class TimetableManagement extends Home
 			}
 			$phaseLabel = TimetableTrack::generationPhaseLabel((string) ($result['phase'] ?? $phase));
 			$hits = (int) (($result['collision_report']['total'] ?? 0));
+			$missed = (int) (($result['unplaced_report']['missed_periods'] ?? 0));
 			$this->updateTimetableJob($jobId, [
 				'status' => 'done',
 				'success' => true,
 				'message' => $phaseLabel . ' generated — ' . count($result['entries']) . ' lesson slots'
 					. (!empty($result['staging_created']) ? ' (' . (int) $result['staging_created'] . ' in parking lot)' : '')
-					. ($hits > 0 ? '. ' . $hits . ' collision' . ($hits === 1 ? '' : 's') . ' still need a move.' : '. No teacher/class collisions.'),
+					. ($hits > 0 ? '. ' . $hits . ' collision' . ($hits === 1 ? '' : 's') . ' still need a move.' : '. No teacher/class collisions.')
+					. ($missed > 0 ? ' ' . $missed . ' period' . ($missed === 1 ? '' : 's') . ' parked — see PDF.' : ''),
 				'progress' => 100,
 				'stage' => 'done',
 				'phase' => $result['phase'] ?? $phase,
 				'warnings' => $result['warnings'],
 				'ai_tip' => $aiTip !== '' ? $aiTip : null,
 				'collision_report' => $result['collision_report'] ?? null,
+				'unplaced_report' => $result['unplaced_report'] ?? null,
+				'unplaced_pdf' => $result['unplaced_pdf'] ?? null,
 				'schedule_id' => (int) ($result['schedule_id'] ?? 0),
 				'staging_created' => (int) ($result['staging_created'] ?? 0),
 				'finished_at' => date('Y-m-d H:i:s'),
@@ -1821,6 +1834,47 @@ class TimetableManagement extends Home
 			}
 		}
 		return $this->outputTimetablePdf($sheets, 'All_Teacher_Timetables', 'All teacher / staff timetables');
+	}
+
+	public function pdf_unplaced($jobId = '')
+	{
+		$this->denyMenu('timetable_dashboard');
+		list($schoolId, , $schema) = $this->bootTimetable();
+		$jobId = preg_replace('/[^A-Za-z0-9_\-]/', '', (string) $jobId);
+		if ($jobId !== '') {
+			$job = $this->readTimetableJob($jobId);
+			if (is_array($job) && (int) ($job['school_id'] ?? 0) === $schoolId) {
+				$file = (string) ($job['unplaced_pdf'] ?? '');
+				$path = $this->unplacedPdfPath($file);
+				if ($file !== '' && is_file($path)) {
+					return $this->response->download($path, null)->setFileName($file);
+				}
+			}
+		}
+		$year = (int) ($this->data['academic_year'] ?? 0);
+		$term = (int) ($this->data['term'] ?? 1);
+		$db = \Config\Database::connect();
+		$schedule = $db->table('timetable_schedules')
+			->where('school_id', $schoolId)
+			->where('academic_year', $year)
+			->where('term', $term)
+			->orderBy('id', 'DESC')
+			->get(1)->getRowArray();
+		if (!$schedule) {
+			$this->session->setFlashdata('error', 'Generate a timetable first.');
+			return redirect()->to(site_url('timetable/dashboard'));
+		}
+		$built = $this->buildUnplacedSummary((int) $schedule['id'], $schoolId, $schema, $this->loadAssignments($schoolId, $year, $term), 'all', $year, $term);
+		if (!empty($built['pdf'])) {
+			$path = $this->unplacedPdfPath((string) $built['pdf']);
+			if (is_file($path)) {
+				return $this->response->download($path, null)->setFileName((string) $built['pdf']);
+			}
+		}
+		return $this->response
+			->setHeader('Content-Type', 'text/html; charset=UTF-8')
+			->setBody($this->renderUnplacedPdfHtml($built['full'] ?? $built['report'] ?? [], $year, $term)
+				. '<script>window.onload=function(){window.print();}</script>');
 	}
 
 	private function countAssignments(int $schoolId, int $year, int $term): int
@@ -2367,6 +2421,125 @@ class TimetableManagement extends Home
 		unset($row);
 
 		return $rows;
+	}
+
+	private function schoolNameForId(int $schoolId): string
+	{
+		$sessionSchool = (int) ($this->session->get('soma_school_id') ?? 0);
+		if ($sessionSchool === $schoolId && trim((string) ($this->data['school_name'] ?? '')) !== '') {
+			return (string) $this->data['school_name'];
+		}
+		$row = \Config\Database::connect()->table('schools')->select('name')->where('id', $schoolId)->get(1)->getRowArray();
+		return trim((string) ($row['name'] ?? '')) ?: 'School';
+	}
+
+	private function unplacedPdfDir(): string
+	{
+		$dir = WRITEPATH . 'uploads/timetables';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0755, true);
+		}
+		return $dir;
+	}
+
+	private function unplacedPdfPath(string $filename): string
+	{
+		$filename = basename($filename);
+		return $this->unplacedPdfDir() . DIRECTORY_SEPARATOR . $filename;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $assignments
+	 * @return array{report:array<string,mixed>,full:array<string,mixed>,pdf:?string}
+	 */
+	private function buildUnplacedSummary(
+		int $scheduleId,
+		int $schoolId,
+		TimetableSchemaModel $schema,
+		array $assignments,
+		string $phase,
+		int $year,
+		int $term
+	): array {
+		foreach ($assignments as $i => $row) {
+			if (empty($row['_track_key']) && empty($row['track_key'])) {
+				$assignments[$i]['_track_key'] = $schema->trackForClass($schoolId, (int) ($row['class_id'] ?? 0));
+			}
+		}
+		$full = (new TimetableUnplacedReport())->build(
+			$scheduleId,
+			$schoolId,
+			$schema,
+			$assignments,
+			$phase,
+			$this->schoolNameForId($schoolId)
+		);
+		$pdf = $this->saveUnplacedPdf($full, $schoolId, $year, $term);
+		$courses = [];
+		foreach (array_slice($full['courses'] ?? [], 0, 40) as $row) {
+			$courses[] = [
+				'level' => $row['level'] ?? '',
+				'class' => $row['class'] ?? '',
+				'course' => $row['course'] ?? '',
+				'teacher' => $row['teacher'] ?? '',
+				'needed' => (int) ($row['needed'] ?? 0),
+				'placed' => (int) ($row['placed'] ?? 0),
+				'missed' => (int) ($row['missed'] ?? 0),
+				'suggestions' => array_slice($row['suggestions'] ?? [], 0, 4),
+			];
+		}
+		return [
+			'report' => [
+				'missed_periods' => (int) ($full['missed_periods'] ?? 0),
+				'missed_courses' => (int) ($full['missed_courses'] ?? 0),
+				'missed_teachers' => (int) ($full['missed_teachers'] ?? 0),
+				'phase_label' => (string) ($full['phase_label'] ?? ''),
+				'courses' => $courses,
+			],
+			'full' => $full,
+			'pdf' => $pdf,
+		];
+	}
+
+	/** @param array<string,mixed> $report */
+	private function saveUnplacedPdf(array $report, int $schoolId, int $year, int $term): ?string
+	{
+		$html = $this->renderUnplacedPdfHtml($report, $year, $term);
+		$filename = 'Unplaced_periods_' . $schoolId . '_' . $year . '_T' . $term . '_' . date('Ymd_His') . '.pdf';
+		try {
+			$wk = new Wkhtmltopdf(['path' => $this->unplacedPdfDir()]);
+			$wk->setTitle('Unplaced periods');
+			$wk->setHtml($html);
+			$wk->setOrientation(Wkhtmltopdf::ORIENTATION_LANDSCAPE);
+			$wk->setPageSize(Wkhtmltopdf::SIZE_A4);
+			$wk->setMargins(['top' => 10, 'bottom' => 10, 'left' => 10, 'right' => 10]);
+			$wk->setOptions(['encoding' => 'UTF-8']);
+			$wk->output(Wkhtmltopdf::MODE_SAVE, $filename);
+			return is_file($this->unplacedPdfPath($filename)) ? $filename : null;
+		} catch (\Throwable $e) {
+			log_message('error', 'Unplaced timetable PDF failed: {msg}', ['msg' => $e->getMessage()]);
+			$fallback = str_replace('.pdf', '.html', $filename);
+			@file_put_contents($this->unplacedPdfPath($fallback), $html);
+			return is_file($this->unplacedPdfPath($fallback)) ? $fallback : null;
+		}
+	}
+
+	/** @param array<string,mixed> $report */
+	private function renderUnplacedPdfHtml(array $report, int $year, int $term): string
+	{
+		return view('pages/timetable/_pdf_unplaced', [
+			'doc_title' => 'Unplaced periods',
+			'school_name' => (string) ($report['school'] ?? $this->schoolNameForId((int) ($this->session->get('soma_school_id') ?? 0))),
+			'phase_label' => (string) ($report['phase_label'] ?? 'All levels'),
+			'academic_year' => (string) ($this->data['academic_year_title'] ?? $year),
+			'term' => $term,
+			'generated_at' => (string) ($report['generated_at'] ?? date('Y-m-d H:i')),
+			'missed_periods' => (int) ($report['missed_periods'] ?? 0),
+			'missed_courses' => (int) ($report['missed_courses'] ?? 0),
+			'missed_teachers' => (int) ($report['missed_teachers'] ?? 0),
+			'courses' => $report['courses'] ?? [],
+			'teachers' => $report['teachers'] ?? [],
+		]);
 	}
 
 	/**
