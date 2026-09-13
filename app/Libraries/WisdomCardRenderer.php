@@ -42,6 +42,19 @@ class WisdomCardRenderer
 
 	public static function templateForStudent(array $student): string
 	{
+		$classId = (int) ($student['class_id'] ?? 0);
+		if ($classId > 0) {
+			$phase = TimetableTrack::generationPhaseForClassId($classId);
+			if ($phase === 'primary') {
+				return self::TEMPLATE_PRIMARY;
+			}
+			if ($phase === 'nursery') {
+				$abs = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR
+					. str_replace('/', DIRECTORY_SEPARATOR, self::TEMPLATE_NURSERY);
+				return is_file($abs) ? self::TEMPLATE_NURSERY : self::TEMPLATE;
+			}
+			return self::TEMPLATE;
+		}
 		if (CardLayout::isWisdomPrimaryStudent($student)) {
 			return self::TEMPLATE_PRIMARY;
 		}

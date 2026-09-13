@@ -353,6 +353,10 @@ class CardLayout
 	 */
 	public static function isWisdomNurseryStudent(array $student): bool
 	{
+		$classId = (int) ($student['class_id'] ?? 0);
+		if ($classId > 0) {
+			return TimetableTrack::generationPhaseForClassId($classId) === 'nursery';
+		}
 		$hay = self::wisdomStudentPathHaystack($student);
 		return (bool) preg_match(
 			'/\b(nurs(?:e|ery|ary)|maternelle|baby\s*class|middle\s*class|top\s*class|\bn[1-3]\b)\b/',
@@ -366,6 +370,10 @@ class CardLayout
 	 */
 	public static function isWisdomPrimaryStudent(array $student): bool
 	{
+		$classId = (int) ($student['class_id'] ?? 0);
+		if ($classId > 0) {
+			return TimetableTrack::generationPhaseForClassId($classId) === 'primary';
+		}
 		if (self::isWisdomNurseryStudent($student)) {
 			return false;
 		}
