@@ -96,10 +96,15 @@ class TimetableUnplacedReport
 				}
 			}
 			$sundayRule = $criteria->prefersSunday($row);
+			$afterLessons = $criteria->requiresAfterLessons($row);
 			$windowNote = $dayNames === []
 				? ($sundayRule ? 'Sunday special criterion + any weekday' : 'Any teaching day (Sunday reserved)')
 				: ('Teacher window: ' . implode(', ', $dayNames) . ' only'
 					. ($sundayRule ? ' + Sunday special criterion' : ''));
+			if ($afterLessons) {
+				$windowNote = 'After 15:40 only, not night'
+					. ($sundayRule ? ' + Sunday special criterion' : '');
+			}
 			$reason = $suggestions === []
 				? 'No legal empty slot for both this class and this teacher'
 					. ($dayNames !== [] ? ' on ' . implode('/', $dayNames) : '')
@@ -209,7 +214,7 @@ class TimetableUnplacedReport
 	): array {
 		$days = TimetableSchemaModel::weekDaysForTrack($settings, $track);
 		$slots = array_values(array_filter(
-			$schema->teachingSlots($schoolId, $track),
+			$schema->generationSlots($schoolId, $track),
 			static fn ($s) => empty($s['is_break'])
 		));
 		$blocked = $schema->specialTimesMap($schoolId, $track);

@@ -622,9 +622,90 @@ class TimetableSchemaModel extends Model
 	{
 		$trackKey = TimetableTrack::normalize($trackKey);
 		if (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
-			return '15:40:00';
+			return self::secondaryLessonEndClock();
 		}
 		return null;
+	}
+
+	public static function secondaryLessonEndClock(): string
+	{
+		return '15:40:00';
+	}
+
+	/** Slots starting at or after this are night (preps / supper), not after-lesson clubs. */
+	public static function secondaryNightStartClock(): string
+	{
+		return '17:30:00';
+	}
+
+	public static function slotClock(?string $time): string
+	{
+		$t = substr(trim((string) $time), 0, 8);
+		if (preg_match('/^\d{2}:\d{2}$/', $t)) {
+			$t .= ':00';
+		}
+		return $t !== '' ? $t : '00:00:00';
+	}
+
+	public static function isAfterLessonSlotTimes(?string $start, ?string $end = null): bool
+	{
+		$startClock = self::slotClock($start);
+		$endClock = self::slotClock($end !== null && $end !== '' ? $end : $start);
+		$lessonEnd = self::secondaryLessonEndClock();
+		$night = self::secondaryNightStartClock();
+		return $startClock >= $lessonEnd && $startClock < $night && $endClock <= $night;
+	}
+
+	public static function isNightSlotTimes(?string $start, ?string $end = null): bool
+	{
+		return self::slotClock($start) >= self::secondaryNightStartClock()
+			|| self::slotClock($end) > self::secondaryNightStartClock();
+	}
+
+	/** After 15:40, before night — existing school periods only. */
+	public function afterLessonSlots(int $schoolId, string $trackKey = TimetableTrack::ALL): array
+	{
+		$this->ensureTrackSlots($schoolId, $trackKey);
+		$this->sanitizeTrackSlots($schoolId, $trackKey);
+		$trackKey = TimetableTrack::normalize($trackKey);
+		$db = \Config\Database::connect();
+		$slots = $db->table('timetable_slots')
+			->where('school_id', $schoolId)
+			->where('track_key', $trackKey)
+			->where('is_break', 0)
+			->orderBy('start_time', 'ASC')
+			->get()->getResultArray();
+		if ($slots === [] && $trackKey !== TimetableTrack::ALL) {
+			$slots = $db->table('timetable_slots')
+				->where('school_id', $schoolId)
+				->where('track_key', TimetableTrack::ALL)
+				->where('is_break', 0)
+				->orderBy('start_time', 'ASC')
+				->get()->getResultArray();
+		}
+		return array_values(array_filter($slots, static function (array $slot): bool {
+			return self::isAfterLessonSlotTimes(
+				(string) ($slot['start_time'] ?? ''),
+				(string) ($slot['end_time'] ?? '')
+			);
+		}));
+	}
+
+	/** Normal teaching periods plus after-lesson (not night) periods. */
+	public function generationSlots(int $schoolId, string $trackKey = TimetableTrack::ALL): array
+	{
+		$merged = [];
+		foreach (array_merge($this->teachingSlots($schoolId, $trackKey), $this->afterLessonSlots($schoolId, $trackKey)) as $slot) {
+			$id = (int) ($slot['id'] ?? 0);
+			if ($id > 0) {
+				$merged[$id] = $slot;
+			}
+		}
+		$slots = array_values($merged);
+		usort($slots, static function (array $a, array $b): int {
+			return strcmp(self::slotClock((string) ($a['start_time'] ?? '')), self::slotClock((string) ($b['start_time'] ?? '')));
+		});
+		return $slots;
 	}
 
 	/** @return list<string> */

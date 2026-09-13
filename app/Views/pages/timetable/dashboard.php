@@ -166,7 +166,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Izabayo Patience: Tuesday full day and Friday after lunch only. Sunday is reserved: save a <strong>Teach on Sunday</strong> course rule first. Generation uses the periods already saved in school settings and never creates a new period from special criteria. Nursery and primary have no Sunday column.</p>
+						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Izabayo Patience: Tuesday full day and Friday after lunch only. Sunday is reserved: save a <strong>Teach on Sunday</strong> course rule first. Farming and Library and Clubs stay after 15:40 and never at night. Generation uses the periods already saved in school settings and never creates a new period from special criteria. Nursery and primary have no Sunday column.</p>
 						<form id="ttCriteriaForm" class="tt-criteria-form">
 							<div class="form-row">
 								<div class="col-md-4 mb-2">
@@ -176,6 +176,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 										<option value="teacher_days">Teacher only on specific days</option>
 										<option value="morning">Prefer morning</option>
 										<option value="teach_sunday">Teach this course on Sunday (high school)</option>
+										<option value="after_lessons">After 15:40 only (not night)</option>
 									</select>
 								</div>
 								<div class="col-md-4 mb-2">
@@ -205,6 +206,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 								</div>
 							</div>
 							<p class="small text-info mb-2" id="ttSundayHint" hidden>Pick the course (and optional teacher/class). Sunday lessons use the same bell periods already saved under Settings → Periods &amp; breaks. Special criteria does not add or change periods.</p>
+							<p class="small text-info mb-2" id="ttAfterLessonsHint" hidden>Pick Farming or Library and Clubs. They use existing bells from 15:40 to 17:30 only — not night preps or supper.</p>
 							<div class="tt-day-checks mb-2" id="ttCriteriaDays">
 								<?php foreach (($criteria_day_choices ?? []) as $dayChoice): ?>
 									<label class="small mr-2 mb-0"><input type="checkbox" name="days[]" value="<?= (int) $dayChoice['value']; ?>"> <?= esc($dayChoice['label']); ?></label>
@@ -227,6 +229,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 								'teacher_days' => 'Teacher days',
 								'morning' => 'Morning',
 								'teach_sunday' => 'Teach on Sunday',
+								'after_lessons' => 'After 15:40 (not night)',
 							];
 							foreach (($custom_criteria ?? []) as $rule):
 								$days = json_decode((string) ($rule['days'] ?? '[]'), true);
@@ -747,11 +750,18 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	});
 	function syncSundayRuleUi() {
 		var sunday = $('#ttRuleType').val() === 'teach_sunday';
+		var afterLessons = $('#ttRuleType').val() === 'after_lessons';
+		var hideTimes = sunday || afterLessons;
 		$('#ttSundayHint').prop('hidden', !sunday);
-		$('#ttCriteriaDays, #ttCriteriaTimes').toggle(!sunday);
+		$('#ttAfterLessonsHint').prop('hidden', !afterLessons);
+		$('#ttCriteriaDays, #ttCriteriaTimes').toggle(!hideTimes);
 		if (sunday) {
 			$('.tt-day-checks input').prop('checked', false);
 			$('.tt-day-checks input[value="6"]').prop('checked', true);
+			$('#ttCriteriaTimes input').val('');
+		}
+		if (afterLessons) {
+			$('.tt-day-checks input').prop('checked', false);
 			$('#ttCriteriaTimes input').val('');
 		}
 	}

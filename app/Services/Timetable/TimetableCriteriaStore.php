@@ -53,7 +53,7 @@ class TimetableCriteriaStore
 		$this->ensureTable();
 		$id = (int) ($input['id'] ?? 0);
 		$type = trim((string) ($input['rule_type'] ?? ''));
-		$allowed = ['last_hour', 'teacher_window', 'teacher_days', 'morning', 'teach_sunday'];
+		$allowed = ['last_hour', 'teacher_window', 'teacher_days', 'morning', 'teach_sunday', 'after_lessons'];
 		if (!in_array($type, $allowed, true)) {
 			return ['error' => 'Choose a valid rule type.'];
 		}
@@ -85,6 +85,13 @@ class TimetableCriteriaStore
 		}
 		if ($type === 'last_hour' && (int) $row['course_id'] <= 0 && (int) $row['teacher_id'] <= 0) {
 			return ['error' => 'Last hour needs a course or a teacher.'];
+		}
+		if ($type === 'after_lessons') {
+			if ((int) $row['course_id'] <= 0 && (int) $row['teacher_id'] <= 0 && (int) $row['class_id'] <= 0) {
+				return ['error' => 'After 15:40 needs a course, teacher, or class.'];
+			}
+			$row['start_time'] = '';
+			$row['end_time'] = '';
 		}
 		if ($type === 'teach_sunday') {
 			if ((int) $row['course_id'] <= 0 && (int) $row['teacher_id'] <= 0 && (int) $row['class_id'] <= 0) {

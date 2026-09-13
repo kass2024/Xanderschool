@@ -430,13 +430,14 @@ class TimetableGeneratorService
 		$enforceGap = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupiedDays !== [];
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
+		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($row);
 		// Prefer last periods first; widen only if the PE / last-hour course has no free late slot.
 		// Other courses must fill morning before any afternoon slot.
 		$windows = $lastHour ? [2, 3, 4, 5, 6, 7, 0] : [0];
 
 		$candidates = [];
 		foreach ($windows as $window) {
-			$morningFirst = !$lastHour && $window === 0;
+			$morningFirst = !$lastHour && !$afterLessons && $window === 0;
 			$candidates = $this->collectPlacementCandidates(
 				$row,
 				$blockSize,
@@ -532,6 +533,7 @@ class TimetableGeneratorService
 		$occupiedDays = $this->subjectOccupiedDays($subjectKey);
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
+		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($row);
 		$candidates = [];
 		$slotCount = count($this->teachingSlots);
 		$reserveLate = $slotCount > 0 ? max(0, $slotCount - 3) : 0;
@@ -596,7 +598,7 @@ class TimetableGeneratorService
 						}
 						if ($lastHour) {
 							$score += ($slotCount - 1 - $j) * 800;
-						} elseif ($j >= $reserveLate) {
+						} elseif (!$afterLessons && $j >= $reserveLate) {
 							$score += 900;
 						}
 						$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
@@ -615,7 +617,7 @@ class TimetableGeneratorService
 				$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $i, $weeklyHours, $row);
 				if ($lastHour) {
 					$score += ($slotCount - 1 - $i) * 800;
-				} elseif ($i >= $reserveLate) {
+				} elseif (!$afterLessons && $i >= $reserveLate) {
 					$score += 900;
 				}
 				$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
@@ -638,8 +640,9 @@ class TimetableGeneratorService
 		$score += (int) ($this->globalDayUsage[$day] ?? 0) * 15;
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
+		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($row);
 		$slot = $this->teachingSlots[$slotIndex] ?? [];
-		if ($lastHour) {
+		if ($lastHour || $afterLessons) {
 			$score += 0;
 		} elseif ($this->slotIsMorning($slot)) {
 			$score -= 2500 + max(0, 12 * 60 - $this->clockMinutes((string) ($slot['start_time'] ?? '')));
@@ -686,6 +689,11 @@ class TimetableGeneratorService
 				isset($slot['end_time']) ? (string) $slot['end_time'] : null
 			);
 			$score += $this->secondaryCriteria->sundayScoreDelta($row, $day);
+			$score += $this->secondaryCriteria->afterLessonScoreDelta(
+				$row,
+				isset($slot['start_time']) ? (string) $slot['start_time'] : null,
+				isset($slot['end_time']) ? (string) $slot['end_time'] : null
+			);
 		}
 
 		return $score;
@@ -726,9 +734,10 @@ class TimetableGeneratorService
 		$occupied = $this->subjectOccupiedDays($subjectKey);
 		$enforce = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupied !== [];
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
+		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($row);
 		$windows = $peSport ? [2, 3, 4, 5, 6, 7, 0] : [0];
 		foreach ($windows as $window) {
-			$morningFirst = !$peSport && $window === 0;
+			$morningFirst = !$peSport && !$afterLessons && $window === 0;
 			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $window, $morningFirst));
 			if ($count === 0 && $morningFirst) {
 				$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $window, false));

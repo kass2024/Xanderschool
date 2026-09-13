@@ -39,6 +39,9 @@ class SecondaryTimetableCriteria
 	/** @var list<array<string,mixed>> */
 	private $sundayRules = [];
 
+	/** @var list<array<string,mixed>> */
+	private $afterLessonRules = [];
+
 	public function __construct()
 	{
 		$this->teacherWindows = $this->defaultTeacherWindows();
@@ -57,6 +60,7 @@ class SecondaryTimetableCriteria
 		$this->windowsByStaffId = [];
 		$this->allowedDaysByStaffId = [];
 		$this->sundayRules = [];
+		$this->afterLessonRules = [];
 		foreach ($rules as $rule) {
 			if (empty($rule['enabled']) && isset($rule['enabled'])) {
 				continue;
@@ -84,6 +88,9 @@ class SecondaryTimetableCriteria
 			}
 			if ($type === 'teach_sunday') {
 				$this->sundayRules[] = $rule;
+			}
+			if ($type === 'after_lessons') {
+				$this->afterLessonRules[] = $rule;
 			}
 		}
 	}
@@ -212,16 +219,55 @@ class SecondaryTimetableCriteria
 	 */
 	public function slotAllowed(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
+		if ($this->requiresAfterLessons($row)) {
+			if (!\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd)) {
+				return false;
+			}
+			if ($day === 6 && !$this->allowsSunday($row, $slotStart, $slotEnd)) {
+				return false;
+			}
+			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
+				return false;
+			}
+			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+		}
 		if ($day === 6) {
 			if (!self::isSecondaryTrack($row) || !$this->allowsSunday($row, $slotStart, $slotEnd)) {
 				return false;
 			}
 			return !$this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd);
 		}
+		if (self::isSecondaryTrack($row) && (
+			\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd)
+			|| \App\Models\TimetableSchemaModel::isNightSlotTimes($slotStart, $slotEnd)
+		)) {
+			return false;
+		}
 		if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
 			return false;
 		}
 		return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+	}
+
+	/** Farming / Library and Clubs: only after 15:40, never night. */
+	public function requiresAfterLessons(array $row): bool
+	{
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['course_title'] ?? ''))));
+		if ($title !== '' && (
+			strpos($title, 'farming') !== false
+			|| (strpos($title, 'library') !== false && strpos($title, 'club') !== false)
+		)) {
+			return true;
+		}
+		$courseId = (int) ($row['course_id'] ?? $row['course'] ?? 0);
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$classId = (int) ($row['class_id'] ?? 0);
+		foreach ($this->afterLessonRules as $rule) {
+			if ($this->ruleMatchesRow($rule, $courseId, $staffId, $classId)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -260,6 +306,15 @@ class SecondaryTimetableCriteria
 			return $this->prefersSunday($row) ? 350 : 0;
 		}
 		return $this->prefersSunday($row) ? -2500 : 50000;
+	}
+
+	/** Soft score: Farming / Library stay in 15:40–17:30, never night. */
+	public function afterLessonScoreDelta(array $row, ?string $slotStart, ?string $slotEnd): int
+	{
+		if (!$this->requiresAfterLessons($row)) {
+			return 0;
+		}
+		return \App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd) ? -800 : 20000;
 	}
 
 	/**

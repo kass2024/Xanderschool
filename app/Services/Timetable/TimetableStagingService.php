@@ -589,7 +589,8 @@ class TimetableStagingService
 			$meta = $this->metaForEntry($entry);
 			$lastHour = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''))
 				|| ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($meta));
-			if ($lastHour) {
+			$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($meta);
+			if ($lastHour || $afterLessons) {
 				continue;
 			}
 			$this->removeScheduledEntry($state, $entry);
@@ -877,7 +878,7 @@ class TimetableStagingService
 		$trackKey = $schema->trackForClass($schoolId, $classId);
 		$days = \App\Models\TimetableSchemaModel::weekDaysForTrack($this->timetableSettings, $trackKey);
 		$slots = array_values(array_filter(
-			$schema->teachingSlots($schoolId, $trackKey),
+			$schema->generationSlots($schoolId, $trackKey),
 			static fn ($s) => empty($s['is_break'])
 		));
 		$blocked = $schema->specialTimesMap($schoolId, $trackKey);
@@ -977,11 +978,20 @@ class TimetableStagingService
 		$useDoubles = $hours >= 3;
 		$peSport = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''));
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($meta));
+		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($meta);
 
 		$score = $blockerCount * 1000;
 		$sameDay = $this->subjectDayCountForState($state, $entry, $day);
 
-		if ($lastHour && $slotCount > 0) {
+		if ($afterLessons) {
+			$start = $candidateRange !== null
+				? sprintf('%02d:%02d:00', intdiv((int) $candidateRange['start'], 60), ((int) $candidateRange['start']) % 60)
+				: null;
+			$end = $candidateRange !== null
+				? sprintf('%02d:%02d:00', intdiv((int) $candidateRange['end'], 60), ((int) $candidateRange['end']) % 60)
+				: null;
+			$score += $this->secondaryCriteria->afterLessonScoreDelta($meta, $start, $end);
+		} elseif ($lastHour && $slotCount > 0) {
 			// Strongly prefer last teaching periods of the day.
 			$score += ($slotCount - 1 - $slotIndex) * 800;
 			$lateStart = max(0, $slotCount - 3);

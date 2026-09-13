@@ -970,7 +970,7 @@ class TimetableManagement extends Home
 				]);
 				$result = $generator->generate(
 					$trackAssignments,
-					$schema->teachingSlots($schoolId, $trackKey),
+					$schema->generationSlots($schoolId, $trackKey),
 					$days,
 					$blocked,
 					$reset
@@ -1635,7 +1635,7 @@ class TimetableManagement extends Home
 		$tracks = TimetableTrack::tracksForSchool($schoolId) ?: [TimetableTrack::ALL];
 		$tracks[] = TimetableTrack::ALL;
 		foreach (array_unique($tracks) as $track) {
-			foreach ($schema->teachingSlots($schoolId, (string) $track) as $slot) {
+			foreach ($schema->generationSlots($schoolId, (string) $track) as $slot) {
 				$id = (int) ($slot['id'] ?? 0);
 				if ($id <= 0) {
 					continue;
