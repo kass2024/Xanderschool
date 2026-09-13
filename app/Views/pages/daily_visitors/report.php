@@ -52,6 +52,7 @@ $toDate = $to_date ?? date('Y-m-d');
 					<tr>
 						<th>Date</th>
 						<th>Name</th>
+						<th>ID number</th>
 						<th>Phone</th>
 						<th>Reason</th>
 						<th>Materials brought</th>
@@ -64,11 +65,12 @@ $toDate = $to_date ?? date('Y-m-d');
 				</thead>
 				<tbody>
 					<?php if (empty($visits)) { ?>
-						<tr><td colspan="10" class="text-muted text-center py-4">No daily visitors in this period.</td></tr>
+						<tr><td colspan="11" class="text-muted text-center py-4">No daily visitors in this period.</td></tr>
 					<?php } else { foreach ($visits as $row) { ?>
 						<tr>
 							<td><?= esc($row['visit_date']) ?></td>
 							<td><strong><?= esc($row['names']) ?></strong></td>
+							<td><?= esc($row['id_number'] ?: '—') ?></td>
 							<td><?= esc($row['phone']) ?></td>
 							<td><?= esc($row['reason']) ?></td>
 							<td><?= esc($row['materials'] ?: '—') ?></td>

@@ -4828,6 +4828,7 @@ public function permission_card_scan()
 		$model = new GateVisitModel();
 		$result = $model->checkIn($schoolId, [
 			'names' => $this->request->getPost('names'),
+			'id_number' => $this->request->getPost('id_number'),
 			'phone' => $this->request->getPost('phone'),
 			'reason' => $this->request->getPost('reason'),
 			'materials' => $this->request->getPost('materials'),

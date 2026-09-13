@@ -17,6 +17,7 @@ class GateVisitModel extends Model
 	protected $allowedFields = [
 		'school_id',
 		'names',
+		'id_number',
 		'phone',
 		'reason',
 		'materials',
@@ -43,6 +44,7 @@ class GateVisitModel extends Model
 				`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
 				`school_id` INT UNSIGNED NOT NULL,
 				`names` VARCHAR(150) NOT NULL,
+				`id_number` VARCHAR(80) NULL DEFAULT NULL,
 				`phone` VARCHAR(50) NULL DEFAULT NULL,
 				`reason` VARCHAR(255) NOT NULL,
 				`materials` TEXT NULL,
@@ -58,6 +60,10 @@ class GateVisitModel extends Model
 				KEY `idx_gv_school_card` (`school_id`, `card`),
 				KEY `idx_gv_school_open` (`school_id`, `time_out`)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+			if (!$db->fieldExists('id_number', 'gate_visits')) {
+				$db->query("ALTER TABLE `gate_visits`
+					ADD COLUMN `id_number` VARCHAR(80) NULL DEFAULT NULL AFTER `names`");
+			}
 		} catch (\Throwable $e) {
 		}
 
@@ -156,6 +162,7 @@ class GateVisitModel extends Model
 		$this->ensureSchema();
 		$schoolId = (int) $schoolId;
 		$names = trim((string) ($input['names'] ?? ''));
+		$idNumber = trim((string) ($input['id_number'] ?? ''));
 		$phone = trim((string) ($input['phone'] ?? ''));
 		$reason = trim((string) ($input['reason'] ?? ''));
 		$materials = trim((string) ($input['materials'] ?? ''));
@@ -170,6 +177,9 @@ class GateVisitModel extends Model
 		}
 		if ($names === '' || mb_strlen($names) < 2) {
 			return ['success' => false, 'message' => 'Visitor name is required.'];
+		}
+		if ($idNumber === '') {
+			return ['success' => false, 'message' => 'Visitor identification number is required.'];
 		}
 		if ($reason === '') {
 			return ['success' => false, 'message' => 'Reason of visit is required.'];
@@ -201,6 +211,7 @@ class GateVisitModel extends Model
 		$id = $this->insert([
 			'school_id' => $schoolId,
 			'names' => mb_substr($names, 0, 150),
+			'id_number' => mb_substr($idNumber, 0, 80),
 			'phone' => mb_substr($phone, 0, 50),
 			'reason' => mb_substr($reason, 0, 255),
 			'materials' => $materials,
@@ -349,6 +360,7 @@ class GateVisitModel extends Model
 		return [
 			'id' => (int) ($row['id'] ?? 0),
 			'names' => (string) ($row['names'] ?? ''),
+			'id_number' => (string) ($row['id_number'] ?? ''),
 			'phone' => (string) ($row['phone'] ?? ''),
 			'reason' => (string) ($row['reason'] ?? ''),
 			'materials' => (string) ($row['materials'] ?? ''),

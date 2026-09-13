@@ -40,6 +40,7 @@ $counts = $counts ?? ['inside' => 0, 'today' => 0, 'checked_out' => 0];
 				<thead>
 					<tr>
 						<th>Name</th>
+						<th>ID number</th>
 						<th>Phone</th>
 						<th>Reason</th>
 						<th>Materials</th>
@@ -49,10 +50,11 @@ $counts = $counts ?? ['inside' => 0, 'today' => 0, 'checked_out' => 0];
 				</thead>
 				<tbody id="gvInsideBody">
 					<?php if (empty($inside)) { ?>
-						<tr><td colspan="6" class="text-muted text-center py-4">No visitor is inside right now.</td></tr>
+						<tr><td colspan="7" class="text-muted text-center py-4">No visitor is inside right now.</td></tr>
 					<?php } else { foreach ($inside as $row) { ?>
 						<tr>
 							<td><strong><?= esc($row['names']) ?></strong></td>
+							<td><?= esc($row['id_number'] ?: '—') ?></td>
 							<td><?= esc($row['phone']) ?></td>
 							<td><?= esc($row['reason']) ?></td>
 							<td><?= esc($row['materials'] ?: '—') ?></td>
@@ -122,10 +124,10 @@ $counts = $counts ?? ['inside' => 0, 'today' => 0, 'checked_out' => 0];
 				var inside = b.inside || [];
 				var ib = document.getElementById('gvInsideBody');
 				if (!inside.length) {
-					ib.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-4">No visitor is inside right now.</td></tr>';
+					ib.innerHTML = '<tr><td colspan="7" class="text-muted text-center py-4">No visitor is inside right now.</td></tr>';
 				} else {
 					ib.innerHTML = inside.map(function (row) {
-						return '<tr><td><strong>' + esc(row.names) + '</strong></td><td>' + esc(row.phone) + '</td><td>'
+						return '<tr><td><strong>' + esc(row.names) + '</strong></td><td>' + esc(row.id_number || '—') + '</td><td>' + esc(row.phone) + '</td><td>'
 							+ esc(row.reason) + '</td><td>' + esc(row.materials || '—') + '</td><td class="gv-card-uid">'
 							+ esc(row.card) + '</td><td>' + esc(row.datetime_in) + '</td></tr>';
 					}).join('');
