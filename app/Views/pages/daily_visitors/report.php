@@ -18,23 +18,44 @@ $toDate = $to_date ?? date('Y-m-d');
 .gv-badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:.72rem; font-weight:700; }
 .gv-badge.in { background:#dcfce7; color:#166534; }
 .gv-badge.out { background:#e2e8f0; color:#475569; }
-.gv-card-uid { font-family:ui-monospace,monospace; }
+.gv-toolbar-row { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:10px; }
+.gv-export { display:inline-flex; align-items:center; gap:6px; }
+.gv-export .staff-export-btn { display:inline-flex; align-items:center; gap:6px; font-weight:600; border-radius:8px; padding:7px 14px; color:#fff !important; }
+.gv-export .staff-export-excel { background:#157347; border-color:#146c43; }
+.gv-export .staff-export-pdf { background:#b02a37; border-color:#a02833; }
 </style>
 
 <div class="container-fluid mt-3 gv-rpt">
 	<form class="gv-toolbar" method="get" action="<?= base_url('daily_visitors/report') ?>">
-		<div class="form-row align-items-end">
-			<div class="form-group col-md-3 mb-2">
-				<label>From</label>
-				<input type="date" name="from" class="form-control" value="<?= esc($fromDate) ?>">
+		<div class="gv-toolbar-row">
+			<div class="form-row align-items-end flex-grow-1">
+				<div class="form-group col-md-3 mb-0">
+					<label>From</label>
+					<input type="date" name="from" class="form-control" value="<?= esc($fromDate) ?>">
+				</div>
+				<div class="form-group col-md-3 mb-0">
+					<label>To</label>
+					<input type="date" name="to" class="form-control" value="<?= esc($toDate) ?>">
+				</div>
+				<div class="form-group col-md-4 mb-0">
+					<button type="submit" class="btn btn-primary">Filter</button>
+					<a class="btn btn-light" href="<?= base_url('daily_visitors/report') ?>">Today</a>
+				</div>
 			</div>
-			<div class="form-group col-md-3 mb-2">
-				<label>To</label>
-				<input type="date" name="to" class="form-control" value="<?= esc($toDate) ?>">
-			</div>
-			<div class="form-group col-md-3 mb-2">
-				<button type="submit" class="btn btn-primary">Filter</button>
-				<a class="btn btn-light" href="<?= base_url('daily_visitors/report') ?>">Today</a>
+			<div class="staff-export-bar gv-export" role="group" aria-label="Export visiting report">
+				<a href="<?= base_url('daily_visitors/export_excel?from=' . urlencode($fromDate) . '&to=' . urlencode($toDate)) ?>"
+				   class="btn btn-sm staff-export-btn staff-export-excel"
+				   title="Download visiting report Excel with school header">
+					<i class="fa fa-file-excel"></i>
+					<span>Excel</span>
+				</a>
+				<a href="<?= base_url('daily_visitors/export_pdf?from=' . urlencode($fromDate) . '&to=' . urlencode($toDate)) ?>"
+				   class="btn btn-sm staff-export-btn staff-export-pdf"
+				   target="_blank"
+				   title="Open visiting report PDF with school header">
+					<i class="fa fa-file-pdf"></i>
+					<span>PDF</span>
+				</a>
 			</div>
 		</div>
 	</form>
@@ -55,8 +76,7 @@ $toDate = $to_date ?? date('Y-m-d');
 						<th>ID number</th>
 						<th>Phone</th>
 						<th>Reason</th>
-						<th>Materials brought</th>
-						<th>Card</th>
+						<th>Materials with you</th>
 						<th>In</th>
 						<th>Out</th>
 						<th>Duration</th>
@@ -65,7 +85,7 @@ $toDate = $to_date ?? date('Y-m-d');
 				</thead>
 				<tbody>
 					<?php if (empty($visits)) { ?>
-						<tr><td colspan="11" class="text-muted text-center py-4">No daily visitors in this period.</td></tr>
+						<tr><td colspan="10" class="text-muted text-center py-4">No daily visitors in this period.</td></tr>
 					<?php } else { foreach ($visits as $row) { ?>
 						<tr>
 							<td><?= esc($row['visit_date']) ?></td>
@@ -74,7 +94,6 @@ $toDate = $to_date ?? date('Y-m-d');
 							<td><?= esc($row['phone']) ?></td>
 							<td><?= esc($row['reason']) ?></td>
 							<td><?= esc($row['materials'] ?: '—') ?></td>
-							<td class="gv-card-uid"><?= esc($row['card']) ?></td>
 							<td><?= esc($row['time_in_label']) ?></td>
 							<td><?= esc($row['time_out_label'] ?: '—') ?></td>
 							<td><?= (int) $row['duration_minutes'] ?> min</td>

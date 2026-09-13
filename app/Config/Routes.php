@@ -169,6 +169,8 @@ $routes->get('parent_visiting/student_visitors/(:num)', 'Home::parent_visiting_s
 // Daily gate visitors (independent from parent visiting)
 $routes->get('daily_visitors/inside', 'DailyVisitors::inside');
 $routes->get('daily_visitors/report', 'DailyVisitors::report');
+$routes->get('daily_visitors/export_excel', 'DailyVisitors::export_excel');
+$routes->get('daily_visitors/export_pdf', 'DailyVisitors::export_pdf');
 $routes->get('daily_visitors/inside_json', 'DailyVisitors::inside_json');
 
 // Asset Management (Phase 1+)

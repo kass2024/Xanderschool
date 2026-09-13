@@ -1,0 +1,125 @@
+<?php
+/** @var array $school */
+/** @var list<array<string,mixed>> $visits */
+/** @var array{total:int,inside:int,checked_out:int} $summary */
+/** @var string $from_date */
+/** @var string $to_date */
+/** @var string $year_title */
+/** @var string $term_label */
+/** @var string $printed_at */
+
+use App\Libraries\DailyVisitorsExporter;
+
+$visits = $visits ?? [];
+$summary = $summary ?? ['total' => 0, 'inside' => 0, 'checked_out' => 0];
+$schoolName = trim((string) ($school['name'] ?? 'School'));
+$slogan = trim((string) ($school['slogan'] ?? ''));
+$logo = trim((string) ($school['logo'] ?? ''));
+$fromDate = (string) ($from_date ?? '');
+$toDate = (string) ($to_date ?? '');
+$period = $fromDate === $toDate ? $fromDate : $fromDate . ' — ' . $toDate;
+$contact = array_filter([
+	trim((string) ($school['address'] ?? '')) ?: null,
+	!empty($school['pobox']) ? 'P.O. Box ' . $school['pobox'] : null,
+	!empty($school['phone']) ? 'Tel: ' . $school['phone'] : null,
+	!empty($school['email']) ? 'Email: ' . $school['email'] : null,
+	!empty($school['website']) ? $school['website'] : null,
+]);
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Visiting report — <?= esc($schoolName) ?></title>
+	<style>
+		@page { size: A4 landscape; margin: 10mm; }
+		body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #111; margin: 0; }
+		.hdr { border: 1.5px solid #012F6B; padding: 10px 12px; margin-bottom: 10px; overflow: hidden; }
+		.hdr-logo { float: left; width: 90px; }
+		.hdr-logo img { max-width: 80px; max-height: 70px; }
+		.hdr-text { float: left; width: calc(100% - 100px); padding-left: 8px; }
+		.hdr-text .name { font-size: 16pt; font-weight: bold; color: #012F6B; margin: 0 0 2px; text-transform: uppercase; }
+		.hdr-text .slogan { font-size: 9.5pt; font-style: italic; color: #475569; margin: 0 0 4px; }
+		.hdr-text .contact { font-size: 8.5pt; color: #64748B; }
+		.title { text-align: center; font-size: 13pt; font-weight: bold; color: #012F6B; margin: 6px 0 2px; }
+		.subtitle { text-align: center; font-size: 9pt; color: #475569; margin-bottom: 10px; }
+		.kpi { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+		.kpi td { border: 1px solid #cbd5e1; text-align: center; padding: 6px 4px; background: #E8F0FA; font-size: 8.5pt; }
+		.kpi .val { display: block; font-size: 13pt; font-weight: bold; color: #012F6B; }
+		table.data { width: 100%; border-collapse: collapse; }
+		table.data th, table.data td { border: 1px solid #94a3b8; padding: 4px 5px; vertical-align: top; font-size: 8.5pt; }
+		table.data th { background: #012F6B; color: #fff; font-weight: bold; text-align: center; }
+		table.data tr:nth-child(even) td { background: #F7FAFD; }
+		.num { text-align: center; white-space: nowrap; }
+		.foot { margin-top: 12px; font-size: 8pt; color: #64748B; text-align: center; }
+	</style>
+</head>
+<body>
+<div class="hdr">
+	<?php if ($logo !== '') : ?>
+		<div class="hdr-logo">
+			<img src="<?= esc(base_url('assets/images/logo/' . $logo), 'attr') ?>" alt="Logo">
+		</div>
+	<?php endif; ?>
+	<div class="hdr-text">
+		<div class="name"><?= esc($schoolName) ?></div>
+		<?php if ($slogan !== '') : ?>
+			<div class="slogan"><?= esc($slogan) ?></div>
+		<?php endif; ?>
+		<?php if ($contact) : ?>
+			<div class="contact"><?= esc(implode('  •  ', $contact)) ?></div>
+		<?php endif; ?>
+	</div>
+</div>
+
+<div class="title">DAILY VISITING REPORT</div>
+<div class="subtitle">
+	Period <?= esc($period) ?>
+	<?php if (!empty($year_title)) : ?> · <?= esc($year_title) ?><?php endif; ?>
+	<?php if (!empty($term_label)) : ?> · <?= esc($term_label) ?><?php endif; ?>
+	· Printed <?= esc($printed_at ?? date('d M Y H:i')) ?>
+</div>
+
+<table class="kpi">
+	<tr>
+		<td><span class="val"><?= (int) $summary['total'] ?></span>Visits</td>
+		<td><span class="val"><?= (int) $summary['inside'] ?></span>Still inside</td>
+		<td><span class="val"><?= (int) $summary['checked_out'] ?></span>Checked out</td>
+	</tr>
+</table>
+
+<table class="data">
+	<thead>
+	<tr>
+		<?php foreach (DailyVisitorsExporter::columnHeaders() as $header) : ?>
+			<th><?= esc($header) ?></th>
+		<?php endforeach; ?>
+	</tr>
+	</thead>
+	<tbody>
+	<?php if (!$visits) : ?>
+		<tr><td colspan="10" style="text-align:center;color:#64748b;">No daily visitors in this period.</td></tr>
+	<?php else :
+		foreach ($visits as $visit) :
+			$vals = DailyVisitorsExporter::rowValues($visit);
+			?>
+			<tr>
+				<td class="num"><?= esc($vals[0]) ?></td>
+				<td><strong><?= esc($vals[1]) ?></strong></td>
+				<td><?= esc($vals[2]) ?></td>
+				<td><?= esc($vals[3]) ?></td>
+				<td><?= esc($vals[4]) ?></td>
+				<td><?= esc($vals[5]) ?></td>
+				<td class="num"><?= esc($vals[6]) ?></td>
+				<td class="num"><?= esc($vals[7]) ?></td>
+				<td class="num"><?= esc($vals[8]) ?></td>
+				<td class="num"><?= esc($vals[9]) ?></td>
+			</tr>
+		<?php endforeach;
+	endif; ?>
+	</tbody>
+</table>
+
+<div class="foot">Generated by <?= esc($schoolName) ?> · Daily visiting report</div>
+</body>
+</html>
