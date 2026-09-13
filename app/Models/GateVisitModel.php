@@ -108,6 +108,29 @@ class GateVisitModel extends Model
 			->first();
 	}
 
+	public function staffInsideToday($schoolId, $staffId): bool
+	{
+		$schoolId = (int) $schoolId;
+		$staffId = (int) $staffId;
+		if ($schoolId <= 0 || $staffId <= 0) {
+			return false;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('attendance_records')) {
+			return false;
+		}
+		$row = $db->table('attendance_records')
+			->select('id')
+			->where('school_id', $schoolId)
+			->where('user_type', 1)
+			->where('user_id', $staffId)
+			->where('time_in >=', strtotime('today'))
+			->where('time_out', 0)
+			->get()->getRowArray();
+
+		return !empty($row);
+	}
+
 	/**
 	 * @return array{success:bool,action?:string,message:string,visit?:array,blocked?:string}
 	 */
@@ -135,6 +158,9 @@ class GateVisitModel extends Model
 		if ($owner) {
 			$type = (string) ($owner['type'] ?? '');
 			if ($type === 'staff') {
+				$owner['kind'] = 'staff';
+				$owner['last_status'] = $this->staffInsideToday($schoolId, (int) ($owner['id'] ?? 0)) ? 'IN' : '';
+				$owner['card_variants'] = $this->cardVariants($card);
 				return [
 					'success' => true,
 					'kind' => 'staff',

@@ -94,6 +94,20 @@ class CardRegistry
 		$db = \Config\Database::connect();
 		$out = [];
 
+		$insideStaff = [];
+		if ($db->tableExists('attendance_records')) {
+			$open = $db->table('attendance_records')
+				->select('user_id')
+				->whereIn('school_id', $scopeSchoolIds)
+				->where('user_type', 1)
+				->where('time_in >=', strtotime('today'))
+				->where('time_out', 0)
+				->get()->getResultArray();
+			foreach ($open as $row) {
+				$insideStaff[(int) ($row['user_id'] ?? 0)] = true;
+			}
+		}
+
 		if ($db->fieldExists('card', 'staffs')) {
 			$rows = $db->table('staffs s')
 				->select('s.id, s.fname, s.lname, s.card, s.photo, p.title as post_title')
@@ -107,12 +121,15 @@ class CardRegistry
 				if ($card === '') {
 					continue;
 				}
+				$staffId = (int) $r['id'];
 				$out[] = [
 					'kind' => 'staff',
-					'id' => (int) $r['id'],
+					'id' => $staffId,
 					'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
 					'post' => (string) ($r['post_title'] ?? ''),
 					'card' => $card,
+					'card_variants' => card_uid_lookup_variants($card),
+					'last_status' => !empty($insideStaff[$staffId]) ? 'IN' : '',
 					'photo' => profile_photo_url($r['photo'] ?? null),
 				];
 			}
@@ -135,6 +152,7 @@ class CardRegistry
 				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
 				'post' => '',
 				'card' => $card,
+				'card_variants' => card_uid_lookup_variants($card),
 				'photo' => '',
 			];
 		}
@@ -156,6 +174,7 @@ class CardRegistry
 				'name' => (string) ($r['names'] ?? ''),
 				'post' => '',
 				'card' => $card,
+				'card_variants' => card_uid_lookup_variants($card),
 				'photo' => '',
 			];
 		}
