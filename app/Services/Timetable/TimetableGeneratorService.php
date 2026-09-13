@@ -62,6 +62,12 @@ class TimetableGeneratorService
 	/** @var array<string,array<string,int>> track => "start|end" => slot_id */
 	private $trackClockSlots = [];
 
+	/** @var callable|null */
+	private $progressHandler = null;
+
+	/** @var callable|null */
+	private $abortHandler = null;
+
 	/** @param list<array<string,mixed>> $rules */
 	public function setCustomRules(array $rules): void
 	{
@@ -78,6 +84,21 @@ class TimetableGeneratorService
 	{
 		$this->classTracks = $classTracks;
 		$this->trackClockSlots = $trackClockSlots;
+	}
+
+	public function setProgressHandler(?callable $handler): void
+	{
+		$this->progressHandler = $handler;
+	}
+
+	public function setAbortHandler(?callable $handler): void
+	{
+		$this->abortHandler = $handler;
+	}
+
+	private function generationWasDiscarded(): bool
+	{
+		return $this->abortHandler !== null && (bool) ($this->abortHandler)();
 	}
 
 	public static function distributeWeeklyHours(int $hours): array
@@ -241,42 +262,35 @@ class TimetableGeneratorService
 			}
 		}
 
+		$totalNeeds = count($lessonNeeds);
+		$processed = 0;
+		$guard = 0;
+		$maxGuard = max($totalNeeds * 4, 80);
+		if ($totalNeeds <= 80) {
+			$this->sortLessonNeeds($lessonNeeds);
+		} else {
+			$this->sortLessonNeedsLight($lessonNeeds);
+		}
+		if ($this->progressHandler !== null) {
+			($this->progressHandler)(0, max($totalNeeds, 1), $totalNeeds);
+		}
+
 		while ($lessonNeeds !== []) {
-			foreach ($lessonNeeds as $i => $need) {
-				$lessonNeeds[$i]['candidate_count'] = $this->countPlacementCandidates(
-					$need['assignment'],
-					(int) $need['block_size'],
-					(int) $need['hours']
-				);
-				$lessonNeeds[$i]['is_pe'] = $this->isPhysicalEducationSportCourse(
-					(string) ($need['assignment']['course_title'] ?? '')
-				) ? 1 : 0;
+			if ($this->generationWasDiscarded()) {
+				throw new TimetableJobCancelledException('Generation discarded');
 			}
-			usort($lessonNeeds, static function ($a, $b) {
-				// Place PE/Sport first so it can claim end-of-day slots before others fill them.
-				$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
-				if ($pe !== 0) {
-					return $pe;
+			if (++$guard > $maxGuard) {
+				foreach ($lessonNeeds as $stuck) {
+					$assignment = $stuck['assignment'];
+					$classLabel = TimetableClassLabel::fromRow($assignment);
+					$teacher = trim((string) ($assignment['teacher_name'] ?? ''));
+					$this->warnings[] = 'Could not place ' . ($assignment['course_title'] ?? 'course')
+						. ' in ' . ($classLabel !== '' ? $classLabel : 'class')
+						. ($teacher !== '' ? ' (' . $teacher . ')' : '')
+						. ' — ' . (int) $stuck['block_size'] . ' period(s)';
 				}
-				$ca = (int) ($a['candidate_count'] ?? PHP_INT_MAX);
-				$cb = (int) ($b['candidate_count'] ?? PHP_INT_MAX);
-				if ($ca !== $cb) {
-					return $ca <=> $cb;
-				}
-				$bs = (int) $b['block_size'] <=> (int) $a['block_size'];
-				if ($bs !== 0) {
-					return $bs;
-				}
-				$ha = (int) $a['hours'];
-				$hb = (int) $b['hours'];
-				if ($ha <= 2 && $hb > 2) {
-					return -1;
-				}
-				if ($hb <= 2 && $ha > 2) {
-					return 1;
-				}
-				return $hb <=> $ha;
-			});
+				break;
+			}
 
 			$need = array_shift($lessonNeeds);
 			$assignKey = $this->assignmentQuotaKey($need['assignment']);
@@ -326,9 +340,73 @@ class TimetableGeneratorService
 					. ($teacher !== '' ? ' (' . $teacher . ')' : '')
 					. ' — ' . $blockSize . ' period(s)';
 			}
+			$processed++;
+			if ($this->progressHandler !== null && ($processed % 4 === 0 || $lessonNeeds === [])) {
+				($this->progressHandler)($processed, max($totalNeeds, 1), count($lessonNeeds));
+			}
 		}
 
 		return ['entries' => $entries, 'warnings' => $this->warnings];
+	}
+
+	/** @param list<array<string,mixed>> $lessonNeeds */
+	private function sortLessonNeeds(array &$lessonNeeds): void
+	{
+		foreach ($lessonNeeds as $i => $need) {
+			$lessonNeeds[$i]['candidate_count'] = $this->countPlacementCandidates(
+				$need['assignment'],
+				(int) $need['block_size'],
+				(int) $need['hours']
+			);
+			$lessonNeeds[$i]['is_pe'] = $this->isPhysicalEducationSportCourse(
+				(string) ($need['assignment']['course_title'] ?? '')
+			) ? 1 : 0;
+		}
+		usort($lessonNeeds, static function ($a, $b) {
+			$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
+			if ($pe !== 0) {
+				return $pe;
+			}
+			$ca = (int) ($a['candidate_count'] ?? PHP_INT_MAX);
+			$cb = (int) ($b['candidate_count'] ?? PHP_INT_MAX);
+			if ($ca !== $cb) {
+				return $ca <=> $cb;
+			}
+			$bs = (int) $b['block_size'] <=> (int) $a['block_size'];
+			if ($bs !== 0) {
+				return $bs;
+			}
+			$ha = (int) $a['hours'];
+			$hb = (int) $b['hours'];
+			if ($ha <= 2 && $hb > 2) {
+				return -1;
+			}
+			if ($hb <= 2 && $ha > 2) {
+				return 1;
+			}
+			return $hb <=> $ha;
+		});
+	}
+
+	/** Fast sort for large batches — skip per-lesson candidate scans that freeze progress. */
+	private function sortLessonNeedsLight(array &$lessonNeeds): void
+	{
+		foreach ($lessonNeeds as $i => $need) {
+			$lessonNeeds[$i]['is_pe'] = $this->isPhysicalEducationSportCourse(
+				(string) ($need['assignment']['course_title'] ?? '')
+			) ? 1 : 0;
+		}
+		usort($lessonNeeds, static function ($a, $b) {
+			$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
+			if ($pe !== 0) {
+				return $pe;
+			}
+			$bs = (int) $b['block_size'] <=> (int) $a['block_size'];
+			if ($bs !== 0) {
+				return $bs;
+			}
+			return (int) $b['hours'] <=> (int) $a['hours'];
+		});
 	}
 
 	/** @return list<string> */

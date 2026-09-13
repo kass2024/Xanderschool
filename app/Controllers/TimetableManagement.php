@@ -12,6 +12,7 @@ use App\Models\TimetableSchemaModel;
 use App\Services\Timetable\TimetableConflictService;
 use App\Services\Timetable\TimetableCriteriaStore;
 use App\Services\Timetable\TimetableGeneratorService;
+use App\Services\Timetable\TimetableJobCancelledException;
 use App\Services\Timetable\TimetableStagingService;
 use App\Services\Timetable\TimetableUnplacedReport;
 
@@ -497,6 +498,9 @@ class TimetableManagement extends Home
 		if (session_status() === PHP_SESSION_ACTIVE) {
 			@session_write_close();
 		}
+		if ($this->request->getPost('force') || $this->request->getPost('discard')) {
+			$this->discardActiveTimetableJobs($schoolId, $year, $term);
+		}
 		$result = $this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'manual', $useGemini, $phase);
 		if (!empty($result['error']) && empty($result['queued']) && empty($result['job_id'])) {
 			return $this->response->setJSON(['error' => $result['error']]);
@@ -530,6 +534,10 @@ class TimetableManagement extends Home
 		}
 
 		$existing = $this->findExistingTimetableJob($schoolId, $year, $term);
+		if (is_array($existing) && $this->timetableJobLooksStale($existing)) {
+			$this->cancelTimetableJob((string) $existing['id'], 'Previous generation stalled and was discarded.');
+			$existing = null;
+		}
 		if (is_array($existing) && in_array((string) ($existing['status'] ?? ''), ['queued', 'running'], true)) {
 			$this->spawnTimetableWorker((string) $existing['id']);
 			return [
@@ -794,6 +802,11 @@ class TimetableManagement extends Home
 		}
 		$status = (string) ($job['status'] ?? '');
 		if (in_array($status, ['queued', 'running'], true)) {
+			if ($this->timetableJobLooksStale($job)) {
+				$this->cancelTimetableJob((string) $jobId, 'Generation stalled. Discard it and generate again.');
+				$fresh = $this->readTimetableJob((string) $jobId);
+				return $this->response->setJSON(is_array($fresh) ? $fresh : $job);
+			}
 			$created = strtotime((string) ($job['created_at'] ?? '')) ?: time();
 			$started = strtotime((string) ($job['started_at'] ?? '')) ?: 0;
 			$lastSpawn = strtotime((string) ($job['last_spawn_at'] ?? '')) ?: 0;
@@ -812,6 +825,22 @@ class TimetableManagement extends Home
 			}
 		}
 		return $this->response->setJSON($job);
+	}
+
+	public function discard_generation()
+	{
+		$this->denyMenu('timetable_dashboard');
+		list($schoolId) = $this->bootTimetable();
+		$year = (int) ($this->request->getPost('academic_year') ?: $this->data['academic_year']);
+		$term = (int) ($this->request->getPost('term') ?: $this->data['term']);
+		$n = $this->discardActiveTimetableJobs($schoolId, $year, $term);
+		return $this->response->setJSON([
+			'success' => true,
+			'discarded' => $n,
+			'message' => $n > 0
+				? 'Generation discarded. You can generate again.'
+				: 'No running generation to discard.',
+		]);
 	}
 
 	/**
@@ -846,6 +875,8 @@ class TimetableManagement extends Home
 	{
 		try {
 			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term, $jobId, $phase, $useGemini);
+		} catch (TimetableJobCancelledException $e) {
+			throw $e;
 		} catch (\Throwable $e) {
 			log_message('error', 'Timetable generation primary pass failed for school {school}, retrying after repair: {msg}', [
 				'school' => $schoolId,
@@ -991,6 +1022,9 @@ class TimetableManagement extends Home
 		$phaseIndex = 0;
 
 		foreach ($phaseTracks as $phaseKey => $tracks) {
+			if ($this->timetableJobWasDiscarded($jobId)) {
+				throw new TimetableJobCancelledException('Generation discarded');
+			}
 			$phaseLabel = TimetableTrack::generationPhaseLabel($phaseKey);
 			$stages = $this->markGenerationStage($stages, $phaseKey, 'running');
 			$basePct = (int) round(8 + ($phaseIndex / $phaseCount) * 62);
@@ -1002,6 +1036,9 @@ class TimetableManagement extends Home
 			]);
 
 			$generator = new TimetableGeneratorService();
+			$generator->setAbortHandler(function () use ($jobId): bool {
+				return $this->timetableJobWasDiscarded($jobId);
+			});
 			$generator->setCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
 			$allSlotTimes = $this->collectSlotTimesById($schoolId, $schema);
 			$generator->mergeSlotTimes($allSlotTimes);
@@ -1028,6 +1065,16 @@ class TimetableManagement extends Home
 					'stage' => $phaseKey,
 					'stages' => $stages,
 				]);
+				$generator->setProgressHandler(function (int $done, int $total, int $left) use ($jobId, $phaseLabel, $trackLabel, $basePct, &$stages, $phaseKey): void {
+					$frac = $total > 0 ? min(1, $done / $total) : 0;
+					$this->reportGenerationProgress($jobId, [
+						'message' => 'Generating ' . $phaseLabel . ' — ' . $trackLabel
+							. ' (' . $done . '/' . $total . ($left > 0 ? ', ' . $left . ' left' : '') . ')…',
+						'progress' => min(72, $basePct + 5 + (int) round($frac * 16)),
+						'stage' => $phaseKey,
+						'stages' => $stages,
+					]);
+				});
 				$result = $generator->generate(
 					$trackAssignments,
 					$schema->generationSlots($schoolId, $trackKey),
@@ -1264,6 +1311,9 @@ class TimetableManagement extends Home
 	{
 		if ($jobId === null || $jobId === '') {
 			return;
+		}
+		if ($this->timetableJobWasDiscarded($jobId)) {
+			throw new TimetableJobCancelledException('Generation discarded');
 		}
 		$this->updateTimetableJob($jobId, $patch);
 	}
@@ -1622,6 +1672,7 @@ class TimetableManagement extends Home
 		if (empty($job['id'])) {
 			return;
 		}
+		$job['updated_at'] = date('Y-m-d H:i:s');
 		file_put_contents($this->timetableJobPath((string) $job['id']), json_encode($job, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 	}
 
@@ -1656,6 +1707,9 @@ class TimetableManagement extends Home
 		$job = $this->readTimetableJob($jobId);
 		if (!$job) {
 			return null;
+		}
+		if ((string) ($job['status'] ?? '') === 'cancelled' && (string) ($patch['status'] ?? '') !== 'cancelled') {
+			return $job;
 		}
 		$job = array_merge($job, $patch);
 		$this->writeTimetableJob($job);
@@ -1817,6 +1871,70 @@ class TimetableManagement extends Home
 		return null;
 	}
 
+	private function timetableJobWasDiscarded(?string $jobId): bool
+	{
+		if ($jobId === null || $jobId === '') {
+			return false;
+		}
+		$job = $this->readTimetableJob($jobId);
+		return is_array($job) && (string) ($job['status'] ?? '') === 'cancelled';
+	}
+
+	/** @param array<string,mixed> $job */
+	private function timetableJobLooksStale(array $job): bool
+	{
+		if (!in_array((string) ($job['status'] ?? ''), ['queued', 'running'], true)) {
+			return false;
+		}
+		$updated = strtotime((string) ($job['updated_at'] ?? '')) ?: 0;
+		if ($updated <= 0) {
+			$path = $this->timetableJobPath((string) ($job['id'] ?? ''));
+			$updated = is_file($path) ? (int) @filemtime($path) : 0;
+		}
+		if ($updated <= 0) {
+			$updated = strtotime((string) ($job['started_at'] ?? $job['created_at'] ?? '')) ?: 0;
+		}
+		return $updated > 0 && (time() - $updated) >= 480;
+	}
+
+	private function cancelTimetableJob(string $jobId, string $message = 'Generation discarded.'): void
+	{
+		$jobId = preg_replace('/[^A-Za-z0-9_\-]/', '', $jobId);
+		if ($jobId === '') {
+			return;
+		}
+		$this->updateTimetableJob($jobId, [
+			'status' => 'cancelled',
+			'success' => false,
+			'message' => $message,
+			'finished_at' => date('Y-m-d H:i:s'),
+		]);
+		$lock = $this->timetableJobPath($jobId) . '.lock';
+		if (is_file($lock)) {
+			@unlink($lock);
+		}
+	}
+
+	private function discardActiveTimetableJobs(int $schoolId, int $year, int $term): int
+	{
+		$n = 0;
+		foreach (glob($this->timetableJobDir() . DIRECTORY_SEPARATOR . '*.json') ?: [] as $file) {
+			$data = json_decode((string) @file_get_contents($file), true);
+			if (!is_array($data)) {
+				continue;
+			}
+			if ((int) ($data['school_id'] ?? 0) !== $schoolId
+				|| (int) ($data['academic_year'] ?? 0) !== $year
+				|| (int) ($data['term'] ?? 0) !== $term
+				|| !in_array((string) ($data['status'] ?? ''), ['queued', 'running'], true)) {
+				continue;
+			}
+			$this->cancelTimetableJob((string) ($data['id'] ?? ''), 'Generation discarded.');
+			$n++;
+		}
+		return $n;
+	}
+
 	private function cleanupOldTimetableJobs(): void
 	{
 		$cutoff = time() - 86400;
@@ -1893,7 +2011,7 @@ class TimetableManagement extends Home
 		if (!$job) {
 			return ['ok' => false, 'error' => 'Job not found'];
 		}
-		if (in_array((string) ($job['status'] ?? ''), ['done', 'failed'], true)) {
+		if (in_array((string) ($job['status'] ?? ''), ['done', 'failed', 'cancelled'], true)) {
 			return ['ok' => true, 'already_finished' => true, 'job_id' => $jobId];
 		}
 
@@ -1904,6 +2022,10 @@ class TimetableManagement extends Home
 		}
 
 		try {
+			$job = $this->readTimetableJob($jobId) ?? $job;
+			if (in_array((string) ($job['status'] ?? ''), ['cancelled', 'done', 'failed'], true)) {
+				return ['ok' => true, 'cancelled' => ($job['status'] ?? '') === 'cancelled', 'job_id' => $jobId];
+			}
 			$schoolId = (int) ($job['school_id'] ?? 0);
 			$staffId = (int) ($job['staff_id'] ?? 0);
 			$year = (int) ($job['academic_year'] ?? 0);
@@ -1921,6 +2043,9 @@ class TimetableManagement extends Home
 			]);
 			$schema->ensureSchema();
 			$result = $this->runGeneration($schoolId, $staffId, $schema, $year, $term, $jobId, $phase, $useGemini);
+			if ($this->timetableJobWasDiscarded($jobId)) {
+				return ['ok' => true, 'cancelled' => true, 'job_id' => $jobId];
+			}
 			if ($result === null) {
 				$this->updateTimetableJob($jobId, [
 					'status' => 'failed',
@@ -1958,6 +2083,9 @@ class TimetableManagement extends Home
 				'finished_at' => date('Y-m-d H:i:s'),
 			]);
 			return ['ok' => true, 'job_id' => $jobId];
+		} catch (TimetableJobCancelledException $e) {
+			$this->cancelTimetableJob($jobId, 'Generation discarded.');
+			return ['ok' => true, 'cancelled' => true, 'job_id' => $jobId];
 		} catch (\Throwable $e) {
 			log_message('error', 'Timetable background job failed [{job}]: {msg}', [
 				'job' => $jobId,

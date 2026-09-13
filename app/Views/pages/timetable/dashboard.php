@@ -393,6 +393,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	var printClassBase = '<?= site_url('timetable/print_class'); ?>';
 	var printTeacherBase = '<?= site_url('timetable/print_teacher'); ?>';
 	var jobStatusBase = '<?= site_url('timetable/generate_status'); ?>';
+	var discardJobUrl = '<?= site_url('timetable/discard_generation'); ?>';
 	var hasSchedule = <?= $hasSchedule ? 'true' : 'false'; ?>;
 	var activeJob = <?= json_encode($active_generation_job ?? null, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 	var lastJob = <?= json_encode($last_generation_job ?? null, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
@@ -621,6 +622,10 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 				});
 				html += '</ul>';
 			}
+			html += '<div class="mt-2">'
+				+ '<button type="button" class="btn btn-sm btn-outline-danger mr-2" id="btnDiscardGeneration">Discard</button>'
+				+ '<button type="button" class="btn btn-sm btn-primary" id="btnDiscardAndRegen">Discard and regenerate</button>'
+				+ '</div>';
 			html += '</div>';
 		} else if (status === 'done') {
 			setGenerating(false);
@@ -631,9 +636,11 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 			html += renderUnplacedReport(job.unplaced_report, job.id || job.job_id, job.unplaced_pdf);
 			if (job.ai_tip) html += '<div class="alert alert-info mt-2 py-2 small mb-2"><strong>AI:</strong> ' + esc(job.ai_tip).replace(/\n/g, '<br>') + '</div>';
 			html += '<button type="button" class="btn btn-sm btn-outline-primary" id="btnRefreshPreview">Refresh preview</button>';
-		} else if (status === 'failed') {
+		} else if (status === 'failed' || status === 'cancelled') {
 			setGenerating(false);
-			html = '<div class="alert alert-danger py-2 mb-0">' + (job.message || 'Generation failed.') + '</div>';
+			var tone = status === 'cancelled' ? 'warning' : 'danger';
+			html = '<div class="alert alert-' + tone + ' py-2 mb-2">' + (job.message || (status === 'cancelled' ? 'Generation discarded.' : 'Generation failed.')) + '</div>'
+				+ '<button type="button" class="btn btn-sm btn-primary" id="btnRetryGenerate">Generate again</button>';
 		}
 		if (html) $('#generateResult').html(html);
 	}
@@ -653,6 +660,9 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 				pollTimer = setTimeout(function () { pollJob(jobId); }, 2000);
 				return;
 			}
+			if (job && job.status === 'cancelled') {
+				setGenerating(false);
+			}
 			if (job && job.status === 'done') {
 				hasSchedule = true;
 				loadPreview();
@@ -669,7 +679,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		});
 	}
 
-	function startGenerate(phase) {
+	function startGenerate(phase, force) {
 		setGenerating(true);
 		var label = phase === 'nursery' ? 'Nursery' : (phase === 'primary' ? 'Primary' : (phase === 'high_school' || phase === 'secondary' ? 'High school' : 'All levels'));
 		$('#generateResult').html(
@@ -689,7 +699,8 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 				academic_year: <?= (int) ($academic_year ?? 0); ?>,
 				term: <?= (int) ($term ?? 1); ?>,
 				use_gemini: $('#useAiTips').is(':checked') ? 1 : 0,
-				phase: phase || 'all'
+				phase: phase || 'all',
+				force: force ? 1 : 0
 			}
 		}).done(function (r) {
 			if (r && r.error) {
@@ -743,6 +754,40 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	});
 	$('#btnGenerateAll').on('click', function () {
 		startGenerate('all');
+	});
+	function discardGeneration(thenRegen) {
+		stopJobPolling();
+		$.ajax({
+			url: discardJobUrl,
+			method: 'POST',
+			dataType: 'json',
+			timeout: 20000,
+			data: {
+				academic_year: <?= (int) ($academic_year ?? 0); ?>,
+				term: <?= (int) ($term ?? 1); ?>
+			}
+		}).done(function (r) {
+			setGenerating(false);
+			activeJob = null;
+			if (thenRegen) {
+				startGenerate('all', true);
+				return;
+			}
+			$('#generateResult').html('<div class="alert alert-warning py-2 mb-0">'
+				+ esc((r && r.message) || 'Generation discarded. You can generate again.') + '</div>');
+		}).fail(function () {
+			setGenerating(false);
+			$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">Could not discard the generation. Refresh and try again.</div>');
+		});
+	}
+	$(document).on('click', '#btnDiscardGeneration', function () {
+		discardGeneration(false);
+	});
+	$(document).on('click', '#btnDiscardAndRegen', function () {
+		discardGeneration(true);
+	});
+	$(document).on('click', '#btnRetryGenerate', function () {
+		startGenerate('all', true);
 	});
 	$('#btnToggleCriteria').on('click', function () {
 		var box = document.getElementById('ttCriteriaBox');
