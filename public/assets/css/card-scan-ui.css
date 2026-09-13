@@ -363,13 +363,6 @@
 	}
 }
 
-.staff-name-cell {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 6px 8px;
-}
-
 .staff-load-pills {
 	display: inline-flex;
 	flex-wrap: wrap;
@@ -400,7 +393,7 @@
 	color: #fff;
 }
 
-tr.staff-has-courses > td:first-child {
+tr.staff-has-courses > td.staff-teaching-col {
 	background: #eef4ff;
 }
 
