@@ -199,6 +199,9 @@ class TimetableGeneratorService
 		$this->days = $days;
 		$this->blocked = $blocked;
 		$this->mergeSlotTimes($teachingSlots);
+		foreach ($this->secondaryCriteria->relaxOverloadedRestrictions($hydrate, $teachingSlots, $days) as $warning) {
+			$this->warnings[] = $warning;
+		}
 
 		$entries = [];
 		$lessonNeeds = [];
@@ -1040,6 +1043,11 @@ class TimetableGeneratorService
 			return false;
 		}
 		if ($this->secondaryCriteria !== null) {
+			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+			if ($this->secondaryCriteria->isHeavyStaff($staffId)
+				|| $this->secondaryCriteria->isPersonalRestrictionRelaxed($staffId, (string) ($row['teacher_name'] ?? ''))) {
+				return false;
+			}
 			$days = $this->secondaryCriteria->restrictedTeachingDays($row);
 			if (is_array($days) && count($days) < 3) {
 				return false;

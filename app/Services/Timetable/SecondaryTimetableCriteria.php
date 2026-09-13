@@ -42,6 +42,18 @@ class SecondaryTimetableCriteria
 	/** @var list<array<string,mixed>> */
 	private $afterLessonRules = [];
 
+	/** @var array<int,true> */
+	private $relaxedStaffIds = [];
+
+	/** @var array<string,true> */
+	private $relaxedNameNeedles = [];
+
+	/** @var array<int,true> */
+	private $heavyStaffIds = [];
+
+	/** @var array<int,int> */
+	private $weeklyPeriodsByStaffId = [];
+
 	public function __construct()
 	{
 		$this->teacherWindows = $this->defaultTeacherWindows();
@@ -61,6 +73,9 @@ class SecondaryTimetableCriteria
 		$this->allowedDaysByStaffId = [];
 		$this->sundayRules = [];
 		$this->afterLessonRules = [];
+		$this->relaxedStaffIds = [];
+		$this->relaxedNameNeedles = [];
+		$this->heavyStaffIds = [];
 		foreach ($rules as $rule) {
 			if (empty($rule['enabled']) && isset($rule['enabled'])) {
 				continue;
@@ -327,11 +342,12 @@ class SecondaryTimetableCriteria
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
 		$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+		$personalRelaxed = $this->isPersonalRestrictionRelaxed($staffId, $teacher);
 
-		if ($staffId > 0 && isset($this->allowedDaysByStaffId[$staffId]) && !in_array($day, $this->allowedDaysByStaffId[$staffId], true)) {
+		if (!$personalRelaxed && $staffId > 0 && isset($this->allowedDaysByStaffId[$staffId]) && !in_array($day, $this->allowedDaysByStaffId[$staffId], true)) {
 			return false;
 		}
-		if ($staffId > 0 && !empty($this->windowsByStaffId[$staffId])) {
+		if (!$personalRelaxed && $staffId > 0 && !empty($this->windowsByStaffId[$staffId])) {
 			$dayWindows = array_values(array_filter($this->windowsByStaffId[$staffId], static function (array $w) use ($day): bool {
 				return (int) $w['day'] === $day;
 			}));
@@ -363,6 +379,9 @@ class SecondaryTimetableCriteria
 		}
 
 		if ($teacher === '') {
+			return true;
+		}
+		if ($personalRelaxed) {
 			return true;
 		}
 		foreach ($this->blockedDaysByName as $needle => $blocked) {
@@ -547,6 +566,10 @@ class SecondaryTimetableCriteria
 	public function restrictedTeachingDays(array $row): ?array
 	{
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
+		if ($this->isPersonalRestrictionRelaxed($staffId, $teacher)) {
+			return null;
+		}
 		if ($staffId > 0 && isset($this->allowedDaysByStaffId[$staffId]) && $this->allowedDaysByStaffId[$staffId] !== []) {
 			return array_values(array_unique(array_map('intval', $this->allowedDaysByStaffId[$staffId])));
 		}
@@ -583,6 +606,10 @@ class SecondaryTimetableCriteria
 		}
 		if ($weeklyHours <= 0) {
 			return $fallback;
+		}
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		if ($staffId > 0 && isset($this->heavyStaffIds[$staffId])) {
+			return max($fallback, $weeklyHours, 6);
 		}
 		$days = $this->restrictedTeachingDays($row);
 		if ($days === null || $days === []) {
@@ -800,6 +827,233 @@ class SecondaryTimetableCriteria
 			return '';
 		}
 		return $classId . '|' . $subject;
+	}
+
+	/**
+	 * Drop day/window special criteria (and Alice Monday) when the teacher
+	 * already has more weekly periods than those rules can hold.
+	 *
+	 * @param list<array<string,mixed>> $assignments
+	 * @param list<array<string,mixed>> $teachingSlots
+	 * @param list<int> $days
+	 * @return list<string>
+	 */
+	public function relaxOverloadedRestrictions(array $assignments, array $teachingSlots, array $days): array
+	{
+		$slotsPerDay = 0;
+		foreach ($teachingSlots as $slot) {
+			if (!empty($slot['is_break'])) {
+				continue;
+			}
+			$start = (string) ($slot['start_time'] ?? '');
+			$end = (string) ($slot['end_time'] ?? '');
+			if (\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($start, $end)
+				|| \App\Models\TimetableSchemaModel::isNightSlotTimes($start, $end)) {
+				continue;
+			}
+			$slotsPerDay++;
+		}
+		if ($slotsPerDay <= 0) {
+			$slotsPerDay = 8;
+		}
+
+		$openDays = [];
+		foreach ($days as $day) {
+			$day = (int) $day;
+			if ($day !== 6) {
+				$openDays[] = $day;
+			}
+		}
+		$openDays = array_values(array_unique($openDays));
+		$openCount = max(1, count($openDays));
+		$fullCap = $openCount * $slotsPerDay;
+
+		$this->weeklyPeriodsByStaffId = $this->weeklyPeriodsByStaff($assignments);
+		foreach ($this->weeklyPeriodsByStaffId as $staffId => $load) {
+			if ($load > (int) floor($fullCap * 0.70)) {
+				$this->heavyStaffIds[$staffId] = true;
+				$this->relaxedStaffIds[$staffId] = true;
+			}
+		}
+		foreach ($assignments as $row) {
+			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+			if ($staffId <= 0 || !isset($this->heavyStaffIds[$staffId])) {
+				continue;
+			}
+			$name = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? '')) ?? ''));
+			if ($name === '') {
+				continue;
+			}
+			foreach (array_keys($this->blockedDaysByName) as $needle) {
+				if (strpos($name, (string) $needle) !== false) {
+					unset($this->blockedDaysByName[$needle]);
+					$this->relaxedNameNeedles[strtolower((string) $needle)] = true;
+				}
+			}
+			foreach (array_keys($this->teacherWindows) as $needle) {
+				if ($this->teacherNameMatches($name, (string) $needle)) {
+					unset($this->teacherWindows[$needle]);
+					$this->relaxedNameNeedles[strtolower((string) $needle)] = true;
+				}
+			}
+		}
+
+		$warnings = [];
+		foreach ($this->allowedDaysByStaffId as $staffId => $allowed) {
+			$load = (int) ($this->weeklyPeriodsByStaffId[$staffId] ?? 0);
+			$cap = max(1, count($allowed)) * $slotsPerDay;
+			if ($load > $cap) {
+				unset($this->allowedDaysByStaffId[$staffId], $this->windowsByStaffId[$staffId]);
+				$this->relaxedStaffIds[$staffId] = true;
+				$this->heavyStaffIds[$staffId] = true;
+				$warnings[] = $this->teacherLabel($assignments, (int) $staffId)
+					. " has {$load} weekly periods, so the teacher-days rule was ignored.";
+			}
+		}
+		foreach ($this->windowsByStaffId as $staffId => $windows) {
+			if (isset($this->relaxedStaffIds[$staffId])) {
+				continue;
+			}
+			$load = (int) ($this->weeklyPeriodsByStaffId[$staffId] ?? 0);
+			$winDays = [];
+			foreach ($windows as $window) {
+				$winDays[(int) ($window['day'] ?? -1)] = true;
+			}
+			unset($winDays[-1]);
+			$cap = max(1, count($winDays)) * $slotsPerDay;
+			if ($load > $cap) {
+				unset($this->windowsByStaffId[$staffId], $this->allowedDaysByStaffId[$staffId]);
+				$this->relaxedStaffIds[$staffId] = true;
+				$this->heavyStaffIds[$staffId] = true;
+				$warnings[] = $this->teacherLabel($assignments, (int) $staffId)
+					. " has {$load} weekly periods, so the teacher-window rule was ignored.";
+			}
+		}
+
+		foreach ($this->blockedDaysByName as $needle => $blocked) {
+			$load = $this->weeklyPeriodsForName($assignments, (string) $needle);
+			$remaining = array_values(array_diff($openDays, array_map('intval', $blocked)));
+			$cap = max(1, count($remaining)) * $slotsPerDay;
+			if ($load > $cap) {
+				unset($this->blockedDaysByName[$needle]);
+				$this->relaxedNameNeedles[strtolower((string) $needle)] = true;
+				$warnings[] = ucfirst((string) $needle)
+					. " has {$load} weekly periods, so the blocked-day special criterion was ignored.";
+			}
+		}
+
+		foreach (array_keys($this->teacherWindows) as $needle) {
+			$load = $this->weeklyPeriodsForName($assignments, (string) $needle);
+			$winDays = [];
+			foreach ($this->teacherWindows[$needle] as $window) {
+				$winDays[(int) ($window['day'] ?? -1)] = true;
+			}
+			unset($winDays[-1]);
+			$cap = max(1, count($winDays)) * $slotsPerDay;
+			if ($load > $cap) {
+				unset($this->teacherWindows[$needle]);
+				$this->relaxedNameNeedles[strtolower((string) $needle)] = true;
+				$warnings[] = ucfirst((string) $needle)
+					. " has {$load} weekly periods, so the named teacher window was ignored.";
+			}
+		}
+
+		foreach ($this->heavyStaffIds as $staffId => $_) {
+			$load = (int) ($this->weeklyPeriodsByStaffId[$staffId] ?? 0);
+			$warnings[] = $this->teacherLabel($assignments, (int) $staffId)
+				. " has {$load} weekly periods, so day/window special criteria were ignored to fill empty slots.";
+		}
+
+		return array_values(array_unique($warnings));
+	}
+
+	public function isPersonalRestrictionRelaxed(int $staffId, string $teacherName = ''): bool
+	{
+		if ($staffId > 0 && isset($this->relaxedStaffIds[$staffId])) {
+			return true;
+		}
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', $teacherName) ?? ''));
+		if ($teacher === '') {
+			return false;
+		}
+		foreach (array_keys($this->relaxedNameNeedles) as $needle) {
+			if ($this->teacherNameMatches($teacher, (string) $needle) || strpos($teacher, (string) $needle) !== false) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	public function isHeavyStaff(int $staffId): bool
+	{
+		return $staffId > 0 && isset($this->heavyStaffIds[$staffId]);
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $assignments
+	 * @return array<int,int>
+	 */
+	private function weeklyPeriodsByStaff(array $assignments): array
+	{
+		$seenCombine = [];
+		$out = [];
+		foreach ($assignments as $row) {
+			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+			if ($staffId <= 0) {
+				continue;
+			}
+			$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
+			$combineKey = $this->combineGroupKey($row);
+			if ($combineKey !== '' && isset($seenCombine[$combineKey])) {
+				continue;
+			}
+			if ($combineKey !== '') {
+				$seenCombine[$combineKey] = true;
+			}
+			$out[$staffId] = (int) ($out[$staffId] ?? 0) + $hours;
+		}
+
+		return $out;
+	}
+
+	/** @param list<array<string,mixed>> $assignments */
+	private function weeklyPeriodsForName(array $assignments, string $needle): int
+	{
+		$seen = [];
+		$total = 0;
+		$needle = strtolower(trim($needle));
+		foreach ($assignments as $row) {
+			$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? '')) ?? ''));
+			if ($teacher === '' || (!$this->teacherNameMatches($teacher, $needle) && strpos($teacher, $needle) === false)) {
+				continue;
+			}
+			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+			$key = $staffId . ':' . (int) ($row['class_id'] ?? 0) . ':' . (int) ($row['course_id'] ?? $row['course'] ?? 0);
+			if (isset($seen[$key])) {
+				continue;
+			}
+			$seen[$key] = true;
+			$total += TimetableGeneratorService::weeklyHoursFromCourse($row);
+		}
+
+		return $total;
+	}
+
+	/** @param list<array<string,mixed>> $assignments */
+	private function teacherLabel(array $assignments, int $staffId): string
+	{
+		foreach ($assignments as $row) {
+			if ((int) ($row['lecturer'] ?? $row['staff_id'] ?? 0) !== $staffId) {
+				continue;
+			}
+			$name = trim((string) ($row['teacher_name'] ?? ''));
+			if ($name !== '') {
+				return $name;
+			}
+		}
+
+		return 'Teacher #' . $staffId;
 	}
 
 	/**

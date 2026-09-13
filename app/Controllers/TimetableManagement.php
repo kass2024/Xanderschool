@@ -410,10 +410,65 @@ class TimetableManagement extends Home
 	public function save_criteria()
 	{
 		$this->denyMenu('timetable_dashboard');
-		list($schoolId) = $this->bootTimetable();
+		list($schoolId, , $schema) = $this->bootTimetable();
+		$input = $this->request->getPost() ?: [];
+		$reject = $this->rejectOverloadedTeacherCriteria($schoolId, $schema, $input);
+		if ($reject !== null) {
+			return $this->response->setJSON(['error' => $reject]);
+		}
 		$store = new TimetableCriteriaStore();
-		$result = $store->save($schoolId, $this->request->getPost() ?: []);
+		$result = $store->save($schoolId, $input);
 		return $this->response->setJSON($result);
+	}
+
+	/**
+	 * Teacher-days / teacher-window rules cannot shrink a heavy load (e.g. 76 periods/week).
+	 */
+	private function rejectOverloadedTeacherCriteria(int $schoolId, TimetableSchemaModel $schema, array $input): ?string
+	{
+		$type = trim((string) ($input['rule_type'] ?? ''));
+		if (!in_array($type, ['teacher_days', 'teacher_window'], true)) {
+			return null;
+		}
+		$teacherId = (int) ($input['teacher_id'] ?? 0);
+		if ($teacherId <= 0) {
+			return null;
+		}
+		$days = $input['days'] ?? [];
+		if (is_string($days)) {
+			$days = array_filter(array_map('intval', explode(',', $days)));
+		}
+		if (!is_array($days)) {
+			$days = [];
+		}
+		$days = array_values(array_unique(array_map('intval', $days)));
+		$days = array_values(array_filter($days, static fn ($d): bool => (int) $d !== 6));
+		if ($days === []) {
+			return null;
+		}
+		$year = (int) ($this->data['academic_year'] ?? 0);
+		$term = (int) ($this->data['term'] ?? 0);
+		$load = (int) ((\App\Libraries\StaffTeachingLoad::countsByStaff($schoolId, $year, $term)[$teacherId]['periods'] ?? 0));
+		if ($load <= 0) {
+			return null;
+		}
+		$slots = $schema->teachingSlots($schoolId, \App\Libraries\TimetableTrack::O_LEVEL);
+		if ($slots === []) {
+			$slots = $schema->teachingSlots($schoolId, \App\Libraries\TimetableTrack::ALL);
+		}
+		$slotsPerDay = max(1, count($slots));
+		$cap = count($days) * $slotsPerDay;
+		if ($load <= $cap) {
+			return null;
+		}
+		$staff = (new StaffModel())->select('fname,lname')->where('id', $teacherId)->get(1)->getRowArray();
+		$name = trim(($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? ''));
+		if ($name === '') {
+			$name = 'This teacher';
+		}
+
+		return $name . ' has ' . $load . ' weekly periods. This special criterion only leaves room for about '
+			. $cap . ' periods, so it was rejected. Use the full week so empty periods can be filled.';
 	}
 
 	public function delete_criteria()

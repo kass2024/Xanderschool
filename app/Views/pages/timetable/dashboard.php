@@ -166,7 +166,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Only the teaching-notes pairs share one teacher period (Chemistry, Biology, Math, Computer Science, Economics, Entrepreneurship). Other classes keep their own periods. Izabayo Patience: Tuesday full day and Friday after lunch only. Sunday is reserved: save a <strong>Teach on Sunday</strong> course rule first. Farming and Library and Clubs stay after 15:40 and never at night. Generation uses the periods already saved in school settings and never creates a new period from special criteria. Nursery and primary have no Sunday column.</p>
+						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, teacher windows, PE last hour, mornings, clinical). A teacher-days or teacher-window rule is rejected when that teacher already has too many weekly periods to fit (for example Alice Namahoro with 76). Generation also ignores those rules so empty slots can be filled. Only the teaching-notes pairs share one teacher period (Chemistry, Biology, Math, Computer Science, Economics, Entrepreneurship). Sunday is reserved: save a <strong>Teach on Sunday</strong> course rule first. Farming and Library and Clubs stay after 15:40 and never at night. Nursery and primary have no Sunday column.</p>
 						<form id="ttCriteriaForm" class="tt-criteria-form">
 							<div class="form-row">
 								<div class="col-md-4 mb-2">
