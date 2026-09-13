@@ -39,7 +39,7 @@ class Wkhtmltopdf
 	/**
 	 * Path to executable.
 	 */
-	protected $_bin = '/usr/bin/wkhtmltopdf';
+	protected $_bin = null;
 	protected $_filename = null;                // filename in $path directory
 
 	/**
@@ -94,7 +94,12 @@ class Wkhtmltopdf
 
 		if (array_key_exists('binpath', $options)) {
 			$this->setBinPath($options['binpath']);
+		} else {
+			$this->setBinPath($this->resolveBinPath());
 		}
+
+		// wkhtmltopdf 0.12.6+ blocks local file access by default (needed for HTML temp + images)
+		$this->setOptions(array('enable-local-file-access' => null));
 
 		if (array_key_exists('window-status', $options)) {
 			$this->setWindowStatus($options['window-status']);
@@ -566,10 +571,59 @@ class Wkhtmltopdf
 	 */
 	public function setBinPath($path)
 	{
-		if (file_exists($path)) {
+		if ($path && file_exists($path)) {
 			$this->_bin = (string)$path;
 		}
 		return $this;
+	}
+
+	/**
+	 * Resolve wkhtmltopdf binary for Linux (Docker/VPS) and Windows (XAMPP).
+	 * Override with env WKHTMLTOPDF_BIN when needed.
+	 *
+	 * @return string
+	 */
+	protected function resolveBinPath()
+	{
+		$candidates = array();
+		$env = getenv('WKHTMLTOPDF_BIN');
+		if (is_string($env) && $env !== '') {
+			$candidates[] = $env;
+		}
+
+		if (strncasecmp(PHP_OS, 'WIN', 3) === 0) {
+			$candidates[] = 'C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe';
+			$candidates[] = 'C:\\Program Files (x86)\\wkhtmltopdf\\bin\\wkhtmltopdf.exe';
+			if (defined('ROOTPATH')) {
+				$candidates[] = ROOTPATH . 'bin' . DIRECTORY_SEPARATOR . 'wkhtmltopdf.exe';
+			}
+			if (defined('FCPATH')) {
+				$candidates[] = FCPATH . 'bin' . DIRECTORY_SEPARATOR . 'wkhtmltopdf.exe';
+			}
+		} else {
+			$candidates[] = '/usr/local/bin/wkhtmltopdf';
+			$candidates[] = '/usr/bin/wkhtmltopdf';
+		}
+
+		foreach ($candidates as $path) {
+			if ($path && is_file($path)) {
+				return $path;
+			}
+		}
+
+		// Fall back to PATH lookup
+		$whichCmd = (strncasecmp(PHP_OS, 'WIN', 3) === 0) ? 'where wkhtmltopdf 2>NUL' : 'command -v wkhtmltopdf 2>/dev/null';
+		$found = trim((string)shell_exec($whichCmd));
+		if ($found !== '') {
+			$line = preg_split('/\r\n|\r|\n/', $found);
+			if (!empty($line[0]) && is_file($line[0])) {
+				return $line[0];
+			}
+		}
+
+		return (strncasecmp(PHP_OS, 'WIN', 3) === 0)
+			? 'C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe'
+			: '/usr/bin/wkhtmltopdf';
 	}
 
 	/**
@@ -804,7 +858,14 @@ class Wkhtmltopdf
 	 */
 	protected function _getCommand()
 	{
-		$command = $this->_bin;
+		$bin = $this->_bin ?: $this->resolveBinPath();
+		if (!$bin || !is_file($bin)) {
+			throw new Exception(
+				'wkhtmltopdf binary not found. Install wkhtmltopdf or set WKHTMLTOPDF_BIN. Looked for: ' . ($bin ?: '(empty)')
+			);
+		}
+		$this->_bin = $bin;
+		$command = escapeshellarg($bin);
 
 		$command .= ($this->getCopies() > 1) ? " --copies " . $this->getCopies() : "";
 		$command .= " --orientation " . $this->getOrientation();
@@ -817,7 +878,11 @@ class Wkhtmltopdf
 		}
 
 		foreach ($this->getOptions() as $key => $value) {
-			$command .= " --$key $value";
+			if ($value === null || $value === '') {
+				$command .= " --$key";
+			} else {
+				$command .= " --$key " . escapeshellarg((string)$value);
+			}
 		}
 
 		$command .= ($this->getWindowStatus()) ? " --window-status " . $this->getWindowStatus() . "" : "";
@@ -862,20 +927,28 @@ class Wkhtmltopdf
 
 		$content = $this->_exec(str_replace('%input%', $input, $this->_getCommand()));
 
-		if (strpos(mb_strtolower($content['stderr']), 'error')) {
-//			echo $content['stderr'];
+		$stdout = $content['stdout'] ?? '';
+		$stderr = strtolower((string) ($content['stderr'] ?? ''));
+		$returnCode = (int) ($content['return'] ?? 0);
+
+		// PDF bytes are binary — never measure them with mb_strlen(utf-8).
+		if (strlen($stdout) > 4 && strncmp($stdout, '%PDF', 4) === 0) {
+			return $stdout;
+		}
+
+		if (strpos($stderr, 'error') !== false) {
 			throw new Exception("System error <pre>" . $content['stderr'] . "</pre>");
 		}
 
-		if (mb_strlen($content['stdout'], 'utf-8') === 0) {
+		if ($stdout === '') {
 			throw new Exception("WKHTMLTOPDF didn't return any data");
 		}
 
-		if ((int)$content['return'] > 1) {
-			throw new Exception("Shell error, return code: " . (int)$content['return']);
+		if ($returnCode > 1) {
+			throw new Exception("Shell error, return code: " . $returnCode);
 		}
 
-		return $content['stdout'];
+		return $stdout;
 	}
 
 	/**

@@ -1423,7 +1423,7 @@ class TimetableManagement extends Home
 			if ($id <= 0) {
 				continue;
 			}
-			if (TimetableTrack::generationPhaseKey($schema->trackForClass($schoolId, $id)) === $phase) {
+			if (TimetableTrack::generationPhaseForClassId($id) === $phase) {
 				$ids[] = $id;
 			}
 		}
@@ -2200,12 +2200,12 @@ class TimetableManagement extends Home
 			$label = TimetableTrack::generationPhaseLabel($phase);
 			$db = \Config\Database::connect();
 			$sheets = [];
-			foreach ($this->fetchClassRows($db, $schoolId) as $class) {
-				$classId = (int) ($class['id'] ?? 0);
+			$classIds = $phase === 'all'
+				? array_map(static fn ($c) => (int) ($c['id'] ?? 0), $this->fetchClassRows($db, $schoolId))
+				: $this->phaseClassIds($schoolId, $phase, $schema);
+			foreach ($classIds as $classId) {
+				$classId = (int) $classId;
 				if ($classId <= 0) {
-					continue;
-				}
-				if ($phase !== 'all' && TimetableTrack::generationPhaseForClassId($classId) !== $phase) {
 					continue;
 				}
 				try {
@@ -3141,6 +3141,9 @@ class TimetableManagement extends Home
 		if (!is_dir($dir)) {
 			@mkdir($dir, 0755, true);
 		}
+		if (!is_dir($dir) || !is_writable($dir)) {
+			$dir = rtrim(sys_get_temp_dir(), '/\\');
+		}
 
 		$filename = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $filenamePrefix) . '_' . date('Y-m-d') . '.pdf';
 
@@ -3152,11 +3155,20 @@ class TimetableManagement extends Home
 			$wk->setPageSize(Wkhtmltopdf::SIZE_A4);
 			$wk->setMargins(['top' => 8, 'bottom' => 8, 'left' => 8, 'right' => 8]);
 			$wk->setOptions(['encoding' => 'UTF-8']);
-			$wk->output(Wkhtmltopdf::MODE_DOWNLOAD, $filename);
-			return $this->response;
+			$pdf = $wk->output(Wkhtmltopdf::MODE_STRING, $filename);
+			if (!is_string($pdf) || strncmp($pdf, '%PDF', 4) !== 0) {
+				throw new \RuntimeException('PDF converter returned empty output.');
+			}
+			return $this->response
+				->setHeader('Content-Type', 'application/pdf')
+				->setHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+				->setHeader('Cache-Control', 'private, max-age=0, must-revalidate')
+				->setBody($pdf);
 		} catch (\Throwable $e) {
+			log_message('error', 'Timetable PDF convert failed: {msg}', ['msg' => $e->getMessage()]);
 			return $this->response
 				->setHeader('Content-Type', 'text/html; charset=UTF-8')
+				->setHeader('Content-Disposition', 'inline; filename="' . preg_replace('/\.pdf$/', '.html', $filename) . '"')
 				->setBody($html . '<script>window.onload=function(){window.print();}</script>');
 		}
 	}

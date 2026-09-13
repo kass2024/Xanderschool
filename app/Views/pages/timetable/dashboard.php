@@ -304,13 +304,13 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		<div class="card-header"><strong><i class="fa fa-file-pdf-o"></i> Export all timetables (PDF)</strong></div>
 		<div class="card-body">
 			<div class="d-flex flex-wrap align-items-center mb-2" style="gap:10px;">
-				<a href="<?= site_url('timetable/pdf_all_classes'); ?>" class="btn btn-primary">
+				<a href="<?= site_url('timetable/pdf_all_classes'); ?>" class="btn btn-primary" target="_blank">
 					<i class="fa fa-download"></i> All class timetables (<?= (int) ($class_count ?? 0); ?>)
 				</a>
-				<a href="<?= site_url('timetable/pdf_all_teachers'); ?>" class="btn btn-info">
+				<a href="<?= site_url('timetable/pdf_all_teachers'); ?>" class="btn btn-info" target="_blank">
 					<i class="fa fa-download"></i> All teacher / staff timetables (<?= (int) ($staff_count ?? 0); ?>)
 				</a>
-				<a href="<?= site_url('timetable/pdf_unplaced'); ?>" class="btn btn-warning">
+				<a href="<?= site_url('timetable/pdf_unplaced'); ?>" class="btn btn-warning" target="_blank">
 					<i class="fa fa-file-pdf-o"></i> Unplaced periods summary
 				</a>
 			</div>
@@ -322,7 +322,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 					$lvlHref = site_url('timetable/pdf_all_classes/' . rawurlencode($lvlKey));
 					?>
 					<?php if ($lvlCount > 0): ?>
-						<a href="<?= esc($lvlHref); ?>" class="btn btn-outline-primary">
+						<a href="<?= esc($lvlHref); ?>" class="btn btn-outline-primary" target="_blank">
 							<i class="fa <?= esc($lvl['icon'] ?? 'fa-download'); ?>"></i>
 							<?= esc($lvl['label'] ?? $lvlKey); ?>
 							(<?= $lvlCount; ?>)
