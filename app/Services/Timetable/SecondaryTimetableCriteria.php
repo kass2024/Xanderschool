@@ -615,11 +615,26 @@ class SecondaryTimetableCriteria
 	private function windowsForTeacher(string $teacher): array
 	{
 		foreach ($this->teacherWindows as $needle => $windows) {
-			if (strpos($teacher, $needle) !== false) {
+			if ($this->teacherNameMatches($teacher, (string) $needle)) {
 				return $windows;
 			}
 		}
 		return [];
+	}
+
+	private function teacherNameMatches(string $teacher, string $needle): bool
+	{
+		$needle = strtolower(trim($needle));
+		if ($needle === '') {
+			return false;
+		}
+		$parts = preg_split('/\s+/', $needle) ?: [];
+		foreach ($parts as $part) {
+			if ($part !== '' && strpos($teacher, $part) === false) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -637,6 +652,10 @@ class SecondaryTimetableCriteria
 		$linear = [
 			['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
 			['day' => 4, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
+		];
+		$patienceTueFri = [
+			['day' => 1, 'start' => 7 * 60, 'end' => 18 * 60, 'scope' => null],
+			['day' => 4, 'start' => 13 * 60, 'end' => 18 * 60, 'scope' => null],
 		];
 		return [
 			'innocent' => [
@@ -666,6 +685,9 @@ class SecondaryTimetableCriteria
 			],
 			'linear' => $linear,
 			'rinea' => $linear,
+			// Tuesday all teaching day; Friday after lunch only.
+			'uwamahoro patience' => $patienceTueFri,
+			'izabayo patience' => $patienceTueFri,
 		];
 	}
 
