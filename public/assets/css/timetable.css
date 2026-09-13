@@ -153,6 +153,24 @@
 .tt-dashboard .tt-preview-head { background: #f8fafc; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: space-between; }
 .tt-preview-controls { gap: 8px; }
 .tt-preview-controls select { width: auto; min-width: 120px; }
+.tt-live-pick { position: relative; min-width: 260px; max-width: 360px; flex: 1 1 240px; }
+.tt-live-pick-select {
+	position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+	overflow: hidden; clip: rect(0, 0, 0, 0);
+}
+.tt-live-pick-menu {
+	position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
+	max-height: 280px; overflow: auto; background: #fff;
+	border: 1px solid #cbd5e1; border-radius: 8px;
+	box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+.tt-live-pick-item {
+	display: block; width: 100%; text-align: left; border: 0; background: #fff;
+	padding: 7px 10px; font-size: 0.8rem; color: #0f172a;
+}
+.tt-live-pick-item:hover,
+.tt-live-pick-item.is-active { background: #eff6ff; color: #1d4ed8; }
+.tt-live-pick-empty { padding: 10px; font-size: 0.78rem; color: #64748b; }
 .tt-dashboard .tt-preview-body { padding: 12px; max-height: 75vh; overflow: auto; background: #fff; }
 
 .tt-export-card .card-header { background: #f8fafc; font-weight: 600; }

@@ -55,20 +55,20 @@ class TimetableManagement extends Home
 
 		$data['classes'] = $this->fetchClassRows($db, $schoolId);
 
-		$data['staffs'] = $db->table('staffs s')
-			->select('s.id, s.fname, s.lname, s.post, p.title AS post_title')
-			->join('posts p', 'p.id = s.post', 'left')
-			->where('s.school_id', $schoolId)
-			->whereIn('s.status', [1, 2])
-			->orderBy('fname')->orderBy('lname')
-			->get()->getResultArray();
-
 		$data['schedule'] = $db->table('timetable_schedules')
 			->where('school_id', $schoolId)
 			->where('academic_year', $year)
 			->where('term', $term)
 			->orderBy('id', 'DESC')
 			->get(1)->getRowArray();
+
+		$data['staffs'] = $this->fetchTimetableStaffRows(
+			$db,
+			$schoolId,
+			$year,
+			$term,
+			(int) ($data['schedule']['id'] ?? 0)
+		);
 		$data['generation_levels'] = $this->buildGenerationLevelCards($schoolId, $year, $term, $schema, $data['schedule'] ?? null);
 		$data['last_generation_job'] = $this->findLastFinishedTimetableJob($schoolId, $year, $term);
 		if (!empty($data['last_generation_job']) && !empty($data['schedule']['id'])) {
@@ -1961,12 +1961,12 @@ class TimetableManagement extends Home
 		list($schoolId, , $schema) = $this->bootTimetable();
 		$db = \Config\Database::connect();
 		$sheets = [];
-		$staffs = $db->table('staffs s')
-			->select('s.id')
-			->where('s.school_id', $schoolId)
-			->whereIn('s.status', [1, 2])
-			->orderBy('s.fname')->orderBy('s.lname')
-			->get()->getResultArray();
+		$year = (int) ($this->data['academic_year'] ?? 0);
+		$term = (int) ($this->data['term'] ?? 1);
+		$schedule = $db->table('timetable_schedules')
+			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
+			->orderBy('id', 'DESC')->get(1)->getRowArray();
+		$staffs = $this->fetchTimetableStaffRows($db, $schoolId, $year, $term, (int) ($schedule['id'] ?? 0));
 		foreach ($staffs as $staff) {
 			$grid = $this->buildGridView($schoolId, $schema, 'teacher', (int) $staff['id']);
 			if (!empty($grid['schedule'])) {
@@ -2276,11 +2276,13 @@ class TimetableManagement extends Home
 
 		$data['classes'] = $this->fetchClassRows($db, $schoolId);
 
-		$data['staffs'] = $db->table('staffs s')
-			->select('s.id, s.fname, s.lname, p.title AS post_title')
-			->join('posts p', 'p.id = s.post', 'left')
-			->where('s.school_id', $schoolId)->whereIn('s.status', [1, 2])
-			->orderBy('fname')->orderBy('lname')->get()->getResultArray();
+		$data['staffs'] = $this->fetchTimetableStaffRows(
+			$db,
+			$schoolId,
+			$year,
+			$term,
+			(int) ($schedule['id'] ?? 0)
+		);
 
 		$data['school_name'] = $this->data['school_name'] ?? '';
 		$data['editable'] = $editable && !empty($schedule);
@@ -2536,6 +2538,80 @@ class TimetableManagement extends Home
 			return $maps['by_time'][$key];
 		}
 		return null;
+	}
+
+	/**
+	 * Teachers for preview / PDF: active staff plus anyone assigned or already on the grid
+	 * (placed or parked), even if their staff status is no longer 1/2.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function fetchTimetableStaffRows(
+		\CodeIgniter\Database\BaseConnection $db,
+		int $schoolId,
+		int $year = 0,
+		int $term = 0,
+		int $scheduleId = 0
+	): array {
+		$ids = [];
+		$active = $db->table('staffs')
+			->select('id')
+			->where('school_id', $schoolId)
+			->whereIn('status', [1, 2])
+			->get()->getResultArray();
+		foreach ($active as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id > 0) {
+				$ids[$id] = true;
+			}
+		}
+		if ($year > 0 && $term > 0) {
+			$assigned = $db->table('course_records cr')
+				->select('cr.lecturer')
+				->join('classes cl', 'cl.id = cr.class')
+				->where('cl.school_id', $schoolId)
+				->where('cr.year', $year)
+				->where("find_in_set($term, cr.term) > 0", null, false)
+				->where('cr.lecturer >', 0)
+				->get()->getResultArray();
+			foreach ($assigned as $row) {
+				$id = (int) ($row['lecturer'] ?? 0);
+				if ($id > 0) {
+					$ids[$id] = true;
+				}
+			}
+		}
+		if ($scheduleId > 0) {
+			$onGrid = $db->table('timetable_entries')
+				->select('staff_id')
+				->where('schedule_id', $scheduleId)
+				->where('staff_id >', 0)
+				->get()->getResultArray();
+			foreach ($onGrid as $row) {
+				$id = (int) ($row['staff_id'] ?? 0);
+				if ($id > 0) {
+					$ids[$id] = true;
+				}
+			}
+		}
+		if ($ids === []) {
+			return [];
+		}
+		$idList = array_keys($ids);
+		$rows = $db->table('staffs s')
+			->select('s.id, s.fname, s.lname, s.post, s.status, p.title AS post_title')
+			->join('posts p', 'p.id = s.post', 'left')
+			->whereIn('s.id', $idList)
+			->orderBy('s.fname')
+			->orderBy('s.lname')
+			->get()->getResultArray();
+		usort($rows, static function (array $a, array $b): int {
+			return strcasecmp(
+				trim((string) ($a['fname'] ?? '') . ' ' . (string) ($a['lname'] ?? '')),
+				trim((string) ($b['fname'] ?? '') . ' ' . (string) ($b['lname'] ?? ''))
+			);
+		});
+		return $rows;
 	}
 
 	/** @return list<array<string,mixed>> */

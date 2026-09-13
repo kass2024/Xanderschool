@@ -302,18 +302,32 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 					<option value="class">Class</option>
 					<option value="teacher">Teacher</option>
 				</select>
-				<select id="previewClass" class="form-control form-control-sm tt-preview-entity">
-					<?php foreach ($classes as $c): ?>
-						<option value="<?= (int) $c['id']; ?>"><?= esc($c['class_label'] ?? (($c['level_name'] ?? '') . ' ' . $c['title'])); ?></option>
-					<?php endforeach; ?>
-				</select>
-				<select id="previewTeacher" class="form-control form-control-sm tt-preview-entity d-none">
-					<?php foreach ($staffs as $s): ?>
-						<option value="<?= (int) $s['id']; ?>">
-							<?= esc($s['fname'] . ' ' . $s['lname']); ?><?= !empty($s['post_title']) ? ' · ' . esc($s['post_title']) : ''; ?>
-						</option>
-					<?php endforeach; ?>
-				</select>
+				<div class="tt-live-pick tt-preview-entity" data-tt-live-pick id="previewClassPick">
+					<input type="search" class="form-control form-control-sm tt-live-pick-q" placeholder="Search class…" autocomplete="off">
+					<select id="previewClass" class="tt-live-pick-select" aria-hidden="true" tabindex="-1">
+						<?php foreach ($classes as $c): ?>
+							<?php $classLabel = $c['class_label'] ?? (($c['level_name'] ?? '') . ' ' . $c['title']); ?>
+							<option value="<?= (int) $c['id']; ?>" data-search="<?= esc($classLabel); ?>"><?= esc($classLabel); ?></option>
+						<?php endforeach; ?>
+					</select>
+					<div class="tt-live-pick-menu" hidden></div>
+				</div>
+				<div class="tt-live-pick tt-preview-entity d-none" data-tt-live-pick id="previewTeacherPick">
+					<input type="search" class="form-control form-control-sm tt-live-pick-q" placeholder="Search teacher…" autocomplete="off">
+					<select id="previewTeacher" class="tt-live-pick-select" aria-hidden="true" tabindex="-1">
+						<?php foreach ($staffs as $s): ?>
+							<?php
+								$teacherLabel = trim(($s['fname'] ?? '') . ' ' . ($s['lname'] ?? ''));
+								if (!empty($s['post_title'])) {
+									$teacherLabel .= ' · ' . $s['post_title'];
+								}
+								$teacherSearch = trim(($s['fname'] ?? '') . ' ' . ($s['lname'] ?? '') . ' ' . ($s['post_title'] ?? ''));
+							?>
+							<option value="<?= (int) $s['id']; ?>" data-search="<?= esc($teacherSearch); ?>"><?= esc($teacherLabel); ?></option>
+						<?php endforeach; ?>
+					</select>
+					<div class="tt-live-pick-menu" hidden></div>
+				</div>
 				<a href="#" id="previewOpenFull" class="btn btn-sm btn-info">Full page</a>
 				<a href="#" id="previewPrint" class="btn btn-sm btn-outline-secondary">Print PDF</a>
 			</div>
@@ -345,6 +359,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 </div>
 
 <script src="<?= base_url('assets/js/timetable-live-edit.js'); ?>"></script>
+<script src="<?= base_url('assets/js/timetable-live-pick.js'); ?>"></script>
 <script>
 (function () {
 	var classBase = '<?= site_url('timetable/class'); ?>';
@@ -499,14 +514,9 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	}
 
 	function syncEntityOptions() {
-		var mode = currentMode();
-		if (mode === 'teacher') {
-			$('#previewClass').addClass('d-none');
-			$('#previewTeacher').removeClass('d-none');
-		} else {
-			$('#previewTeacher').addClass('d-none');
-			$('#previewClass').removeClass('d-none');
-		}
+		var teacher = currentMode() === 'teacher';
+		$('#previewClassPick').toggleClass('d-none', teacher);
+		$('#previewTeacherPick').toggleClass('d-none', !teacher);
 	}
 
 	function loadPreview() {
@@ -731,6 +741,9 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		loadPreview();
 	});
 
+	if (window.TtLivePick) {
+		TtLivePick.init('#previewClassPick, #previewTeacherPick');
+	}
 	syncEntityOptions();
 	if (hasSchedule) loadPreview();
 	if (activeJob && activeJob.id && (activeJob.status === 'queued' || activeJob.status === 'running')) {
