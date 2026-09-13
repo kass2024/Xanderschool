@@ -166,7 +166,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Izabayo Patience: Tuesday full day and Friday after lunch only. Sunday is reserved: generation never places a high-school course there unless you save a <strong>Teach on Sunday</strong> rule first. Nursery and primary have no Sunday column.</p>
+						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Izabayo Patience: Tuesday full day and Friday after lunch only. Sunday is reserved: save a <strong>Teach on Sunday</strong> course rule first. Generation uses the periods already saved in school settings and never creates a new period from special criteria. Nursery and primary have no Sunday column.</p>
 						<form id="ttCriteriaForm" class="tt-criteria-form">
 							<div class="form-row">
 								<div class="col-md-4 mb-2">
@@ -204,15 +204,17 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 									</select>
 								</div>
 							</div>
-							<p class="small text-info mb-2" id="ttSundayHint" hidden>Sunday is special: pick the course (and optional teacher/class), then save this rule before you generate. Generation will place only these lessons on Sunday.</p>
-							<div class="tt-day-checks mb-2">
+							<p class="small text-info mb-2" id="ttSundayHint" hidden>Pick the course (and optional teacher/class). Sunday lessons use the same bell periods already saved under Settings → Periods &amp; breaks. Special criteria does not add or change periods.</p>
+							<div class="tt-day-checks mb-2" id="ttCriteriaDays">
 								<?php foreach (($criteria_day_choices ?? []) as $dayChoice): ?>
 									<label class="small mr-2 mb-0"><input type="checkbox" name="days[]" value="<?= (int) $dayChoice['value']; ?>"> <?= esc($dayChoice['label']); ?></label>
 								<?php endforeach; ?>
 							</div>
-							<div class="form-row">
+							<div class="form-row" id="ttCriteriaTimes">
 								<div class="col-5 mb-2"><input type="time" name="start_time" class="form-control form-control-sm" placeholder="From"></div>
 								<div class="col-5 mb-2"><input type="time" name="end_time" class="form-control form-control-sm" placeholder="To"></div>
+							</div>
+							<div class="form-row">
 								<div class="col-12 mb-2"><input type="text" name="note" class="form-control form-control-sm" placeholder="Note (optional)"></div>
 							</div>
 							<button type="submit" class="btn btn-sm btn-success">Save rule</button>
@@ -746,9 +748,11 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	function syncSundayRuleUi() {
 		var sunday = $('#ttRuleType').val() === 'teach_sunday';
 		$('#ttSundayHint').prop('hidden', !sunday);
+		$('#ttCriteriaDays, #ttCriteriaTimes').toggle(!sunday);
 		if (sunday) {
 			$('.tt-day-checks input').prop('checked', false);
 			$('.tt-day-checks input[value="6"]').prop('checked', true);
+			$('#ttCriteriaTimes input').val('');
 		}
 	}
 	$('#ttRuleType').on('change', syncSundayRuleUi);

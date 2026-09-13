@@ -244,25 +244,8 @@ class SecondaryTimetableCriteria
 		if ($matched === []) {
 			return false;
 		}
-		$windows = [];
-		foreach ($matched as $rule) {
-			$start = trim((string) ($rule['start_time'] ?? ''));
-			$end = trim((string) ($rule['end_time'] ?? ''));
-			if ($start !== '' && $end !== '') {
-				$windows[] = [$this->timeToMinutes($start), $this->timeToMinutes($end)];
-			}
-		}
-		if ($windows === [] || $slotStart === null) {
-			return true;
-		}
-		$slotFrom = $this->timeToMinutes((string) $slotStart);
-		$slotTo = $this->timeToMinutes((string) ($slotEnd ?? $slotStart));
-		foreach ($windows as [$from, $to]) {
-			if ($to > $from && $slotFrom >= $from && $slotTo <= $to) {
-				return true;
-			}
-		}
-		return false;
+		// Place into the school's saved teaching periods only — ignore any leftover times on the rule.
+		return true;
 	}
 
 	public function prefersSunday(array $row): bool

@@ -90,10 +90,10 @@ class TimetableCriteriaStore
 			if ((int) $row['course_id'] <= 0 && (int) $row['teacher_id'] <= 0 && (int) $row['class_id'] <= 0) {
 				return ['error' => 'Teach on Sunday needs a course, teacher, or class. Save it before generating.'];
 			}
-			if ($days === [] || !in_array(6, $days, true)) {
-				$days[] = 6;
-				$row['days'] = json_encode(array_values(array_unique(array_map('intval', $days))));
-			}
+			// Sunday uses the school's existing bell periods — never invent a new period here.
+			$row['start_time'] = '';
+			$row['end_time'] = '';
+			$row['days'] = json_encode([6]);
 		}
 		$db = \Config\Database::connect();
 		if ($id > 0) {
