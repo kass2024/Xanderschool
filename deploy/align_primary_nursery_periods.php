@@ -1,7 +1,6 @@
 <?php
 /**
- * Align Primary and Nursery bells with the other classes.
- * Keeps special activities. Clips regular lessons to 15:40. Sunday stays off.
+ * Restore 1-hour Primary and Nursery bells. Sunday stays off.
  *
  *   docker exec xander_school_app php /var/www/html/deploy/align_primary_nursery_periods.php [school_id]
  */
@@ -21,10 +20,10 @@ use App\Models\TimetableSchemaModel;
 $schoolId = (int) ($argv[1] ?? 27);
 $schema = new TimetableSchemaModel();
 $schema->ensureSchema();
-$n = $schema->alignPrimaryNurseryWithOtherClasses($schoolId);
+$n = $schema->restorePrimaryNurseryHourPeriods($schoolId, true);
 
 $db = \Config\Database::connect();
-echo "Aligned school {$schoolId} ({$n} slot rows).\n";
+echo "Restored 1-hour primary/nursery for school {$schoolId} ({$n} slot rows).\n";
 foreach ([TimetableTrack::PRIMARY, TimetableTrack::NURSERY, TimetableTrack::O_LEVEL] as $track) {
 	echo "=== {$track} ===\n";
 	$rows = $db->table('timetable_slots')
@@ -41,6 +40,11 @@ foreach ([TimetableTrack::PRIMARY, TimetableTrack::NURSERY, TimetableTrack::O_LE
 		->where('school_id', $schoolId)
 		->where('track_key', $track)
 		->countAllResults();
-	echo "  specials={$specials}\n";
+	$sunday = (int) $db->table('timetable_special_times')
+		->where('school_id', $schoolId)
+		->where('track_key', $track)
+		->where('day_of_week', 6)
+		->countAllResults();
+	echo "  specials={$specials} sunday={$sunday}\n";
 }
 echo "Done.\n";

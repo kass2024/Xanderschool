@@ -163,21 +163,19 @@ class TimetableSchemaModel extends Model
 	public function applyPrimarySlotTemplate(int $schoolId, string $trackKey = TimetableTrack::ALL): int
 	{
 		$trackKey = TimetableTrack::normalize($trackKey);
-		$lessonsEndAt1540 = in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true);
 
 		return $this->applySlotTemplatePreservingSpecials(
 			$schoolId,
 			$trackKey,
-			self::schoolDaySlotTemplate($lessonsEndAt1540)
+			self::schoolDaySlotTemplate(false)
 		);
 	}
 
 	/**
-	 * Copy O Level / A Level / TVET bells onto Primary and Nursery.
-	 * Sunday stays off. Special activities are kept on the existing slot ids.
-	 * Teaching periods that cross 15:40 are clipped so lessons end at 15:40.
+	 * Restore 1-hour Primary / Nursery bells (07:30–16:30). Never copy senior 40-minute periods.
+	 * Sunday stays off. Special activities on remaining slot ids are kept.
 	 */
-	public function alignPrimaryNurseryWithOtherClasses(int $schoolId): int
+	public function restorePrimaryNurseryHourPeriods(int $schoolId, bool $force = false): int
 	{
 		$this->ensureSchema();
 		$schoolId = (int) $schoolId;
@@ -185,21 +183,58 @@ class TimetableSchemaModel extends Model
 			return 0;
 		}
 
-		$sourceKey = $this->firstSeniorTrackWithSlots($schoolId);
-		$template = $sourceKey !== null
-			? $this->slotsAsTemplate($schoolId, $sourceKey)
-			: self::schoolDaySlotTemplate(true);
-		if ($template === []) {
-			$template = self::schoolDaySlotTemplate(true);
-		}
-		$template = self::clipTemplateLessonsToEnd($template, self::secondaryLessonEndClock());
-
+		$template = self::schoolDaySlotTemplate(false);
 		$updated = 0;
 		foreach ([TimetableTrack::PRIMARY, TimetableTrack::NURSERY] as $trackKey) {
+			if (!$force && $this->trackUsesHourLessonPeriods($schoolId, $trackKey)) {
+				$this->stripSundaySpecials($schoolId, $trackKey);
+				continue;
+			}
 			$updated += $this->applySlotTemplatePreservingSpecials($schoolId, $trackKey, $template);
+			$this->stripSundaySpecials($schoolId, $trackKey);
 		}
 
 		return $updated;
+	}
+
+	/**
+	 * @deprecated Use restorePrimaryNurseryHourPeriods(). Kept so older deploy scripts still work.
+	 */
+	public function alignPrimaryNurseryWithOtherClasses(int $schoolId): int
+	{
+		return $this->restorePrimaryNurseryHourPeriods($schoolId, true);
+	}
+
+	private function trackUsesHourLessonPeriods(int $schoolId, string $trackKey): bool
+	{
+		$rows = \Config\Database::connect()->table('timetable_slots')
+			->where('school_id', $schoolId)
+			->where('track_key', $trackKey)
+			->where('is_break', 0)
+			->orderBy('sort_order', 'ASC')
+			->get()
+			->getResultArray();
+		if ($rows === []) {
+			return false;
+		}
+		$first = $rows[0];
+		$start = self::slotClock((string) ($first['start_time'] ?? ''));
+		$end = self::slotClock((string) ($first['end_time'] ?? ''));
+
+		return $start === '07:30:00' && $end === '08:30:00' && count($rows) <= 8;
+	}
+
+	public function stripSundaySpecials(int $schoolId, string $trackKey): void
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('timetable_special_times')) {
+			return;
+		}
+		$db->table('timetable_special_times')
+			->where('school_id', $schoolId)
+			->where('track_key', $trackKey)
+			->where('day_of_week', self::sundayDayIndex())
+			->delete();
 	}
 
 	public function clipJuniorLessonEnds(int $schoolId, string $trackKey): int
@@ -308,9 +343,9 @@ class TimetableSchemaModel extends Model
 		}
 
 		if ($trackKey === TimetableTrack::ALL) {
-			$this->insertSlotSet($schoolId, $trackKey, self::schoolDaySlotTemplate(true));
+			$this->insertSlotSet($schoolId, $trackKey, self::schoolDaySlotTemplate(false));
 		} elseif (in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
-			$this->insertSlotSet($schoolId, $trackKey, self::schoolDaySlotTemplate(true));
+			$this->insertSlotSet($schoolId, $trackKey, self::schoolDaySlotTemplate(false));
 		} elseif (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
 			$this->insertSlotSet($schoolId, $trackKey, self::secondarySlotTemplate());
 		} else {
@@ -357,13 +392,13 @@ class TimetableSchemaModel extends Model
 	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
 	private static function primarySlotTemplate(): array
 	{
-		return self::schoolDaySlotTemplate(true);
+		return self::schoolDaySlotTemplate(false);
 	}
 
 	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
 	private static function nurserySlotTemplate(): array
 	{
-		return self::schoolDaySlotTemplate(true);
+		return self::schoolDaySlotTemplate(false);
 	}
 
 	private function firstSeniorTrackWithSlots(int $schoolId): ?string
@@ -738,6 +773,10 @@ class TimetableSchemaModel extends Model
 			// Periods 12–16 are activities/preps after the 15:40 teaching cutoff.
 			// Periods 10–11 (through 15:40) remain teachable.
 			return ['12', '13', '14', '15', '16'];
+		}
+		if (in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
+			// Last 1-hour column (15:30–16:30) is assembly / debates / Sabbath, not a lesson.
+			return ['7'];
 		}
 		return [];
 	}

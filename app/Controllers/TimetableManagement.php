@@ -246,11 +246,8 @@ class TimetableManagement extends Home
 			$db->table('timetable_settings')->insert($settingsPayload);
 		}
 
-		$schema = new TimetableSchemaModel();
 		if (in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
-			$schema->clipJuniorLessonEnds($schoolId, $trackKey);
-		} else {
-			$schema->alignPrimaryNurseryWithOtherClasses($schoolId);
+			(new TimetableSchemaModel())->stripSundaySpecials($schoolId, $trackKey);
 		}
 
 		return $this->response->setJSON(['success' => 'Periods saved for ' . $trackLabel . '.']);

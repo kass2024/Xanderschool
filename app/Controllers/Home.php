@@ -2494,7 +2494,7 @@ public function testEmail()
 			$data['timetable_track_key'] = 'all';
 		}
 		$ttSchema->ensureTrackSlots($schoolId, $data['timetable_track_key']);
-		$ttSchema->alignPrimaryNurseryWithOtherClasses($schoolId);
+		$ttSchema->restorePrimaryNurseryHourPeriods($schoolId);
 		$data['timetable_slots'] = $ttSchema->allSlots($schoolId, $data['timetable_track_key']);
 		$data['timetable_settings'] = $db->table('timetable_settings')
 			->where('school_id', $schoolId)->get(1)->getRowArray();
