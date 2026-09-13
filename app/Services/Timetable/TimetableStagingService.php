@@ -360,6 +360,7 @@ class TimetableStagingService
 			$totalReplaced += $this->autoPlaceStaging($scheduleId, $schoolId, $schema, $filterClassId, $filterStaffId, false);
 		}
 
+		$totalMoved += $this->parkAllConflicts($scheduleId, $schoolId, $filterClassId, $filterStaffId);
 		$remaining = count($this->collectConflictEntryIds(
 			$this->scheduledEntries($scheduleId, $schoolId, $filterClassId, $filterStaffId)
 		));
@@ -369,6 +370,28 @@ class TimetableStagingService
 			'replaced' => $totalReplaced,
 			'remaining_conflicts' => $remaining,
 		];
+	}
+
+	/** Park leftover colliding rows. Never write them back onto the grid. */
+	public function parkAllConflicts(
+		int $scheduleId,
+		int $schoolId,
+		int $filterClassId = 0,
+		int $filterStaffId = 0
+	): int {
+		$ids = $this->collectConflictEntryIds(
+			$this->scheduledEntries($scheduleId, $schoolId, $filterClassId, $filterStaffId)
+		);
+		if ($ids === []) {
+			return 0;
+		}
+		\Config\Database::connect()->table('timetable_entries')
+			->whereIn('id', $ids)
+			->update([
+				'day_of_week' => -1,
+				'slot_id' => 0,
+			]);
+		return count($ids);
 	}
 
 	/** @return array<string,array<string,mixed>> */
@@ -897,23 +920,37 @@ class TimetableStagingService
 			if (count($group) <= 1) {
 				continue;
 			}
-			usort($group, function (array $a, array $b): int {
-				$c = $this->timeToMinutes((string) ($a['start_time'] ?? '00:00')) <=> $this->timeToMinutes((string) ($b['start_time'] ?? '00:00'));
-				return $c !== 0 ? $c : ((int) ($a['id'] ?? 0) <=> (int) ($b['id'] ?? 0));
+			usort($group, static function (array $a, array $b): int {
+				return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
 			});
-			$active = [];
+			$kept = [];
 			foreach ($group as $entry) {
 				$entryId = (int) ($entry['id'] ?? 0);
-				$start = $this->timeToMinutes((string) ($entry['start_time'] ?? '00:00'));
-				$end = $this->timeToMinutes((string) ($entry['end_time'] ?? '00:00'));
-				$active = array_values(array_filter($active, static function (array $row) use ($start): bool {
-					return (int) ($row['end'] ?? 0) > $start;
-				}));
-				foreach ($active as $other) {
-					$ids[$entryId] = $entryId;
-					$ids[(int) ($other['id'] ?? 0)] = (int) ($other['id'] ?? 0);
+				$slotId = (int) ($entry['slot_id'] ?? 0);
+				$start = $this->timeToMinutes((string) ($entry['start_time'] ?? ''));
+				$end = $this->timeToMinutes((string) ($entry['end_time'] ?? ''));
+				$hasTime = $end > $start;
+				$collides = false;
+				foreach ($kept as $other) {
+					$sameSlot = (int) ($other['slot_id'] ?? 0) === $slotId;
+					$otherHasTime = (int) ($other['end'] ?? 0) > (int) ($other['start'] ?? 0);
+					$timeClash = $hasTime && $otherHasTime
+						&& $start < (int) $other['end'] && (int) $other['start'] < $end;
+					if ($sameSlot || $timeClash) {
+						$collides = true;
+						break;
+					}
 				}
-				$active[] = ['id' => $entryId, 'end' => $end];
+				if ($collides) {
+					$ids[$entryId] = $entryId;
+					continue;
+				}
+				$kept[] = [
+					'id' => $entryId,
+					'slot_id' => $slotId,
+					'start' => $start,
+					'end' => $end,
+				];
 			}
 		}
 

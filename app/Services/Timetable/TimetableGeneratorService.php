@@ -160,6 +160,7 @@ class TimetableGeneratorService
 			$this->classDayUsage = [];
 			$this->globalDayUsage = [];
 			$this->warnings = [];
+			$this->slotTimes = [];
 		}
 
 		$this->secondaryCriteria = new SecondaryTimetableCriteria();
@@ -177,16 +178,7 @@ class TimetableGeneratorService
 		$this->teachingSlots = $teachingSlots;
 		$this->days = $days;
 		$this->blocked = $blocked;
-		$this->slotTimes = [];
-		foreach ($teachingSlots as $slot) {
-			$id = (int) ($slot['id'] ?? 0);
-			if ($id > 0) {
-				$this->slotTimes[$id] = [
-					'start' => (string) ($slot['start_time'] ?? '00:00:00'),
-					'end' => (string) ($slot['end_time'] ?? '00:00:00'),
-				];
-			}
-		}
+		$this->mergeSlotTimes($teachingSlots);
 
 		$entries = [];
 		$lessonNeeds = [];
@@ -366,7 +358,6 @@ class TimetableGeneratorService
 		if ($day < 0 || $slotIds === [] || count($slotIds) > $room) {
 			return [];
 		}
-		$primaryStaff = (int) ($row['lecturer'] ?? 0);
 		foreach ($slotIds as $slotId) {
 			if (!empty($this->blocked[$day . ':' . $slotId])) {
 				return [];
@@ -374,7 +365,7 @@ class TimetableGeneratorService
 			if (isset($this->classBusy[$this->busyKey($classId, $day, $slotId)])) {
 				return [];
 			}
-			if ($staffId > 0 && $staffId !== $primaryStaff && $this->staffHasTimeConflict($staffId, $day, $slotId)) {
+			if ($staffId > 0 && $this->staffHasTimeConflict($staffId, $day, $slotId)) {
 				return [];
 			}
 			if (!$this->criteriaAllowsSlot($partner, $day, $slotId)) {
@@ -386,7 +377,7 @@ class TimetableGeneratorService
 			$this->classBusy[$this->busyKey($classId, $day, $slotId)] = true;
 			$this->classDayUsage[$classId . ':' . $day] = (int) ($this->classDayUsage[$classId . ':' . $day] ?? 0) + 1;
 			$this->globalDayUsage[$day] = (int) ($this->globalDayUsage[$day] ?? 0) + 1;
-			if ($staffId > 0 && $staffId !== $primaryStaff) {
+			if ($staffId > 0) {
 				$this->staffBusy[$this->busyStaffKey($staffId, $day, $slotId)] = true;
 				$range = $this->slotTimeRange($slotId);
 				if ($range !== null) {
@@ -662,7 +653,6 @@ class TimetableGeneratorService
 		if ($partners === []) {
 			return true;
 		}
-		$primaryStaff = (int) ($row['lecturer'] ?? 0);
 		foreach ($partners as $partner) {
 			$partnerClass = (int) ($partner['class_id'] ?? 0);
 			$partnerStaff = (int) ($partner['lecturer'] ?? 0);
@@ -673,7 +663,7 @@ class TimetableGeneratorService
 				if (!$this->criteriaAllowsSlot($partner, $day, (int) $slotId)) {
 					return false;
 				}
-				if ($partnerStaff > 0 && $partnerStaff !== $primaryStaff && $this->staffHasTimeConflict($partnerStaff, $day, (int) $slotId)) {
+				if ($partnerStaff > 0 && $this->staffHasTimeConflict($partnerStaff, $day, (int) $slotId)) {
 					return false;
 				}
 			}
@@ -744,18 +734,34 @@ class TimetableGeneratorService
 	 * @param list<array<string,mixed>> $entries
 	 * @param array<int,array{start:string,end:string}> $slotTimesById
 	 */
-	public function seedBusyFromEntries(array $entries, array $slotTimesById = []): void
+	/**
+	 * @param list<array<string,mixed>>|array<int,array{start?:string,end?:string}> $slotsOrById
+	 */
+	public function mergeSlotTimes(array $slotsOrById): void
 	{
-		foreach ($slotTimesById as $slotId => $times) {
-			$id = (int) $slotId;
+		foreach ($slotsOrById as $key => $slot) {
+			if (!is_array($slot)) {
+				continue;
+			}
+			$id = (int) ($slot['id'] ?? $key);
 			if ($id <= 0) {
 				continue;
 			}
+			$start = (string) ($slot['start'] ?? $slot['start_time'] ?? '');
+			$end = (string) ($slot['end'] ?? $slot['end_time'] ?? '');
+			if ($start === '' && $end === '') {
+				continue;
+			}
 			$this->slotTimes[$id] = [
-				'start' => (string) ($times['start'] ?? '00:00:00'),
-				'end' => (string) ($times['end'] ?? '00:00:00'),
+				'start' => $start !== '' ? $start : '00:00:00',
+				'end' => $end !== '' ? $end : '00:00:00',
 			];
 		}
+	}
+
+	public function seedBusyFromEntries(array $entries, array $slotTimesById = []): void
+	{
+		$this->mergeSlotTimes($slotTimesById);
 		foreach ($entries as $entry) {
 			$day = (int) ($entry['day_of_week'] ?? -1);
 			$slotId = (int) ($entry['slot_id'] ?? 0);

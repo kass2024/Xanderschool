@@ -81,7 +81,9 @@ class TimetableManagement extends Home
 				$schoolId,
 				$schema,
 				$warnings,
-				$last['ai_tip'] ?? ($last['collision_report']['ai_tip'] ?? null)
+				$last['ai_tip'] ?? ($last['collision_report']['ai_tip'] ?? null),
+				$this->loadAssignments($schoolId, $year, $term),
+				$db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray()
 			);
 			$data['last_generation_job'] = $last;
 		}
@@ -938,8 +940,10 @@ class TimetableManagement extends Home
 
 			$generator = new TimetableGeneratorService();
 			$generator->setCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
+			$allSlotTimes = $this->collectSlotTimesById($schoolId, $schema);
+			$generator->mergeSlotTimes($allSlotTimes);
 			if ($keepBusyEntries !== []) {
-				$generator->seedBusyFromEntries($keepBusyEntries, $slotTimesById);
+				$generator->seedBusyFromEntries($keepBusyEntries, $slotTimesById + $allSlotTimes);
 			}
 			$reset = $keepBusyEntries === [];
 			$phaseEntries = 0;
@@ -1025,6 +1029,18 @@ class TimetableManagement extends Home
 			$scheduleId = (int) $db->insertID();
 		}
 
+		$allSlotTimes = $this->collectSlotTimesById($schoolId, $schema);
+		$filtered = (new TimetableConflictService())->filterCollisionFreeEntries(
+			$allEntries,
+			$allSlotTimes,
+			$keepBusyEntries
+		);
+		if ($filtered['rejected'] !== []) {
+			$allWarnings[] = 'Parked ' . count($filtered['rejected'])
+				. ' lesson(s) that would have put a teacher in two classes or two teachers in one class.';
+		}
+		$allEntries = $filtered['kept'];
+
 		$this->insertTimetableEntriesBatch($scheduleId, $schoolId, $allEntries);
 		$this->reportGenerationProgress($jobId, [
 			'message' => 'Saved ' . count($allEntries) . ' lessons — parking leftover periods…',
@@ -1043,6 +1059,7 @@ class TimetableManagement extends Home
 			'stages' => $stages,
 		]);
 		$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
+		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 		$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 
 		$now = date('Y-m-d H:i:s');
@@ -1125,6 +1142,7 @@ class TimetableManagement extends Home
 				$geminiTip = 'AI collision check skipped after an error. Collisions were parked instead.';
 			}
 			$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
+			$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 			$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 			$stages = $this->markGenerationStage($stages, 'gemini', 'done');
 			$this->reportGenerationProgress($jobId, [
@@ -1135,7 +1153,15 @@ class TimetableManagement extends Home
 			]);
 		}
 
-		$collisionReport = $this->buildCollisionReport($scheduleId, $schoolId, $schema, $allWarnings, $geminiTip);
+		$collisionReport = $this->buildCollisionReport(
+			$scheduleId,
+			$schoolId,
+			$schema,
+			$allWarnings,
+			$geminiTip,
+			$phaseAssignments,
+			$settings
+		);
 		try {
 			$unplaced = $this->buildUnplacedSummary($scheduleId, $schoolId, $schema, $phaseAssignments, $phase, $year, $term);
 		} catch (\Throwable $e) {
@@ -1561,16 +1587,50 @@ class TimetableManagement extends Home
 
 	/**
 	 * @param list<string> $warnings
+	 * @param list<array<string,mixed>> $assignments
+	 * @param array<string,mixed>|null $settings
 	 * @return array<string,mixed>
 	 */
-	private function buildCollisionReport(int $scheduleId, int $schoolId, TimetableSchemaModel $schema, array $warnings, ?string $geminiTip): array
-	{
+	private function buildCollisionReport(
+		int $scheduleId,
+		int $schoolId,
+		TimetableSchemaModel $schema,
+		array $warnings,
+		?string $geminiTip,
+		array $assignments = [],
+		?array $settings = null
+	): array {
 		$checker = new TimetableConflictService();
 		$summary = $checker->summarizeConflicts($checker->findScheduleConflicts($scheduleId, $schoolId, $schema));
 		$summary['warnings'] = array_values(array_slice($warnings, 0, 40));
 		$summary['ai_tip'] = $geminiTip;
 		$summary['ok'] = ((int) ($summary['total'] ?? 0)) === 0;
+		$summary['grid_clean'] = $summary['ok'];
+		$summary['assignment_alerts'] = $assignments === []
+			? []
+			: $checker->assignmentLoadAlerts($assignments, $schema, $schoolId, $settings);
 		return $summary;
+	}
+
+	/** @return array<int,array{start:string,end:string}> */
+	private function collectSlotTimesById(int $schoolId, TimetableSchemaModel $schema): array
+	{
+		$out = [];
+		$tracks = TimetableTrack::tracksForSchool($schoolId) ?: [TimetableTrack::ALL];
+		$tracks[] = TimetableTrack::ALL;
+		foreach (array_unique($tracks) as $track) {
+			foreach ($schema->teachingSlots($schoolId, (string) $track) as $slot) {
+				$id = (int) ($slot['id'] ?? 0);
+				if ($id <= 0) {
+					continue;
+				}
+				$out[$id] = [
+					'start' => (string) ($slot['start_time'] ?? '00:00:00'),
+					'end' => (string) ($slot['end_time'] ?? '00:00:00'),
+				];
+			}
+		}
+		return $out;
 	}
 
 	/** @param list<array<string,mixed>> $assignments */

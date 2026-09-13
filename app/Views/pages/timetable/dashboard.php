@@ -402,26 +402,50 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		if (!report) return '';
 		var html = '';
 		var total = parseInt(report.total, 10) || 0;
+		var alerts = report.assignment_alerts || [];
 		if (total <= 0) {
-			html += '<div class="alert alert-success py-2 mb-2">No two teachers share a class period, and no teacher is double-booked.</div>';
+			html += '<div class="alert alert-success py-2 mb-2"><strong>Grid is collision-free.</strong> '
+				+ 'No teacher is in two classes at once, and no two teachers share a class period. '
+				+ 'Anything that would collide was parked instead of placed.</div>';
 		} else {
-			html += '<div class="alert alert-warning py-2 mb-2"><strong>' + total + ' collision' + (total === 1 ? '' : 's') + ' after AI check.</strong> '
-				+ (report.two_teachers ? (report.two_teachers + ' two-teachers-in-one-class. ') : '')
-				+ (report.teacher ? (report.teacher + ' teacher double-book. ') : '')
-				+ (report.class ? (report.class + ' class double-lesson.') : '')
-				+ '</div>';
+			html += '<div class="alert alert-danger py-2 mb-2"><strong>' + total + ' collision' + (total === 1 ? '' : 's')
+				+ ' still on the grid.</strong> Generate again — extras are parked so slots stay legal.</div>';
 			html += renderClassGroups(groupByClass(report.items || [], 'class'), function (items) {
 				var inner = '<ol class="tt-collision-list mb-0 pl-3">';
 				items.forEach(function (item) {
 					inner += '<li><div>' + esc(item.message || '') + '</div>'
-						+ (item.fix ? '<div class="text-muted">Fix: ' + esc(item.fix) + '</div>' : '')
+						+ (item.fix ? '<div class="text-muted">Correct in Manage Course: ' + esc(item.fix) + '</div>' : '')
 						+ '</li>';
 				});
 				return inner + '</ol>';
 			});
 		}
+		if (alerts.length) {
+			html += '<div class="alert alert-warning py-2 mb-2"><strong>Correct course assignment</strong> — '
+				+ alerts.length + ' teacher/class load' + (alerts.length === 1 ? '' : 's')
+				+ ' cannot fit the week without a collision.</div>';
+			html += '<div class="tt-scroll-box">';
+			alerts.forEach(function (alert) {
+				html += '<div class="tt-class-group">';
+				html += '<div class="tt-class-group-title">' + esc(alert.teacher || alert.class || 'Assignment')
+					+ ' <span class="tt-class-group-count">' + (alert.assigned || 0) + ' assigned / '
+					+ (alert.available || 0) + ' slots</span></div>';
+				html += '<div class="small mb-1">' + esc(alert.message || '') + '</div>';
+				if (alert.items && alert.items.length) {
+					html += '<ul class="pl-3 mb-0 small">';
+					alert.items.slice(0, 12).forEach(function (item) {
+						html += '<li>' + esc(item.class || item.teacher || '')
+							+ ' — ' + esc(item.course || '')
+							+ ' (' + (item.hours || 0) + ' periods)</li>';
+					});
+					html += '</ul>';
+				}
+				html += '</div>';
+			});
+			html += '</div>';
+		}
 		if (!hasUnplaced && report.warnings && report.warnings.length) {
-			html += '<div class="small font-weight-bold text-warning mb-1">Unplaced lessons</div>';
+			html += '<div class="small font-weight-bold text-warning mb-1">Parked instead of colliding</div>';
 			html += '<div class="tt-scroll-box"><ul class="pl-3 mb-0">';
 			report.warnings.forEach(function (w) { html += '<li>' + esc(w) + '</li>'; });
 			html += '</ul></div>';

@@ -3,6 +3,7 @@
 namespace App\Services\Timetable;
 
 use App\Libraries\TimetableClassLabel;
+use App\Libraries\TimetableTrack;
 use App\Models\TimetableSchemaModel;
 
 /**
@@ -169,7 +170,9 @@ class TimetableConflictService
 							: 'Two teachers in ' . $className . ' on ' . $when . ' — '
 								. trim((string) ($other['teacher_name'] ?? 'Teacher')) . ' (' . ($other['course_title'] ?? '') . ')'
 								. ' and ' . trim((string) ($entry['teacher_name'] ?? 'Teacher')) . ' (' . ($entry['course_title'] ?? '') . ').',
-						'fix' => 'Open the ' . $className . ' timetable, drag one of these two lessons to a free period so only one teacher is in the room.',
+						'fix' => $sameTeacher
+							? 'Correct Manage Course: this class has two lessons in the same period. Split the hours or change one teacher.'
+							: 'Correct Manage Course: two teachers are assigned to ' . $className . ' in a way that forced them into the same period. Reassign one subject.',
 					];
 				} else {
 					$classMap[$ck] = $entry;
@@ -181,9 +184,13 @@ class TimetableConflictService
 					'start' => $this->timeToMinutes((string) ($entry['start_time'] ?? '00:00')),
 					'end' => $this->timeToMinutes((string) ($entry['end_time'] ?? '00:00')),
 				];
+				$hasTime = $range['end'] > $range['start'];
 				$key = $staffId . ':' . $day;
 				foreach ($staffMap[$key] ?? [] as $other) {
-					if ($other['slot_id'] === $slotId || $this->rangesOverlap($range['start'], $range['end'], $other['start'], $other['end'])) {
+					$otherHasTime = (int) ($other['end'] ?? 0) > (int) ($other['start'] ?? 0);
+					$sameSlot = (int) $other['slot_id'] === $slotId;
+					$timeClash = $hasTime && $otherHasTime && $this->rangesOverlap($range['start'], $range['end'], $other['start'], $other['end']);
+					if ($sameSlot || $timeClash) {
 						$issues[] = [
 							'type' => 'teacher',
 							'entry_id' => $id,
@@ -193,10 +200,10 @@ class TimetableConflictService
 							'other_class' => (string) ($other['class'] ?? ''),
 							'day' => $day,
 							'slot_id' => $slotId,
-							'message' => trim((string) ($entry['teacher_name'] ?? 'Teacher')) . ' is double-booked on ' . $when
+							'message' => trim((string) ($entry['teacher_name'] ?? 'Teacher')) . ' cannot teach two classes at once on ' . $when
 								. ': ' . ($other['course'] ?? 'lesson') . ' in ' . ($other['class'] ?: 'a class')
 								. ' and ' . ($entry['course_title'] ?? 'lesson') . ' in ' . $className . '.',
-							'fix' => 'Move one of this teacher’s lessons to another free period on their teacher timetable.',
+							'fix' => 'Correct Manage Course: give one of these subjects to another teacher, or reduce weekly periods so both fit in different slots.',
 						];
 					}
 				}
@@ -243,6 +250,215 @@ class TimetableConflictService
 			'teacher' => $counts['teacher'],
 			'items' => $items,
 		];
+	}
+
+	/**
+	 * Drop any generated row that would put two teachers in one class or one teacher in two classes.
+	 *
+	 * @param list<array<string,mixed>> $entries
+	 * @param array<int,array{start?:string,end?:string,start_time?:string,end_time?:string}> $slotTimesById
+	 * @param list<array<string,mixed>> $occupied
+	 * @return array{kept:list<array<string,mixed>>,rejected:list<array<string,mixed>>}
+	 */
+	public function filterCollisionFreeEntries(array $entries, array $slotTimesById, array $occupied = []): array
+	{
+		$classBusy = [];
+		$staffSlots = [];
+		$staffTimes = [];
+		foreach ($occupied as $entry) {
+			$this->rememberOccupancy($entry, $slotTimesById, $classBusy, $staffSlots, $staffTimes);
+		}
+
+		$kept = [];
+		$rejected = [];
+		foreach ($entries as $entry) {
+			$day = (int) ($entry['day_of_week'] ?? -1);
+			$slotId = (int) ($entry['slot_id'] ?? 0);
+			if ($day < 0 || $slotId <= 0) {
+				$kept[] = $entry;
+				continue;
+			}
+			$classId = (int) ($entry['class_id'] ?? 0);
+			$staffId = (int) ($entry['staff_id'] ?? 0);
+			$classKey = $classId . ':' . $day . ':' . $slotId;
+			if ($classId > 0 && isset($classBusy[$classKey])) {
+				$entry['_reject_reason'] = 'Another teacher or lesson already occupies this class period.';
+				$rejected[] = $entry;
+				continue;
+			}
+			if ($staffId > 0 && isset($staffSlots[$staffId . ':' . $day . ':' . $slotId])) {
+				$entry['_reject_reason'] = 'This teacher is already in another class in this period.';
+				$rejected[] = $entry;
+				continue;
+			}
+			$range = $this->slotRangeFromMap($slotId, $slotTimesById, $entry);
+			if ($staffId > 0 && $range !== null) {
+				foreach ($staffTimes[$staffId][$day] ?? [] as $booked) {
+					if ($this->rangesOverlap($range['start'], $range['end'], $booked['start'], $booked['end'])) {
+						$entry['_reject_reason'] = 'This teacher is already teaching at this clock time.';
+						$rejected[] = $entry;
+						continue 2;
+					}
+				}
+			}
+			$this->rememberOccupancy($entry, $slotTimesById, $classBusy, $staffSlots, $staffTimes);
+			$kept[] = $entry;
+		}
+
+		return ['kept' => $kept, 'rejected' => $rejected];
+	}
+
+	/**
+	 * Teachers / classes whose Manage Course load cannot fit without a collision.
+	 *
+	 * @param list<array<string,mixed>> $assignments
+	 * @return list<array<string,mixed>>
+	 */
+	public function assignmentLoadAlerts(array $assignments, TimetableSchemaModel $schema, int $schoolId, ?array $settings): array
+	{
+		$uniqueClocks = [];
+		$tracks = TimetableTrack::tracksForSchool($schoolId) ?: [TimetableTrack::ALL];
+		foreach ($tracks as $track) {
+			foreach ($schema->teachingSlots($schoolId, (string) $track) as $slot) {
+				if (!empty($slot['is_break'])) {
+					continue;
+				}
+				$start = substr((string) ($slot['start_time'] ?? ''), 0, 5);
+				$end = substr((string) ($slot['end_time'] ?? ''), 0, 5);
+				if ($start === '' || $end === '') {
+					continue;
+				}
+				$uniqueClocks[$start . '-' . $end] = true;
+			}
+		}
+		$days = count(TimetableSchemaModel::weekDaysFromSettings($settings));
+		if ($days <= 0) {
+			$days = 5;
+		}
+		$available = max(1, count($uniqueClocks) * $days);
+
+		$teachers = [];
+		$classes = [];
+		foreach ($assignments as $row) {
+			$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
+			if ($hours <= 0) {
+				continue;
+			}
+			$teacher = trim((string) ($row['teacher_name'] ?? '')) ?: 'Unassigned';
+			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+			$tKey = $staffId > 0 ? ('s:' . $staffId) : ('n:' . strtolower($teacher));
+			if (!isset($teachers[$tKey])) {
+				$teachers[$tKey] = [
+					'type' => 'teacher_overload',
+					'teacher' => $teacher,
+					'assigned' => 0,
+					'available' => $available,
+					'items' => [],
+				];
+			}
+			$teachers[$tKey]['assigned'] += $hours;
+			$teachers[$tKey]['items'][] = [
+				'class' => TimetableClassLabel::fromRow($row),
+				'course' => (string) ($row['course_title'] ?? 'Course'),
+				'hours' => $hours,
+			];
+
+			$classId = (int) ($row['class_id'] ?? 0);
+			$className = TimetableClassLabel::fromRow($row);
+			$cKey = $classId > 0 ? ('c:' . $classId) : ('n:' . strtolower($className));
+			if (!isset($classes[$cKey])) {
+				$classes[$cKey] = [
+					'type' => 'class_overload',
+					'class' => $className,
+					'assigned' => 0,
+					'available' => $available,
+					'items' => [],
+				];
+			}
+			$classes[$cKey]['assigned'] += $hours;
+			$classes[$cKey]['items'][] = [
+				'teacher' => $teacher,
+				'course' => (string) ($row['course_title'] ?? 'Course'),
+				'hours' => $hours,
+			];
+		}
+
+		$alerts = [];
+		foreach ($teachers as $row) {
+			if ((int) $row['assigned'] <= (int) $row['available']) {
+				continue;
+			}
+			$row['message'] = $row['teacher'] . ' is assigned ' . $row['assigned']
+				. ' weekly periods, but the week has only ' . $row['available']
+				. ' teaching slots. Correct Manage Course: reduce credits or share subjects with another teacher.';
+			$alerts[] = $row;
+		}
+		foreach ($classes as $row) {
+			if ((int) $row['assigned'] <= (int) $row['available']) {
+				continue;
+			}
+			$row['message'] = $row['class'] . ' is assigned ' . $row['assigned']
+				. ' weekly periods, but the week has only ' . $row['available']
+				. ' teaching slots. Correct Manage Course: reduce credits for this class.';
+			$alerts[] = $row;
+		}
+		usort($alerts, static function (array $a, array $b): int {
+			return ((int) $b['assigned'] - (int) $b['available']) <=> ((int) $a['assigned'] - (int) $a['available']);
+		});
+		return $alerts;
+	}
+
+	/**
+	 * @param array<string,mixed> $entry
+	 * @param array<int,array<string,mixed>> $slotTimesById
+	 * @param array<string,bool> $classBusy
+	 * @param array<string,bool> $staffSlots
+	 * @param array<int,array<int,list<array{start:int,end:int}>>> $staffTimes
+	 */
+	private function rememberOccupancy(
+		array $entry,
+		array $slotTimesById,
+		array &$classBusy,
+		array &$staffSlots,
+		array &$staffTimes
+	): void {
+		$day = (int) ($entry['day_of_week'] ?? -1);
+		$slotId = (int) ($entry['slot_id'] ?? 0);
+		if ($day < 0 || $slotId <= 0) {
+			return;
+		}
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$staffId = (int) ($entry['staff_id'] ?? 0);
+		if ($classId > 0) {
+			$classBusy[$classId . ':' . $day . ':' . $slotId] = true;
+		}
+		if ($staffId > 0) {
+			$staffSlots[$staffId . ':' . $day . ':' . $slotId] = true;
+			$range = $this->slotRangeFromMap($slotId, $slotTimesById, $entry);
+			if ($range !== null) {
+				$staffTimes[$staffId][$day][] = $range;
+			}
+		}
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $slotTimesById
+	 * @param array<string,mixed> $entry
+	 * @return array{start:int,end:int}|null
+	 */
+	private function slotRangeFromMap(int $slotId, array $slotTimesById, array $entry): ?array
+	{
+		$times = $slotTimesById[$slotId] ?? null;
+		$start = (string) ($times['start'] ?? $times['start_time'] ?? $entry['start_time'] ?? '');
+		$end = (string) ($times['end'] ?? $times['end_time'] ?? $entry['end_time'] ?? '');
+		if ($start === '' || $end === '') {
+			return null;
+		}
+		$range = [
+			'start' => $this->timeToMinutes($start),
+			'end' => $this->timeToMinutes($end),
+		];
+		return $range['end'] > $range['start'] ? $range : null;
 	}
 
 	/** @param array<string,mixed> $row */
