@@ -358,9 +358,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			$infoY = (float) ($namesF['y'] ?? 49.6);
 			$infoH = ((float) ($yearF['y'] ?? 66.2) + (float) ($yearF['h'] ?? 7.6)) - $infoY;
 			$infoF = ['x' => $namesF['x'] ?? 42.8, 'y' => $infoY, 'w' => $namesF['w'] ?? 54.5, 'h' => $infoH];
-			$passTpl = CardLayout::isWisdomPrimaryStudent($student)
-				? \App\Libraries\WisdomCardRenderer::TEMPLATE_PRIMARY
-				: \App\Libraries\WisdomCardRenderer::TEMPLATE;
+			$passTpl = \App\Libraries\WisdomCardRenderer::templateForStudent($student);
 			$tplBg = asset_card_img_src($passTpl, CardLayout::WISDOM_CHROME, 1800, 1200);
 		?>
 			<?php if ($tplBg): ?>

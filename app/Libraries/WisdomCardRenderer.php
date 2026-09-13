@@ -3,7 +3,7 @@
 namespace App\Libraries;
 
 /**
- * Rasterize student ID cards onto Wisdom pass PNGs (high school or primary).
+ * Rasterize student ID cards onto Wisdom pass PNGs (high school, primary, or nursery).
  * Photo (circle) + NAME / CLASS / ACADEMIC YEAR / ID NO overlays.
  * Output: 1712×1080 JPEG (20 px/mm CR80) for Cr80ImagePdf.
  * Wisdom schools only — caller must gate with is_wisdom_school().
@@ -17,9 +17,11 @@ class WisdomCardRenderer
 	private const SRC_W = 1011;
 	private const SRC_H = 639;
 
-	/** Non-primary Wisdom classes (nursery / O-level / A-level / etc.). */
+	/** O-level / A-level / other non-primary, non-nursery Wisdom classes. */
 	public const TEMPLATE = 'assets/images/background/wisdom_high_school_pass_template.png';
 	public const TEMPLATE_PRIMARY = 'assets/images/background/wisdom_primary_pass_template.png';
+	/** Nursery keeps the previous Musanze pass artwork. */
+	public const TEMPLATE_NURSERY = 'assets/images/background/wisdom_nursery_pass_template.png';
 	/** Legacy fallback if the high-school PNG is missing. */
 	public const TEMPLATE_LEGACY = 'assets/images/background/student_pass_template.png';
 
@@ -40,7 +42,17 @@ class WisdomCardRenderer
 
 	public static function templateForStudent(array $student): string
 	{
-		return CardLayout::isWisdomPrimaryStudent($student) ? self::TEMPLATE_PRIMARY : self::TEMPLATE;
+		if (CardLayout::isWisdomPrimaryStudent($student)) {
+			return self::TEMPLATE_PRIMARY;
+		}
+		if (CardLayout::isWisdomNurseryStudent($student)) {
+			$abs = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR
+				. str_replace('/', DIRECTORY_SEPARATOR, self::TEMPLATE_NURSERY);
+			if (is_file($abs)) {
+				return self::TEMPLATE_NURSERY;
+			}
+		}
+		return self::TEMPLATE;
 	}
 
 	public static function isAvailable(): bool

@@ -349,15 +349,27 @@ class CardLayout
 	}
 
 	/**
+	 * True for Wisdom nursery (N1–N3 / baby–top class) students.
+	 */
+	public static function isWisdomNurseryStudent(array $student): bool
+	{
+		$hay = self::wisdomStudentPathHaystack($student);
+		return (bool) preg_match(
+			'/\b(nurs(?:e|ery|ary)|maternelle|baby\s*class|middle\s*class|top\s*class|\bn[1-3]\b)\b/',
+			$hay
+		);
+	}
+
+	/**
 	 * True for Wisdom primary (P1–P6) students — use primary pass PNG.
 	 * Nursery / secondary are excluded.
 	 */
 	public static function isWisdomPrimaryStudent(array $student): bool
 	{
-		$hay = self::wisdomStudentPathHaystack($student);
-		if (preg_match('/\b(nurs(?:e|ery|ary)|maternelle|baby\s*class|middle\s*class|top\s*class|\bn[1-3]\b)\b/', $hay)) {
+		if (self::isWisdomNurseryStudent($student)) {
 			return false;
 		}
+		$hay = self::wisdomStudentPathHaystack($student);
 		return (bool) preg_match('/\b(primary|primaire|p[1-6])\b/', $hay);
 	}
 
