@@ -816,11 +816,15 @@ class TimetableManagement extends Home
 		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
 
 		$byTrack = [];
+		$byClassTrack = [];
 		foreach ($assignments as $assignment) {
 			$classId = (int) ($assignment['class_id'] ?? 0);
 			$track = $schema->trackForClass($schoolId, $classId);
 			$assignment['_track_key'] = $track;
 			$byTrack[$track][] = $assignment;
+			if ($classId > 0) {
+				$byClassTrack[$classId] = $track;
+			}
 		}
 
 		$orderedTracks = TimetableTrack::orderTracksForGeneration(array_keys($byTrack));
@@ -973,11 +977,10 @@ class TimetableManagement extends Home
 			'stages' => $stages,
 		]);
 
-		$db->transStart();
-		$existing = $existingSchedule;
 		$fingerprint = $this->assignmentsFingerprint($schoolId, $year, $term);
 		$scheduleId = 0;
 		$phasesMeta = [];
+		$existing = $existingSchedule;
 		if ($existing) {
 			$scheduleId = (int) $existing['id'];
 			$decoded = json_decode((string) ($existing['generated_phases'] ?? ''), true);
@@ -1008,53 +1011,68 @@ class TimetableManagement extends Home
 			$scheduleId = (int) $db->insertID();
 		}
 
-		foreach ($allEntries as $entry) {
-			$db->table('timetable_entries')->insert([
-				'schedule_id' => $scheduleId,
-				'school_id' => $schoolId,
-				'class_id' => $entry['class_id'],
-				'staff_id' => $entry['staff_id'],
-				'course_id' => $entry['course_id'],
-				'course_record_id' => $entry['course_record_id'] ?: null,
-				'day_of_week' => $entry['day_of_week'],
-				'slot_id' => $entry['slot_id'],
-				'entry_type' => $entry['entry_type'],
-			]);
-		}
+		$this->insertTimetableEntriesBatch($scheduleId, $schoolId, $allEntries);
+		$this->reportGenerationProgress($jobId, [
+			'message' => 'Saved ' . count($allEntries) . ' lessons — parking leftover periods…',
+			'progress' => 82,
+			'stage' => 'save',
+			'stages' => $stages,
+		]);
 
 		$stagingSvc = new TimetableStagingService();
 		$stagingCreated = $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 		$stagingSvc->autoPlaceStaging($scheduleId, $schoolId, $schema, 0, 0, false);
+		$this->reportGenerationProgress($jobId, [
+			'message' => 'Clearing collisions without overlaps…',
+			'progress' => 84,
+			'stage' => 'save',
+			'stages' => $stages,
+		]);
 		$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
 		$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 
 		$now = date('Y-m-d H:i:s');
+		$entryCountsByPhase = [];
+		foreach ($allEntries as $entry) {
+			$cid = (int) ($entry['class_id'] ?? 0);
+			$track = (string) ($byClassTrack[$cid] ?? $schema->trackForClass($schoolId, $cid));
+			$pk = TimetableTrack::generationPhaseKey($track);
+			$entryCountsByPhase[$pk] = ($entryCountsByPhase[$pk] ?? 0) + 1;
+		}
 		$targetPhases = $phase === 'all' ? TimetableTrack::generationPhaseKeys() : [$phase];
 		foreach ($targetPhases as $pk) {
-			if (!isset($phaseTracks[$pk]) && $phase !== 'all') {
+			if ($phase === 'all' && !isset($phaseTracks[$pk])) {
 				continue;
 			}
-			if ($phase === 'all' && !isset($phaseTracks[$pk])) {
+			if ($phase !== 'all' && !isset($phaseTracks[$pk])) {
 				continue;
 			}
 			$phasesMeta[$pk] = [
 				'status' => 'generated',
 				'generated_at' => $now,
-				'entries' => count(array_filter($allEntries, static function (array $e) use ($schema, $schoolId, $pk): bool {
-					return TimetableTrack::generationPhaseKey($schema->trackForClass($schoolId, (int) ($e['class_id'] ?? 0))) === $pk;
-				})),
-				'hash' => $this->phaseAssignmentsFingerprint($schoolId, $year, $term, $pk, $schema),
+				'entries' => (int) ($entryCountsByPhase[$pk] ?? 0),
+				'hash' => $this->phaseAssignmentsFingerprintFromRows($phaseAssignments, $pk, $schema, $schoolId),
 			];
 		}
 
 		$allCurrent = true;
 		foreach (TimetableTrack::generationPhaseKeys() as $pk) {
-			if (!$this->phaseHasAssignments($schoolId, $year, $term, $pk, $schema)) {
+			if (!isset($phaseTracks[$pk]) && $phase !== 'all') {
+				continue;
+			}
+			if ($phase === 'all' && !isset($phaseTracks[$pk]) && !$this->phaseHasAssignments($schoolId, $year, $term, $pk, $schema)) {
+				continue;
+			}
+			if ($phase !== 'all' && $pk !== $phase) {
+				$meta = $phasesMeta[$pk] ?? null;
+				if (!is_array($meta) || ($meta['status'] ?? '') !== 'generated') {
+					$allCurrent = false;
+					break;
+				}
 				continue;
 			}
 			$meta = $phasesMeta[$pk] ?? null;
-			$currentHash = $this->phaseAssignmentsFingerprint($schoolId, $year, $term, $pk, $schema);
-			if (!is_array($meta) || ($meta['status'] ?? '') !== 'generated' || !hash_equals((string) ($meta['hash'] ?? ''), $currentHash)) {
+			if (!is_array($meta) || ($meta['status'] ?? '') !== 'generated') {
 				$allCurrent = false;
 				break;
 			}
@@ -1068,11 +1086,6 @@ class TimetableManagement extends Home
 			'needs_regen' => $allCurrent ? 0 : 1,
 			'generated_phases' => json_encode($phasesMeta),
 		]);
-
-		$db->transComplete();
-		if ($db->transStatus() === false) {
-			throw new \RuntimeException('Database transaction failed while saving the timetable.');
-		}
 
 		$stages = $this->markGenerationStage($stages, 'save', 'done');
 		$this->reportGenerationProgress($jobId, [
@@ -1255,9 +1268,23 @@ class TimetableManagement extends Home
 
 	private function phaseAssignmentsFingerprint(int $schoolId, int $year, int $term, string $phase, TimetableSchemaModel $schema): string
 	{
+		return $this->phaseAssignmentsFingerprintFromRows(
+			$this->loadAssignments($schoolId, $year, $term),
+			$phase,
+			$schema,
+			$schoolId
+		);
+	}
+
+	/** @param list<array<string,mixed>> $rows */
+	private function phaseAssignmentsFingerprintFromRows(array $rows, string $phase, TimetableSchemaModel $schema, int $schoolId): string
+	{
 		$parts = [];
-		foreach ($this->loadAssignments($schoolId, $year, $term) as $row) {
-			$track = $schema->trackForClass($schoolId, (int) ($row['class_id'] ?? 0));
+		foreach ($rows as $row) {
+			$track = (string) ($row['_track_key'] ?? $row['track_key'] ?? '');
+			if ($track === '') {
+				$track = $schema->trackForClass($schoolId, (int) ($row['class_id'] ?? 0));
+			}
 			if (TimetableTrack::generationPhaseKey($track) !== $phase) {
 				continue;
 			}
@@ -1271,6 +1298,36 @@ class TimetableManagement extends Home
 		}
 		sort($parts);
 		return hash('sha256', implode('|', $parts));
+	}
+
+	/** @param list<array<string,mixed>> $entries */
+	private function insertTimetableEntriesBatch(int $scheduleId, int $schoolId, array $entries): void
+	{
+		if ($scheduleId <= 0 || $entries === []) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		$chunk = [];
+		foreach ($entries as $entry) {
+			$chunk[] = [
+				'schedule_id' => $scheduleId,
+				'school_id' => $schoolId,
+				'class_id' => (int) ($entry['class_id'] ?? 0),
+				'staff_id' => (int) ($entry['staff_id'] ?? 0),
+				'course_id' => (int) ($entry['course_id'] ?? 0),
+				'course_record_id' => !empty($entry['course_record_id']) ? (int) $entry['course_record_id'] : null,
+				'day_of_week' => (int) ($entry['day_of_week'] ?? 0),
+				'slot_id' => (int) ($entry['slot_id'] ?? 0),
+				'entry_type' => (string) ($entry['entry_type'] ?? 'lesson'),
+			];
+			if (count($chunk) >= 200) {
+				$db->table('timetable_entries')->insertBatch($chunk);
+				$chunk = [];
+			}
+		}
+		if ($chunk !== []) {
+			$db->table('timetable_entries')->insertBatch($chunk);
+		}
 	}
 
 	private function applyGeminiCollisionFixes(int $scheduleId, int $schoolId, TimetableSchemaModel $schema, ?string $jobId = null): ?string
@@ -2474,7 +2531,8 @@ class TimetableManagement extends Home
 			$phase,
 			$this->schoolNameForId($schoolId)
 		);
-		$pdf = $this->saveUnplacedPdf($full, $schoolId, $year, $term);
+		// Build the PDF on download so generation is not blocked by wkhtmltopdf.
+		$pdf = null;
 		$courses = [];
 		foreach (array_slice($full['courses'] ?? [], 0, 40) as $row) {
 			$courses[] = [
