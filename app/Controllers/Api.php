@@ -4799,25 +4799,18 @@ public function permission_card_scan()
 		if ((int) ($row['status'] ?? 1) === 0) {
 			return $this->response->setJSON(['success' => 0, 'message' => 'This school is locked.']);
 		}
-		$model = new GateVisitModel();
-		$model->ensureSchema();
-		$board = $model->todayBoard((int) $row['id']);
-		$logoFile = trim((string) ($row['logo'] ?? ''));
-		$logoUrl = $logoFile !== '' ? base_url('assets/images/logo/' . $logoFile) : '';
-		$staffDash = StaffShiftClock::dashboard((int) $row['id']);
-		return $this->response->setJSON([
-			'success' => 1,
-			'school' => [
-				'id' => (int) $row['id'],
-				'name' => (string) $row['name'],
-				'acronym' => (string) $row['acronym'],
-				'logo' => $logoUrl,
-				'logo_file' => $logoFile,
-			],
-			'board' => $board,
-			'kpi' => $staffDash['kpi'],
-			'recent' => $staffDash['recent'],
-		]);
+		$school = [
+			'id' => (int) $row['id'],
+			'name' => (string) $row['name'],
+			'acronym' => (string) $row['acronym'],
+			'logo' => '',
+			'logo_file' => trim((string) ($row['logo'] ?? '')),
+		];
+		$logoFile = $school['logo_file'];
+		if ($logoFile !== '') {
+			$school['logo'] = base_url('assets/images/logo/' . $logoFile);
+		}
+		return $this->response->setJSON($this->gateSnapshot((int) $row['id'], $school));
 	}
 
 	public function gate_lookup_card()
@@ -4841,6 +4834,7 @@ public function permission_card_scan()
 			'reason' => $this->request->getPost('reason'),
 			'materials' => $this->request->getPost('materials'),
 			'card' => $this->request->getPost('card'),
+			'time' => $this->request->getPost('time'),
 			'source' => 'android',
 		]);
 		if (!empty($result['success'])) {
@@ -4854,8 +4848,9 @@ public function permission_card_scan()
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 		$schoolId = (int) ($this->request->getPost('school_id') ?: 0);
 		$card = trim((string) ($this->request->getPost('card') ?: ''));
+		$eventTime = (int) ($this->request->getPost('time') ?: 0);
 		$model = new GateVisitModel();
-		$result = $model->checkOut($schoolId, $card);
+		$result = $model->checkOut($schoolId, $card, $eventTime);
 		if (!empty($result['success'])) {
 			$result['board'] = $model->todayBoard($schoolId);
 		}
@@ -4883,30 +4878,10 @@ public function permission_card_scan()
 	public function gate_staff_scan()
 	{
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-		helper(['card_uid', 'qonics']);
 		$schoolId = (int) ($this->request->getPost('school_id') ?: 0);
 		$cardRaw = trim((string) ($this->request->getPost('card') ?? ''));
-		if ($schoolId <= 0 || $cardRaw === '') {
-			return $this->response->setJSON(['success' => 0, 'message' => 'School and card are required']);
-		}
-
-		$gate = new GateVisitModel();
-		if ($gate->findOpenByCard($schoolId, $cardRaw)) {
-			return $this->response->setJSON(['success' => 0, 'message' => 'This is a visitor card. Switch to Visitors mode.']);
-		}
-
-		$owner = CardRegistry::lookup($schoolId, $cardRaw);
-		if ($owner && ($owner['type'] ?? '') === 'student') {
-			return $this->response->setJSON(['success' => 0, 'message' => 'This is a student card.']);
-		}
-		if ($owner && ($owner['type'] ?? '') === 'visitor') {
-			return $this->response->setJSON(['success' => 0, 'message' => 'This is a visitor card. Switch to Visitors mode.']);
-		}
-		if (!$owner || ($owner['type'] ?? '') !== 'staff') {
-			return $this->response->setJSON(['success' => 0, 'message' => 'Staff card not found']);
-		}
-
-		$out = AttendanceScanService::scanStaff($schoolId, (int) $owner['id']);
+		$eventTime = (int) ($this->request->getPost('time') ?: 0);
+		$out = $this->applyStaffCard($schoolId, $cardRaw, $eventTime);
 		$dash = StaffShiftClock::dashboard($schoolId);
 		$out['kpi'] = $dash['kpi'];
 		$out['recent'] = $dash['recent'];
@@ -4920,11 +4895,129 @@ public function permission_card_scan()
 		if ($schoolId <= 0) {
 			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
 		}
+		return $this->response->setJSON($this->gateSnapshot($schoolId));
+	}
+
+	public function gate_bootstrap()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
+		}
+		return $this->response->setJSON($this->gateSnapshot($schoolId));
+	}
+
+	/**
+	 * Replay offline staff / visitor events in time order, then return a fresh cache snapshot.
+	 */
+	public function gate_sync()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
+		}
+		$raw = (string) ($this->request->getPost('events') ?: '[]');
+		$events = json_decode($raw, true);
+		if (!is_array($events)) {
+			$events = [];
+		}
+		usort($events, static function ($a, $b) {
+			return ((int) ($a['time'] ?? 0)) <=> ((int) ($b['time'] ?? 0));
+		});
+
+		$model = new GateVisitModel();
+		$results = [];
+		foreach ($events as $ev) {
+			if (!is_array($ev)) {
+				continue;
+			}
+			$op = strtolower(trim((string) ($ev['op'] ?? '')));
+			$card = trim((string) ($ev['card'] ?? ''));
+			$time = (int) ($ev['time'] ?? 0);
+			if ($op === 'staff') {
+				$results[] = $this->applyStaffCard($schoolId, $card, $time);
+				continue;
+			}
+			if ($op === 'checkin') {
+				$results[] = $model->checkIn($schoolId, [
+					'names' => $ev['names'] ?? '',
+					'id_number' => $ev['id_number'] ?? '',
+					'phone' => $ev['phone'] ?? '',
+					'reason' => $ev['reason'] ?? '',
+					'materials' => $ev['materials'] ?? '',
+					'card' => $card,
+					'time' => $time,
+					'source' => 'android-offline',
+				]);
+				continue;
+			}
+			if ($op === 'checkout') {
+				$results[] = $model->checkOut($schoolId, $card, $time);
+			}
+		}
+
+		$out = $this->gateSnapshot($schoolId);
+		$out['results'] = $results;
+		return $this->response->setJSON($out);
+	}
+
+	/**
+	 * @param array<string,mixed>|null $school
+	 * @return array<string,mixed>
+	 */
+	private function gateSnapshot(int $schoolId, ?array $school = null): array
+	{
+		$model = new GateVisitModel();
+		$model->ensureSchema();
 		$dash = StaffShiftClock::dashboard($schoolId);
-		return $this->response->setJSON([
+		if ($school === null) {
+			$row = (new SchoolModel())->select('id,name,acronym,logo')->where('id', $schoolId)->get()->getRowArray();
+			$school = [
+				'id' => $schoolId,
+				'name' => (string) ($row['name'] ?? ''),
+				'acronym' => (string) ($row['acronym'] ?? ''),
+				'logo' => !empty($row['logo']) ? base_url('assets/images/logo/' . $row['logo']) : '',
+				'logo_file' => (string) ($row['logo'] ?? ''),
+			];
+		}
+		return [
 			'success' => 1,
+			'school' => $school,
+			'board' => $model->todayBoard($schoolId),
 			'kpi' => $dash['kpi'],
 			'recent' => $dash['recent'],
-		]);
+			'cards' => CardRegistry::exportOwnedCards($schoolId),
+			'server_time' => time(),
+		];
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	private function applyStaffCard(int $schoolId, string $cardRaw, int $eventTime = 0): array
+	{
+		helper(['card_uid', 'qonics']);
+		if ($schoolId <= 0 || $cardRaw === '') {
+			return ['success' => 0, 'message' => 'School and card are required'];
+		}
+		$gate = new GateVisitModel();
+		if ($gate->findOpenByCard($schoolId, $cardRaw)) {
+			return ['success' => 0, 'kind' => 'visitor_out', 'message' => 'This is a visitor card.'];
+		}
+		$owner = CardRegistry::lookup($schoolId, $cardRaw);
+		if ($owner && ($owner['type'] ?? '') === 'student') {
+			return ['success' => 0, 'kind' => 'student', 'message' => 'This is a student card.'];
+		}
+		if ($owner && ($owner['type'] ?? '') === 'visitor') {
+			return ['success' => 0, 'kind' => 'parent', 'message' => 'This is a parent visitor card.'];
+		}
+		if (!$owner || ($owner['type'] ?? '') !== 'staff') {
+			return ['success' => 0, 'kind' => 'unknown', 'message' => 'Staff card not found'];
+		}
+		$out = AttendanceScanService::scanStaff($schoolId, (int) $owner['id'], $eventTime);
+		$out['kind'] = 'staff';
+		return $out;
 	}
 }

@@ -124,6 +124,7 @@ class GateVisitModel extends Model
 		if ($open) {
 			return [
 				'success' => true,
+				'kind' => 'visitor_out',
 				'action' => 'checkout',
 				'message' => 'Card is assigned. Confirm visitor exit.',
 				'visit' => $this->presentVisit($open),
@@ -133,26 +134,33 @@ class GateVisitModel extends Model
 		$owner = CardRegistry::lookup($schoolId, $card);
 		if ($owner) {
 			$type = (string) ($owner['type'] ?? '');
+			if ($type === 'staff') {
+				return [
+					'success' => true,
+					'kind' => 'staff',
+					'action' => 'staff',
+					'owner' => $owner,
+					'message' => 'Staff card ready for attendance.',
+				];
+			}
 			$labels = [
 				'student' => 'a student',
-				'staff' => 'a staff member',
 				'visitor' => 'a parent visitor',
 			];
 			$who = $labels[$type] ?? $type;
-			$hint = $type === 'staff'
-				? ' Switch to Staff mode for attendance.'
-				: ' Use a daily visitor card.';
 			return [
 				'success' => false,
+				'kind' => $type === 'visitor' ? 'parent' : $type,
 				'blocked' => $type,
-				'message' => 'This card belongs to ' . $who . ': ' . ($owner['name'] ?? '') . '.' . $hint,
+				'message' => 'This card belongs to ' . $who . ': ' . ($owner['name'] ?? '') . '.',
 			];
 		}
 
 		return [
 			'success' => true,
+			'kind' => 'visitor_free',
 			'action' => 'checkin',
-			'message' => 'Card is free. Register the visitor.',
+			'message' => 'Card is free. Register the visitor first.',
 			'card' => $this->storedCard($card),
 		];
 	}
@@ -210,7 +218,8 @@ class GateVisitModel extends Model
 			return ['success' => false, 'message' => $conflict];
 		}
 
-		$now = time();
+		$eventTime = (int) ($input['time'] ?? 0);
+		$now = $eventTime > 1000000000 ? $eventTime : time();
 		$id = $this->insert([
 			'school_id' => $schoolId,
 			'names' => mb_substr($names, 0, 150),
@@ -236,7 +245,7 @@ class GateVisitModel extends Model
 	/**
 	 * @return array{success:bool,message:string,visit?:array}
 	 */
-	public function checkOut($schoolId, $card)
+	public function checkOut($schoolId, $card, $eventTime = 0)
 	{
 		$this->ensureSchema();
 		$schoolId = (int) $schoolId;
@@ -245,7 +254,7 @@ class GateVisitModel extends Model
 			return ['success' => false, 'message' => 'No visitor is currently using this card.'];
 		}
 
-		$now = time();
+		$now = ((int) $eventTime) > 1000000000 ? (int) $eventTime : time();
 		$timeIn = (int) ($open['time_in'] ?? 0);
 		if ($timeIn > 0 && ($now - $timeIn) < 4) {
 			return [

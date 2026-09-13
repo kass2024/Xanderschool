@@ -80,6 +80,90 @@ class CardRegistry
 	}
 
 	/**
+	 * Compact card index for the gate tablet offline cache.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	public static function exportOwnedCards(int $schoolId): array
+	{
+		helper(['card_uid', 'qonics']);
+		$scopeSchoolIds = self::scopeSchoolIds($schoolId);
+		if ($scopeSchoolIds === []) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		$out = [];
+
+		if ($db->fieldExists('card', 'staffs')) {
+			$rows = $db->table('staffs s')
+				->select('s.id, s.fname, s.lname, s.card, s.photo, p.title as post_title')
+				->join('posts p', 'p.id = s.post', 'left')
+				->whereIn('s.school_id', $scopeSchoolIds)
+				->where('s.status !=', 0)
+				->where("TRIM(COALESCE(s.card, '')) <> ''", null, false)
+				->get()->getResultArray();
+			foreach ($rows as $r) {
+				$card = strtoupper(trim((string) ($r['card'] ?? '')));
+				if ($card === '') {
+					continue;
+				}
+				$out[] = [
+					'kind' => 'staff',
+					'id' => (int) $r['id'],
+					'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
+					'post' => (string) ($r['post_title'] ?? ''),
+					'card' => $card,
+					'photo' => profile_photo_url($r['photo'] ?? null),
+				];
+			}
+		}
+
+		$rows = $db->table('students')
+			->select('id, fname, lname, card')
+			->whereIn('school_id', $scopeSchoolIds)
+			->where('status', 1)
+			->where("TRIM(COALESCE(card, '')) <> ''", null, false)
+			->get()->getResultArray();
+		foreach ($rows as $r) {
+			$card = strtoupper(trim((string) ($r['card'] ?? '')));
+			if ($card === '') {
+				continue;
+			}
+			$out[] = [
+				'kind' => 'student',
+				'id' => (int) $r['id'],
+				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
+				'post' => '',
+				'card' => $card,
+				'photo' => '',
+			];
+		}
+
+		$rows = $db->table('student_visitors sv')
+			->select('sv.id, sv.names, sv.card')
+			->whereIn('sv.school_id', $scopeSchoolIds)
+			->where('sv.status', 1)
+			->where("TRIM(COALESCE(sv.card, '')) <> ''", null, false)
+			->get()->getResultArray();
+		foreach ($rows as $r) {
+			$card = strtoupper(trim((string) ($r['card'] ?? '')));
+			if ($card === '') {
+				continue;
+			}
+			$out[] = [
+				'kind' => 'parent',
+				'id' => (int) $r['id'],
+				'name' => (string) ($r['names'] ?? ''),
+				'post' => '',
+				'card' => $card,
+				'photo' => '',
+			];
+		}
+
+		return $out;
+	}
+
+	/**
 	 * @return list<int>
 	 */
 	private static function scopeSchoolIds(int $schoolId): array
