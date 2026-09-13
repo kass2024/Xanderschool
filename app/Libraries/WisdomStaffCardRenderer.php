@@ -30,6 +30,9 @@ class WisdomStaffCardRenderer
 	private const HOLE_D = 274;
 
 	private const NAVY = [8, 32, 96];
+	private const MUTED = [70, 96, 150];
+	private const GOLD = [196, 154, 48];
+	private const RULE = [214, 222, 236];
 
 	/** @var string */
 	private $font;
@@ -170,13 +173,18 @@ class WisdomStaffCardRenderer
 	 */
 	private function drawStaffInfo($im, array $staff, array $ctx, int $navy): void
 	{
-		$name = $this->upper(trim((string) (($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? ''))));
+		$muted = imagecolorallocate($im, self::MUTED[0], self::MUTED[1], self::MUTED[2]);
+		$gold = imagecolorallocate($im, self::GOLD[0], self::GOLD[1], self::GOLD[2]);
+		$rule = imagecolorallocate($im, self::RULE[0], self::RULE[1], self::RULE[2]);
+		$white = imagecolorallocate($im, 255, 255, 255);
+
+		$name = $this->upper($this->cleanName((string) (($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? ''))));
 		$post = $this->upper(trim((string) ($staff['post_title'] ?? '')));
-		$phone = trim((string) ($staff['phone'] ?? ''));
-		$email = trim((string) ($staff['email'] ?? ''));
+		$phone = $this->formatPhone(trim((string) ($staff['phone'] ?? '')));
+		$email = strtolower(trim((string) ($staff['email'] ?? '')));
 		$staffId = trim((string) ($staff['id'] ?? ''));
 		$card = strtoupper(trim((string) ($staff['card'] ?? '')));
-		$address = trim((string) ($staff['address'] ?? ''));
+		$address = $this->upper(trim((string) ($staff['address'] ?? '')));
 		$year = trim((string) ($ctx['year'] ?? ''));
 		if ($year !== '') {
 			$year = CardLayout::formatAcademicYear($year);
@@ -184,53 +192,114 @@ class WisdomStaffCardRenderer
 			$year = rtrim($year, '/');
 		}
 
-		$nameX = $this->sx(40);
-		$nameW = $this->sx(511);
-		$nameY = $this->sy(468);
-		$nameH = $this->sy(52);
+		$boxX = $this->sx(36);
+		$boxW = $this->sx(519);
 		if ($name !== '') {
-			$size = $this->fitSize($name, $nameW, (int) round($nameH * 0.86), 36, 16);
-			$this->drawText($im, $name, $size, $nameX, $nameY, $nameW, $nameH, $navy, 'center');
+			$size = $this->fitSize($name, $boxW, $this->sy(46), 34, 15);
+			$this->drawText($im, $name, $size, $boxX, $this->sy(458), $boxW, $this->sy(48), $navy, 'center');
 		}
 		if ($post !== '') {
-			$size = $this->fitSize($post, $nameW, $this->sy(36), 22, 12);
-			$this->drawText($im, $post, $size, $nameX, $this->sy(518), $nameW, $this->sy(40), $navy, 'center');
+			$this->drawPostBadge($im, $post, $this->sy(512), $navy, $white, $gold);
 		}
+		$this->drawAccentRule($im, $this->sy(562), $navy, $gold);
 
 		$rows = [];
 		if ($phone !== '') {
-			$rows[] = ['Phone', $phone];
+			$rows[] = ['PHONE', $phone];
 		}
 		if ($email !== '') {
-			$rows[] = ['Email', $email];
+			$rows[] = ['EMAIL', $email];
 		}
 		if ($staffId !== '') {
-			$rows[] = ['Staff ID', $staffId];
+			$rows[] = ['STAFF ID', $staffId];
 		}
 		if ($card !== '') {
-			$rows[] = ['Card', $card];
+			$rows[] = ['CARD', $card];
 		}
 		if ($address !== '') {
-			$rows[] = ['Address', $this->upper($address)];
+			$rows[] = ['ADDRESS', $address];
 		}
 		if ($year !== '') {
-			$rows[] = ['Issued', $year];
+			$rows[] = ['ISSUED', $year];
 		}
 
-		$labelX = $this->sx(52);
-		$colonX = $this->sx(200);
-		$valueX = $this->sx(220);
-		$valueW = $this->sx(320);
+		$padX = $this->sx(52);
+		$contentW = $this->sx(487);
+		$labelW = $this->sx(150);
+		$valueX = $padX + $labelW + $this->sx(12);
+		$valueW = $contentW - $labelW - $this->sx(12);
 		$rowH = $this->sy(38);
-		$y = $this->sy(575);
-		foreach ($rows as $row) {
+		$y = $this->sy(578);
+		$limitY = $this->sy(792);
+		foreach ($rows as $i => $row) {
+			if ($y + $rowH > $limitY) {
+				break;
+			}
+			if ($i > 0) {
+				imagefilledrectangle($im, $padX, $y - $this->sy(2), $padX + $contentW, $y - $this->sy(1), $rule);
+			}
 			[$lab, $val] = $row;
-			$this->drawText($im, $lab, 15.0, $labelX, $y, $this->sx(128), $rowH, $navy, 'left');
-			$this->drawText($im, ':', 15.0, $colonX, $y, $this->sx(16), $rowH, $navy, 'left');
-			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.78), 16, 10);
-			$this->drawText($im, $val, $size, $valueX, $y, $valueW, $rowH, $navy, 'left');
+			$this->drawTrackedText($im, $lab, 10.5, 1.4, $padX, $y, $labelW, $rowH, $muted, 'left');
+			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.72), 16.5, 10);
+			$this->drawText($im, $val, $size, $valueX, $y, $valueW, $rowH, $navy, 'right');
 			$y += $rowH;
 		}
+	}
+
+	/**
+	 * @param resource|\GdImage $im
+	 */
+	private function drawPostBadge($im, string $post, int $y, int $navy, int $white, int $gold): void
+	{
+		$maxW = $this->sx(500);
+		$size = $this->fitSize($post, (int) round($maxW * 0.72), $this->sy(22), 14.5, 9.5);
+		$m = $this->measure($size, $post);
+		$padX = $this->sx(28);
+		$h = $this->sy(36);
+		$w = min($maxW, $m['w'] + ($padX * 2));
+		$x = (int) round((self::W - $w) / 2);
+		$this->fillRoundRect($im, $x, $y, $w, $h, (int) round($h / 2), $navy);
+		$this->drawText($im, $post, $size, $x, $y, $w, $h, $white, 'center');
+		$dot = (int) max(3, round($this->sx(3)));
+		imagefilledellipse($im, $x + $this->sx(10), $y + (int) round($h / 2), $dot, $dot, $gold);
+		imagefilledellipse($im, $x + $w - $this->sx(10), $y + (int) round($h / 2), $dot, $dot, $gold);
+	}
+
+	/**
+	 * @param resource|\GdImage $im
+	 */
+	private function drawAccentRule($im, int $y, int $navy, int $gold): void
+	{
+		$cx = (int) round(self::W / 2);
+		$half = $this->sx(92);
+		$h = max(2, $this->sy(2));
+		imagefilledrectangle($im, $cx - $half, $y, $cx - $this->sx(12), $y + $h, $navy);
+		imagefilledrectangle($im, $cx + $this->sx(12), $y, $cx + $half, $y + $h, $navy);
+		$pts = [
+			$cx, $y - $this->sy(4),
+			$cx + $this->sx(6), $y + (int) round($h / 2),
+			$cx, $y + $h + $this->sy(4),
+			$cx - $this->sx(6), $y + (int) round($h / 2),
+		];
+		if (PHP_VERSION_ID >= 80100) {
+			imagefilledpolygon($im, $pts, $gold);
+		} else {
+			imagefilledpolygon($im, $pts, 4, $gold);
+		}
+	}
+
+	/**
+	 * @param resource|\GdImage $im
+	 */
+	private function fillRoundRect($im, int $x, int $y, int $w, int $h, int $r, int $color): void
+	{
+		$r = max(1, min($r, (int) floor($w / 2), (int) floor($h / 2)));
+		imagefilledrectangle($im, $x + $r, $y, $x + $w - $r, $y + $h, $color);
+		imagefilledrectangle($im, $x, $y + $r, $x + $w, $y + $h - $r, $color);
+		imagefilledellipse($im, $x + $r, $y + $r, $r * 2, $r * 2, $color);
+		imagefilledellipse($im, $x + $w - $r, $y + $r, $r * 2, $r * 2, $color);
+		imagefilledellipse($im, $x + $r, $y + $h - $r, $r * 2, $r * 2, $color);
+		imagefilledellipse($im, $x + $w - $r, $y + $h - $r, $r * 2, $r * 2, $color);
 	}
 
 	/** @return resource|\GdImage|null */
@@ -289,12 +358,79 @@ class WisdomStaffCardRenderer
 	private function drawText($im, string $text, float $size, int $x, int $y, int $w, int $h, int $color, string $align): void
 	{
 		$m = $this->measure($size, $text);
-		$tx = $align === 'center'
-			? $x + (int) round(($w - $m['w']) / 2) - (int) $m['box'][0]
-			: $x - (int) $m['box'][0];
+		if ($align === 'center') {
+			$tx = $x + (int) round(($w - $m['w']) / 2) - (int) $m['box'][0];
+		} elseif ($align === 'right') {
+			$tx = $x + $w - $m['w'] - (int) $m['box'][0];
+		} else {
+			$tx = $x - (int) $m['box'][0];
+		}
 		$textH = max(1, $m['h']);
 		$ty = $y + (int) round(($h - $textH) / 2) + (int) abs($m['box'][7]);
 		imagettftext($im, $size, 0, $tx, $ty, $color, $this->font, $text);
+	}
+
+	/**
+	 * @param resource|\GdImage $im
+	 */
+	private function drawTrackedText($im, string $text, float $size, float $track, int $x, int $y, int $w, int $h, int $color, string $align): void
+	{
+		$chars = preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY);
+		if (!is_array($chars) || count($chars) === 0) {
+			return;
+		}
+		$widths = [];
+		$total = 0;
+		foreach ($chars as $ch) {
+			$mw = $this->measure($size, $ch)['w'];
+			$widths[] = $mw;
+			$total += $mw;
+		}
+		$total += (int) round($track * max(0, count($chars) - 1));
+		if ($align === 'center') {
+			$cx = $x + (int) round(($w - $total) / 2);
+		} elseif ($align === 'right') {
+			$cx = $x + $w - $total;
+		} else {
+			$cx = $x;
+		}
+		$m = $this->measure($size, $text);
+		$textH = max(1, $m['h']);
+		$ty = $y + (int) round(($h - $textH) / 2) + (int) abs($m['box'][7]);
+		foreach ($chars as $i => $ch) {
+			imagettftext($im, $size, 0, $cx, $ty, $color, $this->font, $ch);
+			$cx += $widths[$i] + (int) round($track);
+		}
+	}
+
+	private function cleanName(string $name): string
+	{
+		$name = preg_replace('/\s+/u', ' ', trim($name)) ?? trim($name);
+		return $name;
+	}
+
+	private function formatPhone(string $phone): string
+	{
+		$raw = trim($phone);
+		if ($raw === '') {
+			return '';
+		}
+		$digits = preg_replace('/\D+/', '', $raw) ?? '';
+		if (strlen($digits) === 12 && substr($digits, 0, 3) === '250') {
+			$digits = '0' . substr($digits, 3);
+		} elseif (strlen($digits) === 11 && substr($digits, 0, 2) === '25') {
+			$digits = '0' . substr($digits, 2);
+		}
+		if (strlen($digits) === 10 && $digits[0] === '0') {
+			return substr($digits, 0, 4) . ' ' . substr($digits, 4, 3) . ' ' . substr($digits, 7);
+		}
+		if (strlen($digits) === 11 && $digits[0] === '0') {
+			return substr($digits, 0, 3) . ' ' . substr($digits, 3, 3) . ' ' . substr($digits, 6, 3) . ' ' . substr($digits, 9);
+		}
+		if (strlen($digits) === 9) {
+			return '0' . substr($digits, 0, 3) . ' ' . substr($digits, 3, 3) . ' ' . substr($digits, 6);
+		}
+		return $raw;
 	}
 
 	private function fitSize(string $text, int $maxW, int $maxH, float $max, float $min): float

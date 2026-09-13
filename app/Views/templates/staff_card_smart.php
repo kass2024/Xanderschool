@@ -166,6 +166,39 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		white-space: nowrap;
 		overflow: hidden;
 	}
+	.ws-name {
+		position: absolute; left: 6%; top: 45.6%; width: 88%; height: 5.2%;
+		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
+		-webkit-box-pack: center; justify-content: center;
+		color: #082060; font-weight: 700; letter-spacing: 0.02em;
+		white-space: nowrap; overflow: hidden;
+	}
+	.ws-post {
+		position: absolute; left: 18%; top: 51%; width: 64%; height: 3.5%;
+		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
+		-webkit-box-pack: center; justify-content: center;
+		background: #082060; color: #ffffff; font-weight: 700;
+		letter-spacing: 0.08em; border-radius: 10mm;
+		white-space: nowrap; overflow: hidden; font-size: 2.1mm;
+	}
+	.ws-rule {
+		position: absolute; left: 28%; top: 55.8%; width: 44%; height: 0.35mm;
+		background: #082060;
+	}
+	.ws-rule:after {
+		content: '';
+		position: absolute; left: 50%; top: -0.7mm; width: 1.6mm; height: 1.6mm;
+		margin-left: -0.8mm; background: #c49a30; transform: rotate(45deg);
+	}
+	.ws-row {
+		position: absolute; left: 9%; width: 82%; height: 3.8%;
+		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
+		-webkit-box-pack: justify; justify-content: space-between;
+		border-top: 0.12mm solid #d6deec;
+		white-space: nowrap; overflow: hidden;
+	}
+	.ws-lab { color: #466096; font-size: 1.55mm; letter-spacing: 0.12em; font-weight: 700; }
+	.ws-val { color: #082060; font-size: 2.05mm; font-weight: 700; }
 </style>
 <script>
 (function () {
@@ -214,13 +247,20 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		'staff_id' => $staffId,
 		'moto' => $motoVal !== '' ? $motoVal : $schoolName,
 	];
-	$labeled = ['names', 'post', 'phone', 'email', 'staff_id'];
+	$labeled = $isWisdomArt ? [] : ['names', 'post', 'phone', 'email', 'staff_id'];
+	$wsRows = [];
 	if ($isWisdomArt) {
-		$fields['names'] = ['x' => 8, 'y' => 47.0, 'w' => 84, 'h' => 5.4, 'visible' => 1];
-		$fields['post'] = ['x' => 8, 'y' => 52.6, 'w' => 84, 'h' => 4.4, 'visible' => 1];
-		$fields['phone'] = ['x' => 8, 'y' => 58.0, 'w' => 84, 'h' => 4.2, 'visible' => 1];
-		$fields['email'] = ['x' => 8, 'y' => 62.6, 'w' => 84, 'h' => 4.2, 'visible' => 1];
-		$fields['staff_id'] = ['x' => 8, 'y' => 67.2, 'w' => 84, 'h' => 4.2, 'visible' => 1];
+		$fullName = preg_replace('/\s+/u', ' ', trim($fullName)) ?? $fullName;
+		if (!empty($staff['phone'])) {
+			$wsRows[] = ['PHONE', $phoneLabel];
+		}
+		if (!empty($staff['email'])) {
+			$wsRows[] = ['EMAIL', trim((string) $staff['email'])];
+		}
+		if (($staff['id'] ?? '') !== '') {
+			$wsRows[] = ['STAFF ID', (string) $staff['id']];
+		}
+		$wsRows[] = ['ISSUED', $validDate];
 	}
 	$cardBgSrc = $bgSrc;
 	if ($isWisdomArt) {
@@ -257,6 +297,20 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			<div class="cf-photo" style="<?= CardLayout::boxStyle($f, 3); ?>border-radius:50%;">
 				<?php if ($photoSrc): ?><img src="<?= $photoSrc; ?>" alt=""><?php endif; ?>
 			</div>
+		<?php endif; ?>
+
+		<?php if ($isWisdomArt): ?>
+			<div class="ws-name"><?= esc($fullName); ?></div>
+			<?php if ($postTitle !== '' && $postTitle !== '—'): ?>
+				<div class="ws-post"><?= esc($postTitle); ?></div>
+			<?php endif; ?>
+			<div class="ws-rule"></div>
+			<?php foreach ($wsRows as $i => $ws): ?>
+				<div class="ws-row" style="top:<?= number_format(57.6 + ($i * 3.9), 1, '.', ''); ?>%;">
+					<span class="ws-lab"><?= esc($ws[0]); ?></span>
+					<span class="ws-val"><?= esc($ws[1]); ?></span>
+				</div>
+			<?php endforeach; ?>
 		<?php endif; ?>
 
 		<?php foreach ($isWisdomArt ? [] : ['school_name', 'header1', 'header2'] as $key):
