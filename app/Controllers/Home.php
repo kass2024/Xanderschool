@@ -6933,6 +6933,40 @@ public function attendanceCard()
 		}
 	}
 
+	public function export_staff_courses_pdf()
+	{
+		$this->_preset(1, 3);
+		$school = $this->schoolMetaForStaffExport();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$yearId = (int) ($this->data['academic_year'] ?? $this->data['academic_year_id'] ?? 0);
+		$term = (int) ($this->data['term'] ?? 0);
+		$staffs = \App\Libraries\StaffTeachingLoad::detailsByStaff($schoolId, $yearId, $term);
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+
+		$html = view('pages/reports/staff_courses_export_pdf', [
+			'school' => $school,
+			'staffs' => $staffs,
+			'year_title' => $yearTitle,
+			'term_label' => $termLabel,
+			'printed_at' => date('d M Y H:i'),
+		]);
+
+		try {
+			$mask = FCPATH . 'assets/templates/*.html';
+			array_map('unlink', glob($mask) ?: []);
+			$wkhtmltopdf = new Wkhtmltopdf(['path' => FCPATH . 'assets/templates/']);
+			$wkhtmltopdf->setTitle('Staff Courses');
+			$wkhtmltopdf->setHtml($html);
+			$wkhtmltopdf->setOrientation('Portrait');
+			$wkhtmltopdf->setMargins(['top' => 8, 'left' => 8, 'right' => 8, 'bottom' => 8]);
+			$filename = \App\Libraries\StaffTeachingLoad::coursesExportFilename($school['name']);
+			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, $filename);
+		} catch (\Exception $e) {
+			echo $e->getMessage();
+		}
+	}
+
 	/**
 	 * Smart class list for Excel/PDF (holiday classes excluded).
 	 *

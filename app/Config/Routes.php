@@ -124,6 +124,7 @@ $routes->get('/staff-report/individual', 'Home::staff_individual_report');
 $routes->get('/staff-report/all', 'Home::staffs_in_out_attendance_reports');
 $routes->get('/export_staff_list_excel', 'Home::export_staff_list_excel');
 $routes->get('/export_staff_list_pdf', 'Home::export_staff_list_pdf');
+$routes->get('/export_staff_courses_pdf', 'Home::export_staff_courses_pdf');
 $routes->get('/export_class_list_excel', 'Home::export_class_list_excel');
 $routes->get('/export_class_list_pdf', 'Home::export_class_list_pdf');
 $routes->get('/export_smart_student_list', 'Home::export_smart_student_list');

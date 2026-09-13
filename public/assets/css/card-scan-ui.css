@@ -346,6 +346,18 @@
 	color: #fff !important;
 }
 
+.staff-export-courses {
+	background: #0b57d0;
+	border-color: #0842a0;
+	color: #fff !important;
+	box-shadow: 0 2px 8px rgba(11, 87, 208, 0.28);
+}
+
+.staff-export-courses:hover {
+	background: #0842a0;
+	color: #fff !important;
+}
+
 @media (max-width: 576px) {
 	.staff-list-header-actions {
 		width: 100%;

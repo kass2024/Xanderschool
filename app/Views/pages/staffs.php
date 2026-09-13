@@ -25,6 +25,13 @@
 										<i class="fa fa-file-pdf"></i>
 										<span>PDF</span>
 									</a>
+									<a href="<?= base_url('export_staff_courses_pdf'); ?>"
+									   class="btn btn-sm staff-export-btn staff-export-courses"
+									   target="_blank"
+									   title="Export all staff courses and weekly periods with school header">
+										<i class="fa fa-graduation-cap"></i>
+										<span>Courses PDF</span>
+									</a>
 								</div>
 								<div class="btn-group dropdown">
 									<button type="button" data-toggle="dropdown" aria-haspopup="true"
@@ -47,6 +54,7 @@
 										<h6 tabindex="-1" class="dropdown-header">Export list</h6>
 										<a href="<?= base_url('export_staff_list_excel'); ?>" class="dropdown-item"><i class="fa fa-file-excel"></i> Export Excel</a>
 										<a href="<?= base_url('export_staff_list_pdf'); ?>" class="dropdown-item" target="_blank"><i class="fa fa-file-pdf"></i> Export PDF</a>
+										<a href="<?= base_url('export_staff_courses_pdf'); ?>" class="dropdown-item" target="_blank"><i class="fa fa-graduation-cap"></i> Courses &amp; periods PDF</a>
 									</div>
 								</div>
 							</div>
