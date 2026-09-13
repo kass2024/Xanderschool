@@ -363,10 +363,10 @@ class MenuClearance
 			],
 			[
 				'key' => 'daily_visitors',
-				'label' => 'Daily visitors',
+				'label' => 'Daily visiting',
 				'children' => [
 					['key' => 'daily_visitors/inside', 'label' => 'Currently inside'],
-					['key' => 'daily_visitors/report', 'label' => 'Visitor register'],
+					['key' => 'daily_visitors/report', 'label' => 'Visiting report'],
 				],
 			],
 			[

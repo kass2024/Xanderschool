@@ -139,10 +139,13 @@ class GateVisitModel extends Model
 				'visitor' => 'a parent visitor',
 			];
 			$who = $labels[$type] ?? $type;
+			$hint = $type === 'staff'
+				? ' Switch to Staff mode for attendance.'
+				: ' Use a daily visitor card.';
 			return [
 				'success' => false,
 				'blocked' => $type,
-				'message' => 'This card belongs to ' . $who . ': ' . ($owner['name'] ?? '') . '. Use a daily visitor card.',
+				'message' => 'This card belongs to ' . $who . ': ' . ($owner['name'] ?? '') . '.' . $hint,
 			];
 		}
 

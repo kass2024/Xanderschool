@@ -99,6 +99,14 @@ class PostMenuClearanceModel extends Model
 		}
 		$keys = MenuClearance::applyFeeOperatorPolicy($keys, $postId);
 
+		// Existing custom rows predate Daily visiting — grant it with Parent visiting.
+		if (in_array('parent_visiting', $keys, true)
+			|| in_array('parent_visiting/report', $keys, true)
+			|| in_array('parent_visiting/assign', $keys, true)
+			|| in_array('parent_visiting/verify', $keys, true)) {
+			$keys = array_merge($keys, MenuClearance::groupKeys('daily_visitors'));
+		}
+
 		return array_values(array_unique($keys));
 	}
 

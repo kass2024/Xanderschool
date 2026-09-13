@@ -27,8 +27,10 @@ use App\Models\SchoolModel;
 use App\Models\SmsModel;
 use App\Models\SmsRecipientModel;
 use App\Libraries\AttendanceScanService;
+use App\Libraries\CardRegistry;
 use App\Libraries\HeyStarDeviceStore;
 use App\Libraries\HeyStarSyncService;
+use App\Libraries\StaffShiftClock;
 use App\Models\StaffModel;
 use App\Models\StudentModel;
 use App\Models\StudentVisitorModel;
@@ -4800,15 +4802,21 @@ public function permission_card_scan()
 		$model = new GateVisitModel();
 		$model->ensureSchema();
 		$board = $model->todayBoard((int) $row['id']);
+		$logoFile = trim((string) ($row['logo'] ?? ''));
+		$logoUrl = $logoFile !== '' ? base_url('assets/images/logo/' . $logoFile) : '';
+		$staffDash = StaffShiftClock::dashboard((int) $row['id']);
 		return $this->response->setJSON([
 			'success' => 1,
 			'school' => [
 				'id' => (int) $row['id'],
 				'name' => (string) $row['name'],
 				'acronym' => (string) $row['acronym'],
-				'logo' => (string) ($row['logo'] ?? ''),
+				'logo' => $logoUrl,
+				'logo_file' => $logoFile,
 			],
 			'board' => $board,
+			'kpi' => $staffDash['kpi'],
+			'recent' => $staffDash['recent'],
 		]);
 	}
 
@@ -4866,6 +4874,57 @@ public function permission_card_scan()
 		return $this->response->setJSON([
 			'success' => true,
 			'board' => $board,
+		]);
+	}
+
+	/**
+	 * Tablet staff attendance — same IN/OUT rules as the web staff card scanner.
+	 */
+	public function gate_staff_scan()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		helper(['card_uid', 'qonics']);
+		$schoolId = (int) ($this->request->getPost('school_id') ?: 0);
+		$cardRaw = trim((string) ($this->request->getPost('card') ?? ''));
+		if ($schoolId <= 0 || $cardRaw === '') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'School and card are required']);
+		}
+
+		$gate = new GateVisitModel();
+		if ($gate->findOpenByCard($schoolId, $cardRaw)) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'This is a visitor card. Switch to Visitors mode.']);
+		}
+
+		$owner = CardRegistry::lookup($schoolId, $cardRaw);
+		if ($owner && ($owner['type'] ?? '') === 'student') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'This is a student card.']);
+		}
+		if ($owner && ($owner['type'] ?? '') === 'visitor') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'This is a visitor card. Switch to Visitors mode.']);
+		}
+		if (!$owner || ($owner['type'] ?? '') !== 'staff') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'Staff card not found']);
+		}
+
+		$out = AttendanceScanService::scanStaff($schoolId, (int) $owner['id']);
+		$dash = StaffShiftClock::dashboard($schoolId);
+		$out['kpi'] = $dash['kpi'];
+		$out['recent'] = $dash['recent'];
+		return $this->response->setJSON($out);
+	}
+
+	public function gate_staff_today()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
+		}
+		$dash = StaffShiftClock::dashboard($schoolId);
+		return $this->response->setJSON([
+			'success' => 1,
+			'kpi' => $dash['kpi'],
+			'recent' => $dash['recent'],
 		]);
 	}
 }

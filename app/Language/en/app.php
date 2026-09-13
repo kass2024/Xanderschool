@@ -1223,7 +1223,7 @@ return [
    "termProclamationList"    => "Term proclamation list",
    "marksList"    => "Uploaded marks",
    "viewUploadedMarks"    => "View Uploaded marks",
-   "dailyVisitors"        => "Daily visitors",
+   "dailyVisitors"        => "Daily visiting",
    "dailyVisitorsInside"  => "Currently inside",
-   "dailyVisitorsReport"  => "Visitor register",
+   "dailyVisitorsReport"  => "Visiting report",
 ];
