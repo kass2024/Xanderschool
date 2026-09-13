@@ -339,6 +339,9 @@ class TimetableConflictService
 
 		$teachers = [];
 		$classes = [];
+		$criteria = new SecondaryTimetableCriteria();
+		$criteria->hydrateFromAssignments($assignments);
+		$seenCombine = [];
 		foreach ($assignments as $row) {
 			$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
 			if ($hours <= 0) {
@@ -347,6 +350,18 @@ class TimetableConflictService
 			$teacher = trim((string) ($row['teacher_name'] ?? '')) ?: 'Unassigned';
 			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 			$tKey = $staffId > 0 ? ('s:' . $staffId) : ('n:' . strtolower($teacher));
+			$combineKey = $criteria->combineGroupKey($row);
+			$teacherHours = $hours;
+			$combineNote = '';
+			if ($combineKey !== '') {
+				if (isset($seenCombine[$combineKey])) {
+					$teacherHours = 0;
+					$combineNote = ' combined (same period)';
+				} else {
+					$seenCombine[$combineKey] = true;
+					$combineNote = ' combined';
+				}
+			}
 			if (!isset($teachers[$tKey])) {
 				$teachers[$tKey] = [
 					'type' => 'teacher_overload',
@@ -356,11 +371,11 @@ class TimetableConflictService
 					'items' => [],
 				];
 			}
-			$teachers[$tKey]['assigned'] += $hours;
+			$teachers[$tKey]['assigned'] += $teacherHours;
 			$teachers[$tKey]['items'][] = [
 				'class' => TimetableClassLabel::fromRow($row),
-				'course' => (string) ($row['course_title'] ?? 'Course'),
-				'hours' => $hours,
+				'course' => (string) ($row['course_title'] ?? 'Course') . $combineNote,
+				'hours' => $teacherHours,
 			];
 
 			$classId = (int) ($row['class_id'] ?? 0);

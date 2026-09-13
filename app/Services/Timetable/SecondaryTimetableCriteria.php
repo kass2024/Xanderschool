@@ -509,6 +509,27 @@ class SecondaryTimetableCriteria
 		return $partners[0] ?? null;
 	}
 
+	/** Stable key so a combined group counts as one teacher load. */
+	public function combineGroupKey(array $row): string
+	{
+		$partners = $this->combinePartners($row);
+		if ($partners === []) {
+			return '';
+		}
+		$ids = [(int) ($row['class_id'] ?? 0)];
+		foreach ($partners as $partner) {
+			$ids[] = (int) ($partner['class_id'] ?? 0);
+		}
+		$ids = array_values(array_unique(array_filter($ids)));
+		sort($ids);
+		if (count($ids) < 2) {
+			return '';
+		}
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
+		return $staffId . '|' . $subject . '|' . implode('-', $ids);
+	}
+
 	/** PE: at most one period per class day (spread across week). */
 	public function peMaxPerDay(array $row, int $weeklyHours): ?int
 	{
@@ -587,6 +608,7 @@ class SecondaryTimetableCriteria
 		if ($subject === 'biology') {
 			return [
 				['level' => 'S5', 'a' => 'ANP', 'b' => 'ST1'],
+				['level' => 'S5', 'a' => 'PCB', 'b' => 'HCB'],
 				['level' => 'S6', 'a' => 'ANP', 'b' => 'GE'],
 				['level' => 'S6', 'a' => 'PCB', 'b' => 'HCB'],
 			];
@@ -732,11 +754,22 @@ class SecondaryTimetableCriteria
 		if (strpos($hay, 'ANP') !== false || strpos($hay, 'NURS') !== false) {
 			return 'ANP';
 		}
-		if (strpos($hay, 'STREAM 1') !== false || preg_match('/\bST\s*1\b/', $hay)) {
+		if (strpos($hay, 'STREAM 2') !== false || strpos($hay, 'STREAM II') !== false
+			|| preg_match('/\bST(?:R(?:EAM)?)?\s*2\b/', $hay) || preg_match('/\bSTR\.?\s*II\b/', $hay)) {
+			return 'ST2';
+		}
+		if (strpos($hay, 'STREAM 1') !== false || strpos($hay, 'STREAM I') !== false
+			|| preg_match('/\bST(?:R(?:EAM)?)?\s*1\b/', $hay) || preg_match('/\bSTR\.?\s*I\b/', $hay)) {
 			return 'ST1';
 		}
-		if (strpos($hay, 'STREAM 2') !== false || preg_match('/\bST\s*2\b/', $hay)) {
-			return 'ST2';
+		if (strpos($hay, 'MEG') !== false) {
+			return 'MEG';
+		}
+		if (strpos($hay, 'MPG') !== false) {
+			return 'MPG';
+		}
+		if (strpos($hay, 'MCB') !== false) {
+			return 'MCB';
 		}
 		if (strpos($hay, 'MPC') !== false) {
 			return 'MPC';

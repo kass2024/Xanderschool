@@ -56,10 +56,28 @@ class TimetableGeneratorService
 	/** @var array<int,array<string,mixed>> */
 	private $assignmentByClassCourse = [];
 
+	/** @var array<int,string> class_id => track_key */
+	private $classTracks = [];
+
+	/** @var array<string,array<string,int>> track => "start|end" => slot_id */
+	private $trackClockSlots = [];
+
 	/** @param list<array<string,mixed>> $rules */
 	public function setCustomRules(array $rules): void
 	{
 		$this->customRules = $rules;
+	}
+
+	/**
+	 * Map combined-class copies onto the partner class's own track bells.
+	 *
+	 * @param array<int,string> $classTracks
+	 * @param array<string,array<string,int>> $trackClockSlots
+	 */
+	public function setCombineSlotMaps(array $classTracks, array $trackClockSlots): void
+	{
+		$this->classTracks = $classTracks;
+		$this->trackClockSlots = $trackClockSlots;
 	}
 
 	public static function distributeWeeklyHours(int $hours): array
@@ -148,9 +166,10 @@ class TimetableGeneratorService
 	 * @param list<array<string,mixed>> $teachingSlots
 	 * @param list<int> $days
 	 * @param array<string,bool> $blocked
+	 * @param list<array<string,mixed>> $contextAssignments All phase assignments so ANP/Stream combines can see each other.
 	 * @return array{entries:list<array<string,mixed>>,warnings:list<string>}
 	 */
-	public function generate(array $assignments, array $teachingSlots, array $days = [0, 1, 2, 3, 4], array $blocked = [], bool $resetState = true): array
+	public function generate(array $assignments, array $teachingSlots, array $days = [0, 1, 2, 3, 4], array $blocked = [], bool $resetState = true, array $contextAssignments = []): array
 	{
 		if ($resetState) {
 			$this->classBusy = [];
@@ -160,11 +179,12 @@ class TimetableGeneratorService
 			$this->classDayUsage = [];
 			$this->globalDayUsage = [];
 			$this->warnings = [];
-			$this->slotTimes = [];
+			// Keep slotTimes so partner classes on another track can share the same clock.
 		}
 
 		$this->secondaryCriteria = new SecondaryTimetableCriteria();
-		$this->secondaryCriteria->hydrateFromAssignments($assignments);
+		$hydrate = $contextAssignments !== [] ? $contextAssignments : $assignments;
+		$this->secondaryCriteria->hydrateFromAssignments($hydrate);
 		$this->secondaryCriteria->hydrateCustomRules($this->customRules);
 		$this->assignmentByClassCourse = [];
 		foreach ($assignments as $row) {
@@ -195,7 +215,18 @@ class TimetableGeneratorService
 			return 0;
 		});
 
+		$batchClassIds = [];
 		foreach ($assignments as $row) {
+			$cid = (int) ($row['class_id'] ?? 0);
+			if ($cid > 0) {
+				$batchClassIds[$cid] = true;
+			}
+		}
+
+		foreach ($assignments as $row) {
+			if ($this->isCombineFollowerInBatch($row, $batchClassIds)) {
+				continue;
+			}
 			$hours = self::weeklyHoursFromCourse($row);
 			$blocks = $this->lessonBlocksForCourse($row, $hours);
 			foreach ($blocks as $blockSize) {
@@ -346,13 +377,19 @@ class TimetableGeneratorService
 
 		$classId = (int) ($partner['class_id'] ?? 0);
 		$staffId = (int) ($partner['lecturer'] ?? 0);
+		$sourceStaff = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$sameTeacher = $staffId > 0 && $staffId === $sourceStaff;
 		$courseId = (int) ($partner['course_id'] ?? 0);
 		$subjectKey = $classId . ':' . $courseId;
 		$out = [];
 		$day = (int) ($placed[0]['day_of_week'] ?? -1);
 		$slotIds = [];
 		foreach ($placed as $entry) {
-			$slotIds[] = (int) ($entry['slot_id'] ?? 0);
+			$sourceSlot = (int) ($entry['slot_id'] ?? 0);
+			if ($sourceSlot <= 0) {
+				continue;
+			}
+			$slotIds[] = $this->slotIdForClass($classId, $sourceSlot);
 		}
 		$slotIds = array_values(array_filter($slotIds));
 		if ($day < 0 || $slotIds === [] || count($slotIds) > $room) {
@@ -365,7 +402,8 @@ class TimetableGeneratorService
 			if (isset($this->classBusy[$this->busyKey($classId, $day, $slotId)])) {
 				return [];
 			}
-			if ($staffId > 0 && $this->staffHasTimeConflict($staffId, $day, $slotId)) {
+			// Same teacher is already in this period — that is the combine, not a clash.
+			if (!$sameTeacher && $staffId > 0 && $this->staffHasTimeConflict($staffId, $day, $slotId)) {
 				return [];
 			}
 			if (!$this->criteriaAllowsSlot($partner, $day, $slotId)) {
@@ -377,7 +415,7 @@ class TimetableGeneratorService
 			$this->classBusy[$this->busyKey($classId, $day, $slotId)] = true;
 			$this->classDayUsage[$classId . ':' . $day] = (int) ($this->classDayUsage[$classId . ':' . $day] ?? 0) + 1;
 			$this->globalDayUsage[$day] = (int) ($this->globalDayUsage[$day] ?? 0) + 1;
-			if ($staffId > 0) {
+			if ($staffId > 0 && !$sameTeacher) {
 				$this->staffBusy[$this->busyStaffKey($staffId, $day, $slotId)] = true;
 				$range = $this->slotTimeRange($slotId);
 				if ($range !== null) {
@@ -709,17 +747,20 @@ class TimetableGeneratorService
 		if ($partners === []) {
 			return true;
 		}
+		$sourceStaff = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		foreach ($partners as $partner) {
 			$partnerClass = (int) ($partner['class_id'] ?? 0);
 			$partnerStaff = (int) ($partner['lecturer'] ?? 0);
+			$sameTeacher = $partnerStaff > 0 && $partnerStaff === $sourceStaff;
 			foreach ($slotIds as $slotId) {
-				if (isset($this->classBusy[$this->busyKey($partnerClass, $day, (int) $slotId)])) {
+				$partnerSlot = $this->slotIdForClass($partnerClass, (int) $slotId);
+				if (isset($this->classBusy[$this->busyKey($partnerClass, $day, $partnerSlot)])) {
 					return false;
 				}
-				if (!$this->criteriaAllowsSlot($partner, $day, (int) $slotId)) {
+				if (!$this->criteriaAllowsSlot($partner, $day, $partnerSlot)) {
 					return false;
 				}
-				if ($partnerStaff > 0 && $this->staffHasTimeConflict($partnerStaff, $day, (int) $slotId)) {
+				if (!$sameTeacher && $partnerStaff > 0 && $this->staffHasTimeConflict($partnerStaff, $day, $partnerSlot)) {
 					return false;
 				}
 			}
@@ -1039,6 +1080,54 @@ class TimetableGeneratorService
 	{
 		$track = strtolower(trim((string) ($row['_track_key'] ?? $row['track_key'] ?? '')));
 		return in_array($track, ['primary', 'nursery'], true);
+	}
+
+	/**
+	 * Only the lowest class id in this generate batch places; partners are copied.
+	 *
+	 * @param array<int,bool> $batchClassIds
+	 */
+	private function isCombineFollowerInBatch(array $row, array $batchClassIds): bool
+	{
+		if ($this->secondaryCriteria === null) {
+			return false;
+		}
+		$partners = $this->secondaryCriteria->combinePartners($row);
+		if ($partners === []) {
+			return false;
+		}
+		$my = (int) ($row['class_id'] ?? 0);
+		foreach ($partners as $partner) {
+			$pid = (int) ($partner['class_id'] ?? 0);
+			if ($pid > 0 && isset($batchClassIds[$pid]) && $pid < $my) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private function slotIdForClass(int $classId, int $sourceSlotId): int
+	{
+		if ($classId <= 0 || $sourceSlotId <= 0) {
+			return $sourceSlotId;
+		}
+		$times = $this->slotTimes[$sourceSlotId] ?? null;
+		if ($times === null) {
+			return $sourceSlotId;
+		}
+		$track = (string) ($this->classTracks[$classId] ?? '');
+		if ($track === '') {
+			return $sourceSlotId;
+		}
+		$key = $this->clockKey((string) ($times['start'] ?? ''), (string) ($times['end'] ?? ''));
+		$mapped = (int) ($this->trackClockSlots[$track][$key] ?? 0);
+		return $mapped > 0 ? $mapped : $sourceSlotId;
+	}
+
+	private function clockKey(string $start, string $end): string
+	{
+		return \App\Models\TimetableSchemaModel::slotClock($start)
+			. '|' . \App\Models\TimetableSchemaModel::slotClock($end);
 	}
 
 	private function assignmentQuotaKey(array $row): string

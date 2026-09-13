@@ -946,13 +946,14 @@ class TimetableManagement extends Home
 			$generator->setCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
 			$allSlotTimes = $this->collectSlotTimesById($schoolId, $schema);
 			$generator->mergeSlotTimes($allSlotTimes);
+			$generator->setCombineSlotMaps($byClassTrack, $this->trackClockSlotMap($schoolId, $schema, array_keys($byTrack)));
 			if ($keepBusyEntries !== []) {
 				$generator->seedBusyFromEntries($keepBusyEntries, $slotTimesById + $allSlotTimes);
 			}
 			$reset = $keepBusyEntries === [];
 			$phaseEntries = 0;
 			foreach ($tracks as $trackKey) {
-				$trackAssignments = $byTrack[$trackKey] ?? [];
+				$trackAssignments = $this->excludeSatisfiedAssignments($byTrack[$trackKey] ?? [], $allEntries);
 				if ($trackAssignments === []) {
 					continue;
 				}
@@ -973,7 +974,8 @@ class TimetableManagement extends Home
 					$schema->generationSlots($schoolId, $trackKey),
 					$days,
 					$blocked,
-					$reset
+					$reset,
+					$phaseAssignments
 				);
 				$reset = false;
 				$phaseEntries += count($result['entries']);
@@ -1626,6 +1628,54 @@ class TimetableManagement extends Home
 			? []
 			: $checker->assignmentLoadAlerts($assignments, $schema, $schoolId, $settings);
 		return $summary;
+	}
+
+	/**
+	 * Drop Manage Course rows already filled by a combined-class copy from another track.
+	 *
+	 * @param list<array<string,mixed>> $assignments
+	 * @param list<array<string,mixed>> $entries
+	 * @return list<array<string,mixed>>
+	 */
+	private function excludeSatisfiedAssignments(array $assignments, array $entries): array
+	{
+		$have = [];
+		foreach ($entries as $entry) {
+			$key = (int) ($entry['class_id'] ?? 0) . ':' . (int) ($entry['course_id'] ?? 0);
+			$have[$key] = (int) ($have[$key] ?? 0) + 1;
+		}
+		$out = [];
+		foreach ($assignments as $row) {
+			$needed = TimetableGeneratorService::weeklyHoursFromCourse($row);
+			$key = (int) ($row['class_id'] ?? 0) . ':' . (int) ($row['course_id'] ?? 0);
+			if ($needed > 0 && (int) ($have[$key] ?? 0) >= $needed) {
+				continue;
+			}
+			$out[] = $row;
+		}
+		return $out;
+	}
+
+	/**
+	 * @param list<string> $tracks
+	 * @return array<string,array<string,int>>
+	 */
+	private function trackClockSlotMap(int $schoolId, TimetableSchemaModel $schema, array $tracks): array
+	{
+		$map = [];
+		foreach ($tracks as $track) {
+			$track = (string) $track;
+			foreach ($schema->generationSlots($schoolId, $track) as $slot) {
+				$id = (int) ($slot['id'] ?? 0);
+				if ($id <= 0) {
+					continue;
+				}
+				$key = TimetableSchemaModel::slotClock((string) ($slot['start_time'] ?? ''))
+					. '|' . TimetableSchemaModel::slotClock((string) ($slot['end_time'] ?? ''));
+				$map[$track][$key] = $id;
+			}
+		}
+		return $map;
 	}
 
 	/** @return array<int,array{start:string,end:string}> */
