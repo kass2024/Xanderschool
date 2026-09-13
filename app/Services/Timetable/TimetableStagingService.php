@@ -233,7 +233,8 @@ class TimetableStagingService
 		int $schoolId,
 		\App\Models\TimetableSchemaModel $schema,
 		int $filterClassId = 0,
-		int $filterStaffId = 0
+		int $filterStaffId = 0,
+		bool $allowRelocate = true
 	): int {
 		if ($scheduleId <= 0 || $schoolId <= 0) {
 			return 0;
@@ -246,6 +247,7 @@ class TimetableStagingService
 		$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
 		$this->secondaryCriteria = new SecondaryTimetableCriteria();
 		$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
+		$this->secondaryCriteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
 
 		$builder = $db->table('timetable_entries')
 			->where('schedule_id', $scheduleId)
@@ -299,7 +301,7 @@ class TimetableStagingService
 			}
 
 			$found = $this->findBestDirectPlacement($entry, $days, $schema, $schoolId, $state);
-			if ($found === null) {
+			if ($found === null && $allowRelocate) {
 				$found = $this->placeByRelocatingOneBlocker($db, $entry, $days, $schema, $schoolId, $state);
 			}
 			if ($found === null) {
@@ -354,7 +356,8 @@ class TimetableStagingService
 					'slot_id' => 0,
 				]);
 			$totalMoved += count($idsToParking);
-			$totalReplaced += $this->autoPlaceStaging($scheduleId, $schoolId, $schema, $filterClassId, $filterStaffId);
+			// Place only into free cells — never relocate a legal lesson to force a fit.
+			$totalReplaced += $this->autoPlaceStaging($scheduleId, $schoolId, $schema, $filterClassId, $filterStaffId, false);
 		}
 
 		$remaining = count($this->collectConflictEntryIds(

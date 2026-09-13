@@ -353,6 +353,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	var activeJob = <?= json_encode($active_generation_job ?? null, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 	var lastJob = <?= json_encode($last_generation_job ?? null, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 	var pollTimer = null;
+	var pollFails = 0;
 	var saveCriteriaUrl = '<?= site_url('timetable/save_criteria'); ?>';
 	var deleteCriteriaUrl = '<?= site_url('timetable/delete_criteria'); ?>';
 
@@ -495,20 +496,31 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 	function pollJob(jobId) {
 		if (!jobId) return;
 		stopJobPolling();
-		$.getJSON(jobStatusBase + '/' + encodeURIComponent(jobId), function (job) {
+		$.ajax({
+			url: jobStatusBase + '/' + encodeURIComponent(jobId),
+			dataType: 'json',
+			timeout: 20000
+		}).done(function (job) {
+			pollFails = 0;
 			activeJob = job || null;
 			renderJobState(activeJob);
 			if (job && (job.status === 'queued' || job.status === 'running')) {
-				pollTimer = setTimeout(function () { pollJob(jobId); }, 900);
+				pollTimer = setTimeout(function () { pollJob(jobId); }, 2000);
 				return;
 			}
 			if (job && job.status === 'done') {
 				hasSchedule = true;
 				loadPreview();
 			}
-		}).fail(function () {
+		}).fail(function (xhr) {
+			pollFails += 1;
+			if (pollFails < 8) {
+				pollTimer = setTimeout(function () { pollJob(jobId); }, 2500);
+				return;
+			}
 			setGenerating(false);
-			$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">Could not read timetable job status.</div>');
+			var extra = (xhr && xhr.status) ? ' (HTTP ' + xhr.status + ')' : '';
+			$('#generateResult').html('<div class="alert alert-danger py-2 mb-0">Could not read timetable job status' + extra + '. Refresh and try again.</div>');
 		});
 	}
 

@@ -381,12 +381,21 @@ class TimetableSchemaModel extends Model
 		$this->ensureTrackSlots($schoolId, $trackKey);
 		$this->sanitizeTrackSlots($schoolId, $trackKey);
 		$trackKey = TimetableTrack::normalize($trackKey);
-		$slots = \Config\Database::connect()->table('timetable_slots')
+		$db = \Config\Database::connect();
+		$slots = $db->table('timetable_slots')
 			->where('school_id', $schoolId)
 			->where('track_key', $trackKey)
 			->where('is_break', 0)
 			->orderBy('sort_order', 'ASC')
 			->get()->getResultArray();
+		if ($slots === [] && $trackKey !== TimetableTrack::ALL) {
+			$slots = $db->table('timetable_slots')
+				->where('school_id', $schoolId)
+				->where('track_key', TimetableTrack::ALL)
+				->where('is_break', 0)
+				->orderBy('sort_order', 'ASC')
+				->get()->getResultArray();
+		}
 		$reservedLabels = self::reservedActivitySlotLabels($trackKey);
 		$secondaryDayEnd = self::secondaryTeachingDayEndTime($trackKey);
 		if ($reservedLabels !== [] || $secondaryDayEnd !== null) {

@@ -477,6 +477,7 @@ class TimetableManagement extends Home
 			'progress' => 3,
 			'stage' => 'queued',
 			'stages' => [],
+			'last_spawn_at' => date('Y-m-d H:i:s'),
 		]);
 		$this->spawnTimetableWorker($jobId);
 
@@ -701,8 +702,9 @@ class TimetableManagement extends Home
 
 	public function generation_status($jobId = '')
 	{
+		$this->_preset();
 		$this->denyMenu('timetable_dashboard');
-		list($schoolId) = $this->bootTimetable();
+		$schoolId = (int) $this->session->get('soma_school_id');
 		if (session_status() === PHP_SESSION_ACTIVE) {
 			@session_write_close();
 		}
@@ -712,13 +714,16 @@ class TimetableManagement extends Home
 		}
 		$status = (string) ($job['status'] ?? '');
 		if (in_array($status, ['queued', 'running'], true)) {
-			// Re-spawn worker if still idle; never process inline here (that freezes the % UI).
 			$created = strtotime((string) ($job['created_at'] ?? '')) ?: time();
 			$started = strtotime((string) ($job['started_at'] ?? '')) ?: 0;
-			$idleQueued = $status === 'queued' && (time() - $created) >= 1;
-			$staleRunning = $status === 'running' && $started > 0 && (time() - $started) >= 90
-				&& !is_file($this->timetableJobPath((string) $jobId) . '.lock');
-			if ($idleQueued || $staleRunning) {
+			$lastSpawn = strtotime((string) ($job['last_spawn_at'] ?? '')) ?: 0;
+			$lock = $this->timetableJobPath((string) $jobId) . '.lock';
+			$hasLock = is_file($lock);
+			$idleQueued = $status === 'queued' && (time() - $created) >= 3 && !$hasLock;
+			$staleRunning = $status === 'running' && $started > 0 && (time() - $started) >= 180 && !$hasLock;
+			$spawnCool = $lastSpawn <= 0 || (time() - $lastSpawn) >= 20;
+			if (($idleQueued || $staleRunning) && $spawnCool) {
+				$this->updateTimetableJob((string) $jobId, ['last_spawn_at' => date('Y-m-d H:i:s')]);
 				$this->spawnTimetableWorker((string) $jobId);
 			}
 			$fresh = $this->readTimetableJob((string) $jobId);
@@ -1018,8 +1023,9 @@ class TimetableManagement extends Home
 
 		$stagingSvc = new TimetableStagingService();
 		$stagingCreated = $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
-		$stagingSvc->autoPlaceStaging($scheduleId, $schoolId, $schema);
+		$stagingSvc->autoPlaceStaging($scheduleId, $schoolId, $schema, 0, 0, false);
 		$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
+		$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 
 		$now = date('Y-m-d H:i:s');
 		$targetPhases = $phase === 'all' ? TimetableTrack::generationPhaseKeys() : [$phase];
@@ -1084,7 +1090,14 @@ class TimetableManagement extends Home
 				'stage' => 'gemini',
 				'stages' => $stages,
 			]);
-			$geminiTip = $this->applyGeminiCollisionFixes($scheduleId, $schoolId, $schema, $jobId);
+			try {
+				$geminiTip = $this->applyGeminiCollisionFixes($scheduleId, $schoolId, $schema, $jobId);
+			} catch (\Throwable $e) {
+				log_message('error', 'Gemini collision check failed: {msg}', ['msg' => $e->getMessage()]);
+				$geminiTip = 'AI collision check skipped after an error. Collisions were parked instead.';
+			}
+			$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
+			$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 			$stages = $this->markGenerationStage($stages, 'gemini', 'done');
 			$this->reportGenerationProgress($jobId, [
 				'message' => $geminiTip ?: 'AI collision check complete.',
