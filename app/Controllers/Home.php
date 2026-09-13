@@ -2499,8 +2499,14 @@ public function testEmail()
 			->where('school_id', $schoolId)->get(1)->getRowArray();
 		$data['timetable_special_times'] = $ttSchema->specialTimes($schoolId, $data['timetable_track_key']);
 		$data['timetable_track_labels'] = \App\Libraries\TimetableTrack::labels();
-		$data['timetable_day_labels'] = \App\Models\TimetableSchemaModel::dayLabelsFromSettings($data['timetable_settings']);
-		$data['timetable_day_map'] = \App\Models\TimetableSchemaModel::dayMapFromSettings($data['timetable_settings']);
+		$data['timetable_day_labels'] = \App\Models\TimetableSchemaModel::dayLabelsForTrack(
+			$data['timetable_settings'],
+			$data['timetable_track_key']
+		);
+		$data['timetable_day_map'] = \App\Models\TimetableSchemaModel::dayMapForTrack(
+			$data['timetable_settings'],
+			$data['timetable_track_key']
+		);
 
 		// Sample staff from DB for staff card preview (post required)
 		$stMdl = new StaffModel();

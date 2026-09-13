@@ -95,13 +95,17 @@ class TimetableUnplacedReport
 					$dayNames[] = self::DAY_LABELS[(int) $d] ?? ('Day ' . $d);
 				}
 			}
+			$sundayRule = $criteria->prefersSunday($row);
 			$windowNote = $dayNames === []
-				? 'Any teaching day'
-				: ('Teacher window: ' . implode(', ', $dayNames) . ' only');
+				? ($sundayRule ? 'Sunday special criterion + any weekday' : 'Any teaching day (Sunday reserved)')
+				: ('Teacher window: ' . implode(', ', $dayNames) . ' only'
+					. ($sundayRule ? ' + Sunday special criterion' : ''));
 			$reason = $suggestions === []
 				? 'No legal empty slot for both this class and this teacher'
 					. ($dayNames !== [] ? ' on ' . implode('/', $dayNames) : '')
-					. '. Parked so nothing overlaps. Check Manage Course load or free a listed class period.'
+					. ($sundayRule
+						? '. Sunday is allowed only for this saved special criterion — check free Sunday slots or weekday collisions.'
+						: '. Sunday is reserved (save a Teach on Sunday special criterion before generating if this course should meet on Sunday). Parked so nothing overlaps.')
 				: 'Weekly periods are short. Free slots still exist — remaining hours stayed parked. '
 					. 'Try the listed slots or regenerate after this fix so they auto-fill.';
 			$courseRow = [

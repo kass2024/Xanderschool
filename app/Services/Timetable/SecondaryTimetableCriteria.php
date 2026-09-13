@@ -36,6 +36,9 @@ class SecondaryTimetableCriteria
 	/** @var list<array<string,mixed>> */
 	private $customRules = [];
 
+	/** @var list<array<string,mixed>> */
+	private $sundayRules = [];
+
 	public function __construct()
 	{
 		$this->teacherWindows = $this->defaultTeacherWindows();
@@ -53,6 +56,7 @@ class SecondaryTimetableCriteria
 		$this->customRules = $rules;
 		$this->windowsByStaffId = [];
 		$this->allowedDaysByStaffId = [];
+		$this->sundayRules = [];
 		foreach ($rules as $rule) {
 			if (empty($rule['enabled']) && isset($rule['enabled'])) {
 				continue;
@@ -77,6 +81,9 @@ class SecondaryTimetableCriteria
 			}
 			if ($type === 'teacher_days' && $staffId > 0 && $days !== []) {
 				$this->allowedDaysByStaffId[$staffId] = $days;
+			}
+			if ($type === 'teach_sunday') {
+				$this->sundayRules[] = $rule;
 			}
 		}
 	}
@@ -205,10 +212,71 @@ class SecondaryTimetableCriteria
 	 */
 	public function slotAllowed(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
+		if ($day === 6) {
+			if (!self::isSecondaryTrack($row) || !$this->allowsSunday($row, $slotStart, $slotEnd)) {
+				return false;
+			}
+			return !$this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd);
+		}
 		if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
 			return false;
 		}
 		return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+	}
+
+	/**
+	 * Sunday is reserved: only courses saved as Teach on Sunday may be generated there.
+	 */
+	public function allowsSunday(array $row, ?string $slotStart = null, ?string $slotEnd = null): bool
+	{
+		if (!self::isSecondaryTrack($row)) {
+			return false;
+		}
+		$courseId = (int) ($row['course_id'] ?? $row['course'] ?? 0);
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$classId = (int) ($row['class_id'] ?? 0);
+		$matched = [];
+		foreach ($this->sundayRules as $rule) {
+			if ($this->ruleMatchesRow($rule, $courseId, $staffId, $classId)) {
+				$matched[] = $rule;
+			}
+		}
+		if ($matched === []) {
+			return false;
+		}
+		$windows = [];
+		foreach ($matched as $rule) {
+			$start = trim((string) ($rule['start_time'] ?? ''));
+			$end = trim((string) ($rule['end_time'] ?? ''));
+			if ($start !== '' && $end !== '') {
+				$windows[] = [$this->timeToMinutes($start), $this->timeToMinutes($end)];
+			}
+		}
+		if ($windows === [] || $slotStart === null) {
+			return true;
+		}
+		$slotFrom = $this->timeToMinutes((string) $slotStart);
+		$slotTo = $this->timeToMinutes((string) ($slotEnd ?? $slotStart));
+		foreach ($windows as [$from, $to]) {
+			if ($to > $from && $slotFrom >= $from && $slotTo <= $to) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public function prefersSunday(array $row): bool
+	{
+		return $this->allowsSunday($row);
+	}
+
+	/** Soft score: Sunday-rule courses go to Sunday first; everyone else never lands there. */
+	public function sundayScoreDelta(array $row, int $day): int
+	{
+		if ($day !== 6) {
+			return $this->prefersSunday($row) ? 350 : 0;
+		}
+		return $this->prefersSunday($row) ? -2500 : 50000;
 	}
 
 	/**

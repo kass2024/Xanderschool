@@ -403,6 +403,9 @@ class TimetableGeneratorService
 
 	private function criteriaAllowsSlot(array $row, int $day, int $slotId): bool
 	{
+		if ($day === 6 && $this->secondaryCriteria === null) {
+			return false;
+		}
 		if ($this->secondaryCriteria === null) {
 			return true;
 		}
@@ -682,6 +685,7 @@ class TimetableGeneratorService
 				isset($slot['start_time']) ? (string) $slot['start_time'] : null,
 				isset($slot['end_time']) ? (string) $slot['end_time'] : null
 			);
+			$score += $this->secondaryCriteria->sundayScoreDelta($row, $day);
 		}
 
 		return $score;

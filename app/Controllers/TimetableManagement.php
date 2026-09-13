@@ -105,7 +105,8 @@ class TimetableManagement extends Home
 		$data['settings_url'] = base_url('settings#timetable-settings');
 		$data['special_times'] = $schema->specialTimes($schoolId);
 		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
-		$data['day_labels'] = TimetableSchemaModel::dayLabelsFromSettings($settings);
+		$data['day_labels'] = TimetableSchemaModel::dayLabelsForTrack($settings, TimetableTrack::ALL);
+		$data['criteria_day_choices'] = TimetableSchemaModel::criteriaDayChoices();
 		$data['class_count'] = count($data['classes']);
 		$data['staff_count'] = count($data['staffs']);
 		$data['period_count'] = count(array_filter($data['slots'], static function ($s) {
@@ -219,8 +220,11 @@ class TimetableManagement extends Home
 		$trackLabel = $labels[$trackKey] ?? $trackKey;
 
 		$includeSaturday = $this->request->getPost('include_saturday') ? 1 : 0;
-		$includeSunday = $this->request->getPost('include_sunday') ? 1 : 0;
 		$row = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
+		$includeSunday = !empty($row['include_sunday']) ? 1 : 0;
+		if (!in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
+			$includeSunday = 1;
+		}
 		$dayList = TimetableSchemaModel::dayLabelsFromSettings([
 			'include_saturday' => $includeSaturday,
 			'include_sunday' => $includeSunday,

@@ -53,7 +53,7 @@ class TimetableCriteriaStore
 		$this->ensureTable();
 		$id = (int) ($input['id'] ?? 0);
 		$type = trim((string) ($input['rule_type'] ?? ''));
-		$allowed = ['last_hour', 'teacher_window', 'teacher_days', 'morning'];
+		$allowed = ['last_hour', 'teacher_window', 'teacher_days', 'morning', 'teach_sunday'];
 		if (!in_array($type, $allowed, true)) {
 			return ['error' => 'Choose a valid rule type.'];
 		}
@@ -85,6 +85,15 @@ class TimetableCriteriaStore
 		}
 		if ($type === 'last_hour' && (int) $row['course_id'] <= 0 && (int) $row['teacher_id'] <= 0) {
 			return ['error' => 'Last hour needs a course or a teacher.'];
+		}
+		if ($type === 'teach_sunday') {
+			if ((int) $row['course_id'] <= 0 && (int) $row['teacher_id'] <= 0 && (int) $row['class_id'] <= 0) {
+				return ['error' => 'Teach on Sunday needs a course, teacher, or class. Save it before generating.'];
+			}
+			if ($days === [] || !in_array(6, $days, true)) {
+				$days[] = 6;
+				$row['days'] = json_encode(array_values(array_unique(array_map('intval', $days))));
+			}
 		}
 		$db = \Config\Database::connect();
 		if ($id > 0) {

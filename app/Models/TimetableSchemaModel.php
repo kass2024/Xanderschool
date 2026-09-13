@@ -712,15 +712,44 @@ class TimetableSchemaModel extends Model
 		return $days;
 	}
 
+	/** Sunday is a reserved high-school column (never primary / nursery). */
+	public static function sundayDayIndex(): int
+	{
+		return 6;
+	}
+
 	/** @param array<string,mixed>|null $settings @return list<int> */
 	public static function weekDaysForTrack(?array $settings, string $trackKey): array
 	{
 		$trackKey = TimetableTrack::normalize($trackKey);
 		$days = self::weekDaysFromSettings($settings);
 		if (in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
-			$days = array_values(array_filter($days, static fn (int $day): bool => $day !== 6));
+			return array_values(array_filter($days, static fn (int $day): bool => $day !== 6));
+		}
+		// High school / shared: Sunday is always a visible column, but generation
+		// only places lessons there when a Teach on Sunday special criterion exists.
+		if (!in_array(6, $days, true)) {
+			$days[] = 6;
 		}
 		return $days;
+	}
+
+	/**
+	 * Day checkboxes for special criteria (always Mon–Sun with real day numbers).
+	 *
+	 * @return list<array{value:int,label:string}>
+	 */
+	public static function criteriaDayChoices(): array
+	{
+		return [
+			['value' => 0, 'label' => 'Mon'],
+			['value' => 1, 'label' => 'Tue'],
+			['value' => 2, 'label' => 'Wed'],
+			['value' => 3, 'label' => 'Thu'],
+			['value' => 4, 'label' => 'Fri'],
+			['value' => 5, 'label' => 'Sat'],
+			['value' => 6, 'label' => 'Sun'],
+		];
 	}
 
 	/** @return list<array<string,mixed>> */

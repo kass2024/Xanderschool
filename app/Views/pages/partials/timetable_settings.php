@@ -111,10 +111,11 @@ $colorOptions = [
 						<label class="btn btn-sm btn-outline-primary <?= $includeSaturday ? 'active' : ''; ?>">
 							<input type="checkbox" id="includeSaturday" name="include_saturday" value="1" autocomplete="off" <?= $includeSaturday ? 'checked' : ''; ?>> Saturday
 						</label>
-						<label class="btn btn-sm btn-outline-primary <?= $includeSunday ? 'active' : ''; ?>">
-							<input type="checkbox" id="includeSunday" name="include_sunday" value="1" autocomplete="off" <?= $includeSunday ? 'checked' : ''; ?>> Sunday
+						<label class="btn btn-sm btn-outline-primary <?= $includeSunday || !in_array($selectedTrack, ['primary', 'nursery'], true) ? 'active' : ''; ?>">
+							<input type="checkbox" id="includeSunday" name="include_sunday" value="1" autocomplete="off" <?= $includeSunday || !in_array($selectedTrack, ['primary', 'nursery'], true) ? 'checked' : ''; ?> <?= in_array($selectedTrack, ['primary', 'nursery'], true) ? 'disabled' : ''; ?>> Sunday
 						</label>
 					</div>
+					<p class="small text-muted mb-0 mt-2">Sunday is on for high school / TVET only. Generation never fills Sunday unless you save a <strong>Teach on Sunday</strong> special criterion first. Primary and nursery stay Monday–Friday (plus Saturday if you enable it).</p>
 				</div>
 				<button type="submit" class="btn btn-primary">Save periods</button>
 			</form>

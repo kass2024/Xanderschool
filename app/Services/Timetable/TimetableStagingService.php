@@ -633,6 +633,9 @@ class TimetableStagingService
 		if ($staffId > 0 && $range !== null && $this->staffTimeConflictIds($state, $staffId, $day, $range['start'], $range['end']) !== []) {
 			return false;
 		}
+		if ($day === 6 && $this->secondaryCriteria === null) {
+			return false;
+		}
 		if ($this->secondaryCriteria !== null) {
 			$meta = $this->metaForEntry($entry);
 			if (!$this->secondaryCriteria->slotAllowed(

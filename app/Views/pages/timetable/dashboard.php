@@ -166,7 +166,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Izabayo Patience: Tuesday full day and Friday after lunch only. Nursery and primary use the same course-period fill, no-collision parking, and any extra rules you add below.</p>
+						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, Alice not Monday, teacher windows, PE last hour, mornings, clinical). Izabayo Patience: Tuesday full day and Friday after lunch only. Sunday is reserved: generation never places a high-school course there unless you save a <strong>Teach on Sunday</strong> rule first. Nursery and primary have no Sunday column.</p>
 						<form id="ttCriteriaForm" class="tt-criteria-form">
 							<div class="form-row">
 								<div class="col-md-4 mb-2">
@@ -175,6 +175,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 										<option value="teacher_window">Teacher only on days + time range</option>
 										<option value="teacher_days">Teacher only on specific days</option>
 										<option value="morning">Prefer morning</option>
+										<option value="teach_sunday">Teach this course on Sunday (high school)</option>
 									</select>
 								</div>
 								<div class="col-md-4 mb-2">
@@ -193,10 +194,20 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 										<?php endforeach; ?>
 									</select>
 								</div>
+								<div class="col-md-4 mb-2">
+									<select name="class_id" class="form-control form-control-sm">
+										<option value="0">Any class</option>
+										<?php foreach (($classes ?? []) as $c): ?>
+											<?php $classLabel = $c['class_label'] ?? (($c['level_name'] ?? '') . ' ' . ($c['title'] ?? '')); ?>
+											<option value="<?= (int) $c['id']; ?>"><?= esc(trim($classLabel)); ?></option>
+										<?php endforeach; ?>
+									</select>
+								</div>
 							</div>
+							<p class="small text-info mb-2" id="ttSundayHint" hidden>Sunday is special: pick the course (and optional teacher/class), then save this rule before you generate. Generation will place only these lessons on Sunday.</p>
 							<div class="tt-day-checks mb-2">
-								<?php foreach (($day_labels ?? ['Mon','Tue','Wed','Thu','Fri']) as $di => $dl): ?>
-									<label class="small mr-2 mb-0"><input type="checkbox" name="days[]" value="<?= (int) $di; ?>"> <?= esc($dl); ?></label>
+								<?php foreach (($criteria_day_choices ?? []) as $dayChoice): ?>
+									<label class="small mr-2 mb-0"><input type="checkbox" name="days[]" value="<?= (int) $dayChoice['value']; ?>"> <?= esc($dayChoice['label']); ?></label>
 								<?php endforeach; ?>
 							</div>
 							<div class="form-row">
@@ -207,14 +218,24 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 							<button type="submit" class="btn btn-sm btn-success">Save rule</button>
 						</form>
 						<ul id="ttCriteriaList" class="tt-criteria-list small mb-0 mt-2">
-							<?php foreach (($custom_criteria ?? []) as $rule):
+							<?php
+							$ruleTypeLabels = [
+								'last_hour' => 'Last hour',
+								'teacher_window' => 'Teacher window',
+								'teacher_days' => 'Teacher days',
+								'morning' => 'Morning',
+								'teach_sunday' => 'Teach on Sunday',
+							];
+							foreach (($custom_criteria ?? []) as $rule):
 								$days = json_decode((string) ($rule['days'] ?? '[]'), true);
 								$dayTxt = is_array($days) && $days !== [] ? implode(',', array_map(static function ($d) {
 									return ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(int) $d] ?? $d;
 								}, $days)) : 'any day';
+								$typeKey = (string) ($rule['rule_type'] ?? '');
+								$typeLabel = $ruleTypeLabels[$typeKey] ?? str_replace('_', ' ', $typeKey);
 								?>
 								<li data-id="<?= (int) $rule['id']; ?>">
-									<strong><?= esc(str_replace('_', ' ', (string) $rule['rule_type'])); ?></strong>
+									<strong><?= esc($typeLabel); ?></strong>
 									· <?= esc($dayTxt); ?>
 									<?php if (!empty($rule['start_time'])): ?> <?= esc($rule['start_time']); ?>–<?= esc($rule['end_time']); ?><?php endif; ?>
 									<?php if (!empty($rule['note'])): ?> — <?= esc($rule['note']); ?><?php endif; ?>
@@ -722,6 +743,16 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		var box = document.getElementById('ttCriteriaBox');
 		if (box) box.hidden = !box.hidden;
 	});
+	function syncSundayRuleUi() {
+		var sunday = $('#ttRuleType').val() === 'teach_sunday';
+		$('#ttSundayHint').prop('hidden', !sunday);
+		if (sunday) {
+			$('.tt-day-checks input').prop('checked', false);
+			$('.tt-day-checks input[value="6"]').prop('checked', true);
+		}
+	}
+	$('#ttRuleType').on('change', syncSundayRuleUi);
+	syncSundayRuleUi();
 	$('#ttCriteriaForm').on('submit', function (e) {
 		e.preventDefault();
 		$.ajax({
