@@ -357,7 +357,7 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse fa-com">
-										<?php if (menu_clearance_allowed('daily_visitors/inside')) { ?>
+										<?php if (menu_clearance_allowed('daily_visitors') || menu_clearance_allowed('daily_visitors/inside')) { ?>
 										<li>
 											<a href="<?= base_url('daily_visitors/inside'); ?>">
 												<i class="metismenu-icon"></i>
@@ -365,7 +365,7 @@
 											</a>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('daily_visitors/report')) { ?>
+										<?php if (menu_clearance_allowed('daily_visitors') || menu_clearance_allowed('daily_visitors/report')) { ?>
 										<li>
 											<a href="<?= base_url('daily_visitors/report'); ?>">
 												<i class="metismenu-icon"></i>

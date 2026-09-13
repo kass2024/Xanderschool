@@ -103,7 +103,8 @@ class PostMenuClearanceModel extends Model
 		if (in_array('parent_visiting', $keys, true)
 			|| in_array('parent_visiting/report', $keys, true)
 			|| in_array('parent_visiting/assign', $keys, true)
-			|| in_array('parent_visiting/verify', $keys, true)) {
+			|| in_array('parent_visiting/verify', $keys, true)
+			|| in_array('daily_visitors', $keys, true)) {
 			$keys = array_merge($keys, MenuClearance::groupKeys('daily_visitors'));
 		}
 
