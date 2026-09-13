@@ -1053,12 +1053,20 @@ class TimetableManagement extends Home
 		$stagingCreated = $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 		$stagingSvc->autoPlaceStaging($scheduleId, $schoolId, $schema, 0, 0, false);
 		$this->reportGenerationProgress($jobId, [
+			'message' => 'Filling morning periods for every class…',
+			'progress' => 83,
+			'stage' => 'save',
+			'stages' => $stages,
+		]);
+		$stagingSvc->fillMorningGaps($scheduleId, $schoolId, $schema);
+		$this->reportGenerationProgress($jobId, [
 			'message' => 'Clearing collisions without overlaps…',
 			'progress' => 84,
 			'stage' => 'save',
 			'stages' => $stages,
 		]);
 		$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
+		$stagingSvc->fillMorningGaps($scheduleId, $schoolId, $schema);
 		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 		$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 
@@ -1142,6 +1150,7 @@ class TimetableManagement extends Home
 				$geminiTip = 'AI collision check skipped after an error. Collisions were parked instead.';
 			}
 			$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
+			$stagingSvc->fillMorningGaps($scheduleId, $schoolId, $schema);
 			$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 			$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 			$stages = $this->markGenerationStage($stages, 'gemini', 'done');

@@ -428,18 +428,32 @@ class TimetableGeneratorService
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
 		// Prefer last periods first; widen only if the PE / last-hour course has no free late slot.
+		// Other courses must fill morning before any afternoon slot.
 		$windows = $lastHour ? [2, 3, 4, 5, 6, 7, 0] : [0];
 
 		$candidates = [];
 		foreach ($windows as $window) {
+			$morningFirst = !$lastHour && $window === 0;
 			$candidates = $this->collectPlacementCandidates(
 				$row,
 				$blockSize,
 				$weeklyHours,
 				$maxPerDay,
 				$enforceGap,
-				$window
+				$window,
+				$morningFirst
 			);
+			if ($candidates === [] && $morningFirst) {
+				$candidates = $this->collectPlacementCandidates(
+					$row,
+					$blockSize,
+					$weeklyHours,
+					$maxPerDay,
+					$enforceGap,
+					$window,
+					false
+				);
+			}
 			if ($candidates === [] && $enforceGap) {
 				$candidates = $this->collectPlacementCandidates(
 					$row,
@@ -447,8 +461,20 @@ class TimetableGeneratorService
 					$weeklyHours,
 					$maxPerDay,
 					false,
-					$window
+					$window,
+					$morningFirst
 				);
+				if ($candidates === [] && $morningFirst) {
+					$candidates = $this->collectPlacementCandidates(
+						$row,
+						$blockSize,
+						$weeklyHours,
+						$maxPerDay,
+						false,
+						$window,
+						false
+					);
+				}
 			}
 			if ($candidates !== []) {
 				break;
@@ -493,7 +519,8 @@ class TimetableGeneratorService
 		int $weeklyHours,
 		int $maxPerDay,
 		bool $enforceNonAdjacentDays,
-		int $endOfDayWindow = 0
+		int $endOfDayWindow = 0,
+		bool $morningOnly = false
 	): array {
 		$classId = (int) ($row['class_id'] ?? 0);
 		$staffId = (int) ($row['lecturer'] ?? 0);
@@ -512,6 +539,11 @@ class TimetableGeneratorService
 
 		$orderedDays = $this->days;
 		usort($orderedDays, function ($a, $b) use ($classId) {
+			$ma = $this->classMorningFreeCount($classId, (int) $a);
+			$mb = $this->classMorningFreeCount($classId, (int) $b);
+			if ($ma !== $mb) {
+				return $mb <=> $ma;
+			}
 			$ua = (int) ($this->classDayUsage[$classId . ':' . $a] ?? 0);
 			$ub = (int) ($this->classDayUsage[$classId . ':' . $b] ?? 0);
 			if ($ua !== $ub) {
@@ -532,9 +564,15 @@ class TimetableGeneratorService
 				if ($endOfDayWindow > 0 && $i < $lateStartIndex) {
 					continue;
 				}
+				if ($morningOnly && !$this->slotIsMorning($this->teachingSlots[$i] ?? [])) {
+					continue;
+				}
 				if ($blockSize === 2) {
 					for ($j = $i + 1; $j < $slotCount; $j++) {
 						if ($endOfDayWindow > 0 && $j < $lateStartIndex) {
+							continue;
+						}
+						if ($morningOnly && !$this->slotIsMorning($this->teachingSlots[$j] ?? [])) {
 							continue;
 						}
 						$slotA = (int) $this->teachingSlots[$i]['id'];
@@ -597,8 +635,14 @@ class TimetableGeneratorService
 		$score += (int) ($this->globalDayUsage[$day] ?? 0) * 15;
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
-		// Non-last-hour: slight preference for earlier slots.
-		$score += $lastHour ? 0 : $slotIndex;
+		$slot = $this->teachingSlots[$slotIndex] ?? [];
+		if ($lastHour) {
+			$score += 0;
+		} elseif ($this->slotIsMorning($slot)) {
+			$score -= 2500 + max(0, 12 * 60 - $this->clockMinutes((string) ($slot['start_time'] ?? '')));
+		} else {
+			$score += 5000 + $this->classMorningFreeCount($classId, $day) * 800;
+		}
 
 		$subjectKey = $classId . ':' . $courseId;
 		$sameDayPenalty = ($weeklyHours > 0 && $weeklyHours <= 2) ? 200 : 40;
@@ -680,9 +724,16 @@ class TimetableGeneratorService
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$windows = $peSport ? [2, 3, 4, 5, 6, 7, 0] : [0];
 		foreach ($windows as $window) {
-			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $window));
+			$morningFirst = !$peSport && $window === 0;
+			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $window, $morningFirst));
+			if ($count === 0 && $morningFirst) {
+				$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $window, false));
+			}
 			if ($count === 0 && $enforce) {
-				$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, false, $window));
+				$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, false, $window, $morningFirst));
+				if ($count === 0 && $morningFirst) {
+					$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, false, $window, false));
+				}
 			}
 			if ($count > 0) {
 				return $count;
@@ -810,10 +861,53 @@ class TimetableGeneratorService
 		];
 	}
 
-	private function timeToMinutes(string $time): int
+	public static function isMorningClock(?string $startTime): bool
+	{
+		$start = trim((string) $startTime);
+		if ($start === '') {
+			return false;
+		}
+		return self::clockMinutesFromString($start) < 12 * 60;
+	}
+
+	/** @param array<string,mixed> $slot */
+	private function slotIsMorning(array $slot): bool
+	{
+		return self::isMorningClock((string) ($slot['start_time'] ?? ''));
+	}
+
+	private function clockMinutes(string $time): int
+	{
+		return self::clockMinutesFromString($time);
+	}
+
+	public static function clockMinutesFromString(string $time): int
 	{
 		$parts = explode(':', substr($time, 0, 8));
 		return ((int) ($parts[0] ?? 0)) * 60 + (int) ($parts[1] ?? 0);
+	}
+
+	private function classMorningFreeCount(int $classId, int $day): int
+	{
+		$free = 0;
+		foreach ($this->teachingSlots as $slot) {
+			if (!empty($slot['is_break']) || !$this->slotIsMorning($slot)) {
+				continue;
+			}
+			$slotId = (int) ($slot['id'] ?? 0);
+			if ($slotId <= 0 || !empty($this->blocked[$day . ':' . $slotId])) {
+				continue;
+			}
+			if (!isset($this->classBusy[$this->busyKey($classId, $day, $slotId)])) {
+				$free++;
+			}
+		}
+		return $free;
+	}
+
+	private function timeToMinutes(string $time): int
+	{
+		return self::clockMinutesFromString($time);
 	}
 
 	private function rangesOverlap(int $aStart, int $aEnd, int $bStart, int $bEnd): bool

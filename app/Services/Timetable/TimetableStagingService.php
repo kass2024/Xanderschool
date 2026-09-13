@@ -372,6 +372,215 @@ class TimetableStagingService
 		];
 	}
 
+	/**
+	 * Move parked or afternoon lessons into empty morning teaching slots for every class.
+	 */
+	public function fillMorningGaps(
+		int $scheduleId,
+		int $schoolId,
+		\App\Models\TimetableSchemaModel $schema
+	): int {
+		if ($scheduleId <= 0 || $schoolId <= 0) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
+		$this->timetableSettings = $settings;
+		$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
+		$this->secondaryCriteria = new SecondaryTimetableCriteria();
+		$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
+		$this->secondaryCriteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
+
+		$scheduled = $this->scheduledEntries($scheduleId, $schoolId);
+		$state = $this->buildScheduleState($scheduled);
+		$parking = $db->table('timetable_entries')
+			->where('schedule_id', $scheduleId)
+			->where('school_id', $schoolId)
+			->where('entry_type', 'lesson')
+			->where('day_of_week', -1)
+			->where('slot_id', 0)
+			->orderBy('id')
+			->get()->getResultArray();
+
+		$parkedByClass = [];
+		foreach ($parking as $row) {
+			$parkedByClass[(int) ($row['class_id'] ?? 0)][] = $row;
+		}
+		$placedByClass = [];
+		foreach ($scheduled as $row) {
+			$placedByClass[(int) ($row['class_id'] ?? 0)][] = $row;
+		}
+
+		$filled = 0;
+		$classIds = array_unique(array_merge(array_keys($parkedByClass), array_keys($placedByClass)));
+		foreach ($classIds as $classId) {
+			if ($classId <= 0) {
+				continue;
+			}
+			$trackKey = $schema->trackForClass($schoolId, $classId);
+			$days = \App\Models\TimetableSchemaModel::weekDaysForTrack($settings, $trackKey);
+			$slots = array_values(array_filter(
+				$schema->teachingSlots($schoolId, $trackKey),
+				static fn ($s) => empty($s['is_break'])
+			));
+			$blocked = $schema->specialTimesMap($schoolId, $trackKey);
+			foreach ($days as $day) {
+				foreach ($slots as $slot) {
+					$slotId = (int) ($slot['id'] ?? 0);
+					if ($slotId <= 0 || !TimetableGeneratorService::isMorningClock((string) ($slot['start_time'] ?? ''))) {
+						continue;
+					}
+					if (!empty($blocked[$day . ':' . $slotId])) {
+						continue;
+					}
+					if (!empty($state['class_busy'][$classId . ':' . $day . ':' . $slotId])) {
+						continue;
+					}
+
+					$moved = $this->fillOneMorningSlot(
+						$db,
+						(int) $day,
+						$slot,
+						$parkedByClass[$classId] ?? [],
+						$placedByClass[$classId] ?? [],
+						$state
+					);
+					if ($moved === null) {
+						continue;
+					}
+					$filled++;
+					if (($moved['from'] ?? '') === 'parking') {
+						$parkedByClass[$classId] = array_values(array_filter(
+							$parkedByClass[$classId] ?? [],
+							static fn (array $row): bool => (int) ($row['id'] ?? 0) !== (int) $moved['id']
+						));
+						$placedByClass[$classId][] = $moved['entry'];
+					} else {
+						foreach ($placedByClass[$classId] as $i => $row) {
+							if ((int) ($row['id'] ?? 0) === (int) $moved['id']) {
+								$placedByClass[$classId][$i] = $moved['entry'];
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		return $filled;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $parked
+	 * @param list<array<string,mixed>> $placed
+	 * @param array<string,mixed> $state
+	 * @return array{id:int,from:string,entry:array<string,mixed>}|null
+	 */
+	private function fillOneMorningSlot(
+		\CodeIgniter\Database\BaseConnection $db,
+		int $day,
+		array $slot,
+		array $parked,
+		array $placed,
+		array &$state
+	): ?array {
+		$slotId = (int) ($slot['id'] ?? 0);
+		foreach ($parked as $entry) {
+			if (!$this->entryMayOccupySlot($entry, $day, $slot, $state)) {
+				continue;
+			}
+			$db->table('timetable_entries')->where('id', (int) $entry['id'])->update([
+				'day_of_week' => $day,
+				'slot_id' => $slotId,
+			]);
+			$entry['day_of_week'] = $day;
+			$entry['slot_id'] = $slotId;
+			$entry['start_time'] = (string) ($slot['start_time'] ?? '');
+			$entry['end_time'] = (string) ($slot['end_time'] ?? '');
+			$this->addScheduledEntry($state, $entry);
+			return ['id' => (int) $entry['id'], 'from' => 'parking', 'entry' => $entry];
+		}
+
+		$movers = $placed;
+		usort($movers, function (array $a, array $b): int {
+			$aPe = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($this->metaForEntry($a)['course_title'] ?? '')) ? 1 : 0;
+			$bPe = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($this->metaForEntry($b)['course_title'] ?? '')) ? 1 : 0;
+			if ($aPe !== $bPe) {
+				return $aPe <=> $bPe;
+			}
+			return TimetableGeneratorService::clockMinutesFromString((string) ($b['start_time'] ?? '00:00'))
+				<=> TimetableGeneratorService::clockMinutesFromString((string) ($a['start_time'] ?? '00:00'));
+		});
+		foreach ($movers as $entry) {
+			$fromDay = (int) ($entry['day_of_week'] ?? -1);
+			$fromSlot = (int) ($entry['slot_id'] ?? 0);
+			if ($fromDay < 0 || $fromSlot <= 0) {
+				continue;
+			}
+			if (TimetableGeneratorService::isMorningClock((string) ($entry['start_time'] ?? ''))) {
+				continue;
+			}
+			$meta = $this->metaForEntry($entry);
+			$lastHour = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''))
+				|| ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($meta));
+			if ($lastHour) {
+				continue;
+			}
+			$this->removeScheduledEntry($state, $entry);
+			if (!$this->entryMayOccupySlot($entry, $day, $slot, $state)) {
+				$this->addScheduledEntry($state, $entry);
+				continue;
+			}
+			$db->table('timetable_entries')->where('id', (int) $entry['id'])->update([
+				'day_of_week' => $day,
+				'slot_id' => $slotId,
+			]);
+			$entry['day_of_week'] = $day;
+			$entry['slot_id'] = $slotId;
+			$entry['start_time'] = (string) ($slot['start_time'] ?? '');
+			$entry['end_time'] = (string) ($slot['end_time'] ?? '');
+			$this->addScheduledEntry($state, $entry);
+			return ['id' => (int) $entry['id'], 'from' => 'afternoon', 'entry' => $entry];
+		}
+
+		return null;
+	}
+
+	/**
+	 * @param array<string,mixed> $entry
+	 * @param array<string,mixed> $slot
+	 * @param array<string,mixed> $state
+	 */
+	private function entryMayOccupySlot(array $entry, int $day, array $slot, array $state): bool
+	{
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$staffId = (int) ($entry['staff_id'] ?? 0);
+		$slotId = (int) ($slot['id'] ?? 0);
+		$key = $day . ':' . $slotId;
+		if ($classId > 0 && !empty($state['class_busy'][$classId . ':' . $key])) {
+			return false;
+		}
+		if ($staffId > 0 && !empty($state['staff_busy'][$staffId . ':' . $key])) {
+			return false;
+		}
+		$range = $this->slotTimeRange($slot);
+		if ($staffId > 0 && $range !== null && $this->staffTimeConflictIds($state, $staffId, $day, $range['start'], $range['end']) !== []) {
+			return false;
+		}
+		if ($this->secondaryCriteria !== null) {
+			$meta = $this->metaForEntry($entry);
+			if (!$this->secondaryCriteria->slotAllowed(
+				$meta,
+				$day,
+				(string) ($slot['start_time'] ?? ''),
+				(string) ($slot['end_time'] ?? '')
+			)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/** Park leftover colliding rows. Never write them back onto the grid. */
 	public function parkAllConflicts(
 		int $scheduleId,
@@ -703,9 +912,15 @@ class TimetableStagingService
 			if ($slotIndex < $lateStart) {
 				$score += 5000;
 			}
+		} elseif ($candidateRange !== null && TimetableGeneratorService::isMorningClock(
+			sprintf('%02d:%02d:00', intdiv((int) $candidateRange['start'], 60), ((int) $candidateRange['start']) % 60)
+		)) {
+			$score -= 2500;
 		} elseif ($slotCount > 0 && $slotIndex >= max(0, $slotCount - 3)) {
 			// Leave end-of-day freer for PE when staging non-PE subjects.
 			$score += 900;
+		} else {
+			$score += 4000;
 		}
 
 		if ($useDoubles) {
