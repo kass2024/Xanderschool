@@ -260,7 +260,6 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		if (($staff['id'] ?? '') !== '') {
 			$wsRows[] = ['STAFF ID', (string) $staff['id']];
 		}
-		$wsRows[] = ['ISSUED', $validDate];
 	}
 	$cardBgSrc = $bgSrc;
 	if ($isWisdomArt) {

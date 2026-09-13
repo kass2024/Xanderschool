@@ -183,14 +183,6 @@ class WisdomStaffCardRenderer
 		$phone = $this->formatPhone(trim((string) ($staff['phone'] ?? '')));
 		$email = strtolower(trim((string) ($staff['email'] ?? '')));
 		$staffId = trim((string) ($staff['id'] ?? ''));
-		$card = strtoupper(trim((string) ($staff['card'] ?? '')));
-		$address = $this->upper(trim((string) ($staff['address'] ?? '')));
-		$year = trim((string) ($ctx['year'] ?? ''));
-		if ($year !== '') {
-			$year = CardLayout::formatAcademicYear($year);
-			$year = preg_replace('#/+TERM\s*\d*$#i', '', $year) ?? $year;
-			$year = rtrim($year, '/');
-		}
 
 		$boxX = $this->sx(36);
 		$boxW = $this->sx(519);
@@ -212,15 +204,6 @@ class WisdomStaffCardRenderer
 		}
 		if ($staffId !== '') {
 			$rows[] = ['STAFF ID', $staffId];
-		}
-		if ($card !== '') {
-			$rows[] = ['CARD', $card];
-		}
-		if ($address !== '') {
-			$rows[] = ['ADDRESS', $address];
-		}
-		if ($year !== '') {
-			$rows[] = ['ISSUED', $year];
 		}
 
 		$padX = $this->sx(52);
