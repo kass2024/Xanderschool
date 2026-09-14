@@ -152,9 +152,13 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 					</div>
 
 					<div class="tt-gen-options mb-3">
-						<label class="tt-ai-toggle mb-0">
+						<label class="tt-ai-toggle mb-0" title="Keep Gemini on to repair teacher/class collisions after generate.">
 							<input type="checkbox" id="useAiTips" checked>
 							<span>Gemini collision fix</span>
+						</label>
+						<label class="tt-ai-toggle mb-0" title="Leave unchecked to keep every placed lesson. Check only when you want a full rebuild.">
+							<input type="checkbox" id="replaceLockedTimetable">
+							<span>Replace locked timetable</span>
 						</label>
 						<button type="button" class="btn btn-outline-secondary btn-sm" id="btnToggleCriteria">
 							Special criteria
@@ -163,10 +167,11 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 							Generate all
 						</button>
 					</div>
+					<p class="small text-muted mb-3">Placed lessons stay locked. Generate only fills empty periods unless you check <strong>Replace locked timetable</strong>.</p>
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, teacher windows, PE last hour, mornings, clinical). Combined courses share <strong>one teacher period</strong> for every paired class (5 classes × 3 credits = 3 teacher periods, copied to each class). A teacher-days or teacher-window rule is rejected when that teacher already has too many weekly periods to fit (for example Alice Namahoro with 76), except pinned notes such as IZABAYO PATIENCE (fill every Tuesday period before break, then every Friday period after break and before lunch, remainder on Sunday). After each generate, lessons that already match those special windows are locked so the next generate cannot move them. Sunday is reserved: only Teach on Sunday special criteria, or a named Sunday teacher, may use that column. Farming and Library and Clubs stay after 15:40 and never at night. Nursery and primary have no Sunday column.</p>
+						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, teacher windows, PE last hour, mornings, clinical). Combined courses share <strong>one teacher period</strong> for every paired class (5 classes × 3 credits = 3 teacher periods, copied to each class). A teacher-days or teacher-window rule is rejected when that teacher already has too many weekly periods to fit (for example Alice Namahoro with 76), except pinned notes such as IZABAYO PATIENCE (fill every Tuesday period before break, then every Friday period after break and before lunch, remainder on Sunday). Every placed lesson is locked after generate, on every level. The next generate only fills empty periods unless you check <strong>Replace locked timetable</strong>. Sunday is reserved: only Teach on Sunday special criteria, or a named Sunday teacher, may use that column. Farming and Library and Clubs stay after 15:40 and never at night. Nursery and primary have no Sunday column.</p>
 						<form id="ttCriteriaForm" class="tt-criteria-form">
 							<div class="form-row">
 								<div class="col-md-4 mb-2">
@@ -714,6 +719,9 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 	}
 
 	function startGenerate(phase, force) {
+		if ($('#replaceLockedTimetable').is(':checked') && !window.confirm('Replace locked timetable will rebuild this level and can move every lesson. Continue?')) {
+			return;
+		}
 		setGenerating(true);
 		var label = phase === 'nursery' ? 'Nursery' : (phase === 'primary' ? 'Primary' : (phase === 'high_school' || phase === 'secondary' ? 'High school' : 'All levels'));
 		$('#generateResult').html(
@@ -733,6 +741,7 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 				academic_year: <?= (int) ($academic_year ?? 0); ?>,
 				term: <?= (int) ($term ?? 1); ?>,
 				use_gemini: $('#useAiTips').is(':checked') ? 1 : 0,
+				replace_locked: $('#replaceLockedTimetable').is(':checked') ? 1 : 0,
 				phase: phase || 'all',
 				force: force ? 1 : 0
 			}

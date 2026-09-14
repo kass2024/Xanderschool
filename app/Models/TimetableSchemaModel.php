@@ -48,13 +48,38 @@ class TimetableSchemaModel extends Model
 			return;
 		}
 		$fields = $db->getFieldNames('timetable_entries');
-		if (in_array('is_locked', $fields, true)) {
+		if (!in_array('is_locked', $fields, true)) {
+			try {
+				$db->query("ALTER TABLE `timetable_entries` ADD COLUMN `is_locked` tinyint(1) NOT NULL DEFAULT 0 AFTER `custom_label`");
+			} catch (\Throwable $e) {
+				// column may exist
+			}
+		}
+		$this->freezeExistingPlacedLessons();
+	}
+
+	/**
+	 * Lock every already-placed lesson so the next generate cannot wipe the grid.
+	 */
+	public function freezeExistingPlacedLessons(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('timetable_entries') || !$db->fieldExists('is_locked', 'timetable_entries')) {
 			return;
 		}
 		try {
-			$db->query("ALTER TABLE `timetable_entries` ADD COLUMN `is_locked` tinyint(1) NOT NULL DEFAULT 0 AFTER `custom_label`");
+			$db->query(
+				"UPDATE `timetable_entries` SET `is_locked` = 1
+				WHERE `entry_type` = 'lesson' AND `day_of_week` >= 0 AND `slot_id` > 0
+				AND (`is_locked` = 0 OR `is_locked` IS NULL)"
+			);
+			$done = true;
 		} catch (\Throwable $e) {
-			// column may exist
+			// lock column may be missing on a brand-new install
 		}
 	}
 

@@ -396,13 +396,14 @@ class TimetableManagement extends Home
 		}
 
 		if ($day < 0 || $slotId <= 0) {
-			if ($db->fieldExists('is_locked', 'timetable_entries') && (int) ($entry['is_locked'] ?? 0) === 1) {
-				return $this->response->setJSON(['error' => 'This lesson is locked by special criteria. Unlock it before parking.']);
-			}
-			$db->table('timetable_entries')->where('id', $entryId)->update([
+			$park = [
 				'day_of_week' => -1,
 				'slot_id' => 0,
-			]);
+			];
+			if ($db->fieldExists('is_locked', 'timetable_entries')) {
+				$park['is_locked'] = 0;
+			}
+			$db->table('timetable_entries')->where('id', $entryId)->update($park);
 			return $this->response->setJSON(['success' => 'Lesson moved to holding area.']);
 		}
 
@@ -412,10 +413,14 @@ class TimetableManagement extends Home
 			return $this->response->setJSON(['error' => 'Conflict detected.', 'conflicts' => $conflicts]);
 		}
 
-		$db->table('timetable_entries')->where('id', $entryId)->update([
+		$placed = [
 			'day_of_week' => $day,
 			'slot_id' => $slotId,
-		]);
+		];
+		if ($db->fieldExists('is_locked', 'timetable_entries')) {
+			$placed['is_locked'] = 1;
+		}
+		$db->table('timetable_entries')->where('id', $entryId)->update($placed);
 
 		return $this->response->setJSON(['success' => 'Timetable updated.']);
 	}
@@ -499,7 +504,8 @@ class TimetableManagement extends Home
 		list($schoolId, $staffId, $schema) = $this->bootTimetable();
 		$year = (int) ($this->request->getPost('academic_year') ?: $this->data['academic_year']);
 		$term = (int) ($this->request->getPost('term') ?: $this->data['term']);
-		$useGemini = (bool) $this->request->getPost('use_gemini');
+		$useGemini = (int) $this->request->getPost('use_gemini') === 1;
+		$replaceLocked = (int) $this->request->getPost('replace_locked') === 1;
 		$phase = TimetableTrack::normalizeGenerationPhase($this->request->getPost('phase'));
 		if ($this->countAssignments($schoolId, $year, $term) <= 0) {
 			return $this->response->setJSON(['error' => 'No course assignments found. Assign courses to classes first.']);
@@ -516,7 +522,7 @@ class TimetableManagement extends Home
 		if ($this->request->getPost('force') || $this->request->getPost('discard')) {
 			$this->discardActiveTimetableJobs($schoolId, $year, $term);
 		}
-		$result = $this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'manual', $useGemini, $phase);
+		$result = $this->queueBackgroundGeneration($schoolId, $staffId, $year, $term, 'manual', $useGemini, $phase, $replaceLocked);
 		if (!empty($result['error']) && empty($result['queued']) && empty($result['job_id'])) {
 			return $this->response->setJSON(['error' => $result['error']]);
 		}
@@ -535,7 +541,8 @@ class TimetableManagement extends Home
 		int $term,
 		string $reason = 'manual',
 		bool $useGemini = false,
-		string $phase = 'all'
+		string $phase = 'all',
+		bool $replaceLocked = false
 	): array {
 		if ($schoolId <= 0 || $year <= 0 || $term <= 0) {
 			return ['error' => 'Invalid school/year/term for timetable regeneration.'];
@@ -574,6 +581,7 @@ class TimetableManagement extends Home
 			'academic_year' => $year,
 			'term' => $term,
 			'use_gemini' => $useGemini ? 1 : 0,
+			'replace_locked' => $replaceLocked ? 1 : 0,
 			'phase' => $phase,
 			'reason' => $reason,
 			'message' => 'Queued — ' . $phaseLabel . '…',
@@ -886,10 +894,10 @@ class TimetableManagement extends Home
 	/**
 	 * @return array{entries:list<array<string,mixed>>,warnings:list<string>,schedule_id:int}|null
 	 */
-	private function runGeneration(int $schoolId, int $staffId, TimetableSchemaModel $schema, int $year, int $term, ?string $jobId = null, string $phase = 'all', bool $useGemini = false): ?array
+	private function runGeneration(int $schoolId, int $staffId, TimetableSchemaModel $schema, int $year, int $term, ?string $jobId = null, string $phase = 'all', bool $useGemini = false, bool $replaceLocked = false): ?array
 	{
 		try {
-			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term, $jobId, $phase, $useGemini);
+			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term, $jobId, $phase, $useGemini, $replaceLocked);
 		} catch (TimetableJobCancelledException $e) {
 			throw $e;
 		} catch (\Throwable $e) {
@@ -905,7 +913,7 @@ class TimetableManagement extends Home
 					'stage' => 'retry',
 				]);
 			}
-			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term, $jobId, $phase, $useGemini);
+			return $this->runGenerationOnce($schoolId, $staffId, $schema, $year, $term, $jobId, $phase, $useGemini, $replaceLocked);
 		}
 	}
 
@@ -922,7 +930,8 @@ class TimetableManagement extends Home
 		int $term,
 		?string $jobId = null,
 		string $phase = 'all',
-		bool $useGemini = false
+		bool $useGemini = false,
+		bool $replaceLocked = false
 	): ?array {
 		$db = \Config\Database::connect();
 		$phase = TimetableTrack::normalizeGenerationPhase($phase);
@@ -1014,6 +1023,9 @@ class TimetableManagement extends Home
 		$slotTimesById = [];
 		if ($existingSchedule) {
 			$scheduleIdExisting = (int) $existingSchedule['id'];
+			if (!$replaceLocked) {
+				$this->lockAllPlacedEntries($scheduleIdExisting, $phase === 'all' ? [] : $classIdList);
+			}
 			if ($phase !== 'all' && $classIdList !== []) {
 				$keepBusyEntries = $db->table('timetable_entries te')
 					->select('te.class_id, te.staff_id, te.course_id, te.day_of_week, te.slot_id, ts.start_time, ts.end_time')
@@ -1025,7 +1037,7 @@ class TimetableManagement extends Home
 					->whereNotIn('te.class_id', $classIdList)
 					->get()->getResultArray();
 			}
-			if ($db->fieldExists('is_locked', 'timetable_entries')) {
+			if (!$replaceLocked && $db->fieldExists('is_locked', 'timetable_entries')) {
 				$lockedQ = $db->table('timetable_entries te')
 					->select('te.class_id, te.staff_id, te.course_id, te.day_of_week, te.slot_id, ts.start_time, ts.end_time')
 					->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
@@ -1156,7 +1168,7 @@ class TimetableManagement extends Home
 			}
 			if ($phase === 'all' || $classIdList === []) {
 				$del = $db->table('timetable_entries')->where('schedule_id', $scheduleId);
-				if ($db->fieldExists('is_locked', 'timetable_entries')) {
+				if (!$replaceLocked && $db->fieldExists('is_locked', 'timetable_entries')) {
 					$del->groupStart()->where('is_locked', 0)->orWhere('is_locked IS NULL', null, false)->groupEnd();
 				}
 				$del->delete();
@@ -1164,7 +1176,7 @@ class TimetableManagement extends Home
 				$del = $db->table('timetable_entries')
 					->where('schedule_id', $scheduleId)
 					->whereIn('class_id', $classIdList);
-				if ($db->fieldExists('is_locked', 'timetable_entries')) {
+				if (!$replaceLocked && $db->fieldExists('is_locked', 'timetable_entries')) {
 					$del->groupStart()->where('is_locked', 0)->orWhere('is_locked IS NULL', null, false)->groupEnd();
 				}
 				$del->delete();
@@ -1198,7 +1210,6 @@ class TimetableManagement extends Home
 		$allEntries = $filtered['kept'];
 
 		$this->insertTimetableEntriesBatch($scheduleId, $schoolId, $allEntries);
-		$this->lockCorrectSpecialCriteriaEntries($scheduleId, $schoolId, $phaseAssignments, $schema);
 		$this->reportGenerationProgress($jobId, [
 			'message' => 'Saved ' . count($allEntries) . ' lessons — parking leftover periods…',
 			'progress' => 82,
@@ -1322,7 +1333,7 @@ class TimetableManagement extends Home
 			]);
 		}
 
-		$this->lockCorrectSpecialCriteriaEntries($scheduleId, $schoolId, $phaseAssignments, $schema);
+		$this->lockAllPlacedEntries($scheduleId, $phase === 'all' ? [] : $classIdList);
 
 		$collisionReport = $this->buildCollisionReport(
 			$scheduleId,
@@ -1550,129 +1561,31 @@ class TimetableManagement extends Home
 	}
 
 	/**
-	 * Freeze special-criteria lessons that already sit in the right window
-	 * so the next generate cannot move them.
+	 * Freeze every placed lesson so a later generate cannot wipe the grid
+	 * unless Replace locked timetable is checked.
 	 *
-	 * @param list<array<string,mixed>> $assignments
+	 * @param list<int> $classIdList
 	 */
-	private function lockCorrectSpecialCriteriaEntries(
-		int $scheduleId,
-		int $schoolId,
-		array $assignments,
-		TimetableSchemaModel $schema
-	): int {
-		if ($scheduleId <= 0 || $schoolId <= 0) {
+	private function lockAllPlacedEntries(int $scheduleId, array $classIdList = []): int
+	{
+		if ($scheduleId <= 0) {
 			return 0;
 		}
 		$db = \Config\Database::connect();
 		if (!$db->fieldExists('is_locked', 'timetable_entries')) {
 			return 0;
 		}
-		$criteria = new SecondaryTimetableCriteria();
-		$criteria->hydrateFromAssignments($assignments);
-		$criteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
-
-		$teachingSlots = [];
-		$tracks = TimetableTrack::tracksForSchool($schoolId) ?: [TimetableTrack::ALL];
-		$tracks[] = TimetableTrack::ALL;
-		$seenSlot = [];
-		foreach (array_unique($tracks) as $track) {
-			foreach ($schema->generationSlots($schoolId, (string) $track) as $slot) {
-				$id = (int) ($slot['id'] ?? 0);
-				if ($id <= 0 || isset($seenSlot[$id])) {
-					continue;
-				}
-				$seenSlot[$id] = true;
-				$teachingSlots[] = $slot;
-			}
+		$q = $db->table('timetable_entries')
+			->where('schedule_id', $scheduleId)
+			->where('entry_type', 'lesson')
+			->where('day_of_week >=', 0)
+			->where('slot_id >', 0)
+			->groupStart()->where('is_locked', 0)->orWhere('is_locked IS NULL', null, false)->groupEnd();
+		if ($classIdList !== []) {
+			$q->whereIn('class_id', $classIdList);
 		}
-
-		$metaByKey = [];
-		foreach ($assignments as $row) {
-			$classId = (int) ($row['class_id'] ?? 0);
-			$courseId = (int) ($row['course_id'] ?? 0);
-			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-			if ($classId <= 0 || $courseId <= 0) {
-				continue;
-			}
-			$metaByKey[$classId . ':' . $courseId . ':' . $staffId] = $row;
-			if (!isset($metaByKey[$classId . ':' . $courseId . ':0'])) {
-				$metaByKey[$classId . ':' . $courseId . ':0'] = $row;
-			}
-		}
-
-		$entries = $db->table('timetable_entries te')
-			->select('te.id, te.class_id, te.staff_id, te.course_id, te.day_of_week, te.slot_id, te.is_locked,
-				ts.start_time, ts.end_time, c.title AS course_title,
-				CONCAT(s.fname, " ", s.lname) AS teacher_name')
-			->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
-			->join('courses c', 'c.id = te.course_id', 'left')
-			->join('staffs s', 's.id = te.staff_id', 'left')
-			->where('te.schedule_id', $scheduleId)
-			->where('te.school_id', $schoolId)
-			->where('te.entry_type', 'lesson')
-			->where('te.day_of_week >=', 0)
-			->where('te.slot_id >', 0)
-			->get()->getResultArray();
-
-		$occupiedByStaff = [];
-		foreach ($entries as $entry) {
-			$staffId = (int) ($entry['staff_id'] ?? 0);
-			$day = (int) ($entry['day_of_week'] ?? -1);
-			if ($staffId <= 0 || $day < 0) {
-				continue;
-			}
-			$occupiedByStaff[$staffId][] = [
-				'day' => $day,
-				'start' => $this->lockTimeToMinutes((string) ($entry['start_time'] ?? '')),
-				'end' => $this->lockTimeToMinutes((string) ($entry['end_time'] ?? '')),
-			];
-		}
-
-		$ids = [];
-		foreach ($entries as $entry) {
-			if ((int) ($entry['is_locked'] ?? 0) === 1) {
-				continue;
-			}
-			$classId = (int) ($entry['class_id'] ?? 0);
-			$courseId = (int) ($entry['course_id'] ?? 0);
-			$staffId = (int) ($entry['staff_id'] ?? 0);
-			$row = $metaByKey[$classId . ':' . $courseId . ':' . $staffId]
-				?? $metaByKey[$classId . ':' . $courseId . ':0']
-				?? [
-					'class_id' => $classId,
-					'course_id' => $courseId,
-					'lecturer' => $staffId,
-					'staff_id' => $staffId,
-					'course_title' => (string) ($entry['course_title'] ?? ''),
-					'teacher_name' => (string) ($entry['teacher_name'] ?? ''),
-					'_track_key' => '',
-				];
-			$row['teacher_name'] = (string) ($entry['teacher_name'] ?? $row['teacher_name'] ?? '');
-			$row['course_title'] = (string) ($entry['course_title'] ?? $row['course_title'] ?? '');
-			if ($criteria->shouldLockPlacement(
-				$row,
-				(int) ($entry['day_of_week'] ?? -1),
-				(string) ($entry['start_time'] ?? ''),
-				(string) ($entry['end_time'] ?? ''),
-				$occupiedByStaff[$staffId] ?? [],
-				$teachingSlots
-			)) {
-				$ids[] = (int) $entry['id'];
-			}
-		}
-		$ids = array_values(array_filter($ids));
-		if ($ids === []) {
-			return 0;
-		}
-		$db->table('timetable_entries')->whereIn('id', $ids)->update(['is_locked' => 1]);
-		return count($ids);
-	}
-
-	private function lockTimeToMinutes(string $time): int
-	{
-		$parts = explode(':', substr($time, 0, 8));
-		return ((int) ($parts[0] ?? 0)) * 60 + (int) ($parts[1] ?? 0);
+		$q->update(['is_locked' => 1]);
+		return $db->affectedRows();
 	}
 
 	private function applyGeminiCollisionFixes(int $scheduleId, int $schoolId, TimetableSchemaModel $schema, ?string $jobId = null): ?string
@@ -2215,6 +2128,7 @@ class TimetableManagement extends Home
 			$year = (int) ($job['academic_year'] ?? 0);
 			$term = (int) ($job['term'] ?? 1);
 			$useGemini = !empty($job['use_gemini']);
+			$replaceLocked = !empty($job['replace_locked']);
 			$phase = TimetableTrack::normalizeGenerationPhase($job['phase'] ?? 'all');
 			$schema = new TimetableSchemaModel();
 			$this->updateTimetableJob($jobId, [
@@ -2226,7 +2140,7 @@ class TimetableManagement extends Home
 				'started_at' => date('Y-m-d H:i:s'),
 			]);
 			$schema->ensureSchema();
-			$result = $this->runGeneration($schoolId, $staffId, $schema, $year, $term, $jobId, $phase, $useGemini);
+			$result = $this->runGeneration($schoolId, $staffId, $schema, $year, $term, $jobId, $phase, $useGemini, $replaceLocked);
 			if ($this->timetableJobWasDiscarded($jobId)) {
 				return ['ok' => true, 'cancelled' => true, 'job_id' => $jobId];
 			}
