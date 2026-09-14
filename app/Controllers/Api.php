@@ -2462,7 +2462,14 @@ public function check_school($option)
 		$term = $this->request->getPost("term");
         $this->_preset($school_id);
 		$stMdl = new StudentModel();
-		$student = $stMdl->get_student_simple2(array("card" => $card), $school_id, true);
+		$owner = \App\Libraries\CardRegistry::lookup((int) $school_id, (string) $card);
+		$student = null;
+		if ($owner && ($owner['type'] ?? '') === 'student') {
+			$student = $stMdl->get_student_simple2(array("students.id" => (int) $owner['id']), $school_id, true);
+		}
+		if ($student == null) {
+			$student = $stMdl->get_student_simple2(array("card" => $card), $school_id, true);
+		}
 		if ($student == null) {
 			//student not found
 			return $this->response->setJSON(array("error" => lang("app.noStudentFound")));
@@ -3214,8 +3221,11 @@ public function get_boarding_classes()
 {
     helper('card_uid');
     $stMdl = new StudentModel();
+    $stMdl->ensureCardNfcColumn();
     $cardRaw = trim((string) $this->request->getPost('card'));
+    $cardFormat = strtolower(trim((string) $this->request->getPost('card_format')));
     $card = normalize_card_uid($cardRaw);
+    $nfc = stored_card_uid($cardRaw);
     $created_by = (int) $this->request->getPost('operator');
     $student_id = (int) $this->request->getPost('student_id');
     $school_id = (int) $this->request->getPost('school_id');
@@ -3232,7 +3242,7 @@ public function get_boarding_classes()
         return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid card UID.']);
     }
 
-    $blocked = \App\Libraries\CardRegistry::assertAvailable($school_id, $card, 'student', $student_id);
+    $blocked = \App\Libraries\CardRegistry::assertAvailable($school_id, $cardRaw !== '' ? $cardRaw : $card, 'student', $student_id);
     if ($blocked) {
         return $this->response->setStatusCode(409)->setJSON(['error' => $blocked]);
     }
@@ -3245,12 +3255,23 @@ public function get_boarding_classes()
             ->get(1)->getRow();
         $update_v = $update_v_data ? $update_v_data->version : 1;
 
+        $existing = $stMdl->select('id, card, card_nfc')->where('id', $student_id)->where('school_id', $school_id)->first();
+        $existingCard = is_array($existing) ? trim((string) ($existing['card'] ?? '')) : '';
         $data = [
             'id' => $student_id,
-            'card' => $card,
             'updateVersion' => $update_v,
             'updated_by' => $created_by,
         ];
+        // USB FissaiD stores a different ID than Samsung NFC Tag.getId().
+        // Keep both so web USB and the phone can find the same student.
+        if ($cardFormat === 'hex' && $nfc !== '') {
+            $data['card_nfc'] = $nfc;
+            if ($existingCard === '') {
+                $data['card'] = $card;
+            }
+        } else {
+            $data['card'] = $card;
+        }
 
         if ($stMdl->save($data)) {
             return $this->response->setStatusCode(200)
@@ -3278,7 +3299,8 @@ public function get_boarding_classes()
 			return $this->response->setStatusCode(400)->setJSON(['error' => 'Invalid student or school ID.']);
 		}
 
-		$student = $stMdl->select('id, card')
+		$stMdl->ensureCardNfcColumn();
+		$student = $stMdl->select('id, card, card_nfc')
 			->where('id', $student_id)
 			->where('school_id', $school_id)
 			->where('status', 1)
@@ -3288,7 +3310,7 @@ public function get_boarding_classes()
 			return $this->response->setStatusCode(404)->setJSON(['error' => 'Student not found.']);
 		}
 
-		if (trim((string) ($student->card ?? '')) === '') {
+		if (trim((string) ($student->card ?? '')) === '' && trim((string) ($student->card_nfc ?? '')) === '') {
 			return $this->response->setJSON(['success' => 'No card was assigned to this student.']);
 		}
 
@@ -3303,6 +3325,7 @@ public function get_boarding_classes()
 			if ($stMdl->save([
 				'id' => $student_id,
 				'card' => null,
+				'card_nfc' => null,
 				'updateVersion' => $update_v,
 				'updated_by' => $operator,
 			])) {

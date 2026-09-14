@@ -31,6 +31,7 @@ class StudentModel extends Model
 		'gd_phone',
 		'guardian_nid',
 		'card',
+		'card_nfc',
 		'transport_money',
 		'wallet_pin',
 		'wallet_balance',
@@ -57,6 +58,21 @@ class StudentModel extends Model
 
 	/** @var bool */
 	private static $photoAuditReady = false;
+
+	/** @var bool */
+	private static $cardNfcReady = false;
+
+	public function ensureCardNfcColumn(): void
+	{
+		if (self::$cardNfcReady) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists($this->table) && !$db->fieldExists('card_nfc', $this->table)) {
+			$db->query("ALTER TABLE `{$this->table}` ADD COLUMN `card_nfc` VARCHAR(32) NULL DEFAULT NULL AFTER `card`");
+		}
+		self::$cardNfcReady = true;
+	}
 
 	public function ensureFatherNidColumn(): void
 	{

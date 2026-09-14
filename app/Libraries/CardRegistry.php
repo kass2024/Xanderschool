@@ -13,6 +13,7 @@ class CardRegistry
 	public static function lookup(int $schoolId, string $card): ?array
 	{
 		helper('card_uid');
+		(new \App\Models\StudentModel())->ensureCardNfcColumn();
 		$variants = card_uid_lookup_variants($card);
 		if ($schoolId <= 0 || empty($variants)) {
 			return null;
@@ -22,20 +23,29 @@ class CardRegistry
 		$placeholders = implode(',', array_fill(0, count($variants), '?'));
 		$scopeSchoolIds = self::scopeSchoolIds($schoolId);
 		$scopePlaceholders = implode(',', array_fill(0, count($scopeSchoolIds), '?'));
-		$params = array_merge($scopeSchoolIds, $variants);
+		$baseParams = array_merge($scopeSchoolIds, $variants);
+		$studentParams = array_merge($scopeSchoolIds, $variants, $variants);
 
+		$nfcSql = $db->fieldExists('card_nfc', 'students')
+			? " OR UPPER(TRIM(COALESCE(card_nfc, ''))) IN ({$placeholders})"
+			: '';
 		$student = $db->query(
-			"SELECT id, school_id, CONCAT(fname, ' ', lname) AS name, card FROM students
-			WHERE school_id IN ({$scopePlaceholders}) AND status = 1 AND UPPER(TRIM(card)) IN ({$placeholders})
+			"SELECT id, school_id, CONCAT(fname, ' ', lname) AS name, card, COALESCE(card_nfc, '') AS card_nfc FROM students
+			WHERE school_id IN ({$scopePlaceholders}) AND status = 1
+			AND (UPPER(TRIM(card)) IN ({$placeholders}){$nfcSql})
 			ORDER BY school_id ASC, id ASC LIMIT 1",
-			$params
+			$nfcSql === '' ? $baseParams : $studentParams
 		)->getRowArray();
 		if ($student) {
+			$shown = trim((string) ($student['card'] ?? ''));
+			if ($shown === '') {
+				$shown = (string) ($student['card_nfc'] ?? '');
+			}
 			return [
 				'type' => 'student',
 				'id' => (int) $student['id'],
 				'name' => (string) $student['name'],
-				'card' => (string) $student['card'],
+				'card' => $shown,
 				'school_id' => (int) ($student['school_id'] ?? $schoolId),
 			];
 		}
@@ -46,7 +56,7 @@ class CardRegistry
 				WHERE school_id IN ({$scopePlaceholders}) AND card IS NOT NULL AND TRIM(card) <> ''
 				AND UPPER(TRIM(card)) IN ({$placeholders})
 				ORDER BY school_id ASC, id ASC LIMIT 1",
-				$params
+				$baseParams
 			)->getRowArray();
 			if ($staff) {
 				return [
@@ -64,7 +74,7 @@ class CardRegistry
 			INNER JOIN students st ON st.id = sv.student_id AND st.school_id = sv.school_id AND st.status = 1
 			WHERE sv.school_id IN ({$scopePlaceholders}) AND sv.status = 1 AND UPPER(TRIM(sv.card)) IN ({$placeholders})
 			ORDER BY sv.school_id ASC, sv.id ASC LIMIT 1",
-			$params
+			$baseParams
 		)->getRowArray();
 		if ($visitor) {
 			return [
@@ -154,24 +164,37 @@ class CardRegistry
 			}
 		}
 
-		$rows = $db->table('students')
-			->select('id, fname, lname, card')
+		(new \App\Models\StudentModel())->ensureCardNfcColumn();
+		$hasNfc = $db->fieldExists('card_nfc', 'students');
+		$studentSelect = $hasNfc ? 'id, fname, lname, card, card_nfc' : 'id, fname, lname, card';
+		$studentQ = $db->table('students')
+			->select($studentSelect)
 			->whereIn('school_id', $scopeSchoolIds)
 			->where('status', 1)
-			->where("TRIM(COALESCE(card, '')) <> ''", null, false)
-			->get()->getResultArray();
+			->groupStart()
+			->where("TRIM(COALESCE(card, '')) <> ''", null, false);
+		if ($hasNfc) {
+			$studentQ->orWhere("TRIM(COALESCE(card_nfc, '')) <> ''", null, false);
+		}
+		$rows = $studentQ->groupEnd()->get()->getResultArray();
 		foreach ($rows as $r) {
 			$card = strtoupper(trim((string) ($r['card'] ?? '')));
-			if ($card === '') {
+			$nfc = $hasNfc ? strtoupper(trim((string) ($r['card_nfc'] ?? ''))) : '';
+			$shown = $card !== '' ? $card : $nfc;
+			if ($shown === '') {
 				continue;
+			}
+			$variants = card_uid_lookup_variants($card !== '' ? $card : $nfc);
+			if ($nfc !== '' && $nfc !== $card) {
+				$variants = array_values(array_unique(array_merge($variants, card_uid_lookup_variants($nfc))));
 			}
 			$out[] = [
 				'kind' => 'student',
 				'id' => (int) $r['id'],
 				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
 				'post' => '',
-				'card' => $card,
-				'card_variants' => card_uid_lookup_variants($card),
+				'card' => $shown,
+				'card_variants' => $variants,
 				'photo' => '',
 			];
 		}
