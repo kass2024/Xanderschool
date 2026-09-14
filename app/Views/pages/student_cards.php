@@ -4,12 +4,15 @@
 			.vl {
 				border-left: 3px solid #3ac47d;
 			}
+			.card-gen-filters .form-control {
+				min-height: 38px;
+			}
 		</style>
 		<div class="pull-left mb-2" style="width: 100%">
 			<small class="text-muted">Wisdom High School template · photo + name, class, academic year, ID no · settings design ignored</small>
 		</div>
-		<div class="pull-left" style="width: 100%">
-			<div class="col-md-6 col-sm-12 col-lg-4 pull-left">
+		<div class="pull-left card-gen-filters" style="width: 100%">
+			<div class="col-md-4 col-sm-12 pull-left mb-2">
 				<input type="checkbox" name="sms" value="1" id="search_type"> <label for="search_type"><?= lang("app.Uses");?></label>
 				<div id="search_student_dv">
 					<select class="form-control select3" name="search_student" id="search_student">
@@ -18,6 +21,7 @@
 				<div id="search_class_dv" style="display: none !important;">
 					<select class="form-control select2" id="search_class">
 						<option selected disabled><?= lang("app.selectClass");?></option>
+						<option value="0"><?= lang("app.all");?></option>
 						<?php
 						foreach ($classes as $class) {
 							echo "<option value='{$class['id']}'>{$class['level_name']} {$class['title']} {$class['code']} </option>";
@@ -25,6 +29,19 @@
 						?>
 					</select>
 				</div>
+			</div>
+			<div class="col-md-3 col-sm-12 pull-left mb-2">
+				<label for="filter_studying_mode"><?= lang("app.studyingMode"); ?></label>
+				<select class="form-control" id="filter_studying_mode">
+					<option value=""><?= lang("app.allModes"); ?></option>
+					<option value="1"><?= lang("app.dayScholar"); ?></option>
+					<option value="0"><?= lang("app.boarding"); ?></option>
+				</select>
+			</div>
+			<div class="col-md-4 col-sm-12 pull-left mb-2" style="padding-top: 24px;">
+				<a href="<?= base_url('export_assigned_student_cards_excel'); ?>" id="btn_export_assigned_cards" class="btn btn-success">
+					<i class="fa fa-file-excel"></i> <?= lang("app.exportAssignedCards"); ?>
+				</a>
 			</div>
 		</div>
 		<div style="margin-top: 15px;width: 100%;float:left;">
@@ -39,6 +56,7 @@
 								<th><?= lang("app.regNo");?></th>
 								<th><?= lang("app.studentName");?></th>
 								<th><?= lang("app.sClass");?></th>
+								<th><?= lang("app.studyingMode");?></th>
 								<th><?= lang("app.photo");?></th>
 								<th>Print</th>
 								<th style="align-content: center;"><?= lang("app.remove");?></th>
@@ -61,6 +79,9 @@
 				</div>
 				<div class="col-md-5 col-sm-12 pull-left">
 					<div style="background:white;padding: 10px">
+						<p class="text-muted small mb-2">
+							<?= lang("app.cardGenCriteriaHint"); ?>
+						</p>
 						<div class="row" style="margin-top: 20px;">
 							<div class="col-md-12 pull-left">
 								<center>
@@ -139,8 +160,41 @@
 		$("#search_class").on('select2:select', function (selection) {
 			formatRepoSelection(selection.params.data, true);
 		});
+		$("#filter_studying_mode").on("change", function () {
+			syncExportLink();
+			if ($("#search_type").is(":checked")) {
+				var classId = $("#search_class").val();
+				if (classId !== null && classId !== undefined && classId !== '') {
+					formatRepoSelection({id: classId, text: $("#search_class option:selected").text()}, true);
+				}
+			}
+		});
+		$("#search_class").on("change", function () {
+			syncExportLink();
+		});
+		syncExportLink();
 
 	});
+
+	function currentStudyingMode() {
+		return $("#filter_studying_mode").val() || "";
+	}
+
+	function syncExportLink() {
+		var params = [];
+		if ($("#search_type").is(":checked")) {
+			var classId = $("#search_class").val();
+			if (classId !== null && classId !== undefined && classId !== '') {
+				params.push("class_id=" + encodeURIComponent(classId));
+			}
+		}
+		var mode = currentStudyingMode();
+		if (mode !== "") {
+			params.push("studying_mode=" + encodeURIComponent(mode));
+		}
+		var base = "<?= base_url('export_assigned_student_cards_excel'); ?>";
+		$("#btn_export_assigned_cards").attr("href", params.length ? (base + "?" + params.join("&")) : base);
+	}
 
 	function formatRepoSelection(repo, isClass = false) {
 		var id = repo.id;
@@ -169,7 +223,9 @@
 		}
 		if (isError)
 			return;
-		$.get("<?=base_url();?>get_student/" + id + cl + type, function (data) {
+		var mode = currentStudyingMode();
+		var qs = mode !== "" ? ("?studying_mode=" + encodeURIComponent(mode)) : "";
+		$.get("<?=base_url();?>get_student/" + id + cl + type + qs, function (data) {
 			if (isClass) {
 				$("#studentsTable tbody").html(data);
 			} else {

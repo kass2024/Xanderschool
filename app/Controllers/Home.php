@@ -1983,7 +1983,40 @@ public function testEmail()
 		$data['head_master'] = $skData->head_master ?? '';
 		$data['card_badge'] = 'STAFF CARD';
 		$ids = implode(",", array_map('intval', (array) $ids));
-		$data['staffs'] = $stMdl->get_staff("staffs.id in (" . $ids . ")");
+		$staffs = $stMdl->get_staff("staffs.id in (" . $ids . ")");
+		$printable = [];
+		foreach ((array) $staffs as $staff) {
+			if (resolve_profile_photo($staff['photo'] ?? '') !== null) {
+				$printable[] = $staff;
+			}
+		}
+		if (count($printable) === 0) {
+			return redirect()->to("staff-cards");
+		}
+		$data['staffs'] = $printable;
+		$schoolId = (int) $this->session->get('soma_school_id');
+		if (is_wisdom_school($schoolId) && \App\Libraries\WisdomStaffCardRenderer::isAvailable()) {
+			try {
+				$renderer = new \App\Libraries\WisdomStaffCardRenderer();
+				$jpegs = [];
+				foreach ((array) $data['staffs'] as $staff) {
+					$jpeg = $renderer->renderJpeg($staff, [
+						'year' => $data['theyear'] ?? ($data['year'] ?? ''),
+					]);
+					if (is_string($jpeg) && strlen($jpeg) > 100) {
+						$jpegs[] = $jpeg;
+					}
+				}
+				if (count($jpegs) > 0) {
+					$pdf = \App\Libraries\Cr80ImagePdf::fromJpegs($jpegs);
+					\App\Libraries\Cr80ImagePdf::stream($pdf, 'staffs_card_' . time() . '.pdf');
+					return;
+				}
+			} catch (\Throwable $e) {
+				log_message('error', 'Wisdom staff card PDF failed: ' . $e->getMessage());
+			}
+		}
+		$data['wisdom_staff_art'] = is_wisdom_school($schoolId);
 		$html = view("templates/staff_card_smart", $data);
 		try {
 			$mask = FCPATH . "assets/templates/*.html";
@@ -1991,6 +2024,9 @@ public function testEmail()
 			$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
 			$wkhtmltopdf->setTitle(lang("app.staffCards") ?: 'Staff cards');
 			$wkhtmltopdf->setHtml($html);
+			if (!empty($data['wisdom_staff_art'])) {
+				$orientation = 'portrait';
+			}
 			$pageW = $orientation === 'portrait' ? '54mm' : '85.6mm';
 			$pageH = $orientation === 'portrait' ? '85.6mm' : '54mm';
 			$wkhtmltopdf->setOrientation("Portrait");
@@ -2034,6 +2070,92 @@ public function testEmail()
 				->get()->getRowArray();
 		$data['content'] = view("pages/student_cards", $data);
 		return view('main', $data);
+	}
+
+	public function export_assigned_student_cards_excel()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
+		$classId = (int) ($this->request->getGet('class_id') ?? 0);
+		$modeRaw = $this->request->getGet('studying_mode');
+
+		$studentModel = new StudentModel();
+		$builder = $studentModel
+			->select("
+				students.id,
+				students.regno,
+				CONCAT(students.fname, ' ', students.lname) AS name,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class,
+				c.id AS class_id,
+				students.studying_mode,
+				students.card AS card_number
+			")
+			->join('class_records cr', 'cr.student = students.id', 'inner')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('students.school_id', $schoolId)
+			->where('students.status', 1)
+			->where('students.card IS NOT NULL', null, false)
+			->where('students.card !=', '');
+
+		if ($year > 0) {
+			$builder->where('cr.year', (string) $year);
+		}
+		if ($classId > 0) {
+			$builder->where('c.id', $classId);
+		}
+		if ($modeRaw !== null && $modeRaw !== '') {
+			$builder->where('students.studying_mode', (string) $modeRaw);
+		}
+
+		$students = $builder
+			->groupBy('students.id')
+			->orderBy('l.title', 'ASC')
+			->orderBy('c.title', 'ASC')
+			->orderBy('students.fname', 'ASC')
+			->orderBy('students.lname', 'ASC')
+			->get()
+			->getResultArray();
+
+		foreach ($students as &$student) {
+			$student['mode_label'] = self::ModeToStr($student['studying_mode'] ?? 0);
+		}
+		unset($student);
+
+		$filterParts = [];
+		if ($classId > 0 && !empty($students[0]['class'])) {
+			$filterParts[] = 'Class: ' . $students[0]['class'];
+		} elseif ($classId > 0) {
+			$filterParts[] = 'Class ID: ' . $classId;
+		} else {
+			$filterParts[] = 'Class: All';
+		}
+		if ($modeRaw !== null && $modeRaw !== '') {
+			$filterParts[] = 'Mode: ' . self::ModeToStr($modeRaw);
+		} else {
+			$filterParts[] = 'Mode: All';
+		}
+
+		$school = $this->schoolMetaForStaffExport();
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+		$spreadsheet = \App\Libraries\CardAssignedListExporter::buildExcel(
+			$school,
+			$students,
+			$yearTitle,
+			$termLabel,
+			implode('   |   ', $filterParts)
+		);
+		$filename = \App\Libraries\CardAssignedListExporter::exportFilename($school['name'], 'xlsx');
+		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
+
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
+		header('Cache-Control: max-age=0');
+		$writer->save('php://output');
+		exit;
 	}
 
 	public function staff_cards()
@@ -9627,8 +9749,23 @@ public function getApplicationDocs($id = null)
 		$AddressModel = new AddressModel();
 //		var_dump($_SESSION['soma_academics_year']); die();
 		$data = $this->data;
-		$key = $isClass == 0 ? "students.id" : "c.id";
-		$students = $StudentModel->get_student($id, $key, null, false, $academicYear);
+		$type = (int) $type;
+		$isClass = (int) $isClass;
+		if ($type === 2 && $isClass === 1 && (int) $id === 0) {
+			$students = $StudentModel->get_student(null, null, null, false, $academicYear);
+		} else {
+			$key = $isClass == 0 ? "students.id" : "c.id";
+			$students = $StudentModel->get_student($id, $key, null, false, $academicYear);
+		}
+		if ($type === 2) {
+			$modeRaw = $this->request->getGet('studying_mode');
+			if ($modeRaw !== null && $modeRaw !== '') {
+				$modeStr = (string) $modeRaw;
+				$students = array_values(array_filter($students, static function ($student) use ($modeStr) {
+					return (string) ($student['studying_mode'] ?? '0') === $modeStr;
+				}));
+			}
+		}
 		if (count($students) < 1) {
 			if ((int) $type === 10) {
 				echo "<tr class='mef-empty-class'><td colspan='6' class='text-muted text-center'>No students in this class yet. Extra fees will still be saved for the class.</td></tr>"
@@ -9694,10 +9831,12 @@ public function getApplicationDocs($id = null)
 					? "<a class='btn btn-sm btn-dark' href='" . esc(base_url('generate_cards') . '?student_id=' . $sid, 'attr') . "' target='_blank' rel='noopener'><i class='fa fa-print'></i> Print card</a>"
 					: '<span class="text-muted small">No photo</span>';
 				$color = $hasPhoto ? '' : 'color:orangered';
-				echo "<tr class='disc_row' style='$color' id='" . esc($student['regno'] . $type, 'attr') . "' data-student-id='" . $sid . "' data-has-photo='" . ($hasPhoto ? '1' : '0') . "'>
+				$modeLabel = self::ModeToStr($student['studying_mode'] ?? 0);
+				echo "<tr class='disc_row' style='$color' id='" . esc($student['regno'] . $type, 'attr') . "' data-student-id='" . $sid . "' data-has-photo='" . ($hasPhoto ? '1' : '0') . "' data-mode='" . esc((string) ($student['studying_mode'] ?? '0'), 'attr') . "'>
 				<td>" . esc($student['regno']) . "</td>
 				<td>" . esc($student['stdnames']) . "</td>
 				<td>" . esc($student['level_name'] . " " . $student['title'] . " " . $student['code']) . " </td>
+				<td>" . esc($modeLabel) . "</td>
 				<td>" . $photoHtml . "</td>
 				<td style='text-align:center;white-space:nowrap;'>" . $printBtn . "</td>
 				<td style='text-align: center;'>
@@ -9856,12 +9995,16 @@ public function getApplicationDocs($id = null)
 					} catch (\Throwable $e) {
 					}
 				}
-				$fallback = profile_photo_url(null);
-				$photoUrl = $hasPhoto ? profile_photo_url($resolved) : $fallback;
-				$photo = "<img src='" . esc($photoUrl, 'attr') . "' alt='' style='width:60px;height:60px;object-fit:cover;border-radius:4px;' onerror=\"this.onerror=null;this.src='" . esc($fallback, 'attr') . "';\" />"
-					. "<input type='hidden' value='" . (int)$staff['id'] . "' name='stId[]'>";
+				$hidden = $hasPhoto
+					? "<input type='hidden' value='" . (int) $staff['id'] . "' name='stId[]'>"
+					: '';
+				if ($hasPhoto) {
+					$photo = "<img src='" . esc(profile_photo_url($resolved), 'attr') . "' alt='' style='width:60px;height:60px;object-fit:cover;border-radius:4px;' />" . $hidden;
+				} else {
+					$photo = "<span style='display:inline-block;width:60px;height:60px;background:#f1f3f5;border-radius:4px;' title='No photo'></span>";
+				}
 				$color = $hasPhoto ? "" : "color:orangered";
-				echo "<tr class='disc_row' style='$color' id='row" . (int)$staff['id'] . "'>
+				echo "<tr class='disc_row' style='$color' id='row" . (int)$staff['id'] . "' data-has-photo='" . ($hasPhoto ? '1' : '0') . "'>
 				<td>" . (int)$staff['id'] . "</td>
 				<td>" . esc($staff['fname'] . ' ' . $staff['lname']) . "</td>
 				<td>" . esc($staff['post_title']) . " </td>

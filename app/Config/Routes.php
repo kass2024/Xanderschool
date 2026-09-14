@@ -78,6 +78,7 @@ $routes->get('/messaging/employees', 'Home::messaging_employees');
 $routes->get('/messaging/parents', 'Home::messaging_parents');
 $routes->get('/messaging/history', 'Home::messaging_history');
 $routes->add('/student-cards', 'Home::student_cards');
+$routes->get('/export_assigned_student_cards_excel', 'Home::export_assigned_student_cards_excel');
 $routes->add('/student-photo', 'Home::student_photo');
 $routes->post('/save_live_student_photo', 'Home::save_live_student_photo');
 $routes->add('/staff-cards', 'Home::staff_cards');
