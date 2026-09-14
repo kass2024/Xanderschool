@@ -106,11 +106,25 @@ class TimetableManagement extends Home
 				->where('slot_id >', 0)
 				->countAllResults();
 		}
+		$previewMode = $this->request->getGet('preview_mode') === 'teacher' ? 'teacher' : 'class';
+		$previewId = (int) $this->request->getGet('preview_id');
+		$data['preview_mode'] = $previewMode;
 		$data['preview_class_id'] = !empty($data['classes']) ? (int) $data['classes'][0]['id'] : 0;
-		if ($data['preview_class_id'] > 0 && !empty($data['schedule'])) {
+		$data['preview_teacher_id'] = !empty($data['staffs']) ? (int) $data['staffs'][0]['id'] : 0;
+		if ($previewMode === 'class' && $previewId > 0) {
+			$data['preview_class_id'] = $previewId;
+		}
+		if ($previewMode === 'teacher' && $previewId > 0) {
+			$data['preview_teacher_id'] = $previewId;
+		}
+		$previewEntityId = $previewMode === 'teacher'
+			? (int) $data['preview_teacher_id']
+			: (int) $data['preview_class_id'];
+		$data['preview_data'] = null;
+		if ($previewEntityId > 0 && !empty($data['schedule'])) {
 			try {
 				$data['preview_data'] = $this->gridBodyViewData(
-					$this->buildGridView($schoolId, $schema, 'class', $data['preview_class_id'], false, false)
+					$this->buildGridView($schoolId, $schema, $previewMode, $previewEntityId, false, false)
 				);
 			} catch (\Throwable $e) {
 				log_message('error', 'Timetable dashboard preview failed: {msg}', ['msg' => $e->getMessage()]);

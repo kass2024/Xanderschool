@@ -346,21 +346,26 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 				<span class="text-muted small ml-1">All days visible</span>
 			</div>
 			<div class="d-flex flex-wrap align-items-center tt-preview-controls">
+				<?php
+					$previewMode = (($preview_mode ?? 'class') === 'teacher') ? 'teacher' : 'class';
+					$previewClassId = (int) ($preview_class_id ?? 0);
+					$previewTeacherId = (int) ($preview_teacher_id ?? 0);
+				?>
 				<select id="previewMode" class="form-control form-control-sm">
-					<option value="class">Class</option>
-					<option value="teacher">Teacher</option>
+					<option value="class" <?= $previewMode === 'class' ? 'selected' : ''; ?>>Class</option>
+					<option value="teacher" <?= $previewMode === 'teacher' ? 'selected' : ''; ?>>Teacher</option>
 				</select>
-				<div class="tt-live-pick tt-preview-entity" data-tt-live-pick id="previewClassPick">
+				<div class="tt-live-pick tt-preview-entity<?= $previewMode === 'teacher' ? ' d-none' : ''; ?>" data-tt-live-pick id="previewClassPick">
 					<input type="search" class="form-control form-control-sm tt-live-pick-q" placeholder="Search class…" autocomplete="off">
 					<select id="previewClass" class="tt-live-pick-select" aria-hidden="true" tabindex="-1">
 						<?php foreach ($classes as $c): ?>
 							<?php $classLabel = $c['class_label'] ?? (($c['level_name'] ?? '') . ' ' . $c['title']); ?>
-							<option value="<?= (int) $c['id']; ?>" data-search="<?= esc($classLabel); ?>"><?= esc($classLabel); ?></option>
+							<option value="<?= (int) $c['id']; ?>" data-search="<?= esc($classLabel); ?>" <?= (int) $c['id'] === $previewClassId ? 'selected' : ''; ?>><?= esc($classLabel); ?></option>
 						<?php endforeach; ?>
 					</select>
 					<div class="tt-live-pick-menu" hidden></div>
 				</div>
-				<div class="tt-live-pick tt-preview-entity d-none" data-tt-live-pick id="previewTeacherPick">
+				<div class="tt-live-pick tt-preview-entity<?= $previewMode === 'teacher' ? '' : ' d-none'; ?>" data-tt-live-pick id="previewTeacherPick">
 					<input type="search" class="form-control form-control-sm tt-live-pick-q" placeholder="Search teacher…" autocomplete="off">
 					<select id="previewTeacher" class="tt-live-pick-select" aria-hidden="true" tabindex="-1">
 						<?php foreach ($staffs as $s): ?>
@@ -371,7 +376,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 								}
 								$teacherSearch = trim(($s['fname'] ?? '') . ' ' . ($s['lname'] ?? '') . ' ' . ($s['post_title'] ?? ''));
 							?>
-							<option value="<?= (int) $s['id']; ?>" data-search="<?= esc($teacherSearch); ?>"><?= esc($teacherLabel); ?></option>
+							<option value="<?= (int) $s['id']; ?>" data-search="<?= esc($teacherSearch); ?>" <?= (int) $s['id'] === $previewTeacherId ? 'selected' : ''; ?>><?= esc($teacherLabel); ?></option>
 						<?php endforeach; ?>
 					</select>
 					<div class="tt-live-pick-menu" hidden></div>
@@ -440,9 +445,11 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 	var saveCriteriaUrl = '<?= site_url('timetable/save_criteria'); ?>';
 	var deleteCriteriaUrl = '<?= site_url('timetable/delete_criteria'); ?>';
 	var unplacedPdfBase = '<?= site_url('timetable/pdf_unplaced'); ?>';
-	var previewXhr = null;
+	var dashboardUrl = '<?= site_url('timetable/dashboard'); ?>';
 	var hasServerPreview = <?= !empty($preview_data) ? 'true' : 'false'; ?>;
+	var initialPreviewMode = '<?= (($preview_mode ?? 'class') === 'teacher') ? 'teacher' : 'class'; ?>';
 	var initialPreviewClassId = '<?= (int) ($preview_class_id ?? 0); ?>';
+	var initialPreviewTeacherId = '<?= (int) ($preview_teacher_id ?? 0); ?>';
 
 	function esc(s) {
 		return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -597,39 +604,14 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 		var mode = currentMode();
 		var id = currentId();
 		if (!id) return;
-		if (!force && hasServerPreview && mode === 'class' && String(id) === String(initialPreviewClassId)
-			&& $('#ttPreviewBody .tt-sheet').length) {
+		var sameAsServer = mode === initialPreviewMode && (
+			(mode === 'class' && String(id) === String(initialPreviewClassId))
+			|| (mode === 'teacher' && String(id) === String(initialPreviewTeacherId))
+		);
+		if (!force && hasServerPreview && sameAsServer && $('#ttPreviewBody .tt-sheet').length) {
 			return;
 		}
-		if (previewXhr && previewXhr.readyState !== 4) {
-			previewXhr.abort();
-		}
-		$('#ttPreviewBody').html('<div class="p-5 text-center"><i class="fa fa-spinner fa-spin fa-2x text-muted"></i><div class="mt-2 text-muted">Loading timetable...</div></div>');
-		previewXhr = $.ajax({
-			url: '<?= site_url('timetable/preview'); ?>/' + id + '?mode=' + mode,
-			dataType: 'json',
-			timeout: 60000
-		}).done(function (r) {
-			if (!r || r.error) {
-				$('#ttPreviewBody').html('<div class="alert alert-warning m-3">' + ((r && r.error) ? r.error : 'No preview data') + '</div>');
-				return;
-			}
-			$('#ttPreviewBody').html(r.html || '<div class="alert alert-warning m-3">No preview data</div>');
-			if (r.editable && window.TtLiveEdit) TtLiveEdit.init($('#ttPreviewBody'));
-		}).fail(function (xhr, textStatus) {
-			if (textStatus === 'abort') return;
-			var detail = '';
-			if (textStatus === 'timeout') {
-				detail = 'the server took too long';
-			} else if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
-				detail = xhr.responseJSON.error;
-			} else if (xhr && xhr.status) {
-				detail = 'HTTP ' + xhr.status + (xhr.statusText ? ' ' + xhr.statusText : '');
-			} else if (textStatus) {
-				detail = textStatus;
-			}
-			$('#ttPreviewBody').html('<div class="alert alert-danger m-3">Could not load preview' + (detail ? ': ' + detail : '') + '. Try <strong>Generate smart timetable</strong> again.</div>');
-		});
+		window.location = dashboardUrl + '?preview_mode=' + encodeURIComponent(mode) + '&preview_id=' + encodeURIComponent(id);
 	}
 
 	function stopJobPolling() {
@@ -717,9 +699,7 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 				setGenerating(false);
 			}
 			if (job && job.status === 'done') {
-				hasSchedule = true;
-				hasServerPreview = false;
-				loadPreview(true);
+				window.location = dashboardUrl;
 			}
 		}).fail(function (xhr) {
 			pollFails += 1;
@@ -886,15 +866,13 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 		}, 'json');
 	});
 	$(document).on('click', '#btnRefreshPreview', function () {
-		hasSchedule = true;
-		loadPreview(true);
+		window.location = dashboardUrl;
 	});
 
 	if (window.TtLivePick) {
 		TtLivePick.init('#previewClassPick, #previewTeacherPick');
 	}
 	syncEntityOptions();
-	if (hasSchedule && !hasServerPreview) loadPreview();
 	if (activeJob && activeJob.id && (activeJob.status === 'queued' || activeJob.status === 'running')) {
 		renderJobState(activeJob);
 		pollJob(activeJob.id);
