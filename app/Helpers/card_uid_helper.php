@@ -3,11 +3,13 @@
 /**
  * RFID card UID helpers — same rules as assign-card + attendance-card.
  *
- * NFC reader order:  6C0477CD  (bytes as read from USB wedge)
- * Storage order:     CD77046C  (byte pairs reversed — assign-card / DB form)
+ * Android Tag.getId() and USB hex wedges send 8/14/20-char HEX (e.g. 94280002).
+ * Some USB HID readers send 9–13 digit DECIMAL instead.
  *
- * Save: normalize_card_uid() reverses bytes once.
- * Lookup: card_uid_lookup_variants() tries both orders.
+ * All-digit 8-char values MUST stay hex: 94280002 is a real NFC UID, not decimal 94,280,002.
+ *
+ * Save: normalize_card_uid() reverses byte pairs once (assign-card / DB form).
+ * Lookup: card_uid_lookup_variants() tries hex, reversed hex, and decimal-as-hex.
  */
 
 if (!function_exists('reverse_card_uid_bytes')) {
@@ -24,32 +26,81 @@ if (!function_exists('reverse_card_uid_bytes')) {
 	}
 }
 
+if (!function_exists('card_uid_is_nfc_hex_length')) {
+	/** ISO 14443 UID hex lengths: 4 / 7 / 10 bytes. */
+	function card_uid_is_nfc_hex_length(string $uid): bool
+	{
+		$len = strlen($uid);
+		return $len === 8 || $len === 14 || $len === 20;
+	}
+}
+
+if (!function_exists('card_uid_decimal_to_hex')) {
+	function card_uid_decimal_to_hex(string $digits): string
+	{
+		$digits = preg_replace('/\D/', '', $digits);
+		if ($digits === '') {
+			return '';
+		}
+		$digits = ltrim($digits, '0');
+		if ($digits === '') {
+			return '00000000';
+		}
+		try {
+			if (function_exists('gmp_init')) {
+				$hex = strtoupper(gmp_strval(gmp_init($digits, 10), 16));
+			} else {
+				$hex = '';
+				while ($digits !== '' && $digits !== '0') {
+					$quot = '';
+					$rem = 0;
+					$len = strlen($digits);
+					for ($i = 0; $i < $len; $i++) {
+						$acc = $rem * 10 + (int) $digits[$i];
+						$q = intdiv($acc, 16);
+						$rem = $acc % 16;
+						if ($quot !== '' || $q > 0) {
+							$quot .= (string) $q;
+						}
+					}
+					$hex = dechex($rem) . $hex;
+					$digits = $quot === '' ? '0' : $quot;
+				}
+				$hex = strtoupper($hex);
+			}
+			return str_pad($hex, 8, '0', STR_PAD_LEFT);
+		} catch (\Throwable $e) {
+			return '';
+		}
+	}
+}
+
 if (!function_exists('clean_card_uid_raw')) {
 	/**
-	 * Clean reader input: decimal → hex (padded), strip non-hex. Does NOT reverse bytes.
+	 * Clean reader input. Does NOT reverse bytes.
+	 * NFC hex (8/14/20 chars, including all-digit UIDs) stays hex.
+	 * Longer all-digit HID values are converted from decimal.
 	 */
 	function clean_card_uid_raw(string $raw): string
 	{
-		$uid = trim(preg_replace('/\s+/', '', $raw));
+		$uid = strtoupper(trim(preg_replace('/\s+/', '', $raw)));
 		if ($uid === '') {
 			return '';
 		}
 
-		if (ctype_digit($uid)) {
-			try {
-				if (function_exists('gmp_init')) {
-					$uid = strtoupper(gmp_strval(gmp_init($uid, 10), 16));
-				} else {
-					$uid = strtoupper(base_convert($uid, 10, 16));
-				}
-				$uid = str_pad($uid, 8, '0', STR_PAD_LEFT);
-			} catch (\Throwable $e) {
-				return '';
+		$hexOnly = strtoupper(preg_replace('/[^A-F0-9]/', '', $uid));
+		if (card_uid_is_nfc_hex_length($hexOnly) && ctype_xdigit($hexOnly)) {
+			return $hexOnly;
+		}
+
+		if (ctype_digit($uid) && strlen($uid) >= 5 && strlen($uid) <= 13) {
+			$fromDec = card_uid_decimal_to_hex($uid);
+			if ($fromDec !== '') {
+				return $fromDec;
 			}
 		}
 
-		$uid = strtoupper(preg_replace('/[^A-F0-9]/', '', $uid));
-		return strlen($uid) >= 4 ? $uid : '';
+		return strlen($hexOnly) >= 4 ? $hexOnly : '';
 	}
 }
 
@@ -97,24 +148,43 @@ if (!function_exists('resolve_card_uid_for_save')) {
 
 if (!function_exists('card_uid_lookup_variants')) {
 	/**
-	 * All UID forms to try in DB lookups (storage + reader order).
+	 * All UID forms to try in DB lookups (hex, reversed, decimal-as-hex).
 	 *
 	 * @return string[]
 	 */
 	function card_uid_lookup_variants(string $rawOrStored): array
 	{
+		$out = [];
+		$add = static function (string $uid) use (&$out): void {
+			$uid = strtoupper(preg_replace('/[^A-F0-9]/', '', $uid));
+			if (strlen($uid) < 4) {
+				return;
+			}
+			$out[$uid] = true;
+			$rev = reverse_card_uid_bytes($uid);
+			if ($rev !== '') {
+				$out[$rev] = true;
+			}
+		};
+
+		$stripped = strtoupper(preg_replace('/[^A-F0-9]/', '', $rawOrStored));
 		$clean = clean_card_uid_raw($rawOrStored);
-		if ($clean === '') {
-			$clean = strtoupper(preg_replace('/[^A-F0-9]/', '', $rawOrStored));
+		if ($stripped !== '' && card_uid_is_nfc_hex_length($stripped)) {
+			$add($stripped);
 		}
-		if ($clean === '') {
-			return [];
+		if ($clean !== '') {
+			$add($clean);
 		}
 
-		// Reader order (NFC wedge) + storage order (assign-card byte-reversed), same as attendance scan.
-		$reader = $clean;
-		$storage = reverse_card_uid_bytes($clean);
+		// USB decimal wedge AND all-digit hex UIDs (e.g. Android 94280002).
+		$digits = preg_replace('/\D/', '', $rawOrStored);
+		if ($digits !== '' && strlen($digits) >= 5 && strlen($digits) <= 13) {
+			$fromDec = card_uid_decimal_to_hex($digits);
+			if ($fromDec !== '') {
+				$add($fromDec);
+			}
+		}
 
-		return array_values(array_unique(array_filter([$storage, $reader])));
+		return array_keys($out);
 	}
 }

@@ -3668,6 +3668,7 @@ public function get_boarding_classes()
 		}
 
 		$stMdl = new \App\Models\StudentModel();
+		$ownerSchool = (int) ($owner['school_id'] ?? $schoolId);
 		return $stMdl
 			->select("students.id, CONCAT(students.fname, ' ', students.lname) AS name, students.regno, students.card,
 				students.photo, students.phone, students.sex,
@@ -3678,7 +3679,7 @@ public function get_boarding_classes()
 			->join('departments d', 'd.id = c.department', 'left')
 			->join('levels l', 'l.id = c.level', 'left')
 			->where('students.id', (int) $owner['id'])
-			->where('students.school_id', $schoolId)
+			->where('students.school_id', $ownerSchool)
 			->where('students.status', 1)
 			->orderBy('cr.id', 'DESC')
 			->get(1)
