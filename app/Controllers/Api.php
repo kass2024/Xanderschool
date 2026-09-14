@@ -1258,6 +1258,170 @@ public function sync($option, $school_id)
 	}
 
 	/**
+	 * Mobile: live staff list (same rows as web /staffs). No offline cache.
+	 * GET: school_id, optional year, term, q.
+	 */
+	public function get_staff_list($school_id = null)
+	{
+		$schoolId = (int) ($school_id ?? $this->request->getGet('school_id') ?? $this->request->getPost('school_id') ?? 0);
+		$yearId = (int) ($this->request->getGet('year') ?? $this->request->getPost('year')
+			?? $this->request->getGet('academic_year') ?? $this->request->getPost('academic_year') ?? 0);
+		$term = (int) ($this->request->getGet('term') ?? $this->request->getPost('term') ?? 0);
+		$q = trim((string) ($this->request->getGet('q') ?? $this->request->getGet('search') ?? ''));
+		if ($schoolId < 1) {
+			return $this->response->setStatusCode(400)->setJSON([
+				'success' => false,
+				'error' => 'school_id is required.',
+			]);
+		}
+		try {
+			if ($yearId < 1 || $term < 1) {
+				$this->_preset($schoolId);
+				if ($yearId < 1) {
+					$yearId = (int) ($this->data['academic_year'] ?? 0);
+				}
+				if ($term < 1) {
+					$term = (int) ($this->data['term'] ?? 0);
+				}
+			}
+			$staffMdl = new StaffModel();
+			$builder = $staffMdl->select("staffs.id, staffs.fname, staffs.lname, staffs.phone, staffs.email,
+					staffs.status, staffs.post, staffs.photo, p.title as post_title")
+				->join("posts p", "p.id=staffs.post", "left")
+				->where("staffs.school_id", $schoolId)
+				->orderBy("staffs.fname", "ASC")
+				->orderBy("staffs.lname", "ASC");
+			if ($q !== '') {
+				$builder->groupStart()
+					->like("staffs.fname", $q)
+					->orLike("staffs.lname", $q)
+					->orLike("staffs.phone", $q)
+					->orLike("staffs.email", $q)
+					->orLike("p.title", $q)
+					->groupEnd();
+			}
+			$staffs = $builder->get()->getResultArray();
+			$staffs = \App\Libraries\StaffTeachingLoad::attach($staffs, $schoolId, $yearId, $term);
+			$out = [];
+			foreach ($staffs as $row) {
+				$status = (int) ($row['status'] ?? 0);
+				$out[] = [
+					'id' => (int) ($row['id'] ?? 0),
+					'fname' => (string) ($row['fname'] ?? ''),
+					'lname' => (string) ($row['lname'] ?? ''),
+					'name' => trim(($row['fname'] ?? '') . ' ' . ($row['lname'] ?? '')),
+					'phone' => (string) ($row['phone'] ?? ''),
+					'email' => (string) ($row['email'] ?? ''),
+					'post' => (int) ($row['post'] ?? 0),
+					'post_title' => (string) ($row['post_title'] ?? ''),
+					'status' => $status,
+					'status_label' => ($status === 1 || $status === 2) ? 'Active' : 'Locked',
+					'photo' => (string) ($row['photo'] ?? ''),
+					'taught_courses' => (int) ($row['taught_courses'] ?? 0),
+					'taught_periods' => (int) ($row['taught_periods'] ?? 0),
+				];
+			}
+			return $this->response->setJSON([
+				'success' => true,
+				'staffs' => $out,
+				'count' => count($out),
+				'academic_year' => $yearId,
+				'term' => $term,
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON([
+				'success' => false,
+				'error' => $e->getMessage(),
+			]);
+		}
+	}
+
+	/**
+	 * Mobile: live edit staff names / phone / email (same fields as web edit_staff).
+	 * POST: school_id, staff_id, fname, lname, phone, email.
+	 */
+	public function update_staff_profile()
+	{
+		$schoolId = (int) ($this->request->getPost('school_id') ?? $this->request->getGet('school_id') ?? 0);
+		$staffId = (int) ($this->request->getPost('staff_id') ?? $this->request->getPost('id') ?? 0);
+		$fname = trim((string) $this->request->getPost('fname'));
+		$lname = trim((string) $this->request->getPost('lname'));
+		$phone = trim((string) $this->request->getPost('phone'));
+		$email = trim((string) $this->request->getPost('email'));
+		if ($schoolId < 1 || $staffId < 1) {
+			return $this->response->setStatusCode(400)->setJSON([
+				'success' => false,
+				'error' => 'school_id and staff_id are required.',
+			]);
+		}
+		if ($fname === '' || $lname === '') {
+			return $this->response->setJSON([
+				'success' => false,
+				'error' => 'First name and last name are required.',
+			]);
+		}
+		if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+			return $this->response->setJSON([
+				'success' => false,
+				'error' => 'Enter a valid email address.',
+			]);
+		}
+		try {
+			$staffMdl = new StaffModel();
+			$existing = $staffMdl->where('id', $staffId)->where('school_id', $schoolId)->first();
+			if ($existing === null) {
+				return $this->response->setJSON([
+					'success' => false,
+					'error' => 'Staff not found.',
+				]);
+			}
+			if ($email !== '') {
+				$dup = $staffMdl->where('school_id', $schoolId)
+					->where('email', $email)
+					->where('id !=', $staffId)
+					->first();
+				if ($dup !== null) {
+					return $this->response->setJSON([
+						'success' => false,
+						'error' => 'This email is already used by another staff.',
+					]);
+				}
+			}
+			$uvMdl = new UpdateVersionModel();
+			$updateV = 1;
+			$updateRow = $uvMdl->select('version')->where('type', 'staff')->where('school_id', $schoolId)->get(1)->getRow();
+			if ($updateRow !== null) {
+				$updateV = (int) $updateRow->version;
+			}
+			$staffMdl->save([
+				'id' => $staffId,
+				'fname' => $fname,
+				'lname' => $lname,
+				'phone' => $phone,
+				'email' => $email,
+				'updateVersion' => $updateV,
+			]);
+			return $this->response->setJSON([
+				'success' => true,
+				'message' => lang('app.staffDataSaved') ?: 'Staff data saved.',
+				'staff' => [
+					'id' => $staffId,
+					'fname' => $fname,
+					'lname' => $lname,
+					'name' => trim($fname . ' ' . $lname),
+					'phone' => $phone,
+					'email' => $email,
+				],
+			]);
+		} catch (\Throwable $e) {
+			return $this->response->setStatusCode(500)->setJSON([
+				'success' => false,
+				'error' => $e->getMessage(),
+			]);
+		}
+	}
+
+	/**
 	 * Mobile: material-check context for one student (same data as web student_material_check_context).
 	 * GET: school_id, student_id, year (academic_year).
 	 */

@@ -809,6 +809,8 @@ class MenuClearance
 				|| $has('student-cards') || $has('pendingRegistrations')
 				|| $has('dismissedStudent') || $has('student_material_check')
 				|| $has('hostel_allocate'),
+			'staffs' => self::groupVisibleForKeys($allowedKeys, 'staffs')
+				|| $has('staffs') || $has('staff-cards'),
 			'attendance' => $has('attendance_record') || $has('marks_entry')
 				|| self::groupVisibleForKeys($allowedKeys, 'marks'),
 			'daily_attendance' => $has('attendance_record') || $has('attendance-card'),
