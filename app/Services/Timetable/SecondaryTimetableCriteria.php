@@ -250,7 +250,10 @@ class SecondaryTimetableCriteria
 			if (!self::isSecondaryTrack($row) || !$this->allowsSunday($row, $slotStart, $slotEnd)) {
 				return false;
 			}
-			return !$this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd);
+			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
+				return false;
+			}
+			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
 		}
 		if (self::isSecondaryTrack($row) && (
 			\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd)
@@ -303,7 +306,8 @@ class SecondaryTimetableCriteria
 			}
 		}
 		if ($matched === []) {
-			return false;
+			$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
+			return $this->isIzabayoPatience($teacher);
 		}
 		// Place into the school's saved teaching periods only — ignore any leftover times on the rule.
 		return true;
@@ -371,7 +375,7 @@ class SecondaryTimetableCriteria
 		}
 
 		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
-		if ($meta && ($meta['dept'] ?? '') === 'ANP') {
+		if ($meta && ($meta['dept'] ?? '') === 'ANP' && !$this->isPinnedTeacherName($teacher) && $this->windowsForTeacher($teacher) === []) {
 			// ANP teaching is required Tuesday–Thursday, mornings only.
 			if (!in_array($day, [1, 2, 3], true) || !$this->isMorningSlotByTimes($slotStart, $slotEnd)) {
 				return false;
@@ -496,9 +500,32 @@ class SecondaryTimetableCriteria
 		$level = $meta['level'];
 		$dept = $meta['dept'];
 		$wantedDepts = $this->combineDeptsFor($subject, $level, $dept);
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$courseId = (int) ($row['course_id'] ?? $row['course'] ?? 0);
+		// Documented group with a missing dept code: still share one teacher period
+		// (e.g. S6 Entrepreneurship across 5–6 classes).
+		if ($wantedDepts === [] && $this->subjectCombinesAtLevel($subject, $level)) {
+			return $this->collectCombinePartners($row, $classId, $subject, $level, null, $staffId, $courseId);
+		}
 		if ($wantedDepts === []) {
 			return [];
 		}
+		return $this->collectCombinePartners($row, $classId, $subject, $level, $wantedDepts, 0, 0);
+	}
+
+	/**
+	 * @param list<string>|null $wantedDepts
+	 * @return list<array<string,mixed>>
+	 */
+	private function collectCombinePartners(
+		array $row,
+		int $classId,
+		string $subject,
+		string $level,
+		?array $wantedDepts,
+		int $sameStaff,
+		int $sameCourse
+	): array {
 		$out = [];
 		$seen = [];
 		foreach ($this->assignmentsByKey as $cand) {
@@ -507,19 +534,46 @@ class SecondaryTimetableCriteria
 				continue;
 			}
 			$cm = $this->classMeta[(string) $cid] ?? null;
-			if ($cm === null) {
-				continue;
-			}
-			if (($cm['level'] ?? '') !== $level || !in_array((string) ($cm['dept'] ?? ''), $wantedDepts, true)) {
+			if ($cm === null || ($cm['level'] ?? '') !== $level) {
 				continue;
 			}
 			if ($this->normalizeSubject((string) ($cand['course_title'] ?? '')) !== $subject) {
 				continue;
 			}
+			if ($wantedDepts !== null && !in_array((string) ($cm['dept'] ?? ''), $wantedDepts, true)) {
+				continue;
+			}
+			if ($wantedDepts === null) {
+				$cStaff = (int) ($cand['lecturer'] ?? $cand['staff_id'] ?? 0);
+				$cCourse = (int) ($cand['course_id'] ?? $cand['course'] ?? 0);
+				$sameTeacher = $sameStaff > 0 && $cStaff === $sameStaff;
+				$sameOffering = $sameCourse > 0 && $cCourse === $sameCourse;
+				if (!$sameTeacher && !$sameOffering && !$this->openCombineGroup($subject, $level)) {
+					continue;
+				}
+			}
 			$seen[$cid] = true;
 			$out[] = $cand;
 		}
 		return $out;
+	}
+
+	private function subjectCombinesAtLevel(string $subject, string $level): bool
+	{
+		if ($this->openCombineGroup($subject, $level)) {
+			return true;
+		}
+		foreach ($this->combinePairsForSubject($subject) as $pair) {
+			if (($pair['level'] ?? '') === $level) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private function openCombineGroup(string $subject, string $level): bool
+	{
+		return $subject === 'entrepreneurship' && $level === 'S6';
 	}
 
 	public function combinePartner(array $row): ?array
@@ -870,7 +924,7 @@ class SecondaryTimetableCriteria
 
 		$this->weeklyPeriodsByStaffId = $this->weeklyPeriodsByStaff($assignments);
 		foreach ($this->weeklyPeriodsByStaffId as $staffId => $load) {
-			if ($load > (int) floor($fullCap * 0.70)) {
+			if ($load > (int) floor($fullCap * 0.70) && !$this->staffIsPinned($assignments, (int) $staffId)) {
 				$this->heavyStaffIds[$staffId] = true;
 				$this->relaxedStaffIds[$staffId] = true;
 			}
@@ -878,6 +932,9 @@ class SecondaryTimetableCriteria
 		foreach ($assignments as $row) {
 			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 			if ($staffId <= 0 || !isset($this->heavyStaffIds[$staffId])) {
+				continue;
+			}
+			if ($this->isPinnedTeacherName((string) ($row['teacher_name'] ?? ''))) {
 				continue;
 			}
 			$name = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? '')) ?? ''));
@@ -911,7 +968,7 @@ class SecondaryTimetableCriteria
 			}
 		}
 		foreach ($this->windowsByStaffId as $staffId => $windows) {
-			if (isset($this->relaxedStaffIds[$staffId])) {
+			if (isset($this->relaxedStaffIds[$staffId]) || $this->staffIsPinned($assignments, (int) $staffId)) {
 				continue;
 			}
 			$load = (int) ($this->weeklyPeriodsByStaffId[$staffId] ?? 0);
@@ -943,6 +1000,9 @@ class SecondaryTimetableCriteria
 		}
 
 		foreach (array_keys($this->teacherWindows) as $needle) {
+			if ($this->isPinnedTeacherName((string) $needle)) {
+				continue;
+			}
 			$load = $this->weeklyPeriodsForName($assignments, (string) $needle);
 			$winDays = [];
 			foreach ($this->teacherWindows[$needle] as $window) {
@@ -969,6 +1029,9 @@ class SecondaryTimetableCriteria
 
 	public function isPersonalRestrictionRelaxed(int $staffId, string $teacherName = ''): bool
 	{
+		if ($this->isPinnedTeacherName($teacherName)) {
+			return false;
+		}
 		if ($staffId > 0 && isset($this->relaxedStaffIds[$staffId])) {
 			return true;
 		}
@@ -1021,12 +1084,20 @@ class SecondaryTimetableCriteria
 	private function weeklyPeriodsForName(array $assignments, string $needle): int
 	{
 		$seen = [];
+		$seenCombine = [];
 		$total = 0;
 		$needle = strtolower(trim($needle));
 		foreach ($assignments as $row) {
 			$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? '')) ?? ''));
 			if ($teacher === '' || (!$this->teacherNameMatches($teacher, $needle) && strpos($teacher, $needle) === false)) {
 				continue;
+			}
+			$combineKey = $this->combineGroupKey($row);
+			if ($combineKey !== '' && isset($seenCombine[$combineKey])) {
+				continue;
+			}
+			if ($combineKey !== '') {
+				$seenCombine[$combineKey] = true;
 			}
 			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 			$key = $staffId . ':' . (int) ($row['class_id'] ?? 0) . ':' . (int) ($row['course_id'] ?? $row['course'] ?? 0);
@@ -1100,9 +1171,11 @@ class SecondaryTimetableCriteria
 			['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
 			['day' => 4, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
 		];
-		$patienceTueFri = [
-			['day' => 1, 'start' => 7 * 60, 'end' => 18 * 60, 'scope' => null],
-			['day' => 4, 'start' => 13 * 60, 'end' => 18 * 60, 'scope' => null],
+		// High-school break is 09:40–10:00. Teaching cutoff 15:40.
+		$patienceWindows = [
+			['day' => 1, 'start' => 7 * 60, 'end' => 9 * 60 + 40, 'scope' => null],
+			['day' => 4, 'start' => 10 * 60, 'end' => 15 * 60 + 40, 'scope' => null],
+			['day' => 6, 'start' => 7 * 60, 'end' => 15 * 60 + 40, 'scope' => null],
 		];
 		return [
 			'innocent' => [
@@ -1132,10 +1205,47 @@ class SecondaryTimetableCriteria
 			],
 			'linear' => $linear,
 			'rinea' => $linear,
-			// IZABAYO PATIENCE: Tuesday all teaching day; Friday after lunch only.
-			'izabayo patience' => $patienceTueFri,
-			'patience izabayo' => $patienceTueFri,
+			// IZABAYO PATIENCE: Tuesday before break, Friday after break, Sunday.
+			'izabayo patience' => $patienceWindows,
+			'patience izabayo' => $patienceWindows,
+			'izabayo gihanga' => $patienceWindows,
 		];
+	}
+
+	private function isIzabayoPatience(string $teacher): bool
+	{
+		return $this->isPinnedTeacherName($teacher);
+	}
+
+	private function isPinnedTeacherName(string $teacher): bool
+	{
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', $teacher) ?? ''));
+		if ($teacher === '') {
+			return false;
+		}
+		foreach (['izabayo patience', 'patience izabayo', 'izabayo gihanga'] as $needle) {
+			if ($this->teacherNameMatches($teacher, $needle)) {
+				return true;
+			}
+		}
+		return strpos($teacher, 'izabayo') !== false && strpos($teacher, 'patience') !== false;
+	}
+
+	/** @param list<array<string,mixed>> $assignments */
+	private function staffIsPinned(array $assignments, int $staffId): bool
+	{
+		if ($staffId <= 0) {
+			return false;
+		}
+		foreach ($assignments as $row) {
+			if ((int) ($row['lecturer'] ?? $row['staff_id'] ?? 0) !== $staffId) {
+				continue;
+			}
+			if ($this->isPinnedTeacherName((string) ($row['teacher_name'] ?? ''))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private function timeToMinutes(string $time): int

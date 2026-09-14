@@ -1182,14 +1182,22 @@ class TimetableGeneratorService
 		if ($partners === []) {
 			return false;
 		}
+		// Phase-wide leader (lowest class id) places once; partners only receive copies.
+		// Do not require the leader to be in this track batch — O Level / A Level
+		// / TVET generate separately but still share one teacher period.
 		$my = (int) ($row['class_id'] ?? 0);
+		$ids = [$my];
 		foreach ($partners as $partner) {
 			$pid = (int) ($partner['class_id'] ?? 0);
-			if ($pid > 0 && isset($batchClassIds[$pid]) && $pid < $my) {
-				return true;
+			if ($pid > 0) {
+				$ids[] = $pid;
 			}
 		}
-		return false;
+		$ids = array_values(array_unique(array_filter($ids)));
+		if (count($ids) < 2) {
+			return false;
+		}
+		return $my !== min($ids);
 	}
 
 	private function slotIdForClass(int $classId, int $sourceSlotId): int
