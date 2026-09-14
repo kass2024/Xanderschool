@@ -143,6 +143,8 @@ $routes->post('api/desktop/push', 'DesktopSync::push');
 $routes->get('desktop_sync/status', 'DesktopSync::localStatus');
 $routes->post('desktop_sync/tick', 'DesktopSync::localTick');
 
+$routes->get('api/get_staff_list', 'Api::get_staff_list');
+$routes->post('api/update_staff_profile', 'Api::update_staff_profile');
 $routes->add('api', 'Api::index');
 $routes->add('api/(:any)', 'Api::$1');
 // ✅ Add this line before the wildcard

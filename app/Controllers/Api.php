@@ -1292,13 +1292,6 @@ public function sync($option, $school_id)
 					->groupEnd();
 			}
 			$staffs = $builder->get()->getResultArray();
-			if ($yearId > 0) {
-				try {
-					$staffs = \App\Libraries\StaffTeachingLoad::attachLite($staffs, $schoolId, $yearId, $term);
-				} catch (\Throwable $ignored) {
-					// List still returns if course-load totals fail.
-				}
-			}
 			$out = [];
 			foreach ($staffs as $row) {
 				$status = (int) ($row['status'] ?? 0);
@@ -1318,7 +1311,7 @@ public function sync($option, $school_id)
 				];
 			}
 			return $this->response->setJSON([
-				'success' => true,
+				'success' => '1',
 				'staffs' => $out,
 				'count' => count($out),
 				'academic_year' => $yearId,
@@ -1345,7 +1338,7 @@ public function sync($option, $school_id)
 		$phone = trim((string) $this->request->getPost('phone'));
 		$email = trim((string) $this->request->getPost('email'));
 		if ($schoolId < 1 || $staffId < 1) {
-			return $this->response->setStatusCode(400)->setJSON([
+			return $this->response->setJSON([
 				'success' => false,
 				'error' => 'school_id and staff_id are required.',
 			]);
@@ -1363,19 +1356,28 @@ public function sync($option, $school_id)
 			]);
 		}
 		try {
-			$staffMdl = new StaffModel();
-			$existing = $staffMdl->where('id', $staffId)->where('school_id', $schoolId)->first();
+			$db = \Config\Database::connect();
+			$existing = $db->table('staffs')
+				->select('id, email')
+				->where('id', $staffId)
+				->where('school_id', $schoolId)
+				->get(1)
+				->getRowArray();
 			if ($existing === null) {
 				return $this->response->setJSON([
 					'success' => false,
 					'error' => 'Staff not found.',
 				]);
 			}
-			if ($email !== '') {
-				$dup = $staffMdl->where('school_id', $schoolId)
+			$currentEmail = trim((string) ($existing['email'] ?? ''));
+			if ($email !== '' && strcasecmp($email, $currentEmail) !== 0) {
+				$dup = $db->table('staffs')
+					->select('id')
+					->where('school_id', $schoolId)
 					->where('email', $email)
 					->where('id !=', $staffId)
-					->first();
+					->get(1)
+					->getRowArray();
 				if ($dup !== null) {
 					return $this->response->setJSON([
 						'success' => false,
@@ -1383,23 +1385,40 @@ public function sync($option, $school_id)
 					]);
 				}
 			}
-			$uvMdl = new UpdateVersionModel();
 			$updateV = 1;
-			$updateRow = $uvMdl->select('version')->where('type', 'staff')->where('school_id', $schoolId)->get(1)->getRow();
-			if ($updateRow !== null) {
-				$updateV = (int) $updateRow->version;
+			try {
+				$updateRow = (new UpdateVersionModel())
+					->select('version')
+					->where('type', 'staff')
+					->where('school_id', $schoolId)
+					->get(1)
+					->getRow();
+				if ($updateRow !== null) {
+					$updateV = (int) $updateRow->version;
+				}
+			} catch (\Throwable $ignored) {
 			}
-			$staffMdl->save([
-				'id' => $staffId,
-				'fname' => $fname,
-				'lname' => $lname,
-				'phone' => $phone,
-				'email' => $email,
-				'updateVersion' => $updateV,
-			]);
+			$ok = $db->table('staffs')
+				->where('id', $staffId)
+				->where('school_id', $schoolId)
+				->update([
+					'fname' => $fname,
+					'lname' => $lname,
+					'phone' => $phone,
+					'email' => $email,
+					'updateVersion' => $updateV,
+					'updated_at' => date('Y-m-d H:i:s'),
+				]);
+			if ($ok === false) {
+				return $this->response->setJSON([
+					'success' => false,
+					'error' => 'Could not save staff.',
+				]);
+			}
+			$saved = 'Staff data saved.';
 			return $this->response->setJSON([
-				'success' => true,
-				'message' => lang('app.staffDataSaved') ?: 'Staff data saved.',
+				'success' => $saved,
+				'message' => $saved,
 				'staff' => [
 					'id' => $staffId,
 					'fname' => $fname,
@@ -1410,7 +1429,7 @@ public function sync($option, $school_id)
 				],
 			]);
 		} catch (\Throwable $e) {
-			return $this->response->setStatusCode(500)->setJSON([
+			return $this->response->setJSON([
 				'success' => false,
 				'error' => $e->getMessage(),
 			]);
