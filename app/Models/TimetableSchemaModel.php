@@ -254,7 +254,11 @@ class TimetableSchemaModel extends Model
 				TimetableTrack::NURSERY,
 				self::nurserySlotTemplate()
 			);
-			$this->remapPlacementsBySlotStart($schoolId, TimetableTrack::NURSERY, $oldNurserySlots);
+			try {
+				$this->remapPlacementsBySlotStart($schoolId, TimetableTrack::NURSERY, $oldNurserySlots);
+			} catch (\Throwable $e) {
+				$this->parkLessonsOnBreakSlots($schoolId, TimetableTrack::NURSERY);
+			}
 		}
 		$this->stripSundaySpecials($schoolId, TimetableTrack::NURSERY);
 
@@ -378,35 +382,76 @@ class TimetableSchemaModel extends Model
 
 		if ($oldStartById !== [] && $db->tableExists('timetable_special_times')) {
 			$specials = $db->table('timetable_special_times')
-				->select('id, slot_id')
+				->select('id, slot_id, day_of_week')
 				->where('school_id', $schoolId)
 				->where('track_key', $trackKey)
 				->whereIn('slot_id', array_keys($oldStartById))
 				->get()->getResultArray();
 			foreach ($specials as $special) {
+				$specialId = (int) ($special['id'] ?? 0);
 				$oldStart = $oldStartById[(int) ($special['slot_id'] ?? 0)] ?? '';
 				$target = $teachingIdByStart[$oldStart] ?? 0;
-				if ($target > 0) {
-					if ($target !== (int) ($special['slot_id'] ?? 0)) {
-						$db->table('timetable_special_times')->where('id', (int) $special['id'])->update([
-							'slot_id' => $target,
-						]);
-					}
-				} else {
-					$db->table('timetable_special_times')->where('id', (int) $special['id'])->delete();
+				if ($specialId <= 0) {
+					continue;
+				}
+				if ($target <= 0) {
+					$db->table('timetable_special_times')->where('id', $specialId)->delete();
+					continue;
+				}
+				if ($target === (int) ($special['slot_id'] ?? 0)) {
+					continue;
+				}
+				$dup = (int) $db->table('timetable_special_times')
+					->where('school_id', $schoolId)
+					->where('day_of_week', (int) ($special['day_of_week'] ?? -1))
+					->where('slot_id', $target)
+					->where('id !=', $specialId)
+					->countAllResults();
+				if ($dup > 0) {
+					$db->table('timetable_special_times')->where('id', $specialId)->delete();
+					continue;
+				}
+				try {
+					$db->table('timetable_special_times')->where('id', $specialId)->update([
+						'slot_id' => $target,
+					]);
+				} catch (\Throwable $e) {
+					$db->table('timetable_special_times')->where('id', $specialId)->delete();
 				}
 			}
 		}
 
-		if ($breakIds !== [] && $db->tableExists('timetable_entries')) {
-			$db->table('timetable_entries')
-				->where('school_id', $schoolId)
-				->whereIn('slot_id', $breakIds)
-				->update([
-					'day_of_week' => -1,
-					'slot_id' => 0,
-				]);
+		$this->parkLessonsOnBreakSlots($schoolId, $trackKey);
+	}
+
+	private function parkLessonsOnBreakSlots(int $schoolId, string $trackKey): void
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('timetable_entries')) {
+			return;
 		}
+		$breakIds = [];
+		foreach ($db->table('timetable_slots')
+			->select('id')
+			->where('school_id', $schoolId)
+			->where('track_key', $trackKey)
+			->where('is_break', 1)
+			->get()->getResultArray() as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id > 0) {
+				$breakIds[] = $id;
+			}
+		}
+		if ($breakIds === []) {
+			return;
+		}
+		$db->table('timetable_entries')
+			->where('school_id', $schoolId)
+			->whereIn('slot_id', $breakIds)
+			->update([
+				'day_of_week' => -1,
+				'slot_id' => 0,
+			]);
 	}
 
 	public function stripSundaySpecials(int $schoolId, string $trackKey): void
