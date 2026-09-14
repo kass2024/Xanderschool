@@ -69,7 +69,7 @@ $colorOptions = [
 
 	<div class="tab-content">
 		<div class="tab-pane fade show active" id="ttTabPeriods" role="tabpanel">
-			<p class="text-muted mb-3">Define bell periods and breaks. Primary and nursery use 1-hour lessons (07:30–16:30) and never include Sunday. High school / TVET keep their own 40-minute bells. Special activities stay on the weekly grid.</p>
+			<p class="text-muted mb-3">Nursery is independent: <strong>Morning circle 07:30–08:00</strong> every day, then lessons, with break <strong>10:30–11:00</strong>. Primary keeps 1-hour lessons from 07:30. High school / TVET keep 40-minute bells. None of these include Sunday.</p>
 
 			<form id="timetableSlotsForm">
 				<input type="hidden" name="track_key" id="ttTrackKeyPeriods" value="<?= esc($selectedTrack); ?>">
@@ -117,7 +117,7 @@ $colorOptions = [
 						</label>
 						<?php endif; ?>
 					</div>
-					<p class="small text-muted mb-0 mt-2">These rows are the only bell periods used on every day. Primary and nursery never have a Sunday column. High school / TVET may show Sunday, but generation never fills it unless you save a <strong>Teach on Sunday</strong> special criterion first. Special activities already saved on primary and nursery are kept.</p>
+					<p class="small text-muted mb-0 mt-2">These rows are the only bell periods used on every day. Nursery and primary never have a Sunday column. High school / TVET may show Sunday, but generation never fills it unless you save a <strong>Teach on Sunday</strong> special criterion first. Special activities already saved on primary and nursery are kept.</p>
 				</div>
 				<button type="submit" class="btn btn-primary">Save periods</button>
 			</form>

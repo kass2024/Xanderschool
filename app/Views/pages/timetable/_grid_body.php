@@ -79,10 +79,13 @@ $conflictIds = $conflict_entry_ids ?? [];
 				<tbody>
 				<?php foreach ($grid as $row):
 					$slot = $row['slot'];
-					if (!empty($slot['is_break'])): ?>
-						<tr class="tt-break-row">
+					if (!empty($slot['is_break'])):
+						$breakText = (string) ($slot['break_label'] ?: $slot['label']);
+						$isCircle = stripos($breakText, 'circle') !== false;
+						?>
+						<tr class="tt-break-row<?= $isCircle ? ' tt-circle-row' : ''; ?>">
 							<td class="tt-time"><?= esc($ttRange($slot['start_time'], $slot['end_time'])); ?></td>
-							<td colspan="<?= count($day_labels); ?>" class="tt-break-label"><?= esc($slot['break_label'] ?: $slot['label']); ?></td>
+							<td colspan="<?= count($day_labels); ?>" class="tt-break-label"><?= esc($breakText); ?></td>
 						</tr>
 					<?php else: ?>
 						<tr>

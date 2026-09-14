@@ -198,6 +198,12 @@ class TimetableSchemaModel extends Model
 	public function seedDefaultSlots(int $schoolId, string $trackKey = TimetableTrack::ALL): void
 	{
 		$this->ensureTrackSlots($schoolId, $trackKey);
+		if (TimetableTrack::normalize($trackKey) === TimetableTrack::ALL) {
+			foreach (TimetableTrack::categoryKeys() as $key) {
+				$this->ensureTrackSlots($schoolId, $key);
+			}
+			$this->restorePrimaryNurseryHourPeriods($schoolId);
+		}
 	}
 
 	/**
@@ -207,17 +213,16 @@ class TimetableSchemaModel extends Model
 	public function applyPrimarySlotTemplate(int $schoolId, string $trackKey = TimetableTrack::ALL): int
 	{
 		$trackKey = TimetableTrack::normalize($trackKey);
+		$template = $trackKey === TimetableTrack::NURSERY
+			? self::nurserySlotTemplate()
+			: self::schoolDaySlotTemplate(false);
 
-		return $this->applySlotTemplatePreservingSpecials(
-			$schoolId,
-			$trackKey,
-			self::schoolDaySlotTemplate(false)
-		);
+		return $this->applySlotTemplatePreservingSpecials($schoolId, $trackKey, $template);
 	}
 
 	/**
-	 * Restore 1-hour Primary / Nursery bells (07:30–16:30). Never copy senior 40-minute periods.
-	 * Sunday stays off. Special activities on remaining slot ids are kept.
+	 * Primary keeps 1-hour bells (07:30–16:30). Nursery is independent
+	 * (morning circle 07:30–08:00, break 10:30–11:00). Never copy senior 40-minute periods.
 	 */
 	public function restorePrimaryNurseryHourPeriods(int $schoolId, bool $force = false): int
 	{
@@ -227,16 +232,31 @@ class TimetableSchemaModel extends Model
 			return 0;
 		}
 
-		$template = self::schoolDaySlotTemplate(false);
 		$updated = 0;
-		foreach ([TimetableTrack::PRIMARY, TimetableTrack::NURSERY] as $trackKey) {
-			if (!$force && $this->trackUsesHourLessonPeriods($schoolId, $trackKey)) {
-				$this->stripSundaySpecials($schoolId, $trackKey);
-				continue;
-			}
-			$updated += $this->applySlotTemplatePreservingSpecials($schoolId, $trackKey, $template);
-			$this->stripSundaySpecials($schoolId, $trackKey);
+		if ($force || !$this->trackUsesHourLessonPeriods($schoolId, TimetableTrack::PRIMARY)) {
+			$updated += $this->applySlotTemplatePreservingSpecials(
+				$schoolId,
+				TimetableTrack::PRIMARY,
+				self::schoolDaySlotTemplate(false)
+			);
 		}
+		$this->stripSundaySpecials($schoolId, TimetableTrack::PRIMARY);
+
+		if ($force || !$this->trackUsesNurseryIndependentPeriods($schoolId)) {
+			$oldNurserySlots = \Config\Database::connect()->table('timetable_slots')
+				->where('school_id', $schoolId)
+				->where('track_key', TimetableTrack::NURSERY)
+				->orderBy('sort_order', 'ASC')
+				->get()
+				->getResultArray();
+			$updated += $this->applySlotTemplatePreservingSpecials(
+				$schoolId,
+				TimetableTrack::NURSERY,
+				self::nurserySlotTemplate()
+			);
+			$this->remapPlacementsBySlotStart($schoolId, TimetableTrack::NURSERY, $oldNurserySlots);
+		}
+		$this->stripSundaySpecials($schoolId, TimetableTrack::NURSERY);
 
 		return $updated;
 	}
@@ -266,6 +286,127 @@ class TimetableSchemaModel extends Model
 		$end = self::slotClock((string) ($first['end_time'] ?? ''));
 
 		return $start === '07:30:00' && $end === '08:30:00' && count($rows) <= 8;
+	}
+
+	private function trackUsesNurseryIndependentPeriods(int $schoolId): bool
+	{
+		$rows = \Config\Database::connect()->table('timetable_slots')
+			->where('school_id', $schoolId)
+			->where('track_key', TimetableTrack::NURSERY)
+			->orderBy('sort_order', 'ASC')
+			->get()
+			->getResultArray();
+		if ($rows === []) {
+			return false;
+		}
+		$first = $rows[0];
+		$start = self::slotClock((string) ($first['start_time'] ?? ''));
+		$end = self::slotClock((string) ($first['end_time'] ?? ''));
+		if ($start !== '07:30:00' || $end !== '08:00:00' || empty($first['is_break'])) {
+			return false;
+		}
+		foreach ($rows as $row) {
+			if (self::slotClock((string) ($row['start_time'] ?? '')) === '10:30:00'
+				&& self::slotClock((string) ($row['end_time'] ?? '')) === '11:00:00'
+				&& !empty($row['is_break'])) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Keep lessons/specials on the same clock time after a slot rewrite.
+	 * Periods that disappeared (e.g. 07:30 teaching → morning circle) are parked.
+	 *
+	 * @param list<array<string,mixed>> $oldSlots
+	 */
+	private function remapPlacementsBySlotStart(int $schoolId, string $trackKey, array $oldSlots): void
+	{
+		$db = \Config\Database::connect();
+		$oldStartById = [];
+		foreach ($oldSlots as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id > 0) {
+				$oldStartById[$id] = self::slotClock((string) ($row['start_time'] ?? ''));
+			}
+		}
+
+		$teachingIdByStart = [];
+		$breakIds = [];
+		foreach ($db->table('timetable_slots')
+			->where('school_id', $schoolId)
+			->where('track_key', $trackKey)
+			->orderBy('sort_order', 'ASC')
+			->get()->getResultArray() as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id <= 0) {
+				continue;
+			}
+			$start = self::slotClock((string) ($row['start_time'] ?? ''));
+			if (!empty($row['is_break'])) {
+				$breakIds[] = $id;
+			} else {
+				$teachingIdByStart[$start] = $id;
+			}
+		}
+
+		if ($oldStartById !== [] && $db->tableExists('timetable_entries')) {
+			$entries = $db->table('timetable_entries')
+				->select('id, slot_id')
+				->where('school_id', $schoolId)
+				->whereIn('slot_id', array_keys($oldStartById))
+				->get()->getResultArray();
+			foreach ($entries as $entry) {
+				$oldStart = $oldStartById[(int) ($entry['slot_id'] ?? 0)] ?? '';
+				$target = $teachingIdByStart[$oldStart] ?? 0;
+				if ($target > 0) {
+					if ($target !== (int) ($entry['slot_id'] ?? 0)) {
+						$db->table('timetable_entries')->where('id', (int) $entry['id'])->update([
+							'slot_id' => $target,
+						]);
+					}
+				} else {
+					$db->table('timetable_entries')->where('id', (int) $entry['id'])->update([
+						'day_of_week' => -1,
+						'slot_id' => 0,
+					]);
+				}
+			}
+		}
+
+		if ($oldStartById !== [] && $db->tableExists('timetable_special_times')) {
+			$specials = $db->table('timetable_special_times')
+				->select('id, slot_id')
+				->where('school_id', $schoolId)
+				->where('track_key', $trackKey)
+				->whereIn('slot_id', array_keys($oldStartById))
+				->get()->getResultArray();
+			foreach ($specials as $special) {
+				$oldStart = $oldStartById[(int) ($special['slot_id'] ?? 0)] ?? '';
+				$target = $teachingIdByStart[$oldStart] ?? 0;
+				if ($target > 0) {
+					if ($target !== (int) ($special['slot_id'] ?? 0)) {
+						$db->table('timetable_special_times')->where('id', (int) $special['id'])->update([
+							'slot_id' => $target,
+						]);
+					}
+				} else {
+					$db->table('timetable_special_times')->where('id', (int) $special['id'])->delete();
+				}
+			}
+		}
+
+		if ($breakIds !== [] && $db->tableExists('timetable_entries')) {
+			$db->table('timetable_entries')
+				->where('school_id', $schoolId)
+				->whereIn('slot_id', $breakIds)
+				->update([
+					'day_of_week' => -1,
+					'slot_id' => 0,
+				]);
+		}
 	}
 
 	public function stripSundaySpecials(int $schoolId, string $trackKey): void
@@ -388,8 +529,10 @@ class TimetableSchemaModel extends Model
 
 		if ($trackKey === TimetableTrack::ALL) {
 			$this->insertSlotSet($schoolId, $trackKey, self::schoolDaySlotTemplate(false));
-		} elseif (in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
+		} elseif ($trackKey === TimetableTrack::PRIMARY) {
 			$this->insertSlotSet($schoolId, $trackKey, self::schoolDaySlotTemplate(false));
+		} elseif ($trackKey === TimetableTrack::NURSERY) {
+			$this->insertSlotSet($schoolId, $trackKey, self::nurserySlotTemplate());
 		} elseif (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
 			$this->insertSlotSet($schoolId, $trackKey, self::secondarySlotTemplate());
 		} else {
@@ -439,10 +582,23 @@ class TimetableSchemaModel extends Model
 		return self::schoolDaySlotTemplate(false);
 	}
 
+	/** Independent nursery day: circle 07:30–08:00, break 10:30–11:00. */
 	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
 	private static function nurserySlotTemplate(): array
 	{
-		return self::schoolDaySlotTemplate(false);
+		return [
+			['label' => 'MORNING CIRCLE', 'start' => '07:30:00', 'end' => '08:00:00', 'break' => 1, 'break_label' => 'MORNING CIRCLE'],
+			['label' => '1', 'start' => '08:00:00', 'end' => '09:00:00', 'break' => 0, 'break_label' => null],
+			['label' => '2', 'start' => '09:00:00', 'end' => '10:00:00', 'break' => 0, 'break_label' => null],
+			['label' => '3', 'start' => '10:00:00', 'end' => '10:30:00', 'break' => 0, 'break_label' => null],
+			['label' => 'BREAK TIME', 'start' => '10:30:00', 'end' => '11:00:00', 'break' => 1, 'break_label' => 'BREAK TIME'],
+			['label' => '4', 'start' => '11:00:00', 'end' => '12:00:00', 'break' => 0, 'break_label' => null],
+			['label' => 'LUNCH TIME', 'start' => '12:00:00', 'end' => '13:10:00', 'break' => 1, 'break_label' => 'LUNCH TIME'],
+			['label' => '5', 'start' => '13:10:00', 'end' => '14:10:00', 'break' => 0, 'break_label' => null],
+			['label' => '6', 'start' => '14:10:00', 'end' => '15:10:00', 'break' => 0, 'break_label' => null],
+			['label' => 'WATER BREAK', 'start' => '15:10:00', 'end' => '15:30:00', 'break' => 1, 'break_label' => 'WATER BREAK'],
+			['label' => '7', 'start' => '15:30:00', 'end' => '16:30:00', 'break' => 0, 'break_label' => null],
+		];
 	}
 
 	private function firstSeniorTrackWithSlots(int $schoolId): ?string

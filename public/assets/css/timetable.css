@@ -33,6 +33,11 @@
 .tt-sheet-nursery .tt-grid th { background: #ffedd5; color: #9a3412; }
 .tt-sheet-nursery .tt-time { background: #fff7ed; }
 .tt-sheet-nursery .tt-break-row td { background: #fde68a; color: #78350f; }
+.tt-circle-row td, .tt-sheet-nursery .tt-circle-row td {
+	background: #fdba74 !important;
+	color: #7c2d12 !important;
+	letter-spacing: 0.08em;
+}
 .tt-sheet-nursery .tt-nursery-colored {
 	border-radius: 4px;
 	-webkit-print-color-adjust: exact;
