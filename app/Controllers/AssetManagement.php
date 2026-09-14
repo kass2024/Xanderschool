@@ -52,54 +52,360 @@ class AssetManagement extends Home
 	public function dashboard()
 	{
 		$schoolId = $this->bootAssets();
-		$this->denyUnless('asset_dashboard');
+		$this->denyUnlessAsset();
 		$data = $this->data;
 		$assetMdl = new AssetModel();
 		$locMdl = new AssetLocationModel();
 		$catMdl = new AssetCategoryModel();
 
-		$data['title'] = 'Asset Management Dashboard';
-		$data['subtitle'] = 'Asset Management';
+		$assets = $assetMdl->listDetailed($schoolId);
+		$grouped = [];
+		foreach ($assets as $a) {
+			$type = trim((string) ($a['category_name'] ?? '')) ?: 'Other';
+			if (!isset($grouped[$type])) {
+				$grouped[$type] = ['type' => $type, 'qty' => 0, 'damaged' => 0, 'rows' => []];
+			}
+			$qty = (float) ($a['quantity'] ?? 1);
+			$dmg = (float) ($a['qty_damaged'] ?? 0);
+			$grouped[$type]['qty'] += $qty;
+			$grouped[$type]['damaged'] += $dmg;
+			$grouped[$type]['rows'][] = $a;
+		}
+
+		$moves = [];
+		try {
+			$db = \Config\Database::connect();
+			if ($db->tableExists('asset_distributions')) {
+				$moves = $db->table('asset_distributions d')
+					->select('d.*, a.name AS asset_name, lf.name AS from_name, lt.name AS to_name')
+					->join('assets a', 'a.id = d.asset_id', 'left')
+					->join('asset_locations lf', 'lf.id = d.from_location_id', 'left')
+					->join('asset_locations lt', 'lt.id = d.to_location_id', 'left')
+					->where('d.school_id', $schoolId)
+					->orderBy('d.id', 'DESC')
+					->limit(12)
+					->get()
+					->getResultArray();
+			}
+		} catch (\Throwable $e) {
+			$moves = [];
+		}
+
+		$data['title'] = 'Fixed assets';
+		$data['subtitle'] = 'Asset register';
 		$data['page'] = 'asset_dashboard';
-		$data['stats'] = $assetMdl->dashboardStats($schoolId);
-		$data['recent'] = array_slice($assetMdl->listDetailed($schoolId), 0, 10);
-		$data['location_count'] = count($locMdl->listForSchool($schoolId));
-		$data['category_count'] = count($catMdl->listForSchool($schoolId));
-		$data['content'] = view('pages/assets/dashboard', $data);
+		$data['totals'] = $assetMdl->simpleTotals($schoolId);
+		$data['assets'] = $assets;
+		$data['grouped'] = $grouped;
+		$data['locations'] = $locMdl->listForSchool($schoolId);
+		$data['categories'] = $catMdl->listForSchool($schoolId);
+		$data['moves'] = $moves;
+		$data['type_suggestions'] = [
+			'Furniture', 'Electronic Equipment', 'Kitchen material',
+			'Cleaning material', 'School material', 'House',
+		];
+		$data['content'] = view('pages/assets/simple_register', $data);
 		return view('main', $data);
+	}
+
+	protected function denyUnlessAsset()
+	{
+		$keys = [
+			'asset_dashboard', 'asset_assets', 'asset_locations', 'asset_categories',
+			'asset_checkout', 'asset_transfers', 'asset_reports', 'asset_settings',
+			'asset_assignments', 'asset_maintenance', 'asset_inspections', 'asset_incidents',
+			'asset_audits',
+		];
+		foreach ($keys as $key) {
+			if (function_exists('menu_clearance_allowed') && menu_clearance_allowed($key)) {
+				return;
+			}
+		}
+		$this->denyUnless('asset_dashboard');
+	}
+
+	public function save_simple_asset()
+	{
+		$schoolId = $this->bootAssets();
+		$this->denyUnlessAsset();
+		$actorId = (int) $this->session->get('soma_id');
+		$assetMdl = new AssetModel();
+		$schema = new AssetSchemaModel();
+		$catMdl = new AssetCategoryModel();
+		$locMdl = new AssetLocationModel();
+		$histMdl = new AssetStatusHistoryModel();
+
+		$id = (int) $this->request->getPost('id');
+		$name = trim((string) $this->request->getPost('name'));
+		$type = trim((string) $this->request->getPost('asset_type'));
+		$locationName = trim((string) $this->request->getPost('location_name'));
+		$locationId = (int) $this->request->getPost('location_id');
+		$qty = (float) $this->request->getPost('quantity');
+		$damaged = (float) $this->request->getPost('qty_damaged');
+		$age = strtolower(trim((string) $this->request->getPost('age_flag')));
+		if ($age !== 'new') {
+			$age = 'old';
+		}
+		if ($name === '') {
+			return $this->response->setJSON(['error' => 'Description is required.']);
+		}
+		if ($qty <= 0) {
+			return $this->response->setJSON(['error' => 'Quantity must be greater than 0.']);
+		}
+		if ($damaged < 0) {
+			$damaged = 0;
+		}
+		if ($damaged > $qty) {
+			return $this->response->setJSON(['error' => 'Damaged quantity cannot exceed total quantity.']);
+		}
+		if ($type === '') {
+			$type = 'General';
+		}
+		if ($locationId <= 0 && $locationName === '') {
+			return $this->response->setJSON(['error' => 'Location is required.']);
+		}
+
+		$cat = $catMdl->findOrCreateByName($schoolId, $type, $actorId);
+		if ($locationId > 0) {
+			$loc = $locMdl->where('school_id', $schoolId)->where('id', $locationId)->first();
+		} else {
+			$loc = $locMdl->findOrCreateByName($schoolId, $locationName, $actorId);
+		}
+		if (!$cat || !$loc) {
+			return $this->response->setJSON(['error' => 'Could not save type or location.']);
+		}
+
+		$good = max(0, $qty - $damaged);
+		$status = $good <= 0 ? 'damaged' : 'available';
+		$now = date('Y-m-d H:i:s');
+
+		try {
+			if ($id > 0) {
+				$existing = $assetMdl->where('school_id', $schoolId)->where('id', $id)->first();
+				if (!$existing) {
+					return $this->response->setJSON(['error' => 'Asset not found.']);
+				}
+				$assetMdl->save([
+					'id' => $id,
+					'name' => $name,
+					'description' => $name,
+					'category_id' => (int) $cat['id'],
+					'location_id' => (int) $loc['id'],
+					'quantity' => $qty,
+					'qty_damaged' => $damaged,
+					'condition_code' => $age === 'new' ? 'new' : 'good',
+					'lifecycle_status' => $status,
+					'tracking_mode' => 'quantity',
+					'updated_by' => $actorId,
+				]);
+				$histMdl->insert([
+					'school_id' => $schoolId,
+					'asset_id' => $id,
+					'previous_status' => $existing['lifecycle_status'],
+					'new_status' => $status,
+					'operation_type' => 'update',
+					'actor_id' => $actorId,
+					'destination_location_id' => (int) $loc['id'],
+					'notes' => 'Updated qty ' . $qty . ' (damaged ' . $damaged . ')',
+					'created_at' => $now,
+				]);
+				return $this->response->setJSON(['success' => 'Asset updated.']);
+			}
+
+			$lot = $assetMdl->findLot($schoolId, $name, (int) $cat['id'], (int) $loc['id']);
+			if ($lot) {
+				$newQty = (float) $lot['quantity'] + $qty;
+				$newDmg = (float) ($lot['qty_damaged'] ?? 0) + $damaged;
+				$assetMdl->save([
+					'id' => (int) $lot['id'],
+					'quantity' => $newQty,
+					'qty_damaged' => $newDmg,
+					'condition_code' => $age === 'new' ? 'new' : ($lot['condition_code'] ?: 'good'),
+					'lifecycle_status' => ($newQty - $newDmg) <= 0 ? 'damaged' : 'available',
+					'updated_by' => $actorId,
+				]);
+				$histMdl->insert([
+					'school_id' => $schoolId,
+					'asset_id' => (int) $lot['id'],
+					'previous_status' => $lot['lifecycle_status'],
+					'new_status' => 'available',
+					'operation_type' => 'receive',
+					'actor_id' => $actorId,
+					'destination_location_id' => (int) $loc['id'],
+					'notes' => 'Added ' . $qty . ' to existing stock',
+					'created_at' => $now,
+				]);
+				return $this->response->setJSON(['success' => 'Quantity added to existing stock at this location.']);
+			}
+
+			$code = $schema->nextAssetCode($schoolId, $cat['category_code']);
+			$assetMdl->insert([
+				'school_id' => $schoolId,
+				'asset_code' => $code,
+				'name' => $name,
+				'description' => $name,
+				'category_id' => (int) $cat['id'],
+				'location_id' => (int) $loc['id'],
+				'quantity' => $qty,
+				'qty_damaged' => $damaged,
+				'condition_code' => $age === 'new' ? 'new' : 'good',
+				'lifecycle_status' => $status,
+				'tracking_mode' => 'quantity',
+				'purchase_price' => 0,
+				'total_acquisition_cost' => 0,
+				'created_by' => $actorId,
+				'updated_by' => $actorId,
+			]);
+			$newId = (int) $assetMdl->getInsertID();
+			$histMdl->insert([
+				'school_id' => $schoolId,
+				'asset_id' => $newId,
+				'new_status' => $status,
+				'operation_type' => 'register',
+				'actor_id' => $actorId,
+				'destination_location_id' => (int) $loc['id'],
+				'notes' => 'Registered ' . $qty,
+				'created_at' => $now,
+			]);
+			return $this->response->setJSON(['success' => 'Asset recorded.']);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => 'Could not save: ' . $e->getMessage()]);
+		}
+	}
+
+	public function distribute_asset()
+	{
+		$schoolId = $this->bootAssets();
+		$this->denyUnlessAsset();
+		$actorId = (int) $this->session->get('soma_id');
+		$assetMdl = new AssetModel();
+		$locMdl = new AssetLocationModel();
+		$schema = new AssetSchemaModel();
+		$histMdl = new AssetStatusHistoryModel();
+
+		$assetId = (int) $this->request->getPost('asset_id');
+		$qty = (float) $this->request->getPost('quantity');
+		$toLocationId = (int) $this->request->getPost('to_location_id');
+		$toLocationName = trim((string) $this->request->getPost('to_location_name'));
+		$notes = trim((string) $this->request->getPost('notes'));
+
+		$from = $assetMdl->where('school_id', $schoolId)->where('id', $assetId)->where('archived_at', null)->first();
+		if (!$from) {
+			return $this->response->setJSON(['error' => 'Asset not found.']);
+		}
+		if ($qty <= 0) {
+			return $this->response->setJSON(['error' => 'Enter how many to send.']);
+		}
+		$available = (float) $from['quantity'] - (float) ($from['qty_damaged'] ?? 0);
+		if ($qty > $available) {
+			return $this->response->setJSON(['error' => 'Only ' . rtrim(rtrim(number_format($available, 2), '0'), '.') . ' good items are available to distribute.']);
+		}
+		if ($toLocationId <= 0 && $toLocationName === '') {
+			return $this->response->setJSON(['error' => 'Choose a destination location.']);
+		}
+		$toLoc = $toLocationId > 0
+			? $locMdl->where('school_id', $schoolId)->where('id', $toLocationId)->first()
+			: $locMdl->findOrCreateByName($schoolId, $toLocationName, $actorId);
+		if (!$toLoc) {
+			return $this->response->setJSON(['error' => 'Destination location not found.']);
+		}
+		if ((int) $toLoc['id'] === (int) $from['location_id']) {
+			return $this->response->setJSON(['error' => 'Choose a different location.']);
+		}
+
+		$db = \Config\Database::connect();
+		$db->transStart();
+		try {
+			$now = date('Y-m-d H:i:s');
+			$newFromQty = (float) $from['quantity'] - $qty;
+			$assetMdl->save([
+				'id' => (int) $from['id'],
+				'quantity' => $newFromQty,
+				'lifecycle_status' => ($newFromQty - (float) ($from['qty_damaged'] ?? 0)) <= 0 ? 'assigned' : 'available',
+				'updated_by' => $actorId,
+			]);
+
+			$dest = $assetMdl->findLot($schoolId, $from['name'], (int) $from['category_id'], (int) $toLoc['id']);
+			if ($dest) {
+				$assetMdl->save([
+					'id' => (int) $dest['id'],
+					'quantity' => (float) $dest['quantity'] + $qty,
+					'lifecycle_status' => 'available',
+					'updated_by' => $actorId,
+				]);
+				$destId = (int) $dest['id'];
+			} else {
+				$code = $schema->nextAssetCode($schoolId, 'MOV');
+				$assetMdl->insert([
+					'school_id' => $schoolId,
+					'asset_code' => $code,
+					'name' => $from['name'],
+					'description' => $from['description'] ?: $from['name'],
+					'category_id' => $from['category_id'],
+					'location_id' => (int) $toLoc['id'],
+					'quantity' => $qty,
+					'qty_damaged' => 0,
+					'condition_code' => $from['condition_code'] ?: 'good',
+					'lifecycle_status' => 'available',
+					'tracking_mode' => 'quantity',
+					'created_by' => $actorId,
+					'updated_by' => $actorId,
+				]);
+				$destId = (int) $assetMdl->getInsertID();
+			}
+
+			$db->table('asset_distributions')->insert([
+				'school_id' => $schoolId,
+				'asset_id' => (int) $from['id'],
+				'dest_asset_id' => $destId,
+				'from_location_id' => $from['location_id'],
+				'to_location_id' => (int) $toLoc['id'],
+				'quantity' => $qty,
+				'notes' => $notes !== '' ? $notes : null,
+				'created_by' => $actorId,
+				'created_at' => $now,
+			]);
+			$histMdl->insert([
+				'school_id' => $schoolId,
+				'asset_id' => (int) $from['id'],
+				'previous_status' => $from['lifecycle_status'],
+				'new_status' => 'available',
+				'operation_type' => 'distribute',
+				'actor_id' => $actorId,
+				'source_location_id' => $from['location_id'],
+				'destination_location_id' => (int) $toLoc['id'],
+				'notes' => 'Distributed ' . $qty . ($notes !== '' ? (': ' . $notes) : ''),
+				'created_at' => $now,
+			]);
+			$db->transComplete();
+			if ($db->transStatus() === false) {
+				return $this->response->setJSON(['error' => 'Distribution failed.']);
+			}
+			return $this->response->setJSON(['success' => 'Distributed ' . rtrim(rtrim(number_format($qty, 2), '0'), '.') . ' to ' . $toLoc['name'] . '.']);
+		} catch (\Throwable $e) {
+			$db->transRollback();
+			return $this->response->setJSON(['error' => 'Could not distribute: ' . $e->getMessage()]);
+		}
+	}
+
+	public function save_quick_location()
+	{
+		$schoolId = $this->bootAssets();
+		$this->denyUnlessAsset();
+		$name = trim((string) $this->request->getPost('name'));
+		if ($name === '') {
+			return $this->response->setJSON(['error' => 'Location name is required.']);
+		}
+		$loc = (new AssetLocationModel())->findOrCreateByName($schoolId, $name, (int) $this->session->get('soma_id'));
+		if (!$loc) {
+			return $this->response->setJSON(['error' => 'Could not save location.']);
+		}
+		return $this->response->setJSON(['success' => 'Location saved.', 'id' => (int) $loc['id'], 'name' => $loc['name']]);
 	}
 
 	public function assets()
 	{
-		$schoolId = $this->bootAssets();
-		$this->denyUnless('asset_assets');
-		$data = $this->data;
-		$assetMdl = new AssetModel();
-		$catMdl = new AssetCategoryModel();
-		$locMdl = new AssetLocationModel();
-		$staffMdl = new StaffModel();
-
-		$filters = [
-			'q' => $this->request->getGet('q'),
-			'status' => $this->request->getGet('status'),
-			'category_id' => $this->request->getGet('category_id'),
-			'location_id' => $this->request->getGet('location_id'),
-		];
-
-		$data['title'] = 'Assets';
-		$data['subtitle'] = 'Asset register';
-		$data['page'] = 'asset_assets';
-		$data['filters'] = $filters;
-		$data['assets'] = $assetMdl->listDetailed($schoolId, $filters);
-		$data['categories'] = $catMdl->listForSchool($schoolId);
-		$data['locations'] = $locMdl->listForSchool($schoolId);
-		$data['staffs'] = $staffMdl->select("id, concat(fname,' ',lname) as names")
-			->where('school_id', $schoolId)
-			->orderBy('fname', 'ASC')
-			->get()->getResultArray();
-		$data['statuses'] = self::$lifecycleStatuses;
-		$data['content'] = view('pages/assets/assets_list', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('asset_management/dashboard'));
 	}
 
 	public function asset_view($id = null)
@@ -154,6 +460,9 @@ class AssetManagement extends Home
 
 		$categoryId = (int) $this->request->getPost('category_id');
 		$locationId = (int) $this->request->getPost('location_id');
+		if ($locationId <= 0) {
+			return $this->response->setJSON(['error' => 'Please select where this asset is located.']);
+		}
 		$status = trim((string) $this->request->getPost('lifecycle_status'));
 		if ($status === '' || !in_array($status, self::$lifecycleStatuses, true)) {
 			$status = 'draft';
@@ -355,30 +664,7 @@ class AssetManagement extends Home
 
 	public function locations()
 	{
-		$schoolId = $this->bootAssets();
-		$this->denyUnless('asset_locations');
-		$data = $this->data;
-		$locMdl = new AssetLocationModel();
-		$staffMdl = new StaffModel();
-		$rows = $locMdl->listForSchool($schoolId, true);
-		foreach ($rows as &$row) {
-			$stats = $locMdl->assetStats($schoolId, (int) $row['id']);
-			$row['asset_count'] = $stats['count'];
-			$row['asset_value'] = $stats['value'];
-		}
-		unset($row);
-
-		$data['title'] = 'Areas and Locations';
-		$data['subtitle'] = 'Asset locations';
-		$data['page'] = 'asset_locations';
-		$data['locations'] = $rows;
-		$data['location_tree'] = $locMdl->buildTree(array_filter($rows, function ($r) {
-			return (int) $r['status'] === 1;
-		}));
-		$data['staffs'] = $staffMdl->select("id, concat(fname,' ',lname) as names")
-			->where('school_id', $schoolId)->get()->getResultArray();
-		$data['content'] = view('pages/assets/locations', $data);
-		return view('main', $data);
+		return redirect()->to(base_url('asset_management/dashboard'));
 	}
 
 	public function save_location()
@@ -389,8 +675,13 @@ class AssetManagement extends Home
 		$id = (int) $this->request->getPost('id');
 		$name = trim((string) $this->request->getPost('name'));
 		$code = strtoupper(trim((string) $this->request->getPost('location_code')));
-		if ($name === '' || $code === '') {
-			return $this->response->setJSON(['error' => 'Name and location code are required.']);
+		if ($name === '') {
+			return $this->response->setJSON(['error' => 'Location name is required.']);
+		}
+		if ($code === '') {
+			$slug = strtoupper(preg_replace('/[^A-Z0-9]+/', '_', $name));
+			$slug = trim($slug, '_');
+			$code = substr($slug !== '' ? $slug : ('LOC' . time()), 0, 40);
 		}
 		$parentId = (int) $this->request->getPost('parent_location_id') ?: null;
 		if ($parentId && $id && $parentId === $id) {

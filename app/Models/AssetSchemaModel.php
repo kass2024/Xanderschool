@@ -197,6 +197,26 @@ class AssetSchemaModel extends Model
 			KEY `idx_ash_school` (`school_id`, `created_at`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+		$db->query("CREATE TABLE IF NOT EXISTS `asset_distributions` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+			`school_id` INT UNSIGNED NOT NULL,
+			`asset_id` INT UNSIGNED NOT NULL,
+			`dest_asset_id` INT UNSIGNED NULL DEFAULT NULL,
+			`from_location_id` INT UNSIGNED NULL DEFAULT NULL,
+			`to_location_id` INT UNSIGNED NOT NULL,
+			`quantity` DECIMAL(18,2) NOT NULL DEFAULT 0,
+			`notes` TEXT NULL,
+			`created_by` INT NULL DEFAULT NULL,
+			`created_at` DATETIME NULL DEFAULT NULL,
+			PRIMARY KEY (`id`),
+			KEY `idx_adist_school` (`school_id`, `created_at`),
+			KEY `idx_adist_asset` (`asset_id`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+		if (!$db->fieldExists('qty_damaged', 'assets')) {
+			$db->query("ALTER TABLE `assets` ADD COLUMN `qty_damaged` DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER `quantity`");
+		}
+
 		$db->query("CREATE TABLE IF NOT EXISTS `asset_settings` (
 			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
 			`school_id` INT UNSIGNED NOT NULL,
@@ -239,106 +259,7 @@ class AssetSchemaModel extends Model
 				'updated_at' => date('Y-m-d H:i:s'),
 			]);
 		}
-
-		$count = (int) $db->table('asset_categories')->where('school_id', $schoolId)->countAllResults();
-		if ($count > 0) {
-			return;
-		}
-
-		$defaults = [
-			['ICT', 'Information Technology', null],
-			['FURN', 'Furniture', null],
-			['LAB', 'Laboratory Equipment', null],
-			['DORM', 'Dormitory Equipment', null],
-			['KITCH', 'Kitchen Equipment', null],
-			['VEH', 'Vehicles', null],
-			['SPORT', 'Sports Equipment', null],
-			['BOOK', 'Books and Library Materials', null],
-			['CONS', 'Consumable Supplies', null],
-			['INFRA', 'Buildings and Infrastructure', null],
-		];
-
-		$now = date('Y-m-d H:i:s');
-		$parentIds = [];
-		foreach ($defaults as $row) {
-			$db->table('asset_categories')->insert([
-				'school_id' => $schoolId,
-				'parent_category_id' => null,
-				'category_code' => $row[0],
-				'name' => $row[1],
-				'description' => 'Default seeded category',
-				'asset_class' => $row[0] === 'CONS' ? 'tangible' : 'tangible',
-				'tracking_mode' => $row[0] === 'CONS' ? 'quantity' : 'individual',
-				'is_fixed_asset' => $row[0] === 'CONS' ? 0 : 1,
-				'is_consumable' => $row[0] === 'CONS' ? 1 : 0,
-				'default_depreciation_method' => $row[0] === 'CONS' ? 'none' : 'straight_line',
-				'status' => 1,
-				'created_by' => $actorId,
-				'created_at' => $now,
-				'updated_at' => $now,
-			]);
-			$parentIds[$row[0]] = (int) $db->insertID();
-		}
-
-		$children = [
-			['DESKTOP', 'Desktop Computer', 'ICT'],
-			['LAPTOP', 'Laptop', 'ICT'],
-			['PRINTER', 'Printer', 'ICT'],
-			['ROUTER', 'Router', 'ICT'],
-			['PROJ', 'Projector', 'ICT'],
-			['DESK', 'Desk', 'FURN'],
-			['CHAIR', 'Chair', 'FURN'],
-			['CAB', 'Cabinet', 'FURN'],
-		];
-		foreach ($children as $c) {
-			$parent = isset($parentIds[$c[2]]) ? $parentIds[$c[2]] : null;
-			$db->table('asset_categories')->insert([
-				'school_id' => $schoolId,
-				'parent_category_id' => $parent,
-				'category_code' => $c[0],
-				'name' => $c[1],
-				'description' => null,
-				'asset_class' => 'tangible',
-				'tracking_mode' => 'individual',
-				'is_fixed_asset' => 1,
-				'is_consumable' => 0,
-				'requires_serial_number' => in_array($c[0], ['DESKTOP', 'LAPTOP', 'PRINTER', 'PROJ'], true) ? 1 : 0,
-				'status' => 1,
-				'created_by' => $actorId,
-				'created_at' => $now,
-				'updated_at' => $now,
-			]);
-		}
-
-		$locDefaults = [
-			['MAIN', 'Main Campus', 'campus', null],
-			['ACAD', 'Academic Block', 'building', 'MAIN'],
-			['BOARD', 'Boarding Area', 'building', 'MAIN'],
-			['ADMIN', 'Administration Block', 'building', 'MAIN'],
-			['COMPLAB', 'Computer Laboratory', 'room', 'ACAD'],
-			['LIB', 'Library', 'room', 'ACAD'],
-			['CLASS', 'Classroom', 'room', 'ACAD'],
-			['STORE', 'Warehouse', 'store', 'MAIN'],
-		];
-		$locIds = [];
-		foreach ($locDefaults as $l) {
-			$parent = null;
-			if (!empty($l[3]) && isset($locIds[$l[3]])) {
-				$parent = $locIds[$l[3]];
-			}
-			$db->table('asset_locations')->insert([
-				'school_id' => $schoolId,
-				'parent_location_id' => $parent,
-				'location_code' => $l[0],
-				'name' => $l[1],
-				'location_type' => $l[2],
-				'status' => 1,
-				'created_by' => $actorId,
-				'created_at' => $now,
-				'updated_at' => $now,
-			]);
-			$locIds[$l[0]] = (int) $db->insertID();
-		}
+		// No dummy categories or locations — schools create their own.
 	}
 
 	/**

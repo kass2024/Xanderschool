@@ -78,6 +78,43 @@ class AssetLocationModel extends Model
 	 * @param int $locationId
 	 * @return array{count:int,value:float}
 	 */
+	public function findOrCreateByName($schoolId, $name, $actorId = null)
+	{
+		$this->ensureSchema();
+		$name = trim((string) $name);
+		if ($name === '') {
+			return null;
+		}
+		$schoolId = (int) $schoolId;
+		$existing = $this->where('school_id', $schoolId)
+			->where('name', $name)
+			->where('status', 1)
+			->first();
+		if ($existing) {
+			return $existing;
+		}
+		$slug = strtoupper(preg_replace('/[^A-Z0-9]+/', '_', $name));
+		$slug = substr(trim($slug, '_'), 0, 36);
+		if ($slug === '') {
+			$slug = 'LOC' . time();
+		}
+		$code = $slug;
+		$n = 1;
+		while ($this->where('school_id', $schoolId)->where('location_code', $code)->first()) {
+			$code = substr($slug, 0, 32) . '_' . $n;
+			$n++;
+		}
+		$this->insert([
+			'school_id' => $schoolId,
+			'location_code' => $code,
+			'name' => $name,
+			'status' => 1,
+			'created_by' => $actorId,
+			'updated_by' => $actorId,
+		]);
+		return $this->find($this->getInsertID());
+	}
+
 	public function assetStats($schoolId, $locationId)
 	{
 		$db = \Config\Database::connect();

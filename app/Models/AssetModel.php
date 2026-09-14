@@ -22,7 +22,7 @@ class AssetModel extends Model
 		'net_book_value', 'replacement_value', 'condition_code', 'lifecycle_status',
 		'criticality', 'warranty_start', 'warranty_expiry', 'insurance_policy',
 		'insurance_expiry', 'last_inspection_date', 'next_inspection_date',
-		'last_maintenance_date', 'next_maintenance_date', 'quantity', 'tracking_mode',
+		'last_maintenance_date', 'next_maintenance_date', 'quantity', 'qty_damaged', 'tracking_mode',
 		'photo_path', 'notes', 'custom_fields_json', 'version', 'approved_by',
 		'created_by', 'updated_by', 'archived_at',
 	];
@@ -128,5 +128,41 @@ class AssetModel extends Model
 			'missing' => (int) ($statusMap['missing'] ?? 0) + (int) ($statusMap['stolen'] ?? 0),
 			'draft' => (int) ($statusMap['draft'] ?? 0),
 		];
+	}
+
+	public function simpleTotals($schoolId)
+	{
+		$this->ensureSchema();
+		$db = \Config\Database::connect();
+		$row = $db->table('assets')
+			->select('COUNT(*) AS lots,
+				COALESCE(SUM(quantity),0) AS qty,
+				COALESCE(SUM(qty_damaged),0) AS damaged')
+			->where('school_id', (int) $schoolId)
+			->where('archived_at', null)
+			->get()
+			->getRowArray();
+		$qty = (float) ($row['qty'] ?? 0);
+		$damaged = (float) ($row['damaged'] ?? 0);
+		return [
+			'lots' => (int) ($row['lots'] ?? 0),
+			'qty' => $qty,
+			'damaged' => $damaged,
+			'good' => max(0, $qty - $damaged),
+		];
+	}
+
+	public function findLot($schoolId, $name, $categoryId, $locationId, $excludeId = 0)
+	{
+		$this->ensureSchema();
+		$builder = $this->where('school_id', (int) $schoolId)
+			->where('name', $name)
+			->where('category_id', (int) $categoryId)
+			->where('location_id', (int) $locationId)
+			->where('archived_at', null);
+		if ($excludeId > 0) {
+			$builder->where('id !=', (int) $excludeId);
+		}
+		return $builder->first();
 	}
 }

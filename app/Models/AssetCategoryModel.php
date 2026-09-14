@@ -34,6 +34,40 @@ class AssetCategoryModel extends Model
 		return $builder->findAll();
 	}
 
+	public function findOrCreateByName($schoolId, $name, $actorId = null)
+	{
+		$this->ensureSchema();
+		$name = trim((string) $name);
+		if ($name === '') {
+			$name = 'General';
+		}
+		$schoolId = (int) $schoolId;
+		$rows = $this->where('school_id', $schoolId)->where('status', 1)->findAll();
+		foreach ($rows as $row) {
+			if (strcasecmp((string) $row['name'], $name) === 0) {
+				return $row;
+			}
+		}
+		$code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $name));
+		$code = substr($code !== '' ? $code : 'GEN', 0, 12);
+		$base = $code;
+		$n = 1;
+		while ($this->where('school_id', $schoolId)->where('category_code', $code)->first()) {
+			$code = substr($base, 0, 10) . $n;
+			$n++;
+		}
+		$this->insert([
+			'school_id' => $schoolId,
+			'category_code' => $code,
+			'name' => $name,
+			'tracking_mode' => 'quantity',
+			'status' => 1,
+			'created_by' => $actorId,
+			'updated_by' => $actorId,
+		]);
+		return $this->find($this->getInsertID());
+	}
+
 	public function buildTree(array $rows)
 	{
 		$byParent = [];

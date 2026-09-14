@@ -814,36 +814,22 @@
 							<?php } ?>
 							<?php if (menu_clearance_group_visible('asset_management') || menu_clearance_group_visible('library')) { ?>
 								<li class="app-sidebar__heading">Asset Management</li>
+								<?php if (menu_clearance_group_visible('asset_management')) { ?>
 								<li>
-									<a href="javascript:void">
+									<a href="<?= base_url('asset_management/dashboard'); ?>">
 										<i class="metismenu-icon pe-7s-box2"></i>
-										Asset Management
-										<i class="metismenu-state-icon fa fa-caret-down"></i>
+										Fixed assets
 									</a>
-									<ul class="mm-collapse">
-										<?php if (menu_clearance_allowed('asset_dashboard')) { ?>
-										<li><a href="<?= base_url('asset_management/dashboard'); ?>"><i class="metismenu-icon"></i> Dashboard</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_locations')) { ?>
-										<li><a href="<?= base_url('asset_management/locations'); ?>"><i class="metismenu-icon"></i> Locations</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_assets')) { ?>
-										<li><a href="<?= base_url('asset_management/assets'); ?>"><i class="metismenu-icon"></i> Register assets</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_checkout')) { ?>
-										<li><a href="<?= base_url('asset_management/checkout'); ?>"><i class="metismenu-icon"></i> Borrow / Return</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('book_management')) { ?>
-										<li><a href="<?= base_url('book_management'); ?>"><i class="metismenu-icon"></i> Library books</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('borrowed_report')) { ?>
-										<li><a href="<?= base_url('borrowed_report'); ?>"><i class="metismenu-icon"></i> Library borrowed</a></li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('asset_settings')) { ?>
-										<li><a href="<?= base_url('asset_management/settings'); ?>"><i class="metismenu-icon"></i> Settings</a></li>
-										<?php } ?>
-									</ul>
 								</li>
+								<?php } ?>
+								<?php if (menu_clearance_allowed('book_management') || menu_clearance_allowed('borrowed_report')) { ?>
+								<li>
+									<a href="<?= menu_clearance_allowed('book_management') ? base_url('book_management') : base_url('borrowed_report'); ?>">
+										<i class="metismenu-icon pe-7s-notebook"></i>
+										Library
+									</a>
+								</li>
+								<?php } ?>
 							<?php } ?>
 							<?php if (menu_clearance_group_visible('transport')) { ?>
 								<li class="app-sidebar__heading"><?= lang("app.transportManagement"); ?></li>
