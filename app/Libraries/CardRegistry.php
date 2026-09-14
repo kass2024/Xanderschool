@@ -239,14 +239,19 @@ class CardRegistry
 		try {
 			if ($db->fieldExists('is_master', 'schools') && $db->fieldExists('master_school_id', 'schools')) {
 				$row = $db->table('schools')
-					->select('is_master')
+					->select('is_master, master_school_id')
 					->where('id', $schoolId)
 					->get()
 					->getRowArray();
+				$masterId = (int) ($row['master_school_id'] ?? 0);
 				if (!empty($row['is_master'])) {
+					$masterId = $schoolId;
+				}
+				if ($masterId > 0) {
+					$scope[] = $masterId;
 					$children = $db->table('schools')
 						->select('id')
-						->where('master_school_id', $schoolId)
+						->where('master_school_id', $masterId)
 						->get()
 						->getResultArray();
 					foreach ($children as $child) {

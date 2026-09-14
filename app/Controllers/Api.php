@@ -3223,9 +3223,7 @@ public function get_boarding_classes()
     $stMdl = new StudentModel();
     $stMdl->ensureCardNfcColumn();
     $cardRaw = trim((string) $this->request->getPost('card'));
-    $cardFormat = strtolower(trim((string) $this->request->getPost('card_format')));
     $card = normalize_card_uid($cardRaw);
-    $nfc = stored_card_uid($cardRaw);
     $created_by = (int) $this->request->getPost('operator');
     $student_id = (int) $this->request->getPost('student_id');
     $school_id = (int) $this->request->getPost('school_id');
@@ -3256,21 +3254,17 @@ public function get_boarding_classes()
         $update_v = $update_v_data ? $update_v_data->version : 1;
 
         $existing = $stMdl->select('id, card, card_nfc')->where('id', $student_id)->where('school_id', $school_id)->first();
-        $existingCard = is_array($existing) ? trim((string) ($existing['card'] ?? '')) : '';
+        $existingCard = is_array($existing) ? strtoupper(trim((string) ($existing['card'] ?? ''))) : '';
         $data = [
             'id' => $student_id,
+            'card' => $card,
             'updateVersion' => $update_v,
             'updated_by' => $created_by,
         ];
-        // USB FissaiD stores a different ID than Samsung NFC Tag.getId().
-        // Keep both so web USB and the phone can find the same student.
-        if ($cardFormat === 'hex' && $nfc !== '') {
-            $data['card_nfc'] = $nfc;
-            if ($existingCard === '') {
-                $data['card'] = $card;
-            }
-        } else {
-            $data['card'] = $card;
+        // USB web assign is the source of truth. Do not record UIDs from the phone.
+        // Only drop a previous phone mapping when the USB card itself changes.
+        if ($existingCard !== '' && $existingCard !== strtoupper($card)) {
+            $data['card_nfc'] = null;
         }
 
         if ($stMdl->save($data)) {
@@ -3751,6 +3745,7 @@ public function permission_card_scan()
 
     try {
         $cardRaw = trim((string) $this->request->getPost('card'));
+        $cardHex = trim((string) $this->request->getPost('card_hex'));
         $school_id = (int) $this->request->getPost('school_id');
 
         if ($cardRaw === '' || $school_id <= 0) {
@@ -3761,6 +3756,9 @@ public function permission_card_scan()
         }
 
         $student = $this->findStudentByCardUid($school_id, $cardRaw);
+        if (!$student && $cardHex !== '') {
+            $student = $this->findStudentByCardUid($school_id, $cardHex);
+        }
 
         if (!$student) {
             $display = clean_card_uid_raw($cardRaw) ?: $cardRaw;
