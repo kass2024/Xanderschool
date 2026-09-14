@@ -69,6 +69,61 @@ class StaffTeachingLoad
 	}
 
 	/**
+	 * Fast course/period totals for mobile list (one grouped query, no timetable hydrate).
+	 *
+	 * @return array<int,array{courses:int,periods:int}>
+	 */
+	public static function countsByStaffLite(int $schoolId, int $year, int $term = 0): array
+	{
+		if ($schoolId <= 0 || $year <= 0) {
+			return [];
+		}
+		$db = Database::connect();
+		$sql = "SELECT cr.lecturer AS staff_id, COUNT(*) AS courses,
+				COALESCE(SUM(c.credit + 0), 0) AS periods
+			FROM course_records cr
+			INNER JOIN classes cl ON cl.id = cr.class
+			LEFT JOIN courses c ON c.id = cr.course
+			WHERE cl.school_id = ? AND cr.year = ? AND cr.lecturer > 0";
+		$binds = [$schoolId, $year];
+		if ($term > 0) {
+			$sql .= " AND FIND_IN_SET(?, cr.term) > 0";
+			$binds[] = $term;
+		}
+		$sql .= " GROUP BY cr.lecturer";
+		$out = [];
+		foreach ($db->query($sql, $binds)->getResultArray() as $row) {
+			$id = (int) ($row['staff_id'] ?? 0);
+			if ($id <= 0) {
+				continue;
+			}
+			$out[$id] = [
+				'courses' => (int) ($row['courses'] ?? 0),
+				'periods' => (int) ($row['periods'] ?? 0),
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $staffs
+	 * @return list<array<string,mixed>>
+	 */
+	public static function attachLite(array $staffs, int $schoolId, int $year, int $term = 0): array
+	{
+		$counts = self::countsByStaffLite($schoolId, $year, $term);
+		foreach ($staffs as &$staff) {
+			$id = (int) ($staff['id'] ?? 0);
+			$stat = $counts[$id] ?? ['courses' => 0, 'periods' => 0];
+			$staff['taught_courses'] = (int) $stat['courses'];
+			$staff['taught_periods'] = (int) $stat['periods'];
+		}
+		unset($staff);
+
+		return $staffs;
+	}
+
+	/**
 	 * @param list<array<string,mixed>> $staffs
 	 * @return list<array<string,mixed>>
 	 */

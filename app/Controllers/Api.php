@@ -1275,18 +1275,9 @@ public function sync($option, $school_id)
 			]);
 		}
 		try {
-			if ($yearId < 1 || $term < 1) {
-				$this->_preset($schoolId);
-				if ($yearId < 1) {
-					$yearId = (int) ($this->data['academic_year'] ?? 0);
-				}
-				if ($term < 1) {
-					$term = (int) ($this->data['term'] ?? 0);
-				}
-			}
 			$staffMdl = new StaffModel();
 			$builder = $staffMdl->select("staffs.id, staffs.fname, staffs.lname, staffs.phone, staffs.email,
-					staffs.status, staffs.post, staffs.photo, p.title as post_title")
+					staffs.status, staffs.post, p.title as post_title")
 				->join("posts p", "p.id=staffs.post", "left")
 				->where("staffs.school_id", $schoolId)
 				->orderBy("staffs.fname", "ASC")
@@ -1301,7 +1292,13 @@ public function sync($option, $school_id)
 					->groupEnd();
 			}
 			$staffs = $builder->get()->getResultArray();
-			$staffs = \App\Libraries\StaffTeachingLoad::attach($staffs, $schoolId, $yearId, $term);
+			if ($yearId > 0) {
+				try {
+					$staffs = \App\Libraries\StaffTeachingLoad::attachLite($staffs, $schoolId, $yearId, $term);
+				} catch (\Throwable $ignored) {
+					// List still returns if course-load totals fail.
+				}
+			}
 			$out = [];
 			foreach ($staffs as $row) {
 				$status = (int) ($row['status'] ?? 0);
@@ -1316,7 +1313,6 @@ public function sync($option, $school_id)
 					'post_title' => (string) ($row['post_title'] ?? ''),
 					'status' => $status,
 					'status_label' => ($status === 1 || $status === 2) ? 'Active' : 'Locked',
-					'photo' => (string) ($row['photo'] ?? ''),
 					'taught_courses' => (int) ($row['taught_courses'] ?? 0),
 					'taught_periods' => (int) ($row['taught_periods'] ?? 0),
 				];
