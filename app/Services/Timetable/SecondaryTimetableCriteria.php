@@ -54,6 +54,9 @@ class SecondaryTimetableCriteria
 	/** @var array<int,int> */
 	private $weeklyPeriodsByStaffId = [];
 
+	/** @var list<array{course_id:int,class_ids:list<int>}> */
+	private $customCombineGroups = [];
+
 	public function __construct()
 	{
 		$this->teacherWindows = $this->defaultTeacherWindows();
@@ -76,6 +79,7 @@ class SecondaryTimetableCriteria
 		$this->relaxedStaffIds = [];
 		$this->relaxedNameNeedles = [];
 		$this->heavyStaffIds = [];
+		$this->customCombineGroups = [];
 		foreach ($rules as $rule) {
 			if (empty($rule['enabled']) && isset($rule['enabled'])) {
 				continue;
@@ -106,6 +110,15 @@ class SecondaryTimetableCriteria
 			}
 			if ($type === 'after_lessons') {
 				$this->afterLessonRules[] = $rule;
+			}
+			if ($type === 'combine_classes') {
+				$ids = $this->decodeClassIds($rule['class_ids'] ?? $rule['days'] ?? null);
+				if (count($ids) >= 2) {
+					$this->customCombineGroups[] = [
+						'course_id' => (int) ($rule['course_id'] ?? 0),
+						'class_ids' => $ids,
+					];
+				}
 			}
 		}
 	}
@@ -524,15 +537,31 @@ class SecondaryTimetableCriteria
 		$wantedDepts = $this->combineDeptsFor($subject, $level, $dept);
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$courseId = (int) ($row['course_id'] ?? $row['course'] ?? 0);
+		$out = [];
 		// Documented group with a missing dept code: still share one teacher period
 		// (e.g. S6 Entrepreneurship across 5–6 classes).
 		if ($wantedDepts === [] && $this->subjectCombinesAtLevel($subject, $level)) {
-			return $this->collectCombinePartners($row, $classId, $subject, $level, null, $staffId, $courseId);
+			$out = $this->collectCombinePartners($row, $classId, $subject, $level, null, $staffId, $courseId);
+		} elseif ($wantedDepts !== []) {
+			$out = $this->collectCombinePartners($row, $classId, $subject, $level, $wantedDepts, 0, 0);
 		}
-		if ($wantedDepts === []) {
-			return [];
+		foreach ($this->customCombinePartners($row) as $partner) {
+			$cid = (int) ($partner['class_id'] ?? 0);
+			if ($cid <= 0 || $cid === $classId) {
+				continue;
+			}
+			$already = false;
+			foreach ($out as $existing) {
+				if ((int) ($existing['class_id'] ?? 0) === $cid) {
+					$already = true;
+					break;
+				}
+			}
+			if (!$already) {
+				$out[] = $partner;
+			}
 		}
-		return $this->collectCombinePartners($row, $classId, $subject, $level, $wantedDepts, 0, 0);
+		return $out;
 	}
 
 	/**
@@ -604,25 +633,30 @@ class SecondaryTimetableCriteria
 		return $partners[0] ?? null;
 	}
 
-	/** Stable key so a combined group counts as one teacher load. */
+	/** Stable key so a combined group counts as one teacher load (one class of periods). */
 	public function combineGroupKey(array $row): string
 	{
-		$partners = $this->combinePartners($row);
-		if ($partners === []) {
-			return '';
-		}
-		$ids = [(int) ($row['class_id'] ?? 0)];
-		foreach ($partners as $partner) {
-			$ids[] = (int) ($partner['class_id'] ?? 0);
-		}
-		$ids = array_values(array_unique(array_filter($ids)));
-		sort($ids);
-		if (count($ids) < 2) {
-			return '';
-		}
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
-		return $staffId . '|' . $subject . '|' . implode('-', $ids);
+		$classId = (int) ($row['class_id'] ?? 0);
+		if ($staffId <= 0 || $subject === '' || $classId <= 0) {
+			return '';
+		}
+		$customIds = $this->customGroupClassIds($row);
+		if (count($customIds) >= 2) {
+			sort($customIds);
+			return $staffId . '|' . $subject . '|custom|' . implode('-', $customIds);
+		}
+		$meta = $this->classMeta[(string) $classId] ?? null;
+		if ($meta === null) {
+			return '';
+		}
+		$group = $this->combineGroupDepts($subject, (string) ($meta['level'] ?? ''), (string) ($meta['dept'] ?? ''));
+		if (count($group) < 2) {
+			return '';
+		}
+		sort($group);
+		return $staffId . '|' . $subject . '|' . $meta['level'] . '|' . implode('-', $group);
 	}
 
 	/** PE: at most one period per class day (spread across week). */
@@ -701,45 +735,112 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
+	 * Documented combined-class groups. One shared lesson = one teacher period.
+	 *
+	 * @return list<array{subject:string,level:string,depts:list<string>,label:string}>
+	 */
+	public static function documentCombineGroups(): array
+	{
+		return [
+			['subject' => 'chemistry', 'level' => 'S4', 'depts' => ['ANP', 'ST1'], 'label' => 'Chemistry S4 ANP + Stream 1'],
+			['subject' => 'chemistry', 'level' => 'S5', 'depts' => ['ANP', 'ST1'], 'label' => 'Chemistry S5 ANP + Stream 1'],
+			['subject' => 'chemistry', 'level' => 'S6', 'depts' => ['MCB', 'PCB'], 'label' => 'Chemistry S6 MCB + PCB'],
+			['subject' => 'physics', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Physics S4 Stream 1 + Stream 2'],
+			['subject' => 'physics', 'level' => 'S6', 'depts' => ['PCB', 'PCM', 'MPC', 'MPG'], 'label' => 'Physics S6 PCB + PCM + MPC + MPG'],
+			['subject' => 'mathematics', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Mathematics S4 Stream 1 + Stream 2'],
+			['subject' => 'mathematics', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'Mathematics S5 Stream 1 + Stream 2 (morning)'],
+			['subject' => 'mathematics', 'level' => 'S6', 'depts' => ['ANP', 'PCB'], 'label' => 'Mathematics S6 ANP + PCB'],
+			['subject' => 'mathematics', 'level' => 'S6', 'depts' => ['MCB', 'MCE', 'MEG', 'MPC', 'MPG', 'PCM'], 'label' => 'Mathematics S6 MCB + MCE + MEG + MPC + MPG + PCM'],
+			['subject' => 'economics', 'level' => 'S6', 'depts' => ['MCE', 'MEG'], 'label' => 'Economics S6 MCE + MEG'],
+			['subject' => 'entrepreneurship', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Entrepreneurship S4 Stream 1 + Stream 2'],
+			['subject' => 'entrepreneurship', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'Entrepreneurship S5 Stream 1 + Stream 2'],
+			['subject' => 'entrepreneurship', 'level' => 'S6', 'depts' => ['MCE', 'MPG', 'PCB', 'MCB', 'MEG', 'MPC', 'PCM'], 'label' => 'Entrepreneurship S6 MCE + MPG + PCB + MCB + MEG + MPC + PCM'],
+			['subject' => 'general_studies', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'General Studies S4 Stream 1 + Stream 2'],
+			['subject' => 'general_studies', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'General Studies S5 Stream 1 + Stream 2'],
+			['subject' => 'general_studies', 'level' => 'S6', 'depts' => ['MPC', 'MCB', 'MCE', 'MPG', 'MEG', 'PCM', 'PCB'], 'label' => 'General Studies S6 MPC + MCB + MCE + MPG + MEG + PCM + PCB'],
+			['subject' => 'geography', 'level' => 'S6', 'depts' => ['MEG', 'MPG'], 'label' => 'Geography S6 MEG + MPG'],
+			['subject' => 'biology', 'level' => 'S5', 'depts' => ['ANP', 'ST1'], 'label' => 'Biology S5 ANP + Stream 1'],
+			['subject' => 'biology', 'level' => 'S5', 'depts' => ['PCB', 'HCB'], 'label' => 'Biology S5 PCB + HCB'],
+			['subject' => 'biology', 'level' => 'S6', 'depts' => ['ANP', 'MCB', 'PCB'], 'label' => 'Biology S6 ANP + MCB + PCB'],
+			['subject' => 'kinyarwanda', 'level' => 'S6', 'depts' => ['MCE', 'MPC', 'PCB', 'PCM', 'MEG'], 'label' => 'Kinyarwanda S6 MCE + MPC + PCB + PCM + MEG'],
+			['subject' => 'english', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'English S4 Stream 1 + Stream 2'],
+			['subject' => 'english', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'English S5 Stream 1 + Stream 2'],
+			['subject' => 'english', 'level' => 'S6', 'depts' => ['MCE', 'MPC', 'PCB', 'PCM', 'MEG'], 'label' => 'English S6 MCE + MPC + PCB + PCM + MEG'],
+			['subject' => 'computer', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S4 Stream 1 + Stream 2'],
+			['subject' => 'computer', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S5 Stream 1 + Stream 2'],
+			['subject' => 'computer', 'level' => 'S6', 'depts' => ['MPC', 'MCE'], 'label' => 'Computer Science S6 MPC + MCE'],
+		];
+	}
+
+	/**
+	 * Locked document rules shown in Special criteria (always applied on generate).
+	 *
+	 * @return list<array{title:string,detail:string,group:string}>
+	 */
+	public static function documentCriteriaForDisplay(): array
+	{
+		$out = [
+			['group' => 'Blocks', 'title' => '4 and 6 periods', 'detail' => 'At least two periods together (doubles).'],
+			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately.'],
+			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
+			['group' => 'PE', 'title' => 'Physical Education', 'detail' => 'At least one PE period on each class day; at most one PE period per day.'],
+			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
+			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
+			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Rinea, Varlette and Marguerite teach ANP in the morning, Tuesday to Thursday.'],
+			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
+			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'Tuesday 07:00–12:00.'],
+			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full day 07:00–16:00.'],
+			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],
+			['group' => 'Windows', 'title' => 'Eric (L3 SOD)', 'detail' => 'Monday and Tuesday 07:00–10:00.'],
+			['group' => 'Windows', 'title' => 'Olivier', 'detail' => 'Friday 07:00–10:00.'],
+			['group' => 'Windows', 'title' => 'Varlette', 'detail' => 'Thursday 09:00–12:00, Friday 08:00–12:00, plus ANP mornings.'],
+			['group' => 'Windows', 'title' => 'Marguerite', 'detail' => 'Monday morning, Wednesday morning, Thursday morning plus one after lunch.'],
+			['group' => 'Windows', 'title' => 'Rinea / Linear', 'detail' => 'Thursday 09:20–15:40, Friday 09:20–12:00, plus ANP mornings.'],
+		];
+		foreach (self::documentCombineGroups() as $group) {
+			$out[] = [
+				'group' => 'Combine',
+				'title' => $group['label'],
+				'detail' => 'Combined as one class — teacher load is one class of periods, copied to each partner.',
+			];
+		}
+		return $out;
+	}
+
+	/**
 	 * @return list<array{level:string,a:string,b:string}>
 	 */
 	private function combinePairsForSubject(string $subject): array
 	{
-		// subject already normalized
-		if ($subject === 'chemistry') {
-			return [
-				['level' => 'S5', 'a' => 'ANP', 'b' => 'ST1'],
-				['level' => 'S6', 'a' => 'ANP', 'b' => 'GE'],
-			];
+		$pairs = [];
+		foreach (self::documentCombineGroups() as $group) {
+			if (($group['subject'] ?? '') !== $subject) {
+				continue;
+			}
+			$depts = array_values($group['depts'] ?? []);
+			$level = (string) ($group['level'] ?? '');
+			for ($i = 0; $i < count($depts); $i++) {
+				for ($j = $i + 1; $j < count($depts); $j++) {
+					$pairs[] = ['level' => $level, 'a' => $depts[$i], 'b' => $depts[$j]];
+				}
+			}
 		}
-		if ($subject === 'biology') {
-			return [
-				['level' => 'S5', 'a' => 'ANP', 'b' => 'ST1'],
-				['level' => 'S5', 'a' => 'PCB', 'b' => 'HCB'],
-				['level' => 'S6', 'a' => 'ANP', 'b' => 'GE'],
-				['level' => 'S6', 'a' => 'PCB', 'b' => 'HCB'],
-			];
-		}
-		if ($subject === 'computer') {
-			return [
-				['level' => 'S6', 'a' => 'MPC', 'b' => 'MCE'],
-			];
-		}
-		if ($subject === 'mathematics') {
-			return [
-				['level' => 'S6', 'a' => 'ANP', 'b' => 'PCB'],
-				['level' => 'S5', 'a' => 'ST1', 'b' => 'ST2'],
-			];
-		}
-		if ($subject === 'economics') {
-			return [
-				['level' => 'S6', 'a' => 'MCE', 'b' => 'MEG'],
-			];
-		}
-		if ($subject === 'entrepreneurship') {
-			return [
-				['level' => 'S5', 'a' => 'ST1', 'b' => 'ST2'],
-			];
+		return $pairs;
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function combineGroupDepts(string $subject, string $level, string $dept): array
+	{
+		foreach (self::documentCombineGroups() as $group) {
+			if (($group['subject'] ?? '') !== $subject || ($group['level'] ?? '') !== $level) {
+				continue;
+			}
+			$depts = array_values($group['depts'] ?? []);
+			if (in_array($dept, $depts, true)) {
+				return $depts;
+			}
 		}
 		return [];
 	}
@@ -749,24 +850,73 @@ class SecondaryTimetableCriteria
 	 */
 	private function combineDeptsFor(string $subject, string $level, string $dept): array
 	{
-		if ($subject === 'entrepreneurship' && $level === 'S6') {
-			$group = ['MCE', 'MPG', 'PCB', 'MCB', 'MEG', 'MPC'];
-			return in_array($dept, $group, true) ? array_values(array_filter($group, static function ($d) use ($dept) {
-				return $d !== $dept;
-			})) : [];
+		$group = $this->combineGroupDepts($subject, $level, $dept);
+		if ($group === []) {
+			return [];
 		}
-		$wanted = [];
-		foreach ($this->combinePairsForSubject($subject) as $pair) {
-			if (($pair['level'] ?? '') !== $level) {
+		return array_values(array_filter($group, static function ($d) use ($dept) {
+			return $d !== $dept;
+		}));
+	}
+
+	/** @return list<array<string,mixed>> */
+	private function customCombinePartners(array $row): array
+	{
+		$classId = (int) ($row['class_id'] ?? 0);
+		$ids = $this->customGroupClassIds($row);
+		if ($classId <= 0 || count($ids) < 2) {
+			return [];
+		}
+		$out = [];
+		$seen = [];
+		foreach ($this->assignmentsByKey as $cand) {
+			$cid = (int) ($cand['class_id'] ?? 0);
+			if ($cid === $classId || $cid <= 0 || isset($seen[$cid]) || !in_array($cid, $ids, true)) {
 				continue;
 			}
-			if ($dept === ($pair['a'] ?? '')) {
-				$wanted[] = (string) $pair['b'];
-			} elseif ($dept === ($pair['b'] ?? '')) {
-				$wanted[] = (string) $pair['a'];
+			$seen[$cid] = true;
+			$out[] = $cand;
+		}
+		return $out;
+	}
+
+	/** @return list<int> */
+	private function customGroupClassIds(array $row): array
+	{
+		$classId = (int) ($row['class_id'] ?? 0);
+		$courseId = (int) ($row['course_id'] ?? $row['course'] ?? 0);
+		foreach ($this->customCombineGroups as $group) {
+			$ids = $group['class_ids'];
+			if (!in_array($classId, $ids, true)) {
+				continue;
+			}
+			$needCourse = (int) ($group['course_id'] ?? 0);
+			if ($needCourse > 0 && $needCourse !== $courseId) {
+				continue;
+			}
+			return $ids;
+		}
+		return [];
+	}
+
+	/** @return list<int> */
+	private function decodeClassIds($raw): array
+	{
+		if (is_string($raw)) {
+			$decoded = json_decode($raw, true);
+			$raw = is_array($decoded) ? $decoded : explode(',', $raw);
+		}
+		if (!is_array($raw)) {
+			return [];
+		}
+		$ids = [];
+		foreach ($raw as $id) {
+			$id = (int) $id;
+			if ($id > 0) {
+				$ids[] = $id;
 			}
 		}
-		return array_values(array_unique($wanted));
+		return array_values(array_unique($ids));
 	}
 
 	private function normalizeSubject(string $title): string
@@ -792,6 +942,21 @@ class SecondaryTimetableCriteria
 		}
 		if (strpos($t, 'entrepreneur') !== false) {
 			return 'entrepreneurship';
+		}
+		if (preg_match('/\bphysics\b/', $t) === 1) {
+			return 'physics';
+		}
+		if (strpos($t, 'general stud') !== false || preg_match('/\bg\.?\s*s\.?\b/', $t) || strpos($t, 'gen stud') !== false) {
+			return 'general_studies';
+		}
+		if (strpos($t, 'geograph') !== false || preg_match('/\bgeo\b/', $t)) {
+			return 'geography';
+		}
+		if (strpos($t, 'kinyarwanda') !== false || strpos($t, 'ikinyarwanda') !== false) {
+			return 'kinyarwanda';
+		}
+		if (strpos($t, 'english') !== false) {
+			return 'english';
 		}
 		return $t;
 	}
@@ -852,7 +1017,7 @@ class SecondaryTimetableCriteria
 			'ANP' => 'ANP', 'ST1' => 'ST1', 'ST2' => 'ST2', 'STR' => 'ST1',
 			'MPC' => 'MPC', 'MCE' => 'MCE', 'PCB' => 'PCB', 'HCB' => 'HCB',
 			'GE' => 'GE', 'SOD' => 'SOD', 'PCM' => 'PCM', 'MCB' => 'MCB',
-			'MEG' => 'MEG', 'MPG' => 'MPG', 'ACC' => 'ACC',
+			'MBC' => 'MCB', 'MEG' => 'MEG', 'MPG' => 'MPG', 'ACC' => 'ACC',
 		];
 		if (isset($map[$c])) {
 			return $map[$c];
@@ -875,8 +1040,11 @@ class SecondaryTimetableCriteria
 		if (strpos($hay, 'MPG') !== false) {
 			return 'MPG';
 		}
-		if (strpos($hay, 'MCB') !== false) {
+		if (strpos($hay, 'MCB') !== false || strpos($hay, 'MBC') !== false) {
 			return 'MCB';
+		}
+		if (strpos($hay, 'PCM') !== false) {
+			return 'PCM';
 		}
 		if (strpos($hay, 'MPC') !== false) {
 			return 'MPC';
@@ -1188,14 +1356,16 @@ class SecondaryTimetableCriteria
 	{
 		// Day: Mon=0 … Fri=4. Times in minutes from midnight.
 		$vallette = [
-			['day' => 0, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
+			['day' => 1, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
 			['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
 			['day' => 3, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
-			['day' => 4, 'start' => 8 * 60 + 30, 'end' => 12 * 60, 'scope' => null],
+			['day' => 4, 'start' => 8 * 60, 'end' => 12 * 60, 'scope' => null],
 		];
 		$linear = [
-			['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
-			['day' => 4, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
+			['day' => 1, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
+			['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
+			['day' => 3, 'start' => 9 * 60 + 20, 'end' => 15 * 60 + 40, 'scope' => null],
+			['day' => 4, 'start' => 9 * 60 + 20, 'end' => 12 * 60, 'scope' => null],
 		];
 		// IZABAYO PATIENCE: fill Tuesday before break, then Friday after break
 		// and before lunch, then remaining periods on Sunday.
@@ -1207,7 +1377,7 @@ class SecondaryTimetableCriteria
 		return [
 			'innocent' => [
 				['day' => 0, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null],
-				['day' => 1, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null],
+				['day' => 4, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null],
 				['day' => 2, 'start' => 7 * 60, 'end' => 10 * 60, 'scope' => null],
 			],
 			'eric' => [
@@ -1225,9 +1395,13 @@ class SecondaryTimetableCriteria
 			'yaliet' => $vallette,
 			'valiet' => $vallette,
 			'margueritte' => [
+				['day' => 0, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
+				['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
 				['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
 			],
 			'marguerite' => [
+				['day' => 0, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
+				['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
 				['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
 			],
 			'linear' => $linear,

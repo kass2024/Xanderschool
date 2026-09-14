@@ -171,11 +171,28 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">Document rules apply on high school (combined classes, teacher windows, PE last hour, mornings, clinical). Combined courses share <strong>one teacher period</strong> for every paired class (5 classes × 3 credits = 3 teacher periods, copied to each class). A teacher-days or teacher-window rule is rejected when that teacher already has too many weekly periods to fit (for example Alice Namahoro with 76), except pinned notes such as IZABAYO PATIENCE (fill every Tuesday period before break, then every Friday period after break and before lunch, remainder on Sunday). Every placed lesson is locked after generate, on every level. The next generate only fills empty periods unless you check <strong>Replace locked timetable</strong>. Sunday is reserved: only Teach on Sunday special criteria, or a named Sunday teacher, may use that column. Farming and Library and Clubs stay after 15:40 and never at night. Nursery and primary have no Sunday column.</p>
+						<p class="small text-muted mb-2">Document rules stay locked and apply on every generate. Combined classes share <strong>one teacher period</strong> (5 classes × 5 periods = 5 teacher periods, copied to each class). Add extra rules below, or click a saved rule to edit it. Placed lessons stay locked unless you check <strong>Replace locked timetable</strong>.</p>
+						<div class="small font-weight-bold mb-1">Locked document criteria</div>
+						<ul class="tt-criteria-list small mb-3">
+							<?php foreach (($document_criteria ?? []) as $docRule): ?>
+								<li>
+									<span class="badge badge-secondary mr-1">Locked</span>
+									<strong><?= esc($docRule['title'] ?? ''); ?></strong>
+									<?php if (!empty($docRule['group'])): ?>
+										<span class="text-muted">· <?= esc($docRule['group']); ?></span>
+									<?php endif; ?>
+									<?php if (!empty($docRule['detail'])): ?>
+										— <?= esc($docRule['detail']); ?>
+									<?php endif; ?>
+								</li>
+							<?php endforeach; ?>
+						</ul>
 						<form id="ttCriteriaForm" class="tt-criteria-form">
+							<input type="hidden" name="id" id="ttRuleId" value="0">
 							<div class="form-row">
 								<div class="col-md-4 mb-2">
 									<select name="rule_type" id="ttRuleType" class="form-control form-control-sm">
+										<option value="combine_classes">Combine classes (one teacher period)</option>
 										<option value="last_hour">Put course / teacher at last hour</option>
 										<option value="teacher_window">Teacher only on days + time range</option>
 										<option value="teacher_days">Teacher only on specific days</option>
@@ -185,7 +202,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 									</select>
 								</div>
 								<div class="col-md-4 mb-2">
-									<select name="teacher_id" class="form-control form-control-sm">
+									<select name="teacher_id" id="ttTeacherId" class="form-control form-control-sm">
 										<option value="0">Any teacher</option>
 										<?php foreach ($staffs as $s): ?>
 											<option value="<?= (int) $s['id']; ?>"><?= esc(trim($s['fname'] . ' ' . $s['lname'])); ?></option>
@@ -193,15 +210,15 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 									</select>
 								</div>
 								<div class="col-md-4 mb-2">
-									<select name="course_id" class="form-control form-control-sm">
+									<select name="course_id" id="ttCourseId" class="form-control form-control-sm">
 										<option value="0">Any course</option>
 										<?php foreach (($criteria_courses ?? []) as $c): ?>
 											<option value="<?= (int) $c['id']; ?>"><?= esc($c['title']); ?></option>
 										<?php endforeach; ?>
 									</select>
 								</div>
-								<div class="col-md-4 mb-2">
-									<select name="class_id" class="form-control form-control-sm">
+								<div class="col-md-4 mb-2" id="ttSingleClassWrap">
+									<select name="class_id" id="ttClassId" class="form-control form-control-sm">
 										<option value="0">Any class</option>
 										<?php foreach (($classes ?? []) as $c): ?>
 											<?php $classLabel = $c['class_label'] ?? (($c['level_name'] ?? '') . ' ' . ($c['title'] ?? '')); ?>
@@ -212,23 +229,36 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 							</div>
 							<p class="small text-info mb-2" id="ttSundayHint" hidden>Pick the course (and optional teacher/class). Sunday lessons use the same bell periods already saved under Settings → Periods &amp; breaks. Special criteria does not add or change periods.</p>
 							<p class="small text-info mb-2" id="ttAfterLessonsHint" hidden>Pick Farming or Library and Clubs. They use existing bells from 15:40 to 17:30 only — not night preps or supper.</p>
+							<p class="small text-info mb-2" id="ttCombineHint" hidden>Pick the course and at least two classes that share one teacher lesson. Teacher load is the periods of one class, not class-count × periods.</p>
+							<div class="mb-2" id="ttCombineClassesWrap" hidden>
+								<label class="small mb-1">Classes in this combined lesson</label>
+								<select name="class_ids[]" id="ttCombineClasses" class="form-control form-control-sm" multiple size="8">
+									<?php foreach (($classes ?? []) as $c): ?>
+										<?php $classLabel = $c['class_label'] ?? (($c['level_name'] ?? '') . ' ' . ($c['title'] ?? '')); ?>
+										<option value="<?= (int) $c['id']; ?>"><?= esc(trim($classLabel)); ?></option>
+									<?php endforeach; ?>
+								</select>
+							</div>
 							<div class="tt-day-checks mb-2" id="ttCriteriaDays">
 								<?php foreach (($criteria_day_choices ?? []) as $dayChoice): ?>
 									<label class="small mr-2 mb-0"><input type="checkbox" name="days[]" value="<?= (int) $dayChoice['value']; ?>"> <?= esc($dayChoice['label']); ?></label>
 								<?php endforeach; ?>
 							</div>
 							<div class="form-row" id="ttCriteriaTimes">
-								<div class="col-5 mb-2"><input type="time" name="start_time" class="form-control form-control-sm" placeholder="From"></div>
-								<div class="col-5 mb-2"><input type="time" name="end_time" class="form-control form-control-sm" placeholder="To"></div>
+								<div class="col-5 mb-2"><input type="time" name="start_time" id="ttStartTime" class="form-control form-control-sm" placeholder="From"></div>
+								<div class="col-5 mb-2"><input type="time" name="end_time" id="ttEndTime" class="form-control form-control-sm" placeholder="To"></div>
 							</div>
 							<div class="form-row">
-								<div class="col-12 mb-2"><input type="text" name="note" class="form-control form-control-sm" placeholder="Note (optional)"></div>
+								<div class="col-12 mb-2"><input type="text" name="note" id="ttRuleNote" class="form-control form-control-sm" placeholder="Note (optional)"></div>
 							</div>
-							<button type="submit" class="btn btn-sm btn-success">Save rule</button>
+							<button type="submit" class="btn btn-sm btn-success" id="ttSaveRuleBtn">Save rule</button>
+							<button type="button" class="btn btn-sm btn-outline-secondary" id="ttResetRuleBtn">New rule</button>
 						</form>
+						<div class="small font-weight-bold mt-3 mb-1">Your extra rules</div>
 						<ul id="ttCriteriaList" class="tt-criteria-list small mb-0 mt-2">
 							<?php
 							$ruleTypeLabels = [
+								'combine_classes' => 'Combine classes',
 								'last_hour' => 'Last hour',
 								'teacher_window' => 'Teacher window',
 								'teacher_days' => 'Teacher days',
@@ -236,20 +266,57 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 								'teach_sunday' => 'Teach on Sunday',
 								'after_lessons' => 'After 15:40 (not night)',
 							];
+							$classLabelById = [];
+							foreach (($classes ?? []) as $c) {
+								$classLabelById[(int) $c['id']] = trim((string) ($c['class_label'] ?? (($c['level_name'] ?? '') . ' ' . ($c['title'] ?? ''))));
+							}
 							foreach (($custom_criteria ?? []) as $rule):
 								$days = json_decode((string) ($rule['days'] ?? '[]'), true);
-								$dayTxt = is_array($days) && $days !== [] ? implode(',', array_map(static function ($d) {
+								$classIds = json_decode((string) ($rule['class_ids'] ?? '[]'), true);
+								if (!is_array($classIds) || $classIds === []) {
+									$classIds = [];
+								}
+								$typeKey = (string) ($rule['rule_type'] ?? '');
+								if ($typeKey === 'combine_classes' && $classIds === [] && is_array($days)) {
+									$classIds = $days;
+								}
+								$dayTxt = is_array($days) && $days !== [] && $typeKey !== 'combine_classes' ? implode(',', array_map(static function ($d) {
 									return ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(int) $d] ?? $d;
 								}, $days)) : 'any day';
-								$typeKey = (string) ($rule['rule_type'] ?? '');
+								$combineTxt = [];
+								foreach ($classIds as $cid) {
+									$combineTxt[] = $classLabelById[(int) $cid] ?? ('#' . (int) $cid);
+								}
 								$typeLabel = $ruleTypeLabels[$typeKey] ?? str_replace('_', ' ', $typeKey);
+								$lockedRule = !empty($rule['is_locked']) || (string) ($rule['source'] ?? '') === 'document';
 								?>
-								<li data-id="<?= (int) $rule['id']; ?>">
+								<li class="tt-edit-rule" data-id="<?= (int) $rule['id']; ?>"
+									data-type="<?= esc($typeKey); ?>"
+									data-teacher="<?= (int) ($rule['teacher_id'] ?? 0); ?>"
+									data-course="<?= (int) ($rule['course_id'] ?? 0); ?>"
+									data-class="<?= (int) ($rule['class_id'] ?? 0); ?>"
+									data-class-ids="<?= esc(json_encode(array_map('intval', $classIds))); ?>"
+									data-days="<?= esc(is_array($days) ? json_encode($days) : '[]'); ?>"
+									data-start="<?= esc((string) ($rule['start_time'] ?? '')); ?>"
+									data-end="<?= esc((string) ($rule['end_time'] ?? '')); ?>"
+									data-note="<?= esc((string) ($rule['note'] ?? '')); ?>"
+									data-locked="<?= $lockedRule ? '1' : '0'; ?>"
+									style="cursor:pointer;">
+									<?php if ($lockedRule): ?><span class="badge badge-secondary mr-1">Locked</span><?php endif; ?>
 									<strong><?= esc($typeLabel); ?></strong>
-									· <?= esc($dayTxt); ?>
+									<?php if ($typeKey === 'combine_classes'): ?>
+										· <?= esc($combineTxt !== [] ? implode(' + ', $combineTxt) : 'classes'); ?>
+									<?php else: ?>
+										· <?= esc($dayTxt); ?>
+									<?php endif; ?>
 									<?php if (!empty($rule['start_time'])): ?> <?= esc($rule['start_time']); ?>–<?= esc($rule['end_time']); ?><?php endif; ?>
 									<?php if (!empty($rule['note'])): ?> — <?= esc($rule['note']); ?><?php endif; ?>
-									<button type="button" class="btn btn-link btn-sm text-danger p-0 ml-1 tt-del-rule" data-id="<?= (int) $rule['id']; ?>">remove</button>
+									<?php if (!$lockedRule): ?>
+										<button type="button" class="btn btn-link btn-sm p-0 ml-1 tt-load-rule">edit</button>
+										<button type="button" class="btn btn-link btn-sm text-danger p-0 ml-1 tt-del-rule" data-id="<?= (int) $rule['id']; ?>">remove</button>
+									<?php else: ?>
+										<span class="text-muted ml-1">always applied</span>
+									<?php endif; ?>
 								</li>
 							<?php endforeach; ?>
 						</ul>
@@ -837,24 +904,70 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 		if (box) box.hidden = !box.hidden;
 	});
 	function syncSundayRuleUi() {
-		var sunday = $('#ttRuleType').val() === 'teach_sunday';
-		var afterLessons = $('#ttRuleType').val() === 'after_lessons';
-		var hideTimes = sunday || afterLessons;
+		var type = $('#ttRuleType').val();
+		var sunday = type === 'teach_sunday';
+		var afterLessons = type === 'after_lessons';
+		var combine = type === 'combine_classes';
+		var hideTimes = sunday || afterLessons || combine;
 		$('#ttSundayHint').prop('hidden', !sunday);
 		$('#ttAfterLessonsHint').prop('hidden', !afterLessons);
+		$('#ttCombineHint').prop('hidden', !combine);
+		$('#ttCombineClassesWrap').prop('hidden', !combine);
+		$('#ttSingleClassWrap').toggle(!combine);
 		$('#ttCriteriaDays, #ttCriteriaTimes').toggle(!hideTimes);
 		if (sunday) {
 			$('.tt-day-checks input').prop('checked', false);
 			$('.tt-day-checks input[value="6"]').prop('checked', true);
 			$('#ttCriteriaTimes input').val('');
 		}
-		if (afterLessons) {
+		if (afterLessons || combine) {
 			$('.tt-day-checks input').prop('checked', false);
 			$('#ttCriteriaTimes input').val('');
 		}
 	}
+	function resetCriteriaForm() {
+		$('#ttRuleId').val('0');
+		$('#ttSaveRuleBtn').text('Save rule');
+		$('#ttCriteriaForm')[0].reset();
+		$('#ttCombineClasses option').prop('selected', false);
+		syncSundayRuleUi();
+	}
+	function loadCriteriaRule(el) {
+		var $el = $(el);
+		$('#ttRuleId').val($el.data('id') || 0);
+		$('#ttRuleType').val($el.data('type') || 'combine_classes');
+		$('#ttTeacherId').val($el.data('teacher') || 0);
+		$('#ttCourseId').val($el.data('course') || 0);
+		$('#ttClassId').val($el.data('class') || 0);
+		$('#ttStartTime').val($el.data('start') || '');
+		$('#ttEndTime').val($el.data('end') || '');
+		$('#ttRuleNote').val($el.data('note') || '');
+		$('.tt-day-checks input').prop('checked', false);
+		var days = $el.data('days');
+		if (typeof days === 'string') {
+			try { days = JSON.parse(days); } catch (e) { days = []; }
+		}
+		if ($.isArray(days)) {
+			days.forEach(function (d) {
+				$('.tt-day-checks input[value="' + d + '"]').prop('checked', true);
+			});
+		}
+		var classIds = $el.data('class-ids');
+		if (typeof classIds === 'string') {
+			try { classIds = JSON.parse(classIds); } catch (e) { classIds = []; }
+		}
+		$('#ttCombineClasses option').prop('selected', false);
+		if ($.isArray(classIds)) {
+			classIds.forEach(function (id) {
+				$('#ttCombineClasses option[value="' + id + '"]').prop('selected', true);
+			});
+		}
+		$('#ttSaveRuleBtn').text($el.data('id') ? 'Update rule' : 'Save rule');
+		syncSundayRuleUi();
+	}
 	$('#ttRuleType').on('change', syncSundayRuleUi);
 	syncSundayRuleUi();
+	$('#ttResetRuleBtn').on('click', resetCriteriaForm);
 	$('#ttCriteriaForm').on('submit', function (e) {
 		e.preventDefault();
 		$.ajax({
@@ -864,13 +977,21 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 			data: $(this).serialize()
 		}).done(function (r) {
 			if (r && r.error) { alert(r.error); return; }
-			alert('Rule saved. Generate again to apply it.');
+			alert('Rule saved. It stays in place for later generates.');
 			location.reload();
 		}).fail(function () { alert('Could not save rule.'); });
 	});
-	$(document).on('click', '.tt-del-rule', function () {
+	$(document).on('click', '.tt-load-rule, .tt-edit-rule', function (e) {
+		if ($(e.target).hasClass('tt-del-rule')) {
+			return;
+		}
+		loadCriteriaRule($(this).closest('li')[0] || this);
+	});
+	$(document).on('click', '.tt-del-rule', function (e) {
+		e.stopPropagation();
 		var id = $(this).data('id');
 		$.post(deleteCriteriaUrl, { id: id }, function (r) {
+			if (r && r.error) { alert(r.error); return; }
 			if (r && r.success) location.reload();
 		}, 'json');
 	});

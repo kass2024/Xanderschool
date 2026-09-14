@@ -75,6 +75,7 @@ class TimetableManagement extends Home
 		$data['last_generation_job'] = $this->findLastFinishedTimetableJob($schoolId, $year, $term);
 		$criteriaStore = new TimetableCriteriaStore();
 		$data['custom_criteria'] = $criteriaStore->listForSchool($schoolId);
+		$data['document_criteria'] = SecondaryTimetableCriteria::documentCriteriaForDisplay();
 		$data['criteria_courses'] = $this->uniqueAssignmentCourses($this->loadAssignments($schoolId, $year, $term));
 
 		$data['staff_with_timetable'] = 0;
@@ -494,8 +495,8 @@ class TimetableManagement extends Home
 		$this->denyMenu('timetable_dashboard');
 		list($schoolId) = $this->bootTimetable();
 		$id = (int) $this->request->getPost('id');
-		$ok = (new TimetableCriteriaStore())->delete($schoolId, $id);
-		return $this->response->setJSON($ok ? ['success' => true] : ['error' => 'Could not delete rule.']);
+		$result = (new TimetableCriteriaStore())->deleteDetailed($schoolId, $id);
+		return $this->response->setJSON($result);
 	}
 
 	public function generate()

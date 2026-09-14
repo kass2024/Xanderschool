@@ -10,25 +10,52 @@ class TimetableCriteriaStore
 	public function ensureTable(): void
 	{
 		$db = \Config\Database::connect();
-		if ($db->tableExists('timetable_custom_criteria')) {
+		if (!$db->tableExists('timetable_custom_criteria')) {
+			$db->query("CREATE TABLE IF NOT EXISTS `timetable_custom_criteria` (
+				`id` int(11) NOT NULL AUTO_INCREMENT,
+				`school_id` int(11) NOT NULL,
+				`rule_type` varchar(40) NOT NULL,
+				`teacher_id` int(11) NOT NULL DEFAULT 0,
+				`course_id` int(11) NOT NULL DEFAULT 0,
+				`class_id` int(11) NOT NULL DEFAULT 0,
+				`class_ids` varchar(255) DEFAULT NULL,
+				`days` varchar(64) DEFAULT NULL,
+				`start_time` varchar(8) DEFAULT NULL,
+				`end_time` varchar(8) DEFAULT NULL,
+				`note` varchar(255) DEFAULT NULL,
+				`enabled` tinyint(1) NOT NULL DEFAULT 1,
+				`is_locked` tinyint(1) NOT NULL DEFAULT 0,
+				`source` varchar(20) DEFAULT 'custom',
+				`created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (`id`),
+				KEY `school_id` (`school_id`)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		}
+		$this->ensureExtraColumns();
+	}
+
+	private function ensureExtraColumns(): void
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('timetable_custom_criteria')) {
 			return;
 		}
-		$db->query("CREATE TABLE IF NOT EXISTS `timetable_custom_criteria` (
-			`id` int(11) NOT NULL AUTO_INCREMENT,
-			`school_id` int(11) NOT NULL,
-			`rule_type` varchar(40) NOT NULL,
-			`teacher_id` int(11) NOT NULL DEFAULT 0,
-			`course_id` int(11) NOT NULL DEFAULT 0,
-			`class_id` int(11) NOT NULL DEFAULT 0,
-			`days` varchar(64) DEFAULT NULL,
-			`start_time` varchar(8) DEFAULT NULL,
-			`end_time` varchar(8) DEFAULT NULL,
-			`note` varchar(255) DEFAULT NULL,
-			`enabled` tinyint(1) NOT NULL DEFAULT 1,
-			`created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (`id`),
-			KEY `school_id` (`school_id`)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		$fields = $db->getFieldNames('timetable_custom_criteria');
+		$adds = [
+			'class_ids' => "ALTER TABLE `timetable_custom_criteria` ADD COLUMN `class_ids` varchar(255) DEFAULT NULL AFTER `class_id`",
+			'is_locked' => "ALTER TABLE `timetable_custom_criteria` ADD COLUMN `is_locked` tinyint(1) NOT NULL DEFAULT 0 AFTER `enabled`",
+			'source' => "ALTER TABLE `timetable_custom_criteria` ADD COLUMN `source` varchar(20) DEFAULT 'custom' AFTER `is_locked`",
+		];
+		foreach ($adds as $name => $sql) {
+			if (in_array($name, $fields, true)) {
+				continue;
+			}
+			try {
+				$db->query($sql);
+			} catch (\Throwable $e) {
+				// column may exist
+			}
+		}
 	}
 
 	/** @return list<array<string,mixed>> */
@@ -51,9 +78,10 @@ class TimetableCriteriaStore
 	public function save(int $schoolId, array $input): array
 	{
 		$this->ensureTable();
+		$db = \Config\Database::connect();
 		$id = (int) ($input['id'] ?? 0);
 		$type = trim((string) ($input['rule_type'] ?? ''));
-		$allowed = ['last_hour', 'teacher_window', 'teacher_days', 'morning', 'teach_sunday', 'after_lessons'];
+		$allowed = ['last_hour', 'teacher_window', 'teacher_days', 'morning', 'teach_sunday', 'after_lessons', 'combine_classes'];
 		if (!in_array($type, $allowed, true)) {
 			return ['error' => 'Choose a valid rule type.'];
 		}
@@ -65,6 +93,7 @@ class TimetableCriteriaStore
 			$days = [];
 		}
 		$days = array_values(array_unique(array_map('intval', $days)));
+		$classIds = $this->decodeClassIds($input['class_ids'] ?? null);
 		$row = [
 			'school_id' => $schoolId,
 			'rule_type' => $type,
@@ -77,6 +106,13 @@ class TimetableCriteriaStore
 			'note' => substr(trim((string) ($input['note'] ?? '')), 0, 255),
 			'enabled' => !empty($input['enabled']) ? 1 : 1,
 		];
+		if ($db->fieldExists('class_ids', 'timetable_custom_criteria')) {
+			$row['class_ids'] = $classIds !== [] ? json_encode($classIds) : null;
+		}
+		if ($id <= 0 && $db->fieldExists('source', 'timetable_custom_criteria')) {
+			$row['source'] = 'custom';
+			$row['is_locked'] = 0;
+		}
 		if ($type === 'teacher_window' && ((int) $row['teacher_id'] <= 0 || $days === [] || $row['start_time'] === '' || $row['end_time'] === '')) {
 			return ['error' => 'Teacher window needs a teacher, at least one day, and a time range.'];
 		}
@@ -93,6 +129,17 @@ class TimetableCriteriaStore
 			$row['start_time'] = '';
 			$row['end_time'] = '';
 		}
+		if ($type === 'combine_classes') {
+			if (count($classIds) < 2) {
+				return ['error' => 'Combine classes needs at least two classes (and usually a course).'];
+			}
+			$row['days'] = json_encode($classIds);
+			$row['start_time'] = '';
+			$row['end_time'] = '';
+			if ((int) $row['class_id'] <= 0) {
+				$row['class_id'] = $classIds[0];
+			}
+		}
 		if ($type === 'teach_sunday') {
 			if ((int) $row['course_id'] <= 0 && (int) $row['teacher_id'] <= 0 && (int) $row['class_id'] <= 0) {
 				return ['error' => 'Teach on Sunday needs a course, teacher, or class. Save it before generating.'];
@@ -102,7 +149,6 @@ class TimetableCriteriaStore
 			$row['end_time'] = '';
 			$row['days'] = json_encode([6]);
 		}
-		$db = \Config\Database::connect();
 		if ($id > 0) {
 			$db->table('timetable_custom_criteria')->where('id', $id)->where('school_id', $schoolId)->update($row);
 			return ['success' => true, 'id' => $id];
@@ -113,13 +159,48 @@ class TimetableCriteriaStore
 
 	public function delete(int $schoolId, int $id): bool
 	{
+		$result = $this->deleteDetailed($schoolId, $id);
+		return !empty($result['success']);
+	}
+
+	/** @return array{success?:bool,error?:string} */
+	public function deleteDetailed(int $schoolId, int $id): array
+	{
 		$this->ensureTable();
 		if ($schoolId <= 0 || $id <= 0) {
-			return false;
+			return ['error' => 'Could not delete rule.'];
 		}
-		\Config\Database::connect()->table('timetable_custom_criteria')
-			->where('school_id', $schoolId)->where('id', $id)->delete();
-		return true;
+		$db = \Config\Database::connect();
+		$existing = $db->table('timetable_custom_criteria')
+			->where('school_id', $schoolId)->where('id', $id)->get(1)->getRowArray();
+		if (!$existing) {
+			return ['error' => 'Rule not found.'];
+		}
+		if (!empty($existing['is_locked']) || (string) ($existing['source'] ?? '') === 'document') {
+			return ['error' => 'Document criteria stay locked so generate cannot drop them.'];
+		}
+		$db->table('timetable_custom_criteria')->where('school_id', $schoolId)->where('id', $id)->delete();
+		return ['success' => true];
+	}
+
+	/** @return list<int> */
+	private function decodeClassIds($raw): array
+	{
+		if (is_string($raw)) {
+			$decoded = json_decode($raw, true);
+			$raw = is_array($decoded) ? $decoded : explode(',', $raw);
+		}
+		if (!is_array($raw)) {
+			return [];
+		}
+		$ids = [];
+		foreach ($raw as $id) {
+			$id = (int) $id;
+			if ($id > 0) {
+				$ids[] = $id;
+			}
+		}
+		return array_values(array_unique($ids));
 	}
 
 	private function normTime($value): string
