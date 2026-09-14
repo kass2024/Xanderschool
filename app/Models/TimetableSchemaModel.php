@@ -15,6 +15,7 @@ class TimetableSchemaModel extends Model
 
 	public function ensureSchema(): void
 	{
+		$this->ensureEntryLockColumn();
 		if (self::$ready) {
 			return;
 		}
@@ -36,7 +37,25 @@ class TimetableSchemaModel extends Model
 		}
 		$this->ensureTrackColumns();
 		$this->ensureScheduleMetaColumns();
+		$this->ensureEntryLockColumn();
 		self::$ready = true;
+	}
+
+	public function ensureEntryLockColumn(): void
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('timetable_entries')) {
+			return;
+		}
+		$fields = $db->getFieldNames('timetable_entries');
+		if (in_array('is_locked', $fields, true)) {
+			return;
+		}
+		try {
+			$db->query("ALTER TABLE `timetable_entries` ADD COLUMN `is_locked` tinyint(1) NOT NULL DEFAULT 0 AFTER `custom_label`");
+		} catch (\Throwable $e) {
+			// column may exist
+		}
 	}
 
 	private function ensureScheduleMetaColumns(): void

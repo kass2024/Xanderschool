@@ -9,6 +9,7 @@ use App\Libraries\Wkhtmltopdf;
 use App\Models\ClassesModel;
 use App\Models\StaffModel;
 use App\Models\TimetableSchemaModel;
+use App\Services\Timetable\SecondaryTimetableCriteria;
 use App\Services\Timetable\TimetableConflictService;
 use App\Services\Timetable\TimetableCriteriaStore;
 use App\Services\Timetable\TimetableGeneratorService;
@@ -395,6 +396,9 @@ class TimetableManagement extends Home
 		}
 
 		if ($day < 0 || $slotId <= 0) {
+			if ($db->fieldExists('is_locked', 'timetable_entries') && (int) ($entry['is_locked'] ?? 0) === 1) {
+				return $this->response->setJSON(['error' => 'This lesson is locked by special criteria. Unlock it before parking.']);
+			}
 			$db->table('timetable_entries')->where('id', $entryId)->update([
 				'day_of_week' => -1,
 				'slot_id' => 0,
@@ -1006,17 +1010,36 @@ class TimetableManagement extends Home
 			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
 			->orderBy('id', 'DESC')->get(1)->getRowArray();
 		$keepBusyEntries = [];
+		$lockedEntries = [];
 		$slotTimesById = [];
-		if ($existingSchedule && $phase !== 'all' && $classIdList !== []) {
-			$keepBusyEntries = $db->table('timetable_entries te')
-				->select('te.class_id, te.staff_id, te.day_of_week, te.slot_id, ts.start_time, ts.end_time')
-				->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
-				->where('te.schedule_id', (int) $existingSchedule['id'])
-				->where('te.entry_type', 'lesson')
-				->where('te.day_of_week >=', 0)
-				->where('te.slot_id >', 0)
-				->whereNotIn('te.class_id', $classIdList)
-				->get()->getResultArray();
+		if ($existingSchedule) {
+			$scheduleIdExisting = (int) $existingSchedule['id'];
+			if ($phase !== 'all' && $classIdList !== []) {
+				$keepBusyEntries = $db->table('timetable_entries te')
+					->select('te.class_id, te.staff_id, te.course_id, te.day_of_week, te.slot_id, ts.start_time, ts.end_time')
+					->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
+					->where('te.schedule_id', $scheduleIdExisting)
+					->where('te.entry_type', 'lesson')
+					->where('te.day_of_week >=', 0)
+					->where('te.slot_id >', 0)
+					->whereNotIn('te.class_id', $classIdList)
+					->get()->getResultArray();
+			}
+			if ($db->fieldExists('is_locked', 'timetable_entries')) {
+				$lockedQ = $db->table('timetable_entries te')
+					->select('te.class_id, te.staff_id, te.course_id, te.day_of_week, te.slot_id, ts.start_time, ts.end_time')
+					->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
+					->where('te.schedule_id', $scheduleIdExisting)
+					->where('te.entry_type', 'lesson')
+					->where('te.is_locked', 1)
+					->where('te.day_of_week >=', 0)
+					->where('te.slot_id >', 0);
+				if ($phase !== 'all' && $classIdList !== []) {
+					$lockedQ->whereIn('te.class_id', $classIdList);
+				}
+				$lockedEntries = $lockedQ->get()->getResultArray();
+			}
+			$keepBusyEntries = array_merge($keepBusyEntries, $lockedEntries);
 			foreach ($keepBusyEntries as $row) {
 				$sid = (int) ($row['slot_id'] ?? 0);
 				if ($sid > 0) {
@@ -1060,7 +1083,10 @@ class TimetableManagement extends Home
 			$reset = $keepBusyEntries === [];
 			$phaseEntries = 0;
 			foreach ($tracks as $trackKey) {
-				$trackAssignments = $this->excludeSatisfiedAssignments($byTrack[$trackKey] ?? [], $allEntries);
+				$trackAssignments = $this->excludeSatisfiedAssignments(
+					$byTrack[$trackKey] ?? [],
+					array_merge($allEntries, $lockedEntries)
+				);
 				if ($trackAssignments === []) {
 					continue;
 				}
@@ -1129,12 +1155,19 @@ class TimetableManagement extends Home
 				$phasesMeta = $decoded;
 			}
 			if ($phase === 'all' || $classIdList === []) {
-				$db->table('timetable_entries')->where('schedule_id', $scheduleId)->delete();
+				$del = $db->table('timetable_entries')->where('schedule_id', $scheduleId);
+				if ($db->fieldExists('is_locked', 'timetable_entries')) {
+					$del->groupStart()->where('is_locked', 0)->orWhere('is_locked IS NULL', null, false)->groupEnd();
+				}
+				$del->delete();
 			} else {
-				$db->table('timetable_entries')
+				$del = $db->table('timetable_entries')
 					->where('schedule_id', $scheduleId)
-					->whereIn('class_id', $classIdList)
-					->delete();
+					->whereIn('class_id', $classIdList);
+				if ($db->fieldExists('is_locked', 'timetable_entries')) {
+					$del->groupStart()->where('is_locked', 0)->orWhere('is_locked IS NULL', null, false)->groupEnd();
+				}
+				$del->delete();
 			}
 		} else {
 			$db->table('timetable_schedules')->insert([
@@ -1165,6 +1198,7 @@ class TimetableManagement extends Home
 		$allEntries = $filtered['kept'];
 
 		$this->insertTimetableEntriesBatch($scheduleId, $schoolId, $allEntries);
+		$this->lockCorrectSpecialCriteriaEntries($scheduleId, $schoolId, $phaseAssignments, $schema);
 		$this->reportGenerationProgress($jobId, [
 			'message' => 'Saved ' . count($allEntries) . ' lessons — parking leftover periods…',
 			'progress' => 82,
@@ -1287,6 +1321,8 @@ class TimetableManagement extends Home
 				'stages' => $stages,
 			]);
 		}
+
+		$this->lockCorrectSpecialCriteriaEntries($scheduleId, $schoolId, $phaseAssignments, $schema);
 
 		$collisionReport = $this->buildCollisionReport(
 			$scheduleId,
@@ -1485,9 +1521,10 @@ class TimetableManagement extends Home
 			return;
 		}
 		$db = \Config\Database::connect();
+		$hasLock = $db->fieldExists('is_locked', 'timetable_entries');
 		$chunk = [];
 		foreach ($entries as $entry) {
-			$chunk[] = [
+			$row = [
 				'schedule_id' => $scheduleId,
 				'school_id' => $schoolId,
 				'class_id' => (int) ($entry['class_id'] ?? 0),
@@ -1498,6 +1535,10 @@ class TimetableManagement extends Home
 				'slot_id' => (int) ($entry['slot_id'] ?? 0),
 				'entry_type' => (string) ($entry['entry_type'] ?? 'lesson'),
 			];
+			if ($hasLock) {
+				$row['is_locked'] = !empty($entry['is_locked']) ? 1 : 0;
+			}
+			$chunk[] = $row;
 			if (count($chunk) >= 200) {
 				$db->table('timetable_entries')->insertBatch($chunk);
 				$chunk = [];
@@ -1506,6 +1547,132 @@ class TimetableManagement extends Home
 		if ($chunk !== []) {
 			$db->table('timetable_entries')->insertBatch($chunk);
 		}
+	}
+
+	/**
+	 * Freeze special-criteria lessons that already sit in the right window
+	 * so the next generate cannot move them.
+	 *
+	 * @param list<array<string,mixed>> $assignments
+	 */
+	private function lockCorrectSpecialCriteriaEntries(
+		int $scheduleId,
+		int $schoolId,
+		array $assignments,
+		TimetableSchemaModel $schema
+	): int {
+		if ($scheduleId <= 0 || $schoolId <= 0) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->fieldExists('is_locked', 'timetable_entries')) {
+			return 0;
+		}
+		$criteria = new SecondaryTimetableCriteria();
+		$criteria->hydrateFromAssignments($assignments);
+		$criteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
+
+		$teachingSlots = [];
+		$tracks = TimetableTrack::tracksForSchool($schoolId) ?: [TimetableTrack::ALL];
+		$tracks[] = TimetableTrack::ALL;
+		$seenSlot = [];
+		foreach (array_unique($tracks) as $track) {
+			foreach ($schema->generationSlots($schoolId, (string) $track) as $slot) {
+				$id = (int) ($slot['id'] ?? 0);
+				if ($id <= 0 || isset($seenSlot[$id])) {
+					continue;
+				}
+				$seenSlot[$id] = true;
+				$teachingSlots[] = $slot;
+			}
+		}
+
+		$metaByKey = [];
+		foreach ($assignments as $row) {
+			$classId = (int) ($row['class_id'] ?? 0);
+			$courseId = (int) ($row['course_id'] ?? 0);
+			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+			if ($classId <= 0 || $courseId <= 0) {
+				continue;
+			}
+			$metaByKey[$classId . ':' . $courseId . ':' . $staffId] = $row;
+			if (!isset($metaByKey[$classId . ':' . $courseId . ':0'])) {
+				$metaByKey[$classId . ':' . $courseId . ':0'] = $row;
+			}
+		}
+
+		$entries = $db->table('timetable_entries te')
+			->select('te.id, te.class_id, te.staff_id, te.course_id, te.day_of_week, te.slot_id, te.is_locked,
+				ts.start_time, ts.end_time, c.title AS course_title,
+				CONCAT(s.fname, " ", s.lname) AS teacher_name')
+			->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
+			->join('courses c', 'c.id = te.course_id', 'left')
+			->join('staffs s', 's.id = te.staff_id', 'left')
+			->where('te.schedule_id', $scheduleId)
+			->where('te.school_id', $schoolId)
+			->where('te.entry_type', 'lesson')
+			->where('te.day_of_week >=', 0)
+			->where('te.slot_id >', 0)
+			->get()->getResultArray();
+
+		$occupiedByStaff = [];
+		foreach ($entries as $entry) {
+			$staffId = (int) ($entry['staff_id'] ?? 0);
+			$day = (int) ($entry['day_of_week'] ?? -1);
+			if ($staffId <= 0 || $day < 0) {
+				continue;
+			}
+			$occupiedByStaff[$staffId][] = [
+				'day' => $day,
+				'start' => $this->lockTimeToMinutes((string) ($entry['start_time'] ?? '')),
+				'end' => $this->lockTimeToMinutes((string) ($entry['end_time'] ?? '')),
+			];
+		}
+
+		$ids = [];
+		foreach ($entries as $entry) {
+			if ((int) ($entry['is_locked'] ?? 0) === 1) {
+				continue;
+			}
+			$classId = (int) ($entry['class_id'] ?? 0);
+			$courseId = (int) ($entry['course_id'] ?? 0);
+			$staffId = (int) ($entry['staff_id'] ?? 0);
+			$row = $metaByKey[$classId . ':' . $courseId . ':' . $staffId]
+				?? $metaByKey[$classId . ':' . $courseId . ':0']
+				?? [
+					'class_id' => $classId,
+					'course_id' => $courseId,
+					'lecturer' => $staffId,
+					'staff_id' => $staffId,
+					'course_title' => (string) ($entry['course_title'] ?? ''),
+					'teacher_name' => (string) ($entry['teacher_name'] ?? ''),
+					'_track_key' => '',
+				];
+			$row['teacher_name'] = (string) ($entry['teacher_name'] ?? $row['teacher_name'] ?? '');
+			$row['course_title'] = (string) ($entry['course_title'] ?? $row['course_title'] ?? '');
+			if ($criteria->shouldLockPlacement(
+				$row,
+				(int) ($entry['day_of_week'] ?? -1),
+				(string) ($entry['start_time'] ?? ''),
+				(string) ($entry['end_time'] ?? ''),
+				$occupiedByStaff[$staffId] ?? [],
+				$teachingSlots
+			)) {
+				$ids[] = (int) $entry['id'];
+			}
+		}
+		$ids = array_values(array_filter($ids));
+		if ($ids === []) {
+			return 0;
+		}
+		$db->table('timetable_entries')->whereIn('id', $ids)->update(['is_locked' => 1]);
+		return count($ids);
+	}
+
+	private function lockTimeToMinutes(string $time): int
+	{
+		$parts = explode(':', substr($time, 0, 8));
+		return ((int) ($parts[0] ?? 0)) * 60 + (int) ($parts[1] ?? 0);
 	}
 
 	private function applyGeminiCollisionFixes(int $scheduleId, int $schoolId, TimetableSchemaModel $schema, ?string $jobId = null): ?string
@@ -1517,15 +1684,17 @@ class TimetableManagement extends Home
 		}
 
 		$db = \Config\Database::connect();
-		$movable = $db->table('timetable_entries te')
+		$movableQ = $db->table('timetable_entries te')
 			->select('te.id AS entry_id, te.class_id, te.staff_id, te.day_of_week AS day, te.slot_id, c.title AS course')
 			->join('courses c', 'c.id = te.course_id', 'left')
 			->where('te.schedule_id', $scheduleId)
 			->where('te.entry_type', 'lesson')
 			->where('te.day_of_week >=', 0)
-			->where('te.slot_id >', 0)
-			->limit(60)
-			->get()->getResultArray();
+			->where('te.slot_id >', 0);
+		if ($db->fieldExists('is_locked', 'timetable_entries')) {
+			$movableQ->groupStart()->where('te.is_locked', 0)->orWhere('te.is_locked IS NULL', null, false)->groupEnd();
+		}
+		$movable = $movableQ->limit(60)->get()->getResultArray();
 
 		$busy = [];
 		foreach ($movable as $row) {
@@ -1772,8 +1941,12 @@ class TimetableManagement extends Home
 		foreach ($assignments as $row) {
 			$needed = TimetableGeneratorService::weeklyHoursFromCourse($row);
 			$key = (int) ($row['class_id'] ?? 0) . ':' . (int) ($row['course_id'] ?? 0);
-			if ($needed > 0 && (int) ($have[$key] ?? 0) >= $needed) {
+			$already = (int) ($have[$key] ?? 0);
+			if ($needed > 0 && $already >= $needed) {
 				continue;
+			}
+			if ($already > 0) {
+				$row['weekly_hours'] = max(0, $needed - $already);
 			}
 			$out[] = $row;
 		}

@@ -315,7 +315,22 @@ class SecondaryTimetableCriteria
 
 	public function prefersSunday(array $row): bool
 	{
-		return $this->allowsSunday($row);
+		if (!self::isSecondaryTrack($row)) {
+			return false;
+		}
+		// Ordered-fill teachers (Patience) may use Sunday as overflow, but weekday windows come first.
+		if ($this->hasOrderedFillWindows($row)) {
+			return false;
+		}
+		$courseId = (int) ($row['course_id'] ?? $row['course'] ?? 0);
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$classId = (int) ($row['class_id'] ?? 0);
+		foreach ($this->sundayRules as $rule) {
+			if ($this->ruleMatchesRow($rule, $courseId, $staffId, $classId)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Soft score: Sunday-rule courses go to Sunday first; everyone else never lands there. */
@@ -324,7 +339,14 @@ class SecondaryTimetableCriteria
 		if ($day !== 6) {
 			return $this->prefersSunday($row) ? 350 : 0;
 		}
-		return $this->prefersSunday($row) ? -2500 : 50000;
+		if ($this->prefersSunday($row)) {
+			return -2500;
+		}
+		// Named overflow (Patience) may sit on Sunday after weekday windows fill.
+		if ($this->allowsSunday($row)) {
+			return 0;
+		}
+		return 50000;
 	}
 
 	/** Soft score: Farming / Library stay in 15:40–17:30, never night. */
@@ -662,6 +684,10 @@ class SecondaryTimetableCriteria
 			return $fallback;
 		}
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		// Keep doubles (2/day) so Patience can fill Tuesday then Friday with several courses.
+		if ($this->hasOrderedFillWindows($row)) {
+			return $fallback;
+		}
 		if ($staffId > 0 && isset($this->heavyStaffIds[$staffId])) {
 			return max($fallback, $weeklyHours, 6);
 		}
@@ -1171,11 +1197,12 @@ class SecondaryTimetableCriteria
 			['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
 			['day' => 4, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
 		];
-		// High-school break is 09:40–10:00. Teaching cutoff 15:40.
+		// IZABAYO PATIENCE: fill Tuesday before break, then Friday after break
+		// and before lunch, then remaining periods on Sunday.
 		$patienceWindows = [
-			['day' => 1, 'start' => 7 * 60, 'end' => 9 * 60 + 40, 'scope' => null],
-			['day' => 4, 'start' => 10 * 60, 'end' => 15 * 60 + 40, 'scope' => null],
-			['day' => 6, 'start' => 7 * 60, 'end' => 15 * 60 + 40, 'scope' => null],
+			['day' => 1, 'start' => 7 * 60, 'end' => 9 * 60 + 40, 'scope' => null, 'priority' => 1],
+			['day' => 4, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null, 'priority' => 2],
+			['day' => 6, 'start' => 7 * 60, 'end' => 15 * 60 + 40, 'scope' => null, 'priority' => 3],
 		];
 		return [
 			'innocent' => [
@@ -1246,6 +1273,177 @@ class SecondaryTimetableCriteria
 			}
 		}
 		return false;
+	}
+
+	public function isWindowFillTeacher(array $row): bool
+	{
+		return $this->fillPriorityBands($row) !== [];
+	}
+
+	public function hasOrderedFillWindows(array $row): bool
+	{
+		$priorities = [];
+		foreach ($this->fillPriorityBands($row) as $band) {
+			$priorities[(int) ($band['priority'] ?? 1)] = true;
+		}
+		return count($priorities) > 1;
+	}
+
+	/**
+	 * Named / saved teacher windows, lowest priority number first.
+	 *
+	 * @return list<array{day:int,start:int,end:int,priority:int,scope:?string}>
+	 */
+	public function fillPriorityBands(array $row): array
+	{
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? '')) ?? ''));
+		$windows = [];
+		if ($staffId > 0 && !empty($this->windowsByStaffId[$staffId])) {
+			foreach ($this->windowsByStaffId[$staffId] as $window) {
+				$windows[] = $window;
+			}
+		}
+		foreach ($this->windowsForTeacher($teacher) as $window) {
+			$windows[] = $window;
+		}
+		if ($windows === [] && $staffId > 0 && isset($this->allowedDaysByStaffId[$staffId])) {
+			foreach ($this->allowedDaysByStaffId[$staffId] as $day) {
+				$windows[] = [
+					'day' => (int) $day,
+					'start' => 0,
+					'end' => 24 * 60,
+					'scope' => null,
+					'priority' => 1,
+				];
+			}
+		}
+		$out = [];
+		$seen = [];
+		foreach ($windows as $window) {
+			$day = (int) ($window['day'] ?? -1);
+			$start = (int) ($window['start'] ?? 0);
+			$end = (int) ($window['end'] ?? 0);
+			if ($day < 0 || $end <= $start) {
+				continue;
+			}
+			$key = $day . ':' . $start . ':' . $end;
+			if (isset($seen[$key])) {
+				continue;
+			}
+			$seen[$key] = true;
+			$out[] = [
+				'day' => $day,
+				'start' => $start,
+				'end' => $end,
+				'priority' => (int) ($window['priority'] ?? 1),
+				'scope' => $window['scope'] ?? null,
+			];
+		}
+		usort($out, static function (array $a, array $b): int {
+			return (int) $a['priority'] <=> (int) $b['priority'];
+		});
+		return $out;
+	}
+
+	/**
+	 * Lock special-criteria cells that already sit in the right window.
+	 * Overflow (Sunday for Patience) locks only after earlier windows are full.
+	 *
+	 * @param list<array{day:int,start:int,end:int}> $staffOccupied
+	 * @param list<array<string,mixed>> $teachingSlots
+	 */
+	public function shouldLockPlacement(
+		array $row,
+		int $day,
+		?string $slotStart,
+		?string $slotEnd,
+		array $staffOccupied,
+		array $teachingSlots
+	): bool {
+		$bands = $this->fillPriorityBands($row);
+		if ($bands === []) {
+			return false;
+		}
+		if (!$this->teacherAllows($row, $day, $slotStart, $slotEnd)) {
+			return false;
+		}
+		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+		$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+		$matchedPriority = null;
+		foreach ($bands as $band) {
+			if ((int) $band['day'] === $day && $start >= (int) $band['start'] && $end <= (int) $band['end']) {
+				$matchedPriority = (int) $band['priority'];
+				break;
+			}
+		}
+		if ($matchedPriority === null) {
+			return false;
+		}
+		foreach ($bands as $band) {
+			if ((int) $band['priority'] >= $matchedPriority) {
+				continue;
+			}
+			$cap = $this->countSlotsInBand($band, $teachingSlots);
+			$filled = $this->countOccupiedInBand($band, $staffOccupied);
+			if ($cap > 0 && $filled < $cap) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * @param array{day:int,start:int,end:int} $band
+	 * @param list<array<string,mixed>> $teachingSlots
+	 */
+	public function countSlotsInBand(array $band, array $teachingSlots): int
+	{
+		$count = 0;
+		foreach ($teachingSlots as $slot) {
+			if (!empty($slot['is_break'])) {
+				continue;
+			}
+			$startRaw = (string) ($slot['start_time'] ?? $slot['start'] ?? '');
+			$endRaw = (string) ($slot['end_time'] ?? $slot['end'] ?? '');
+			$start = $this->timeToMinutes($startRaw);
+			$end = $this->timeToMinutes($endRaw);
+			if ($end <= $start) {
+				continue;
+			}
+			if (\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($startRaw, $endRaw)
+				|| \App\Models\TimetableSchemaModel::isNightSlotTimes($startRaw, $endRaw)) {
+				continue;
+			}
+			if ($start >= (int) $band['start'] && $end <= (int) $band['end']) {
+				$count++;
+			}
+		}
+		return $count;
+	}
+
+	/**
+	 * @param array{day:int,start:int,end:int} $band
+	 * @param list<array{day:int,start:int,end:int}> $occupied
+	 */
+	public function countOccupiedInBand(array $band, array $occupied): int
+	{
+		$count = 0;
+		$day = (int) ($band['day'] ?? -1);
+		foreach ($occupied as $row) {
+			if ((int) ($row['day'] ?? -1) !== $day) {
+				continue;
+			}
+			$start = (int) ($row['start'] ?? 0);
+			$end = (int) ($row['end'] ?? 0);
+			if ($end <= $start) {
+				continue;
+			}
+			if ($start >= (int) $band['start'] && $end <= (int) $band['end']) {
+				$count++;
+			}
+		}
+		return $count;
 	}
 
 	private function timeToMinutes(string $time): int

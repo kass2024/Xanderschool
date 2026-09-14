@@ -361,8 +361,16 @@ class TimetableGeneratorService
 			$lessonNeeds[$i]['is_pe'] = $this->isPhysicalEducationSportCourse(
 				(string) ($need['assignment']['course_title'] ?? '')
 			) ? 1 : 0;
+			$lessonNeeds[$i]['window_fill'] = (
+				$this->secondaryCriteria !== null
+				&& $this->secondaryCriteria->isWindowFillTeacher($need['assignment'])
+			) ? 1 : 0;
 		}
 		usort($lessonNeeds, static function ($a, $b) {
+			$win = (int) ($b['window_fill'] ?? 0) <=> (int) ($a['window_fill'] ?? 0);
+			if ($win !== 0) {
+				return $win;
+			}
 			$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
 			if ($pe !== 0) {
 				return $pe;
@@ -395,8 +403,16 @@ class TimetableGeneratorService
 			$lessonNeeds[$i]['is_pe'] = $this->isPhysicalEducationSportCourse(
 				(string) ($need['assignment']['course_title'] ?? '')
 			) ? 1 : 0;
+			$lessonNeeds[$i]['window_fill'] = (
+				$this->secondaryCriteria !== null
+				&& $this->secondaryCriteria->isWindowFillTeacher($need['assignment'])
+			) ? 1 : 0;
 		}
 		usort($lessonNeeds, static function ($a, $b) {
+			$win = (int) ($b['window_fill'] ?? 0) <=> (int) ($a['window_fill'] ?? 0);
+			if ($win !== 0) {
+				return $win;
+			}
 			$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
 			if ($pe !== 0) {
 				return $pe;
@@ -813,9 +829,74 @@ class TimetableGeneratorService
 				isset($slot['start_time']) ? (string) $slot['start_time'] : null,
 				isset($slot['end_time']) ? (string) $slot['end_time'] : null
 			);
+			$score += $this->namedWindowFillScore($row, $day, $slotIndex);
 		}
 
 		return $score;
+	}
+
+	private function namedWindowFillScore(array $row, int $day, int $slotIndex): int
+	{
+		if ($this->secondaryCriteria === null) {
+			return 0;
+		}
+		$bands = $this->secondaryCriteria->fillPriorityBands($row);
+		if ($bands === []) {
+			return 0;
+		}
+		$slot = $this->teachingSlots[$slotIndex] ?? [];
+		$start = $this->clockMinutes((string) ($slot['start_time'] ?? ''));
+		$end = $this->clockMinutes((string) ($slot['end_time'] ?? ''));
+		$thisPriority = 99;
+		foreach ($bands as $band) {
+			if ((int) $band['day'] === $day && $start >= (int) $band['start'] && $end <= (int) $band['end']) {
+				$thisPriority = min($thisPriority, (int) $band['priority']);
+			}
+		}
+		if ($thisPriority === 99) {
+			return 20000;
+		}
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		foreach ($bands as $band) {
+			if ((int) $band['priority'] >= $thisPriority) {
+				continue;
+			}
+			$cap = $this->secondaryCriteria->countSlotsInBand($band, $this->teachingSlots);
+			$filled = $this->countStaffFilledInBand($staffId, $band);
+			if ($cap > 0 && $filled < $cap) {
+				return 15000 + ($thisPriority * 2000);
+			}
+		}
+
+		return ($thisPriority - 1) * 400;
+	}
+
+	/** @param array{day:int,start:int,end:int} $band */
+	private function countStaffFilledInBand(int $staffId, array $band): int
+	{
+		if ($staffId <= 0) {
+			return 0;
+		}
+		$day = (int) ($band['day'] ?? -1);
+		$count = 0;
+		foreach ($this->teachingSlots as $slot) {
+			if (!empty($slot['is_break'])) {
+				continue;
+			}
+			$slotId = (int) ($slot['id'] ?? 0);
+			if ($slotId <= 0) {
+				continue;
+			}
+			$start = $this->clockMinutes((string) ($slot['start_time'] ?? ''));
+			$end = $this->clockMinutes((string) ($slot['end_time'] ?? ''));
+			if ($end <= $start || $start < (int) $band['start'] || $end > (int) $band['end']) {
+				continue;
+			}
+			if (isset($this->staffBusy[$this->busyStaffKey($staffId, $day, $slotId)])) {
+				$count++;
+			}
+		}
+		return $count;
 	}
 
 	/** @param list<int> $slotIds */
@@ -966,6 +1047,12 @@ class TimetableGeneratorService
 				$day,
 				$slotId
 			);
+			$classId = (int) ($entry['class_id'] ?? 0);
+			$courseId = (int) ($entry['course_id'] ?? 0);
+			if ($classId > 0 && $courseId > 0) {
+				$subjectKey = $classId . ':' . $courseId . ':' . $day;
+				$this->subjectDayCount[$subjectKey] = (int) ($this->subjectDayCount[$subjectKey] ?? 0) + 1;
+			}
 		}
 	}
 
@@ -1122,7 +1209,8 @@ class TimetableGeneratorService
 		}
 		if ($this->secondaryCriteria !== null) {
 			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-			if ($this->secondaryCriteria->isHeavyStaff($staffId)
+			if ($this->secondaryCriteria->hasOrderedFillWindows($row)
+				|| $this->secondaryCriteria->isHeavyStaff($staffId)
 				|| $this->secondaryCriteria->isPersonalRestrictionRelaxed($staffId, (string) ($row['teacher_name'] ?? ''))) {
 				return false;
 			}

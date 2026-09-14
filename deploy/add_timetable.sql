@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS `timetable_entries` (
   `room_label` varchar(80) DEFAULT NULL,
   `entry_type` varchar(20) NOT NULL DEFAULT 'lesson',
   `custom_label` varchar(120) DEFAULT NULL,
+  `is_locked` tinyint(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `schedule_day_slot` (`schedule_id`,`day_of_week`,`slot_id`),
   KEY `staff_day_slot` (`schedule_id`,`staff_id`,`day_of_week`,`slot_id`),

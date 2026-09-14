@@ -26,6 +26,12 @@ class TimetableStagingService
 		return 'c:' . $classId . ':' . $courseId . ':' . $staffId;
 	}
 
+	/** @param array<string,mixed> $entry */
+	private function entryIsLocked(array $entry): bool
+	{
+		return (int) ($entry['is_locked'] ?? 0) === 1;
+	}
+
 	/**
 	 * @param array<string,mixed> $assignment
 	 */
@@ -349,12 +355,14 @@ class TimetableStagingService
 				break;
 			}
 
-			$db->table('timetable_entries')
-				->whereIn('id', $idsToParking)
-				->update([
-					'day_of_week' => -1,
-					'slot_id' => 0,
-				]);
+			$park = $db->table('timetable_entries')->whereIn('id', $idsToParking);
+			if ($db->fieldExists('is_locked', 'timetable_entries')) {
+				$park->groupStart()->where('is_locked', 0)->orWhere('is_locked IS NULL', null, false)->groupEnd();
+			}
+			$park->update([
+				'day_of_week' => -1,
+				'slot_id' => 0,
+			]);
 			$totalMoved += count($idsToParking);
 			// Place only into free cells — never relocate a legal lesson to force a fit.
 			$totalReplaced += $this->autoPlaceStaging($scheduleId, $schoolId, $schema, $filterClassId, $filterStaffId, false);
@@ -578,6 +586,9 @@ class TimetableStagingService
 				<=> TimetableGeneratorService::clockMinutesFromString((string) ($a['start_time'] ?? '00:00'));
 		});
 		foreach ($movers as $entry) {
+			if ($this->entryIsLocked($entry)) {
+				continue;
+			}
 			$fromDay = (int) ($entry['day_of_week'] ?? -1);
 			$fromSlot = (int) ($entry['slot_id'] ?? 0);
 			if ($fromDay < 0 || $fromSlot <= 0) {
@@ -661,15 +672,19 @@ class TimetableStagingService
 		$ids = $this->collectConflictEntryIds(
 			$this->scheduledEntries($scheduleId, $schoolId, $filterClassId, $filterStaffId)
 		);
+		$ids = array_values(array_filter($ids));
 		if ($ids === []) {
 			return 0;
 		}
-		\Config\Database::connect()->table('timetable_entries')
-			->whereIn('id', $ids)
-			->update([
-				'day_of_week' => -1,
-				'slot_id' => 0,
-			]);
+		$db = \Config\Database::connect();
+		$upd = $db->table('timetable_entries')->whereIn('id', $ids);
+		if ($db->fieldExists('is_locked', 'timetable_entries')) {
+			$upd->groupStart()->where('is_locked', 0)->orWhere('is_locked IS NULL', null, false)->groupEnd();
+		}
+		$upd->update([
+			'day_of_week' => -1,
+			'slot_id' => 0,
+		]);
 		return count($ids);
 	}
 
@@ -839,7 +854,7 @@ class TimetableStagingService
 			}
 			$blockerId = (int) $blockers[0];
 			$blocker = $state['by_id'][$blockerId] ?? null;
-			if (!is_array($blocker)) {
+			if (!is_array($blocker) || $this->entryIsLocked($blocker)) {
 				continue;
 			}
 			$this->removeScheduledEntry($state, $blocker);
@@ -1216,8 +1231,19 @@ class TimetableStagingService
 			if (count($group) <= 1) {
 				continue;
 			}
+			usort($group, static function (array $a, array $b): int {
+				$la = (int) ($a['is_locked'] ?? 0);
+				$lb = (int) ($b['is_locked'] ?? 0);
+				if ($la !== $lb) {
+					return $lb <=> $la;
+				}
+				return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+			});
 			$drop = array_slice($group, 1);
 			foreach ($drop as $entry) {
+				if ((int) ($entry['is_locked'] ?? 0) === 1) {
+					continue;
+				}
 				$ids[(int) $entry['id']] = (int) $entry['id'];
 			}
 		}
@@ -1226,6 +1252,11 @@ class TimetableStagingService
 				continue;
 			}
 			usort($group, static function (array $a, array $b): int {
+				$la = (int) ($a['is_locked'] ?? 0);
+				$lb = (int) ($b['is_locked'] ?? 0);
+				if ($la !== $lb) {
+					return $lb <=> $la;
+				}
 				return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
 			});
 			$kept = [];
@@ -1247,7 +1278,9 @@ class TimetableStagingService
 					}
 				}
 				if ($collides) {
-					$ids[$entryId] = $entryId;
+					if ((int) ($entry['is_locked'] ?? 0) !== 1) {
+						$ids[$entryId] = $entryId;
+					}
 					continue;
 				}
 				$kept[] = [
