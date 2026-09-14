@@ -9,6 +9,7 @@ use App\Libraries\Wkhtmltopdf;
 use App\Models\ClassesModel;
 use App\Models\StaffModel;
 use App\Models\TimetableSchemaModel;
+use App\Services\Timetable\NurseryTimetableCriteria;
 use App\Services\Timetable\SecondaryTimetableCriteria;
 use App\Services\Timetable\TimetableConflictService;
 use App\Services\Timetable\TimetableCriteriaStore;
@@ -2624,6 +2625,7 @@ class TimetableManagement extends Home
 		}
 
 		$grid = $this->buildGridFromSlots($slots, $dayLabels, $specialMap, $labelByDay);
+		$nurseryClassCache = [];
 
 		if ($entries !== []) {
 			$slotMaps = $this->buildSlotIndexMaps($slots);
@@ -2656,6 +2658,15 @@ class TimetableManagement extends Home
 					$cell['line2'] = $entry['teacher_name'] ?? '';
 				} else {
 					$cell['line2'] = TimetableClassLabel::fromRow($entry);
+				}
+				$classId = (int) ($entry['class_id'] ?? 0);
+				if ($this->cellIsNurseryColored($mode, $trackKey, $schema, $schoolId, $classId, $nurseryClassCache)) {
+					$tone = NurseryTimetableCriteria::colorForCourse(
+						(string) ($cell['course'] ?? ''),
+						(int) ($entry['course_id'] ?? 0)
+					);
+					$cell['nursery_bg'] = $tone['bg'];
+					$cell['nursery_fg'] = $tone['fg'];
 				}
 				$grid[$si]['cells'][$dayLabel] = $cell;
 			}
@@ -2796,6 +2807,29 @@ class TimetableManagement extends Home
 			return $c !== 0 ? $c : strcmp((string) ($a['end_time'] ?? ''), (string) ($b['end_time'] ?? ''));
 		});
 		return $all;
+	}
+
+	/**
+	 * @param array<int,bool> $nurseryClassCache
+	 */
+	private function cellIsNurseryColored(
+		string $mode,
+		string $trackKey,
+		TimetableSchemaModel $schema,
+		int $schoolId,
+		int $classId,
+		array &$nurseryClassCache
+	): bool {
+		if ($mode === 'class') {
+			return $trackKey === TimetableTrack::NURSERY;
+		}
+		if ($classId <= 0) {
+			return false;
+		}
+		if (!isset($nurseryClassCache[$classId])) {
+			$nurseryClassCache[$classId] = $schema->trackForClass($schoolId, $classId) === TimetableTrack::NURSERY;
+		}
+		return !empty($nurseryClassCache[$classId]);
 	}
 
 	/** @return list<array{slot:array,cells:array}> */

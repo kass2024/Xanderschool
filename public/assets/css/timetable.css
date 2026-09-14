@@ -21,6 +21,25 @@
 .tt-break-row td { background: #e2e8f0; text-align: center; font-weight: 700; font-size: 0.7rem; padding: 6px; }
 .tt-break-label { letter-spacing: 0.06em; }
 
+/* Nursery class timetable — pastel course colors */
+.tt-sheet-nursery {
+	background: linear-gradient(180deg, #fff7ed 0%, #ffffff 56px);
+	border: 1px solid #fed7aa;
+	box-shadow: 0 8px 24px rgba(154, 52, 18, 0.08);
+}
+.tt-sheet-nursery .tt-school { color: #9a3412; }
+.tt-sheet-nursery .tt-sheet-title { color: #c2410c; }
+.tt-sheet-nursery .tt-entity-name { color: #7c2d12; }
+.tt-sheet-nursery .tt-grid th { background: #ffedd5; color: #9a3412; }
+.tt-sheet-nursery .tt-time { background: #fff7ed; }
+.tt-sheet-nursery .tt-break-row td { background: #fde68a; color: #78350f; }
+.tt-sheet-nursery .tt-nursery-colored {
+	border-radius: 4px;
+	-webkit-print-color-adjust: exact;
+	print-color-adjust: exact;
+}
+.tt-sheet-nursery .tt-nursery-colored .tt-sub { color: inherit; opacity: 0.88; }
+
 /* Special time blocks */
 .tt-special-cell { font-weight: 700; }
 .tt-special-label { font-size: 0.65rem; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.03em; writing-mode: horizontal-tb; }
@@ -226,7 +245,7 @@
 
 /* Subtle always-on hints in edit mode (not exported) */
 .tt-sheet-editable .tt-cell-free { background: #f0fdf4; }
-.tt-sheet-editable .tt-cell-occupied { background: #eff6ff; }
+.tt-sheet-editable .tt-cell-occupied:not(.tt-nursery-colored) { background: #eff6ff; }
 .tt-sheet-editable .tt-cell-free::after {
 	content: ''; display: block; height: 2px; background: #86efac; margin-top: 2px; opacity: 0.5;
 }
@@ -234,7 +253,7 @@
 	background: #dcfce7 !important;
 	box-shadow: inset 0 0 0 2px #22c55e;
 }
-.tt-sheet-editable.tt-is-dragging .tt-cell-occupied:not(.tt-dragging) {
+.tt-sheet-editable.tt-is-dragging .tt-cell-occupied:not(.tt-dragging):not(.tt-nursery-colored) {
 	background: #dbeafe !important;
 	box-shadow: inset 0 0 0 1px #3b82f6;
 }
@@ -353,7 +372,11 @@
 	.tt-edit-toolbar, .tt-staging-dock, .tt-staging-parking, .tt-conflict-banner { display: none !important; }
 	.tt-sheet { padding: 0; }
 	.tt-sheet-editable .tt-cell-free,
-	.tt-sheet-editable .tt-cell-occupied { background: #fff !important; box-shadow: none !important; }
+	.tt-sheet-editable .tt-cell-occupied:not(.tt-nursery-colored) { background: #fff !important; box-shadow: none !important; }
+	.tt-sheet-nursery .tt-nursery-colored {
+		-webkit-print-color-adjust: exact !important;
+		print-color-adjust: exact !important;
+	}
 	.tt-sheet-editable .tt-cell-free::after { display: none !important; }
 	.tt-drag-grip { display: none !important; }
 	.tt-grid-wrap { overflow: visible; }

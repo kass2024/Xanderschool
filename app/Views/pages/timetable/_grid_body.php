@@ -12,12 +12,23 @@
 /** @var array<int,bool> $conflict_entry_ids */
 $schoolName = strtoupper($school_name ?? 'SCHOOL');
 $editable = !empty($editable) && empty($for_pdf);
+$isNurserySheet = strtolower((string) ($track_key ?? '')) === 'nursery';
+if (!$isNurserySheet) {
+	foreach ($grid ?? [] as $row) {
+		foreach (($row['cells'] ?? []) as $cell) {
+			if (!empty($cell['nursery_bg'])) {
+				$isNurserySheet = true;
+				break 2;
+			}
+		}
+	}
+}
 $ttRange = static function ($start, $end) {
 	return substr((string) $start, 0, 5) . ' - ' . substr((string) $end, 0, 5);
 };
 $conflictIds = $conflict_entry_ids ?? [];
 ?>
-<div class="tt-sheet<?= $editable ? ' tt-sheet-editable' : ''; ?>"
+<div class="tt-sheet<?= $editable ? ' tt-sheet-editable' : ''; ?><?= $isNurserySheet ? ' tt-sheet-nursery' : ''; ?>"
 	<?php if ($editable): ?>
 	data-schedule-id="<?= (int) ($schedule_id ?? 0); ?>"
 	data-mode="<?= esc($mode ?? 'class'); ?>"
@@ -94,6 +105,9 @@ $conflictIds = $conflict_entry_ids ?? [];
 									$cellClasses[] = 'tt-special-cell tt-special-' . esc($color);
 								} elseif ($isLesson) {
 									$cellClasses[] = 'tt-lesson-cell tt-cell-occupied';
+									if (!empty($cell['nursery_bg'])) {
+										$cellClasses[] = 'tt-nursery-colored';
+									}
 									if ($editable) {
 										$cellClasses[] = 'tt-draggable-lesson';
 									}
@@ -105,6 +119,9 @@ $conflictIds = $conflict_entry_ids ?? [];
 								}
 								?>
 								<td class="<?= implode(' ', $cellClasses); ?>"
+									<?php if (!empty($cell['nursery_bg'])): ?>
+									style="background:<?= esc($cell['nursery_bg']); ?>;color:<?= esc($cell['nursery_fg'] ?? '#1e293b'); ?>;"
+									<?php endif; ?>
 									<?php if ($editable && ($isLesson || $isEmpty)): ?>
 									data-day="<?= $dayNum; ?>"
 									data-slot-id="<?= $slotId; ?>"

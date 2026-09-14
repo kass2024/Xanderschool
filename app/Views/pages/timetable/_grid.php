@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/timetable.css'); ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/timetable.css'); ?>?v=nursery-colors-1">
 
 <div class="tt-page">
 	<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">

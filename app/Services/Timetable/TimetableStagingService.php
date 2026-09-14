@@ -559,7 +559,16 @@ class TimetableStagingService
 		array &$state
 	): ?array {
 		$slotId = (int) ($slot['id'] ?? 0);
-		foreach ($parked as $entry) {
+		$parkedOrder = $parked;
+		usort($parkedOrder, function (array $a, array $b) use ($state, $day): int {
+			$aNew = $this->dayHasCourse($state, $a, $day) ? 1 : 0;
+			$bNew = $this->dayHasCourse($state, $b, $day) ? 1 : 0;
+			if ($aNew !== $bNew) {
+				return $aNew <=> $bNew;
+			}
+			return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+		});
+		foreach ($parkedOrder as $entry) {
 			if (!$this->entryMayOccupySlot($entry, $day, $slot, $state)) {
 				continue;
 			}
@@ -601,7 +610,9 @@ class TimetableStagingService
 			$lastHour = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''))
 				|| ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($meta));
 			$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($meta);
-			if ($lastHour || $afterLessons) {
+			$homework = NurseryTimetableCriteria::isNurseryRow($meta)
+				&& NurseryTimetableCriteria::isHomeworkCourse((string) ($meta['course_title'] ?? ''));
+			if ($lastHour || $afterLessons || $homework) {
 				continue;
 			}
 			$this->removeScheduledEntry($state, $entry);
@@ -656,6 +667,18 @@ class TimetableStagingService
 				(string) ($slot['start_time'] ?? ''),
 				(string) ($slot['end_time'] ?? '')
 			)) {
+				return false;
+			}
+		}
+		$meta = $this->metaForEntry($entry);
+		if (NurseryTimetableCriteria::isNurseryRow($meta)) {
+			$title = (string) ($meta['course_title'] ?? '');
+			$homework = NurseryTimetableCriteria::isHomeworkCourse($title);
+			$start = (string) ($slot['start_time'] ?? '');
+			if ($homework && TimetableGeneratorService::isMorningClock($start)) {
+				return false;
+			}
+			if ($this->wouldExceedSubjectDayLimit($state, $entry, $day)) {
 				return false;
 			}
 		}
@@ -744,6 +767,7 @@ class TimetableStagingService
 			'staff_time' => [],
 			'subject_day_count' => [],
 			'class_day_usage' => [],
+			'class_day_courses' => [],
 		];
 		foreach ($scheduled as $entry) {
 			$this->addScheduledEntry($state, $entry);
@@ -779,6 +803,10 @@ class TimetableStagingService
 		$subjectKey = $classId . ':' . (int) ($entry['course_id'] ?? 0) . ':' . $day;
 		$state['subject_day_count'][$subjectKey] = (int) ($state['subject_day_count'][$subjectKey] ?? 0) + 1;
 		$state['class_day_usage'][$classId . ':' . $day] = (int) ($state['class_day_usage'][$classId . ':' . $day] ?? 0) + 1;
+		$courseId = (int) ($entry['course_id'] ?? 0);
+		if ($classId > 0 && $courseId > 0) {
+			$state['class_day_courses'][$classId . ':' . $day][$courseId] = true;
+		}
 	}
 
 	/** @param array<string,mixed> $state */
@@ -806,6 +834,13 @@ class TimetableStagingService
 		$subjectKey = $classId . ':' . (int) ($entry['course_id'] ?? 0) . ':' . $day;
 		$state['subject_day_count'][$subjectKey] = max(0, (int) ($state['subject_day_count'][$subjectKey] ?? 0) - 1);
 		$state['class_day_usage'][$classId . ':' . $day] = max(0, (int) ($state['class_day_usage'][$classId . ':' . $day] ?? 0) - 1);
+		$courseId = (int) ($entry['course_id'] ?? 0);
+		if ($classId > 0 && $courseId > 0) {
+			unset($state['class_day_courses'][$classId . ':' . $day][$courseId]);
+			if (($state['subject_day_count'][$subjectKey] ?? 0) > 0) {
+				$state['class_day_courses'][$classId . ':' . $day][$courseId] = true;
+			}
+		}
 	}
 
 	/** @param array<string,mixed> $state */
@@ -935,6 +970,11 @@ class TimetableStagingService
 						continue;
 					}
 				}
+				if (NurseryTimetableCriteria::isNurseryRow($meta)
+					&& NurseryTimetableCriteria::isHomeworkCourse((string) ($meta['course_title'] ?? ''))
+					&& TimetableGeneratorService::isMorningClock((string) ($slot['start_time'] ?? ''))) {
+					continue;
+				}
 				$classBlocker = (int) ($state['class_busy'][$classId . ':' . $key] ?? 0);
 				$blockers = array_values(array_unique(array_filter([$classBlocker])));
 				if ($staffId > 0) {
@@ -990,7 +1030,7 @@ class TimetableStagingService
 		$meta = $this->metaForEntry($entry);
 		$hours = TimetableGeneratorService::weeklyHoursFromCourse($meta);
 		$track = strtolower(trim((string) ($meta['track_key'] ?? '')));
-		$useDoubles = $hours >= 3;
+		$useDoubles = $hours >= 3 && !NurseryTimetableCriteria::isNurseryRow($meta);
 		$peSport = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''));
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($meta));
 		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($meta);
@@ -1065,6 +1105,19 @@ class TimetableStagingService
 			$meta['_track_key'] = $track;
 			$score += $this->secondaryCriteria->morningScoreDelta($meta, $start, $end);
 		}
+		if (NurseryTimetableCriteria::isNurseryRow($meta) && $candidateRange !== null) {
+			$startH = intdiv((int) $candidateRange['start'], 60);
+			$startM = ((int) $candidateRange['start']) % 60;
+			$endH = intdiv((int) $candidateRange['end'], 60);
+			$endM = ((int) $candidateRange['end']) % 60;
+			$start = sprintf('%02d:%02d:00', $startH, $startM);
+			$end = sprintf('%02d:%02d:00', $endH, $endM);
+			$score += NurseryTimetableCriteria::varietyScoreDelta(
+				$this->uniqueCoursesOnDay($state, $classId, $day),
+				$this->dayHasCourse($state, $entry, $day)
+			);
+			$score += NurseryTimetableCriteria::homeworkScoreDelta($meta, $start, $end);
+		}
 		return $score;
 	}
 
@@ -1134,11 +1187,25 @@ class TimetableStagingService
 	}
 
 	/** @param array<string,mixed> $state */
+	private function uniqueCoursesOnDay(array $state, int $classId, int $day): int
+	{
+		return count($state['class_day_courses'][$classId . ':' . $day] ?? []);
+	}
+
+	/** @param array<string,mixed> $state */
+	private function dayHasCourse(array $state, array $entry, int $day): bool
+	{
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$courseId = (int) ($entry['course_id'] ?? 0);
+		return $classId > 0 && $courseId > 0 && !empty($state['class_day_courses'][$classId . ':' . $day][$courseId]);
+	}
+
+	/** @param array<string,mixed> $state */
 	private function wouldExceedSubjectDayLimit(array $state, array $entry, int $day): bool
 	{
 		$meta = $this->metaForEntry($entry);
 		$hours = TimetableGeneratorService::weeklyHoursFromCourse($meta);
-		$maxPerDay = $this->maxPerDayForEntry($meta, $hours);
+		$maxPerDay = $this->maxPerDayForEntry($meta, $hours, $state, $entry, $day);
 		return $this->subjectDayCountForState($state, $entry, $day) + 1 > $maxPerDay;
 	}
 
@@ -1153,8 +1220,17 @@ class TimetableStagingService
 		];
 	}
 
-	private function maxPerDayForEntry(array $meta, int $hours): int
+	private function maxPerDayForEntry(array $meta, int $hours, array $state = [], array $entry = [], int $day = -1): int
 	{
+		if (NurseryTimetableCriteria::isNurseryRow($meta)) {
+			if ($state !== [] && $entry !== [] && $day >= 0) {
+				return NurseryTimetableCriteria::maxPerDay(
+					$this->uniqueCoursesOnDay($state, (int) ($entry['class_id'] ?? 0), $day),
+					$this->dayHasCourse($state, $entry, $day)
+				);
+			}
+			return 1;
+		}
 		if ($this->secondaryCriteria !== null) {
 			$peMax = $this->secondaryCriteria->peMaxPerDay($meta, $hours);
 			if ($peMax !== null) {
