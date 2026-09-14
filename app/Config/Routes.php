@@ -177,6 +177,8 @@ $routes->get('daily_visitors/export_pdf', 'DailyVisitors::export_pdf');
 $routes->get('daily_visitors/inside_json', 'DailyVisitors::inside_json');
 
 // Asset Management (Phase 1+)
+$routes->get('asset_management', 'AssetManagement::dashboard');
+$routes->get('asset_management/register', 'AssetManagement::dashboard');
 $routes->get('asset_management/dashboard', 'AssetManagement::dashboard');
 $routes->get('asset_management/assets', 'AssetManagement::assets');
 $routes->get('asset_management/asset_view/(:num)', 'AssetManagement::asset_view/$1');
@@ -184,6 +186,7 @@ $routes->post('asset_management/save_asset', 'AssetManagement::save_asset');
 $routes->post('asset_management/save_simple_asset', 'AssetManagement::save_simple_asset');
 $routes->post('asset_management/distribute_asset', 'AssetManagement::distribute_asset');
 $routes->post('asset_management/save_quick_location', 'AssetManagement::save_quick_location');
+$routes->post('asset_management/stock_move', 'AssetManagement::stock_move');
 $routes->post('asset_management/archive_asset', 'AssetManagement::archive_asset');
 $routes->get('asset_management/locations', 'AssetManagement::locations');
 $routes->post('asset_management/save_location', 'AssetManagement::save_location');

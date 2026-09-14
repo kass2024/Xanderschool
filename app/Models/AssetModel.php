@@ -134,10 +134,18 @@ class AssetModel extends Model
 	{
 		$this->ensureSchema();
 		$db = \Config\Database::connect();
+		$dmgExpr = '0';
+		try {
+			if ($db->fieldExists('qty_damaged', 'assets')) {
+				$dmgExpr = 'COALESCE(SUM(qty_damaged),0)';
+			}
+		} catch (\Throwable $e) {
+			$dmgExpr = '0';
+		}
 		$row = $db->table('assets')
 			->select('COUNT(*) AS lots,
 				COALESCE(SUM(quantity),0) AS qty,
-				COALESCE(SUM(qty_damaged),0) AS damaged')
+				' . $dmgExpr . ' AS damaged')
 			->where('school_id', (int) $schoolId)
 			->where('archived_at', null)
 			->get()

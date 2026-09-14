@@ -18,7 +18,7 @@
 	<div class="d-flex justify-content-between align-items-center mb-3">
 		<div>
 			<h4 class="mb-0">Fixed asset register</h4>
-			<small class="text-muted">Record quantities by location. Distribute stock to classrooms and offices.</small>
+			<small class="text-muted">Register items, then use In / Out to receive or issue stock. Move sends stock to another location.</small>
 		</div>
 		<div>
 			<button type="button" class="btn btn-outline-secondary btn-sm mr-1" data-toggle="modal" data-target="#mdlLocation"><i class="fa fa-map-marker-alt"></i> New location</button>
@@ -130,11 +130,21 @@
 						<td><?= esc($a['location_name'] ?? '—'); ?></td>
 						<td><span class="am-pill <?= $age === 'old' ? 'old' : ''; ?>"><?= $age === 'new' ? 'New' : 'Old'; ?></span></td>
 						<td class="text-nowrap">
+							<button type="button" class="btn btn-sm btn-success btn-stock" data-dir="in"
+								data-id="<?= (int)$a['id']; ?>"
+								data-name="<?= esc($a['name'], 'attr'); ?>"
+								data-loc="<?= esc($a['location_name'] ?? '', 'attr'); ?>"
+								data-good="<?= $good; ?>">In</button>
+							<button type="button" class="btn btn-sm btn-danger btn-stock" data-dir="out"
+								data-id="<?= (int)$a['id']; ?>"
+								data-name="<?= esc($a['name'], 'attr'); ?>"
+								data-loc="<?= esc($a['location_name'] ?? '', 'attr'); ?>"
+								data-good="<?= $good; ?>">Out</button>
 							<button type="button" class="btn btn-sm btn-outline-primary btn-dist"
 								data-id="<?= (int)$a['id']; ?>"
 								data-name="<?= esc($a['name'], 'attr'); ?>"
 								data-loc="<?= esc($a['location_name'] ?? '', 'attr'); ?>"
-								data-good="<?= $good; ?>">Distribute</button>
+								data-good="<?= $good; ?>">Move</button>
 							<button type="button" class="btn btn-sm btn-outline-secondary btn-edit"
 								data-json="<?= esc(json_encode($a), 'attr'); ?>">Edit</button>
 						</td>
@@ -148,27 +158,61 @@
 
 	<?php if (!empty($moves)) { ?>
 	<div class="am-card p-3">
-		<strong>Recent distributions</strong>
+		<strong>Recent stock movements</strong>
 		<ul class="mb-0 mt-2 pl-3">
-			<?php foreach ($moves as $m) { ?>
-				<li class="mb-1">
-					<?= number_format((float)$m['quantity'], 0); ?>
-					<?= esc($m['asset_name'] ?? 'item'); ?>
-					from <?= esc($m['from_name'] ?? '—'); ?>
-					→ <?= esc($m['to_name'] ?? '—'); ?>
-					<small class="text-muted"><?= esc($m['created_at'] ?? ''); ?></small>
-				</li>
+			<?php foreach ($moves as $m) {
+				$dir = strtolower((string) ($m['direction'] ?? 'move'));
+				$qtyN = number_format((float)$m['quantity'], 0);
+				$name = esc($m['asset_name'] ?? 'item');
+				if ($dir === 'in') {
+					$line = 'IN ' . $qtyN . ' ' . $name . ' at ' . esc($m['to_name'] ?? $m['from_name'] ?? '—');
+				} elseif ($dir === 'out') {
+					$line = 'OUT ' . $qtyN . ' ' . $name . ' from ' . esc($m['from_name'] ?? '—');
+				} else {
+					$line = 'MOVE ' . $qtyN . ' ' . $name . ' from ' . esc($m['from_name'] ?? '—') . ' → ' . esc($m['to_name'] ?? '—');
+				}
+			?>
+				<li class="mb-1"><?= $line; ?> <small class="text-muted"><?= esc($m['created_at'] ?? ''); ?></small></li>
 			<?php } ?>
 		</ul>
 	</div>
 	<?php } ?>
 </div>
 
+<div class="modal fade" id="mdlStock" tabindex="-1">
+	<div class="modal-dialog">
+		<form class="modal-content" id="frmStock">
+			<div class="modal-header">
+				<h5 class="modal-title" id="stock_title">Stock in</h5>
+				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+			</div>
+			<div class="modal-body">
+				<input type="hidden" name="asset_id" id="stock_asset_id">
+				<input type="hidden" name="direction" id="stock_dir" value="in">
+				<p class="mb-2" id="stock_label"></p>
+				<div class="form-group">
+					<label>Quantity</label>
+					<input type="number" min="1" step="1" class="form-control" name="quantity" id="stock_qty" required>
+					<small class="text-muted" id="stock_avail"></small>
+				</div>
+				<div class="form-group mb-0">
+					<label>Note (optional)</label>
+					<input class="form-control" name="notes" id="stock_notes" placeholder="Received from supplier / issued to P4">
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-light" data-dismiss="modal">Cancel</button>
+				<button type="submit" class="btn btn-primary" id="stock_save">Save</button>
+			</div>
+		</form>
+	</div>
+</div>
+
 <div class="modal fade" id="mdlDistribute" tabindex="-1">
 	<div class="modal-dialog">
 		<form class="modal-content" id="frmDistribute">
 			<div class="modal-header">
-				<h5 class="modal-title">Distribute stock</h5>
+				<h5 class="modal-title">Move stock</h5>
 				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
 			</div>
 			<div class="modal-body">
@@ -255,6 +299,30 @@ $(function () {
 			toastOk(res.success || 'Saved');
 			reloadSoon();
 		}, 'json').fail(function () { toastErr('Could not save'); });
+	});
+
+	$(document).on('click', '.btn-stock', function () {
+		var dir = $(this).data('dir') === 'out' ? 'out' : 'in';
+		var good = parseFloat($(this).data('good') || 0);
+		$('#stock_asset_id').val($(this).data('id'));
+		$('#stock_dir').val(dir);
+		$('#stock_title').text(dir === 'out' ? 'Stock out' : 'Stock in');
+		$('#stock_save').text(dir === 'out' ? 'Issue stock' : 'Receive stock');
+		$('#stock_label').text($(this).data('name') + ' — ' + ($(this).data('loc') || ''));
+		$('#stock_avail').text(dir === 'out' ? (good + ' good items available to issue') : 'Will add to current quantity');
+		$('#stock_qty').attr('max', dir === 'out' ? good : null).val(1);
+		$('#stock_notes').val('');
+		$('#mdlStock').modal('show');
+	});
+
+	$('#frmStock').on('submit', function (e) {
+		e.preventDefault();
+		$.post('<?= base_url('asset_management/stock_move'); ?>', $(this).serialize(), function (res) {
+			if (res.error) { toastErr(res.error); return; }
+			toastOk(res.success || 'Saved');
+			$('#mdlStock').modal('hide');
+			reloadSoon();
+		}, 'json').fail(function () { toastErr('Could not update stock'); });
 	});
 
 	$(document).on('click', '.btn-dist', function () {

@@ -34,10 +34,19 @@ class AssetManagement extends Home
 		$this->_preset();
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$schema = new AssetSchemaModel();
-		$schema->ensureSchema();
-		AssetOpsSchema::ensureAll();
-		$schema->seedDefaults($schoolId, (int) $this->session->get('soma_id'));
+		try {
+			$schema->ensureSchema();
+			AssetOpsSchema::ensureAll();
+			$schema->seedDefaults($schoolId, (int) $this->session->get('soma_id'));
+		} catch (\Throwable $e) {
+			log_message('error', 'Asset schema bootstrap: ' . $e->getMessage());
+		}
 		return $schoolId;
+	}
+
+	public function register()
+	{
+		return $this->dashboard();
 	}
 
 	protected function denyUnless($menuKey)
@@ -58,7 +67,11 @@ class AssetManagement extends Home
 		$locMdl = new AssetLocationModel();
 		$catMdl = new AssetCategoryModel();
 
-		$assets = $assetMdl->listDetailed($schoolId);
+		try {
+			$assets = $assetMdl->listDetailed($schoolId);
+		} catch (\Throwable $e) {
+			$assets = [];
+		}
 		$grouped = [];
 		foreach ($assets as $a) {
 			$type = trim((string) ($a['category_name'] ?? '')) ?: 'Other';
@@ -93,8 +106,12 @@ class AssetManagement extends Home
 
 		$data['title'] = 'Fixed assets';
 		$data['subtitle'] = 'Asset register';
-		$data['page'] = 'asset_dashboard';
-		$data['totals'] = $assetMdl->simpleTotals($schoolId);
+		$data['page'] = 'asset_register';
+		try {
+			$data['totals'] = $assetMdl->simpleTotals($schoolId);
+		} catch (\Throwable $e) {
+			$data['totals'] = ['lots' => count($assets), 'qty' => 0, 'damaged' => 0, 'good' => 0];
+		}
 		$data['assets'] = $assets;
 		$data['grouped'] = $grouped;
 		$data['locations'] = $locMdl->listForSchool($schoolId);
@@ -110,11 +127,21 @@ class AssetManagement extends Home
 
 	protected function denyUnlessAsset()
 	{
+		if (function_exists('menu_clearance_group_visible') && menu_clearance_group_visible('asset_management')) {
+			return;
+		}
+		if (function_exists('menu_clearance_allowed') && menu_clearance_allowed('asset_management')) {
+			return;
+		}
+		$postId = (int) $this->session->get('soma_post');
+		if (in_array($postId, [1, 3, 7, 12, 13, 18], true)) {
+			return;
+		}
 		$keys = [
 			'asset_dashboard', 'asset_assets', 'asset_locations', 'asset_categories',
 			'asset_checkout', 'asset_transfers', 'asset_reports', 'asset_settings',
 			'asset_assignments', 'asset_maintenance', 'asset_inspections', 'asset_incidents',
-			'asset_audits',
+			'asset_audits', 'book_management',
 		];
 		foreach ($keys as $key) {
 			if (function_exists('menu_clearance_allowed') && menu_clearance_allowed($key)) {
@@ -354,7 +381,7 @@ class AssetManagement extends Home
 				$destId = (int) $assetMdl->getInsertID();
 			}
 
-			$db->table('asset_distributions')->insert([
+			$distRow = [
 				'school_id' => $schoolId,
 				'asset_id' => (int) $from['id'],
 				'dest_asset_id' => $destId,
@@ -364,7 +391,11 @@ class AssetManagement extends Home
 				'notes' => $notes !== '' ? $notes : null,
 				'created_by' => $actorId,
 				'created_at' => $now,
-			]);
+			];
+			if ($db->fieldExists('direction', 'asset_distributions')) {
+				$distRow['direction'] = 'move';
+			}
+			$db->table('asset_distributions')->insert($distRow);
 			$histMdl->insert([
 				'school_id' => $schoolId,
 				'asset_id' => (int) $from['id'],
@@ -403,9 +434,88 @@ class AssetManagement extends Home
 		return $this->response->setJSON(['success' => 'Location saved.', 'id' => (int) $loc['id'], 'name' => $loc['name']]);
 	}
 
+	public function stock_move()
+	{
+		$schoolId = $this->bootAssets();
+		$this->denyUnlessAsset();
+		$actorId = (int) $this->session->get('soma_id');
+		$assetMdl = new AssetModel();
+		$histMdl = new AssetStatusHistoryModel();
+
+		$assetId = (int) $this->request->getPost('asset_id');
+		$qty = (float) $this->request->getPost('quantity');
+		$direction = strtolower(trim((string) $this->request->getPost('direction')));
+		$notes = trim((string) $this->request->getPost('notes'));
+		if ($direction !== 'out') {
+			$direction = 'in';
+		}
+		if ($qty <= 0) {
+			return $this->response->setJSON(['error' => 'Enter a quantity greater than 0.']);
+		}
+		$asset = $assetMdl->where('school_id', $schoolId)->where('id', $assetId)->where('archived_at', null)->first();
+		if (!$asset) {
+			return $this->response->setJSON(['error' => 'Asset not found.']);
+		}
+
+		$current = (float) $asset['quantity'];
+		$damaged = (float) ($asset['qty_damaged'] ?? 0);
+		$good = max(0, $current - $damaged);
+		if ($direction === 'out' && $qty > $good) {
+			return $this->response->setJSON(['error' => 'Only ' . rtrim(rtrim(number_format($good, 2), '0'), '.') . ' good items are in stock.']);
+		}
+		$newQty = $direction === 'in' ? ($current + $qty) : ($current - $qty);
+		if ($newQty < $damaged) {
+			return $this->response->setJSON(['error' => 'Cannot take out more than the good stock.']);
+		}
+
+		$now = date('Y-m-d H:i:s');
+		$db = \Config\Database::connect();
+		try {
+			$assetMdl->save([
+				'id' => (int) $asset['id'],
+				'quantity' => $newQty,
+				'lifecycle_status' => ($newQty - $damaged) <= 0 ? 'assigned' : 'available',
+				'updated_by' => $actorId,
+			]);
+			if ($db->tableExists('asset_distributions')) {
+				$row = [
+					'school_id' => $schoolId,
+					'asset_id' => (int) $asset['id'],
+					'dest_asset_id' => (int) $asset['id'],
+					'from_location_id' => $asset['location_id'],
+					'to_location_id' => $asset['location_id'] ?: 0,
+					'quantity' => $qty,
+					'notes' => $notes !== '' ? $notes : null,
+					'created_by' => $actorId,
+					'created_at' => $now,
+				];
+				if ($db->fieldExists('direction', 'asset_distributions')) {
+					$row['direction'] = $direction;
+				}
+				$db->table('asset_distributions')->insert($row);
+			}
+			$histMdl->insert([
+				'school_id' => $schoolId,
+				'asset_id' => (int) $asset['id'],
+				'previous_status' => $asset['lifecycle_status'],
+				'new_status' => 'available',
+				'operation_type' => $direction === 'in' ? 'stock_in' : 'stock_out',
+				'actor_id' => $actorId,
+				'source_location_id' => $asset['location_id'],
+				'destination_location_id' => $asset['location_id'],
+				'notes' => strtoupper($direction) . ' ' . $qty . ($notes !== '' ? (': ' . $notes) : ''),
+				'created_at' => $now,
+			]);
+			$label = $direction === 'in' ? 'Stock in recorded.' : 'Stock out recorded.';
+			return $this->response->setJSON(['success' => $label]);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => 'Could not update stock: ' . $e->getMessage()]);
+		}
+	}
+
 	public function assets()
 	{
-		return redirect()->to(base_url('asset_management/dashboard'));
+		return redirect()->to(base_url('asset_management/register'));
 	}
 
 	public function asset_view($id = null)
@@ -664,7 +774,7 @@ class AssetManagement extends Home
 
 	public function locations()
 	{
-		return redirect()->to(base_url('asset_management/dashboard'));
+		return redirect()->to(base_url('asset_management/register'));
 	}
 
 	public function save_location()

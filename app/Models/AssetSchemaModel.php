@@ -205,6 +205,7 @@ class AssetSchemaModel extends Model
 			`from_location_id` INT UNSIGNED NULL DEFAULT NULL,
 			`to_location_id` INT UNSIGNED NOT NULL,
 			`quantity` DECIMAL(18,2) NOT NULL DEFAULT 0,
+			`direction` VARCHAR(12) NOT NULL DEFAULT 'move',
 			`notes` TEXT NULL,
 			`created_by` INT NULL DEFAULT NULL,
 			`created_at` DATETIME NULL DEFAULT NULL,
@@ -213,8 +214,15 @@ class AssetSchemaModel extends Model
 			KEY `idx_adist_asset` (`asset_id`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-		if (!$db->fieldExists('qty_damaged', 'assets')) {
-			$db->query("ALTER TABLE `assets` ADD COLUMN `qty_damaged` DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER `quantity`");
+		try {
+			if (!$db->fieldExists('qty_damaged', 'assets')) {
+				$db->query("ALTER TABLE `assets` ADD COLUMN `qty_damaged` DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER `quantity`");
+			}
+			if ($db->tableExists('asset_distributions') && !$db->fieldExists('direction', 'asset_distributions')) {
+				$db->query("ALTER TABLE `asset_distributions` ADD COLUMN `direction` VARCHAR(12) NOT NULL DEFAULT 'move' AFTER `quantity`");
+			}
+		} catch (\Throwable $e) {
+			log_message('error', 'Asset schema alter: ' . $e->getMessage());
 		}
 
 		$db->query("CREATE TABLE IF NOT EXISTS `asset_settings` (

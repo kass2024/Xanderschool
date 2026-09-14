@@ -815,8 +815,8 @@
 							<?php if (menu_clearance_group_visible('asset_management') || menu_clearance_group_visible('library')) { ?>
 								<li class="app-sidebar__heading">Asset Management</li>
 								<?php if (menu_clearance_group_visible('asset_management')) { ?>
-								<li>
-									<a href="<?= base_url('asset_management/dashboard'); ?>">
+								<li class="<?= (!empty($page) && $page === 'asset_register') ? 'mm-active' : ''; ?>">
+									<a href="<?= base_url('asset_management/register'); ?>">
 										<i class="metismenu-icon pe-7s-box2"></i>
 										Fixed assets
 									</a>
