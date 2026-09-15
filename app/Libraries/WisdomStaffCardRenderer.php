@@ -19,7 +19,7 @@ class WisdomStaffCardRenderer
 	/** Default / campus card (backward compatible). */
 	public const TEMPLATE = self::TEMPLATE_MUSANZE;
 
-	/** Principal, Director of Finance, Director, Deputy Director. */
+	/** Executive Principal, Director of Finance, Director, Deputy Director. */
 	public const RWANDA_ART_POST_IDS = [15, 24, 29, 30];
 
 	/** Measured on 591×1004 source artwork. */
@@ -68,6 +68,7 @@ class WisdomStaffCardRenderer
 			'director',
 			'director of finance',
 			'director of finances',
+			'executive principal',
 			'principal',
 		], true);
 	}

@@ -74,7 +74,7 @@ class BranchContextService
 	}
 
 	/**
-	 * Cross-branch Budget Dashboard: only Principal, Budget Manager, Director of Finance
+	 * Cross-branch Budget Dashboard: only Executive Principal, Budget Manager, Director of Finance
 	 * when logged in at the master school. Head master / Headmistress / Deans see own school only.
 	 */
 	public function hasCentralDashboard($staffId, $postId, $schoolId)

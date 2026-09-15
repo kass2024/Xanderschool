@@ -150,7 +150,7 @@ class BudgetPermissions
 			4 => [ // Dean of discipline — view reports
 				'budget.view_reports',
 			],
-			15 => [ // Principal — view reports + cross-branch budget dashboard on master
+			15 => [ // Executive Principal — view reports + cross-branch budget dashboard on master
 				'budget.view_reports', 'budget.view_all_branches', 'budget.export', 'cash_request.view_audit',
 			],
 		];

@@ -551,7 +551,7 @@ class BudgetCashflow extends Home
 		$map = [
 			24 => 'Director of Finance — prioritize approvals, payment authorization, and branch exceptions.',
 			19 => 'Budget Manager — prioritize availability checks, returns, and schools stuck in budget review.',
-			15 => 'Principal — oversight of all branches; highlight schools needing follow-up.',
+			15 => 'Executive Principal — oversight of all branches; highlight schools needing follow-up.',
 			1 => 'Head master — own-school oversight only; focus on local draft progress and request delays.',
 			18 => 'Headmistress — own-school oversight only.',
 			4 => 'Dean — own-school oversight only.',
@@ -2502,7 +2502,7 @@ class BudgetCashflow extends Home
 				: session('soma_school');
 		}
 
-		// Multi-school overview (DoF / Principal / Budget Manager at master)
+		// Multi-school overview (DoF / Executive Principal / Budget Manager at master)
 		$data['school_report_rows'] = [];
 		if ($canMonitorAll && ($monitorAllSchools || $tab === 'summary')) {
 			foreach ($reportBranches as $br) {

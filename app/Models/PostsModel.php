@@ -12,6 +12,10 @@ class PostsModel extends Model
 	protected $createdField  = 'created_at';
 	protected $updatedField  = 'updated_at';
 
+	/** Leadership post shown as Executive Principal (legacy title: Principal). */
+	public const PRINCIPAL_ID = 15;
+	public const PRINCIPAL_TITLE = 'Executive Principal';
+
 	/** Head Teacher / Deputy Head Teacher — used on staff creation privilege list. */
 	public const HEAD_TEACHER_ID = 25;
 	public const DEPUTY_HEAD_TEACHER_ID = 26;
@@ -31,6 +35,7 @@ class PostsModel extends Model
 		}
 		$ready = true;
 		$db = \Config\Database::connect();
+		$this->renameExactPostTitle(self::PRINCIPAL_ID, 'Principal', self::PRINCIPAL_TITLE);
 		$wanted = [
 			self::HEAD_TEACHER_ID => 'Head Teacher',
 			self::DEPUTY_HEAD_TEACHER_ID => 'Deputy Head Teacher',
@@ -67,6 +72,29 @@ class PostsModel extends Model
 				// ignore
 			}
 			$this->ensureDefaultRestrictedClearance($id, $title);
+		}
+	}
+
+	/** Rename a built-in post when the current title still matches the legacy label. */
+	private function renameExactPostTitle(int $id, string $from, string $to): void
+	{
+		if ($id < 1 || $from === '' || $to === '' || strcasecmp($from, $to) === 0) {
+			return;
+		}
+		try {
+			$db = \Config\Database::connect();
+			$clash = $db->table('posts')->where('title', $to)->where('id !=', $id)->get(1)->getRowArray();
+			if ($clash) {
+				return;
+			}
+			$row = $db->table('posts')->where('id', $id)->get(1)->getRowArray();
+			if ($row && strcasecmp(trim((string) ($row['title'] ?? '')), $from) === 0) {
+				$db->table('posts')->where('id', $id)->update(['title' => $to, 'status' => 1]);
+				return;
+			}
+			$db->table('posts')->where('title', $from)->update(['title' => $to]);
+		} catch (\Throwable $e) {
+			// ignore rename failures; existing title still works
 		}
 	}
 

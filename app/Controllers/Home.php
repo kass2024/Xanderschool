@@ -3299,7 +3299,7 @@ public function testEmail()
 		return $this->response->setJSON(['success' => 'Document deleted for current academic year']);
 	}
 
-	/** Posts allowed for AI academic plans (DoS, HM, Headmistress, Principal, IT, Librarian, Matron, Patron). */
+	/** Posts allowed for AI academic plans (DoS, HM, Headmistress, Executive Principal, IT, Librarian, Matron, Patron). */
 	private function academicPlanPosts(): array
 	{
 		return GeminiAcademicDocs::ALLOWED_POSTS;

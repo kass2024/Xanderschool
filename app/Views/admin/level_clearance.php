@@ -93,7 +93,7 @@ $centralFlip = array_flip($masterCentralPosts ?? []);
 								<ul class="mb-0 mt-2 small">
 									<li><strong>Full control (everything):</strong> #24 Director of Finance — prepare, edit, approve, cash requests (all schools).</li>
 									<li><strong>Prepare &amp; fill budget:</strong> #8 Cashier, #9 Accountant, #28 Chief Accountant (all schools).</li>
-									<li><strong>Budget Dashboard — all child schools:</strong> #24 Director of Finance, #19 Budget Manager, #15 Principal (master school only).</li>
+									<li><strong>Budget Dashboard — all child schools:</strong> #24 Director of Finance, #19 Budget Manager, #15 Executive Principal (master school only).</li>
 									<li><strong>View-only own school</strong> (no Prepare / Start; no all-branches table):
 										#1 Head master, #3 Director of studies, #4 Dean of discipline, #18 Headmistress, #25 Head Teacher, #26 Deputy Head Teacher, #29 Director, #30 Deputy Director.</li>
 									<li><strong>Child schools — all other posts:</strong> Finance menu is hidden.</li>
