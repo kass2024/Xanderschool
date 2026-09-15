@@ -1212,6 +1212,13 @@ class TimetableManagement extends Home
 		if ($filtered['rejected'] !== []) {
 			$allWarnings[] = 'Parked ' . count($filtered['rejected'])
 				. ' lesson(s) that would have put a teacher in two classes or two teachers in one class.';
+			foreach ($filtered['rejected'] as $rejected) {
+				$rejected['day_of_week'] = -1;
+				$rejected['slot_id'] = 0;
+				$rejected['is_locked'] = 0;
+				unset($rejected['_reject_reason']);
+				$filtered['kept'][] = $rejected;
+			}
 		}
 		$allEntries = $filtered['kept'];
 
@@ -2833,24 +2840,38 @@ class TimetableManagement extends Home
 		$data['conflict_entry_ids'] = [];
 		$data['staging_remaining'] = 0;
 
-		if ($includeInteractiveData && $schedule && $entityId > 0) {
+		if ($schedule && $entityId > 0) {
 			try {
-				$assignments = $this->loadAssignments($schoolId, $year, $term);
-				$staging = new TimetableStagingService();
-				if ($mode === 'class') {
-					$staging->reconcile((int) $schedule['id'], $schoolId, $assignments, $entityId, 0);
-					$staging->autoPlaceStaging((int) $schedule['id'], $schoolId, $schema, $entityId, 0);
-				} else {
-					$staging->reconcile((int) $schedule['id'], $schoolId, $assignments, 0, $entityId);
-					$staging->autoPlaceStaging((int) $schedule['id'], $schoolId, $schema, 0, $entityId);
+				if ($includeInteractiveData) {
+					$assignments = $this->loadAssignments($schoolId, $year, $term);
+					$staging = new TimetableStagingService();
+					if ($mode === 'class') {
+						$staging->reconcile((int) $schedule['id'], $schoolId, $assignments, $entityId, 0);
+						$staging->autoPlaceStaging((int) $schedule['id'], $schoolId, $schema, $entityId, 0);
+					} else {
+						$staging->reconcile((int) $schedule['id'], $schoolId, $assignments, 0, $entityId);
+						$staging->autoPlaceStaging((int) $schedule['id'], $schoolId, $schema, 0, $entityId);
+					}
+					$stagingCounts = $staging->counts(
+						(int) $schedule['id'],
+						$assignments,
+						$mode === 'class' ? $entityId : 0,
+						$mode === 'teacher' ? $entityId : 0
+					);
+					$data['staging_remaining'] = (int) ($stagingCounts['remaining'] ?? 0);
+
+					$checker = new TimetableConflictService();
+					foreach ($checker->findScheduleConflicts((int) $schedule['id'], $schoolId, $schema) as $issue) {
+						$eid = (int) ($issue['entry_id'] ?? 0);
+						$oid = (int) ($issue['other_id'] ?? 0);
+						if ($eid > 0) {
+							$data['conflict_entry_ids'][$eid] = true;
+						}
+						if ($oid > 0) {
+							$data['conflict_entry_ids'][$oid] = true;
+						}
+					}
 				}
-				$stagingCounts = $staging->counts(
-					(int) $schedule['id'],
-					$assignments,
-					$mode === 'class' ? $entityId : 0,
-					$mode === 'teacher' ? $entityId : 0
-				);
-				$data['staging_remaining'] = (int) ($stagingCounts['remaining'] ?? 0);
 
 				$stagingBuilder = $db->table('timetable_entries te')
 					->select('te.*, c.title AS course_title, c.code AS course_code,
@@ -2871,18 +2892,8 @@ class TimetableManagement extends Home
 					$stagingBuilder->where('te.staff_id', $entityId);
 				}
 				$data['staging_entries'] = $stagingBuilder->get()->getResultArray();
-
-				// Only flag conflicts that touch this class/teacher (full-school scan is too heavy for preview).
-				$checker = new TimetableConflictService();
-				foreach ($checker->findScheduleConflicts((int) $schedule['id'], $schoolId, $schema) as $issue) {
-					$eid = (int) ($issue['entry_id'] ?? 0);
-					$oid = (int) ($issue['other_id'] ?? 0);
-					if ($eid > 0) {
-						$data['conflict_entry_ids'][$eid] = true;
-					}
-					if ($oid > 0) {
-						$data['conflict_entry_ids'][$oid] = true;
-					}
+				if (!$includeInteractiveData) {
+					$data['staging_remaining'] = count($data['staging_entries']);
 				}
 			} catch (\Throwable $e) {
 				log_message('error', 'Timetable staging/conflicts skipped: {msg}', ['msg' => $e->getMessage()]);

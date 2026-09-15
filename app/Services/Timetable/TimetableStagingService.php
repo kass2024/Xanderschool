@@ -519,6 +519,19 @@ class TimetableStagingService
 		}
 
 		$placed = 0;
+		usort($parking, function (array $a, array $b): int {
+			$rank = function (array $entry): int {
+				$meta = $this->metaForEntry($entry);
+				if ($this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($meta)) {
+					return 0;
+				}
+				if (TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''))) {
+					return 1;
+				}
+				return 2;
+			};
+			return $rank($a) <=> $rank($b);
+		});
 		foreach ($parking as $entry) {
 			$key = $this->keyFromEntry($entry);
 			$meta = $this->metaForEntry($entry);

@@ -323,12 +323,16 @@ class TimetableGeneratorService
 			if (++$guard > $maxGuard) {
 				foreach ($lessonNeeds as $stuck) {
 					$assignment = $stuck['assignment'];
+					$left = max(1, min((int) $stuck['block_size'], (int) $stuck['hours']));
+					for ($p = 0; $p < $left; $p++) {
+						$entries[] = $this->parkingEntry($assignment);
+					}
 					$classLabel = TimetableClassLabel::fromRow($assignment);
 					$teacher = trim((string) ($assignment['teacher_name'] ?? ''));
 					$this->warnings[] = 'Could not place ' . ($assignment['course_title'] ?? 'course')
 						. ' in ' . ($classLabel !== '' ? $classLabel : 'class')
 						. ($teacher !== '' ? ' (' . $teacher . ')' : '')
-						. ' — ' . (int) $stuck['block_size'] . ' period(s)';
+						. ' — parked ' . $left . ' period(s) below the grid';
 				}
 				break;
 			}
@@ -384,12 +388,15 @@ class TimetableGeneratorService
 				]);
 			} else {
 				$assignment = $need['assignment'];
+				for ($p = 0; $p < max(1, $blockSize); $p++) {
+					$entries[] = $this->parkingEntry($assignment);
+				}
 				$classLabel = TimetableClassLabel::fromRow($assignment);
 				$teacher = trim((string) ($assignment['teacher_name'] ?? ''));
 				$this->warnings[] = 'Could not place ' . ($assignment['course_title'] ?? 'course')
 					. ' in ' . ($classLabel !== '' ? $classLabel : 'class')
 					. ($teacher !== '' ? ' (' . $teacher . ')' : '')
-					. ' — ' . $blockSize . ' period(s)';
+					. ' — parked ' . $blockSize . ' period(s) below the grid';
 			}
 			$processed++;
 			if ($this->progressHandler !== null && ($processed % 4 === 0 || $lessonNeeds === [])) {
@@ -720,7 +727,8 @@ class TimetableGeneratorService
 		if ($placeAsHomework) {
 			$windows = [3, 2, 1, 0];
 		} elseif ($lastHour) {
-			$windows = [1, 2];
+			// Last teaching hours first; then any legal teaching slot so the course is never dropped.
+			$windows = [1, 2, 0];
 		} else {
 			$windows = [0];
 		}
@@ -966,7 +974,7 @@ class TimetableGeneratorService
 					if ($lastHourAllowed !== [] && !isset($lastHourAllowed[$i])) {
 						continue;
 					}
-					if (!$this->slotIsLastTeachingHour($this->teachingSlots[$i] ?? [])) {
+					if ($endOfDayWindow > 0 && !$this->slotIsLastTeachingHour($this->teachingSlots[$i] ?? [])) {
 						continue;
 					}
 				} elseif ($endOfDayWindow > 0 && $i < $lateStartIndex) {
@@ -1007,7 +1015,7 @@ class TimetableGeneratorService
 							if ($lastHourAllowed !== [] && !isset($lastHourAllowed[$j])) {
 								continue;
 							}
-							if (!$this->slotIsLastTeachingHour($this->teachingSlots[$j] ?? [])) {
+							if ($endOfDayWindow > 0 && !$this->slotIsLastTeachingHour($this->teachingSlots[$j] ?? [])) {
 								continue;
 							}
 						} elseif ($endOfDayWindow > 0 && $j < $lateStartIndex) {
@@ -1301,7 +1309,7 @@ class TimetableGeneratorService
 		$enforce = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupied !== [];
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($row);
-		$windows = $peSport ? [1, 2] : [0];
+		$windows = $peSport ? [1, 2, 0] : [0];
 		foreach ($windows as $window) {
 			$morningFirst = !$peSport && !$afterLessons && $window === 0;
 			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $window, $morningFirst));
@@ -1755,6 +1763,20 @@ class TimetableGeneratorService
 			return 8000;
 		}
 		return (int) $fromEnd * 800;
+	}
+
+	/** Unscheduled Manage Course period — shown in the grid below the timetable. */
+	private function parkingEntry(array $row): array
+	{
+		return [
+			'class_id' => (int) ($row['class_id'] ?? 0),
+			'staff_id' => (int) ($row['lecturer'] ?? 0),
+			'course_id' => (int) ($row['course_id'] ?? 0),
+			'course_record_id' => (int) ($row['course_record_id'] ?? 0),
+			'day_of_week' => -1,
+			'slot_id' => 0,
+			'entry_type' => 'lesson',
+		];
 	}
 
 	private function isMathematicsCourse(string $title): bool

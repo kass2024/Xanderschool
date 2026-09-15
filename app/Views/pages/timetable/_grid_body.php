@@ -195,24 +195,26 @@ foreach ($grid ?? [] as $scanRow) {
 		<?php if ($hasCombined): ?>
 			<div class="tt-combined-legend">Colored cells are combined classes (same subject + same teacher). Partner class names are listed on the cell.</div>
 		<?php endif; ?>
-		<?php if ($editable): ?>
-		<div class="tt-staging-dock tt-staging-parking tt-staging-bottom mt-2" id="ttStagingDockBottom" data-drop-zone="parking">
+		<?php if ($editable || !empty($staging_entries)): ?>
+		<div class="tt-staging-dock tt-staging-parking tt-staging-bottom mt-2" id="ttStagingDockBottom"<?= $editable ? ' data-drop-zone="parking"' : ''; ?>>
 			<div class="tt-staging-label">
 				<i class="fa fa-level-down"></i>
-				Unscheduled lessons
-				<?php if (!empty($staging_remaining)): ?>
-					<span class="badge badge-warning ml-1"><?= (int) $staging_remaining; ?> period(s) to place</span>
+				Periods from Manage Course not on this grid
+				<?php if (!empty($staging_remaining) || !empty($staging_entries)): ?>
+					<span class="badge badge-warning ml-1"><?= (int) ($staging_remaining ?: count($staging_entries)); ?> period(s)</span>
 				<?php endif; ?>
-				— drag into a free (green) cell when space is available
+				<?= $editable ? ' — drag into a free (green) cell when space is available' : ' — kept below to avoid a teacher or class collision'; ?>
 			</div>
 			<div class="tt-staging-items">
 				<?php if (!empty($staging_entries)): ?>
 					<?php foreach ($staging_entries as $st): ?>
-						<div class="tt-staging-chip tt-lesson-chip"
+						<div class="tt-staging-chip<?= $editable ? ' tt-lesson-chip' : ''; ?>"
+							<?php if ($editable): ?>
 							draggable="true"
 							data-entry-id="<?= (int) $st['id']; ?>"
 							data-staff-id="<?= (int) ($st['staff_id'] ?? 0); ?>"
 							data-class-id="<?= (int) ($st['class_id'] ?? 0); ?>"
+							<?php endif; ?>
 							title="<?= esc($st['course_title'] ?? ''); ?>">
 							<strong><?= esc($st['course_title'] ?? 'Lesson'); ?></strong>
 							<span><?= esc($mode === 'class' ? ($st['teacher_name'] ?? '') : \App\Libraries\TimetableClassLabel::fromRow($st)); ?></span>

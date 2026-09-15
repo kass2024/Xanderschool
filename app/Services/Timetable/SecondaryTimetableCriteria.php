@@ -275,11 +275,6 @@ class SecondaryTimetableCriteria
 			}
 			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
 		}
-		if ($this->prefersLastHour($row)) {
-			if (!\App\Models\TimetableSchemaModel::isLastTeachingHourSlotTimes($slotStart, $slotEnd)) {
-				return false;
-			}
-		}
 		if ($day === 6) {
 			if (!self::isSecondaryTrack($row) || !$this->allowsSunday($row, $slotStart, $slotEnd)) {
 				return false;
@@ -879,7 +874,7 @@ class SecondaryTimetableCriteria
 			['group' => 'Blocks', 'title' => '4 and 6 periods', 'detail' => 'At least two periods together (doubles).'],
 			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
-			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching hours of the day (14:20–15:40, preferring 15:00–15:40). Never after 15:40, never mid-morning or just after lunch. GISUBIZO SAMUEL / PE is locked there. At most one PE period per class day.'],
+			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Prefer the last teaching hours (14:20–15:40, especially 15:00–15:40). Never after 15:40. If last hours would collide (same teacher in two classes), use another free teaching period so PE is still on the class and teacher grids. At most one PE period per class day. Any period that still cannot fit is listed below the timetable.'],
 			['group' => 'After lessons', 'title' => 'Farming / Library and Clubs', 'detail' => 'Always after lessons end (15:40–17:30). Never during the teaching day, never night preps or supper.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
 			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
