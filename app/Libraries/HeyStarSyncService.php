@@ -64,10 +64,10 @@ class HeyStarSyncService
 			'sevUploadRecSnapshotEnable' => 1,
 			'sevUploadRecStrangerDataEnable' => 0,
 		]);
-		// Official LAN API: pciLedAlwaysEnable = fill light always on (night IR).
-		// Do not use undocumented ir_* keys — they do not control the fill light.
+		// Fill light auto (on when a face is present). Always-on washes faces and
+		// causes false matches — do not force pciLedAlwaysEnable=1.
 		$client->post('device/setPciConfig', [
-			'pciLedAlwaysEnable' => 1,
+			'pciLedAlwaysEnable' => 0,
 			'pciLedColorStranger' => 1,
 			'pciRelayOut' => 1,
 			'pciRelayMode' => 1,
@@ -79,14 +79,17 @@ class HeyStarSyncService
 			'recModeFingerEnable' => 0,
 			'recModePalmEnable' => 0,
 		]);
-		// Night-friendly recognition: face on, no liveness reject, slightly lower threshold.
+		// Accurate recognition: stricter score, monocular liveness, ~1.5m, registered-only.
 		$client->post('device/setRecConfig', [
-			'recThreshold1vN' => 55,
-			'recThreshold1v1' => 50,
-			'recInterval' => 2,
-			'recDistance' => 0,
-			'recRank' => 1,
+			'recThreshold1vN' => 75,
+			'recThreshold1v1' => 68,
+			'recInterval' => 3,
+			'recDistance' => 3,
+			'recRank' => 2,
 			'recStrangerEnable' => 0,
+			'recIsStrangerTimes' => 2,
+			'recStrangerOpenDoor' => 0,
+			'recMultiplayer' => 0,
 		]);
 		// Keep the live camera always ready. IN/OUT is decided on Xander from the
 		// staff shift (same toggle as the web scanner), not Check-In / Check-Out taps.
@@ -260,18 +263,21 @@ class HeyStarSyncService
 		}
 		$uiRes = $client->post('device/setUiConfig', $ui, 60);
 		$recRes = $client->post('device/setRecConfig', [
-			'recRank' => 1,
-			'recThreshold1vN' => 72,
-			'recThreshold1v1' => 65,
+			'recRank' => 2,
+			'recThreshold1vN' => 75,
+			'recThreshold1v1' => 68,
+			'recInterval' => 3,
+			'recDistance' => 3,
 			'recSucTtsMode' => 2,
 			'recSucDisplayMode' => 1,
 			'recRecordUploadMode' => 2,
 			'recRecordSave' => 1,
-			'recStrangerEnable' => 1,
-			'recIsStrangerTimes' => 1,
-			'recStrangerTtsMode' => 2,
+			'recStrangerEnable' => 0,
+			'recIsStrangerTimes' => 2,
+			'recStrangerTtsMode' => 1,
 			'recStrangerDisplayMode' => 1,
 			'recStrangerOpenDoor' => 0,
+			'recMultiplayer' => 0,
 			'recNoPerTtsMode' => 2,
 			'recNotBioTtsMode' => 1,
 			'recNotBioDisplayMode' => 1,
