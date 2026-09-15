@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Xander School — Timetable working process &amp; check list</title>
+	<style>
+		:root {
+			--ink: #0f172a;
+			--muted: #475569;
+			--line: #cbd5e1;
+			--bg: #f8fafc;
+			--card: #ffffff;
+			--teal: #0f766e;
+			--teal-soft: #ccfbf1;
+			--amber: #b45309;
+			--amber-soft: #ffedd5;
+			--blue: #1d4ed8;
+			--blue-soft: #dbeafe;
+			--rose: #be123c;
+			--rose-soft: #ffe4e6;
+		}
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+			color: var(--ink);
+			background: var(--bg);
+		}
+		.wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 64px; }
+		h1 { font-size: 1.7rem; margin: 0 0 6px; }
+		h2 { font-size: 1.2rem; margin: 32px 0 12px; border-bottom: 2px solid var(--teal); padding-bottom: 6px; }
+		h3 { font-size: 1rem; margin: 18px 0 8px; }
+		.sub { color: var(--muted); margin: 0 0 22px; }
+		.hero {
+			background: linear-gradient(135deg, #0f766e, #134e4a);
+			color: #ecfdf5;
+			border-radius: 14px;
+			padding: 22px 24px;
+			margin-bottom: 22px;
+		}
+		.hero h1 { color: #fff; }
+		.hero .sub { color: #ccfbf1; }
+		.grid { display: grid; gap: 12px; }
+		@media (min-width: 800px) {
+			.cols-2 { grid-template-columns: 1fr 1fr; }
+			.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+		}
+		.card {
+			background: var(--card);
+			border: 1px solid var(--line);
+			border-radius: 10px;
+			padding: 14px 16px;
+		}
+		.tag {
+			display: inline-block;
+			font-size: 0.7rem;
+			font-weight: 700;
+			letter-spacing: .04em;
+			text-transform: uppercase;
+			padding: 2px 8px;
+			border-radius: 999px;
+			margin-right: 6px;
+		}
+		.tag-check { background: var(--teal-soft); color: var(--teal); }
+		.tag-teacher { background: var(--blue-soft); color: var(--blue); }
+		.tag-class { background: var(--amber-soft); color: var(--amber); }
+		.tag-fail { background: var(--rose-soft); color: var(--rose); }
+		ol.process { padding-left: 20px; }
+		ol.process li { margin: 8px 0; }
+		table { width: 100%; border-collapse: collapse; font-size: 0.92rem; background: #fff; }
+		th, td { border: 1px solid var(--line); padding: 8px 10px; vertical-align: top; text-align: left; }
+		th { background: #f1f5f9; }
+		tr.priority td:first-child { font-weight: 700; }
+		.check { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
+		.check input { margin-top: 4px; }
+		.note { font-size: 0.88rem; color: var(--muted); }
+		.flow {
+			display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+			margin: 12px 0 4px;
+		}
+		.flow span {
+			background: #fff;
+			border: 1px solid var(--line);
+			border-radius: 8px;
+			padding: 8px 10px;
+			font-size: 0.85rem;
+			font-weight: 600;
+		}
+		.flow .arrow { border: 0; background: none; color: var(--teal); font-weight: 700; padding: 0; }
+		footer { margin-top: 36px; color: var(--muted); font-size: 0.82rem; }
+		@media print {
+			body { background: #fff; }
+			.hero { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+			.wrap { padding: 0; }
+		}
+	</style>
+</head>
+<body>
+<div class="wrap">
+	<div class="hero">
+		<h1>Timetable working process &amp; what to check</h1>
+		<p class="sub">High school only (O Level, A Level, TVET, Special). Nursery and primary are not covered by these locked rules. Generate with <strong>Replace locked timetable</strong> before checking.</p>
+	</div>
+
+	<h2>1. Which timetables to open first</h2>
+	<p>Open the <strong>teacher</strong> view for named staff, then the <strong>class</strong> view for the streams in each combine group. A Combined badge should appear on both.</p>
+
+	<div class="grid cols-2">
+		<div class="card">
+			<h3><span class="tag tag-teacher">Teacher views — must check</span></h3>
+			<ol>
+				<li><strong>IZABAYO Patience</strong> — Tuesday 07:00–12:00 full, Friday 10:00–12:00, leftover on Sunday</li>
+				<li><strong>ALICE NAMAHORO</strong> — no lessons on Monday; Computer Science S6 MPC + MCE combined</li>
+				<li><strong>NTEZIYAREMYE Innocent</strong> — Mon 10:00–12:00, Wed 07:00–10:00, Fri 10:00–12:00</li>
+				<li><strong>NDAYIZEYE Eric</strong> — L3 SOD only: Mon–Tue 07:00–10:00</li>
+				<li><strong>UBANANAYO Olivier</strong> — Friday 07:00–10:00</li>
+				<li><strong>NTABANGANYIMANA Varlette</strong> — ANP mornings Tue–Thu, plus Thu 09:00–12:00, Fri 08:00–12:00</li>
+				<li><strong>MARGUERITTE Uwimana</strong> — Mon morning, Wed morning, Thu morning + one after lunch</li>
+				<li><strong>LINEA Kubahoniyesu</strong> — ANP mornings Tue–Thu, Thu 09:20–15:40, Fri 09:20–12:00</li>
+				<li><strong>Any teacher not in that list</strong> — periods should start from morning (07:00–12:00) before afternoon</li>
+			</ol>
+		</div>
+		<div class="card">
+			<h3><span class="tag tag-class">Class views — must check</span></h3>
+			<ol>
+				<li><strong>S4 ANP and S5 ANP</strong> — Tuesday 07:00–12:00 empty of normal lessons (clinical)</li>
+				<li><strong>S6 ANP</strong> — Wednesday 07:00–16:00 empty of normal lessons (clinical)</li>
+				<li><strong>S4 Stream 1 and Stream 2</strong> — each listed subject is Combined on its own clock (ICT together, Physics together, Maths together, …). Different subjects never share one period.</li>
+				<li><strong>S5 Stream 1, Stream 2, ANP, PCB, HCB</strong> — see combine table below</li>
+				<li><strong>S6 MPC, MCE, MCB, MEG, MPG, PCM, PCB, ANP</strong> — large combine groups (Maths, Physics, English, GS…)</li>
+				<li><strong>Any class with PE</strong> — at most one PE period per day</li>
+				<li><strong>Any 5-period subject not combined</strong> — should show 2+2+1 (three sessions, not five singles)</li>
+			</ol>
+		</div>
+	</div>
+
+	<h2>2. How generation works</h2>
+	<div class="flow">
+		<span>1. Load Manage Course assignments</span>
+		<span class="arrow">→</span>
+		<span>2. Apply locked document rules</span>
+		<span class="arrow">→</span>
+		<span>3. Place combined groups first</span>
+		<span class="arrow">→</span>
+		<span>4. Copy the same slot onto every partner class</span>
+		<span class="arrow">→</span>
+		<span>5. Place remaining courses (morning first)</span>
+	</div>
+	<div class="card">
+		<ol class="process">
+			<li><strong>Scope.</strong> These rules run only for high school tracks. Nursery and primary keep their own generators.</li>
+			<li><strong>Locked criteria.</strong> Alice’s Monday ban, named teacher windows, clinical hours, and combine groups are never dropped when a teacher looks overloaded.</li>
+			<li><strong>Blocks (consecutive hours).</strong> Weekly periods are split before placement:
+				<ul>
+					<li>4 or 6 periods → doubles only (2+2 or 2+2+2)</li>
+					<li>3, 5 or 7 periods → 2 together and 1 separate (5 → 2+2+1 = <em>3 teacher sessions</em>)</li>
+					<li>2 periods → two singles on different days</li>
+					<li>PE → one period per class day (never a double)</li>
+				</ul>
+			</li>
+			<li><strong>Combine (document only).</strong> Each Word-file row is <em>one subject + one teacher + listed classes</em> on one shared clock. ICT S4 Stream 1+2 is a different lesson from Physics S4 Stream 1+2. If the two streams have different teachers for that subject, they are <em>not</em> combined. Courses not in the Word file are never combined.</li>
+			<li><strong>Named teachers.</strong> Innocent, Eric (L3 SOD), Olivier, Varlette, Marguerite, Linea, Patience, Alice may only sit in their document windows.</li>
+			<li><strong>Everyone else.</strong> Normal placement, filling from morning periods first, then afternoon if morning is full.</li>
+			<li><strong>Maths &amp; Physics</strong> prefer 07:00–12:00. ANP teaching prefers Tuesday–Thursday mornings.</li>
+			<li><strong>Clinical.</strong> S4/S5 ANP Tuesday 07:00–12:00 and S6 ANP Wednesday 07:00–16:00 stay free of ordinary lessons.</li>
+			<li><strong>Lock.</strong> Combined and windowed lessons are saved locked. A later generate will not move them unless you check <strong>Replace locked timetable</strong>.</li>
+		</ol>
+	</div>
+
+	<h2>3. Priority check list (do these in order)</h2>
+	<table>
+		<thead>
+			<tr>
+				<th>Order</th>
+				<th>Open this timetable</th>
+				<th>What must be true</th>
+				<th>Fail if…</th>
+			</tr>
+		</thead>
+		<tbody>
+			<tr class="priority">
+				<td>1</td>
+				<td>Teacher: <strong>IZABAYO Patience</strong></td>
+				<td>Tuesday before lunch (07:00–12:00) filled first; then Friday after break (10:00–12:00); leftover only on Sunday.</td>
+				<td>Lessons on Monday/Wednesday/Thursday, or Tuesday after lunch while Tuesday morning is empty.</td>
+			</tr>
+			<tr class="priority">
+				<td>2</td>
+				<td>Teacher: <strong>ALICE NAMAHORO</strong></td>
+				<td>No Monday. Computer Science for S6 MPC and S6 MCE is one Combined lesson at the same time.</td>
+				<td>Any Monday cell, or CS appearing twice at different times for MPC vs MCE.</td>
+			</tr>
+			<tr class="priority">
+				<td>3</td>
+				<td>Teacher of <strong>Mathematics S6</strong> (MCB+MCE+MEG+MPC+MPG+PCM)</td>
+				<td>One Combined cell listing those classes. Teacher load is 3 sessions for a 5-period course, not 30.</td>
+				<td>Six separate maths lessons in the same week-slot, or no Combined badge.</td>
+			</tr>
+			<tr>
+				<td>4</td>
+				<td>Classes <strong>S4 Stream 1</strong> and <strong>S4 Stream 2</strong></td>
+				<td>Each of ICT, Physics, Maths, Entrepreneurship, GS, Kinyarwanda, English is Combined <strong>separately</strong>: ST1 and ST2 share the clock for that one subject only, and only if it is the same teacher.</td>
+				<td>ICT sitting on Physics’ period, or ST1 Physics Combined with ST2 English, or different teachers sharing a Combined badge.</td>
+			</tr>
+			<tr>
+				<td>5</td>
+				<td>Classes <strong>S4 ANP</strong>, <strong>S5 ANP</strong>, <strong>S6 ANP</strong></td>
+				<td>S4/S5: Tuesday morning free. S6: Wednesday full day free. No ordinary lesson in those clinical windows.</td>
+				<td>Chemistry/Maths/etc. sitting on those clinical hours.</td>
+			</tr>
+			<tr>
+				<td>6</td>
+				<td>Teacher: Innocent, Eric, Olivier, Varlette, Marguerite, Linea</td>
+				<td>Lessons only inside their windows (table in section 5).</td>
+				<td>A lesson outside the window (e.g. Innocent on Tuesday).</td>
+			</tr>
+			<tr>
+				<td>7</td>
+				<td>Any class — pick a <strong>5-period</strong> and a <strong>2-period</strong> subject</td>
+				<td>5-period: two doubles and one single. 2-period: two different days, not a double.</td>
+				<td>Five isolated singles, or both 2-period lessons on the same day.</td>
+			</tr>
+			<tr>
+				<td>8</td>
+				<td>Any class with <strong>PE</strong></td>
+				<td>At most one PE period per day, spread across the week.</td>
+				<td>A PE double, or all PE piled on one day.</td>
+			</tr>
+			<tr>
+				<td>9</td>
+				<td>A teacher <strong>not listed</strong> in the Word file</td>
+				<td>Morning cells fill before afternoon. Periods still complete.</td>
+				<td>Afternoon full while morning still empty.</td>
+			</tr>
+			<tr>
+				<td>10</td>
+				<td>A same-teacher subject <strong>not</strong> in the combine list</td>
+				<td>Each class has its own lesson (not Combined).</td>
+				<td>Unexpected Combined badge on a course the document never listed.</td>
+			</tr>
+		</tbody>
+	</table>
+
+	<h2>4. Combined courses to verify (document only)</h2>
+	<p class="note">Each row below is its own lesson. S4 Stream 1 and Stream 2 do <strong>not</strong> put ICT, Physics, Maths, Entrepreneurship, GS, Kinyarwanda and English on one clock. On the class timetable you should see the subject + Combined + the partner class names. On the teacher timetable you should see one cell with all class names joined by +.</p>
+	<table>
+		<thead>
+			<tr><th>Subject</th><th>Level</th><th>Classes that must share one teacher slot</th></tr>
+		</thead>
+		<tbody>
+			<tr><td>Computer Science</td><td>S6</td><td>MPC + MCE</td></tr>
+			<tr><td>ICT</td><td>S5</td><td>Stream 1 + Stream 2</td></tr>
+			<tr><td>ICT</td><td>S4</td><td>Stream 1 + Stream 2</td></tr>
+			<tr><td>Chemistry</td><td>S5</td><td>ANP + Stream 1</td></tr>
+			<tr><td>Chemistry</td><td>S6</td><td>MCB + PCB</td></tr>
+			<tr><td>Physics</td><td>S4</td><td>Stream 1 + Stream 2</td></tr>
+			<tr><td>Physics</td><td>S5</td><td>ANP + Stream 1 + Stream 2</td></tr>
+			<tr><td>Physics</td><td>S6</td><td>PCB + PCM + MPC + ANP + MPG</td></tr>
+			<tr><td>Mathematics</td><td>S4</td><td>Stream 1 + Stream 2</td></tr>
+			<tr><td>Mathematics</td><td>S5</td><td>Stream 1 + Stream 2 (prefer morning)</td></tr>
+			<tr><td>Mathematics</td><td>S6</td><td>ANP + PCB</td></tr>
+			<tr><td>Mathematics</td><td>S6</td><td>MCB + MCE + MEG + MPC + MPG + PCM</td></tr>
+			<tr><td>Economics</td><td>S6</td><td>MCE + MEG</td></tr>
+			<tr><td>Entrepreneurship</td><td>S4 / S5</td><td>Stream 1 + Stream 2</td></tr>
+			<tr><td>Entrepreneurship</td><td>S6</td><td>MCE + MPG + PCB + MCB + MEG + MPC + PCM</td></tr>
+			<tr><td>General Studies</td><td>S4 / S5</td><td>Stream 1 + Stream 2</td></tr>
+			<tr><td>General Studies</td><td>S6</td><td>MPC + MCB + MCE + MPG + MEG + PCM + PCB</td></tr>
+			<tr><td>Geography</td><td>S6</td><td>MEG + MPG</td></tr>
+			<tr><td>Biology</td><td>S5</td><td>ANP + Stream 1, and separately PCB + HCB</td></tr>
+			<tr><td>Biology</td><td>S6</td><td>ANP + MCB + PCB</td></tr>
+			<tr><td>Kinyarwanda</td><td>S4 / S5</td><td>Stream 1 + Stream 2</td></tr>
+			<tr><td>Kinyarwanda</td><td>S6</td><td>MCE + MPC + PCB + PCM + MEG</td></tr>
+			<tr><td>English</td><td>S4 / S5</td><td>Stream 1 + Stream 2</td></tr>
+			<tr><td>English</td><td>S6</td><td>MCE + MPC + PCB + PCM + MEG + MCB + MPG</td></tr>
+		</tbody>
+	</table>
+
+	<h2>5. Named teacher windows</h2>
+	<table>
+		<thead>
+			<tr><th>Teacher</th><th>Allowed times</th></tr>
+		</thead>
+		<tbody>
+			<tr><td>Alice Namahoro</td><td>Any teaching day except Monday. CS S6 MPC+MCE combined.</td></tr>
+			<tr><td>IZABAYO Patience</td><td>Tue 07:00–12:00 (fill first), Fri 10:00–12:00, remaining Sunday.</td></tr>
+			<tr><td>NTEZIYAREMYE Innocent</td><td>Mon 10:00–12:00, Wed 07:00–10:00, Fri 10:00–12:00.</td></tr>
+			<tr><td>NDAYIZEYE Eric</td><td>L3 SOD: Mon 07:00–10:00, Tue 07:00–10:00. Other classes unrestricted.</td></tr>
+			<tr><td>UBANANAYO Olivier</td><td>Friday 07:00–10:00.</td></tr>
+			<tr><td>NTABANGANYIMANA Varlette</td><td>ANP Tue–Thu mornings; Thu 09:00–12:00; Fri 08:00–12:00.</td></tr>
+			<tr><td>MARGUERITTE Uwimana</td><td>Mon morning, Wed morning, Thu morning plus one period after lunch.</td></tr>
+			<tr><td>LINEA Kubahoniyesu</td><td>ANP Tue–Thu mornings; Thu 09:20–15:40; Fri 09:20–12:00.</td></tr>
+		</tbody>
+	</table>
+
+	<h2>6. Printable tick sheet</h2>
+	<div class="card">
+		<div class="check"><input type="checkbox"> Patience: Tuesday morning full before Friday / Sunday</div>
+		<div class="check"><input type="checkbox"> Alice: no Monday; CS S6 MPC + MCE Combined</div>
+		<div class="check"><input type="checkbox"> Innocent / Eric / Olivier / Varlette / Marguerite / Linea inside windows</div>
+		<div class="check"><input type="checkbox"> S4/S5 ANP Tuesday morning clinical; S6 ANP Wednesday clinical</div>
+		<div class="check"><input type="checkbox"> Maths S6 six-stream group Combined (one teacher cell)</div>
+		<div class="check"><input type="checkbox"> Physics S5 ANP+ST1+ST2 Combined</div>
+		<div class="check"><input type="checkbox"> S4 ST1 vs ST2: ICT Combined on its own clock; Physics on a different clock; never all subjects at once</div>
+		<div class="check"><input type="checkbox"> 5-period course uses 2+2+1; 2-period course on two days</div>
+		<div class="check"><input type="checkbox"> PE at most once per class day</div>
+		<div class="check"><input type="checkbox"> Unlisted teacher fills morning before afternoon</div>
+		<div class="check"><input type="checkbox"> A course not in the Word file is <em>not</em> Combined</div>
+	</div>
+
+	<footer>
+		Xander School timetable guide · sourced from <em>Timetable_Generation_Criteria_and_Teaching_Notes</em> · high school rules only.
+		Open this file from <code>public/timetable-criteria-guide.html</code> or print it as a PDF.
+	</footer>
+</div>
+</body>
+</html>

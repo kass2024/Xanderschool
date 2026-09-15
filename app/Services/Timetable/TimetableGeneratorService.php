@@ -540,6 +540,11 @@ class TimetableGeneratorService
 		if (!$sameTeacher) {
 			return [];
 		}
+		$sourceFam = SecondaryTimetableCriteria::subjectFamily((string) ($row['course_title'] ?? ''));
+		$partnerFam = SecondaryTimetableCriteria::subjectFamily((string) ($partner['course_title'] ?? ''));
+		if ($sourceFam === '' || $sourceFam !== $partnerFam) {
+			return [];
+		}
 		$courseId = (int) ($partner['course_id'] ?? 0);
 		$subjectKey = $classId . ':' . $courseId;
 		$out = [];

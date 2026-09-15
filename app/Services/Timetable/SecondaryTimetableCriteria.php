@@ -525,11 +525,10 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
-	 * Partner assignment for combined lessons (same subject, paired classes).
+	 * Partner assignments for one combined lesson.
+	 * Requires the Word-file group AND the same teacher AND the same subject.
+	 * Different subjects never share a clock (ICT S4 ST1+ST2 is not Physics S4 ST1+ST2).
 	 *
-	 * @return array<string,mixed>|null
-	 */
-	/**
 	 * @return list<array<string,mixed>>
 	 */
 	public function combinePartners(array $row): array
@@ -538,40 +537,20 @@ class SecondaryTimetableCriteria
 			return [];
 		}
 		$classId = (int) ($row['class_id'] ?? 0);
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$meta = $this->classMeta[(string) $classId] ?? null;
-		if ($meta === null) {
+		if ($meta === null || $classId <= 0 || $staffId <= 0) {
 			return [];
 		}
 		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
 		if ($subject === '') {
 			return [];
 		}
-		$level = $meta['level'];
-		$dept = $meta['dept'];
-		$wantedDepts = $this->combineDeptsFor($subject, $level, $dept);
-		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-		$out = [];
-		// Only document groups (plus saved combine_classes rules). Never auto-combine.
-		if ($wantedDepts !== []) {
-			$out = $this->collectCombinePartners($row, $classId, $subject, $level, $wantedDepts, $staffId, 0);
+		$wantedDepts = $this->combineDeptsFor($subject, (string) ($meta['level'] ?? ''), (string) ($meta['dept'] ?? ''));
+		if ($wantedDepts === []) {
+			return [];
 		}
-		foreach ($this->customCombinePartners($row) as $partner) {
-			$cid = (int) ($partner['class_id'] ?? 0);
-			if ($cid <= 0 || $cid === $classId) {
-				continue;
-			}
-			$already = false;
-			foreach ($out as $existing) {
-				if ((int) ($existing['class_id'] ?? 0) === $cid) {
-					$already = true;
-					break;
-				}
-			}
-			if (!$already) {
-				$out[] = $partner;
-			}
-		}
-		return $out;
+		return $this->collectCombinePartners($row, $classId, $subject, (string) ($meta['level'] ?? ''), $wantedDepts, $staffId, 0);
 	}
 
 	/**
@@ -587,6 +566,9 @@ class SecondaryTimetableCriteria
 		int $sameStaff,
 		int $sameCourse
 	): array {
+		if ($sameStaff <= 0 || $subject === '') {
+			return [];
+		}
 		$out = [];
 		$seen = [];
 		foreach ($this->assignmentsByKey as $cand) {
@@ -605,7 +587,11 @@ class SecondaryTimetableCriteria
 				continue;
 			}
 			$cStaff = (int) ($cand['lecturer'] ?? $cand['staff_id'] ?? 0);
-			if ($sameStaff > 0 && $cStaff !== $sameStaff) {
+			if ($cStaff !== $sameStaff) {
+				continue;
+			}
+			$needCourse = (int) $sameCourse;
+			if ($needCourse > 0 && (int) ($cand['course_id'] ?? $cand['course'] ?? 0) !== $needCourse) {
 				continue;
 			}
 			$seen[$cid] = true;
@@ -623,27 +609,23 @@ class SecondaryTimetableCriteria
 	/** Stable key so a combined group counts as one teacher load (one class of sessions). */
 	public function combineGroupKey(array $row): string
 	{
+		$partners = $this->combinePartners($row);
+		if ($partners === []) {
+			return '';
+		}
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
 		$classId = (int) ($row['class_id'] ?? 0);
-		if ($staffId <= 0 || $subject === '' || $classId <= 0) {
-			return '';
-		}
-		$customIds = $this->customGroupClassIds($row);
-		if (count($customIds) >= 2) {
-			sort($customIds);
-			return $staffId . '|' . $subject . '|custom|' . implode('-', $customIds);
-		}
 		$meta = $this->classMeta[(string) $classId] ?? null;
-		if ($meta === null) {
+		if ($meta === null || $staffId <= 0 || $subject === '') {
 			return '';
 		}
 		$group = $this->combineGroupDepts($subject, (string) ($meta['level'] ?? ''), (string) ($meta['dept'] ?? ''));
-		if (count($group) >= 2) {
-			sort($group);
-			return $staffId . '|' . $subject . '|' . $meta['level'] . '|' . implode('-', $group);
+		if (count($group) < 2) {
+			return '';
 		}
-		return '';
+		sort($group);
+		return $staffId . '|' . $subject . '|' . $meta['level'] . '|' . implode('-', $group);
 	}
 
 	/** 5 weekly hours → 3 teaching sessions (2+2+1). Combined load uses this, not class-count × hours. */
@@ -781,7 +763,9 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
-	 * Documented combined-class groups. One shared lesson = one teacher period.
+	 * Documented combined-class groups. Each row is one subject + listed classes
+	 * sharing one teacher clock. ICT S4 ST1+ST2 is not scheduled with Physics
+	 * S4 ST1+ST2; those are independent groups.
 	 *
 	 * @return list<array{subject:string,level:string,depts:list<string>,label:string}>
 	 */
@@ -838,7 +822,7 @@ class SecondaryTimetableCriteria
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Linea, Varlette and Marguerite teach ANP in the morning, Tuesday to Thursday.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Teachers not named in this document use normal placement and fill from morning periods first.'],
-			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Only the listed groups are combined. Other same-teacher courses stay as separate classes.'],
+			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Only the listed groups are combined, each as its own subject + same teacher. ICT ST1+ST2 is a different clock from Physics ST1+ST2. Different subjects or different teachers are never combined. Courses not in the Word file stay separate.'],
 			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'Tuesday 07:00–12:00.'],
 			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full day 07:00–16:00.'],
 			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],
@@ -853,7 +837,7 @@ class SecondaryTimetableCriteria
 			$out[] = [
 				'group' => 'Combine',
 				'title' => $group['label'],
-				'detail' => 'Combined as one class with the same teacher — 5 classes × 5 periods = 3 teaching sessions (not 25), copied onto every class timetable.',
+				'detail' => 'This subject only, same teacher, listed classes share one clock. Other subjects keep their own times.',
 			];
 		}
 		return $out;
@@ -911,25 +895,15 @@ class SecondaryTimetableCriteria
 		}));
 	}
 
-	/** @return list<array<string,mixed>> */
+	/**
+	 * Saved UI combine_classes rules are not used for generation.
+	 * Only Word-file groups with the same teacher and same subject combine.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
 	private function customCombinePartners(array $row): array
 	{
-		$classId = (int) ($row['class_id'] ?? 0);
-		$ids = $this->customGroupClassIds($row);
-		if ($classId <= 0 || count($ids) < 2) {
-			return [];
-		}
-		$out = [];
-		$seen = [];
-		foreach ($this->assignmentsByKey as $cand) {
-			$cid = (int) ($cand['class_id'] ?? 0);
-			if ($cid === $classId || $cid <= 0 || isset($seen[$cid]) || !in_array($cid, $ids, true)) {
-				continue;
-			}
-			$seen[$cid] = true;
-			$out[] = $cand;
-		}
-		return $out;
+		return [];
 	}
 
 	/** @return list<int> */

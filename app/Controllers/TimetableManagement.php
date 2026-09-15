@@ -2723,7 +2723,12 @@ class TimetableManagement extends Home
 				}
 				$isCombined = count($partnerLabels) > 1;
 				$existing = $grid[$si]['cells'][$dayLabel] ?? null;
-				if ($mode === 'teacher' && $isCombined && !empty($existing['type']) && $existing['type'] === 'lesson'
+				$existFam = is_array($existing)
+					? SecondaryTimetableCriteria::subjectFamily((string) ($existing['course'] ?? ''))
+					: '';
+				$sameSubjectCell = $existFam === '' || $fam === '' || $existFam === $fam;
+				if ($mode === 'teacher' && $isCombined && $sameSubjectCell
+					&& !empty($existing['type']) && $existing['type'] === 'lesson'
 					&& (int) ($existing['staff_id'] ?? 0) === (int) ($entry['staff_id'] ?? 0)) {
 					$merged = $existing['combined_classes'] ?? [];
 					if ($classLabel !== '' && !in_array($classLabel, $merged, true)) {

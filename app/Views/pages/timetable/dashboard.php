@@ -171,7 +171,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">These locked document rules apply to <strong>high school only</strong> (O Level, A Level, TVET, Special — not nursery, not primary) and stay on every generate. Only the listed combine groups share one teacher slot (5 classes × 5 periods → 3 sessions, not 25). Other same-teacher courses stay separate. Teachers not named in the document use normal placement and fill from morning first. Consecutive blocks stay: 4/6 doubles, 3/5/7 as 2+1, 2 on separate days. Placed lessons stay locked unless you check <strong>Replace locked timetable</strong>.</p>
+						<p class="small text-muted mb-2">These locked document rules apply to <strong>high school only</strong> (O Level, A Level, TVET, Special — not nursery, not primary) and stay on every generate. Each listed combine group is <strong>one subject + the same teacher</strong> (ICT S4 ST1+ST2 is not the same clock as Physics S4 ST1+ST2). Courses not in the document, and classes with different teachers, stay separate. Teachers not named in the document use normal placement and fill from morning first. Consecutive blocks stay: 4/6 doubles, 3/5/7 as 2+1, 2 on separate days. Placed lessons stay locked unless you check <strong>Replace locked timetable</strong>.</p>
 						<div class="small font-weight-bold mb-1">Locked document criteria</div>
 						<ul class="tt-criteria-list small mb-3">
 							<?php foreach (($document_criteria ?? []) as $docRule): ?>
@@ -229,7 +229,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 							</div>
 							<p class="small text-info mb-2" id="ttSundayHint" hidden>Pick the course (and optional teacher/class). Sunday lessons use the same bell periods already saved under Settings → Periods &amp; breaks. Special criteria does not add or change periods.</p>
 							<p class="small text-info mb-2" id="ttAfterLessonsHint" hidden>Pick Farming or Library and Clubs. They use existing bells from 15:40 to 17:30 only — not night preps or supper.</p>
-							<p class="small text-info mb-2" id="ttCombineHint" hidden>Pick the course and at least two classes that share one teacher lesson. Teacher load is the blocked sessions of one class (5 periods → 3 sessions), not class-count × periods, and the lesson appears on every class timetable.</p>
+							<p class="small text-info mb-2" id="ttCombineHint" hidden>Extra combine rules are not used. Only the locked Word-file groups combine, and only when it is the same subject and the same teacher. Different subjects never share one clock.</p>
 							<div class="mb-2" id="ttCombineClassesWrap" hidden>
 								<label class="small mb-1">Classes in this combined lesson</label>
 								<select name="class_ids[]" id="ttCombineClasses" class="form-control form-control-sm" multiple size="8">
