@@ -1296,8 +1296,9 @@ class TimetableStagingService
 	private function scheduledEntries(int $scheduleId, int $schoolId, int $filterClassId = 0, int $filterStaffId = 0): array
 	{
 		$builder = \Config\Database::connect()->table('timetable_entries')
-			->select('timetable_entries.*, ts.start_time, ts.end_time')
+			->select('timetable_entries.*, ts.start_time, ts.end_time, c.title AS course_title')
 			->join('timetable_slots ts', 'ts.id = timetable_entries.slot_id', 'left')
+			->join('courses c', 'c.id = timetable_entries.course_id', 'left')
 			->where('timetable_entries.schedule_id', $scheduleId)
 			->where('timetable_entries.school_id', $schoolId)
 			->where('timetable_entries.entry_type', 'lesson')
@@ -1381,10 +1382,14 @@ class TimetableStagingService
 					$otherHasTime = (int) ($other['end'] ?? 0) > (int) ($other['start'] ?? 0);
 					$timeClash = $hasTime && $otherHasTime
 						&& $start < (int) $other['end'] && (int) $other['start'] < $end;
-					if ($sameSlot || $timeClash) {
-						$collides = true;
-						break;
+					if (!($sameSlot || $timeClash)) {
+						continue;
 					}
+					if (SecondaryTimetableCriteria::entriesAreCombinedLesson($entry, $other['row'] ?? [])) {
+						continue;
+					}
+					$collides = true;
+					break;
 				}
 				if ($collides) {
 					if ((int) ($entry['is_locked'] ?? 0) !== 1) {
@@ -1397,6 +1402,7 @@ class TimetableStagingService
 					'slot_id' => $slotId,
 					'start' => $start,
 					'end' => $end,
+					'row' => $entry,
 				];
 			}
 		}

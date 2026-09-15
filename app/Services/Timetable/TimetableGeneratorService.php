@@ -514,6 +514,9 @@ class TimetableGeneratorService
 		$staffId = (int) ($partner['lecturer'] ?? 0);
 		$sourceStaff = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$sameTeacher = $staffId > 0 && $staffId === $sourceStaff;
+		if (!$sameTeacher) {
+			return [];
+		}
 		$courseId = (int) ($partner['course_id'] ?? 0);
 		$subjectKey = $classId . ':' . $courseId;
 		$out = [];
@@ -537,26 +540,22 @@ class TimetableGeneratorService
 			if (isset($this->classBusy[$this->busyKey($classId, $day, $slotId)])) {
 				return [];
 			}
-			// Same teacher is already in this period — that is the combine, not a clash.
-			if (!$sameTeacher && $staffId > 0 && $this->staffHasTimeConflict($staffId, $day, $slotId)) {
-				return [];
-			}
-			if (!$this->criteriaAllowsSlot($partner, $day, $slotId)) {
+			$times = $this->slotTimes[$slotId] ?? null;
+			if ($this->secondaryCriteria !== null && $this->secondaryCriteria->clinicalBlocksClass(
+				$partner,
+				$day,
+				$times['start'] ?? null,
+				$times['end'] ?? null
+			)) {
 				return [];
 			}
 		}
 
+		$courseTitle = trim((string) ($partner['course_title'] ?? $row['course_title'] ?? 'Lesson'));
 		foreach ($slotIds as $slotId) {
 			$this->classBusy[$this->busyKey($classId, $day, $slotId)] = true;
 			$this->classDayUsage[$classId . ':' . $day] = (int) ($this->classDayUsage[$classId . ':' . $day] ?? 0) + 1;
 			$this->globalDayUsage[$day] = (int) ($this->globalDayUsage[$day] ?? 0) + 1;
-			if ($staffId > 0 && !$sameTeacher) {
-				$this->staffBusy[$this->busyStaffKey($staffId, $day, $slotId)] = true;
-				$range = $this->slotTimeRange($slotId);
-				if ($range !== null) {
-					$this->staffTimeBookings[$staffId][$day][] = $range;
-				}
-			}
 			$out[] = [
 				'class_id' => $classId,
 				'staff_id' => $staffId,
@@ -565,6 +564,8 @@ class TimetableGeneratorService
 				'day_of_week' => $day,
 				'slot_id' => $slotId,
 				'entry_type' => 'lesson',
+				'is_locked' => 1,
+				'custom_label' => $courseTitle,
 			];
 		}
 		$this->subjectDayCount[$subjectKey . ':' . $day] =
@@ -702,6 +703,9 @@ class TimetableGeneratorService
 		$pick = $candidates[0];
 		$out = [];
 		$hwLabel = null;
+		$courseTitle = trim((string) ($row['course_title'] ?? 'Lesson'));
+		$combined = $this->secondaryCriteria !== null && $this->secondaryCriteria->isCombinedAssignment($row);
+		$occupied = $staffId > 0 ? $this->staffOccupiedRanges($staffId) : [];
 		foreach ($pick['slot_ids'] as $slotId) {
 			$this->markBusy($classId, $staffId, $pick['day'], $slotId);
 			$entry = [
@@ -722,6 +726,23 @@ class TimetableGeneratorService
 			}
 			if ($hwLabel !== null) {
 				$entry['custom_label'] = $hwLabel;
+			}
+			$lock = $combined;
+			if (!$lock && $this->secondaryCriteria !== null) {
+				$lock = $this->secondaryCriteria->shouldLockPlacement(
+					$row,
+					(int) $pick['day'],
+					$times['start'] ?? null,
+					$times['end'] ?? null,
+					$occupied,
+					$this->teachingSlots
+				);
+			}
+			if ($lock) {
+				$entry['is_locked'] = 1;
+				if ($combined && empty($entry['custom_label'])) {
+					$entry['custom_label'] = $courseTitle;
+				}
 			}
 			$out[] = $entry;
 		}
@@ -1041,15 +1062,21 @@ class TimetableGeneratorService
 			$partnerClass = (int) ($partner['class_id'] ?? 0);
 			$partnerStaff = (int) ($partner['lecturer'] ?? 0);
 			$sameTeacher = $partnerStaff > 0 && $partnerStaff === $sourceStaff;
+			if (!$sameTeacher) {
+				continue;
+			}
 			foreach ($slotIds as $slotId) {
 				$partnerSlot = $this->slotIdForClass($partnerClass, (int) $slotId);
 				if (isset($this->classBusy[$this->busyKey($partnerClass, $day, $partnerSlot)])) {
 					return false;
 				}
-				if (!$this->criteriaAllowsSlot($partner, $day, $partnerSlot)) {
-					return false;
-				}
-				if (!$sameTeacher && $partnerStaff > 0 && $this->staffHasTimeConflict($partnerStaff, $day, $partnerSlot)) {
+				$times = $this->slotTimes[$partnerSlot] ?? null;
+				if ($this->secondaryCriteria->clinicalBlocksClass(
+					$partner,
+					$day,
+					$times['start'] ?? null,
+					$times['end'] ?? null
+				)) {
 					return false;
 				}
 			}
@@ -1196,6 +1223,25 @@ class TimetableGeneratorService
 				$this->staffTimeBookings[$staffId][$day][] = $range;
 			}
 		}
+	}
+
+	/** @return list<array{day:int,start:int,end:int}> */
+	private function staffOccupiedRanges(int $staffId): array
+	{
+		$out = [];
+		if ($staffId <= 0) {
+			return $out;
+		}
+		foreach ($this->staffTimeBookings[$staffId] ?? [] as $day => $ranges) {
+			foreach ($ranges as $range) {
+				$out[] = [
+					'day' => (int) $day,
+					'start' => (int) ($range['start'] ?? 0),
+					'end' => (int) ($range['end'] ?? 0),
+				];
+			}
+		}
+		return $out;
 	}
 
 	/** @return array{start:int,end:int}|null */

@@ -60,7 +60,7 @@ class SecondaryTimetableCriteria
 	public function __construct()
 	{
 		$this->teacherWindows = $this->defaultTeacherWindows();
-		$this->anpMorningTeachers = ['rinea', 'linear', 'yaliette', 'yaliet', 'valiette', 'valiet', 'varlette', 'varliette', 'margueritte', 'marguerite'];
+		$this->anpMorningTeachers = ['rinea', 'linear', 'linea', 'kubahoni', 'yaliette', 'yaliet', 'valiette', 'valiet', 'varlette', 'varliette', 'margueritte', 'marguerite'];
 		$this->blockedDaysByName = [
 			'alice' => [0], // Alice must not teach on Monday
 		];
@@ -151,10 +151,18 @@ class SecondaryTimetableCriteria
 		}
 	}
 
+	/**
+	 * Document special criteria apply to high school only
+	 * (O Level / A Level / TVET / Special) — never nursery or primary.
+	 */
 	public static function isSecondaryTrack(array $row): bool
 	{
 		$track = strtolower(trim((string) ($row['_track_key'] ?? $row['track_key'] ?? '')));
 		if ($track === '') {
+			$phase = strtolower(trim((string) ($row['_phase'] ?? $row['generation_phase'] ?? '')));
+			if ($phase === 'nursery' || $phase === 'primary') {
+				return false;
+			}
 			return true;
 		}
 		return !in_array($track, ['primary', 'nursery'], true);
@@ -483,29 +491,31 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
-	 * Clinical attachment mornings reserved (no regular lessons).
-	 * Tue 7–12: S4 + S6; Wed 7–12: S5 + S6.
+	 * Clinical attachment reserved (no regular lessons) for ANP only.
+	 * Tuesday 07:00–12:00: S4 ANP + S5 ANP.
+	 * Wednesday full day 07:00–16:00: S6 ANP.
 	 */
 	public function clinicalBlocksClass(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
 		if (!self::isSecondaryTrack($row)) {
 			return false;
 		}
-		if (!$this->isMorningSlotByTimes($slotStart, $slotEnd) && $this->timeToMinutes((string) ($slotStart ?? '')) >= (12 * 60)) {
-			return false;
-		}
-		// Only morning slots.
-		if ($this->timeToMinutes((string) ($slotStart ?? '99:00:00')) >= (12 * 60)) {
-			return false;
-		}
-
 		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
-		$level = (string) ($meta['level'] ?? $this->normalizeLevel((string) ($row['level_name'] ?? '')));
-		if ($day === 1 && ($level === 'S4' || $level === 'S6')) {
-			return true;
+		$dept = (string) ($meta['dept'] ?? '');
+		if ($dept !== 'ANP') {
+			return false;
 		}
-		if ($day === 2 && ($level === 'S5' || $level === 'S6')) {
-			return true;
+		$level = (string) ($meta['level'] ?? $this->normalizeLevel((string) ($row['level_name'] ?? '')));
+		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+		$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+		if ($end <= $start) {
+			$end = $start + 40;
+		}
+		if ($day === 1 && ($level === 'S4' || $level === 'S5')) {
+			return $start < (12 * 60) && $end > (7 * 60);
+		}
+		if ($day === 2 && $level === 'S6') {
+			return $start < (16 * 60) && $end > (7 * 60);
 		}
 		return false;
 	}
@@ -538,12 +548,27 @@ class SecondaryTimetableCriteria
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$courseId = (int) ($row['course_id'] ?? $row['course'] ?? 0);
 		$out = [];
-		// Documented group with a missing dept code: still share one teacher period
-		// (e.g. S6 Entrepreneurship across 5–6 classes).
+		// Combined = one teacher in several classes at the same time.
 		if ($wantedDepts === [] && $this->subjectCombinesAtLevel($subject, $level)) {
 			$out = $this->collectCombinePartners($row, $classId, $subject, $level, null, $staffId, $courseId);
 		} elseif ($wantedDepts !== []) {
-			$out = $this->collectCombinePartners($row, $classId, $subject, $level, $wantedDepts, 0, 0);
+			$out = $this->collectCombinePartners($row, $classId, $subject, $level, $wantedDepts, $staffId, 0);
+		}
+		foreach ($this->sameTeacherLevelPartners($row) as $auto) {
+			$cid = (int) ($auto['class_id'] ?? 0);
+			if ($cid <= 0 || $cid === $classId) {
+				continue;
+			}
+			$already = false;
+			foreach ($out as $existing) {
+				if ((int) ($existing['class_id'] ?? 0) === $cid) {
+					$already = true;
+					break;
+				}
+			}
+			if (!$already) {
+				$out[] = $auto;
+			}
 		}
 		foreach ($this->customCombinePartners($row) as $partner) {
 			$cid = (int) ($partner['class_id'] ?? 0);
@@ -594,9 +619,12 @@ class SecondaryTimetableCriteria
 			if ($wantedDepts !== null && !in_array((string) ($cm['dept'] ?? ''), $wantedDepts, true)) {
 				continue;
 			}
+			$cStaff = (int) ($cand['lecturer'] ?? $cand['staff_id'] ?? 0);
+			$cCourse = (int) ($cand['course_id'] ?? $cand['course'] ?? 0);
+			if ($sameStaff > 0 && $cStaff !== $sameStaff) {
+				continue;
+			}
 			if ($wantedDepts === null) {
-				$cStaff = (int) ($cand['lecturer'] ?? $cand['staff_id'] ?? 0);
-				$cCourse = (int) ($cand['course_id'] ?? $cand['course'] ?? 0);
 				$sameTeacher = $sameStaff > 0 && $cStaff === $sameStaff;
 				$sameOffering = $sameCourse > 0 && $cCourse === $sameCourse;
 				if (!$sameTeacher && !$sameOffering && !$this->openCombineGroup($subject, $level)) {
@@ -633,7 +661,7 @@ class SecondaryTimetableCriteria
 		return $partners[0] ?? null;
 	}
 
-	/** Stable key so a combined group counts as one teacher load (one class of periods). */
+	/** Stable key so a combined group counts as one teacher load (one class of sessions). */
 	public function combineGroupKey(array $row): string
 	{
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
@@ -652,11 +680,53 @@ class SecondaryTimetableCriteria
 			return '';
 		}
 		$group = $this->combineGroupDepts($subject, (string) ($meta['level'] ?? ''), (string) ($meta['dept'] ?? ''));
-		if (count($group) < 2) {
-			return '';
+		if (count($group) >= 2) {
+			sort($group);
+			return $staffId . '|' . $subject . '|' . $meta['level'] . '|' . implode('-', $group);
 		}
-		sort($group);
-		return $staffId . '|' . $subject . '|' . $meta['level'] . '|' . implode('-', $group);
+		$autoIds = $this->sameTeacherLevelClassIds($row);
+		if (count($autoIds) >= 2) {
+			return $staffId . '|' . $subject . '|' . $meta['level'] . '|auto|' . implode('-', $autoIds);
+		}
+		return '';
+	}
+
+	/** 5 weekly hours → 3 teaching sessions (2+2+1). Combined load uses this, not class-count × hours. */
+	public static function teacherSessionCount(int $weeklyHours): int
+	{
+		$blocks = TimetableGeneratorService::distributeWeeklyHours($weeklyHours);
+		return max(1, count($blocks));
+	}
+
+	/** True when this assignment shares one teacher lesson with at least one partner class. */
+	public function isCombinedAssignment(array $row): bool
+	{
+		return $this->combineGroupKey($row) !== '';
+	}
+
+	public static function subjectFamily(string $title): string
+	{
+		$c = new self();
+		return $c->normalizeSubject($title);
+	}
+
+	/** Same teacher, different class, same subject = one combined lesson, not a clash. */
+	public static function entriesAreCombinedLesson(array $a, array $b): bool
+	{
+		$staffA = (int) ($a['staff_id'] ?? $a['lecturer'] ?? 0);
+		$staffB = (int) ($b['staff_id'] ?? $b['lecturer'] ?? 0);
+		if ($staffA <= 0 || $staffA !== $staffB) {
+			return false;
+		}
+		if ((int) ($a['class_id'] ?? 0) === (int) ($b['class_id'] ?? 0)) {
+			return false;
+		}
+		$famA = self::subjectFamily((string) ($a['course_title'] ?? ''));
+		$famB = self::subjectFamily((string) ($b['course_title'] ?? ''));
+		if ($famA === '' || $famA !== $famB) {
+			return false;
+		}
+		return true;
 	}
 
 	/** PE: at most one period per class day (spread across week). */
@@ -742,11 +812,14 @@ class SecondaryTimetableCriteria
 	public static function documentCombineGroups(): array
 	{
 		return [
-			['subject' => 'chemistry', 'level' => 'S4', 'depts' => ['ANP', 'ST1'], 'label' => 'Chemistry S4 ANP + Stream 1'],
+			['subject' => 'computer', 'level' => 'S6', 'depts' => ['MPC', 'MCE'], 'label' => 'Computer Science S6 MPC + MCE'],
+			['subject' => 'computer', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S5 Stream 1 + Stream 2'],
+			['subject' => 'computer', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S4 Stream 1 + Stream 2'],
 			['subject' => 'chemistry', 'level' => 'S5', 'depts' => ['ANP', 'ST1'], 'label' => 'Chemistry S5 ANP + Stream 1'],
 			['subject' => 'chemistry', 'level' => 'S6', 'depts' => ['MCB', 'PCB'], 'label' => 'Chemistry S6 MCB + PCB'],
 			['subject' => 'physics', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Physics S4 Stream 1 + Stream 2'],
-			['subject' => 'physics', 'level' => 'S6', 'depts' => ['PCB', 'PCM', 'MPC', 'MPG'], 'label' => 'Physics S6 PCB + PCM + MPC + MPG'],
+			['subject' => 'physics', 'level' => 'S5', 'depts' => ['ANP', 'ST1', 'ST2'], 'label' => 'Physics S5 ANP + Stream 1 + Stream 2'],
+			['subject' => 'physics', 'level' => 'S6', 'depts' => ['PCB', 'PCM', 'MPC', 'ANP', 'MPG'], 'label' => 'Physics S6 PCB + PCM + MPC + ANP + MPG'],
 			['subject' => 'mathematics', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Mathematics S4 Stream 1 + Stream 2'],
 			['subject' => 'mathematics', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'Mathematics S5 Stream 1 + Stream 2 (morning)'],
 			['subject' => 'mathematics', 'level' => 'S6', 'depts' => ['ANP', 'PCB'], 'label' => 'Mathematics S6 ANP + PCB'],
@@ -762,13 +835,12 @@ class SecondaryTimetableCriteria
 			['subject' => 'biology', 'level' => 'S5', 'depts' => ['ANP', 'ST1'], 'label' => 'Biology S5 ANP + Stream 1'],
 			['subject' => 'biology', 'level' => 'S5', 'depts' => ['PCB', 'HCB'], 'label' => 'Biology S5 PCB + HCB'],
 			['subject' => 'biology', 'level' => 'S6', 'depts' => ['ANP', 'MCB', 'PCB'], 'label' => 'Biology S6 ANP + MCB + PCB'],
+			['subject' => 'kinyarwanda', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Kinyarwanda S4 Stream 1 + Stream 2'],
+			['subject' => 'kinyarwanda', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'Kinyarwanda S5 Stream 1 + Stream 2'],
 			['subject' => 'kinyarwanda', 'level' => 'S6', 'depts' => ['MCE', 'MPC', 'PCB', 'PCM', 'MEG'], 'label' => 'Kinyarwanda S6 MCE + MPC + PCB + PCM + MEG'],
 			['subject' => 'english', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'English S4 Stream 1 + Stream 2'],
 			['subject' => 'english', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'English S5 Stream 1 + Stream 2'],
-			['subject' => 'english', 'level' => 'S6', 'depts' => ['MCE', 'MPC', 'PCB', 'PCM', 'MEG'], 'label' => 'English S6 MCE + MPC + PCB + PCM + MEG'],
-			['subject' => 'computer', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S4 Stream 1 + Stream 2'],
-			['subject' => 'computer', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S5 Stream 1 + Stream 2'],
-			['subject' => 'computer', 'level' => 'S6', 'depts' => ['MPC', 'MCE'], 'label' => 'Computer Science S6 MPC + MCE'],
+			['subject' => 'english', 'level' => 'S6', 'depts' => ['MCE', 'MPC', 'PCB', 'PCM', 'MEG', 'MCB', 'MPG'], 'label' => 'English S6 MCE + MPC + PCB + PCM + MEG + MCB + MPG'],
 		];
 	}
 
@@ -780,13 +852,14 @@ class SecondaryTimetableCriteria
 	public static function documentCriteriaForDisplay(): array
 	{
 		$out = [
+			['group' => 'Scope', 'title' => 'High school only', 'detail' => 'These locked rules apply to O Level, A Level, TVET and Special. Nursery and primary are never included.'],
 			['group' => 'Blocks', 'title' => '4 and 6 periods', 'detail' => 'At least two periods together (doubles).'],
-			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately.'],
+			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
 			['group' => 'PE', 'title' => 'Physical Education', 'detail' => 'At least one PE period on each class day; at most one PE period per day.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
 			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
-			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Rinea, Varlette and Marguerite teach ANP in the morning, Tuesday to Thursday.'],
+			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Linea, Varlette and Marguerite teach ANP in the morning, Tuesday to Thursday.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
 			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'Tuesday 07:00–12:00.'],
 			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full day 07:00–16:00.'],
@@ -795,13 +868,14 @@ class SecondaryTimetableCriteria
 			['group' => 'Windows', 'title' => 'Olivier', 'detail' => 'Friday 07:00–10:00.'],
 			['group' => 'Windows', 'title' => 'Varlette', 'detail' => 'Thursday 09:00–12:00, Friday 08:00–12:00, plus ANP mornings.'],
 			['group' => 'Windows', 'title' => 'Marguerite', 'detail' => 'Monday morning, Wednesday morning, Thursday morning plus one after lunch.'],
-			['group' => 'Windows', 'title' => 'Rinea / Linear', 'detail' => 'Thursday 09:20–15:40, Friday 09:20–12:00, plus ANP mornings.'],
+			['group' => 'Windows', 'title' => 'Linea / Linear', 'detail' => 'Thursday 09:20–15:40, Friday 09:20–12:00, plus ANP mornings.'],
+			['group' => 'Windows', 'title' => 'IZABAYO Patience', 'detail' => 'Tuesday before lunch is full (07:00–12:00), Friday after break (10:00–12:00), remaining periods on Sunday.'],
 		];
 		foreach (self::documentCombineGroups() as $group) {
 			$out[] = [
 				'group' => 'Combine',
 				'title' => $group['label'],
-				'detail' => 'Combined as one class — teacher load is one class of periods, copied to each partner.',
+				'detail' => 'Combined as one class with the same teacher — 5 classes × 5 periods = 3 teaching sessions (not 25), copied onto every class timetable.',
 			];
 		}
 		return $out;
@@ -897,6 +971,69 @@ class SecondaryTimetableCriteria
 			return $ids;
 		}
 		return [];
+	}
+
+	/**
+	 * Same teacher + same subject + same level = combined lesson (high school only).
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function sameTeacherLevelPartners(array $row): array
+	{
+		$classId = (int) ($row['class_id'] ?? 0);
+		$ids = $this->sameTeacherLevelClassIds($row);
+		if ($classId <= 0 || count($ids) < 2) {
+			return [];
+		}
+		$out = [];
+		$seen = [];
+		foreach ($this->assignmentsByKey as $cand) {
+			$cid = (int) ($cand['class_id'] ?? 0);
+			if ($cid === $classId || $cid <= 0 || isset($seen[$cid]) || !in_array($cid, $ids, true)) {
+				continue;
+			}
+			$seen[$cid] = true;
+			$out[] = $cand;
+		}
+		return $out;
+	}
+
+	/** @return list<int> */
+	private function sameTeacherLevelClassIds(array $row): array
+	{
+		if (!self::isSecondaryTrack($row)) {
+			return [];
+		}
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$classId = (int) ($row['class_id'] ?? 0);
+		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
+		$meta = $this->classMeta[(string) $classId] ?? null;
+		$level = (string) ($meta['level'] ?? '');
+		if ($staffId <= 0 || $subject === '' || $level === '') {
+			return [];
+		}
+		$ids = [];
+		foreach ($this->assignmentsByKey as $cand) {
+			$cid = (int) ($cand['class_id'] ?? 0);
+			if ($cid <= 0) {
+				continue;
+			}
+			$cStaff = (int) ($cand['lecturer'] ?? $cand['staff_id'] ?? 0);
+			if ($cStaff !== $staffId) {
+				continue;
+			}
+			$cm = $this->classMeta[(string) $cid] ?? null;
+			if ($cm === null || (string) ($cm['level'] ?? '') !== $level) {
+				continue;
+			}
+			if ($this->normalizeSubject((string) ($cand['course_title'] ?? '')) !== $subject) {
+				continue;
+			}
+			$ids[] = $cid;
+		}
+		$ids = array_values(array_unique($ids));
+		sort($ids);
+		return $ids;
 	}
 
 	/** @return list<int> */
@@ -1078,8 +1215,8 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
-	 * Drop day/window special criteria (and Alice Monday) when the teacher
-	 * already has more weekly periods than those rules can hold.
+	 * Document criteria stay locked during generate. Heavy teachers may pack
+	 * more periods per day, but windows / Alice Monday / named days are never dropped.
 	 *
 	 * @param list<array<string,mixed>> $assignments
 	 * @param list<array<string,mixed>> $teachingSlots
@@ -1112,113 +1249,17 @@ class SecondaryTimetableCriteria
 				$openDays[] = $day;
 			}
 		}
-		$openDays = array_values(array_unique($openDays));
-		$openCount = max(1, count($openDays));
+		$openCount = max(1, count(array_unique($openDays)));
 		$fullCap = $openCount * $slotsPerDay;
 
 		$this->weeklyPeriodsByStaffId = $this->weeklyPeriodsByStaff($assignments);
 		foreach ($this->weeklyPeriodsByStaffId as $staffId => $load) {
-			if ($load > (int) floor($fullCap * 0.70) && !$this->staffIsPinned($assignments, (int) $staffId)) {
+			if ($load > (int) floor($fullCap * 0.70)) {
 				$this->heavyStaffIds[$staffId] = true;
-				$this->relaxedStaffIds[$staffId] = true;
-			}
-		}
-		foreach ($assignments as $row) {
-			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-			if ($staffId <= 0 || !isset($this->heavyStaffIds[$staffId])) {
-				continue;
-			}
-			if ($this->isPinnedTeacherName((string) ($row['teacher_name'] ?? ''))) {
-				continue;
-			}
-			$name = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? '')) ?? ''));
-			if ($name === '') {
-				continue;
-			}
-			foreach (array_keys($this->blockedDaysByName) as $needle) {
-				if (strpos($name, (string) $needle) !== false) {
-					unset($this->blockedDaysByName[$needle]);
-					$this->relaxedNameNeedles[strtolower((string) $needle)] = true;
-				}
-			}
-			foreach (array_keys($this->teacherWindows) as $needle) {
-				if ($this->teacherNameMatches($name, (string) $needle)) {
-					unset($this->teacherWindows[$needle]);
-					$this->relaxedNameNeedles[strtolower((string) $needle)] = true;
-				}
 			}
 		}
 
-		$warnings = [];
-		foreach ($this->allowedDaysByStaffId as $staffId => $allowed) {
-			$load = (int) ($this->weeklyPeriodsByStaffId[$staffId] ?? 0);
-			$cap = max(1, count($allowed)) * $slotsPerDay;
-			if ($load > $cap) {
-				unset($this->allowedDaysByStaffId[$staffId], $this->windowsByStaffId[$staffId]);
-				$this->relaxedStaffIds[$staffId] = true;
-				$this->heavyStaffIds[$staffId] = true;
-				$warnings[] = $this->teacherLabel($assignments, (int) $staffId)
-					. " has {$load} weekly periods, so the teacher-days rule was ignored.";
-			}
-		}
-		foreach ($this->windowsByStaffId as $staffId => $windows) {
-			if (isset($this->relaxedStaffIds[$staffId]) || $this->staffIsPinned($assignments, (int) $staffId)) {
-				continue;
-			}
-			$load = (int) ($this->weeklyPeriodsByStaffId[$staffId] ?? 0);
-			$winDays = [];
-			foreach ($windows as $window) {
-				$winDays[(int) ($window['day'] ?? -1)] = true;
-			}
-			unset($winDays[-1]);
-			$cap = max(1, count($winDays)) * $slotsPerDay;
-			if ($load > $cap) {
-				unset($this->windowsByStaffId[$staffId], $this->allowedDaysByStaffId[$staffId]);
-				$this->relaxedStaffIds[$staffId] = true;
-				$this->heavyStaffIds[$staffId] = true;
-				$warnings[] = $this->teacherLabel($assignments, (int) $staffId)
-					. " has {$load} weekly periods, so the teacher-window rule was ignored.";
-			}
-		}
-
-		foreach ($this->blockedDaysByName as $needle => $blocked) {
-			$load = $this->weeklyPeriodsForName($assignments, (string) $needle);
-			$remaining = array_values(array_diff($openDays, array_map('intval', $blocked)));
-			$cap = max(1, count($remaining)) * $slotsPerDay;
-			if ($load > $cap) {
-				unset($this->blockedDaysByName[$needle]);
-				$this->relaxedNameNeedles[strtolower((string) $needle)] = true;
-				$warnings[] = ucfirst((string) $needle)
-					. " has {$load} weekly periods, so the blocked-day special criterion was ignored.";
-			}
-		}
-
-		foreach (array_keys($this->teacherWindows) as $needle) {
-			if ($this->isPinnedTeacherName((string) $needle)) {
-				continue;
-			}
-			$load = $this->weeklyPeriodsForName($assignments, (string) $needle);
-			$winDays = [];
-			foreach ($this->teacherWindows[$needle] as $window) {
-				$winDays[(int) ($window['day'] ?? -1)] = true;
-			}
-			unset($winDays[-1]);
-			$cap = max(1, count($winDays)) * $slotsPerDay;
-			if ($load > $cap) {
-				unset($this->teacherWindows[$needle]);
-				$this->relaxedNameNeedles[strtolower((string) $needle)] = true;
-				$warnings[] = ucfirst((string) $needle)
-					. " has {$load} weekly periods, so the named teacher window was ignored.";
-			}
-		}
-
-		foreach ($this->heavyStaffIds as $staffId => $_) {
-			$load = (int) ($this->weeklyPeriodsByStaffId[$staffId] ?? 0);
-			$warnings[] = $this->teacherLabel($assignments, (int) $staffId)
-				. " has {$load} weekly periods, so day/window special criteria were ignored to fill empty slots.";
-		}
-
-		return array_values(array_unique($warnings));
+		return [];
 	}
 
 	public function isPersonalRestrictionRelaxed(int $staffId, string $teacherName = ''): bool
@@ -1267,6 +1308,8 @@ class SecondaryTimetableCriteria
 			}
 			if ($combineKey !== '') {
 				$seenCombine[$combineKey] = true;
+				$out[$staffId] = (int) ($out[$staffId] ?? 0) + self::teacherSessionCount($hours);
+				continue;
 			}
 			$out[$staffId] = (int) ($out[$staffId] ?? 0) + $hours;
 		}
@@ -1367,10 +1410,10 @@ class SecondaryTimetableCriteria
 			['day' => 3, 'start' => 9 * 60 + 20, 'end' => 15 * 60 + 40, 'scope' => null],
 			['day' => 4, 'start' => 9 * 60 + 20, 'end' => 12 * 60, 'scope' => null],
 		];
-		// IZABAYO PATIENCE: fill Tuesday before break, then Friday after break
-		// and before lunch, then remaining periods on Sunday.
+		// IZABAYO PATIENCE: Tuesday before lunch full, Friday after break,
+		// remaining periods on Sunday.
 		$patienceWindows = [
-			['day' => 1, 'start' => 7 * 60, 'end' => 9 * 60 + 40, 'scope' => null, 'priority' => 1],
+			['day' => 1, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null, 'priority' => 1],
 			['day' => 4, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null, 'priority' => 2],
 			['day' => 6, 'start' => 7 * 60, 'end' => 15 * 60 + 40, 'scope' => null, 'priority' => 3],
 		];
@@ -1405,8 +1448,10 @@ class SecondaryTimetableCriteria
 				['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
 			],
 			'linear' => $linear,
+			'linea' => $linear,
+			'kubahoni' => $linear,
 			'rinea' => $linear,
-			// IZABAYO PATIENCE: Tuesday before break, Friday after break, Sunday.
+			// IZABAYO PATIENCE: Tuesday before lunch, Friday after break, Sunday.
 			'izabayo patience' => $patienceWindows,
 			'patience izabayo' => $patienceWindows,
 			'izabayo gihanga' => $patienceWindows,

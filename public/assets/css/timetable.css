@@ -17,6 +17,11 @@
 .tt-cell { min-height: 44px; height: 48px; text-align: center; }
 .tt-course { font-weight: 700; text-transform: uppercase; line-height: 1.15; word-break: break-word; font-size: 0.68rem; }
 .tt-sub { color: #475569; font-size: 0.62rem; margin-top: 2px; }
+.tt-combined-badge {
+	display: inline-block; margin-top: 2px; padding: 0 5px; border-radius: 8px;
+	background: #0f766e; color: #ecfdf5; font-size: 0.55rem; font-weight: 700;
+	letter-spacing: 0.04em; text-transform: uppercase;
+}
 .tt-code { color: #64748b; font-size: 0.58rem; }
 .tt-break-row td { background: #e2e8f0; text-align: center; font-weight: 700; font-size: 0.7rem; padding: 6px; }
 .tt-break-label { letter-spacing: 0.06em; }

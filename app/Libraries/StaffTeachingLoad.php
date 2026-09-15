@@ -61,6 +61,8 @@ class StaffTeachingLoad
 			}
 			if ($combineKey !== '') {
 				$seenCombine[$combineKey] = true;
+				$out[$staffId]['periods'] += SecondaryTimetableCriteria::teacherSessionCount($hours);
+				continue;
 			}
 			$out[$staffId]['periods'] += $hours;
 		}
@@ -241,14 +243,19 @@ class StaffTeachingLoad
 					}
 				}
 				$combined = count($labels) > 1;
+				$nClasses = count($labels);
+				$hours = (int) $group['hours'];
+				$sessions = SecondaryTimetableCriteria::teacherSessionCount($hours);
 				$grouped[$staffId]['courses'][] = [
 					'class' => $labels !== [] ? implode(' + ', $labels) : 'Class',
 					'title' => $group['title'] !== '' ? $group['title'] : 'Course',
-					'periods' => (int) $group['hours'],
+					'periods' => $combined ? $sessions : $hours,
 					'combined' => $combined,
-					'note' => $combined ? 'Combined lesson' : '',
+					'note' => $combined
+						? ('Combined lesson: ' . $nClasses . ' classes × ' . $hours . ' periods → ' . $sessions . ' teacher sessions')
+						: '',
 				];
-				$grouped[$staffId]['periods'] += (int) $group['hours'];
+				$grouped[$staffId]['periods'] += $combined ? $sessions : $hours;
 			}
 		}
 

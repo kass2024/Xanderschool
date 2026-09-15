@@ -150,6 +150,11 @@ class TimetableCriteriaStore
 			$row['days'] = json_encode([6]);
 		}
 		if ($id > 0) {
+			$existing = $db->table('timetable_custom_criteria')
+				->where('id', $id)->where('school_id', $schoolId)->get(1)->getRowArray();
+			if ($existing && (!empty($existing['is_locked']) || (string) ($existing['source'] ?? '') === 'document')) {
+				return ['error' => 'Document criteria stay locked so generate cannot drop them.'];
+			}
 			$db->table('timetable_custom_criteria')->where('id', $id)->where('school_id', $schoolId)->update($row);
 			return ['success' => true, 'id' => $id];
 		}

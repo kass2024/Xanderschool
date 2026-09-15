@@ -25,8 +25,11 @@ class TimetableConflictService
 		}
 
 		$db = \Config\Database::connect();
-		$entry = $db->table('timetable_entries')->where('id', $entryId)
-			->where('schedule_id', $scheduleId)->get(1)->getRowArray();
+		$entry = $db->table('timetable_entries te')
+			->select('te.*, c.title AS course_title')
+			->join('courses c', 'c.id = te.course_id', 'left')
+			->where('te.id', $entryId)
+			->where('te.schedule_id', $scheduleId)->get(1)->getRowArray();
 		if (!$entry) {
 			return [['type' => 'error', 'message' => 'Lesson not found.']];
 		}
@@ -71,7 +74,7 @@ class TimetableConflictService
 
 		if ($staffId > 0) {
 			$staffRows = $db->table('timetable_entries te')
-				->select('te.id, te.slot_id, c.title AS course_title, cl.title AS class_title, l.title AS level_name, d.code AS dept_code, d.title AS dept_title')
+				->select('te.id, te.slot_id, te.class_id, te.course_id, c.title AS course_title, cl.title AS class_title, l.title AS level_name, d.code AS dept_code, d.title AS dept_title')
 				->join('courses c', 'c.id = te.course_id', 'left')
 				->join('classes cl', 'cl.id = te.class_id', 'left')
 				->join('levels l', 'l.id = cl.level', 'left')
@@ -88,6 +91,21 @@ class TimetableConflictService
 
 			foreach ($staffRows as $row) {
 				$otherSlotId = (int) ($row['slot_id'] ?? 0);
+				$otherRow = [
+					'staff_id' => $staffId,
+					'class_id' => (int) ($row['class_id'] ?? 0),
+					'course_id' => (int) ($row['course_id'] ?? 0),
+					'course_title' => (string) ($row['course_title'] ?? ''),
+				];
+				$moving = [
+					'staff_id' => $staffId,
+					'class_id' => $classId,
+					'course_id' => (int) ($entry['course_id'] ?? 0),
+					'course_title' => (string) ($entry['course_title'] ?? ''),
+				];
+				if (SecondaryTimetableCriteria::entriesAreCombinedLesson($moving, $otherRow)) {
+					continue;
+				}
 				if ($otherSlotId === $slotId) {
 						$conflicts[] = [
 							'type' => 'teacher',
@@ -190,22 +208,32 @@ class TimetableConflictService
 					$otherHasTime = (int) ($other['end'] ?? 0) > (int) ($other['start'] ?? 0);
 					$sameSlot = (int) $other['slot_id'] === $slotId;
 					$timeClash = $hasTime && $otherHasTime && $this->rangesOverlap($range['start'], $range['end'], $other['start'], $other['end']);
-					if ($sameSlot || $timeClash) {
-						$issues[] = [
-							'type' => 'teacher',
-							'entry_id' => $id,
-							'other_id' => (int) $other['id'],
-							'class_id' => $classId,
-							'class' => $className,
-							'other_class' => (string) ($other['class'] ?? ''),
-							'day' => $day,
-							'slot_id' => $slotId,
-							'message' => trim((string) ($entry['teacher_name'] ?? 'Teacher')) . ' cannot teach two classes at once on ' . $when
-								. ': ' . ($other['course'] ?? 'lesson') . ' in ' . ($other['class'] ?: 'a class')
-								. ' and ' . ($entry['course_title'] ?? 'lesson') . ' in ' . $className . '.',
-							'fix' => 'Correct Manage Course: give one of these subjects to another teacher, or reduce weekly periods so both fit in different slots.',
-						];
+					if (!($sameSlot || $timeClash)) {
+						continue;
 					}
+					$otherRow = [
+						'staff_id' => $staffId,
+						'class_id' => (int) ($other['class_id'] ?? 0),
+						'course_id' => (int) ($other['course_id'] ?? 0),
+						'course_title' => (string) ($other['course'] ?? ''),
+					];
+					if (SecondaryTimetableCriteria::entriesAreCombinedLesson($entry, $otherRow)) {
+						continue;
+					}
+					$issues[] = [
+						'type' => 'teacher',
+						'entry_id' => $id,
+						'other_id' => (int) $other['id'],
+						'class_id' => $classId,
+						'class' => $className,
+						'other_class' => (string) ($other['class'] ?? ''),
+						'day' => $day,
+						'slot_id' => $slotId,
+						'message' => trim((string) ($entry['teacher_name'] ?? 'Teacher')) . ' cannot teach two classes at once on ' . $when
+							. ': ' . ($other['course'] ?? 'lesson') . ' in ' . ($other['class'] ?: 'a class')
+							. ' and ' . ($entry['course_title'] ?? 'lesson') . ' in ' . $className . '.',
+						'fix' => 'Correct Manage Course: give one of these subjects to another teacher, or reduce weekly periods so both fit in different slots.',
+					];
 				}
 				$staffMap[$key][] = [
 					'id' => $id,
@@ -214,6 +242,8 @@ class TimetableConflictService
 					'end' => $range['end'],
 					'course' => $entry['course_title'] ?? '',
 					'class' => $className,
+					'class_id' => $classId,
+					'course_id' => (int) ($entry['course_id'] ?? 0),
 				];
 			}
 		}

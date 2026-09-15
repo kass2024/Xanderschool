@@ -2585,6 +2585,36 @@ class TimetableManagement extends Home
 			}
 
 			$entries = $builder->get()->getResultArray();
+			if ($mode === 'class' && $entries !== []) {
+				$staffIds = [];
+				foreach ($entries as $e) {
+					$sid = (int) ($e['staff_id'] ?? 0);
+					if ($sid > 0) {
+						$staffIds[$sid] = true;
+					}
+				}
+				if ($staffIds !== []) {
+					$partnerRows = $db->table('timetable_entries te')
+						->select('te.*, c.title AS course_title, c.code AS course_code,
+							cl.title AS class_title, cl.level AS class_level_id,
+							l.title AS level_name, d.code AS dept_code, d.title AS dept_name,
+							CONCAT(s.fname, " ", s.lname) AS teacher_name, ts.start_time, ts.end_time, ts.label AS slot_label')
+						->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
+						->join('courses c', 'c.id = te.course_id', 'left')
+						->join('classes cl', 'cl.id = te.class_id', 'left')
+						->join('levels l', 'l.id = cl.level', 'left')
+						->join('departments d', 'd.id = cl.department', 'left')
+						->join('staffs s', 's.id = te.staff_id', 'left')
+						->where('te.schedule_id', (int) $schedule['id'])
+						->where('te.entry_type', 'lesson')
+						->where('te.day_of_week >=', 0)
+						->where('te.slot_id >', 0)
+						->where('te.class_id !=', $entityId)
+						->whereIn('te.staff_id', array_keys($staffIds))
+						->get()->getResultArray();
+					$entries = array_merge($entries, $partnerRows);
+				}
+			}
 		}
 
 		$dayLabels = $this->expandDayLabelsForEntries($dayLabels, $dayMap, $entries);
@@ -2657,6 +2687,9 @@ class TimetableManagement extends Home
 			}
 
 			foreach ($entries as $entry) {
+				if ($mode === 'class' && (int) ($entry['class_id'] ?? 0) !== $entityId) {
+					continue;
+				}
 				$si = $this->resolveSlotRowIndex($slotMaps, $entry, $slots);
 				$dayLabel = $labelByDay[(int) $entry['day_of_week']] ?? null;
 				if ($si === null || $dayLabel === null) {
@@ -2707,6 +2740,17 @@ class TimetableManagement extends Home
 				];
 				if ($mode === 'class') {
 					$cell['line2'] = $entry['teacher_name'] ?? '';
+					if ($isCombined) {
+						$others = [];
+						foreach ($partnerLabels as $pl) {
+							if ($pl !== $classLabel) {
+								$others[] = $pl;
+							}
+						}
+						if ($others !== []) {
+							$cell['line2'] = trim((string) ($entry['teacher_name'] ?? '') . ' · ' . implode(' + ', $others));
+						}
+					}
 				} else {
 					$cell['line2'] = $isCombined ? implode(' + ', $partnerLabels) : $classLabel;
 				}

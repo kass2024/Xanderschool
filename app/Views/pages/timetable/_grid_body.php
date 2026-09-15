@@ -141,6 +141,9 @@ $conflictIds = $conflict_entry_ids ?? [];
 										<?php else: ?>
 											<span class="tt-drag-grip" title="Drag to move">⋮⋮</span>
 											<div class="tt-course"><?= esc($cell['course']); ?></div>
+											<?php if (!empty($cell['combined'])): ?>
+												<div class="tt-combined-badge">Combined</div>
+											<?php endif; ?>
 											<?php if ($mode === 'class' && !empty($cell['line2'])): ?>
 												<div class="tt-sub"><?= esc($cell['line2']); ?></div>
 											<?php elseif ($mode === 'teacher'): ?>
