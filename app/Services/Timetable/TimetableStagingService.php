@@ -1144,11 +1144,26 @@ class TimetableStagingService
 				$this->uniqueCoursesOnDay($state, $classId, $day),
 				$this->dayHasCourse($state, $entry, $day)
 			);
+			$hwOnDay = 0;
+			foreach (($state['by_id'] ?? []) as $existing) {
+				if ((int) ($existing['class_id'] ?? 0) !== $classId) {
+					continue;
+				}
+				if ((int) ($existing['day_of_week'] ?? -1) !== $day) {
+					continue;
+				}
+				$label = strtolower((string) ($existing['custom_label'] ?? $existing['course_title'] ?? ''));
+				if (strpos($label, 'homework') !== false || strpos($label, 'home work') !== false) {
+					$hwOnDay++;
+				}
+			}
 			$score += NurseryTimetableCriteria::homeworkScoreDelta(
 				$meta,
 				$start,
 				$end,
-				!empty($state['nursery_homework_done'][$classId . ':' . (int) ($entry['course_id'] ?? 0)])
+				!empty($state['nursery_homework_done'][$classId . ':' . (int) ($entry['course_id'] ?? 0)]),
+				$hwOnDay,
+				$this->uniqueCoursesOnDay($state, $classId, $day)
 			);
 		}
 		return $score;
