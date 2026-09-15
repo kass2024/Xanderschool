@@ -16,7 +16,7 @@ class NurseryTimetableCriteria
 
 	public const MIN_HOMEWORK_PER_DAY = 1;
 
-	public const MAX_HOMEWORK_PER_DAY = 3;
+	public const MAX_HOMEWORK_PER_DAY = 4;
 
 	/** Homework / late window starts after lunch */
 	public const HOMEWORK_START_MINUTES = 13 * 60;
@@ -122,11 +122,8 @@ class NurseryTimetableCriteria
 
 	public static function maxPerDay(int $uniqueCoursesOnDay, bool $alreadyHasThisCourse): int
 	{
-		if (!$alreadyHasThisCourse) {
-			return 1;
-		}
-		// A second period of the same course only after the day already has 4 subjects.
-		return $uniqueCoursesOnDay >= self::MIN_DISTINCT_COURSES_PER_DAY ? 2 : 1;
+		// Nursery may teach the same course twice in one day.
+		return 2;
 	}
 
 	public static function varietyScoreDelta(int $uniqueCoursesOnDay, bool $alreadyHasThisCourse): int

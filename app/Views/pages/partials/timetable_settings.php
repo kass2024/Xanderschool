@@ -69,7 +69,7 @@ $colorOptions = [
 
 	<div class="tab-content">
 		<div class="tab-pane fade show active" id="ttTabPeriods" role="tabpanel">
-			<p class="text-muted mb-3">Nursery is independent: <strong>Morning circle 07:30–08:00</strong>, break <strong>10:30–11:00</strong>, lunch <strong>12:00–13:00</strong>, lessons end <strong>16:30</strong>. Aim for <strong>at least 4 taught courses per day</strong> (including the 10:00–10:30 lesson), then <strong>1–3 × 30-minute Homework in …</strong> in the last hours (14:00–16:30). Every course gets one homework slot in the week. Plain Writing is a normal lesson; homework shows as <strong>Homework in Writing</strong>. Primary keeps 1-hour lessons from 07:30. High school / TVET keep 40-minute bells. None of these include Sunday.</p>
+			<p class="text-muted mb-3">Nursery is independent: <strong>Morning circle 07:30–08:00</strong>, break <strong>10:30–11:00</strong>, lunch <strong>12:00–13:00</strong>, lessons end <strong>16:30</strong>. Aim for <strong>at least 4 taught courses per day</strong> (same course may appear twice). Every course gets <strong>Homework in …</strong> in the last 30-minute periods, and leftover late slots are filled with homework so afternoons are not left empty. Plain Writing is a normal lesson. Primary keeps 1-hour lessons from 07:30. High school / TVET keep 40-minute bells. None of these include Sunday.</p>
 
 			<form id="timetableSlotsForm">
 				<input type="hidden" name="track_key" id="ttTrackKeyPeriods" value="<?= esc($selectedTrack); ?>">

@@ -388,6 +388,11 @@ class TimetableGeneratorService
 				]);
 			} else {
 				$assignment = $need['assignment'];
+				// Nursery homework is filled in a dedicated pack pass — do not park it unlabeled.
+				if ($nurseryHwNeed) {
+					$processed++;
+					continue;
+				}
 				for ($p = 0; $p < max(1, $blockSize); $p++) {
 					$entries[] = $this->parkingEntry($assignment);
 				}
@@ -413,7 +418,9 @@ class TimetableGeneratorService
 	}
 
 	/**
-	 * Second pass: every nursery course that still lacks "Homework in …" gets a late 30-min slot.
+	 * Pack nursery homework into free afternoon 30-min slots, then fill leftover free slots.
+	 * Every course gets at least one "Homework in …"; remaining late slots get more homework
+	 * so the afternoon is not left empty.
 	 *
 	 * @param list<array<string,mixed>> $assignments
 	 * @param array<string,int> $placedByAssignment
@@ -422,6 +429,7 @@ class TimetableGeneratorService
 	private function fillMissingNurseryHomework(array $assignments, array &$placedByAssignment): array
 	{
 		$extra = [];
+		$byClass = [];
 		foreach ($assignments as $row) {
 			if (!NurseryTimetableCriteria::isNurseryRow($row)) {
 				continue;
@@ -431,32 +439,124 @@ class TimetableGeneratorService
 			}
 			$classId = (int) ($row['class_id'] ?? 0);
 			$courseId = (int) ($row['course_id'] ?? 0);
-			if ($classId <= 0 || $courseId <= 0) {
+			if ($classId <= 0 || $courseId <= 0 || self::weeklyHoursFromCourse($row) <= 0) {
 				continue;
 			}
-			$subjectKey = $classId . ':' . $courseId;
-			if (!empty($this->nurseryHomeworkDone[$subjectKey])) {
+			$byClass[$classId][] = $row;
+		}
+
+		foreach ($byClass as $classId => $rows) {
+			$staffId = (int) ($rows[0]['lecturer'] ?? 0);
+			$freeHw = $this->listFreeNurseryHomeworkSlots((int) $classId, $staffId);
+			if ($freeHw === []) {
 				continue;
 			}
-			$hours = self::weeklyHoursFromCourse($row);
-			if ($hours <= 0) {
-				continue;
+
+			// Pass 1: one homework for every course that still needs it.
+			foreach ($rows as $row) {
+				$subjectKey = (int) $classId . ':' . (int) ($row['course_id'] ?? 0);
+				if (!empty($this->nurseryHomeworkDone[$subjectKey])) {
+					continue;
+				}
+				$slot = array_shift($freeHw);
+				if ($slot === null) {
+					$this->warnings[] = 'Could not place Homework in '
+						. trim((string) ($row['course_title'] ?? 'course'))
+						. ' for ' . (TimetableClassLabel::fromRow($row) ?: 'class')
+						. ' — no free late 30-min slot';
+					break;
+				}
+				$entry = $this->commitNurseryHomeworkEntry($row, (int) $slot['day'], (int) $slot['slot_id']);
+				if ($entry === null) {
+					array_unshift($freeHw, $slot);
+					continue;
+				}
+				$extra[] = $entry;
+				$assignKey = $this->assignmentQuotaKey($row) . ':hw';
+				$placedByAssignment[$assignKey] = (int) ($placedByAssignment[$assignKey] ?? 0) + 1;
 			}
-			$placed = $this->placeLesson($row, 1, $hours, true);
-			if ($placed === null) {
-				$this->warnings[] = 'Could not place Homework in '
-					. trim((string) ($row['course_title'] ?? 'course'))
-					. ' for ' . (TimetableClassLabel::fromRow($row) ?: 'class');
-				continue;
-			}
-			foreach ($placed as $entry) {
+
+			// Pass 2: fill remaining free afternoon 30-min slots with more homework (no empty last hours).
+			$cursor = 0;
+			$rowCount = count($rows);
+			while ($freeHw !== [] && $rowCount > 0) {
+				$slot = array_shift($freeHw);
+				$row = $rows[$cursor % $rowCount];
+				$cursor++;
+				$entry = $this->commitNurseryHomeworkEntry($row, (int) $slot['day'], (int) $slot['slot_id']);
+				if ($entry === null) {
+					continue;
+				}
 				$extra[] = $entry;
 			}
-			$assignKey = $this->assignmentQuotaKey($row) . ':hw';
-			$placedByAssignment[$assignKey] = (int) ($placedByAssignment[$assignKey] ?? 0) + count($placed);
 		}
 
 		return $extra;
+	}
+
+	/**
+	 * @return list<array{day:int,slot_id:int,start:string}>
+	 */
+	private function listFreeNurseryHomeworkSlots(int $classId, int $staffId = 0): array
+	{
+		$out = [];
+		foreach ($this->days as $day) {
+			$day = (int) $day;
+			foreach ($this->teachingSlots as $slot) {
+				$slotId = (int) ($slot['id'] ?? 0);
+				$start = (string) ($slot['start_time'] ?? '');
+				$end = (string) ($slot['end_time'] ?? '');
+				if ($slotId <= 0 || !NurseryTimetableCriteria::isHomeworkSizedSlot($start, $end)) {
+					continue;
+				}
+				if (!$this->slotsFree($classId, $staffId, $day, [$slotId])) {
+					continue;
+				}
+				$out[] = ['day' => $day, 'slot_id' => $slotId, 'start' => $start];
+			}
+		}
+		usort($out, static function ($a, $b) {
+			$sa = NurseryTimetableCriteria::homeworkLatenessBonus($a['start']);
+			$sb = NurseryTimetableCriteria::homeworkLatenessBonus($b['start']);
+			if ($sa !== $sb) {
+				return $sa <=> $sb;
+			}
+			return (int) $a['day'] <=> (int) $b['day'];
+		});
+
+		return $out;
+	}
+
+	/** @return array<string,mixed>|null */
+	private function commitNurseryHomeworkEntry(array $row, int $day, int $slotId): ?array
+	{
+		$classId = (int) ($row['class_id'] ?? 0);
+		$staffId = (int) ($row['lecturer'] ?? 0);
+		$courseId = (int) ($row['course_id'] ?? 0);
+		$subjectKey = $classId . ':' . $courseId;
+		if ($classId <= 0 || $courseId <= 0 || $slotId <= 0) {
+			return null;
+		}
+		if (!$this->slotsFree($classId, $staffId, $day, [$slotId])) {
+			return null;
+		}
+		$this->markBusy($classId, $staffId, $day, $slotId);
+		$this->nurseryHomeworkDone[$subjectKey] = true;
+		$dayHwKey = $classId . ':' . $day;
+		$this->nurseryHomeworkByDay[$dayHwKey] = (int) ($this->nurseryHomeworkByDay[$dayHwKey] ?? 0) + 1;
+		$this->subjectDayCount[$subjectKey . ':' . $day] =
+			(int) ($this->subjectDayCount[$subjectKey . ':' . $day] ?? 0) + 1;
+
+		return [
+			'class_id' => $classId,
+			'staff_id' => $staffId,
+			'course_id' => $courseId,
+			'course_record_id' => (int) ($row['course_record_id'] ?? 0),
+			'day_of_week' => $day,
+			'slot_id' => $slotId,
+			'entry_type' => 'lesson',
+			'custom_label' => NurseryTimetableCriteria::homeworkLabelForCourse((string) ($row['course_title'] ?? '')),
+		];
 	}
 
 	/** @param list<array<string,mixed>> $lessonNeeds */
@@ -1568,7 +1668,7 @@ class TimetableGeneratorService
 	private function maxPerDayForCourse(array $row, int $weeklyHours): int
 	{
 		if (NurseryTimetableCriteria::isNurseryRow($row)) {
-			return 1;
+			return 2;
 		}
 		if ($this->secondaryCriteria !== null) {
 			$peMax = $this->secondaryCriteria->peMaxPerDay($row, $weeklyHours);
