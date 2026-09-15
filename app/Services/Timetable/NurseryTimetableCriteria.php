@@ -16,7 +16,7 @@ class NurseryTimetableCriteria
 
 	public const MIN_HOMEWORK_PER_DAY = 1;
 
-	public const MAX_HOMEWORK_PER_DAY = 2;
+	public const MAX_HOMEWORK_PER_DAY = 3;
 
 	/** Homework / late window starts after lunch */
 	public const HOMEWORK_START_MINUTES = 13 * 60;
@@ -76,8 +76,14 @@ class NurseryTimetableCriteria
 		return $start < self::HOMEWORK_END_MINUTES && $end > self::HOMEWORK_START_MINUTES;
 	}
 
+	/**
+	 * Afternoon ~30-minute bells reserved for homework (not the morning 10:00–10:30 lesson).
+	 */
 	public static function isHomeworkSizedSlot(?string $startTime, ?string $endTime): bool
 	{
+		if (!self::slotOverlapsHomeworkWindow($startTime, $endTime)) {
+			return false;
+		}
 		$start = TimetableGeneratorService::clockMinutesFromString((string) $startTime);
 		$end = TimetableGeneratorService::clockMinutesFromString((string) $endTime);
 		if ($end <= $start) {
@@ -161,14 +167,17 @@ class NurseryTimetableCriteria
 			if ($homeworkOnDay >= self::MAX_HOMEWORK_PER_DAY) {
 				return 14000;
 			}
-			if ($uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY) {
-				return 7500;
-			}
 			$score = self::homeworkLatenessBonus($startTime);
+			// Prefer days that already have 4 taught courses, but still place homework otherwise.
+			if ($uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY) {
+				$score += 2500;
+			}
 			if ($homeworkOnDay === 0) {
 				$score -= 3500;
 			} elseif ($homeworkOnDay === 1) {
-				$score -= 900;
+				$score -= 1200;
+			} elseif ($homeworkOnDay === 2) {
+				$score -= 400;
 			}
 
 			return $score;

@@ -249,14 +249,22 @@ class TimetableGeneratorService
 		/** @var array<string,int> */
 		$placedByAssignment = [];
 
-		// Combined subjects first so paired classes claim the same slots together.
+		// After-lesson (Farming / Library) and PE claim their locked clocks before
+		// combined groups and ordinary courses can take those periods.
 		usort($assignments, function (array $a, array $b): int {
-			$pa = $this->secondaryCriteria && $this->secondaryCriteria->combinePartner($a) ? 0 : 1;
-			$pb = $this->secondaryCriteria && $this->secondaryCriteria->combinePartner($b) ? 0 : 1;
-			if ($pa !== $pb) {
-				return $pa <=> $pb;
-			}
-			return 0;
+			$rank = function (array $row): int {
+				if ($this->secondaryCriteria && $this->secondaryCriteria->requiresAfterLessons($row)) {
+					return 0;
+				}
+				if ($this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''))) {
+					return 1;
+				}
+				if ($this->secondaryCriteria && $this->secondaryCriteria->combinePartner($row)) {
+					return 2;
+				}
+				return 3;
+			};
+			return $rank($a) <=> $rank($b);
 		});
 
 		$batchClassIds = [];
@@ -388,7 +396,59 @@ class TimetableGeneratorService
 			}
 		}
 
+		$hwExtra = $this->fillMissingNurseryHomework($assignments, $placedByAssignment);
+		foreach ($hwExtra as $entry) {
+			$entries[] = $entry;
+		}
+
 		return ['entries' => $entries, 'warnings' => $this->warnings];
+	}
+
+	/**
+	 * Second pass: every nursery course that still lacks "Homework in …" gets a late 30-min slot.
+	 *
+	 * @param list<array<string,mixed>> $assignments
+	 * @param array<string,int> $placedByAssignment
+	 * @return list<array<string,mixed>>
+	 */
+	private function fillMissingNurseryHomework(array $assignments, array &$placedByAssignment): array
+	{
+		$extra = [];
+		foreach ($assignments as $row) {
+			if (!NurseryTimetableCriteria::isNurseryRow($row)) {
+				continue;
+			}
+			if (NurseryTimetableCriteria::isHomeworkCourse((string) ($row['course_title'] ?? ''))) {
+				continue;
+			}
+			$classId = (int) ($row['class_id'] ?? 0);
+			$courseId = (int) ($row['course_id'] ?? 0);
+			if ($classId <= 0 || $courseId <= 0) {
+				continue;
+			}
+			$subjectKey = $classId . ':' . $courseId;
+			if (!empty($this->nurseryHomeworkDone[$subjectKey])) {
+				continue;
+			}
+			$hours = self::weeklyHoursFromCourse($row);
+			if ($hours <= 0) {
+				continue;
+			}
+			$placed = $this->placeLesson($row, 1, $hours, true);
+			if ($placed === null) {
+				$this->warnings[] = 'Could not place Homework in '
+					. trim((string) ($row['course_title'] ?? 'course'))
+					. ' for ' . (TimetableClassLabel::fromRow($row) ?: 'class');
+				continue;
+			}
+			foreach ($placed as $entry) {
+				$extra[] = $entry;
+			}
+			$assignKey = $this->assignmentQuotaKey($row) . ':hw';
+			$placedByAssignment[$assignKey] = (int) ($placedByAssignment[$assignKey] ?? 0) + count($placed);
+		}
+
+		return $extra;
 	}
 
 	/** @param list<array<string,mixed>> $lessonNeeds */
@@ -403,6 +463,10 @@ class TimetableGeneratorService
 			$lessonNeeds[$i]['is_pe'] = $this->isPhysicalEducationSportCourse(
 				(string) ($need['assignment']['course_title'] ?? '')
 			) ? 1 : 0;
+			$lessonNeeds[$i]['is_after_lessons'] = (
+				$this->secondaryCriteria !== null
+				&& $this->secondaryCriteria->requiresAfterLessons($need['assignment'])
+			) ? 1 : 0;
 			$lessonNeeds[$i]['window_fill'] = (
 				$this->secondaryCriteria !== null
 				&& $this->secondaryCriteria->isWindowFillTeacher($need['assignment'])
@@ -414,6 +478,14 @@ class TimetableGeneratorService
 			$lessonNeeds[$i]['is_homework'] = ($explicitHw || !empty($need['nursery_homework'])) ? 1 : 0;
 		}
 		usort($lessonNeeds, static function ($a, $b) {
+			$after = (int) ($b['is_after_lessons'] ?? 0) <=> (int) ($a['is_after_lessons'] ?? 0);
+			if ($after !== 0) {
+				return $after;
+			}
+			$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
+			if ($pe !== 0) {
+				return $pe;
+			}
 			$win = (int) ($b['window_fill'] ?? 0) <=> (int) ($a['window_fill'] ?? 0);
 			if ($win !== 0) {
 				return $win;
@@ -422,10 +494,6 @@ class TimetableGeneratorService
 			$hw = (int) ($a['is_homework'] ?? 0) <=> (int) ($b['is_homework'] ?? 0);
 			if ($hw !== 0) {
 				return $hw;
-			}
-			$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
-			if ($pe !== 0) {
-				return $pe;
 			}
 			$ca = (int) ($a['candidate_count'] ?? PHP_INT_MAX);
 			$cb = (int) ($b['candidate_count'] ?? PHP_INT_MAX);
@@ -455,6 +523,10 @@ class TimetableGeneratorService
 			$lessonNeeds[$i]['is_pe'] = $this->isPhysicalEducationSportCourse(
 				(string) ($need['assignment']['course_title'] ?? '')
 			) ? 1 : 0;
+			$lessonNeeds[$i]['is_after_lessons'] = (
+				$this->secondaryCriteria !== null
+				&& $this->secondaryCriteria->requiresAfterLessons($need['assignment'])
+			) ? 1 : 0;
 			$lessonNeeds[$i]['window_fill'] = (
 				$this->secondaryCriteria !== null
 				&& $this->secondaryCriteria->isWindowFillTeacher($need['assignment'])
@@ -466,6 +538,14 @@ class TimetableGeneratorService
 			$lessonNeeds[$i]['is_homework'] = ($explicitHw || !empty($need['nursery_homework'])) ? 1 : 0;
 		}
 		usort($lessonNeeds, static function ($a, $b) {
+			$after = (int) ($b['is_after_lessons'] ?? 0) <=> (int) ($a['is_after_lessons'] ?? 0);
+			if ($after !== 0) {
+				return $after;
+			}
+			$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
+			if ($pe !== 0) {
+				return $pe;
+			}
 			$win = (int) ($b['window_fill'] ?? 0) <=> (int) ($a['window_fill'] ?? 0);
 			if ($win !== 0) {
 				return $win;
@@ -473,10 +553,6 @@ class TimetableGeneratorService
 			$hw = (int) ($a['is_homework'] ?? 0) <=> (int) ($b['is_homework'] ?? 0);
 			if ($hw !== 0) {
 				return $hw;
-			}
-			$pe = (int) ($b['is_pe'] ?? 0) <=> (int) ($a['is_pe'] ?? 0);
-			if ($pe !== 0) {
-				return $pe;
 			}
 			$bs = (int) $b['block_size'] <=> (int) $a['block_size'];
 			if ($bs !== 0) {
@@ -638,10 +714,12 @@ class TimetableGeneratorService
 		$explicitHomework = $nursery && NurseryTimetableCriteria::isHomeworkCourse((string) ($row['course_title'] ?? ''));
 		$placeAsHomework = $nursery && ($nurseryHomeworkPlacement || $explicitHomework);
 		// Lessons fill mornings first (4+ courses/day). Homework uses the last periods.
+		// PE last-hour is hard: last 1 teaching period ending by 15:40, then last 2.
+		// Never fall back to window 0 (any slot) — that put PE at 13:40.
 		if ($placeAsHomework) {
 			$windows = [3, 2, 1, 0];
 		} elseif ($lastHour) {
-			$windows = [2, 3, 4, 5, 6, 7, 0];
+			$windows = [1, 2];
 		} else {
 			$windows = [0];
 		}
@@ -766,7 +844,7 @@ class TimetableGeneratorService
 			if ($hwLabel !== null) {
 				$entry['custom_label'] = $hwLabel;
 			}
-			$lock = $combined;
+			$lock = $combined || $peSport || $afterLessons;
 			if (!$lock && $this->secondaryCriteria !== null) {
 				$lock = $this->secondaryCriteria->shouldLockPlacement(
 					$row,
@@ -824,9 +902,15 @@ class TimetableGeneratorService
 		$placeAsHomework = $nurseryHomeworkPlacement || $explicitHomework;
 		$candidates = [];
 		$slotCount = count($this->teachingSlots);
-		$reserveLate = $slotCount > 0 ? max(0, $slotCount - 3) : 0;
+		$lessonIndexes = $this->teachingDaySlotIndexes();
+		$reserveLate = $lessonIndexes !== []
+			? (int) $lessonIndexes[max(0, count($lessonIndexes) - 2)]
+			: ($slotCount > 0 ? max(0, $slotCount - 3) : 0);
 		$lateStartIndex = 0;
-		if ($endOfDayWindow > 0 && $slotCount > 0) {
+		$lastHourAllowed = [];
+		if ($lastHour && $endOfDayWindow > 0 && $lessonIndexes !== []) {
+			$lastHourAllowed = array_flip(array_slice($lessonIndexes, -max($endOfDayWindow, $blockSize)));
+		} elseif ($endOfDayWindow > 0 && $slotCount > 0) {
 			$lateStartIndex = max(0, $slotCount - max($endOfDayWindow, $blockSize));
 		}
 
@@ -877,7 +961,14 @@ class TimetableGeneratorService
 				continue;
 			}
 			for ($i = 0; $i < $slotCount; $i++) {
-				if ($endOfDayWindow > 0 && $i < $lateStartIndex) {
+				if ($lastHour) {
+					if ($lastHourAllowed !== [] && !isset($lastHourAllowed[$i])) {
+						continue;
+					}
+					if (!$this->slotIsLastTeachingHour($this->teachingSlots[$i] ?? [])) {
+						continue;
+					}
+				} elseif ($endOfDayWindow > 0 && $i < $lateStartIndex) {
 					continue;
 				}
 				if ($morningOnly && !$this->slotIsMorning($this->teachingSlots[$i] ?? [])) {
@@ -901,7 +992,7 @@ class TimetableGeneratorService
 				if ($placeAsHomework && $this->slotIsMorning($slot)) {
 					continue;
 				}
-				// Taught lessons: fill mornings first; never use 30-min homework slots.
+				// Taught lessons: leave afternoon 30-min bells for homework only.
 				if ($nursery && !$placeAsHomework && $hwSized) {
 					continue;
 				}
@@ -911,7 +1002,14 @@ class TimetableGeneratorService
 				}
 				if ($blockSize === 2) {
 					for ($j = $i + 1; $j < $slotCount; $j++) {
-						if ($endOfDayWindow > 0 && $j < $lateStartIndex) {
+						if ($lastHour) {
+							if ($lastHourAllowed !== [] && !isset($lastHourAllowed[$j])) {
+								continue;
+							}
+							if (!$this->slotIsLastTeachingHour($this->teachingSlots[$j] ?? [])) {
+								continue;
+							}
+						} elseif ($endOfDayWindow > 0 && $j < $lateStartIndex) {
 							continue;
 						}
 						if ($morningOnly && !$this->slotIsMorning($this->teachingSlots[$j] ?? [])) {
@@ -957,7 +1055,7 @@ class TimetableGeneratorService
 							$score += 15;
 						}
 						if ($lastHour) {
-							$score += ($slotCount - 1 - $j) * 800;
+							$score += $this->lastHourIndexPenalty($j, $lessonIndexes);
 						} elseif (!$afterLessons && $j >= $reserveLate) {
 							$score += 900;
 						}
@@ -980,7 +1078,7 @@ class TimetableGeneratorService
 					}
 					$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $i, $weeklyHours, $scoreRow);
 				if ($lastHour) {
-					$score += ($slotCount - 1 - $i) * 800;
+					$score += $this->lastHourIndexPenalty($i, $lessonIndexes);
 				} elseif (!$afterLessons && $i >= $reserveLate) {
 					$score += 900;
 				}
