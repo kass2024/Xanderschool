@@ -100,9 +100,11 @@ class HeyStarSyncService
 
 		$staff = 0;
 		$skipped = 0;
+		$renamed = 0;
 		$deviceOnly = 0;
 		$devicePeople = [];
 		$deviceSnMap = [];
+		$devicePeopleNameMap = [];
 		$errors = [];
 		if (!$client->ok($brand['ui'] ?? [])) {
 			$errors[] = 'School UI: ' . (string) (($brand['ui']['msg'] ?? 'branding failed'));
@@ -115,6 +117,7 @@ class HeyStarSyncService
 					$sn = self::devicePersonSn($person);
 					if ($sn !== '') {
 						$deviceSnMap[$sn] = true;
+						$devicePeopleNameMap[$sn] = (string) ($person['name'] ?? '');
 					}
 				}
 			} else {
@@ -130,14 +133,31 @@ class HeyStarSyncService
 		}
 		foreach ($roster as $p) {
 			$sn = 'T' . (int) $p['id'];
+			$wantName = self::safeName((string) $p['name']);
 			if (isset($deviceSnMap[$sn])) {
-				$skipped++;
+				$haveName = self::safeName((string) ($devicePeopleNameMap[$sn] ?? ''));
+				if ($haveName !== '' && strcasecmp($haveName, $wantName) === 0) {
+					$skipped++;
+					continue;
+				}
+				// Name-only merge (no face fields) so enrolled faces stay on the terminal.
+				$res = $client->post('person/merge', [
+					'type' => 1,
+					'sn' => $sn,
+					'name' => $wantName,
+					'verifyStyle' => 1,
+				]);
+				if (!$client->ok($res)) {
+					$errors[] = $sn . ' rename: ' . (string) ($res['msg'] ?? 'person merge failed');
+					continue;
+				}
+				$renamed++;
 				continue;
 			}
 			$res = $client->post('person/merge', [
 				'type' => 1,
 				'sn' => $sn,
-				'name' => self::safeName((string) $p['name']),
+				'name' => $wantName,
 				'verifyStyle' => 1,
 			]);
 			if (!$client->ok($res)) {
@@ -162,8 +182,9 @@ class HeyStarSyncService
 		HeyStarDeviceStore::markStaffSynced($schoolId);
 		return [
 			'success' => 1,
-			'message' => self::buildSyncMessage($brand['name'], $staff, $skipped, count($devicePeople), $deviceOnly, $deviceKey !== ''),
+			'message' => self::buildSyncMessage($brand['name'], $staff, $skipped, $renamed, count($devicePeople), $deviceOnly, $deviceKey !== ''),
 			'staff' => $staff,
+			'renamed' => $renamed,
 			'skipped_existing' => $skipped,
 			'device_existing' => count($devicePeople),
 			'device_only' => $deviceOnly,
@@ -387,12 +408,12 @@ class HeyStarSyncService
 		return '';
 	}
 
-	private static function buildSyncMessage(string $schoolName, int $added, int $skipped, int $deviceCount, int $deviceOnly, bool $compared): string
+	private static function buildSyncMessage(string $schoolName, int $added, int $skipped, int $renamed, int $deviceCount, int $deviceOnly, bool $compared): string
 	{
 		if (!$compared) {
 			return "Branded HeyStar as {$schoolName}. Synced {$added} staff names. Existing enrolled faces on the terminal were not removed. Capture faces on the terminal. Staff card photos are uploaded on Xander, not from the camera.";
 		}
-		$message = "Branded HeyStar as {$schoolName}. Compared {$deviceCount} existing people on the terminal with the online staff roster, added {$added} missing staff, and left {$skipped} existing online staff entries untouched so their faces stay as they are.";
+		$message = "Branded HeyStar as {$schoolName}. Compared {$deviceCount} existing people on the terminal with the online staff roster, added {$added} missing staff, updated {$renamed} edited names, and left {$skipped} matching entries untouched so their faces stay as they are.";
 		if ($deviceOnly > 0) {
 			$message .= " {$deviceOnly} device-only people were left untouched.";
 		}
