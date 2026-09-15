@@ -68,6 +68,10 @@ $headMaster = $fmt(trim((string) ($head_master ?? 'Headmaster')));
 
 $labels = CardLayout::STAFF_FIELDS;
 
+$icoPhone = '<svg viewBox="0 0 24 24" fill="#082060" xmlns="http://www.w3.org/2000/svg"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1.1-.2 1.2.4 2.5.6 3.8.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.6.6 3.8.1.4 0 .8-.3 1.1l-2.2 2.2z"/></svg>';
+$icoEmail = '<svg viewBox="0 0 24 24" fill="none" stroke="#082060" stroke-width="2.2" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 7 9-7"/></svg>';
+$icoId = '<svg viewBox="0 0 24 24" fill="none" stroke="#082060" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8.2" cy="12" r="2.1" fill="#082060" stroke="none"/><path d="M13 10h6M13 13h5M13 16h3.5"/></svg>';
+
 $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1.35, float $factor = 0.52) use ($cardWmm, $cardHmm): float {
 	return CardLayout::fitFontMm($text, (float)($f['w'] ?? 50), (float)($f['h'] ?? 6), $cardWmm, $cardHmm, $max, $min, $factor);
 };
@@ -175,8 +179,16 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		color: #082060; font-weight: 700; letter-spacing: 0.02em;
 		white-space: nowrap; overflow: hidden; font-size: 3.8mm;
 	}
+	.ws-post-wrap {
+		position: absolute; left: 6%; top: 54%; width: 88%; height: 4.4%;
+	}
+	.ws-gold-l, .ws-gold-r {
+		position: absolute; top: 48%; width: 16%; height: 0.38mm; background: #c49a30;
+	}
+	.ws-gold-l { left: 0; }
+	.ws-gold-r { right: 0; }
 	.ws-post {
-		position: absolute; left: 12%; top: 54.4%; width: 76%; height: 4.2%;
+		position: absolute; left: 18%; top: 0; width: 64%; height: 100%;
 		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
 		-webkit-box-pack: center; justify-content: center;
 		background: #082060; color: #ffffff; font-weight: 700;
@@ -184,26 +196,29 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		white-space: nowrap; overflow: hidden; font-size: 2.6mm;
 	}
 	.ws-info {
-		position: absolute; left: 6.8%; top: 59.2%; width: 86.4%;
+		position: absolute; left: 6%; top: 59.4%; width: 88%;
 	}
 	.ws-row {
-		position: relative; left: auto; width: 100%; height: 5.6mm;
+		position: relative; left: auto; width: 100%; height: 6.2mm;
 		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
-		background: #ecf1fa;
-		border-radius: 10mm;
-		padding: 0 2.6mm 0 2.4mm;
-		margin: 0 0 1.15mm;
+		background: #e4ecf8;
+		border-radius: 3.2mm;
+		padding: 0 2.2mm 0 1.4mm;
+		margin: 0 0 1.1mm;
 		border-top: none;
 		white-space: nowrap; overflow: hidden;
 		box-sizing: border-box;
 	}
-	.ws-dot {
-		width: 1.15mm; height: 1.15mm; border-radius: 50%;
-		background: #c49a30; margin-right: 1.8mm; flex-shrink: 0;
-		display: inline-block;
+	.ws-ico {
+		width: 4.4mm; height: 4.4mm; border-radius: 50%;
+		background: #f4f7fc; margin-right: 1.6mm; flex-shrink: 0;
+		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
+		-webkit-box-pack: center; justify-content: center;
 	}
-	.ws-lab { color: #466096; font-size: 1.75mm; letter-spacing: 0.14em; font-weight: 700; }
-	.ws-val { color: #082060; font-size: 2.55mm; font-weight: 700; margin-left: auto; }
+	.ws-ico svg { width: 2.5mm; height: 2.5mm; display: block; }
+	.ws-lab { color: #082060; font-size: 2.05mm; letter-spacing: 0.08em; font-weight: 700; width: 16mm; flex-shrink: 0; }
+	.ws-split { width: 0.28mm; height: 3.1mm; background: #b0c0d8; margin: 0 2mm; flex-shrink: 0; }
+	.ws-val { color: #082060; font-size: 2.55mm; font-weight: 700; text-align: left; margin-left: 0; }
 </style>
 <script>
 (function () {
@@ -257,13 +272,13 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	if ($isWisdomArt) {
 		$fullName = preg_replace('/\s+/u', ' ', trim($fullName)) ?? $fullName;
 		if (!empty($staff['phone'])) {
-			$wsRows[] = ['PHONE', $phoneLabel];
+			$wsRows[] = ['PHONE', $phoneLabel, 'phone'];
 		}
 		if (!empty($staff['email'])) {
-			$wsRows[] = ['EMAIL', trim((string) $staff['email'])];
+			$wsRows[] = ['EMAIL', trim((string) $staff['email']), 'email'];
 		}
 		if (($staff['id'] ?? '') !== '') {
-			$wsRows[] = ['STAFF ID', (string) $staff['id']];
+			$wsRows[] = ['STAFF ID', (string) $staff['id'], 'id'];
 		}
 	}
 	$cardBgSrc = $bgSrc;
@@ -306,14 +321,21 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		<?php if ($isWisdomArt): ?>
 			<div class="ws-name"><?= esc($fullName); ?></div>
 			<?php if ($postTitle !== '' && $postTitle !== '—'): ?>
-				<div class="ws-post"><?= esc($postTitle); ?></div>
+				<div class="ws-post-wrap">
+					<div class="ws-gold-l"></div>
+					<div class="ws-post"><?= esc($postTitle); ?></div>
+					<div class="ws-gold-r"></div>
+				</div>
 			<?php endif; ?>
 			<?php if ($wsRows !== []): ?>
 			<div class="ws-info">
-			<?php foreach ($wsRows as $ws): ?>
+			<?php foreach ($wsRows as $ws):
+				$kind = $ws[2] ?? 'phone';
+			?>
 				<div class="ws-row">
-					<span class="ws-dot"></span>
+					<span class="ws-ico"><?= $kind === 'email' ? $icoEmail : ($kind === 'id' ? $icoId : $icoPhone); ?></span>
 					<span class="ws-lab"><?= esc($ws[0]); ?></span>
+					<span class="ws-split"></span>
 					<span class="ws-val"><?= esc($ws[1]); ?></span>
 				</div>
 			<?php endforeach; ?>

@@ -30,7 +30,6 @@ class WisdomStaffCardRenderer
 	private const HOLE_D = 274;
 
 	private const NAVY = [8, 32, 96];
-	private const MUTED = [70, 96, 150];
 	private const GOLD = [196, 154, 48];
 
 	/** @var string */
@@ -174,7 +173,6 @@ class WisdomStaffCardRenderer
 	 */
 	private function drawStaffInfo($im, array $staff, array $ctx, int $navy): void
 	{
-		$muted = imagecolorallocate($im, self::MUTED[0], self::MUTED[1], self::MUTED[2]);
 		$gold = imagecolorallocate($im, self::GOLD[0], self::GOLD[1], self::GOLD[2]);
 		$white = imagecolorallocate($im, 255, 255, 255);
 
@@ -196,60 +194,122 @@ class WisdomStaffCardRenderer
 
 		$rows = [];
 		if ($phone !== '') {
-			$rows[] = ['PHONE', $phone];
+			$rows[] = ['PHONE', $phone, 'phone'];
 		}
 		if ($email !== '') {
-			$rows[] = ['EMAIL', $email];
+			$rows[] = ['EMAIL', $email, 'email'];
 		}
 		if ($staffId !== '') {
-			$rows[] = ['STAFF ID', $staffId];
+			$rows[] = ['STAFF ID', $staffId, 'id'];
 		}
-		$this->drawContactPills($im, $rows, $navy, $muted, $gold);
+		$this->drawContactPills($im, $rows, $navy);
 	}
 
 	/**
-	 * Soft navy capsules for phone / email / staff id — grouped, no underlines.
+	 * Icon + label | value pills. Values sit left of the remaining space.
 	 *
 	 * @param resource|\GdImage $im
-	 * @param list<array{0:string,1:string}> $rows
+	 * @param list<array{0:string,1:string,2:string}> $rows
 	 */
-	private function drawContactPills($im, array $rows, int $navy, int $muted, int $gold): void
+	private function drawContactPills($im, array $rows, int $navy): void
 	{
 		if ($rows === []) {
 			return;
 		}
-		$fill = imagecolorallocate($im, 236, 241, 250);
-		$x = $this->sx(40);
-		$w = $this->sx(511);
-		$rowH = $this->sy(50);
-		$gap = $this->sy(9);
-		$y = $this->sy(592);
-		$limitY = $this->sy(800);
-		$padL = $this->sx(28);
-		$padR = $this->sx(22);
-		$labelW = $this->sx(132);
-		$dot = (int) max(5, round($this->sx(4.5)));
+		$fill = imagecolorallocate($im, 228, 236, 248);
+		$disc = imagecolorallocate($im, 244, 247, 252);
+		$split = imagecolorallocate($im, 176, 192, 216);
+		$x = $this->sx(36);
+		$w = $this->sx(519);
+		$rowH = $this->sy(54);
+		$gap = $this->sy(8);
+		$y = $this->sy(594);
+		$limitY = $this->sy(810);
+		$radius = (int) round($rowH * 0.42);
+		$discD = (int) max(22, round($rowH * 0.68));
+		$labelW = $this->sx(118);
 		foreach ($rows as $row) {
 			if ($y + $rowH > $limitY) {
 				break;
 			}
-			[$lab, $val] = $row;
-			$this->fillRoundRect($im, $x, $y, $w, $rowH, (int) round($rowH / 2), $fill);
-			imagefilledellipse(
+			[$lab, $val, $kind] = $row;
+			$this->fillRoundRect($im, $x, $y, $w, $rowH, $radius, $fill);
+			$cx = $x + $this->sx(28);
+			$cy = $y + (int) round($rowH / 2);
+			imagefilledellipse($im, $cx, $cy, $discD, $discD, $disc);
+			$this->drawContactGlyph($im, $cx, $cy, (int) round($discD * 0.34), $navy, $kind);
+			$labX = $cx + (int) round($discD / 2) + $this->sx(12);
+			$this->drawTrackedText($im, $lab, 13.2, 1.5, $labX, $y, $labelW, $rowH, $navy, 'left');
+			$splitX = $labX + $labelW + $this->sx(6);
+			$splitH = (int) round($rowH * 0.46);
+			imagefilledrectangle(
 				$im,
-				$x + $this->sx(16),
-				$y + (int) round($rowH / 2),
-				$dot,
-				$dot,
-				$gold
+				$splitX,
+				$y + (int) round(($rowH - $splitH) / 2),
+				$splitX + max(2, $this->sx(2)),
+				$y + (int) round(($rowH + $splitH) / 2),
+				$split
 			);
-			$textX = $x + $padL;
-			$this->drawTrackedText($im, $lab, 12.2, 1.7, $textX, $y, $labelW, $rowH, $muted, 'left');
-			$valX = $textX + $labelW + $this->sx(8);
-			$valW = ($x + $w) - $valX - $padR;
-			$size = $this->fitSize($val, max(20, $valW), (int) round($rowH * 0.70), 22, 13);
-			$this->drawText($im, $val, $size, $valX, $y, $valW, $rowH, $navy, 'right');
+			$valX = $splitX + $this->sx(14);
+			$valW = ($x + $w) - $valX - $this->sx(16);
+			$size = $this->fitSize($val, max(20, $valW), (int) round($rowH * 0.62), 23, 13);
+			$this->drawText($im, $val, $size, $valX, $y, $valW, $rowH, $navy, 'left');
 			$y += $rowH + $gap;
+		}
+	}
+
+	/**
+	 * @param resource|\GdImage $im
+	 */
+	private function drawContactGlyph($im, int $cx, int $cy, int $s, int $navy, string $kind): void
+	{
+		$s = max(6, $s);
+		if ($kind === 'email') {
+			$w = (int) round($s * 1.75);
+			$h = (int) round($s * 1.2);
+			$x0 = $cx - (int) round($w / 2);
+			$y0 = $cy - (int) round($h / 2);
+			$t = max(2, (int) round($s * 0.18));
+			imagesetthickness($im, $t);
+			imagerectangle($im, $x0, $y0, $x0 + $w, $y0 + $h, $navy);
+			imageline($im, $x0, $y0, $cx, $cy + (int) round($h * 0.08), $navy);
+			imageline($im, $x0 + $w, $y0, $cx, $cy + (int) round($h * 0.08), $navy);
+			imagesetthickness($im, 1);
+			return;
+		}
+		if ($kind === 'id') {
+			$w = (int) round($s * 1.8);
+			$h = (int) round($s * 1.25);
+			$x0 = $cx - (int) round($w / 2);
+			$y0 = $cy - (int) round($h / 2);
+			$t = max(2, (int) round($s * 0.16));
+			imagesetthickness($im, $t);
+			imagerectangle($im, $x0, $y0, $x0 + $w, $y0 + $h, $navy);
+			imagesetthickness($im, 1);
+			$hx = $x0 + (int) round($w * 0.28);
+			$hy = $y0 + (int) round($h * 0.32);
+			imagefilledellipse($im, $hx, $hy, max(4, (int) round($s * 0.55)), max(4, (int) round($s * 0.55)), $navy);
+			$lx = $x0 + (int) round($w * 0.55);
+			$lw = max(3, (int) round($w * 0.32));
+			$lh = max(2, (int) round($s * 0.12));
+			imagefilledrectangle($im, $lx, $y0 + (int) round($h * 0.32), $lx + $lw, $y0 + (int) round($h * 0.32) + $lh, $navy);
+			imagefilledrectangle($im, $lx, $y0 + (int) round($h * 0.52), $lx + $lw, $y0 + (int) round($h * 0.52) + $lh, $navy);
+			imagefilledrectangle($im, $lx, $y0 + (int) round($h * 0.72), $lx + (int) round($lw * 0.7), $y0 + (int) round($h * 0.72) + $lh, $navy);
+			return;
+		}
+		$a = (int) round($s * 0.72);
+		imagefilledellipse($im, $cx - (int) round($s * 0.38), $cy - (int) round($s * 0.42), $a, $a, $navy);
+		imagefilledellipse($im, $cx + (int) round($s * 0.38), $cy + (int) round($s * 0.42), $a, $a, $navy);
+		$pts = [
+			$cx - (int) round($s * 0.12), $cy - (int) round($s * 0.58),
+			$cx + (int) round($s * 0.58), $cy + (int) round($s * 0.12),
+			$cx + (int) round($s * 0.12), $cy + (int) round($s * 0.58),
+			$cx - (int) round($s * 0.58), $cy - (int) round($s * 0.12),
+		];
+		if (PHP_VERSION_ID >= 80100) {
+			imagefilledpolygon($im, $pts, $navy);
+		} else {
+			imagefilledpolygon($im, $pts, 4, $navy);
 		}
 	}
 
@@ -267,9 +327,11 @@ class WisdomStaffCardRenderer
 		$x = (int) round((self::W - $w) / 2);
 		$this->fillRoundRect($im, $x, $y, $w, $h, (int) round($h / 2), $navy);
 		$this->drawText($im, $post, $size, $x, $y, $w, $h, $white, 'center');
-		$dot = (int) max(3, round($this->sx(3)));
-		imagefilledellipse($im, $x + $this->sx(10), $y + (int) round($h / 2), $dot, $dot, $gold);
-		imagefilledellipse($im, $x + $w - $this->sx(10), $y + (int) round($h / 2), $dot, $dot, $gold);
+		$lineY = $y + (int) round($h / 2);
+		$th = max(2, $this->sy(2.4));
+		$gap = $this->sx(10);
+		imagefilledrectangle($im, $this->sx(42), $lineY - (int) floor($th / 2), $x - $gap, $lineY + (int) ceil($th / 2), $gold);
+		imagefilledrectangle($im, $x + $w + $gap, $lineY - (int) floor($th / 2), $this->sx(549), $lineY + (int) ceil($th / 2), $gold);
 	}
 
 	/**
