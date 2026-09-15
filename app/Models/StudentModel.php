@@ -316,7 +316,7 @@ class StudentModel extends Model
 
 		$builder = $this->select('students.id,card,updateVersion,studying_mode,regno,students.status,concat(students.fname," ",students.lname) as name
 		,concat(l.title," ",d.code," ",c.title) as class,d.title as dept_title,l.title as level_title,f.title as faculty_title,lf.title as level_faculty_title,photo,father,mother,dob,ft_phone,mt_phone,gd_phone,students.sex,
-		UNIX_TIMESTAMP(students.updated_at) as updated_at,c.id as class_id,COALESCE(students.ft_phone, students.mt_phone, gd_phone, "") AS phone')
+		UNIX_TIMESTAMP(students.updated_at) as updated_at,c.id as class_id,cr.id as record_id,COALESCE(students.ft_phone, students.mt_phone, gd_phone, "") AS phone')
 			->join('class_records cr', 'cr.student=students.id')
 			->join('classes c', 'c.id=cr.class')
 			->join('departments d', 'd.id=c.department')

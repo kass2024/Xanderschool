@@ -891,6 +891,35 @@ public function sync($option, $school_id)
                 break;
 
             // -------------------------
+            // DAILY CLASS ATTENDANCE (today, two-way with Android)
+            // -------------------------
+            case "daily_attendance":
+                $date = trim((string) $this->request->getGet('date'));
+                if ($date === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+                    $date = date('Y-m-d');
+                }
+                $year = (int) ($this->data['academic_year'] ?? 0);
+                $db = \Config\Database::connect();
+                $builder = $db->table('daily_attendance da')
+                    ->select('da.student_id, da.datee, da.active_term, cr.class as class_id')
+                    ->join('students st', 'st.id = da.student_id')
+                    ->join('class_records cr', 'cr.student = da.student_id', 'left')
+                    ->where('st.school_id', $school_id)
+                    ->where('da.datee', $date);
+                if ($year > 0) {
+                    $builder->groupStart()
+                        ->where('cr.year', $year)
+                        ->orWhere('cr.year', null)
+                        ->groupEnd();
+                }
+                $rows = $builder->groupBy('da.student_id, da.datee, da.active_term, cr.class')
+                    ->get()->getResultArray();
+                foreach ($rows as $item) {
+                    $data['attendance'][] = $item;
+                }
+                break;
+
+            // -------------------------
             // STAFF (v1)
             // -------------------------
             case "staff":
@@ -2796,24 +2825,49 @@ public function get_boarding_classes()
 
 	public function save_class_attendance()
 	{
-		$teacher = $this->request->getPost("teacher");
-		$class = $this->request->getPost("class");
-		$term = $this->request->getPost("term");
+		$term = (int) $this->request->getPost("term");
 		$students = $this->request->getPost("students");
-		$records = json_decode($students, true);
-		$atMdl = new DailyAttendanceModel();
-		try {
-			foreach ($records as $item) {
-				$atMdl->save(array("datee" => date('Y-m-d'), "student_id" => $item, 'active_term' => $term));
-			}
-		} catch (\Exception $e) {
-			if ($e->getCode() == 1062) {
-				return $this->response->setJSON(array("error" => "Student already attended"));
-			}
-			return $this->response->setJSON(array("error" => lang("app.failedSaveRecords") . $e->getMessage()));
+		$records = json_decode((string) $students, true);
+		if (!is_array($records)) {
+			return $this->response->setJSON(["error" => "Invalid students payload"]);
 		}
-		$data['success'] = "1";
-		return $this->response->setJSON($data);
+		$atMdl = new DailyAttendanceModel();
+		$db = \Config\Database::connect();
+		$date = date('Y-m-d');
+		$saved = 0;
+		$skipped = 0;
+		foreach ($records as $item) {
+			$studentId = (int) $item;
+			if ($studentId < 1) {
+				continue;
+			}
+			$exists = $db->table('daily_attendance')
+				->where('student_id', $studentId)
+				->where('datee', $date)
+				->get(1)
+				->getRow();
+			if ($exists) {
+				$skipped++;
+				continue;
+			}
+			try {
+				$atMdl->insert(["datee" => $date, "student_id" => $studentId, "active_term" => $term]);
+				$saved++;
+			} catch (\Exception $e) {
+				$code = (int) $e->getCode();
+				$msg = $e->getMessage();
+				if ($code === 1062 || stripos($msg, 'Duplicate') !== false) {
+					$skipped++;
+					continue;
+				}
+				return $this->response->setJSON(["error" => lang("app.failedSaveRecords") . $msg]);
+			}
+		}
+		return $this->response->setJSON([
+			"success" => "1",
+			"saved" => $saved,
+			"skipped" => $skipped,
+		]);
 	}
 
 	/**
@@ -2833,7 +2887,7 @@ public function get_boarding_classes()
 		}
 
 		$stMdl = new StudentModel();
-		$student = $stMdl->select('id, school_id, status')
+		$student = $stMdl->select('id, school_id, status, updateVersion')
 			->where('id', $studentId)
 			->where('school_id', $schoolId)
 			->get(1)
@@ -2842,25 +2896,37 @@ public function get_boarding_classes()
 			return $this->response->setJSON(['error' => 'Student not found in this school']);
 		}
 
+		if ($year < 1) {
+			$schoolMdl = new SchoolModel();
+			$yearRow = $schoolMdl->select('at.academic_year')
+				->join('active_term at', 'at.id = schools.active_term', 'left')
+				->where('schools.id', $schoolId)
+				->get(1)
+				->getRowArray();
+			$year = (int) ($yearRow['academic_year'] ?? 0);
+		}
+
 		$db = \Config\Database::connect();
 		$db->transStart();
 		try {
-			$stMdl->save(['id' => $studentId, 'status' => 0]);
+			$stMdl->save([
+				'id' => $studentId,
+				'status' => 0,
+				'updateVersion' => ((int) ($student['updateVersion'] ?? 0)) + 1,
+			]);
 
 			$crMdl = new ClassRecordModel();
 			if ($recordId > 0) {
 				$crMdl->save(['id' => $recordId, 'status' => 0]);
-			} else {
-				$builder = $db->table('class_records')
-					->where('student', $studentId);
-				if ($year > 0) {
-					$builder->where('year', $year);
-				}
-				if ($classId > 0) {
-					$builder->where('class', $classId);
-				}
-				$builder->update(['status' => 0]);
 			}
+			$builder = $db->table('class_records')->where('student', $studentId);
+			if ($year > 0) {
+				$builder->where('year', $year);
+			}
+			if ($classId > 0) {
+				$builder->where('class', $classId);
+			}
+			$builder->update(['status' => 0]);
 		} catch (\Exception $e) {
 			$db->transRollback();
 			return $this->response->setJSON(['error' => 'Failed to dismiss student: ' . $e->getMessage()]);
