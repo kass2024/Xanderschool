@@ -183,15 +183,27 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		letter-spacing: 0.06em; border-radius: 10mm;
 		white-space: nowrap; overflow: hidden; font-size: 2.6mm;
 	}
+	.ws-info {
+		position: absolute; left: 6.8%; top: 59.2%; width: 86.4%;
+	}
 	.ws-row {
-		position: absolute; left: 9%; width: 82%; height: 4.4%;
+		position: relative; left: auto; width: 100%; height: 5.6mm;
 		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
-		-webkit-box-pack: justify; justify-content: space-between;
+		background: #ecf1fa;
+		border-radius: 10mm;
+		padding: 0 2.6mm 0 2.4mm;
+		margin: 0 0 1.15mm;
 		border-top: none;
 		white-space: nowrap; overflow: hidden;
+		box-sizing: border-box;
 	}
-	.ws-lab { color: #466096; font-size: 1.7mm; letter-spacing: 0.12em; font-weight: 700; }
-	.ws-val { color: #082060; font-size: 2.75mm; font-weight: 700; }
+	.ws-dot {
+		width: 1.15mm; height: 1.15mm; border-radius: 50%;
+		background: #c49a30; margin-right: 1.8mm; flex-shrink: 0;
+		display: inline-block;
+	}
+	.ws-lab { color: #466096; font-size: 1.75mm; letter-spacing: 0.14em; font-weight: 700; }
+	.ws-val { color: #082060; font-size: 2.55mm; font-weight: 700; margin-left: auto; }
 </style>
 <script>
 (function () {
@@ -296,12 +308,17 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			<?php if ($postTitle !== '' && $postTitle !== '—'): ?>
 				<div class="ws-post"><?= esc($postTitle); ?></div>
 			<?php endif; ?>
-			<?php foreach ($wsRows as $i => $ws): ?>
-				<div class="ws-row" style="top:<?= number_format(59.6 + ($i * 4.5), 1, '.', ''); ?>%;">
+			<?php if ($wsRows !== []): ?>
+			<div class="ws-info">
+			<?php foreach ($wsRows as $ws): ?>
+				<div class="ws-row">
+					<span class="ws-dot"></span>
 					<span class="ws-lab"><?= esc($ws[0]); ?></span>
 					<span class="ws-val"><?= esc($ws[1]); ?></span>
 				</div>
 			<?php endforeach; ?>
+			</div>
+			<?php endif; ?>
 		<?php endif; ?>
 
 		<?php foreach ($isWisdomArt ? [] : ['school_name', 'header1', 'header2'] as $key):

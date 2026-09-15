@@ -204,24 +204,52 @@ class WisdomStaffCardRenderer
 		if ($staffId !== '') {
 			$rows[] = ['STAFF ID', $staffId];
 		}
+		$this->drawContactPills($im, $rows, $navy, $muted, $gold);
+	}
 
-		$padX = $this->sx(52);
-		$contentW = $this->sx(487);
-		$labelW = $this->sx(150);
-		$valueX = $padX + $labelW + $this->sx(12);
-		$valueW = $contentW - $labelW - $this->sx(12);
-		$rowH = $this->sy(46);
-		$y = $this->sy(594);
-		$limitY = $this->sy(792);
+	/**
+	 * Soft navy capsules for phone / email / staff id — grouped, no underlines.
+	 *
+	 * @param resource|\GdImage $im
+	 * @param list<array{0:string,1:string}> $rows
+	 */
+	private function drawContactPills($im, array $rows, int $navy, int $muted, int $gold): void
+	{
+		if ($rows === []) {
+			return;
+		}
+		$fill = imagecolorallocate($im, 236, 241, 250);
+		$x = $this->sx(40);
+		$w = $this->sx(511);
+		$rowH = $this->sy(50);
+		$gap = $this->sy(9);
+		$y = $this->sy(592);
+		$limitY = $this->sy(800);
+		$padL = $this->sx(28);
+		$padR = $this->sx(22);
+		$labelW = $this->sx(132);
+		$dot = (int) max(5, round($this->sx(4.5)));
 		foreach ($rows as $row) {
 			if ($y + $rowH > $limitY) {
 				break;
 			}
 			[$lab, $val] = $row;
-			$this->drawTrackedText($im, $lab, 11.5, 1.4, $padX, $y, $labelW, $rowH, $muted, 'left');
-			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.84), 24, 14);
-			$this->drawText($im, $val, $size, $valueX, $y, $valueW, $rowH, $navy, 'right');
-			$y += $rowH;
+			$this->fillRoundRect($im, $x, $y, $w, $rowH, (int) round($rowH / 2), $fill);
+			imagefilledellipse(
+				$im,
+				$x + $this->sx(16),
+				$y + (int) round($rowH / 2),
+				$dot,
+				$dot,
+				$gold
+			);
+			$textX = $x + $padL;
+			$this->drawTrackedText($im, $lab, 12.2, 1.7, $textX, $y, $labelW, $rowH, $muted, 'left');
+			$valX = $textX + $labelW + $this->sx(8);
+			$valW = ($x + $w) - $valX - $padR;
+			$size = $this->fitSize($val, max(20, $valW), (int) round($rowH * 0.70), 22, 13);
+			$this->drawText($im, $val, $size, $valX, $y, $valW, $rowH, $navy, 'right');
+			$y += $rowH + $gap;
 		}
 	}
 
