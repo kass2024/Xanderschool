@@ -169,14 +169,14 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		overflow: hidden;
 	}
 	.ws-name {
-		position: absolute; left: 5%; top: 44.8%; width: 90%; height: 6.2%;
+		position: absolute; left: 5%; top: 47.8%; width: 90%; height: 6.2%;
 		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
 		-webkit-box-pack: center; justify-content: center;
 		color: #082060; font-weight: 700; letter-spacing: 0.02em;
 		white-space: nowrap; overflow: hidden; font-size: 3.8mm;
 	}
 	.ws-post {
-		position: absolute; left: 12%; top: 51.2%; width: 76%; height: 4.2%;
+		position: absolute; left: 12%; top: 54.4%; width: 76%; height: 4.2%;
 		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
 		-webkit-box-pack: center; justify-content: center;
 		background: #082060; color: #ffffff; font-weight: 700;
@@ -297,7 +297,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 				<div class="ws-post"><?= esc($postTitle); ?></div>
 			<?php endif; ?>
 			<?php foreach ($wsRows as $i => $ws): ?>
-				<div class="ws-row" style="top:<?= number_format(56.4 + ($i * 4.5), 1, '.', ''); ?>%;">
+				<div class="ws-row" style="top:<?= number_format(59.6 + ($i * 4.5), 1, '.', ''); ?>%;">
 					<span class="ws-lab"><?= esc($ws[0]); ?></span>
 					<span class="ws-val"><?= esc($ws[1]); ?></span>
 				</div>

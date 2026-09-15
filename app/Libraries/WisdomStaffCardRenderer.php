@@ -188,10 +188,10 @@ class WisdomStaffCardRenderer
 		$boxW = $this->sx(519);
 		if ($name !== '') {
 			$size = $this->fitSize($name, $boxW, $this->sy(56), 44, 18);
-			$this->drawText($im, $name, $size, $boxX, $this->sy(450), $boxW, $this->sy(58), $navy, 'center');
+			$this->drawText($im, $name, $size, $boxX, $this->sy(480), $boxW, $this->sy(58), $navy, 'center');
 		}
 		if ($post !== '') {
-			$this->drawPostBadge($im, $post, $this->sy(512), $navy, $white, $gold);
+			$this->drawPostBadge($im, $post, $this->sy(542), $navy, $white, $gold);
 		}
 
 		$rows = [];
@@ -211,7 +211,7 @@ class WisdomStaffCardRenderer
 		$valueX = $padX + $labelW + $this->sx(12);
 		$valueW = $contentW - $labelW - $this->sx(12);
 		$rowH = $this->sy(46);
-		$y = $this->sy(560);
+		$y = $this->sy(594);
 		$limitY = $this->sy(792);
 		foreach ($rows as $row) {
 			if ($y + $rowH > $limitY) {
