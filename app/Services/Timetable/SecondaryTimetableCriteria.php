@@ -299,14 +299,24 @@ class SecondaryTimetableCriteria
 	/** Farming / Library and Clubs: only after 15:40, never night. */
 	public static function isAfterLessonCourseTitle(string $title): bool
 	{
+		return self::afterLessonFamily($title) !== '';
+	}
+
+	/** farming | library_clubs | '' — same-teacher classes share one after-lesson clock. */
+	public static function afterLessonFamily(string $title): string
+	{
 		$t = strtolower(trim(preg_replace('/\s+/', ' ', $title)));
 		if ($t === '') {
-			return false;
+			return '';
 		}
-		if (strpos($t, 'farming') !== false || strpos($t, 'library') !== false) {
-			return true;
+		if (strpos($t, 'farming') !== false) {
+			return 'farming';
 		}
-		return $t === 'club' || $t === 'clubs' || preg_match('/\blibrary\b.*\bclubs?\b/', $t) === 1;
+		if (strpos($t, 'library') !== false || $t === 'club' || $t === 'clubs'
+			|| preg_match('/\blibrary\b.*\bclubs?\b/', $t) === 1) {
+			return 'library_clubs';
+		}
+		return '';
 	}
 
 	public function requiresAfterLessons(array $row): bool
@@ -557,8 +567,9 @@ class SecondaryTimetableCriteria
 
 	/**
 	 * Partner assignments for one combined lesson.
-	 * Requires the Word-file group AND the same teacher AND the same subject.
-	 * Different subjects never share a clock (ICT S4 ST1+ST2 is not Physics S4 ST1+ST2).
+	 * Word-file groups: same teacher AND same subject AND listed classes.
+	 * After-lesson (Farming / Library and Clubs): same teacher AND same activity
+	 * across classes, so one clock fills the 15:40+ grid instead of parking.
 	 *
 	 * @return list<array<string,mixed>>
 	 */
@@ -567,6 +578,18 @@ class SecondaryTimetableCriteria
 		if (!self::isSecondaryTrack($row)) {
 			return [];
 		}
+		$doc = $this->documentCombinePartners($row);
+		if ($doc !== []) {
+			return $doc;
+		}
+		return $this->afterLessonCombinePartners($row);
+	}
+
+	/**
+	 * @return list<array<string,mixed>>
+	 */
+	private function documentCombinePartners(array $row): array
+	{
 		$classId = (int) ($row['class_id'] ?? 0);
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$meta = $this->classMeta[(string) $classId] ?? null;
@@ -582,6 +605,62 @@ class SecondaryTimetableCriteria
 			return [];
 		}
 		return $this->collectCombinePartners($row, $classId, $subject, (string) ($meta['level'] ?? ''), $wantedDepts, $staffId, 0);
+	}
+
+	/**
+	 * Same Farming teacher (or same Library teacher) → one after-lesson clock for every class.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function afterLessonCombinePartners(array $row): array
+	{
+		if (!$this->requiresAfterLessons($row)) {
+			return [];
+		}
+		$classId = (int) ($row['class_id'] ?? 0);
+		$family = self::afterLessonFamily((string) ($row['course_title'] ?? ''));
+		if ($classId <= 0 || $family === '') {
+			return [];
+		}
+		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
+		if ($staffId <= 0 && $teacher === '') {
+			return [];
+		}
+		$out = [];
+		$seen = [];
+		foreach ($this->assignmentsByKey as $cand) {
+			$cid = (int) ($cand['class_id'] ?? 0);
+			$courseId = (int) ($cand['course_id'] ?? $cand['course'] ?? 0);
+			$seenKey = $cid . ':' . $courseId;
+			if ($cid === $classId || $cid <= 0 || isset($seen[$seenKey])) {
+				continue;
+			}
+			if (!self::isSecondaryTrack($cand) || !$this->requiresAfterLessons($cand)) {
+				continue;
+			}
+			if (self::afterLessonFamily((string) ($cand['course_title'] ?? '')) !== $family) {
+				continue;
+			}
+			if (!$this->isSameCombineTeacher($row, $cand)) {
+				continue;
+			}
+			$seen[$seenKey] = true;
+			$out[] = $cand;
+		}
+		return $out;
+	}
+
+	public function isSameCombineTeacher(array $a, array $b): bool
+	{
+		$staffA = (int) ($a['lecturer'] ?? $a['staff_id'] ?? 0);
+		$staffB = (int) ($b['lecturer'] ?? $b['staff_id'] ?? 0);
+		if ($staffA > 0 && $staffA === $staffB) {
+			return true;
+		}
+		$nameA = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($a['teacher_name'] ?? ''))));
+		$nameB = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($b['teacher_name'] ?? ''))));
+		return $nameA !== '' && $nameA === $nameB;
 	}
 
 	/**
@@ -644,6 +723,16 @@ class SecondaryTimetableCriteria
 		if ($partners === []) {
 			return '';
 		}
+		$family = self::afterLessonFamily((string) ($row['course_title'] ?? ''));
+		if ($family !== '') {
+			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+			$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
+			$who = $staffId > 0 ? (string) $staffId : ('n:' . $teacher);
+			if ($who === 'n:') {
+				return '';
+			}
+			return 'after|' . $who . '|' . $family;
+		}
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
 		$classId = (int) ($row['class_id'] ?? 0);
@@ -698,6 +787,8 @@ class SecondaryTimetableCriteria
 			'general_studies' => ['bg' => '#e0e7ff', 'fg' => '#312e81', 'accent' => '#4f46e5'],
 			'geography' => ['bg' => '#ecfccb', 'fg' => '#3f6212', 'accent' => '#65a30d'],
 			'economics' => ['bg' => '#fae8ff', 'fg' => '#86198f', 'accent' => '#c026d3'],
+			'farming' => ['bg' => '#d9f99d', 'fg' => '#365314', 'accent' => '#65a30d'],
+			'library_clubs' => ['bg' => '#fde68a', 'fg' => '#78350f', 'accent' => '#d97706'],
 		];
 		$tone = $map[$family] ?? ['bg' => '#ccfbf1', 'fg' => '#134e4a', 'accent' => '#0f766e'];
 		$slug = preg_replace('/[^a-z0-9]+/', '-', $family);
@@ -710,14 +801,26 @@ class SecondaryTimetableCriteria
 	{
 		$staffA = (int) ($a['staff_id'] ?? $a['lecturer'] ?? 0);
 		$staffB = (int) ($b['staff_id'] ?? $b['lecturer'] ?? 0);
-		if ($staffA <= 0 || $staffA !== $staffB) {
-			return false;
-		}
+		$titleA = (string) ($a['course_title'] ?? $a['custom_label'] ?? '');
+		$titleB = (string) ($b['course_title'] ?? $b['custom_label'] ?? '');
 		if ((int) ($a['class_id'] ?? 0) === (int) ($b['class_id'] ?? 0)) {
 			return false;
 		}
-		$famA = self::subjectFamily((string) ($a['course_title'] ?? ''));
-		$famB = self::subjectFamily((string) ($b['course_title'] ?? ''));
+		$afterA = self::afterLessonFamily($titleA);
+		$afterB = self::afterLessonFamily($titleB);
+		if ($afterA !== '' && $afterA === $afterB) {
+			if ($staffA > 0 && $staffA === $staffB) {
+				return true;
+			}
+			$nameA = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($a['teacher_name'] ?? ''))));
+			$nameB = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($b['teacher_name'] ?? ''))));
+			return $nameA !== '' && $nameA === $nameB;
+		}
+		if ($staffA <= 0 || $staffA !== $staffB) {
+			return false;
+		}
+		$famA = self::subjectFamily($titleA);
+		$famB = self::subjectFamily($titleB);
 		if ($famA === '' || $famA !== $famB) {
 			return false;
 		}
@@ -874,14 +977,14 @@ class SecondaryTimetableCriteria
 			['group' => 'Blocks', 'title' => '4 and 6 periods', 'detail' => 'At least two periods together (doubles).'],
 			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
-			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Prefer the last teaching hours (14:20–15:40, especially 15:00–15:40). Never after 15:40. If last hours would collide (same teacher in two classes), use another free teaching period so PE is still on the class and teacher grids. At most one PE period per class day. Any period that still cannot fit is listed below the timetable.'],
-			['group' => 'After lessons', 'title' => 'Farming / Library and Clubs', 'detail' => 'Always after lessons end (15:40–17:30). Never during the teaching day, never night preps or supper.'],
+			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching period of the class (15:00–15:40). If that cell is taken, the other lesson is moved earlier. Overflow 14:20–15:00 only when 15:00 is a special (TESTS/HW). Never after 15:40. Never 13:40. At most one PE period per class day.'],
+			['group' => 'After lessons', 'title' => 'Farming / Library and Clubs', 'detail' => 'Always after lessons end (15:40–17:30), filling the first free cells after 15:40. Never during the teaching day, never night preps or supper. Same teacher + same activity (Farming with Farming, Library with Library) share one clock across classes.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
 			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Linea, Varlette and Marguerite teach ANP in the morning, Tuesday to Thursday.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Teachers not named in this document use normal placement and fill from morning periods first.'],
-			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Only the listed groups are combined, each as its own subject + same teacher. ICT ST1+ST2 is a different clock from Physics ST1+ST2. Different subjects or different teachers are never combined. Courses not in the Word file stay separate.'],
+			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Farming and Library and Clubs also combine when the teacher is the same (each activity keeps its own clock). Different academic subjects or different teachers are never combined.'],
 			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'Tuesday 07:00–12:00.'],
 			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full day 07:00–16:00.'],
 			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],
@@ -1042,6 +1145,12 @@ class SecondaryTimetableCriteria
 		}
 		if (strpos($t, 'english') !== false) {
 			return 'english';
+		}
+		if (strpos($t, 'farming') !== false) {
+			return 'farming';
+		}
+		if (strpos($t, 'library') !== false || $t === 'club' || $t === 'clubs') {
+			return 'library_clubs';
 		}
 		return $t;
 	}

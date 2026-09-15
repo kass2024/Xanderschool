@@ -1104,6 +1104,16 @@ class TimetableSchemaModel extends Model
 		return self::slotClock($start) >= '14:20:00';
 	}
 
+	/** The last academic period itself: ends at 15:40 (never 13:40 or after lessons). */
+	public static function isFinalTeachingPeriodSlotTimes(?string $start, ?string $end = null): bool
+	{
+		if (!self::isTeachingDayLessonSlotTimes($start, $end)) {
+			return false;
+		}
+		$endClock = self::slotClock($end !== null && $end !== '' ? $end : $start);
+		return $endClock === self::secondaryLessonEndClock();
+	}
+
 	public static function isNightSlotTimes(?string $start, ?string $end = null): bool
 	{
 		return self::slotClock($start) >= self::secondaryNightStartClock()

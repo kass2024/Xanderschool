@@ -316,19 +316,28 @@ class TimetableConflictService
 				$rejected[] = $entry;
 				continue;
 			}
-			if ($staffId > 0 && isset($staffSlots[$staffId . ':' . $day . ':' . $slotId])) {
-				$entry['_reject_reason'] = 'This teacher is already in another class in this period.';
-				$rejected[] = $entry;
-				continue;
+			$staffKey = $staffId . ':' . $day . ':' . $slotId;
+			if ($staffId > 0 && isset($staffSlots[$staffKey])) {
+				$other = is_array($staffSlots[$staffKey]) ? $staffSlots[$staffKey] : [];
+				if (!SecondaryTimetableCriteria::entriesAreCombinedLesson($entry, $other)) {
+					$entry['_reject_reason'] = 'This teacher is already in another class in this period.';
+					$rejected[] = $entry;
+					continue;
+				}
 			}
 			$range = $this->slotRangeFromMap($slotId, $slotTimesById, $entry);
 			if ($staffId > 0 && $range !== null) {
 				foreach ($staffTimes[$staffId][$day] ?? [] as $booked) {
-					if ($this->rangesOverlap($range['start'], $range['end'], $booked['start'], $booked['end'])) {
-						$entry['_reject_reason'] = 'This teacher is already teaching at this clock time.';
-						$rejected[] = $entry;
-						continue 2;
+					if (!$this->rangesOverlap($range['start'], $range['end'], $booked['start'], $booked['end'])) {
+						continue;
 					}
+					$other = is_array($booked['entry'] ?? null) ? $booked['entry'] : [];
+					if ($other !== [] && SecondaryTimetableCriteria::entriesAreCombinedLesson($entry, $other)) {
+						continue;
+					}
+					$entry['_reject_reason'] = 'This teacher is already teaching at this clock time.';
+					$rejected[] = $entry;
+					continue 2;
 				}
 			}
 			$this->rememberOccupancy($entry, $slotTimesById, $classBusy, $staffSlots, $staffTimes);
@@ -475,12 +484,13 @@ class TimetableConflictService
 		$classId = (int) ($entry['class_id'] ?? 0);
 		$staffId = (int) ($entry['staff_id'] ?? 0);
 		if ($classId > 0) {
-			$classBusy[$classId . ':' . $day . ':' . $slotId] = true;
+			$classBusy[$classId . ':' . $day . ':' . $slotId] = $entry;
 		}
 		if ($staffId > 0) {
-			$staffSlots[$staffId . ':' . $day . ':' . $slotId] = true;
+			$staffSlots[$staffId . ':' . $day . ':' . $slotId] = $entry;
 			$range = $this->slotRangeFromMap($slotId, $slotTimesById, $entry);
 			if ($range !== null) {
+				$range['entry'] = $entry;
 				$staffTimes[$staffId][$day][] = $range;
 			}
 		}

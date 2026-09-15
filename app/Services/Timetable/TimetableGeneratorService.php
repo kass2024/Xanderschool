@@ -414,6 +414,8 @@ class TimetableGeneratorService
 			$entries[] = $entry;
 		}
 
+		$this->promotePeToLastHour($entries);
+
 		return ['entries' => $entries, 'warnings' => $this->warnings];
 	}
 
@@ -719,15 +721,23 @@ class TimetableGeneratorService
 
 		$classId = (int) ($partner['class_id'] ?? 0);
 		$staffId = (int) ($partner['lecturer'] ?? 0);
-		$sourceStaff = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-		$sameTeacher = $staffId > 0 && $staffId === $sourceStaff;
+		$sameTeacher = $this->secondaryCriteria !== null
+			&& $this->secondaryCriteria->isSameCombineTeacher($row, $partner);
 		if (!$sameTeacher) {
 			return [];
 		}
-		$sourceFam = SecondaryTimetableCriteria::subjectFamily((string) ($row['course_title'] ?? ''));
-		$partnerFam = SecondaryTimetableCriteria::subjectFamily((string) ($partner['course_title'] ?? ''));
-		if ($sourceFam === '' || $sourceFam !== $partnerFam) {
-			return [];
+		$sourceAfter = SecondaryTimetableCriteria::afterLessonFamily((string) ($row['course_title'] ?? ''));
+		$partnerAfter = SecondaryTimetableCriteria::afterLessonFamily((string) ($partner['course_title'] ?? ''));
+		if ($sourceAfter !== '' || $partnerAfter !== '') {
+			if ($sourceAfter === '' || $sourceAfter !== $partnerAfter) {
+				return [];
+			}
+		} else {
+			$sourceFam = SecondaryTimetableCriteria::subjectFamily((string) ($row['course_title'] ?? ''));
+			$partnerFam = SecondaryTimetableCriteria::subjectFamily((string) ($partner['course_title'] ?? ''));
+			if ($sourceFam === '' || $sourceFam !== $partnerFam) {
+				return [];
+			}
 		}
 		$courseId = (int) ($partner['course_id'] ?? 0);
 		$subjectKey = $classId . ':' . $courseId;
@@ -773,6 +783,7 @@ class TimetableGeneratorService
 				'staff_id' => $staffId,
 				'course_id' => $courseId,
 				'course_record_id' => (int) ($partner['course_record_id'] ?? 0),
+				'course_title' => $courseTitle,
 				'day_of_week' => $day,
 				'slot_id' => $slotId,
 				'entry_type' => 'lesson',
@@ -827,8 +838,9 @@ class TimetableGeneratorService
 		if ($placeAsHomework) {
 			$windows = [3, 2, 1, 0];
 		} elseif ($lastHour) {
-			// Last teaching hours first; then any legal teaching slot so the course is never dropped.
-			$windows = [1, 2, 0];
+			// Last academic period first (15:00–15:40), then 14:20–15:00.
+			// Window 0 is not used here — promotePeToLastHour relocates the occupant instead of dropping PE to 13:40.
+			$windows = [1, 2];
 		} else {
 			$windows = [0];
 		}
@@ -939,6 +951,7 @@ class TimetableGeneratorService
 				'staff_id' => $staffId,
 				'course_id' => $courseId,
 				'course_record_id' => (int) ($row['course_record_id'] ?? 0),
+				'course_title' => $courseTitle,
 				'day_of_week' => $pick['day'],
 				'slot_id' => $slotId,
 				'entry_type' => 'lesson',
@@ -1374,12 +1387,12 @@ class TimetableGeneratorService
 		if ($partners === []) {
 			return true;
 		}
-		$sourceStaff = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		foreach ($partners as $partner) {
 			$partnerClass = (int) ($partner['class_id'] ?? 0);
-			$partnerStaff = (int) ($partner['lecturer'] ?? 0);
-			$sameTeacher = $partnerStaff > 0 && $partnerStaff === $sourceStaff;
-			if (!$sameTeacher) {
+			if ($partnerClass <= 0) {
+				continue;
+			}
+			if (!$this->secondaryCriteria->isSameCombineTeacher($row, $partner)) {
 				continue;
 			}
 			foreach ($slotIds as $slotId) {
@@ -1873,10 +1886,329 @@ class TimetableGeneratorService
 			'staff_id' => (int) ($row['lecturer'] ?? 0),
 			'course_id' => (int) ($row['course_id'] ?? 0),
 			'course_record_id' => (int) ($row['course_record_id'] ?? 0),
+			'course_title' => trim((string) ($row['course_title'] ?? '')),
 			'day_of_week' => -1,
 			'slot_id' => 0,
 			'entry_type' => 'lesson',
 		];
+	}
+
+	/**
+	 * Move PE onto the class's last teaching period (15:00–15:40), swapping the occupant earlier.
+	 *
+	 * @param list<array<string,mixed>> $entries
+	 */
+	private function promotePeToLastHour(array &$entries): void
+	{
+		for ($pass = 0; $pass < 48; $pass++) {
+			$moved = false;
+			foreach ($entries as $i => $entry) {
+				$title = $this->entryCourseTitle($entry);
+				if (!$this->isPhysicalEducationSportCourse($title)) {
+					continue;
+				}
+				$entries[$i]['course_title'] = $title;
+				if ($this->entryIsFinalTeachingPeriod($entries[$i])) {
+					continue;
+				}
+				if ($this->tryMovePeToFinalPeriod($entries, $i)) {
+					$moved = true;
+					break;
+				}
+			}
+			if (!$moved) {
+				break;
+			}
+		}
+	}
+
+	private function entryCourseTitle(array $entry): string
+	{
+		$title = trim((string) ($entry['course_title'] ?? $entry['custom_label'] ?? ''));
+		if ($title !== '') {
+			return $title;
+		}
+		$key = (int) ($entry['class_id'] ?? 0) . ':' . (int) ($entry['course_id'] ?? 0);
+		return trim((string) ($this->assignmentByClassCourse[$key]['course_title'] ?? ''));
+	}
+
+	private function entryIsFinalTeachingPeriod(array $entry): bool
+	{
+		$slotId = (int) ($entry['slot_id'] ?? 0);
+		$day = (int) ($entry['day_of_week'] ?? -1);
+		if ($day < 0 || $slotId <= 0) {
+			return false;
+		}
+		$times = $this->slotTimes[$slotId] ?? null;
+		return $times !== null && \App\Models\TimetableSchemaModel::isFinalTeachingPeriodSlotTimes(
+			(string) ($times['start'] ?? ''),
+			(string) ($times['end'] ?? '')
+		);
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $entries
+	 */
+	private function tryMovePeToFinalPeriod(array &$entries, int $peIndex): bool
+	{
+		$pe = $entries[$peIndex];
+		$classId = (int) ($pe['class_id'] ?? 0);
+		$staffId = (int) ($pe['staff_id'] ?? $pe['lecturer'] ?? 0);
+		$peDay = (int) ($pe['day_of_week'] ?? -1);
+		$peSlot = (int) ($pe['slot_id'] ?? 0);
+		$peRow = $this->assignmentByClassCourse[$classId . ':' . (int) ($pe['course_id'] ?? 0)] ?? $pe;
+		$targets = $this->pePromotionTargets();
+		$indexByClass = [];
+		$indexByStaff = [];
+		foreach ($entries as $j => $other) {
+			$oDay = (int) ($other['day_of_week'] ?? -1);
+			$oSlot = (int) ($other['slot_id'] ?? 0);
+			if ($oDay < 0 || $oSlot <= 0) {
+				continue;
+			}
+			$indexByClass[$this->busyKey((int) ($other['class_id'] ?? 0), $oDay, $oSlot)] = $j;
+			$oStaff = (int) ($other['staff_id'] ?? 0);
+			if ($oStaff > 0) {
+				$indexByStaff[$this->busyStaffKey($oStaff, $oDay, $oSlot)][] = $j;
+			}
+		}
+
+		foreach ($targets as $target) {
+			$day = (int) $target['day'];
+			$slotId = (int) $target['slot_id'];
+			if ($classId <= 0 || $slotId <= 0) {
+				continue;
+			}
+			if (!empty($this->blocked[$day . ':' . $slotId])) {
+				continue;
+			}
+			if (!$this->criteriaAllowsSlot($peRow, $day, $slotId)) {
+				continue;
+			}
+			if ($peDay === $day && $peSlot === $slotId) {
+				continue;
+			}
+			$staffClash = false;
+			foreach ($indexByStaff[$this->busyStaffKey($staffId, $day, $slotId)] ?? [] as $j) {
+				if ($j !== $peIndex) {
+					$staffClash = true;
+					break;
+				}
+			}
+			if (!$staffClash && $staffId > 0) {
+				$targetRange = $this->slotTimeRange($slotId);
+				$peRange = ($peDay >= 0 && $peSlot > 0) ? $this->slotTimeRange($peSlot) : null;
+				foreach ($this->staffTimeBookings[$staffId][$day] ?? [] as $booked) {
+					if ($peRange !== null && $peDay === $day
+						&& (int) ($booked['start'] ?? 0) === (int) $peRange['start']
+						&& (int) ($booked['end'] ?? 0) === (int) $peRange['end']) {
+						continue;
+					}
+					if ($targetRange !== null && $this->rangesOverlap(
+						$targetRange['start'],
+						$targetRange['end'],
+						(int) ($booked['start'] ?? 0),
+						(int) ($booked['end'] ?? 0)
+					)) {
+						$staffClash = true;
+						break;
+					}
+				}
+			}
+			if ($staffClash) {
+				continue;
+			}
+
+			$occKey = $this->busyKey($classId, $day, $slotId);
+			$occIndex = $indexByClass[$occKey] ?? null;
+			if ($occIndex === $peIndex) {
+				continue;
+			}
+			if ($occIndex === null) {
+				$this->relocateGeneratedEntry($entries, $peIndex, $day, $slotId);
+				return true;
+			}
+			$occupant = $entries[$occIndex];
+			$occTitle = $this->entryCourseTitle($occupant);
+			if ($this->isPhysicalEducationSportCourse($occTitle)
+				|| ($this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons(
+					$this->assignmentByClassCourse[(int) ($occupant['class_id'] ?? 0) . ':' . (int) ($occupant['course_id'] ?? 0)] ?? $occupant
+				))) {
+				continue;
+			}
+			$occStaff = (int) ($occupant['staff_id'] ?? 0);
+			$occRow = $this->assignmentByClassCourse[(int) ($occupant['class_id'] ?? 0) . ':' . (int) ($occupant['course_id'] ?? 0)] ?? $occupant;
+			$destDay = $peDay;
+			$destSlot = $peSlot;
+			if ($destDay < 0 || $destSlot <= 0) {
+				$escape = $this->findFreeTeachingSlotFor($occRow, $classId, $occStaff, $day, $slotId, $indexByClass, $indexByStaff, $occIndex);
+				if ($escape === null) {
+					continue;
+				}
+				$destDay = $escape['day'];
+				$destSlot = $escape['slot_id'];
+			} else {
+				if (!empty($this->blocked[$destDay . ':' . $destSlot])) {
+					continue;
+				}
+				if (!$this->criteriaAllowsSlot($occRow, $destDay, $destSlot)) {
+					continue;
+				}
+				$destClassKey = $this->busyKey($classId, $destDay, $destSlot);
+				$blocking = $indexByClass[$destClassKey] ?? null;
+				if ($blocking !== null && $blocking !== $peIndex && $blocking !== $occIndex) {
+					continue;
+				}
+				if ($occStaff > 0) {
+					$staffBlock = false;
+					foreach ($indexByStaff[$this->busyStaffKey($occStaff, $destDay, $destSlot)] ?? [] as $j) {
+						if ($j !== $occIndex && $j !== $peIndex) {
+							$staffBlock = true;
+							break;
+						}
+					}
+					if ($staffBlock) {
+						continue;
+					}
+				}
+			}
+			$this->relocateGeneratedEntry($entries, $occIndex, $destDay, $destSlot);
+			$this->relocateGeneratedEntry($entries, $peIndex, $day, $slotId);
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * @return list<array{day:int,slot_id:int}>
+	 */
+	private function pePromotionTargets(): array
+	{
+		$final = [];
+		$overflow = [];
+		foreach ($this->days as $day) {
+			foreach ($this->teachingSlots as $slot) {
+				if (!empty($slot['is_break'])) {
+					continue;
+				}
+				$slotId = (int) ($slot['id'] ?? 0);
+				if ($slotId <= 0) {
+					continue;
+				}
+				$start = (string) ($slot['start_time'] ?? '');
+				$end = (string) ($slot['end_time'] ?? '');
+				$row = ['day' => (int) $day, 'slot_id' => $slotId];
+				if (\App\Models\TimetableSchemaModel::isFinalTeachingPeriodSlotTimes($start, $end)) {
+					$final[] = $row;
+				} elseif (\App\Models\TimetableSchemaModel::isLastTeachingHourSlotTimes($start, $end)) {
+					$overflow[] = $row;
+				}
+			}
+		}
+		return array_merge($final, $overflow);
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $entries
+	 * @param array<string,int> $indexByClass
+	 * @param array<string,list<int>> $indexByStaff
+	 * @return array{day:int,slot_id:int}|null
+	 */
+	private function findFreeTeachingSlotFor(
+		array $row,
+		int $classId,
+		int $staffId,
+		int $avoidDay,
+		int $avoidSlot,
+		array $indexByClass,
+		array $indexByStaff,
+		int $selfIndex
+	): ?array {
+		foreach ($this->days as $day) {
+			foreach ($this->teachingSlots as $slot) {
+				if (!empty($slot['is_break'])) {
+					continue;
+				}
+				$slotId = (int) ($slot['id'] ?? 0);
+				if ($slotId <= 0 || ((int) $day === $avoidDay && $slotId === $avoidSlot)) {
+					continue;
+				}
+				$start = (string) ($slot['start_time'] ?? '');
+				$end = (string) ($slot['end_time'] ?? '');
+				if (!\App\Models\TimetableSchemaModel::isTeachingDayLessonSlotTimes($start, $end)) {
+					continue;
+				}
+				if (!empty($this->blocked[$day . ':' . $slotId])) {
+					continue;
+				}
+				if (!$this->criteriaAllowsSlot($row, (int) $day, $slotId)) {
+					continue;
+				}
+				$occ = $indexByClass[$this->busyKey($classId, (int) $day, $slotId)] ?? null;
+				if ($occ !== null && $occ !== $selfIndex) {
+					continue;
+				}
+				if ($staffId > 0) {
+					$busy = false;
+					foreach ($indexByStaff[$this->busyStaffKey($staffId, (int) $day, $slotId)] ?? [] as $j) {
+						if ($j !== $selfIndex) {
+							$busy = true;
+							break;
+						}
+					}
+					if ($busy) {
+						continue;
+					}
+				}
+				return ['day' => (int) $day, 'slot_id' => $slotId];
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $entries
+	 */
+	private function relocateGeneratedEntry(array &$entries, int $index, int $day, int $slotId): void
+	{
+		$entry = $entries[$index];
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$staffId = (int) ($entry['staff_id'] ?? 0);
+		$oldDay = (int) ($entry['day_of_week'] ?? -1);
+		$oldSlot = (int) ($entry['slot_id'] ?? 0);
+		if ($oldDay >= 0 && $oldSlot > 0) {
+			$this->unmarkBusy($classId, $staffId, $oldDay, $oldSlot);
+		}
+		$this->markBusy($classId, $staffId, $day, $slotId);
+		$entries[$index]['day_of_week'] = $day;
+		$entries[$index]['slot_id'] = $slotId;
+		$entries[$index]['is_locked'] = 1;
+	}
+
+	private function unmarkBusy(int $classId, int $staffId, int $day, int $slotId): void
+	{
+		unset($this->classBusy[$this->busyKey($classId, $day, $slotId)]);
+		$this->classDayUsage[$classId . ':' . $day] = max(0, (int) ($this->classDayUsage[$classId . ':' . $day] ?? 0) - 1);
+		$this->globalDayUsage[$day] = max(0, (int) ($this->globalDayUsage[$day] ?? 0) - 1);
+		if ($staffId <= 0) {
+			return;
+		}
+		unset($this->staffBusy[$this->busyStaffKey($staffId, $day, $slotId)]);
+		$range = $this->slotTimeRange($slotId);
+		if ($range === null || empty($this->staffTimeBookings[$staffId][$day])) {
+			return;
+		}
+		$removed = false;
+		$kept = [];
+		foreach ($this->staffTimeBookings[$staffId][$day] as $booked) {
+			if (!$removed && (int) ($booked['start'] ?? 0) === (int) $range['start']
+				&& (int) ($booked['end'] ?? 0) === (int) $range['end']) {
+				$removed = true;
+				continue;
+			}
+			$kept[] = $booked;
+		}
+		$this->staffTimeBookings[$staffId][$day] = $kept;
 	}
 
 	private function isMathematicsCourse(string $title): bool
