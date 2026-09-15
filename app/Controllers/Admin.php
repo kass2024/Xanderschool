@@ -450,6 +450,7 @@ class Admin extends BaseController
 		$centralMdl = new MasterCentralPostModel();
 		$centralMdl->ensureSchema();
 		$postsMdl = new PostsModel();
+		$postsMdl->ensureLeadershipPosts();
 		$posts = $postsMdl->orderBy('id', 'ASC')->findAll();
 		if (!is_array($posts)) {
 			$posts = [];
@@ -978,7 +979,7 @@ class Admin extends BaseController
 			$head_names       = explode(' ', $headmaster, 2);
 			$fname            = $head_names[0];
 			$lname            = isset($head_names[1]) ? $head_names[1] : '';
-			$default_password = $this->random_password();
+			$default_password = $this->_smsSafePassword(8);
 			$staffData        = [
 				'school_id'  => $school_id,
 				'fname'      => $fname,
@@ -991,12 +992,12 @@ class Admin extends BaseController
 				'created_by' => $this->session->get('soma_admin_id'),
 			];
 			$staffMdl->save($staffData);
-			//send notification EMAIL and SMS
-			$msg  = "Dear $fname, $name is on XanderTech SmartSMS, you can now login, \nEmail: "
-				. $email . "\nPassword: " . $default_password . "\n Thank you";
-			$msg2 = "Dear $fname, $name is on XanderTech SmartSMS, you can now login, \nEmail: "
-				. $email . "\nPassword: *******\n Thank you";
-//			if ($this->_send_sms($phone, $msg, $result, 1))
+			$nameLogin = trim($fname . ' ' . strtoupper(substr((string) $lname, 0, 1)) . '.');
+			$loginUser = $email !== '' ? $email : $phone;
+			$smsPack = $this->_staffCredentialSms($nameLogin, $loginUser, $default_password, false);
+			$msg  = $smsPack['body'];
+			$msg2 = $smsPack['log'];
+			$result = null;
             if ($this->sendSMS($phone, $msg, $result))
 			{
 				//save sent sms

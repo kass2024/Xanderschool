@@ -218,15 +218,35 @@ class BaseController extends Controller
 			return '';
 		}
 		if (substr($phone, 0, 3) === '250') {
-			return $phone;
+			return strlen($phone) >= 12 ? substr($phone, 0, 12) : $phone;
 		}
-		if ($phone[0] === '0') {
-			return '250' . substr($phone, 1);
+		if (isset($phone[0]) && $phone[0] === '0') {
+			return '250' . substr($phone, 1, 9);
 		}
 		if (strlen($phone) === 9) {
 			return '250' . $phone;
 		}
-		return '25' . $phone;
+		if (strlen($phone) === 12 && substr($phone, 0, 2) === '25') {
+			return $phone;
+		}
+		return '';
+	}
+
+	/** Provider/error payload as a string for SMS logs and UI. */
+	protected function _smsFailReason($fail): string
+	{
+		if ($fail === null || $fail === false || $fail === '') {
+			return '';
+		}
+		if (is_array($fail)) {
+			$content = $fail['content'] ?? $fail['message'] ?? null;
+			if (is_string($content) && trim($content) !== '') {
+				return trim($content);
+			}
+			$encoded = json_encode($fail);
+			return $encoded !== false ? $encoded : 'SMS failed';
+		}
+		return trim((string) $fail);
 	}
 
 	function _send_sms($phone, $message, &$result, $remaining_sms, $school_acronym = "SOMANET", $school_id = null)
@@ -234,7 +254,7 @@ class BaseController extends Controller
 		$this->_comms_debug('SMS', '_send_sms start (SwiftQOM)', [
 			'phone_raw' => $phone,
 			'remaining_sms' => $remaining_sms,
-			'sender' => $school_acronym,
+			'school_acronym' => $school_acronym,
 			'school_id' => $school_id,
 			'msg_len' => strlen((string) $message),
 		]);
@@ -245,14 +265,15 @@ class BaseController extends Controller
 			return false;
 		}
 
-		return $this->sendSMS($phone, $message, $result, $school_acronym);
+		// SwiftQOM only accepts the registered sender_id; school acronyms are rejected.
+		return $this->sendSMS($phone, $message, $result);
 	}
 
 	public function sendSMS($phone, $message, &$result, $sender = null): bool
 	{
 		$smsConfig = config('Sms');
 		$smsType = $smsConfig->type;
-		$sender = $sender ?: $smsConfig->swiftqomSender;
+		$sender = trim((string) ($smsConfig->swiftqomSender ?: 'SWIFTQOM'));
 
 		$this->_comms_debug('SMS', 'sendSMS start', [
 			'sms.type' => $smsType,
@@ -264,7 +285,7 @@ class BaseController extends Controller
 		]);
 
 		$phone = $this->_normalize_rw_phone($phone);
-		if ($phone === '') {
+		if ($phone === '' || strlen($phone) < 12) {
 			$result = ["code" => 400, "content" => 'Invalid phone number'];
 			$this->_comms_debug('SMS', 'invalid phone', ['phone_raw' => $phone]);
 			return false;
@@ -304,6 +325,8 @@ class BaseController extends Controller
 				'json' => $data,
 				'verify' => false,
 				'http_errors' => false,
+				'timeout' => 30,
+				'connect_timeout' => 10,
 			]);
 		} catch (\Throwable $e) {
 			$result = ["code" => 500, "content" => $e->getMessage()];
@@ -325,8 +348,12 @@ class BaseController extends Controller
 			return false;
 		}
 
-		if (isset($resData->status) && (int) $resData->status === 200) {
+		$status = isset($resData->status) ? $resData->status : null;
+		$messageOk = isset($resData->message) && strtolower((string) $resData->message) === 'success';
+		$successFlag = isset($resData->success) && ($resData->success === true || $resData->success === 1 || $resData->success === '1');
+		if ((int) $status === 200 || $messageOk || $successFlag) {
 			$this->_comms_debug('SMS', 'swiftqom: SUCCESS', ['phone' => $phone]);
+			$result = ["code" => 200, "content" => (string) ($resData->message ?? 'success')];
 			return true;
 		}
 
@@ -397,8 +424,8 @@ class BaseController extends Controller
 				$this->_comms_debug('EMAIL-SMTP', trim((string) $str), ['level' => $level]);
 			};
 
-			// Enable protocol-level debug when DEBUG_COMMS is on
-			if ((string) env('DEBUG_COMMS', '1') !== '0') {
+			// Protocol dump only when DEBUG_COMMS=2 (level 1 already logs start/success/fail).
+			if ((string) env('DEBUG_COMMS', '1') === '2') {
 				$mail->SMTPDebug = 2;
 			}
 

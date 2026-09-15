@@ -24,7 +24,7 @@
 	}
 </style>
 <div class="mail-content">
-	<h5><?= lang("app.dear"); ?> Dear, <?= $name; ?></h5>
+	<h5><?= lang("app.dear"); ?> <?= $name; ?></h5>
 	<p><?= lang("app.emailContent");?><br>
 		<span class="boxed"><?= lang("app.phone"); ?> : <?= $phone; ?></span><br>
 		<span class="boxed"><?= lang("app.mail"); ?> : <?= $email; ?></span><br>
@@ -38,4 +38,4 @@
 	<p class="mail-footer"><?= lang("app.notReply"); ?></p>
 </div>
 <span
-	style="text-align: center;color:#8e9b98;font-size: 10pt;display: block;margin-top:5px"><?= lang("app.Copyright"); ?> &copy; <?= date("Y"); ?> BDS Ltd</span>
+	style="text-align: center;color:#8e9b98;font-size: 10pt;display: block;margin-top:5px"><?= lang("app.Copyright"); ?> &copy; <?= date("Y"); ?> XanderTech</span>

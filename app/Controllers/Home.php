@@ -7242,6 +7242,7 @@ public function attendanceCard()
 	public function share_staff_access()
 	{
 		$this->_preset(1, 3);
+		set_time_limit(120);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$staffId = (int) ($this->request->getPost('staff_id') ?? 0);
 		$scope = trim((string) ($this->request->getPost('scope') ?? 'single'));
@@ -7275,7 +7276,13 @@ public function attendanceCard()
 		$sentEmail = 0;
 		$failed = [];
 		foreach ($targets as $staff) {
-			$res = $this->shareStaffAccessForStaff($staff, $channel);
+			try {
+				$res = $this->shareStaffAccessForStaff($staff, $channel);
+			} catch (\Throwable $e) {
+				$name = trim(($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? ''));
+				$failed[] = $name . ': ' . $e->getMessage();
+				continue;
+			}
 			if (!empty($res['sms'])) {
 				$sentSms++;
 			}
@@ -7338,7 +7345,7 @@ public function attendanceCard()
 
 		$fname = (string) ($staff['fname'] ?? '');
 		$lname = (string) ($staff['lname'] ?? '');
-		$email = trim((string) ($staff['email'] ?? ''));
+		$email = preg_replace('/\s+/', '', trim((string) ($staff['email'] ?? '')));
 		$phone = trim((string) ($staff['phone'] ?? ''));
 		$name = trim($fname . ' ' . strtoupper(substr($lname, 0, 1)) . '.');
 		$loginUser = $email !== '' ? $email : $phone;
@@ -7351,32 +7358,46 @@ public function attendanceCard()
 				$result['errors'][] = 'No phone number';
 			} else {
 				$smsResult = null;
-				if ($this->sendSMS($phone, $smsBody, $smsResult)) {
-					$smsCount = (int) ceil(strlen($smsBody) / (defined('PER_SMS') ? PER_SMS : 160));
-					$this->_save_sms(
-						$this->data['active_term'] ?? 0,
-						$phone,
-						$smsLogBody,
-						'Staff access share',
-						$staffId,
-						1,
-						$smsCount
-					);
-					$result['sms'] = true;
-				} else {
-					$this->_save_sms(
-						$this->data['active_term'] ?? 0,
-						$phone,
-						$smsLogBody,
-						'Staff access share',
-						$staffId,
-						1,
-						0,
-						$smsResult
-					);
-					$result['errors'][] = 'SMS failed' . (is_array($smsResult)
-						? ': ' . ($smsResult['content'] ?? json_encode($smsResult))
-						: ($smsResult ? ': ' . $smsResult : ''));
+				try {
+					$smsOk = $this->sendSMS($phone, $smsBody, $smsResult);
+				} catch (\Throwable $e) {
+					$smsOk = false;
+					$smsResult = ['content' => $e->getMessage()];
+				}
+				$failReason = $smsOk ? '' : $this->_smsFailReason($smsResult);
+				try {
+					if ($smsOk) {
+						$smsCount = (int) ceil(strlen($smsBody) / (defined('PER_SMS') ? PER_SMS : 160));
+						$this->_save_sms(
+							$this->data['active_term'] ?? 0,
+							$phone,
+							$smsLogBody,
+							'Staff access share',
+							$staffId,
+							1,
+							$smsCount
+						);
+						$result['sms'] = true;
+					} else {
+						$this->_save_sms(
+							$this->data['active_term'] ?? 0,
+							$phone,
+							$smsLogBody,
+							'Staff access share',
+							$staffId,
+							1,
+							0,
+							$failReason
+						);
+						$result['errors'][] = 'SMS failed' . ($failReason !== '' ? ': ' . $failReason : '');
+					}
+				} catch (\Throwable $e) {
+					if ($smsOk) {
+						$result['sms'] = true;
+					} else {
+						$result['errors'][] = 'SMS failed' . ($failReason !== '' ? ': ' . $failReason : '');
+					}
+					log_message('error', 'shareStaffAccess SMS log: {msg}', ['msg' => $e->getMessage()]);
 				}
 			}
 		}
@@ -7391,11 +7412,17 @@ public function attendanceCard()
 					'email' => $email,
 					'default_password' => $defaultPassword,
 				];
-				$htmlMsg = view('emails/staff_creation', $mailData);
-				if ($this->_send_email($email, lang('app.welcomeOnSomanet'), $htmlMsg)) {
-					$result['email'] = true;
-				} else {
-					$result['errors'][] = 'Email failed';
+				$emailError = null;
+				try {
+					$htmlMsg = view('emails/staff_creation', $mailData);
+					if ($this->_send_email($email, 'XanderTech SmartSMS login credentials', $htmlMsg, $emailError)) {
+						$result['email'] = true;
+					} else {
+						$result['errors'][] = 'Email failed' . ($emailError ? ': ' . $emailError : '');
+					}
+				} catch (\Throwable $e) {
+					$result['errors'][] = 'Email failed: ' . $e->getMessage();
+					log_message('error', 'shareStaffAccess email: {msg}', ['msg' => $e->getMessage()]);
 				}
 			}
 		}
@@ -8678,8 +8705,8 @@ public function attendanceCard()
 		$country = $this->request->getPost("country");
 		$city = $this->request->getPost("city");
 		$address = $this->request->getPost("address");
-		$shift = (int) ($this->request->getPost("shift") ?? 0);
-		$default_password = $this->random_password();
+			$shift = (int) ($this->request->getPost("shift") ?? 0);
+		$default_password = $this->_smsSafePassword(8);
 		try {
 			$staffMdl = new StaffModel();
 			$school_id = $this->session->get("soma_school_id");
@@ -8692,26 +8719,26 @@ public function attendanceCard()
 			, "status" => 2, "post" => $post, "shift_id" => $shift > 0 ? $shift : 0, "country" => $country, "city" => $city, "address" => $address, "updateVersion" => $update_v));
 			HeyStarDeviceStore::requestStaffSync((int) $school_id);
 			$name = $fname . " " . strtoupper(substr($lname, 0, 1)) . ".";
-			//send notification EMAIL and SMS
-			$msg = lang("app.dear") . " $name" . lang("app.accountIsCreated") . ", \nEmail: "
-					. $email . "\n" . lang("app.password") . ": " . $default_password . "\n " . lang("app.thankyou");
-			$msg2 = lang("app.dear") . " $name" . lang("app.accountIsCreated") . ", \nEmail: "
-					. $email . "\n" . lang("app.password") . ": ********** \n " . lang("app.thankyou");
+			$loginUser = trim((string) $email) !== '' ? trim((string) $email) : trim((string) $phone);
+			$smsPack = $this->_staffCredentialSms($name, $loginUser, $default_password, false);
+			$msg = $smsPack['body'];
+			$msg2 = $smsPack['log'];
+			$result = null;
 
 			if ($this->sendSMS($phone, $msg, $result)) {
-				//save sent sms
 				$sms_count = (int)ceil(strlen($msg) / PER_SMS);
 				$this->_save_sms($this->data['active_term'], $phone, $msg2, lang("app.staffCreation"), $id, 1, $sms_count);
 			} else {
-				$this->_save_sms($this->data['active_term'], $phone, $msg2, lang("app.staffCreation"), $id, 1, 0, $result);
+				$this->_save_sms($this->data['active_term'], $phone, $msg2, lang("app.staffCreation"), $id, 1, 0, $this->_smsFailReason($result));
 			}
 			$data = array("name" => $name, "phone" => $phone, "email" => $email, "default_password" => $default_password);
 			$html_msg = view("emails/staff_creation", $data);
-			$sent = $this->_send_email($email, lang("app.welcomeOnSomanet"), $html_msg);
+			$emailError = null;
+			$sent = $this->_send_email($email, lang("app.welcomeOnSomanet"), $html_msg, $emailError);
 			if (! $sent) {
 				return $this->response->setJSON(array(
 					"success" => lang("app.userSaved"),
-					"warning" => "Staff saved but welcome email could not be sent. Check SMTP settings in .env.",
+					"warning" => "Staff saved but welcome email could not be sent" . ($emailError ? ': ' . $emailError : '.'),
 				));
 			}
 			return $this->response->setJSON(array("success" => lang("app.userSaved") . " Welcome email sent."));
@@ -10095,6 +10122,7 @@ public function getApplicationDocs($id = null)
 	private
 	function _save_sms($term_id, $phone, $msg, $subject = "", $receiver_id = 0, $type = 0, $smsCount = 1, $fail = "")
 	{
+		$fail = $this->_smsFailReason($fail);
 		$smsMdl = new SmsModel();
 		$termMdl = new TermModel();
 		$school_id = $this->session->get("soma_school_id");

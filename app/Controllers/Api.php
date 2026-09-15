@@ -3506,6 +3506,7 @@ public function get_boarding_classes()
 		$id = $smsMdl->insert(array("school_id" => $school_id, "active_term" => $term_id,
 			"content" => $msg, "subject" => $subject, "recipient_type" => $type));
 		$smsRMdl = new SmsRecipientModel();
+		$fail = $this->_smsFailReason($fail);
 		$status = strlen($fail) > 3 ? 2 : 1;
 		$smsRMdl->save(array("sms_record_id" => $id, "receiver_id" => $receiver_id,
 			"phone" => $phone, "sent_on" => time(), "status" => $status, "fail_reason" => $fail));
