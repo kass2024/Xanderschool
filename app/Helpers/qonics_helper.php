@@ -1232,7 +1232,7 @@ if (!function_exists('profile_photo_card_cover_src')) {
 		if (!is_dir($cacheDir)) {
 			@mkdir($cacheDir, 0775, true);
 		}
-		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v2") . '.jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v3") . '.jpg';
 		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
 		if (is_file($cached)) {
 			return '_card_img/' . $key;
@@ -1281,7 +1281,7 @@ if (!function_exists('profile_photo_card_cover_src')) {
 			$cropW = $sw;
 			$cropH = (int) round($sw / $targetRatio);
 			$sx = 0;
-			$sy = (int) max(0, ($sh - $cropH) * 0.28);
+			$sy = (int) max(0, ($sh - $cropH) * 0.08);
 		}
 		$cropW = max(1, min($sw - $sx, $cropW));
 		$cropH = max(1, min($sh - $sy, $cropH));

@@ -32,7 +32,6 @@ class WisdomStaffCardRenderer
 	private const NAVY = [8, 32, 96];
 	private const MUTED = [70, 96, 150];
 	private const GOLD = [196, 154, 48];
-	private const RULE = [214, 222, 236];
 
 	/** @var string */
 	private $font;
@@ -137,14 +136,15 @@ class WisdomStaffCardRenderer
 	{
 		$cx = $this->sx(self::HOLE_CX);
 		$cy = $this->sy(self::HOLE_CY);
-		// Slightly inside the white hole so the artwork ring stays visible.
-		$d = (int) max(2, round($this->sx(self::HOLE_D) * 0.96));
+		// Artwork is stretched to CR80, so the printed hole is an ellipse.
+		// Use the smaller axis so the photo stays inside the ring and centered.
+		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 0.98));
 
 		$src = $this->loadImage($path);
 		if (!$src) {
 			return;
 		}
-		$square = $this->coverSquare($src, $d, 0.22);
+		$square = $this->coverSquare($src, $d, 0.08);
 		imagedestroy($src);
 		if (!$square) {
 			return;
@@ -176,7 +176,6 @@ class WisdomStaffCardRenderer
 	{
 		$muted = imagecolorallocate($im, self::MUTED[0], self::MUTED[1], self::MUTED[2]);
 		$gold = imagecolorallocate($im, self::GOLD[0], self::GOLD[1], self::GOLD[2]);
-		$rule = imagecolorallocate($im, self::RULE[0], self::RULE[1], self::RULE[2]);
 		$white = imagecolorallocate($im, 255, 255, 255);
 
 		$name = $this->upper($this->cleanName((string) (($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? ''))));
@@ -188,13 +187,12 @@ class WisdomStaffCardRenderer
 		$boxX = $this->sx(36);
 		$boxW = $this->sx(519);
 		if ($name !== '') {
-			$size = $this->fitSize($name, $boxW, $this->sy(46), 34, 15);
-			$this->drawText($im, $name, $size, $boxX, $this->sy(458), $boxW, $this->sy(48), $navy, 'center');
+			$size = $this->fitSize($name, $boxW, $this->sy(56), 44, 18);
+			$this->drawText($im, $name, $size, $boxX, $this->sy(450), $boxW, $this->sy(58), $navy, 'center');
 		}
 		if ($post !== '') {
 			$this->drawPostBadge($im, $post, $this->sy(512), $navy, $white, $gold);
 		}
-		$this->drawAccentRule($im, $this->sy(562), $navy, $gold);
 
 		$rows = [];
 		if ($phone !== '') {
@@ -212,19 +210,16 @@ class WisdomStaffCardRenderer
 		$labelW = $this->sx(150);
 		$valueX = $padX + $labelW + $this->sx(12);
 		$valueW = $contentW - $labelW - $this->sx(12);
-		$rowH = $this->sy(38);
-		$y = $this->sy(578);
+		$rowH = $this->sy(46);
+		$y = $this->sy(560);
 		$limitY = $this->sy(792);
-		foreach ($rows as $i => $row) {
+		foreach ($rows as $row) {
 			if ($y + $rowH > $limitY) {
 				break;
 			}
-			if ($i > 0) {
-				imagefilledrectangle($im, $padX, $y - $this->sy(2), $padX + $contentW, $y - $this->sy(1), $rule);
-			}
 			[$lab, $val] = $row;
-			$this->drawTrackedText($im, $lab, 10.5, 1.4, $padX, $y, $labelW, $rowH, $muted, 'left');
-			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.72), 16.5, 10);
+			$this->drawTrackedText($im, $lab, 11.5, 1.4, $padX, $y, $labelW, $rowH, $muted, 'left');
+			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.84), 24, 14);
 			$this->drawText($im, $val, $size, $valueX, $y, $valueW, $rowH, $navy, 'right');
 			$y += $rowH;
 		}
@@ -235,11 +230,11 @@ class WisdomStaffCardRenderer
 	 */
 	private function drawPostBadge($im, string $post, int $y, int $navy, int $white, int $gold): void
 	{
-		$maxW = $this->sx(500);
-		$size = $this->fitSize($post, (int) round($maxW * 0.72), $this->sy(22), 14.5, 9.5);
+		$maxW = $this->sx(520);
+		$size = $this->fitSize($post, (int) round($maxW * 0.84), $this->sy(28), 18.5, 11);
 		$m = $this->measure($size, $post);
-		$padX = $this->sx(28);
-		$h = $this->sy(36);
+		$padX = $this->sx(30);
+		$h = $this->sy(42);
 		$w = min($maxW, $m['w'] + ($padX * 2));
 		$x = (int) round((self::W - $w) / 2);
 		$this->fillRoundRect($im, $x, $y, $w, $h, (int) round($h / 2), $navy);
@@ -247,29 +242,6 @@ class WisdomStaffCardRenderer
 		$dot = (int) max(3, round($this->sx(3)));
 		imagefilledellipse($im, $x + $this->sx(10), $y + (int) round($h / 2), $dot, $dot, $gold);
 		imagefilledellipse($im, $x + $w - $this->sx(10), $y + (int) round($h / 2), $dot, $dot, $gold);
-	}
-
-	/**
-	 * @param resource|\GdImage $im
-	 */
-	private function drawAccentRule($im, int $y, int $navy, int $gold): void
-	{
-		$cx = (int) round(self::W / 2);
-		$half = $this->sx(92);
-		$h = max(2, $this->sy(2));
-		imagefilledrectangle($im, $cx - $half, $y, $cx - $this->sx(12), $y + $h, $navy);
-		imagefilledrectangle($im, $cx + $this->sx(12), $y, $cx + $half, $y + $h, $navy);
-		$pts = [
-			$cx, $y - $this->sy(4),
-			$cx + $this->sx(6), $y + (int) round($h / 2),
-			$cx, $y + $h + $this->sy(4),
-			$cx - $this->sx(6), $y + (int) round($h / 2),
-		];
-		if (PHP_VERSION_ID >= 80100) {
-			imagefilledpolygon($im, $pts, $gold);
-		} else {
-			imagefilledpolygon($im, $pts, 4, $gold);
-		}
 	}
 
 	/**
@@ -319,22 +291,18 @@ class WisdomStaffCardRenderer
 		}
 		if ($sw >= $sh) {
 			$side = $sh;
-			$sx = (int) max(0, ($sw - $sh) / 2);
+			$sx = (int) max(0, (int) round(($sw - $sh) / 2));
 			$sy = 0;
 		} else {
 			$side = $sw;
 			$sx = 0;
-			$sy = (int) max(0, ($sh - $sw) * $biasY);
+			$maxShift = max(0, $sh - $sw);
+			$sy = (int) round($maxShift * $biasY);
+			$sy = max(0, min($sy, $maxShift));
 		}
 		$side = max(1, min($side, $sw - $sx, $sh - $sy));
-		$zoom = 0.98;
-		$crop = max(1, (int) round($side * $zoom));
-		$sx += (int) round(($side - $crop) / 2);
-		$sy += (int) round(($side - $crop) * 0.28);
-		$sx = max(0, min($sx, $sw - $crop));
-		$sy = max(0, min($sy, $sh - $crop));
 		$sq = imagecreatetruecolor($size, $size);
-		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $crop, $crop);
+		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $side, $side);
 		return $sq;
 	}
 

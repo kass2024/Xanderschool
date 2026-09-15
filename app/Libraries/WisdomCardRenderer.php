@@ -255,7 +255,7 @@ class WisdomCardRenderer
 		if (!$src) {
 			return;
 		}
-		$square = $this->coverSquare($src, max(2, $d), 0.22);
+		$square = $this->coverSquare($src, max(2, $d), 0.08);
 		imagedestroy($src);
 		if (!$square) {
 			return;
@@ -350,14 +350,14 @@ class WisdomCardRenderer
 			[$y, $label, $val] = $row;
 			$this->drawText($im, $label, $labelSize, $labelX, $y, $this->sx(200), $rowH, $navy, 'left');
 			$this->drawText($im, ':', $labelSize, $colonX, $y, $this->sx(20), $rowH, $navy, 'left');
-			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.78), 28, 12);
+			$size = $this->fitSize($val, $valueW, (int) round($rowH * 0.86), 34, 14);
 			$this->drawText($im, $val, $size, $valueX, $y, $valueW, $rowH, $navy, 'left');
 		}
 	}
 
 	/**
-	 * Cover-crop to an opaque square for reliable circle painting.
-	 * Slight zoom so the subject fills the circle (less backdrop crescent).
+	 * Cover-crop to an opaque square. Keep the head: take a centered/top square
+	 * with no extra downward zoom.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -379,15 +379,8 @@ class WisdomCardRenderer
 			$sy = (int) max(0, ($sh - $sw) * $biasY);
 		}
 		$side = max(1, min($side, $sw - $sx, $sh - $sy));
-		// Photos from live studio are already framed to the ID circle — keep full square.
-		$zoom = 0.98;
-		$crop = max(1, (int) round($side * $zoom));
-		$sx += (int) round(($side - $crop) / 2);
-		$sy += (int) round(($side - $crop) * 0.28);
-		$sx = max(0, min($sx, $sw - $crop));
-		$sy = max(0, min($sy, $sh - $crop));
 		$sq = imagecreatetruecolor($size, $size);
-		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $crop, $crop);
+		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $side, $side);
 		return $sq;
 	}
 

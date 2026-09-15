@@ -207,6 +207,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	.card.is-wisdom .cf-photo img {
 		width: 100%; height: 100%;
 		object-fit: cover;
+		object-position: center 12%;
 		display: block;
 		border: 0;
 	}
@@ -425,8 +426,8 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			$lab = $labels[$key] ?? ucfirst($key);
 			$val = $values[$key] ?? '';
 			$line = $lab . ' ' . $val;
-			$max = $key === 'names' ? 3.0 : 2.4;
-			$fs = $fit($line, $f, $max, 1.25, 0.48);
+			$max = $key === 'names' ? 3.6 : 2.9;
+			$fs = $fit($line, $f, $max, 1.4, 0.50);
 		?>
 			<div class="cf" data-max="<?= number_format($max, 2, '.', ''); ?>" data-min="1.2" style="<?= CardLayout::boxStyle($f, 2); ?>font-size:<?= number_format($fs, 2, '.', ''); ?>mm;">
 				<span class="lab"><?= esc($lab); ?></span><span class="val"><?= esc($val); ?></span>

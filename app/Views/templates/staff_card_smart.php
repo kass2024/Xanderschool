@@ -136,6 +136,8 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		height: 100%;
 		display: block;
 		border: 0;
+		object-fit: cover;
+		object-position: center 12%;
 	}
 	.cf-badge, .cf-moto {
 		background: <?= $main; ?>;
@@ -167,38 +169,29 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		overflow: hidden;
 	}
 	.ws-name {
-		position: absolute; left: 6%; top: 45.6%; width: 88%; height: 5.2%;
+		position: absolute; left: 5%; top: 44.8%; width: 90%; height: 6.2%;
 		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
 		-webkit-box-pack: center; justify-content: center;
 		color: #082060; font-weight: 700; letter-spacing: 0.02em;
-		white-space: nowrap; overflow: hidden;
+		white-space: nowrap; overflow: hidden; font-size: 3.8mm;
 	}
 	.ws-post {
-		position: absolute; left: 18%; top: 51%; width: 64%; height: 3.5%;
+		position: absolute; left: 12%; top: 51.2%; width: 76%; height: 4.2%;
 		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
 		-webkit-box-pack: center; justify-content: center;
 		background: #082060; color: #ffffff; font-weight: 700;
-		letter-spacing: 0.08em; border-radius: 10mm;
-		white-space: nowrap; overflow: hidden; font-size: 2.1mm;
-	}
-	.ws-rule {
-		position: absolute; left: 28%; top: 55.8%; width: 44%; height: 0.35mm;
-		background: #082060;
-	}
-	.ws-rule:after {
-		content: '';
-		position: absolute; left: 50%; top: -0.7mm; width: 1.6mm; height: 1.6mm;
-		margin-left: -0.8mm; background: #c49a30; transform: rotate(45deg);
+		letter-spacing: 0.06em; border-radius: 10mm;
+		white-space: nowrap; overflow: hidden; font-size: 2.6mm;
 	}
 	.ws-row {
-		position: absolute; left: 9%; width: 82%; height: 3.8%;
+		position: absolute; left: 9%; width: 82%; height: 4.4%;
 		display: -webkit-box; display: flex; -webkit-box-align: center; align-items: center;
 		-webkit-box-pack: justify; justify-content: space-between;
-		border-top: 0.12mm solid #d6deec;
+		border-top: none;
 		white-space: nowrap; overflow: hidden;
 	}
-	.ws-lab { color: #466096; font-size: 1.55mm; letter-spacing: 0.12em; font-weight: 700; }
-	.ws-val { color: #082060; font-size: 2.05mm; font-weight: 700; }
+	.ws-lab { color: #466096; font-size: 1.7mm; letter-spacing: 0.12em; font-weight: 700; }
+	.ws-val { color: #082060; font-size: 2.75mm; font-weight: 700; }
 </style>
 <script>
 (function () {
@@ -303,9 +296,8 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			<?php if ($postTitle !== '' && $postTitle !== '—'): ?>
 				<div class="ws-post"><?= esc($postTitle); ?></div>
 			<?php endif; ?>
-			<div class="ws-rule"></div>
 			<?php foreach ($wsRows as $i => $ws): ?>
-				<div class="ws-row" style="top:<?= number_format(57.6 + ($i * 3.9), 1, '.', ''); ?>%;">
+				<div class="ws-row" style="top:<?= number_format(56.4 + ($i * 4.5), 1, '.', ''); ?>%;">
 					<span class="ws-lab"><?= esc($ws[0]); ?></span>
 					<span class="ws-val"><?= esc($ws[1]); ?></span>
 				</div>
@@ -342,8 +334,8 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			$lab = $labels[$key] ?? ucfirst($key);
 			$val = $values[$key] ?? '';
 			$line = $lab . ' ' . $val;
-			$max = $key === 'names' ? 3.0 : 2.4;
-			$fs = $fit($line, $f, $max, 1.25, 0.48);
+			$max = $key === 'names' ? 3.6 : 2.9;
+			$fs = $fit($line, $f, $max, 1.4, 0.50);
 		?>
 			<div class="cf" data-max="<?= number_format($max, 2, '.', ''); ?>" data-min="1.2" style="<?= CardLayout::boxStyle($f, 2); ?>font-size:<?= number_format($fs, 2, '.', ''); ?>mm;">
 				<span class="lab"><?= esc($lab); ?></span><span class="val"><?= esc($val); ?></span>
