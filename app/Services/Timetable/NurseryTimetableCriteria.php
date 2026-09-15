@@ -6,9 +6,9 @@ use App\Libraries\TimetableTrack;
 
 /**
  * Nursery-only timetable rules:
- * - at least 4 distinct taught courses per day
- * - 1–2 homework periods per day in the last hours (labelled "Homework in …")
- * - every course gets one homework slot in the week when possible
+ * - at least 4 distinct taught courses per day (morning/before lunch)
+ * - each course gets one 30-minute "Homework in …" in the last hours
+ * - 1–2 homework slots per day when periods allow
  */
 class NurseryTimetableCriteria
 {
@@ -18,11 +18,16 @@ class NurseryTimetableCriteria
 
 	public const MAX_HOMEWORK_PER_DAY = 2;
 
-	/** 13:00 — first afternoon teaching slot (prefer later within this window) */
+	/** Homework / late window starts after lunch */
 	public const HOMEWORK_START_MINUTES = 13 * 60;
 
-	/** 16:30 — end of day */
+	/** End of day */
 	public const HOMEWORK_END_MINUTES = 16 * 60 + 30;
+
+	/** Homework periods are ~30 minutes */
+	public const HOMEWORK_DURATION_MIN = 25;
+
+	public const HOMEWORK_DURATION_MAX = 35;
 
 	public static function isNurseryRow(array $row): bool
 	{
@@ -71,18 +76,39 @@ class NurseryTimetableCriteria
 		return $start < self::HOMEWORK_END_MINUTES && $end > self::HOMEWORK_START_MINUTES;
 	}
 
-	/** Prefer the true last periods for homework (15:30, then 14:00, then 13:00). */
+	public static function isHomeworkSizedSlot(?string $startTime, ?string $endTime): bool
+	{
+		$start = TimetableGeneratorService::clockMinutesFromString((string) $startTime);
+		$end = TimetableGeneratorService::clockMinutesFromString((string) $endTime);
+		if ($end <= $start) {
+			return false;
+		}
+		$mins = $end - $start;
+
+		return $mins >= self::HOMEWORK_DURATION_MIN && $mins <= self::HOMEWORK_DURATION_MAX;
+	}
+
+	/** Prefer the true last 30-minute periods for homework. */
 	public static function homeworkLatenessBonus(?string $startTime): int
 	{
 		$start = TimetableGeneratorService::clockMinutesFromString((string) $startTime);
+		if ($start >= 16 * 60) {
+			return -5200;
+		}
 		if ($start >= 15 * 60 + 30) {
-			return -4500;
+			return -4800;
+		}
+		if ($start >= 14 * 60 + 30) {
+			return -3600;
 		}
 		if ($start >= 14 * 60) {
-			return -2800;
+			return -3000;
+		}
+		if ($start >= 13 * 60 + 30) {
+			return -1800;
 		}
 		if ($start >= 13 * 60) {
-			return -900;
+			return -600;
 		}
 
 		return 9000;
@@ -126,55 +152,38 @@ class NurseryTimetableCriteria
 		$explicit = self::isHomeworkCourse((string) ($row['course_title'] ?? ''))
 			|| !empty($row['_nursery_hw_place']);
 		$inWindow = self::slotOverlapsHomeworkWindow($startTime, $endTime);
-		$placingHomework = $explicit || (!$alreadyHasHomework && $inWindow);
+		$sized = self::isHomeworkSizedSlot($startTime, $endTime);
 
 		if ($explicit) {
-			if (!$inWindow) {
-				return 16000;
+			if (!$inWindow || !$sized) {
+				return 18000;
 			}
 			if ($homeworkOnDay >= self::MAX_HOMEWORK_PER_DAY) {
 				return 14000;
 			}
 			if ($uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY) {
-				return 7000;
+				return 7500;
 			}
 			$score = self::homeworkLatenessBonus($startTime);
 			if ($homeworkOnDay === 0) {
 				$score -= 3500;
 			} elseif ($homeworkOnDay === 1) {
-				$score -= 800; // allow a second late homework when periods remain
+				$score -= 900;
 			}
 
 			return $score;
 		}
 
-		// First weekly homework for this course: last hours only, and keep 1–2 per day.
-		if (!$alreadyHasHomework) {
-			if (!$inWindow) {
-				// Prefer teaching in the morning until the day has enough courses.
-				return $uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY ? -500 : 5000;
-			}
-			if ($homeworkOnDay >= self::MAX_HOMEWORK_PER_DAY) {
-				return 13000;
-			}
-			if ($uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY) {
-				// Do not steal afternoon slots before the day has 4 taught subjects.
-				return 8000;
-			}
-			$score = self::homeworkLatenessBonus($startTime) - 6000;
-			if ($homeworkOnDay === 0) {
-				$score -= 2500;
-			}
-
-			return $score;
+		// Normal taught lesson: keep mornings full; leave 30-min late slots for homework.
+		if ($sized) {
+			return 22000;
 		}
-
-		// Already has homework this week — keep extra periods out of the last hours.
 		if ($inWindow) {
-			return $homeworkOnDay >= self::MIN_HOMEWORK_PER_DAY ? 4500 : 1500;
+			// Mild penalty so leftover periods can still use the 60-min afternoon overflow.
+			return $uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY ? 9000 : 3200;
 		}
 
-		return 0;
+		return $uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY ? -500 : 0;
 	}
 
 	/**

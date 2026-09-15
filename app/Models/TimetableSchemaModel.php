@@ -649,10 +649,14 @@ class TimetableSchemaModel extends Model
 			['label' => 'BREAK TIME', 'start' => '10:30:00', 'end' => '11:00:00', 'break' => 1, 'break_label' => 'BREAK TIME'],
 			['label' => '4', 'start' => '11:00:00', 'end' => '12:00:00', 'break' => 0, 'break_label' => null],
 			['label' => 'LUNCH TIME', 'start' => '12:00:00', 'end' => '13:00:00', 'break' => 1, 'break_label' => 'LUNCH TIME'],
+			// One 60-min afternoon overflow for leftover taught periods.
 			['label' => '5', 'start' => '13:00:00', 'end' => '14:00:00', 'break' => 0, 'break_label' => null],
-			['label' => '6', 'start' => '14:00:00', 'end' => '15:00:00', 'break' => 0, 'break_label' => null],
+			// 30-min homework windows in the last hours.
+			['label' => '6a', 'start' => '14:00:00', 'end' => '14:30:00', 'break' => 0, 'break_label' => null],
+			['label' => '6b', 'start' => '14:30:00', 'end' => '15:00:00', 'break' => 0, 'break_label' => null],
 			['label' => 'WATER BREAK', 'start' => '15:00:00', 'end' => '15:30:00', 'break' => 1, 'break_label' => 'WATER BREAK'],
-			['label' => '7', 'start' => '15:30:00', 'end' => '16:30:00', 'break' => 0, 'break_label' => null],
+			['label' => '7a', 'start' => '15:30:00', 'end' => '16:00:00', 'break' => 0, 'break_label' => null],
+			['label' => '7b', 'start' => '16:00:00', 'end' => '16:30:00', 'break' => 0, 'break_label' => null],
 		];
 	}
 

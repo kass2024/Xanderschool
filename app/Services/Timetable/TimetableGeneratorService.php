@@ -888,13 +888,23 @@ class TimetableGeneratorService
 					(string) ($slot['start_time'] ?? ''),
 					(string) ($slot['end_time'] ?? '')
 				);
-				if ($homeworkWindowOnly && !$inHw) {
+				$hwSized = NurseryTimetableCriteria::isHomeworkSizedSlot(
+					(string) ($slot['start_time'] ?? ''),
+					(string) ($slot['end_time'] ?? '')
+				);
+				if ($homeworkWindowOnly && (!$inHw || !$hwSized)) {
+					continue;
+				}
+				if ($placeAsHomework && (!$hwSized || !$inHw)) {
 					continue;
 				}
 				if ($placeAsHomework && $this->slotIsMorning($slot)) {
 					continue;
 				}
-				// Keep taught lessons out of last hours until the day already has 4 courses.
+				// Taught lessons: fill mornings first; never use 30-min homework slots.
+				if ($nursery && !$placeAsHomework && $hwSized) {
+					continue;
+				}
 				if ($nursery && !$placeAsHomework && $inHw
 					&& $this->uniqueCoursesOnDay($classId, (int) $day) < NurseryTimetableCriteria::MIN_DISTINCT_COURSES_PER_DAY) {
 					continue;
@@ -908,7 +918,19 @@ class TimetableGeneratorService
 							continue;
 						}
 						$slotBMeta = $this->teachingSlots[$j] ?? [];
-						if ($homeworkWindowOnly && !NurseryTimetableCriteria::slotOverlapsHomeworkWindow(
+						if ($homeworkWindowOnly && (
+							!NurseryTimetableCriteria::slotOverlapsHomeworkWindow(
+								(string) ($slotBMeta['start_time'] ?? ''),
+								(string) ($slotBMeta['end_time'] ?? '')
+							)
+							|| !NurseryTimetableCriteria::isHomeworkSizedSlot(
+								(string) ($slotBMeta['start_time'] ?? ''),
+								(string) ($slotBMeta['end_time'] ?? '')
+							)
+						)) {
+							continue;
+						}
+						if ($nursery && !$placeAsHomework && NurseryTimetableCriteria::isHomeworkSizedSlot(
 							(string) ($slotBMeta['start_time'] ?? ''),
 							(string) ($slotBMeta['end_time'] ?? '')
 						)) {
