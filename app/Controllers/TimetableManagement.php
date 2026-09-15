@@ -1255,6 +1255,9 @@ class TimetableManagement extends Home
 		$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
 		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 		$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
+		$stagingSvc->hardenLeftoverPlacement($scheduleId, $schoolId, $schema);
+		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
+		$stagingSvc->hardenLeftoverPlacement($scheduleId, $schoolId, $schema);
 
 		$now = date('Y-m-d H:i:s');
 		$entryCountsByPhase = [];
@@ -1341,6 +1344,7 @@ class TimetableManagement extends Home
 			$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
 			$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 			$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
+			$stagingSvc->hardenLeftoverPlacement($scheduleId, $schoolId, $schema);
 			$stages = $this->markGenerationStage($stages, 'gemini', 'done');
 			$this->reportGenerationProgress($jobId, [
 				'message' => $geminiTip ?: 'AI collision check complete.',
@@ -2679,6 +2683,12 @@ class TimetableManagement extends Home
 		$grid = $this->buildGridFromSlots($slots, $dayLabels, $specialMap, $labelByDay);
 		$nurseryClassCache = [];
 		$combinedByClock = [];
+		$combineCriteria = new SecondaryTimetableCriteria();
+		try {
+			$combineCriteria->hydrateFromAssignments($this->loadAssignments($schoolId, $year, $term));
+		} catch (\Throwable $e) {
+			$combineCriteria->hydrateFromAssignments($entries);
+		}
 
 		if ($entries !== []) {
 			$slotMaps = $this->buildSlotIndexMaps($slots);
@@ -2720,6 +2730,9 @@ class TimetableManagement extends Home
 				}
 				$ck = $si . ':' . $dayLabel . ':' . (int) ($entry['staff_id'] ?? 0) . ':' . $fam;
 				$partnerLabels = [];
+				if ($classLabel !== '') {
+					$partnerLabels[] = $classLabel;
+				}
 				foreach ($combinedByClock[$ck] ?? [] as $other) {
 					$otherLabel = TimetableClassLabel::fromRow($other);
 					if ($otherLabel === '') {
@@ -2732,7 +2745,15 @@ class TimetableManagement extends Home
 						}
 					}
 				}
-				$isCombined = count($partnerLabels) > 1;
+				$asAssign = $entry;
+				$asAssign['lecturer'] = (int) ($entry['staff_id'] ?? $entry['lecturer'] ?? 0);
+				foreach ($combineCriteria->combinePartners($asAssign) as $partner) {
+					$pl = TimetableClassLabel::fromRow($partner);
+					if ($pl !== '' && !in_array($pl, $partnerLabels, true)) {
+						$partnerLabels[] = $pl;
+					}
+				}
+				$isCombined = count($partnerLabels) > 1 || $combineCriteria->isCombinedAssignment($asAssign);
 				$existing = $grid[$si]['cells'][$dayLabel] ?? null;
 				$existFam = is_array($existing)
 					? SecondaryTimetableCriteria::subjectFamily((string) ($existing['course'] ?? ''))
@@ -2742,6 +2763,11 @@ class TimetableManagement extends Home
 					&& !empty($existing['type']) && $existing['type'] === 'lesson'
 					&& (int) ($existing['staff_id'] ?? 0) === (int) ($entry['staff_id'] ?? 0)) {
 					$merged = $existing['combined_classes'] ?? [];
+					foreach ($partnerLabels as $pl) {
+						if ($pl !== '' && !in_array($pl, $merged, true)) {
+							$merged[] = $pl;
+						}
+					}
 					if ($classLabel !== '' && !in_array($classLabel, $merged, true)) {
 						$merged[] = $classLabel;
 					}

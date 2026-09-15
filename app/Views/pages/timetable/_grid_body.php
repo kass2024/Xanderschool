@@ -174,13 +174,13 @@ foreach ($grid ?? [] as $scanRow) {
 											<?php endif; ?>
 											<?php if ($mode === 'class' && !empty($cell['line2'])): ?>
 												<div class="tt-sub"><?= esc($cell['line2']); ?></div>
-											<?php elseif ($mode === 'teacher' && empty($cell['combined'])): ?>
-												<div class="tt-sub"><?= esc($cell['line2']); ?></div>
+											<?php elseif ($mode === 'teacher'): ?>
+												<?php if (empty($cell['combined']) && !empty($cell['line2'])): ?>
+													<div class="tt-sub"><?= esc($cell['line2']); ?></div>
+												<?php endif; ?>
 												<?php if (!empty($cell['code'])): ?>
 													<div class="tt-code"><?= esc($cell['code']); ?></div>
 												<?php endif; ?>
-											<?php elseif ($mode === 'teacher' && !empty($cell['code'])): ?>
-												<div class="tt-code"><?= esc($cell['code']); ?></div>
 											<?php endif; ?>
 										<?php endif; ?>
 									<?php endif; ?>

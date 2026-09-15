@@ -720,7 +720,10 @@ class TimetableGeneratorService
 		}
 
 		$classId = (int) ($partner['class_id'] ?? 0);
-		$staffId = (int) ($partner['lecturer'] ?? 0);
+		$staffId = (int) ($partner['lecturer'] ?? $partner['staff_id'] ?? 0);
+		if ($staffId <= 0) {
+			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		}
 		$sameTeacher = $this->secondaryCriteria !== null
 			&& $this->secondaryCriteria->isSameCombineTeacher($row, $partner);
 		if (!$sameTeacher) {
@@ -752,15 +755,21 @@ class TimetableGeneratorService
 			$slotIds[] = $this->slotIdForClass($classId, $sourceSlot);
 		}
 		$slotIds = array_values(array_filter($slotIds));
-		if ($day < 0 || $slotIds === [] || count($slotIds) > $room) {
+		if ($day < 0 || $slotIds === []) {
 			return [];
 		}
+
+		$courseTitle = trim((string) ($partner['course_title'] ?? $row['course_title'] ?? 'Lesson'));
+		$copied = 0;
 		foreach ($slotIds as $slotId) {
+			if ($copied >= $room) {
+				break;
+			}
 			if (!empty($this->blocked[$day . ':' . $slotId])) {
-				return [];
+				continue;
 			}
 			if (isset($this->classBusy[$this->busyKey($classId, $day, $slotId)])) {
-				return [];
+				continue;
 			}
 			$times = $this->slotTimes[$slotId] ?? null;
 			if ($this->secondaryCriteria !== null && $this->secondaryCriteria->clinicalBlocksClass(
@@ -769,16 +778,12 @@ class TimetableGeneratorService
 				$times['start'] ?? null,
 				$times['end'] ?? null
 			)) {
-				return [];
+				continue;
 			}
-		}
-
-		$courseTitle = trim((string) ($partner['course_title'] ?? $row['course_title'] ?? 'Lesson'));
-		foreach ($slotIds as $slotId) {
 			$this->classBusy[$this->busyKey($classId, $day, $slotId)] = true;
 			$this->classDayUsage[$classId . ':' . $day] = (int) ($this->classDayUsage[$classId . ':' . $day] ?? 0) + 1;
 			$this->globalDayUsage[$day] = (int) ($this->globalDayUsage[$day] ?? 0) + 1;
-			$out[] = [
+			$out[] = $this->stampAssignmentMeta([
 				'class_id' => $classId,
 				'staff_id' => $staffId,
 				'course_id' => $courseId,
@@ -789,14 +794,49 @@ class TimetableGeneratorService
 				'entry_type' => 'lesson',
 				'is_locked' => 1,
 				'custom_label' => $courseTitle,
-			];
+			], $partner);
+			$copied++;
+		}
+		if ($out === []) {
+			return [];
 		}
 		$this->subjectDayCount[$subjectKey . ':' . $day] =
-			(int) ($this->subjectDayCount[$subjectKey . ':' . $day] ?? 0) + count($slotIds);
+			(int) ($this->subjectDayCount[$subjectKey . ':' . $day] ?? 0) + count($out);
 		$this->noteCourseOnDay($classId, $day, $courseId);
 		$placedByAssignment[$partnerKey] = $already + count($out);
 
 		return $out;
+	}
+
+	/**
+	 * Keep class/dept/teacher on generated rows so combined-lesson checks
+	 * still work before the DB join is available.
+	 *
+	 * @param array<string,mixed> $entry
+	 * @param array<string,mixed> $row
+	 * @return array<string,mixed>
+	 */
+	private function stampAssignmentMeta(array $entry, array $row): array
+	{
+		foreach ([
+			'class_title', 'level_name', 'level_title', 'dept_code', 'dept_title',
+			'dept_name', 'teacher_name', 'track_key',
+		] as $key) {
+			if (trim((string) ($entry[$key] ?? '')) !== '') {
+				continue;
+			}
+			$val = trim((string) ($row[$key] ?? ''));
+			if ($val !== '') {
+				$entry[$key] = $val;
+			}
+		}
+		if ((int) ($entry['staff_id'] ?? 0) <= 0) {
+			$entry['staff_id'] = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+		}
+		if ((int) ($entry['lecturer'] ?? 0) <= 0) {
+			$entry['lecturer'] = (int) ($entry['staff_id'] ?? $row['lecturer'] ?? 0);
+		}
+		return $entry;
 	}
 
 	private function criteriaAllowsSlot(array $row, int $day, int $slotId): bool
@@ -946,7 +986,7 @@ class TimetableGeneratorService
 		$occupied = $staffId > 0 ? $this->staffOccupiedRanges($staffId) : [];
 		foreach ($pick['slot_ids'] as $slotId) {
 			$this->markBusy($classId, $staffId, $pick['day'], $slotId);
-			$entry = [
+			$entry = $this->stampAssignmentMeta([
 				'class_id' => $classId,
 				'staff_id' => $staffId,
 				'course_id' => $courseId,
@@ -955,7 +995,7 @@ class TimetableGeneratorService
 				'day_of_week' => $pick['day'],
 				'slot_id' => $slotId,
 				'entry_type' => 'lesson',
-			];
+			], $row);
 			$times = $this->slotTimes[$slotId] ?? null;
 			if ($placeAsHomework) {
 				$hwLabel = NurseryTimetableCriteria::homeworkLabelForCourse((string) ($row['course_title'] ?? ''));
@@ -1881,16 +1921,16 @@ class TimetableGeneratorService
 	/** Unscheduled Manage Course period — shown in the grid below the timetable. */
 	private function parkingEntry(array $row): array
 	{
-		return [
+		return $this->stampAssignmentMeta([
 			'class_id' => (int) ($row['class_id'] ?? 0),
-			'staff_id' => (int) ($row['lecturer'] ?? 0),
+			'staff_id' => (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0),
 			'course_id' => (int) ($row['course_id'] ?? 0),
 			'course_record_id' => (int) ($row['course_record_id'] ?? 0),
 			'course_title' => trim((string) ($row['course_title'] ?? '')),
 			'day_of_week' => -1,
 			'slot_id' => 0,
 			'entry_type' => 'lesson',
-		];
+		], $row);
 	}
 
 	/**

@@ -136,12 +136,8 @@ class SecondaryTimetableCriteria
 				continue;
 			}
 			$this->classMeta[(string) $classId] = [
-				'level' => $this->normalizeLevel((string) ($row['level_name'] ?? $row['level_title'] ?? '')),
-				'dept' => $this->normalizeDept(
-					(string) ($row['dept_code'] ?? ''),
-					(string) ($row['dept_title'] ?? ''),
-					(string) ($row['class_title'] ?? '')
-				),
+				'level' => $this->entryLevel($row),
+				'dept' => $this->entryDept($row),
 				'class_title' => (string) ($row['class_title'] ?? ''),
 			];
 			$key = $this->subjectIndexKey($row);
@@ -799,24 +795,25 @@ class SecondaryTimetableCriteria
 	/** Same teacher + same document combine group = one lesson, not a clash. */
 	public static function entriesAreCombinedLesson(array $a, array $b): bool
 	{
-		$staffA = (int) ($a['staff_id'] ?? $a['lecturer'] ?? 0);
-		$staffB = (int) ($b['staff_id'] ?? $b['lecturer'] ?? 0);
-		$titleA = (string) ($a['course_title'] ?? $a['custom_label'] ?? '');
-		$titleB = (string) ($b['course_title'] ?? $b['custom_label'] ?? '');
 		if ((int) ($a['class_id'] ?? 0) === (int) ($b['class_id'] ?? 0)) {
 			return false;
 		}
+		$staffA = (int) ($a['staff_id'] ?? $a['lecturer'] ?? 0);
+		$staffB = (int) ($b['staff_id'] ?? $b['lecturer'] ?? 0);
+		$titleA = (string) ($a['course_title'] ?? $a['custom_label'] ?? $a['course'] ?? '');
+		$titleB = (string) ($b['course_title'] ?? $b['custom_label'] ?? $b['course'] ?? '');
 		$afterA = self::afterLessonFamily($titleA);
 		$afterB = self::afterLessonFamily($titleB);
-		if ($afterA !== '' && $afterA === $afterB) {
-			if ($staffA > 0 && $staffA === $staffB) {
-				return true;
-			}
+		$sameTeacher = ($staffA > 0 && $staffA === $staffB);
+		if (!$sameTeacher) {
 			$nameA = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($a['teacher_name'] ?? ''))));
 			$nameB = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($b['teacher_name'] ?? ''))));
-			return $nameA !== '' && $nameA === $nameB;
+			$sameTeacher = $nameA !== '' && $nameA === $nameB;
 		}
-		if ($staffA <= 0 || $staffA !== $staffB) {
+		if ($afterA !== '' && $afterA === $afterB) {
+			return $sameTeacher;
+		}
+		if (!$sameTeacher || $staffA <= 0) {
 			return false;
 		}
 		$famA = self::subjectFamily($titleA);
@@ -825,31 +822,47 @@ class SecondaryTimetableCriteria
 			return false;
 		}
 		$c = new self();
-		$levelA = $c->normalizeLevel((string) ($a['level_name'] ?? $a['level_title'] ?? ''));
-		$levelB = $c->normalizeLevel((string) ($b['level_name'] ?? $b['level_title'] ?? ''));
-		$deptA = $c->normalizeDept(
-			(string) ($a['dept_code'] ?? ''),
-			(string) ($a['dept_title'] ?? $a['dept_name'] ?? ''),
-			(string) ($a['class_title'] ?? '')
-		);
-		$deptB = $c->normalizeDept(
-			(string) ($b['dept_code'] ?? ''),
-			(string) ($b['dept_title'] ?? $b['dept_name'] ?? ''),
-			(string) ($b['class_title'] ?? '')
-		);
-		if ($levelA === '' || $levelA !== $levelB || $deptA === '' || $deptB === '') {
+		$levelA = $c->entryLevel($a);
+		$levelB = $c->entryLevel($b);
+		$deptA = $c->entryDept($a);
+		$deptB = $c->entryDept($b);
+		if ($levelA !== '' && $levelA === $levelB && $deptA !== '' && $deptB !== '') {
+			foreach (self::documentCombineGroups() as $group) {
+				if (($group['subject'] ?? '') !== $famA || ($group['level'] ?? '') !== $levelA) {
+					continue;
+				}
+				$depts = $group['depts'] ?? [];
+				if (in_array($deptA, $depts, true) && in_array($deptB, $depts, true)) {
+					return true;
+				}
+			}
+		}
+		if ($levelA !== '' && $levelB !== '' && $levelA !== $levelB) {
 			return false;
 		}
-		foreach (self::documentCombineGroups() as $group) {
-			if (($group['subject'] ?? '') !== $famA || ($group['level'] ?? '') !== $levelA) {
-				continue;
-			}
-			$depts = $group['depts'] ?? [];
-			if (in_array($deptA, $depts, true) && in_array($deptB, $depts, true)) {
-				return true;
-			}
-		}
-		return false;
+		$titleNormA = strtolower(trim(preg_replace('/\s+/', ' ', $titleA)));
+		$titleNormB = strtolower(trim(preg_replace('/\s+/', ' ', $titleB)));
+		return $titleNormA !== '' && $titleNormA === $titleNormB;
+	}
+
+	public function entryLevel(array $row): string
+	{
+		$raw = trim(implode(' ', array_filter([
+			(string) ($row['level_name'] ?? ''),
+			(string) ($row['level_title'] ?? ''),
+			(string) ($row['class_title'] ?? ''),
+			(string) ($row['class'] ?? ''),
+		])));
+		return $this->normalizeLevel($raw);
+	}
+
+	public function entryDept(array $row): string
+	{
+		return $this->normalizeDept(
+			(string) ($row['dept_code'] ?? $row['code'] ?? ''),
+			(string) ($row['dept_title'] ?? $row['dept_name'] ?? ''),
+			(string) ($row['class_title'] ?? $row['class'] ?? '')
+		);
 	}
 
 	/** PE: at most one period per class day (spread across week). */

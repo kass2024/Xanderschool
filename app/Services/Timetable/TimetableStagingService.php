@@ -480,8 +480,48 @@ class TimetableStagingService
 
 	/**
 	 * Place remaining Manage Course periods into any legal free slot (morning or afternoon).
+	 * Never leave leftover while the teacher and class still have a legal hole.
 	 */
 	public function fillWeeklyPeriodGaps(
+		int $scheduleId,
+		int $schoolId,
+		\App\Models\TimetableSchemaModel $schema
+	): int {
+		if ($scheduleId <= 0 || $schoolId <= 0) {
+			return 0;
+		}
+		$total = 0;
+		for ($pass = 0; $pass < 8; $pass++) {
+			$attached = $this->attachParkedCombinedCopies($scheduleId, $schoolId, $schema);
+			$direct = $this->placeParkingDirect($scheduleId, $schoolId, $schema, false);
+			$relocated = $this->placeParkingDirect($scheduleId, $schoolId, $schema, true);
+			$gained = $attached + $direct + $relocated;
+			$total += $gained;
+			if ($gained === 0) {
+				break;
+			}
+		}
+		return $total;
+	}
+
+	/**
+	 * Keep draining parking after collision cleanup so leftover cannot beat a free teacher cell.
+	 */
+	public function hardenLeftoverPlacement(
+		int $scheduleId,
+		int $schoolId,
+		\App\Models\TimetableSchemaModel $schema
+	): int {
+		$placed = $this->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
+		$placed += $this->autoPlaceStaging($scheduleId, $schoolId, $schema, 0, 0, true);
+		$placed += $this->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
+		return $placed;
+	}
+
+	/**
+	 * Put a parked combined partner onto the same clock as its already-placed partner.
+	 */
+	public function attachParkedCombinedCopies(
 		int $scheduleId,
 		int $schoolId,
 		\App\Models\TimetableSchemaModel $schema
@@ -497,16 +537,143 @@ class TimetableStagingService
 		$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
 		$this->secondaryCriteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
 
+		$scheduled = $this->scheduledEntries($scheduleId, $schoolId);
+		$state = $this->buildScheduleState($scheduled);
+		$parking = $db->table('timetable_entries te')
+			->select('te.*, c.title AS course_title, cl.title AS class_title, l.title AS level_name,
+				d.code AS dept_code, CONCAT(s.fname, " ", s.lname) AS teacher_name')
+			->join('courses c', 'c.id = te.course_id', 'left')
+			->join('classes cl', 'cl.id = te.class_id', 'left')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->join('staffs s', 's.id = te.staff_id', 'left')
+			->where('te.schedule_id', $scheduleId)
+			->where('te.school_id', $schoolId)
+			->where('te.entry_type', 'lesson')
+			->where('te.day_of_week', -1)
+			->where('te.slot_id', 0)
+			->orderBy('te.id')
+			->get()->getResultArray();
+		if ($parking === []) {
+			return 0;
+		}
+
+		$placed = 0;
+		foreach ($parking as $entry) {
+			$classId = (int) ($entry['class_id'] ?? 0);
+			$staffId = (int) ($entry['staff_id'] ?? 0);
+			if ($classId <= 0 || $staffId <= 0) {
+				continue;
+			}
+			$host = $this->combinedHostClock($entry, $scheduled, $state, $schema, $schoolId);
+			if ($host === null) {
+				continue;
+			}
+			$db->table('timetable_entries')->where('id', (int) $entry['id'])->update([
+				'day_of_week' => $host['day'],
+				'slot_id' => $host['slot_id'],
+				'is_locked' => 1,
+			]);
+			$entry['day_of_week'] = $host['day'];
+			$entry['slot_id'] = $host['slot_id'];
+			$entry['start_time'] = $host['start_time'] ?? ($entry['start_time'] ?? '');
+			$entry['end_time'] = $host['end_time'] ?? ($entry['end_time'] ?? '');
+			$this->addScheduledEntry($state, $entry);
+			$scheduled[] = $entry;
+			$placed++;
+		}
+		return $placed;
+	}
+
+	/**
+	 * @param array<string,mixed> $entry
+	 * @param list<array<string,mixed>> $scheduled
+	 * @param array<string,mixed> $state
+	 * @return array{day:int,slot_id:int,start_time?:string,end_time?:string}|null
+	 */
+	private function combinedHostClock(
+		array $entry,
+		array $scheduled,
+		array $state,
+		\App\Models\TimetableSchemaModel $schema,
+		int $schoolId
+	): ?array {
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$moving = $this->combineCheckRow($entry);
+		$trackKey = $schema->trackForClass($schoolId, $classId);
+		$blocked = $schema->specialTimesMap($schoolId, $trackKey);
+		foreach ($scheduled as $host) {
+			if ((int) ($host['staff_id'] ?? 0) !== (int) ($entry['staff_id'] ?? 0)) {
+				continue;
+			}
+			if ((int) ($host['class_id'] ?? 0) === $classId) {
+				continue;
+			}
+			$day = (int) ($host['day_of_week'] ?? -1);
+			$slotId = (int) ($host['slot_id'] ?? 0);
+			if ($day < 0 || $slotId <= 0) {
+				continue;
+			}
+			if (!SecondaryTimetableCriteria::entriesAreCombinedLesson($moving, $this->combineCheckRow($host))) {
+				continue;
+			}
+			$key = $day . ':' . $slotId;
+			if (!empty($blocked[$key])) {
+				continue;
+			}
+			if (!empty($state['class_busy'][$classId . ':' . $key])) {
+				continue;
+			}
+			$start = (string) ($host['start_time'] ?? '');
+			$end = (string) ($host['end_time'] ?? '');
+			if ($this->secondaryCriteria !== null) {
+				$meta = $this->metaForEntry($entry);
+				$meta['_track_key'] = $trackKey;
+				if (!$this->secondaryCriteria->slotAllowed($meta, $day, $start, $end)) {
+					continue;
+				}
+			}
+			return [
+				'day' => $day,
+				'slot_id' => $slotId,
+				'start_time' => $start,
+				'end_time' => $end,
+			];
+		}
+		return null;
+	}
+
+	private function placeParkingDirect(
+		int $scheduleId,
+		int $schoolId,
+		\App\Models\TimetableSchemaModel $schema,
+		bool $allowRelocate
+	): int {
+		$db = \Config\Database::connect();
+		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
+		$this->timetableSettings = $settings;
+		$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
+		$this->secondaryCriteria = new SecondaryTimetableCriteria();
+		$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
+		$this->secondaryCriteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
+
 		$days = \App\Models\TimetableSchemaModel::weekDaysFromSettings($settings);
 		$scheduled = $this->scheduledEntries($scheduleId, $schoolId);
 		$state = $this->buildScheduleState($scheduled);
-		$parking = $db->table('timetable_entries')
-			->where('schedule_id', $scheduleId)
-			->where('school_id', $schoolId)
-			->where('entry_type', 'lesson')
-			->where('day_of_week', -1)
-			->where('slot_id', 0)
-			->orderBy('id')
+		$parking = $db->table('timetable_entries te')
+			->select('te.*, c.title AS course_title, cl.title AS class_title, l.title AS level_name,
+				d.code AS dept_code, CONCAT(s.fname, " ", s.lname) AS teacher_name')
+			->join('courses c', 'c.id = te.course_id', 'left')
+			->join('classes cl', 'cl.id = te.class_id', 'left')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->join('staffs s', 's.id = te.staff_id', 'left')
+			->where('te.schedule_id', $scheduleId)
+			->where('te.school_id', $schoolId)
+			->where('te.entry_type', 'lesson')
+			->where('te.day_of_week', -1)
+			->where('te.slot_id', 0)
+			->orderBy('te.id')
 			->get()->getResultArray();
 		if ($parking === []) {
 			return 0;
@@ -519,35 +686,35 @@ class TimetableStagingService
 		}
 
 		$placed = 0;
-		usort($parking, function (array $a, array $b): int {
-			$rank = function (array $entry): int {
-				$meta = $this->metaForEntry($entry);
-				if ($this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($meta)) {
-					return 0;
-				}
-				if (TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''))) {
-					return 1;
-				}
-				return 2;
-			};
-			return $rank($a) <=> $rank($b);
-		});
 		foreach ($parking as $entry) {
 			$key = $this->keyFromEntry($entry);
 			$meta = $this->metaForEntry($entry);
 			$needed = TimetableGeneratorService::weeklyHoursFromCourse($meta);
 			$have = (int) ($scheduledByKey[$key] ?? 0);
 			if ($needed > 0 && $have >= $needed) {
+				$db->table('timetable_entries')->where('id', (int) $entry['id'])->delete();
 				continue;
 			}
 			$found = $this->findBestDirectPlacement($entry, $days, $schema, $schoolId, $state, true);
+			if ($found === null && $allowRelocate) {
+				$found = $this->placeByRelocatingOneBlocker($db, $entry, $days, $schema, $schoolId, $state);
+			}
 			if ($found === null) {
 				continue;
 			}
-			$db->table('timetable_entries')->where('id', (int) $entry['id'])->update([
+			$lock = $this->secondaryCriteria !== null && (
+				$this->secondaryCriteria->isCombinedAssignment($meta)
+				|| $this->secondaryCriteria->requiresAfterLessons($meta)
+				|| TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''))
+			);
+			$update = [
 				'day_of_week' => $found['day'],
 				'slot_id' => $found['slot_id'],
-			]);
+			];
+			if ($lock && $db->fieldExists('is_locked', 'timetable_entries')) {
+				$update['is_locked'] = 1;
+			}
+			$db->table('timetable_entries')->where('id', (int) $entry['id'])->update($update);
 			$entry['day_of_week'] = $found['day'];
 			$entry['slot_id'] = $found['slot_id'];
 			$this->addScheduledEntry($state, $entry);
@@ -943,6 +1110,11 @@ class TimetableStagingService
 		int $filterClassId = 0,
 		int $filterStaffId = 0
 	): int {
+		if ($this->assignmentMeta === []) {
+			$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
+			$this->secondaryCriteria = new SecondaryTimetableCriteria();
+			$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
+		}
 		$ids = $this->collectConflictEntryIds(
 			$this->scheduledEntries($scheduleId, $schoolId, $filterClassId, $filterStaffId)
 		);
@@ -1249,34 +1421,43 @@ class TimetableStagingService
 				}
 				$classBlocker = (int) ($state['class_busy'][$classId . ':' . $key] ?? 0);
 				$blockers = array_values(array_unique(array_filter([$classBlocker])));
+				$combinedAttach = false;
 				if ($staffId > 0) {
 					$slotStaffBlocker = (int) ($state['staff_busy'][$staffId . ':' . $key] ?? 0);
-					if ($slotStaffBlocker > 0 && !$this->staffBlockerIsCombined($entry, $state, $slotStaffBlocker)) {
+					if ($slotStaffBlocker > 0 && $this->staffBlockerIsCombined($entry, $state, $slotStaffBlocker)) {
+						$combinedAttach = true;
+					} elseif ($slotStaffBlocker > 0) {
 						$blockers[] = $slotStaffBlocker;
 					}
 					foreach ($this->staffTimeConflictIds($state, $staffId, (int) $day, $range['start'], $range['end']) as $staffBlockerId) {
-						if (!$this->staffBlockerIsCombined($entry, $state, $staffBlockerId)) {
-							$blockers[] = $staffBlockerId;
+						if ($this->staffBlockerIsCombined($entry, $state, $staffBlockerId)) {
+							$combinedAttach = true;
+							continue;
 						}
+						$blockers[] = $staffBlockerId;
 					}
 				}
 				$blockers = array_values(array_unique(array_filter($blockers)));
 				if ($blockers !== [] && (!$allowSingleBlocker || count($blockers) > 1)) {
 					continue;
 				}
+				$score = $this->scoreCandidate(
+					$state,
+					$entry,
+					(int) $day,
+					$slotId,
+					count($blockers),
+					$range,
+					(int) $slotIndex,
+					count($slots)
+				);
+				if ($combinedAttach) {
+					$score -= 8000;
+				}
 				$candidates[] = [
 					'day' => (int) $day,
 					'slot_id' => $slotId,
-					'score' => $this->scoreCandidate(
-						$state,
-						$entry,
-						(int) $day,
-						$slotId,
-						count($blockers),
-						$range,
-						(int) $slotIndex,
-						count($slots)
-					),
+					'score' => $score,
 					'blockers' => $blockers,
 				];
 			}
@@ -1517,11 +1698,34 @@ class TimetableStagingService
 	private function metaForEntry(array $entry): array
 	{
 		$key = $this->keyFromEntry($entry);
-		return $this->assignmentMeta[$key] ?? [
-			'course_title' => '',
-			'credit' => 0,
-			'track_key' => '',
-		];
+		$meta = $this->assignmentMeta[$key] ?? [];
+		if ($meta === []) {
+			$meta = [
+				'course_title' => (string) ($entry['course_title'] ?? $entry['custom_label'] ?? ''),
+				'credit' => 0,
+				'track_key' => (string) ($entry['track_key'] ?? ''),
+				'class_id' => (int) ($entry['class_id'] ?? 0),
+				'course_id' => (int) ($entry['course_id'] ?? 0),
+				'lecturer' => (int) ($entry['staff_id'] ?? 0),
+				'staff_id' => (int) ($entry['staff_id'] ?? 0),
+				'class_title' => (string) ($entry['class_title'] ?? ''),
+				'level_name' => (string) ($entry['level_name'] ?? ''),
+				'dept_code' => (string) ($entry['dept_code'] ?? ''),
+				'teacher_name' => (string) ($entry['teacher_name'] ?? ''),
+			];
+		}
+		foreach ([
+			'course_title', 'class_title', 'level_name', 'level_title', 'dept_code',
+			'dept_title', 'teacher_name', 'track_key',
+		] as $field) {
+			if (trim((string) ($meta[$field] ?? '')) === '' && trim((string) ($entry[$field] ?? '')) !== '') {
+				$meta[$field] = $entry[$field];
+			}
+		}
+		if (trim((string) ($meta['course_title'] ?? '')) === '') {
+			$meta['course_title'] = (string) ($entry['custom_label'] ?? '');
+		}
+		return $meta;
 	}
 
 	private function maxPerDayForEntry(array $meta, int $hours, array $state = [], array $entry = [], int $day = -1): int
@@ -1567,9 +1771,15 @@ class TimetableStagingService
 	private function scheduledEntries(int $scheduleId, int $schoolId, int $filterClassId = 0, int $filterStaffId = 0): array
 	{
 		$builder = \Config\Database::connect()->table('timetable_entries')
-			->select('timetable_entries.*, ts.start_time, ts.end_time, c.title AS course_title')
+			->select('timetable_entries.*, ts.start_time, ts.end_time, c.title AS course_title,
+				cl.title AS class_title, l.title AS level_name, d.code AS dept_code, d.title AS dept_title,
+				CONCAT(s.fname, " ", s.lname) AS teacher_name')
 			->join('timetable_slots ts', 'ts.id = timetable_entries.slot_id', 'left')
 			->join('courses c', 'c.id = timetable_entries.course_id', 'left')
+			->join('classes cl', 'cl.id = timetable_entries.class_id', 'left')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->join('staffs s', 's.id = timetable_entries.staff_id', 'left')
 			->where('timetable_entries.schedule_id', $scheduleId)
 			->where('timetable_entries.school_id', $schoolId)
 			->where('timetable_entries.entry_type', 'lesson')
@@ -1656,7 +1866,10 @@ class TimetableStagingService
 					if (!($sameSlot || $timeClash)) {
 						continue;
 					}
-					if (SecondaryTimetableCriteria::entriesAreCombinedLesson($entry, $other['row'] ?? [])) {
+					if (SecondaryTimetableCriteria::entriesAreCombinedLesson(
+						$this->combineCheckRow($entry),
+						$this->combineCheckRow($other['row'] ?? [])
+					)) {
 						continue;
 					}
 					$collides = true;

@@ -213,9 +213,14 @@ class TimetableConflictService
 					}
 					$otherRow = [
 						'staff_id' => $staffId,
+						'lecturer' => $staffId,
 						'class_id' => (int) ($other['class_id'] ?? 0),
 						'course_id' => (int) ($other['course_id'] ?? 0),
-						'course_title' => (string) ($other['course'] ?? ''),
+						'course_title' => (string) ($other['course'] ?? $other['course_title'] ?? ''),
+						'class_title' => (string) ($other['class_title'] ?? ''),
+						'level_name' => (string) ($other['level_name'] ?? ''),
+						'dept_code' => (string) ($other['dept_code'] ?? ''),
+						'teacher_name' => (string) ($other['teacher_name'] ?? ''),
 					];
 					if (SecondaryTimetableCriteria::entriesAreCombinedLesson($entry, $otherRow)) {
 						continue;
@@ -241,8 +246,13 @@ class TimetableConflictService
 					'start' => $range['start'],
 					'end' => $range['end'],
 					'course' => $entry['course_title'] ?? '',
+					'course_title' => $entry['course_title'] ?? '',
 					'class' => $className,
 					'class_id' => $classId,
+					'class_title' => (string) ($entry['class_title'] ?? ''),
+					'level_name' => (string) ($entry['level_name'] ?? ''),
+					'dept_code' => (string) ($entry['dept_code'] ?? ''),
+					'teacher_name' => (string) ($entry['teacher_name'] ?? ''),
 					'course_id' => (int) ($entry['course_id'] ?? 0),
 				];
 			}
