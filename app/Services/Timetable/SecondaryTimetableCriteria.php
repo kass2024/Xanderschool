@@ -181,6 +181,10 @@ class SecondaryTimetableCriteria
 
 	public function prefersLastHour(array $row): bool
 	{
+		if (self::isSecondaryTrack($row)
+			&& TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($row['course_title'] ?? ''))) {
+			return true;
+		}
 		$courseId = (int) ($row['course_id'] ?? 0);
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$classId = (int) ($row['class_id'] ?? 0);
@@ -271,6 +275,11 @@ class SecondaryTimetableCriteria
 			}
 			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
 		}
+		if ($this->prefersLastHour($row)) {
+			if (!\App\Models\TimetableSchemaModel::isLastTeachingHourSlotTimes($slotStart, $slotEnd)) {
+				return false;
+			}
+		}
 		if ($day === 6) {
 			if (!self::isSecondaryTrack($row) || !$this->allowsSunday($row, $slotStart, $slotEnd)) {
 				return false;
@@ -293,13 +302,21 @@ class SecondaryTimetableCriteria
 	}
 
 	/** Farming / Library and Clubs: only after 15:40, never night. */
+	public static function isAfterLessonCourseTitle(string $title): bool
+	{
+		$t = strtolower(trim(preg_replace('/\s+/', ' ', $title)));
+		if ($t === '') {
+			return false;
+		}
+		if (strpos($t, 'farming') !== false || strpos($t, 'library') !== false) {
+			return true;
+		}
+		return $t === 'club' || $t === 'clubs' || preg_match('/\blibrary\b.*\bclubs?\b/', $t) === 1;
+	}
+
 	public function requiresAfterLessons(array $row): bool
 	{
-		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['course_title'] ?? ''))));
-		if ($title !== '' && (
-			strpos($title, 'farming') !== false
-			|| (strpos($title, 'library') !== false && strpos($title, 'club') !== false)
-		)) {
+		if (self::isAfterLessonCourseTitle((string) ($row['course_title'] ?? ''))) {
 			return true;
 		}
 		$courseId = (int) ($row['course_id'] ?? $row['course'] ?? 0);
@@ -374,13 +391,32 @@ class SecondaryTimetableCriteria
 		return 50000;
 	}
 
-	/** Soft score: Farming / Library stay in 15:40–17:30, never night. */
+	/** Soft score: Farming / Library stay in 15:40–17:30, never night. Prefer 15:40 first. */
 	public function afterLessonScoreDelta(array $row, ?string $slotStart, ?string $slotEnd): int
 	{
 		if (!$this->requiresAfterLessons($row)) {
 			return 0;
 		}
-		return \App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd) ? -800 : 20000;
+		if (!\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd)) {
+			return 20000;
+		}
+		$startMin = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+		$lessonEnd = 15 * 60 + 40;
+		return max(0, $startMin - $lessonEnd) - 800;
+	}
+
+	/** Soft score: PE last teaching hour (15:00–15:40) beats 14:20–15:00. Never after 15:40. */
+	public function lastHourScoreDelta(array $row, ?string $slotStart, ?string $slotEnd): int
+	{
+		if (!$this->prefersLastHour($row)) {
+			return 0;
+		}
+		if (!\App\Models\TimetableSchemaModel::isLastTeachingHourSlotTimes($slotStart, $slotEnd)) {
+			return 20000;
+		}
+		$endMin = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+		$lessonEnd = 15 * 60 + 40;
+		return max(0, $lessonEnd - $endMin);
 	}
 
 	/**
@@ -843,7 +879,8 @@ class SecondaryTimetableCriteria
 			['group' => 'Blocks', 'title' => '4 and 6 periods', 'detail' => 'At least two periods together (doubles).'],
 			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
-			['group' => 'PE', 'title' => 'Physical Education', 'detail' => 'At least one PE period on each class day; at most one PE period per day.'],
+			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching hours of the day (14:20–15:40, preferring 15:00–15:40). Never after 15:40, never mid-morning or just after lunch. GISUBIZO SAMUEL / PE is locked there. At most one PE period per class day.'],
+			['group' => 'After lessons', 'title' => 'Farming / Library and Clubs', 'detail' => 'Always after lessons end (15:40–17:30). Never during the teaching day, never night preps or supper.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
 			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Linea, Varlette and Marguerite teach ANP in the morning, Tuesday to Thursday.'],

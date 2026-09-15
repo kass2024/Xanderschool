@@ -11,8 +11,9 @@ use App\Libraries\TimetableClassLabel;
  * Nursery: at least 3 distinct courses per day, singles until that variety exists,
  * and every course gets one "Homework in …" period in the post-lunch window.
  * Secondary (O/A Level, RTB, Special): applies SecondaryTimetableCriteria —
- * doubles for 3+ hours, non-adjacent days, PE end-of-day, Math/Physics/ANP
- * morning bias, teacher windows, clinical mornings, combined classes.
+ * doubles for 3+ hours, non-adjacent days, PE last teaching hours (by 15:40),
+ * Farming/Library after 15:40, Math/Physics/ANP morning bias, teacher windows,
+ * clinical mornings, combined classes.
  */
 class TimetableGeneratorService
 {
@@ -1104,7 +1105,19 @@ class TimetableGeneratorService
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
 		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($row);
 		$slot = $this->teachingSlots[$slotIndex] ?? [];
-		if ($lastHour || $afterLessons) {
+		if ($afterLessons && $this->secondaryCriteria !== null) {
+			$score += $this->secondaryCriteria->afterLessonScoreDelta(
+				$row,
+				(string) ($slot['start_time'] ?? ''),
+				(string) ($slot['end_time'] ?? '')
+			);
+		} elseif ($lastHour && $this->secondaryCriteria !== null) {
+			$score += $this->secondaryCriteria->lastHourScoreDelta(
+				$row,
+				(string) ($slot['start_time'] ?? ''),
+				(string) ($slot['end_time'] ?? '')
+			);
+		} elseif ($lastHour || $afterLessons) {
 			$score += 0;
 		} elseif ($this->slotIsMorning($slot)) {
 			$score -= 2500 + max(0, 12 * 60 - $this->clockMinutes((string) ($slot['start_time'] ?? '')));
@@ -1288,7 +1301,7 @@ class TimetableGeneratorService
 		$enforce = $this->requiresNonAdjacentDays($row, $weeklyHours) && $occupied !== [];
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($row);
-		$windows = $peSport ? [2, 3, 4, 5, 6, 7, 0] : [0];
+		$windows = $peSport ? [1, 2] : [0];
 		foreach ($windows as $window) {
 			$morningFirst = !$peSport && !$afterLessons && $window === 0;
 			$count = count($this->collectPlacementCandidates($row, $blockSize, $weeklyHours, $maxPerDay, $enforce, $window, $morningFirst));
@@ -1709,6 +1722,39 @@ class TimetableGeneratorService
 		return 'c:' . (int) ($row['class_id'] ?? 0)
 			. ':' . (int) ($row['course_id'] ?? 0)
 			. ':' . (int) ($row['lecturer'] ?? 0);
+	}
+
+	/** Indexes of academic-day slots that finish by 15:40 (not clubs / farming / night). */
+	private function teachingDaySlotIndexes(): array
+	{
+		$out = [];
+		foreach ($this->teachingSlots as $i => $slot) {
+			if (\App\Models\TimetableSchemaModel::isTeachingDayLessonSlotTimes(
+				(string) ($slot['start_time'] ?? ''),
+				(string) ($slot['end_time'] ?? '')
+			)) {
+				$out[] = (int) $i;
+			}
+		}
+		return $out;
+	}
+
+	private function slotIsLastTeachingHour(array $slot): bool
+	{
+		return \App\Models\TimetableSchemaModel::isLastTeachingHourSlotTimes(
+			(string) ($slot['start_time'] ?? ''),
+			(string) ($slot['end_time'] ?? '')
+		);
+	}
+
+	/** 0 = last academic period (15:00–15:40); higher = earlier last-hour overflow. */
+	private function lastHourIndexPenalty(int $slotIndex, array $lessonIndexes): int
+	{
+		$fromEnd = array_search($slotIndex, array_reverse($lessonIndexes), true);
+		if ($fromEnd === false) {
+			return 8000;
+		}
+		return (int) $fromEnd * 800;
 	}
 
 	private function isMathematicsCourse(string $title): bool

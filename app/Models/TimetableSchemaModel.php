@@ -1080,6 +1080,30 @@ class TimetableSchemaModel extends Model
 		return $startClock >= $lessonEnd && $startClock < $night && $endClock <= $night;
 	}
 
+	/** Academic lessons that finish by 15:40 (not clubs, farming, preps, or supper). */
+	public static function isTeachingDayLessonSlotTimes(?string $start, ?string $end = null): bool
+	{
+		$startClock = self::slotClock($start);
+		$endClock = self::slotClock($end !== null && $end !== '' ? $end : $start);
+		$lessonEnd = self::secondaryLessonEndClock();
+		return $startClock < $lessonEnd
+			&& $endClock <= $lessonEnd
+			&& !self::isAfterLessonSlotTimes($start, $end)
+			&& !self::isNightSlotTimes($start, $end);
+	}
+
+	/**
+	 * Last teaching hours of the academic day: 14:20–15:40
+	 * (period 10 14:20–15:00 and period 11 15:00–15:40). Never after 15:40.
+	 */
+	public static function isLastTeachingHourSlotTimes(?string $start, ?string $end = null): bool
+	{
+		if (!self::isTeachingDayLessonSlotTimes($start, $end)) {
+			return false;
+		}
+		return self::slotClock($start) >= '14:20:00';
+	}
+
 	public static function isNightSlotTimes(?string $start, ?string $end = null): bool
 	{
 		return self::slotClock($start) >= self::secondaryNightStartClock()

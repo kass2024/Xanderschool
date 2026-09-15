@@ -569,6 +569,13 @@ class TimetableStagingService
 			return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
 		});
 		foreach ($parkedOrder as $entry) {
+			$parkMeta = $this->metaForEntry($entry);
+			$parkPe = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($parkMeta['course_title'] ?? ''));
+			$parkAfter = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($parkMeta);
+			$parkLast = $parkPe || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($parkMeta));
+			if ($parkLast || $parkAfter) {
+				continue;
+			}
 			if (!$this->entryMayOccupySlot($entry, $day, $slot, $state)) {
 				continue;
 			}
@@ -1075,18 +1082,28 @@ class TimetableStagingService
 				: null;
 			$score += $this->secondaryCriteria->afterLessonScoreDelta($meta, $start, $end);
 		} elseif ($lastHour && $slotCount > 0) {
-			// Strongly prefer last teaching periods of the day.
-			$score += ($slotCount - 1 - $slotIndex) * 800;
-			$lateStart = max(0, $slotCount - 3);
-			if ($slotIndex < $lateStart) {
-				$score += 5000;
+			$start = $candidateRange !== null
+				? sprintf('%02d:%02d:00', intdiv((int) $candidateRange['start'], 60), ((int) $candidateRange['start']) % 60)
+				: null;
+			$end = $candidateRange !== null
+				? sprintf('%02d:%02d:00', intdiv((int) $candidateRange['end'], 60), ((int) $candidateRange['end']) % 60)
+				: null;
+			if ($this->secondaryCriteria !== null) {
+				$score += $this->secondaryCriteria->lastHourScoreDelta($meta, $start, $end);
+			}
+			if ($start !== null && !\App\Models\TimetableSchemaModel::isLastTeachingHourSlotTimes($start, $end)) {
+				$score += 20000;
 			}
 		} elseif ($candidateRange !== null && TimetableGeneratorService::isMorningClock(
 			sprintf('%02d:%02d:00', intdiv((int) $candidateRange['start'], 60), ((int) $candidateRange['start']) % 60)
 		)) {
 			$score -= 2500;
-		} elseif ($slotCount > 0 && $slotIndex >= max(0, $slotCount - 3)) {
-			// Leave end-of-day freer for PE when staging non-PE subjects.
+		} elseif ($slotCount > 0 && $candidateRange !== null
+			&& \App\Models\TimetableSchemaModel::isLastTeachingHourSlotTimes(
+				sprintf('%02d:%02d:00', intdiv((int) $candidateRange['start'], 60), ((int) $candidateRange['start']) % 60),
+				sprintf('%02d:%02d:00', intdiv((int) $candidateRange['end'], 60), ((int) $candidateRange['end']) % 60)
+			)) {
+			// Leave 14:20–15:40 freer for PE when staging non-PE subjects.
 			$score += 900;
 		} else {
 			$score += 4000;
