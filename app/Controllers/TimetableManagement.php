@@ -1535,8 +1535,11 @@ class TimetableManagement extends Home
 		}
 		$db = \Config\Database::connect();
 		$hasLock = $db->fieldExists('is_locked', 'timetable_entries');
+		$hasCustomLabel = $db->fieldExists('custom_label', 'timetable_entries');
 		$chunk = [];
 		foreach ($entries as $entry) {
+			// insertBatch requires every row to share the same keys; otherwise MariaDB
+			// gets a malformed query (SQL error near "Array").
 			$row = [
 				'schedule_id' => $scheduleId,
 				'school_id' => $schoolId,
@@ -1548,8 +1551,9 @@ class TimetableManagement extends Home
 				'slot_id' => (int) ($entry['slot_id'] ?? 0),
 				'entry_type' => (string) ($entry['entry_type'] ?? 'lesson'),
 			];
-			if ($db->fieldExists('custom_label', 'timetable_entries') && !empty($entry['custom_label'])) {
-				$row['custom_label'] = (string) $entry['custom_label'];
+			if ($hasCustomLabel) {
+				$label = trim((string) ($entry['custom_label'] ?? ''));
+				$row['custom_label'] = $label !== '' ? $label : null;
 			}
 			if ($hasLock) {
 				$row['is_locked'] = !empty($entry['is_locked']) ? 1 : 0;
@@ -2199,7 +2203,7 @@ class TimetableManagement extends Home
 				'success' => false,
 				'message' => 'Generation failed after background retry. Please review timetable assignments and try again.',
 				'progress' => 0,
-				'detail' => ENVIRONMENT !== 'production' ? $e->getMessage() : null,
+				'detail' => $e->getMessage(),
 				'finished_at' => date('Y-m-d H:i:s'),
 			]);
 			return ['ok' => false, 'job_id' => $jobId, 'error' => $e->getMessage()];
@@ -2629,9 +2633,28 @@ class TimetableManagement extends Home
 
 		$grid = $this->buildGridFromSlots($slots, $dayLabels, $specialMap, $labelByDay);
 		$nurseryClassCache = [];
+		$combinedByClock = [];
 
 		if ($entries !== []) {
 			$slotMaps = $this->buildSlotIndexMaps($slots);
+
+			foreach ($entries as $entry) {
+				$si = $this->resolveSlotRowIndex($slotMaps, $entry, $slots);
+				$dayLabel = $labelByDay[(int) $entry['day_of_week']] ?? null;
+				if ($si === null || $dayLabel === null) {
+					continue;
+				}
+				$ck = $si . ':' . $dayLabel . ':' . (int) ($entry['staff_id'] ?? 0);
+				$fam = SecondaryTimetableCriteria::subjectFamily((string) ($entry['course_title'] ?? ''));
+				if ($fam === '') {
+					$fam = strtolower(trim((string) ($entry['course_title'] ?? '')));
+				}
+				$ck .= ':' . $fam;
+				$label = TimetableClassLabel::fromRow($entry);
+				if ($label !== '') {
+					$combinedByClock[$ck][$label] = true;
+				}
+			}
 
 			foreach ($entries as $entry) {
 				$si = $this->resolveSlotRowIndex($slotMaps, $entry, $slots);
@@ -2643,6 +2666,27 @@ class TimetableManagement extends Home
 					continue;
 				}
 				if (!empty($grid[$si]['cells'][$dayLabel]['type']) && $grid[$si]['cells'][$dayLabel]['type'] === 'special') {
+					continue;
+				}
+				$classLabel = TimetableClassLabel::fromRow($entry);
+				$fam = SecondaryTimetableCriteria::subjectFamily((string) ($entry['course_title'] ?? ''));
+				if ($fam === '') {
+					$fam = strtolower(trim((string) ($entry['course_title'] ?? '')));
+				}
+				$ck = $si . ':' . $dayLabel . ':' . (int) ($entry['staff_id'] ?? 0) . ':' . $fam;
+				$partnerLabels = array_keys($combinedByClock[$ck] ?? []);
+				$isCombined = count($partnerLabels) > 1;
+				$existing = $grid[$si]['cells'][$dayLabel] ?? null;
+				if ($mode === 'teacher' && $isCombined && !empty($existing['type']) && $existing['type'] === 'lesson'
+					&& (int) ($existing['staff_id'] ?? 0) === (int) ($entry['staff_id'] ?? 0)) {
+					$merged = $existing['combined_classes'] ?? [];
+					if ($classLabel !== '' && !in_array($classLabel, $merged, true)) {
+						$merged[] = $classLabel;
+					}
+					$existing['combined'] = true;
+					$existing['combined_classes'] = $merged;
+					$existing['line2'] = implode(' + ', $merged);
+					$grid[$si]['cells'][$dayLabel] = $existing;
 					continue;
 				}
 				$cell = [
@@ -2657,12 +2701,14 @@ class TimetableManagement extends Home
 						: (string) ($entry['course_title'] ?? ''),
 					'code' => $entry['course_code'] ?? '',
 					'teacher' => $entry['teacher_name'] ?? '',
-					'class' => TimetableClassLabel::fromRow($entry),
+					'class' => $classLabel,
+					'combined' => $isCombined,
+					'combined_classes' => $partnerLabels,
 				];
 				if ($mode === 'class') {
 					$cell['line2'] = $entry['teacher_name'] ?? '';
 				} else {
-					$cell['line2'] = TimetableClassLabel::fromRow($entry);
+					$cell['line2'] = $isCombined ? implode(' + ', $partnerLabels) : $classLabel;
 				}
 				$classId = (int) ($entry['class_id'] ?? 0);
 				if ($this->cellIsNurseryColored($mode, $trackKey, $schema, $schoolId, $classId, $nurseryClassCache)) {
