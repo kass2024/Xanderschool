@@ -64,10 +64,10 @@ class HeyStarSyncService
 			'sevUploadRecSnapshotEnable' => 1,
 			'sevUploadRecStrangerDataEnable' => 0,
 		]);
-		// Fill light auto (on when a face is present). Always-on washes faces and
-		// causes false matches — do not force pciLedAlwaysEnable=1.
+		// Night IR/fill light always on (official LAN: pciLedAlwaysEnable).
+		// Keep recognition strict separately so always-on light does not loosen matching.
 		$client->post('device/setPciConfig', [
-			'pciLedAlwaysEnable' => 0,
+			'pciLedAlwaysEnable' => 1,
 			'pciLedColorStranger' => 1,
 			'pciRelayOut' => 1,
 			'pciRelayMode' => 1,
@@ -97,6 +97,7 @@ class HeyStarSyncService
 			'attendance_direction_enable' => false,
 			'recognize_result_countdown' => 2200,
 			'evt_show_image_duration' => 2200,
+			'delay_for_light_close' => 86400000,
 			'idle_time_for_lcd' => 0,
 		]);
 		$brand = self::applySchoolBranding($client, $schoolId);
