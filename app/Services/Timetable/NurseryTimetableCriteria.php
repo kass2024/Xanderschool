@@ -5,17 +5,18 @@ namespace App\Services\Timetable;
 use App\Libraries\TimetableTrack;
 
 /**
- * Nursery-only timetable rules: varied days, homework at 13:00–14:00, pastel course colors.
+ * Nursery-only timetable rules: varied days, one homework period per course
+ * in the post-lunch window (labelled "Homework in …"), pastel course colors.
  */
 class NurseryTimetableCriteria
 {
 	public const MIN_DISTINCT_COURSES_PER_DAY = 3;
 
-	/** 13:00 */
+	/** 13:00 — first teaching slot after lunch */
 	public const HOMEWORK_START_MINUTES = 13 * 60;
 
-	/** 14:00 */
-	public const HOMEWORK_END_MINUTES = 14 * 60;
+	/** 16:30 — periods 5–7 (after lunch through end of day) so every course can get homework */
+	public const HOMEWORK_END_MINUTES = 16 * 60 + 30;
 
 	public static function isNurseryRow(array $row): bool
 	{
@@ -23,33 +24,34 @@ class NurseryTimetableCriteria
 		return $track === TimetableTrack::NURSERY;
 	}
 
+	/**
+	 * Explicit homework course titles only (e.g. "Homework in Writing").
+	 * Plain "Writing" is a normal lesson, not homework.
+	 */
 	public static function isHomeworkCourse(string $title): bool
 	{
 		$t = self::normalizeTitle($title);
 		if ($t === '') {
 			return false;
 		}
-		$needles = [
-			'homework',
-			'home work',
-			'home-work',
-			'handwriting',
-			'hand writing',
-			'hand-writing',
-			'how of writing',
-			'how to write',
-			'how of write',
-		];
-		foreach ($needles as $needle) {
-			if (strpos($t, $needle) !== false) {
-				return true;
-			}
-		}
-		if ($t === 'writing' || preg_match('/\bwriting\b/', $t) === 1) {
+		if (strpos($t, 'homework') !== false || strpos($t, 'home work') !== false || strpos($t, 'home-work') !== false) {
 			return true;
 		}
 
-		return false;
+		return (bool) preg_match('/\bhw\b/', $t);
+	}
+
+	public static function homeworkLabelForCourse(string $title): string
+	{
+		$title = trim($title);
+		if ($title === '') {
+			return 'Homework';
+		}
+		if (self::isHomeworkCourse($title)) {
+			return $title;
+		}
+
+		return 'Homework in ' . $title;
 	}
 
 	public static function slotOverlapsHomeworkWindow(?string $startTime, ?string $endTime): bool
@@ -87,15 +89,26 @@ class NurseryTimetableCriteria
 		return -150;
 	}
 
-	public static function homeworkScoreDelta(array $row, ?string $startTime, ?string $endTime): int
-	{
-		$homework = self::isHomeworkCourse((string) ($row['course_title'] ?? ''));
+	/**
+	 * Every nursery course needs one homework-window period in the week.
+	 * Explicit "Homework in …" courses stay in that window only.
+	 */
+	public static function homeworkScoreDelta(
+		array $row,
+		?string $startTime,
+		?string $endTime,
+		bool $alreadyHasHomework = false
+	): int {
+		$explicit = self::isHomeworkCourse((string) ($row['course_title'] ?? ''));
 		$inWindow = self::slotOverlapsHomeworkWindow($startTime, $endTime);
-		if ($homework) {
+		if ($explicit) {
 			return $inWindow ? -8500 : 14000;
 		}
+		if (!$alreadyHasHomework) {
+			return $inWindow ? -9000 : 4500;
+		}
 
-		return $inWindow ? 3200 : 0;
+		return $inWindow ? 3500 : 0;
 	}
 
 	/**
@@ -104,6 +117,9 @@ class NurseryTimetableCriteria
 	public static function colorForCourse(string $title, int $courseId = 0): array
 	{
 		$t = self::normalizeTitle($title);
+		if (self::isHomeworkCourse($title) || strpos($t, 'homework in') === 0) {
+			return ['bg' => '#fde68a', 'fg' => '#92400e'];
+		}
 		$map = [
 			'drawing' => ['bg' => '#fed7aa', 'fg' => '#9a3412'],
 			'art' => ['bg' => '#fed7aa', 'fg' => '#9a3412'],
@@ -120,8 +136,8 @@ class NurseryTimetableCriteria
 			'health' => ['bg' => '#86efac', 'fg' => '#14532d'],
 			'hygiene' => ['bg' => '#86efac', 'fg' => '#14532d'],
 			'habit' => ['bg' => '#6ee7b7', 'fg' => '#065f46'],
-			'homework' => ['bg' => '#fde68a', 'fg' => '#92400e'],
 			'writing' => ['bg' => '#fde68a', 'fg' => '#92400e'],
+			'reading' => ['bg' => '#c7d2fe', 'fg' => '#3730a3'],
 			'science' => ['bg' => '#99f6e4', 'fg' => '#115e59'],
 			'discovery' => ['bg' => '#99f6e4', 'fg' => '#115e59'],
 			'religion' => ['bg' => '#ddd6fe', 'fg' => '#5b21b6'],
@@ -133,6 +149,7 @@ class NurseryTimetableCriteria
 			'rhyme' => ['bg' => '#fbcfe8', 'fg' => '#9d174d'],
 			'poem' => ['bg' => '#fbcfe8', 'fg' => '#9d174d'],
 			'social' => ['bg' => '#c7d2fe', 'fg' => '#3730a3'],
+			'oral' => ['bg' => '#bae6fd', 'fg' => '#075985'],
 		];
 		foreach ($map as $needle => $tone) {
 			if (strpos($t, $needle) !== false) {

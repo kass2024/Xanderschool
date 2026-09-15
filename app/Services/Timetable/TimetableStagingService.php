@@ -610,8 +610,15 @@ class TimetableStagingService
 			$lastHour = TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($meta['course_title'] ?? ''))
 				|| ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($meta));
 			$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($meta);
-			$homework = NurseryTimetableCriteria::isNurseryRow($meta)
-				&& NurseryTimetableCriteria::isHomeworkCourse((string) ($meta['course_title'] ?? ''));
+			$customLabel = (string) ($entry['custom_label'] ?? '');
+			$homework = NurseryTimetableCriteria::isNurseryRow($meta) && (
+				NurseryTimetableCriteria::isHomeworkCourse((string) ($meta['course_title'] ?? ''))
+				|| NurseryTimetableCriteria::isHomeworkCourse($customLabel)
+				|| NurseryTimetableCriteria::slotOverlapsHomeworkWindow(
+					(string) ($entry['start_time'] ?? ''),
+					(string) ($entry['end_time'] ?? '')
+				)
+			);
 			if ($lastHour || $afterLessons || $homework) {
 				continue;
 			}
@@ -768,6 +775,7 @@ class TimetableStagingService
 			'subject_day_count' => [],
 			'class_day_usage' => [],
 			'class_day_courses' => [],
+			'nursery_homework_done' => [],
 		];
 		foreach ($scheduled as $entry) {
 			$this->addScheduledEntry($state, $entry);
@@ -806,6 +814,12 @@ class TimetableStagingService
 		$courseId = (int) ($entry['course_id'] ?? 0);
 		if ($classId > 0 && $courseId > 0) {
 			$state['class_day_courses'][$classId . ':' . $day][$courseId] = true;
+			if (NurseryTimetableCriteria::slotOverlapsHomeworkWindow(
+				(string) ($entry['start_time'] ?? ''),
+				(string) ($entry['end_time'] ?? '')
+			)) {
+				$state['nursery_homework_done'][$classId . ':' . $courseId] = true;
+			}
 		}
 	}
 
@@ -839,6 +853,20 @@ class TimetableStagingService
 			unset($state['class_day_courses'][$classId . ':' . $day][$courseId]);
 			if (($state['subject_day_count'][$subjectKey] ?? 0) > 0) {
 				$state['class_day_courses'][$classId . ':' . $day][$courseId] = true;
+			}
+			$hwKey = $classId . ':' . $courseId;
+			unset($state['nursery_homework_done'][$hwKey]);
+			foreach ($state['by_id'] as $other) {
+				if ((int) ($other['class_id'] ?? 0) !== $classId || (int) ($other['course_id'] ?? 0) !== $courseId) {
+					continue;
+				}
+				if (NurseryTimetableCriteria::slotOverlapsHomeworkWindow(
+					(string) ($other['start_time'] ?? ''),
+					(string) ($other['end_time'] ?? '')
+				)) {
+					$state['nursery_homework_done'][$hwKey] = true;
+					break;
+				}
 			}
 		}
 	}
@@ -1116,7 +1144,12 @@ class TimetableStagingService
 				$this->uniqueCoursesOnDay($state, $classId, $day),
 				$this->dayHasCourse($state, $entry, $day)
 			);
-			$score += NurseryTimetableCriteria::homeworkScoreDelta($meta, $start, $end);
+			$score += NurseryTimetableCriteria::homeworkScoreDelta(
+				$meta,
+				$start,
+				$end,
+				!empty($state['nursery_homework_done'][$classId . ':' . (int) ($entry['course_id'] ?? 0)])
+			);
 		}
 		return $score;
 	}

@@ -222,7 +222,8 @@ class TimetableSchemaModel extends Model
 
 	/**
 	 * Primary keeps 1-hour bells (07:30–16:30). Nursery is independent
-	 * (morning circle 07:30–08:00, break 10:30–11:00). Never copy senior 40-minute periods.
+	 * (morning circle 07:30–08:00, lunch 12:00–13:00, lessons end 16:30).
+	 * Never copy senior 40-minute periods.
 	 */
 	public function restorePrimaryNurseryHourPeriods(int $schoolId, bool $force = false): int
 	{
@@ -309,15 +310,24 @@ class TimetableSchemaModel extends Model
 		if ($start !== '07:30:00' || $end !== '08:00:00' || empty($first['is_break'])) {
 			return false;
 		}
+		$hasBreak = false;
+		$hasLunch = false;
+		$endsAt1630 = false;
 		foreach ($rows as $row) {
-			if (self::slotClock((string) ($row['start_time'] ?? '')) === '10:30:00'
-				&& self::slotClock((string) ($row['end_time'] ?? '')) === '11:00:00'
-				&& !empty($row['is_break'])) {
-				return true;
+			$rowStart = self::slotClock((string) ($row['start_time'] ?? ''));
+			$rowEnd = self::slotClock((string) ($row['end_time'] ?? ''));
+			if ($rowStart === '10:30:00' && $rowEnd === '11:00:00' && !empty($row['is_break'])) {
+				$hasBreak = true;
+			}
+			if ($rowStart === '12:00:00' && $rowEnd === '13:00:00' && !empty($row['is_break'])) {
+				$hasLunch = true;
+			}
+			if ($rowEnd === '16:30:00' && empty($row['is_break'])) {
+				$endsAt1630 = true;
 			}
 		}
 
-		return false;
+		return $hasBreak && $hasLunch && $endsAt1630;
 	}
 
 	/**
@@ -627,7 +637,7 @@ class TimetableSchemaModel extends Model
 		return self::schoolDaySlotTemplate(false);
 	}
 
-	/** Independent nursery day: circle 07:30–08:00, break 10:30–11:00. */
+	/** Independent nursery day: circle 07:30–08:00, lunch 12:00–13:00, lessons end 16:30. */
 	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
 	private static function nurserySlotTemplate(): array
 	{
@@ -638,10 +648,10 @@ class TimetableSchemaModel extends Model
 			['label' => '3', 'start' => '10:00:00', 'end' => '10:30:00', 'break' => 0, 'break_label' => null],
 			['label' => 'BREAK TIME', 'start' => '10:30:00', 'end' => '11:00:00', 'break' => 1, 'break_label' => 'BREAK TIME'],
 			['label' => '4', 'start' => '11:00:00', 'end' => '12:00:00', 'break' => 0, 'break_label' => null],
-			['label' => 'LUNCH TIME', 'start' => '12:00:00', 'end' => '13:10:00', 'break' => 1, 'break_label' => 'LUNCH TIME'],
-			['label' => '5', 'start' => '13:10:00', 'end' => '14:10:00', 'break' => 0, 'break_label' => null],
-			['label' => '6', 'start' => '14:10:00', 'end' => '15:10:00', 'break' => 0, 'break_label' => null],
-			['label' => 'WATER BREAK', 'start' => '15:10:00', 'end' => '15:30:00', 'break' => 1, 'break_label' => 'WATER BREAK'],
+			['label' => 'LUNCH TIME', 'start' => '12:00:00', 'end' => '13:00:00', 'break' => 1, 'break_label' => 'LUNCH TIME'],
+			['label' => '5', 'start' => '13:00:00', 'end' => '14:00:00', 'break' => 0, 'break_label' => null],
+			['label' => '6', 'start' => '14:00:00', 'end' => '15:00:00', 'break' => 0, 'break_label' => null],
+			['label' => 'WATER BREAK', 'start' => '15:00:00', 'end' => '15:30:00', 'break' => 1, 'break_label' => 'WATER BREAK'],
 			['label' => '7', 'start' => '15:30:00', 'end' => '16:30:00', 'break' => 0, 'break_label' => null],
 		];
 	}
@@ -1019,16 +1029,21 @@ class TimetableSchemaModel extends Model
 			// Periods 10–11 (through 15:40) remain teachable.
 			return ['12', '13', '14', '15', '16'];
 		}
-		if (in_array($trackKey, [TimetableTrack::PRIMARY, TimetableTrack::NURSERY], true)) {
+		if ($trackKey === TimetableTrack::PRIMARY) {
 			// Last 1-hour column (15:30–16:30) is assembly / debates / Sabbath, not a lesson.
 			return ['7'];
 		}
+		// Nursery teaches through 16:30.
 		return [];
 	}
 
-	/** Teaching day ends at 15:40 (inclusive) for every category. */
+	/** Teaching day ends at 15:40 for senior/primary; nursery teaches through 16:30. */
 	private static function secondaryTeachingDayEndTime(string $trackKey): ?string
 	{
+		if (TimetableTrack::normalize($trackKey) === TimetableTrack::NURSERY) {
+			return '16:30:00';
+		}
+
 		return self::secondaryLessonEndClock();
 	}
 

@@ -1548,6 +1548,9 @@ class TimetableManagement extends Home
 				'slot_id' => (int) ($entry['slot_id'] ?? 0),
 				'entry_type' => (string) ($entry['entry_type'] ?? 'lesson'),
 			];
+			if ($db->fieldExists('custom_label', 'timetable_entries') && !empty($entry['custom_label'])) {
+				$row['custom_label'] = (string) $entry['custom_label'];
+			}
 			if ($hasLock) {
 				$row['is_locked'] = !empty($entry['is_locked']) ? 1 : 0;
 			}
@@ -2649,7 +2652,9 @@ class TimetableManagement extends Home
 					'slot_id' => (int) ($entry['slot_id'] ?? 0),
 					'staff_id' => (int) ($entry['staff_id'] ?? 0),
 					'class_id' => (int) ($entry['class_id'] ?? 0),
-					'course' => $entry['course_title'] ?? $entry['custom_label'] ?? '',
+					'course' => trim((string) ($entry['custom_label'] ?? '')) !== ''
+						? (string) $entry['custom_label']
+						: (string) ($entry['course_title'] ?? ''),
 					'code' => $entry['course_code'] ?? '',
 					'teacher' => $entry['teacher_name'] ?? '',
 					'class' => TimetableClassLabel::fromRow($entry),

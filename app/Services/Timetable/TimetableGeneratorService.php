@@ -9,7 +9,7 @@ use App\Libraries\TimetableClassLabel;
  *
  * Primary: mostly one period per day (math may cluster).
  * Nursery: at least 3 distinct courses per day, singles until that variety exists,
- * homework/handwriting in the 13:00–14:00 window.
+ * and every course gets one "Homework in …" period in the post-lunch window.
  * Secondary (O/A Level, RTB, Special): applies SecondaryTimetableCriteria —
  * doubles for 3+ hours, non-adjacent days, PE end-of-day, Math/Physics/ANP
  * morning bias, teacher windows, clinical mornings, combined classes.
@@ -42,6 +42,9 @@ class TimetableGeneratorService
 
 	/** @var array<string,array<int,true>> classId:day => courseId => true */
 	private $classDayCourses = [];
+
+	/** @var array<string,bool> classId:courseId => already placed a homework-window period */
+	private $nurseryHomeworkDone = [];
 
 	/** @var array<int,int> */
 	private $globalDayUsage = [];
@@ -210,6 +213,7 @@ class TimetableGeneratorService
 			$this->subjectDayCount = [];
 			$this->classDayUsage = [];
 			$this->classDayCourses = [];
+			$this->nurseryHomeworkDone = [];
 			$this->globalDayUsage = [];
 			$this->warnings = [];
 			// Keep slotTimes so partner classes on another track can share the same clock.
@@ -377,10 +381,13 @@ class TimetableGeneratorService
 				$this->secondaryCriteria !== null
 				&& $this->secondaryCriteria->isWindowFillTeacher($need['assignment'])
 			) ? 1 : 0;
-			$lessonNeeds[$i]['is_homework'] = (
-				NurseryTimetableCriteria::isNurseryRow($need['assignment'])
-				&& NurseryTimetableCriteria::isHomeworkCourse((string) ($need['assignment']['course_title'] ?? ''))
-			) ? 1 : 0;
+			$assignment = $need['assignment'];
+			$nursery = NurseryTimetableCriteria::isNurseryRow($assignment);
+			$title = (string) ($assignment['course_title'] ?? '');
+			$subjectKey = (int) ($assignment['class_id'] ?? 0) . ':' . (int) ($assignment['course_id'] ?? 0);
+			$explicitHw = $nursery && NurseryTimetableCriteria::isHomeworkCourse($title);
+			$needsHw = $nursery && !$explicitHw && empty($this->nurseryHomeworkDone[$subjectKey]);
+			$lessonNeeds[$i]['is_homework'] = ($explicitHw || $needsHw) ? 1 : 0;
 		}
 		usort($lessonNeeds, static function ($a, $b) {
 			$win = (int) ($b['window_fill'] ?? 0) <=> (int) ($a['window_fill'] ?? 0);
@@ -427,10 +434,13 @@ class TimetableGeneratorService
 				$this->secondaryCriteria !== null
 				&& $this->secondaryCriteria->isWindowFillTeacher($need['assignment'])
 			) ? 1 : 0;
-			$lessonNeeds[$i]['is_homework'] = (
-				NurseryTimetableCriteria::isNurseryRow($need['assignment'])
-				&& NurseryTimetableCriteria::isHomeworkCourse((string) ($need['assignment']['course_title'] ?? ''))
-			) ? 1 : 0;
+			$assignment = $need['assignment'];
+			$nursery = NurseryTimetableCriteria::isNurseryRow($assignment);
+			$title = (string) ($assignment['course_title'] ?? '');
+			$subjectKey = (int) ($assignment['class_id'] ?? 0) . ':' . (int) ($assignment['course_id'] ?? 0);
+			$explicitHw = $nursery && NurseryTimetableCriteria::isHomeworkCourse($title);
+			$needsHw = $nursery && !$explicitHw && empty($this->nurseryHomeworkDone[$subjectKey]);
+			$lessonNeeds[$i]['is_homework'] = ($explicitHw || $needsHw) ? 1 : 0;
 		}
 		usort($lessonNeeds, static function ($a, $b) {
 			$win = (int) ($b['window_fill'] ?? 0) <=> (int) ($a['window_fill'] ?? 0);
@@ -595,15 +605,17 @@ class TimetableGeneratorService
 		$peSport = $this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''));
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
 		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($row);
-		$homework = NurseryTimetableCriteria::isNurseryRow($row)
-			&& NurseryTimetableCriteria::isHomeworkCourse((string) ($row['course_title'] ?? ''));
+		$nursery = NurseryTimetableCriteria::isNurseryRow($row);
+		$explicitHomework = $nursery && NurseryTimetableCriteria::isHomeworkCourse((string) ($row['course_title'] ?? ''));
+		$needsHomework = $nursery && !$explicitHomework && empty($this->nurseryHomeworkDone[$subjectKey]);
 		// Prefer last periods first; widen only if the PE / last-hour course has no free late slot.
-		// Homework stays in the 13:00–14:00 window. Other courses fill morning first.
+		// Nursery homework (or first weekly homework period) stays in the post-lunch window.
 		$windows = $lastHour ? [2, 3, 4, 5, 6, 7, 0] : [0];
 
 		$candidates = [];
 		foreach ($windows as $window) {
-			$morningFirst = !$lastHour && !$afterLessons && !$homework && $window === 0;
+			$morningFirst = !$lastHour && !$afterLessons && !$explicitHomework && !$needsHomework && $window === 0;
+			$homeworkOnly = ($explicitHomework || $needsHomework) && $window === 0;
 			$candidates = $this->collectPlacementCandidates(
 				$row,
 				$blockSize,
@@ -611,8 +623,21 @@ class TimetableGeneratorService
 				$maxPerDay,
 				$enforceGap,
 				$window,
-				$morningFirst
+				$morningFirst,
+				$homeworkOnly
 			);
+			if ($candidates === [] && $homeworkOnly) {
+				$candidates = $this->collectPlacementCandidates(
+					$row,
+					$blockSize,
+					$weeklyHours,
+					$maxPerDay,
+					$enforceGap,
+					$window,
+					false,
+					false
+				);
+			}
 			if ($candidates === [] && $morningFirst) {
 				$candidates = $this->collectPlacementCandidates(
 					$row,
@@ -621,6 +646,7 @@ class TimetableGeneratorService
 					$maxPerDay,
 					$enforceGap,
 					$window,
+					false,
 					false
 				);
 			}
@@ -632,8 +658,21 @@ class TimetableGeneratorService
 					$maxPerDay,
 					false,
 					$window,
-					$morningFirst
+					$morningFirst,
+					$homeworkOnly
 				);
+				if ($candidates === [] && $homeworkOnly) {
+					$candidates = $this->collectPlacementCandidates(
+						$row,
+						$blockSize,
+						$weeklyHours,
+						$maxPerDay,
+						false,
+						$window,
+						false,
+						false
+					);
+				}
 				if ($candidates === [] && $morningFirst) {
 					$candidates = $this->collectPlacementCandidates(
 						$row,
@@ -642,6 +681,7 @@ class TimetableGeneratorService
 						$maxPerDay,
 						false,
 						$window,
+						false,
 						false
 					);
 				}
@@ -661,9 +701,10 @@ class TimetableGeneratorService
 
 		$pick = $candidates[0];
 		$out = [];
+		$hwLabel = null;
 		foreach ($pick['slot_ids'] as $slotId) {
 			$this->markBusy($classId, $staffId, $pick['day'], $slotId);
-			$out[] = [
+			$entry = [
 				'class_id' => $classId,
 				'staff_id' => $staffId,
 				'course_id' => $courseId,
@@ -672,6 +713,17 @@ class TimetableGeneratorService
 				'slot_id' => $slotId,
 				'entry_type' => 'lesson',
 			];
+			$times = $this->slotTimes[$slotId] ?? null;
+			if ($nursery && $times !== null
+				&& NurseryTimetableCriteria::slotOverlapsHomeworkWindow($times['start'] ?? null, $times['end'] ?? null)
+				&& empty($this->nurseryHomeworkDone[$subjectKey])) {
+				$hwLabel = NurseryTimetableCriteria::homeworkLabelForCourse((string) ($row['course_title'] ?? ''));
+				$this->nurseryHomeworkDone[$subjectKey] = true;
+			}
+			if ($hwLabel !== null) {
+				$entry['custom_label'] = $hwLabel;
+			}
+			$out[] = $entry;
 		}
 		$this->subjectDayCount[$subjectKey . ':' . $pick['day']] =
 			(int) ($this->subjectDayCount[$subjectKey . ':' . $pick['day']] ?? 0) + count($pick['slot_ids']);
@@ -691,7 +743,8 @@ class TimetableGeneratorService
 		int $maxPerDay,
 		bool $enforceNonAdjacentDays,
 		int $endOfDayWindow = 0,
-		bool $morningOnly = false
+		bool $morningOnly = false,
+		bool $homeworkWindowOnly = false
 	): array {
 		$classId = (int) ($row['class_id'] ?? 0);
 		$staffId = (int) ($row['lecturer'] ?? 0);
@@ -702,7 +755,8 @@ class TimetableGeneratorService
 		$lastHour = $peSport || ($this->secondaryCriteria !== null && $this->secondaryCriteria->prefersLastHour($row));
 		$afterLessons = $this->secondaryCriteria !== null && $this->secondaryCriteria->requiresAfterLessons($row);
 		$nursery = NurseryTimetableCriteria::isNurseryRow($row);
-		$homework = $nursery && NurseryTimetableCriteria::isHomeworkCourse((string) ($row['course_title'] ?? ''));
+		$explicitHomework = $nursery && NurseryTimetableCriteria::isHomeworkCourse((string) ($row['course_title'] ?? ''));
+		$alreadyHasHomework = !empty($this->nurseryHomeworkDone[$subjectKey]);
 		$candidates = [];
 		$slotCount = count($this->teachingSlots);
 		$reserveLate = $slotCount > 0 ? max(0, $slotCount - 3) : 0;
@@ -748,7 +802,15 @@ class TimetableGeneratorService
 				if ($morningOnly && !$this->slotIsMorning($this->teachingSlots[$i] ?? [])) {
 					continue;
 				}
-				if ($homework && $this->slotIsMorning($this->teachingSlots[$i] ?? [])) {
+				$slot = $this->teachingSlots[$i] ?? [];
+				$inHw = NurseryTimetableCriteria::slotOverlapsHomeworkWindow(
+					(string) ($slot['start_time'] ?? ''),
+					(string) ($slot['end_time'] ?? '')
+				);
+				if ($homeworkWindowOnly && !$inHw) {
+					continue;
+				}
+				if ($explicitHomework && $this->slotIsMorning($slot)) {
 					continue;
 				}
 				if ($blockSize === 2) {
@@ -757,6 +819,13 @@ class TimetableGeneratorService
 							continue;
 						}
 						if ($morningOnly && !$this->slotIsMorning($this->teachingSlots[$j] ?? [])) {
+							continue;
+						}
+						$slotBMeta = $this->teachingSlots[$j] ?? [];
+						if ($homeworkWindowOnly && !NurseryTimetableCriteria::slotOverlapsHomeworkWindow(
+							(string) ($slotBMeta['start_time'] ?? ''),
+							(string) ($slotBMeta['end_time'] ?? '')
+						)) {
 							continue;
 						}
 						$slotA = (int) $this->teachingSlots[$i]['id'];
@@ -885,7 +954,8 @@ class TimetableGeneratorService
 			$score += NurseryTimetableCriteria::homeworkScoreDelta(
 				$row,
 				isset($slot['start_time']) ? (string) $slot['start_time'] : null,
-				isset($slot['end_time']) ? (string) $slot['end_time'] : null
+				isset($slot['end_time']) ? (string) $slot['end_time'] : null,
+				!empty($this->nurseryHomeworkDone[$classId . ':' . $courseId])
 			);
 		}
 
