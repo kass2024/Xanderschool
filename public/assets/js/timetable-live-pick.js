@@ -53,13 +53,12 @@
 		}
 
 		function choose(value) {
-			var current = String($select.val() || '');
 			$select.val(String(value));
 			$input.val(selectedLabel());
 			$menu.prop('hidden', true);
-			if (current !== String(value)) {
-				$select.trigger('change');
-			}
+			// Always notify — preview must reload even when the same class is re-picked
+			// after a failed/empty server render.
+			$select.trigger('change');
 		}
 
 		$input.val(selectedLabel());

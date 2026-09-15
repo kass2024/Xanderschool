@@ -124,14 +124,18 @@ class TimetableManagement extends Home
 			? (int) $data['preview_teacher_id']
 			: (int) $data['preview_class_id'];
 		$data['preview_data'] = null;
+		$data['preview_error'] = null;
 		if ($previewEntityId > 0 && !empty($data['schedule'])) {
 			try {
 				$data['preview_data'] = $this->gridBodyViewData(
 					$this->buildGridView($schoolId, $schema, $previewMode, $previewEntityId, false, false)
 				);
 			} catch (\Throwable $e) {
-				log_message('error', 'Timetable dashboard preview failed: {msg}', ['msg' => $e->getMessage()]);
+				log_message('error', 'Timetable dashboard preview failed: {msg}', [
+					'msg' => $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+				]);
 				$data['preview_data'] = null;
+				$data['preview_error'] = 'Could not build timetable preview: ' . $e->getMessage();
 			}
 		}
 
@@ -2875,6 +2879,7 @@ class TimetableManagement extends Home
 			'schedule_id' => (int) ($data['schedule_id'] ?? 0),
 			'school_name' => $data['school_name'] ?? '',
 			'generated_at' => $data['generated_at'] ?? null,
+			'track_key' => (string) ($data['track_key'] ?? ''),
 			'staging_entries' => $data['staging_entries'] ?? [],
 			'conflict_entry_ids' => $data['conflict_entry_ids'] ?? [],
 			'staging_remaining' => (int) ($data['staging_remaining'] ?? 0),

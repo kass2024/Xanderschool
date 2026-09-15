@@ -171,7 +171,7 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 
 					<div id="ttCriteriaBox" class="tt-criteria-box mb-3" hidden>
 						<div class="small font-weight-bold mb-2">Special scheduling criteria</div>
-						<p class="small text-muted mb-2">These locked document rules apply to <strong>high school only</strong> (O Level, A Level, TVET, Special — not nursery, not primary) and stay on every generate. Combined classes share <strong>one teacher</strong> at the same time: 5 classes × 5 periods become <strong>3 teaching sessions</strong> (2+2+1), not 25, and the lesson is copied onto every class timetable. Add extra rules below, or click a saved rule to edit it. Placed lessons stay locked unless you check <strong>Replace locked timetable</strong>.</p>
+						<p class="small text-muted mb-2">These locked document rules apply to <strong>high school only</strong> (O Level, A Level, TVET, Special — not nursery, not primary) and stay on every generate. Only the listed combine groups share one teacher slot (5 classes × 5 periods → 3 sessions, not 25). Other same-teacher courses stay separate. Teachers not named in the document use normal placement and fill from morning first. Consecutive blocks stay: 4/6 doubles, 3/5/7 as 2+1, 2 on separate days. Placed lessons stay locked unless you check <strong>Replace locked timetable</strong>.</p>
 						<div class="small font-weight-bold mb-1">Locked document criteria</div>
 						<ul class="tt-criteria-list small mb-3">
 							<?php foreach (($document_criteria ?? []) as $docRule): ?>
@@ -460,6 +460,8 @@ $progressPct = (int) round((($stepPeriods ? 1 : 0) + ($stepAssignments ? 1 : 0) 
 		<div class="tt-preview-body" id="ttPreviewBody">
 			<?php if (!empty($preview_data)): ?>
 				<?= view('pages/timetable/_grid_body', $preview_data); ?>
+			<?php elseif (!empty($preview_error)): ?>
+				<div class="tt-empty-grid p-4 text-center text-danger"><?= esc($preview_error); ?></div>
 			<?php elseif ($hasSchedule): ?>
 				<div class="tt-empty-grid p-4 text-center text-muted">Select a class or teacher above to preview.</div>
 			<?php else: ?>
@@ -522,6 +524,8 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 	var initialPreviewMode = '<?= (($preview_mode ?? 'class') === 'teacher') ? 'teacher' : 'class'; ?>';
 	var initialPreviewClassId = '<?= (int) ($preview_class_id ?? 0); ?>';
 	var initialPreviewTeacherId = '<?= (int) ($preview_teacher_id ?? 0); ?>';
+	var previewGridBase = '<?= site_url('timetable/preview'); ?>';
+	var previewRequest = null;
 
 	function esc(s) {
 		return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -675,15 +679,56 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 		if (!hasSchedule) return;
 		var mode = currentMode();
 		var id = currentId();
-		if (!id) return;
+		if (!id) {
+			$('#ttPreviewBody').html('<div class="tt-empty-grid p-4 text-center text-muted">Select a class or teacher above to preview.</div>');
+			return;
+		}
+		var hasSheet = $('#ttPreviewBody .tt-sheet').length > 0;
 		var sameAsServer = mode === initialPreviewMode && (
 			(mode === 'class' && String(id) === String(initialPreviewClassId))
 			|| (mode === 'teacher' && String(id) === String(initialPreviewTeacherId))
 		);
-		if (!force && hasServerPreview && sameAsServer && $('#ttPreviewBody .tt-sheet').length) {
+		// Keep the server-rendered sheet only when it is already visible.
+		if (!force && hasServerPreview && sameAsServer && hasSheet) {
 			return;
 		}
-		window.location = dashboardUrl + '?preview_mode=' + encodeURIComponent(mode) + '&preview_id=' + encodeURIComponent(id);
+		if (previewRequest && previewRequest.readyState !== 4) {
+			previewRequest.abort();
+		}
+		$('#ttPreviewBody').html('<div class="tt-empty-grid p-4 text-center text-muted"><i class="fa fa-spinner fa-spin"></i> Loading preview…</div>');
+		previewRequest = $.ajax({
+			url: previewGridBase + '/' + encodeURIComponent(id),
+			data: { mode: mode },
+			dataType: 'json',
+			timeout: 60000
+		}).done(function (res) {
+			if (!res) {
+				$('#ttPreviewBody').html('<div class="tt-empty-grid p-4 text-center text-danger">Empty preview response.</div>');
+				return;
+			}
+			if (res.error) {
+				$('#ttPreviewBody').html('<div class="tt-empty-grid p-4 text-center text-danger">' + esc(res.error) + '</div>');
+				return;
+			}
+			if (res.html) {
+				$('#ttPreviewBody').html(res.html);
+				hasServerPreview = true;
+				initialPreviewMode = mode;
+				if (mode === 'class') initialPreviewClassId = String(id);
+				else initialPreviewTeacherId = String(id);
+				return;
+			}
+			$('#ttPreviewBody').html('<div class="tt-empty-grid p-4 text-center text-danger">Could not load timetable preview.</div>');
+		}).fail(function (xhr, status) {
+			if (status === 'abort') return;
+			var msg = 'Could not load timetable preview.';
+			if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
+				msg = xhr.responseJSON.error;
+			} else if (status === 'timeout') {
+				msg = 'Preview timed out. Try Full page.';
+			}
+			$('#ttPreviewBody').html('<div class="tt-empty-grid p-4 text-center text-danger">' + esc(msg) + '</div>');
+		});
 	}
 
 	function stopJobPolling() {
@@ -1003,6 +1048,10 @@ $ttEncodeJob = static function ($job) use ($ttJsonFlags): string {
 		TtLivePick.init('#previewClassPick, #previewTeacherPick');
 	}
 	syncEntityOptions();
+	// If the server left the placeholder (failed build / same-class reselect), load via AJAX.
+	if (hasSchedule && !$('#ttPreviewBody .tt-sheet').length && currentId()) {
+		loadPreview(true);
+	}
 	if (activeJob && activeJob.id && (activeJob.status === 'queued' || activeJob.status === 'running')) {
 		renderJobState(activeJob);
 		pollJob(activeJob.id);
