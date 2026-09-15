@@ -226,6 +226,10 @@ class SecondaryTimetableCriteria
 				return true;
 			}
 		}
+		// Teachers not named in the document: fill from morning first.
+		if (!$this->isDocumentSpecialTeacher($row)) {
+			return true;
+		}
 		return false;
 	}
 
@@ -546,29 +550,10 @@ class SecondaryTimetableCriteria
 		$dept = $meta['dept'];
 		$wantedDepts = $this->combineDeptsFor($subject, $level, $dept);
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-		$courseId = (int) ($row['course_id'] ?? $row['course'] ?? 0);
 		$out = [];
-		// Combined = one teacher in several classes at the same time.
-		if ($wantedDepts === [] && $this->subjectCombinesAtLevel($subject, $level)) {
-			$out = $this->collectCombinePartners($row, $classId, $subject, $level, null, $staffId, $courseId);
-		} elseif ($wantedDepts !== []) {
+		// Only document groups (plus saved combine_classes rules). Never auto-combine.
+		if ($wantedDepts !== []) {
 			$out = $this->collectCombinePartners($row, $classId, $subject, $level, $wantedDepts, $staffId, 0);
-		}
-		foreach ($this->sameTeacherLevelPartners($row) as $auto) {
-			$cid = (int) ($auto['class_id'] ?? 0);
-			if ($cid <= 0 || $cid === $classId) {
-				continue;
-			}
-			$already = false;
-			foreach ($out as $existing) {
-				if ((int) ($existing['class_id'] ?? 0) === $cid) {
-					$already = true;
-					break;
-				}
-			}
-			if (!$already) {
-				$out[] = $auto;
-			}
 		}
 		foreach ($this->customCombinePartners($row) as $partner) {
 			$cid = (int) ($partner['class_id'] ?? 0);
@@ -620,39 +605,13 @@ class SecondaryTimetableCriteria
 				continue;
 			}
 			$cStaff = (int) ($cand['lecturer'] ?? $cand['staff_id'] ?? 0);
-			$cCourse = (int) ($cand['course_id'] ?? $cand['course'] ?? 0);
 			if ($sameStaff > 0 && $cStaff !== $sameStaff) {
 				continue;
-			}
-			if ($wantedDepts === null) {
-				$sameTeacher = $sameStaff > 0 && $cStaff === $sameStaff;
-				$sameOffering = $sameCourse > 0 && $cCourse === $sameCourse;
-				if (!$sameTeacher && !$sameOffering && !$this->openCombineGroup($subject, $level)) {
-					continue;
-				}
 			}
 			$seen[$cid] = true;
 			$out[] = $cand;
 		}
 		return $out;
-	}
-
-	private function subjectCombinesAtLevel(string $subject, string $level): bool
-	{
-		if ($this->openCombineGroup($subject, $level)) {
-			return true;
-		}
-		foreach ($this->combinePairsForSubject($subject) as $pair) {
-			if (($pair['level'] ?? '') === $level) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private function openCombineGroup(string $subject, string $level): bool
-	{
-		return $subject === 'entrepreneurship' && $level === 'S6';
 	}
 
 	public function combinePartner(array $row): ?array
@@ -684,10 +643,6 @@ class SecondaryTimetableCriteria
 			sort($group);
 			return $staffId . '|' . $subject . '|' . $meta['level'] . '|' . implode('-', $group);
 		}
-		$autoIds = $this->sameTeacherLevelClassIds($row);
-		if (count($autoIds) >= 2) {
-			return $staffId . '|' . $subject . '|' . $meta['level'] . '|auto|' . implode('-', $autoIds);
-		}
 		return '';
 	}
 
@@ -710,7 +665,7 @@ class SecondaryTimetableCriteria
 		return $c->normalizeSubject($title);
 	}
 
-	/** Same teacher, different class, same subject = one combined lesson, not a clash. */
+	/** Same teacher + same document combine group = one lesson, not a clash. */
 	public static function entriesAreCombinedLesson(array $a, array $b): bool
 	{
 		$staffA = (int) ($a['staff_id'] ?? $a['lecturer'] ?? 0);
@@ -726,7 +681,32 @@ class SecondaryTimetableCriteria
 		if ($famA === '' || $famA !== $famB) {
 			return false;
 		}
-		return true;
+		$c = new self();
+		$levelA = $c->normalizeLevel((string) ($a['level_name'] ?? $a['level_title'] ?? ''));
+		$levelB = $c->normalizeLevel((string) ($b['level_name'] ?? $b['level_title'] ?? ''));
+		$deptA = $c->normalizeDept(
+			(string) ($a['dept_code'] ?? ''),
+			(string) ($a['dept_title'] ?? $a['dept_name'] ?? ''),
+			(string) ($a['class_title'] ?? '')
+		);
+		$deptB = $c->normalizeDept(
+			(string) ($b['dept_code'] ?? ''),
+			(string) ($b['dept_title'] ?? $b['dept_name'] ?? ''),
+			(string) ($b['class_title'] ?? '')
+		);
+		if ($levelA === '' || $levelA !== $levelB || $deptA === '' || $deptB === '') {
+			return false;
+		}
+		foreach (self::documentCombineGroups() as $group) {
+			if (($group['subject'] ?? '') !== $famA || ($group['level'] ?? '') !== $levelA) {
+				continue;
+			}
+			$depts = $group['depts'] ?? [];
+			if (in_array($deptA, $depts, true) && in_array($deptB, $depts, true)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** PE: at most one period per class day (spread across week). */
@@ -787,13 +767,9 @@ class SecondaryTimetableCriteria
 		if ($weeklyHours <= 0) {
 			return $fallback;
 		}
-		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-		// Keep doubles (2/day) so Patience can fill Tuesday then Friday with several courses.
+		// Keep doubles (2/day). Never dump a whole week's periods onto one day.
 		if ($this->hasOrderedFillWindows($row)) {
 			return $fallback;
-		}
-		if ($staffId > 0 && isset($this->heavyStaffIds[$staffId])) {
-			return max($fallback, $weeklyHours, 6);
 		}
 		$days = $this->restrictedTeachingDays($row);
 		if ($days === null || $days === []) {
@@ -801,7 +777,7 @@ class SecondaryTimetableCriteria
 		}
 		$n = count($days);
 		$pack = (int) ceil($weeklyHours / max(1, $n));
-		return max($fallback, $pack, $weeklyHours);
+		return max($fallback, min($pack, 3));
 	}
 
 	/**
@@ -861,6 +837,8 @@ class SecondaryTimetableCriteria
 			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Linea, Varlette and Marguerite teach ANP in the morning, Tuesday to Thursday.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
+			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Teachers not named in this document use normal placement and fill from morning periods first.'],
+			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Only the listed groups are combined. Other same-teacher courses stay as separate classes.'],
 			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'Tuesday 07:00–12:00.'],
 			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full day 07:00–16:00.'],
 			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],
@@ -971,69 +949,6 @@ class SecondaryTimetableCriteria
 			return $ids;
 		}
 		return [];
-	}
-
-	/**
-	 * Same teacher + same subject + same level = combined lesson (high school only).
-	 *
-	 * @return list<array<string,mixed>>
-	 */
-	private function sameTeacherLevelPartners(array $row): array
-	{
-		$classId = (int) ($row['class_id'] ?? 0);
-		$ids = $this->sameTeacherLevelClassIds($row);
-		if ($classId <= 0 || count($ids) < 2) {
-			return [];
-		}
-		$out = [];
-		$seen = [];
-		foreach ($this->assignmentsByKey as $cand) {
-			$cid = (int) ($cand['class_id'] ?? 0);
-			if ($cid === $classId || $cid <= 0 || isset($seen[$cid]) || !in_array($cid, $ids, true)) {
-				continue;
-			}
-			$seen[$cid] = true;
-			$out[] = $cand;
-		}
-		return $out;
-	}
-
-	/** @return list<int> */
-	private function sameTeacherLevelClassIds(array $row): array
-	{
-		if (!self::isSecondaryTrack($row)) {
-			return [];
-		}
-		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-		$classId = (int) ($row['class_id'] ?? 0);
-		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
-		$meta = $this->classMeta[(string) $classId] ?? null;
-		$level = (string) ($meta['level'] ?? '');
-		if ($staffId <= 0 || $subject === '' || $level === '') {
-			return [];
-		}
-		$ids = [];
-		foreach ($this->assignmentsByKey as $cand) {
-			$cid = (int) ($cand['class_id'] ?? 0);
-			if ($cid <= 0) {
-				continue;
-			}
-			$cStaff = (int) ($cand['lecturer'] ?? $cand['staff_id'] ?? 0);
-			if ($cStaff !== $staffId) {
-				continue;
-			}
-			$cm = $this->classMeta[(string) $cid] ?? null;
-			if ($cm === null || (string) ($cm['level'] ?? '') !== $level) {
-				continue;
-			}
-			if ($this->normalizeSubject((string) ($cand['course_title'] ?? '')) !== $subject) {
-				continue;
-			}
-			$ids[] = $cid;
-		}
-		$ids = array_values(array_unique($ids));
-		sort($ids);
-		return $ids;
 	}
 
 	/** @return list<int> */
@@ -1456,6 +1371,28 @@ class SecondaryTimetableCriteria
 			'patience izabayo' => $patienceWindows,
 			'izabayo gihanga' => $patienceWindows,
 		];
+	}
+
+	public function isDocumentSpecialTeacher(array $row): bool
+	{
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? '')) ?? ''));
+		if ($teacher === '') {
+			return false;
+		}
+		if ($this->isPinnedTeacherName($teacher) || $this->windowsForTeacher($teacher) !== []) {
+			return true;
+		}
+		foreach (array_keys($this->blockedDaysByName) as $needle) {
+			if ($needle !== '' && strpos($teacher, (string) $needle) !== false) {
+				return true;
+			}
+		}
+		foreach ($this->anpMorningTeachers as $needle) {
+			if ($needle !== '' && strpos($teacher, (string) $needle) !== false) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private function isIzabayoPatience(string $teacher): bool

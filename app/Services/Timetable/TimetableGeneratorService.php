@@ -1385,10 +1385,7 @@ class TimetableGeneratorService
 			return false;
 		}
 		if ($this->secondaryCriteria !== null) {
-			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
-			if ($this->secondaryCriteria->hasOrderedFillWindows($row)
-				|| $this->secondaryCriteria->isHeavyStaff($staffId)
-				|| $this->secondaryCriteria->isPersonalRestrictionRelaxed($staffId, (string) ($row['teacher_name'] ?? ''))) {
+			if ($this->secondaryCriteria->hasOrderedFillWindows($row)) {
 				return false;
 			}
 			$days = $this->secondaryCriteria->restrictedTeachingDays($row);

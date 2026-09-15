@@ -2684,10 +2684,7 @@ class TimetableManagement extends Home
 					$fam = strtolower(trim((string) ($entry['course_title'] ?? '')));
 				}
 				$ck .= ':' . $fam;
-				$label = TimetableClassLabel::fromRow($entry);
-				if ($label !== '') {
-					$combinedByClock[$ck][$label] = true;
-				}
+				$combinedByClock[$ck][] = $entry;
 			}
 
 			foreach ($entries as $entry) {
@@ -2711,7 +2708,19 @@ class TimetableManagement extends Home
 					$fam = strtolower(trim((string) ($entry['course_title'] ?? '')));
 				}
 				$ck = $si . ':' . $dayLabel . ':' . (int) ($entry['staff_id'] ?? 0) . ':' . $fam;
-				$partnerLabels = array_keys($combinedByClock[$ck] ?? []);
+				$partnerLabels = [];
+				foreach ($combinedByClock[$ck] ?? [] as $other) {
+					$otherLabel = TimetableClassLabel::fromRow($other);
+					if ($otherLabel === '') {
+						continue;
+					}
+					$sameClass = (int) ($other['class_id'] ?? 0) === (int) ($entry['class_id'] ?? 0);
+					if ($sameClass || SecondaryTimetableCriteria::entriesAreCombinedLesson($entry, $other)) {
+						if (!in_array($otherLabel, $partnerLabels, true)) {
+							$partnerLabels[] = $otherLabel;
+						}
+					}
+				}
 				$isCombined = count($partnerLabels) > 1;
 				$existing = $grid[$si]['cells'][$dayLabel] ?? null;
 				if ($mode === 'teacher' && $isCombined && !empty($existing['type']) && $existing['type'] === 'lesson'
