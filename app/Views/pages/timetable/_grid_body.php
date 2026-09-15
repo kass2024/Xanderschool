@@ -27,6 +27,15 @@ $ttRange = static function ($start, $end) {
 	return substr((string) $start, 0, 5) . ' - ' . substr((string) $end, 0, 5);
 };
 $conflictIds = $conflict_entry_ids ?? [];
+$hasCombined = false;
+foreach ($grid ?? [] as $scanRow) {
+	foreach (($scanRow['cells'] ?? []) as $scanCell) {
+		if (!empty($scanCell['combined'])) {
+			$hasCombined = true;
+			break 2;
+		}
+	}
+}
 ?>
 <div class="tt-sheet<?= $editable ? ' tt-sheet-editable' : ''; ?><?= $isNurserySheet ? ' tt-sheet-nursery' : ''; ?>"
 	<?php if ($editable): ?>
@@ -111,6 +120,13 @@ $conflictIds = $conflict_entry_ids ?? [];
 									if (!empty($cell['nursery_bg'])) {
 										$cellClasses[] = 'tt-nursery-colored';
 									}
+									if (!empty($cell['combined'])) {
+										$cellClasses[] = 'tt-combined-cell';
+										$slug = preg_replace('/[^a-z0-9\-]+/', '', (string) ($cell['combined_slug'] ?? 'combined'));
+										if ($slug !== '') {
+											$cellClasses[] = 'tt-combined-fam-' . $slug;
+										}
+									}
 									if ($editable) {
 										$cellClasses[] = 'tt-draggable-lesson';
 									}
@@ -120,10 +136,19 @@ $conflictIds = $conflict_entry_ids ?? [];
 								} elseif ($editable && $isEmpty) {
 									$cellClasses[] = 'tt-drop-target tt-cell-free';
 								}
+								$combinedStyle = '';
+								if ($isLesson && !empty($cell['combined']) && empty($cell['nursery_bg']) && !empty($cell['combined_bg'])) {
+									$bg = (string) $cell['combined_bg'];
+									$fg = (string) ($cell['combined_fg'] ?? '#134e4a');
+									$accent = (string) ($cell['combined_accent'] ?? '#0f766e');
+									$combinedStyle = 'background:' . $bg . ';color:' . $fg . ';box-shadow:inset 4px 0 0 ' . $accent . ';';
+								}
 								?>
 								<td class="<?= implode(' ', $cellClasses); ?>"
 									<?php if (!empty($cell['nursery_bg'])): ?>
 									style="background:<?= esc($cell['nursery_bg']); ?>;color:<?= esc($cell['nursery_fg'] ?? '#1e293b'); ?>;"
+									<?php elseif ($combinedStyle !== ''): ?>
+									style="<?= esc($combinedStyle); ?>"
 									<?php endif; ?>
 									<?php if ($editable && ($isLesson || $isEmpty)): ?>
 									data-day="<?= $dayNum; ?>"
@@ -143,14 +168,19 @@ $conflictIds = $conflict_entry_ids ?? [];
 											<div class="tt-course"><?= esc($cell['course']); ?></div>
 											<?php if (!empty($cell['combined'])): ?>
 												<div class="tt-combined-badge">Combined</div>
+												<?php if (!empty($cell['combined_with'])): ?>
+													<div class="tt-combined-with"><?= esc($cell['combined_with']); ?></div>
+												<?php endif; ?>
 											<?php endif; ?>
 											<?php if ($mode === 'class' && !empty($cell['line2'])): ?>
 												<div class="tt-sub"><?= esc($cell['line2']); ?></div>
-											<?php elseif ($mode === 'teacher'): ?>
+											<?php elseif ($mode === 'teacher' && empty($cell['combined'])): ?>
 												<div class="tt-sub"><?= esc($cell['line2']); ?></div>
 												<?php if (!empty($cell['code'])): ?>
 													<div class="tt-code"><?= esc($cell['code']); ?></div>
 												<?php endif; ?>
+											<?php elseif ($mode === 'teacher' && !empty($cell['code'])): ?>
+												<div class="tt-code"><?= esc($cell['code']); ?></div>
 											<?php endif; ?>
 										<?php endif; ?>
 									<?php endif; ?>
@@ -162,6 +192,9 @@ $conflictIds = $conflict_entry_ids ?? [];
 				</tbody>
 			</table>
 		</div>
+		<?php if ($hasCombined): ?>
+			<div class="tt-combined-legend">Colored cells are combined classes (same subject + same teacher). Partner class names are listed on the cell.</div>
+		<?php endif; ?>
 		<?php if ($editable): ?>
 		<div class="tt-staging-dock tt-staging-parking tt-staging-bottom mt-2" id="ttStagingDockBottom" data-drop-zone="parking">
 			<div class="tt-staging-label">

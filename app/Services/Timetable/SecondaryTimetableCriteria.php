@@ -647,6 +647,33 @@ class SecondaryTimetableCriteria
 		return $c->normalizeSubject($title);
 	}
 
+	/**
+	 * Distinct highlight for a combined lesson (same subject + same teacher).
+	 *
+	 * @return array{bg:string,fg:string,accent:string,slug:string}
+	 */
+	public static function combinedHighlight(string $family): array
+	{
+		$family = strtolower(trim($family));
+		$map = [
+			'mathematics' => ['bg' => '#ede9fe', 'fg' => '#4c1d95', 'accent' => '#7c3aed'],
+			'physics' => ['bg' => '#dbeafe', 'fg' => '#1e3a8a', 'accent' => '#2563eb'],
+			'chemistry' => ['bg' => '#ccfbf1', 'fg' => '#115e59', 'accent' => '#0d9488'],
+			'biology' => ['bg' => '#dcfce7', 'fg' => '#14532d', 'accent' => '#16a34a'],
+			'computer' => ['bg' => '#cffafe', 'fg' => '#155e75', 'accent' => '#0891b2'],
+			'english' => ['bg' => '#fef3c7', 'fg' => '#92400e', 'accent' => '#d97706'],
+			'kinyarwanda' => ['bg' => '#ffedd5', 'fg' => '#9a3412', 'accent' => '#ea580c'],
+			'entrepreneurship' => ['bg' => '#fce7f3', 'fg' => '#9d174d', 'accent' => '#db2777'],
+			'general_studies' => ['bg' => '#e0e7ff', 'fg' => '#312e81', 'accent' => '#4f46e5'],
+			'geography' => ['bg' => '#ecfccb', 'fg' => '#3f6212', 'accent' => '#65a30d'],
+			'economics' => ['bg' => '#fae8ff', 'fg' => '#86198f', 'accent' => '#c026d3'],
+		];
+		$tone = $map[$family] ?? ['bg' => '#ccfbf1', 'fg' => '#134e4a', 'accent' => '#0f766e'];
+		$slug = preg_replace('/[^a-z0-9]+/', '-', $family);
+		$tone['slug'] = ($slug !== null && $slug !== '') ? $slug : 'combined';
+		return $tone;
+	}
+
 	/** Same teacher + same document combine group = one lesson, not a clash. */
 	public static function entriesAreCombinedLesson(array $a, array $b): bool
 	{

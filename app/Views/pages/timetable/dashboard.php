@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/timetable.css'); ?>?v=nursery-colors-1">
+<link rel="stylesheet" href="<?= base_url('assets/css/timetable.css'); ?>?v=combined-colors-1">
 
 <?php
 $hasSchedule = !empty($schedule);

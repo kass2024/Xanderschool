@@ -2736,7 +2736,15 @@ class TimetableManagement extends Home
 					}
 					$existing['combined'] = true;
 					$existing['combined_classes'] = $merged;
+					$existing['combined_with'] = implode(' + ', $merged);
 					$existing['line2'] = implode(' + ', $merged);
+					if (empty($existing['combined_bg'])) {
+						$tone = SecondaryTimetableCriteria::combinedHighlight($fam);
+						$existing['combined_bg'] = $tone['bg'];
+						$existing['combined_fg'] = $tone['fg'];
+						$existing['combined_accent'] = $tone['accent'];
+						$existing['combined_slug'] = $tone['slug'];
+					}
 					$grid[$si]['cells'][$dayLabel] = $existing;
 					continue;
 				}
@@ -2756,19 +2764,26 @@ class TimetableManagement extends Home
 					'combined' => $isCombined,
 					'combined_classes' => $partnerLabels,
 				];
-				if ($mode === 'class') {
-					$cell['line2'] = $entry['teacher_name'] ?? '';
-					if ($isCombined) {
+				if ($isCombined) {
+					$tone = SecondaryTimetableCriteria::combinedHighlight($fam);
+					$cell['combined_bg'] = $tone['bg'];
+					$cell['combined_fg'] = $tone['fg'];
+					$cell['combined_accent'] = $tone['accent'];
+					$cell['combined_slug'] = $tone['slug'];
+					if ($mode === 'class') {
 						$others = [];
 						foreach ($partnerLabels as $pl) {
 							if ($pl !== $classLabel) {
 								$others[] = $pl;
 							}
 						}
-						if ($others !== []) {
-							$cell['line2'] = trim((string) ($entry['teacher_name'] ?? '') . ' · ' . implode(' + ', $others));
-						}
+						$cell['combined_with'] = $others !== [] ? implode(' + ', $others) : implode(' + ', $partnerLabels);
+					} else {
+						$cell['combined_with'] = implode(' + ', $partnerLabels);
 					}
+				}
+				if ($mode === 'class') {
+					$cell['line2'] = $entry['teacher_name'] ?? '';
 				} else {
 					$cell['line2'] = $isCombined ? implode(' + ', $partnerLabels) : $classLabel;
 				}
