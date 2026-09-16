@@ -13,6 +13,7 @@ class StudentModel extends Model
 		'lname',
 		'phone',
 		'email',
+		'email_password',
 		'regno',
 		'sex',
 		'dob',
@@ -62,6 +63,9 @@ class StudentModel extends Model
 	/** @var bool */
 	private static $cardNfcReady = false;
 
+	/** @var bool */
+	private static $emailPasswordReady = false;
+
 	public function ensureCardNfcColumn(): void
 	{
 		if (self::$cardNfcReady) {
@@ -72,6 +76,18 @@ class StudentModel extends Model
 			$db->query("ALTER TABLE `{$this->table}` ADD COLUMN `card_nfc` VARCHAR(32) NULL DEFAULT NULL AFTER `card`");
 		}
 		self::$cardNfcReady = true;
+	}
+
+	public function ensureEmailPasswordColumn(): void
+	{
+		if (self::$emailPasswordReady) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists($this->table) && !$db->fieldExists('email_password', $this->table)) {
+			$db->query("ALTER TABLE `{$this->table}` ADD COLUMN `email_password` VARCHAR(64) NULL DEFAULT NULL AFTER `email`");
+		}
+		self::$emailPasswordReady = true;
 	}
 
 	public function ensureFatherNidColumn(): void

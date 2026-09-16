@@ -412,8 +412,13 @@
 								</button>
 								<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? '')))); ?>"
 								   class="btn btn-success students-toolbar-submit"
-								   title="One workbook with a sheet per class (Names, Gender, Studying)">
+								   title="One workbook with a sheet per class (Names, Gender, Studying, Email, Password)">
 									<i class="fa fa-file-excel"></i> <?= lang("app.exporttoExcel"); ?>
+								</a>
+								<a href="<?= base_url('export_student_emails?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? ''))) . '&c=' . urlencode((string) $class_id)); ?>"
+								   class="btn btn-outline-success students-toolbar-submit"
+								   title="Export student emails and passwords (nursery excluded)">
+									<i class="fa fa-envelope"></i> Export emails
 								</a>
 							</form>
 							<div class="btn-actions-pane-right actions-icon-btn">
@@ -431,6 +436,11 @@
 												class="typcn typcn-plus"> </i><span><?= lang("app.AddnewStudent"); ?></span>
 										</a>
 										<div class="dropdown-divider"></div>
+										<a href="<?= base_url('export_student_emails?y=' . urlencode((string) $academic_year) . '&c=' . urlencode((string) $class_id)); ?>"
+										   class="dropdown-item"
+										   title="Emails and passwords, nursery excluded">
+											<i class="fa fa-envelope"></i> Export emails
+										</a>
 										<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) $academic_year)); ?>"
 										   class="dropdown-item"
 										   title="One workbook, one sheet per class">
@@ -504,6 +514,7 @@
 												<th><?= lang("app.mode"); ?></th>
 												<th><?= lang("app.gender"); ?></th>
 												<th><?= lang("app.sClass"); ?></th>
+												<th>Email</th>
 												<th><?= lang("app.activeParent"); ?></th>
 												<th>Visitors</th>
 												<th></th>
@@ -541,6 +552,7 @@
 													<td class="ce-list-mode"><?= \App\Controllers\Home::ModeToStr($student['studying_mode']); ?></td>
 													<td><?= $student['sex']; ?></td>
 													<td><?= $student['level'] . ' ' . $student['dept_code'] . ' ' . $student['class']; ?></td>
+													<td><?= !empty($student['email']) ? esc($student['email']) : '—'; ?></td>
 													<td><?= $parent; ?></td>
 													<td><?= $visitorCell; ?></td>
 													<td>
@@ -593,6 +605,7 @@
 												<th><?= lang("app.mode"); ?></th>
 												<th><?= lang("app.gender"); ?></th>
 												<th><?= lang("app.sClass"); ?></th>
+												<th>Email</th>
 												<th><?= lang("app.activeParent"); ?></th>
 												<th>Visitors</th>
 												<th></th>

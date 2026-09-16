@@ -340,6 +340,20 @@ public function testEmail()
 		return strpos($hay, 'holiday') !== false;
 	}
 
+	private function classLooksLikeNursery(array $row): bool
+	{
+		$hay = strtolower(trim(
+			($row['title'] ?? '') . ' ' .
+			($row['level_name'] ?? '') . ' ' .
+			($row['level_title'] ?? '') . ' ' .
+			($row['faculty_code'] ?? '') . ' ' .
+			($row['faculty_title'] ?? '') . ' ' .
+			($row['abbrev'] ?? '') . ' ' .
+			($row['department_name'] ?? '')
+		));
+		return (bool) preg_match('/\b(nursery|baby class|middle class|top class|n1|n2|n3)\b/', $hay);
+	}
+
 	private function isStreamDepartmentTitle(?string $title, ?string $code = null): bool
 	{
 		$c = strtoupper(trim((string) $code));
@@ -7199,13 +7213,14 @@ public function attendanceCard()
 		}));
 
 		$studentMdl = new StudentModel();
+		$studentMdl->ensureEmailPasswordColumn();
 		$sheets = [];
 		foreach ($classes as $class) {
 			$classId = (int) ($class['id'] ?? 0);
 			if ($classId < 1) {
 				continue;
 			}
-			$students = $studentMdl->select('students.id, students.fname, students.lname, students.sex, students.studying_mode')
+			$students = $studentMdl->select('students.id, students.fname, students.lname, students.sex, students.studying_mode, students.email, students.email_password')
 				->join('class_records cr', 'students.id=cr.student')
 				->where('cr.class', $classId)
 				->where('cr.year', $yearId)
@@ -7238,6 +7253,83 @@ public function attendanceCard()
 
 		$spreadsheet = \App\Libraries\SmartStudentSheetsExporter::build($school, $sheets, $yearTitle, $termLabel);
 		$filename = \App\Libraries\SmartStudentSheetsExporter::exportFilename($schoolName, $yearTitle);
+		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
+
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
+		header('Cache-Control: max-age=0');
+		$writer->save('php://output');
+		exit;
+	}
+
+	public function export_student_emails()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		@ini_set('memory_limit', '512M');
+		@set_time_limit(300);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$yearId = (int) ($this->request->getGet('y') ?? 0);
+		$classFilter = (int) ($this->request->getGet('c') ?? 0);
+		if ($yearId < 1) {
+			$yearId = (int) ($this->data['academic_year_id'] ?? 0);
+		}
+		if ($yearId < 1) {
+			echo 'No academic year selected.';
+			return;
+		}
+
+		$classMdl = new ClassesModel();
+		$allClasses = $classMdl->get_classes();
+		$classes = array_values(array_filter($allClasses, function ($class) use ($classFilter) {
+			if ($this->classLooksLikeHoliday($class) || $this->classLooksLikeNursery($class)) {
+				return false;
+			}
+			if ($classFilter > 0) {
+				return (int) ($class['id'] ?? 0) === $classFilter;
+			}
+			return true;
+		}));
+
+		$studentMdl = new StudentModel();
+		$studentMdl->ensureEmailPasswordColumn();
+		$sheets = [];
+		foreach ($classes as $class) {
+			$classId = (int) ($class['id'] ?? 0);
+			if ($classId < 1) {
+				continue;
+			}
+			$students = $studentMdl->select('students.id, students.fname, students.lname, students.regno, students.email, students.email_password')
+				->join('class_records cr', 'students.id=cr.student')
+				->where('cr.class', $classId)
+				->where('cr.year', $yearId)
+				->where('students.status', 1)
+				->groupBy('students.id')
+				->orderBy('students.fname', 'ASC')
+				->orderBy('students.lname', 'ASC')
+				->get()->getResultArray();
+			$unique = [];
+			foreach ($students as $row) {
+				$sid = (int) ($row['id'] ?? 0);
+				if ($sid > 0) {
+					$unique[$sid] = $row;
+				}
+			}
+			$sheets[] = [
+				'class' => $class,
+				'students' => array_values($unique),
+			];
+		}
+
+		$school = $this->schoolMetaForStaffExport();
+		$schoolName = (string) ($school['name'] ?? 'School');
+		$yearTitle = '';
+		$yearRow = (new AcademicYearModel())->select('title')->where('id', $yearId)->where('school_id', $schoolId)->first();
+		if ($yearRow) {
+			$yearTitle = (string) ($yearRow['title'] ?? '');
+		}
+
+		$spreadsheet = \App\Libraries\StudentEmailListExporter::build($school, $sheets, $yearTitle);
+		$filename = \App\Libraries\StudentEmailListExporter::exportFilename($schoolName, $yearTitle);
 		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
 
 		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -7480,6 +7572,7 @@ public function attendanceCard()
 		$studentMdl = new StudentModel();
 		$studentMdl->ensureFatherNidColumn();
 		$studentMdl->ensureFromRegistrationColumns();
+		$studentMdl->ensureEmailPasswordColumn();
 		$studentMdl->backfillFromRegistration($school_id);
 		$classId = (int) $classe;
 		$yearFilter = (int) $yearId;

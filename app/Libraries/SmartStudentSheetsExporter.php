@@ -19,14 +19,24 @@ class SmartStudentSheetsExporter
 	private const BRAND = '012F6B';
 	private const BRAND_LIGHT = 'E8F0FA';
 	private const ALT_ROW = 'F7FAFD';
-	private const LAST_COL = 'D';
+	private const LAST_COL = 'F';
 	/** Extra columns give the school header room so contact text does not clip. */
 	private const HEADER_LAST_COL = 'F';
 
 	/** @return list<string> */
 	public static function columnHeaders(): array
 	{
-		return ['#', 'Names', 'Gender', 'Studying'];
+		return ['#', 'Names', 'Gender', 'Studying', 'Email', 'Password'];
+	}
+
+	/** @param array<string,mixed> $class */
+	public static function classLabel(array $class): string
+	{
+		$level = trim((string) ($class['level_name'] ?? $class['level_title'] ?? ''));
+		$dept = trim((string) ($class['dept_code'] ?? $class['code'] ?? ''));
+		$title = trim((string) ($class['title'] ?? ''));
+		$label = trim($level . ' ' . $dept . ' ' . $title);
+		return $label !== '' ? $label : 'Class';
 	}
 
 	public static function exportFilename(string $schoolName, string $yearTitle = ''): string
@@ -90,7 +100,17 @@ class SmartStudentSheetsExporter
 			$mode = 'Boarding';
 		}
 
-		return [$num, $names !== '' ? $names : '-', $gender, $mode];
+		$email = trim((string) ($student['email'] ?? ''));
+		$password = trim((string) ($student['email_password'] ?? ''));
+
+		return [
+			$num,
+			$names !== '' ? $names : '-',
+			$gender,
+			$mode,
+			$email !== '' ? $email : '-',
+			$password !== '' ? $password : '-',
+		];
 	}
 
 	/**
@@ -110,7 +130,7 @@ class SmartStudentSheetsExporter
 		foreach ($sheets as $entry) {
 			$class = $entry['class'] ?? [];
 			$students = $entry['students'] ?? [];
-			$className = ClassListExporter::className($class);
+			$className = self::classLabel($class);
 			$title = self::sheetTitle($className, $usedTitles);
 
 			if ($first) {
@@ -257,7 +277,7 @@ class SmartStudentSheetsExporter
 		$sheet->getColumnDimension('B')->setWidth(36);
 		$sheet->getColumnDimension('C')->setWidth(12);
 		$sheet->getColumnDimension('D')->setWidth(14);
-		$sheet->getColumnDimension('E')->setWidth(18);
+		$sheet->getColumnDimension('E')->setWidth(36);
 		$sheet->getColumnDimension('F')->setWidth(18);
 
 		self::lockHeader($sheet, $headerRow, $dataStart, $lastData);
