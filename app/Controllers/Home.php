@@ -1475,6 +1475,7 @@ public function testEmail()
 			return redirect()->to("student-cards");
 		}
 		$data['students'] = $printable;
+		$pdfFilename = $this->studentCardsDownloadFilename($printable);
 
 		if ($useWisdomPass && \App\Libraries\WisdomCardRenderer::isAvailable()) {
 			try {
@@ -1494,7 +1495,7 @@ public function testEmail()
 					throw new \RuntimeException('Wisdom card renderer produced no pages');
 				}
 				$pdf = \App\Libraries\Cr80ImagePdf::fromJpegs($jpegs);
-				\App\Libraries\Cr80ImagePdf::stream($pdf, 'students_card_' . time() . '.pdf');
+				\App\Libraries\Cr80ImagePdf::stream($pdf, $pdfFilename);
 				return;
 			} catch (\Throwable $e) {
 				log_message('error', 'Wisdom GD card PDF failed: ' . $e->getMessage());
@@ -1510,7 +1511,7 @@ public function testEmail()
 			$mask = $tplDir . '*.html';
 			array_map('unlink', glob($mask) ?: []);
 			$wkhtmltopdf = new Wkhtmltopdf(array('path' => $tplDir));
-			$wkhtmltopdf->setTitle(lang("app.studentCards"));
+			$wkhtmltopdf->setTitle($pdfFilename);
 			$wkhtmltopdf->setHtml($html);
 			$pageW = '85.6mm';
 			$pageH = '54mm';
@@ -1529,10 +1530,41 @@ public function testEmail()
 				'image-quality' => 100,
 			));
 			$wkhtmltopdf->setMargins(array("top" => 0, "left" => 0, "right" => 0, "bottom" => 0));
-			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "students_card_" . time() . ".pdf");
+			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, $pdfFilename);
 		} catch (\Exception $e) {
 			echo $e->getMessage();
 		}
+	}
+
+	/**
+	 * Download name starts with the full class label, e.g. "S6 MEG students_card.pdf".
+	 *
+	 * @param list<array<string,mixed>> $students
+	 */
+	private function studentCardsDownloadFilename(array $students): string
+	{
+		$labels = [];
+		foreach ($students as $student) {
+			$label = trim(preg_replace('/\s+/', ' ', (string) ($student['class'] ?? '')));
+			if ($label !== '') {
+				$labels[$label] = true;
+			}
+		}
+		$names = array_keys($labels);
+		if (count($names) === 1) {
+			$prefix = $names[0];
+		} elseif (count($names) > 1 && count($names) <= 3) {
+			$prefix = implode(' - ', $names);
+		} elseif (count($names) > 3) {
+			$prefix = 'Multiple classes';
+		} else {
+			$prefix = 'students';
+		}
+		$safe = preg_replace('/[\\\\\\/:*?"<>|]+/', '', $prefix);
+		$safe = trim((string) preg_replace('/\s{2,}/', ' ', (string) $safe));
+		$safe = $safe !== '' ? $safe : 'students';
+
+		return $safe . ' students_card.pdf';
 	}
 
 	/**
