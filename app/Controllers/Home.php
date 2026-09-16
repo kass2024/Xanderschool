@@ -7472,11 +7472,14 @@ public function attendanceCard()
 		$studentMdl->ensureFatherNidColumn();
 		$studentMdl->ensureFromRegistrationColumns();
 		$studentMdl->backfillFromRegistration($school_id);
-		$list = $studentMdl->get_student_simple("c.id = $classe and cr.year=$yearId", null);
+		$classId = (int) $classe;
+		$yearFilter = (int) $yearId;
+		$list = $studentMdl->get_student_simple("c.id = {$classId} and cr.year={$yearFilter} and students.status IN (1,2)", null);
 		$unique = [];
 		foreach ($list as $row) {
 			$sid = (int) ($row['id'] ?? 0);
-			if ($sid > 0) {
+			$st = (int) ($row['status'] ?? 0);
+			if ($sid > 0 && ($st === 1 || $st === 2)) {
 				$unique[$sid] = $row;
 			}
 		}
@@ -7583,7 +7586,9 @@ public function attendanceCard()
 		$data['page'] = "Dismissed";
 		$data['title'] = lang("app.DismissedStudents");
 		$data['subtitle'] = lang("app.DismissedStudents");
-		$data['students'] = $Mdl->where("school_id", $schoolId)->where("status", 0)->get()->getResultArray();
+		$data['students'] = $Mdl->where("school_id", $schoolId)
+			->whereNotIn("status", [1, 2])
+			->get()->getResultArray();
 		$data['content'] = view("pages/dismissedStudent", $data);
 		return view('main', $data);
 	}
@@ -9408,6 +9413,9 @@ public function attendanceCard()
 
 	public function delete_student()
 	{
+		if (!can_manage_student_lock_delete()) {
+			return $this->response->setJSON(['error' => 'Only the Director can delete students']);
+		}
 		$id = (int) $this->request->getPost("data");
 		$school_id = (int) $this->session->get("soma_school_id");
 		$stMdl = new StudentModel();

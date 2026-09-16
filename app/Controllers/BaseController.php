@@ -92,6 +92,10 @@ class BaseController extends Controller
 				}
 				break;
 			case "student":
+				helper('qonics');
+				if (!function_exists('can_manage_student_lock_delete') || !can_manage_student_lock_delete()) {
+					return $this->response->setJSON(array("error"=>"Only the Director can change student status"));
+				}
 				$stMdl =  new StudentModel();
 				$crMdl =  new ClassRecordModel();
 				$id = $this->request->getPost("data");

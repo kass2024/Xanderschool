@@ -563,12 +563,14 @@
 																title="Resend admission confirmation SMS">
 															<i class="fa fa-paper-plane"></i> Resend
 														</button>
+														<?php if (can_manage_student_lock_delete()): ?>
 														<label class="typcn typcn-delete text-danger link"
 															   data-toggle="delete"
 															   data-title="Student #<?= $student['fname']; ?>"
 															   data-target="<?= $student['id']; ?>"
 															   data-href="delete_student"><?= lang("app.del");?></label> |
 														<?=$status;?>
+														<?php endif; ?>
 														<?php if (!empty($student['from_registration'])): ?>
 															<span class="st-from-reg-badge"
 																  title="<?= esc(lang('app.registeredFromLinkApproved')); ?>">

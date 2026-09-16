@@ -52,7 +52,9 @@
 													<td><?= $student['sex']; ?></td>
 													<td><?= $parent; ?></td>
 													<td>
+														<?php if (can_manage_student_lock_delete()): ?>
 														<?=$status;?>
+														<?php endif; ?>
 														<?php if (!empty($student['from_registration'])): ?>
 															<span class="badge badge-pill"
 																  style="background:#0d9488;color:#fff;font-weight:700;margin-left:4px;"

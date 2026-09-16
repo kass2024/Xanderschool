@@ -214,6 +214,16 @@ if (!function_exists('_is_allowed')) {
 	}
 }
 
+if (!function_exists('can_manage_student_lock_delete')) {
+	/** Director / school-head only: delete student and Active/Locked on student lists. */
+	function can_manage_student_lock_delete()
+	{
+		$postId = (int) ($_SESSION['soma_post'] ?? 0);
+		$title = (string) ($_SESSION['soma_post_title'] ?? '');
+		return \Config\MenuClearance::canManageStudentLockDelete($postId, $title);
+	}
+}
+
 if (!function_exists('material_check_full_access')) {
 	function material_check_full_access()
 	{

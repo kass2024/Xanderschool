@@ -12,6 +12,42 @@ class MenuClearance
 	const FULL_ACCESS_POSTS = [1, 3, 18, 25, 26, 29, 30]; // Head master, DoS, Headmistress, Head Teacher, Deputy Head Teacher, Director, Deputy Director
 
 	/**
+	 * School Director / head posts allowed to delete students and toggle Active/Locked.
+	 * Head master / Headmistress / Head Teacher are the same school-head role at schools that do not use "Director".
+	 * Does not include Director of studies or Director of Finance.
+	 */
+	const DIRECTOR_STUDENT_LIFECYCLE_POSTS = [1, 18, 25, 26, 29, 30];
+
+	/**
+	 * @param int $postId
+	 * @param string $postTitle
+	 * @return bool
+	 */
+	public static function canManageStudentLockDelete($postId, $postTitle = '')
+	{
+		$postId = (int) $postId;
+		if (in_array($postId, self::DIRECTOR_STUDENT_LIFECYCLE_POSTS, true)) {
+			return true;
+		}
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) $postTitle)));
+		if ($title === '') {
+			return false;
+		}
+		$allowed = [
+			'director',
+			'deputy director',
+			'head master',
+			'headmaster',
+			'headmistress',
+			'head teacher',
+			'headteacher',
+			'deputy head teacher',
+			'deputy headteacher',
+		];
+		return in_array($title, $allowed, true);
+	}
+
+	/**
 	 * Finance / budget role defaults (Level clearance + runtime filter).
 	 * Full control: Director of Finance (#24) — all schools.
 	 * Prepare/fill: Cashier + Accountant (all schools).
