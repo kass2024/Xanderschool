@@ -83,6 +83,7 @@
 											</thead>
 											<tbody>
 											<?php
+											helper('qonics');
 											foreach ($staffs as $staff) {
 												$status = $staff['status']==1 || $staff['status']==2?'<label class="text-success lnk" data-toggle="update" data-href="change_status/staff/0" data-target="'.$staff["id"].'">'.lang("app.active").'</label>'
 													:'<label class="text-danger lnk" data-toggle="update" data-href="change_status/staff/1" data-target="'.$staff["id"].'">'.lang("app.locked").'</label>';
@@ -98,6 +99,7 @@
 													: '<span class="badge badge-secondary">NOT ASSIGNED</span>';
 												$hasCard = !empty($staff['card']);
 												$hasFace = !empty($staff['face_enrolled']);
+												$hasPhoto = resolve_profile_photo($staff['photo'] ?? '') !== null;
 												$staffName = esc($staff['fname'].' '.$staff['lname']);
 												$taughtCourses = (int) ($staff['taught_courses'] ?? 0);
 												$taughtPeriods = (int) ($staff['taught_periods'] ?? 0);
@@ -129,6 +131,20 @@
 												<td class="staff-actions-cell">
 													<div class="staff-actions-wrap">
 														<div class="staff-card-btns">
+															<?php if ($hasPhoto): ?>
+																<a class="btn btn-sm btn-dark btn-staff-print-card"
+																	href="<?= esc(base_url('generate_staff_cards') . '?staff_id=' . (int) $staff['id'], 'attr') ?>"
+																	target="_blank" rel="noopener"
+																	title="Print staff ID card">
+																	<i class="fa fa-print"></i> Print card
+																</a>
+															<?php else: ?>
+																<button type="button" class="btn btn-sm btn-outline-secondary btn-staff-print-card-disabled"
+																	data-name="<?= $staffName; ?>"
+																	title="Add a staff photo first">
+																	<i class="fa fa-print"></i> Print card
+																</button>
+															<?php endif; ?>
 															<?php if ($hasCard): ?>
 																<button type="button" class="btn btn-sm btn-warning btn-staff-change-card"
 																	data-id="<?= (int)$staff['id']; ?>"
@@ -277,6 +293,16 @@
 			modal.classList.add('d-none');
 			buffer = '';
 		}
+
+		document.querySelectorAll('.btn-staff-print-card-disabled').forEach(function (btn) {
+			btn.addEventListener('click', function () {
+				Swal.fire({
+					icon: 'info',
+					title: 'Photo required',
+					text: 'Add a photo for ' + btn.dataset.name + ' before printing the ID card.'
+				});
+			});
+		});
 
 		document.querySelectorAll('.btn-staff-assign-card, .btn-staff-change-card').forEach(function (btn) {
 			btn.addEventListener('click', function () {

@@ -83,6 +83,7 @@ $routes->get('/export_missing_student_cards_pdf', 'Home::export_missing_student_
 $routes->add('/student-photo', 'Home::student_photo');
 $routes->post('/save_live_student_photo', 'Home::save_live_student_photo');
 $routes->add('/staff-cards', 'Home::staff_cards');
+$routes->match(['get', 'post'], 'generate_staff_cards', 'Home::generate_staff_cards');
 $routes->get('/register-student', 'Home::add_student');
 $routes->get('/get-single-package/(:any)', 'Admin::get_single_package/$1');
 $routes->get('/get-skl-package/(:any)', 'Admin::get_school_package/$1');

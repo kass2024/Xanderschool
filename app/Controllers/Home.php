@@ -2020,11 +2020,26 @@ public function testEmail()
 	public function generate_staff_cards()
 	{
 		$this->_preset(1, 3);
+		helper('qonics');
 		set_time_limit(0);
 		ini_set("memory_limit", -1);
 		ini_set("max_execution_time", -1);
-		$ids = $this->request->getPost("stId");
-		if (!isset($ids) || count($ids) == 0) {
+		$ids = $this->request->getPost("stId") ?: $this->request->getGet("stId");
+		$staffId = (int) ($this->request->getGet('staff_id') ?: $this->request->getPost('staff_id') ?: 0);
+		if (!is_array($ids)) {
+			$idsRaw = trim((string) ($ids ?? ''));
+			if ($idsRaw !== '' && strpos($idsRaw, ',') !== false) {
+				$ids = array_filter(array_map('trim', explode(',', $idsRaw)));
+			} else {
+				$ids = ($idsRaw !== '') ? [$idsRaw] : [];
+			}
+		}
+		$safeIds = array_values(array_unique(array_filter(array_map('intval', (array) $ids))));
+		if ($staffId > 0) {
+			$safeIds[] = $staffId;
+			$safeIds = array_values(array_unique($safeIds));
+		}
+		if (count($safeIds) === 0) {
 			return redirect()->to("staff-cards");
 		}
 		$stMdl = new StaffModel();
@@ -2060,7 +2075,7 @@ public function testEmail()
 		$data['headmaster_signature'] = $skData->headmaster_signature ?? '';
 		$data['head_master'] = $skData->head_master ?? '';
 		$data['card_badge'] = 'STAFF CARD';
-		$ids = implode(",", array_map('intval', (array) $ids));
+		$ids = implode(",", $safeIds);
 		$staffs = $stMdl->get_staff("staffs.id in (" . $ids . ")");
 		$printable = [];
 		foreach ((array) $staffs as $staff) {
@@ -2069,6 +2084,10 @@ public function testEmail()
 			}
 		}
 		if (count($printable) === 0) {
+			if ($staffId > 0) {
+				return $this->response->setStatusCode(400)
+					->setBody('This staff member needs a photo before the ID card can print.');
+			}
 			return redirect()->to("staff-cards");
 		}
 		$data['staffs'] = $printable;

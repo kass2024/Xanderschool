@@ -235,13 +235,13 @@
 
 /* Staff list — card + delete actions without overflow */
 .staff-actions-col {
-	min-width: 168px;
+	min-width: 176px;
 	white-space: nowrap;
 }
 
 .staff-actions-cell {
-	min-width: 168px;
-	max-width: 220px;
+	min-width: 176px;
+	max-width: 240px;
 	white-space: normal !important;
 	vertical-align: middle !important;
 }
