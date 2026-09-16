@@ -6259,14 +6259,30 @@ public function attendanceCard()
 	public function change_post()
 	{
 		$this->_preset();
-		$current_post = $this->request->getPost("post_id");
-		$post = $this->request->getPost("privilege");
-		$staff_id = $this->request->getPost("staff");
+		$current_post = (int) $this->request->getPost("post_id");
+		$post = (int) $this->request->getPost("privilege");
+		$staff_id = (int) $this->request->getPost("staff");
+		$newTitle = trim((string) $this->request->getPost("new_post_title"));
 
 		$staffMdl = new StaffModel();
-		if ($current_post == $post) {
-			//course already assigned to teacher
-			return $this->response->setJSON(array("error" => lang("app.currentPostError")));
+		if ($staff_id < 1) {
+			return $this->response->setJSON(["error" => lang("app.lblError") . "Staff is required"]);
+		}
+		if ($newTitle !== "") {
+			try {
+				$created = (new PostsModel())->createByTitle($newTitle);
+				$post = (int) ($created["id"] ?? 0);
+			} catch (\InvalidArgumentException $e) {
+				return $this->response->setJSON(["error" => $e->getMessage()]);
+			} catch (\Throwable $e) {
+				return $this->response->setJSON(["error" => lang("app.lblError") . $e->getMessage()]);
+			}
+		}
+		if ($post < 1) {
+			return $this->response->setJSON(["error" => "Select a privilege or type a new post title"]);
+		}
+		if ($current_post === $post) {
+			return $this->response->setJSON(["error" => lang("app.currentPostError")]);
 		}
 		$data = array(
 				"post" => $post,

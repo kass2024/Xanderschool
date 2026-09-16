@@ -271,7 +271,6 @@ $(function () {
             }
             if (data.success) {
                 toastada.success(data.success);
-                $input.val("");
                 window.reloadPostSelect($modal.find("select[name='privilege']"), $modal, data.id);
             }
         }, "json").fail(function () {

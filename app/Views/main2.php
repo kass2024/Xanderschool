@@ -1929,13 +1929,13 @@
 							<div class="form-group mb-0">
 								<label><?= lang("app.createNewPost"); ?></label>
 								<div class="input-group">
-									<input type="text" class="form-control new-post-title" maxlength="80"
+									<input type="text" class="form-control new-post-title" name="new_post_title" maxlength="80"
 										   placeholder="<?= lang("app.newPostPlaceholder"); ?>">
 									<div class="input-group-append">
 										<button type="button" class="btn btn-outline-primary btn-create-post"><?= lang("app.add"); ?></button>
 									</div>
 								</div>
-								<small class="form-text text-muted">Create the post, then click Save to assign it.</small>
+								<small class="form-text text-muted">Type the new post and click Save to create and assign it.</small>
 							</div>
 						</div>
 					</div>
@@ -3599,7 +3599,7 @@ if ($page == "pendingRegistration") {
 <script type="application/javascript" src="<?= base_url('assets/js/parsley-extra-validators.js'); ?>"></script>
 <script type="application/javascript" src="<?= base_url('assets/plugins/select2/js/select2.min.js'); ?>"></script>
 <script src="<?= base_url('assets/js/inputmask.bundle.min.js'); ?>"></script>
-<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js?v=create-post-1"></script>
+<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js?v=create-post-2"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.js"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.min.js"></script>
 <script src="<?= base_url(); ?>assets/js/jquery.flot.js"></script>
