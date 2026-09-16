@@ -28,6 +28,8 @@ class PostsModel extends Model
 	public const COOKER_ID = 14;
 	public const COOKER_TITLE = 'Cooker';
 	public const CUSTOMER_CARE_TITLE = 'Customer Care';
+	public const DHT_DISCIPLINE_TITLE = 'DHT DISCIPLINE';
+	public const DHT_ACADEMICS_TITLE = 'DHT ACADEMICS';
 
 	/** Ensure built-in system posts exist and restricted ones get a starter clearance row. */
 	public function ensureLeadershipPosts(): void
@@ -41,6 +43,8 @@ class PostsModel extends Model
 		$this->renameExactPostTitle(self::PRINCIPAL_ID, 'Principal', self::PRINCIPAL_TITLE);
 		$this->renameExactPostTitle(self::COOKER_ID, 'Cooks', self::COOKER_TITLE);
 		$this->ensurePostByTitle(self::CUSTOMER_CARE_TITLE);
+		$this->ensurePostByTitle(self::DHT_DISCIPLINE_TITLE);
+		$this->ensurePostByTitle(self::DHT_ACADEMICS_TITLE);
 		$wanted = [
 			self::HEAD_TEACHER_ID => 'Head Teacher',
 			self::DEPUTY_HEAD_TEACHER_ID => 'Deputy Head Teacher',
