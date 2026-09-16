@@ -231,8 +231,6 @@
 		});
 
 		$("#changePostMdl").on("show.bs.modal",function (e) {
-			$(".select2").select2();
-			$("#refrs_privilege").click();
 			var parent = $(e.relatedTarget).parent();
 			var post_id = parent.data("post");
 			var staff_id = parent.parent().data("id");
@@ -241,6 +239,12 @@
 			$("#lbl_post").text(post_title);
 			$("#sh_post_id").val(post_id);
 			$(".sh_staff_id").val(staff_id);
+			$("#changePostMdl .new-post-title").val("");
+			if (typeof window.reloadPostSelect === "function") {
+				window.reloadPostSelect($("#change_post_privilege"), $("#changePostMdl"), post_id);
+			} else {
+				$("#refrs_privilege").click();
+			}
 		});
 
 		var modal = document.getElementById('staffCardModal');

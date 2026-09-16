@@ -6280,6 +6280,29 @@ public function attendanceCard()
 		}
 	}
 
+	public function create_post()
+	{
+		$this->_preset();
+		$title = trim((string) $this->request->getPost('title'));
+		try {
+			$result = (new PostsModel())->createByTitle($title);
+			$msg = !empty($result['created'])
+				? lang('app.postCreated')
+				: lang('app.postAlreadyExists');
+
+			return $this->response->setJSON([
+				'success' => $msg,
+				'id' => (int) $result['id'],
+				'title' => (string) $result['title'],
+				'created' => !empty($result['created']),
+			]);
+		} catch (\InvalidArgumentException $e) {
+			return $this->response->setJSON(['error' => $e->getMessage()]);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => lang('app.lblError') . $e->getMessage()]);
+		}
+	}
+
 	public function dept()
 	{
 		$this->_preset(1, 3);
@@ -8659,6 +8682,10 @@ public function attendanceCard()
 		$stMdl = new StaffModel();
 		try {
 			$stMdl->save($data);
+			$syncFields = ['fname', 'lname', 'status', 'card'];
+			if (in_array((string) $target, $syncFields, true)) {
+				HeyStarDeviceStore::requestStaffSync((int) $this->session->get('soma_school_id'));
+			}
 			switch ($type) {
 				case "number":
 					$result = number_format($val);
@@ -9403,6 +9430,7 @@ public function attendanceCard()
 			if ($marksMdl->where("created_by", $id)->get()->getRow() != null)
 				return $this->response->setJSON(array("error" => lang("app.notDeletedMmarks")));
 			$stfMdl->delete($id);
+			HeyStarDeviceStore::requestStaffSync((int) $this->session->get('soma_school_id'));
 			return $this->response->setJSON(array("success" => lang("app.staffDeleted")));
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
@@ -10113,8 +10141,7 @@ public function getApplicationDocs($id = null)
 		$this->_preset();
 		$StaffModel = new StaffModel();
 		$data = $this->data;
-		$key = $isPost == 0 ? "staffs.id" : "p.id";
-		$staffs = $StaffModel->get_staff($key . '=' . $id);
+		$staffs = $StaffModel->get_staff_for_card_list($id, $isPost);
 		if (count($staffs) < 1) {
 			echo "<center><h3>" . lang("app.noStaffsFound") . "</h3></center><script>$(function() {
 		  $('#class_text').text('');

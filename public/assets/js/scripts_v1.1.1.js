@@ -101,7 +101,7 @@ $(function () {
                             }
                             return;
                         }
-                        if (btn.is("[data-stay-course-page='1']") || target == "stay-course-page") {
+                        if (target == "stay-course-page") {
                             toastada.success(data.success);
                             var $modal = form.closest(".modal");
                             if ($modal.length) {
@@ -159,7 +159,18 @@ $(function () {
         trigger.removeClass("fa-sync").addClass("fa-spinner").addClass("animated");
         $.get(href, "", function (data) {
             trigger.removeClass("animated").removeClass("fa-spinner").addClass("fa-sync");
-            $("#" + target).html(data);
+            var $sel = $("#" + target);
+            var $modal = $sel.closest(".modal");
+            if ($sel.is("select") && $sel.hasClass("select2-hidden-accessible")) {
+                $sel.select2("destroy");
+            }
+            $sel.html(data);
+            if ($sel.is("select") && $sel.hasClass("select2")) {
+                $sel.select2({
+                    width: "100%",
+                    dropdownParent: $modal.length ? $modal : $(document.body)
+                });
+            }
         }).fail(function () {
             //unknown error
             toastada.error("System server error, please try again later");
@@ -213,6 +224,67 @@ $(function () {
             //unknown error
             toastada.error("System server error, please try again later");
         });
+    });
+
+    window.reloadPostSelect = function ($select, $modal, selectedId) {
+        if (!$select || !$select.length) {
+            return;
+        }
+        $.get((window.base_url || "") + "get_posts", function (html) {
+            if ($select.hasClass("select2-hidden-accessible")) {
+                $select.select2("destroy");
+            }
+            $select.html(html);
+            if (selectedId) {
+                $select.val(String(selectedId));
+            }
+            $select.select2({
+                width: "100%",
+                dropdownParent: $modal && $modal.length ? $modal : $(document.body)
+            });
+        }).fail(function () {
+            toastada.error("Could not load posts");
+        });
+    };
+
+    $(document).on("click", ".btn-create-post", function (e) {
+        e.preventDefault();
+        var $btn = $(this);
+        var $modal = $btn.closest(".modal");
+        var $input = $modal.find(".new-post-title");
+        var title = $.trim($input.val() || "");
+        if (title.length < 2) {
+            toastada.error("Enter a new post title");
+            $input.focus();
+            return;
+        }
+        $btn.prop("disabled", true);
+        $.post((window.base_url || "") + "create_post", { title: title }, function (data) {
+            $btn.prop("disabled", false);
+            if (!data || typeof data !== "object") {
+                toastada.error("Fatal error occurred, if the problem persist please contact system admin");
+                return;
+            }
+            if (data.error) {
+                toastada.error(data.error);
+                return;
+            }
+            if (data.success) {
+                toastada.success(data.success);
+                $input.val("");
+                window.reloadPostSelect($modal.find("select[name='privilege']"), $modal, data.id);
+            }
+        }, "json").fail(function () {
+            $btn.prop("disabled", false);
+            toastada.error("System server error, please try again later");
+        });
+    });
+
+    $(document).on("keydown", ".new-post-title", function (e) {
+        if (e.key === "Enter" || e.keyCode === 13) {
+            e.preventDefault();
+            $(this).closest(".modal").find(".btn-create-post").click();
+        }
     });
 
     //date mask

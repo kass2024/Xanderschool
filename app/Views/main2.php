@@ -1919,12 +1919,23 @@
 							<div class="form-group">
 								<label><?= lang("app.privilege"); ?></label>
 								<a href="javascript:void" class="pull-right" id="refrs_privilege" data-toggle="refresh"
-								   data-href="<?= base_url('get_posts'); ?>" data-target="privilege"
+								   data-href="<?= base_url('get_posts'); ?>" data-target="change_post_privilege"
 								   style="margin: 0 10px"><i class="fa fa-sync faa-spin"></i></a>
 								<select class="form-control select2" style="width: 100%" name="privilege"
-										id="privilege" required>
+										id="change_post_privilege" required>
 									<option selected disabled><?= lang("app.selectPrivilege"); ?></option>
 								</select>
+							</div>
+							<div class="form-group mb-0">
+								<label><?= lang("app.createNewPost"); ?></label>
+								<div class="input-group">
+									<input type="text" class="form-control new-post-title" maxlength="80"
+										   placeholder="<?= lang("app.newPostPlaceholder"); ?>">
+									<div class="input-group-append">
+										<button type="button" class="btn btn-outline-primary btn-create-post"><?= lang("app.add"); ?></button>
+									</div>
+								</div>
+								<small class="form-text text-muted">Create the post, then click Save to assign it.</small>
 							</div>
 						</div>
 					</div>
@@ -3588,7 +3599,7 @@ if ($page == "pendingRegistration") {
 <script type="application/javascript" src="<?= base_url('assets/js/parsley-extra-validators.js'); ?>"></script>
 <script type="application/javascript" src="<?= base_url('assets/plugins/select2/js/select2.min.js'); ?>"></script>
 <script src="<?= base_url('assets/js/inputmask.bundle.min.js'); ?>"></script>
-<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js?v=stay-assign-1"></script>
+<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js?v=create-post-1"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.js"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.min.js"></script>
 <script src="<?= base_url(); ?>assets/js/jquery.flot.js"></script>
@@ -3653,7 +3664,11 @@ if ($page == "pendingRegistration") {
 		}
 		?>
 		$("#mdlStaff").on("shown.bs.modal", function () {
-			$(this).find('[data-toggle="refresh"]').click();
+			if (typeof window.reloadPostSelect === "function") {
+				window.reloadPostSelect($("#staff_privilege"), $("#mdlStaff"));
+			} else {
+				$(this).find('[data-toggle="refresh"]').click();
+			}
 		});
 		$('#mdlStaff a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
 			var target = $(e.target).attr('href');

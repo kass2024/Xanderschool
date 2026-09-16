@@ -127,23 +127,54 @@ class PostsModel extends Model
 	/** Create a regular operational post by title if it is missing. */
 	private function ensurePostByTitle(string $title): void
 	{
-		$title = trim($title);
-		if ($title === '') {
-			return;
-		}
 		try {
-			$db = \Config\Database::connect();
-			$existing = $db->table('posts')->where('title', $title)->get(1)->getRowArray();
-			if ($existing) {
-				if ((int) ($existing['status'] ?? 0) !== 1) {
-					$db->table('posts')->where('id', $existing['id'])->update(['status' => 1]);
-				}
-				return;
-			}
-			$db->table('posts')->insert(['title' => $title, 'status' => 1]);
+			$this->createByTitle($title);
 		} catch (\Throwable $e) {
 			// ignore duplicate title races
 		}
+	}
+
+	/**
+	 * Create a staff post (or return the existing one with the same title).
+	 *
+	 * @return array{id:int,title:string,created:bool}
+	 */
+	public function createByTitle(string $title): array
+	{
+		$title = trim(preg_replace('/\s+/', ' ', $title));
+		if ($title === '' || mb_strlen($title) < 2) {
+			throw new \InvalidArgumentException('Enter a post title.');
+		}
+		if (mb_strlen($title) > 80) {
+			throw new \InvalidArgumentException('Post title is too long.');
+		}
+		$db = \Config\Database::connect();
+		$existing = $db->query(
+			'SELECT id, title, status FROM posts WHERE LOWER(title) = ? LIMIT 1',
+			[strtolower($title)]
+		)->getRowArray();
+		if ($existing) {
+			$id = (int) ($existing['id'] ?? 0);
+			if ($id > 0 && (int) ($existing['status'] ?? 0) !== 1) {
+				$db->table('posts')->where('id', $id)->update(['status' => 1]);
+			}
+			return [
+				'id' => $id,
+				'title' => (string) ($existing['title'] ?? $title),
+				'created' => false,
+			];
+		}
+		$this->insert(['title' => $title, 'status' => 1]);
+		$id = (int) $this->getInsertID();
+		if ($id < 1) {
+			$row = $db->table('posts')->where('title', $title)->get(1)->getRowArray();
+			$id = (int) ($row['id'] ?? 0);
+		}
+		if ($id < 1) {
+			throw new \RuntimeException('Could not create the post.');
+		}
+
+		return ['id' => $id, 'title' => $title, 'created' => true];
 	}
 
 }
