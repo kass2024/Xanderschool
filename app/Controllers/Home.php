@@ -2081,6 +2081,7 @@ public function testEmail()
 		$data['classes'] = array_values(array_filter($allClasses, function ($class) {
 			return !$this->classLooksLikeHoliday($class);
 		}));
+		$data['card_kpis'] = $this->studentCardSchoolKpis();
 		$data['activeTerm'] = $SchoolModel->select("at.term,at.id")
 				->join("active_term at", "at.id=schools.active_term")
 				->where("at.school_id", $this->session->get("soma_school_id"))
@@ -2245,6 +2246,103 @@ public function testEmail()
 		}
 
 		return $filterParts;
+	}
+
+	/**
+	 * Whole-school card-generation snapshot (active year, holiday classes excluded).
+	 * Photo counts use the stored filename heuristic so the page stays fast.
+	 *
+	 * @return array<string,int>
+	 */
+	private function studentCardSchoolKpis(): array
+	{
+		$empty = [
+			'total' => 0,
+			'with_photo' => 0,
+			'without_photo' => 0,
+			'with_uid' => 0,
+			'without_uid' => 0,
+			'print_ready' => 0,
+			'day' => 0,
+			'boarding' => 0,
+			'photo_pct' => 0,
+			'uid_pct' => 0,
+		];
+		$schoolId = (int) $this->session->get('soma_school_id');
+		if ($schoolId < 1) {
+			return $empty;
+		}
+		$year = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
+		$studentModel = new StudentModel();
+		$builder = $studentModel
+			->select('students.id, students.photo, students.card, students.studying_mode')
+			->join('class_records cr', 'cr.student = students.id', 'inner')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('students.school_id', $schoolId)
+			->where('students.status', 1)
+			->groupStart()
+				->notLike('c.title', 'holiday')
+				->notLike('l.title', 'holiday')
+				->notLike('d.title', 'holiday')
+			->groupEnd();
+		if ($year > 0) {
+			$builder->where('cr.year', (string) $year);
+		}
+		$rows = $builder->groupBy('students.id')->get()->getResultArray();
+		$total = count($rows);
+		$withPhoto = 0;
+		$withUid = 0;
+		$day = 0;
+		$boarding = 0;
+		foreach ($rows as $row) {
+			$hasPhoto = $this->studentLooksLikeHasPhoto($row['photo'] ?? '');
+			$hasUid = trim((string) ($row['card'] ?? '')) !== '';
+			if ($hasPhoto) {
+				$withPhoto++;
+			}
+			if ($hasUid) {
+				$withUid++;
+			}
+			if ((string) ($row['studying_mode'] ?? '0') === '1') {
+				$day++;
+			} else {
+				$boarding++;
+			}
+		}
+		$pct = static function (int $part, int $all): int {
+			return $all > 0 ? (int) round(100 * $part / $all) : 0;
+		};
+
+		return [
+			'total' => $total,
+			'with_photo' => $withPhoto,
+			'without_photo' => max(0, $total - $withPhoto),
+			'with_uid' => $withUid,
+			'without_uid' => max(0, $total - $withUid),
+			'print_ready' => $withPhoto,
+			'day' => $day,
+			'boarding' => $boarding,
+			'photo_pct' => $pct($withPhoto, $total),
+			'uid_pct' => $pct($withUid, $total),
+		];
+	}
+
+	private function studentLooksLikeHasPhoto(?string $photo): bool
+	{
+		$stored = trim((string) $photo);
+		if ($stored === '' || strlen($stored) < 3) {
+			return false;
+		}
+		$base = basename(str_replace(["\0", '\\'], '', $stored));
+		if ($base === '' || $base === '.' || $base === '..') {
+			return false;
+		}
+		if (preg_match('/^face_staff_\d+\.(jpe?g|png)$/i', $base)) {
+			return false;
+		}
+		return true;
 	}
 
 	public function staff_cards()
@@ -10027,6 +10125,14 @@ public function getApplicationDocs($id = null)
 				$students = array_values(array_filter($students, static function ($student) use ($wantCard) {
 					$has = trim((string) ($student['card'] ?? '')) !== '';
 					return $has === $wantCard;
+				}));
+			}
+			$hasPhotoFilter = (string) ($this->request->getGet('has_photo') ?? '');
+			if ($hasPhotoFilter === '0' || $hasPhotoFilter === '1') {
+				$wantPhoto = $hasPhotoFilter === '1';
+				$students = array_values(array_filter($students, static function ($student) use ($wantPhoto) {
+					$has = resolve_profile_photo($student['photo'] ?? '') !== null;
+					return $has === $wantPhoto;
 				}));
 			}
 			$students = array_values(array_filter($students, function ($student) {
