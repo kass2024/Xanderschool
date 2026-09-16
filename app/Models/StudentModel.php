@@ -325,13 +325,13 @@ class StudentModel extends Model
 		return $data->getResultArray();
 	}
 
-	public function get_student_simple2($val = null, $school_id = 0, $single = false, $academicYear = 0)
+	public function get_student_simple2($val = null, $school_id = 0, $single = false, $academicYear = 0, $limit = 200)
 	{
 		$school_id    = $school_id == 0 ? $_SESSION['soma_school_id'] : $school_id;
 		$academicYear = $academicYear == 0 ? $_SESSION['soma_academics_year'] : $academicYear;
 
 		$builder = $this->select('students.id,card,updateVersion,studying_mode,regno,students.status,concat(students.fname," ",students.lname) as name
-		,concat(l.title," ",d.code," ",c.title) as class,d.title as dept_title,l.title as level_title,f.title as faculty_title,lf.title as level_faculty_title,photo,father,mother,dob,ft_phone,mt_phone,gd_phone,students.sex,
+		,concat(l.title," ",d.code," ",c.title) as class,c.title as title,d.title as dept_title,d.code as dept_code,l.title as level_title,f.title as faculty_title,lf.title as level_faculty_title,photo,father,mother,dob,ft_phone,mt_phone,gd_phone,students.sex,
 		UNIX_TIMESTAMP(students.updated_at) as updated_at,c.id as class_id,cr.id as record_id,COALESCE(students.ft_phone, students.mt_phone, gd_phone, "") AS phone')
 			->join('class_records cr', 'cr.student=students.id')
 			->join('classes c', 'c.id=cr.class')
@@ -348,7 +348,11 @@ class StudentModel extends Model
 			$builder->Where($val);
 		}
 		$builder->orderBy('students.updated_at','ASC');
-		$builder->limit(200);
+		$limit = (int) $limit;
+		if ($limit > 0)
+		{
+			$builder->limit($limit);
+		}
 		$data = $builder->get();
 		if ($single)
 		{

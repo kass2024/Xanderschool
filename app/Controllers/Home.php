@@ -336,7 +336,17 @@ public function testEmail()
 
 	private function classLooksLikeHoliday(array $row): bool
 	{
-		$hay = strtolower(trim(($row['title'] ?? '') . ' ' . ($row['level_name'] ?? '') . ' ' . ($row['level_title'] ?? '')));
+		$hay = strtolower(trim(implode(' ', [
+			$row['title'] ?? '',
+			$row['class'] ?? '',
+			$row['class_stream'] ?? '',
+			$row['level_name'] ?? '',
+			$row['level_title'] ?? '',
+			$row['dept_title'] ?? '',
+			$row['department_name'] ?? '',
+			$row['code'] ?? '',
+			$row['dept_code'] ?? '',
+		])));
 		return strpos($hay, 'holiday') !== false;
 	}
 
@@ -1463,14 +1473,8 @@ public function testEmail()
 		$data['card_template'] = $cardTemplate;
 
 		$ids = implode(",", $safeIds);
-		$students = $stMdl->get_student_simple2("students.id in (" . $ids . ")");
-		// Wisdom pass PNGs need a circular photo; other templates keep prior behavior via smart view.
-		$printable = [];
-		foreach ((array) $students as $student) {
-			if (!$useWisdomPass || resolve_profile_photo($student['photo'] ?? '') !== null) {
-				$printable[] = $student;
-			}
-		}
+		$students = $stMdl->get_student_simple2("students.id in (" . $ids . ")", 0, false, 0, 0);
+		$printable = $this->studentCardsWithoutHoliday((array) $students, $useWisdomPass);
 		if (count($printable) === 0) {
 			return redirect()->to("student-cards");
 		}
@@ -1565,6 +1569,34 @@ public function testEmail()
 		$safe = $safe !== '' ? $safe : 'students';
 
 		return $safe . ' students_card.pdf';
+	}
+
+	/**
+	 * Never print holiday-class cards. Keep one card per student on the
+	 * matching non-holiday class, using the same student photo.
+	 *
+	 * @param list<array<string,mixed>> $students
+	 * @return list<array<string,mixed>>
+	 */
+	private function studentCardsWithoutHoliday(array $students, bool $requirePhoto): array
+	{
+		$byId = [];
+		foreach ($students as $student) {
+			if (!is_array($student)) {
+				continue;
+			}
+			$sid = (int) ($student['id'] ?? 0);
+			if ($sid < 1 || $this->classLooksLikeHoliday($student)) {
+				continue;
+			}
+			if ($requirePhoto && resolve_profile_photo($student['photo'] ?? '') === null) {
+				continue;
+			}
+			if (!isset($byId[$sid])) {
+				$byId[$sid] = $student;
+			}
+		}
+		return array_values($byId);
 	}
 
 	/**
