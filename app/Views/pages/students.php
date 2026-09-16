@@ -243,6 +243,106 @@
 		text-align: center;
 	}
 }
+.st-kpi-wrap {
+	margin: 12px 16px 4px;
+	padding: 14px 16px 12px;
+	background: linear-gradient(180deg, #f8fbff 0%, #ffffff 70%);
+	border: 1px solid #e2eaf3;
+	border-radius: 14px;
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+.st-kpi-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 6px 16px;
+	margin-bottom: 12px;
+}
+.st-kpi-head strong {
+	font-size: 15px;
+	color: #0f172a;
+	letter-spacing: .01em;
+}
+.st-kpi-grid {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 10px;
+}
+.st-kpi-tile {
+	display: block;
+	text-decoration: none !important;
+	color: inherit;
+	border: 1px solid #e8eef6;
+	border-radius: 12px;
+	padding: 12px 12px 10px;
+	background: #fff;
+	min-height: 92px;
+	transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+	box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+}
+.st-kpi-tile:hover,
+.st-kpi-tile.is-active {
+	transform: translateY(-1px);
+	box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+	text-decoration: none;
+}
+.st-kpi-tile .kpi-ico {
+	width: 28px;
+	height: 28px;
+	border-radius: 8px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 13px;
+	margin-bottom: 8px;
+}
+.st-kpi-tile .kpi-label {
+	font-size: 11px;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: .05em;
+	color: #64748b;
+}
+.st-kpi-tile .kpi-value {
+	font-size: 26px;
+	font-weight: 800;
+	line-height: 1.15;
+	color: #0f172a;
+	margin-top: 2px;
+}
+.st-kpi-tile .kpi-sub {
+	font-size: 11px;
+	color: #94a3b8;
+	margin-top: 2px;
+}
+.st-kpi-tile.is-total { border-top: 3px solid #334155; }
+.st-kpi-tile.is-nursery { border-top: 3px solid #0d9488; }
+.st-kpi-tile.is-primary { border-top: 3px solid #2563eb; }
+.st-kpi-tile.is-o_level { border-top: 3px solid #4f46e5; }
+.st-kpi-tile.is-a_level { border-top: 3px solid #1e3a8a; }
+.st-kpi-tile.is-rtb { border-top: 3px solid #d97706; }
+.st-kpi-tile.is-anp { border-top: 3px solid #16a34a; }
+.st-kpi-tile.is-total .kpi-ico { background: #e2e8f0; color: #334155; }
+.st-kpi-tile.is-nursery .kpi-ico { background: #ccfbf1; color: #0f766e; }
+.st-kpi-tile.is-primary .kpi-ico { background: #dbeafe; color: #1d4ed8; }
+.st-kpi-tile.is-o_level .kpi-ico { background: #e0e7ff; color: #4338ca; }
+.st-kpi-tile.is-a_level .kpi-ico { background: #dbe4ff; color: #1e3a8a; }
+.st-kpi-tile.is-rtb .kpi-ico { background: #fef3c7; color: #b45309; }
+.st-kpi-tile.is-anp .kpi-ico { background: #dcfce7; color: #15803d; }
+.st-kpi-tile.is-active {
+	border-color: #2563eb;
+	box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+}
+@media (max-width: 1199.98px) {
+	.st-kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 767.98px) {
+	.st-kpi-wrap { margin: 10px 10px 0; padding: 12px; }
+	.st-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.st-kpi-tile { min-height: 84px; padding: 10px; }
+	.st-kpi-tile .kpi-value { font-size: 22px; }
+}
 .btn-move-student { white-space:nowrap; }
 #moveStudentClassModal .move-note {
 	font-size: 13px;
@@ -450,6 +550,54 @@
 										</a>
 									</div>
 								</div>
+							</div>
+						</div>
+						<?php
+						$stKpis = (isset($student_kpis) && is_array($student_kpis)) ? $student_kpis : [];
+						$stKpiVal = static function (string $key) use ($stKpis): int {
+							return (int) ($stKpis[$key] ?? 0);
+						};
+						$stKpiTotal = $stKpiVal('total');
+						$stKpiGroup = (string) ($student_kpi_group ?? '');
+						$stKpiYear = (int) ($student_kpi_year ?? 0);
+						$stKpiYearQs = $stKpiYear > 0 ? $stKpiYear : (string) ($academic_year ?? '');
+						$stKpiPct = static function (int $n) use ($stKpiTotal): string {
+							if ($stKpiTotal < 1) {
+								return '0%';
+							}
+							return round($n * 100 / $stKpiTotal) . '%';
+						};
+						$stKpiTiles = [
+							['key' => 'total', 'label' => 'Total', 'icon' => 'fa fa-users', 'href' => false],
+							['key' => 'nursery', 'label' => 'Nursery', 'icon' => 'fa fa-child', 'href' => true],
+							['key' => 'primary', 'label' => 'Primary', 'icon' => 'fa fa-book', 'href' => true],
+							['key' => 'o_level', 'label' => 'O Level', 'icon' => 'fa fa-graduation-cap', 'href' => true],
+							['key' => 'a_level', 'label' => 'A Level', 'icon' => 'fa fa-university', 'href' => true],
+							['key' => 'rtb', 'label' => 'RTB', 'icon' => 'fa fa-cogs', 'href' => true],
+							['key' => 'anp', 'label' => 'ANP', 'icon' => 'fa fa-heartbeat', 'href' => true],
+						];
+						$stKpiBase = base_url('students') . '?y=' . urlencode((string) $stKpiYearQs);
+						?>
+						<div class="st-kpi-wrap">
+							<div class="st-kpi-head">
+								<strong>Student dashboard</strong>
+								<small class="text-muted">Active students in the selected academic year · tap a group to view</small>
+							</div>
+							<div class="st-kpi-grid">
+								<?php foreach ($stKpiTiles as $tile):
+									$n = $stKpiVal($tile['key']);
+									$active = ($tile['key'] === 'total' && $stKpiGroup === '') || ($stKpiGroup === $tile['key']);
+									$href = !empty($tile['href'])
+										? $stKpiBase . '&g=' . urlencode($tile['key'])
+										: $stKpiBase;
+								?>
+								<a href="<?= esc($href); ?>" class="st-kpi-tile is-<?= esc($tile['key']); ?><?= $active ? ' is-active' : ''; ?>">
+									<div class="kpi-ico"><i class="<?= esc($tile['icon']); ?>"></i></div>
+									<div class="kpi-label"><?= esc($tile['label']); ?></div>
+									<div class="kpi-value"><?= number_format($n); ?></div>
+									<div class="kpi-sub"><?= $tile['key'] === 'total' ? 'All levels' : $stKpiPct($n); ?></div>
+								</a>
+								<?php endforeach; ?>
 							</div>
 						</div>
 						<div class="col-sm-12">

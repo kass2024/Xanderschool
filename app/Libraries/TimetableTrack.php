@@ -111,6 +111,58 @@ class TimetableTrack
 		return $row ? self::resolveFromRow($row) : self::ALL;
 	}
 
+	/**
+	 * Student-list KPI buckets. ANP is counted on its own (not as A Level).
+	 *
+	 * @param array<string,mixed> $row
+	 */
+	public static function enrollmentKpiKey(array $row): string
+	{
+		$dept = strtolower(trim((string) ($row['dept_code'] ?? '')));
+		$deptTitle = strtolower(trim((string) ($row['dept_title'] ?? $row['department_name'] ?? '')));
+		$facAbbrev = strtolower(trim((string) ($row['faculty_abbrev'] ?? $row['faculty_code'] ?? '')));
+		$facTitle = strtolower(trim((string) ($row['faculty_title'] ?? '')));
+		$facType = (int) ($row['faculty_type'] ?? $row['type'] ?? 0);
+		$classTitle = strtolower(trim((string) ($row['class_title'] ?? $row['title'] ?? '')));
+		$hay = $dept . ' ' . $deptTitle . ' ' . $facAbbrev . ' ' . $facTitle . ' ' . $classTitle;
+		if ($facType === 3 || $dept === 'anp' || self::matches($hay, ['anp', 'nursing'])) {
+			return 'anp';
+		}
+		$track = self::resolveFromRow($row);
+		if ($track === self::SPECIAL) {
+			return 'anp';
+		}
+		if ($track === self::NURSERY) {
+			return 'nursery';
+		}
+		if ($track === self::PRIMARY) {
+			return 'primary';
+		}
+		if ($track === self::O_LEVEL) {
+			return 'o_level';
+		}
+		if ($track === self::A_LEVEL) {
+			return 'a_level';
+		}
+		if ($track === self::RTB) {
+			return 'rtb';
+		}
+		return 'other';
+	}
+
+	/** @return array<string,string> */
+	public static function enrollmentKpiLabels(): array
+	{
+		return [
+			'nursery' => 'Nursery',
+			'primary' => 'Primary',
+			'o_level' => 'O Level',
+			'a_level' => 'A Level',
+			'rtb' => 'RTB',
+			'anp' => 'ANP',
+		];
+	}
+
 	/** Nursery / primary / high school (O/A/RTB/Special). Shared "all" bells are not a class level. */
 	public static function generationPhaseKey(string $track): string
 	{

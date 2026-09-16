@@ -7942,6 +7942,44 @@ public function attendanceCard()
 		$data['active_year_id'] = $activeYearId;
 		$data['active_year_title'] = (string) ($this->data['academic_year_title'] ?? '');
 		$data['active_term_label'] = (string) ($this->data['term'] ?? '');
+		$group = strtolower(trim((string) $this->request->getGet('g')));
+		$groupKeys = array_keys(\App\Libraries\TimetableTrack::enrollmentKpiLabels());
+		if (!in_array($group, $groupKeys, true)) {
+			$group = '';
+		}
+		$kpiYear = $yearFilter > 0 ? $yearFilter : $activeYearId;
+		$enrollMeta = $this->studentEnrollmentMeta($school_id, $kpiYear);
+		$data['student_kpis'] = $this->buildStudentLevelKpis($enrollMeta);
+		$data['student_kpi_group'] = $group;
+		$data['student_kpi_year'] = $kpiYear;
+		if ($classId < 1 && $group !== '') {
+			$idsInGroup = [];
+			foreach ($enrollMeta as $metaRow) {
+				$sid = (int) ($metaRow['student_id'] ?? 0);
+				if ($sid < 1 || isset($idsInGroup[$sid])) {
+					continue;
+				}
+				if (\App\Libraries\TimetableTrack::enrollmentKpiKey($metaRow) === $group) {
+					$idsInGroup[$sid] = true;
+				}
+			}
+			if ($idsInGroup !== []) {
+				$idList = implode(',', array_map('intval', array_keys($idsInGroup)));
+				$list = $studentMdl->get_student_simple(
+					"students.id IN ({$idList}) and cr.year={$kpiYear} and cr.status = 1 and students.status IN (1,2)",
+					null
+				);
+				$unique = [];
+				foreach ($list as $row) {
+					$sid = (int) ($row['id'] ?? 0);
+					$st = (int) ($row['status'] ?? 0);
+					if ($sid > 0 && ($st === 1 || $st === 2)) {
+						$unique[$sid] = $row;
+					}
+				}
+				$data['students'] = array_values($unique);
+			}
+		}
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
@@ -7956,6 +7994,76 @@ public function attendanceCard()
 
 		$data['content'] = view("pages/students", $data);
 		return view('main', $data);
+	}
+
+	/**
+	 * Active enrollments for KPI grouping (unique later by student id).
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function studentEnrollmentMeta(int $schoolId, int $yearId): array
+	{
+		if ($schoolId < 1 || $yearId < 1) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		$rows = $db->table('class_records cr')
+			->select('students.id AS student_id, l.title AS level_name, l.faculty_id AS level_faculty_id,
+				d.code AS dept_code, d.title AS dept_title, d.faculty_id AS dept_faculty_id,
+				f.type AS faculty_type, f.abbrev AS faculty_abbrev, f.title AS faculty_title,
+				c.title AS class_title')
+			->join('students', 'students.id = cr.student')
+			->join('classes c', 'c.id = cr.class')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
+			->where('students.school_id', $schoolId)
+			->where('cr.year', $yearId)
+			->where('cr.status', 1)
+			->whereIn('students.status', [1, 2])
+			->get()->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$hay = strtolower(trim(($row['level_name'] ?? '') . ' ' . ($row['class_title'] ?? '') . ' ' . ($row['dept_code'] ?? '')));
+			if (strpos($hay, 'holiday') !== false) {
+				continue;
+			}
+			$out[] = $row;
+		}
+		return $out;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $rows
+	 * @return array<string,int>
+	 */
+	private function buildStudentLevelKpis(array $rows): array
+	{
+		$counts = [
+			'total' => 0,
+			'nursery' => 0,
+			'primary' => 0,
+			'o_level' => 0,
+			'a_level' => 0,
+			'rtb' => 0,
+			'anp' => 0,
+			'other' => 0,
+		];
+		$seen = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['student_id'] ?? 0);
+			if ($sid < 1 || isset($seen[$sid])) {
+				continue;
+			}
+			$seen[$sid] = true;
+			$counts['total']++;
+			$key = \App\Libraries\TimetableTrack::enrollmentKpiKey($row);
+			if (!isset($counts[$key])) {
+				$key = 'other';
+			}
+			$counts[$key]++;
+		}
+		return $counts;
 	}
 
 	public function students_live_search()
