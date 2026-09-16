@@ -32,11 +32,13 @@ class SmartStudentSheetsExporter
 	/** @param array<string,mixed> $class */
 	public static function classLabel(array $class): string
 	{
-		$level = trim((string) ($class['level_name'] ?? $class['level_title'] ?? ''));
-		$dept = trim((string) ($class['dept_code'] ?? $class['code'] ?? ''));
 		$title = trim((string) ($class['title'] ?? ''));
-		$label = trim($level . ' ' . $dept . ' ' . $title);
-		return $label !== '' ? $label : 'Class';
+		if (preg_match('/^-+$/', $title)) {
+			$title = '';
+		}
+		$class['title'] = $title;
+
+		return TimetableClassLabel::fromRow($class);
 	}
 
 	public static function exportFilename(string $schoolName, string $yearTitle = ''): string
@@ -321,7 +323,7 @@ class SmartStudentSheetsExporter
 	/**
 	 * @param array<string,mixed> $school
 	 */
-	private static function writeSchoolHeader(Worksheet $sheet, array $school): int
+	public static function writeSchoolHeader(Worksheet $sheet, array $school): int
 	{
 		$headerSpan = self::HEADER_LAST_COL;
 		$name = trim((string) ($school['name'] ?? 'School'));
@@ -419,7 +421,7 @@ class SmartStudentSheetsExporter
 	/**
 	 * @param array<string,mixed> $school
 	 */
-	private static function placeLogo(Worksheet $sheet, array $school): void
+	public static function placeLogo(Worksheet $sheet, array $school): void
 	{
 		$logoFile = trim((string) ($school['logo'] ?? ''));
 		if ($logoFile === '') {

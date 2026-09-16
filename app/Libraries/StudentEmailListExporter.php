@@ -6,6 +6,9 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Font;
+use PhpOffice\PhpSpreadsheet\Style\Protection;
+use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
@@ -17,6 +20,8 @@ class StudentEmailListExporter
 	private const BRAND_LIGHT = 'E8F0FA';
 	private const ALT_ROW = 'F7FAFD';
 	private const LAST_COL = 'F';
+	private const FONT = 'Calibri';
+	private const WEBMAIL = 'https://wisdomschoolrwanda.com:2096';
 
 	/** @return list<string> */
 	public static function columnHeaders(): array
@@ -47,6 +52,9 @@ class StudentEmailListExporter
 	public static function build(array $school, array $sheets, string $yearTitle = ''): Spreadsheet
 	{
 		$spreadsheet = new Spreadsheet();
+		$spreadsheet->getDefaultStyle()->getFont()->setName(self::FONT)->setSize(11);
+		$spreadsheet->getDefaultStyle()->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+
 		$all = [];
 		foreach ($sheets as $entry) {
 			$class = $entry['class'] ?? [];
@@ -65,6 +73,9 @@ class StudentEmailListExporter
 		foreach ($sheets as $entry) {
 			$class = $entry['class'] ?? [];
 			$students = $entry['students'] ?? [];
+			if ($students === []) {
+				continue;
+			}
 			$className = SmartStudentSheetsExporter::classLabel($class);
 			$title = SmartStudentSheetsExporter::sheetTitle($className, $used);
 			$perClass = [];
@@ -93,51 +104,86 @@ class StudentEmailListExporter
 		string $yearTitle
 	): void {
 		$lastCol = self::LAST_COL;
-		$name = trim((string) ($school['name'] ?? 'School'));
-		$sheet->mergeCells("A1:{$lastCol}1");
-		$sheet->setCellValue('A1', strtoupper($name));
-		$sheet->getStyle("A1:{$lastCol}1")->applyFromArray([
-			'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => self::BRAND]],
-			'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-		]);
-		$sheet->mergeCells("A2:{$lastCol}2");
-		$sheet->setCellValue('A2', 'STUDENT EMAIL LIST — ' . strtoupper($title));
-		$sheet->getStyle("A2:{$lastCol}2")->applyFromArray([
-			'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => self::BRAND]],
-			'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-		]);
-		$sheet->mergeCells("A3:{$lastCol}3");
-		$sheet->setCellValue('A3', implode('  |  ', array_filter([
-			$yearTitle !== '' ? 'Academic Year: ' . $yearTitle : null,
-			'Students: ' . count($students),
-			'Webmail: https://wisdomschoolrwanda.com:2096',
-			'Exported: ' . date('d M Y H:i'),
-		])));
-		$sheet->getStyle("A3:{$lastCol}3")->applyFromArray([
-			'font' => ['size' => 10, 'color' => ['rgb' => '334155']],
-			'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::BRAND_LIGHT]],
-		]);
+		$headerEnd = SmartStudentSheetsExporter::writeSchoolHeader($sheet, $school);
 
-		$headerRow = 5;
-		$col = 1;
-		foreach (self::columnHeaders() as $header) {
-			$sheet->setCellValueByColumnAndRow($col, $headerRow, $header);
-			$col++;
-		}
-		$sheet->getStyle("A{$headerRow}:{$lastCol}{$headerRow}")->applyFromArray([
-			'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 11],
-			'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::BRAND]],
+		$titleRow = $headerEnd + 2;
+		$infoRow = $titleRow + 1;
+		$webRow = $infoRow + 1;
+		$headerRow = $webRow + 2;
+		$dataStart = $headerRow + 1;
+
+		$sheet->mergeCells("A{$titleRow}:{$lastCol}{$titleRow}");
+		$sheet->setCellValue("A{$titleRow}", 'STUDENT EMAIL LIST  ·  ' . strtoupper($title));
+		$sheet->getStyle("A{$titleRow}:{$lastCol}{$titleRow}")->applyFromArray([
+			'font' => ['name' => self::FONT, 'bold' => true, 'size' => 14, 'color' => ['rgb' => self::BRAND]],
 			'alignment' => [
 				'horizontal' => Alignment::HORIZONTAL_CENTER,
 				'vertical' => Alignment::VERTICAL_CENTER,
 			],
 		]);
-		$sheet->freezePane('A6');
+		$sheet->getRowDimension($titleRow)->setRowHeight(26);
 
-		$row = 6;
+		$sheet->mergeCells("A{$infoRow}:{$lastCol}{$infoRow}");
+		$sheet->setCellValue("A{$infoRow}", implode('   |   ', array_filter([
+			$yearTitle !== '' ? 'Academic Year: ' . $yearTitle : null,
+			'Students: ' . count($students),
+			'Exported: ' . date('d M Y H:i'),
+		])));
+		$sheet->getStyle("A{$infoRow}:{$lastCol}{$infoRow}")->applyFromArray([
+			'font' => ['name' => self::FONT, 'size' => 10, 'color' => ['rgb' => '334155']],
+			'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::BRAND_LIGHT]],
+			'alignment' => [
+				'horizontal' => Alignment::HORIZONTAL_LEFT,
+				'vertical' => Alignment::VERTICAL_CENTER,
+				'indent' => 1,
+			],
+		]);
+		$sheet->getRowDimension($infoRow)->setRowHeight(22);
+
+		$sheet->mergeCells("A{$webRow}:{$lastCol}{$webRow}");
+		$sheet->setCellValue("A{$webRow}", 'Webmail: ' . self::WEBMAIL);
+		$sheet->getCell("A{$webRow}")->getHyperlink()->setUrl(self::WEBMAIL);
+		$sheet->getStyle("A{$webRow}:{$lastCol}{$webRow}")->applyFromArray([
+			'font' => [
+				'name' => self::FONT,
+				'bold' => true,
+				'size' => 11,
+				'color' => ['rgb' => '0563C1'],
+				'underline' => Font::UNDERLINE_SINGLE,
+			],
+			'alignment' => [
+				'horizontal' => Alignment::HORIZONTAL_LEFT,
+				'vertical' => Alignment::VERTICAL_CENTER,
+				'indent' => 1,
+			],
+		]);
+		$sheet->getRowDimension($webRow)->setRowHeight(22);
+
+		$col = 1;
+		$maxLens = [];
+		foreach (self::columnHeaders() as $header) {
+			$sheet->setCellValueByColumnAndRow($col, $headerRow, $header);
+			$maxLens[$col] = self::textLen($header);
+			$col++;
+		}
+		$sheet->getStyle("A{$headerRow}:{$lastCol}{$headerRow}")->applyFromArray([
+			'font' => ['name' => self::FONT, 'bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 11],
+			'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::BRAND]],
+			'alignment' => [
+				'horizontal' => Alignment::HORIZONTAL_CENTER,
+				'vertical' => Alignment::VERTICAL_CENTER,
+			],
+			'borders' => [
+				'allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']],
+			],
+		]);
+		$sheet->getRowDimension($headerRow)->setRowHeight(24);
+		$sheet->freezePane('A' . $dataStart);
+
+		$row = $dataStart;
 		$num = 1;
 		foreach ($students as $student) {
-			$names = trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? ''));
+			$names = preg_replace('/\s+/', ' ', trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? ''))) ?? '';
 			$values = [
 				$num,
 				(string) ($student['_class_label'] ?? ''),
@@ -149,8 +195,10 @@ class StudentEmailListExporter
 			$col = 1;
 			foreach ($values as $value) {
 				$sheet->setCellValueByColumnAndRow($col, $row, $value);
+				$maxLens[$col] = max($maxLens[$col] ?? 0, self::textLen((string) $value));
 				$col++;
 			}
+			$sheet->getRowDimension($row)->setRowHeight(20);
 			if ($num % 2 === 0) {
 				$sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
 					'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::ALT_ROW]],
@@ -160,27 +208,100 @@ class StudentEmailListExporter
 			$num++;
 		}
 
-		$lastData = $row > 6 ? $row - 1 : 6;
-		if ($row > 6) {
-			$sheet->getStyle("A6:{$lastCol}{$lastData}")->applyFromArray([
+		$lastData = $row > $dataStart ? $row - 1 : $dataStart;
+		if ($row > $dataStart) {
+			$sheet->getStyle("A{$dataStart}:{$lastCol}{$lastData}")->applyFromArray([
+				'font' => ['name' => self::FONT, 'size' => 11, 'color' => ['rgb' => '0F172A']],
 				'borders' => [
 					'allBorders' => ['borderStyle' => Border::BORDER_HAIR, 'color' => ['rgb' => 'E2E8F0']],
 				],
+				'alignment' => ['vertical' => Alignment::VERTICAL_CENTER, 'wrapText' => false],
+			]);
+			$sheet->getStyle("A{$dataStart}:A{$lastData}")
+				->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+			$sheet->getStyle("C{$dataStart}:C{$lastData}")
+				->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+			$sheet->getStyle("F{$dataStart}:F{$lastData}")->applyFromArray([
+				'font' => ['name' => 'Consolas', 'size' => 11, 'color' => ['rgb' => '0F172A']],
 			]);
 		} else {
-			$sheet->mergeCells("A6:{$lastCol}6");
-			$sheet->setCellValue('A6', 'No student emails in this class yet.');
+			$sheet->mergeCells("A{$dataStart}:{$lastCol}{$dataStart}");
+			$sheet->setCellValue("A{$dataStart}", 'No student emails in this class yet.');
+			$sheet->getStyle("A{$dataStart}")->applyFromArray([
+				'font' => ['name' => self::FONT, 'italic' => true, 'color' => ['rgb' => '64748B']],
+			]);
 		}
 
-		$sheet->getColumnDimension('A')->setWidth(8);
-		$sheet->getColumnDimension('B')->setWidth(22);
-		$sheet->getColumnDimension('C')->setWidth(14);
-		$sheet->getColumnDimension('D')->setWidth(32);
-		$sheet->getColumnDimension('E')->setWidth(38);
-		$sheet->getColumnDimension('F')->setWidth(18);
-		$sheet->getRowDimension(1)->setRowHeight(24);
-		$sheet->getRowDimension(2)->setRowHeight(22);
-		$sheet->getRowDimension(3)->setRowHeight(28);
-		$sheet->getRowDimension($headerRow)->setRowHeight(24);
+		self::fitColumns($sheet, $maxLens);
+		self::lockHeader($sheet, $headerRow, $dataStart, $lastData);
+
+		$page = $sheet->getPageSetup();
+		$page->setOrientation(PageSetup::ORIENTATION_LANDSCAPE);
+		$page->setFitToPage(true);
+		$page->setFitToWidth(1);
+		$page->setFitToHeight(0);
+		$page->setRowsToRepeatAtTopByStartAndEnd(1, $headerRow);
+		$sheet->getPageMargins()->setTop(0.4);
+		$sheet->getPageMargins()->setBottom(0.4);
+		$sheet->getPageMargins()->setLeft(0.4);
+		$sheet->getPageMargins()->setRight(0.4);
+		$sheet->getHeaderFooter()->setOddFooter('&L' . self::WEBMAIL . '&RPage &P of &N');
+	}
+
+	/** @param array<int,int> $maxLens */
+	private static function fitColumns(Worksheet $sheet, array $maxLens): void
+	{
+		$caps = [
+			1 => [6, 8],
+			2 => [12, 22],
+			3 => [12, 16],
+			4 => [22, 40],
+			5 => [36, 52],
+			6 => [16, 24],
+		];
+		foreach ($caps as $col => [$min, $max]) {
+			$len = $maxLens[$col] ?? $min;
+			$width = min($max, max($min, $len * 1.12 + 2.4));
+			$sheet->getColumnDimensionByColumn($col)->setWidth($width);
+			$sheet->getColumnDimensionByColumn($col)->setAutoSize(false);
+		}
+	}
+
+	private static function lockHeader(
+		Worksheet $sheet,
+		int $headerRow,
+		int $dataStart,
+		int $lastData
+	): void {
+		$lastCol = self::LAST_COL;
+		$sheet->getStyle("A1:{$lastCol}{$headerRow}")
+			->getProtection()
+			->setLocked(Protection::PROTECTION_PROTECTED);
+
+		$unlockEnd = max($lastData, $dataStart + 40);
+		$sheet->getStyle("A{$dataStart}:{$lastCol}{$unlockEnd}")
+			->getProtection()
+			->setLocked(Protection::PROTECTION_UNPROTECTED);
+
+		$protection = $sheet->getProtection();
+		$protection->setSheet(true);
+		$protection->setPassword('');
+		$protection->setSort(false);
+		$protection->setInsertRows(false);
+		$protection->setInsertColumns(false);
+		$protection->setDeleteRows(false);
+		$protection->setDeleteColumns(false);
+		$protection->setFormatCells(false);
+		$protection->setFormatRows(false);
+		$protection->setFormatColumns(true);
+	}
+
+	private static function textLen(string $text): int
+	{
+		$text = trim($text);
+		if (function_exists('mb_strlen')) {
+			return (int) mb_strlen($text);
+		}
+		return strlen($text);
 	}
 }

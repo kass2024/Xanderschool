@@ -17,6 +17,12 @@ class TimetableClassLabel
 		$title = trim((string) $classTitle);
 		$code = trim((string) $deptCode);
 		$dept = trim((string) $deptName);
+		if (preg_match('/^-+$/', $title)) {
+			$title = '';
+		}
+		if (preg_match('/^-+$/', $code)) {
+			$code = '';
+		}
 
 		// Skip generic department names when code is empty (Primary, Nursery, etc.)
 		if ($code === '' && $dept !== '') {
