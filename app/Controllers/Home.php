@@ -7432,8 +7432,8 @@ public function attendanceCard()
 	}
 
 	/**
-	 * Smart multi-sheet student workbook: one sheet per class (Level+title).
-	 * Columns: Names, Gender, Studying.
+	 * Student list Excel: full student + parent + location details (no email/password).
+	 * Optional ?c=classId limits to the selected class; otherwise all non-holiday classes.
 	 */
 	public function export_smart_student_list()
 	{
@@ -7442,6 +7442,7 @@ public function attendanceCard()
 		@set_time_limit(300);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$yearId = (int) ($this->request->getGet('y') ?? 0);
+		$classFilter = (int) ($this->request->getGet('c') ?? 0);
 		if ($yearId < 1) {
 			$yearId = (int) ($this->data['academic_year_id'] ?? 0);
 		}
@@ -7452,51 +7453,67 @@ public function attendanceCard()
 
 		$classMdl = new ClassesModel();
 		$allClasses = $classMdl->get_classes();
-		$classes = array_values(array_filter($allClasses, function ($class) {
-			return !$this->classLooksLikeHoliday($class);
+		$classes = array_values(array_filter($allClasses, function ($class) use ($classFilter) {
+			if ($this->classLooksLikeHoliday($class)) {
+				return false;
+			}
+			if ($classFilter > 0) {
+				return (int) ($class['id'] ?? 0) === $classFilter;
+			}
+			return true;
 		}));
 
 		$studentMdl = new StudentModel();
-		$studentMdl->ensureEmailPasswordColumn();
-		$sheets = [];
+		$studentMdl->ensureFatherNidColumn();
+		$students = [];
+		$classLabel = 'All classes';
+		$mentorName = '';
 		foreach ($classes as $class) {
 			$classId = (int) ($class['id'] ?? 0);
 			if ($classId < 1) {
 				continue;
 			}
-			$students = $studentMdl->select('students.id, students.fname, students.lname, students.sex, students.studying_mode, students.email, students.email_password')
-				->join('class_records cr', 'students.id=cr.student')
-				->where('cr.class', $classId)
-				->where('cr.year', $yearId)
-				->where('students.status', 1)
-				->groupBy('students.id')
-				->orderBy('students.fname', 'ASC')
-				->orderBy('students.lname', 'ASC')
-				->get()->getResultArray();
-			$unique = [];
-			foreach ($students as $row) {
+			if ($classFilter > 0) {
+				$classLabel = \App\Libraries\SmartStudentSheetsExporter::classLabel($class);
+				$mentorName = (string) ($class['mentor_name'] ?? '');
+			}
+			$rows = $this->studentListExportRows($studentMdl, $classId, $yearId);
+			foreach ($rows as $row) {
 				$sid = (int) ($row['id'] ?? 0);
 				if ($sid > 0) {
-					$unique[$sid] = $row;
+					$students[$sid] = $row;
 				}
 			}
-			$sheets[] = [
-				'class' => $class,
-				'students' => array_values($unique),
-			];
 		}
+		$students = array_values($students);
+		usort($students, static function ($a, $b) {
+			$classCmp = strcasecmp((string) ($a['class'] ?? ''), (string) ($b['class'] ?? ''));
+			if ($classCmp !== 0) {
+				return $classCmp;
+			}
+			$nameCmp = strcasecmp((string) ($a['fname'] ?? ''), (string) ($b['fname'] ?? ''));
+			if ($nameCmp !== 0) {
+				return $nameCmp;
+			}
+			return strcasecmp((string) ($a['lname'] ?? ''), (string) ($b['lname'] ?? ''));
+		});
 
 		$school = $this->schoolMetaForStaffExport();
-		$schoolName = (string) ($school['name'] ?? 'School');
 		$yearTitle = '';
 		$yearRow = (new AcademicYearModel())->select('title')->where('id', $yearId)->where('school_id', $schoolId)->first();
 		if ($yearRow) {
 			$yearTitle = (string) ($yearRow['title'] ?? '');
 		}
 		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+		$classMeta = [
+			'classe' => $classLabel,
+			'mentor_name' => $mentorName,
+		];
 
-		$spreadsheet = \App\Libraries\SmartStudentSheetsExporter::build($school, $sheets, $yearTitle, $termLabel);
-		$filename = \App\Libraries\SmartStudentSheetsExporter::exportFilename($schoolName, $yearTitle);
+		$spreadsheet = \App\Libraries\StudentListExcelExporter::build($school, $classMeta, $students, $yearTitle, $termLabel);
+		$filename = \App\Libraries\StudentListExcelExporter::exportFilename(
+			$classFilter > 0 ? $classLabel : trim(($school['name'] ?? 'School') . ' ' . $yearTitle)
+		);
 		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
 
 		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -7504,6 +7521,64 @@ public function attendanceCard()
 		header('Cache-Control: max-age=0');
 		$writer->save('php://output');
 		exit;
+	}
+
+	/**
+	 * @return list<array<string,mixed>>
+	 */
+	private function studentListExportRows(StudentModel $studentMdl, int $classId, int $yearId): array
+	{
+		return $studentMdl
+			->select("
+				students.id,
+				students.regno,
+				students.fname,
+				students.lname,
+				students.sex,
+				students.dob,
+				students.nationality,
+				students.religion,
+				students.phone,
+				students.studying_mode,
+				students.status,
+				students.photo,
+				students.card,
+				students.father,
+				students.ft_phone,
+				students.father_nid,
+				students.mother,
+				students.mt_phone,
+				students.mother_nid,
+				students.guardian,
+				students.gd_phone,
+				students.guardian_nid,
+				l.title AS level_name,
+				d.title AS dept_title,
+				d.code AS dept_code,
+				c.title AS class_stream,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class,
+				v.title AS village_title,
+				sc.title AS cell_name,
+				ss.title AS sector_name,
+				sd.title AS district_name,
+				sd.province AS province_id
+			")
+			->join('class_records cr', 'students.id = cr.student')
+			->join('classes c', 'c.id = cr.class')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('soma_village v', 'v.id = students.village_id', 'left')
+			->join('soma_cell sc', 'sc.id = v.cell', 'left')
+			->join('soma_sector ss', 'ss.id = sc.sector', 'left')
+			->join('soma_district sd', 'sd.id = ss.district', 'left')
+			->where('cr.class', $classId)
+			->where('cr.year', $yearId)
+			->whereIn('students.status', [1, 2, '1', '2'])
+			->groupBy('students.id')
+			->orderBy('students.fname', 'ASC')
+			->orderBy('students.lname', 'ASC')
+			->get()
+			->getResultArray();
 	}
 
 	public function export_student_emails()

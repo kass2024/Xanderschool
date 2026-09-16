@@ -410,9 +410,10 @@
 								<button type="submit" value="true" class="btn btn-primary students-toolbar-submit">
 									<?= lang("app.viewStudents"); ?>
 								</button>
-								<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? '')))); ?>"
+								<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? ''))) . (((string) $class_id !== '-1' && (string) $class_id !== '') ? '&c=' . urlencode((string) $class_id) : '')); ?>"
+								   id="btn_export_student_excel"
 								   class="btn btn-success students-toolbar-submit"
-								   title="One workbook with a sheet per class (Names, Gender, Studying, Email, Password)">
+								   title="Full student list: names, gender, date of birth, parents, phones, location. No emails or passwords.">
 									<i class="fa fa-file-excel"></i> <?= lang("app.exporttoExcel"); ?>
 								</a>
 								<a href="<?= base_url('export_student_emails?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? ''))) . '&c=' . urlencode((string) $class_id)); ?>"
@@ -441,10 +442,11 @@
 										   title="Emails and passwords, nursery excluded">
 											<i class="fa fa-envelope"></i> Export emails
 										</a>
-										<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) $academic_year)); ?>"
+										<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) $academic_year) . (((string) $class_id !== '-1' && (string) $class_id !== '') ? '&c=' . urlencode((string) $class_id) : '')); ?>"
+										   id="btn_export_student_excel_menu"
 										   class="dropdown-item"
-										   title="One workbook, one sheet per class">
-											<i class="fa fa-file-excel"></i> Smart Excel (all classes)
+										   title="Full student list: parents, phones, location, gender, date of birth">
+											<i class="fa fa-file-excel"></i> <?= lang("app.exporttoExcel"); ?>
 										</a>
 									</div>
 								</div>
@@ -768,6 +770,19 @@ foreach ($students as $st) {
 	var SAVE_CLASS_API = "<?= site_url('saveClassStudents'); ?>";
 	var YEAR_ID = "<?= (int) $academic_year; ?>";
 	var FROM_CLASS = <?= (int) $class_id; ?>;
+	var STUDENT_EXCEL_BASE = "<?= base_url('export_smart_student_list'); ?>";
+
+	function syncStudentExcelLink() {
+		var y = $('#choose_year').val() || YEAR_ID || '';
+		var c = $('#choose_class').val() || '';
+		var href = STUDENT_EXCEL_BASE + '?y=' + encodeURIComponent(y);
+		if (c && c !== '-1') {
+			href += '&c=' + encodeURIComponent(c);
+		}
+		$('#btn_export_student_excel, #btn_export_student_excel_menu').attr('href', href);
+	}
+	$('#choose_class, #choose_year').on('change', syncStudentExcelLink);
+	syncStudentExcelLink();
 	var CLASS_STUDENTS = <?= json_encode($classEditStudents ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 	var MODE_BOARDING = <?= json_encode(lang('app.boarding')); ?>;
 	var MODE_DAY = <?= json_encode(lang('app.day')); ?>;
