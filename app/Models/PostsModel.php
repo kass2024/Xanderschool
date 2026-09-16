@@ -164,8 +164,9 @@ class PostsModel extends Model
 				'created' => false,
 			];
 		}
-		$this->insert(['title' => $title, 'status' => 1]);
-		$id = (int) $this->getInsertID();
+		// posts has no created_at/updated_at — insert via query builder, not Model::insert().
+		$db->table('posts')->insert(['title' => $title, 'status' => 1]);
+		$id = (int) $db->insertID();
 		if ($id < 1) {
 			$row = $db->table('posts')->where('title', $title)->get(1)->getRowArray();
 			$id = (int) ($row['id'] ?? 0);
