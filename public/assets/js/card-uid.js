@@ -18,6 +18,12 @@
 		if (!uid) return '';
 
 		var hexOnly = uid.replace(/[^A-Fa-f0-9]/g, '').toUpperCase();
+		if (hexOnly.length % 2 === 1) {
+			hexOnly = '0' + hexOnly;
+		}
+		if (hexOnly.length > 0 && hexOnly.length < 8) {
+			hexOnly = hexOnly.padStart(8, '0');
+		}
 		// Android NFC / USB hex: keep 8/14/20-char UIDs as hex even if they are all digits (94280002).
 		if (isNfcHexLength(hexOnly)) {
 			return hexOnly;

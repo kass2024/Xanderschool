@@ -435,6 +435,7 @@ $fallbackPhoto = profile_photo_url(null);
 	</div>
 </div>
 
+<script src="<?= base_url('assets/js/card-uid.js') ?>?v=pad8"></script>
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 	let buffer = "";
@@ -481,10 +482,18 @@ document.addEventListener("DOMContentLoaded", function () {
 	}
 
 	function normalizeUID(uid) {
+		if (window.CardUid && CardUid.forScan) {
+			return CardUid.forScan(uid);
+		}
 		uid = (uid || "").trim();
 		if (!uid) return "";
-		if (/^\d+$/.test(uid)) uid = BigInt(uid).toString(16).toUpperCase();
-		return uid.replace(/[^A-Fa-f0-9]/g, "").toUpperCase();
+		if (/^\d+$/.test(uid)) {
+			try { uid = BigInt(uid).toString(16).toUpperCase().padStart(8, "0"); } catch (e) {}
+		}
+		uid = uid.replace(/[^A-Fa-f0-9]/g, "").toUpperCase();
+		if (uid.length % 2 === 1) uid = "0" + uid;
+		if (uid.length > 0 && uid.length < 8) uid = uid.padStart(8, "0");
+		return uid;
 	}
 
 	function setReadyState(state, message) {

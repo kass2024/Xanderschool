@@ -35,6 +35,26 @@ if (!function_exists('card_uid_is_nfc_hex_length')) {
 	}
 }
 
+if (!function_exists('card_uid_pad_hex')) {
+	/**
+	 * Pad short/odd hex so 74AF8DA matches stored 074AF8DA (USB decimal wedges drop the leading 0).
+	 */
+	function card_uid_pad_hex(string $uid): string
+	{
+		$uid = strtoupper(preg_replace('/[^A-F0-9]/', '', $uid) ?? '');
+		if ($uid === '') {
+			return '';
+		}
+		if (strlen($uid) % 2 === 1) {
+			$uid = '0' . $uid;
+		}
+		if (strlen($uid) < 8) {
+			$uid = str_pad($uid, 8, '0', STR_PAD_LEFT);
+		}
+		return $uid;
+	}
+}
+
 if (!function_exists('card_uid_decimal_to_hex')) {
 	function card_uid_decimal_to_hex(string $digits): string
 	{
@@ -89,6 +109,9 @@ if (!function_exists('clean_card_uid_raw')) {
 		}
 
 		$hexOnly = strtoupper(preg_replace('/[^A-F0-9]/', '', $uid));
+		if (strlen($hexOnly) % 2 === 1) {
+			$hexOnly = '0' . $hexOnly;
+		}
 		if (card_uid_is_nfc_hex_length($hexOnly) && ctype_xdigit($hexOnly)) {
 			return $hexOnly;
 		}
@@ -172,8 +195,18 @@ if (!function_exists('card_uid_lookup_variants')) {
 		if ($stripped !== '' && card_uid_is_nfc_hex_length($stripped)) {
 			$add($stripped);
 		}
+		if ($stripped !== '') {
+			$padded = card_uid_pad_hex($stripped);
+			if ($padded !== '') {
+				$add($padded);
+			}
+		}
 		if ($clean !== '') {
 			$add($clean);
+			$paddedClean = card_uid_pad_hex($clean);
+			if ($paddedClean !== '') {
+				$add($paddedClean);
+			}
 		}
 
 		// USB decimal wedge AND all-digit hex UIDs (e.g. Android 94280002).
