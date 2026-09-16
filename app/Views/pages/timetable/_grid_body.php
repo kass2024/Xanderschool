@@ -91,8 +91,9 @@ foreach ($grid ?? [] as $scanRow) {
 					if (!empty($slot['is_break'])):
 						$breakText = (string) ($slot['break_label'] ?: $slot['label']);
 						$isCircle = stripos($breakText, 'circle') !== false;
+						$isHomework = stripos($breakText, 'home') !== false;
 						?>
-						<tr class="tt-break-row<?= $isCircle ? ' tt-circle-row' : ''; ?>">
+						<tr class="tt-break-row<?= $isCircle ? ' tt-circle-row' : ''; ?><?= $isHomework ? ' tt-homework-row' : ''; ?>">
 							<td class="tt-time"><?= esc($ttRange($slot['start_time'], $slot['end_time'])); ?></td>
 							<td colspan="<?= count($day_labels); ?>" class="tt-break-label"><?= esc($breakText); ?></td>
 						</tr>

@@ -8,8 +8,8 @@ use App\Libraries\TimetableClassLabel;
  * Constraint-based timetable generator (aSc-style weekly grid).
  *
  * Primary: mostly one period per day (math may cluster).
- * Nursery: at least 3 distinct courses per day, singles until that variety exists,
- * and every course gets one "Homework in …" period in the post-lunch window.
+ * Nursery: 3 or 4 distinct morning courses per day covering weekly periods;
+ * no taught lesson after lunch (afternoon is one HOME WORK band).
  * Secondary (O/A Level, RTB, Special): applies SecondaryTimetableCriteria —
  * doubles for 3+ hours, non-adjacent days, PE last teaching hours (by 15:40),
  * Farming/Library after 15:40, Math/Physics/ANP morning bias, teacher windows,
@@ -290,15 +290,6 @@ class TimetableGeneratorService
 					'block_size' => (int) $blockSize,
 					'hours' => $hours,
 					'nursery_homework' => $explicitHw ? 1 : 0,
-				];
-			}
-			// Nursery: keep every weekly hour as a taught lesson, then add one late-day homework.
-			if ($nursery && !$explicitHw && $hours > 0) {
-				$lessonNeeds[] = [
-					'assignment' => $row,
-					'block_size' => 1,
-					'hours' => 1,
-					'nursery_homework' => 1,
 				];
 			}
 		}
@@ -1154,12 +1145,11 @@ class TimetableGeneratorService
 				if ($placeAsHomework && $this->slotIsMorning($slot)) {
 					continue;
 				}
-				// Taught lessons: leave afternoon 30-min bells for homework only.
-				if ($nursery && !$placeAsHomework && $hwSized) {
-					continue;
-				}
-				if ($nursery && !$placeAsHomework && $inHw
-					&& $this->uniqueCoursesOnDay($classId, (int) $day) < NurseryTimetableCriteria::MIN_DISTINCT_COURSES_PER_DAY) {
+				// Taught lessons never sit after lunch — that band is HOME WORK.
+				if ($nursery && !$placeAsHomework && ($inHw || NurseryTimetableCriteria::slotIsAfterLunch(
+					(string) ($slot['start_time'] ?? ''),
+					(string) ($slot['end_time'] ?? '')
+				))) {
 					continue;
 				}
 				if ($blockSize === 2) {
@@ -1190,7 +1180,7 @@ class TimetableGeneratorService
 						)) {
 							continue;
 						}
-						if ($nursery && !$placeAsHomework && NurseryTimetableCriteria::isHomeworkSizedSlot(
+						if ($nursery && !$placeAsHomework && NurseryTimetableCriteria::slotIsAfterLunch(
 							(string) ($slotBMeta['start_time'] ?? ''),
 							(string) ($slotBMeta['end_time'] ?? '')
 						)) {

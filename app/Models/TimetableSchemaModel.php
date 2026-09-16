@@ -222,7 +222,7 @@ class TimetableSchemaModel extends Model
 
 	/**
 	 * Primary keeps 1-hour bells (07:30–16:30). Nursery is independent
-	 * (morning circle 07:30–08:00, lunch 12:00–13:00, lessons end 16:30).
+	 * (morning circle 07:30–08:00, lunch 12:00–13:00, HOME WORK after lunch).
 	 * Never copy senior 40-minute periods.
 	 */
 	public function restorePrimaryNurseryHourPeriods(int $schoolId, bool $force = false): int
@@ -312,22 +312,26 @@ class TimetableSchemaModel extends Model
 		}
 		$hasBreak = false;
 		$hasLunch = false;
-		$endsAt1630 = false;
+		$hasHomeworkBand = false;
 		foreach ($rows as $row) {
 			$rowStart = self::slotClock((string) ($row['start_time'] ?? ''));
 			$rowEnd = self::slotClock((string) ($row['end_time'] ?? ''));
+			$label = strtoupper(trim((string) (($row['break_label'] ?? '') !== '' ? $row['break_label'] : ($row['label'] ?? ''))));
 			if ($rowStart === '10:30:00' && $rowEnd === '11:00:00' && !empty($row['is_break'])) {
 				$hasBreak = true;
 			}
 			if ($rowStart === '12:00:00' && $rowEnd === '13:00:00' && !empty($row['is_break'])) {
 				$hasLunch = true;
 			}
-			if ($rowEnd === '16:30:00' && empty($row['is_break'])) {
-				$endsAt1630 = true;
+			if ($rowStart === '13:00:00' && !empty($row['is_break']) && (strpos($label, 'HOME') !== false)) {
+				$hasHomeworkBand = true;
+			}
+			if (empty($row['is_break']) && $rowStart >= '13:00:00') {
+				return false;
 			}
 		}
 
-		return $hasBreak && $hasLunch && $endsAt1630;
+		return $hasBreak && $hasLunch && $hasHomeworkBand;
 	}
 
 	/**
@@ -555,8 +559,17 @@ class TimetableSchemaModel extends Model
 
 		if (count($rows) > count($template)) {
 			$extraIds = array_map(static fn ($r) => (int) $r['id'], array_slice($rows, count($template)));
+			$extraIds = array_values(array_filter($extraIds));
 			if ($extraIds !== []) {
-				$db->table('timetable_special_times')->whereIn('slot_id', $extraIds)->delete();
+				if ($db->tableExists('timetable_entries')) {
+					$db->table('timetable_entries')->whereIn('slot_id', $extraIds)->update([
+						'day_of_week' => -1,
+						'slot_id' => 0,
+					]);
+				}
+				if ($db->tableExists('timetable_special_times')) {
+					$db->table('timetable_special_times')->whereIn('slot_id', $extraIds)->delete();
+				}
 				$db->table('timetable_slots')->whereIn('id', $extraIds)->delete();
 			}
 		}
@@ -649,14 +662,7 @@ class TimetableSchemaModel extends Model
 			['label' => 'BREAK TIME', 'start' => '10:30:00', 'end' => '11:00:00', 'break' => 1, 'break_label' => 'BREAK TIME'],
 			['label' => '4', 'start' => '11:00:00', 'end' => '12:00:00', 'break' => 0, 'break_label' => null],
 			['label' => 'LUNCH TIME', 'start' => '12:00:00', 'end' => '13:00:00', 'break' => 1, 'break_label' => 'LUNCH TIME'],
-			// One 60-min afternoon overflow for leftover taught periods.
-			['label' => '5', 'start' => '13:00:00', 'end' => '14:00:00', 'break' => 0, 'break_label' => null],
-			// 30-min homework windows in the last hours.
-			['label' => '6a', 'start' => '14:00:00', 'end' => '14:30:00', 'break' => 0, 'break_label' => null],
-			['label' => '6b', 'start' => '14:30:00', 'end' => '15:00:00', 'break' => 0, 'break_label' => null],
-			['label' => 'WATER BREAK', 'start' => '15:00:00', 'end' => '15:30:00', 'break' => 1, 'break_label' => 'WATER BREAK'],
-			['label' => '7a', 'start' => '15:30:00', 'end' => '16:00:00', 'break' => 0, 'break_label' => null],
-			['label' => '7b', 'start' => '16:00:00', 'end' => '16:30:00', 'break' => 0, 'break_label' => null],
+			['label' => 'HOME WORK', 'start' => '13:00:00', 'end' => '16:30:00', 'break' => 1, 'break_label' => 'HOME WORK'],
 		];
 	}
 

@@ -79,6 +79,13 @@
 	color: #7c2d12 !important;
 	letter-spacing: 0.08em;
 }
+.tt-homework-row td, .tt-sheet-nursery .tt-homework-row td {
+	background: #fde68a !important;
+	color: #92400e !important;
+	letter-spacing: 0.12em;
+	padding: 18px 6px !important;
+	font-size: 0.85rem !important;
+}
 .tt-sheet-nursery .tt-nursery-colored {
 	border-radius: 4px;
 	-webkit-print-color-adjust: exact;

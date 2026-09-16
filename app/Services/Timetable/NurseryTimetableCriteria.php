@@ -6,13 +6,15 @@ use App\Libraries\TimetableTrack;
 
 /**
  * Nursery-only timetable rules:
- * - at least 4 distinct taught courses per day (morning/before lunch)
- * - each course gets one 30-minute "Homework in …" in the last hours
- * - 1–2 homework slots per day when periods allow
+ * - 3 or 4 distinct taught courses per day before lunch (cover weekly periods)
+ * - no taught course after lunch
+ * - afternoon is one merged HOME WORK band
  */
 class NurseryTimetableCriteria
 {
-	public const MIN_DISTINCT_COURSES_PER_DAY = 4;
+	public const MIN_DISTINCT_COURSES_PER_DAY = 3;
+
+	public const PREFERRED_DISTINCT_COURSES_PER_DAY = 4;
 
 	public const MIN_HOMEWORK_PER_DAY = 1;
 
@@ -63,6 +65,20 @@ class NurseryTimetableCriteria
 		}
 
 		return 'Homework in ' . $title;
+	}
+
+	public static function slotIsAfterLunch(?string $startTime, ?string $endTime = null): bool
+	{
+		$start = TimetableGeneratorService::clockMinutesFromString((string) $startTime);
+		if ($start >= self::HOMEWORK_START_MINUTES) {
+			return true;
+		}
+		if ($endTime === null || $endTime === '') {
+			return false;
+		}
+		$end = TimetableGeneratorService::clockMinutesFromString((string) $endTime);
+
+		return $end > self::HOMEWORK_START_MINUTES;
 	}
 
 	public static function slotOverlapsHomeworkWindow(?string $startTime, ?string $endTime): bool
@@ -137,6 +153,9 @@ class NurseryTimetableCriteria
 		if ($uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY) {
 			return -7000;
 		}
+		if ($uniqueCoursesOnDay < self::PREFERRED_DISTINCT_COURSES_PER_DAY) {
+			return -2500;
+		}
 
 		return -200;
 	}
@@ -180,16 +199,14 @@ class NurseryTimetableCriteria
 			return $score;
 		}
 
-		// Normal taught lesson: keep mornings full; leave 30-min late slots for homework.
-		if ($sized) {
-			return 22000;
-		}
-		if ($inWindow) {
-			// Mild penalty so leftover periods can still use the 60-min afternoon overflow.
-			return $uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY ? 9000 : 3200;
+		// Normal taught lesson: mornings only. After lunch is HOME WORK.
+		if ($inWindow || self::slotIsAfterLunch($startTime, $endTime)) {
+			return 50000;
 		}
 
-		return $uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY ? -500 : 0;
+		return $uniqueCoursesOnDay < self::MIN_DISTINCT_COURSES_PER_DAY ? -500 : (
+			$uniqueCoursesOnDay < self::PREFERRED_DISTINCT_COURSES_PER_DAY ? -150 : 0
+		);
 	}
 
 	/**

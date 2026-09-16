@@ -952,6 +952,9 @@ class TimetableManagement extends Home
 				$schema->ensureTrackSlots($schoolId, $track);
 			}
 		}
+		if ($phase === 'nursery' || $phase === 'all') {
+			$schema->restorePrimaryNurseryHourPeriods($schoolId);
+		}
 
 		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
 
@@ -1240,9 +1243,11 @@ class TimetableManagement extends Home
 			'stages' => $stages,
 		]);
 		$stagingSvc->fillMorningGaps($scheduleId, $schoolId, $schema);
-		$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
-		$stagingSvc->promotePeToLastHour($scheduleId, $schoolId, $schema);
-		$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
+		if ($phase !== 'nursery') {
+			$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
+			$stagingSvc->promotePeToLastHour($scheduleId, $schoolId, $schema);
+			$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
+		}
 		$this->reportGenerationProgress($jobId, [
 			'message' => 'Clearing collisions without overlaps…',
 			'progress' => 84,
@@ -1251,13 +1256,19 @@ class TimetableManagement extends Home
 		]);
 		$stagingSvc->normalizeScheduleConflicts($scheduleId, $schoolId, $schema);
 		$stagingSvc->fillMorningGaps($scheduleId, $schoolId, $schema);
-		$stagingSvc->promotePeToLastHour($scheduleId, $schoolId, $schema);
-		$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
+		if ($phase !== 'nursery') {
+			$stagingSvc->promotePeToLastHour($scheduleId, $schoolId, $schema);
+			$stagingSvc->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
+		}
 		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 		$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
-		$stagingSvc->hardenLeftoverPlacement($scheduleId, $schoolId, $schema);
-		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
-		$stagingSvc->hardenLeftoverPlacement($scheduleId, $schoolId, $schema);
+		if ($phase !== 'nursery') {
+			$stagingSvc->hardenLeftoverPlacement($scheduleId, $schoolId, $schema);
+			$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
+			$stagingSvc->hardenLeftoverPlacement($scheduleId, $schoolId, $schema);
+		} else {
+			$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
+		}
 
 		$now = date('Y-m-d H:i:s');
 		$entryCountsByPhase = [];

@@ -1093,7 +1093,11 @@ class TimetableStagingService
 			$title = (string) ($meta['course_title'] ?? '');
 			$homework = NurseryTimetableCriteria::isHomeworkCourse($title);
 			$start = (string) ($slot['start_time'] ?? '');
+			$end = (string) ($slot['end_time'] ?? '');
 			if ($homework && TimetableGeneratorService::isMorningClock($start)) {
+				return false;
+			}
+			if (!$homework && NurseryTimetableCriteria::slotIsAfterLunch($start, $end)) {
 				return false;
 			}
 			if ($this->wouldExceedSubjectDayLimit($state, $entry, $day)) {
