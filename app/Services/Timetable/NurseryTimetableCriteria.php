@@ -16,6 +16,90 @@ class NurseryTimetableCriteria
 
 	public const PREFERRED_DISTINCT_COURSES_PER_DAY = 4;
 
+	public static function isCoreCourse(array $row): bool
+	{
+		return (int) round((float) ($row['marks'] ?? 0)) >= 100;
+	}
+
+	public static function morningCapacity(int $morningSlots, int $dayCount): int
+	{
+		$slots = max(0, $morningSlots);
+		$days = max(1, $dayCount);
+
+		return $slots * $days;
+	}
+
+	/**
+	 * Cut weekly periods so they fit the morning grid. Core (marks 100) keep more
+	 * periods; non-core extras are reduced first. Every course keeps 1 period while capacity allows.
+	 *
+	 * @param list<array{key:string|int,hours:int,is_core:bool}> $courses
+	 * @return array<string|int,int>
+	 */
+	public static function rebalanceWeeklyHours(array $courses, int $capacity): array
+	{
+		$hours = [];
+		$core = [];
+		foreach ($courses as $item) {
+			$key = $item['key'];
+			$hours[$key] = max(0, (int) ($item['hours'] ?? 0));
+			$core[$key] = !empty($item['is_core']);
+		}
+		$capacity = max(0, $capacity);
+		$sum = (int) array_sum($hours);
+		if ($sum <= $capacity) {
+			return $hours;
+		}
+
+		$overflow = $sum - $capacity;
+		$original = $hours;
+		$nonCore = [];
+		$coreKeys = [];
+		foreach ($hours as $key => $_) {
+			if (!empty($core[$key])) {
+				$coreKeys[] = $key;
+			} else {
+				$nonCore[] = $key;
+			}
+		}
+
+		$reduce = static function (array $keys, int $minKeep) use (&$hours, &$overflow, $original): void {
+			while ($overflow > 0) {
+				$best = null;
+				$bestHours = $minKeep;
+				$bestOrig = PHP_INT_MAX;
+				foreach ($keys as $key) {
+					$current = (int) $hours[$key];
+					if ($current <= $minKeep) {
+						continue;
+					}
+					$orig = (int) $original[$key];
+					if ($current > $bestHours
+						|| ($current === $bestHours && $orig < $bestOrig)
+						|| ($current === $bestHours && $orig === $bestOrig && ($best === null || (string) $key < (string) $best))
+					) {
+						$best = $key;
+						$bestHours = $current;
+						$bestOrig = $orig;
+					}
+				}
+				if ($best === null) {
+					return;
+				}
+				$hours[$best]--;
+				$overflow--;
+			}
+		};
+
+		$reduce($nonCore, 1);
+		$reduce($nonCore, 0);
+		$reduce($coreKeys, 2);
+		$reduce($coreKeys, 1);
+		$reduce($coreKeys, 0);
+
+		return $hours;
+	}
+
 	public const MIN_HOMEWORK_PER_DAY = 1;
 
 	public const MAX_HOMEWORK_PER_DAY = 4;
@@ -136,9 +220,12 @@ class NurseryTimetableCriteria
 		return 9000;
 	}
 
-	public static function maxPerDay(int $uniqueCoursesOnDay, bool $alreadyHasThisCourse): int
+	public static function maxPerDay(int $uniqueCoursesOnDay, bool $alreadyHasThisCourse, bool $isCore = true): int
 	{
-		// Nursery may teach the same course twice in one day.
+		if (!$isCore) {
+			return 1;
+		}
+		// Core (marks 100) may appear twice in one day.
 		return 2;
 	}
 

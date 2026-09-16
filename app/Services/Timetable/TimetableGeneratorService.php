@@ -142,6 +142,9 @@ class TimetableGeneratorService
 
 	public static function weeklyHoursFromCourse(array $course): int
 	{
+		if (array_key_exists('_fitted_hours', $course)) {
+			return max(0, (int) $course['_fitted_hours']);
+		}
 		$explicit = (int) ($course['weekly_hours'] ?? 0);
 		if ($explicit > 0 && $explicit <= 20) {
 			return $explicit;
@@ -154,6 +157,90 @@ class TimetableGeneratorService
 		}
 
 		return self::defaultWeeklyHoursByTitle((string) ($course['course_title'] ?? ''));
+	}
+
+	/**
+	 * Cap nursery weekly periods to morning cells so courses stay on the grid.
+	 * Marks 100 (core) keep more periods; other courses are reduced first.
+	 *
+	 * @param list<array<string,mixed>> $assignments
+	 * @return list<array<string,mixed>>
+	 */
+	public function fitNurseryHoursToMorningGrid(array $assignments): array
+	{
+		$hasNursery = false;
+		foreach ($assignments as $row) {
+			if (NurseryTimetableCriteria::isNurseryRow($row)) {
+				$hasNursery = true;
+				break;
+			}
+		}
+		if (!$hasNursery) {
+			return $assignments;
+		}
+
+		$byClass = [];
+		foreach ($assignments as $i => $row) {
+			if (!NurseryTimetableCriteria::isNurseryRow($row)) {
+				continue;
+			}
+			$classId = (int) ($row['class_id'] ?? 0);
+			if ($classId <= 0) {
+				continue;
+			}
+			$byClass[$classId][] = $i;
+		}
+		if ($byClass === []) {
+			return $assignments;
+		}
+
+		$persist = [];
+		$changed = false;
+		foreach ($byClass as $classId => $indexes) {
+			$items = [];
+			foreach ($indexes as $i) {
+				$row = $assignments[$i];
+				$title = (string) ($row['course_title'] ?? '');
+				if (NurseryTimetableCriteria::isHomeworkCourse($title)) {
+					continue;
+				}
+				$items[] = [
+					'key' => (string) $i,
+					'hours' => self::weeklyHoursFromCourse($row),
+					'is_core' => NurseryTimetableCriteria::isCoreCourse($row),
+				];
+			}
+			if ($items === []) {
+				continue;
+			}
+			$capacity = $this->nurseryMorningCapacityForClass((int) $classId);
+			$fitted = NurseryTimetableCriteria::rebalanceWeeklyHours($items, $capacity);
+			foreach ($fitted as $key => $hours) {
+				$i = (int) $key;
+				$hours = max(0, (int) $hours);
+				$before = self::weeklyHoursFromCourse($assignments[$i]);
+				$assignments[$i]['_fitted_hours'] = $hours;
+				$assignments[$i]['weekly_hours'] = $hours;
+				if ($hours > 0) {
+					$assignments[$i]['credit'] = $hours;
+					$courseId = (int) ($assignments[$i]['course_id'] ?? 0);
+					if ($courseId > 0) {
+						$persist[$courseId] = $hours;
+					}
+				}
+				if ($before !== $hours) {
+					$changed = true;
+				}
+			}
+		}
+		if ($persist !== []) {
+			$this->persistNurseryCourseHours($persist);
+		}
+		if ($changed) {
+			$this->warnings[] = 'Nursery periods were adjusted to fit the morning grid. Core courses (marks 100) kept more periods.';
+		}
+
+		return $assignments;
 	}
 
 	public static function defaultWeeklyHoursByTitle(string $title): int
@@ -206,7 +293,7 @@ class TimetableGeneratorService
 	 * @param list<int> $days
 	 * @param array<string,bool> $blocked
 	 * @param list<array<string,mixed>> $contextAssignments All phase assignments so ANP/Stream combines can see each other.
-	 * @return array{entries:list<array<string,mixed>>,warnings:list<string>}
+	 * @return array{entries:list<array<string,mixed>>,warnings:list<string>,assignments?:list<array<string,mixed>>}
 	 */
 	public function generate(array $assignments, array $teachingSlots, array $days = [0, 1, 2, 3, 4], array $blocked = [], bool $resetState = true, array $contextAssignments = []): array
 	{
@@ -241,6 +328,14 @@ class TimetableGeneratorService
 		$this->days = $days;
 		$this->blocked = $blocked;
 		$this->mergeSlotTimes($teachingSlots);
+		$assignments = $this->fitNurseryHoursToMorningGrid($assignments);
+		foreach ($assignments as $row) {
+			$classId = (int) ($row['class_id'] ?? 0);
+			$courseId = (int) ($row['course_id'] ?? 0);
+			if ($classId > 0 && $courseId > 0) {
+				$this->assignmentByClassCourse[$classId . ':' . $courseId] = $row;
+			}
+		}
 		foreach ($this->secondaryCriteria->relaxOverloadedRestrictions($hydrate, $teachingSlots, $days) as $warning) {
 			$this->warnings[] = $warning;
 		}
@@ -281,6 +376,9 @@ class TimetableGeneratorService
 				continue;
 			}
 			$hours = self::weeklyHoursFromCourse($row);
+			if ($hours <= 0) {
+				continue;
+			}
 			$blocks = $this->lessonBlocksForCourse($row, $hours);
 			$nursery = NurseryTimetableCriteria::isNurseryRow($row);
 			$explicitHw = $nursery && NurseryTimetableCriteria::isHomeworkCourse((string) ($row['course_title'] ?? ''));
@@ -407,7 +505,7 @@ class TimetableGeneratorService
 
 		$this->promotePeToLastHour($entries);
 
-		return ['entries' => $entries, 'warnings' => $this->warnings];
+		return ['entries' => $entries, 'warnings' => $this->warnings, 'assignments' => $assignments];
 	}
 
 	/**
@@ -577,6 +675,8 @@ class TimetableGeneratorService
 			$title = (string) ($assignment['course_title'] ?? '');
 			$explicitHw = $nursery && NurseryTimetableCriteria::isHomeworkCourse($title);
 			$lessonNeeds[$i]['is_homework'] = ($explicitHw || !empty($need['nursery_homework'])) ? 1 : 0;
+			$lessonNeeds[$i]['nursery'] = $nursery ? 1 : 0;
+			$lessonNeeds[$i]['nursery_core'] = ($nursery && NurseryTimetableCriteria::isCoreCourse($assignment)) ? 1 : 0;
 		}
 		usort($lessonNeeds, static function ($a, $b) {
 			$after = (int) ($b['is_after_lessons'] ?? 0) <=> (int) ($a['is_after_lessons'] ?? 0);
@@ -595,6 +695,17 @@ class TimetableGeneratorService
 			$hw = (int) ($a['is_homework'] ?? 0) <=> (int) ($b['is_homework'] ?? 0);
 			if ($hw !== 0) {
 				return $hw;
+			}
+			$core = (int) ($b['nursery_core'] ?? 0) <=> (int) ($a['nursery_core'] ?? 0);
+			if ($core !== 0) {
+				return $core;
+			}
+			if (!empty($a['nursery']) || !empty($b['nursery'])) {
+				$ha = (int) $a['hours'];
+				$hb = (int) $b['hours'];
+				if ($ha !== $hb) {
+					return $hb <=> $ha;
+				}
 			}
 			$ca = (int) ($a['candidate_count'] ?? PHP_INT_MAX);
 			$cb = (int) ($b['candidate_count'] ?? PHP_INT_MAX);
@@ -637,6 +748,8 @@ class TimetableGeneratorService
 			$title = (string) ($assignment['course_title'] ?? '');
 			$explicitHw = $nursery && NurseryTimetableCriteria::isHomeworkCourse($title);
 			$lessonNeeds[$i]['is_homework'] = ($explicitHw || !empty($need['nursery_homework'])) ? 1 : 0;
+			$lessonNeeds[$i]['nursery'] = $nursery ? 1 : 0;
+			$lessonNeeds[$i]['nursery_core'] = ($nursery && NurseryTimetableCriteria::isCoreCourse($assignment)) ? 1 : 0;
 		}
 		usort($lessonNeeds, static function ($a, $b) {
 			$after = (int) ($b['is_after_lessons'] ?? 0) <=> (int) ($a['is_after_lessons'] ?? 0);
@@ -654,6 +767,17 @@ class TimetableGeneratorService
 			$hw = (int) ($a['is_homework'] ?? 0) <=> (int) ($b['is_homework'] ?? 0);
 			if ($hw !== 0) {
 				return $hw;
+			}
+			$core = (int) ($b['nursery_core'] ?? 0) <=> (int) ($a['nursery_core'] ?? 0);
+			if ($core !== 0) {
+				return $core;
+			}
+			if (!empty($a['nursery']) || !empty($b['nursery'])) {
+				$ha = (int) $a['hours'];
+				$hb = (int) $b['hours'];
+				if ($ha !== $hb) {
+					return $hb <=> $ha;
+				}
 			}
 			$bs = (int) $b['block_size'] <=> (int) $a['block_size'];
 			if ($bs !== 0) {
@@ -1104,7 +1228,8 @@ class TimetableGeneratorService
 			if ($nursery && !$placeAsHomework) {
 				$dayMax = NurseryTimetableCriteria::maxPerDay(
 					$this->uniqueCoursesOnDay($classId, (int) $day),
-					$this->dayHasCourse($classId, (int) $day, $courseId)
+					$this->dayHasCourse($classId, (int) $day, $courseId),
+					NurseryTimetableCriteria::isCoreCourse($row)
 				);
 			}
 			if (!$placeAsHomework && $already + $blockSize > $dayMax) {
@@ -1659,6 +1784,70 @@ class TimetableGeneratorService
 			}
 		}
 		return $free;
+	}
+
+	private function nurseryMorningCapacityForClass(int $classId): int
+	{
+		$capacity = 0;
+		foreach ($this->days as $day) {
+			$day = (int) $day;
+			foreach ($this->teachingSlots as $slot) {
+				if (!empty($slot['is_break'])) {
+					continue;
+				}
+				$start = (string) ($slot['start_time'] ?? '');
+				$end = (string) ($slot['end_time'] ?? '');
+				if (NurseryTimetableCriteria::slotIsAfterLunch($start, $end) || !self::isMorningClock($start)) {
+					continue;
+				}
+				$slotId = (int) ($slot['id'] ?? 0);
+				if ($slotId <= 0 || !empty($this->blocked[$day . ':' . $slotId])) {
+					continue;
+				}
+				$capacity++;
+			}
+		}
+		if ($capacity > 0) {
+			return $capacity;
+		}
+
+		$morningSlots = 0;
+		foreach ($this->teachingSlots as $slot) {
+			if (!empty($slot['is_break'])) {
+				continue;
+			}
+			$start = (string) ($slot['start_time'] ?? '');
+			$end = (string) ($slot['end_time'] ?? '');
+			if (NurseryTimetableCriteria::slotIsAfterLunch($start, $end) || !self::isMorningClock($start)) {
+				continue;
+			}
+			$morningSlots++;
+		}
+
+		return NurseryTimetableCriteria::morningCapacity($morningSlots, count($this->days) ?: 5);
+	}
+
+	/**
+	 * @param array<int,int> $hoursByCourseId
+	 */
+	private function persistNurseryCourseHours(array $hoursByCourseId): void
+	{
+		if ($hoursByCourseId === []) {
+			return;
+		}
+		try {
+			$db = \Config\Database::connect();
+			foreach ($hoursByCourseId as $courseId => $hours) {
+				$courseId = (int) $courseId;
+				$hours = max(1, (int) $hours);
+				if ($courseId <= 0) {
+					continue;
+				}
+				$db->table('courses')->where('id', $courseId)->update(['credit' => $hours]);
+			}
+		} catch (\Throwable $e) {
+			log_message('error', 'Nursery course period persist failed: {msg}', ['msg' => $e->getMessage()]);
+		}
 	}
 
 	private function timeToMinutes(string $time): int

@@ -69,7 +69,7 @@ $colorOptions = [
 
 	<div class="tab-content">
 		<div class="tab-pane fade show active" id="ttTabPeriods" role="tabpanel">
-			<p class="text-muted mb-3">Nursery is independent: <strong>Morning circle 07:30–08:00</strong>, break <strong>10:30–11:00</strong>, lunch <strong>12:00–13:00</strong>. Teach <strong>3 or 4 courses per day before lunch</strong> so allocated weekly periods are covered. <strong>No course after lunch</strong> — the afternoon is one merged <strong>HOME WORK</strong> band (13:00–16:30). Primary keeps 1-hour lessons from 07:30. High school / TVET keep 40-minute bells. None of these include Sunday.</p>
+			<p class="text-muted mb-3">Nursery is independent: <strong>Morning circle 07:30–08:00</strong>, break <strong>10:30–11:00</strong>, lunch <strong>12:00–13:00</strong>. Teach <strong>3 or 4 courses per day before lunch</strong> so allocated weekly periods are covered. Courses with <strong>Marks 100 are core</strong> and get more periods; other course periods are reduced so nothing sits outside the grid. <strong>No course after lunch</strong> — the afternoon is one merged <strong>HOME WORK</strong> band (13:00–16:30). Primary keeps 1-hour lessons from 07:30. High school / TVET keep 40-minute bells. None of these include Sunday.</p>
 
 			<form id="timetableSlotsForm">
 				<input type="hidden" name="track_key" id="ttTrackKeyPeriods" value="<?= esc($selectedTrack); ?>">

@@ -140,7 +140,21 @@ $result = $generator->generate(
 	$blocked,
 	$keepBusy === []
 );
+if (!empty($result['assignments'])) {
+	$nurseryAssignments = $result['assignments'];
+}
 echo 'Generated entries: ' . count($result['entries']) . "\n";
+$seenCourses = [];
+foreach ($nurseryAssignments as $assignment) {
+	$cid = (int) ($assignment['course_id'] ?? 0);
+	if ($cid <= 0 || isset($seenCourses[$cid])) {
+		continue;
+	}
+	$seenCourses[$cid] = true;
+	$core = ((int) round((float) ($assignment['marks'] ?? 0)) >= 100) ? 'CORE' : 'other';
+	echo 'CREDIT ' . ($assignment['course_title'] ?? '') . " {$core} periods="
+		. (int) \App\Services\Timetable\TimetableGeneratorService::weeklyHoursFromCourse($assignment) . "\n";
+}
 foreach ($result['warnings'] as $warning) {
 	echo 'WARN ' . $warning . "\n";
 }
@@ -231,6 +245,22 @@ $days = $db->query(
 )->getResultArray();
 foreach ($days as $d) {
 	echo "DAY {$d['class_title']} d{$d['day_of_week']} periods={$d['periods']} courses={$d['courses']}\n";
+}
+
+$courseCounts = $db->query(
+	"SELECT cl.title AS class_title, c.title AS course_title, c.marks, c.credit, COUNT(*) AS periods
+	 FROM timetable_entries te
+	 JOIN classes cl ON cl.id = te.class_id
+	 JOIN courses c ON c.id = te.course_id
+	 JOIN timetable_slots ts ON ts.id = te.slot_id
+	 WHERE te.schedule_id = {$scheduleId} AND te.class_id IN ({$idsSql})
+	   AND te.day_of_week >= 0 AND te.slot_id > 0 AND ts.is_break = 0
+	 GROUP BY cl.title, c.title, c.marks, c.credit
+	 ORDER BY cl.title, c.marks DESC, periods DESC, c.title"
+)->getResultArray();
+foreach ($courseCounts as $row) {
+	$core = ((int) round((float) $row['marks']) >= 100) ? 'CORE' : 'other';
+	echo "COURSE {$row['class_title']} {$row['course_title']} {$core} marks={$row['marks']} credit={$row['credit']} placed={$row['periods']}\n";
 }
 
 echo "Schedule {$scheduleId}: scheduled={$scheduled}, parking={$parking}, after-lunch=" . count($afterLunch) . "\n";

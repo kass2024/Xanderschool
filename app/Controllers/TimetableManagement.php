@@ -1145,6 +1145,9 @@ class TimetableManagement extends Home
 				$phaseEntries += count($result['entries']);
 				$allEntries = array_merge($allEntries, $result['entries']);
 				$allWarnings = array_merge($allWarnings, $result['warnings']);
+				if (!empty($result['assignments'])) {
+					$phaseAssignments = $this->mergeFittedNurseryHours($phaseAssignments, $result['assignments']);
+				}
 			}
 
 			$stages = $this->markGenerationStage($stages, $phaseKey, 'done');
@@ -1521,6 +1524,48 @@ class TimetableManagement extends Home
 			}
 		}
 		return $ids;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $phaseAssignments
+	 * @param list<array<string,mixed>> $fitted
+	 * @return list<array<string,mixed>>
+	 */
+	private function mergeFittedNurseryHours(array $phaseAssignments, array $fitted): array
+	{
+		$map = [];
+		foreach ($fitted as $row) {
+			$classId = (int) ($row['class_id'] ?? 0);
+			$courseId = (int) ($row['course_id'] ?? 0);
+			if ($classId <= 0 || $courseId <= 0) {
+				continue;
+			}
+			if (!array_key_exists('_fitted_hours', $row) && !isset($row['weekly_hours'])) {
+				continue;
+			}
+			$map[$classId . ':' . $courseId] = $row;
+		}
+		if ($map === []) {
+			return $phaseAssignments;
+		}
+		foreach ($phaseAssignments as $i => $row) {
+			$key = (int) ($row['class_id'] ?? 0) . ':' . (int) ($row['course_id'] ?? 0);
+			if (!isset($map[$key])) {
+				continue;
+			}
+			$src = $map[$key];
+			if (array_key_exists('_fitted_hours', $src)) {
+				$phaseAssignments[$i]['_fitted_hours'] = $src['_fitted_hours'];
+			}
+			if (isset($src['weekly_hours'])) {
+				$phaseAssignments[$i]['weekly_hours'] = $src['weekly_hours'];
+			}
+			if (isset($src['credit'])) {
+				$phaseAssignments[$i]['credit'] = $src['credit'];
+			}
+		}
+
+		return $phaseAssignments;
 	}
 
 	private function phaseAssignmentsFingerprint(int $schoolId, int $year, int $term, string $phase, TimetableSchemaModel $schema): string
