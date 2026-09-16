@@ -74,17 +74,18 @@ class HeyStarSyncService
 			'pciRelayDelay' => 2000,
 		]);
 		$client->post('device/setRecModeConfig', [
-			'recModeCardEnable' => 0,
+			'recModeCardEnable' => 1,
 			'recModeFaceEnable' => 1,
 			'recModeFingerEnable' => 0,
 			'recModePalmEnable' => 0,
+			'recModeCardIntf' => 3,
 		]);
-		// Accurate recognition: stricter score, monocular liveness, ~1.5m, registered-only.
+		// Accurate recognition with full distance (0 = no limit). Face or card.
 		$client->post('device/setRecConfig', [
-			'recThreshold1vN' => 75,
-			'recThreshold1v1' => 68,
-			'recInterval' => 3,
-			'recDistance' => 3,
+			'recThreshold1vN' => 68,
+			'recThreshold1v1' => 60,
+			'recInterval' => 2,
+			'recDistance' => 0,
 			'recRank' => 2,
 			'recStrangerEnable' => 0,
 			'recIsStrangerTimes' => 2,
@@ -109,6 +110,7 @@ class HeyStarSyncService
 		$devicePeople = [];
 		$deviceSnMap = [];
 		$devicePeopleNameMap = [];
+		$devicePeopleCardMap = [];
 		$errors = [];
 		if (!$client->ok($brand['ui'] ?? [])) {
 			$errors[] = 'School UI: ' . (string) (($brand['ui']['msg'] ?? 'branding failed'));
@@ -122,6 +124,7 @@ class HeyStarSyncService
 					if ($sn !== '') {
 						$deviceSnMap[$sn] = true;
 						$devicePeopleNameMap[$sn] = (string) ($person['name'] ?? '');
+						$devicePeopleCardMap[$sn] = strtoupper(preg_replace('/[^A-F0-9]/', '', (string) ($person['cardNo'] ?? $person['card'] ?? '')));
 					}
 				}
 			} else {
@@ -135,40 +138,52 @@ class HeyStarSyncService
 		foreach ($roster as $person) {
 			$onlineSnMap['T' . (int) ($person['id'] ?? 0)] = true;
 		}
+		$cardsSynced = 0;
 		foreach ($roster as $p) {
 			$sn = 'T' . (int) $p['id'];
 			$wantName = self::safeName((string) $p['name']);
-			if (isset($deviceSnMap[$sn])) {
-				$haveName = self::safeName((string) ($devicePeopleNameMap[$sn] ?? ''));
-				if ($haveName !== '' && strcasecmp($haveName, $wantName) === 0) {
-					$skipped++;
-					continue;
-				}
-				// Name-only merge (no face fields) so enrolled faces stay on the terminal.
-				$res = $client->post('person/merge', [
-					'type' => 1,
-					'sn' => $sn,
-					'name' => $wantName,
-					'verifyStyle' => 1,
-				]);
-				if (!$client->ok($res)) {
-					$errors[] = $sn . ' rename: ' . (string) ($res['msg'] ?? 'person merge failed');
-					continue;
-				}
-				$renamed++;
-				continue;
-			}
-			$res = $client->post('person/merge', [
+			$wantCard = strtoupper(preg_replace('/[^A-F0-9]/', '', (string) ($p['cardNo'] ?? '')));
+			$payload = [
 				'type' => 1,
 				'sn' => $sn,
 				'name' => $wantName,
-				'verifyStyle' => 1,
-			]);
+				'verifyStyle' => 0, // Face or card
+			];
+			if ($wantCard !== '') {
+				$payload['cardNo'] = $wantCard;
+			}
+			if (isset($deviceSnMap[$sn])) {
+				$haveName = self::safeName((string) ($devicePeopleNameMap[$sn] ?? ''));
+				$haveCard = (string) ($devicePeopleCardMap[$sn] ?? '');
+				$nameSame = ($haveName !== '' && strcasecmp($haveName, $wantName) === 0);
+				$cardSame = ($wantCard === '' || strcasecmp($haveCard, $wantCard) === 0);
+				if ($nameSame && $cardSame) {
+					$skipped++;
+					continue;
+				}
+				// Name/card-only merge (no face fields) so enrolled faces stay on the terminal.
+				$res = $client->post('person/merge', $payload);
+				if (!$client->ok($res)) {
+					$errors[] = $sn . ' update: ' . (string) ($res['msg'] ?? 'person merge failed');
+					continue;
+				}
+				if (!$nameSame) {
+					$renamed++;
+				}
+				if ($wantCard !== '' && !$cardSame) {
+					$cardsSynced++;
+				}
+				continue;
+			}
+			$res = $client->post('person/merge', $payload);
 			if (!$client->ok($res)) {
 				$errors[] = $sn . ': ' . (string) ($res['msg'] ?? 'person merge failed');
 				continue;
 			}
 			$staff++;
+			if ($wantCard !== '') {
+				$cardsSynced++;
+			}
 		}
 		foreach (array_keys($deviceSnMap) as $sn) {
 			if (!preg_match('/^T\d+$/', $sn)) {
@@ -189,6 +204,7 @@ class HeyStarSyncService
 			'message' => self::buildSyncMessage($brand['name'], $staff, $skipped, $renamed, count($devicePeople), $deviceOnly, $deviceKey !== ''),
 			'staff' => $staff,
 			'renamed' => $renamed,
+			'cards_synced' => $cardsSynced,
 			'skipped_existing' => $skipped,
 			'device_existing' => count($devicePeople),
 			'device_only' => $deviceOnly,
@@ -265,10 +281,10 @@ class HeyStarSyncService
 		$uiRes = $client->post('device/setUiConfig', $ui, 60);
 		$recRes = $client->post('device/setRecConfig', [
 			'recRank' => 2,
-			'recThreshold1vN' => 75,
-			'recThreshold1v1' => 68,
-			'recInterval' => 3,
-			'recDistance' => 3,
+			'recThreshold1vN' => 68,
+			'recThreshold1v1' => 60,
+			'recInterval' => 2,
+			'recDistance' => 0,
 			'recSucTtsMode' => 2,
 			'recSucDisplayMode' => 1,
 			'recRecordUploadMode' => 2,
@@ -309,7 +325,7 @@ class HeyStarSyncService
 		helper('qonics');
 		$db = \Config\Database::connect();
 		$rows = $db->table('staffs s')
-			->select('s.id, s.fname, s.lname, s.photo')
+			->select('s.id, s.fname, s.lname, s.photo, s.card')
 			->where('s.school_id', $schoolId)
 			->where('s.status !=', 0)
 			->orderBy('s.fname', 'ASC')
@@ -317,6 +333,7 @@ class HeyStarSyncService
 			->get()
 			->getResultArray();
 		$out = [];
+		helper('card_uid');
 		foreach ($rows as $p) {
 			$id = (int) ($p['id'] ?? 0);
 			if ($id <= 0) {
@@ -324,11 +341,16 @@ class HeyStarSyncService
 			}
 			$name = trim((string) ($p['fname'] ?? '') . ' ' . (string) ($p['lname'] ?? ''));
 			$cardPhoto = (string) AttendanceScanService::staffUploadedPhotoUrl($p['photo'] ?? null);
+			$storedCard = strtoupper(preg_replace('/[^A-F0-9]/', '', (string) ($p['card'] ?? '')));
+			// Device NFC reads reader byte-order; Xander DB stores reversed assign-card form.
+			$deviceCard = $storedCard !== '' ? reverse_card_uid_bytes($storedCard) : '';
 			$out[] = [
 				'id' => $id,
 				'sn' => 'T' . $id,
 				'name' => self::safeName($name),
 				'has_photo' => $cardPhoto !== '' ? 1 : 0,
+				'card' => $storedCard,
+				'cardNo' => $deviceCard,
 			];
 		}
 		return $out;
