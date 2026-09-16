@@ -10,8 +10,8 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Excel handover list of students who already have an assigned card.
- * School header + empty signature column so the student can sign on receipt.
+ * Excel / PDF student card checklist: full class list with Card UID status
+ * and a signature column so students can confirm they received a card.
  */
 class CardAssignedListExporter
 {
@@ -31,6 +31,7 @@ class CardAssignedListExporter
 			'Class',
 			'Studying mode',
 			'Card UID',
+			'Card status',
 			'Date received',
 			'Student signature',
 		];
@@ -44,19 +45,26 @@ class CardAssignedListExporter
 	public static function exportFilename(string $schoolName, string $ext = 'xlsx'): string
 	{
 		$base = trim(preg_replace('/\s+/', ' ', $schoolName));
-		$base = $base !== '' ? $base . ' assigned cards' : 'assigned cards';
+		$base = $base !== '' ? $base . ' student card checklist' : 'student card checklist';
 		$safe = preg_replace('/[\\\\\\/:*?"<>|]+/', '', $base);
 		$safe = trim(preg_replace('/\s{2,}/', ' ', (string) $safe));
-		$safe = $safe !== '' ? $safe : 'assigned_cards';
+		$safe = $safe !== '' ? $safe : 'student_card_checklist';
 		$safe = str_replace(' ', '_', $safe);
 
 		return $safe . '_' . date('Y-m-d') . '.' . ltrim($ext, '.');
 	}
 
-	/**
-	 * @param array<string,mixed> $student
-	 * @return list<int|string>
-	 */
+	public static function missingPdfFilename(string $schoolName): string
+	{
+		$base = trim(preg_replace('/\s+/', ' ', $schoolName));
+		$base = $base !== '' ? $base . ' students without card UID' : 'students without card UID';
+		$safe = preg_replace('/[\\\\\\/:*?"<>|]+/', '', $base);
+		$safe = trim(preg_replace('/\s{2,}/', ' ', (string) $safe));
+		$safe = $safe !== '' ? $safe : 'students_without_card_uid';
+		$safe = str_replace(' ', '_', $safe);
+
+		return $safe . '_' . date('Y-m-d') . '.pdf';
+	}
 	public static function rowValues(array $student, int $num): array
 	{
 		$card = trim((string) ($student['card_number'] ?? $student['card'] ?? ''));
@@ -68,6 +76,7 @@ class CardAssignedListExporter
 			trim((string) ($student['class'] ?? '')),
 			trim((string) ($student['mode_label'] ?? '')),
 			$card !== '' ? $card : '—',
+			$card !== '' ? 'Assigned' : 'Missing',
 			'',
 			'',
 		];
@@ -86,7 +95,7 @@ class CardAssignedListExporter
 	): Spreadsheet {
 		$spreadsheet = new Spreadsheet();
 		$sheet = $spreadsheet->getActiveSheet();
-		$sheet->setTitle('Assigned cards');
+		$sheet->setTitle('Card checklist');
 		$lastCol = self::lastColumn();
 
 		$headerEndRow = self::writeSchoolHeader($sheet, $school, $lastCol);
@@ -97,19 +106,31 @@ class CardAssignedListExporter
 		$dataStart = $headerRow + 1;
 
 		$sheet->mergeCells(self::TEXT_COL . "{$titleRow}:{$lastCol}{$titleRow}");
-		$sheet->setCellValue(self::TEXT_COL . $titleRow, 'STUDENT CARD HANDOVER LIST');
+		$sheet->setCellValue(self::TEXT_COL . $titleRow, 'STUDENT CARD CHECKLIST');
 		$sheet->getStyle(self::TEXT_COL . "{$titleRow}:{$lastCol}{$titleRow}")->applyFromArray([
 			'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => self::BRAND]],
 			'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
 		]);
 		$sheet->getRowDimension($titleRow)->setRowHeight(26);
 
+		$assigned = 0;
+		$missing = 0;
+		foreach ($students as $student) {
+			$uid = trim((string) ($student['card_number'] ?? $student['card'] ?? ''));
+			if ($uid !== '') {
+				$assigned++;
+			} else {
+				$missing++;
+			}
+		}
 		$metaParts = array_filter([
 			'Academic Year: ' . ($yearTitle !== '' ? $yearTitle : '—'),
 			$termLabel !== '' ? $termLabel : null,
 			$filterLabel !== '' ? $filterLabel : null,
 			'Exported: ' . date('d M Y H:i'),
-			'Assigned cards: ' . count($students),
+			'Students: ' . count($students),
+			'Assigned UID: ' . $assigned,
+			'Missing UID: ' . $missing,
 		]);
 		$sheet->mergeCells(self::TEXT_COL . "{$infoRow}:{$lastCol}{$infoRow}");
 		$sheet->setCellValue(self::TEXT_COL . $infoRow, implode('   |   ', $metaParts));
@@ -124,7 +145,7 @@ class CardAssignedListExporter
 		$sheet->getRowDimension($infoRow)->setRowHeight(28);
 
 		$sheet->mergeCells('A' . $noteRow . ":{$lastCol}{$noteRow}");
-		$sheet->setCellValue('A' . $noteRow, 'Each student must sign to confirm that they received their student card.');
+		$sheet->setCellValue('A' . $noteRow, 'Full class checklist. Missing UID means the student does not yet have a card. Each student signs when they receive their card.');
 		$sheet->getStyle('A' . $noteRow . ":{$lastCol}{$noteRow}")->applyFromArray([
 			'font' => ['italic' => true, 'size' => 10, 'color' => ['rgb' => '475569']],
 		]);
@@ -184,19 +205,19 @@ class CardAssignedListExporter
 				],
 				'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
 			]);
-			$sheet->getStyle("H{$dataStart}:H{$lastDataRow}")->applyFromArray([
+			$sheet->getStyle("I{$dataStart}:I{$lastDataRow}")->applyFromArray([
 				'borders' => [
 					'bottom' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '64748B']],
 				],
 			]);
-			$sheet->getStyle("G{$dataStart}:G{$lastDataRow}")->applyFromArray([
+			$sheet->getStyle("H{$dataStart}:H{$lastDataRow}")->applyFromArray([
 				'borders' => [
 					'bottom' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '64748B']],
 				],
 			]);
 		} else {
 			$sheet->mergeCells("A{$dataStart}:{$lastCol}{$dataStart}");
-			$sheet->setCellValue("A{$dataStart}", 'No students with an assigned card match the selected criteria.');
+			$sheet->setCellValue("A{$dataStart}", 'No students match the selected class and studying mode.');
 			$sheet->getStyle("A{$dataStart}:{$lastCol}{$dataStart}")->applyFromArray([
 				'font' => ['italic' => true, 'color' => ['rgb' => '64748B']],
 				'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
@@ -207,12 +228,12 @@ class CardAssignedListExporter
 		$signRow = $row + 2;
 		$sheet->mergeCells("A{$signRow}:D{$signRow}");
 		$sheet->setCellValue("A{$signRow}", 'Distributed by: ________________________________');
-		$sheet->mergeCells("E{$signRow}:F{$signRow}");
+		$sheet->mergeCells("E{$signRow}:G{$signRow}");
 		$sheet->setCellValue("E{$signRow}", 'Signature: ________________');
-		$sheet->mergeCells("G{$signRow}:H{$signRow}");
-		$sheet->setCellValue("G{$signRow}", 'Date: ________________');
+		$sheet->mergeCells("H{$signRow}:I{$signRow}");
+		$sheet->setCellValue("H{$signRow}", 'Date: ________________');
 		$sheet->getRowDimension($signRow)->setRowHeight(28);
-		$sheet->getStyle("A{$signRow}:H{$signRow}")->applyFromArray([
+		$sheet->getStyle("A{$signRow}:I{$signRow}")->applyFromArray([
 			'font' => ['size' => 11, 'color' => ['rgb' => '1E293B']],
 		]);
 
@@ -222,8 +243,9 @@ class CardAssignedListExporter
 		$sheet->getColumnDimension('D')->setWidth(18);
 		$sheet->getColumnDimension('E')->setWidth(16);
 		$sheet->getColumnDimension('F')->setWidth(18);
-		$sheet->getColumnDimension('G')->setWidth(16);
-		$sheet->getColumnDimension('H')->setWidth(24);
+		$sheet->getColumnDimension('G')->setWidth(14);
+		$sheet->getColumnDimension('H')->setWidth(16);
+		$sheet->getColumnDimension('I')->setWidth(24);
 		$sheet->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE);
 		$sheet->getPageSetup()->setFitToWidth(1);
 		$sheet->getPageSetup()->setFitToHeight(0);

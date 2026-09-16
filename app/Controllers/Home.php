@@ -2089,68 +2089,10 @@ public function testEmail()
 	public function export_assigned_student_cards_excel()
 	{
 		$this->_preset(1, 3);
-		$schoolId = (int) $this->session->get('soma_school_id');
-		$year = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
 		$classId = (int) ($this->request->getGet('class_id') ?? 0);
 		$modeRaw = $this->request->getGet('studying_mode');
-
-		$studentModel = new StudentModel();
-		$builder = $studentModel
-			->select("
-				students.id,
-				students.regno,
-				CONCAT(students.fname, ' ', students.lname) AS name,
-				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class,
-				c.id AS class_id,
-				students.studying_mode,
-				students.card AS card_number
-			")
-			->join('class_records cr', 'cr.student = students.id', 'inner')
-			->join('classes c', 'c.id = cr.class', 'left')
-			->join('departments d', 'd.id = c.department', 'left')
-			->join('levels l', 'l.id = c.level', 'left')
-			->where('students.school_id', $schoolId)
-			->where('students.status', 1)
-			->where('students.card IS NOT NULL', null, false)
-			->where('students.card !=', '');
-
-		if ($year > 0) {
-			$builder->where('cr.year', (string) $year);
-		}
-		if ($classId > 0) {
-			$builder->where('c.id', $classId);
-		}
-		if ($modeRaw !== null && $modeRaw !== '') {
-			$builder->where('students.studying_mode', (string) $modeRaw);
-		}
-
-		$students = $builder
-			->groupBy('students.id')
-			->orderBy('l.title', 'ASC')
-			->orderBy('c.title', 'ASC')
-			->orderBy('students.fname', 'ASC')
-			->orderBy('students.lname', 'ASC')
-			->get()
-			->getResultArray();
-
-		foreach ($students as &$student) {
-			$student['mode_label'] = self::ModeToStr($student['studying_mode'] ?? 0);
-		}
-		unset($student);
-
-		$filterParts = [];
-		if ($classId > 0 && !empty($students[0]['class'])) {
-			$filterParts[] = 'Class: ' . $students[0]['class'];
-		} elseif ($classId > 0) {
-			$filterParts[] = 'Class ID: ' . $classId;
-		} else {
-			$filterParts[] = 'Class: All';
-		}
-		if ($modeRaw !== null && $modeRaw !== '') {
-			$filterParts[] = 'Mode: ' . self::ModeToStr($modeRaw);
-		} else {
-			$filterParts[] = 'Mode: All';
-		}
+		$students = $this->studentCardChecklistRows($classId, $modeRaw, null);
+		$filterParts = $this->studentCardChecklistFilterLabel($classId, $modeRaw, $students, null);
 
 		$school = $this->schoolMetaForStaffExport();
 		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
@@ -2170,6 +2112,131 @@ public function testEmail()
 		header('Cache-Control: max-age=0');
 		$writer->save('php://output');
 		exit;
+	}
+
+	public function export_missing_student_cards_pdf()
+	{
+		$this->_preset(1, 3);
+		$classId = (int) ($this->request->getGet('class_id') ?? 0);
+		$modeRaw = $this->request->getGet('studying_mode');
+		$students = $this->studentCardChecklistRows($classId, $modeRaw, false);
+		$filterParts = $this->studentCardChecklistFilterLabel($classId, $modeRaw, $students, false);
+		$school = $this->schoolMetaForStaffExport();
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
+
+		$html = view('pages/reports/missing_student_cards_pdf', [
+			'school' => $school,
+			'students' => $students,
+			'year_title' => $yearTitle,
+			'term_label' => $termLabel,
+			'filter_label' => implode('   |   ', $filterParts),
+			'printed_at' => date('d M Y H:i'),
+		]);
+
+		try {
+			$mask = FCPATH . 'assets/templates/*.html';
+			array_map('unlink', glob($mask) ?: []);
+			$wkhtmltopdf = new Wkhtmltopdf(['path' => FCPATH . 'assets/templates/']);
+			$wkhtmltopdf->setTitle('Students without card UID');
+			$wkhtmltopdf->setHtml($html);
+			$wkhtmltopdf->setOrientation('Landscape');
+			$wkhtmltopdf->setPageSize(Wkhtmltopdf::SIZE_A4);
+			$wkhtmltopdf->setMargins(['top' => 8, 'left' => 8, 'right' => 8, 'bottom' => 8]);
+			$filename = \App\Libraries\CardAssignedListExporter::missingPdfFilename($school['name']);
+			$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, $filename);
+		} catch (\Exception $e) {
+			echo $e->getMessage();
+		}
+	}
+
+	/**
+	 * @param mixed $modeRaw
+	 * @return list<array<string,mixed>>
+	 */
+	private function studentCardChecklistRows(int $classId, $modeRaw, ?bool $hasCard): array
+	{
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
+		$studentModel = new StudentModel();
+		$builder = $studentModel
+			->select("
+				students.id,
+				students.regno,
+				CONCAT(students.fname, ' ', students.lname) AS name,
+				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class,
+				c.id AS class_id,
+				students.studying_mode,
+				students.card AS card_number
+			")
+			->join('class_records cr', 'cr.student = students.id', 'inner')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('students.school_id', $schoolId)
+			->where('students.status', 1);
+
+		if ($year > 0) {
+			$builder->where('cr.year', (string) $year);
+		}
+		if ($classId > 0) {
+			$builder->where('c.id', $classId);
+		}
+		if ($modeRaw !== null && $modeRaw !== '') {
+			$builder->where('students.studying_mode', (string) $modeRaw);
+		}
+		if ($hasCard === true) {
+			$builder->where("TRIM(IFNULL(students.card,'')) <> ''", null, false);
+		} elseif ($hasCard === false) {
+			$builder->where("(students.card IS NULL OR TRIM(students.card) = '')", null, false);
+		}
+
+		$students = $builder
+			->groupBy('students.id')
+			->orderBy('l.title', 'ASC')
+			->orderBy('c.title', 'ASC')
+			->orderBy('students.fname', 'ASC')
+			->orderBy('students.lname', 'ASC')
+			->get()
+			->getResultArray();
+
+		foreach ($students as &$student) {
+			$student['mode_label'] = self::ModeToStr($student['studying_mode'] ?? 0);
+		}
+		unset($student);
+
+		return $students;
+	}
+
+	/**
+	 * @param mixed $modeRaw
+	 * @param list<array<string,mixed>> $students
+	 * @return list<string>
+	 */
+	private function studentCardChecklistFilterLabel(int $classId, $modeRaw, array $students, ?bool $hasCard): array
+	{
+		$filterParts = [];
+		if ($classId > 0 && !empty($students[0]['class'])) {
+			$filterParts[] = 'Class: ' . $students[0]['class'];
+		} elseif ($classId > 0) {
+			$filterParts[] = 'Class ID: ' . $classId;
+		} else {
+			$filterParts[] = 'Class: All';
+		}
+		if ($modeRaw !== null && $modeRaw !== '') {
+			$filterParts[] = 'Mode: ' . self::ModeToStr($modeRaw);
+		} else {
+			$filterParts[] = 'Mode: All';
+		}
+		if ($hasCard === false) {
+			$filterParts[] = 'Card UID: Missing';
+		} elseif ($hasCard === true) {
+			$filterParts[] = 'Card UID: Assigned';
+		} else {
+			$filterParts[] = 'Card UID: All';
+		}
+
+		return $filterParts;
 	}
 
 	public function staff_cards()
@@ -9946,6 +10013,14 @@ public function getApplicationDocs($id = null)
 					return (string) ($student['studying_mode'] ?? '0') === $modeStr;
 				}));
 			}
+			$cardUid = (string) ($this->request->getGet('card_uid') ?? '');
+			if ($cardUid === '0' || $cardUid === '1') {
+				$wantCard = $cardUid === '1';
+				$students = array_values(array_filter($students, static function ($student) use ($wantCard) {
+					$has = trim((string) ($student['card'] ?? '')) !== '';
+					return $has === $wantCard;
+				}));
+			}
 		}
 		if (count($students) < 1) {
 			if ((int) $type === 10) {
@@ -10011,11 +10086,15 @@ public function getApplicationDocs($id = null)
 				$printBtn = $hasPhoto
 					? "<a class='btn btn-sm btn-dark' href='" . esc(base_url('generate_cards') . '?student_id=' . $sid, 'attr') . "' target='_blank' rel='noopener'><i class='fa fa-print'></i> Print card</a>"
 					: '<span class="text-muted small">No photo</span>';
+				$hasCard = trim((string) ($student['card'] ?? '')) !== '';
+				$cardBadge = $hasCard
+					? "<span class='badge badge-success' title='" . esc($student['card'], 'attr') . "'>UID</span>"
+					: "<span class='badge badge-secondary'>No UID</span>";
 				$color = $hasPhoto ? '' : 'color:orangered';
 				$modeLabel = self::ModeToStr($student['studying_mode'] ?? 0);
-				echo "<tr class='disc_row' style='$color' id='" . esc($student['regno'] . $type, 'attr') . "' data-student-id='" . $sid . "' data-has-photo='" . ($hasPhoto ? '1' : '0') . "' data-mode='" . esc((string) ($student['studying_mode'] ?? '0'), 'attr') . "'>
+				echo "<tr class='disc_row' style='$color' id='" . esc($student['regno'] . $type, 'attr') . "' data-student-id='" . $sid . "' data-has-photo='" . ($hasPhoto ? '1' : '0') . "' data-has-card='" . ($hasCard ? '1' : '0') . "' data-mode='" . esc((string) ($student['studying_mode'] ?? '0'), 'attr') . "'>
 				<td>" . esc($student['regno']) . "</td>
-				<td>" . esc($student['stdnames']) . "</td>
+				<td>" . esc($student['stdnames']) . " " . $cardBadge . "</td>
 				<td>" . esc($student['level_name'] . " " . $student['title'] . " " . $student['code']) . " </td>
 				<td>" . esc($modeLabel) . "</td>
 				<td>" . $photoHtml . "</td>

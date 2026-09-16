@@ -38,9 +38,20 @@
 					<option value="0"><?= lang("app.boarding"); ?></option>
 				</select>
 			</div>
-			<div class="col-md-4 col-sm-12 pull-left mb-2" style="padding-top: 24px;">
-				<a href="<?= base_url('export_assigned_student_cards_excel'); ?>" id="btn_export_assigned_cards" class="btn btn-success">
+			<div class="col-md-3 col-sm-12 pull-left mb-2">
+				<label for="filter_card_uid"><?= lang("app.cardUidFilter"); ?></label>
+				<select class="form-control" id="filter_card_uid">
+					<option value=""><?= lang("app.allCardUids"); ?></option>
+					<option value="1"><?= lang("app.hasCardUid"); ?></option>
+					<option value="0"><?= lang("app.noCardUid"); ?></option>
+				</select>
+			</div>
+			<div class="col-md-5 col-sm-12 pull-left mb-2" style="padding-top: 24px;">
+				<a href="<?= base_url('export_assigned_student_cards_excel'); ?>" id="btn_export_assigned_cards" class="btn btn-success mb-1">
 					<i class="fa fa-file-excel"></i> <?= lang("app.exportAssignedCards"); ?>
+				</a>
+				<a href="<?= base_url('export_missing_student_cards_pdf'); ?>" id="btn_export_missing_cards_pdf" class="btn btn-danger mb-1" target="_blank">
+					<i class="fa fa-file-pdf"></i> <?= lang("app.exportMissingCardUidPdf"); ?>
 				</a>
 			</div>
 		</div>
@@ -160,7 +171,7 @@
 		$("#search_class").on('select2:select', function (selection) {
 			formatRepoSelection(selection.params.data, true);
 		});
-		$("#filter_studying_mode").on("change", function () {
+		$("#filter_studying_mode, #filter_card_uid").on("change", function () {
 			syncExportLink();
 			if ($("#search_type").is(":checked")) {
 				var classId = $("#search_class").val();
@@ -180,7 +191,11 @@
 		return $("#filter_studying_mode").val() || "";
 	}
 
-	function syncExportLink() {
+	function currentCardUid() {
+		return $("#filter_card_uid").val() || "";
+	}
+
+	function cardListQueryParams(includeCardUid) {
 		var params = [];
 		if ($("#search_type").is(":checked")) {
 			var classId = $("#search_class").val();
@@ -192,8 +207,22 @@
 		if (mode !== "") {
 			params.push("studying_mode=" + encodeURIComponent(mode));
 		}
-		var base = "<?= base_url('export_assigned_student_cards_excel'); ?>";
-		$("#btn_export_assigned_cards").attr("href", params.length ? (base + "?" + params.join("&")) : base);
+		if (includeCardUid) {
+			var uid = currentCardUid();
+			if (uid !== "") {
+				params.push("card_uid=" + encodeURIComponent(uid));
+			}
+		}
+		return params;
+	}
+
+	function syncExportLink() {
+		var excelParams = cardListQueryParams(false);
+		var pdfParams = cardListQueryParams(false);
+		var excelBase = "<?= base_url('export_assigned_student_cards_excel'); ?>";
+		var pdfBase = "<?= base_url('export_missing_student_cards_pdf'); ?>";
+		$("#btn_export_assigned_cards").attr("href", excelParams.length ? (excelBase + "?" + excelParams.join("&")) : excelBase);
+		$("#btn_export_missing_cards_pdf").attr("href", pdfParams.length ? (pdfBase + "?" + pdfParams.join("&")) : pdfBase);
 	}
 
 	function formatRepoSelection(repo, isClass = false) {
@@ -224,7 +253,15 @@
 		if (isError)
 			return;
 		var mode = currentStudyingMode();
-		var qs = mode !== "" ? ("?studying_mode=" + encodeURIComponent(mode)) : "";
+		var uid = currentCardUid();
+		var qsParts = [];
+		if (mode !== "") {
+			qsParts.push("studying_mode=" + encodeURIComponent(mode));
+		}
+		if (uid !== "") {
+			qsParts.push("card_uid=" + encodeURIComponent(uid));
+		}
+		var qs = qsParts.length ? ("?" + qsParts.join("&")) : "";
 		$.get("<?=base_url();?>get_student/" + id + cl + type + qs, function (data) {
 			if (isClass) {
 				$("#studentsTable tbody").html(data);
