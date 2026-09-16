@@ -13,10 +13,10 @@ class MenuClearance
 
 	/**
 	 * School Director / head posts allowed to delete students and toggle Active/Locked.
-	 * Head master / Headmistress / Head Teacher are the same school-head role at schools that do not use "Director".
-	 * Does not include Director of studies or Director of Finance.
+	 * Head master / Headmistress are the school-head role at schools that do not use "Director".
+	 * Does not include Head Teacher, Deputy Head Teacher, Director of studies, or Director of Finance.
 	 */
-	const DIRECTOR_STUDENT_LIFECYCLE_POSTS = [1, 18, 25, 26, 29, 30];
+	const DIRECTOR_STUDENT_LIFECYCLE_POSTS = [1, 18, 29, 30];
 
 	/**
 	 * @param int $postId
@@ -39,10 +39,6 @@ class MenuClearance
 			'head master',
 			'headmaster',
 			'headmistress',
-			'head teacher',
-			'headteacher',
-			'deputy head teacher',
-			'deputy headteacher',
 		];
 		return in_array($title, $allowed, true);
 	}

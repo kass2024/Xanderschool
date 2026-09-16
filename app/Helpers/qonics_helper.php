@@ -215,7 +215,7 @@ if (!function_exists('_is_allowed')) {
 }
 
 if (!function_exists('can_manage_student_lock_delete')) {
-	/** Director / school-head only: delete student and Active/Locked on student lists. */
+	/** Director / Deputy Director / Head master / Headmistress: delete student and Active/Locked. */
 	function can_manage_student_lock_delete()
 	{
 		$postId = (int) ($_SESSION['soma_post'] ?? 0);
