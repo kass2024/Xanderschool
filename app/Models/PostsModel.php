@@ -25,6 +25,9 @@ class PostsModel extends Model
 	public const DIRECTOR_ID = 29;
 	/** Academic Deputy Director — same menu/budget rights as Director / Head master. Not finance post #21. */
 	public const DEPUTY_DIRECTOR_ID = 30;
+	public const COOKER_ID = 14;
+	public const COOKER_TITLE = 'Cooker';
+	public const CUSTOMER_CARE_TITLE = 'Customer Care';
 
 	/** Ensure built-in system posts exist and restricted ones get a starter clearance row. */
 	public function ensureLeadershipPosts(): void
@@ -36,6 +39,8 @@ class PostsModel extends Model
 		$ready = true;
 		$db = \Config\Database::connect();
 		$this->renameExactPostTitle(self::PRINCIPAL_ID, 'Principal', self::PRINCIPAL_TITLE);
+		$this->renameExactPostTitle(self::COOKER_ID, 'Cooks', self::COOKER_TITLE);
+		$this->ensurePostByTitle(self::CUSTOMER_CARE_TITLE);
 		$wanted = [
 			self::HEAD_TEACHER_ID => 'Head Teacher',
 			self::DEPUTY_HEAD_TEACHER_ID => 'Deputy Head Teacher',
@@ -112,6 +117,28 @@ class PostsModel extends Model
 			}
 		} catch (\Throwable $e) {
 			// ignore permission bootstrap failures; post creation still matters
+		}
+	}
+
+	/** Create a regular operational post by title if it is missing. */
+	private function ensurePostByTitle(string $title): void
+	{
+		$title = trim($title);
+		if ($title === '') {
+			return;
+		}
+		try {
+			$db = \Config\Database::connect();
+			$existing = $db->table('posts')->where('title', $title)->get(1)->getRowArray();
+			if ($existing) {
+				if ((int) ($existing['status'] ?? 0) !== 1) {
+					$db->table('posts')->where('id', $existing['id'])->update(['status' => 1]);
+				}
+				return;
+			}
+			$db->table('posts')->insert(['title' => $title, 'status' => 1]);
+		} catch (\Throwable $e) {
+			// ignore duplicate title races
 		}
 	}
 
