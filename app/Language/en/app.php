@@ -557,6 +557,7 @@ return [
    'staffSaved'                  => 'Staff data saved',
    'usePost'                     => 'Use post',
    'selectPost'                  => 'Select post',
+   'allPosts'                    => 'All posts',
    'Id'                          => 'Id',
    'staffName'                   => 'Staff Name',
    'photo'                       => 'Photo',

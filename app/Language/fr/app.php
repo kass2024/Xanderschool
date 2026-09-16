@@ -555,6 +555,7 @@ return [
 	"staffSaved" => "Données du personnel enregistrées",
 	"usePost" => "Utiliser la publication",
 	"selectPost" => "Sélectionner une publication",
+	"allPosts" => "Tous les postes",
 	"Id" => "Id",
 	"staffName" => "Nom du personnel",
 	"photo" => "Photo",

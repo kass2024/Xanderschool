@@ -30,6 +30,32 @@ class StaffModel extends Model
 			->get()->getResultArray();
 		return $res;
 	}
+
+	/**
+	 * Staff card generation list: one person, one post, or every post (id=0).
+	 */
+	public function get_staff_for_card_list($id, $isPost = 0)
+	{
+		$id = (int) $id;
+		$isPost = (int) $isPost;
+		if ($isPost === 1 && $id === 0) {
+			$staffs = $this->get_staff('staffs.id > 0');
+			usort($staffs, static function ($a, $b) {
+				$postCmp = strcasecmp((string) ($a['post_title'] ?? ''), (string) ($b['post_title'] ?? ''));
+				if ($postCmp !== 0) {
+					return $postCmp;
+				}
+				$nameCmp = strcasecmp((string) ($a['fname'] ?? ''), (string) ($b['fname'] ?? ''));
+				if ($nameCmp !== 0) {
+					return $nameCmp;
+				}
+				return strcasecmp((string) ($a['lname'] ?? ''), (string) ($b['lname'] ?? ''));
+			});
+			return $staffs;
+		}
+		$key = $isPost === 0 ? 'staffs.id' : 'p.id';
+		return $this->get_staff($key . '=' . $id);
+	}
 	public function staff_post_phone()
 	{
 		$data = $this->db->query("SELECT p.id,sum(if(st.phone!='',1,0)) as phone,sum(if(st.phone='',1,0)) as no_phone,p.title from staffs st

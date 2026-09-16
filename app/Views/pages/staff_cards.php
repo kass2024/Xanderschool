@@ -15,6 +15,7 @@
 				<div id="search_class_dv" style="display: none !important;">
 					<select class="form-control select2" id="search_class">
 						<option selected disabled><?= lang("app.selectPost");?></option>
+						<option value="0"><?= lang("app.allPosts");?></option>
 						<?php
 						foreach ($posts as $post) {
 							echo "<option value='{$post['id']}'>{$post['title']} </option>";
@@ -127,6 +128,7 @@
 		});
 		$(document).on('click', '#removerow', function () {
 			$(this).closest('tr').remove();
+			count_students();
 		});
 		$("#search_student").on('select2:select', function (selection) {
 			formatRepoSelection(selection.params.data);
@@ -169,7 +171,7 @@
 	}
 
 	function count_students() {
-		var images = $("[name='stId[]'").length;
+		var images = $("input[name='stId[]']").length;
 		if (images==0){
 			$("#btn_generate").prop("disabled",true);
 		}else{
