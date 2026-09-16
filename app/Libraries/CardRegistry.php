@@ -58,6 +58,9 @@ class CardRegistry
 				ORDER BY school_id ASC, id ASC LIMIT 1",
 				$baseParams
 			)->getRowArray();
+			if (!$staff) {
+				$staff = self::lookupStaffByVariants($scopeSchoolIds, $variants);
+			}
 			if ($staff) {
 				return [
 					'type' => 'staff',
@@ -222,6 +225,50 @@ class CardRegistry
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Match a scanned UID against stored staff cards using every hex/decimal/reversed form.
+	 *
+	 * @param list<int> $scopeSchoolIds
+	 * @param list<string> $variants
+	 * @return array{id:int,school_id:int,name:string,card:string}|null
+	 */
+	private static function lookupStaffByVariants(array $scopeSchoolIds, array $variants): ?array
+	{
+		helper('card_uid');
+		$want = [];
+		foreach ($variants as $v) {
+			$u = strtoupper(trim((string) $v));
+			if ($u !== '') {
+				$want[$u] = true;
+			}
+		}
+		if ($want === [] || $scopeSchoolIds === []) {
+			return null;
+		}
+
+		$db = \Config\Database::connect();
+		$rows = $db->table('staffs')
+			->select('id, school_id, fname, lname, card')
+			->whereIn('school_id', $scopeSchoolIds)
+			->where("TRIM(COALESCE(card, '')) <> ''", null, false)
+			->get()
+			->getResultArray();
+		foreach ($rows as $staff) {
+			$stored = (string) ($staff['card'] ?? '');
+			foreach (card_uid_lookup_variants($stored) as $sv) {
+				if (isset($want[strtoupper($sv)])) {
+					return [
+						'id' => (int) $staff['id'],
+						'school_id' => (int) $staff['school_id'],
+						'name' => trim((string) ($staff['fname'] ?? '') . ' ' . (string) ($staff['lname'] ?? '')),
+						'card' => $stored,
+					];
+				}
+			}
+		}
+		return null;
 	}
 
 	/**

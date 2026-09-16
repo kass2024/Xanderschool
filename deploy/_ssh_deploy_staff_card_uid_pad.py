@@ -18,13 +18,16 @@ FILES = [
     "public/assets/js/card-uid.js",
     "app/Views/staff_attendance_card.php",
     "app/Views/attendance_card.php",
+    "app/Libraries/CardRegistry.php",
+    "app/Controllers/Home.php",
+    "deploy/debug_staff_card_scan.php",
 ]
 
 
 def main() -> int:
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(HOST, username=USER, password=PASSWORD, timeout=90, banner_timeout=90)
+    client.connect(HOST, username=USER, password=PASSWORD, timeout=180, banner_timeout=180, auth_timeout=180)
     sftp = client.open_sftp()
     for rel in FILES:
         local = ROOT / rel
@@ -46,6 +49,8 @@ docker exec xander_school_app grep -n "card_uid_pad_hex\|CardUid.forScan\|padSta
 cd /opt/xander-school/deploy && docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 4
 docker exec xander_school_app php -r "opcache_reset(); echo 'OPCACHE_RESET_OK\n';"
+echo '--- DEBUG ---'
+docker exec xander_school_app php /var/www/html/deploy/debug_staff_card_scan.php
 """
     _, stdout, stderr = client.exec_command(cmd, timeout=180)
     print(stdout.read().decode())

@@ -302,17 +302,24 @@ document.addEventListener("DOMContentLoaded", function () {
 		lastUID = uid;
 		lastScanAt = now;
 		setReadyState("busy", "Processing card…");
-		fetch(apiURL + "?card=" + encodeURIComponent(uid), {
-			method: "GET",
+		fetch(apiURL, {
+			method: "POST",
 			cache: "no-store",
-			headers: { "Accept": "application/json" },
-			credentials: "same-origin"
+			headers: {
+				"Accept": "application/json",
+				"Content-Type": "application/x-www-form-urlencoded"
+			},
+			credentials: "same-origin",
+			body: "card=" + encodeURIComponent(uid)
 		})
 			.then(function (res) { return res.json(); })
 			.then(function (data) {
 				applyDashboard(data);
 				if (data.success) showStaff(data);
-				else showError(data.message || "Card not registered");
+				else {
+					var extra = data.hint || (data.scanned ? ("Reader: " + data.scanned) : "");
+					showError((data.message || "Card not registered") + (extra ? " — " + extra : ""));
+				}
 			})
 			.catch(function () { showError("Connection error — try again"); })
 			.finally(function () {

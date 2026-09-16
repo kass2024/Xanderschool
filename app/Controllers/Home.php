@@ -5514,15 +5514,24 @@ public function attendanceCard()
 			return $this->response->setJSON(['success' => 0, 'message' => 'Card missing']);
 		}
 
+		$variants = card_uid_lookup_variants($cardRaw);
+		log_message('error', '[scanStaffCard] school=' . $schoolId . ' raw=' . $cardRaw . ' variants=' . implode(',', $variants));
+
 		$owner = CardRegistry::lookup($schoolId, $cardRaw);
+		log_message('error', '[scanStaffCard] owner=' . json_encode($owner));
 		if ($owner && $owner['type'] === 'student') {
-			return $this->response->setJSON(['success' => 0, 'message' => 'This is a student card. Use Student IN/OUT Attendance.']);
+			return $this->response->setJSON(['success' => 0, 'message' => 'This is a student card. Use Student IN/OUT Attendance.', 'scanned' => $cardRaw]);
 		}
 		if ($owner && $owner['type'] === 'visitor') {
-			return $this->response->setJSON(['success' => 0, 'message' => 'This is a visitor card.']);
+			return $this->response->setJSON(['success' => 0, 'message' => 'This is a visitor card.', 'scanned' => $cardRaw]);
 		}
 		if (!$owner || $owner['type'] !== 'staff') {
-			return $this->response->setJSON(['success' => 0, 'message' => 'Staff card not found']);
+			return $this->response->setJSON([
+				'success' => 0,
+				'message' => 'Staff card not found',
+				'scanned' => $cardRaw,
+				'hint' => 'Reader sent ' . $cardRaw,
+			]);
 		}
 
 		$db = \Config\Database::connect();
@@ -5531,13 +5540,13 @@ public function attendanceCard()
 			->join('posts p', 'p.id = s.post', 'left')
 			->join('shifts sh', 'sh.id = s.shift_id', 'left')
 			->where('s.id', (int) $owner['id'])
-			->where('s.school_id', $schoolId)
 			->where('s.status !=', 0)
 			->get()
 			->getRow();
 
 		if (!$staff) {
-			return $this->response->setJSON(['success' => 0, 'message' => 'Staff card not found']);
+			log_message('error', '[scanStaffCard] staff row missing/locked id=' . (int) $owner['id'] . ' sessionSchool=' . $schoolId . ' ownerSchool=' . (int) ($owner['school_id'] ?? 0));
+			return $this->response->setJSON(['success' => 0, 'message' => 'Staff card not found', 'scanned' => $cardRaw]);
 		}
 
 		$out = \App\Libraries\AttendanceScanService::scanStaff($schoolId, (int) $staff->id);
