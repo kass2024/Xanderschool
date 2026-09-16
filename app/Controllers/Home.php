@@ -2070,7 +2070,7 @@ public function testEmail()
 		$data['page'] = "generate_cards";
 		$classMdl = new ClassesModel();
 		$SchoolModel = new SchoolModel();
-		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name
+		$allClasses = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name
 		,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf")
 				->join("departments d", "d.id=classes.department")
 				->join("levels l", "l.id=classes.level")
@@ -2078,6 +2078,9 @@ public function testEmail()
 				->join("staffs s", "s.id=classes.mentor", "LEFT")
 				->where("classes.school_id", $this->session->get("soma_school_id"))
 				->get()->getResultArray();
+		$data['classes'] = array_values(array_filter($allClasses, function ($class) {
+			return !$this->classLooksLikeHoliday($class);
+		}));
 		$data['activeTerm'] = $SchoolModel->select("at.term,at.id")
 				->join("active_term at", "at.id=schools.active_term")
 				->where("at.school_id", $this->session->get("soma_school_id"))
@@ -2174,7 +2177,12 @@ public function testEmail()
 			->join('departments d', 'd.id = c.department', 'left')
 			->join('levels l', 'l.id = c.level', 'left')
 			->where('students.school_id', $schoolId)
-			->where('students.status', 1);
+			->where('students.status', 1)
+			->groupStart()
+				->notLike('c.title', 'holiday')
+				->notLike('l.title', 'holiday')
+				->notLike('d.title', 'holiday')
+			->groupEnd();
 
 		if ($year > 0) {
 			$builder->where('cr.year', (string) $year);
@@ -10021,6 +10029,9 @@ public function getApplicationDocs($id = null)
 					return $has === $wantCard;
 				}));
 			}
+			$students = array_values(array_filter($students, function ($student) {
+				return !$this->classLooksLikeHoliday($student);
+			}));
 		}
 		if (count($students) < 1) {
 			if ((int) $type === 10) {
