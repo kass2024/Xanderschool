@@ -17907,6 +17907,9 @@ public function assign_card()
         $builder->where('cr.year', (string) $year);
     }
 
+    $this->applyRegularClassFilter($builder, 'c', 'l');
+    $builder->where("IFNULL(d.title,'') NOT LIKE '%Holiday%'", null, false);
+
     $students = $builder
         ->groupBy('students.id')
         ->orderBy('l.title', 'ASC')
@@ -17915,6 +17918,10 @@ public function assign_card()
         ->orderBy('students.lname', 'ASC')
         ->get()
         ->getResultArray();
+
+    $students = array_values(array_filter($students, function ($row) {
+        return !$this->classLooksLikeHoliday($row);
+    }));
 
     $data['students'] = $students;
     $data['students_by_class'] = $this->parentVisitingGroupStudentsByClass($students);
