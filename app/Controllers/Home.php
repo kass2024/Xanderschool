@@ -7474,7 +7474,7 @@ public function attendanceCard()
 		$studentMdl->backfillFromRegistration($school_id);
 		$classId = (int) $classe;
 		$yearFilter = (int) $yearId;
-		$list = $studentMdl->get_student_simple("c.id = {$classId} and cr.year={$yearFilter} and students.status IN (1,2)", null);
+		$list = $studentMdl->get_student_simple("c.id = {$classId} and cr.year={$yearFilter} and cr.status = 1 and students.status IN (1,2)", null);
 		$unique = [];
 		foreach ($list as $row) {
 			$sid = (int) ($row['id'] ?? 0);
