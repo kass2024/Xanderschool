@@ -4504,6 +4504,7 @@ public function permission_card_scan()
 		$formattedStudents = [];
 		$primaryVisitor = null;
 		$primaryStudent = null;
+		$photoBase = rtrim(base_url(), '/') . '/';
 		foreach ($validVisitors as $visitor) {
 			$toggle = $visitMdl->toggleVisitToday($visitor, $schoolId, $card, $source, $operator, 'Visiting day verification');
 			$toggles[] = $toggle;
@@ -4513,12 +4514,18 @@ public function permission_card_scan()
 			if (!isset($studentsById[$studentId])) {
 				continue;
 			}
+			$photo = trim((string) ($visitor['photo'] ?? ''));
+			if ($photo !== '' && strpos($photo, 'http') !== 0) {
+				$photo = $photoBase . ltrim($photo, '/');
+			}
 			$formattedVisitors[(int) $visitor['id']] = [
 				'id' => (int) $visitor['id'],
+				'student_id' => $studentId,
 				'names' => $visitor['names'],
 				'relationship' => $visitor['relationship'] ?? '',
 				'phone' => $visitor['phone'] ?? '',
-				'card' => strtoupper(trim((string) ($visitor['card'] ?? $card))),
+				'photo' => $photo,
+				'card' => strtoupper(trim((string) ($visitor['card'] ?? ''))),
 			];
 			if ($primaryVisitor === null) {
 				$primaryVisitor = $formattedVisitors[(int) $visitor['id']];
