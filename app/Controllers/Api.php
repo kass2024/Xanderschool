@@ -2942,6 +2942,106 @@ public function get_boarding_classes()
 		]);
 	}
 
+	/**
+	 * Mobile: hard-delete a student. Requires the student to exist in this school.
+	 * POST: school_id, student_id
+	 */
+	public function delete_student()
+	{
+		$schoolId = (int) $this->request->getPost('school_id');
+		$studentId = (int) $this->request->getPost('student_id');
+		if ($schoolId < 1 || $studentId < 1) {
+			return $this->response->setJSON(['error' => 'Missing school or student']);
+		}
+
+		$stMdl = new StudentModel();
+		$student = $stMdl->select('id, school_id, fname, lname')
+			->where('id', $studentId)
+			->where('school_id', $schoolId)
+			->get(1)
+			->getRowArray();
+		if ($student == null) {
+			return $this->response->setJSON(['error' => 'Student not found on server']);
+		}
+
+		try {
+			$visitorMdl = new StudentVisitorModel();
+			$visitorMdl->ensureSchema();
+			$visitorMdl->purgeForStudent($schoolId, $studentId);
+
+			$mksMdl = new MarksModel();
+			$dscMdl = new DisciplineModel();
+			$permMdl = new PermissionModel();
+			$clRecord = new ClassRecordModel();
+			$dailyMdl = new DailyAttendanceModel();
+
+			$stMdl->delete($studentId);
+			$clRecord->where('student', $studentId)->delete();
+			$mksMdl->where('student_id', $studentId)->delete();
+			$dscMdl->where('student_id', $studentId)->delete();
+			$permMdl->where('student_id', $studentId)->delete();
+			$dailyMdl->where('student_id', $studentId)->delete();
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => 'Failed to delete student: ' . $e->getMessage()]);
+		}
+
+		return $this->response->setJSON([
+			'success' => '1',
+			'message' => 'Student deleted',
+			'student_id' => $studentId,
+			'name' => trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? '')),
+		]);
+	}
+
+	/**
+	 * Mobile: live rename. Student must exist on the server.
+	 * POST: school_id, student_id, fname, lname
+	 */
+	public function update_student_name()
+	{
+		$schoolId = (int) $this->request->getPost('school_id');
+		$studentId = (int) $this->request->getPost('student_id');
+		$fname = trim((string) $this->request->getPost('fname'));
+		$lname = trim((string) $this->request->getPost('lname'));
+		if ($schoolId < 1 || $studentId < 1) {
+			return $this->response->setJSON(['error' => 'Missing school or student']);
+		}
+		if ($fname === '' || $lname === '') {
+			return $this->response->setJSON(['error' => 'First name and last name are required']);
+		}
+
+		$stMdl = new StudentModel();
+		$student = $stMdl->select('id, school_id, updateVersion')
+			->where('id', $studentId)
+			->where('school_id', $schoolId)
+			->get(1)
+			->getRowArray();
+		if ($student == null) {
+			return $this->response->setJSON(['error' => 'Student not found on server']);
+		}
+
+		try {
+			$stMdl->save([
+				'id' => $studentId,
+				'fname' => $fname,
+				'lname' => $lname,
+				'updateVersion' => ((int) ($student['updateVersion'] ?? 0)) + 1,
+			]);
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => 'Failed to update name: ' . $e->getMessage()]);
+		}
+
+		$fullName = trim($fname . ' ' . $lname);
+		return $this->response->setJSON([
+			'success' => '1',
+			'message' => 'Student name updated',
+			'student_id' => $studentId,
+			'fname' => $fname,
+			'lname' => $lname,
+			'name' => $fullName,
+		]);
+	}
+
 	public function get_leave($school_id, $user_id)
 	{
 		$csMdl = new LeaveModel();
@@ -3446,6 +3546,8 @@ public function get_boarding_classes()
 				return $this->response->setStatusCode(500)->setJSON(['error' => 'Card assignment failed to save.']);
 			}
 
+			HeyStarDeviceStore::requestStaffSync($school_id);
+
 			return $this->response->setJSON([
 				'success' => 'Staff card assigned successfully.',
 				'card' => strtoupper(trim((string) $row->card)),
@@ -3496,6 +3598,8 @@ public function get_boarding_classes()
 			if ($row && trim((string) ($row->card ?? '')) !== '') {
 				return $this->response->setStatusCode(500)->setJSON(['error' => 'Card removal failed to save.']);
 			}
+
+			HeyStarDeviceStore::requestStaffSync($school_id);
 
 			return $this->response->setJSON(['success' => 'Staff card removed successfully.']);
 		} catch (\Throwable $e) {
@@ -4984,7 +5088,8 @@ public function permission_card_scan()
 			'success' => 1,
 			'school_id' => $schoolId,
 			'staff' => HeyStarSyncService::staffRoster($schoolId),
-			'need_sync' => ($requested === 0 || $requested >= $done) ? 1 : 0,
+			// LAN helper should pull when server queued a change (requested > done).
+			'need_sync' => ($requested > $done) ? 1 : 0,
 			'sync_requested' => $requested,
 			'sync_done' => $done,
 		]);
