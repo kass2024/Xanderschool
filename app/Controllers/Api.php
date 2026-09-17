@@ -4257,6 +4257,162 @@ public function permission_card_scan()
 	}
 
 	/**
+	 * Android: staff / security / director / matron card confirms who received the parent.
+	 * POST: school_id, card (visitor card), staff_card, operator (staff id optional)
+	 */
+	public function visitor_receive_scan()
+	{
+		$schoolId = (int) $this->request->getPost('school_id');
+		$visitorCard = trim((string) $this->request->getPost('card'));
+		$staffCard = trim((string) $this->request->getPost('staff_card'));
+		$operator = (int) $this->request->getPost('operator');
+		if ($schoolId <= 0 || ($visitorCard === '' && $staffCard === '')) {
+			return $this->response->setJSON([
+				'success' => 0,
+				'allowed' => false,
+				'error' => 'Missing school or card.',
+			]);
+		}
+
+		$visitorMdl = new StudentVisitorModel();
+		$visitorMdl->ensureSchema();
+		$staff = $this->findStaffByCard($schoolId, $staffCard !== '' ? $staffCard : '');
+		if (!$staff && $operator > 0) {
+			$db = \Config\Database::connect();
+			$staff = $db->table('staffs s')
+				->select('s.id, s.fname, s.lname, s.status, p.title as post_title')
+				->join('posts p', 'p.id = s.post', 'left')
+				->where('s.school_id', $schoolId)
+				->where('s.id', $operator)
+				->where('s.status !=', 0)
+				->get()->getRowArray();
+		}
+		if (!$staff) {
+			return $this->response->setJSON([
+				'kind' => 'staff',
+				'success' => 0,
+				'allowed' => false,
+				'error' => 'Not a staff card.',
+				'message' => 'Tap a staff card to receive this parent.',
+			]);
+		}
+
+		$staffPayload = [
+			'id' => (int) ($staff['id'] ?? 0),
+			'name' => trim((string) ($staff['fname'] ?? '') . ' ' . (string) ($staff['lname'] ?? '')),
+			'post' => (string) ($staff['post_title'] ?? ''),
+		];
+
+		$visitorIds = [];
+		$seedStudentIds = [];
+		if ($visitorCard !== '') {
+			$visitorMdl = new StudentVisitorModel();
+			$visitorMdl->ensureSchema();
+			$matches = $visitorMdl->findByCard($schoolId, $visitorCard);
+			$active = [];
+			foreach ($matches as $match) {
+				if ((int) ($match['status'] ?? 0) === 1) {
+					$active[] = $match;
+				}
+			}
+			$group = $visitorMdl->expandSharedVisitGroup($schoolId, $active);
+			$display = $group['visitors'] ?? $active;
+			$seedIds = [];
+			$seedStudentIds = [];
+			foreach ($active as $row) {
+				$vid = (int) ($row['id'] ?? 0);
+				$sid = (int) ($row['student_id'] ?? 0);
+				if ($vid > 0) {
+					$seedIds[$vid] = $vid;
+				}
+				if ($sid > 0) {
+					$seedStudentIds[$sid] = $sid;
+				}
+			}
+			foreach ($display as $row) {
+				$vid = (int) ($row['id'] ?? 0);
+				$sid = (int) ($row['student_id'] ?? 0);
+				if ($vid <= 0) {
+					continue;
+				}
+				if (isset($seedIds[$vid]) || ($sid > 0 && !isset($seedStudentIds[$sid]))) {
+					$visitorIds[$vid] = $vid;
+				}
+			}
+			if ($visitorIds === []) {
+				foreach ($active as $row) {
+					$vid = (int) ($row['id'] ?? 0);
+					if ($vid > 0) {
+						$visitorIds[$vid] = $vid;
+					}
+				}
+			}
+			foreach ($display as $row) {
+				$vid = (int) ($row['id'] ?? 0);
+				$sid = (int) ($row['student_id'] ?? 0);
+				if ($vid > 0) {
+					$visitorIds[$vid] = $vid;
+				}
+				if ($sid > 0) {
+					$seedStudentIds[$sid] = $sid;
+				}
+			}
+		}
+
+		$visitMdl = new VisitorVisitModel();
+		$updated = $visitMdl->attachReceiver(
+			$schoolId,
+			array_values($visitorIds),
+			$staffPayload,
+			array_values($seedStudentIds)
+		);
+		$label = trim($staffPayload['name'] . ($staffPayload['post'] !== '' ? ' · ' . $staffPayload['post'] : ''));
+
+		return $this->response->setJSON([
+			'kind' => 'staff',
+			'success' => 1,
+			'allowed' => true,
+			'updated' => $updated,
+			'staff' => $staffPayload,
+			'message' => $label !== '' ? ('Received by ' . $label) : 'Parent received.',
+		]);
+	}
+
+	/**
+	 * @return array<string,mixed>|null
+	 */
+	private function findStaffByCard(int $schoolId, string $cardRaw)
+	{
+		$schoolId = (int) $schoolId;
+		$cardRaw = trim($cardRaw);
+		if ($schoolId <= 0 || $cardRaw === '') {
+			return null;
+		}
+		helper('card_uid');
+		$variants = card_uid_lookup_variants($cardRaw);
+		if ($variants === []) {
+			$variants = [strtoupper($cardRaw)];
+		}
+		$db = \Config\Database::connect();
+		$builder = $db->table('staffs s')
+			->select('s.id, s.fname, s.lname, s.card, s.status, p.title as post_title')
+			->join('posts p', 'p.id = s.post', 'left')
+			->where('s.school_id', $schoolId)
+			->where('s.status !=', 0)
+			->groupStart();
+		foreach ($variants as $variant) {
+			$variant = strtoupper(trim((string) $variant));
+			if ($variant === '') {
+				continue;
+			}
+			$builder->orWhere('UPPER(TRIM(s.card))', $variant);
+		}
+		$builder->groupEnd();
+		$row = $builder->get(1)->getRowArray();
+		return $row ?: null;
+	}
+
+	/**
 	 * Android / API: lookup visitor by card + school.
 	 * GET/POST: card, school_id
 	 */

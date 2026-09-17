@@ -82,6 +82,8 @@ class StudentVisitorModel extends Model
 			`time_out` INT UNSIGNED NOT NULL DEFAULT 0,
 			`source` VARCHAR(20) NOT NULL DEFAULT 'web',
 			`operator` INT NULL DEFAULT NULL,
+			`received_by_name` VARCHAR(191) NULL DEFAULT NULL,
+			`received_by_post` VARCHAR(120) NULL DEFAULT NULL,
 			`notes` TEXT NULL,
 			`created_at` DATETIME NULL DEFAULT NULL,
 			`updated_at` DATETIME NULL DEFAULT NULL,
@@ -90,6 +92,17 @@ class StudentVisitorModel extends Model
 			KEY `idx_vv_visitor` (`visitor_id`),
 			KEY `idx_vv_student` (`student_id`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		} catch (\Throwable $e) {
+		}
+
+		try {
+			$db = \Config\Database::connect();
+			if ($db->tableExists('visitor_visits') && !$db->fieldExists('received_by_name', 'visitor_visits')) {
+				$db->query("ALTER TABLE `visitor_visits` ADD COLUMN `received_by_name` VARCHAR(191) NULL DEFAULT NULL AFTER `operator`");
+			}
+			if ($db->tableExists('visitor_visits') && !$db->fieldExists('received_by_post', 'visitor_visits')) {
+				$db->query("ALTER TABLE `visitor_visits` ADD COLUMN `received_by_post` VARCHAR(120) NULL DEFAULT NULL AFTER `received_by_name`");
+			}
 		} catch (\Throwable $e) {
 		}
 

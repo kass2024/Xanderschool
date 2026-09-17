@@ -19,6 +19,8 @@ class VisitorVisitModel extends Model
 		'time_out',
 		'source',
 		'operator',
+		'received_by_name',
+		'received_by_post',
 		'notes',
 	];
 	protected $useTimestamps = true;
@@ -101,5 +103,59 @@ class VisitorVisitModel extends Model
 			'visit' => $visit,
 			'message' => 'Visit OUT recorded.',
 		];
+	}
+
+	/**
+	 * Stamp the staff member who received the parent on today's visit rows.
+	 *
+	 * @param array<int,int> $visitorIds
+	 * @param array{id?:int,name?:string,post?:string} $staff
+	 * @param array<int,int> $studentIds
+	 */
+	public function attachReceiver(int $schoolId, array $visitorIds, array $staff, array $studentIds = []): int
+	{
+		$schoolId = (int) $schoolId;
+		$ids = [];
+		foreach ($visitorIds as $visitorId) {
+			$visitorId = (int) $visitorId;
+			if ($visitorId > 0) {
+				$ids[$visitorId] = $visitorId;
+			}
+		}
+		$sids = [];
+		foreach ($studentIds as $studentId) {
+			$studentId = (int) $studentId;
+			if ($studentId > 0) {
+				$sids[$studentId] = $studentId;
+			}
+		}
+		$staffId = (int) ($staff['id'] ?? 0);
+		$name = trim((string) ($staff['name'] ?? ''));
+		$post = trim((string) ($staff['post'] ?? ''));
+		if ($schoolId <= 0 || ($ids === [] && $sids === []) || ($staffId <= 0 && $name === '')) {
+			return 0;
+		}
+		$today = date('Y-m-d');
+		$data = [
+			'received_by_name' => $name !== '' ? $name : null,
+			'received_by_post' => $post !== '' ? $post : null,
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		if ($staffId > 0) {
+			$data['operator'] = $staffId;
+		}
+		$builder = $this->where('school_id', $schoolId)
+			->where('visit_date', $today);
+		if ($ids !== [] && $sids !== []) {
+			$builder->groupStart()
+				->whereIn('visitor_id', array_values($ids))
+				->orWhereIn('student_id', array_values($sids))
+				->groupEnd();
+		} elseif ($ids !== []) {
+			$builder->whereIn('visitor_id', array_values($ids));
+		} else {
+			$builder->whereIn('student_id', array_values($sids));
+		}
+		return (int) $builder->set($data)->update();
 	}
 }

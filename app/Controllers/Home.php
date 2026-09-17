@@ -18246,11 +18246,14 @@ public function assign_card()
 		$visitBuilder = $db->table('visitor_visits vv')
 			->select("
 				vv.id, vv.student_id, vv.visit_date, vv.time_in, vv.time_out, vv.source,
+				vv.operator, vv.received_by_name, vv.received_by_post,
 				sv.names AS visitor_name, sv.relationship,
 				s.regno,
 				CONCAT(s.fname, ' ', s.lname) AS student_name,
 				CONCAT(l.title, ' ', d.code, ' ', c.title) AS class_name,
-				c.id AS class_id
+				c.id AS class_id,
+				TRIM(CONCAT(COALESCE(stf.fname,''), ' ', COALESCE(stf.lname,''))) AS staff_name,
+				p.title AS staff_post
 			")
 			->join('student_visitors sv', 'sv.id = vv.visitor_id', 'left')
 			->join('students s', 's.id = vv.student_id', 'left')
@@ -18258,6 +18261,8 @@ public function assign_card()
 			->join('classes c', 'c.id = cr.class', 'left')
 			->join('departments d', 'd.id = c.department', 'left')
 			->join('levels l', 'l.id = c.level', 'left')
+			->join('staffs stf', 'stf.id = vv.operator', 'left')
+			->join('posts p', 'p.id = stf.post', 'left')
 			->where('vv.school_id', $school_id)
 			->where('vv.visit_date >=', $from)
 			->where('vv.visit_date <=', $to)
@@ -18338,13 +18343,24 @@ public function assign_card()
 				$row['visits'] = $studentVisits;
 				$row['visit_count'] = count($studentVisits);
 				$visitorNames = [];
+				$receivers = [];
 				$firstIn = null;
 				$lastOut = null;
-				foreach ($studentVisits as $v) {
+				foreach ($studentVisits as &$v) {
 					$vn = trim((string) ($v['visitor_name'] ?? ''));
 					if ($vn !== '') {
 						$visitorNames[$vn] = true;
 					}
+					$received = trim((string) ($v['received_by_name'] ?? ''));
+					if ($received === '') {
+						$received = trim((string) ($v['staff_name'] ?? ''));
+					}
+					$post = trim((string) ($v['received_by_post'] ?? $v['staff_post'] ?? ''));
+					$label = $received === '' ? '' : ($received . ($post !== '' ? ' · ' . $post : ''));
+					if ($label !== '') {
+						$receivers[$label] = true;
+					}
+					$v['received_by'] = $label;
 					if (!empty($v['time_in'])) {
 						$ti = (int) $v['time_in'];
 						if ($firstIn === null || $ti < $firstIn) {
@@ -18358,7 +18374,10 @@ public function assign_card()
 						}
 					}
 				}
+				unset($v);
+				$row['visits'] = $studentVisits;
 				$row['visitor_summary'] = implode(', ', array_keys($visitorNames));
+				$row['received_summary'] = implode(', ', array_keys($receivers));
 				$row['first_check_in'] = $firstIn ? date('Y-m-d H:i', $firstIn) : '';
 				$row['last_check_out'] = $lastOut ? date('Y-m-d H:i', $lastOut) : '';
 				$classSections[$cid]['visited'][] = $row;
