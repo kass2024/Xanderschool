@@ -361,6 +361,76 @@ class StudentModel extends Model
 		return $data->getResultArray();
 	}
 
+	/** Enrolled students (current year class record) for Android roster catch-up. */
+	public function countEnrolledForSync(int $schoolId, int $academicYear): int
+	{
+		$row = $this->db->query(
+			"SELECT COUNT(DISTINCT students.id) AS c
+			 FROM students
+			 INNER JOIN class_records cr ON cr.student = students.id AND cr.year = ?
+			 WHERE students.school_id = ?
+			   AND students.status IN (0, 1)",
+			[$academicYear, $schoolId]
+		)->getRowArray();
+		return (int) ($row['c'] ?? 0);
+	}
+
+	/**
+	 * Android student_v2 page. Cursor is (updated_at, id) so same-second imports are not skipped.
+	 * One class_record per student (latest id for the year).
+	 */
+	public function getStudentSyncPage(int $schoolId, int $academicYear, int $updatedAt, int $afterId, int $limit = 500): array
+	{
+		$schoolId = max(0, $schoolId);
+		$academicYear = max(0, $academicYear);
+		$updatedAt = max(0, $updatedAt);
+		$afterId = max(0, $afterId);
+		$limit = max(1, min(800, $limit));
+
+		$sql = "SELECT students.id,
+			students.card,
+			students.updateVersion,
+			students.studying_mode,
+			students.regno,
+			students.status,
+			CONCAT(students.fname, ' ', students.lname) AS name,
+			CONCAT(IFNULL(l.title,''), ' ', IFNULL(d.code,''), ' ', IFNULL(c.title,'')) AS class,
+			c.title AS title,
+			IFNULL(d.title,'') AS dept_title,
+			IFNULL(d.code,'') AS dept_code,
+			IFNULL(l.title,'') AS level_title,
+			IFNULL(students.photo,'') AS photo,
+			IFNULL(students.sex,'') AS sex,
+			UNIX_TIMESTAMP(COALESCE(students.updated_at, students.created_at, FROM_UNIXTIME(0))) AS updated_at,
+			c.id AS class_id,
+			cr.id AS record_id,
+			COALESCE(students.ft_phone, students.mt_phone, students.gd_phone, '') AS phone
+		FROM students
+		INNER JOIN (
+			SELECT student, MAX(id) AS record_id
+			FROM class_records
+			WHERE year = ?
+			GROUP BY student
+		) latest ON latest.student = students.id
+		INNER JOIN class_records cr ON cr.id = latest.record_id
+		INNER JOIN classes c ON c.id = cr.class
+		INNER JOIN departments d ON d.id = c.department
+		INNER JOIN levels l ON l.id = c.level
+		WHERE students.school_id = ?
+		  AND students.status IN (0, 1)
+		  AND (
+				UNIX_TIMESTAMP(COALESCE(students.updated_at, students.created_at, FROM_UNIXTIME(0))) > ?
+			 OR (
+				UNIX_TIMESTAMP(COALESCE(students.updated_at, students.created_at, FROM_UNIXTIME(0))) = ?
+				AND students.id > ?
+			 )
+		  )
+		ORDER BY updated_at ASC, students.id ASC
+		LIMIT {$limit}";
+
+		return $this->db->query($sql, [$academicYear, $schoolId, $updatedAt, $updatedAt, $afterId])->getResultArray();
+	}
+
 	public function search_student($hint)
 	{
 		$data = $this->db->query("SELECT `students`.`id`, concat(students.regno, ' - ', `students`.`fname`, ' ', students.lname) as text,card FROM `students` WHERE (`students`.`fname` LIKE '%{$hint}%' ESCAPE '!' OR  `students`.`lname` LIKE '%{$hint}%' ESCAPE '!' OR `students`.`regno` = '{$hint}')

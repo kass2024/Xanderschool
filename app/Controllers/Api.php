@@ -884,10 +884,24 @@ public function sync($option, $school_id)
             // -------------------------
             case "student_v2":
                 $Mdl = new \App\Models\StudentModel();
-                $dt = $Mdl->get_student_simple2("UNIX_TIMESTAMP(students.updated_at)>$updatedAt", $school_id, false, $this->data['academic_year']);
-                foreach ($dt as $item) {
-                    $data['students'][] = $item;
+                $year = (int) ($this->data['academic_year'] ?? 0);
+                $updatedAt = (int) $updatedAt;
+                $afterId = (int) $this->request->getGet('afterId');
+                $limit = (int) $this->request->getGet('limit');
+                if ($limit < 50) {
+                    $limit = 500;
                 }
+                if ($limit > 800) {
+                    $limit = 800;
+                }
+                $rows = $Mdl->getStudentSyncPage((int) $school_id, $year, $updatedAt, $afterId, $limit);
+                $last = !empty($rows) ? $rows[count($rows) - 1] : null;
+                $data['students'] = $rows;
+                $data['has_more'] = count($rows) >= $limit;
+                $data['enrolled_count'] = $Mdl->countEnrolledForSync((int) $school_id, $year);
+                $data['next_updated_at'] = $last ? (int) $last['updated_at'] : $updatedAt;
+                $data['next_id'] = $last ? (int) $last['id'] : $afterId;
+                $data['page_size'] = $limit;
                 break;
 
             // -------------------------
