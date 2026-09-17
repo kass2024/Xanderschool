@@ -4296,6 +4296,11 @@ public function permission_card_scan()
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
+		if ($student_id > 0) {
+			$visitorMdl->ensureRegisteredParentsAsVisitors($school_id, $student_id);
+		} else {
+			$visitorMdl->ensureRegisteredParentsAsVisitors($school_id);
+		}
 
 		$builder = $visitorMdl->select("student_visitors.*, CONCAT(s.fname, ' ', s.lname) AS student_name")
 			->join('students s', 's.id = student_visitors.student_id', 'left')

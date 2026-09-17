@@ -993,7 +993,8 @@
 											</div>
 
 											<div class="ss-panel">
-												<div class="ss-panel-head"><i class="fa fa-id-badge"></i> Visitors <span class="badge-req">Required for visiting</span></div>
+												<div class="ss-panel-head"><i class="fa fa-id-badge"></i> Extra visitors <span class="text-muted" style="font-weight:500;font-size:.8rem;">optional</span></div>
+												<p class="text-muted" style="font-size:.85rem;margin:-4px 0 12px;">Father, mother and guardian entered above are automatically allowed to visit this student. Add extra people only if needed.</p>
 												<div class="ss-visitor-grid">
 													<div class="ss-visitor-card">
 														<h6>Visitor 1</h6>
@@ -1204,6 +1205,8 @@
 				var ftPhone = ($('#ft_phone').val() || '').trim();
 				var mother = ($('#mother').val() || '').trim();
 				var mtPhone = ($('#mt_phone').val() || '').trim();
+				var guardian = ($('#guardian').val() || '').trim();
+				var gdPhone = ($('#gd_phone').val() || '').trim();
 				if (!$('#visitor1Names').val().trim() && father) {
 					$('#visitor1Names').val(father);
 					if (!$('#visitor1Phone').val().trim()) $('#visitor1Phone').val(ftPhone);
@@ -1213,6 +1216,11 @@
 					$('#visitor2Names').val(mother);
 					if (!$('#visitor2Phone').val().trim()) $('#visitor2Phone').val(mtPhone);
 					if (!$('#visitor2Relationship').val()) $('#visitor2Relationship').val('Mother');
+				}
+				if (!$('#visitor2Names').val().trim() && guardian && guardian !== father && guardian !== mother) {
+					$('#visitor2Names').val(guardian);
+					if (!$('#visitor2Phone').val().trim()) $('#visitor2Phone').val(gdPhone);
+					if (!$('#visitor2Relationship').val()) $('#visitor2Relationship').val('Guardian');
 				}
 				var v1n = ($('#visitor1Names').val() || '').trim();
 				var v1p = ($('#visitor1Phone').val() || '').trim();

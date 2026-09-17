@@ -698,13 +698,64 @@ class StudentVisitorModel extends Model
 	}
 
 	/**
-	 * Create active visitor rows for a student (skips empty names; no RFID card at import).
+	 * True when a candidate visitor already exists on the student (active or inactive).
+	 *
+	 * @param array<int,array<string,mixed>> $existing
+	 * @param array{names?:string,phone?:string,relationship?:string} $candidate
+	 */
+	public function visitorMatchesExisting(array $existing, array $candidate, int $excludeId = 0): ?array
+	{
+		$names = $this->normalizeMatchName((string) ($candidate['names'] ?? ''));
+		$phone = $this->normalizeMatchPhone((string) ($candidate['phone'] ?? ''));
+		$rel = strtolower(self::normalizeRelationship((string) ($candidate['relationship'] ?? '')));
+		if ($names === '') {
+			return null;
+		}
+		foreach ($existing as $row) {
+			$rid = (int) ($row['id'] ?? 0);
+			if ($excludeId > 0 && $rid === $excludeId) {
+				continue;
+			}
+			$rowName = $this->normalizeMatchName((string) ($row['names'] ?? ''));
+			$rowPhone = $this->normalizeMatchPhone((string) ($row['phone'] ?? ''));
+			$rowRel = strtolower(self::normalizeRelationship((string) ($row['relationship'] ?? '')));
+			$sameName = $rowName !== '' && $rowName === $names;
+			$samePhone = $phone !== '' && $rowPhone !== '' && $rowPhone === $phone;
+			$sameRel = $rel !== '' && $rowRel !== '' && $rel === $rowRel;
+			if ($sameName && ($samePhone || $sameRel || ($phone === '' && $rowPhone === ''))) {
+				return $row;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * @return array<string,mixed>|null
+	 */
+	public function findDuplicateVisitor(int $schoolId, int $studentId, string $names, string $phone = '', string $relationship = '', int $excludeId = 0): ?array
+	{
+		$this->ensureSchema();
+		if ($schoolId <= 0 || $studentId <= 0 || trim($names) === '') {
+			return null;
+		}
+		$existing = $this->where('school_id', $schoolId)
+			->where('student_id', $studentId)
+			->findAll();
+		return $this->visitorMatchesExisting($existing, [
+			'names' => $names,
+			'phone' => $phone,
+			'relationship' => $relationship,
+		], $excludeId);
+	}
+
+	/**
+	 * Create active visitor rows for a student (skips empty names and duplicates).
 	 *
 	 * @param int $schoolId
 	 * @param int $studentId
 	 * @param array<int,array{names?:string,phone?:string,relationship?:string}> $visitors
 	 * @param int|null $operator
-	 * @return int rows inserted
+	 * @return int rows inserted or reactivated
 	 */
 	public function syncForStudent(int $schoolId, int $studentId, array $visitors, ?int $operator = null): int
 	{
@@ -715,7 +766,10 @@ class StudentVisitorModel extends Model
 			return 0;
 		}
 
-		$inserted = 0;
+		$existing = $this->where('school_id', $schoolId)
+			->where('student_id', $studentId)
+			->findAll();
+		$changed = 0;
 		foreach ($visitors as $v) {
 			$names = trim((string) ($v['names'] ?? ''));
 			if ($names === '') {
@@ -723,7 +777,25 @@ class StudentVisitorModel extends Model
 			}
 			$phone = trim((string) ($v['phone'] ?? ''));
 			$relationship = self::normalizeRelationship((string) ($v['relationship'] ?? ''));
-			$this->insert([
+			$match = $this->visitorMatchesExisting($existing, [
+				'names' => $names,
+				'phone' => $phone,
+				'relationship' => $relationship,
+			]);
+			if ($match) {
+				$matchId = (int) ($match['id'] ?? 0);
+				if ($matchId > 0 && (int) ($match['status'] ?? 1) !== 1) {
+					$this->update($matchId, [
+						'status' => 1,
+						'phone' => $phone !== '' ? $phone : ($match['phone'] ?? null),
+						'relationship' => $relationship !== '' ? $relationship : ($match['relationship'] ?? null),
+						'updated_by' => $operator,
+					]);
+					$changed++;
+				}
+				continue;
+			}
+			$row = [
 				'school_id' => $schoolId,
 				'student_id' => $studentId,
 				'names' => $names,
@@ -732,10 +804,119 @@ class StudentVisitorModel extends Model
 				'status' => 1,
 				'created_by' => $operator,
 				'updated_by' => $operator,
-			]);
-			$inserted++;
+			];
+			$this->insert($row);
+			$newId = (int) $this->getInsertID();
+			$row['id'] = $newId;
+			$existing[] = $row;
+			$changed++;
 		}
-		return $inserted;
+		return $changed;
+	}
+
+	/**
+	 * Copy registered father/mother/guardian onto the student's allowed-visitor list.
+	 *
+	 * @return int rows inserted or reactivated
+	 */
+	public function ensureRegisteredParentsAsVisitors(int $schoolId, ?int $studentId = null, ?int $operator = null): int
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		if ($schoolId <= 0) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$builder = $db->table('students')
+			->select('id, father, ft_phone, mother, mt_phone, guardian, gd_phone')
+			->where('school_id', $schoolId)
+			->where('status', 1);
+		if ($studentId !== null && (int) $studentId > 0) {
+			$builder->where('id', (int) $studentId);
+		}
+		$students = $builder->get()->getResultArray();
+		if ($students === []) {
+			return 0;
+		}
+
+		$existingByStudent = [];
+		$vQuery = $db->table('student_visitors')
+			->select('id, student_id, names, phone, relationship, status')
+			->where('school_id', $schoolId);
+		if ($studentId !== null && (int) $studentId > 0) {
+			$vQuery->where('student_id', (int) $studentId);
+		}
+		foreach ($vQuery->get()->getResultArray() as $row) {
+			$sid = (int) ($row['student_id'] ?? 0);
+			if ($sid < 1) {
+				continue;
+			}
+			$existingByStudent[$sid][] = $row;
+		}
+
+		$changed = 0;
+		foreach ($students as $student) {
+			$sid = (int) $student['id'];
+			$existing = $existingByStudent[$sid] ?? [];
+			foreach ($this->parentVisitorRowsFromStudent($student) as $candidate) {
+				$match = $this->visitorMatchesExisting($existing, $candidate);
+				if ($match) {
+					$matchId = (int) ($match['id'] ?? 0);
+					if ($matchId > 0 && (int) ($match['status'] ?? 1) !== 1) {
+						$this->update($matchId, [
+							'status' => 1,
+							'phone' => $candidate['phone'] !== '' ? $candidate['phone'] : ($match['phone'] ?? null),
+							'relationship' => $candidate['relationship'],
+							'updated_by' => $operator,
+						]);
+						$changed++;
+					}
+					continue;
+				}
+				$row = [
+					'school_id' => $schoolId,
+					'student_id' => $sid,
+					'names' => $candidate['names'],
+					'phone' => $candidate['phone'] !== '' ? $candidate['phone'] : null,
+					'relationship' => $candidate['relationship'],
+					'status' => 1,
+					'created_by' => $operator,
+					'updated_by' => $operator,
+				];
+				$this->insert($row);
+				$row['id'] = (int) $this->getInsertID();
+				$existing[] = $row;
+				$existingByStudent[$sid] = $existing;
+				$changed++;
+			}
+		}
+		return $changed;
+	}
+
+	/**
+	 * @param array<string,mixed> $student
+	 * @return list<array{names:string,phone:string,relationship:string}>
+	 */
+	public function parentVisitorRowsFromStudent(array $student): array
+	{
+		$rows = [];
+		$pairs = [
+			[$student['father'] ?? '', $student['ft_phone'] ?? '', 'Father'],
+			[$student['mother'] ?? '', $student['mt_phone'] ?? '', 'Mother'],
+			[$student['guardian'] ?? '', $student['gd_phone'] ?? '', 'Guardian'],
+		];
+		foreach ($pairs as [$names, $phone, $rel]) {
+			$names = trim((string) $names);
+			if ($names === '') {
+				continue;
+			}
+			$rows[] = [
+				'names' => $names,
+				'phone' => trim((string) $phone),
+				'relationship' => $rel,
+			];
+		}
+		return $rows;
 	}
 
 	/**

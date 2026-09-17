@@ -8862,6 +8862,14 @@ public function attendanceCard()
 		try {
 			$studentMdl->ensureFatherNidColumn();
 			$school_id = $this->session->get("soma_school_id");
+			$dup = $this->findDuplicateActiveStudent((int) $school_id, (string) $fname, (string) $lname, (string) $dob, '', 0);
+			if ($dup) {
+				$who = trim(($dup['fname'] ?? '') . ' ' . ($dup['lname'] ?? ''));
+				$reg = trim((string) ($dup['regno'] ?? ''));
+				return $this->response->setJSON([
+					'error' => 'This student is already registered' . ($reg !== '' ? ' as ' . $reg : '') . ($who !== '' ? ' (' . $who . ')' : '') . '.',
+				]);
+			}
 			$classMdl = new ClassesModel();
 			$classData = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name
 											,f.type,f.title as faculty_name,f.abbrev as faculty_code")
@@ -8882,6 +8890,19 @@ public function attendanceCard()
 			//create class record
 			$classRecordMdl = new ClassRecordModel();
 			$classRecordMdl->save(array("student" => $id, "year" => $this->data['academic_year'], "class" => $class));
+			$this->_syncStudentVisitors(
+				(int) $school_id,
+				(int) $id,
+				$this->_visitorRowsFromData([
+					'father' => $father,
+					'ft_phone' => $ft_phone,
+					'mother' => $mother,
+					'mt_phone' => $mt_phone,
+					'guardian' => $guardian,
+					'gd_phone' => $gd_phone,
+				]),
+				(int) $this->session->get('soma_id')
+			);
 			$smsNote = '';
 			try {
 				$smsResult = $this->dispatchAdmissionSmsForStudent([
@@ -9010,6 +9031,20 @@ public function attendanceCard()
 		$data = array("id" => $id, $target => $val, "updateVersion" => $update_v);
 		try {
 			$stMdl->save($data);
+			if (in_array($target, ['father', 'ft_phone', 'mother', 'mt_phone', 'guardian', 'gd_phone'], true)) {
+				$fresh = $stMdl->select('id, father, ft_phone, mother, mt_phone, guardian, gd_phone')
+					->where('id', (int) $id)
+					->where('school_id', $schoolId)
+					->get(1)->getRowArray();
+				if ($fresh) {
+					$this->_syncStudentVisitors(
+						$schoolId,
+						(int) $id,
+						$this->_visitorRowsFromData($fresh),
+						(int) $this->session->get('soma_id')
+					);
+				}
+			}
 			switch ($type) {
 				case "number":
 					$result = number_format($val);
@@ -9093,6 +9128,15 @@ public function attendanceCard()
 				if (count($patch) > 2) {
 					$stMdl->save($patch);
 					$did = true;
+					if (array_intersect(array_keys($patch), ['father', 'ft_phone', 'mother', 'mt_phone', 'guardian', 'gd_phone'])) {
+						$fresh = $stMdl->select('id, father, ft_phone, mother, mt_phone, guardian, gd_phone')
+							->where('id', $id)
+							->where('school_id', $schoolId)
+							->get(1)->getRowArray();
+						if ($fresh) {
+							$this->_syncStudentVisitors($schoolId, $id, $this->_visitorRowsFromData($fresh), (int) $this->session->get('soma_id'));
+						}
+					}
 				}
 				if ($hasMode) {
 					$stMdl->updateStudyingModeByStudentId($id, $modeVal, $schoolId);
@@ -10996,7 +11040,8 @@ public function getApplicationDocs($id = null)
 	}
 
 	/**
-	 * Build visitor rows from application or bulk-upload columns.
+	 * Build visitor rows from application, bulk-upload, or student parent fields.
+	 * Father, mother, and guardian are always included when named.
 	 *
 	 * @param array<string,mixed> $row
 	 * @return array<int,array{names:string,phone:string,relationship:string}>
@@ -11004,30 +11049,170 @@ public function getApplicationDocs($id = null)
 	private function _visitorRowsFromData(array $row): array
 	{
 		$visitors = [];
-		for ($i = 1; $i <= 2; $i++) {
-			$names = trim((string) ($row['visitor' . $i . '_names'] ?? $row['visitor' . $i . 'Names'] ?? ''));
+		$push = function (string $names, string $phone, string $relationship) use (&$visitors) {
+			$names = trim($names);
 			if ($names === '') {
-				continue;
+				return;
+			}
+			$phone = trim($phone);
+			$relationship = \App\Models\StudentVisitorModel::normalizeRelationship($relationship);
+			$nameKey = strtolower(preg_replace('/\s+/', ' ', $names));
+			$phoneKey = preg_replace('/\D+/', '', $phone);
+			foreach ($visitors as $existing) {
+				$exName = strtolower(preg_replace('/\s+/', ' ', $existing['names']));
+				$exPhone = preg_replace('/\D+/', '', $existing['phone']);
+				$exRel = strtolower((string) $existing['relationship']);
+				$sameName = $exName === $nameKey;
+				$samePhone = $phoneKey !== '' && $exPhone !== '' && $exPhone === $phoneKey;
+				$sameRel = $relationship !== '' && $exRel === strtolower($relationship);
+				if ($sameName && ($samePhone || $sameRel)) {
+					return;
+				}
 			}
 			$visitors[] = [
 				'names' => $names,
-				'phone' => trim((string) ($row['visitor' . $i . '_phone'] ?? $row['visitor' . $i . 'Phone'] ?? '')),
-				'relationship' => trim((string) ($row['visitor' . $i . '_relationship'] ?? $row['visitor' . $i . 'Relationship'] ?? '')),
+				'phone' => $phone,
+				'relationship' => $relationship,
 			];
+		};
+
+		$push((string) ($row['father'] ?? ''), (string) ($row['ft_phone'] ?? $row['father_phone'] ?? ''), 'Father');
+		$push((string) ($row['mother'] ?? ''), (string) ($row['mt_phone'] ?? $row['mother_phone'] ?? ''), 'Mother');
+		$push((string) ($row['guardian'] ?? ''), (string) ($row['gd_phone'] ?? $row['guardian_phone'] ?? ''), 'Guardian');
+		for ($i = 1; $i <= 2; $i++) {
+			$push(
+				(string) ($row['visitor' . $i . '_names'] ?? $row['visitor' . $i . 'Names'] ?? ''),
+				(string) ($row['visitor' . $i . '_phone'] ?? $row['visitor' . $i . 'Phone'] ?? ''),
+				(string) ($row['visitor' . $i . '_relationship'] ?? $row['visitor' . $i . 'Relationship'] ?? '')
+			);
 		}
 		if (empty($visitors)) {
 			$parentNames = trim((string) ($row['parentNames'] ?? ''));
 			if ($parentNames !== '') {
 				$ptype = (int) ($row['parentType'] ?? 1);
 				$rel = $ptype === 2 ? 'Mother' : ($ptype === 3 ? 'Guardian' : 'Father');
-				$visitors[] = [
-					'names' => $parentNames,
-					'phone' => trim((string) ($row['parentPhoneNumber'] ?? '')),
-					'relationship' => $rel,
-				];
+				$push($parentNames, (string) ($row['parentPhoneNumber'] ?? ''), $rel);
 			}
 		}
 		return $visitors;
+	}
+
+	private function _normalizePersonName(string $value): string
+	{
+		$value = strtolower(trim(preg_replace('/\s+/', ' ', $value)));
+		return $value;
+	}
+
+	private function _normalizeDobKey(string $value): string
+	{
+		$value = trim($value);
+		if ($value === '' || $value === '0000-00-00') {
+			return '';
+		}
+		if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $value, $m)) {
+			return $m[1] . '-' . $m[2] . '-' . $m[3];
+		}
+		if (preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/', $value, $m)) {
+			$year = strlen($m[3]) === 2 ? ('20' . $m[3]) : $m[3];
+			return sprintf('%04d-%02d-%02d', (int) $year, (int) $m[2], (int) $m[1]);
+		}
+		return '';
+	}
+
+	/**
+	 * Active student already enrolled with the same identity.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private function findDuplicateActiveStudent(int $schoolId, string $fname, string $lname, string $dob = '', string $regno = '', int $excludeId = 0): ?array
+	{
+		$schoolId = (int) $schoolId;
+		$fnameKey = $this->_normalizePersonName($fname);
+		$lnameKey = $this->_normalizePersonName($lname);
+		$regno = strtoupper(trim($regno));
+		$dobKey = $this->_normalizeDobKey($dob);
+		if ($schoolId <= 0 || ($fnameKey === '' && $regno === '')) {
+			return null;
+		}
+		$db = \Config\Database::connect();
+		if ($regno !== '' && strlen($regno) > 2) {
+			$q = $db->table('students')
+				->select('id, fname, lname, regno, dob')
+				->where('school_id', $schoolId)
+				->where('status', 1)
+				->where("UPPER(TRIM(regno)) = " . $db->escape($regno), null, false);
+			if ($excludeId > 0) {
+				$q->where('id !=', $excludeId);
+			}
+			$row = $q->get(1)->getRowArray();
+			if ($row) {
+				return $row;
+			}
+		}
+		if ($fnameKey === '' || $lnameKey === '') {
+			return null;
+		}
+		$q = $db->table('students')
+			->select('id, fname, lname, regno, dob')
+			->where('school_id', $schoolId)
+			->where('status', 1);
+		if ($excludeId > 0) {
+			$q->where('id !=', $excludeId);
+		}
+		$candidates = $q->get()->getResultArray();
+		foreach ($candidates as $row) {
+			if ($this->_normalizePersonName((string) ($row['fname'] ?? '')) !== $fnameKey) {
+				continue;
+			}
+			if ($this->_normalizePersonName((string) ($row['lname'] ?? '')) !== $lnameKey) {
+				continue;
+			}
+			$rowDob = $this->_normalizeDobKey((string) ($row['dob'] ?? ''));
+			if ($dobKey === '' || $rowDob === '' || $dobKey === $rowDob) {
+				return $row;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Open application (not rejected) with the same student identity.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private function findDuplicateApplication(int $schoolId, string $fname, string $lname, string $dob = '', int $excludeId = 0): ?array
+	{
+		$schoolId = (int) $schoolId;
+		$fnameKey = $this->_normalizePersonName($fname);
+		$lnameKey = $this->_normalizePersonName($lname);
+		$dobKey = $this->_normalizeDobKey($dob);
+		if ($schoolId <= 0 || $fnameKey === '' || $lnameKey === '') {
+			return null;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('applications')) {
+			return null;
+		}
+		$q = $db->table('applications')
+			->select('id, fname, lname, dateOfBirth, code, status, admitted')
+			->where('schoolId', $schoolId)
+			->where('status !=', 3);
+		if ($excludeId > 0) {
+			$q->where('id !=', $excludeId);
+		}
+		foreach ($q->get()->getResultArray() as $row) {
+			if ($this->_normalizePersonName((string) ($row['fname'] ?? '')) !== $fnameKey) {
+				continue;
+			}
+			if ($this->_normalizePersonName((string) ($row['lname'] ?? '')) !== $lnameKey) {
+				continue;
+			}
+			$rowDob = $this->_normalizeDobKey((string) ($row['dateOfBirth'] ?? ''));
+			if ($dobKey === '' || $rowDob === '' || $dobKey === $rowDob) {
+				return $row;
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -11035,11 +11220,16 @@ public function getApplicationDocs($id = null)
 	 */
 	private function _syncStudentVisitors(int $schoolId, int $studentId, array $visitors, ?int $operator = null): void
 	{
-		if ($studentId <= 0 || empty($visitors)) {
+		if ($studentId <= 0) {
 			return;
 		}
 		$visitorMdl = new StudentVisitorModel();
+		if (empty($visitors)) {
+			$visitorMdl->ensureRegisteredParentsAsVisitors($schoolId, $studentId, $operator);
+			return;
+		}
 		$visitorMdl->syncForStudent($schoolId, $studentId, $visitors, $operator);
+		$visitorMdl->ensureRegisteredParentsAsVisitors($schoolId, $studentId, $operator);
 	}
 
 	public
@@ -11344,6 +11534,16 @@ public function getApplicationDocs($id = null)
 					$regno = strlen($this->_sanitize_txt($sheet['C'])) > 2 ? $this->_sanitize_txt($sheet['C']) : $this->_generate_regno(true);
 					$dobCell = $worksheet->getCell('E' . (int) $rowNum);
 					$dobParsed = $this->_parseSpreadsheetDate($sheet['E'] ?? '', $dobCell);
+					$dup = $this->findDuplicateActiveStudent(
+						(int) $this->session->get("soma_school_id"),
+						$this->_sanitize_txt($sheet['A']),
+						$this->_sanitize_txt($sheet['B']),
+						(string) $dobParsed,
+						strlen($this->_sanitize_txt($sheet['C'])) > 2 ? $this->_sanitize_txt($sheet['C']) : ''
+					);
+					if ($dup) {
+						continue;
+					}
 					$dt = array("school_id" => $this->session->get("soma_school_id"),
 							"fname" => $this->_sanitize_txt($sheet['A']),
 							"lname" => $this->_sanitize_txt($sheet['B']),
@@ -11367,15 +11567,18 @@ public function getApplicationDocs($id = null)
 					$classRecordMdl = new ClassRecordModel();
 					$classRecordMdl->save(array("student" => $id, "year" => $this->data['academic_year'], "class" => $post_class));
 					$visitorRows = $this->_visitorRowsFromData([
+						'father' => $this->_sanitize_txt($sheet['H'] ?? ''),
+						'ft_phone' => $this->_sanitize_txt($sheet['I'] ?? ''),
+						'mother' => $this->_sanitize_txt($sheet['J'] ?? ''),
+						'mt_phone' => $this->_sanitize_txt($sheet['K'] ?? ''),
+						'guardian' => $this->_sanitize_txt($sheet['L'] ?? ''),
+						'gd_phone' => $this->_sanitize_txt($sheet['M'] ?? ''),
 						'visitor1_names' => $this->_sanitize_txt($sheet['O'] ?? ''),
 						'visitor1_phone' => $this->_sanitize_txt($sheet['P'] ?? ''),
 						'visitor1_relationship' => $this->_sanitize_txt($sheet['Q'] ?? ''),
 						'visitor2_names' => $this->_sanitize_txt($sheet['R'] ?? ''),
 						'visitor2_phone' => $this->_sanitize_txt($sheet['S'] ?? ''),
 						'visitor2_relationship' => $this->_sanitize_txt($sheet['T'] ?? ''),
-						'parentNames' => $this->_sanitize_txt($sheet['H'] ?? '') ?: $this->_sanitize_txt($sheet['J'] ?? '') ?: $this->_sanitize_txt($sheet['L'] ?? ''),
-						'parentPhoneNumber' => $this->_sanitize_txt($sheet['I'] ?? '') ?: $this->_sanitize_txt($sheet['K'] ?? '') ?: $this->_sanitize_txt($sheet['M'] ?? ''),
-						'parentType' => strlen($this->_sanitize_txt($sheet['H'] ?? '')) > 1 ? 1 : (strlen($this->_sanitize_txt($sheet['J'] ?? '')) > 1 ? 2 : 3),
 					]);
 					$this->_syncStudentVisitors(
 						(int) $this->session->get('soma_school_id'),
@@ -17963,6 +18166,7 @@ public function assign_card()
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
 		$visitorMdl->purgeOrphans($school_id);
+		$visitorMdl->ensureRegisteredParentsAsVisitors($school_id, null, (int) ($this->session->get('soma_id') ?? 0));
 
 		$studentModel = new StudentModel();
 		$students = $studentModel
@@ -18258,6 +18462,11 @@ public function assign_card()
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
+		if ($byClass) {
+			$visitorMdl->ensureRegisteredParentsAsVisitors($school_id);
+		} else {
+			$visitorMdl->ensureRegisteredParentsAsVisitors($school_id, $targetId);
+		}
 
 		if ($targetId <= 0) {
 			echo '<tr><td colspan="7" class="text-center text-muted py-3">Invalid selection.</td></tr>';
@@ -18674,8 +18883,27 @@ public function assign_card()
 					return $this->response->setJSON(['success' => false, 'error' => 'Visitor not found.']);
 				}
 				$payload['id'] = $visitor_id;
+				$dup = $visitorMdl->findDuplicateVisitor($school_id, $student_id, $names, $phone, $relationship, $visitor_id);
+				if ($dup && (int) ($dup['status'] ?? 1) === 1) {
+					return $this->response->setJSON([
+						'success' => false,
+						'error' => 'This visitor is already registered for this student.',
+					]);
+				}
 			} else {
 				$payload['created_by'] = $operator;
+				$dup = $visitorMdl->findDuplicateVisitor($school_id, $student_id, $names, $phone, $relationship, 0);
+				if ($dup) {
+					if ((int) ($dup['status'] ?? 1) === 1) {
+						return $this->response->setJSON([
+							'success' => false,
+							'error' => 'This visitor is already registered for this student.',
+						]);
+					}
+					$payload['id'] = (int) $dup['id'];
+					$visitor_id = (int) $dup['id'];
+					$payload['status'] = 1;
+				}
 			}
 
 			$file = $this->request->getFile('photo');
@@ -18927,6 +19155,7 @@ public function assign_card()
 
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
+		$visitorMdl->ensureRegisteredParentsAsVisitors($school_id, null, (int) ($this->session->get('soma_id') ?? 0));
 
 		$students = (new StudentModel())
 			->select("
@@ -18971,6 +19200,8 @@ public function assign_card()
 		if ($student_id <= 0) {
 			return $this->response->setJSON(['success' => false, 'error' => 'Invalid student.']);
 		}
+
+		$visitorMdl->ensureRegisteredParentsAsVisitors($school_id, $student_id, (int) ($this->session->get('soma_id') ?? 0));
 
 		$visitors = $visitorMdl
 			->where('school_id', $school_id)
@@ -22997,15 +23228,20 @@ public function assign_card()
         $parentPhone = $gdPhone !== '' ? $gdPhone : $parentPhone;
         $relationship = '3';
     }
-    if ($visitor1Names === '' && $father !== '' && $ftPhone !== '') {
+    if ($visitor1Names === '' && $father !== '') {
         $visitor1Names = $father;
         $visitor1Phone = $ftPhone;
         $visitor1Rel = $visitor1Rel !== '' ? $visitor1Rel : 'Father';
     }
-    if ($visitor2Names === '' && $mother !== '' && $mtPhone !== '') {
+    if ($visitor2Names === '' && $mother !== '') {
         $visitor2Names = $mother;
         $visitor2Phone = $mtPhone;
         $visitor2Rel = $visitor2Rel !== '' ? $visitor2Rel : 'Mother';
+    }
+    if ($visitor2Names === '' && $guardian !== '') {
+        $visitor2Names = $guardian;
+        $visitor2Phone = $gdPhone;
+        $visitor2Rel = $visitor2Rel !== '' ? $visitor2Rel : 'Guardian';
     }
     if ($parentNames === '' || $parentPhone === '') {
         return $this->response->setJSON(['error' => 'Provide at least Visitor 1 or Father/Mother contact with phone.']);
@@ -23028,6 +23264,21 @@ public function assign_card()
     }
     $level = (string) $classRow->level;
     $dept = (string) $classRow->department;
+
+    $existingStudent = $this->findDuplicateActiveStudent((int) $school, (string) $firstName, (string) $lastName, (string) $dateOfBirth);
+    if ($existingStudent) {
+        $reg = trim((string) ($existingStudent['regno'] ?? ''));
+        return $this->response->setJSON([
+            'error' => 'This student is already registered at this school' . ($reg !== '' ? ' (reg no. ' . $reg . ')' : '') . '. Duplicate applications are not allowed.',
+        ]);
+    }
+    $existingApp = $this->findDuplicateApplication((int) $school, (string) $firstName, (string) $lastName, (string) $dateOfBirth, (int) $applicationId);
+    if ($existingApp) {
+        $code = trim((string) ($existingApp['code'] ?? ''));
+        return $this->response->setJSON([
+            'error' => 'An application for this student already exists' . ($code !== '' ? ' (code ' . $code . ')' : '') . '. Duplicate registration is not allowed.',
+        ]);
+    }
 
     $registrationFee = (new ApplicationRegistrationFeeService())->resolveFee(
         (int) $applicationSettings,
@@ -24245,6 +24496,18 @@ public function assign_card()
 				->get()->getRowArray();
 		if (!$application) {
 			return $this->response->setJSON(["error" => "Application not found"]);
+		}
+		$dupStudent = $this->findDuplicateActiveStudent(
+			(int) $this->session->get("soma_school_id"),
+			(string) ($application['fname'] ?? ''),
+			(string) ($application['lname'] ?? ''),
+			(string) ($application['dateOfBirth'] ?? '')
+		);
+		if ($dupStudent) {
+			$reg = trim((string) ($dupStudent['regno'] ?? ''));
+			return $this->response->setJSON([
+				"error" => "This student is already enrolled" . ($reg !== '' ? " as {$reg}" : "") . ". Duplicate registration cannot be approved.",
+			]);
 		}
 
 		// Use class from registration when posted on application

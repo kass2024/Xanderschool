@@ -153,6 +153,7 @@
 										<div class="form-group">
 											<label><?= lang("app.fatherNames"); ?></label>
 											<input type="text" class="form-control" name="father" data-parsley-required="false"/>
+											<small class="text-muted">Registered father, mother and guardian are automatically allowed to visit this student.</small>
 										</div>
 										<div class="form-group">
 											<label><?= lang("app.fPhoneNumber"); ?></label>
