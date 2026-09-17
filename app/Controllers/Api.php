@@ -4391,11 +4391,11 @@ public function permission_card_scan()
 			];
 		}
 
-		$resolvedGroup = ['student_ids' => [], 'visitors' => $activeVisitors];
-		// expandSharedVisitGroup loads the whole school — too slow for kiosk/Android.
-		// Keep sibling expansion on interactive web verify only.
-		if (!in_array(strtolower((string) $source), ['android', 'device', 'kiosk'], true)) {
-			$resolvedGroup = $visitorMdl->expandSharedVisitGroup($schoolId, $activeVisitors);
+		// Targeted sibling expansion (same parent / same visitor identity).
+		// Loads only matching names, not the whole school — safe for kiosk/Android.
+		$resolvedGroup = $visitorMdl->expandSharedVisitGroup($schoolId, $activeVisitors);
+		if (empty($resolvedGroup['visitors'])) {
+			$resolvedGroup = ['student_ids' => [], 'visitors' => $activeVisitors];
 		}
 		$studentIds = [];
 		foreach (($resolvedGroup['student_ids'] ?? []) as $studentId) {

@@ -452,16 +452,80 @@ class StudentVisitorModel extends Model
 		}
 
 		$db = \Config\Database::connect();
-		$studentRows = $db->table('students')
+		$seedStudentIds = [];
+		$seedNames = [];
+		$seedPhones = [];
+		foreach ($seedVisitors as $visitor) {
+			$studentId = (int) ($visitor['student_id'] ?? 0);
+			if ($studentId > 0) {
+				$seedStudentIds[$studentId] = $studentId;
+			}
+			$name = $this->normalizeMatchName((string) ($visitor['names'] ?? $visitor['name'] ?? ''));
+			$phone = $this->normalizeMatchPhone((string) ($visitor['phone'] ?? ''));
+			if ($name !== '') {
+				$seedNames[$name] = $name;
+			}
+			if ($phone !== '') {
+				$seedPhones[$phone] = $phone;
+			}
+		}
+
+		$seedStudentRows = [];
+		if (!empty($seedStudentIds)) {
+			$seedStudentRows = $db->table('students')
+				->select('id, status, father, ft_phone, mother, mt_phone, guardian, gd_phone')
+				->where('school_id', $schoolId)
+				->where('status', 1)
+				->whereIn('id', array_values($seedStudentIds))
+				->get()->getResultArray();
+			foreach ($seedStudentRows as $row) {
+				foreach ($this->studentParentKeys($row) as $key) {
+					$parts = explode('|', $key, 2);
+					if (isset($parts[0]) && $parts[0] !== '') {
+						$seedNames[$parts[0]] = $parts[0];
+					}
+					if (isset($parts[1]) && $parts[1] !== '') {
+						$seedPhones[$parts[1]] = $parts[1];
+					}
+				}
+			}
+		}
+
+		$studentQ = $db->table('students')
 			->select('id, status, father, ft_phone, mother, mt_phone, guardian, gd_phone')
 			->where('school_id', $schoolId)
-			->where('status', 1)
-			->get()->getResultArray();
-		$visitorRows = $db->table('student_visitors')
+			->where('status', 1);
+		$studentQ->groupStart();
+		if (!empty($seedStudentIds)) {
+			$studentQ->whereIn('id', array_values($seedStudentIds));
+		} else {
+			$studentQ->where('id', 0);
+		}
+		foreach ($seedNames as $name) {
+			$escaped = $db->escape($name);
+			$studentQ->orWhere("LOWER(TRIM(father)) = {$escaped}", null, false)
+				->orWhere("LOWER(TRIM(mother)) = {$escaped}", null, false)
+				->orWhere("LOWER(TRIM(guardian)) = {$escaped}", null, false);
+		}
+		$studentQ->groupEnd();
+		$studentRows = $studentQ->get()->getResultArray();
+
+		$visitorQ = $db->table('student_visitors')
 			->select('id, school_id, student_id, names, phone, relationship, photo, card, status')
 			->where('school_id', $schoolId)
-			->where('status', 1)
-			->get()->getResultArray();
+			->where('status', 1);
+		$visitorQ->groupStart();
+		if (!empty($seedStudentIds)) {
+			$visitorQ->whereIn('student_id', array_values($seedStudentIds));
+		} else {
+			$visitorQ->where('student_id', 0);
+		}
+		foreach ($seedNames as $name) {
+			$escaped = $db->escape($name);
+			$visitorQ->orWhere("LOWER(TRIM(names)) = {$escaped}", null, false);
+		}
+		$visitorQ->groupEnd();
+		$visitorRows = $visitorQ->get()->getResultArray();
 
 		$studentsById = [];
 		foreach ($studentRows as $row) {
