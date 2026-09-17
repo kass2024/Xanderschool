@@ -3952,7 +3952,7 @@ if ($page == "pendingRegistration") {
 <script type="application/javascript" src="<?= base_url('assets/js/parsley-extra-validators.js'); ?>"></script>
 <script type="application/javascript" src="<?= base_url('assets/plugins/select2/js/select2.min.js'); ?>"></script>
 <script src="<?= base_url('assets/js/inputmask.bundle.min.js'); ?>"></script>
-<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js?v=create-post-2"></script>
+<script type="text/javascript" src="<?= base_url(); ?>assets/js/scripts_v1.1.1.js?v=class-delete-1"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.js"></script>
 <script src="<?= base_url(); ?>assets/js/Chart.min.js"></script>
 <script src="<?= base_url(); ?>assets/js/jquery.flot.js"></script>

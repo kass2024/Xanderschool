@@ -728,8 +728,9 @@
 														<?php if (can_manage_student_lock_delete()): ?>
 														<label class="typcn typcn-delete text-danger link"
 															   data-toggle="delete"
-															   data-title="Student #<?= $student['fname']; ?>"
+															   data-title="<?= esc(trim($student['fname'] . ' ' . $student['lname']) . ' from ' . trim($student['level'] . ' ' . $student['dept_code'] . ' ' . $student['class']) . ' only'); ?>"
 															   data-target="<?= $student['id']; ?>"
+															   data-target-record="<?= (int) $student['record_id']; ?>"
 															   data-href="delete_student"><?= lang("app.del");?></label> |
 														<?=$status;?>
 														<?php endif; ?>

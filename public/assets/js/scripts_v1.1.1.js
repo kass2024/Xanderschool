@@ -208,7 +208,11 @@ $(function () {
             return;
         var target = $(this).data("target");
         var href = $(this).data("href");
-        $.post(base_url + href, "data=" + target, function (data) {
+        var extra = "";
+        if ($(this).data("target-record") != undefined) {
+            extra += "&record_id=" + $(this).data("target-record");
+        }
+        $.post(base_url + href, "data=" + target + extra, function (data) {
             if (data.hasOwnProperty("error")) {
                 toastada.error(data.error);
                 // alert(data.error);

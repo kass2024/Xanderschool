@@ -12,6 +12,7 @@ use App\Libraries\StaffShiftClock;
 use App\Libraries\CardRegistry;
 use App\Libraries\HeyStarDeviceStore;
 use App\Libraries\HeyStarSyncService;
+use App\Libraries\StudentClassRemoval;
 use App\Models\AcademicYearModel;
 use App\Models\AcademicPlanModel;
 use App\Models\AcademicAiAnalysisModel;
@@ -10047,28 +10048,15 @@ public function attendanceCard()
 		}
 		$id = (int) $this->request->getPost("data");
 		$school_id = (int) $this->session->get("soma_school_id");
-		$stMdl = new StudentModel();
+		$recordId = (int) $this->request->getPost('record_id');
+		$classId = (int) $this->request->getPost('class_id');
+		$yearId = (int) $this->request->getPost('year');
 		try {
-			$row = $stMdl->where('id', $id)->where('school_id', $school_id)->first();
-			if (!$row) {
-				return $this->response->setJSON(['error' => lang("app.studentNotDeleted") ?? 'Student not found.']);
+			$result = StudentClassRemoval::remove($school_id, $id, $recordId, $classId, $yearId);
+			if (empty($result['ok'])) {
+				return $this->response->setJSON(['error' => $result['error'] ?? 'Student was not removed.']);
 			}
-
-			$visitorMdl = new StudentVisitorModel();
-			$visitorMdl->ensureSchema();
-			$visitorMdl->purgeForStudent($school_id, $id);
-
-			$mksMdl = new MarksModel();
-			$dscMdl = new DisciplineModel();
-			$permMdl = new PermissionModel();
-			$clRecord = new ClassRecordModel();
-			$stMdl->delete($id);
-			//remove class record
-			$clRecord->where("student", $id)->delete();
-			$mksMdl->where("student_id", $id)->delete();
-			$dscMdl->where("student_id", $id)->delete();
-			$permMdl->where("student_id", $id)->delete();
-			return $this->response->setJSON(array("success" => lang("app.studentDeleted")));
+			return $this->response->setJSON(['success' => $result['message']]);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}

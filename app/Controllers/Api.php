@@ -31,6 +31,7 @@ use App\Libraries\CardRegistry;
 use App\Libraries\HeyStarDeviceStore;
 use App\Libraries\HeyStarSyncService;
 use App\Libraries\StaffShiftClock;
+use App\Libraries\StudentClassRemoval;
 use App\Models\StaffModel;
 use App\Models\StudentModel;
 use App\Models\StudentVisitorModel;
@@ -2995,13 +2996,20 @@ public function get_boarding_classes()
 	}
 
 	/**
-	 * Mobile: hard-delete a student. Requires the student to exist in this school.
-	 * POST: school_id, student_id
+	 * Mobile: remove a student from the current class only.
+	 * Hard-deletes the student only when no other class enrollments remain.
+	 * POST: school_id, student_id, record_id?, class_id?, year?
 	 */
 	public function delete_student()
 	{
 		$schoolId = (int) $this->request->getPost('school_id');
 		$studentId = (int) $this->request->getPost('student_id');
+		$recordId = (int) $this->request->getPost('record_id');
+		$classId = (int) $this->request->getPost('class_id');
+		if ($classId < 1) {
+			$classId = (int) $this->request->getPost('class');
+		}
+		$year = (int) $this->request->getPost('year');
 		if ($schoolId < 1 || $studentId < 1) {
 			return $this->response->setJSON(['error' => 'Missing school or student']);
 		}
@@ -3017,29 +3025,18 @@ public function get_boarding_classes()
 		}
 
 		try {
-			$visitorMdl = new StudentVisitorModel();
-			$visitorMdl->ensureSchema();
-			$visitorMdl->purgeForStudent($schoolId, $studentId);
-
-			$mksMdl = new MarksModel();
-			$dscMdl = new DisciplineModel();
-			$permMdl = new PermissionModel();
-			$clRecord = new ClassRecordModel();
-			$dailyMdl = new DailyAttendanceModel();
-
-			$stMdl->delete($studentId);
-			$clRecord->where('student', $studentId)->delete();
-			$mksMdl->where('student_id', $studentId)->delete();
-			$dscMdl->where('student_id', $studentId)->delete();
-			$permMdl->where('student_id', $studentId)->delete();
-			$dailyMdl->where('student_id', $studentId)->delete();
+			$result = StudentClassRemoval::remove($schoolId, $studentId, $recordId, $classId, $year);
+			if (empty($result['ok'])) {
+				return $this->response->setJSON(['error' => $result['error'] ?? 'Failed to remove student']);
+			}
 		} catch (\Exception $e) {
 			return $this->response->setJSON(['error' => 'Failed to delete student: ' . $e->getMessage()]);
 		}
 
 		return $this->response->setJSON([
 			'success' => '1',
-			'message' => 'Student deleted',
+			'message' => $result['message'] ?? 'Student deleted',
+			'mode' => $result['mode'] ?? 'deleted',
 			'student_id' => $studentId,
 			'name' => trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? '')),
 		]);
