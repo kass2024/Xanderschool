@@ -148,7 +148,7 @@ class SchoolHierarchyService
 	/**
 	 * Seed WISDOM SCHOOL RWANDA as master for all Wisdom-named schools.
 	 *
-	 * @return array{master_id:int, children:int, names:string[]}
+	 * @return array
 	 */
 	public function seedWisdomMasterGroup()
 	{
@@ -197,7 +197,7 @@ class SchoolHierarchyService
 	 * Create/reset Head master login for every Wisdom child school.
 	 * Never creates or changes a login for WISDOM SCHOOL RWANDA (master).
 	 *
-	 * @return array{master_id:int, password:string, login_url:string, file:string, created:array, updated:array, skipped:array}
+	 * @return array
 	 */
 	public function resetWisdomChildDefaultPasswords($defaultPassword = self::WISDOM_CHILD_DEFAULT_PASSWORD, $loginUrl = self::WISDOM_LOGIN_URL)
 	{
@@ -227,7 +227,7 @@ class SchoolHierarchyService
 			$sid = (int) ($school['id'] ?? 0);
 			$name = trim((string) ($school['name'] ?? ''));
 			if ($sid < 1 || $this->isWisdomMasterSchoolRow($school, $masterId)) {
-				$skipped[] = ['school' => $name !== '' ? $name : ('#' . $sid), 'reason' => 'master school — login not created'];
+				$skipped[] = ['school' => $name !== '' ? $name : ('#' . $sid), 'reason' => 'master school - login not created'];
 				continue;
 			}
 
@@ -254,7 +254,7 @@ class SchoolHierarchyService
 
 			$email = trim((string) ($school['email'] ?? ''));
 			if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-				$acronym = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '', (string) ($school['acronym'] ?? 'child')));
+				$acronym = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '', (string) ($school['acronym'] ?? 'child')));
 				$email = 'admin.' . ($acronym !== '' ? $acronym : ('s' . $sid)) . '@wisdomschools.rw';
 			}
 
@@ -330,7 +330,7 @@ class SchoolHierarchyService
 		$loginUrl = rtrim((string) $loginUrl, '/');
 
 		$lines = [];
-		$lines[] = 'WISDOM SCHOOLS — CHILD SCHOOL LOGIN CREDENTIALS';
+		$lines[] = 'WISDOM SCHOOLS - CHILD SCHOOL LOGIN CREDENTIALS';
 		$lines[] = 'Generated: ' . date('Y-m-d H:i:s');
 		$lines[] = 'Master school (NO login created/reset): ' . ($master['name'] ?? ('#' . $masterId));
 		$lines[] = 'Login link: ' . $loginUrl;
@@ -384,8 +384,11 @@ class SchoolHierarchyService
 		return $file;
 	}
 
-	private function isWisdomMasterSchoolRow(array $school, int $masterId): bool
+	private function isWisdomMasterSchoolRow($school, $masterId)
 	{
+		if (!is_array($school)) {
+			return false;
+		}
 		if ((int) ($school['id'] ?? 0) === $masterId) {
 			return true;
 		}
