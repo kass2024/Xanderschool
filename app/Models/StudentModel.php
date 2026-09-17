@@ -367,9 +367,9 @@ class StudentModel extends Model
 		$row = $this->db->query(
 			"SELECT COUNT(DISTINCT students.id) AS c
 			 FROM students
-			 INNER JOIN class_records cr ON cr.student = students.id AND cr.year = ?
+			 INNER JOIN class_records cr ON cr.student = students.id AND cr.year = ? AND cr.status = 1
 			 WHERE students.school_id = ?
-			   AND students.status IN (0, 1)",
+			   AND students.status IN (1, 2)",
 			[$academicYear, $schoolId]
 		)->getRowArray();
 		return (int) ($row['c'] ?? 0);
@@ -409,7 +409,7 @@ class StudentModel extends Model
 		INNER JOIN (
 			SELECT student, MAX(id) AS record_id
 			FROM class_records
-			WHERE year = ?
+			WHERE year = ? AND status = 1
 			GROUP BY student
 		) latest ON latest.student = students.id
 		INNER JOIN class_records cr ON cr.id = latest.record_id
@@ -417,7 +417,7 @@ class StudentModel extends Model
 		INNER JOIN departments d ON d.id = c.department
 		INNER JOIN levels l ON l.id = c.level
 		WHERE students.school_id = ?
-		  AND students.status IN (0, 1)
+		  AND students.status IN (0, 1, 2)
 		  AND (
 				UNIX_TIMESTAMP(COALESCE(students.updated_at, students.created_at, FROM_UNIXTIME(0))) > ?
 			 OR (
@@ -429,6 +429,44 @@ class StudentModel extends Model
 		LIMIT {$limit}";
 
 		return $this->db->query($sql, [$academicYear, $schoolId, $updatedAt, $updatedAt, $afterId])->getResultArray();
+	}
+
+	/**
+	 * Same roster as web Students list: active class record + student status 1 or 2.
+	 */
+	public function getClassRoster(int $schoolId, int $classId, int $academicYear): array
+	{
+		$schoolId = max(0, $schoolId);
+		$classId = max(0, $classId);
+		$academicYear = max(0, $academicYear);
+		if ($schoolId < 1 || $classId < 1 || $academicYear < 1) {
+			return [];
+		}
+		$sql = "SELECT students.id,
+			students.card,
+			students.studying_mode,
+			students.regno,
+			students.status,
+			CONCAT(students.fname, ' ', students.lname) AS name,
+			CONCAT(IFNULL(l.title,''), ' ', IFNULL(d.code,''), ' ', IFNULL(c.title,'')) AS class,
+			IFNULL(d.title,'') AS dept_title,
+			IFNULL(students.photo,'') AS photo,
+			IFNULL(students.sex,'') AS sex,
+			c.id AS class_id,
+			MAX(cr.id) AS record_id,
+			COALESCE(students.ft_phone, students.mt_phone, students.gd_phone, '') AS phone
+		FROM students
+		INNER JOIN class_records cr ON cr.student = students.id AND cr.class = ? AND cr.year = ? AND cr.status = 1
+		INNER JOIN classes c ON c.id = cr.class
+		INNER JOIN departments d ON d.id = c.department
+		INNER JOIN levels l ON l.id = c.level
+		WHERE students.school_id = ?
+		  AND students.status IN (1, 2)
+		GROUP BY students.id, students.card, students.studying_mode, students.regno, students.status,
+			students.fname, students.lname, l.title, d.code, c.title, d.title, students.photo, students.sex, c.id,
+			students.ft_phone, students.mt_phone, students.gd_phone
+		ORDER BY students.fname ASC, students.lname ASC";
+		return $this->db->query($sql, [$classId, $academicYear, $schoolId])->getResultArray();
 	}
 
 	public function search_student($hint)

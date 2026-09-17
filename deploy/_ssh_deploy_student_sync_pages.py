@@ -20,10 +20,10 @@ FILES = [
 ]
 
 VERIFY_STRINGS = [
+    ("app/Controllers/Api.php", "function get_class_roster"),
     ("app/Controllers/Api.php", "has_more"),
-    ("app/Controllers/Api.php", "enrolled_count"),
+    ("app/Models/StudentModel.php", "function getClassRoster"),
     ("app/Models/StudentModel.php", "function getStudentSyncPage"),
-    ("app/Models/StudentModel.php", "function countEnrolledForSync"),
 ]
 
 

@@ -795,6 +795,7 @@ public function get_students($class, $academicYear, $termId = null)
                                     ) as count')
             ->join('class_records cr', 'cr.student = students.id')
             ->where('cr.class', $class)
+            ->where('cr.status', 1)
             ->where('students.status', 1)
             ->where('cr.year', $academicYear)
             ->orderBy('students.fname', 'ASC')
@@ -810,6 +811,7 @@ public function get_students($class, $academicYear, $termId = null)
                                     photo')
             ->join('class_records cr', 'cr.student = students.id')
             ->where('cr.class', $class)
+            ->where('cr.status', 1)
             ->where('students.status', 1)
             ->where('cr.year', $academicYear)
             ->orderBy('students.fname', 'ASC')
@@ -843,6 +845,42 @@ public function get_students($class, $academicYear, $termId = null)
     ]);
 }
 
+	/**
+	 * Mobile: exact web Students-list roster for one class.
+	 * POST/GET: school_id, class_id, year
+	 */
+	public function get_class_roster()
+	{
+		$schoolId = (int) ($this->request->getPost('school_id') ?? $this->request->getGet('school_id') ?? 0);
+		$classId = (int) ($this->request->getPost('class_id') ?? $this->request->getGet('class_id')
+			?? $this->request->getPost('class') ?? $this->request->getGet('class') ?? 0);
+		$year = (int) ($this->request->getPost('year') ?? $this->request->getGet('year')
+			?? $this->request->getPost('academic_year') ?? $this->request->getGet('academic_year') ?? 0);
+		if ($schoolId < 1 || $classId < 1) {
+			return $this->response->setJSON(['error' => 'school_id and class_id are required']);
+		}
+		$this->_preset($schoolId);
+		if ($year < 1) {
+			$year = (int) ($this->data['academic_year'] ?? 0);
+		}
+		$stMdl = new StudentModel();
+		$rows = $stMdl->getClassRoster($schoolId, $classId, $year);
+		$unique = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['id'] ?? 0);
+			if ($sid > 0) {
+				$unique[$sid] = $row;
+			}
+		}
+		$list = array_values($unique);
+		return $this->response->setJSON([
+			'success' => '1',
+			'class_id' => $classId,
+			'year' => $year,
+			'count' => count($list),
+			'students' => $list,
+		]);
+	}
 
 public function sync($option, $school_id)
 {
