@@ -284,7 +284,7 @@ class AttendanceScanService
 				'regno' => (string) ($r['regno'] ?? ''),
 				'class' => $classes[$sid] ?? '',
 				'card' => (string) ($r['card'] ?? ''),
-				'photo' => profile_photo_url($r['photo'] ?? null),
+				'photo' => self::kioskPhotoUrl($r['photo'] ?? null),
 			];
 		}
 		return $out;
@@ -397,7 +397,7 @@ class AttendanceScanService
 				'phone' => (string) ($r['phone'] ?? ''),
 				'relationship' => (string) ($r['relationship'] ?? ''),
 				'card' => (string) ($r['card'] ?? ''),
-				'photo' => profile_photo_url($r['photo'] ?? null),
+				'photo' => self::kioskPhotoUrl($r['photo'] ?? null),
 				'student_name' => (string) ($r['student_name'] ?? ''),
 				'student_regno' => (string) ($r['regno'] ?? ''),
 				'student_class' => $classes[$sid] ?? '',
@@ -1037,7 +1037,7 @@ class AttendanceScanService
 			'name' => trim((string) $student->fname . ' ' . (string) $student->lname),
 			'regno' => (string) ($student->regno ?? ''),
 			'class' => $className,
-			'photo' => profile_photo_url($student->photo ?? null),
+			'photo' => self::kioskPhotoUrl($student->photo ?? null),
 			'records' => $records,
 		];
 	}
@@ -1056,6 +1056,16 @@ class AttendanceScanService
 			'photo' => $photo !== '' ? $photo : profile_photo_url($staff->photo ?? null),
 			'card_photo' => $photo,
 		];
+	}
+
+	/**
+	 * Real uploaded photo URL for the kiosk, or empty when deleted / missing.
+	 * Never send fallback avatars — the tablet must drop its cached file.
+	 */
+	private static function kioskPhotoUrl(?string $stored): string
+	{
+		helper('qonics');
+		return profile_photo_url($stored, '');
 	}
 
 	/**

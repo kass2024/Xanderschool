@@ -4528,6 +4528,7 @@ public function permission_card_scan()
 	private function processVisitorScan($schoolId, $cardRaw, $source = 'android', $operator = null)
 	{
 		helper('card_uid');
+		helper('qonics');
 		$schoolId = (int) $schoolId;
 		$cardRaw = trim((string) $cardRaw);
 		if ($schoolId <= 0 || $cardRaw === '') {
@@ -4693,10 +4694,7 @@ public function permission_card_scan()
 				continue;
 			}
 			$student = $studentsById[$studentId];
-			$photo = trim((string) ($student['photo'] ?? ''));
-			if ($photo !== '' && strpos($photo, 'http') !== 0) {
-				$photo = $photoBase . ltrim($photo, '/');
-			}
+			$photo = profile_photo_url($student['photo'] ?? null, '');
 			$formattedStudents[$studentId] = [
 				'id' => $studentId,
 				'name' => $student['name'] ?? '',
