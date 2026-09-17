@@ -2994,8 +2994,8 @@ public function get_boarding_classes()
 	}
 
 	/**
-	 * Mobile: live rename. Student must exist on the server.
-	 * POST: school_id, student_id, fname, lname
+	 * Mobile: live rename + studying mode. Student must exist on the server.
+	 * POST: school_id, student_id, fname, lname, studying_mode (0 boarding / 1 day)
 	 */
 	public function update_student_name()
 	{
@@ -3011,7 +3011,7 @@ public function get_boarding_classes()
 		}
 
 		$stMdl = new StudentModel();
-		$student = $stMdl->select('id, school_id, updateVersion')
+		$student = $stMdl->select('id, school_id, updateVersion, studying_mode')
 			->where('id', $studentId)
 			->where('school_id', $schoolId)
 			->get(1)
@@ -3020,25 +3020,33 @@ public function get_boarding_classes()
 			return $this->response->setJSON(['error' => 'Student not found on server']);
 		}
 
+		$modeRaw = $this->request->getPost('studying_mode');
+		$mode = $modeRaw === null || $modeRaw === ''
+			? (int) ($student['studying_mode'] ?? 1)
+			: $stMdl->normalizeStudyingMode($modeRaw);
+
 		try {
 			$stMdl->save([
 				'id' => $studentId,
 				'fname' => $fname,
 				'lname' => $lname,
+				'studying_mode' => $mode,
 				'updateVersion' => ((int) ($student['updateVersion'] ?? 0)) + 1,
 			]);
 		} catch (\Exception $e) {
-			return $this->response->setJSON(['error' => 'Failed to update name: ' . $e->getMessage()]);
+			return $this->response->setJSON(['error' => 'Failed to update student: ' . $e->getMessage()]);
 		}
 
 		$fullName = trim($fname . ' ' . $lname);
 		return $this->response->setJSON([
 			'success' => '1',
-			'message' => 'Student name updated',
+			'message' => 'Student updated',
 			'student_id' => $studentId,
 			'fname' => $fname,
 			'lname' => $lname,
 			'name' => $fullName,
+			'studying_mode' => $mode,
+			'mode_label' => $mode === 0 ? 'Boarding' : 'Day',
 		]);
 	}
 
