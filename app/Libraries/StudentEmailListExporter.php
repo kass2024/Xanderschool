@@ -21,7 +21,7 @@ class StudentEmailListExporter
 	private const ALT_ROW = 'F7FAFD';
 	private const LAST_COL = 'F';
 	private const FONT = 'Calibri';
-	private const WEBMAIL = 'https://wisdomschoolrwanda.com:2096';
+	private const DEFAULT_WEBMAIL_HOST = 'wisdomschoolrwanda.com';
 
 	/** @return list<string> */
 	public static function columnHeaders(): array
@@ -47,6 +47,14 @@ class StudentEmailListExporter
 
 	/**
 	 * @param array<string,mixed> $school
+	 */
+	public static function webmailUrl(array $school = []): string
+	{
+		return 'https://' . self::DEFAULT_WEBMAIL_HOST . ':2096';
+	}
+
+	/**
+	 * @param array<string,mixed> $school
 	 * @param list<array{class:array<string,mixed>,students:list<array<string,mixed>>}> $sheets
 	 */
 	public static function build(array $school, array $sheets, string $yearTitle = ''): Spreadsheet
@@ -55,6 +63,7 @@ class StudentEmailListExporter
 		$spreadsheet->getDefaultStyle()->getFont()->setName(self::FONT)->setSize(11);
 		$spreadsheet->getDefaultStyle()->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
 
+		$webmail = self::webmailUrl($school);
 		$all = [];
 		foreach ($sheets as $entry) {
 			$class = $entry['class'] ?? [];
@@ -67,7 +76,7 @@ class StudentEmailListExporter
 
 		$sheet = $spreadsheet->getActiveSheet();
 		$sheet->setTitle('All emails');
-		self::fillSheet($sheet, $school, 'All classes', $all, $yearTitle);
+		self::fillSheet($sheet, $school, 'All classes', $all, $yearTitle, $webmail);
 
 		$used = ['all emails' => 1];
 		foreach ($sheets as $entry) {
@@ -85,7 +94,7 @@ class StudentEmailListExporter
 			}
 			$newSheet = $spreadsheet->createSheet();
 			$newSheet->setTitle($title);
-			self::fillSheet($newSheet, $school, $className, $perClass, $yearTitle);
+			self::fillSheet($newSheet, $school, $className, $perClass, $yearTitle, $webmail);
 		}
 
 		$spreadsheet->setActiveSheetIndex(0);
@@ -101,7 +110,8 @@ class StudentEmailListExporter
 		array $school,
 		string $title,
 		array $students,
-		string $yearTitle
+		string $yearTitle,
+		string $webmail
 	): void {
 		$lastCol = self::LAST_COL;
 		$headerEnd = SmartStudentSheetsExporter::writeSchoolHeader($sheet, $school);
@@ -141,8 +151,8 @@ class StudentEmailListExporter
 		$sheet->getRowDimension($infoRow)->setRowHeight(22);
 
 		$sheet->mergeCells("A{$webRow}:{$lastCol}{$webRow}");
-		$sheet->setCellValue("A{$webRow}", 'Webmail: ' . self::WEBMAIL);
-		$sheet->getCell("A{$webRow}")->getHyperlink()->setUrl(self::WEBMAIL);
+		$sheet->setCellValue("A{$webRow}", 'Webmail: ' . $webmail);
+		$sheet->getCell("A{$webRow}")->getHyperlink()->setUrl($webmail);
 		$sheet->getStyle("A{$webRow}:{$lastCol}{$webRow}")->applyFromArray([
 			'font' => [
 				'name' => self::FONT,
@@ -245,7 +255,7 @@ class StudentEmailListExporter
 		$sheet->getPageMargins()->setBottom(0.4);
 		$sheet->getPageMargins()->setLeft(0.4);
 		$sheet->getPageMargins()->setRight(0.4);
-		$sheet->getHeaderFooter()->setOddFooter('&L' . self::WEBMAIL . '&RPage &P of &N');
+		$sheet->getHeaderFooter()->setOddFooter('&L' . $webmail . '&RPage &P of &N');
 	}
 
 	/** @param array<int,int> $maxLens */
