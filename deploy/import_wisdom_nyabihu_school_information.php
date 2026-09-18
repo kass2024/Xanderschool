@@ -406,13 +406,31 @@ if (!$year) {
 }
 
 $schoolInfo = $data['school'];
-$db->table('schools')->where('id', TARGET_SCHOOL_ID)->update([
+$schoolUpdate = [
 	'name' => clean_text($schoolInfo['name'] ?? 'WISDOM SCHOOL NYABIHU', 100),
 	'slogan' => clean_text($schoolInfo['slogan'] ?? '', 100),
 	'address' => 'Mukamira, Nyabihu, Rwanda',
 	'head_master' => clean_text($schoolInfo['head_teacher'] ?? 'NIYIRORA BETHOLDE', 100),
 	'updated_at' => $now,
-]);
+];
+if ($activeTerm) {
+	$db->table('active_term')
+		->where('id', (int) $activeTerm['id'])
+		->where('school_id', TARGET_SCHOOL_ID)
+		->update(['academic_year' => (string) $academicYearId]);
+} else {
+	$db->table('active_term')->insert([
+		'school_id' => TARGET_SCHOOL_ID,
+		'academic_year' => (string) $academicYearId,
+		'term' => 1,
+		'sms_usage' => 1,
+		'created_by' => CREATED_BY,
+		'created_at' => $now,
+		'updated_at' => $now,
+	]);
+	$schoolUpdate['active_term'] = (int) $db->insertID();
+}
+$db->table('schools')->where('id', TARGET_SCHOOL_ID)->update($schoolUpdate);
 
 $staffByName = [];
 $staffByRole = [];
