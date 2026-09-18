@@ -1,0 +1,1891 @@
+{
+  "school": {
+    "name": "WISDOM SCHOOL KANZENZE",
+    "acronym": "WIS-KAN",
+    "slogan": "FEARING GOD IS KNOWLEDGE",
+    "academic_year": "2026-2027",
+    "term": "Term I",
+    "head_teacher": "JEREMIE SEMAGOLI"
+  },
+  "classes": [
+    {
+      "class_label": "BABY CLASS",
+      "sheet": "N1",
+      "full_name": "CYUZUZO NEIL LICKLESS",
+      "fname": "CYUZUZO",
+      "lname": "NEIL LICKLESS",
+      "sex": "F"
+    },
+    {
+      "class_label": "BABY CLASS",
+      "sheet": "N1",
+      "full_name": "GANZA KEVAN",
+      "fname": "GANZA",
+      "lname": "KEVAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "BABY CLASS",
+      "sheet": "N1",
+      "full_name": "HIRWA PATRICK",
+      "fname": "HIRWA",
+      "lname": "PATRICK",
+      "sex": "M"
+    },
+    {
+      "class_label": "BABY CLASS",
+      "sheet": "N1",
+      "full_name": "HIRWA YVAN",
+      "fname": "HIRWA",
+      "lname": "YVAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "BABY CLASS",
+      "sheet": "N1",
+      "full_name": "IRATEGEKA BRIGHT",
+      "fname": "IRATEGEKA",
+      "lname": "BRIGHT",
+      "sex": "M"
+    },
+    {
+      "class_label": "BABY CLASS",
+      "sheet": "N1",
+      "full_name": "MWAMBUTSA GWIZA ELLAN",
+      "fname": "MWAMBUTSA",
+      "lname": "GWIZA ELLAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "BABY CLASS",
+      "sheet": "N1",
+      "full_name": "NKOMEZA ELDIN MIGUEL",
+      "fname": "NKOMEZA",
+      "lname": "ELDIN MIGUEL",
+      "sex": "M"
+    },
+    {
+      "class_label": "BABY CLASS",
+      "sheet": "N1",
+      "full_name": "RWEMA ENZO",
+      "fname": "RWEMA",
+      "lname": "ENZO",
+      "sex": "M"
+    },
+    {
+      "class_label": "BABY CLASS",
+      "sheet": "N1",
+      "full_name": "SHAMI GAIDEN",
+      "fname": "SHAMI",
+      "lname": "GAIDEN",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "AGABE Briella",
+      "fname": "AGABE",
+      "lname": "Briella",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "AGABE HODALI Kelly",
+      "fname": "AGABE",
+      "lname": "HODALI Kelly",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "AGATESI Pamela",
+      "fname": "AGATESI",
+      "lname": "Pamela",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "AHIRWE GASARO NANCY",
+      "fname": "AHIRWE",
+      "lname": "GASARO NANCY",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "ATETE Meghan",
+      "fname": "ATETE",
+      "lname": "Meghan",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "CYUSA L ILEY Dylan",
+      "fname": "CYUSA",
+      "lname": "L ILEY Dylan",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "GISA Bravan",
+      "fname": "GISA",
+      "lname": "Bravan",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "IGABE NDANGIZI Ayan",
+      "fname": "IGABE",
+      "lname": "NDANGIZI Ayan",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "IGANZE Amiri",
+      "fname": "IGANZE",
+      "lname": "Amiri",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "IGANZE BRIGHT",
+      "fname": "IGANZE",
+      "lname": "BRIGHT",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "IMPANO LIZA TISHA JOANNA",
+      "fname": "IMPANO",
+      "lname": "LIZA TISHA JOANNA",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "INEZA OR Joanna",
+      "fname": "INEZA",
+      "lname": "OR Joanna",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "MANZI J.JERVICE",
+      "fname": "MANZI",
+      "lname": "J.JERVICE",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "MIGABO MUCYO Hertier",
+      "fname": "MIGABO",
+      "lname": "MUCYO Hertier",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "MUGISHA KIRABO Ivana",
+      "fname": "MUGISHA",
+      "lname": "KIRABO Ivana",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "MUTUZO Odley",
+      "fname": "MUTUZO",
+      "lname": "Odley",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "NDAGIJIMANA Angel Briella",
+      "fname": "NDAGIJIMANA",
+      "lname": "Angel Briella",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "NEZERWA MUHIRE Gaelle",
+      "fname": "NEZERWA",
+      "lname": "MUHIRE Gaelle",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "NGANJI Darrel",
+      "fname": "NGANJI",
+      "lname": "Darrel",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "NGERERO Jervais",
+      "fname": "NGERERO",
+      "lname": "Jervais",
+      "sex": "M"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "SHIMAYESU JAMIE Berinice",
+      "fname": "SHIMAYESU",
+      "lname": "JAMIE Berinice",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "USENGIMANA Emile",
+      "fname": "USENGIMANA",
+      "lname": "Emile",
+      "sex": "F"
+    },
+    {
+      "class_label": "MIDDLE CLASS",
+      "sheet": "N2",
+      "full_name": "UWURUKUNDO MERISA APOPHIA",
+      "fname": "UWURUKUNDO",
+      "lname": "MERISA APOPHIA",
+      "sex": "F"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "ATETE Anisha Nema",
+      "fname": "ATETE",
+      "lname": "Anisha Nema",
+      "sex": "F"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "Cyubahiro Richard",
+      "fname": "Cyubahiro",
+      "lname": "Richard",
+      "sex": "M"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "ISHIMIRWE BERIAH TYCHIQUE",
+      "fname": "ISHIMIRWE",
+      "lname": "BERIAH TYCHIQUE",
+      "sex": "M"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "NKotanyi Iganze Elio",
+      "fname": "NKotanyi",
+      "lname": "Iganze Elio",
+      "sex": "M"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "INGANZE Flower Yassippe",
+      "fname": "INGANZE",
+      "lname": "Flower Yassippe",
+      "sex": "F"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "Uwacu cyomoro yvan",
+      "fname": "Uwacu",
+      "lname": "cyomoro yvan",
+      "sex": "M"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "Uwase Muhire Laraine",
+      "fname": "Uwase",
+      "lname": "Muhire Laraine",
+      "sex": "F"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "INEZA Gianni",
+      "fname": "INEZA",
+      "lname": "Gianni",
+      "sex": "F"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "ISHIMWE KEVIN",
+      "fname": "ISHIMWE",
+      "lname": "KEVIN",
+      "sex": "M"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "NIYODUSENGA FRED",
+      "fname": "NIYODUSENGA",
+      "lname": "FRED",
+      "sex": "M"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "NTWARI CYUSA ERIC",
+      "fname": "NTWARI",
+      "lname": "CYUSA ERIC",
+      "sex": "M"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "NTAKIRUTIMANA BELLA",
+      "fname": "NTAKIRUTIMANA",
+      "lname": "BELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "RWEMA ALDO",
+      "fname": "RWEMA",
+      "lname": "ALDO",
+      "sex": "M"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "NDAYISHIMIYE HERTIER",
+      "fname": "NDAYISHIMIYE",
+      "lname": "HERTIER",
+      "sex": "M"
+    },
+    {
+      "class_label": "TOP CLASS",
+      "sheet": "N3",
+      "full_name": "IRADUHA HAKIZIMANA ISRAEL",
+      "fname": "IRADUHA",
+      "lname": "HAKIZIMANA ISRAEL",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "AKEZA GAELLA",
+      "fname": "AKEZA",
+      "lname": "GAELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "AKARIZA AIME BRIELLA",
+      "fname": "AKARIZA",
+      "lname": "AIME BRIELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "AJENEZA BRAVINE",
+      "fname": "AJENEZA",
+      "lname": "BRAVINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "ATONE YVAN",
+      "fname": "ATONE",
+      "lname": "YVAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "BERWA NANCY ORNELLA",
+      "fname": "BERWA",
+      "lname": "NANCY ORNELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "KEZA NAOME BELLA",
+      "fname": "KEZA",
+      "lname": "NAOME BELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "ICYITEGETSE KEZA ALINE",
+      "fname": "ICYITEGETSE",
+      "lname": "KEZA ALINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "IGABE HODARI KEILLA",
+      "fname": "IGABE",
+      "lname": "HODARI KEILLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "IRANSUBIJE PHILEMON",
+      "fname": "IRANSUBIJE",
+      "lname": "PHILEMON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "GANZA PATRICK",
+      "fname": "GANZA",
+      "lname": "PATRICK",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "MPANO NDAMIRA LEON",
+      "fname": "MPANO",
+      "lname": "NDAMIRA LEON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "NZAYINAMBAHO TOMSON",
+      "fname": "NZAYINAMBAHO",
+      "lname": "TOMSON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "MUKUNDWA JESCA",
+      "fname": "MUKUNDWA",
+      "lname": "JESCA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "SANO CLEVER",
+      "fname": "SANO",
+      "lname": "CLEVER",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "SHAMI JOLUDA",
+      "fname": "SHAMI",
+      "lname": "JOLUDA",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "IRUMVA YVAN",
+      "fname": "IRUMVA",
+      "lname": "YVAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "INEZA ANAELI",
+      "fname": "INEZA",
+      "lname": "ANAELI",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "NDAYISHIME EZEKIEL",
+      "fname": "NDAYISHIME",
+      "lname": "EZEKIEL",
+      "sex": "M"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "IRADUKUNDA DENYSE",
+      "fname": "IRADUKUNDA",
+      "lname": "DENYSE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "IGIRIMBABAZI JOYEUSE",
+      "fname": "IGIRIMBABAZI",
+      "lname": "JOYEUSE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "KEZA DORIANE",
+      "fname": "KEZA",
+      "lname": "DORIANE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P1",
+      "sheet": "P1",
+      "full_name": "CYOMORO JOSHUA",
+      "fname": "CYOMORO",
+      "lname": "JOSHUA",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "AGANZE ORNELLA ANUALITTE",
+      "fname": "AGANZE",
+      "lname": "ORNELLA ANUALITTE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "ISHEJA ANABELLE",
+      "fname": "ISHEJA",
+      "lname": "ANABELLE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "KAZUNGU EGIDE",
+      "fname": "KAZUNGU",
+      "lname": "EGIDE",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "MUKUNZI YVAN",
+      "fname": "MUKUNZI",
+      "lname": "YVAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "NGENZI GRENON TYLLA",
+      "fname": "NGENZI",
+      "lname": "GRENON TYLLA",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "INEZAYIMANA BONHEUR ALLAN",
+      "fname": "INEZAYIMANA",
+      "lname": "BONHEUR ALLAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "RUGWIRO MIGHUEL",
+      "fname": "RUGWIRO",
+      "lname": "MIGHUEL",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "AGANZE BRYAN",
+      "fname": "AGANZE",
+      "lname": "BRYAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "INZA KAMALI DAVINA",
+      "fname": "INZA",
+      "lname": "KAMALI DAVINA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "NISHIMWE FIONA",
+      "fname": "NISHIMWE",
+      "lname": "FIONA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "AGATONI ANICIA",
+      "fname": "AGATONI",
+      "lname": "ANICIA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "KAMANZI SHYAKA IVAN",
+      "fname": "KAMANZI",
+      "lname": "SHYAKA IVAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "ISHEJA AKISSE",
+      "fname": "ISHEJA",
+      "lname": "AKISSE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "CYUSA DORAN",
+      "fname": "CYUSA",
+      "lname": "DORAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "ABAYISENGA ELYON",
+      "fname": "ABAYISENGA",
+      "lname": "ELYON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "KUNDWA AURORE",
+      "fname": "KUNDWA",
+      "lname": "AURORE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "GANZA ALFRED",
+      "fname": "GANZA",
+      "lname": "ALFRED",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "GANZA BRUNO",
+      "fname": "GANZA",
+      "lname": "BRUNO",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "MIHIGO NOELLA DESTINE",
+      "fname": "MIHIGO",
+      "lname": "NOELLA DESTINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "IHIRWE PAORAH",
+      "fname": "IHIRWE",
+      "lname": "PAORAH",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "UMURISA DEBORAH",
+      "fname": "UMURISA",
+      "lname": "DEBORAH",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "NGABONZIZA WINNER",
+      "fname": "NGABONZIZA",
+      "lname": "WINNER",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "NTWALI GIDEON",
+      "fname": "NTWALI",
+      "lname": "GIDEON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "IHIWE KAMBABAZI PAMELLA",
+      "fname": "IHIWE",
+      "lname": "KAMBABAZI PAMELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "NGIRIKIRINGO LIONEL",
+      "fname": "NGIRIKIRINGO",
+      "lname": "LIONEL",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "RUKUNDA ELIO MARLEY",
+      "fname": "RUKUNDA",
+      "lname": "ELIO MARLEY",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "ISHEJA UMUHOZA BEULA",
+      "fname": "ISHEJA",
+      "lname": "UMUHOZA BEULA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "NKINZINGABO BRYAN",
+      "fname": "NKINZINGABO",
+      "lname": "BRYAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "GIRAMATA JOYCE",
+      "fname": "GIRAMATA",
+      "lname": "JOYCE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "ISIMBI NOLLA BLESSING GAELLA",
+      "fname": "ISIMBI",
+      "lname": "NOLLA BLESSING GAELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "NISHIMWE CYUZUZO DIVINE",
+      "fname": "NISHIMWE",
+      "lname": "CYUZUZO DIVINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "IRAKOZE HAKIZIMANA MAIVIE",
+      "fname": "IRAKOZE",
+      "lname": "HAKIZIMANA MAIVIE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "AKEZA ROLENE",
+      "fname": "AKEZA",
+      "lname": "ROLENE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P2",
+      "sheet": "P2",
+      "full_name": "ATETE LOVE FIOLA",
+      "fname": "ATETE",
+      "lname": "LOVE FIOLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "MUKAYISENGA FRANCINE",
+      "fname": "MUKAYISENGA",
+      "lname": "FRANCINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "ISHIMWE ELIE",
+      "fname": "ISHIMWE",
+      "lname": "ELIE",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "MUVUNYI AURORLE AMINA",
+      "fname": "MUVUNYI",
+      "lname": "AURORLE AMINA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "UMURERWA HOPE",
+      "fname": "UMURERWA",
+      "lname": "HOPE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "GISA BRICE JABO",
+      "fname": "GISA",
+      "lname": "BRICE JABO",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "MUGISHA IRINATWE SEZARD",
+      "fname": "MUGISHA",
+      "lname": "IRINATWE SEZARD",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "ISHIMWE DANICA WIVINNE",
+      "fname": "ISHIMWE",
+      "lname": "DANICA WIVINNE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "ASHIMWE Innocent abba",
+      "fname": "ASHIMWE",
+      "lname": "Innocent abba",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "NGABO UZIEL BRYANA",
+      "fname": "NGABO",
+      "lname": "UZIEL BRYANA",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "MANZE NGOGA GERARD",
+      "fname": "MANZE",
+      "lname": "NGOGA GERARD",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "KAMARI NSHUTI Gentil",
+      "fname": "KAMARI",
+      "lname": "NSHUTI Gentil",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "IRIBA MAGURU Yaspe",
+      "fname": "IRIBA",
+      "lname": "MAGURU Yaspe",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "AGANZE brave",
+      "fname": "AGANZE",
+      "lname": "brave",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "NGANJI RWANAMIZA BRUNO",
+      "fname": "NGANJI",
+      "lname": "RWANAMIZA BRUNO",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "NDEJURU SETSA EDA",
+      "fname": "NDEJURU",
+      "lname": "SETSA EDA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "UWASE BRENDA MUBANDA",
+      "fname": "UWASE",
+      "lname": "BRENDA MUBANDA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "NZAYINAMBAHO PETERSON",
+      "fname": "NZAYINAMBAHO",
+      "lname": "PETERSON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "AGATESI JUNIOR",
+      "fname": "AGATESI",
+      "lname": "JUNIOR",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "NGENZI NELSON",
+      "fname": "NGENZI",
+      "lname": "NELSON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "IHIRWE FRAVIA",
+      "fname": "IHIRWE",
+      "lname": "FRAVIA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "MUGIRANEZA ELVE",
+      "fname": "MUGIRANEZA",
+      "lname": "ELVE",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "NASTETE NOELA",
+      "fname": "NASTETE",
+      "lname": "NOELA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "IRADUKUNDA BYRAN",
+      "fname": "IRADUKUNDA",
+      "lname": "BYRAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "IHIRWE IZABELLA",
+      "fname": "IHIRWE",
+      "lname": "IZABELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "INEZA ELIZABEHTE",
+      "fname": "INEZA",
+      "lname": "ELIZABEHTE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "AKARIZA KEVINE",
+      "fname": "AKARIZA",
+      "lname": "KEVINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "AKEZA HOPE",
+      "fname": "AKEZA",
+      "lname": "HOPE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "CYUSA PATRICK",
+      "fname": "CYUSA",
+      "lname": "PATRICK",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "GANZA INNOCENT",
+      "fname": "GANZA",
+      "lname": "INNOCENT",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "GISA FRIEND",
+      "fname": "GISA",
+      "lname": "FRIEND",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "HIRWA JULES",
+      "fname": "HIRWA",
+      "lname": "JULES",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "HIRWA PATRICK",
+      "fname": "HIRWA",
+      "lname": "PATRICK",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IGIRANEZA BONHEUR ANIKE",
+      "fname": "IGIRANEZA",
+      "lname": "BONHEUR ANIKE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IGIRANEZA DIVINE",
+      "fname": "IGIRANEZA",
+      "lname": "DIVINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IGIRIMBABAZI VANESSA",
+      "fname": "IGIRIMBABAZI",
+      "lname": "VANESSA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IHIMBAZWE BLESSING",
+      "fname": "IHIMBAZWE",
+      "lname": "BLESSING",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IHIRWE BRAVE",
+      "fname": "IHIRWE",
+      "lname": "BRAVE",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IHIRWE MUHAWE ORNELLA",
+      "fname": "IHIRWE",
+      "lname": "MUHAWE ORNELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "INEZA HAKIZIMANA BODUINE",
+      "fname": "INEZA",
+      "lname": "HAKIZIMANA BODUINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "INEZA PEACE",
+      "fname": "INEZA",
+      "lname": "PEACE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "INEZA RUKUNDO TREZOR",
+      "fname": "INEZA",
+      "lname": "RUKUNDO TREZOR",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IRADUKUNDA GASARO DIVIA",
+      "fname": "IRADUKUNDA",
+      "lname": "GASARO DIVIA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IRAKOZE HIRWA GAELLA",
+      "fname": "IRAKOZE",
+      "lname": "HIRWA GAELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IRANZI ISHIMWE BRUNO",
+      "fname": "IRANZI",
+      "lname": "ISHIMWE BRUNO",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "IRIRASHE LIANNAH",
+      "fname": "IRIRASHE",
+      "lname": "LIANNAH",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "ISHIMWE ENZO KANANURA",
+      "fname": "ISHIMWE",
+      "lname": "ENZO KANANURA",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "MANZI BLESSED",
+      "fname": "MANZI",
+      "lname": "BLESSED",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "MPUHWE SERIVATRICE CAVIA",
+      "fname": "MPUHWE",
+      "lname": "SERIVATRICE CAVIA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "MUGISHA LIAM CALVIN",
+      "fname": "MUGISHA",
+      "lname": "LIAM CALVIN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "MUHIRWA YVAN",
+      "fname": "MUHIRWA",
+      "lname": "YVAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "MUKUNZI HONORE MWIZA",
+      "fname": "MUKUNZI",
+      "lname": "HONORE MWIZA",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "MUTAGOMA IGABE GABIN",
+      "fname": "MUTAGOMA",
+      "lname": "IGABE GABIN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "NDUWAYO ERIC",
+      "fname": "NDUWAYO",
+      "lname": "ERIC",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "NGABOYIMANZI FISTON",
+      "fname": "NGABOYIMANZI",
+      "lname": "FISTON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "NIHIMBAZWE NELLY",
+      "fname": "NIHIMBAZWE",
+      "lname": "NELLY",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "NYIRAHIRWA YVETTE",
+      "fname": "NYIRAHIRWA",
+      "lname": "YVETTE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "NZAYINAMBAHO JOHNSON",
+      "fname": "NZAYINAMBAHO",
+      "lname": "JOHNSON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "RUGWIRO CHRISTIAN",
+      "fname": "RUGWIRO",
+      "lname": "CHRISTIAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "SANGWA DANNY",
+      "fname": "SANGWA",
+      "lname": "DANNY",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "SUGIRA FABRICE",
+      "fname": "SUGIRA",
+      "lname": "FABRICE",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "TURABAYO LUCKY VALENTIN",
+      "fname": "TURABAYO",
+      "lname": "LUCKY VALENTIN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "UMURAGWA CHANICE ALINE",
+      "fname": "UMURAGWA",
+      "lname": "CHANICE ALINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "UWACU LILOU ELICIE",
+      "fname": "UWACU",
+      "lname": "LILOU ELICIE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "UWASE BENITHA",
+      "fname": "UWASE",
+      "lname": "BENITHA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "UWASE KETTY QUEEN",
+      "fname": "UWASE",
+      "lname": "KETTY QUEEN",
+      "sex": "F"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "UWIKIRENGA Sadjidulhi Ismael",
+      "fname": "UWIKIRENGA",
+      "lname": "Sadjidulhi Ismael",
+      "sex": "M"
+    },
+    {
+      "class_label": "P4",
+      "sheet": "P4",
+      "full_name": "UWIKUNDA SCOVIA",
+      "fname": "UWIKUNDA",
+      "lname": "SCOVIA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "AGACIROKIMANA BENJAMIN",
+      "fname": "AGACIROKIMANA",
+      "lname": "BENJAMIN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "CYUBAHIRO BORIS",
+      "fname": "CYUBAHIRO",
+      "lname": "BORIS",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "CYUBAHIRO BRIGHT",
+      "fname": "CYUBAHIRO",
+      "lname": "BRIGHT",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "CYUSA BRYAN",
+      "fname": "CYUSA",
+      "lname": "BRYAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "GANZA PATRICK",
+      "fname": "GANZA",
+      "lname": "PATRICK",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "GATETE YVAN",
+      "fname": "GATETE",
+      "lname": "YVAN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "GISA SANGWA SAMUEL",
+      "fname": "GISA",
+      "lname": "SANGWA SAMUEL",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "IHOGOZA GAHIGIRO SAMANTHA",
+      "fname": "IHOGOZA",
+      "lname": "GAHIGIRO SAMANTHA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "IKAZE MAGURU Keila",
+      "fname": "IKAZE",
+      "lname": "MAGURU Keila",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "INEZA STELLA",
+      "fname": "INEZA",
+      "lname": "STELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "IRANEJEJE MEIRVELLE",
+      "fname": "IRANEJEJE",
+      "lname": "MEIRVELLE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "IRUMVA NICKSON",
+      "fname": "IRUMVA",
+      "lname": "NICKSON",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "ISHIMWE BRUNO",
+      "fname": "ISHIMWE",
+      "lname": "BRUNO",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "KAMANZI CEDRIC",
+      "fname": "KAMANZI",
+      "lname": "CEDRIC",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "KEZA DARLENE",
+      "fname": "KEZA",
+      "lname": "DARLENE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "KEZA SIEllA BELINDA",
+      "fname": "KEZA",
+      "lname": "SIEllA BELINDA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "KUNDWA NANCY ORGA",
+      "fname": "KUNDWA",
+      "lname": "NANCY ORGA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "KWIZERA MOISE",
+      "fname": "KWIZERA",
+      "lname": "MOISE",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "MBABAZI Liliane",
+      "fname": "MBABAZI",
+      "lname": "Liliane",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "MUCYO ALDI GAEL",
+      "fname": "MUCYO",
+      "lname": "ALDI GAEL",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "MUCYO Cedrick",
+      "fname": "MUCYO",
+      "lname": "Cedrick",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "MUGISHA JOSUA",
+      "fname": "MUGISHA",
+      "lname": "JOSUA",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "MUKIZA Noel",
+      "fname": "MUKIZA",
+      "lname": "Noel",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "MUSHIKIWABO LOUISE",
+      "fname": "MUSHIKIWABO",
+      "lname": "LOUISE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "MUTIMUTUJE NICE",
+      "fname": "MUTIMUTUJE",
+      "lname": "NICE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "MUTUYIMANA GRACE",
+      "fname": "MUTUYIMANA",
+      "lname": "GRACE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "NGABONZIZA JUSTIN",
+      "fname": "NGABONZIZA",
+      "lname": "JUSTIN",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "NIYIRERA Ketia",
+      "fname": "NIYIRERA",
+      "lname": "Ketia",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "UKWISHAKA John Paul",
+      "fname": "UKWISHAKA",
+      "lname": "John Paul",
+      "sex": "M"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "UWAMBAYISHEMA YVETTE",
+      "fname": "UWAMBAYISHEMA",
+      "lname": "YVETTE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P5",
+      "sheet": "P5",
+      "full_name": "UWIRAGIYE RAISSA",
+      "fname": "UWIRAGIYE",
+      "lname": "RAISSA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "AGATESI GAELLA",
+      "fname": "AGATESI",
+      "lname": "GAELLA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "GATESI SHANIYA",
+      "fname": "GATESI",
+      "lname": "SHANIYA",
+      "sex": "F"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "IHIMBAZWE QUEEN ALBINE",
+      "fname": "IHIMBAZWE",
+      "lname": "QUEEN ALBINE",
+      "sex": "F"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "INEZA Aurole",
+      "fname": "INEZA",
+      "lname": "Aurole",
+      "sex": "F"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "IRANEZEZA John",
+      "fname": "IRANEZEZA",
+      "lname": "John",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "IRUMVA Kevin",
+      "fname": "IRUMVA",
+      "lname": "Kevin",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "ISHIMWE Bertin",
+      "fname": "ISHIMWE",
+      "lname": "Bertin",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "MUGISHA AGANO Happy",
+      "fname": "MUGISHA",
+      "lname": "AGANO Happy",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "MUGISHA Paul Ghislin",
+      "fname": "MUGISHA",
+      "lname": "Paul Ghislin",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "MUKUNZI Wilson",
+      "fname": "MUKUNZI",
+      "lname": "Wilson",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "NGABO Mihigo Blaise",
+      "fname": "NGABO",
+      "lname": "Mihigo Blaise",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "NTWARI YASE Brice",
+      "fname": "NTWARI",
+      "lname": "YASE Brice",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "NYIRASAFARI Aline",
+      "fname": "NYIRASAFARI",
+      "lname": "Aline",
+      "sex": "F"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "RWEMA Danny",
+      "fname": "RWEMA",
+      "lname": "Danny",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "SUGIRA Elysee",
+      "fname": "SUGIRA",
+      "lname": "Elysee",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "TUYISHIME Emmanuel",
+      "fname": "TUYISHIME",
+      "lname": "Emmanuel",
+      "sex": "M"
+    },
+    {
+      "class_label": "P6",
+      "sheet": "P6",
+      "full_name": "UWAJENEZA Liliane",
+      "fname": "UWAJENEZA",
+      "lname": "Liliane",
+      "sex": "F"
+    }
+  ],
+  "staff": [
+    {
+      "full_name": "JEREMIE SEMAGOLI",
+      "fname": "JEREMIE",
+      "lname": "SEMAGOLI",
+      "position": "HEAD TEACHER",
+      "phone": "0784327527",
+      "email": "jeremiesemagori@gmail.com",
+      "photo": "01_JEREMIE_SEMAGOLI.jpg"
+    },
+    {
+      "full_name": "AYINKAMIYE MARRY ROSE",
+      "fname": "AYINKAMIYE",
+      "lname": "MARRY ROSE",
+      "position": "TEACHER",
+      "phone": "256765579465",
+      "email": "",
+      "photo": "02_AYINKAMIYE_MARRY_ROSE.jpg"
+    },
+    {
+      "full_name": "NYIRABIZEYIMANA CLAUDINE",
+      "fname": "NYIRABIZEYIMANA",
+      "lname": "CLAUDINE",
+      "position": "TEACHER",
+      "phone": "0732253242",
+      "email": "nyirabizeyemana123claudine@gmail.com",
+      "photo": "03_NYIRABIZEYIMANA_CLAUDINE.jpg"
+    },
+    {
+      "full_name": "NYIRANSENGA SHALON",
+      "fname": "NYIRANSENGA",
+      "lname": "SHALON",
+      "position": "TEACHER",
+      "phone": "0798684056",
+      "email": "sheckytuyi20@gmail.com",
+      "photo": "04_NYIRANSENGA_SHALON.jpg"
+    },
+    {
+      "full_name": "MUKESHIMANA ALICE",
+      "fname": "MUKESHIMANA",
+      "lname": "ALICE",
+      "position": "TEACHER",
+      "phone": "0785783099",
+      "email": "amukeshimana27@gmail.com",
+      "photo": "05_MUKESHIMANA_ALICE.jpg"
+    },
+    {
+      "full_name": "NYIRASAFARI FORTUNATE",
+      "fname": "NYIRASAFARI",
+      "lname": "FORTUNATE",
+      "position": "TEACHER",
+      "phone": "0791861104",
+      "email": "fortunatenyirasafari@gmail.com",
+      "photo": "06_NYIRASAFARI_FORTUNATE.jpg"
+    },
+    {
+      "full_name": "HAKIZIMANA CHRISTIAN",
+      "fname": "HAKIZIMANA",
+      "lname": "CHRISTIAN",
+      "position": "TEACHER",
+      "phone": "0729581349",
+      "email": "christianhakizimzna49@gmail.com",
+      "photo": "07_HAKIZIMANA_CHRISTIAN.jpg"
+    },
+    {
+      "full_name": "AMANIGIRIMBABAZI JEAN",
+      "fname": "AMANIGIRIMBABAZI",
+      "lname": "JEAN",
+      "position": "TEACHER",
+      "phone": "0782331955",
+      "email": "imanigirimbabazijean@gmail.com",
+      "photo": "08_AMANIGIRIMBABAZI_JEAN.jpg"
+    },
+    {
+      "full_name": "NDAYIZEYE ELIE",
+      "fname": "NDAYIZEYE",
+      "lname": "ELIE",
+      "position": "TEACHER",
+      "phone": "0790437164",
+      "email": "eliendayi2003@gmail.com",
+      "photo": "09_NDAYIZEYE_ELIE.jpg"
+    },
+    {
+      "full_name": "DUSINGIZIMANA MATHIEU",
+      "fname": "DUSINGIZIMANA",
+      "lname": "MATHIEU",
+      "position": "TEACHER",
+      "phone": "0785548156",
+      "email": "mathieudusingizimana@gmail.com",
+      "photo": "10_DUSINGIZIMANA_MATHIEU.jpg"
+    }
+  ],
+  "photos": [
+    {
+      "file": "01_JEREMIE_SEMAGOLI.jpg",
+      "name_hint": "JEREMIE SEMAGOLI"
+    },
+    {
+      "file": "02_AYINKAMIYE_MARRY_ROSE.jpg",
+      "name_hint": "AYINKAMIYE MARRY ROSE"
+    },
+    {
+      "file": "03_NYIRABIZEYIMANA_CLAUDINE.jpg",
+      "name_hint": "NYIRABIZEYIMANA CLAUDINE"
+    },
+    {
+      "file": "04_NYIRANSENGA_SHALON.jpg",
+      "name_hint": "NYIRANSENGA SHALON"
+    },
+    {
+      "file": "05_MUKESHIMANA_ALICE.jpg",
+      "name_hint": "MUKESHIMANA ALICE"
+    },
+    {
+      "file": "06_NYIRASAFARI_FORTUNATE.jpg",
+      "name_hint": "NYIRASAFARI FORTUNATE"
+    },
+    {
+      "file": "07_HAKIZIMANA_CHRISTIAN.jpg",
+      "name_hint": "HAKIZIMANA CHRISTIAN"
+    },
+    {
+      "file": "08_AMANIGIRIMBABAZI_JEAN.jpg",
+      "name_hint": "AMANIGIRIMBABAZI JEAN"
+    },
+    {
+      "file": "09_NDAYIZEYE_ELIE.jpg",
+      "name_hint": "NDAYIZEYE ELIE"
+    },
+    {
+      "file": "10_DUSINGIZIMANA_MATHIEU.jpg",
+      "name_hint": "DUSINGIZIMANA MATHIEU"
+    }
+  ],
+  "skipped": []
+}
