@@ -135,15 +135,14 @@ class WisdomStaffCardRenderer
 	{
 		$cx = $this->sx(self::HOLE_CX);
 		$cy = $this->sy(self::HOLE_CY);
-		// Artwork is stretched to CR80, so the printed hole is an ellipse.
-		// Use the smaller axis so the photo stays inside the ring and centered.
-		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 0.98));
+		// Stay inside the black inner line so the blue artwork ring stays visible.
+		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 0.88));
 
 		$src = $this->loadImage($path);
 		if (!$src) {
 			return;
 		}
-		$square = $this->coverSquare($src, $d, 0.08);
+		$square = $this->fitSubjectInCircle($src, $d);
 		imagedestroy($src);
 		if (!$square) {
 			return;
@@ -369,33 +368,83 @@ class WisdomStaffCardRenderer
 	}
 
 	/**
+	 * Trim leftover white, then fit the person inside the circle with a
+	 * small margin so tight ID portraits do not explode to fill the ring.
+	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
 	 */
-	private function coverSquare($src, int $size, float $biasY)
+	private function fitSubjectInCircle($src, int $size)
 	{
-		$sw = imagesx($src);
-		$sh = imagesy($src);
-		if ($sw < 2 || $sh < 2) {
+		if ($size < 2) {
 			return null;
 		}
-		if ($sw >= $sh) {
-			$side = $sh;
-			$sx = (int) max(0, (int) round(($sw - $sh) / 2));
-			$sy = 0;
-		} else {
-			$side = $sw;
-			$sx = 0;
-			$maxShift = max(0, $sh - $sw);
-			$sy = (int) round($maxShift * $biasY);
-			$sy = max(0, min($sy, $maxShift));
-		}
-		$side = max(1, min($side, $sw - $sx, $sh - $sy));
+		[$sx, $sy, $sw, $sh] = $this->subjectBox($src);
 		$sq = imagecreatetruecolor($size, $size);
-		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $side, $side);
+		$white = imagecolorallocate($sq, 255, 255, 255);
+		imagefill($sq, 0, 0, $white);
+		$inner = (int) max(2, round($size * 0.86));
+		$scale = min($inner / max(1, $sw), $inner / max(1, $sh));
+		$nw = max(1, (int) round($sw * $scale));
+		$nh = max(1, (int) round($sh * $scale));
+		$ox = (int) (($size - $nw) / 2);
+		$oy = (int) (($size - $nh) / 2);
+		imagecopyresampled($sq, $src, $ox, $oy, $sx, $sy, $nw, $nh, $sw, $sh);
 		return $sq;
 	}
 
+	/**
+	 * Bounding box of non-white pixels, plus a little breathing room.
+	 *
+	 * @param resource|\GdImage $src
+	 * @return array{0:int,1:int,2:int,3:int}
+	 */
+	private function subjectBox($src): array
+	{
+		$w = imagesx($src);
+		$h = imagesy($src);
+		$minX = $w;
+		$minY = $h;
+		$maxX = 0;
+		$maxY = 0;
+		$step = max(1, (int) round(min($w, $h) / 160));
+		for ($y = 0; $y < $h; $y += $step) {
+			for ($x = 0; $x < $w; $x += $step) {
+				$rgb = imagecolorat($src, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 0xFF;
+				$g = ($rgb >> 8) & 0xFF;
+				$b = $rgb & 0xFF;
+				if ($r < 248 || $g < 248 || $b < 248) {
+					if ($x < $minX) {
+						$minX = $x;
+					}
+					if ($y < $minY) {
+						$minY = $y;
+					}
+					if ($x > $maxX) {
+						$maxX = $x;
+					}
+					if ($y > $maxY) {
+						$maxY = $y;
+					}
+				}
+			}
+		}
+		if ($maxX <= $minX || $maxY <= $minY) {
+			return [0, 0, $w, $h];
+		}
+		$pad = (int) round(max($maxX - $minX, $maxY - $minY) * 0.08);
+		$x0 = max(0, $minX - $pad);
+		$y0 = max(0, $minY - $pad);
+		$x1 = min($w, $maxX + 1 + $pad);
+		$y1 = min($h, $maxY + 1 + $pad);
+		return [$x0, $y0, max(1, $x1 - $x0), max(1, $y1 - $y0)];
+	}
+
+	/**
+	 * @param resource|\GdImage $src
+	 * @return resource|\GdImage|null
+	 */
 	/** @param resource|\GdImage $im */
 	private function drawText($im, string $text, float $size, int $x, int $y, int $w, int $h, int $color, string $align): void
 	{

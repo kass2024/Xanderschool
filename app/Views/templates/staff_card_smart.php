@@ -140,7 +140,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		height: 100%;
 		display: block;
 		border: 0;
-		object-fit: cover;
+		object-fit: <?= !empty($isWisdomArt) ? 'contain' : 'cover' ?>;
 		object-position: center 12%;
 	}
 	.cf-badge, .cf-moto {
@@ -312,7 +312,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		<?php endif; ?>
 
 		<?php if (CardLayout::isVisible($fields, 'photo') || $isWisdomArt):
-			$f = $isWisdomArt ? ['x' => 26.8, 'y' => 17.4, 'w' => 46.4, 'h' => 27.3] : $fields['photo']; ?>
+			$f = $isWisdomArt ? ['x' => 30.0, 'y' => 19.2, 'w' => 40.0, 'h' => 23.6] : $fields['photo']; ?>
 			<div class="cf-photo" style="<?= CardLayout::boxStyle($f, 3); ?>border-radius:50%;">
 				<?php if ($photoSrc): ?><img src="<?= $photoSrc; ?>" alt=""><?php endif; ?>
 			</div>
