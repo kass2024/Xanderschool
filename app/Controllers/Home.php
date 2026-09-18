@@ -1230,7 +1230,7 @@ public function testEmail()
 		if ($operatorName === '') {
 			$operatorName = trim((string) $this->session->get('soma_name'));
 		}
-		$allClasses = $classMdl->select("classes.id,classes.title,d.code as dept_code,l.title as level_name")
+		$allClasses = $classMdl->select("classes.id,classes.title,d.code as dept_code,d.title as dept_title,l.title as level_name")
 			->join("departments d", "d.id=classes.department")
 			->join("levels l", "l.id=classes.level")
 			->where("classes.school_id", $schoolId)
@@ -1239,8 +1239,7 @@ public function testEmail()
 			->get()->getResultArray();
 		$classes = [];
 		foreach ($allClasses as $row) {
-			$hay = strtolower(trim(($row['level_name'] ?? '') . ' ' . ($row['title'] ?? '') . ' ' . ($row['dept_code'] ?? '')));
-			if (strpos($hay, 'holiday') !== false) {
+			if ($this->classLooksLikeHoliday($row)) {
 				continue;
 			}
 			$classes[] = [
@@ -1249,6 +1248,7 @@ public function testEmail()
 			];
 		}
 		$builder = $stMdl->select("students.id,students.regno,students.photo,students.photo_taken_by,students.photo_taken_at,students.fname,students.lname,c.id as class_id,
+			c.title as class_stream,l.title as level_name,d.code as dept_code,d.title as dept_title,
 			concat(students.fname,' ',students.lname) as name,concat(l.title,' ',d.code,' ',c.title) as class")
 			->join('class_records cr', 'cr.student=students.id')
 			->join('classes c', 'c.id=cr.class')
@@ -1261,9 +1261,15 @@ public function testEmail()
 		if ($yearId > 0) {
 			$builder->where('cr.year', $yearId);
 		}
+		$this->applyRegularClassFilter($builder, 'c', 'l');
+		$builder->where("IFNULL(d.title,'') NOT LIKE '%Holiday%'", null, false);
+		$builder->where("IFNULL(d.code,'') NOT LIKE '%Holiday%'", null, false);
 		$rows = $builder->get()->getResultArray();
 		$unique = [];
 		foreach ($rows as $row) {
+			if ($this->classLooksLikeHoliday($row)) {
+				continue;
+			}
 			$sid = (int) ($row['id'] ?? 0);
 			if ($sid <= 0 || isset($unique[$sid])) {
 				continue;
@@ -8116,6 +8122,9 @@ public function attendanceCard()
 		if ($activeYearId > 0) {
 			$builder->where('cr.year', $activeYearId);
 		}
+		$this->applyRegularClassFilter($builder, 'c', 'l');
+		$builder->where("IFNULL(d.title,'') NOT LIKE '%Holiday%'", null, false);
+		$builder->where("IFNULL(d.code,'') NOT LIKE '%Holiday%'", null, false);
 
 		if ($query !== '') {
 			$escapedQuery = $db->escapeLikeString($query);
@@ -8138,6 +8147,14 @@ public function attendanceCard()
 		$rows = $builder->get()->getResultArray();
 		$students = [];
 		foreach ($rows as $row) {
+			if ($this->classLooksLikeHoliday([
+				'title' => $row['class_name'] ?? '',
+				'class' => trim((string) (($row['level_name'] ?? '') . ' ' . ($row['dept_code'] ?? '') . ' ' . ($row['class_name'] ?? ''))),
+				'level_name' => $row['level_name'] ?? '',
+				'dept_code' => $row['dept_code'] ?? '',
+			])) {
+				continue;
+			}
 			$students[] = [
 				'id' => (int) ($row['id'] ?? 0),
 				'regno' => (string) ($row['regno'] ?? ''),

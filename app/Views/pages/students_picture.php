@@ -406,7 +406,11 @@
 
 	(function () {
 		var studio = window.PHOTO_STUDIO || { students: [], placeholder: '', saveUrl: '' };
-		var students = studio.students || [];
+		function isHolidayClass(s) {
+			var label = ((s && s.class) ? String(s.class) : '') + ' ' + ((s && s.label) ? String(s.label) : '');
+			return /holiday/i.test(label);
+		}
+		var students = (studio.students || []).filter(function (s) { return !isHolidayClass(s); });
 		var stream = null;
 		var selected = null;
 		var captured = null;
@@ -499,6 +503,7 @@
 			var cls = $('#spClass').val() || '';
 			var missing = $('#spMissing').is(':checked');
 			return students.filter(function (s) {
+				if (isHolidayClass(s)) return false;
 				if (cls && String(s.class_id) !== String(cls)) return false;
 				if (missing && s.has_photo) return false;
 				if (!q) return true;
@@ -966,6 +971,11 @@
 			$('.sp-tab, .sp-pane').removeClass('active');
 			$(this).addClass('active');
 			$('#spPane' + ($(this).data('pane') === 'live' ? 'Live' : 'Upload')).addClass('active');
+		});
+		$('#spClass option').each(function () {
+			if (/holiday/i.test($(this).text() || '')) {
+				$(this).remove();
+			}
 		});
 		$('#spSearch, #spClass, #spMissing').on('input change', renderList);
 		$(listEl).on('click', '.sp-student', function () { pickStudent($(this).data('id')); });
