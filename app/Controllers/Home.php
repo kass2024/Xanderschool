@@ -1346,29 +1346,9 @@ public function testEmail()
 		}
 
 		$name = make_profile_photo_name('jpg');
-		$saved = false;
-		if (function_exists('imagecreatefromstring')) {
-			$im = @imagecreatefromstring($decoded);
-			if ($im) {
-				$w = imagesx($im);
-				$h = imagesy($im);
-				$target = 1200;
-				$dst = imagecreatetruecolor($target, $target);
-				$white = imagecolorallocate($dst, 255, 255, 255);
-				imagefill($dst, 0, 0, $white);
-				$scale = min($target / max(1, $w), $target / max(1, $h));
-				$nw = max(1, (int) round($w * $scale));
-				$nh = max(1, (int) round($h * $scale));
-				$ox = (int) (($target - $nw) / 2);
-				$oy = (int) (($target - $nh) / 2);
-				imagecopyresampled($dst, $im, $ox, $oy, 0, 0, $nw, $nh, $w, $h);
-				imagedestroy($im);
-				$im = $dst;
-				imageinterlace($im, true);
-				$saved = imagejpeg($im, $profilePath . $name, 92);
-				imagedestroy($im);
-			}
-		}
+		$saved = function_exists('save_profile_photo_white_bg_from_string')
+			? save_profile_photo_white_bg_from_string($decoded, $profilePath . $name, false, 'contain')
+			: false;
 		if (!$saved && file_put_contents($profilePath . $name, $decoded) === false) {
 			return $this->response->setJSON(['error' => lang('app.ImagenotSaved')]);
 		}
@@ -12148,7 +12128,14 @@ public function getApplicationDocs($id = null)
             case "student_picture":
                 $student = new \App\Models\StudentModel();
                 $existing = $student->select('photo')->find($id);
-                $safeMove($file, $profilePath, $name);
+                $name = make_profile_photo_name('jpg');
+                $tmpName = 'up_' . $name;
+                $safeMove($file, $profilePath, $tmpName);
+                $ok = save_profile_photo_white_bg($profilePath . $tmpName, $profilePath . $name, true);
+                @unlink($profilePath . $tmpName);
+                if (!$ok) {
+                    throw new \RuntimeException("Could not process photo");
+                }
                 $student->update($id, ["photo" => $name]);
                 if (!empty($existing['photo']) && is_file($profilePath . $existing['photo'])) {
                     @unlink($profilePath . $existing['photo']);
@@ -12158,7 +12145,14 @@ public function getApplicationDocs($id = null)
 
             /* ==================== STAFF PICTURE ==================== */
             case "staff_picture":
-                $safeMove($file, $profilePath, $name);
+                $name = make_profile_photo_name('jpg');
+                $tmpName = 'up_' . $name;
+                $safeMove($file, $profilePath, $tmpName);
+                $ok = save_profile_photo_white_bg($profilePath . $tmpName, $profilePath . $name, true);
+                @unlink($profilePath . $tmpName);
+                if (!$ok) {
+                    throw new \RuntimeException("Could not process photo");
+                }
 
                 $staff = new \App\Models\StaffModel();
                 $staff->update($id, ["photo" => $name]);
@@ -17998,7 +17992,7 @@ public function getApplicationDocs($id = null)
 		if ($student == null) {
 			return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.opsStudentNotFound")));
 		}
-		$name = make_profile_photo_name($ext);
+		$name = make_profile_photo_name('jpg');
 		$profilePath = FCPATH . "assets/images/profile/";
 		if (!is_dir($profilePath)) {
 			@mkdir($profilePath, 0775, true);
@@ -18006,7 +18000,13 @@ public function getApplicationDocs($id = null)
 		if (!is_writable($profilePath)) {
 			@chmod($profilePath, 0775);
 		}
-		if ($file->move($profilePath, $name, true)) {
+		$tmpName = 'up_' . $name;
+		if ($file->move($profilePath, $tmpName, true)) {
+			$ok = save_profile_photo_white_bg($profilePath . $tmpName, $profilePath . $name, true);
+			@unlink($profilePath . $tmpName);
+			if (!$ok) {
+				return $this->response->setStatusCode(400)->setJSON(array("error" => lang("app.photoNotSaved")));
+			}
 			//save to student
 			try {
 				$stMdl->save(array("id" => $student->id, "photo" => $name));
@@ -18928,12 +18928,18 @@ public function assign_card()
 					return $this->response->setJSON(['success' => false, 'error' => 'Photo must be 5 MB or smaller.']);
 				}
 				helper('filesystem');
-				$name = make_profile_photo_name($ext);
+				$name = make_profile_photo_name('jpg');
 				$profilePath = FCPATH . 'assets/images/profile/';
 				if (!is_dir($profilePath)) {
 					@mkdir($profilePath, 0775, true);
 				}
-				if (!$file->move($profilePath, $name, true)) {
+				$tmpName = 'up_' . $name;
+				if (!$file->move($profilePath, $tmpName, true)) {
+					return $this->response->setJSON(['success' => false, 'error' => 'Could not save visitor photo.']);
+				}
+				$ok = save_profile_photo_white_bg($profilePath . $tmpName, $profilePath . $name, true);
+				@unlink($profilePath . $tmpName);
+				if (!$ok) {
 					return $this->response->setJSON(['success' => false, 'error' => 'Could not save visitor photo.']);
 				}
 				$payload['photo'] = $name;

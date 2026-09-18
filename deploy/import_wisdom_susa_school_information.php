@@ -359,6 +359,7 @@ $staffByName = [];
 $staffByRole = [];
 $staffCreated = 0;
 $staffUpdated = 0;
+$photosSaved = 0;
 $photos = $data['photos'] ?? [];
 
 foreach ($data['staff'] as $staff) {
@@ -403,16 +404,29 @@ foreach ($data['staff'] as $staff) {
 	if ($matchedPhoto) {
 		$src = $photoDir . ($matchedPhoto['file'] ?? '');
 		if (is_file($src)) {
-			$ext = strtolower(pathinfo($src, PATHINFO_EXTENSION)) ?: 'jpg';
 			$photoName = function_exists('make_profile_photo_name')
-				? make_profile_photo_name($ext)
-				: ('img_' . bin2hex(random_bytes(8)) . '.' . $ext);
+				? make_profile_photo_name('jpg')
+				: ('img_' . bin2hex(random_bytes(8)) . '.jpg');
 			$dest = FCPATH . 'assets/images/profile/' . $photoName;
 			if (!is_dir(FCPATH . 'assets/images/profile/')) {
 				mkdir(FCPATH . 'assets/images/profile/', 0775, true);
 			}
-			if (!@copy($src, $dest)) {
+			$saved = function_exists('save_profile_photo_white_bg')
+				? save_profile_photo_white_bg($src, $dest, true)
+				: @copy($src, $dest);
+			if (!$saved) {
 				$photoName = '';
+			} else {
+				$photosSaved++;
+				if ($existing) {
+					$oldPhoto = basename((string) ($existing['photo'] ?? ''));
+					if ($oldPhoto !== '' && $oldPhoto !== $photoName) {
+						$oldPath = FCPATH . 'assets/images/profile/' . $oldPhoto;
+						if (is_file($oldPath)) {
+							@unlink($oldPath);
+						}
+					}
+				}
 			}
 		}
 	}
@@ -630,6 +644,7 @@ if ($dryRun) {
 say('School: ' . ($school['name'] ?? TARGET_ACRONYM) . ' (id ' . TARGET_SCHOOL_ID . ')');
 say('Academic year: ' . ACADEMIC_YEAR_TITLE . ' (id ' . $academicYearId . ')');
 say('Staff created: ' . $staffCreated . '; updated: ' . $staffUpdated);
+say('Staff photos cropped on white: ' . $photosSaved);
 say('Classes created: ' . $classesCreated);
 say('Students created: ' . $studentCreated . '; existing reactivated: ' . $studentUpdated);
 say('Enrollments ensured: ' . $enrolled);

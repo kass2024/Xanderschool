@@ -24,6 +24,8 @@ REMOTE_PHOTO = f"{REMOTE_APP}/writable/staff_photos_import_susa"
 FILES = [
     "deploy/import_wisdom_susa_school_information.php",
     "deploy/_wisdom_susa_school_information.json",
+    "app/Libraries/ProfilePhotoNormalizer.php",
+    "app/Helpers/qonics_helper.php",
 ]
 
 
@@ -55,7 +57,7 @@ def main() -> int:
         + flag
     )
     print("RUN", cmd)
-    _, stdout, stderr = client.exec_command(cmd, timeout=300)
+    _, stdout, stderr = client.exec_command(cmd, timeout=1200)
     code = stdout.channel.recv_exit_status()
     out = stdout.read().decode(errors="replace")
     err = stderr.read().decode(errors="replace")

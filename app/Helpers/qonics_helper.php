@@ -929,6 +929,23 @@ if (!function_exists('make_profile_photo_name')) {
 }
 
 /**
+ * Crop a profile photo to a 3:4 ID portrait and place it on a white background.
+ */
+if (!function_exists('save_profile_photo_white_bg')) {
+	function save_profile_photo_white_bg(string $srcPath, string $destPath, bool $useAi = true, string $fit = 'cover'): bool
+	{
+		return (new \App\Libraries\ProfilePhotoNormalizer())->saveFromFile($srcPath, $destPath, $useAi, $fit);
+	}
+}
+
+if (!function_exists('save_profile_photo_white_bg_from_string')) {
+	function save_profile_photo_white_bg_from_string(string $bytes, string $destPath, bool $useAi = true, string $fit = 'cover'): bool
+	{
+		return (new \App\Libraries\ProfilePhotoNormalizer())->saveFromBytes($bytes, $destPath, $useAi, $fit);
+	}
+}
+
+/**
  * Resolve a stored photo name to an existing file under assets/images/profile/.
  * Handles DB truncation (varchar(20)) of longer uniqid filenames.
  */

@@ -1,0 +1,15 @@
+---
+description: Crop every profile photo onto a white background
+alwaysApply: true
+---
+
+# Profile photos: crop + white background
+
+Whenever importing or saving student/staff profile pictures:
+
+1. Crop to a head-and-shoulders ID portrait (3:4, keep the top of the head/cap).
+2. Place the person on a **pure white** background.
+3. Save as JPEG under `assets/images/profile`.
+4. Do not copy raw ceremony/scene photos as-is.
+
+Use `save_profile_photo_white_bg()` / `ProfilePhotoNormalizer` (AI isolation when an API key is available, GD crop onto white always). Apply this to every Wisdom child-school import going forward.
