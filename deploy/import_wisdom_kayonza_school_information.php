@@ -643,7 +643,17 @@ foreach ($data['staff'] as $staff) {
 	];
 	if ($email !== '' && !$existing) {
 		$payload['email'] = $email;
-	} elseif ($email !== '' && $existing && strpos((string) ($existing['email'] ?? ''), '@wisdomschools.rw') === false) {
+	} elseif ($email !== '' && $existing && (
+		$post === HEAD_MASTER_POST
+		|| strpos((string) ($existing['email'] ?? ''), '@wisdomschools.rw') === false
+	)) {
+		$taken = $db->table('staffs')->where('email', $email)->get(1)->getRowArray();
+		if ($taken && (int) ($taken['id'] ?? 0) !== (int) ($existing['id'] ?? 0)
+			&& (int) ($taken['school_id'] ?? 0) === TARGET_SCHOOL_ID) {
+			$slug = strtolower(preg_replace('/[^a-z0-9]+/i', '.', trim(($taken['fname'] ?? '') . '.' . ($taken['lname'] ?? ''))) ?? 'staff');
+			$alt = 's35.' . trim($slug, '.') . '@wisdomschoolkayonza.rw';
+			$db->table('staffs')->where('id', (int) $taken['id'])->where('school_id', TARGET_SCHOOL_ID)->update(['email' => $alt]);
+		}
 		$payload['email'] = $email;
 	}
 	if ($photoName !== '') {

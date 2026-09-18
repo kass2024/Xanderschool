@@ -83,6 +83,9 @@ foreach ($branches as [$code, $location, $useWisdomRwanda]) {
 	$schoolName = 'Wisdom ' . $location;
 	$acronym = 'WIS-' . $code;
 	$email = strtolower('admin.' . $code . '@wisdomschools.rw');
+	if ($code === 'KAY') {
+		$email = 'umutonihenry@gmail.com';
+	}
 	$phone = '078800' . str_pad((string) array_search([$code, $location, false], $branches, true) + 1, 4, '0', STR_PAD_LEFT);
 
 	$existingSchool = $db->table('schools')
@@ -223,6 +226,9 @@ foreach ($branches as [$code, $location, $useWisdomRwanda]) {
 		continue;
 	}
 	$email = strtolower('admin.' . $code . '@wisdomschools.rw');
+	if ($code === 'KAY') {
+		$email = 'umutonihenry@gmail.com';
+	}
 	echo sprintf("  %-22s  %s\n", 'Wisdom ' . $location, $email);
 }
 
