@@ -19,7 +19,7 @@ class ProfilePhotoNormalizer
 		return $this->lastError;
 	}
 
-	public function saveFromFile(string $srcPath, string $destPath, bool $useAi = true, string $fit = 'cover'): bool
+	public function saveFromFile(string $srcPath, string $destPath, bool $useAi = true, string $fit = 'contain'): bool
 	{
 		if (!is_file($srcPath)) {
 			$this->lastError = 'Source photo missing';
@@ -33,7 +33,7 @@ class ProfilePhotoNormalizer
 		return $this->saveFromBytes($bytes, $destPath, $useAi, $fit);
 	}
 
-	public function saveFromBytes(string $bytes, string $destPath, bool $useAi = true, string $fit = 'cover'): bool
+	public function saveFromBytes(string $bytes, string $destPath, bool $useAi = true, string $fit = 'contain'): bool
 	{
 		$this->lastError = '';
 		if (!function_exists('imagecreatetruecolor')) {
@@ -42,26 +42,23 @@ class ProfilePhotoNormalizer
 		}
 
 		$work = $bytes;
-		$isolated = false;
 		if ($useAi) {
 			$aiBytes = $this->isolateOnWhite($bytes);
 			if (is_string($aiBytes) && strlen($aiBytes) > 200) {
 				$work = $aiBytes;
-				$isolated = true;
 			}
 		}
 
 		$src = @imagecreatefromstring($work);
 		if ($src === false && $work !== $bytes) {
 			$src = @imagecreatefromstring($bytes);
-			$isolated = false;
 		}
 		if ($src === false) {
 			$this->lastError = 'Could not decode photo';
 			return false;
 		}
 
-		$mode = ($isolated || strtolower($fit) === 'cover') ? 'cover' : 'contain';
+		$mode = strtolower($fit) === 'cover' ? 'cover' : 'contain';
 		$out = $this->cropOntoWhite($src, self::WIDTH, self::HEIGHT, $mode);
 		imagedestroy($src);
 		if ($out === null) {
@@ -127,15 +124,16 @@ class ProfilePhotoNormalizer
 			'gemini-2.0-flash-preview-image-generation',
 		])));
 
-		$prompt = "Edit this photograph into a school ID passport photo.\n"
-			. "Keep the exact same person and the exact same clothing as the source.\n"
+		$prompt = "Edit this photograph into a school ID photo.\n"
+			. "Keep the exact same person, clothing, and framing as the source.\n"
+			. "Keep the FULL person that is already visible: top of the hair or cap, ears, neck, both shoulders, and the clothing on the chest.\n"
+			. "Do NOT zoom in. Do NOT crop tighter than the source. Do NOT cut off hair, ears, chin, or shoulders.\n"
 			. "Do NOT add glasses, a tie, jewelry, makeup, a new beard, or any garment that is not already in the photo.\n"
 			. "Do NOT remove a graduation cap, glasses, or head covering if they are already in the photo.\n"
 			. "Do not beautify or change identity.\n"
-			. "Remove the original background completely (walls, banners, flowers, other people).\n"
+			. "Remove only the original background (walls, banners, flowers, other people).\n"
 			. "Place the person on a pure solid white background (#FFFFFF) with no shadows or gradients.\n"
-			. "Crop to a head-and-shoulders portrait, facing the camera, with a small white margin above the head.\n"
-			. "Output one photorealistic image only. No text.";
+			. "Leave a small white margin around the whole person. Output one photorealistic image only. No text.";
 
 		foreach ($models as $model) {
 			try {

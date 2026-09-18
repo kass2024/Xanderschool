@@ -136,7 +136,7 @@ class WisdomStaffCardRenderer
 		$cx = $this->sx(self::HOLE_CX);
 		$cy = $this->sy(self::HOLE_CY);
 		// Stay inside the black inner line so the blue artwork ring stays visible.
-		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 0.88));
+		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 0.93));
 
 		$src = $this->loadImage($path);
 		if (!$src) {
@@ -368,8 +368,8 @@ class WisdomStaffCardRenderer
 	}
 
 	/**
-	 * Trim leftover white, then fit the person inside the circle with a
-	 * small margin so tight ID portraits do not explode to fill the ring.
+	 * Place the full photo inside the circle. Scale by the diagonal so the
+	 * circular mask does not cut hair or shoulders.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -379,72 +379,21 @@ class WisdomStaffCardRenderer
 		if ($size < 2) {
 			return null;
 		}
-		[$sx, $sy, $sw, $sh] = $this->subjectBox($src);
+		$sw = imagesx($src);
+		$sh = imagesy($src);
 		$sq = imagecreatetruecolor($size, $size);
 		$white = imagecolorallocate($sq, 255, 255, 255);
 		imagefill($sq, 0, 0, $white);
-		$inner = (int) max(2, round($size * 0.86));
+		$inner = (int) max(2, round($size * 0.93));
 		$scale = min($inner / max(1, $sw), $inner / max(1, $sh));
 		$nw = max(1, (int) round($sw * $scale));
 		$nh = max(1, (int) round($sh * $scale));
 		$ox = (int) (($size - $nw) / 2);
 		$oy = (int) (($size - $nh) / 2);
-		imagecopyresampled($sq, $src, $ox, $oy, $sx, $sy, $nw, $nh, $sw, $sh);
+		imagecopyresampled($sq, $src, $ox, $oy, 0, 0, $nw, $nh, $sw, $sh);
 		return $sq;
 	}
 
-	/**
-	 * Bounding box of non-white pixels, plus a little breathing room.
-	 *
-	 * @param resource|\GdImage $src
-	 * @return array{0:int,1:int,2:int,3:int}
-	 */
-	private function subjectBox($src): array
-	{
-		$w = imagesx($src);
-		$h = imagesy($src);
-		$minX = $w;
-		$minY = $h;
-		$maxX = 0;
-		$maxY = 0;
-		$step = max(1, (int) round(min($w, $h) / 160));
-		for ($y = 0; $y < $h; $y += $step) {
-			for ($x = 0; $x < $w; $x += $step) {
-				$rgb = imagecolorat($src, $x, $y) & 0xFFFFFF;
-				$r = ($rgb >> 16) & 0xFF;
-				$g = ($rgb >> 8) & 0xFF;
-				$b = $rgb & 0xFF;
-				if ($r < 248 || $g < 248 || $b < 248) {
-					if ($x < $minX) {
-						$minX = $x;
-					}
-					if ($y < $minY) {
-						$minY = $y;
-					}
-					if ($x > $maxX) {
-						$maxX = $x;
-					}
-					if ($y > $maxY) {
-						$maxY = $y;
-					}
-				}
-			}
-		}
-		if ($maxX <= $minX || $maxY <= $minY) {
-			return [0, 0, $w, $h];
-		}
-		$pad = (int) round(max($maxX - $minX, $maxY - $minY) * 0.08);
-		$x0 = max(0, $minX - $pad);
-		$y0 = max(0, $minY - $pad);
-		$x1 = min($w, $maxX + 1 + $pad);
-		$y1 = min($h, $maxY + 1 + $pad);
-		return [$x0, $y0, max(1, $x1 - $x0), max(1, $y1 - $y0)];
-	}
-
-	/**
-	 * @param resource|\GdImage $src
-	 * @return resource|\GdImage|null
-	 */
 	/** @param resource|\GdImage $im */
 	private function drawText($im, string $text, float $size, int $x, int $y, int $w, int $h, int $color, string $align): void
 	{

@@ -16,7 +16,10 @@ REMOTE_APP = "/opt/xander-school/app"
 
 FILES = [
     "app/Libraries/WisdomStaffCardRenderer.php",
+    "app/Libraries/ProfilePhotoNormalizer.php",
+    "app/Helpers/qonics_helper.php",
     "app/Views/templates/staff_card_smart.php",
+    "deploy/import_wisdom_susa_school_information.php",
 ]
 
 
