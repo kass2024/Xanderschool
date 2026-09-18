@@ -1,8 +1,8 @@
 """Parse Wisdom School Susa student Excel + staff Word + photos.
 
 Scoped to C:\\methode\\15 Wisdoms\\6.WISDOM SCHOOL SUSA only.
-The P3 sheet is labeled WISDOM SCHOOL NYABIHU and is recorded as skipped
-so it is never mixed into Susa.
+All sheets including P3 are imported as Susa (the P3 header said Nyabihu;
+the list is confirmed as Susa).
 """
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def parse_students() -> tuple[list[dict[str, str]], list[dict]]:
         ws = workbook[sheet_name]
         rows = [list(row) for row in ws.iter_rows(values_only=True)]
         header_blob = " ".join(clean(cell) for row in rows[:8] for cell in row[:4])
-        foreign = "NYABIHU" in header_blob.upper() and "SUSA" not in header_blob.upper()
+        foreign = False  # P3 header said Nyabihu; user confirmed the list is Susa.
         started = False
         sheet_students: list[dict[str, str]] = []
         for row in rows:

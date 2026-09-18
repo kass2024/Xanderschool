@@ -686,6 +686,90 @@
       "lname": "NEILLA"
     },
     {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "UWIMANA SAMUEI",
+      "fname": "UWIMANA",
+      "lname": "SAMUEI"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "MIZERO NIYITSINZE JONATHAN",
+      "fname": "MIZERO",
+      "lname": "NIYITSINZE JONATHAN"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "UMWIZERWA IGABE WINNER",
+      "fname": "UMWIZERWA",
+      "lname": "IGABE WINNER"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "INEZA WINNY PRINCESS",
+      "fname": "INEZA",
+      "lname": "WINNY PRINCESS"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "UWUMUGISHA IMANIRARORA KELISY",
+      "fname": "UWUMUGISHA",
+      "lname": "IMANIRARORA KELISY"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "KAMANZI KEZA BRIELLA",
+      "fname": "KAMANZI",
+      "lname": "KEZA BRIELLA"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "ABIJURU DANIELA",
+      "fname": "ABIJURU",
+      "lname": "DANIELA"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "NDAYISABA ISHEMA BERTRAND",
+      "fname": "NDAYISABA",
+      "lname": "ISHEMA BERTRAND"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "SANGWA KABAYIZA BRYSON",
+      "fname": "SANGWA",
+      "lname": "KABAYIZA BRYSON"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "ANINAE ANIS GRADIS",
+      "fname": "ANINAE",
+      "lname": "ANIS GRADIS"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "KAMANZI MUGISHA BRIAN",
+      "fname": "KAMANZI",
+      "lname": "MUGISHA BRIAN"
+    },
+    {
+      "class_label": "P3",
+      "sheet": "P3",
+      "full_name": "HABYARIMANA NTWARI MICHEL",
+      "fname": "HABYARIMANA",
+      "lname": "NTWARI MICHEL"
+    },
+    {
       "class_label": "P4",
       "sheet": "P4",
       "full_name": "AKARIZA KEZA BRIANA",
@@ -994,111 +1078,19 @@
       "lname": "MOISE"
     }
   ],
-  "skipped": [
-    {
-      "sheet": "P3",
-      "class_label": "P3",
-      "reason": "Sheet header is WISDOM SCHOOL NYABIHU — not imported into Susa",
-      "header": "WISDOM SCHOOL NYABIHU    ACADEMIC YEAR 2024-2025.    TERM III        2026-09-18 00:00:00            NO STUDENT NAME  ",
-      "students": [
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "UWIMANA SAMUEI",
-          "fname": "UWIMANA",
-          "lname": "SAMUEI"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "MIZERO NIYITSINZE JONATHAN",
-          "fname": "MIZERO",
-          "lname": "NIYITSINZE JONATHAN"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "UMWIZERWA IGABE WINNER",
-          "fname": "UMWIZERWA",
-          "lname": "IGABE WINNER"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "INEZA WINNY PRINCESS",
-          "fname": "INEZA",
-          "lname": "WINNY PRINCESS"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "UWUMUGISHA IMANIRARORA KELISY",
-          "fname": "UWUMUGISHA",
-          "lname": "IMANIRARORA KELISY"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "KAMANZI KEZA BRIELLA",
-          "fname": "KAMANZI",
-          "lname": "KEZA BRIELLA"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "ABIJURU DANIELA",
-          "fname": "ABIJURU",
-          "lname": "DANIELA"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "NDAYISABA ISHEMA BERTRAND",
-          "fname": "NDAYISABA",
-          "lname": "ISHEMA BERTRAND"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "SANGWA KABAYIZA BRYSON",
-          "fname": "SANGWA",
-          "lname": "KABAYIZA BRYSON"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "ANINAE ANIS GRADIS",
-          "fname": "ANINAE",
-          "lname": "ANIS GRADIS"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "KAMANZI MUGISHA BRIAN",
-          "fname": "KAMANZI",
-          "lname": "MUGISHA BRIAN"
-        },
-        {
-          "class_label": "P3",
-          "sheet": "P3",
-          "full_name": "HABYARIMANA NTWARI MICHEL",
-          "fname": "HABYARIMANA",
-          "lname": "NTWARI MICHEL"
-        }
-      ]
-    }
-  ],
+  "skipped": [],
   "counts": {
-    "students": 122,
+    "students": 134,
     "staff": 10,
     "photos": 9,
-    "skipped_students": 12,
+    "skipped_students": 0,
     "by_class": {
       "BABY CLASS": 16,
       "MIDDLE CLASS": 17,
       "TOP CLASS": 19,
       "P1": 14,
       "P2": 12,
+      "P3": 12,
       "P4": 14,
       "P5": 19,
       "P6": 11

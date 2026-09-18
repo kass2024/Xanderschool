@@ -7,7 +7,9 @@
  * (faculty type 2) using Wisdom Rwanda level names:
  * Baby class, Middle Class, Top Class, P1–P6.
  *
- * The P3 Excel sheet is labeled Nyabihu and is not imported.
+ * All classes including P3 are REB (faculty type 2) using Wisdom Rwanda
+ * level names: Baby class, Middle Class, Top Class, P1–P6.
+ * Every student is Day (studying_mode = 1).
  *
  * Usage:
  *   php deploy/import_wisdom_susa_school_information.php --dry-run
@@ -519,7 +521,7 @@ foreach ($existingStudents as $existingStudent) {
 foreach ($data['classes'] as $student) {
 	$classLabel = strtoupper(clean_text($student['class_label'] ?? ''));
 	$fullName = clean_text($student['full_name'] ?? '');
-	if ($classLabel === '' || $fullName === '' || $classLabel === 'P3') {
+	if ($classLabel === '' || $fullName === '') {
 		continue;
 	}
 	if (!isset($classCache[$classLabel])) {
@@ -538,6 +540,7 @@ foreach ($data['classes'] as $student) {
 		$studentId = (int) $existing['id'];
 		$db->table('students')->where('id', $studentId)->where('school_id', TARGET_SCHOOL_ID)->update([
 			'status' => 1,
+			'studying_mode' => 1,
 			'updated_at' => $now,
 			'updated_by' => CREATED_BY,
 		]);
@@ -599,6 +602,14 @@ if ($nextReg > $startReg) {
 	}
 }
 
+$db->table('students')
+	->where('school_id', TARGET_SCHOOL_ID)
+	->update(['studying_mode' => 1]);
+$dayCount = $db->table('students')
+	->where('school_id', TARGET_SCHOOL_ID)
+	->where('studying_mode', 1)
+	->countAllResults();
+
 try {
 	(new \App\Services\SchoolHierarchyService())->seedWisdomMasterGroup();
 } catch (\Throwable $e) {
@@ -622,6 +633,7 @@ say('Staff created: ' . $staffCreated . '; updated: ' . $staffUpdated);
 say('Classes created: ' . $classesCreated);
 say('Students created: ' . $studentCreated . '; existing reactivated: ' . $studentUpdated);
 say('Enrollments ensured: ' . $enrolled);
+say('Studying mode Day: ' . $dayCount . ' students');
 say('Source students: ' . count($data['classes']) . '; source staff: ' . count($data['staff']));
 if (!empty($data['skipped'])) {
 	foreach ($data['skipped'] as $skip) {
