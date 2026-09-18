@@ -513,7 +513,7 @@
 								<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? ''))) . (((string) $class_id !== '-1' && (string) $class_id !== '') ? '&c=' . urlencode((string) $class_id) : '')); ?>"
 								   id="btn_export_student_excel"
 								   class="btn btn-success students-toolbar-submit"
-								   title="Full student list: names, gender, date of birth, parents, phones, location. No emails or passwords.">
+								   title="Full student list: names, gender, date of birth, parents, phones, location. No class selected = one Excel sheet per class.">
 									<i class="fa fa-file-excel"></i> <?= lang("app.exporttoExcel"); ?>
 								</a>
 								<a href="<?= base_url('export_student_emails?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? ''))) . '&c=' . urlencode((string) $class_id)); ?>"
@@ -545,7 +545,7 @@
 										<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) $academic_year) . (((string) $class_id !== '-1' && (string) $class_id !== '') ? '&c=' . urlencode((string) $class_id) : '')); ?>"
 										   id="btn_export_student_excel_menu"
 										   class="dropdown-item"
-										   title="Full student list: parents, phones, location, gender, date of birth">
+										   title="Full student list: parents, phones, location, gender, date of birth. No class selected = one sheet per class.">
 											<i class="fa fa-file-excel"></i> <?= lang("app.exporttoExcel"); ?>
 										</a>
 									</div>

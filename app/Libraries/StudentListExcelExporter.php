@@ -95,11 +95,74 @@ class StudentListExcelExporter
 		string $yearTitle,
 		string $termLabel = ''
 	): Spreadsheet {
+		return self::buildMany($school, [
+			['class' => $classMeta, 'students' => $students],
+		], $yearTitle, $termLabel);
+	}
+
+	/**
+	 * One worksheet per class. Used when exporting without choosing a class.
+	 *
+	 * @param array<string,mixed> $school
+	 * @param list<array{class:array<string,mixed>,students:list<array<string,mixed>>}> $sheets
+	 */
+	public static function buildMany(
+		array $school,
+		array $sheets,
+		string $yearTitle,
+		string $termLabel = ''
+	): Spreadsheet {
 		$spreadsheet = new Spreadsheet();
-		$sheet = $spreadsheet->getActiveSheet();
-		$sheet->setTitle('Students');
-		$lastCol = self::lastColumn();
+		$usedTitles = [];
+		$first = true;
 		$addressModel = new AddressModel();
+
+		foreach ($sheets as $entry) {
+			$classMeta = $entry['class'] ?? [];
+			$students = $entry['students'] ?? [];
+			$classLabel = trim((string) ($classMeta['classe'] ?? ''));
+			if ($classLabel === '') {
+				$classLabel = SmartStudentSheetsExporter::classLabel($classMeta);
+			}
+			$title = SmartStudentSheetsExporter::sheetTitle($classLabel !== '' ? $classLabel : 'Class', $usedTitles);
+			if ($first) {
+				$sheet = $spreadsheet->getActiveSheet();
+				$first = false;
+			} else {
+				$sheet = $spreadsheet->createSheet();
+			}
+			$sheet->setTitle($title);
+			self::fillSheet($sheet, $school, $classMeta, $students, $yearTitle, $termLabel, $addressModel);
+		}
+
+		if ($first) {
+			$sheet = $spreadsheet->getActiveSheet();
+			$sheet->setTitle('No classes');
+			self::fillSheet($sheet, $school, ['classe' => 'All classes', 'mentor_name' => ''], [], $yearTitle, $termLabel, $addressModel);
+		}
+
+		$spreadsheet->setActiveSheetIndex(0);
+		return $spreadsheet;
+	}
+
+	/**
+	 * @param array<string,mixed> $school
+	 * @param array<string,mixed> $classMeta
+	 * @param list<array<string,mixed>> $students
+	 */
+	private static function fillSheet(
+		Worksheet $sheet,
+		array $school,
+		array $classMeta,
+		array $students,
+		string $yearTitle,
+		string $termLabel,
+		?AddressModel $addressModel = null
+	): void {
+		if ($addressModel === null) {
+			$addressModel = new AddressModel();
+		}
+		$lastCol = self::lastColumn();
 
 		$headerEndRow = self::writeSchoolHeader($sheet, $school, $lastCol);
 		$titleRow = $headerEndRow + 2;
@@ -215,8 +278,6 @@ class StudentListExcelExporter
 		$sheet->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE);
 		$sheet->getPageSetup()->setFitToWidth(1);
 		$sheet->getPageSetup()->setFitToHeight(0);
-
-		return $spreadsheet;
 	}
 
 	/**

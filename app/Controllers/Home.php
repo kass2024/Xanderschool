@@ -7470,11 +7470,11 @@ public function attendanceCard()
 	public function export_smart_student_list()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
-		@ini_set('memory_limit', '512M');
-		@set_time_limit(300);
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$yearId = (int) ($this->request->getGet('y') ?? 0);
 		$classFilter = (int) ($this->request->getGet('c') ?? 0);
+		@ini_set('memory_limit', $classFilter > 0 ? '512M' : '1024M');
+		@set_time_limit($classFilter > 0 ? 300 : 600);
 		if ($yearId < 1) {
 			$yearId = (int) ($this->data['academic_year_id'] ?? 0);
 		}
@@ -7497,7 +7497,7 @@ public function attendanceCard()
 
 		$studentMdl = new StudentModel();
 		$studentMdl->ensureFatherNidColumn();
-		$students = [];
+		$sheets = [];
 		$classLabel = 'All classes';
 		$mentorName = '';
 		foreach ($classes as $class) {
@@ -7505,30 +7505,39 @@ public function attendanceCard()
 			if ($classId < 1) {
 				continue;
 			}
+			$oneLabel = \App\Libraries\SmartStudentSheetsExporter::classLabel($class);
+			$oneMentor = (string) ($class['mentor_name'] ?? '');
 			if ($classFilter > 0) {
-				$classLabel = \App\Libraries\SmartStudentSheetsExporter::classLabel($class);
-				$mentorName = (string) ($class['mentor_name'] ?? '');
+				$classLabel = $oneLabel;
+				$mentorName = $oneMentor;
 			}
 			$rows = $this->studentListExportRows($studentMdl, $classId, $yearId);
+			$unique = [];
 			foreach ($rows as $row) {
 				$sid = (int) ($row['id'] ?? 0);
 				if ($sid > 0) {
-					$students[$sid] = $row;
+					$unique[$sid] = $row;
 				}
 			}
+			$students = array_values($unique);
+			usort($students, static function ($a, $b) {
+				$nameCmp = strcasecmp((string) ($a['fname'] ?? ''), (string) ($b['fname'] ?? ''));
+				if ($nameCmp !== 0) {
+					return $nameCmp;
+				}
+				return strcasecmp((string) ($a['lname'] ?? ''), (string) ($b['lname'] ?? ''));
+			});
+			$sheets[] = [
+				'class' => [
+					'classe' => $oneLabel !== '' ? $oneLabel : 'Class',
+					'mentor_name' => $oneMentor,
+					'title' => $class['title'] ?? '',
+					'level_name' => $class['level_name'] ?? '',
+					'code' => $class['code'] ?? '',
+				],
+				'students' => $students,
+			];
 		}
-		$students = array_values($students);
-		usort($students, static function ($a, $b) {
-			$classCmp = strcasecmp((string) ($a['class'] ?? ''), (string) ($b['class'] ?? ''));
-			if ($classCmp !== 0) {
-				return $classCmp;
-			}
-			$nameCmp = strcasecmp((string) ($a['fname'] ?? ''), (string) ($b['fname'] ?? ''));
-			if ($nameCmp !== 0) {
-				return $nameCmp;
-			}
-			return strcasecmp((string) ($a['lname'] ?? ''), (string) ($b['lname'] ?? ''));
-		});
 
 		$school = $this->schoolMetaForStaffExport();
 		$yearTitle = '';
@@ -7537,14 +7546,21 @@ public function attendanceCard()
 			$yearTitle = (string) ($yearRow['title'] ?? '');
 		}
 		$termLabel = (string) self::TermToStr($this->data['term'] ?? 0);
-		$classMeta = [
-			'classe' => $classLabel,
-			'mentor_name' => $mentorName,
-		];
 
-		$spreadsheet = \App\Libraries\StudentListExcelExporter::build($school, $classMeta, $students, $yearTitle, $termLabel);
+		if ($classFilter > 0) {
+			$entry = $sheets[0] ?? ['class' => ['classe' => $classLabel, 'mentor_name' => $mentorName], 'students' => []];
+			$spreadsheet = \App\Libraries\StudentListExcelExporter::build(
+				$school,
+				$entry['class'],
+				$entry['students'],
+				$yearTitle,
+				$termLabel
+			);
+		} else {
+			$spreadsheet = \App\Libraries\StudentListExcelExporter::buildMany($school, $sheets, $yearTitle, $termLabel);
+		}
 		$filename = \App\Libraries\StudentListExcelExporter::exportFilename(
-			$classFilter > 0 ? $classLabel : trim(($school['name'] ?? 'School') . ' ' . $yearTitle)
+			$classFilter > 0 ? $classLabel : trim(($school['name'] ?? 'School') . ' ' . $yearTitle . ' all classes')
 		);
 		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
 

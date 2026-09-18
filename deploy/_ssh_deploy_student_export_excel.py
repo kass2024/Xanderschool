@@ -39,16 +39,17 @@ def main() -> int:
 
     cmd = r"""
 set -e
+docker cp /opt/xander-school/app/app/Controllers/Home.php xander_school_app:/var/www/html/app/Controllers/Home.php
+docker cp /opt/xander-school/app/app/Libraries/StudentListExcelExporter.php xander_school_app:/var/www/html/app/Libraries/StudentListExcelExporter.php
 docker exec xander_school_app php -l /var/www/html/app/Controllers/Home.php
 docker exec xander_school_app php -l /var/www/html/app/Libraries/StudentListExcelExporter.php
-docker exec xander_school_app grep -n "StudentListExcelExporter\|Father Phone\|email_password" \
+docker exec xander_school_app grep -n "buildMany\|each on its own sheet\|export_smart_student_list" \
   /var/www/html/app/Controllers/Home.php \
-  /var/www/html/app/Libraries/StudentListExcelExporter.php \
-  /var/www/html/app/Views/pages/students.php | head -n 30
+  /var/www/html/app/Libraries/StudentListExcelExporter.php | head -n 20
 cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 3
-docker exec xander_school_app php -r 'opcache_reset();' || true
+docker exec xander_school_app php -r 'opcache_reset(); echo "opcache ok";'
 echo DONE
 """
     _, o, e = c.exec_command(cmd, timeout=180)
