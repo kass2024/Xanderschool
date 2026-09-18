@@ -1,17 +1,17 @@
 <?php
 /**
- * Import WISDOM SCHOOL KAYONZA only (WSY / school 35).
+ * Import WISDOM SCHOOL FUMBWE only (WIS-FUM / school 34).
  *
- * Source: deploy/_wisdom_kayonza_school_information.json (parsed from
- * C:\methode\15 Wisdoms\5.Kayonza). Classes are REB
+ * Source: deploy/_wisdom_fumbwe_school_information.json (parsed from
+ * C:\methode\15 Wisdoms\5.Fumbwe). Classes are REB
  * (faculty type 2) using Wisdom Rwanda level names:
  * Baby class, Middle Class, Top Class, P1–P6.
  * Every student is Day (studying_mode = 1).
  * Staff photos are named files matched fuzzily (PROMENSE/PROMESSE, Ishimwe/INSHIMWE).
  *
  * Usage:
- *   php deploy/import_wisdom_kayonza_school_information.php --dry-run
- *   php deploy/import_wisdom_kayonza_school_information.php
+ *   php deploy/import_wisdom_fumbwe_school_information.php --dry-run
+ *   php deploy/import_wisdom_fumbwe_school_information.php
  */
 declare(strict_types=1);
 
@@ -26,9 +26,9 @@ require rtrim($paths->systemDirectory, '/ ') . '/bootstrap.php';
 helper('qonics');
 
 $db = \Config\Database::connect();
-$jsonPath = __DIR__ . '/_wisdom_kayonza_school_information.json';
+$jsonPath = __DIR__ . '/_wisdom_fumbwe_school_information.json';
 $dryRun = in_array('--dry-run', $argv ?? [], true);
-$photoDir = rtrim((string) (getenv('PHOTO_DIR') ?: (WRITEPATH . 'staff_photos_import_kayonza')), '/\\') . DIRECTORY_SEPARATOR;
+$photoDir = rtrim((string) (getenv('PHOTO_DIR') ?: (WRITEPATH . 'staff_photos_import_fumbwe')), '/\\') . DIRECTORY_SEPARATOR;
 
 if (!is_file($jsonPath)) {
 	fwrite(STDERR, "Missing {$jsonPath}\n");
@@ -38,12 +38,12 @@ if (!is_file($jsonPath)) {
 $data = json_decode((string) file_get_contents($jsonPath), true);
 if (!is_array($data) || !is_array($data['school'] ?? null)
 	|| !is_array($data['classes'] ?? null) || !is_array($data['staff'] ?? null)) {
-	fwrite(STDERR, "Invalid Kayonza import JSON\n");
+	fwrite(STDERR, "Invalid Fumbwe import JSON\n");
 	exit(1);
 }
 
-const TARGET_ACRONYM = 'WSY';
-const TARGET_SCHOOL_ID = 35;
+const TARGET_ACRONYM = 'WIS-FUM';
+const TARGET_SCHOOL_ID = 34;
 const ACADEMIC_YEAR_TITLE = '2026-2027';
 const CREATED_BY = 1;
 const DEFAULT_VILLAGE_ID = 1202;
@@ -437,17 +437,16 @@ function match_photo(array $photos, string $fullName, array $usedFiles = []): ?a
 }
 
 $school = $db->table('schools')->where('id', TARGET_SCHOOL_ID)->get(1)->getRowArray();
-$acronym = strtoupper((string) (is_array($school) ? ($school['acronym'] ?? '') : ''));
-$foundName = compact_name((string) (is_array($school) ? ($school['name'] ?? '') : ''));
-if (!$school || (strpos($foundName, 'KAYONZA') === false && $acronym !== 'WSY' && $acronym !== 'WIS-KAY')) {
-	$school = $db->table('schools')->like('name', 'KAYONZA', 'both')->get(1)->getRowArray();
+if (!$school || strtoupper((string) ($school['acronym'] ?? '')) !== TARGET_ACRONYM) {
+	$school = $db->table('schools')->where('acronym', TARGET_ACRONYM)->get(1)->getRowArray();
 }
 if (!$school || (int) $school['id'] !== TARGET_SCHOOL_ID) {
-	fwrite(STDERR, "Target Kayonza school was not found at expected school id 35\n");
+	fwrite(STDERR, "Target Fumbwe school was not found at expected school id 34 / WIS-FUM\n");
 	exit(1);
 }
+
 $schoolName = compact_name((string) ($school['name'] ?? ''));
-if (strpos($schoolName, 'KAYONZA') === false
+if (strpos($schoolName, 'FUMBWE') === false
 	|| strpos($schoolName, 'SUSA') !== false
 	|| strpos($schoolName, 'NYABIHU') !== false
 	|| strpos($schoolName, 'BURERA') !== false
@@ -461,9 +460,9 @@ if (strpos($schoolName, 'KAYONZA') === false
 	|| strpos($schoolName, 'RWANDA') !== false
 	|| strpos($schoolName, 'RUBAVU') !== false
 	|| strpos($schoolName, 'RUBENGERA') !== false
-	|| strpos($schoolName, 'FUMBWE') !== false
+	|| strpos($schoolName, 'KAYONZA') !== false
 	|| strpos($schoolName, 'MUSANZE') !== false) {
-	fwrite(STDERR, "Refusing to import: school id 35 is not Wisdom Kayonza (" . ($school['name'] ?? '') . ")\n");
+	fwrite(STDERR, "Refusing to import: school id 34 is not Wisdom Fumbwe (" . ($school['name'] ?? '') . ")\n");
 	exit(1);
 }
 
@@ -504,10 +503,10 @@ if (!$year) {
 
 $schoolInfo = $data['school'];
 $schoolUpdate = [
-	'name' => clean_text($schoolInfo['name'] ?? 'WISDOM SCHOOL KAYONZA', 100),
+	'name' => clean_text($schoolInfo['name'] ?? 'WISDOM SCHOOL FUMBWE', 100),
 	'slogan' => clean_text($schoolInfo['slogan'] ?? '', 100),
-	'address' => 'Kayonza, Rwanda',
-	'head_master' => clean_text($schoolInfo['head_teacher'] ?? 'UMUTONO Henriette', 100),
+	'address' => 'Fumbwe, Rwanda',
+	'head_master' => clean_text($schoolInfo['head_teacher'] ?? 'MUTSINZI Jean Damascene', 100),
 	'updated_at' => $now,
 ];
 if ($activeTerm) {
@@ -657,11 +656,11 @@ foreach ($data['staff'] as $staff) {
 	} else {
 		if ($email === '') {
 			$slug = strtolower(preg_replace('/[^a-z0-9]+/i', '.', $fullName) ?? 'staff');
-			$email = trim($slug, '.') . '@wisdomschoolkayonza.rw';
+			$email = trim($slug, '.') . '@wisdomschoolfumbwe.rw';
 		}
 		$taken = $db->table('staffs')->where('email', $email)->get(1)->getRowArray();
 		if ($taken) {
-			$email = 's35.' . preg_replace('/[^a-z0-9]+/i', '.', strtolower($fullName)) . '@wisdomschoolkayonza.rw';
+			$email = 's34.' . preg_replace('/[^a-z0-9]+/i', '.', strtolower($fullName)) . '@wisdomschoolfumbwe.rw';
 		}
 		$db->table('staffs')->insert([
 			'school_id' => TARGET_SCHOOL_ID,
@@ -675,8 +674,8 @@ foreach ($data['staff'] as $staff) {
 			'post' => $post,
 			'shift_id' => 0,
 			'country' => 'Rwanda',
-			'city' => 'Kayonza',
-			'address' => 'Kayonza, Rwanda',
+			'city' => 'Fumbwe',
+			'address' => 'Fumbwe, Rwanda',
 			'photo' => $photoName,
 			'lang' => 'en',
 			'next_login' => 0,
@@ -814,24 +813,6 @@ foreach ($data['classes'] as $student) {
 	$enrolled++;
 }
 
-if ($usedStudentIds !== []) {
-	$keep = array_map('intval', array_keys($usedStudentIds));
-	$in = implode(',', $keep);
-	$db->query(
-		'UPDATE class_records cr
-		 INNER JOIN students st ON st.id = cr.student
-		 SET cr.status = 0
-		 WHERE st.school_id = ' . TARGET_SCHOOL_ID . '
-		   AND cr.year = ' . (int) $academicYearId . '
-		   AND cr.status = 1
-		   AND st.id NOT IN (' . $in . ')'
-	);
-	$db->table('students')
-		->where('school_id', TARGET_SCHOOL_ID)
-		->whereNotIn('id', $keep)
-		->update(['status' => 0, 'updated_at' => $now, 'updated_by' => CREATED_BY]);
-}
-
 if ($nextReg > $startReg) {
 	if ($counterRow) {
 		$db->table('reg_number')->where('id', (int) $counterRow['id'])
@@ -847,11 +828,9 @@ if ($nextReg > $startReg) {
 
 $db->table('students')
 	->where('school_id', TARGET_SCHOOL_ID)
-	->where('status', 1)
 	->update(['studying_mode' => 1]);
 $dayCount = $db->table('students')
 	->where('school_id', TARGET_SCHOOL_ID)
-	->where('status', 1)
 	->where('studying_mode', 1)
 	->countAllResults();
 
