@@ -221,19 +221,26 @@ $contactBits = array_values(array_filter([
 	!empty($school_email) ? $school_email : null,
 	!empty($school_website) ? $school_website : null,
 ]));
-$logoName = trim((string) ($school_logo ?? ''));
+$logoName = basename(trim((string) ($school_logo ?? '')));
 $logoUrl = $logoName !== '' ? base_url('assets/images/logo/' . $logoName) : '';
-$logoSrc = $logoUrl;
-$logoFile = $logoName !== '' ? FCPATH . 'assets/images/logo/' . $logoName : '';
-if ($logoFile !== '' && is_file($logoFile)) {
-	$ext = strtolower((string) pathinfo($logoFile, PATHINFO_EXTENSION));
-	$mime = 'image/png';
-	if ($ext === 'jpg' || $ext === 'jpeg') {
-		$mime = 'image/jpeg';
-	} elseif ($ext === 'gif') {
-		$mime = 'image/gif';
+$logoSrc = '';
+if ($isPdf) {
+	$resolved = function_exists('asset_resolve_path')
+		? asset_resolve_path(
+			$logoName !== '' ? 'assets/images/logo/' . $logoName : null,
+			'assets/images/fallback-logo.png'
+		)
+		: null;
+	if (!$resolved && $logoName !== '') {
+		$try = FCPATH . 'assets/images/logo/' . $logoName;
+		$resolved = is_file($try) ? $try : null;
 	}
-	$logoSrc = 'data:' . $mime . ';base64,' . base64_encode((string) file_get_contents($logoFile));
+	if ($resolved) {
+		$logoSrc = \App\Libraries\MpdfReport::imageFileForPdf($resolved);
+	}
+}
+if ($logoSrc === '') {
+	$logoSrc = $logoUrl;
 }
 if ($isPdf) {
 	echo view('pages/reports/staff_report_clock_pdf', [

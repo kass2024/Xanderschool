@@ -59,9 +59,9 @@ $pdfTitle = $singleDay
 <body>
 <table class="hdr">
 	<tr>
-		<td width="78" style="width:78px;">
+		<td width="78" style="width:78px; text-align:center;">
 			<?php if (!empty($logoSrc)) : ?>
-				<img src="<?= esc($logoSrc, 'attr'); ?>" width="64" height="64" alt="">
+				<img src="<?= htmlspecialchars($logoSrc, ENT_QUOTES, 'UTF-8'); ?>" width="64" height="64" alt="Logo" style="width:64px; height:64px;">
 			<?php endif; ?>
 		</td>
 		<td>

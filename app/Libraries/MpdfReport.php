@@ -10,6 +10,9 @@ use Mpdf\Output\Destination;
  */
 class MpdfReport
 {
+	/** @var array<string,string> */
+	private static $imageVars = [];
+
 	/**
 	 * @param array{title?:string,orientation?:string,margin?:int} $opts
 	 */
@@ -47,6 +50,9 @@ class MpdfReport
 		$mpdf->SetDisplayMode('fullpage');
 		$mpdf->SetCompression(true);
 		$mpdf->shrink_tables_to_fit = 1;
+		foreach (self::$imageVars as $name => $bytes) {
+			$mpdf->imageVars[$name] = $bytes;
+		}
 		$mpdf->SetHTMLFooter(
 			'<table width="100%" style="font-size:8pt;color:#64748b;border-top:1px solid #cbd5e1;">'
 			. '<tr><td>Xander School</td>'
@@ -81,6 +87,52 @@ class MpdfReport
 		header('Pragma: public');
 		echo $pdf;
 		exit;
+	}
+
+	/**
+	 * Embed a local logo as mPDF imageVars (HTTP / data-URI logos fail inside Docker).
+	 * Returns src="var:name" which ImageProcessor reads from $mpdf->imageVars.
+	 */
+	public static function imageFileForPdf(string $absPath): string
+	{
+		$absPath = realpath($absPath) ?: $absPath;
+		if ($absPath === '' || !is_file($absPath)) {
+			return '';
+		}
+		$raw = @file_get_contents($absPath);
+		if ($raw === false || $raw === '') {
+			return '';
+		}
+		$jpeg = self::flattenToJpegBytes($raw);
+		$bytes = ($jpeg !== '') ? $jpeg : $raw;
+		$name = 'logo_' . md5($absPath . '|' . (string) @filemtime($absPath) . '|' . strlen($bytes));
+		self::$imageVars[$name] = $bytes;
+
+		return 'var:' . $name;
+	}
+
+	private static function flattenToJpegBytes(string $raw): string
+	{
+		$src = @imagecreatefromstring($raw);
+		if ($src === false) {
+			return '';
+		}
+		$sw = imagesx($src);
+		$sh = imagesy($src);
+		$scale = min(1.0, 240 / max(1, $sw), 240 / max(1, $sh));
+		$dw = max(1, (int) round($sw * $scale));
+		$dh = max(1, (int) round($sh * $scale));
+		$dst = imagecreatetruecolor($dw, $dh);
+		$white = imagecolorallocate($dst, 255, 255, 255);
+		imagefill($dst, 0, 0, $white);
+		imagecopyresampled($dst, $src, 0, 0, 0, 0, $dw, $dh, $sw, $sh);
+		ob_start();
+		imagejpeg($dst, null, 90);
+		$jpeg = (string) ob_get_clean();
+		imagedestroy($src);
+		imagedestroy($dst);
+
+		return strlen($jpeg) > 32 ? $jpeg : '';
 	}
 
 	private static function ensureLoaded(): void
