@@ -243,7 +243,7 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Square for a circular card hole: keep the original person, cover-crop, then clean only the studio wall.
+	 * Square for a circular card hole: white studio wall, then zoom the person to fill the circle.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -254,11 +254,14 @@ class ProfilePhotoNormalizer
 			return null;
 		}
 		$size = max(32, $size);
-		$out = $this->cropOntoWhite($src, $size, $size, 'cover');
-		if ($out === null) {
+		$copy = imagecreatetruecolor(imagesx($src), imagesy($src));
+		if ($copy === false) {
 			return null;
 		}
-		$this->whitenBackdropInPlace($out);
+		imagecopy($copy, $src, 0, 0, 0, 0, imagesx($src), imagesy($src));
+		$this->whitenBackdropInPlace($copy);
+		$out = $this->tightCoverOntoWhite($copy, $size, $size);
+		imagedestroy($copy);
 		return $out;
 	}
 
@@ -277,9 +280,6 @@ class ProfilePhotoNormalizer
 		}
 
 		$wall = $this->sampleCornerRgb($im, $w, $h);
-		if ($wall[0] > 246 && $wall[1] > 246 && $wall[2] > 246) {
-			return;
-		}
 
 		$white = imagecolorallocate($im, 255, 255, 255);
 		$seen = str_repeat("\0", $w * $h);
@@ -340,7 +340,7 @@ class ProfilePhotoNormalizer
 			return null;
 		}
 		$bbox = $this->subjectBBox($src, $sw, $sh);
-		$pad = (int) max(4, round(max($bbox[2], $bbox[3]) * 0.06));
+		$pad = (int) max(2, round(max($bbox[2], $bbox[3]) * 0.03));
 		$sx = max(0, $bbox[0] - $pad);
 		$sy = max(0, $bbox[1] - $pad);
 		$bw = min($sw - $sx, $bbox[2] + $pad * 2);
@@ -354,7 +354,8 @@ class ProfilePhotoNormalizer
 			$bw = min($side, $sw - $sx);
 		}
 		if ($bh < $side) {
-			$sy = max(0, min($sh - $side, $sy - (int) round(($side - $bh) * 0.18)));
+			// Extra height goes below the subject so the head stays at the top of the circle.
+			$sy = max(0, min($sh - $side, $sy));
 			$bh = min($side, $sh - $sy);
 		}
 		$crop = max(1, min($bw, $bh, $sw - $sx, $sh - $sy));
@@ -406,26 +407,31 @@ class ProfilePhotoNormalizer
 	/** @return array{0:int,1:int,2:int} */
 	private function sampleCornerRgb($im, int $w, int $h): array
 	{
-		$box = max(4, (int) floor(min($w, $h) * 0.07));
+		$box = max(4, (int) floor(min($w, $h) * 0.10));
 		$step = max(1, (int) floor($box / 8));
 		$regions = [
 			[0, 0],
 			[$w - $box, 0],
 			[0, $h - $box],
 			[$w - $box, $h - $box],
+			[(int) floor($w * 0.08), 0],
+			[(int) floor($w * 0.82) - $box, 0],
 		];
-		$medians = [];
+		$rs = [];
+		$gs = [];
+		$bs = [];
 		foreach ($regions as $rg) {
-			$rs = [];
-			$gs = [];
-			$bs = [];
-			for ($y = $rg[1]; $y < $rg[1] + $box; $y += $step) {
-				for ($x = $rg[0]; $x < $rg[0] + $box; $x += $step) {
-					$rgb = imagecolorat($im, min($w - 1, $x), min($h - 1, $y)) & 0xFFFFFF;
+			for ($y = $rg[1]; $y < $rg[1] + $box && $y < $h; $y += $step) {
+				for ($x = $rg[0]; $x < $rg[0] + $box && $x < $w; $x += $step) {
+					$rgb = imagecolorat($im, max(0, min($w - 1, $x)), max(0, min($h - 1, $y))) & 0xFFFFFF;
 					$r = ($rgb >> 16) & 255;
 					$g = ($rgb >> 8) & 255;
 					$b = $rgb & 255;
-					if ($this->isSkinTone($r, $g, $b) || $this->luma($r, $g, $b) < 40) {
+					$lum = $this->luma($r, $g, $b);
+					if ($lum > 232 || $lum < 55) {
+						continue;
+					}
+					if ($this->isSkinTone($r, $g, $b)) {
 						continue;
 					}
 					$rs[] = $r;
@@ -433,28 +439,24 @@ class ProfilePhotoNormalizer
 					$bs[] = $b;
 				}
 			}
-			if (count($rs) < 4) {
-				continue;
-			}
-			sort($rs);
-			sort($gs);
-			sort($bs);
-			$mid = intdiv(count($rs), 2);
-			$medians[] = [$rs[$mid], $gs[$mid], $bs[$mid]];
 		}
-		if ($medians === []) {
-			return [168, 162, 154];
+		if (count($rs) < 6) {
+			return [150, 148, 142];
 		}
-		usort($medians, function ($a, $b) {
-			return $this->luma($b[0], $b[1], $b[2]) <=> $this->luma($a[0], $a[1], $a[2]);
-		});
-		return $medians[0];
+		sort($rs);
+		sort($gs);
+		sort($bs);
+		$mid = intdiv(count($rs), 2);
+		return [$rs[$mid], $gs[$mid], $bs[$mid]];
 	}
 
 	private function isWallPixel(int $r, int $g, int $b, array $wall): bool
 	{
+		if ($r >= 238 && $g >= 238 && $b >= 238) {
+			return true;
+		}
 		$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
-		if ($dist <= 155) {
+		if ($dist <= 175) {
 			return true;
 		}
 		$lum = $this->luma($r, $g, $b);
@@ -462,7 +464,10 @@ class ProfilePhotoNormalizer
 		$maxc = max($r, $g, $b);
 		$minc = min($r, $g, $b);
 		$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
-		return $sat < 0.16 && abs($lum - $wallLum) <= 38 && $lum >= 80 && $lum <= $wallLum + 26;
+		if ($sat < 0.20 && $lum >= 75 && $lum <= 210 && abs($lum - $wallLum) <= 70) {
+			return true;
+		}
+		return $sat < 0.13 && $lum >= 90 && $lum <= 198;
 	}
 
 	private function isProtectedPerson(int $r, int $g, int $b, array $wall): bool
