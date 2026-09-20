@@ -256,7 +256,7 @@ class WisdomCardRenderer
 			return;
 		}
 		$hole = max(2, $d);
-		$fill = (int) round($hole * 1.08);
+		$fill = (int) round($hole * 1.02);
 		$square = (new ProfilePhotoNormalizer())->circlePortraitFromImage($src, $fill);
 		if (!$square) {
 			$square = $this->coverSquare($src, $fill, 0.10);

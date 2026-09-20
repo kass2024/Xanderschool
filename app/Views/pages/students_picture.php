@@ -688,7 +688,6 @@
 			o.imageSmoothingEnabled = true;
 			o.imageSmoothingQuality = 'high';
 			o.drawImage(srcCanvas, cropX, cropY, crop, crop, 0, 0, PHOTO_SIZE, PHOTO_SIZE);
-			whitenDarkBackground(out);
 			return out;
 		}
 
@@ -699,12 +698,13 @@
 		function isSkinPx(r, g, b) {
 			var maxc = Math.max(r, g, b);
 			var minc = Math.min(r, g, b);
+			if ((maxc - minc) < 18) return false;
+			if (r <= g + 4) return false;
 			var sat = maxc === 0 ? 0 : (maxc - minc) / maxc;
-			if (sat < 0.16) return false;
 			var lum = lumaOf(r, g, b);
-			if (lum > 195 || lum < 22) return false;
-			if (r <= b || g < b - 12) return false;
-			return (r - b) >= 8 && r >= 32;
+			if ((r - g) < 12 && (g - b) < 18 && lum > 100 && sat < 0.22) return false;
+			if (lum < 22 || lum > 210) return false;
+			return (r - b) >= 10;
 		}
 
 		function satOf(r, g, b) {
@@ -716,20 +716,18 @@
 		function isPersonPx(r, g, b, wr, wg, wb) {
 			if (isSkinPx(r, g, b)) return true;
 			var lum = lumaOf(r, g, b);
-			var wallLum = lumaOf(wr, wg, wb);
-			if (lum < wallLum - 30) return true;
-			if (satOf(r, g, b) > satOf(wr, wg, wb) + 0.14 && satOf(r, g, b) > 0.20) return true;
-			return false;
+			if (lum < 48) return true;
+			var dist = Math.abs(r - wr) + Math.abs(g - wg) + Math.abs(b - wb);
+			return satOf(r, g, b) > 0.28 && dist > 90;
 		}
 
 		function isWallPx(r, g, b, wr, wg, wb) {
 			var dist = Math.abs(r - wr) + Math.abs(g - wg) + Math.abs(b - wb);
-			if (dist <= 130) return true;
+			if (dist <= 155) return true;
 			var lum = lumaOf(r, g, b);
 			var wallLum = lumaOf(wr, wg, wb);
 			var sat = satOf(r, g, b);
-			if (sat < 0.24 && Math.abs(lum - wallLum) <= 55) return true;
-			return sat < 0.12 && lum >= 70 && lum <= 210;
+			return sat < 0.16 && Math.abs(lum - wallLum) <= 38 && lum >= 80 && lum <= wallLum + 26;
 		}
 
 		function whitenDarkBackground(cnv) {
@@ -738,36 +736,55 @@
 			var h = cnv.height;
 			var img = c.getImageData(0, 0, w, h);
 			var data = img.data;
-			var rs = [], gs = [], bs = [];
-			var box = Math.max(4, Math.floor(Math.min(w, h) * 0.08));
-			function take(x, y) {
-				var i = (y * w + x) * 4;
-				rs.push(data[i]);
-				gs.push(data[i + 1]);
-				bs.push(data[i + 2]);
-			}
+			var box = Math.max(4, Math.floor(Math.min(w, h) * 0.07));
+			var st = Math.max(1, Math.floor(box / 8));
 			var regions = [[0, 0], [w - box, 0], [0, h - box], [w - box, h - box]];
-			var st = Math.max(1, Math.floor(box / 10));
+			var medians = [];
 			for (var ri = 0; ri < regions.length; ri++) {
+				var rs = [], gs = [], bs = [];
 				for (var y = regions[ri][1]; y < regions[ri][1] + box; y += st) {
 					for (var x = regions[ri][0]; x < regions[ri][0] + box; x += st) {
-						take(Math.min(w - 1, x), Math.min(h - 1, y));
+						var i = (Math.min(h - 1, y) * w + Math.min(w - 1, x)) * 4;
+						var r = data[i], g = data[i + 1], b = data[i + 2];
+						if (isSkinPx(r, g, b) || lumaOf(r, g, b) < 40) continue;
+						rs.push(r); gs.push(g); bs.push(b);
 					}
 				}
+				if (rs.length < 4) continue;
+				rs.sort(function (a, b) { return a - b; });
+				gs.sort(function (a, b) { return a - b; });
+				bs.sort(function (a, b) { return a - b; });
+				var mid = Math.floor(rs.length / 2);
+				medians.push([rs[mid], gs[mid], bs[mid]]);
 			}
-			rs.sort(function (a, b) { return a - b; });
-			gs.sort(function (a, b) { return a - b; });
-			bs.sort(function (a, b) { return a - b; });
-			var mid = Math.floor(rs.length / 2);
-			var wr = rs[mid] || 160, wg = gs[mid] || 155, wb = bs[mid] || 145;
-			for (var i = 0; i < data.length; i += 4) {
-				var r = data[i], g = data[i + 1], b = data[i + 2];
-				if (isPersonPx(r, g, b, wr, wg, wb)) continue;
-				if (isWallPx(r, g, b, wr, wg, wb) || (r >= 228 && g >= 228 && b >= 228)) {
-					data[i] = 255;
-					data[i + 1] = 255;
-					data[i + 2] = 255;
-				}
+			medians.sort(function (a, b) { return lumaOf(b[0], b[1], b[2]) - lumaOf(a[0], a[1], a[2]); });
+			var wr = (medians[0] && medians[0][0]) || 168;
+			var wg = (medians[0] && medians[0][1]) || 162;
+			var wb = (medians[0] && medians[0][2]) || 154;
+			if (wr > 246 && wg > 246 && wb > 246) {
+				return;
+			}
+			var seen = new Uint8Array(w * h);
+			var queue = [];
+			function push(x, y) {
+				if (x < 0 || y < 0 || x >= w || y >= h) return;
+				var idx = y * w + x;
+				if (seen[idx]) return;
+				seen[idx] = 1;
+				queue.push(idx);
+			}
+			for (var x = 0; x < w; x++) { push(x, 0); push(x, h - 1); }
+			for (var y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
+			var qi = 0;
+			while (qi < queue.length) {
+				var idx = queue[qi++];
+				var px = idx % w;
+				var py = (idx - px) / w;
+				var p = idx * 4;
+				var r = data[p], g = data[p + 1], b = data[p + 2];
+				if (isPersonPx(r, g, b, wr, wg, wb) || !isWallPx(r, g, b, wr, wg, wb)) continue;
+				data[p] = 255; data[p + 1] = 255; data[p + 2] = 255;
+				push(px + 1, py); push(px - 1, py); push(px, py + 1); push(px, py - 1);
 			}
 			c.putImageData(img, 0, 0);
 		}
@@ -841,9 +858,7 @@
 			$('#spCapture').prop('disabled', true);
 			try {
 				useCaptured(squareCrop(captureFullFrame()), function () {
-					autoFitToCircle();
-					applyAutoEnhance();
-					setStatus('Photo captured — white background applied', 'ok');
+					setStatus('Photo captured', 'ok');
 					savePhoto();
 				});
 			} catch (e) {
