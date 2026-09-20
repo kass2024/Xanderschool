@@ -974,6 +974,8 @@ return [
 	"noPhotoToRemove" => "Aucune photo à supprimer",
 	"StaffphotoNotSaved" => "Photo du personnel non enregistrée",
 	"staffPhotoUploaded" => "Photo du personnel téléchargée",
+	"staffPhotoRemoved" => "Photo du personnel supprimée",
+	"removeStaffPhotoConfirm" => "Supprimer la photo de ce membre du personnel ?",
 	"studentCardSaved" => "Carte d'élève non enregistrée",
 	"schltCardSaved" => "Carte d'élève de l'école téléchargée",
 	"schoolLogoNotSaved" => "Le logo de l'école n'est pas enregistré",

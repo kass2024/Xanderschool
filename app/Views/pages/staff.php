@@ -71,13 +71,21 @@
 			<?php
 			helper('qonics');
 			$resolved = resolve_profile_photo($staff['photo'] ?? '');
-			$photo = $resolved !== null ? profile_photo_url($resolved) : profile_photo_url(null);
+			$hasPhoto = $resolved !== null;
+			$photo = $hasPhoto ? profile_photo_url($resolved) : profile_photo_url(null);
+			$fallbackPhoto = profile_photo_url(null);
 			?>
-			<img src="<?=$photo;?>" id="img_photo" style="width: 100px;height: 100px;border-radius: 50%;background: #FFFFFF;float:left;border: 1px solid #4C5B5C;">
-			<input type="file" id="in_student_photo" style="display: none;overflow: hidden">
+			<div style="position:relative;float:left;width:100px;height:100px;">
+				<img src="<?= esc($photo); ?>" id="img_photo" alt="" style="width:100px;height:100px;border-radius:50%;background:#FFFFFF;border:1px solid #4C5B5C;object-fit:cover;display:block;">
+				<button type="button" id="btn_remove_photo" title="<?= esc(lang('app.removePhoto')); ?>"
+					style="position:absolute;top:0;right:0;width:24px;height:24px;border:none;border-radius:50%;background:#dc3545;color:#fff;font-size:12px;line-height:24px;padding:0;cursor:pointer;<?= $hasPhoto ? '' : 'display:none;'; ?>">
+					<i class="fa fa-times"></i>
+				</button>
+			</div>
+			<input type="file" id="in_student_photo" accept="image/jpeg,image/jpg,image/png" style="display: none;overflow: hidden">
 			<div style="border: 1px dashed #bababa;float: left;width: calc(100% - 110px);margin-left: 10px;height: 100px;cursor: pointer;text-align: center;" id="dv_select_img">
 				<p style="margin: 30px 0 0;font-weight: 600;"><?= lang("app.uploadPhoto");?></p>
-				<label class="text-muted" style="font-style: italic;font-size: 10pt;"<?= lang("app.totalSize");?>></label>
+				<label class="text-muted" style="font-style: italic;font-size: 10pt;"><?= lang("app.totalSize");?></label>
 			</div>
 		</div>
 	</div>
@@ -199,6 +207,34 @@
 		$(document).on("click","#dv_select_img",function () {
 			$("#in_student_photo")[0].click();
 		});
+		function toggleStaffPhotoRemove(show) {
+			$("#btn_remove_photo").toggle(!!show);
+		}
+		function removeStaffPhoto() {
+			if (!confirm("<?= esc(lang('app.removeStaffPhotoConfirm'), 'js'); ?>")) {
+				return;
+			}
+			var id = $("#staff_section").data("id");
+			$.post(window.base_url + "remove_staff_photo", { id: id }, function (data) {
+				if (data.hasOwnProperty("error")) {
+					toastada.error(data.error);
+				} else if (data.hasOwnProperty("success")) {
+					$("#img_photo").prop("src", <?= json_encode($fallbackPhoto) ?>);
+					$("#in_student_photo").val("");
+					toggleStaffPhotoRemove(false);
+					toastada.success(data.success);
+				} else {
+					toastada.error('<?= lang("app.fatalErr");?>');
+				}
+			}, "json").fail(function () {
+				toastada.error('<?= lang("app.systemErr");?>');
+			});
+		}
+		$("#btn_remove_photo").on("click", function (e) {
+			e.preventDefault();
+			e.stopPropagation();
+			removeStaffPhoto();
+		});
 		$("#in_student_photo").on("change", function (e) {
 			var file = $(this)[0].files[0];
 			var upload = new Upload(file);
@@ -260,6 +296,7 @@
 					img.prop("src","");
 				}else if (data.hasOwnProperty("success")){
 					toastada.success(data.success);
+					toggleStaffPhotoRemove(true);
 				}else{
 					toastada.error('<?= lang("app.fatalErr");?>');
 					img.prop("src","");

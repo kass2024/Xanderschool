@@ -983,6 +983,8 @@ return [
    'noPhotoToRemove'             => 'No photo to remove',
    'StaffphotoNotSaved'          => 'Staff photo not saved',
    'staffPhotoUploaded'          => 'Staff photo uploaded',
+   'staffPhotoRemoved'           => 'Staff photo removed',
+   'removeStaffPhotoConfirm'     => 'Remove this staff photo?',
    'studentCardSaved'            => 'School student card not saved',
    'schltCardSaved'              => 'School student card uploaded',
    'schoolLogoNotSaved'          => 'School logo not saved',

@@ -12297,6 +12297,46 @@ public function getApplicationDocs($id = null)
 		}
 	}
 
+	public function remove_staff_photo()
+	{
+		$this->_preset();
+		$staffId = (int) $this->request->getPost('id');
+		if ($staffId <= 0) {
+			return $this->response->setJSON(['error' => lang('app.fatalErrorRestart')]);
+		}
+
+		helper('qonics');
+		$stMdl = new StaffModel();
+		$staff = $stMdl->select('id,photo')
+			->where('id', $staffId)
+			->where('school_id', $this->session->get('soma_school_id'))
+			->first();
+		if ($staff === null) {
+			return $this->response->setJSON(['error' => lang('app.fatalErrorRestart')]);
+		}
+
+		$oldPhoto = trim((string) ($staff['photo'] ?? ''));
+		$resolved = resolve_profile_photo($oldPhoto);
+		if ($resolved === null && ($oldPhoto === '' || strlen($oldPhoto) < 3)) {
+			return $this->response->setJSON(['error' => lang('app.noPhotoToRemove')]);
+		}
+
+		$profilePath = FCPATH . 'assets/images/profile/';
+		if ($resolved !== null && is_file($profilePath . $resolved)) {
+			@unlink($profilePath . $resolved);
+		}
+
+		try {
+			$stMdl->update($staffId, ['photo' => '']);
+			if ((int) $staffId === (int) $this->session->get('soma_id')) {
+				$this->session->set('soma_picture', '../no_image.jpg');
+			}
+			return $this->response->setJSON(['success' => lang('app.staffPhotoRemoved')]);
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => lang('app.OopsAction')]);
+		}
+	}
+
 
 	public
 	function send_multiple_sms()
