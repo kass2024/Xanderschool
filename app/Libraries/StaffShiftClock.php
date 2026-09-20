@@ -170,7 +170,7 @@ class StaffShiftClock
 		}
 
 		$rows = $db->table('attendance_records ar')
-			->select('ar.time_in, ar.time_out, s.fname, s.lname, s.photo, p.title as post_title, sh.title as shift_title, sh.options')
+			->select('ar.user_id, ar.time_in, ar.time_out, s.id as staff_id, s.fname, s.lname, s.photo, p.title as post_title, sh.title as shift_title, sh.options')
 			->join('staffs s', 's.id = ar.user_id')
 			->join('posts p', 'p.id = s.post', 'left')
 			->join('shifts sh', 'sh.id = s.shift_id', 'left')
@@ -209,6 +209,7 @@ class StaffShiftClock
 			if (count($recent) < 10) {
 				$name = trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? ''));
 				$recent[] = [
+					'id' => (int) ($r['staff_id'] ?? $r['user_id'] ?? 0),
 					'name' => $name !== '' ? $name : 'Staff',
 					'post' => (string) ($r['post_title'] ?? ''),
 					'shift' => (string) ($window['title'] ?? $r['shift_title'] ?? ''),
@@ -216,7 +217,8 @@ class StaffShiftClock
 					'time_out' => $outTs > 0 ? date('H:i', $outTs) : '',
 					'in_code' => $inEval['code'],
 					'in_label' => $inEval['label'],
-					'photo' => profile_photo_url($r['photo'] ?? null),
+					'photo' => AttendanceScanService::staffUploadedPhotoUrl($r['photo'] ?? null)
+						?: profile_photo_url($r['photo'] ?? null),
 				];
 			}
 		}
