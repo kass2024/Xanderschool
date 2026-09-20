@@ -1275,7 +1275,7 @@ if (!function_exists('profile_photo_card_cover_src')) {
 		if (!is_dir($cacheDir)) {
 			@mkdir($cacheDir, 0775, true);
 		}
-		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v3") . '.jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v5circle") . '.jpg';
 		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
 		if (is_file($cached)) {
 			return '_card_img/' . $key;
@@ -1306,6 +1306,20 @@ if (!function_exists('profile_photo_card_cover_src')) {
 			}
 		}
 		if (!$src) {
+			return asset_card_img_src($relative, null, $outW, $outH);
+		}
+
+		if (abs($outW - $outH) <= 8) {
+			$side = max($outW, $outH);
+			$dst = (new \App\Libraries\ProfilePhotoNormalizer())->circlePortraitFromImage($src, $side);
+			imagedestroy($src);
+			if ($dst) {
+				@imagejpeg($dst, $cached, 90);
+				imagedestroy($dst);
+				if (is_file($cached)) {
+					return '_card_img/' . $key;
+				}
+			}
 			return asset_card_img_src($relative, null, $outW, $outH);
 		}
 

@@ -10,6 +10,8 @@ class ProfilePhotoNormalizer
 {
 	public const WIDTH = 900;
 	public const HEIGHT = 1200;
+	/** Square ID-card hole (webcam + Wisdom circle artwork). */
+	public const CIRCLE = 1000;
 
 	/** @var string */
 	private $lastError = '';
@@ -58,8 +60,14 @@ class ProfilePhotoNormalizer
 			return false;
 		}
 
-		$mode = strtolower($fit) === 'cover' ? 'cover' : 'contain';
-		$out = $this->cropOntoWhite($src, self::WIDTH, self::HEIGHT, $mode);
+		$this->whitenBackdropInPlace($src);
+		$mode = strtolower($fit);
+		if ($mode === 'circle') {
+			$out = $this->tightCoverOntoWhite($src, self::CIRCLE, self::CIRCLE);
+		} else {
+			$outFit = $mode === 'cover' ? 'cover' : 'contain';
+			$out = $this->cropOntoWhite($src, self::WIDTH, self::HEIGHT, $outFit);
+		}
 		imagedestroy($src);
 		if ($out === null) {
 			$this->lastError = 'Could not crop photo';
@@ -230,6 +238,228 @@ class ProfilePhotoNormalizer
 			throw new \RuntimeException('curl failed: ' . $err);
 		}
 		return ['code' => $code, 'body' => (string) $body];
+	}
+
+	/**
+	 * Build a square portrait that fills a circular card hole: white backdrop, person zoomed to fit.
+	 *
+	 * @param resource|\GdImage $src
+	 * @return resource|\GdImage|null
+	 */
+	public function circlePortraitFromImage($src, int $size)
+	{
+		if (!is_resource($src) && !is_object($src)) {
+			return null;
+		}
+		$size = max(32, $size);
+		$copy = imagecreatetruecolor(imagesx($src), imagesy($src));
+		if ($copy === false) {
+			return null;
+		}
+		imagecopy($copy, $src, 0, 0, 0, 0, imagesx($src), imagesy($src));
+		$this->whitenBackdropInPlace($copy);
+		$out = $this->tightCoverOntoWhite($copy, $size, $size);
+		imagedestroy($copy);
+		return $out;
+	}
+
+	/**
+	 * Replace a dark / studio backdrop (edge-connected) with pure white. Keeps skin and clothing.
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	public function whitenBackdropInPlace($im): void
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		if ($w < 4 || $h < 4) {
+			return;
+		}
+
+		$border = $this->sampleBorderRgb($im, $w, $h);
+		$borderLum = $this->luma($border[0], $border[1], $border[2]);
+		if ($borderLum > 205) {
+			return;
+		}
+
+		$seen = str_repeat("\0", $w * $h);
+		$queue = [];
+		$qi = 0;
+		$push = static function (int $x, int $y) use (&$queue, &$seen, $w, $h) {
+			if ($x < 0 || $y < 0 || $x >= $w || $y >= $h) {
+				return;
+			}
+			$i = $y * $w + $x;
+			if ($seen[$i] !== "\0") {
+				return;
+			}
+			$seen[$i] = "\1";
+			$queue[] = $i;
+		};
+		for ($x = 0; $x < $w; $x++) {
+			$push($x, 0);
+			$push($x, $h - 1);
+		}
+		for ($y = 0; $y < $h; $y++) {
+			$push(0, $y);
+			$push($w - 1, $y);
+		}
+
+		$white = imagecolorallocate($im, 255, 255, 255);
+		while ($qi < count($queue)) {
+			$i = $queue[$qi++];
+			$x = $i % $w;
+			$y = intdiv($i, $w);
+			$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+			$r = ($rgb >> 16) & 255;
+			$g = ($rgb >> 8) & 255;
+			$b = $rgb & 255;
+			if ($this->isSkinTone($r, $g, $b) || !$this->isBackdropPixel($r, $g, $b, $border)) {
+				continue;
+			}
+			imagesetpixel($im, $x, $y, $white);
+			$push($x + 1, $y);
+			$push($x - 1, $y);
+			$push($x, $y + 1);
+			$push($x, $y - 1);
+		}
+	}
+
+	/**
+	 * Crop the non-white subject so it fills the frame (ID circle), then place on white.
+	 *
+	 * @param resource|\GdImage $src
+	 * @return resource|\GdImage|null
+	 */
+	public function tightCoverOntoWhite($src, int $outW, int $outH)
+	{
+		$sw = imagesx($src);
+		$sh = imagesy($src);
+		if ($sw < 2 || $sh < 2) {
+			return null;
+		}
+		$bbox = $this->subjectBBox($src, $sw, $sh);
+		$pad = (int) max(4, round(max($bbox[2], $bbox[3]) * 0.06));
+		$sx = max(0, $bbox[0] - $pad);
+		$sy = max(0, $bbox[1] - $pad);
+		$bw = min($sw - $sx, $bbox[2] + $pad * 2);
+		$bh = min($sh - $sy, $bbox[3] + $pad * 2);
+		$side = max($bw, $bh);
+		if ($side < 8) {
+			return $this->cropOntoWhite($src, $outW, $outH, 'cover');
+		}
+		if ($bw < $side) {
+			$sx = max(0, min($sw - $side, $sx - intdiv($side - $bw, 2)));
+			$bw = min($side, $sw - $sx);
+		}
+		if ($bh < $side) {
+			$sy = max(0, min($sh - $side, $sy - (int) round(($side - $bh) * 0.18)));
+			$bh = min($side, $sh - $sy);
+		}
+		$crop = max(1, min($bw, $bh, $sw - $sx, $sh - $sy));
+
+		$dst = imagecreatetruecolor($outW, $outH);
+		$white = imagecolorallocate($dst, 255, 255, 255);
+		imagefill($dst, 0, 0, $white);
+		imagecopyresampled($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $crop, $crop);
+		return $dst;
+	}
+
+	/** @return array{0:int,1:int,2:int,3:int} x,y,w,h */
+	private function subjectBBox($im, int $w, int $h): array
+	{
+		$minX = $w;
+		$minY = $h;
+		$maxX = 0;
+		$maxY = 0;
+		$step = max(1, (int) floor(min($w, $h) / 220));
+		for ($y = 0; $y < $h; $y += $step) {
+			for ($x = 0; $x < $w; $x += $step) {
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($r > 246 && $g > 246 && $b > 246) {
+					continue;
+				}
+				if ($x < $minX) {
+					$minX = $x;
+				}
+				if ($y < $minY) {
+					$minY = $y;
+				}
+				if ($x > $maxX) {
+					$maxX = $x;
+				}
+				if ($y > $maxY) {
+					$maxY = $y;
+				}
+			}
+		}
+		if ($maxX < $minX) {
+			return [0, 0, $w, $h];
+		}
+		return [$minX, $minY, max(1, $maxX - $minX + 1), max(1, $maxY - $minY + 1)];
+	}
+
+	/** @return array{0:int,1:int,2:int} */
+	private function sampleBorderRgb($im, int $w, int $h): array
+	{
+		$rs = [];
+		$gs = [];
+		$bs = [];
+		$step = max(1, (int) floor($w / 60));
+		$take = static function ($im, int $x, int $y) use (&$rs, &$gs, &$bs) {
+			$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+			$rs[] = ($rgb >> 16) & 255;
+			$gs[] = ($rgb >> 8) & 255;
+			$bs[] = $rgb & 255;
+		};
+		for ($x = 0; $x < $w; $x += $step) {
+			$take($im, $x, 0);
+			$take($im, $x, $h - 1);
+		}
+		for ($y = 0; $y < $h; $y += $step) {
+			$take($im, 0, $y);
+			$take($im, $w - 1, $y);
+		}
+		sort($rs);
+		sort($gs);
+		sort($bs);
+		$mid = intdiv(count($rs), 2);
+		return [$rs[$mid] ?? 20, $gs[$mid] ?? 20, $bs[$mid] ?? 20];
+	}
+
+	private function isBackdropPixel(int $r, int $g, int $b, array $border): bool
+	{
+		$lum = $this->luma($r, $g, $b);
+		if ($lum > 168) {
+			return false;
+		}
+		$dist = abs($r - $border[0]) + abs($g - $border[1]) + abs($b - $border[2]);
+		if ($dist <= 92 && $lum < 155) {
+			return true;
+		}
+		$maxc = max($r, $g, $b);
+		$minc = min($r, $g, $b);
+		$sat = $maxc === 0 ? 0 : ($maxc - $minc) / $maxc;
+		return $lum < 48 && $sat < 0.28;
+	}
+
+	private function isSkinTone(int $r, int $g, int $b): bool
+	{
+		if ($r < 70 || $g < 25 || $b < 12) {
+			return false;
+		}
+		if ($r <= $g || $r <= $b) {
+			return false;
+		}
+		return ($r - $g) >= 8 && ($r - $b) >= 12;
+	}
+
+	private function luma(int $r, int $g, int $b): float
+	{
+		return 0.2126 * $r + 0.7152 * $g + 0.0722 * $b;
 	}
 
 	private function jpegForAi($src): ?string

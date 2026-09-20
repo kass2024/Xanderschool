@@ -255,7 +255,12 @@ class WisdomCardRenderer
 		if (!$src) {
 			return;
 		}
-		$square = $this->coverSquare($src, max(2, $d), 0.08);
+		$hole = max(2, $d);
+		$fill = (int) round($hole * 1.08);
+		$square = (new ProfilePhotoNormalizer())->circlePortraitFromImage($src, $fill);
+		if (!$square) {
+			$square = $this->coverSquare($src, $fill, 0.10);
+		}
 		imagedestroy($src);
 		if (!$square) {
 			return;
@@ -266,14 +271,20 @@ class WisdomCardRenderer
 		$r2 = $r * $r;
 		$x0 = $cx - (int) ($d / 2);
 		$y0 = $cy - (int) ($d / 2);
+		$sqW = imagesx($square);
+		$sqH = imagesy($square);
+		$offX = (int) max(0, round(($sqW - $d) / 2));
+		$offY = (int) max(0, round(($sqH - $d) / 2));
 		for ($yy = 0; $yy < $d; $yy++) {
 			$dy = $yy + 0.5 - $r;
+			$sy = min($sqH - 1, $yy + $offY);
 			for ($xx = 0; $xx < $d; $xx++) {
 				$dx = $xx + 0.5 - $r;
 				if (($dx * $dx + $dy * $dy) > $r2) {
 					continue;
 				}
-				imagesetpixel($im, $x0 + $xx, $y0 + $yy, imagecolorat($square, $xx, $yy) & 0xFFFFFF);
+				$sx = min($sqW - 1, $xx + $offX);
+				imagesetpixel($im, $x0 + $xx, $y0 + $yy, imagecolorat($square, $sx, $sy) & 0xFFFFFF);
 			}
 		}
 		imagedestroy($square);

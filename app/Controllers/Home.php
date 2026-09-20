@@ -1353,7 +1353,7 @@ public function testEmail()
 
 		$name = make_profile_photo_name('jpg');
 		$saved = function_exists('save_profile_photo_white_bg_from_string')
-			? save_profile_photo_white_bg_from_string($decoded, $profilePath . $name, false, 'contain')
+			? save_profile_photo_white_bg_from_string($decoded, $profilePath . $name, true, 'circle')
 			: false;
 		if (!$saved && file_put_contents($profilePath . $name, $decoded) === false) {
 			return $this->response->setJSON(['error' => lang('app.ImagenotSaved')]);

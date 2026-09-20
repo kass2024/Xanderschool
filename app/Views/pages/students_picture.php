@@ -351,7 +351,7 @@
 							<div class="sp-circle-guide" aria-hidden="true"></div>
 							<span class="sp-hd-badge">ID circle</span>
 						</div>
-						<div class="sp-live-hint">Fit the face inside the circle — same size as the student ID card</div>
+						<div class="sp-live-hint">Fill the circle with face and shoulders — dark background is removed automatically</div>
 					</div>
 					<div class="sp-edit-box">
 						<div class="sp-edit-frame" id="spFrame" title="Card photo circle preview">
@@ -364,11 +364,13 @@
 					<button type="button" class="sp-btn sp-btn-ghost" id="spRetake" disabled>Retake</button>
 					<button type="button" class="sp-btn sp-btn-ghost" id="spRotate" disabled>Rotate</button>
 					<button type="button" class="sp-btn sp-btn-primary" id="spSave" disabled><i class="fa fa-save"></i> Save photo</button>
+					<button type="button" class="sp-btn sp-btn-ghost" id="spWhiteBg" disabled>White background</button>
+					<button type="button" class="sp-btn sp-btn-ghost" id="spFitCircle" disabled>Fit to circle</button>
 					<button type="button" class="sp-btn sp-btn-ghost" id="spAuto">Auto enhance</button>
 					<button type="button" class="sp-btn sp-btn-ghost" id="spResetEdit">Reset edits</button>
 				</div>
 				<div class="sp-sliders">
-					<div><label>Zoom</label><input type="range" id="spZoom" min="100" max="180" value="100"></div>
+					<div><label>Zoom</label><input type="range" id="spZoom" min="100" max="200" value="108"></div>
 					<div><label>Exposure</label><input type="range" id="spExposure" min="-150" max="150" value="0"></div>
 					<div><label>Temperature</label><input type="range" id="spTemperature" min="-25" max="25" value="0"></div>
 					<div><label>Tint</label><input type="range" id="spTint" min="-15" max="15" value="0"></div>
@@ -420,10 +422,10 @@
 		var dragStart = { x: 0, y: 0 };
 		var STORAGE_KEY = 'xander_student_photo_camera';
 		var PHOTO_SIZE = 1600;
-		/** Inset of the ID-card circle inside the square stage (matches .sp-circle-guide inset 4%). */
-		var CIRCLE_INSET = 0.04;
+		/** Capture the full square; the ID card already clips it to a circle. */
+		var CIRCLE_INSET = 0.0;
 		/** Face bias inside the square (matches WisdomCardRenderer coverSquare bias). */
-		var FACE_BIAS_Y = 0.28;
+		var FACE_BIAS_Y = 0.18;
 		var video = document.getElementById('spVideo');
 		var canvas = document.getElementById('spEditCanvas');
 		var ctx = canvas.getContext('2d');
@@ -645,7 +647,7 @@
 			tmp.width = vw;
 			tmp.height = vh;
 			var tctx = tmp.getContext('2d');
-			tctx.fillStyle = '#111827';
+			tctx.fillStyle = '#ffffff';
 			tctx.fillRect(0, 0, vw, vh);
 			tctx.save();
 			tctx.translate(vw, 0);
@@ -686,7 +688,101 @@
 			o.imageSmoothingEnabled = true;
 			o.imageSmoothingQuality = 'high';
 			o.drawImage(srcCanvas, cropX, cropY, crop, crop, 0, 0, PHOTO_SIZE, PHOTO_SIZE);
+			whitenDarkBackground(out);
 			return out;
+		}
+
+		function lumaOf(r, g, b) {
+			return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+		}
+
+		function isSkinPx(r, g, b) {
+			return r > 70 && g > 25 && b > 12 && r > g && r > b && (r - g) >= 8 && (r - b) >= 12;
+		}
+
+		function whitenDarkBackground(cnv) {
+			var c = cnv.getContext('2d');
+			var w = cnv.width;
+			var h = cnv.height;
+			var img = c.getImageData(0, 0, w, h);
+			var data = img.data;
+			var rs = [];
+			var gs = [];
+			var bs = [];
+			var step = Math.max(1, Math.floor(w / 50));
+			function take(x, y) {
+				var i = (y * w + x) * 4;
+				rs.push(data[i]);
+				gs.push(data[i + 1]);
+				bs.push(data[i + 2]);
+			}
+			for (var x = 0; x < w; x += step) { take(x, 0); take(x, h - 1); }
+			for (var y = 0; y < h; y += step) { take(0, y); take(w - 1, y); }
+			rs.sort(function (a, b) { return a - b; });
+			gs.sort(function (a, b) { return a - b; });
+			bs.sort(function (a, b) { return a - b; });
+			var mid = Math.floor(rs.length / 2);
+			var br = rs[mid] || 20;
+			var bg = gs[mid] || 20;
+			var bb = bs[mid] || 20;
+			if (lumaOf(br, bg, bb) > 205) {
+				return;
+			}
+			for (var i = 0; i < data.length; i += 4) {
+				var r = data[i];
+				var g = data[i + 1];
+				var b = data[i + 2];
+				if (isSkinPx(r, g, b)) continue;
+				var lum = lumaOf(r, g, b);
+				if (lum > 168) continue;
+				var dist = Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb);
+				if (dist <= 96 && lum < 160) {
+					data[i] = 255;
+					data[i + 1] = 255;
+					data[i + 2] = 255;
+				} else if (lum < 42) {
+					data[i] = 255;
+					data[i + 1] = 255;
+					data[i + 2] = 255;
+				}
+			}
+			c.putImageData(img, 0, 0);
+		}
+
+		function autoFitToCircle() {
+			if (!captured) return;
+			var sample = document.createElement('canvas');
+			sample.width = 240;
+			sample.height = 240;
+			var sctx = sample.getContext('2d');
+			sctx.fillStyle = '#ffffff';
+			sctx.fillRect(0, 0, 240, 240);
+			sctx.drawImage(captured, 0, 0, 240, 240);
+			var data = sctx.getImageData(0, 0, 240, 240).data;
+			var minX = 240, minY = 240, maxX = 0, maxY = 0;
+			for (var y = 0; y < 240; y++) {
+				for (var x = 0; x < 240; x++) {
+					var i = (y * 240 + x) * 4;
+					if (data[i] > 246 && data[i + 1] > 246 && data[i + 2] > 246) continue;
+					if (x < minX) minX = x;
+					if (y < minY) minY = y;
+					if (x > maxX) maxX = x;
+					if (y > maxY) maxY = y;
+				}
+			}
+			if (maxX < minX) {
+				$('#spZoom').val(108);
+				return;
+			}
+			var bw = maxX - minX + 1;
+			var bh = maxY - minY + 1;
+			var needed = Math.max(240 / Math.max(8, bw), 240 / Math.max(8, bh)) * 0.94;
+			var zoomPct = Math.round(Math.min(200, Math.max(100, needed * 100)));
+			$('#spZoom').val(zoomPct);
+			var cx = (minX + maxX) / 2;
+			var cy = (minY + maxY) / 2;
+			pan.x = Math.round((120 - cx) * (PHOTO_SIZE / 240) * 0.35);
+			pan.y = Math.round((110 - cy) * (PHOTO_SIZE / 240) * 0.35);
 		}
 
 		function useCaptured(imgCanvas, onReady) {
@@ -694,9 +790,9 @@
 			captured.onload = function () {
 				rotation = 0;
 				pan = { x: 0, y: 0 };
-				$('#spZoom').val(100);
+				$('#spZoom').val(108);
 				drawEdit();
-				$('#spRetake, #spRotate, #spSave').prop('disabled', false);
+				$('#spRetake, #spRotate, #spSave, #spWhiteBg, #spFitCircle').prop('disabled', false);
 				$('#spCapture').prop('disabled', !stream);
 				if (typeof onReady === 'function') onReady();
 			};
@@ -722,8 +818,9 @@
 			$('#spCapture').prop('disabled', true);
 			try {
 				useCaptured(squareCrop(captureFullFrame()), function () {
+					autoFitToCircle();
 					applyAutoEnhance();
-					setStatus('Photo captured, saving…', 'ok');
+					setStatus('Photo captured — white background applied', 'ok');
 					savePhoto();
 				});
 			} catch (e) {
@@ -766,14 +863,13 @@
 			context.fillStyle = '#ffffff';
 			context.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
 			context.save();
-			context.beginPath();
-			context.arc(targetCanvas.width / 2, targetCanvas.height / 2, targetCanvas.width / 2, 0, Math.PI * 2);
-			context.clip();
 			context.translate(targetCanvas.width / 2 + pan.x, targetCanvas.height / 2 + pan.y);
 			context.rotate(rotation * Math.PI / 180);
 			var base = Math.max(targetCanvas.width / captured.width, targetCanvas.height / captured.height) * zoom;
 			var dw = captured.width * base;
 			var dh = captured.height * base;
+			context.imageSmoothingEnabled = true;
+			context.imageSmoothingQuality = 'high';
 			context.drawImage(captured, -dw / 2, -dh / 2, dw, dh);
 			context.restore();
 		}
@@ -956,7 +1052,7 @@
 					else { selected.has_photo = true; renderList(); }
 					captured = null;
 					drawEdit();
-					$('#spRetake, #spRotate, #spSave').prop('disabled', true);
+			$('#spRetake, #spRotate, #spSave, #spWhiteBg, #spFitCircle').prop('disabled', true);
 					$('#spCapture').prop('disabled', !stream);
 				} else {
 					toastErr('Could not save the photo.');
@@ -989,13 +1085,32 @@
 		$('#spRetake').on('click', function () {
 			captured = null;
 			drawEdit();
-			$('#spRetake, #spRotate, #spSave').prop('disabled', true);
+			$('#spRetake, #spRotate, #spSave, #spWhiteBg, #spFitCircle').prop('disabled', true);
 		});
 		$('#spRotate').on('click', function () { rotation = (rotation + 90) % 360; drawEdit(); });
 		$('#spSave').on('click', savePhoto);
+		$('#spWhiteBg').on('click', function () {
+			if (!captured) return;
+			var c = document.createElement('canvas');
+			c.width = captured.width;
+			c.height = captured.height;
+			var cx = c.getContext('2d');
+			cx.fillStyle = '#ffffff';
+			cx.fillRect(0, 0, c.width, c.height);
+			cx.drawImage(captured, 0, 0);
+			whitenDarkBackground(c);
+			useCaptured(c, function () {
+				autoFitToCircle();
+				drawEdit();
+			});
+		});
+		$('#spFitCircle').on('click', function () {
+			autoFitToCircle();
+			drawEdit();
+		});
 		$('#spAuto').on('click', applyAutoEnhance);
 		$('#spResetEdit').on('click', function () {
-			$('#spZoom').val(100);
+			$('#spZoom').val(108);
 			resetAdjustmentSliders();
 			pan = { x: 0, y: 0 };
 			rotation = 0;
@@ -1020,7 +1135,7 @@
 			if (!captured) return;
 			e.preventDefault();
 			var z = parseInt($('#spZoom').val(), 10) + (e.deltaY > 0 ? -8 : 8);
-			$('#spZoom').val(Math.max(100, Math.min(180, z)));
+			$('#spZoom').val(Math.max(100, Math.min(200, z)));
 			drawEdit();
 		}, { passive: false });
 		window.addEventListener('beforeunload', stopCamera);
