@@ -697,7 +697,39 @@
 		}
 
 		function isSkinPx(r, g, b) {
-			return r > 70 && g > 25 && b > 12 && r > g && r > b && (r - g) >= 8 && (r - b) >= 12;
+			var maxc = Math.max(r, g, b);
+			var minc = Math.min(r, g, b);
+			var sat = maxc === 0 ? 0 : (maxc - minc) / maxc;
+			if (sat < 0.16) return false;
+			var lum = lumaOf(r, g, b);
+			if (lum > 195 || lum < 22) return false;
+			if (r <= b || g < b - 12) return false;
+			return (r - b) >= 8 && r >= 32;
+		}
+
+		function satOf(r, g, b) {
+			var maxc = Math.max(r, g, b);
+			var minc = Math.min(r, g, b);
+			return maxc === 0 ? 0 : (maxc - minc) / maxc;
+		}
+
+		function isPersonPx(r, g, b, wr, wg, wb) {
+			if (isSkinPx(r, g, b)) return true;
+			var lum = lumaOf(r, g, b);
+			var wallLum = lumaOf(wr, wg, wb);
+			if (lum < wallLum - 30) return true;
+			if (satOf(r, g, b) > satOf(wr, wg, wb) + 0.14 && satOf(r, g, b) > 0.20) return true;
+			return false;
+		}
+
+		function isWallPx(r, g, b, wr, wg, wb) {
+			var dist = Math.abs(r - wr) + Math.abs(g - wg) + Math.abs(b - wb);
+			if (dist <= 130) return true;
+			var lum = lumaOf(r, g, b);
+			var wallLum = lumaOf(wr, wg, wb);
+			var sat = satOf(r, g, b);
+			if (sat < 0.24 && Math.abs(lum - wallLum) <= 55) return true;
+			return sat < 0.12 && lum >= 70 && lum <= 210;
 		}
 
 		function whitenDarkBackground(cnv) {
@@ -706,41 +738,32 @@
 			var h = cnv.height;
 			var img = c.getImageData(0, 0, w, h);
 			var data = img.data;
-			var rs = [];
-			var gs = [];
-			var bs = [];
-			var step = Math.max(1, Math.floor(w / 50));
+			var rs = [], gs = [], bs = [];
+			var box = Math.max(4, Math.floor(Math.min(w, h) * 0.08));
 			function take(x, y) {
 				var i = (y * w + x) * 4;
 				rs.push(data[i]);
 				gs.push(data[i + 1]);
 				bs.push(data[i + 2]);
 			}
-			for (var x = 0; x < w; x += step) { take(x, 0); take(x, h - 1); }
-			for (var y = 0; y < h; y += step) { take(0, y); take(w - 1, y); }
+			var regions = [[0, 0], [w - box, 0], [0, h - box], [w - box, h - box]];
+			var st = Math.max(1, Math.floor(box / 10));
+			for (var ri = 0; ri < regions.length; ri++) {
+				for (var y = regions[ri][1]; y < regions[ri][1] + box; y += st) {
+					for (var x = regions[ri][0]; x < regions[ri][0] + box; x += st) {
+						take(Math.min(w - 1, x), Math.min(h - 1, y));
+					}
+				}
+			}
 			rs.sort(function (a, b) { return a - b; });
 			gs.sort(function (a, b) { return a - b; });
 			bs.sort(function (a, b) { return a - b; });
 			var mid = Math.floor(rs.length / 2);
-			var br = rs[mid] || 20;
-			var bg = gs[mid] || 20;
-			var bb = bs[mid] || 20;
-			if (lumaOf(br, bg, bb) > 205) {
-				return;
-			}
+			var wr = rs[mid] || 160, wg = gs[mid] || 155, wb = bs[mid] || 145;
 			for (var i = 0; i < data.length; i += 4) {
-				var r = data[i];
-				var g = data[i + 1];
-				var b = data[i + 2];
-				if (isSkinPx(r, g, b)) continue;
-				var lum = lumaOf(r, g, b);
-				if (lum > 168) continue;
-				var dist = Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb);
-				if (dist <= 96 && lum < 160) {
-					data[i] = 255;
-					data[i + 1] = 255;
-					data[i + 2] = 255;
-				} else if (lum < 42) {
+				var r = data[i], g = data[i + 1], b = data[i + 2];
+				if (isPersonPx(r, g, b, wr, wg, wb)) continue;
+				if (isWallPx(r, g, b, wr, wg, wb) || (r >= 228 && g >= 228 && b >= 228)) {
 					data[i] = 255;
 					data[i + 1] = 255;
 					data[i + 2] = 255;

@@ -264,7 +264,8 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Replace a dark / studio backdrop (edge-connected) with pure white. Keeps skin and clothing.
+	 * Replace grey / beige / dark studio walls with smooth #FFFFFF.
+	 * Samples the four corners (wall, not the person) then flood-fills matching pixels.
 	 *
 	 * @param resource|\GdImage $im
 	 */
@@ -276,12 +277,13 @@ class ProfilePhotoNormalizer
 			return;
 		}
 
-		$border = $this->sampleBorderRgb($im, $w, $h);
-		$borderLum = $this->luma($border[0], $border[1], $border[2]);
-		if ($borderLum > 205) {
+		$wall = $this->sampleCornerRgb($im, $w, $h);
+		if ($wall[0] > 242 && $wall[1] > 242 && $wall[2] > 242) {
+			$this->forcePureWhite($im, $w, $h);
 			return;
 		}
 
+		$white = imagecolorallocate($im, 255, 255, 255);
 		$seen = str_repeat("\0", $w * $h);
 		$queue = [];
 		$qi = 0;
@@ -305,7 +307,6 @@ class ProfilePhotoNormalizer
 			$push($w - 1, $y);
 		}
 
-		$white = imagecolorallocate($im, 255, 255, 255);
 		while ($qi < count($queue)) {
 			$i = $queue[$qi++];
 			$x = $i % $w;
@@ -314,7 +315,7 @@ class ProfilePhotoNormalizer
 			$r = ($rgb >> 16) & 255;
 			$g = ($rgb >> 8) & 255;
 			$b = $rgb & 255;
-			if ($this->isSkinTone($r, $g, $b) || !$this->isBackdropPixel($r, $g, $b, $border)) {
+			if ($this->isPersonPixel($r, $g, $b, $wall) || !$this->isWallPixel($r, $g, $b, $wall)) {
 				continue;
 			}
 			imagesetpixel($im, $x, $y, $white);
@@ -323,6 +324,36 @@ class ProfilePhotoNormalizer
 			$push($x, $y + 1);
 			$push($x, $y - 1);
 		}
+
+		$step = 4;
+		for ($y = 0; $y < $h; $y += $step) {
+			for ($x = 0; $x < $w; $x += $step) {
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($this->isPersonPixel($r, $g, $b, $wall) || !$this->isWallPixel($r, $g, $b, $wall)) {
+					continue;
+				}
+				for ($yy = $y; $yy < min($h, $y + $step); $yy++) {
+					for ($xx = $x; $xx < min($w, $x + $step); $xx++) {
+						$p = imagecolorat($im, $xx, $yy) & 0xFFFFFF;
+						$pr = ($p >> 16) & 255;
+						$pg = ($p >> 8) & 255;
+						$pb = $p & 255;
+						if ($this->isPersonPixel($pr, $pg, $pb, $wall)) {
+							continue;
+						}
+						if ($this->isWallPixel($pr, $pg, $pb, $wall)) {
+							imagesetpixel($im, $xx, $yy, $white);
+						}
+					}
+				}
+			}
+		}
+
+		$this->smoothWhiteHalo($im, $w, $h, $white);
+		$this->forcePureWhite($im, $w, $h);
 	}
 
 	/**
@@ -403,58 +434,140 @@ class ProfilePhotoNormalizer
 	}
 
 	/** @return array{0:int,1:int,2:int} */
-	private function sampleBorderRgb($im, int $w, int $h): array
+	private function sampleCornerRgb($im, int $w, int $h): array
 	{
 		$rs = [];
 		$gs = [];
 		$bs = [];
-		$step = max(1, (int) floor($w / 60));
+		$box = max(4, (int) floor(min($w, $h) * 0.08));
 		$take = static function ($im, int $x, int $y) use (&$rs, &$gs, &$bs) {
 			$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
 			$rs[] = ($rgb >> 16) & 255;
 			$gs[] = ($rgb >> 8) & 255;
 			$bs[] = $rgb & 255;
 		};
-		for ($x = 0; $x < $w; $x += $step) {
-			$take($im, $x, 0);
-			$take($im, $x, $h - 1);
-		}
-		for ($y = 0; $y < $h; $y += $step) {
-			$take($im, 0, $y);
-			$take($im, $w - 1, $y);
+		$regions = [
+			[0, 0],
+			[$w - $box, 0],
+			[0, $h - $box],
+			[$w - $box, $h - $box],
+		];
+		$step = max(1, (int) floor($box / 10));
+		foreach ($regions as $rg) {
+			for ($y = $rg[1]; $y < $rg[1] + $box; $y += $step) {
+				for ($x = $rg[0]; $x < $rg[0] + $box; $x += $step) {
+					$take($im, min($w - 1, $x), min($h - 1, $y));
+				}
+			}
 		}
 		sort($rs);
 		sort($gs);
 		sort($bs);
 		$mid = intdiv(count($rs), 2);
-		return [$rs[$mid] ?? 20, $gs[$mid] ?? 20, $bs[$mid] ?? 20];
+		return [$rs[$mid] ?? 160, $gs[$mid] ?? 155, $bs[$mid] ?? 145];
 	}
 
-	private function isBackdropPixel(int $r, int $g, int $b, array $border): bool
+	private function isWallPixel(int $r, int $g, int $b, array $wall): bool
 	{
+		$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
 		$lum = $this->luma($r, $g, $b);
-		if ($lum > 168) {
-			return false;
-		}
-		$dist = abs($r - $border[0]) + abs($g - $border[1]) + abs($b - $border[2]);
-		if ($dist <= 92 && $lum < 155) {
-			return true;
-		}
+		$wallLum = $this->luma($wall[0], $wall[1], $wall[2]);
 		$maxc = max($r, $g, $b);
 		$minc = min($r, $g, $b);
-		$sat = $maxc === 0 ? 0 : ($maxc - $minc) / $maxc;
-		return $lum < 48 && $sat < 0.28;
+		$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+		if ($dist <= 130) {
+			return true;
+		}
+		if ($sat < 0.24 && abs($lum - $wallLum) <= 55) {
+			return true;
+		}
+		return $sat < 0.12 && $lum >= 70 && $lum <= 210;
+	}
+
+	private function isPersonPixel(int $r, int $g, int $b, array $wall): bool
+	{
+		if ($this->isSkinTone($r, $g, $b)) {
+			return true;
+		}
+		$lum = $this->luma($r, $g, $b);
+		$wallLum = $this->luma($wall[0], $wall[1], $wall[2]);
+		$maxc = max($r, $g, $b);
+		$minc = min($r, $g, $b);
+		$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+		$wallSat = (max($wall) - min($wall)) / max(1, max($wall));
+		if ($lum < $wallLum - 30) {
+			return true;
+		}
+		if ($sat > $wallSat + 0.14 && $sat > 0.20) {
+			return true;
+		}
+		return false;
 	}
 
 	private function isSkinTone(int $r, int $g, int $b): bool
 	{
-		if ($r < 70 || $g < 25 || $b < 12) {
+		$maxc = max($r, $g, $b);
+		$minc = min($r, $g, $b);
+		$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+		if ($sat < 0.16) {
 			return false;
 		}
-		if ($r <= $g || $r <= $b) {
+		$lum = $this->luma($r, $g, $b);
+		if ($lum > 195 || $lum < 22) {
 			return false;
 		}
-		return ($r - $g) >= 8 && ($r - $b) >= 12;
+		if ($r <= $b || $g < $b - 12) {
+			return false;
+		}
+		return ($r - $b) >= 8 && $r >= 32;
+	}
+
+	/** @param resource|\GdImage $im */
+	private function smoothWhiteHalo($im, int $w, int $h, int $white): void
+	{
+		$mark = [];
+		for ($y = 1; $y < $h - 1; $y++) {
+			for ($x = 1; $x < $w - 1; $x++) {
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				if ($rgb === 0xFFFFFF) {
+					continue;
+				}
+				$n = 0;
+				for ($oy = -1; $oy <= 1; $oy++) {
+					for ($ox = -1; $ox <= 1; $ox++) {
+						if ($ox === 0 && $oy === 0) {
+							continue;
+						}
+						if ((imagecolorat($im, $x + $ox, $y + $oy) & 0xFFFFFF) === 0xFFFFFF) {
+							$n++;
+						}
+					}
+				}
+				if ($n >= 5) {
+					$mark[] = [$x, $y];
+				}
+			}
+		}
+		foreach ($mark as $p) {
+			imagesetpixel($im, $p[0], $p[1], $white);
+		}
+	}
+
+	/** @param resource|\GdImage $im */
+	private function forcePureWhite($im, int $w, int $h): void
+	{
+		$white = imagecolorallocate($im, 255, 255, 255);
+		for ($y = 0; $y < $h; $y++) {
+			for ($x = 0; $x < $w; $x++) {
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($r >= 228 && $g >= 228 && $b >= 228) {
+					imagesetpixel($im, $x, $y, $white);
+				}
+			}
+		}
 	}
 
 	private function luma(int $r, int $g, int $b): float
