@@ -6724,22 +6724,21 @@ public function attendanceCard()
 		$data['pdf'] = false;
 		if ($pdf == 'true') {
 			$data['pdf'] = true;
+			@ini_set('memory_limit', '512M');
+			@set_time_limit(180);
 			$html = view("pages/reports/staff_report_individual", $data);
 			try {
-				$mask = FCPATH . "assets/templates/*.html";
-				array_map('unlink', glob($mask));//clear previous cards
-				$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
-				$wkhtmltopdf->setTitle(lang("app.Staffattendancereport"));
-				$wkhtmltopdf->setHtml($html);
-				$wkhtmltopdf->setOrientation("portrait");
-				$wkhtmltopdf->setMargins(array("top" => 8, "left" => 8, "right" => 8, "bottom" => 8));
-				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "staff_report_individual" . time() . ".pdf");
-			} catch (\Exception $e) {
+				\App\Libraries\MpdfReport::stream(
+					$html,
+					'staff_clock_report_' . date('Ymd_His') . '.pdf',
+					['title' => lang("app.Staffattendancereport") ?: 'Staff clock-in / clock-out']
+				);
+			} catch (\Throwable $e) {
 				echo $e->getMessage();
 			}
-		} else {
-			echo view("pages/reports/staff_report_individual", $data);
+			return;
 		}
+		echo view("pages/reports/staff_report_individual", $data);
 
 	}
 

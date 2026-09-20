@@ -183,7 +183,7 @@ $summaries = [];
 foreach ($staffs as $staff) {
 	$clocks = $clocksByStaff[(int) $staff['id']] ?? [];
 	$sum = \App\Libraries\StaffAttendanceReport::summarize($staff, $date1, $date2, $clocks);
-	if ($reportType === 'individual') {
+	if ($reportType === 'individual' || $isPdf) {
 		$sum['days'] = \App\Libraries\StaffAttendanceReport::calendarDays($staff, $date1, $date2, $sum);
 	}
 	$summaries[] = $sum;
@@ -223,6 +223,32 @@ $contactBits = array_values(array_filter([
 ]));
 $logoName = trim((string) ($school_logo ?? ''));
 $logoUrl = $logoName !== '' ? base_url('assets/images/logo/' . $logoName) : '';
+$logoSrc = $logoUrl;
+$logoFile = $logoName !== '' ? FCPATH . 'assets/images/logo/' . $logoName : '';
+if ($logoFile !== '' && is_file($logoFile)) {
+	$ext = strtolower((string) pathinfo($logoFile, PATHINFO_EXTENSION));
+	$mime = 'image/png';
+	if ($ext === 'jpg' || $ext === 'jpeg') {
+		$mime = 'image/jpeg';
+	} elseif ($ext === 'gif') {
+		$mime = 'image/gif';
+	}
+	$logoSrc = 'data:' . $mime . ';base64,' . base64_encode((string) file_get_contents($logoFile));
+}
+if ($isPdf) {
+	echo view('pages/reports/staff_report_clock_pdf', [
+		'summaries' => $summaries,
+		'ayBounds' => $ayBounds,
+		'date1' => $date1,
+		'date2' => $date2,
+		'logoSrc' => $logoSrc,
+		'contactBits' => $contactBits,
+		'school_name' => $school_name ?? '',
+		'school_moto' => $school_moto ?? '',
+		'academic_year_title' => $academic_year_title ?? '',
+	]);
+	return;
+}
 $renderSummaryTable = static function (array $list, $rateClass) {
 	if (count($list) === 0) {
 		echo '<div class="io-empty">No staff in this group.</div>';
@@ -278,25 +304,8 @@ $kpis = [
 	['key' => 'nco', 'lbl' => 'No checkout', 'val' => (int) $org['nco'], 'icon' => 'fa-sign-out', 'tone' => 'warn', 'bar' => null],
 	['key' => 'hrs', 'lbl' => 'Hours worked', 'val' => (string) $org['hours'] . 'h', 'icon' => 'fa-briefcase', 'tone' => 'blue', 'bar' => null],
 ];
-if ($isPdf) : ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="UTF-8">
-	<title><?= esc($reportTitle); ?></title>
-	<link href="<?= \App\Libraries\SqliteCompat::fontAwesomeHref(); ?>" rel="stylesheet">
-	<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=7">
-	<style>
-		body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #0f172a; }
-		.io-acc { break-inside: avoid; page-break-inside: avoid; }
-		.io-acc-body, .io-acc.open .io-acc-body { display: block !important; }
-		.io-fold-bar, .io-acc-actions, .io-acc-chev, .io-filters, .io-tabs { display: none !important; }
-		.io-acc-toggle { cursor: default !important; }
-	</style>
-</head>
-<body>
-<?php endif; ?>
-<div id="printable" class="io-report<?= $isPdf ? ' is-pdf' : ''; ?>">
+?>
+<div id="printable" class="io-report">
 	<div class="io-letterhead">
 		<?php if ($logoUrl !== '') : ?>
 			<img class="io-lh-logo" src="<?= esc($logoUrl, 'attr'); ?>" alt="">
@@ -501,7 +510,3 @@ if ($isPdf) : ?>
 		<div><?= lang("app.generatedbySomanet"); ?></div>
 	</div>
 </div>
-<?php if ($isPdf) : ?>
-</body>
-</html>
-<?php endif; ?>

@@ -21,6 +21,7 @@ UPLOAD_DIRS=(
   "$APP_DIR/public/assets/documents"
   "$APP_DIR/public/assets/templates"
   "$APP_DIR/public/assets/reports"
+  "$APP_DIR/writable/mpdf"
 )
 
 for d in "${UPLOAD_DIRS[@]}"; do

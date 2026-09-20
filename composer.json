@@ -12,7 +12,8 @@
         "psr/log": "^1.1",
         "zendframework/zend-escaper": "^2.5",
         "phpoffice/phpspreadsheet": "^1.10",
-        "guzzlehttp/guzzle": "^7.4"
+        "guzzlehttp/guzzle": "^7.4",
+        "mpdf/mpdf": "^8.2.5"
     },
     "require-dev": {
         "codeigniter4/codeigniter4-standard": "^1.0",
