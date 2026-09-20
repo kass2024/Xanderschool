@@ -6732,7 +6732,7 @@ public function attendanceCard()
 				$wkhtmltopdf->setTitle(lang("app.Staffattendancereport"));
 				$wkhtmltopdf->setHtml($html);
 				$wkhtmltopdf->setOrientation("portrait");
-				$wkhtmltopdf->setMargins(array("top" => 0, "left" => 0, "right" => 0, "bottom" => 0));
+				$wkhtmltopdf->setMargins(array("top" => 8, "left" => 8, "right" => 8, "bottom" => 8));
 				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "staff_report_individual" . time() . ".pdf");
 			} catch (\Exception $e) {
 				echo $e->getMessage();
