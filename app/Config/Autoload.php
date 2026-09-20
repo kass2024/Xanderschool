@@ -49,10 +49,16 @@ class Autoload extends \CodeIgniter\Config\AutoloadConfig
 		 *       'CodeIgniter' => SYSPATH
 		 *   `];
 		 */
+		$vendor = rtrim(ROOTPATH, '/\\') . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR;
 		$psr4 = [
 			'Config'      => APPPATH . 'Config',
 			APP_NAMESPACE => APPPATH,                // For custom namespace
 			'App'         => APPPATH,                // To ensure filters, etc still found,
+			'Mpdf\PsrLogAwareTrait' => $vendor . 'mpdf/psr-log-aware-trait/src',
+			'Mpdf\PsrHttpMessageShim' => $vendor . 'mpdf/psr-http-message-shim/src',
+			'Mpdf' => $vendor . 'mpdf/mpdf/src',
+			'setasign\Fpdi' => $vendor . 'setasign/fpdi/src',
+			'DeepCopy' => $vendor . 'myclabs/deep-copy/src/DeepCopy',
 		];
 
 		/**

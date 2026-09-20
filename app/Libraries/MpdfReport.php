@@ -15,6 +15,7 @@ class MpdfReport
 	 */
 	public static function stream(string $html, string $filename, array $opts = []): void
 	{
+		self::ensureLoaded();
 		$tempDir = rtrim(WRITEPATH, '/\\') . DIRECTORY_SEPARATOR . 'mpdf';
 		if (!is_dir($tempDir)) {
 			@mkdir($tempDir, 0775, true);
@@ -53,5 +54,19 @@ class MpdfReport
 		);
 		$mpdf->WriteHTML($html);
 		$mpdf->Output($filename, Destination::INLINE);
+	}
+
+	private static function ensureLoaded(): void
+	{
+		if (class_exists(\Mpdf\Mpdf::class, false)) {
+			return;
+		}
+		$autoload = rtrim(ROOTPATH, '/\\') . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php';
+		if (is_file($autoload)) {
+			require_once $autoload;
+		}
+		if (! class_exists(\Mpdf\Mpdf::class, true)) {
+			throw new \RuntimeException('mPDF is not installed. Expected vendor/mpdf/mpdf.');
+		}
 	}
 }
