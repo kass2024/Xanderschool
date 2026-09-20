@@ -217,6 +217,11 @@ class SchoolHierarchyService
 		}
 
 		$db = \Config\Database::connect();
+		try {
+			(new \App\Models\PostsModel())->ensureLeadershipPosts();
+		} catch (\Throwable $e) {
+			// continue; Head Teacher post is also created by the child-school rename script
+		}
 		$hash = password_hash((string) $defaultPassword, PASSWORD_DEFAULT);
 		$now = date('Y-m-d H:i:s');
 		$created = [];
@@ -233,7 +238,11 @@ class SchoolHierarchyService
 
 			$staff = $db->table('staffs')
 				->where('school_id', $sid)
-				->where('post', 1)
+				->groupStart()
+					->where('post', \App\Models\PostsModel::HEAD_TEACHER_ID)
+					->orWhere('post', 1)
+				->groupEnd()
+				->orderBy('post', 'DESC')
 				->orderBy('id', 'ASC')
 				->get(1)->getRowArray();
 
@@ -241,6 +250,7 @@ class SchoolHierarchyService
 				$db->table('staffs')->where('id', (int) $staff['id'])->update([
 					'password' => $hash,
 					'status' => 1,
+					'post' => \App\Models\PostsModel::HEAD_TEACHER_ID,
 					'reset_exp' => 0,
 					'updated_at' => $now,
 				]);
@@ -281,7 +291,7 @@ class SchoolHierarchyService
 				'status' => 1,
 				'last_login' => 0,
 				'email' => $email,
-				'post' => 1,
+				'post' => \App\Models\PostsModel::HEAD_TEACHER_ID,
 				'shift_id' => 0,
 				'country' => (string) ($school['country'] ?? 'Rwanda'),
 				'city' => '',
@@ -345,7 +355,11 @@ class SchoolHierarchyService
 			$sid = (int) $school['id'];
 			$staff = $db->table('staffs')
 				->where('school_id', $sid)
-				->where('post', 1)
+				->groupStart()
+					->where('post', \App\Models\PostsModel::HEAD_TEACHER_ID)
+					->orWhere('post', 1)
+				->groupEnd()
+				->orderBy('post', 'DESC')
 				->orderBy('id', 'ASC')
 				->get()->getResultArray();
 
@@ -359,7 +373,7 @@ class SchoolHierarchyService
 			$lines[] = 'Phone: ' . ((string) ($head['phone'] ?? '') !== '' ? $head['phone'] : ($school['phone'] ?? ''));
 
 			if (!$staff) {
-				$lines[] = '  (no Head master account found)';
+				$lines[] = '  (no Head Teacher account found)';
 			}
 			foreach ($staff as $st) {
 				$post = $db->table('posts')->where('id', (int) ($st['post'] ?? 0))->get(1)->getRowArray();

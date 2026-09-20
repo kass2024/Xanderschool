@@ -88,7 +88,7 @@ class Api extends BaseController
 			header("location: " . base_url('logout'));
 			die();
 		}
-		if ($skl->active_term == 0 && $this->session->get('soma_post') != 1) {
+		if ($skl->active_term == 0 && !\Config\MenuClearance::isHeadMasterEquivalent((int) $this->session->get('soma_post'))) {
 			//no active term, disable other accounts except admin
 			$this->session->setFlashdata('error', lang("app.activeTermNotSet"));
 			header("location: " . base_url('login'));

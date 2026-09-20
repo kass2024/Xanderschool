@@ -11,12 +11,15 @@ class MenuClearance
 	/** Posts that always have full menu access (cannot be restricted). */
 	const FULL_ACCESS_POSTS = [1, 3, 18, 25, 26, 29, 30]; // Head master, DoS, Headmistress, Head Teacher, Deputy Head Teacher, Director, Deputy Director
 
+	/** Head master, Headmistress, and Head Teacher (same school-head rights). */
+	const HEAD_MASTER_EQUIVALENT_POSTS = [1, 18, 25];
+
 	/**
 	 * School Director / head posts allowed to delete students and toggle Active/Locked.
-	 * Head master / Headmistress are the school-head role at schools that do not use "Director".
-	 * Does not include Head Teacher, Deputy Head Teacher, Director of studies, or Director of Finance.
+	 * Head master / Headmistress / Head Teacher are the school-head role at schools that do not use "Director".
+	 * Does not include Deputy Head Teacher, Director of studies, or Director of Finance.
 	 */
-	const DIRECTOR_STUDENT_LIFECYCLE_POSTS = [1, 18, 29, 30];
+	const DIRECTOR_STUDENT_LIFECYCLE_POSTS = [1, 18, 25, 29, 30];
 
 	/**
 	 * @param int $postId
@@ -39,6 +42,8 @@ class MenuClearance
 			'head master',
 			'headmaster',
 			'headmistress',
+			'head teacher',
+			'headteacher',
 		];
 		return in_array($title, $allowed, true);
 	}
@@ -683,6 +688,19 @@ class MenuClearance
 	public static function isFullAccessPost($postId)
 	{
 		return in_array((int) $postId, self::FULL_ACCESS_POSTS, true);
+	}
+
+	/** Head master / Headmistress / Head Teacher. */
+	public static function isHeadMasterEquivalent($postId)
+	{
+		return in_array((int) $postId, self::HEAD_MASTER_EQUIVALENT_POSTS, true);
+	}
+
+	/** School head or Director of studies. */
+	public static function isHeadMasterOrDos($postId)
+	{
+		$postId = (int) $postId;
+		return $postId === 3 || self::isHeadMasterEquivalent($postId);
 	}
 
 	/**

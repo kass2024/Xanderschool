@@ -117,7 +117,7 @@
 			}
 			?>
 			<?php
-			if ($_SESSION["soma_post"]==1) {
+			if (is_head_master_equivalent()) {
 				?>
 				<a href="javascript:void(0);" class="btn-wide btn-shadow btn btn-dark"><?= lang("app.changePost");?></a>
 				<a href="javascript:void(0);" class="btn-wide btn-shadow btn btn-danger"><?= lang("app.del");?></a>

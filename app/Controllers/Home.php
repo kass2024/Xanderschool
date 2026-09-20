@@ -120,7 +120,7 @@ class Home extends BaseController
 				header("location: " . base_url('logout'));
 				die();
 			}
-			if ($skl->active_term == 0 && $this->session->get('soma_post') != 1) {
+			if ($skl->active_term == 0 && !MenuClearance::isHeadMasterEquivalent((int) $this->session->get('soma_post'))) {
 				//no active term, disable other accounts except admin
 				$this->session->setFlashdata('error', "Active term not set, contact school admin");
 				header("location: " . base_url('login'));
@@ -6824,8 +6824,8 @@ public function attendanceCard()
 				->where("r.year", $year)
 				->where("find_in_set({$term},r.term)>0")
 				->groupBy("courses.id");
-		if ($this->session->get("soma_post") != 1 && $this->session->get("soma_post") != 3) {
-			//filter courses if is not head master or dean of studies
+		if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post"))) {
+			//filter courses if is not head master / head teacher or dean of studies
 			$builder->where("s.id", $this->session->get("soma_id"));
 		}
 		$data['courses'] = $builder->get()->getResultArray();
@@ -6904,8 +6904,8 @@ public function attendanceCard()
 				->where("r.year", $year)
 				->where("find_in_set({$term},r.term)>0")
 				->groupBy("courses.id");
-		if ($this->session->get("soma_post") != 1 && $this->session->get("soma_post") != 3) {
-			//filter courses if is not head master or dean of studies
+		if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post"))) {
+			//filter courses if is not head master / head teacher or dean of studies
 			$builder->where("s.id", $this->session->get("soma_id"));
 		}
 		$data['courses'] = $builder->get()->getResultArray();
@@ -9812,8 +9812,8 @@ public function attendanceCard()
 					->orderBy("d.code")
 					->orderBy("l.title");
 
-			if ($this->session->get("soma_post") != 1 && $this->session->get("soma_post") != 3) {
-				//filter class by teacher if is not head master or dean of studies
+			if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post"))) {
+				//filter class by teacher if is not head master / head teacher or dean of studies
 				$builder->where("cr.lecturer", $this->session->get("soma_id"));
 			}
 			$classes = $builder->get()->getResultArray();
@@ -10014,8 +10014,8 @@ public function attendanceCard()
 
 	public function delete_marks()
 	{
-		if (!in_array($this->session->get("soma_post"), [1, 3])) {
-			return $this->response->setJSON(array("error" => "Oops, Only head master or dean of study can delete marks "));
+		if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post"))) {
+			return $this->response->setJSON(array("error" => "Oops, Only head master, head teacher or dean of study can delete marks "));
 		}
 		$this->_preset(1, 3);
 		$ids = '';
@@ -12630,10 +12630,10 @@ public function getApplicationDocs($id = null)
 		if ($isHolidayMarks && !is_wisdom_school($school_id)) {
 			$data['error'] = "Holiday coaching is only available for Wisdom schools";
 		}
-		if (!$isHolidayMarks && !in_array($this->session->get("soma_post"), [1, 3]) && $term != $sessionTerm) {
+		if (!$isHolidayMarks && !MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post")) && $term != $sessionTerm) {
 			$data['error'] = "you are not allowed to manage marks of selected term";
 		}
-		if (!in_array($this->session->get("soma_post"), [1, 3]) && $academic_year != $sessionYear) {
+		if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post")) && $academic_year != $sessionYear) {
 			$data['error'] = "you are not allowed to manage marks of selected academic year";
 		}
 		$atMdl = new ActiveTermModel();
@@ -12664,8 +12664,8 @@ public function getApplicationDocs($id = null)
 				$builder->where("find_in_set($term,r.term) !=0");
 				$builder->where("IFNULL(courses.program_type,'') <> 'holiday'");
 			}
-			if (!in_array($this->session->get("soma_post"), [1, 3])) {
-				//filter courses if is not head master or dean of studies
+			if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post"))) {
+				//filter courses if is not head master / head teacher or dean of studies
 				$builder->where("s.id", $this->session->get("soma_id"));
 			}
 			$data['courses'] = $builder->get()->getResultArray();
@@ -13715,7 +13715,7 @@ public function getApplicationDocs($id = null)
 		$active_term = $this->data['active_term'];
 		$year = $yearId ?? $this->data['academic_year'];
 		$isHolidayMarks = (int) $mt === holiday_coaching_mark_type() || is_holiday_term_choice($term);
-		if (in_array($this->session->get('soma_post'), [1, 3]) && $term != null && !$isHolidayMarks) {
+		if (MenuClearance::isHeadMasterOrDos((int) $this->session->get('soma_post')) && $term != null && !$isHolidayMarks) {
 			$atMdl = new ActiveTermModel();
 			$at_data = $atMdl->select('id')
 					->where('academic_year', $year)
@@ -13842,7 +13842,7 @@ public function getApplicationDocs($id = null)
 			$ownerFilter = '';
 			$termFilter = " AND m.term={$active_term}";
 			if ($mtInt === holiday_coaching_mark_type()) {
-				if (!in_array($this->session->get('soma_post'), [1, 3])) {
+				if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get('soma_post'))) {
 					$ownerId = (int) $this->session->get('soma_id');
 					$ownerFilter = " AND m.created_by={$ownerId}";
 				}

@@ -1124,7 +1124,7 @@
 						<div class="form-group">
 							<label><?= lang("app.year"); ?></label>
 							<?php
-							if (in_array($_SESSION['soma_post'], [1, 3])) {
+							if (is_head_master_or_dos()) {
 								?>
 								<select class="form-control select2" name="academic_year">
 									<?php
@@ -1165,7 +1165,7 @@
 						<div class="form-group" id="active_term">
 							<label><?= lang("app.activeTerm"); ?></label>
 							<?php
-							if (in_array($_SESSION['soma_post'], [1, 3])) {
+							if (is_head_master_or_dos()) {
 								?>
 								<select class="form-control select2" name="term" id="marks_term_select">
 									<option

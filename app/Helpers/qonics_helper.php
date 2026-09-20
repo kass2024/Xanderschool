@@ -215,12 +215,28 @@ if (!function_exists('_is_allowed')) {
 }
 
 if (!function_exists('can_manage_student_lock_delete')) {
-	/** Director / Deputy Director / Head master / Headmistress: delete student and Active/Locked. */
+	/** Director / Deputy Director / Head master / Headmistress / Head Teacher: delete student and Active/Locked. */
 	function can_manage_student_lock_delete()
 	{
 		$postId = (int) ($_SESSION['soma_post'] ?? 0);
 		$title = (string) ($_SESSION['soma_post_title'] ?? '');
 		return \Config\MenuClearance::canManageStudentLockDelete($postId, $title);
+	}
+}
+
+if (!function_exists('is_head_master_equivalent')) {
+	function is_head_master_equivalent($postId = null)
+	{
+		$postId = (int) ($postId ?? ($_SESSION['soma_post'] ?? 0));
+		return \Config\MenuClearance::isHeadMasterEquivalent($postId);
+	}
+}
+
+if (!function_exists('is_head_master_or_dos')) {
+	function is_head_master_or_dos($postId = null)
+	{
+		$postId = (int) ($postId ?? ($_SESSION['soma_post'] ?? 0));
+		return \Config\MenuClearance::isHeadMasterOrDos($postId);
 	}
 }
 
