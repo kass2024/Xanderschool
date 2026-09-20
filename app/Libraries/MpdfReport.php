@@ -13,7 +13,7 @@ class MpdfReport
 	/**
 	 * @param array{title?:string,orientation?:string,margin?:int} $opts
 	 */
-	public static function stream(string $html, string $filename, array $opts = []): void
+	public static function render(string $html, string $filename, array $opts = []): string
 	{
 		self::ensureLoaded();
 		$tempDir = rtrim(WRITEPATH, '/\\') . DIRECTORY_SEPARATOR . 'mpdf';
@@ -53,7 +53,34 @@ class MpdfReport
 			. '<td style="text-align:right;">Page {PAGENO} / {nbpg}</td></tr></table>'
 		);
 		$mpdf->WriteHTML($html);
-		$mpdf->Output($filename, Destination::INLINE);
+		$pdf = $mpdf->Output($filename, Destination::STRING_RETURN);
+		if (!is_string($pdf) || strncmp($pdf, '%PDF', 4) !== 0) {
+			throw new \RuntimeException('mPDF returned empty output.');
+		}
+
+		return $pdf;
+	}
+
+	/**
+	 * Send the PDF to the browser and stop (same as wkhtmltopdf MODE_EMBEDDED).
+	 * Must exit so CodeIgniter after-filters do not wrap it as HTML.
+	 *
+	 * @param array{title?:string,orientation?:string,margin?:int} $opts
+	 */
+	public static function stream(string $html, string $filename, array $opts = []): void
+	{
+		$pdf = self::render($html, $filename, $opts);
+		$safe = preg_replace('/[^A-Za-z0-9_\-.]+/', '_', $filename) ?: 'staff_clock_report.pdf';
+		while (ob_get_level() > 0) {
+			ob_end_clean();
+		}
+		header('Content-Type: application/pdf');
+		header('Content-Disposition: inline; filename="' . $safe . '"');
+		header('Content-Length: ' . strlen($pdf));
+		header('Cache-Control: private, max-age=0, must-revalidate');
+		header('Pragma: public');
+		echo $pdf;
+		exit;
 	}
 
 	private static function ensureLoaded(): void
