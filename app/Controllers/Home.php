@@ -898,6 +898,19 @@ public function testEmail()
 			}
 		}
 
+		$keep = $db->query(
+			'SELECT id FROM class_records WHERE student = ? AND year = ? AND class = ? ORDER BY id DESC LIMIT 1',
+			[$studentId, $yearKey, $toClassId]
+		)->getRowArray();
+		if ($keep) {
+			(new ClassRecordModel())->dropOtherClassesForStudentYear(
+				$studentId,
+				$yearKey,
+				(int) $keep['id'],
+				$toClassId
+			);
+		}
+
 		$this->remapStudentRecordsOnClassMove(
 			$db,
 			$schoolId,
@@ -20536,9 +20549,15 @@ public function assign_card()
 		$student = new StudentModel();
 		$std = $student->select("students.studying_mode,cr.id,cr.class AS classe")
 				->join("class_records cr", "cr.student=students.id", "LEFT")
+				->join("classes c", "c.id=cr.class", "LEFT")
+				->join("levels l", "l.id=c.level", "LEFT")
+				->join("departments d", "d.id=c.department", "LEFT")
 				->where("cr.year", $this->data['academic_year'])
 				->where("students.id", $id)
 				->where("students.school_id", $this->session->get("soma_school_id"))
+				->orderBy("(LOWER(CONCAT(IFNULL(c.title,''),' ',IFNULL(l.title,''),' ',IFNULL(d.title,''),' ',IFNULL(d.code,''))) LIKE '%holiday%')", "ASC", false)
+				->orderBy("cr.status", "DESC")
+				->orderBy("cr.id", "DESC")
 				->get()->getRowArray();
 		echo json_encode($std);
 	}
