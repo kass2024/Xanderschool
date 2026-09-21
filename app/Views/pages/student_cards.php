@@ -222,7 +222,8 @@
 			</div>
 		</div>
 		<div style="margin-top: 15px;width: 100%;float:left;">
-			<form action="<?= base_url('generate_cards'); ?>" class="validate" target="_blank" method="POST">
+			<form action="<?= base_url('generate_cards'); ?>" id="generateCardsForm" class="validate" target="_blank" method="POST">
+				<input type="hidden" name="class_id" id="card_class_id" value="0">
 
 				<div class="col-md-6 col-sm-12 pull-left" style="margin-bottom: 15px">
 					<div style="background:white;padding: 10px;max-height: 500px;overflow: auto;">
@@ -336,6 +337,7 @@
 		});
 		$("#search_class").on('select2:select', function (selection) {
 			formatRepoSelection(selection.params.data, true);
+			syncCardClassId();
 		});
 		$("#filter_studying_mode, #filter_card_uid, #filter_has_photo").on("change", function () {
 			highlightCardKpis();
@@ -349,6 +351,7 @@
 		});
 		$("#search_class").on("change", function () {
 			syncExportLink();
+			syncCardClassId();
 		});
 		$(document).on("click", ".card-kpi-tile", function () {
 			var $tile = $(this);
@@ -370,6 +373,18 @@
 		});
 		syncExportLink();
 		highlightCardKpis();
+		syncCardClassId();
+		$("#generateCardsForm").on("submit", function () {
+			syncCardClassId();
+			var cid = currentCardClassId();
+			if (cid !== "0") {
+				$("#studentsTable tbody tr.disc_row").each(function () {
+					if (String($(this).attr("data-class-id") || "") !== cid) {
+						$(this).find("input[name='stId[]']").prop("disabled", true);
+					}
+				});
+			}
+		});
 
 	});
 
@@ -421,6 +436,21 @@
 		}
 		syncExportLink();
 		formatRepoSelection({id: "0", text: "All"}, true);
+	}
+
+	function currentCardClassId() {
+		if (!$("#search_type").is(":checked")) {
+			return "0";
+		}
+		var v = $("#search_class").val();
+		if (v === null || v === undefined || v === "") {
+			return "0";
+		}
+		return String(v);
+	}
+
+	function syncCardClassId() {
+		$("#card_class_id").val(currentCardClassId());
 	}
 
 	function cardListQueryParams(includeCardUid) {

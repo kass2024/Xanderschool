@@ -1425,7 +1425,6 @@ public function testEmail()
 			return redirect()->to("student-cards");
 		}
 
-		$stMdl = new StudentModel();
 		$sklMdl = new SchoolModel();
 		$this->ensureStaffCardSchema();
 		$schoolId = (int) $this->session->get("soma_school_id");
@@ -1469,9 +1468,8 @@ public function testEmail()
 		$data['head_master'] = $skData->head_master ?? '';
 		$data['card_template'] = $cardTemplate;
 
-		$ids = implode(",", $safeIds);
-		$students = $stMdl->get_student_simple2("students.id in (" . $ids . ")", 0, false, 0, 0);
-		$printable = $this->studentCardsWithoutHoliday((array) $students, $useWisdomPass);
+		$classId = (int) ($this->request->getPost('class_id') ?: $this->request->getGet('class_id') ?: 0);
+		$printable = $this->studentCardsForPrint($safeIds, $classId, $useWisdomPass);
 		if (count($printable) === 0) {
 			return redirect()->to("student-cards");
 		}
@@ -1569,13 +1567,54 @@ public function testEmail()
 	}
 
 	/**
+	 * Load printable card rows for the given students, locked to one class.
+	 * Extra class_records (P1 A leftovers, P3, holiday) are never mixed in.
+	 *
+	 * @param list<int> $studentIds
+	 * @return list<array<string,mixed>>
+	 */
+	private function studentCardsForPrint(array $studentIds, int $classId, bool $requirePhoto): array
+	{
+		$studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds))));
+		if ($studentIds === []) {
+			return [];
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$year = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
+		$stMdl = new StudentModel();
+		$builder = $stMdl->select('students.id,students.card,students.studying_mode,students.regno,students.status,
+			concat(students.fname," ",students.lname) as name,concat(l.title," ",d.code," ",c.title) as class,
+			c.title as title,d.title as dept_title,d.code as dept_code,l.title as level_title,
+			f.title as faculty_title,lf.title as level_faculty_title,students.photo,
+			c.id as class_id,cr.id as record_id')
+			->join('class_records cr', 'cr.student=students.id')
+			->join('classes c', 'c.id=cr.class')
+			->join('departments d', 'd.id=c.department')
+			->join('levels l', 'l.id=c.level')
+			->join('faculty f', 'f.id=d.faculty_id', 'left')
+			->join('faculty lf', 'lf.id=l.faculty_id', 'left')
+			->where('students.school_id', $schoolId)
+			->where('students.status', '1')
+			->where('cr.status', '1')
+			->whereIn('students.id', $studentIds);
+		if ($year > 0) {
+			$builder->where('cr.year', $year);
+		}
+		if ($classId > 0) {
+			$builder->where('c.id', $classId);
+		}
+		$rows = $builder->orderBy('cr.id', 'DESC')->get()->getResultArray();
+		return $this->studentCardsWithoutHoliday((array) $rows, $requirePhoto, $classId);
+	}
+
+	/**
 	 * Never print holiday-class cards. Keep one card per student on the
 	 * matching non-holiday class, using the same student photo.
 	 *
 	 * @param list<array<string,mixed>> $students
 	 * @return list<array<string,mixed>>
 	 */
-	private function studentCardsWithoutHoliday(array $students, bool $requirePhoto): array
+	private function studentCardsWithoutHoliday(array $students, bool $requirePhoto, int $classId = 0): array
 	{
 		$byId = [];
 		foreach ($students as $student) {
@@ -1583,13 +1622,23 @@ public function testEmail()
 				continue;
 			}
 			$sid = (int) ($student['id'] ?? 0);
+			$rowClass = (int) ($student['class_id'] ?? 0);
 			if ($sid < 1 || $this->classLooksLikeHoliday($student)) {
+				continue;
+			}
+			if ($classId > 0 && $rowClass !== $classId) {
 				continue;
 			}
 			if ($requirePhoto && !student_card_photo_is_printable($student['photo'] ?? '')) {
 				continue;
 			}
 			if (!isset($byId[$sid])) {
+				$byId[$sid] = $student;
+				continue;
+			}
+			$oldRid = (int) ($byId[$sid]['record_id'] ?? 0);
+			$newRid = (int) ($student['record_id'] ?? 0);
+			if ($newRid > $oldRid) {
 				$byId[$sid] = $student;
 			}
 		}
@@ -10630,6 +10679,12 @@ public function getApplicationDocs($id = null)
 				}
 			}
 			$students = array_values($unique);
+			if ($isClass === 1 && (int) $id > 0) {
+				$wantClass = (int) $id;
+				$students = array_values(array_filter($students, static function ($student) use ($wantClass) {
+					return (int) ($student['class_id'] ?? 0) === $wantClass;
+				}));
+			}
 		}
 		if (count($students) < 1) {
 			if ((int) $type === 10) {
@@ -10692,8 +10747,10 @@ public function getApplicationDocs($id = null)
 				} else {
 					$photoHtml = "<span style='display:inline-block;width:60px;height:60px;background:#f1f3f5;border-radius:4px;' title='No photo'></span>";
 				}
+				$rowClassId = (int) ($student['class_id'] ?? 0);
+				$printQs = 'student_id=' . $sid . ($rowClassId > 0 ? '&class_id=' . $rowClassId : '');
 				$printBtn = $hasPhoto
-					? "<a class='btn btn-sm btn-dark' href='" . esc(base_url('generate_cards') . '?student_id=' . $sid, 'attr') . "' target='_blank' rel='noopener'><i class='fa fa-print'></i> Print card</a>"
+					? "<a class='btn btn-sm btn-dark' href='" . esc(base_url('generate_cards') . '?' . $printQs, 'attr') . "' target='_blank' rel='noopener'><i class='fa fa-print'></i> Print card</a>"
 					: '<span class="text-muted small">No photo</span>';
 				$hasCard = trim((string) ($student['card'] ?? '')) !== '';
 				$cardBadge = $hasCard
@@ -10701,7 +10758,7 @@ public function getApplicationDocs($id = null)
 					: "<span class='badge badge-secondary'>No UID</span>";
 				$color = $hasPhoto ? '' : 'color:orangered';
 				$modeLabel = self::ModeToStr($student['studying_mode'] ?? 0);
-				echo "<tr class='disc_row' style='$color' id='" . esc($student['regno'] . $type, 'attr') . "' data-student-id='" . $sid . "' data-has-photo='" . ($hasPhoto ? '1' : '0') . "' data-has-card='" . ($hasCard ? '1' : '0') . "' data-mode='" . esc((string) ($student['studying_mode'] ?? '0'), 'attr') . "'>
+				echo "<tr class='disc_row' style='$color' id='" . esc($student['regno'] . $type, 'attr') . "' data-student-id='" . $sid . "' data-class-id='" . (int) ($student['class_id'] ?? 0) . "' data-has-photo='" . ($hasPhoto ? '1' : '0') . "' data-has-card='" . ($hasCard ? '1' : '0') . "' data-mode='" . esc((string) ($student['studying_mode'] ?? '0'), 'attr') . "'>
 				<td>" . esc($student['regno']) . "</td>
 				<td>" . esc($student['stdnames']) . " " . $cardBadge . "</td>
 				<td>" . esc($student['level_name'] . " " . $student['title'] . " " . $student['code']) . " </td>
