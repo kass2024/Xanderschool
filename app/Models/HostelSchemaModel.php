@@ -402,6 +402,36 @@ class HostelSchemaModel extends Model
 	}
 
 	/**
+	 * Current-year hostel name by student id.
+	 *
+	 * @return array<int, string>
+	 */
+	public function listStudentHostelNames(int $schoolId, int $yearId): array
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $yearId < 1) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		$rows = $db->table('hostel_allocations ha')
+			->select('ha.student_id, h.name AS hostel_name')
+			->join('hostels h', 'h.id = ha.hostel_id')
+			->where('ha.school_id', $schoolId)
+			->where('ha.academic_year', $yearId)
+			->where('h.active', 1)
+			->get()->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['student_id'] ?? 0);
+			$name = trim((string) ($row['hostel_name'] ?? ''));
+			if ($sid > 0 && $name !== '') {
+				$out[$sid] = $name;
+			}
+		}
+		return $out;
+	}
+
+	/**
 	 * @return array{ok:bool,error?:string,allocation_id?:int}
 	 */
 	public function allocateStudent(

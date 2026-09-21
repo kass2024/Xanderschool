@@ -7644,6 +7644,149 @@ public function attendanceCard()
 			->getResultArray();
 	}
 
+	/**
+	 * School settings: short Excel for hostel assignment.
+	 * One sheet per class and gender (P1 Girls, P1 Boys). Columns: Name, Class, Hostel dropdown.
+	 */
+	public function export_hostel_assignment_excel()
+	{
+		$this->_preset(1, 3);
+		@ini_set('memory_limit', '1024M');
+		@set_time_limit(600);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$yearId = (int) ($this->request->getGet('y') ?? 0);
+		if ($yearId < 1) {
+			$yearId = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
+		}
+		if ($yearId < 1) {
+			echo 'No academic year selected.';
+			return;
+		}
+
+		$hostelMdl = new \App\Models\HostelSchemaModel();
+		$hostelMdl->ensureSchema();
+		$hostels = $hostelMdl->listHostels($schoolId, true);
+		$assigned = $hostelMdl->listStudentHostelNames($schoolId, $yearId);
+
+		$hostelLists = [
+			'M_nursery' => [], 'M_primary' => [], 'M_high_school' => [], 'M_all' => [],
+			'F_nursery' => [], 'F_primary' => [], 'F_high_school' => [], 'F_all' => [],
+		];
+		foreach ($hostels as $hostel) {
+			$name = trim((string) ($hostel['name'] ?? ''));
+			if ($name === '') {
+				continue;
+			}
+			$gender = $hostelMdl->normalizeGender((string) ($hostel['gender'] ?? 'M'));
+			$group = $hostelMdl->normalizeLevelGroup((string) ($hostel['level_group'] ?? ''));
+			$hostelLists[$gender . '_all'][] = $name;
+			if ($group !== '') {
+				$hostelLists[$gender . '_' . $group][] = $name;
+			} else {
+				$hostelLists[$gender . '_nursery'][] = $name;
+				$hostelLists[$gender . '_primary'][] = $name;
+				$hostelLists[$gender . '_high_school'][] = $name;
+			}
+		}
+
+		$db = \Config\Database::connect();
+		$classRows = $db->table('classes c')
+			->select('c.id, c.title, d.title AS department_name, d.code AS dept_code, l.title AS level_name')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('c.school_id', $schoolId)
+			->orderBy('l.id', 'ASC')
+			->orderBy('d.title', 'ASC')
+			->orderBy('c.title', 'ASC')
+			->get()->getResultArray();
+
+		$sheets = [];
+		foreach ($classRows as $class) {
+			if ($this->classLooksLikeHoliday($class)) {
+				continue;
+			}
+			$classId = (int) ($class['id'] ?? 0);
+			if ($classId < 1) {
+				continue;
+			}
+			$classLabel = \App\Libraries\TimetableClassLabel::fromRow($class);
+			$levelGroup = $hostelMdl->resolveLevelGroupFromTitle((string) ($class['level_name'] ?? ''));
+			if ($levelGroup === '') {
+				$levelGroup = $hostelMdl->resolveLevelGroupFromTitle($classLabel);
+			}
+			if ($levelGroup === '') {
+				$levelGroup = 'high_school';
+			}
+
+			$students = $db->table('students s')
+				->select("s.id, s.fname, s.lname, s.sex, CONCAT(TRIM(s.fname), ' ', TRIM(s.lname)) AS name")
+				->join('class_records cr', 'cr.student = s.id')
+				->where('cr.class', $classId)
+				->where('cr.year', $yearId)
+				->where('cr.status', 1)
+				->where('s.school_id', $schoolId)
+				->whereIn('s.status', [1, '1'])
+				->orderBy('s.fname', 'ASC')
+				->orderBy('s.lname', 'ASC')
+				->get()->getResultArray();
+
+			$byGender = ['F' => [], 'M' => []];
+			$seen = [];
+			foreach ($students as $student) {
+				$sid = (int) ($student['id'] ?? 0);
+				if ($sid < 1 || isset($seen[$sid])) {
+					continue;
+				}
+				$seen[$sid] = true;
+				$sex = $hostelMdl->normalizeStudentSex($student['sex'] ?? '');
+				$bucket = $sex === 'F' ? 'F' : 'M';
+				$name = trim((string) ($student['name'] ?? ''));
+				if ($name === '') {
+					$name = trim((string) ($student['fname'] ?? '') . ' ' . (string) ($student['lname'] ?? ''));
+				}
+				$byGender[$bucket][] = [
+					'name' => $name !== '' ? $name : '—',
+					'class' => $classLabel,
+					'hostel' => $assigned[$sid] ?? '',
+				];
+			}
+
+			foreach (['F', 'M'] as $gender) {
+				if ($byGender[$gender] === []) {
+					continue;
+				}
+				$sheets[] = [
+					'class_label' => $classLabel,
+					'level_group' => $levelGroup,
+					'gender' => $gender,
+					'students' => $byGender[$gender],
+				];
+			}
+		}
+
+		$school = $this->schoolMetaForStaffExport();
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$yearRow = (new AcademicYearModel())->select('title')->where('id', $yearId)->where('school_id', $schoolId)->first();
+		if ($yearRow) {
+			$yearTitle = (string) ($yearRow['title'] ?? $yearTitle);
+		}
+
+		$spreadsheet = \App\Libraries\HostelAssignmentExcelExporter::build(
+			$school,
+			$sheets,
+			$hostelLists,
+			$yearTitle
+		);
+		$filename = \App\Libraries\HostelAssignmentExcelExporter::exportFilename($school['name'] ?? 'School', $yearTitle);
+		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
+
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
+		header('Cache-Control: max-age=0');
+		$writer->save('php://output');
+		exit;
+	}
+
 	public function export_student_emails()
 	{
 		$this->_preset(1, 3, 4, 5, 6);

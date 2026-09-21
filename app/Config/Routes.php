@@ -131,6 +131,7 @@ $routes->get('/export_staff_courses_pdf', 'Home::export_staff_courses_pdf');
 $routes->get('/export_class_list_excel', 'Home::export_class_list_excel');
 $routes->get('/export_class_list_pdf', 'Home::export_class_list_pdf');
 $routes->get('/export_smart_student_list', 'Home::export_smart_student_list');
+$routes->get('/export_hostel_assignment_excel', 'Home::export_hostel_assignment_excel');
 $routes->get('/export_student_emails', 'Home::export_student_emails');
 $routes->get('/system-report/fees/?(:any)', 'Home::feesReport/$1');
 $routes->add('/class-deliberation', 'Home::classDeliberation');

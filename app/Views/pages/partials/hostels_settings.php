@@ -5,7 +5,7 @@ $hostels = $hostels ?? [];
 $hostelSettings = $hostel_settings ?? ['separate_by_level' => false];
 $separateByLevel = !empty($hostelSettings['separate_by_level']);
 ?>
-<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=3">
+<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=4">
 
 <div class="hst-settings" id="hstSettings">
 	<p class="text-muted hst-intro">
@@ -29,9 +29,15 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 	</div>
 
 	<div class="hst-card">
-		<h6><i class="fa fa-bed"></i> Hostel catalog</h6>
+		<div class="hst-catalog-head">
+			<h6 class="mb-0"><i class="fa fa-bed"></i> Hostel catalog</h6>
+			<a href="<?= base_url('export_hostel_assignment_excel'); ?>" class="btn btn-success btn-sm" id="hstExportExcel">
+				<i class="fa fa-file-excel"></i> Export to Excel
+			</a>
+		</div>
 		<p class="text-muted small mb-3">
 			Create hostels by gender and level group, for example <strong>Primary Girls Hostel</strong> or <strong>High School Boys Hostel</strong>.
+			Export makes one sheet per class and gender (P1 Girls, P1 Boys) with student name, class, and a hostel dropdown.
 		</p>
 		<form id="hstAddForm" class="hst-add-form">
 			<div class="form-row align-items-end">

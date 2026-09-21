@@ -50,6 +50,15 @@
 
 .hst-add-form { margin-bottom: 14px; }
 
+.hst-catalog-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin-bottom: 12px;
+}
+
 .hst-gender-badge {
 	display: inline-flex;
 	align-items: center;
