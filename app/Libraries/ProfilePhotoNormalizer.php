@@ -256,12 +256,22 @@ class ProfilePhotoNormalizer
 		$size = max(32, $size);
 		$copy = imagecreatetruecolor(imagesx($src), imagesy($src));
 		if ($copy === false) {
-			return null;
+			return $this->cropOntoWhite($src, $size, $size, 'cover');
 		}
 		imagecopy($copy, $src, 0, 0, 0, 0, imagesx($src), imagesy($src));
 		$this->whitenBackdropInPlace($copy);
+		if ($this->looksBlank($copy)) {
+			imagedestroy($copy);
+			return $this->cropOntoWhite($src, $size, $size, 'cover');
+		}
 		$out = $this->tightCoverOntoWhite($copy, $size, $size);
 		imagedestroy($copy);
+		if ($out === null || $this->looksBlank($out)) {
+			if ($out) {
+				imagedestroy($out);
+			}
+			return $this->cropOntoWhite($src, $size, $size, 'cover');
+		}
 		return $out;
 	}
 
@@ -325,15 +335,21 @@ class ProfilePhotoNormalizer
 			$ny = ($y - $cy) / $ry;
 			$inCore = ($nx * $nx + $ny * $ny) < 1.0;
 			$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
-			if ($inCore && !$nearWhite && $dist > 42) {
+			if ($inCore) {
+				if ($nearWhite || $dist > 36) {
+					continue;
+				}
+			} elseif ($nearWhite) {
+				$push($x + 1, $y);
+				$push($x - 1, $y);
+				$push($x, $y + 1);
+				$push($x, $y - 1);
 				continue;
 			}
-			if (!$nearWhite && !$this->isWallPixel($r, $g, $b, $wall)) {
+			if (!$this->isWallPixel($r, $g, $b, $wall)) {
 				continue;
 			}
-			if (!$nearWhite) {
-				imagesetpixel($im, $x, $y, $white);
-			}
+			imagesetpixel($im, $x, $y, $white);
 			$push($x + 1, $y);
 			$push($x - 1, $y);
 			$push($x, $y + 1);
@@ -357,6 +373,9 @@ class ProfilePhotoNormalizer
 			return null;
 		}
 		$bbox = $this->subjectBBox($src, $sw, $sh);
+		if (($bbox[2] * $bbox[3]) < (int) ($sw * $sh * 0.12) || max($bbox[2], $bbox[3]) < (int) (min($sw, $sh) * 0.28)) {
+			return $this->cropOntoWhite($src, $outW, $outH, 'cover');
+		}
 		$pad = (int) max(2, round(max($bbox[2], $bbox[3]) * 0.03));
 		$sx = max(0, $bbox[0] - $pad);
 		$sy = max(0, $bbox[1] - $pad);
@@ -384,7 +403,40 @@ class ProfilePhotoNormalizer
 		return $dst;
 	}
 
-	/** @return array{0:int,1:int,2:int,3:int} x,y,w,h */
+	/**
+	 * True when the face area was wiped to white (photo would vanish on the card).
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	public function looksBlank($im): bool
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		if ($w < 4 || $h < 4) {
+			return true;
+		}
+		$hits = 0;
+		$seen = 0;
+		$x0 = (int) floor($w * 0.20);
+		$x1 = (int) ceil($w * 0.80);
+		$y0 = (int) floor($h * 0.16);
+		$y1 = (int) ceil($h * 0.84);
+		$step = max(1, (int) floor(min($w, $h) / 36));
+		for ($y = $y0; $y < $y1; $y += $step) {
+			for ($x = $x0; $x < $x1; $x += $step) {
+				$seen++;
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($r < 238 || $g < 238 || $b < 238) {
+					$hits++;
+				}
+			}
+		}
+		return $seen > 0 && ($hits / $seen) < 0.08;
+	}
+
 	private function subjectBBox($im, int $w, int $h): array
 	{
 		$minX = $w;

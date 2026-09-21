@@ -256,8 +256,12 @@ class WisdomCardRenderer
 			return;
 		}
 		$hole = max(2, $d);
-		$square = (new ProfilePhotoNormalizer())->circlePortraitFromImage($src, $hole);
-		if (!$square) {
+		$normalizer = new ProfilePhotoNormalizer();
+		$square = $normalizer->circlePortraitFromImage($src, $hole);
+		if (!$square || $normalizer->looksBlank($square)) {
+			if ($square) {
+				imagedestroy($square);
+			}
 			$square = $this->coverSquare($src, $hole, 0.10);
 		}
 		imagedestroy($src);
