@@ -251,7 +251,7 @@ class AttendanceScanService
 		$hasNfc = $db->fieldExists('card_nfc', 'students');
 		$nfcSelect = $hasNfc ? ', s.card_nfc' : '';
 		$rows = $db->table('students s')
-			->select('s.id, s.school_id, s.fname, s.lname, s.regno, s.card, s.photo' . $nfcSelect)
+			->select('s.id, s.school_id, s.fname, s.lname, s.regno, s.card, s.photo, s.studying_mode' . $nfcSelect)
 			->whereIn('s.school_id', $scopeSchoolIds)
 			->where('s.status', 1)
 			->orderBy('s.fname', 'ASC')
@@ -289,6 +289,7 @@ class AttendanceScanService
 				'card' => strtoupper(trim((string) ($r['card'] ?? ''))),
 				'card_nfc' => $hasNfc ? strtoupper(trim((string) ($r['card_nfc'] ?? ''))) : '',
 				'photo' => self::kioskPhotoUrl($r['photo'] ?? null),
+				'studying_mode' => (int) ($r['studying_mode'] ?? 1),
 			];
 		}
 		return $out;
@@ -313,7 +314,7 @@ class AttendanceScanService
 		$hasNfc = $db->fieldExists('card_nfc', 'students');
 		$nfcSelect = $hasNfc ? ', card_nfc' : '';
 		$studentRows = $db->table('students')
-			->select('id, fname, lname, regno, card' . $nfcSelect)
+			->select('id, fname, lname, regno, card, studying_mode' . $nfcSelect)
 			->whereIn('school_id', $scopeSchoolIds)
 			->where('status', 1)
 			->get()
@@ -326,6 +327,7 @@ class AttendanceScanService
 				'regno' => (string) ($r['regno'] ?? ''),
 				'card' => strtoupper(trim((string) ($r['card'] ?? ''))),
 				'card_nfc' => $hasNfc ? strtoupper(trim((string) ($r['card_nfc'] ?? ''))) : '',
+				'studying_mode' => (int) ($r['studying_mode'] ?? 1),
 			];
 		}
 
@@ -587,6 +589,16 @@ class AttendanceScanService
 			->getRow();
 		if ($class) {
 			$className = 'Level ' . $class->level . ' ' . $class->title;
+		}
+
+		if ((int) ($student->studying_mode ?? 1) === 0) {
+			return [
+				'success' => 0,
+				'kind' => 'student',
+				'denied' => 'boarding',
+				'message' => 'Boarding students cannot use this gate',
+				'person' => self::studentPayload($student, $className, ''),
+			];
 		}
 
 		$time = $eventTime > 1000000000 ? $eventTime : time();
@@ -1143,6 +1155,7 @@ class AttendanceScanService
 			'class' => $className,
 			'card' => strtoupper(trim((string) ($student->card ?? ''))),
 			'photo' => self::kioskPhotoUrl($student->photo ?? null),
+			'studying_mode' => (int) ($student->studying_mode ?? 1),
 			'records' => $records,
 		];
 	}
