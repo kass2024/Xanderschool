@@ -62,14 +62,27 @@ class ProfilePhotoNormalizer
 
 		$mode = strtolower($fit);
 		if ($mode === 'circle') {
-			$out = $this->cropOntoWhite($src, self::CIRCLE, self::CIRCLE, 'cover');
+			$out = $this->circlePortraitFromImage($src, self::CIRCLE);
+			if ($out === null) {
+				$out = $this->cropOntoWhite($src, self::CIRCLE, self::CIRCLE, 'cover');
+			}
 		} else {
 			$outFit = $mode === 'cover' ? 'cover' : 'contain';
 			$out = $this->cropOntoWhite($src, self::WIDTH, self::HEIGHT, $outFit);
 		}
 		imagedestroy($src);
-		if ($whiten && $out !== null) {
+		if ($whiten && $mode !== 'circle' && $out !== null) {
+			$backup = imagecreatetruecolor(imagesx($out), imagesy($out));
+			if ($backup !== false) {
+				imagecopy($backup, $out, 0, 0, 0, 0, imagesx($out), imagesy($out));
+			}
 			$this->whitenBackdropInPlace($out);
+			if ($this->looksBlank($out) && $backup) {
+				imagedestroy($out);
+				$out = $backup;
+			} elseif ($backup) {
+				imagedestroy($backup);
+			}
 		}
 		if ($out === null) {
 			$this->lastError = 'Could not crop photo';
@@ -254,23 +267,39 @@ class ProfilePhotoNormalizer
 			return null;
 		}
 		$size = max(32, $size);
+		$fallback = $this->cropOntoWhite($src, $size, $size, 'cover');
+
 		$copy = imagecreatetruecolor(imagesx($src), imagesy($src));
 		if ($copy === false) {
-			return $this->cropOntoWhite($src, $size, $size, 'cover');
+			return $fallback;
 		}
 		imagecopy($copy, $src, 0, 0, 0, 0, imagesx($src), imagesy($src));
 		$this->whitenBackdropInPlace($copy);
+		$work = $copy;
 		if ($this->looksBlank($copy)) {
 			imagedestroy($copy);
-			return $this->cropOntoWhite($src, $size, $size, 'cover');
+			$work = $src;
 		}
-		$out = $this->tightCoverOntoWhite($copy, $size, $size);
-		imagedestroy($copy);
+		$out = $this->tightCoverOntoWhite($work, $size, $size);
+		if ($out !== null && !$this->looksBlank($out)) {
+			$this->whitenHeadHaloInPlace($out);
+			$this->whitenRimInPlace($out);
+			if ($this->looksBlank($out)) {
+				imagedestroy($out);
+				$out = null;
+			}
+		}
+		if ($work !== $src) {
+			imagedestroy($work);
+		}
 		if ($out === null || $this->looksBlank($out)) {
 			if ($out) {
 				imagedestroy($out);
 			}
-			return $this->cropOntoWhite($src, $size, $size, 'cover');
+			return $fallback;
+		}
+		if ($fallback) {
+			imagedestroy($fallback);
 		}
 		return $out;
 	}
@@ -289,11 +318,17 @@ class ProfilePhotoNormalizer
 			return;
 		}
 
+		$cornerLum = $this->cornerMedianLuma($im, $w, $h);
+		if ($cornerLum < 88) {
+			$this->whitenDarkStudioInPlace($im, $w, $h);
+			return;
+		}
+
 		$wall = $this->sampleCornerRgb($im, $w, $h);
 		$cx = ($w - 1) * 0.5;
 		$cy = ($h - 1) * 0.42;
-		$rx = max(8.0, $w * 0.36);
-		$ry = max(8.0, $h * 0.40);
+		$rx = max(8.0, $w * 0.40);
+		$ry = max(8.0, $h * 0.44);
 
 		$white = imagecolorallocate($im, 255, 255, 255);
 		$seen = str_repeat("\0", $w * $h);
@@ -336,7 +371,7 @@ class ProfilePhotoNormalizer
 			$inCore = ($nx * $nx + $ny * $ny) < 1.0;
 			$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
 			if ($inCore) {
-				if ($nearWhite || $dist > 36) {
+				if ($nearWhite || $dist > 28) {
 					continue;
 				}
 			} elseif ($nearWhite) {
@@ -360,6 +395,109 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
+	 * Webcam studio is usually a dark wall. Replace only edge-connected dark pixels
+	 * outside the head/shoulders core so hair and uniforms stay intact.
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	private function whitenDarkStudioInPlace($im, int $w, int $h): void
+	{
+		$cx = ($w - 1) * 0.5;
+		$cy = ($h - 1) * 0.34;
+		$rx = max(8.0, $w * 0.26);
+		$ry = max(8.0, $h * 0.32);
+		$white = imagecolorallocate($im, 255, 255, 255);
+		$seen = str_repeat("\0", $w * $h);
+		$queue = [];
+		$qi = 0;
+		$push = static function (int $x, int $y) use (&$queue, &$seen, $w, $h) {
+			if ($x < 0 || $y < 0 || $x >= $w || $y >= $h) {
+				return;
+			}
+			$i = $y * $w + $x;
+			if ($seen[$i] !== "\0") {
+				return;
+			}
+			$seen[$i] = "\1";
+			$queue[] = $i;
+		};
+		for ($x = 0; $x < $w; $x++) {
+			$push($x, 0);
+			$push($x, $h - 1);
+		}
+		for ($y = 0; $y < $h; $y++) {
+			$push(0, $y);
+			$push($w - 1, $y);
+		}
+
+		while ($qi < count($queue)) {
+			$i = $queue[$qi++];
+			$x = $i % $w;
+			$y = intdiv($i, $w);
+			$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+			$r = ($rgb >> 16) & 255;
+			$g = ($rgb >> 8) & 255;
+			$b = $rgb & 255;
+			if ($this->isSkinTone($r, $g, $b)) {
+				continue;
+			}
+			$nx = ($x - $cx) / $rx;
+			$ny = ($y - $cy) / $ry;
+			if (($nx * $nx + $ny * $ny) < 1.0) {
+				continue;
+			}
+			$lum = $this->luma($r, $g, $b);
+			$maxc = max($r, $g, $b);
+			$minc = min($r, $g, $b);
+			$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+			$nearWhite = ($r >= 242 && $g >= 242 && $b >= 242);
+			$darkWall = $lum <= 85 && $sat < 0.35;
+			if ($lum <= 45) {
+				$darkWall = true;
+			}
+			$grayWall = $lum <= 175 && $sat < 0.12;
+			if (!$nearWhite && !$darkWall && !$grayWall) {
+				continue;
+			}
+			if (!$nearWhite) {
+				imagesetpixel($im, $x, $y, $white);
+			}
+			$push($x + 1, $y);
+			$push($x - 1, $y);
+			$push($x, $y + 1);
+			$push($x, $y - 1);
+		}
+	}
+
+	/** @param resource|\GdImage $im */
+	private function cornerMedianLuma($im, int $w, int $h): float
+	{
+		$box = max(4, (int) floor(min($w, $h) * 0.08));
+		$step = max(1, (int) floor($box / 6));
+		$vals = [];
+		$regions = [[0, 0], [$w - $box, 0], [0, $h - $box], [$w - $box, $h - $box]];
+		foreach ($regions as $rg) {
+			for ($y = $rg[1]; $y < $rg[1] + $box && $y < $h; $y += $step) {
+				for ($x = $rg[0]; $x < $rg[0] + $box && $x < $w; $x += $step) {
+					$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+					$r = ($rgb >> 16) & 255;
+					$g = ($rgb >> 8) & 255;
+					$b = $rgb & 255;
+					if ($this->isSkinTone($r, $g, $b)) {
+						continue;
+					}
+					$vals[] = $this->luma($r, $g, $b);
+				}
+			}
+		}
+		if (count($vals) < 4) {
+			return 160.0;
+		}
+		sort($vals);
+		return $vals[intdiv(count($vals), 2)];
+	}
+
+	/**
 	 * Crop the non-white subject so it fills the frame (ID circle), then place on white.
 	 *
 	 * @param resource|\GdImage $src
@@ -373,33 +511,38 @@ class ProfilePhotoNormalizer
 			return null;
 		}
 		$bbox = $this->subjectBBox($src, $sw, $sh);
-		if (($bbox[2] * $bbox[3]) < (int) ($sw * $sh * 0.12) || max($bbox[2], $bbox[3]) < (int) (min($sw, $sh) * 0.28)) {
+		$area = $bbox[2] * $bbox[3];
+		$frame = $sw * $sh;
+		$cornerLum = $this->cornerMedianLuma($src, $sw, $sh);
+		$alreadyFills = $area >= (int) ($frame * 0.55)
+			&& $bbox[2] >= (int) ($sw * 0.70)
+			&& $bbox[3] >= (int) ($sh * 0.62)
+			&& $cornerLum >= 88;
+		if ($alreadyFills) {
 			return $this->cropOntoWhite($src, $outW, $outH, 'cover');
 		}
-		$pad = (int) max(2, round(max($bbox[2], $bbox[3]) * 0.03));
-		$sx = max(0, $bbox[0] - $pad);
-		$sy = max(0, $bbox[1] - $pad);
-		$bw = min($sw - $sx, $bbox[2] + $pad * 2);
-		$bh = min($sh - $sy, $bbox[3] + $pad * 2);
-		$side = max($bw, $bh);
-		if ($side < 8) {
+		if ($area < (int) ($frame * 0.08) || max($bbox[2], $bbox[3]) < (int) (min($sw, $sh) * 0.22)) {
 			return $this->cropOntoWhite($src, $outW, $outH, 'cover');
 		}
-		if ($bw < $side) {
-			$sx = max(0, min($sw - $side, $sx - intdiv($side - $bw, 2)));
-			$bw = min($side, $sw - $sx);
+
+		$bw = $bbox[2];
+		$bh = $bbox[3];
+		$pad = (int) max(2, round($bw * 0.035));
+		// Fill the circle using shoulder width, keeping the top of the head.
+		$side = (int) round($bw + $pad * 2);
+		$minHeadShoulders = (int) round($bh * 0.60);
+		if ($side < $minHeadShoulders) {
+			$side = $minHeadShoulders;
 		}
-		if ($bh < $side) {
-			// Extra height goes below the subject so the head stays at the top of the circle.
-			$sy = max(0, min($sh - $side, $sy));
-			$bh = min($side, $sh - $sy);
-		}
-		$crop = max(1, min($bw, $bh, $sw - $sx, $sh - $sy));
+		$side = max(8, min($side, $sw, $sh));
+		$cx = $bbox[0] + intdiv($bw, 2);
+		$sx = (int) max(0, min($sw - $side, $cx - intdiv($side, 2)));
+		$sy = (int) max(0, min($sh - $side, $bbox[1] - $pad));
 
 		$dst = imagecreatetruecolor($outW, $outH);
 		$white = imagecolorallocate($dst, 255, 255, 255);
 		imagefill($dst, 0, 0, $white);
-		imagecopyresampled($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $crop, $crop);
+		$this->hiQualityResample($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $side, $side);
 		return $dst;
 	}
 
@@ -444,13 +587,17 @@ class ProfilePhotoNormalizer
 		$maxX = 0;
 		$maxY = 0;
 		$step = max(1, (int) floor(min($w, $h) / 220));
+		$darkStudio = $this->cornerMedianLuma($im, $w, $h) < 88;
 		for ($y = 0; $y < $h; $y += $step) {
 			for ($x = 0; $x < $w; $x += $step) {
 				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
 				$r = ($rgb >> 16) & 255;
 				$g = ($rgb >> 8) & 255;
 				$b = $rgb & 255;
-				if ($r > 246 && $g > 246 && $b > 246) {
+				if ($this->isBackdropPixel($r, $g, $b)) {
+					continue;
+				}
+				if ($darkStudio && $this->isDarkStudioPixel($r, $g, $b)) {
 					continue;
 				}
 				if ($x < $minX) {
@@ -470,7 +617,122 @@ class ProfilePhotoNormalizer
 		if ($maxX < $minX) {
 			return [0, 0, $w, $h];
 		}
-		return [$minX, $minY, max(1, $maxX - $minX + 1), max(1, $maxY - $minY + 1)];
+		$bw = max(1, $maxX - $minX + 1);
+		$bh = max(1, $maxY - $minY + 1);
+		if ($darkStudio) {
+			$hairPad = (int) round($bh * 0.18);
+			$minY = max(0, $minY - $hairPad);
+			$sidePad = (int) round($bw * 0.04);
+			$minX = max(0, $minX - $sidePad);
+			$maxX = min($w - 1, $maxX + $sidePad);
+			$bw = max(1, $maxX - $minX + 1);
+			$bh = max(1, $maxY - $minY + 1);
+		}
+		return [$minX, $minY, $bw, $bh];
+	}
+
+	private function isDarkStudioPixel(int $r, int $g, int $b): bool
+	{
+		if ($this->isSkinTone($r, $g, $b)) {
+			return false;
+		}
+		$lum = $this->luma($r, $g, $b);
+		$maxc = max($r, $g, $b);
+		$minc = min($r, $g, $b);
+		$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+		if ($lum <= 48) {
+			return true;
+		}
+		return $lum <= 88 && $sat < 0.35;
+	}
+
+	/**
+	 * After the person fills the square, clear leftover studio around the head
+	 * without touching dark uniforms at the shoulders.
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	private function whitenHeadHaloInPlace($im): void
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		if ($w < 8 || $h < 8) {
+			return;
+		}
+		$cx = ($w - 1) * 0.5;
+		$cy = ($h - 1) * 0.30;
+		$rx = max(8.0, $w * 0.24);
+		$ry = max(8.0, $h * 0.30);
+		$white = imagecolorallocate($im, 255, 255, 255);
+		$yMax = (int) floor($h * 0.50);
+		for ($y = 0; $y < $yMax; $y++) {
+			for ($x = 0; $x < $w; $x++) {
+				$nx = ($x - $cx) / $rx;
+				$ny = ($y - $cy) / $ry;
+				if (($nx * $nx + $ny * $ny) < 1.0) {
+					continue;
+				}
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($this->isSkinTone($r, $g, $b)) {
+					continue;
+				}
+				$lum = $this->luma($r, $g, $b);
+				$maxc = max($r, $g, $b);
+				$minc = min($r, $g, $b);
+				$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+				if ($sat > 0.22) {
+					continue;
+				}
+				if ($lum <= 95 || ($lum <= 180 && $sat < 0.12)) {
+					imagesetpixel($im, $x, $y, $white);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Clean leftover studio only in the corners / outer ring (the card clips to a circle).
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	private function whitenRimInPlace($im): void
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		if ($w < 8 || $h < 8) {
+			return;
+		}
+		$cx = ($w - 1) * 0.5;
+		$cy = ($h - 1) * 0.5;
+		$rad = min($w, $h) * 0.5;
+		$inner = $rad * 0.86;
+		$white = imagecolorallocate($im, 255, 255, 255);
+		for ($y = 0; $y < $h; $y++) {
+			for ($x = 0; $x < $w; $x++) {
+				$dx = $x - $cx;
+				$dy = $y - $cy;
+				if (($dx * $dx + $dy * $dy) < ($inner * $inner)) {
+					continue;
+				}
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($this->isSkinTone($r, $g, $b)) {
+					continue;
+				}
+				$lum = $this->luma($r, $g, $b);
+				$maxc = max($r, $g, $b);
+				$minc = min($r, $g, $b);
+				$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+				if (($lum <= 80 && $sat < 0.22) || ($lum >= 205 && $sat < 0.08) || ($lum <= 160 && $sat < 0.08)) {
+					imagesetpixel($im, $x, $y, $white);
+				}
+			}
+		}
 	}
 
 	/** @return array{0:int,1:int,2:int} */
@@ -519,10 +781,22 @@ class ProfilePhotoNormalizer
 		return [$rs[$mid], $gs[$mid], $bs[$mid]];
 	}
 
+	private function isBackdropPixel(int $r, int $g, int $b): bool
+	{
+		if ($r > 246 && $g > 246 && $b > 246) {
+			return true;
+		}
+		$lum = $this->luma($r, $g, $b);
+		$maxc = max($r, $g, $b);
+		$minc = min($r, $g, $b);
+		$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+		return $lum >= 205 && $sat < 0.08;
+	}
+
 	private function isWallPixel(int $r, int $g, int $b, array $wall): bool
 	{
 		$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
-		if ($dist <= 96) {
+		if ($dist <= 70) {
 			return true;
 		}
 		$lum = $this->luma($r, $g, $b);
@@ -530,7 +804,7 @@ class ProfilePhotoNormalizer
 		$maxc = max($r, $g, $b);
 		$minc = min($r, $g, $b);
 		$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
-		return $sat < 0.14 && $dist <= 130 && abs($lum - $wallLum) <= 24 && $lum >= 95;
+		return $sat < 0.14 && $dist <= 100 && abs($lum - $wallLum) <= 20 && $lum >= 110;
 	}
 
 	private function isProtectedPerson(int $r, int $g, int $b, array $wall): bool
@@ -636,12 +910,24 @@ class ProfilePhotoNormalizer
 		$dst = imagecreatetruecolor($dw, $dh);
 		$white = imagecolorallocate($dst, 255, 255, 255);
 		imagefill($dst, 0, 0, $white);
-		imagecopyresampled($dst, $src, 0, 0, 0, 0, $dw, $dh, $sw, $sh);
+		$this->hiQualityResample($dst, $src, 0, 0, 0, 0, $dw, $dh, $sw, $sh);
 		ob_start();
 		imagejpeg($dst, null, 88);
 		$out = ob_get_clean();
 		imagedestroy($dst);
 		return is_string($out) && strlen($out) > 32 ? $out : null;
+	}
+
+	/**
+	 * @param resource|\GdImage $dst
+	 * @param resource|\GdImage $src
+	 */
+	private function hiQualityResample($dst, $src, int $dx, int $dy, int $sx, int $sy, int $dw, int $dh, int $sw, int $sh): void
+	{
+		if (function_exists('imagesetinterpolation') && defined('IMG_BICUBIC')) {
+			@imagesetinterpolation($dst, IMG_BICUBIC);
+		}
+		imagecopyresampled($dst, $src, $dx, $dy, $sx, $sy, $dw, $dh, $sw, $sh);
 	}
 
 	private function cropOntoWhite($src, int $outW, int $outH, string $fit = 'cover')
@@ -662,7 +948,7 @@ class ProfilePhotoNormalizer
 			$nh = max(1, (int) round($sh * $scale));
 			$ox = (int) (($outW - $nw) / 2);
 			$oy = (int) (($outH - $nh) / 2);
-			imagecopyresampled($dst, $src, $ox, $oy, 0, 0, $nw, $nh, $sw, $sh);
+			$this->hiQualityResample($dst, $src, $ox, $oy, 0, 0, $nw, $nh, $sw, $sh);
 			return $dst;
 		}
 
@@ -678,11 +964,11 @@ class ProfilePhotoNormalizer
 			$cropH = (int) round($sw / $targetRatio);
 			$sx = 0;
 			// Keep the top of the head / cap; crop extra from the bottom.
-			$sy = (int) max(0, ($sh - $cropH) * 0.12);
+			$sy = (int) max(0, ($sh - $cropH) * 0.08);
 		}
 		$cropW = max(1, min($sw - $sx, $cropW));
 		$cropH = max(1, min($sh - $sy, $cropH));
-		imagecopyresampled($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $cropW, $cropH);
+		$this->hiQualityResample($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $cropW, $cropH);
 		return $dst;
 	}
 }

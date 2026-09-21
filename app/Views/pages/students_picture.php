@@ -226,7 +226,7 @@
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		object-position: center 28%;
+		object-position: center center;
 		display: block;
 		background: #000;
 	}
@@ -351,7 +351,7 @@
 							<div class="sp-circle-guide" aria-hidden="true"></div>
 							<span class="sp-hd-badge">ID circle</span>
 						</div>
-						<div class="sp-live-hint">Fill the circle with face and shoulders — dark background is removed automatically</div>
+						<div class="sp-live-hint">Fill the circle with face and shoulders — this is exactly the ID-card photo</div>
 					</div>
 					<div class="sp-edit-box">
 						<div class="sp-edit-frame" id="spFrame" title="Card photo circle preview">
@@ -370,7 +370,7 @@
 					<button type="button" class="sp-btn sp-btn-ghost" id="spResetEdit">Reset edits</button>
 				</div>
 				<div class="sp-sliders">
-					<div><label>Zoom</label><input type="range" id="spZoom" min="100" max="200" value="108"></div>
+					<div><label>Zoom</label><input type="range" id="spZoom" min="100" max="180" value="100"></div>
 					<div><label>Exposure</label><input type="range" id="spExposure" min="-150" max="150" value="0"></div>
 					<div><label>Temperature</label><input type="range" id="spTemperature" min="-25" max="25" value="0"></div>
 					<div><label>Tint</label><input type="range" id="spTint" min="-15" max="15" value="0"></div>
@@ -422,10 +422,9 @@
 		var dragStart = { x: 0, y: 0 };
 		var STORAGE_KEY = 'xander_student_photo_camera';
 		var PHOTO_SIZE = 1600;
-		/** Capture the full square; the ID card already clips it to a circle. */
-		var CIRCLE_INSET = 0.0;
-		/** Face bias inside the square (matches WisdomCardRenderer coverSquare bias). */
-		var FACE_BIAS_Y = 0.18;
+		/** Match .sp-circle-guide inset: 4% so capture == the ID-card circle. */
+		var CIRCLE_INSET = 0.04;
+		var FACE_BIAS_Y = 0;
 		var video = document.getElementById('spVideo');
 		var canvas = document.getElementById('spEditCanvas');
 		var ctx = canvas.getContext('2d');
@@ -660,9 +659,8 @@
 		}
 
 		/**
-		 * Crop the same square that fills the on-screen ID circle guide.
-		 * Stage is 1:1 with object-fit:cover → center square of the frame,
-		 * then inset to the circle ring and bias slightly toward the face.
+		 * Crop the square that the on-screen ID circle covers (object-fit:cover
+		 * into a 1:1 stage, then inset to the teal ring).
 		 */
 		function squareCrop(srcCanvas) {
 			var W = srcCanvas.width;
@@ -670,10 +668,8 @@
 			var side = Math.min(W, H);
 			var baseX = (W - side) / 2;
 			var baseY = (H - side) / 2;
-			// Match CSS circle inset so capture == what is inside the guide.
 			var insetPx = side * CIRCLE_INSET;
 			var crop = Math.max(2, side - insetPx * 2);
-			// Slight upward bias so head/shoulders fill the card circle.
 			var cropX = baseX + (side - crop) / 2;
 			var cropY = baseY + (side - crop) * FACE_BIAS_Y;
 			cropX = Math.max(0, Math.min(cropX, W - crop));
@@ -723,11 +719,17 @@
 
 		function isWallPx(r, g, b, wr, wg, wb) {
 			var dist = Math.abs(r - wr) + Math.abs(g - wg) + Math.abs(b - wb);
-			if (dist <= 155) return true;
+			if (dist <= 72) return true;
 			var lum = lumaOf(r, g, b);
 			var wallLum = lumaOf(wr, wg, wb);
 			var sat = satOf(r, g, b);
-			return sat < 0.16 && Math.abs(lum - wallLum) <= 38 && lum >= 80 && lum <= wallLum + 26;
+			return sat < 0.14 && Math.abs(lum - wallLum) <= 24 && lum >= 90 && lum <= wallLum + 20;
+		}
+
+		function inPersonCore(x, y, w, h) {
+			var nx = (x - (w - 1) * 0.5) / Math.max(8, w * 0.28);
+			var ny = (y - (h - 1) * 0.36) / Math.max(8, h * 0.34);
+			return (nx * nx + ny * ny) < 1;
 		}
 
 		function whitenDarkBackground(cnv) {
@@ -739,6 +741,7 @@
 			var box = Math.max(4, Math.floor(Math.min(w, h) * 0.07));
 			var st = Math.max(1, Math.floor(box / 8));
 			var regions = [[0, 0], [w - box, 0], [0, h - box], [w - box, h - box]];
+			var lumVals = [];
 			var medians = [];
 			for (var ri = 0; ri < regions.length; ri++) {
 				var rs = [], gs = [], bs = [];
@@ -746,7 +749,8 @@
 					for (var x = regions[ri][0]; x < regions[ri][0] + box; x += st) {
 						var i = (Math.min(h - 1, y) * w + Math.min(w - 1, x)) * 4;
 						var r = data[i], g = data[i + 1], b = data[i + 2];
-						if (isSkinPx(r, g, b) || lumaOf(r, g, b) < 40) continue;
+						if (isSkinPx(r, g, b)) continue;
+						lumVals.push(lumaOf(r, g, b));
 						rs.push(r); gs.push(g); bs.push(b);
 					}
 				}
@@ -757,13 +761,16 @@
 				var mid = Math.floor(rs.length / 2);
 				medians.push([rs[mid], gs[mid], bs[mid]]);
 			}
+			lumVals.sort(function (a, b) { return a - b; });
+			var cornerLum = lumVals.length ? lumVals[Math.floor(lumVals.length / 2)] : 160;
 			medians.sort(function (a, b) { return lumaOf(b[0], b[1], b[2]) - lumaOf(a[0], a[1], a[2]); });
 			var wr = (medians[0] && medians[0][0]) || 168;
 			var wg = (medians[0] && medians[0][1]) || 162;
 			var wb = (medians[0] && medians[0][2]) || 154;
-			if (wr > 246 && wg > 246 && wb > 246) {
+			if (wr > 246 && wg > 246 && wb > 246 && cornerLum > 220) {
 				return;
 			}
+			var darkStudio = cornerLum < 88;
 			var seen = new Uint8Array(w * h);
 			var queue = [];
 			function push(x, y) {
@@ -782,8 +789,21 @@
 				var py = (idx - px) / w;
 				var p = idx * 4;
 				var r = data[p], g = data[p + 1], b = data[p + 2];
-				if (isPersonPx(r, g, b, wr, wg, wb) || !isWallPx(r, g, b, wr, wg, wb)) continue;
-				data[p] = 255; data[p + 1] = 255; data[p + 2] = 255;
+				if (isSkinPx(r, g, b)) continue;
+				if (inPersonCore(px, py, w, h)) continue;
+				var lum = lumaOf(r, g, b);
+				var sat = satOf(r, g, b);
+				var nearWhite = r > 242 && g > 242 && b > 242;
+				var wall;
+				if (darkStudio) {
+					wall = nearWhite || (lum <= 80 && sat < 0.22) || (lum <= 170 && sat < 0.10);
+				} else {
+					wall = nearWhite || isWallPx(r, g, b, wr, wg, wb);
+				}
+				if (!wall) continue;
+				if (!nearWhite) {
+					data[p] = 255; data[p + 1] = 255; data[p + 2] = 255;
+				}
 				push(px + 1, py); push(px - 1, py); push(px, py + 1); push(px, py - 1);
 			}
 			c.putImageData(img, 0, 0);
@@ -811,18 +831,18 @@
 				}
 			}
 			if (maxX < minX) {
-				$('#spZoom').val(108);
+				$('#spZoom').val(100);
 				return;
 			}
 			var bw = maxX - minX + 1;
 			var bh = maxY - minY + 1;
-			var needed = Math.max(240 / Math.max(8, bw), 240 / Math.max(8, bh)) * 0.94;
-			var zoomPct = Math.round(Math.min(200, Math.max(100, needed * 100)));
+			var needed = Math.max(240 / Math.max(8, bw), 240 / Math.max(8, bh)) * 0.98;
+			var zoomPct = Math.round(Math.min(124, Math.max(100, needed * 100)));
 			$('#spZoom').val(zoomPct);
 			var cx = (minX + maxX) / 2;
 			var cy = (minY + maxY) / 2;
-			pan.x = Math.round((120 - cx) * (PHOTO_SIZE / 240) * 0.35);
-			pan.y = Math.round((110 - cy) * (PHOTO_SIZE / 240) * 0.35);
+			pan.x = Math.round((120 - cx) * (PHOTO_SIZE / 240) * 0.28);
+			pan.y = Math.round((108 - cy) * (PHOTO_SIZE / 240) * 0.28);
 		}
 
 		function useCaptured(imgCanvas, onReady) {
@@ -830,7 +850,7 @@
 			captured.onload = function () {
 				rotation = 0;
 				pan = { x: 0, y: 0 };
-				$('#spZoom').val(108);
+				$('#spZoom').val(100);
 				drawEdit();
 				$('#spRetake, #spRotate, #spSave, #spWhiteBg, #spFitCircle').prop('disabled', false);
 				$('#spCapture').prop('disabled', !stream);
@@ -857,7 +877,11 @@
 			if (!stream || !selected) return;
 			$('#spCapture').prop('disabled', true);
 			try {
-				useCaptured(squareCrop(captureFullFrame()), function () {
+				var sq = squareCrop(captureFullFrame());
+				whitenDarkBackground(sq);
+				useCaptured(sq, function () {
+					autoFitToCircle();
+					drawEdit();
 					setStatus('Photo captured', 'ok');
 					savePhoto();
 				});
@@ -1148,7 +1172,7 @@
 		});
 		$('#spAuto').on('click', applyAutoEnhance);
 		$('#spResetEdit').on('click', function () {
-			$('#spZoom').val(108);
+			$('#spZoom').val(100);
 			resetAdjustmentSliders();
 			pan = { x: 0, y: 0 };
 			rotation = 0;
@@ -1173,7 +1197,7 @@
 			if (!captured) return;
 			e.preventDefault();
 			var z = parseInt($('#spZoom').val(), 10) + (e.deltaY > 0 ? -8 : 8);
-			$('#spZoom').val(Math.max(100, Math.min(200, z)));
+			$('#spZoom').val(Math.max(100, Math.min(180, z)));
 			drawEdit();
 		}, { passive: false });
 		window.addEventListener('beforeunload', stopCamera);

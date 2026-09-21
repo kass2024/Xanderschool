@@ -213,7 +213,7 @@ class WisdomCardRenderer
 		// Template ring sits slightly below the widest chord midpoint.
 		$cy += (int) round($bestW * 0.025);
 		// Oversized so photo tucks under the teal ring (covers white inner stroke).
-		$d = (int) round($bestW * 1.10);
+		$d = (int) round($bestW * 1.07);
 		return [$cx, $cy, max(2, $d)];
 	}
 
@@ -262,32 +262,51 @@ class WisdomCardRenderer
 			if ($square) {
 				imagedestroy($square);
 			}
-			$square = $this->coverSquare($src, $hole, 0.10);
+			$square = $this->coverSquare($src, $hole, 0.08);
 		}
 		imagedestroy($src);
 		if (!$square) {
 			return;
 		}
 
-		// Opaque circle paint — truecolor RGB ints (no imagecolorallocate / alpha gaps).
 		$r = $d / 2.0;
-		$r2 = $r * $r;
 		$x0 = $cx - (int) ($d / 2);
 		$y0 = $cy - (int) ($d / 2);
 		$sqW = imagesx($square);
 		$sqH = imagesy($square);
 		$offX = (int) max(0, round(($sqW - $d) / 2));
 		$offY = (int) max(0, round(($sqH - $d) / 2));
+		$edge = 1.25;
+		$inner = $r - $edge;
 		for ($yy = 0; $yy < $d; $yy++) {
 			$dy = $yy + 0.5 - $r;
-			$sy = min($sqH - 1, $yy + $offY);
+			$sy = min($sqH - 1, max(0, $yy + $offY));
 			for ($xx = 0; $xx < $d; $xx++) {
 				$dx = $xx + 0.5 - $r;
-				if (($dx * $dx + $dy * $dy) > $r2) {
+				$dist = sqrt($dx * $dx + $dy * $dy);
+				if ($dist > $r) {
 					continue;
 				}
-				$sx = min($sqW - 1, $xx + $offX);
-				imagesetpixel($im, $x0 + $xx, $y0 + $yy, imagecolorat($square, $sx, $sy) & 0xFFFFFF);
+				$sx = min($sqW - 1, max(0, $xx + $offX));
+				$pix = imagecolorat($square, $sx, $sy) & 0xFFFFFF;
+				$px = $x0 + $xx;
+				$py = $y0 + $yy;
+				if ($dist <= $inner) {
+					imagesetpixel($im, $px, $py, $pix);
+					continue;
+				}
+				$t = ($r - $dist) / $edge;
+				$bg = imagecolorat($im, $px, $py) & 0xFFFFFF;
+				$pr = ($pix >> 16) & 255;
+				$pg = ($pix >> 8) & 255;
+				$pb = $pix & 255;
+				$br = ($bg >> 16) & 255;
+				$bgc = ($bg >> 8) & 255;
+				$bb = $bg & 255;
+				$nr = (int) round($pr * $t + $br * (1 - $t));
+				$ng = (int) round($pg * $t + $bgc * (1 - $t));
+				$nb = (int) round($pb * $t + $bb * (1 - $t));
+				imagesetpixel($im, $px, $py, ($nr << 16) | ($ng << 8) | $nb);
 			}
 		}
 		imagedestroy($square);
