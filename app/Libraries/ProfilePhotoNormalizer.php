@@ -282,8 +282,7 @@ class ProfilePhotoNormalizer
 		}
 		$out = $this->tightCoverOntoWhite($work, $size, $size);
 		if ($out !== null && !$this->looksBlank($out)) {
-			$this->whitenHeadHaloInPlace($out);
-			$this->whitenRimInPlace($out);
+			$this->smoothWhiteStudioInPlace($out);
 			if ($this->looksBlank($out)) {
 				imagedestroy($out);
 				$out = null;
@@ -295,6 +294,9 @@ class ProfilePhotoNormalizer
 		if ($out === null || $this->looksBlank($out)) {
 			if ($out) {
 				imagedestroy($out);
+			}
+			if ($fallback) {
+				$this->smoothWhiteStudioInPlace($fallback);
 			}
 			return $fallback;
 		}
@@ -644,6 +646,184 @@ class ProfilePhotoNormalizer
 			return true;
 		}
 		return $lum <= 88 && $sat < 0.35;
+	}
+
+	/**
+	 * Composite the student onto a smooth pure-white studio backdrop.
+	 * Leftover gray/beige/dark wall is keyed out; the person edge is feathered
+	 * so ID cards print without a patchy or jagged background.
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	public function smoothWhiteStudioInPlace($im): void
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		if ($w < 8 || $h < 8) {
+			return;
+		}
+
+		$wall = $this->sampleCornerRgb($im, $w, $h);
+		$cx = ($w - 1) * 0.5;
+		$cy = ($h - 1) * 0.40;
+		$rad = max(8.0, min($w, $h) * 0.5);
+		$n = $w * $h;
+		$conf = str_repeat("\x00", $n);
+
+		for ($y = 0; $y < $h; $y++) {
+			$row = $y * $w;
+			for ($x = 0; $x < $w; $x++) {
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				$lum = $this->luma($r, $g, $b);
+				$maxc = max($r, $g, $b);
+				$minc = min($r, $g, $b);
+				$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+				$dx = ($x - $cx) / $rad;
+				$dy = ($y - $cy) / $rad;
+				$distN = sqrt($dx * $dx + $dy * $dy);
+				$wallDist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
+				$inHead = ($y < $h * 0.62) && ($distN < 0.52);
+				$inTorso = ($y >= $h * 0.38) && ($distN < 0.70);
+
+				$p = 90;
+				if ($this->isSkinTone($r, $g, $b)) {
+					$p = 255;
+				} elseif ($sat > 0.28 && $wallDist > 55) {
+					$p = 245;
+				} elseif ($lum < 58 && $inHead) {
+					$p = 235;
+				} elseif ($lum < 72 && $inTorso && $sat < 0.22) {
+					$p = 220;
+				} elseif ($lum > 208 && $inTorso && $distN < 0.62) {
+					$p = 215;
+				} elseif ($distN > 1.02) {
+					$p = 0;
+				} elseif ($this->isStudioBackdropPixel($r, $g, $b, $wall, $wallDist, $lum, $sat)) {
+					$p = $inHead && $lum < 70 ? 160 : 8;
+				} elseif ($sat < 0.12 && $distN > 0.42 && !$inTorso) {
+					$p = 12;
+				} elseif ($distN < 0.34) {
+					$p = 200;
+				}
+				$conf[$row + $x] = chr($p);
+			}
+		}
+
+		$conf = $this->dilateU8($conf, $w, $h);
+		$matte = $this->boxBlurU8($conf, $w, $h, 2);
+
+		for ($y = 0; $y < $h; $y++) {
+			$row = $y * $w;
+			for ($x = 0; $x < $w; $x++) {
+				$a = ord($matte[$row + $x]) / 255.0;
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($this->isSkinTone($r, $g, $b)) {
+					continue;
+				}
+				$maxc = max($r, $g, $b);
+				$minc = min($r, $g, $b);
+				$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+				if ($sat > 0.24 && $a > 0.20) {
+					continue;
+				}
+				if ($a <= 0.12) {
+					imagesetpixel($im, $x, $y, 0xFFFFFF);
+					continue;
+				}
+				if ($a >= 0.88) {
+					continue;
+				}
+				$nr = (int) round($r * $a + 255 * (1 - $a));
+				$ng = (int) round($g * $a + 255 * (1 - $a));
+				$nb = (int) round($b * $a + 255 * (1 - $a));
+				imagesetpixel($im, $x, $y, ($nr << 16) | ($ng << 8) | $nb);
+			}
+		}
+	}
+
+	private function isStudioBackdropPixel(int $r, int $g, int $b, array $wall, int $wallDist, float $lum, float $sat): bool
+	{
+		if ($this->isSkinTone($r, $g, $b)) {
+			return false;
+		}
+		if ($sat > 0.26) {
+			return false;
+		}
+		if ($lum <= 92 && $sat < 0.34) {
+			return true;
+		}
+		if ($sat < 0.13 && $lum >= 88 && $lum <= 222) {
+			return true;
+		}
+		return $this->isWallPixel($r, $g, $b, $wall) || $wallDist <= 62;
+	}
+
+	private function dilateU8(string $src, int $w, int $h): string
+	{
+		$out = $src;
+		for ($y = 1; $y < $h - 1; $y++) {
+			$row = $y * $w;
+			for ($x = 1; $x < $w - 1; $x++) {
+				$max = 0;
+				for ($oy = -1; $oy <= 1; $oy++) {
+					$rr = ($y + $oy) * $w;
+					for ($ox = -1; $ox <= 1; $ox++) {
+						$v = ord($src[$rr + $x + $ox]);
+						if ($v > $max) {
+							$max = $v;
+						}
+					}
+				}
+				$out[$row + $x] = chr($max);
+			}
+		}
+		return $out;
+	}
+
+	private function boxBlurU8(string $src, int $w, int $h, int $radius): string
+	{
+		$r = max(1, $radius);
+		$div = $r * 2 + 1;
+		$tmp = $src;
+		for ($y = 0; $y < $h; $y++) {
+			$row = $y * $w;
+			for ($x = 0; $x < $w; $x++) {
+				$sum = 0;
+				for ($k = -$r; $k <= $r; $k++) {
+					$xx = $x + $k;
+					if ($xx < 0) {
+						$xx = 0;
+					} elseif ($xx >= $w) {
+						$xx = $w - 1;
+					}
+					$sum += ord($src[$row + $xx]);
+				}
+				$tmp[$row + $x] = chr(intdiv($sum, $div));
+			}
+		}
+		$out = $tmp;
+		for ($x = 0; $x < $w; $x++) {
+			for ($y = 0; $y < $h; $y++) {
+				$sum = 0;
+				for ($k = -$r; $k <= $r; $k++) {
+					$yy = $y + $k;
+					if ($yy < 0) {
+						$yy = 0;
+					} elseif ($yy >= $h) {
+						$yy = $h - 1;
+					}
+					$sum += ord($tmp[$yy * $w + $x]);
+				}
+				$out[$y * $w + $x] = chr(intdiv($sum, $div));
+			}
+		}
+		return $out;
 	}
 
 	/**

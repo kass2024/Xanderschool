@@ -806,6 +806,45 @@
 				}
 				push(px + 1, py); push(px - 1, py); push(px, py + 1); push(px, py - 1);
 			}
+			var cx = (w - 1) * 0.5, cy = (h - 1) * 0.40, rad = Math.min(w, h) * 0.5;
+			for (var i = 0, y = 0; y < h; y++) {
+				for (var x = 0; x < w; x++, i++) {
+					var p = i * 4;
+					var r = data[p], g = data[p + 1], b = data[p + 2];
+					if (isSkinPx(r, g, b)) continue;
+					var lum = lumaOf(r, g, b);
+					var sat = satOf(r, g, b);
+					if (sat > 0.26) continue;
+					var dx = (x - cx) / rad, dy = (y - cy) / rad;
+					var distN = Math.sqrt(dx * dx + dy * dy);
+					var inHead = y < h * 0.58 && distN < 0.48;
+					if (inHead && lum < 70) continue;
+					var studio = (lum <= 92 && sat < 0.34)
+						|| (sat < 0.13 && lum >= 88 && lum <= 222)
+						|| isWallPx(r, g, b, wr, wg, wb);
+					if (studio && (distN > 0.36 || y < h * 0.22 || y > h * 0.82)) {
+						data[p] = 255; data[p + 1] = 255; data[p + 2] = 255;
+					}
+				}
+			}
+			for (var y = 1; y < h - 1; y++) {
+				for (var x = 1; x < w - 1; x++) {
+					var p = (y * w + x) * 4;
+					if (data[p] >= 248 && data[p + 1] >= 248 && data[p + 2] >= 248) continue;
+					if (isSkinPx(data[p], data[p + 1], data[p + 2])) continue;
+					var n = 0;
+					if (data[((y) * w + (x - 1)) * 4] >= 248) n++;
+					if (data[((y) * w + (x + 1)) * 4] >= 248) n++;
+					if (data[((y - 1) * w + x) * 4] >= 248) n++;
+					if (data[((y + 1) * w + x) * 4] >= 248) n++;
+					if (n >= 2) {
+						var t = n >= 3 ? 0.22 : 0.45;
+						data[p] = Math.round(data[p] * t + 255 * (1 - t));
+						data[p + 1] = Math.round(data[p + 1] * t + 255 * (1 - t));
+						data[p + 2] = Math.round(data[p + 2] * t + 255 * (1 - t));
+					}
+				}
+			}
 			c.putImageData(img, 0, 0);
 		}
 
