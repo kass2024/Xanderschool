@@ -1145,7 +1145,9 @@ class AttendanceScanService
 	private static function isSchoolGateArea(string $name): bool
 	{
 		$n = strtolower(trim($name));
-		return $n !== '' && (bool) preg_match('/\bgate\b/', $n);
+		$n = preg_replace('/[^a-z0-9]+/', ' ', $n);
+		$n = trim((string) $n);
+		return $n === 'gate' || $n === 'school gate' || str_contains($n, 'school gate');
 	}
 
 	/**
