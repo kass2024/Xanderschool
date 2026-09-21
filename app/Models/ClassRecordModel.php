@@ -11,48 +11,23 @@ class ClassRecordModel extends Model
 	protected $primaryKey = 'id';
 	protected $returnType = 'array';
 	protected $afterInsert = ['enforceExclusiveClass'];
-
-	/** @var bool */
-	private $skipExclusive = false;
-
-	public function insert($data = null, bool $returnID = true)
-	{
-		if (is_array($data) && empty($data[$this->primaryKey])) {
-			$student = (int) ($data['student'] ?? 0);
-			$class = (int) ($data['class'] ?? 0);
-			$year = $data['year'] ?? null;
-			if ($student > 0 && $class > 0 && $year !== null && $year !== '') {
-				$existing = $this->db->query(
-					'SELECT id FROM class_records WHERE student = ? AND year = ? AND class = ? ORDER BY id DESC LIMIT 1',
-					[$student, $year, $class]
-				)->getRowArray();
-				if ($existing) {
-					$id = (int) $existing['id'];
-					$update = $data;
-					unset($update[$this->primaryKey]);
-					$this->skipExclusive = true;
-					try {
-						parent::update($id, $update);
-					} finally {
-						$this->skipExclusive = false;
-					}
-					$this->dropOtherClassesForStudentYear($student, $year, $id, $class);
-					$this->insertID = $id;
-					return $returnID ? $id : true;
-				}
-			}
-		}
-
-		return parent::insert($data, $returnID);
-	}
+	protected $afterUpdate = ['enforceExclusiveClass'];
 
 	/**
 	 * Keep one regular (non-holiday) class per student per year, and at most
 	 * one holiday coaching class. Extra leftover rows are deleted.
+	 *
+	 * @param int        $studentId
+	 * @param int|string $year
+	 * @param int        $keepId
+	 * @param int        $keepClass
+	 * @return int
 	 */
-	public function dropOtherClassesForStudentYear($studentId, $year, int $keepId, int $keepClass = 0): int
+	public function dropOtherClassesForStudentYear($studentId, $year, $keepId, $keepClass = 0)
 	{
 		$studentId = (int) $studentId;
+		$keepId = (int) $keepId;
+		$keepClass = (int) $keepClass;
 		if ($studentId < 1 || $keepId < 1) {
 			return 0;
 		}
@@ -85,8 +60,13 @@ class ClassRecordModel extends Model
 		return (int) $this->db->affectedRows();
 	}
 
-	public function classIsHoliday(int $classId): bool
+	/**
+	 * @param int $classId
+	 * @return bool
+	 */
+	public function classIsHoliday($classId)
 	{
+		$classId = (int) $classId;
 		if ($classId < 1) {
 			return false;
 		}
@@ -112,11 +92,12 @@ class ClassRecordModel extends Model
 		return strpos($hay, 'holiday') !== false;
 	}
 
+	/**
+	 * @param array $data
+	 * @return array
+	 */
 	protected function enforceExclusiveClass(array $data)
 	{
-		if ($this->skipExclusive) {
-			return $data;
-		}
 		$id = 0;
 		if (isset($data['id'])) {
 			$id = is_array($data['id']) ? (int) ($data['id'][0] ?? 0) : (int) $data['id'];
@@ -146,7 +127,13 @@ class ClassRecordModel extends Model
 		return $data;
 	}
 
-	private function holidayMatchSql(string $classAlias, string $levelAlias, string $deptAlias): string
+	/**
+	 * @param string $classAlias
+	 * @param string $levelAlias
+	 * @param string $deptAlias
+	 * @return string
+	 */
+	private function holidayMatchSql($classAlias, $levelAlias, $deptAlias)
 	{
 		return "LOWER(CONCAT(IFNULL({$classAlias}.title,''),' ',IFNULL({$levelAlias}.title,''),' ',IFNULL({$deptAlias}.title,''),' ',IFNULL({$deptAlias}.code,''))) LIKE '%holiday%'";
 	}
