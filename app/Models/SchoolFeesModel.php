@@ -118,7 +118,8 @@ class SchoolFeesModel extends Model
 	}
 
 	/**
-	 * Full class name: level + department/faculty code + stream (e.g. "S4 ANP", "S1 SOD A", "P2 B").
+	 * Match class-creation names: "P1 A", "Baby class", "S4 MCB", "S4 ANP", "Level 3 SOD".
+	 * Do not insert generic stage names (Primary, Nursery, O'Level) into the class label.
 	 */
 	public static function displayLabel(array $row): string
 	{
@@ -132,13 +133,14 @@ class SchoolFeesModel extends Model
 		}
 		$dept = trim((string) ($row['dept_code'] ?? $row['code'] ?? ''));
 		$faculty = trim((string) ($row['faculty_code'] ?? ''));
+		$deptTitle = trim((string) ($row['dept_title'] ?? ''));
 		$mid = $dept !== '' ? $dept : $faculty;
 
 		$parts = [];
 		if ($level !== '') {
 			$parts[] = $level;
 		}
-		if ($mid !== '') {
+		if ($mid !== '' && !self::isGenericStageName($mid, $deptTitle)) {
 			$alreadyInLevel = strcasecmp($mid, $level) === 0;
 			$alreadyInTitle = $classTitle !== '' && (
 				strcasecmp($mid, $classTitle) === 0
@@ -153,6 +155,22 @@ class SchoolFeesModel extends Model
 		}
 		$label = trim(preg_replace('/\s+/', ' ', implode(' ', $parts)));
 		return $label !== '' ? $label : $level;
+	}
+
+	/** Primary / Nursery / O'Level are stages, not part of the spoken class name. */
+	private static function isGenericStageName(string $code, string $title = ''): bool
+	{
+		$hay = strtolower(trim($code . ' ' . $title));
+		if ($hay === '') {
+			return false;
+		}
+		if (preg_match('/\b(anp|nursing)\b/', $hay)) {
+			return false;
+		}
+		return (bool) preg_match(
+			'/\b(pri|pre|nur|primary|nursery|ordinary(\s*level)?|o[\'’]?\s*-?level|olevel|a[\'’]?\s*-?level|alevel|advanced(\s*level)?|reb|secondary|high\s*school)\b/i',
+			$hay
+		);
 	}
 
 	/**

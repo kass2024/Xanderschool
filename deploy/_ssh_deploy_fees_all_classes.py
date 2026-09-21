@@ -23,6 +23,7 @@ VERIFY = [
     ("app/Controllers/Home.php", "ensureSpecialNursingAnpClasses"),
     ("app/Views/pages/school_fees_management.php", "All classes"),
     ("app/Views/pages/school_fees_management.php", "Search class or department"),
+    ("app/Models/SchoolFeesModel.php", "isGenericStageName"),
 ]
 
 
