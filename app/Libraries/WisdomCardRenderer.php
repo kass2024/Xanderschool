@@ -606,6 +606,10 @@ class WisdomCardRenderer
 
 	private function profilePath($stored): ?string
 	{
+		if (function_exists('student_profile_photo_path')) {
+			$path = student_profile_photo_path(is_string($stored) ? $stored : null);
+			return is_string($path) && is_file($path) ? $path : null;
+		}
 		$base = null;
 		if (function_exists('resolve_profile_photo')) {
 			$base = resolve_profile_photo(is_string($stored) ? $stored : null);
@@ -615,7 +619,9 @@ class WisdomCardRenderer
 		if ($base === null || $base === '') {
 			return null;
 		}
-		return $this->assetPath('assets/images/profile/' . $base);
+		$fcpath = defined('FCPATH') ? rtrim(FCPATH, '/\\') : '';
+		$path = $fcpath . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR . $base;
+		return is_file($path) ? $path : null;
 	}
 
 	private function assetPath(string $relative): ?string

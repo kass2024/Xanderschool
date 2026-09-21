@@ -1006,6 +1006,76 @@ if (!function_exists('resolve_profile_photo')) {
 	}
 }
 
+if (!function_exists('student_profile_photo_path')) {
+	function student_profile_photo_path(?string $stored): ?string
+	{
+		$resolved = resolve_profile_photo($stored);
+		if ($resolved === null) {
+			return null;
+		}
+		$dirs = [];
+		$desktopDir = trim((string) getenv('XANDER_PROFILE_DIR'));
+		if ($desktopDir !== '') {
+			$dirs[] = rtrim($desktopDir, '/\\') . DIRECTORY_SEPARATOR;
+		}
+		$dirs[] = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'profile' . DIRECTORY_SEPARATOR;
+		foreach ($dirs as $dir) {
+			$path = $dir . $resolved;
+			if (is_file($path)) {
+				return $path;
+			}
+		}
+		return null;
+	}
+}
+
+if (!function_exists('student_card_photo_is_printable')) {
+	function student_card_photo_is_printable(?string $stored): bool
+	{
+		$path = student_profile_photo_path($stored);
+		if ($path === null) {
+			return false;
+		}
+		$base = strtolower(basename($path));
+		if (preg_match('/^(fallback-avatar|default|blank|placeholder|no[-_]?photo|avatar)(\.|$)/i', $base)) {
+			return false;
+		}
+		$info = @getimagesize($path);
+		if (!is_array($info) || (int) ($info[0] ?? 0) < 8 || (int) ($info[1] ?? 0) < 8) {
+			return false;
+		}
+		$type = (int) ($info[2] ?? 0);
+		$src = null;
+		switch ($type) {
+			case IMAGETYPE_JPEG:
+				$src = @imagecreatefromjpeg($path);
+				break;
+			case IMAGETYPE_PNG:
+				$src = @imagecreatefrompng($path);
+				break;
+			case IMAGETYPE_GIF:
+				$src = @imagecreatefromgif($path);
+				break;
+			case IMAGETYPE_WEBP:
+				if (function_exists('imagecreatefromwebp')) {
+					$src = @imagecreatefromwebp($path);
+				}
+				break;
+		}
+		if (!$src) {
+			$bytes = @file_get_contents($path);
+			if (is_string($bytes) && strlen($bytes) > 32) {
+				$src = @imagecreatefromstring($bytes);
+			}
+		}
+		if (!$src) {
+			return false;
+		}
+		imagedestroy($src);
+		return true;
+	}
+}
+
 if (!function_exists('profile_photo_url')) {
 	function profile_photo_url(?string $stored, ?string $fallback = null): string
 	{

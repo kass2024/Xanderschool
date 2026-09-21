@@ -279,8 +279,8 @@ class StudentModel extends Model
 				$builder->Where($key, $val);
 			}
 		}
-		if(!$academicYear){
-			$builder->where('cr.year', $academicYear);
+		if ((int) $academicYear > 0) {
+			$builder->where('cr.year', (int) $academicYear);
 		}
 		$data = $builder->get();
 		if ($single)

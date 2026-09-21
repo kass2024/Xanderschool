@@ -1586,7 +1586,7 @@ public function testEmail()
 			if ($sid < 1 || $this->classLooksLikeHoliday($student)) {
 				continue;
 			}
-			if ($requirePhoto && resolve_profile_photo($student['photo'] ?? '') === null) {
+			if ($requirePhoto && !student_card_photo_is_printable($student['photo'] ?? '')) {
 				continue;
 			}
 			if (!isset($byId[$sid])) {
@@ -10451,13 +10451,33 @@ public function getApplicationDocs($id = null)
 			if ($hasPhotoFilter === '0' || $hasPhotoFilter === '1') {
 				$wantPhoto = $hasPhotoFilter === '1';
 				$students = array_values(array_filter($students, static function ($student) use ($wantPhoto) {
-					$has = resolve_profile_photo($student['photo'] ?? '') !== null;
+					$has = student_card_photo_is_printable($student['photo'] ?? '');
 					return $has === $wantPhoto;
 				}));
 			}
 			$students = array_values(array_filter($students, function ($student) {
 				return !$this->classLooksLikeHoliday($student);
 			}));
+			$unique = [];
+			foreach ($students as $student) {
+				$sid = (int) ($student['id'] ?? 0);
+				if ($sid < 1) {
+					continue;
+				}
+				if (!isset($unique[$sid])) {
+					$unique[$sid] = $student;
+					continue;
+				}
+				if ($isClass === 1 && (int) $id > 0) {
+					$wantClass = (int) $id;
+					$newIsWanted = (int) ($student['class_id'] ?? 0) === $wantClass;
+					$oldIsWanted = (int) ($unique[$sid]['class_id'] ?? 0) === $wantClass;
+					if ($newIsWanted && !$oldIsWanted) {
+						$unique[$sid] = $student;
+					}
+				}
+			}
+			$students = array_values($unique);
 		}
 		if (count($students) < 1) {
 			if ((int) $type === 10) {
@@ -10503,7 +10523,7 @@ public function getApplicationDocs($id = null)
 				// Student card list — PNG template; photo required for print.
 				$sid = (int) $student['id'];
 				$resolved = resolve_profile_photo($student['photo'] ?? '');
-				$hasPhoto = $resolved !== null;
+				$hasPhoto = student_card_photo_is_printable($student['photo'] ?? '');
 				if ($hasPhoto && trim((string) $student['photo']) !== $resolved) {
 					try {
 						$StudentModel->update($sid, ['photo' => $resolved]);

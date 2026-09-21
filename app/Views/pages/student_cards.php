@@ -505,12 +505,25 @@
 	}
 
 	function count_students() {
-		var images = $("input[name='stId[]']").length;
-		if (images == 0) {
-			$("#btn_generate").prop("disabled", true);
-		} else {
-			$("#btn_generate").prop("disabled", false);
+		var seen = {};
+		var printable = 0;
+		$("#studentsTable tbody tr.disc_row[data-has-photo='1']").each(function () {
+			var id = String($(this).attr("data-student-id") || "");
+			if (id !== "" && !seen[id]) {
+				seen[id] = true;
+				printable++;
+			}
+		});
+		if (printable === 0) {
+			$("input[name='stId[]']").each(function () {
+				var id = String($(this).val() || "");
+				if (id !== "" && !seen[id]) {
+					seen[id] = true;
+					printable++;
+				}
+			});
 		}
-		$("#btn_generate span").text(images);
+		$("#btn_generate").prop("disabled", printable === 0);
+		$("#btn_generate span").text(printable);
 	}
 </script>
