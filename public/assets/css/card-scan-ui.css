@@ -707,6 +707,101 @@ tr.staff-has-courses > td.staff-teaching-col {
 	padding: 10px 20px;
 }
 
+.disc-lang-bar {
+	display: flex;
+	justify-content: flex-end;
+	margin: 0 0 12px;
+}
+
+.disc-lang-switch {
+	display: inline-flex;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	overflow: hidden;
+	background: #fff;
+}
+
+.disc-lang-btn {
+	border: 0;
+	background: transparent;
+	padding: 6px 12px;
+	font-size: 12px;
+	font-weight: 700;
+	cursor: pointer;
+	color: #475569;
+}
+
+.disc-lang-btn.is-active {
+	background: #0f766e;
+	color: #fff;
+}
+
+.disc-lang-switch--sidebar {
+	margin: 6px 12px 8px;
+	width: calc(100% - 24px);
+	border-color: rgba(255,255,255,.35);
+	background: transparent;
+}
+
+.disc-lang-switch--sidebar .disc-lang-btn {
+	flex: 1;
+	color: #fff;
+}
+
+.disc-lang-switch--sidebar .disc-lang-btn.is-active {
+	background: #fff;
+	color: #b71c3c;
+}
+
+.disc-lang-menu-item {
+	list-style: none;
+	padding: 0;
+}
+
+.disc-code-hint {
+	margin: 6px 0 0;
+	font-size: 12px;
+	color: #64748b;
+}
+
+.disc-occur-box {
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 10px 12px;
+	margin-bottom: 14px;
+	font-size: 12px;
+	color: #334155;
+}
+
+.disc-occur-pills {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 6px;
+}
+
+.disc-occur-pills span {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 999px;
+	padding: 3px 8px;
+}
+
+.disc-occur-applied {
+	margin-top: 8px;
+}
+
+.disc-occur-applied ul {
+	margin: 6px 0 0;
+	padding-left: 18px;
+}
+
+.disc-entry-page #reduce_marks_display {
+	background: #f1f5f9;
+	cursor: default;
+}
+
 @media (max-width: 992px) {
 	.disc-entry-page .disc-entry-grid {
 		grid-template-columns: 1fr;

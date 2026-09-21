@@ -927,6 +927,10 @@
 					</div>
 				</div>
 
+					<?= view('pages/partials/discipline_codes_settings', [
+						'discipline_codes' => $discipline_codes ?? [],
+					]); ?>
+
 				</div>
 			</div>
 		</div>

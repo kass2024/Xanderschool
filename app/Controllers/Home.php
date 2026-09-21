@@ -2816,6 +2816,10 @@ public function testEmail()
 		$hostelSchema->ensureSchema();
 		$data['hostels'] = $hostelSchema->listHostels($schoolId, true);
 		$data['hostel_settings'] = $hostelSchema->getSchoolSettings($schoolId);
+		$discCodeMdl = new \App\Models\DisciplineCodeModel();
+		$discCodeMdl->ensureSchema();
+		$discCodeMdl->seedIfEmpty($schoolId);
+		$data['discipline_codes'] = $discCodeMdl->listCodes($schoolId, false);
 		$areaMdl = new AttendanceAreaModel();
 		$data['attendance_areas'] = $areaMdl->listAreas($schoolId, true);
 		HeyStarDeviceStore::ensureSchema();
@@ -10248,6 +10252,11 @@ public function attendanceCard()
 				->get()->getRowArray();
 		$data['subtitle'] = lang("app.disciplineRecordEntry");
 		$data['page'] = "Discipline Record Entry";
+		$discCodeMdl = new \App\Models\DisciplineCodeModel();
+		$discCodeMdl->ensureSchema();
+		$discCodeMdl->seedIfEmpty((int) $this->session->get('soma_school_id'));
+		$data['discipline_code_groups'] = $discCodeMdl->groupedCodes((int) $this->session->get('soma_school_id'), true);
+		$data['disc_lang'] = \App\Models\DisciplineCodeModel::discLang();
 		$data['content'] = view("pages/discipline_record_entry", $data);
 		return view('main', $data);
 	}
@@ -10986,29 +10995,45 @@ public function getApplicationDocs($id = null)
 		$DisciplineModel = new DisciplineModel();
 		$school_id = $this->session->get("soma_school_id");
 		$notify = $this->request->getPost("sms") == null ? 0 : $this->request->getPost("sms");
-		$marks = $this->request->getPost("reduce_marks");
-		$comment = $this->request->getPost("reason");
+		$codeId = (int) $this->request->getPost("code_id");
 		$types = $this->request->getPost("discipline_type");
 		$active = $this->request->getPost("active_term");
 		$schoo = $school_id;
 		$created_by = $this->session->get("soma_id");
 		$formids = $this->request->getPost("discId[]");
+		$codeMdl = new \App\Models\DisciplineCodeModel();
+		$codeMdl->ensureSchema();
+		$code = $codeId > 0
+			? $codeMdl->where('id', $codeId)->where('school_id', (int) $school_id)->where('active', 1)->first()
+			: null;
+		if (!$code) {
+			return $this->response->setJSON(["error" => "Select a conduct code from the school discipline law."]);
+		}
+		$lang = \App\Models\DisciplineCodeModel::discLang();
 		if ($types == 0) {
-			//behavior, force remove marks and notify
 			$notify = 0;
-			$marks = 0;
 		}
 		if (!is_array($formids)) {
-			//no student selected
 			return $this->response->setJSON(array("error" => lang("app.pleaseAddErr")));
 		}
 		$isSMSError = false;
+		$batchSeen = [];
 		foreach ($formids as $formid) {
-			$a = $formid;
+			$a = (int) $formid;
+			$prev = $codeMdl->countOccurrences((int) $school_id, $a, $codeId, (int) $active) + (int) ($batchSeen[$a] ?? 0);
+			$batchSeen[$a] = (int) ($batchSeen[$a] ?? 0) + 1;
+			$resolved = $codeMdl->resolveOccurrence($code, $prev);
+			$marks = ($types == 0) ? 0 : $resolved['marks'];
+			$title = \App\Models\DisciplineCodeModel::titleFor($code, $lang);
+			$sanction = $lang === 'rw' ? $resolved['sanction_rw'] : $resolved['sanction_en'];
+			$comment = trim($title . ' (' . ($lang === 'rw' ? $resolved['label_rw'] : $resolved['label_en']) . ')'
+				. ($sanction !== '' ? ' — ' . $sanction : ''));
 			$data = array(
 					"student_id" => $a,
 					"school_id" => $schoo,
 					"type" => $types,
+					"code_id" => $codeId,
+					"occurrence" => $resolved['occurrence'],
 					"comment" => $comment,
 					"marks" => $marks,
 					"active_term" => $active,
@@ -11042,6 +11067,138 @@ public function getApplicationDocs($id = null)
 		if ($isSMSError)
 			$ms = lang("app.notSent");
 		return $this->response->setJSON(array("success" => lang("app.disciplineSuccessfully") . $ms));
+	}
+
+	public function set_disc_lang()
+	{
+		$this->_preset();
+		$lang = strtolower(trim((string) ($this->request->getPost('lang') ?? $this->request->getGet('lang') ?? 'en')));
+		$lang = $lang === 'rw' ? 'rw' : 'en';
+		$this->session->set('disc_lang', $lang);
+		if ($this->request->isAJAX() || strtolower((string) $this->request->getHeaderLine('X-Requested-With')) === 'xmlhttprequest') {
+			return $this->response->setJSON(['success' => 1, 'lang' => $lang]);
+		}
+		return redirect()->back();
+	}
+
+	public function discipline_code_preview()
+	{
+		$this->_preset();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$codeId = (int) $this->request->getPost('code_id');
+		$termId = (int) $this->request->getPost('active_term');
+		$ids = $this->request->getPost('discId');
+		if (!is_array($ids)) {
+			$ids = $this->request->getPost('discId[]');
+		}
+		if (!is_array($ids)) {
+			$ids = [];
+		}
+		$codeMdl = new \App\Models\DisciplineCodeModel();
+		$codeMdl->ensureSchema();
+		$code = $codeId > 0
+			? $codeMdl->where('id', $codeId)->where('school_id', $schoolId)->where('active', 1)->first()
+			: null;
+		if (!$code) {
+			return $this->response->setJSON(['error' => 'Select a conduct code.']);
+		}
+		$lang = \App\Models\DisciplineCodeModel::discLang();
+		$students = [];
+		$seen = [];
+		foreach ($ids as $id) {
+			$sid = (int) $id;
+			if ($sid < 1) {
+				continue;
+			}
+			$prev = $codeMdl->countOccurrences($schoolId, $sid, $codeId, $termId) + (int) ($seen[$sid] ?? 0);
+			$seen[$sid] = (int) ($seen[$sid] ?? 0) + 1;
+			$resolved = $codeMdl->resolveOccurrence($code, $prev);
+			$students[] = [
+				'id' => $sid,
+				'occurrence' => $resolved['occurrence'],
+				'marks' => $resolved['marks'],
+				'label' => $lang === 'rw' ? $resolved['label_rw'] : $resolved['label_en'],
+				'sanction' => $lang === 'rw' ? $resolved['sanction_rw'] : $resolved['sanction_en'],
+			];
+		}
+		return $this->response->setJSON([
+			'success' => 1,
+			'code' => [
+				'id' => (int) $code['id'],
+				'title' => \App\Models\DisciplineCodeModel::titleFor($code, $lang),
+				'first_marks' => (int) $code['first_marks'],
+				'second_marks' => (int) $code['second_marks'],
+				'third_marks' => (int) $code['third_marks'],
+			],
+			'students' => $students,
+		]);
+	}
+
+	public function manipulate_discipline_code()
+	{
+		$this->_preset();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$mdl = new \App\Models\DisciplineCodeModel();
+		$mdl->ensureSchema();
+		$action = strtolower(trim((string) $this->request->getPost('action')));
+		$id = (int) $this->request->getPost('id');
+		if ($action === 'delete' || $action === 'hide') {
+			$row = $id > 0 ? $mdl->where('id', $id)->where('school_id', $schoolId)->first() : null;
+			if (!$row) {
+				return $this->response->setJSON(['error' => 'Law not found.']);
+			}
+			$mdl->update($id, ['active' => 0]);
+			return $this->response->setJSON(['success' => 'Law hidden from behaviour entry.']);
+		}
+		if ($action === 'restore') {
+			$row = $id > 0 ? $mdl->where('id', $id)->where('school_id', $schoolId)->first() : null;
+			if (!$row) {
+				return $this->response->setJSON(['error' => 'Law not found.']);
+			}
+			$mdl->update($id, ['active' => 1]);
+			return $this->response->setJSON(['success' => 'Law restored.']);
+		}
+		$titleEn = trim((string) $this->request->getPost('title_en'));
+		$titleRw = trim((string) $this->request->getPost('title_rw'));
+		$catEn = trim((string) $this->request->getPost('category_en'));
+		$catRw = trim((string) $this->request->getPost('category_rw'));
+		if ($titleEn === '' || $titleRw === '' || $catEn === '' || $catRw === '') {
+			return $this->response->setJSON(['error' => 'Category and law text are required in English and Kinyarwanda.']);
+		}
+		$payload = [
+			'category_key' => $mdl->resolveCategoryKey($schoolId, $catEn, $catRw),
+			'category_en' => $catEn,
+			'category_rw' => $catRw,
+			'code_no' => max(1, (int) $this->request->getPost('code_no')),
+			'title_en' => $titleEn,
+			'title_rw' => $titleRw,
+			'first_marks' => max(0, (int) $this->request->getPost('first_marks')),
+			'second_marks' => max(0, (int) $this->request->getPost('second_marks')),
+			'third_marks' => max(0, (int) $this->request->getPost('third_marks')),
+			'first_sanction_en' => trim((string) $this->request->getPost('first_sanction_en')),
+			'first_sanction_rw' => trim((string) $this->request->getPost('first_sanction_rw')),
+			'second_sanction_en' => trim((string) $this->request->getPost('second_sanction_en')),
+			'second_sanction_rw' => trim((string) $this->request->getPost('second_sanction_rw')),
+			'third_sanction_en' => trim((string) $this->request->getPost('third_sanction_en')),
+			'third_sanction_rw' => trim((string) $this->request->getPost('third_sanction_rw')),
+			'active' => 1,
+		];
+		if ($id > 0) {
+			$row = $mdl->where('id', $id)->where('school_id', $schoolId)->first();
+			if (!$row) {
+				return $this->response->setJSON(['error' => 'Law not found.']);
+			}
+			$mdl->update($id, $payload);
+			return $this->response->setJSON(['success' => 'Law updated.']);
+		}
+		$maxRow = \Config\Database::connect()->table('discipline_codes')
+			->selectMax('sort_order')
+			->where('school_id', $schoolId)
+			->get()->getRowArray();
+		$payload['school_id'] = $schoolId;
+		$payload['sort_order'] = (int) ($maxRow['sort_order'] ?? 0) + 1;
+		$mdl->insert($payload);
+		return $this->response->setJSON(['success' => 'Law added.']);
 	}
 
 	public
@@ -14205,6 +14362,7 @@ public function getApplicationDocs($id = null)
 				->get()->getRowArray();
 		$data['subtitle'] = lang("app.disciplineRecord");
 		$data['page'] = "discipline_record";
+		$data['disc_lang'] = \App\Models\DisciplineCodeModel::discLang();
 		$data['content'] = view("pages/discipline_record", $data);
 		return view('main', $data);
 	}

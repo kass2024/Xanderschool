@@ -49,6 +49,33 @@
 		.modal-backdrop { z-index: 10040 !important; }
 		.select2-container--open,
 		.select2-dropdown { z-index: 10060 !important; }
+
+		.disc-lang-switch {
+			display: inline-flex;
+			border: 1px solid #cbd5e1;
+			border-radius: 8px;
+			overflow: hidden;
+			background: #fff;
+		}
+		.disc-lang-btn {
+			border: 0;
+			background: transparent;
+			padding: 6px 12px;
+			font-size: 12px;
+			font-weight: 700;
+			cursor: pointer;
+			color: #475569;
+		}
+		.disc-lang-btn.is-active { background: #0f766e; color: #fff; }
+		.disc-lang-switch--sidebar {
+			margin: 6px 12px 8px;
+			width: calc(100% - 24px);
+			border-color: rgba(255,255,255,.35);
+			background: transparent;
+		}
+		.disc-lang-switch--sidebar .disc-lang-btn { flex: 1; color: #fff; }
+		.disc-lang-switch--sidebar .disc-lang-btn.is-active { background: #fff; color: #b71c3c; }
+		.disc-lang-menu-item { list-style: none; padding: 0; }
 	</style>
 </head>
 <body cz-shortcut-listen="true" data-url="<?= base_url(); ?>">
@@ -252,6 +279,9 @@
 									<i class="metismenu-state-icon fa fa-caret-down"></i>
 								</a>
 								<ul class="mm-collapse">
+									<li class="disc-lang-menu-item">
+										<?= view('pages/partials/disc_lang_switcher', ['compact' => true]); ?>
+									</li>
 									<?php if (menu_clearance_allowed('discipline_record_entry')) { ?>
 									<li>
 										<a href="<?= base_url('discipline_record_entry'); ?>">

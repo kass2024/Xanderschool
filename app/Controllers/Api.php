@@ -3290,31 +3290,78 @@ public function get_boarding_classes()
 		return $this->response->setJSON(array("error" => lang("app.notBorrowBook")));
 	}
 
+	public function discipline_codes()
+	{
+		$school_id = (int) $this->request->getPost('school_id') ?: (int) $this->request->getGet('school_id');
+		$this->_preset($school_id);
+		$codeMdl = new \App\Models\DisciplineCodeModel();
+		$codeMdl->ensureSchema();
+		$codeMdl->seedIfEmpty($school_id);
+		$lang = strtolower(trim((string) ($this->request->getPost('lang') ?? $this->request->getGet('lang') ?? 'en')));
+		$lang = $lang === 'rw' ? 'rw' : 'en';
+		$groups = [];
+		foreach ($codeMdl->groupedCodes($school_id, true) as $g) {
+			$items = [];
+			foreach ($g['items'] as $row) {
+				$items[] = [
+					'id' => (int) $row['id'],
+					'code_no' => (int) $row['code_no'],
+					'title' => \App\Models\DisciplineCodeModel::titleFor($row, $lang),
+					'first_marks' => (int) $row['first_marks'],
+					'second_marks' => (int) $row['second_marks'],
+					'third_marks' => (int) $row['third_marks'],
+				];
+			}
+			$groups[] = [
+				'key' => $g['key'],
+				'title' => $lang === 'rw' ? $g['rw'] : $g['en'],
+				'items' => $items,
+			];
+		}
+		return $this->response->setJSON(['success' => 1, 'lang' => $lang, 'groups' => $groups]);
+	}
+
 	public function save_discipline()
 	{
 		$school_id = $this->request->getPost("school_id");
 		$this->_preset($school_id);
 		$DisciplineModel = new DisciplineModel();
 		$notify = $this->request->getPost("notify_parent");
-		$marks = $this->request->getPost("marks");
-		$comment = $this->request->getPost("reason");
 		$types = $this->request->getPost("type");
 		$active = $this->data['active_term'];
 		$created_by = $this->request->getPost("operator");
 		$student_id = $this->request->getPost("student_id");
+		$codeId = (int) $this->request->getPost("code_id");
+		$codeMdl = new \App\Models\DisciplineCodeModel();
+		$codeMdl->ensureSchema();
+		$codeMdl->seedIfEmpty((int) $school_id);
+		$code = $codeId > 0
+			? $codeMdl->where('id', $codeId)->where('school_id', (int) $school_id)->where('active', 1)->first()
+			: null;
+		if (!$code) {
+			return $this->response->setJSON(["error" => "Select a conduct code from the school discipline law."]);
+		}
+		$lang = \App\Models\DisciplineCodeModel::discLang();
+		$prev = $codeMdl->countOccurrences((int) $school_id, (int) $student_id, $codeId, (int) $active);
+		$resolved = $codeMdl->resolveOccurrence($code, $prev);
+		$marks = ($types == 0) ? 0 : $resolved['marks'];
+		$title = \App\Models\DisciplineCodeModel::titleFor($code, $lang);
+		$sanction = $lang === 'rw' ? $resolved['sanction_rw'] : $resolved['sanction_en'];
+		$comment = trim($title . ' (' . ($lang === 'rw' ? $resolved['label_rw'] : $resolved['label_en']) . ')'
+			. ($sanction !== '' ? ' — ' . $sanction : ''));
 		if ($types == 0) {
-			//behavior, force remove marks and notify
 			$notify = 0;
 			$marks = 0;
 		}
 		if (strlen($student_id) == 0) {
-			//no student selected
 			return $this->response->setJSON(array("error" => lang("app.pleaseadStudent")));
 		}
 		$data = array(
 			"student_id" => $student_id,
 			"school_id" => $school_id,
 			"type" => $types,
+			"code_id" => $codeId,
+			"occurrence" => $resolved['occurrence'],
 			"comment" => $comment,
 			"marks" => $marks,
 			"active_term" => $active,
