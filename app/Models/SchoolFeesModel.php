@@ -54,12 +54,16 @@ class SchoolFeesModel extends Model
 			d.code AS dept_code,
 			d.title AS dept_title,
 			c.title AS class_title,
+			f.abbrev AS faculty_code,
+			f.title AS faculty_title,
+			f.type AS faculty_type,
 			ac.title AS academic_year_title,
 			school_fees.academic_year AS academic_year_id,
 			TRIM(CONCAT(COALESCE(stf.fname,''),' ',COALESCE(stf.lname,''))) AS created_by_name
 		")
 			->join("levels l", "l.id = school_fees.level", "LEFT")
 			->join("departments d", "d.id = school_fees.department", "LEFT")
+			->join("faculty f", "f.id = d.faculty_id", "LEFT")
 			->join("classes c", "c.id = school_fees.class_id", "LEFT")
 			->join("academic_year ac", "ac.id = school_fees.academic_year", "LEFT")
 			->join("staffs stf", "stf.id = school_fees.created_by", "LEFT")
@@ -72,14 +76,83 @@ class SchoolFeesModel extends Model
 			->get()->getResultArray();
 	}
 
+	/**
+	 * Every class in the school (including special/ANP). Holiday coaching is excluded later.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	public function listClassesForSchool(int $schoolId): array
+	{
+		if ($schoolId < 1) {
+			return [];
+		}
+
+		return $this->db->table('classes c')
+			->select("c.id AS class_id, c.title AS class_title, c.level AS level_id, c.department AS department_id,
+				l.title AS level_title, d.code AS dept_code, d.title AS dept_title,
+				f.abbrev AS faculty_code, f.title AS faculty_title, f.type AS faculty_type")
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
+			->where('c.school_id', $schoolId)
+			->orderBy('l.title', 'ASC')
+			->orderBy('d.code', 'ASC')
+			->orderBy('c.title', 'ASC')
+			->get()->getResultArray();
+	}
+
+	public static function isHolidayClass(array $row): bool
+	{
+		$hay = strtolower(trim(implode(' ', [
+			$row['class_title'] ?? '',
+			$row['title'] ?? '',
+			$row['level_title'] ?? '',
+			$row['level_name'] ?? '',
+			$row['dept_title'] ?? '',
+			$row['dept_code'] ?? '',
+			$row['code'] ?? '',
+			$row['faculty_title'] ?? '',
+			$row['faculty_code'] ?? '',
+		])));
+		return strpos($hay, 'holiday') !== false;
+	}
+
+	/**
+	 * Full class name: level + department/faculty code + stream (e.g. "S4 ANP", "S1 SOD A", "P2 B").
+	 */
 	public static function displayLabel(array $row): string
 	{
-		$level = trim((string) ($row['level_title'] ?? ''));
-		$classTitle = trim((string) ($row['class_title'] ?? ''));
-		if ($classTitle === '' || $classTitle === '-----') {
-			return $level;
+		$level = trim((string) ($row['level_title'] ?? $row['level_name'] ?? ''));
+		if (preg_match('/^level\s+(\d+)$/i', $level, $m)) {
+			$level = 'Level ' . $m[1];
 		}
-		return trim($level . ' ' . $classTitle);
+		$classTitle = trim((string) ($row['class_title'] ?? $row['title'] ?? ''));
+		if ($classTitle === '-----') {
+			$classTitle = '';
+		}
+		$dept = trim((string) ($row['dept_code'] ?? $row['code'] ?? ''));
+		$faculty = trim((string) ($row['faculty_code'] ?? ''));
+		$mid = $dept !== '' ? $dept : $faculty;
+
+		$parts = [];
+		if ($level !== '') {
+			$parts[] = $level;
+		}
+		if ($mid !== '') {
+			$alreadyInLevel = strcasecmp($mid, $level) === 0;
+			$alreadyInTitle = $classTitle !== '' && (
+				strcasecmp($mid, $classTitle) === 0
+				|| stripos($classTitle, $mid) !== false
+			);
+			if (!$alreadyInLevel && !$alreadyInTitle) {
+				$parts[] = $mid;
+			}
+		}
+		if ($classTitle !== '' && strcasecmp($classTitle, $level) !== 0) {
+			$parts[] = $classTitle;
+		}
+		$label = trim(preg_replace('/\s+/', ' ', implode(' ', $parts)));
+		return $label !== '' ? $label : $level;
 	}
 
 	/**
@@ -144,30 +217,102 @@ class SchoolFeesModel extends Model
 			$classId = (int) ($fee['class_id'] ?? 0);
 			$key = (int) ($fee['level_id'] ?? 0) . '-' . (int) ($fee['department_id'] ?? 0) . '-' . $classId;
 			if (!isset($groups[$key])) {
-				$groups[$key] = [
-					'level_id' => (int) ($fee['level_id'] ?? 0),
-					'department_id' => (int) ($fee['department_id'] ?? 0),
-					'class_id' => $classId,
-					'level_title' => (string) ($fee['level_title'] ?? ''),
-					'dept_code' => (string) ($fee['dept_code'] ?? ''),
-					'dept_title' => (string) ($fee['dept_title'] ?? ''),
-					'class_title' => (string) ($fee['class_title'] ?? ''),
-					'display_label' => self::displayLabel($fee),
-					'academic_year_title' => (string) ($fee['academic_year_title'] ?? ''),
-					'terms' => [1 => null, 2 => null, 3 => null],
-				];
+				$groups[$key] = self::emptyGroupFromRow($fee, $classId);
 			}
 			$term = (int) ($fee['term'] ?? 0);
 			if ($term >= 1 && $term <= 3) {
 				$groups[$key]['terms'][$term] = $fee;
 			}
 		}
+		return self::sortGroups(array_values($groups));
+	}
+
+	/**
+	 * One row per real class (including special/ANP), with fees attached when they exist.
+	 * Fees saved on a class_id go only to that class; level+department fees (class_id empty)
+	 * apply to every class of that level and department.
+	 *
+	 * @param list<array<string,mixed>> $classes
+	 * @param list<array<string,mixed>> $fees
+	 * @return list<array<string,mixed>>
+	 */
+	public static function groupsForAllClasses(array $classes, array $fees): array
+	{
+		$byClass = [];
+		$byLevelDept = [];
+		foreach ($fees as $fee) {
+			$classId = (int) ($fee['class_id'] ?? 0);
+			$levelId = (int) ($fee['level_id'] ?? 0);
+			$deptId = (int) ($fee['department_id'] ?? 0);
+			if ($classId > 0) {
+				$byClass[$classId][] = $fee;
+			} else {
+				$byLevelDept[$levelId . '-' . $deptId][] = $fee;
+			}
+		}
+
+		$groups = [];
+		foreach ($classes as $class) {
+			if (!is_array($class) || self::isHolidayClass($class)) {
+				continue;
+			}
+			$classId = (int) ($class['class_id'] ?? $class['id'] ?? 0);
+			$levelId = (int) ($class['level_id'] ?? $class['level'] ?? 0);
+			$deptId = (int) ($class['department_id'] ?? $class['department'] ?? 0);
+			if ($classId < 1) {
+				continue;
+			}
+			$group = self::emptyGroupFromRow($class, $classId);
+			$attach = $byClass[$classId] ?? [];
+			if ($attach === []) {
+				$attach = $byLevelDept[$levelId . '-' . $deptId] ?? [];
+			}
+			foreach ($attach as $fee) {
+				$term = (int) ($fee['term'] ?? 0);
+				if ($term >= 1 && $term <= 3) {
+					$group['terms'][$term] = $fee;
+				}
+			}
+			$groups[] = $group;
+		}
+
+		return self::sortGroups($groups);
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 * @return array<string,mixed>
+	 */
+	private static function emptyGroupFromRow(array $row, int $classId): array
+	{
+		return [
+			'level_id' => (int) ($row['level_id'] ?? $row['level'] ?? 0),
+			'department_id' => (int) ($row['department_id'] ?? $row['department'] ?? 0),
+			'class_id' => $classId,
+			'level_title' => (string) ($row['level_title'] ?? $row['level_name'] ?? ''),
+			'dept_code' => (string) ($row['dept_code'] ?? $row['code'] ?? ''),
+			'dept_title' => (string) ($row['dept_title'] ?? ''),
+			'class_title' => (string) ($row['class_title'] ?? $row['title'] ?? ''),
+			'faculty_code' => (string) ($row['faculty_code'] ?? ''),
+			'faculty_title' => (string) ($row['faculty_title'] ?? ''),
+			'display_label' => self::displayLabel($row),
+			'academic_year_title' => (string) ($row['academic_year_title'] ?? ''),
+			'terms' => [1 => null, 2 => null, 3 => null],
+		];
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $groups
+	 * @return list<array<string,mixed>>
+	 */
+	private static function sortGroups(array $groups): array
+	{
 		usort($groups, static function ($a, $b) {
-			$labelCmp = strcmp($a['display_label'], $b['display_label']);
+			$labelCmp = strnatcasecmp((string) $a['display_label'], (string) $b['display_label']);
 			if ($labelCmp !== 0) {
 				return $labelCmp;
 			}
-			return strcmp($a['dept_code'], $b['dept_code']);
+			return strnatcasecmp((string) $a['dept_code'], (string) $b['dept_code']);
 		});
 		return array_values($groups);
 	}

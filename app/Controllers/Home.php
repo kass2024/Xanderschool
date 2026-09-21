@@ -15829,6 +15829,7 @@ public function getApplicationDocs($id = null)
 		$detpModel = new DeptModel();
 		$academicYearMdl = new AcademicYearModel();
 		$school_id = (int) $this->session->get("soma_school_id");
+		(new FacultyModel())->ensureSpecialNursingAnpClasses($school_id);
 		$selectedYear = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
 		$data['title'] = lang("app.schoolFees");
 		$data['subtitle'] = lang("app.schoolFees");
@@ -15852,7 +15853,10 @@ public function getApplicationDocs($id = null)
 		}
 
 		$data['fees'] = $schoolFee->listForSchool($school_id, $selectedYear);
-		$data['feeGroups'] = SchoolFeesModel::groupByLevelDept($data['fees']);
+		$data['feeGroups'] = SchoolFeesModel::groupsForAllClasses(
+			$schoolFee->listClassesForSchool($school_id),
+			$data['fees']
+		);
 		$data['feeCount'] = count($data['fees']);
 		$data['feeTotalAmount'] = array_sum(array_map(static fn($f) => (float) ($f['amount'] ?? 0), $data['fees']));
 		$data['feeLevelCount'] = count($data['feeGroups']);
@@ -15908,36 +15912,38 @@ public function getApplicationDocs($id = null)
 	 */
 	public function get_fee_targets($dept)
 	{
-		$classMdl = new ClassesModel();
 		$school_id = (int) $this->session->get("soma_school_id");
 		$dept = (int) $dept;
-		$classes = $classMdl->select('classes.id, classes.title, classes.level, l.title AS level_title')
-			->join('levels l', 'l.id = classes.level', 'INNER')
-			->where('classes.school_id', $school_id)
-			->where('classes.department', $dept)
-			->orderBy('l.title', 'ASC')
-			->orderBy('classes.title', 'ASC')
-			->get()->getResultArray();
+		$classes = [];
+		foreach ((new SchoolFeesModel())->listClassesForSchool($school_id) as $row) {
+			if ((int) ($row['department_id'] ?? 0) !== $dept) {
+				continue;
+			}
+			if (SchoolFeesModel::isHolidayClass($row)) {
+				continue;
+			}
+			$classes[] = $row;
+		}
 
 		$byLevel = [];
 		foreach ($classes as $row) {
-			$byLevel[(int) $row['level']][] = $row;
+			$byLevel[(int) ($row['level_id'] ?? 0)][] = $row;
 		}
 
 		foreach ($byLevel as $levelId => $levelClasses) {
 			$count = count($levelClasses);
 			foreach ($levelClasses as $c) {
-				$classTitle = trim((string) ($c['title'] ?? ''));
-				if ($classTitle === '' || $classTitle === '-----') {
-					$label = esc($c['level_title']);
-				} else {
-					$label = esc(trim($c['level_title'] . ' ' . $classTitle));
-				}
-				echo '<option value="c:' . (int) $c['id'] . '">' . $label . '</option>';
+				$label = SchoolFeesModel::displayLabel($c);
+				echo '<option value="c:' . (int) ($c['class_id'] ?? 0) . '">' . esc($label) . '</option>';
 			}
 			if ($count > 1) {
-				$levelTitle = esc($levelClasses[0]['level_title'] ?? '');
-				echo '<option value="l:' . (int) $levelId . '">' . $levelTitle . ' (all classes)</option>';
+				$levelTitle = SchoolFeesModel::displayLabel([
+					'level_title' => $levelClasses[0]['level_title'] ?? '',
+					'dept_code' => $levelClasses[0]['dept_code'] ?? '',
+					'faculty_code' => $levelClasses[0]['faculty_code'] ?? '',
+					'class_title' => '',
+				]);
+				echo '<option value="l:' . (int) $levelId . '">' . esc($levelTitle) . ' (all classes)</option>';
 			}
 		}
 	}
@@ -16404,14 +16410,26 @@ public function getApplicationDocs($id = null)
 							->groupEnd();
 					}
 					$row = $builder->get(1)->getRowArray();
-					if (!$row) {
-						continue;
-					}
-					$schoolFee->update((int) $row['id'], [
+					$schoolFee->resetQuery();
+					$payload = [
 						'amount' => $base,
 						'amount_boarding' => $boardingVal,
 						'amount_day' => $dayVal,
-					]);
+					];
+					if (!$row) {
+						$schoolFee->insert($payload + [
+							'school_id' => $school_id,
+							'level' => $levelId,
+							'department' => $deptId,
+							'class_id' => $classId > 0 ? $classId : null,
+							'term' => $term,
+							'academic_year' => $academicYear,
+							'created_by' => $this->session->get('soma_id'),
+						]);
+						$updated++;
+						continue;
+					}
+					$schoolFee->update((int) $row['id'], $payload);
 					$updated++;
 				}
 				if ($updated === 0) {

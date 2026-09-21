@@ -12,7 +12,7 @@ $uniqueLevels = [];
 foreach ($feeGroups as $g) {
 	$uniqueLevels[$g['display_label']] = $g['display_label'];
 }
-ksort($uniqueLevels);
+ksort($uniqueLevels, SORT_NATURAL | SORT_FLAG_CASE);
 ?>
 <link rel="stylesheet" href="<?= base_url('assets/css/school-fees.css'); ?>">
 
@@ -43,7 +43,7 @@ ksort($uniqueLevels);
 			<div class="sf-kpi">
 				<div class="sf-kpi-icon green"><i class="fa fa-layer-group"></i></div>
 				<div class="sf-kpi-value"><?= (int) $feeLevelCount; ?></div>
-				<div class="sf-kpi-label"><?= lang('app.level'); ?></div>
+				<div class="sf-kpi-label"><?= lang('app.classes'); ?></div>
 			</div>
 			<div class="sf-kpi">
 				<div class="sf-kpi-icon orange"><i class="fa fa-coins"></i></div>
@@ -67,9 +67,9 @@ ksort($uniqueLevels);
 				</div>
 				<?php if (!empty($feeGroups)) : ?>
 				<div class="sf-field">
-					<label for="sfLevelFilter"><?= lang('app.level'); ?></label>
+					<label for="sfLevelFilter"><?= lang('app.selectClass'); ?></label>
 					<select class="form-control" id="sfLevelFilter">
-						<option value="">All levels</option>
+						<option value="">All classes</option>
 						<?php foreach ($uniqueLevels as $lvl) : ?>
 							<option value="<?= esc($lvl, 'attr'); ?>"><?= esc($lvl); ?></option>
 						<?php endforeach; ?>
@@ -77,7 +77,7 @@ ksort($uniqueLevels);
 				</div>
 				<div class="sf-field sf-search-field">
 					<label for="sfSearch">Search</label>
-					<input type="text" class="form-control" id="sfSearch" placeholder="Search level or department…">
+					<input type="text" class="form-control" id="sfSearch" placeholder="Search class or department…">
 				</div>
 				<?php endif; ?>
 			</div>
@@ -86,14 +86,14 @@ ksort($uniqueLevels);
 		<div class="sf-panel">
 			<div class="sf-panel-head">
 				<h3><?= lang('app.schoolFeesManagement'); ?></h3>
-				<span class="sf-badge" id="sfVisibleCount"><?= count($feeGroups); ?> levels · <?= (int) $feeCount; ?> fees</span>
+				<span class="sf-badge" id="sfVisibleCount"><?= count($feeGroups); ?> classes · <?= (int) $feeCount; ?> fees</span>
 			</div>
 			<div class="sf-panel-body">
 				<?php if (empty($feeGroups)) : ?>
 					<div class="sf-empty">
 						<i class="fa fa-inbox"></i>
-						<h4>No fees configured</h4>
-						<p>No school fees found for <?= esc($selectedYearTitle); ?>. Add a fee to get started.</p>
+						<h4>No classes found</h4>
+						<p>No classes are available for <?= esc($selectedYearTitle); ?>. Add a class first, then set school fees.</p>
 					</div>
 				<?php else : ?>
 					<div class="sf-table-wrap">
@@ -110,7 +110,8 @@ ksort($uniqueLevels);
 							</thead>
 							<tbody>
 								<?php foreach ($feeGroups as $group) :
-									$searchText = strtolower($group['display_label'] . ' ' . $group['dept_code'] . ' ' . $group['dept_title']);
+									$searchText = strtolower($group['display_label'] . ' ' . $group['dept_code'] . ' ' . $group['dept_title'] . ' ' . ($group['faculty_code'] ?? '') . ' ' . ($group['faculty_title'] ?? '') . ' ' . ($group['class_title'] ?? ''));
+									$hasAnyTerm = !empty($group['terms'][1]) || !empty($group['terms'][2]) || !empty($group['terms'][3]);
 									?>
 									<tr class="sf-group-row"
 										data-level="<?= esc($group['display_label'], 'attr'); ?>"
@@ -198,7 +199,8 @@ ksort($uniqueLevels);
 												data-level-id="<?= (int) $group['level_id']; ?>"
 												data-dept-id="<?= (int) $group['department_id']; ?>"
 												data-class-id="<?= (int) ($group['class_id'] ?? 0); ?>"
-												data-label="<?= esc($group['display_label'], 'attr'); ?>">
+												data-label="<?= esc($group['display_label'], 'attr'); ?>"
+												<?= $hasAnyTerm ? '' : 'disabled'; ?>>
 												<i class="fa fa-trash"></i>
 											</button>
 										</td>
@@ -308,7 +310,7 @@ ksort($uniqueLevels);
 			$row.toggle(show);
 			if (show) visible++;
 		});
-		$('#sfVisibleCount').text(visible + ' levels · <?= (int) $feeCount; ?> fees');
+		$('#sfVisibleCount').text(visible + ' classes · <?= (int) $feeCount; ?> fees');
 	}
 
 	function bootSchoolFees() {
@@ -345,7 +347,7 @@ ksort($uniqueLevels);
 			$('#edit_group_level_id').val($b.data('level-id'));
 			$('#edit_group_dept_id').val($b.data('dept-id'));
 			$('#edit_group_class_id').val($b.data('class-id') || 0);
-			$('#edit_group_title').text($b.data('level') + ' · ' + $b.data('dept'));
+			$('#edit_group_title').text($b.data('level'));
 			for (var t = 1; t <= 3; t++) {
 				$('#edit_group_boarding_' + t).val($b.data('boarding-' + t) || '');
 				$('#edit_group_day_' + t).val($b.data('day-' + t) || '');
