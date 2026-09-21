@@ -247,8 +247,11 @@ class AttendanceScanService
 			return [];
 		}
 		$year = self::academicYear($schoolId);
+		(new \App\Models\StudentModel())->ensureCardNfcColumn();
+		$hasNfc = $db->fieldExists('card_nfc', 'students');
+		$nfcSelect = $hasNfc ? ', s.card_nfc' : '';
 		$rows = $db->table('students s')
-			->select('s.id, s.school_id, s.fname, s.lname, s.regno, s.card, s.photo')
+			->select('s.id, s.school_id, s.fname, s.lname, s.regno, s.card, s.photo' . $nfcSelect)
 			->whereIn('s.school_id', $scopeSchoolIds)
 			->where('s.status', 1)
 			->orderBy('s.fname', 'ASC')
@@ -283,11 +286,87 @@ class AttendanceScanService
 				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
 				'regno' => (string) ($r['regno'] ?? ''),
 				'class' => $classes[$sid] ?? '',
-				'card' => (string) ($r['card'] ?? ''),
+				'card' => strtoupper(trim((string) ($r['card'] ?? ''))),
+				'card_nfc' => $hasNfc ? strtoupper(trim((string) ($r['card_nfc'] ?? ''))) : '',
 				'photo' => self::kioskPhotoUrl($r['photo'] ?? null),
 			];
 		}
 		return $out;
+	}
+
+	/**
+	 * Tiny card roster for the Android kiosk (poll every few seconds).
+	 * No photos / class joins — only ids, names, and current UIDs.
+	 *
+	 * @return array{success:int,students:list<array<string,mixed>>,visitors:list<array<string,mixed>>,staff:list<array<string,mixed>>}
+	 */
+	public static function cardIndex(int $schoolId): array
+	{
+		$db = \Config\Database::connect();
+		$scopeSchoolIds = self::scopeSchoolIds($schoolId);
+		$empty = ['success' => 1, 'students' => [], 'visitors' => [], 'staff' => []];
+		if ($scopeSchoolIds === []) {
+			return $empty;
+		}
+
+		(new \App\Models\StudentModel())->ensureCardNfcColumn();
+		$hasNfc = $db->fieldExists('card_nfc', 'students');
+		$nfcSelect = $hasNfc ? ', card_nfc' : '';
+		$studentRows = $db->table('students')
+			->select('id, fname, lname, regno, card' . $nfcSelect)
+			->whereIn('school_id', $scopeSchoolIds)
+			->where('status', 1)
+			->get()
+			->getResultArray();
+		$students = [];
+		foreach ($studentRows as $r) {
+			$students[] = [
+				'id' => (int) ($r['id'] ?? 0),
+				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
+				'regno' => (string) ($r['regno'] ?? ''),
+				'card' => strtoupper(trim((string) ($r['card'] ?? ''))),
+				'card_nfc' => $hasNfc ? strtoupper(trim((string) ($r['card_nfc'] ?? ''))) : '',
+			];
+		}
+
+		$visitorRows = $db->table('student_visitors')
+			->select('id, names, card')
+			->whereIn('school_id', $scopeSchoolIds)
+			->where('status', 1)
+			->get()
+			->getResultArray();
+		$visitors = [];
+		foreach ($visitorRows as $r) {
+			$visitors[] = [
+				'id' => (int) ($r['id'] ?? 0),
+				'names' => trim((string) ($r['names'] ?? '')),
+				'card' => strtoupper(trim((string) ($r['card'] ?? ''))),
+			];
+		}
+
+		$staff = [];
+		if ($db->fieldExists('card', 'staffs')) {
+			$staffRows = $db->table('staffs')
+				->select('id, fname, lname, card')
+				->whereIn('school_id', $scopeSchoolIds)
+				->where('status !=', 0)
+				->get()
+				->getResultArray();
+			foreach ($staffRows as $r) {
+				$staff[] = [
+					'id' => (int) ($r['id'] ?? 0),
+					'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
+					'card' => strtoupper(trim((string) ($r['card'] ?? ''))),
+				];
+			}
+		}
+
+		return [
+			'success' => 1,
+			'students' => $students,
+			'visitors' => $visitors,
+			'staff' => $staff,
+		];
 	}
 
 	/**
@@ -305,7 +384,7 @@ class AttendanceScanService
 		$hasFace = $db->fieldExists('face_enrolled', 'staffs');
 		$faceSelect = $hasFace ? ', s.face_enrolled' : '';
 		$rows = $db->table('staffs s')
-			->select('s.id, s.school_id, s.fname, s.lname, s.photo, s.card, s.shift_id, s.status, p.title as post_title, sh.title as shift_title' . $faceSelect)
+			->select('s.id, s.school_id, s.fname, s.lname, s.photo, s.card, s.shift_id, s.status, p.title as post_title, sh.title as shift_title, sh.options as shift_options' . $faceSelect)
 			->join('posts p', 'p.id = s.post', 'left')
 			->join('shifts sh', 'sh.id = s.shift_id', 'left')
 			->whereIn('s.school_id', $scopeSchoolIds)
@@ -330,6 +409,7 @@ class AttendanceScanService
 				'post' => (string) ($r['post_title'] ?? ''),
 				'shift' => (string) ($r['shift_title'] ?? ''),
 				'shift_id' => (int) ($r['shift_id'] ?? 0),
+				'shift_options' => (string) ($r['shift_options'] ?? '[]'),
 				'card' => (string) ($r['card'] ?? ''),
 				'photo' => $cardPhoto !== '' ? $cardPhoto : $photo,
 				'card_photo' => $cardPhoto,
@@ -574,11 +654,11 @@ class AttendanceScanService
 	}
 
 	public const STAFF_OUT_AFTER_IN_SECONDS = 300;
+	private const WAIT_CHECKOUT_MSG = 'Already checked in — waiting for checkout';
 
 	/**
-	 * Staff face/card clock. Same rule as the web staff scanner:
-	 * one IN per calendar day; OUT is allowed only 5 minutes after IN,
-	 * and later looks overwrite time_out.
+	 * Staff face/card clock. Shift-aware: IN once per working day; OUT only
+	 * within GRACE_SECONDS of shift end (or 5 minutes after IN if no shift).
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -601,6 +681,7 @@ class AttendanceScanService
 		}
 
 		$time = $eventTime > 1000000000 ? $eventTime : time();
+		$wanted = strtoupper(trim($wanted));
 		$shift = null;
 		if (!empty($staff->shift_id) && (int) $staff->shift_id > 0) {
 			$shift = [
@@ -608,9 +689,25 @@ class AttendanceScanService
 				'options' => $staff->shift_options ?? '[]',
 			];
 		}
+		$shiftAssigned = $shift !== null && StaffShiftClock::hasDays($shift['options'] ?? '[]');
 		$window = StaffShiftClock::windowFor($shift, $time);
 		$todayStart = strtotime('today', $time);
 		$todayEnd = strtotime('tomorrow', $time) - 1;
+		$working = !empty($window['working']);
+		$endTs = (int) ($window['end_ts'] ?? 0);
+
+		// Off-day (e.g. Sunday on a Mon–Fri shift) never records IN or OUT,
+		// even if a leftover attendance row exists from earlier tests.
+		if ($shiftAssigned && !$working) {
+			$payload = self::staffClockPayload(
+				$staff, '', $time, $window, $shift,
+				['code' => 'rejected', 'label' => 'Rejected', 'detail' => 'Not a working day', 'minutes' => 0],
+				false, 0, 'Not a working day for this shift', false
+			);
+			$payload['success'] = 0;
+			$payload['status'] = '';
+			return $payload;
+		}
 
 		$attendance = $db->table('attendance_records')
 			->where('user_id', (int) $staff->id)
@@ -624,16 +721,26 @@ class AttendanceScanService
 			->getRow();
 
 		if (!$attendance) {
-			// Check-in after shift end does not count as attendance.
-			if (!empty($window['working']) && !empty($window['end_ts'])
-				&& $time > ((int) $window['end_ts'] + StaffShiftClock::GRACE_SECONDS)) {
+			if ($wanted === 'OUT') {
+				$payload = self::staffClockPayload(
+					$staff, '', $time, $window, $shift,
+					['code' => 'rejected', 'label' => 'Rejected', 'detail' => 'No check-in today', 'minutes' => 0],
+					false, 0, 'Checkout not allowed — no check-in today', false
+				);
+				$payload['success'] = 0;
+				$payload['status'] = '';
+				return $payload;
+			}
+			if ($working && $endTs > 0 && $time > ($endTs + StaffShiftClock::GRACE_SECONDS)) {
 				$payload = self::staffClockPayload(
 					$staff, 'IN', $time, $window, $shift,
 					['code' => 'rejected', 'label' => 'Rejected', 'detail' => 'After shift end', 'minutes' => 0],
 					false, 0,
-					'Shift already ended (' . ($window['end_label'] ?? '') . ') — attendance not recorded'
+					'Shift already ended (' . ($window['end_label'] ?? '') . ') — attendance not recorded',
+					false
 				);
 				$payload['success'] = 0;
+				$payload['status'] = '';
 				return $payload;
 			}
 			$db->table('attendance_records')->insert([
@@ -648,31 +755,28 @@ class AttendanceScanService
 			return self::staffClockPayload(
 				$staff, 'IN', $time, $window, $shift,
 				StaffShiftClock::evaluateIn($time, $window),
-				false, 1
+				false, 1, 'Staff IN', false
 			);
 		}
 
 		$timeIn = (int) $attendance->time_in;
 		$alreadyOut = (int) ($attendance->time_out ?? 0) > 0;
-		if (!$alreadyOut && ($timeIn + self::STAFF_OUT_AFTER_IN_SECONDS) > $time) {
-			$wait = $timeIn + self::STAFF_OUT_AFTER_IN_SECONDS - $time;
-			$mins = max(1, (int) ceil($wait / 60));
+
+		if ($alreadyOut) {
 			return self::staffClockPayload(
-				$staff, 'IN', $timeIn, $window, $shift,
-				StaffShiftClock::evaluateIn($timeIn, $window),
-				true, 1, 'Already checked IN — wait ' . $mins . ' min to check OUT'
+				$staff, 'OUT', (int) $attendance->time_out, $window, $shift,
+				StaffShiftClock::evaluateOut((int) $attendance->time_out, $window),
+				true, 1, 'Already checked out', false
 			);
 		}
 
-		// Never record checkout before shift end time.
-		if (!empty($window['working']) && !empty($window['end_ts'])
-			&& $time < ((int) $window['end_ts'] - StaffShiftClock::GRACE_SECONDS)) {
-			$mins = (int) round((((int) $window['end_ts']) - $time) / 60);
+		$canOut = $working && $endTs > 0 && $time >= ($endTs - StaffShiftClock::GRACE_SECONDS);
+
+		if ($wanted === 'IN' || !$canOut) {
 			return self::staffClockPayload(
 				$staff, 'IN', $timeIn, $window, $shift,
 				StaffShiftClock::evaluateIn($timeIn, $window),
-				true, 1,
-				'Checkout not allowed before shift end (' . ($window['end_label'] ?? '') . ') — ' . $mins . ' min remaining'
+				true, 1, self::WAIT_CHECKOUT_MSG, false
 			);
 		}
 
@@ -682,7 +786,7 @@ class AttendanceScanService
 		return self::staffClockPayload(
 			$staff, 'OUT', $time, $window, $shift,
 			StaffShiftClock::evaluateOut($time, $window),
-			false, 1, 'Staff OUT'
+			false, 1, 'Staff OUT', false
 		);
 	}
 
@@ -705,6 +809,20 @@ class AttendanceScanService
 			'time_in' => 0,
 			'time_out' => 0,
 		];
+		$shiftAssigned = $shift !== null && StaffShiftClock::hasDays($shift['options'] ?? '[]');
+		$window = StaffShiftClock::windowFor($shift, $time);
+		$working = !empty($window['working']);
+		$endTs = (int) ($window['end_ts'] ?? 0);
+		if ($shiftAssigned && !$working) {
+			return [
+				'status' => '',
+				'already' => false,
+				'can_out' => false,
+				'message' => 'Not a working day for this shift',
+				'time_in' => 0,
+				'time_out' => 0,
+			];
+		}
 		if (!$attendance) {
 			return $empty;
 		}
@@ -716,34 +834,20 @@ class AttendanceScanService
 		if ($timeOut > 0) {
 			return [
 				'status' => 'OUT',
-				'already' => false,
+				'already' => true,
 				'can_out' => false,
-				'message' => '',
+				'message' => 'Already checked out',
 				'time_in' => $timeIn,
 				'time_out' => $timeOut,
 			];
 		}
-		$window = StaffShiftClock::windowFor($shift, $time);
-		if (($timeIn + self::STAFF_OUT_AFTER_IN_SECONDS) > $time) {
-			$wait = $timeIn + self::STAFF_OUT_AFTER_IN_SECONDS - $time;
-			$mins = max(1, (int) ceil($wait / 60));
+		$canOut = $working && $endTs > 0 && $time >= ($endTs - StaffShiftClock::GRACE_SECONDS);
+		if (!$canOut) {
 			return [
 				'status' => 'IN',
 				'already' => true,
 				'can_out' => false,
-				'message' => 'Already checked IN — wait ' . $mins . ' min to check OUT',
-				'time_in' => $timeIn,
-				'time_out' => 0,
-			];
-		}
-		if (!empty($window['working']) && !empty($window['end_ts'])
-			&& $time < ((int) $window['end_ts'] - StaffShiftClock::GRACE_SECONDS)) {
-			$mins = (int) round((((int) $window['end_ts']) - $time) / 60);
-			return [
-				'status' => 'IN',
-				'already' => true,
-				'can_out' => false,
-				'message' => 'Checkout not allowed before shift end (' . ($window['end_label'] ?? '') . ') — ' . $mins . ' min remaining',
+				'message' => self::WAIT_CHECKOUT_MSG,
 				'time_in' => $timeIn,
 				'time_out' => 0,
 			];
@@ -821,7 +925,7 @@ class AttendanceScanService
 	 * @param array<string,mixed> $verdict
 	 * @return array<string,mixed>
 	 */
-	private static function staffClockPayload($staff, string $status, int $time, array $window, $shift, array $verdict, bool $already, int $inCount = 0, string $message = ''): array
+	private static function staffClockPayload($staff, string $status, int $time, array $window, $shift, array $verdict, bool $already, int $inCount = 0, string $message = '', bool $canOut = false): array
 	{
 		$shiftHours = '';
 		if (!empty($window['working']) && !empty($window['start_label'])) {
@@ -844,7 +948,7 @@ class AttendanceScanService
 			'time' => date('H:i', $time),
 			'message' => $message,
 			'already' => $already,
-			'can_out' => false,
+			'can_out' => $canOut,
 			'in_count' => $inCount,
 			'verdict' => $verdict,
 			'shift' => [
@@ -1037,6 +1141,7 @@ class AttendanceScanService
 			'name' => trim((string) $student->fname . ' ' . (string) $student->lname),
 			'regno' => (string) ($student->regno ?? ''),
 			'class' => $className,
+			'card' => strtoupper(trim((string) ($student->card ?? ''))),
 			'photo' => self::kioskPhotoUrl($student->photo ?? null),
 			'records' => $records,
 		];

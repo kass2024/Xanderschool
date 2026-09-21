@@ -3517,11 +3517,16 @@ public function get_boarding_classes()
 
     try {
         $uvMdl = new UpdateVersionModel();
-        $update_v_data = $uvMdl->select('version')
+        $update_v_data = $uvMdl->select('id, version')
             ->where('type', 'student')
             ->where('school_id', $school_id)
             ->get(1)->getRow();
-        $update_v = $update_v_data ? $update_v_data->version : 1;
+        $update_v = ($update_v_data ? (int) $update_v_data->version : 0) + 1;
+        if ($update_v_data && !empty($update_v_data->id)) {
+            $uvMdl->update((int) $update_v_data->id, ['version' => $update_v]);
+        } else {
+            $uvMdl->insert(['school_id' => $school_id, 'type' => 'student', 'version' => $update_v]);
+        }
 
         $existing = $stMdl->select('id, card, card_nfc')->where('id', $student_id)->where('school_id', $school_id)->first();
         $existingCard = is_array($existing) ? strtoupper(trim((string) ($existing['card'] ?? ''))) : '';
@@ -3580,11 +3585,16 @@ public function get_boarding_classes()
 
 		try {
 			$uvMdl = new UpdateVersionModel();
-			$update_v_data = $uvMdl->select('version')
+			$update_v_data = $uvMdl->select('id, version')
 				->where('type', 'student')
 				->where('school_id', $school_id)
 				->get(1)->getRow();
-			$update_v = $update_v_data ? $update_v_data->version : 1;
+			$update_v = ($update_v_data ? (int) $update_v_data->version : 0) + 1;
+			if ($update_v_data && !empty($update_v_data->id)) {
+				$uvMdl->update((int) $update_v_data->id, ['version' => $update_v]);
+			} else {
+				$uvMdl->insert(['school_id' => $school_id, 'type' => 'student', 'version' => $update_v]);
+			}
 
 			if ($stMdl->save([
 				'id' => $student_id,
@@ -5176,6 +5186,20 @@ public function permission_card_scan()
 			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
 		}
 		return $this->response->setJSON(AttendanceScanService::bootstrap($schoolId));
+	}
+
+	/**
+	 * Lightweight card UID poll for the Android kiosk.
+	 * Used every few seconds so newly assigned student cards work without a full roster download.
+	 */
+	public function device_cards()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
+		}
+		return $this->response->setJSON(AttendanceScanService::cardIndex($schoolId));
 	}
 
 	public function device_staff_list()
