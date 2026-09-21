@@ -158,16 +158,14 @@
 			if (boarding !== '') {
 				$(".txt-fees-inputs[data-mode='0']").val(boarding);
 			}
-			if (day !== '') {
-				$(".txt-fees-inputs[data-mode='1']").val(day);
-			}
+			$(".txt-fees-inputs[data-mode='1']").val(day !== '' ? day : '0');
 		}
 
 		$("#btn-boarding-amount").on('keyup change', function () {
 			$(".txt-fees-inputs[data-mode='0']").val($(this).val());
 		});
 		$("#btn-day-amount").on('keyup change', function () {
-			$(".txt-fees-inputs[data-mode='1']").val($(this).val());
+			$(".txt-fees-inputs[data-mode='1']").val($(this).val() !== '' ? $(this).val() : '0');
 		});
 
 		function mefSyncTermChips() {

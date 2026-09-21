@@ -11417,8 +11417,33 @@ public function getApplicationDocs($id = null)
 		}
 
 		$aa = 0;
+		$modeById = [];
+		if (!empty($formids)) {
+			$ids = array_values(array_unique(array_map('intval', $formids)));
+			if ($ids) {
+				foreach ((new StudentModel())->select('id, studying_mode')->whereIn('id', $ids)->findAll() as $mr) {
+					$modeById[(int) $mr['id']] = (int) ($mr['studying_mode'] ?? 1);
+				}
+			}
+		}
 		foreach ($formids as $formid) {
 			$studentAmount = $amounts[$aa] ?? $amount;
+			$mode = $modeById[(int) $formid] ?? 1;
+			$modeAmt = ($mode === 0) ? $boardingVal : $dayVal;
+			$otherAmt = ($mode === 0) ? $dayVal : $boardingVal;
+			if ($boardingVal !== null || $dayVal !== null) {
+				if ($modeAmt === null) {
+					$aa++;
+					continue;
+				}
+				if ($studentAmount === '' || $studentAmount === null) {
+					$studentAmount = $modeAmt;
+				} elseif ($otherAmt !== null && is_numeric($studentAmount)
+					&& abs((float) $studentAmount - $otherAmt) < 0.01
+					&& abs((float) $studentAmount - $modeAmt) > 0.01) {
+					$studentAmount = $modeAmt;
+				}
+			}
 			foreach ($terms as $term) {
 				$data = [
 						"type_id" => $formid,
@@ -16156,9 +16181,7 @@ public function getApplicationDocs($id = null)
 				$students = $stMdl->get_student($classIdAuto, 'c.id', null, false, $academicYear);
 				foreach ($students as $st) {
 					$mode = (int) ($st['studying_mode'] ?? 1);
-					$amt = ($mode === 0)
-						? ($boardingVal !== null ? $boardingVal : $dayVal)
-						: ($dayVal !== null ? $dayVal : $boardingVal);
+					$amt = ($mode === 0) ? $boardingVal : $dayVal;
 					if ($amt === null) {
 						continue;
 					}
@@ -16187,6 +16210,36 @@ public function getApplicationDocs($id = null)
 							return (int) $ps['class_id'] === $classId;
 						}));
 					}
+				}
+				if (!empty($classStudents) && ($boardingVal !== null || $dayVal !== null)) {
+					$ids = array_values(array_unique(array_map(static fn($ps) => (int) $ps['student_id'], $classStudents)));
+					$modeById = [];
+					if ($ids) {
+						foreach ((new StudentModel())->select('id, studying_mode')->whereIn('id', $ids)->findAll() as $mr) {
+							$modeById[(int) $mr['id']] = (int) ($mr['studying_mode'] ?? 1);
+						}
+					}
+					$clamped = [];
+					foreach ($classStudents as $ps) {
+						$sid = (int) $ps['student_id'];
+						$mode = $modeById[$sid] ?? 1;
+						$modeAmt = ($mode === 0) ? $boardingVal : $dayVal;
+						$otherAmt = ($mode === 0) ? $dayVal : $boardingVal;
+						if ($modeAmt === null) {
+							continue;
+						}
+						$studentAmt = (float) $ps['amount'];
+						if ($otherAmt !== null && abs($studentAmt - $otherAmt) < 0.01 && abs($studentAmt - $modeAmt) > 0.01) {
+							$studentAmt = $modeAmt;
+						}
+						$clamped[] = [
+							'student_id' => $sid,
+							'amount' => $studentAmt,
+							'class_id' => (int) ($ps['class_id'] ?? 0),
+							'mode_amt' => $modeAmt,
+						];
+					}
+					$classStudents = $clamped;
 				}
 
 				$base = (float) ($amount !== '' && is_numeric($amount) ? $amount : 0);
@@ -16252,7 +16305,8 @@ public function getApplicationDocs($id = null)
 					foreach ($classStudents as $ps) {
 						$sid = (int) $ps['student_id'];
 						$studentAmt = (float) $ps['amount'];
-						$delta = $studentAmt - $base;
+						$compareAmt = isset($ps['mode_amt']) && $ps['mode_amt'] !== null ? (float) $ps['mode_amt'] : $base;
+						$delta = $studentAmt - $compareAmt;
 						// Replace prior adjustments so expected = studentAmt
 						\Config\Database::connect()->table('school_fees_discount')
 							->where('student', $sid)
@@ -16675,6 +16729,7 @@ public function getApplicationDocs($id = null)
 		$boardingVal = ($boardingAmt !== '' && is_numeric($boardingAmt)) ? (float) $boardingAmt : null;
 		$dayVal = ($dayAmt !== '' && is_numeric($dayAmt)) ? (float) $dayAmt : null;
 		if ($boardingVal === null && $dayVal === null && $legacyAmt !== '' && is_numeric($legacyAmt)) {
+			// Single undifferentiated amount — not a boarding figure copied onto day scholars.
 			$boardingVal = (float) $legacyAmt;
 			$dayVal = (float) $legacyAmt;
 		}
@@ -18036,7 +18091,9 @@ public function getApplicationDocs($id = null)
 		$schoolFees = new SchoolFeesModel();
 		$extraFees = new ExtraFeesModel();
 		$classMdl = new ClassesModel();
-		$extraFeesx = $extraFees->select("extra_fees.id,extra_fees.type,extra_fees.title,extra_fees.amount,extra_fees.type,extra_fees.term,fr.amount as paidextra,fr.due_date")
+		$studentRow = (new StudentModel())->select('studying_mode')->find($student);
+		$studyingMode = (int) ($studentRow['studying_mode'] ?? 1);
+		$extraFeesx = $extraFees->select("extra_fees.id,extra_fees.type,extra_fees.title,extra_fees.amount,extra_fees.amount_boarding,extra_fees.amount_day,extra_fees.type,extra_fees.term,fr.amount as paidextra,fr.due_date")
 				->join("(select fr.student_id,fr.fees_id,fr.due_date,COALESCE(sum(fr.amount),0) as amount from fees_records fr
 			 where fr.fees_type=1 and fr.status=1 and fr.student_id=$student group by fr.fees_id) fr", "extra_fees.id=fr.fees_id", "LEFT")
 				->where("(extra_fees.type_id=$class AND extra_fees.type=0 and extra_fees.academic_year=$year) or (extra_fees.type_id=$student AND extra_fees.type=1 and extra_fees.academic_year=$year)")
@@ -18049,7 +18106,7 @@ public function getApplicationDocs($id = null)
 				->where("classes.school_id", $school_id)
 				->where("classes.id", $class)
 				->get()->getRowArray();
-		$schoolfrees = $schoolFees->select("school_fees.id,school_fees.term,(school_fees.amount+coalesce(fd.amount,0)) as amount ,sum(fr.amount) as paidschoolfees, fr.due_date")
+		$schoolfrees = $schoolFees->select("school_fees.id,school_fees.term,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,sum(fr.amount) as paidschoolfees, fr.due_date")
 				->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=0 and fr.status=1", "LEFT")
 				->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
 				->where("school_fees.level", $level['level_id'])
@@ -18061,11 +18118,12 @@ public function getApplicationDocs($id = null)
 				->get()->getResultArray();
 		$i = 1;
 		foreach ($schoolfrees as $schoolfree) {
-			$piadschlfees = $schoolfree['amount'] - $schoolfree['paidschoolfees'];
+			$expected = SchoolFeesModel::expectedForStudent($schoolfree, $studyingMode, (float) ($schoolfree['discount'] ?? 0));
+			$piadschlfees = $expected - (float) $schoolfree['paidschoolfees'];
 			echo "<tr>	<td><input id='fixedSchoolFees' type='hidden' value" . $schoolfree['id'] . ">" . $i . "</td>
 						<td>" . lang("app.schoolFees") . "</td>
 						<td>" . $this->TermToStr($schoolfree['term']) . "</td>
-						<td>" . $schoolfree['amount'] . "<a data-id='{$schoolfree['id']}' data-amount='{$schoolfree['amount']}'
+						<td>" . $expected . "<a data-id='{$schoolfree['id']}' data-amount='{$expected}'
 						class='fa fa-pencil-alt btn-append-fees' style='cursor:pointer;'></a> </td>
 						<td>" . $schoolfree['paidschoolfees'] . "</td>
 						<td>" . $piadschlfees . "</td>
@@ -18086,14 +18144,17 @@ public function getApplicationDocs($id = null)
 					continue;
 				}
 			}
-			$extrapaid = $extraffe['amount'] - $extraffe['paidextra'];
+			$extraAmt = ((int) ($extraffe['type'] ?? 0) === 1)
+				? (float) ($extraffe['amount'] ?? 0)
+				: ExtraFeesModel::expectedForMode($extraffe, $studyingMode);
+			$extrapaid = $extraAmt - $extraffe['paidextra'];
 			$delBtn = (empty($extraffe['paidextra']) && $extraffe['type'] == 1) ? '<a class="fa fa-trash btn-del-fee" style="color: orangered" href="#"></a>' : '';
-			$editBtn = ($extraffe['type'] == 1) ? "<a data-id='{$extraffe['id']}' data-amount='{$extraffe['amount']}'
+			$editBtn = ($extraffe['type'] == 1) ? "<a data-id='{$extraffe['id']}' data-amount='{$extraAmt}'
 						class='fa fa-pencil-alt btn-edit-extra-fees' style='cursor:pointer;'></a>" : '';
 			echo "<tr>	<td>" . $i . "</td>
 						<td data-id='{$extraffe['id']}'><span>" . $extraffe['title'] . '</span> ' . $delBtn . "</td>
 						<td>" . $this->TermToStr($extraffe['term']) . "</td>
-						<td>" . $extraffe['amount'] . $editBtn . "</td>
+						<td>" . $extraAmt . $editBtn . "</td>
 						<td>" . $extraffe['paidextra'] . "</td>
 						<td>" . $extrapaid . "</td>
 						<td>" . $extraffe['due_date'] . "</td>
@@ -18143,7 +18204,7 @@ public function getApplicationDocs($id = null)
 
 		$items = [];
 
-		$schoolRows = $schoolFees->select('school_fees.id,school_fees.term,(school_fees.amount+coalesce(fd.amount,0)) as amount,sum(fr.amount) as paid')
+		$schoolRows = $schoolFees->select('school_fees.id,school_fees.term,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,sum(fr.amount) as paid')
 			->join('fees_records fr', "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=0 and fr.status=1", 'LEFT')
 			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", 'fd.feesId=school_fees.id', 'LEFT')
 			->where('school_fees.level', $level['level_id'])
@@ -18151,12 +18212,12 @@ public function getApplicationDocs($id = null)
 			->where('school_fees.academic_year', $year)
 			->where('school_fees.school_id', $school_id)
 			->where('school_fees.term', $termFilter)
-			->groupBy('school_fees.id,school_fees.term,school_fees.amount,fd.amount')
+			->groupBy('school_fees.id,school_fees.term,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,fd.amount')
 			->orderBy('school_fees.term', 'ASC')
 			->get()->getResultArray();
 
 		foreach ($schoolRows as $row) {
-			$expected = (float) ($row['amount'] ?? 0);
+			$expected = SchoolFeesModel::expectedForStudent($row, $studyingMode, (float) ($row['discount'] ?? 0));
 			$paid = (float) ($row['paid'] ?? 0);
 			$remain = max(0, $expected - $paid);
 			if ($remain <= 0) {
@@ -18280,12 +18341,19 @@ public function getApplicationDocs($id = null)
 		$data = $this->data;
 		$extrafeesmodel = new ExtraFeesModel();
 		$school_id = $this->session->get("soma_school_id");
-		$extrafees = $extrafeesmodel->select("extra_fees.amount as extra_amt,sum(fr.amount) as paid_amt")
+		$row = $extrafeesmodel->select("extra_fees.amount,extra_fees.amount_boarding,extra_fees.amount_day,extra_fees.type,sum(fr.amount) as paid_amt")
 				->join("fees_records fr", "fr.fees_id=extra_fees.id AND fr.student_id=$student and fr.fees_type=1 and fr.status=1", "LEFT")
 				->where("extra_fees.school_id", $school_id)
 				->where("extra_fees.id", $extra)
 				->get()->getRowArray();
-		echo json_encode($extrafees);
+		$stModeRow = (new StudentModel())->select('studying_mode')->find($student);
+		$mode = (int) ($stModeRow['studying_mode'] ?? 1);
+		$extraAmt = $row
+			? (((int) ($row['type'] ?? 0) === 1)
+				? (float) ($row['amount'] ?? 0)
+				: ExtraFeesModel::expectedForMode($row, $mode))
+			: 0;
+		echo json_encode(['extra_amt' => $extraAmt, 'paid_amt' => $row['paid_amt'] ?? 0]);
 	}
 
 	public
@@ -18295,13 +18363,18 @@ public function getApplicationDocs($id = null)
 		$data = $this->data;
 		$schoolfeesModel = new SchoolFeesModel();
 		$school_id = $this->session->get("soma_school_id");
-		$schoolfees = $schoolfeesModel->select("(school_fees.amount+coalesce(fd.amount,0)) as schlfee_amt,sum(fr.amount) as paid_amt")
+		$schoolfees = $schoolfeesModel->select("school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,sum(fr.amount) as paid_amt")
 				->join("fees_records fr", "fr.fees_id=school_fees.id AND fr.student_id=$student and fr.fees_type=0 and fr.status=1", "LEFT")
 				->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
 				->where("school_fees.school_id", $school_id)
 				->where("school_fees.id", $feeId)
 				->get()->getRowArray();
-		echo json_encode($schoolfees);
+		$stModeRow = (new StudentModel())->select('studying_mode')->find($student);
+		$mode = (int) ($stModeRow['studying_mode'] ?? 1);
+		$expected = $schoolfees
+			? SchoolFeesModel::expectedForStudent($schoolfees, $mode, (float) ($schoolfees['discount'] ?? 0))
+			: 0;
+		echo json_encode(['schlfee_amt' => $expected, 'paid_amt' => $schoolfees['paid_amt'] ?? 0]);
 	}
 
 	public
@@ -24462,12 +24535,7 @@ public function assign_card()
 	 */
 	private function schoolFeeAmountForMode(array $row, int $studyingMode): float
 	{
-		$modes = SchoolFeesModel::modeAmounts($row);
-		$amount = ($studyingMode === 0) ? $modes['boarding'] : $modes['day'];
-		if ($amount === null) {
-			$amount = $modes['legacy'];
-		}
-		return max(0, (float) $amount);
+		return SchoolFeesModel::expectedForMode($row, $studyingMode);
 	}
 
 	private function extraFeeAmountForMode(array $row, int $studyingMode): float

@@ -2361,9 +2361,7 @@
 			if (boarding !== '') {
 				$('#sfFeeStudents .sf-fee-amt[data-mode="0"]').val(boarding);
 			}
-			if (day !== '') {
-				$('#sfFeeStudents .sf-fee-amt[data-mode="1"]').val(day);
-			}
+			$('#sfFeeStudents .sf-fee-amt[data-mode="1"]').val(day !== '' ? day : '0');
 			sfSyncBaseAmount();
 		}
 

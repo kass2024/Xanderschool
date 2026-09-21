@@ -4,6 +4,7 @@ namespace App\Libraries;
 
 use App\Models\ExtraFeesModel;
 use App\Models\FacultyModel;
+use App\Models\SchoolFeesModel;
 use App\Models\StudentModel;
 
 /**
@@ -318,8 +319,8 @@ class FeesReportHelper
 		string $feesScope = self::FEES_BOTH
 	) {
 		$feesScope = self::normalizeFeesScope($feesScope);
-		$schoolAmtExpr = '(COALESCE(sf.amount,0) + coalesce(fd.amount,0))';
-		$extraAmtExpr = '((CASE WHEN students.studying_mode = 0 THEN COALESCE(ex.boarding_amount,0) ELSE COALESCE(ex.day_amount,0) END) + COALESCE(student.amount,0))';
+		$schoolAmtExpr = '(' . SchoolFeesModel::sqlExpectedFromSums('sf') . ' + coalesce(fd.amount,0))';
+		$extraAmtExpr = '(' . ExtraFeesModel::sqlExpectedFromSums('ex') . ' + COALESCE(student.amount,0))';
 		$schoolPaidExpr = '(COALESCE(fr.amount,0))';
 		$extraPaidExpr = '(COALESCE(extraPaid.amount,0) + COALESCE(extraPaidSingle.amount,0))';
 		if ($feesScope === self::FEES_SCHOOL) {
@@ -353,10 +354,10 @@ class FeesReportHelper
 			->join('departments d', 'd.id=cl.department')
 			->join('levels l', 'l.id=cl.level')
 			->join('faculty f', 'f.id=d.faculty_id')
-			->join("(select sum(sf.amount) as amount,sf.level,sf.department from school_fees sf where sf.term IN ($termsIn) and
+			->join("(select " . SchoolFeesModel::sqlModeSumSelect('sf') . ",sf.level,sf.department from school_fees sf where sf.term IN ($termsIn) and
 			sf.academic_year=$academic and sf.school_id = $schoolId group by sf.level,sf.department) sf", 'sf.level=l.id and sf.department=d.id', 'LEFT')
-			->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $schoolId group by fd.student,sf.level,sf.department) fd", 'fd.level=l.id and fd.department=d.id AND fd.student=students.id', 'LEFT')
-			->join("(select sum(COALESCE(ex.amount_boarding, ex.amount)) as boarding_amount, sum(COALESCE(ex.amount_day, ex.amount)) as day_amount,ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
+			->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $schoolId AND (fd.comment IS NULL OR fd.comment NOT LIKE 'Set from Create Fee%') group by fd.student,sf.level,sf.department) fd", 'fd.level=l.id and fd.department=d.id AND fd.student=students.id', 'LEFT')
+			->join("(select " . ExtraFeesModel::sqlModeSumSelect('ex') . ",ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
 			ex.academic_year=$academic and ex.school_id = $schoolId group by ex.type_id) ex", 'ex.type_id=cl.id', 'LEFT')
 			->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=1 and ex.term IN ($termsIn) and
 			ex.academic_year=$academic and ex.school_id = $schoolId

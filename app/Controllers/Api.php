@@ -2015,7 +2015,9 @@ public function sync($option, $school_id)
 			->where("classes.school_id", $school_id)
 			->where("classes.id", $class)
 			->get()->getRowArray();
-		$schoolfrees = $schoolFees->select("school_fees.id,'School fees' as title,0 as type,(school_fees.amount+coalesce(fd.amount,0)) as amount ,coalesce(sum(fr.amount),0) as paid, fr.due_date,school_fees.term")
+		$stModeRow = (new StudentModel())->select('studying_mode')->find($student);
+		$mode = (int) ($stModeRow['studying_mode'] ?? 1);
+		$schoolfrees = $schoolFees->select("school_fees.id,'School fees' as title,0 as type,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,coalesce(sum(fr.amount),0) as paid, fr.due_date,school_fees.term")
 			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
 			->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=2", "LEFT")
 			->where("school_fees.level", $level['level_id'])
@@ -2024,15 +2026,27 @@ public function sync($option, $school_id)
 			->where("school_fees.school_id", $school_id)
 			->groupBy("school_fees.id")
 			->get()->getResultArray();
+		foreach ($schoolfrees as &$sfRow) {
+			$sfRow['amount'] = SchoolFeesModel::expectedForStudent($sfRow, $mode, (float) ($sfRow['discount'] ?? 0));
+			unset($sfRow['amount_boarding'], $sfRow['amount_day'], $sfRow['discount']);
+		}
+		unset($sfRow);
 
 		$extraFees = new ExtraFeesModel();
-		$extraFeesx = $extraFees->select("extra_fees.id,extra_fees.title,1 as type,extra_fees.amount
+		$extraFeesx = $extraFees->select("extra_fees.id,extra_fees.title,1 as type,extra_fees.amount,extra_fees.amount_boarding,extra_fees.amount_day,extra_fees.type as extra_kind
 		,coalesce(sum(fr.amount),0) as paid,fr.due_date,extra_fees.term")
 			->join("fees_records fr", "extra_fees.id=fr.fees_id and fr.student_id=$student and fr.fees_type=1", "LEFT")
 			->where("((extra_fees.type_id=$class AND extra_fees.type=0) or (extra_fees.type_id=$student AND extra_fees.type=1))")
 			->where("extra_fees.academic_year", $classYear->year)
 			->groupBy("extra_fees.id")
 			->get()->getResultArray();
+		foreach ($extraFeesx as &$exRow) {
+			if ((int) ($exRow['extra_kind'] ?? 0) !== 1) {
+				$exRow['amount'] = ExtraFeesModel::expectedForMode($exRow, $mode);
+			}
+			unset($exRow['amount_boarding'], $exRow['amount_day'], $exRow['extra_kind']);
+		}
+		unset($exRow);
 		$dt = array_merge_recursive($schoolfrees, $extraFeesx);
 		usort($dt, function ($a, $b) {
 			return $a['term'] <=> $b['term'];

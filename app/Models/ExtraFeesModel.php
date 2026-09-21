@@ -5,6 +5,9 @@ use CodeIgniter\Model;
 
 class ExtraFeesModel extends Model
 {
+	/** WISDOM SCHOOL KAYONZA — Registration is set manually (10,000 all classes). */
+	private const KAYONZA_SCHOOL_ID = 35;
+
 	protected $table="extra_fees";
 	protected $allowedFields = ["school_id","title","academic_year","type_id","type","term","amount","amount_boarding","amount_day","created_by"];
 	protected $useTimestamps = true;
@@ -44,14 +47,30 @@ class ExtraFeesModel extends Model
 		];
 	}
 
+	/**
+	 * Amount a boarding (0) or day (1) student owes. Never give boarding fees to a day scholar.
+	 */
 	public static function expectedForMode(array $row, int $studyingMode): float
 	{
 		$modes = self::modeAmounts($row);
-		$amount = ($studyingMode === 0) ? $modes['boarding'] : $modes['day'];
-		if ($amount === null) {
-			$amount = $modes['legacy'];
+		$hasSplit = ($row['amount_boarding'] ?? null) !== null && ($row['amount_boarding'] ?? '') !== ''
+			|| ($row['amount_day'] ?? null) !== null && ($row['amount_day'] ?? '') !== '';
+		if ($hasSplit) {
+			$amount = ((int) $studyingMode === 0) ? $modes['boarding'] : $modes['day'];
+			return max(0, (float) ($amount ?? 0));
 		}
-		return max(0, (float) $amount);
+		return max(0, (float) $modes['legacy']);
+	}
+
+	public static function sqlModeSumSelect(string $alias): string
+	{
+		return "SUM(CASE WHEN {$alias}.amount_boarding IS NOT NULL THEN {$alias}.amount_boarding WHEN {$alias}.amount_day IS NOT NULL THEN 0 ELSE COALESCE({$alias}.amount, 0) END) AS boarding_amount, "
+			. "SUM(CASE WHEN {$alias}.amount_day IS NOT NULL THEN {$alias}.amount_day WHEN {$alias}.amount_boarding IS NOT NULL THEN 0 ELSE COALESCE({$alias}.amount, 0) END) AS day_amount";
+	}
+
+	public static function sqlExpectedFromSums(string $sumAlias, string $modeCol = 'students.studying_mode'): string
+	{
+		return "(CASE WHEN {$modeCol} = 0 THEN COALESCE({$sumAlias}.boarding_amount,0) ELSE COALESCE({$sumAlias}.day_amount,0) END)";
 	}
 
 	public static function isRegistrationTitle(?string $title): bool
@@ -317,6 +336,9 @@ class ExtraFeesModel extends Model
 	): int {
 		$this->ensureSchema();
 		if ($schoolId < 1 || $yearId < 1) {
+			return 0;
+		}
+		if ($schoolId === self::KAYONZA_SCHOOL_ID) {
 			return 0;
 		}
 		$db = \Config\Database::connect();

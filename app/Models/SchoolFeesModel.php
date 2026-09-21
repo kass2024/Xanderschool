@@ -186,7 +186,7 @@ class SchoolFeesModel extends Model
 		$boarding = ($boarding === null || $boarding === '') ? null : (float) $boarding;
 		$day = ($day === null || $day === '') ? null : (float) $day;
 		if ($boarding === null && $day === null && $legacy > 0) {
-			// Legacy fee: show same amount for both until re-saved with modes
+			// Undifferentiated legacy fee (no boarding/day split).
 			$boarding = $legacy;
 			$day = $legacy;
 		}
@@ -195,6 +195,57 @@ class SchoolFeesModel extends Model
 			'day' => $day,
 			'legacy' => $legacy,
 		];
+	}
+
+	/**
+	 * Amount a boarding (0) or day (1) student owes. Never cross-assign the other mode.
+	 */
+	public static function expectedForMode(array $row, int $studyingMode): float
+	{
+		$modes = self::modeAmounts($row);
+		$hasSplit = ($row['amount_boarding'] ?? null) !== null && ($row['amount_boarding'] ?? '') !== ''
+			|| ($row['amount_day'] ?? null) !== null && ($row['amount_day'] ?? '') !== '';
+		if ($hasSplit) {
+			$amount = ((int) $studyingMode === 0) ? $modes['boarding'] : $modes['day'];
+			return max(0, (float) ($amount ?? 0));
+		}
+		return max(0, (float) $modes['legacy']);
+	}
+
+	/**
+	 * Mode-correct expected amount, keeping real scholarships but dropping a boarding figure billed to a day scholar.
+	 */
+	public static function expectedForStudent(array $row, int $studyingMode, float $discount = 0): float
+	{
+		$modeAmt = self::expectedForMode($row, $studyingMode);
+		$base = (float) ($row['amount'] ?? 0);
+		$legacyExpected = $base + $discount;
+		$boardRaw = $row['amount_boarding'] ?? null;
+		$dayRaw = $row['amount_day'] ?? null;
+		$hasSplit = ($boardRaw !== null && $boardRaw !== '') || ($dayRaw !== null && $dayRaw !== '');
+		if (!$hasSplit) {
+			return max(0, $legacyExpected > 0 ? $legacyExpected : $modeAmt);
+		}
+		$otherAmt = self::expectedForMode($row, ((int) $studyingMode === 0) ? 1 : 0);
+		if ($otherAmt > 0 && abs($legacyExpected - $otherAmt) < 0.01 && abs($legacyExpected - $modeAmt) > 0.01) {
+			return $modeAmt;
+		}
+		if (abs($legacyExpected - $modeAmt) < 0.01 || abs($discount) < 0.01) {
+			return $modeAmt;
+		}
+		return max(0, $legacyExpected);
+	}
+
+	/** SQL: sum boarding/day without falling back to the other mode's amount. */
+	public static function sqlModeSumSelect(string $alias): string
+	{
+		return "SUM(CASE WHEN {$alias}.amount_boarding IS NOT NULL THEN {$alias}.amount_boarding WHEN {$alias}.amount_day IS NOT NULL THEN 0 ELSE COALESCE({$alias}.amount, 0) END) AS boarding_amount, "
+			. "SUM(CASE WHEN {$alias}.amount_day IS NOT NULL THEN {$alias}.amount_day WHEN {$alias}.amount_boarding IS NOT NULL THEN 0 ELSE COALESCE({$alias}.amount, 0) END) AS day_amount";
+	}
+
+	public static function sqlExpectedFromSums(string $sumAlias, string $modeCol = 'students.studying_mode'): string
+	{
+		return "(CASE WHEN {$modeCol} = 0 THEN COALESCE({$sumAlias}.boarding_amount,0) ELSE COALESCE({$sumAlias}.day_amount,0) END)";
 	}
 
 	/**
