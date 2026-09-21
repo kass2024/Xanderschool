@@ -59,10 +59,18 @@ class ProfilePhotoNormalizer
 			$this->lastError = 'Could not decode photo';
 			return false;
 		}
+		if ($this->isEmptyPortrait($src)) {
+			imagedestroy($src);
+			$this->lastError = 'Photo is empty';
+			return false;
+		}
 
 		$mode = strtolower($fit);
 		if ($mode === 'circle') {
-			$out = $this->cropOntoWhite($src, self::CIRCLE, self::CIRCLE, 'cover');
+			$out = $this->idCircleCoverFromImage($src, self::CIRCLE);
+			if ($out === null) {
+				$out = $this->cropOntoWhite($src, self::CIRCLE, self::CIRCLE, 'cover');
+			}
 		} else {
 			$outFit = $mode === 'cover' ? 'cover' : 'contain';
 			$out = $this->cropOntoWhite($src, self::WIDTH, self::HEIGHT, $outFit);
@@ -577,6 +585,270 @@ class ProfilePhotoNormalizer
 			}
 		}
 		return $seen > 0 && ($hits / $seen) < 0.08;
+	}
+
+	/**
+	 * True when the file has no usable face (flat grey/white disc).
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	public function isEmptyPortrait($im): bool
+	{
+		if ($this->looksBlank($im)) {
+			return true;
+		}
+		$w = imagesx($im);
+		$h = imagesy($im);
+		$step = max(1, (int) floor(min($w, $h) / 40));
+		$seen = 0;
+		$person = 0;
+		for ($y = (int) ($h * 0.12); $y < (int) ($h * 0.88); $y += $step) {
+			for ($x = (int) ($w * 0.12); $x < (int) ($w * 0.88); $x += $step) {
+				$seen++;
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($this->isSkinTone($r, $g, $b)) {
+					$person++;
+					continue;
+				}
+				$maxc = max($r, $g, $b);
+				$minc = min($r, $g, $b);
+				$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+				$lum = $this->luma($r, $g, $b);
+				if ($sat > 0.22 && $lum > 30 && $lum < 220) {
+					$person++;
+				}
+			}
+		}
+		return $seen > 0 && ($person / $seen) < 0.04;
+	}
+
+	/**
+	 * Cover-crop the real portrait into a square that fills the ID-card circle.
+	 * Strips white letterbox bars (circle-on-3:4 files) so the face is not
+	 * taken from empty padding.
+	 *
+	 * @param resource|\GdImage $src
+	 * @return resource|\GdImage|null
+	 */
+	public function idCircleCoverFromImage($src, int $size)
+	{
+		if (!is_resource($src) && !is_object($src)) {
+			return null;
+		}
+		$size = max(32, $size);
+		$sw = imagesx($src);
+		$sh = imagesy($src);
+		if ($sw < 2 || $sh < 2) {
+			return null;
+		}
+		[$bx, $by, $bw, $bh] = $this->letterboxBox($src, $sw, $sh);
+		if ($bw < 8 || $bh < 8) {
+			$bx = 0;
+			$by = 0;
+			$bw = $sw;
+			$bh = $sh;
+		}
+
+		$person = $this->personBox($src, $bx, $by, $bw, $bh);
+		if ($person !== null) {
+			[$px, $py, $pw, $ph] = $person;
+			$padX = (int) max(8, round($pw * 0.22));
+			$padTop = (int) max(8, round($ph * 0.18));
+			$padBot = (int) max(6, round($ph * 0.08));
+			$px = max($bx, $px - $padX);
+			$py = max($by, $py - $padTop);
+			$pr = min($bx + $bw, $px + $pw + $padX * 2);
+			$pb = min($by + $bh, $py + $ph + $padBot);
+			$pw = max(8, $pr - $px);
+			$ph = max(8, $pb - $py);
+			$side = max($pw, $ph);
+			$side = min($side, $bw, $bh);
+			$cx = $px + intdiv($pw, 2);
+			$sx = (int) max($bx, min($bx + $bw - $side, $cx - intdiv($side, 2)));
+			$sy = (int) max($by, min($by + $bh - $side, $py));
+			$crop = $side;
+		} else {
+			$side = min($bw, $bh);
+			$cx = $bx + intdiv($bw, 2);
+			$sx = (int) max($bx, min($bx + $bw - $side, $cx - intdiv($side, 2)));
+			$sy = $by;
+			if ($bh > $bw) {
+				$extra = $bh - $side;
+				$sy = (int) max($by, min($by + $extra, $by + (int) round($extra * 0.10)));
+			}
+			$zoom = 1.0;
+			$crop = max(8, (int) round($side / $zoom));
+			$sx = (int) max($bx, min($bx + $bw - $crop, $sx + intdiv($side - $crop, 2)));
+			$sy = (int) max($by, min($by + $bh - $crop, $sy + (int) round(($side - $crop) * 0.08)));
+		}
+		$crop = max(1, min($crop, $sw - $sx, $sh - $sy, $bx + $bw - $sx, $by + $bh - $sy));
+
+		$dst = imagecreatetruecolor($size, $size);
+		$white = imagecolorallocate($dst, 255, 255, 255);
+		imagefill($dst, 0, 0, $white);
+		$this->hiQualityResample($dst, $src, 0, 0, $sx, $sy, $size, $size, $crop, $crop);
+		return $dst;
+	}
+
+	/** @return array{0:int,1:int,2:int,3:int} x,y,w,h */
+	private function letterboxBox($im, int $w, int $h): array
+	{
+		$top = 0;
+		while ($top < (int) ($h * 0.40) && $this->isWhiteBar($im, 0, $top, $w, 1)) {
+			$top++;
+		}
+		$bot = $h - 1;
+		while ($bot > (int) ($h * 0.60) && $this->isWhiteBar($im, 0, $bot, $w, 1)) {
+			$bot--;
+		}
+		$left = 0;
+		while ($left < (int) ($w * 0.40) && $this->isWhiteBar($im, $left, $top, 1, max(1, $bot - $top + 1))) {
+			$left++;
+		}
+		$right = $w - 1;
+		while ($right > (int) ($w * 0.60) && $this->isWhiteBar($im, $right, $top, 1, max(1, $bot - $top + 1))) {
+			$right--;
+		}
+		if ($right <= $left || $bot <= $top) {
+			return [0, 0, $w, $h];
+		}
+		return [$left, $top, $right - $left + 1, $bot - $top + 1];
+	}
+
+	private function isWhiteBar($im, int $x, int $y, int $bw, int $bh): bool
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		$x1 = min($w, $x + max(1, $bw));
+		$y1 = min($h, $y + max(1, $bh));
+		$seen = 0;
+		$white = 0;
+		$step = 2;
+		for ($yy = max(0, $y); $yy < $y1; $yy += $step) {
+			for ($xx = max(0, $x); $xx < $x1; $xx += $step) {
+				$seen++;
+				$rgb = imagecolorat($im, $xx, $yy) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($r >= 248 && $g >= 248 && $b >= 248) {
+					$white++;
+				}
+			}
+		}
+		return $seen > 0 && ($white / $seen) >= 0.90;
+	}
+
+	/**
+	 * Bounding box of the person inside a (letterboxed) portrait, or null when
+	 * the subject already fills the frame.
+	 *
+	 * @return array{0:int,1:int,2:int,3:int}|null
+	 */
+	private function personBox($im, int $x0, int $y0, int $bw, int $bh): ?array
+	{
+		$wall = $this->sampleInnerWall($im, $x0, $y0, $bw, $bh);
+		$step = max(1, (int) floor(min($bw, $bh) / 180));
+		$minX = $x0 + $bw;
+		$minY = $y0 + $bh;
+		$maxX = $x0;
+		$maxY = $y0;
+		$hits = 0;
+		$wallLum = $this->luma($wall[0], $wall[1], $wall[2]);
+		for ($y = $y0; $y < $y0 + $bh; $y += $step) {
+			for ($x = $x0; $x < $x0 + $bw; $x += $step) {
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($this->isBackdropPixel($r, $g, $b)) {
+					continue;
+				}
+				$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
+				$lum = $this->luma($r, $g, $b);
+				$maxc = max($r, $g, $b);
+				$minc = min($r, $g, $b);
+				$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
+				$isPerson = $this->isSkinTone($r, $g, $b)
+					|| $lum < $wallLum - 22
+					|| $sat > 0.20
+					|| $dist > 70;
+				if (!$isPerson) {
+					continue;
+				}
+				$hits++;
+				if ($x < $minX) {
+					$minX = $x;
+				}
+				if ($y < $minY) {
+					$minY = $y;
+				}
+				if ($x > $maxX) {
+					$maxX = $x;
+				}
+				if ($y > $maxY) {
+					$maxY = $y;
+				}
+			}
+		}
+		if ($maxX < $minX || $hits < 12) {
+			return null;
+		}
+		$pw = max(1, $maxX - $minX + 1);
+		$ph = max(1, $maxY - $minY + 1);
+		$area = $pw * $ph;
+		$frame = max(1, $bw * $bh);
+		// Already filling the portrait — a second zoom would cut the head.
+		if ($pw >= (int) ($bw * 0.58) && $ph >= (int) ($bh * 0.52)) {
+			return null;
+		}
+		if ($area < (int) ($frame * 0.06) || max($pw, $ph) < (int) (min($bw, $bh) * 0.18)) {
+			return null;
+		}
+		return [$minX, $minY, $pw, $ph];
+	}
+
+	/** @return array{0:int,1:int,2:int} */
+	private function sampleInnerWall($im, int $x0, int $y0, int $bw, int $bh): array
+	{
+		$insetX = max(2, (int) round($bw * 0.08));
+		$insetY = max(2, (int) round($bh * 0.08));
+		$pts = [
+			[$x0 + $insetX, $y0 + $insetY],
+			[$x0 + $bw - $insetX - 1, $y0 + $insetY],
+			[$x0 + $insetX, $y0 + $bh - $insetY - 1],
+			[$x0 + $bw - $insetX - 1, $y0 + $bh - $insetY - 1],
+		];
+		$rs = $gs = $bs = [];
+		foreach ($pts as [$x, $y]) {
+			for ($dy = -3; $dy <= 3; $dy++) {
+				for ($dx = -3; $dx <= 3; $dx++) {
+					$xx = max(0, min(imagesx($im) - 1, $x + $dx));
+					$yy = max(0, min(imagesy($im) - 1, $y + $dy));
+					$rgb = imagecolorat($im, $xx, $yy) & 0xFFFFFF;
+					$r = ($rgb >> 16) & 255;
+					$g = ($rgb >> 8) & 255;
+					$b = $rgb & 255;
+					if ($this->isBackdropPixel($r, $g, $b)) {
+						continue;
+					}
+					$rs[] = $r;
+					$gs[] = $g;
+					$bs[] = $b;
+				}
+			}
+		}
+		if ($rs === []) {
+			return [210, 214, 220];
+		}
+		sort($rs);
+		sort($gs);
+		sort($bs);
+		$m = intdiv(count($rs), 2);
+		return [$rs[$m], $gs[$m], $bs[$m]];
 	}
 
 	private function subjectBBox($im, int $w, int $h): array

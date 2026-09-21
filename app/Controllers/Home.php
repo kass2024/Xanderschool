@@ -1355,8 +1355,18 @@ public function testEmail()
 		$saved = function_exists('save_profile_photo_white_bg_from_string')
 			? save_profile_photo_white_bg_from_string($decoded, $profilePath . $name, false, 'circle', false)
 			: false;
-		if (!$saved && file_put_contents($profilePath . $name, $decoded) === false) {
-			return $this->response->setJSON(['error' => lang('app.ImagenotSaved')]);
+		if (!$saved) {
+			$rawOk = @file_put_contents($profilePath . $name, $decoded) !== false;
+			$probe = $rawOk ? @imagecreatefromstring($decoded) : false;
+			$empty = false;
+			if ($probe) {
+				$empty = (new \App\Libraries\ProfilePhotoNormalizer())->isEmptyPortrait($probe);
+				imagedestroy($probe);
+			}
+			if (!$rawOk || $empty) {
+				@unlink($profilePath . $name);
+				return $this->response->setJSON(['error' => lang('app.ImagenotSaved')]);
+			}
 		}
 
 		$takenAt = date('Y-m-d H:i:s');

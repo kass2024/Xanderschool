@@ -262,9 +262,14 @@ class WisdomCardRenderer
 			return;
 		}
 		$hole = max(2, $d);
-		$square = $this->coverSquare($src, $hole, 0.06, 1.16);
+		$normalizer = new ProfilePhotoNormalizer();
+		if ($normalizer->isEmptyPortrait($src)) {
+			imagedestroy($src);
+			return;
+		}
+		$square = $normalizer->idCircleCoverFromImage($src, $hole);
 		if (!$square) {
-			$square = $this->coverSquare($src, $hole, 0.0, 1.0);
+			$square = $this->coverSquare($src, $hole, 0.06, 1.08);
 		}
 		imagedestroy($src);
 		if (!$square) {
