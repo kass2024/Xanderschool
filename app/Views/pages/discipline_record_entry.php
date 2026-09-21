@@ -15,6 +15,29 @@ $discGroups = $discipline_code_groups ?? [];
       <?= view('pages/partials/disc_lang_switcher', ['disc_lang' => $discLang]); ?>
     </div>
 
+    <div class="disc-kpi-grid" id="discKpis">
+      <div class="disc-kpi">
+        <div class="disc-kpi-icon purple"><i class="fa fa-gavel"></i></div>
+        <div class="disc-kpi-value" data-kpi="incidents">—</div>
+        <div class="disc-kpi-label"><?= disc_t('Incidents this term', 'Ibyaha muri iki gihembwe'); ?></div>
+      </div>
+      <div class="disc-kpi">
+        <div class="disc-kpi-icon blue"><i class="fa fa-calendar-day"></i></div>
+        <div class="disc-kpi-value" data-kpi="today">—</div>
+        <div class="disc-kpi-label"><?= disc_t('Today', 'Uyu munsi'); ?></div>
+      </div>
+      <div class="disc-kpi">
+        <div class="disc-kpi-icon orange"><i class="fa fa-user-clock"></i></div>
+        <div class="disc-kpi-value" data-kpi="risk">—</div>
+        <div class="disc-kpi-label"><?= disc_t('At-risk students', 'Bari mu kaga'); ?></div>
+      </div>
+      <div class="disc-kpi">
+        <div class="disc-kpi-icon green"><i class="fa fa-book"></i></div>
+        <div class="disc-kpi-value" data-kpi="codes"><?= (int) array_sum(array_map(static function ($g) { return count($g['items'] ?? []); }, $discGroups)); ?></div>
+        <div class="disc-kpi-label"><?= disc_t('Conduct codes', 'Amabwiriza'); ?></div>
+      </div>
+    </div>
+
     <div class="disc-entry-search">
       <?= view('pages/partials/card_scan_search', ['classes' => $classes, 'use_lang' => false]) ?>
     </div>
@@ -87,8 +110,8 @@ $discGroups = $discipline_code_groups ?? [];
           </div>
 
           <div class="disc-form-group">
-            <label for="disc_code_id"><?= disc_t('School conduct code', 'Amabwiriza y\'ishuri'); ?></label>
-            <select class="form-control" id="disc_code_id" name="code_id" required>
+            <label for="disc_code_filter"><?= disc_t('School conduct code', 'Amabwiriza y\'ishuri'); ?></label>
+            <select class="disc-code-native" id="disc_code_id" name="code_id" required>
               <option value=""><?= disc_t('Select a conduct code…', 'Hitamo itegeko…'); ?></option>
               <?php foreach ($discGroups as $g) :
                 $gLabel = $discLang === 'rw'
@@ -109,14 +132,18 @@ $discGroups = $discipline_code_groups ?? [];
                             data-s1="<?= esc($s1, 'attr'); ?>"
                             data-s2="<?= esc($s2, 'attr'); ?>"
                             data-s3="<?= esc($s3, 'attr'); ?>"
-                            data-title="<?= esc($title, 'attr'); ?>">
+                            data-title="<?= esc($title, 'attr'); ?>"
+                            data-cat="<?= esc($gLabel, 'attr'); ?>">
                       <?= (int) $item['code_no']; ?>. <?= esc($title); ?>
                     </option>
                   <?php endforeach; ?>
                 </optgroup>
               <?php endforeach; ?>
             </select>
-            <p class="disc-code-hint"><?= disc_t('Reason and marks are taken from this law. You cannot type them.', 'Impamvu n\'amanota biva ku itegeko. Ntushobora kubyandika.'); ?></p>
+            <input type="search" id="disc_code_filter" class="form-control" autocomplete="off"
+                   placeholder="<?= disc_t('Search by number or words…', 'Shakisha nimero cyangwa amagambo…'); ?>">
+            <div class="disc-code-list" id="discCodeList" role="listbox"></div>
+            <p class="disc-code-hint" id="discCodeHint"><?= disc_t('Reason and marks are taken from this law. You cannot type them.', 'Impamvu n\'amanota biva ku itegeko. Ntushobora kubyandika.'); ?></p>
           </div>
 
           <div class="disc-occur-box" id="discOccurBox" hidden>
@@ -205,6 +232,108 @@ $(function () {
     return $("#disc_code_id").find("option:selected");
   }
 
+  function optionCount() {
+    return $("#disc_code_id option").filter(function () { return parseInt($(this).val(), 10) > 0; }).length;
+  }
+
+  function buildCodeList() {
+    const $list = $("#discCodeList");
+    $list.empty();
+    const selected = $("#disc_code_id").val();
+    $("#disc_code_id optgroup").each(function () {
+      const cat = $(this).attr("label") || "";
+      $list.append(`<div class="disc-code-cat">${$("<div/>").text(cat).html()}</div>`);
+      $(this).find("option").each(function () {
+        const id = $(this).val();
+        if (!id) return;
+        const text = $(this).text().trim();
+        const isSel = String(id) === String(selected);
+        $list.append(
+          `<button type="button" class="disc-code-item${isSel ? " is-selected" : ""}" data-id="${id}" role="option">${$("<div/>").text(text).html()}</button>`
+        );
+      });
+    });
+    const n = optionCount();
+    $("#discKpis [data-kpi='codes']").text(n);
+    if (!n) {
+      $list.html('<div class="disc-code-empty">' + t("No conduct codes found. Loading school laws…", "Nta mabwiriza yabonetse. Turimo gukurura amategeko…") + "</div>");
+    }
+  }
+
+  function filterCodeList() {
+    const term = ($("#disc_code_filter").val() || "").toLowerCase().trim();
+    let visible = 0;
+    let lastCat = null;
+    $("#discCodeList .disc-code-cat, #discCodeList .disc-code-item").each(function () {
+      if ($(this).hasClass("disc-code-cat")) {
+        lastCat = $(this);
+        $(this).hide();
+        return;
+      }
+      const match = !term || $(this).text().toLowerCase().indexOf(term) !== -1
+        || String($(this).data("id")).indexOf(term) !== -1;
+      $(this).toggle(match);
+      if (match) {
+        visible++;
+        if (lastCat) lastCat.show();
+      }
+    });
+    let $empty = $("#discCodeList .disc-code-empty");
+    if (optionCount() && term && visible === 0) {
+      if (!$empty.length) {
+        $("#discCodeList").append('<div class="disc-code-empty">' + t("No matching law", "Nta tegeko rihuye") + "</div>");
+      } else {
+        $empty.text(t("No matching law", "Nta tegeko rihuye")).show();
+      }
+    } else if ($empty.length && optionCount()) {
+      $empty.remove();
+    }
+  }
+
+  function loadCodesIfEmpty() {
+    if (optionCount()) {
+      buildCodeList();
+      return;
+    }
+    $.getJSON("<?= base_url('discipline_codes_json'); ?>").done(function (res) {
+      if (!res || !res.groups) return;
+      const $sel = $("#disc_code_id");
+      $sel.find("optgroup").remove();
+      res.groups.forEach(function (g) {
+        const $og = $("<optgroup>").attr("label", g.title || "");
+        (g.items || []).forEach(function (item) {
+          $og.append(
+            $("<option>")
+              .val(item.id)
+              .attr("data-m1", item.first_marks)
+              .attr("data-m2", item.second_marks)
+              .attr("data-m3", item.third_marks)
+              .attr("data-s1", item.first_sanction || "")
+              .attr("data-s2", item.second_sanction || "")
+              .attr("data-s3", item.third_sanction || "")
+              .attr("data-title", item.title || "")
+              .text((item.code_no || "") + ". " + (item.title || ""))
+          );
+        });
+        $sel.append($og);
+      });
+      buildCodeList();
+    }).fail(function () {
+      $("#discCodeList").html('<div class="disc-code-empty">' + t("Could not load conduct codes.", "Ntibishoboye gukurura amabwiriza.") + "</div>");
+    });
+  }
+
+  function loadKpis() {
+    $.getJSON("<?= base_url('behavior_dashboard_data'); ?>", { mode: "discipline" }).done(function (data) {
+      if (!data || !data.kpis) return;
+      const k = data.kpis;
+      $("#discKpis [data-kpi='incidents']").text(k.discipline_incidents_term != null ? k.discipline_incidents_term : "0");
+      $("#discKpis [data-kpi='today']").text(k.discipline_incidents_today != null ? k.discipline_incidents_today : "0");
+      $("#discKpis [data-kpi='risk']").text(k.students_at_risk != null ? k.students_at_risk : "0");
+      if (k.conduct_codes != null) $("#discKpis [data-kpi='codes']").text(k.conduct_codes);
+    });
+  }
+
   function renderSchedule() {
     const $opt = selectedCodeOption();
     const id = parseInt($opt.val(), 10) || 0;
@@ -269,6 +398,9 @@ $(function () {
     $table.find("tr.disc_row").remove();
     updateEmptyState();
     $("#disc_code_id").val("").trigger("change");
+    $("#disc_code_filter").val("");
+    $(".disc-code-item").removeClass("is-selected");
+    filterCodeList();
     $("#notify_parent").prop("checked", false);
     $("#student_search_input").val("");
     $("#student_search_box").hide().empty();
@@ -379,6 +511,15 @@ $(function () {
     else $("#send_sms, #reduce_marks").show();
   });
 
+  $(document).on("click", ".disc-code-item", function () {
+    const id = $(this).data("id");
+    $("#disc_code_id").val(String(id)).trigger("change");
+    $(".disc-code-item").removeClass("is-selected");
+    $(this).addClass("is-selected");
+  });
+
+  $("#disc_code_filter").on("input", filterCodeList);
+
   $("#disc_code_id").on("change", refreshOccurrence);
 
   $("#disciplineForm").on("submit", function (e) {
@@ -420,11 +561,19 @@ $(function () {
 
   $("#cardInput").on("focus", function () { $(this).blur(); });
 
+  loadCodesIfEmpty();
+  loadKpis();
   updateEmptyState();
 });
 
 function bootSelects() {
-  $("#choose_disc_type, #search_class, #disc_code_id").select2({ width: "100%" });
+  $("#choose_disc_type, #search_class").each(function () {
+    const $el = $(this);
+    if ($el.data("select2")) {
+      try { $el.select2("destroy"); } catch (e) {}
+    }
+    $el.select2({ width: "100%", placeholder: $el.find("option:first").text() });
+  });
 }
 $(bootSelects);
 </script>

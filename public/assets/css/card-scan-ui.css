@@ -802,9 +802,123 @@ tr.staff-has-courses > td.staff-teaching-col {
 	cursor: default;
 }
 
+.disc-entry-page .disc-kpi-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 12px;
+	margin: 0 auto 18px;
+	max-width: 1180px;
+}
+
+.disc-entry-page .disc-kpi {
+	background: #fff;
+	border: 1px solid #e8edf3;
+	border-radius: 14px;
+	padding: 14px 16px;
+	text-align: center;
+	box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.disc-entry-page .disc-kpi-icon {
+	width: 36px;
+	height: 36px;
+	border-radius: 10px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 6px;
+	font-size: 1rem;
+}
+
+.disc-entry-page .disc-kpi-icon.blue { background: #dbeafe; color: #1d4ed8; }
+.disc-entry-page .disc-kpi-icon.green { background: #dcfce7; color: #15803d; }
+.disc-entry-page .disc-kpi-icon.orange { background: #ffedd5; color: #c2410c; }
+.disc-entry-page .disc-kpi-icon.purple { background: #ede9fe; color: #6d28d9; }
+
+.disc-entry-page .disc-kpi-value {
+	font-size: 1.55rem;
+	font-weight: 800;
+	color: #0f172a;
+	line-height: 1.1;
+}
+
+.disc-entry-page .disc-kpi-label {
+	font-size: 0.72rem;
+	color: #64748b;
+	margin-top: 4px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.disc-entry-page .disc-code-native {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	border: 0;
+}
+
+.disc-entry-page .disc-code-list {
+	margin-top: 8px;
+	max-height: 280px;
+	overflow: auto;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	background: #f8fafc;
+}
+
+.disc-entry-page .disc-code-cat {
+	padding: 8px 12px 4px;
+	font-size: 0.72rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #64748b;
+	background: #eef2f7;
+	position: sticky;
+	top: 0;
+}
+
+.disc-entry-page .disc-code-item {
+	display: block;
+	width: 100%;
+	text-align: left;
+	border: 0;
+	background: transparent;
+	padding: 8px 12px;
+	font-size: 0.86rem;
+	color: #0f172a;
+	cursor: pointer;
+	line-height: 1.35;
+}
+
+.disc-entry-page .disc-code-item:hover {
+	background: #e0e7ff;
+}
+
+.disc-entry-page .disc-code-item.is-selected {
+	background: #dbeafe;
+	font-weight: 700;
+	color: #1e3a8a;
+}
+
+.disc-entry-page .disc-code-empty {
+	padding: 16px 12px;
+	text-align: center;
+	color: #64748b;
+	font-size: 0.86rem;
+}
+
 @media (max-width: 992px) {
 	.disc-entry-page .disc-entry-grid {
 		grid-template-columns: 1fr;
+	}
+	.disc-entry-page .disc-kpi-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }
 

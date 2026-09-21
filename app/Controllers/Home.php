@@ -351,6 +351,45 @@ public function testEmail()
 		return strpos($hay, 'holiday') !== false;
 	}
 
+	/**
+	 * @param list<array<string,mixed>> $classes
+	 * @return list<array<string,mixed>>
+	 */
+	private function classesWithoutHoliday(array $classes): array
+	{
+		$out = [];
+		foreach ($classes as $class) {
+			if (is_array($class) && !$this->classLooksLikeHoliday($class)) {
+				$out[] = $class;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Discipline / permission lists never include holiday coaching rows.
+	 *
+	 * @param list<array<string,mixed>> $students
+	 * @return list<array<string,mixed>>
+	 */
+	private function disciplineStudentsWithoutHoliday(array $students): array
+	{
+		$byId = [];
+		foreach ($students as $student) {
+			if (!is_array($student) || $this->classLooksLikeHoliday($student)) {
+				continue;
+			}
+			$sid = (int) ($student['id'] ?? 0);
+			if ($sid < 1) {
+				continue;
+			}
+			if (!isset($byId[$sid])) {
+				$byId[$sid] = $student;
+			}
+		}
+		return array_values($byId);
+	}
+
 	private function classLooksLikeNursery(array $row): bool
 	{
 		$hay = strtolower(trim(
@@ -10317,6 +10356,7 @@ public function attendanceCard()
 		$discCodeMdl = new \App\Models\DisciplineCodeModel();
 		$discCodeMdl->ensureSchema();
 		$discCodeMdl->seedIfEmpty((int) $this->session->get('soma_school_id'));
+		$data['classes'] = $this->classesWithoutHoliday($data['classes']);
 		$data['discipline_code_groups'] = $discCodeMdl->groupedCodes((int) $this->session->get('soma_school_id'), true);
 		$data['disc_lang'] = \App\Models\DisciplineCodeModel::discLang();
 		$data['content'] = view("pages/discipline_record_entry", $data);
@@ -10644,6 +10684,9 @@ public function getApplicationDocs($id = null)
 		} else {
 			$key = $isClass == 0 ? "students.id" : "c.id";
 			$students = $StudentModel->get_student($id, $key, null, false, $academicYear);
+		}
+		if (in_array($type, [0, 1, 5], true)) {
+			$students = $this->disciplineStudentsWithoutHoliday($students);
 		}
 		if ($type === 2) {
 			$modeRaw = $this->request->getGet('studying_mode');
@@ -11137,6 +11180,43 @@ public function getApplicationDocs($id = null)
 		if ($isSMSError)
 			$ms = lang("app.notSent");
 		return $this->response->setJSON(array("success" => lang("app.disciplineSuccessfully") . $ms));
+	}
+
+	public function discipline_codes_json()
+	{
+		$this->_preset();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$mdl = new \App\Models\DisciplineCodeModel();
+		$mdl->ensureSchema();
+		$mdl->seedIfEmpty($schoolId);
+		$lang = \App\Models\DisciplineCodeModel::discLang();
+		$groups = [];
+		$count = 0;
+		foreach ($mdl->groupedCodes($schoolId, true) as $g) {
+			$items = [];
+			foreach (($g['items'] ?? []) as $row) {
+				$count++;
+				$items[] = [
+					'id' => (int) $row['id'],
+					'code_no' => (int) $row['code_no'],
+					'title' => \App\Models\DisciplineCodeModel::titleFor($row, $lang),
+					'first_marks' => (int) $row['first_marks'],
+					'second_marks' => (int) $row['second_marks'],
+					'third_marks' => (int) $row['third_marks'],
+					'first_sanction' => $lang === 'rw' ? (string) ($row['first_sanction_rw'] ?? '') : (string) ($row['first_sanction_en'] ?? ''),
+					'second_sanction' => $lang === 'rw' ? (string) ($row['second_sanction_rw'] ?? '') : (string) ($row['second_sanction_en'] ?? ''),
+					'third_sanction' => $lang === 'rw' ? (string) ($row['third_sanction_rw'] ?? '') : (string) ($row['third_sanction_en'] ?? ''),
+				];
+			}
+			$groups[] = [
+				'key' => $g['key'],
+				'title' => $lang === 'rw'
+					? ((string) ($g['rw'] ?? '') !== '' ? $g['rw'] : ($g['en'] ?? ''))
+					: ((string) ($g['en'] ?? '') !== '' ? $g['en'] : ($g['rw'] ?? '')),
+				'items' => $items,
+			];
+		}
+		return $this->response->setJSON(['success' => 1, 'lang' => $lang, 'count' => $count, 'groups' => $groups]);
 	}
 
 	public function set_disc_lang()
@@ -14430,6 +14510,7 @@ public function getApplicationDocs($id = null)
 				->join("active_term at", "at.id=schools.active_term")
 				->where("at.school_id", $this->session->get("soma_school_id"))
 				->get()->getRowArray();
+		$data['classes'] = $this->classesWithoutHoliday($data['classes']);
 		$data['subtitle'] = lang("app.disciplineRecord");
 		$data['page'] = "discipline_record";
 		$data['disc_lang'] = \App\Models\DisciplineCodeModel::discLang();
@@ -20350,7 +20431,7 @@ public function assign_card()
 		$avgRemaining = 0;
 
 		if ($classId > 0) {
-			$students = $studentModel->get_student($classId, 'c.id');
+			$students = $this->disciplineStudentsWithoutHoliday($studentModel->get_student($classId, 'c.id'));
 			$classStudents = count($students);
 			$sumRemaining = 0;
 			foreach ($students as $st) {
@@ -20390,8 +20471,13 @@ public function assign_card()
 							WHERE ds.student_id = s.id AND ds.active_term = ?), 0) AS deducted
 					FROM students s
 					JOIN class_records cr ON cr.student = s.id AND cr.status = 1
+					JOIN classes c ON c.id = cr.class
+					LEFT JOIN levels lv ON lv.id = c.level
+					LEFT JOIN departments dp ON dp.id = c.department
 					JOIN schools sk ON sk.id = s.school_id
 					WHERE s.school_id = ? AND s.status = 1
+					  AND LOWER(CONCAT(IFNULL(c.title,"")," ",IFNULL(lv.title,"")," ",IFNULL(dp.title,"")," ",IFNULL(dp.code,""))) NOT LIKE "%holiday%"
+					GROUP BY s.id
 				) t WHERE t.deducted > 0 AND (t.dmax - t.deducted) < (t.dmax / 2)',
 				[$discMax, $activeTerm, $schoolId]
 			)->getRowArray();
@@ -20402,6 +20488,26 @@ public function assign_card()
 				->where('active_term', $activeTerm)
 				->countAllResults();
 		}
+
+		$incidentsToday = (int) $db->table('disciplines')
+			->where('school_id', $schoolId)
+			->where('active_term', $activeTerm)
+			->where('DATE(created_at)', date('Y-m-d'))
+			->countAllResults();
+		if ($classId > 0) {
+			$incidentsToday = (int) $db->table('disciplines ds')
+				->join('class_records cr', 'cr.student = ds.student_id AND cr.status = 1')
+				->where('ds.school_id', $schoolId)
+				->where('ds.active_term', $activeTerm)
+				->where('DATE(ds.created_at)', date('Y-m-d'))
+				->where('cr.class', $classId)
+				->countAllResults();
+		}
+
+		$codeMdl = new \App\Models\DisciplineCodeModel();
+		$codeMdl->ensureSchema();
+		$codeMdl->seedIfEmpty($schoolId);
+		$conductCodes = count($codeMdl->listCodes($schoolId, true));
 
 		$recentDiscBuilder = $db->table('disciplines ds')
 			->select('ds.id, ds.marks, ds.comment, ds.created_at, s.fname, s.lname, s.regno')
@@ -20435,6 +20541,8 @@ public function assign_card()
 				'discipline_avg_remaining' => $avgRemaining,
 				'students_at_risk' => $studentsAtRisk,
 				'discipline_incidents_term' => $discIncidents,
+				'discipline_incidents_today' => $incidentsToday,
+				'conduct_codes' => $conductCodes,
 				'discipline_max' => $discMax,
 			],
 			'discipline_students' => $discStudents,

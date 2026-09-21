@@ -69,8 +69,13 @@ class DisciplineCodeModel extends Model
 		if ($schoolId < 1) {
 			return;
 		}
-		$exists = $this->where('school_id', $schoolId)->countAllResults();
-		if ($exists > 0) {
+		$total = (int) $this->where('school_id', $schoolId)->countAllResults();
+		$active = (int) $this->where('school_id', $schoolId)->where('active', 1)->countAllResults();
+		if ($total > 0 && $active < 1) {
+			$this->builder()->where('school_id', $schoolId)->update(['active' => 1]);
+			$active = $total;
+		}
+		if ($active > 0) {
 			return;
 		}
 		$now = date('Y-m-d H:i:s');
