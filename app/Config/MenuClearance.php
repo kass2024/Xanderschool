@@ -59,9 +59,9 @@ class MenuClearance
 	const CHILD_BUDGET_PREPARE_POSTS = [8, 9, 28]; // Cashier, Accountant, Chief Accountant
 	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26, 29, 30]; // Head master, DOS, Dean, Executive Principal, Headmistress, Head Teacher, Deputy Head Teacher, Director, Deputy Director
 	/** Fees Entry + school/extra fee settings. */
-	const FEE_OPERATOR_POSTS = [8, 9, 24, 28]; // Cashier, Accountant, Director of Finance, Chief Accountant
+	const FEE_OPERATOR_POSTS = [8, 9, 24, 28, 29]; // Cashier, Accountant, Director of Finance, Chief Accountant, Director
 	/** Fees report only (no entry, no settings, no SMS). */
-	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26, 29, 30];
+	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26, 30];
 	/** Budget Dashboard “All branches” / cross-school rollup (master school only). */
 	const BUDGET_CROSS_BRANCH_DASHBOARD_POSTS = [15, 19, 24]; // Executive Principal, Budget Manager, Director of Finance
 
@@ -157,8 +157,10 @@ class MenuClearance
 			$nonFinance = array_values(array_filter($keys, static function ($k) {
 				return !self::isFinanceMenuKey($k);
 			}));
-			// Leaders: fees report only — not Fees Entry or fee settings
-			return array_values(array_unique(array_merge($nonFinance, self::childBudgetViewKeys(), self::feeReportOnlyKeys())));
+			$feeKeys = self::canManageFees($postId)
+				? array_merge(['finance', 'fees'], self::feeMenuKeys())
+				: self::feeReportOnlyKeys();
+			return array_values(array_unique(array_merge($nonFinance, self::childBudgetViewKeys(), $feeKeys)));
 		}
 
 		if (!$isChild) {
@@ -282,7 +284,7 @@ class MenuClearance
 	}
 
 	/**
-	 * Director of Finance / Cashier / Accountant: full fee menus.
+	 * Director of Finance / Cashier / Accountant / Director: full fee menus.
 	 * Headmaster / Executive Principal / Headmistress / DOS / Dean: fees report only.
 	 * Everyone else: no fee entry or settings.
 	 *

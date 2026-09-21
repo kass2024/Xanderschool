@@ -92,10 +92,12 @@ $centralFlip = array_flip($masterCentralPosts ?? []);
 								<strong><i class="fa fa-school"></i> Finance budget defaults (automatic)</strong>
 								<ul class="mb-0 mt-2 small">
 									<li><strong>Full control (everything):</strong> #24 Director of Finance — prepare, edit, approve, cash requests (all schools).</li>
+									<li><strong>Full Fees Management</strong> (Fees Entry, school/extra fees, report): #8 Cashier, #9 Accountant, #24 Director of Finance, #28 Chief Accountant, <strong>#29 Director</strong>.</li>
 									<li><strong>Prepare &amp; fill budget:</strong> #8 Cashier, #9 Accountant, #28 Chief Accountant (all schools).</li>
 									<li><strong>Budget Dashboard — all child schools:</strong> #24 Director of Finance, #19 Budget Manager, #15 Executive Principal (master school only).</li>
 									<li><strong>View-only own school</strong> (no Prepare / Start; no all-branches table):
-										#1 Head master, #3 Director of studies, #4 Dean of discipline, #18 Headmistress, #25 Head Teacher, #26 Deputy Head Teacher, #29 Director, #30 Deputy Director.</li>
+										#1 Head master, #3 Director of studies, #4 Dean of discipline, #18 Headmistress, #25 Head Teacher, #26 Deputy Head Teacher, #30 Deputy Director.
+										#29 Director keeps full Fees Management.</li>
 									<li><strong>Child schools — all other posts:</strong> Finance menu is hidden.</li>
 								</ul>
 								<p class="small mb-0 mt-2 text-muted">These rules apply at login from the post + school type. Resetting a post updates the checklist; leadership still cannot prepare budgets. Director of Finance is never restricted.</p>
