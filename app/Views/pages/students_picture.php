@@ -917,9 +917,9 @@
 			$('#spCapture').prop('disabled', true);
 			try {
 				var sq = squareCrop(captureFullFrame());
-				whitenDarkBackground(sq);
 				useCaptured(sq, function () {
-					autoFitToCircle();
+					$('#spZoom').val(100);
+					pan = { x: 0, y: 0 };
 					drawEdit();
 					setStatus('Photo captured', 'ok');
 					savePhoto();

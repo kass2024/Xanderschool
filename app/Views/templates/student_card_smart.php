@@ -205,12 +205,12 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		overflow: hidden;
 	}
 	.card.is-wisdom .cf-photo img {
-		width: 108%;
-		height: 108%;
-		margin: -4%;
+		width: 116%;
+		height: 116%;
+		margin: -8%;
 		object-fit: cover;
 		-webkit-object-fit: cover;
-		object-position: center 12%;
+		object-position: center 10%;
 		display: block;
 		border: 0;
 		background: #ffffff;

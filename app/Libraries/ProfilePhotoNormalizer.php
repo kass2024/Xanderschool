@@ -62,10 +62,7 @@ class ProfilePhotoNormalizer
 
 		$mode = strtolower($fit);
 		if ($mode === 'circle') {
-			$out = $this->circlePortraitFromImage($src, self::CIRCLE);
-			if ($out === null) {
-				$out = $this->cropOntoWhite($src, self::CIRCLE, self::CIRCLE, 'cover');
-			}
+			$out = $this->cropOntoWhite($src, self::CIRCLE, self::CIRCLE, 'cover');
 		} else {
 			$outFit = $mode === 'cover' ? 'cover' : 'contain';
 			$out = $this->cropOntoWhite($src, self::WIDTH, self::HEIGHT, $outFit);
@@ -96,7 +93,7 @@ class ProfilePhotoNormalizer
 
 		$tmp = $destPath . '.tmp.jpg';
 		imageinterlace($out, true);
-		$ok = @imagejpeg($out, $tmp, 92);
+		$ok = @imagejpeg($out, $tmp, 94);
 		imagedestroy($out);
 		if (!$ok || !is_file($tmp)) {
 			$this->lastError = 'Could not write photo';

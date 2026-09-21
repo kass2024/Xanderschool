@@ -213,7 +213,7 @@ class WisdomCardRenderer
 		// Template ring sits slightly below the widest chord midpoint.
 		$cy += (int) round($bestW * 0.025);
 		// Oversized so photo tucks under the teal ring (covers white inner stroke).
-		$d = (int) round($bestW * 1.07);
+		$d = (int) round($bestW * 1.12);
 		return [$cx, $cy, max(2, $d)];
 	}
 
@@ -252,17 +252,19 @@ class WisdomCardRenderer
 		[$cx, $cy, $d] = $this->detectPhotoHole($im);
 
 		$src = $this->loadImage($path);
+		if (!$src && is_file($path)) {
+			$bytes = @file_get_contents($path);
+			if (is_string($bytes) && strlen($bytes) > 32) {
+				$src = @imagecreatefromstring($bytes);
+			}
+		}
 		if (!$src) {
 			return;
 		}
 		$hole = max(2, $d);
-		$normalizer = new ProfilePhotoNormalizer();
-		$square = $normalizer->circlePortraitFromImage($src, $hole);
-		if (!$square || $normalizer->looksBlank($square)) {
-			if ($square) {
-				imagedestroy($square);
-			}
-			$square = $this->coverSquare($src, $hole, 0.08);
+		$square = $this->coverSquare($src, $hole, 0.06, 1.16);
+		if (!$square) {
+			$square = $this->coverSquare($src, $hole, 0.0, 1.0);
 		}
 		imagedestroy($src);
 		if (!$square) {
@@ -395,7 +397,7 @@ class WisdomCardRenderer
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
 	 */
-	private function coverSquare($src, int $size, float $biasY)
+	private function coverSquare($src, int $size, float $biasY, float $zoom = 1.0)
 	{
 		$sw = imagesx($src);
 		$sh = imagesy($src);
@@ -411,9 +413,16 @@ class WisdomCardRenderer
 			$sx = 0;
 			$sy = (int) max(0, ($sh - $sw) * $biasY);
 		}
-		$side = max(1, min($side, $sw - $sx, $sh - $sy));
+		$zoom = max(1.0, min(1.35, $zoom));
+		$crop = max(1, (int) round($side / $zoom));
+		$sx += (int) max(0, ($side - $crop) / 2);
+		$sy += (int) max(0, ($side - $crop) * $biasY);
+		$crop = max(1, min($crop, $sw - $sx, $sh - $sy));
 		$sq = imagecreatetruecolor($size, $size);
-		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $side, $side);
+		if (function_exists('imagesetinterpolation') && defined('IMG_BICUBIC')) {
+			@imagesetinterpolation($sq, IMG_BICUBIC);
+		}
+		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $crop, $crop);
 		return $sq;
 	}
 

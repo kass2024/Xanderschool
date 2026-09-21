@@ -1275,7 +1275,7 @@ if (!function_exists('profile_photo_card_cover_src')) {
 		if (!is_dir($cacheDir)) {
 			@mkdir($cacheDir, 0775, true);
 		}
-		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v12smoothwhite") . '.jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v13origfill") . '.jpg';
 		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
 		if (is_file($cached)) {
 			return '_card_img/' . $key;
@@ -1311,14 +1311,21 @@ if (!function_exists('profile_photo_card_cover_src')) {
 
 		if (abs($outW - $outH) <= 8) {
 			$side = max($outW, $outH);
-			$dst = (new \App\Libraries\ProfilePhotoNormalizer())->circlePortraitFromImage($src, $side);
+			$sw = imagesx($src);
+			$sh = imagesy($src);
+			$crop = max(1, (int) round(min($sw, $sh) / 1.12));
+			$sx = (int) max(0, ($sw - $crop) / 2);
+			$sy = (int) max(0, ($sh - $crop) * 0.08);
+			$crop = max(1, min($crop, $sw - $sx, $sh - $sy));
+			$dst = imagecreatetruecolor($side, $side);
+			$white = imagecolorallocate($dst, 255, 255, 255);
+			imagefill($dst, 0, 0, $white);
+			imagecopyresampled($dst, $src, 0, 0, $sx, $sy, $side, $side, $crop, $crop);
 			imagedestroy($src);
-			if ($dst) {
-				@imagejpeg($dst, $cached, 90);
-				imagedestroy($dst);
-				if (is_file($cached)) {
-					return '_card_img/' . $key;
-				}
+			@imagejpeg($dst, $cached, 92);
+			imagedestroy($dst);
+			if (is_file($cached)) {
+				return '_card_img/' . $key;
 			}
 			return asset_card_img_src($relative, null, $outW, $outH);
 		}
