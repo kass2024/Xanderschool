@@ -16,27 +16,55 @@ foreach ($discipline_codes as $row) {
 ?>
 <style>
 .dcode-wrap { margin-top: 22px; border-top: 1px solid #e2e8f0; padding-top: 18px; }
-.dcode-wrap h6 { font-weight: 700; margin-bottom: 6px; }
-.dcode-cat { margin-top: 14px; }
-.dcode-cat h6 { font-size: 13px; color: #0f172a; background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
-.dcode-table { font-size: 12px; }
+.dcode-head { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 10px; padding: 10px 12px; cursor: pointer; text-align: left; }
+.dcode-head:hover { background: #f1f5f9; }
+.dcode-head .dcode-head-title { font-weight: 700; margin: 0; flex: 1; font-size: 15px; color: #0f172a; }
+.dcode-head .fa-chevron-down { transition: transform .15s ease; color: #64748b; }
+.dcode-wrap.is-open > .dcode-head .fa-chevron-down { transform: rotate(180deg); }
+.dcode-body { display: none; padding: 10px 2px 0; }
+.dcode-wrap.is-open > .dcode-body { display: block; }
+.dcode-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.dcode-cat { margin-top: 8px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.dcode-cat-btn { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: #f8fafc; padding: 9px 12px; font-size: 13px; font-weight: 700; color: #0f172a; text-align: left; cursor: pointer; }
+.dcode-cat-btn:hover { background: #f1f5f9; }
+.dcode-cat-btn .fa-chevron-right { color: #64748b; font-size: 11px; transition: transform .15s ease; width: 12px; }
+.dcode-cat.is-open .dcode-cat-btn .fa-chevron-right { transform: rotate(90deg); }
+.dcode-cat-count { margin-left: auto; background: #e2e8f0; color: #334155; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 1px 8px; }
+.dcode-cat-panel { display: none; padding: 0; }
+.dcode-cat.is-open .dcode-cat-panel { display: block; }
+.dcode-table { font-size: 12px; margin-bottom: 0; }
 .dcode-table td, .dcode-table th { vertical-align: middle; }
 .dcode-table textarea { min-height: 52px; font-size: 12px; }
 .dcode-add { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px; margin-top: 12px; }
 .dcode-hidden { opacity: 0.45; }
 </style>
 <div class="dcode-wrap" id="dcodeWrap">
-	<h6><i class="fa fa-gavel"></i> Discipline law / Amabwiriza</h6>
-	<p class="text-muted small mb-2">
+	<button type="button" class="dcode-head" id="dcodeToggle" aria-expanded="false">
+		<span class="dcode-head-title"><i class="fa fa-gavel"></i> Discipline law / Amabwiriza</span>
+		<span class="dcode-cat-count"><?= count($discipline_codes); ?> laws</span>
+		<i class="fa fa-chevron-down"></i>
+	</button>
+	<div class="dcode-body">
+	<p class="text-muted small mb-2 mt-2">
 		School conduct codes from the 2026 discipline document. Edit, add, or deactivate a law.
 		Behaviour entry uses these codes only — marks for 1st, 2nd and 3rd time are applied automatically.
 	</p>
+	<div class="dcode-toolbar">
+		<button type="button" class="btn btn-outline-secondary btn-sm" id="dcodeExpandAll">Expand all</button>
+		<button type="button" class="btn btn-outline-secondary btn-sm" id="dcodeCollapseAll">Collapse all</button>
+		<button type="button" class="btn btn-outline-success btn-sm" id="dcodeShowAdd"><i class="fa fa-plus"></i> Add a new law</button>
+	</div>
 	<?php if (empty($grouped)) : ?>
 		<p class="text-muted">No laws yet. Reload this page to seed the Wisdom 2026 catalog, then edit.</p>
 	<?php endif; ?>
-	<?php foreach ($grouped as $cat) : ?>
-		<div class="dcode-cat">
-			<h6><?= esc($cat['en']); ?> <span class="text-muted">/ <?= esc($cat['rw']); ?></span></h6>
+	<?php foreach ($grouped as $catKey => $cat) : ?>
+		<div class="dcode-cat" data-cat="<?= esc($catKey, 'attr'); ?>">
+			<button type="button" class="dcode-cat-btn">
+				<i class="fa fa-chevron-right"></i>
+				<span><?= esc($cat['en']); ?> <span class="text-muted">/ <?= esc($cat['rw']); ?></span></span>
+				<span class="dcode-cat-count"><?= count($cat['items']); ?></span>
+			</button>
+			<div class="dcode-cat-panel">
 			<div class="table-responsive">
 				<table class="table table-sm table-bordered dcode-table mb-0">
 					<thead>
@@ -72,6 +100,7 @@ foreach ($discipline_codes as $row) {
 					<?php endforeach; ?>
 					</tbody>
 				</table>
+			</div>
 			</div>
 		</div>
 	<?php endforeach; ?>
@@ -135,10 +164,12 @@ foreach ($discipline_codes as $row) {
 		<button type="submit" class="btn btn-success btn-sm" id="dcodeSaveBtn"><i class="fa fa-plus"></i> Save law</button>
 		<button type="button" class="btn btn-secondary btn-sm" id="dcodeReset">New</button>
 	</form>
+	</div>
 </div>
 <script>
 (function ($) {
 	var codes = <?= json_encode(array_values($discipline_codes), JSON_UNESCAPED_UNICODE); ?>;
+	var $wrap = $('#dcodeWrap');
 	function byId(id) {
 		id = parseInt(id, 10) || 0;
 		for (var i = 0; i < codes.length; i++) {
@@ -150,6 +181,26 @@ foreach ($discipline_codes as $row) {
 		if (typeof toastr !== 'undefined') { ok ? toastr.success(msg) : toastr.error(msg); return; }
 		alert(msg);
 	}
+	function setOpen(on) {
+		$wrap.toggleClass('is-open', !!on);
+		$('#dcodeToggle').attr('aria-expanded', on ? 'true' : 'false');
+	}
+	$('#dcodeToggle').on('click', function () { setOpen(!$wrap.hasClass('is-open')); });
+	$(document).on('click', '.dcode-cat-btn', function () {
+		$(this).closest('.dcode-cat').toggleClass('is-open');
+	});
+	$('#dcodeExpandAll').on('click', function () {
+		setOpen(true);
+		$wrap.find('.dcode-cat').addClass('is-open');
+	});
+	$('#dcodeCollapseAll').on('click', function () {
+		$wrap.find('.dcode-cat').removeClass('is-open');
+	});
+	$('#dcodeShowAdd').on('click', function () {
+		setOpen(true);
+		$('#dcodeForm')[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+		$('#dcodeCatEn').trigger('focus');
+	});
 	function fillForm(c) {
 		$('#dcodeId').val(c ? c.id : 0);
 		$('#dcodeCatEn').val(c ? (c.category_en || '') : '');
@@ -170,6 +221,8 @@ foreach ($discipline_codes as $row) {
 	}
 	$(document).on('click', '.dcode-edit', function () {
 		fillForm(byId($(this).data('id')));
+		setOpen(true);
+		$(this).closest('.dcode-cat').addClass('is-open');
 		$('#dcodeForm')[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
 	});
 	$('#dcodeReset').on('click', function () { fillForm(null); });
