@@ -20,8 +20,8 @@ FILES = [
 
 VERIFY_STRINGS = [
     ("app/Libraries/AttendanceScanService.php", "denied' => 'boarding"),
-    ("app/Libraries/AttendanceScanService.php", "'studying_mode' => (int)"),
-    ("app/Libraries/AttendanceScanService.php", "Boarding students cannot use this gate"),
+    ("app/Libraries/AttendanceScanService.php", "function isSchoolGateArea"),
+    ("app/Libraries/AttendanceScanService.php", "Boarding students cannot swipe at the school gate"),
 ]
 
 

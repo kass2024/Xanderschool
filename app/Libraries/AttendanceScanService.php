@@ -591,12 +591,12 @@ class AttendanceScanService
 			$className = 'Level ' . $class->level . ' ' . $class->title;
 		}
 
-		if ((int) ($student->studying_mode ?? 1) === 0) {
+		if ((int) ($student->studying_mode ?? 1) === 0 && self::isSchoolGateArea($areaName)) {
 			return [
 				'success' => 0,
 				'kind' => 'student',
 				'denied' => 'boarding',
-				'message' => 'Boarding students cannot use this gate',
+				'message' => 'Boarding students cannot swipe at the school gate',
 				'person' => self::studentPayload($student, $className, ''),
 			];
 		}
@@ -1140,6 +1140,12 @@ class AttendanceScanService
 			->getRow();
 		$year = (int) ($row->academic_year ?? 0);
 		return $year > 0 ? $year : (int) date('Y');
+	}
+
+	private static function isSchoolGateArea(string $name): bool
+	{
+		$n = strtolower(trim($name));
+		return $n !== '' && (bool) preg_match('/\bgate\b/', $n);
 	}
 
 	/**
