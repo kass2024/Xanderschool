@@ -948,16 +948,16 @@ if (!function_exists('make_profile_photo_name')) {
  * Crop a profile photo to a 3:4 ID portrait and place it on a white background.
  */
 if (!function_exists('save_profile_photo_white_bg')) {
-	function save_profile_photo_white_bg(string $srcPath, string $destPath, bool $useAi = true, string $fit = 'contain'): bool
+	function save_profile_photo_white_bg(string $srcPath, string $destPath, bool $useAi = true, string $fit = 'contain', bool $whiten = true): bool
 	{
-		return (new \App\Libraries\ProfilePhotoNormalizer())->saveFromFile($srcPath, $destPath, $useAi, $fit);
+		return (new \App\Libraries\ProfilePhotoNormalizer())->saveFromFile($srcPath, $destPath, $useAi, $fit, $whiten);
 	}
 }
 
 if (!function_exists('save_profile_photo_white_bg_from_string')) {
-	function save_profile_photo_white_bg_from_string(string $bytes, string $destPath, bool $useAi = true, string $fit = 'contain'): bool
+	function save_profile_photo_white_bg_from_string(string $bytes, string $destPath, bool $useAi = true, string $fit = 'contain', bool $whiten = true): bool
 	{
-		return (new \App\Libraries\ProfilePhotoNormalizer())->saveFromBytes($bytes, $destPath, $useAi, $fit);
+		return (new \App\Libraries\ProfilePhotoNormalizer())->saveFromBytes($bytes, $destPath, $useAi, $fit, $whiten);
 	}
 }
 
@@ -1275,7 +1275,7 @@ if (!function_exists('profile_photo_card_cover_src')) {
 		if (!is_dir($cacheDir)) {
 			@mkdir($cacheDir, 0775, true);
 		}
-		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v8white") . '.jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v9white") . '.jpg';
 		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
 		if (is_file($cached)) {
 			return '_card_img/' . $key;

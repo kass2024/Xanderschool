@@ -21,7 +21,7 @@ class ProfilePhotoNormalizer
 		return $this->lastError;
 	}
 
-	public function saveFromFile(string $srcPath, string $destPath, bool $useAi = true, string $fit = 'contain'): bool
+	public function saveFromFile(string $srcPath, string $destPath, bool $useAi = true, string $fit = 'contain', bool $whiten = true): bool
 	{
 		if (!is_file($srcPath)) {
 			$this->lastError = 'Source photo missing';
@@ -32,10 +32,10 @@ class ProfilePhotoNormalizer
 			$this->lastError = 'Source photo unreadable';
 			return false;
 		}
-		return $this->saveFromBytes($bytes, $destPath, $useAi, $fit);
+		return $this->saveFromBytes($bytes, $destPath, $useAi, $fit, $whiten);
 	}
 
-	public function saveFromBytes(string $bytes, string $destPath, bool $useAi = true, string $fit = 'contain'): bool
+	public function saveFromBytes(string $bytes, string $destPath, bool $useAi = true, string $fit = 'contain', bool $whiten = true): bool
 	{
 		$this->lastError = '';
 		if (!function_exists('imagecreatetruecolor')) {
@@ -68,7 +68,7 @@ class ProfilePhotoNormalizer
 			$out = $this->cropOntoWhite($src, self::WIDTH, self::HEIGHT, $outFit);
 		}
 		imagedestroy($src);
-		if ($out !== null) {
+		if ($whiten && $out !== null) {
 			$this->whitenBackdropInPlace($out);
 		}
 		if ($out === null) {
@@ -280,6 +280,10 @@ class ProfilePhotoNormalizer
 		}
 
 		$wall = $this->sampleCornerRgb($im, $w, $h);
+		$cx = ($w - 1) * 0.5;
+		$cy = ($h - 1) * 0.42;
+		$rx = max(8.0, $w * 0.36);
+		$ry = max(8.0, $h * 0.40);
 
 		$white = imagecolorallocate($im, 255, 255, 255);
 		$seen = str_repeat("\0", $w * $h);
@@ -313,17 +317,30 @@ class ProfilePhotoNormalizer
 			$r = ($rgb >> 16) & 255;
 			$g = ($rgb >> 8) & 255;
 			$b = $rgb & 255;
-			if ($this->isProtectedPerson($r, $g, $b, $wall) || !$this->isWallPixel($r, $g, $b, $wall)) {
+			$nearWhite = ($r >= 242 && $g >= 242 && $b >= 242);
+			if ($this->isProtectedPerson($r, $g, $b, $wall)) {
 				continue;
 			}
-			imagesetpixel($im, $x, $y, $white);
+			$nx = ($x - $cx) / $rx;
+			$ny = ($y - $cy) / $ry;
+			$inCore = ($nx * $nx + $ny * $ny) < 1.0;
+			$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
+			if ($inCore && !$nearWhite && $dist > 42) {
+				continue;
+			}
+			if (!$nearWhite && !$this->isWallPixel($r, $g, $b, $wall)) {
+				continue;
+			}
+			if (!$nearWhite) {
+				imagesetpixel($im, $x, $y, $white);
+			}
 			$push($x + 1, $y);
 			$push($x - 1, $y);
 			$push($x, $y + 1);
 			$push($x, $y - 1);
 		}
 
-		$this->featherWallEdge($im, $w, $h, $wall, $white);
+		$this->featherWallEdge($im, $w, $h, $wall, $white, $cx, $cy, $rx, $ry);
 	}
 
 	/**
@@ -452,11 +469,8 @@ class ProfilePhotoNormalizer
 
 	private function isWallPixel(int $r, int $g, int $b, array $wall): bool
 	{
-		if ($r >= 238 && $g >= 238 && $b >= 238) {
-			return true;
-		}
 		$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
-		if ($dist <= 175) {
+		if ($dist <= 96) {
 			return true;
 		}
 		$lum = $this->luma($r, $g, $b);
@@ -464,10 +478,7 @@ class ProfilePhotoNormalizer
 		$maxc = max($r, $g, $b);
 		$minc = min($r, $g, $b);
 		$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
-		if ($sat < 0.20 && $lum >= 75 && $lum <= 210 && abs($lum - $wallLum) <= 70) {
-			return true;
-		}
-		return $sat < 0.13 && $lum >= 90 && $lum <= 198;
+		return $sat < 0.14 && $dist <= 130 && abs($lum - $wallLum) <= 24 && $lum >= 95;
 	}
 
 	private function isProtectedPerson(int $r, int $g, int $b, array $wall): bool
@@ -476,14 +487,15 @@ class ProfilePhotoNormalizer
 			return true;
 		}
 		$lum = $this->luma($r, $g, $b);
-		if ($lum < 48) {
+		$wallLum = $this->luma($wall[0], $wall[1], $wall[2]);
+		if ($lum < 58 || $lum < $wallLum - 16) {
 			return true;
 		}
 		$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
 		$maxc = max($r, $g, $b);
 		$minc = min($r, $g, $b);
 		$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
-		return $sat > 0.28 && $dist > 90;
+		return $sat > 0.22 && $dist > 70;
 	}
 
 	private function isSkinTone(int $r, int $g, int $b): bool
@@ -510,15 +522,20 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Soften only wall-colored pixels that already touch the white background.
+	 * Soften only wall-colored pixels that are almost surrounded by white, outside the face core.
 	 *
 	 * @param resource|\GdImage $im
 	 */
-	private function featherWallEdge($im, int $w, int $h, array $wall, int $white): void
+	private function featherWallEdge($im, int $w, int $h, array $wall, int $white, float $cx, float $cy, float $rx, float $ry): void
 	{
 		$mark = [];
 		for ($y = 1; $y < $h - 1; $y++) {
 			for ($x = 1; $x < $w - 1; $x++) {
+				$nx = ($x - $cx) / $rx;
+				$ny = ($y - $cy) / $ry;
+				if (($nx * $nx + $ny * $ny) < 1.0) {
+					continue;
+				}
 				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
 				if ($rgb === 0xFFFFFF) {
 					continue;
@@ -526,7 +543,8 @@ class ProfilePhotoNormalizer
 				$r = ($rgb >> 16) & 255;
 				$g = ($rgb >> 8) & 255;
 				$b = $rgb & 255;
-				if ($this->isProtectedPerson($r, $g, $b, $wall) || !$this->isWallPixel($r, $g, $b, $wall)) {
+				$dist = abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]);
+				if ($dist > 80 || $this->isProtectedPerson($r, $g, $b, $wall)) {
 					continue;
 				}
 				$n = 0;
@@ -540,7 +558,7 @@ class ProfilePhotoNormalizer
 						}
 					}
 				}
-				if ($n >= 3) {
+				if ($n >= 6) {
 					$mark[] = [$x, $y];
 				}
 			}
