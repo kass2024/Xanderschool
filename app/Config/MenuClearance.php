@@ -706,6 +706,50 @@ class MenuClearance
 	}
 
 	/**
+	 * May enter / edit marks for every course in the school (not only assigned classes).
+	 * Director, Head master, Head Teacher, Director of studies, DHT ACADEMICS.
+	 */
+	public static function canEnterAllCourseMarks($postId, $postTitle = '')
+	{
+		$postId = (int) $postId;
+		if (self::isHeadMasterOrDos($postId) || $postId === 29) {
+			return true;
+		}
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) $postTitle)));
+		if ($title === '') {
+			return false;
+		}
+		if (strpos($title, 'finance') !== false) {
+			return false;
+		}
+		$allowed = [
+			'director',
+			'head master',
+			'headmaster',
+			'head mistress',
+			'headmistress',
+			'head teacher',
+			'headteacher',
+			'director of studies',
+			'dean of studies',
+			'dht academics',
+			'deputy ht academics',
+			'deputy head teacher academics',
+			'deputy headteacher academics',
+		];
+		if (in_array($title, $allowed, true)) {
+			return true;
+		}
+		if (preg_match('/\bdht\b.*\bacademic/', $title)) {
+			return true;
+		}
+		if (preg_match('/\bdeputy\b.*\b(ht|head\s*teacher|headteacher)\b.*\bacademic/', $title)) {
+			return true;
+		}
+		return false;
+	}
+
+	/**
 	 * Legacy sidebar privileges mirrored as default allowed keys.
 	 * Full-access posts get every key.
 	 *

@@ -240,6 +240,15 @@ if (!function_exists('is_head_master_or_dos')) {
 	}
 }
 
+if (!function_exists('can_enter_all_course_marks')) {
+	function can_enter_all_course_marks($postId = null, $postTitle = null)
+	{
+		$postId = (int) ($postId ?? ($_SESSION['soma_post'] ?? 0));
+		$postTitle = (string) ($postTitle ?? ($_SESSION['soma_post_title'] ?? ''));
+		return \Config\MenuClearance::canEnterAllCourseMarks($postId, $postTitle);
+	}
+}
+
 if (!function_exists('material_check_full_access')) {
 	function material_check_full_access()
 	{

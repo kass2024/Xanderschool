@@ -10101,8 +10101,8 @@ public function attendanceCard()
 					->orderBy("d.code")
 					->orderBy("l.title");
 
-			if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post"))) {
-				//filter class by teacher if is not head master / head teacher or dean of studies
+			if (!MenuClearance::canEnterAllCourseMarks((int) $this->session->get("soma_post"), (string) $this->session->get('soma_post_title'))) {
+				//filter class by teacher if is not a school academic leader
 				$builder->where("cr.lecturer", $this->session->get("soma_id"));
 			}
 			$classes = $builder->get()->getResultArray();
@@ -10303,8 +10303,8 @@ public function attendanceCard()
 
 	public function delete_marks()
 	{
-		if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post"))) {
-			return $this->response->setJSON(array("error" => "Oops, Only head master, head teacher or dean of study can delete marks "));
+		if (!MenuClearance::canEnterAllCourseMarks((int) $this->session->get("soma_post"), (string) $this->session->get('soma_post_title'))) {
+			return $this->response->setJSON(array("error" => "Oops, Only the Director, Head master, Head Teacher, Director of studies or DHT Academics can delete marks "));
 		}
 		$this->_preset(1, 3);
 		$ids = '';
@@ -13137,8 +13137,14 @@ public function getApplicationDocs($id = null)
 		}
 	}
 
+	private function staffCanEnterAllCourseMarks(): bool
+	{
+		return MenuClearance::canEnterAllCourseMarks(
+			(int) $this->session->get('soma_post'),
+			(string) $this->session->get('soma_post_title')
+		);
+	}
 
-	public
 	function marks_entry()
 	{
 		$this->_preset();
@@ -13166,10 +13172,10 @@ public function getApplicationDocs($id = null)
 		if ($isHolidayMarks && !is_wisdom_school($school_id)) {
 			$data['error'] = "Holiday coaching is only available for Wisdom schools";
 		}
-		if (!$isHolidayMarks && !MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post")) && $term != $sessionTerm) {
+		if (!$isHolidayMarks && !$this->staffCanEnterAllCourseMarks() && $term != $sessionTerm) {
 			$data['error'] = "you are not allowed to manage marks of selected term";
 		}
-		if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post")) && $academic_year != $sessionYear) {
+		if (!$this->staffCanEnterAllCourseMarks() && $academic_year != $sessionYear) {
 			$data['error'] = "you are not allowed to manage marks of selected academic year";
 		}
 		$atMdl = new ActiveTermModel();
@@ -13200,8 +13206,8 @@ public function getApplicationDocs($id = null)
 				$builder->where("find_in_set($term,r.term) !=0");
 				$builder->where("IFNULL(courses.program_type,'') <> 'holiday'");
 			}
-			if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get("soma_post"))) {
-				//filter courses if is not head master / head teacher or dean of studies
+			if (!$this->staffCanEnterAllCourseMarks()) {
+				//filter courses if is not Director / Head master / Head Teacher / DOS / DHT Academics
 				$builder->where("s.id", $this->session->get("soma_id"));
 			}
 			$data['courses'] = $builder->get()->getResultArray();
@@ -14251,7 +14257,7 @@ public function getApplicationDocs($id = null)
 		$active_term = $this->data['active_term'];
 		$year = $yearId ?? $this->data['academic_year'];
 		$isHolidayMarks = (int) $mt === holiday_coaching_mark_type() || is_holiday_term_choice($term);
-		if (MenuClearance::isHeadMasterOrDos((int) $this->session->get('soma_post')) && $term != null && !$isHolidayMarks) {
+		if ($this->staffCanEnterAllCourseMarks() && $term != null && !$isHolidayMarks) {
 			$atMdl = new ActiveTermModel();
 			$at_data = $atMdl->select('id')
 					->where('academic_year', $year)
@@ -14378,7 +14384,7 @@ public function getApplicationDocs($id = null)
 			$ownerFilter = '';
 			$termFilter = " AND m.term={$active_term}";
 			if ($mtInt === holiday_coaching_mark_type()) {
-				if (!MenuClearance::isHeadMasterOrDos((int) $this->session->get('soma_post'))) {
+				if (!$this->staffCanEnterAllCourseMarks()) {
 					$ownerId = (int) $this->session->get('soma_id');
 					$ownerFilter = " AND m.created_by={$ownerId}";
 				}
