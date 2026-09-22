@@ -2503,9 +2503,21 @@
 								<select class="form-control select2" required name="classe">
 									<option selected disabled><?= lang("app.selectLevel"); ?></option>
 									<?php foreach ($classes as $classe) {
+										$optLabel = \App\Models\SchoolFeesModel::displayLabel([
+											'level_title' => $classe['level_name'] ?? '',
+											'class_title' => $classe['title'] ?? '',
+											'dept_code' => $classe['code'] ?? '',
+											'dept_title' => $classe['department_name'] ?? '',
+											'faculty_code' => $classe['faculty_code'] ?? '',
+										]);
+										if ($optLabel === '') {
+											$optLabel = trim(($classe['level_name'] ?? '') . ' ' . ($classe['code'] ?? '') . ' ' . ($classe['title'] ?? ''));
+										}
+										if ($optLabel === '') {
+											$optLabel = 'Class #' . (int) $classe['id'];
+										}
 										?>
-										<option
-												value="<?= $classe['id']; ?>"> <?= $classe['level_name']; ?> <?= $classe['code']; ?> <?= $classe['title']; ?></option>
+										<option value="<?= (int) $classe['id']; ?>"><?= esc($optLabel); ?></option>
 										<?php
 									}
 									?>

@@ -591,4 +591,96 @@ class ExtraFeesModel extends Model
 
 		return ['ok' => true, 'payments' => $paymentCount];
 	}
+
+	public function listClassFeesForSchool(int $schoolId, int $yearId): array
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $yearId < 1) {
+			return [];
+		}
+		return $this->select("extra_fees.id, extra_fees.title, extra_fees.term, extra_fees.amount,
+			extra_fees.amount_boarding, extra_fees.amount_day, extra_fees.type_id AS class_id,
+			cl.title AS class_title, cl.level AS level_id, cl.department AS department_id,
+			l.title AS level_title, d.code AS dept_code, d.title AS dept_title,
+			f.abbrev AS faculty_code, f.title AS faculty_title,
+			TRIM(CONCAT(COALESCE(sf.fname,''),' ',COALESCE(sf.lname,''))) AS created_by_name")
+			->join('classes cl', 'cl.id = extra_fees.type_id')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
+			->join('staffs sf', 'sf.id = extra_fees.created_by', 'left')
+			->where('extra_fees.school_id', $schoolId)
+			->where('extra_fees.academic_year', $yearId)
+			->where('extra_fees.type', 0)
+			->orderBy('l.title', 'ASC')
+			->orderBy('d.code', 'ASC')
+			->orderBy('cl.title', 'ASC')
+			->orderBy('extra_fees.title', 'ASC')
+			->orderBy('extra_fees.term', 'ASC')
+			->get()->getResultArray();
+	}
+
+	/**
+	 * One row per class + extra-fee title, with term 1–3 cells (school-fees table layout).
+	 *
+	 * @param list<array<string,mixed>> $fees
+	 * @return list<array<string,mixed>>
+	 */
+	public static function groupByClassAndTitle(array $fees): array
+	{
+		$groups = [];
+		foreach ($fees as $fee) {
+			if (\App\Models\SchoolFeesModel::isHolidayClass($fee)) {
+				continue;
+			}
+			$classId = (int) ($fee['class_id'] ?? $fee['type_id'] ?? 0);
+			$title = trim((string) ($fee['title'] ?? ''));
+			if ($classId < 1 || $title === '') {
+				continue;
+			}
+			$key = $classId . '|' . strtolower($title);
+			if (!isset($groups[$key])) {
+				$labelRow = $fee;
+				$labelRow['title'] = (string) ($fee['class_title'] ?? '');
+				$label = trim((string) \App\Models\SchoolFeesModel::displayLabel($labelRow));
+				if ($label === '') {
+					$label = trim(implode(' ', array_filter([
+						(string) ($fee['level_title'] ?? $fee['level_name'] ?? ''),
+						(string) ($fee['dept_code'] ?? $fee['code'] ?? ''),
+						(string) ($fee['class_title'] ?? ''),
+					], static function ($p) {
+						return trim($p) !== '';
+					})));
+				}
+				if ($label === '') {
+					$label = 'Class #' . $classId;
+				}
+				$groups[$key] = [
+					'class_id' => $classId,
+					'title' => $title,
+					'display_label' => $label,
+					'class_title' => (string) ($fee['class_title'] ?? ''),
+					'level_id' => (int) ($fee['level_id'] ?? 0),
+					'department_id' => (int) ($fee['department_id'] ?? 0),
+					'dept_code' => (string) ($fee['dept_code'] ?? ''),
+					'dept_title' => (string) ($fee['dept_title'] ?? ''),
+					'faculty_code' => (string) ($fee['faculty_code'] ?? ''),
+					'terms' => [1 => null, 2 => null, 3 => null],
+				];
+			}
+			$term = (int) ($fee['term'] ?? 0);
+			if ($term >= 1 && $term <= 3) {
+				$groups[$key]['terms'][$term] = $fee;
+			}
+		}
+		$out = array_values($groups);
+		usort($out, static function ($a, $b) {
+			$c = strnatcasecmp((string) $a['display_label'], (string) $b['display_label']);
+			if ($c !== 0) {
+				return $c;
+			}
+			return strnatcasecmp((string) $a['title'], (string) $b['title']);
+		});
+		return $out;
+	}
 }

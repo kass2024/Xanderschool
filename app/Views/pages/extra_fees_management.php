@@ -1,5 +1,6 @@
 <?php
 /** @var array $fees */
+/** @var array $feeGroups */
 /** @var array $years */
 /** @var int $selectedYear */
 /** @var string $selectedYearTitle */
@@ -8,52 +9,28 @@
 /** @var int $classCount */
 /** @var int $classFeeCount */
 /** @var int $studentFeeCount */
+/** @var int $groupCount */
 
-if (!function_exists('ef_term_badges')) {
-	function ef_term_badges($terms): void
-	{
-		foreach (explode(',', (string) $terms) as $term) {
-			$term = trim($term);
-			if ($term === '') {
-				continue;
-			}
-			$label = \App\Controllers\Home::TermToStr((int) $term);
-			echo '<span class="ef-term-badge t' . esc($term, 'attr') . '">' . esc($label) . '</span>';
-		}
-	}
-}
-
-if (!function_exists('ef_target_label')) {
-	function ef_target_label(array $fee): string
-	{
-		if ((int) ($fee['type'] ?? 0) === 1) {
-			$name = trim((string) ($fee['student_name'] ?? ''));
-			$reg = trim((string) ($fee['regno'] ?? ''));
-			return $reg !== '' ? $reg . ' ' . $name : ($name !== '' ? $name : 'Individual student');
-		}
-		return trim(($fee['level_name'] ?? '') . ' ' . ($fee['code'] ?? '') . ' ' . ($fee['classe'] ?? ''));
-	}
-}
+$feeGroups = $feeGroups ?? \App\Models\ExtraFeesModel::groupByClassAndTitle($fees ?? []);
+$groupCount = (int) ($groupCount ?? count($feeGroups));
 
 $uniqueClasses = [];
-foreach ($classes ?? [] as $cRow) {
-	$label = trim(($cRow['level_name'] ?? '') . ' ' . ($cRow['code'] ?? '') . ' ' . ($cRow['title'] ?? ''));
-	if ($label === '' || stripos($label, 'holiday') !== false) {
-		continue;
+$uniqueTitles = [];
+foreach ($feeGroups as $g) {
+	$lbl = trim((string) ($g['display_label'] ?? ''));
+	if ($lbl !== '') {
+		$uniqueClasses[$lbl] = $lbl;
 	}
-	$uniqueClasses[$label] = $label;
-}
-foreach ($fees as $fee) {
-	if ((int) ($fee['type'] ?? 0) === 0) {
-		$label = ef_target_label($fee);
-		if ($label !== '' && stripos($label, 'holiday') === false) {
-			$uniqueClasses[$label] = $label;
-		}
+	$ttl = trim((string) ($g['title'] ?? ''));
+	if ($ttl !== '') {
+		$uniqueTitles[$ttl] = $ttl;
 	}
 }
-uksort($uniqueClasses, 'strnatcasecmp');
+ksort($uniqueClasses, SORT_NATURAL | SORT_FLAG_CASE);
+ksort($uniqueTitles, SORT_NATURAL | SORT_FLAG_CASE);
 ?>
-<link rel="stylesheet" href="<?= base_url('assets/css/extra-fees.css'); ?>?v=4">
+<link rel="stylesheet" href="<?= base_url('assets/css/school-fees.css'); ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/extra-fees.css'); ?>?v=5">
 
 <div class="ef-page" id="extraFeesPage">
 	<div class="ef-center">
@@ -74,24 +51,23 @@ uksort($uniqueClasses, 'strnatcasecmp');
 		<div class="ef-kpi-grid">
 			<div class="ef-kpi">
 				<div class="ef-kpi-icon blue"><i class="fa fa-list"></i></div>
-				<div class="ef-kpi-value" id="efKpiCount"><?= (int) $feeCount; ?></div>
+				<div class="ef-kpi-value"><?= (int) $groupCount; ?></div>
 				<div class="ef-kpi-label"><?= lang('app.extraFees'); ?></div>
 			</div>
 			<div class="ef-kpi">
 				<div class="ef-kpi-icon green"><i class="fa fa-university"></i></div>
-				<div class="ef-kpi-value" id="efKpiClass"><?= (int) $classFeeCount; ?></div>
-				<div class="ef-kpi-label"><?= lang('app.addClassFee'); ?></div>
+				<div class="ef-kpi-value"><?= (int) $classCount; ?></div>
+				<div class="ef-kpi-label"><?= lang('app.classes'); ?></div>
 			</div>
 			<div class="ef-kpi">
 				<div class="ef-kpi-icon purple"><i class="fa fa-user"></i></div>
-				<div class="ef-kpi-value" id="efKpiStudent"><?= (int) $studentFeeCount; ?></div>
+				<div class="ef-kpi-value"><?= (int) $studentFeeCount; ?></div>
 				<div class="ef-kpi-label">Individual fees</div>
 			</div>
 			<div class="ef-kpi">
 				<div class="ef-kpi-icon orange"><i class="fa fa-coins"></i></div>
-				<div class="ef-kpi-value" id="efKpiAmount"><?= number_format((float) $feeTotalAmount); ?></div>
+				<div class="ef-kpi-value"><?= number_format((float) $feeTotalAmount); ?></div>
 				<div class="ef-kpi-label"><?= lang('app.amount'); ?> (Rwf)</div>
-				<small class="text-muted d-block" style="font-size:.7rem;margin-top:2px">Unit × students</small>
 			</div>
 		</div>
 
@@ -138,18 +114,9 @@ uksort($uniqueClasses, 'strnatcasecmp');
 						<?php endforeach; ?>
 					</select>
 				</div>
-				<?php if (!empty($fees)) : ?>
+				<?php if (!empty($feeGroups)) : ?>
 				<div class="ef-field">
-					<label for="efTypeFilter">Type</label>
-					<select class="form-control" id="efTypeFilter">
-						<option value="">All types</option>
-						<option value="class">Class fees</option>
-						<option value="student">Individual fees</option>
-					</select>
-				</div>
-				<?php if (!empty($uniqueClasses)) : ?>
-				<div class="ef-field">
-					<label for="efClassFilter"><?= lang('app.sClass'); ?></label>
+					<label for="efClassFilter"><?= lang('app.selectClass'); ?></label>
 					<select class="form-control" id="efClassFilter">
 						<option value="">All classes</option>
 						<?php foreach ($uniqueClasses as $cls) : ?>
@@ -157,19 +124,18 @@ uksort($uniqueClasses, 'strnatcasecmp');
 						<?php endforeach; ?>
 					</select>
 				</div>
-				<?php endif; ?>
 				<div class="ef-field">
-					<label for="efTermFilter"><?= lang('app.term'); ?></label>
-					<select class="form-control" id="efTermFilter">
-						<option value="">All terms</option>
-						<option value="1"><?= lang('app.term1'); ?></option>
-						<option value="2"><?= lang('app.term2'); ?></option>
-						<option value="3"><?= lang('app.term3'); ?></option>
+					<label for="efTitleFilter"><?= lang('app.title'); ?></label>
+					<select class="form-control" id="efTitleFilter">
+						<option value="">All extra fees</option>
+						<?php foreach ($uniqueTitles as $ttl) : ?>
+							<option value="<?= esc($ttl, 'attr'); ?>"><?= esc($ttl); ?></option>
+						<?php endforeach; ?>
 					</select>
 				</div>
 				<div class="ef-field ef-search-field">
 					<label for="efSearch">Search</label>
-					<input type="text" class="form-control" id="efSearch" placeholder="Search title, class or student…">
+					<input type="text" class="form-control" id="efSearch" placeholder="Search class, department or fee title…">
 				</div>
 				<?php endif; ?>
 			</div>
@@ -177,26 +143,15 @@ uksort($uniqueClasses, 'strnatcasecmp');
 
 		<div class="ef-panel">
 			<div class="ef-panel-head">
-				<h3>Configured extra fees</h3>
-				<span class="ef-badge" id="efVisibleCount"><?= (int) $feeCount; ?> fee<?= $feeCount === 1 ? '' : 's'; ?></span>
+				<h3><?= lang('app.extraFees'); ?></h3>
+				<span class="ef-badge" id="efVisibleCount"><?= $groupCount; ?> class fees · <?= (int) $feeCount; ?> terms</span>
 			</div>
-			<?php if (!empty($fees)) : ?>
-			<div class="ef-bulk-bar" id="efBulkBar">
-				<label class="ef-bulk-select-all mb-0">
-					<input type="checkbox" id="efSelectAllVisible"> Select all visible
-				</label>
-				<span class="ef-bulk-count text-muted" id="efSelectedCount">0 selected</span>
-				<button type="button" class="btn btn-danger btn-sm" id="efBulkDeleteBtn" disabled>
-					<i class="fa fa-trash"></i> Delete selected
-				</button>
-			</div>
-			<?php endif; ?>
 			<div class="ef-panel-body">
-				<?php if (empty($fees)) : ?>
+				<?php if (empty($feeGroups)) : ?>
 					<div class="ef-empty">
 						<i class="fa fa-inbox"></i>
 						<h4>No extra fees yet</h4>
-						<p>No extra fees configured for <?= esc($selectedYearTitle); ?>. Add a class fee with boarding/day amounts, or assign fees to multiple students. Primary (P1–P6), Software Development, Accounting and Stream registration fees are created automatically.</p>
+						<p>No class extra fees configured for <?= esc($selectedYearTitle); ?>. Add a class fee with boarding/day amounts. Individual student extras are edited from the search box above.</p>
 						<button type="button" class="btn ef-btn-add" data-toggle="modal" data-target="#mdlextrafees">
 							<i class="fa fa-plus"></i> <?= lang('app.addClassFee'); ?>
 						</button>
@@ -205,79 +160,111 @@ uksort($uniqueClasses, 'strnatcasecmp');
 					<div class="ef-table-wrap">
 						<table id="extraFeesTable" class="table mb-0">
 							<thead>
-							<tr>
-								<th class="ef-col-check text-center" style="width:42px">
-									<span class="sr-only">Select</span>
-								</th>
-								<th><?= lang('app.title'); ?></th>
-								<th>Type</th>
-								<th><?= lang('app.sClass'); ?> / Student</th>
-								<th class="text-right"><?= lang('app.amount'); ?></th>
-								<th><?= lang('app.term'); ?></th>
-								<th><?= lang('app.academicYear'); ?></th>
-								<th><?= lang('app.recordedBy'); ?></th>
-								<th class="text-center"><?= lang('app.Actions'); ?></th>
-							</tr>
+								<tr>
+									<th><?= lang('app.selectClass'); ?></th>
+									<th><?= lang('app.title'); ?></th>
+									<th><?= lang('app.selectDepartment'); ?></th>
+									<th class="sf-term-col-h"><?= lang('app.term1'); ?></th>
+									<th class="sf-term-col-h"><?= lang('app.term2'); ?></th>
+									<th class="sf-term-col-h"><?= lang('app.term3'); ?></th>
+									<th class="sf-actions-col"><?= lang('app.Actions'); ?></th>
+								</tr>
 							</thead>
 							<tbody>
-							<?php foreach ($fees as $fee) :
-								$isStudent = (int) ($fee['type'] ?? 0) === 1;
-								$target = ef_target_label($fee);
-								$searchText = strtolower($fee['title'] . ' ' . $target . ' ' . ($fee['regno'] ?? '') . ' ' . ($fee['created_by_name'] ?? ''));
-								$termStr = (string) ($fee['term'] ?? '');
-								$modes = \App\Models\ExtraFeesModel::modeAmounts($fee);
-								$unitAmt = (float) ($fee['amount'] ?? 0);
-								$stuCount = (int) ($fee['student_count'] ?? ($isStudent ? 1 : 0));
-								$lineTotal = (float) ($fee['line_total'] ?? $unitAmt);
-								$boardAmt = $modes['boarding'];
-								$dayAmt = $modes['day'];
-								$splitModes = !$isStudent && $boardAmt !== null && $dayAmt !== null && abs((float) $boardAmt - (float) $dayAmt) > 0.00001;
-								?>
-								<tr class="ef-fee-row"
-									data-id="<?= (int) $fee['id']; ?>"
-									data-type="<?= $isStudent ? 'student' : 'class'; ?>"
-									data-class="<?= esc($isStudent ? '' : $target, 'attr'); ?>"
-									data-terms="<?= esc($termStr, 'attr'); ?>"
-									data-search="<?= esc($searchText, 'attr'); ?>">
-									<td class="text-center ef-col-check">
-										<input type="checkbox" class="ef-row-check" value="<?= (int) $fee['id']; ?>" aria-label="Select fee">
-									</td>
-									<td><span class="ef-fee-title"><?= esc($fee['title']); ?></span></td>
-									<td>
-										<span class="ef-target-badge <?= $isStudent ? 'student' : 'class'; ?>">
-											<?= $isStudent ? 'Individual' : 'Class'; ?>
-										</span>
-									</td>
-									<td><?= esc($target); ?></td>
-									<td class="text-right">
-										<?php if ($splitModes) { ?>
-										<span class="ef-mode-amt board"><?= number_format((float) $boardAmt); ?> boarding</span>
-										<span class="ef-mode-amt day"><?= number_format((float) $dayAmt); ?> day</span>
-										<?php } else { ?>
-										<span class="ef-amount"><?= number_format($lineTotal); ?></span>
-										<?php } ?>
-										<?php if (!$isStudent) { ?>
-										<small class="d-block text-muted" style="font-size:.72rem">
-											<?php if (!$splitModes) { ?>
-												<?= number_format($unitAmt); ?> × <?= $stuCount; ?> student<?= $stuCount === 1 ? '' : 's'; ?>
-											<?php } else { ?>
-												Saved for the class<?= $stuCount > 0 ? ' · ' . $stuCount . ' student' . ($stuCount === 1 ? '' : 's') : ' · no students yet'; ?>
-											<?php } ?>
-										</small>
-										<?php } elseif ($stuCount > 0) { ?>
-										<small class="d-block text-muted" style="font-size:.72rem">1 student</small>
-										<?php } ?>
-									</td>
-									<td><?php ef_term_badges($fee['term']); ?></td>
-									<td><?= esc($fee['academic_year']); ?></td>
-									<td><?= esc(trim((string) ($fee['created_by_name'] ?? '')) !== '' ? $fee['created_by_name'] : '—'); ?></td>
-									<td class="text-center">
-										<button type="button" class="btn btn-outline-danger btn-sm ef-btn-del delButton" data-id="<?= (int) $fee['id']; ?>">
-											<i class="fa fa-trash"></i>
-										</button>
-									</td>
-								</tr>
-							<?php endforeach; ?>
+								<?php foreach ($feeGroups as $group) :
+									$searchText = strtolower($group['display_label'] . ' ' . $group['title'] . ' ' . $group['dept_code'] . ' ' . $group['dept_title'] . ' ' . ($group['faculty_code'] ?? '') . ' ' . ($group['class_title'] ?? ''));
+									$hasAnyTerm = !empty($group['terms'][1]) || !empty($group['terms'][2]) || !empty($group['terms'][3]);
+									?>
+									<tr class="sf-group-row"
+										data-class="<?= esc($group['display_label'], 'attr'); ?>"
+										data-title="<?= esc($group['title'], 'attr'); ?>"
+										data-search="<?= esc($searchText, 'attr'); ?>">
+										<td class="sf-level-cell">
+											<span class="sf-level-pill"><?= esc($group['display_label']); ?></span>
+										</td>
+										<td><span class="ef-fee-title"><?= esc($group['title']); ?></span></td>
+										<td>
+											<?php if (!empty($group['dept_code'])) : ?>
+												<span class="sf-dept-tag"><?= esc($group['dept_code']); ?></span>
+											<?php endif; ?>
+											<?php if (!empty($group['dept_title'])) : ?>
+												<span class="sf-dept-name"><?= esc($group['dept_title']); ?></span>
+											<?php endif; ?>
+										</td>
+										<?php for ($t = 1; $t <= 3; $t++) :
+											$termFee = $group['terms'][$t] ?? null;
+											$modes = $termFee ? \App\Models\ExtraFeesModel::modeAmounts($termFee) : null;
+											?>
+											<td class="sf-term-col t<?= $t; ?>">
+												<?php if ($termFee) : ?>
+													<div class="sf-term-cell">
+														<div class="sf-mode-amounts">
+															<div class="sf-mode-line boarding">
+																<span class="sf-mode-label"><?= lang('app.boarding'); ?></span>
+																<span class="sf-amount"><?= $modes['boarding'] !== null ? number_format((float) $modes['boarding']) : '—'; ?></span>
+															</div>
+															<div class="sf-mode-line day">
+																<span class="sf-mode-label"><?= lang('app.day'); ?></span>
+																<span class="sf-amount"><?= $modes['day'] !== null ? number_format((float) $modes['day']) : '—'; ?></span>
+															</div>
+														</div>
+														<?php if (!empty($termFee['created_by_name'])) : ?>
+															<small class="d-block text-muted" style="font-size:.68rem;margin-top:4px;"><?= esc(lang('app.recordedBy')); ?>: <?= esc($termFee['created_by_name']); ?></small>
+														<?php endif; ?>
+														<div class="sf-term-actions">
+															<button type="button" class="sf-icon-btn editFeeBtn" title="<?= lang('app.editFee'); ?>"
+																data-id="<?= (int) $termFee['id']; ?>"
+																data-amount="<?= esc((float) ($termFee['amount'] ?? 0), 'attr'); ?>"
+																data-boarding="<?= esc($modes['boarding'] !== null ? (float) $modes['boarding'] : '', 'attr'); ?>"
+																data-day="<?= esc($modes['day'] !== null ? (float) $modes['day'] : '', 'attr'); ?>"
+																data-term="<?= $t; ?>"
+																data-term-label="<?= esc(\App\Controllers\Home::TermToStr($t), 'attr'); ?>"
+																data-class="<?= esc($group['display_label'], 'attr'); ?>"
+																data-title="<?= esc($group['title'], 'attr'); ?>"
+																data-dept="<?= esc($group['dept_code'], 'attr'); ?>">
+																<i class="fa fa-pen"></i>
+															</button>
+															<button type="button" class="sf-icon-btn danger delButton" title="Delete"
+																data-id="<?= (int) $termFee['id']; ?>">
+																<i class="fa fa-trash"></i>
+															</button>
+														</div>
+													</div>
+												<?php else : ?>
+													<span class="sf-term-empty">—</span>
+												<?php endif; ?>
+											</td>
+										<?php endfor; ?>
+										<td class="sf-row-actions">
+											<?php
+											$gModes = [];
+											for ($gt = 1; $gt <= 3; $gt++) {
+												$tf = $group['terms'][$gt] ?? null;
+												$gModes[$gt] = $tf ? \App\Models\ExtraFeesModel::modeAmounts($tf) : ['boarding' => null, 'day' => null];
+											}
+											?>
+											<button type="button" class="btn btn-sm btn-outline-primary editGroupBtn"
+												data-class-id="<?= (int) $group['class_id']; ?>"
+												data-title="<?= esc($group['title'], 'attr'); ?>"
+												data-class="<?= esc($group['display_label'], 'attr'); ?>"
+												data-boarding-1="<?= esc($gModes[1]['boarding'] !== null ? (float) $gModes[1]['boarding'] : '', 'attr'); ?>"
+												data-day-1="<?= esc($gModes[1]['day'] !== null ? (float) $gModes[1]['day'] : '', 'attr'); ?>"
+												data-boarding-2="<?= esc($gModes[2]['boarding'] !== null ? (float) $gModes[2]['boarding'] : '', 'attr'); ?>"
+												data-day-2="<?= esc($gModes[2]['day'] !== null ? (float) $gModes[2]['day'] : '', 'attr'); ?>"
+												data-boarding-3="<?= esc($gModes[3]['boarding'] !== null ? (float) $gModes[3]['boarding'] : '', 'attr'); ?>"
+												data-day-3="<?= esc($gModes[3]['day'] !== null ? (float) $gModes[3]['day'] : '', 'attr'); ?>">
+												<i class="fa fa-edit"></i> <?= lang('app.editFee'); ?>
+											</button>
+											<button type="button" class="btn btn-sm btn-outline-danger delGroupBtn"
+												data-class-id="<?= (int) $group['class_id']; ?>"
+												data-title="<?= esc($group['title'], 'attr'); ?>"
+												data-label="<?= esc($group['display_label'] . ' · ' . $group['title'], 'attr'); ?>"
+												<?= $hasAnyTerm ? '' : 'disabled'; ?>>
+												<i class="fa fa-trash"></i>
+											</button>
+										</td>
+									</tr>
+								<?php endforeach; ?>
 							</tbody>
 						</table>
 					</div>
@@ -285,6 +272,83 @@ uksort($uniqueClasses, 'strnatcasecmp');
 			</div>
 		</div>
 
+	</div>
+</div>
+
+<div class="modal fade" id="mdlEditFee" tabindex="-1" role="dialog">
+	<div class="modal-dialog" role="document">
+		<div class="modal-content">
+			<form action="<?= base_url('update_extra_fee'); ?>" class="autoSubmit validate" id="frmEditFee">
+				<input type="hidden" name="fee_id" id="edit_fee_id">
+				<input type="hidden" name="year" value="<?= (int) $selectedYear; ?>">
+				<div class="modal-header">
+					<h5 class="modal-title"><?= lang('app.editFee'); ?></h5>
+					<button type="button" class="close" data-dismiss="modal"><span>×</span></button>
+				</div>
+				<div class="modal-body">
+					<div class="sf-edit-meta">
+						<div><strong><?= lang('app.sClass'); ?>:</strong> <span id="edit_fee_class">—</span></div>
+						<div><strong><?= lang('app.title'); ?>:</strong> <span id="edit_fee_title">—</span></div>
+						<div><strong><?= lang('app.term'); ?>:</strong> <span id="edit_fee_term">—</span></div>
+					</div>
+					<div class="form-group mt-3">
+						<label><?= lang('app.boarding'); ?> <?= lang('app.amount'); ?></label>
+						<input type="number" min="0" step="1" name="amount_boarding" id="edit_fee_boarding" class="form-control" placeholder="Leave blank if not charged">
+					</div>
+					<div class="form-group">
+						<label><?= lang('app.day'); ?> <?= lang('app.amount'); ?></label>
+						<input type="number" min="0" step="1" name="amount_day" id="edit_fee_day" class="form-control" placeholder="Leave blank if not charged">
+					</div>
+					<input type="hidden" name="amount" id="edit_fee_amount" value="">
+					<div class="custom-control custom-checkbox">
+						<input type="checkbox" class="custom-control-input" id="edit_apply_all_terms" name="apply_all_terms" value="1">
+						<label class="custom-control-label" for="edit_apply_all_terms"><?= lang('app.allTermsSameAmount'); ?></label>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-dismiss="modal"><?= lang('app.close'); ?></button>
+					<button type="submit" class="btn btn-primary" data-target="reload"><?= lang('app.save'); ?></button>
+				</div>
+			</form>
+		</div>
+	</div>
+</div>
+
+<div class="modal fade" id="mdlEditFeeGroup" tabindex="-1" role="dialog">
+	<div class="modal-dialog" role="document">
+		<div class="modal-content">
+			<form action="<?= base_url('update_extra_fee'); ?>" class="autoSubmit validate" id="frmEditFeeGroup">
+				<input type="hidden" name="class_id" id="edit_group_class_id">
+				<input type="hidden" name="title" id="edit_group_title_val">
+				<input type="hidden" name="year" value="<?= (int) $selectedYear; ?>">
+				<div class="modal-header">
+					<h5 class="modal-title"><?= lang('app.editFee'); ?> — <span id="edit_group_heading"></span></h5>
+					<button type="button" class="close" data-dismiss="modal"><span>×</span></button>
+				</div>
+				<div class="modal-body">
+					<p class="text-muted small mb-3">Update boarding and day amounts per term. Leave a term blank to keep it unchanged. Leave a mode blank if that extra fee is not charged.</p>
+					<?php for ($et = 1; $et <= 3; $et++) : ?>
+					<div class="border rounded p-2 mb-2">
+						<strong class="d-block mb-2"><?= lang('app.term' . $et); ?></strong>
+						<div class="form-row">
+							<div class="form-group col-md-6 mb-1">
+								<label class="small mb-0"><?= lang('app.boarding'); ?></label>
+								<input type="number" min="0" step="1" name="amount_boarding_<?= $et; ?>" id="edit_group_boarding_<?= $et; ?>" class="form-control form-control-sm">
+							</div>
+							<div class="form-group col-md-6 mb-1">
+								<label class="small mb-0"><?= lang('app.day'); ?></label>
+								<input type="number" min="0" step="1" name="amount_day_<?= $et; ?>" id="edit_group_day_<?= $et; ?>" class="form-control form-control-sm">
+							</div>
+						</div>
+					</div>
+					<?php endfor; ?>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-dismiss="modal"><?= lang('app.close'); ?></button>
+					<button type="submit" class="btn btn-primary" data-target="reload"><?= lang('app.save'); ?></button>
+				</div>
+			</form>
+		</div>
 	</div>
 </div>
 
@@ -385,88 +449,93 @@ $(function () {
 		});
 	});
 
-	function efSelectedIds() {
-		const ids = [];
-		$('.ef-fee-row:visible .ef-row-check:checked').each(function () {
-			ids.push(parseInt($(this).val(), 10));
-		});
-		return ids.filter(function (id) { return id > 0; });
-	}
-
-	function efUpdateBulkUi() {
-		const ids = efSelectedIds();
-		const n = ids.length;
-		$('#efSelectedCount').text(n + ' selected');
-		$('#efBulkDeleteBtn').prop('disabled', n < 1);
-		const $visible = $('.ef-fee-row:visible .ef-row-check');
-		const allChecked = $visible.length > 0 && $visible.filter(':checked').length === $visible.length;
-		$('#efSelectAllVisible').prop('checked', allChecked);
-	}
-
 	function efApplyFilters() {
-		const type = $('#efTypeFilter').val();
 		const cls = ($('#efClassFilter').val() || '').toLowerCase();
-		const term = $('#efTermFilter').val();
+		const title = ($('#efTitleFilter').val() || '').toLowerCase();
 		const q = ($('#efSearch').val() || '').toLowerCase().trim();
 		let visible = 0;
-		$('.ef-fee-row').each(function () {
+		$('#extraFeesTable tbody tr.sf-group-row').each(function () {
 			const $row = $(this);
 			let show = true;
-			if (type && $row.data('type') !== type) show = false;
-			if (show && cls && String($row.data('class') || '').toLowerCase().indexOf(cls) === -1) show = false;
-			if (show && term) {
-				const terms = String($row.data('terms') || '');
-				if (terms.split(',').map(function (t) { return t.trim(); }).indexOf(term) === -1) show = false;
-			}
+			if (cls && String($row.data('class') || '').toLowerCase() !== cls) show = false;
+			if (show && title && String($row.data('title') || '').toLowerCase() !== title) show = false;
 			if (show && q && String($row.data('search') || '').indexOf(q) === -1) show = false;
 			$row.toggle(show);
-			if (!show) $row.find('.ef-row-check').prop('checked', false);
 			if (show) visible++;
 		});
-		$('#efVisibleCount').text(visible + ' fee' + (visible === 1 ? '' : 's'));
-		efUpdateBulkUi();
+		$('#efVisibleCount').text(visible + ' class fee' + (visible === 1 ? '' : 's') + ' · <?= (int) $feeCount; ?> terms');
 	}
 
-	$('#efTypeFilter, #efClassFilter, #efTermFilter').on('change', efApplyFilters);
+	$('#efClassFilter, #efTitleFilter').on('change', efApplyFilters);
 	$('#efSearch').on('input', efApplyFilters);
 
-	$(document).on('change', '.ef-row-check', efUpdateBulkUi);
-	$('#efSelectAllVisible').on('change', function () {
-		const on = $(this).is(':checked');
-		$('.ef-fee-row:visible .ef-row-check').prop('checked', on);
-		efUpdateBulkUi();
+	$(document).on('click', '.editFeeBtn', function () {
+		const $b = $(this);
+		$('#edit_fee_id').val($b.data('id'));
+		$('#edit_fee_class').text($b.data('class'));
+		$('#edit_fee_title').text($b.data('title'));
+		$('#edit_fee_term').text($b.data('term-label'));
+		const boarding = $b.data('boarding');
+		const day = $b.data('day');
+		$('#edit_fee_boarding').val(boarding !== undefined && boarding !== '' ? boarding : '');
+		$('#edit_fee_day').val(day !== undefined && day !== '' ? day : '');
+		$('#edit_fee_amount').val($b.data('amount'));
+		$('#edit_apply_all_terms').prop('checked', false);
+		$('#mdlEditFee').modal('show');
 	});
 
-	$('#efBulkDeleteBtn').on('click', function () {
-		const ids = efSelectedIds();
-		if (!ids.length) return;
-		if (!confirm('Delete ' + ids.length + ' selected extra fee(s)?\n\nThis also permanently removes linked payment records.')) return;
-		const $btn = $(this).prop('disabled', true);
+	$('#frmEditFee').on('submit', function () {
+		const b = Number($('#edit_fee_boarding').val() || 0);
+		const d = Number($('#edit_fee_day').val() || 0);
+		$('#edit_fee_amount').val(Math.max(b, d));
+	});
+
+	$(document).on('click', '.editGroupBtn', function () {
+		const $b = $(this);
+		$('#edit_group_class_id').val($b.data('class-id'));
+		$('#edit_group_title_val').val($b.data('title'));
+		$('#edit_group_heading').text(($b.data('class') || '') + ' · ' + ($b.data('title') || ''));
+		for (let t = 1; t <= 3; t++) {
+			$('#edit_group_boarding_' + t).val($b.data('boarding-' + t) || '');
+			$('#edit_group_day_' + t).val($b.data('day-' + t) || '');
+		}
+		$('#mdlEditFeeGroup').modal('show');
+	});
+
+	$(document).on('click', '.delGroupBtn', function () {
+		const $b = $(this);
+		const label = $b.data('label') || 'this extra fee';
+		if (!confirm('Delete all terms of ' + label + '?\n\nThis also permanently removes linked payment records.')) {
+			return;
+		}
+		$b.prop('disabled', true);
 		$.ajax({
-			url: '<?= base_url('deleteExtraFeesBulk'); ?>',
+			url: '<?= base_url('deleteExtraFeeGroup'); ?>',
 			method: 'POST',
 			dataType: 'json',
-			data: { ids: ids },
+			data: {
+				class_id: $b.data('class-id'),
+				title: $b.data('title'),
+				year: efYear
+			},
 			success: function (res) {
 				if (res.success) {
 					toastada.success(res.success);
 					setTimeout(function () { window.location.reload(); }, 600);
 				} else {
 					toastada.error(res.error || 'Delete failed.');
-					$btn.prop('disabled', false);
-					efUpdateBulkUi();
+					$b.prop('disabled', false);
 				}
 			},
 			error: function (e) {
 				toastada.error((e.responseJSON && e.responseJSON.error) ? e.responseJSON.error : 'Delete failed.');
-				$btn.prop('disabled', false);
-				efUpdateBulkUi();
+				$b.prop('disabled', false);
 			}
 		});
 	});
 
 	$(document).on('click', '.delButton', function () {
-		if (!confirm('Delete this extra fee?\n\nThis also permanently removes linked payment records.')) return;
+		if (!confirm('Delete this extra fee term?\n\nThis also permanently removes linked payment records.')) return;
 		const id = $(this).data('id');
 		const $btn = $(this).prop('disabled', true);
 		$.ajax({
