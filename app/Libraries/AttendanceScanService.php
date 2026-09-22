@@ -48,6 +48,30 @@ class AttendanceScanService
 		return array_values(array_unique(array_filter(array_map('intval', $scope))));
 	}
 
+	/**
+	 * Accept taps from any attendance location that belongs to this school (or a campus).
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private static function resolveArea(int $schoolId, int $areaId): ?array
+	{
+		if ($areaId <= 0 || $schoolId <= 0) {
+			return null;
+		}
+		$areaMdl = new AttendanceAreaModel();
+		$scope = self::scopeSchoolIds($schoolId);
+		if ($scope === []) {
+			$scope = [$schoolId];
+		}
+		foreach ($scope as $sid) {
+			$row = $areaMdl->getForSchool((int) $sid, $areaId);
+			if ($row) {
+				return $row;
+			}
+		}
+		return null;
+	}
+
 	public static function ensureFaceColumn(): void
 	{
 		static $ready = false;
@@ -562,7 +586,7 @@ class AttendanceScanService
 		}
 
 		$areaMdl = new AttendanceAreaModel();
-		$area = $areaMdl->getActiveForSchool($schoolId, $areaId);
+		$area = self::resolveArea($schoolId, $areaId);
 		if (!$area) {
 			return ['success' => 0, 'message' => 'Invalid attendance location'];
 		}
@@ -571,7 +595,7 @@ class AttendanceScanService
 		$db = \Config\Database::connect();
 		$student = $db->table('students')
 			->where('id', $studentId)
-			->where('school_id', $schoolId)
+			->whereIn('school_id', self::scopeSchoolIds($schoolId) ?: [$schoolId])
 			->get()
 			->getRow();
 		if (!$student) {
@@ -725,7 +749,7 @@ class AttendanceScanService
 		}
 
 		$areaMdl = new AttendanceAreaModel();
-		$area = $areaMdl->getActiveForSchool($schoolId, $areaId);
+		$area = self::resolveArea($schoolId, $areaId);
 		if (!$area) {
 			return ['success' => 0, 'message' => 'Invalid attendance location'];
 		}
@@ -734,7 +758,7 @@ class AttendanceScanService
 		$db = \Config\Database::connect();
 		$student = $db->table('students')
 			->where('id', $studentId)
-			->where('school_id', $schoolId)
+			->whereIn('school_id', self::scopeSchoolIds($schoolId) ?: [$schoolId])
 			->get()
 			->getRow();
 		if (!$student) {
