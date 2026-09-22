@@ -21,7 +21,8 @@ FILES = [
 VERIFY_STRINGS = [
     ("app/Libraries/AttendanceScanService.php", "denied' => 'day"),
     ("app/Libraries/AttendanceScanService.php", "function isDormitoryArea"),
-    ("app/Libraries/AttendanceScanService.php", "Day scholars cannot swipe at the dormitory"),
+    ("app/Libraries/AttendanceScanService.php", "STUDENT_OUT_AFTER_IN_SECONDS = 600"),
+    ("app/Libraries/AttendanceScanService.php", "Already IN"),
 ]
 
 

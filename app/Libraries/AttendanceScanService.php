@@ -636,7 +636,7 @@ class AttendanceScanService
 			->get()
 			->getRow();
 
-		// First tap of the day is IN. Every later tap is OUT and overwrites time_out.
+		// First tap of the day is IN. Later taps are OUT only after 10 minutes.
 		$status = 'IN';
 		if (!$attendance) {
 			$db->table('attendance_records')->insert([
@@ -649,6 +649,27 @@ class AttendanceScanService
 				'shift_id' => 1,
 			]);
 		} else {
+			$timeIn = (int) ($attendance->time_in ?? 0);
+			if ($timeIn > 0 && ($time - $timeIn) < self::STUDENT_OUT_AFTER_IN_SECONDS) {
+				$school = $db->table('schools')->select('name, email, phone, logo')->where('id', $schoolId)->get()->getRow();
+				return [
+					'success' => 1,
+					'already' => 1,
+					'kind' => 'student',
+					'status' => 'IN',
+					'time' => date('H:i', $timeIn),
+					'message' => 'Already IN',
+					'person' => self::studentPayload($student, $className, $records->records ?? ''),
+					'school' => [
+						'name' => (string) ($school->name ?? ''),
+						'email' => (string) ($school->email ?? ''),
+						'phone' => (string) ($school->phone ?? ''),
+						'logo' => !empty($school->logo) ? base_url('assets/images/logo/' . $school->logo) : '',
+					],
+					'area' => ['id' => $areaId, 'name' => $areaName],
+					'month' => $month,
+				];
+			}
 			$db->table('attendance_records')
 				->where('id', $attendance->id)
 				->update(['time_out' => $time]);
@@ -675,6 +696,7 @@ class AttendanceScanService
 		];
 	}
 
+	public const STUDENT_OUT_AFTER_IN_SECONDS = 600;
 	public const STAFF_OUT_AFTER_IN_SECONDS = 300;
 	private const WAIT_CHECKOUT_MSG = 'Already checked in — waiting for checkout';
 
