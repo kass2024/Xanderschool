@@ -208,8 +208,11 @@ ksort($uniqueTitles, SORT_NATURAL | SORT_FLAG_CASE);
 																<span class="sf-amount"><?= $modes['day'] !== null ? number_format((float) $modes['day']) : '—'; ?></span>
 															</div>
 														</div>
-														<?php if (!empty($termFee['created_by_name'])) : ?>
-															<small class="d-block text-muted" style="font-size:.68rem;margin-top:4px;"><?= esc(lang('app.recordedBy')); ?>: <?= esc($termFee['created_by_name']); ?></small>
+														<?php
+														$recordedBy = trim((string) ($termFee['created_by_name'] ?? ''));
+														if ($recordedBy !== '') :
+														?>
+															<small class="d-block text-muted" style="font-size:.68rem;margin-top:4px;"><?= esc(lang('app.recordedBy')); ?>: <?= esc($recordedBy); ?></small>
 														<?php endif; ?>
 														<div class="sf-term-actions">
 															<button type="button" class="sf-icon-btn editFeeBtn" title="<?= lang('app.editFee'); ?>"

@@ -20,7 +20,7 @@ use App\Models\ExtraFeesModel;
 
 const SCHOOL_ID = 27;
 const ACADEMIC_YEAR_ID = 16;
-const CREATED_BY = 1;
+const CREATED_BY = 0;
 const TERMS = [1, 2, 3];
 
 $dryRun = in_array('--dry-run', $argv ?? [], true);

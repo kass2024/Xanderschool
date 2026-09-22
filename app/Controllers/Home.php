@@ -16569,6 +16569,7 @@ public function getApplicationDocs($id = null)
 		$extraFees = new ExtraFeesModel();
 		$extraFees->ensureSchema();
 		$school_id = $this->session->get("soma_school_id");
+		$extraFees->clearForeignCreatedByForWisdomRwanda((int) $school_id);
 		$academicYear = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
 		$extraFees->ensureTrackRegistrationFees(
 			(int) $school_id,

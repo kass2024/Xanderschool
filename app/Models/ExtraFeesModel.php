@@ -7,6 +7,8 @@ class ExtraFeesModel extends Model
 {
 	/** WISDOM SCHOOL KAYONZA — Registration is set manually (10,000 all classes). */
 	private const KAYONZA_SCHOOL_ID = 35;
+	/** WISDOM SCHOOL RWANDA — never show or stamp staff from another school. */
+	private const WISDOM_RWANDA_SCHOOL_ID = 27;
 
 	protected $table="extra_fees";
 	protected $allowedFields = ["school_id","title","academic_year","type_id","type","term","amount","amount_boarding","amount_day","created_by"];
@@ -14,6 +16,64 @@ class ExtraFeesModel extends Model
 	protected $primaryKey = 'id';
 	protected $createdField  = 'created_at';
 	protected $updatedField  = 'updated_at';
+
+	public static function isWisdomSchoolRwanda(int $schoolId): bool
+	{
+		if ($schoolId === self::WISDOM_RWANDA_SCHOOL_ID) {
+			return true;
+		}
+		if ($schoolId < 1) {
+			return false;
+		}
+		$row = \Config\Database::connect()->table('schools')
+			->select('name')
+			->where('id', $schoolId)
+			->get(1)->getRowArray();
+		$name = strtoupper(trim(preg_replace('/\s+/', ' ', (string) ($row['name'] ?? ''))));
+		return $name === 'WISDOM SCHOOL RWANDA';
+	}
+
+	private $staffSchoolCache = [];
+
+	private function staffBelongsToSchool(int $schoolId, int $staffId): bool
+	{
+		if ($schoolId < 1 || $staffId < 1) {
+			return false;
+		}
+		$key = $schoolId . ':' . $staffId;
+		if (!array_key_exists($key, $this->staffSchoolCache)) {
+			$row = \Config\Database::connect()->table('staffs')
+				->select('id')
+				->where('id', $staffId)
+				->where('school_id', $schoolId)
+				->get(1)->getRowArray();
+			$this->staffSchoolCache[$key] = !empty($row);
+		}
+		return $this->staffSchoolCache[$key];
+	}
+
+	/**
+	 * Drop created_by when it points to staff who are not on WISDOM SCHOOL RWANDA.
+	 * Other schools are left unchanged.
+	 */
+	public function clearForeignCreatedByForWisdomRwanda(int $schoolId): int
+	{
+		if (!self::isWisdomSchoolRwanda($schoolId)) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$db->query(
+			'UPDATE extra_fees ef
+			LEFT JOIN staffs st ON st.id = ef.created_by AND st.school_id = ef.school_id
+			SET ef.created_by = NULL
+			WHERE ef.school_id = ?
+			  AND ef.created_by IS NOT NULL
+			  AND ef.created_by <> 0
+			  AND st.id IS NULL',
+			[$schoolId]
+		);
+		return $db->affectedRows();
+	}
 
 	public function ensureSchema(): void
 	{
@@ -350,6 +410,9 @@ class ExtraFeesModel extends Model
 			->where('title', $title)
 			->where('term', $term)
 			->get(1)->getRowArray();
+		if (self::isWisdomSchoolRwanda($schoolId) && !$this->staffBelongsToSchool($schoolId, $createdBy)) {
+			$createdBy = 0;
+		}
 		$payload = [
 			'school_id' => $schoolId,
 			'title' => $title,
@@ -360,11 +423,17 @@ class ExtraFeesModel extends Model
 			'amount' => $base,
 			'amount_boarding' => $boarding,
 			'amount_day' => $day,
-			'created_by' => $createdBy,
+			'created_by' => $createdBy > 0 ? $createdBy : null,
 		];
 		if ($existing) {
+			if (self::isWisdomSchoolRwanda($schoolId)) {
+				unset($payload['created_by']);
+			}
 			$this->update((int) $existing['id'], $payload);
 			return (int) $existing['id'];
+		}
+		if ($payload['created_by'] === null) {
+			unset($payload['created_by']);
 		}
 		return (int) $this->insert($payload);
 	}
@@ -465,6 +534,9 @@ class ExtraFeesModel extends Model
 				}
 			}
 		}
+		if (self::isWisdomSchoolRwanda($schoolId) && !$this->staffBelongsToSchool($schoolId, $createdBy)) {
+			$createdBy = 0;
+		}
 		$payload = [
 			'school_id' => $schoolId,
 			'title' => $title,
@@ -475,11 +547,17 @@ class ExtraFeesModel extends Model
 			'amount' => $amount,
 			'amount_boarding' => null,
 			'amount_day' => $amount,
-			'created_by' => $createdBy,
+			'created_by' => $createdBy > 0 ? $createdBy : null,
 		];
 		if ($existing) {
+			if (self::isWisdomSchoolRwanda($schoolId)) {
+				unset($payload['created_by']);
+			}
 			$this->update((int) $existing['id'], $payload);
 			return (int) $existing['id'];
+		}
+		if ($payload['created_by'] === null) {
+			unset($payload['created_by']);
 		}
 		return (int) $this->insert($payload);
 	}
@@ -598,6 +676,10 @@ class ExtraFeesModel extends Model
 		if ($schoolId < 1 || $yearId < 1) {
 			return [];
 		}
+		$staffJoin = 'sf.id = extra_fees.created_by';
+		if (self::isWisdomSchoolRwanda($schoolId)) {
+			$staffJoin .= ' AND sf.school_id = extra_fees.school_id';
+		}
 		return $this->select("extra_fees.id, extra_fees.title, extra_fees.term, extra_fees.amount,
 			extra_fees.amount_boarding, extra_fees.amount_day, extra_fees.type_id AS class_id,
 			cl.title AS class_title, cl.level AS level_id, cl.department AS department_id,
@@ -608,7 +690,7 @@ class ExtraFeesModel extends Model
 			->join('levels l', 'l.id = cl.level', 'left')
 			->join('departments d', 'd.id = cl.department', 'left')
 			->join('faculty f', 'f.id = d.faculty_id', 'left')
-			->join('staffs sf', 'sf.id = extra_fees.created_by', 'left')
+			->join('staffs sf', $staffJoin, 'left')
 			->where('extra_fees.school_id', $schoolId)
 			->where('extra_fees.academic_year', $yearId)
 			->where('extra_fees.type', 0)
