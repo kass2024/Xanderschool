@@ -7595,9 +7595,7 @@ public function attendanceCard()
 		$classFilter = (int) ($this->request->getGet('c') ?? 0);
 		@ini_set('memory_limit', $classFilter > 0 ? '512M' : '1024M');
 		@set_time_limit($classFilter > 0 ? 300 : 600);
-		if ($yearId < 1) {
-			$yearId = (int) ($this->data['academic_year_id'] ?? 0);
-		}
+		$yearId = $this->schoolOwnedAcademicYearId($schoolId, $yearId);
 		if ($yearId < 1) {
 			echo 'No academic year selected.';
 			return;
@@ -7631,7 +7629,7 @@ public function attendanceCard()
 				$classLabel = $oneLabel;
 				$mentorName = $oneMentor;
 			}
-			$rows = $this->studentListExportRows($studentMdl, $classId, $yearId);
+			$rows = $this->studentListExportRows($studentMdl, $classId, $yearId, $schoolId);
 			$unique = [];
 			foreach ($rows as $row) {
 				$sid = (int) ($row['id'] ?? 0);
@@ -7694,8 +7692,11 @@ public function attendanceCard()
 	/**
 	 * @return list<array<string,mixed>>
 	 */
-	private function studentListExportRows(StudentModel $studentMdl, int $classId, int $yearId): array
+	private function studentListExportRows(StudentModel $studentMdl, int $classId, int $yearId, int $schoolId): array
 	{
+		if ($schoolId < 1 || $classId < 1 || $yearId < 1) {
+			return [];
+		}
 		return $studentMdl
 			->select("
 				students.id,
@@ -7740,13 +7741,39 @@ public function attendanceCard()
 			->join('soma_sector ss', 'ss.id = sc.sector', 'left')
 			->join('soma_district sd', 'sd.id = ss.district', 'left')
 			->where('cr.class', $classId)
+			->where('c.school_id', $schoolId)
+			->where('students.school_id', $schoolId)
 			->where('cr.year', $yearId)
+			->where('cr.status', 1)
 			->whereIn('students.status', [1, 2, '1', '2'])
 			->groupBy('students.id')
 			->orderBy('students.fname', 'ASC')
 			->orderBy('students.lname', 'ASC')
 			->get()
 			->getResultArray();
+	}
+
+	/** Academic year id must belong to the current school — never another campus. */
+	private function schoolOwnedAcademicYearId(int $schoolId, int $requestedYearId = 0): int
+	{
+		if ($schoolId < 1) {
+			return 0;
+		}
+		$acMdl = new AcademicYearModel();
+		if ($requestedYearId > 0) {
+			$row = $acMdl->select('id')->where('id', $requestedYearId)->where('school_id', $schoolId)->first();
+			if ($row) {
+				return (int) ($row['id'] ?? 0);
+			}
+		}
+		$fallback = (int) ($this->data['academic_year_id'] ?? 0);
+		if ($fallback > 0) {
+			$row = $acMdl->select('id')->where('id', $fallback)->where('school_id', $schoolId)->first();
+			if ($row) {
+				return (int) ($row['id'] ?? 0);
+			}
+		}
+		return 0;
 	}
 
 	/**
@@ -7759,10 +7786,10 @@ public function attendanceCard()
 		@ini_set('memory_limit', '1024M');
 		@set_time_limit(600);
 		$schoolId = (int) $this->session->get('soma_school_id');
-		$yearId = (int) ($this->request->getGet('y') ?? 0);
-		if ($yearId < 1) {
-			$yearId = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
-		}
+		$yearId = $this->schoolOwnedAcademicYearId(
+			$schoolId,
+			(int) ($this->request->getGet('y') ?? 0)
+		);
 		if ($yearId < 1) {
 			echo 'No academic year selected.';
 			return;
@@ -7903,7 +7930,8 @@ public function attendanceCard()
 		if ($yearId < 1) {
 			$yearId = (int) ($this->data['academic_year_id'] ?? 0);
 		}
-		if ($yearId < 1) {
+		$yearId = $this->schoolOwnedAcademicYearId($schoolId, $yearId);
+		if ($schoolId < 1 || $yearId < 1) {
 			echo 'No academic year selected.';
 			return;
 		}
@@ -7930,8 +7958,12 @@ public function attendanceCard()
 			}
 			$students = $studentMdl->select('students.id, students.fname, students.lname, students.regno, students.email, students.email_password')
 				->join('class_records cr', 'students.id=cr.student')
+				->join('classes c', 'c.id=cr.class')
 				->where('cr.class', $classId)
+				->where('c.school_id', $schoolId)
+				->where('students.school_id', $schoolId)
 				->where('cr.year', $yearId)
+				->where('cr.status', 1)
 				->where('students.status', 1)
 				->groupBy('students.id')
 				->orderBy('students.fname', 'ASC')

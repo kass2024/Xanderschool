@@ -516,9 +516,9 @@
 								   title="Full student list: names, gender, date of birth, parents, phones, location. No class selected = one Excel sheet per class.">
 									<i class="fa fa-file-excel"></i> <?= lang("app.exporttoExcel"); ?>
 								</a>
-								<a href="<?= base_url('export_student_emails?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? ''))) . '&c=' . urlencode((string) $class_id)); ?>"
+								<a href="<?= base_url('export_student_emails?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? ''))) . (((string) $class_id !== '-1' && (string) $class_id !== '') ? '&c=' . urlencode((string) $class_id) : '')); ?>"
 								   class="btn btn-outline-success students-toolbar-submit"
-								   title="Export student emails and passwords (nursery excluded)">
+								   title="Export student emails and passwords for this school only (nursery excluded)">
 									<i class="fa fa-envelope"></i> Export emails
 								</a>
 							</form>
@@ -537,9 +537,9 @@
 												class="typcn typcn-plus"> </i><span><?= lang("app.AddnewStudent"); ?></span>
 										</a>
 										<div class="dropdown-divider"></div>
-										<a href="<?= base_url('export_student_emails?y=' . urlencode((string) $academic_year) . '&c=' . urlencode((string) $class_id)); ?>"
+										<a href="<?= base_url('export_student_emails?y=' . urlencode((string) (($academic_year !== '-1' && $academic_year !== '') ? $academic_year : ($active_year_id ?? ''))) . (((string) $class_id !== '-1' && (string) $class_id !== '') ? '&c=' . urlencode((string) $class_id) : '')); ?>"
 										   class="dropdown-item"
-										   title="Emails and passwords, nursery excluded">
+										   title="Emails and passwords for this school only, nursery excluded">
 											<i class="fa fa-envelope"></i> Export emails
 										</a>
 										<a href="<?= base_url('export_smart_student_list?y=' . urlencode((string) $academic_year) . (((string) $class_id !== '-1' && (string) $class_id !== '') ? '&c=' . urlencode((string) $class_id) : '')); ?>"
