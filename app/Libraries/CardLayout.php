@@ -333,14 +333,55 @@ class CardLayout
 	}
 
 	/**
-	 * Student card name: Title Case only (Mutesi Adela), never ALL CAPS.
+	 * Student card name: first name ALL CAPS, last name Title Case.
+	 * Example: ISHIMWE Nshuti Private
 	 */
-	public static function formatPersonName(?string $name): string
+	public static function formatPersonName(?string $firstName, ?string $lastName = null): string
 	{
-		$name = trim(preg_replace('/\s+/', ' ', (string) $name) ?? '');
-		if ($name === '') {
-			return '';
+		$first = self::collapseName($firstName);
+		$last = $lastName === null ? null : self::collapseName($lastName);
+		if ($last === null) {
+			if (strpos($first, ' ') !== false) {
+				$bits = explode(' ', $first, 2);
+				$first = $bits[0];
+				$last = $bits[1] ?? '';
+			} else {
+				$last = '';
+			}
 		}
+		$parts = [];
+		if ($first !== '') {
+			$parts[] = self::upperName($first);
+		}
+		if ($last !== '') {
+			$parts[] = self::titleCaseName($last);
+		}
+		return implode(' ', $parts);
+	}
+
+	/** Student card name from fname/lname, falling back to a concatenated name. */
+	public static function formatStudentCardName(array $student): string
+	{
+		$fname = self::collapseName($student['fname'] ?? '');
+		$lname = self::collapseName($student['lname'] ?? '');
+		if ($fname !== '' || $lname !== '') {
+			return self::formatPersonName($fname, $lname);
+		}
+		return self::formatPersonName(self::collapseName($student['name'] ?? ($student['stdnames'] ?? '')));
+	}
+
+	private static function collapseName($name): string
+	{
+		return trim(preg_replace('/\s+/', ' ', (string) $name) ?? '');
+	}
+
+	private static function upperName(string $name): string
+	{
+		return function_exists('mb_strtoupper') ? mb_strtoupper($name, 'UTF-8') : strtoupper($name);
+	}
+
+	private static function titleCaseName(string $name): string
+	{
 		if (function_exists('mb_convert_case')) {
 			return mb_convert_case($name, MB_CASE_TITLE, 'UTF-8');
 		}

@@ -123,11 +123,7 @@ class WisdomCardRenderer
 		$navy = imagecolorallocate($im, self::NAVY[0], self::NAVY[1], self::NAVY[2]);
 		$teal = imagecolorallocate($im, self::TEAL[0], self::TEAL[1], self::TEAL[2]);
 
-		$rawName = trim((string) ($student['name'] ?? ($student['stdnames'] ?? '')));
-		if ($rawName === '') {
-			$rawName = trim((string) ($student['fname'] ?? '') . ' ' . (string) ($student['lname'] ?? ''));
-		}
-		$fullName = CardLayout::formatPersonName($rawName);
+		$fullName = CardLayout::formatStudentCardName($student);
 		$classLabel = $this->upper(trim((string) ($student['class'] ?? '')));
 		$year = $this->upper(CardLayout::formatAcademicYear((string) ($ctx['year'] ?? '')));
 		// Keep year as 2026/2027 — drop trailing term suffix if present.

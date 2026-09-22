@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Student ID card names: Title Case, not ALL CAPS."""
+"""Student card names: first name ALL CAPS, last name Title Case."""
 from __future__ import annotations
 
 import os
+import socket
+import time
 from pathlib import Path
 
 import paramiko
@@ -16,18 +18,36 @@ FILES = [
     "app/Libraries/CardLayout.php",
     "app/Libraries/WisdomCardRenderer.php",
     "app/Views/templates/student_card_smart.php",
+    "app/Controllers/Home.php",
 ]
 VERIFY = [
-    ("app/Libraries/CardLayout.php", "function formatPersonName"),
-    ("app/Libraries/WisdomCardRenderer.php", "CardLayout::formatPersonName"),
-    ("app/Views/templates/student_card_smart.php", "formatPersonName"),
+    ("app/Libraries/CardLayout.php", "function formatStudentCardName"),
+    ("app/Libraries/CardLayout.php", "first name ALL CAPS"),
+    ("app/Libraries/WisdomCardRenderer.php", "formatStudentCardName"),
+    ("app/Views/templates/student_card_smart.php", "formatStudentCardName"),
+    ("app/Controllers/Home.php", "students.fname,students.lname"),
 ]
+
+
+def wait_port(timeout: int = 180) -> bool:
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            s = socket.create_connection((HOST, 22), timeout=6)
+            s.close()
+            return True
+        except OSError:
+            time.sleep(4)
+    return False
 
 
 def main() -> int:
+    if not wait_port(180):
+        print("SSH port 22 still closed")
+        return 1
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(HOST, username=USER, password=PASSWORD, timeout=90, banner_timeout=90)
+    c.connect(HOST, username=USER, password=PASSWORD, timeout=180, banner_timeout=180, auth_timeout=180)
     sftp = c.open_sftp()
     for rel in FILES:
         remote = f"{REMOTE_BASE}/{rel}"

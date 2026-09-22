@@ -1635,7 +1635,7 @@ public function testEmail()
 		$year = (int) ($this->data['academic_year_id'] ?? $this->data['academic_year'] ?? 0);
 		$stMdl = new StudentModel();
 		$builder = $stMdl->select('students.id,students.card,students.studying_mode,students.regno,students.status,
-			concat(students.fname," ",students.lname) as name,concat(l.title," ",d.code," ",c.title) as class,
+			students.fname,students.lname,concat(students.fname," ",students.lname) as name,concat(l.title," ",d.code," ",c.title) as class,
 			c.title as title,d.title as dept_title,d.code as dept_code,l.title as level_title,
 			f.title as faculty_title,lf.title as level_faculty_title,students.photo,
 			c.id as class_id,cr.id as record_id')
