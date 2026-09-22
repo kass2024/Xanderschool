@@ -17,13 +17,15 @@ REMOTE_BASE = "/opt/xander-school/app"
 FILES = [
     "app/Libraries/AttendanceScanService.php",
     "app/Controllers/Api.php",
+    "app/Models/AttendanceAreaModel.php",
 ]
 
 VERIFY_STRINGS = [
     ("app/Libraries/AttendanceScanService.php", "function ingestKioskBatch"),
     ("app/Libraries/AttendanceScanService.php", "function applyStudentEvent"),
+    ("app/Libraries/AttendanceScanService.php", "strpos($n, 'school gate') !== false"),
     ("app/Controllers/Api.php", "function device_scan_batch"),
-    ("app/Controllers/Api.php", "getPost('student_id')"),
+    ("app/Models/AttendanceAreaModel.php", "where('user_type', 0)"),
 ]
 
 

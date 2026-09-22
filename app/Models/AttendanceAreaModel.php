@@ -340,7 +340,6 @@ class AttendanceAreaModel extends Model
 		if ($ids !== [] && $db->tableExists('attendance_records')) {
 			$recQ = $db->table('attendance_records')
 				->select('user_id, area_id, time_in, time_out')
-				->where('school_id', $schoolId)
 				->where('user_type', 0)
 				->where("DATE_FORMAT(FROM_UNIXTIME(time_in),'%m-%Y') = " . $db->escape($monthYm), null, false)
 				->whereIn('user_id', $ids);

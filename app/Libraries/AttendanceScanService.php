@@ -705,6 +705,15 @@ class AttendanceScanService
 	 */
 	public static function applyStudentEvent(int $schoolId, int $studentId, int $areaId, int $eventTime = 0, string $wanted = ''): array
 	{
+		try {
+			return self::applyStudentEventInner($schoolId, $studentId, $areaId, $eventTime, $wanted);
+		} catch (\Throwable $e) {
+			return ['success' => 0, 'message' => 'Scan save failed: ' . $e->getMessage()];
+		}
+	}
+
+	private static function applyStudentEventInner(int $schoolId, int $studentId, int $areaId, int $eventTime = 0, string $wanted = ''): array
+	{
 		$wanted = strtoupper(trim($wanted));
 		if ($wanted !== 'IN' && $wanted !== 'OUT') {
 			return self::scanStudent($schoolId, $studentId, $areaId, $eventTime);
@@ -1350,8 +1359,8 @@ class AttendanceScanService
 		$n = strtolower(trim($name));
 		$n = preg_replace('/[^a-z0-9]+/', ' ', $n);
 		$n = trim((string) $n);
-		return $n === 'gate' || $n === 'school gate' || str_contains($n, 'school gate')
-			|| str_ends_with($n, ' gate');
+		return $n === 'gate' || $n === 'school gate' || strpos($n, 'school gate') !== false
+			|| substr($n, -5) === ' gate';
 	}
 
 	private static function isDormitoryArea(string $name): bool
@@ -1359,8 +1368,8 @@ class AttendanceScanService
 		$n = strtolower(trim($name));
 		$n = preg_replace('/[^a-z0-9]+/', ' ', $n);
 		$n = trim((string) $n);
-		return str_contains($n, 'dormitor') || $n === 'dorm' || str_starts_with($n, 'dorm ')
-			|| str_ends_with($n, ' dorm') || str_contains($n, 'hostel');
+		return strpos($n, 'dormitor') !== false || $n === 'dorm' || strpos($n, 'dorm ') === 0
+			|| substr($n, -5) === ' dorm' || strpos($n, 'hostel') !== false;
 	}
 
 	/**
