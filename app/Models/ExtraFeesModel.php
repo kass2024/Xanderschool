@@ -65,7 +65,7 @@ class ExtraFeesModel extends Model
 		$db->query(
 			'UPDATE extra_fees ef
 			LEFT JOIN staffs st ON st.id = ef.created_by AND st.school_id = ef.school_id
-			SET ef.created_by = NULL
+			SET ef.created_by = 0
 			WHERE ef.school_id = ?
 			  AND ef.created_by IS NOT NULL
 			  AND ef.created_by <> 0
@@ -423,7 +423,7 @@ class ExtraFeesModel extends Model
 			'amount' => $base,
 			'amount_boarding' => $boarding,
 			'amount_day' => $day,
-			'created_by' => $createdBy > 0 ? $createdBy : null,
+			'created_by' => $createdBy > 0 ? $createdBy : 0,
 		];
 		if ($existing) {
 			if (self::isWisdomSchoolRwanda($schoolId)) {
@@ -431,9 +431,6 @@ class ExtraFeesModel extends Model
 			}
 			$this->update((int) $existing['id'], $payload);
 			return (int) $existing['id'];
-		}
-		if ($payload['created_by'] === null) {
-			unset($payload['created_by']);
 		}
 		return (int) $this->insert($payload);
 	}
@@ -547,7 +544,7 @@ class ExtraFeesModel extends Model
 			'amount' => $amount,
 			'amount_boarding' => null,
 			'amount_day' => $amount,
-			'created_by' => $createdBy > 0 ? $createdBy : null,
+			'created_by' => $createdBy > 0 ? $createdBy : 0,
 		];
 		if ($existing) {
 			if (self::isWisdomSchoolRwanda($schoolId)) {
@@ -555,9 +552,6 @@ class ExtraFeesModel extends Model
 			}
 			$this->update((int) $existing['id'], $payload);
 			return (int) $existing['id'];
-		}
-		if ($payload['created_by'] === null) {
-			unset($payload['created_by']);
 		}
 		return (int) $this->insert($payload);
 	}

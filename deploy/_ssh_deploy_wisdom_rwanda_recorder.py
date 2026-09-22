@@ -27,7 +27,7 @@ VERIFY = [
 SQL = r"""
 UPDATE extra_fees ef
 LEFT JOIN staffs st ON st.id = ef.created_by AND st.school_id = ef.school_id
-SET ef.created_by = NULL
+SET ef.created_by = 0
 WHERE ef.school_id = 27
   AND ef.created_by IS NOT NULL
   AND ef.created_by <> 0
