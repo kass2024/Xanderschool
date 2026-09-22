@@ -16571,21 +16571,12 @@ public function getApplicationDocs($id = null)
 		$school_id = $this->session->get("soma_school_id");
 		$extraFees->clearForeignCreatedByForWisdomRwanda((int) $school_id);
 		$academicYear = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
-		$extraFees->ensureTrackRegistrationFees(
-			(int) $school_id,
-			$academicYear,
-			(int) ($this->session->get('soma_id') ?: 0)
-		);
-		$dbCheck = \Config\Database::connect();
-		$hasFeedingTransport = (int) $dbCheck->table('extra_fees')
-			->where('school_id', $school_id)
-			->where('academic_year', $academicYear)
-			->groupStart()
-			->like('title', 'feeding')
-			->orLike('title', 'transport')
-			->groupEnd()
-			->countAllResults();
-		if ((int) $school_id === 27 || $hasFeedingTransport > 0) {
+		if (ExtraFeesModel::isWisdomSchoolRwanda((int) $school_id)) {
+			$extraFees->ensureTrackRegistrationFees(
+				(int) $school_id,
+				$academicYear,
+				(int) ($this->session->get('soma_id') ?: 0)
+			);
 			$extraFees->ensureDayScholarFeedingTransport(
 				(int) $school_id,
 				$academicYear,

@@ -446,6 +446,9 @@ class ExtraFeesModel extends Model
 		if ($schoolId < 1 || $yearId < 1) {
 			return 0;
 		}
+		if (!self::isWisdomSchoolRwanda($schoolId)) {
+			return 0;
+		}
 		$db = \Config\Database::connect();
 		$classes = $db->table('classes c')
 			->select('c.id, c.title, l.title as level_name, d.title as dept_title, d.code as dept_code, f.title as faculty_title')
@@ -572,6 +575,9 @@ class ExtraFeesModel extends Model
 	): int {
 		$this->ensureSchema();
 		if ($schoolId < 1 || $yearId < 1) {
+			return 0;
+		}
+		if (!self::isWisdomSchoolRwanda($schoolId)) {
 			return 0;
 		}
 		if ($schoolId === self::KAYONZA_SCHOOL_ID) {
