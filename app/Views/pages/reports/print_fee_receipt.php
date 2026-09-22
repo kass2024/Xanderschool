@@ -65,7 +65,7 @@ $defaultFormat = 'thermal';
 					<span><?= esc(lang('app.' . termToStr($record['term']))); ?></span>
 					<span><?= number_format((float) $record['amount']); ?> Rwf</span>
 				</div>
-				<div style="font-size:10px;color:#555;"><?= esc(paymentModeToString($record['payment_mode'])); ?> · <?= date('d-M-Y', strtotime($record['date'])); ?></div>
+				<div style="font-size:10px;color:#555;"><?= esc(paymentModeToString($record['payment_mode'], $record['bank_name'] ?? '')); ?> · <?= date('d-M-Y', strtotime($record['date'])); ?></div>
 			</div>
 		<?php $i++; endforeach; ?>
 
@@ -118,7 +118,7 @@ $defaultFormat = 'thermal';
 					<td><?= $i++; ?></td>
 					<td><?= esc($record['item']); ?></td>
 					<td><?= esc(lang('app.' . termToStr($record['term']))); ?></td>
-					<td><?= esc(paymentModeToString($record['payment_mode'])); ?></td>
+					<td><?= esc(paymentModeToString($record['payment_mode'], $record['bank_name'] ?? '')); ?></td>
 					<td><?= date('d-M-Y', strtotime($record['date'])); ?></td>
 					<td style="text-align:right;"><?= number_format((float) $record['amount']); ?></td>
 				</tr>

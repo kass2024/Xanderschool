@@ -2647,6 +2647,11 @@
 									<input type="text" name="slipRef" class="form-control" id="feInvoiceSlipRef"
 									       maxlength="50" placeholder="<?= lang("app.slipReferencePlaceholder"); ?>">
 								</div>
+								<div class="col-md-6 mt-3" id="feBankNameWrap" style="display:none">
+									<label><?= lang("app.bankName"); ?> <span class="text-danger">*</span></label>
+									<input type="text" name="bankName" class="form-control" id="feInvoiceBankName"
+									       maxlength="120" placeholder="<?= lang("app.bankNamePlaceholder"); ?>">
+								</div>
 							</div>
 						</div>
 					</div>

@@ -667,6 +667,7 @@ foreach ($pendings as $p) {
                 <option value="3"><?= lang('app.cheque') ?></option>
                 <option value="4"><?= lang('app.momo') ?></option>
                 <option value="5"><?= lang('app.airtelMoney') ?></option>
+                <option value="6"><?= lang('app.transfer') ?></option>
               </select>
             </div>
             <div class="col-md-4">
@@ -676,6 +677,10 @@ foreach ($pendings as $p) {
             <div class="col-md-4" id="feSlipRefWrap">
               <label><?= lang('app.slipReference') ?></label>
               <input type="text" class="form-control" id="feInvoiceSlipRef" maxlength="50" placeholder="<?= lang('app.slipReferencePlaceholder') ?>">
+            </div>
+            <div class="col-md-4 mt-3" id="feBankNameWrap" style="display:none">
+              <label><?= lang('app.bankName') ?> <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="feInvoiceBankName" maxlength="120" placeholder="<?= lang('app.bankNamePlaceholder') ?>">
             </div>
           </div>
         </div>
@@ -1030,12 +1035,19 @@ foreach ($pendings as $p) {
     });
     var mode = $('#feInvoicePaymentMode').val();
     var slipOk = ($('#feInvoiceSlipRef').val() || '').trim().length > 0;
+    var bankOk = mode !== '1' || ($('#feInvoiceBankName').val() || '').trim().length > 0;
     $('#feInvoiceTotal').text(formatRwf(total));
-    $('#approveConfirmBtn').prop('disabled', count === 0 || !mode || !slipOk || !$('#approveClassId').val());
+    $('#approveConfirmBtn').prop('disabled', count === 0 || !mode || !slipOk || !bankOk || !$('#approveClassId').val());
   }
 
   function feToggleSlipRef() {
     $('#feSlipRefWrap').show();
+    if ($('#feInvoicePaymentMode').val() === '1') {
+      $('#feBankNameWrap').show();
+    } else {
+      $('#feBankNameWrap').hide();
+      $('#feInvoiceBankName').val('');
+    }
     feInvoiceUpdateTotal();
   }
 
@@ -1219,6 +1231,7 @@ foreach ($pendings as $p) {
   $(document).on('input', '#approveRegistrationModal .fe-inv-amount', feInvoiceUpdateTotal);
   $('#feInvoicePaymentMode').on('change', feToggleSlipRef);
   $('#feInvoiceSlipRef').on('input', feInvoiceUpdateTotal);
+  $('#feInvoiceBankName').on('input', feInvoiceUpdateTotal);
 
   $('#feInvSelectAll').on('click', function () {
     $('#feInvoiceBody .fe-inv-check').each(function () {
@@ -1251,6 +1264,11 @@ foreach ($pendings as $p) {
     var slipRef = ($('#feInvoiceSlipRef').val() || '').trim();
     if (!slipRef) {
       showAlert($('#approveAlert'), 'danger', <?= json_encode(lang('app.slipReferenceRequired')) ?>);
+      return;
+    }
+    var bankName = ($('#feInvoiceBankName').val() || '').trim();
+    if (mode === '1' && !bankName) {
+      showAlert($('#approveAlert'), 'danger', <?= json_encode(lang('app.bankNameRequired')) ?>);
       return;
     }
 
@@ -1296,6 +1314,7 @@ foreach ($pendings as $p) {
         paymentMode: mode,
         dueDate: $('#feInvoiceDueDate').val(),
         slipRef: slipRef,
+        bankName: bankName,
         payments: JSON.stringify(payments)
       })
     })

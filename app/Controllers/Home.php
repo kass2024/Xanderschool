@@ -16859,6 +16859,7 @@ public function getApplicationDocs($id = null)
 		$due_date = trim((string) $this->request->getPost("dueDate"));
 		$promisedDate = trim((string) $this->request->getPost("promisedDate"));
 		$slipRef = trim((string) $this->request->getPost("slipRef"));
+		$bankName = trim((string) $this->request->getPost("bankName"));
 		$feeEntryModel = new FeesRecordModel();
 		$feeEntryModel->ensureSchema();
 		$studentRow = (new StudentModel())->select('studying_mode')->find($student);
@@ -16890,6 +16891,10 @@ public function getApplicationDocs($id = null)
 				if ($isInstallment) {
 					$rowDue = $promisedDate;
 				}
+				$payMode = (int) ($modes[$key] ?? 0);
+				if ($payMode === FeesApproval::PAYMENT_MODE_BANK_SLIP && $bankName === '') {
+					return $this->response->setJSON(["error" => lang("app.bankNameRequired")]);
+				}
 				$data = [
 						"student_id" => $student,
 						"fees_type" => $feesTypes[$key],
@@ -16899,14 +16904,29 @@ public function getApplicationDocs($id = null)
 						"is_installment" => $isInstallment ? 1 : 0,
 						"promised_date" => $isInstallment ? $promisedDate : null,
 						"reminder_sent_at" => null,
-						"payment_mode" => $modes[$key],
+						"payment_mode" => $payMode,
+						"refNo" => $slipRef,
+						"bank_name" => $payMode === FeesApproval::PAYMENT_MODE_BANK_SLIP ? $bankName : null,
 						"status" => FeesApproval::STATUS_APPROVED,
 						"created_by" => $this->session->get("soma_id")];
-				$recId = $feeEntryModel->insert($data);
-				$savedAny = true;
-				if ($slipRef !== '') {
-					$this->_assignFeeSlipRef($feeEntryModel, (int) $recId, $student, (int) $feesTypes[$key], $slipRef, (int) $item);
+				try {
+					$recId = $feeEntryModel->insert($data);
+				} catch (\Exception $insertEx) {
+					if (stripos($insertEx->getMessage(), 'Duplicate') !== false) {
+						$feeEntryModel->allowSharedFeeReferences();
+						$recId = $feeEntryModel->insert($data);
+					} else {
+						throw $insertEx;
+					}
 				}
+				if (!$recId) {
+					$feeEntryModel->allowSharedFeeReferences();
+					$recId = $feeEntryModel->insert($data);
+				}
+				if (!$recId) {
+					return $this->response->setJSON(["error" => "Could not save fee item. Please try again."]);
+				}
+				$savedAny = true;
 				if (count($items) - 1 == $key) {
 					$resString .= $recId . ':' . $feesTypes[$key];
 				} else {
@@ -16937,29 +16957,31 @@ public function getApplicationDocs($id = null)
 	}
 
 	/**
-	 * Persist bank-slip reference; suffix record id when student+type+ref already exists.
+	 * Persist the same bank-slip / transfer reference on every selected fee item.
 	 */
-	private function _assignFeeSlipRef(FeesRecordModel $model, int $recordId, int $studentId, int $feesType, string $refNo, int $feesId = 0): void
+	private function _assignFeeSlipRef(FeesRecordModel $model, int $recordId, int $studentId, int $feesType, string $refNo, int $feesId = 0, string $bankName = ''): void
 	{
+		$payload = [];
 		$baseRef = trim($refNo);
-		if ($baseRef === '') {
+		if ($baseRef !== '') {
+			$payload['refNo'] = $baseRef;
+		}
+		$bank = trim($bankName);
+		if ($bank !== '') {
+			$payload['bank_name'] = substr($bank, 0, 120);
+		}
+		if ($payload === []) {
 			return;
 		}
-		if ($feesId < 1) {
-			$row = $model->find($recordId);
-			$feesId = (int) ($row['fees_id'] ?? 0);
+		try {
+			$model->update($recordId, $payload);
+		} catch (\Exception $e) {
+			if (stripos($e->getMessage(), 'Duplicate') === false) {
+				throw $e;
+			}
+			$model->allowSharedFeeReferences();
+			$model->update($recordId, $payload);
 		}
-		$finalRef = $baseRef;
-		$dup = $model->where('student_id', $studentId)
-				->where('fees_type', $feesType)
-				->where('fees_id', $feesId)
-				->where('refNo', $baseRef)
-				->where('id !=', $recordId)
-				->countAllResults();
-		if ($dup > 0) {
-			$finalRef = $baseRef . '-' . $recordId;
-		}
-		$model->update($recordId, ['refNo' => $finalRef]);
 	}
 
 	private function financeActorId(): int
@@ -22005,8 +22027,9 @@ public function assign_card()
 		$this->_preset();
 		$this->denyUnlessFeeOperator(true);
 		$feesRecordMdl = new FeesRecordModel();
+		$feesRecordMdl->ensureSchema();
 		$extraFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,1 as type,fees_records.created_at as date,
-		concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,
+		concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,fees_records.bank_name,
 		TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 				->join("extra_fees extra", "fees_records.fees_id=extra.id and fees_records.fees_type=1")
 				->join("academic_year ac", "ac.id=extra.academic_year")
@@ -22016,7 +22039,7 @@ public function assign_card()
 				->orderBy("fees_records.id", 'DESC')
 				->get()->getResultArray();
 		$schoolFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,0 as type,fees_records.created_at as date
-		,if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,
+		,if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,fees_records.bank_name,
 		TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 				->join("school_fees sf", "sf.id=fees_records.fees_id and fees_records.fees_type=0")
 				->join("academic_year ac", "ac.id=sf.academic_year")
@@ -22083,6 +22106,7 @@ public function assign_card()
 			return null;
 		}
 		$feesRecordMdl = new FeesRecordModel();
+		$feesRecordMdl->ensureSchema();
 		$studentMdl = new StudentModel();
 		$extraFeesData = [];
 		$schoolFeesData = [];
@@ -22102,7 +22126,7 @@ public function assign_card()
 		$schoolFees = [];
 		if (count($extraFeesData) > 0) {
 			$extraFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,fees_records.created_at as date,
-			concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,
+			concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.bank_name,
 			TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 					->join("extra_fees extra", "fees_records.fees_id=extra.id and fees_records.fees_type=1 and fees_records.status=1")
 					->join("academic_year ac", "ac.id=extra.academic_year")
@@ -22113,7 +22137,7 @@ public function assign_card()
 		}
 		if (count($schoolFeesData) > 0) {
 			$schoolFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,fees_records.created_at as date,
-			if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,
+			if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,fees_records.bank_name,
 			TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 					->join("school_fees sf", "sf.id=fees_records.fees_id and fees_records.fees_type=0 and fees_records.status=1")
 					->join("academic_year ac", "ac.id=sf.academic_year")
@@ -24712,7 +24736,8 @@ public function assign_card()
 		string $dueDate,
 		string $slipRef,
 		int $paymentMode,
-		int $createdBy
+		int $createdBy,
+		string $bankName = ''
 	): array {
 		if ($studentId < 1 || $payments === []) {
 			return ['ok' => false, 'error' => lang('app.selectAtLeastOneFeeItem')];
@@ -24720,12 +24745,16 @@ public function assign_card()
 		if ($slipRef === '') {
 			return ['ok' => false, 'error' => lang('app.slipReferenceRequired')];
 		}
+		if ($paymentMode === FeesApproval::PAYMENT_MODE_BANK_SLIP && trim($bankName) === '') {
+			return ['ok' => false, 'error' => lang('app.bankNameRequired')];
+		}
 
 		$schoolFeeMdl = new SchoolFeesModel();
 		$schoolFeeMdl->ensureSchema();
 		$extraFeeMdl = new ExtraFeesModel();
 		$extraFeeMdl->ensureSchema();
 		$feeEntryModel = new FeesRecordModel();
+		$feeEntryModel->ensureSchema();
 		$receiptParts = [];
 
 		foreach ($payments as $idx => $pay) {
@@ -24837,21 +24866,33 @@ public function assign_card()
 				return ['ok' => false, 'error' => 'Could not save fee item #' . ($idx + 1) . '.'];
 			}
 
-			$recId = (int) $feeEntryModel->insert([
+			$payRow = [
 				'student_id' => $studentId,
 				'fees_type' => $feeType,
 				'amount' => $received,
 				'fees_id' => $feeId,
 				'due_date' => $dueDate,
 				'payment_mode' => $paymentMode,
+				'refNo' => $slipRef,
+				'bank_name' => $paymentMode === FeesApproval::PAYMENT_MODE_BANK_SLIP ? trim($bankName) : null,
 				'status' => FeesApproval::STATUS_APPROVED,
 				'created_by' => $createdBy,
-			]);
+			];
+			try {
+				$recId = (int) $feeEntryModel->insert($payRow);
+			} catch (\Exception $insertEx) {
+				if (stripos($insertEx->getMessage(), 'Duplicate') === false) {
+					return ['ok' => false, 'error' => $insertEx->getMessage()];
+				}
+				$feeEntryModel->allowSharedFeeReferences();
+				$recId = (int) $feeEntryModel->insert($payRow);
+			}
+			if ($recId < 1) {
+				$feeEntryModel->allowSharedFeeReferences();
+				$recId = (int) $feeEntryModel->insert($payRow);
+			}
 			if ($recId < 1) {
 				return ['ok' => false, 'error' => 'Could not save payment for item #' . ($idx + 1) . '.'];
-			}
-			if ($slipRef !== '') {
-				$this->_assignFeeSlipRef($feeEntryModel, $recId, $studentId, $feeType, $slipRef);
 			}
 			$receiptParts[] = $recId . ':' . $feeType;
 		}
@@ -25172,6 +25213,7 @@ public function assign_card()
 		$paymentMode = (int) $this->request->getPost("paymentMode");
 		$dueDate = trim((string) $this->request->getPost("dueDate"));
 		$slipRef = trim((string) $this->request->getPost("slipRef"));
+		$bankName = trim((string) $this->request->getPost("bankName"));
 		$application = $applicationMdl->select("id,fname,lname,
 		gender,phoneNumber,parentType,parentPhoneNumber,parentNames,dateOfBirth,
 		level,studyingMode,faculty_id,department_id,schoolId,class_id,cell_id,village_id,medical_status,
@@ -25234,6 +25276,9 @@ public function assign_card()
 		}
 		if ($slipRef === '') {
 			return $this->response->setJSON(["error" => lang("app.slipReferenceRequired")]);
+		}
+		if ($paymentMode === FeesApproval::PAYMENT_MODE_BANK_SLIP && $bankName === '') {
+			return $this->response->setJSON(["error" => lang("app.bankNameRequired")]);
 		}
 
 		$regNo = $this->_generate_regno(true);
@@ -25317,7 +25362,8 @@ public function assign_card()
 					$dueDate,
 					$slipRef,
 					$paymentMode,
-					$createdBy
+					$createdBy,
+					$bankName
 				);
 				if (empty($feeResult['ok'])) {
 					$db->transRollback();

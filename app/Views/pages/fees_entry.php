@@ -9,7 +9,7 @@
 				<?= view('pages/partials/card_scan_search', [
 					'classes' => $classes,
 					'use_lang' => true,
-					'default_mode' => 'card',
+					'default_mode' => 'student',
 					'student_placeholder' => 'Type student name or reg no...',
 				]) ?>
 
@@ -31,7 +31,7 @@
 					<div class="fe-student-header" id="feStudentCard">
 						<div class="fe-student-empty">
 							<i class="fa fa-id-card"></i>
-							<p>Scan a student card, search by name, or pick from a class to begin.</p>
+							<p>Search by student name, pick from a class, or scan a card to begin.</p>
 						</div>
 					</div>
 
@@ -167,7 +167,7 @@ $(function () {
 		$('#feStudentCard').removeClass('has-student').html(`
 			<div class="fe-student-empty">
 				<i class="fa fa-id-card"></i>
-				<p>Scan a student card, search by name, or pick from a class to begin.</p>
+				<p>Search by student name, pick from a class, or scan a card to begin.</p>
 			</div>`);
 		$('#feWorkspaceCard').removeClass('has-fees-ready');
 		$('.paidContent').hide();
@@ -313,6 +313,7 @@ $(function () {
 	function feInvoiceUpdateTotal() {
 		let total = 0;
 		let count = 0;
+		let hasInstallment = false;
 		$('#feInvoiceBody .fe-inv-check:checked').each(function () {
 			const $row = $(this).closest('tr');
 			const amt = parseFloat($row.find('.fe-inv-amount').val()) || 0;
@@ -320,17 +321,34 @@ $(function () {
 			if (amt > 0 && amt <= max + 0.001) {
 				total += amt;
 				count++;
+				if (amt < max - 0.001) {
+					hasInstallment = true;
+				}
 			}
 		});
 		const mode = $('#feInvoicePaymentMode').val();
 		const slipOk = ($('#feInvoiceSlipRef').val() || '').trim().length > 0;
+		const bankOk = mode !== '1' || ($('#feInvoiceBankName').val() || '').trim().length > 0;
+		const promisedOk = !hasInstallment || ($('#feInvoicePromisedDate').val() || '').trim().length > 0;
+		if (hasInstallment) {
+			$('#fePromisedDateWrap').show();
+		} else {
+			$('#fePromisedDateWrap').hide();
+			$('#feInvoicePromisedDate').val('');
+		}
 		$('#feInvoiceTotal').text(formatRwf(total));
 		$('#feSaveCount').text(count > 0 ? '(' + count + ' item' + (count > 1 ? 's' : '') + ')' : '');
-		$('#btnSave').prop('disabled', count === 0 || !mode || !slipOk);
+		$('#btnSave').prop('disabled', count === 0 || !mode || !slipOk || !bankOk || !promisedOk);
 	}
 
 	function feToggleSlipRef() {
 		$('#feSlipRefWrap').show();
+		if ($('#feInvoicePaymentMode').val() === '1') {
+			$('#feBankNameWrap').show();
+		} else {
+			$('#feBankNameWrap').hide();
+			$('#feInvoiceBankName').val('');
+		}
 		feInvoiceUpdateTotal();
 	}
 
@@ -371,10 +389,14 @@ $(function () {
 		$('#btnSave').prop('disabled', true);
 		$('#feInvoicePaymentMode').val('');
 		$('#feInvoiceDueDate').val('');
+		$('#feInvoicePromisedDate').val('');
+		$('#fePromisedDateWrap').hide();
 		$('#feInvoiceSlipRef').val('');
+		$('#feInvoiceBankName').val('');
 		feToggleSlipRef();
 
-		$.getJSON('<?= base_url('get_fee_invoice_items/') ?>' + year + '/' + std + '/' + classe, function (res) {
+		const term = $('#feInvoiceTerm').val() || '1';
+		$.getJSON('<?= base_url('get_fee_invoice_items/') ?>' + year + '/' + std + '/' + classe + '?term=' + encodeURIComponent(term), function (res) {
 			$('#feInvoiceLoading').hide();
 			if (!res.success) {
 				toastada.error(res.error || 'Could not load items.');
@@ -394,6 +416,7 @@ $(function () {
 	}
 
 	$('#mdlfeesEntry').on('shown.bs.modal', feInvoiceLoadItems);
+	$('#feInvoiceTerm').on('change', feInvoiceLoadItems);
 
 	$(document).on('change', '.fe-inv-check', function () {
 		const $row = $(this).closest('tr');
@@ -414,6 +437,8 @@ $(function () {
 
 	$('#feInvoicePaymentMode').on('change', feToggleSlipRef);
 	$('#feInvoiceSlipRef').on('input', feInvoiceUpdateTotal);
+	$('#feInvoiceBankName').on('input', feInvoiceUpdateTotal);
+	$('#feInvoicePromisedDate').on('change input', feInvoiceUpdateTotal);
 
 	$('#feInvSelectAll').on('click', function () {
 		$('#feInvoiceBody .fe-inv-check').each(function () {
@@ -441,10 +466,32 @@ $(function () {
 			toastada.error('<?= esc(lang('app.slipReferenceRequired')); ?>');
 			return;
 		}
+		const bankName = ($('#feInvoiceBankName').val() || '').trim();
+		if (mode === '1' && !bankName) {
+			toastada.error('<?= esc(lang('app.bankNameRequired')); ?>');
+			return;
+		}
+		let hasInstallment = false;
+		$('#feInvoiceBody .fe-inv-row').each(function () {
+			const $cb = $(this).find('.fe-inv-check');
+			if (!$cb.is(':checked')) return;
+			const amount = parseFloat($(this).find('.fe-inv-amount').val()) || 0;
+			const max = parseFloat($(this).data('remain')) || 0;
+			if (amount > 0 && amount < max - 0.001) {
+				hasInstallment = true;
+			}
+		});
+		const promisedDate = ($('#feInvoicePromisedDate').val() || '').trim();
+		if (hasInstallment && !promisedDate) {
+			toastada.error('Enter promised payment date for installment payment.');
+			return;
+		}
 		const payload = {
 			studentid: $('#studentId').val(),
 			dueDate: $('#feInvoiceDueDate').val(),
+			promisedDate: promisedDate,
 			slipRef: slipRef,
+			bankName: bankName,
 			'items[]': [],
 			'feeTypes[]': [],
 			'amounts[]': [],
@@ -647,6 +694,7 @@ $(function () {
 				let style = '';
 				if (isCancelled) style = 'color:red;text-decoration:line-through;';
 				const refCell = record.refNo ? record.refNo : '—';
+				const modeLabel = paymentModeToString(record.payment_mode, record.bank_name);
 				let statusCell = isCancelled ? '—' : "<span class='badge badge-success'><?= esc(lang('app.feeStatusApproved')); ?></span>";
 				let actions = '';
 				if (canPrint) {
@@ -659,7 +707,7 @@ $(function () {
 					'<td>' + getJsTermToString(record.term) + '</td> ' +
 					'<td>' + record.item + '</td> ' +
 					'<td>' + record.amount + ' Rwf</td>' +
-					'<td>' + paymentModeToString(record.payment_mode) + '</td>' +
+					'<td>' + modeLabel + '</td>' +
 					'<td>' + refCell + '</td>' +
 					'<td>' + record.date + '</td>' +
 					'<td>' + (record.recorded_by_name || '—') + '</td>' +
@@ -687,14 +735,20 @@ function getJsTermToString(term) {
 	}
 }
 
-function paymentModeToString(mode) {
-	switch (mode) {
-		case '1': return 'Bank slip';
-		case '2': return 'Cash';
-		case '3': return 'Cheque';
-		case '4': return 'MTN Momo';
-		case '5': return 'Airtel Money';
-		default: return mode;
+function paymentModeToString(mode, bankName) {
+	let label;
+	switch (String(mode)) {
+		case '1': label = 'Bank slip'; break;
+		case '2': label = 'Cash'; break;
+		case '3': label = 'Cheque'; break;
+		case '4': label = 'MTN Momo'; break;
+		case '5': label = 'Airtel Money'; break;
+		case '6': label = 'Transfer'; break;
+		default: label = mode;
 	}
+	if (String(mode) === '1' && bankName) {
+		return label + ' — ' + bankName;
+	}
+	return label;
 }
 </script>

@@ -560,11 +560,13 @@ if (!function_exists('termToStr')) {
 	}
 }
 if (!function_exists('paymentModeToString')) {
-	function paymentModeToString($mode)
+	function paymentModeToString($mode, $bankName = '')
 	{
-		switch ($mode) {
+		switch ((string) $mode) {
 			case '1':
-				return lang("app.bankSlip");
+				$label = lang("app.bankSlip");
+				$bank = trim((string) $bankName);
+				return $bank !== '' ? ($label . ' — ' . $bank) : $label;
 			case '2':
 				return lang("app.cash");
 			case '3':

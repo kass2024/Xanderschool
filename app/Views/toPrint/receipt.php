@@ -82,7 +82,7 @@
 				$total = $record['amount'] + $total; ?>
 				<div class="row">
 					<div class="col-3" style="text-align: left"><?= '<strong>'.$i.'.</strong> '.$record['item'].
-						' <span style="border: 1px dotted;padding: 2px;border-radius: 3px">'.paymentModeToString($record['payment_mode']).'</span>'; ?></div>
+						' <span style="border: 1px dotted;padding: 2px;border-radius: 3px">'.paymentModeToString($record['payment_mode'], $record['bank_name'] ?? '').'</span>'; ?></div>
 					<div class="col-3" style="text-align: center"><?= number_format($record['amount']); ?> Rwf</div>
 					<div class="col-3" style="text-align: center"><?= lang("app." . termToStr($record['term'])); ?></div>
 					<div class="col-3" style="text-align: right"><?= date('d-M-Y', strtotime($record['date'])); ?></div>
