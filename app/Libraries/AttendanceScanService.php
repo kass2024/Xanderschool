@@ -696,6 +696,177 @@ class AttendanceScanService
 		];
 	}
 
+	/**
+	 * Replay a kiosk tap into attendance_records using the original event time
+	 * and the IN/OUT the device already decided — so delayed uploads still
+	 * land on the attendance report instead of toggling the wrong status.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function applyStudentEvent(int $schoolId, int $studentId, int $areaId, int $eventTime = 0, string $wanted = ''): array
+	{
+		$wanted = strtoupper(trim($wanted));
+		if ($wanted !== 'IN' && $wanted !== 'OUT') {
+			return self::scanStudent($schoolId, $studentId, $areaId, $eventTime);
+		}
+
+		helper('qonics');
+		if ($areaId <= 0) {
+			return ['success' => 0, 'message' => 'Select a student location in Settings first'];
+		}
+
+		$areaMdl = new AttendanceAreaModel();
+		$area = $areaMdl->getActiveForSchool($schoolId, $areaId);
+		if (!$area) {
+			return ['success' => 0, 'message' => 'Invalid attendance location'];
+		}
+		$areaName = (string) ($area['name'] ?? '');
+
+		$db = \Config\Database::connect();
+		$student = $db->table('students')
+			->where('id', $studentId)
+			->where('school_id', $schoolId)
+			->get()
+			->getRow();
+		if (!$student) {
+			return ['success' => 0, 'message' => 'Student not found'];
+		}
+
+		if ((int) ($student->studying_mode ?? 1) === 0 && self::isSchoolGateArea($areaName)) {
+			return [
+				'success' => 1,
+				'skipped' => 1,
+				'denied' => 'boarding',
+				'kind' => 'student',
+				'message' => 'Boarding students cannot swipe at the school gate',
+			];
+		}
+		if ((int) ($student->studying_mode ?? 1) === 1 && self::isDormitoryArea($areaName)) {
+			return [
+				'success' => 1,
+				'skipped' => 1,
+				'denied' => 'day',
+				'kind' => 'student',
+				'message' => 'Day scholars cannot swipe at the dormitory',
+			];
+		}
+
+		$time = $eventTime > 1000000000 ? $eventTime : time();
+		$todayStart = strtotime('today', $time);
+		$todayEnd = strtotime('tomorrow', $time) - 1;
+		$row = $db->table('attendance_records')
+			->where('user_id', $student->id)
+			->where('school_id', $schoolId)
+			->where('area_id', $areaId)
+			->where('user_type', 0)
+			->where('time_in >=', $todayStart)
+			->where('time_in <=', $todayEnd)
+			->orderBy('id', 'ASC')
+			->get()
+			->getRow();
+
+		$status = $wanted;
+		$already = false;
+		if ($wanted === 'IN') {
+			if (!$row) {
+				$db->table('attendance_records')->insert([
+					'user_id' => $student->id,
+					'user_type' => 0,
+					'time_in' => $time,
+					'time_out' => 0,
+					'school_id' => $schoolId,
+					'area_id' => $areaId,
+					'shift_id' => 1,
+				]);
+			} else {
+				$already = true;
+			}
+		} else {
+			if (!$row) {
+				$db->table('attendance_records')->insert([
+					'user_id' => $student->id,
+					'user_type' => 0,
+					'time_in' => $time,
+					'time_out' => $time,
+					'school_id' => $schoolId,
+					'area_id' => $areaId,
+					'shift_id' => 1,
+				]);
+			} elseif ((int) ($row->time_out ?? 0) > 0) {
+				$already = true;
+			} else {
+				$db->table('attendance_records')
+					->where('id', $row->id)
+					->update(['time_out' => $time]);
+			}
+		}
+
+		return [
+			'success' => 1,
+			'already' => $already ? 1 : 0,
+			'kind' => 'student',
+			'status' => $status,
+			'time' => date('H:i', $time),
+			'message' => $already
+				? ($wanted === 'IN' ? 'Already IN' : 'Already OUT')
+				: ($wanted === 'IN' ? 'Student IN' : 'Student OUT'),
+			'person' => self::studentPayload($student, '', ''),
+			'area' => ['id' => $areaId, 'name' => $areaName],
+		];
+	}
+
+	/**
+	 * Bulk upload from the USB kiosk pending queue.
+	 *
+	 * @param list<array<string,mixed>> $events
+	 * @return array<string,mixed>
+	 */
+	public static function ingestKioskBatch(int $schoolId, array $events): array
+	{
+		$results = [];
+		foreach ($events as $i => $ev) {
+			if (!is_array($ev)) {
+				$results[] = ['i' => $i, 'local_id' => 0, 'success' => 0, 'message' => 'bad event'];
+				continue;
+			}
+			$localId = (int) ($ev['local_id'] ?? $ev['id'] ?? 0);
+			$card = trim((string) ($ev['card'] ?? ''));
+			$areaId = (int) ($ev['area_id'] ?? 0);
+			$time = (int) ($ev['time'] ?? 0);
+			$studentId = (int) ($ev['student_id'] ?? 0);
+			$wanted = strtoupper(trim((string) ($ev['status'] ?? '')));
+			$useSchool = $schoolId;
+			if ($studentId <= 0 && $card !== '') {
+				$owner = CardRegistry::lookup($schoolId, $card);
+				if ($owner && ($owner['type'] ?? '') === 'student') {
+					$studentId = (int) $owner['id'];
+					$useSchool = (int) ($owner['school_id'] ?? $schoolId);
+				}
+			}
+			if ($studentId <= 0) {
+				$results[] = [
+					'i' => $i,
+					'local_id' => $localId,
+					'success' => 0,
+					'message' => 'Card not found',
+				];
+				continue;
+			}
+			$out = self::applyStudentEvent($useSchool, $studentId, $areaId, $time, $wanted);
+			$results[] = [
+				'i' => $i,
+				'local_id' => $localId,
+				'success' => (int) ($out['success'] ?? 0),
+				'already' => !empty($out['already']) ? 1 : 0,
+				'skipped' => !empty($out['skipped']) ? 1 : 0,
+				'denied' => (string) ($out['denied'] ?? ''),
+				'status' => (string) ($out['status'] ?? ''),
+				'message' => (string) ($out['message'] ?? ''),
+			];
+		}
+		return ['success' => 1, 'results' => $results];
+	}
+
 	public const STUDENT_OUT_AFTER_IN_SECONDS = 600;
 	public const STAFF_OUT_AFTER_IN_SECONDS = 300;
 	private const WAIT_CHECKOUT_MSG = 'Already checked in — waiting for checkout';

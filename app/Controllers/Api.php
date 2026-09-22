@@ -5238,14 +5238,39 @@ public function permission_card_scan()
 		$card = trim((string) ($this->request->getPost('card') ?? ''));
 		$areaId = (int) ($this->request->getPost('area_id') ?: $this->request->getPost('area') ?: 0);
 		$eventTime = (int) $this->request->getPost('time');
-		if ($schoolId <= 0 || $card === '') {
+		$studentId = (int) $this->request->getPost('student_id');
+		$status = strtoupper(trim((string) $this->request->getPost('status')));
+		if ($schoolId <= 0 || ($card === '' && $studentId <= 0)) {
 			return $this->response->setJSON(['success' => 0, 'message' => 'School and card are required']);
+		}
+		if ($studentId > 0) {
+			return $this->response->setJSON(
+				AttendanceScanService::applyStudentEvent($schoolId, $studentId, $areaId, $eventTime, $status)
+			);
 		}
 		$owner = \App\Libraries\CardRegistry::lookup($schoolId, $card);
 		if ($owner && ($owner['type'] ?? '') === 'visitor') {
 			return $this->response->setJSON($this->processVisitorScan((int) ($owner['school_id'] ?? $schoolId), $card, 'android', null));
 		}
 		return $this->response->setJSON(AttendanceScanService::scanCard($schoolId, $card, $areaId, $eventTime));
+	}
+
+	/**
+	 * USB kiosk pending-queue upload — writes attendance_records for reports.
+	 */
+	public function device_scan_batch()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) $this->request->getPost('school_id');
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
+		}
+		$raw = (string) ($this->request->getPost('events') ?: '[]');
+		$events = json_decode($raw, true);
+		if (!is_array($events)) {
+			$events = [];
+		}
+		return $this->response->setJSON(AttendanceScanService::ingestKioskBatch($schoolId, $events));
 	}
 
 	/**
