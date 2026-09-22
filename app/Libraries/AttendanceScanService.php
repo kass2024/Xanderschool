@@ -601,6 +601,16 @@ class AttendanceScanService
 			];
 		}
 
+		if ((int) ($student->studying_mode ?? 1) === 1 && self::isDormitoryArea($areaName)) {
+			return [
+				'success' => 0,
+				'kind' => 'student',
+				'denied' => 'day',
+				'message' => 'Day scholars cannot swipe at the dormitory',
+				'person' => self::studentPayload($student, $className, ''),
+			];
+		}
+
 		$time = $eventTime > 1000000000 ? $eventTime : time();
 		$todayStart = strtotime('today', $time);
 		$todayEnd = strtotime('tomorrow', $time) - 1;
@@ -1147,7 +1157,17 @@ class AttendanceScanService
 		$n = strtolower(trim($name));
 		$n = preg_replace('/[^a-z0-9]+/', ' ', $n);
 		$n = trim((string) $n);
-		return $n === 'gate' || $n === 'school gate' || str_contains($n, 'school gate');
+		return $n === 'gate' || $n === 'school gate' || str_contains($n, 'school gate')
+			|| str_ends_with($n, ' gate');
+	}
+
+	private static function isDormitoryArea(string $name): bool
+	{
+		$n = strtolower(trim($name));
+		$n = preg_replace('/[^a-z0-9]+/', ' ', $n);
+		$n = trim((string) $n);
+		return str_contains($n, 'dormitor') || $n === 'dorm' || str_starts_with($n, 'dorm ')
+			|| str_ends_with($n, ' dorm') || str_contains($n, 'hostel');
 	}
 
 	/**
