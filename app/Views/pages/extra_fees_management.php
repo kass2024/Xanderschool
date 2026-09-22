@@ -53,7 +53,7 @@ foreach ($fees as $fee) {
 }
 uksort($uniqueClasses, 'strnatcasecmp');
 ?>
-<link rel="stylesheet" href="<?= base_url('assets/css/extra-fees.css'); ?>?v=3">
+<link rel="stylesheet" href="<?= base_url('assets/css/extra-fees.css'); ?>?v=4">
 
 <div class="ef-page" id="extraFeesPage">
 	<div class="ef-center">
@@ -92,6 +92,36 @@ uksort($uniqueClasses, 'strnatcasecmp');
 				<div class="ef-kpi-value" id="efKpiAmount"><?= number_format((float) $feeTotalAmount); ?></div>
 				<div class="ef-kpi-label"><?= lang('app.amount'); ?> (Rwf)</div>
 				<small class="text-muted d-block" style="font-size:.7rem;margin-top:2px">Unit × students</small>
+			</div>
+		</div>
+
+		<div class="ef-student-card">
+			<div class="ef-student-head">
+				<h3>Edit one student’s extra fees</h3>
+				<p>Search a student, then change Feeding, Transport or any other extra fee for that student only.</p>
+			</div>
+			<div class="ef-student-search">
+				<label for="efStudentSearch">Student</label>
+				<select class="form-control" id="efStudentSearch" style="width:100%"></select>
+			</div>
+			<div id="efStudentEmpty" class="ef-student-empty">Type a name or registration number to load extra fees.</div>
+			<div id="efStudentWrap" style="display:none">
+				<div class="ef-student-meta" id="efStudentMeta"></div>
+				<div class="ef-table-wrap">
+					<table class="table mb-0" id="efStudentFeeTable">
+						<thead>
+						<tr>
+							<th><?= lang('app.title'); ?></th>
+							<th><?= lang('app.term'); ?></th>
+							<th>Source</th>
+							<th class="text-right" style="min-width:140px"><?= lang('app.amount'); ?></th>
+							<th class="text-center"><?= lang('app.Actions'); ?></th>
+						</tr>
+						</thead>
+						<tbody></tbody>
+					</table>
+				</div>
+				<p class="text-muted small mb-0 mt-2">Saving creates or updates this student’s own extra fee. Other students in the class keep the class amount.</p>
 			</div>
 		</div>
 
@@ -262,6 +292,97 @@ uksort($uniqueClasses, 'strnatcasecmp');
 $(function () {
 	$('#academicYearSelect').on('change', function () {
 		window.location.href = '<?= base_url('extra_fees_management?year='); ?>' + $(this).val();
+	});
+
+	const efYear = <?= (int) $selectedYear; ?>;
+	let efCurrentStudent = 0;
+
+	function efLoadStudentFees(studentId) {
+		if (!studentId) return;
+		efCurrentStudent = parseInt(studentId, 10);
+		$('#efStudentEmpty').text('Loading extra fees…').show();
+		$('#efStudentWrap').hide();
+		$.getJSON('<?= base_url('extra_fee_student_lines'); ?>', { student: studentId, year: efYear }, function (res) {
+			if (!res.success) {
+				$('#efStudentEmpty').text(res.error || 'Could not load student extra fees.').show();
+				return;
+			}
+			const st = res.student || {};
+			$('#efStudentMeta').html(
+				'<strong>' + (st.regno || '') + ' ' + (st.name || '') + '</strong>' +
+				'<span>' + (st.class_label || '') + '</span>' +
+				'<span class="ef-mode-pill">' + (st.mode_label || '') + '</span>'
+			);
+			let html = '';
+			(res.lines || []).forEach(function (line) {
+				html += '<tr>' +
+					'<td>' + $('<div>').text(line.title || '').html() + '</td>' +
+					'<td>' + $('<div>').text(line.term_label || '').html() + '</td>' +
+					'<td><span class="ef-target-badge ' + (line.type === 'student' ? 'student' : 'class') + '">' +
+						(line.type === 'student' ? 'This student' : 'Class default') + '</span></td>' +
+					'<td class="text-right"><input type="number" min="0" step="1" class="form-control form-control-sm text-right ef-stu-amt" value="' +
+						Math.round(Number(line.amount || 0)) + '" data-id="' + line.id + '" data-title="' +
+						$('<div>').text(line.title || '').html() + '" data-term="' + line.term + '"></td>' +
+					'<td class="text-center"><button type="button" class="btn btn-sm btn-success ef-stu-save" data-id="' + line.id + '">Save</button></td>' +
+					'</tr>';
+			});
+			if (!html) {
+				html = '<tr><td colspan="5" class="text-muted text-center">No extra fees for this student.</td></tr>';
+			}
+			$('#efStudentFeeTable tbody').html(html);
+			$('#efStudentEmpty').hide();
+			$('#efStudentWrap').show();
+		}).fail(function () {
+			$('#efStudentEmpty').text('Could not load student extra fees.').show();
+		});
+	}
+
+	$('#efStudentSearch').select2({
+		ajax: {
+			url: '<?= base_url('search_student'); ?>',
+			type: 'post',
+			dataType: 'json',
+			delay: 250,
+			data: function (params) {
+				return { searchTerm: params.term };
+			},
+			processResults: function (response) {
+				return { results: response || [] };
+			},
+			cache: true
+		},
+		placeholder: 'Search by name or registration number…',
+		minimumInputLength: 2,
+		width: '100%'
+	});
+	$('#efStudentSearch').on('select2:select', function (e) {
+		const id = e.params && e.params.data ? e.params.data.id : $(this).val();
+		efLoadStudentFees(id);
+	});
+
+	$(document).on('click', '.ef-stu-save', function () {
+		const $row = $(this).closest('tr');
+		const $amt = $row.find('.ef-stu-amt');
+		const $btn = $(this).prop('disabled', true);
+		$.post('<?= base_url('save_student_extra_fee'); ?>', {
+			studentId: efCurrentStudent,
+			feeId: $amt.data('id'),
+			title: $amt.data('title'),
+			term: $amt.data('term'),
+			amount: $amt.val(),
+			year: efYear
+		}, function (res) {
+			if (res.success) {
+				toastada.success(res.success);
+				efLoadStudentFees(efCurrentStudent);
+			} else {
+				toastada.error(res.error || 'Save failed.');
+				$btn.prop('disabled', false);
+			}
+		}, 'json').fail(function () {
+			toastada.error('Save failed.');
+			$btn.prop('disabled', false);
+		});
 	});
 
 	function efSelectedIds() {

@@ -403,3 +403,51 @@
 .mef-term-chip.t1.active span { background: #166534; border-color: #166534; }
 .mef-term-chip.t2.active span { background: #92400e; border-color: #92400e; }
 .mef-term-chip.t3.active span { background: #1e40af; border-color: #1e40af; }
+
+.ef-student-card {
+  background: #fff;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  padding: 16px 18px 18px;
+  margin-bottom: 18px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+.ef-student-head h3 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+.ef-student-head p {
+  margin: 0 0 12px;
+  color: #64748b;
+  font-size: 0.86rem;
+}
+.ef-student-search label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.ef-student-empty {
+  margin-top: 12px;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+.ef-student-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 14px 0 10px;
+  color: #334155;
+}
+.ef-mode-pill {
+  background: #ecfdf5;
+  color: #047857;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}

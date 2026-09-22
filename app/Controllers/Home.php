@@ -16575,6 +16575,22 @@ public function getApplicationDocs($id = null)
 			$academicYear,
 			(int) ($this->session->get('soma_id') ?: 0)
 		);
+		$dbCheck = \Config\Database::connect();
+		$hasFeedingTransport = (int) $dbCheck->table('extra_fees')
+			->where('school_id', $school_id)
+			->where('academic_year', $academicYear)
+			->groupStart()
+			->like('title', 'feeding')
+			->orLike('title', 'transport')
+			->groupEnd()
+			->countAllResults();
+		if ((int) $school_id === 27 || $hasFeedingTransport > 0) {
+			$extraFees->ensureDayScholarFeedingTransport(
+				(int) $school_id,
+				$academicYear,
+				(int) ($this->session->get('soma_id') ?: 0)
+			);
+		}
 		$extraFees->absorbDuplicateStudentRegistrationFees((int) $school_id, $academicYear);
 		$data['title'] = lang("app.extraFees");
 		$data['subtitle'] = lang("app.extraFees");
@@ -16663,6 +16679,126 @@ public function getApplicationDocs($id = null)
 		return view('main', $data);
 	}
 
+	public function extra_fee_student_lines()
+	{
+		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
+		$studentId = (int) ($this->request->getGet('student') ?: $this->request->getPost('student'));
+		$year = (int) ($this->request->getGet('year') ?: $this->data['academic_year']);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		if ($studentId < 1) {
+			return $this->response->setJSON(['error' => 'Select a student.']);
+		}
+		$db = \Config\Database::connect();
+		$student = $db->table('students st')
+			->select("st.id, st.regno, st.studying_mode, CONCAT(st.fname,' ',st.lname) as name,
+				cr.class as class_id, l.title as level_name, d.code as dept_code, cl.title as class_title")
+			->join('class_records cr', 'cr.student = st.id AND cr.status = 1 AND cr.year = ' . $year, 'left')
+			->join('classes cl', 'cl.id = cr.class', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->where('st.id', $studentId)
+			->where('st.school_id', $schoolId)
+			->get(1)->getRowArray();
+		if (!$student) {
+			return $this->response->setJSON(['error' => 'Student not found.']);
+		}
+		$classId = (int) ($student['class_id'] ?? 0);
+		$mode = (int) ($student['studying_mode'] ?? 1);
+		$extraFees = new ExtraFeesModel();
+		$extraFees->ensureSchema();
+		$rows = $extraFees->select('extra_fees.id, extra_fees.title, extra_fees.type, extra_fees.term, extra_fees.amount, extra_fees.amount_boarding, extra_fees.amount_day')
+			->where('extra_fees.school_id', $schoolId)
+			->groupStart()
+				->groupStart()
+					->where('extra_fees.type_id', $classId)
+					->where('extra_fees.type', 0)
+					->where('extra_fees.academic_year', $year)
+				->groupEnd()
+				->orGroupStart()
+					->where('extra_fees.type_id', $studentId)
+					->where('extra_fees.type', 1)
+					->where('extra_fees.academic_year', $year)
+				->groupEnd()
+			->groupEnd()
+			->orderBy('extra_fees.term', 'ASC')
+			->orderBy('extra_fees.title', 'ASC')
+			->get()->getResultArray();
+		$rows = ExtraFeesModel::preferStudentOverrides($rows);
+		$lines = [];
+		foreach ($rows as $row) {
+			$isStudent = (int) ($row['type'] ?? 0) === 1;
+			$amount = $isStudent
+				? (float) ($row['amount'] ?? 0)
+				: ExtraFeesModel::expectedForMode($row, $mode);
+			$lines[] = [
+				'id' => (int) $row['id'],
+				'title' => (string) $row['title'],
+				'term' => (int) $row['term'],
+				'term_label' => $this->TermToStr($row['term']),
+				'type' => $isStudent ? 'student' : 'class',
+				'amount' => $amount,
+			];
+		}
+		$classLabel = trim(($student['level_name'] ?? '') . ' ' . ($student['dept_code'] ?? '') . ' ' . ($student['class_title'] ?? ''));
+		return $this->response->setJSON([
+			'success' => true,
+			'student' => [
+				'id' => $studentId,
+				'name' => $student['name'] ?? '',
+				'regno' => $student['regno'] ?? '',
+				'class_label' => $classLabel,
+				'mode_label' => $mode === 0 ? lang('app.boarding') : lang('app.day'),
+			],
+			'lines' => $lines,
+		]);
+	}
+
+	public function save_student_extra_fee()
+	{
+		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$studentId = (int) $this->request->getPost('studentId');
+		$feeId = (int) $this->request->getPost('feeId');
+		$title = trim((string) $this->request->getPost('title'));
+		$term = (int) $this->request->getPost('term');
+		$amount = (float) $this->request->getPost('amount');
+		$year = (int) ($this->request->getPost('year') ?: $this->data['academic_year']);
+		if ($studentId < 1) {
+			return $this->response->setJSON(['error' => 'Select a student.']);
+		}
+		if ($amount < 0) {
+			return $this->response->setJSON(['error' => 'Amount cannot be negative.']);
+		}
+		$extraFees = new ExtraFeesModel();
+		$extraFees->ensureSchema();
+		if ($feeId > 0) {
+			$src = $extraFees->where('id', $feeId)->where('school_id', $schoolId)->first();
+			if ($src) {
+				$title = $title !== '' ? $title : (string) ($src['title'] ?? '');
+				$term = $term > 0 ? $term : (int) ($src['term'] ?? 0);
+				$year = (int) ($src['academic_year'] ?? $year);
+			}
+		}
+		if ($title === '' || $term < 1 || $term > 3) {
+			return $this->response->setJSON(['error' => 'Fee title and term are required.']);
+		}
+		$id = $extraFees->upsertStudentExtraFee(
+			$schoolId,
+			$year,
+			$studentId,
+			$title,
+			$term,
+			$amount,
+			(int) ($this->session->get('soma_id') ?: 0)
+		);
+		if ($id < 1) {
+			return $this->response->setJSON(['error' => 'Could not save extra fee.']);
+		}
+		return $this->response->setJSON(['success' => lang('app.feeSaved'), 'id' => $id]);
+	}
+
 	public
 	function manipulate_extra_fee($type = 0)
 	{
@@ -16673,9 +16809,26 @@ public function getApplicationDocs($id = null)
 		$school_id = (int) $this->session->get("soma_school_id");
 		$id = $this->request->getPost("feeId");
 		if (!empty($id)) {
-			$amount = $this->request->getPost("feeNewAmount");
+			$amount = (float) $this->request->getPost("feeNewAmount");
+			$studentId = (int) $this->request->getPost("studentId");
+			$row = $ExtraFeesModel->where('id', $id)->where('school_id', $school_id)->first();
+			if (!$row) {
+				return $this->response->setJSON(["error" => "Fee not found."]);
+			}
 			try {
-				$ExtraFeesModel->save(['id' => $id, 'amount' => $amount]);
+				if ((int) ($row['type'] ?? 0) === 0 && $studentId > 0) {
+					$ExtraFeesModel->upsertStudentExtraFee(
+						$school_id,
+						(int) ($row['academic_year'] ?? $this->data['academic_year']),
+						$studentId,
+						(string) ($row['title'] ?? ''),
+						(int) ($row['term'] ?? 1),
+						$amount,
+						(int) ($this->session->get('soma_id') ?: 0)
+					);
+				} else {
+					$ExtraFeesModel->save(['id' => $id, 'amount' => $amount, 'amount_day' => $amount]);
+				}
 			} catch (\Exception $e) {
 				return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 			}
@@ -18153,26 +18306,15 @@ public function getApplicationDocs($id = null)
 						</tr>";
 			$i++;
 		}
-		$classExtraKeys = [];
+		$extraFeesx = ExtraFeesModel::preferStudentOverrides($extraFeesx);
 		foreach ($extraFeesx as $extraffe) {
-			if ((int) ($extraffe['type'] ?? 0) === 0) {
-				$classExtraKeys[strtolower(trim((string) ($extraffe['title'] ?? ''))) . '|' . (int) ($extraffe['term'] ?? 0)] = true;
-			}
-		}
-		foreach ($extraFeesx as $extraffe) {
-			if ((int) ($extraffe['type'] ?? 0) === 1 && ExtraFeesModel::isRegistrationTitle($extraffe['title'] ?? '')) {
-				$key = strtolower(trim((string) ($extraffe['title'] ?? ''))) . '|' . (int) ($extraffe['term'] ?? 0);
-				if (isset($classExtraKeys[$key])) {
-					continue;
-				}
-			}
 			$extraAmt = ((int) ($extraffe['type'] ?? 0) === 1)
 				? (float) ($extraffe['amount'] ?? 0)
 				: ExtraFeesModel::expectedForMode($extraffe, $studyingMode);
 			$extrapaid = $extraAmt - $extraffe['paidextra'];
 			$delBtn = (empty($extraffe['paidextra']) && $extraffe['type'] == 1) ? '<a class="fa fa-trash btn-del-fee" style="color: orangered" href="#"></a>' : '';
-			$editBtn = ($extraffe['type'] == 1) ? "<a data-id='{$extraffe['id']}' data-amount='{$extraAmt}'
-						class='fa fa-pencil-alt btn-edit-extra-fees' style='cursor:pointer;'></a>" : '';
+			$editBtn = "<a data-id='{$extraffe['id']}' data-amount='{$extraAmt}' data-title='" . htmlspecialchars((string) $extraffe['title'], ENT_QUOTES) . "' data-term='{$extraffe['term']}'
+						class='fa fa-pencil-alt btn-edit-extra-fees' style='cursor:pointer;'></a>";
 			echo "<tr>	<td>" . $i . "</td>
 						<td data-id='{$extraffe['id']}'><span>" . $extraffe['title'] . '</span> ' . $delBtn . "</td>
 						<td>" . $this->TermToStr($extraffe['term']) . "</td>
@@ -18267,19 +18409,8 @@ public function getApplicationDocs($id = null)
 			->orderBy('extra_fees.title', 'ASC')
 			->get()->getResultArray();
 
-		$classExtraKeys = [];
+		$extraRows = ExtraFeesModel::preferStudentOverrides($extraRows);
 		foreach ($extraRows as $row) {
-			if ((int) ($row['type'] ?? 0) === 0) {
-				$classExtraKeys[strtolower(trim((string) ($row['title'] ?? ''))) . '|' . (int) ($row['term'] ?? 0)] = true;
-			}
-		}
-		foreach ($extraRows as $row) {
-			if ((int) ($row['type'] ?? 0) === 1 && ExtraFeesModel::isRegistrationTitle($row['title'] ?? '')) {
-				$key = strtolower(trim((string) ($row['title'] ?? ''))) . '|' . (int) ($row['term'] ?? 0);
-				if (isset($classExtraKeys[$key])) {
-					continue;
-				}
-			}
 			$expected = ((int) ($row['type'] ?? 0) === 1)
 				? (float) ($row['amount'] ?? 0)
 				: ExtraFeesModel::expectedForMode($row, $studyingMode);

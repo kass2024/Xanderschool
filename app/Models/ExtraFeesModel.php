@@ -193,6 +193,55 @@ class ExtraFeesModel extends Model
 		return strpos($hay, 'primary') !== false;
 	}
 
+	public static function isNurseryClassName(?string $levelName, ?string $classTitle = null, ?string $deptTitle = null, ?string $facultyTitle = null): bool
+	{
+		$hay = strtolower(trim(implode(' ', array_filter([
+			(string) $levelName,
+			(string) $classTitle,
+			(string) $deptTitle,
+			(string) $facultyTitle,
+		]))));
+		if ($hay === '' || strpos($hay, 'holiday') !== false) {
+			return false;
+		}
+		return (bool) preg_match('/\b(nursery|baby class|middle class|top class|n1|n2|n3)\b/', $hay);
+	}
+
+	public static function isPrimaryOrNurseryClass(?string $levelName, ?string $classTitle = null, ?string $deptTitle = null, ?string $deptCode = null, ?string $facultyTitle = null): bool
+	{
+		return self::isNurseryClassName($levelName, $classTitle, $deptTitle, $facultyTitle)
+			|| self::isPrimaryRegistrationClass($levelName, $classTitle, $deptTitle, $deptCode);
+	}
+
+	public static function extraFeeKey(array $row): string
+	{
+		return strtolower(trim((string) ($row['title'] ?? ''))) . '|' . (int) ($row['term'] ?? 0);
+	}
+
+	/**
+	 * If a student has their own extra fee for the same title+term, hide the class copy.
+	 *
+	 * @param list<array<string,mixed>> $rows
+	 * @return list<array<string,mixed>>
+	 */
+	public static function preferStudentOverrides(array $rows): array
+	{
+		$studentKeys = [];
+		foreach ($rows as $row) {
+			if ((int) ($row['type'] ?? 0) === 1) {
+				$studentKeys[self::extraFeeKey($row)] = true;
+			}
+		}
+		$out = [];
+		foreach ($rows as $row) {
+			if ((int) ($row['type'] ?? 0) === 0 && isset($studentKeys[self::extraFeeKey($row)])) {
+				continue;
+			}
+			$out[] = $row;
+		}
+		return $out;
+	}
+
 	/**
 	 * Class extra fee with the same title and term (used instead of a per-student copy).
 	 */
@@ -311,6 +360,123 @@ class ExtraFeesModel extends Model
 			'amount' => $base,
 			'amount_boarding' => $boarding,
 			'amount_day' => $day,
+			'created_by' => $createdBy,
+		];
+		if ($existing) {
+			$this->update((int) $existing['id'], $payload);
+			return (int) $existing['id'];
+		}
+		return (int) $this->insert($payload);
+	}
+
+	/**
+	 * Day-scholar Feeding / Transport per term.
+	 * Primary & Nursery: Feeding 60,000 · Transport 60,000
+	 * High school (everything else): Feeding 100,000 · Transport 80,000
+	 * Replaces existing day amounts and keeps any boarding amount already stored.
+	 */
+	public function ensureDayScholarFeedingTransport(int $schoolId, int $yearId, int $createdBy): int
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $yearId < 1) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$classes = $db->table('classes c')
+			->select('c.id, c.title, l.title as level_name, d.title as dept_title, d.code as dept_code, f.title as faculty_title')
+			->join('departments d', 'd.id = c.department')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
+			->where('c.school_id', $schoolId)
+			->get()->getResultArray();
+		$saved = 0;
+		foreach ($classes as $cls) {
+			$hay = strtolower(trim(($cls['title'] ?? '') . ' ' . ($cls['level_name'] ?? '') . ' ' . ($cls['dept_title'] ?? '') . ' ' . ($cls['faculty_title'] ?? '')));
+			if ($hay === '' || strpos($hay, 'holiday') !== false) {
+				continue;
+			}
+			$primaryOrNursery = self::isPrimaryOrNurseryClass(
+				$cls['level_name'] ?? '',
+				$cls['title'] ?? '',
+				$cls['dept_title'] ?? '',
+				$cls['dept_code'] ?? '',
+				$cls['faculty_title'] ?? ''
+			);
+			$fees = $primaryOrNursery
+				? [['title' => 'Feeding', 'day' => 60000.0], ['title' => 'Transport', 'day' => 60000.0]]
+				: [['title' => 'Feeding', 'day' => 100000.0], ['title' => 'Transport', 'day' => 80000.0]];
+			foreach ($fees as $fee) {
+				for ($term = 1; $term <= 3; $term++) {
+					$existing = $this->findClassFeeByTitle($schoolId, $yearId, (int) $cls['id'], $fee['title'], $term);
+					$boarding = null;
+					if ($existing) {
+						$boardRaw = $existing['amount_boarding'] ?? null;
+						$boarding = ($boardRaw === null || $boardRaw === '') ? null : (float) $boardRaw;
+					}
+					$id = $this->upsertClassModeFee(
+						$schoolId,
+						$yearId,
+						(int) $cls['id'],
+						$fee['title'],
+						$term,
+						$boarding,
+						(float) $fee['day'],
+						$createdBy
+					);
+					if ($id > 0) {
+						$saved++;
+					}
+				}
+			}
+		}
+		return $saved;
+	}
+
+	public function upsertStudentExtraFee(
+		int $schoolId,
+		int $yearId,
+		int $studentId,
+		string $title,
+		int $term,
+		float $amount,
+		int $createdBy
+	): int {
+		if ($schoolId < 1 || $yearId < 1 || $studentId < 1 || $term < 1 || $term > 3 || trim($title) === '') {
+			return 0;
+		}
+		$title = trim($title);
+		$existing = $this->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('type', 1)
+			->where('type_id', $studentId)
+			->where('term', $term)
+			->where('title', $title)
+			->get(1)->getRowArray();
+		if (!$existing) {
+			$candidates = $this->where('school_id', $schoolId)
+				->where('academic_year', $yearId)
+				->where('type', 1)
+				->where('type_id', $studentId)
+				->where('term', $term)
+				->get()->getResultArray();
+			$want = strtolower($title);
+			foreach ($candidates as $candidate) {
+				if (strtolower(trim((string) ($candidate['title'] ?? ''))) === $want) {
+					$existing = $candidate;
+					break;
+				}
+			}
+		}
+		$payload = [
+			'school_id' => $schoolId,
+			'title' => $title,
+			'academic_year' => $yearId,
+			'type_id' => $studentId,
+			'type' => 1,
+			'term' => $term,
+			'amount' => $amount,
+			'amount_boarding' => null,
+			'amount_day' => $amount,
 			'created_by' => $createdBy,
 		];
 		if ($existing) {
