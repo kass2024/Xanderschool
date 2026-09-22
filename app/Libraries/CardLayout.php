@@ -333,6 +333,21 @@ class CardLayout
 	}
 
 	/**
+	 * Student card name: Title Case only (Mutesi Adela), never ALL CAPS.
+	 */
+	public static function formatPersonName(?string $name): string
+	{
+		$name = trim(preg_replace('/\s+/', ' ', (string) $name) ?? '');
+		if ($name === '') {
+			return '';
+		}
+		if (function_exists('mb_convert_case')) {
+			return mb_convert_case($name, MB_CASE_TITLE, 'UTF-8');
+		}
+		return ucwords(strtolower($name));
+	}
+
+	/**
 	 * Wisdom printed school name from the student's path.
 	 * Nursery / Primary → Wisdom School Musanze; otherwise Wisdom High School.
 	 */

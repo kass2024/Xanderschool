@@ -245,7 +245,6 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		border-collapse: collapse;
 		color: <?= $wisdomNavy; ?>;
 		font-weight: 700;
-		text-transform: uppercase;
 		width: 100%;
 		height: 100%;
 	}
@@ -256,7 +255,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		white-space: nowrap;
 		height: 33%;
 	}
-	.card.is-wisdom .w-info .k { padding-right: 1.2mm; width: 1%; white-space: nowrap; }
+	.card.is-wisdom .w-info .k { padding-right: 1.2mm; width: 1%; white-space: nowrap; text-transform: uppercase; }
 	.card.is-wisdom .w-info .c { padding-right: 1.6mm; }
 	.card.is-wisdom .w-info .v { overflow: visible; white-space: nowrap; }
 </style>
@@ -298,7 +297,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	$phone = strlen(trim($student['ft_phone'] ?? '')) > 4 ? $student['ft_phone']
 		: (strlen(trim($student['mt_phone'] ?? '')) > 4 ? $student['mt_phone']
 			: (strlen(trim($student['gd_phone'] ?? '')) > 4 ? $student['gd_phone'] : ($student['phone'] ?? '')));
-	$fullName = $fmt($student['name'] ?? '');
+	$fullName = CardLayout::formatPersonName($student['name'] ?? (($student['fname'] ?? '') . ' ' . ($student['lname'] ?? '')));
 	$regno = $fmt($student['regno'] ?? '');
 	$classLabel = $fmt($student['class'] ?? '');
 	$father = $fmt($student['father'] ?? '—');
