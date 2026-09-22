@@ -83,7 +83,7 @@ function feeDefinitions(): array
 		['title' => 'Hiring Mattress', 'boarding' => 15000.0, 'day' => null, 'scope' => 'all'],
 		['title' => 'Uniform', 'boarding' => 110000.0, 'day' => 110000.0, 'scope' => 'all'],
 		['title' => 'Transport', 'boarding' => null, 'day' => 60000.0, 'scope' => 'primary'],
-		['title' => 'Feeding', 'boarding' => 60000.0, 'day' => 60000.0, 'scope' => 'primary'],
+		['title' => 'Feeding', 'boarding' => null, 'day' => 60000.0, 'scope' => 'primary'],
 		['title' => 'Feeding', 'boarding' => null, 'day' => 100000.0, 'scope' => 'high_school'],
 		['title' => 'Transport', 'boarding' => null, 'day' => 80000.0, 'scope' => 'high_school'],
 		['title' => 'Money for Shaving', 'boarding' => 5000.0, 'day' => 5000.0, 'scope' => 'all'],

@@ -370,10 +370,9 @@ class ExtraFeesModel extends Model
 	}
 
 	/**
-	 * Day-scholar Feeding / Transport per term.
+	 * Feeding and Transport apply to day scholars only (boarding amount is always cleared).
 	 * Primary & Nursery: Feeding 60,000 · Transport 60,000
 	 * High school (everything else): Feeding 100,000 · Transport 80,000
-	 * Replaces existing day amounts and keeps any boarding amount already stored.
 	 */
 	public function ensureDayScholarFeedingTransport(int $schoolId, int $yearId, int $createdBy): int
 	{
@@ -407,23 +406,22 @@ class ExtraFeesModel extends Model
 				: [['title' => 'Feeding', 'day' => 100000.0], ['title' => 'Transport', 'day' => 80000.0]];
 			foreach ($fees as $fee) {
 				for ($term = 1; $term <= 3; $term++) {
-					$existing = $this->findClassFeeByTitle($schoolId, $yearId, (int) $cls['id'], $fee['title'], $term);
-					$boarding = null;
-					if ($existing) {
-						$boardRaw = $existing['amount_boarding'] ?? null;
-						$boarding = ($boardRaw === null || $boardRaw === '') ? null : (float) $boardRaw;
-					}
 					$id = $this->upsertClassModeFee(
 						$schoolId,
 						$yearId,
 						(int) $cls['id'],
 						$fee['title'],
 						$term,
-						$boarding,
+						null,
 						(float) $fee['day'],
 						$createdBy
 					);
 					if ($id > 0) {
+						$db->table('extra_fees')->where('id', $id)->update([
+							'amount' => (float) $fee['day'],
+							'amount_boarding' => null,
+							'amount_day' => (float) $fee['day'],
+						]);
 						$saved++;
 					}
 				}
