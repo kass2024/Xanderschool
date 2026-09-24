@@ -2017,7 +2017,7 @@ public function sync($option, $school_id)
 			->get()->getRowArray();
 		$stModeRow = (new StudentModel())->select('studying_mode')->find($student);
 		$mode = (int) ($stModeRow['studying_mode'] ?? 1);
-		$schoolfrees = $schoolFees->select("school_fees.id,'School fees' as title,0 as type,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,coalesce(sum(fr.amount),0) as paid, fr.due_date,school_fees.term")
+		$schoolfrees = $schoolFees->select("school_fees.id,school_fees.class_id,'School fees' as title,0 as type,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,coalesce(sum(fr.amount),0) as paid, fr.due_date,school_fees.term")
 			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
 			->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=2", "LEFT")
 			->where("school_fees.level", $level['level_id'])
@@ -2026,6 +2026,7 @@ public function sync($option, $school_id)
 			->where("school_fees.school_id", $school_id)
 			->groupBy("school_fees.id")
 			->get()->getResultArray();
+		$schoolfrees = SchoolFeesModel::dedupeForClass($schoolfrees, (int) $class);
 		foreach ($schoolfrees as &$sfRow) {
 			$sfRow['amount'] = SchoolFeesModel::expectedForStudent($sfRow, $mode, (float) ($sfRow['discount'] ?? 0));
 			unset($sfRow['amount_boarding'], $sfRow['amount_day'], $sfRow['discount']);
@@ -2765,7 +2766,7 @@ public function get_boarding_classes()
 			->where("classes.school_id", $school_id)
 			->where("classes.id", $class)
 			->get()->getRowArray();
-		$schoolfrees = $schoolFees->select("(school_fees.amount+coalesce(fd.amount,0)) as skl_amount ,coalesce(sum(fr.amount),0) as paidschoolfees")
+		$schoolfreesRows = $schoolFees->select("school_fees.id,school_fees.class_id,school_fees.term,(school_fees.amount+coalesce(fd.amount,0)) as skl_amount ,coalesce(sum(fr.amount),0) as paidschoolfees")
 			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student_id group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
 			->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student_id and fr.fees_type=0 and fr.status=1", "LEFT")
 			->where("school_fees.level", $level['level_id'])
@@ -2773,9 +2774,10 @@ public function get_boarding_classes()
 			->where("school_fees.academic_year", $year)
 			->where("school_fees.term", $term)
 			->where("school_fees.school_id", $school_id)
-			->groupBy("school_fees.academic_year")
-			->groupBy("school_fees.term")
-			->get()->getRowArray();
+			->groupBy("school_fees.id")
+			->get()->getResultArray();
+		$schoolfreesRows = SchoolFeesModel::dedupeForClass($schoolfreesRows, (int) $class);
+		$schoolfrees = $schoolfreesRows[0] ?? null;
 		if ($schoolfrees == null)
 			$schoolfrees = array("skl_amount" => "0", "paidschoolfees" => "0");
 		$schoolfrees['transport_money'] = $class_data->transport_money;
@@ -5253,6 +5255,21 @@ public function permission_card_scan()
 			return $this->response->setJSON($this->processVisitorScan((int) ($owner['school_id'] ?? $schoolId), $card, 'android', null));
 		}
 		return $this->response->setJSON(AttendanceScanService::scanCard($schoolId, $card, $areaId, $eventTime));
+	}
+
+	/**
+	 * Cafeteria check: school fees, other extra fees, and the next promised payment date.
+	 * Does not record attendance.
+	 */
+	public function device_fee_brief()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		$studentId = (int) ($this->request->getPost('student_id') ?: $this->request->getGet('student_id') ?: 0);
+		if ($schoolId <= 0 || $studentId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'School and student are required']);
+		}
+		return $this->response->setJSON(AttendanceScanService::feeBrief($schoolId, $studentId));
 	}
 
 	/**
