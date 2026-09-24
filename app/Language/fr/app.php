@@ -78,6 +78,8 @@ return [
 	"employeesMessaging" => " Messagerie des employés ",
 	"attendance" => " Présence ",
 	"studentAttendance" => " Fréquentation des élèves ",
+	"attendanceReport" => " Rapport de présence ",
+	"reportType" => " Type de rapport ",
 	"recordAttendance" => " Record de fréquentation ",
 	"studentInOut" => " Rapport entrée / sortie ",
 	"attendanceArea" => " Lieu de présence ",

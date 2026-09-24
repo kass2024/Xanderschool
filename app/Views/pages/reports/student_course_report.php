@@ -39,6 +39,7 @@
 </style>
 <?php
 if ($show_header) {
+	echo view('pages/reports/_attendance_report_type');
 	?>
 	<div class="col-12">
 		<form id="frm_report" method="get" target="_blank"

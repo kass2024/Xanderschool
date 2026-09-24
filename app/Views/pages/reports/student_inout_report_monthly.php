@@ -5,6 +5,7 @@ if ($show_header) {
 	$defaultMonth = (int) ($default_month ?? date('n'));
 	$defaultYear = (int) ($default_year ?? date('Y'));
 	$years = $report_years ?? [$defaultYear];
+	echo view('pages/reports/_attendance_report_type');
 	?>
 	<div class="io-page">
 		<div class="io-filters">

@@ -221,7 +221,7 @@
 										<li>
 											<a href="<?= base_url('hostel_allocate'); ?>">
 												<i class="metismenu-icon"></i>
-												Hostel
+												Dormitories
 											</a>
 										</li>
 										<?php } ?>
@@ -620,65 +620,14 @@
 											</a>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('student-report/course/monthly')) { ?>
+										<?php
+										$attendanceReports = student_attendance_report_types();
+										if ($attendanceReports) {
+										?>
 										<li>
-											<a href="<?= base_url('student-report/course/monthly/'); ?>">
+											<a href="<?= base_url($attendanceReports[0]['path']); ?>">
 												<i class="metismenu-icon"></i>
-												<?= lang("app.studentCourse"); ?>
-											</a>
-										</li>
-										<?php } ?>
-										<li style="display: none">
-											<a href="<?= base_url('student-report/course/summary/'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.courseSummary"); ?>
-											</a>
-										</li>
-										<?php if (menu_clearance_allowed('student-report/daily/class')) { ?>
-										<li>
-											<a href="<?= base_url('student-report/daily/class'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.studentDailyAttendance"); ?>
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('student-report/daily/all')) { ?>
-										<li>
-											<a href="<?= base_url('student-report/daily/all'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.dailyAttendance"); ?>
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('student-report/daily/details')) { ?>
-										<li>
-											<a href="<?= base_url('student-report/daily/details'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.dailyGeneralAttendance"); ?>
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('student-report/boarding/all')) { ?>
-										<li>
-											<a href="<?= base_url('student-report/boarding/all'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.boardingAttendance"); ?>
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('student-report/boarding/details')) { ?>
-										<li>
-											<a href="<?= base_url('student-report/boarding/details'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.boardingGeneralAttendance"); ?>
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (menu_clearance_allowed('student-report/inout/monthly')) { ?>
-										<li>
-											<a href="<?= base_url('student-report/inout/monthly'); ?>">
-												<i class="metismenu-icon"></i>
-												<?= lang("app.studentInOut"); ?>
+												<?= lang("app.attendanceReport"); ?>
 											</a>
 										</li>
 										<?php } ?>
@@ -2579,6 +2528,7 @@
 					</div>
 					<div class="modal-body">
 						<input type="hidden" name="studentid" id="studentId">
+						<div class="fe-invoice-student" id="feInvoiceStudent" hidden></div>
 
 						<div id="feInvoiceLoading" class="fe-invoice-loading">
 							<i class="fa fa-spinner fa-spin"></i> Loading payable items…

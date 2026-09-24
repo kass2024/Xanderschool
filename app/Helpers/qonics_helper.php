@@ -97,6 +97,34 @@ if (!function_exists('budget_menu_any')) {
 	}
 }
 
+if (!function_exists('student_attendance_report_types')) {
+	/**
+	 * Student attendance reports opened from the Attendance report page.
+	 * Each item keeps its existing clearance key and URL.
+	 *
+	 * @return array<int, array{key:string,label:string,path:string}>
+	 */
+	function student_attendance_report_types()
+	{
+		$types = [
+			['key' => 'student-report/course/monthly', 'label' => lang('app.studentCourse'), 'path' => 'student-report/course/monthly'],
+			['key' => 'student-report/daily/class', 'label' => lang('app.studentDailyAttendance'), 'path' => 'student-report/daily/class'],
+			['key' => 'student-report/daily/all', 'label' => lang('app.dailyAttendance'), 'path' => 'student-report/daily/all'],
+			['key' => 'student-report/daily/details', 'label' => lang('app.dailyGeneralAttendance'), 'path' => 'student-report/daily/details'],
+			['key' => 'student-report/boarding/all', 'label' => lang('app.boardingAttendance'), 'path' => 'student-report/boarding/all'],
+			['key' => 'student-report/boarding/details', 'label' => lang('app.boardingGeneralAttendance'), 'path' => 'student-report/boarding/details'],
+			['key' => 'student-report/inout/monthly', 'label' => lang('app.studentInOut'), 'path' => 'student-report/inout/monthly'],
+		];
+		$allowed = [];
+		foreach ($types as $type) {
+			if (menu_clearance_allowed($type['key'])) {
+				$allowed[] = $type;
+			}
+		}
+		return $allowed;
+	}
+}
+
 if (!function_exists('school_hierarchy_home_id')) {
 	/** Staff login school (unchanged when viewing a child school). */
 	function school_hierarchy_home_id()

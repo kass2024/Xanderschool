@@ -80,6 +80,8 @@ return [
    'employeesMessaging'          => 'Employees messaging',
    'attendance'                  => 'Attendance',
    'studentAttendance'           => 'Student Attendance',
+   'attendanceReport'            => 'Attendance report',
+   'reportType'                  => 'Report type',
    'recordAttendance'            => 'Record attendance',
    'studentInOut'                => 'In/Out Report',
    'attendanceArea'              => 'Attendance location',
