@@ -415,17 +415,12 @@
 												<?= lang("app.recordAttendance"); ?>
 											</a>
 										</li>
-										<?php
-										$attendanceReports = student_attendance_report_types();
-										if ($attendanceReports) {
-										?>
 										<li>
-											<a href="<?= base_url($attendanceReports[0]['path']); ?>">
+											<a href="<?= base_url('student-report/course/monthly'); ?>">
 												<i class="metismenu-icon"></i>
 												<?= lang("app.attendanceReport"); ?>
 											</a>
 										</li>
-										<?php } ?>
 									</ul>
 								</li>
 								<li>

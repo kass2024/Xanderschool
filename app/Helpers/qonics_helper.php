@@ -115,13 +115,7 @@ if (!function_exists('student_attendance_report_types')) {
 			['key' => 'student-report/boarding/details', 'label' => lang('app.boardingGeneralAttendance'), 'path' => 'student-report/boarding/details'],
 			['key' => 'student-report/inout/monthly', 'label' => lang('app.studentInOut'), 'path' => 'student-report/inout/monthly'],
 		];
-		$allowed = [];
-		foreach ($types as $type) {
-			if (menu_clearance_allowed($type['key'])) {
-				$allowed[] = $type;
-			}
-		}
-		return $allowed;
+		return $types;
 	}
 }
 
