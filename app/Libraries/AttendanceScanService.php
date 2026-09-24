@@ -301,9 +301,11 @@ class AttendanceScanService
 			}
 		}
 
+		$feeding = self::feedingPaidMap($schoolId);
 		$out = [];
 		foreach ($rows as $r) {
 			$sid = (int) $r['id'];
+			$mode = (int) ($r['studying_mode'] ?? 1);
 			$out[] = [
 				'id' => $sid,
 				'school_id' => (int) ($r['school_id'] ?? $schoolId),
@@ -313,7 +315,8 @@ class AttendanceScanService
 				'card' => strtoupper(trim((string) ($r['card'] ?? ''))),
 				'card_nfc' => $hasNfc ? strtoupper(trim((string) ($r['card_nfc'] ?? ''))) : '',
 				'photo' => self::kioskPhotoUrl($r['photo'] ?? null),
-				'studying_mode' => (int) ($r['studying_mode'] ?? 1),
+				'studying_mode' => $mode,
+				'feeding_paid' => $mode === 0 ? 1 : (int) ($feeding[$sid] ?? 0),
 			];
 		}
 		return $out;
@@ -343,15 +346,24 @@ class AttendanceScanService
 			->where('status', 1)
 			->get()
 			->getResultArray();
+		$feeding = self::feedingPaidMap($schoolId);
 		$students = [];
 		foreach ($studentRows as $r) {
+			$card = strtoupper(trim((string) ($r['card'] ?? '')));
+			$nfc = $hasNfc ? strtoupper(trim((string) ($r['card_nfc'] ?? ''))) : '';
+			if ($card === '' && $nfc === '') {
+				continue;
+			}
+			$sid = (int) ($r['id'] ?? 0);
+			$mode = (int) ($r['studying_mode'] ?? 1);
 			$students[] = [
-				'id' => (int) ($r['id'] ?? 0),
+				'id' => $sid,
 				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
 				'regno' => (string) ($r['regno'] ?? ''),
-				'card' => strtoupper(trim((string) ($r['card'] ?? ''))),
-				'card_nfc' => $hasNfc ? strtoupper(trim((string) ($r['card_nfc'] ?? ''))) : '',
-				'studying_mode' => (int) ($r['studying_mode'] ?? 1),
+				'card' => $card,
+				'card_nfc' => $nfc,
+				'studying_mode' => $mode,
+				'feeding_paid' => $mode === 0 ? 1 : (int) ($feeding[$sid] ?? 0),
 			];
 		}
 
@@ -635,6 +647,24 @@ class AttendanceScanService
 			];
 		}
 
+		if (self::isCafeteriaArea($areaName) && (int) ($student->studying_mode ?? 1) !== 0) {
+			$feedMap = self::feedingPaidMap((int) ($student->school_id ?? $schoolId));
+			$feedingPaid = (int) ($feedMap[(int) $student->id] ?? 0);
+			if ($feedingPaid !== 1) {
+				$person = self::studentPayload($student, $className, '');
+				$person['feeding_paid'] = 0;
+				$person['feeding_status'] = 'not_paid';
+				return [
+					'success' => 0,
+					'kind' => 'student',
+					'denied' => 'feeding',
+					'feeding_paid' => 0,
+					'message' => 'Feeding not paid',
+					'person' => $person,
+				];
+			}
+		}
+
 		$time = $eventTime > 1000000000 ? $eventTime : time();
 		$todayStart = strtotime('today', $time);
 		$todayEnd = strtotime('tomorrow', $time) - 1;
@@ -782,6 +812,19 @@ class AttendanceScanService
 				'kind' => 'student',
 				'message' => 'Day scholars cannot swipe at the dormitory',
 			];
+		}
+		if (self::isCafeteriaArea($areaName) && (int) ($student->studying_mode ?? 1) !== 0) {
+			$feedMap = self::feedingPaidMap((int) ($student->school_id ?? $schoolId));
+			if ((int) ($feedMap[(int) $student->id] ?? 0) !== 1) {
+				return [
+					'success' => 1,
+					'skipped' => 1,
+					'denied' => 'feeding',
+					'kind' => 'student',
+					'feeding_paid' => 0,
+					'message' => 'Feeding not paid',
+				];
+			}
 		}
 
 		$time = $eventTime > 1000000000 ? $eventTime : time();
@@ -1396,6 +1439,152 @@ class AttendanceScanService
 			|| substr($n, -5) === ' dorm' || strpos($n, 'hostel') !== false;
 	}
 
+	private static function isCafeteriaArea(string $name): bool
+	{
+		$n = strtolower(trim($name));
+		$n = preg_replace('/[^a-z0-9]+/', ' ', $n);
+		$n = trim((string) $n);
+		return strpos($n, 'cafeteria') !== false || strpos($n, 'cafetria') !== false
+			|| strpos($n, 'canteen') !== false || strpos($n, 'dining') !== false
+			|| strpos($n, 'refectory') !== false;
+	}
+
+	/** @var array<int,array{at:int,map:array<int,int>}> */
+	private static $feedingPaidCache = [];
+
+	/**
+	 * Current-term Feeding fee for day scholars. 1 = paid (or nothing due), 0 = not paid.
+	 * Boarding students are always 1 — cafeteria does not check their feeding.
+	 *
+	 * @return array<int,int>
+	 */
+	private static function feedingPaidMap(int $schoolId): array
+	{
+		$now = time();
+		if (isset(self::$feedingPaidCache[$schoolId]) && ($now - self::$feedingPaidCache[$schoolId]['at']) < 15) {
+			return self::$feedingPaidCache[$schoolId]['map'];
+		}
+		$map = [];
+		try {
+			$db = \Config\Database::connect();
+			$scope = self::scopeSchoolIds($schoolId);
+			if ($scope === []) {
+				$scope = [$schoolId];
+			}
+			$year = self::academicYear($schoolId);
+			$termRow = $db->table('schools sc')
+				->select('at.term')
+				->join('active_term at', 'at.id = sc.active_term', 'left')
+				->where('sc.id', $schoolId)
+				->get()
+				->getRow();
+			$term = (int) ($termRow->term ?? 1);
+			if ($term < 1 || $term > 3) {
+				$term = 1;
+			}
+			$studentRows = $db->table('students')
+				->select('id, studying_mode')
+				->whereIn('school_id', $scope)
+				->where('status', 1)
+				->get()
+				->getResultArray();
+			$classOf = [];
+			$classRows = $db->table('class_records')
+				->select('student, class')
+				->where('year', $year)
+				->get()
+				->getResultArray();
+			foreach ($classRows as $cr) {
+				$classOf[(int) ($cr['student'] ?? 0)] = (int) ($cr['class'] ?? 0);
+			}
+			$feeRows = $db->table('extra_fees')
+				->select('id, type, type_id, amount, amount_boarding, amount_day, title')
+				->whereIn('school_id', $scope)
+				->where('academic_year', $year)
+				->where('term', $term)
+				->get()
+				->getResultArray();
+			$byClass = [];
+			$byStudent = [];
+			$feeIds = [];
+			foreach ($feeRows as $fee) {
+				$title = strtolower(trim((string) ($fee['title'] ?? '')));
+				if (strpos($title, 'feed') === false) {
+					continue;
+				}
+				$feeIds[] = (int) $fee['id'];
+				if ((int) ($fee['type'] ?? 0) === 1) {
+					$byStudent[(int) $fee['type_id']][] = $fee;
+				} else {
+					$byClass[(int) $fee['type_id']][] = $fee;
+				}
+			}
+			$paid = [];
+			if ($feeIds !== []) {
+				$paidRows = $db->table('fees_records')
+					->select('student_id, fees_id, SUM(amount) AS paid', false)
+					->where('fees_type', 1)
+					->whereIn('fees_id', $feeIds)
+					->groupBy('student_id')
+					->groupBy('fees_id')
+					->get()
+					->getResultArray();
+				foreach ($paidRows as $pr) {
+					$paid[(int) $pr['student_id'] . ':' . (int) $pr['fees_id']] = (float) $pr['paid'];
+				}
+			}
+			foreach ($studentRows as $st) {
+				$sid = (int) ($st['id'] ?? 0);
+				if ($sid < 1) {
+					continue;
+				}
+				if ((int) ($st['studying_mode'] ?? 1) === 0) {
+					$map[$sid] = 1;
+					continue;
+				}
+				$rowsForStudent = [];
+				$classId = (int) ($classOf[$sid] ?? 0);
+				if ($classId > 0 && isset($byClass[$classId])) {
+					foreach ($byClass[$classId] as $fee) {
+						$rowsForStudent[] = $fee;
+					}
+				}
+				if (isset($byStudent[$sid])) {
+					foreach ($byStudent[$sid] as $fee) {
+						$rowsForStudent[] = $fee;
+					}
+				}
+				$expected = 0.0;
+				$got = 0.0;
+				foreach ($rowsForStudent as $fee) {
+					$expected += \App\Models\ExtraFeesModel::expectedForMode($fee, 1);
+					$got += (float) ($paid[$sid . ':' . (int) $fee['id']] ?? 0);
+				}
+				$map[$sid] = ($expected <= 0.009 || ($got + 0.5) >= $expected) ? 1 : 0;
+			}
+		} catch (\Throwable $e) {
+			$map = [];
+		}
+		self::$feedingPaidCache[$schoolId] = ['at' => $now, 'map' => $map];
+		return $map;
+	}
+
+	/**
+	 * @param object $student
+	 */
+	private static function feedingPaidFlag($student): int
+	{
+		if ((int) ($student->studying_mode ?? 1) === 0) {
+			return 1;
+		}
+		$schoolId = (int) ($student->school_id ?? 0);
+		if ($schoolId < 1) {
+			return 0;
+		}
+		$map = self::feedingPaidMap($schoolId);
+		return (int) ($map[(int) $student->id] ?? 0);
+	}
+
 	/**
 	 * @param object $student
 	 * @return array<string,mixed>
@@ -1410,6 +1599,7 @@ class AttendanceScanService
 			'card' => strtoupper(trim((string) ($student->card ?? ''))),
 			'photo' => self::kioskPhotoUrl($student->photo ?? null),
 			'studying_mode' => (int) ($student->studying_mode ?? 1),
+			'feeding_paid' => self::feedingPaidFlag($student),
 			'records' => $records,
 		];
 	}
