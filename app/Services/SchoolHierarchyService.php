@@ -95,16 +95,21 @@ class SchoolHierarchyService
 
 	public function canAccessChildSchools($staffSchoolId, $postId)
 	{
-		if (!$this->isCentralPost((int) $postId)) {
+		$postId = (int) $postId;
+		$wisdomLeader = (new WisdomGroupOverview())->isLeaderPost($postId);
+		if (!$this->isCentralPost($postId) && !$wisdomLeader) {
 			return false;
 		}
 		$this->ensureSchema();
 		$db = \Config\Database::connect();
 		$row = $db->table('schools')->where('id', (int) $staffSchoolId)->get(1)->getRowArray();
-		if (!$row) {
+		if (!$row || empty($row['is_master'])) {
 			return false;
 		}
-		return !empty($row['is_master']);
+		if (!$this->isCentralPost($postId) && $wisdomLeader) {
+			return (new WisdomGroupOverview())->isWisdomMaster((int) $staffSchoolId);
+		}
+		return true;
 	}
 
 	public function canViewSchool($staffSchoolId, $postId, $targetSchoolId)
