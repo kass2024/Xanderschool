@@ -212,8 +212,8 @@ class WisdomStaffCardRenderer
 	{
 		$cx = $this->sx(self::HOLE_CX);
 		$cy = $this->sy(self::HOLE_CY);
-		// Stay inside the black inner line so the blue artwork ring stays visible.
-		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 0.93));
+		// Fill the artwork hole. A hair inside the ring so the blue border stays visible.
+		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 0.98));
 
 		$src = $this->loadImage($path);
 		if (!$src) {
@@ -445,9 +445,8 @@ class WisdomStaffCardRenderer
 	}
 
 	/**
-	 * Fit the whole person inside the circle. White margins are ignored so
-	 * the portrait fills the round frame, and the circle does not cut the
-	 * bottom of the body.
+	 * Cover the circle with the portrait, then the caller clips it round.
+	 * The head stays in frame; extra length is taken from the lower edge.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -459,70 +458,20 @@ class WisdomStaffCardRenderer
 		}
 		$sw = max(1, imagesx($src));
 		$sh = max(1, imagesy($src));
-		[$bx, $by, $bw, $bh] = $this->subjectBounds($src, $sw, $sh);
+		$side = min($sw, $sh);
+		if ($sw >= $sh) {
+			$sx = (int) max(0, (int) round(($sw - $side) / 2));
+			$sy = 0;
+		} else {
+			$sx = 0;
+			$sy = (int) max(0, (int) round(($sh - $side) * 0.08));
+		}
+		$side = max(1, min($side, $sw - $sx, $sh - $sy));
 		$sq = imagecreatetruecolor($size, $size);
 		$white = imagecolorallocate($sq, 255, 255, 255);
 		imagefill($sq, 0, 0, $white);
-		$radius = ($size / 2.0) * 0.96;
-		$halfDiag = 0.5 * sqrt(($bw * $bw) + ($bh * $bh));
-		$scale = $radius / max(0.001, $halfDiag);
-		$nw = max(1, (int) round($bw * $scale));
-		$nh = max(1, (int) round($bh * $scale));
-		$ox = (int) round(($size - $nw) / 2);
-		$oy = (int) round(($size - $nh) / 2);
-		imagecopyresampled($sq, $src, $ox, $oy, $bx, $by, $nw, $nh, $bw, $bh);
+		imagecopyresampled($sq, $src, 0, 0, $sx, $sy, $size, $size, $side, $side);
 		return $sq;
-	}
-
-	/**
-	 * Tight box around the person. Near-white padding is dropped so a
-	 * head-and-shoulders portrait can fill the card circle.
-	 *
-	 * @param resource|\GdImage $src
-	 * @return array{0:int,1:int,2:int,3:int}
-	 */
-	private function subjectBounds($src, int $sw, int $sh): array
-	{
-		$step = max(1, (int) floor(min($sw, $sh) / 160));
-		$minX = $sw;
-		$minY = $sh;
-		$maxX = 0;
-		$maxY = 0;
-		$hits = 0;
-		for ($y = 0; $y < $sh; $y += $step) {
-			for ($x = 0; $x < $sw; $x += $step) {
-				$rgb = imagecolorat($src, $x, $y) & 0xFFFFFF;
-				$r = ($rgb >> 16) & 255;
-				$g = ($rgb >> 8) & 255;
-				$b = $rgb & 255;
-				if ($r >= 246 && $g >= 246 && $b >= 246) {
-					continue;
-				}
-				$hits++;
-				if ($x < $minX) {
-					$minX = $x;
-				}
-				if ($y < $minY) {
-					$minY = $y;
-				}
-				if ($x > $maxX) {
-					$maxX = $x;
-				}
-				if ($y > $maxY) {
-					$maxY = $y;
-				}
-			}
-		}
-		if ($hits < 8 || $maxX <= $minX || $maxY <= $minY) {
-			return [0, 0, $sw, $sh];
-		}
-		$padX = (int) max($step, round(($maxX - $minX) * 0.04));
-		$padY = (int) max($step, round(($maxY - $minY) * 0.04));
-		$x0 = max(0, $minX - $padX);
-		$y0 = max(0, $minY - $padY);
-		$x1 = min($sw - 1, $maxX + $padX);
-		$y1 = min($sh - 1, $maxY + $padY);
-		return [$x0, $y0, $x1 - $x0 + 1, $y1 - $y0 + 1];
 	}
 
 	/** @param resource|\GdImage $im */
