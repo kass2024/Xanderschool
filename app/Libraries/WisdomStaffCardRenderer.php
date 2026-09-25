@@ -16,11 +16,16 @@ class WisdomStaffCardRenderer
 
 	public const TEMPLATE_MUSANZE = 'assets/images/background/wisdom_staff_card_musanze.png';
 	public const TEMPLATE_RWANDA = 'assets/images/background/wisdom_staff_card_rwanda.png';
+	public const TEMPLATE_BURERA = 'assets/images/background/wisdom_staff_card_burera.png';
+	public const TEMPLATE_KANZENZE = 'assets/images/background/wisdom_staff_card_kanzenze.png';
+	public const TEMPLATE_NGORORERO = 'assets/images/background/wisdom_staff_card_ngororero.png';
+	public const TEMPLATE_NYABIHU = 'assets/images/background/wisdom_staff_card_nyabihu.png';
+	public const TEMPLATE_SUSA = 'assets/images/background/wisdom_staff_card_susa.png';
 	/** Default / campus card (backward compatible). */
 	public const TEMPLATE = self::TEMPLATE_MUSANZE;
 
-	/** Executive Principal, Director of Finance, Director, Deputy Director. */
-	public const RWANDA_ART_POST_IDS = [15, 24, 29, 30];
+	/** Executive Principal, Director of Finance, Chief Accountant, Director, Deputy Director. */
+	public const RWANDA_ART_POST_IDS = [15, 24, 28, 29, 30];
 
 	/** Measured on 591×1004 source artwork. */
 	private const SRC_W = 591;
@@ -62,6 +67,7 @@ class WisdomStaffCardRenderer
 		}
 		$title = self::normTitle((string) ($staff['post_title'] ?? ''));
 		return in_array($title, [
+			'chief accountant',
 			'deputy director',
 			'director',
 			'director of finance',
@@ -72,17 +78,88 @@ class WisdomStaffCardRenderer
 	}
 
 	/**
+	 * Printed staff number on the Wisdom master card.
+	 *
 	 * @param array<string,mixed> $staff
 	 */
-	public static function templateForStaff(array $staff): string
+	public static function cardStaffId(array $staff, string $schoolName = ''): string
+	{
+		$real = trim((string) ($staff['id'] ?? ''));
+		if (!self::isMasterSchool($schoolName !== '' ? $schoolName : (string) ($staff['school_name'] ?? ''))) {
+			return $real;
+		}
+		$byPost = [
+			29 => '1',
+			30 => '3',
+			15 => '4',
+			24 => '5',
+			28 => '6',
+		];
+		$postId = (int) ($staff['post'] ?? 0);
+		if (isset($byPost[$postId])) {
+			return $byPost[$postId];
+		}
+		$title = self::normTitle((string) ($staff['post_title'] ?? ''));
+		$byTitle = [
+			'deputy director' => '3',
+			'director of finance' => '5',
+			'director of finances' => '5',
+			'executive principal' => '4',
+			'principal' => '4',
+			'chief accountant' => '6',
+			'director' => '1',
+		];
+		return $byTitle[$title] ?? $real;
+	}
+
+	public static function isMasterSchool(string $schoolName): bool
+	{
+		$name = strtoupper(preg_replace('/\s+/', ' ', trim($schoolName)) ?? '');
+		if ($name === '' || strpos($name, 'WISDOM') === false) {
+			return false;
+		}
+		foreach (['BURERA', 'FUMBWE', 'KABARORE', 'KANZENZE', 'KAYONZA', 'KIRAMURUZI', 'MUSANZE', 'MUYUMBU', 'NGORORERO', 'NYABIHU', 'NYAMASHEKE', 'RUBAVU', 'RUBENGERA', 'RUNDA', 'SUSA'] as $campus) {
+			if (strpos($name, $campus) !== false) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * @param array<string,mixed> $staff
+	 */
+	public static function templateForStaff(array $staff, string $schoolName = ''): string
 	{
 		if (self::usesRwandaArtwork($staff) && self::assetPath(self::TEMPLATE_RWANDA) !== null) {
 			return self::TEMPLATE_RWANDA;
+		}
+		$campus = self::campusTemplate($schoolName !== '' ? $schoolName : (string) ($staff['school_name'] ?? ''));
+		if ($campus !== null) {
+			return $campus;
 		}
 		if (self::assetPath(self::TEMPLATE_MUSANZE) !== null) {
 			return self::TEMPLATE_MUSANZE;
 		}
 		return self::TEMPLATE_RWANDA;
+	}
+
+	public static function campusTemplate(string $schoolName): ?string
+	{
+		$name = strtoupper(preg_replace('/\s+/', ' ', trim($schoolName)) ?? '');
+		$map = [
+			'BURERA' => self::TEMPLATE_BURERA,
+			'KANZENZE' => self::TEMPLATE_KANZENZE,
+			'NGORORERO' => self::TEMPLATE_NGORORERO,
+			'NYABIHU' => self::TEMPLATE_NYABIHU,
+			'SUSA' => self::TEMPLATE_SUSA,
+		];
+		foreach ($map as $key => $path) {
+			if ($name !== '' && strpos($name, $key) !== false && self::assetPath($path) !== null) {
+				return $path;
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -112,7 +189,7 @@ class WisdomStaffCardRenderer
 		if (!function_exists('imagecreatetruecolor') || !is_file($this->font)) {
 			return null;
 		}
-		$im = $this->baseFromTemplate(self::templateForStaff($staff));
+		$im = $this->baseFromTemplate(self::templateForStaff($staff, (string) ($ctx['school_name'] ?? '')));
 		if ($im === null) {
 			return null;
 		}
@@ -179,7 +256,7 @@ class WisdomStaffCardRenderer
 		$post = $this->upper(trim((string) ($staff['post_title'] ?? '')));
 		$phone = $this->formatPhone(trim((string) ($staff['phone'] ?? '')));
 		$email = strtolower(trim((string) ($staff['email'] ?? '')));
-		$staffId = trim((string) ($staff['id'] ?? ''));
+		$staffId = self::cardStaffId($staff, (string) ($ctx['school_name'] ?? ''));
 
 		$boxX = $this->sx(36);
 		$boxW = $this->sx(519);
@@ -368,8 +445,9 @@ class WisdomStaffCardRenderer
 	}
 
 	/**
-	 * Place the full photo inside the circle. Scale by the diagonal so the
-	 * circular mask does not cut hair or shoulders.
+	 * Fit the whole person inside the circle. White margins are ignored so
+	 * the portrait fills the round frame, and the circle does not cut the
+	 * bottom of the body.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -379,19 +457,72 @@ class WisdomStaffCardRenderer
 		if ($size < 2) {
 			return null;
 		}
-		$sw = imagesx($src);
-		$sh = imagesy($src);
+		$sw = max(1, imagesx($src));
+		$sh = max(1, imagesy($src));
+		[$bx, $by, $bw, $bh] = $this->subjectBounds($src, $sw, $sh);
 		$sq = imagecreatetruecolor($size, $size);
 		$white = imagecolorallocate($sq, 255, 255, 255);
 		imagefill($sq, 0, 0, $white);
-		$inner = (int) max(2, round($size * 0.93));
-		$scale = min($inner / max(1, $sw), $inner / max(1, $sh));
-		$nw = max(1, (int) round($sw * $scale));
-		$nh = max(1, (int) round($sh * $scale));
-		$ox = (int) (($size - $nw) / 2);
-		$oy = (int) (($size - $nh) / 2);
-		imagecopyresampled($sq, $src, $ox, $oy, 0, 0, $nw, $nh, $sw, $sh);
+		$radius = ($size / 2.0) * 0.96;
+		$halfDiag = 0.5 * sqrt(($bw * $bw) + ($bh * $bh));
+		$scale = $radius / max(0.001, $halfDiag);
+		$nw = max(1, (int) round($bw * $scale));
+		$nh = max(1, (int) round($bh * $scale));
+		$ox = (int) round(($size - $nw) / 2);
+		$oy = (int) round(($size - $nh) / 2);
+		imagecopyresampled($sq, $src, $ox, $oy, $bx, $by, $nw, $nh, $bw, $bh);
 		return $sq;
+	}
+
+	/**
+	 * Tight box around the person. Near-white padding is dropped so a
+	 * head-and-shoulders portrait can fill the card circle.
+	 *
+	 * @param resource|\GdImage $src
+	 * @return array{0:int,1:int,2:int,3:int}
+	 */
+	private function subjectBounds($src, int $sw, int $sh): array
+	{
+		$step = max(1, (int) floor(min($sw, $sh) / 160));
+		$minX = $sw;
+		$minY = $sh;
+		$maxX = 0;
+		$maxY = 0;
+		$hits = 0;
+		for ($y = 0; $y < $sh; $y += $step) {
+			for ($x = 0; $x < $sw; $x += $step) {
+				$rgb = imagecolorat($src, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($r >= 246 && $g >= 246 && $b >= 246) {
+					continue;
+				}
+				$hits++;
+				if ($x < $minX) {
+					$minX = $x;
+				}
+				if ($y < $minY) {
+					$minY = $y;
+				}
+				if ($x > $maxX) {
+					$maxX = $x;
+				}
+				if ($y > $maxY) {
+					$maxY = $y;
+				}
+			}
+		}
+		if ($hits < 8 || $maxX <= $minX || $maxY <= $minY) {
+			return [0, 0, $sw, $sh];
+		}
+		$padX = (int) max($step, round(($maxX - $minX) * 0.04));
+		$padY = (int) max($step, round(($maxY - $minY) * 0.04));
+		$x0 = max(0, $minX - $padX);
+		$y0 = max(0, $minY - $padY);
+		$x1 = min($sw - 1, $maxX + $padX);
+		$y1 = min($sh - 1, $maxY + $padY);
+		return [$x0, $y0, $x1 - $x0 + 1, $y1 - $y0 + 1];
 	}
 
 	/** @param resource|\GdImage $im */
