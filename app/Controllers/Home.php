@@ -2199,6 +2199,8 @@ public function testEmail()
 				foreach ((array) $data['staffs'] as $staff) {
 					$jpeg = $renderer->renderJpeg($staff, [
 						'year' => $data['theyear'] ?? ($data['year'] ?? ''),
+						// Campus artwork (Ngororero, Musanze, ...) follows the logged-in school.
+						'school_name' => (string) ($data['school_name'] ?? ''),
 					]);
 					if (is_string($jpeg) && strlen($jpeg) > 100) {
 						$jpegs[] = $jpeg;

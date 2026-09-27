@@ -23,6 +23,7 @@ FILES = [
     "app/Helpers/qonics_helper.php",
     "app/Views/templates/staff_card_smart.php",
     "app/Views/pages/school_settings.php",
+    "app/Controllers/Home.php",
     "public/assets/images/background/wisdom_staff_card_ngororero.png",
 ]
 
@@ -32,6 +33,7 @@ VERIFY = [
     ("app/Views/templates/staff_card_smart.php", "object-position: center 25%"),
     ("app/Libraries/ProfilePhotoNormalizer.php", "seatHeadBelowTop"),
     ("app/Helpers/qonics_helper.php", "v5fillcircle"),
+    ("app/Controllers/Home.php", "Campus artwork (Ngororero, Musanze, ...) follows the logged-in school."),
 ]
 
 
@@ -57,6 +59,9 @@ cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 3
 docker exec xander_school_app php -r 'opcache_reset();' || true
+png=/opt/xander-school/app/public/assets/images/background/wisdom_staff_card_ngororero.png
+test -f "$png"
+test "$(stat -c%s "$png")" -gt 130000
 {verify}
 echo DONE
 """
