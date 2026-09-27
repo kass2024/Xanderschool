@@ -626,8 +626,9 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Fill the circle with a cover crop. The portrait sits slightly lower
-	 * so the ring leaves a little room above the hair.
+	 * Place the portrait in the staff-card circle: fill the hole, keep the
+	 * round clip, and leave a little white above the hair so the ring does
+	 * not cut the top of the head.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -651,29 +652,43 @@ class ProfilePhotoNormalizer
 			$bw = $sw;
 			$bh = $sh;
 		}
-		$targetRatio = $outW / $outH;
-		$srcRatio = $bw / max(1, $bh);
-		if ($srcRatio > $targetRatio) {
-			$cropH = $bh;
-			$cropW = max(1, (int) round($bh * $targetRatio));
-			$sx = $bx + (int) max(0, (int) floor(($bw - $cropW) / 2));
-			$sy = $by;
+		$person = $this->personBox($src, $bx, $by, $bw, $bh);
+		if ($person === null) {
+			$px = $bx;
+			$py = $by;
+			$pw = $bw;
+			$ph = $bh;
+			$fillsFrame = true;
 		} else {
-			$cropW = $bw;
-			$cropH = max(1, (int) round($bw / $targetRatio));
-			$sx = $bx;
-			$sy = $by;
+			[$px, $py, $pw, $ph] = $person;
+			$fillsFrame = false;
 		}
-		$sx = max(0, min($sw - 1, $sx));
-		$sy = max(0, min($sh - 1, $sy));
-		$cropW = max(1, min($cropW, $sw - $sx, $bx + $bw - $sx));
-		$cropH = max(1, min($cropH, $sh - $sy, $by + $bh - $sy));
+		$hairPad = (int) max(2, round($ph * 0.06));
+		$py = max($by, $py - $hairPad);
+		$ph = max(8, min($by + $bh - $py, $ph + $hairPad));
+
+		$side = min($outW, $outH);
+		// Room above the hair. The circle is narrower than the square near
+		// the top, so this keeps a wide crown inside the ring.
+		$margin = (int) round($side * ($fillsFrame ? 0.12 : 0.14));
+		$targetFrac = $fillsFrame ? 0.86 : 0.70;
+		$scale = ($side * $targetFrac) / max(1, $pw);
+		$drawW = max(1, (int) round($pw * $scale));
+		$drawH = max(1, (int) round($ph * $scale));
+		// If the scaled head would be pushed into the top edge, shrink it.
+		if ($margin + (int) round($drawH * 0.42) > (int) round($side * 0.62)) {
+			$fitH = max(1, (int) round($side * 0.62) - $margin);
+			$scale = min($scale, $fitH / max(1, $ph * 0.42));
+			$drawW = max(1, (int) round($pw * $scale));
+			$drawH = max(1, (int) round($ph * $scale));
+		}
+		$dx = (int) round(($outW - $drawW) / 2);
+		$dy = $margin;
 
 		$dst = imagecreatetruecolor($outW, $outH);
 		$white = imagecolorallocate($dst, 255, 255, 255);
 		imagefill($dst, 0, 0, $white);
-		$this->hiQualityResample($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $cropW, $cropH);
-		$this->seatHeadBelowTop($dst);
+		$this->hiQualityResample($dst, $src, $dx, $dy, $px, $py, $drawW, $drawH, $pw, $ph);
 		return $dst;
 	}
 

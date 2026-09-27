@@ -151,6 +151,10 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		border-radius: 50%;
 		-webkit-border-radius: 50%;
 	}
+	.cf-photo.is-round img {
+		object-position: center center;
+		-webkit-object-position: center center;
+	}
 	.cf-badge, .cf-moto {
 		background: <?= $main; ?>;
 		color: #ffffff;

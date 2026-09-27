@@ -30,7 +30,7 @@ VERIFY = [
     ("app/Libraries/WisdomStaffCardRenderer.php", "innerPhotoBox"),
     ("app/Views/templates/staff_card_smart.php", "object-position: center 25%"),
     ("app/Libraries/ProfilePhotoNormalizer.php", "seatHeadBelowTop"),
-    ("app/Helpers/qonics_helper.php", "v3hair22"),
+    ("app/Helpers/qonics_helper.php", "v4fitcircle"),
 ]
 
 

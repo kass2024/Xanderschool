@@ -1498,9 +1498,8 @@ if (!function_exists('profile_photo_card_src')) {
 }
 
 /**
- * Staff-card photo: cover crop, slightly lowered, so the circle is full
- * and the head stays in frame. wkhtmltopdf ignores object-fit, so the bitmap
- * is already the filled frame.
+ * Staff-card photo: fill the circle and keep the top of the head inside it.
+ * wkhtmltopdf ignores object-fit, so the bitmap is already the filled frame.
  */
 if (!function_exists('profile_photo_staff_circle_src')) {
 	function profile_photo_staff_circle_src(?string $stored, int $outW = 640, int $outH = 640): string
@@ -1520,7 +1519,7 @@ if (!function_exists('profile_photo_staff_circle_src')) {
 		if (!is_dir($cacheDir)) {
 			@mkdir($cacheDir, 0775, true);
 		}
-		$key = md5($real . '|' . @filemtime($real) . "|staffcircle{$outW}x{$outH}|v3hair22") . '.jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|staffcircle{$outW}x{$outH}|v4fitcircle") . '.jpg';
 		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
 		if (is_file($cached)) {
 			return '_card_img/' . $key;
