@@ -56,12 +56,15 @@ class StaffTeachingLoad
 			$out[$staffId]['courses']++;
 			$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
 			$combineKey = $criteria->combineGroupKey($row);
-			if ($combineKey !== '' && isset($seenCombine[$combineKey])) {
-				continue;
-			}
 			if ($combineKey !== '') {
-				$seenCombine[$combineKey] = true;
-				$out[$staffId]['periods'] += SecondaryTimetableCriteria::teacherSessionCount($hours);
+				$previous = $seenCombine[$combineKey] ?? null;
+				if ($previous === null) {
+					$seenCombine[$combineKey] = $hours;
+					$out[$staffId]['periods'] += $hours;
+				} elseif ($hours > $previous) {
+					$out[$staffId]['periods'] += $hours - $previous;
+					$seenCombine[$combineKey] = $hours;
+				}
 				continue;
 			}
 			$out[$staffId]['periods'] += $hours;
@@ -216,6 +219,8 @@ class StaffTeachingLoad
 						'title' => $title,
 						'hours' => $hours,
 					];
+				} elseif ($hours > (int) $pending[$staffId][$combineKey]['hours']) {
+					$pending[$staffId][$combineKey]['hours'] = $hours;
 				}
 				$pending[$staffId][$combineKey]['labels'][] = $label;
 				if ($title !== '') {
@@ -245,17 +250,16 @@ class StaffTeachingLoad
 				$combined = count($labels) > 1;
 				$nClasses = count($labels);
 				$hours = (int) $group['hours'];
-				$sessions = SecondaryTimetableCriteria::teacherSessionCount($hours);
 				$grouped[$staffId]['courses'][] = [
 					'class' => $labels !== [] ? implode(' + ', $labels) : 'Class',
 					'title' => $group['title'] !== '' ? $group['title'] : 'Course',
-					'periods' => $combined ? $sessions : $hours,
+					'periods' => $hours,
 					'combined' => $combined,
 					'note' => $combined
-						? ('Combined lesson: ' . $nClasses . ' classes × ' . $hours . ' periods → ' . $sessions . ' teacher sessions')
+						? ('Combined: ' . $nClasses . ' classes share these ' . $hours . ' periods')
 						: '',
 				];
-				$grouped[$staffId]['periods'] += $combined ? $sessions : $hours;
+				$grouped[$staffId]['periods'] += $hours;
 			}
 		}
 

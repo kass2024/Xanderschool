@@ -744,7 +744,7 @@ class SecondaryTimetableCriteria
 		return $staffId . '|' . $subject . '|' . $meta['level'] . '|' . implode('-', $group);
 	}
 
-	/** 5 weekly hours → 3 teaching sessions (2+2+1). Combined load uses this, not class-count × hours. */
+	/** How many timetable blocks a weekly load splits into (5 hours → 3 blocks of 2+2+1). Period totals still use the full Manage Course credit. */
 	public static function teacherSessionCount(int $weeklyHours): int
 	{
 		$blocks = TimetableGeneratorService::distributeWeeklyHours($weeklyHours);
@@ -1373,12 +1373,15 @@ class SecondaryTimetableCriteria
 			}
 			$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
 			$combineKey = $this->combineGroupKey($row);
-			if ($combineKey !== '' && isset($seenCombine[$combineKey])) {
-				continue;
-			}
 			if ($combineKey !== '') {
-				$seenCombine[$combineKey] = true;
-				$out[$staffId] = (int) ($out[$staffId] ?? 0) + self::teacherSessionCount($hours);
+				$previous = $seenCombine[$combineKey] ?? null;
+				if ($previous === null) {
+					$seenCombine[$combineKey] = $hours;
+					$out[$staffId] = (int) ($out[$staffId] ?? 0) + $hours;
+				} elseif ($hours > $previous) {
+					$out[$staffId] = (int) ($out[$staffId] ?? 0) + ($hours - $previous);
+					$seenCombine[$combineKey] = $hours;
+				}
 				continue;
 			}
 			$out[$staffId] = (int) ($out[$staffId] ?? 0) + $hours;
@@ -1399,12 +1402,18 @@ class SecondaryTimetableCriteria
 			if ($teacher === '' || (!$this->teacherNameMatches($teacher, $needle) && strpos($teacher, $needle) === false)) {
 				continue;
 			}
+			$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
 			$combineKey = $this->combineGroupKey($row);
-			if ($combineKey !== '' && isset($seenCombine[$combineKey])) {
-				continue;
-			}
 			if ($combineKey !== '') {
-				$seenCombine[$combineKey] = true;
+				$previous = $seenCombine[$combineKey] ?? null;
+				if ($previous === null) {
+					$seenCombine[$combineKey] = $hours;
+					$total += $hours;
+				} elseif ($hours > $previous) {
+					$total += $hours - $previous;
+					$seenCombine[$combineKey] = $hours;
+				}
+				continue;
 			}
 			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 			$key = $staffId . ':' . (int) ($row['class_id'] ?? 0) . ':' . (int) ($row['course_id'] ?? $row['course'] ?? 0);
@@ -1412,7 +1421,7 @@ class SecondaryTimetableCriteria
 				continue;
 			}
 			$seen[$key] = true;
-			$total += TimetableGeneratorService::weeklyHoursFromCourse($row);
+			$total += $hours;
 		}
 
 		return $total;
