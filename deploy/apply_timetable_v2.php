@@ -215,6 +215,7 @@ foreach ($generateOrder as $track) {
 	$allEntries = array_merge($allEntries, $result['entries']);
 	echo "  placed rows " . count($result['entries']) . "\n";
 }
+$generator->sweepMergedEntries($allEntries);
 
 foreach ($allEntries as $entry) {
 	$db->table('timetable_entries')->insert([
@@ -232,9 +233,9 @@ foreach ($allEntries as $entry) {
 	]);
 }
 $db->table('timetable_schedules')->where('id', $scheduleId)->update([
-	'title' => 'Version 2',
+	'title' => 'Final Version',
 	'status' => 'published',
-	'notes' => 'Version 2. ANP classes teach 07:00–16:20. Priority courses are placed first. Version 1 is stored in timetable_*_v1.',
+	'notes' => 'Final timetable. Combined courses follow Version 1. Periods that exceed free slots stay highlighted. Version 1 is stored in timetable_*_v1.',
 	'generated_at' => date('Y-m-d H:i:s'),
 ]);
 

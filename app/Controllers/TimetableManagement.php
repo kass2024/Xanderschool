@@ -2623,6 +2623,16 @@ class TimetableManagement extends Home
 		$entries = [];
 
 		if ($schedule && $entityId > 0) {
+			try {
+				(new TimetableStagingService())->parkAllConflicts(
+					(int) $schedule['id'],
+					$schoolId,
+					$mode === 'class' ? $entityId : 0,
+					$mode === 'teacher' ? $entityId : 0
+				);
+			} catch (\Throwable $e) {
+				log_message('error', 'Timetable collision park skipped: {msg}', ['msg' => $e->getMessage()]);
+			}
 			$builder = $db->table('timetable_entries te')
 				->select('te.*, c.title AS course_title, c.code AS course_code,
 					cl.title AS class_title, cl.level AS class_level_id,

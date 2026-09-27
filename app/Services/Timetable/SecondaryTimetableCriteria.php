@@ -264,7 +264,7 @@ class SecondaryTimetableCriteria
 			if (!\App\Models\TimetableSchemaModel::isLibraryHomeScienceClock($slotStart, $slotEnd)) {
 				return false;
 			}
-			if ($day === 6 && !$this->allowsSunday($row, $slotStart, $slotEnd)) {
+			if ($day >= 5 && !$this->allowsSunday($row, $slotStart, $slotEnd)) {
 				return false;
 			}
 			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
@@ -273,7 +273,7 @@ class SecondaryTimetableCriteria
 			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
 		}
 		if ($this->isClinicalAttachmentCourse($row)) {
-			if ($day === 6 || !$this->isAnpClinicalWindow($row, $day, $slotStart, $slotEnd)) {
+			if ($day >= 5 || !$this->isAnpClinicalWindow($row, $day, $slotStart, $slotEnd)) {
 				return false;
 			}
 			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
@@ -288,7 +288,7 @@ class SecondaryTimetableCriteria
 			if (!\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd)) {
 				return false;
 			}
-			if ($day === 6 && !$this->allowsSunday($row, $slotStart, $slotEnd)) {
+			if ($day >= 5 && !$this->allowsSunday($row, $slotStart, $slotEnd)) {
 				return false;
 			}
 			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
@@ -296,7 +296,7 @@ class SecondaryTimetableCriteria
 			}
 			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
 		}
-		if ($day === 6) {
+		if ($day >= 5) {
 			if (!self::isSecondaryTrack($row) || !$this->allowsSunday($row, $slotStart, $slotEnd)) {
 				return false;
 			}
@@ -735,7 +735,7 @@ class SecondaryTimetableCriteria
 	/** Teaching cells from 07:00 through the period that ends at 16:20. Not Sunday. */
 	private function isAnpClassHourSlot(?string $slotStart, ?string $slotEnd, int $day): bool
 	{
-		if ($day === 6) {
+		if ($day >= 5) {
 			return false;
 		}
 		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
@@ -1107,6 +1107,9 @@ class SecondaryTimetableCriteria
 					return true;
 				}
 			}
+		}
+		if ($famA === 'clinical attachment' || $famA === 'mch') {
+			return true;
 		}
 		if ($levelA !== '' && $levelB !== '' && $levelA !== $levelB) {
 			return false;

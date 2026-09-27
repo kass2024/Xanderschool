@@ -1127,13 +1127,10 @@ class TimetableStagingService
 			return 0;
 		}
 		$db = \Config\Database::connect();
-		$upd = $db->table('timetable_entries')->whereIn('id', $ids);
-		if ($db->fieldExists('is_locked', 'timetable_entries')) {
-			$upd->groupStart()->where('is_locked', 0)->orWhere('is_locked IS NULL', null, false)->groupEnd();
-		}
-		$upd->update([
+		$db->table('timetable_entries')->whereIn('id', $ids)->update([
 			'day_of_week' => -1,
 			'slot_id' => 0,
+			'is_locked' => 0,
 		]);
 		return count($ids);
 	}
@@ -1738,7 +1735,8 @@ class TimetableStagingService
 			if ($state !== [] && $entry !== [] && $day >= 0) {
 				return NurseryTimetableCriteria::maxPerDay(
 					$this->uniqueCoursesOnDay($state, (int) ($entry['class_id'] ?? 0), $day),
-					$this->dayHasCourse($state, $entry, $day)
+					$this->dayHasCourse($state, $entry, $day),
+					NurseryTimetableCriteria::isCoreCourse($meta)
 				);
 			}
 			return 1;
@@ -1815,7 +1813,9 @@ class TimetableStagingService
 			if ($entryId <= 0 || $classId <= 0 || $day < 0 || $slotId <= 0) {
 				continue;
 			}
-			$byClassSlot[$classId . ':' . $day . ':' . $slotId][] = $entry;
+			$clock = substr((string) ($entry['start_time'] ?? ''), 0, 5)
+				. '|' . substr((string) ($entry['end_time'] ?? ''), 0, 5);
+			$byClassSlot[$classId . ':' . $day . ':' . ($clock !== '|' ? $clock : (string) $slotId)][] = $entry;
 			if ($staffId > 0) {
 				$teacherDayRows[$staffId . ':' . $day][] = $entry;
 			}
@@ -1827,18 +1827,15 @@ class TimetableStagingService
 				continue;
 			}
 			usort($group, static function (array $a, array $b): int {
-				$la = (int) ($a['is_locked'] ?? 0);
-				$lb = (int) ($b['is_locked'] ?? 0);
-				if ($la !== $lb) {
-					return $lb <=> $la;
+				$pa = stripos((string) ($a['course_title'] ?? ''), 'physical education') !== false ? 1 : 0;
+				$pb = stripos((string) ($b['course_title'] ?? ''), 'physical education') !== false ? 1 : 0;
+				if ($pa !== $pb) {
+					return $pa <=> $pb;
 				}
 				return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
 			});
 			$drop = array_slice($group, 1);
 			foreach ($drop as $entry) {
-				if ((int) ($entry['is_locked'] ?? 0) === 1) {
-					continue;
-				}
 				$ids[(int) $entry['id']] = (int) $entry['id'];
 			}
 		}
@@ -1880,9 +1877,7 @@ class TimetableStagingService
 					break;
 				}
 				if ($collides) {
-					if ((int) ($entry['is_locked'] ?? 0) !== 1) {
-						$ids[$entryId] = $entryId;
-					}
+					$ids[$entryId] = $entryId;
 					continue;
 				}
 				$kept[] = [

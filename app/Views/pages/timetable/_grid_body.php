@@ -200,11 +200,11 @@ foreach ($grid ?? [] as $scanRow) {
 		<div class="tt-staging-dock tt-staging-parking tt-staging-bottom mt-2" id="ttStagingDockBottom"<?= $editable ? ' data-drop-zone="parking"' : ''; ?>>
 			<div class="tt-staging-label">
 				<i class="fa fa-level-down"></i>
-				Periods from Manage Course not on this grid
+				Highlighted: hours that do not fit
 				<?php if (!empty($staging_remaining) || !empty($staging_entries)): ?>
 					<span class="badge badge-warning ml-1"><?= (int) ($staging_remaining ?: count($staging_entries)); ?> period(s)</span>
 				<?php endif; ?>
-				<?= $editable ? ' — drag into a free (green) cell when space is available' : ' — kept below to avoid a teacher or class collision'; ?>
+				— more periods than free slots, or placing them would put two teachers in the same class. They stay listed on the class timetable and the teacher timetable.
 			</div>
 			<div class="tt-staging-items">
 				<?php if (!empty($staging_entries)): ?>

@@ -87,6 +87,17 @@ class TimetableGeneratorService
 	}
 
 	/**
+	 * After every track has been generated, drop a second teacher from one class period.
+	 * Combined courses (same teacher, Version 1 groups) stay on one clock.
+	 *
+	 * @param list<array<string,mixed>> $entries
+	 */
+	public function sweepMergedEntries(array &$entries): void
+	{
+		$this->parkCollisions($entries);
+	}
+
+	/**
 	 * Map combined-class copies onto the partner class's own track bells.
 	 *
 	 * @param array<int,string> $classTracks
@@ -513,6 +524,9 @@ class TimetableGeneratorService
 		$this->recoverParkedAnpPriority($entries);
 		$this->seatParkedOnEmptySlots($entries);
 		$this->promotePeToLastHour($entries);
+		$this->parkCollisions($entries);
+		$this->seatParkedOnEmptySlots($entries);
+		$this->parkCollisions($entries);
 
 		return ['entries' => $entries, 'warnings' => $this->warnings, 'assignments' => $assignments];
 	}
@@ -2171,6 +2185,112 @@ class TimetableGeneratorService
 			'slot_id' => 0,
 			'entry_type' => 'lesson',
 		], $row);
+	}
+
+	/**
+	 * One class period keeps one lesson. A teacher keeps one lesson at a time,
+	 * except a Version 1 combined course (same subject, same teacher, listed classes).
+	 *
+	 * @param list<array<string,mixed>> $entries
+	 */
+	private function parkCollisions(array &$entries): void
+	{
+		$byClass = [];
+		foreach ($entries as $i => $entry) {
+			$day = (int) ($entry['day_of_week'] ?? -1);
+			$slotId = (int) ($entry['slot_id'] ?? 0);
+			$classId = (int) ($entry['class_id'] ?? 0);
+			if ($day < 0 || $slotId <= 0 || $classId <= 0) {
+				continue;
+			}
+			$times = $this->slotTimes[$slotId] ?? null;
+			$clock = $times
+				? \App\Models\TimetableSchemaModel::slotClock((string) ($times['start'] ?? ''))
+					. '|' . \App\Models\TimetableSchemaModel::slotClock((string) ($times['end'] ?? ''))
+				: ('slot' . $slotId);
+			$byClass[$classId . ':' . $day . ':' . $clock][] = $i;
+		}
+		foreach ($byClass as $idxs) {
+			if (count($idxs) < 2) {
+				continue;
+			}
+			usort($idxs, function (int $a, int $b) use ($entries): int {
+				$pa = $this->isPhysicalEducationSportCourse($this->entryCourseTitle($entries[$a])) ? 1 : 0;
+				$pb = $this->isPhysicalEducationSportCourse($this->entryCourseTitle($entries[$b])) ? 1 : 0;
+				return $pa <=> $pb;
+			});
+			$keep = $idxs[0];
+			foreach ($idxs as $i) {
+				if ($i === $keep) {
+					continue;
+				}
+				$this->parkGeneratedEntry($entries, $i);
+			}
+		}
+
+		$byTeacher = [];
+		foreach ($entries as $i => $entry) {
+			$day = (int) ($entry['day_of_week'] ?? -1);
+			$slotId = (int) ($entry['slot_id'] ?? 0);
+			$staffId = (int) ($entry['staff_id'] ?? 0);
+			if ($day < 0 || $slotId <= 0 || $staffId <= 0) {
+				continue;
+			}
+			$byTeacher[$staffId . ':' . $day][] = $i;
+		}
+		foreach ($byTeacher as $idxs) {
+			if (count($idxs) < 2) {
+				continue;
+			}
+			$kept = [];
+			foreach ($idxs as $i) {
+				$slotId = (int) ($entries[$i]['slot_id'] ?? 0);
+				$range = $this->slotTimeRange($slotId);
+				$clash = false;
+				foreach ($kept as $other) {
+					$sameSlot = (int) ($entries[$other]['slot_id'] ?? 0) === $slotId;
+					$otherRange = $this->slotTimeRange((int) ($entries[$other]['slot_id'] ?? 0));
+					$timeClash = $range !== null && $otherRange !== null && $this->rangesOverlap(
+						$range['start'],
+						$range['end'],
+						$otherRange['start'],
+						$otherRange['end']
+					);
+					if (!$sameSlot && !$timeClash) {
+						continue;
+					}
+					if (SecondaryTimetableCriteria::entriesAreCombinedLesson($entries[$i], $entries[$other])) {
+						continue;
+					}
+					$clash = true;
+					break;
+				}
+				if ($clash) {
+					$this->parkGeneratedEntry($entries, $i);
+					continue;
+				}
+				$kept[] = $i;
+			}
+		}
+	}
+
+	/** @param list<array<string,mixed>> $entries */
+	private function parkGeneratedEntry(array &$entries, int $index): void
+	{
+		$entry = $entries[$index];
+		$day = (int) ($entry['day_of_week'] ?? -1);
+		$slotId = (int) ($entry['slot_id'] ?? 0);
+		if ($day >= 0 && $slotId > 0) {
+			$this->unmarkBusy(
+				(int) ($entry['class_id'] ?? 0),
+				(int) ($entry['staff_id'] ?? 0),
+				$day,
+				$slotId
+			);
+		}
+		$entries[$index]['day_of_week'] = -1;
+		$entries[$index]['slot_id'] = 0;
+		$entries[$index]['is_locked'] = 0;
 	}
 
 	/**
