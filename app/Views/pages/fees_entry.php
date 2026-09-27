@@ -152,7 +152,26 @@ $(function () {
 		if (type) $s.addClass(type);
 	}
 
+	function renderInvoiceStudent(st) {
+		const $box = $('#feInvoiceStudent');
+		if (!$box.length) return;
+		if (!st) {
+			$box.attr('hidden', true).empty();
+			return;
+		}
+		const feText = function (value) {
+			return $('<div>').text(value || '').html();
+		};
+		$box.removeAttr('hidden').html(`
+			<div class="fe-invoice-student-photo">${st.photo_html || ''}</div>
+			<div class="fe-invoice-student-info">
+				<strong>${feText(st.name)}</strong>
+				<span>Reg: ${feText(st.regno)} · Class: ${feText(st.class_label)}</span>
+			</div>`);
+	}
+
 	function renderStudentCard(st) {
+		window.currentFeeStudent = st || null;
 		const html = `
 			<div class="fe-student-photo">${st.photo_html || ''}</div>
 			<div class="fe-student-info">
@@ -165,6 +184,7 @@ $(function () {
 			</div>`;
 		$('#feStudentCard').addClass('has-student').html(html);
 		$('#feWorkspaceCard').addClass('has-fees-ready');
+		renderInvoiceStudent(st);
 	}
 
 	function clearStudentCard() {
@@ -175,6 +195,8 @@ $(function () {
 			</div>`);
 		$('#feWorkspaceCard').removeClass('has-fees-ready');
 		$('.paidContent').hide();
+		window.currentFeeStudent = null;
+		renderInvoiceStudent(null);
 	}
 
 	function syncHiddenSelects(st) {
@@ -409,6 +431,7 @@ $(function () {
 	}
 
 	function feInvoiceLoadItems() {
+		renderInvoiceStudent(window.currentFeeStudent || null);
 		const std = $('#select_student').val();
 		const year = $('#select_year').val();
 		const classe = $('#select_class').val();
