@@ -442,7 +442,9 @@ class StaffTeachingLoad
 			}
 			$line['on_timetable'] = count($clocks);
 			$assignedTotal += (int) $line['periods'];
-			$onTotal += (int) $line['on_timetable'];
+			if (empty($line['manager_only'])) {
+				$onTotal += (int) $line['on_timetable'];
+			}
 			unset($line['class_ids'], $line['course_ids']);
 		}
 		unset($line);

@@ -62,6 +62,14 @@ foreach ($hsTracks as $track) {
 
 echo "L3 SOD Occupation and Maintain SHE stay in Manage Course and are not timetabled\n";
 
+// Nursing teaches through 16:20 on Friday. CPD and tests on the special track
+// were covering 14:20–16:20 and left those ANP cells empty.
+$db->query("DELETE st FROM timetable_special_times st
+	INNER JOIN timetable_slots ts ON ts.id = st.slot_id
+	WHERE st.school_id = {$schoolId} AND st.track_key = 'special' AND st.day_of_week = 4
+	AND ts.start_time >= '14:20:00' AND ts.end_time <= '16:20:00'");
+echo "ANP Friday 14:20–16:20 is teaching time\n";
+
 $sample = $db->table('course_records')->where('id', 2082)->get()->getRowArray();
 if (!$sample) {
 	fwrite(STDERR, "Home Science sample record missing\n");
@@ -235,7 +243,7 @@ echo "Version 2 locked fill placed: {$overflowPlaced}\n";
 $db->table('timetable_schedules')->where('id', $scheduleId)->update([
 	'title' => 'Final Version',
 	'status' => 'published',
-	'notes' => 'Version 2 rules are locked for the next generation. Leftover periods fill an empty class and teacher cell, including Mon–Thu 15:40–16:20. Combined courses follow Version 1. Periods that still exceed free slots stay highlighted.',
+	'notes' => 'Regenerated so every Manage Course period that fits is on the class timetable and the teacher timetable. S4, S5 and S6 ANP teach through 16:20, including Friday. S5 clinical is Tuesday morning. S4 clinical has its own periods. S6 clinical is Wednesday. Named windows, Version 1 combines, and manager-only SHE and Occupation stay as set. Periods that still exceed free slots stay highlighted.',
 	'generated_at' => date('Y-m-d H:i:s'),
 ]);
 

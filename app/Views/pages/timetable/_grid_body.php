@@ -83,7 +83,7 @@ foreach ($grid ?? [] as $scanRow) {
 				<span class="tt-period-counter-label">periods / week</span>
 			</div>
 			<div class="tt-period-counter-note">
-				Same total as Manage Course and the staff course PDF.
+				Same total as Manage Course. Each class keeps its own periods on this timetable.
 				<?php if ($periodsMatch): ?>
 					<span class="tt-period-match">All <?= $assignedPeriods ?> are on this timetable.</span>
 				<?php else: ?>
