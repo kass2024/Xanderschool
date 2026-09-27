@@ -341,10 +341,12 @@ public function testEmail()
 			$row['title'] ?? '',
 			$row['class'] ?? '',
 			$row['class_stream'] ?? '',
+			$row['class_title'] ?? '',
 			$row['level_name'] ?? '',
 			$row['level_title'] ?? '',
 			$row['dept_title'] ?? '',
 			$row['department_name'] ?? '',
+			$row['faculty_title'] ?? '',
 			$row['code'] ?? '',
 			$row['dept_code'] ?? '',
 		])));
@@ -11070,7 +11072,61 @@ public function getApplicationDocs($id = null)
 		$key = $this->request->getPost('searchTerm');
 		$StudentModel = new StudentModel();
 		$students = $StudentModel->search_student($key);
+		if ((string) $this->request->getPost('excludeHoliday') === '1') {
+			$year = (int) ($this->request->getPost('year') ?: ($this->data['academic_year'] ?? 0));
+			$students = $this->feeSearchWithoutHoliday($students, $year);
+		}
 		echo json_encode($students);
+	}
+
+	/**
+	 * Fees Entry search keeps only students enrolled in a normal class.
+	 *
+	 * @param list<array<string,mixed>> $students
+	 * @return list<array<string,mixed>>
+	 */
+	private function feeSearchWithoutHoliday(array $students, int $year): array
+	{
+		if ($students === [] || $year < 1) {
+			return [];
+		}
+		$ids = [];
+		foreach ($students as $student) {
+			$id = (int) ($student['id'] ?? 0);
+			if ($id > 0) {
+				$ids[$id] = $id;
+			}
+		}
+		if ($ids === []) {
+			return [];
+		}
+		$rows = (new StudentModel())
+			->select('students.id, c.title, c.title as class_title, l.title as level_name, d.title as department_name, d.code, f.title as faculty_title')
+			->join('class_records cr', 'cr.student = students.id')
+			->join('classes c', 'c.id = cr.class')
+			->join('levels l', 'l.id = c.level', 'LEFT')
+			->join('departments d', 'd.id = c.department', 'LEFT')
+			->join('faculty f', 'f.id = d.faculty_id', 'LEFT')
+			->whereIn('students.id', array_values($ids))
+			->where('students.school_id', (int) $this->session->get('soma_school_id'))
+			->where('cr.year', $year)
+			->get()->getResultArray();
+		$regular = [];
+		foreach ($rows as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id < 1 || $this->classLooksLikeHoliday($row)) {
+				continue;
+			}
+			$regular[$id] = true;
+		}
+		$out = [];
+		foreach ($students as $student) {
+			$id = (int) ($student['id'] ?? 0);
+			if (isset($regular[$id])) {
+				$out[] = $student;
+			}
+		}
+		return $out;
 	}
 
 	public function search_staff()
@@ -17470,13 +17526,18 @@ public function getApplicationDocs($id = null)
 				break;
 			}
 		}
-		$data['classes'] = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name,l.id as level_id,
-		f.type,f.abbrev as faculty_code")
+		$data['classes'] = $this->classesWithoutHoliday($classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name,l.id as level_id,
+		f.type,f.abbrev as faculty_code,f.title as faculty_title")
 				->join("departments d", "d.id=classes.department")
 				->join("levels l", "l.id=classes.level")
 				->join("faculty f", "f.id=d.faculty_id")
 				->where("classes.school_id", $school_id)
-				->get()->getResultArray();
+				->where("IFNULL(classes.title,'') NOT LIKE '%Holiday%'", null, false)
+				->where("IFNULL(l.title,'') NOT LIKE '%Holiday%'", null, false)
+				->where("IFNULL(d.title,'') NOT LIKE '%Holiday%'", null, false)
+				->where("IFNULL(d.code,'') NOT LIKE '%Holiday%'", null, false)
+				->where("IFNULL(f.title,'') NOT LIKE '%Holiday%'", null, false)
+				->get()->getResultArray());
 		$data['content'] = view("pages/fees_entry", $data);
 		return view('main', $data);
 	}
@@ -17498,25 +17559,37 @@ public function getApplicationDocs($id = null)
 		}
 
 		$stMdl = new StudentModel();
-		$row = $stMdl->select("
+		$rows = $stMdl->select("
 			students.id, students.regno, students.photo,
 			CONCAT(students.fname,' ',students.lname) AS name,
-			c.id AS class_id, c.title AS class_title,
-			d.code AS dept_code, l.title AS level_name
+			c.id AS class_id, c.title AS class_title, c.title AS title,
+			d.title AS department_name, d.code AS dept_code,
+			l.title AS level_name, f.title AS faculty_title
 		")
 			->join('class_records cr', 'cr.student = students.id AND cr.year = ' . $year, 'INNER')
 			->join('classes c', 'c.id = cr.class', 'INNER')
 			->join('departments d', 'd.id = c.department', 'LEFT')
 			->join('levels l', 'l.id = c.level', 'LEFT')
+			->join('faculty f', 'f.id = d.faculty_id', 'LEFT')
 			->where('students.id', $studentId)
 			->where('students.school_id', $school_id)
 			->where('students.status', 1)
-			->get(1)->getRowArray();
+			->get()->getResultArray();
+
+		$row = null;
+		foreach ($rows as $candidate) {
+			if (!$this->classLooksLikeHoliday($candidate)) {
+				$row = $candidate;
+				break;
+			}
+		}
 
 		if (!$row) {
 			return $this->response->setJSON([
 				'success' => false,
-				'error' => 'Student not found or not enrolled for the selected academic year.',
+				'error' => $rows
+					? 'Holiday classes are not available in Fees Entry.'
+					: 'Student not found or not enrolled for the selected academic year.',
 			]);
 		}
 

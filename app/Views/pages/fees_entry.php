@@ -244,7 +244,7 @@ $(function () {
 			url: '<?= base_url('search_student') ?>',
 			type: 'POST',
 			dataType: 'json',
-			data: { searchTerm: term },
+			data: { searchTerm: term, excludeHoliday: 1, year: $('#select_year').val() },
 			success: function (data) {
 				let html = '';
 				if (!data.length) {
