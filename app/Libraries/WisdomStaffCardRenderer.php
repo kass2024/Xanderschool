@@ -214,7 +214,7 @@ class WisdomStaffCardRenderer
 		$cy = $this->sy(self::HOLE_CY);
 		// Same as Wisdom Rwanda student cards: oversized so the portrait tucks
 		// under the ring. No white cap, and the head is not clipped inside the hole.
-		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 1.12));
+		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 1.04));
 
 		$src = $this->loadImage($path);
 		if (!$src) {
@@ -233,6 +233,7 @@ class WisdomStaffCardRenderer
 		if (!$square) {
 			return;
 		}
+		$square = $this->seatHeadBelowRing($square, $d);
 
 		$r = $d / 2.0;
 		$x0 = $cx - (int) ($d / 2);
@@ -480,6 +481,85 @@ class WisdomStaffCardRenderer
 		imagecopyresampled($im, $src, 0, 0, 0, 0, self::W, self::H, imagesx($src), imagesy($src));
 		imagedestroy($src);
 		return $im;
+	}
+
+	/**
+	 * Keep the whole head inside the ring. The gap is the portrait's own
+	 * backdrop, not a white stripe painted over the hair.
+	 *
+	 * @param resource|\GdImage $square
+	 * @return resource|\GdImage
+	 */
+	private function seatHeadBelowRing($square, int $size)
+	{
+		$scale = 0.94;
+		$draw = (int) max(2, round($size * $scale));
+		$left = (int) max(0, round(($size - $draw) / 2));
+		$top = (int) round($size * 0.055);
+		if ($top + $draw > $size) {
+			$top = max(0, $size - $draw);
+		}
+		$placed = imagecreatetruecolor($size, $size);
+		$fill = $this->backdropColor($square, $placed);
+		imagefill($placed, 0, 0, $fill);
+		imagecopyresampled(
+			$placed,
+			$square,
+			$left,
+			$top,
+			0,
+			0,
+			$draw,
+			$draw,
+			max(1, imagesx($square)),
+			max(1, imagesy($square))
+		);
+		imagedestroy($square);
+		return $placed;
+	}
+
+	/**
+	 * Studio wall color from the portrait edges. Skips dark hair pixels.
+	 *
+	 * @param resource|\GdImage $im
+	 * @param resource|\GdImage $dest
+	 */
+	private function backdropColor($im, $dest): int
+	{
+		$w = max(1, imagesx($im));
+		$h = max(1, imagesy($im));
+		$pts = [
+			[1, 1],
+			[$w - 2, 1],
+			[1, $h - 2],
+			[$w - 2, $h - 2],
+			[(int) ($w * 0.2), 1],
+			[(int) ($w * 0.8), 1],
+		];
+		$rs = 0;
+		$gs = 0;
+		$bs = 0;
+		$n = 0;
+		foreach ($pts as $pt) {
+			$x = max(0, min($w - 1, (int) $pt[0]));
+			$y = max(0, min($h - 1, (int) $pt[1]));
+			$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+			$r = ($rgb >> 16) & 255;
+			$g = ($rgb >> 8) & 255;
+			$b = $rgb & 255;
+			$lum = (0.299 * $r) + (0.587 * $g) + (0.114 * $b);
+			if ($lum < 150) {
+				continue;
+			}
+			$rs += $r;
+			$gs += $g;
+			$bs += $b;
+			$n++;
+		}
+		if ($n < 1) {
+			return imagecolorallocate($dest, 244, 244, 244);
+		}
+		return imagecolorallocate($dest, (int) round($rs / $n), (int) round($gs / $n), (int) round($bs / $n));
 	}
 
 	/**
