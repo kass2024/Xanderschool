@@ -693,20 +693,26 @@ class ProfilePhotoNormalizer
 			return;
 		}
 		$wall = $this->frameWallColor($dst);
-		$minGap = (int) round($h * 0.10);
-		$cx = (int) ($w / 2);
-		$have = 0;
-		for ($y = 0; $y < (int) ($h * 0.45); $y++) {
-			if (!$this->pixelNearWall($dst, $cx, $y, $wall, 48)) {
-				break;
+		// The round mask clips the upper corners, so the crown needs more
+		// than a thin gap or the circle still shaves the sides of the hair.
+		$minGap = (int) round($h * 0.18);
+		$x0 = (int) ($w * 0.18);
+		$x1 = (int) ($w * 0.82);
+		$step = max(1, (int) ($w / 48));
+		$have = $h;
+		for ($y = 0; $y < (int) ($h * 0.5); $y++) {
+			for ($x = $x0; $x <= $x1; $x += $step) {
+				if (!$this->pixelNearWall($dst, $x, $y, $wall, 48)) {
+					$have = $y;
+					break 2;
+				}
 			}
-			$have++;
 		}
 		$shift = $minGap - $have;
 		if ($shift < 2) {
 			return;
 		}
-		$shift = min($shift, (int) round($h * 0.16));
+		$shift = min($shift, (int) round($h * 0.22));
 		$moved = imagecreatetruecolor($w, $h);
 		imagecopy($moved, $dst, 0, $shift, 0, 0, $w, $h - $shift);
 		$fill = imagecolorallocate($moved, $wall[0], $wall[1], $wall[2]);

@@ -1520,7 +1520,7 @@ if (!function_exists('profile_photo_staff_circle_src')) {
 		if (!is_dir($cacheDir)) {
 			@mkdir($cacheDir, 0775, true);
 		}
-		$key = md5($real . '|' . @filemtime($real) . "|staffcircle{$outW}x{$outH}|v2seat25") . '.jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|staffcircle{$outW}x{$outH}|v3hair18") . '.jpg';
 		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
 		if (is_file($cached)) {
 			return '_card_img/' . $key;
