@@ -511,6 +511,7 @@ class TimetableGeneratorService
 		}
 
 		$this->recoverParkedAnpPriority($entries);
+		$this->seatParkedOnEmptySlots($entries);
 		$this->promotePeToLastHour($entries);
 
 		return ['entries' => $entries, 'warnings' => $this->warnings, 'assignments' => $assignments];
@@ -2173,6 +2174,36 @@ class TimetableGeneratorService
 	}
 
 	/**
+	 * Drop a parked lesson into any free period the teacher and class are allowed to use.
+	 *
+	 * @param list<array<string,mixed>> $entries
+	 */
+	private function seatParkedOnEmptySlots(array &$entries): void
+	{
+		if ($this->secondaryCriteria === null) {
+			return;
+		}
+		for ($pass = 0; $pass < 24; $pass++) {
+			$moved = false;
+			foreach ($entries as $i => $entry) {
+				if ((int) ($entry['slot_id'] ?? 0) > 0) {
+					continue;
+				}
+				$classId = (int) ($entry['class_id'] ?? 0);
+				$courseId = (int) ($entry['course_id'] ?? 0);
+				$row = $this->assignmentByClassCourse[$classId . ':' . $courseId] ?? $entry;
+				if ($this->seatParkedPriority($entries, $i, $row, false)) {
+					$moved = true;
+					break;
+				}
+			}
+			if (!$moved) {
+				break;
+			}
+		}
+	}
+
+	/**
 	 * Put parked ANP priority lessons into the class by moving a later course aside.
 	 *
 	 * @param list<array<string,mixed>> $entries
@@ -2212,7 +2243,7 @@ class TimetableGeneratorService
 	 * @param list<array<string,mixed>> $entries
 	 * @param array<string,mixed> $row
 	 */
-	private function seatParkedPriority(array &$entries, int $parkedIndex, array $row): bool
+	private function seatParkedPriority(array &$entries, int $parkedIndex, array $row, bool $displace = true): bool
 	{
 		$entry = $entries[$parkedIndex];
 		$classId = (int) ($entry['class_id'] ?? 0);
@@ -2255,6 +2286,9 @@ class TimetableGeneratorService
 				if ($occIndex === null) {
 					$this->relocateGeneratedEntry($entries, $parkedIndex, $dayNum, $slotId);
 					return true;
+				}
+				if (!$displace) {
+					continue;
 				}
 				$occupant = $entries[$occIndex];
 				$occTitle = $this->entryCourseTitle($occupant);

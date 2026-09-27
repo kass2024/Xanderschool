@@ -391,8 +391,7 @@ class SecondaryTimetableCriteria
 			}
 		}
 		if ($matched === []) {
-			$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
-			return $this->isIzabayoPatience($teacher);
+			return false;
 		}
 		// Place into the school's saved teaching periods only — ignore any leftover times on the rule.
 		return true;
@@ -516,9 +515,11 @@ class SecondaryTimetableCriteria
 			}
 		}
 
-		// ANP priority courses must land on the grid. A narrow named window
-		// (for example Friday morning only) cannot block them.
-		if ($this->isAnpDept($row) && ($this->isPrioritySubject($row) || $this->isAnpMainExtra($row))) {
+		// Olivier’s other ANP courses stay outside his Friday-only note.
+		// Clinical attachment already has its own day. Named availability
+		// for Varlette, Marguerite, Linea and the other teachers is kept.
+		if ($this->isAnpDept($row) && ($this->isPrioritySubject($row) || $this->isAnpMainExtra($row))
+			&& strpos($teacher, 'olivier') !== false) {
 			return true;
 		}
 
@@ -770,6 +771,10 @@ class SecondaryTimetableCriteria
 		if ($clinical !== []) {
 			return $clinical;
 		}
+		$mch = $this->mchCombinePartners($row);
+		if ($mch !== []) {
+			return $mch;
+		}
 		return $this->afterLessonCombinePartners($row);
 	}
 
@@ -799,6 +804,43 @@ class SecondaryTimetableCriteria
 			}
 			$otherLevel = $this->anpLevel($cand);
 			if ($otherLevel !== 'S4' && $otherLevel !== 'S5') {
+				continue;
+			}
+			if (!$this->isSameCombineTeacher($row, $cand)) {
+				continue;
+			}
+			$seen[$cid] = true;
+			$out[] = $cand;
+		}
+		return $out;
+	}
+
+	/**
+	 * S4, S5 and S6 MCH share one clock. Varlette’s Thursday and Friday
+	 * window cannot cover three separate copies of the same 4-period course.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function mchCombinePartners(array $row): array
+	{
+		if (!$this->isAnpDept($row) || !preg_match('/\bmch\b/', $this->courseTitle($row))) {
+			return [];
+		}
+		$level = $this->anpLevel($row);
+		if (!in_array($level, ['S4', 'S5', 'S6'], true)) {
+			return [];
+		}
+		$out = [];
+		$seen = [];
+		foreach ($this->assignmentsByKey as $cand) {
+			$cid = (int) ($cand['class_id'] ?? 0);
+			if ($cid <= 0 || $cid === (int) ($row['class_id'] ?? 0) || isset($seen[$cid])) {
+				continue;
+			}
+			if (!$this->isAnpDept($cand) || !preg_match('/\bmch\b/', $this->courseTitle($cand))) {
+				continue;
+			}
+			if (!in_array($this->anpLevel($cand), ['S4', 'S5', 'S6'], true)) {
 				continue;
 			}
 			if (!$this->isSameCombineTeacher($row, $cand)) {
@@ -1155,16 +1197,17 @@ class SecondaryTimetableCriteria
 		if ($weeklyHours <= 0) {
 			return $fallback;
 		}
-		// Keep doubles (2/day). Never dump a whole week's periods onto one day.
-		if ($this->hasOrderedFillWindows($row)) {
-			return $fallback;
-		}
 		$days = $this->restrictedTeachingDays($row);
 		if ($days === null || $days === []) {
 			return $fallback;
 		}
 		$n = count($days);
 		$pack = (int) ceil($weeklyHours / max(1, $n));
+		// A two- or three-day window has to hold the whole course.
+		// Tuesday 07:00–10:00 is four periods, so the old cap of 3 was too small.
+		if ($n <= 3 || $this->hasOrderedFillWindows($row)) {
+			return $weeklyHours;
+		}
 		return max($fallback, min($pack, 3));
 	}
 
@@ -1221,7 +1264,7 @@ class SecondaryTimetableCriteria
 			['group' => 'Scope', 'title' => 'High school only', 'detail' => 'These locked rules apply to O Level, A Level, TVET and Special. Nursery and primary are never included.'],
 			['group' => 'Day end', 'title' => 'Normal courses', 'detail' => 'Normal courses finish by 15:40 Monday to Thursday. On Friday they finish by 15:00, so 15:00–15:40 is not a normal lesson. Special activities, farming, library, and night periods stay on their own bells.'],
 			['group' => 'Day end', 'title' => 'S4, S5 and S6 ANP', 'detail' => 'These classes teach 07:00–16:20, including 15:40–16:20, Monday to Friday.'],
-			['group' => 'Priority', 'title' => 'Schedule first', 'detail' => 'Clinical attachment, medical pathology, surgical pathology, pharmacology, MCH, fundamentals of nursing, ethics, biology, chemistry, physics, mathematics, and English. Medical and surgical pathology are not taught in S4 ANP. S4 Kinyarwanda is with these main courses. On ANP these lessons are placed even when a teacher’s usual short window is smaller than the course.'],
+			['group' => 'Priority', 'title' => 'Schedule first', 'detail' => 'Clinical attachment, medical pathology, surgical pathology, pharmacology, MCH, fundamentals of nursing, ethics, biology, chemistry, physics, mathematics, and English. Medical and surgical pathology are not taught in S4 ANP. S4 Kinyarwanda is with these main courses. Named teacher availability is kept.'],
 			['group' => 'Priority', 'title' => 'S6 ANP after main courses', 'detail' => 'French, Kinyarwanda, and ICT.'],
 			['group' => 'Priority', 'title' => 'S5 ANP after main courses', 'detail' => 'French, citizenship, Kinyarwanda, and ICT.'],
 			['group' => 'Priority', 'title' => 'S4 ANP after main courses', 'detail' => 'ICT, French, citizenship, and entrepreneurship.'],
@@ -1234,7 +1277,7 @@ class SecondaryTimetableCriteria
 			['group' => 'After lessons', 'title' => 'Farming', 'detail' => 'After lessons (15:40–17:30), never night. Same teacher shares one clock.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
 			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
-			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Linea, Varlette and Marguerite teach ANP in the morning, Tuesday to Thursday.'],
+			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Varlette, Marguerite and Linea teach S4, S5 and S6 ANP only inside the times listed under Windows.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Teachers not named in this document use normal placement and fill from morning periods first.'],
 			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Farming and Library and Clubs also combine when the teacher is the same (each activity keeps its own clock). Different academic subjects or different teachers are never combined.'],
@@ -1243,10 +1286,12 @@ class SecondaryTimetableCriteria
 			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],
 			['group' => 'Windows', 'title' => 'Eric (L3 SOD)', 'detail' => 'Monday and Tuesday 07:00–10:00.'],
 			['group' => 'Windows', 'title' => 'Olivier', 'detail' => 'Friday 07:00–10:00.'],
-			['group' => 'Windows', 'title' => 'Varlette', 'detail' => 'Thursday 09:00–12:00, Friday 08:00–12:00, plus ANP mornings.'],
-			['group' => 'Windows', 'title' => 'Marguerite', 'detail' => 'Monday morning, Wednesday morning, Thursday morning plus one after lunch.'],
-			['group' => 'Windows', 'title' => 'Linea / Linear', 'detail' => 'Thursday 09:20–15:40, Friday 09:20–12:00, plus ANP mornings.'],
-			['group' => 'Windows', 'title' => 'IZABAYO Patience', 'detail' => 'Tuesday before lunch is full (07:00–12:00), Friday after break (10:00–12:00), remaining periods on Sunday.'],
+			['group' => 'Windows', 'title' => 'Varlette', 'detail' => 'Thursday 09:00–12:00 and Friday 08:30–12:00. S4, S5 and S6 MCH share that clock.'],
+			['group' => 'Windows', 'title' => 'Marguerite', 'detail' => 'Monday 07:00–10:00, Wednesday 08:00–10:00, and Thursday 07:00–16:20.'],
+			['group' => 'Windows', 'title' => 'Linea / Linear', 'detail' => 'Thursday 09:00–15:40. Friday 09:20–10:00 is the 09:00–09:40 lesson.'],
+			['group' => 'Windows', 'title' => 'Jean Pierre Bunezero', 'detail' => 'Every weekday 10:40–12:00.'],
+			['group' => 'Windows', 'title' => 'NTAZIKA Elias', 'detail' => 'Management Accounting, every weekday 10:00–12:00.'],
+			['group' => 'Windows', 'title' => 'IZABAYO Patience', 'detail' => 'Taxation: Tuesday 07:00–10:00, then Friday 13:00–15:00.'],
 		];
 		foreach (self::documentCombineGroups() as $group) {
 			$out[] = [
@@ -1718,23 +1763,30 @@ class SecondaryTimetableCriteria
 	{
 		// Day: Mon=0 … Fri=4. Times in minutes from midnight.
 		$vallette = [
-			['day' => 1, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
-			['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
 			['day' => 3, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
-			['day' => 4, 'start' => 8 * 60, 'end' => 12 * 60, 'scope' => null],
+			['day' => 4, 'start' => 8 * 60 + 30, 'end' => 12 * 60, 'scope' => null],
+		];
+		$marguerite = [
+			['day' => 0, 'start' => 7 * 60, 'end' => 10 * 60, 'scope' => null],
+			['day' => 2, 'start' => 8 * 60, 'end' => 10 * 60, 'scope' => null],
+			['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60 + 20, 'scope' => null],
 		];
 		$linear = [
-			['day' => 1, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
-			['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
-			['day' => 3, 'start' => 9 * 60 + 20, 'end' => 15 * 60 + 40, 'scope' => null],
-			['day' => 4, 'start' => 9 * 60 + 20, 'end' => 12 * 60, 'scope' => null],
+			['day' => 3, 'start' => 9 * 60, 'end' => 15 * 60 + 40, 'scope' => null],
+			['day' => 4, 'start' => 9 * 60, 'end' => 9 * 60 + 40, 'scope' => null],
 		];
-		// IZABAYO PATIENCE: Tuesday before lunch full, Friday after break,
-		// remaining periods on Sunday.
+		$midMorning = [];
+		foreach ([0, 1, 2, 3, 4] as $day) {
+			$midMorning[] = ['day' => $day, 'start' => 10 * 60 + 40, 'end' => 12 * 60, 'scope' => null];
+		}
+		$lateMorning = [];
+		foreach ([0, 1, 2, 3, 4] as $day) {
+			$lateMorning[] = ['day' => $day, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null];
+		}
+		// IZABAYO PATIENCE: Tuesday 07:00–10:00, then Friday 13:00–15:00.
 		$patienceWindows = [
-			['day' => 1, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null, 'priority' => 1],
-			['day' => 4, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null, 'priority' => 2],
-			['day' => 6, 'start' => 7 * 60, 'end' => 15 * 60 + 40, 'scope' => null, 'priority' => 3],
+			['day' => 1, 'start' => 7 * 60, 'end' => 10 * 60, 'scope' => null, 'priority' => 1],
+			['day' => 4, 'start' => 13 * 60, 'end' => 15 * 60, 'scope' => null, 'priority' => 2],
 		];
 		return [
 			'innocent' => [
@@ -1756,21 +1808,16 @@ class SecondaryTimetableCriteria
 			'yaliette' => $vallette,
 			'yaliet' => $vallette,
 			'valiet' => $vallette,
-			'margueritte' => [
-				['day' => 0, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
-				['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
-				['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
-			],
-			'marguerite' => [
-				['day' => 0, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
-				['day' => 2, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => null],
-				['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60, 'scope' => null],
-			],
+			'ntabanganyimana' => $vallette,
+			'margueritte' => $marguerite,
+			'marguerite' => $marguerite,
 			'linear' => $linear,
 			'linea' => $linear,
 			'kubahoni' => $linear,
 			'rinea' => $linear,
-			// IZABAYO PATIENCE: Tuesday before lunch, Friday after break, Sunday.
+			'bunezero' => $midMorning,
+			'ntazika' => $lateMorning,
+			// IZABAYO PATIENCE: Tuesday 07:00–10:00, Friday 13:00–15:00.
 			'izabayo patience' => $patienceWindows,
 			'patience izabayo' => $patienceWindows,
 			'izabayo gihanga' => $patienceWindows,
