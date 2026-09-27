@@ -290,7 +290,7 @@ if (!empty($lh['website'])) {
 				break;
 			}
 		}
-		$headRows = $columns === [] ? 1 : (4 + ($hasTopic ? 1 : 0));
+		$headRows = $columns === [] ? 1 : (3 + ($hasTopic ? 1 : 0));
 		?>
 		<div class="ms-scroll">
 			<table class="ms">
@@ -306,11 +306,6 @@ if (!empty($lh['website'])) {
 						<th rowspan="<?= $headRows; ?>">Remark</th>
 					</tr>
 					<?php if ($columns !== []): ?>
-					<tr class="ms-sub">
-						<?php foreach ($columns as $col): ?>
-							<th><span>Type</span><?= esc($col['kind']); ?></th>
-						<?php endforeach; ?>
-					</tr>
 					<tr class="ms-sub">
 						<?php foreach ($columns as $col): ?>
 							<th><span>Date</span><?= esc($col['date_long'] !== '' ? $col['date_long'] : '—'); ?></th>
