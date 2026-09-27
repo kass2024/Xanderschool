@@ -367,6 +367,36 @@
 									</ul>
 								</li>
 								<?php
+							} elseif (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+								?>
+								<li>
+									<a href="javascript:void">
+										<i class="metismenu-icon fa fa-magic"></i>
+										Pedagogical Documents
+										<i class="metismenu-state-icon fa fa-caret-down"></i>
+									</a>
+									<ul class="mm-collapse">
+										<li>
+											<a href="<?= base_url('ped_scheme_of_work'); ?>">
+												<i class="metismenu-icon"></i>
+												Scheme of Work
+											</a>
+										</li>
+										<li>
+											<a href="<?= base_url('ped_session_plan'); ?>">
+												<i class="metismenu-icon"></i>
+												Session Plan
+											</a>
+										</li>
+										<li>
+											<a href="<?= base_url('timetable/mine'); ?>">
+												<i class="metismenu-icon"></i>
+												My timetable
+											</a>
+										</li>
+									</ul>
+								</li>
+								<?php
 							}
 							?>
 

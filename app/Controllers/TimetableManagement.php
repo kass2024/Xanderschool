@@ -40,6 +40,23 @@ class TimetableManagement extends Home
 		}
 	}
 
+	/** 0 = full timetable office. Positive = this lecturer only. -1 = no access. */
+	protected function timetableOwnStaffId(): int
+	{
+		if (function_exists('menu_clearance_allowed') && menu_clearance_allowed('timetable_dashboard')) {
+			return 0;
+		}
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			return (int) $this->session->get('soma_id');
+		}
+		return -1;
+	}
+
+	public function my_timetable()
+	{
+		return $this->teacher_timetable((int) $this->session->get('soma_id'));
+	}
+
 	public function dashboard()
 	{
 		$this->denyMenu('timetable_dashboard');
@@ -2340,11 +2357,22 @@ class TimetableManagement extends Home
 
 	public function teacher_timetable($staffId = 0)
 	{
-		$this->denyMenu('timetable_dashboard');
+		$ownId = $this->timetableOwnStaffId();
+		if ($ownId < 0) {
+			$this->denyMenu('timetable_dashboard');
+		}
+		if ($ownId > 0 && (int) $staffId !== $ownId) {
+			return redirect()->to(site_url('timetable/mine'));
+		}
 		list($schoolId, , $schema) = $this->bootTimetable();
-		$staffId = (int) $staffId;
-		$data = $this->buildGridView($schoolId, $schema, 'teacher', $staffId, true);
+		$staffId = $ownId > 0 ? $ownId : (int) $staffId;
+		$data = $this->buildGridView($schoolId, $schema, 'teacher', $staffId, $ownId === 0);
 		$data['page'] = 'timetable_teacher';
+		$data['timetable_own_only'] = $ownId > 0;
+		if ($ownId > 0) {
+			$data['staffs'] = [];
+			$data['classes'] = [];
+		}
 		$data['content'] = view('pages/timetable/teacher_view', $data);
 		return view('main', $data);
 	}
@@ -2363,10 +2391,17 @@ class TimetableManagement extends Home
 
 	public function print_teacher($staffId = 0)
 	{
-		$this->denyMenu('timetable_dashboard');
+		$ownId = $this->timetableOwnStaffId();
+		if ($ownId < 0) {
+			$this->denyMenu('timetable_dashboard');
+		}
+		if ($ownId > 0 && (int) $staffId !== $ownId) {
+			return redirect()->to(site_url('timetable/print_teacher/' . $ownId));
+		}
 		list($schoolId, , $schema) = $this->bootTimetable();
+		$staffId = $ownId > 0 ? $ownId : (int) $staffId;
 		$data = $this->gridBodyViewData(
-			$this->buildGridView($schoolId, $schema, 'teacher', (int) $staffId, false, false),
+			$this->buildGridView($schoolId, $schema, 'teacher', $staffId, false, false),
 			true
 		);
 		$slug = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $data['title'] ?? 'teacher');

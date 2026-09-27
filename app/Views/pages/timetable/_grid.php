@@ -2,6 +2,7 @@
 
 <div class="tt-page">
 	<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+		<?php if (empty($timetable_own_only)): ?>
 		<div class="tt-live-pick" data-tt-live-pick style="max-width:360px;">
 			<input type="search" class="form-control form-control-sm tt-live-pick-q" placeholder="<?= $mode === 'class' ? 'Search class…' : 'Search teacher…'; ?>" autocomplete="off">
 			<select id="ttEntitySwitch" class="tt-live-pick-select" aria-hidden="true" tabindex="-1">
@@ -26,8 +27,11 @@
 			</select>
 			<div class="tt-live-pick-menu" hidden></div>
 		</div>
+		<?php endif; ?>
 		<div>
+			<?php if (empty($timetable_own_only)): ?>
 			<a href="<?= site_url('timetable/dashboard'); ?>" class="btn btn-sm btn-outline-secondary">Back</a>
+			<?php endif; ?>
 			<a href="<?= site_url($mode === 'class' ? 'timetable/print_class/' . $entity_id : 'timetable/print_teacher/' . $entity_id); ?>" target="_blank" class="btn btn-sm btn-primary">Print / PDF</a>
 		</div>
 	</div>
@@ -35,6 +39,7 @@
 	<?= view('pages/timetable/_grid_body', get_defined_vars()); ?>
 </div>
 
+<?php if (empty($timetable_own_only)): ?>
 <script src="<?= base_url('assets/js/timetable-live-edit.js'); ?>"></script>
 <script src="<?= base_url('assets/js/timetable-live-pick.js'); ?>"></script>
 <script>
@@ -45,3 +50,4 @@ $('#ttEntitySwitch').on('change', function () {
 	window.location = base + '/' + id;
 });
 </script>
+<?php endif; ?>

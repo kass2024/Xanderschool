@@ -320,6 +320,7 @@ $routes->post('timetable/delete_criteria', 'TimetableManagement::delete_criteria
 $routes->get('timetable/generate_status/(:segment)', 'TimetableManagement::generation_status/$1');
 $routes->get('timetable/run_job/(:segment)', 'TimetableManagement::run_job/$1');
 $routes->post('timetable/run_job/(:segment)', 'TimetableManagement::run_job/$1');
+$routes->get('timetable/mine', 'TimetableManagement::my_timetable');
 $routes->get('timetable/class/(:num)', 'TimetableManagement::class_timetable/$1');
 $routes->get('timetable/teacher/(:num)', 'TimetableManagement::teacher_timetable/$1');
 $routes->get('timetable/print_class/(:num)', 'TimetableManagement::print_class/$1');

@@ -222,6 +222,78 @@ if (!function_exists('menu_clearance_group_visible')) {
 		return false;
 	}
 }
+
+/**
+ * Classes and courses this staff member lectures in the active academic year.
+ *
+ * @return array{class_ids: int[], course_ids: int[]}
+ */
+if (!function_exists('staff_assigned_course_scope')) {
+	function staff_assigned_course_scope($staffId = null, $schoolId = null, $yearId = null)
+	{
+		static $cache = [];
+		$staffId = (int) ($staffId ?? ($_SESSION['soma_id'] ?? 0));
+		$schoolId = (int) ($schoolId ?? ($_SESSION['soma_school_id'] ?? 0));
+		$yearId = (int) ($yearId ?? ($_SESSION['soma_academics_year'] ?? 0));
+		$key = $staffId . ':' . $schoolId . ':' . $yearId;
+		if (isset($cache[$key])) {
+			return $cache[$key];
+		}
+		$empty = ['class_ids' => [], 'course_ids' => []];
+		if ($staffId < 1 || $schoolId < 1) {
+			$cache[$key] = $empty;
+			return $empty;
+		}
+		$db = \Config\Database::connect();
+		$builder = $db->table('course_records cr')
+			->select('cr.class, cr.course')
+			->join('classes cl', 'cl.id = cr.class')
+			->where('cr.lecturer', $staffId)
+			->where('cl.school_id', $schoolId);
+		if ($yearId > 0) {
+			$builder->where('cr.year', $yearId);
+		}
+		$rows = $builder->get()->getResultArray();
+		$classes = [];
+		$courses = [];
+		foreach ($rows as $row) {
+			$classes[(int) ($row['class'] ?? 0)] = true;
+			$courses[(int) ($row['course'] ?? 0)] = true;
+		}
+		unset($classes[0], $courses[0]);
+		$cache[$key] = [
+			'class_ids' => array_map('intval', array_keys($classes)),
+			'course_ids' => array_map('intval', array_keys($courses)),
+		];
+		return $cache[$key];
+	}
+}
+
+if (!function_exists('staff_has_assigned_course')) {
+	function staff_has_assigned_course()
+	{
+		$scope = staff_assigned_course_scope();
+		return $scope['course_ids'] !== [];
+	}
+}
+
+/**
+ * Course lecturers who are not academic managers see only their own
+ * timetable, scheme of work, and lesson plans. Analysis stays hidden.
+ */
+if (!function_exists('pedagogical_own_work_only')) {
+	function pedagogical_own_work_only()
+	{
+		if (!staff_has_assigned_course()) {
+			return false;
+		}
+		if (menu_clearance_allowed('ped_analyse') || menu_clearance_allowed('timetable_dashboard')) {
+			return false;
+		}
+		return true;
+	}
+}
+
 if (!function_exists('_is_allowed')) {
 	function _is_allowed($allowed)
 	{

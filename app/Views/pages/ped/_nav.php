@@ -28,10 +28,16 @@ $sessionLabel = $hasReb ? '3. Lesson Plan' : '3. Session Plan';
 </style>
 <div class="ped-hero">
 	<h3><i class="fa fa-magic"></i> <?= esc($title ?? 'Pedagogical Documents'); ?></h3>
-	<p><?= esc($subtitle ?? ''); ?> · Year: <b><?= esc($yearTitle); ?></b></p>
+	<?php if (!empty(trim((string) ($subtitle ?? '')))): ?>
+		<p><?= esc($subtitle); ?> · Year: <b><?= esc($yearTitle); ?></b></p>
+	<?php else: ?>
+		<p>Year: <b><?= esc($yearTitle); ?></b></p>
+	<?php endif; ?>
 </div>
 <div class="ped-tabs">
+	<?php if (empty($ped_own_only)) { ?>
 	<a class="<?= $section === 'analyse' ? 'is-on' : ''; ?>" href="<?= base_url('ped_analyse'); ?>"><?= esc($analyseLabel); ?></a>
-	<a class="<?= $section === 'scheme' ? 'is-on' : ''; ?>" href="<?= base_url('ped_scheme_of_work'); ?>">2. Scheme of Work</a>
-	<a class="<?= $section === 'session' ? 'is-on' : ''; ?>" href="<?= base_url('ped_session_plan'); ?>"><?= esc($sessionLabel); ?></a>
+	<?php } ?>
+	<a class="<?= $section === 'scheme' ? 'is-on' : ''; ?>" href="<?= base_url('ped_scheme_of_work'); ?>"><?= empty($ped_own_only) ? '2. Scheme of Work' : 'Scheme of Work'; ?></a>
+	<a class="<?= $section === 'session' ? 'is-on' : ''; ?>" href="<?= base_url('ped_session_plan'); ?>"><?= empty($ped_own_only) ? esc($sessionLabel) : ($hasReb ? 'Lesson Plan' : 'Session Plan'); ?></a>
 </div>

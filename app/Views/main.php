@@ -521,7 +521,10 @@
 							</li>
 							<?php } ?>
 
-							<?php if (menu_clearance_group_visible('pedagogical')) { ?>
+							<?php
+							$pedOwnMenu = function_exists('pedagogical_own_work_only') && pedagogical_own_work_only();
+							$showPedMenu = menu_clearance_group_visible('pedagogical') || $pedOwnMenu;
+							if ($showPedMenu) { ?>
 								<li>
 									<a href="javascript:void">
 										<i class="metismenu-icon fa fa-magic"></i>
@@ -537,7 +540,7 @@
 											</a>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('ped_scheme_of_work')) { ?>
+										<?php if (menu_clearance_allowed('ped_scheme_of_work') || $pedOwnMenu) { ?>
 										<li>
 											<a href="<?= base_url('ped_scheme_of_work'); ?>">
 												<i class="metismenu-icon"></i>
@@ -545,7 +548,7 @@
 											</a>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('ped_session_plan')) { ?>
+										<?php if (menu_clearance_allowed('ped_session_plan') || $pedOwnMenu) { ?>
 										<li>
 											<a href="<?= base_url('ped_session_plan'); ?>">
 												<i class="metismenu-icon"></i>
@@ -558,6 +561,13 @@
 											<a href="<?= base_url('timetable/dashboard'); ?>">
 												<i class="metismenu-icon"></i>
 												Timetable Management
+											</a>
+										</li>
+										<?php } elseif ($pedOwnMenu) { ?>
+										<li>
+											<a href="<?= base_url('timetable/mine'); ?>">
+												<i class="metismenu-icon"></i>
+												My timetable
 											</a>
 										</li>
 										<?php } ?>

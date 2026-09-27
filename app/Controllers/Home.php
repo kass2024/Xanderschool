@@ -3682,10 +3682,61 @@ public function testEmail()
 	private function requireAcademicPlanAccess(): void
 	{
 		$this->_preset(...$this->academicPlanPosts());
-		if (!_is_allowed($this->academicPlanPosts())) {
-			header('location: ' . base_url('dashboard'));
-			die();
+		if (_is_allowed($this->academicPlanPosts())) {
+			return;
 		}
+		if (function_exists('staff_has_assigned_course') && staff_has_assigned_course()) {
+			return;
+		}
+		header('location: ' . base_url('dashboard'));
+		die();
+	}
+
+	/** Course lecturers do not run syllabus / curriculum analysis. */
+	private function rejectOwnStaffAnalysis()
+	{
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			return $this->response->setJSON(['error' => 'Analysis is managed by the academic office.']);
+		}
+		return null;
+	}
+
+	private function ownAcademicPlanMessage(?array $row): ?string
+	{
+		if (!function_exists('pedagogical_own_work_only') || !pedagogical_own_work_only()) {
+			return null;
+		}
+		if (!$row) {
+			return 'Not found';
+		}
+		$staffId = (int) $this->session->get('soma_id');
+		$scope = staff_assigned_course_scope($staffId);
+		$classId = (int) ($row['class_id'] ?? 0);
+		$courseId = (int) ($row['course_id'] ?? 0);
+		$lecturerId = (int) ($row['lecturer_id'] ?? 0);
+		$ownsClass = $classId === 0 || in_array($classId, $scope['class_ids'], true);
+		if ($courseId > 0 && in_array($courseId, $scope['course_ids'], true) && $ownsClass) {
+			return null;
+		}
+		if ($lecturerId === $staffId && $ownsClass && ($courseId === 0 || in_array($courseId, $scope['course_ids'], true))) {
+			return null;
+		}
+		return 'You can only open your own scheme of work and lesson plans.';
+	}
+
+	private function ownClassCourseMessage(int $classId, int $courseId): ?string
+	{
+		if (!function_exists('pedagogical_own_work_only') || !pedagogical_own_work_only()) {
+			return null;
+		}
+		$scope = staff_assigned_course_scope();
+		if ($classId > 0 && !in_array($classId, $scope['class_ids'], true)) {
+			return 'You can only work on your own classes.';
+		}
+		if ($courseId <= 0 || !in_array($courseId, $scope['course_ids'], true)) {
+			return 'You can only work on your own courses.';
+		}
+		return null;
 	}
 
 	private function ensureCoursesMetaSchema(): void
@@ -3943,6 +3994,9 @@ public function testEmail()
 
 	public function ped_analyse()
 	{
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			return redirect()->to(base_url('ped_scheme_of_work'));
+		}
 		$hasReb = $this->schoolHasRebClasses();
 		$title = $hasReb ? 'Analyse Syllabus & Weeks breakdown' : 'Analyse Curriculum & Chronogram';
 		return $this->renderPedagogicalPage('analyse', $title, '');
@@ -4036,6 +4090,59 @@ public function testEmail()
 			];
 		}
 		$data['analysis_cache'] = $cacheByClass;
+		$data['ped_own_only'] = false;
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			$data['ped_own_only'] = true;
+			$scope = staff_assigned_course_scope();
+			$classIds = $scope['class_ids'];
+			$courseIds = $scope['course_ids'];
+			$staffId = (int) $this->session->get('soma_id');
+			$data['classes'] = array_values(array_filter($data['classes'], static function ($c) use ($classIds) {
+				return in_array((int) ($c['id'] ?? 0), $classIds, true);
+			}));
+			$data['pedagogical_docs'] = array_values(array_filter($data['pedagogical_docs'], static function ($d) use ($classIds) {
+				return in_array((int) ($d['class_id'] ?? 0), $classIds, true);
+			}));
+			if ($yearId > 0 && $classIds !== []) {
+				$allPlans = $planMdl->where('school_id', $schoolId)
+					->where('academic_year', $yearId)
+					->whereIn('class_id', $classIds)
+					->orderBy('id', 'DESC')
+					->findAll(300);
+				$allPlans = array_values(array_filter($allPlans, function ($p) {
+					return $this->ownAcademicPlanMessage($p) === null;
+				}));
+			} else {
+				$allPlans = [];
+			}
+			$data['saved_plans'] = $allPlans;
+			$data['scheme_plans'] = array_values(array_filter($allPlans, static function ($p) {
+				return ($p['plan_type'] ?? '') === 'scheme_of_work';
+			}));
+			$data['session_plans'] = array_values(array_filter($allPlans, static function ($p) {
+				return in_array($p['plan_type'] ?? '', ['session_plan', 'lesson_plan'], true);
+			}));
+			foreach ($cacheByClass as $cid => $row) {
+				if (!in_array((int) $cid, $classIds, true)) {
+					unset($cacheByClass[$cid]);
+					continue;
+				}
+				$modules = array_values(array_filter($row['modules'] ?? [], static function ($m) use ($courseIds, $staffId) {
+					$courseId = (int) ($m['matched_course_id'] ?? 0);
+					if ($courseId > 0) {
+						return in_array($courseId, $courseIds, true);
+					}
+					$teacherId = (int) ($m['teacher_id'] ?? 0);
+					return $teacherId > 0 && $teacherId === $staffId;
+				}));
+				$row['modules'] = $modules;
+				$row['module_count'] = count($modules);
+				$row['has_cache'] = $modules !== [];
+				unset($row['analysis']);
+				$cacheByClass[$cid] = $row;
+			}
+			$data['analysis_cache'] = $cacheByClass;
+		}
 		$data['ped_section'] = $section;
 
 		$data['title'] = $title;
@@ -4072,6 +4179,12 @@ public function testEmail()
 				->groupBy('courses.id')
 				->get()->getResultArray();
 		}
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			$allowed = array_flip(staff_assigned_course_scope()['course_ids']);
+			$courses = array_values(array_filter($courses, static function ($c) use ($allowed) {
+				return isset($allowed[(int) ($c['id'] ?? 0)]);
+			}));
+		}
 		return [
 			'school' => $school ?: [],
 			'class' => $class ?: [],
@@ -4096,6 +4209,9 @@ public function testEmail()
 	public function ai_analyze_curriculum()
 	{
 		$this->requireAcademicPlanAccess();
+		if ($denied = $this->rejectOwnStaffAnalysis()) {
+			return $denied;
+		}
 		$this->ensureAcademicPlansSchema();
 		$this->ensurePedagogicalDocsSchema();
 		@ini_set('max_execution_time', '0');
@@ -4135,6 +4251,9 @@ public function testEmail()
 	public function ai_analyze_progress()
 	{
 		$this->requireAcademicPlanAccess();
+		if ($denied = $this->rejectOwnStaffAnalysis()) {
+			return $denied;
+		}
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$classId = (int) ($this->request->getGet('class_id') ?: $this->request->getPost('class_id'));
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
@@ -4159,6 +4278,9 @@ public function testEmail()
 	public function ai_analysis_preview()
 	{
 		$this->requireAcademicPlanAccess();
+		if ($denied = $this->rejectOwnStaffAnalysis()) {
+			return $denied;
+		}
 		$this->ensurePedagogicalDocsSchema();
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$classId = (int) ($this->request->getGet('class_id') ?: $this->request->getPost('class_id'));
@@ -4218,6 +4340,9 @@ public function testEmail()
 	public function ai_analyze_queue()
 	{
 		$this->requireAcademicPlanAccess();
+		if ($denied = $this->rejectOwnStaffAnalysis()) {
+			return $denied;
+		}
 		$this->ensureAcademicPlansSchema();
 		$this->ensurePedagogicalDocsSchema();
 		$schoolId = (int) $this->session->get('soma_school_id');
@@ -4325,6 +4450,9 @@ public function testEmail()
 	public function ai_analyze_queue_status()
 	{
 		$this->requireAcademicPlanAccess();
+		if ($denied = $this->rejectOwnStaffAnalysis()) {
+			return $denied;
+		}
 		$this->ensureAcademicPlansSchema();
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$batchId = trim((string) ($this->request->getGet('batch_id') ?: $this->request->getPost('batch_id')));
@@ -4472,6 +4600,9 @@ public function testEmail()
 	public function ai_analyze_queue_process()
 	{
 		$this->requireAcademicPlanAccess();
+		if ($denied = $this->rejectOwnStaffAnalysis()) {
+			return $denied;
+		}
 		if (session_status() === PHP_SESSION_ACTIVE) {
 			session_write_close();
 		}
@@ -4975,17 +5106,45 @@ public function testEmail()
 		if (!is_array($module) || empty($module)) {
 			return $this->response->setJSON(['error' => 'Module payload required']);
 		}
+		$courseId = (int) ($module['matched_course_id'] ?? 0);
+		$postedTeacherId = (int) ($module['teacher_id'] ?? 0);
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			if ($courseId > 0) {
+				if ($msg = $this->ownClassCourseMessage($classId, $courseId)) {
+					return $this->response->setJSON(['error' => $msg]);
+				}
+			} else {
+				$scope = staff_assigned_course_scope();
+				if ($postedTeacherId !== (int) $this->session->get('soma_id') || !in_array($classId, $scope['class_ids'], true)) {
+					return $this->response->setJSON(['error' => 'You can only work on your own courses.']);
+				}
+			}
+		}
 
 		$ctx = $this->buildAcademicAiContext($schoolId, $classId, $yearId);
 		$cache = (new AcademicAiAnalysisModel())->where('school_id', $schoolId)->where('class_id', $classId)->where('academic_year', $yearId)->first();
 		$analysis = $cache ? json_decode($cache['analysis_json'] ?? '', true) : [];
 		$programType = (string) ($analysis['program_type'] ?? (((int)($ctx['class']['faculty_type'] ?? 1) === 2) ? 'reb' : 'tvet'));
 		$chrono = is_array($analysis) ? ($analysis['chronogram'] ?? null) : null;
+		$ownCourses = null;
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			$ownCourses = array_flip(staff_assigned_course_scope()['course_ids']);
+		}
 		// Prefer full module (with chronogram_slots) from saved analysis
 		if (is_array($analysis) && !empty($analysis['modules']) && !empty($module['code'])) {
 			$code = strtoupper(trim((string) $module['code']));
 			foreach ($analysis['modules'] as $am) {
 				if (strcasecmp((string) ($am['code'] ?? ''), $code) === 0) {
+					if ($ownCourses !== null) {
+						$amCourse = (int) ($am['matched_course_id'] ?? 0);
+						$amTeacher = (int) ($am['teacher_id'] ?? 0);
+						if ($amCourse > 0 && !isset($ownCourses[$amCourse])) {
+							continue;
+						}
+						if ($amCourse <= 0 && $amTeacher !== (int) $this->session->get('soma_id')) {
+							continue;
+						}
+					}
 					$module = array_merge($am, $module);
 					if (empty($module['chronogram_slots']) && !empty($am['chronogram_slots'])) {
 						$module['chronogram_slots'] = $am['chronogram_slots'];
@@ -4999,6 +5158,9 @@ public function testEmail()
 		$courseId = (int) ($module['matched_course_id'] ?? 0) ?: null;
 		$moduleCode = strtoupper(trim((string) ($module['code'] ?? '')));
 		$existing = $this->findCachedSchemeOfWork($planMdl, $schoolId, $classId, $yearId, $courseId, $moduleCode);
+		if ($existing && $this->ownAcademicPlanMessage($existing)) {
+			$existing = null;
+		}
 		if ($existing && !$force) {
 			$json = json_decode($existing['content_json'] ?? '', true) ?: [];
 			$layout = (string) (($json['meta']['layout'] ?? '') ?: '');
@@ -5026,6 +5188,9 @@ public function testEmail()
 		}
 
 		$lecturerId = (int) ($module['teacher_id'] ?? 0) ?: null;
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			$lecturerId = (int) $this->session->get('soma_id');
+		}
 		// Replace previous SOW for same class+course/code+year
 		if ($existing) {
 			$planMdl->delete((int) $existing['id']);
@@ -5106,6 +5271,10 @@ public function testEmail()
 		if (!$row) {
 			return redirect()->to(base_url('ped_scheme_of_work'));
 		}
+		if ($msg = $this->ownAcademicPlanMessage($row)) {
+			$this->session->setFlashdata('error', $msg);
+			return redirect()->to(base_url('ped_scheme_of_work'));
+		}
 		$data = $this->data;
 		$data['title'] = 'Edit Scheme of Work';
 		$data['subtitle'] = $row['title'] ?? '';
@@ -5115,6 +5284,7 @@ public function testEmail()
 		$data['content'] = view('pages/ped/edit_plan', [
 			'plan' => $row,
 			'ped_section' => 'scheme',
+			'ped_own_only' => function_exists('pedagogical_own_work_only') && pedagogical_own_work_only(),
 			'title' => $data['title'],
 			'subtitle' => $data['subtitle'],
 		]);
@@ -5133,6 +5303,9 @@ public function testEmail()
 		$row = $mdl->where('id', $id)->where('school_id', $schoolId)->first();
 		if (!$row) {
 			return $this->response->setJSON(['error' => 'Plan not found']);
+		}
+		if ($msg = $this->ownAcademicPlanMessage($row)) {
+			return $this->response->setJSON(['error' => $msg]);
 		}
 		if (trim(strip_tags($html)) === '') {
 			return $this->response->setJSON(['error' => 'Content cannot be empty']);
@@ -5172,6 +5345,9 @@ public function testEmail()
 		if (!$row) {
 			return $this->response->setStatusCode(404)->setBody('Plan not found');
 		}
+		if ($msg = $this->ownAcademicPlanMessage($row)) {
+			return $this->response->setStatusCode(403)->setBody($msg);
+		}
 		$html = (string) ($row['content_html'] ?? '');
 		if ($html === '') {
 			$html = '<p>Empty plan</p>';
@@ -5192,6 +5368,9 @@ public function testEmail()
 		if (!$row) {
 			return $this->response->setStatusCode(404)->setBody('Plan not found');
 		}
+		if ($msg = $this->ownAcademicPlanMessage($row)) {
+			return $this->response->setStatusCode(403)->setBody($msg);
+		}
 		$html = (string) ($row['content_html'] ?? '');
 		$name = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $row['title'] ?? 'plan') . '.doc';
 		return $this->response
@@ -5208,6 +5387,9 @@ public function testEmail()
 		$row = (new AcademicPlanModel())->where('id', (int) $id)->where('school_id', $schoolId)->first();
 		if (!$row) {
 			return $this->response->setStatusCode(404)->setBody('Plan not found');
+		}
+		if ($msg = $this->ownAcademicPlanMessage($row)) {
+			return $this->response->setStatusCode(403)->setBody($msg);
 		}
 		$html = (string) ($row['content_html'] ?? '');
 		if ($html === '') {
@@ -5258,6 +5440,13 @@ public function testEmail()
 		if (!$scheme) {
 			return $this->response->setJSON(['error' => 'Generate a Scheme of Work for this course first']);
 		}
+		if ($msg = $this->ownAcademicPlanMessage($scheme)) {
+			return $this->response->setJSON(['error' => $msg]);
+		}
+		$schemeCourseId = (int) ($scheme['course_id'] ?? 0);
+		if ($schemeCourseId > 0 && ($msg = $this->ownClassCourseMessage((int) ($scheme['class_id'] ?? $classId), $schemeCourseId))) {
+			return $this->response->setJSON(['error' => $msg]);
+		}
 		$schemeJson = json_decode($scheme['content_json'] ?? '', true) ?: [];
 		$ctx = $this->buildAcademicAiContext($schoolId, $classId, $yearId);
 		$programType = (string) ($scheme['program_type'] ?: 'tvet');
@@ -5280,7 +5469,9 @@ public function testEmail()
 			'week_number' => (int) ($topic['week'] ?? 0) ?: null,
 			'term' => (int) ($topic['term'] ?? 0) ?: null,
 			'topic' => $topic['topic'] ?? ($topic['ic_title'] ?? ''),
-			'lecturer_id' => $scheme['lecturer_id'],
+			'lecturer_id' => (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only())
+				? (int) $this->session->get('soma_id')
+				: $scheme['lecturer_id'],
 			'content_html' => $result['html'],
 			'content_json' => json_encode($result['json'], JSON_UNESCAPED_UNICODE),
 			'created_by' => (int) $this->session->get('soma_id'),
@@ -5305,6 +5496,9 @@ public function testEmail()
 		$row = (new AcademicPlanModel())->where('id', $schemeId)->where('school_id', $schoolId)->where('plan_type', 'scheme_of_work')->first();
 		if (!$row) {
 			return $this->response->setJSON(['error' => 'Scheme not found', 'topics' => []]);
+		}
+		if ($msg = $this->ownAcademicPlanMessage($row)) {
+			return $this->response->setJSON(['error' => $msg, 'topics' => []]);
 		}
 		$json = json_decode($row['content_json'] ?? '', true) ?: [];
 		return $this->response->setJSON(['topics' => $json['topics_for_sessions'] ?? [], 'scheme' => ['id' => $row['id'], 'title' => $row['title'], 'program_type' => $row['program_type']]]);
