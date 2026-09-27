@@ -158,8 +158,8 @@ if (!empty($lh['website'])) {
 		table.ms td.name, table.ms th.name { text-align: left; min-width: 170px; }
 		table.ms td.name { font-weight: 700; color: var(--navy); }
 		table.ms .reg { display: block; margin-top: 1px; color: var(--muted); font-size: 10px; font-weight: 600; }
-		table.ms .q-name, table.ms .q-date, table.ms .q-max { display: block; line-height: 1.2; }
-		table.ms .q-date, table.ms .q-max { font-weight: 600; font-size: .86em; color: #dbe7f5; }
+		table.ms tr.ms-sub th { background: #1c4d86; font-weight: 600; font-size: .92em; padding: 3px 2px; }
+		table.ms tr.ms-sub th span { display: block; color: #d6e4f5; font-size: .78em; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 		table.ms td.total { background: #e7f6ee !important; font-weight: 800; }
 		table.ms td.pct { background: #eef6ff !important; font-weight: 800; }
 		table.ms td.remark { font-weight: 800; }
@@ -282,23 +282,53 @@ if (!empty($lh['website'])) {
 			<div class="ms-fact"><span>Teacher</span><strong><?= esc($sheet['teacher'] ?? ''); ?></strong></div>
 		</div>
 
+		<?php
+		$hasTopic = false;
+		foreach ($columns as $col) {
+			if (trim((string) ($col['topic'] ?? '')) !== '') {
+				$hasTopic = true;
+				break;
+			}
+		}
+		$headRows = $columns === [] ? 1 : (4 + ($hasTopic ? 1 : 0));
+		?>
 		<div class="ms-scroll">
 			<table class="ms">
 				<thead>
 					<tr>
-						<th class="num sticky">No.</th>
-						<th class="name sticky-2">Student</th>
+						<th class="num sticky" rowspan="<?= $headRows; ?>">No.</th>
+						<th class="name sticky-2" rowspan="<?= $headRows; ?>">Student</th>
 						<?php foreach ($columns as $col): ?>
-							<th>
-								<span class="q-name"><?= esc($col['label']); ?></span>
-								<?php if ($col['date_short'] !== ''): ?><span class="q-date"><?= esc($col['date_short']); ?></span><?php endif; ?>
-								<span class="q-max">/<?= (int) $col['max']; ?></span>
-							</th>
+							<th><?= esc($col['label']); ?></th>
 						<?php endforeach; ?>
-						<th>Total<?= $maxTotal > 0 ? '<span class="q-max">/' . $maxTotal . '</span>' : ''; ?></th>
-						<th>CAT %</th>
-						<th>Remark</th>
+						<th rowspan="<?= $headRows; ?>">Total<?= $maxTotal > 0 ? '<br>/' . $maxTotal : ''; ?></th>
+						<th rowspan="<?= $headRows; ?>">CAT %</th>
+						<th rowspan="<?= $headRows; ?>">Remark</th>
 					</tr>
+					<?php if ($columns !== []): ?>
+					<tr class="ms-sub">
+						<?php foreach ($columns as $col): ?>
+							<th><span>Type</span><?= esc($col['kind']); ?></th>
+						<?php endforeach; ?>
+					</tr>
+					<tr class="ms-sub">
+						<?php foreach ($columns as $col): ?>
+							<th><span>Date</span><?= esc($col['date_long'] !== '' ? $col['date_long'] : '—'); ?></th>
+						<?php endforeach; ?>
+					</tr>
+					<tr class="ms-sub">
+						<?php foreach ($columns as $col): ?>
+							<th><span>Max</span>/<?= (int) $col['max']; ?></th>
+						<?php endforeach; ?>
+					</tr>
+					<?php if ($hasTopic): ?>
+					<tr class="ms-sub">
+						<?php foreach ($columns as $col): ?>
+							<th><span>Topic</span><?= esc(trim((string) $col['topic']) !== '' ? $col['topic'] : '—'); ?></th>
+						<?php endforeach; ?>
+					</tr>
+					<?php endif; ?>
+					<?php endif; ?>
 				</thead>
 				<tbody>
 					<?php if ($students === []): ?>
@@ -321,39 +351,9 @@ if (!empty($lh['website'])) {
 		</div>
 		<?php if ($columns === []): ?>
 			<p class="ms-note">No marks have been saved for this course in the selected term.</p>
+		<?php else: ?>
+			<p class="ms-note">CAT % is the total of marks obtained across these assessments<?= $maxTotal > 0 ? ' / ' . $maxTotal : ''; ?> &times; 100. A blank cell means the student has no saved mark for that assessment.</p>
 		<?php endif; ?>
-
-		<h3 class="ms-section">Assessments</h3>
-		<div class="ms-scroll">
-			<table class="ms">
-				<thead>
-					<tr>
-						<th>Assessment</th>
-						<th>Type</th>
-						<th>Date given</th>
-						<th>Due / test date</th>
-						<th>Max mark</th>
-						<th>Topic / coverage</th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php if ($columns === []): ?>
-						<tr><td class="name" colspan="6">No assessments recorded.</td></tr>
-					<?php endif; ?>
-					<?php foreach ($columns as $col): ?>
-						<tr>
-							<td class="name"><?= esc($col['label']); ?></td>
-							<td><?= esc($col['kind']); ?></td>
-							<td><?= esc($col['date_long']); ?></td>
-							<td><?= esc($col['date_long']); ?></td>
-							<td><?= (int) $col['max']; ?></td>
-							<td class="name"><?= esc($col['topic'] !== '' ? $col['topic'] : '—'); ?></td>
-						</tr>
-					<?php endforeach; ?>
-				</tbody>
-			</table>
-		</div>
-		<p class="ms-note">CAT % is the total of marks obtained across the assessments above<?= $maxTotal > 0 ? ' / ' . $maxTotal : ''; ?> &times; 100. A blank cell means the student has no saved mark for that assessment.</p>
 
 		<div class="ms-sign">
 			<div><span>Teacher signature</span><b class="ms-line"></b></div>
