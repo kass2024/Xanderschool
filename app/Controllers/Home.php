@@ -10109,7 +10109,7 @@ public function attendanceCard()
 				//filter class by teacher if is not a school academic leader
 				$builder->where("cr.lecturer", $this->session->get("soma_id"));
 			}
-			$classes = $builder->get()->getResultArray();
+			$classes = $this->classesWithoutHoliday($builder->get()->getResultArray());
 			echo "<option selected disabled>" . lang("app.selectClass") . "</option>";
 			foreach ($classes as $classe) {
 				$lecturer = htmlspecialchars(trim((string) ($classe['lecturer_name'] ?? '')), ENT_QUOTES);
