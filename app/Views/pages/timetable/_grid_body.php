@@ -72,6 +72,60 @@ foreach ($grid ?? [] as $scanRow) {
 		</div>
 	<?php endif; ?>
 
+	<?php if (($mode ?? '') === 'teacher' && !empty($period_counter)):
+		$assignedPeriods = (int) ($period_counter['periods'] ?? 0);
+		$onTimetable = (int) ($period_counter['on_timetable'] ?? 0);
+		$periodsMatch = $onTimetable === $assignedPeriods;
+	?>
+		<div class="tt-period-counter">
+			<div class="tt-period-counter-total">
+				<span class="tt-period-counter-num"><?= $assignedPeriods ?></span>
+				<span class="tt-period-counter-label">periods / week</span>
+			</div>
+			<div class="tt-period-counter-note">
+				Same total as Manage Course and the staff course PDF.
+				<?php if ($periodsMatch): ?>
+					<span class="tt-period-match">All <?= $assignedPeriods ?> are on this timetable.</span>
+				<?php else: ?>
+					<span class="tt-period-short"><?= $onTimetable ?> on this timetable, <?= $assignedPeriods - $onTimetable ?> still listed below.</span>
+				<?php endif; ?>
+			</div>
+			<table class="tt-period-table">
+				<thead>
+				<tr>
+					<th>Class</th>
+					<th>Course</th>
+					<th>Manage Course</th>
+					<th>On timetable</th>
+				</tr>
+				</thead>
+				<tbody>
+				<?php foreach ($period_counter['courses'] ?? [] as $courseLine):
+					$need = (int) ($courseLine['periods'] ?? 0);
+					$have = (int) ($courseLine['on_timetable'] ?? 0);
+				?>
+					<tr class="<?= $have === $need ? 'tt-period-ok' : 'tt-period-gap'; ?>">
+						<td><?= esc((string) ($courseLine['class'] ?? '')) ?></td>
+						<td>
+							<?= esc((string) ($courseLine['title'] ?? '')) ?>
+							<?php if (!empty($courseLine['note'])): ?>
+								<div class="tt-period-line-note"><?= esc((string) $courseLine['note']) ?></div>
+							<?php endif; ?>
+						</td>
+						<td><?= $need ?></td>
+						<td><?= $have ?></td>
+					</tr>
+				<?php endforeach; ?>
+				<tr class="tt-period-sum">
+					<td colspan="2">Total weekly periods</td>
+					<td><?= $assignedPeriods ?></td>
+					<td><?= $onTimetable ?></td>
+				</tr>
+				</tbody>
+			</table>
+		</div>
+	<?php endif; ?>
+
 	<?php if (empty($schedule)): ?>
 		<div class="alert alert-warning">No timetable for this term. <a href="<?= site_url('timetable/dashboard'); ?>">Generate one</a>.</div>
 	<?php else: ?>

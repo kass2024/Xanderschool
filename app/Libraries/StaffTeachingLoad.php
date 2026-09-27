@@ -310,6 +310,158 @@ class StaffTeachingLoad
 		return $out;
 	}
 
+	/**
+	 * Weekly periods for one teacher, counted the same way as Manage Course and the staff course PDF.
+	 * Combined classes share one total. Each line also says how many of those periods are on the timetable.
+	 *
+	 * @return array{periods:int,on_timetable:int,courses:list<array<string,mixed>>}|null
+	 */
+	public static function counterForTeacher(int $schoolId, int $year, int $term, int $staffId, int $scheduleId): ?array
+	{
+		if ($schoolId <= 0 || $year <= 0 || $staffId <= 0) {
+			return null;
+		}
+
+		$db = Database::connect();
+		$builder = $db->table('course_records cr')
+			->select('cr.course AS course_id, cr.lecturer, cr.class AS class_id,
+				c.title AS course_title, c.credit,
+				cl.title AS class_title, l.title AS level_name,
+				d.code AS dept_code, d.title AS dept_title')
+			->join('courses c', 'c.id = cr.course')
+			->join('classes cl', 'cl.id = cr.class')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->where('cl.school_id', $schoolId)
+			->where('cr.year', $year)
+			->where('cr.lecturer', $staffId);
+		if ($term > 0) {
+			$builder->where("find_in_set({$term}, cr.term) > 0", null, false);
+		}
+		$rows = $builder->get()->getResultArray();
+		if ($rows === []) {
+			return ['periods' => 0, 'on_timetable' => 0, 'courses' => []];
+		}
+
+		$criteria = new SecondaryTimetableCriteria();
+		$criteria->hydrateFromAssignments($rows);
+		$lines = [];
+		$pending = [];
+		foreach ($rows as $row) {
+			$label = TimetableClassLabel::fromRow($row);
+			$title = trim((string) ($row['course_title'] ?? ''));
+			$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
+			$courseId = (int) ($row['course_id'] ?? 0);
+			$classId = (int) ($row['class_id'] ?? 0);
+			$combineKey = $criteria->combineGroupKey($row);
+			if ($combineKey !== '') {
+				if (!isset($pending[$combineKey])) {
+					$pending[$combineKey] = [
+						'labels' => [],
+						'title' => $title,
+						'hours' => $hours,
+						'class_ids' => [],
+						'course_ids' => [],
+					];
+				} elseif ($hours > (int) $pending[$combineKey]['hours']) {
+					$pending[$combineKey]['hours'] = $hours;
+				}
+				$pending[$combineKey]['labels'][] = $label;
+				$pending[$combineKey]['class_ids'][$classId] = $classId;
+				$pending[$combineKey]['course_ids'][$courseId] = $courseId;
+				if ($title !== '') {
+					$pending[$combineKey]['title'] = $title;
+				}
+				continue;
+			}
+			$managerOnly = in_array($courseId, SecondaryTimetableCriteria::MANAGER_ONLY_COURSE_IDS, true);
+			$lines[] = [
+				'class' => $label,
+				'title' => $title !== '' ? $title : 'Course',
+				'periods' => $hours,
+				'on_timetable' => 0,
+				'combined' => false,
+				'manager_only' => $managerOnly,
+				'class_ids' => [$classId => $classId],
+				'course_ids' => [$courseId => $courseId],
+				'note' => $managerOnly ? 'In Manage Course, not placed on the timetable' : '',
+			];
+		}
+		foreach ($pending as $group) {
+			$labels = [];
+			foreach ($group['labels'] as $label) {
+				$label = trim((string) $label);
+				if ($label !== '' && !in_array($label, $labels, true)) {
+					$labels[] = $label;
+				}
+			}
+			$hours = (int) $group['hours'];
+			$combined = count($labels) > 1;
+			$lines[] = [
+				'class' => $labels !== [] ? implode(' + ', $labels) : 'Class',
+				'title' => $group['title'] !== '' ? $group['title'] : 'Course',
+				'periods' => $hours,
+				'on_timetable' => 0,
+				'combined' => $combined,
+				'manager_only' => false,
+				'class_ids' => $group['class_ids'],
+				'course_ids' => $group['course_ids'],
+				'note' => $combined
+					? ('Combined: ' . count($labels) . ' classes share these ' . $hours . ' periods')
+					: '',
+			];
+		}
+
+		$placed = [];
+		if ($scheduleId > 0) {
+			$placed = $db->table('timetable_entries te')
+				->select('te.class_id, te.course_id, te.day_of_week, ts.start_time, ts.end_time')
+				->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
+				->where('te.schedule_id', $scheduleId)
+				->where('te.staff_id', $staffId)
+				->where('te.entry_type', 'lesson')
+				->where('te.day_of_week >=', 0)
+				->where('te.slot_id >', 0)
+				->get()->getResultArray();
+		}
+
+		$assignedTotal = 0;
+		$onTotal = 0;
+		foreach ($lines as &$line) {
+			$clocks = [];
+			foreach ($placed as $entry) {
+				$classId = (int) ($entry['class_id'] ?? 0);
+				$courseId = (int) ($entry['course_id'] ?? 0);
+				if (!isset($line['class_ids'][$classId]) || !isset($line['course_ids'][$courseId])) {
+					continue;
+				}
+				$clock = (int) ($entry['day_of_week'] ?? -1) . '|'
+					. substr((string) ($entry['start_time'] ?? ''), 0, 5) . '|'
+					. substr((string) ($entry['end_time'] ?? ''), 0, 5);
+				$clocks[$clock] = true;
+			}
+			$line['on_timetable'] = count($clocks);
+			$assignedTotal += (int) $line['periods'];
+			$onTotal += (int) $line['on_timetable'];
+			unset($line['class_ids'], $line['course_ids']);
+		}
+		unset($line);
+
+		usort($lines, static function (array $a, array $b): int {
+			$classCmp = strcasecmp((string) $a['class'], (string) $b['class']);
+			if ($classCmp !== 0) {
+				return $classCmp;
+			}
+			return strcasecmp((string) $a['title'], (string) $b['title']);
+		});
+
+		return [
+			'periods' => $assignedTotal,
+			'on_timetable' => $onTotal,
+			'courses' => $lines,
+		];
+	}
+
 	public static function coursesExportFilename(string $schoolName): string
 	{
 		$base = trim(preg_replace('/\s+/', ' ', $schoolName) ?? '');

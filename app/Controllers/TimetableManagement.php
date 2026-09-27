@@ -2998,6 +2998,17 @@ class TimetableManagement extends Home
 			}
 		}
 
+		$data['period_counter'] = null;
+		if ($mode === 'teacher' && $entityId > 0) {
+			$data['period_counter'] = \App\Libraries\StaffTeachingLoad::counterForTeacher(
+				$schoolId,
+				$year,
+				$term,
+				$entityId,
+				(int) ($schedule['id'] ?? 0)
+			);
+		}
+
 		return $data;
 	}
 
@@ -3021,6 +3032,7 @@ class TimetableManagement extends Home
 			'staging_entries' => $data['staging_entries'] ?? [],
 			'conflict_entry_ids' => $data['conflict_entry_ids'] ?? [],
 			'staging_remaining' => (int) ($data['staging_remaining'] ?? 0),
+			'period_counter' => $data['period_counter'] ?? null,
 			'letterhead' => $data['letterhead'] ?? null,
 		];
 	}

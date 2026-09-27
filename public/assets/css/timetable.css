@@ -5,6 +5,25 @@
 .tt-sheet-title { font-size: 0.85rem; color: #64748b; text-transform: uppercase; }
 .tt-entity-name { font-size: 1.25rem; font-weight: 700; margin-top: 4px; }
 .tt-meta { font-size: 0.75rem; color: #94a3b8; }
+.tt-period-counter {
+	margin: 0 auto 14px; max-width: 760px; border: 2px solid #1e3a8a; border-radius: 10px;
+	background: #eff6ff; padding: 10px 12px;
+	-webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.tt-period-counter-total { display: flex; align-items: baseline; justify-content: center; gap: 8px; }
+.tt-period-counter-num { font-size: 2rem; font-weight: 800; color: #1e3a8a; line-height: 1; }
+.tt-period-counter-label { font-weight: 700; color: #1e3a8a; }
+.tt-period-counter-note { text-align: center; font-size: 0.78rem; color: #334155; margin: 4px 0 8px; }
+.tt-period-match { color: #047857; font-weight: 700; }
+.tt-period-short { color: #b45309; font-weight: 700; }
+.tt-period-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 0.75rem; }
+.tt-period-table th, .tt-period-table td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: left; }
+.tt-period-table th:nth-child(n+3), .tt-period-table td:nth-child(n+3) { text-align: center; width: 90px; font-weight: 700; }
+.tt-period-table th { background: #dbeafe; }
+.tt-period-gap td:last-child { color: #b45309; }
+.tt-period-ok td:last-child { color: #047857; }
+.tt-period-sum td { font-weight: 800; background: #f8fafc; }
+.tt-period-line-note { color: #64748b; font-size: 0.68rem; font-weight: 600; }
 
 .tt-grid-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .tt-grid { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 0.72rem; table-layout: fixed; }
