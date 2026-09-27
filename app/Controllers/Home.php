@@ -13687,18 +13687,94 @@ public function getApplicationDocs($id = null)
 	{
 		$this->requireMarkSheetAccess();
 		$yearId = (int) ($this->request->getGet('year') ?: 0);
-		$rows = $this->markSheetCourseRows($yearId);
+		$termNo = (int) ($this->request->getGet('term') ?: ($this->data['term'] ?? 1));
+		if ($termNo < 1 || $termNo > 3) {
+			$termNo = 1;
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$termRow = (new ActiveTermModel())->select('id')
+			->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('term', $termNo)
+			->get(1)->getRow();
+		$counts = $this->markSheetMarkCounts($schoolId, $termRow ? (int) $termRow->id : 0);
 		$courses = [];
-		foreach ($rows as $row) {
-			$courses[] = [
+		$byTeacher = [];
+		foreach ($this->markSheetCourseRows($yearId) as $row) {
+			if (!$this->markSheetTermIncludes((string) ($row['term'] ?? ''), $termNo)) {
+				continue;
+			}
+			$marks = (int) ($counts[(int) $row['class'] . ':' . (int) $row['course']] ?? 0);
+			$classLabel = trim($row['level_name'] . ' ' . $row['class_title']);
+			$courseLabel = trim($row['course_title'] . ($row['course_code'] !== '' ? ' (' . $row['course_code'] . ')' : ''));
+			$teacher = trim((string) ($row['teacher'] ?? ''));
+			if ($teacher === '') {
+				$teacher = 'Unassigned';
+			}
+			$item = [
 				'id' => (int) $row['id'],
 				'lecturer' => (int) $row['lecturer'],
-				'teacher' => $row['teacher'],
-				'term' => (string) $row['term'],
-				'label' => trim($row['level_name'] . ' ' . $row['class_title'] . ' — ' . $row['course_title'] . ($row['course_code'] !== '' ? ' (' . $row['course_code'] . ')' : '') . ' — ' . $row['teacher']),
+				'teacher' => $teacher,
+				'class_label' => $classLabel,
+				'course' => $courseLabel,
+				'marks' => $marks,
+				'has_marks' => $marks > 0,
+				'label' => trim($classLabel . ' — ' . $courseLabel . ' — ' . $teacher),
+			];
+			$courses[] = $item;
+			$tid = (int) $row['lecturer'];
+			if (!isset($byTeacher[$tid])) {
+				$byTeacher[$tid] = ['id' => $tid, 'name' => $teacher, 'with_marks' => 0, 'missing' => 0, 'missing_labels' => []];
+			}
+			if ($marks > 0) {
+				$byTeacher[$tid]['with_marks']++;
+			} else {
+				$byTeacher[$tid]['missing']++;
+				if (count($byTeacher[$tid]['missing_labels']) < 6) {
+					$byTeacher[$tid]['missing_labels'][] = trim($classLabel . ' — ' . $courseLabel);
+				}
+			}
+		}
+		$missingTeachers = [];
+		$filledTeachers = 0;
+		foreach ($byTeacher as $teacher) {
+			if ($teacher['with_marks'] > 0) {
+				$filledTeachers++;
+			}
+			if ($teacher['missing'] > 0 && $teacher['with_marks'] === 0) {
+				$missingTeachers[] = $teacher;
+			}
+		}
+		usort($missingTeachers, static function (array $a, array $b): int {
+			return strcasecmp((string) $a['name'], (string) $b['name']);
+		});
+		$withMarks = 0;
+		$missingCourses = [];
+		foreach ($courses as $course) {
+			if ($course['has_marks']) {
+				$withMarks++;
+				continue;
+			}
+			$missingCourses[] = [
+				'id' => $course['id'],
+				'teacher' => $course['teacher'],
+				'label' => trim($course['class_label'] . ' — ' . $course['course']),
 			];
 		}
-		return $this->response->setJSON(['courses' => $courses]);
+		return $this->response->setJSON([
+			'sees_all' => $this->markSheetSeesAll(),
+			'courses' => $courses,
+			'summary' => [
+				'assigned' => count($courses),
+				'with_marks' => $withMarks,
+				'missing' => count($missingCourses),
+				'teachers' => count($byTeacher),
+				'teachers_filled' => $filledTeachers,
+				'teachers_missing' => count($missingTeachers),
+			],
+			'missing_teachers' => $this->markSheetSeesAll() ? $missingTeachers : [],
+			'missing_courses' => $missingCourses,
+		]);
 	}
 
 	private function requireMarkSheetAccess(): void
@@ -13719,7 +13795,37 @@ public function getApplicationDocs($id = null)
 
 	private function markSheetSeesAll(): bool
 	{
-		return \Config\MenuClearance::isFullAccessPost((int) $this->session->get('soma_post'));
+		return \Config\MenuClearance::seesAllMarksMenus((int) $this->session->get('soma_post'));
+	}
+
+	/** @return array<string,int> */
+	private function markSheetMarkCounts(int $schoolId, int $termId): array
+	{
+		if ($schoolId < 1 || $termId < 1) {
+			return [];
+		}
+		$rows = \Config\Database::connect()->query(
+			'SELECT m.class_id, m.course_id, COUNT(*) AS n
+			 FROM marks m
+			 JOIN classes cl ON cl.id = m.class_id
+			 WHERE cl.school_id = ? AND m.term = ?
+			 GROUP BY m.class_id, m.course_id',
+			[$schoolId, $termId]
+		)->getResultArray();
+		$map = [];
+		foreach ($rows as $row) {
+			$map[(int) $row['class_id'] . ':' . (int) $row['course_id']] = (int) $row['n'];
+		}
+		return $map;
+	}
+
+	private function markSheetTermIncludes(string $raw, int $termNo): bool
+	{
+		$parts = array_map('trim', explode(',', $raw));
+		if (count($parts) === 1 && ($parts[0] === '' || $parts[0] === '0')) {
+			return true;
+		}
+		return in_array((string) $termNo, $parts, true);
 	}
 
 	private function renderMarkSheetPicker()
@@ -13731,6 +13837,7 @@ public function getApplicationDocs($id = null)
 		$data['page'] = 'get_uploaded_marks';
 		$data['sees_all'] = $this->markSheetSeesAll();
 		$data['current_year'] = (int) ($this->data['academic_year'] ?? 0);
+		$data['current_term'] = max(1, min(3, (int) ($this->data['term'] ?? 1)));
 		$data['years'] = (new AcademicYearModel())->select('id,title')
 			->where('school_id', $schoolId)
 			->orderBy('id', 'DESC')
