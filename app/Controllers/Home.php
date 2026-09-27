@@ -3673,7 +3673,7 @@ public function testEmail()
 		return $this->response->setJSON(['success' => 'Document deleted for current academic year']);
 	}
 
-	/** Posts allowed for AI academic plans (DoS, HM, Headmistress, Executive Principal, IT, Librarian, Matron, Patron). */
+	/** Posts allowed for AI academic plans (DoS, HM, Headmistress, Executive Principal, IT, Librarian, Matron, Patron, Coordinator). */
 	private function academicPlanPosts(): array
 	{
 		return GeminiAcademicDocs::ALLOWED_POSTS;
@@ -3683,6 +3683,9 @@ public function testEmail()
 	{
 		$this->_preset(...$this->academicPlanPosts());
 		if (_is_allowed($this->academicPlanPosts())) {
+			return;
+		}
+		if (MenuClearance::isCoordinatorPost((int) $this->session->get('soma_post'))) {
 			return;
 		}
 		if (function_exists('staff_has_assigned_course') && staff_has_assigned_course()) {

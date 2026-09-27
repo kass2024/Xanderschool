@@ -64,6 +64,12 @@ if (!function_exists('menu_clearance_allowed')) {
 			if (!is_array($cacheKeys)) {
 				$cacheKeys = [];
 			}
+			if (\Config\MenuClearance::isCoordinatorPost($postId)) {
+				$cacheKeys = array_values(array_unique(array_merge(
+					$cacheKeys,
+					\Config\MenuClearance::groupKeys('pedagogical')
+				)));
+			}
 		}
 
 		return in_array($menuKey, $cacheKeys, true);
@@ -285,6 +291,10 @@ if (!function_exists('pedagogical_own_work_only')) {
 	function pedagogical_own_work_only()
 	{
 		if (!staff_has_assigned_course()) {
+			return false;
+		}
+		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		if (\Config\MenuClearance::isCoordinatorPost($postId)) {
 			return false;
 		}
 		if (menu_clearance_allowed('ped_analyse') || menu_clearance_allowed('timetable_dashboard')) {

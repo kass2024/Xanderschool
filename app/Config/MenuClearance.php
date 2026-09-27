@@ -692,6 +692,24 @@ class MenuClearance
 		return in_array((int) $postId, self::FULL_ACCESS_POSTS, true);
 	}
 
+	/**
+	 * Academic coordinator: full pedagogical documents and every class/teacher timetable.
+	 * Title match covers a recreated post; id 27 is the seeded Coordinator post.
+	 */
+	public static function isCoordinatorPost($postId)
+	{
+		$postId = (int) $postId;
+		if ($postId < 1) {
+			return false;
+		}
+		$title = self::postTitle($postId);
+		if ($title !== '') {
+			$flat = str_replace(['-', '_'], ' ', $title);
+			return strpos($flat, 'coordinator') !== false || strpos($flat, 'co ordinator') !== false;
+		}
+		return $postId === 27;
+	}
+
 	public static function postTitle($postId)
 	{
 		static $cache = [];
@@ -878,8 +896,8 @@ class MenuClearance
 			$keys = array_merge($keys, self::groupKeys('daily_visitors'));
 		}
 
-		// Pedagogical: is_allowed(1, 3, 5, 6, 13, 15, 17, 18)
-		if (in_array($postId, [5, 6, 13, 15, 17], true)) {
+		// Pedagogical: is_allowed(1, 3, 5, 6, 13, 15, 17, 18) plus Coordinator
+		if (in_array($postId, [5, 6, 13, 15, 17], true) || self::isCoordinatorPost($postId)) {
 			$keys = array_merge($keys, self::groupKeys('pedagogical'));
 		}
 
