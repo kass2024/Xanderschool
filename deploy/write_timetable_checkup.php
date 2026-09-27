@@ -14,6 +14,7 @@ require __DIR__ . '/../app/Config/Paths.php';
 $paths = new Config\Paths();
 require rtrim($paths->systemDirectory, '/ ') . '/bootstrap.php';
 
+use App\Libraries\StaffTeachingLoad;
 use App\Libraries\TimetableClassLabel;
 
 @set_time_limit(0);
@@ -203,6 +204,75 @@ foreach ($teachers as $row) {
 	}
 }
 
+$teacherReports = [];
+foreach ($teachers as $row) {
+	$staffId = (int) $row['id'];
+	$counter = StaffTeachingLoad::counterForTeacher($schoolId, $year, $term, $staffId, $scheduleId);
+	if ($counter === null) {
+		continue;
+	}
+	$managerOnlyPeriods = 0;
+	$lines = [];
+	$gapNotes = [];
+	foreach ($counter['courses'] as $line) {
+		$need = (int) ($line['periods'] ?? 0);
+		$have = (int) ($line['on_timetable'] ?? 0);
+		if (!empty($line['manager_only'])) {
+			$managerOnlyPeriods += $need;
+			$lines[] = $line['class'] . ' — ' . $line['title'] . ': ' . $need . ' period'
+				. ($need === 1 ? ' stays' : 's stay') . ' in Manage Course and ' . ($need === 1 ? 'is' : 'are') . ' not placed on the timetable.';
+			continue;
+		}
+		if ($have >= $need) {
+			$share = !empty($line['combined']) ? ' Combined classes share this one clock.' : '';
+			$lines[] = $line['class'] . ' — ' . $line['title'] . ': all ' . $need . ' periods are on the timetable.' . $share;
+			continue;
+		}
+		$short = $need - $have;
+		$lines[] = $line['class'] . ' — ' . $line['title'] . ': ' . $have . ' of ' . $need
+			. ' periods are on the timetable. ' . $short . ' more would put two teachers in the same class, or the teacher is already busy in every legal hour.';
+		$gapNotes[] = $line['class'] . ' ' . $line['title'] . ' is short by ' . $short;
+	}
+	$teachingAssigned = (int) $counter['periods'] - $managerOnlyPeriods;
+	$onTimetable = (int) $counter['on_timetable'];
+	if ($teachingAssigned > 0 && $onTimetable >= $teachingAssigned) {
+		$lead = 'Every teaching period from Manage Course is on this timetable.';
+	} elseif ($onTimetable <= 0) {
+		$lead = 'None of the teaching periods are on a timetable yet.';
+	} else {
+		$lead = $onTimetable . ' of ' . $teachingAssigned . ' teaching periods are on the timetable. '
+			. ($teachingAssigned - $onTimetable) . ' remain off the grid because the class or the allowed hours are full.';
+	}
+	if ($managerOnlyPeriods > 0) {
+		$lead .= ' ' . $managerOnlyPeriods . ' period' . ($managerOnlyPeriods === 1 ? '' : 's')
+			. ' stay in Manage Course only.';
+	}
+	if (isset($windowNames[$staffId])) {
+		$outCount = 0;
+		foreach ($outside as $lesson) {
+			if ((int) $lesson['staff_id'] === $staffId) {
+				$outCount++;
+			}
+		}
+		$lead .= ' Availability: ' . $windowNames[$staffId] . '.';
+		$lead .= $outCount === 0
+			? ' Every placed lesson is inside that window.'
+			: ' ' . $outCount . ' placed lesson' . ($outCount === 1 ? ' is' : 's are') . ' outside that window.';
+	}
+	if ($gapNotes !== []) {
+		$lead .= ' Detail: ' . implode('; ', $gapNotes) . '.';
+	}
+	$teacherReports[] = [
+		'id' => $staffId,
+		'name' => (string) $row['teacher'],
+		'assigned' => (int) $counter['periods'],
+		'on' => $onTimetable,
+		'teaching' => $teachingAssigned,
+		'lead' => $lead,
+		'lines' => $lines,
+	];
+}
+
 $base = rtrim((string) (config('App')->baseURL ?? ''), '/');
 $generated = date('Y-m-d H:i');
 $title = (string) ($schedule['title'] ?? 'Final Version');
@@ -232,6 +302,11 @@ th{background:#eef4fb;font-size:13px}
 tr:last-child td{border-bottom:0}
 a{color:#1d4ed8}
 .note{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px 14px}
+.linkbox{background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px 16px;margin:0 0 18px}
+.teacher{background:#fff;border:1px solid #d7e0ec;border-radius:12px;padding:14px 16px;margin:0 0 12px}
+.teacher h3{margin:0 0 6px;font-size:18px}
+.teacher p{margin:0 0 8px}
+.teacher ul{margin:0}
 .good{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:12px 14px}
 ul{margin:8px 0 0;padding-left:18px}
 </style>
@@ -239,7 +314,12 @@ ul{margin:8px 0 0;padding-left:18px}
 <body>
 <div class="wrap">
 <h1>Final timetable checkup</h1>
-<p class="sub">Wisdom School Rwanda · <?= $h($title) ?> · academic year 2026–2027, term 1 · checked <?= $h($generated) ?></p>
+<p class="sub">Wisdom School Rwanda · <?= $h($title) ?> · academic year 2026–2027, term 1 · high school rebuilt and unlocked · checked <?= $h($generated) ?></p>
+<div class="linkbox">
+	<strong>Full report, no login required</strong><br>
+	<a href="<?= $h($base . '/timetable-final-checkup.html') ?>"><?= $h($base . '/timetable-final-checkup.html') ?></a>
+	<p class="sub" style="margin:8px 0 0">Each teacher below has a full comment. The teacher timetable links open inside the school system after login.</p>
+</div>
 
 <div class="cards">
 	<div class="card"><b><?= count($teachers) ?></b><span>Teachers in Manage Course</span></div>
@@ -313,6 +393,24 @@ Occupation and learning process, and Maintain SHE at Workplace, stay assigned to
 <?php endforeach; ?>
 </table>
 <?php endif; ?>
+
+<h2>Comment on each teacher</h2>
+<p class="sub"><?= count($teacherReports) ?> teachers. The comment states what is on the timetable and why any period is still off it.</p>
+<?php foreach ($teacherReports as $report):
+	$href = $base . '/timetable/teacher/' . (int) $report['id'];
+	$match = (int) $report['on'] >= (int) $report['teaching'] && (int) $report['teaching'] > 0;
+?>
+<article class="teacher">
+	<h3><a href="<?= $h($href) ?>"><?= $h($report['name']) ?></a></h3>
+	<p class="<?= $match ? 'ok' : 'warn' ?>"><?= (int) $report['on'] ?> on the timetable · <?= (int) $report['teaching'] ?> teaching periods · <?= (int) $report['assigned'] ?> in Manage Course</p>
+	<p><?= $h($report['lead']) ?></p>
+	<ul>
+	<?php foreach ($report['lines'] as $line): ?>
+		<li><?= $h($line) ?></li>
+	<?php endforeach; ?>
+	</ul>
+</article>
+<?php endforeach; ?>
 
 <h2>Teachers</h2>
 <p class="sub">Assigned is the Manage Course weekly total. Placed is on both the class timetable and that teacher’s timetable. Highlighted means the hours are more than the free legal slots, so they stay listed under the grid.</p>

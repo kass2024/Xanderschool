@@ -234,29 +234,26 @@ foreach ($allEntries as $entry) {
 		'slot_id' => $entry['slot_id'],
 		'entry_type' => $entry['entry_type'] ?? 'lesson',
 		'custom_label' => $entry['custom_label'] ?? null,
-		'is_locked' => !empty($entry['is_locked']) ? 1 : 0,
+		'is_locked' => 0,
 	]);
 }
 $overflowPlaced = (new \App\Services\Timetable\TimetableStagingService())
 	->fillVersion2Gaps($scheduleId, $schoolId, $schema);
 echo "Version 2 locked fill placed: {$overflowPlaced}\n";
-$locked = 0;
-if ($db->fieldExists('is_locked', 'timetable_entries')) {
+$unlocked = 0;
+if ($db->fieldExists('is_locked', 'timetable_entries') && $hsClassIds !== []) {
 	$db->table('timetable_entries')
 		->where('schedule_id', $scheduleId)
-		->where('entry_type', 'lesson')
-		->where('day_of_week >=', 0)
-		->where('slot_id >', 0)
-		->update(['is_locked' => 1]);
-	$locked = (int) $db->table('timetable_entries')
+		->whereIn('class_id', $hsClassIds)
+		->update(['is_locked' => 0]);
+	$unlocked = (int) $db->table('timetable_entries')
 		->where('schedule_id', $scheduleId)
-		->where('entry_type', 'lesson')
+		->whereIn('class_id', $hsClassIds)
 		->where('day_of_week >=', 0)
 		->where('slot_id >', 0)
-		->where('is_locked', 1)
 		->countAllResults();
 }
-echo "LOCKED_PLACED {$locked}\n";
+echo "UNLOCKED_HIGH_SCHOOL {$unlocked}\n";
 $fingerprintRows = $db->table('course_records cr')
 	->select('cr.id, cr.course, cr.class, cr.lecturer, cr.term, COALESCE(c.credit,0) AS credit')
 	->join('courses c', 'c.id = cr.course', 'left')
@@ -286,7 +283,7 @@ foreach (\App\Libraries\TimetableTrack::generationPhaseKeys() as $phaseKey) {
 $db->table('timetable_schedules')->where('id', $scheduleId)->update([
 	'title' => 'Final Version',
 	'status' => 'published',
-	'notes' => 'Final timetable, locked. Placed lessons stay until Replace locked timetable is checked. S4, S5 and S6 ANP teach through 16:20, including Friday. S5 clinical is Tuesday morning. S4 clinical has its own periods. S6 clinical is Wednesday. Named windows, Version 1 combines, and manager-only SHE and Occupation stay as set.',
+	'notes' => 'High school rebuilt and unlocked. S4, S5 and S6 ANP teach through 16:20, including Friday. S5 clinical is Tuesday morning. S4 clinical has its own periods. S6 clinical is Wednesday. Named windows, Version 1 combines, and manager-only SHE and Occupation stay as set. Nursery and primary lessons were kept.',
 	'generated_at' => date('Y-m-d H:i:s'),
 	'needs_regen' => 0,
 	'assignments_hash' => $fingerprint,
