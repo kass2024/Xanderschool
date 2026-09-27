@@ -1498,9 +1498,8 @@ if (!function_exists('profile_photo_card_src')) {
 }
 
 /**
- * Staff-card photo: cover crop, anchored at the top, so the circle is full
- * and the head stays in frame. wkhtmltopdf ignores object-fit, so the bitmap
- * is already the filled frame.
+ * Staff-card photo already fitted inside a circle. The whole head stays
+ * visible. wkhtmltopdf ignores object-fit, so the bitmap is precomposed.
  */
 if (!function_exists('profile_photo_staff_circle_src')) {
 	function profile_photo_staff_circle_src(?string $stored, int $outW = 640, int $outH = 640): string
@@ -1509,8 +1508,9 @@ if (!function_exists('profile_photo_staff_circle_src')) {
 		if ($resolved === null) {
 			return '';
 		}
-		$outW = max(80, min(1200, $outW));
-		$outH = max(80, min(1200, $outH));
+		$side = max($outW, $outH);
+		$outW = max(80, min(1200, $side));
+		$outH = $outW;
 		$relative = 'assets/images/profile/' . $resolved;
 		$real = asset_resolve_path($relative, null);
 		if ($real === null) {
@@ -1520,7 +1520,7 @@ if (!function_exists('profile_photo_staff_circle_src')) {
 		if (!is_dir($cacheDir)) {
 			@mkdir($cacheDir, 0775, true);
 		}
-		$key = md5($real . '|' . @filemtime($real) . "|staffcircle{$outW}x{$outH}|v3hair18") . '.jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|staffcircle{$outW}x{$outH}|v4fullhead") . '.jpg';
 		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
 		if (is_file($cached)) {
 			return '_card_img/' . $key;

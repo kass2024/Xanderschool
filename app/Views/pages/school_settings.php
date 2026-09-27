@@ -232,7 +232,7 @@
 	.ss-ed-item[data-key="badge"] { background: rgba(14,165,233,.9); color: #fff; border: 0; border-radius: 0 !important; left: 0 !important; width: 100% !important; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 	.ss-ed-item[data-key="moto"] { background: rgba(14,165,233,.9); color: #fff; border: 0; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 	.ss-ed-item[data-key="photo"] { background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-weight: 600; overflow: hidden; border-radius: 50%; }
-	.ss-ed-item[data-key="photo"] img { width: 100% !important; height: 100% !important; max-width: none !important; max-height: none !important; object-fit: cover; object-position: center 25%; border-radius: 50%; pointer-events: none; }
+	.ss-ed-item[data-key="photo"] img { width: 92% !important; height: 92% !important; max-width: none !important; max-height: none !important; object-fit: contain; object-position: center center; border-radius: 50%; pointer-events: none; }
 	.ss-ed-item[data-key="logo"] {
 		display: flex; align-items: center; justify-content: center;
 		background: #ffffff !important;

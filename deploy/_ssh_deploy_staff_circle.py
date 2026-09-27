@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fill every staff-card circle with a top-anchored cover crop."""
+"""Fit every staff-card photo inside the circle without cutting the head."""
 from __future__ import annotations
 
 import os
@@ -28,8 +28,9 @@ FILES = [
 VERIFY = [
     ("app/Libraries/ProfilePhotoNormalizer.php", "function coverCenterTop"),
     ("app/Libraries/WisdomStaffCardRenderer.php", "innerPhotoBox"),
-    ("app/Views/templates/staff_card_smart.php", "object-position: center top"),
-    ("app/Helpers/qonics_helper.php", "profile_photo_staff_circle_src"),
+    ("app/Views/templates/staff_card_smart.php", "object-position: center center"),
+    ("app/Libraries/ProfilePhotoNormalizer.php", "staffCircleScale"),
+    ("app/Helpers/qonics_helper.php", "v4fullhead"),
 ]
 
 
