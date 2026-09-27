@@ -797,6 +797,40 @@ class MenuClearance
 		return array_values(array_unique($keys));
 	}
 
+	/**
+	 * Director, Head Teacher, Dean of Studies, Deputy HT Academics, and Headmaster
+	 * see every Marks submenu.
+	 *
+	 * @param int $postId
+	 * @return bool
+	 */
+	public static function seesAllMarksMenus($postId)
+	{
+		$postId = (int) $postId;
+		if (self::isFullAccessPost($postId) || self::isHeadMasterEquivalent($postId)) {
+			return true;
+		}
+		return self::canEnterAllCourseMarks($postId, self::postTitle($postId));
+	}
+
+	/** @return string[] */
+	public static function marksMenuKeys()
+	{
+		return [
+			'marks',
+			'marks_entry',
+			'get_uploaded_marks',
+			'student_report',
+			'get_periodic_report',
+			'get_periodic_marks',
+			'proclamation_list',
+			'student_term_results',
+			'class-deliberation',
+			'finish_deliberation',
+			'deliberation_settings',
+		];
+	}
+
 	/** Head master / Headmistress / Head Teacher. */
 	public static function isHeadMasterEquivalent($postId)
 	{

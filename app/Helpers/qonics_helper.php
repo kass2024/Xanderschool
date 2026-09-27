@@ -67,7 +67,7 @@ if (!function_exists('menu_clearance_allowed')) {
 			if (\Config\MenuClearance::isFullAccessPost($postId)
 				|| \Config\MenuClearance::isCoordinatorPost($postId)
 				|| \Config\MenuClearance::isHeadMasterEquivalent($postId)
-				|| \Config\MenuClearance::canEnterAllCourseMarks($postId)) {
+				|| \Config\MenuClearance::canEnterAllCourseMarks($postId, \Config\MenuClearance::postTitle($postId))) {
 				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, [
 					'pedagogical',
 					'ped_analyse',
@@ -75,6 +75,12 @@ if (!function_exists('menu_clearance_allowed')) {
 					'ped_session_plan',
 					'timetable_dashboard',
 				])));
+			}
+			if (\Config\MenuClearance::seesAllMarksMenus($postId)) {
+				$cacheKeys = array_values(array_unique(array_merge(
+					$cacheKeys,
+					\Config\MenuClearance::marksMenuKeys()
+				)));
 			}
 		}
 

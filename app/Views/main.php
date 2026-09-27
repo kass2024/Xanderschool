@@ -423,10 +423,7 @@
 										</a>
 									</li>
 									<?php } ?>
-									<?php
-									$showMarkSheet = menu_clearance_allowed('get_uploaded_marks')
-										|| (function_exists('staff_has_assigned_course') && staff_has_assigned_course());
-									if ($showMarkSheet) { ?>
+									<?php if (menu_clearance_allowed('get_uploaded_marks') || (function_exists('staff_has_assigned_course') && staff_has_assigned_course())) { ?>
 										<li>
 											<a href="<?= base_url('get_uploaded_marks');?>">
 												<i class="metismenu-icon"></i>
