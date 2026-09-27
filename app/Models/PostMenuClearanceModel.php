@@ -108,6 +108,7 @@ class PostMenuClearanceModel extends Model
 			$keys = array_merge($keys, MenuClearance::groupKeys('daily_visitors'));
 		}
 
+		$keys = MenuClearance::applyRoleMenuPolicy($keys, $postId);
 		return array_values(array_unique($keys));
 	}
 

@@ -274,20 +274,7 @@ if (!function_exists('can_enter_all_course_marks')) {
 if (!function_exists('material_check_full_access')) {
 	function material_check_full_access()
 	{
-		if (function_exists('menu_clearance_allowed') && menu_clearance_allowed('student_material_check')) {
-			return true;
-		}
-		$postId = (int) ($_SESSION['soma_post'] ?? 0);
-		if (in_array($postId, \Config\StudentMaterialPermissions::FULL_ACCESS_POST_IDS, true)) {
-			return true;
-		}
-		$title = strtolower(trim((string) ($_SESSION['soma_post_title'] ?? '')));
-		foreach (\Config\StudentMaterialPermissions::FULL_ACCESS_TITLE_KEYWORDS as $kw) {
-			if ($title !== '' && strpos($title, $kw) !== false) {
-				return true;
-			}
-		}
-		return false;
+		return \Config\MenuClearance::canUseMaterialAndDormitory((int) ($_SESSION['soma_post'] ?? 0));
 	}
 }
 
@@ -317,10 +304,7 @@ if (!function_exists('material_check_mentor_class_ids')) {
 if (!function_exists('material_check_menu_visible')) {
 	function material_check_menu_visible()
 	{
-		if (material_check_full_access()) {
-			return true;
-		}
-		return count(material_check_mentor_class_ids()) > 0;
+		return material_check_full_access();
 	}
 }
 
@@ -331,10 +315,7 @@ if (!function_exists('material_check_can_access_class')) {
 		if ($classId <= 0) {
 			return false;
 		}
-		if (material_check_full_access()) {
-			return true;
-		}
-		return in_array($classId, material_check_mentor_class_ids($schoolId), true);
+		return material_check_full_access();
 	}
 }
 

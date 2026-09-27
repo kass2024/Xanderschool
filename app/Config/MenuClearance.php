@@ -356,7 +356,7 @@ class MenuClearance
 					['key' => 'student-photo', 'label' => 'Student Photo'],
 					['key' => 'assign-card', 'label' => 'Assign Card'],
 					['key' => 'student_material_check', 'label' => 'Required Material Check'],
-					['key' => 'hostel_allocate', 'label' => 'Hostel'],
+					['key' => 'hostel_allocate', 'label' => 'Dormitories'],
 				],
 			],
 			[
@@ -690,6 +690,93 @@ class MenuClearance
 	public static function isFullAccessPost($postId)
 	{
 		return in_array((int) $postId, self::FULL_ACCESS_POSTS, true);
+	}
+
+	public static function postTitle($postId)
+	{
+		static $cache = [];
+		$postId = (int) $postId;
+		if ($postId < 1) {
+			return '';
+		}
+		if (isset($cache[$postId])) {
+			return $cache[$postId];
+		}
+		$title = '';
+		try {
+			$row = \Config\Database::connect()->table('posts')->select('title')->where('id', $postId)->get(1)->getRowArray();
+			$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['title'] ?? ''))));
+		} catch (\Throwable $e) {
+			$title = '';
+		}
+		$cache[$postId] = $title;
+		return $title;
+	}
+
+	/** Classroom Teacher only. Head Teacher and Deputy Head Teacher stay allowed. */
+	public static function isTeacherPost($postId)
+	{
+		$postId = (int) $postId;
+		if ($postId === 2) {
+			return true;
+		}
+		return self::postTitle($postId) === 'teacher';
+	}
+
+	/**
+	 * Material Check and Dormitories: Patron, Matron, Customer Care, Director,
+	 * Head of Discipline, Deputy HT Discipline.
+	 */
+	public static function canUseMaterialAndDormitory($postId)
+	{
+		$t = self::postTitle((int) $postId);
+		if ($t === '') {
+			return false;
+		}
+		if (strpos($t, 'patron') !== false || strpos($t, 'matron') !== false) {
+			return true;
+		}
+		if (strpos($t, 'customer care') !== false) {
+			return true;
+		}
+		if ($t === 'director') {
+			return true;
+		}
+		if (strpos($t, 'head of discipline') !== false || strpos($t, 'dean of discipline') !== false) {
+			return true;
+		}
+		if (strpos($t, 'dht discipline') !== false) {
+			return true;
+		}
+		if (strpos($t, 'discipline') !== false && (strpos($t, 'deputy') !== false || strpos($t, 'dht') !== false)) {
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * @param string[] $keys
+	 * @return string[]
+	 */
+	public static function applyRoleMenuPolicy(array $keys, $postId)
+	{
+		$postId = (int) $postId;
+		if (self::isTeacherPost($postId)) {
+			$drop = array_flip(self::groupKeys('behavior'));
+			$keys = array_values(array_filter($keys, static function ($k) use ($drop) {
+				return !isset($drop[$k]);
+			}));
+		}
+		if (self::canUseMaterialAndDormitory($postId)) {
+			$keys[] = 'students';
+			$keys[] = 'student_material_check';
+			$keys[] = 'hostel_allocate';
+		} else {
+			$keys = array_values(array_filter($keys, static function ($k) {
+				return $k !== 'student_material_check' && $k !== 'hostel_allocate';
+			}));
+		}
+		return array_values(array_unique($keys));
 	}
 
 	/** Head master / Headmistress / Head Teacher. */
