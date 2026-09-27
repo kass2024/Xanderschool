@@ -626,6 +626,59 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
+	 * Fill a frame the way CSS does: object-fit cover, object-position center top.
+	 * White letterbox bars are dropped first. The picture is cropped, never stretched
+	 * or shrunk inside the frame, so a circle clipped from this frame has no empty rim.
+	 * The top of the portrait stays in frame so the head is not cropped off the bottom.
+	 *
+	 * @param resource|\GdImage $src
+	 * @return resource|\GdImage|null
+	 */
+	public function coverCenterTop($src, int $outW, int $outH)
+	{
+		if (!is_resource($src) && !is_object($src)) {
+			return null;
+		}
+		$outW = max(2, $outW);
+		$outH = max(2, $outH);
+		$sw = imagesx($src);
+		$sh = imagesy($src);
+		if ($sw < 2 || $sh < 2) {
+			return null;
+		}
+		[$bx, $by, $bw, $bh] = $this->letterboxBox($src, $sw, $sh);
+		if ($bw < 8 || $bh < 8) {
+			$bx = 0;
+			$by = 0;
+			$bw = $sw;
+			$bh = $sh;
+		}
+		$targetRatio = $outW / $outH;
+		$srcRatio = $bw / max(1, $bh);
+		if ($srcRatio > $targetRatio) {
+			$cropH = $bh;
+			$cropW = max(1, (int) round($bh * $targetRatio));
+			$sx = $bx + (int) max(0, (int) floor(($bw - $cropW) / 2));
+			$sy = $by;
+		} else {
+			$cropW = $bw;
+			$cropH = max(1, (int) round($bw / $targetRatio));
+			$sx = $bx;
+			$sy = $by;
+		}
+		$sx = max(0, min($sw - 1, $sx));
+		$sy = max(0, min($sh - 1, $sy));
+		$cropW = max(1, min($cropW, $sw - $sx, $bx + $bw - $sx));
+		$cropH = max(1, min($cropH, $sh - $sy, $by + $bh - $sy));
+
+		$dst = imagecreatetruecolor($outW, $outH);
+		$white = imagecolorallocate($dst, 255, 255, 255);
+		imagefill($dst, 0, 0, $white);
+		$this->hiQualityResample($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $cropW, $cropH);
+		return $dst;
+	}
+
+	/**
 	 * Cover-crop the real portrait into a square that fills the ID-card circle.
 	 * Strips white letterbox bars (circle-on-3:4 files) so the face is not
 	 * taken from empty padding.

@@ -231,8 +231,8 @@
 	.ss-ed-item .ss-ed-label { font-weight: 700; color: #0284c7; margin-right: 3px; }
 	.ss-ed-item[data-key="badge"] { background: rgba(14,165,233,.9); color: #fff; border: 0; border-radius: 0 !important; left: 0 !important; width: 100% !important; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 	.ss-ed-item[data-key="moto"] { background: rgba(14,165,233,.9); color: #fff; border: 0; display: flex; align-items: center; justify-content: center; font-weight: 700; }
-	.ss-ed-item[data-key="photo"] { background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-weight: 600; overflow: hidden; }
-	.ss-ed-item[data-key="photo"] img { width: 100% !important; height: 100% !important; max-width: none !important; max-height: none !important; object-fit: cover; pointer-events: none; }
+	.ss-ed-item[data-key="photo"] { background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-weight: 600; overflow: hidden; border-radius: 50%; }
+	.ss-ed-item[data-key="photo"] img { width: 100% !important; height: 100% !important; max-width: none !important; max-height: none !important; object-fit: cover; object-position: center top; border-radius: 50%; pointer-events: none; }
 	.ss-ed-item[data-key="logo"] {
 		display: flex; align-items: center; justify-content: center;
 		background: #ffffff !important;
@@ -1255,7 +1255,7 @@
 			<div id="headingHostels" class="b-radius-0 card-header">
 				<button type="button" data-toggle="collapse" data-target="#collapseHostels" aria-expanded="false"
 						aria-controls="collapseHostels" class="text-left m-0 p-0 btn btn-link btn-block">
-					<h5 class="m-0 p-0"><span class="ss-acc-ico"><i class="fa fa-bed"></i></span>Hostels</h5><i class="fa fa-chevron-down ss-acc-chevron"></i>
+					<h5 class="m-0 p-0"><span class="ss-acc-ico"><i class="fa fa-bed"></i></span>Dormitories</h5><i class="fa fa-chevron-down ss-acc-chevron"></i>
 				</button>
 			</div>
 			<div id="collapseHostels" data-parent="#accordion" class="collapse">

@@ -119,9 +119,12 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	}
 	.cf-logo img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
 	.cf-photo {
+		position: relative;
 		border: <?= !empty($isWisdomArt) ? '0' : ($isPainted ? '0.7' : '0.45'); ?>mm solid <?= $main; ?>;
 		background: <?= !empty($isWisdomArt) ? 'transparent' : '#f1f5f9'; ?>;
 		overflow: hidden;
+		border-radius: 50%;
+		-webkit-border-radius: 50%;
 	}
 	/* Classic Curve painted design — swoosh bands + rounded frame (color only) */
 	.paint { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 1; overflow: hidden; }
@@ -142,10 +145,11 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		margin: 0;
 		display: block;
 		border: 0;
-		object-fit: contain;
-		-webkit-object-fit: contain;
-		object-position: center center;
-		background: #ffffff;
+		object-fit: cover;
+		-webkit-object-fit: cover;
+		object-position: center top;
+		border-radius: 50%;
+		-webkit-border-radius: 50%;
 	}
 	.cf-badge, .cf-moto {
 		background: <?= $main; ?>;
@@ -254,7 +258,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	if ($isWisdomArt) {
 		$photoPxW = $photoPxH = max($photoPxW, $photoPxH, 640);
 	}
-	$photoSrc = profile_photo_card_src($staff['photo'] ?? '', $photoPxW, $photoPxH);
+	$photoSrc = profile_photo_staff_circle_src($staff['photo'] ?? '', $photoPxW, $photoPxH);
 	$fullName = $fmt(trim(($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? '')));
 	$postTitle = $fmt($staff['post_title'] ?? '—');
 	$phoneLabel = $fmt(!empty($staff['phone']) ? $staff['phone'] : '—');
@@ -319,7 +323,20 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		<?php endif; ?>
 
 		<?php if (CardLayout::isVisible($fields, 'photo') || $isWisdomArt):
-			$f = $isWisdomArt ? ['x' => 30.0, 'y' => 19.2, 'w' => 40.0, 'h' => 23.6] : $fields['photo']; ?>
+			$f = $isWisdomArt ? \App\Libraries\WisdomStaffCardRenderer::innerPhotoBox() : $fields['photo'];
+			if (!$isWisdomArt) {
+				$mmW = $cardWmm * ((float) ($f['w'] ?? 0) / 100);
+				$mmH = $cardHmm * ((float) ($f['h'] ?? 0) / 100);
+				$side = min($mmW, $mmH);
+				if ($side > 1 && abs($mmW - $mmH) > 0.4) {
+					$cx = ((float) $f['x']) + ((float) $f['w'] / 2);
+					$cy = ((float) $f['y']) + ((float) $f['h'] / 2);
+					$f['w'] = ($side / $cardWmm) * 100;
+					$f['h'] = ($side / $cardHmm) * 100;
+					$f['x'] = $cx - ($f['w'] / 2);
+					$f['y'] = $cy - ($f['h'] / 2);
+				}
+			} ?>
 			<div class="cf-photo<?= $isWisdomArt ? ' is-round' : ''; ?>" style="<?= CardLayout::boxStyle($f, 3); ?>border-radius:50%;">
 				<?php if ($photoSrc): ?><img src="<?= $photoSrc; ?>" alt=""><?php endif; ?>
 			</div>

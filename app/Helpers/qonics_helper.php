@@ -1498,6 +1498,75 @@ if (!function_exists('profile_photo_card_src')) {
 }
 
 /**
+ * Staff-card photo: cover crop, anchored at the top, so the circle is full
+ * and the head stays in frame. wkhtmltopdf ignores object-fit, so the bitmap
+ * is already the filled frame.
+ */
+if (!function_exists('profile_photo_staff_circle_src')) {
+	function profile_photo_staff_circle_src(?string $stored, int $outW = 640, int $outH = 640): string
+	{
+		$resolved = resolve_profile_photo($stored);
+		if ($resolved === null) {
+			return '';
+		}
+		$outW = max(80, min(1200, $outW));
+		$outH = max(80, min(1200, $outH));
+		$relative = 'assets/images/profile/' . $resolved;
+		$real = asset_resolve_path($relative, null);
+		if ($real === null) {
+			return '';
+		}
+		$cacheDir = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'templates' . DIRECTORY_SEPARATOR . '_card_img';
+		if (!is_dir($cacheDir)) {
+			@mkdir($cacheDir, 0775, true);
+		}
+		$key = md5($real . '|' . @filemtime($real) . "|staffcircle{$outW}x{$outH}|v1top") . '.jpg';
+		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
+		if (is_file($cached)) {
+			return '_card_img/' . $key;
+		}
+		if (!function_exists('imagecreatetruecolor')) {
+			return asset_card_img_src($relative, null, $outW, $outH);
+		}
+		$info = @getimagesize($real);
+		$src = null;
+		if (is_array($info)) {
+			switch ((int) $info[2]) {
+				case IMAGETYPE_JPEG:
+					$src = @imagecreatefromjpeg($real);
+					break;
+				case IMAGETYPE_PNG:
+					$src = @imagecreatefrompng($real);
+					break;
+				case IMAGETYPE_GIF:
+					$src = @imagecreatefromgif($real);
+					break;
+				case IMAGETYPE_WEBP:
+					if (function_exists('imagecreatefromwebp')) {
+						$src = @imagecreatefromwebp($real);
+					}
+					break;
+			}
+		}
+		if (!$src) {
+			return asset_card_img_src($relative, null, $outW, $outH);
+		}
+		$n = new \App\Libraries\ProfilePhotoNormalizer();
+		$dst = $n->coverCenterTop($src, $outW, $outH);
+		imagedestroy($src);
+		if (!$dst) {
+			return asset_card_img_src($relative, null, $outW, $outH);
+		}
+		@imagejpeg($dst, $cached, 92);
+		imagedestroy($dst);
+		if (is_file($cached)) {
+			return '_card_img/' . $key;
+		}
+		return asset_card_img_src($relative, null, $outW, $outH);
+	}
+}
+
+/**
  * Center-crop profile photo to exact WxH (keeps face proportional — no stretch).
  * Used by CR80 PDF so wkhtmltopdf cannot squash the image into the photo box.
  */

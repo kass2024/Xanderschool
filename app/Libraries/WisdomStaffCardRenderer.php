@@ -33,6 +33,8 @@ class WisdomStaffCardRenderer
 	private const HOLE_CX = 296;
 	private const HOLE_CY = 312;
 	private const HOLE_D = 274;
+	/** Sit just inside the painted ring so the photo fills the hole without covering it. */
+	private const HOLE_INSET = 0.98;
 
 	private const NAVY = [8, 32, 96];
 	private const GOLD = [196, 154, 48];
@@ -43,6 +45,30 @@ class WisdomStaffCardRenderer
 	public function __construct(?string $fontPath = null)
 	{
 		$this->font = $fontPath ?: WisdomCardRenderer::resolveFont();
+	}
+
+	/**
+	 * Percent box for the inner photo circle on CR80 portrait artwork.
+	 * Width and height are equal in millimetres so the clip is a circle,
+	 * inset from the painted ring.
+	 *
+	 * @return array{x:float,y:float,w:float,h:float}
+	 */
+	public static function innerPhotoBox(): array
+	{
+		$cardW = 54.0;
+		$cardH = 85.6;
+		$diameterMm = ($cardW * (self::HOLE_D / self::SRC_W)) * self::HOLE_INSET;
+		$w = ($diameterMm / $cardW) * 100;
+		$h = ($diameterMm / $cardH) * 100;
+		$cx = (self::HOLE_CX / self::SRC_W) * 100;
+		$cy = (self::HOLE_CY / self::SRC_H) * 100;
+		return [
+			'x' => $cx - ($w / 2),
+			'y' => $cy - ($h / 2),
+			'w' => $w,
+			'h' => $h,
+		];
 	}
 
 	public static function isAvailable(): bool
@@ -212,8 +238,8 @@ class WisdomStaffCardRenderer
 	{
 		$cx = $this->sx(self::HOLE_CX);
 		$cy = $this->sy(self::HOLE_CY);
-		// Wisdom Rwanda fit: the whole head and shoulders stay inside the ring.
-		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 0.93));
+		// Inner hole only. The artwork ring stays outside this diameter.
+		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * self::HOLE_INSET));
 
 		$src = $this->loadImage($path);
 		if (!$src) {
@@ -224,7 +250,7 @@ class WisdomStaffCardRenderer
 			imagedestroy($src);
 			return;
 		}
-		$square = $this->fitSubjectInCircle($src, $d);
+		$square = $normalizer->coverCenterTop($src, $d, $d);
 		imagedestroy($src);
 		if (!$square) {
 			return;
@@ -476,85 +502,6 @@ class WisdomStaffCardRenderer
 		imagecopyresampled($im, $src, 0, 0, 0, 0, self::W, self::H, imagesx($src), imagesy($src));
 		imagedestroy($src);
 		return $im;
-	}
-
-	/**
-	 * Scale the whole portrait so the head and shoulders stay inside the ring.
-	 *
-	 * @param resource|\GdImage $src
-	 * @return resource|\GdImage|null
-	 */
-	private function fitSubjectInCircle($src, int $size)
-	{
-		if ($size < 2) {
-			return null;
-		}
-		$sw = max(1, imagesx($src));
-		$sh = max(1, imagesy($src));
-		[$bx, $by, $bw, $bh] = $this->subjectBounds($src, $sw, $sh);
-		$sq = imagecreatetruecolor($size, $size);
-		$white = imagecolorallocate($sq, 255, 255, 255);
-		imagefill($sq, 0, 0, $white);
-		$radius = ($size / 2.0) * 0.96;
-		$halfDiag = 0.5 * sqrt(($bw * $bw) + ($bh * $bh));
-		$scale = $radius / max(0.001, $halfDiag);
-		$nw = max(1, (int) round($bw * $scale));
-		$nh = max(1, (int) round($bh * $scale));
-		$ox = (int) round(($size - $nw) / 2);
-		$oy = (int) round(($size - $nh) / 2);
-		imagecopyresampled($sq, $src, $ox, $oy, $bx, $by, $nw, $nh, $bw, $bh);
-		return $sq;
-	}
-
-	/**
-	 * Tight box around the person. Near-white padding is dropped so a
-	 * head-and-shoulders portrait can sit inside the card circle.
-	 *
-	 * @param resource|\GdImage $src
-	 * @return array{0:int,1:int,2:int,3:int}
-	 */
-	private function subjectBounds($src, int $sw, int $sh): array
-	{
-		$step = max(1, (int) floor(min($sw, $sh) / 160));
-		$minX = $sw;
-		$minY = $sh;
-		$maxX = 0;
-		$maxY = 0;
-		$hits = 0;
-		for ($y = 0; $y < $sh; $y += $step) {
-			for ($x = 0; $x < $sw; $x += $step) {
-				$rgb = imagecolorat($src, $x, $y) & 0xFFFFFF;
-				$r = ($rgb >> 16) & 255;
-				$g = ($rgb >> 8) & 255;
-				$b = $rgb & 255;
-				if ($r >= 246 && $g >= 246 && $b >= 246) {
-					continue;
-				}
-				$hits++;
-				if ($x < $minX) {
-					$minX = $x;
-				}
-				if ($y < $minY) {
-					$minY = $y;
-				}
-				if ($x > $maxX) {
-					$maxX = $x;
-				}
-				if ($y > $maxY) {
-					$maxY = $y;
-				}
-			}
-		}
-		if ($hits < 8 || $maxX <= $minX || $maxY <= $minY) {
-			return [0, 0, $sw, $sh];
-		}
-		$padX = (int) max($step, round(($maxX - $minX) * 0.04));
-		$padY = (int) max($step, round(($maxY - $minY) * 0.04));
-		$x0 = max(0, $minX - $padX);
-		$y0 = max(0, $minY - $padY);
-		$x1 = min($sw - 1, $maxX + $padX);
-		$y1 = min($sh - 1, $maxY + $padY);
-		return [$x0, $y0, $x1 - $x0 + 1, $y1 - $y0 + 1];
 	}
 
 	/** @param resource|\GdImage $im */
