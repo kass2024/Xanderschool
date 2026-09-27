@@ -141,8 +141,8 @@ if (!empty($lh['website'])) {
 		}
 		.ms-fact span { display: block; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 		.ms-fact strong { display: block; margin-top: 2px; color: var(--navy); font-size: 13px; word-break: break-word; }
-		.ms-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 10px; }
-		table.ms { width: 100%; border-collapse: collapse; font-size: 12px; }
+		.ms-scroll { width: max-content; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 10px; }
+		table.ms { width: max-content; border-collapse: collapse; font-size: 12px; table-layout: auto; }
 		table.ms th {
 			background: var(--navy);
 			color: #fff;
@@ -154,8 +154,9 @@ if (!empty($lh['website'])) {
 		}
 		table.ms td { border: 1px solid var(--line); padding: 6px 5px; text-align: center; background: #fff; }
 		table.ms tbody tr:nth-child(even) td { background: #f8fafc; }
-		table.ms td.num, table.ms th.num { width: 36px; }
-		table.ms td.name, table.ms th.name { text-align: left; min-width: 170px; }
+		table.ms td.num, table.ms th.num { width: 36px; white-space: nowrap; }
+		table.ms td.name, table.ms th.name { text-align: left; width: 1%; white-space: nowrap; }
+		table.ms th.q, table.ms td.q { width: 78px; min-width: 78px; max-width: 96px; white-space: normal; }
 		table.ms td.name { font-weight: 700; color: var(--navy); }
 		table.ms .reg { display: block; margin-top: 1px; color: var(--muted); font-size: 10px; font-weight: 600; }
 		table.ms tr.ms-sub th { background: #1c4d86; font-weight: 600; font-size: .92em; padding: 3px 2px; }
@@ -219,20 +220,17 @@ if (!empty($lh['website'])) {
 				min-width: 0;
 			}
 			.ms-fact strong { font-size: 11px; }
-			.ms-scroll { overflow: hidden; border: 0; border-radius: 0; }
+			.ms-scroll { overflow: visible; border: 0; border-radius: 0; width: max-content; max-width: 100%; }
 			table.ms th.sticky, table.ms td.sticky,
 			table.ms th.sticky-2, table.ms td.sticky-2 { position: static; }
-			table.ms { width: 100%; max-width: 100%; table-layout: fixed; font-size: 8.5px; }
+			table.ms { width: max-content; max-width: none; table-layout: auto; font-size: 8.5px; }
 			.ms-sheet.tight table.ms { font-size: 7.5px; }
 			.ms-sheet.dense table.ms { font-size: 6.5px; }
-			table.ms th, table.ms td {
-				padding: 2px 1px;
-				min-width: 0 !important;
-				white-space: normal;
-				overflow: hidden;
-				word-wrap: break-word;
-			}
-			table.ms td.name, table.ms th.name { width: 18%; }
+			table.ms th, table.ms td { padding: 2px 3px; }
+			table.ms th.q, table.ms td.q { width: 58px; min-width: 58px; max-width: 64px; }
+			.ms-sheet.tight table.ms th.q, .ms-sheet.tight table.ms td.q { width: 46px; min-width: 46px; max-width: 50px; }
+			.ms-sheet.dense table.ms th.q, .ms-sheet.dense table.ms td.q { width: 38px; min-width: 38px; max-width: 42px; }
+			table.ms td.name, table.ms th.name { width: auto; white-space: nowrap; }
 			table.ms th, table.ms td.total, table.ms td.pct, table.ms td.remark {
 				-webkit-print-color-adjust: exact;
 				print-color-adjust: exact;
@@ -298,24 +296,24 @@ if (!empty($lh['website'])) {
 						<th class="num sticky" rowspan="<?= $headRows; ?>">No.</th>
 						<th class="name sticky-2" rowspan="<?= $headRows; ?>">Student</th>
 						<?php foreach ($columns as $col): ?>
-							<th><?= esc($col['label']); ?></th>
+							<th class="q"><?= esc($col['label']); ?></th>
 						<?php endforeach; ?>
 					</tr>
 					<?php if ($columns !== []): ?>
 					<tr class="ms-sub">
 						<?php foreach ($columns as $col): ?>
-							<th><span>Date</span><?= esc($col['date_long'] !== '' ? $col['date_long'] : '—'); ?></th>
+							<th class="q"><span>Date</span><?= esc($col['date_long'] !== '' ? $col['date_long'] : '—'); ?></th>
 						<?php endforeach; ?>
 					</tr>
 					<tr class="ms-sub">
 						<?php foreach ($columns as $col): ?>
-							<th><span>Max</span>/<?= (int) $col['max']; ?></th>
+							<th class="q"><span>Max</span>/<?= (int) $col['max']; ?></th>
 						<?php endforeach; ?>
 					</tr>
 					<?php if ($hasTopic): ?>
 					<tr class="ms-sub">
 						<?php foreach ($columns as $col): ?>
-							<th><span>Topic</span><?= esc(trim((string) $col['topic']) !== '' ? $col['topic'] : '—'); ?></th>
+							<th class="q"><span>Topic</span><?= esc(trim((string) $col['topic']) !== '' ? $col['topic'] : '—'); ?></th>
 						<?php endforeach; ?>
 					</tr>
 					<?php endif; ?>
@@ -330,7 +328,7 @@ if (!empty($lh['website'])) {
 							<td class="num sticky"><?= $i + 1; ?></td>
 							<td class="name sticky-2"><?= esc($student['name']); ?><span class="reg"><?= esc($student['regno']); ?></span></td>
 							<?php foreach ($columns as $col): ?>
-								<td><?= esc($student['cells'][$col['key']] ?? ''); ?></td>
+								<td class="q"><?= esc($student['cells'][$col['key']] ?? ''); ?></td>
 							<?php endforeach; ?>
 						</tr>
 					<?php endforeach; ?>
