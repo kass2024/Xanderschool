@@ -212,14 +212,19 @@ class WisdomStaffCardRenderer
 	{
 		$cx = $this->sx(self::HOLE_CX);
 		$cy = $this->sy(self::HOLE_CY);
-		// Fill the artwork hole. A hair inside the ring so the blue border stays visible.
-		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 0.98));
+		// Same as Wisdom Rwanda student cards: oversized so the portrait tucks
+		// under the ring. No white cap, and the head is not clipped inside the hole.
+		$d = (int) max(2, round(min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D)) * 1.12));
 
 		$src = $this->loadImage($path);
 		if (!$src) {
 			return;
 		}
 		$normalizer = new ProfilePhotoNormalizer();
+		if ($normalizer->isEmptyPortrait($src)) {
+			imagedestroy($src);
+			return;
+		}
 		$square = $normalizer->idCircleCoverFromImage($src, $d);
 		if (!$square) {
 			$square = $this->fitSubjectInCircle($src, $d);
@@ -228,20 +233,48 @@ class WisdomStaffCardRenderer
 		if (!$square) {
 			return;
 		}
-		$square = $this->nudgePortraitDown($square, $d);
 
 		$r = $d / 2.0;
-		$r2 = $r * $r;
 		$x0 = $cx - (int) ($d / 2);
 		$y0 = $cy - (int) ($d / 2);
+		$sqW = imagesx($square);
+		$sqH = imagesy($square);
+		$offX = (int) max(0, round(($sqW - $d) / 2));
+		$offY = (int) max(0, round(($sqH - $d) / 2));
+		$edge = 1.25;
+		$inner = $r - $edge;
 		for ($yy = 0; $yy < $d; $yy++) {
 			$dy = $yy + 0.5 - $r;
+			$sy = min($sqH - 1, max(0, $yy + $offY));
 			for ($xx = 0; $xx < $d; $xx++) {
 				$dx = $xx + 0.5 - $r;
-				if (($dx * $dx + $dy * $dy) > $r2) {
+				$dist = sqrt($dx * $dx + $dy * $dy);
+				if ($dist > $r) {
 					continue;
 				}
-				imagesetpixel($im, $x0 + $xx, $y0 + $yy, imagecolorat($square, $xx, $yy) & 0xFFFFFF);
+				$sx = min($sqW - 1, max(0, $xx + $offX));
+				$pix = imagecolorat($square, $sx, $sy) & 0xFFFFFF;
+				$px = $x0 + $xx;
+				$py = $y0 + $yy;
+				if ($px < 0 || $py < 0 || $px >= imagesx($im) || $py >= imagesy($im)) {
+					continue;
+				}
+				if ($dist <= $inner) {
+					imagesetpixel($im, $px, $py, $pix);
+					continue;
+				}
+				$t = ($r - $dist) / $edge;
+				$bg = imagecolorat($im, $px, $py) & 0xFFFFFF;
+				$pr = ($pix >> 16) & 255;
+				$pg = ($pix >> 8) & 255;
+				$pb = $pix & 255;
+				$br = ($bg >> 16) & 255;
+				$bgc = ($bg >> 8) & 255;
+				$bb = $bg & 255;
+				$nr = (int) round($pr * $t + $br * (1 - $t));
+				$ng = (int) round($pg * $t + $bgc * (1 - $t));
+				$nb = (int) round($pb * $t + $bb * (1 - $t));
+				imagesetpixel($im, $px, $py, ($nr << 16) | ($ng << 8) | $nb);
 			}
 		}
 		imagedestroy($square);
@@ -447,23 +480,6 @@ class WisdomStaffCardRenderer
 		imagecopyresampled($im, $src, 0, 0, 0, 0, self::W, self::H, imagesx($src), imagesy($src));
 		imagedestroy($src);
 		return $im;
-	}
-
-	/**
-	 * Drop the portrait a little so the circle does not clip the top of the head.
-	 *
-	 * @param resource|\GdImage $square
-	 * @return resource|\GdImage
-	 */
-	private function nudgePortraitDown($square, int $size)
-	{
-		$shift = (int) max(1, round($size * 0.07));
-		$placed = imagecreatetruecolor($size, $size);
-		$white = imagecolorallocate($placed, 255, 255, 255);
-		imagefill($placed, 0, 0, $white);
-		imagecopy($placed, $square, 0, $shift, 0, 0, $size, max(1, $size - $shift));
-		imagedestroy($square);
-		return $placed;
 	}
 
 	/**
