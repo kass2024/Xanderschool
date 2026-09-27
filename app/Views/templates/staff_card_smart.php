@@ -147,10 +147,10 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	.cf-photo.is-round img {
 		width: 116%;
 		height: 116%;
-		margin: -8%;
+		margin: -2% -8% -14%;
 		object-fit: cover;
 		-webkit-object-fit: cover;
-		object-position: center 10%;
+		object-position: center top;
 		background: #ffffff;
 	}
 	.cf-badge, .cf-moto {

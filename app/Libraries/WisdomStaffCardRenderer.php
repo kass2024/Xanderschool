@@ -228,6 +228,7 @@ class WisdomStaffCardRenderer
 		if (!$square) {
 			return;
 		}
+		$square = $this->nudgePortraitDown($square, $d);
 
 		$r = $d / 2.0;
 		$r2 = $r * $r;
@@ -446,6 +447,23 @@ class WisdomStaffCardRenderer
 		imagecopyresampled($im, $src, 0, 0, 0, 0, self::W, self::H, imagesx($src), imagesy($src));
 		imagedestroy($src);
 		return $im;
+	}
+
+	/**
+	 * Drop the portrait a little so the circle does not clip the top of the head.
+	 *
+	 * @param resource|\GdImage $square
+	 * @return resource|\GdImage
+	 */
+	private function nudgePortraitDown($square, int $size)
+	{
+		$shift = (int) max(1, round($size * 0.07));
+		$placed = imagecreatetruecolor($size, $size);
+		$white = imagecolorallocate($placed, 255, 255, 255);
+		imagefill($placed, 0, 0, $white);
+		imagecopy($placed, $square, 0, $shift, 0, 0, $size, max(1, $size - $shift));
+		imagedestroy($square);
+		return $placed;
 	}
 
 	/**
