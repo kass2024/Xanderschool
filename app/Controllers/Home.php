@@ -13269,6 +13269,12 @@ public function getApplicationDocs($id = null)
 				"error" => "Period " . (int) $period . " is locked. Marks entry is not allowed. Contact the school admin to unlock it."
 			));
 		}
+		if ((int) $mark_type === 1) {
+			$sequenceError = $this->catSequenceError($catType, (int) $class, (int) $course_id, $term, (int) $period);
+			if ($sequenceError !== null) {
+				return $this->response->setJSON(array("error" => $sequenceError));
+			}
+		}
 //		print_r($marks_id); die();
 
 		$MarksModel = new MarksModel();
@@ -14248,6 +14254,69 @@ public function getApplicationDocs($id = null)
 			}
 
 		}
+	}
+
+	public
+	function cat_type_options()
+	{
+		$this->_preset();
+		$class = (int) $this->request->getGet('class_id');
+		$course = (int) $this->request->getGet('course');
+		$period = (int) ($this->request->getGet('period') ?? 0);
+		$year = $this->request->getGet('year') ?: $this->data['academic_year'];
+		$termId = $this->resolveMarksTermId($this->request->getGet('term'), $year);
+		$filled = $this->filledCatTypes($class, $course, $termId, $period);
+		return $this->response->setJSON(['groups' => catTypeGroups($filled)]);
+	}
+
+	private function resolveMarksTermId($termNo, $year)
+	{
+		if ($termNo === null || $termNo === '' || is_holiday_term_choice($termNo)) {
+			return $this->data['active_term'];
+		}
+		$atMdl = new ActiveTermModel();
+		$row = $atMdl->select('id')
+			->where('academic_year', $year)
+			->where('term', $termNo)
+			->where('school_id', $this->session->get('soma_school_id'))
+			->get(1)->getRow();
+		return $row ? $row->id : $this->data['active_term'];
+	}
+
+	private function filledCatTypes($class, $course, $termId, $period): array
+	{
+		if ((int) $class < 1 || (int) $course < 1 || empty($termId)) {
+			return [];
+		}
+		$rows = (new MarksModel())->select('cat_type')
+			->where('class_id', (int) $class)
+			->where('course_id', (int) $course)
+			->where('term', $termId)
+			->where('period', (int) $period)
+			->where('mark_type', 1)
+			->where('cat_type !=', '')
+			->groupBy('cat_type')
+			->get()->getResultArray();
+		$filled = [];
+		foreach ($rows as $row) {
+			if (!empty($row['cat_type'])) {
+				$filled[] = $row['cat_type'];
+			}
+		}
+		return $filled;
+	}
+
+	private function catSequenceError($catType, $class, $course, $termId, $period): ?string
+	{
+		$catType = strtoupper(trim((string) $catType));
+		if ($catType === '' || !preg_match('/^[QTH]\d+$/', $catType)) {
+			return 'Select a quiz, test, or homework first.';
+		}
+		$filled = $this->filledCatTypes($class, $course, $termId, $period);
+		if (catTypeIsAllowed($catType, $filled)) {
+			return null;
+		}
+		return catTypeStr($catType) . ' is locked until the previous one is saved.';
 	}
 
 	public

@@ -824,40 +824,87 @@ if (!function_exists('decisionTypeStr')) {
 if (!function_exists('catTypeStr')) {
 	function catTypeStr($type)
 	{
-		switch ($type) {
-			case 'Q1':
-				return lang("app.quiz1");
-			case 'Q2':
-				return lang("app.quiz2");
-			case 'Q3':
-				return lang("app.quiz3");
-			case 'Q4':
-				return lang("app.quiz4");
-			case 'Q5':
-				return lang("app.quiz5");
-			case 'T1':
-				return lang("app.test1");
-			case 'T2':
-				return lang("app.test2");
-			case 'T3':
-				return lang("app.test3");
-			case 'T4':
-				return lang("app.test4");
-			case 'T5':
-				return lang("app.test5");
-			case 'H1':
-				return lang("app.homework1");
-			case 'H2':
-				return lang("app.homework2");
-			case 'H3':
-				return lang("app.homework3");
-			case 'H4':
-				return lang("app.homework4");
-			case 'H5':
-				return lang("app.homework5");
-			default:
-				return $type;
+		$type = strtoupper(trim((string) $type));
+		if (preg_match('/^([QTH])(\d+)$/', $type, $m)) {
+			$sampleKey = ['Q' => 'quiz1', 'T' => 'test1', 'H' => 'homework1'][$m[1]];
+			$sample = trim((string) lang('app.' . $sampleKey));
+			$stem = trim((string) preg_replace('/\d+$/', '', $sample));
+			if ($stem === '') {
+				$stem = trim((string) lang('app.' . ['Q' => 'quiz', 'T' => 'test', 'H' => 'homework'][$m[1]]));
+			}
+			return $stem . ' ' . (int) $m[2];
 		}
+		return $type;
+	}
+}
+
+if (!function_exists('catTypeGroups')) {
+	/**
+	 * Quiz, test, and homework lists grow one step at a time.
+	 * Finished numbers stay editable. The next number is offered.
+	 * Anything after that is left out until the current one is saved.
+	 *
+	 * @param array $filledCodes saved cat_type values such as Q1, T2, H3
+	 */
+	function catTypeGroups(array $filledCodes): array
+	{
+		$families = [
+			'Q' => lang('app.quiz'),
+			'T' => lang('app.test'),
+			'H' => lang('app.homework'),
+		];
+		$byPrefix = ['Q' => [], 'T' => [], 'H' => []];
+		foreach ($filledCodes as $code) {
+			if (preg_match('/^([QTH])(\d+)$/', strtoupper(trim((string) $code)), $m)) {
+				$byPrefix[$m[1]][(int) $m[2]] = true;
+			}
+		}
+		$groups = [];
+		foreach ($families as $prefix => $header) {
+			$nums = $byPrefix[$prefix];
+			$maxExisting = $nums ? max(array_keys($nums)) : 0;
+			$contiguous = 0;
+			for ($i = 1; $i <= $maxExisting; $i++) {
+				if (empty($nums[$i])) {
+					break;
+				}
+				$contiguous = $i;
+			}
+			$openThrough = $contiguous + 1;
+			$showMax = max($maxExisting, $openThrough);
+			$options = [];
+			for ($i = 1; $i <= $showMax; $i++) {
+				$has = !empty($nums[$i]);
+				if (!$has && $i > $openThrough) {
+					continue;
+				}
+				$options[] = [
+					'value' => $prefix . $i,
+					'label' => catTypeStr($prefix . $i),
+					'open' => true,
+				];
+			}
+			$groups[] = [
+				'header' => trim((string) $header),
+				'options' => $options,
+			];
+		}
+		return $groups;
+	}
+}
+
+if (!function_exists('catTypeIsAllowed')) {
+	function catTypeIsAllowed($code, array $filledCodes): bool
+	{
+		$code = strtoupper(trim((string) $code));
+		foreach (catTypeGroups($filledCodes) as $group) {
+			foreach ($group['options'] as $option) {
+				if ($option['value'] === $code) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 }
 

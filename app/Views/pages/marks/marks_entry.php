@@ -309,24 +309,6 @@ body.marks-entry-body .select2-search__field {
 					<label for="catype"><?= lang("app.catType"); ?></label>
 					<select class="form-control select2" id="catype" name="catType">
 						<option selected disabled><?= lang("app.catType"); ?> </option>
-						<option disabled><?= lang("app.quiz"); ?> </option>
-						<option value="Q1"><?= lang("app.quiz1"); ?> </option>
-						<option value="Q2"><?= lang("app.quiz2"); ?> </option>
-						<option value="Q3"><?= lang("app.quiz3"); ?> </option>
-						<option value="Q4"><?= lang("app.quiz4"); ?> </option>
-						<option value="Q5"><?= lang("app.quiz5"); ?> </option>
-						<option disabled><?= lang("app.test"); ?> </option>
-						<option value="T1"><?= lang("app.test1"); ?> </option>
-						<option value="T2"><?= lang("app.test2"); ?> </option>
-						<option value="T3"><?= lang("app.test3"); ?> </option>
-						<option value="T4"><?= lang("app.test4"); ?> </option>
-						<option value="T5"><?= lang("app.test5"); ?> </option>
-						<option disabled><?= lang("app.homework"); ?> </option>
-						<option value="H1"><?= lang("app.homework1"); ?> </option>
-						<option value="H2"><?= lang("app.homework2"); ?> </option>
-						<option value="H3"><?= lang("app.homework3"); ?> </option>
-						<option value="H4"><?= lang("app.homework4"); ?> </option>
-						<option value="H5"><?= lang("app.homework5"); ?> </option>
 					</select>
 				</div>
 				<?php
@@ -497,11 +479,12 @@ body.marks-entry-body .select2-search__field {
 		});
 
 		$("#select_class").on("change", function () {
-			populate_marks();
+			refreshCatTypes(populate_marks);
 		})
 		$("#catype").on("change", function () {
 			populate_marks();
 		})
+		refreshCatTypes();
 		$("#checkSheet").on("click", function () {
 			if ($(this).prop("checked") == true) {
 				$("#mannualUpload").hide();
@@ -537,14 +520,84 @@ body.marks-entry-body .select2-search__field {
 		$('#btn-del-marks').prop('disabled',true);
 	}
 
+	function applyCatOptions(groups) {
+		var $sel = $("#catype");
+		if (!$sel.length) {
+			return;
+		}
+		var prev = $sel.val();
+		if ($sel.data("select2")) {
+			$sel.select2("destroy");
+		}
+		$sel.empty();
+		$sel.append($("<option>", {value: "", text: "<?= lang("app.catType"); ?>", disabled: true}));
+		var firstOpen = null;
+		(groups || []).forEach(function (group) {
+			var $og = $("<optgroup>", {label: group.header});
+			(group.options || []).forEach(function (option) {
+				var $op = $("<option>", {value: option.value, text: option.label});
+				if (!option.open) {
+					$op.prop("disabled", true);
+				} else if (!firstOpen) {
+					firstOpen = option.value;
+				}
+				$og.append($op);
+			});
+			$sel.append($og);
+		});
+		if (prev && $sel.find("option[value='" + prev + "']:not(:disabled)").length) {
+			$sel.val(prev);
+		} else if (firstOpen) {
+			$sel.val(firstOpen);
+		}
+		var $parent = $sel.closest(".marks-filter-item");
+		$sel.select2({
+			width: "100%",
+			dropdownParent: $parent.length ? $parent : $sel.parent()
+		});
+	}
+
+	function refreshCatTypes(done) {
+		var $sel = $("#catype");
+		if (!$sel.length) {
+			if (typeof done === "function") done();
+			return;
+		}
+		var classId = $("#select_class").val();
+		var course = $("#select_course").val();
+		if (!classId || !course) {
+			applyCatOptions([
+				{header: "<?= trim(lang('app.quiz')); ?>", options: [{value: "Q1", label: "<?= trim(lang('app.quiz1')); ?>", open: true}]},
+				{header: "<?= trim(lang('app.test')); ?>", options: [{value: "T1", label: "<?= trim(lang('app.test1')); ?>", open: true}]},
+				{header: "<?= trim(lang('app.homework')); ?>", options: [{value: "H1", label: "<?= trim(lang('app.homework1')); ?>", open: true}]}
+			]);
+			if (typeof done === "function") done();
+			return;
+		}
+		$.getJSON("<?= base_url(); ?>cat_type_options", {
+			course: course,
+			class_id: classId,
+			term: $("#term").val(),
+			period: $("#period1").val() || 0,
+			year: $("[name='year']").val(),
+			marktype: $("#marktype").val()
+		}).done(function (data) {
+			applyCatOptions(data.groups || []);
+		}).always(function () {
+			if (typeof done === "function") done();
+		});
+	}
+
 	function populate_marks() {
 		var id = $("#select_class").val() + "/";
 		var mt = $("#marktype").val() + "/";
-		var ct = $("#catype").val() + "/";
+		var ct = ($("#catype").val() || "") + "/";
 		var course = $("#select_course").val() + "/";
 		var period = $("#period1").val().length == 0 ? '0/' : ($("#period1").val() + "/");
 		var term = $("#term").val();
 		if ($("#select_class").val() == null || $("#select_course").val() == null)
+			return;
+		if ($("#catype").length && !$("#catype").val())
 			return;
 		resetView();
 		$("#export_pdf").prop("href", "<?= base_url(''); ?>get_student_marks/" + mt + ct + id + course + period + term+"/"+$("[name='year']").val() + "?pdf").removeClass("disabled");
