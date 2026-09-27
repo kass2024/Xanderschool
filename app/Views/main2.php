@@ -1124,7 +1124,6 @@
 									<?php
 								}
 								?>
-								<option value="4"><?= lang("app.catExam"); ?></option>
 								<option value="3"><?= lang("app.secondSitting"); ?></option>
 								<option value="9"><?= lang("app.reAssess"); ?></option>
 								<?php if (is_wisdom_school()): ?>
