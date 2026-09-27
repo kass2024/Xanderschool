@@ -20,6 +20,17 @@ class SecondaryTimetableCriteria
 	 */
 	public const MANAGER_ONLY_COURSE_IDS = [476, 478];
 
+	/** Locked ruleset used by every generation after the final Version 2 checkup. */
+	public const RULES_VERSION = 2;
+
+	/** When true, a leftover lesson may use an empty Mon–Thu 15:40–16:20 cell. */
+	private $overflowFill = false;
+
+	public function setOverflowFill(bool $on): void
+	{
+		$this->overflowFill = $on;
+	}
+
 	/** @var array<string,array<string,mixed>> classId => meta */
 	private $classMeta = [];
 
@@ -316,6 +327,12 @@ class SecondaryTimetableCriteria
 			}
 			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
 		}
+		if ($this->overflowFill && $this->isOverflowLateLesson($row, $day, $slotStart, $slotEnd)) {
+			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
+				return false;
+			}
+			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+		}
 		if (self::isSecondaryTrack($row) && (
 			\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd)
 			|| \App\Models\TimetableSchemaModel::isNightSlotTimes($slotStart, $slotEnd)
@@ -330,6 +347,23 @@ class SecondaryTimetableCriteria
 			return false;
 		}
 		return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+	}
+
+	/**
+	 * Empty Mon–Thu 15:40–16:20 cell. Used only after the normal day is full,
+	 * so a leftover period is not left off the grid while that row is blank.
+	 * Friday stays at 15:00. Library, chapel, dinner and preps are not this row.
+	 */
+	private function isOverflowLateLesson(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
+	{
+		if (!self::isSecondaryTrack($row) || $day < 0 || $day > 3) {
+			return false;
+		}
+		if ($this->isFixedEveningActivity($row) || $this->requiresAfterLessons($row) || $this->isClinicalAttachmentCourse($row)) {
+			return false;
+		}
+		return \App\Models\TimetableSchemaModel::slotClock($slotStart) === '15:40:00'
+			&& \App\Models\TimetableSchemaModel::slotClock($slotEnd) === '16:20:00';
 	}
 
 	/** Library and Clubs and Home Science sit only at 16:40–17:30. */

@@ -27,6 +27,9 @@ class TimetableStagingService
 	}
 
 	/** @param array<string,mixed> $entry */
+	/** Version 2 lock: leftovers may use an empty Mon–Thu 15:40–16:20 cell. */
+	private $version2Overflow = false;
+
 	private function entryIsLocked(array $entry): bool
 	{
 		return (int) ($entry['is_locked'] ?? 0) === 1;
@@ -505,6 +508,189 @@ class TimetableStagingService
 	}
 
 	/**
+	 * Version 2 lock. Place every leftover into a cell where that class and that
+	 * teacher are both free, including an empty Monday–Thursday 15:40–16:20 row.
+	 * A single class lesson may move into that row so the leftover can take its old cell.
+	 * Gemini picks among the legal cells when the API key is set. Illegal moves are dropped.
+	 */
+	public function fillVersion2Gaps(
+		int $scheduleId,
+		int $schoolId,
+		\App\Models\TimetableSchemaModel $schema
+	): int {
+		if ($scheduleId <= 0 || $schoolId <= 0) {
+			return 0;
+		}
+		$this->version2Overflow = true;
+		$placed = $this->applyGeminiOverflowChoices($scheduleId, $schoolId, $schema);
+		for ($pass = 0; $pass < 8; $pass++) {
+			$gained = $this->placeParkingDirect($scheduleId, $schoolId, $schema, true);
+			$placed += $gained;
+			if ($gained === 0) {
+				break;
+			}
+		}
+		$this->parkAllConflicts($scheduleId, $schoolId);
+		$this->version2Overflow = false;
+		return $placed;
+	}
+
+	/**
+	 * @return int placements accepted from Gemini
+	 */
+	private function applyGeminiOverflowChoices(
+		int $scheduleId,
+		int $schoolId,
+		\App\Models\TimetableSchemaModel $schema
+	): int {
+		$gemini = new \App\Libraries\GeminiTimetable();
+		if (!$gemini->isConfigured()) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
+		$this->timetableSettings = $settings;
+		$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
+		$this->secondaryCriteria = new SecondaryTimetableCriteria();
+		$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
+		$this->secondaryCriteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
+		$this->secondaryCriteria->setOverflowFill(true);
+
+		$scheduled = $this->scheduledEntries($scheduleId, $schoolId);
+		$state = $this->buildScheduleState($scheduled);
+		$days = \App\Models\TimetableSchemaModel::weekDaysFromSettings($settings);
+		$parking = $db->table('timetable_entries te')
+			->select('te.*, c.title AS course_title, cl.title AS class_title, l.title AS level_name,
+				d.code AS dept_code, CONCAT(s.fname, " ", s.lname) AS teacher_name')
+			->join('courses c', 'c.id = te.course_id', 'left')
+			->join('classes cl', 'cl.id = te.class_id', 'left')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->join('staffs s', 's.id = te.staff_id', 'left')
+			->where('te.schedule_id', $scheduleId)
+			->where('te.school_id', $schoolId)
+			->where('te.entry_type', 'lesson')
+			->where('te.day_of_week', -1)
+			->where('te.slot_id', 0)
+			->orderBy('te.id')
+			->get()->getResultArray();
+		if ($parking === []) {
+			return 0;
+		}
+
+		$pending = [];
+		$allowed = [];
+		foreach (array_slice($parking, 0, 40) as $entry) {
+			$options = [];
+			foreach ($this->candidateSlots($entry, $days, $schema, $schoolId, $state, false, true) as $candidate) {
+				if (($candidate['blockers'] ?? []) !== []) {
+					continue;
+				}
+				$day = (int) $candidate['day'];
+				$slotId = (int) $candidate['slot_id'];
+				$options[] = ['day' => $day, 'slot_id' => $slotId];
+				$allowed[(int) $entry['id']][$day . ':' . $slotId] = true;
+				if (count($options) >= 8) {
+					break;
+				}
+			}
+			if ($options === []) {
+				continue;
+			}
+			$pending[] = [
+				'entry_id' => (int) $entry['id'],
+				'course' => (string) ($entry['course_title'] ?? ''),
+				'class_id' => (int) ($entry['class_id'] ?? 0),
+				'staff_id' => (int) ($entry['staff_id'] ?? 0),
+				'options' => $options,
+			];
+		}
+		if ($pending === []) {
+			return 0;
+		}
+
+		$choices = $gemini->choosePlacements($pending, [
+			'rules' => 'Version 2. One class period, one teacher. Combined courses may share a clock. Do not invent slots.',
+		]);
+		$used = [];
+		$placed = 0;
+		$byId = [];
+		foreach ($parking as $entry) {
+			$byId[(int) $entry['id']] = $entry;
+		}
+		foreach ($choices as $choice) {
+			$entryId = (int) ($choice['entry_id'] ?? 0);
+			$day = (int) ($choice['day'] ?? -1);
+			$slotId = (int) ($choice['slot_id'] ?? 0);
+			if (empty($allowed[$entryId][$day . ':' . $slotId]) || empty($byId[$entryId])) {
+				continue;
+			}
+			$entry = $byId[$entryId];
+			$classId = (int) ($entry['class_id'] ?? 0);
+			$staffId = (int) ($entry['staff_id'] ?? 0);
+			$slotKey = $day . ':' . $slotId;
+			if (isset($used['c' . $classId . ':' . $slotKey]) || ($staffId > 0 && isset($used['s' . $staffId . ':' . $slotKey]))) {
+				continue;
+			}
+			if (!empty($state['class_busy'][$classId . ':' . $slotKey])) {
+				continue;
+			}
+			if ($staffId > 0 && !empty($state['staff_busy'][$staffId . ':' . $slotKey])) {
+				continue;
+			}
+			$db->table('timetable_entries')->where('id', $entryId)->update([
+				'day_of_week' => $day,
+				'slot_id' => $slotId,
+			]);
+			$entry['day_of_week'] = $day;
+			$entry['slot_id'] = $slotId;
+			$this->addScheduledEntry($state, $entry);
+			$used['c' . $classId . ':' . $slotKey] = true;
+			if ($staffId > 0) {
+				$used['s' . $staffId . ':' . $slotKey] = true;
+			}
+			$placed++;
+		}
+		return $placed;
+	}
+
+	/**
+	 * @param array<string,mixed> $blocker
+	 * @param array<string,mixed> $state
+	 */
+	private function blockerMustStay(array $blocker, array $state): bool
+	{
+		$meta = $this->metaForEntry($blocker);
+		if ($this->secondaryCriteria !== null && (
+			$this->secondaryCriteria->isClinicalAttachmentCourse($meta)
+			|| $this->secondaryCriteria->isFixedEveningActivity($meta)
+			|| $this->secondaryCriteria->requiresAfterLessons($meta)
+		)) {
+			return true;
+		}
+		$self = (int) ($blocker['id'] ?? 0);
+		$staffId = (int) ($blocker['staff_id'] ?? 0);
+		$day = (int) ($blocker['day_of_week'] ?? -1);
+		foreach ($state['by_id'] as $other) {
+			if ((int) ($other['id'] ?? 0) === $self || (int) ($other['staff_id'] ?? 0) !== $staffId) {
+				continue;
+			}
+			if ((int) ($other['day_of_week'] ?? -1) !== $day) {
+				continue;
+			}
+			if (!SecondaryTimetableCriteria::entriesAreCombinedLesson($blocker, $other)) {
+				continue;
+			}
+			$a = $this->entryTimeRange($blocker);
+			$b = $this->entryTimeRange($other);
+			if ($a !== null && $b !== null && $a['start'] < $b['end'] && $b['start'] < $a['end']) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Keep draining parking after collision cleanup so leftover cannot beat a free teacher cell.
 	 */
 	public function hardenLeftoverPlacement(
@@ -515,6 +701,7 @@ class TimetableStagingService
 		$placed = $this->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
 		$placed += $this->autoPlaceStaging($scheduleId, $schoolId, $schema, 0, 0, true);
 		$placed += $this->fillWeeklyPeriodGaps($scheduleId, $schoolId, $schema);
+		$placed += $this->fillVersion2Gaps($scheduleId, $schoolId, $schema);
 		return $placed;
 	}
 
@@ -656,6 +843,9 @@ class TimetableStagingService
 		$this->secondaryCriteria = new SecondaryTimetableCriteria();
 		$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
 		$this->secondaryCriteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
+		if ($this->version2Overflow) {
+			$this->secondaryCriteria->setOverflowFill(true);
+		}
 
 		$days = \App\Models\TimetableSchemaModel::weekDaysFromSettings($settings);
 		$scheduled = $this->scheduledEntries($scheduleId, $schoolId);
@@ -1335,11 +1525,24 @@ class TimetableStagingService
 			}
 			$blockerId = (int) $blockers[0];
 			$blocker = $state['by_id'][$blockerId] ?? null;
-			if (!is_array($blocker) || $this->entryIsLocked($blocker)) {
+			if (!is_array($blocker)) {
+				continue;
+			}
+			if ($this->entryIsLocked($blocker) && !$this->version2Overflow) {
+				continue;
+			}
+			if ($this->version2Overflow && $this->blockerMustStay($blocker, $state)) {
 				continue;
 			}
 			$this->removeScheduledEntry($state, $blocker);
-			$relocation = $this->findBestDirectPlacement($blocker, $days, $schema, $schoolId, $state);
+			$relocation = $this->findBestDirectPlacement(
+				$blocker,
+				$days,
+				$schema,
+				$schoolId,
+				$state,
+				$this->version2Overflow
+			);
 			if ($relocation === null) {
 				$this->addScheduledEntry($state, $blocker);
 				continue;

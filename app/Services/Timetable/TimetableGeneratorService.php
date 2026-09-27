@@ -525,7 +525,11 @@ class TimetableGeneratorService
 		$this->seatParkedOnEmptySlots($entries);
 		$this->promotePeToLastHour($entries);
 		$this->parkCollisions($entries);
+		if ($this->secondaryCriteria !== null) {
+			$this->secondaryCriteria->setOverflowFill(true);
+		}
 		$this->seatParkedOnEmptySlots($entries);
+		$this->seatOverflowByMovingOne($entries);
 		$this->parkCollisions($entries);
 
 		return ['entries' => $entries, 'warnings' => $this->warnings, 'assignments' => $assignments];
@@ -2313,6 +2317,37 @@ class TimetableGeneratorService
 				$courseId = (int) ($entry['course_id'] ?? 0);
 				$row = $this->assignmentByClassCourse[$classId . ':' . $courseId] ?? $entry;
 				if ($this->seatParkedPriority($entries, $i, $row, false)) {
+					$moved = true;
+					break;
+				}
+			}
+			if (!$moved) {
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Version 2 lock. After the normal day is full, move one ordinary lesson
+	 * into an empty Monday–Thursday 15:40–16:20 cell and seat the leftover there.
+	 *
+	 * @param list<array<string,mixed>> $entries
+	 */
+	private function seatOverflowByMovingOne(array &$entries): void
+	{
+		if ($this->secondaryCriteria === null) {
+			return;
+		}
+		for ($pass = 0; $pass < 24; $pass++) {
+			$moved = false;
+			foreach ($entries as $i => $entry) {
+				if ((int) ($entry['slot_id'] ?? 0) > 0) {
+					continue;
+				}
+				$classId = (int) ($entry['class_id'] ?? 0);
+				$courseId = (int) ($entry['course_id'] ?? 0);
+				$row = $this->assignmentByClassCourse[$classId . ':' . $courseId] ?? $entry;
+				if ($this->seatParkedPriority($entries, $i, $row, true)) {
 					$moved = true;
 					break;
 				}

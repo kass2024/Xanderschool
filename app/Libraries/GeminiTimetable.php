@@ -91,6 +91,55 @@ class GeminiTimetable
 	}
 
 	/**
+	 * Pick a legal empty cell for each leftover lesson.
+	 * Options are already limited to cells where the class and the teacher are free.
+	 *
+	 * @param list<array<string,mixed>> $pending
+	 * @return list<array{entry_id:int,day:int,slot_id:int}>
+	 */
+	public function choosePlacements(array $pending, array $context = []): array
+	{
+		if (!$this->isConfigured() || $pending === []) {
+			return [];
+		}
+
+		$prompt = "You place leftover school lessons into empty timetable cells.\n"
+			. "Hard rules: use ONLY an option listed for that entry_id. "
+			. "Never give one teacher two classes at the same day and slot_id. "
+			. "Never give one class two lessons at the same day and slot_id. "
+			. "Prefer spreading one course across different days. "
+			. "Return ONLY JSON: {\"placements\":[{\"entry_id\":1,\"day\":0,\"slot_id\":2}]}\n"
+			. "Pending: " . json_encode($pending) . "\n"
+			. "Context: " . json_encode($context);
+
+		$text = $this->ask($prompt, 1200);
+		if ($text === null || $text === '') {
+			return [];
+		}
+		if (preg_match('/\{.*\}/s', $text, $m)) {
+			$text = $m[0];
+		}
+		$data = json_decode($text, true);
+		if (!is_array($data) || empty($data['placements']) || !is_array($data['placements'])) {
+			return [];
+		}
+		$out = [];
+		foreach ($data['placements'] as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$entryId = (int) ($row['entry_id'] ?? 0);
+			$day = (int) ($row['day'] ?? -1);
+			$slotId = (int) ($row['slot_id'] ?? 0);
+			if ($entryId <= 0 || $day < 0 || $slotId <= 0) {
+				continue;
+			}
+			$out[] = ['entry_id' => $entryId, 'day' => $day, 'slot_id' => $slotId];
+		}
+		return $out;
+	}
+
+	/**
 	 * Quality review after a successful generate (spread of low-hour subjects, doubles, etc.).
 	 *
 	 * @param list<array<string,mixed>> $sampleRows day/course samples from one or more classes

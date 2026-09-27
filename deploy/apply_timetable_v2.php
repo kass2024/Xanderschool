@@ -229,10 +229,13 @@ foreach ($allEntries as $entry) {
 		'is_locked' => !empty($entry['is_locked']) ? 1 : 0,
 	]);
 }
+$overflowPlaced = (new \App\Services\Timetable\TimetableStagingService())
+	->fillVersion2Gaps($scheduleId, $schoolId, $schema);
+echo "Version 2 locked fill placed: {$overflowPlaced}\n";
 $db->table('timetable_schedules')->where('id', $scheduleId)->update([
 	'title' => 'Final Version',
 	'status' => 'published',
-	'notes' => 'Final timetable. Combined courses follow Version 1. Periods that exceed free slots stay highlighted. Version 1 is stored in timetable_*_v1.',
+	'notes' => 'Version 2 rules are locked for the next generation. Leftover periods fill an empty class and teacher cell, including Mon–Thu 15:40–16:20. Combined courses follow Version 1. Periods that still exceed free slots stay highlighted.',
 	'generated_at' => date('Y-m-d H:i:s'),
 ]);
 
