@@ -413,7 +413,7 @@ class MenuClearance
 				'label' => 'Marks',
 				'children' => [
 					['key' => 'marks_entry', 'label' => 'Marks Entry'],
-					['key' => 'get_uploaded_marks', 'label' => 'Mark sheet'],
+					['key' => 'get_uploaded_marks', 'label' => 'Marks sheet'],
 					['key' => 'student_report', 'label' => 'Progress Reports'],
 					['key' => 'get_periodic_report', 'label' => 'Periodic report'],
 					['key' => 'get_periodic_marks', 'label' => 'Periodic Result'],

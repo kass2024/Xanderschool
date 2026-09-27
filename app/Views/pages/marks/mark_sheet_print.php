@@ -46,8 +46,8 @@ $maxTotal = (int) ($sheet['max_total'] ?? 0);
 	<div class="ms-toolbar">
 		<button onclick="window.print()">Print / PDF</button>
 	</div>
-	<h1 class="ms-title">CONTINUOUS ASSESSMENT (CAT) - CLASS MARK SHEET</h1>
-	<p class="ms-sub">Student list, then every quiz, homework and test saved for this term</p>
+	<h1 class="ms-title">MARKS SHEET</h1>
+	<p class="ms-sub">Marks already saved for this class and course</p>
 	<table class="ms-meta">
 		<tr>
 			<td><b>School:</b> <?= esc($sheet['school'] ?? ''); ?></td>
@@ -59,7 +59,6 @@ $maxTotal = (int) ($sheet['max_total'] ?? 0);
 		</tr>
 	</table>
 
-	<h3>A. Student CAT Record</h3>
 	<table class="ms">
 		<thead>
 			<tr>
@@ -92,10 +91,10 @@ $maxTotal = (int) ($sheet['max_total'] ?? 0);
 		</tbody>
 	</table>
 	<?php if ($columns === []): ?>
-		<p>No quiz, homework, or test has been saved for this course in the selected term.</p>
+		<p>No marks have been saved for this course in the selected term.</p>
 	<?php endif; ?>
 
-	<h3>B. Assessment Register</h3>
+	<h3>Assessments</h3>
 	<table class="ms">
 		<thead>
 			<tr>

@@ -11,7 +11,7 @@
 	.ms-grid .form-group { margin:0; min-width:180px; flex:1; }
 </style>
 <div class="ms-card">
-	<h4>Continuous assessment mark sheet</h4>
+	<h4>Marks sheet</h4>
 	<p><?= $sees_all
 		? 'Choose the academic year, term, and any teacher’s course. The sheet lists that class and every quiz, homework, and test saved for the term.'
 		: 'Choose the academic year, term, and one of your courses. You only see classes and subjects assigned to you.'; ?></p>
@@ -60,7 +60,7 @@
 	var courses = [];
 	function termMatches(raw, term) {
 		var parts = String(raw || '').split(',');
-		if (parts.length === 1 && parts[0].trim() === '') return true;
+		if (parts.length === 1 && (parts[0].trim() === '' || parts[0].trim() === '0')) return true;
 		for (var i = 0; i < parts.length; i++) {
 			if (parts[i].trim() === String(term)) return true;
 		}

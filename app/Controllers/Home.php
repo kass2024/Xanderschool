@@ -13791,7 +13791,7 @@ public function getApplicationDocs($id = null)
 			return $this->response->setBody('That course is not assigned in the selected academic year.');
 		}
 		$termParts = array_filter(array_map('trim', explode(',', (string) ($record['term'] ?? ''))), static function ($part) {
-			return $part !== '';
+			return $part !== '' && $part !== '0';
 		});
 		if ($termParts !== [] && !in_array((string) $termNo, $termParts, true)) {
 			return $this->response->setBody('That course is not assigned in the selected term.');
@@ -13820,35 +13820,75 @@ public function getApplicationDocs($id = null)
 		$markRows = [];
 		if ($termId > 0) {
 			$markRows = $db->table('marks')
-				->select('id, student_id, cat_type, period, marks, outof, examDate')
+				->select('id, student_id, mark_type, cat_type, period, marks, outof, examDate')
 				->where('class_id', (int) $record['class'])
 				->where('course_id', (int) $record['course'])
 				->where('term', $termId)
-				->where('mark_type', 1)
+				->whereIn('mark_type', [1, 2, holiday_coaching_mark_type()])
 				->orderBy('id', 'ASC')
 				->get()->getResultArray();
+		}
+		$knownIds = [];
+		foreach ($students as $student) {
+			$knownIds[(int) $student['id']] = true;
+		}
+		$missingIds = [];
+		foreach ($markRows as $mark) {
+			$sid = (int) ($mark['student_id'] ?? 0);
+			if ($sid > 0 && !isset($knownIds[$sid])) {
+				$missingIds[$sid] = $sid;
+			}
+		}
+		if ($missingIds !== []) {
+			$extra = $db->table('students')
+				->select("id, regno, concat(fname,' ',lname) as name")
+				->whereIn('id', array_values($missingIds))
+				->orderBy('fname', 'ASC')
+				->orderBy('lname', 'ASC')
+				->get()->getResultArray();
+			$students = array_merge($students, $extra);
 		}
 		$columns = [];
 		$cells = [];
 		foreach ($markRows as $mark) {
+			$markType = (int) ($mark['mark_type'] ?? 0);
 			$code = strtoupper(trim((string) ($mark['cat_type'] ?? '')));
-			if (!preg_match('/^[QTH]\d+$/', $code)) {
-				continue;
+			$label = '';
+			$kind = '';
+			if (preg_match('/^[QTH]\d+$/', $code)) {
+				$label = function_exists('catTypeStr') ? catTypeStr($code) : $code;
+				$kind = $code[0] === 'Q' ? 'Quiz' : ($code[0] === 'H' ? 'Homework' : 'Test');
+			} elseif ($markType === 2) {
+				$code = 'EXAM';
+				$label = 'Exam';
+				$kind = 'Exam';
+			} elseif ($markType === holiday_coaching_mark_type()) {
+				$code = 'HOLIDAY';
+				$label = 'Holiday';
+				$kind = 'Holiday';
+			} else {
+				$code = 'CAT';
+				$label = 'CAT';
+				$kind = 'CAT';
 			}
 			$when = $this->markSheetTimestamp($mark['examDate'] ?? 0);
-			$key = $code . '|' . (int) ($mark['period'] ?? 0) . '|' . $when;
+			$key = $markType . '|' . $code . '|' . (int) ($mark['period'] ?? 0);
 			if (!isset($columns[$key])) {
 				$columns[$key] = [
 					'key' => $key,
 					'code' => $code,
-					'label' => function_exists('catTypeStr') ? catTypeStr($code) : $code,
-					'kind' => $code[0] === 'Q' ? 'Quiz' : ($code[0] === 'H' ? 'Homework' : 'Test'),
+					'label' => $label,
+					'kind' => $kind,
 					'max' => (int) ($mark['outof'] ?? 0),
 					'when' => $when,
 					'date_short' => $when > 0 ? date('d M', $when) : '',
 					'date_long' => $when > 0 ? date('d M Y', $when) : '',
 					'topic' => '',
 				];
+			} elseif ($when > 0 && (int) $columns[$key]['when'] === 0) {
+				$columns[$key]['when'] = $when;
+				$columns[$key]['date_short'] = date('d M', $when);
+				$columns[$key]['date_long'] = date('d M Y', $when);
 			}
 			$studentId = (int) $mark['student_id'];
 			$cells[$studentId][$key] = self::displayMarkEntry($mark['marks'], $mark['id']);
@@ -13887,7 +13927,7 @@ public function getApplicationDocs($id = null)
 		}
 		$subject = trim($record['course_title'] . ($record['course_code'] !== '' ? ' (' . $record['course_code'] . ')' : ''));
 		$sheet = [
-			'title' => 'CAT mark sheet — ' . $subject,
+			'title' => 'Marks sheet — ' . $subject,
 			'school' => (string) ($this->data['school_name'] ?? ''),
 			'subject' => $subject,
 			'class_label' => trim($record['level_name'] . ' ' . $record['class_title']),
