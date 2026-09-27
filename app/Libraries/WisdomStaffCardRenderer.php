@@ -219,7 +219,11 @@ class WisdomStaffCardRenderer
 		if (!$src) {
 			return;
 		}
-		$square = $this->fitSubjectInCircle($src, $d);
+		$normalizer = new ProfilePhotoNormalizer();
+		$square = $normalizer->idCircleCoverFromImage($src, $d);
+		if (!$square) {
+			$square = $this->fitSubjectInCircle($src, $d);
+		}
 		imagedestroy($src);
 		if (!$square) {
 			return;

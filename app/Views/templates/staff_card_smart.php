@@ -140,8 +140,18 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		height: 100%;
 		display: block;
 		border: 0;
-		object-fit: <?= !empty($isWisdomArt) ? 'contain' : 'cover' ?>;
+		object-fit: cover;
+		-webkit-object-fit: cover;
 		object-position: center 12%;
+	}
+	.cf-photo.is-round img {
+		width: 116%;
+		height: 116%;
+		margin: -8%;
+		object-fit: cover;
+		-webkit-object-fit: cover;
+		object-position: center 10%;
+		background: #ffffff;
 	}
 	.cf-badge, .cf-moto {
 		background: <?= $main; ?>;
@@ -247,12 +257,15 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	$photoField = $fields['photo'] ?? ['w' => 36, 'h' => 30];
 	$photoPxW = max(180, (int) round($cardWmm * ((float)($photoField['w'] ?? 36) / 100) * 12));
 	$photoPxH = max(220, (int) round($cardHmm * ((float)($photoField['h'] ?? 30) / 100) * 12));
+	if ($isWisdomArt) {
+		$photoPxW = $photoPxH = max($photoPxW, $photoPxH, 640);
+	}
 	$photoSrc = profile_photo_card_cover_src($staff['photo'] ?? '', $photoPxW, $photoPxH);
 	$fullName = $fmt(trim(($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? '')));
 	$postTitle = $fmt($staff['post_title'] ?? '—');
 	$phoneLabel = $fmt(!empty($staff['phone']) ? $staff['phone'] : '—');
 	$emailLabel = $fmt(!empty($staff['email']) ? $staff['email'] : '—');
-	$staffId = $fmt((string) ($staff['id'] ?? '—'));
+	$staffId = $fmt(\App\Libraries\WisdomStaffCardRenderer::cardStaffId($staff, (string) ($school_name ?? $schoolName ?? '')));
 	$validDate = $fmt($validityShort !== '' ? $validityShort : date('Y'));
 
 	$values = [
@@ -278,12 +291,12 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			$wsRows[] = ['EMAIL', trim((string) $staff['email']), 'email'];
 		}
 		if (($staff['id'] ?? '') !== '') {
-			$wsRows[] = ['STAFF ID', (string) $staff['id'], 'id'];
+			$wsRows[] = ['STAFF ID', \App\Libraries\WisdomStaffCardRenderer::cardStaffId($staff, (string) ($school_name ?? $schoolName ?? '')), 'id'];
 		}
 	}
 	$cardBgSrc = $bgSrc;
 	if ($isWisdomArt) {
-		$rel = \App\Libraries\WisdomStaffCardRenderer::templateForStaff($staff);
+		$rel = \App\Libraries\WisdomStaffCardRenderer::templateForStaff($staff, (string) ($school_name ?? $schoolName ?? ''));
 		$abs = rtrim(FCPATH, '/\\') . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
 		if (is_file($abs)) {
 			$cardBgSrc = asset_card_img_src($rel, null, 1080, 1712);
@@ -313,7 +326,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 
 		<?php if (CardLayout::isVisible($fields, 'photo') || $isWisdomArt):
 			$f = $isWisdomArt ? ['x' => 30.0, 'y' => 19.2, 'w' => 40.0, 'h' => 23.6] : $fields['photo']; ?>
-			<div class="cf-photo" style="<?= CardLayout::boxStyle($f, 3); ?>border-radius:50%;">
+			<div class="cf-photo<?= $isWisdomArt ? ' is-round' : ''; ?>" style="<?= CardLayout::boxStyle($f, 3); ?>border-radius:50%;">
 				<?php if ($photoSrc): ?><img src="<?= $photoSrc; ?>" alt=""><?php endif; ?>
 			</div>
 		<?php endif; ?>
