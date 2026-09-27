@@ -78,10 +78,42 @@ class DisciplineCodeModel extends Model
 		if ($active > 0) {
 			return;
 		}
+		$this->insertMissingCatalogRows($schoolId);
+	}
+
+	/**
+	 * Schools that already have conduct codes still receive new catalog laws.
+	 * Existing rows are left as the school saved them.
+	 */
+	public function ensureCatalogUpdates(int $schoolId): void
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1) {
+			return;
+		}
+		$this->seedIfEmpty($schoolId);
+		$this->insertMissingCatalogRows($schoolId);
+	}
+
+	private function insertMissingCatalogRows(int $schoolId): void
+	{
+		$have = [];
+		foreach ($this->where('school_id', $schoolId)->select('category_key, code_no')->findAll() as $row) {
+			$have[(string) ($row['category_key'] ?? '') . '|' . (int) ($row['code_no'] ?? 0)] = true;
+		}
+		$maxRow = \Config\Database::connect()->table('discipline_codes')
+			->selectMax('sort_order', 'mx')
+			->where('school_id', $schoolId)
+			->get()->getRowArray();
+		$sort = (int) ($maxRow['mx'] ?? 0);
 		$now = date('Y-m-d H:i:s');
-		$sort = 0;
 		foreach (WisdomDisciplineCatalog::categories() as $cat) {
 			foreach ($cat['items'] as $item) {
+				$key = (string) ($cat['key'] ?? '');
+				$no = (int) ($item['no'] ?? 0);
+				if ($no > 0 && isset($have[$key . '|' . $no])) {
+					continue;
+				}
 				$sort++;
 				$marks = $item['marks'] ?? [0, 0, 0];
 				$se = $item['se'] ?? ['', '', ''];
@@ -115,8 +147,7 @@ class DisciplineCodeModel extends Model
 	/** @return list<array<string,mixed>> */
 	public function listCodes(int $schoolId, bool $activeOnly = false): array
 	{
-		$this->ensureSchema();
-		$this->seedIfEmpty($schoolId);
+		$this->ensureCatalogUpdates($schoolId);
 		$b = $this->where('school_id', $schoolId);
 		if ($activeOnly) {
 			$b->where('active', 1);

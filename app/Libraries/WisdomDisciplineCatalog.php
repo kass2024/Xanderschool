@@ -395,6 +395,22 @@ class WisdomDisciplineCatalog
 						'se' => ['4 weeks home', '4 weeks home', '4 weeks home'],
 						'sr' => ['Ibyumweru 4 mu rugo', 'Ibyumweru 4 mu rugo', 'Ibyumweru 4 mu rugo'],
 					],
+					[
+						'no' => 12,
+						'en' => 'Forgetting student card',
+						'rw' => 'Kwibagirwa ikarita y\'umunyeshuri',
+						'marks' => [10, 20, 30],
+						'se' => ['10 marks', '20 marks', '30 marks'],
+						'sr' => ['Amanota 10', 'Amanota 20', 'Amanota 30'],
+					],
+					[
+						'no' => 13,
+						'en' => 'Losing student card',
+						'rw' => 'Gutakaza ikarita y\'umunyeshuri',
+						'marks' => [30, 40, 0],
+						'se' => ['30 marks', '40 marks', 'Pay for a new student card'],
+						'sr' => ['Amanota 30', 'Amanota 40', 'Kwishyura ikarita nshya y\'umunyeshuri'],
+					],
 				],
 			],
 			[

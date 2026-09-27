@@ -3312,7 +3312,7 @@ public function get_boarding_classes()
 		$this->_preset($school_id);
 		$codeMdl = new \App\Models\DisciplineCodeModel();
 		$codeMdl->ensureSchema();
-		$codeMdl->seedIfEmpty($school_id);
+		$codeMdl->ensureCatalogUpdates($school_id);
 		$lang = strtolower(trim((string) ($this->request->getPost('lang') ?? $this->request->getGet('lang') ?? 'en')));
 		$lang = $lang === 'rw' ? 'rw' : 'en';
 		$groups = [];
@@ -3323,14 +3323,24 @@ public function get_boarding_classes()
 					'id' => (int) $row['id'],
 					'code_no' => (int) $row['code_no'],
 					'title' => \App\Models\DisciplineCodeModel::titleFor($row, $lang),
+					'title_en' => (string) ($row['title_en'] ?? ''),
+					'title_rw' => (string) ($row['title_rw'] ?? ''),
 					'first_marks' => (int) $row['first_marks'],
 					'second_marks' => (int) $row['second_marks'],
 					'third_marks' => (int) $row['third_marks'],
+					'first_sanction_en' => (string) ($row['first_sanction_en'] ?? ''),
+					'first_sanction_rw' => (string) ($row['first_sanction_rw'] ?? ''),
+					'second_sanction_en' => (string) ($row['second_sanction_en'] ?? ''),
+					'second_sanction_rw' => (string) ($row['second_sanction_rw'] ?? ''),
+					'third_sanction_en' => (string) ($row['third_sanction_en'] ?? ''),
+					'third_sanction_rw' => (string) ($row['third_sanction_rw'] ?? ''),
 				];
 			}
 			$groups[] = [
 				'key' => $g['key'],
 				'title' => $lang === 'rw' ? $g['rw'] : $g['en'],
+				'en' => (string) ($g['en'] ?? ''),
+				'rw' => (string) ($g['rw'] ?? ''),
 				'items' => $items,
 			];
 		}
@@ -3350,7 +3360,7 @@ public function get_boarding_classes()
 		$codeId = (int) $this->request->getPost("code_id");
 		$codeMdl = new \App\Models\DisciplineCodeModel();
 		$codeMdl->ensureSchema();
-		$codeMdl->seedIfEmpty((int) $school_id);
+		$codeMdl->ensureCatalogUpdates((int) $school_id);
 		$code = $codeId > 0
 			? $codeMdl->where('id', $codeId)->where('school_id', (int) $school_id)->where('active', 1)->first()
 			: null;
