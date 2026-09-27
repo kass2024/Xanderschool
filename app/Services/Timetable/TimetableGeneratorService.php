@@ -295,7 +295,7 @@ class TimetableGeneratorService
 	 * @param list<array<string,mixed>> $contextAssignments All phase assignments so ANP/Stream combines can see each other.
 	 * @return array{entries:list<array<string,mixed>>,warnings:list<string>,assignments?:list<array<string,mixed>>}
 	 */
-	public function generate(array $assignments, array $teachingSlots, array $days = [0, 1, 2, 3, 4], array $blocked = [], bool $resetState = true, array $contextAssignments = []): array
+	public function generate(array $assignments, array $teachingSlots, array $days = [0, 1, 2, 3, 4], array $blocked = [], bool $resetState = true, array $contextAssignments = [], array $preoccupied = []): array
 	{
 		if ($resetState) {
 			$this->classBusy = [];
@@ -309,6 +309,9 @@ class TimetableGeneratorService
 			$this->globalDayUsage = [];
 			$this->warnings = [];
 			// Keep slotTimes so partner classes on another track can share the same clock.
+		}
+		if ($preoccupied !== []) {
+			$this->seedBusyFromEntries($preoccupied);
 		}
 
 		$this->secondaryCriteria = new SecondaryTimetableCriteria();

@@ -1203,6 +1203,13 @@ class TimetableSchemaModel extends Model
 		return $t !== '' ? $t : '00:00:00';
 	}
 
+	/** Library and Clubs / Home Science clock: 16:40–17:30. */
+	public static function isLibraryHomeScienceClock(?string $start, ?string $end = null): bool
+	{
+		return self::slotClock($start) === '16:40:00'
+			&& self::slotClock($end !== null && $end !== '' ? $end : $start) === '17:30:00';
+	}
+
 	public static function isAfterLessonSlotTimes(?string $start, ?string $end = null): bool
 	{
 		$startClock = self::slotClock($start);

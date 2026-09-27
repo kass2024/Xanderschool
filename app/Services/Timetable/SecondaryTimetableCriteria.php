@@ -259,6 +259,18 @@ class SecondaryTimetableCriteria
 	 */
 	public function slotAllowed(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
+		if ($this->isFixedEveningActivity($row)) {
+			if (!\App\Models\TimetableSchemaModel::isLibraryHomeScienceClock($slotStart, $slotEnd)) {
+				return false;
+			}
+			if ($day === 6 && !$this->allowsSunday($row, $slotStart, $slotEnd)) {
+				return false;
+			}
+			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
+				return false;
+			}
+			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+		}
 		if ($this->requiresAfterLessons($row)) {
 			if (!\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd)) {
 				return false;
@@ -299,13 +311,20 @@ class SecondaryTimetableCriteria
 		return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
 	}
 
-	/** Farming / Library and Clubs: only after 15:40, never night. */
+	/** Library and Clubs and Home Science sit only at 16:40–17:30. */
+	public function isFixedEveningActivity(array $row): bool
+	{
+		$family = self::afterLessonFamily((string) ($row['course_title'] ?? ''));
+		return $family === 'library_clubs' || $family === 'home_science';
+	}
+
+	/** Farming / Library and Clubs / Home Science: after the teaching day, never night. */
 	public static function isAfterLessonCourseTitle(string $title): bool
 	{
 		return self::afterLessonFamily($title) !== '';
 	}
 
-	/** farming | library_clubs | '' — same-teacher classes share one after-lesson clock. */
+	/** farming | library_clubs | home_science | '' — same-teacher classes share one clock. */
 	public static function afterLessonFamily(string $title): string
 	{
 		$t = strtolower(trim(preg_replace('/\s+/', ' ', $title)));
@@ -314,6 +333,9 @@ class SecondaryTimetableCriteria
 		}
 		if (strpos($t, 'farming') !== false) {
 			return 'farming';
+		}
+		if (strpos($t, 'home science') !== false) {
+			return 'home_science';
 		}
 		if (strpos($t, 'library') !== false || $t === 'club' || $t === 'clubs'
 			|| preg_match('/\blibrary\b.*\bclubs?\b/', $t) === 1) {
@@ -999,7 +1021,9 @@ class SecondaryTimetableCriteria
 			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
 			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching period of the class (15:00–15:40; on Friday 14:20–15:00). If that cell is taken, the other lesson is moved earlier. Never after 15:40, and never in 15:00–15:40 on Friday. Never 13:40. At most one PE period per class day.'],
-			['group' => 'After lessons', 'title' => 'Farming / Library and Clubs', 'detail' => 'Always after lessons end (15:40–17:30), filling the first free cells after 15:40. Never during the teaching day, never night preps or supper. Same teacher + same activity (Farming with Farming, Library with Library) share one clock across classes.'],
+			['group' => 'After lessons', 'title' => 'Library and Clubs / Home Science', 'detail' => '16:40–17:30 only, for the listed classes. Same teacher shares one clock. Not during the teaching day and not at chapel, dinner, or preps.'],
+			['group' => 'After lessons', 'title' => 'Evening bells', 'detail' => '17:30–18:00 chapel, 18:00–19:00 dinner, 19:00–21:00 preps.'],
+			['group' => 'After lessons', 'title' => 'Farming', 'detail' => 'After lessons (15:40–17:30), never night. Same teacher shares one clock.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
 			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Linea, Varlette and Marguerite teach ANP in the morning, Tuesday to Thursday.'],
