@@ -23,6 +23,7 @@ FILES = [
     "app/Helpers/qonics_helper.php",
     "app/Views/templates/staff_card_smart.php",
     "app/Views/pages/school_settings.php",
+    "public/assets/images/background/wisdom_staff_card_ngororero.png",
 ]
 
 VERIFY = [
@@ -30,7 +31,7 @@ VERIFY = [
     ("app/Libraries/WisdomStaffCardRenderer.php", "innerPhotoBox"),
     ("app/Views/templates/staff_card_smart.php", "object-position: center 25%"),
     ("app/Libraries/ProfilePhotoNormalizer.php", "seatHeadBelowTop"),
-    ("app/Helpers/qonics_helper.php", "v4fitcircle"),
+    ("app/Helpers/qonics_helper.php", "v5fillcircle"),
 ]
 
 

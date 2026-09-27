@@ -663,25 +663,30 @@ class ProfilePhotoNormalizer
 			[$px, $py, $pw, $ph] = $person;
 			$fillsFrame = false;
 		}
-		$hairPad = (int) max(2, round($ph * 0.06));
+		$hairPad = (int) max(2, round($ph * 0.08));
 		$py = max($by, $py - $hairPad);
 		$ph = max(8, min($by + $bh - $py, $ph + $hairPad));
+		// Wide scene photos (person at a desk) are zoomed to the head so the
+		// circle is a round portrait, not a tiny full-body picture.
+		$headW = $this->upperSpan($src, $px, $py, $pw, max(8, (int) round($ph * 0.45)));
+		if ($headW >= 8 && $headW < (int) ($pw * 0.82)) {
+			$zoom = (int) round($headW / 0.58);
+			$zoom = max($zoom, (int) round($headW * 1.45));
+			$zoom = min($zoom, $pw, $bw);
+			$cx = $px + (int) ($pw / 2);
+			$px = max($bx, min($bx + $bw - $zoom, $cx - (int) ($zoom / 2)));
+			$pw = $zoom;
+			$fillsFrame = false;
+		}
 
 		$side = min($outW, $outH);
-		// Room above the hair. The circle is narrower than the square near
-		// the top, so this keeps a wide crown inside the ring.
-		$margin = (int) round($side * ($fillsFrame ? 0.12 : 0.14));
-		$targetFrac = $fillsFrame ? 0.86 : 0.70;
+		// Fill the circle. The gap above the hair keeps the crown inside the
+		// round edge without leaving the person tiny in the hole.
+		$margin = (int) round($side * 0.12);
+		$targetFrac = $fillsFrame ? 0.92 : 0.88;
 		$scale = ($side * $targetFrac) / max(1, $pw);
 		$drawW = max(1, (int) round($pw * $scale));
 		$drawH = max(1, (int) round($ph * $scale));
-		// If the scaled head would be pushed into the top edge, shrink it.
-		if ($margin + (int) round($drawH * 0.42) > (int) round($side * 0.62)) {
-			$fitH = max(1, (int) round($side * 0.62) - $margin);
-			$scale = min($scale, $fitH / max(1, $ph * 0.42));
-			$drawW = max(1, (int) round($pw * $scale));
-			$drawH = max(1, (int) round($ph * $scale));
-		}
 		$dx = (int) round(($outW - $drawW) / 2);
 		$dy = $margin;
 
@@ -690,6 +695,44 @@ class ProfilePhotoNormalizer
 		imagefill($dst, 0, 0, $white);
 		$this->hiQualityResample($dst, $src, $dx, $dy, $px, $py, $drawW, $drawH, $pw, $ph);
 		return $dst;
+	}
+
+	/**
+	 * Width of the person across the top of the box (head and shoulders).
+	 * A desk or full-body shot is wider lower down, so this stays on the head.
+	 */
+	private function upperSpan($im, int $x0, int $y0, int $bw, int $bh): int
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		$step = max(1, (int) floor(min(max(1, $bw), max(1, $bh)) / 48));
+		$minX = $x0 + $bw;
+		$maxX = $x0;
+		$hits = 0;
+		$y1 = min($h, $y0 + max(1, $bh));
+		$x1 = min($w, $x0 + max(1, $bw));
+		for ($y = max(0, $y0); $y < $y1; $y += $step) {
+			for ($x = max(0, $x0); $x < $x1; $x += $step) {
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($r > 242 && $g > 242 && $b > 242) {
+					continue;
+				}
+				$hits++;
+				if ($x < $minX) {
+					$minX = $x;
+				}
+				if ($x > $maxX) {
+					$maxX = $x;
+				}
+			}
+		}
+		if ($hits < 6 || $maxX <= $minX) {
+			return 0;
+		}
+		return $maxX - $minX + 1;
 	}
 
 	/**
