@@ -55,7 +55,7 @@ if (!empty($lh['website'])) {
 			display: flex;
 			flex-wrap: wrap;
 			align-items: center;
-			justify-content: space-between;
+			justify-content: flex-end;
 			gap: 10px;
 			padding: 10px 16px;
 			background: var(--navy);
@@ -249,7 +249,6 @@ if (!empty($lh['website'])) {
 </head>
 <body>
 	<div class="ms-toolbar">
-		<p>Landscape PDF. Extra quizzes stay in the table and scroll on screen.</p>
 		<button type="button" onclick="window.print()">Print / Save PDF</button>
 	</div>
 	<article class="ms-sheet <?= esc($density); ?>">
@@ -301,9 +300,6 @@ if (!empty($lh['website'])) {
 						<?php foreach ($columns as $col): ?>
 							<th><?= esc($col['label']); ?></th>
 						<?php endforeach; ?>
-						<th rowspan="<?= $headRows; ?>">Total<?= $maxTotal > 0 ? '<br>/' . $maxTotal : ''; ?></th>
-						<th rowspan="<?= $headRows; ?>">CAT %</th>
-						<th rowspan="<?= $headRows; ?>">Remark</th>
 					</tr>
 					<?php if ($columns !== []): ?>
 					<tr class="ms-sub">
@@ -327,7 +323,7 @@ if (!empty($lh['website'])) {
 				</thead>
 				<tbody>
 					<?php if ($students === []): ?>
-						<tr><td class="name" colspan="<?= 5 + $colCount; ?>">No active students in this class for the selected year.</td></tr>
+						<tr><td class="name" colspan="<?= 2 + $colCount; ?>">No active students in this class for the selected year.</td></tr>
 					<?php endif; ?>
 					<?php foreach ($students as $i => $student): ?>
 						<tr>
@@ -336,9 +332,6 @@ if (!empty($lh['website'])) {
 							<?php foreach ($columns as $col): ?>
 								<td><?= esc($student['cells'][$col['key']] ?? ''); ?></td>
 							<?php endforeach; ?>
-							<td class="total"><?= $columns === [] ? '' : esc($student['total']); ?></td>
-							<td class="pct"><?= $columns === [] ? '' : esc($student['percent']); ?></td>
-							<td class="remark <?= esc($student['remark_class']); ?>"><?= esc($student['remark']); ?></td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -346,8 +339,6 @@ if (!empty($lh['website'])) {
 		</div>
 		<?php if ($columns === []): ?>
 			<p class="ms-note">No marks have been saved for this course in the selected term.</p>
-		<?php else: ?>
-			<p class="ms-note">CAT % is the total of marks obtained across these assessments<?= $maxTotal > 0 ? ' / ' . $maxTotal : ''; ?> &times; 100. A blank cell means the student has no saved mark for that assessment.</p>
 		<?php endif; ?>
 
 		<div class="ms-sign">
