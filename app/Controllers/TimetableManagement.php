@@ -643,6 +643,7 @@ class TimetableManagement extends Home
 			->where('cl.school_id', $schoolId)
 			->where('cr.year', $year)
 			->where("find_in_set($term, cr.term) > 0", null, false)
+			->whereNotIn('cr.course', \App\Services\Timetable\SecondaryTimetableCriteria::MANAGER_ONLY_COURSE_IDS)
 			->orderBy('cr.id', 'ASC')
 			->get()->getResultArray();
 		$parts = [];
@@ -2533,6 +2534,7 @@ class TimetableManagement extends Home
 			->where('cl.school_id', $schoolId)
 			->where('cr.year', $year)
 			->where("find_in_set($term, cr.term) > 0", null, false)
+			->whereNotIn('cr.course', \App\Services\Timetable\SecondaryTimetableCriteria::MANAGER_ONLY_COURSE_IDS)
 			->orderBy('cl.title')->orderBy('c.title')
 			->get()->getResultArray();
 

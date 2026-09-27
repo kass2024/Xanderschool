@@ -17,6 +17,7 @@ require rtrim($paths->systemDirectory, '/ ') . '/bootstrap.php';
 
 use App\Libraries\TimetableTrack;
 use App\Models\TimetableSchemaModel;
+use App\Services\Timetable\SecondaryTimetableCriteria;
 use App\Services\Timetable\TimetableGeneratorService;
 
 @set_time_limit(0);
@@ -59,11 +60,7 @@ foreach ($hsTracks as $track) {
 	rewriteEveningSpecials($db, $schoolId, $track);
 }
 
-$db->table('course_records')
-	->where('class', 220)
-	->whereIn('course', [476, 478])
-	->delete();
-echo "Removed L3 SOD course records\n";
+echo "L3 SOD Occupation and Maintain SHE stay in Manage Course and are not timetabled\n";
 
 $sample = $db->table('course_records')->where('id', 2082)->get()->getRowArray();
 if (!$sample) {
@@ -250,8 +247,9 @@ echo "=== ACTIVITY PLACEMENT ===\n";
 foreach ($activity as $line) {
 	echo $line['title'] . ' ' . substr((string) $line['start_time'], 0, 5) . '-' . substr((string) $line['end_time'], 0, 5) . ' x' . $line['n'] . "\n";
 }
-$sod = (int) $db->table('course_records')->where('class', 220)->whereIn('course', [476, 478])->countAllResults();
-echo "L3 SOD removed courses left: {$sod}\n";
+$sodKept = (int) $db->table('course_records')->where('class', 220)->whereIn('course', [476, 478])->countAllResults();
+$sodOnGrid = (int) $db->table('timetable_entries')->where('schedule_id', $scheduleId)->whereIn('course_id', [476, 478])->countAllResults();
+echo "L3 SOD manager-only course records: {$sodKept}; timetable rows: {$sodOnGrid}\n";
 $chapel = (int) $db->table('timetable_special_times')->where('school_id', $schoolId)->where('label', 'CHAPEL')->countAllResults();
 $dinner = (int) $db->table('timetable_special_times')->where('school_id', $schoolId)->where('label', 'DINNER')->countAllResults();
 $preps = (int) $db->table('timetable_special_times')->where('school_id', $schoolId)->where('label', 'PREPS')->countAllResults();
@@ -372,5 +370,6 @@ function loadAssignments($db, int $schoolId, int $year, int $term): array
 		->where('cl.school_id', $schoolId)
 		->where('cr.year', $year)
 		->where("find_in_set({$term}, cr.term) > 0", null, false)
+		->whereNotIn('cr.course', SecondaryTimetableCriteria::MANAGER_ONLY_COURSE_IDS)
 		->get()->getResultArray();
 }

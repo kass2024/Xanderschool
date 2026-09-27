@@ -12,6 +12,14 @@ namespace App\Services\Timetable;
  */
 class SecondaryTimetableCriteria
 {
+	/**
+	 * Stay in Manage Course. Never placed on a class or teacher timetable.
+	 * L3 SOD: Occupation and learning process, Maintain SHE at Workplace.
+	 *
+	 * @var list<int>
+	 */
+	public const MANAGER_ONLY_COURSE_IDS = [476, 478];
+
 	/** @var array<string,array<string,mixed>> classId => meta */
 	private $classMeta = [];
 

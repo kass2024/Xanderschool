@@ -1162,6 +1162,7 @@ class TimetableStagingService
 			->where('cl.school_id', $schoolId)
 			->where('cr.year', $year)
 			->where("find_in_set($term, cr.term) >", 0, false)
+			->whereNotIn('cr.course', SecondaryTimetableCriteria::MANAGER_ONLY_COURSE_IDS)
 			->get()->getResultArray();
 
 		$out = [];
