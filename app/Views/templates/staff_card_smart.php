@@ -147,7 +147,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		border: 0;
 		object-fit: cover;
 		-webkit-object-fit: cover;
-		object-position: center top;
+		object-position: center 25%;
 		border-radius: 50%;
 		-webkit-border-radius: 50%;
 	}

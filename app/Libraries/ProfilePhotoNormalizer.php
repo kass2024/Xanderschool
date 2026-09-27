@@ -626,10 +626,10 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Fill a frame the way CSS does: object-fit cover, object-position center top.
-	 * White letterbox bars are dropped first. The picture is cropped, never stretched
-	 * or shrunk inside the frame, so a circle clipped from this frame has no empty rim.
-	 * The top of the portrait stays in frame so the head is not cropped off the bottom.
+	 * Fill a frame the way CSS does: object-fit cover, object-position center 20%.
+	 * White letterbox bars are dropped first. The picture is cropped, never stretched,
+	 * and still covers the frame. The portrait then sits slightly lower so the circle
+	 * does not shave the hair; the strip above the head is the photo's own background.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -675,7 +675,102 @@ class ProfilePhotoNormalizer
 		$white = imagecolorallocate($dst, 255, 255, 255);
 		imagefill($dst, 0, 0, $white);
 		$this->hiQualityResample($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $cropW, $cropH);
+		$this->seatHeadBelowTop($dst);
 		return $dst;
+	}
+
+	/**
+	 * If the hair touches the top of the cover, slide the portrait down and
+	 * fill the new strip with the photo's own wall colour so the circle stays full.
+	 *
+	 * @param resource|\GdImage $dst
+	 */
+	private function seatHeadBelowTop($dst): void
+	{
+		$w = imagesx($dst);
+		$h = imagesy($dst);
+		if ($w < 8 || $h < 8) {
+			return;
+		}
+		$wall = $this->frameWallColor($dst);
+		$minGap = (int) round($h * 0.10);
+		$cx = (int) ($w / 2);
+		$have = 0;
+		for ($y = 0; $y < (int) ($h * 0.45); $y++) {
+			if (!$this->pixelNearWall($dst, $cx, $y, $wall, 48)) {
+				break;
+			}
+			$have++;
+		}
+		$shift = $minGap - $have;
+		if ($shift < 2) {
+			return;
+		}
+		$shift = min($shift, (int) round($h * 0.16));
+		$moved = imagecreatetruecolor($w, $h);
+		imagecopy($moved, $dst, 0, $shift, 0, 0, $w, $h - $shift);
+		$fill = imagecolorallocate($moved, $wall[0], $wall[1], $wall[2]);
+		imagefilledrectangle($moved, 0, 0, $w - 1, max(0, $shift), $fill);
+		imagecopy($dst, $moved, 0, 0, 0, 0, $w, $h);
+		imagedestroy($moved);
+	}
+
+	/**
+	 * Studio colour from the upper corners, skipping dark hair.
+	 *
+	 * @param resource|\GdImage $im
+	 * @return array{0:int,1:int,2:int}
+	 */
+	private function frameWallColor($im): array
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		$pts = [
+			[1, 1],
+			[$w - 2, 1],
+			[(int) ($w * 0.08), 2],
+			[(int) ($w * 0.92), 2],
+			[2, (int) ($h * 0.08)],
+			[$w - 3, (int) ($h * 0.08)],
+		];
+		$rs = 0;
+		$gs = 0;
+		$bs = 0;
+		$n = 0;
+		foreach ($pts as $pt) {
+			$x = max(0, min($w - 1, (int) $pt[0]));
+			$y = max(0, min($h - 1, (int) $pt[1]));
+			$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+			$r = ($rgb >> 16) & 255;
+			$g = ($rgb >> 8) & 255;
+			$b = $rgb & 255;
+			$lum = (0.299 * $r) + (0.587 * $g) + (0.114 * $b);
+			if ($lum < 140) {
+				continue;
+			}
+			$rs += $r;
+			$gs += $g;
+			$bs += $b;
+			$n++;
+		}
+		if ($n < 1) {
+			return [236, 236, 236];
+		}
+		return [(int) round($rs / $n), (int) round($gs / $n), (int) round($bs / $n)];
+	}
+
+	/** @param resource|\GdImage $im @param array{0:int,1:int,2:int} $wall */
+	private function pixelNearWall($im, int $x, int $y, array $wall, int $tol): bool
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		$x = max(0, min($w - 1, $x));
+		$y = max(0, min($h - 1, $y));
+		$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+		$r = ($rgb >> 16) & 255;
+		$g = ($rgb >> 8) & 255;
+		$b = $rgb & 255;
+		return abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]) <= $tol * 3;
 	}
 
 	/**
