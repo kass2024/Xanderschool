@@ -626,10 +626,8 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Fit a staff portrait inside a circular frame without cutting the head.
-	 * The whole photo is scaled uniformly (never cropped, never stretched).
-	 * The person stays inside the circle, with a little room above the hair.
-	 * Any remaining circle area is the photo's own background.
+	 * Fill the circle with a cover crop. The portrait sits slightly lower
+	 * so the ring leaves a little room above the hair.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -653,164 +651,89 @@ class ProfilePhotoNormalizer
 			$bw = $sw;
 			$bh = $sh;
 		}
-		$wall = $this->contentWallColor($src, $bx, $by, $bw, $bh);
-		$dst = imagecreatetruecolor($outW, $outH);
-		$fill = imagecolorallocate($dst, $wall[0], $wall[1], $wall[2]);
-		imagefill($dst, 0, 0, $fill);
+		$targetRatio = $outW / $outH;
+		$srcRatio = $bw / max(1, $bh);
+		if ($srcRatio > $targetRatio) {
+			$cropH = $bh;
+			$cropW = max(1, (int) round($bh * $targetRatio));
+			$sx = $bx + (int) max(0, (int) floor(($bw - $cropW) / 2));
+			$sy = $by;
+		} else {
+			$cropW = $bw;
+			$cropH = max(1, (int) round($bw / $targetRatio));
+			$sx = $bx;
+			$sy = $by;
+		}
+		$sx = max(0, min($sw - 1, $sx));
+		$sy = max(0, min($sh - 1, $sy));
+		$cropW = max(1, min($cropW, $sw - $sx, $bx + $bw - $sx));
+		$cropH = max(1, min($cropH, $sh - $sy, $by + $bh - $sy));
 
-		$scale = $this->staffCircleScale($src, $bx, $by, $bw, $bh, $outW, $outH, $wall);
-		$drawW = max(1, (int) round($bw * $scale));
-		$drawH = max(1, (int) round($bh * $scale));
-		$ox = (int) round(($outW - $drawW) / 2);
-		$oy = (int) round(($outH - $drawH) / 2);
-		$this->hiQualityResample($dst, $src, $ox, $oy, $bx, $by, $drawW, $drawH, $bw, $bh);
+		$dst = imagecreatetruecolor($outW, $outH);
+		$white = imagecolorallocate($dst, 255, 255, 255);
+		imagefill($dst, 0, 0, $white);
+		$this->hiQualityResample($dst, $src, 0, 0, $sx, $sy, $outW, $outH, $cropW, $cropH);
+		$this->seatHeadBelowTop($dst);
 		return $dst;
 	}
 
 	/**
-	 * Largest uniform scale that keeps the person inside the circle.
-	 * The full photo is shown (never cropped). Background may meet the rim;
-	 * hair and the head may not.
+	 * Slide the filled portrait down a little and fill the strip with the
+	 * photo's own background so the circle stays full.
 	 *
-	 * @param resource|\GdImage $im
-	 * @param array{0:int,1:int,2:int} $wall
+	 * @param resource|\GdImage $dst
 	 */
-	private function staffCircleScale($im, int $bx, int $by, int $bw, int $bh, int $outW, int $outH, array $wall): float
+	private function seatHeadBelowTop($dst): void
 	{
-		$contain = min($outW / $bw, $outH / $bh);
-		if (abs($outW - $outH) > 2) {
-			return $contain * 0.94;
+		$w = imagesx($dst);
+		$h = imagesy($dst);
+		if ($w < 8 || $h < 8) {
+			return;
 		}
-		$points = $this->subjectEdgePoints($im, $bx, $by, $bw, $bh, $wall);
-		$lo = $contain * 0.55;
-		$hi = $contain * 0.96;
-		$best = $lo;
-		for ($i = 0; $i < 14; $i++) {
-			$mid = ($lo + $hi) / 2.0;
-			if ($this->subjectInsideCircle($mid, $bx, $by, $bw, $bh, $outW, $outH, $points)) {
-				$best = $mid;
-				$lo = $mid;
-			} else {
-				$hi = $mid;
-			}
-		}
-		return $best;
-	}
-
-	/**
-	 * @param array<int,array{0:int,1:int}> $points
-	 */
-	private function subjectInsideCircle(float $scale, int $bx, int $by, int $bw, int $bh, int $outW, int $outH, array $points): bool
-	{
-		$ox = ($outW - $bw * $scale) / 2.0;
-		$oy = ($outH - $bh * $scale) / 2.0;
-		$cx = $outW / 2.0;
-		$cy = $outH / 2.0;
-		$safeR = (min($outW, $outH) / 2.0) * 0.975;
-		$safeR2 = $safeR * $safeR;
-		$top = $outH;
-		foreach ($points as $pt) {
-			$dx = $ox + (($pt[0] - $bx) * $scale) - $cx;
-			$dy = $oy + (($pt[1] - $by) * $scale) - $cy;
-			if (($dx * $dx + $dy * $dy) > $safeR2) {
-				return false;
-			}
-			$py = $oy + (($pt[1] - $by) * $scale);
-			if ($py < $top) {
-				$top = $py;
-			}
-		}
-		return $top >= ($outH * 0.05);
-	}
-
-	/**
-	 * Outline of the person: leftmost and rightmost non-background pixel on each row.
-	 * Falls back to the whole photo when the background cannot be separated.
-	 *
-	 * @param resource|\GdImage $im
-	 * @param array{0:int,1:int,2:int} $wall
-	 * @return array<int,array{0:int,1:int}>
-	 */
-	private function subjectEdgePoints($im, int $bx, int $by, int $bw, int $bh, array $wall): array
-	{
-		$w = imagesx($im);
-		$h = imagesy($im);
-		$step = max(1, (int) (min($bw, $bh) / 100));
-		$hits = 0;
-		$seen = 0;
-		$rows = [];
-		for ($y = $by; $y < $by + $bh; $y += $step) {
-			$yy = min($h - 1, $y);
-			$left = null;
-			$right = null;
-			for ($x = $bx; $x < $bx + $bw; $x += $step) {
-				$seen++;
-				$xx = min($w - 1, $x);
-				if (!$this->awayFromWall($im, $xx, $yy, $wall)) {
-					continue;
+		$wall = $this->frameWallColor($dst);
+		$minGap = (int) round($h * 0.22);
+		$x0 = (int) ($w * 0.18);
+		$x1 = (int) ($w * 0.82);
+		$step = max(1, (int) ($w / 48));
+		$have = $h;
+		for ($y = 0; $y < (int) ($h * 0.55); $y++) {
+			for ($x = $x0; $x <= $x1; $x += $step) {
+				if (!$this->pixelNearWall($dst, $x, $y, $wall, 48)) {
+					$have = $y;
+					break 2;
 				}
-				$hits++;
-				if ($left === null) {
-					$left = $x;
-				}
-				$right = $x;
-			}
-			if ($left !== null && $right !== null) {
-				$rows[] = [$y, $left, $right];
 			}
 		}
-		if ($seen < 1 || $hits < (int) ($seen * 0.05) || $rows === []) {
-			return [
-				[$bx, $by],
-				[$bx + $bw - 1, $by],
-				[$bx, $by + $bh - 1],
-				[$bx + $bw - 1, $by + $bh - 1],
-			];
+		$shift = $minGap - $have;
+		if ($shift < 2) {
+			return;
 		}
-		$pad = $step * 2;
-		$points = [];
-		$n = count($rows);
-		foreach ($rows as $i => $row) {
-			$y = $row[0];
-			if ($i === 0) {
-				$y = max($by, $y - $pad);
-			}
-			$points[] = [max($bx, $row[1] - $step), $y];
-			$points[] = [min($bx + $bw - 1, $row[2] + $step), $y];
-		}
-		$points[] = [(int) (($rows[0][1] + $rows[0][2]) / 2), max($by, $rows[0][0] - $pad)];
-		$last = $rows[$n - 1];
-		$points[] = [(int) (($last[1] + $last[2]) / 2), min($by + $bh - 1, $last[0] + $step)];
-		return $points;
-	}
-
-	/** @param resource|\GdImage $im @param array{0:int,1:int,2:int} $wall */
-	private function awayFromWall($im, int $x, int $y, array $wall): bool
-	{
-		$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
-		$r = ($rgb >> 16) & 255;
-		$g = ($rgb >> 8) & 255;
-		$b = $rgb & 255;
-		return abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]) > 96;
+		$shift = min($shift, (int) round($h * 0.26));
+		$moved = imagecreatetruecolor($w, $h);
+		imagecopy($moved, $dst, 0, $shift, 0, 0, $w, $h - $shift);
+		$fill = imagecolorallocate($moved, $wall[0], $wall[1], $wall[2]);
+		imagefilledrectangle($moved, 0, 0, $w - 1, max(0, $shift), $fill);
+		imagecopy($dst, $moved, 0, 0, 0, 0, $w, $h);
+		imagedestroy($moved);
 	}
 
 	/**
-	 * Background colour just inside the photo, skipping dark hair.
+	 * Studio colour from the upper corners, skipping dark hair.
 	 *
 	 * @param resource|\GdImage $im
 	 * @return array{0:int,1:int,2:int}
 	 */
-	private function contentWallColor($im, int $bx, int $by, int $bw, int $bh): array
+	private function frameWallColor($im): array
 	{
 		$w = imagesx($im);
 		$h = imagesy($im);
 		$pts = [
-			[$bx + 2, $by + 2],
-			[$bx + $bw - 3, $by + 2],
-			[$bx + 2, $by + (int) ($bh * 0.12)],
-			[$bx + $bw - 3, $by + (int) ($bh * 0.12)],
-			[$bx + (int) ($bw * 0.08), $by + 3],
-			[$bx + (int) ($bw * 0.92), $by + 3],
+			[1, 1],
+			[$w - 2, 1],
+			[(int) ($w * 0.08), 2],
+			[(int) ($w * 0.92), 2],
+			[2, (int) ($h * 0.08)],
+			[$w - 3, (int) ($h * 0.08)],
 		];
 		$rs = 0;
 		$gs = 0;
@@ -836,6 +759,20 @@ class ProfilePhotoNormalizer
 			return [236, 236, 236];
 		}
 		return [(int) round($rs / $n), (int) round($gs / $n), (int) round($bs / $n)];
+	}
+
+	/** @param resource|\GdImage $im @param array{0:int,1:int,2:int} $wall */
+	private function pixelNearWall($im, int $x, int $y, array $wall, int $tol): bool
+	{
+		$w = imagesx($im);
+		$h = imagesy($im);
+		$x = max(0, min($w - 1, $x));
+		$y = max(0, min($h - 1, $y));
+		$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+		$r = ($rgb >> 16) & 255;
+		$g = ($rgb >> 8) & 255;
+		$b = $rgb & 255;
+		return abs($r - $wall[0]) + abs($g - $wall[1]) + abs($b - $wall[2]) <= $tol * 3;
 	}
 
 	/**

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fit every staff-card photo inside the circle without cutting the head."""
+"""Fill staff-card circles and leave a little room above the hair."""
 from __future__ import annotations
 
 import os
@@ -28,9 +28,9 @@ FILES = [
 VERIFY = [
     ("app/Libraries/ProfilePhotoNormalizer.php", "function coverCenterTop"),
     ("app/Libraries/WisdomStaffCardRenderer.php", "innerPhotoBox"),
-    ("app/Views/templates/staff_card_smart.php", "object-position: center center"),
-    ("app/Libraries/ProfilePhotoNormalizer.php", "staffCircleScale"),
-    ("app/Helpers/qonics_helper.php", "v4fullhead"),
+    ("app/Views/templates/staff_card_smart.php", "object-position: center 25%"),
+    ("app/Libraries/ProfilePhotoNormalizer.php", "seatHeadBelowTop"),
+    ("app/Helpers/qonics_helper.php", "v3hair22"),
 ]
 
 
