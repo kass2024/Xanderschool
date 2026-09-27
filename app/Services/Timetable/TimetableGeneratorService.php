@@ -2161,7 +2161,8 @@ class TimetableGeneratorService
 		$times = $this->slotTimes[$slotId] ?? null;
 		return $times !== null && \App\Models\TimetableSchemaModel::isFinalTeachingPeriodSlotTimes(
 			(string) ($times['start'] ?? ''),
-			(string) ($times['end'] ?? '')
+			(string) ($times['end'] ?? ''),
+			$day
 		);
 	}
 
@@ -2316,8 +2317,12 @@ class TimetableGeneratorService
 				}
 				$start = (string) ($slot['start_time'] ?? '');
 				$end = (string) ($slot['end_time'] ?? '');
-				$row = ['day' => (int) $day, 'slot_id' => $slotId];
-				if (\App\Models\TimetableSchemaModel::isFinalTeachingPeriodSlotTimes($start, $end)) {
+				$dayNum = (int) $day;
+				if (!\App\Models\TimetableSchemaModel::isNormalCourseSlotForDay($start, $end, $dayNum)) {
+					continue;
+				}
+				$row = ['day' => $dayNum, 'slot_id' => $slotId];
+				if (\App\Models\TimetableSchemaModel::isFinalTeachingPeriodSlotTimes($start, $end, $dayNum)) {
 					$final[] = $row;
 				} elseif (\App\Models\TimetableSchemaModel::isLastTeachingHourSlotTimes($start, $end)) {
 					$overflow[] = $row;
@@ -2354,7 +2359,7 @@ class TimetableGeneratorService
 				}
 				$start = (string) ($slot['start_time'] ?? '');
 				$end = (string) ($slot['end_time'] ?? '');
-				if (!\App\Models\TimetableSchemaModel::isTeachingDayLessonSlotTimes($start, $end)) {
+				if (!\App\Models\TimetableSchemaModel::isNormalCourseSlotForDay($start, $end, (int) $day)) {
 					continue;
 				}
 				if (!empty($this->blocked[$day . ':' . $slotId])) {

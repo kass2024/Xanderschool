@@ -1162,6 +1162,32 @@ class TimetableSchemaModel extends Model
 		return '15:40:00';
 	}
 
+	/** Friday normal courses finish at 15:00. Monday–Thursday finish at 15:40. */
+	public static function fridayLessonEndClock(): string
+	{
+		return '15:00:00';
+	}
+
+	public static function normalCourseEndClock(?int $day = null): string
+	{
+		if ($day === 4) {
+			return self::fridayLessonEndClock();
+		}
+
+		return self::secondaryLessonEndClock();
+	}
+
+	/** Academic lesson cell for that weekday. Friday rejects anything that finishes after 15:00. */
+	public static function isNormalCourseSlotForDay(?string $start, ?string $end, int $day): bool
+	{
+		if (!self::isTeachingDayLessonSlotTimes($start, $end)) {
+			return false;
+		}
+		$endClock = self::slotClock($end !== null && $end !== '' ? $end : $start);
+
+		return $endClock <= self::normalCourseEndClock($day);
+	}
+
 	/** Slots starting at or after this are night (preps / supper), not after-lesson clubs. */
 	public static function secondaryNightStartClock(): string
 	{
@@ -1210,9 +1236,17 @@ class TimetableSchemaModel extends Model
 		return self::slotClock($start) >= '14:20:00';
 	}
 
-	/** The last academic period itself: ends at 15:40 (never 13:40 or after lessons). */
-	public static function isFinalTeachingPeriodSlotTimes(?string $start, ?string $end = null): bool
+	/** The last academic period itself: ends at 15:40, or 15:00 on Friday. */
+	public static function isFinalTeachingPeriodSlotTimes(?string $start, ?string $end = null, ?int $day = null): bool
 	{
+		if ($day === 4) {
+			if (!self::isNormalCourseSlotForDay($start, $end, 4)) {
+				return false;
+			}
+			$endClock = self::slotClock($end !== null && $end !== '' ? $end : $start);
+
+			return $endClock === self::fridayLessonEndClock();
+		}
 		if (!self::isTeachingDayLessonSlotTimes($start, $end)) {
 			return false;
 		}

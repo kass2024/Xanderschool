@@ -275,6 +275,9 @@ class SecondaryTimetableCriteria
 			if (!self::isSecondaryTrack($row) || !$this->allowsSunday($row, $slotStart, $slotEnd)) {
 				return false;
 			}
+			if (!\App\Models\TimetableSchemaModel::isNormalCourseSlotForDay($slotStart, $slotEnd, $day)) {
+				return false;
+			}
 			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
 				return false;
 			}
@@ -284,6 +287,10 @@ class SecondaryTimetableCriteria
 			\App\Models\TimetableSchemaModel::isAfterLessonSlotTimes($slotStart, $slotEnd)
 			|| \App\Models\TimetableSchemaModel::isNightSlotTimes($slotStart, $slotEnd)
 		)) {
+			return false;
+		}
+		if (self::isSecondaryTrack($row)
+			&& !\App\Models\TimetableSchemaModel::isNormalCourseSlotForDay($slotStart, $slotEnd, $day)) {
 			return false;
 		}
 		if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
@@ -987,10 +994,11 @@ class SecondaryTimetableCriteria
 	{
 		$out = [
 			['group' => 'Scope', 'title' => 'High school only', 'detail' => 'These locked rules apply to O Level, A Level, TVET and Special. Nursery and primary are never included.'],
+			['group' => 'Day end', 'title' => 'Normal courses', 'detail' => 'Normal courses finish by 15:40 Monday to Thursday. On Friday they finish by 15:00, so 15:00–15:40 is not a normal lesson. Special activities, farming, library, and night periods stay on their own bells.'],
 			['group' => 'Blocks', 'title' => '4 and 6 periods', 'detail' => 'At least two periods together (doubles).'],
 			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
-			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching period of the class (15:00–15:40). If that cell is taken, the other lesson is moved earlier. Overflow 14:20–15:00 only when 15:00 is a special (TESTS/HW). Never after 15:40. Never 13:40. At most one PE period per class day.'],
+			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching period of the class (15:00–15:40; on Friday 14:20–15:00). If that cell is taken, the other lesson is moved earlier. Never after 15:40, and never in 15:00–15:40 on Friday. Never 13:40. At most one PE period per class day.'],
 			['group' => 'After lessons', 'title' => 'Farming / Library and Clubs', 'detail' => 'Always after lessons end (15:40–17:30), filling the first free cells after 15:40. Never during the teaching day, never night preps or supper. Same teacher + same activity (Farming with Farming, Library with Library) share one clock across classes.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
 			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
