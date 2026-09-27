@@ -601,8 +601,10 @@ class TimetableSchemaModel extends Model
 			$this->insertSlotSet($schoolId, $trackKey, self::schoolDaySlotTemplate(false));
 		} elseif ($trackKey === TimetableTrack::NURSERY) {
 			$this->insertSlotSet($schoolId, $trackKey, self::nurserySlotTemplate());
-		} elseif (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
+		} elseif ($trackKey === TimetableTrack::O_LEVEL) {
 			$this->insertSlotSet($schoolId, $trackKey, self::secondarySlotTemplate());
+		} elseif (in_array($trackKey, [TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
+			$this->insertSlotSet($schoolId, $trackKey, self::aLevelSlotTemplate());
 		} else {
 			$sharedCount = (int) $db->table('timetable_slots')
 				->where('school_id', $schoolId)->where('track_key', TimetableTrack::ALL)->countAllResults();
@@ -751,6 +753,22 @@ class TimetableSchemaModel extends Model
 		];
 	}
 
+	/**
+	 * A Level evening bells, also used by Special and RTB / TVET.
+	 * Period 15 is 17:30–18:00, 16 is 18:00–19:00, and 17 runs 19:00–21:00.
+	 *
+	 * @return list<array{label:string,start:string,end:string,break:int,break_label:?string}>
+	 */
+	private static function aLevelSlotTemplate(): array
+	{
+		$slots = self::secondarySlotTemplate();
+		$slots[count($slots) - 2] = ['label' => '15', 'start' => '17:30:00', 'end' => '18:00:00', 'break' => 0, 'break_label' => null];
+		$slots[count($slots) - 1] = ['label' => '16', 'start' => '18:00:00', 'end' => '19:00:00', 'break' => 0, 'break_label' => null];
+		$slots[] = ['label' => '17', 'start' => '19:00:00', 'end' => '21:00:00', 'break' => 0, 'break_label' => null];
+
+		return $slots;
+	}
+
 	/** @return list<array{label:string,start:string,end:string,break:int,break_label:?string}> */
 	private static function defaultTemplateForTrack(string $trackKey): array
 	{
@@ -758,8 +776,11 @@ class TimetableSchemaModel extends Model
 		if ($trackKey === TimetableTrack::NURSERY) {
 			return self::nurserySlotTemplate();
 		}
-		if (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
+		if ($trackKey === TimetableTrack::O_LEVEL) {
 			return self::secondarySlotTemplate();
+		}
+		if (in_array($trackKey, [TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
+			return self::aLevelSlotTemplate();
 		}
 		return self::primarySlotTemplate();
 	}
@@ -782,6 +803,85 @@ class TimetableSchemaModel extends Model
 				'break_label' => $row['break_label'],
 			]);
 		}
+	}
+
+	/**
+	 * Copy the saved A Level bell rows onto Special and RTB / TVET.
+	 * Existing rows keep their ids so special activities stay on the same periods.
+	 */
+	public function alignSpecialAndRtbPeriodsToALevel(int $schoolId): int
+	{
+		$this->ensureSchema();
+		$schoolId = (int) $schoolId;
+		if ($schoolId <= 0) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$source = $db->table('timetable_slots')
+			->where('school_id', $schoolId)
+			->where('track_key', TimetableTrack::A_LEVEL)
+			->orderBy('sort_order', 'ASC')
+			->get()->getResultArray();
+		if ($source === []) {
+			return 0;
+		}
+
+		$written = 0;
+		foreach ([TimetableTrack::SPECIAL, TimetableTrack::RTB] as $trackKey) {
+			$rows = $db->table('timetable_slots')
+				->where('school_id', $schoolId)
+				->where('track_key', $trackKey)
+				->orderBy('sort_order', 'ASC')
+				->get()->getResultArray();
+			$keepIds = [];
+			foreach ($source as $i => $slot) {
+				$payload = [
+					'school_id' => $schoolId,
+					'track_key' => $trackKey,
+					'level_id' => 0,
+					'sort_order' => $i,
+					'label' => (string) ($slot['label'] ?? ''),
+					'start_time' => (string) ($slot['start_time'] ?? '08:00:00'),
+					'end_time' => (string) ($slot['end_time'] ?? '08:40:00'),
+					'is_break' => !empty($slot['is_break']) ? 1 : 0,
+					'break_label' => $slot['break_label'] ?? null,
+				];
+				if (isset($rows[$i])) {
+					$id = (int) $rows[$i]['id'];
+					$db->table('timetable_slots')->where('id', $id)->update($payload);
+					$keepIds[] = $id;
+				} else {
+					$db->table('timetable_slots')->insert($payload);
+					$keepIds[] = (int) $db->insertID();
+				}
+				$written++;
+			}
+			if ($keepIds === []) {
+				continue;
+			}
+			$extraRows = $db->table('timetable_slots')
+				->select('id')
+				->where('school_id', $schoolId)
+				->where('track_key', $trackKey)
+				->whereNotIn('id', $keepIds)
+				->get()->getResultArray();
+			$extraIds = array_values(array_filter(array_map(static fn ($r): int => (int) ($r['id'] ?? 0), $extraRows)));
+			if ($extraIds === []) {
+				continue;
+			}
+			if ($db->tableExists('timetable_entries')) {
+				$db->table('timetable_entries')->whereIn('slot_id', $extraIds)->update([
+					'day_of_week' => -1,
+					'slot_id' => 0,
+				]);
+			}
+			if ($db->tableExists('timetable_special_times')) {
+				$db->table('timetable_special_times')->whereIn('slot_id', $extraIds)->delete();
+			}
+			$db->table('timetable_slots')->whereIn('id', $extraIds)->delete();
+		}
+
+		return $written;
 	}
 
 	private function copySlotsFromTrack(int $schoolId, string $fromTrack, string $toTrack): void
@@ -1035,9 +1135,9 @@ class TimetableSchemaModel extends Model
 	{
 		$trackKey = TimetableTrack::normalize($trackKey);
 		if (in_array($trackKey, [TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::SPECIAL, TimetableTrack::RTB], true)) {
-			// Periods 12–16 are activities/preps after the 15:40 teaching cutoff.
+			// Periods 12–17 are activities/preps after the 15:40 teaching cutoff.
 			// Periods 10–11 (through 15:40) remain teachable.
-			return ['12', '13', '14', '15', '16'];
+			return ['12', '13', '14', '15', '16', '17'];
 		}
 		if ($trackKey === TimetableTrack::PRIMARY) {
 			// Last 1-hour column (15:30–16:30) is assembly / debates / Sabbath, not a lesson.

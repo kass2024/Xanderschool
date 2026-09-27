@@ -2,12 +2,10 @@
 declare(strict_types=1);
 
 /**
- * Apply the TIME_TABLE_24H.docx high-school slot allocation to
- * Wisdom Musanze secondary-style tracks:
- * - O Level
- * - A Level
- * - RTB / TVET
- * - Special
+ * Apply high-school slot allocation to Wisdom Musanze secondary-style tracks.
+ * O Level keeps the 17:30–20:00 / 20:00–21:00 evening.
+ * A Level, Special, and RTB / TVET share the A Level bells through 21:00
+ * (17:30–18:00, 18:00–19:00, 19:00–21:00).
  *
  * The source document includes Sunday, so this also enables the Sunday column.
  *
@@ -36,8 +34,10 @@ if (!$school) {
 	exit(1);
 }
 
-$tracks = [
+$oLevelTracks = [
 	TimetableTrack::O_LEVEL,
+];
+$alignedTracks = [
 	TimetableTrack::A_LEVEL,
 	TimetableTrack::SPECIAL,
 	TimetableTrack::RTB,
@@ -63,6 +63,11 @@ $template = [
 	['label' => '15', 'start' => '17:30:00', 'end' => '20:00:00', 'break' => 0, 'break_label' => null],
 	['label' => '16', 'start' => '20:00:00', 'end' => '21:00:00', 'break' => 0, 'break_label' => null],
 ];
+
+$aLevelTemplate = $template;
+$aLevelTemplate[count($aLevelTemplate) - 2] = ['label' => '15', 'start' => '17:30:00', 'end' => '18:00:00', 'break' => 0, 'break_label' => null];
+$aLevelTemplate[count($aLevelTemplate) - 1] = ['label' => '16', 'start' => '18:00:00', 'end' => '19:00:00', 'break' => 0, 'break_label' => null];
+$aLevelTemplate[] = ['label' => '17', 'start' => '19:00:00', 'end' => '21:00:00', 'break' => 0, 'break_label' => null];
 
 $specials = [
 	['day' => 0, 'slot_label' => '13', 'label' => 'Assembly', 'color' => 'orange'],
@@ -116,7 +121,10 @@ if ($dryRun) {
 	echo "Created timetable settings." . PHP_EOL . PHP_EOL;
 }
 
-foreach ($tracks as $trackKey) {
+foreach (array_merge(
+	array_map(static fn (string $key): array => [$key, $template], $oLevelTracks),
+	array_map(static fn (string $key): array => [$key, $aLevelTemplate], $alignedTracks),
+) as [$trackKey, $slotTemplate]) {
 	echo "=== {$trackKey} ===" . PHP_EOL;
 	$rows = $db->table('timetable_slots')
 		->where('school_id', SCHOOL_ID)
@@ -125,8 +133,8 @@ foreach ($tracks as $trackKey) {
 		->get()->getResultArray();
 
 	if ($dryRun) {
-		echo 'Existing slots: ' . count($rows) . '; target slots: ' . count($template) . PHP_EOL;
-		foreach ($template as $i => $slot) {
+		echo 'Existing slots: ' . count($rows) . '; target slots: ' . count($slotTemplate) . PHP_EOL;
+		foreach ($slotTemplate as $i => $slot) {
 			echo sprintf(
 				"  [%d] %s %s-%s%s\n",
 				$i,
@@ -142,7 +150,7 @@ foreach ($tracks as $trackKey) {
 
 	$keepIds = [];
 	$slotIdByLabel = [];
-	foreach ($template as $i => $slot) {
+	foreach ($slotTemplate as $i => $slot) {
 		$payload = [
 			'school_id' => SCHOOL_ID,
 			'track_key' => $trackKey,
@@ -207,7 +215,7 @@ foreach ($tracks as $trackKey) {
 		]);
 	}
 
-	echo 'Applied ' . count($template) . ' slots and ' . count($specials) . " special activities." . PHP_EOL . PHP_EOL;
+	echo 'Applied ' . count($slotTemplate) . ' slots and ' . count($specials) . " special activities." . PHP_EOL . PHP_EOL;
 }
 
 echo "Done." . PHP_EOL;
