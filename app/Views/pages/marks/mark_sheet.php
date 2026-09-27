@@ -4,17 +4,22 @@
 /** @var int $current_year */
 ?>
 <style>
-	.ms-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1.1rem 1.2rem; max-width:920px; }
-	.ms-card h4 { margin:0 0 .35rem; font-weight:700; color:#0f2744; }
-	.ms-card p { margin:0 0 1rem; color:#64748b; font-size:.9rem; }
-	.ms-grid { display:flex; flex-wrap:wrap; gap:.75rem; align-items:flex-end; }
-	.ms-grid .form-group { margin:0; min-width:180px; flex:1; }
+	.ms-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:1.15rem 1.2rem; width:100%; max-width:1100px; }
+	.ms-card h4 { margin:0 0 .3rem; font-weight:800; color:#0f2744; letter-spacing:.02em; }
+	.ms-card p { margin:0 0 1rem; color:#64748b; font-size:.92rem; line-height:1.45; }
+	.ms-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:.75rem; align-items:end; }
+	.ms-grid .form-group { margin:0; min-width:0; }
+	.ms-grid .ms-wide { grid-column:span 2; }
+	.ms-grid .btn { width:100%; }
+	@media (max-width:640px) {
+		.ms-grid .ms-wide { grid-column:auto; }
+	}
 </style>
 <div class="ms-card">
 	<h4>Marks sheet</h4>
 	<p><?= $sees_all
-		? 'Choose the academic year, term, and any teacher’s course. The sheet lists that class and every quiz, homework, and test saved for the term.'
-		: 'Choose the academic year, term, and one of your courses. You only see classes and subjects assigned to you.'; ?></p>
+		? 'Choose the academic year, term, and any teacher’s course. The sheet opens in landscape with the school header, ready to save as PDF even when there are many quizzes.'
+		: 'Choose the academic year, term, and one of your courses. The sheet opens in landscape with the school header.'; ?></p>
 	<form action="<?= base_url('get_uploaded_marks/1'); ?>" method="post" target="_blank" id="markSheetForm">
 		<div class="ms-grid">
 			<div class="form-group">
@@ -42,7 +47,7 @@
 				</select>
 			</div>
 			<?php endif; ?>
-			<div class="form-group" style="flex:2;min-width:260px;">
+			<div class="form-group ms-wide">
 				<label>Course</label>
 				<select class="form-control" name="record_id" id="msCourse" required>
 					<option value="">Select a course</option>

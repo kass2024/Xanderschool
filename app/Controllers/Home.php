@@ -13926,6 +13926,7 @@ public function getApplicationDocs($id = null)
 			];
 		}
 		$subject = trim($record['course_title'] . ($record['course_code'] !== '' ? ' (' . $record['course_code'] . ')' : ''));
+		$logoFile = (string) ($this->data['school_logo'] ?? '');
 		$sheet = [
 			'title' => 'Marks sheet — ' . $subject,
 			'school' => (string) ($this->data['school_name'] ?? ''),
@@ -13937,6 +13938,18 @@ public function getApplicationDocs($id = null)
 			'columns' => array_values($columns),
 			'students' => $sheetStudents,
 			'max_total' => $maxTotal,
+			'generated_at' => date('d M Y'),
+			'letterhead' => [
+				'name' => (string) ($this->data['school_name'] ?? ''),
+				'slogan' => (string) ($this->data['school_moto'] ?? ''),
+				'address' => (string) ($this->data['school_address'] ?? ''),
+				'pobox' => (string) ($this->data['school_pobox'] ?? ''),
+				'phone' => (string) ($this->data['school_phone'] ?? ''),
+				'email' => (string) ($this->data['school_email'] ?? ''),
+				'website' => (string) ($this->data['school_website'] ?? ''),
+				'acronym' => (string) ($this->data['school_acronym'] ?? ''),
+				'logo' => strlen($logoFile) > 4 ? base_url('assets/images/logo/' . $logoFile) : '',
+			],
 		];
 		return $this->response
 			->setHeader('Content-Type', 'text/html; charset=UTF-8')
