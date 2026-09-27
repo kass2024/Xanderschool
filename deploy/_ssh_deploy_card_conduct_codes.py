@@ -20,14 +20,13 @@ REMOTE_BASE = "/opt/xander-school/app"
 FILES = [
     "app/Libraries/WisdomDisciplineCatalog.php",
     "app/Models/DisciplineCodeModel.php",
-    "app/Controllers/Api.php",
+    "app/Views/pages/discipline_record_entry.php",
 ]
 
 VERIFY = [
-    ("app/Libraries/WisdomDisciplineCatalog.php", "Forgetting student card"),
-    ("app/Libraries/WisdomDisciplineCatalog.php", "Losing student card"),
-    ("app/Models/DisciplineCodeModel.php", "ensureCatalogUpdates"),
-    ("app/Controllers/Api.php", "ensureCatalogUpdates"),
+    ("app/Libraries/WisdomDisciplineCatalog.php", "Pay 50,000 RWF"),
+    ("app/Models/DisciplineCodeModel.php", "correctLosingStudentCard"),
+    ("app/Views/pages/discipline_record_entry.php", "Every time"),
 ]
 
 

@@ -248,8 +248,13 @@ $(function () {
         if (!id) return;
         const text = $(this).text().trim();
         const isSel = String(id) === String(selected);
+        const m1 = $(this).attr("data-m1") || 0;
+        const m2 = $(this).attr("data-m2") || 0;
+        const m3 = $(this).attr("data-m3") || 0;
         $list.append(
-          `<button type="button" class="disc-code-item${isSel ? " is-selected" : ""}" data-id="${id}" role="option">${$("<div/>").text(text).html()}</button>`
+          `<button type="button" class="disc-code-item${isSel ? " is-selected" : ""}" data-id="${id}" role="option">` +
+          `<span class="disc-code-text">${$("<div/>").text(text).html()}</span>` +
+          `<span class="disc-code-marks">${m1} / ${m2} / ${m3}</span></button>`
         );
       });
     });
@@ -345,12 +350,22 @@ $(function () {
     }
     const m1 = $opt.data("m1") || 0, m2 = $opt.data("m2") || 0, m3 = $opt.data("m3") || 0;
     const s1 = $opt.data("s1") || "", s2 = $opt.data("s2") || "", s3 = $opt.data("s3") || "";
+    if (String(m1) === String(m2) && String(m2) === String(m3) && s1 === s2 && s2 === s3) {
+      $("#discOccurSchedule").html(
+        `<strong>${t("Automatic deduction", "Imanota zigabanywa ubwazo")}</strong>` +
+        `<div class="disc-occur-pills">` +
+          `<span class="disc-pill is-now">${t("Every time", "Buri gihe")}: <b>${m1}</b>${s1 ? " · " + $("<div/>").text(s1).html() : ""}</span>` +
+        `</div>`
+      );
+      $box.removeAttr("hidden");
+      return;
+    }
     $("#discOccurSchedule").html(
       `<strong>${t("Deduction schedule", "Amanota agabanywa")}</strong>` +
       `<div class="disc-occur-pills">` +
-        `<span>${t("1st time", "Bwa mbere")}: <b>${m1}</b>${s1 ? " · " + s1 : ""}</span>` +
-        `<span>${t("2nd time", "Bwa kabiri")}: <b>${m2}</b>${s2 ? " · " + s2 : ""}</span>` +
-        `<span>${t("3rd time", "Bwa gatatu")}: <b>${m3}</b>${s3 ? " · " + s3 : ""}</span>` +
+        `<span class="disc-pill" data-n="1">${t("1st time", "Bwa mbere")}: <b>${m1}</b>${s1 ? " · " + $("<div/>").text(s1).html() : ""}</span>` +
+        `<span class="disc-pill" data-n="2">${t("2nd time", "Bwa kabiri")}: <b>${m2}</b>${s2 ? " · " + $("<div/>").text(s2).html() : ""}</span>` +
+        `<span class="disc-pill" data-n="3">${t("3rd time", "Bwa gatatu")}: <b>${m3}</b>${s3 ? " · " + $("<div/>").text(s3).html() : ""}</span>` +
       `</div>`
     );
     $box.removeAttr("hidden");
@@ -389,7 +404,13 @@ $(function () {
         html += `<li>${names[s.id] || ("#" + s.id)} — <b>${s.label}</b> → ${s.marks} ${t("marks", "amanota")}${s.sanction ? " · " + s.sanction : ""}</li>`;
       });
       html += "</ul>";
+      if (parseInt(firstMarks, 10) === 0) {
+        html += `<p class="disc-zero-note">${t("No marks this time. It is still saved and the parent can be notified. The next time this code is used, it will be the next offence.", "Nta manota kuri iyi nshuro. Bizabikwa kandi umubyeyi ashobora kumenyeshwa. Igihe gikurikira iki tegeko rizaba indi nshuro.")}</p>`;
+      }
       $("#discOccurApplied").html(html);
+      const occ = res.students[0] ? parseInt(res.students[0].occurrence, 10) : 1;
+      $("#discOccurSchedule .disc-pill").removeClass("is-now");
+      $("#discOccurSchedule .disc-pill[data-n='" + occ + "']").addClass("is-now");
       if (firstMarks !== null) $("#reduce_marks_display").val(firstMarks);
     });
   }
@@ -430,7 +451,7 @@ $(function () {
       url: "<?= base_url('search_student'); ?>",
       type: "POST",
       dataType: "json",
-      data: { searchTerm: term },
+      data: { searchTerm: term, excludeHoliday: 1, year: "<?= (int) ($academic_year ?? 0); ?>" },
       success: function (data) {
         let html = "";
         if (!data.length) html = "<div class='text-muted text-center p-2'>" + t("No students found", "Nta munyeshuri wabonetse") + "</div>";

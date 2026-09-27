@@ -93,6 +93,28 @@ class DisciplineCodeModel extends Model
 		}
 		$this->seedIfEmpty($schoolId);
 		$this->insertMissingCatalogRows($schoolId);
+		$this->correctLosingStudentCard($schoolId);
+	}
+
+	/** Losing a student card is always 10 marks plus 50,000 RWF. No 1st/2nd/3rd ladder. */
+	private function correctLosingStudentCard(int $schoolId): void
+	{
+		\Config\Database::connect()->table('discipline_codes')
+			->where('school_id', $schoolId)
+			->where('category_key', 'behavior')
+			->where('code_no', 13)
+			->update([
+				'first_marks' => 10,
+				'second_marks' => 10,
+				'third_marks' => 10,
+				'first_sanction_en' => 'Pay 50,000 RWF',
+				'second_sanction_en' => 'Pay 50,000 RWF',
+				'third_sanction_en' => 'Pay 50,000 RWF',
+				'first_sanction_rw' => 'Kwishyura 50,000 RWF',
+				'second_sanction_rw' => 'Kwishyura 50,000 RWF',
+				'third_sanction_rw' => 'Kwishyura 50,000 RWF',
+				'updated_at' => date('Y-m-d H:i:s'),
+			]);
 	}
 
 	private function insertMissingCatalogRows(int $schoolId): void
@@ -206,6 +228,19 @@ class DisciplineCodeModel extends Model
 		$marks = [1 => (int) ($code['first_marks'] ?? 0), 2 => (int) ($code['second_marks'] ?? 0), 3 => (int) ($code['third_marks'] ?? 0)];
 		$en = [1 => (string) ($code['first_sanction_en'] ?? ''), 2 => (string) ($code['second_sanction_en'] ?? ''), 3 => (string) ($code['third_sanction_en'] ?? '')];
 		$rw = [1 => (string) ($code['first_sanction_rw'] ?? ''), 2 => (string) ($code['second_sanction_rw'] ?? ''), 3 => (string) ($code['third_sanction_rw'] ?? '')];
+		$flat = $marks[1] === $marks[2] && $marks[2] === $marks[3]
+			&& $en[1] === $en[2] && $en[2] === $en[3]
+			&& $rw[1] === $rw[2] && $rw[2] === $rw[3];
+		if ($flat) {
+			return [
+				'occurrence' => 1,
+				'marks' => max(0, $marks[1]),
+				'sanction_en' => $en[1],
+				'sanction_rw' => $rw[1],
+				'label_en' => 'Every time',
+				'label_rw' => 'Buri gihe',
+			];
+		}
 		$labels = [
 			1 => ['en' => '1st time', 'rw' => 'Bwa mbere'],
 			2 => ['en' => '2nd time', 'rw' => 'Bwa kabiri'],
