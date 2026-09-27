@@ -247,7 +247,7 @@
 										</a>
 									</li>
 									<?php
-									if (is_allowed(1, 3)) {
+									if (is_allowed(1, 3) || (function_exists('staff_has_assigned_course') && staff_has_assigned_course())) {
 										?>
 										<li>
 											<a href="<?= base_url('get_uploaded_marks');?>">
@@ -255,6 +255,10 @@
 												<?= lang("app.marksList"); ?>
 											</a>
 										</li>
+										<?php
+									}
+									if (is_allowed(1, 3)) {
+										?>
 										<li>
 											<a href="<?= base_url('student_report'); ?>">
 												<i class="metismenu-icon typcn typcn-user-outline"></i>

@@ -13673,124 +13673,271 @@ public function getApplicationDocs($id = null)
 	public
 	function get_uploaded_marks($type = 0, $pdf = false)
 	{
-		//0:view field,1:view data
-		if ($type == 0) {
-			$this->_preset();
-			$data = $this->data;
-			$data['title'] = lang("app.viewUploadedMarks");
-			$data['subtitle'] = lang("app.viewMarks");
-			$data['page'] = "get_uploaded_marks";
-			$cMdl = new ClassesModel();
-			$school_id = $this->session->get("soma_school_id");
-			$data['classes'] = $cMdl->get_classes();
-			$acMdl = new AcademicYearModel();
-			$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
-					->orderBy("id", 'DESC')->get()->getResultArray();
-			$data['content'] = view("pages/marks/uploaded_marks", $data);
-			return view('main', $data);
-		} else {
-			$html = "";
-			$pdf = $this->request->getPost("pdf");
-			$year = $this->request->getPost("year");
-			$term = $this->request->getPost("term");
-			$class = $this->request->getPost("class");
-			$course = $this->request->getPost("course");
-			$period = $this->request->getPost("period");
-			$marksMdl = new MarksModel();
-			$atMdl = new ActiveTermModel();
-			$school_id = $this->session->get("soma_school_id");
-			$active_term = $atMdl->select("id")->where("term", $term)
-					->where("academic_year", $year)->where("school_id", $school_id)
-					->get(1)->getRow();
-			if ($active_term == null) {
-				echo "invalid data, please try again later";
-				die();
-			}
-			$builder = $marksMdl->select("marks.outOf,mark_type,cat_type,period,marks.examDate,cs.id,marks.created_at,marks.class_id,
-			cs.title as courseName,cs.code as courseCode,cs.marks as courseMarks,concat(l.title,' ',d.code,' ',c.title) as class,marks.course_id,
-			at.term,count(marks.id) as count,avg(marks.marks) as avg,concat(s.fname,' ',s.lname) as names,at.academic_year")
-					->join("classes c", "c.id=marks.class_id")
-					->join('departments d', 'd.id=c.department')
-					->join('levels l', 'l.id=c.level')
-					->join("courses cs", "cs.id=marks.course_id")
-					->join("staffs s", "s.id=marks.created_by")
-					->join("active_term at", "at.id=marks.term")
-					->where("at.school_id", $this->session->get("soma_school_id"))
-					->where("at.academic_year", $year)
-					->where("at.term", $term)
-					->where("marks.class_id", $class);
-			if ($period != 0) {
-				$builder->where("marks.period", $period);
-			}
-			if ($course != 0) {
-				$builder->where("marks.course_id", $course);
-			}
-			$builder->groupBy("marks.course_id");
-			$builder->groupBy("marks.class_id");
-			$builder->groupBy("marks.mark_type");
-			$builder->groupBy("marks.cat_type");
-			$builder->groupBy("marks.period");
-			$builder->groupBy("marks.created_by");
-			$builder->orderBy("c.id");
-			$builder->orderBy("cs.id");
-			$builder->orderBy("marks.created_at");
-			$marks = $builder->get()->getResultArray();
-			if (count($marks) == 0) {
-				echo "No course marks found on the selected period,term and academic year, please try again later";
-				die();
-			}
-			$html .= "<table style='border: 0px' border='1' id='marks_table' class='table table-striped table-bordered table-condensed'><thead>
-<tr><th>#</th><th>Class</th><th>Course</th><th>Term</th><th>Assessment type</th><th>Period</th><th>CAT type</th><th>Out Of</th>
-<th>assignment Date</th><th>No of student</th><th>Average</th><th>Created by</th><th>Created at</th><th></th></tr></thead><tbody>";
-			$a = 0;
-			foreach ($marks as $mark) {
-				$a++;
-				$html .= "<tr>
-<td>{$a}</td>
-<td>{$mark['class']}</td>
-<td>{$mark['courseName']} - {$mark['courseCode']}</td>
-<td>".termToStr($mark['term'])."</td>
-<td>".self::marksTypeToStr($mark['mark_type'])."</td>
-<td>{$mark['period']}</td>
-<td>".catTypeStr($mark['cat_type'])."</td>
-<td>{$mark['outOf']}</td>
-<td>" . date('Y-m-d', $mark['examDate']) . "</td>
-<td>{$mark['count']}</td>
-<td>".number_format($mark['avg'],2)."</td>
-<td>{$mark['names']}</td>
-<td>{$mark['created_at']}</td>
-<td><a target='_blank' href='".base_url('get_student_marks/'. $mark['mark_type'] .'/'. $mark['cat_type'] .'/'. $mark['class_id'] .'/'. $mark['course_id'] .'/'. $mark['period'] .'/'. $mark['term'].'/'.$mark['academic_year'])."?pdf' class='btn btn-success'>Print</a> </td>
-</tr>";
-			}
-			$html .= "</tbody></table>";
-			$html .="<script>$('#marks_table').dataTable({paging: false});</script>";
-
-			if ($pdf) {
-				$this->_preset();
-				$data = $this->data;
-				$classMdl = new ClassesModel();
-				$data["class"] = $classMdl->get_class_name($class);
-				$data["period"] = $period;
-				$data["content"] = $html;
-				$html = view("templates/student_results", $data);
-				try {
-					$mask = FCPATH . "assets/templates/*.html";
-					array_map('unlink', glob($mask));//clear previous cards
-					$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
-					$wkhtmltopdf->setTitle(lang("app.rtudentRsults"));
-					$wkhtmltopdf->setHtml($html);
-					$wkhtmltopdf->setOrientation("Landscape");
-//					$wkhtmltopdf->setOptions(array("page-width" => "278px", "page-height" => "430px"));
-					$wkhtmltopdf->setMargins(array("top" => 2, "left" => 10, "right" => 5, "bottom" => 2));
-					$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "students_results_" . time() . ".pdf");
-				} catch (\Exception $e) {
-					echo $e->getMessage();
-				}
-			} else {
-				echo $html;
-			}
+		$this->requireMarkSheetAccess();
+		if ((int) $type === 0) {
+			return $this->renderMarkSheetPicker();
 		}
+		return $this->renderMarkSheetDocument();
 	}
+
+	public function mark_sheet_courses()
+	{
+		$this->requireMarkSheetAccess();
+		$yearId = (int) ($this->request->getGet('year') ?: 0);
+		$rows = $this->markSheetCourseRows($yearId);
+		$courses = [];
+		foreach ($rows as $row) {
+			$courses[] = [
+				'id' => (int) $row['id'],
+				'lecturer' => (int) $row['lecturer'],
+				'teacher' => $row['teacher'],
+				'term' => (string) $row['term'],
+				'label' => trim($row['level_name'] . ' ' . $row['class_title'] . ' — ' . $row['course_title'] . ($row['course_code'] !== '' ? ' (' . $row['course_code'] . ')' : '') . ' — ' . $row['teacher']),
+			];
+		}
+		return $this->response->setJSON(['courses' => $courses]);
+	}
+
+	private function requireMarkSheetAccess(): void
+	{
+		$this->_preset();
+		if ($this->markSheetSeesAll()) {
+			return;
+		}
+		if (function_exists('menu_clearance_allowed') && menu_clearance_allowed('get_uploaded_marks')) {
+			return;
+		}
+		if (function_exists('staff_has_assigned_course') && staff_has_assigned_course()) {
+			return;
+		}
+		header('location: ' . base_url('dashboard'));
+		die();
+	}
+
+	private function markSheetSeesAll(): bool
+	{
+		return \Config\MenuClearance::isFullAccessPost((int) $this->session->get('soma_post'));
+	}
+
+	private function renderMarkSheetPicker()
+	{
+		$data = $this->data;
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$data['title'] = 'Mark sheet';
+		$data['subtitle'] = 'Continuous assessment';
+		$data['page'] = 'get_uploaded_marks';
+		$data['sees_all'] = $this->markSheetSeesAll();
+		$data['current_year'] = (int) ($this->data['academic_year'] ?? 0);
+		$data['years'] = (new AcademicYearModel())->select('id,title')
+			->where('school_id', $schoolId)
+			->orderBy('id', 'DESC')
+			->get()->getResultArray();
+		$data['content'] = view('pages/marks/mark_sheet', $data);
+		return view('main', $data);
+	}
+
+	private function markSheetCourseRows(int $yearId): array
+	{
+		$schoolId = (int) $this->session->get('soma_school_id');
+		if ($yearId < 1 || $schoolId < 1) {
+			return [];
+		}
+		$builder = \Config\Database::connect()->table('course_records r')
+			->select("r.id, r.course, r.class, r.lecturer, r.term, r.year, c.title as course_title, c.code as course_code, l.title as level_name, cl.title as class_title, concat(st.fname,' ',st.lname) as teacher")
+			->join('courses c', 'c.id = r.course')
+			->join('classes cl', 'cl.id = r.class')
+			->join('levels l', 'l.id = cl.level')
+			->join('staffs st', 'st.id = r.lecturer', 'left')
+			->where('cl.school_id', $schoolId)
+			->where('r.year', $yearId)
+			->orderBy('l.id', 'ASC')
+			->orderBy('cl.title', 'ASC')
+			->orderBy('c.title', 'ASC');
+		if (!$this->markSheetSeesAll()) {
+			$builder->where('r.lecturer', (int) $this->session->get('soma_id'));
+		}
+		return $builder->get()->getResultArray();
+	}
+
+	private function renderMarkSheetDocument()
+	{
+		$yearId = (int) $this->request->getPost('year');
+		$termNo = (int) $this->request->getPost('term');
+		$recordId = (int) $this->request->getPost('record_id');
+		$schoolId = (int) $this->session->get('soma_school_id');
+		if ($yearId < 1 || $termNo < 1 || $recordId < 1) {
+			return $this->response->setBody('Choose an academic year, term, and course.');
+		}
+		$db = \Config\Database::connect();
+		$record = $db->table('course_records r')
+			->select("r.id, r.course, r.class, r.lecturer, r.term, r.year, c.title as course_title, c.code as course_code, l.title as level_name, cl.title as class_title, concat(st.fname,' ',st.lname) as teacher")
+			->join('courses c', 'c.id = r.course')
+			->join('classes cl', 'cl.id = r.class')
+			->join('levels l', 'l.id = cl.level')
+			->join('staffs st', 'st.id = r.lecturer', 'left')
+			->where('r.id', $recordId)
+			->where('cl.school_id', $schoolId)
+			->get(1)->getRowArray();
+		if (!$record) {
+			return $this->response->setStatusCode(404)->setBody('Course not found.');
+		}
+		if (!$this->markSheetSeesAll() && (int) $record['lecturer'] !== (int) $this->session->get('soma_id')) {
+			return $this->response->setStatusCode(403)->setBody('You can only generate a mark sheet for your own courses.');
+		}
+		if ((int) $record['year'] !== $yearId) {
+			return $this->response->setBody('That course is not assigned in the selected academic year.');
+		}
+		$termParts = array_filter(array_map('trim', explode(',', (string) ($record['term'] ?? ''))), static function ($part) {
+			return $part !== '';
+		});
+		if ($termParts !== [] && !in_array((string) $termNo, $termParts, true)) {
+			return $this->response->setBody('That course is not assigned in the selected term.');
+		}
+		$termRow = (new ActiveTermModel())->select('id')
+			->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('term', $termNo)
+			->get(1)->getRow();
+		$termId = $termRow ? (int) $termRow->id : 0;
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		$yearRow = (new AcademicYearModel())->select('title')->where('id', $yearId)->get(1)->getRow();
+		if ($yearRow) {
+			$yearTitle = (string) $yearRow->title;
+		}
+		$students = $db->table('students s')
+			->select("s.id, s.regno, concat(s.fname,' ',s.lname) as name")
+			->join('class_records cr', 's.id = cr.student')
+			->where('cr.class', (int) $record['class'])
+			->where('cr.year', $yearId)
+			->where('cr.status', '1')
+			->where('s.status', 1)
+			->orderBy('s.fname', 'ASC')
+			->orderBy('s.lname', 'ASC')
+			->get()->getResultArray();
+		$markRows = [];
+		if ($termId > 0) {
+			$markRows = $db->table('marks')
+				->select('id, student_id, cat_type, period, marks, outof, examDate')
+				->where('class_id', (int) $record['class'])
+				->where('course_id', (int) $record['course'])
+				->where('term', $termId)
+				->where('mark_type', 1)
+				->orderBy('id', 'ASC')
+				->get()->getResultArray();
+		}
+		$columns = [];
+		$cells = [];
+		foreach ($markRows as $mark) {
+			$code = strtoupper(trim((string) ($mark['cat_type'] ?? '')));
+			if (!preg_match('/^[QTH]\d+$/', $code)) {
+				continue;
+			}
+			$when = $this->markSheetTimestamp($mark['examDate'] ?? 0);
+			$key = $code . '|' . (int) ($mark['period'] ?? 0) . '|' . $when;
+			if (!isset($columns[$key])) {
+				$columns[$key] = [
+					'key' => $key,
+					'code' => $code,
+					'label' => function_exists('catTypeStr') ? catTypeStr($code) : $code,
+					'kind' => $code[0] === 'Q' ? 'Quiz' : ($code[0] === 'H' ? 'Homework' : 'Test'),
+					'max' => (int) ($mark['outof'] ?? 0),
+					'when' => $when,
+					'date_short' => $when > 0 ? date('d M', $when) : '',
+					'date_long' => $when > 0 ? date('d M Y', $when) : '',
+					'topic' => '',
+				];
+			}
+			$studentId = (int) $mark['student_id'];
+			$cells[$studentId][$key] = self::displayMarkEntry($mark['marks'], $mark['id']);
+		}
+		uasort($columns, static function ($a, $b) {
+			if ($a['when'] !== $b['when']) {
+				return $a['when'] <=> $b['when'];
+			}
+			return strcmp($a['code'], $b['code']);
+		});
+		$maxTotal = 0;
+		foreach ($columns as $col) {
+			$maxTotal += (int) $col['max'];
+		}
+		$sheetStudents = [];
+		foreach ($students as $student) {
+			$sid = (int) $student['id'];
+			$obtained = 0;
+			foreach ($columns as $col) {
+				$raw = $cells[$sid][$col['key']] ?? '';
+				if ($raw !== '' && is_numeric($raw)) {
+					$obtained += (float) $raw;
+				}
+			}
+			$percent = $maxTotal > 0 ? round(($obtained / $maxTotal) * 100, 1) : 0;
+			$remark = $this->markSheetRemark($percent, $columns !== []);
+			$sheetStudents[] = [
+				'name' => $student['name'],
+				'regno' => $student['regno'],
+				'cells' => $cells[$sid] ?? [],
+				'total' => $columns === [] ? '' : $this->markSheetNumber($obtained),
+				'percent' => $columns === [] ? '' : number_format($percent, 1) . '%',
+				'remark' => $remark['text'],
+				'remark_class' => $remark['class'],
+			];
+		}
+		$subject = trim($record['course_title'] . ($record['course_code'] !== '' ? ' (' . $record['course_code'] . ')' : ''));
+		$sheet = [
+			'title' => 'CAT mark sheet — ' . $subject,
+			'school' => (string) ($this->data['school_name'] ?? ''),
+			'subject' => $subject,
+			'class_label' => trim($record['level_name'] . ' ' . $record['class_title']),
+			'term_label' => 'Term ' . $termNo,
+			'year_title' => $yearTitle,
+			'teacher' => (string) $record['teacher'],
+			'columns' => array_values($columns),
+			'students' => $sheetStudents,
+			'max_total' => $maxTotal,
+		];
+		return $this->response
+			->setHeader('Content-Type', 'text/html; charset=UTF-8')
+			->setBody(view('pages/marks/mark_sheet_print', ['sheet' => $sheet]));
+	}
+
+	private function markSheetTimestamp($value): int
+	{
+		if (is_numeric($value) && (int) $value > 100000) {
+			return (int) $value;
+		}
+		$parsed = strtotime((string) $value);
+		return $parsed ? (int) $parsed : 0;
+	}
+
+	private function markSheetNumber($value): string
+	{
+		if ((float) $value == (int) $value) {
+			return (string) (int) $value;
+		}
+		return rtrim(rtrim(number_format((float) $value, 1, '.', ''), '0'), '.');
+	}
+
+	/** @return array{text:string,class:string} */
+	private function markSheetRemark(float $percent, bool $hasAssessments): array
+	{
+		if (!$hasAssessments) {
+			return ['text' => '', 'class' => ''];
+		}
+		if ($percent >= 85) {
+			return ['text' => 'Excellent', 'class' => 'r-excellent'];
+		}
+		if ($percent >= 75) {
+			return ['text' => 'Very Good', 'class' => 'r-very'];
+		}
+		if ($percent >= 60) {
+			return ['text' => 'Good', 'class' => 'r-good'];
+		}
+		if ($percent >= 50) {
+			return ['text' => 'Fair', 'class' => 'r-fair'];
+		}
+		return ['text' => 'Low', 'class' => 'r-low'];
+	}
+
 
 	public
 	function student_term_results($type = 0, $pdf = false)
