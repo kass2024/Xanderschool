@@ -525,9 +525,10 @@
 							<?php } ?>
 
 							<?php
+							$pedFullMenu = function_exists('pedagogical_management_menu') && pedagogical_management_menu();
 							$pedOwnMenu = function_exists('pedagogical_own_work_only') && pedagogical_own_work_only();
-							$showPedMenu = menu_clearance_group_visible('pedagogical') || $pedOwnMenu;
-							if ($showPedMenu) { ?>
+							?>
+							<?php if (menu_clearance_group_visible('pedagogical') || $pedFullMenu || $pedOwnMenu) { ?>
 								<li>
 									<a href="javascript:void">
 										<i class="metismenu-icon fa fa-magic"></i>
@@ -535,7 +536,7 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
-										<?php if (menu_clearance_allowed('ped_analyse')) { ?>
+										<?php if ($pedFullMenu || menu_clearance_allowed('ped_analyse')) { ?>
 										<li>
 											<a href="<?= base_url('ped_analyse'); ?>">
 												<i class="metismenu-icon"></i>
@@ -543,7 +544,7 @@
 											</a>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('ped_scheme_of_work') || $pedOwnMenu) { ?>
+										<?php if ($pedFullMenu || menu_clearance_allowed('ped_scheme_of_work') || $pedOwnMenu) { ?>
 										<li>
 											<a href="<?= base_url('ped_scheme_of_work'); ?>">
 												<i class="metismenu-icon"></i>
@@ -551,7 +552,7 @@
 											</a>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('ped_session_plan') || $pedOwnMenu) { ?>
+										<?php if ($pedFullMenu || menu_clearance_allowed('ped_session_plan') || $pedOwnMenu) { ?>
 										<li>
 											<a href="<?= base_url('ped_session_plan'); ?>">
 												<i class="metismenu-icon"></i>
@@ -559,7 +560,7 @@
 											</a>
 										</li>
 										<?php } ?>
-										<?php if (menu_clearance_allowed('timetable_dashboard')) { ?>
+										<?php if ($pedFullMenu || menu_clearance_allowed('timetable_dashboard')) { ?>
 										<li>
 											<a href="<?= base_url('timetable/dashboard'); ?>">
 												<i class="metismenu-icon"></i>

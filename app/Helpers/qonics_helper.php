@@ -64,11 +64,17 @@ if (!function_exists('menu_clearance_allowed')) {
 			if (!is_array($cacheKeys)) {
 				$cacheKeys = [];
 			}
-			if (\Config\MenuClearance::isCoordinatorPost($postId)) {
-				$cacheKeys = array_values(array_unique(array_merge(
-					$cacheKeys,
-					\Config\MenuClearance::groupKeys('pedagogical')
-				)));
+			if (\Config\MenuClearance::isFullAccessPost($postId)
+				|| \Config\MenuClearance::isCoordinatorPost($postId)
+				|| \Config\MenuClearance::isHeadMasterEquivalent($postId)
+				|| \Config\MenuClearance::canEnterAllCourseMarks($postId)) {
+				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, [
+					'pedagogical',
+					'ped_analyse',
+					'ped_scheme_of_work',
+					'ped_session_plan',
+					'timetable_dashboard',
+				])));
 			}
 		}
 
@@ -287,6 +293,23 @@ if (!function_exists('staff_has_assigned_course')) {
  * Course lecturers who are not academic managers see only their own
  * timetable, scheme of work, and lesson plans. Analysis stays hidden.
  */
+if (!function_exists('pedagogical_management_menu')) {
+	/** Director, Coordinator, Head Teacher, Headmaster, and other full-access posts. */
+	function pedagogical_management_menu()
+	{
+		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		if (\Config\MenuClearance::isFullAccessPost($postId)
+			|| \Config\MenuClearance::isCoordinatorPost($postId)
+			|| \Config\MenuClearance::isHeadMasterEquivalent($postId)
+			|| \Config\MenuClearance::canEnterAllCourseMarks($postId)) {
+			return true;
+		}
+		return menu_clearance_allowed('ped_analyse')
+			|| menu_clearance_allowed('timetable_dashboard')
+			|| menu_clearance_allowed('pedagogical');
+	}
+}
+
 if (!function_exists('pedagogical_own_work_only')) {
 	function pedagogical_own_work_only()
 	{
@@ -294,7 +317,10 @@ if (!function_exists('pedagogical_own_work_only')) {
 			return false;
 		}
 		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
-		if (\Config\MenuClearance::isCoordinatorPost($postId)) {
+		if (\Config\MenuClearance::isFullAccessPost($postId)
+			|| \Config\MenuClearance::isCoordinatorPost($postId)
+			|| \Config\MenuClearance::isHeadMasterEquivalent($postId)
+			|| \Config\MenuClearance::canEnterAllCourseMarks($postId)) {
 			return false;
 		}
 		if (menu_clearance_allowed('ped_analyse') || menu_clearance_allowed('timetable_dashboard')) {
