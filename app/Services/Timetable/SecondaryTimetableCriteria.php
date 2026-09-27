@@ -255,7 +255,8 @@ class SecondaryTimetableCriteria
 	/**
 	 * Hard slot gate used by generation and parking for every track.
 	 * Custom teacher days/windows apply school-wide; document windows, Alice,
-	 * clinical, and ANP class mornings apply to high school only.
+	 * and clinical windows apply to high school only.
+	 * S4, S5 and S6 ANP teach 07:00–16:20.
 	 */
 	public function slotAllowed(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
@@ -266,6 +267,18 @@ class SecondaryTimetableCriteria
 			if ($day === 6 && !$this->allowsSunday($row, $slotStart, $slotEnd)) {
 				return false;
 			}
+			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
+				return false;
+			}
+			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+		}
+		if ($this->isClinicalAttachmentCourse($row)) {
+			if ($day === 6 || !$this->isAnpClinicalWindow($row, $day, $slotStart, $slotEnd)) {
+				return false;
+			}
+			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+		}
+		if ($this->isAnpDept($row) && $this->isAnpClassHourSlot($slotStart, $slotEnd, $day)) {
 			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
 				return false;
 			}
@@ -451,10 +464,14 @@ class SecondaryTimetableCriteria
 
 	/**
 	 * Hard: saved teacher windows/days (all tracks) + document named windows (high school).
-	 * ANP *classes* only on Tuesday–Thursday mornings; named ANP teachers keep their own windows.
+	 * Clinical attachment follows its class window, not the teacher's other days.
+	 * Named ANP teachers keep their own windows. Other ANP lessons may use 07:00–16:20.
 	 */
 	public function teacherAllows(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
+		if ($this->isClinicalAttachmentCourse($row)) {
+			return true;
+		}
 		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
@@ -487,14 +504,6 @@ class SecondaryTimetableCriteria
 			return true;
 		}
 
-		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
-		if ($meta && ($meta['dept'] ?? '') === 'ANP' && !$this->isPinnedTeacherName($teacher) && $this->windowsForTeacher($teacher) === []) {
-			// ANP teaching is required Tuesday–Thursday, mornings only.
-			if (!in_array($day, [1, 2, 3], true) || !$this->isMorningSlotByTimes($slotStart, $slotEnd)) {
-				return false;
-			}
-		}
-
 		if ($teacher === '') {
 			return true;
 		}
@@ -505,6 +514,12 @@ class SecondaryTimetableCriteria
 			if ($needle !== '' && strpos($teacher, $needle) !== false && in_array($day, $blocked, true)) {
 				return false;
 			}
+		}
+
+		// ANP priority courses must land on the grid. A narrow named window
+		// (for example Friday morning only) cannot block them.
+		if ($this->isAnpDept($row) && ($this->isPrioritySubject($row) || $this->isAnpMainExtra($row))) {
+			return true;
 		}
 
 		$windows = $this->windowsForTeacher($teacher);
@@ -563,10 +578,14 @@ class SecondaryTimetableCriteria
 	/**
 	 * Clinical attachment reserved (no regular lessons) for ANP only.
 	 * Tuesday 07:00–12:00: S4 ANP + S5 ANP.
-	 * Wednesday full day 07:00–16:00: S6 ANP.
+	 * Wednesday full teaching day 07:00–16:20: S6 ANP.
+	 * The clinical course itself is not blocked; it is the only lesson in that window.
 	 */
 	public function clinicalBlocksClass(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
+		if ($this->isClinicalAttachmentCourse($row)) {
+			return false;
+		}
 		if (!self::isSecondaryTrack($row)) {
 			return false;
 		}
@@ -585,9 +604,149 @@ class SecondaryTimetableCriteria
 			return $start < (12 * 60) && $end > (7 * 60);
 		}
 		if ($day === 2 && $level === 'S6') {
-			return $start < (16 * 60) && $end > (7 * 60);
+			return $start < (16 * 60 + 20) && $end > (7 * 60);
 		}
 		return false;
+	}
+
+	public function isClinicalAttachmentCourse(array $row): bool
+	{
+		return strpos($this->courseTitle($row), 'clinical attachment') !== false;
+	}
+
+	public function isAnpDept(array $row): bool
+	{
+		if (!self::isSecondaryTrack($row)) {
+			return false;
+		}
+		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+		if ($meta !== null) {
+			return (string) ($meta['dept'] ?? '') === 'ANP';
+		}
+		return $this->entryDept($row) === 'ANP';
+	}
+
+	/** S4/S5 Tuesday 07:00–12:00, S6 Wednesday 07:00–16:20. */
+	public function isAnpClinicalWindow(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
+	{
+		if (!$this->isAnpDept($row)) {
+			return false;
+		}
+		$level = $this->anpLevel($row);
+		if ($day === 1 && ($level === 'S4' || $level === 'S5')) {
+			$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+			$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+			return $start >= (7 * 60) && $end <= (12 * 60) && $end > $start
+				&& \App\Models\TimetableSchemaModel::isTeachingDayLessonSlotTimes($slotStart, $slotEnd);
+		}
+		if ($day === 2 && $level === 'S6') {
+			return $this->isAnpClassHourSlot($slotStart, $slotEnd, $day);
+		}
+		return false;
+	}
+
+	/**
+	 * Lower numbers are placed first.
+	 * 0 evening activities, 1 clinical, 2 priority subjects, 9 ANP languages/ICT after those.
+	 */
+	public function placementRank(array $row): int
+	{
+		if ($this->isFixedEveningActivity($row) || self::isAfterLessonCourseTitle((string) ($row['course_title'] ?? ''))) {
+			return 0;
+		}
+		if ($this->isClinicalAttachmentCourse($row)) {
+			return 1;
+		}
+		if ($this->isPrioritySubject($row) || $this->isAnpMainExtra($row)) {
+			return 2;
+		}
+		if ($this->isAnpSecondWave($row)) {
+			return 9;
+		}
+		return 5;
+	}
+
+	public function isPrioritySubject(array $row): bool
+	{
+		$t = $this->courseTitle($row);
+		if ($t === '' || strpos($t, 'sub math') !== false) {
+			return false;
+		}
+		foreach (['medical pathology', 'surgical pathology', 'pharmacology', 'fundamentals of nursing', 'ethics'] as $phrase) {
+			if (strpos($t, $phrase) !== false) {
+				return true;
+			}
+		}
+		return (bool) preg_match('/\bmch\b|\bbiology\b|\bchemistry\b|\bphysics\b|\bmathematics\b|\bmaths\b|\benglish\b/', $t);
+	}
+
+	/** S4 Kinyarwanda is placed with the main courses, not with the later languages. */
+	public function isAnpMainExtra(array $row): bool
+	{
+		return $this->isAnpDept($row)
+			&& $this->anpLevel($row) === 'S4'
+			&& strpos($this->courseTitle($row), 'kinyarwanda') !== false;
+	}
+
+	public function isAnpSecondWave(array $row): bool
+	{
+		if (!$this->isAnpDept($row)) {
+			return false;
+		}
+		$names = [
+			'S6' => ['french', 'kinyarwanda', 'ict'],
+			'S5' => ['french', 'citizenship', 'kinyarwanda', 'ict'],
+			'S4' => ['ict', 'french', 'citizenship', 'entrepreneurship'],
+		];
+		$level = $this->anpLevel($row);
+		if (!isset($names[$level])) {
+			return false;
+		}
+		$t = $this->courseTitle($row);
+		foreach ($names[$level] as $name) {
+			if ($name === 'ict') {
+				if (preg_match('/\bict\b/', $t)) {
+					return true;
+				}
+				continue;
+			}
+			if (strpos($t, $name) !== false) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private function courseTitle(array $row): string
+	{
+		return strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['course_title'] ?? ''))));
+	}
+
+	private function anpLevel(array $row): string
+	{
+		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+		if ($meta !== null && (string) ($meta['level'] ?? '') !== '') {
+			return (string) $meta['level'];
+		}
+		return $this->entryLevel($row);
+	}
+
+	/** Teaching cells from 07:00 through the period that ends at 16:20. Not Sunday. */
+	private function isAnpClassHourSlot(?string $slotStart, ?string $slotEnd, int $day): bool
+	{
+		if ($day === 6) {
+			return false;
+		}
+		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+		$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+		if ($end <= $start || $start < (7 * 60) || $end > (16 * 60 + 20)) {
+			return false;
+		}
+		if (\App\Models\TimetableSchemaModel::isTeachingDayLessonSlotTimes($slotStart, $slotEnd)) {
+			return true;
+		}
+		return \App\Models\TimetableSchemaModel::slotClock($slotStart) === '15:40:00'
+			&& \App\Models\TimetableSchemaModel::slotClock($slotEnd) === '16:20:00';
 	}
 
 	/**
@@ -607,7 +766,48 @@ class SecondaryTimetableCriteria
 		if ($doc !== []) {
 			return $doc;
 		}
+		$clinical = $this->clinicalCombinePartners($row);
+		if ($clinical !== []) {
+			return $clinical;
+		}
 		return $this->afterLessonCombinePartners($row);
+	}
+
+	/**
+	 * S4 and S5 clinical share Tuesday morning with one teacher.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function clinicalCombinePartners(array $row): array
+	{
+		if (!$this->isClinicalAttachmentCourse($row) || !$this->isAnpDept($row)) {
+			return [];
+		}
+		$level = $this->anpLevel($row);
+		if ($level !== 'S4' && $level !== 'S5') {
+			return [];
+		}
+		$out = [];
+		$seen = [];
+		foreach ($this->assignmentsByKey as $cand) {
+			$cid = (int) ($cand['class_id'] ?? 0);
+			if ($cid <= 0 || $cid === (int) ($row['class_id'] ?? 0) || isset($seen[$cid])) {
+				continue;
+			}
+			if (!$this->isClinicalAttachmentCourse($cand) || !$this->isAnpDept($cand)) {
+				continue;
+			}
+			$otherLevel = $this->anpLevel($cand);
+			if ($otherLevel !== 'S4' && $otherLevel !== 'S5') {
+				continue;
+			}
+			if (!$this->isSameCombineTeacher($row, $cand)) {
+				continue;
+			}
+			$seen[$cid] = true;
+			$out[] = $cand;
+		}
+		return $out;
 	}
 
 	/**
@@ -945,6 +1145,9 @@ class SecondaryTimetableCriteria
 	/** Raise the daily cap so weekly Manage Course periods can still fit on a short teacher window. */
 	public function packedDailyCap(array $row, int $weeklyHours, int $fallback): int
 	{
+		if ($this->isClinicalAttachmentCourse($row)) {
+			return max($weeklyHours, $fallback);
+		}
 		$peMax = $this->peMaxPerDay($row, $weeklyHours);
 		if ($peMax !== null) {
 			return $peMax;
@@ -1017,10 +1220,15 @@ class SecondaryTimetableCriteria
 		$out = [
 			['group' => 'Scope', 'title' => 'High school only', 'detail' => 'These locked rules apply to O Level, A Level, TVET and Special. Nursery and primary are never included.'],
 			['group' => 'Day end', 'title' => 'Normal courses', 'detail' => 'Normal courses finish by 15:40 Monday to Thursday. On Friday they finish by 15:00, so 15:00–15:40 is not a normal lesson. Special activities, farming, library, and night periods stay on their own bells.'],
+			['group' => 'Day end', 'title' => 'S4, S5 and S6 ANP', 'detail' => 'These classes teach 07:00–16:20, including 15:40–16:20, Monday to Friday.'],
+			['group' => 'Priority', 'title' => 'Schedule first', 'detail' => 'Clinical attachment, medical pathology, surgical pathology, pharmacology, MCH, fundamentals of nursing, ethics, biology, chemistry, physics, mathematics, and English. Medical and surgical pathology are not taught in S4 ANP. S4 Kinyarwanda is with these main courses. On ANP these lessons are placed even when a teacher’s usual short window is smaller than the course.'],
+			['group' => 'Priority', 'title' => 'S6 ANP after main courses', 'detail' => 'French, Kinyarwanda, and ICT.'],
+			['group' => 'Priority', 'title' => 'S5 ANP after main courses', 'detail' => 'French, citizenship, Kinyarwanda, and ICT.'],
+			['group' => 'Priority', 'title' => 'S4 ANP after main courses', 'detail' => 'ICT, French, citizenship, and entrepreneurship.'],
 			['group' => 'Blocks', 'title' => '4 and 6 periods', 'detail' => 'At least two periods together (doubles).'],
 			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
-			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching period of the class (15:00–15:40; on Friday 14:20–15:00). If that cell is taken, the other lesson is moved earlier. Never after 15:40, and never in 15:00–15:40 on Friday. Never 13:40. At most one PE period per class day.'],
+			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching period of the class (15:00–15:40; on Friday 14:20–15:00). For S4, S5 and S6 ANP the last period is 15:40–16:20. If that cell is taken, the other lesson is moved earlier. Never 13:40. At most one PE period per class day.'],
 			['group' => 'After lessons', 'title' => 'Library and Clubs / Home Science', 'detail' => '16:40–17:30 only, for the listed classes. Same teacher shares one clock. Not during the teaching day and not at chapel, dinner, or preps.'],
 			['group' => 'After lessons', 'title' => 'Evening bells', 'detail' => '17:30–18:00 chapel, 18:00–19:00 dinner, 19:00–21:00 preps.'],
 			['group' => 'After lessons', 'title' => 'Farming', 'detail' => 'After lessons (15:40–17:30), never night. Same teacher shares one clock.'],
@@ -1030,8 +1238,8 @@ class SecondaryTimetableCriteria
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Teachers not named in this document use normal placement and fill from morning periods first.'],
 			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Farming and Library and Clubs also combine when the teacher is the same (each activity keeps its own clock). Different academic subjects or different teachers are never combined.'],
-			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'Tuesday 07:00–12:00.'],
-			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full day 07:00–16:00.'],
+			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'Tuesday 07:00–12:00. Same teacher, so both classes share that morning. S5 keeps its extra period.'],
+			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full teaching day 07:00–16:20. No other S6 ANP lesson on Wednesday.'],
 			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],
 			['group' => 'Windows', 'title' => 'Eric (L3 SOD)', 'detail' => 'Monday and Tuesday 07:00–10:00.'],
 			['group' => 'Windows', 'title' => 'Olivier', 'detail' => 'Friday 07:00–10:00.'],

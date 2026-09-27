@@ -92,6 +92,33 @@ foreach ($homeClasses as $classId) {
 }
 echo "Added Home Science assignments: {$added}\n";
 
+$anpAdded = 0;
+foreach ([433 => 'Kinyarwanda', 487 => 'ICT'] as $courseId => $label) {
+	$exists = (int) $db->table('course_records')
+		->where('class', 231)
+		->where('course', $courseId)
+		->where('year', $year)
+		->countAllResults();
+	if ($exists > 0) {
+		continue;
+	}
+	$src = $db->table('course_records')
+		->where('class', 230)
+		->where('course', $courseId)
+		->where('year', $year)
+		->get(1)->getRowArray();
+	if (!$src) {
+		fwrite(STDERR, "S5 ANP {$label} record missing\n");
+		continue;
+	}
+	unset($src['id']);
+	$src['class'] = 231;
+	$db->table('course_records')->insert($src);
+	$anpAdded++;
+	echo "Added S6 ANP {$label}\n";
+}
+echo "Added S6 ANP courses: {$anpAdded}\n";
+
 $assignments = loadAssignments($db, $schoolId, $year, $term);
 $byTrack = [];
 $classTrack = [];
@@ -148,7 +175,8 @@ $generator = new TimetableGeneratorService();
 $generator->setCombineSlotMaps($classTrack, $clockMap);
 $allEntries = [];
 $reset = true;
-foreach ($hsTracks as $track) {
+$generateOrder = [TimetableTrack::SPECIAL, TimetableTrack::O_LEVEL, TimetableTrack::A_LEVEL, TimetableTrack::RTB];
+foreach ($generateOrder as $track) {
 	$done = [];
 	foreach ($allEntries as $entry) {
 		if ((int) ($entry['slot_id'] ?? 0) > 0) {
@@ -206,7 +234,7 @@ foreach ($allEntries as $entry) {
 $db->table('timetable_schedules')->where('id', $scheduleId)->update([
 	'title' => 'Version 2',
 	'status' => 'published',
-	'notes' => 'Version 2 evening activities. Version 1 is stored in timetable_*_v1.',
+	'notes' => 'Version 2. ANP classes teach 07:00–16:20. Priority courses are placed first. Version 1 is stored in timetable_*_v1.',
 	'generated_at' => date('Y-m-d H:i:s'),
 ]);
 
