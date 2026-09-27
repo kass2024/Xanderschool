@@ -72,10 +72,17 @@ foreach ($grid ?? [] as $scanRow) {
 		</div>
 	<?php endif; ?>
 
-	<?php if (($mode ?? '') === 'teacher' && !empty($period_counter)):
+	<?php if (empty($for_pdf) && ($mode ?? '') === 'teacher' && !empty($period_counter)):
 		$assignedPeriods = (int) ($period_counter['periods'] ?? 0);
 		$onTimetable = (int) ($period_counter['on_timetable'] ?? 0);
-		$periodsMatch = $onTimetable === $assignedPeriods;
+		$managerOnlyPeriods = 0;
+		foreach ($period_counter['courses'] ?? [] as $courseLine) {
+			if (!empty($courseLine['manager_only'])) {
+				$managerOnlyPeriods += (int) ($courseLine['periods'] ?? 0);
+			}
+		}
+		$teachingAssigned = $assignedPeriods - $managerOnlyPeriods;
+		$periodsMatch = $onTimetable === $teachingAssigned;
 	?>
 		<div class="tt-period-counter">
 			<div class="tt-period-counter-total">
@@ -85,9 +92,12 @@ foreach ($grid ?? [] as $scanRow) {
 			<div class="tt-period-counter-note">
 				Same total as Manage Course. Each class keeps its own periods on this timetable.
 				<?php if ($periodsMatch): ?>
-					<span class="tt-period-match">All <?= $assignedPeriods ?> are on this timetable.</span>
+					<span class="tt-period-match">All <?= $teachingAssigned ?> teaching periods are on this timetable.</span>
 				<?php else: ?>
-					<span class="tt-period-short"><?= $onTimetable ?> on this timetable, <?= $assignedPeriods - $onTimetable ?> still listed below.</span>
+					<span class="tt-period-short"><?= $onTimetable ?> on this timetable, <?= $teachingAssigned - $onTimetable ?> still do not fit without two teachers in one class.</span>
+				<?php endif; ?>
+				<?php if ($managerOnlyPeriods > 0): ?>
+					<span class="tt-period-line-note"><?= $managerOnlyPeriods ?> period(s) stay in Manage Course only.</span>
 				<?php endif; ?>
 			</div>
 			<table class="tt-period-table">
@@ -247,10 +257,10 @@ foreach ($grid ?? [] as $scanRow) {
 				</tbody>
 			</table>
 		</div>
-		<?php if ($hasCombined): ?>
+		<?php if (empty($for_pdf) && $hasCombined): ?>
 			<div class="tt-combined-legend">Colored cells are combined classes (same subject + same teacher). Partner class names are listed on the cell.</div>
 		<?php endif; ?>
-		<?php if ($editable || !empty($staging_entries)): ?>
+		<?php if (empty($for_pdf) && ($editable || !empty($staging_entries))): ?>
 		<div class="tt-staging-dock tt-staging-parking tt-staging-bottom mt-2" id="ttStagingDockBottom"<?= $editable ? ' data-drop-zone="parking"' : ''; ?>>
 			<div class="tt-staging-label">
 				<i class="fa fa-level-down"></i>
