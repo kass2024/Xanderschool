@@ -124,6 +124,43 @@ foreach ([433 => 'Kinyarwanda', 487 => 'ICT'] as $courseId => $label) {
 }
 echo "Added S6 ANP courses: {$anpAdded}\n";
 
+$s4Clinical = $db->query("SELECT cr.course, c.credit
+	FROM course_records cr
+	JOIN courses c ON c.id = cr.course
+	WHERE cr.class = 229 AND cr.year = {$year} AND c.title LIKE '%Clinical Attachment%'
+	LIMIT 1")->getRowArray();
+if ($s4Clinical && (int) $s4Clinical['credit'] === 6) {
+	$clinicalCourseId = (int) $s4Clinical['course'];
+	$shared = (int) $db->table('course_records')
+		->where('course', $clinicalCourseId)
+		->where('class !=', 229)
+		->countAllResults();
+	if ($shared === 0) {
+		$db->table('courses')->where('id', $clinicalCourseId)->update(['credit' => 7]);
+		echo "S4 ANP clinical credit set to 7 so the Tuesday class matches S5\n";
+	}
+}
+
+$mpcKiny = (int) $db->query("SELECT COUNT(*) AS n
+	FROM course_records cr
+	JOIN courses c ON c.id = cr.course
+	WHERE cr.class = 193 AND cr.year = {$year}
+	AND (c.title LIKE '%Kinyarwanda%' OR c.title LIKE '%Ikinyarwanda%')")->getRowArray()['n'];
+if ($mpcKiny === 0) {
+	$srcKiny = $db->query("SELECT cr.*
+		FROM course_records cr
+		JOIN courses c ON c.id = cr.course
+		WHERE cr.class = 196 AND cr.year = {$year}
+		AND (c.title LIKE '%Kinyarwanda%' OR c.title LIKE '%Ikinyarwanda%')
+		LIMIT 1")->getRowArray();
+	if ($srcKiny) {
+		unset($srcKiny['id']);
+		$srcKiny['class'] = 193;
+		$db->table('course_records')->insert($srcKiny);
+		echo "Added S6 MPC Kinyarwanda so it joins the combined class\n";
+	}
+}
+
 $assignments = loadAssignments($db, $schoolId, $year, $term);
 $byTrack = [];
 $classTrack = [];
@@ -153,6 +190,11 @@ if (!$schedule) {
 	exit(1);
 }
 $scheduleId = (int) $schedule['id'];
+$lockedSnapshot = 'timetable_entries_locked_20260927';
+if (!$db->tableExists($lockedSnapshot)) {
+	$db->query("CREATE TABLE `{$lockedSnapshot}` AS SELECT * FROM timetable_entries WHERE schedule_id = {$scheduleId}");
+	echo "Locked current timetable into {$lockedSnapshot}\n";
+}
 $keep = [];
 if ($hsClassIds !== []) {
 	$keep = $db->table('timetable_entries te')
@@ -234,26 +276,26 @@ foreach ($allEntries as $entry) {
 		'slot_id' => $entry['slot_id'],
 		'entry_type' => $entry['entry_type'] ?? 'lesson',
 		'custom_label' => $entry['custom_label'] ?? null,
-		'is_locked' => 0,
+		'is_locked' => 1,
 	]);
 }
 $overflowPlaced = (new \App\Services\Timetable\TimetableStagingService())
 	->fillVersion2Gaps($scheduleId, $schoolId, $schema);
 echo "Version 2 locked fill placed: {$overflowPlaced}\n";
-$unlocked = 0;
+$locked = 0;
 if ($db->fieldExists('is_locked', 'timetable_entries') && $hsClassIds !== []) {
 	$db->table('timetable_entries')
 		->where('schedule_id', $scheduleId)
 		->whereIn('class_id', $hsClassIds)
-		->update(['is_locked' => 0]);
-	$unlocked = (int) $db->table('timetable_entries')
+		->update(['is_locked' => 1]);
+	$locked = (int) $db->table('timetable_entries')
 		->where('schedule_id', $scheduleId)
 		->whereIn('class_id', $hsClassIds)
 		->where('day_of_week >=', 0)
 		->where('slot_id >', 0)
 		->countAllResults();
 }
-echo "UNLOCKED_HIGH_SCHOOL {$unlocked}\n";
+echo "LOCKED_HIGH_SCHOOL {$locked}\n";
 $fingerprintRows = $db->table('course_records cr')
 	->select('cr.id, cr.course, cr.class, cr.lecturer, cr.term, COALESCE(c.credit,0) AS credit')
 	->join('courses c', 'c.id = cr.course', 'left')
@@ -283,7 +325,7 @@ foreach (\App\Libraries\TimetableTrack::generationPhaseKeys() as $phaseKey) {
 $db->table('timetable_schedules')->where('id', $scheduleId)->update([
 	'title' => 'Final Version',
 	'status' => 'published',
-	'notes' => 'High school rebuilt and unlocked. S4, S5 and S6 ANP teach through 16:20, including Friday. S5 clinical is Tuesday morning. S4 clinical has its own periods. S6 clinical is Wednesday. Named windows, Version 1 combines, and manager-only SHE and Occupation stay as set. Nursery and primary lessons were kept.',
+	'notes' => 'High school rebuilt and locked. S4 ST mathematics is 07:00–12:00. S1 mathematics is after break or lunch. S5 physics is ST1+ST2, with ANP separate. S5 chemistry and biology ANP are separate from ST1. S6 Kinyarwanda is one class across MCE, MPC, PCB, PCM, MEG, MCB and MPG. S4 and S5 Kinyarwanda streams are combined. S4 and S5 clinical share Tuesday 07:00–12:00. MCH is three separate classes. Varlette is Thursday 09:00–12:00 and Friday 08:00–12:00. Nursery and primary lessons were kept.',
 	'generated_at' => date('Y-m-d H:i:s'),
 	'needs_regen' => 0,
 	'assignments_hash' => $fingerprint,

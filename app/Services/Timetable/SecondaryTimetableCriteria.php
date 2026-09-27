@@ -279,6 +279,9 @@ class SecondaryTimetableCriteria
 	 */
 	public function slotAllowed(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
+		if (!$this->mathWindowAllows($row, $slotStart, $slotEnd)) {
+			return false;
+		}
 		if ($this->isFixedEveningActivity($row)) {
 			if (!\App\Models\TimetableSchemaModel::isLibraryHomeScienceClock($slotStart, $slotEnd)) {
 				return false;
@@ -619,8 +622,44 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
+	 * Mathematics windows that are fixed, not only preferred.
+	 * S4 ST1 and ST2: 07:00–12:00 only.
+	 * S1: after break (10:00) or after lunch, never 07:00–09:40.
+	 */
+	private function mathWindowAllows(array $row, ?string $slotStart, ?string $slotEnd): bool
+	{
+		if (!$this->isPlainMathematics($row) || !self::isSecondaryTrack($row)) {
+			return true;
+		}
+		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+		$level = $meta !== null ? (string) ($meta['level'] ?? '') : $this->entryLevel($row);
+		$dept = $meta !== null ? (string) ($meta['dept'] ?? '') : $this->entryDept($row);
+		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+		$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+		if ($end <= $start) {
+			return false;
+		}
+		if ($level === 'S4' && in_array($dept, ['ST1', 'ST2'], true)) {
+			return $start >= (7 * 60) && $end <= (12 * 60);
+		}
+		if ($level === 'S1') {
+			return $start >= (10 * 60);
+		}
+		return true;
+	}
+
+	private function isPlainMathematics(array $row): bool
+	{
+		$t = $this->courseTitle($row);
+		if ($t === '' || strpos($t, 'sub math') !== false) {
+			return false;
+		}
+		return strpos($t, 'mathematics') !== false || preg_match('/\bmaths?\b/', $t) === 1;
+	}
+
+	/**
 	 * Clinical attachment reserved (no regular lessons) for ANP only.
-	 * Tuesday 07:00–12:00: S5 ANP.
+	 * Tuesday 07:00–12:00: S4 ANP and S5 ANP together.
 	 * Wednesday full teaching day 07:00–16:20: S6 ANP.
 	 * The clinical course itself is not blocked; it is the only lesson in that window.
 	 */
@@ -643,8 +682,8 @@ class SecondaryTimetableCriteria
 		if ($end <= $start) {
 			$end = $start + 40;
 		}
-		// Tuesday morning is S5 clinical only. S4 clinical has its own periods later in the ANP day.
-		if ($day === 1 && $level === 'S5') {
+		// Tuesday morning is the combined S4 and S5 clinical class.
+		if ($day === 1 && in_array($level, ['S4', 'S5'], true)) {
 			return $start < (12 * 60) && $end > (7 * 60);
 		}
 		if ($day === 2 && $level === 'S6') {
@@ -671,10 +710,8 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
-	 * S5: Tuesday 07:00–12:00 (7 periods).
+	 * S4 and S5 together: Tuesday 07:00–12:00 (7 periods, one class).
 	 * S6: Wednesday 07:00–16:20.
-	 * S4: its own 6 periods on the ANP day through 16:20, not inside S5’s Tuesday morning.
-	 * One teacher cannot cover both class loads on the same clocks.
 	 */
 	public function isAnpClinicalWindow(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
@@ -682,7 +719,7 @@ class SecondaryTimetableCriteria
 			return false;
 		}
 		$level = $this->anpLevel($row);
-		if ($level === 'S5') {
+		if ($level === 'S4' || $level === 'S5') {
 			if ($day !== 1) {
 				return false;
 			}
@@ -693,23 +730,6 @@ class SecondaryTimetableCriteria
 		}
 		if ($level === 'S6') {
 			return $day === 2 && $this->isAnpClassHourSlot($slotStart, $slotEnd, $day);
-		}
-		if ($level === 'S4') {
-			// Keep S5 Tuesday morning, S6 Wednesday, Linea’s Thursday, and Varlette’s Friday morning.
-			if ($day === 2) {
-				return false;
-			}
-			$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
-			if ($day === 1 && $start < (13 * 60)) {
-				return false;
-			}
-			if ($day === 3 && $start >= (9 * 60) && $start < (15 * 60 + 40)) {
-				return false;
-			}
-			if ($day === 4 && $start >= (9 * 60) && $start < (12 * 60)) {
-				return false;
-			}
-			return $this->isAnpClassHourSlot($slotStart, $slotEnd, $day);
 		}
 		return false;
 	}
@@ -857,29 +877,18 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
-	 * S4 and S5 clinical each keep their own clocks.
-	 * One shared Tuesday morning hid S4’s 6 periods on the teacher sheet.
+	 * S4 ANP and S5 ANP clinical share Tuesday 07:00–12:00 as one class.
+	 * S6 clinical stays on its own Wednesday.
 	 *
 	 * @return list<array<string,mixed>>
 	 */
 	private function clinicalCombinePartners(array $row): array
 	{
-		return [];
-	}
-
-	/**
-	 * S4, S5 and S6 MCH share one clock. Varlette’s Thursday and Friday
-	 * window cannot cover three separate copies of the same 4-period course.
-	 *
-	 * @return list<array<string,mixed>>
-	 */
-	private function mchCombinePartners(array $row): array
-	{
-		if (!$this->isAnpDept($row) || !preg_match('/\bmch\b/', $this->courseTitle($row))) {
+		if (!$this->isClinicalAttachmentCourse($row) || !$this->isAnpDept($row)) {
 			return [];
 		}
 		$level = $this->anpLevel($row);
-		if (!in_array($level, ['S4', 'S5', 'S6'], true)) {
+		if (!in_array($level, ['S4', 'S5'], true)) {
 			return [];
 		}
 		$out = [];
@@ -889,10 +898,11 @@ class SecondaryTimetableCriteria
 			if ($cid <= 0 || $cid === (int) ($row['class_id'] ?? 0) || isset($seen[$cid])) {
 				continue;
 			}
-			if (!$this->isAnpDept($cand) || !preg_match('/\bmch\b/', $this->courseTitle($cand))) {
+			if (!$this->isClinicalAttachmentCourse($cand) || !$this->isAnpDept($cand)) {
 				continue;
 			}
-			if (!in_array($this->anpLevel($cand), ['S4', 'S5', 'S6'], true)) {
+			$other = $this->anpLevel($cand);
+			if (!in_array($other, ['S4', 'S5'], true) || $other === $level) {
 				continue;
 			}
 			if (!$this->isSameCombineTeacher($row, $cand)) {
@@ -902,6 +912,16 @@ class SecondaryTimetableCriteria
 			$out[] = $cand;
 		}
 		return $out;
+	}
+
+	/**
+	 * S4, S5 and S6 MCH are three different classes.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function mchCombinePartners(array $row): array
+	{
+		return [];
 	}
 
 	/**
@@ -1052,6 +1072,14 @@ class SecondaryTimetableCriteria
 			}
 			return 'after|' . $who . '|' . $family;
 		}
+		if ($this->isClinicalAttachmentCourse($row)) {
+			$level = $this->anpLevel($row);
+			$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
+			if (in_array($level, ['S4', 'S5'], true) && $staffId > 0) {
+				return $staffId . '|clinical|S4-S5';
+			}
+			return '';
+		}
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
 		$classId = (int) ($row['class_id'] ?? 0);
@@ -1160,8 +1188,10 @@ class SecondaryTimetableCriteria
 				}
 			}
 		}
-		if ($famA === 'mch') {
-			return true;
+		if ($famA === 'clinical') {
+			return in_array($levelA, ['S4', 'S5'], true)
+				&& in_array($levelB, ['S4', 'S5'], true)
+				&& $levelA !== $levelB;
 		}
 		if ($levelA !== '' && $levelB !== '' && $levelA !== $levelB) {
 			return false;
@@ -1279,12 +1309,11 @@ class SecondaryTimetableCriteria
 			['subject' => 'computer', 'level' => 'S6', 'depts' => ['MPC', 'MCE'], 'label' => 'Computer Science S6 MPC + MCE'],
 			['subject' => 'computer', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S5 Stream 1 + Stream 2'],
 			['subject' => 'computer', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S4 Stream 1 + Stream 2'],
-			['subject' => 'chemistry', 'level' => 'S5', 'depts' => ['ANP', 'ST1'], 'label' => 'Chemistry S5 ANP + Stream 1'],
 			['subject' => 'chemistry', 'level' => 'S6', 'depts' => ['MCB', 'PCB'], 'label' => 'Chemistry S6 MCB + PCB'],
 			['subject' => 'physics', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Physics S4 Stream 1 + Stream 2'],
-			['subject' => 'physics', 'level' => 'S5', 'depts' => ['ANP', 'ST1', 'ST2'], 'label' => 'Physics S5 ANP + Stream 1 + Stream 2'],
+			['subject' => 'physics', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'Physics S5 Stream 1 + Stream 2'],
 			['subject' => 'physics', 'level' => 'S6', 'depts' => ['PCB', 'PCM', 'MPC', 'ANP', 'MPG'], 'label' => 'Physics S6 PCB + PCM + MPC + ANP + MPG'],
-			['subject' => 'mathematics', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Mathematics S4 Stream 1 + Stream 2'],
+			['subject' => 'mathematics', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Mathematics S4 Stream 1 + Stream 2 (07:00–12:00)'],
 			['subject' => 'mathematics', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'Mathematics S5 Stream 1 + Stream 2 (morning)'],
 			['subject' => 'mathematics', 'level' => 'S6', 'depts' => ['ANP', 'PCB'], 'label' => 'Mathematics S6 ANP + PCB'],
 			['subject' => 'mathematics', 'level' => 'S6', 'depts' => ['MCB', 'MCE', 'MEG', 'MPC', 'MPG', 'PCM'], 'label' => 'Mathematics S6 MCB + MCE + MEG + MPC + MPG + PCM'],
@@ -1296,12 +1325,11 @@ class SecondaryTimetableCriteria
 			['subject' => 'general_studies', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'General Studies S5 Stream 1 + Stream 2'],
 			['subject' => 'general_studies', 'level' => 'S6', 'depts' => ['MPC', 'MCB', 'MCE', 'MPG', 'MEG', 'PCM', 'PCB'], 'label' => 'General Studies S6 MPC + MCB + MCE + MPG + MEG + PCM + PCB'],
 			['subject' => 'geography', 'level' => 'S6', 'depts' => ['MEG', 'MPG'], 'label' => 'Geography S6 MEG + MPG'],
-			['subject' => 'biology', 'level' => 'S5', 'depts' => ['ANP', 'ST1'], 'label' => 'Biology S5 ANP + Stream 1'],
 			['subject' => 'biology', 'level' => 'S5', 'depts' => ['PCB', 'HCB'], 'label' => 'Biology S5 PCB + HCB'],
 			['subject' => 'biology', 'level' => 'S6', 'depts' => ['ANP', 'MCB', 'PCB'], 'label' => 'Biology S6 ANP + MCB + PCB'],
 			['subject' => 'kinyarwanda', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Kinyarwanda S4 Stream 1 + Stream 2'],
 			['subject' => 'kinyarwanda', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'Kinyarwanda S5 Stream 1 + Stream 2'],
-			['subject' => 'kinyarwanda', 'level' => 'S6', 'depts' => ['MCE', 'MPC', 'PCB', 'PCM', 'MEG'], 'label' => 'Kinyarwanda S6 MCE + MPC + PCB + PCM + MEG'],
+			['subject' => 'kinyarwanda', 'level' => 'S6', 'depts' => ['MCE', 'MPC', 'PCB', 'PCM', 'MEG', 'MCB', 'MPG'], 'label' => 'Kinyarwanda S6 MCE + MPC + PCB + PCM + MEG + MCB + MPG'],
 			['subject' => 'english', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'English S4 Stream 1 + Stream 2'],
 			['subject' => 'english', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'English S5 Stream 1 + Stream 2'],
 			['subject' => 'english', 'level' => 'S6', 'depts' => ['MCE', 'MPC', 'PCB', 'PCM', 'MEG', 'MCB', 'MPG'], 'label' => 'English S6 MCE + MPC + PCB + PCM + MEG + MCB + MPG'],
@@ -1331,18 +1359,17 @@ class SecondaryTimetableCriteria
 			['group' => 'After lessons', 'title' => 'Evening bells', 'detail' => '17:30–18:00 chapel, 18:00–19:00 dinner, 19:00–21:00 preps.'],
 			['group' => 'After lessons', 'title' => 'Farming', 'detail' => 'After lessons (15:40–17:30), never night. Same teacher shares one clock.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
-			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00.'],
+			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00. S4 ST1 and ST2 Mathematics stay inside 07:00–12:00. S1 Mathematics is after break or after lunch.'],
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Varlette, Marguerite and Linea teach S4, S5 and S6 ANP only inside the times listed under Windows.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Teachers not named in this document use normal placement and fill from morning periods first.'],
 			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Farming and Library and Clubs also combine when the teacher is the same (each activity keeps its own clock). Different academic subjects or different teachers are never combined.'],
-			['group' => 'Clinical', 'title' => 'S5 ANP clinical', 'detail' => 'Tuesday 07:00–12:00. These periods are this class only.'],
-			['group' => 'Clinical', 'title' => 'S4 ANP clinical', 'detail' => 'Six periods of its own through 16:20. Not on S5 Tuesday morning and not on S6 Wednesday. ANP teaching runs through 16:20, including Friday.'],
+			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'One combined class, Tuesday 07:00–12:00, 7 periods. No other S4 or S5 ANP lesson in that window.'],
 			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full teaching day 07:00–16:20. No other S6 ANP lesson on Wednesday.'],
 			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],
 			['group' => 'Windows', 'title' => 'Eric (L3 SOD)', 'detail' => 'Monday and Tuesday 07:00–10:00.'],
 			['group' => 'Windows', 'title' => 'Olivier', 'detail' => 'Friday 07:00–10:00.'],
-			['group' => 'Windows', 'title' => 'Varlette', 'detail' => 'Thursday 09:00–12:00 and Friday 08:30–12:00. S4, S5 and S6 MCH share that clock.'],
+			['group' => 'Windows', 'title' => 'Varlette', 'detail' => 'Thursday 09:00–12:00 and Friday 08:00–12:00. S4, S5 and S6 MCH are three different classes.'],
 			['group' => 'Windows', 'title' => 'Marguerite', 'detail' => 'Monday 07:00–10:00, Wednesday 08:00–10:00, and Thursday 07:00–16:20.'],
 			['group' => 'Windows', 'title' => 'Linea / Linear', 'detail' => 'Thursday 09:00–15:40. Friday 09:20–10:00 is the 09:00–09:40 lesson.'],
 			['group' => 'Windows', 'title' => 'Jean Pierre Bunezero', 'detail' => 'Every weekday 10:40–12:00.'],
@@ -1466,6 +1493,9 @@ class SecondaryTimetableCriteria
 		$t = strtolower(trim(preg_replace('/\s+/', ' ', $title)));
 		if ($t === '') {
 			return '';
+		}
+		if (strpos($t, 'clinical attachment') !== false) {
+			return 'clinical';
 		}
 		if (strpos($t, 'chem') !== false) {
 			return 'chemistry';
@@ -1820,7 +1850,7 @@ class SecondaryTimetableCriteria
 		// Day: Mon=0 … Fri=4. Times in minutes from midnight.
 		$vallette = [
 			['day' => 3, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
-			['day' => 4, 'start' => 8 * 60 + 30, 'end' => 12 * 60, 'scope' => null],
+			['day' => 4, 'start' => 8 * 60, 'end' => 12 * 60, 'scope' => null],
 		];
 		$marguerite = [
 			['day' => 0, 'start' => 7 * 60, 'end' => 10 * 60, 'scope' => null],
