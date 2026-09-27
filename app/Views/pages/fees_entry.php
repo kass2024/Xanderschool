@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/fees-entry.css') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/fees-entry.css?v=9') ?>">
 <link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>">
 
 <div class="fe-page card-scan-page">
@@ -36,8 +36,12 @@
 					</div>
 
 					<div class="fe-class-pick" id="feClassPick">
-						<h4><?= lang('app.student') ?> — tap to load fees</h4>
-						<div class="fe-student-chips" id="feClassChips"></div>
+						<div class="fe-class-pick-head">
+							<h4>Students in this class</h4>
+							<span class="fe-class-count" id="feClassCount"></span>
+						</div>
+						<input type="search" id="feClassFilter" class="form-control fe-class-filter" placeholder="Filter by name or reg no" autocomplete="off">
+						<div class="fe-student-list" id="feClassChips"></div>
 					</div>
 
 					<div class="paidContent fe-fees-section" style="display:none">
@@ -196,8 +200,8 @@ $(function () {
 			reloadSummaryReport();
 			$('#successAlert').show();
 			setScanStatus('✅ ' + res.student.name + ' loaded', 'ok');
-			$('.fe-student-chip').removeClass('active');
-			$(`.fe-student-chip[data-id="${res.student.id}"]`).addClass('active');
+			$('.fe-student-row').removeClass('active');
+			$(`.fe-student-row[data-id="${res.student.id}"]`).addClass('active');
 		}).fail(function () {
 			setScanStatus('⚠️ Network error', 'err');
 			toastada.error('Unable to load student.');
@@ -269,22 +273,53 @@ $(function () {
 	$('#search_class').on('select2:select', function (e) {
 		const classId = e.params.data.id;
 		const year = $('#select_year').val();
+		$('#feClassFilter').val('');
 		$.get(`<?= base_url('get_student/') ?>${classId}/1/7/${year}`, function (html) {
 			const $tmp = $('<select>').html(html);
-			let chips = '';
+			const feText = function (value) {
+				return $('<div>').text(value || '').html();
+			};
+			let rows = '';
+			let n = 0;
 			$tmp.find('option').each(function () {
 				const v = $(this).val();
 				const t = $(this).text().trim();
-				if (v && t) {
-					chips += `<button type="button" class="fe-student-chip" data-id="${v}">${t}</button>`;
-				}
+				if (!v || !t) return;
+				n += 1;
+				const parts = t.match(/^(\S+)\s+(.+)$/);
+				const reg = parts ? parts[1] : '';
+				const name = parts ? parts[2] : t;
+				const bits = name.split(/\s+/).filter(Boolean);
+				const initials = ((bits[0] || '?').charAt(0) + (bits[1] ? bits[1].charAt(0) : '')).toUpperCase();
+				rows += `<button type="button" class="fe-student-row" data-id="${feText(v)}">
+					<span class="fe-student-row-no">${n}</span>
+					<span class="fe-student-avatar">${feText(initials)}</span>
+					<span class="fe-student-row-main">
+						<span class="fe-student-row-name">${feText(name)}</span>
+						<span class="fe-student-row-reg">${feText(reg)}</span>
+					</span>
+					<i class="fa fa-chevron-right" aria-hidden="true"></i>
+				</button>`;
 			});
-			$('#feClassChips').html(chips || '<span class="text-muted">No students in this class.</span>');
+			$('#feClassCount').text(n ? n + (n === 1 ? ' student' : ' students') : '');
+			$('#feClassChips').html(rows || '<div class="fe-class-empty">No students in this class.</div>');
 			$('#feClassPick').addClass('visible');
 		});
 	});
 
-	$(document).on('click', '.fe-student-chip', function () {
+	$('#feClassFilter').on('input', function () {
+		const q = $(this).val().trim().toLowerCase();
+		let shown = 0;
+		$('#feClassChips .fe-student-row').each(function () {
+			const hit = !q || $(this).text().toLowerCase().indexOf(q) !== -1;
+			$(this).toggle(hit);
+			if (hit) shown += 1;
+		});
+		const total = $('#feClassChips .fe-student-row').length;
+		$('#feClassCount').text(q ? (shown + ' of ' + total) : (total ? total + (total === 1 ? ' student' : ' students') : ''));
+	});
+
+	$(document).on('click', '.fe-student-row', function () {
 		loadStudent($(this).data('id'));
 	});
 

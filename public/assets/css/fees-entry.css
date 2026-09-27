@@ -1,0 +1,476 @@
+/* Fees Entry — card scan + compact student + fees workspace */
+.fe-page {
+  padding: 4px 12px 24px;
+  background: #f1f5f9;
+  min-height: calc(100vh - 120px);
+}
+
+.fe-center {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.fe-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .fe-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fe-scan-panel {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  position: sticky;
+  top: 12px;
+}
+
+.fe-scan-panel .card-scan-search-col {
+  max-width: none;
+}
+
+.fe-year-field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Right workspace — single card: student header + fees table */
+.fe-workspace {
+  min-width: 0;
+}
+
+.fe-workspace-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+
+.fe-student-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 20px;
+  min-height: 100px;
+}
+
+.fe-student-header.has-student {
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+  border-bottom: 1px solid #e8edf3;
+}
+
+.fe-student-empty {
+  text-align: center;
+  color: #94a3b8;
+}
+
+.fe-student-empty i {
+  font-size: 1.8rem;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.fe-student-empty p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.fe-invoice-student {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e8edf3;
+  border-radius: 10px;
+}
+
+.fe-invoice-student-photo .student-entry-photo {
+  width: 52px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.fe-invoice-student-info strong {
+  display: block;
+  font-size: 1rem;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.fe-invoice-student-info span {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.fe-student-photo .student-entry-photo {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 2px solid #e2e8f0;
+}
+
+.fe-student-info h3 {
+  margin: 0 0 2px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.fe-student-info .fe-meta {
+  color: #64748b;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.fe-student-info .fe-meta strong {
+  color: #475569;
+  font-weight: 600;
+}
+
+.fe-meta-sep {
+  margin: 0 6px;
+  color: #cbd5e1;
+}
+
+.fe-class-pick {
+  padding: 14px 16px 16px;
+  border-bottom: 1px solid #eef2f7;
+  display: none;
+  background: #f8fafc;
+}
+
+.fe-class-pick.visible {
+  display: block;
+}
+
+.fe-workspace-card:has(.fe-class-pick.visible) .fe-student-header:not(.has-student) {
+  display: none;
+}
+
+.fe-class-pick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.fe-class-pick h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.fe-class-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #15803d;
+  background: #ecfdf3;
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.fe-class-filter {
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border-color: #e2e8f0;
+  height: 38px;
+}
+
+.fe-student-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 560px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.fe-student-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.fe-student-row-no {
+  width: 1.4rem;
+  flex: 0 0 1.4rem;
+  text-align: right;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.fe-student-avatar {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 10px;
+  background: #ecfdf3;
+  color: #15803d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fe-student-row-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fe-student-row-name {
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fe-student-row-reg {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.fe-student-row .fa-chevron-right {
+  color: #cbd5e1;
+  font-size: 0.75rem;
+}
+
+.fe-student-row:hover {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.fe-student-row:hover .fa-chevron-right,
+.fe-student-row.active .fa-chevron-right {
+  color: #15803d;
+}
+
+.fe-student-row.active {
+  border-color: #15803d;
+  background: #f0fdf4;
+  box-shadow: inset 3px 0 0 #15803d;
+}
+
+.fe-class-empty {
+  padding: 18px 8px;
+  text-align: center;
+  color: #64748b;
+}
+
+/* Fees section — flush under student header, no gap */
+.fe-fees-section {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.fe-workspace-card.has-fees-ready .fe-fees-section {
+  display: block !important;
+}
+
+.fe-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #eef2f7;
+  background: #fafbfc;
+}
+
+.fe-actions-bar--compact {
+  border-bottom: none;
+  padding: 8px 16px;
+  justify-content: flex-end;
+}
+
+.fe-actions-bar .btn {
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  padding: 6px 14px;
+}
+
+.fe-tabs {
+  border-bottom: 1px solid #eef2f7;
+  padding: 0 8px;
+  background: #fff;
+}
+
+.fe-tabs .nav-link {
+  font-weight: 600;
+  color: #64748b;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 16px;
+  font-size: 0.88rem;
+}
+
+.fe-tabs .nav-link.active {
+  color: #0f172a;
+  background: transparent;
+  border-bottom-color: #15803d;
+}
+
+.fe-table-wrap {
+  overflow-x: auto;
+}
+
+.fe-table-wrap table {
+  width: 100%;
+  margin: 0;
+}
+
+.fe-table-wrap thead th {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 8px 12px;
+}
+
+.fe-table-wrap tbody td {
+  vertical-align: middle;
+  font-size: 0.88rem;
+  padding: 8px 12px;
+}
+
+.fe-amount-paid { color: #15803d; font-weight: 700; }
+.fe-amount-due { color: #b45309; font-weight: 700; }
+
+/* Invoice modal — multi-line smart entry */
+.fe-invoice-modal .modal-body {
+  padding: 16px 20px;
+}
+
+.fe-invoice-loading,
+.fe-invoice-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: #64748b;
+}
+
+.fe-invoice-empty i {
+  font-size: 2rem;
+  color: #15803d;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.fe-invoice-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fe-invoice-hint {
+  font-size: 0.82rem;
+  color: #64748b;
+  margin-left: auto;
+}
+
+.fe-invoice-table-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  margin-bottom: 14px;
+}
+
+.fe-invoice-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  z-index: 1;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fe-inv-section td {
+  background: #f1f5f9;
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+  padding: 6px 12px !important;
+}
+
+.fe-inv-row .fe-inv-amount {
+  max-width: 110px;
+  margin-left: auto;
+}
+
+.fe-inv-row .fe-inv-amount:disabled {
+  background: #f8fafc;
+}
+
+.fe-invoice-total-row td {
+  background: #f0fdf4;
+  border-top: 2px solid #bbf7d0;
+  font-size: 0.95rem;
+}
+
+.fe-invoice-meta {
+  margin-top: 4px;
+}
+
+.fe-invoice-meta label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
