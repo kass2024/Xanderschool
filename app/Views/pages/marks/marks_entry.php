@@ -344,7 +344,9 @@ body.marks-entry-body .select2-search__field {
 				</div>
 				<div class="marks-field">
 					<span><?= lang("app.teacher"); ?></span>
-					<strong><?= $soma_name; ?></strong>
+					<strong id="marks_teacher_name"
+							data-self="<?= esc($soma_name); ?>"
+							data-full="<?= !empty($marks_teacher_is_assignee) ? '1' : '0'; ?>"><?= !empty($marks_teacher_is_assignee) ? '—' : esc($soma_name); ?></strong>
 				</div>
 				<div class="marks-field">
 					<label for="outofmarks"><?= lang("app.totalMarks"); ?></label>
@@ -472,13 +474,16 @@ body.marks-entry-body .select2-search__field {
 			if ($("#select_class").data("select2")) {
 				$("#select_class").select2("destroy");
 			}
+			showAssignedTeacher();
 			$("#select_class").load("<?= base_url(); ?>get_class/" + val+"/"+$("[name='year']").val(), function () {
 				initMarksSelect2($("#select_class_div"));
+				showAssignedTeacher();
 				populate_marks();
 			});
 		});
 
 		$("#select_class").on("change", function () {
+			showAssignedTeacher();
 			refreshCatTypes(populate_marks);
 		})
 		$("#catype").on("change", function () {
@@ -506,6 +511,23 @@ body.marks-entry-body .select2-search__field {
 		})
 
 	})
+
+	function showAssignedTeacher() {
+		var $label = $("#marks_teacher_name");
+		if (!$label.length) {
+			return;
+		}
+		var name = $("#select_class option:selected").data("lecturer");
+		if (name) {
+			$label.text(name);
+			return;
+		}
+		if (String($label.data("full")) === "1") {
+			$label.text("—");
+			return;
+		}
+		$label.text($label.data("self") || "");
+	}
 
 	function resetView() {
 		$('[type="submit"]').prop("disabled", true);

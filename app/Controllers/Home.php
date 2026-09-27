@@ -10088,12 +10088,14 @@ public function attendanceCard()
 		$year = $yearId ?? $this->data['academic_year'];
 		if ($course > 0) {
 			$builder = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name
-											,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name")
+											,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name
+											,concat(lec.fname,' ',lec.lname) as lecturer_name")
 					->join("departments d", "d.id=classes.department")
 					->join("levels l", "l.id=classes.level")
 					->join("faculty f", "f.id=d.faculty_id")
 					->join("staffs s", "s.id=classes.mentor", "LEFT")
 					->join("course_records cr", "cr.class=classes.id")
+					->join("staffs lec", "lec.id=cr.lecturer", "LEFT")
 					->where("cr.year", $year)
 					->where("cr.course", $course)
 					->where("classes.school_id", $this->session->get("soma_school_id"))
@@ -10108,7 +10110,8 @@ public function attendanceCard()
 			$classes = $builder->get()->getResultArray();
 			echo "<option selected disabled>" . lang("app.selectClass") . "</option>";
 			foreach ($classes as $classe) {
-				echo "<option value='" . $classe['id'] . "'>" . $classe['level_name'] . " " . $classe['code'] . " " . $classe['title'] . "</option>";
+				$lecturer = htmlspecialchars(trim((string) ($classe['lecturer_name'] ?? '')), ENT_QUOTES);
+				echo "<option value='" . $classe['id'] . "' data-lecturer='" . $lecturer . "'>" . $classe['level_name'] . " " . $classe['code'] . " " . $classe['title'] . "</option>";
 			}
 		}
 	}
@@ -13213,6 +13216,7 @@ public function getApplicationDocs($id = null)
 			$data['courses'] = $builder->get()->getResultArray();
 		}
 		$data['soma_name'] = $this->session->get("soma_name");
+		$data['marks_teacher_is_assignee'] = $this->staffCanEnterAllCourseMarks();
 		$data['content'] = view("pages/marks/marks_entry", $data);
 		return view('main', $data);
 	}
