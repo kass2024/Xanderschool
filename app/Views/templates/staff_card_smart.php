@@ -135,22 +135,16 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	.paint-l-dark { left: -56%; top: -15%; width: 70%; height: 130%; border-radius: 50%; background: <?= $tintMid; ?>; }
 	.paint-b-light { left: -12%; top: 85.5%; width: 135%; height: 30%; border-radius: 50%; background: <?= $tintLight; ?>; }
 	.paint-b-mid { left: -15%; top: 89.5%; width: 140%; height: 30%; border-radius: 50%; background: <?= $tintMid; ?>; }
-	.cf-photo img {
+	.cf-photo img,
+	.cf-photo.is-round img {
 		width: 100%;
 		height: 100%;
+		margin: 0;
 		display: block;
 		border: 0;
-		object-fit: cover;
-		-webkit-object-fit: cover;
-		object-position: center 12%;
-	}
-	.cf-photo.is-round img {
-		width: 116%;
-		height: 116%;
-		margin: -8%;
-		object-fit: cover;
-		-webkit-object-fit: cover;
-		object-position: center 10%;
+		object-fit: contain;
+		-webkit-object-fit: contain;
+		object-position: center center;
 		background: #ffffff;
 	}
 	.cf-badge, .cf-moto {
@@ -260,7 +254,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	if ($isWisdomArt) {
 		$photoPxW = $photoPxH = max($photoPxW, $photoPxH, 640);
 	}
-	$photoSrc = profile_photo_card_cover_src($staff['photo'] ?? '', $photoPxW, $photoPxH);
+	$photoSrc = profile_photo_card_src($staff['photo'] ?? '', $photoPxW, $photoPxH);
 	$fullName = $fmt(trim(($staff['fname'] ?? '') . ' ' . ($staff['lname'] ?? '')));
 	$postTitle = $fmt($staff['post_title'] ?? '—');
 	$phoneLabel = $fmt(!empty($staff['phone']) ? $staff['phone'] : '—');
