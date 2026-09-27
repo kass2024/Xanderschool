@@ -3360,7 +3360,24 @@ class TimetableManagement extends Home
 				trim((string) ($b['fname'] ?? '') . ' ' . (string) ($b['lname'] ?? ''))
 			);
 		});
-		return $rows;
+		return array_values(array_filter($rows, function (array $row): bool {
+			return !$this->isSupportStaffPost((string) ($row['post_title'] ?? ''));
+		}));
+	}
+
+	/** Security, cleaning, and kitchen posts are not timetable teachers. */
+	private function isSupportStaffPost(string $title): bool
+	{
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', $title) ?? ''));
+		if ($title === '') {
+			return false;
+		}
+		foreach (['security', 'cleaner', 'cook'] as $needle) {
+			if (strpos($title, $needle) !== false) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** @return list<array<string,mixed>> */
