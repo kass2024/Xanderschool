@@ -240,11 +240,57 @@ foreach ($allEntries as $entry) {
 $overflowPlaced = (new \App\Services\Timetable\TimetableStagingService())
 	->fillVersion2Gaps($scheduleId, $schoolId, $schema);
 echo "Version 2 locked fill placed: {$overflowPlaced}\n";
+$locked = 0;
+if ($db->fieldExists('is_locked', 'timetable_entries')) {
+	$db->table('timetable_entries')
+		->where('schedule_id', $scheduleId)
+		->where('entry_type', 'lesson')
+		->where('day_of_week >=', 0)
+		->where('slot_id >', 0)
+		->update(['is_locked' => 1]);
+	$locked = (int) $db->table('timetable_entries')
+		->where('schedule_id', $scheduleId)
+		->where('entry_type', 'lesson')
+		->where('day_of_week >=', 0)
+		->where('slot_id >', 0)
+		->where('is_locked', 1)
+		->countAllResults();
+}
+echo "LOCKED_PLACED {$locked}\n";
+$fingerprintRows = $db->table('course_records cr')
+	->select('cr.id, cr.course, cr.class, cr.lecturer, cr.term, COALESCE(c.credit,0) AS credit')
+	->join('courses c', 'c.id = cr.course', 'left')
+	->join('classes cl', 'cl.id = cr.class')
+	->where('cl.school_id', $schoolId)
+	->where('cr.year', $year)
+	->where("find_in_set({$term}, cr.term) > 0", null, false)
+	->whereNotIn('cr.course', SecondaryTimetableCriteria::MANAGER_ONLY_COURSE_IDS)
+	->orderBy('cr.id', 'ASC')
+	->get()->getResultArray();
+$fingerprintParts = [];
+foreach ($fingerprintRows as $fingerprintRow) {
+	$fingerprintParts[] = implode(':', [
+		(int) ($fingerprintRow['id'] ?? 0),
+		(int) ($fingerprintRow['course'] ?? 0),
+		(int) ($fingerprintRow['class'] ?? 0),
+		(int) ($fingerprintRow['lecturer'] ?? 0),
+		trim((string) ($fingerprintRow['term'] ?? '')),
+		(string) ($fingerprintRow['credit'] ?? '0'),
+	]);
+}
+$fingerprint = hash('sha256', implode('|', $fingerprintParts));
+$phases = [];
+foreach (\App\Libraries\TimetableTrack::generationPhaseKeys() as $phaseKey) {
+	$phases[$phaseKey] = ['status' => 'generated', 'at' => date('Y-m-d H:i:s')];
+}
 $db->table('timetable_schedules')->where('id', $scheduleId)->update([
 	'title' => 'Final Version',
 	'status' => 'published',
-	'notes' => 'Regenerated so every Manage Course period that fits is on the class timetable and the teacher timetable. S4, S5 and S6 ANP teach through 16:20, including Friday. S5 clinical is Tuesday morning. S4 clinical has its own periods. S6 clinical is Wednesday. Named windows, Version 1 combines, and manager-only SHE and Occupation stay as set. Periods that still exceed free slots stay highlighted.',
+	'notes' => 'Final timetable, locked. Placed lessons stay until Replace locked timetable is checked. S4, S5 and S6 ANP teach through 16:20, including Friday. S5 clinical is Tuesday morning. S4 clinical has its own periods. S6 clinical is Wednesday. Named windows, Version 1 combines, and manager-only SHE and Occupation stay as set.',
 	'generated_at' => date('Y-m-d H:i:s'),
+	'needs_regen' => 0,
+	'assignments_hash' => $fingerprint,
+	'generated_phases' => json_encode($phases),
 ]);
 
 $activity = $db->query("SELECT co.title, ts.start_time, ts.end_time, COUNT(*) n
