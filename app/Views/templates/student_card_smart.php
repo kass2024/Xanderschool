@@ -199,18 +199,18 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	}
 	.card.is-wisdom .cf-photo {
 		background: #ffffff;
-		border: 1.5mm solid <?= $wisdomTeal; ?>;
+		border: 0;
 		border-radius: 50%;
 		-webkit-border-radius: 50%;
 		overflow: hidden;
 	}
 	.card.is-wisdom .cf-photo img {
-		width: 116%;
-		height: 116%;
-		margin: -8%;
+		width: 100%;
+		height: 100%;
+		margin: 0;
 		object-fit: cover;
 		-webkit-object-fit: cover;
-		object-position: center 10%;
+		object-position: center center;
 		display: block;
 		border: 0;
 		background: #ffffff;
@@ -352,7 +352,7 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 			</div>
 		<?php endif; ?>
 		<?php if ($isWisdom):
-			$photoF = $fields['photo'] ?? ['x' => 6.6, 'y' => 33.8, 'w' => 25.2, 'h' => 40.0];
+			$photoF = $fields['photo'] ?? ['x' => 8.4, 'y' => 35.1, 'w' => 24.2, 'h' => 38.3];
 			$namesF = $fields['names'] ?? ['x' => 42.8, 'y' => 49.6, 'w' => 54.5, 'h' => 8.0];
 			$yearF = $fields['header1'] ?? ['x' => 42.8, 'y' => 66.2, 'w' => 54.5, 'h' => 7.6];
 			$idF = $fields['regno'] ?? ['x' => 15.6, 'y' => 85.5, 'w' => 24.7, 'h' => 6.5];

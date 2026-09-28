@@ -921,7 +921,7 @@ class CardLayout
 			'header1' => self::f(35.5, 66.2, 62.0, 7.6),
 			'header2' => self::f(35.5, 74, 62.0, 6, false),
 			'badge' => self::f(36.0, 36.2, 36.0, 10.8),
-			'photo' => self::f(6.6, 33.8, 25.2, 40.0),
+			'photo' => self::f(8.4, 35.1, 24.2, 38.3),
 			'names' => self::f(35.5, 49.5, 62.0, 8.2),
 			'class' => self::f(35.5, 57.8, 62.0, 7.8),
 			'regno' => self::f(5.5, 84.8, 32.0, 10.2),

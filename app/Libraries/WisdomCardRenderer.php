@@ -17,6 +17,15 @@ class WisdomCardRenderer
 	private const SRC_W = 1011;
 	private const SRC_H = 639;
 
+	/**
+	 * Inner white photo hole, measured on the 1011×639 artwork
+	 * (high school, primary, and nursery share it). A smaller disc
+	 * sits inside the teal ring instead of covering it.
+	 */
+	private const HOLE_CX = 207;
+	private const HOLE_CY = 347;
+	private const HOLE_D = 245;
+
 	/** O-level / A-level / other non-primary, non-nursery Wisdom classes. */
 	public const TEMPLATE = 'assets/images/background/wisdom_high_school_pass_template.png';
 	public const TEMPLATE_PRIMARY = 'assets/images/background/wisdom_primary_pass_template.png';
@@ -25,7 +34,6 @@ class WisdomCardRenderer
 	/** Legacy fallback if the high-school PNG is missing. */
 	public const TEMPLATE_LEGACY = 'assets/images/background/student_pass_template.png';
 
-	private const TEAL = [0, 130, 142];
 	private const NAVY = [4, 73, 107];
 
 	/** @var string */
@@ -121,7 +129,6 @@ class WisdomCardRenderer
 
 		$white = imagecolorallocate($im, 255, 255, 255);
 		$navy = imagecolorallocate($im, self::NAVY[0], self::NAVY[1], self::NAVY[2]);
-		$teal = imagecolorallocate($im, self::TEAL[0], self::TEAL[1], self::TEAL[2]);
 
 		$fullName = CardLayout::formatStudentCardName($student);
 		$classLabel = $this->upper(trim((string) ($student['class'] ?? '')));
@@ -135,7 +142,7 @@ class WisdomCardRenderer
 		}
 		$idNo = $this->upper($idNo);
 
-		$this->pastePhoto($im, $photoPath, $teal);
+		$this->pastePhoto($im, $photoPath);
 		$this->drawFieldValues($im, $fullName, $classLabel, $year, $navy);
 		$this->drawIdBar($im, $idNo !== '' ? $idNo : '—', $white);
 
@@ -143,113 +150,22 @@ class WisdomCardRenderer
 	}
 
 	/**
-	 * Detect the inner photo hole on the already-scaled card canvas.
-	 * Returns [cx, cy, diameter] in output pixels.
+	 * Inner white hole on the scaled card, slightly inset so the teal ring stays visible.
 	 *
-	 * @param resource|\GdImage $im
 	 * @return array{0:int,1:int,2:int}
 	 */
-	private function detectPhotoHole($im): array
+	private function photoHole(): array
 	{
-		$w = imagesx($im);
-		$h = imagesy($im);
-		$guessCx = (int) round($w * 0.205);
-		$y0 = (int) round($h * 0.35);
-		$y1 = (int) round($h * 0.72);
-
-		$bestW = 0;
-		$bestY = (int) round($h * 0.54);
-		$bestL = 0;
-		$bestR = 0;
-		for ($y = $y0; $y < $y1; $y++) {
-			$l = $guessCx;
-			while ($l > (int) ($w * 0.04) && !$this->isTealRingPixel($im, $l, $y)) {
-				$l--;
-			}
-			$r = $guessCx;
-			while ($r < (int) ($w * 0.42) && !$this->isTealRingPixel($im, $r, $y)) {
-				$r++;
-			}
-			if (!$this->isTealRingPixel($im, $l, $y) || !$this->isTealRingPixel($im, $r, $y)) {
-				continue;
-			}
-			$l++;
-			$r--;
-			$span = $r - $l + 1;
-			// Photo hole: left edge inside left slab, right edge before ID banner.
-			if ($span > $bestW && $l > (int) ($w * 0.07) && $l < (int) ($w * 0.12) && $r > (int) ($w * 0.28) && $r < (int) ($w * 0.36)) {
-				$bestW = $span;
-				$bestY = $y;
-				$bestL = $l;
-				$bestR = $r;
-			}
-		}
-
-		if ($bestW < 100) {
-			// Fallback measured on 1011×639 artwork.
-			return [$this->sx(207.3), $this->sy(353), $this->sx(266)];
-		}
-
-		$cx = (int) round(($bestL + $bestR) / 2);
-		// Refine cy: equal chord widths above/below equator.
-		$target = (int) round($bestW * 0.92);
-		$yTop = $bestY;
-		$yBot = $bestY;
-		for ($y = $bestY; $y >= $y0; $y--) {
-			$span = $this->holeSpanAt($im, $cx, $y, $w);
-			if ($span < $target) {
-				$yTop = $y;
-				break;
-			}
-		}
-		for ($y = $bestY; $y < $y1; $y++) {
-			$span = $this->holeSpanAt($im, $cx, $y, $w);
-			if ($span < $target) {
-				$yBot = $y;
-				break;
-			}
-		}
-		$cy = (int) round(($yTop + $yBot) / 2);
-		// Template ring sits slightly below the widest chord midpoint.
-		$cy += (int) round($bestW * 0.025);
-		// Oversized so photo tucks under the teal ring (covers white inner stroke).
-		$d = (int) round($bestW * 1.12);
-		return [$cx, $cy, max(2, $d)];
-	}
-
-	/** @param resource|\GdImage $im */
-	private function isTealRingPixel($im, int $x, int $y): bool
-	{
-		$rgb = imagecolorat($im, $x, $y);
-		$r = ($rgb >> 16) & 0xFF;
-		$g = ($rgb >> 8) & 0xFF;
-		$b = $rgb & 0xFF;
-		return $r <= 25 && $g >= 105 && $g <= 160 && $b >= 115 && $b <= 175;
-	}
-
-	/** @param resource|\GdImage $im */
-	private function holeSpanAt($im, int $cx, int $y, int $w): int
-	{
-		$l = $cx;
-		while ($l > (int) ($w * 0.04) && !$this->isTealRingPixel($im, $l, $y)) {
-			$l--;
-		}
-		$r = $cx;
-		while ($r < (int) ($w * 0.42) && !$this->isTealRingPixel($im, $r, $y)) {
-			$r++;
-		}
-		if (!$this->isTealRingPixel($im, $l, $y) || !$this->isTealRingPixel($im, $r, $y)) {
-			return 0;
-		}
-		return ($r - 1) - ($l + 1) + 1;
+		$d = min($this->sx(self::HOLE_D), $this->sy(self::HOLE_D));
+		return [$this->sx(self::HOLE_CX), $this->sy(self::HOLE_CY), max(2, $d)];
 	}
 
 	/**
 	 * @param resource|\GdImage $im
 	 */
-	private function pastePhoto($im, string $path, int $teal): void
+	private function pastePhoto($im, string $path): void
 	{
-		[$cx, $cy, $d] = $this->detectPhotoHole($im);
+		[$cx, $cy, $d] = $this->photoHole();
 
 		$src = $this->loadImage($path);
 		if (!$src && is_file($path)) {

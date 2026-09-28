@@ -1003,9 +1003,8 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Cover-crop the real portrait into a square that fills the ID-card circle.
-	 * Strips white letterbox bars (circle-on-3:4 files) so the face is not
-	 * taken from empty padding.
+	 * Student ID circle. The head sits inside the round hole with air above
+	 * the hair, so a tight webcam shot is not blown up past the teal ring.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -1028,45 +1027,36 @@ class ProfilePhotoNormalizer
 			$bw = $sw;
 			$bh = $sh;
 		}
-
-		$person = $this->personBox($src, $bx, $by, $bw, $bh);
-		if ($person !== null) {
-			[$px, $py, $pw, $ph] = $person;
-			$padX = (int) max(8, round($pw * 0.22));
-			$padTop = (int) max(8, round($ph * 0.18));
-			$padBot = (int) max(6, round($ph * 0.08));
-			$px = max($bx, $px - $padX);
-			$py = max($by, $py - $padTop);
-			$pr = min($bx + $bw, $px + $pw + $padX * 2);
-			$pb = min($by + $bh, $py + $ph + $padBot);
-			$pw = max(8, $pr - $px);
-			$ph = max(8, $pb - $py);
-			$side = max($pw, $ph);
-			$side = min($side, $bw, $bh);
-			$cx = $px + intdiv($pw, 2);
-			$sx = (int) max($bx, min($bx + $bw - $side, $cx - intdiv($side, 2)));
-			$sy = (int) max($by, min($by + $bh - $side, $py));
-			$crop = $side;
-		} else {
-			$side = min($bw, $bh);
-			$cx = $bx + intdiv($bw, 2);
-			$sx = (int) max($bx, min($bx + $bw - $side, $cx - intdiv($side, 2)));
-			$sy = $by;
-			if ($bh > $bw) {
-				$extra = $bh - $side;
-				$sy = (int) max($by, min($by + $extra, $by + (int) round($extra * 0.10)));
-			}
-			$zoom = 1.0;
-			$crop = max(8, (int) round($side / $zoom));
-			$sx = (int) max($bx, min($bx + $bw - $crop, $sx + intdiv($side - $crop, 2)));
-			$sy = (int) max($by, min($by + $bh - $crop, $sy + (int) round(($side - $crop) * 0.08)));
+		$wall = $this->sampleInnerWall($src, $bx, $by, $bw, $bh);
+		$subject = $this->visaSubjectBox($src, $bx, $by, $bw, $bh, $wall);
+		if ($subject === null) {
+			$subject = [$bx, $by, $bw, $bh];
 		}
-		$crop = max(1, min($crop, $sw - $sx, $sh - $sy, $bx + $bw - $sx, $by + $bh - $sy));
+		[$px, $py, $pw, $ph] = $subject;
+		$crown = $this->visaCrown($src, $px, $py, $pw, $ph, $wall);
+		$head = $this->visaHeadSpan($src, $px, $crown, $pw, $ph, $wall);
+		$headW = max(8, (int) $head['w']);
+		$headCx = (int) $head['cx'];
+		// Head is under half the square, so the circle does not shave the hair.
+		$frame = max(8.0, $headW / 0.46);
+		$frameTop = $crown - (0.18 * $frame);
+		$frameLeft = $headCx - ($frame / 2.0);
 
+		$scale = $size / $frame;
 		$dst = imagecreatetruecolor($size, $size);
 		$white = imagecolorallocate($dst, 255, 255, 255);
 		imagefill($dst, 0, 0, $white);
-		$this->hiQualityResample($dst, $src, 0, 0, $sx, $sy, $size, $size, $crop, $crop);
+		$visLeft = (int) max(0, floor($frameLeft));
+		$visTop = (int) max(0, floor($frameTop));
+		$visRight = (int) min($sw, ceil($frameLeft + $frame));
+		$visBottom = (int) min($sh, ceil($frameTop + $frame));
+		if ($visRight - $visLeft >= 2 && $visBottom - $visTop >= 2) {
+			$ddx = (int) round(($visLeft - $frameLeft) * $scale);
+			$ddy = (int) round(($visTop - $frameTop) * $scale);
+			$ddw = max(1, (int) round(($visRight - $visLeft) * $scale));
+			$ddh = max(1, (int) round(($visBottom - $visTop) * $scale));
+			$this->hiQualityResample($dst, $src, $ddx, $ddy, $visLeft, $visTop, $ddw, $ddh, $visRight - $visLeft, $visBottom - $visTop);
+		}
 		return $dst;
 	}
 
