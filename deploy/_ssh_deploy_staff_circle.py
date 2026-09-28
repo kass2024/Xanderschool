@@ -32,7 +32,7 @@ VERIFY = [
     ("app/Libraries/WisdomStaffCardRenderer.php", "innerPhotoBox"),
     ("app/Views/templates/staff_card_smart.php", "object-position: center 25%"),
     ("app/Libraries/ProfilePhotoNormalizer.php", "seatHeadBelowTop"),
-    ("app/Helpers/qonics_helper.php", "v5fillcircle"),
+    ("app/Helpers/qonics_helper.php", "v7fillhead"),
     ("app/Controllers/Home.php", "Campus artwork (Ngororero, Musanze, ...) follows the logged-in school."),
 ]
 

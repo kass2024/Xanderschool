@@ -645,9 +645,8 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Place the portrait in the staff-card circle using a US visa head size.
-	 * The square is clipped to the artwork circle. Crown stays below the round
-	 * edge, the head is 50–66% of the frame, and the shoulders fill the hole.
+	 * Place the portrait in the staff-card circle. The square is clipped round.
+	 * The face fills the hole, and the crown stays below the ring.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -681,29 +680,11 @@ class ProfilePhotoNormalizer
 		$head = $this->visaHeadSpan($src, $px, $crown, $pw, $ph, $wall);
 		$headW = max(8, (int) $head['w']);
 		$headCx = (int) $head['cx'];
-		$subjectH = max(8, ($py + $ph) - $crown);
-		$chinH = (int) round($headW * 1.35);
-		$chinH = max((int) round($subjectH * 0.34), min((int) round($subjectH * 0.78), $chinH));
-		$shoulderW = $this->visaShoulderSpan($src, $headCx, $crown, $chinH, $px, $py + $ph, $wall);
-		if ($shoulderW < (int) round($headW * 1.2)) {
-			$shoulderW = (int) round($headW * 2.05);
-		}
-
-		// US visa: chin-to-crown is 50–69% of the photo. 58% is the middle.
-		// Shoulders fill the circle unless that would push the head outside
-		// that range (a desk photo must zoom in; a tight face must not).
-		$frameByHead = $chinH / 0.58;
-		$frameByFill = max(1.0, $shoulderW / 0.96);
-		$frame = $frameByFill;
-		if ($chinH / $frame > 0.66) {
-			$frame = $chinH / 0.66;
-		}
-		if ($chinH / $frame < 0.50) {
-			$frame = $chinH / 0.50;
-		}
-		$frame = max(8.0, $frame);
-		// Crown sits 14% down so the round edge does not slice the hair.
-		$frameTop = $crown - (0.14 * $frame);
+		// Size the square from the head only. A desk or full-room photo zooms
+		// in until the face fills the circle; shoulders may be clipped by the ring.
+		$frame = max(8.0, $headW / 0.56);
+		// Crown sits 11% down so the round edge does not slice the hair.
+		$frameTop = $crown - (0.11 * $frame);
 		$frameLeft = $headCx - ($frame / 2.0);
 
 		$side = (float) min($outW, $outH);
