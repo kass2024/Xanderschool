@@ -28,7 +28,7 @@ VERIFY = [
     ("app/Libraries/ProfilePhotoNormalizer.php", "US visa head size"),
     ("app/Libraries/WisdomStaffCardRenderer.php", "HOLE_CY = 314"),
     ("app/Helpers/qonics_helper.php", "v6visacircle"),
-    ("app/Views/templates/staff_card_smart.php", "-webkit-object-fit: fill"),
+    ("app/Views/templates/staff_card_smart.php", "min-height: 100%"),
 ]
 
 
@@ -46,10 +46,10 @@ def main() -> int:
         sftp.put(str(local), remote)
     sftp.close()
     verify = "\n".join(
-        f'grep -q "{needle}" "{REMOTE_BASE}/{path}" || exit 1' for path, needle in VERIFY
+        f'grep -q -e "{needle}" "{REMOTE_BASE}/{path}" && echo OK {path} || {{ echo MISSING {path}; exit 1; }}'
+        for path, needle in VERIFY
     )
     cmd = f"""
-set -e
 cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 3
