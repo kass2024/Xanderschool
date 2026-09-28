@@ -626,9 +626,9 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Place the portrait in the staff-card circle: fill the hole, keep the
-	 * round clip, and leave a little white above the hair so the ring does
-	 * not cut the top of the head.
+	 * Place the portrait in the staff-card circle using a US visa head size.
+	 * The square is clipped to the artwork circle. Crown stays below the round
+	 * edge, the head is 50–66% of the frame, and the shoulders fill the hole.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -652,49 +652,218 @@ class ProfilePhotoNormalizer
 			$bw = $sw;
 			$bh = $sh;
 		}
-		$person = $this->personBox($src, $bx, $by, $bw, $bh);
-		if ($person === null) {
-			$px = $bx;
-			$py = $by;
-			$pw = $bw;
-			$ph = $bh;
-			$fillsFrame = true;
-		} else {
-			[$px, $py, $pw, $ph] = $person;
-			$fillsFrame = false;
+		$wall = $this->sampleInnerWall($src, $bx, $by, $bw, $bh);
+		$subject = $this->visaSubjectBox($src, $bx, $by, $bw, $bh, $wall);
+		if ($subject === null) {
+			$subject = [$bx, $by, $bw, $bh];
 		}
-		$hairPad = (int) max(2, round($ph * 0.08));
-		$py = max($by, $py - $hairPad);
-		$ph = max(8, min($by + $bh - $py, $ph + $hairPad));
-		// Wide scene photos (person at a desk) are zoomed to the head so the
-		// circle is a round portrait, not a tiny full-body picture.
-		$headW = $this->upperSpan($src, $px, $py, $pw, max(8, (int) round($ph * 0.45)));
-		if ($headW >= 8 && $headW < (int) ($pw * 0.82)) {
-			$zoom = (int) round($headW / 0.58);
-			$zoom = max($zoom, (int) round($headW * 1.45));
-			$zoom = min($zoom, $pw, $bw);
-			$cx = $px + (int) ($pw / 2);
-			$px = max($bx, min($bx + $bw - $zoom, $cx - (int) ($zoom / 2)));
-			$pw = $zoom;
-			$fillsFrame = false;
+		[$px, $py, $pw, $ph] = $subject;
+		$crown = $this->visaCrown($src, $px, $py, $pw, $ph, $wall);
+		$head = $this->visaHeadSpan($src, $px, $crown, $pw, $ph, $wall);
+		$headW = max(8, (int) $head['w']);
+		$headCx = (int) $head['cx'];
+		$subjectH = max(8, ($py + $ph) - $crown);
+		$chinH = (int) round($headW * 1.35);
+		$chinH = max((int) round($subjectH * 0.34), min((int) round($subjectH * 0.78), $chinH));
+		$shoulderW = $this->visaShoulderSpan($src, $headCx, $crown, $chinH, $px, $py + $ph, $wall);
+		if ($shoulderW < (int) round($headW * 1.2)) {
+			$shoulderW = (int) round($headW * 2.05);
 		}
 
-		$side = min($outW, $outH);
-		// Fill the circle. The gap above the hair keeps the crown inside the
-		// round edge without leaving the person tiny in the hole.
-		$margin = (int) round($side * 0.12);
-		$targetFrac = $fillsFrame ? 0.92 : 0.88;
-		$scale = ($side * $targetFrac) / max(1, $pw);
-		$drawW = max(1, (int) round($pw * $scale));
-		$drawH = max(1, (int) round($ph * $scale));
-		$dx = (int) round(($outW - $drawW) / 2);
-		$dy = $margin;
+		// US visa: chin-to-crown is 50–69% of the photo. 58% is the middle.
+		// Shoulders fill the circle unless that would push the head outside
+		// that range (a desk photo must zoom in; a tight face must not).
+		$frameByHead = $chinH / 0.58;
+		$frameByFill = max(1.0, $shoulderW / 0.96);
+		$frame = $frameByFill;
+		if ($chinH / $frame > 0.66) {
+			$frame = $chinH / 0.66;
+		}
+		if ($chinH / $frame < 0.50) {
+			$frame = $chinH / 0.50;
+		}
+		$frame = max(8.0, $frame);
+		// Crown sits 14% down so the round edge does not slice the hair.
+		$frameTop = $crown - (0.14 * $frame);
+		$frameLeft = $headCx - ($frame / 2.0);
+
+		$side = (float) min($outW, $outH);
+		$scale = $side / $frame;
+		$dstFull = $frame * $scale;
+		$dx0 = (($outW - $dstFull) / 2.0);
+		$dy0 = (($outH - $dstFull) / 2.0);
+		$visLeft = (int) max(0, floor($frameLeft));
+		$visTop = (int) max(0, floor($frameTop));
+		$visRight = (int) min($sw, ceil($frameLeft + $frame));
+		$visBottom = (int) min($sh, ceil($frameTop + $frame));
 
 		$dst = imagecreatetruecolor($outW, $outH);
 		$white = imagecolorallocate($dst, 255, 255, 255);
 		imagefill($dst, 0, 0, $white);
-		$this->hiQualityResample($dst, $src, $dx, $dy, $px, $py, $drawW, $drawH, $pw, $ph);
+		if ($visRight - $visLeft >= 2 && $visBottom - $visTop >= 2) {
+			$ddx = (int) round($dx0 + (($visLeft - $frameLeft) * $scale));
+			$ddy = (int) round($dy0 + (($visTop - $frameTop) * $scale));
+			$ddw = max(1, (int) round(($visRight - $visLeft) * $scale));
+			$ddh = max(1, (int) round(($visBottom - $visTop) * $scale));
+			$this->hiQualityResample($dst, $src, $ddx, $ddy, $visLeft, $visTop, $ddw, $ddh, $visRight - $visLeft, $visBottom - $visTop);
+		}
 		return $dst;
+	}
+
+	/**
+	 * @param resource|\GdImage $im
+	 * @param array{0:int,1:int,2:int} $wall
+	 * @return array{0:int,1:int,2:int,3:int}|null
+	 */
+	private function visaSubjectBox($im, int $x0, int $y0, int $bw, int $bh, array $wall): ?array
+	{
+		$step = max(1, (int) floor(min($bw, $bh) / 180));
+		$minX = $x0 + $bw;
+		$minY = $y0 + $bh;
+		$maxX = $x0;
+		$maxY = $y0;
+		$hits = 0;
+		$y1 = min(imagesy($im), $y0 + $bh);
+		$x1 = min(imagesx($im), $x0 + $bw);
+		for ($y = max(0, $y0); $y < $y1; $y += $step) {
+			for ($x = max(0, $x0); $x < $x1; $x += $step) {
+				if (!$this->visaPersonPixel($im, $x, $y, $wall)) {
+					continue;
+				}
+				$hits++;
+				if ($x < $minX) {
+					$minX = $x;
+				}
+				if ($y < $minY) {
+					$minY = $y;
+				}
+				if ($x > $maxX) {
+					$maxX = $x;
+				}
+				if ($y > $maxY) {
+					$maxY = $y;
+				}
+			}
+		}
+		if ($hits < 12 || $maxX <= $minX || $maxY <= $minY) {
+			return null;
+		}
+		return [$minX, $minY, $maxX - $minX + 1, $maxY - $minY + 1];
+	}
+
+	/**
+	 * Top of the hair, measured in the middle of the subject so a desk or
+	 * a raised arm does not set the crown.
+	 *
+	 * @param resource|\GdImage $im
+	 * @param array{0:int,1:int,2:int} $wall
+	 */
+	private function visaCrown($im, int $x0, int $y0, int $bw, int $bh, array $wall): int
+	{
+		$step = max(1, (int) floor(min($bw, $bh) / 160));
+		$xA = $x0 + (int) round($bw * 0.28);
+		$xB = $x0 + (int) round($bw * 0.72);
+		$limit = $y0 + (int) round($bh * 0.72);
+		$h = imagesy($im);
+		$w = imagesx($im);
+		for ($y = max(0, $y0); $y < min($h, $limit); $y += $step) {
+			$hits = 0;
+			for ($x = max(0, $xA); $x < min($w, $xB); $x += $step) {
+				if ($this->visaPersonPixel($im, $x, $y, $wall)) {
+					$hits++;
+					if ($hits >= 3) {
+						return max($y0, $y - $step);
+					}
+				}
+			}
+		}
+		return $y0;
+	}
+
+	/**
+	 * @param resource|\GdImage $im
+	 * @param array{0:int,1:int,2:int} $wall
+	 * @return array{w:int,cx:int}
+	 */
+	private function visaHeadSpan($im, int $x0, int $crown, int $bw, int $bh, array $wall): array
+	{
+		$band = max(8, (int) round($bh * 0.22));
+		$step = max(1, (int) floor(min($bw, $band) / 80));
+		$minX = $x0 + $bw;
+		$maxX = $x0;
+		$hits = 0;
+		$y1 = min(imagesy($im), $crown + $band);
+		$x1 = min(imagesx($im), $x0 + $bw);
+		for ($y = max(0, $crown); $y < $y1; $y += $step) {
+			for ($x = max(0, $x0); $x < $x1; $x += $step) {
+				if (!$this->visaPersonPixel($im, $x, $y, $wall)) {
+					continue;
+				}
+				$hits++;
+				if ($x < $minX) {
+					$minX = $x;
+				}
+				if ($x > $maxX) {
+					$maxX = $x;
+				}
+			}
+		}
+		if ($hits < 6 || $maxX <= $minX) {
+			return ['w' => max(8, (int) round($bw * 0.42)), 'cx' => $x0 + (int) ($bw / 2)];
+		}
+		return ['w' => $maxX - $minX + 1, 'cx' => (int) round(($minX + $maxX) / 2)];
+	}
+
+	/**
+	 * @param resource|\GdImage $im
+	 * @param array{0:int,1:int,2:int} $wall
+	 */
+	private function visaShoulderSpan($im, int $headCx, int $crown, int $chinH, int $xMin, int $yMax, array $wall): int
+	{
+		$yA = $crown + (int) round($chinH * 0.95);
+		$yB = $crown + (int) round($chinH * 1.45);
+		$yB = min(imagesy($im) - 1, $yMax, $yB);
+		if ($yB <= $yA + 2) {
+			return 0;
+		}
+		$half = (int) round($chinH * 2.4);
+		$xA = max(0, $headCx - $half);
+		$xB = min(imagesx($im) - 1, $headCx + $half);
+		$step = max(1, (int) floor(max(8, $yB - $yA) / 40));
+		$minX = $xB;
+		$maxX = $xA;
+		$hits = 0;
+		for ($y = $yA; $y <= $yB; $y += $step) {
+			for ($x = $xA; $x <= $xB; $x += $step) {
+				if (!$this->visaPersonPixel($im, $x, $y, $wall)) {
+					continue;
+				}
+				$hits++;
+				if ($x < $minX) {
+					$minX = $x;
+				}
+				if ($x > $maxX) {
+					$maxX = $x;
+				}
+			}
+		}
+		if ($hits < 6 || $maxX <= $minX) {
+			return 0;
+		}
+		return $maxX - $minX + 1;
+	}
+
+	/** @param resource|\GdImage $im @param array{0:int,1:int,2:int} $wall */
+	private function visaPersonPixel($im, int $x, int $y, array $wall): bool
+	{
+		$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+		$r = ($rgb >> 16) & 255;
+		$g = ($rgb >> 8) & 255;
+		$b = $rgb & 255;
+		if ($this->isBackdropPixel($r, $g, $b) || $this->isWallPixel($r, $g, $b, $wall)) {
+			return false;
+		}
+		return $this->isProtectedPerson($r, $g, $b, $wall);
 	}
 
 	/**

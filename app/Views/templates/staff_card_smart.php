@@ -152,6 +152,12 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 		-webkit-border-radius: 50%;
 	}
 	.cf-photo.is-round img {
+		width: 100%;
+		height: 100%;
+		min-width: 100%;
+		min-height: 100%;
+		object-fit: fill;
+		-webkit-object-fit: fill;
 		object-position: center center;
 		-webkit-object-position: center center;
 	}

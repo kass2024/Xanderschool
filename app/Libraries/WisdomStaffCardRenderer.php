@@ -31,10 +31,10 @@ class WisdomStaffCardRenderer
 	private const SRC_W = 591;
 	private const SRC_H = 1004;
 	private const HOLE_CX = 296;
-	private const HOLE_CY = 312;
-	private const HOLE_D = 274;
-	/** Sit just inside the painted ring so the photo fills the hole without covering it. */
-	private const HOLE_INSET = 0.98;
+	private const HOLE_CY = 314;
+	private const HOLE_D = 272;
+	/** Fill the white hole. The black ring and blue artwork sit outside this diameter. */
+	private const HOLE_INSET = 1.0;
 
 	private const NAVY = [8, 32, 96];
 	private const GOLD = [196, 154, 48];
