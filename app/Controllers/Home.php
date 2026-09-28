@@ -291,6 +291,78 @@ public function testEmail()
 		return redirect()->to(base_url('dashboard'));
 	}
 
+	/**
+	 * Wisdom master leaders (Director, Executive Principal, Deputy Director)
+	 * see every child campus. Other schools and posts keep the normal dashboard.
+	 * Staff card ownership stays inside one school.
+	 */
+	private function attachWisdomLeaderDashboard(array &$data, $schoolId): void
+	{
+		$data['wisdom_group'] = [];
+		$data['accountant_watch'] = [];
+		try {
+			helper('qonics');
+			$overview = new \App\Services\WisdomGroupOverview();
+			$homeId = (int) school_hierarchy_home_id();
+			$postId = (int) $this->session->get('soma_post');
+			$currentId = (int) $schoolId;
+			$yearId = (int) ($this->data['academic_year'] ?? 0);
+			if ($overview->showGroupDashboard($homeId, $postId, $currentId)) {
+				$data['wisdom_group'] = $overview->summary($homeId, $yearId);
+			}
+			if ($overview->showAccountantDashboard($homeId, $postId, $currentId)) {
+				$data['accountant_watch'] = $overview->accountantAttendance($homeId);
+			}
+		} catch (\Throwable $e) {
+			$data['wisdom_group'] = [];
+			$data['accountant_watch'] = [];
+		}
+	}
+
+	/** Printable staff in / absent list for the Wisdom master leader dashboard. */
+	public function wisdom_staff_today($schoolId = 0, $kind = 'in')
+	{
+		if ($this->session->get($this->log_status) == null) {
+			return redirect()->to(base_url('login'));
+		}
+		$this->_preset();
+		helper('qonics');
+		$overview = new \App\Services\WisdomGroupOverview();
+		$homeId = (int) school_hierarchy_home_id();
+		$postId = (int) $this->session->get('soma_post');
+		if (!$overview->isLeaderPost($postId) || !$overview->isWisdomMaster($homeId)) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		$allowed = [];
+		foreach ($overview->schools($homeId) as $school) {
+			$id = (int) ($school['id'] ?? 0);
+			if ($id > 0) {
+				$allowed[$id] = (string) ($school['name'] ?? '');
+			}
+		}
+		$schoolId = (int) $schoolId;
+		if ($schoolId > 0 && !isset($allowed[$schoolId])) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		$ids = $schoolId > 0 ? [$schoolId] : array_keys($allowed);
+		$kind = $kind === 'absent' ? 'absent' : 'in';
+		$data = $this->data;
+		$data['title'] = $kind === 'absent' ? 'Staff absent today' : 'Staff in today';
+		$data['page'] = 'dashboard';
+		$data['kind'] = $kind;
+		$data['list'] = $overview->todayStaffList($ids, $kind);
+		$letterId = $schoolId > 0 ? $schoolId : $homeId;
+		$print = \Config\Database::connect()->table('schools')
+			->select('name,logo,slogan,header_text_1,header_text_2,phone,email,address,pobox')
+			->where('id', $letterId)
+			->get(1)
+			->getRowArray();
+		$data['print_school'] = is_array($print) ? $print : [];
+		$data['school_label'] = $schoolId > 0 ? ($allowed[$schoolId] ?? '') : 'All Wisdom schools';
+		$data['content'] = view('pages/wisdom_staff_today', $data);
+		return view('main', $data);
+	}
+
 	public function index($type = null)
 	{
 		if ($type !== null) {
@@ -1171,6 +1243,7 @@ public function testEmail()
 				->get()->getResultArray();
 		// Same parent KPI as before (father + mother slots), but only regular-class students.
 		$data['parent'] = $data['students'] * 2;
+		$this->attachWisdomLeaderDashboard($data, $school_id);
 		$data['subtitle'] = lang("app.SomanetDashboard");
 		$data['page'] = "dashboard";
 		$data['content'] = view("pages/dashboard", $data);

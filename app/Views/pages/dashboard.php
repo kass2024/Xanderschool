@@ -4,6 +4,112 @@
 		<div class="app-inner-layout__content">
 			<div class="tab-content">
 				<div class="container-fluid">
+					<?php if (!empty($accountant_watch)): ?>
+					<?php
+						$aw = $accountant_watch;
+						$awSchools = [];
+						foreach ($aw['people'] as $person) {
+							$key = (string) $person['school'];
+							if (!isset($awSchools[$key])) {
+								$awSchools[$key] = ['name' => $key, 'is_master' => !empty($person['is_master']), 'people' => []];
+							}
+							$awSchools[$key]['people'][] = $person;
+						}
+						$awMaster = null;
+						$awChildren = [];
+						foreach ($awSchools as $campus) {
+							if (!empty($campus['is_master'])) {
+								$awMaster = $campus;
+							} else {
+								$awChildren[] = $campus;
+							}
+						}
+					?>
+					<style>
+						.aw-wrap { margin-bottom: 16px; }
+						.aw-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+						.aw-kpi { background: #fff; border: 1px solid #e6e8ee; border-top: 4px solid #1d4ed8; border-radius: 12px; padding: 12px 14px; }
+						.aw-kpi b { display: block; font-size: 1.55rem; line-height: 1.1; color: #1d4ed8; }
+						.aw-kpi span { display: block; margin-top: 4px; color: #6b7280; font-size: .78rem; }
+						.aw-kpi.green { border-top-color: #16a34a; }
+						.aw-kpi.green b { color: #16a34a; }
+						.aw-kpi.red { border-top-color: #dc2626; }
+						.aw-kpi.red b { color: #dc2626; }
+						.aw-master { border: 2px solid #1d4ed8; background: linear-gradient(180deg, #eff6ff 0%, #fff 72%); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+						.aw-badge { display: inline-block; background: #1d4ed8; color: #fff; border-radius: 999px; font-size: .72rem; padding: 2px 8px; margin-bottom: 8px; }
+						.aw-master h3, .aw-card h4 { margin: 0 0 8px; }
+						.aw-master h3 { color: #1d4ed8; font-size: 1.15rem; }
+						.aw-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+						.aw-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
+						.aw-card.tone-blue { border-top: 4px solid #1d4ed8; }
+						.aw-card.tone-blue h4 { color: #1d4ed8; }
+						.aw-card.tone-green { border-top: 4px solid #16a34a; }
+						.aw-card.tone-green h4 { color: #16a34a; }
+						.aw-card.tone-red { border-top: 4px solid #dc2626; }
+						.aw-card.tone-red h4 { color: #dc2626; }
+						.aw-person { display: flex; justify-content: space-between; gap: 8px; background: rgba(255,255,255,.9); border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+						.aw-person strong { display: block; }
+						.aw-person em { font-style: normal; color: #6b7280; font-size: .75rem; }
+						.aw-in { color: #15803d; font-weight: 700; }
+						.aw-out { color: #dc2626; font-weight: 700; }
+						.aw-search { max-width: 360px; margin: 0 0 12px; }
+						@media (min-width: 700px) {
+							.aw-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+							.aw-grid { grid-template-columns: 1fr 1fr; }
+						}
+					</style>
+					<div class="aw-wrap">
+						<div class="aw-kpis">
+							<div class="aw-kpi"><b><?= count($aw['people']); ?></b><span>Accountants, all schools</span></div>
+							<div class="aw-kpi green"><b><?= (int) $aw['in']; ?></b><span>In today</span></div>
+							<div class="aw-kpi red"><b><?= (int) $aw['absent']; ?></b><span>Absent today</span></div>
+						</div>
+						<?php if ($awMaster): ?>
+						<div class="aw-card-block aw-master" data-find="<?= esc(strtolower($awMaster['name'] . ' ' . implode(' ', array_column($awMaster['people'], 'name')))); ?>">
+							<div class="aw-badge">Master school</div>
+							<h3><?= esc($awMaster['name']); ?></h3>
+							<?php foreach ($awMaster['people'] as $person): ?>
+								<div class="aw-person">
+									<div><strong><?= esc($person['name']); ?></strong><em><?= esc($person['post']); ?></em></div>
+									<div class="<?= $person['status'] === 'in' ? 'aw-in' : 'aw-out'; ?>"><?= $person['status'] === 'in' ? 'In · ' . esc($person['time']) : ($person['status'] === 'off' ? 'Off today' : 'Absent'); ?></div>
+								</div>
+							<?php endforeach; ?>
+						</div>
+						<?php endif; ?>
+						<?php if ($awChildren): ?>
+						<input type="search" id="awSearch" class="form-control aw-search" placeholder="Search school or accountant">
+						<div class="aw-grid" id="awGrid">
+							<?php foreach ($awChildren as $awIndex => $campus):
+								$awTone = ['tone-blue', 'tone-green', 'tone-red'][$awIndex % 3];
+							?>
+							<div class="aw-card <?= $awTone; ?>" data-find="<?= esc(strtolower($campus['name'] . ' ' . implode(' ', array_column($campus['people'], 'name')))); ?>">
+								<h4><?= esc($campus['name']); ?></h4>
+								<?php foreach ($campus['people'] as $person): ?>
+									<div class="aw-person">
+										<div><strong><?= esc($person['name']); ?></strong><em><?= esc($person['post']); ?></em></div>
+										<div class="<?= $person['status'] === 'in' ? 'aw-in' : 'aw-out'; ?>"><?= $person['status'] === 'in' ? 'In · ' . esc($person['time']) : ($person['status'] === 'off' ? 'Off today' : 'Absent'); ?></div>
+									</div>
+								<?php endforeach; ?>
+							</div>
+							<?php endforeach; ?>
+						</div>
+						<script>
+							$(function () {
+								$("#awSearch").on("input", function () {
+									var q = $.trim($(this).val()).toLowerCase();
+									$("#awGrid .aw-card, .aw-master").each(function () {
+										var hay = String($(this).attr("data-find") || "");
+										$(this).toggle(q === "" || hay.indexOf(q) !== -1);
+									});
+								});
+							});
+						</script>
+						<?php endif; ?>
+						<?php if (!$aw['people']): ?>
+							<div class="aw-card">No accountant posts found.</div>
+						<?php endif; ?>
+					</div>
+					<?php endif; ?>
 					<div class="card no-shadow bg-transparent no-border rm-borders mb-3">
 						<div class="card">
 							<div class="no-gutters row">
@@ -133,6 +239,154 @@
 							</div>
 						</div>
 					</div>
+					<?php if (!empty($wisdom_group['schools'])):
+						$wgTotals = $wisdom_group['totals'];
+						$wgMaster = null;
+						$wgChildren = [];
+						foreach ($wisdom_group['schools'] as $campus) {
+							if (!empty($campus['is_master'])) {
+								$wgMaster = $campus;
+							} else {
+								$wgChildren[] = $campus;
+							}
+						}
+						$wgLink = function ($path) {
+							return base_url($path);
+						};
+						$wgSingle = !empty($wisdom_group['single']);
+						if ($wgSingle && !$wgMaster && $wgChildren) {
+							$wgMaster = $wgChildren[0];
+							$wgChildren = [];
+						}
+					?>
+					<style>
+						.wg-wrap { margin-bottom: 16px; }
+						.wg-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+						.wg-kpi { background: #fff; border: 1px solid #e6e8ee; border-top: 4px solid #1d4ed8; border-radius: 12px; padding: 12px 14px; min-width: 0; }
+						.wg-kpi b { display: block; font-size: 1.55rem; line-height: 1.1; color: #1d4ed8; }
+						.wg-kpi.green { border-top-color: #16a34a; }
+						.wg-kpi.green b { color: #16a34a; }
+						.wg-kpi.red { border-top-color: #dc2626; }
+						.wg-kpi.red b { color: #dc2626; }
+						a.wg-kpi { text-decoration: none; display: block; }
+						a.wg-kpi:hover { box-shadow: 0 4px 14px rgba(15, 23, 42, .08); }
+						.wg-metrics a { color: inherit; text-decoration: none; display: block; }
+						.wg-metrics a.metric-in { background: #ecfdf5; border: 2px solid #16a34a; }
+						.wg-metrics a.metric-in strong, .wg-metrics a.metric-in em { color: #15803d; }
+						.wg-metrics a.metric-absent { background: #fef2f2; border: 2px solid #dc2626; }
+						.wg-metrics a.metric-absent strong, .wg-metrics a.metric-absent em { color: #dc2626; }
+						.wg-metrics a:hover strong { text-decoration: underline; }
+						.wg-ranks { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+						.wg-rank { background: rgba(255,255,255,.9); border-radius: 10px; padding: 8px 10px; }
+						.wg-rank h5 { margin: 0 0 6px; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+						.wg-rank.late h5 { color: #dc2626; }
+						.wg-rank.early h5 { color: #16a34a; }
+						.wg-rank ol { margin: 0; padding-left: 18px; }
+						.wg-rank li { font-size: .82rem; margin: 2px 0; }
+						@media (min-width: 700px) { .wg-ranks { grid-template-columns: 1fr 1fr; } }
+						.wg-kpi span { display: block; margin-top: 4px; color: #6b7280; font-size: .78rem; }
+						.wg-master { border: 2px solid #1d4ed8; background: linear-gradient(180deg, #eff6ff 0%, #fff 72%); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+						.wg-master h3 { margin: 0 0 4px; font-size: 1.15rem; color: #1d4ed8; }
+						.wg-badge { display: inline-block; background: #1d4ed8; color: #fff; border-radius: 999px; font-size: .72rem; padding: 2px 8px; margin-bottom: 8px; }
+						.wg-card.tone-green { border-top: 4px solid #16a34a; }
+						.wg-card.tone-green h4 { color: #16a34a; }
+						.wg-card.tone-red { border-top: 4px solid #dc2626; }
+						.wg-card.tone-red h4 { color: #dc2626; }
+						.wg-card.tone-blue { border-top: 4px solid #1d4ed8; }
+						.wg-card.tone-blue h4 { color: #1d4ed8; }
+						.wg-metrics, .wg-links { display: flex; flex-wrap: wrap; gap: 8px; }
+						.wg-metrics { margin-top: 10px; }
+						.wg-metrics div, .wg-metrics a { flex: 1 1 88px; background: rgba(255,255,255,.85); border-radius: 10px; padding: 8px 10px; }
+						.wg-metrics strong { display: block; font-size: 1.15rem; }
+						.wg-metrics em { font-style: normal; color: #6b7280; font-size: .75rem; }
+						.wg-links { margin-top: 12px; }
+						.wg-links a { flex: 1 1 140px; text-align: center; background: #1d4ed8; color: #fff; border-radius: 8px; padding: 8px 10px; font-size: .85rem; text-decoration: none; }
+						.wg-links a.alt { background: #16a34a; }
+						.wg-links a.red { background: #dc2626; }
+						.wg-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+						.wg-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; min-width: 0; }
+						.wg-card h4 { margin: 0 0 8px; font-size: 1rem; }
+						@media (min-width: 700px) {
+							.wg-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+							.wg-grid { grid-template-columns: 1fr 1fr; }
+						}
+						@media (min-width: 1100px) {
+							.wg-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+						}
+					</style>
+					<div class="wg-wrap">
+						<div class="wg-kpis">
+							<div class="wg-kpi"><b><?= (int) $wgTotals['students']; ?></b><span><?= $wgSingle ? 'Students' : 'Students, all schools'; ?></span></div>
+							<div class="wg-kpi green"><b><?= (int) $wgTotals['boys']; ?></b><span>Boys</span></div>
+							<div class="wg-kpi red"><b><?= (int) $wgTotals['girls']; ?></b><span>Girls</span></div>
+							<div class="wg-kpi"><b><?= (int) $wgTotals['staff']; ?></b><span>Staff</span></div>
+							<div class="wg-kpi green"><b><?= (int) $wgTotals['students_present']; ?></b><span>Students present today</span></div>
+							<a class="wg-kpi green" href="<?= base_url('wisdom-staff-today/0/in'); ?>"><b><?= (int) $wgTotals['staff_present']; ?></b><span>Staff in today</span></a>
+							<a class="wg-kpi red" href="<?= base_url('wisdom-staff-today/0/absent'); ?>"><b><?= (int) $wgTotals['staff_absent']; ?></b><span>Staff absent today</span></a>
+						</div>
+						<?php if ($wgMaster): ?>
+						<div class="wg-master">
+							<div class="wg-badge"><?= $wgSingle ? 'Your school' : 'Master school'; ?></div>
+							<h3><?= esc($wgMaster['name']); ?></h3>
+							<div class="wg-metrics">
+								<div><strong><?= (int) $wgMaster['students']; ?></strong><em>Students</em></div>
+								<div><strong><?= (int) $wgMaster['boys']; ?></strong><em>Boys</em></div>
+								<div><strong><?= (int) $wgMaster['girls']; ?></strong><em>Girls</em></div>
+								<div><strong><?= (int) $wgMaster['staff']; ?></strong><em>Staff</em></div>
+								<div><strong><?= (int) $wgMaster['students_present']; ?></strong><em>Students in today</em></div>
+								<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/in'); ?>"><strong><?= (int) $wgMaster['staff_present']; ?></strong><em>Staff in today</em></a>
+								<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/absent'); ?>"><strong><?= (int) $wgMaster['staff_absent']; ?></strong><em>Staff absent today</em></a>
+							</div>
+							<div class="wg-ranks">
+								<div class="wg-rank late"><h5>Most late today</h5><ol><?php foreach (($wgMaster['late_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($wgMaster['late_today'])): ?><li>No one late after shift start</li><?php endif; ?></ol></div>
+								<div class="wg-rank early"><h5>Earliest today</h5><ol><?php foreach (($wgMaster['early_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($wgMaster['early_today'])): ?><li>No early arrivals</li><?php endif; ?></ol></div>
+							</div>
+							<div class="wg-links">
+								<a href="<?= $wgLink('student-report/daily/all'); ?>">Student attendance</a>
+								<a class="alt" href="<?= $wgLink('staff-report/individual'); ?>">Staff attendance</a>
+							</div>
+						</div>
+						<?php endif; ?>
+						<?php if ($wgChildren): ?>
+						<input type="search" id="wgSchoolSearch" class="form-control" placeholder="Search school" style="max-width:360px;margin:0 0 12px;">
+						<div class="wg-grid" id="wgSchoolGrid">
+							<?php foreach ($wgChildren as $wgIndex => $campus):
+								$wgTone = ['tone-blue', 'tone-green', 'tone-red'][$wgIndex % 3];
+							?>
+							<div class="wg-card <?= $wgTone; ?>" data-school-name="<?= esc(strtolower($campus['name'])); ?>">
+								<h4><?= esc($campus['name']); ?></h4>
+								<div class="wg-metrics">
+									<div><strong><?= (int) $campus['students']; ?></strong><em>Students</em></div>
+									<div><strong><?= (int) $campus['boys']; ?></strong><em>Boys</em></div>
+									<div><strong><?= (int) $campus['girls']; ?></strong><em>Girls</em></div>
+									<div><strong><?= (int) $campus['staff']; ?></strong><em>Staff</em></div>
+									<div><strong><?= (int) $campus['students_present']; ?></strong><em>Students in</em></div>
+									<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/in'); ?>"><strong><?= (int) $campus['staff_present']; ?></strong><em>Staff in</em></a>
+									<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/absent'); ?>"><strong><?= (int) $campus['staff_absent']; ?></strong><em>Staff absent</em></a>
+								</div>
+								<div class="wg-ranks">
+									<div class="wg-rank late"><h5>Most late today</h5><ol><?php foreach (($campus['late_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($campus['late_today'])): ?><li>No one late after shift start</li><?php endif; ?></ol></div>
+									<div class="wg-rank early"><h5>Earliest today</h5><ol><?php foreach (($campus['early_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($campus['early_today'])): ?><li>No early arrivals</li><?php endif; ?></ol></div>
+								</div>
+							</div>
+							<?php endforeach; ?>
+						</div>
+						<?php endif; ?>
+					</div>
+					<?php if ($wgChildren): ?>
+					<script>
+						$(function () {
+							$("#wgSchoolSearch").on("input", function () {
+								var q = $.trim($(this).val()).toLowerCase();
+								$("#wgSchoolGrid .wg-card").each(function () {
+									var name = String($(this).data("school-name") || "");
+									$(this).toggle(q === "" || name.indexOf(q) !== -1);
+								});
+							});
+						});
+					</script>
+					<?php endif; ?>
+					<?php endif; ?>
 					<div class="mb-3 card">
 						<div class="card-header-tab card-header">
 							<div
@@ -369,6 +623,47 @@
 						</div>
 
 					</div>
+
+					<?php if (!empty($installment_due_dates)) : ?>
+					<div class="mb-3 card border-warning">
+						<div class="card-header-tab card-header">
+							<div class="card-header-title font-size-lg text-capitalize font-weight-normal text-warning">
+								<i class="header-icon lnr-warning icon-gradient bg-warm-flame"></i>
+								Installment promises due
+							</div>
+						</div>
+						<div class="no-gutters row">
+							<div class="col-sm-12 col-md-12 col-xl-12">
+								<table class="table table-hover table-striped table-bordered mb-0">
+									<thead>
+									<tr>
+										<th>#</th>
+										<th><?= lang("app.regno"); ?></th>
+										<th><?= lang("app.names"); ?></th>
+										<th><?= lang("app.sClass"); ?></th>
+										<th>Balance</th>
+										<th>Promised date</th>
+										<th>Reference</th>
+									</tr>
+									</thead>
+									<tbody>
+									<?php $ii = 1; foreach ($installment_due_dates as $inst) : ?>
+										<tr>
+											<td><?= $ii++; ?></td>
+											<td><?= esc($inst['regno'] ?? ''); ?></td>
+											<td><?= esc($inst['student'] ?? ''); ?></td>
+											<td><?= esc(($inst['level_name'] ?? '') . ' ' . ($inst['code'] ?? '') . ' ' . ($inst['title'] ?? '')); ?></td>
+											<td><?= number_format((float) ($inst['balance'] ?? 0)); ?></td>
+											<td><?= esc($inst['promised_date'] ?? ''); ?></td>
+											<td><?= esc($inst['refNo'] ?? '—'); ?></td>
+										</tr>
+									<?php endforeach; ?>
+									</tbody>
+								</table>
+							</div>
+						</div>
+					</div>
+					<?php endif; ?>
 
 					<div class="mb-3 card">
 						<div class="card-header-tab card-header">
