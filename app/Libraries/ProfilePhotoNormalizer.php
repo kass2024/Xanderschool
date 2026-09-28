@@ -589,6 +589,8 @@ class ProfilePhotoNormalizer
 
 	/**
 	 * True when the file has no usable face (flat grey/white disc).
+	 * A cool or grey studio portrait can fail the skin-tone test and still
+	 * be a real person, so a large subject with internal contrast counts.
 	 *
 	 * @param resource|\GdImage $im
 	 */
@@ -602,6 +604,9 @@ class ProfilePhotoNormalizer
 		$step = max(1, (int) floor(min($w, $h) / 40));
 		$seen = 0;
 		$person = 0;
+		$subject = 0;
+		$sum = 0.0;
+		$sumSq = 0.0;
 		for ($y = (int) ($h * 0.12); $y < (int) ($h * 0.88); $y += $step) {
 			for ($x = (int) ($w * 0.12); $x < (int) ($w * 0.88); $x += $step) {
 				$seen++;
@@ -609,20 +614,34 @@ class ProfilePhotoNormalizer
 				$r = ($rgb >> 16) & 255;
 				$g = ($rgb >> 8) & 255;
 				$b = $rgb & 255;
-				if ($this->isSkinTone($r, $g, $b)) {
-					$person++;
-					continue;
-				}
 				$maxc = max($r, $g, $b);
 				$minc = min($r, $g, $b);
 				$sat = $maxc === 0 ? 0.0 : ($maxc - $minc) / $maxc;
 				$lum = $this->luma($r, $g, $b);
-				if ($sat > 0.22 && $lum > 30 && $lum < 220) {
+				if ($this->isSkinTone($r, $g, $b) || ($sat > 0.22 && $lum > 30 && $lum < 220)) {
 					$person++;
 				}
+				if ($this->isBackdropPixel($r, $g, $b) || $lum >= 198) {
+					continue;
+				}
+				$subject++;
+				$sum += $lum;
+				$sumSq += $lum * $lum;
 			}
 		}
-		return $seen > 0 && ($person / $seen) < 0.04;
+		if ($seen === 0) {
+			return true;
+		}
+		if (($person / $seen) >= 0.04) {
+			return false;
+		}
+		if ($subject < 8 || ($subject / $seen) < 0.08) {
+			return true;
+		}
+		$mean = $sum / $subject;
+		$var = ($sumSq / $subject) - ($mean * $mean);
+		$std = sqrt(max(0.0, $var));
+		return $std < 12.0;
 	}
 
 	/**
