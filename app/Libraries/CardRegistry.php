@@ -51,15 +51,17 @@ class CardRegistry
 		}
 
 		if ($db->fieldExists('card', 'staffs')) {
+			// Staff cards stay inside one school. A UID at another campus is not a conflict.
+			$staffParams = array_merge([$schoolId], $variants);
 			$staff = $db->query(
 				"SELECT id, school_id, CONCAT(fname, ' ', lname) AS name, card FROM staffs
-				WHERE school_id IN ({$scopePlaceholders}) AND card IS NOT NULL AND TRIM(card) <> ''
+				WHERE school_id = ? AND card IS NOT NULL AND TRIM(card) <> ''
 				AND UPPER(TRIM(card)) IN ({$placeholders})
-				ORDER BY school_id ASC, id ASC LIMIT 1",
-				$baseParams
+				ORDER BY id ASC LIMIT 1",
+				$staffParams
 			)->getRowArray();
 			if (!$staff) {
-				$staff = self::lookupStaffByVariants($scopeSchoolIds, $variants);
+				$staff = self::lookupStaffByVariants([$schoolId], $variants);
 			}
 			if ($staff) {
 				return [
@@ -131,7 +133,7 @@ class CardRegistry
 				->select('s.id, s.fname, s.lname, s.card, s.photo, s.shift_id, p.title as post_title, sh.title as shift_title, sh.options as shift_options')
 				->join('posts p', 'p.id = s.post', 'left')
 				->join('shifts sh', 'sh.id = s.shift_id', 'left')
-				->whereIn('s.school_id', $scopeSchoolIds)
+				->where('s.school_id', $schoolId)
 				->where('s.status !=', 0)
 				->where("TRIM(COALESCE(s.card, '')) <> ''", null, false)
 				->get()->getResultArray();
@@ -151,6 +153,14 @@ class CardRegistry
 				}
 				$att = isset($clocks[$staffId]) ? (object) $clocks[$staffId] : null;
 				$preview = AttendanceScanService::previewStaffClock($att, $shift, $now);
+				$permit = $db->table('leaves')
+					->select('fromDate, toDate')
+					->where('requested_by', $staffId)
+					->where('status', 1)
+					->where('toDate >=', strtotime('today'))
+					->orderBy('toDate', 'DESC')
+					->get(1)
+					->getRowArray();
 				$out[] = [
 					'kind' => 'staff',
 					'id' => $staffId,
@@ -163,6 +173,8 @@ class CardRegistry
 					'already' => !empty($preview['already']) ? 1 : 0,
 					'clock_message' => (string) ($preview['message'] ?? ''),
 					'photo' => profile_photo_url($r['photo'] ?? null),
+					'permit_from' => (int) ($permit['fromDate'] ?? 0),
+					'permit_until' => (int) ($permit['toDate'] ?? 0),
 				];
 			}
 		}

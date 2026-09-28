@@ -386,7 +386,7 @@ class AttendanceScanService
 		if ($db->fieldExists('card', 'staffs')) {
 			$staffRows = $db->table('staffs')
 				->select('id, fname, lname, card')
-				->whereIn('school_id', $scopeSchoolIds)
+				->where('school_id', $schoolId)
 				->where('status !=', 0)
 				->get()
 				->getResultArray();
@@ -412,11 +412,11 @@ class AttendanceScanService
 	 */
 	public static function staffList(int $schoolId): array
 	{
+		// Staff lists stay inside the logged-in school.
 		self::ensureFaceColumn();
 		helper('qonics');
 		$db = \Config\Database::connect();
-		$scopeSchoolIds = self::scopeSchoolIds($schoolId);
-		if ($scopeSchoolIds === []) {
+		if ($schoolId <= 0) {
 			return [];
 		}
 		$hasFace = $db->fieldExists('face_enrolled', 'staffs');
@@ -425,7 +425,7 @@ class AttendanceScanService
 			->select('s.id, s.school_id, s.fname, s.lname, s.photo, s.card, s.shift_id, s.status, p.title as post_title, sh.title as shift_title, sh.options as shift_options' . $faceSelect)
 			->join('posts p', 'p.id = s.post', 'left')
 			->join('shifts sh', 'sh.id = s.shift_id', 'left')
-			->whereIn('s.school_id', $scopeSchoolIds)
+			->where('s.school_id', $schoolId)
 			->where('s.status !=', 0)
 			->orderBy('s.fname', 'ASC')
 			->orderBy('s.lname', 'ASC')
