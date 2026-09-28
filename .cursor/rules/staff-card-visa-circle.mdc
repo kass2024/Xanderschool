@@ -24,4 +24,4 @@ Keep this design for every Wisdom campus staff card (Ngororero and any school ad
 
 ## New school
 
-Add campus artwork and a `campusTemplate()` entry. Reuse this same circle frame. Only remeasure `HOLE_*` if that artwork’s white hole is not the shared 591×1004 circle.
+Add campus artwork and a `campusTemplate()` entry. Reuse this same circle frame. Only remeasure `HOLE_*` if that artwork’s white hole is not the shared 591×1004 circle. A named campus must use its own file. The Musanze artwork is the master fallback, not the card for Rubavu or any other child school.

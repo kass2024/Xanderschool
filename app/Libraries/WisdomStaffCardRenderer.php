@@ -3,7 +3,7 @@
 namespace App\Libraries;
 
 /**
- * Rasterize Wisdom staff ID cards onto campus artwork (Musanze or Rwanda).
+ * Rasterize Wisdom staff ID cards onto that campus artwork.
  * Artwork is used as a screenshot (full-bleed). Photo sits inside the
  * existing circle. Staff fields are drawn on the white face only.
  * No colored overlays, rings, badges, or bars are painted.
@@ -157,12 +157,13 @@ class WisdomStaffCardRenderer
 	 */
 	public static function templateForStaff(array $staff, string $schoolName = ''): string
 	{
-		if (self::usesRwandaArtwork($staff) && self::assetPath(self::TEMPLATE_RWANDA) !== null) {
-			return self::TEMPLATE_RWANDA;
-		}
-		$campus = self::campusTemplate($schoolName !== '' ? $schoolName : (string) ($staff['school_name'] ?? ''));
+		$name = $schoolName !== '' ? $schoolName : (string) ($staff['school_name'] ?? '');
+		$campus = self::campusTemplate($name);
 		if ($campus !== null) {
 			return $campus;
+		}
+		if (self::usesRwandaArtwork($staff) && self::assetPath(self::TEMPLATE_RWANDA) !== null) {
+			return self::TEMPLATE_RWANDA;
 		}
 		if (self::assetPath(self::TEMPLATE_MUSANZE) !== null) {
 			return self::TEMPLATE_MUSANZE;
@@ -175,9 +176,18 @@ class WisdomStaffCardRenderer
 		$name = strtoupper(preg_replace('/\s+/', ' ', trim($schoolName)) ?? '');
 		$map = [
 			'BURERA' => self::TEMPLATE_BURERA,
+			'FUMBWE' => 'assets/images/background/wisdom_staff_card_fumbwe.png',
+			'KABARORE' => 'assets/images/background/wisdom_staff_card_kabarore.png',
 			'KANZENZE' => self::TEMPLATE_KANZENZE,
+			'KAYONZA' => 'assets/images/background/wisdom_staff_card_kayonza.png',
+			'KIRAMURUZI' => 'assets/images/background/wisdom_staff_card_kiramuruzi.png',
+			'MUSANZE' => self::TEMPLATE_MUSANZE,
+			'MUYUMBU' => 'assets/images/background/wisdom_staff_card_muyumbu.png',
 			'NGORORERO' => self::TEMPLATE_NGORORERO,
 			'NYABIHU' => self::TEMPLATE_NYABIHU,
+			'NYAMASHEKE' => 'assets/images/background/wisdom_staff_card_nyamasheke.png',
+			'RUBAVU' => 'assets/images/background/wisdom_staff_card_rubavu.png',
+			'RUBENGERA' => 'assets/images/background/wisdom_staff_card_rubengera.png',
 			'SUSA' => self::TEMPLATE_SUSA,
 		];
 		foreach ($map as $key => $path) {
