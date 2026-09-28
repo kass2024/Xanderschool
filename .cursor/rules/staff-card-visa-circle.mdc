@@ -1,0 +1,27 @@
+---
+description: Wisdom staff-card photos fill the circle in a US visa head-and-shoulders frame
+alwaysApply: true
+---
+
+# Staff card circle: US visa portrait
+
+Keep this design for every Wisdom campus staff card (Ngororero and any school added later). Do not invent a tighter crop or a smaller floating photo.
+
+## Look
+
+- The photo is clipped to the artwork circle and fills that hole.
+- US visa head size: chin to crown is about **50–66%** of the frame (target **58%**).
+- The crown sits about **14%** down so the round edge does not cut hair.
+- Shoulders fill the circle. A desk or ceremony shot is zoomed to head-and-shoulders. A face that is already tight is not zoomed further.
+- White background. No extra ring, badge, or colored overlay on the photo.
+
+## Use the shared code
+
+- Frame with `ProfilePhotoNormalizer::coverCenterTop()`.
+- HTML/PDF cache key must change when the frame changes (`profile_photo_staff_circle_src`, currently `v6visacircle`).
+- Place the bitmap with `WisdomStaffCardRenderer` hole constants measured on the **591×1004** artwork: center `(296, 314)`, diameter **272**, inset **1.0** (fill the white hole, leave the black ring and blue artwork outside).
+- The round `<img>` uses `object-fit: fill` and `min-width/min-height: 100%` so flex layout cannot shrink it inside the circle.
+
+## New school
+
+Add campus artwork and a `campusTemplate()` entry. Reuse this same circle frame. Only remeasure `HOLE_*` if that artwork’s white hole is not the shared 591×1004 circle.
