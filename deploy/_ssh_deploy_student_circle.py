@@ -16,16 +16,12 @@ _m = re.search(r'PASSWORD = os\.environ\.get\("VPS_PASSWORD", "([^"]*)"\)', _src
 PASSWORD = _m.group(1) if _m else ""
 REMOTE_BASE = "/opt/xander-school/app"
 FILES = [
-    "app/Libraries/WisdomCardRenderer.php",
     "app/Libraries/ProfilePhotoNormalizer.php",
-    "app/Libraries/CardLayout.php",
-    "app/Views/templates/student_card_smart.php",
     "app/Helpers/qonics_helper.php",
 ]
 VERIFY = [
-    ("app/Libraries/WisdomCardRenderer.php", "HOLE_D = 245"),
-    ("app/Helpers/qonics_helper.php", "v15fitcircle"),
-    ("app/Views/templates/student_card_smart.php", "object-position: center center"),
+    ("app/Libraries/ProfilePhotoNormalizer.php", "A webcam headshot already fills the file"),
+    ("app/Helpers/qonics_helper.php", "v16fillcircle"),
 ]
 
 

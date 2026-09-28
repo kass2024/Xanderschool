@@ -1003,8 +1003,10 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Student ID circle. The head sits inside the round hole with air above
-	 * the hair, so a tight webcam shot is not blown up past the teal ring.
+	 * Student ID circle. Webcam portraits already fill their frame, so the
+	 * square is covered edge to edge and the card clips it round. A wide
+	 * scene still zooms to the head. The result is never a small rectangle
+	 * floating on white.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -1037,10 +1039,16 @@ class ProfilePhotoNormalizer
 		$head = $this->visaHeadSpan($src, $px, $crown, $pw, $ph, $wall);
 		$headW = max(8, (int) $head['w']);
 		$headCx = (int) $head['cx'];
-		// Head is under half the square, so the circle does not shave the hair.
-		$frame = max(8.0, $headW / 0.46);
-		$frameTop = $crown - (0.18 * $frame);
+		// A webcam headshot already fills the file. Do not shrink it.
+		$content = (float) min($bw, $bh);
+		$frame = max(8.0, $headW / 0.62);
+		if ($frame > $content) {
+			$frame = $content;
+		}
 		$frameLeft = $headCx - ($frame / 2.0);
+		$frameTop = $crown - (0.10 * $frame);
+		$frameLeft = max((float) $bx, min($bx + $bw - $frame, $frameLeft));
+		$frameTop = max((float) $by, min($by + $bh - $frame, $frameTop));
 
 		$scale = $size / $frame;
 		$dst = imagecreatetruecolor($size, $size);
@@ -1050,13 +1058,14 @@ class ProfilePhotoNormalizer
 		$visTop = (int) max(0, floor($frameTop));
 		$visRight = (int) min($sw, ceil($frameLeft + $frame));
 		$visBottom = (int) min($sh, ceil($frameTop + $frame));
-		if ($visRight - $visLeft >= 2 && $visBottom - $visTop >= 2) {
-			$ddx = (int) round(($visLeft - $frameLeft) * $scale);
-			$ddy = (int) round(($visTop - $frameTop) * $scale);
-			$ddw = max(1, (int) round(($visRight - $visLeft) * $scale));
-			$ddh = max(1, (int) round(($visBottom - $visTop) * $scale));
-			$this->hiQualityResample($dst, $src, $ddx, $ddy, $visLeft, $visTop, $ddw, $ddh, $visRight - $visLeft, $visBottom - $visTop);
+		if ($visRight - $visLeft < 2 || $visBottom - $visTop < 2) {
+			return $dst;
 		}
+		$ddx = (int) round(($visLeft - $frameLeft) * $scale);
+		$ddy = (int) round(($visTop - $frameTop) * $scale);
+		$ddw = max(1, (int) round(($visRight - $visLeft) * $scale));
+		$ddh = max(1, (int) round(($visBottom - $visTop) * $scale));
+		$this->hiQualityResample($dst, $src, $ddx, $ddy, $visLeft, $visTop, $ddw, $ddh, $visRight - $visLeft, $visBottom - $visTop);
 		return $dst;
 	}
 
