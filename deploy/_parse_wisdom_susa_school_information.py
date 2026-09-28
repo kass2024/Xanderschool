@@ -113,7 +113,7 @@ def parse_staff_doc() -> tuple[dict[str, str], list[dict[str, str]]]:
 
     school: dict[str, str] = {
         "name": "WISDOM SCHOOL SUSA",
-        "acronym": "WIS-SUS",
+        "acronym": "WISSUS",
         "slogan": "",
         "academic_year": "2026-2027",
         "term": "Term I",

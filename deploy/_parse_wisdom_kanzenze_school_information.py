@@ -248,7 +248,7 @@ def main() -> int:
     payload = {
         "school": {
             "name": "WISDOM SCHOOL KANZENZE",
-            "acronym": "WIS-KAN",
+            "acronym": "WISKAN",
             "slogan": "FEARING GOD IS KNOWLEDGE",
             "academic_year": "2026-2027",
             "term": "Term I",

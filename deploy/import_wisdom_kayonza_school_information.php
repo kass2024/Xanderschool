@@ -439,7 +439,7 @@ function match_photo(array $photos, string $fullName, array $usedFiles = []): ?a
 $school = $db->table('schools')->where('id', TARGET_SCHOOL_ID)->get(1)->getRowArray();
 $acronym = strtoupper((string) (is_array($school) ? ($school['acronym'] ?? '') : ''));
 $foundName = compact_name((string) (is_array($school) ? ($school['name'] ?? '') : ''));
-if (!$school || (strpos($foundName, 'KAYONZA') === false && $acronym !== 'WSY' && $acronym !== 'WIS-KAY')) {
+if (!$school || (strpos($foundName, 'KAYONZA') === false && $acronym !== 'WSY' && $acronym !== 'WISKAY')) {
 	$school = $db->table('schools')->like('name', 'KAYONZA', 'both')->get(1)->getRowArray();
 }
 if (!$school || (int) $school['id'] !== TARGET_SCHOOL_ID) {

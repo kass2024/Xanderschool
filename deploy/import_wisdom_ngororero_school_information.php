@@ -1,6 +1,6 @@
 <?php
 /**
- * Import WISDOM SCHOOL NGORORERO only (WIS-NGO / school 41).
+ * Import WISDOM SCHOOL NGORORERO only (WISNGO / school 41).
  *
  * Source: deploy/_wisdom_ngororero_school_information.json (parsed from
  * C:\methode\15 Wisdoms\1.Wisdom Ngororero). Classes are REB
@@ -41,7 +41,7 @@ if (!is_array($data) || !is_array($data['school'] ?? null)
 	exit(1);
 }
 
-const TARGET_ACRONYM = 'WIS-NGO';
+const TARGET_ACRONYM = 'WISNGO';
 const TARGET_SCHOOL_ID = 41;
 const ACADEMIC_YEAR_TITLE = '2026-2027';
 const CREATED_BY = 1;
@@ -387,11 +387,16 @@ function match_photo(array $photos, string $fullName): ?array
 }
 
 $school = $db->table('schools')->where('id', TARGET_SCHOOL_ID)->get(1)->getRowArray();
-if (!$school || strtoupper((string) ($school['acronym'] ?? '')) !== TARGET_ACRONYM) {
-	$school = $db->table('schools')->where('acronym', TARGET_ACRONYM)->get(1)->getRowArray();
+$acronymKey = preg_replace('/[^A-Z]/', '', strtoupper((string) ($school['acronym'] ?? ''))) ?? '';
+$targetKey = preg_replace('/[^A-Z]/', '', TARGET_ACRONYM) ?? '';
+if (!$school || $acronymKey !== $targetKey) {
+	$school = $db->table('schools')->where('acronym', $targetKey)->get(1)->getRowArray();
+	if (!$school) {
+		$school = $db->table('schools')->where('acronym', TARGET_ACRONYM)->get(1)->getRowArray();
+	}
 }
 if (!$school || (int) $school['id'] !== TARGET_SCHOOL_ID) {
-	fwrite(STDERR, "Target Ngororero school was not found at expected school id 41 / WIS-NGO\n");
+	fwrite(STDERR, "Target Ngororero school was not found at expected school id 41 / WISNGO\n");
 	exit(1);
 }
 $schoolName = compact_name((string) ($school['name'] ?? ''));

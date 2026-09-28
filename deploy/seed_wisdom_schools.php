@@ -81,7 +81,7 @@ foreach ($branches as [$code, $location, $useWisdomRwanda]) {
 	}
 
 	$schoolName = 'Wisdom ' . $location;
-	$acronym = 'WIS-' . $code;
+	$acronym = 'WIS' . $code;
 	$email = strtolower('admin.' . $code . '@wisdomschools.rw');
 	if ($code === 'KAY') {
 		$email = 'umutonihenry@gmail.com';

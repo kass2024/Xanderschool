@@ -181,7 +181,7 @@ class SchoolHierarchyService
 			->groupStart()
 				->like('name', 'Wisdom', 'both')
 				->orLike('name', 'WISDOM', 'both')
-				->orLike('acronym', 'WIS-', 'after')
+				->orLike('acronym', 'WIS', 'after')
 			->groupEnd()
 			->where('id !=', $masterId)
 			->get()->getResultArray();

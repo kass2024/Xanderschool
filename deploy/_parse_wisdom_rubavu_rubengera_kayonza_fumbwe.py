@@ -300,7 +300,7 @@ def parse_rubavu() -> None:
     head = next((row["full_name"] for row in staff if row["position"] == "HEAD TEACHER"), "")
     write_payload(
         "rubavu",
-        {"name": "WISDOM SCHOOL RUBAVU", "acronym": "WIS-RUB", "slogan": "FEARING GOD IS KNOWLEDGE", "academic_year": "2026-2027", "term": "Term I", "head_teacher": head},
+        {"name": "WISDOM SCHOOL RUBAVU", "acronym": "WISRUB", "slogan": "FEARING GOD IS KNOWLEDGE", "academic_year": "2026-2027", "term": "Term I", "head_teacher": head},
         students,
         staff,
         photos,
@@ -388,7 +388,7 @@ def parse_rubengera() -> None:
     head = next((row["full_name"] for row in staff if row["position"] == "HEAD TEACHER"), "")
     write_payload(
         "rubengera",
-        {"name": "WISDOM SCHOOL RUBENGERA", "acronym": "WIS-RBE", "slogan": "", "academic_year": "2026-2027", "term": "Term I", "head_teacher": head},
+        {"name": "WISDOM SCHOOL RUBENGERA", "acronym": "WISRBE", "slogan": "", "academic_year": "2026-2027", "term": "Term I", "head_teacher": head},
         students,
         staff,
         photos,
@@ -592,7 +592,7 @@ def parse_fumbwe() -> None:
     head = next((row["full_name"] for row in staff if row["position"] == "HEAD TEACHER"), "")
     write_payload(
         "fumbwe",
-        {"name": "WISDOM SCHOOL FUMBWE", "acronym": "WIS-FUM", "slogan": "FEARING GOD IS KNOWLEDGE", "academic_year": "2026-2027", "term": "Term I", "head_teacher": head},
+        {"name": "WISDOM SCHOOL FUMBWE", "acronym": "WISFUM", "slogan": "FEARING GOD IS KNOWLEDGE", "academic_year": "2026-2027", "term": "Term I", "head_teacher": head},
         students,
         staff,
         photos,
