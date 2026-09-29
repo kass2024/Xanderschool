@@ -1105,16 +1105,13 @@ public function testEmail()
 				->where("leaves.created_at >=", date('Y-1-1'))
 				->get()->getResultArray();
 //		print_r($approveds); die();
-		$schoolFeeExpected = 'MAX(' . SchoolFeesModel::sqlExpectedForStudent('sf', 'fd.amount') . ')';
-		$schoolFeeOn = SchoolFeesModel::sqlClassFeeOn('sf', 'cl.id', 'l.id', 'd.id');
-		$schoolFeeDiscount = "(select sum(amount) as amount,feesId,student from school_fees_discount where " . SchoolFeesModel::scholarshipCommentSql('comment') . " group by student,feesId)";
-		$schoolfeesQ = $studentMdl->select("students.id,students.lname,{$schoolFeeExpected} as expected,sum(fr.amount) as paid,fr.due_date")
+		$schoolfeesQ = $studentMdl->select("students.id,students.lname,(sf.amount+coalesce(fd.amount,0)) as expected,sum(fr.amount) as paid,fr.due_date")
 				->join("class_records cr", "cr.student=students.id", "LEFT")
 				->join("classes cl", "cl.id=cr.class", "LEFT")
 				->join("levels l", "l.id=cl.level", "LEFT")
 				->join("departments d", "d.id=cl.department", "LEFT")
-				->join("school_fees sf", "sf.school_id={$school_id} AND {$schoolFeeOn}", "LEFT")
-				->join("{$schoolFeeDiscount} fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
+				->join("school_fees sf", "sf.level=l.id and sf.department=d.id ")
+				->join("(select sum(amount) as amount,feesId,student from school_fees_discount group by student,feesId) fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
 				->join("fees_records fr", "fr.fees_id=sf.id and fr.student_id=students.id and fr.fees_type=0 and fr.status=1", "LEFT ")
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
@@ -1132,7 +1129,7 @@ public function testEmail()
 				->where("ex.school_id", $school_id);
 		$this->applyRegularClassFilter($extrafeesQ);
 		$data['extrafees'] = $extrafeesQ->groupBy("students.id")->get()->getResultArray();
-		$data['scl_due_dates'] = $studentMdl->select("students.id,{$schoolFeeExpected} as expected,sum(fr.amount) as paid
+		$data['scl_due_dates'] = $studentMdl->select("students.id,(sf.amount+coalesce(fd.amount,0)) as expected,sum(fr.amount) as paid
 															,fr.due_date
 															,fr.fees_type
 														 	,concat(students.fname,' ',students.lname) as student,
@@ -1146,8 +1143,8 @@ public function testEmail()
 				->join("levels l", "l.id=cl.level", "LEFT")
 				->join("departments d", "d.id=cl.department", "LEFT")
 				->join("faculty f", "f.id=d.faculty_id", "LEFT")
-				->join("school_fees sf", "sf.school_id={$school_id} AND {$schoolFeeOn}", "LEFT")
-				->join("{$schoolFeeDiscount} fd", "fd.feesId=sf.id AND fd.student = students.id", "LEFT")
+				->join("school_fees sf", "sf.level=l.id and sf.department=d.id ")
+				->join("(select sum(amount) as amount,feesId,student from school_fees_discount group by student,feesId) fd", "fd.feesId=sf.id AND fd.student = students.id", "LEFT")
 				->join("fees_records fr", "fr.fees_id=sf.id and fr.student_id=students.id and fr.fees_type=0 and fr.status=1", "LEFT ")
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
