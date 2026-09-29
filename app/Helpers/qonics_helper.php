@@ -1588,7 +1588,7 @@ if (!function_exists('profile_photo_card_cover_src')) {
 		if (!is_dir($cacheDir)) {
 			@mkdir($cacheDir, 0775, true);
 		}
-		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v16fillcircle") . '.jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|cover{$outW}x{$outH}|v17fillcircle") . '.jpg';
 		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
 		if (is_file($cached)) {
 			return '_card_img/' . $key;

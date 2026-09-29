@@ -207,9 +207,11 @@ $fit = static function (string $text, array $f, float $max = 3.2, float $min = 1
 	.card.is-wisdom .cf-photo img {
 		width: 100%;
 		height: 100%;
+		min-width: 100%;
+		min-height: 100%;
 		margin: 0;
-		object-fit: cover;
-		-webkit-object-fit: cover;
+		object-fit: fill;
+		-webkit-object-fit: fill;
 		object-position: center center;
 		display: block;
 		border: 0;

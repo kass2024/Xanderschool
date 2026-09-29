@@ -19,12 +19,12 @@ class WisdomCardRenderer
 
 	/**
 	 * Inner white photo hole, measured on the 1011×639 artwork
-	 * (high school, primary, and nursery share it). A smaller disc
-	 * sits inside the teal ring instead of covering it.
+	 * (high school, primary, and nursery share it). Diameter 248
+	 * covers that white disc out to the teal ring.
 	 */
 	private const HOLE_CX = 207;
 	private const HOLE_CY = 347;
-	private const HOLE_D = 245;
+	private const HOLE_D = 248;
 
 	/** O-level / A-level / other non-primary, non-nursery Wisdom classes. */
 	public const TEMPLATE = 'assets/images/background/wisdom_high_school_pass_template.png';
