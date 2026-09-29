@@ -303,6 +303,8 @@ class AttendanceScanService
 
 		$feeding = self::feedingPaidMap($schoolId);
 		$feedingAmounts = self::feedingAmountMap($schoolId);
+		$transportAmounts = self::transportAmountMap($schoolId);
+		$transportRequired = self::transportRequiredMap($schoolId);
 		$hostels = self::hostelNameMap($schoolId);
 		$termFees = self::termFeeBriefMap($schoolId);
 		$out = [];
@@ -321,6 +323,8 @@ class AttendanceScanService
 				'studying_mode' => $mode,
 				'feeding_paid' => $mode === 0 ? 1 : (int) ($feeding[$sid] ?? 0),
 				'feeding_amount' => (int) ($feedingAmounts[$sid] ?? 0),
+				'transport_amount' => (int) ($transportAmounts[$sid] ?? 0),
+				'transport_required' => (int) ($transportRequired[$sid] ?? 0),
 				'hostel' => (string) ($hostels[$sid] ?? ''),
 			];
 			if (isset($termFees[$sid])) {
@@ -357,6 +361,8 @@ class AttendanceScanService
 			->getResultArray();
 		$feeding = self::feedingPaidMap($schoolId);
 		$feedingAmounts = self::feedingAmountMap($schoolId);
+		$transportAmounts = self::transportAmountMap($schoolId);
+		$transportRequired = self::transportRequiredMap($schoolId);
 		$hostels = self::hostelNameMap($schoolId);
 		$termFees = self::termFeeBriefMap($schoolId);
 		$students = [];
@@ -377,6 +383,8 @@ class AttendanceScanService
 				'studying_mode' => $mode,
 				'feeding_paid' => $mode === 0 ? 1 : (int) ($feeding[$sid] ?? 0),
 				'feeding_amount' => (int) ($feedingAmounts[$sid] ?? 0),
+				'transport_amount' => (int) ($transportAmounts[$sid] ?? 0),
+				'transport_required' => (int) ($transportRequired[$sid] ?? 0),
 				'hostel' => (string) ($hostels[$sid] ?? ''),
 			];
 			if (isset($termFees[$sid])) {
@@ -681,6 +689,19 @@ class AttendanceScanService
 			];
 		}
 
+		if (self::isTransportArea($areaName) && !self::transportMayRide($student)) {
+			$person = self::studentPayload($student, $className, '');
+			$brief = self::feeBrief((int) ($student->school_id ?? $schoolId), (int) $student->id);
+			return [
+				'success' => 0,
+				'kind' => 'student',
+				'denied' => 'transport',
+				'message' => 'Transport not paid',
+				'person' => $person,
+				'fees' => $brief,
+			];
+		}
+
 		$time = $eventTime > 1000000000 ? $eventTime : time();
 		$todayStart = strtotime('today', $time);
 		$todayEnd = strtotime('tomorrow', $time) - 1;
@@ -843,6 +864,15 @@ class AttendanceScanService
 				'kind' => 'student',
 				'feeding_paid' => 0,
 				'message' => 'Feeding not paid',
+			];
+		}
+		if (self::isTransportArea($areaName) && !self::transportMayRide($student)) {
+			return [
+				'success' => 1,
+				'skipped' => 1,
+				'denied' => 'transport',
+				'kind' => 'student',
+				'message' => 'Transport not paid',
 			];
 		}
 		if (self::isEntryOnlyArea($areaName) && $wanted === 'OUT') {
@@ -1477,6 +1507,14 @@ class AttendanceScanService
 			|| strpos($n, 'refectory') !== false;
 	}
 
+	private static function isTransportArea(string $name): bool
+	{
+		$n = strtolower(trim($name));
+		$n = preg_replace('/[^a-z0-9]+/', ' ', $n);
+		$n = trim((string) $n);
+		return strpos($n, 'transport') !== false;
+	}
+
 	/** Cafeteria and dormitory record IN only. No checkout, including evening preps. */
 	private static function isEntryOnlyArea(string $name): bool
 	{
@@ -1501,6 +1539,28 @@ class AttendanceScanService
 		}
 		$amount = (int) (self::feedingAmountMap($schoolId)[$sid] ?? 0);
 		return $amount >= self::CAFETERIA_EAT_MIN;
+	}
+
+	/**
+	 * Transport location only. Boarding students are not checked.
+	 * Day scholars need this term's Transport fee paid in full
+	 * (60,000 primary/nursery, 80,000 high school, or the class amount).
+	 *
+	 * @param object $student
+	 */
+	private static function transportMayRide($student): bool
+	{
+		if ((int) ($student->studying_mode ?? 1) !== 1) {
+			return true;
+		}
+		$schoolId = (int) ($student->school_id ?? 0);
+		$sid = (int) ($student->id ?? 0);
+		if ($schoolId < 1 || $sid < 1) {
+			return false;
+		}
+		$required = (int) (self::transportRequiredMap($schoolId)[$sid] ?? 0);
+		$paid = (int) (self::transportAmountMap($schoolId)[$sid] ?? 0);
+		return $required > 0 && $paid >= $required;
 	}
 
 	/**
@@ -1777,6 +1837,12 @@ class AttendanceScanService
 	/** @var array<int,array{at:int,map:array<int,int>}> */
 	private static $feedingAmountCache = [];
 
+	/** @var array<int,array{at:int,map:array<int,int>}> */
+	private static $transportAmountCache = [];
+
+	/** @var array<int,array{at:int,map:array<int,int>}> */
+	private static $transportRequiredCache = [];
+
 	/** @var array<int,array{at:int,map:array<int,string>}> */
 	private static $hostelNameCache = [];
 
@@ -1918,6 +1984,153 @@ class AttendanceScanService
 	}
 
 	/**
+	 * Current-term Transport paid, in RWF, by student id.
+	 *
+	 * @return array<int,int>
+	 */
+	private static function transportAmountMap(int $schoolId): array
+	{
+		$now = time();
+		if (isset(self::$transportAmountCache[$schoolId]) && ($now - self::$transportAmountCache[$schoolId]['at']) < 15) {
+			return self::$transportAmountCache[$schoolId]['map'];
+		}
+		self::loadTransportFeeMaps($schoolId);
+		return self::$transportAmountCache[$schoolId]['map'] ?? [];
+	}
+
+	/**
+	 * Current-term Transport expected for a day scholar, in RWF, by student id.
+	 * 0 means this student has no Transport fee.
+	 *
+	 * @return array<int,int>
+	 */
+	private static function transportRequiredMap(int $schoolId): array
+	{
+		$now = time();
+		if (isset(self::$transportRequiredCache[$schoolId]) && ($now - self::$transportRequiredCache[$schoolId]['at']) < 15) {
+			return self::$transportRequiredCache[$schoolId]['map'];
+		}
+		self::loadTransportFeeMaps($schoolId);
+		return self::$transportRequiredCache[$schoolId]['map'] ?? [];
+	}
+
+	private static function loadTransportFeeMaps(int $schoolId): void
+	{
+		$now = time();
+		$amountMap = [];
+		$requiredMap = [];
+		try {
+			$db = \Config\Database::connect();
+			$scope = self::scopeSchoolIds($schoolId);
+			if ($scope === []) {
+				$scope = [$schoolId];
+			}
+			$year = self::academicYear($schoolId);
+			$termRow = $db->table('schools sc')
+				->select('at.term')
+				->join('active_term at', 'at.id = sc.active_term', 'left')
+				->where('sc.id', $schoolId)
+				->get()
+				->getRow();
+			$term = (int) ($termRow->term ?? 1);
+			if ($term < 1 || $term > 3) {
+				$term = 1;
+			}
+			$studentIds = [];
+			$studentRows = $db->table('students')
+				->select('id')
+				->whereIn('school_id', $scope)
+				->where('status', 1)
+				->get()
+				->getResultArray();
+			foreach ($studentRows as $st) {
+				$sid = (int) ($st['id'] ?? 0);
+				if ($sid > 0) {
+					$studentIds[$sid] = true;
+				}
+			}
+			$classOf = [];
+			$classRows = $db->table('class_records')
+				->select('student, class')
+				->where('year', $year)
+				->get()
+				->getResultArray();
+			foreach ($classRows as $cr) {
+				$classOf[(int) ($cr['student'] ?? 0)] = (int) ($cr['class'] ?? 0);
+			}
+			$feeRows = $db->table('extra_fees')
+				->select('id, type, type_id, amount, amount_boarding, amount_day, title, term')
+				->whereIn('school_id', $scope)
+				->where('academic_year', $year)
+				->where('term', $term)
+				->get()
+				->getResultArray();
+			$byClass = [];
+			$byStudent = [];
+			$feeIds = [];
+			foreach ($feeRows as $fee) {
+				$title = strtolower(trim((string) ($fee['title'] ?? '')));
+				if (strpos($title, 'transport') === false) {
+					continue;
+				}
+				$feeIds[] = (int) $fee['id'];
+				if ((int) ($fee['type'] ?? 0) === 1) {
+					$byStudent[(int) $fee['type_id']][] = $fee;
+				} else {
+					$byClass[(int) $fee['type_id']][] = $fee;
+				}
+			}
+			$paid = [];
+			if ($feeIds !== []) {
+				$paidRows = $db->table('fees_records')
+					->select('student_id, fees_id, SUM(amount) AS paid', false)
+					->where('fees_type', 1)
+					->whereIn('fees_id', $feeIds)
+					->groupBy('student_id')
+					->groupBy('fees_id')
+					->get()
+					->getResultArray();
+				foreach ($paidRows as $pr) {
+					$paid[(int) $pr['student_id'] . ':' . (int) $pr['fees_id']] = (float) $pr['paid'];
+				}
+			}
+			foreach (array_keys($studentIds) as $sid) {
+				$rowsForStudent = [];
+				$classId = (int) ($classOf[$sid] ?? 0);
+				if ($classId > 0 && isset($byClass[$classId])) {
+					foreach ($byClass[$classId] as $fee) {
+						$rowsForStudent[] = $fee;
+					}
+				}
+				if (isset($byStudent[$sid])) {
+					foreach ($byStudent[$sid] as $fee) {
+						$rowsForStudent[] = $fee;
+					}
+				}
+				if ($rowsForStudent === []) {
+					continue;
+				}
+				$kept = \App\Models\ExtraFeesModel::preferStudentOverrides($rowsForStudent);
+				$expected = 0.0;
+				$got = 0.0;
+				foreach ($rowsForStudent as $fee) {
+					$got += (float) ($paid[$sid . ':' . (int) $fee['id']] ?? 0);
+				}
+				foreach ($kept as $fee) {
+					$expected += \App\Models\ExtraFeesModel::expectedForMode($fee, 1);
+				}
+				$amountMap[$sid] = (int) round($got);
+				$requiredMap[$sid] = (int) round($expected);
+			}
+		} catch (\Throwable $e) {
+			$amountMap = [];
+			$requiredMap = [];
+		}
+		self::$transportAmountCache[$schoolId] = ['at' => $now, 'map' => $amountMap];
+		self::$transportRequiredCache[$schoolId] = ['at' => $now, 'map' => $requiredMap];
+	}
+
+	/**
 	 * Current-year hostel name by student id.
 	 *
 	 * @return array<int,string>
@@ -1986,6 +2199,8 @@ class AttendanceScanService
 			'studying_mode' => (int) ($student->studying_mode ?? 1),
 			'feeding_paid' => self::feedingPaidFlag($student),
 			'feeding_amount' => (int) (self::feedingAmountMap($schoolId)[$sid] ?? 0),
+			'transport_amount' => (int) (self::transportAmountMap($schoolId)[$sid] ?? 0),
+			'transport_required' => (int) (self::transportRequiredMap($schoolId)[$sid] ?? 0),
 			'hostel' => (string) (self::hostelNameMap($schoolId)[$sid] ?? ''),
 			'records' => $records,
 		];
