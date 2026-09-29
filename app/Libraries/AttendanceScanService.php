@@ -1474,27 +1474,20 @@ class AttendanceScanService
 	}
 
 	/**
-	 * Cafeteria eat rule. Boarding is unchanged (always allowed).
-	 * A day scholar may eat when feeding paid this term is 60,000 or more,
-	 * or when the existing full-fee flag is already paid.
+	 * Cafeteria only. Current-term Feeding payments must be 60,000 or more.
+	 * Boarding, school fees, and other fees do not grant entry.
 	 *
 	 * @param object $student
 	 */
 	private static function cafeteriaMayEat($student): bool
 	{
-		if ((int) ($student->studying_mode ?? 1) === 0) {
-			return true;
-		}
 		$schoolId = (int) ($student->school_id ?? 0);
 		$sid = (int) ($student->id ?? 0);
 		if ($schoolId < 1 || $sid < 1) {
 			return false;
 		}
 		$amount = (int) (self::feedingAmountMap($schoolId)[$sid] ?? 0);
-		if ($amount >= self::CAFETERIA_EAT_MIN) {
-			return true;
-		}
-		return (int) (self::feedingPaidMap($schoolId)[$sid] ?? 0) === 1;
+		return $amount >= self::CAFETERIA_EAT_MIN;
 	}
 
 	/**
@@ -1764,11 +1757,6 @@ class AttendanceScanService
 				if ($sid < 1) {
 					continue;
 				}
-				if ((int) ($st['studying_mode'] ?? 1) === 0) {
-					$map[$sid] = 1;
-					$amountMap[$sid] = 0;
-					continue;
-				}
 				$rowsForStudent = [];
 				$classId = (int) ($classOf[$sid] ?? 0);
 				if ($classId > 0 && isset($byClass[$classId])) {
@@ -1788,7 +1776,11 @@ class AttendanceScanService
 					$got += (float) ($paid[$sid . ':' . (int) $fee['id']] ?? 0);
 				}
 				$amountMap[$sid] = (int) round($got);
-				$map[$sid] = ($expected <= 0.009 || ($got + 0.5) >= $expected) ? 1 : 0;
+				if ((int) ($st['studying_mode'] ?? 1) === 0) {
+					$map[$sid] = 1;
+				} else {
+					$map[$sid] = ($expected <= 0.009 || ($got + 0.5) >= $expected) ? 1 : 0;
+				}
 			}
 		} catch (\Throwable $e) {
 			$map = [];
