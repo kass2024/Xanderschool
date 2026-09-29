@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Deploy per-dormitory student list (Excel and PDF)."""
+from __future__ import annotations
+
+import os
+import sys
+import time
+from pathlib import Path
+
+import paramiko
+
+ROOT = Path(r"C:\xampp7\htdocs\Xander-school")
+HOST = "66.29.135.120"
+USER = "root"
+PASSWORD = os.environ.get("VPS_PASSWORD", "6W7sa2g4dMEwcN80ZU")
+REMOTE_APP = "/opt/xander-school/app"
+FILES = [
+    "app/Controllers/Home.php",
+    "app/Config/Routes.php",
+    "app/Models/HostelSchemaModel.php",
+    "app/Libraries/HostelDormitoryReport.php",
+    "app/Views/pages/hostel_allocate.php",
+    "app/Views/pages/reports/dormitory_roster_pdf.php",
+    "public/assets/css/hostels.css",
+]
+
+
+def _deploy_once() -> int:
+    c = paramiko.SSHClient()
+    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.connect(HOST, username=USER, password=PASSWORD, timeout=120, banner_timeout=120, auth_timeout=120)
+    sftp = c.open_sftp()
+    for rel in FILES:
+        local = ROOT / rel
+        remote = f"{REMOTE_APP}/{rel}"
+        remote_dir = os.path.dirname(remote).replace("\\", "/")
+        try:
+            sftp.stat(remote_dir)
+        except FileNotFoundError:
+            c.exec_command(f"mkdir -p {remote_dir}")
+            time.sleep(0.4)
+        print("PUT", rel, local.stat().st_size)
+        sftp.put(str(local), remote)
+    sftp.close()
+    cmd = r"""
+set -e
+cd /opt/xander-school/deploy
+docker compose -f docker-compose.prod.yml --env-file .env.production restart app
+sleep 6
+docker exec xander_school_app php -r 'opcache_reset();'
+docker exec xander_school_app php -l /var/www/html/app/Controllers/Home.php
+docker exec xander_school_app php -l /var/www/html/app/Libraries/HostelDormitoryReport.php
+docker exec xander_school_app php -l /var/www/html/app/Models/HostelSchemaModel.php
+docker exec xander_school_app grep -n "export_dormitory_roster" /var/www/html/app/Config/Routes.php
+docker exec xander_school_app grep -n "drmExcel" /var/www/html/app/Views/pages/hostel_allocate.php
+docker exec xander_school_app grep -n "function dormitoryRosters" /var/www/html/app/Models/HostelSchemaModel.php
+echo DONE
+"""
+    _, o, e = c.exec_command(cmd, timeout=240)
+    sys.stdout.buffer.write(o.read())
+    sys.stderr.buffer.write(e.read())
+    code = o.channel.recv_exit_status()
+    c.close()
+    print("EXIT", code)
+    return code
+
+
+def main() -> int:
+    last_err: Exception | None = None
+    for attempt in range(1, 6):
+        try:
+            print(f"attempt {attempt}")
+            return _deploy_once()
+        except Exception as ex:  # noqa: BLE001
+            last_err = ex
+            print("fail", type(ex).__name__, ex)
+            time.sleep(8)
+    print("ALL FAILED", last_err)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

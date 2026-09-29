@@ -8282,6 +8282,104 @@ public function attendanceCard()
 		exit;
 	}
 
+	public function export_dormitory_roster_excel()
+	{
+		$ctx = $this->dormitoryRosterExportContext();
+		if ($ctx === null) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		@ini_set('memory_limit', '512M');
+		@set_time_limit(180);
+		$spreadsheet = \App\Libraries\HostelDormitoryReport::buildExcel($ctx['school'], $ctx['dorms'], $ctx['year_title']);
+		$filename = \App\Libraries\HostelDormitoryReport::exportFilename($ctx['school']['name'] ?? 'School', $ctx['year_title'], 'xlsx');
+		$writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx');
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
+		header('Cache-Control: max-age=0');
+		$writer->save('php://output');
+		exit;
+	}
+
+	public function export_dormitory_roster_pdf()
+	{
+		$ctx = $this->dormitoryRosterExportContext();
+		if ($ctx === null) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		@ini_set('memory_limit', '512M');
+		@set_time_limit(180);
+		$school = $ctx['school'];
+		$logoName = basename(trim((string) ($school['logo'] ?? '')));
+		$logoSrc = '';
+		$resolved = function_exists('asset_resolve_path')
+			? asset_resolve_path(
+				$logoName !== '' ? 'assets/images/logo/' . $logoName : null,
+				'assets/images/fallback-logo.png'
+			)
+			: null;
+		if (!$resolved && $logoName !== '') {
+			$try = FCPATH . 'assets/images/logo/' . $logoName;
+			$resolved = is_file($try) ? $try : null;
+		}
+		if ($resolved) {
+			$logoSrc = \App\Libraries\MpdfReport::imageFileForPdf($resolved);
+		}
+		$html = view('pages/reports/dormitory_roster_pdf', [
+			'school' => $school,
+			'dorms' => $ctx['dorms'],
+			'year_title' => $ctx['year_title'],
+			'printed_at' => date('d M Y H:i'),
+			'logo_src' => $logoSrc,
+		]);
+		$schoolLabel = trim((string) ($school['name'] ?? 'School'));
+		$footerSchool = htmlspecialchars($schoolLabel !== '' ? $schoolLabel : 'School', ENT_QUOTES, 'UTF-8');
+		$footer = '<table width="100%" style="font-size:8pt;color:#64748b;border-top:1px solid #012F6B;">'
+			. '<tr><td>' . $footerSchool . '</td>'
+			. '<td style="text-align:center;">Dormitory lists</td>'
+			. '<td style="text-align:right;">Page {PAGENO} / {nbpg}</td></tr></table>';
+		try {
+			\App\Libraries\MpdfReport::stream($html, \App\Libraries\HostelDormitoryReport::exportFilename($schoolLabel, $ctx['year_title'], 'pdf'), [
+				'title' => $schoolLabel . ' — Dormitory lists',
+				'orientation' => 'L',
+				'margin' => 8,
+				'margin_top' => 28,
+				'footer' => $footer,
+			]);
+		} catch (\Throwable $e) {
+			echo $e->getMessage();
+		}
+	}
+
+	/**
+	 * @return array{school:array<string,mixed>,dorms:list<array<string,mixed>>,year_title:string}|null
+	 */
+	private function dormitoryRosterExportContext(): ?array
+	{
+		$this->_preset();
+		helper('qonics');
+		if (!menu_clearance_allowed('hostel_allocate')) {
+			return null;
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$yearId = $this->schoolOwnedAcademicYearId($schoolId, (int) ($this->request->getGet('year') ?? 0));
+		if ($yearId < 1) {
+			$yearId = (int) ($this->data['academic_year'] ?? $this->data['academic_year_id'] ?? 0);
+		}
+		$yearTitle = (string) ($this->data['academic_year_title'] ?? '');
+		if ($yearId > 0) {
+			$yearRow = (new AcademicYearModel())->select('title')->where('id', $yearId)->where('school_id', $schoolId)->first();
+			if ($yearRow) {
+				$yearTitle = (string) ($yearRow['title'] ?? $yearTitle);
+			}
+		}
+		$mdl = new \App\Models\HostelSchemaModel();
+		return [
+			'school' => $this->schoolMetaForStaffExport(),
+			'dorms' => $mdl->dormitoryRosters($schoolId, $yearId),
+			'year_title' => $yearTitle,
+		];
+	}
+
 	public function export_student_emails()
 	{
 		$this->_preset(1, 3, 4, 5, 6);

@@ -125,11 +125,8 @@ class HostelSchemaModel extends Model
 	 */
 	public function getSchoolSettings(int $schoolId): array
 	{
-		$this->ensureSchema();
-		$db = \Config\Database::connect();
-		$row = $db->table('hostel_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
 		return [
-			'separate_by_level' => (int) ($row['separate_by_level'] ?? 0) === 1,
+			'separate_by_level' => false,
 		];
 	}
 
@@ -251,50 +248,6 @@ class HostelSchemaModel extends Model
 		int $studentId,
 		int $yearId
 	): array {
-		$studentLevel = $this->getStudentLevel($schoolId, $studentId, $yearId);
-		if ($studentLevel === null) {
-			return ['ok' => true];
-		}
-
-		$hostel = $this->where('school_id', $schoolId)->find($hostelId);
-		$hostelGroup = $this->normalizeLevelGroup((string) ($hostel['level_group'] ?? ''));
-		$studentGroup = $this->normalizeLevelGroup((string) ($studentLevel['level_group'] ?? ''));
-		if ($hostelGroup !== '' && $studentGroup !== '' && $hostelGroup !== $studentGroup) {
-			return [
-				'ok' => false,
-				'error' => 'This hostel is reserved for ' . $this->levelGroupLabel($hostelGroup)
-					. ' students only. Cannot add a ' . $this->levelGroupLabel($studentGroup) . ' student.',
-			];
-		}
-
-		$settings = $this->getSchoolSettings($schoolId);
-		if (empty($settings['separate_by_level'])) {
-			return ['ok' => true];
-		}
-
-		$residentLevels = $this->getHostelResidentLevels($schoolId, $hostelId, $yearId);
-		if ($residentLevels === []) {
-			return ['ok' => true];
-		}
-
-		foreach ($residentLevels as $lvl) {
-			$residentGroup = $this->normalizeLevelGroup((string) ($lvl['level_group'] ?? ''));
-			if ($residentGroup !== '' && $studentGroup !== '' && $residentGroup !== $studentGroup) {
-				$names = array_values(array_unique(array_map(function ($r) {
-					$group = (string) ($r['level_group'] ?? '');
-					return $group !== '' ? $this->levelGroupLabel($group) : (string) ($r['level_title'] ?? '');
-				}, $residentLevels)));
-				$names = array_values(array_filter($names));
-				$hostelLevels = $names !== [] ? implode(', ', $names) : 'another level';
-				$studentTitle = $studentGroup !== '' ? $this->levelGroupLabel($studentGroup)
-					: ($studentLevel['level_title'] !== '' ? $studentLevel['level_title'] : 'this level');
-				return [
-					'ok' => false,
-					'error' => "Level mixing is blocked: this hostel already has {$hostelLevels} students. "
-						. "Cannot add a {$studentTitle} student. Change the setting in Settings → Hostels to allow mixing.",
-				];
-			}
-		}
 		return ['ok' => true];
 	}
 
@@ -356,6 +309,110 @@ class HostelSchemaModel extends Model
 		}
 		unset($h);
 		return $hostels;
+	}
+
+	/**
+	 * Assigned students grouped under each dormitory for the year.
+	 *
+	 * @return list<array{id:int,name:string,gender:string,gender_label:string,max_beds:int,occupied:int,students:list<array{name:string,regno:string,gender:string,class:string}>}>
+	 */
+	public function dormitoryRosters(int $schoolId, int $yearId): array
+	{
+		$hostels = $this->listHostels($schoolId, true);
+		if ($hostels === []) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		$rows = $db->table('hostel_allocations ha')
+			->select('ha.hostel_id, students.id, students.regno, students.fname, students.lname, students.sex,
+				c.title AS class_title, l.title AS level_name, d.title AS dept_title, d.code AS dept_code')
+			->join('students', 'students.id = ha.student_id')
+			->join('hostels h', 'h.id = ha.hostel_id')
+			->join(
+				'class_records cr',
+				'cr.student = students.id AND cr.year = ' . (int) $yearId . ' AND cr.status = 1',
+				'left'
+			)
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->where('ha.school_id', $schoolId)
+			->where('ha.academic_year', $yearId)
+			->where('h.school_id', $schoolId)
+			->where('h.active', 1)
+			->orderBy('l.title', 'ASC')
+			->orderBy('c.title', 'ASC')
+			->orderBy('students.fname', 'ASC')
+			->orderBy('students.lname', 'ASC')
+			->get()->getResultArray();
+
+		$byHostel = [];
+		$seen = [];
+		foreach ($rows as $row) {
+			$hid = (int) ($row['hostel_id'] ?? 0);
+			$sid = (int) ($row['id'] ?? 0);
+			if ($hid < 1 || $sid < 1) {
+				continue;
+			}
+			$key = $hid . ':' . $sid;
+			$holiday = stripos((string) ($row['class_title'] ?? ''), 'holiday') !== false
+				|| stripos((string) ($row['level_name'] ?? ''), 'holiday') !== false
+				|| stripos((string) ($row['dept_title'] ?? ''), 'holiday') !== false
+				|| stripos((string) ($row['dept_code'] ?? ''), 'holiday') !== false;
+			if (isset($seen[$key])) {
+				if ($seen[$key] !== 'holiday' || $holiday) {
+					continue;
+				}
+				foreach ($byHostel[$hid] as $i => $kept) {
+					if ((int) ($kept['id'] ?? 0) === $sid) {
+						$byHostel[$hid][$i] = $row;
+						break;
+					}
+				}
+				$seen[$key] = 'class';
+				continue;
+			}
+			$seen[$key] = $holiday ? 'holiday' : 'class';
+			$byHostel[$hid][] = $row;
+		}
+
+		$out = [];
+		foreach ($hostels as $hostel) {
+			$id = (int) ($hostel['id'] ?? 0);
+			$gender = $this->normalizeGender((string) ($hostel['gender'] ?? 'M'));
+			$students = [];
+			foreach ($byHostel[$id] ?? [] as $row) {
+				$name = trim((string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? ''));
+				$sex = $this->normalizeStudentSex($row['sex'] ?? '');
+				$class = \App\Models\SchoolFeesModel::displayLabel($row);
+				$students[] = [
+					'name' => $name !== '' ? $name : 'Student',
+					'regno' => trim((string) ($row['regno'] ?? '')),
+					'gender' => $sex === 'F' ? 'Female' : ($sex === 'M' ? 'Male' : ''),
+					'class' => $class !== '' ? $class : '—',
+				];
+			}
+			usort($students, static function (array $a, array $b): int {
+				$byClass = strcasecmp((string) $a['class'], (string) $b['class']);
+				if ($byClass !== 0) {
+					return $byClass;
+				}
+				return strcasecmp((string) $a['name'], (string) $b['name']);
+			});
+			$maxBeds = (int) ($hostel['max_beds'] ?? 0);
+			$occupied = count($students);
+			$out[] = [
+				'id' => $id,
+				'name' => trim((string) ($hostel['name'] ?? '')) !== '' ? trim((string) $hostel['name']) : 'Dormitory',
+				'gender' => $gender,
+				'gender_label' => $gender === 'F' ? 'Female' : 'Male',
+				'max_beds' => $maxBeds,
+				'occupied' => $occupied,
+				'free_beds' => max(0, $maxBeds - $occupied),
+				'students' => $students,
+			];
+		}
+		return $out;
 	}
 
 	public function normalizeGender(string $gender): string
@@ -446,7 +503,7 @@ class HostelSchemaModel extends Model
 
 		$hostel = $this->where('school_id', $schoolId)->where('active', 1)->find($hostelId);
 		if (!$hostel) {
-			return ['ok' => false, 'error' => 'Hostel not found.'];
+			return ['ok' => false, 'error' => 'Dormitory not found.'];
 		}
 
 		$student = $db->table('students')
@@ -454,19 +511,22 @@ class HostelSchemaModel extends Model
 			->where('id', $studentId)
 			->where('school_id', $schoolId)
 			->get(1)->getRowArray();
-		if (!$student || (int) ($student['status'] ?? 0) !== 1) {
+		if (!$student) {
 			return ['ok' => false, 'error' => 'Student not found.'];
 		}
-		if (!$this->isBoardingStudent($student)) {
-			return ['ok' => false, 'error' => 'Day students cannot be allocated to a hostel.'];
+		$status = (int) ($student['status'] ?? 0);
+		if ($status !== 1 && $status !== 2) {
+			return ['ok' => false, 'error' => 'Dismissed students cannot be assigned to a dormitory.'];
 		}
-
+		if (!$this->isBoardingStudent($student)) {
+			return ['ok' => false, 'error' => 'Day students cannot be assigned to a dormitory.'];
+		}
 		$sex = $this->normalizeStudentSex($student['sex'] ?? '');
 		$hostelGender = $this->normalizeGender((string) $hostel['gender']);
 		if ($sex !== '' && $sex !== $hostelGender) {
 			return [
 				'ok' => false,
-				'error' => 'Student gender does not match this hostel (' . ($hostelGender === 'F' ? 'Female' : 'Male') . ').',
+				'error' => 'Student gender does not match this dormitory (' . ($hostelGender === 'F' ? 'Female' : 'Male') . ').',
 			];
 		}
 
@@ -482,7 +542,7 @@ class HostelSchemaModel extends Model
 		// If reassigning from another hostel, bed frees on that hostel; still check target capacity
 		$willOccupyNew = !$existing || (int) $existing['hostel_id'] !== $hostelId;
 		if ($willOccupyNew && $occupied >= (int) $hostel['max_beds']) {
-			return ['ok' => false, 'error' => 'Hostel is full (max ' . (int) $hostel['max_beds'] . ' beds).'];
+			return ['ok' => false, 'error' => 'Dormitory is full (max ' . (int) $hostel['max_beds'] . ' beds).'];
 		}
 
 		$levelCheck = $this->assertLevelCompatible($schoolId, $hostelId, $studentId, $yearId);
@@ -532,7 +592,8 @@ class HostelSchemaModel extends Model
 		int $yearId,
 		?int $classId = null,
 		?int $departmentId = null,
-		bool $unallocatedOnly = false
+		bool $unallocatedOnly = false,
+		bool $allStudents = false
 	): array {
 		$this->ensureSchema();
 		$db = \Config\Database::connect();
@@ -550,8 +611,14 @@ class HostelSchemaModel extends Model
 			->where('cr.year', $yearId)
 			->where('cr.status', 1)
 			->where('students.school_id', $schoolId)
-			->where('students.status', 1)
-			->where('students.studying_mode', self::MODE_BOARDING);
+			->whereIn('students.status', [1, 2])
+			->where("IFNULL(c.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(l.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(d.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(d.code,'') NOT LIKE '%Holiday%'", null, false);
+		if (!$allStudents) {
+			$b->where('students.studying_mode', self::MODE_BOARDING);
+		}
 
 		if ($classId !== null && $classId > 0) {
 			$b->where('cr.class', $classId);
@@ -585,22 +652,7 @@ class HostelSchemaModel extends Model
 	 */
 	private function hostelCanTakeStudent(array $hostel, string $studentGroup, bool $separateLevels): bool
 	{
-		if ((int) ($hostel['free'] ?? 0) <= 0) {
-			return false;
-		}
-		if ($studentGroup !== '' && (string) ($hostel['level_group'] ?? '') !== ''
-			&& (string) $hostel['level_group'] !== $studentGroup) {
-			return false;
-		}
-		if (!$separateLevels || $studentGroup === '') {
-			return true;
-		}
-		foreach (($hostel['resident_groups'] ?? []) as $existingGroup) {
-			if ((string) $existingGroup !== $studentGroup) {
-				return false;
-			}
-		}
-		return true;
+		return (int) ($hostel['free'] ?? 0) > 0;
 	}
 
 	/**
