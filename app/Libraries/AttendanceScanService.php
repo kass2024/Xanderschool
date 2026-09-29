@@ -1474,13 +1474,16 @@ class AttendanceScanService
 	}
 
 	/**
-	 * Cafeteria only. Current-term Feeding payments must be 60,000 or more.
-	 * Boarding, school fees, and other fees do not grant entry.
+	 * Cafeteria only. Boarding students are always allowed.
+	 * Day scholars need current-term Feeding of 60,000 or more.
 	 *
 	 * @param object $student
 	 */
 	private static function cafeteriaMayEat($student): bool
 	{
+		if ((int) ($student->studying_mode ?? 1) === 0) {
+			return true;
+		}
 		$schoolId = (int) ($student->school_id ?? 0);
 		$sid = (int) ($student->id ?? 0);
 		if ($schoolId < 1 || $sid < 1) {
