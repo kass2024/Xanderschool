@@ -213,8 +213,57 @@ class SchoolFeesModel extends Model
 	}
 
 	/**
-	 * Mode-correct expected amount, keeping real scholarships but dropping a boarding figure billed to a day scholar.
+	 * One school-fee row per term for this class. Sibling classes in the same level are ignored.
+	 *
+	 * @param list<array<string,mixed>> $rows
+	 * @return list<array<string,mixed>>
 	 */
+	private static function feeRowScore(array $row): int
+	{
+		$score = 0;
+		foreach (['amount_boarding', 'amount_day', 'amount'] as $key) {
+			if (isset($row[$key]) && $row[$key] !== '' && $row[$key] !== null && (float) $row[$key] > 0) {
+				$score++;
+			}
+		}
+		return $score;
+	}
+
+	public static function dedupeForClass(array $rows, int $classId): array
+	{
+		$byTerm = [];
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$rowClass = (int) ($row['class_id'] ?? 0);
+			if ($classId > 0 && $rowClass > 0 && $rowClass !== $classId) {
+				continue;
+			}
+			$term = (int) ($row['term'] ?? 0);
+			if (!isset($byTerm[$term])) {
+				$byTerm[$term] = $row;
+				continue;
+			}
+			$keptClass = (int) ($byTerm[$term]['class_id'] ?? 0);
+			$rowMatches = $classId > 0 && $rowClass === $classId;
+			$keptMatches = $classId > 0 && $keptClass === $classId;
+			if ($rowMatches && !$keptMatches) {
+				$byTerm[$term] = $row;
+				continue;
+			}
+			if ($rowMatches !== $keptMatches) {
+				continue;
+			}
+			$rowScore = self::feeRowScore($row);
+			$keptScore = self::feeRowScore($byTerm[$term]);
+			if ($rowScore > $keptScore || ($rowScore === $keptScore && (int) ($row['id'] ?? 0) > (int) ($byTerm[$term]['id'] ?? 0))) {
+				$byTerm[$term] = $row;
+			}
+		}
+		return array_values($byTerm);
+	}
+
 	public static function expectedForStudent(array $row, int $studyingMode, float $discount = 0): float
 	{
 		$modeAmt = self::expectedForMode($row, $studyingMode);
@@ -233,7 +282,176 @@ class SchoolFeesModel extends Model
 		if (abs($legacyExpected - $modeAmt) < 0.01 || abs($discount) < 0.01) {
 			return $modeAmt;
 		}
+		// A reduction that cancels the shared amount (often the higher mode) must not
+		// wipe the other mode. A waiver of this student's own mode amount still stays at 0.
+		if ($modeAmt > 0 && $legacyExpected <= 0.01 && abs($modeAmt + $discount) > 0.01) {
+			return $modeAmt;
+		}
 		return max(0, $legacyExpected);
+	}
+
+	/**
+	 * Auto rows that copy boarding/day onto a student. Real scholarships keep their own comment.
+	 */
+	public static function scholarshipCommentSql(string $column = 'comment'): string
+	{
+		return "({$column} IS NULL OR ({$column} NOT LIKE 'Set from Create Fee%' AND {$column} NOT LIKE 'Set from pending registration%'))";
+	}
+
+	/** Derived table: one scholarship total per fee for this student. Does not include mode-copy rows. */
+	public static function scholarshipDiscountSubquery(int $studentId): string
+	{
+		$studentId = (int) $studentId;
+		$comment = self::scholarshipCommentSql('d.comment');
+		return "(SELECT SUM(d.amount) AS amount, d.feesId FROM school_fees_discount d WHERE d.student = {$studentId} AND {$comment} GROUP BY d.feesId)";
+	}
+
+	/**
+	 * SQL twin of expectedForStudent(). $discountExpr is a numeric SQL expression (for example fd.amount).
+	 */
+	public static function sqlExpectedForStudent(string $alias, string $discountExpr, string $modeCol = 'students.studying_mode'): string
+	{
+		$mode = "CASE WHEN {$modeCol} = 0 THEN COALESCE({$alias}.amount_boarding,0) ELSE COALESCE({$alias}.amount_day,0) END";
+		$other = "CASE WHEN {$modeCol} = 0 THEN COALESCE({$alias}.amount_day,0) ELSE COALESCE({$alias}.amount_boarding,0) END";
+		$legacy = "(COALESCE({$alias}.amount,0) + COALESCE({$discountExpr},0))";
+		$hasSplit = "({$alias}.amount_boarding IS NOT NULL OR {$alias}.amount_day IS NOT NULL)";
+		return "(CASE
+			WHEN NOT {$hasSplit} THEN GREATEST(0, CASE WHEN {$legacy} > 0 THEN {$legacy} ELSE COALESCE({$alias}.amount,0) END)
+			WHEN ABS({$legacy} - ({$mode})) < 0.01 OR ABS(COALESCE({$discountExpr},0)) < 0.01 THEN ({$mode})
+			WHEN ({$other}) > 0 AND ABS({$legacy} - ({$other})) < 0.01 AND ABS({$legacy} - ({$mode})) >= 0.01 THEN ({$mode})
+			WHEN ({$mode}) > 0 AND {$legacy} <= 0.01 AND ABS(({$mode}) + COALESCE({$discountExpr},0)) > 0.01 THEN ({$mode})
+			ELSE GREATEST(0, {$legacy})
+		END)";
+	}
+
+	/**
+	 * Match this class's own fee. A level-wide fee is used only when that class has no row for the term.
+	 */
+	public static function sqlClassFeeOn(string $alias, string $classCol, string $levelCol, string $deptCol): string
+	{
+		return "(
+			{$alias}.class_id = {$classCol}
+			OR (
+				({$alias}.class_id IS NULL OR {$alias}.class_id = 0)
+				AND {$alias}.level = {$levelCol}
+				AND {$alias}.department = {$deptCol}
+				AND NOT EXISTS (
+					SELECT 1 FROM school_fees sfx
+					WHERE sfx.school_id = {$alias}.school_id
+					  AND sfx.academic_year = {$alias}.academic_year
+					  AND sfx.term = {$alias}.term
+					  AND sfx.class_id = {$classCol}
+				)
+			)
+		)";
+	}
+
+	/**
+	 * One school-fee row per term for a class. Class rows win over a shared level/department row.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	public function linesForClass(int $schoolId, int $academicYear, int $classId, int $levelId, int $deptId, int $term = 0): array
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $academicYear < 1) {
+			return [];
+		}
+
+		$builder = $this->select('school_fees.id, school_fees.class_id, school_fees.level, school_fees.department, school_fees.term, school_fees.amount, school_fees.amount_boarding, school_fees.amount_day, school_fees.academic_year')
+			->where('school_fees.school_id', $schoolId)
+			->where('school_fees.academic_year', $academicYear);
+		if ($term >= 1 && $term <= 3) {
+			$builder->where('school_fees.term', $term);
+		}
+		if ($classId > 0) {
+			$builder->groupStart()
+				->where('school_fees.class_id', $classId)
+				->orGroupStart()
+					->where('school_fees.level', $levelId)
+					->where('school_fees.department', $deptId)
+					->groupStart()
+						->where('school_fees.class_id IS NULL', null, false)
+						->orWhere('school_fees.class_id', 0)
+					->groupEnd()
+				->groupEnd()
+			->groupEnd();
+		} else {
+			$builder->where('school_fees.level', $levelId)
+				->where('school_fees.department', $deptId)
+				->groupStart()
+					->where('school_fees.class_id IS NULL', null, false)
+					->orWhere('school_fees.class_id', 0)
+				->groupEnd();
+		}
+
+		$rows = $builder->orderBy('school_fees.term', 'ASC')->orderBy('school_fees.id', 'DESC')->get()->getResultArray();
+		$rows = self::dedupeForClass($rows, $classId);
+		usort($rows, static function ($a, $b) {
+			return ((int) ($a['term'] ?? 0)) <=> ((int) ($b['term'] ?? 0));
+		});
+		return $rows;
+	}
+
+	/**
+	 * Attach paid amounts and real scholarships. Payment rows are only read.
+	 *
+	 * @param list<array<string,mixed>> $rows
+	 * @return list<array<string,mixed>>
+	 */
+	public function attachStudentBalances(array $rows, int $studentId): array
+	{
+		if ($rows === [] || $studentId < 1) {
+			return $rows;
+		}
+		$ids = [];
+		foreach ($rows as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id > 0) {
+				$ids[] = $id;
+			}
+		}
+		$ids = array_values(array_unique($ids));
+		if ($ids === []) {
+			return $rows;
+		}
+
+		$db = \Config\Database::connect();
+		$paidMap = [];
+		$dueMap = [];
+		$paidRows = $db->table('fees_records')
+			->select('fees_id, SUM(amount) AS paid, MAX(due_date) AS due_date', false)
+			->where('student_id', $studentId)
+			->where('fees_type', 0)
+			->where('status', 1)
+			->whereIn('fees_id', $ids)
+			->groupBy('fees_id')
+			->get()->getResultArray();
+		foreach ($paidRows as $paidRow) {
+			$fid = (int) ($paidRow['fees_id'] ?? 0);
+			$paidMap[$fid] = (float) ($paidRow['paid'] ?? 0);
+			$dueMap[$fid] = $paidRow['due_date'] ?? null;
+		}
+
+		$discMap = [];
+		$idList = implode(',', $ids);
+		$comment = self::scholarshipCommentSql('comment');
+		$discRows = $db->query(
+			"SELECT feesId, SUM(amount) AS amount FROM school_fees_discount WHERE student = ? AND feesId IN ({$idList}) AND {$comment} GROUP BY feesId",
+			[$studentId]
+		)->getResultArray();
+		foreach ($discRows as $discRow) {
+			$discMap[(int) ($discRow['feesId'] ?? 0)] = (float) ($discRow['amount'] ?? 0);
+		}
+
+		foreach ($rows as &$row) {
+			$fid = (int) ($row['id'] ?? 0);
+			$row['paid'] = $paidMap[$fid] ?? 0.0;
+			$row['discount'] = $discMap[$fid] ?? 0.0;
+			$row['due_date'] = $dueMap[$fid] ?? ($row['due_date'] ?? null);
+		}
+		unset($row);
+		return $rows;
 	}
 
 	/** SQL: sum boarding/day without falling back to the other mode's amount. */

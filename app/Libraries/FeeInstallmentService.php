@@ -29,7 +29,7 @@ class FeeInstallmentService
 
 		if ($feesType === 0) {
 			$row = (new SchoolFeesModel())->select('school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount')
-				->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$studentId group by feesId) fd", 'fd.feesId=school_fees.id', 'LEFT')
+				->join(SchoolFeesModel::scholarshipDiscountSubquery($studentId) . ' fd', 'fd.feesId=school_fees.id', 'LEFT')
 				->where('school_fees.id', $feesId)
 				->get()->getRowArray();
 			$expected = $row ? SchoolFeesModel::expectedForStudent($row, $studyingMode, (float) ($row['discount'] ?? 0)) : 0.0;

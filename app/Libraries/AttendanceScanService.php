@@ -1612,6 +1612,7 @@ class AttendanceScanService
 				$discountRows = $db->table('school_fees_discount')
 					->select('feesId, student, SUM(amount) AS amount', false)
 					->whereIn('feesId', $schoolFeeIds)
+					->where(\App\Models\SchoolFeesModel::scholarshipCommentSql('comment'), null, false)
 					->groupBy('feesId')
 					->groupBy('student')
 					->get()

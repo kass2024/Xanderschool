@@ -1105,13 +1105,16 @@ public function testEmail()
 				->where("leaves.created_at >=", date('Y-1-1'))
 				->get()->getResultArray();
 //		print_r($approveds); die();
-		$schoolfeesQ = $studentMdl->select("students.id,students.lname,(sf.amount+coalesce(fd.amount,0)) as expected,sum(fr.amount) as paid,fr.due_date")
+		$schoolFeeExpected = 'MAX(' . SchoolFeesModel::sqlExpectedForStudent('sf', 'fd.amount') . ')';
+		$schoolFeeOn = SchoolFeesModel::sqlClassFeeOn('sf', 'cl.id', 'l.id', 'd.id');
+		$schoolFeeDiscount = "(select sum(amount) as amount,feesId,student from school_fees_discount where " . SchoolFeesModel::scholarshipCommentSql('comment') . " group by student,feesId)";
+		$schoolfeesQ = $studentMdl->select("students.id,students.lname,MAX({$schoolFeeExpected}) as expected,sum(fr.amount) as paid,fr.due_date")
 				->join("class_records cr", "cr.student=students.id", "LEFT")
 				->join("classes cl", "cl.id=cr.class", "LEFT")
 				->join("levels l", "l.id=cl.level", "LEFT")
 				->join("departments d", "d.id=cl.department", "LEFT")
-				->join("school_fees sf", "sf.level=l.id and sf.department=d.id ")
-				->join("(select sum(amount) as amount,feesId,student from school_fees_discount group by student,feesId) fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
+				->join("school_fees sf", "sf.school_id={$school_id} AND {$schoolFeeOn}", "LEFT")
+				->join("{$schoolFeeDiscount} fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
 				->join("fees_records fr", "fr.fees_id=sf.id and fr.student_id=students.id and fr.fees_type=0 and fr.status=1", "LEFT ")
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
@@ -1129,7 +1132,7 @@ public function testEmail()
 				->where("ex.school_id", $school_id);
 		$this->applyRegularClassFilter($extrafeesQ);
 		$data['extrafees'] = $extrafeesQ->groupBy("students.id")->get()->getResultArray();
-		$data['scl_due_dates'] = $studentMdl->select("students.id,(sf.amount+coalesce(fd.amount,0)) as expected,sum(fr.amount) as paid
+		$data['scl_due_dates'] = $studentMdl->select("students.id,{$schoolFeeExpected} as expected,sum(fr.amount) as paid
 															,fr.due_date
 															,fr.fees_type
 														 	,concat(students.fname,' ',students.lname) as student,
@@ -1143,8 +1146,8 @@ public function testEmail()
 				->join("levels l", "l.id=cl.level", "LEFT")
 				->join("departments d", "d.id=cl.department", "LEFT")
 				->join("faculty f", "f.id=d.faculty_id", "LEFT")
-				->join("school_fees sf", "sf.level=l.id and sf.department=d.id ")
-				->join("(select sum(amount) as amount,feesId,student from school_fees_discount group by student,feesId) fd", "fd.feesId=sf.id AND fd.student = students.id", "LEFT")
+				->join("school_fees sf", "sf.school_id={$school_id} AND {$schoolFeeOn}", "LEFT")
+				->join("{$schoolFeeDiscount} fd", "fd.feesId=sf.id AND fd.student = students.id", "LEFT")
 				->join("fees_records fr", "fr.fees_id=sf.id and fr.student_id=students.id and fr.fees_type=0 and fr.status=1", "LEFT ")
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
@@ -16975,6 +16978,9 @@ public function getApplicationDocs($id = null)
 							continue;
 						}
 						$studentAmt = (float) $ps['amount'];
+						if ($studentAmt <= 0 && $modeAmt > 0) {
+							$studentAmt = (float) $modeAmt;
+						}
 						if ($otherAmt !== null && abs($studentAmt - $otherAmt) < 0.01 && abs($studentAmt - $modeAmt) > 0.01) {
 							$studentAmt = $modeAmt;
 						}
@@ -17749,15 +17755,23 @@ public function getApplicationDocs($id = null)
 		$comment = $this->request->getPost("comment");
 		$feesModel = new SchoolFeesModel();
 		$feesDiscountModel = new SchoolFeesDiscountModel();
-		$feeData = $feesModel->select('(school_fees.amount+coalesce(fd.amount,0)) as amount')->where('school_fees.id', $feeId)
-				->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by student,feesId) fd", "fd.feesId=school_fees.id", "LEFT")->first();
+		$student = (int) $student;
+		$feeData = $feesModel->select('school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount')
+				->join(SchoolFeesModel::scholarshipDiscountSubquery($student) . ' fd', 'fd.feesId=school_fees.id', 'LEFT')
+				->where('school_fees.id', $feeId)->first();
 		if ($feeData == null) {
 			return $this->response->setJSON(array("error" => "Error: invalid school fees"));
 		}
-		if ($feeData['amount'] != $oldAmount) {
+		$stModeRow = (new StudentModel())->select('studying_mode')->find($student);
+		$studyingMode = (int) ($stModeRow['studying_mode'] ?? 1);
+		$currentExpected = SchoolFeesModel::expectedForStudent($feeData, $studyingMode, (float) ($feeData['discount'] ?? 0));
+		if (abs($currentExpected - (float) $oldAmount) > 0.5) {
 			return $this->response->setJSON(array("error" => "Error: Invalid data (altered)"));
 		}
-		$amount = $newAmount - $oldAmount;
+		if (abs((float) $newAmount - $currentExpected) < 0.5) {
+			return $this->response->setJSON(array("success" => lang("app.feeSaved")));
+		}
+		$amount = (float) $newAmount - (float) ($feeData['amount'] ?? 0) - (float) ($feeData['discount'] ?? 0);
 		$type = $amount > 0 ? 1 : 0;
 		$data = array(
 				"student" => $student,
@@ -19091,26 +19105,26 @@ public function getApplicationDocs($id = null)
 				->where("classes.school_id", $school_id)
 				->where("classes.id", $class)
 				->get()->getRowArray();
-		$schoolfrees = $schoolFees->select("school_fees.id,school_fees.term,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,sum(fr.amount) as paidschoolfees, fr.due_date")
-				->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=0 and fr.status=1", "LEFT")
-				->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
-				->where("school_fees.level", $level['level_id'])
-				->where("school_fees.department", $level['dept_id'])
-				->where("school_fees.academic_year", $year)
-				->where("school_fees.school_id", $school_id)
-				->groupBy("school_fees.academic_year")
-				->groupBy("school_fees.term")
-				->get()->getResultArray();
+		$schoolFees->ensureSchema();
+		$schoolfrees = $schoolFees->linesForClass(
+			(int) $school_id,
+			(int) $year,
+			(int) $class,
+			(int) ($level['level_id'] ?? 0),
+			(int) ($level['dept_id'] ?? 0)
+		);
+		$schoolfrees = $schoolFees->attachStudentBalances($schoolfrees, (int) $student);
 		$i = 1;
 		foreach ($schoolfrees as $schoolfree) {
 			$expected = SchoolFeesModel::expectedForStudent($schoolfree, $studyingMode, (float) ($schoolfree['discount'] ?? 0));
-			$piadschlfees = $expected - (float) $schoolfree['paidschoolfees'];
+			$piadschlfees = $expected - (float) ($schoolfree['paid'] ?? 0);
+			$paidShown = $schoolfree['paid'] ?? '';
 			echo "<tr>	<td><input id='fixedSchoolFees' type='hidden' value" . $schoolfree['id'] . ">" . $i . "</td>
 						<td>" . lang("app.schoolFees") . "</td>
 						<td>" . $this->TermToStr($schoolfree['term']) . "</td>
 						<td>" . $expected . "<a data-id='{$schoolfree['id']}' data-amount='{$expected}'
 						class='fa fa-pencil-alt btn-append-fees' style='cursor:pointer;'></a> </td>
-						<td>" . $schoolfree['paidschoolfees'] . "</td>
+						<td>" . $paidShown . "</td>
 						<td>" . $piadschlfees . "</td>
 						<td>" . $schoolfree['due_date'] . "</td>
 						</tr>";
@@ -19178,17 +19192,16 @@ public function getApplicationDocs($id = null)
 
 		$items = [];
 
-		$schoolRows = $schoolFees->select('school_fees.id,school_fees.term,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,sum(fr.amount) as paid')
-			->join('fees_records fr', "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=0 and fr.status=1", 'LEFT')
-			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", 'fd.feesId=school_fees.id', 'LEFT')
-			->where('school_fees.level', $level['level_id'])
-			->where('school_fees.department', $level['dept_id'])
-			->where('school_fees.academic_year', $year)
-			->where('school_fees.school_id', $school_id)
-			->where('school_fees.term', $termFilter)
-			->groupBy('school_fees.id,school_fees.term,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,fd.amount')
-			->orderBy('school_fees.term', 'ASC')
-			->get()->getResultArray();
+		$schoolFees->ensureSchema();
+		$schoolRows = $schoolFees->linesForClass(
+			$school_id,
+			$year,
+			$class,
+			(int) ($level['level_id'] ?? 0),
+			(int) ($level['dept_id'] ?? 0),
+			$termFilter
+		);
+		$schoolRows = $schoolFees->attachStudentBalances($schoolRows, $student);
 
 		foreach ($schoolRows as $row) {
 			$expected = SchoolFeesModel::expectedForStudent($row, $studyingMode, (float) ($row['discount'] ?? 0));
@@ -19280,14 +19293,14 @@ public function getApplicationDocs($id = null)
 				->where("classes.school_id", $school_id)
 				->where("classes.id", $class)
 				->get()->getRowArray();
-		$schoolfrees = $schoolFees->select("school_fees.id,school_fees.term,(school_fees.amount+coalesce(fd.amount,0)) as amount ,fr.amount as paidschoolfees, fr.due_date")
-				->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
-				->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=2", "LEFT")
-				->where("school_fees.level", $level['level_id'])
-				->where("school_fees.department", $level['dept_id'])
-				->where("school_fees.academic_year", $year)
-				->where("school_fees.school_id", $school_id)
-				->get()->getResultArray();
+		$schoolFees->ensureSchema();
+		$schoolfrees = $schoolFees->linesForClass(
+			(int) $school_id,
+			(int) $year,
+			(int) $class,
+			(int) ($level['level_id'] ?? 0),
+			(int) ($level['dept_id'] ?? 0)
+		);
 
 		echo "<option selected disabled>" . lang("app.SelectSchoolterm") . "</option>";
 		$i = 1;
@@ -19328,7 +19341,7 @@ public function getApplicationDocs($id = null)
 		$school_id = $this->session->get("soma_school_id");
 		$schoolfees = $schoolfeesModel->select("school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,sum(fr.amount) as paid_amt")
 				->join("fees_records fr", "fr.fees_id=school_fees.id AND fr.student_id=$student and fr.fees_type=0 and fr.status=1", "LEFT")
-				->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
+				->join(SchoolFeesModel::scholarshipDiscountSubquery((int) $student) . " fd", "fd.feesId=school_fees.id", "LEFT")
 				->where("school_fees.school_id", $school_id)
 				->where("school_fees.id", $feeId)
 				->get()->getRowArray();
@@ -22883,8 +22896,11 @@ public function assign_card()
 		}
 		$data['type'] = $type;
 		$data['page'] = 'school_fees_payments';
+		$payFeeExpected = 'MAX(' . SchoolFeesModel::sqlExpectedForStudent('sf', 'fd.amount') . ')';
+		$payFeeOn = SchoolFeesModel::sqlClassFeeOn('sf', 'cl.id', 'l.id', 'd.id');
+		$payFeeDiscount = "(select sum(amount) as amount,feesId,student from school_fees_discount where " . SchoolFeesModel::scholarshipCommentSql('comment') . " group by student,feesId)";
 		$data['schoolfees'] = $studentMdl->select("students.id,concat(students.fname,' ',students.lname) as student,
-															(sf.amount+coalesce(fd.amount,0)) as expected,sum(fr.amount) as paid,
+															{$payFeeExpected} as expected,sum(fr.amount) as paid,
 															,fr.due_date
 															,d.title as department_name,
 															,cl.title
@@ -22895,9 +22911,9 @@ public function assign_card()
 				->join("levels l", "l.id=cl.level", "LEFT")
 				->join("departments d", "d.id=cl.department", "LEFT")
 				->join("faculty f", "f.id=d.faculty_id")
-				->join("school_fees sf", "sf.level=l.id and sf.department=d.id ")
+				->join("school_fees sf", "sf.school_id={$school_id} AND {$payFeeOn}", "LEFT")
 				->join("fees_records fr", "fr.fees_id=sf.id and fr.student_id=students.id and fr.fees_type=0 and fr.status=1", "LEFT ")
-				->join("(select sum(amount) as amount,feesId,student from school_fees_discount group by student,feesId) fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
+				->join("{$payFeeDiscount} fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
 				->where("sf.school_id", $school_id)
@@ -23449,6 +23465,9 @@ public function assign_card()
 				->where("classes.id", $classe)
 				->get()->getRowArray();
 		$studentMdl = new StudentModel();
+		$pdfSchoolExpected = 'MAX(' . SchoolFeesModel::sqlExpectedForStudent('sf', 'fd.amount') . ')';
+		$pdfFeeOn = SchoolFeesModel::sqlClassFeeOn('sf', 'cl.id', 'cl.level', 'cl.department');
+		$pdfDiscount = "(select sum(amount) as amount,feesId,student from school_fees_discount where " . SchoolFeesModel::scholarshipCommentSql('comment') . " group by student,feesId)";
 		$students = $studentMdl->select("concat(students.fname,' ',students.lname) as student,
 		students.studying_mode,
 		students.regno,
@@ -23458,15 +23477,15 @@ public function assign_card()
 		d.code as dept_code,
 		l.title as level_name,
 		,f.type,f.abbrev as faculty_code,
-		 (COALESCE(sum(sf.amount),0) + COALESCE(sum(ex.amount),0) + COALESCE(sum(student.amount),0) + coalesce(fd.amount,0)) as amount,
+		 ({$pdfSchoolExpected} + COALESCE(sum(ex.amount),0) + COALESCE(sum(student.amount),0)) as amount,
 		COALESCE(sum(fr.amount),0) + COALESCE(sum(extraPaid.amount),0) as paid")
 				->join("class_records cr", "cr.student=students.id")
 				->join("classes cl", "cl.id=cr.class")
 				->join("departments d", "d.id=cl.department")
 				->join("levels l", "l.id=cl.level")
 				->join("faculty f", "f.id=d.faculty_id")
-				->join("school_fees sf", "sf.level=cl.level and sf.department=cl.department and sf.term=$term and sf.academic_year=$academic", "LEFT")
-				->join("(select sum(amount) as amount,feesId,student from school_fees_discount group by student,feesId) fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
+				->join("school_fees sf", "sf.school_id=$school_id AND sf.term=$term AND sf.academic_year=$academic AND {$pdfFeeOn}", "LEFT")
+				->join("{$pdfDiscount} fd", "fd.feesId=sf.id AND fd.student=students.id", "LEFT")
 				->join("extra_fees ex", "ex.type_id=cl.id and ex.type=0 and ex.academic_year=$academic and ex.term=$term", "LEFT")
 				->join("(select ex.id,ex.type_id,COALESCE(sum(ex.amount),0) as amount from extra_fees ex where ex.type=1 and ex.term=$term and ex.academic_year=$academic
 					AND NOT EXISTS (
