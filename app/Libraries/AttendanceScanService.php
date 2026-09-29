@@ -302,6 +302,8 @@ class AttendanceScanService
 		}
 
 		$feeding = self::feedingPaidMap($schoolId);
+		$feedingAmounts = self::feedingAmountMap($schoolId);
+		$hostels = self::hostelNameMap($schoolId);
 		$out = [];
 		foreach ($rows as $r) {
 			$sid = (int) $r['id'];
@@ -317,6 +319,8 @@ class AttendanceScanService
 				'photo' => self::kioskPhotoUrl($r['photo'] ?? null),
 				'studying_mode' => $mode,
 				'feeding_paid' => $mode === 0 ? 1 : (int) ($feeding[$sid] ?? 0),
+				'feeding_amount' => (int) ($feedingAmounts[$sid] ?? 0),
+				'hostel' => (string) ($hostels[$sid] ?? ''),
 			];
 		}
 		return $out;
@@ -347,6 +351,8 @@ class AttendanceScanService
 			->get()
 			->getResultArray();
 		$feeding = self::feedingPaidMap($schoolId);
+		$feedingAmounts = self::feedingAmountMap($schoolId);
+		$hostels = self::hostelNameMap($schoolId);
 		$students = [];
 		foreach ($studentRows as $r) {
 			$card = strtoupper(trim((string) ($r['card'] ?? '')));
@@ -364,6 +370,8 @@ class AttendanceScanService
 				'card_nfc' => $nfc,
 				'studying_mode' => $mode,
 				'feeding_paid' => $mode === 0 ? 1 : (int) ($feeding[$sid] ?? 0),
+				'feeding_amount' => (int) ($feedingAmounts[$sid] ?? 0),
+				'hostel' => (string) ($hostels[$sid] ?? ''),
 			];
 		}
 
@@ -647,24 +655,20 @@ class AttendanceScanService
 			];
 		}
 
-		if (self::isCafeteriaArea($areaName) && (int) ($student->studying_mode ?? 1) !== 0) {
-			$feedMap = self::feedingPaidMap((int) ($student->school_id ?? $schoolId));
-			$feedingPaid = (int) ($feedMap[(int) $student->id] ?? 0);
-			if ($feedingPaid !== 1) {
-				$person = self::studentPayload($student, $className, '');
-				$person['feeding_paid'] = 0;
-				$person['feeding_status'] = 'not_paid';
-				$brief = self::feeBrief((int) ($student->school_id ?? $schoolId), (int) $student->id);
-				return [
-					'success' => 0,
-					'kind' => 'student',
-					'denied' => 'feeding',
-					'feeding_paid' => 0,
-					'message' => 'Feeding not paid',
-					'person' => $person,
-					'fees' => $brief,
-				];
-			}
+		if (self::isCafeteriaArea($areaName) && !self::cafeteriaMayEat($student)) {
+			$person = self::studentPayload($student, $className, '');
+			$person['feeding_paid'] = 0;
+			$person['feeding_status'] = 'not_paid';
+			$brief = self::feeBrief((int) ($student->school_id ?? $schoolId), (int) $student->id);
+			return [
+				'success' => 0,
+				'kind' => 'student',
+				'denied' => 'feeding',
+				'feeding_paid' => 0,
+				'message' => 'Feeding not paid',
+				'person' => $person,
+				'fees' => $brief,
+			];
 		}
 
 		$time = $eventTime > 1000000000 ? $eventTime : time();
@@ -693,6 +697,8 @@ class AttendanceScanService
 			->getRow();
 
 		// First tap of the day is IN. Later taps are OUT only after 10 minutes.
+		// Cafeteria and dormitory (including evening preps) never check out.
+		$entryOnly = self::isEntryOnlyArea($areaName);
 		$status = 'IN';
 		if (!$attendance) {
 			$db->table('attendance_records')->insert([
@@ -704,7 +710,7 @@ class AttendanceScanService
 				'area_id' => $areaId,
 				'shift_id' => 1,
 			]);
-		} else {
+		} elseif (!$entryOnly) {
 			$timeIn = (int) ($attendance->time_in ?? 0);
 			if ($timeIn > 0 && ($time - $timeIn) < self::STUDENT_OUT_AFTER_IN_SECONDS) {
 				$school = $db->table('schools')->select('name, email, phone, logo')->where('id', $schoolId)->get()->getRow();
@@ -730,6 +736,10 @@ class AttendanceScanService
 				->where('id', $attendance->id)
 				->update(['time_out' => $time]);
 			$status = 'OUT';
+		} elseif ((int) ($attendance->time_out ?? 0) > 0) {
+			$db->table('attendance_records')
+				->where('id', $attendance->id)
+				->update(['time_out' => 0]);
 		}
 
 		$school = $db->table('schools')->select('name, email, phone, logo')->where('id', $schoolId)->get()->getRow();
@@ -815,18 +825,18 @@ class AttendanceScanService
 				'message' => 'Day scholars cannot swipe at the dormitory',
 			];
 		}
-		if (self::isCafeteriaArea($areaName) && (int) ($student->studying_mode ?? 1) !== 0) {
-			$feedMap = self::feedingPaidMap((int) ($student->school_id ?? $schoolId));
-			if ((int) ($feedMap[(int) $student->id] ?? 0) !== 1) {
-				return [
-					'success' => 1,
-					'skipped' => 1,
-					'denied' => 'feeding',
-					'kind' => 'student',
-					'feeding_paid' => 0,
-					'message' => 'Feeding not paid',
-				];
-			}
+		if (self::isCafeteriaArea($areaName) && !self::cafeteriaMayEat($student)) {
+			return [
+				'success' => 1,
+				'skipped' => 1,
+				'denied' => 'feeding',
+				'kind' => 'student',
+				'feeding_paid' => 0,
+				'message' => 'Feeding not paid',
+			];
+		}
+		if (self::isEntryOnlyArea($areaName) && $wanted === 'OUT') {
+			$wanted = 'IN';
 		}
 
 		$time = $eventTime > 1000000000 ? $eventTime : time();
@@ -856,6 +866,10 @@ class AttendanceScanService
 					'area_id' => $areaId,
 					'shift_id' => 1,
 				]);
+			} elseif (self::isEntryOnlyArea($areaName) && (int) ($row->time_out ?? 0) > 0) {
+				$db->table('attendance_records')
+					->where('id', $row->id)
+					->update(['time_out' => 0]);
 			} else {
 				$already = true;
 			}
@@ -946,6 +960,8 @@ class AttendanceScanService
 	}
 
 	public const STUDENT_OUT_AFTER_IN_SECONDS = 600;
+	/** Day-scholar feeding paid at the cafeteria. 60,000 RWF or more may eat. */
+	private const CAFETERIA_EAT_MIN = 60000;
 	public const STAFF_OUT_AFTER_IN_SECONDS = 300;
 	private const WAIT_CHECKOUT_MSG = 'Already checked in — waiting for checkout';
 
@@ -1451,6 +1467,36 @@ class AttendanceScanService
 			|| strpos($n, 'refectory') !== false;
 	}
 
+	/** Cafeteria and dormitory record IN only. No checkout, including evening preps. */
+	private static function isEntryOnlyArea(string $name): bool
+	{
+		return self::isCafeteriaArea($name) || self::isDormitoryArea($name);
+	}
+
+	/**
+	 * Cafeteria eat rule. Boarding is unchanged (always allowed).
+	 * A day scholar may eat when feeding paid this term is 60,000 or more,
+	 * or when the existing full-fee flag is already paid.
+	 *
+	 * @param object $student
+	 */
+	private static function cafeteriaMayEat($student): bool
+	{
+		if ((int) ($student->studying_mode ?? 1) === 0) {
+			return true;
+		}
+		$schoolId = (int) ($student->school_id ?? 0);
+		$sid = (int) ($student->id ?? 0);
+		if ($schoolId < 1 || $sid < 1) {
+			return false;
+		}
+		$amount = (int) (self::feedingAmountMap($schoolId)[$sid] ?? 0);
+		if ($amount >= self::CAFETERIA_EAT_MIN) {
+			return true;
+		}
+		return (int) (self::feedingPaidMap($schoolId)[$sid] ?? 0) === 1;
+	}
+
 	/**
 	 * Year totals for the cafeteria check screen. Feeding is excluded from extra fees.
 	 *
@@ -1625,6 +1671,12 @@ class AttendanceScanService
 	/** @var array<int,array{at:int,map:array<int,int>}> */
 	private static $feedingPaidCache = [];
 
+	/** @var array<int,array{at:int,map:array<int,int>}> */
+	private static $feedingAmountCache = [];
+
+	/** @var array<int,array{at:int,map:array<int,string>}> */
+	private static $hostelNameCache = [];
+
 	/**
 	 * Current-term Feeding fee for day scholars. 1 = paid (or nothing due), 0 = not paid.
 	 * Boarding students are always 1 — cafeteria does not check their feeding.
@@ -1638,6 +1690,7 @@ class AttendanceScanService
 			return self::$feedingPaidCache[$schoolId]['map'];
 		}
 		$map = [];
+		$amountMap = [];
 		try {
 			$db = \Config\Database::connect();
 			$scope = self::scopeSchoolIds($schoolId);
@@ -1713,6 +1766,7 @@ class AttendanceScanService
 				}
 				if ((int) ($st['studying_mode'] ?? 1) === 0) {
 					$map[$sid] = 1;
+					$amountMap[$sid] = 0;
 					continue;
 				}
 				$rowsForStudent = [];
@@ -1733,12 +1787,66 @@ class AttendanceScanService
 					$expected += \App\Models\ExtraFeesModel::expectedForMode($fee, 1);
 					$got += (float) ($paid[$sid . ':' . (int) $fee['id']] ?? 0);
 				}
+				$amountMap[$sid] = (int) round($got);
 				$map[$sid] = ($expected <= 0.009 || ($got + 0.5) >= $expected) ? 1 : 0;
 			}
 		} catch (\Throwable $e) {
 			$map = [];
+			$amountMap = [];
 		}
 		self::$feedingPaidCache[$schoolId] = ['at' => $now, 'map' => $map];
+		self::$feedingAmountCache[$schoolId] = ['at' => $now, 'map' => $amountMap];
+		return $map;
+	}
+
+	/**
+	 * Current-term feeding amount paid, in RWF, by student id.
+	 *
+	 * @return array<int,int>
+	 */
+	private static function feedingAmountMap(int $schoolId): array
+	{
+		$now = time();
+		if (isset(self::$feedingAmountCache[$schoolId]) && ($now - self::$feedingAmountCache[$schoolId]['at']) < 15) {
+			return self::$feedingAmountCache[$schoolId]['map'];
+		}
+		unset(self::$feedingPaidCache[$schoolId]);
+		self::feedingPaidMap($schoolId);
+		return self::$feedingAmountCache[$schoolId]['map'] ?? [];
+	}
+
+	/**
+	 * Current-year hostel name by student id.
+	 *
+	 * @return array<int,string>
+	 */
+	private static function hostelNameMap(int $schoolId): array
+	{
+		$now = time();
+		if (isset(self::$hostelNameCache[$schoolId]) && ($now - self::$hostelNameCache[$schoolId]['at']) < 15) {
+			return self::$hostelNameCache[$schoolId]['map'];
+		}
+		$map = [];
+		try {
+			$scope = self::scopeSchoolIds($schoolId);
+			if ($scope === []) {
+				$scope = [$schoolId];
+			}
+			$schema = new \App\Models\HostelSchemaModel();
+			foreach ($scope as $sid) {
+				$year = self::academicYear((int) $sid);
+				$part = $schema->listStudentHostelNames((int) $sid, $year);
+				foreach ($part as $studentId => $name) {
+					$name = trim((string) $name);
+					if ((int) $studentId > 0 && $name !== '') {
+						$map[(int) $studentId] = $name;
+					}
+				}
+			}
+		} catch (\Throwable $e) {
+			$map = [];
+		}
+		self::$hostelNameCache[$schoolId] = ['at' => $now, 'map' => $map];
 		return $map;
 	}
 
@@ -1773,6 +1881,8 @@ class AttendanceScanService
 			'photo' => self::kioskPhotoUrl($student->photo ?? null),
 			'studying_mode' => (int) ($student->studying_mode ?? 1),
 			'feeding_paid' => self::feedingPaidFlag($student),
+			'feeding_amount' => (int) (self::feedingAmountMap((int) ($student->school_id ?? 0))[(int) $student->id] ?? 0),
+			'hostel' => (string) (self::hostelNameMap((int) ($student->school_id ?? 0))[(int) $student->id] ?? ''),
 			'records' => $records,
 		];
 	}
