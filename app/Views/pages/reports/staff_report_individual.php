@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=7">
+<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=8">
 <?php
 if ($show_header) {
 	$defaultStart = $default_start ?? date('Y-m-01');
@@ -6,6 +6,7 @@ if ($show_header) {
 	$defaultMonth = $default_month ?? date('Y-m');
 	$ayBounds = $ay_bounds ?? ['start' => $defaultStart, 'end' => $defaultEnd, 'label' => ($academic_year_title ?? '')];
 	$ayMonths = $ay_months ?? [];
+	echo view('pages/reports/_wisdom_school_switch');
 	?>
 	<div class="io-page">
 		<div class="io-filters">
@@ -71,8 +72,9 @@ if ($show_header) {
 		</div>
 		<div id="report_content">
 			<div class="io-empty">
-				Choose <strong>Overall</strong> for all staff summaries by shift, <strong>Absent staff</strong> for absentees in the period,
-				or <strong>Individual</strong> for day-by-day detail. Use fold/unfold on each staff card, then print <strong>PDF all</strong> or a single staff PDF.
+				Choose <strong>Overall</strong> for all staff by shift. <strong>Scheduled</strong> is the days that person should attend from their shift.
+				<strong>Clock in</strong> and <strong>Clock out</strong> that do not match mean a clock-out is missing.
+				<strong>Absent staff</strong> lists absentees. <strong>Individual</strong> is day-by-day detail.
 			</div>
 		</div>
 	</div>
@@ -262,77 +264,85 @@ $renderSummaryTable = static function (array $list, $rateClass) {
 		return;
 	}
 	?>
-	<table class="io-log">
+	<div class="io-table-wrap">
+	<table class="io-log io-staff-sum">
 		<thead>
 		<tr>
 			<th>#</th>
 			<th>Staff</th>
 			<th>Post</th>
-			<th>Scheduled</th>
+			<th>Scheduled <span class="io-th-hint">shift days</span></th>
 			<th>Present</th>
 			<th>Absent</th>
 			<th>Leave</th>
 			<th>Late</th>
 			<th>Hours</th>
+			<th>Clock in</th>
+			<th>Clock out</th>
 			<th>Attendance</th>
-			<th>Punctuality</th>
 		</tr>
 		</thead>
 		<tbody>
-		<?php $n = 1; foreach ($list as $r) : ?>
-			<tr class="<?= (int) $r['absent'] > 0 || (int) $r['nco'] > 0 ? 'is-miss' : ''; ?>">
-				<td><?= $n++; ?></td>
+		<?php $n = 1; foreach ($list as $r) :
+			$clockIn = (int) ($r['clock_in'] ?? 0);
+			$clockOut = (int) ($r['clock_out'] ?? 0);
+			$gap = max(0, $clockIn - $clockOut);
+			$miss = (int) $r['absent'] > 0 || $gap > 0;
+			?>
+			<tr class="<?= $miss ? 'is-miss' : ''; ?>">
+				<td class="io-num"><?= $n++; ?></td>
 				<td>
 					<strong><?= esc($r['name']); ?></strong>
 					<div class="io-reg">ID <?= (int) $r['id']; ?></div>
 				</td>
 				<td><?= esc($r['post'] ?: '—'); ?></td>
-				<td><?= (int) $r['scheduled']; ?></td>
-				<td><?= (int) $r['present']; ?></td>
-				<td><?= (int) $r['absent']; ?></td>
-				<td><?= (int) $r['leave']; ?></td>
-				<td><?= (int) $r['late_count']; ?><?php if ((int) $r['late_min'] > 0) : ?> <span class="io-reg">(<?= (int) $r['late_min']; ?> min)</span><?php endif; ?></td>
+				<td class="io-num">
+					<span class="io-sched"><?= (int) $r['scheduled']; ?></span>
+					<?php if (trim((string) ($r['shift_pattern'] ?? '')) !== '') : ?>
+						<div class="io-reg"><?= esc($r['shift_pattern']); ?></div>
+					<?php else : ?>
+						<div class="io-reg">No shift</div>
+					<?php endif; ?>
+					<?php if ((int) ($r['elapsed'] ?? $r['scheduled']) < (int) $r['scheduled']) : ?>
+						<div class="io-reg"><?= (int) $r['elapsed']; ?> due so far</div>
+					<?php endif; ?>
+				</td>
+				<td class="io-num"><?= (int) $r['present']; ?></td>
+				<td class="io-num<?= (int) $r['absent'] > 0 ? ' is-bad' : ''; ?>"><?= (int) $r['absent']; ?></td>
+				<td class="io-num"><?= (int) $r['leave']; ?></td>
+				<td class="io-num"><?= (int) $r['late_count']; ?><?php if ((int) $r['late_min'] > 0) : ?> <span class="io-reg">(<?= (int) $r['late_min']; ?> min)</span><?php endif; ?></td>
 				<td><?= esc($r['hours_worked']); ?></td>
-				<td><span class="io-rate <?= $rateClass((int) $r['attendance_rate']); ?>"><?= (int) $r['attendance_rate']; ?>%</span></td>
-				<td><span class="io-rate <?= $rateClass((int) $r['punctuality']); ?>"><?= (int) $r['punctuality']; ?>%</span></td>
+				<td class="io-num"><span class="io-count in"><?= $clockIn; ?></span></td>
+				<td class="io-num">
+					<?php if ($gap > 0) : ?>
+						<span class="io-count miss"><?= $clockOut; ?></span>
+						<div class="io-gap"><?= $gap; ?> missing</div>
+					<?php else : ?>
+						<span class="io-count out"><?= $clockOut; ?></span>
+					<?php endif; ?>
+				</td>
+				<td class="io-num"><span class="io-rate <?= $rateClass((int) $r['attendance_rate']); ?>"><?= (int) $r['attendance_rate']; ?>%</span></td>
 			</tr>
 		<?php endforeach; ?>
 		</tbody>
 	</table>
+	</div>
 	<?php
 };
 $kpis = [
 	['key' => 'staff', 'lbl' => 'Staff', 'val' => (int) $org['staff'], 'icon' => 'fa-users', 'tone' => 'navy', 'bar' => null],
+	['key' => 'sched', 'lbl' => 'Scheduled days', 'val' => (int) $org['scheduled'], 'icon' => 'fa-calendar', 'tone' => 'blue', 'bar' => null],
 	['key' => 'att', 'lbl' => 'Attendance rate', 'val' => (int) $org['attendance_rate'] . '%', 'icon' => 'fa-line-chart', 'tone' => 'in', 'bar' => (int) $org['attendance_rate']],
 	['key' => 'abs', 'lbl' => 'Absenteeism', 'val' => (int) $org['absenteeism'] . '%', 'icon' => 'fa-user-times', 'tone' => 'out', 'bar' => (int) $org['absenteeism']],
-	['key' => 'pun', 'lbl' => 'Punctuality', 'val' => (int) $org['punctuality'] . '%', 'icon' => 'fa-clock-o', 'tone' => 'blue', 'bar' => (int) $org['punctuality']],
+	['key' => 'cin', 'lbl' => 'Clock in', 'val' => (int) ($org['clock_in'] ?? 0), 'icon' => 'fa-sign-in', 'tone' => 'in', 'bar' => null],
+	['key' => 'cout', 'lbl' => 'Clock out', 'val' => (int) ($org['clock_out'] ?? 0), 'icon' => 'fa-sign-out', 'tone' => 'blue', 'bar' => null],
+	['key' => 'nco', 'lbl' => 'Missing clock-out', 'val' => (int) $org['nco'], 'icon' => 'fa-exclamation-circle', 'tone' => 'warn', 'bar' => null],
 	['key' => 'late', 'lbl' => 'Late arrivals', 'val' => (int) $org['late'], 'icon' => 'fa-hourglass-half', 'tone' => 'warn', 'bar' => null],
 	['key' => 'adays', 'lbl' => 'Absent days', 'val' => (int) $org['absent'], 'icon' => 'fa-calendar-times-o', 'tone' => 'out', 'bar' => null],
-	['key' => 'nco', 'lbl' => 'No checkout', 'val' => (int) $org['nco'], 'icon' => 'fa-sign-out', 'tone' => 'warn', 'bar' => null],
-	['key' => 'hrs', 'lbl' => 'Hours worked', 'val' => (string) $org['hours'] . 'h', 'icon' => 'fa-briefcase', 'tone' => 'blue', 'bar' => null],
+	['key' => 'hrs', 'lbl' => 'Hours worked', 'val' => (string) $org['hours'] . 'h', 'icon' => 'fa-briefcase', 'tone' => 'navy', 'bar' => null],
 ];
 ?>
 <div id="printable" class="io-report">
-	<div class="io-letterhead">
-		<?php if ($logoUrl !== '') : ?>
-			<img class="io-lh-logo" src="<?= esc($logoUrl, 'attr'); ?>" alt="">
-		<?php endif; ?>
-		<div class="io-lh-text">
-			<div class="io-lh-name"><?= esc($school_name ?? ''); ?></div>
-			<?php if (!empty($school_moto)) : ?>
-				<div class="io-lh-slogan"><?= esc($school_moto); ?></div>
-			<?php endif; ?>
-			<?php if ($contactBits) : ?>
-				<div class="io-lh-contact"><?= esc(implode('  •  ', $contactBits)); ?></div>
-			<?php endif; ?>
-		</div>
-		<div class="io-lh-meta">
-			<div><?= esc($ayBounds['label'] ?? ($academic_year_title ?? '')); ?></div>
-			<div><?= esc($date1); ?> → <?= esc($date2); ?></div>
-			<div><?= lang("app.printedOn"); ?> <?= date('Y-m-d H:i'); ?></div>
-		</div>
-	</div>
-
 	<div class="io-report-title">
 		<h2><?= esc($reportTitle); ?></h2>
 		<p>Staff attendance dashboard for the selected period</p>
@@ -354,6 +364,11 @@ $kpis = [
 	</div>
 
 	<?php if ($reportType === 'overall' || $reportType === 'absent') : ?>
+		<div class="io-callout">
+			<strong>Scheduled</strong> is the number of days that staff member is supposed to attend in this period, counted from the weekdays on their shift.
+			<strong>Clock in</strong> and <strong>Clock out</strong> should match. When clock-out is lower, that many check-outs are missing.
+			Attendance uses shift days due so far, so a later day in the period is not counted as absent yet.
+		</div>
 		<?php if (count($summaries) === 0) : ?>
 			<div class="io-empty"><?= $reportType === 'absent' ? 'No absent staff in this period.' : 'No staff found for this period.'; ?></div>
 		<?php else : ?>
@@ -365,22 +380,32 @@ $kpis = [
 					<?php endforeach; ?>
 				</div>
 				<div class="io-pane" id="stPaneAll">
-					<?php $si = 0; foreach ($byShift as $shiftName => $rows) : $si++; ?>
+					<?php $si = 0; foreach ($byShift as $shiftName => $rows) : $si++;
+						$shiftKpi = \App\Libraries\StaffAttendanceReport::orgKpis($rows);
+						$pattern = trim((string) ($rows[0]['shift_pattern'] ?? ''));
+						?>
 						<div class="io-shift-block">
 							<div class="io-shift-head">
 								<strong><?= esc($shiftName); ?></strong>
-								<span><?= count($rows); ?> staff · Attendance <?= (int) \App\Libraries\StaffAttendanceReport::orgKpis($rows)['attendance_rate']; ?>%</span>
+								<span>
+									<?= count($rows); ?> staff
+									<?php if ($pattern !== '') : ?> · <?= esc($pattern); ?><?php endif; ?>
+									· Attendance <?= (int) $shiftKpi['attendance_rate']; ?>%
+									· Clock in <?= (int) $shiftKpi['clock_in']; ?> / out <?= (int) $shiftKpi['clock_out']; ?>
+								</span>
 							</div>
 							<?php $renderSummaryTable($rows, $rateClass); ?>
 						</div>
 					<?php endforeach; ?>
 				</div>
-				<?php $si = 0; foreach ($byShift as $shiftName => $rows) : $si++; ?>
+				<?php $si = 0; foreach ($byShift as $shiftName => $rows) : $si++;
+					$pattern = trim((string) ($rows[0]['shift_pattern'] ?? ''));
+					?>
 					<div class="io-pane" id="stPaneShift<?= $si; ?>" hidden>
 						<div class="io-shift-block">
 							<div class="io-shift-head">
 								<strong><?= esc($shiftName); ?></strong>
-								<span><?= count($rows); ?> staff</span>
+								<span><?= count($rows); ?> staff<?php if ($pattern !== '') : ?> · <?= esc($pattern); ?><?php endif; ?></span>
 							</div>
 							<?php $renderSummaryTable($rows, $rateClass); ?>
 						</div>
@@ -402,7 +427,8 @@ $kpis = [
 		<?php else : ?>
 			<?php if (count($summaries) > 1 && !$isPdf) : ?>
 				<div class="io-fold-bar">
-					<span><?= count($summaries); ?> staff — click a name to unfold day-by-day detail</span>
+					<input type="search" id="ioStaffSearch" class="form-control" placeholder="Search by staff name" style="max-width:280px;margin-right:12px;">
+					<span id="ioStaffCount"><?= count($summaries); ?> staff — click a name to unfold day-by-day detail</span>
 					<div>
 						<button type="button" class="btn btn-sm btn-outline-primary io-fold-all"><i class="fa fa-expand"></i> Unfold all</button>
 						<button type="button" class="btn btn-sm btn-outline-secondary io-fold-none"><i class="fa fa-compress"></i> Fold all</button>
@@ -412,7 +438,7 @@ $kpis = [
 			<?php foreach ($summaries as $si => $sum) :
 				$open = $isPdf || count($summaries) === 1;
 				?>
-				<div class="io-acc<?= $open ? ' open' : ''; ?><?= $si < count($summaries) - 1 ? ' io-staff-break' : ''; ?>" id="staff-<?= (int) $sum['id']; ?>">
+				<div class="io-acc<?= $open ? ' open' : ''; ?><?= $si < count($summaries) - 1 ? ' io-staff-break' : ''; ?>" id="staff-<?= (int) $sum['id']; ?>" data-staff-name="<?= esc(strtolower($sum['name'])); ?>">
 					<div class="io-acc-toggle">
 						<div class="io-acc-chev"><i class="fa fa-chevron-right"></i></div>
 						<div class="io-acc-who">
@@ -425,9 +451,6 @@ $kpis = [
 						</div>
 						<div class="io-acc-pills">
 							<span class="io-pill <?= $rateClass((int) $sum['attendance_rate']); ?>">Att <?= (int) $sum['attendance_rate']; ?>%</span>
-							<span class="io-pill ok">P <?= (int) $sum['present']; ?></span>
-							<span class="io-pill bad">A <?= (int) $sum['absent']; ?></span>
-							<span class="io-pill warn">L <?= (int) $sum['late_count']; ?></span>
 							<span class="io-pill navy"><?= esc($sum['hours_worked']); ?></span>
 						</div>
 						<?php if (!$isPdf) : ?>
@@ -445,7 +468,8 @@ $kpis = [
 							<div class="io-kpi out"><div class="lbl">Absent</div><div class="val"><?= (int) $sum['absent']; ?></div></div>
 							<div class="io-kpi blue"><div class="lbl">Leave</div><div class="val"><?= (int) $sum['leave']; ?></div></div>
 							<div class="io-kpi warn"><div class="lbl">Late</div><div class="val"><?= (int) $sum['late_count']; ?></div></div>
-							<div class="io-kpi blue"><div class="lbl">Punctuality</div><div class="val"><?= (int) $sum['punctuality']; ?>%</div></div>
+							<div class="io-kpi in"><div class="lbl">Clock in</div><div class="val"><?= (int) ($sum['clock_in'] ?? 0); ?></div></div>
+							<div class="io-kpi <?= ((int) ($sum['clock_in'] ?? 0) !== (int) ($sum['clock_out'] ?? 0)) ? 'warn' : 'blue'; ?>"><div class="lbl">Clock out</div><div class="val"><?= (int) ($sum['clock_out'] ?? 0); ?></div></div>
 						</div>
 						<div class="io-day-kpis">
 							<div><span class="lbl">Scheduled</span> <strong><?= (int) $sum['scheduled']; ?></strong></div>
@@ -511,9 +535,29 @@ $kpis = [
 		<?php endif; ?>
 	<?php endif; ?>
 
+	<?php if (!$isPdf) : ?>
+	<script>
+		$(function () {
+			$("#ioStaffSearch").on("input", function () {
+				var q = $.trim($(this).val()).toLowerCase();
+				var shown = 0;
+				$(".io-acc").each(function () {
+					var name = String($(this).data("staff-name") || "");
+					var match = q === "" || name.indexOf(q) !== -1;
+					$(this).toggle(match);
+					if (match) {
+						shown++;
+					}
+				});
+				$("#ioStaffCount").text(shown + " staff — click a name to unfold day-by-day detail");
+			});
+		});
+	</script>
+	<?php endif; ?>
 	<div class="io-footnote">
-		Attendance rate = (present + approved leave) / scheduled shift days.
-		Punctuality = on-time clock-in / present days. Scoped to active academic year <?= esc($ayBounds['label'] ?? ''); ?>.
+		Scheduled = shift working days in the period. Attendance rate = (present + approved leave) / shift days due so far.
+		Clock in and clock out that do not match mean a clock-out is missing.
+		Scoped to active academic year <?= esc($ayBounds['label'] ?? ''); ?>.
 		<div><?= lang("app.generatedbySomanet"); ?></div>
 	</div>
 </div>

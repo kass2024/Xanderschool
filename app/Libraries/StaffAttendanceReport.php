@@ -20,14 +20,26 @@ class StaffAttendanceReport
 		if (!is_array($shiftOptions)) {
 			$shiftOptions = [];
 		}
+
+		$rangeStart = $date1;
+		$rangeEnd = $date2;
 		$created = date('Y-m-d', strtotime((string) ($staff['created_at'] ?? $date1)));
-		if ($date1 < $created) {
-			$date1 = $created;
+		if ($created > $rangeStart) {
+			$rangeStart = $created;
+		}
+		$today = date('Y-m-d');
+		$elapsedEnd = $rangeEnd < $today ? $rangeEnd : $today;
+		if ($elapsedEnd < $rangeStart) {
+			$elapsedEnd = $rangeStart;
 		}
 
-		$scheduled = get_total_days($date1, $date2, $shiftOptions);
-		$leaveDays = self::leaveDays($staff, $date1, $date2);
+		// Full period the shift says they should attend (not capped at today).
+		$scheduled = self::countShiftDays($shiftOptions, $rangeStart, $rangeEnd);
+		// Days already due, so later shift days in the period are not marked absent.
+		$elapsed = self::countShiftDays($shiftOptions, $rangeStart, $elapsedEnd);
+		$leaveDays = self::leaveDays($staff, $rangeStart, $elapsedEnd);
 		$shiftMeta = ['title' => (string) ($staff['title'] ?? ''), 'options' => json_encode($shiftOptions)];
+		$shiftPattern = self::shiftPatternLabel($shiftOptions);
 
 		$present = 0;
 		$lateMin = 0;
@@ -73,19 +85,25 @@ class StaffAttendanceReport
 			}
 			$outEval = null;
 			// Never honour checkout recorded before shift end — treat as no checkout.
-			if ($outTs > 0 && !empty($window['end_ts'])
-				&& $outTs < ((int) $window['end_ts'] - StaffShiftClock::GRACE_SECONDS)) {
-				$outTs = 0;
-			}
-			if ($outTs > 0) {
+			$earlyCheckout = $outTs > 0 && !empty($window['end_ts'])
+				&& $outTs < ((int) $window['end_ts'] - StaffShiftClock::GRACE_SECONDS);
+			if ($outTs > $inTs) {
 				$clockOut++;
-				$workedSec += max(0, $outTs - $inTs);
+				$workedSec += $outTs - $inTs;
 				$outEval = StaffShiftClock::evaluateOut($outTs, $window);
 				if ($outEval['code'] === 'overtime') {
 					$overtimeMin += (int) $outEval['minutes'];
 				}
+				if ($earlyCheckout && $outEval['code'] === 'early') {
+					$earlyMin += (int) $outEval['minutes'];
+					$earlyCount++;
+				}
 			} else {
 				$nco++;
+				if (date('Y-m-d', $inTs) === date('Y-m-d')) {
+					$workedSec += max(0, time() - $inTs);
+					$outTs = 0;
+				}
 			}
 			$day = date('Y-m-d', $inTs);
 			$byDay[$day] = [
@@ -102,9 +120,9 @@ class StaffAttendanceReport
 			];
 		}
 
-		$absent = max(0, $scheduled - $present - $leaveDays);
-		$attendanceRate = $scheduled > 0 ? (int) round(($present + $leaveDays) / $scheduled * 100) : 0;
-		$absenteeism = $scheduled > 0 ? (int) round($absent / $scheduled * 100) : 0;
+		$absent = max(0, $elapsed - $present - $leaveDays);
+		$attendanceRate = $elapsed > 0 ? (int) round(($present + $leaveDays) / $elapsed * 100) : 0;
+		$absenteeism = $elapsed > 0 ? (int) round($absent / $elapsed * 100) : 0;
 		$punctuality = $present > 0 ? (int) round($ontime / $present * 100) : 0;
 
 		return [
@@ -112,9 +130,11 @@ class StaffAttendanceReport
 			'name' => trim((string) ($staff['fname'] ?? '') . ' ' . (string) ($staff['lname'] ?? '')),
 			'post' => (string) ($staff['post_title'] ?? ''),
 			'shift' => (string) ($staff['title'] ?? ''),
+			'shift_pattern' => $shiftPattern,
 			'email' => (string) ($staff['email'] ?? ''),
 			'phone' => (string) ($staff['phone'] ?? ''),
 			'scheduled' => $scheduled,
+			'elapsed' => $elapsed,
 			'present' => $present,
 			'absent' => $absent,
 			'leave' => $leaveDays,
@@ -204,36 +224,101 @@ class StaffAttendanceReport
 	{
 		$staff = count($rows);
 		$scheduled = 0;
+		$elapsed = 0;
 		$present = 0;
 		$absent = 0;
 		$leave = 0;
 		$late = 0;
 		$ontime = 0;
+		$clockIn = 0;
+		$clockOut = 0;
 		$nco = 0;
 		$hours = 0.0;
 		foreach ($rows as $r) {
 			$scheduled += (int) $r['scheduled'];
+			$elapsed += (int) ($r['elapsed'] ?? $r['scheduled']);
 			$present += (int) $r['present'];
 			$absent += (int) $r['absent'];
 			$leave += (int) $r['leave'];
 			$late += (int) $r['late_count'];
 			$ontime += (int) $r['ontime'];
+			$clockIn += (int) ($r['clock_in'] ?? 0);
+			$clockOut += (int) ($r['clock_out'] ?? 0);
 			$nco += (int) $r['nco'];
 			$hours += (float) $r['hours_worked_h'];
 		}
 		return [
 			'staff' => $staff,
 			'scheduled' => $scheduled,
+			'elapsed' => $elapsed,
 			'present' => $present,
 			'absent' => $absent,
 			'leave' => $leave,
 			'late' => $late,
+			'clock_in' => $clockIn,
+			'clock_out' => $clockOut,
 			'nco' => $nco,
 			'hours' => round($hours, 1),
-			'attendance_rate' => $scheduled > 0 ? (int) round(($present + $leave) / $scheduled * 100) : 0,
-			'absenteeism' => $scheduled > 0 ? (int) round($absent / $scheduled * 100) : 0,
+			'attendance_rate' => $elapsed > 0 ? (int) round(($present + $leave) / $elapsed * 100) : 0,
+			'absenteeism' => $elapsed > 0 ? (int) round($absent / $elapsed * 100) : 0,
 			'punctuality' => $present > 0 ? (int) round($ontime / $present * 100) : 0,
 		];
+	}
+
+	/**
+	 * Working days in a date range that match the staff member's shift weekdays.
+	 *
+	 * @param list<string> $shiftOptions
+	 */
+	public static function countShiftDays(array $shiftOptions, string $from, string $to): int
+	{
+		helper('qonics');
+		if ($from === '' || $to === '' || $from > $to) {
+			return 0;
+		}
+		$weekdays = [];
+		foreach ($shiftOptions as $shift) {
+			$opp = preg_split('/\s+/', trim((string) $shift)) ?: [];
+			if (!isset($opp[0]) || $opp[0] === '') {
+				continue;
+			}
+			$weekdays[strtolower(days_mini($opp[0]))] = true;
+		}
+		if ($weekdays === []) {
+			return 0;
+		}
+		$start = new \DateTime($from);
+		$end = new \DateTime($to);
+		$end->modify('+1 day');
+		$n = 0;
+		foreach (new \DatePeriod($start, new \DateInterval('P1D'), $end) as $dt) {
+			if (isset($weekdays[strtolower($dt->format('D'))])) {
+				$n++;
+			}
+		}
+		return $n;
+	}
+
+	/**
+	 * @param list<string> $shiftOptions
+	 */
+	public static function shiftPatternLabel(array $shiftOptions): string
+	{
+		helper('qonics');
+		$order = ['Mon' => 0, 'Tue' => 1, 'Wed' => 2, 'Thu' => 3, 'Fri' => 4, 'Sat' => 5, 'Sun' => 6];
+		$have = [];
+		foreach ($shiftOptions as $shift) {
+			$opp = preg_split('/\s+/', trim((string) $shift)) ?: [];
+			if (!isset($opp[0]) || $opp[0] === '') {
+				continue;
+			}
+			$have[days_mini($opp[0])] = true;
+		}
+		$days = array_keys($have);
+		usort($days, static function ($a, $b) use ($order) {
+			return ($order[$a] ?? 9) <=> ($order[$b] ?? 9);
+		});
+		return implode(', ', $days);
 	}
 
 	/**
@@ -414,12 +499,12 @@ class StaffAttendanceReport
 
 	private static function formatDuration(int $seconds): string
 	{
-		if ($seconds <= 0) {
-			return '0h';
+		if ($seconds > 0 && $seconds < 60) {
+			$seconds = 60;
 		}
-		$h = intdiv($seconds, 3600);
-		$m = intdiv($seconds % 3600, 60);
-		return $m > 0 ? $h . 'h ' . $m . 'm' : $h . 'h';
+		$h = intdiv(max(0, $seconds), 3600);
+		$m = intdiv(max(0, $seconds) % 3600, 60);
+		return $h . 'h ' . $m . 'min';
 	}
 
 	private static function dayCode(array $inEval, ?array $outEval, int $outTs): string
