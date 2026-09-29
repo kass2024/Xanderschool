@@ -23,17 +23,13 @@ class StaffAttendanceReport
 
 		$rangeStart = $date1;
 		$rangeEnd = $date2;
-		$created = date('Y-m-d', strtotime((string) ($staff['created_at'] ?? $date1)));
-		if ($created > $rangeStart) {
-			$rangeStart = $created;
-		}
 		$today = date('Y-m-d');
 		$elapsedEnd = $rangeEnd < $today ? $rangeEnd : $today;
 		if ($elapsedEnd < $rangeStart) {
 			$elapsedEnd = $rangeStart;
 		}
 
-		// Full period the shift says they should attend (not capped at today).
+		// Same shift and same period = the same scheduled days for every staff member.
 		$scheduled = self::countShiftDays($shiftOptions, $rangeStart, $rangeEnd);
 		// Days already due, so later shift days in the period are not marked absent.
 		$elapsed = self::countShiftDays($shiftOptions, $rangeStart, $elapsedEnd);
@@ -121,7 +117,7 @@ class StaffAttendanceReport
 		}
 
 		$absent = max(0, $elapsed - $present - $leaveDays);
-		$attendanceRate = $elapsed > 0 ? (int) round(($present + $leaveDays) / $elapsed * 100) : 0;
+		$attendanceRate = self::punchAttendanceRate($elapsed, $clockIn, $clockOut, $leaveDays);
 		$absenteeism = $elapsed > 0 ? (int) round($absent / $elapsed * 100) : 0;
 		$punctuality = $present > 0 ? (int) round($ontime / $present * 100) : 0;
 
@@ -259,10 +255,27 @@ class StaffAttendanceReport
 			'clock_out' => $clockOut,
 			'nco' => $nco,
 			'hours' => round($hours, 1),
-			'attendance_rate' => $elapsed > 0 ? (int) round(($present + $leave) / $elapsed * 100) : 0,
+			'attendance_rate' => self::punchAttendanceRate($elapsed, $clockIn, $clockOut, $leave),
 			'absenteeism' => $elapsed > 0 ? (int) round($absent / $elapsed * 100) : 0,
 			'punctuality' => $present > 0 ? (int) round($ontime / $present * 100) : 0,
 		];
+	}
+
+	/**
+	 * Each due shift day needs a clock-in and a clock-out. Approved leave counts as both.
+	 * A missing clock-out cannot produce 100%.
+	 */
+	private static function punchAttendanceRate(int $dueDays, int $clockIn, int $clockOut, int $leaveDays): int
+	{
+		$slots = $dueDays * 2;
+		if ($slots <= 0) {
+			return 0;
+		}
+		$score = $clockIn + $clockOut + ($leaveDays * 2);
+		if ($score > $slots) {
+			$score = $slots;
+		}
+		return (int) round($score / $slots * 100);
 	}
 
 	/**

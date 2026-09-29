@@ -388,7 +388,7 @@ $kpis = [
 		<div class="io-callout">
 			<strong>Scheduled</strong> is the number of days that staff member is supposed to attend in this period, counted from the weekdays on their shift.
 			<strong>Clock in</strong> and <strong>Clock out</strong> should match. When clock-out is lower, that many check-outs are missing.
-			Attendance uses shift days due so far, so a later day in the period is not counted as absent yet.
+			Everyone on the same shift has the same scheduled days for this period. Attendance counts both clock-in and clock-out, so a missing clock-out cannot be 100%.
 		</div>
 		<?php if (count($summaries) === 0) : ?>
 			<div class="io-empty"><?= $reportType === 'absent' ? 'No absent staff in this period.' : 'No staff found for this period.'; ?></div>
@@ -576,7 +576,7 @@ $kpis = [
 	</script>
 	<?php endif; ?>
 	<div class="io-footnote">
-		Scheduled = shift working days in the period. Attendance rate = (present + approved leave) / shift days due so far.
+		Scheduled = that shift's working days in the period, the same for every person on the shift. Attendance = (clock-in + clock-out) / (scheduled days × 2). A missing clock-out keeps the rate below 100%.
 		Clock in and clock out that do not match mean a clock-out is missing.
 		Scoped to active academic year <?= esc($ayBounds['label'] ?? ''); ?>.
 		<div><?= lang("app.generatedbySomanet"); ?></div>

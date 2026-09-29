@@ -118,7 +118,7 @@ $rateColor = static function (int $pct): string {
 		<td><div class="k">Absent days</div><div class="v out"><?= (int) ($org['absent'] ?? 0); ?></div></td>
 	</tr>
 </table>
-<p class="note">Scheduled is the days each person should attend from their shift. Clock in and clock out that do not match mean a clock-out is missing. Attendance uses shift days already due, so a later day in the period is not counted as absent.</p>
+<p class="note">Scheduled is that shift's working days in this period, so everyone on the shift has the same number. Attendance = (clock-in + clock-out) / (scheduled days × 2). A missing clock-out cannot be 100%.</p>
 
 <?php if (count($summaries ?? []) === 0) : ?>
 	<p class="note">No staff found for this period.</p>

@@ -204,7 +204,7 @@ $rateClass = static function ($pct) {
 			<h4><?= lang("app.employeesMonthlReport"); ?> — <?= esc($monthLabel); ?></h4>
 			<?php $renderTable($rows, $rateClass); ?>
 			<div style="margin-top:10px;font-size:.8rem;color:#64748b;">
-				Attendance rate = (present + approved leave) / scheduled working days.
+				Scheduled days follow each staff member's shift and are the same for everyone on that shift. Attendance = (clock-in + clock-out) / (scheduled days × 2), so a missing clock-out cannot be 100%.
 				Punctuality = on-time arrivals / present days. Late uses each staff shift start time.
 			</div>
 			<div style="text-align:right;color:#94a3b8;margin-top:8px;font-size:.8rem;"><?= lang("app.generatedbySomanet"); ?></div>
