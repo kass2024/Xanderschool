@@ -1108,7 +1108,7 @@ public function testEmail()
 		$schoolFeeExpected = 'MAX(' . SchoolFeesModel::sqlExpectedForStudent('sf', 'fd.amount') . ')';
 		$schoolFeeOn = SchoolFeesModel::sqlClassFeeOn('sf', 'cl.id', 'l.id', 'd.id');
 		$schoolFeeDiscount = "(select sum(amount) as amount,feesId,student from school_fees_discount where " . SchoolFeesModel::scholarshipCommentSql('comment') . " group by student,feesId)";
-		$schoolfeesQ = $studentMdl->select("students.id,students.lname,MAX({$schoolFeeExpected}) as expected,sum(fr.amount) as paid,fr.due_date")
+		$schoolfeesQ = $studentMdl->select("students.id,students.lname,{$schoolFeeExpected} as expected,sum(fr.amount) as paid,fr.due_date")
 				->join("class_records cr", "cr.student=students.id", "LEFT")
 				->join("classes cl", "cl.id=cr.class", "LEFT")
 				->join("levels l", "l.id=cl.level", "LEFT")
