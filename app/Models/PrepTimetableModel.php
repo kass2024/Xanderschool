@@ -136,15 +136,16 @@ class PrepTimetableModel extends Model
 			return [];
 		}
 		$db = \Config\Database::connect();
-		$rows = $db->table('staffs s')
-			->select('s.id, s.fname, s.lname, p.title AS post_title')
-			->join('posts p', 'p.id = s.post', 'inner')
-			->where('s.school_id', $schoolId)
-			->where('s.status', 1)
-			->orderBy('s.fname', 'ASC')
-			->orderBy('s.lname', 'ASC')
-			->get()
-			->getResultArray();
+		// Status 1 and 2 are both "active" on the staff list. Status 0 is locked.
+		$result = $db->query(
+			"SELECT s.id, s.fname, s.lname, p.title AS post_title
+			 FROM staffs s
+			 INNER JOIN posts p ON p.id = s.post
+			 WHERE s.school_id = ? AND s.status IN (1, 2)
+			 ORDER BY s.fname ASC, s.lname ASC",
+			[$schoolId]
+		);
+		$rows = is_object($result) ? $result->getResultArray() : [];
 		$out = [];
 		foreach ($rows as $row) {
 			$group = self::postGroup((string) ($row['post_title'] ?? ''));

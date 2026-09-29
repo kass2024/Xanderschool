@@ -9,13 +9,6 @@ $morningStart = (string) ($rota['morning_start'] ?? '05:30');
 $morningEnd = (string) ($rota['morning_end'] ?? '06:30');
 $eveningStart = (string) ($rota['evening_start'] ?? '19:00');
 $eveningEnd = (string) ($rota['evening_end'] ?? '21:00');
-$byPost = ['Teacher' => [], 'Patron' => [], 'Matron' => []];
-foreach ($staff as $person) {
-	$post = (string) ($person['post'] ?? '');
-	if (isset($byPost[$post])) {
-		$byPost[$post][] = $person;
-	}
-}
 $selected = static function (array $duties, int $day, string $slot, int $staffId): string {
 	$ids = $duties[$day][$slot] ?? [];
 	return in_array($staffId, array_map('intval', $ids), true) ? 'selected' : '';
@@ -32,7 +25,7 @@ $selected = static function (array $duties, int $day, string $slot, int $staffId
 	.prep-times .prep-time-pair { display: flex; gap: 8px; align-items: center; }
 </style>
 
-<p class="text-muted mb-3">Choose who invigilates each morning prep and evening prep. Only active staff whose post is <strong>Teacher</strong>, <strong>Patron</strong>, or <strong>Matron</strong> can be chosen. You can pick more than one person in a cell.</p>
+<p class="text-muted mb-3">Choose who invigilates each morning prep and evening prep. Only active staff whose post is <strong>Teacher</strong>, <strong>Patron</strong>, or <strong>Matron</strong> can be chosen. You can pick more than one person in a cell.<?php if ($staff !== []): ?> <strong><?= count($staff); ?> staff available.</strong><?php endif; ?></p>
 
 <?php if ($staff === []): ?>
 	<div class="alert alert-warning">No active staff with a Teacher, Patron, or Matron post. Set that post on the staff record, then come back here.</div>
@@ -73,16 +66,9 @@ $selected = static function (array $duties, int $day, string $slot, int $staffId
 					<td class="prep-day"><?= esc($label); ?></td>
 					<?php foreach (['morning', 'evening'] as $slot): ?>
 						<td>
-							<select class="prep-staff-select" multiple data-day="<?= (int) $day; ?>" data-slot="<?= esc($slot); ?>" data-placeholder="Select teacher, patron, or matron">
-								<?php foreach ($byPost as $post => $people): ?>
-									<?php if ($people === []) { continue; } ?>
-									<optgroup label="<?= esc($post); ?>">
-										<?php foreach ($people as $person): ?>
-											<option value="<?= (int) $person['id']; ?>" <?= $selected($duties, (int) $day, $slot, (int) $person['id']); ?>>
-												<?= esc($person['name']); ?>
-											</option>
-										<?php endforeach; ?>
-									</optgroup>
+							<select class="prep-staff-select" multiple data-prep-day="<?= (int) $day; ?>" data-prep-slot="<?= esc($slot); ?>">
+								<?php foreach ($staff as $person): ?>
+									<option value="<?= (int) $person['id']; ?>" <?= $selected($duties, (int) $day, $slot, (int) $person['id']); ?>><?= esc($person['name'] . ' (' . $person['post'] . ')'); ?></option>
 								<?php endforeach; ?>
 							</select>
 						</td>
@@ -119,27 +105,56 @@ $selected = static function (array $duties, int $day, string $slot, int $staffId
 		var el = document.getElementById(id);
 		if (el) el.addEventListener('change', paintHeads);
 	});
+	var prepStaff = <?= json_encode(array_values($staff), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?> || [];
+	function prepMatcher(params, data) {
+		var term = jQuery.trim(params.term || '').toUpperCase();
+		if (term === '') return data;
+		var text = jQuery.trim(data.text || '').toUpperCase();
+		return text.indexOf(term) > -1 ? data : null;
+	}
+	function fillSelect($el) {
+		var chosen = {};
+		($el.val() || []).forEach(function (id) { chosen[String(id)] = true; });
+		$el.empty();
+		$el.append(new Option('', '', false, false));
+		prepStaff.forEach(function (person) {
+			var id = String(person.id);
+			var label = jQuery.trim((person.name || '') + (person.post ? ' (' + person.post + ')' : ''));
+			var option = new Option(label, id, false, !!chosen[id]);
+			$el.append(option);
+		});
+	}
 	function initSelects() {
 		if (!window.jQuery || !jQuery.fn.select2) return;
 		jQuery('#prepInvigilation .prep-staff-select').each(function () {
 			var $el = jQuery(this);
-			if ($el.data('select2')) return;
+			if ($el.data('select2')) $el.select2('destroy');
+			fillSelect($el);
 			$el.select2({
 				width: '100%',
-				placeholder: $el.data('placeholder') || 'Select staff',
+				multiple: true,
+				placeholder: 'Select teacher, patron, or matron',
 				closeOnSelect: false,
-				dropdownParent: jQuery(document.body)
+				dropdownParent: jQuery(document.body),
+				matcher: prepMatcher
 			});
 		});
 	}
 	jQuery(function () {
-		initSelects();
+		function whenSelect2(tries) {
+			if (window.jQuery && jQuery.fn.select2) {
+				initSelects();
+				return;
+			}
+			if (tries < 50) setTimeout(function () { whenSelect2(tries + 1); }, 40);
+		}
+		whenSelect2(0);
 		jQuery('#prepTimetableForm').on('submit', function (e) {
 			e.preventDefault();
 			var assignments = {};
 			jQuery('#prepTimetableForm .prep-staff-select').each(function () {
-				var day = String(jQuery(this).data('day'));
-				var slot = String(jQuery(this).data('slot'));
+				var day = String(jQuery(this).attr('data-prep-day'));
+				var slot = String(jQuery(this).attr('data-prep-slot'));
 				if (!assignments[day]) assignments[day] = { morning: [], evening: [] };
 				var values = jQuery(this).val() || [];
 				assignments[day][slot] = values;
