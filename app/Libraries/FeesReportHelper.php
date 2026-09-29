@@ -355,8 +355,24 @@ class FeesReportHelper
 			->join('levels l', 'l.id=cl.level')
 			->join('faculty f', 'f.id=d.faculty_id')
 			->join("(select " . SchoolFeesModel::sqlModeSumSelect('sf') . ",sf.level,sf.department from school_fees sf where sf.term IN ($termsIn) and
-			sf.academic_year=$academic and sf.school_id = $schoolId group by sf.level,sf.department) sf", 'sf.level=l.id and sf.department=d.id', 'LEFT')
-			->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $schoolId AND (fd.comment IS NULL OR fd.comment NOT LIKE 'Set from Create Fee%') group by fd.student,sf.level,sf.department) fd", 'fd.level=l.id and fd.department=d.id AND fd.student=students.id', 'LEFT')
+			sf.academic_year=$academic and sf.school_id = $schoolId and sf.id IN (
+				select MAX(sx.id) from school_fees sx
+				where sx.school_id = $schoolId and sx.academic_year = $academic and sx.term IN ($termsIn)
+				and (
+					sx.class_id = $classId
+					OR (
+						(sx.class_id IS NULL OR sx.class_id = 0)
+						AND NOT EXISTS (
+							SELECT 1 FROM school_fees sy
+							WHERE sy.school_id = sx.school_id AND sy.academic_year = sx.academic_year
+							AND sy.term = sx.term AND sy.level = sx.level AND sy.department = sx.department
+							AND sy.class_id = $classId
+						)
+					)
+				)
+				group by sx.term
+			) group by sf.level,sf.department) sf", 'sf.level=l.id and sf.department=d.id', 'LEFT')
+			->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $schoolId AND (fd.comment IS NULL OR (fd.comment NOT LIKE 'Set from Create Fee%' AND fd.comment NOT LIKE 'Set from pending registration%')) group by fd.student,sf.level,sf.department) fd", 'fd.level=l.id and fd.department=d.id AND fd.student=students.id', 'LEFT')
 			->join("(select " . ExtraFeesModel::sqlModeSumSelect('ex') . ",ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
 			ex.academic_year=$academic and ex.school_id = $schoolId group by ex.type_id) ex", 'ex.type_id=cl.id', 'LEFT')
 			->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=1 and ex.term IN ($termsIn) and
@@ -381,6 +397,47 @@ class FeesReportHelper
 			->groupBy('students.id');
 	}
 
+	private static function extraTitleKey(string $title): string
+	{
+		$clean = preg_replace('/\s+/u', ' ', trim($title));
+		return strtolower($clean ?? '');
+	}
+
+	private static function preferExtraTitle(string $current, string $candidate): string
+	{
+		$candidate = trim((string) (preg_replace('/\s+/u', ' ', trim($candidate)) ?? ''));
+		if ($candidate === '') {
+			return $current;
+		}
+		if ($current === '') {
+			return $candidate;
+		}
+		$currentMixed = $current !== strtoupper($current);
+		$candidateMixed = $candidate !== strtoupper($candidate);
+		if ($candidateMixed && !$currentMixed) {
+			return $candidate;
+		}
+		return $current;
+	}
+
+	/**
+	 * Same title and term must not be billed twice when the name only differs by case or spacing.
+	 *
+	 * @param list<array<string,mixed>> $rows
+	 */
+	private static function expectedFromExtraRows(array $rows, int $mode): float
+	{
+		$byTerm = [];
+		foreach ($rows as $ex) {
+			$term = (int) ($ex['term'] ?? 0);
+			$amount = ExtraFeesModel::expectedForMode($ex, $mode);
+			if (!isset($byTerm[$term]) || $amount > $byTerm[$term]) {
+				$byTerm[$term] = $amount;
+			}
+		}
+		return (float) array_sum($byTerm);
+	}
+
 	/**
 	 * @param list<array<string,mixed>> $students
 	 * @return array{students: list<array<string,mixed>>, extraFeeColumns: list<string>}
@@ -402,7 +459,7 @@ class FeesReportHelper
 		$actorMap = [];
 		$paymentModeMap = [];
 		$lastPaymentMap = [];
-		$extraFeeColumns = [];
+		$extraFeeLabels = [];
 		$classExtraDefs = [];
 		$studentExtraDefs = [];
 		$extraPaidMap = [];
@@ -422,14 +479,12 @@ class FeesReportHelper
 				->get()->getResultArray();
 			foreach ($classExtras as $ex) {
 				$title = trim((string) ($ex['title'] ?? ''));
-				if ($title === '') {
+				$key = self::extraTitleKey($title);
+				if ($key === '') {
 					continue;
 				}
-				if (!isset($classExtraDefs[$title])) {
-					$classExtraDefs[$title] = [];
-					$extraFeeColumns[] = $title;
-				}
-				$classExtraDefs[$title][] = $ex;
+				$extraFeeLabels[$key] = self::preferExtraTitle($extraFeeLabels[$key] ?? '', $title);
+				$classExtraDefs[$key][] = $ex;
 			}
 		}
 
@@ -553,14 +608,13 @@ class FeesReportHelper
 					->get()->getResultArray();
 				foreach ($studentExtras as $ex) {
 					$title = trim((string) ($ex['title'] ?? ''));
+					$key = self::extraTitleKey($title);
 					$sid = (int) ($ex['type_id'] ?? 0);
-					if ($title === '' || $sid < 1) {
+					if ($key === '' || $sid < 1) {
 						continue;
 					}
-					if (!isset($classExtraDefs[$title]) && !in_array($title, $extraFeeColumns, true)) {
-						$extraFeeColumns[] = $title;
-					}
-					$studentExtraDefs[$sid][$title][] = $ex;
+					$extraFeeLabels[$key] = self::preferExtraTitle($extraFeeLabels[$key] ?? '', $title);
+					$studentExtraDefs[$sid][$key][] = $ex;
 				}
 
 				$paidRows = $db->table('fees_records fr')
@@ -579,18 +633,20 @@ class FeesReportHelper
 				foreach ($paidRows as $paidRow) {
 					$sid = (int) ($paidRow['student_id'] ?? 0);
 					$title = trim((string) ($paidRow['title'] ?? ''));
-					if ($sid < 1 || $title === '') {
+					$key = self::extraTitleKey($title);
+					if ($sid < 1 || $key === '') {
 						continue;
 					}
-					$extraPaidMap[$sid][$title] = (float) ($paidRow['paid'] ?? 0);
-					if (!in_array($title, $extraFeeColumns, true)) {
-						$extraFeeColumns[] = $title;
-					}
+					$extraPaidMap[$sid][$key] = (float) ($extraPaidMap[$sid][$key] ?? 0) + (float) ($paidRow['paid'] ?? 0);
+					$extraFeeLabels[$key] = self::preferExtraTitle($extraFeeLabels[$key] ?? '', $title);
 				}
 			}
 		}
 
-		sort($extraFeeColumns, SORT_NATURAL | SORT_FLAG_CASE);
+		uksort($extraFeeLabels, static function ($a, $b) use ($extraFeeLabels) {
+			return strnatcasecmp($extraFeeLabels[$a], $extraFeeLabels[$b]);
+		});
+		$extraFeeColumns = array_values($extraFeeLabels);
 		foreach ($students as &$stRow) {
 			$sid = (int) ($stRow['student_id'] ?? 0);
 			$mode = (int) ($stRow['studying_mode'] ?? 1);
@@ -600,18 +656,13 @@ class FeesReportHelper
 			$stRow['last_payment'] = $lastPaymentMap[$sid] ?? '';
 			$breakdown = [];
 			if ($withDetailed && $includeExtra) {
-				foreach ($extraFeeColumns as $title) {
-					$expected = 0.0;
-					foreach ($classExtraDefs[$title] ?? [] as $ex) {
-						$expected += ExtraFeesModel::expectedForMode($ex, $mode);
+				foreach ($extraFeeLabels as $key => $title) {
+					if (isset($classExtraDefs[$key])) {
+						$expected = self::expectedFromExtraRows($classExtraDefs[$key], $mode);
+					} else {
+						$expected = self::expectedFromExtraRows($studentExtraDefs[$sid][$key] ?? [], $mode);
 					}
-					foreach ($studentExtraDefs[$sid][$title] ?? [] as $ex) {
-						if (isset($classExtraDefs[$title])) {
-							continue;
-						}
-						$expected += ExtraFeesModel::expectedForMode($ex, $mode);
-					}
-					$paid = (float) ($extraPaidMap[$sid][$title] ?? 0);
+					$paid = (float) ($extraPaidMap[$sid][$key] ?? 0);
 					$breakdown[$title] = [
 						'expected' => $expected,
 						'paid' => $paid,

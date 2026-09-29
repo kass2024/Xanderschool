@@ -1939,7 +1939,7 @@ public function sync($option, $school_id)
 
         // --- Student Info ---
         $student = $studentMdl->select("
-            students.id, students.regno,
+            students.id, students.regno, students.studying_mode,
             CONCAT(students.fname,' ',students.lname) AS name,
             sk.id AS school_id, sk.name AS school_name,
             c.id AS class_id, d.id AS dept_id, l.id AS level_id,
@@ -2030,13 +2030,44 @@ public function sync($option, $school_id)
                 ->get()->getResultArray();
         }
 
+        $studyingMode = (int) ($student->studying_mode ?? 1);
+        if ($schoolFees !== []) {
+            $feeIds = array_values(array_unique(array_filter(array_map('intval', array_column($schoolFees, 'feesId')))));
+            $detailById = [];
+            if ($feeIds !== []) {
+                foreach ($schoolFeesMdl->select('id, amount, amount_boarding, amount_day')->whereIn('id', $feeIds)->findAll() as $detail) {
+                    $detailById[(int) $detail['id']] = $detail;
+                }
+                $commentSql = \App\Models\SchoolFeesModel::scholarshipCommentSql('comment');
+                $idList = implode(',', $feeIds);
+                $discRows = \Config\Database::connect()->query(
+                    "SELECT feesId, SUM(amount) AS amount FROM school_fees_discount WHERE student = ? AND feesId IN ({$idList}) AND {$commentSql} GROUP BY feesId",
+                    [$studentDbId]
+                )->getResultArray();
+                foreach ($discRows as $discRow) {
+                    $fid = (int) ($discRow['feesId'] ?? 0);
+                    if (isset($detailById[$fid])) {
+                        $detailById[$fid]['discount'] = (float) ($discRow['amount'] ?? 0);
+                    }
+                }
+            }
+            foreach ($schoolFees as &$sfRow) {
+                $fid = (int) ($sfRow['feesId'] ?? 0);
+                $detail = $detailById[$fid] ?? ['amount' => $sfRow['expected'] ?? 0, 'discount' => 0];
+                $expected = \App\Models\SchoolFeesModel::expectedForStudent($detail, $studyingMode, (float) ($detail['discount'] ?? 0));
+                $paid = (float) ($sfRow['paid'] ?? 0);
+                $sfRow['expected'] = $expected;
+                $sfRow['balance'] = $expected - $paid;
+            }
+            unset($sfRow);
+        }
+
         // --- Extra Fees (Class-based) ---
         $extraClass = $extraFeesMdl->select("
             extra_fees.id AS feesId,
             extra_fees.title, extra_fees.academic_year, extra_fees.term,
-            extra_fees.amount AS expected,
-            COALESCE(SUM(fr.amount),0) AS paid,
-            (extra_fees.amount - COALESCE(SUM(fr.amount),0)) AS balance
+            extra_fees.amount, extra_fees.amount_boarding, extra_fees.amount_day,
+            COALESCE(SUM(fr.amount),0) AS paid
         ")
             ->join("fees_records fr",
                 "fr.fees_id = extra_fees.id 
@@ -2050,6 +2081,14 @@ public function sync($option, $school_id)
             ->groupBy("extra_fees.id")
             ->orderBy("extra_fees.title", "ASC")
             ->get()->getResultArray();
+        foreach ($extraClass as &$exRow) {
+            $expected = \App\Models\ExtraFeesModel::expectedForMode($exRow, $studyingMode);
+            $paid = (float) ($exRow['paid'] ?? 0);
+            $exRow['expected'] = $expected;
+            $exRow['balance'] = $expected - $paid;
+            unset($exRow['amount'], $exRow['amount_boarding'], $exRow['amount_day']);
+        }
+        unset($exRow);
 
         // --- Extra Fees (Student-specific) ---
         $extraStudent = $extraFeesMdl->select("
@@ -2139,16 +2178,20 @@ public function sync($option, $school_id)
 			->get()->getRowArray();
 		$stModeRow = (new StudentModel())->select('studying_mode')->find($student);
 		$mode = (int) ($stModeRow['studying_mode'] ?? 1);
-		$schoolfrees = $schoolFees->select("school_fees.id,school_fees.class_id,'School fees' as title,0 as type,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount,coalesce(sum(fr.amount),0) as paid, fr.due_date,school_fees.term")
-			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
-			->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=2", "LEFT")
-			->where("school_fees.level", $level['level_id'])
-			->where("school_fees.department", $level['dept_id'])
-			->where("school_fees.academic_year", $classYear->year)
-			->where("school_fees.school_id", $school_id)
-			->groupBy("school_fees.id")
-			->get()->getResultArray();
-		$schoolfrees = SchoolFeesModel::dedupeForClass($schoolfrees, (int) $class);
+		$schoolFees->ensureSchema();
+		$schoolfrees = $schoolFees->linesForClass(
+			(int) $school_id,
+			(int) ($classYear->year ?? 0),
+			(int) $class,
+			(int) ($level['level_id'] ?? 0),
+			(int) ($level['dept_id'] ?? 0)
+		);
+		$schoolfrees = $schoolFees->attachStudentBalances($schoolfrees, (int) $student);
+		foreach ($schoolfrees as &$sfPrep) {
+			$sfPrep['title'] = 'School fees';
+			$sfPrep['type'] = 0;
+		}
+		unset($sfPrep);
 		foreach ($schoolfrees as &$sfRow) {
 			$sfRow['amount'] = SchoolFeesModel::expectedForStudent($sfRow, $mode, (float) ($sfRow['discount'] ?? 0));
 			unset($sfRow['amount_boarding'], $sfRow['amount_day'], $sfRow['discount']);
@@ -2902,7 +2945,7 @@ public function get_boarding_classes()
 		$extraFees = new ExtraFeesModel();
 		$classMdl = new ClassesModel();
 		$classRMdl = new ClassRecordModel();
-		$class_data = $classRMdl->select("class,st.transport_money")
+		$class_data = $classRMdl->select("class,st.transport_money,st.studying_mode")
 			->join("students st", "st.id = class_records.student")
 			->where("student", $student_id)
 			->where("year", $year)
@@ -2926,20 +2969,26 @@ public function get_boarding_classes()
 			->where("classes.school_id", $school_id)
 			->where("classes.id", $class)
 			->get()->getRowArray();
-		$schoolfreesRows = $schoolFees->select("school_fees.id,school_fees.class_id,school_fees.term,(school_fees.amount+coalesce(fd.amount,0)) as skl_amount ,coalesce(sum(fr.amount),0) as paidschoolfees")
-			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student_id group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
-			->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student_id and fr.fees_type=0 and fr.status=1", "LEFT")
-			->where("school_fees.level", $level['level_id'])
-			->where("school_fees.department", $level['dept_id'])
-			->where("school_fees.academic_year", $year)
-			->where("school_fees.term", $term)
-			->where("school_fees.school_id", $school_id)
-			->groupBy("school_fees.id")
-			->get()->getResultArray();
-		$schoolfreesRows = SchoolFeesModel::dedupeForClass($schoolfreesRows, (int) $class);
-		$schoolfrees = $schoolfreesRows[0] ?? null;
-		if ($schoolfrees == null)
+		$schoolFees->ensureSchema();
+		$schoolfreesRows = $schoolFees->linesForClass(
+			(int) $school_id,
+			(int) $year,
+			(int) $class,
+			(int) ($level['level_id'] ?? 0),
+			(int) ($level['dept_id'] ?? 0),
+			(int) $term
+		);
+		$schoolfreesRows = $schoolFees->attachStudentBalances($schoolfreesRows, (int) $student_id);
+		$feeRow = $schoolfreesRows[0] ?? null;
+		$studyingMode = (int) ($class_data->studying_mode ?? 1);
+		if ($feeRow == null) {
 			$schoolfrees = array("skl_amount" => "0", "paidschoolfees" => "0");
+		} else {
+			$schoolfrees = [
+				"skl_amount" => SchoolFeesModel::expectedForStudent($feeRow, $studyingMode, (float) ($feeRow['discount'] ?? 0)),
+				"paidschoolfees" => (float) ($feeRow['paid'] ?? 0),
+			];
+		}
 		$schoolfrees['transport_money'] = $class_data->transport_money;
 		$data = array_merge($extraFeesx ?: ["extra_amount" => "0", "paidextra" => "0"], $schoolfrees);
 		$data['success'] = 1;
@@ -5766,7 +5815,9 @@ public function permission_card_scan()
 	}
 
 	/**
-	 * Tablet staff attendance — same IN/OUT rules as the web staff card scanner.
+	 * Staff Attendance USB kiosk. The installed app posts here when it is online
+	 * and when it flushes taps saved offline. Record the clock; do not treat it
+	 * as a gate outing.
 	 */
 	public function gate_staff_scan()
 	{
@@ -5774,10 +5825,31 @@ public function permission_card_scan()
 		$schoolId = (int) ($this->request->getPost('school_id') ?: 0);
 		$cardRaw = trim((string) ($this->request->getPost('card') ?? ''));
 		$eventTime = (int) ($this->request->getPost('time') ?: 0);
-		$out = $this->applyStaffCard($schoolId, $cardRaw, $eventTime);
-		$dash = StaffShiftClock::dashboard($schoolId);
-		$out['kpi'] = $dash['kpi'];
-		$out['recent'] = $dash['recent'];
+		$wanted = strtoupper(trim((string) ($this->request->getPost('status') ?? '')));
+		if ($wanted !== 'IN' && $wanted !== 'OUT') {
+			$wanted = '';
+		}
+		if ($schoolId <= 0 || $cardRaw === '') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'School and card are required']);
+		}
+		$owner = CardRegistry::lookup($schoolId, $cardRaw);
+		if ($owner && ($owner['type'] ?? '') === 'student') {
+			return $this->response->setJSON(['success' => 0, 'kind' => 'student', 'message' => 'This is a student card.']);
+		}
+		if ($owner && ($owner['type'] ?? '') === 'visitor') {
+			return $this->response->setJSON(['success' => 0, 'kind' => 'visitor', 'message' => 'This is a parent visitor card.']);
+		}
+		if (!$owner || ($owner['type'] ?? '') !== 'staff') {
+			return $this->response->setJSON(['success' => 0, 'message' => 'Staff card not found']);
+		}
+		$staffSchool = (int) ($owner['school_id'] ?? $schoolId);
+		if ($staffSchool <= 0) {
+			$staffSchool = $schoolId;
+		}
+		$out = AttendanceScanService::scanStaff($staffSchool, (int) $owner['id'], $eventTime, $wanted);
+		$dash = StaffShiftClock::dashboard($staffSchool);
+		$out['kpi'] = $dash['kpi'] ?? [];
+		$out['recent'] = $dash['recent'] ?? [];
 		return $this->response->setJSON($out);
 	}
 
@@ -5831,6 +5903,28 @@ public function permission_card_scan()
 			$time = (int) ($ev['time'] ?? 0);
 			if ($op === 'staff') {
 				$results[] = $this->applyStaffCard($schoolId, $card, $time);
+				continue;
+			}
+			if ($op === 'staff_out') {
+				try {
+					$reason = trim((string) ($ev['reason'] ?? ''));
+					$owner = CardRegistry::lookup($schoolId, $card);
+					if ($owner && ($owner['type'] ?? '') === 'staff' && $reason !== '') {
+						$staff = $this->staffGatePerson($schoolId, (int) $owner['id']);
+						if ($staff && !$this->staffIsSecurity($staff)) {
+							$results[] = $this->recordStaffGateOut(
+								$schoolId,
+								$staff,
+								$reason,
+								!empty($ev['approved']),
+								$time > 1000000000 ? $time : time()
+							);
+						}
+					}
+				} catch (\Throwable $e) {
+					log_message('error', 'gate_sync staff_out: ' . $e->getMessage());
+					$results[] = ['success' => 0, 'message' => 'Could not save the outing.'];
+				}
 				continue;
 			}
 			if ($op === 'checkin') {
@@ -5887,6 +5981,8 @@ public function permission_card_scan()
 	}
 
 	/**
+	 * Gate tablet: staff outing permission. Does not write attendance.
+	 *
 	 * @return array<string,mixed>
 	 */
 	private function applyStaffCard(int $schoolId, string $cardRaw, int $eventTime = 0): array
@@ -5909,8 +6005,333 @@ public function permission_card_scan()
 		if (!$owner || ($owner['type'] ?? '') !== 'staff') {
 			return ['success' => 0, 'kind' => 'unknown', 'message' => 'Staff card not found'];
 		}
-		$out = AttendanceScanService::scanStaff($schoolId, (int) $owner['id'], $eventTime);
-		$out['kind'] = 'staff';
-		return $out;
+		return $this->staffGateDecision($schoolId, (int) $owner['id'], $eventTime);
+	}
+
+	public function gate_staff_out_reason()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		try {
+			$schoolId = (int) ($this->request->getPost('school_id') ?: 0);
+			$cardRaw = trim((string) ($this->request->getPost('card') ?? ''));
+			$reason = trim((string) ($this->request->getPost('reason') ?? ''));
+			if ($schoolId <= 0 || $cardRaw === '' || $reason === '') {
+				return $this->gateJson(['success' => 0, 'message' => 'Card, school, and reason are required.']);
+			}
+			$owner = CardRegistry::lookup($schoolId, $cardRaw);
+			if (!$owner || ($owner['type'] ?? '') !== 'staff') {
+				return $this->gateJson(['success' => 0, 'message' => 'Staff card not found']);
+			}
+			$staff = $this->staffGatePerson($schoolId, (int) $owner['id']);
+			if ($staff === null) {
+				return $this->gateJson(['success' => 0, 'message' => 'Staff card not found']);
+			}
+			if ($this->staffIsSecurity($staff)) {
+				return $this->gateJson($this->staffGatePayload($staff, true, false, 'Security access'));
+			}
+			return $this->gateJson($this->recordStaffGateOut($schoolId, $staff, $reason, false, time()));
+		} catch (\Throwable $e) {
+			log_message('error', 'gate_staff_out_reason: ' . $e->getMessage());
+			return $this->gateJson([
+				'success' => 0,
+				'message' => 'Could not save the outing. Please try again.',
+			]);
+		}
+	}
+
+	/**
+	 * Always a JSON body. A failed json_encode used to return an empty page,
+	 * which the gate tablet showed as "End of input at character 0".
+	 *
+	 * @param array<string,mixed> $payload
+	 */
+	private function gateJson(array $payload)
+	{
+		$flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+		if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+			$flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+		}
+		$json = json_encode($payload, $flags);
+		if ($json === false || $json === '') {
+			$json = '{"success":0,"message":"Could not save the outing. Please try again."}';
+		}
+		return $this->response
+			->setStatusCode(200)
+			->setHeader('Content-Type', 'application/json; charset=UTF-8')
+			->setBody($json);
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	private function staffGateDecision(int $schoolId, int $staffId, int $eventTime = 0): array
+	{
+		$staff = $this->staffGatePerson($schoolId, $staffId);
+		if ($staff === null) {
+			return ['success' => 0, 'kind' => 'unknown', 'message' => 'Staff card not found'];
+		}
+		if ($this->staffIsSecurity($staff)) {
+			return $this->staffGatePayload($staff, true, false, 'Security access');
+		}
+		$now = $eventTime > 1000000000 ? $eventTime : time();
+		if ($this->staffHasApprovedOut($schoolId, $staffId, $now)) {
+			return $this->staffGatePayload($staff, true, false, 'Approved permission. Access granted.');
+		}
+		return $this->staffGatePayload($staff, false, true, 'No approved permission. Record a reason to go out.');
+	}
+
+	/**
+	 * @return object|null
+	 */
+	private function staffGatePerson(int $schoolId, int $staffId)
+	{
+		$db = \Config\Database::connect();
+		return $db->table('staffs s')
+			->select('s.id, s.fname, s.lname, s.phone, s.photo, s.post, p.title as post_title')
+			->join('posts p', 'p.id = s.post', 'left')
+			->where('s.id', $staffId)
+			->where('s.school_id', $schoolId)
+			->where('s.status !=', 0)
+			->get()
+			->getRow();
+	}
+
+	/**
+	 * @param object $staff
+	 */
+	private function staffIsSecurity($staff): bool
+	{
+		if ((int) ($staff->post ?? 0) === 11) {
+			return true;
+		}
+		$title = strtolower(trim((string) ($staff->post_title ?? '')));
+		return $title !== '' && strpos($title, 'security') !== false;
+	}
+
+	private function staffHasApprovedOut(int $schoolId, int $staffId, int $now): bool
+	{
+		$db = \Config\Database::connect();
+		$leave = $db->table('leaves')
+			->select('id')
+			->where('school_id', $schoolId)
+			->where('requested_by', $staffId)
+			->where('status', 1)
+			->where('fromDate <=', $now)
+			->where('toDate >=', $now)
+			->get(1)
+			->getRow();
+		return $leave !== null;
+	}
+
+	/**
+	 * @param object $staff
+	 * @return array<string,mixed>
+	 */
+	private function staffGatePayload($staff, bool $granted, bool $needReason, string $message): array
+	{
+		$person = [
+			'id' => (int) $staff->id,
+			'name' => trim($staff->fname . ' ' . $staff->lname),
+			'post' => (string) ($staff->post_title ?? ''),
+			'photo' => (string) ($staff->photo ?? ''),
+		];
+		return [
+			'success' => 1,
+			'kind' => 'staff',
+			'granted' => $granted ? 1 : 0,
+			'need_reason' => $needReason ? 1 : 0,
+			'status' => $granted ? 'OUT' : '',
+			'already' => false,
+			'can_out' => false,
+			'message' => $message,
+			'person' => $person,
+			'staff' => $person,
+		];
+	}
+
+	private function ensureStaffGateOuts(): void
+	{
+		$db = \Config\Database::connect();
+		$db->query("CREATE TABLE IF NOT EXISTS staff_gate_outs (
+			id INT NOT NULL AUTO_INCREMENT,
+			school_id INT NOT NULL,
+			staff_id INT NOT NULL,
+			reason TEXT NOT NULL,
+			approved TINYINT NOT NULL DEFAULT 0,
+			sms_sent TINYINT NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY idx_staff_gate_out (school_id, staff_id, created_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		if ($db->tableExists('staff_gate_outs') && !$db->fieldExists('sms_sent', 'staff_gate_outs')) {
+			$db->query('ALTER TABLE staff_gate_outs ADD COLUMN sms_sent TINYINT NOT NULL DEFAULT 0');
+		}
+	}
+
+	/**
+	 * Save the outing, then text the headteacher. A repeat of the same
+	 * reason within 3 minutes does not send a second SMS.
+	 *
+	 * @param object $staff
+	 * @return array<string,mixed>
+	 */
+	private function recordStaffGateOut(int $schoolId, $staff, string $reason, bool $approved, int $when): array
+	{
+		$this->ensureStaffGateOuts();
+		$db = \Config\Database::connect();
+		$staffId = (int) $staff->id;
+		$reason = trim($reason);
+		$when = $when > 1000000000 ? $when : time();
+		$since = date('Y-m-d H:i:s', $when - 180);
+		$recent = $db->table('staff_gate_outs')
+			->where('school_id', $schoolId)
+			->where('staff_id', $staffId)
+			->where('reason', $reason)
+			->where('created_at >=', $since)
+			->orderBy('id', 'DESC')
+			->get(1)
+			->getRow();
+
+		$rowId = 0;
+		$alreadySent = false;
+		if ($recent) {
+			$rowId = (int) $recent->id;
+			$alreadySent = (int) ($recent->sms_sent ?? 0) === 1;
+		} else {
+			$row = [
+				'school_id' => $schoolId,
+				'staff_id' => $staffId,
+				'reason' => $reason,
+				'approved' => $approved ? 1 : 0,
+				'created_at' => date('Y-m-d H:i:s', $when),
+			];
+			if ($db->fieldExists('sms_sent', 'staff_gate_outs')) {
+				$row['sms_sent'] = 0;
+			}
+			$saved = $db->table('staff_gate_outs')->insert($row);
+			if ($saved === false) {
+				throw new \RuntimeException('Could not save staff outing');
+			}
+			$rowId = (int) $db->insertID();
+		}
+
+		$sms = ['sent' => $alreadySent ? 1 : 0, 'heads' => 0, 'fail' => ''];
+		if (!$approved && !$alreadySent) {
+			try {
+				$sms = $this->notifyHeadteacherStaffOut($schoolId, $staff, $reason);
+			} catch (\Throwable $e) {
+				log_message('error', 'staff gate SMS: ' . $e->getMessage());
+				$sms = ['sent' => 0, 'heads' => 0, 'fail' => 'SMS failed'];
+			}
+			if ((int) ($sms['sent'] ?? 0) > 0 && $rowId > 0 && $db->fieldExists('sms_sent', 'staff_gate_outs')) {
+				$db->table('staff_gate_outs')->where('id', $rowId)->update(['sms_sent' => 1]);
+			}
+		}
+
+		$notified = (int) ($sms['sent'] ?? 0) > 0;
+		$name = trim((string) ($staff->fname ?? '') . ' ' . (string) ($staff->lname ?? ''));
+		$message = $notified
+			? $name . ' may go out. The headteacher has been notified. Thanks.'
+			: $name . ' may go out. The outing is saved. Thanks.';
+		$payload = $this->staffGatePayload($staff, true, false, $message);
+		$payload['saved'] = 1;
+		$payload['reason'] = $reason;
+		$payload['sms'] = $sms;
+		$payload['notified'] = $notified ? 1 : 0;
+		return $payload;
+	}
+
+	/**
+	 * Head Teacher, Head master, or Headmistress. Deputy Head Teacher only if none of those exist.
+	 *
+	 * @return list<object>
+	 */
+	private function headteacherRecipients(int $schoolId): array
+	{
+		$db = \Config\Database::connect();
+		$rows = $db->table('staffs s')
+			->select('s.id, s.fname, s.lname, s.phone, s.post, p.title as post_title')
+			->join('posts p', 'p.id = s.post', 'left')
+			->where('s.school_id', $schoolId)
+			->where('s.status !=', 0)
+			->get()
+			->getResult();
+		$heads = [];
+		$deputies = [];
+		foreach ($rows as $row) {
+			$postId = (int) ($row->post ?? 0);
+			$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row->post_title ?? ''))));
+			$isHead = in_array($postId, [1, 18, 25], true) || in_array($title, [
+				'head teacher', 'headteacher', 'head master', 'headmaster', 'headmistress',
+			], true);
+			$isDeputy = $postId === 26 || $title === 'deputy head teacher' || $title === 'deputy headteacher';
+			if ($isHead) {
+				$heads[] = $row;
+			} elseif ($isDeputy) {
+				$deputies[] = $row;
+			}
+		}
+		$picked = $heads !== [] ? $heads : $deputies;
+		$withPhone = [];
+		foreach ($picked as $row) {
+			if (trim((string) ($row->phone ?? '')) !== '') {
+				$withPhone[] = $row;
+			}
+		}
+		return $withPhone;
+	}
+
+	/**
+	 * @param object $staff
+	 * @return array<string,mixed>
+	 */
+	private function notifyHeadteacherStaffOut(int $schoolId, $staff, string $reason): array
+	{
+		$heads = $this->headteacherRecipients($schoolId);
+		$name = trim((string) ($staff->fname ?? '') . ' ' . (string) ($staff->lname ?? ''));
+		$post = trim((string) ($staff->post_title ?? ''));
+		if ($post === '') {
+			$post = 'Staff';
+		}
+		$msg = $name . ' (' . $post . ') is going out. Reason: ' . trim($reason);
+		$sent = 0;
+		$fail = '';
+		foreach ($heads as $head) {
+			$phone = trim((string) ($head->phone ?? ''));
+			if ($phone === '') {
+				continue;
+			}
+			$result = null;
+			try {
+				if ($this->sendSMS($phone, $msg, $result, null, 8)) {
+					$sent++;
+				} else {
+					$fail = $this->smsResultText($result);
+				}
+			} catch (\Throwable $e) {
+				$fail = 'SMS failed';
+				log_message('error', 'gate headteacher SMS: ' . $e->getMessage());
+			}
+		}
+		return ['sent' => $sent, 'heads' => count($heads), 'fail' => $fail];
+	}
+
+	/**
+	 * @param mixed $result
+	 */
+	private function smsResultText($result): string
+	{
+		if (!is_array($result)) {
+			return 'SMS failed';
+		}
+		$content = $result['content'] ?? 'SMS failed';
+		if (is_string($content)) {
+			return $content;
+		}
+		if (is_scalar($content)) {
+			return (string) $content;
+		}
+		$encoded = json_encode($content);
+		return $encoded !== false ? $encoded : 'SMS failed';
 	}
 }
