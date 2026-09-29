@@ -104,10 +104,13 @@ if ($show_header) {
 				$(this).addClass("active");
 				if (day === "all") {
 					$(".io-visit-row").show();
+					$(".io-inv-block").show();
 					$("#ioDayCaption").text("All activity days");
 				} else {
 					$(".io-visit-row").hide();
 					$(".io-visit-row[data-day='" + day + "']").show();
+					$(".io-inv-block").hide();
+					$(".io-inv-block[data-day='" + day + "']").show();
 					$("#ioDayCaption").text("Day " + day);
 				}
 				var $vis = day === "all" ? $(".io-visit-row") : $(".io-visit-row[data-day='" + day + "']");
@@ -192,6 +195,11 @@ foreach ($visits as $vv) {
 				</div>
 			</div>
 			<h4><?= lang("app.StudentInOutmonthlyReport"); ?><?= !empty($attendance_area) ? ' — ' . esc($attendance_area) : ''; ?></h4>
+
+			<?= view('pages/reports/_prep_invigilators', [
+				'prep_days' => $prep_days ?? [],
+				'default_day' => $defaultDay,
+			]); ?>
 
 			<?php if (count($activeDays) === 0) : ?>
 				<div class="io-empty">No NFC IN/OUT scans for this filter in <?= esc($month_label ?? ''); ?>.</div>

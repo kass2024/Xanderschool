@@ -136,6 +136,7 @@ class AttendanceScanService
 			'attendance_today' => self::studentAttendanceToday($schoolId),
 			'visitors' => self::visitorList($schoolId),
 			'visitor_visits_today' => self::visitorVisitsToday($schoolId),
+			'prep_rota' => (new \App\Models\PrepTimetableModel())->deviceRota($schoolId),
 		];
 	}
 
@@ -430,6 +431,7 @@ class AttendanceScanService
 			'students' => $students,
 			'visitors' => $visitors,
 			'staff' => $staff,
+			'prep_rota' => (new \App\Models\PrepTimetableModel())->deviceRota($schoolId),
 		];
 	}
 
@@ -604,7 +606,12 @@ class AttendanceScanService
 			return ['success' => 0, 'message' => 'Visitor cards cannot be used here'];
 		}
 		if ($owner['type'] === 'staff') {
-			return ['success' => 0, 'kind' => 'staff', 'message' => 'Staff must use face, not card'];
+			return (new \App\Models\PrepTimetableModel())->recordDutyTap(
+				(int) ($owner['school_id'] ?? $schoolId),
+				(int) $owner['id'],
+				$areaId,
+				$eventTime
+			);
 		}
 		if ($owner['type'] === 'student') {
 			$ownerSchoolId = (int) ($owner['school_id'] ?? $schoolId);

@@ -77,7 +77,7 @@ $isChosen = static function (array $duties, int $day, string $slot, int $staffId
 	.prep-none { display: none; padding: 8px; color: #64748b; font-size: 13px; }
 </style>
 
-<p class="text-muted mb-3">Choose who invigilates each morning prep and evening prep. All active staff can be chosen except <strong>Cooker</strong>, <strong>Cleaner</strong>, and <strong>Security</strong>. Click a cell, tick the names, and you can pick more than one person.<?php if ($staff !== []): ?> <strong><?= count($staff); ?> staff available.</strong><?php endif; ?></p>
+<p class="text-muted mb-3">Choose who invigilates each morning prep and evening prep. All active staff can be chosen except <strong>Cooker</strong>, <strong>Cleaner</strong>, and <strong>Security</strong>. Click a cell, tick the names, and you can pick more than one person. On the day they are on duty they must tap their staff card at the Morning prep or Evening prep reader.<?php if ($staff !== []): ?> <strong><?= count($staff); ?> staff available.</strong><?php endif; ?></p>
 
 <?php if ($staff === []): ?>
 	<div class="alert alert-warning">No active staff available for prep invigilation.</div>

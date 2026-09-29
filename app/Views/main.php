@@ -876,6 +876,12 @@
 										Preps invigilation
 									</a>
 								</li>
+								<li class="<?= (!empty($page) && $page === 'prep_invigilation_report') ? 'mm-active' : ''; ?>">
+									<a href="<?= base_url('prep_invigilation_report'); ?>">
+										<i class="metismenu-icon fa fa-check-square"></i>
+										Prep attendance
+									</a>
+								</li>
 							<?php } ?>
 							<!--
 							<li class="app-sidebar__heading">MISCELLANIOUS</li>

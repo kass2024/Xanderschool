@@ -3141,6 +3141,32 @@ public function testEmail()
 		return $this->response->setJSON(['success' => (string) $result['message']]);
 	}
 
+	/** Present and absent invigilators for morning and evening prep. */
+	public function prep_invigilation_report()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$from = trim((string) ($this->request->getGet('date1') ?: date('Y-m-d')));
+		$to = trim((string) ($this->request->getGet('date2') ?: $from));
+		if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) {
+			$from = date('Y-m-d');
+		}
+		if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) {
+			$to = $from;
+		}
+		$prepMdl = new \App\Models\PrepTimetableModel();
+		$report = $prepMdl->attendanceReport($schoolId, $from, $to, '');
+		$data = $this->data;
+		$data['title'] = 'Prep attendance';
+		$data['subtitle'] = 'Present and absent invigilators';
+		$data['page'] = 'prep_invigilation_report';
+		$data['prep_report'] = $report;
+		$data['date1'] = $report['from'];
+		$data['date2'] = $report['to'];
+		$data['content'] = view('pages/prep_invigilation_report', $data);
+		return view('main', $data);
+	}
+
 	private function ensurePedagogicalDocsSchema()
 	{
 		$db = \Config\Database::connect();
@@ -7242,6 +7268,16 @@ public function attendanceCard()
 		$data['show_header'] = false;
 		$data['classe'] = $classe > 0 ? (new ClassesModel())->get_class_name($classe) : 'All classes';
 		$data['attendance_area'] = $areaLabel;
+		$prepSlot = $areaId > 0 ? \App\Models\PrepTimetableModel::slotFromAreaName($areaLabel) : '';
+		$showPrep = $areaId <= 0 || $prepSlot !== '';
+		$data['prep_days'] = [];
+		$data['default_day'] = (int) ($data['default_day'] ?? 0);
+		if ($showPrep) {
+			$fromDate = sprintf('%04d-%02d-01', $yearNum, $monthNum);
+			$toDate = date('Y-m-t', strtotime($fromDate));
+			$prepReport = (new \App\Models\PrepTimetableModel())->attendanceReport($schoolId, $fromDate, $toDate, $prepSlot);
+			$data['prep_days'] = $prepReport['days'];
+		}
 		$data['pdf'] = ($pdf === 'true' || $pdf === true);
 		echo view("pages/reports/student_inout_report_monthly", $data);
 	}
