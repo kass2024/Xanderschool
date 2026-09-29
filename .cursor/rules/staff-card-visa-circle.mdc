@@ -18,7 +18,7 @@ Keep this design for every Wisdom campus staff card (Ngororero and any school ad
 ## Use the shared code
 
 - Frame with `ProfilePhotoNormalizer::coverCenterTop()`.
-- HTML/PDF cache key must change when the frame changes (`profile_photo_staff_circle_src`, currently `v6visacircle`).
+- HTML/PDF cache key must change when the frame changes (`profile_photo_staff_circle_src`, currently `v8visa58`). Student cards use the same frame (`v18visa58`).
 - Place the bitmap with `WisdomStaffCardRenderer` hole constants measured on the **591×1004** artwork: center `(296, 314)`, diameter **272**, inset **1.0** (fill the white hole, leave the black ring and blue artwork outside).
 - The round `<img>` uses `object-fit: fill` and `min-width/min-height: 100%` so flex layout cannot shrink it inside the circle.
 

@@ -12,6 +12,12 @@ class ProfilePhotoNormalizer
 	public const HEIGHT = 1200;
 	/** Square ID-card hole (webcam + Wisdom circle artwork). */
 	public const CIRCLE = 1000;
+	/** US visa: chin-to-crown is 58% of the frame (allowed band is 50–69%). */
+	private const VISA_HEAD_OF_FRAME = 0.58;
+	/** Crown sits this far down so the circle does not cut the hair. */
+	private const VISA_CROWN_INSET = 0.14;
+	/** Crown-to-chin height divided by ear-to-ear width. */
+	private const VISA_FACE_ASPECT = 1.35;
 
 	/** @var string */
 	private $lastError = '';
@@ -646,7 +652,7 @@ class ProfilePhotoNormalizer
 
 	/**
 	 * Place the portrait in the staff-card circle. The square is clipped round.
-	 * The face fills the hole, and the crown stays below the ring.
+	 * Chin-to-crown is a US-visa share of the frame, with neck and shoulders below.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -663,29 +669,11 @@ class ProfilePhotoNormalizer
 		if ($sw < 2 || $sh < 2) {
 			return null;
 		}
-		[$bx, $by, $bw, $bh] = $this->letterboxBox($src, $sw, $sh);
-		if ($bw < 8 || $bh < 8) {
-			$bx = 0;
-			$by = 0;
-			$bw = $sw;
-			$bh = $sh;
+		$placed = $this->visaFrame($src);
+		if ($placed === null) {
+			return null;
 		}
-		$wall = $this->sampleInnerWall($src, $bx, $by, $bw, $bh);
-		$subject = $this->visaSubjectBox($src, $bx, $by, $bw, $bh, $wall);
-		if ($subject === null) {
-			$subject = [$bx, $by, $bw, $bh];
-		}
-		[$px, $py, $pw, $ph] = $subject;
-		$crown = $this->visaCrown($src, $px, $py, $pw, $ph, $wall);
-		$head = $this->visaHeadSpan($src, $px, $crown, $pw, $ph, $wall);
-		$headW = max(8, (int) $head['w']);
-		$headCx = (int) $head['cx'];
-		// Size the square from the head only. A desk or full-room photo zooms
-		// in until the face fills the circle; shoulders may be clipped by the ring.
-		$frame = max(8.0, $headW / 0.56);
-		// Crown sits 11% down so the round edge does not slice the hair.
-		$frameTop = $crown - (0.11 * $frame);
-		$frameLeft = $headCx - ($frame / 2.0);
+		[$frameLeft, $frameTop, $frame] = $placed;
 
 		$side = (float) min($outW, $outH);
 		$scale = $side / $frame;
@@ -1003,9 +991,9 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
-	 * Student ID circle. Webcam shots and uploaded files are both scaled
-	 * until the picture covers the square. The card clips that square to
-	 * the artwork hole, so a small portrait cannot float on white.
+	 * Student ID circle. Same US-visa frame as the staff card: the head is
+	 * about 58% of the square, the crown sits below the ring, and the neck
+	 * stays in view. Webcam and uploaded photos both use this frame.
 	 *
 	 * @param resource|\GdImage $src
 	 * @return resource|\GdImage|null
@@ -1016,6 +1004,47 @@ class ProfilePhotoNormalizer
 			return null;
 		}
 		$size = max(32, $size);
+		$sw = imagesx($src);
+		$sh = imagesy($src);
+		if ($sw < 2 || $sh < 2) {
+			return null;
+		}
+		$placed = $this->visaFrame($src);
+		if ($placed === null) {
+			return null;
+		}
+		[$frameLeft, $frameTop, $frame] = $placed;
+
+		$scale = $size / $frame;
+		$dst = imagecreatetruecolor($size, $size);
+		$white = imagecolorallocate($dst, 255, 255, 255);
+		imagefill($dst, 0, 0, $white);
+		$visLeft = (int) max(0, floor($frameLeft));
+		$visTop = (int) max(0, floor($frameTop));
+		$visRight = (int) min($sw, ceil($frameLeft + $frame));
+		$visBottom = (int) min($sh, ceil($frameTop + $frame));
+		if ($visRight - $visLeft < 2 || $visBottom - $visTop < 2) {
+			return $dst;
+		}
+		$ddx = (int) round(($visLeft - $frameLeft) * $scale);
+		$ddy = (int) round(($visTop - $frameTop) * $scale);
+		$ddw = max(1, (int) round(($visRight - $visLeft) * $scale));
+		$ddh = max(1, (int) round(($visBottom - $visTop) * $scale));
+		$this->hiQualityResample($dst, $src, $ddx, $ddy, $visLeft, $visTop, $ddw, $ddh, $visRight - $visLeft, $visBottom - $visTop);
+		return $dst;
+	}
+
+	/**
+	 * Square crop for a US visa portrait.
+	 * Chin-to-crown is about 58% of the frame and the crown is 14% down,
+	 * so the neck and shoulders remain. A headshot that is already this
+	 * tight is not zoomed further.
+	 *
+	 * @param resource|\GdImage $src
+	 * @return array{0:float,1:float,2:float}|null left, top, size
+	 */
+	private function visaFrame($src): ?array
+	{
 		$sw = imagesx($src);
 		$sh = imagesy($src);
 		if ($sw < 2 || $sh < 2) {
@@ -1034,288 +1063,21 @@ class ProfilePhotoNormalizer
 			$subject = [$bx, $by, $bw, $bh];
 		}
 		[$px, $py, $pw, $ph] = $subject;
-		// Cover-fit the person into the square and keep the top of the head.
-		// A tall portrait uses its width so the face and shoulders stay in frame.
-		// A wide webcam shot uses its height and stays centered.
-		if ($pw >= $ph) {
-			$frame = (float) max(8, $ph);
-			$frameLeft = $px + ($pw - $frame) / 2.0;
-			$frameTop = (float) $py;
-		} else {
-			$frame = (float) max(8, $pw);
-			$frameLeft = (float) $px;
-			$frameTop = (float) $py;
+		$crown = $this->visaCrown($src, $px, $py, $pw, $ph, $wall);
+		$head = $this->visaHeadSpan($src, $px, $crown, $pw, $ph, $wall);
+		$headW = max(8, (int) $head['w']);
+		$headCx = (int) $head['cx'];
+		$content = (float) min($bw, $bh);
+		$frame = ($headW * self::VISA_FACE_ASPECT) / self::VISA_HEAD_OF_FRAME;
+		if ($frame > $content) {
+			$frame = $content;
 		}
+		$frame = max(8.0, $frame);
+		$frameLeft = $headCx - ($frame / 2.0);
+		$frameTop = $crown - (self::VISA_CROWN_INSET * $frame);
 		$frameLeft = max((float) $bx, min($bx + $bw - $frame, $frameLeft));
 		$frameTop = max((float) $by, min($by + $bh - $frame, $frameTop));
-
-		$scale = $size / $frame;
-		$dst = imagecreatetruecolor($size, $size);
-		$white = imagecolorallocate($dst, 255, 255, 255);
-		imagefill($dst, 0, 0, $white);
-		$visLeft = (int) max(0, floor($frameLeft));
-		$visTop = (int) max(0, floor($frameTop));
-		$visRight = (int) min($sw, ceil($frameLeft + $frame));
-		$visBottom = (int) min($sh, ceil($frameTop + $frame));
-		if ($visRight - $visLeft < 2 || $visBottom - $visTop < 2) {
-			return $dst;
-		}
-		$ddx = (int) round(($visLeft - $frameLeft) * $scale);
-		$ddy = (int) round(($visTop - $frameTop) * $scale);
-		$ddw = max(1, (int) round(($visRight - $visLeft) * $scale));
-		$ddh = max(1, (int) round(($visBottom - $visTop) * $scale));
-		$this->hiQualityResample($dst, $src, $ddx, $ddy, $visLeft, $visTop, $ddw, $ddh, $visRight - $visLeft, $visBottom - $visTop);
-		$this->coverWhiteMargins($dst);
-		$this->coverEquator($dst);
-		return $dst;
-	}
-
-	/**
-	 * Zoom a finished square until the photograph touches every edge.
-	 * Near-white padding (webcam matte or an upload placed on white) is
-	 * not part of the picture. The crown stays near the top of the crop.
-	 *
-	 * @param resource|\GdImage $dst
-	 */
-	private function coverWhiteMargins($dst): void
-	{
-		$w = imagesx($dst);
-		$h = imagesy($dst);
-		if ($w < 16 || $h < 16) {
-			return;
-		}
-		$bounds = $this->opaqueBounds($dst);
-		if ($bounds === null) {
-			return;
-		}
-		[$minX, $minY, $maxX, $maxY] = $bounds;
-		$cw = $maxX - $minX + 1;
-		$ch = $maxY - $minY + 1;
-		if ($cw < 8 || $ch < 8) {
-			return;
-		}
-		$tol = max(2, (int) round(min($w, $h) * 0.012));
-		if ($minX <= $tol && $minY <= $tol && ($w - 1 - $maxX) <= $tol && ($h - 1 - $maxY) <= $tol) {
-			return;
-		}
-		$scale = max($w / $cw, $h / $ch);
-		if ($scale < 1.02 || $scale > 5.0) {
-			return;
-		}
-		$srcW = $w / $scale;
-		$srcH = $h / $scale;
-		$srcX = $minX + max(0.0, $cw - $srcW) * 0.50;
-		$srcY = $minY + max(0.0, $ch - $srcH) * 0.10;
-		$srcX = max(0.0, min($w - $srcW, $srcX));
-		$srcY = max(0.0, min($h - $srcH, $srcY));
-		$sx = (int) round($srcX);
-		$sy = (int) round($srcY);
-		$sw = max(1, (int) round($srcW));
-		$sh = max(1, (int) round($srcH));
-		if ($sx + $sw > $w) {
-			$sw = $w - $sx;
-		}
-		if ($sy + $sh > $h) {
-			$sh = $h - $sy;
-		}
-		if ($sw < 2 || $sh < 2) {
-			return;
-		}
-		$next = imagecreatetruecolor($w, $h);
-		if ($next === false) {
-			return;
-		}
-		$white = imagecolorallocate($next, 255, 255, 255);
-		imagefill($next, 0, 0, $white);
-		$this->hiQualityResample($next, $dst, 0, 0, $sx, $sy, $w, $h, $sw, $sh);
-		imagecopy($dst, $next, 0, 0, 0, 0, $w, $h);
-		imagedestroy($next);
-	}
-
-	/**
-	 * Close white gaps beside the cheeks. One small zoom, anchored at the
-	 * crown, so the face still fills the circle without becoming a forehead crop.
-	 *
-	 * @param resource|\GdImage $dst
-	 */
-	private function coverEquator($dst): void
-	{
-		$w = imagesx($dst);
-		$h = imagesy($dst);
-		if ($w < 16 || $h < 16) {
-			return;
-		}
-		$gapL = 0;
-		$gapR = 0;
-		$y0 = (int) round($h * 0.42);
-		$y1 = (int) round($h * 0.58);
-		$step = max(1, (int) floor($h / 48));
-		$seen = false;
-		for ($y = $y0; $y <= $y1; $y += $step) {
-			$left = $w;
-			$right = -1;
-			for ($x = 0; $x < $w; $x += 1) {
-				if (!$this->isWhiteMattePixel($dst, $x, $y)) {
-					$left = $x;
-					break;
-				}
-			}
-			for ($x = $w - 1; $x >= 0; $x -= 1) {
-				if (!$this->isWhiteMattePixel($dst, $x, $y)) {
-					$right = $x;
-					break;
-				}
-			}
-			if ($right <= $left) {
-				continue;
-			}
-			$seen = true;
-			if ($left > $gapL) {
-				$gapL = $left;
-			}
-			$rightGap = $w - 1 - $right;
-			if ($rightGap > $gapR) {
-				$gapR = $rightGap;
-			}
-		}
-		if (!$seen) {
-			return;
-		}
-		$tol = max(2, (int) round($w * 0.012));
-		if ($gapL <= $tol && $gapR <= $tol) {
-			return;
-		}
-		$span = max(8, $w - $gapL - $gapR);
-		$mid = $this->rowContentSpan($dst, (int) round($h * 0.50));
-		$faceCx = $mid === null ? ($w / 2.0) : (($mid[0] + $mid[1]) / 2.0);
-		$low = $this->rowContentSpan($dst, (int) round($h * 0.86));
-		$lowSpan = $low === null ? $span : ($low[1] - $low[0] + 1);
-		// Cheeks move toward the ring. Wider shoulders can be cropped.
-		// A photo that is already just a face is only nudged, so the chin stays.
-		$zoom = ($w * 0.92) / $span;
-		if ($lowSpan > $span * 1.35) {
-			$zoom = min($zoom, $h / max(8.0, $span * 1.38));
-			$zoom = min(2.4, $zoom);
-		} else {
-			$zoom = min(1.08, $zoom);
-		}
-		if ($zoom < 1.02) {
-			return;
-		}
-		$sw = $w / $zoom;
-		$sh = $h / $zoom;
-		$sx = $faceCx - ($sw / 2.0);
-		$crownY = 0;
-		for ($y = 0; $y < $h; $y++) {
-			if (!$this->isWhiteMattePixel($dst, (int) $faceCx, $y)) {
-				$crownY = $y;
-				break;
-			}
-		}
-		$sy = $crownY - ($sh * 0.06);
-		$sx = max(0.0, min($w - $sw, $sx));
-		$sy = max(0.0, min($h - $sh, $sy));
-		$six = (int) round($sx);
-		$siy = (int) round($sy);
-		$siw = max(1, (int) round($sw));
-		$sih = max(1, (int) round($sh));
-		if ($six + $siw > $w) {
-			$siw = $w - $six;
-		}
-		if ($siy + $sih > $h) {
-			$sih = $h - $siy;
-		}
-		$next = imagecreatetruecolor($w, $h);
-		if ($next === false) {
-			return;
-		}
-		$white = imagecolorallocate($next, 255, 255, 255);
-		imagefill($next, 0, 0, $white);
-		$this->hiQualityResample($next, $dst, 0, 0, $six, $siy, $w, $h, $siw, $sih);
-		imagecopy($dst, $next, 0, 0, 0, 0, $w, $h);
-		imagedestroy($next);
-	}
-
-	/**
-	 * Bounds of the photograph, ignoring a near-white matte.
-	 *
-	 * @param resource|\GdImage $im
-	 * @return array{0:int,1:int,2:int,3:int}|null
-	 */
-	private function opaqueBounds($im): ?array
-	{
-		$w = imagesx($im);
-		$h = imagesy($im);
-		$step = max(1, (int) floor(min($w, $h) / 200));
-		$minX = $w;
-		$minY = $h;
-		$maxX = 0;
-		$maxY = 0;
-		$hits = 0;
-		for ($y = 0; $y < $h; $y += $step) {
-			for ($x = 0; $x < $w; $x += $step) {
-				if ($this->isWhiteMattePixel($im, $x, $y)) {
-					continue;
-				}
-				$hits++;
-				if ($x < $minX) {
-					$minX = $x;
-				}
-				if ($y < $minY) {
-					$minY = $y;
-				}
-				if ($x > $maxX) {
-					$maxX = $x;
-				}
-				if ($y > $maxY) {
-					$maxY = $y;
-				}
-			}
-		}
-		if ($hits < 12 || $maxX <= $minX || $maxY <= $minY) {
-			return null;
-		}
-		return [$minX, $minY, $maxX, $maxY];
-	}
-
-	/** @param resource|\GdImage $im @return array{0:int,1:int}|null */
-	private function rowContentSpan($im, int $y): ?array
-	{
-		$w = imagesx($im);
-		$h = imagesy($im);
-		$y = max(0, min($h - 1, $y));
-		$left = $w;
-		$right = -1;
-		for ($x = 0; $x < $w; $x++) {
-			if (!$this->isWhiteMattePixel($im, $x, $y)) {
-				$left = $x;
-				break;
-			}
-		}
-		for ($x = $w - 1; $x >= 0; $x--) {
-			if (!$this->isWhiteMattePixel($im, $x, $y)) {
-				$right = $x;
-				break;
-			}
-		}
-		if ($right <= $left) {
-			return null;
-		}
-		return [$left, $right];
-	}
-
-	/** @param resource|\GdImage $im */
-	private function isWhiteMattePixel($im, int $x, int $y): bool
-	{
-		$rgba = imagecolorat($im, $x, $y);
-		$alpha = ($rgba >> 24) & 0x7F;
-		if ($alpha > 96) {
-			return true;
-		}
-		$r = ($rgba >> 16) & 255;
-		$g = ($rgba >> 8) & 255;
-		$b = $rgba & 255;
-		return $r >= 246 && $g >= 246 && $b >= 246;
+		return [$frameLeft, $frameTop, $frame];
 	}
 
 	/** @return array{0:int,1:int,2:int,3:int} x,y,w,h */
