@@ -18662,9 +18662,6 @@ public function getApplicationDocs($id = null)
 			if ($name === '') {
 				return $this->response->setJSON(['error' => 'Hostel name is required.']);
 			}
-			if ($levelGroup === '') {
-				return $this->response->setJSON(['error' => 'Select the hostel level group.']);
-			}
 			foreach ($mdl->listHostels($schoolId, true) as $row) {
 				if (strcasecmp(trim((string) ($row['name'] ?? '')), $name) === 0) {
 					return $this->response->setJSON(['error' => 'That hostel name already exists.']);
@@ -18713,13 +18710,13 @@ public function getApplicationDocs($id = null)
 			$name = trim((string) $this->request->getPost('name'));
 			$maxBeds = max(1, (int) $this->request->getPost('max_beds'));
 			$gender = $mdl->normalizeGender((string) $this->request->getPost('gender'));
-			$levelGroup = $mdl->normalizeLevelGroup((string) $this->request->getPost('level_group'));
+			$postedGroup = trim((string) $this->request->getPost('level_group'));
+			$levelGroup = $postedGroup !== ''
+				? $mdl->normalizeLevelGroup($postedGroup)
+				: $mdl->normalizeLevelGroup((string) ($row['level_group'] ?? ''));
 
 			if ($name === '') {
 				return $this->response->setJSON(['error' => 'Hostel name is required.']);
-			}
-			if ($levelGroup === '') {
-				return $this->response->setJSON(['error' => 'Select the hostel level group.']);
 			}
 			foreach ($mdl->listHostels($schoolId, true) as $other) {
 				if ((int) ($other['id'] ?? 0) !== $id
