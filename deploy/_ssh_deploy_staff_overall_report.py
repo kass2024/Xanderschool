@@ -17,7 +17,10 @@ REMOTE_APP = "/opt/xander-school/app"
 
 FILES = [
     "app/Libraries/StaffAttendanceReport.php",
+    "app/Libraries/MpdfReport.php",
+    "app/Controllers/Home.php",
     "app/Views/pages/reports/staff_report_individual.php",
+    "app/Views/pages/reports/staff_report_overall_pdf.php",
     "public/assets/css/inout-report.css",
 ]
 
@@ -42,10 +45,11 @@ cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 6
 docker exec xander_school_app php -r 'opcache_reset();'
-docker exec xander_school_app grep -n "countShiftDays\|Missing clock-out\|io-count" \
-  /var/www/html/app/Libraries/StaffAttendanceReport.php \
+docker exec xander_school_app grep -n "staff_report_overall_pdf\|schoolbrand\|margin_top" \
   /var/www/html/app/Views/pages/reports/staff_report_individual.php \
-  /var/www/html/public/assets/css/inout-report.css | head -40
+  /var/www/html/app/Views/pages/reports/staff_report_overall_pdf.php \
+  /var/www/html/app/Controllers/Home.php \
+  /var/www/html/app/Libraries/MpdfReport.php | head -40
 echo DONE
 """
     _, o, e = c.exec_command(cmd, timeout=240)

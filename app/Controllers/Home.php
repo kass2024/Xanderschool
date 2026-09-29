@@ -7158,10 +7158,25 @@ public function attendanceCard()
 			@set_time_limit(180);
 			$html = view("pages/reports/staff_report_individual", $data);
 			try {
+				$brandedSummary = in_array($reportType, ['overall', 'absent'], true);
+				$schoolLabel = trim((string) ($data['school_name'] ?? 'School'));
+				$footerSchool = htmlspecialchars($schoolLabel, ENT_QUOTES, 'UTF-8');
+				$footer = '<table width="100%" style="font-size:8pt;color:#64748b;border-top:1px solid #012F6B;">'
+					. '<tr><td>' . $footerSchool . '</td>'
+					. '<td style="text-align:center;">Staff attendance</td>'
+					. '<td style="text-align:right;">Page {PAGENO} / {nbpg}</td></tr></table>';
 				\App\Libraries\MpdfReport::stream(
 					$html,
-					'staff_clock_report_' . date('Ymd_His') . '.pdf',
-					['title' => lang("app.Staffattendancereport") ?: 'Staff clock-in / clock-out']
+					($brandedSummary ? 'staff_attendance_' : 'staff_clock_report_') . date('Ymd_His') . '.pdf',
+					[
+						'title' => $brandedSummary
+							? ($schoolLabel . ' — Staff attendance')
+							: (lang("app.Staffattendancereport") ?: 'Staff clock-in / clock-out'),
+						'orientation' => $brandedSummary ? 'L' : 'P',
+						'margin' => $brandedSummary ? 8 : 10,
+						'margin_top' => $brandedSummary ? 32 : 12,
+						'footer' => $footer,
+					]
 				);
 			} catch (\Throwable $e) {
 				echo $e->getMessage();

@@ -14,7 +14,7 @@ class MpdfReport
 	private static $imageVars = [];
 
 	/**
-	 * @param array{title?:string,orientation?:string,margin?:int} $opts
+	 * @param array{title?:string,orientation?:string,margin?:int,margin_top?:int,margin_bottom?:int,footer?:string} $opts
 	 */
 	public static function render(string $html, string $filename, array $opts = []): string
 	{
@@ -29,6 +29,8 @@ class MpdfReport
 			$orientation = 'P';
 		}
 		$margin = (int) ($opts['margin'] ?? 10);
+		$marginTop = (int) ($opts['margin_top'] ?? 12);
+		$marginBottom = (int) ($opts['margin_bottom'] ?? 16);
 
 		$mpdf = new Mpdf([
 			'mode' => 'utf-8',
@@ -36,8 +38,8 @@ class MpdfReport
 			'orientation' => $orientation,
 			'margin_left' => $margin,
 			'margin_right' => $margin,
-			'margin_top' => 12,
-			'margin_bottom' => 16,
+			'margin_top' => $marginTop,
+			'margin_bottom' => $marginBottom,
 			'margin_header' => 6,
 			'margin_footer' => 8,
 			'tempDir' => $tempDir,
@@ -53,11 +55,13 @@ class MpdfReport
 		foreach (self::$imageVars as $name => $bytes) {
 			$mpdf->imageVars[$name] = $bytes;
 		}
-		$mpdf->SetHTMLFooter(
-			'<table width="100%" style="font-size:8pt;color:#64748b;border-top:1px solid #cbd5e1;">'
-			. '<tr><td>Xander School</td>'
-			. '<td style="text-align:right;">Page {PAGENO} / {nbpg}</td></tr></table>'
-		);
+		$footer = trim((string) ($opts['footer'] ?? ''));
+		if ($footer === '') {
+			$footer = '<table width="100%" style="font-size:8pt;color:#64748b;border-top:1px solid #cbd5e1;">'
+				. '<tr><td>Xander School</td>'
+				. '<td style="text-align:right;">Page {PAGENO} / {nbpg}</td></tr></table>';
+		}
+		$mpdf->SetHTMLFooter($footer);
 		$mpdf->WriteHTML($html);
 		$pdf = $mpdf->Output($filename, Destination::STRING_RETURN);
 		if (!is_string($pdf) || strncmp($pdf, '%PDF', 4) !== 0) {
@@ -71,7 +75,7 @@ class MpdfReport
 	 * Send the PDF to the browser and stop (same as wkhtmltopdf MODE_EMBEDDED).
 	 * Must exit so CodeIgniter after-filters do not wrap it as HTML.
 	 *
-	 * @param array{title?:string,orientation?:string,margin?:int} $opts
+	 * @param array{title?:string,orientation?:string,margin?:int,margin_top?:int,margin_bottom?:int,footer?:string} $opts
 	 */
 	public static function stream(string $html, string $filename, array $opts = []): void
 	{

@@ -105,22 +105,28 @@ if ($show_header) {
 			syncPeriodUi();
 			syncReportUi();
 
-			$("#btn_generate").on("click", function (e) {
-				e.preventDefault();
+			function periodReady() {
 				if ($("#period_mode").val() === "month") {
 					if (!$("#month_key").val()) {
 						toastada.warning("<?= lang("app.pleaseSelectMonth"); ?>");
-						return;
+						return false;
 					}
 				} else {
 					if (!$("#date1").val()) {
 						toastada.warning("<?= lang("app.strtDateErr"); ?>");
-						return;
+						return false;
 					}
 					if (!$("#date2").val()) {
 						toastada.warning("<?= lang("app.endDateErr"); ?>");
-						return;
+						return false;
 					}
+				}
+				return true;
+			}
+			$("#btn_generate").on("click", function (e) {
+				e.preventDefault();
+				if (!periodReady()) {
+					return;
 				}
 				$("#btn_generate").text("<?= lang("app.pleaseWait"); ?>").prop("disabled", true);
 				$("#report_content").load("<?= base_url('staff_individual_report_data'); ?>", $("#frm_report").serialize(), function () {
@@ -128,16 +134,13 @@ if ($show_header) {
 				});
 			});
 			$("#btn_print").on("click", function () {
-				if (!$("#printable").length) {
-					toastada.warning("Generate the report first.");
+				if (!periodReady()) {
 					return;
 				}
-				$(".io-acc").addClass("open");
-				window.print();
+				window.open(pdfUrl(), "_blank");
 			});
 			$("#frm_report").on("submit", function () {
-				if (!$("#printable").length) {
-					toastada.warning("Generate the report first.");
+				if (!periodReady()) {
 					return false;
 				}
 			});
@@ -185,7 +188,7 @@ $summaries = [];
 foreach ($staffs as $staff) {
 	$clocks = $clocksByStaff[(int) $staff['id']] ?? [];
 	$sum = \App\Libraries\StaffAttendanceReport::summarize($staff, $date1, $date2, $clocks);
-	if ($reportType === 'individual' || $isPdf) {
+	if ($reportType === 'individual') {
 		$sum['days'] = \App\Libraries\StaffAttendanceReport::calendarDays($staff, $date1, $date2, $sum);
 	}
 	$summaries[] = $sum;
@@ -243,6 +246,24 @@ if ($isPdf) {
 }
 if ($logoSrc === '') {
 	$logoSrc = $logoUrl;
+}
+if ($isPdf && in_array($reportType, ['overall', 'absent'], true)) {
+	echo view('pages/reports/staff_report_overall_pdf', [
+		'summaries' => $summaries,
+		'byShift' => $byShift,
+		'org' => $org,
+		'ayBounds' => $ayBounds,
+		'date1' => $date1,
+		'date2' => $date2,
+		'logoSrc' => $logoSrc,
+		'contactBits' => $contactBits,
+		'school_name' => $school_name ?? '',
+		'school_moto' => $school_moto ?? '',
+		'academic_year_title' => $academic_year_title ?? '',
+		'reportTitle' => $reportTitle,
+		'reportType' => $reportType,
+	]);
+	return;
 }
 if ($isPdf) {
 	echo view('pages/reports/staff_report_clock_pdf', [
