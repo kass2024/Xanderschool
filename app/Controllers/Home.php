@@ -3106,6 +3106,44 @@ public function testEmail()
 		return view('main', $data);
 	}
 
+	/** Morning and evening prep invigilation. Not the class timetable. */
+	public function prep_invigilation()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$prepMdl = new \App\Models\PrepTimetableModel();
+		$prepMdl->ensureSchema();
+		$data = $this->data;
+		$data['title'] = 'Preps invigilation';
+		$data['subtitle'] = 'Morning and evening prep duty';
+		$data['page'] = 'prep_invigilation';
+		$data['prep_timetable'] = $prepMdl->forSchool($schoolId);
+		$data['prep_staff'] = $prepMdl->eligibleStaff($schoolId);
+		$data['content'] = view('pages/prep_invigilation', $data);
+		return view('main', $data);
+	}
+
+	public function save_prep_timetable()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$raw = (string) ($this->request->getPost('assignments') ?: '{}');
+		$assignments = json_decode($raw, true);
+		if (!is_array($assignments)) {
+			$assignments = [];
+		}
+		$result = (new \App\Models\PrepTimetableModel())->saveRota($schoolId, [
+			'morning_start' => $this->request->getPost('morning_start'),
+			'morning_end' => $this->request->getPost('morning_end'),
+			'evening_start' => $this->request->getPost('evening_start'),
+			'evening_end' => $this->request->getPost('evening_end'),
+		], $assignments);
+		if (empty($result['ok'])) {
+			return $this->response->setJSON(['error' => (string) ($result['message'] ?? 'Could not save')]);
+		}
+		return $this->response->setJSON(['success' => (string) $result['message']]);
+	}
+
 	private function ensurePedagogicalDocsSchema()
 	{
 		$db = \Config\Database::connect();

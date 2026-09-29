@@ -869,6 +869,14 @@
 									</a>
 								</li>
 							<?php } ?>
+							<?php if (menu_clearance_allowed('settings')) { ?>
+								<li class="<?= (!empty($page) && $page === 'prep_invigilation') ? 'mm-active' : ''; ?>">
+									<a href="<?= base_url('prep_invigilation'); ?>">
+										<i class="metismenu-icon fa fa-calendar"></i>
+										Preps invigilation
+									</a>
+								</li>
+							<?php } ?>
 							<!--
 							<li class="app-sidebar__heading">MISCELLANIOUS</li>
 							<li>
