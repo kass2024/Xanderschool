@@ -304,11 +304,12 @@ class AttendanceScanService
 		$feeding = self::feedingPaidMap($schoolId);
 		$feedingAmounts = self::feedingAmountMap($schoolId);
 		$hostels = self::hostelNameMap($schoolId);
+		$termFees = self::termFeeBriefMap($schoolId);
 		$out = [];
 		foreach ($rows as $r) {
 			$sid = (int) $r['id'];
 			$mode = (int) ($r['studying_mode'] ?? 1);
-			$out[] = [
+			$row = [
 				'id' => $sid,
 				'school_id' => (int) ($r['school_id'] ?? $schoolId),
 				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
@@ -322,6 +323,10 @@ class AttendanceScanService
 				'feeding_amount' => (int) ($feedingAmounts[$sid] ?? 0),
 				'hostel' => (string) ($hostels[$sid] ?? ''),
 			];
+			if (isset($termFees[$sid])) {
+				$row['fees'] = $termFees[$sid];
+			}
+			$out[] = $row;
 		}
 		return $out;
 	}
@@ -353,6 +358,7 @@ class AttendanceScanService
 		$feeding = self::feedingPaidMap($schoolId);
 		$feedingAmounts = self::feedingAmountMap($schoolId);
 		$hostels = self::hostelNameMap($schoolId);
+		$termFees = self::termFeeBriefMap($schoolId);
 		$students = [];
 		foreach ($studentRows as $r) {
 			$card = strtoupper(trim((string) ($r['card'] ?? '')));
@@ -362,7 +368,7 @@ class AttendanceScanService
 			}
 			$sid = (int) ($r['id'] ?? 0);
 			$mode = (int) ($r['studying_mode'] ?? 1);
-			$students[] = [
+			$cardRow = [
 				'id' => $sid,
 				'name' => trim((string) ($r['fname'] ?? '') . ' ' . (string) ($r['lname'] ?? '')),
 				'regno' => (string) ($r['regno'] ?? ''),
@@ -373,6 +379,10 @@ class AttendanceScanService
 				'feeding_amount' => (int) ($feedingAmounts[$sid] ?? 0),
 				'hostel' => (string) ($hostels[$sid] ?? ''),
 			];
+			if (isset($termFees[$sid])) {
+				$cardRow['fees'] = $termFees[$sid];
+			}
+			$students[] = $cardRow;
 		}
 
 		$visitorRows = $db->table('student_visitors')
@@ -1494,14 +1504,28 @@ class AttendanceScanService
 	}
 
 	/**
-	 * Year totals for the cafeteria check screen. Feeding is excluded from extra fees.
+	 * Current-term totals for the cafeteria screen. Feeding is excluded from other fees.
 	 *
 	 * @return array<string,mixed>
 	 */
 	public static function feeBrief(int $schoolId, int $studentId): array
 	{
-		$empty = [
-			'success' => 0,
+		$map = self::termFeeBriefMap($schoolId);
+		if (!isset($map[$studentId])) {
+			$missing = self::emptyFeeBrief();
+			$missing['success'] = 0;
+			return $missing;
+		}
+		return $map[$studentId];
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	private static function emptyFeeBrief(): array
+	{
+		return [
+			'success' => 1,
 			'school_paid' => 0,
 			'school_expected' => 0,
 			'extra_paid' => 0,
@@ -1513,155 +1537,237 @@ class AttendanceScanService
 			'promised_date' => '',
 			'promised_label' => '',
 			'promised_overdue' => 0,
+			'term' => 0,
 		];
+	}
+
+	/** @var array<int,array{at:int,map:array<int,array<string,mixed>>}> */
+	private static $termFeeCache = [];
+
+	/**
+	 * Current-term school fees and other fees (feeding excluded), keyed by student id.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function termFeeBriefMap(int $schoolId): array
+	{
+		$now = time();
+		if (isset(self::$termFeeCache[$schoolId]) && ($now - self::$termFeeCache[$schoolId]['at']) < 15) {
+			return self::$termFeeCache[$schoolId]['map'];
+		}
+		$map = [];
 		try {
 			$db = \Config\Database::connect();
 			$scope = self::scopeSchoolIds($schoolId);
 			if ($scope === []) {
 				$scope = [$schoolId];
 			}
-			$student = $db->table('students')
-				->select('id, school_id, studying_mode')
-				->where('id', $studentId)
-				->whereIn('school_id', $scope)
+			$year = self::academicYear($schoolId);
+			$termRow = $db->table('schools sc')
+				->select('at.term')
+				->join('active_term at', 'at.id = sc.active_term', 'left')
+				->where('sc.id', $schoolId)
 				->get()
 				->getRow();
-			if (!$student) {
-				return $empty;
+			$term = (int) ($termRow->term ?? 1);
+			if ($term < 1 || $term > 3) {
+				$term = 1;
 			}
-			$ownerSchool = (int) ($student->school_id ?? $schoolId);
-			$mode = (int) ($student->studying_mode ?? 1);
-			$year = self::academicYear($ownerSchool);
-			$class = $db->table('class_records cr')
-				->select('cr.class AS class_id, c.level, d.id AS dept_id')
+			$studentRows = $db->table('students')
+				->select('id, school_id, studying_mode')
+				->whereIn('school_id', $scope)
+				->where('status', 1)
+				->get()
+				->getResultArray();
+			$classOf = [];
+			$classRows = $db->table('class_records cr')
+				->select('cr.student, cr.class AS class_id, c.level, d.id AS dept_id')
 				->join('classes c', 'c.id = cr.class', 'left')
 				->join('departments d', 'd.id = c.department', 'left')
-				->where('cr.student', $studentId)
 				->where('cr.year', $year)
 				->get()
-				->getRow();
-			$classId = (int) ($class->class_id ?? 0);
-			$levelId = (int) ($class->level ?? 0);
-			$deptId = (int) ($class->dept_id ?? 0);
-
-			$schoolPaid = 0.0;
-			$schoolExpected = 0.0;
-			if ($levelId > 0 && $deptId > 0) {
-				$schoolRows = $db->table('school_fees')
-					->select('school_fees.id, school_fees.class_id, school_fees.amount, school_fees.amount_boarding, school_fees.amount_day, school_fees.term, COALESCE(fd.amount,0) AS discount', false)
-					->join('(SELECT SUM(amount) AS amount, feesId FROM school_fees_discount WHERE student = ' . (int) $studentId . ' GROUP BY feesId) fd', 'fd.feesId = school_fees.id', 'left')
-					->where('school_fees.school_id', $ownerSchool)
-					->where('school_fees.academic_year', $year)
-					->where('school_fees.level', $levelId)
-					->where('school_fees.department', $deptId)
+				->getResultArray();
+			foreach ($classRows as $cr) {
+				$sid = (int) ($cr['student'] ?? 0);
+				if ($sid > 0) {
+					$classOf[$sid] = $cr;
+				}
+			}
+			$schoolRows = $db->table('school_fees')
+				->select('id, school_id, class_id, level, department, amount, amount_boarding, amount_day, term')
+				->whereIn('school_id', $scope)
+				->where('academic_year', $year)
+				->where('term', $term)
+				->get()
+				->getResultArray();
+			$schoolByKey = [];
+			$schoolFeeIds = [];
+			foreach ($schoolRows as $row) {
+				$key = (int) ($row['school_id'] ?? 0) . ':' . (int) ($row['level'] ?? 0) . ':' . (int) ($row['department'] ?? 0);
+				$schoolByKey[$key][] = $row;
+				$schoolFeeIds[] = (int) $row['id'];
+			}
+			$discount = [];
+			if ($schoolFeeIds !== []) {
+				$discountRows = $db->table('school_fees_discount')
+					->select('feesId, student, SUM(amount) AS amount', false)
+					->whereIn('feesId', $schoolFeeIds)
+					->groupBy('feesId')
+					->groupBy('student')
 					->get()
 					->getResultArray();
-				$schoolRows = \App\Models\SchoolFeesModel::dedupeForClass($schoolRows, $classId);
-				$schoolIds = [];
-				foreach ($schoolRows as $row) {
-					$schoolExpected += \App\Models\SchoolFeesModel::expectedForStudent($row, $mode, (float) ($row['discount'] ?? 0));
-					$schoolIds[] = (int) $row['id'];
-				}
-				if ($schoolIds !== []) {
-					$paidRow = $db->table('fees_records')
-						->select('COALESCE(SUM(amount),0) AS paid', false)
-						->where('student_id', $studentId)
-						->where('fees_type', 2)
-						->whereIn('fees_id', $schoolIds)
-						->get()
-						->getRow();
-					$schoolPaid = (float) ($paidRow->paid ?? 0);
+				foreach ($discountRows as $dr) {
+					$discount[(int) $dr['student'] . ':' . (int) $dr['feesId']] = (float) ($dr['amount'] ?? 0);
 				}
 			}
-
-			$extraPaid = 0.0;
-			$extraExpected = 0.0;
-			$extraBuilder = $db->table('extra_fees')
-				->select('id, title, type, amount, amount_boarding, amount_day, term')
-				->where('school_id', $ownerSchool)
-				->where('academic_year', $year);
-			if ($classId > 0) {
-				$extraBuilder->where(
-					"((type = 0 AND type_id = {$classId}) OR (type = 1 AND type_id = " . (int) $studentId . '))',
-					null,
-					false
-				);
-			} else {
-				$extraBuilder->where('type', 1)->where('type_id', $studentId);
-			}
-			$extraRows = $extraBuilder->get()->getResultArray();
+			$extraRows = $db->table('extra_fees')
+				->select('id, title, type, type_id, amount, amount_boarding, amount_day')
+				->whereIn('school_id', $scope)
+				->where('academic_year', $year)
+				->where('term', $term)
+				->get()
+				->getResultArray();
+			$byClass = [];
+			$byStudent = [];
 			$extraIds = [];
-			foreach ($extraRows as $row) {
-				$title = strtolower(trim((string) ($row['title'] ?? '')));
+			foreach ($extraRows as $fee) {
+				$title = strtolower(trim((string) ($fee['title'] ?? '')));
 				if (strpos($title, 'feed') !== false) {
 					continue;
 				}
-				$kind = (int) ($row['type'] ?? 0);
-				$expected = $kind === 1
-					? max(0, (float) ($row['amount'] ?? 0))
-					: \App\Models\ExtraFeesModel::expectedForMode($row, $mode);
-				if ($expected <= 0.009) {
+				$extraIds[] = (int) $fee['id'];
+				if ((int) ($fee['type'] ?? 0) === 1) {
+					$byStudent[(int) $fee['type_id']][] = $fee;
+				} else {
+					$byClass[(int) $fee['type_id']][] = $fee;
+				}
+			}
+			$paid = [];
+			$payIds = array_values(array_unique(array_merge($schoolFeeIds, $extraIds)));
+			if ($payIds !== []) {
+				$paidRows = $db->table('fees_records')
+					->select('student_id, fees_id, fees_type, SUM(amount) AS paid', false)
+					->whereIn('fees_type', [1, 2])
+					->whereIn('fees_id', $payIds)
+					->groupBy('student_id')
+					->groupBy('fees_id')
+					->groupBy('fees_type')
+					->get()
+					->getResultArray();
+				foreach ($paidRows as $pr) {
+					$paid[(int) $pr['student_id'] . ':' . (int) $pr['fees_type'] . ':' . (int) $pr['fees_id']] = (float) $pr['paid'];
+				}
+			}
+			$promiseOf = [];
+			$today = date('Y-m-d');
+			$promiseRows = $db->table('fees_records fr')
+				->select('fr.student_id, fr.promised_date')
+				->join('students s', 's.id = fr.student_id', 'inner')
+				->whereIn('s.school_id', $scope)
+				->where('s.status', 1)
+				->where('fr.promised_date IS NOT NULL', null, false)
+				->where('fr.promised_date !=', '')
+				->get()
+				->getResultArray();
+			foreach ($promiseRows as $pr) {
+				$sid = (int) ($pr['student_id'] ?? 0);
+				$iso = substr((string) ($pr['promised_date'] ?? ''), 0, 10);
+				if ($sid < 1 || $iso === '') {
 					continue;
 				}
-				$extraExpected += $expected;
-				$extraIds[] = (int) $row['id'];
-			}
-			if ($extraIds !== []) {
-				$paidRow = $db->table('fees_records')
-					->select('COALESCE(SUM(amount),0) AS paid', false)
-					->where('student_id', $studentId)
-					->where('fees_type', 1)
-					->whereIn('fees_id', $extraIds)
-					->get()
-					->getRow();
-				$extraPaid = (float) ($paidRow->paid ?? 0);
-			}
-
-			$promise = $db->table('fees_records')
-				->select('promised_date')
-				->where('student_id', $studentId)
-				->where('promised_date IS NOT NULL', null, false)
-				->where('promised_date >=', date('Y-m-d'))
-				->orderBy('promised_date', 'ASC')
-				->get(1)
-				->getRow();
-			$overdue = 0;
-			if (!$promise || empty($promise->promised_date)) {
-				$promise = $db->table('fees_records')
-					->select('promised_date')
-					->where('student_id', $studentId)
-					->where('promised_date IS NOT NULL', null, false)
-					->orderBy('promised_date', 'DESC')
-					->get(1)
-					->getRow();
-				$overdue = ($promise && !empty($promise->promised_date)) ? 1 : 0;
-			}
-			$iso = ($promise && !empty($promise->promised_date)) ? (string) $promise->promised_date : '';
-			$label = '';
-			if ($iso !== '') {
-				$ts = strtotime($iso);
-				$label = $ts ? date('d M Y', $ts) : $iso;
+				$slot = $promiseOf[$sid] ?? ['future' => '', 'past' => ''];
+				if ($iso >= $today) {
+					if ($slot['future'] === '' || $iso < $slot['future']) {
+						$slot['future'] = $iso;
+					}
+				} elseif ($slot['past'] === '' || $iso > $slot['past']) {
+					$slot['past'] = $iso;
+				}
+				$promiseOf[$sid] = $slot;
 			}
 			$money = static function (float $n): string {
 				return number_format(round($n), 0, '.', ',');
 			};
-			return [
-				'success' => 1,
-				'school_paid' => round($schoolPaid),
-				'school_expected' => round($schoolExpected),
-				'extra_paid' => round($extraPaid),
-				'extra_expected' => round($extraExpected),
-				'school_paid_label' => $money($schoolPaid),
-				'school_expected_label' => $money($schoolExpected),
-				'extra_paid_label' => $money($extraPaid),
-				'extra_expected_label' => $money($extraExpected),
-				'promised_date' => $iso,
-				'promised_label' => $label,
-				'promised_overdue' => $overdue,
-			];
+			foreach ($studentRows as $st) {
+				$sid = (int) ($st['id'] ?? 0);
+				if ($sid < 1) {
+					continue;
+				}
+				$mode = (int) ($st['studying_mode'] ?? 1);
+				$ownerSchool = (int) ($st['school_id'] ?? $schoolId);
+				$class = $classOf[$sid] ?? null;
+				$classId = (int) ($class['class_id'] ?? 0);
+				$levelId = (int) ($class['level'] ?? 0);
+				$deptId = (int) ($class['dept_id'] ?? 0);
+				$schoolPaid = 0.0;
+				$schoolExpected = 0.0;
+				if ($levelId > 0 && $deptId > 0) {
+					$key = $ownerSchool . ':' . $levelId . ':' . $deptId;
+					$rows = \App\Models\SchoolFeesModel::dedupeForClass($schoolByKey[$key] ?? [], $classId);
+					foreach ($rows as $row) {
+						$feeId = (int) ($row['id'] ?? 0);
+						$disc = (float) ($discount[$sid . ':' . $feeId] ?? 0);
+						$schoolExpected += \App\Models\SchoolFeesModel::expectedForStudent($row, $mode, $disc);
+						$schoolPaid += (float) ($paid[$sid . ':2:' . $feeId] ?? 0);
+					}
+				}
+				$extraPaid = 0.0;
+				$extraExpected = 0.0;
+				$rowsForStudent = [];
+				if ($classId > 0 && isset($byClass[$classId])) {
+					foreach ($byClass[$classId] as $fee) {
+						$rowsForStudent[] = $fee;
+					}
+				}
+				if (isset($byStudent[$sid])) {
+					foreach ($byStudent[$sid] as $fee) {
+						$rowsForStudent[] = $fee;
+					}
+				}
+				foreach ($rowsForStudent as $fee) {
+					$kind = (int) ($fee['type'] ?? 0);
+					$expected = $kind === 1
+						? max(0, (float) ($fee['amount'] ?? 0))
+						: \App\Models\ExtraFeesModel::expectedForMode($fee, $mode);
+					if ($expected <= 0.009) {
+						continue;
+					}
+					$extraExpected += $expected;
+					$extraPaid += (float) ($paid[$sid . ':1:' . (int) $fee['id']] ?? 0);
+				}
+				$slot = $promiseOf[$sid] ?? ['future' => '', 'past' => ''];
+				$overdue = 0;
+				$iso = (string) ($slot['future'] ?? '');
+				if ($iso === '') {
+					$iso = (string) ($slot['past'] ?? '');
+					$overdue = $iso !== '' ? 1 : 0;
+				}
+				$label = '';
+				if ($iso !== '') {
+					$ts = strtotime($iso);
+					$label = $ts ? date('d M Y', $ts) : $iso;
+				}
+				$map[$sid] = [
+					'success' => 1,
+					'school_paid' => (int) round($schoolPaid),
+					'school_expected' => (int) round($schoolExpected),
+					'extra_paid' => (int) round($extraPaid),
+					'extra_expected' => (int) round($extraExpected),
+					'school_paid_label' => $money($schoolPaid),
+					'school_expected_label' => $money($schoolExpected),
+					'extra_paid_label' => $money($extraPaid),
+					'extra_expected_label' => $money($extraExpected),
+					'promised_date' => $iso,
+					'promised_label' => $label,
+					'promised_overdue' => $overdue,
+					'term' => $term,
+				];
+			}
 		} catch (\Throwable $e) {
-			return $empty;
+			return self::$termFeeCache[$schoolId]['map'] ?? [];
 		}
+		self::$termFeeCache[$schoolId] = ['at' => $now, 'map' => $map];
+		return $map;
 	}
 
 	/** @var array<int,array{at:int,map:array<int,int>}> */
@@ -1867,8 +1973,10 @@ class AttendanceScanService
 	 */
 	private static function studentPayload($student, string $className, string $records): array
 	{
-		return [
-			'id' => (int) $student->id,
+		$schoolId = (int) ($student->school_id ?? 0);
+		$sid = (int) $student->id;
+		$payload = [
+			'id' => $sid,
 			'name' => trim((string) $student->fname . ' ' . (string) $student->lname),
 			'regno' => (string) ($student->regno ?? ''),
 			'class' => $className,
@@ -1876,10 +1984,15 @@ class AttendanceScanService
 			'photo' => self::kioskPhotoUrl($student->photo ?? null),
 			'studying_mode' => (int) ($student->studying_mode ?? 1),
 			'feeding_paid' => self::feedingPaidFlag($student),
-			'feeding_amount' => (int) (self::feedingAmountMap((int) ($student->school_id ?? 0))[(int) $student->id] ?? 0),
-			'hostel' => (string) (self::hostelNameMap((int) ($student->school_id ?? 0))[(int) $student->id] ?? ''),
+			'feeding_amount' => (int) (self::feedingAmountMap($schoolId)[$sid] ?? 0),
+			'hostel' => (string) (self::hostelNameMap($schoolId)[$sid] ?? ''),
 			'records' => $records,
 		];
+		$fees = self::termFeeBriefMap($schoolId);
+		if (isset($fees[$sid])) {
+			$payload['fees'] = $fees[$sid];
+		}
+		return $payload;
 	}
 
 	/**
