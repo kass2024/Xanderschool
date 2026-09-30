@@ -102,8 +102,10 @@ class WisdomPopulationReport
 				'short' => self::shortName($name),
 				'expected_f' => 0,
 				'expected_m' => 0,
+				'expected' => 0,
 				'present_f' => 0,
 				'present_m' => 0,
+				'present' => 0,
 				'teachers' => $blankStaff,
 				'support' => $blankStaff,
 				'np' => [],
@@ -120,15 +122,18 @@ class WisdomPopulationReport
 			return strcasecmp((string) $a['name'], (string) $b['name']);
 		});
 		$totals = [
-			'expected_f' => 0, 'expected_m' => 0, 'present_f' => 0, 'present_m' => 0,
+			'expected_f' => 0, 'expected_m' => 0, 'expected' => 0,
+			'present_f' => 0, 'present_m' => 0, 'present' => 0,
 			'teachers_present' => 0, 'teachers_missing' => 0,
 			'support_present' => 0, 'support_missing' => 0,
 		];
 		foreach ($rows as $row) {
 			$totals['expected_f'] += $row['expected_f'];
 			$totals['expected_m'] += $row['expected_m'];
+			$totals['expected'] += $row['expected'];
 			$totals['present_f'] += $row['present_f'];
 			$totals['present_m'] += $row['present_m'];
+			$totals['present'] += $row['present'];
 			$totals['teachers_present'] += $row['teachers']['present'];
 			$totals['teachers_missing'] += $row['teachers']['missing'];
 			$totals['support_present'] += $row['support']['present'];
@@ -153,26 +158,28 @@ class WisdomPopulationReport
 		}
 		$idList = implode(',', array_map('intval', array_keys($bySchool)));
 		$day = $db->escape($date);
-		$yearSql = $yearId > 0 ? ' AND cr.year = ' . (int) $yearId : '';
+		$yearId = (int) $yearId;
 		$presentJoin = $db->tableExists('daily_attendance')
 			? "LEFT JOIN (SELECT DISTINCT student_id FROM daily_attendance WHERE DATE(datee) = {$day}) da ON da.student_id = s.id"
 			: '';
 		$presentSelect = $presentJoin !== '' ? 'CASE WHEN da.student_id IS NULL THEN 0 ELSE 1 END' : '0';
 		$sql = "SELECT s.school_id, s.id, s.sex, s.studying_mode,
-				c.id AS class_id, c.title AS class_title, l.title AS level_name, d.code AS dept_code,
+				c.id AS class_id, c.title AS class_title, l.title AS level_name, d.code AS dept_code, d.title AS dept_title,
 				{$presentSelect} AS present
 			FROM students s
-			INNER JOIN class_records cr ON cr.student = s.id AND cr.status = 1 {$yearSql}
+			INNER JOIN schools sch ON sch.id = s.school_id
+			LEFT JOIN active_term atr ON atr.id = sch.active_term
+			INNER JOIN class_records cr ON cr.student = s.id
+				AND cr.year = IFNULL(atr.academic_year, {$yearId})
 			INNER JOIN classes c ON c.id = cr.class
 			LEFT JOIN levels l ON l.id = c.level
 			LEFT JOIN departments d ON d.id = c.department
 			{$presentJoin}
 			WHERE s.school_id IN ({$idList})
-				AND s.status IN (1, 2)
+				AND s.status = 1
 				AND IFNULL(c.title,'') NOT LIKE '%Holiday%'
 				AND IFNULL(l.title,'') NOT LIKE '%Holiday%'
-				AND IFNULL(d.title,'') NOT LIKE '%Holiday%'
-				AND IFNULL(d.code,'') NOT LIKE '%Holiday%'";
+			ORDER BY c.id ASC";
 		$seen = [];
 		$classes = [];
 		foreach ($db->query($sql)->getResultArray() as $row) {
@@ -185,6 +192,10 @@ class WisdomPopulationReport
 			$gender = self::gender($row['sex'] ?? '');
 			$present = (int) ($row['present'] ?? 0) === 1;
 			$boarding = (int) ($row['studying_mode'] ?? 1) === 0;
+			$bySchool[$sid]['expected']++;
+			if ($present) {
+				$bySchool[$sid]['present']++;
+			}
 			if ($gender === 'F') {
 				$bySchool[$sid]['expected_f']++;
 				if ($present) {
@@ -376,7 +387,7 @@ class WisdomPopulationReport
 		$sheet->mergeCells('A1:O1');
 		$sheet->setCellValue('A1', 'WISDOM SCHOOLS — ATTENDANCE');
 		$sheet->mergeCells('A2:O2');
-		$sheet->setCellValue('A2', 'Date ' . $data['date_label'] . '    ·    Student present and absent are from the daily register, not card in/out    ·    Support staff = shift is not Academic staff');
+		$sheet->setCellValue('A2', 'Date ' . $data['date_label'] . '    ·    Expected students match the dashboard, holiday classes excluded    ·    Present and absent are from the daily register, not card in/out    ·    Support staff = shift is not Academic staff');
 		$sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16)->getColor()->setRGB(self::NAVY);
 		$sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('475569');
 		$sheet->getRowDimension(1)->setRowHeight(24);
@@ -426,20 +437,22 @@ class WisdomPopulationReport
 		foreach ($data['schools'] as $school) {
 			$expF = (int) $school['expected_f'];
 			$expM = (int) $school['expected_m'];
+			$exp = (int) $school['expected'];
 			$preF = (int) $school['present_f'];
 			$preM = (int) $school['present_m'];
+			$pre = (int) $school['present'];
 			$sheet->fromArray([
 				$n,
 				$school['short'],
 				$expF,
 				$expM,
-				$expF + $expM,
+				$exp,
 				$preF,
 				$preM,
-				$preF + $preM,
+				$pre,
 				max(0, $expF - $preF),
 				max(0, $expM - $preM),
-				max(0, ($expF + $expM) - ($preF + $preM)),
+				max(0, $exp - $pre),
 				(int) $school['teachers']['present'],
 				(int) $school['teachers']['missing'],
 				(int) $school['support']['present'],
@@ -452,8 +465,8 @@ class WisdomPopulationReport
 			$row++;
 		}
 		$t = $data['totals'];
-		$exp = $t['expected_f'] + $t['expected_m'];
-		$pre = $t['present_f'] + $t['present_m'];
+		$exp = (int) $t['expected'];
+		$pre = (int) $t['present'];
 		$sheet->fromArray([
 			'',
 			'GENERAL TOTAL',
