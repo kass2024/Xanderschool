@@ -931,12 +931,26 @@ class AttendanceScanService
 					'area_id' => $areaId,
 					'shift_id' => 1,
 				]);
-			} elseif ((int) ($row->time_out ?? 0) > 0) {
-				$already = true;
 			} else {
-				$db->table('attendance_records')
-					->where('id', $row->id)
-					->update(['time_out' => $time]);
+				$timeIn = (int) ($row->time_in ?? 0);
+				if ($timeIn > 0 && ($time - $timeIn) < self::STUDENT_OUT_AFTER_IN_SECONDS) {
+					return [
+						'success' => 1,
+						'already' => 1,
+						'kind' => 'student',
+						'status' => 'IN',
+						'time' => date('H:i', $timeIn),
+						'message' => 'Already In',
+						'person' => self::studentPayload($student, '', ''),
+						'area' => ['id' => $areaId, 'name' => $areaName],
+					];
+				}
+				$existingOut = (int) ($row->time_out ?? 0);
+				if ($existingOut <= 0 || $time >= $existingOut) {
+					$db->table('attendance_records')
+						->where('id', $row->id)
+						->update(['time_out' => $time]);
+				}
 			}
 		}
 
@@ -1013,8 +1027,8 @@ class AttendanceScanService
 	private const WAIT_CHECKOUT_MSG = 'Already checked in — waiting for checkout';
 
 	/**
-	 * Staff face/card clock. Shift-aware: IN once per working day; OUT only
-	 * within GRACE_SECONDS of shift end (or 5 minutes after IN if no shift).
+	 * Staff face/card clock. Shift-aware: IN once per working day; OUT near
+	 * shift end. A tap after the shift has ended is a checkout marked extra time.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -1076,24 +1090,30 @@ class AttendanceScanService
 			->get()
 			->getRow();
 
+		$afterEnd = $working && $endTs > 0 && $time > ($endTs + StaffShiftClock::GRACE_SECONDS);
+
 		if (!$attendance) {
+			if ($afterEnd) {
+				$db->table('attendance_records')->insert([
+					'user_id' => (int) $staff->id,
+					'user_type' => 1,
+					'time_in' => $time,
+					'time_out' => $time,
+					'school_id' => $schoolId,
+					'area_id' => 0,
+					'shift_id' => (int) ($staff->shift_id ?? 0),
+				]);
+				return self::staffClockPayload(
+					$staff, 'OUT', $time, $window, $shift,
+					StaffShiftClock::evaluateOut($time, $window),
+					false, 1, 'Checkout · Extra time', true
+				);
+			}
 			if ($wanted === 'OUT') {
 				$payload = self::staffClockPayload(
 					$staff, '', $time, $window, $shift,
 					['code' => 'rejected', 'label' => 'Rejected', 'detail' => 'No check-in today', 'minutes' => 0],
 					false, 0, 'Checkout not allowed — no check-in today', false
-				);
-				$payload['success'] = 0;
-				$payload['status'] = '';
-				return $payload;
-			}
-			if ($working && $endTs > 0 && $time > ($endTs + StaffShiftClock::GRACE_SECONDS)) {
-				$payload = self::staffClockPayload(
-					$staff, 'IN', $time, $window, $shift,
-					['code' => 'rejected', 'label' => 'Rejected', 'detail' => 'After shift end', 'minutes' => 0],
-					false, 0,
-					'Shift already ended (' . ($window['end_label'] ?? '') . ') — attendance not recorded',
-					false
 				);
 				$payload['success'] = 0;
 				$payload['status'] = '';
@@ -1139,10 +1159,12 @@ class AttendanceScanService
 		$db->table('attendance_records')
 			->where('id', $attendance->id)
 			->update(['time_out' => $time]);
+		$outEval = StaffShiftClock::evaluateOut($time, $window);
+		$outMsg = ($outEval['code'] ?? '') === 'overtime' ? 'Checkout · Extra time' : 'Staff OUT';
 		return self::staffClockPayload(
 			$staff, 'OUT', $time, $window, $shift,
-			StaffShiftClock::evaluateOut($time, $window),
-			false, 1, 'Staff OUT', false
+			$outEval,
+			false, 1, $outMsg, false
 		);
 	}
 
