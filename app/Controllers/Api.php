@@ -176,6 +176,19 @@ class Api extends BaseController
 			}
 		}
 
+		$postedPeriod = (int) ($info['period'] ?? 0);
+		if ($markType !== holiday_coaching_mark_type()) {
+			if ((int) ($active_term[0]['use_period'] ?? 0) === 1 && $postedPeriod < 1) {
+				return $this->response->setJSON(["error" => "Select a period. Marks cannot be entered without a period.", "success" => false]);
+			}
+			if (period_is_locked($activeTermId, $postedPeriod)) {
+				return $this->response->setJSON(["error" => "Period " . $postedPeriod . " is locked. No marks can be entered or changed.", "success" => false]);
+			}
+		}
+		if (marks_course_locked((int) $school_id, $activeTermId, (int) ($info['created_by'] ?? 0), (int) ($info['course_id'] ?? 0))) {
+			return $this->response->setJSON(["error" => "Marks editing is locked for you on this course.", "success" => false]);
+		}
+
 		$oldQ = $marksRecordModel->select('id')
 			->where('student_id', $info['student_id'])
 			->where('course_id', $info['course_id'])
@@ -423,6 +436,25 @@ class Api extends BaseController
 			$courseIds[] = (int) ($courseRow['id'] ?? 0);
 		}
 		$courseIds = array_values(array_filter($courseIds));
+		$lockedCourseIds = [];
+		if ($courseIds) {
+			ensure_marks_edit_lock_schema();
+			$lockRows = \Config\Database::connect()->table('marks_edit_locks')
+				->select('course_id')
+				->where('school_id', $school_id)
+				->where('term_id', (int) ($school->active_term ?? 0))
+				->where('staff_id', $teacher_id)
+				->where('locked', 1)
+				->whereIn('course_id', $courseIds)
+				->get()->getResultArray();
+			foreach ($lockRows as $lockRow) {
+				$lockedCourseIds[(int) $lockRow['course_id']] = true;
+			}
+		}
+		foreach ($coursesData as &$courseRow) {
+			$courseRow['marks_locked'] = !empty($lockedCourseIds[(int) ($courseRow['id'] ?? 0)]) ? 1 : 0;
+		}
+		unset($courseRow);
 		if ($classIds && $courseIds) {
 			$filledRows = (new MarksModel())
 				->select('course_id, class_id, period, cat_type')
@@ -481,6 +513,10 @@ class Api extends BaseController
 		if (!staff_owns_course_class($teacher_id, $course_id, $class_id, (int) ($this->data['academic_year'] ?? 0))) {
 			return $this->response->setJSON(['error' => 'This course is not assigned to you']);
 		}
+		if (period_is_locked((int) ($this->data['active_term'] ?? 0), $period)) {
+			return $this->response->setJSON(['error' => 'Period ' . $period . ' is locked. No marks can be entered or changed.']);
+		}
+		$courseLocked = marks_course_locked($school_id, (int) ($this->data['active_term'] ?? 0), $teacher_id, $course_id);
 		$query = (new MarksModel())
 			->select('student_id, marks, outof')
 			->where('term', (int) $this->data['active_term'])
@@ -500,11 +536,12 @@ class Api extends BaseController
 				'out_of' => (string) ($row['outof'] ?? ''),
 			];
 		}
-		$editOn = cat_edit_allowed((int) ($this->data['active_term'] ?? 0));
+		$editOn = !$courseLocked;
 		return $this->response->setJSON([
 			'success' => '1',
 			'allow_cat_edit' => $editOn ? 1 : 0,
-			'editable' => ($mark_type !== 1 || $editOn || $marks === []) ? 1 : 0,
+			'marks_locked' => $courseLocked ? 1 : 0,
+			'editable' => $editOn ? 1 : 0,
 			'marks' => $marks,
 		]);
 	}
@@ -2471,13 +2508,20 @@ public function check_school($option)
 							->where('cat_type', $catType)
 							->where('period', $info['period'] ?? 0)
 							->first();
+						$postedPeriod = (int) ($info['period'] ?? 0);
+						if (period_is_locked((int) ($this->data['active_term'] ?? 0), $postedPeriod)) {
+							return $this->response->setJSON([
+								'error' => 'Period ' . $postedPeriod . ' is locked. No marks can be entered or changed.',
+								'last_id' => $last_id,
+							]);
+						}
+						if (marks_course_locked((int) $school_id, (int) ($this->data['active_term'] ?? 0), $teacherId, (int) ($info['course_id'] ?? 0))) {
+							return $this->response->setJSON([
+								'error' => 'Marks editing is locked for you on this course. Quizzes, tests, homework, and exams cannot be entered or changed.',
+								'last_id' => $last_id,
+							]);
+						}
 						if ($existing) {
-							if ($markType === 1 && !cat_edit_allowed((int) ($this->data['active_term'] ?? 0))) {
-								return $this->response->setJSON([
-									'error' => catTypeStr($catType) . ' is saved and locked. The Coordinator or Director can allow editing.',
-									'last_id' => $last_id,
-								]);
-							}
 							$mMdl->save([
 								'id' => $existing['id'],
 								'marks' => $info['marks'],

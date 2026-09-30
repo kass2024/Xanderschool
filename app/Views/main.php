@@ -422,6 +422,14 @@
 										</a>
 									</li>
 									<?php } ?>
+									<?php if (\Config\MenuClearance::canToggleSavedCatEdit((int) ($_SESSION['soma_post'] ?? 0))) { ?>
+									<li>
+										<a href="<?= base_url('lock_marks_editing'); ?>">
+											<i class="metismenu-icon"></i>
+											Lock Marks editing
+										</a>
+									</li>
+									<?php } ?>
 									<?php if (menu_clearance_allowed('get_uploaded_marks') || (function_exists('staff_has_assigned_course') && staff_has_assigned_course())) { ?>
 										<li>
 											<a href="<?= base_url('get_uploaded_marks');?>">
@@ -1437,7 +1445,7 @@
 								<?php endfor; ?>
 							</select>
 							<small id="period_locked_hint" class="text-danger" style="display:none;">
-								This period is locked. Contact the school admin to unlock it.
+								This period is locked. No marks can be entered until it is unlocked.
 							</small>
 						</div>
 					</div>
@@ -3858,17 +3866,26 @@ if ($page == "pendingRegistration") {
 				$("#periodd").hide();
 			}
 		}
-		$("#mdlmarks form").on("submit", function () {
+		$("#mdlmarks form").on("submit", function (e) {
 			if (String($("#marks_type").val() || "") === "11") {
 				applyMarksHolidayMode();
+				return;
 			}
+			<?php if ((int) $periodic === 1) { ?>
+			var periodVal = $("#marks_period_select").val();
+			var $opt = $("#marks_period_select option:selected");
+			if (!periodVal || $opt.is(":disabled") || /\(Locked\)/.test($opt.text())) {
+				e.preventDefault();
+				$("#period_locked_hint").show();
+				return false;
+			}
+			<?php } ?>
 		});
 
 		$("#marks_type").on("change", function () {
 			applyMarksHolidayMode();
-			var mark = $(this).val();
-			if (mark == 1 <?=$periodic == 0 ? ' && false' : ' && true';?>
-		)
+			var mark = String($(this).val() || "");
+			if (mark !== "11" <?=$periodic == 0 ? ' && false' : ' && true';?>)
 			{
 				$('[name="period"]').prop("required", true);
 				$("#periodd").show();

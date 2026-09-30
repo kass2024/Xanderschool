@@ -369,14 +369,12 @@ body.marks-entry-body .select2-search__field {
 				</div>
 				<?php if (!empty($is_coordinator)): ?>
 					<div class="marks-field">
-						<span>Saved quiz editing</span>
-						<button type="button" class="btn btn-sm <?= !empty($allow_cat_edit) ? 'btn-warning' : 'btn-primary'; ?>" id="btn-toggle-cat-edit" data-allow="<?= !empty($allow_cat_edit) ? '0' : '1'; ?>">
-							<?= !empty($allow_cat_edit) ? 'Lock saved quizzes' : 'Allow editing saved quizzes'; ?>
-						</button>
-						<small class="marks-max-live" id="catEditState"><?= !empty($allow_cat_edit) ? 'Assigned teachers can change a saved quiz, test, or homework.' : 'Saved quizzes are locked. Turn this on to let the assigned teacher edit them.'; ?></small>
+						<span>Marks editing</span>
+						<a class="btn btn-sm btn-warning" href="<?= base_url('lock_marks_editing'); ?>">Lock Marks editing</a>
+						<small class="marks-max-live">Lock or unlock each teacher and course. A lock blocks quizzes, tests, homework, and exams.</small>
 					</div>
 				<?php else: ?>
-					<p class="marks-help">You enter marks only for courses assigned to you. After a quiz is saved, the next one is added. A saved quiz can be changed only when the Coordinator or Director allows editing.</p>
+					<p class="marks-help">You enter marks only for courses assigned to you. If the Coordinator or Director locks this course, quizzes, tests, homework, and exams cannot be entered or changed.</p>
 				<?php endif; ?>
 				<div class="marks-field">
 					<label for="outofmarks"><?= lang("app.totalMarks"); ?></label>
@@ -401,11 +399,8 @@ body.marks-entry-body .select2-search__field {
 				   class="btn btn-primary btn-lg disabled" id="export_pdf"
 				   target="_blank"><i class="fa fa-file-pdf"></i> <?= lang("app.export"); ?>
 				</a>
-				<?php if (!empty($allow_cat_edit)) { ?>
-					<button class="btn btn-warning btn-lg" type="button" id="btn-del-marks"
-							disabled>
-						<i class="fa fa-trash"></i> <?= lang("app.del"); ?> </button>
-				<?php } ?>
+				<button class="btn btn-warning btn-lg" type="button" id="btn-del-marks" disabled>
+					<i class="fa fa-trash"></i> <?= lang("app.del"); ?> </button>
 			</div>
 		</div>
 	</div>
@@ -689,28 +684,6 @@ body.marks-entry-body .select2-search__field {
 			populate_marks();
 		});
 	};
-
-	$("#btn-toggle-cat-edit").on("click", function () {
-		var $btn = $(this);
-		if ($btn.data("busy")) {
-			return;
-		}
-		var allow = String($btn.data("allow")) === "1" ? 1 : 0;
-		$btn.data("busy", 1).prop("disabled", true);
-		$.post("<?= base_url('toggle_cat_edit'); ?>", {allow: allow}, function (res) {
-			if (res && res.success) {
-				if (window.toastada) toastada.success(res.success);
-				setTimeout(function () { window.location.reload(); }, 700);
-			} else {
-				var err = (res && res.error) ? res.error : "Could not update quiz editing";
-				if (window.toastada) toastada.error(err);
-				$btn.data("busy", 0).prop("disabled", false);
-			}
-		}, "json").fail(function () {
-			if (window.toastada) toastada.error("Could not update quiz editing");
-			$btn.data("busy", 0).prop("disabled", false);
-		});
-	});
 
 	function populate_marks() {
 		var id = $("#select_class").val() + "/";

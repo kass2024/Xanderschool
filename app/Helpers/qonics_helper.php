@@ -1093,6 +1093,79 @@ if (!function_exists('cat_edit_allowed')) {
 	}
 }
 
+if (!function_exists('ensure_marks_edit_lock_schema')) {
+	function ensure_marks_edit_lock_schema(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('marks_edit_locks')) {
+			$db->query("CREATE TABLE `marks_edit_locks` (
+				`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+				`school_id` INT NOT NULL,
+				`term_id` INT NOT NULL,
+				`staff_id` INT NOT NULL,
+				`course_id` INT NOT NULL,
+				`locked` TINYINT(1) NOT NULL DEFAULT 1,
+				`updated_by` INT NULL,
+				`updated_at` DATETIME NULL,
+				PRIMARY KEY (`id`),
+				UNIQUE KEY `uniq_marks_edit_lock` (`school_id`,`term_id`,`staff_id`,`course_id`)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		}
+		$done = true;
+	}
+}
+
+if (!function_exists('marks_course_locked')) {
+	/** True when marks editing is locked for this teacher and course (quizzes, tests, homework, and exams). */
+	function marks_course_locked($schoolId, $termId, $staffId, $courseId): bool
+	{
+		$schoolId = (int) $schoolId;
+		$termId = (int) $termId;
+		$staffId = (int) $staffId;
+		$courseId = (int) $courseId;
+		if ($schoolId < 1 || $termId < 1 || $staffId < 1 || $courseId < 1) {
+			return false;
+		}
+		ensure_marks_edit_lock_schema();
+		$row = \Config\Database::connect()->table('marks_edit_locks')
+			->select('locked')
+			->where('school_id', $schoolId)
+			->where('term_id', $termId)
+			->where('staff_id', $staffId)
+			->where('course_id', $courseId)
+			->get(1)->getRowArray();
+		return (int) ($row['locked'] ?? 0) === 1;
+	}
+}
+
+if (!function_exists('period_is_locked')) {
+	function period_is_locked($activeTermId, $period): bool
+	{
+		$period = (int) $period;
+		$activeTermId = (int) $activeTermId;
+		if ($period < 1 || $activeTermId < 1) {
+			return false;
+		}
+		$row = \Config\Database::connect()->table('active_term')
+			->select('locked_periods')
+			->where('id', $activeTermId)
+			->get(1)->getRowArray();
+		if (!$row) {
+			return false;
+		}
+		foreach (explode(',', (string) ($row['locked_periods'] ?? '')) as $part) {
+			if ((int) trim($part) === $period) {
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
 if (!function_exists('staff_owns_course_class')) {
 	/** True when this staff member is the lecturer on the course for that class and year. */
 	function staff_owns_course_class($staffId, $courseId, $classId, $yearId): bool
