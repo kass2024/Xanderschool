@@ -301,11 +301,17 @@ body.marks-entry-body .select2-search__field {
 					} ?>
 				</select>
 			</div>
+			<div class="marks-filter-item" id="select_class_div">
+				<label for="select_class"><?= lang("app.sClass"); ?></label>
+				<select class="form-control select2" name="class_id_name" id="select_class" required>
+					<option selected disabled><?= lang("app.sClass"); ?> </option>
+				</select>
+			</div>
 			<?php
 			$type = $_GET['marktype'];
 			if ($type == 1) {
 				?>
-				<div class="marks-filter-item">
+				<div class="marks-filter-item" id="cat_type_div" style="display:none;">
 					<label for="catype"><?= lang("app.catType"); ?></label>
 					<select class="form-control select2" id="catype" name="catType">
 						<option selected disabled><?= lang("app.catType"); ?> </option>
@@ -313,12 +319,6 @@ body.marks-entry-body .select2-search__field {
 				</div>
 				<?php
 			} ?>
-			<div class="marks-filter-item" id="select_class_div">
-				<label for="select_class"><?= lang("app.sClass"); ?></label>
-				<select class="form-control select2" name="class_id_name" id="select_class" required>
-					<option selected disabled><?= lang("app.sClass"); ?> </option>
-				</select>
-			</div>
 			<input type="hidden" value="<?php echo $_GET['marktype']; ?>" name="marktype" id="marktype">
 			<input type="hidden" value="<?php echo isset($_GET['period']) ? $_GET['period'] : ''; ?>" name="period"
 				   id="period1">
@@ -482,16 +482,22 @@ body.marks-entry-body .select2-search__field {
 				$("#select_class").select2("destroy");
 			}
 			showAssignedTeacher();
+			hideCatType();
 			$("#select_class").load("<?= base_url(); ?>get_class/" + val+"/"+$("[name='year']").val()+"/1", function () {
 				initMarksSelect2($("#select_class_div"));
 				showAssignedTeacher();
-				populate_marks();
+				resetView();
+				$("#dv_marks").html("<h3 style=\"text-align: center;margin: 24px 8px\"><?= lang("app.selectCourseAndClass"); ?></h3>");
 			});
 		});
 
 		$("#select_class").on("change", function () {
 			showAssignedTeacher();
 			$("#catype").data("userPicked", 0);
+			if (!$(this).val()) {
+				hideCatType();
+				return;
+			}
 			refreshCatTypes(populate_marks);
 		})
 		$("#catype").on("change", function () {
@@ -501,7 +507,7 @@ body.marks-entry-body .select2-search__field {
 			$(this).data("userPicked", 1);
 			populate_marks();
 		})
-		refreshCatTypes();
+		hideCatType();
 		$("#checkSheet").on("click", function () {
 			if ($(this).prop("checked") == true) {
 				$("#mannualUpload").hide();
@@ -608,8 +614,17 @@ body.marks-entry-body .select2-search__field {
 		window.applyingCatOptions = false;
 	}
 
+	function hideCatType() {
+		var $box = $("#cat_type_div");
+		if (!$box.length) {
+			return;
+		}
+		$box.hide();
+	}
+
 	function refreshCatTypes(done) {
 		var $sel = $("#catype");
+		var $box = $("#cat_type_div");
 		if (!$sel.length) {
 			if (typeof done === "function") done();
 			return;
@@ -617,14 +632,11 @@ body.marks-entry-body .select2-search__field {
 		var classId = $("#select_class").val();
 		var course = $("#select_course").val();
 		if (!classId || !course) {
-			applyCatOptions([
-				{header: "<?= trim(lang('app.quiz')); ?>", options: [{value: "Q1", label: "<?= trim(lang('app.quiz1')); ?>", open: true}]},
-				{header: "<?= trim(lang('app.test')); ?>", options: [{value: "T1", label: "<?= trim(lang('app.test1')); ?>", open: true}]},
-				{header: "<?= trim(lang('app.homework')); ?>", options: [{value: "H1", label: "<?= trim(lang('app.homework1')); ?>", open: true}]}
-			]);
+			hideCatType();
 			if (typeof done === "function") done();
 			return;
 		}
+		$box.show();
 		$.getJSON("<?= base_url(); ?>cat_type_options", {
 			course: course,
 			class_id: classId,
