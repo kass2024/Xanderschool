@@ -12,7 +12,8 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 /**
  * All-schools attendance workbook in the Wisdom population layout.
  * Student present/absent come from the daily register, not card in/out.
- * Support staff are everyone whose shift is not Academic staff.
+ * Teachers are staff whose post is Teacher.
+ * Support staff are everyone else whose shift is not Academic staff.
  */
 class WisdomPopulationReport
 {
@@ -270,8 +271,9 @@ class WisdomPopulationReport
 		$hasSex = in_array('sex', $db->getFieldNames('staffs'), true);
 		$sexCol = $hasSex ? 's.sex' : "'' AS sex";
 		$rows = $db->query(
-			"SELECT s.id, s.school_id, {$sexCol}, sh.title AS shift_title, sh.options AS shift_options
+			"SELECT s.id, s.school_id, {$sexCol}, p.title AS post_title, sh.title AS shift_title, sh.options AS shift_options
 			FROM staffs s
+			LEFT JOIN posts p ON p.id = s.post
 			LEFT JOIN shifts sh ON sh.id = s.shift_id
 			WHERE s.school_id IN ({$idList}) AND IFNULL(s.status, 1) <> 0"
 		)->getResultArray();
@@ -302,8 +304,15 @@ class WisdomPopulationReport
 				'title' => (string) ($staff['shift_title'] ?? ''),
 				'options' => (string) ($staff['shift_options'] ?? '[]'),
 			];
+			$isTeacher = self::isTeacherPost((string) ($staff['post_title'] ?? ''));
 			$academic = self::isAcademicShift($shift['title']);
-			$bucket = $academic ? 'teachers' : 'support';
+			if ($isTeacher) {
+				$bucket = 'teachers';
+			} elseif (!$academic) {
+				$bucket = 'support';
+			} else {
+				continue;
+			}
 			$hasShift = trim($shift['options']) !== '' && $shift['options'] !== '[]';
 			$window = StaffShiftClock::windowFor($shift, $noon);
 			$timeIn = $clocks[$staffId] ?? 0;
@@ -317,7 +326,7 @@ class WisdomPopulationReport
 			} else {
 				$bySchool[$sid][$bucket]['missing']++;
 			}
-			if (!$academic) {
+			if (!$isTeacher) {
 				continue;
 			}
 			$gender = self::gender($staff['sex'] ?? '');
@@ -387,7 +396,7 @@ class WisdomPopulationReport
 		$sheet->mergeCells('A1:O1');
 		$sheet->setCellValue('A1', 'WISDOM SCHOOLS — ATTENDANCE');
 		$sheet->mergeCells('A2:O2');
-		$sheet->setCellValue('A2', 'Date ' . $data['date_label'] . '    ·    Expected students match the dashboard, holiday classes excluded    ·    Present and absent are from the daily register, not card in/out    ·    Support staff = shift is not Academic staff');
+		$sheet->setCellValue('A2', 'Date ' . $data['date_label'] . '    ·    Expected students match the dashboard, holiday classes excluded    ·    Present and absent are from the daily register, not card in/out    ·    Teachers = post is Teacher    ·    Support staff = shift is not Academic staff');
 		$sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16)->getColor()->setRGB(self::NAVY);
 		$sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('475569');
 		$sheet->getRowDimension(1)->setRowHeight(24);
@@ -597,7 +606,7 @@ class WisdomPopulationReport
 		$sheet->mergeCells('A1:E1');
 		$sheet->setCellValue('A1', 'TEACHERS ATTENDANCE SUMMARY');
 		$sheet->mergeCells('A2:E2');
-		$sheet->setCellValue('A2', 'Date: ' . $data['date_label'] . '    ·    Academic staff only    ·    Male and female are those present today');
+		$sheet->setCellValue('A2', 'Date: ' . $data['date_label'] . '    ·    Post is Teacher only    ·    Male and female are those present today');
 		$sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16)->getColor()->setRGB(self::NAVY);
 		$sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('475569');
 		$labels = [
@@ -669,6 +678,11 @@ class WisdomPopulationReport
 		}
 		$sheet->getPageSetup()->setFitToPage(true)->setFitToWidth(1)->setFitToHeight(0);
 		$sheet->getHeaderFooter()->setOddFooter('&LTeachers&R&P / &N');
+	}
+
+	private static function isTeacherPost(string $title): bool
+	{
+		return strcasecmp(trim($title), 'Teacher') === 0;
 	}
 
 	private static function isAcademicShift(string $title): bool
