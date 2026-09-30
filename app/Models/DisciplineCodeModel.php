@@ -81,9 +81,12 @@ class DisciplineCodeModel extends Model
 		$this->insertMissingCatalogRows($schoolId);
 	}
 
+	/** Revised Amabwiriza 2026. Bump this when the official document changes again. */
+	private const CATALOG_REVISION = '2026-avuguruye';
+
 	/**
-	 * Schools that already have conduct codes still receive new catalog laws.
-	 * Existing rows are left as the school saved them.
+	 * Schools that already have conduct codes receive new catalog laws,
+	 * and the revised 2026 document replaces the official laws once.
 	 */
 	public function ensureCatalogUpdates(int $schoolId): void
 	{
@@ -91,9 +94,90 @@ class DisciplineCodeModel extends Model
 		if ($schoolId < 1) {
 			return;
 		}
+		$this->refreshSchoolCatalog($schoolId);
+		static $swept = false;
+		if ($swept) {
+			return;
+		}
+		$swept = true;
+		$rows = \Config\Database::connect()->table('discipline_codes')->select('school_id')->distinct()->get()->getResultArray();
+		foreach ($rows as $row) {
+			$sid = (int) ($row['school_id'] ?? 0);
+			if ($sid > 0 && $sid !== $schoolId) {
+				$this->refreshSchoolCatalog($sid);
+			}
+		}
+	}
+
+	private function refreshSchoolCatalog(int $schoolId): void
+	{
+		if ($schoolId < 1) {
+			return;
+		}
 		$this->seedIfEmpty($schoolId);
 		$this->insertMissingCatalogRows($schoolId);
+		$this->applyRevisedCatalog($schoolId);
 		$this->correctLosingStudentCard($schoolId);
+	}
+
+	private function applyRevisedCatalog(int $schoolId): void
+	{
+		$db = \Config\Database::connect();
+		$db->query("CREATE TABLE IF NOT EXISTS `discipline_catalog_revision` (
+			`school_id` INT UNSIGNED NOT NULL,
+			`revision` VARCHAR(64) NOT NULL,
+			PRIMARY KEY (`school_id`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		$saved = $db->table('discipline_catalog_revision')->where('school_id', $schoolId)->get(1)->getRowArray();
+		if (is_array($saved) && (string) ($saved['revision'] ?? '') === self::CATALOG_REVISION) {
+			return;
+		}
+		$now = date('Y-m-d H:i:s');
+		foreach (WisdomDisciplineCatalog::categories() as $cat) {
+			foreach ($cat['items'] as $item) {
+				$key = (string) ($cat['key'] ?? '');
+				$no = (int) ($item['no'] ?? 0);
+				if ($key === '' || $no < 1) {
+					continue;
+				}
+				$marks = $item['marks'] ?? [0, 0, 0];
+				$se = $item['se'] ?? ['', '', ''];
+				$sr = $item['sr'] ?? ['', '', ''];
+				$payload = [
+					'category_en' => (string) ($cat['en'] ?? ''),
+					'category_rw' => (string) ($cat['rw'] ?? ''),
+					'title_en' => (string) ($item['en'] ?? ''),
+					'title_rw' => (string) ($item['rw'] ?? ''),
+					'first_marks' => (int) ($marks[0] ?? 0),
+					'second_marks' => (int) ($marks[1] ?? 0),
+					'third_marks' => (int) ($marks[2] ?? 0),
+					'first_sanction_en' => (string) ($se[0] ?? ''),
+					'first_sanction_rw' => (string) ($sr[0] ?? ''),
+					'second_sanction_en' => (string) ($se[1] ?? ''),
+					'second_sanction_rw' => (string) ($sr[1] ?? ''),
+					'third_sanction_en' => (string) ($se[2] ?? ''),
+					'third_sanction_rw' => (string) ($sr[2] ?? ''),
+					'updated_at' => $now,
+				];
+				$existing = $db->table('discipline_codes')
+					->select('id')
+					->where('school_id', $schoolId)
+					->where('category_key', $key)
+					->where('code_no', $no)
+					->get(1)->getRowArray();
+				if (is_array($existing) && !empty($existing['id'])) {
+					$db->table('discipline_codes')->where('id', (int) $existing['id'])->update($payload);
+				}
+			}
+		}
+		if (is_array($saved) && !empty($saved['school_id'])) {
+			$db->table('discipline_catalog_revision')->where('school_id', $schoolId)->update(['revision' => self::CATALOG_REVISION]);
+		} else {
+			$db->table('discipline_catalog_revision')->insert([
+				'school_id' => $schoolId,
+				'revision' => self::CATALOG_REVISION,
+			]);
+		}
 	}
 
 	/** Losing a student card is always 10 marks plus 50,000 RWF. No 1st/2nd/3rd ladder. */
