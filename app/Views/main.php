@@ -126,11 +126,10 @@
 										$isHome = $csid === $homeSchoolId;
 										?>
 									<li>
-										<a href="<?= base_url('switch-school/' . $csid); ?>" class="<?= $isActive ? 'font-weight-bold' : ''; ?>">
+										<a href="<?= base_url('dashboard'); ?>" class="<?= $isHome ? 'font-weight-bold' : ''; ?>">
 											<i class="metismenu-icon"></i>
 											<?= esc($cs['name'] ?? ''); ?>
-											<?php if ($isHome) { ?><small class="text-warning"> (master)</small><?php } ?>
-											<?php if ($isActive && !$isHome) { ?><small class="text-info"> · viewing</small><?php } ?>
+											<?php if ($isHome) { ?><small class="text-warning"> (your school)</small><?php } ?>
 										</a>
 									</li>
 									<?php } ?>

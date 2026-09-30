@@ -235,53 +235,13 @@ public function testEmail()
 		return $this->response->setJSON(array("success" => "language changed"));
 	}
 
-	/** Central post at master school: view another child school dashboard. */
+	/** Child-school menu returns to the logged-in school dashboard. It does not open another school. */
 	public function switch_school_context($targetId = 0)
 	{
 		if ($this->session->get($this->log_status) == null) {
 			return redirect()->to(base_url('login'));
 		}
-		helper('qonics');
-		$targetId = (int) $targetId;
-		$homeId = school_hierarchy_home_id();
-		$postId = (int) $this->session->get('soma_post');
-		$hierarchy = new \App\Services\SchoolHierarchyService();
-		if (!$hierarchy->canViewSchool($homeId, $postId, $targetId)) {
-			$this->session->setFlashdata('error', 'You cannot access that school dashboard.');
-			return redirect()->to(base_url('dashboard'));
-		}
-		$school = \Config\Database::connect()->table('schools')->where('id', $targetId)->get(1)->getRowArray();
-		if (!$school) {
-			return redirect()->to(base_url('dashboard'));
-		}
-		$this->session->set([
-			'soma_school_id' => $targetId,
-			'soma_school' => $school['name'],
-		]);
-		try {
-			$schema = new \App\Models\BudgetSchemaModel();
-			$schema->ensureSchema();
-			$schema->seedFoundation($targetId, (int) $this->session->get('soma_id'));
-		} catch (\Throwable $e) {
-			// non-fatal
-		}
-		$this->session->setFlashdata('success', 'Now viewing: ' . ($school['name'] ?? 'school'));
-		$next = trim((string) $this->request->getGet('next'), '/');
-		$allowedNext = [
-			'dashboard',
-			'student-report/course/monthly',
-			'student-report/daily/class',
-			'student-report/daily/all',
-			'student-report/daily/details',
-			'student-report/boarding/all',
-			'student-report/boarding/details',
-			'student-report/inout/monthly',
-			'staff-report/individual',
-		];
-		if (!in_array($next, $allowedNext, true)) {
-			$next = 'dashboard';
-		}
-		return redirect()->to(base_url($next));
+		return redirect()->to(base_url('dashboard'));
 	}
 
 	/** Return to home (master) school context. */
@@ -1073,6 +1033,7 @@ public function testEmail()
 
 	public function dashboard()
 	{
+		$this->restoreLoggedInSchool();
 		$this->_preset();
 		$data = $this->data;
 		$data['title'] = lang("app.dashboard");
@@ -7223,6 +7184,28 @@ public function attendanceCard()
 		}
 		echo view("pages/reports/staff_report_individual", $data);
 
+	}
+
+	/** Dashboard always belongs to the school the user logged into. */
+	private function restoreLoggedInSchool(): void
+	{
+		if ($this->session->get($this->log_status) == null) {
+			return;
+		}
+		helper('qonics');
+		$homeId = (int) school_hierarchy_home_id();
+		$currentId = (int) $this->session->get('soma_school_id');
+		if ($homeId < 1 || $currentId < 1 || $homeId === $currentId) {
+			return;
+		}
+		$school = \Config\Database::connect()->table('schools')->select('name')->where('id', $homeId)->get(1)->getRowArray();
+		if (!$school) {
+			return;
+		}
+		$this->session->set([
+			'soma_school_id' => $homeId,
+			'soma_school' => (string) ($school['name'] ?? ''),
+		]);
 	}
 
 	private function schoolShowsAttendanceLocations(int $schoolId): bool

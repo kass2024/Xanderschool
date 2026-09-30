@@ -250,9 +250,6 @@
 								$wgChildren[] = $campus;
 							}
 						}
-						$wgLink = function ($path) {
-							return base_url($path);
-						};
 						$wgSingle = !empty($wisdom_group['single']);
 						if ($wgSingle && !$wgMaster && $wgChildren) {
 							$wgMaster = $wgChildren[0];
@@ -364,20 +361,16 @@
 							<div class="wg-loc-title">Student in/out by location</div>
 							<div class="wg-locs">
 								<?php foreach ($wgMaster['locations'] as $loc): ?>
-								<a class="wg-loc" href="<?= base_url('student-report/inout/monthly'); ?>">
+								<div class="wg-loc">
 									<b><?= esc($loc['name']); ?></b>
 									<span><?= (int) $loc['checked_in']; ?> in · <?= (int) $loc['checked_out']; ?> out · <?= (int) $loc['inside']; ?> inside</span>
-								</a>
+								</div>
 								<?php endforeach; ?>
 							</div>
 							<?php endif; ?>
 							<div class="wg-ranks">
 								<div class="wg-rank late"><h5>Most late today</h5><ol><?php foreach (($wgMaster['late_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($wgMaster['late_today'])): ?><li>No one late after shift start</li><?php endif; ?></ol></div>
 								<div class="wg-rank early"><h5>Earliest today</h5><ol><?php foreach (($wgMaster['early_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($wgMaster['early_today'])): ?><li>No early arrivals</li><?php endif; ?></ol></div>
-							</div>
-							<div class="wg-links">
-								<a href="<?= $wgLink('student-report/daily/all'); ?>">Student attendance</a>
-								<a class="alt" href="<?= $wgLink('staff-report/individual'); ?>">Staff attendance</a>
 							</div>
 						</div>
 						<?php endif; ?>
@@ -399,22 +392,6 @@
 									<div><strong><?= (int) $campus['student_inside']; ?></strong><em>Still inside</em></div>
 									<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/in'); ?>"><strong><?= (int) $campus['staff_present']; ?></strong><em>Staff in</em></a>
 									<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/absent'); ?>"><strong><?= (int) $campus['staff_absent']; ?></strong><em>Staff absent</em></a>
-								</div>
-								<div class="wg-reports">
-									<?php
-									$wgReportTypes = [
-										['student-report/course/monthly', 'Student course attendance'],
-										['student-report/daily/class', 'Class Daily attendance'],
-										['student-report/daily/all', 'Daily attendance'],
-										['student-report/daily/details', 'Daily General Attendance'],
-										['student-report/boarding/all', 'Boarding attendance'],
-										['student-report/boarding/details', 'Boarding General Attendance'],
-										['student-report/inout/monthly', 'In/Out Report'],
-									];
-									foreach ($wgReportTypes as $wgType):
-									?>
-									<a href="<?= base_url('switch-school/' . (int) $campus['id']); ?>?next=<?= rawurlencode($wgType[0]); ?>"><?= esc($wgType[1]); ?></a>
-									<?php endforeach; ?>
 								</div>
 								<div class="wg-ranks">
 									<div class="wg-rank late"><h5>Most late today</h5><ol><?php foreach (($campus['late_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($campus['late_today'])): ?><li>No one late after shift start</li><?php endif; ?></ol></div>

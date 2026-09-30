@@ -16,9 +16,8 @@ PASSWORD = os.environ.get("VPS_PASSWORD", "6W7sa2g4dMEwcN80ZU")
 REMOTE_APP = "/opt/xander-school/app"
 FILES = [
     "app/Controllers/Home.php",
-    "app/Services/WisdomGroupOverview.php",
+    "app/Views/main.php",
     "app/Views/pages/dashboard.php",
-    "app/Views/pages/reports/student_inout_report_monthly.php",
 ]
 
 
@@ -41,8 +40,8 @@ sleep 6
 docker exec xander_school_app php -r 'opcache_reset();'
 docker exec xander_school_app php -l /var/www/html/app/Controllers/Home.php
 docker exec xander_school_app php -l /var/www/html/app/Services/WisdomGroupOverview.php
-docker exec xander_school_app grep -n "Student in/out by location" /var/www/html/app/Views/pages/dashboard.php
-docker exec xander_school_app grep -n "schoolShowsAttendanceLocations" /var/www/html/app/Controllers/Home.php
+docker exec xander_school_app grep -n "restoreLoggedInSchool" /var/www/html/app/Controllers/Home.php
+docker exec xander_school_app grep -n "switch-school" /var/www/html/app/Views/pages/dashboard.php || echo "NO_SCHOOL_SWITCH_LINKS"
 echo DONE
 """
     _, o, e = c.exec_command(cmd, timeout=240)
