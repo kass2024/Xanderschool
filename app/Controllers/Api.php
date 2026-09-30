@@ -3563,11 +3563,16 @@ public function get_boarding_classes()
 		$postId = (int) ($this->request->getPost('post_id') ?: $this->request->getGet('post_id'));
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
 		$overview = new \App\Services\WisdomGroupOverview();
+		if (!$overview->canMonitor($postId)) {
+			return $this->response->setJSON([
+				'error' => 'Only Director, Deputy Director, Executive Principal, and Director of Finance can open all schools monitoring.',
+			]);
+		}
 		$homeId = (int) school_hierarchy_home_id();
 		if ($homeId < 1) {
 			$homeId = $schoolId;
 		}
-		if ($overview->showGroupDashboard($homeId, $postId, $schoolId)) {
+		if ($overview->showMonitorGroup($homeId, $postId, $schoolId)) {
 			$data = $overview->summary($homeId, $yearId);
 		} else {
 			$data = $overview->schoolSummary($schoolId, $yearId);

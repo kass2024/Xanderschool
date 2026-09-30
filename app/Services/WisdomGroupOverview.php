@@ -11,9 +11,29 @@ class WisdomGroupOverview
 	/** Executive Principal, Director, Deputy Director. */
 	const LEADER_POSTS = [15, 29, 30];
 
+	/** App all-schools monitor: Executive Principal, Director of Finance, Director, Deputy Director. */
+	const MONITOR_POSTS = [15, 24, 29, 30];
+
 	public function isLeaderPost($postId)
 	{
 		return in_array((int) $postId, self::LEADER_POSTS, true);
+	}
+
+	public function canMonitor($postId)
+	{
+		return in_array((int) $postId, self::MONITOR_POSTS, true);
+	}
+
+	/**
+	 * All-schools monitor while one of the four posts is on the Wisdom master school.
+	 */
+	public function showMonitorGroup($homeSchoolId, $postId, $currentSchoolId)
+	{
+		$homeSchoolId = (int) $homeSchoolId;
+		return $homeSchoolId > 0
+			&& $homeSchoolId === (int) $currentSchoolId
+			&& $this->canMonitor($postId)
+			&& $this->isWisdomMaster($homeSchoolId);
 	}
 
 	public function isWisdomMaster($schoolId)
@@ -726,7 +746,14 @@ class WisdomGroupOverview
 		}
 		try {
 			$today = date('Y-m-d');
-			$report = (new \App\Models\PrepTimetableModel())->attendanceReport($schoolId, $today, $today);
+			$model = new \App\Models\PrepTimetableModel();
+			$times = $model->forSchool($schoolId);
+			$starts = [
+				'morning' => (string) ($times['morning_start'] ?? '05:30'),
+				'evening' => (string) ($times['evening_start'] ?? '19:00'),
+			];
+			$nowHm = date('H:i');
+			$report = $model->attendanceReport($schoolId, $today, $today);
 			$day = null;
 			foreach ($report['days'] ?? [] as $candidate) {
 				if (($candidate['date'] ?? '') === $today) {
@@ -738,6 +765,17 @@ class WisdomGroupOverview
 				return $out;
 			}
 			foreach (['morning', 'evening'] as $slot) {
+				$opens = $starts[$slot] ?? '19:00';
+				if ($nowHm < $opens) {
+					$out[$slot] = [
+						'present' => 0,
+						'absent' => 0,
+						'people' => [],
+						'pending' => true,
+						'starts' => $opens,
+					];
+					continue;
+				}
 				$pack = $day['slots'][$slot] ?? [];
 				$people = [];
 				foreach ($pack['present'] ?? [] as $person) {
