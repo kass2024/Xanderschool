@@ -493,6 +493,76 @@ class WisdomGroupOverview
 	}
 
 	/**
+	 * Every student tap at one location today, for the monitor list.
+	 *
+	 * @return array{name:string,people:list<array<string,string>>}
+	 */
+	public function locationRoster(int $schoolId, int $areaId, int $yearId): array
+	{
+		$empty = ['name' => '', 'people' => []];
+		if ($schoolId < 1 || $areaId < 1) {
+			return $empty;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('attendance_areas') || !$db->tableExists('attendance_records') || !$db->tableExists('students')) {
+			return $empty;
+		}
+		$area = $db->table('attendance_areas')
+			->select('id, name')
+			->where('id', $areaId)
+			->where('school_id', $schoolId)
+			->get(1)
+			->getRowArray();
+		if (!$area) {
+			return $empty;
+		}
+		$todayStart = strtotime(date('Y-m-d') . ' 00:00:00');
+		$todayEnd = $todayStart + 86400;
+		$yearSql = $yearId > 0 ? ' AND cr.year = ' . (int) $yearId : '';
+		$classSql = ($db->tableExists('class_records') && $db->tableExists('classes'))
+			? "(
+					SELECT c.title
+					FROM class_records cr
+					INNER JOIN classes c ON c.id = cr.class
+					WHERE cr.student = s.id AND cr.status = 1{$yearSql}
+					ORDER BY cr.id DESC
+					LIMIT 1
+				)"
+			: "''";
+		$sql = "SELECT ar.time_in, ar.time_out,
+				TRIM(CONCAT(s.fname, ' ', s.lname)) AS student_name,
+				{$classSql} AS class_title
+			FROM attendance_records ar
+			INNER JOIN students s ON s.id = ar.user_id
+			WHERE ar.area_id = " . (int) $areaId . "
+				AND ar.school_id = " . (int) $schoolId . "
+				AND ar.user_type = 0
+				AND ar.time_in >= {$todayStart}
+				AND ar.time_in < {$todayEnd}
+			ORDER BY (COALESCE(ar.time_out, 0) = 0) DESC, ar.time_in DESC";
+		$people = [];
+		try {
+			$rows = $db->query($sql)->getResultArray();
+		} catch (\Throwable $e) {
+			return $empty;
+		}
+		foreach ($rows as $row) {
+			$outAt = (int) ($row['time_out'] ?? 0);
+			$people[] = [
+				'name' => trim((string) ($row['student_name'] ?? '')),
+				'class' => trim((string) ($row['class_title'] ?? '')),
+				'time_in' => !empty($row['time_in']) ? date('H:i', (int) $row['time_in']) : '',
+				'time_out' => $outAt > 0 ? date('H:i', $outAt) : '',
+				'status' => $outAt > 0 ? 'out' : 'inside',
+			];
+		}
+		return [
+			'name' => trim((string) ($area['name'] ?? '')),
+			'people' => $people,
+		];
+	}
+
+	/**
 	 * Printable list of staff who are in, or still absent, today.
 	 *
 	 * @param int[] $schoolIds

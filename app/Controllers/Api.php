@@ -3581,6 +3581,25 @@ public function get_boarding_classes()
 		return $this->response->setJSON($data);
 	}
 
+	public function school_monitor_location()
+	{
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id'));
+		$this->_preset($schoolId);
+		helper('qonics');
+		$postId = (int) ($this->request->getPost('post_id') ?: $this->request->getGet('post_id'));
+		$areaId = (int) ($this->request->getPost('area_id') ?: $this->request->getGet('area_id'));
+		$overview = new \App\Services\WisdomGroupOverview();
+		if (!$overview->canMonitor($postId)) {
+			return $this->response->setJSON([
+				'error' => 'Only Director, Deputy Director, Executive Principal, and Director of Finance can open all schools monitoring.',
+			]);
+		}
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$data = $overview->locationRoster($schoolId, $areaId, $yearId);
+		$data['success'] = 1;
+		return $this->response->setJSON($data);
+	}
+
 	public function save_discipline()
 	{
 		$school_id = $this->request->getPost("school_id");
