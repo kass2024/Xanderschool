@@ -644,27 +644,38 @@ if (!function_exists('days_mini')) {
 if (!function_exists('hours')) {
 	function hours($hour, $type = 0)//0:12,1: 24 hours
 	{
-		$data = explode(".", $hour);
-		$hh = sprintf("%02d", $data[0]);
-		$mm = $data[1] == "0" ? "00" : "30";
+		$val = (float) $hour;
+		if ($val < 0) {
+			$val = 0;
+		}
+		$hh = (int) floor($val + 1e-8);
+		$mm = (int) round(($val - $hh) * 60);
+		if ($mm >= 60) {
+			$hh += intdiv($mm, 60);
+			$mm %= 60;
+		}
+		$hh = $hh % 24;
+		$mmStr = sprintf('%02d', $mm);
 		if ($type == 1) {
-			$hour = $hh . ":" . $mm;
-			return $hour;
+			return sprintf('%02d:%s', $hh, $mmStr);
 		}
-		if ($hour == '0.0') {
-			$hour = "12:00 am (midnight next day)";
-		} else if ($hour == '12.0') {
-			$hour = "12:00 pm (noon)";
-		} else if ($hh == '0') {
-			$hour = "12:" . $mm . " am";
-		} else if ($hh == '12') {
-			$hour = "12:" . $mm . " pm";
-		} else if ($hh > 12) {
-			$hour = ($hh - 12) . ":" . $mm . " pm";
-		} else {
-			$hour = $hh . ":" . $mm . " am";
+		$raw = trim((string) $hour);
+		if ($raw === '0' || $raw === '0.0' || $raw === '0.00') {
+			return '12:00 am (midnight next day)';
 		}
-		return $hour;
+		if (abs($val - 12) < 0.001) {
+			return '12:00 pm (noon)';
+		}
+		if ($hh === 0) {
+			return '12:' . $mmStr . ' am';
+		}
+		if ($hh === 12) {
+			return '12:' . $mmStr . ' pm';
+		}
+		if ($hh > 12) {
+			return ($hh - 12) . ':' . $mmStr . ' pm';
+		}
+		return $hh . ':' . $mmStr . ' am';
 	}
 }
 if (!function_exists('termToStr')) {

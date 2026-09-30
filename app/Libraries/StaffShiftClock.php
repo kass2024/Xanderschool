@@ -17,11 +17,17 @@ class StaffShiftClock
 
 	public static function decimalToSeconds(string $hour): int
 	{
-		$parts = explode('.', (string) $hour, 2);
-		$hh = (int) ($parts[0] ?? 0);
-		$frac = $parts[1] ?? '0';
-		$mm = ($frac === '0' || $frac === '00' || $frac === '') ? 0 : 30;
-		return ($hh * 60 + $mm) * 60;
+		$val = (float) $hour;
+		if ($val < 0) {
+			$val = 0;
+		}
+		$hh = (int) floor($val + 1e-8);
+		$mm = (int) round(($val - $hh) * 60);
+		if ($mm >= 60) {
+			$hh += intdiv($mm, 60);
+			$mm %= 60;
+		}
+		return (($hh * 60) + $mm) * 60;
 	}
 
 	/**
@@ -80,6 +86,29 @@ class StaffShiftClock
 
 		$empty['title'] = (string) ($shift['title'] ?? '');
 		return $empty;
+	}
+
+	/**
+	 * True when shift.options lists at least one weekday 0–6.
+	 *
+	 * @param mixed $options
+	 */
+	public static function hasDays($options): bool
+	{
+		$arr = is_array($options) ? $options : json_decode((string) $options, true);
+		if (!is_array($arr)) {
+			return false;
+		}
+		foreach ($arr as $opt) {
+			$p = preg_split('/\s+/', trim((string) $opt)) ?: [];
+			if (count($p) >= 3) {
+				$day = (int) $p[0];
+				if ($day >= 0 && $day <= 6) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -148,7 +177,7 @@ class StaffShiftClock
 		}
 		if ($diff < -60) {
 			$mins = (int) round(abs($diff) / 60);
-			return ['code' => 'overtime', 'label' => 'Overtime', 'detail' => $mins . ' min after ' . ($window['end_label'] ?? ''), 'minutes' => $mins];
+			return ['code' => 'overtime', 'label' => 'Extra time', 'detail' => $mins . ' min after ' . ($window['end_label'] ?? ''), 'minutes' => $mins];
 		}
 		return ['code' => 'ontime', 'label' => 'On time', 'detail' => 'Shift ends ' . ($window['end_label'] ?? ''), 'minutes' => 0];
 	}

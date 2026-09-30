@@ -186,9 +186,13 @@
 				var dayVal = parts[0];
 				var openVal = parts[1];
 				var closeVal = parts[2];
+				var closeText = window.shiftClock.labelFromDecimal(closeVal);
+				if (parseFloat(closeVal) <= parseFloat(openVal) && closeText.indexOf("next day") === -1) {
+					closeText += " next day";
+				}
 				hourview.append(
-					"<div class='hours'><span class='dayy'>" + optionText(weekday, dayVal) + "</span><span class='openn'>" + optionText(open, openVal) + " </span><span>-</span>" +
-					"<span class='closee'> " + optionText(close, closeVal) + " </span><a href='javascript:void(0)' class='remove-hours'>Remove</a>" +
+					"<div class='hours'><span class='dayy'>" + optionText(weekday, dayVal) + "</span><span class='openn'>" + window.shiftClock.labelFromDecimal(openVal) + " </span><span>-</span>" +
+					"<span class='closee'> " + closeText + " </span><a href='javascript:void(0)' class='remove-hours'>Remove</a>" +
 					"<input name='hours[]' value='" + dayVal + " " + openVal + " " + closeVal + "' type='hidden'> </div>"
 				);
 			});
@@ -200,15 +204,19 @@
 
 		var hourview = $("#mdlAddShift .hours-view");
 		$(".addhours").click(function () {
-			var weekday = $(this).closest(".add-hours").children().children(".weekday");
-			var open = $(this).closest(".add-hours").children().children(".hours-start");
-			var close = $(this).closest(".add-hours").children().children(".hours-end");
+			var wrap = $(this).closest(".add-hours");
+			var weekday = wrap.find(".weekday");
+			var open = wrap.find(".hours-start");
+			var close = wrap.find(".hours-end");
 			var weekdayVal = weekday.val();
 			var weekdayText = weekday.find('option:selected').text();
-			var openVal = open.val();
-			var openText = open.find('option:selected').text();
-			var closeVal = close.val();
-			var closeText = close.find('option:selected').text();
+			var openVal = window.shiftClock.value(open);
+			var openText = window.shiftClock.label(open);
+			var closeVal = window.shiftClock.value(close);
+			var closeText = window.shiftClock.label(close);
+			if (parseFloat(closeVal) <= parseFloat(openVal) && closeText.indexOf("next day") === -1) {
+				closeText += " next day";
+			}
 			hourview.append("<div class='hours'><span class='dayy'>"+weekdayText+"</span><span class='openn'>"+openText+" </span><span>-</span>"+
 				"<span class='closee'> "+closeText+" </span><a href='javascript:void(0)' class='remove-hours'>Remove</a>"+
 				"<input name='hours[]' value='"+weekdayVal+" "+openVal+" "+closeVal+"' type='hidden'> </div>");

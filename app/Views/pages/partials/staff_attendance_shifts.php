@@ -140,8 +140,11 @@
 				var openVal = parts[1];
 				var closeVal = parts[2];
 				var weekdayText = optionText(weekday, dayVal);
-				var openText = optionText(open, openVal);
-				var closeText = optionText(close, closeVal);
+				var openText = window.shiftClock.labelFromDecimal(openVal);
+				var closeText = window.shiftClock.labelFromDecimal(closeVal);
+				if (parseFloat(closeVal) <= parseFloat(openVal) && closeText.indexOf("next day") === -1) {
+					closeText += " next day";
+				}
 				hourview.append(
 					"<div class='hours'><span class='dayy'>" + weekdayText + "</span><span class='openn'>" + openText + " </span><span>-</span>" +
 					"<span class='closee'> " + closeText + " </span><a href='javascript:void(0)' class='remove-hours'>Remove</a>" +
@@ -165,10 +168,13 @@
 			var close = wrap.find(".hours-end");
 			var weekdayVal = weekday.val();
 			var weekdayText = weekday.find("option:selected").text();
-			var openVal = open.val();
-			var openText = open.find("option:selected").text();
-			var closeVal = close.val();
-			var closeText = close.find("option:selected").text();
+			var openVal = window.shiftClock.value(open);
+			var openText = window.shiftClock.label(open);
+			var closeVal = window.shiftClock.value(close);
+			var closeText = window.shiftClock.label(close);
+			if (parseFloat(closeVal) <= parseFloat(openVal) && closeText.indexOf("next day") === -1) {
+				closeText += " next day";
+			}
 			hourview.append(
 				"<div class='hours'><span class='dayy'>" + weekdayText + "</span><span class='openn'>" + openText + " </span><span>-</span>" +
 				"<span class='closee'> " + closeText + " </span><a href='javascript:void(0)' class='remove-hours'>Remove</a>" +
