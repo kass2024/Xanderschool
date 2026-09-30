@@ -3595,7 +3595,9 @@ public function get_boarding_classes()
 			]);
 		}
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
-		$data = $overview->locationRoster($schoolId, $areaId, $yearId);
+		$mode = strtolower(trim((string) ($this->request->getPost('mode') ?: $this->request->getGet('mode') ?: 'in')));
+		$className = trim((string) ($this->request->getPost('class') ?: $this->request->getGet('class') ?: ''));
+		$data = $overview->locationRoster($schoolId, $areaId, $yearId, $mode, $className);
 		$data['success'] = 1;
 		return $this->response->setJSON($data);
 	}

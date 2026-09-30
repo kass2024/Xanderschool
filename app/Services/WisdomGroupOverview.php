@@ -274,7 +274,7 @@ class WisdomGroupOverview
 			}
 		}
 		$today = $this->loadTodayStaff($ids);
-		$masterLocations = $this->masterLocationFlow((int) $masterId);
+		$masterLocations = $this->masterLocationFlow((int) $masterId, (int) $yearId);
 		foreach ($rows as $i => $row) {
 			$pack = $today[(int) $row['id']] ?? ['absent' => [], 'late' => [], 'early' => []];
 			$rows[$i]['staff_absent'] = count($pack['absent']);
@@ -447,9 +447,9 @@ class WisdomGroupOverview
 	/**
 	 * Today's student IN/OUT by attendance location. Master school only.
 	 *
-	 * @return list<array{id:int,name:string,checked_in:int,checked_out:int,inside:int}>
+	 * @return list<array{id:int,name:string,checked_in:int,checked_out:int,inside:int,absent:int}>
 	 */
-	private function masterLocationFlow(int $masterId): array
+	private function masterLocationFlow(int $masterId, int $yearId = 0): array
 	{
 		if ($masterId < 1) {
 			return [];
@@ -475,31 +475,50 @@ class WisdomGroupOverview
 				AND aa.active = 1
 			GROUP BY aa.id, aa.name, aa.sort_order
 			ORDER BY aa.sort_order ASC, aa.name ASC";
+		$enrolled = $this->enrolledStudentCount($masterId, $yearId);
+		$tapped = [];
+		if ($enrolled > 0 && $db->tableExists('students')) {
+			$tapSql = "SELECT ar.area_id, COUNT(DISTINCT ar.user_id) AS tapped
+				FROM attendance_records ar
+				INNER JOIN (" . $this->enrolledStudentSql($masterId, $yearId) . ") es ON es.id = ar.user_id
+				WHERE ar.school_id = {$masterId}
+					AND ar.user_type = 0
+					AND ar.time_in >= {$todayStart}
+					AND ar.time_in < {$todayEnd}
+				GROUP BY ar.area_id";
+			foreach ($db->query($tapSql)->getResultArray() as $tap) {
+				$tapped[(int) $tap['area_id']] = (int) $tap['tapped'];
+			}
+		}
 		$out = [];
 		foreach ($db->query($sql)->getResultArray() as $row) {
 			$name = trim((string) ($row['name'] ?? ''));
 			if ($name === '') {
 				continue;
 			}
+			$areaId = (int) ($row['id'] ?? 0);
 			$out[] = [
-				'id' => (int) ($row['id'] ?? 0),
+				'id' => $areaId,
 				'name' => $name,
 				'checked_in' => (int) ($row['checked_in'] ?? 0),
 				'checked_out' => (int) ($row['checked_out'] ?? 0),
 				'inside' => (int) ($row['inside'] ?? 0),
+				'absent' => max(0, $enrolled - (int) ($tapped[$areaId] ?? 0)),
 			];
 		}
 		return $out;
 	}
 
 	/**
-	 * Every student tap at one location today, for the monitor list.
+	 * Location list. Without a class, returns class totals. With a class, returns those students.
+	 * Absent means enrolled students who never tapped this location today.
 	 *
-	 * @return array{name:string,people:list<array<string,string>>}
+	 * @return array{name:string,mode:string,classes:list<array{name:string,count:int}>,people:list<array<string,string>>}
 	 */
-	public function locationRoster(int $schoolId, int $areaId, int $yearId): array
+	public function locationRoster(int $schoolId, int $areaId, int $yearId, string $mode = 'in', string $classFilter = ''): array
 	{
-		$empty = ['name' => '', 'people' => []];
+		$mode = in_array($mode, ['in', 'out', 'absent'], true) ? $mode : 'in';
+		$empty = ['name' => '', 'mode' => $mode, 'classes' => [], 'people' => []];
 		if ($schoolId < 1 || $areaId < 1) {
 			return $empty;
 		}
@@ -518,48 +537,167 @@ class WisdomGroupOverview
 		}
 		$todayStart = strtotime(date('Y-m-d') . ' 00:00:00');
 		$todayEnd = $todayStart + 86400;
-		$yearSql = $yearId > 0 ? ' AND cr.year = ' . (int) $yearId : '';
-		$classSql = ($db->tableExists('class_records') && $db->tableExists('classes'))
-			? "(
-					SELECT c.title
-					FROM class_records cr
-					INNER JOIN classes c ON c.id = cr.class
-					WHERE cr.student = s.id AND cr.status = 1{$yearSql}
-					ORDER BY cr.id DESC
-					LIMIT 1
-				)"
-			: "''";
-		$sql = "SELECT ar.time_in, ar.time_out,
-				TRIM(CONCAT(s.fname, ' ', s.lname)) AS student_name,
-				{$classSql} AS class_title
+		$classFilter = trim($classFilter);
+		try {
+			$rows = $mode === 'absent'
+				? $this->locationAbsentRows($schoolId, $areaId, $yearId, $todayStart, $todayEnd)
+				: $this->locationTapRows($schoolId, $areaId, $yearId, $todayStart, $todayEnd, $mode === 'out');
+		} catch (\Throwable $e) {
+			return $empty;
+		}
+		$grouped = [];
+		foreach ($rows as $row) {
+			$label = \App\Models\SchoolFeesModel::displayLabel($row);
+			if ($label === '') {
+				$label = 'No class';
+			}
+			if ($classFilter !== '' && strcasecmp($label, $classFilter) !== 0) {
+				continue;
+			}
+			$outAt = (int) ($row['time_out'] ?? 0);
+			$grouped[$label][] = [
+				'name' => trim((string) ($row['student_name'] ?? '')),
+				'class' => $label,
+				'time_in' => !empty($row['time_in']) ? date('H:i', (int) $row['time_in']) : '',
+				'time_out' => $outAt > 0 ? date('H:i', $outAt) : '',
+				'status' => $mode === 'absent' ? 'absent' : ($outAt > 0 ? 'out' : 'in'),
+			];
+		}
+		ksort($grouped, SORT_NATURAL | SORT_FLAG_CASE);
+		if ($classFilter !== '') {
+			$people = $grouped[$classFilter] ?? [];
+			if ($people === []) {
+				foreach ($grouped as $label => $pack) {
+					if (strcasecmp($label, $classFilter) === 0) {
+						$people = $pack;
+						break;
+					}
+				}
+			}
+			usort($people, static function ($a, $b) {
+				return strcasecmp((string) $a['name'], (string) $b['name']);
+			});
+			return [
+				'name' => trim((string) ($area['name'] ?? '')),
+				'mode' => $mode,
+				'class' => $classFilter,
+				'classes' => [],
+				'people' => $people,
+			];
+		}
+		$classes = [];
+		foreach ($grouped as $label => $pack) {
+			$classes[] = ['name' => $label, 'count' => count($pack)];
+		}
+		return [
+			'name' => trim((string) ($area['name'] ?? '')),
+			'mode' => $mode,
+			'classes' => $classes,
+			'people' => [],
+		];
+	}
+
+	private function enrolledStudentSql(int $schoolId, int $yearId): string
+	{
+		$schoolId = (int) $schoolId;
+		$yearId = (int) $yearId;
+		return "SELECT DISTINCT s.id
+			FROM students s
+			INNER JOIN schools sch ON sch.id = s.school_id
+			LEFT JOIN active_term atr ON atr.id = sch.active_term
+			INNER JOIN class_records a ON a.student = s.id AND a.status = 1
+				AND a.year = IFNULL(atr.academic_year, {$yearId})
+			INNER JOIN classes cl ON cl.id = a.class
+			LEFT JOIN levels l ON l.id = cl.level
+			LEFT JOIN departments d ON d.id = cl.department
+			WHERE s.status IN (1, 2)
+				AND s.school_id = {$schoolId}
+				AND IFNULL(cl.title,'') NOT LIKE '%Holiday%'
+				AND IFNULL(l.title,'') NOT LIKE '%Holiday%'
+				AND IFNULL(d.title,'') NOT LIKE '%Holiday%'
+				AND IFNULL(d.code,'') NOT LIKE '%Holiday%'";
+	}
+
+	private function enrolledStudentCount(int $schoolId, int $yearId): int
+	{
+		$db = \Config\Database::connect();
+		if ($schoolId < 1 || !$db->tableExists('students') || !$db->tableExists('class_records')) {
+			return 0;
+		}
+		try {
+			$row = $db->query('SELECT COUNT(*) AS total FROM (' . $this->enrolledStudentSql($schoolId, $yearId) . ') es')->getRowArray();
+		} catch (\Throwable $e) {
+			return 0;
+		}
+		return (int) ($row['total'] ?? 0);
+	}
+
+	private function classSelect(string $studentAlias = 's'): string
+	{
+		return "TRIM(CONCAT({$studentAlias}.fname, ' ', {$studentAlias}.lname)) AS student_name,
+			l.title AS level_title, d.code AS dept_code, d.title AS dept_title,
+			f.abbrev AS faculty_code, c.title AS class_title";
+	}
+
+	private function classJoins(string $studentAlias = 's', int $yearId = 0): string
+	{
+		$yearId = (int) $yearId;
+		$year = $yearId > 0 ? " AND cr2.year = {$yearId}" : '';
+		return "LEFT JOIN class_records cr ON cr.id = (
+				SELECT cr2.id
+				FROM class_records cr2
+				INNER JOIN classes c2 ON c2.id = cr2.class
+				LEFT JOIN levels l2 ON l2.id = c2.level
+				LEFT JOIN departments d2 ON d2.id = c2.department
+				WHERE cr2.student = {$studentAlias}.id AND cr2.status = 1{$year}
+					AND IFNULL(c2.title,'') NOT LIKE '%Holiday%'
+					AND IFNULL(l2.title,'') NOT LIKE '%Holiday%'
+					AND IFNULL(d2.title,'') NOT LIKE '%Holiday%'
+					AND IFNULL(d2.code,'') NOT LIKE '%Holiday%'
+				ORDER BY cr2.id DESC
+				LIMIT 1
+			)
+			LEFT JOIN classes c ON c.id = cr.class
+			LEFT JOIN levels l ON l.id = c.level
+			LEFT JOIN departments d ON d.id = c.department
+			LEFT JOIN faculty f ON f.id = d.faculty_id";
+	}
+
+	private function locationTapRows(int $schoolId, int $areaId, int $yearId, int $todayStart, int $todayEnd, bool $outOnly): array
+	{
+		$db = \Config\Database::connect();
+		$out = $outOnly ? ' AND COALESCE(ar.time_out, 0) > 0' : '';
+		$sql = "SELECT ar.time_in, ar.time_out, " . $this->classSelect('s') . "
 			FROM attendance_records ar
 			INNER JOIN students s ON s.id = ar.user_id
+			" . $this->classJoins('s', $yearId) . "
 			WHERE ar.area_id = " . (int) $areaId . "
 				AND ar.school_id = " . (int) $schoolId . "
 				AND ar.user_type = 0
 				AND ar.time_in >= {$todayStart}
-				AND ar.time_in < {$todayEnd}
-			ORDER BY (COALESCE(ar.time_out, 0) = 0) DESC, ar.time_in DESC";
-		$people = [];
-		try {
-			$rows = $db->query($sql)->getResultArray();
-		} catch (\Throwable $e) {
-			return $empty;
-		}
-		foreach ($rows as $row) {
-			$outAt = (int) ($row['time_out'] ?? 0);
-			$people[] = [
-				'name' => trim((string) ($row['student_name'] ?? '')),
-				'class' => trim((string) ($row['class_title'] ?? '')),
-				'time_in' => !empty($row['time_in']) ? date('H:i', (int) $row['time_in']) : '',
-				'time_out' => $outAt > 0 ? date('H:i', $outAt) : '',
-				'status' => $outAt > 0 ? 'out' : 'inside',
-			];
-		}
-		return [
-			'name' => trim((string) ($area['name'] ?? '')),
-			'people' => $people,
-		];
+				AND ar.time_in < {$todayEnd}{$out}
+			ORDER BY s.fname, s.lname";
+		return $db->query($sql)->getResultArray();
+	}
+
+	private function locationAbsentRows(int $schoolId, int $areaId, int $yearId, int $todayStart, int $todayEnd): array
+	{
+		$db = \Config\Database::connect();
+		$sql = "SELECT 0 AS time_in, 0 AS time_out, " . $this->classSelect('s') . "
+			FROM students s
+			INNER JOIN (" . $this->enrolledStudentSql($schoolId, $yearId) . ") es ON es.id = s.id
+			" . $this->classJoins('s', $yearId) . "
+			WHERE NOT EXISTS (
+				SELECT 1 FROM attendance_records ar
+				WHERE ar.user_id = s.id
+					AND ar.user_type = 0
+					AND ar.area_id = " . (int) $areaId . "
+					AND ar.school_id = " . (int) $schoolId . "
+					AND ar.time_in >= {$todayStart}
+					AND ar.time_in < {$todayEnd}
+			)
+			ORDER BY s.fname, s.lname";
+		return $db->query($sql)->getResultArray();
 	}
 
 	/**
