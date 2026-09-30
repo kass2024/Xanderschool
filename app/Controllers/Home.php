@@ -3967,10 +3967,75 @@ public function testEmail()
 		}
 	}
 
+	/** Wisdom schools, and children of a Wisdom master, receive the holiday subject list on their own school. */
+	private function schoolMaySeedHolidayCourses(int $schoolId): bool
+	{
+		if ($schoolId < 1) {
+			return false;
+		}
+		if (is_wisdom_school($schoolId)) {
+			return true;
+		}
+		try {
+			$masterId = (int) (new \App\Services\SchoolHierarchyService())->masterSchoolId($schoolId);
+			return $masterId > 0 && is_wisdom_school($masterId);
+		} catch (\Throwable $e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Child schools get the master's course categories as their own rows.
+	 * Courses are never copied; new courses stay on the child school.
+	 */
+	private function ensureChildCourseCategoriesFromMaster(int $schoolId): void
+	{
+		if ($schoolId < 1 || !school_has_course_programme_menu($schoolId)) {
+			return;
+		}
+		try {
+			$hierarchy = new \App\Services\SchoolHierarchyService();
+			if (!$hierarchy->isChildSchool($schoolId)) {
+				return;
+			}
+			$masterId = (int) $hierarchy->masterSchoolId($schoolId);
+		} catch (\Throwable $e) {
+			return;
+		}
+		if ($masterId < 1 || $masterId === $schoolId) {
+			return;
+		}
+		$catMdl = new CourseCategoryModel();
+		$ownTitles = [];
+		foreach ($catMdl->where('school_id', $schoolId)->findAll() as $row) {
+			$title = strtolower(trim((string) ($row['title'] ?? '')));
+			if ($title !== '') {
+				$ownTitles[$title] = true;
+			}
+		}
+		foreach ((new CourseCategoryModel())->where('school_id', $masterId)->findAll() as $row) {
+			$title = trim((string) ($row['title'] ?? ''));
+			$key = strtolower($title);
+			if ($key === '' || isset($ownTitles[$key])) {
+				continue;
+			}
+			try {
+				$catMdl->insert([
+					'school_id' => $schoolId,
+					'title' => $title,
+					'status' => $row['status'] ?? 1,
+				]);
+				$ownTitles[$key] = true;
+			} catch (\Throwable $e) {
+				log_message('error', 'ensureChildCourseCategoriesFromMaster: ' . $e->getMessage());
+			}
+		}
+	}
+
 	/** Default Wisdom holiday coaching subjects from the report card (50 marks each, no credits). */
 	private function ensureDefaultHolidayCourses(int $schoolId, int $yearId): void
 	{
-		if ($schoolId < 1 || !is_wisdom_school($schoolId)) {
+		if ($schoolId < 1 || !$this->schoolMaySeedHolidayCourses($schoolId)) {
 			return;
 		}
 		$this->ensureCoursesMetaSchema();
@@ -6385,7 +6450,8 @@ public function attendanceCard()
 		$data['title'] = lang("app.createNewCourse");
 		$school_id = $this->session->get("soma_school_id");
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
-		if (is_wisdom_school($school_id)) {
+		$this->ensureChildCourseCategoriesFromMaster((int) $school_id);
+		if (school_has_course_programme_menu($school_id)) {
 			$this->ensureDefaultHolidayCourses((int) $school_id, $yearId);
 		}
 
@@ -9083,6 +9149,7 @@ public function attendanceCard()
 		$data['title'] = lang("app.courseCategoryLists");
 		$data['subtitle'] = lang("app.viewAllCategory");
 		$data['page'] = "course_category";
+		$this->ensureChildCourseCategoriesFromMaster((int) $this->session->get("soma_school_id"));
 		$categoryMdl = new CourseCategoryModel();
 		$data['categories'] = $categoryMdl
 				->where("school_id", $this->session->get("soma_school_id"))
@@ -10275,7 +10342,7 @@ public function attendanceCard()
 		if ($course) {
 			$courseRow = (new CourseModel())->select('program_type')->where('id', (int) $course)->get(1)->getRowArray();
 			$isHolidayCourse = is_holiday_course_program($courseRow['program_type'] ?? '');
-			if ($isHolidayCourse && !is_wisdom_school($this->session->get('soma_school_id'))) {
+			if ($isHolidayCourse && !school_has_course_programme_menu($this->session->get('soma_school_id'))) {
 				return $this->response->setJSON(array("error" => "Holiday coaching courses are only available for Wisdom schools"));
 			}
 		}
@@ -10531,9 +10598,29 @@ public function attendanceCard()
 		} else {
 			$marks = (int) round($credit * 10);
 		}
+		$schoolId = (int) $this->session->get("soma_school_id");
 		$programType = normalize_course_program_type($this->request->getPost('program_type'));
-		if ($programType === 'holiday' && !is_wisdom_school($this->session->get('soma_school_id'))) {
+		if ($programType === 'holiday' && !school_has_course_programme_menu($schoolId)) {
 			return $this->response->setJSON(array("error" => "Holiday coaching courses are only available for Wisdom schools"));
+		}
+		if ($courseId > 0) {
+			$ownedCourse = $courseModel->select('id')
+				->where('id', (int) $courseId)
+				->where('school_id', $schoolId)
+				->get(1)->getRowArray();
+			if (!$ownedCourse) {
+				return $this->response->setJSON(array("error" => "This course belongs to another school."));
+			}
+		}
+		$categoryId = (int) $this->request->getPost("category");
+		if ($categoryId > 0) {
+			$ownedCategory = (new CourseCategoryModel())
+				->where('id', $categoryId)
+				->where('school_id', $schoolId)
+				->countAllResults();
+			if ($ownedCategory < 1) {
+				return $this->response->setJSON(array("error" => "Choose a category that belongs to this school."));
+			}
 		}
 		if ($programType === 'holiday') {
 			$credit = 0.0;
@@ -10543,7 +10630,7 @@ public function attendanceCard()
 		}
 		if ($courseId == 0) {
 			$data = array(
-					"school_id" => $this->session->get("soma_school_id"),
+					"school_id" => $schoolId,
 					"title" => $this->request->getPost("title"),
 					"code" => $this->request->getPost("code"),
 					"category" => $this->request->getPost("category"),

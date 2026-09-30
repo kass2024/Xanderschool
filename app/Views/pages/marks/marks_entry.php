@@ -200,6 +200,14 @@ body.marks-entry-body .select2-search__field {
 	display: none !important;
 }
 @media (max-width: 767px) {
+	.marks-entry-grid { flex-direction: column; }
+	.marks-entry-card { order: 1; }
+	#dv_marks { order: 2; }
+	.marks-entry-actions {
+		order: 3;
+		margin-top: 12px;
+		margin-bottom: 16px;
+	}
 	.marks-entry-body .app-header {
 		flex-direction: column !important;
 		align-items: stretch !important;
@@ -229,16 +237,27 @@ body.marks-entry-body .select2-search__field {
 }
 @media (min-width: 768px) {
 	.marks-filter-item { flex: 1 1 280px; max-width: 420px; }
-	.marks-entry-grid { flex-wrap: nowrap; }
-	.marks-entry-card { flex: 0 0 340px; width: 340px; }
+	.marks-entry-grid {
+		display: grid;
+		grid-template-columns: 340px minmax(0, 1fr);
+		grid-template-areas:
+			"card sheet"
+			"actions sheet";
+		column-gap: 12px;
+		row-gap: 12px;
+		align-items: start;
+	}
+	.marks-entry-card { grid-area: card; width: auto; max-width: none; }
 	#dv_marks {
-		flex: 1 1 auto;
+		grid-area: sheet;
 		max-height: min(70vh, 640px);
 		overflow: auto;
 	}
 	.marks-entry-actions {
+		grid-area: actions;
 		flex-direction: row;
 		flex-wrap: wrap;
+		margin-top: 0;
 	}
 	.marks-entry-actions .btn { flex: 1 1 30%; width: auto; }
 }
@@ -371,22 +390,22 @@ body.marks-entry-body .select2-search__field {
 					<input type="date" class="form-control" name="examDate" required id="examDate" value="<?= date('Y-m-d'); ?>">
 					<input type="hidden" class="form-control" name="year" required value="<?=$academic_year_id;?>">
 				</div>
-				<div class="marks-entry-actions">
-					<button type="submit" class="btn btn-success btn-lg" data-target="stay-marks"
-							disabled><?= lang("app.save"); ?> </button>
-					<a href="<?= base_url('get_student_marks'); ?>"
-					   class="btn btn-primary btn-lg disabled" id="export_pdf"
-					   target="_blank"><i class="fa fa-file-pdf"></i> <?= lang("app.export"); ?>
-					</a>
-					<?php if (!empty($allow_cat_edit)) { ?>
-						<button class="btn btn-warning btn-lg" type="button" id="btn-del-marks"
-								disabled>
-							<i class="fa fa-trash"></i> <?= lang("app.del"); ?> </button>
-					<?php } ?>
-				</div>
 			</div>
 			<div id="dv_marks">
 				<h3 style="text-align: center;margin: 24px 8px"><?= lang("app.selectCourseAndClass"); ?> </h3>
+			</div>
+			<div class="marks-entry-actions">
+				<button type="submit" class="btn btn-success btn-lg" data-target="stay-marks"
+						disabled><?= lang("app.save"); ?> </button>
+				<a href="<?= base_url('get_student_marks'); ?>"
+				   class="btn btn-primary btn-lg disabled" id="export_pdf"
+				   target="_blank"><i class="fa fa-file-pdf"></i> <?= lang("app.export"); ?>
+				</a>
+				<?php if (!empty($allow_cat_edit)) { ?>
+					<button class="btn btn-warning btn-lg" type="button" id="btn-del-marks"
+							disabled>
+						<i class="fa fa-trash"></i> <?= lang("app.del"); ?> </button>
+				<?php } ?>
 			</div>
 		</div>
 	</div>

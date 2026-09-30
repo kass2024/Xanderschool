@@ -1775,6 +1775,30 @@ if (!function_exists('is_wisdom_school')) {
 	}
 }
 
+if (!function_exists('school_has_course_programme_menu')) {
+	/**
+	 * Master and every child school use the same course-creation menu
+	 * (RTB, REB, Special, Holiday, cross-cutting). New courses still save
+	 * on the school that is logged in.
+	 */
+	function school_has_course_programme_menu($schoolId = null)
+	{
+		$schoolId = $schoolId !== null ? (int) $schoolId : (int) ($_SESSION['soma_school_id'] ?? 0);
+		if ($schoolId < 1) {
+			return false;
+		}
+		if (is_wisdom_school($schoolId)) {
+			return true;
+		}
+		try {
+			$hierarchy = new \App\Services\SchoolHierarchyService();
+			return $hierarchy->isMasterSchool($schoolId) || $hierarchy->isChildSchool($schoolId);
+		} catch (\Throwable $e) {
+			return false;
+		}
+	}
+}
+
 if (!function_exists('holiday_coaching_mark_type')) {
 	function holiday_coaching_mark_type()
 	{

@@ -99,7 +99,7 @@ foreach ($classes as $c) {
 				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="2" data-mode="manual"><?= lang("app.reb"); ?> (REB)</button>
 				<button type="button" class="btn btn-outline-primary btn-block btn-lg course-type-pick mb-2" data-type="3" data-mode="manual">Special (ANP)</button>
 				<button type="button" class="btn btn-outline-info btn-block btn-lg course-type-pick mb-2" data-type="cross" data-mode="manual">Cross-cutting (RTB + REB + Special)</button>
-				<?php if (is_wisdom_school()): ?>
+				<?php if (school_has_course_programme_menu()): ?>
 				<button type="button" class="btn btn-outline-success btn-block btn-lg course-type-pick" data-type="holiday" data-mode="manual"><?= lang("app.holidayCoaching"); ?></button>
 				<p class="text-muted mt-2 mb-0" style="font-size:.85rem;">Holiday coaching courses stay on their own list and are assigned by academic year (not by term).</p>
 				<?php endif; ?>
@@ -465,7 +465,7 @@ $groupDefs = [
 		'label' => 'Special',
 	],
 ];
-if (is_wisdom_school() || !empty($coursesGrouped['holiday'])) {
+if (school_has_course_programme_menu() || !empty($coursesGrouped['holiday'])) {
 	$groupDefs['holiday'] = [
 		'title' => lang('app.holidayCoaching') . ' — academic year (not termly)',
 		'table_id' => 'courseTableHoliday',
