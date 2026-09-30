@@ -2927,6 +2927,8 @@ public function testEmail()
 		$grade = new GradeModel();
 		$schoolId = (int) $this->session->get("soma_school_id");
 		$data['settings'] = $settingsMdl->getSchool(array("schools.id" => $schoolId))->getRowArray();
+		$data['settings']['allow_cat_edit'] = cat_edit_allowed((int) ($this->data['active_term'] ?? 0)) ? 1 : 0;
+		$data['is_coordinator'] = MenuClearance::isCoordinatorPost((int) $this->session->get('soma_post'));
 		if (!isset($data['settings']['use_grading_system'])) {
 			$data['settings']['use_grading_system'] = 1;
 		}
@@ -3440,6 +3442,9 @@ public function testEmail()
 		if (!in_array('locked_periods', $fields, true)) {
 			$db->query("ALTER TABLE `active_term` ADD COLUMN `locked_periods` VARCHAR(32) NOT NULL DEFAULT '' AFTER `use_period`");
 		}
+		if (!in_array('allow_cat_edit', $fields, true)) {
+			$db->query("ALTER TABLE `active_term` ADD COLUMN `allow_cat_edit` TINYINT(1) NOT NULL DEFAULT 0");
+		}
 		$done = true;
 	}
 
@@ -3517,6 +3522,29 @@ public function testEmail()
 			'locked_periods' => $locked,
 			'period' => $period,
 			'locked' => $lock === 1,
+		]);
+	}
+
+	/** Coordinator only: allow or lock changes to a quiz, test, or homework that is already saved. */
+	public function toggle_cat_edit()
+	{
+		$this->_preset();
+		$this->ensurePeriodLocksSchema();
+		if (!MenuClearance::isCoordinatorPost((int) $this->session->get('soma_post'))) {
+			return $this->response->setJSON(['error' => 'Only the Coordinator can allow editing of saved quizzes, tests, and homework.']);
+		}
+		$termId = (int) ($this->data['active_term'] ?? 0);
+		if ($termId < 1) {
+			return $this->response->setJSON(['error' => 'No active term set']);
+		}
+		$allow = (int) $this->request->getPost('allow') === 1 ? 1 : 0;
+		(new ActiveTermModel())->save(['id' => $termId, 'allow_cat_edit' => $allow]);
+		$msg = $allow === 1
+			? 'Editing is on. Assigned teachers can change a saved quiz, test, or homework.'
+			: 'Editing is locked. Saved quizzes, tests, and homework cannot be changed.';
+		return $this->response->setJSON([
+			'success' => $msg,
+			'allow_cat_edit' => $allow,
 		]);
 	}
 
@@ -10586,7 +10614,7 @@ public function attendanceCard()
 		return view('main', $data);
 	}
 
-	public function get_class(int $course = 0, int $yearId = null)
+	public function get_class(int $course = 0, int $yearId = null, int $assignedOnly = 0)
 	{
 		$this->_preset();
 		$classMdl = new ClassesModel();
@@ -10608,8 +10636,8 @@ public function attendanceCard()
 					->orderBy("d.code")
 					->orderBy("l.title");
 
-			if (!MenuClearance::canEnterAllCourseMarks((int) $this->session->get("soma_post"), (string) $this->session->get('soma_post_title'))) {
-				//filter class by teacher if is not a school academic leader
+			if ($assignedOnly === 1 || !MenuClearance::canEnterAllCourseMarks((int) $this->session->get("soma_post"), (string) $this->session->get('soma_post_title'))) {
+				// Marks entry always passes assignedOnly=1. Every post, including Headmaster and DHT Academics, sees only their classes.
 				$builder->where("cr.lecturer", $this->session->get("soma_id"));
 			}
 			$classes = $this->classesWithoutHoliday($builder->get()->getResultArray());
@@ -10811,10 +10839,10 @@ public function attendanceCard()
 
 	public function delete_marks()
 	{
-		if (!MenuClearance::canEnterAllCourseMarks((int) $this->session->get("soma_post"), (string) $this->session->get('soma_post_title'))) {
-			return $this->response->setJSON(array("error" => "Oops, Only the Director, Head master, Head Teacher, Director of studies or DHT Academics can delete marks "));
+		$this->_preset();
+		if (!cat_edit_allowed((int) ($this->data['active_term'] ?? 0))) {
+			return $this->response->setJSON(array("error" => "Saved marks are locked. The Coordinator can allow editing in School settings."));
 		}
-		$this->_preset(1, 3);
 		$ids = '';
 		if (!empty($this->request->getPost("data"))) {
 			$ids = $this->request->getPost("data");
@@ -10843,8 +10871,19 @@ public function attendanceCard()
 			return $this->response->setJSON(array("error" => "Oops, You can only delete marks of current active term only"));
 		}
 		$marksMdl = new MarksModel();
+		$idList = array_values(array_filter(array_map('intval', explode(',', (string) $ids))));
+		if ($idList === []) {
+			return $this->response->setJSON(array("error" => "Invalid marks data"));
+		}
+		$rows = $marksMdl->select('id, course_id, class_id')->whereIn('id', $idList)->findAll();
+		$staffId = (int) $this->session->get('soma_id');
+		foreach ($rows as $row) {
+			if (!staff_owns_course_class($staffId, (int) ($row['course_id'] ?? 0), (int) ($row['class_id'] ?? 0), (int) $year)) {
+				return $this->response->setJSON(array("error" => "You can only change marks for courses assigned to you."));
+			}
+		}
 		try {
-			$marksMdl->whereIn("id", explode(",", $ids))->delete();
+			$marksMdl->whereIn("id", $idList)->delete();
 			return $this->response->setJSON(array("success" => "Marks delete successfully"));
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
@@ -12487,6 +12526,9 @@ public function getApplicationDocs($id = null)
 			if ($active_term == null) {
 				return $this->response->setJSON(array("error" => "invalid term data, please try again later"));
 			}
+			if (!staff_owns_course_class((int) $this->session->get('soma_id'), (int) $post_course, (int) $post_class, (int) $year)) {
+				return $this->response->setJSON(array("error" => "You can only enter marks for courses assigned to you."));
+			}
 			if ($file_class != $post_class) {
 				return $this->response->setJSON(array("error" => lang("app.pleaseUpload")));
 			} else if ($file_course != $post_course) {
@@ -13768,14 +13810,14 @@ public function getApplicationDocs($id = null)
 				$builder->where("find_in_set($term,r.term) !=0");
 				$builder->where("IFNULL(courses.program_type,'') <> 'holiday'");
 			}
-			if (!$this->staffCanEnterAllCourseMarks()) {
-				//filter courses if is not Director / Head master / Head Teacher / DOS / DHT Academics
-				$builder->where("s.id", $this->session->get("soma_id"));
-			}
+			// Every post enters marks only for courses assigned to them.
+			$builder->where("s.id", $this->session->get("soma_id"));
 			$data['courses'] = $builder->get()->getResultArray();
 		}
 		$data['soma_name'] = $this->session->get("soma_name");
-		$data['marks_teacher_is_assignee'] = $this->staffCanEnterAllCourseMarks();
+		$data['marks_teacher_is_assignee'] = false;
+		$data['allow_cat_edit'] = cat_edit_allowed((int) ($this->data['active_term'] ?? 0));
+		$data['is_coordinator'] = MenuClearance::isCoordinatorPost((int) $this->session->get('soma_post'));
 		$data['content'] = view("pages/marks/marks_entry", $data);
 		return view('main', $data);
 	}
@@ -13824,6 +13866,9 @@ public function getApplicationDocs($id = null)
 			return $this->response->setJSON(array("error" => "Holiday coaching courses use the Holiday coaching marks type and stay out of CAT/Exam"));
 		}
 		$created_by = $this->session->get("soma_id");
+		if (!staff_owns_course_class((int) $created_by, (int) $course_id, (int) $class, (int) $year)) {
+			return $this->response->setJSON(array("error" => "You can only enter marks for courses assigned to you."));
+		}
 		if (!is_array($student_id)) {
 			return $this->response->setJSON(array("error" => lang("app.pleaseAddErr")));
 		}
@@ -13833,9 +13878,15 @@ public function getApplicationDocs($id = null)
 			));
 		}
 		if ((int) $mark_type === 1) {
+			$catType = normalizeCatTypeCode($catType);
 			$sequenceError = $this->catSequenceError($catType, (int) $class, (int) $course_id, $term, (int) $period);
 			if ($sequenceError !== null) {
 				return $this->response->setJSON(array("error" => $sequenceError));
+			}
+			if ($this->savedCatLockedForUpdate($catType, (int) $class, (int) $course_id, $term, (int) $period, $marks_id)) {
+				return $this->response->setJSON(array(
+					"error" => catTypeStr($catType) . " is saved and locked. The Coordinator can allow editing."
+				));
 			}
 		}
 //		print_r($marks_id); die();
@@ -15135,7 +15186,11 @@ public function getApplicationDocs($id = null)
 		$period = (int) ($this->request->getGet('period') ?? 0);
 		$year = $this->request->getGet('year') ?: $this->data['academic_year'];
 		$termId = $this->resolveMarksTermId($this->request->getGet('term'), $year);
-		$filled = $this->filledCatTypes($class, $course, $termId, $period);
+		if (!staff_owns_course_class((int) $this->session->get('soma_id'), $course, $class, (int) $year)) {
+			$filled = [];
+		} else {
+			$filled = $this->filledCatTypes($class, $course, $termId, $period);
+		}
 		return $this->response->setJSON(['groups' => catTypeGroups($filled)]);
 	}
 
@@ -15144,13 +15199,19 @@ public function getApplicationDocs($id = null)
 		if ($termNo === null || $termNo === '' || is_holiday_term_choice($termNo)) {
 			return $this->data['active_term'];
 		}
+		$currentTerm = (string) ($this->data['term'] ?? '');
+		$currentYear = (string) ($this->data['academic_year'] ?? '');
+		if ((string) $termNo === $currentTerm && (string) $year === $currentYear) {
+			return $this->data['active_term'];
+		}
 		$atMdl = new ActiveTermModel();
 		$row = $atMdl->select('id')
 			->where('academic_year', $year)
 			->where('term', $termNo)
 			->where('school_id', $this->session->get('soma_school_id'))
+			->orderBy('id', 'DESC')
 			->get(1)->getRow();
-		return $row ? $row->id : $this->data['active_term'];
+		return $row ? $row->id : null;
 	}
 
 	private function filledCatTypes($class, $course, $termId, $period): array
@@ -15158,27 +15219,70 @@ public function getApplicationDocs($id = null)
 		if ((int) $class < 1 || (int) $course < 1 || empty($termId)) {
 			return [];
 		}
-		$rows = (new MarksModel())->select('cat_type')
+		$query = (new MarksModel())->select('cat_type')
 			->where('class_id', (int) $class)
 			->where('course_id', (int) $course)
 			->where('term', $termId)
-			->where('period', (int) $period)
 			->where('mark_type', 1)
 			->where('cat_type !=', '')
-			->groupBy('cat_type')
-			->get()->getResultArray();
+			->groupBy('cat_type');
+		$period = (int) $period;
+		if ($period > 0) {
+			$query->where('period', $period);
+		} else {
+			$query->groupStart()
+				->where('period', 0)
+				->orWhere('period', null)
+				->groupEnd();
+		}
+		$rows = $query->get()->getResultArray();
 		$filled = [];
 		foreach ($rows as $row) {
-			if (!empty($row['cat_type'])) {
-				$filled[] = $row['cat_type'];
+			$code = normalizeCatTypeCode($row['cat_type'] ?? '');
+			if ($code !== '') {
+				$filled[$code] = $code;
 			}
 		}
-		return $filled;
+		return array_values($filled);
+	}
+
+	/** True when this quiz/test/homework already has saved rows and the Coordinator has not allowed editing. */
+	private function savedCatLockedForUpdate($catType, $class, $course, $termId, $period, $marksIds): bool
+	{
+		if (cat_edit_allowed((int) $termId)) {
+			return false;
+		}
+		$code = normalizeCatTypeCode($catType);
+		if ($code === '' || !in_array($code, $this->filledCatTypes($class, $course, $termId, $period), true)) {
+			return false;
+		}
+		foreach ((array) $marksIds as $mid) {
+			if ($mid != 0 && strlen((string) $mid) > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private function catTypeSqlMatch(string $column, $code): string
+	{
+		$code = normalizeCatTypeCode($code);
+		$db = \Config\Database::connect();
+		$variants = [$code];
+		if (preg_match('/^([QTH])(\d+)$/', $code, $m)) {
+			$word = ['Q' => 'QUIZ', 'T' => 'TEST', 'H' => 'HOMEWORK'][$m[1]];
+			$variants[] = $word . $m[2];
+			$variants[] = $word . ' ' . $m[2];
+		}
+		$quoted = array_map(static function ($variant) use ($db) {
+			return $db->escape($variant);
+		}, $variants);
+		return 'UPPER(TRIM(' . $column . ')) IN (' . implode(',', $quoted) . ')';
 	}
 
 	private function catSequenceError($catType, $class, $course, $termId, $period): ?string
 	{
-		$catType = strtoupper(trim((string) $catType));
+		$catType = normalizeCatTypeCode($catType);
 		if ($catType === '' || !preg_match('/^[QTH]\d+$/', $catType)) {
 			return 'Select a quiz, test, or homework first.';
 		}
@@ -15196,18 +15300,17 @@ public function getApplicationDocs($id = null)
 		$active_term = $this->data['active_term'];
 		$year = $yearId ?? $this->data['academic_year'];
 		$isHolidayMarks = (int) $mt === holiday_coaching_mark_type() || is_holiday_term_choice($term);
-		if ($this->staffCanEnterAllCourseMarks() && $term != null && !$isHolidayMarks) {
-			$atMdl = new ActiveTermModel();
-			$at_data = $atMdl->select('id')
-					->where('academic_year', $year)
-					->where('term', $term)
-					->get(1)
-					->getRow();
-			if ($at_data == null) {
+		if (!$isHolidayMarks && $term !== null && $term !== '') {
+			$resolvedTerm = $this->resolveMarksTermId($term, $year);
+			if ($resolvedTerm === null) {
 				echo "<h3>" . lang('app.InvalidDataSupplied') . "</h3>";
 				die();
 			}
-			$active_term = $at_data->id;
+			$active_term = $resolvedTerm;
+		}
+		if (!staff_owns_course_class((int) $this->session->get('soma_id'), (int) $course, (int) $class, (int) $year)) {
+			echo '<div class="alert alert-danger" style="margin:1rem;">You can only enter marks for courses assigned to you.</div>';
+			die();
 		}
 		if ((int) $period > 0 && $this->isPeriodLocked($active_term, $period)) {
 			echo '<div class="alert alert-danger" style="margin:1rem;">'
@@ -15219,8 +15322,16 @@ public function getApplicationDocs($id = null)
 		if ($ct == "undefined") {
 			$ct = '';
 		}
+		$ct = normalizeCatTypeCode($ct);
 		$StudentModel = new StudentModel();
 		$html_script = "";
+		$lockSavedCat = false;
+		if ((int) $mt === 1 && $ct !== '' && $ct !== 'undefined') {
+			$savedCode = normalizeCatTypeCode($ct);
+			$lockSavedCat = $savedCode !== ''
+				&& !cat_edit_allowed((int) $active_term)
+				&& in_array($savedCode, $this->filledCatTypes($class, $course, $active_term, $period), true);
+		}
 		$html = '<table style="width: 100%;" id="marks_table"
 						   class="table table-hover table-striped table-bordered"
 						   role="grid" aria-describedby="example_info">
@@ -15323,10 +15434,8 @@ public function getApplicationDocs($id = null)
 			$ownerFilter = '';
 			$termFilter = " AND m.term={$active_term}";
 			if ($mtInt === holiday_coaching_mark_type()) {
-				if (!$this->staffCanEnterAllCourseMarks()) {
-					$ownerId = (int) $this->session->get('soma_id');
-					$ownerFilter = " AND m.created_by={$ownerId}";
-				}
+				$ownerId = (int) $this->session->get('soma_id');
+				$ownerFilter = " AND m.created_by={$ownerId}";
 				$yearTermIds = $this->activeTermIdsForYear((int) $this->session->get('soma_school_id'), (int) $year);
 				if ($yearTermIds === []) {
 					$yearTermIds = [(int) $active_term];
@@ -15398,7 +15507,7 @@ public function getApplicationDocs($id = null)
 														  m.outof,
 														  m.cat_type,
 														  m.id,
-														  m.examDate from marks m where m.mark_type=$mt AND m.cat_type='$ct' AND m.course_id=$course AND m.class_id=$class AND m.period=$period AND m.term={$active_term}";
+														  m.examDate from marks m where m.mark_type=$mt AND " . $this->catTypeSqlMatch('m.cat_type', $ct) . " AND m.course_id=$course AND m.class_id=$class AND m.period=$period AND m.term={$active_term}";
 			$students = $StudentModel->select("students.id,
 														  students.regno,
 														  concat(students.fname,' ',students.lname) as name,
@@ -15485,6 +15594,16 @@ public function getApplicationDocs($id = null)
 				echo $e->getMessage();
 			}
 		} else {
+			if (!empty($lockSavedCat)) {
+				$html_script .= "<script>
+				$('.marks-entry-input').prop('readonly', true);
+				$('[type=\"submit\"]').prop('disabled', true);
+				$('#btn-del-marks').prop('disabled', true);
+				if (!$('#cat-edit-lock-note').length) {
+					$('#dv_marks').prepend('<div id=\"cat-edit-lock-note\" class=\"alert alert-info\" style=\"margin:8px;\">This assessment is saved. The Coordinator can allow editing before it can be changed. Choose the next quiz, test, or homework to enter a new one.</div>');
+				}
+</script>";
+			}
 			echo $html . $html_script;
 		}
 	}

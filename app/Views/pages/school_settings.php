@@ -923,6 +923,24 @@
 							<?php else: ?>
 								<p class="ss-periods-off">Periodic system is off. Use <strong>Change Active Term</strong> and enable “Use periodic option in marks” to manage periods here.</p>
 							<?php endif; ?>
+							<?php if (!empty($is_coordinator)): ?>
+								<div class="ss-periods-box" id="ss_cat_edit_box">
+									<h5>Saved quizzes, tests, and homework</h5>
+									<p class="ss-period-hint">Teachers enter marks only for courses assigned to them. A saved quiz stays locked until you allow editing. The next quiz is added as soon as the current one is saved.</p>
+									<div class="ss-period-row<?= empty($settings['allow_cat_edit']) ? ' is-locked' : ''; ?>" id="ss_cat_edit_row">
+										<div>
+											<span class="ss-period-label">Editing saved assessments</span>
+											<span class="ss-period-status" id="cat_edit_status"><?= !empty($settings['allow_cat_edit']) ? 'Allowed' : 'Locked'; ?></span>
+										</div>
+										<button type="button"
+												class="btn-period-lock <?= !empty($settings['allow_cat_edit']) ? 'btn-unlock' : 'btn-lock'; ?>"
+												id="btn_toggle_cat_edit"
+												data-allow="<?= !empty($settings['allow_cat_edit']) ? '0' : '1'; ?>">
+											<?= !empty($settings['allow_cat_edit']) ? 'Lock editing' : 'Allow editing'; ?>
+										</button>
+									</div>
+								</div>
+							<?php endif; ?>
 						</div>
 					</div>
 				</div>
@@ -3202,6 +3220,45 @@ $(document).on("click","#btn-remove-discipline",function () {
 				error: function () {
 					if (window.toastada) toastada.error('Could not update period lock');
 					else alert('Could not update period lock');
+				},
+				complete: function () {
+					$btn.data('busy', 0).prop('disabled', false);
+				}
+			});
+		});
+
+		$('#btn_toggle_cat_edit').on('click', function () {
+			var $btn = $(this);
+			if ($btn.data('busy')) return;
+			var allow = String($btn.data('allow')) === '1' ? 1 : 0;
+			$btn.data('busy', 1).prop('disabled', true);
+			$.ajax({
+				url: "<?= base_url('toggle_cat_edit'); ?>",
+				type: "POST",
+				dataType: "json",
+				data: { allow: allow },
+				success: function (res) {
+					if (res && res.success) {
+						if (window.toastada) toastada.success(res.success);
+						else alert(res.success);
+						var on = parseInt(res.allow_cat_edit, 10) === 1;
+						var $row = $('#ss_cat_edit_row');
+						$row.toggleClass('is-locked', !on);
+						$('#cat_edit_status').text(on ? 'Allowed' : 'Locked');
+						$btn
+							.toggleClass('btn-lock', !on)
+							.toggleClass('btn-unlock', on)
+							.data('allow', on ? 0 : 1)
+							.text(on ? 'Lock editing' : 'Allow editing');
+					} else {
+						var err = (res && res.error) ? res.error : 'Could not update quiz editing';
+						if (window.toastada) toastada.error(err);
+						else alert(err);
+					}
+				},
+				error: function () {
+					if (window.toastada) toastada.error('Could not update quiz editing');
+					else alert('Could not update quiz editing');
 				},
 				complete: function () {
 					$btn.data('busy', 0).prop('disabled', false);

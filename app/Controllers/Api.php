@@ -373,16 +373,6 @@ class Api extends BaseController
 		if (!$school) {
 			return $this->response->setJSON(['error' => 'School not found']);
 		}
-		$staffRow = (new StaffModel())
-			->select('staffs.post, p.title as post_title')
-			->join('posts p', 'p.id=staffs.post', 'left')
-			->where('staffs.id', $teacher_id)
-			->where('staffs.school_id', $school_id)
-			->get()->getRow();
-		$fullAccess = $staffRow && \Config\MenuClearance::canEnterAllCourseMarks(
-			(int) $staffRow->post,
-			(string) ($staffRow->post_title ?? '')
-		);
 		$csMdl = new CourseModel();
 		$courseQuery = $csMdl->select("courses.id,courses.title,courses.code,r.class as class_id,courses.marks,courses.program_type, CONCAT(s.fname,' ',s.lname) as lecturer")
 			->join("course_records r", "courses.id=r.course")
@@ -398,10 +388,8 @@ class Api extends BaseController
 			->where("IFNULL(dfilter.title,'') NOT LIKE '%Holiday%'", null, false)
 			->where("IFNULL(dfilter.code,'') NOT LIKE '%Holiday%'", null, false)
 			->groupBy("courses.id")
-			->groupBy("r.class");
-		if (!$fullAccess) {
-			$courseQuery->where("r.lecturer", $teacher_id);
-		}
+			->groupBy("r.class")
+			->where("r.lecturer", $teacher_id);
 		$coursesData = $courseQuery->get()->getResultArray();
 		$clMdl = new CourseRecordModel();
 		$classQuery = $clMdl->select("c.id,concat(l.title,' ',c.title,' ',d.code) as title")
@@ -416,10 +404,8 @@ class Api extends BaseController
 			->where("c.school_id", $school_id)
 			->groupBy("c.id")
 			->orderBy("d.code")
-			->orderBy("l.title");
-		if (!$fullAccess) {
-			$classQuery->where("course_records.lecturer", $teacher_id);
-		}
+			->orderBy("l.title")
+			->where("course_records.lecturer", $teacher_id);
 		$classes = $classQuery->get()->getResultArray();
 		$academicTypeId = 1;
 		if (!empty($school->academic_type)) {
@@ -432,20 +418,26 @@ class Api extends BaseController
 			$classIds[] = (int) ($classRow['id'] ?? 0);
 		}
 		$filledCats = [];
-		if ($classIds) {
+		$courseIds = [];
+		foreach ($coursesData as $courseRow) {
+			$courseIds[] = (int) ($courseRow['id'] ?? 0);
+		}
+		$courseIds = array_values(array_filter($courseIds));
+		if ($classIds && $courseIds) {
 			$filledRows = (new MarksModel())
 				->select('course_id, class_id, period, cat_type')
 				->where('term', (int) $school->active_term)
 				->where('mark_type', 1)
 				->where('cat_type !=', '')
 				->whereIn('class_id', $classIds)
+				->whereIn('course_id', $courseIds)
 				->groupBy('course_id')
 				->groupBy('class_id')
 				->groupBy('period')
 				->groupBy('cat_type')
 				->findAll();
 			foreach ($filledRows as $filled) {
-				$code = strtoupper(trim((string) ($filled['cat_type'] ?? '')));
+				$code = normalizeCatTypeCode($filled['cat_type'] ?? '');
 				if ($code === '') {
 					continue;
 				}
@@ -459,7 +451,8 @@ class Api extends BaseController
 		}
 		return $this->response->setJSON([
 			'success' => '1',
-			'full_access' => $fullAccess ? 1 : 0,
+			'full_access' => 0,
+			'allow_cat_edit' => cat_edit_allowed((int) ($school->active_term ?? 0)) ? 1 : 0,
 			'use_period' => (int) ($school->use_period ?? 0),
 			'classes' => $classes,
 			'courses' => $coursesData,
@@ -484,26 +477,9 @@ class Api extends BaseController
 			return $this->response->setJSON(['error' => 'Missing marks sheet fields']);
 		}
 		$this->_preset($school_id);
-		$staffRow = (new StaffModel())
-			->select('staffs.post, p.title as post_title')
-			->join('posts p', 'p.id=staffs.post', 'left')
-			->where('staffs.id', $teacher_id)
-			->where('staffs.school_id', $school_id)
-			->get()->getRow();
-		$fullAccess = $staffRow && \Config\MenuClearance::canEnterAllCourseMarks(
-			(int) $staffRow->post,
-			(string) ($staffRow->post_title ?? '')
-		);
-		if (!$fullAccess) {
-			$owns = (new CourseRecordModel())
-				->where('course', $course_id)
-				->where('class', $class_id)
-				->where('year', $this->data['academic_year'])
-				->where('lecturer', $teacher_id)
-				->countAllResults();
-			if ($owns < 1) {
-				return $this->response->setJSON(['error' => 'This course is not assigned to you']);
-			}
+		helper('qonics');
+		if (!staff_owns_course_class($teacher_id, $course_id, $class_id, (int) ($this->data['academic_year'] ?? 0))) {
+			return $this->response->setJSON(['error' => 'This course is not assigned to you']);
 		}
 		$query = (new MarksModel())
 			->select('student_id, marks, outof')
@@ -524,8 +500,11 @@ class Api extends BaseController
 				'out_of' => (string) ($row['outof'] ?? ''),
 			];
 		}
+		$editOn = cat_edit_allowed((int) ($this->data['active_term'] ?? 0));
 		return $this->response->setJSON([
 			'success' => '1',
+			'allow_cat_edit' => $editOn ? 1 : 0,
+			'editable' => ($mark_type !== 1 || $editOn || $marks === []) ? 1 : 0,
 			'marks' => $marks,
 		]);
 	}
@@ -2452,7 +2431,14 @@ public function check_school($option)
 				foreach ($records as $info) {
 					try {
 						$markType = (int) ($info['mark_type'] ?? 0);
-						$catType = strtoupper(trim((string) ($info['cat_type'] ?? '')));
+						$catType = normalizeCatTypeCode($info['cat_type'] ?? '');
+						$teacherId = (int) ($info['created_by'] ?? 0);
+						if (!staff_owns_course_class($teacherId, (int) ($info['course_id'] ?? 0), (int) ($info['class_id'] ?? 0), (int) ($this->data['academic_year'] ?? 0))) {
+							return $this->response->setJSON([
+								'error' => 'You can only enter marks for courses assigned to you.',
+								'last_id' => $last_id,
+							]);
+						}
 						$sheetKey = (int) $info['class_id'] . ':' . (int) $info['course_id'] . ':' . (int) ($info['period'] ?? 0);
 						if ($markType === 1) {
 							if (!isset($unlocked[$sheetKey])) {
@@ -2467,7 +2453,7 @@ public function check_school($option)
 									->findAll();
 								$unlocked[$sheetKey] = [];
 								foreach ($saved as $savedRow) {
-									$unlocked[$sheetKey][] = strtoupper(trim((string) ($savedRow['cat_type'] ?? '')));
+									$unlocked[$sheetKey][] = normalizeCatTypeCode($savedRow['cat_type'] ?? '');
 								}
 							}
 							if (!catTypeIsAllowed($catType, $unlocked[$sheetKey])) {
@@ -2486,6 +2472,12 @@ public function check_school($option)
 							->where('period', $info['period'] ?? 0)
 							->first();
 						if ($existing) {
+							if ($markType === 1 && !cat_edit_allowed((int) ($this->data['active_term'] ?? 0))) {
+								return $this->response->setJSON([
+									'error' => catTypeStr($catType) . ' is saved and locked. The Coordinator can allow editing.',
+									'last_id' => $last_id,
+								]);
+							}
 							$mMdl->save([
 								'id' => $existing['id'],
 								'marks' => $info['marks'],

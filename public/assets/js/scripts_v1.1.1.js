@@ -91,6 +91,12 @@ $(function () {
                             }, 1500);
                             return;
                         }
+                        if (target == "stay-marks") {
+                            if (typeof window.afterMarksSaved === "function") {
+                                window.afterMarksSaved();
+                            }
+                            return;
+                        }
                         if (target == "stay-assign") {
                             toastada.success(data.success);
                             form.find("[name='classes']").val(null).trigger("change");

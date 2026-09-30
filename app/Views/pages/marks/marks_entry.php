@@ -346,8 +346,19 @@ body.marks-entry-body .select2-search__field {
 					<span><?= lang("app.teacher"); ?></span>
 					<strong id="marks_teacher_name"
 							data-self="<?= esc($soma_name); ?>"
-							data-full="<?= !empty($marks_teacher_is_assignee) ? '1' : '0'; ?>"><?= !empty($marks_teacher_is_assignee) ? '—' : esc($soma_name); ?></strong>
+							data-full="0"><?= esc($soma_name); ?></strong>
 				</div>
+				<?php if (!empty($is_coordinator)): ?>
+					<div class="marks-field">
+						<span>Saved quiz editing</span>
+						<button type="button" class="btn btn-sm <?= !empty($allow_cat_edit) ? 'btn-warning' : 'btn-primary'; ?>" id="btn-toggle-cat-edit" data-allow="<?= !empty($allow_cat_edit) ? '0' : '1'; ?>">
+							<?= !empty($allow_cat_edit) ? 'Lock saved quizzes' : 'Allow editing saved quizzes'; ?>
+						</button>
+						<small class="marks-max-live" id="catEditState"><?= !empty($allow_cat_edit) ? 'Assigned teachers can change a saved quiz, test, or homework.' : 'Saved quizzes are locked. Turn this on to let the assigned teacher edit them.'; ?></small>
+					</div>
+				<?php else: ?>
+					<p class="marks-help">You enter marks only for courses assigned to you. After a quiz is saved, the next one is added. A saved quiz can be changed only when the Coordinator allows editing.</p>
+				<?php endif; ?>
 				<div class="marks-field">
 					<label for="outofmarks"><?= lang("app.totalMarks"); ?></label>
 					<input type="number" min="0" step="any" class="form-control" name="outofmarks" required
@@ -361,21 +372,17 @@ body.marks-entry-body .select2-search__field {
 					<input type="hidden" class="form-control" name="year" required value="<?=$academic_year_id;?>">
 				</div>
 				<div class="marks-entry-actions">
-					<button type="submit" class="btn btn-success btn-lg" data-target="reload"
+					<button type="submit" class="btn btn-success btn-lg" data-target="stay-marks"
 							disabled><?= lang("app.save"); ?> </button>
-					<?php
-					if (is_allowed(1, 3)) {
-						?>
-						<a href="<?= base_url('get_student_marks'); ?>"
-						   class="btn btn-primary btn-lg disabled" id="export_pdf"
-						   target="_blank"><i class="fa fa-file-pdf"></i> <?= lang("app.export"); ?>
-						</a>
+					<a href="<?= base_url('get_student_marks'); ?>"
+					   class="btn btn-primary btn-lg disabled" id="export_pdf"
+					   target="_blank"><i class="fa fa-file-pdf"></i> <?= lang("app.export"); ?>
+					</a>
+					<?php if (!empty($allow_cat_edit)) { ?>
 						<button class="btn btn-warning btn-lg" type="button" id="btn-del-marks"
 								disabled>
 							<i class="fa fa-trash"></i> <?= lang("app.del"); ?> </button>
-						<?php
-					}
-					?>
+					<?php } ?>
 				</div>
 			</div>
 			<div id="dv_marks">
@@ -475,7 +482,7 @@ body.marks-entry-body .select2-search__field {
 				$("#select_class").select2("destroy");
 			}
 			showAssignedTeacher();
-			$("#select_class").load("<?= base_url(); ?>get_class/" + val+"/"+$("[name='year']").val(), function () {
+			$("#select_class").load("<?= base_url(); ?>get_class/" + val+"/"+$("[name='year']").val()+"/1", function () {
 				initMarksSelect2($("#select_class_div"));
 				showAssignedTeacher();
 				populate_marks();
@@ -484,9 +491,14 @@ body.marks-entry-body .select2-search__field {
 
 		$("#select_class").on("change", function () {
 			showAssignedTeacher();
+			$("#catype").data("userPicked", 0);
 			refreshCatTypes(populate_marks);
 		})
 		$("#catype").on("change", function () {
+			if (window.applyingCatOptions) {
+				return;
+			}
+			$(this).data("userPicked", 1);
 			populate_marks();
 		})
 		refreshCatTypes();
@@ -567,8 +579,24 @@ body.marks-entry-body .select2-search__field {
 			});
 			$sel.append($og);
 		});
-		if (prev && $sel.find("option[value='" + prev + "']:not(:disabled)").length) {
+		var quizLast = null;
+		$sel.find("optgroup").each(function () {
+			if (quizLast) {
+				return;
+			}
+			if (/quiz/i.test($(this).attr("label") || "")) {
+				var $ops = $(this).find("option:not(:disabled)");
+				if ($ops.length) {
+					quizLast = $ops.last().val();
+				}
+			}
+		});
+		var keepPrev = prev && $sel.data("userPicked") && $sel.find("option[value='" + prev + "']:not(:disabled)").length;
+		window.applyingCatOptions = true;
+		if (keepPrev) {
 			$sel.val(prev);
+		} else if (quizLast) {
+			$sel.val(quizLast);
 		} else if (firstOpen) {
 			$sel.val(firstOpen);
 		}
@@ -577,6 +605,7 @@ body.marks-entry-body .select2-search__field {
 			width: "100%",
 			dropdownParent: $parent.length ? $parent : $sel.parent()
 		});
+		window.applyingCatOptions = false;
 	}
 
 	function refreshCatTypes(done) {
@@ -609,6 +638,48 @@ body.marks-entry-body .select2-search__field {
 			if (typeof done === "function") done();
 		});
 	}
+
+	window.afterMarksSaved = function () {
+		var saved = $("#catype").val();
+		if (!$("#catype").length) {
+			populate_marks();
+			return;
+		}
+		refreshCatTypes(function () {
+			var $sel = $("#catype");
+			var $current = $sel.find("option").filter(function () {
+				return this.value === saved;
+			}).first();
+			var $next = $current.next("option");
+			if ($next.length && $next.val()) {
+				$sel.val($next.val()).trigger("change");
+				return;
+			}
+			populate_marks();
+		});
+	};
+
+	$("#btn-toggle-cat-edit").on("click", function () {
+		var $btn = $(this);
+		if ($btn.data("busy")) {
+			return;
+		}
+		var allow = String($btn.data("allow")) === "1" ? 1 : 0;
+		$btn.data("busy", 1).prop("disabled", true);
+		$.post("<?= base_url('toggle_cat_edit'); ?>", {allow: allow}, function (res) {
+			if (res && res.success) {
+				if (window.toastada) toastada.success(res.success);
+				setTimeout(function () { window.location.reload(); }, 700);
+			} else {
+				var err = (res && res.error) ? res.error : "Could not update quiz editing";
+				if (window.toastada) toastada.error(err);
+				$btn.data("busy", 0).prop("disabled", false);
+			}
+		}, "json").fail(function () {
+			if (window.toastada) toastada.error("Could not update quiz editing");
+			$btn.data("busy", 0).prop("disabled", false);
+		});
+	});
 
 	function populate_marks() {
 		var id = $("#select_class").val() + "/";

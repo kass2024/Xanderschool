@@ -969,7 +969,8 @@ if (!function_exists('catTypeGroups')) {
 		];
 		$byPrefix = ['Q' => [], 'T' => [], 'H' => []];
 		foreach ($filledCodes as $code) {
-			if (preg_match('/^([QTH])(\d+)$/', strtoupper(trim((string) $code)), $m)) {
+			$code = normalizeCatTypeCode($code);
+			if (preg_match('/^([QTH])(\d+)$/', $code, $m)) {
 				$byPrefix[$m[1]][(int) $m[2]] = true;
 			}
 		}
@@ -1007,10 +1008,32 @@ if (!function_exists('catTypeGroups')) {
 	}
 }
 
+if (!function_exists('normalizeCatTypeCode')) {
+	/** Q1 / QUIZ 1 / quiz1 all become Q1. Unknown text is returned trimmed and uppercased. */
+	function normalizeCatTypeCode($type): string
+	{
+		$type = strtoupper(trim((string) $type));
+		$type = (string) preg_replace('/\s+/', '', $type);
+		if (preg_match('/^([QTH])(\d+)$/', $type, $m)) {
+			return $m[1] . (int) $m[2];
+		}
+		if (preg_match('/^QUIZ(\d+)$/', $type, $m)) {
+			return 'Q' . (int) $m[1];
+		}
+		if (preg_match('/^TEST(\d+)$/', $type, $m)) {
+			return 'T' . (int) $m[1];
+		}
+		if (preg_match('/^HOMEWORK(\d+)$/', $type, $m)) {
+			return 'H' . (int) $m[1];
+		}
+		return $type;
+	}
+}
+
 if (!function_exists('catTypeIsAllowed')) {
 	function catTypeIsAllowed($code, array $filledCodes): bool
 	{
-		$code = strtoupper(trim((string) $code));
+		$code = normalizeCatTypeCode($code);
 		foreach (catTypeGroups($filledCodes) as $group) {
 			foreach ($group['options'] as $option) {
 				if ($option['value'] === $code) {
@@ -1019,6 +1042,65 @@ if (!function_exists('catTypeIsAllowed')) {
 			}
 		}
 		return false;
+	}
+}
+
+if (!function_exists('ensure_cat_edit_schema')) {
+	function ensure_cat_edit_schema(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('active_term')) {
+			$done = true;
+			return;
+		}
+		$fields = $db->getFieldNames('active_term');
+		if (!in_array('allow_cat_edit', $fields, true)) {
+			$db->query("ALTER TABLE `active_term` ADD COLUMN `allow_cat_edit` TINYINT(1) NOT NULL DEFAULT 0");
+		}
+		$done = true;
+	}
+}
+
+if (!function_exists('cat_edit_allowed')) {
+	/** Saved quizzes, tests, and homework can be changed only while the Coordinator has allowed it. */
+	function cat_edit_allowed($activeTermId): bool
+	{
+		$activeTermId = (int) $activeTermId;
+		if ($activeTermId < 1) {
+			return false;
+		}
+		ensure_cat_edit_schema();
+		$row = \Config\Database::connect()->table('active_term')
+			->select('allow_cat_edit')
+			->where('id', $activeTermId)
+			->get(1)->getRowArray();
+		return (int) ($row['allow_cat_edit'] ?? 0) === 1;
+	}
+}
+
+if (!function_exists('staff_owns_course_class')) {
+	/** True when this staff member is the lecturer on the course for that class and year. */
+	function staff_owns_course_class($staffId, $courseId, $classId, $yearId): bool
+	{
+		$staffId = (int) $staffId;
+		$courseId = (int) $courseId;
+		$classId = (int) $classId;
+		$yearId = (int) $yearId;
+		if ($staffId < 1 || $courseId < 1 || $classId < 1) {
+			return false;
+		}
+		$query = \Config\Database::connect()->table('course_records')
+			->where('course', $courseId)
+			->where('class', $classId)
+			->where('lecturer', $staffId);
+		if ($yearId > 0) {
+			$query->where('year', $yearId);
+		}
+		return $query->countAllResults() > 0;
 	}
 }
 

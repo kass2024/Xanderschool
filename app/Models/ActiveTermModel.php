@@ -3,7 +3,7 @@ use CodeIgniter\Model;
 
 class ActiveTermModel extends Model{
 	protected $table = "active_term";
-	protected $allowedFields = ["id","school_id","academic_year","term","sms_usage","use_period","created_by"];
+	protected $allowedFields = ["id","school_id","academic_year","term","sms_usage","use_period","locked_periods","allow_cat_edit","created_by"];
 	protected $useTimestamps = true;
 	protected $primaryKey = 'id';
 
