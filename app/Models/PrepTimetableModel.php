@@ -97,7 +97,8 @@ class PrepTimetableModel extends Model
 	 */
 	public static function slotFromAreaName(string $name): string
 	{
-		$n = strtolower(trim((string) preg_replace('/[^a-z0-9]+/', ' ', $name)));
+		$n = strtolower(trim($name));
+		$n = trim((string) preg_replace('/[^a-z0-9]+/', ' ', $n));
 		$prep = strpos($n, 'prep') !== false || strpos($n, 'preparation') !== false;
 		if (!$prep) {
 			return '';
