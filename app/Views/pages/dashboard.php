@@ -316,9 +316,13 @@
 						.wg-loc:hover { border-color: #1d4ed8; box-shadow: 0 4px 14px rgba(15, 23, 42, .08); }
 						.wg-loc b { display: block; color: #1d4ed8; font-size: .88rem; }
 						.wg-loc span { display: block; margin-top: 4px; color: #64748b; font-size: .75rem; }
-						.wg-reports { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
-						.wg-reports a { display: block; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 10px; font-size: .78rem; font-weight: 700; color: #1e293b; text-decoration: none; }
-						.wg-reports a:hover { border-color: #1d4ed8; color: #1d4ed8; background: #eff6ff; }
+						.wg-att { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+						.wg-att article { background: #f8fafc; border: 1px solid #e5e7eb; border-top: 3px solid #1d4ed8; border-radius: 10px; padding: 7px 8px; min-width: 0; }
+						.wg-att article.green { border-top-color: #16a34a; }
+						.wg-att article.amber { border-top-color: #d97706; }
+						.wg-att span { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #64748b; }
+						.wg-att b { display: block; margin-top: 2px; font-size: 1.05rem; line-height: 1.15; color: #0f172a; }
+						.wg-att small { display: block; color: #64748b; font-size: .72rem; }
 						.wg-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
 						.wg-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; min-width: 0; }
 						.wg-card h4 { margin: 0 0 8px; font-size: 1rem; }
@@ -392,6 +396,39 @@
 									<div><strong><?= (int) $campus['student_inside']; ?></strong><em>Still inside</em></div>
 									<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/in'); ?>"><strong><?= (int) $campus['staff_present']; ?></strong><em>Staff in</em></a>
 									<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/absent'); ?>"><strong><?= (int) $campus['staff_absent']; ?></strong><em>Staff absent</em></a>
+								</div>
+								<?php $att = $campus['att_summary'] ?? []; ?>
+								<div class="wg-att">
+									<article>
+										<span>Course attendance</span>
+										<b><?= (int) ($att['course_present'] ?? 0); ?></b>
+										<small><?= (int) ($att['course_sessions'] ?? 0); ?> session<?= (int) ($att['course_sessions'] ?? 0) === 1 ? '' : 's'; ?> today</small>
+									</article>
+									<article class="green">
+										<span>Class daily</span>
+										<b><?= (int) ($att['classes_marked'] ?? 0); ?> / <?= (int) ($att['classes_total'] ?? 0); ?></b>
+										<small>Classes marked</small>
+									</article>
+									<article>
+										<span>Daily attendance</span>
+										<b><?= (int) ($att['daily_present'] ?? 0); ?></b>
+										<small><?= (int) ($att['daily_absent'] ?? 0); ?> absent</small>
+									</article>
+									<article class="green">
+										<span>Daily general</span>
+										<b><?= (int) ($att['daily_present'] ?? 0); ?></b>
+										<small>On today's register</small>
+									</article>
+									<article class="amber">
+										<span>Boarding</span>
+										<b><?= (int) ($att['boarding_present'] ?? 0); ?></b>
+										<small><?= (int) ($att['boarding_absent'] ?? 0); ?> absent of <?= (int) ($att['boarding_total'] ?? 0); ?></small>
+									</article>
+									<article class="amber">
+										<span>Boarding general</span>
+										<b><?= (int) ($att['boarding_present'] ?? 0); ?></b>
+										<small>Boarders marked today</small>
+									</article>
 								</div>
 								<div class="wg-ranks">
 									<div class="wg-rank late"><h5>Most late today</h5><ol><?php foreach (($campus['late_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($campus['late_today'])): ?><li>No one late after shift start</li><?php endif; ?></ol></div>

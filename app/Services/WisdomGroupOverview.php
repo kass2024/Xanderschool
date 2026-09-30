@@ -261,9 +261,164 @@ class WisdomGroupOverview
 			$rows[$i]['late_today'] = $pack['late'];
 			$rows[$i]['early_today'] = $pack['early'];
 			$rows[$i]['locations'] = !empty($row['is_master']) ? $masterLocations : [];
+			$rows[$i]['att_summary'] = [];
 			$totals['staff_absent'] += count($pack['absent']);
 		}
+		$childIds = [];
+		foreach ($rows as $row) {
+			if (empty($row['is_master'])) {
+				$childIds[] = (int) $row['id'];
+			}
+		}
+		$attendance = $this->childAttendanceSummaries($childIds, (int) $yearId);
+		foreach ($rows as $i => $row) {
+			$id = (int) $row['id'];
+			if (isset($attendance[$id])) {
+				$enrolled = (int) ($row['students'] ?? 0);
+				$present = (int) $attendance[$id]['daily_present'];
+				$attendance[$id]['daily_absent'] = max(0, $enrolled - $present);
+				$boardingTotal = (int) $attendance[$id]['boarding_total'];
+				$boardingPresent = (int) $attendance[$id]['boarding_present'];
+				$attendance[$id]['boarding_absent'] = max(0, $boardingTotal - $boardingPresent);
+				$rows[$i]['att_summary'] = $attendance[$id];
+			}
+		}
 		return ['schools' => $rows, 'totals' => $totals, 'master_id' => (int) $masterId];
+	}
+
+	/**
+	 * Today's register totals for child schools. Numbers only, no other dashboard.
+	 *
+	 * @param int[] $ids
+	 * @return array<int, array<string, int>>
+	 */
+	private function childAttendanceSummaries(array $ids, int $yearId): array
+	{
+		$blank = [
+			'course_sessions' => 0,
+			'course_present' => 0,
+			'classes_total' => 0,
+			'classes_marked' => 0,
+			'daily_present' => 0,
+			'daily_absent' => 0,
+			'boarding_total' => 0,
+			'boarding_present' => 0,
+			'boarding_absent' => 0,
+		];
+		$out = [];
+		foreach ($ids as $id) {
+			if ($id > 0) {
+				$out[$id] = $blank;
+			}
+		}
+		if ($out === []) {
+			return [];
+		}
+		try {
+			$db = \Config\Database::connect();
+			$idList = implode(',', array_map('intval', array_keys($out)));
+			$today = $db->escape(date('Y-m-d'));
+			$yearId = (int) $yearId;
+
+			if ($db->tableExists('classes')) {
+				$sql = "SELECT school_id, COUNT(*) AS classes_total
+					FROM classes
+					WHERE school_id IN ({$idList})
+						AND IFNULL(title,'') NOT LIKE '%Holiday%'
+					GROUP BY school_id";
+				foreach ($db->query($sql)->getResultArray() as $row) {
+					$sid = (int) $row['school_id'];
+					if (isset($out[$sid])) {
+						$out[$sid]['classes_total'] = (int) $row['classes_total'];
+					}
+				}
+			}
+
+			if ($db->tableExists('daily_attendance') && $db->tableExists('students')) {
+				$sql = "SELECT st.school_id,
+						COUNT(DISTINCT da.student_id) AS daily_present,
+						COUNT(DISTINCT CASE WHEN st.studying_mode = 0 THEN da.student_id END) AS boarding_present
+					FROM daily_attendance da
+					INNER JOIN students st ON st.id = da.student_id
+					WHERE st.school_id IN ({$idList})
+						AND st.status IN (1, 2)
+						AND DATE(da.datee) = {$today}
+					GROUP BY st.school_id";
+				foreach ($db->query($sql)->getResultArray() as $row) {
+					$sid = (int) $row['school_id'];
+					if (!isset($out[$sid])) {
+						continue;
+					}
+					$out[$sid]['daily_present'] = (int) $row['daily_present'];
+					$out[$sid]['boarding_present'] = (int) $row['boarding_present'];
+				}
+
+				$boardSql = "SELECT s.school_id, COUNT(DISTINCT s.id) AS boarding_total
+					FROM students s
+					INNER JOIN class_records cr ON cr.student = s.id AND cr.status = 1"
+					. ($yearId > 0 ? " AND cr.year = {$yearId}" : '') . "
+					WHERE s.school_id IN ({$idList})
+						AND s.status IN (1, 2)
+						AND s.studying_mode = 0
+					GROUP BY s.school_id";
+				foreach ($db->query($boardSql)->getResultArray() as $row) {
+					$sid = (int) $row['school_id'];
+					if (isset($out[$sid])) {
+						$out[$sid]['boarding_total'] = (int) $row['boarding_total'];
+					}
+				}
+
+				if ($db->tableExists('class_records')) {
+					$classSql = "SELECT st.school_id, COUNT(DISTINCT cr.class) AS classes_marked
+						FROM daily_attendance da
+						INNER JOIN students st ON st.id = da.student_id
+						INNER JOIN class_records cr ON cr.student = st.id AND cr.status = 1"
+						. ($yearId > 0 ? " AND cr.year = {$yearId}" : '') . "
+						WHERE st.school_id IN ({$idList})
+							AND DATE(da.datee) = {$today}
+						GROUP BY st.school_id";
+					foreach ($db->query($classSql)->getResultArray() as $row) {
+						$sid = (int) $row['school_id'];
+						if (isset($out[$sid])) {
+							$out[$sid]['classes_marked'] = (int) $row['classes_marked'];
+						}
+					}
+				}
+			}
+
+			if ($db->tableExists('course_attendance') && $db->tableExists('classes')) {
+				$courseSql = "SELECT c.school_id,
+						COUNT(DISTINCT ca.id) AS course_sessions,
+						COUNT(car.student_id) AS course_present
+					FROM course_attendance ca
+					INNER JOIN classes c ON c.id = ca.class_id
+					LEFT JOIN course_attendance_records car ON car.attendance_id = ca.id
+					WHERE c.school_id IN ({$idList})
+						AND DATE(ca.created_at) = {$today}
+					GROUP BY c.school_id";
+				if (!$db->tableExists('course_attendance_records')) {
+					$courseSql = "SELECT c.school_id,
+							COUNT(DISTINCT ca.id) AS course_sessions,
+							0 AS course_present
+						FROM course_attendance ca
+						INNER JOIN classes c ON c.id = ca.class_id
+						WHERE c.school_id IN ({$idList})
+							AND DATE(ca.created_at) = {$today}
+						GROUP BY c.school_id";
+				}
+				foreach ($db->query($courseSql)->getResultArray() as $row) {
+					$sid = (int) $row['school_id'];
+					if (!isset($out[$sid])) {
+						continue;
+					}
+					$out[$sid]['course_sessions'] = (int) $row['course_sessions'];
+					$out[$sid]['course_present'] = (int) $row['course_present'];
+				}
+			}
+		} catch (\Throwable $e) {
+			return $out;
+		}
+		return $out;
 	}
 
 	/**
