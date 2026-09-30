@@ -262,6 +262,9 @@ class WisdomGroupOverview
 			$rows[$i]['early_today'] = $pack['early'];
 			$rows[$i]['locations'] = !empty($row['is_master']) ? $masterLocations : [];
 			$rows[$i]['att_summary'] = [];
+			$rows[$i]['prep_summary'] = (!empty($row['is_master']) && $this->isWisdomSchoolRwanda((string) ($row['name'] ?? '')))
+				? $this->rwandaPrepSummary((int) $row['id'])
+				: [];
 			$totals['staff_absent'] += count($pack['absent']);
 		}
 		$childIds = [];
@@ -696,5 +699,72 @@ class WisdomGroupOverview
 	{
 		$value = strtoupper(trim((string) $value));
 		return $value !== '' && (strpos($value, 'WISDOM') !== false || strpos($value, 'WIS-') === 0);
+	}
+
+	private function isWisdomSchoolRwanda(string $name): bool
+	{
+		$name = strtoupper(trim((string) preg_replace('/\s+/', ' ', $name)));
+		foreach (SchoolHierarchyService::WISDOM_RWANDA_NAMES as $candidate) {
+			if ($name === strtoupper($candidate)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Today's morning and evening prep invigilators for Wisdom School Rwanda.
+	 *
+	 * @return array{morning: array{present: int, absent: int, people: list<array<string, string>>}, evening: array{present: int, absent: int, people: list<array<string, string>>}}
+	 */
+	private function rwandaPrepSummary(int $schoolId): array
+	{
+		$blank = ['present' => 0, 'absent' => 0, 'people' => []];
+		$out = ['morning' => $blank, 'evening' => $blank];
+		if ($schoolId < 1) {
+			return $out;
+		}
+		try {
+			$today = date('Y-m-d');
+			$report = (new \App\Models\PrepTimetableModel())->attendanceReport($schoolId, $today, $today);
+			$day = null;
+			foreach ($report['days'] ?? [] as $candidate) {
+				if (($candidate['date'] ?? '') === $today) {
+					$day = $candidate;
+					break;
+				}
+			}
+			if (!$day) {
+				return $out;
+			}
+			foreach (['morning', 'evening'] as $slot) {
+				$pack = $day['slots'][$slot] ?? [];
+				$people = [];
+				foreach ($pack['present'] ?? [] as $person) {
+					$people[] = [
+						'name' => (string) ($person['name'] ?? ''),
+						'post' => (string) ($person['post'] ?? ''),
+						'status' => 'present',
+						'time' => (string) ($person['time'] ?? ''),
+					];
+				}
+				foreach ($pack['absent'] ?? [] as $person) {
+					$people[] = [
+						'name' => (string) ($person['name'] ?? ''),
+						'post' => (string) ($person['post'] ?? ''),
+						'status' => 'absent',
+						'time' => '',
+					];
+				}
+				$out[$slot] = [
+					'present' => count($pack['present'] ?? []),
+					'absent' => count($pack['absent'] ?? []),
+					'people' => $people,
+				];
+			}
+		} catch (\Throwable $e) {
+			return ['morning' => $blank, 'evening' => $blank];
+		}
+		return $out;
 	}
 }

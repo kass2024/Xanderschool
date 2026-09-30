@@ -323,6 +323,19 @@
 						.wg-att span { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #64748b; }
 						.wg-att b { display: block; margin-top: 2px; font-size: 1.05rem; line-height: 1.15; color: #0f172a; }
 						.wg-att small { display: block; color: #64748b; font-size: .72rem; }
+						.wg-prep { margin-top: 12px; }
+						.wg-prep-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+						.wg-prep-head h5 { margin: 0; font-size: .78rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #1d4ed8; }
+						.wg-prep-head a { font-size: .78rem; font-weight: 700; color: #1d4ed8; }
+						.wg-prep-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+						.wg-prep article { background: #fff; border: 1px solid #dbeafe; border-radius: 10px; padding: 8px 10px; min-width: 0; }
+						.wg-prep article h6 { margin: 0 0 4px; font-size: .82rem; color: #0f172a; }
+						.wg-prep .ok { color: #047857; font-weight: 700; }
+						.wg-prep .no { color: #b91c1c; font-weight: 700; margin-left: 8px; }
+						.wg-prep ul { list-style: none; margin: 6px 0 0; padding: 0; }
+						.wg-prep li { display: flex; justify-content: space-between; gap: 8px; font-size: .8rem; padding: 3px 0; border-top: 1px solid #f1f5f9; }
+						.wg-prep li span { color: #64748b; }
+						@media (min-width: 700px) { .wg-prep-grid { grid-template-columns: 1fr 1fr; } }
 						.wg-book { display: inline-block; margin: 0 0 12px; background: #012F6B; color: #fff; border-radius: 10px; padding: 8px 14px; font-size: .85rem; font-weight: 700; text-decoration: none; }
 						.wg-book:hover { color: #fff; background: #011f4b; }
 						.wg-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
@@ -375,6 +388,44 @@
 									<span><?= (int) $loc['checked_in']; ?> in · <?= (int) $loc['checked_out']; ?> out · <?= (int) $loc['inside']; ?> inside</span>
 								</div>
 								<?php endforeach; ?>
+							</div>
+							<?php endif; ?>
+							<?php if (!empty($wgMaster['prep_summary'])):
+								$prep = $wgMaster['prep_summary'];
+							?>
+							<div class="wg-prep">
+								<div class="wg-prep-head">
+									<h5>Invigilation today</h5>
+									<a href="<?= base_url('prep_invigilation_report'); ?>">Prep attendance</a>
+								</div>
+								<div class="wg-prep-grid">
+									<?php foreach (['morning' => 'Morning prep', 'evening' => 'Evening prep'] as $prepSlot => $prepLabel):
+										$prepPack = $prep[$prepSlot] ?? ['present' => 0, 'absent' => 0, 'people' => []];
+									?>
+									<article>
+										<h6><?= esc($prepLabel); ?>
+											<span class="ok">Present <?= (int) ($prepPack['present'] ?? 0); ?></span>
+											<span class="no">Absent <?= (int) ($prepPack['absent'] ?? 0); ?></span>
+										</h6>
+										<?php if (empty($prepPack['people'])): ?>
+											<div style="color:#64748b;font-size:.8rem;">No invigilators on duty</div>
+										<?php else: ?>
+										<ul>
+											<?php foreach ($prepPack['people'] as $inv): ?>
+											<li>
+												<div><?= esc($inv['name']); ?><?php if (trim((string) ($inv['post'] ?? '')) !== ''): ?> <span>· <?= esc($inv['post']); ?></span><?php endif; ?></div>
+												<?php if (($inv['status'] ?? '') === 'present'): ?>
+													<strong class="ok"><?= esc($inv['time'] !== '' ? $inv['time'] : 'Present'); ?></strong>
+												<?php else: ?>
+													<strong class="no" style="margin-left:0;">Absent</strong>
+												<?php endif; ?>
+											</li>
+											<?php endforeach; ?>
+										</ul>
+										<?php endif; ?>
+									</article>
+									<?php endforeach; ?>
+								</div>
 							</div>
 							<?php endif; ?>
 							<div class="wg-ranks">

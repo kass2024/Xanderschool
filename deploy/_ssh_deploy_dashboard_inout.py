@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy dashboard student in/out by school."""
+"""Deploy Wisdom School Rwanda invigilation summary on the dashboard."""
 from __future__ import annotations
 
 import os
@@ -15,7 +15,8 @@ USER = "root"
 PASSWORD = os.environ.get("VPS_PASSWORD", "6W7sa2g4dMEwcN80ZU")
 REMOTE_APP = "/opt/xander-school/app"
 FILES = [
-    "app/Libraries/WisdomPopulationReport.php",
+    "app/Services/WisdomGroupOverview.php",
+    "app/Views/pages/dashboard.php",
 ]
 
 
@@ -36,8 +37,10 @@ cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 6
 docker exec xander_school_app php -r 'opcache_reset();'
-docker exec xander_school_app php -l /var/www/html/app/Libraries/WisdomPopulationReport.php
-docker exec xander_school_app grep -n "holiday classes excluded" /var/www/html/app/Libraries/WisdomPopulationReport.php
+docker exec xander_school_app php -l /var/www/html/app/Services/WisdomGroupOverview.php
+docker exec xander_school_app php -l /var/www/html/app/Views/pages/dashboard.php
+docker exec xander_school_app grep -n "Invigilation today" /var/www/html/app/Views/pages/dashboard.php
+docker exec xander_school_app grep -n "isWisdomSchoolRwanda" /var/www/html/app/Services/WisdomGroupOverview.php
 echo DONE
 """
     _, o, e = c.exec_command(cmd, timeout=240)
