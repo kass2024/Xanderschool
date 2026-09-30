@@ -260,7 +260,7 @@ class WisdomStaffCardRenderer
 			imagedestroy($src);
 			return;
 		}
-		$square = $normalizer->coverCenterTop($src, $d, $d);
+		$square = $normalizer->fitPhotoToCircle($src, $cx, $cy, $d);
 		imagedestroy($src);
 		if (!$square) {
 			return;

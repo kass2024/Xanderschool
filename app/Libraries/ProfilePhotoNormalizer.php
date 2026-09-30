@@ -651,6 +651,164 @@ class ProfilePhotoNormalizer
 	}
 
 	/**
+	 * Cover-fit any staff photo into a fixed circle.
+	 * The picture is only scaled, positioned, and cropped. Colors, features, and
+	 * background are left as they are. Eyes land about 40% down the circle, the
+	 * face stays inside it, and shoulders remain when the source includes them.
+	 * Circle X/Y are the hole center on the card; they do not change the crop size.
+	 *
+	 * @param resource|\GdImage $image
+	 * @return resource|\GdImage|null
+	 */
+	public function fitPhotoToCircle($image, int $circleX, int $circleY, int $circleDiameter)
+	{
+		if (!is_resource($image) && !is_object($image)) {
+			return null;
+		}
+		$circleDiameter = max(32, $circleDiameter);
+		$sw = imagesx($image);
+		$sh = imagesy($image);
+		if ($sw < 2 || $sh < 2) {
+			return null;
+		}
+		$face = $this->staffFaceAnchor($image);
+		if ($face === null) {
+			$srcSize = (float) min($sw, $sh);
+			$srcX = ($sw - $srcSize) / 2.0;
+			$srcY = ($sh - $srcSize) / 2.0;
+		} else {
+			[$srcX, $srcY, $srcSize] = $this->staffCircleWindow($face, $sw, $sh, $circleDiameter);
+		}
+		$srcSize = max(1.0, min($srcSize, (float) $sw, (float) $sh));
+		$srcX = max(0.0, min($sw - $srcSize, $srcX));
+		$srcY = max(0.0, min($sh - $srcSize, $srcY));
+		$sx = (int) round($srcX);
+		$sy = (int) round($srcY);
+		$ss = max(1, (int) round($srcSize));
+		if ($sx + $ss > $sw) {
+			$sx = max(0, $sw - $ss);
+		}
+		if ($sy + $ss > $sh) {
+			$sy = max(0, $sh - $ss);
+		}
+		if ($sx + $ss > $sw) {
+			$ss = max(1, $sw - $sx);
+		}
+		if ($sy + $ss > $sh) {
+			$ss = max(1, $sh - $sy);
+		}
+		$dst = imagecreatetruecolor($circleDiameter, $circleDiameter);
+		$this->hiQualityResample($dst, $image, 0, 0, $sx, $sy, $circleDiameter, $circleDiameter, $ss, $ss);
+		return $dst;
+	}
+
+	/**
+	 * @param array{cx:int,crown:int,chin:int,eyes:int,headW:int} $face
+	 * @return array{0:float,1:float,2:float} source x, y, window size
+	 */
+	private function staffCircleWindow(array $face, int $sw, int $sh, int $diameter): array
+	{
+		$headH = max(8.0, (float) ($face['chin'] - $face['crown']));
+		$headW = max(8.0, (float) $face['headW']);
+		$scale = (0.56 * $diameter) / $headH;
+		$scale = min($scale, (0.90 * $diameter) / $headW);
+		$scale = max($scale, $diameter / $sw, $diameter / $sh);
+		$srcSize = $diameter / $scale;
+		if ($srcSize > $sw || $srcSize > $sh) {
+			$srcSize = (float) min($sw, $sh);
+		}
+		$srcX = $face['cx'] - ($srcSize / 2.0);
+		$srcY = $face['eyes'] - (0.40 * $srcSize);
+		$crownLimit = $face['crown'] - (0.04 * $srcSize);
+		if ($srcY > $crownLimit) {
+			$srcY = $crownLimit;
+		}
+		$chinLimit = $face['chin'] - (0.82 * $srcSize);
+		if ($srcY < $chinLimit) {
+			$srcY = $chinLimit;
+		}
+		return [$srcX, $srcY, $srcSize];
+	}
+
+	/**
+	 * @param resource|\GdImage $src
+	 * @return array{cx:int,crown:int,chin:int,eyes:int,headW:int}|null
+	 */
+	private function staffFaceAnchor($src): ?array
+	{
+		$sw = imagesx($src);
+		$sh = imagesy($src);
+		[$bx, $by, $bw, $bh] = $this->letterboxBox($src, $sw, $sh);
+		if ($bw < 8 || $bh < 8) {
+			$bx = 0;
+			$by = 0;
+			$bw = $sw;
+			$bh = $sh;
+		}
+		$wall = $this->sampleInnerWall($src, $bx, $by, $bw, $bh);
+		$subject = $this->visaSubjectBox($src, $bx, $by, $bw, $bh, $wall);
+		if ($subject === null) {
+			return null;
+		}
+		[$px, $py, $pw, $ph] = $subject;
+		$crown = $this->visaCrown($src, $px, $py, $pw, $ph, $wall);
+		$head = $this->visaHeadSpan($src, $px, $crown, $pw, $ph, $wall);
+		$headW = max(8, (int) $head['w']);
+		$cx = (int) $head['cx'];
+		$chin = $this->staffChin($src, $cx, $crown, $headW);
+		if ($chin <= $crown + 4) {
+			$chin = min($sh - 1, $crown + (int) round($headW * 1.35));
+		}
+		$eyes = (int) round($crown + (0.45 * ($chin - $crown)));
+		return [
+			'cx' => $cx,
+			'crown' => $crown,
+			'chin' => $chin,
+			'eyes' => max($crown + 1, min($chin - 1, $eyes)),
+			'headW' => $headW,
+		];
+	}
+
+	/**
+	 * Lowest skin row under the crown, stopping at the neck so a shirt is not the chin.
+	 *
+	 * @param resource|\GdImage $im
+	 */
+	private function staffChin($im, int $cx, int $crown, int $headW): int
+	{
+		$sh = imagesy($im);
+		$half = max(2, (int) round($headW * 0.22));
+		$x0 = max(0, $cx - $half);
+		$x1 = min(imagesx($im) - 1, $cx + $half);
+		$limit = min($sh - 1, $crown + (int) round($headW * 1.55));
+		$step = max(1, (int) floor($headW / 36));
+		$lastSkin = $crown;
+		$gap = 0;
+		for ($y = $crown; $y <= $limit; $y += $step) {
+			$skin = 0;
+			$seen = 0;
+			for ($x = $x0; $x <= $x1; $x += $step) {
+				$seen++;
+				$rgb = imagecolorat($im, $x, $y) & 0xFFFFFF;
+				if ($this->isSkinTone(($rgb >> 16) & 255, ($rgb >> 8) & 255, $rgb & 255)) {
+					$skin++;
+				}
+			}
+			if ($seen > 0 && ($skin / $seen) >= 0.34) {
+				$lastSkin = $y;
+				$gap = 0;
+				continue;
+			}
+			$gap += $step;
+			if ($lastSkin > $crown + (int) round($headW * 0.65) && $gap > (int) round($headW * 0.10)) {
+				break;
+			}
+		}
+		$maxChin = min($sh - 1, $crown + (int) round($headW * 1.40));
+		return min($lastSkin, $maxChin);
+	}
+
+	/**
 	 * Place the portrait in the staff-card circle. The square is clipped round.
 	 * Chin-to-crown is a US-visa share of the frame, with neck and shoulders below.
 	 *

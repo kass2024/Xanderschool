@@ -1601,7 +1601,7 @@ if (!function_exists('profile_photo_staff_circle_src')) {
 		if (!is_dir($cacheDir)) {
 			@mkdir($cacheDir, 0775, true);
 		}
-		$key = md5($real . '|' . @filemtime($real) . "|staffcircle{$outW}x{$outH}|v8visa58") . '.jpg';
+		$key = md5($real . '|' . @filemtime($real) . "|staffcircle{$outW}x{$outH}|v9face40") . '.jpg';
 		$cached = $cacheDir . DIRECTORY_SEPARATOR . $key;
 		if (is_file($cached)) {
 			return '_card_img/' . $key;
@@ -1633,7 +1633,8 @@ if (!function_exists('profile_photo_staff_circle_src')) {
 			return asset_card_img_src($relative, null, $outW, $outH);
 		}
 		$n = new \App\Libraries\ProfilePhotoNormalizer();
-		$dst = $n->coverCenterTop($src, $outW, $outH);
+		$side = max($outW, $outH);
+		$dst = $n->fitPhotoToCircle($src, 0, 0, $side);
 		imagedestroy($src);
 		if (!$dst) {
 			return asset_card_img_src($relative, null, $outW, $outH);

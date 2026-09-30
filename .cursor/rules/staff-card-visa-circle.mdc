@@ -9,16 +9,15 @@ Keep this design for every Wisdom campus staff card (Ngororero and any school ad
 
 ## Look
 
-- The photo is clipped to the artwork circle and fills that hole.
-- US visa head size: chin to crown is about **50–66%** of the frame (target **58%**).
-- The crown sits about **14%** down so the round edge does not cut hair.
-- Shoulders fill the circle. A desk or ceremony shot is zoomed to head-and-shoulders. A face that is already tight is not zoomed further.
-- White background. No extra ring, badge, or colored overlay on the photo.
+- The photo is clipped to the artwork circle and fills that hole. No white gaps inside the circle.
+- Scale with cover only. Do not stretch, recolor, or replace the background.
+- Center the face. Eyes sit about **40%** down the circle (38–42%). Keep the forehead, chin, and ears inside the circle, with a little of the shoulders when the source has them.
+- A close-up is not zoomed further. A full-body or wide shot is scaled until the face fills that same circle.
 
 ## Use the shared code
 
-- Frame with `ProfilePhotoNormalizer::coverCenterTop()`.
-- HTML/PDF cache key must change when the frame changes (`profile_photo_staff_circle_src`, currently `v8visa58`). Student cards use the same frame (`v18visa58`).
+- Frame with `ProfilePhotoNormalizer::fitPhotoToCircle()`.
+- HTML/PDF cache key must change when the frame changes (`profile_photo_staff_circle_src`, currently `v9face40`). Student cards stay on `v18visa58`.
 - Place the bitmap with `WisdomStaffCardRenderer` hole constants measured on the **591×1004** artwork: center `(296, 314)`, diameter **272**, inset **1.0** (fill the white hole, leave the black ring and blue artwork outside).
 - The round `<img>` uses `object-fit: fill` and `min-width/min-height: 100%` so flex layout cannot shrink it inside the circle.
 
