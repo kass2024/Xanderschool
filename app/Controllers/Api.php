@@ -2555,7 +2555,14 @@ public function check_school($option)
 							$st_data = $this->_get_parent_phone($info['student_id']);
 							$phone = $st_data['phone'];
 							if (strlen($phone) > 3) {
-								$msg = $this->get_discipline_msg($st_data['name'], $info['marks'], $info['comment'], (int) ($info['type'] ?? 1) === 0);
+								$batchLang = strtolower(trim((string) ($info['lang'] ?? '')));
+								$msg = $this->get_discipline_msg(
+									$st_data['name'],
+									$info['marks'],
+									$info['comment'],
+									(int) ($info['type'] ?? 1) === 0,
+									($batchLang === 'rw' || $batchLang === 'en') ? $batchLang : null
+								);
                                 
                                 if ($this->sendSMS($phone, $msg, $result)) {
                                     //save sent sms
@@ -3548,6 +3555,27 @@ public function get_boarding_classes()
 		return $this->response->setJSON(['success' => 1, 'lang' => $lang, 'groups' => $groups]);
 	}
 
+	public function school_monitor()
+	{
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id'));
+		$this->_preset($schoolId);
+		helper('qonics');
+		$postId = (int) ($this->request->getPost('post_id') ?: $this->request->getGet('post_id'));
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$overview = new \App\Services\WisdomGroupOverview();
+		$homeId = (int) school_hierarchy_home_id();
+		if ($homeId < 1) {
+			$homeId = $schoolId;
+		}
+		if ($overview->showGroupDashboard($homeId, $postId, $schoolId)) {
+			$data = $overview->summary($homeId, $yearId);
+		} else {
+			$data = $overview->schoolSummary($schoolId, $yearId);
+		}
+		$data['success'] = 1;
+		return $this->response->setJSON($data);
+	}
+
 	public function save_discipline()
 	{
 		$school_id = $this->request->getPost("school_id");
@@ -3568,7 +3596,10 @@ public function get_boarding_classes()
 		if (!$code) {
 			return $this->response->setJSON(["error" => "Select a conduct code from the school discipline law."]);
 		}
-		$lang = \App\Models\DisciplineCodeModel::discLang();
+		$postedLang = strtolower(trim((string) $this->request->getPost('lang')));
+		$lang = ($postedLang === 'rw' || $postedLang === 'en')
+			? $postedLang
+			: \App\Models\DisciplineCodeModel::discLang();
 		$prev = $codeMdl->countOccurrences((int) $school_id, (int) $student_id, $codeId, (int) $active);
 		$resolved = $codeMdl->resolveOccurrence($code, $prev);
 		$sendRemarks = (int) $types === 0;
@@ -3598,7 +3629,7 @@ public function get_boarding_classes()
 				$st_data = $this->_get_parent_phone($student_id);
 				$phone = $st_data['phone'];
 				if (strlen($phone) > 3) {
-					$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment, $sendRemarks);
+					$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment, $sendRemarks, $lang);
 //					if ($this->_send_sms($phone, $msg, $result, $this->data['remaining_sms'], $this->data['school_acronym'])) {
 //						//save sent sms
 //						$sms_count = (int)ceil(strlen($msg) / PER_SMS);

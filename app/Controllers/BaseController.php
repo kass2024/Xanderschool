@@ -546,8 +546,11 @@ class BaseController extends Controller
 			'message' => $message,
 		];
 	}
-	public function get_discipline_msg($name,$marks,$reason,$sendRemarks = false){
-		$lang = \App\Models\DisciplineCodeModel::discLang();
+	public function get_discipline_msg($name,$marks,$reason,$sendRemarks = false,$lang = null){
+		$lang = strtolower(trim((string) $lang));
+		if ($lang !== 'rw' && $lang !== 'en') {
+			$lang = \App\Models\DisciplineCodeModel::discLang();
+		}
 		$name = trim((string) $name);
 		$reason = trim((string) $reason);
 		$marks = (int) $marks;
