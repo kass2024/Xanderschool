@@ -359,6 +359,36 @@ public function testEmail()
 			->where("IFNULL({$levelAlias}.title,'') NOT LIKE '%Holiday%'", null, false);
 	}
 
+	/** All-schools attendance workbook for the Director and Executive Principal. */
+	public function wisdom_population_report()
+	{
+		if ($this->session->get($this->log_status) == null) {
+			return redirect()->to(base_url('login'));
+		}
+		$this->restoreLoggedInSchool();
+		$this->_preset();
+		helper('qonics');
+		$postId = (int) $this->session->get('soma_post');
+		$homeId = (int) school_hierarchy_home_id();
+		$allowed = [
+			\App\Models\PostsModel::PRINCIPAL_ID,
+			\App\Models\PostsModel::DIRECTOR_ID,
+		];
+		$overview = new \App\Services\WisdomGroupOverview();
+		if (!in_array($postId, $allowed, true) || !$overview->isWisdomMaster($homeId)) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		$yearId = (int) ($this->data['academic_year'] ?? $this->data['academic_year_id'] ?? 0);
+		$date = date('Y-m-d');
+		$posted = trim((string) $this->request->getGet('date'));
+		if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $posted)) {
+			$date = $posted;
+		}
+		@ini_set('memory_limit', '512M');
+		@set_time_limit(180);
+		\App\Libraries\WisdomPopulationReport::stream($homeId, $yearId, $date);
+	}
+
 	/**
 	 * Distinct active students in non-holiday classes for the academic year (dashboard "Total Students").
 	 */

@@ -323,6 +323,8 @@
 						.wg-att span { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #64748b; }
 						.wg-att b { display: block; margin-top: 2px; font-size: 1.05rem; line-height: 1.15; color: #0f172a; }
 						.wg-att small { display: block; color: #64748b; font-size: .72rem; }
+						.wg-book { display: inline-block; margin: 0 0 12px; background: #012F6B; color: #fff; border-radius: 10px; padding: 8px 14px; font-size: .85rem; font-weight: 700; text-decoration: none; }
+						.wg-book:hover { color: #fff; background: #011f4b; }
 						.wg-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
 						.wg-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; min-width: 0; }
 						.wg-card h4 { margin: 0 0 8px; font-size: 1rem; }
@@ -335,6 +337,9 @@
 						}
 					</style>
 					<div class="wg-wrap">
+						<?php if (in_array((int) session('soma_post'), [\App\Models\PostsModel::PRINCIPAL_ID, \App\Models\PostsModel::DIRECTOR_ID], true)): ?>
+						<a class="wg-book" href="<?= base_url('wisdom-population-report'); ?>">Attendance workbook</a>
+						<?php endif; ?>
 						<div class="wg-kpis">
 							<div class="wg-kpi"><b><?= (int) $wgTotals['students']; ?></b><span><?= $wgSingle ? 'Students' : 'Students, all schools'; ?></span></div>
 							<div class="wg-kpi green"><b><?= (int) $wgTotals['boys']; ?></b><span>Boys</span></div>

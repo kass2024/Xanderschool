@@ -15,8 +15,10 @@ USER = "root"
 PASSWORD = os.environ.get("VPS_PASSWORD", "6W7sa2g4dMEwcN80ZU")
 REMOTE_APP = "/opt/xander-school/app"
 FILES = [
-    "app/Services/WisdomGroupOverview.php",
+    "app/Controllers/Home.php",
+    "app/Config/Routes.php",
     "app/Views/pages/dashboard.php",
+    "app/Libraries/WisdomPopulationReport.php",
 ]
 
 
@@ -37,9 +39,10 @@ cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 6
 docker exec xander_school_app php -r 'opcache_reset();'
-docker exec xander_school_app php -l /var/www/html/app/Services/WisdomGroupOverview.php
-docker exec xander_school_app grep -n "Course attendance" /var/www/html/app/Views/pages/dashboard.php
-docker exec xander_school_app grep -n "function childAttendanceSummaries" /var/www/html/app/Services/WisdomGroupOverview.php
+docker exec xander_school_app php -l /var/www/html/app/Controllers/Home.php
+docker exec xander_school_app php -l /var/www/html/app/Libraries/WisdomPopulationReport.php
+docker exec xander_school_app grep -n "wisdom-population-report" /var/www/html/app/Config/Routes.php
+docker exec xander_school_app grep -n "Attendance workbook" /var/www/html/app/Views/pages/dashboard.php
 echo DONE
 """
     _, o, e = c.exec_command(cmd, timeout=240)
