@@ -2555,7 +2555,7 @@ public function check_school($option)
 							$st_data = $this->_get_parent_phone($info['student_id']);
 							$phone = $st_data['phone'];
 							if (strlen($phone) > 3) {
-								$msg = $this->get_discipline_msg($st_data['name'], $info['marks'], $info['comment']);
+								$msg = $this->get_discipline_msg($st_data['name'], $info['marks'], $info['comment'], (int) ($info['type'] ?? 1) === 0);
                                 
                                 if ($this->sendSMS($phone, $msg, $result)) {
                                     //save sent sms
@@ -3571,15 +3571,12 @@ public function get_boarding_classes()
 		$lang = \App\Models\DisciplineCodeModel::discLang();
 		$prev = $codeMdl->countOccurrences((int) $school_id, (int) $student_id, $codeId, (int) $active);
 		$resolved = $codeMdl->resolveOccurrence($code, $prev);
-		$marks = ($types == 0) ? 0 : $resolved['marks'];
+		$sendRemarks = (int) $types === 0;
+		$marks = $sendRemarks ? 0 : $resolved['marks'];
 		$title = \App\Models\DisciplineCodeModel::titleFor($code, $lang);
 		$sanction = $lang === 'rw' ? $resolved['sanction_rw'] : $resolved['sanction_en'];
 		$comment = trim($title . ' (' . ($lang === 'rw' ? $resolved['label_rw'] : $resolved['label_en']) . ')'
 			. ($sanction !== '' ? ' — ' . $sanction : ''));
-		if ($types == 0) {
-			$notify = 0;
-			$marks = 0;
-		}
 		if (strlen($student_id) == 0) {
 			return $this->response->setJSON(array("error" => lang("app.pleaseadStudent")));
 		}
@@ -3601,7 +3598,7 @@ public function get_boarding_classes()
 				$st_data = $this->_get_parent_phone($student_id);
 				$phone = $st_data['phone'];
 				if (strlen($phone) > 3) {
-					$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment);
+					$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment, $sendRemarks);
 //					if ($this->_send_sms($phone, $msg, $result, $this->data['remaining_sms'], $this->data['school_acronym'])) {
 //						//save sent sms
 //						$sms_count = (int)ceil(strlen($msg) / PER_SMS);

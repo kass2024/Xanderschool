@@ -11843,9 +11843,7 @@ public function getApplicationDocs($id = null)
 			return $this->response->setJSON(["error" => "Select a conduct code from the school discipline law."]);
 		}
 		$lang = \App\Models\DisciplineCodeModel::discLang();
-		if ($types == 0) {
-			$notify = 0;
-		}
+		$sendRemarks = (int) $types === 0;
 		if (!is_array($formids)) {
 			return $this->response->setJSON(array("error" => lang("app.pleaseAddErr")));
 		}
@@ -11856,7 +11854,7 @@ public function getApplicationDocs($id = null)
 			$prev = $codeMdl->countOccurrences((int) $school_id, $a, $codeId, (int) $active) + (int) ($batchSeen[$a] ?? 0);
 			$batchSeen[$a] = (int) ($batchSeen[$a] ?? 0) + 1;
 			$resolved = $codeMdl->resolveOccurrence($code, $prev);
-			$marks = ($types == 0) ? 0 : $resolved['marks'];
+			$marks = $sendRemarks ? 0 : $resolved['marks'];
 			$title = \App\Models\DisciplineCodeModel::titleFor($code, $lang);
 			$sanction = $lang === 'rw' ? $resolved['sanction_rw'] : $resolved['sanction_en'];
 			$comment = trim($title . ' (' . ($lang === 'rw' ? $resolved['label_rw'] : $resolved['label_en']) . ')'
@@ -11879,7 +11877,7 @@ public function getApplicationDocs($id = null)
 					$st_data = $this->_get_parent_phone($formid);
 					$phone = $st_data['phone'];
 					if (strlen($phone) > 3) {
-						$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment);
+						$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment, $sendRemarks);
 						if ($this->sendSMS($phone, $msg, $result)) {
 							//save sent sms
 							$sms_count = (int)ceil(strlen($msg) / PER_SMS);

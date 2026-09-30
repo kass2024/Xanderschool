@@ -273,7 +273,7 @@ class BaseController extends Controller
 		return $this->sendSMS($phone, $message, $result);
 	}
 
-	public function sendSMS($phone, $message, &$result, $sender = null): bool
+	public function sendSMS($phone, $message, &$result, $sender = null, $timeout = 30): bool
 	{
 		$smsConfig = config('Sms');
 		$smsType = $smsConfig->type;
@@ -319,6 +319,10 @@ class BaseController extends Controller
 			'api_key_prefix' => substr($apiKey, 0, 6) . '…',
 		]);
 
+		$timeout = (int) $timeout;
+		if ($timeout < 4) {
+			$timeout = 4;
+		}
 		$curl = \Config\Services::curlrequest();
 		try {
 			$req = $curl->request('POST', $smsConfig->swiftqomUrl, [
@@ -329,8 +333,8 @@ class BaseController extends Controller
 				'json' => $data,
 				'verify' => false,
 				'http_errors' => false,
-				'timeout' => 30,
-				'connect_timeout' => 10,
+				'timeout' => $timeout,
+				'connect_timeout' => min(5, $timeout),
 			]);
 		} catch (\Throwable $e) {
 			$result = ["code" => 500, "content" => $e->getMessage()];
@@ -542,13 +546,37 @@ class BaseController extends Controller
 			'message' => $message,
 		];
 	}
-	public function get_discipline_msg($name,$marks,$reason){
-		return "Babyeyi dufatanyije kurera, umwana wanyu {$name} akuweho amanota {$marks} y'imyitwarire kubera {$reason}.\nMurakoze";
-
+	public function get_discipline_msg($name,$marks,$reason,$sendRemarks = false){
+		$lang = \App\Models\DisciplineCodeModel::discLang();
+		$name = trim((string) $name);
+		$reason = trim((string) $reason);
+		$marks = (int) $marks;
+		if ($sendRemarks) {
+			if ($lang === 'rw') {
+				return "Babyeyi, {$name} yakoze iki kosa: {$reason}. Murakoze.";
+			}
+			return "Dear parent, {$name} committed this mistake: {$reason}. Thank you.";
+		}
+		if ($marks <= 0) {
+			if ($lang === 'rw') {
+				return "Babyeyi, {$name}: {$reason}. Nta manota yakuweho. Iyi nshuro yabitswe. Murakoze.";
+			}
+			return "Dear parent, {$name}: {$reason}. No marks were deducted. This offence is recorded. Thank you.";
+		}
+		if ($lang === 'rw') {
+			return "Babyeyi, {$name} yakuweho amanota {$marks} y'imyitwarire: {$reason}. Murakoze.";
+		}
+		return "Dear parent, {$name} lost {$marks} conduct marks: {$reason}. Thank you.";
 	}
 	public function get_permisson_msg($name,$destination,$reason){
-		return "babyeyi dufatanyije kurera umwana wanyu {$name} ahawe uruhushya rwo Kujya {$destination} Kubera {$reason}.\nMurakoze";
-
+		$lang = \App\Models\DisciplineCodeModel::discLang();
+		$name = trim((string) $name);
+		$destination = trim((string) $destination);
+		$reason = trim((string) $reason);
+		if ($lang === 'rw') {
+			return "Babyeyi, {$name} ahawe uruhushya rwo kujya {$destination}. Impamvu: {$reason}. Murakoze.";
+		}
+		return "Dear parent, {$name} was given permission to go to {$destination}. Reason: {$reason}. Thank you.";
 	}
 	/**
 	 * This function is used to send push notification to user

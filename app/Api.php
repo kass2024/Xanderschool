@@ -776,7 +776,7 @@ public function get_students($class, $academicYear, $termId = null)
 		$sfMdl = new SchoolFeesModel();;
 		$classMdl = new ClassesModel();
 		$stMdl = new StudentModel();
-		$student_info = $stMdl->select('students.id,sk.name as skul,sk.bank_account,sk.bank_name,studying_mode,regno,concat(students.fname," ",students.lname) as name,concat(l.title," ",d.code," ",c.title) as class,c.id as class_id,d.title as dept_title')
+		$student_info = $stMdl->select('students.id,students.school_id,sk.name as skul,sk.bank_account,sk.bank_name,studying_mode,regno,concat(students.fname," ",students.lname) as name,concat(l.title," ",d.code," ",c.title) as class,c.id as class_id,d.title as dept_title')
 			->join('class_records cr', 'cr.student=students.id')
 			->join('classes c', 'c.id=cr.class')
 			->join('departments d', 'd.id=c.department')
@@ -794,16 +794,30 @@ public function get_students($class, $academicYear, $termId = null)
 			->join("levels l", "l.id=classes.level")
 			->where("classes.id", $student_info->class_id)
 			->get()->getRowArray();
-		$schoolfees = $sfMdl->select("school_fees.id as feesId,(school_fees.amount+coalesce(fd.amount,0)-coalesce(sum(fr.amount),0)) as amount,0 as feesType,'single' as term")
-			->join("(select sum(amount) as amount,feesId from school_fees_discount where student='{$student_info->id}' group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
-			->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id='{$student_info->id}' and fr.fees_type=0", "LEFT")
-			->where("school_fees.level", $level['level_id'])
-			->where("school_fees.department", $level['dept_id'])
-			->where("school_fees.academic_year", $year)
-			->having("amount>", 0)
-			->where("school_fees.term", $term)
-			->get()->getRow();
-		$schoolfees = $schoolfees == null ? array() : $schoolfees;
+		$sfMdl->ensureSchema();
+		$feeLines = $sfMdl->linesForClass(
+			(int) ($student_info->school_id ?? 0),
+			(int) $year,
+			(int) $student_info->class_id,
+			(int) ($level['level_id'] ?? 0),
+			(int) ($level['dept_id'] ?? 0),
+			(int) $term
+		);
+		$feeLines = $sfMdl->attachStudentBalances($feeLines, (int) $student_info->id);
+		$schoolfees = [];
+		if ($feeLines) {
+			$feeLine = $feeLines[0];
+			$expected = SchoolFeesModel::expectedForStudent($feeLine, (int) ($student_info->studying_mode ?? 1), (float) ($feeLine['discount'] ?? 0));
+			$remain = $expected - (float) ($feeLine['paid'] ?? 0);
+			if ($remain > 0) {
+				$schoolfees = [
+					'feesId' => (int) $feeLine['id'],
+					'amount' => $remain,
+					'feesType' => 0,
+					'term' => 'single',
+				];
+			}
+		}
 		$extrafeesM = new ExtraFeesModel();
 		$extrafees = $extrafeesM->select("extra_fees.id as feesId,extra_fees.title,1 as feesType,(extra_fees.amount-coalesce(sum(fr.amount),0)) as amount")
 			->join("fees_records fr", "fr.fees_id=extra_fees.id and fr.student_id='{$student_info->id}' and fr.fees_type=1", "LEFT")
@@ -839,15 +853,24 @@ public function get_students($class, $academicYear, $termId = null)
 			->where("classes.school_id", $school_id)
 			->where("classes.id", $class)
 			->get()->getRowArray();
-		$schoolfrees = $schoolFees->select("school_fees.id,'School fees' as title,0 as type,(school_fees.amount+coalesce(fd.amount,0)) as amount ,coalesce(sum(fr.amount),0) as paid, fr.due_date,school_fees.term")
-			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
-			->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student and fr.fees_type=2", "LEFT")
-			->where("school_fees.level", $level['level_id'])
-			->where("school_fees.department", $level['dept_id'])
-			->where("school_fees.academic_year", $classYear->year)
-			->where("school_fees.school_id", $school_id)
-			->groupBy("school_fees.id")
-			->get()->getResultArray();
+		$stModeRow = (new StudentModel())->select('studying_mode')->find($student);
+		$mode = (int) ($stModeRow['studying_mode'] ?? 1);
+		$schoolFees->ensureSchema();
+		$schoolfrees = $schoolFees->linesForClass(
+			(int) $school_id,
+			(int) ($classYear->year ?? 0),
+			(int) $class,
+			(int) ($level['level_id'] ?? 0),
+			(int) ($level['dept_id'] ?? 0)
+		);
+		$schoolfrees = $schoolFees->attachStudentBalances($schoolfrees, (int) $student);
+		foreach ($schoolfrees as &$sfRow) {
+			$sfRow['title'] = 'School fees';
+			$sfRow['type'] = 0;
+			$sfRow['amount'] = SchoolFeesModel::expectedForStudent($sfRow, $mode, (float) ($sfRow['discount'] ?? 0));
+			unset($sfRow['amount_boarding'], $sfRow['amount_day'], $sfRow['discount'], $sfRow['class_id'], $sfRow['level'], $sfRow['department'], $sfRow['academic_year']);
+		}
+		unset($sfRow);
 
 		$extraFees = new ExtraFeesModel();
 		$extraFeesx = $extraFees->select("extra_fees.id,extra_fees.title,1 as type,extra_fees.amount
@@ -1047,7 +1070,7 @@ public function get_students($class, $academicYear, $termId = null)
 							$st_data = $this->_get_parent_phone($info['student_id']);
 							$phone = $st_data['phone'];
 							if (strlen($phone) > 3) {
-								$msg = $this->get_discipline_msg($st_data['name'], $info['marks'], $info['comment']);
+								$msg = $this->get_discipline_msg($st_data['name'], $info['marks'], $info['comment'], (int) ($info['type'] ?? 1) === 0);
 //								if ($this->_send_sms($phone, $msg, $result, $this->data['remaining_sms'], $this->data['school_acronym'])) {
 //									//save sent sms
 //									$sms_count = (int)ceil(strlen($msg) / PER_SMS);
@@ -1252,7 +1275,7 @@ public function get_boarding_classes()
 		$extraFees = new ExtraFeesModel();
 		$classMdl = new ClassesModel();
 		$classRMdl = new ClassRecordModel();
-		$class_data = $classRMdl->select("class,st.transport_money")
+		$class_data = $classRMdl->select("class,st.transport_money,st.studying_mode")
 			->join("students st", "st.id = class_records.student")
 			->where("student", $student_id)
 			->where("year", $year)
@@ -1276,19 +1299,25 @@ public function get_boarding_classes()
 			->where("classes.school_id", $school_id)
 			->where("classes.id", $class)
 			->get()->getRowArray();
-		$schoolfrees = $schoolFees->select("(school_fees.amount+coalesce(fd.amount,0)) as skl_amount ,coalesce(sum(fr.amount),0) as paidschoolfees")
-			->join("(select sum(amount) as amount,feesId from school_fees_discount where student=$student_id group by feesId) fd", "fd.feesId=school_fees.id", "LEFT")
-			->join("fees_records fr", "fr.fees_id=school_fees.id and fr.student_id=$student_id and fr.fees_type=0 and fr.status=1", "LEFT")
-			->where("school_fees.level", $level['level_id'])
-			->where("school_fees.department", $level['dept_id'])
-			->where("school_fees.academic_year", $year)
-			->where("school_fees.term", $term)
-			->where("school_fees.school_id", $school_id)
-			->groupBy("school_fees.academic_year")
-			->groupBy("school_fees.term")
-			->get()->getRowArray();
-		if ($schoolfrees == null)
+		$schoolFees->ensureSchema();
+		$schoolfreesRows = $schoolFees->linesForClass(
+			(int) $school_id,
+			(int) $year,
+			(int) $class,
+			(int) ($level['level_id'] ?? 0),
+			(int) ($level['dept_id'] ?? 0),
+			(int) $term
+		);
+		$schoolfreesRows = $schoolFees->attachStudentBalances($schoolfreesRows, (int) $student_id);
+		$feeRow = $schoolfreesRows[0] ?? null;
+		if ($feeRow == null) {
 			$schoolfrees = array("skl_amount" => "0", "paidschoolfees" => "0");
+		} else {
+			$schoolfrees = [
+				"skl_amount" => SchoolFeesModel::expectedForStudent($feeRow, (int) ($class_data->studying_mode ?? 1), (float) ($feeRow['discount'] ?? 0)),
+				"paidschoolfees" => (float) ($feeRow['paid'] ?? 0),
+			];
+		}
 		$schoolfrees['transport_money'] = $class_data->transport_money;
 		$data = array_merge($extraFeesx, $schoolfrees);
 		$data['success'] = 1;
@@ -1542,9 +1571,8 @@ public function get_boarding_classes()
 		$active = $this->data['active_term'];
 		$created_by = $this->request->getPost("operator");
 		$student_id = $this->request->getPost("student_id");
-		if ($types == 0) {
-			//behavior, force remove marks and notify
-			$notify = 0;
+		$sendRemarks = (int) $types === 0;
+		if ($sendRemarks) {
 			$marks = 0;
 		}
 		if (strlen($student_id) == 0) {
@@ -1567,7 +1595,7 @@ public function get_boarding_classes()
 				$st_data = $this->_get_parent_phone($student_id);
 				$phone = $st_data['phone'];
 				if (strlen($phone) > 3) {
-					$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment);
+					$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment, $sendRemarks);
 //					if ($this->_send_sms($phone, $msg, $result, $this->data['remaining_sms'], $this->data['school_acronym'])) {
 //						//save sent sms
 //						$sms_count = (int)ceil(strlen($msg) / PER_SMS);

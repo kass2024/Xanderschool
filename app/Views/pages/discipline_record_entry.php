@@ -102,14 +102,6 @@ $discGroups = $discipline_code_groups ?? [];
           </div>
 
           <div class="disc-form-group">
-            <label for="choose_disc_type"><?= disc_t('Type', 'Ubwoko'); ?></label>
-            <select class="form-control select2" id="choose_disc_type" name="discipline_type">
-              <option value="1" selected><?= disc_t('Reduce discipline marks', 'Gugabanya amanota y\'imyitwarire'); ?></option>
-              <option value="0"><?= disc_t('Behaviour comments', 'Ibitekerezo ku myitwarire'); ?></option>
-            </select>
-          </div>
-
-          <div class="disc-form-group">
             <label for="disc_code_filter"><?= disc_t('School conduct code', 'Amabwiriza y\'ishuri'); ?></label>
             <select class="disc-code-native" id="disc_code_id" name="code_id" required>
               <option value=""><?= disc_t('Select a conduct code…', 'Hitamo itegeko…'); ?></option>
@@ -151,11 +143,21 @@ $discGroups = $discipline_code_groups ?? [];
             <div class="disc-occur-applied" id="discOccurApplied"></div>
           </div>
 
+          <div class="disc-form-group">
+            <label for="choose_disc_type"><?= disc_t('After this code', 'Nyuma y\'iki tegeko'); ?></label>
+            <select class="form-control" id="choose_disc_type" name="discipline_type">
+              <option value="1" selected><?= disc_t('Reduce discipline marks', 'Gugabanya amanota y\'imyitwarire'); ?></option>
+              <option value="0"><?= disc_t('Send remarks to parent', 'Ohereza ibitekerezo ku mubyeyi'); ?></option>
+            </select>
+          </div>
+
           <div class="disc-form-group" id="reduce_marks">
             <label><?= disc_t('Marks to deduct', 'Amanota agabanywa'); ?></label>
             <input type="text" id="reduce_marks_display" class="form-control disc-marks-input" readonly
                    placeholder="<?= disc_t('Automatic', 'Bikora ubwabyo'); ?>">
           </div>
+
+          <p class="disc-code-hint" id="discRemarkPreview" hidden></p>
 
           <div class="disc-form-group disc-form-check" id="send_sms">
             <input type="checkbox" name="sms" value="1" id="notify_parent">
@@ -339,10 +341,32 @@ $(function () {
     });
   }
 
+  function isRemarks() {
+    return String($("#choose_disc_type").val()) === "0";
+  }
+
+  function paintAction() {
+    const remarks = isRemarks();
+    $("#reduce_marks").toggle(!remarks);
+    $("#send_sms").show();
+    $("label[for='notify_parent']").text(remarks
+      ? t("Send remarks to parent (includes the mistake)", "Ohereza ibitekerezo ku mubyeyi (harimo ikosa)")
+      : t("Notify parent by SMS", "Menyesha umubyeyi kuri SMS"));
+    if (remarks) $("#notify_parent").prop("checked", true);
+    const title = (selectedCodeOption().data("title") || "").toString();
+    const $preview = $("#discRemarkPreview");
+    if (remarks && title) {
+      $preview.text(t("Parent remark: ", "Igitekerezo ku mubyeyi: ") + title).removeAttr("hidden");
+    } else {
+      $preview.attr("hidden", true).text("");
+    }
+  }
+
   function renderSchedule() {
     const $opt = selectedCodeOption();
     const id = parseInt($opt.val(), 10) || 0;
     const $box = $("#discOccurBox");
+    paintAction();
     if (!id) {
       $box.attr("hidden", true);
       $("#reduce_marks_display").val("");
@@ -350,6 +374,19 @@ $(function () {
     }
     const m1 = $opt.data("m1") || 0, m2 = $opt.data("m2") || 0, m3 = $opt.data("m3") || 0;
     const s1 = $opt.data("s1") || "", s2 = $opt.data("s2") || "", s3 = $opt.data("s3") || "";
+    if (isRemarks()) {
+      const title = ($opt.data("title") || $opt.text() || "").toString().trim();
+      const mistake = [title, s1].filter(function (part) { return String(part).trim() !== ""; }).join(" — ");
+      $("#discOccurSchedule").html(
+        `<strong>${t("Remark to parent", "Igitekerezo ku mubyeyi")}</strong>` +
+        `<div class="disc-occur-pills">` +
+          `<span class="disc-pill is-now">${t("Mistake committed", "Ikosa ryakozwe")}: ${$("<div/>").text(mistake).html()}</span>` +
+        `</div>`
+      );
+      $box.removeAttr("hidden");
+      $("#reduce_marks_display").val("0");
+      return;
+    }
     if (String(m1) === String(m2) && String(m2) === String(m3) && s1 === s2 && s2 === s3) {
       $("#discOccurSchedule").html(
         `<strong>${t("Automatic deduction", "Imanota zigabanywa ubwazo")}</strong>` +
@@ -383,7 +420,7 @@ $(function () {
     if (!codeId || !ids.length) {
       $("#discOccurApplied").empty();
       const $opt = selectedCodeOption();
-      if (codeId) $("#reduce_marks_display").val($opt.data("m1") || 0);
+      if (codeId) $("#reduce_marks_display").val(isRemarks() ? 0 : ($opt.data("m1") || 0));
       return;
     }
     $.post("<?= base_url('discipline_code_preview'); ?>", {
@@ -399,12 +436,19 @@ $(function () {
         names[id] = $(this).find("td").eq(2).text().trim() || ("#" + id);
       });
       let firstMarks = null;
+      const remarks = isRemarks();
       res.students.forEach(function (s) {
-        if (firstMarks === null) firstMarks = s.marks;
-        html += `<li>${names[s.id] || ("#" + s.id)} — <b>${s.label}</b> → ${s.marks} ${t("marks", "amanota")}${s.sanction ? " · " + s.sanction : ""}</li>`;
+        if (firstMarks === null) firstMarks = remarks ? 0 : s.marks;
+        if (remarks) {
+          const title = (selectedCodeOption().data("title") || "").toString();
+          const mistake = [title, s.sanction].filter(function (part) { return String(part || "").trim() !== ""; }).join(" — ");
+          html += `<li>${names[s.id] || ("#" + s.id)} — ${t("Mistake committed", "Ikosa ryakozwe")}: ${$("<div/>").text(mistake).html()}</li>`;
+        } else {
+          html += `<li>${names[s.id] || ("#" + s.id)} — <b>${s.label}</b> → ${s.marks} ${t("marks", "amanota")}${s.sanction ? " · " + s.sanction : ""}</li>`;
+        }
       });
       html += "</ul>";
-      if (parseInt(firstMarks, 10) === 0) {
+      if (!remarks && parseInt(firstMarks, 10) === 0) {
         html += `<p class="disc-zero-note">${t("No marks this time. It is still saved and the parent can be notified. The next time this code is used, it will be the next offence.", "Nta manota kuri iyi nshuro. Bizabikwa kandi umubyeyi ashobora kumenyeshwa. Igihe gikurikira iki tegeko rizaba indi nshuro.")}</p>`;
       }
       $("#discOccurApplied").html(html);
@@ -527,9 +571,7 @@ $(function () {
   }
 
   $("#choose_disc_type").on("change", function () {
-    const val = $(this).val();
-    if (val == 0) $("#send_sms, #reduce_marks").hide();
-    else $("#send_sms, #reduce_marks").show();
+    refreshOccurrence();
   });
 
   $(document).on("click", ".disc-code-item", function () {
