@@ -2928,7 +2928,7 @@ public function testEmail()
 		$schoolId = (int) $this->session->get("soma_school_id");
 		$data['settings'] = $settingsMdl->getSchool(array("schools.id" => $schoolId))->getRowArray();
 		$data['settings']['allow_cat_edit'] = cat_edit_allowed((int) ($this->data['active_term'] ?? 0)) ? 1 : 0;
-		$data['is_coordinator'] = MenuClearance::isCoordinatorPost((int) $this->session->get('soma_post'));
+		$data['is_coordinator'] = MenuClearance::canToggleSavedCatEdit((int) $this->session->get('soma_post'));
 		if (!isset($data['settings']['use_grading_system'])) {
 			$data['settings']['use_grading_system'] = 1;
 		}
@@ -3525,13 +3525,13 @@ public function testEmail()
 		]);
 	}
 
-	/** Coordinator only: allow or lock changes to a quiz, test, or homework that is already saved. */
+	/** Coordinator or Director: allow or lock changes to a quiz, test, or homework that is already saved. */
 	public function toggle_cat_edit()
 	{
 		$this->_preset();
 		$this->ensurePeriodLocksSchema();
-		if (!MenuClearance::isCoordinatorPost((int) $this->session->get('soma_post'))) {
-			return $this->response->setJSON(['error' => 'Only the Coordinator can allow editing of saved quizzes, tests, and homework.']);
+		if (!MenuClearance::canToggleSavedCatEdit((int) $this->session->get('soma_post'))) {
+			return $this->response->setJSON(['error' => 'Only the Coordinator or Director can allow editing of saved quizzes, tests, and homework.']);
 		}
 		$termId = (int) ($this->data['active_term'] ?? 0);
 		if ($termId < 1) {
@@ -10637,8 +10637,8 @@ public function attendanceCard()
 					->orderBy("l.title");
 
 			if ($assignedOnly === 1 || !MenuClearance::canEnterAllCourseMarks((int) $this->session->get("soma_post"), (string) $this->session->get('soma_post_title'))) {
-				// Marks entry always passes assignedOnly=1. Every post, including Headmaster and DHT Academics, sees only their classes.
-				$builder->where("cr.lecturer", $this->session->get("soma_id"));
+				// Marks entry always passes assignedOnly=1, so leaders cannot open another teacher's class.
+				$builder->where("cr.lecturer", (int) $this->session->get("soma_id"));
 			}
 			$classes = $this->classesWithoutHoliday($builder->get()->getResultArray());
 			echo "<option selected disabled>" . lang("app.selectClass") . "</option>";
@@ -10841,7 +10841,7 @@ public function attendanceCard()
 	{
 		$this->_preset();
 		if (!cat_edit_allowed((int) ($this->data['active_term'] ?? 0))) {
-			return $this->response->setJSON(array("error" => "Saved marks are locked. The Coordinator can allow editing in School settings."));
+			return $this->response->setJSON(array("error" => "Saved marks are locked. The Coordinator or Director can allow editing in School settings."));
 		}
 		$ids = '';
 		if (!empty($this->request->getPost("data"))) {
@@ -13810,14 +13810,14 @@ public function getApplicationDocs($id = null)
 				$builder->where("find_in_set($term,r.term) !=0");
 				$builder->where("IFNULL(courses.program_type,'') <> 'holiday'");
 			}
-			// Every post enters marks only for courses assigned to them.
-			$builder->where("s.id", $this->session->get("soma_id"));
+			// Leaders included: Headmaster, Director, DHT Academics, and every other post.
+			$builder->where("r.lecturer", (int) $this->session->get("soma_id"));
 			$data['courses'] = $builder->get()->getResultArray();
 		}
 		$data['soma_name'] = $this->session->get("soma_name");
 		$data['marks_teacher_is_assignee'] = false;
 		$data['allow_cat_edit'] = cat_edit_allowed((int) ($this->data['active_term'] ?? 0));
-		$data['is_coordinator'] = MenuClearance::isCoordinatorPost((int) $this->session->get('soma_post'));
+		$data['is_coordinator'] = MenuClearance::canToggleSavedCatEdit((int) $this->session->get('soma_post'));
 		$data['content'] = view("pages/marks/marks_entry", $data);
 		return view('main', $data);
 	}
@@ -13885,7 +13885,7 @@ public function getApplicationDocs($id = null)
 			}
 			if ($this->savedCatLockedForUpdate($catType, (int) $class, (int) $course_id, $term, (int) $period, $marks_id)) {
 				return $this->response->setJSON(array(
-					"error" => catTypeStr($catType) . " is saved and locked. The Coordinator can allow editing."
+					"error" => catTypeStr($catType) . " is saved and locked. The Coordinator or Director can allow editing."
 				));
 			}
 		}
@@ -15600,7 +15600,7 @@ public function getApplicationDocs($id = null)
 				$('[type=\"submit\"]').prop('disabled', true);
 				$('#btn-del-marks').prop('disabled', true);
 				if (!$('#cat-edit-lock-note').length) {
-					$('#dv_marks').prepend('<div id=\"cat-edit-lock-note\" class=\"alert alert-info\" style=\"margin:8px;\">This assessment is saved. The Coordinator can allow editing before it can be changed. Choose the next quiz, test, or homework to enter a new one.</div>');
+					$('#dv_marks').prepend('<div id=\"cat-edit-lock-note\" class=\"alert alert-info\" style=\"margin:8px;\">This assessment is saved. The Coordinator or Director can allow editing before it can be changed. Choose the next quiz, test, or homework to enter a new one.</div>');
 				}
 </script>";
 			}

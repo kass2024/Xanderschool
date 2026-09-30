@@ -710,6 +710,23 @@ class MenuClearance
 		return $postId === 27;
 	}
 
+	/** School Director (post 29). Director of studies and Director of Finance stay out. */
+	public static function isDirectorPost($postId)
+	{
+		$postId = (int) $postId;
+		if ($postId === 29) {
+			return true;
+		}
+		return self::postTitle($postId) === 'director';
+	}
+
+	/** Coordinator or Director may allow editing of a quiz, test, or homework that is already saved. */
+	public static function canToggleSavedCatEdit($postId)
+	{
+		$postId = (int) $postId;
+		return self::isCoordinatorPost($postId) || self::isDirectorPost($postId);
+	}
+
 	public static function postTitle($postId)
 	{
 		static $cache = [];

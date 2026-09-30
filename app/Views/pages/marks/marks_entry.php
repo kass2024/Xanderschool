@@ -357,7 +357,7 @@ body.marks-entry-body .select2-search__field {
 						<small class="marks-max-live" id="catEditState"><?= !empty($allow_cat_edit) ? 'Assigned teachers can change a saved quiz, test, or homework.' : 'Saved quizzes are locked. Turn this on to let the assigned teacher edit them.'; ?></small>
 					</div>
 				<?php else: ?>
-					<p class="marks-help">You enter marks only for courses assigned to you. After a quiz is saved, the next one is added. A saved quiz can be changed only when the Coordinator allows editing.</p>
+					<p class="marks-help">You enter marks only for courses assigned to you. After a quiz is saved, the next one is added. A saved quiz can be changed only when the Coordinator or Director allows editing.</p>
 				<?php endif; ?>
 				<div class="marks-field">
 					<label for="outofmarks"><?= lang("app.totalMarks"); ?></label>

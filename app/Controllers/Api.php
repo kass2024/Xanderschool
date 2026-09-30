@@ -2474,7 +2474,7 @@ public function check_school($option)
 						if ($existing) {
 							if ($markType === 1 && !cat_edit_allowed((int) ($this->data['active_term'] ?? 0))) {
 								return $this->response->setJSON([
-									'error' => catTypeStr($catType) . ' is saved and locked. The Coordinator can allow editing.',
+									'error' => catTypeStr($catType) . ' is saved and locked. The Coordinator or Director can allow editing.',
 									'last_id' => $last_id,
 								]);
 							}

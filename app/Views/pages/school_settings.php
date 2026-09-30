@@ -926,7 +926,7 @@
 							<?php if (!empty($is_coordinator)): ?>
 								<div class="ss-periods-box" id="ss_cat_edit_box">
 									<h5>Saved quizzes, tests, and homework</h5>
-									<p class="ss-period-hint">Teachers enter marks only for courses assigned to them. A saved quiz stays locked until you allow editing. The next quiz is added as soon as the current one is saved.</p>
+									<p class="ss-period-hint">Every post, including school leaders, enters marks only for courses assigned to them. A saved quiz stays locked until the Coordinator or Director allows editing. The next quiz is added as soon as the current one is saved.</p>
 									<div class="ss-period-row<?= empty($settings['allow_cat_edit']) ? ' is-locked' : ''; ?>" id="ss_cat_edit_row">
 										<div>
 											<span class="ss-period-label">Editing saved assessments</span>
