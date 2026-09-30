@@ -303,6 +303,25 @@
 						.wg-links a { flex: 1 1 140px; text-align: center; background: #1d4ed8; color: #fff; border-radius: 8px; padding: 8px 10px; font-size: .85rem; text-decoration: none; }
 						.wg-links a.alt { background: #16a34a; }
 						.wg-links a.red { background: #dc2626; }
+						.wg-flow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+						.wg-flow div { flex: 1 1 88px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 10px; }
+						.wg-flow strong { display: block; font-size: 1.15rem; }
+						.wg-flow em { font-style: normal; color: #6b7280; font-size: .75rem; }
+						.wg-flow .in { border-color: #86efac; background: #f0fdf4; }
+						.wg-flow .in strong { color: #15803d; }
+						.wg-flow .out { border-color: #fcd34d; background: #fffbeb; }
+						.wg-flow .out strong { color: #b45309; }
+						.wg-flow .stay { border-color: #93c5fd; background: #eff6ff; }
+						.wg-flow .stay strong { color: #1d4ed8; }
+						.wg-loc-title { margin: 12px 0 6px; font-size: .78rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #1d4ed8; }
+						.wg-locs { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px; }
+						.wg-loc { display: block; background: #fff; border: 1px solid #dbeafe; border-radius: 10px; padding: 8px 10px; text-decoration: none; color: inherit; }
+						.wg-loc:hover { border-color: #1d4ed8; box-shadow: 0 4px 14px rgba(15, 23, 42, .08); }
+						.wg-loc b { display: block; color: #1d4ed8; font-size: .88rem; }
+						.wg-loc span { display: block; margin-top: 4px; color: #64748b; font-size: .75rem; }
+						.wg-reports { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+						.wg-reports a { display: block; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 10px; font-size: .78rem; font-weight: 700; color: #1e293b; text-decoration: none; }
+						.wg-reports a:hover { border-color: #1d4ed8; color: #1d4ed8; background: #eff6ff; }
 						.wg-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
 						.wg-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; min-width: 0; }
 						.wg-card h4 { margin: 0 0 8px; font-size: 1rem; }
@@ -320,7 +339,9 @@
 							<div class="wg-kpi green"><b><?= (int) $wgTotals['boys']; ?></b><span>Boys</span></div>
 							<div class="wg-kpi red"><b><?= (int) $wgTotals['girls']; ?></b><span>Girls</span></div>
 							<div class="wg-kpi"><b><?= (int) $wgTotals['staff']; ?></b><span>Staff</span></div>
-							<div class="wg-kpi green"><b><?= (int) $wgTotals['students_present']; ?></b><span>Students present today</span></div>
+							<div class="wg-kpi green"><b><?= (int) $wgTotals['students_present']; ?></b><span>Students in today</span></div>
+							<div class="wg-kpi"><b><?= (int) $wgTotals['student_out']; ?></b><span>Students out today</span></div>
+							<div class="wg-kpi"><b><?= (int) $wgTotals['student_inside']; ?></b><span>Students still inside</span></div>
 							<a class="wg-kpi green" href="<?= base_url('wisdom-staff-today/0/in'); ?>"><b><?= (int) $wgTotals['staff_present']; ?></b><span>Staff in today</span></a>
 							<a class="wg-kpi red" href="<?= base_url('wisdom-staff-today/0/absent'); ?>"><b><?= (int) $wgTotals['staff_absent']; ?></b><span>Staff absent today</span></a>
 						</div>
@@ -334,9 +355,22 @@
 								<div><strong><?= (int) $wgMaster['girls']; ?></strong><em>Girls</em></div>
 								<div><strong><?= (int) $wgMaster['staff']; ?></strong><em>Staff</em></div>
 								<div><strong><?= (int) $wgMaster['students_present']; ?></strong><em>Students in today</em></div>
+								<div><strong><?= (int) $wgMaster['student_out']; ?></strong><em>Students out</em></div>
+								<div><strong><?= (int) $wgMaster['student_inside']; ?></strong><em>Still inside</em></div>
 								<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/in'); ?>"><strong><?= (int) $wgMaster['staff_present']; ?></strong><em>Staff in today</em></a>
 								<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/absent'); ?>"><strong><?= (int) $wgMaster['staff_absent']; ?></strong><em>Staff absent today</em></a>
 							</div>
+							<?php if (!empty($wgMaster['locations'])): ?>
+							<div class="wg-loc-title">Student in/out by location</div>
+							<div class="wg-locs">
+								<?php foreach ($wgMaster['locations'] as $loc): ?>
+								<a class="wg-loc" href="<?= base_url('student-report/inout/monthly'); ?>">
+									<b><?= esc($loc['name']); ?></b>
+									<span><?= (int) $loc['checked_in']; ?> in · <?= (int) $loc['checked_out']; ?> out · <?= (int) $loc['inside']; ?> inside</span>
+								</a>
+								<?php endforeach; ?>
+							</div>
+							<?php endif; ?>
 							<div class="wg-ranks">
 								<div class="wg-rank late"><h5>Most late today</h5><ol><?php foreach (($wgMaster['late_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($wgMaster['late_today'])): ?><li>No one late after shift start</li><?php endif; ?></ol></div>
 								<div class="wg-rank early"><h5>Earliest today</h5><ol><?php foreach (($wgMaster['early_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($wgMaster['early_today'])): ?><li>No early arrivals</li><?php endif; ?></ol></div>
@@ -361,8 +395,26 @@
 									<div><strong><?= (int) $campus['girls']; ?></strong><em>Girls</em></div>
 									<div><strong><?= (int) $campus['staff']; ?></strong><em>Staff</em></div>
 									<div><strong><?= (int) $campus['students_present']; ?></strong><em>Students in</em></div>
+									<div><strong><?= (int) $campus['student_out']; ?></strong><em>Students out</em></div>
+									<div><strong><?= (int) $campus['student_inside']; ?></strong><em>Still inside</em></div>
 									<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/in'); ?>"><strong><?= (int) $campus['staff_present']; ?></strong><em>Staff in</em></a>
 									<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/absent'); ?>"><strong><?= (int) $campus['staff_absent']; ?></strong><em>Staff absent</em></a>
+								</div>
+								<div class="wg-reports">
+									<?php
+									$wgReportTypes = [
+										['student-report/course/monthly', 'Student course attendance'],
+										['student-report/daily/class', 'Class Daily attendance'],
+										['student-report/daily/all', 'Daily attendance'],
+										['student-report/daily/details', 'Daily General Attendance'],
+										['student-report/boarding/all', 'Boarding attendance'],
+										['student-report/boarding/details', 'Boarding General Attendance'],
+										['student-report/inout/monthly', 'In/Out Report'],
+									];
+									foreach ($wgReportTypes as $wgType):
+									?>
+									<a href="<?= base_url('switch-school/' . (int) $campus['id']); ?>?next=<?= rawurlencode($wgType[0]); ?>"><?= esc($wgType[1]); ?></a>
+									<?php endforeach; ?>
 								</div>
 								<div class="wg-ranks">
 									<div class="wg-rank late"><h5>Most late today</h5><ol><?php foreach (($campus['late_today'] ?? []) as $person): ?><li><?= esc($person['name']); ?><?php if (trim((string) ($person['post'] ?? '')) !== ''): ?> · <?= esc($person['post']); ?><?php endif; ?></li><?php endforeach; ?><?php if (empty($campus['late_today'])): ?><li>No one late after shift start</li><?php endif; ?></ol></div>

@@ -21,6 +21,7 @@ if ($show_header) {
 						<?php endforeach; ?>
 					</select>
 				</div>
+				<?php if (!empty($show_locations)): ?>
 				<div class="io-field">
 					<label><?= lang("app.attendanceArea"); ?></label>
 					<select class="select2 form-control" id="select_area" name="area">
@@ -35,6 +36,7 @@ if ($show_header) {
 						<?php endforeach; ?>
 					</select>
 				</div>
+				<?php endif; ?>
 				<div class="io-field">
 					<label><?= lang("app.month"); ?></label>
 					<select class="select2 form-control" id="choose_month" name="months">
@@ -58,7 +60,7 @@ if ($show_header) {
 			</div>
 		</div>
 		<div id="report_content">
-			<div class="io-empty">Choose class, location, month and year, then Generate. Use <strong>All classes</strong> and <strong>All locations</strong> to track every NFC IN/OUT scan.</div>
+			<div class="io-empty"><?= !empty($show_locations) ? 'Choose class, location, month and year, then Generate. Use <strong>All classes</strong> and <strong>All locations</strong> to track every NFC IN/OUT scan.' : 'Choose class, month and year, then Generate. Use <strong>All classes</strong> to track every NFC IN/OUT scan.'; ?></div>
 		</div>
 	</div>
 	<script>
@@ -159,7 +161,7 @@ foreach ($visits as $vv) {
 		<div class="io-kpi"><div class="lbl">Coverage</div><div class="val"><?= (int) ($kpi['coverage'] ?? 0); ?>%</div></div>
 	</div>
 
-	<?php if (count($areaStats) > 0) : ?>
+	<?php if (!empty($show_locations) && count($areaStats) > 0) : ?>
 		<div class="io-area-map">
 			<?php foreach ($areaStats as $as) : ?>
 				<button type="button" class="io-area-card<?= $singleArea ? ' active' : ''; ?>" data-area="<?= (int) $as['id']; ?>">
@@ -186,7 +188,7 @@ foreach ($visits as $vv) {
 				<div>
 					<strong><?= esc($school_name ?? ''); ?></strong><br>
 					<?= lang("app.sClass"); ?>: <?= esc($classe ?? ''); ?><br>
-					<?= lang("app.attendanceArea"); ?>: <?= esc($attendance_area ?? ''); ?><br>
+					<?php if (!empty($show_locations)): ?><?= lang("app.attendanceArea"); ?>: <?= esc($attendance_area ?? ''); ?><br><?php endif; ?>
 					<?= lang("app.month"); ?>: <?= esc($month_label ?? $month ?? ''); ?>
 				</div>
 				<div>

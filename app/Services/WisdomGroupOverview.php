@@ -115,7 +115,7 @@ class WisdomGroupOverview
 				$ids[] = $id;
 			}
 		}
-		$blank = ['students' => 0, 'boys' => 0, 'girls' => 0, 'parents' => 0, 'staff' => 0, 'students_present' => 0, 'staff_present' => 0, 'staff_absent' => 0];
+		$blank = ['students' => 0, 'boys' => 0, 'girls' => 0, 'parents' => 0, 'staff' => 0, 'students_present' => 0, 'student_out' => 0, 'student_inside' => 0, 'staff_present' => 0, 'staff_absent' => 0];
 		$bySchool = [];
 		foreach ($ids as $id) {
 			$bySchool[$id] = $blank;
@@ -219,6 +219,25 @@ class WisdomGroupOverview
 				$key = ((int) $row['user_type'] === 1) ? 'staff_present' : 'students_present';
 				$bySchool[$sid][$key] = (int) $row['present_today'];
 			}
+			if ($db->tableExists('attendance_records')) {
+				$flowSql = "SELECT school_id,
+						COUNT(DISTINCT CASE WHEN COALESCE(time_out, 0) > 0 THEN user_id END) AS student_out,
+						COUNT(DISTINCT CASE WHEN COALESCE(time_out, 0) = 0 THEN user_id END) AS student_inside
+					FROM attendance_records
+					WHERE user_type = 0
+						AND school_id IN ({$idList})
+						AND time_in >= {$todayStart}
+						AND time_in < {$todayEnd}
+					GROUP BY school_id";
+				foreach ($db->query($flowSql)->getResultArray() as $row) {
+					$sid = (int) $row['school_id'];
+					if (!isset($bySchool[$sid])) {
+						continue;
+					}
+					$bySchool[$sid]['student_out'] = (int) ($row['student_out'] ?? 0);
+					$bySchool[$sid]['student_inside'] = (int) ($row['student_inside'] ?? 0);
+				}
+			}
 		}
 		$rows = [];
 		$totals = $blank;
@@ -235,14 +254,64 @@ class WisdomGroupOverview
 			}
 		}
 		$today = $this->loadTodayStaff($ids);
+		$masterLocations = $this->masterLocationFlow((int) $masterId);
 		foreach ($rows as $i => $row) {
 			$pack = $today[(int) $row['id']] ?? ['absent' => [], 'late' => [], 'early' => []];
 			$rows[$i]['staff_absent'] = count($pack['absent']);
 			$rows[$i]['late_today'] = $pack['late'];
 			$rows[$i]['early_today'] = $pack['early'];
+			$rows[$i]['locations'] = !empty($row['is_master']) ? $masterLocations : [];
 			$totals['staff_absent'] += count($pack['absent']);
 		}
 		return ['schools' => $rows, 'totals' => $totals, 'master_id' => (int) $masterId];
+	}
+
+	/**
+	 * Today's student IN/OUT by attendance location. Master school only.
+	 *
+	 * @return list<array{id:int,name:string,checked_in:int,checked_out:int,inside:int}>
+	 */
+	private function masterLocationFlow(int $masterId): array
+	{
+		if ($masterId < 1) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('attendance_areas') || !$db->tableExists('attendance_records')) {
+			return [];
+		}
+		$todayStart = strtotime(date('Y-m-d') . ' 00:00:00');
+		$todayEnd = $todayStart + 86400;
+		$sql = "SELECT aa.id, aa.name,
+				COUNT(ar.id) AS checked_in,
+				SUM(CASE WHEN COALESCE(ar.time_out, 0) > 0 THEN 1 ELSE 0 END) AS checked_out,
+				SUM(CASE WHEN ar.id IS NOT NULL AND COALESCE(ar.time_out, 0) = 0 THEN 1 ELSE 0 END) AS inside
+			FROM attendance_areas aa
+			LEFT JOIN attendance_records ar
+				ON ar.area_id = aa.id
+				AND ar.school_id = aa.school_id
+				AND ar.user_type = 0
+				AND ar.time_in >= {$todayStart}
+				AND ar.time_in < {$todayEnd}
+			WHERE aa.school_id = {$masterId}
+				AND aa.active = 1
+			GROUP BY aa.id, aa.name, aa.sort_order
+			ORDER BY aa.sort_order ASC, aa.name ASC";
+		$out = [];
+		foreach ($db->query($sql)->getResultArray() as $row) {
+			$name = trim((string) ($row['name'] ?? ''));
+			if ($name === '') {
+				continue;
+			}
+			$out[] = [
+				'id' => (int) ($row['id'] ?? 0),
+				'name' => $name,
+				'checked_in' => (int) ($row['checked_in'] ?? 0),
+				'checked_out' => (int) ($row['checked_out'] ?? 0),
+				'inside' => (int) ($row['inside'] ?? 0),
+			];
+		}
+		return $out;
 	}
 
 	/**

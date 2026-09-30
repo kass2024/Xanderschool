@@ -266,7 +266,22 @@ public function testEmail()
 			// non-fatal
 		}
 		$this->session->setFlashdata('success', 'Now viewing: ' . ($school['name'] ?? 'school'));
-		return redirect()->to(base_url('dashboard'));
+		$next = trim((string) $this->request->getGet('next'), '/');
+		$allowedNext = [
+			'dashboard',
+			'student-report/course/monthly',
+			'student-report/daily/class',
+			'student-report/daily/all',
+			'student-report/daily/details',
+			'student-report/boarding/all',
+			'student-report/boarding/details',
+			'student-report/inout/monthly',
+			'staff-report/individual',
+		];
+		if (!in_array($next, $allowedNext, true)) {
+			$next = 'dashboard';
+		}
+		return redirect()->to(base_url($next));
 	}
 
 	/** Return to home (master) school context. */
@@ -7210,6 +7225,19 @@ public function attendanceCard()
 
 	}
 
+	private function schoolShowsAttendanceLocations(int $schoolId): bool
+	{
+		if ($schoolId < 1) {
+			return false;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->fieldExists('is_master', 'schools')) {
+			return false;
+		}
+		$row = $db->table('schools')->select('is_master')->where('id', $schoolId)->get(1)->getRowArray();
+		return !empty($row['is_master']);
+	}
+
 	public function student_inout_monthly_report()
 	{
 		$this->_preset();
@@ -7221,7 +7249,8 @@ public function attendanceCard()
 		$data['classes'] = $clMdl->get_classes();
 		$areaMdl = new AttendanceAreaModel();
 		$schoolId = (int) $this->session->get("soma_school_id");
-		$data['attendance_areas'] = $areaMdl->listAreas($schoolId, false);
+		$data['show_locations'] = $this->schoolShowsAttendanceLocations($schoolId);
+		$data['attendance_areas'] = $data['show_locations'] ? $areaMdl->listAreas($schoolId, false) : [];
 		$yearNow = (int) date('Y');
 		$data['report_years'] = range($yearNow, $yearNow - 2);
 		$data['default_month'] = (int) date('n');
@@ -7245,8 +7274,9 @@ public function attendanceCard()
 		}
 		$month = sprintf("%02d-%04d", $monthNum, $yearNum);
 		$classe = (int) $this->request->getVar("class");
-		$areaId = (int) $this->request->getVar("area");
 		$schoolId = (int) $this->session->get("soma_school_id");
+		$showLocations = $this->schoolShowsAttendanceLocations($schoolId);
+		$areaId = $showLocations ? (int) $this->request->getVar("area") : 0;
 		$areaMdl = new AttendanceAreaModel();
 		$areaLabel = 'All locations';
 		if ($areaId > 0) {
@@ -7266,6 +7296,7 @@ public function attendanceCard()
 		);
 		$data = array_merge($data, $report);
 		$data['show_header'] = false;
+		$data['show_locations'] = $showLocations;
 		$data['classe'] = $classe > 0 ? (new ClassesModel())->get_class_name($classe) : 'All classes';
 		$data['attendance_area'] = $areaLabel;
 		$prepSlot = $areaId > 0 ? \App\Models\PrepTimetableModel::slotFromAreaName($areaLabel) : '';
