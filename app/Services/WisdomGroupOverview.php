@@ -656,6 +656,7 @@ class WisdomGroupOverview
 				'checked_out' => (int) ($row['checked_out'] ?? 0),
 				'inside' => (int) ($row['inside'] ?? 0),
 				'absent' => max(0, $baseEnrolled - $seen),
+				'students_in' => $seen,
 				'day_in' => $daySeen,
 				'day_absent' => max(0, $dayEnrolled - $daySeen),
 			];

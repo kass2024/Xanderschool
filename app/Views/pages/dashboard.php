@@ -426,7 +426,7 @@
 								<?php foreach ($wgMaster['locations'] as $loc): ?>
 								<div class="wg-loc">
 									<b><?= esc($loc['name']); ?></b>
-									<span><?= (int) ($loc['day_in'] ?? 0); ?> dayscholar in · <?= (int) ($loc['day_absent'] ?? 0); ?> dayscholar absent · <?= (int) $loc['checked_out']; ?> out · <?= (int) $loc['absent']; ?> absent</span>
+									<span><?= (int) ($loc['students_in'] ?? $loc['checked_in'] ?? 0); ?> in · <?= (int) $loc['absent']; ?> absent · <?= (int) $loc['checked_out']; ?> out</span>
 								</div>
 								<?php endforeach; ?>
 							</div>
