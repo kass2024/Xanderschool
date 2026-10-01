@@ -2938,39 +2938,40 @@ public function get_boarding_classes()
 
 
 	public function check_permission($student_id)
-{
-    $permMdl = new PermissionModel();
+	{
+		$permMdl = new PermissionModel();
+		try {
+			$data = $permMdl->select("
+					permission.id AS permission_id,
+					permission.destination,
+					permission.reason,
+					permission.leave_time,
+					permission.return_time,
+					IFNULL(CONCAT(sf.fname, ' ', sf.lname), '') AS operator,
+					IFNULL(CONCAT(st.fname, ' ', st.lname), '') AS name,
+					IFNULL(sk.phone, '') AS school_phone,
+					IFNULL(sk.email, '') AS school_email,
+					IFNULL(at.term, '') AS term
+				")
+				->join("students st", "st.id = permission.student_id")
+				->join("schools sk", "sk.id = st.school_id")
+				->join("active_term at", "at.id = permission.active_term", "left")
+				->join("staffs sf", "sf.id = permission.created_by", "left")
+				->where("permission.status", "0")
+				->where("permission.student_id", $student_id)
+				->orderBy("permission.id", "DESC")
+				->get(1)
+				->getRowArray();
+		} catch (\Throwable $e) {
+			log_message('error', 'check_permission: ' . $e->getMessage());
+			return $this->response->setJSON(["error" => "Could not check this student's permission."]);
+		}
 
-    // Fetch all unjustified permissions for the given student
-    $data = $permMdl->select("
-            permission.id AS permission_id,
-            permission.destination,
-            permission.reason,
-            permission.leave_time,
-            permission.return_time,
-            CONCAT(sf.fname, ' ', sf.lname) AS operator,
-            CONCAT(st.fname, ' ', st.lname) AS name,
-            sk.phone AS school_phone,
-            sk.email AS school_email,
-            at.term
-        ")
-        ->join("students st", "st.id = permission.student_id")
-        ->join("schools sk", "sk.id = st.school_id")
-        ->join("active_term at", "at.id = permission.active_term")
-        ->join("staffs sf", "sf.id = permission.created_by")
-        ->where("permission.status", "0")
-        ->where("permission.student_id", $student_id)
-        ->orderBy("permission.leave_time", "DESC")
-        ->findAll();
-
-    // If no unjustified permissions found
-    if (empty($data)) {
-        return $this->response->setJSON(["error" => "0"]);
-    }
-
-    // Return all unjustified permissions as JSON array
-    return $this->response->setJSON($data);
-}
+		if (empty($data)) {
+			return $this->response->setJSON(["error" => "0"]);
+		}
+		return $this->response->setJSON($data);
+	}
 
 
 	public function get_years($school_id)
@@ -3793,6 +3794,15 @@ public function get_boarding_classes()
 		if (strlen($student_id) == 0) {
 			//no student selected
 			return $this->response->setJSON(array("error" => lang("app.pleaseadStudent")));
+		}
+		$pending = (new PermissionModel())
+			->where("student_id", $student_id)
+			->where("status", "0")
+			->countAllResults();
+		if ($pending > 0) {
+			return $this->response->setJSON(array(
+				"error" => "This student must justify the current permission before another one can be given.",
+			));
 		}
 		$data = array(
 			"student_id" => $student_id,
