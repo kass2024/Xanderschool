@@ -374,7 +374,9 @@
 								<div><strong><?= (int) $wgMaster['boys']; ?></strong><em>Boys</em></div>
 								<div><strong><?= (int) $wgMaster['girls']; ?></strong><em>Girls</em></div>
 								<div><strong><?= (int) $wgMaster['staff']; ?></strong><em>Staff</em></div>
-								<div><strong><?= (int) $wgMaster['students_present']; ?></strong><em>Students in today</em></div>
+								<?php $matt = $wgMaster['att_summary'] ?? []; ?>
+								<div><strong><?= (int) ($matt['daily_present'] ?? 0); ?></strong><em>Present students</em></div>
+								<div><strong><?= (int) ($matt['daily_absent'] ?? 0); ?></strong><em>Absent students</em></div>
 								<div><strong><?= (int) $wgMaster['student_out']; ?></strong><em>Students out</em></div>
 								<div><strong><?= (int) $wgMaster['student_inside']; ?></strong><em>Still inside</em></div>
 								<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/in'); ?>"><strong><?= (int) $wgMaster['staff_present']; ?></strong><em>Staff in today</em></a>
@@ -448,9 +450,6 @@
 									<div><strong><?= (int) $campus['boys']; ?></strong><em>Boys</em></div>
 									<div><strong><?= (int) $campus['girls']; ?></strong><em>Girls</em></div>
 									<div><strong><?= (int) $campus['staff']; ?></strong><em>Staff</em></div>
-									<div><strong><?= (int) $campus['students_present']; ?></strong><em>Students in</em></div>
-									<div><strong><?= (int) $campus['student_out']; ?></strong><em>Students out</em></div>
-									<div><strong><?= (int) $campus['student_inside']; ?></strong><em>Still inside</em></div>
 									<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/in'); ?>"><strong><?= (int) $campus['staff_present']; ?></strong><em>Staff in</em></a>
 									<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/absent'); ?>"><strong><?= (int) $campus['staff_absent']; ?></strong><em>Staff absent</em></a>
 								</div>

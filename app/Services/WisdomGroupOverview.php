@@ -254,13 +254,7 @@ class WisdomGroupOverview
 				: [];
 			$totals['staff_absent'] += count($pack['absent']);
 		}
-		$childIds = [];
-		foreach ($rows as $row) {
-			if (empty($row['is_master'])) {
-				$childIds[] = (int) $row['id'];
-			}
-		}
-		$attendance = $this->childAttendanceSummaries($childIds, (int) $yearId);
+		$attendance = $this->childAttendanceSummaries($ids, (int) $yearId);
 		foreach ($rows as $i => $row) {
 			$id = (int) $row['id'];
 			if (isset($attendance[$id])) {
@@ -274,7 +268,7 @@ class WisdomGroupOverview
 	}
 
 	/**
-	 * Today's register totals for child schools. Numbers only, no other dashboard.
+	 * Today's register totals from the daily attendance app. Numbers only.
 	 *
 	 * @param int[] $ids
 	 * @return array<int, array<string, int>>
