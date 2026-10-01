@@ -320,6 +320,7 @@
 						.wg-att article { background: #f8fafc; border: 1px solid #e5e7eb; border-top: 3px solid #1d4ed8; border-radius: 10px; padding: 7px 8px; min-width: 0; }
 						.wg-att article.green { border-top-color: #16a34a; }
 						.wg-att article.amber { border-top-color: #d97706; }
+						.wg-att article.red { border-top-color: #dc2626; }
 						.wg-att span { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #64748b; }
 						.wg-att b { display: block; margin-top: 2px; font-size: 1.05rem; line-height: 1.15; color: #0f172a; }
 						.wg-att small { display: block; color: #64748b; font-size: .72rem; }
@@ -385,7 +386,7 @@
 								<?php foreach ($wgMaster['locations'] as $loc): ?>
 								<div class="wg-loc">
 									<b><?= esc($loc['name']); ?></b>
-									<span><?= (int) $loc['checked_in']; ?> in · <?= (int) $loc['checked_out']; ?> out · <?= (int) $loc['inside']; ?> inside</span>
+									<span><?= (int) ($loc['day_in'] ?? 0); ?> dayscholar in · <?= (int) ($loc['day_absent'] ?? 0); ?> dayscholar absent · <?= (int) $loc['checked_out']; ?> out · <?= (int) $loc['absent']; ?> absent</span>
 								</div>
 								<?php endforeach; ?>
 							</div>
@@ -455,35 +456,15 @@
 								</div>
 								<?php $att = $campus['att_summary'] ?? []; ?>
 								<div class="wg-att">
-									<article>
-										<span>Course attendance</span>
-										<b><?= (int) ($att['course_present'] ?? 0); ?></b>
-										<small><?= (int) ($att['course_sessions'] ?? 0); ?> session<?= (int) ($att['course_sessions'] ?? 0) === 1 ? '' : 's'; ?> today</small>
-									</article>
 									<article class="green">
-										<span>Class daily</span>
-										<b><?= (int) ($att['classes_marked'] ?? 0); ?> / <?= (int) ($att['classes_total'] ?? 0); ?></b>
-										<small>Classes marked</small>
-									</article>
-									<article>
-										<span>Daily attendance</span>
-										<b><?= (int) ($att['daily_present'] ?? 0); ?></b>
-										<small><?= (int) ($att['daily_absent'] ?? 0); ?> absent</small>
-									</article>
-									<article class="green">
-										<span>Daily general</span>
+										<span>Present students</span>
 										<b><?= (int) ($att['daily_present'] ?? 0); ?></b>
 										<small>On today's register</small>
 									</article>
-									<article class="amber">
-										<span>Boarding</span>
-										<b><?= (int) ($att['boarding_present'] ?? 0); ?></b>
-										<small><?= (int) ($att['boarding_absent'] ?? 0); ?> absent of <?= (int) ($att['boarding_total'] ?? 0); ?></small>
-									</article>
-									<article class="amber">
-										<span>Boarding general</span>
-										<b><?= (int) ($att['boarding_present'] ?? 0); ?></b>
-										<small>Boarders marked today</small>
+									<article class="red">
+										<span>Absent students</span>
+										<b><?= (int) ($att['daily_absent'] ?? 0); ?></b>
+										<small>Not on today's register</small>
 									</article>
 								</div>
 								<div class="wg-ranks">

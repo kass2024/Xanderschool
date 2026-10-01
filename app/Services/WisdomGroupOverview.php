@@ -267,9 +267,6 @@ class WisdomGroupOverview
 				$enrolled = (int) ($row['students'] ?? 0);
 				$present = (int) $attendance[$id]['daily_present'];
 				$attendance[$id]['daily_absent'] = max(0, $enrolled - $present);
-				$boardingTotal = (int) $attendance[$id]['boarding_total'];
-				$boardingPresent = (int) $attendance[$id]['boarding_present'];
-				$attendance[$id]['boarding_absent'] = max(0, $boardingTotal - $boardingPresent);
 				$rows[$i]['att_summary'] = $attendance[$id];
 			}
 		}
@@ -285,15 +282,8 @@ class WisdomGroupOverview
 	private function childAttendanceSummaries(array $ids, int $yearId): array
 	{
 		$blank = [
-			'course_sessions' => 0,
-			'course_present' => 0,
-			'classes_total' => 0,
-			'classes_marked' => 0,
 			'daily_present' => 0,
 			'daily_absent' => 0,
-			'boarding_total' => 0,
-			'boarding_present' => 0,
-			'boarding_absent' => 0,
 		];
 		$out = [];
 		foreach ($ids as $id) {
@@ -306,103 +296,22 @@ class WisdomGroupOverview
 		}
 		try {
 			$db = \Config\Database::connect();
+			if (!$db->tableExists('daily_attendance') || !$db->tableExists('students')) {
+				return $out;
+			}
 			$idList = implode(',', array_map('intval', array_keys($out)));
 			$today = $db->escape(date('Y-m-d'));
-			$yearId = (int) $yearId;
-
-			if ($db->tableExists('classes')) {
-				$sql = "SELECT school_id, COUNT(*) AS classes_total
-					FROM classes
-					WHERE school_id IN ({$idList})
-						AND IFNULL(title,'') NOT LIKE '%Holiday%'
-					GROUP BY school_id";
-				foreach ($db->query($sql)->getResultArray() as $row) {
-					$sid = (int) $row['school_id'];
-					if (isset($out[$sid])) {
-						$out[$sid]['classes_total'] = (int) $row['classes_total'];
-					}
-				}
-			}
-
-			if ($db->tableExists('daily_attendance') && $db->tableExists('students')) {
-				$sql = "SELECT st.school_id,
-						COUNT(DISTINCT da.student_id) AS daily_present,
-						COUNT(DISTINCT CASE WHEN st.studying_mode = 0 THEN da.student_id END) AS boarding_present
-					FROM daily_attendance da
-					INNER JOIN students st ON st.id = da.student_id
-					WHERE st.school_id IN ({$idList})
-						AND st.status IN (1, 2)
-						AND DATE(da.datee) = {$today}
-					GROUP BY st.school_id";
-				foreach ($db->query($sql)->getResultArray() as $row) {
-					$sid = (int) $row['school_id'];
-					if (!isset($out[$sid])) {
-						continue;
-					}
+			$sql = "SELECT st.school_id, COUNT(DISTINCT da.student_id) AS daily_present
+				FROM daily_attendance da
+				INNER JOIN students st ON st.id = da.student_id
+				WHERE st.school_id IN ({$idList})
+					AND st.status = 1
+					AND DATE(da.datee) = {$today}
+				GROUP BY st.school_id";
+			foreach ($db->query($sql)->getResultArray() as $row) {
+				$sid = (int) $row['school_id'];
+				if (isset($out[$sid])) {
 					$out[$sid]['daily_present'] = (int) $row['daily_present'];
-					$out[$sid]['boarding_present'] = (int) $row['boarding_present'];
-				}
-
-				$boardSql = "SELECT s.school_id, COUNT(DISTINCT s.id) AS boarding_total
-					FROM students s
-					INNER JOIN class_records cr ON cr.student = s.id AND cr.status = 1"
-					. ($yearId > 0 ? " AND cr.year = {$yearId}" : '') . "
-					WHERE s.school_id IN ({$idList})
-						AND s.status IN (1, 2)
-						AND s.studying_mode = 0
-					GROUP BY s.school_id";
-				foreach ($db->query($boardSql)->getResultArray() as $row) {
-					$sid = (int) $row['school_id'];
-					if (isset($out[$sid])) {
-						$out[$sid]['boarding_total'] = (int) $row['boarding_total'];
-					}
-				}
-
-				if ($db->tableExists('class_records')) {
-					$classSql = "SELECT st.school_id, COUNT(DISTINCT cr.class) AS classes_marked
-						FROM daily_attendance da
-						INNER JOIN students st ON st.id = da.student_id
-						INNER JOIN class_records cr ON cr.student = st.id AND cr.status = 1"
-						. ($yearId > 0 ? " AND cr.year = {$yearId}" : '') . "
-						WHERE st.school_id IN ({$idList})
-							AND DATE(da.datee) = {$today}
-						GROUP BY st.school_id";
-					foreach ($db->query($classSql)->getResultArray() as $row) {
-						$sid = (int) $row['school_id'];
-						if (isset($out[$sid])) {
-							$out[$sid]['classes_marked'] = (int) $row['classes_marked'];
-						}
-					}
-				}
-			}
-
-			if ($db->tableExists('course_attendance') && $db->tableExists('classes')) {
-				$courseSql = "SELECT c.school_id,
-						COUNT(DISTINCT ca.id) AS course_sessions,
-						COUNT(car.student_id) AS course_present
-					FROM course_attendance ca
-					INNER JOIN classes c ON c.id = ca.class_id
-					LEFT JOIN course_attendance_records car ON car.attendance_id = ca.id
-					WHERE c.school_id IN ({$idList})
-						AND DATE(ca.created_at) = {$today}
-					GROUP BY c.school_id";
-				if (!$db->tableExists('course_attendance_records')) {
-					$courseSql = "SELECT c.school_id,
-							COUNT(DISTINCT ca.id) AS course_sessions,
-							0 AS course_present
-						FROM course_attendance ca
-						INNER JOIN classes c ON c.id = ca.class_id
-						WHERE c.school_id IN ({$idList})
-							AND DATE(ca.created_at) = {$today}
-						GROUP BY c.school_id";
-				}
-				foreach ($db->query($courseSql)->getResultArray() as $row) {
-					$sid = (int) $row['school_id'];
-					if (!isset($out[$sid])) {
-						continue;
-					}
-					$out[$sid]['course_sessions'] = (int) $row['course_sessions'];
-					$out[$sid]['course_present'] = (int) $row['course_present'];
 				}
 			}
 		} catch (\Throwable $e) {
@@ -442,19 +351,23 @@ class WisdomGroupOverview
 				AND aa.active = 1
 			GROUP BY aa.id, aa.name, aa.sort_order
 			ORDER BY aa.sort_order ASC, aa.name ASC";
-		$enrolled = $this->enrolledStudentCount($masterId, $yearId);
+		$population = $this->locationPopulation($masterId, $yearId);
 		$tapped = [];
-		if ($enrolled > 0 && $db->tableExists('students')) {
-			$tapSql = "SELECT ar.area_id, COUNT(DISTINCT ar.user_id) AS tapped
+		if ($population['enrolled'] > 0 && $db->tableExists('students')) {
+			$tapSql = "SELECT ar.area_id,
+					COUNT(DISTINCT es.id) AS tapped,
+					COUNT(DISTINCT CASE WHEN es.studying_mode = 1 THEN es.id END) AS day_tapped,
+					COUNT(DISTINCT CASE WHEN es.is_nursery = 0 THEN es.id END) AS prep_tapped,
+					COUNT(DISTINCT CASE WHEN es.is_nursery = 0 AND es.studying_mode = 1 THEN es.id END) AS prep_day_tapped
 				FROM attendance_records ar
-				INNER JOIN (" . $this->enrolledStudentSql($masterId, $yearId) . ") es ON es.id = ar.user_id
+				INNER JOIN (" . $this->enrolledFlagsSql($masterId, $yearId) . ") es ON es.id = ar.user_id
 				WHERE ar.school_id = {$masterId}
 					AND ar.user_type = 0
 					AND ar.time_in >= {$todayStart}
 					AND ar.time_in < {$todayEnd}
 				GROUP BY ar.area_id";
 			foreach ($db->query($tapSql)->getResultArray() as $tap) {
-				$tapped[(int) $tap['area_id']] = (int) $tap['tapped'];
+				$tapped[(int) $tap['area_id']] = $tap;
 			}
 		}
 		$out = [];
@@ -464,16 +377,99 @@ class WisdomGroupOverview
 				continue;
 			}
 			$areaId = (int) ($row['id'] ?? 0);
+			$tap = $tapped[$areaId] ?? [];
+			$prep = $this->isPrepLocation($name);
+			$baseEnrolled = $prep ? $population['prep_enrolled'] : $population['enrolled'];
+			$dayEnrolled = $prep ? $population['prep_day'] : $population['day_enrolled'];
+			$seen = $prep ? (int) ($tap['prep_tapped'] ?? 0) : (int) ($tap['tapped'] ?? 0);
+			$daySeen = $prep ? (int) ($tap['prep_day_tapped'] ?? 0) : (int) ($tap['day_tapped'] ?? 0);
 			$out[] = [
 				'id' => $areaId,
+				'school_id' => $masterId,
 				'name' => $name,
 				'checked_in' => (int) ($row['checked_in'] ?? 0),
 				'checked_out' => (int) ($row['checked_out'] ?? 0),
 				'inside' => (int) ($row['inside'] ?? 0),
-				'absent' => max(0, $enrolled - (int) ($tapped[$areaId] ?? 0)),
+				'absent' => max(0, $baseEnrolled - $seen),
+				'day_in' => $daySeen,
+				'day_absent' => max(0, $dayEnrolled - $daySeen),
 			];
 		}
 		return $out;
+	}
+
+	private function isPrepLocation(string $name): bool
+	{
+		return stripos($name, 'prep') !== false;
+	}
+
+	/** Nursery / baby / middle / top class. Prep locations skip these students. */
+	private function nurseryMatchSql(string $levelAlias, string $classAlias, string $deptAlias): string
+	{
+		return "(
+			LOWER(IFNULL({$levelAlias}.title,'')) LIKE '%nursery%'
+			OR LOWER(IFNULL({$levelAlias}.title,'')) LIKE '%maternelle%'
+			OR LOWER(IFNULL({$classAlias}.title,'')) LIKE '%baby%'
+			OR LOWER(IFNULL({$classAlias}.title,'')) LIKE '%middle class%'
+			OR LOWER(IFNULL({$classAlias}.title,'')) LIKE '%top class%'
+			OR LOWER(IFNULL({$classAlias}.title,'')) REGEXP '(^|[^a-z0-9])n[1-3]([^0-9]|$)'
+			OR LOWER(IFNULL({$deptAlias}.title,'')) LIKE '%nursery%'
+		)";
+	}
+
+	/**
+	 * One row per enrolled student, with day-scholar and nursery flags.
+	 */
+	private function enrolledFlagsSql(int $schoolId, int $yearId): string
+	{
+		$schoolId = (int) $schoolId;
+		$yearId = (int) $yearId;
+		$nursery = $this->nurseryMatchSql('l', 'cl', 'd');
+		return "SELECT s.id,
+				MAX(CASE WHEN IFNULL(s.studying_mode, 1) = 1 THEN 1 ELSE 0 END) AS studying_mode,
+				MAX(CASE WHEN {$nursery} THEN 1 ELSE 0 END) AS is_nursery
+			FROM students s
+			INNER JOIN schools sch ON sch.id = s.school_id
+			LEFT JOIN active_term atr ON atr.id = sch.active_term
+			INNER JOIN class_records a ON a.student = s.id
+				AND a.year = IFNULL(atr.academic_year, {$yearId})
+			INNER JOIN classes cl ON cl.id = a.class
+			LEFT JOIN levels l ON l.id = cl.level
+			LEFT JOIN departments d ON d.id = cl.department
+			WHERE s.status = 1
+				AND s.school_id = {$schoolId}
+				AND IFNULL(cl.title,'') NOT LIKE '%Holiday%'
+				AND IFNULL(l.title,'') NOT LIKE '%Holiday%'
+			GROUP BY s.id";
+	}
+
+	/**
+	 * @return array{enrolled:int,day_enrolled:int,prep_enrolled:int,prep_day:int}
+	 */
+	private function locationPopulation(int $schoolId, int $yearId): array
+	{
+		$blank = ['enrolled' => 0, 'day_enrolled' => 0, 'prep_enrolled' => 0, 'prep_day' => 0];
+		$db = \Config\Database::connect();
+		if ($schoolId < 1 || !$db->tableExists('students') || !$db->tableExists('class_records')) {
+			return $blank;
+		}
+		try {
+			$row = $db->query(
+				"SELECT COUNT(*) AS enrolled,
+					SUM(studying_mode = 1) AS day_enrolled,
+					SUM(is_nursery = 0) AS prep_enrolled,
+					SUM(is_nursery = 0 AND studying_mode = 1) AS prep_day
+				FROM (" . $this->enrolledFlagsSql($schoolId, $yearId) . ") es"
+			)->getRowArray();
+		} catch (\Throwable $e) {
+			return $blank;
+		}
+		return [
+			'enrolled' => (int) ($row['enrolled'] ?? 0),
+			'day_enrolled' => (int) ($row['day_enrolled'] ?? 0),
+			'prep_enrolled' => (int) ($row['prep_enrolled'] ?? 0),
+			'prep_day' => (int) ($row['prep_day'] ?? 0),
+		];
 	}
 
 	/**
@@ -484,7 +480,7 @@ class WisdomGroupOverview
 	 */
 	public function locationRoster(int $schoolId, int $areaId, int $yearId, string $mode = 'in', string $classFilter = ''): array
 	{
-		$mode = in_array($mode, ['in', 'out', 'absent'], true) ? $mode : 'in';
+		$mode = in_array($mode, ['in', 'out', 'absent', 'day_in', 'day_absent'], true) ? $mode : 'in';
 		$empty = ['name' => '', 'mode' => $mode, 'classes' => [], 'people' => []];
 		if ($schoolId < 1 || $areaId < 1) {
 			return $empty;
@@ -505,10 +501,12 @@ class WisdomGroupOverview
 		$todayStart = strtotime(date('Y-m-d') . ' 00:00:00');
 		$todayEnd = $todayStart + 86400;
 		$classFilter = trim($classFilter);
+		$skipNursery = $this->isPrepLocation((string) ($area['name'] ?? ''));
+		$dayscholar = $mode === 'day_in' || $mode === 'day_absent';
 		try {
-			$rows = $mode === 'absent'
-				? $this->locationAbsentRows($schoolId, $areaId, $yearId, $todayStart, $todayEnd)
-				: $this->locationTapRows($schoolId, $areaId, $yearId, $todayStart, $todayEnd, $mode === 'out');
+			$rows = ($mode === 'absent' || $mode === 'day_absent')
+				? $this->locationAbsentRows($schoolId, $areaId, $yearId, $todayStart, $todayEnd, $dayscholar, $skipNursery)
+				: $this->locationTapRows($schoolId, $areaId, $yearId, $todayStart, $todayEnd, $mode === 'out', $dayscholar, $skipNursery);
 		} catch (\Throwable $e) {
 			return $empty;
 		}
@@ -527,7 +525,7 @@ class WisdomGroupOverview
 				'class' => $label,
 				'time_in' => !empty($row['time_in']) ? date('H:i', (int) $row['time_in']) : '',
 				'time_out' => $outAt > 0 ? date('H:i', $outAt) : '',
-				'status' => $mode === 'absent' ? 'absent' : ($outAt > 0 ? 'out' : 'in'),
+				'status' => ($mode === 'absent' || $mode === 'day_absent') ? 'absent' : ($outAt > 0 ? 'out' : 'in'),
 			];
 		}
 		ksort($grouped, SORT_NATURAL | SORT_FLAG_CASE);
@@ -627,10 +625,12 @@ class WisdomGroupOverview
 			LEFT JOIN faculty f ON f.id = d.faculty_id";
 	}
 
-	private function locationTapRows(int $schoolId, int $areaId, int $yearId, int $todayStart, int $todayEnd, bool $outOnly): array
+	private function locationTapRows(int $schoolId, int $areaId, int $yearId, int $todayStart, int $todayEnd, bool $outOnly, bool $dayscholarOnly = false, bool $skipNursery = false): array
 	{
 		$db = \Config\Database::connect();
 		$out = $outOnly ? ' AND COALESCE(ar.time_out, 0) > 0' : '';
+		$day = $dayscholarOnly ? ' AND IFNULL(s.studying_mode, 1) = 1' : '';
+		$nur = $skipNursery ? ' AND NOT ' . $this->nurseryMatchSql('l', 'c', 'd') : '';
 		$sql = "SELECT ar.time_in, ar.time_out, " . $this->classSelect('s') . "
 			FROM attendance_records ar
 			INNER JOIN students s ON s.id = ar.user_id
@@ -639,14 +639,16 @@ class WisdomGroupOverview
 				AND ar.school_id = " . (int) $schoolId . "
 				AND ar.user_type = 0
 				AND ar.time_in >= {$todayStart}
-				AND ar.time_in < {$todayEnd}{$out}
+				AND ar.time_in < {$todayEnd}{$out}{$day}{$nur}
 			ORDER BY s.fname, s.lname";
 		return $db->query($sql)->getResultArray();
 	}
 
-	private function locationAbsentRows(int $schoolId, int $areaId, int $yearId, int $todayStart, int $todayEnd): array
+	private function locationAbsentRows(int $schoolId, int $areaId, int $yearId, int $todayStart, int $todayEnd, bool $dayscholarOnly = false, bool $skipNursery = false): array
 	{
 		$db = \Config\Database::connect();
+		$day = $dayscholarOnly ? ' AND IFNULL(s.studying_mode, 1) = 1' : '';
+		$nur = $skipNursery ? ' AND NOT ' . $this->nurseryMatchSql('l', 'c', 'd') : '';
 		$sql = "SELECT 0 AS time_in, 0 AS time_out, " . $this->classSelect('s') . "
 			FROM students s
 			INNER JOIN (" . $this->enrolledStudentSql($schoolId, $yearId) . ") es ON es.id = s.id
@@ -659,7 +661,7 @@ class WisdomGroupOverview
 					AND ar.school_id = " . (int) $schoolId . "
 					AND ar.time_in >= {$todayStart}
 					AND ar.time_in < {$todayEnd}
-			)
+			){$day}{$nur}
 			ORDER BY s.fname, s.lname";
 		return $db->query($sql)->getResultArray();
 	}
