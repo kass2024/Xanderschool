@@ -187,6 +187,45 @@ class AttendanceScanService
 	}
 
 	/**
+	 * Compact feeding and transport amounts for phone location attendance.
+	 *
+	 * @return list<array<string,int>>
+	 */
+	public static function locationRules(int $schoolId): array
+	{
+		$db = \Config\Database::connect();
+		$scope = self::scopeSchoolIds($schoolId);
+		if ($scope === []) {
+			$scope = [$schoolId];
+		}
+		$rows = $db->table('students')
+			->select('id, studying_mode')
+			->whereIn('school_id', $scope)
+			->where('status', 1)
+			->get()
+			->getResultArray();
+		$feedingAmounts = self::feedingAmountMap($schoolId);
+		$transportAmounts = self::transportAmountMap($schoolId);
+		$transportRequired = self::transportRequiredMap($schoolId);
+		$out = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['id'] ?? 0);
+			if ($sid <= 0) {
+				continue;
+			}
+			$mode = $row['studying_mode'];
+			$out[] = [
+				'id' => $sid,
+				'studying_mode' => ($mode === null || $mode === '') ? 1 : (int) $mode,
+				'feeding_amount' => (int) ($feedingAmounts[$sid] ?? 0),
+				'transport_amount' => (int) ($transportAmounts[$sid] ?? 0),
+				'transport_required' => (int) ($transportRequired[$sid] ?? 0),
+			];
+		}
+		return $out;
+	}
+
+	/**
 	 * @return array<string,mixed>
 	 */
 	public static function openByAcronym(string $acronym): array

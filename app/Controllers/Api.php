@@ -5600,6 +5600,7 @@ public function permission_card_scan()
 			'success' => 1,
 			'locations' => $locations,
 			'attendance_today' => \App\Libraries\AttendanceScanService::studentAttendanceToday($schoolId),
+			'rules' => \App\Libraries\AttendanceScanService::locationRules($schoolId),
 		]);
 	}
 
