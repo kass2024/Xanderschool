@@ -265,12 +265,19 @@ class WisdomGroupOverview
 			$id = (int) $row['id'];
 			$enrolled = (int) ($row['students'] ?? 0);
 			if ($id === (int) $masterId) {
-				$present = $this->devicePresentCount($id, (int) $yearId);
+				$split = $this->masterPresentSplit($id, (int) $yearId);
+				$present = (int) $split['total'];
 				$rows[$i]['att_summary'] = [
 					'daily_present' => $present,
 					'daily_absent' => max(0, $enrolled - $present),
+					'day_present' => (int) $split['day'],
+					'board_present' => (int) $split['board'],
+					'girls_present' => (int) $split['girls'],
+					'boys_present' => (int) $split['boys'],
 					'source' => 'device',
 				];
+				$rows[$i]['daily_visitors'] = $this->dailyVisitorPulse($id);
+				$rows[$i]['parent_visits'] = $this->parentVisitPulse($id, (int) $yearId);
 				continue;
 			}
 			if (isset($attendance[$id])) {
@@ -343,7 +350,153 @@ class WisdomGroupOverview
 
 	public function devicePresentCount(int $schoolId, int $yearId): int
 	{
-		return count($this->devicePresentStudentIds($schoolId, $yearId, 0));
+		return (int) $this->masterPresentSplit($schoolId, $yearId)['total'];
+	}
+
+	/**
+	 * Master present split: school-gate day scholars, boarding device, and sex of those present.
+	 *
+	 * @return array{total:int,day:int,board:int,girls:int,boys:int}
+	 */
+	public function masterPresentSplit(int $schoolId, int $yearId): array
+	{
+		$blank = ['total' => 0, 'day' => 0, 'board' => 0, 'girls' => 0, 'boys' => 0];
+		if ($schoolId < 1) {
+			return $blank;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('students') || !$db->tableExists('class_records')) {
+			return $blank;
+		}
+		$todayStart = strtotime(date('Y-m-d') . ' 00:00:00');
+		$todayEnd = $todayStart + 86400;
+		$today = $db->escape(date('Y-m-d'));
+		$gateIds = $this->gateAreaIds($schoolId);
+		$gateSql = '0';
+		if ($gateIds !== [] && $db->tableExists('attendance_records')) {
+			$gateSql = 'es.studying_mode = 1 AND es.id IN (
+				SELECT ar.user_id FROM attendance_records ar
+				WHERE ar.school_id = ' . (int) $schoolId . '
+					AND ar.user_type = 0
+					AND ar.area_id IN (' . implode(',', $gateIds) . ')
+					AND ar.time_in >= ' . $todayStart . '
+					AND ar.time_in < ' . $todayEnd . '
+			)';
+		}
+		$boardSql = '0';
+		if ($db->tableExists('boarding_attendance')) {
+			$boardSql = 'es.studying_mode = 0 AND es.id IN (
+				SELECT ba.student_id FROM boarding_attendance ba
+				WHERE DATE(ba.datee) = ' . $today . '
+			)';
+		}
+		$girl = "UPPER(TRIM(s.sex)) IN ('F','FEMALE','GIRL','GIRLS','FEMININ','FEMININE','GORE')
+			OR UPPER(LEFT(TRIM(s.sex), 1)) = 'F'";
+		try {
+			$row = $db->query(
+				'SELECT COUNT(*) AS total,
+					SUM(es.studying_mode = 1) AS day_present,
+					SUM(es.studying_mode = 0) AS board_present,
+					SUM(CASE WHEN ' . $girl . ' THEN 1 ELSE 0 END) AS girls_present
+				FROM (' . $this->enrolledFlagsSql($schoolId, $yearId) . ') es
+				INNER JOIN students s ON s.id = es.id
+				WHERE (' . $gateSql . ' OR ' . $boardSql . ')'
+			)->getRowArray();
+		} catch (\Throwable $e) {
+			return $blank;
+		}
+		$total = (int) ($row['total'] ?? 0);
+		$girls = min($total, (int) ($row['girls_present'] ?? 0));
+		return [
+			'total' => $total,
+			'day' => (int) ($row['day_present'] ?? 0),
+			'board' => (int) ($row['board_present'] ?? 0),
+			'girls' => $girls,
+			'boys' => max(0, $total - $girls),
+		];
+	}
+
+	/**
+	 * Today's daily gate visitors. Same totals as the visiting report.
+	 *
+	 * @return array{visits:int,still_inside:int,checked_out:int}
+	 */
+	public function dailyVisitorPulse(int $schoolId): array
+	{
+		$blank = ['visits' => 0, 'still_inside' => 0, 'checked_out' => 0];
+		if ($schoolId < 1) {
+			return $blank;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('gate_visits')) {
+			return $blank;
+		}
+		try {
+			$row = $db->query(
+				'SELECT COUNT(*) AS visits,
+					SUM(CASE WHEN IFNULL(time_out, 0) = 0 THEN 1 ELSE 0 END) AS still_inside,
+					SUM(CASE WHEN IFNULL(time_out, 0) > 0 THEN 1 ELSE 0 END) AS checked_out
+				FROM gate_visits
+				WHERE school_id = ' . (int) $schoolId . '
+					AND visit_date = ' . $db->escape(date('Y-m-d'))
+			)->getRowArray();
+		} catch (\Throwable $e) {
+			return $blank;
+		}
+		return [
+			'visits' => (int) ($row['visits'] ?? 0),
+			'still_inside' => (int) ($row['still_inside'] ?? 0),
+			'checked_out' => (int) ($row['checked_out'] ?? 0),
+		];
+	}
+
+	/**
+	 * Today's parent visiting short report. Same rules as the parent visiting report.
+	 *
+	 * @return array{classes:int,students:int,visited:int,not_visited:int,check_ins:int}
+	 */
+	public function parentVisitPulse(int $schoolId, int $yearId): array
+	{
+		$blank = ['classes' => 0, 'students' => 0, 'visited' => 0, 'not_visited' => 0, 'check_ins' => 0];
+		if ($schoolId < 1) {
+			return $blank;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('students') || !$db->tableExists('class_records') || !$db->tableExists('classes')) {
+			return $blank;
+		}
+		try {
+			$pop = $db->query(
+				'SELECT COUNT(DISTINCT s.id) AS students, COUNT(DISTINCT c.id) AS classes
+				FROM students s
+				INNER JOIN class_records cr ON cr.student = s.id AND cr.year = ' . (int) $yearId . '
+				INNER JOIN classes c ON c.id = cr.class
+				WHERE s.school_id = ' . (int) $schoolId . ' AND s.status = 1'
+			)->getRowArray();
+			$students = (int) ($pop['students'] ?? 0);
+			$classes = (int) ($pop['classes'] ?? 0);
+			$visited = 0;
+			$checkIns = 0;
+			if ($db->tableExists('visitor_visits')) {
+				$vis = $db->query(
+					'SELECT COUNT(*) AS check_ins, COUNT(DISTINCT student_id) AS visited
+					FROM visitor_visits
+					WHERE school_id = ' . (int) $schoolId . '
+						AND visit_date = ' . $db->escape(date('Y-m-d'))
+				)->getRowArray();
+				$visited = (int) ($vis['visited'] ?? 0);
+				$checkIns = (int) ($vis['check_ins'] ?? 0);
+			}
+			return [
+				'classes' => $classes,
+				'students' => $students,
+				'visited' => $visited,
+				'not_visited' => max(0, $students - $visited),
+				'check_ins' => $checkIns,
+			];
+		} catch (\Throwable $e) {
+			return $blank;
+		}
 	}
 
 	public function schoolIsMaster(int $schoolId): bool

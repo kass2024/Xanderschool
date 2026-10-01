@@ -316,6 +316,17 @@
 						.wg-loc:hover { border-color: #1d4ed8; box-shadow: 0 4px 14px rgba(15, 23, 42, .08); }
 						.wg-loc b { display: block; color: #1d4ed8; font-size: .88rem; }
 						.wg-loc span { display: block; margin-top: 4px; color: #64748b; font-size: .75rem; }
+						.wg-pulse-row { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
+						.wg-pulse { background: #fff; border: 1px solid #dbeafe; border-radius: 12px; padding: 10px 12px; }
+						.wg-pulse-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+						.wg-pulse-head b { color: #1d4ed8; font-size: .92rem; }
+						.wg-pulse-head span { color: #64748b; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+						.wg-pulse-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+						.wg-pulse-nums div { background: #f8fafc; border-radius: 8px; padding: 6px 8px; text-align: center; }
+						.wg-pulse-nums strong { display: block; font-size: 1.15rem; color: #0f172a; }
+						.wg-pulse-nums em { font-style: normal; color: #64748b; font-size: .72rem; }
+						.wg-pulse small { display: block; margin-top: 6px; color: #64748b; font-size: .75rem; }
+						@media (min-width: 700px) { .wg-pulse-row { grid-template-columns: 1fr 1fr; } }
 						.wg-att { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
 						.wg-att article { background: #f8fafc; border: 1px solid #e5e7eb; border-top: 3px solid #1d4ed8; border-radius: 10px; padding: 7px 8px; min-width: 0; }
 						.wg-att article.green { border-top-color: #16a34a; }
@@ -375,12 +386,39 @@
 								<div><strong><?= (int) $wgMaster['girls']; ?></strong><em>Girls</em></div>
 								<div><strong><?= (int) $wgMaster['staff']; ?></strong><em>Staff</em></div>
 								<?php $matt = $wgMaster['att_summary'] ?? []; ?>
-								<div><strong><?= (int) ($matt['daily_present'] ?? 0); ?></strong><em>Present students</em><br><small>School gate and boarding</small></div>
+								<div><strong><?= (int) ($matt['daily_present'] ?? 0); ?></strong><em>Total present</em><br><small>School gate and boarding</small></div>
+								<div><strong><?= (int) ($matt['day_present'] ?? 0); ?></strong><em>Dayscholar present</em><br><small>School gate</small></div>
+								<div><strong><?= (int) ($matt['board_present'] ?? 0); ?></strong><em>Boarding present</em><br><small>Boarding device</small></div>
+								<div><strong><?= (int) ($matt['girls_present'] ?? 0); ?></strong><em>Girls present</em></div>
+								<div><strong><?= (int) ($matt['boys_present'] ?? 0); ?></strong><em>Boys present</em></div>
 								<div><strong><?= (int) ($matt['daily_absent'] ?? 0); ?></strong><em>Absent students</em><br><small>Not recorded on the device</small></div>
 								<div><strong><?= (int) $wgMaster['student_out']; ?></strong><em>Students out</em></div>
 								<div><strong><?= (int) $wgMaster['student_inside']; ?></strong><em>Still inside</em></div>
 								<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/in'); ?>"><strong><?= (int) $wgMaster['staff_present']; ?></strong><em>Staff in today</em></a>
 								<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/absent'); ?>"><strong><?= (int) $wgMaster['staff_absent']; ?></strong><em>Staff absent today</em></a>
+							</div>
+							<?php
+								$wgVisitors = $wgMaster['daily_visitors'] ?? [];
+								$wgParents = $wgMaster['parent_visits'] ?? [];
+							?>
+							<div class="wg-pulse-row">
+								<div class="wg-pulse">
+									<div class="wg-pulse-head"><b>Daily visitors</b><span>Today</span></div>
+									<div class="wg-pulse-nums">
+										<div><strong><?= (int) ($wgVisitors['visits'] ?? 0); ?></strong><em>Visits</em></div>
+										<div><strong><?= (int) ($wgVisitors['still_inside'] ?? 0); ?></strong><em>Still inside</em></div>
+										<div><strong><?= (int) ($wgVisitors['checked_out'] ?? 0); ?></strong><em>Checked out</em></div>
+									</div>
+								</div>
+								<div class="wg-pulse">
+									<div class="wg-pulse-head"><b>Parent visit</b><span>Today</span></div>
+									<div class="wg-pulse-nums">
+										<div><strong><?= (int) ($wgParents['visited'] ?? 0); ?></strong><em>Visited</em></div>
+										<div><strong><?= (int) ($wgParents['not_visited'] ?? 0); ?></strong><em>Not visited</em></div>
+										<div><strong><?= (int) ($wgParents['check_ins'] ?? 0); ?></strong><em>Check-ins</em></div>
+									</div>
+									<small><?= (int) ($wgParents['classes'] ?? 0); ?> classes · <?= (int) ($wgParents['students'] ?? 0); ?> students</small>
+								</div>
 							</div>
 							<?php if (!empty($wgMaster['locations'])): ?>
 							<div class="wg-loc-title">Student in/out by location</div>
