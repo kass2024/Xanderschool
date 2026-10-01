@@ -3677,6 +3677,26 @@ public function get_boarding_classes()
 		return $this->response->setJSON($data);
 	}
 
+	public function school_monitor_people()
+	{
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id'));
+		$this->_preset($schoolId);
+		helper('qonics');
+		$postId = (int) ($this->request->getPost('post_id') ?: $this->request->getGet('post_id'));
+		$overview = new \App\Services\WisdomGroupOverview();
+		if (!$overview->canMonitor($postId)) {
+			return $this->response->setJSON([
+				'error' => 'Only Director, Deputy Director, Executive Principal, and Director of Finance can open all schools monitoring.',
+			]);
+		}
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		$mode = strtolower(trim((string) ($this->request->getPost('mode') ?: $this->request->getGet('mode') ?: 'present')));
+		$className = trim((string) ($this->request->getPost('class') ?: $this->request->getGet('class') ?: ''));
+		$data = $overview->monitorPeople($schoolId, $yearId, $mode, $className);
+		$data['success'] = 1;
+		return $this->response->setJSON($data);
+	}
+
 	public function save_discipline()
 	{
 		$school_id = $this->request->getPost("school_id");

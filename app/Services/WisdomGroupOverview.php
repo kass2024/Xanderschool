@@ -828,6 +828,335 @@ class WisdomGroupOverview
 		];
 	}
 
+	/**
+	 * Class list behind a dashboard number. Without a class, returns class totals.
+	 *
+	 * @return array{mode:string,classes:list<array{name:string,count:int}>,people:list<array<string,string>>}
+	 */
+	public function monitorPeople(int $schoolId, int $yearId, string $mode, string $classFilter = ''): array
+	{
+		$mode = strtolower(trim($mode));
+		$allowed = [
+			'present', 'day', 'board', 'girls', 'boys', 'absent',
+			'visit', 'visit_in', 'visit_out',
+			'parent_in', 'parent_out', 'parent_checks',
+			'staff_in', 'staff_out',
+		];
+		if (!in_array($mode, $allowed, true)) {
+			$mode = 'present';
+		}
+		$classFilter = trim($classFilter);
+		$empty = ['mode' => $mode, 'classes' => [], 'people' => []];
+		if ($schoolId < 1) {
+			return $empty;
+		}
+		try {
+			if (strpos($mode, 'visit') === 0) {
+				$rows = $this->visitorPeople($schoolId, $mode);
+			} elseif (strpos($mode, 'parent_') === 0) {
+				$rows = $this->parentPeople($schoolId, $yearId, $mode);
+			} elseif (strpos($mode, 'staff_') === 0) {
+				$rows = $this->staffPeople($schoolId, $mode);
+			} else {
+				$rows = $this->attendancePeople($schoolId, $yearId, $mode);
+			}
+		} catch (\Throwable $e) {
+			return $empty;
+		}
+		return $this->groupPeople($rows, $mode, $classFilter);
+	}
+
+	/**
+	 * @param list<array<string,string>> $rows
+	 * @return array{mode:string,classes:list<array{name:string,count:int}>,people:list<array<string,string>>,class?:string}
+	 */
+	private function groupPeople(array $rows, string $mode, string $classFilter): array
+	{
+		$grouped = [];
+		foreach ($rows as $row) {
+			$label = trim((string) ($row['class'] ?? ''));
+			if ($label === '') {
+				$label = 'No class';
+			}
+			if ($classFilter !== '' && strcasecmp($label, $classFilter) !== 0) {
+				continue;
+			}
+			$grouped[$label][] = $row;
+		}
+		ksort($grouped, SORT_NATURAL | SORT_FLAG_CASE);
+		if ($classFilter !== '') {
+			$people = [];
+			foreach ($grouped as $label => $pack) {
+				if (strcasecmp($label, $classFilter) === 0) {
+					$people = $pack;
+					break;
+				}
+			}
+			usort($people, static function ($a, $b) {
+				return strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+			});
+			return [
+				'mode' => $mode,
+				'class' => $classFilter,
+				'classes' => [],
+				'people' => $people,
+			];
+		}
+		$classes = [];
+		foreach ($grouped as $label => $pack) {
+			$classes[] = ['name' => $label, 'count' => count($pack)];
+		}
+		return ['mode' => $mode, 'classes' => $classes, 'people' => []];
+	}
+
+	/** @return list<array<string,string>> */
+	private function attendancePeople(int $schoolId, int $yearId, string $mode): array
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('students') || !$db->tableExists('class_records')) {
+			return [];
+		}
+		$master = $this->schoolIsMaster($schoolId);
+		$todayStart = strtotime(date('Y-m-d') . ' 00:00:00');
+		$todayEnd = $todayStart + 86400;
+		$today = $db->escape(date('Y-m-d'));
+		$girl = "UPPER(TRIM(s.sex)) IN ('F','FEMALE','GIRL','GIRLS','FEMININ','FEMININE','GORE')
+			OR UPPER(LEFT(TRIM(s.sex), 1)) = 'F'";
+		$presentSql = '0';
+		$timeSql = "'' AS seen_at";
+		if ($master) {
+			$gateIds = $this->gateAreaIds($schoolId);
+			$gateJoin = '0 AS gate_time';
+			if ($gateIds !== [] && $db->tableExists('attendance_records')) {
+				$gateJoin = '(SELECT MIN(ar.time_in) FROM attendance_records ar
+					WHERE ar.user_id = s.id AND ar.user_type = 0 AND ar.school_id = ' . (int) $schoolId . '
+						AND ar.area_id IN (' . implode(',', $gateIds) . ')
+						AND ar.time_in >= ' . $todayStart . ' AND ar.time_in < ' . $todayEnd . ') AS gate_time';
+			}
+			$boardJoin = 'NULL AS board_time';
+			if ($db->tableExists('boarding_attendance')) {
+				$boardJoin = '(SELECT MIN(ba.clock_time) FROM boarding_attendance ba
+					WHERE ba.student_id = s.id AND DATE(ba.datee) = ' . $today . ') AS board_time';
+			}
+			$presentSql = '((es.studying_mode = 1 AND gate_time IS NOT NULL) OR (es.studying_mode = 0 AND board_time IS NOT NULL))';
+			$timeSql = $gateJoin . ', ' . $boardJoin;
+		} elseif ($db->tableExists('daily_attendance')) {
+			$presentSql = 'reg.student_id IS NOT NULL';
+			$timeSql = 'reg.seen_at';
+		}
+		$regJoin = '';
+		if (!$master && $db->tableExists('daily_attendance')) {
+			$regJoin = 'LEFT JOIN (
+				SELECT student_id, MIN(datee) AS seen_at
+				FROM daily_attendance
+				WHERE DATE(datee) = ' . $today . '
+				GROUP BY student_id
+			) reg ON reg.student_id = s.id';
+		}
+		$sql = 'SELECT s.id, es.studying_mode,
+				CASE WHEN ' . $girl . ' THEN 1 ELSE 0 END AS is_girl,
+				' . $timeSql . ',
+				' . $this->classSelect('s') . '
+			FROM (' . $this->enrolledFlagsSql($schoolId, $yearId) . ') es
+			INNER JOIN students s ON s.id = es.id
+			' . $regJoin . '
+			' . $this->classJoins('s', $yearId);
+		$raw = $db->query($sql)->getResultArray();
+		$out = [];
+		foreach ($raw as $row) {
+			$isGirl = (int) ($row['is_girl'] ?? 0) === 1;
+			$modeDay = (int) ($row['studying_mode'] ?? 1) === 1;
+			$present = false;
+			$when = '';
+			if ($master) {
+				$gateTime = (int) ($row['gate_time'] ?? 0);
+				$boardRaw = trim((string) ($row['board_time'] ?? ''));
+				$boardTime = $boardRaw !== '' ? strtotime($boardRaw) : 0;
+				$atGate = $modeDay && $gateTime > 0;
+				$atBoard = !$modeDay && $boardTime > 0;
+				$present = $atGate || $atBoard;
+				$stamp = $atBoard ? $boardTime : $gateTime;
+				if ($stamp > 0) {
+					$when = date('H:i', $stamp);
+				}
+			} else {
+				$present = !empty($row['seen_at']);
+				$seen = (string) ($row['seen_at'] ?? '');
+				if ($seen !== '') {
+					$stamp = strtotime($seen);
+					if ($stamp > 0) {
+						$when = date('H:i', $stamp);
+					}
+				}
+			}
+			$keep = false;
+			if ($mode === 'absent') {
+				$keep = !$present;
+			} elseif ($mode === 'day') {
+				$keep = $present && $modeDay;
+			} elseif ($mode === 'board') {
+				$keep = $present && !$modeDay;
+			} elseif ($mode === 'girls') {
+				$keep = $present && $isGirl;
+			} elseif ($mode === 'boys') {
+				$keep = $present && !$isGirl;
+			} else {
+				$keep = $present;
+			}
+			if (!$keep) {
+				continue;
+			}
+			$out[] = [
+				'name' => trim((string) ($row['student_name'] ?? '')),
+				'class' => \App\Models\SchoolFeesModel::displayLabel($row),
+				'time_in' => $mode === 'absent' ? '' : $when,
+				'time_out' => '',
+				'status' => $mode === 'absent' ? 'absent' : 'in',
+			];
+		}
+		return $out;
+	}
+
+	/** @return list<array<string,string>> */
+	private function visitorPeople(int $schoolId, string $mode): array
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('gate_visits')) {
+			return [];
+		}
+		$rows = $db->query(
+			'SELECT names, reason, time_in, time_out
+			FROM gate_visits
+			WHERE school_id = ' . (int) $schoolId . '
+				AND visit_date = ' . $db->escape(date('Y-m-d')) . '
+			ORDER BY time_in DESC'
+		)->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$outAt = (int) ($row['time_out'] ?? 0);
+			$inside = $outAt <= 0;
+			if ($mode === 'visit_in' && !$inside) {
+				continue;
+			}
+			if ($mode === 'visit_out' && $inside) {
+				continue;
+			}
+			$in = (int) ($row['time_in'] ?? 0);
+			$reason = trim((string) ($row['reason'] ?? ''));
+			$out[] = [
+				'name' => trim((string) ($row['names'] ?? '')),
+				'class' => $reason !== '' ? $reason : 'Visit',
+				'time_in' => $in > 0 ? date('H:i', $in) : '',
+				'time_out' => $outAt > 0 ? date('H:i', $outAt) : '',
+				'status' => $inside ? 'in' : 'out',
+			];
+		}
+		return $out;
+	}
+
+	/** @return list<array<string,string>> */
+	private function parentPeople(int $schoolId, int $yearId, string $mode): array
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('students') || !$db->tableExists('class_records') || !$db->tableExists('classes')) {
+			return [];
+		}
+		$today = $db->escape(date('Y-m-d'));
+		if ($mode === 'parent_checks' && $db->tableExists('visitor_visits')) {
+			$rows = $db->query(
+				'SELECT TRIM(CONCAT(s.fname, " ", s.lname)) AS student_name,
+					sv.names AS visitor_name, vv.time_in, vv.time_out,
+					l.title AS level_title, d.code AS dept_code, d.title AS dept_title,
+					f.abbrev AS faculty_code, c.title AS class_title
+				FROM visitor_visits vv
+				INNER JOIN students s ON s.id = vv.student_id
+				LEFT JOIN student_visitors sv ON sv.id = vv.visitor_id
+				' . $this->classJoins('s', $yearId) . '
+				WHERE vv.school_id = ' . (int) $schoolId . ' AND vv.visit_date = ' . $today
+			)->getResultArray();
+			$out = [];
+			foreach ($rows as $row) {
+				$in = (int) ($row['time_in'] ?? 0);
+				$outAt = (int) ($row['time_out'] ?? 0);
+				$visitor = trim((string) ($row['visitor_name'] ?? ''));
+				$out[] = [
+					'name' => trim((string) ($row['student_name'] ?? '')),
+					'class' => \App\Models\SchoolFeesModel::displayLabel($row),
+					'time_in' => $in > 0 ? date('H:i', $in) : '',
+					'time_out' => $outAt > 0 ? date('H:i', $outAt) : '',
+					'status' => $outAt > 0 ? 'out' : 'in',
+					'note' => $visitor,
+				];
+			}
+			return $out;
+		}
+		$students = $db->query(
+			'SELECT s.id, TRIM(CONCAT(s.fname, " ", s.lname)) AS student_name,
+				l.title AS level_title, d.code AS dept_code, d.title AS dept_title,
+				f.abbrev AS faculty_code, c.title AS class_title
+			FROM students s
+			INNER JOIN class_records cr ON cr.student = s.id AND cr.year = ' . (int) $yearId . '
+			INNER JOIN classes c ON c.id = cr.class
+			LEFT JOIN levels l ON l.id = c.level
+			LEFT JOIN departments d ON d.id = c.department
+			LEFT JOIN faculty f ON f.id = d.faculty_id
+			WHERE s.school_id = ' . (int) $schoolId . ' AND s.status = 1'
+		)->getResultArray();
+		$visited = [];
+		if ($db->tableExists('visitor_visits')) {
+			foreach ($db->query(
+				'SELECT DISTINCT student_id FROM visitor_visits
+				WHERE school_id = ' . (int) $schoolId . ' AND visit_date = ' . $today
+			)->getResultArray() as $row) {
+				$visited[(int) ($row['student_id'] ?? 0)] = true;
+			}
+		}
+		$out = [];
+		$seen = [];
+		foreach ($students as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id < 1 || isset($seen[$id])) {
+				continue;
+			}
+			$seen[$id] = true;
+			$did = !empty($visited[$id]);
+			if ($mode === 'parent_in' && !$did) {
+				continue;
+			}
+			if ($mode === 'parent_out' && $did) {
+				continue;
+			}
+			$out[] = [
+				'name' => trim((string) ($row['student_name'] ?? '')),
+				'class' => \App\Models\SchoolFeesModel::displayLabel($row),
+				'time_in' => '',
+				'time_out' => '',
+				'status' => $did ? 'in' : 'absent',
+			];
+		}
+		return $out;
+	}
+
+	/** @return list<array<string,string>> */
+	private function staffPeople(int $schoolId, string $mode): array
+	{
+		$pack = $this->loadTodayStaff([$schoolId]);
+		$kind = $mode === 'staff_out' ? 'absent' : 'in';
+		$rows = $pack[$schoolId][$kind] ?? [];
+		$out = [];
+		foreach ($rows as $row) {
+			$post = trim((string) ($row['post'] ?? ''));
+			$out[] = [
+				'name' => trim((string) ($row['name'] ?? '')),
+				'class' => $post !== '' ? $post : 'Staff',
+				'time_in' => (string) ($row['time'] ?? ''),
+				'time_out' => '',
+				'status' => $kind === 'absent' ? 'absent' : 'in',
+			];
+		}
+		return $out;
+	}
+
 	private function enrolledStudentSql(int $schoolId, int $yearId): string
 	{
 		$schoolId = (int) $schoolId;
