@@ -4349,6 +4349,71 @@ public function discipline_card_scan()
     ]);
 }
 
+	/**
+	 * Compact card roster for the behavior app. Stored UIDs match assign-card (byte-reversed hex).
+	 * GET/POST school_id.
+	 */
+	public function student_cards()
+	{
+		helper('card_uid');
+		$schoolId = (int) ($this->request->getPost('school_id') ?? $this->request->getGet('school_id') ?? 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['error' => 'Missing school ID.']);
+		}
+
+		$db = \Config\Database::connect();
+		$yearRow = $db->query(
+			"SELECT at.academic_year AS year_id
+			 FROM schools s
+			 LEFT JOIN active_term at ON at.id = s.active_term
+			 WHERE s.id = ?",
+			[$schoolId]
+		)->getRowArray();
+		$year = (int) ($yearRow['year_id'] ?? 0);
+		$scope = \App\Libraries\CardRegistry::schoolScopeIds($schoolId);
+		if ($scope === []) {
+			$scope = [$schoolId];
+		}
+		$scopePh = implode(',', array_fill(0, count($scope), '?'));
+		$yearSql = $year > 0 ? ' AND year = ?' : '';
+		$params = $year > 0 ? array_merge([$year], $scope) : $scope;
+		$rows = $db->query(
+			"SELECT students.id,
+				UPPER(TRIM(students.card)) AS card,
+				students.regno,
+				CONCAT(students.fname, ' ', students.lname) AS name,
+				TRIM(CONCAT(IFNULL(l.title,''), ' ', IFNULL(d.code,''), ' ', IFNULL(c.title,''))) AS class,
+				c.id AS class_id,
+				IFNULL(students.photo,'') AS photo,
+				IFNULL(students.sex,'') AS sex,
+				COALESCE(students.ft_phone, students.mt_phone, students.gd_phone, '') AS phone
+			 FROM students
+			 INNER JOIN (
+				SELECT student, MAX(id) AS record_id
+				FROM class_records
+				WHERE status = 1{$yearSql}
+				GROUP BY student
+			 ) latest ON latest.student = students.id
+			 INNER JOIN class_records cr ON cr.id = latest.record_id
+			 INNER JOIN classes c ON c.id = cr.class
+			 INNER JOIN departments d ON d.id = c.department
+			 INNER JOIN levels l ON l.id = c.level
+			 WHERE students.school_id IN ({$scopePh})
+			   AND students.status = 1
+			   AND TRIM(IFNULL(students.card,'')) <> ''
+			   AND IFNULL(c.title,'') NOT LIKE '%holiday%'
+			   AND IFNULL(l.title,'') NOT LIKE '%holiday%'
+			   AND IFNULL(d.title,'') NOT LIKE '%holiday%'",
+			$params
+		)->getResultArray();
+
+		return $this->response->setJSON([
+			'success' => true,
+			'count' => count($rows),
+			'students' => $rows,
+		]);
+	}
+
 public function permission_card_scan()
 {
     helper(['text', 'card_uid']);
@@ -5511,6 +5576,31 @@ public function permission_card_scan()
 			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
 		}
 		return $this->response->setJSON(AttendanceScanService::bootstrap($schoolId));
+	}
+
+	/**
+	 * Phone location attendance: active locations and today's clocks only.
+	 */
+	public function device_locations()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
+		}
+		$areaMdl = new \App\Models\AttendanceAreaModel();
+		$locations = [];
+		foreach ($areaMdl->listAreas($schoolId, true) as $area) {
+			$locations[] = [
+				'id' => (int) ($area['id'] ?? 0),
+				'name' => (string) ($area['name'] ?? ''),
+			];
+		}
+		return $this->response->setJSON([
+			'success' => 1,
+			'locations' => $locations,
+			'attendance_today' => \App\Libraries\AttendanceScanService::studentAttendanceToday($schoolId),
+		]);
 	}
 
 	/**
