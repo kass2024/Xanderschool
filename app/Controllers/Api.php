@@ -3832,8 +3832,20 @@ public function get_boarding_classes()
 				}
 			}
 			$schoolMdl = new SchoolModel();
-			$skl = $schoolMdl->select("phone")->where("id", $school_id)->get()->getRow();
-			return $this->response->setJSON(array("success" => lang("app.permissionSavedsuccessfully"), "school_phone" => $skl->phone));
+			$skl = $schoolMdl->select("name, phone, email, website, address, pobox, slogan, logo")
+				->where("id", $school_id)->get()->getRow();
+			$logoFile = $skl ? trim((string) ($skl->logo ?? '')) : '';
+			return $this->response->setJSON([
+				"success" => lang("app.permissionSavedsuccessfully"),
+				"school_name" => $skl ? (string) ($skl->name ?? '') : '',
+				"school_phone" => $skl ? (string) ($skl->phone ?? '') : '',
+				"school_email" => $skl ? (string) ($skl->email ?? '') : '',
+				"school_website" => $skl ? (string) ($skl->website ?? '') : '',
+				"school_address" => $skl ? (string) ($skl->address ?? '') : '',
+				"school_pobox" => $skl ? (string) ($skl->pobox ?? '') : '',
+				"school_slogan" => $skl ? (string) ($skl->slogan ?? '') : '',
+				"school_logo" => $logoFile !== '' ? base_url('assets/images/logo/' . $logoFile) : '',
+			]);
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => lang("app.OopsAction")));
 		}
