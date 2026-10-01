@@ -146,8 +146,10 @@ class WisdomGroupOverview
 			$yearId = (int) $yearId;
 			$studentSql = "SELECT s.school_id,
 					COUNT(DISTINCT s.id) AS students,
-					COUNT(DISTINCT CASE WHEN UPPER(TRIM(s.sex)) IN ('M','MALE','BOY') THEN s.id END) AS boys,
-					COUNT(DISTINCT CASE WHEN UPPER(TRIM(s.sex)) IN ('F','FEMALE','GIRL') THEN s.id END) AS girls,
+					COUNT(DISTINCT CASE WHEN
+						UPPER(TRIM(s.sex)) IN ('F','FEMALE','GIRL','GIRLS','FEMININ','FEMININE','GORE')
+						OR UPPER(LEFT(TRIM(s.sex), 1)) = 'F'
+					THEN s.id END) AS girls,
 					COUNT(DISTINCT CASE WHEN
 						NULLIF(TRIM(s.father), '') IS NOT NULL
 						OR NULLIF(TRIM(s.mother), '') IS NOT NULL
@@ -159,61 +161,26 @@ class WisdomGroupOverview
 				FROM students s
 				INNER JOIN schools sch ON sch.id = s.school_id
 				LEFT JOIN active_term atr ON atr.id = sch.active_term
-				INNER JOIN class_records a ON a.student = s.id AND a.status = 1
+				INNER JOIN class_records a ON a.student = s.id
 					AND a.year = IFNULL(atr.academic_year, {$yearId})
 				INNER JOIN classes cl ON cl.id = a.class
 				LEFT JOIN levels l ON l.id = cl.level
-				LEFT JOIN departments d ON d.id = cl.department
-				WHERE s.status IN (1, 2)
+				WHERE s.status = 1
 					AND s.school_id IN ({$idList})
 					AND IFNULL(cl.title,'') NOT LIKE '%Holiday%'
 					AND IFNULL(l.title,'') NOT LIKE '%Holiday%'
-					AND IFNULL(d.title,'') NOT LIKE '%Holiday%'
-					AND IFNULL(d.code,'') NOT LIKE '%Holiday%'
 				GROUP BY s.school_id";
 			foreach ($db->query($studentSql)->getResultArray() as $row) {
 				$sid = (int) $row['school_id'];
 				if (!isset($bySchool[$sid])) {
 					continue;
 				}
-				$bySchool[$sid]['students'] = (int) $row['students'];
-				$bySchool[$sid]['boys'] = (int) $row['boys'];
-				$bySchool[$sid]['girls'] = (int) $row['girls'];
+				$students = (int) $row['students'];
+				$girls = min($students, (int) $row['girls']);
+				$bySchool[$sid]['students'] = $students;
+				$bySchool[$sid]['girls'] = $girls;
+				$bySchool[$sid]['boys'] = $students - $girls;
 				$bySchool[$sid]['parents'] = (int) ($row['parents'] ?? 0);
-			}
-			$missing = [];
-			foreach ($bySchool as $sid => $stats) {
-				if ((int) $stats['students'] === 0) {
-					$missing[] = (int) $sid;
-				}
-			}
-			if ($missing) {
-				$missingList = implode(',', $missing);
-				$fallbackSql = "SELECT school_id,
-						COUNT(id) AS students,
-						SUM(CASE WHEN UPPER(TRIM(sex)) IN ('M','MALE','BOY') THEN 1 ELSE 0 END) AS boys,
-						SUM(CASE WHEN UPPER(TRIM(sex)) IN ('F','FEMALE','GIRL') THEN 1 ELSE 0 END) AS girls,
-						SUM(CASE WHEN
-							NULLIF(TRIM(father), '') IS NOT NULL
-							OR NULLIF(TRIM(mother), '') IS NOT NULL
-							OR NULLIF(TRIM(guardian), '') IS NOT NULL
-							OR NULLIF(TRIM(ft_phone), '') IS NOT NULL
-							OR NULLIF(TRIM(mt_phone), '') IS NOT NULL
-							OR NULLIF(TRIM(gd_phone), '') IS NOT NULL
-						THEN 1 ELSE 0 END) AS parents
-					FROM students
-					WHERE status IN (1, 2) AND school_id IN ({$missingList})
-					GROUP BY school_id";
-				foreach ($db->query($fallbackSql)->getResultArray() as $row) {
-					$sid = (int) $row['school_id'];
-					if (!isset($bySchool[$sid]) || (int) $bySchool[$sid]['students'] > 0) {
-						continue;
-					}
-					$bySchool[$sid]['students'] = (int) $row['students'];
-					$bySchool[$sid]['boys'] = (int) $row['boys'];
-					$bySchool[$sid]['girls'] = (int) $row['girls'];
-					$bySchool[$sid]['parents'] = (int) ($row['parents'] ?? 0);
-				}
 			}
 			$staffSql = "SELECT school_id, COUNT(id) AS staff FROM staffs WHERE school_id IN ({$idList}) GROUP BY school_id";
 			foreach ($db->query($staffSql)->getResultArray() as $row) {
@@ -605,17 +572,14 @@ class WisdomGroupOverview
 			FROM students s
 			INNER JOIN schools sch ON sch.id = s.school_id
 			LEFT JOIN active_term atr ON atr.id = sch.active_term
-			INNER JOIN class_records a ON a.student = s.id AND a.status = 1
+			INNER JOIN class_records a ON a.student = s.id
 				AND a.year = IFNULL(atr.academic_year, {$yearId})
 			INNER JOIN classes cl ON cl.id = a.class
 			LEFT JOIN levels l ON l.id = cl.level
-			LEFT JOIN departments d ON d.id = cl.department
-			WHERE s.status IN (1, 2)
+			WHERE s.status = 1
 				AND s.school_id = {$schoolId}
 				AND IFNULL(cl.title,'') NOT LIKE '%Holiday%'
-				AND IFNULL(l.title,'') NOT LIKE '%Holiday%'
-				AND IFNULL(d.title,'') NOT LIKE '%Holiday%'
-				AND IFNULL(d.code,'') NOT LIKE '%Holiday%'";
+				AND IFNULL(l.title,'') NOT LIKE '%Holiday%'";
 	}
 
 	private function enrolledStudentCount(int $schoolId, int $yearId): int
