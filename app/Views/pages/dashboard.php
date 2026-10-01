@@ -375,8 +375,8 @@
 								<div><strong><?= (int) $wgMaster['girls']; ?></strong><em>Girls</em></div>
 								<div><strong><?= (int) $wgMaster['staff']; ?></strong><em>Staff</em></div>
 								<?php $matt = $wgMaster['att_summary'] ?? []; ?>
-								<div><strong><?= (int) ($matt['daily_present'] ?? 0); ?></strong><em>Present students</em></div>
-								<div><strong><?= (int) ($matt['daily_absent'] ?? 0); ?></strong><em>Absent students</em></div>
+								<div><strong><?= (int) ($matt['daily_present'] ?? 0); ?></strong><em>Present students</em><br><small>School gate and boarding</small></div>
+								<div><strong><?= (int) ($matt['daily_absent'] ?? 0); ?></strong><em>Absent students</em><br><small>Not recorded on the device</small></div>
 								<div><strong><?= (int) $wgMaster['student_out']; ?></strong><em>Students out</em></div>
 								<div><strong><?= (int) $wgMaster['student_inside']; ?></strong><em>Still inside</em></div>
 								<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/in'); ?>"><strong><?= (int) $wgMaster['staff_present']; ?></strong><em>Staff in today</em></a>

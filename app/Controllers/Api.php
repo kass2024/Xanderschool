@@ -280,11 +280,17 @@ class Api extends BaseController
 								'academic_type' => isset($result->academic_type) ? $result->academic_type : '',
 								'school_phone' => isset($result->school_phone) ? $result->school_phone : '',
 								'school_email' => isset($result->school_email) ? $result->school_email : '',
+								'soma_is_master' => 0,
 								'success' => "Login done",
 								'courses' => [],
 								'classes' => [],
 								'assessmentTypes' => [],
 							];
+							try {
+								$data['soma_is_master'] = (new \App\Services\WisdomGroupOverview())->schoolIsMaster((int) $result->school_id) ? 1 : 0;
+							} catch (\Throwable $e) {
+								$data['soma_is_master'] = 0;
+							}
 							if ($data['soma_academic_title'] === '' && !empty($data['soma_academic'])) {
 								try {
 									$ay = (new AcademicYearModel())
@@ -3144,8 +3150,33 @@ public function get_boarding_classes()
 		return $this->response->setJSON($data);
 	}
 
+	public function class_device_attendance()
+	{
+		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		$classId = (int) ($this->request->getPost('class') ?: $this->request->getGet('class') ?: 0);
+		$this->_preset($schoolId);
+		$overview = new \App\Services\WisdomGroupOverview();
+		if (!$overview->schoolIsMaster($schoolId)) {
+			return $this->response->setJSON(['success' => 1, 'locked' => 0, 'present' => []]);
+		}
+		$yearId = (int) ($this->data['academic_year'] ?? 0);
+		return $this->response->setJSON([
+			'success' => 1,
+			'locked' => 1,
+			'present' => $overview->devicePresentStudentIds($schoolId, $yearId, $classId),
+		]);
+	}
+
 	public function save_class_attendance()
 	{
+		$classId = (int) $this->request->getPost('class');
+		if ($classId > 0) {
+			$classRow = \Config\Database::connect()->table('classes')->select('school_id')->where('id', $classId)->get(1)->getRowArray();
+			$schoolId = (int) ($classRow['school_id'] ?? 0);
+			if ($schoolId > 0 && (new \App\Services\WisdomGroupOverview())->schoolIsMaster($schoolId)) {
+				return $this->response->setJSON(['error' => 'Master school attendance comes from the school gate and the boarding device. Mark it by swiping the card.']);
+			}
+		}
 		$term = (int) $this->request->getPost("term");
 		$students = $this->request->getPost("students");
 		$records = json_decode((string) $students, true);
@@ -5822,6 +5853,21 @@ public function permission_card_scan()
 	/**
 	 * Staff roster for the school-LAN helper (auto-sync names to HeyStar).
 	 */
+	public function heystar_students()
+	{
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$in = $this->heystarInput();
+		$schoolId = (int) ($in['school_id'] ?? 0);
+		if ($schoolId <= 0) {
+			return $this->response->setJSON(['success' => 0, 'students' => []]);
+		}
+		return $this->response->setJSON([
+			'success' => 1,
+			'school_id' => $schoolId,
+			'students' => AttendanceScanService::heystarBoardingRoster($schoolId),
+		]);
+	}
+
 	public function heystar_staff()
 	{
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');

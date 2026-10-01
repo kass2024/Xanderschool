@@ -254,17 +254,135 @@ class WisdomGroupOverview
 				: [];
 			$totals['staff_absent'] += count($pack['absent']);
 		}
-		$attendance = $this->childAttendanceSummaries($ids, (int) $yearId);
+		$childOnly = [];
+		foreach ($ids as $id) {
+			if ((int) $id !== (int) $masterId) {
+				$childOnly[] = (int) $id;
+			}
+		}
+		$attendance = $this->childAttendanceSummaries($childOnly, (int) $yearId);
 		foreach ($rows as $i => $row) {
 			$id = (int) $row['id'];
+			$enrolled = (int) ($row['students'] ?? 0);
+			if ($id === (int) $masterId) {
+				$present = $this->devicePresentCount($id, (int) $yearId);
+				$rows[$i]['att_summary'] = [
+					'daily_present' => $present,
+					'daily_absent' => max(0, $enrolled - $present),
+					'source' => 'device',
+				];
+				continue;
+			}
 			if (isset($attendance[$id])) {
-				$enrolled = (int) ($row['students'] ?? 0);
 				$present = (int) $attendance[$id]['daily_present'];
 				$attendance[$id]['daily_absent'] = max(0, $enrolled - $present);
+				$attendance[$id]['source'] = 'register';
 				$rows[$i]['att_summary'] = $attendance[$id];
 			}
 		}
 		return ['schools' => $rows, 'totals' => $totals, 'master_id' => (int) $masterId];
+	}
+
+	/**
+	 * Master school: day scholars present at the school gate, boarding present in boarding attendance.
+	 *
+	 * @return list<int>
+	 */
+	public function devicePresentStudentIds(int $schoolId, int $yearId, int $classId = 0): array
+	{
+		if ($schoolId < 1) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('students') || !$db->tableExists('class_records')) {
+			return [];
+		}
+		$todayStart = strtotime(date('Y-m-d') . ' 00:00:00');
+		$todayEnd = $todayStart + 86400;
+		$today = $db->escape(date('Y-m-d'));
+		$classSql = '';
+		if ($classId > 0) {
+			$classSql = ' AND es.id IN (SELECT student FROM class_records WHERE class = ' . (int) $classId . ' AND status = 1)';
+		}
+		$gateIds = $this->gateAreaIds($schoolId);
+		$gateSql = '0';
+		if ($gateIds !== [] && $db->tableExists('attendance_records')) {
+			$gateSql = 'es.studying_mode = 1 AND es.id IN (
+				SELECT ar.user_id FROM attendance_records ar
+				WHERE ar.school_id = ' . (int) $schoolId . '
+					AND ar.user_type = 0
+					AND ar.area_id IN (' . implode(',', $gateIds) . ')
+					AND ar.time_in >= ' . $todayStart . '
+					AND ar.time_in < ' . $todayEnd . '
+			)';
+		}
+		$boardSql = '0';
+		if ($db->tableExists('boarding_attendance')) {
+			$boardSql = 'es.studying_mode = 0 AND es.id IN (
+				SELECT ba.student_id FROM boarding_attendance ba
+				WHERE DATE(ba.datee) = ' . $today . '
+			)';
+		}
+		try {
+			$rows = $db->query(
+				'SELECT es.id FROM (' . $this->enrolledFlagsSql($schoolId, $yearId) . ') es
+				WHERE (' . $gateSql . ' OR ' . $boardSql . ')' . $classSql
+			)->getResultArray();
+		} catch (\Throwable $e) {
+			return [];
+		}
+		$ids = [];
+		foreach ($rows as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id > 0) {
+				$ids[] = $id;
+			}
+		}
+		return $ids;
+	}
+
+	public function devicePresentCount(int $schoolId, int $yearId): int
+	{
+		return count($this->devicePresentStudentIds($schoolId, $yearId, 0));
+	}
+
+	public function schoolIsMaster(int $schoolId): bool
+	{
+		if ($schoolId < 1) {
+			return false;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('schools') || !$db->fieldExists('is_master', 'schools')) {
+			return false;
+		}
+		$row = $db->table('schools')->select('is_master')->where('id', $schoolId)->get(1)->getRowArray();
+		return !empty($row['is_master']);
+	}
+
+	/** @return list<int> */
+	private function gateAreaIds(int $schoolId): array
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('attendance_areas')) {
+			return [];
+		}
+		$ids = [];
+		foreach ($db->table('attendance_areas')->select('id, name')->where('school_id', $schoolId)->where('active', 1)->get()->getResultArray() as $area) {
+			if ($this->isGateLocation((string) ($area['name'] ?? ''))) {
+				$ids[] = (int) $area['id'];
+			}
+		}
+		return $ids;
+	}
+
+	private function isGateLocation(string $name): bool
+	{
+		$n = strtolower(trim(preg_replace('/[^a-z0-9]+/i', ' ', $name) ?? ''));
+		$n = trim($n);
+		if ($n === '') {
+			return false;
+		}
+		return $n === 'gate' || $n === 'school gate' || strpos($n, 'school gate') !== false || substr($n, -5) === ' gate';
 	}
 
 	/**
