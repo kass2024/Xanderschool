@@ -14183,17 +14183,7 @@ public function getApplicationDocs($id = null)
 		$smsMdl = new SmsModel();
 		$smsRMdl = new SmsRecipientModel();
 
-		//check if the school has intouch info and prevent is from balance check
-		$intouchAccount = new IntouchAccount();
-		$account_info = $intouchAccount->where('school_id', $this->session->get("soma_school_id"))->first();
-
-		log_message('error', 'found account {id} with {username} as username and {password} as pwd', [$account_info]);
-
-		$intouch_account_found = false;
-		if (!is_null($account_info) && trim($account_info['username']) && trim($account_info['password'])) {
-			$intouch_account_found = true;
-		}
-		if (!$intouch_account_found && $estimation > $this->data['remaining_sms']) {
+		if ($estimation > $this->data['remaining_sms']) {
 			return $this->response->setJSON(['error' => "SMS can not be sent, Remaining balance is " . $this->data['remaining_sms']]);
 		}
 		if ($type == "dep") {
@@ -14226,12 +14216,9 @@ public function getApplicationDocs($id = null)
 				}
 			}
 			$param = base_url("background_process/2");
-			if ($intouch_account_found) {
-				$param .= "/" . $this->session->get("soma_school_id");
-			}
 			$command = "curl $param > /dev/null &";
 			exec($command);
-			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all"));
+			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all", "sms_id" => $sid));
 		} else if ($type == "class") {
 			//send to selected departments
 			$ids = $this->request->getPost("class_id");
@@ -14263,7 +14250,7 @@ public function getApplicationDocs($id = null)
 			$param = base_url("background_process/2");
 			$command = "curl $param > /dev/null &";
 			exec($command);
-			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all"));
+			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all", "sms_id" => $sid));
 		} else if ($type == "student") {
 			//send to selected departments
 			$ids = $this->request->getPost("studentId");
@@ -14295,11 +14282,8 @@ public function getApplicationDocs($id = null)
 			$param = base_url("background_process/2");
 			$command = "curl $param > /dev/null &";
 			exec($command);
-			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all"));
+			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all", "sms_id" => $sid));
 		}
-//		$param = base_url("background_process/2");
-//		$command = "curl $param > /dev/null &";
-//		exec($command);
 	}
 
 	public
@@ -14314,8 +14298,8 @@ public function getApplicationDocs($id = null)
 		$stMdl = new StaffModel();
 		$smsMdl = new SmsModel();
 		$smsRMdl = new SmsRecipientModel();
+		$emailSent = 0;
 		if ($type == "post") {
-			//send to selected departments
 			$ids = $this->request->getPost("post_id");
 			$sent = 0;
 			$all = 0;
@@ -14328,25 +14312,31 @@ public function getApplicationDocs($id = null)
 			if ($sid === false)
 				return $this->response->setJSON(array("error" => lang("app.smsErr")));
 			foreach ($ids as $id) {
-				$phones = $stMdl->get_staff("p.id={$id} AND phone!=''", "staffs.id,staffs.phone");
-				foreach ($phones as $phone) {
+				$people = $stMdl->get_staff("p.id={$id} AND (phone!='' OR email!='')", "staffs.id,staffs.phone,staffs.email,staffs.fname,staffs.lname");
+				foreach ($people as $person) {
 					$all++;
-					$p = $phone["phone"];
+					$p = trim((string) ($person['phone'] ?? ''));
 					try {
-						$smsRMdl->save(array("sms_record_id" => $sid, "receiver_id" => $phone['id'], "phone" => $p, "status" => 0));
-						$sent++;
+						if ($p !== '') {
+							$smsRMdl->save(array("sms_record_id" => $sid, "receiver_id" => $person['id'], "phone" => $p, "status" => 0));
+							$sent++;
+						}
+						if ($this->emailPortalMessage((string) ($person['email'] ?? ''), trim(($person['fname'] ?? '') . ' ' . ($person['lname'] ?? '')), $message)) {
+							$emailSent++;
+						}
 					} catch (\Exception $e) {
-						//future use
 						return $this->response->setJSON(array("error" => "Error: " . $e));
 					}
 				}
 			}
 			$param = base_url("background_process/2");
-			$command = "curl $param > /dev/null &";
-			exec($command);
-			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all"));
+			exec("curl $param > /dev/null &");
+			return $this->response->setJSON(array(
+				"success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all" . ($emailSent > 0 ? ". Email sent to $emailSent staff." : ""),
+				"sms_id" => $sid,
+				"emailed" => $emailSent,
+			));
 		} else if ($type == "staff") {
-			//send to selected staffs
 			$ids = $this->request->getPost("staffId");
 			if (count($ids) == 0) {
 				return $this->response->setJSON(array("error" => lang("app.optionsErr")));
@@ -14359,23 +14349,30 @@ public function getApplicationDocs($id = null)
 			if ($sid === false)
 				return $this->response->setJSON(array("error" => lang("app.smsErr")));
 			foreach ($ids as $id) {
-				$phones = $stMdl->get_staff("staffs.id={$id} AND staffs.phone !=''", "staffs.id,staffs.phone");
-				foreach ($phones as $phone) {
+				$people = $stMdl->get_staff("staffs.id={$id} AND (staffs.phone !='' OR staffs.email!='')", "staffs.id,staffs.phone,staffs.email,staffs.fname,staffs.lname");
+				foreach ($people as $person) {
 					$all++;
-					$p = $phone["phone"];
+					$p = trim((string) ($person['phone'] ?? ''));
 					try {
-						$smsRMdl->save(array("sms_record_id" => $sid, "receiver_id" => $phone['id'], "phone" => $p, "status" => 0));
-						$sent++;
+						if ($p !== '') {
+							$smsRMdl->save(array("sms_record_id" => $sid, "receiver_id" => $person['id'], "phone" => $p, "status" => 0));
+							$sent++;
+						}
+						if ($this->emailPortalMessage((string) ($person['email'] ?? ''), trim(($person['fname'] ?? '') . ' ' . ($person['lname'] ?? '')), $message)) {
+							$emailSent++;
+						}
 					} catch (\Exception $e) {
-						//future use
 						return $this->response->setJSON(array("error" => "Error: " . $e));
 					}
 				}
 			}
 			$param = base_url("background_process/2");
-			$command = "curl $param > /dev/null &";
-			exec($command);
-			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all"));
+			exec("curl $param > /dev/null &");
+			return $this->response->setJSON(array(
+				"success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all" . ($emailSent > 0 ? ". Email sent to $emailSent staff." : ""),
+				"sms_id" => $sid,
+				"emailed" => $emailSent,
+			));
 		}
 //		$param = base_url("background_process/2");
 //		$command = "curl $param > /dev/null &";
@@ -14405,28 +14402,92 @@ public function getApplicationDocs($id = null)
 			foreach ($pendings as $pending) {
 				try {
 					$pending['remaining_sms'] = $this->_sms_balance($pending['sms_limit'], $pending['sms_usage'], $pending['extra_sms']);
-
-					// $school_account = $this->request->getGet('school_id');
-					if ($school_account) {
-						// echo "Here "; die();
-					}
+					$result = null;
 					if ($this->sendSMS($pending['phone'], $pending['content'], $result)) {
-						//increment used sms
-						$sms_count = (int)ceil(strlen($pending['content']) / PER_SMS);
+						$sms_count = (int) ceil(strlen($pending['content']) / PER_SMS);
 						if (($pending['sms_limit'] - $pending['sms_usage']) <= 0 && $pending['extra_sms'] > 0) {
-							//decrement extra sms
 							$schoolMdl = new SchoolModel();
 							$schoolMdl->where("id", $pending['school_id'])->decrement("extra_sms", $sms_count);
 						}
 						$termMdl->incrementSMS($pending['active_term'], $sms_count);
 						$smsRMdl->save(array("id" => $pending['id'], "status" => 1, "sent_on" => time()));
 					} else {
-						$smsRMdl->save(array("id" => $pending['id'], "status" => 2, "fail_reason" => $result['content']));
+						$smsRMdl->save(array("id" => $pending['id'], "status" => 2, "fail_reason" => is_array($result) ? ($result['content'] ?? 'SMS failed') : 'SMS failed'));
 					}
 				} catch (\Exception $e) {
-//					return $this->response->setJSON(array("error" => "Error: ".$e));
+					log_message('error', 'background SMS: {msg}', ['msg' => $e->getMessage()]);
 				}
 			}
+		}
+	}
+
+	public function sms_delivery_status($id = 0)
+	{
+		$this->_preset();
+		$id = (int) $id;
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$db = \Config\Database::connect();
+		$record = $db->table('sms_records')->select('id,recipient_type')->where('id', $id)->where('school_id', $schoolId)->get()->getRowArray();
+		if (!$record) {
+			return $this->response->setJSON(['error' => 'Message batch not found.']);
+		}
+		$isStaff = (int) ($record['recipient_type'] ?? 0) === 1;
+		$nameSql = $isStaff
+			? "TRIM(CONCAT(st.fname,' ',st.lname))"
+			: "TRIM(CONCAT(st.fname,' ',st.lname))";
+		$join = $isStaff
+			? 'LEFT JOIN staffs st ON st.id = r.receiver_id'
+			: 'LEFT JOIN students st ON st.id = r.receiver_id';
+		$rows = $db->query(
+			"SELECT r.status, r.phone, r.fail_reason, $nameSql AS person_name
+			 FROM sms_record_recipients r $join WHERE r.sms_record_id = ?",
+			[$id]
+		)->getResultArray();
+		$pending = 0;
+		$sent = 0;
+		$failed = 0;
+		$failedList = [];
+		foreach ($rows as $row) {
+			$status = (int) ($row['status'] ?? 0);
+			if ($status === 1) {
+				$sent++;
+			} elseif ($status === 2) {
+				$failed++;
+				$failedList[] = [
+					'name' => (string) ($row['person_name'] ?? ''),
+					'phone' => (string) ($row['phone'] ?? ''),
+					'reason' => (string) ($row['fail_reason'] ?? ''),
+				];
+			} else {
+				$pending++;
+			}
+		}
+		$total = max(1, count($rows));
+		$percent = (int) floor((($sent + $failed) / $total) * 100);
+		return $this->response->setJSON([
+			'pending' => $pending,
+			'sent' => $sent,
+			'failed' => $failed,
+			'percent' => $percent,
+			'failed_list' => $failedList,
+		]);
+	}
+
+	private function emailPortalMessage(string $email, string $name, string $message): bool
+	{
+		$email = trim($email);
+		if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+			return false;
+		}
+		$safeName = htmlspecialchars($name !== '' ? $name : 'staff', ENT_QUOTES, 'UTF-8');
+		$safeBody = nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
+		$html = '<p>Dear ' . $safeName . ',</p><p>' . $safeBody . '</p><p>Wisdom School</p>';
+		$error = null;
+		try {
+			return (bool) $this->_send_email($email, 'Wisdom School message', $html, $error);
+		} catch (\Throwable $e) {
+			log_message('error', 'portal email: {msg}', ['msg' => $e->getMessage()]);
+			return false;
 		}
 	}
 
