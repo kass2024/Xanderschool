@@ -10242,6 +10242,191 @@ public function attendanceCard()
 		return $this->response->setJSON(['success' => true, 'saved' => $saved, 'message' => $msg]);
 	}
 
+	private function ensureParentUpdateLinkSchema(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('parent_update_links')) {
+			$db->query("CREATE TABLE `parent_update_links` (
+				`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+				`school_id` INT NOT NULL,
+				`student_id` INT NOT NULL,
+				`token_hash` CHAR(64) NOT NULL,
+				`expires_at` DATETIME NOT NULL,
+				`created_by` INT NULL,
+				`created_at` DATETIME NULL,
+				PRIMARY KEY (`id`),
+				UNIQUE KEY `uniq_parent_update_token` (`token_hash`),
+				KEY `idx_parent_update_student` (`student_id`, `expires_at`)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		}
+		$done = true;
+	}
+
+	/** Staff: create a 4-hour link so a parent can update names, phones, and address only. */
+	public function create_parent_update_link()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		$this->ensureParentUpdateLinkSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$studentId = (int) $this->request->getPost('student_id');
+		if ($studentId < 1) {
+			return $this->response->setJSON(['error' => 'Select a student']);
+		}
+		$student = (new StudentModel())->select('id, fname, lname, regno')
+			->where('id', $studentId)
+			->where('school_id', $schoolId)
+			->get(1)->getRowArray();
+		if (!$student) {
+			return $this->response->setJSON(['error' => 'Student not found']);
+		}
+		$db = \Config\Database::connect();
+		$now = date('Y-m-d H:i:s');
+		$db->table('parent_update_links')
+			->where('school_id', $schoolId)
+			->where('student_id', $studentId)
+			->where('expires_at >', $now)
+			->update(['expires_at' => $now]);
+		$token = bin2hex(random_bytes(16));
+		$expires = date('Y-m-d H:i:s', time() + (4 * 3600));
+		$db->table('parent_update_links')->insert([
+			'school_id' => $schoolId,
+			'student_id' => $studentId,
+			'token_hash' => hash('sha256', $token),
+			'expires_at' => $expires,
+			'created_by' => (int) $this->session->get('soma_id'),
+			'created_at' => $now,
+		]);
+		$name = trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? ''));
+		$url = base_url('parent-update/' . $token);
+		return $this->response->setJSON([
+			'success' => true,
+			'url' => $url,
+			'expires_at' => $expires,
+			'student' => $name,
+			'regno' => (string) ($student['regno'] ?? ''),
+		]);
+	}
+
+	private function parentUpdateLinkRow(string $token): ?array
+	{
+		$token = trim($token);
+		if ($token === '' || !preg_match('/^[a-f0-9]{32}$/', $token)) {
+			return null;
+		}
+		$this->ensureParentUpdateLinkSchema();
+		$row = \Config\Database::connect()->table('parent_update_links')
+			->where('token_hash', hash('sha256', $token))
+			->get(1)->getRowArray();
+		return $row ?: null;
+	}
+
+	/** Public page. Parents can change names, phones, and address until the link is 4 hours old. */
+	public function parent_update($token = '')
+	{
+		helper('qonics');
+		$lang = strtolower(trim((string) ($this->request->getGet('lang') ?: $this->request->getPost('lang') ?: 'en')));
+		if (!in_array($lang, ['en', 'rw'], true)) {
+			$lang = 'en';
+		}
+		$row = $this->parentUpdateLinkRow((string) $token);
+		$expired = !$row || strtotime((string) ($row['expires_at'] ?? '')) < time();
+		$data = [
+			'lang' => $lang,
+			'token' => (string) $token,
+			'expired' => $expired,
+			'saved' => $this->request->getGet('saved') === '1',
+			'error' => '',
+			'student' => null,
+			'school_name' => '',
+			'expires_at' => $row['expires_at'] ?? '',
+			'provinces' => (new AddressModel())->getProvince(),
+			'districts' => [],
+			'sectors' => [],
+			'cells' => [],
+			'villages' => [],
+		];
+		if ($expired) {
+			return view('pages/parent_update', $data);
+		}
+		$schoolId = (int) $row['school_id'];
+		$studentId = (int) $row['student_id'];
+		$school = (new SchoolModel())->select('name')->where('id', $schoolId)->get(1)->getRowArray();
+		$data['school_name'] = (string) ($school['name'] ?? '');
+		$student = \Config\Database::connect()->table('students')
+			->select('students.id, students.fname, students.lname, students.regno, students.father, students.ft_phone, students.mother, students.mt_phone, students.guardian, students.gd_phone, students.village_id, v.title AS village_title, sc.id AS cell_id, sc.title AS cell_name, ss.id AS sector_id, ss.title AS sector_name, sd.id AS district_id, sd.title AS district_name, sd.province AS province_id')
+			->join('soma_village v', 'v.id = students.village_id', 'left')
+			->join('soma_cell sc', 'sc.id = v.cell', 'left')
+			->join('soma_sector ss', 'ss.id = sc.sector', 'left')
+			->join('soma_district sd', 'sd.id = ss.district', 'left')
+			->where('students.id', $studentId)
+			->where('students.school_id', $schoolId)
+			->get(1)->getRowArray();
+		if (!$student) {
+			$data['expired'] = true;
+			return view('pages/parent_update', $data);
+		}
+		$address = new AddressModel();
+		$provinceId = (int) ($student['province_id'] ?? 0);
+		$districtId = (int) ($student['district_id'] ?? 0);
+		$sectorId = (int) ($student['sector_id'] ?? 0);
+		$cellId = (int) ($student['cell_id'] ?? 0);
+		if ($provinceId > 0) {
+			$data['districts'] = $address->getAddress('soma_district', $provinceId, 'province');
+		}
+		if ($districtId > 0) {
+			$data['sectors'] = $address->getAddress('soma_sector', $districtId, 'district');
+		}
+		if ($sectorId > 0) {
+			$data['cells'] = $address->getAddress('soma_cell', $sectorId, 'sector');
+		}
+		if ($cellId > 0) {
+			$data['villages'] = $address->getAddress('soma_village', $cellId, 'cell');
+		}
+		if (strtolower($this->request->getMethod()) === 'post') {
+			$clip = static function ($value, int $max): string {
+				$value = trim(strip_tags((string) $value));
+				if (function_exists('mb_substr')) {
+					return mb_substr($value, 0, $max);
+				}
+				return substr($value, 0, $max);
+			};
+			$patch = [
+				'father' => $clip($this->request->getPost('father'), 120),
+				'ft_phone' => $clip($this->request->getPost('ft_phone'), 20),
+				'mother' => $clip($this->request->getPost('mother'), 120),
+				'mt_phone' => $clip($this->request->getPost('mt_phone'), 20),
+				'guardian' => $clip($this->request->getPost('guardian'), 120),
+				'gd_phone' => $clip($this->request->getPost('gd_phone'), 20),
+			];
+			$villageId = (int) $this->request->getPost('village');
+			if ($villageId > 0) {
+				$villageRow = \Config\Database::connect()->table('soma_village')->select('id')->where('id', $villageId)->get(1)->getRowArray();
+				if (!$villageRow) {
+					$data['error'] = $lang === 'rw' ? 'Hitamo umudugudu.' : 'Select a village.';
+					$student = array_merge($student, $patch);
+					$data['student'] = $student;
+					return view('pages/parent_update', $data);
+				}
+				$patch['village_id'] = $villageId;
+			}
+			$fresh = $this->parentUpdateLinkRow((string) $token);
+			if (!$fresh || strtotime((string) $fresh['expires_at']) < time()) {
+				$data['expired'] = true;
+				return view('pages/parent_update', $data);
+			}
+			$stMdl = new StudentModel();
+			$stMdl->save(array_merge(['id' => $studentId], $patch));
+			$this->_syncStudentVisitors($schoolId, $studentId, $this->_visitorRowsFromData($patch), 0);
+			return redirect()->to(base_url('parent-update/' . $token . '?lang=' . $lang . '&saved=1'));
+		}
+		$data['student'] = $student;
+		return view('pages/parent_update', $data);
+	}
+
 	public function edit_staff($type = "text", $link = "s")
 	{
 		$id = $this->request->getPost("id");

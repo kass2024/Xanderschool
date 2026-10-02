@@ -363,6 +363,22 @@
 	color: #fff;
 	vertical-align: middle;
 }
+.btn-parent-link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	margin-left: 6px;
+	padding: 0;
+	border-radius: 999px;
+	border: 1px solid #99f6e4;
+	background: #f0fdfa;
+	color: #0f766e;
+	vertical-align: middle;
+	line-height: 1;
+}
+.btn-parent-link:hover { background: #0f766e; color: #fff; }
 .st-from-reg-badge {
 	display: inline-block;
 	font-size: 11px;
@@ -717,7 +733,15 @@
 													<td><input type="checkbox" class="st-sms-check" value="<?= (int) $student['id']; ?>"></td>
 													<td><?= $a; ?></td>
 													<td><a href="<?= base_url('student/' . $student['id']); ?>"
-														   class="link"><?= $student['regno']; ?></a></td>
+														   class="link"><?= $student['regno']; ?></a>
+														<button type="button"
+																class="btn-parent-link"
+																data-id="<?= (int) $student['id']; ?>"
+																data-name="<?= esc($student['fname'] . ' ' . $student['lname']); ?>"
+																title="Create a 4-hour link for the parent">
+															<i class="fa fa-link"></i>
+														</button>
+													</td>
 													<td class="ce-list-names"><?= $student['fname'] . ' ' . $student['lname']; ?></td>
 													<td class="ce-list-mode"><?= \App\Controllers\Home::ModeToStr($student['studying_mode']); ?></td>
 													<td class="ce-list-sex"><?= $student['sex'] === 'F' ? lang('app.female') : ($student['sex'] === 'M' ? lang('app.male') : $student['sex']); ?></td>
@@ -903,6 +927,27 @@ foreach ($students as $st) {
 					<button type="button" class="btn btn-secondary" data-dismiss="modal">Done</button>
 					<button type="button" class="btn btn-primary" id="btnSaveClassStudents">Save all</button>
 				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<div class="modal fade" id="parentLinkModal" tabindex="-1" role="dialog" aria-labelledby="parentLinkTitle">
+	<div class="modal-dialog" role="document">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="parentLinkTitle">Parent update link</h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+			</div>
+			<div class="modal-body">
+				<p id="parentLinkStudent" style="font-weight:700;margin-bottom:8px;"></p>
+				<p style="color:#475569;font-size:13px;">Send this link to the parent. It expires in 4 hours and only allows parent names, phone numbers, and the address. The page has English and Kinyarwanda.</p>
+				<input type="text" class="form-control" id="parentLinkUrl" readonly>
+				<p id="parentLinkExpiry" style="margin-top:8px;font-size:13px;color:#0f766e;"></p>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+				<a class="btn btn-success" id="parentLinkWhatsapp" target="_blank" rel="noopener">WhatsApp</a>
+				<button type="button" class="btn btn-primary" id="parentLinkCopy">Copy link</button>
 			</div>
 		</div>
 	</div>
@@ -1968,6 +2013,48 @@ foreach ($students as $st) {
 				}
 			});
 		});
+	});
+
+	$(document).on('click', '.btn-parent-link', function () {
+		var $btn = $(this);
+		if ($btn.data('busy')) {
+			return;
+		}
+		var id = $btn.data('id');
+		var name = $btn.data('name') || 'Student';
+		$btn.data('busy', 1);
+		$.post("<?= site_url('create_parent_update_link'); ?>", withCsrf({ student_id: id }), function (res) {
+			if (!res || !res.success || !res.url) {
+				alert((res && res.error) || 'Could not create the link');
+				return;
+			}
+			$('#parentLinkStudent').text(name + (res.regno ? ' · ' + res.regno : ''));
+			$('#parentLinkUrl').val(res.url);
+			$('#parentLinkExpiry').text('Expires ' + (res.expires_at || 'in 4 hours'));
+			var msg = 'Please update parent names, phones and address for ' + name + '. This link expires in 4 hours: ' + res.url
+				+ '\n\nMushyiremo amazina y\'ababyeyi, telefoni n\'aderesi ya ' + name + '. Iyi link irangira mu masaha 4: ' + res.url;
+			$('#parentLinkWhatsapp').attr('href', 'https://wa.me/?text=' + encodeURIComponent(msg));
+			$('#parentLinkModal').modal('show');
+			$('#parentLinkUrl').trigger('focus').trigger('select');
+		}, 'json').fail(function () {
+			alert('Could not create the link');
+		}).always(function () {
+			$btn.data('busy', 0);
+		});
+	});
+
+	$(document).on('click', '#parentLinkCopy', function () {
+		var input = document.getElementById('parentLinkUrl');
+		if (!input) {
+			return;
+		}
+		input.select();
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard.writeText(input.value);
+		} else {
+			document.execCommand('copy');
+		}
+		$(this).text('Copied');
 	});
 })(jQuery);
 </script>

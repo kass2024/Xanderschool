@@ -74,6 +74,8 @@ $routes->setAutoRoute(true);
 // route since we don't have to scan directories.
 $routes->get('/', 'Home::index');
 $routes->get('/login', 'Home::login');
+$routes->get('parent-update/(:segment)', 'Home::parent_update/$1');
+$routes->post('parent-update/(:segment)', 'Home::parent_update/$1');
 $routes->get('/messaging/employees', 'Home::messaging_employees');
 $routes->get('/messaging/parents', 'Home::messaging_parents');
 $routes->get('/messaging/history', 'Home::messaging_history');
