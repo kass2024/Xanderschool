@@ -8993,7 +8993,7 @@ public function attendanceCard()
 		)->getResultArray();
 		foreach ($rows as $row) {
 			$name = strtolower(trim(preg_replace('/\s+/', ' ', ($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''))));
-			if ($name === 'test staff' || $name === 'staff test') {
+			if ($name === 'test staff' || $name === 'staff test' || $name === 'testing staff') {
 				return $row;
 			}
 		}
