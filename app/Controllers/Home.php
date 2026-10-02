@@ -10266,7 +10266,7 @@ public function attendanceCard()
 		$done = true;
 	}
 
-	/** Staff: create a 4-hour link so a parent can update names, phones, and address only. */
+	/** Staff: create a 48-hour link so a parent can update names, phones, and address only. */
 	public function create_parent_update_link()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
@@ -10291,7 +10291,7 @@ public function attendanceCard()
 			->where('expires_at >', $now)
 			->update(['expires_at' => $now]);
 		$token = bin2hex(random_bytes(16));
-		$expires = date('Y-m-d H:i:s', time() + (4 * 3600));
+		$expires = date('Y-m-d H:i:s', time() + (48 * 3600));
 		$db->table('parent_update_links')->insert([
 			'school_id' => $schoolId,
 			'student_id' => $studentId,
@@ -10324,7 +10324,7 @@ public function attendanceCard()
 		return $row ?: null;
 	}
 
-	/** Public page. Parents can change names, phones, and address until the link is 4 hours old. */
+	/** Public page. Parents can change names, phones, and address until the link is 48 hours old. */
 	public function parent_update($token = '')
 	{
 		helper('qonics');

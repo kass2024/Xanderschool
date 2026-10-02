@@ -2,7 +2,7 @@
 $isRw = ($lang ?? 'en') === 'rw';
 $t = $isRw ? [
 	'title' => 'Hindura amakuru y\'ababyeyi',
-	'intro' => 'Urashobora guhindura amazina y\'ababyeyi, telefoni, n\'aderesi gusa. Iyi link irangira mu masaha 4.',
+	'intro' => 'Urashobora guhindura amazina y\'ababyeyi, telefoni, n\'aderesi gusa. Iyi link irangira mu masaha 48.',
 	'expired' => 'Iyi link yarangiye. Saba ishuri indi link nshya.',
 	'saved' => 'Amakuru yabitswe. Urashobora kongera kuyahindura kugeza iyi link irangira.',
 	'student' => 'Umunyeshuri',
@@ -23,7 +23,7 @@ $t = $isRw ? [
 	'expires' => 'Irangira',
 ] : [
 	'title' => 'Update parent details',
-	'intro' => 'You can change parent names, phone numbers, and the address only. This link expires in 4 hours.',
+	'intro' => 'You can change parent names, phone numbers, and the address only. This link expires in 48 hours.',
 	'expired' => 'This link has expired. Ask the school for a new one.',
 	'saved' => 'Saved. You can still correct it until this link expires.',
 	'student' => 'Student',

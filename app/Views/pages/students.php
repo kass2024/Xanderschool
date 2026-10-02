@@ -738,7 +738,7 @@
 																class="btn-parent-link"
 																data-id="<?= (int) $student['id']; ?>"
 																data-name="<?= esc($student['fname'] . ' ' . $student['lname']); ?>"
-																title="Create a 4-hour link for the parent">
+																title="Create a 48-hour link for the parent">
 															<i class="fa fa-link"></i>
 														</button>
 													</td>
@@ -940,7 +940,7 @@ foreach ($students as $st) {
 			</div>
 			<div class="modal-body">
 				<p id="parentLinkStudent" style="font-weight:700;margin-bottom:8px;"></p>
-				<p style="color:#475569;font-size:13px;">Send this link to the parent. It expires in 4 hours and only allows parent names, phone numbers, and the address. The page has English and Kinyarwanda.</p>
+				<p style="color:#475569;font-size:13px;">Send this link to the parent. It expires in 48 hours and only allows parent names, phone numbers, and the address. The page has English and Kinyarwanda.</p>
 				<input type="text" class="form-control" id="parentLinkUrl" readonly>
 				<p id="parentLinkExpiry" style="margin-top:8px;font-size:13px;color:#0f766e;"></p>
 			</div>
@@ -2030,9 +2030,9 @@ foreach ($students as $st) {
 			}
 			$('#parentLinkStudent').text(name + (res.regno ? ' · ' + res.regno : ''));
 			$('#parentLinkUrl').val(res.url);
-			$('#parentLinkExpiry').text('Expires ' + (res.expires_at || 'in 4 hours'));
-			var msg = 'Please update parent names, phones and address for ' + name + '. This link expires in 4 hours: ' + res.url
-				+ '\n\nMushyiremo amazina y\'ababyeyi, telefoni n\'aderesi ya ' + name + '. Iyi link irangira mu masaha 4: ' + res.url;
+			$('#parentLinkExpiry').text('Expires ' + (res.expires_at || 'in 48 hours'));
+			var msg = 'Please update parent names, phones and address for ' + name + '. This link expires in 48 hours: ' + res.url
+				+ '\n\nMushyiremo amazina y\'ababyeyi, telefoni n\'aderesi ya ' + name + '. Iyi link irangira mu masaha 48: ' + res.url;
 			$('#parentLinkWhatsapp').attr('href', 'https://wa.me/?text=' + encodeURIComponent(msg));
 			$('#parentLinkModal').modal('show');
 			$('#parentLinkUrl').trigger('focus').trigger('select');
