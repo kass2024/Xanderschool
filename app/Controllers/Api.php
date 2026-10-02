@@ -2973,6 +2973,106 @@ public function get_boarding_classes()
 		return $this->response->setJSON($data);
 	}
 
+	/**
+	 * Phone permission menu. Today's finished slips come first.
+	 */
+	public function permission_dashboard($school_id)
+	{
+		$school_id = (int) $school_id;
+		if ($school_id < 1) {
+			return $this->response->setJSON(["error" => "Invalid school"]);
+		}
+		$db = \Config\Database::connect();
+		$today = date('Y-m-d');
+		$now = date('Y-m-d H:i:s');
+		try {
+			$count = static function ($extra) use ($db, $school_id) {
+				$b = $db->table('permission p')
+					->join('students s', 's.id = p.student_id')
+					->where('s.school_id', $school_id);
+				$extra($b);
+				return (int) $b->countAllResults();
+			};
+			$given = $count(static function ($b) use ($today) {
+				$b->where('DATE(p.created_at)', $today);
+			});
+			$done = $count(static function ($b) use ($today) {
+				$b->where('p.status', '1')->where('DATE(p.created_at)', $today);
+			});
+			$justified = $count(static function ($b) use ($today) {
+				$b->where('p.status', '1')->where('DATE(p.updated_at)', $today);
+			});
+			$waiting = $count(static function ($b) {
+				$b->where('p.status', '0');
+			});
+			$outNow = $count(static function ($b) use ($now) {
+				$b->where('p.leave_time <=', $now)->where('p.return_time >=', $now);
+			});
+
+			$rows = $db->query(
+				"SELECT p.id, p.student_id, p.destination, p.reason, p.leave_time, p.return_time, p.status,
+					TRIM(CONCAT(s.fname, ' ', s.lname)) AS name,
+					IFNULL(s.regno, '') AS regno,
+					IFNULL(s.photo, '') AS photo,
+					TRIM(CONCAT(IFNULL(l.title, ''), ' ', IFNULL(d.code, ''), ' ', IFNULL(c.title, ''))) AS class_label
+				FROM permission p
+				JOIN students s ON s.id = p.student_id
+				LEFT JOIN class_records cr ON cr.id = (
+					SELECT MAX(cr2.id) FROM class_records cr2 WHERE cr2.student = s.id AND cr2.status = 1
+				)
+				LEFT JOIN classes c ON c.id = cr.class
+				LEFT JOIN levels l ON l.id = c.level
+				LEFT JOIN departments d ON d.id = c.department
+				WHERE s.school_id = ?
+				AND (
+					DATE(p.created_at) = ?
+					OR (p.status = '1' AND DATE(p.updated_at) = ?)
+					OR p.status = '0'
+				)
+				ORDER BY p.status DESC, p.id DESC
+				LIMIT 80",
+				[$school_id, $today, $today]
+			)->getResultArray();
+
+			$doneRows = [];
+			$waitRows = [];
+			foreach ($rows as $row) {
+				$item = [
+					'id' => (int) $row['id'],
+					'student_id' => (int) $row['student_id'],
+					'name' => (string) $row['name'],
+					'regno' => (string) $row['regno'],
+					'photo' => (string) $row['photo'],
+					'class_label' => trim((string) $row['class_label']),
+					'destination' => (string) $row['destination'],
+					'reason' => (string) $row['reason'],
+					'leave_time' => (string) $row['leave_time'],
+					'return_time' => (string) $row['return_time'],
+					'status' => (string) $row['status'],
+				];
+				if ((string) $row['status'] === '1') {
+					$doneRows[] = $item;
+				} else {
+					$waitRows[] = $item;
+				}
+			}
+
+			return $this->response->setJSON([
+				'success' => 1,
+				'given_today' => $given,
+				'done_today' => $done,
+				'justified_today' => $justified,
+				'waiting' => $waiting,
+				'out_now' => $outNow,
+				'done' => $doneRows,
+				'waiting_list' => $waitRows,
+			]);
+		} catch (\Throwable $e) {
+			log_message('error', 'permission_dashboard: ' . $e->getMessage());
+			return $this->response->setJSON(['error' => 'Could not load the permission dashboard.']);
+		}
+	}
+
 
 	public function get_years($school_id)
 	{
