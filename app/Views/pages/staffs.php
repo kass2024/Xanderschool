@@ -482,7 +482,7 @@
 				+ '  <div class="ssa-staff-chip"><i class="fa fa-user"></i> <strong>' + escapeHtml(who) + '</strong></div>'
 				+ '  <p class="ssa-label">Delivery method</p>'
 				+ '  <div class="ssa-channels">'
-				+ '    <button type="button" class="ssa-channel is-active" data-channel="sms">'
+				+ '    <button type="button" class="ssa-channel" data-channel="sms">'
 				+ '      <span class="ssa-channel-icon"><i class="fa fa-sms"></i></span>'
 				+ '      <span class="ssa-channel-title">SMS only</span>'
 				+ '    </button>'
@@ -490,7 +490,7 @@
 				+ '      <span class="ssa-channel-icon"><i class="fa fa-envelope"></i></span>'
 				+ '      <span class="ssa-channel-title">Email only</span>'
 				+ '    </button>'
-				+ '    <button type="button" class="ssa-channel" data-channel="both">'
+				+ '    <button type="button" class="ssa-channel is-active" data-channel="both">'
 				+ '      <span class="ssa-channel-icon"><i class="fa fa-paper-plane"></i></span>'
 				+ '      <span class="ssa-channel-title">SMS + Email</span>'
 				+ '    </button>'
@@ -500,7 +500,7 @@
 		}
 
 		function bindShareChannelPicker(popup, defaultChannel) {
-			var selected = defaultChannel || 'sms';
+			var selected = defaultChannel || 'both';
 			popup.querySelectorAll('.ssa-channel').forEach(function (el) {
 				el.classList.toggle('is-active', el.dataset.channel === selected);
 				el.addEventListener('click', function () {
@@ -539,7 +539,7 @@
 				cancelButtonText: 'Cancel',
 				focusConfirm: false,
 				didOpen: function () {
-					bindShareChannelPicker(Swal.getPopup(), 'sms');
+					bindShareChannelPicker(Swal.getPopup(), 'both');
 				},
 				preConfirm: function () {
 					return Swal.getPopup()._ssaGetChannel();
@@ -582,7 +582,7 @@
 			}
 
 			var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-			var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 28000);
+			var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 45000);
 			return fetch('<?= base_url('share_staff_access'); ?>', {
 				method: 'POST',
 				headers: {

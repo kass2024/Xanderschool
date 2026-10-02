@@ -363,15 +363,100 @@ class BaseController extends Controller
 		$status = isset($resData->status) ? $resData->status : null;
 		$messageOk = isset($resData->message) && strtolower((string) $resData->message) === 'success';
 		$successFlag = isset($resData->success) && ($resData->success === true || $resData->success === 1 || $resData->success === '1');
-		if ((int) $status === 200 || $messageOk || $successFlag) {
-			$this->_comms_debug('SMS', 'swiftqom: SUCCESS', ['phone' => $phone]);
-			$result = ["code" => 200, "content" => (string) ($resData->message ?? 'success')];
-			return true;
+		$accepted = ((int) $status === 200 || $messageOk || $successFlag);
+		if (!$accepted) {
+			$result = ["code" => 400, "content" => $resData->message ?? 'SMS failed'];
+			$this->_comms_debug('SMS', 'swiftqom: FAIL', ['result' => $result]);
+			return false;
 		}
 
-		$result = ["code" => 400, "content" => $resData->message ?? 'SMS failed'];
-		$this->_comms_debug('SMS', 'swiftqom: FAIL', ['result' => $result]);
+		$messageId = trim((string) ($resData->message_id ?? ''));
+		if ($messageId === '') {
+			$result = ["code" => 400, "content" => 'SMS provider did not return a message id, so delivery was not confirmed.'];
+			$this->_comms_debug('SMS', 'swiftqom: accepted without message id', []);
+			return false;
+		}
+
+		$delivery = ['state' => 'pending', 'error' => '', 'status' => ''];
+		for ($try = 0; $try < 2; $try++) {
+			if ($try > 0) {
+				usleep(1500000);
+			}
+			$delivery = $this->swiftqomDeliveryStatus($phone, $messageId);
+			if ($delivery['state'] !== 'pending') {
+				break;
+			}
+		}
+		$this->_comms_debug('SMS', 'swiftqom: delivery', [
+			'message_id' => $messageId,
+			'state' => $delivery['state'],
+			'status' => $delivery['status'],
+			'error' => $delivery['error'],
+		]);
+		if ($delivery['state'] === 'delivered') {
+			$result = ["code" => 200, "content" => 'delivered'];
+			return true;
+		}
+		$why = $delivery['state'] === 'failed'
+			? ($delivery['error'] !== '' ? $delivery['error'] : 'SMS was not delivered')
+			: 'SMS was accepted but delivery is not confirmed (' . ($delivery['status'] !== '' ? $delivery['status'] : 'pending') . ').';
+		$result = ["code" => 400, "content" => $why];
 		return false;
+	}
+
+	/**
+	 * SwiftQOM's send call only means the message was accepted.
+	 * sms_status is the delivery result (FAILED even when send returned success).
+	 *
+	 * @return array{state:string, error:string, status:string}
+	 */
+	protected function swiftqomDeliveryStatus(string $phone, string $messageId): array
+	{
+		$unknown = ['state' => 'pending', 'error' => '', 'status' => ''];
+		$smsConfig = config('Sms');
+		$endpoint = preg_replace('#/send_sms/?$#', '/sms_status', (string) $smsConfig->swiftqomUrl);
+		if (!is_string($endpoint) || $endpoint === $smsConfig->swiftqomUrl) {
+			return $unknown;
+		}
+		$ch = curl_init($endpoint);
+		curl_setopt_array($ch, [
+			CURLOPT_POST => true,
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_TIMEOUT => 6,
+			CURLOPT_CONNECTTIMEOUT => 4,
+			CURLOPT_HTTPHEADER => [
+				'x-api-key: ' . $smsConfig->swiftqomKey,
+				'Content-Type: application/json',
+				'Accept: application/json',
+			],
+			CURLOPT_POSTFIELDS => json_encode([
+				'phone' => $phone,
+				'message_id' => $messageId,
+			]),
+			CURLOPT_SSL_VERIFYPEER => false,
+		]);
+		$raw = curl_exec($ch);
+		curl_close($ch);
+		if ($raw === false || $raw === '') {
+			return ['state' => 'pending', 'error' => '', 'status' => 'UNCONFIRMED'];
+		}
+		$data = json_decode($raw);
+		$row = $data->data ?? null;
+		$status = strtoupper(trim((string) ($row->status ?? '')));
+		$error = trim((string) ($row->error_message ?? ''));
+		if (stripos($error, 'upstream') !== false) {
+			$error = 'The mobile network gateway rejected the message (upstream send failed).';
+		} else {
+			$error = preg_replace('/Password:\s*\S+/i', 'Password: [hidden]', $error);
+			$error = trim(preg_replace('/\s+/', ' ', $error));
+		}
+		if (in_array($status, ['FAILED', 'UNDELIVERED', 'REJECTED', 'EXPIRED', 'ERROR'], true)) {
+			return ['state' => 'failed', 'error' => $error !== '' ? $error : 'SMS was not delivered', 'status' => $status];
+		}
+		if (in_array($status, ['DELIVERED', 'SUCCESS', 'SENT', 'OK'], true)) {
+			return ['state' => 'delivered', 'error' => '', 'status' => $status];
+		}
+		return ['state' => 'pending', 'error' => '', 'status' => $status !== '' ? $status : 'PENDING'];
 	}
 
 	/**
