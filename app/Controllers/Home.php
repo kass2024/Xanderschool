@@ -10283,6 +10283,21 @@ public function attendanceCard()
 		if (!$student) {
 			return $this->response->setJSON(['error' => 'Student not found']);
 		}
+		$url = $this->issueParentUpdateUrl($schoolId, $studentId);
+		$expires = date('Y-m-d H:i:s', time() + (48 * 3600));
+		$name = trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? ''));
+		return $this->response->setJSON([
+			'success' => true,
+			'url' => $url,
+			'expires_at' => $expires,
+			'student' => $name,
+			'regno' => (string) ($student['regno'] ?? ''),
+		]);
+	}
+
+	private function issueParentUpdateUrl(int $schoolId, int $studentId): string
+	{
+		$this->ensureParentUpdateLinkSchema();
 		$db = \Config\Database::connect();
 		$now = date('Y-m-d H:i:s');
 		$db->table('parent_update_links')
@@ -10291,23 +10306,111 @@ public function attendanceCard()
 			->where('expires_at >', $now)
 			->update(['expires_at' => $now]);
 		$token = bin2hex(random_bytes(16));
-		$expires = date('Y-m-d H:i:s', time() + (48 * 3600));
 		$db->table('parent_update_links')->insert([
 			'school_id' => $schoolId,
 			'student_id' => $studentId,
 			'token_hash' => hash('sha256', $token),
-			'expires_at' => $expires,
+			'expires_at' => date('Y-m-d H:i:s', time() + (48 * 3600)),
 			'created_by' => (int) $this->session->get('soma_id'),
 			'created_at' => $now,
 		]);
-		$name = trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? ''));
-		$url = base_url('parent-update/' . $token);
+		return base_url('parent-update/' . $token);
+	}
+
+	/** Father, mother, and guardian phones. The same number is sent once. */
+	private function collectParentUpdatePhones(array $student): array
+	{
+		$phones = [];
+		foreach (['ft_phone', 'mt_phone', 'gd_phone'] as $key) {
+			$ph = trim((string) ($student[$key] ?? ''));
+			$digits = preg_replace('/\D/', '', $ph);
+			if (strlen($digits) >= 9 && !isset($phones[$digits])) {
+				$phones[$digits] = $ph;
+			}
+		}
+		return array_values($phones);
+	}
+
+	private function buildParentUpdateSms(string $studentName, string $url): string
+	{
+		$studentName = trim($studentName) !== '' ? trim($studentName) : 'umunyeshuri';
+		return $studentName . ": Hindura amazina y'ababyeyi, telefoni n'aderesi. Iyi link irangira mu masaha 48: " . $url
+			. "\nUpdate parent names, phones and address. Expires in 48 hours.";
+	}
+
+	/** Send the 48-hour parent update link by SMS to the parents of the selected students. */
+	public function send_parent_update_sms()
+	{
+		$this->_preset(1, 3, 4, 5, 6);
+		@ini_set('max_execution_time', '300');
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$ids = $this->request->getPost('studentIds');
+		if (is_string($ids) && $ids !== '') {
+			$ids = preg_split('/[,\s]+/', $ids);
+		}
+		if (!is_array($ids)) {
+			$ids = [];
+		}
+		$ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+		if ($ids === []) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Select at least one student.']);
+		}
+		if (count($ids) > 200) {
+			return $this->response->setJSON(['success' => false, 'error' => 'Select at most 200 students at a time.']);
+		}
+		$rows = (new StudentModel())->select('id, fname, lname, regno, father, ft_phone, mother, mt_phone, guardian, gd_phone')
+			->where('school_id', $schoolId)
+			->whereIn('id', $ids)
+			->get()->getResultArray();
+		$found = [];
+		foreach ($rows as $row) {
+			$found[(int) $row['id']] = $row;
+		}
+		$sentStudents = 0;
+		$sentMessages = 0;
+		$issues = [];
+		$lastUrl = '';
+		foreach ($ids as $id) {
+			if (!isset($found[$id])) {
+				$issues[] = 'Student #' . $id . ' was not found.';
+				continue;
+			}
+			$st = $found[$id];
+			$name = trim(($st['fname'] ?? '') . ' ' . ($st['lname'] ?? ''));
+			$who = $name !== '' ? $name : ('#' . $id);
+			$phones = $this->collectParentUpdatePhones($st);
+			if ($phones === []) {
+				$issues[] = $who . ': no parent phone number.';
+				continue;
+			}
+			$url = $this->issueParentUpdateUrl($schoolId, $id);
+			$lastUrl = $url;
+			$message = $this->buildParentUpdateSms($name, $url);
+			$sentForStudent = 0;
+			foreach ($phones as $phone) {
+				if ($this->sendChargedSms($phone, $message, $id, 'Parent update link')) {
+					$sentForStudent++;
+					$sentMessages++;
+				}
+			}
+			if ($sentForStudent > 0) {
+				$sentStudents++;
+			} else {
+				$issues[] = $who . ': SMS could not be sent.';
+			}
+		}
+		$summary = 'Parent link SMS sent for ' . $sentStudents . ' student' . ($sentStudents === 1 ? '' : 's')
+			. ' (' . $sentMessages . ' parent number' . ($sentMessages === 1 ? '' : 's') . ').';
+		if ($issues !== []) {
+			$summary .= ' ' . implode(' ', array_slice($issues, 0, 6));
+		}
 		return $this->response->setJSON([
-			'success' => true,
-			'url' => $url,
-			'expires_at' => $expires,
-			'student' => $name,
-			'regno' => (string) ($student['regno'] ?? ''),
+			'success' => $sentStudents > 0,
+			'sent' => $sentStudents,
+			'messages' => $sentMessages,
+			'url' => count($ids) === 1 ? $lastUrl : '',
+			'message' => $summary,
+			'error' => $sentStudents > 0 ? null : ($issues[0] ?? 'No SMS sent.'),
 		]);
 	}
 

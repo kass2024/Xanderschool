@@ -683,6 +683,9 @@
 												<button type="button" id="btnSendAdmissionSmsSelected" class="btn btn-info">
 													<i class="fa fa-paper-plane"></i> Send to selected
 												</button>
+												<button type="button" id="btnSendParentLinkSms" class="btn btn-success">
+													<i class="fa fa-comment"></i> SMS parent links
+												</button>
 											</div>
 										</div>
 										<div class="students-table-scroll">
@@ -940,13 +943,14 @@ foreach ($students as $st) {
 			</div>
 			<div class="modal-body">
 				<p id="parentLinkStudent" style="font-weight:700;margin-bottom:8px;"></p>
-				<p style="color:#475569;font-size:13px;">Send this link to the parent. It expires in 48 hours and only allows parent names, phone numbers, and the address. The page has English and Kinyarwanda.</p>
+				<p style="color:#475569;font-size:13px;">This link expires in 48 hours and only allows parent names, phone numbers, and the address. The page has English and Kinyarwanda. SMS goes to the father, mother, and guardian numbers on the student.</p>
 				<input type="text" class="form-control" id="parentLinkUrl" readonly>
 				<p id="parentLinkExpiry" style="margin-top:8px;font-size:13px;color:#0f766e;"></p>
 			</div>
 			<div class="modal-footer">
 				<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
 				<a class="btn btn-success" id="parentLinkWhatsapp" target="_blank" rel="noopener">WhatsApp</a>
+				<button type="button" class="btn btn-info" id="parentLinkSms"><i class="fa fa-comment"></i> Send SMS</button>
 				<button type="button" class="btn btn-primary" id="parentLinkCopy">Copy link</button>
 			</div>
 		</div>
@@ -997,6 +1001,7 @@ foreach ($students as $st) {
 (function ($) {
 	var LIVE_SEARCH_API = "<?= site_url('students_live_search'); ?>";
 	var SMS_API = "<?= site_url('sendStudentAdmissionSms'); ?>";
+	var PARENT_SMS_API = "<?= site_url('send_parent_update_sms'); ?>";
 	var MOVE_API = "<?= site_url('move_students_class'); ?>";
 	var EDIT_FIELD_API = "<?= site_url('edit_student/text'); ?>";
 	var SAVE_CLASS_API = "<?= site_url('saveClassStudents'); ?>";
@@ -2015,6 +2020,63 @@ foreach ($students as $st) {
 		});
 	});
 
+	function sendParentLinkSms(ids, $btn) {
+		if (!ids.length) {
+			showAlert('warning', 'Select at least one student.');
+			return;
+		}
+		var orig = $btn ? $btn.html() : '';
+		if ($btn) {
+			$btn.prop('disabled', true).text('Sending…');
+		}
+		showAlert('info', 'Sending parent update links by SMS…');
+		$.ajax({
+			url: PARENT_SMS_API,
+			type: 'POST',
+			dataType: 'json',
+			data: withCsrf({ studentIds: ids })
+		}).done(function (res) {
+			if (res && res.success) {
+				showAlert('success', res.message || 'Parent link SMS sent.');
+				if (res.url && ids.length === 1) {
+					$('#parentLinkUrl').val(res.url);
+					$('#parentLinkExpiry').text('Sent by SMS. Expires in 48 hours.');
+				}
+			} else {
+				showAlert('danger', (res && (res.error || res.message)) || 'SMS was not sent.');
+			}
+		}).fail(function () {
+			showAlert('danger', 'Could not send the parent link SMS.');
+		}).always(function () {
+			if ($btn) {
+				$btn.prop('disabled', false).html(orig);
+			}
+		});
+	}
+
+	$(document).on('click', '#btnSendParentLinkSms', function () {
+		var ids = selectedIds();
+		if (!ids.length) {
+			showAlert('warning', 'Select students first, then click SMS parent links.');
+			return;
+		}
+		if (!confirm('Send the 48-hour parent update link by SMS to the father, mother, and guardian of ' + ids.length + ' student(s)?')) {
+			return;
+		}
+		sendParentLinkSms(ids, $(this));
+	});
+
+	$(document).on('click', '#parentLinkSms', function () {
+		var id = parseInt($('#parentLinkModal').data('student-id'), 10);
+		if (!id) {
+			return;
+		}
+		if (!confirm('Send this parent update link by SMS to the father, mother, and guardian?')) {
+			return;
+		}
+		sendParentLinkSms([id], $(this));
+	});
+
 	$(document).on('click', '.btn-parent-link', function () {
 		var $btn = $(this);
 		if ($btn.data('busy')) {
@@ -2022,6 +2084,7 @@ foreach ($students as $st) {
 		}
 		var id = $btn.data('id');
 		var name = $btn.data('name') || 'Student';
+		$('#parentLinkModal').data('student-id', id);
 		$btn.data('busy', 1);
 		$.post("<?= site_url('create_parent_update_link'); ?>", withCsrf({ student_id: id }), function (res) {
 			if (!res || !res.success || !res.url) {
