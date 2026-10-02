@@ -445,7 +445,7 @@ class BaseController extends Controller
 		$status = strtoupper(trim((string) ($row->status ?? '')));
 		$error = trim((string) ($row->error_message ?? ''));
 		if (stripos($error, 'upstream') !== false) {
-			$error = 'SwiftQOM accepted the SMS, then the mobile gateway rejected it. Top up the SwiftQOM balance and send again.';
+			$error = 'SwiftQOM queued the SMS, then its own sender returned HTTP 502 (upstream send failed). The SMS balance was not the cause.';
 		} else {
 			$error = preg_replace('/Password:\s*\S+/i', 'Password: [hidden]', $error);
 			$error = trim(preg_replace('/\s+/', ' ', $error));
