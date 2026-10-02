@@ -415,7 +415,7 @@
 	overflow: auto; max-height: calc(100vh - 250px); border: 1px solid #dbe3ef; border-radius: 12px;
 	background: #fff;
 }
-#classEditTable { margin: 0; font-size: 12px; min-width: 1780px; }
+#classEditTable { margin: 0; font-size: 12px; min-width: 2480px; border-collapse: separate; border-spacing: 0; }
 #classEditTable thead th {
 	position: sticky; top: 0; z-index: 3; background: #0f172a; color: #e2e8f0; white-space: nowrap;
 	font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-color: #1e293b; padding: 8px 8px;
@@ -425,6 +425,8 @@
 #classEditTable thead th.ce-grp-father { background: #1d4ed8; }
 #classEditTable thead th.ce-grp-mother { background: #7c3aed; }
 #classEditTable thead th.ce-grp-guardian { background: #0369a1; }
+#classEditTable thead th.ce-grp-address { background: #047857; }
+#classEditTable thead th.ce-grp-sex { background: #9d174d; }
 #classEditTable td { vertical-align: middle; padding: 6px 7px; }
 #classEditTable .form-control, #classEditTable select.form-control {
 	height: 32px; padding: 3px 8px; font-size: 12px; border-radius: 8px; border-color: #cbd5e1;
@@ -456,6 +458,22 @@
 }
 .ce-mode-toggle button.active[data-value="0"] { background: #2563eb; color: #fff; }
 .ce-mode-toggle button.active[data-value="1"] { background: #d97706; color: #fff; }
+.ce-sex-toggle {
+	display: inline-flex; border: 1px solid #f9a8d4; border-radius: 999px; overflow: hidden;
+	background: #fff; min-width: 168px;
+}
+.ce-sex-toggle button {
+	flex: 1; border: 0; background: transparent; padding: 6px 12px; font-size: 12px; font-weight: 800;
+	cursor: pointer; color: #64748b; white-space: nowrap;
+}
+.ce-sex-toggle button.active[data-value="F"] { background: #db2777; color: #fff; }
+.ce-sex-toggle button.active[data-value="M"] { background: #1d4ed8; color: #fff; }
+#classEditTable .ce-w-addr { min-width: 148px; }
+#classEditTable td.ce-sex { background: #fff7fb; }
+#classEditTable tr:hover td { background: #f8fafc; }
+#classEditTable tr.ce-dirty td { background: #fffbeb; }
+#classEditTable tr.ce-saved td { background: #f0fdf4; }
+#classEditTable tr.ce-saving td { background: #eff6ff; }
 .ce-row-mark { font-size: 11px; color: #94a3b8; }
 .ce-row-mark.saved { color: #16a34a; }
 .ce-row-mark.busy { color: #2563eb; }
@@ -674,8 +692,10 @@
 											<?php
 											$a = 1;
 											foreach ($students as $student) {
-												$status = $student['status'] == 1 || $student['status'] == 2 ? '<label class="text-success lnk" data-toggle="update" data-href="change_status/student/0" data-target="' . $student['id'] . '" data-target-record="' . $student['record_id'] . '">'.lang("app.active").'</label>'
-													: '<label class="text-danger lnk" data-toggle="update" data-href="change_status/student/1" data-target="' . $student['id'] . '" data-target-record="' . $student['record_id'] . '">'.lang("app.locked").'</label>';
+												$isLive = (int) $student['status'] === 1 || (int) $student['status'] === 2;
+												$status = $isLive
+													? '<button type="button" class="btn btn-sm btn-outline-danger" data-toggle="update" data-href="change_status/student/0" data-target="' . $student['id'] . '" data-target-record="' . $student['record_id'] . '">Deactivate</button>'
+													: '<button type="button" class="btn btn-sm btn-outline-success" data-toggle="update" data-href="change_status/student/1" data-target="' . $student['id'] . '" data-target-record="' . $student['record_id'] . '">Activate</button>';
 												$parent = '';
 												if (strlen($student['father']) > 3) {
 													$parent = "<span class='badge badge-pill badge-success'>".lang("app.father")."</span> " . $student['father'] . "<br><a href='tel:{$student['ft_phone']}'>{$student['ft_phone']}</a>";
@@ -700,7 +720,7 @@
 														   class="link"><?= $student['regno']; ?></a></td>
 													<td class="ce-list-names"><?= $student['fname'] . ' ' . $student['lname']; ?></td>
 													<td class="ce-list-mode"><?= \App\Controllers\Home::ModeToStr($student['studying_mode']); ?></td>
-													<td><?= $student['sex']; ?></td>
+													<td class="ce-list-sex"><?= $student['sex'] === 'F' ? lang('app.female') : ($student['sex'] === 'M' ? lang('app.male') : $student['sex']); ?></td>
 													<td><?= $student['level'] . ' ' . $student['dept_code'] . ' ' . $student['class']; ?></td>
 													<td><?= !empty($student['email']) ? esc($student['email']) : '—'; ?></td>
 													<td><?= $parent; ?></td>
@@ -787,7 +807,11 @@ foreach ($students as $st) {
 	$modeRaw = strtolower(trim((string) ($st['studying_mode'] ?? '0')));
 	$modeNorm = ($modeRaw === '1' || $modeRaw === 'day') ? '1' : '0';
 	$sexNorm = strtoupper(trim((string) ($st['sex'] ?? '')));
-	if ($sexNorm !== 'F' && $sexNorm !== 'M') {
+	if (in_array($sexNorm, ['FEMALE', 'GIRL'], true)) {
+		$sexNorm = 'F';
+	} elseif (in_array($sexNorm, ['MALE', 'BOY'], true)) {
+		$sexNorm = 'M';
+	} elseif ($sexNorm !== 'F' && $sexNorm !== 'M') {
 		$sexNorm = '';
 	}
 	$classEditStudents[] = [
@@ -800,6 +824,15 @@ foreach ($students as $st) {
 		'studying_mode' => $modeNorm,
 		'phone' => (string) ($st['phone'] ?? ''),
 		'nationality' => (string) ($st['nationality'] ?? ''),
+		'province_id' => (int) ($st['province_id'] ?? 0),
+		'district_id' => (int) ($st['district_id'] ?? 0),
+		'district_name' => (string) ($st['district_name'] ?? ''),
+		'sector_id' => (int) ($st['sector_id'] ?? 0),
+		'sector_name' => (string) ($st['sector_name'] ?? ''),
+		'cell_id' => (int) ($st['cell_id'] ?? 0),
+		'cell_name' => (string) ($st['cell_name'] ?? ''),
+		'village_id' => (int) ($st['village_id'] ?? 0),
+		'village_title' => (string) ($st['village_title'] ?? ''),
 		'religion' => (string) ($st['religion'] ?? ''),
 		'father' => (string) ($st['father'] ?? ''),
 		'ft_phone' => (string) ($st['ft_phone'] ?? ''),
@@ -819,7 +852,7 @@ foreach ($students as $st) {
 			<div class="modal-header">
 				<div>
 					<h5 class="modal-title" id="classEditTitle">Edit class — <?= esc($currentClassLabel); ?></h5>
-					<span class="ce-subtitle">Click outside a cell to auto-save. Study mode (Boarding / Day) saves instantly. Works for every school.</span>
+					<span class="ce-subtitle">Every change saves on its own. Sex, study mode, and village save as soon as you choose them.</span>
 				</div>
 				<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
 			</div>
@@ -838,11 +871,16 @@ foreach ($students as $st) {
 							<th class="ce-grp-student">Reg no</th>
 							<th class="ce-grp-student">First name</th>
 							<th class="ce-grp-student">Last name</th>
-							<th class="ce-grp-student">Sex</th>
+							<th class="ce-grp-sex">Sex</th>
 							<th class="ce-grp-student">Birth date</th>
 							<th class="ce-grp-mode">Study mode</th>
 							<th class="ce-grp-student">Student phone</th>
 							<th class="ce-grp-student">Nationality</th>
+							<th class="ce-grp-address">Province</th>
+							<th class="ce-grp-address">District</th>
+							<th class="ce-grp-address">Sector</th>
+							<th class="ce-grp-address">Cell</th>
+							<th class="ce-grp-address">Village</th>
 							<th class="ce-grp-student">Religion</th>
 							<th class="ce-grp-father">Father names</th>
 							<th class="ce-grp-father">Father phone</th>
@@ -935,7 +973,23 @@ foreach ($students as $st) {
 	var CLASS_STUDENTS = <?= json_encode($classEditStudents ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 	var MODE_BOARDING = <?= json_encode(lang('app.boarding')); ?>;
 	var MODE_DAY = <?= json_encode(lang('app.day')); ?>;
-	var CE_FIELDS = ['fname','lname','sex','dob','studying_mode','phone','nationality','religion','father','ft_phone','father_nid','mother','mt_phone','mother_nid','guardian','gd_phone','guardian_nid'];
+	var CE_FIELDS = ['fname','lname','sex','dob','studying_mode','phone','nationality','village_id','religion','father','ft_phone','father_nid','mother','mt_phone','mother_nid','guardian','gd_phone','guardian_nid'];
+	var PROVINCES = <?= json_encode((new \App\Models\AddressModel())->getProvince(), JSON_UNESCAPED_UNICODE); ?>;
+	var ADDR_API = "<?= site_url('get_address'); ?>";
+	var ADDR_CHAIN = {
+		province_id: { next: 'district_id', target: 'district', key: 'province' },
+		district_id: { next: 'sector_id', target: 'sector', key: 'district' },
+		sector_id: { next: 'cell_id', target: 'cell', key: 'sector' },
+		cell_id: { next: 'village_id', target: 'village', key: 'cell' }
+	};
+	var ADDR_PARENT = {
+		district_id: 'province_id',
+		sector_id: 'district_id',
+		cell_id: 'sector_id',
+		village_id: 'cell_id'
+	};
+	var SEX_FEMALE = <?= json_encode(lang('app.female')); ?>;
+	var SEX_MALE = <?= json_encode(lang('app.male')); ?>;
 	var RELIGIONS = <?= json_encode([
 		lang('app.islam'),
 		lang('app.catholics'),
@@ -1275,7 +1329,17 @@ foreach ($students as $st) {
 		}
 		if (field === 'sex') {
 			v = v.trim().toUpperCase();
+			if (v === 'FEMALE' || v === 'GIRL') {
+				return 'F';
+			}
+			if (v === 'MALE' || v === 'BOY') {
+				return 'M';
+			}
 			return (v === 'F' || v === 'M') ? v : '';
+		}
+		if (field === 'village_id') {
+			var n = parseInt(v, 10);
+			return n > 0 ? String(n) : '';
 		}
 		return v;
 	}
@@ -1306,7 +1370,62 @@ foreach ($students as $st) {
 			var active = $el.find('button.active').attr('data-value');
 			return ceNormMode(active);
 		}
+		if ($el.hasClass('ce-sex-toggle')) {
+			return ceNormField('sex', $el.find('button.active').attr('data-value'));
+		}
 		return String($el.val() == null ? '' : $el.val());
+	}
+
+	function ceSexToggle(id, value) {
+		var sex = ceNormField('sex', value);
+		return '<div class="ce-sex-toggle ce-field" data-id="' + id + '" data-field="sex" tabindex="0">' +
+			'<button type="button" data-value="F"' + (sex === 'F' ? ' class="active"' : '') + '>' + ceEsc(SEX_FEMALE) + '</button>' +
+			'<button type="button" data-value="M"' + (sex === 'M' ? ' class="active"' : '') + '>' + ceEsc(SEX_MALE) + '</button>' +
+			'</div>';
+	}
+
+	function ceAddrOptions(field, selected, label) {
+		var html = '<option value="">Select</option>';
+		if (field === 'province_id') {
+			PROVINCES.forEach(function (p) {
+				html += ceOpt(String(p.id), String(selected || ''), p.title);
+			});
+			return html;
+		}
+		if (selected) {
+			html += ceOpt(String(selected), String(selected), label || selected);
+		}
+		return html;
+	}
+
+	function ceAddrSelect(id, field, selected, label) {
+		var extra = field === 'village_id' ? ' ce-field' : '';
+		return '<select class="form-control ce-addr ce-w-addr' + extra + '" data-id="' + id + '" data-field="' + field + '">' +
+			ceAddrOptions(field, selected, label) + '</select>';
+	}
+
+	function ceClearAddr($tr, fromField) {
+		var order = ['province_id', 'district_id', 'sector_id', 'cell_id', 'village_id'];
+		var start = order.indexOf(fromField);
+		if (start < 0) {
+			return;
+		}
+		for (var i = start + 1; i < order.length; i++) {
+			var $sel = $tr.find('select.ce-addr[data-field="' + order[i] + '"]');
+			$sel.html('<option value="">Select</option>').val('');
+		}
+	}
+
+	function ceLoadAddr($select, target, key, parentVal, keep) {
+		if (!parentVal) {
+			return;
+		}
+		$.get(ADDR_API + '/' + target, { key: key, val: parentVal }, function (html) {
+			$select.html(html);
+			if (keep) {
+				$select.val(String(keep));
+			}
+		});
 	}
 
 	function ceFindStudent(id) {
@@ -1331,6 +1450,7 @@ foreach ($students as $st) {
 		CLASS_STUDENTS.forEach(function (st) {
 			st.studying_mode = ceNormMode(st.studying_mode);
 			st.sex = ceNormField('sex', st.sex);
+			st.village_id = ceNormField('village_id', st.village_id);
 			ceOrigMap[st.id] = ceSnapshot(st);
 		});
 	}
@@ -1465,6 +1585,9 @@ foreach ($students as $st) {
 		if (field === 'studying_mode') {
 			$row.find('.ce-list-mode').text(ceModeLabel(val));
 		}
+		if (field === 'sex') {
+			$row.find('.ce-list-sex').text(val === 'F' ? SEX_FEMALE : (val === 'M' ? SEX_MALE : ''));
+		}
 		if (field === 'fname' || field === 'lname') {
 			var st = ceFindStudent(id);
 			if (st) {
@@ -1485,7 +1608,7 @@ foreach ($students as $st) {
 			} else {
 				boarding++;
 			}
-			var hay = [st.regno, st.fname, st.lname, st.father, st.mother, st.guardian, st.ft_phone, st.father_nid, st.mother_nid, st.guardian_nid].join(' ').toLowerCase();
+			var hay = [st.regno, st.fname, st.lname, st.father, st.mother, st.guardian, st.ft_phone, st.father_nid, st.mother_nid, st.guardian_nid, st.district_name, st.sector_name, st.cell_name, st.village_title].join(' ').toLowerCase();
 			if (filter && hay.indexOf(filter) === -1) {
 				return;
 			}
@@ -1502,12 +1625,16 @@ foreach ($students as $st) {
 				'<td class="ce-regno">' + ceEsc(st.regno) + '</td>' +
 				'<td class="ce-w-name">' + ceInput(st.id, 'fname', st.fname, 'ce-w-name') + '</td>' +
 				'<td class="ce-w-name">' + ceInput(st.id, 'lname', st.lname, 'ce-w-name') + '</td>' +
-				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="sex">' +
-					'<option value=""></option>' + ceOpt('F', st.sex, 'F') + ceOpt('M', st.sex, 'M') + '</select></td>' +
+				'<td class="ce-sex">' + ceSexToggle(st.id, st.sex) + '</td>' +
 				'<td>' + ceInput(st.id, 'dob', st.dob, '', 'date') + '</td>' +
 				'<td>' + ceModeToggle(st.id, st.studying_mode) + '</td>' +
 				'<td class="ce-w-phone">' + ceInput(st.id, 'phone', st.phone, 'ce-w-phone') + '</td>' +
 				'<td>' + ceInput(st.id, 'nationality', st.nationality) + '</td>' +
+				'<td>' + ceAddrSelect(st.id, 'province_id', st.province_id, '') + '</td>' +
+				'<td>' + ceAddrSelect(st.id, 'district_id', st.district_id, st.district_name) + '</td>' +
+				'<td>' + ceAddrSelect(st.id, 'sector_id', st.sector_id, st.sector_name) + '</td>' +
+				'<td>' + ceAddrSelect(st.id, 'cell_id', st.cell_id, st.cell_name) + '</td>' +
+				'<td>' + ceAddrSelect(st.id, 'village_id', st.village_id, st.village_title) + '</td>' +
 				'<td><select class="form-control ce-field" data-id="' + st.id + '" data-field="religion">' + relOpts + '</select></td>' +
 				'<td class="ce-w-name">' + ceInput(st.id, 'father', st.father, 'ce-w-name') + '</td>' +
 				'<td class="ce-w-phone">' + ceInput(st.id, 'ft_phone', st.ft_phone, 'ce-w-phone') + '</td>' +
@@ -1520,7 +1647,7 @@ foreach ($students as $st) {
 				'<td class="ce-w-nid">' + ceInput(st.id, 'guardian_nid', st.guardian_nid, 'ce-w-nid') + '</td>' +
 				'</tr>';
 		});
-		$('#classEditTable tbody').html(html || '<tr><td colspan="19" class="text-center text-muted py-3">No students match.</td></tr>');
+		$('#classEditTable tbody').html(html || '<tr><td colspan="24" class="text-center text-muted py-3">No students match.</td></tr>');
 		$('#classEditCount').text(shown + ' of ' + CLASS_STUDENTS.length + ' · ' + boarding + ' ' + MODE_BOARDING + ' · ' + day + ' ' + MODE_DAY);
 		CLASS_STUDENTS.forEach(function (st) { ceMarkRow(st.id); });
 		ceRefreshHints();
@@ -1722,7 +1849,7 @@ foreach ($students as $st) {
 
 	$(document).on('focusout', '#classEditTable .ce-field', function (e) {
 		var $el = $(this);
-		if ($el.hasClass('ce-mode-toggle')) {
+		if ($el.hasClass('ce-mode-toggle') || $el.hasClass('ce-sex-toggle')) {
 			return;
 		}
 		window.setTimeout(function () {
@@ -1730,25 +1857,77 @@ foreach ($students as $st) {
 		}, 40);
 	});
 
-	$(document).on('click', '#classEditTable .ce-mode-toggle button', function (e) {
+	$(document).on('click', '#classEditTable .ce-mode-toggle button, #classEditTable .ce-sex-toggle button', function (e) {
 		e.preventDefault();
 		e.stopPropagation();
 		var $btn = $(this);
-		var $wrap = $btn.closest('.ce-mode-toggle');
+		var $wrap = $btn.closest('.ce-mode-toggle, .ce-sex-toggle');
 		$wrap.find('button').removeClass('active');
 		$btn.addClass('active');
 		ceSaveField($wrap);
 	});
 
-	$(document).on('mousedown', '#classEditModal', function (e) {
-		var $t = $(e.target);
-		if ($t.closest('.ce-field, .ce-mode-toggle button').length) {
+	$(document).on('change', '#classEditTable select.ce-addr', function () {
+		var $el = $(this);
+		var field = $el.attr('data-field');
+		var id = parseInt($el.attr('data-id'), 10);
+		var val = String($el.val() || '');
+		var st = ceFindStudent(id);
+		var $tr = $el.closest('tr');
+		if (st) {
+			st[field] = field === 'village_id' ? ceNormField('village_id', val) : val;
+			var label = $.trim($el.find('option:selected').text());
+			if (field === 'district_id') st.district_name = label;
+			if (field === 'sector_id') st.sector_name = label;
+			if (field === 'cell_id') st.cell_name = label;
+			if (field === 'village_id') st.village_title = label;
+		}
+		if (field === 'village_id') {
 			return;
 		}
-		var $active = $('#classEditTable input.ce-field:focus, #classEditTable select.ce-field:focus');
-		if ($active.length) {
-			ceSaveField($active);
+		ceClearAddr($tr, field);
+		if (st) {
+			st.district_id = field === 'province_id' ? '' : st.district_id;
+			if (field === 'province_id' || field === 'district_id') {
+				st.sector_id = '';
+				st.sector_name = '';
+			}
+			if (field !== 'cell_id') {
+				st.cell_id = field === 'sector_id' ? '' : (field === 'province_id' || field === 'district_id' ? '' : st.cell_id);
+			}
+			st.village_id = '';
+			st.village_title = '';
 		}
+		var step = ADDR_CHAIN[field];
+		if (step && val) {
+			ceLoadAddr($tr.find('select.ce-addr[data-field="' + step.next + '"]'), step.target, step.key, val, '');
+		}
+		ceMarkRow(id);
+		ceRefreshHints();
+	});
+
+	$(document).on('focus', '#classEditTable select.ce-addr', function () {
+		var $el = $(this);
+		var field = $el.attr('data-field');
+		var spec = ADDR_PARENT[field] ? ADDR_CHAIN[ADDR_PARENT[field]] : null;
+		if (!spec || $el.find('option').length > 2) {
+			return;
+		}
+		var $tr = $el.closest('tr');
+		var parentVal = $tr.find('select.ce-addr[data-field="' + ADDR_PARENT[field] + '"]').val();
+		if (!parentVal) {
+			return;
+		}
+		ceLoadAddr($el, spec.target, spec.key, parentVal, $el.val());
+	});
+
+	$(document).on('mousedown', '#classEditModal', function (e) {
+		var $t = $(e.target);
+		var $active = $('#classEditTable input.ce-field:focus, #classEditTable select.ce-field:focus');
+		if (!$active.length || $t.closest($active).length) {
+			return;
+		}
+		ceSaveField($active);
 	});
 
 	$(document).on('click', '#btnSaveClassStudents', function () {

@@ -293,7 +293,7 @@ class StudentModel extends Model
 
 	public function get_student_simple($val = null, $key = 'students.id', $single = false)
 	{
-		$builder = $this->select('students.*,cr.id as record_id,v.title as village_title,sc.title as cell_name,c.title as class,d.code as dept_code,d.title as dept_title
+		$builder = $this->select('students.*,cr.id as record_id,v.title as village_title,sc.id as cell_id,sc.title as cell_name,ss.id as sector_id,ss.title as sector_name,sd.id as district_id,sd.title as district_name,sd.province as province_id,c.title as class,d.code as dept_code,d.title as dept_title
 		,l.title as level')
 			->join('class_records cr', 'cr.student=students.id')
 			->join('classes c', 'c.id=cr.class')
@@ -301,8 +301,8 @@ class StudentModel extends Model
 			->join('levels l', 'l.id=c.level')
 			->join('soma_village as v', 'v.id=students.village_id', 'LEFT')
 			->join('soma_cell as sc', 'sc.id=v.cell', 'LEFT')
-			//          ->join('soma_sector as ss', 'ss.id=sc.sector', 'LEFT')
-			//          ->join('soma_district as sd', 'sd.id=ss.district', 'LEFT')
+			->join('soma_sector as ss', 'ss.id=sc.sector', 'LEFT')
+			->join('soma_district as sd', 'sd.id=ss.district', 'LEFT')
 			//          ->where("students.status",1)
 			->where('students.school_id', $_SESSION['soma_school_id']);
 		if ($val !== null)

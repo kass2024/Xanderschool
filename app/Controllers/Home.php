@@ -10047,7 +10047,19 @@ public function attendanceCard()
 			return $this->response->setJSON(["error" => lang("app.pleaseProvide"), "msg" => lang("app.pleaseProvide")]);
 		}
 		if ($target == 'sex' && !in_array($val, ['F', 'M'])) {
-			return $this->response->setJSON(["error" => "Sex must be F or M", "msg" => "Sex must be F or M"]);
+			return $this->response->setJSON(["error" => "Sex must be Female or Male", "msg" => "Sex must be Female or Male"]);
+		}
+		if ($target === 'village_id') {
+			$villageId = (int) $val;
+			if ($villageId < 1) {
+				$val = null;
+			} else {
+				$villageRow = \Config\Database::connect()->table('soma_village')->select('id')->where('id', $villageId)->get(1)->getRowArray();
+				if (!$villageRow) {
+					return $this->response->setJSON(["error" => "Select a village", "msg" => "Select a village"]);
+				}
+				$val = $villageId;
+			}
 		}
 		if (in_array($target, ['father_nid', 'mother_nid', 'guardian_nid'], true) && is_string($val) && strlen($val) > 32) {
 			$val = substr($val, 0, 32);
@@ -10061,6 +10073,7 @@ public function attendanceCard()
 		}
 		$allowed = [
 			'fname', 'lname', 'sex', 'dob', 'studying_mode', 'phone', 'email', 'nationality', 'religion',
+			'village_id',
 			'father', 'ft_phone', 'father_nid', 'mother', 'mt_phone', 'mother_nid', 'guardian', 'gd_phone', 'guardian_nid',
 		];
 		if (!in_array($target, $allowed, true)) {
@@ -10134,7 +10147,7 @@ public function attendanceCard()
 			return $this->response->setJSON(['success' => false, 'error' => 'No student changes to save.']);
 		}
 		$allowed = [
-			'fname', 'lname', 'sex', 'dob', 'phone', 'email', 'nationality', 'religion',
+			'fname', 'lname', 'sex', 'dob', 'phone', 'email', 'nationality', 'religion', 'village_id',
 			'father', 'ft_phone', 'father_nid', 'mother', 'mt_phone', 'mother_nid', 'guardian', 'gd_phone', 'guardian_nid',
 		];
 		$stMdl = new StudentModel();
@@ -10169,6 +10182,19 @@ public function attendanceCard()
 				}
 				$val = is_string($row[$field]) ? trim($row[$field]) : $row[$field];
 				if ($field === 'sex' && !in_array((string) $val, ['F', 'M', ''], true)) {
+					continue;
+				}
+				if ($field === 'village_id') {
+					$villageId = (int) $val;
+					if ($villageId < 1) {
+						$patch[$field] = null;
+						continue;
+					}
+					$villageRow = \Config\Database::connect()->table('soma_village')->select('id')->where('id', $villageId)->get(1)->getRowArray();
+					if (!$villageRow) {
+						continue;
+					}
+					$patch[$field] = $villageId;
 					continue;
 				}
 				if (in_array($field, ['father_nid', 'mother_nid', 'guardian_nid'], true) && is_string($val) && strlen($val) > 32) {
@@ -19644,7 +19670,10 @@ public function getApplicationDocs($id = null)
 
 	public function manipulate_heystar_device()
 	{
-		$this->_preset(1, 3);
+		$blocked = $this->_beginJsonAction();
+		if ($blocked !== null) {
+			return $blocked;
+		}
 		$sessionSchool = (int) $this->session->get('soma_school_id');
 		$schoolId = (int) $this->request->getPost('school_id') ?: $sessionSchool;
 		if ($schoolId <= 0) {
@@ -19662,6 +19691,17 @@ public function getApplicationDocs($id = null)
 			return $this->response->setJSON(['error' => 'This school is locked.']);
 		}
 		$action = (string) $this->request->getPost('action');
+		if ($action === 'discover_ip') {
+			$out = HeyStarSyncService::discoverDeviceIp(
+				$schoolId,
+				trim((string) $this->request->getPost('device_key')),
+				trim((string) $this->request->getPost('password')),
+				trim((string) $this->request->getPost('browser_ip'))
+			);
+			$out['school_id'] = $schoolId;
+			$out['school'] = (string) ($school['name'] ?? '');
+			return $this->response->setJSON($out);
+		}
 		if ($action === 'save') {
 			HeyStarDeviceStore::save($schoolId, [
 				'device_key' => trim((string) $this->request->getPost('device_key')),
@@ -19675,14 +19715,26 @@ public function getApplicationDocs($id = null)
 				'school' => (string) ($school['name'] ?? ''),
 			]);
 		}
-		if ($action === 'sync') {
+		if ($action === 'sync_changes') {
 			HeyStarDeviceStore::save($schoolId, [
 				'device_key' => trim((string) $this->request->getPost('device_key')),
 				'device_ip' => trim((string) $this->request->getPost('device_ip')),
 				'password' => trim((string) $this->request->getPost('password')),
 				'area_id' => (int) $this->request->getPost('area_id'),
 			]);
-			$out = HeyStarSyncService::syncSchool($schoolId);
+			$out = HeyStarSyncService::syncChangesOnly($schoolId);
+			$out['school_id'] = $schoolId;
+			$out['school'] = (string) ($school['name'] ?? '');
+			return $this->response->setJSON($out);
+		}
+		if ($action === 'sync' || $action === 'sync_changes') {
+			HeyStarDeviceStore::save($schoolId, [
+				'device_key' => trim((string) $this->request->getPost('device_key')),
+				'device_ip' => trim((string) $this->request->getPost('device_ip')),
+				'password' => trim((string) $this->request->getPost('password')),
+				'area_id' => (int) $this->request->getPost('area_id'),
+			]);
+			$out = HeyStarSyncService::syncChangesOnly($schoolId);
 			$out['school_id'] = $schoolId;
 			$out['school'] = (string) ($school['name'] ?? ($out['school'] ?? ''));
 			return $this->response->setJSON($out);
