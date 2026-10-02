@@ -60,6 +60,18 @@
 							</div>
 						</div>
 						<div class="card-body">
+							<div class="staff-share-toolbar">
+								<label class="staff-share-all">
+									<input type="checkbox" id="staffShareSelectAll"> Select
+								</label>
+								<button type="button" id="btnShareSelectedStaff" class="btn btn-sm btn-info" disabled>
+									<i class="fa fa-share-alt"></i> Share access to selected
+								</button>
+								<button type="button" id="btnStaffSmsTest" class="btn btn-sm btn-outline-success">
+									<i class="fa fa-comment"></i> SMS test (Test Staff)
+								</button>
+								<span id="staffShareCount">None selected</span>
+							</div>
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
 								<div class="row">
 									<div class="col-sm-12">
@@ -67,6 +79,7 @@
 											   class=" table-hover table-striped table-bordered">
 											<thead>
 											<tr role="row">
+												<th data-orderable="false" style="width:36px;"><input type="checkbox" id="staffShareSelectAllHead" title="Select all"></th>
 												<th><?= lang("app.names");?></th>
 												<th class="all staff-teaching-col">Courses / Periods</th>
 												<th><?= lang("app.phone");?></th>
@@ -106,6 +119,7 @@
 												$hasLoad = $taughtCourses > 0;
 												?>
 											<tr data-id="<?=$staff['id'];?>" class="<?= $hasLoad ? 'staff-has-courses' : ''; ?>">
+												<td><input type="checkbox" class="staff-share-check" value="<?= (int) $staff['id']; ?>"></td>
 												<td><a href="<?=base_url('staff/'.$staff['id']);?>" class="link"><?=$staffName;?></a></td>
 												<td data-order="<?= $taughtPeriods; ?>" class="all staff-teaching-col">
 													<?php if ($hasLoad): ?>
@@ -424,11 +438,40 @@
 			return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 		}
 
+		var selectedStaffShareIds = [];
+
+		function selectedStaffIds() {
+			var ids = [];
+			var nodes;
+			if (window.jQuery && jQuery.fn.dataTable && jQuery.fn.dataTable.isDataTable && jQuery.fn.dataTable.isDataTable('#example')) {
+				nodes = jQuery('#example').DataTable().$('.staff-share-check:checked').toArray();
+			} else {
+				nodes = document.querySelectorAll('.staff-share-check:checked');
+			}
+			Array.prototype.forEach.call(nodes, function (el) {
+				var id = parseInt(el.value, 10);
+				if (id > 0) ids.push(id);
+			});
+			return ids;
+		}
+
+		function refreshStaffShareCount() {
+			var ids = selectedStaffIds();
+			var label = document.getElementById('staffShareCount');
+			var btn = document.getElementById('btnShareSelectedStaff');
+			if (label) {
+				label.textContent = ids.length ? (ids.length + ' selected') : 'None selected';
+			}
+			if (btn) btn.disabled = ids.length === 0;
+		}
+
 		function shareChannelPickerHtml(staffName, scope) {
 			var who = scope === 'all' ? 'All active staff' : staffName;
 			var scopeNote = scope === 'all'
 				? '<div class="ssa-note"><i class="fa fa-users"></i> This will reset passwords for every active staff member in your school.</div>'
-				: '<div class="ssa-note"><i class="fa fa-key"></i> A new password will be generated and sent immediately. The old password will stop working.</div>';
+				: (scope === 'selected'
+					? '<div class="ssa-note"><i class="fa fa-users"></i> This resets passwords only for the staff you selected.</div>'
+					: '<div class="ssa-note"><i class="fa fa-key"></i> A new password will be generated and sent immediately. The old password will stop working.</div>');
 			return ''
 				+ '<div class="ssa-head">'
 				+ '  <div class="ssa-head-icon"><i class="fa fa-share-alt"></i></div>'
@@ -530,7 +573,13 @@
 			}));
 
 			var body = 'channel=' + encodeURIComponent(channel) + '&scope=' + encodeURIComponent(scope);
-			if (scope !== 'all') body += '&staff_id=' + encodeURIComponent(staffId);
+			if (scope === 'selected') {
+				selectedStaffShareIds.forEach(function (id) {
+					body += '&staff_ids[]=' + encodeURIComponent(id);
+				});
+			} else if (scope !== 'all') {
+				body += '&staff_id=' + encodeURIComponent(staffId);
+			}
 
 			return fetch('<?= base_url('share_staff_access'); ?>', {
 				method: 'POST',
@@ -598,5 +647,60 @@
 				openShareAccessDialog(0, '', 'all', lnk.dataset.channel);
 			});
 		});
+
+		document.addEventListener('change', function (e) {
+			if (e.target && (e.target.classList.contains('staff-share-check') || e.target.id === 'staffShareSelectAll' || e.target.id === 'staffShareSelectAllHead')) {
+				if (e.target.id === 'staffShareSelectAll' || e.target.id === 'staffShareSelectAllHead') {
+					var on = e.target.checked;
+					document.querySelectorAll('.staff-share-check').forEach(function (box) { box.checked = on; });
+					var other = document.getElementById(e.target.id === 'staffShareSelectAll' ? 'staffShareSelectAllHead' : 'staffShareSelectAll');
+					if (other) other.checked = on;
+				}
+				refreshStaffShareCount();
+			}
+		});
+
+		var shareSelectedBtn = document.getElementById('btnShareSelectedStaff');
+		if (shareSelectedBtn) {
+			shareSelectedBtn.addEventListener('click', function () {
+				var ids = selectedStaffIds();
+				if (!ids.length) return;
+				selectedStaffShareIds = ids;
+				openShareAccessDialog(0, ids.length + ' selected staff', 'selected');
+			});
+		}
+
+		var smsTestBtn = document.getElementById('btnStaffSmsTest');
+		if (smsTestBtn) {
+			smsTestBtn.addEventListener('click', function () {
+				Swal.fire(Object.assign({}, ssaSwalBase, {
+					title: 'Send SMS test',
+					html: 'Send a test SMS to the staff member named <strong>Test Staff</strong>? The password is not changed.',
+					icon: 'question',
+					showCancelButton: true,
+					confirmButtonText: 'Send test',
+					cancelButtonText: 'Cancel'
+				})).then(function (choice) {
+					if (!choice.isConfirmed) return;
+					smsTestBtn.disabled = true;
+					fetch('<?= base_url('send_staff_sms_test'); ?>', {
+						method: 'POST',
+						headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+						credentials: 'same-origin'
+					}).then(function (r) { return r.json(); }).then(function (res) {
+						if (res.success) {
+							Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'success', title: 'SMS sent', text: res.success }));
+						} else {
+							Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'error', title: 'SMS test failed', text: res.error || 'Could not send.' }));
+						}
+					}).catch(function (err) {
+						Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'error', title: 'Network error', text: err.message || 'Request failed.' }));
+					}).finally(function () {
+						smsTestBtn.disabled = false;
+					});
+				});
+			});
+		}
+		refreshStaffShareCount();
 	});
 </script>

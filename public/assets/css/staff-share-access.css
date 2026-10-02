@@ -25,6 +25,20 @@
 	transform: translateY(-1px);
 }
 
+.staff-share-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin-bottom: 12px;
+}
+.staff-share-toolbar #staffShareCount {
+	font-size: 13px;
+	font-weight: 600;
+	color: #475569;
+}
+.staff-share-all { margin: 0; font-weight: 600; color: #334155; }
+.staff-share-check { width: 16px; height: 16px; cursor: pointer; }
 .dropdown-item.btn-share-all-staff {
 	font-size: 0.88rem;
 }

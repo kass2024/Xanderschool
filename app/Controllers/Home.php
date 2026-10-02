@@ -8769,6 +8769,26 @@ public function attendanceCard()
 			$targets = $staffMdl->where('school_id', $schoolId)
 				->whereIn('status', [1, 2])
 				->findAll();
+		} elseif ($scope === 'selected') {
+			$ids = $this->request->getPost('staff_ids');
+			if (is_string($ids) && $ids !== '') {
+				$ids = preg_split('/[,\s]+/', $ids);
+			}
+			if (!is_array($ids)) {
+				$ids = [];
+			}
+			$ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+			if ($ids === []) {
+				return $this->response->setJSON(['error' => 'Select at least one staff member.']);
+			}
+			if (count($ids) > 200) {
+				return $this->response->setJSON(['error' => 'Select at most 200 staff at a time.']);
+			}
+			set_time_limit(300);
+			$targets = $staffMdl->where('school_id', $schoolId)
+				->whereIn('id', $ids)
+				->whereIn('status', [1, 2])
+				->findAll();
 		} else {
 			if ($staffId < 1) {
 				return $this->response->setJSON(['error' => 'Staff member not specified.']);
@@ -8940,6 +8960,78 @@ public function attendanceCard()
 		}
 
 		return $result;
+	}
+
+	/** Send a plain SMS test to the staff member named Test Staff. Does not change the password. */
+	public function send_staff_sms_test()
+	{
+		$this->_preset(1, 3);
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = $this->findTestStaff($schoolId);
+		if (!$row) {
+			return $this->response->setJSON(['error' => 'No staff named Test Staff was found in this school.']);
+		}
+		$sent = $this->deliverStaffSmsTest($row);
+		if (empty($sent['ok'])) {
+			return $this->response->setJSON(['error' => $sent['error'] ?? 'SMS test failed.']);
+		}
+		$name = trim(($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''));
+		return $this->response->setJSON([
+			'success' => 'SMS test sent to ' . $name . '.',
+			'staff' => $name,
+		]);
+	}
+
+	private function findTestStaff(int $schoolId): ?array
+	{
+		if ($schoolId < 1) {
+			return null;
+		}
+		$rows = \Config\Database::connect()->query(
+			"SELECT id, fname, lname, phone, school_id FROM staffs WHERE school_id = ? AND (LOWER(fname) LIKE '%test%' OR LOWER(lname) LIKE '%test%')",
+			[$schoolId]
+		)->getResultArray();
+		foreach ($rows as $row) {
+			$name = strtolower(trim(preg_replace('/\s+/', ' ', ($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''))));
+			if ($name === 'test staff' || $name === 'staff test') {
+				return $row;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @return array{ok:bool, error:string}
+	 */
+	private function deliverStaffSmsTest(array $row): array
+	{
+		$phone = trim((string) ($row['phone'] ?? ''));
+		$name = trim(($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''));
+		if ($phone === '') {
+			return ['ok' => false, 'error' => $name . ' has no phone number.'];
+		}
+		$message = 'Wisdom School SMS test for ' . $name . '. If you received this, staff SMS is working.';
+		$smsResult = null;
+		$ok = $this->sendSMS($phone, $message, $smsResult);
+		$fail = $ok ? '' : $this->_smsFailReason($smsResult);
+		$schoolId = (int) ($row['school_id'] ?? 0);
+		$termId = 0;
+		if ($schoolId > 0) {
+			$school = (new SchoolModel())->select('active_term')->where('id', $schoolId)->get(1)->getRowArray();
+			$termId = (int) ($school['active_term'] ?? 0);
+		}
+		if ($termId < 1) {
+			$termId = (int) ($this->data['active_term'] ?? 0);
+		}
+		if ($termId > 0) {
+			$smsCount = $ok ? (int) ceil(strlen($message) / (defined('PER_SMS') ? PER_SMS : 160)) : 0;
+			$this->_save_sms($termId, $phone, $message, 'Staff SMS test', (int) ($row['id'] ?? 0), 1, $smsCount, $fail);
+		}
+		if (!$ok) {
+			return ['ok' => false, 'error' => 'SMS failed' . ($fail !== '' ? ': ' . $fail : '')];
+		}
+		return ['ok' => true, 'error' => ''];
 	}
 
 	public function students()
