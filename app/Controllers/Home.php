@@ -8835,6 +8835,13 @@ public function attendanceCard()
 		if ($sentEmail > 0) {
 			$parts[] = $sentEmail . ' email(s) sent';
 		}
+		if ($sentSms === 0 && $sentEmail === 0) {
+			$why = $failed ? implode(' ', $failed) : 'Check the phone number and try SMS only.';
+			return $this->response->setJSON([
+				'error' => 'Could not send the message. ' . $why,
+				'failed' => $failed,
+			]);
+		}
 		if ($failed) {
 			return $this->response->setJSON([
 				'warning' => implode('. ', $parts) . '. Some deliveries failed.',
@@ -8842,9 +8849,6 @@ public function attendanceCard()
 				'sent_sms' => $sentSms,
 				'sent_email' => $sentEmail,
 			]);
-		}
-		if ($sentSms === 0 && $sentEmail === 0) {
-			return $this->response->setJSON(['error' => 'Could not send credentials. Check phone numbers and email addresses.']);
 		}
 		return $this->response->setJSON([
 			'success' => implode('. ', $parts) . '.',
@@ -8869,6 +8873,7 @@ public function attendanceCard()
 		$defaultPassword = method_exists($this, '_smsSafePassword')
 			? $this->_smsSafePassword(8)
 			: $this->random_password();
+		$previousHash = (string) ($staff['password'] ?? '');
 		$staffMdl = new StaffModel();
 		$staffMdl->update($staffId, [
 			'password' => password_hash($defaultPassword, PASSWORD_DEFAULT),
@@ -8891,7 +8896,11 @@ public function attendanceCard()
 			} else {
 				$smsResult = null;
 				try {
-					$smsOk = $this->sendSMS($phone, $smsBody, $smsResult);
+					$smsOk = $this->sendSMS($phone, $smsBody, $smsResult, null, 8);
+					if (!$smsOk && $this->smsSendWasSlow($smsResult)) {
+						$smsResult = null;
+						$smsOk = $this->sendSMS($phone, $smsBody, $smsResult, null, 8);
+					}
 				} catch (\Throwable $e) {
 					$smsOk = false;
 					$smsResult = ['content' => $e->getMessage()];
@@ -8959,7 +8968,31 @@ public function attendanceCard()
 			}
 		}
 
+		if (!$result['sms'] && !$result['email'] && $previousHash !== '') {
+			try {
+				$staffMdl->update($staffId, ['password' => $previousHash]);
+			} catch (\Throwable $e) {
+				log_message('error', 'shareStaffAccess password restore: {msg}', ['msg' => $e->getMessage()]);
+			}
+			$result['errors'][] = 'Password was not changed because the message was not delivered.';
+		}
+
 		return $result;
+	}
+
+	/** True when the provider connection itself stalled, so one quick retry is worth it. */
+	private function smsSendWasSlow($smsResult): bool
+	{
+		$text = strtolower($this->_smsFailReason($smsResult));
+		if ($text === '') {
+			return false;
+		}
+		foreach (['timed out', 'timeout', 'could not resolve', 'connection', 'curl error 28', 'operation timed'] as $needle) {
+			if (strpos($text, $needle) !== false) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Send a plain SMS test to the staff member named Test Staff. Does not change the password. */
@@ -9013,7 +9046,7 @@ public function attendanceCard()
 		}
 		$message = 'Wisdom School SMS test for ' . $name . '. If you received this, staff SMS is working.';
 		$smsResult = null;
-		$ok = $this->sendSMS($phone, $message, $smsResult);
+		$ok = $this->sendSMS($phone, $message, $smsResult, null, 8);
 		$fail = $ok ? '' : $this->_smsFailReason($smsResult);
 		$schoolId = (int) ($row['school_id'] ?? 0);
 		$termId = 0;

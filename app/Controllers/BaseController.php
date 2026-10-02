@@ -173,17 +173,21 @@ class BaseController extends Controller
 	/** Compact SMS for staff credentials (user + password, no login URL). */
 	protected function _staffCredentialSms(string $name, string $loginUser, string $password, bool $isReset = false): array
 	{
+		$name = trim(preg_replace('/[^A-Za-z0-9 .]/', '', $name));
+		$loginUser = preg_replace('/\s+/', '', $loginUser);
 		$intro = $isReset
-			? lang('app.dear') . ' ' . $name . ', SmartSMS login reset.'
-			: lang('app.dear') . ' ' . $name . lang('app.accountIsCreated');
-		$body = trim(preg_replace('/\s+/', ' ', $intro))
-			. ' User: ' . $loginUser
-			. '. ' . lang('app.password') . ': ' . $password
-			. '. ' . lang('app.thankyou');
-		$logBody = trim(preg_replace('/\s+/', ' ', $intro))
-			. ' User: ' . $loginUser
-			. '. ' . lang('app.password') . ': **********'
-			. '. ' . lang('app.thankyou');
+			? 'Dear ' . $name . ', SmartSMS login reset.'
+			: 'Dear ' . $name . ', your SmartSMS account is ready.';
+		$body = $intro . ' User: ' . $loginUser . '. Password: ' . $password;
+		if (strlen($body) > 150) {
+			$short = trim(strtok($name, ' '));
+			$intro = $isReset ? 'SmartSMS login reset.' : 'Your SmartSMS account is ready.';
+			if ($short !== '') {
+				$intro = 'Dear ' . $short . ', ' . $intro;
+			}
+			$body = $intro . ' User: ' . $loginUser . '. Password: ' . $password;
+		}
+		$logBody = preg_replace('/Password: \S+/', 'Password: **********', $body);
 		return ['body' => $body, 'log' => $logBody];
 	}
 
@@ -425,7 +429,8 @@ class BaseController extends Controller
 			$mail->SMTPSecure = ($crypto === 'ssl' || $crypto === 'smtps')
 				? PHPMailer::ENCRYPTION_SMTPS
 				: PHPMailer::ENCRYPTION_STARTTLS;
-			$mail->Timeout    = 20;
+			$mail->Timeout    = 8;
+			ini_set('default_socket_timeout', '8');
 			$mail->CharSet    = 'UTF-8';
 			$mail->SMTPDebug  = 0;
 			$mail->Debugoutput = function ($str, $level) {

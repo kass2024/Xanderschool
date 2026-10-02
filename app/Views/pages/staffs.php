@@ -482,7 +482,7 @@
 				+ '  <div class="ssa-staff-chip"><i class="fa fa-user"></i> <strong>' + escapeHtml(who) + '</strong></div>'
 				+ '  <p class="ssa-label">Delivery method</p>'
 				+ '  <div class="ssa-channels">'
-				+ '    <button type="button" class="ssa-channel" data-channel="sms">'
+				+ '    <button type="button" class="ssa-channel is-active" data-channel="sms">'
 				+ '      <span class="ssa-channel-icon"><i class="fa fa-sms"></i></span>'
 				+ '      <span class="ssa-channel-title">SMS only</span>'
 				+ '    </button>'
@@ -490,7 +490,7 @@
 				+ '      <span class="ssa-channel-icon"><i class="fa fa-envelope"></i></span>'
 				+ '      <span class="ssa-channel-title">Email only</span>'
 				+ '    </button>'
-				+ '    <button type="button" class="ssa-channel is-active" data-channel="both">'
+				+ '    <button type="button" class="ssa-channel" data-channel="both">'
 				+ '      <span class="ssa-channel-icon"><i class="fa fa-paper-plane"></i></span>'
 				+ '      <span class="ssa-channel-title">SMS + Email</span>'
 				+ '    </button>'
@@ -500,7 +500,7 @@
 		}
 
 		function bindShareChannelPicker(popup, defaultChannel) {
-			var selected = defaultChannel || 'both';
+			var selected = defaultChannel || 'sms';
 			popup.querySelectorAll('.ssa-channel').forEach(function (el) {
 				el.classList.toggle('is-active', el.dataset.channel === selected);
 				el.addEventListener('click', function () {
@@ -539,7 +539,7 @@
 				cancelButtonText: 'Cancel',
 				focusConfirm: false,
 				didOpen: function () {
-					bindShareChannelPicker(Swal.getPopup(), 'both');
+					bindShareChannelPicker(Swal.getPopup(), 'sms');
 				},
 				preConfirm: function () {
 					return Swal.getPopup()._ssaGetChannel();
@@ -567,7 +567,7 @@
 			Swal.fire(Object.assign({}, ssaSwalBase, {
 				customClass: Object.assign({}, ssaSwalBase.customClass, { popup: 'ssa-swal ssa-swal--loading' }),
 				title: 'Sending credentials…',
-				html: '<div class="ssa-loading-wrap"><div class="ssa-spinner"></div><p>Resetting password and delivering login details</p></div>',
+				html: '<div class="ssa-loading-wrap"><div class="ssa-spinner"></div><p>Sending the message now. This should take a few seconds.</p></div>',
 				showConfirmButton: false,
 				allowOutsideClick: false
 			}));
@@ -581,6 +581,8 @@
 				body += '&staff_id=' + encodeURIComponent(staffId);
 			}
 
+			var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+			var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 28000);
 			return fetch('<?= base_url('share_staff_access'); ?>', {
 				method: 'POST',
 				headers: {
@@ -589,7 +591,8 @@
 					'X-Requested-With': 'XMLHttpRequest'
 				},
 				credentials: 'same-origin',
-				body: body
+				body: body,
+				signal: ctrl ? ctrl.signal : undefined
 			}).then(function (r) {
 				return r.text().then(function (text) {
 					var res;
@@ -626,14 +629,17 @@
 					confirmButtonText: 'Close'
 				}));
 			}).catch(function (err) {
+				var timedOut = err && (err.name === 'AbortError' || /abort/i.test(err.message || ''));
 				return Swal.fire(Object.assign({}, ssaSwalBase, {
 					customClass: Object.assign({}, ssaSwalBase.customClass, { popup: 'ssa-swal ssa-swal--compact' }),
 					icon: 'error',
-					title: 'Network error',
-					text: err.message || 'Request failed.',
+					title: timedOut ? 'Sending took too long' : 'Network error',
+					text: timedOut
+						? 'The provider did not answer in time. If the phone did not get the SMS, try again with SMS only.'
+						: (err.message || 'Request failed.'),
 					confirmButtonText: 'Close'
 				}));
-			});
+			}).finally(function () { clearTimeout(timer); });
 		}
 
 		document.querySelectorAll('.btn-staff-share-access').forEach(function (btn) {
