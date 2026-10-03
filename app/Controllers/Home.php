@@ -10459,8 +10459,8 @@ public function attendanceCard()
 	private function buildParentUpdateSms(string $studentName, string $url): string
 	{
 		$studentName = trim($studentName) !== '' ? trim($studentName) : 'umunyeshuri';
-		return $studentName . ": Hindura amazina y'ababyeyi, telefoni n'aderesi. Iyi link irangira mu masaha 48: " . $url
-			. "\nUpdate parent names, phones and address. Expires in 48 hours.";
+		return $studentName . ": Hindura amazina, itariki y'amavuko, ababyeyi, telefoni n'aderesi. Iyi link irangira mu masaha 48: " . $url
+			. "\nUpdate student name, date of birth, parents, phones and address. Expires in 48 hours.";
 	}
 
 	/** Send the 48-hour parent update link by SMS to the parents of the selected students. */
@@ -10552,7 +10552,7 @@ public function attendanceCard()
 		return $row ?: null;
 	}
 
-	/** Public page. Parents can change names, phones, and address until the link is 48 hours old. */
+	/** Public page. Parents can change the student's names, date of birth, parent contacts, and address for 48 hours. */
 	public function parent_update($token = '')
 	{
 		helper('qonics');
@@ -10585,7 +10585,7 @@ public function attendanceCard()
 		$school = (new SchoolModel())->select('name')->where('id', $schoolId)->get(1)->getRowArray();
 		$data['school_name'] = (string) ($school['name'] ?? '');
 		$student = \Config\Database::connect()->table('students')
-			->select('students.id, students.fname, students.lname, students.regno, students.father, students.ft_phone, students.mother, students.mt_phone, students.guardian, students.gd_phone, students.village_id, v.title AS village_title, sc.id AS cell_id, sc.title AS cell_name, ss.id AS sector_id, ss.title AS sector_name, sd.id AS district_id, sd.title AS district_name, sd.province AS province_id')
+			->select('students.id, students.fname, students.lname, students.dob, students.regno, students.father, students.ft_phone, students.mother, students.mt_phone, students.guardian, students.gd_phone, students.village_id, v.title AS village_title, sc.id AS cell_id, sc.title AS cell_name, ss.id AS sector_id, ss.title AS sector_name, sd.id AS district_id, sd.title AS district_name, sd.province AS province_id')
 			->join('soma_village v', 'v.id = students.village_id', 'left')
 			->join('soma_cell sc', 'sc.id = v.cell', 'left')
 			->join('soma_sector ss', 'ss.id = sc.sector', 'left')
@@ -10622,7 +10622,16 @@ public function attendanceCard()
 				}
 				return substr($value, 0, $max);
 			};
+			$fname = $clip($this->request->getPost('fname'), 80);
+			$lname = $clip($this->request->getPost('lname'), 80);
+			if ($fname === '' || $lname === '') {
+				$data['error'] = $lang === 'rw' ? 'Andika amazina y\'umunyeshuri.' : 'Enter the student\'s names.';
+				$data['student'] = $student;
+				return view('pages/parent_update', $data);
+			}
 			$patch = [
+				'fname' => $fname,
+				'lname' => $lname,
 				'father' => $clip($this->request->getPost('father'), 120),
 				'ft_phone' => $clip($this->request->getPost('ft_phone'), 20),
 				'mother' => $clip($this->request->getPost('mother'), 120),
@@ -10630,6 +10639,19 @@ public function attendanceCard()
 				'guardian' => $clip($this->request->getPost('guardian'), 120),
 				'gd_phone' => $clip($this->request->getPost('gd_phone'), 20),
 			];
+			$dob = $clip($this->request->getPost('dob'), 10);
+			if ($dob !== '') {
+				$born = \DateTime::createFromFormat('Y-m-d', $dob);
+				$year = (int) substr($dob, 0, 4);
+				$today = new \DateTime('today');
+				if (!$born || $born->format('Y-m-d') !== $dob || $year < 1980 || $born > $today) {
+					$data['error'] = $lang === 'rw' ? 'Itariki y\'amavuko ntabwo ari yo.' : 'Enter a valid date of birth.';
+					$student = array_merge($student, $patch, ['dob' => $dob]);
+					$data['student'] = $student;
+					return view('pages/parent_update', $data);
+				}
+				$patch['dob'] = $dob;
+			}
 			$villageId = (int) $this->request->getPost('village');
 			if ($villageId > 0) {
 				$villageRow = \Config\Database::connect()->table('soma_village')->select('id')->where('id', $villageId)->get(1)->getRowArray();

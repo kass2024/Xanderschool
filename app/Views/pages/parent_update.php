@@ -1,8 +1,11 @@
 <?php
 $isRw = ($lang ?? 'en') === 'rw';
 $t = $isRw ? [
-	'title' => 'Hindura amakuru y\'ababyeyi',
-	'intro' => 'Urashobora guhindura amazina y\'ababyeyi, telefoni, n\'aderesi gusa. Iyi link irangira mu masaha 48.',
+	'title' => 'Hindura amakuru y\'umunyeshuri',
+	'intro' => 'Urashobora guhindura amazina y\'umunyeshuri, itariki y\'amavuko, amazina y\'ababyeyi, telefoni, n\'aderesi. Iyi link irangira mu masaha 48.',
+	'firstName' => 'Izina ry\'umunyeshuri',
+	'lastName' => 'Izina ry\'umuryango',
+	'dob' => 'Itariki y\'amavuko',
 	'expired' => 'Iyi link yarangiye. Saba ishuri indi link nshya.',
 	'saved' => 'Amakuru yabitswe. Urashobora kongera kuyahindura kugeza iyi link irangira.',
 	'student' => 'Umunyeshuri',
@@ -22,8 +25,11 @@ $t = $isRw ? [
 	'save' => 'Bika',
 	'expires' => 'Irangira',
 ] : [
-	'title' => 'Update parent details',
-	'intro' => 'You can change parent names, phone numbers, and the address only. This link expires in 48 hours.',
+	'title' => 'Update student details',
+	'intro' => 'You can change the student\'s names, date of birth, parent names, phone numbers, and the address. This link expires in 48 hours.',
+	'firstName' => 'Student first name',
+	'lastName' => 'Student last name',
+	'dob' => 'Date of birth',
 	'expired' => 'This link has expired. Ask the school for a new one.',
 	'saved' => 'Saved. You can still correct it until this link expires.',
 	'student' => 'Student',
@@ -44,6 +50,10 @@ $t = $isRw ? [
 	'expires' => 'Expires',
 ];
 $st = $student ?? [];
+$dobVal = (string) ($st['dob'] ?? '');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dobVal) || $dobVal === '0000-00-00') {
+	$dobVal = '';
+}
 $base = base_url('parent-update/' . ($token ?? ''));
 $opt = static function ($rows, $selected) {
 	$html = '';
@@ -115,6 +125,21 @@ $opt = static function ($rows, $selected) {
 				</div>
 				<form method="post" action="<?= esc($base . '?lang=' . ($isRw ? 'rw' : 'en')); ?>">
 					<input type="hidden" name="lang" value="<?= $isRw ? 'rw' : 'en'; ?>">
+					<div class="pu-section"><?= esc($t['student']); ?></div>
+					<div class="pu-grid">
+						<div>
+							<label><?= esc($t['firstName']); ?></label>
+							<input class="form-control" name="fname" required value="<?= esc($st['fname'] ?? ''); ?>">
+						</div>
+						<div>
+							<label><?= esc($t['lastName']); ?></label>
+							<input class="form-control" name="lname" required value="<?= esc($st['lname'] ?? ''); ?>">
+						</div>
+						<div>
+							<label><?= esc($t['dob']); ?></label>
+							<input class="form-control" type="date" name="dob" value="<?= esc($dobVal); ?>">
+						</div>
+					</div>
 					<div class="pu-grid">
 						<div>
 							<label><?= esc($t['father']); ?></label>
