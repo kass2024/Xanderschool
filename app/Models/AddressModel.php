@@ -24,13 +24,14 @@ class AddressModel extends Model
 		}
 		return "";
 	}
-	public function getAddress($table, $val, $key,$single=false)
+	public function getAddress($table, $val, $key, $single = false)
 	{
-		$builder = $this->setTable($table);
-		$builder->where($key, $val)->orderBy("title","ASC");
+		$builder = \Config\Database::connect()->table($table);
+		$builder->where($key, $val)->orderBy('title', 'ASC');
 		$data = $builder->get();
-		if (!$single)
+		if (!$single) {
 			return $data->getResultArray();
+		}
 		return $data->getRowArray();
 	}
 
