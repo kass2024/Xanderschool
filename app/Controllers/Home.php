@@ -3538,6 +3538,36 @@ public function testEmail()
 		]);
 	}
 
+	/**
+	 * Courses shown on Lock Marks editing for this school, year, and term.
+	 * Optional staff id limits the list to one teacher.
+	 */
+	private function marksEditLockCourseRows(int $schoolId, int $year, int $termNo, int $staffId = 0): array
+	{
+		$db = \Config\Database::connect();
+		$builder = $db->table('course_records r')
+			->select("s.id AS staff_id, s.fname, s.lname, c.id AS course_id, c.title AS course_title, c.code AS course_code, GROUP_CONCAT(DISTINCT CONCAT(IFNULL(l.title,''),' ',cl.title) ORDER BY l.title, cl.title SEPARATOR ', ') AS classes", false)
+			->join('staffs s', 's.id = r.lecturer')
+			->join('courses c', 'c.id = r.course')
+			->join('classes cl', 'cl.id = r.class')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->where('c.school_id', $schoolId)
+			->where('r.year', $year)
+			->where("IFNULL(c.program_type,'') <> 'holiday'", null, false)
+			->groupBy('s.id')
+			->groupBy('c.id')
+			->orderBy('s.fname')
+			->orderBy('s.lname')
+			->orderBy('c.title');
+		if ($staffId > 0) {
+			$builder->where('s.id', $staffId);
+		}
+		if ($termNo > 0) {
+			$builder->where('find_in_set(' . $termNo . ', r.term) != 0', null, false);
+		}
+		return $builder->get()->getResultArray();
+	}
+
 	/** Coordinator or Director: lock marks editing per teacher and per course. */
 	public function lock_marks_editing()
 	{
@@ -3559,24 +3589,7 @@ public function testEmail()
 		$termId = (int) ($this->data['active_term'] ?? 0);
 		$termNo = (int) ($this->data['term'] ?? 0);
 		$db = \Config\Database::connect();
-		$builder = $db->table('course_records r')
-			->select("s.id AS staff_id, s.fname, s.lname, c.id AS course_id, c.title AS course_title, c.code AS course_code, GROUP_CONCAT(DISTINCT CONCAT(IFNULL(l.title,''),' ',cl.title) ORDER BY l.title, cl.title SEPARATOR ', ') AS classes", false)
-			->join('staffs s', 's.id = r.lecturer')
-			->join('courses c', 'c.id = r.course')
-			->join('classes cl', 'cl.id = r.class')
-			->join('levels l', 'l.id = cl.level', 'left')
-			->where('c.school_id', $schoolId)
-			->where('r.year', $year)
-			->where("IFNULL(c.program_type,'') <> 'holiday'", null, false)
-			->groupBy('s.id')
-			->groupBy('c.id')
-			->orderBy('s.fname')
-			->orderBy('s.lname')
-			->orderBy('c.title');
-		if ($termNo > 0) {
-			$builder->where('find_in_set(' . $termNo . ', r.term) != 0', null, false);
-		}
-		$rows = $builder->get()->getResultArray();
+		$rows = $this->marksEditLockCourseRows($schoolId, $year, $termNo);
 		$lockRows = $db->table('marks_edit_locks')
 			->select('staff_id, course_id, locked')
 			->where('school_id', $schoolId)
@@ -3628,66 +3641,108 @@ public function testEmail()
 		if ($termId < 1) {
 			return $this->response->setJSON(['error' => 'No active term set']);
 		}
+		$scope = strtolower(trim((string) $this->request->getPost('scope')));
+		$schoolWide = $scope === 'school';
 		$staffId = (int) $this->request->getPost('staff_id');
 		$courseId = (int) $this->request->getPost('course_id');
 		$locked = (int) $this->request->getPost('locked') === 1 ? 1 : 0;
-		if ($staffId < 1) {
+		if (!$schoolWide && $staffId < 1) {
 			return $this->response->setJSON(['error' => 'Select a teacher']);
 		}
 		$db = \Config\Database::connect();
-		$courseIds = [];
-		if ($courseId > 0) {
-			$courseIds[] = $courseId;
+		$pairs = [];
+		if ($courseId > 0 && !$schoolWide) {
+			$pairs[] = ['staff_id' => $staffId, 'course_id' => $courseId];
 		} else {
-			$builder = $db->table('course_records r')
-				->select('c.id')
-				->join('courses c', 'c.id = r.course')
-				->where('c.school_id', $schoolId)
-				->where('r.year', $year)
-				->where('r.lecturer', $staffId)
-				->groupBy('c.id');
-			if ($termNo > 0) {
-				$builder->where('find_in_set(' . $termNo . ', r.term) != 0', null, false);
+			foreach ($this->marksEditLockCourseRows($schoolId, $year, $termNo, $schoolWide ? 0 : $staffId) as $row) {
+				$sid = (int) $row['staff_id'];
+				$cid = (int) $row['course_id'];
+				if ($sid > 0 && $cid > 0) {
+					$pairs[$sid . ':' . $cid] = ['staff_id' => $sid, 'course_id' => $cid];
+				}
 			}
-			foreach ($builder->get()->getResultArray() as $row) {
-				$courseIds[] = (int) $row['id'];
+			$lockQ = $db->table('marks_edit_locks')
+				->select('staff_id, course_id')
+				->where('school_id', $schoolId)
+				->where('term_id', $termId)
+				->where('course_id >', 0);
+			if (!$schoolWide) {
+				$lockQ->where('staff_id', $staffId);
 			}
+			foreach ($lockQ->get()->getResultArray() as $lock) {
+				$sid = (int) $lock['staff_id'];
+				$cid = (int) $lock['course_id'];
+				if ($sid > 0 && $cid > 0) {
+					$pairs[$sid . ':' . $cid] = ['staff_id' => $sid, 'course_id' => $cid];
+				}
+			}
+			$pairs = array_values($pairs);
 		}
-		if ($courseIds === []) {
-			return $this->response->setJSON(['error' => 'This teacher has no courses for the active term']);
+		if ($pairs === []) {
+			$err = $schoolWide
+				? 'No teachers have courses for the active term'
+				: 'This teacher has no courses for the active term';
+			return $this->response->setJSON(['error' => $err]);
 		}
 		$now = date('Y-m-d H:i:s');
 		$by = (int) $this->session->get('soma_id');
-		foreach ($courseIds as $cid) {
-			$existing = $db->table('marks_edit_locks')
-				->select('id')
-				->where('school_id', $schoolId)
-				->where('term_id', $termId)
-				->where('staff_id', $staffId)
-				->where('course_id', $cid)
-				->get(1)->getRowArray();
-			$payload = [
+		$have = [];
+		$haveQ = $db->table('marks_edit_locks')
+			->select('staff_id, course_id')
+			->where('school_id', $schoolId)
+			->where('term_id', $termId);
+		if (!$schoolWide) {
+			$haveQ->where('staff_id', $staffId);
+			if ($courseId > 0) {
+				$haveQ->where('course_id', $courseId);
+			}
+		}
+		foreach ($haveQ->get()->getResultArray() as $row) {
+			$have[(int) $row['staff_id'] . ':' . (int) $row['course_id']] = true;
+		}
+		foreach ($pairs as $pair) {
+			$key = (int) $pair['staff_id'] . ':' . (int) $pair['course_id'];
+			if (isset($have[$key])) {
+				continue;
+			}
+			$db->table('marks_edit_locks')->insert([
+				'school_id' => $schoolId,
+				'term_id' => $termId,
+				'staff_id' => (int) $pair['staff_id'],
+				'course_id' => (int) $pair['course_id'],
 				'locked' => $locked,
 				'updated_by' => $by,
 				'updated_at' => $now,
-			];
-			if ($existing) {
-				$db->table('marks_edit_locks')->where('id', (int) $existing['id'])->update($payload);
-			} else {
-				$payload['school_id'] = $schoolId;
-				$payload['term_id'] = $termId;
-				$payload['staff_id'] = $staffId;
-				$payload['course_id'] = $cid;
-				$db->table('marks_edit_locks')->insert($payload);
+			]);
+		}
+		$sql = 'UPDATE marks_edit_locks SET locked = ' . (int) $locked
+			. ', updated_by = ' . (int) $by
+			. ', updated_at = ' . $db->escape($now)
+			. ' WHERE school_id = ' . (int) $schoolId
+			. ' AND term_id = ' . (int) $termId;
+		if (!$schoolWide) {
+			$sql .= ' AND staff_id = ' . (int) $staffId;
+			if ($courseId > 0) {
+				$sql .= ' AND course_id = ' . (int) $courseId;
 			}
 		}
-		$msg = $locked === 1
-			? 'Marks editing is locked for this teacher and course. Quizzes, tests, homework, and exams cannot be entered or changed.'
-			: 'Marks editing is open again for this teacher and course.';
-		if ($courseId < 1) {
+		$db->query($sql);
+		if ($schoolWide) {
+			$msg = $locked === 1
+				? 'Marks editing is locked for every teacher this term.'
+				: 'Marks editing is open again for every teacher this term.';
+		} elseif ($courseId < 1) {
 			$msg = $locked === 1
 				? 'Marks editing is locked for every course of this teacher.'
 				: 'Marks editing is open again for every course of this teacher.';
+		} else {
+			$msg = $locked === 1
+				? 'Marks editing is locked for this teacher and course. Quizzes, tests, homework, and exams cannot be entered or changed.'
+				: 'Marks editing is open again for this teacher and course.';
+		}
+		$courseIds = [];
+		foreach ($pairs as $pair) {
+			$courseIds[] = (int) $pair['course_id'];
 		}
 		return $this->response->setJSON([
 			'success' => $msg,
@@ -3695,6 +3750,7 @@ public function testEmail()
 			'staff_id' => $staffId,
 			'course_id' => $courseId,
 			'course_ids' => $courseIds,
+			'rows' => $pairs,
 		]);
 	}
 

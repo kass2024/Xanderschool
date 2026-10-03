@@ -2,7 +2,18 @@
 	.lock-marks-page { padding: 8px 4px 24px; }
 	.lock-marks-page h4 { margin: 0 0 6px; }
 	.lock-marks-lead { color: #4b5563; margin-bottom: 14px; }
-	.lock-marks-search { max-width: 360px; margin-bottom: 14px; }
+	.lock-school-bar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 12px;
+		flex-wrap: wrap;
+		margin-bottom: 14px;
+	}
+	.lock-school-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+	.lock-school-actions .btn { color: #fff; }
+	.lock-marks-search { max-width: 360px; margin: 0 0 14px; }
+	.lock-school-bar .lock-marks-search { margin: 0; }
 	.lock-teacher {
 		background: #fff;
 		border: 1px solid #e5e7eb;
@@ -49,10 +60,21 @@
 	<?php else: ?>
 		<h4>Lock Marks editing</h4>
 		<p class="lock-marks-lead">
-			Lock is per teacher and per course for this term. A locked course blocks every mark type:
-			quizzes, tests, homework, and exams. A locked period in School settings still blocks marks entry for that period.
+			Lock one course, every course of one teacher, or every teacher for this term.
+			A locked course blocks quizzes, tests, homework, and exams.
+			A locked period in School settings still blocks marks entry for that period.
 		</p>
-		<input type="search" class="form-control lock-marks-search" id="lockMarksSearch" placeholder="Search teacher or course">
+		<?php if (!empty($teachers)): ?>
+			<div class="lock-school-bar">
+				<input type="search" class="form-control lock-marks-search" id="lockMarksSearch" placeholder="Search teacher or course">
+				<div class="lock-school-actions">
+					<button type="button" class="btn btn-danger btn-lock-school" data-locked="1">Lock all teachers</button>
+					<button type="button" class="btn btn-success btn-lock-school" data-locked="0">Unlock all teachers</button>
+				</div>
+			</div>
+		<?php else: ?>
+			<input type="search" class="form-control lock-marks-search" id="lockMarksSearch" placeholder="Search teacher or course">
+		<?php endif; ?>
 		<?php if (empty($teachers)): ?>
 			<div class="alert alert-info">No teachers have courses assigned for this term.</div>
 		<?php endif; ?>
@@ -62,7 +84,7 @@
 					<strong><?= esc($teacher['name']); ?></strong>
 					<div class="lock-teacher-actions">
 						<button type="button" class="btn btn-sm btn-danger btn-lock-all" data-staff="<?= (int) $teacher['id']; ?>" data-locked="1">Lock all courses</button>
-						<button type="button" class="btn btn-sm btn-success btn-lock-all" data-staff="<?= (int) $teacher['id']; ?>" data-locked="0">Unlock all</button>
+						<button type="button" class="btn btn-sm btn-success btn-lock-all" data-staff="<?= (int) $teacher['id']; ?>" data-locked="0">Unlock all courses</button>
 					</div>
 				</div>
 				<?php foreach ($teacher['courses'] as $course):
@@ -105,31 +127,47 @@
 		});
 	});
 
+	function lockFlag($btn) {
+		return String($btn.attr("data-locked")) === "1" ? 1 : 0;
+	}
+
 	function paintCourseLock(staffId, courseId, locked) {
 		var $row = $('[data-course-row="' + staffId + '-' + courseId + '"]');
+		if (!$row.length) return;
 		$row.toggleClass("is-locked", !!locked);
 		$row.find(".lock-pill").toggleClass("on", !!locked).toggleClass("off", !locked).text(locked ? "Locked" : "Open");
 		var $btn = $row.find(".btn-lock-course");
 		$btn.toggleClass("btn-warning", !locked).toggleClass("btn-primary", !!locked)
-			.data("locked", locked ? 0 : 1)
+			.attr("data-locked", locked ? "0" : "1")
 			.text(locked ? "Unlock" : "Lock");
+		$btn.removeData("locked");
 	}
 
-	function postLock(staffId, courseId, locked, $btn) {
+	function postLock(staffId, courseId, locked, $btn, scope) {
 		if ($btn.data("busy")) return;
 		$btn.data("busy", 1).prop("disabled", true);
-		$.post("<?= base_url('toggle_marks_edit_lock'); ?>", {
+		var payload = {
 			staff_id: staffId,
 			course_id: courseId,
-			locked: locked
-		}, function (res) {
+			locked: String(locked)
+		};
+		if (scope) payload.scope = scope;
+		$.post("<?= base_url('toggle_marks_edit_lock'); ?>", payload, function (res) {
 			if (res && res.success) {
 				if (window.toastada) toastada.success(res.success);
-				var ids = res.course_ids || [];
-				if (!ids.length && courseId) ids = [courseId];
-				ids.forEach(function (cid) {
-					paintCourseLock(staffId, cid, parseInt(res.locked, 10) === 1);
-				});
+				var lockedOn = parseInt(res.locked, 10) === 1;
+				var rows = res.rows || [];
+				if (rows.length) {
+					rows.forEach(function (row) {
+						paintCourseLock(row.staff_id, row.course_id, lockedOn);
+					});
+				} else {
+					var ids = res.course_ids || [];
+					if (!ids.length && courseId) ids = [courseId];
+					ids.forEach(function (cid) {
+						paintCourseLock(staffId, cid, lockedOn);
+					});
+				}
 			} else {
 				var err = (res && res.error) ? res.error : "Could not update the lock";
 				if (window.toastada) toastada.error(err);
@@ -143,12 +181,22 @@
 		});
 	}
 
-	$(document).on("click", ".btn-lock-course", function () {
+	$(document).on("click", ".btn-lock-course", function (e) {
+		e.preventDefault();
 		var $btn = $(this);
-		postLock($btn.data("staff"), $btn.data("course"), String($btn.data("locked")) === "1" ? 1 : 0, $btn);
+		postLock($btn.attr("data-staff"), $btn.attr("data-course"), lockFlag($btn), $btn);
 	});
-	$(document).on("click", ".btn-lock-all", function () {
+	$(document).on("click", ".btn-lock-all", function (e) {
+		e.preventDefault();
 		var $btn = $(this);
-		postLock($btn.data("staff"), 0, String($btn.data("locked")) === "1" ? 1 : 0, $btn);
+		postLock($btn.attr("data-staff"), 0, lockFlag($btn), $btn);
+	});
+	$(document).on("click", ".btn-lock-school", function (e) {
+		e.preventDefault();
+		var $btn = $(this);
+		var locked = lockFlag($btn);
+		var word = locked ? "lock marks editing for every teacher" : "unlock marks editing for every teacher";
+		if (!window.confirm("This will " + word + " for the active term. Continue?")) return;
+		postLock(0, 0, locked, $btn, "school");
 	});
 </script>
