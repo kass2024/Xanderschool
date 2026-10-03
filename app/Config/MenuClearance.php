@@ -727,6 +727,28 @@ class MenuClearance
 		return self::isCoordinatorPost($postId) || self::isDirectorPost($postId);
 	}
 
+	/**
+	 * Lock Marks editing for this school.
+	 * Coordinator, Director, and the school head (Head Teacher, Head master, Headmistress),
+	 * including head teachers at child schools.
+	 */
+	public static function canLockMarksEditing($postId)
+	{
+		$postId = (int) $postId;
+		if (self::canToggleSavedCatEdit($postId) || self::isHeadMasterEquivalent($postId)) {
+			return true;
+		}
+		$title = self::postTitle($postId);
+		return in_array($title, [
+			'head master',
+			'headmaster',
+			'head mistress',
+			'headmistress',
+			'head teacher',
+			'headteacher',
+		], true);
+	}
+
 	public static function postTitle($postId)
 	{
 		static $cache = [];

@@ -3577,7 +3577,7 @@ public function testEmail()
 		$data['title'] = 'Lock Marks editing';
 		$data['subtitle'] = 'Lock Marks editing';
 		$data['page'] = 'marks';
-		if (!MenuClearance::canToggleSavedCatEdit((int) $this->session->get('soma_post'))) {
+		if (!MenuClearance::canLockMarksEditing((int) $this->session->get('soma_post'))) {
 			$data['denied'] = true;
 			$data['teachers'] = [];
 			$data['content'] = view('pages/marks/lock_marks_editing', $data);
@@ -3630,8 +3630,8 @@ public function testEmail()
 	{
 		$this->_preset();
 		helper('qonics');
-		if (!MenuClearance::canToggleSavedCatEdit((int) $this->session->get('soma_post'))) {
-			return $this->response->setJSON(['error' => 'Only the Coordinator or Director can lock marks editing.']);
+		if (!MenuClearance::canLockMarksEditing((int) $this->session->get('soma_post'))) {
+			return $this->response->setJSON(['error' => 'Only the Coordinator, Director, or Head Teacher can lock marks editing.']);
 		}
 		ensure_marks_edit_lock_schema();
 		$schoolId = (int) $this->session->get('soma_school_id');
@@ -14646,6 +14646,7 @@ public function getApplicationDocs($id = null)
 		$data['marks_teacher_is_assignee'] = false;
 		$data['allow_cat_edit'] = cat_edit_allowed((int) ($this->data['active_term'] ?? 0));
 		$data['is_coordinator'] = MenuClearance::canToggleSavedCatEdit((int) $this->session->get('soma_post'));
+		$data['can_lock_marks'] = MenuClearance::canLockMarksEditing((int) $this->session->get('soma_post'));
 		$data['content'] = view("pages/marks/marks_entry", $data);
 		return view('main', $data);
 	}

@@ -422,7 +422,7 @@
 										</a>
 									</li>
 									<?php } ?>
-									<?php if (\Config\MenuClearance::canToggleSavedCatEdit((int) ($_SESSION['soma_post'] ?? 0))) { ?>
+									<?php if (\Config\MenuClearance::canLockMarksEditing((int) ($_SESSION['soma_post'] ?? 0))) { ?>
 									<li>
 										<a href="<?= base_url('lock_marks_editing'); ?>">
 											<i class="metismenu-icon"></i>

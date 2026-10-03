@@ -367,14 +367,14 @@ body.marks-entry-body .select2-search__field {
 							data-self="<?= esc($soma_name); ?>"
 							data-full="0"><?= esc($soma_name); ?></strong>
 				</div>
-				<?php if (!empty($is_coordinator)): ?>
+				<?php if (!empty($can_lock_marks)): ?>
 					<div class="marks-field">
 						<span>Marks editing</span>
 						<a class="btn btn-sm btn-warning" href="<?= base_url('lock_marks_editing'); ?>">Lock Marks editing</a>
 						<small class="marks-max-live">Lock or unlock each teacher and course. A lock blocks quizzes, tests, homework, and exams.</small>
 					</div>
 				<?php else: ?>
-					<p class="marks-help">You enter marks only for courses assigned to you. If the Coordinator or Director locks this course, quizzes, tests, homework, and exams cannot be entered or changed.</p>
+					<p class="marks-help">You enter marks only for courses assigned to you. If the Coordinator, Director, or Head Teacher locks this course, quizzes, tests, homework, and exams cannot be entered or changed.</p>
 				<?php endif; ?>
 				<div class="marks-field">
 					<label for="outofmarks"><?= lang("app.totalMarks"); ?></label>

@@ -56,7 +56,7 @@
 </style>
 <div class="lock-marks-page">
 	<?php if (!empty($denied)): ?>
-		<div class="alert alert-danger">Only the Coordinator or Director can lock marks editing.</div>
+		<div class="alert alert-danger">Only the Coordinator, Director, or Head Teacher can lock marks editing.</div>
 	<?php else: ?>
 		<h4>Lock Marks editing</h4>
 		<p class="lock-marks-lead">
