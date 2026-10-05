@@ -108,7 +108,17 @@ class ExtraFeesModel extends Model
 	}
 
 	/**
-	 * Amount a boarding (0) or day (1) student owes. Never give boarding fees to a day scholar.
+	 * Feeding and Transport are saved on one mode, but every student in the class owes that amount.
+	 */
+	public static function sharesAmountAcrossModes(?string $title): bool
+	{
+		$title = strtolower(trim((string) $title));
+		return $title === 'feeding' || $title === 'transport';
+	}
+
+	/**
+	 * Amount a boarding (0) or day (1) student owes.
+	 * Feeding and Transport still use the saved amount when that student's mode was left empty.
 	 */
 	public static function expectedForMode(array $row, int $studyingMode): float
 	{
@@ -117,6 +127,9 @@ class ExtraFeesModel extends Model
 			|| ($row['amount_day'] ?? null) !== null && ($row['amount_day'] ?? '') !== '';
 		if ($hasSplit) {
 			$amount = ((int) $studyingMode === 0) ? $modes['boarding'] : $modes['day'];
+			if ($amount === null && $modes['legacy'] > 0 && self::sharesAmountAcrossModes($row['title'] ?? '')) {
+				return $modes['legacy'];
+			}
 			return max(0, (float) ($amount ?? 0));
 		}
 		return max(0, (float) $modes['legacy']);
@@ -124,8 +137,9 @@ class ExtraFeesModel extends Model
 
 	public static function sqlModeSumSelect(string $alias): string
 	{
-		return "SUM(CASE WHEN {$alias}.amount_boarding IS NOT NULL THEN {$alias}.amount_boarding WHEN {$alias}.amount_day IS NOT NULL THEN 0 ELSE COALESCE({$alias}.amount, 0) END) AS boarding_amount, "
-			. "SUM(CASE WHEN {$alias}.amount_day IS NOT NULL THEN {$alias}.amount_day WHEN {$alias}.amount_boarding IS NOT NULL THEN 0 ELSE COALESCE({$alias}.amount, 0) END) AS day_amount";
+		$shared = "LOWER(TRIM({$alias}.title)) IN ('feeding','transport')";
+		return "SUM(CASE WHEN {$alias}.amount_boarding IS NOT NULL THEN {$alias}.amount_boarding WHEN {$shared} THEN COALESCE({$alias}.amount, 0) WHEN {$alias}.amount_day IS NOT NULL THEN 0 ELSE COALESCE({$alias}.amount, 0) END) AS boarding_amount, "
+			. "SUM(CASE WHEN {$alias}.amount_day IS NOT NULL THEN {$alias}.amount_day WHEN {$shared} THEN COALESCE({$alias}.amount, 0) WHEN {$alias}.amount_boarding IS NOT NULL THEN 0 ELSE COALESCE({$alias}.amount, 0) END) AS day_amount";
 	}
 
 	public static function sqlExpectedFromSums(string $sumAlias, string $modeCol = 'students.studying_mode'): string
@@ -433,6 +447,124 @@ class ExtraFeesModel extends Model
 			return (int) $existing['id'];
 		}
 		return (int) $this->insert($payload);
+	}
+
+	/**
+	 * Copy an extra fee onto classes in the same level and department that do not have it yet.
+	 * Amounts are copied only when every sibling class agrees. Holiday classes are left alone.
+	 */
+	public function ensureSiblingClassExtras(int $schoolId, int $academicYear): int
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $academicYear < 1) {
+			return 0;
+		}
+		static $done = [];
+		$key = $schoolId . ':' . $academicYear;
+		if (isset($done[$key])) {
+			return 0;
+		}
+		$done[$key] = true;
+
+		$db = \Config\Database::connect();
+		$notHoliday = "IFNULL(%s,'') NOT LIKE '%%Holiday%%'";
+		$classes = $db->table('classes c')
+			->select('c.id, c.level, c.department')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
+			->where('c.school_id', $schoolId)
+			->where(sprintf($notHoliday, 'c.title'), null, false)
+			->where(sprintf($notHoliday, 'l.title'), null, false)
+			->where(sprintf($notHoliday, 'd.title'), null, false)
+			->where(sprintf($notHoliday, 'd.code'), null, false)
+			->where(sprintf($notHoliday, 'f.title'), null, false)
+			->get()->getResultArray();
+		if ($classes === []) {
+			return 0;
+		}
+
+		$feeRows = $db->table('extra_fees ef')
+			->select('ef.type_id, ef.title, ef.term, ef.amount, ef.amount_boarding, ef.amount_day, ef.created_by, c.level, c.department')
+			->join('classes c', 'c.id = ef.type_id')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
+			->where('ef.school_id', $schoolId)
+			->where('ef.academic_year', $academicYear)
+			->where('ef.type', 0)
+			->where(sprintf($notHoliday, 'c.title'), null, false)
+			->where(sprintf($notHoliday, 'l.title'), null, false)
+			->where(sprintf($notHoliday, 'd.title'), null, false)
+			->where(sprintf($notHoliday, 'd.code'), null, false)
+			->where(sprintf($notHoliday, 'f.title'), null, false)
+			->get()->getResultArray();
+
+		$owned = [];
+		$siblings = [];
+		foreach ($feeRows as $row) {
+			$term = (int) ($row['term'] ?? 0);
+			$classId = (int) ($row['type_id'] ?? 0);
+			$titleKey = strtolower(trim((string) ($row['title'] ?? '')));
+			if ($term < 1 || $classId < 1 || $titleKey === '') {
+				continue;
+			}
+			$owned[$classId . ':' . $term . ':' . $titleKey] = true;
+			$group = (int) $row['level'] . ':' . (int) $row['department'] . ':' . $term . ':' . $titleKey;
+			$signature = (float) ($row['amount'] ?? 0) . '|'
+				. ($row['amount_boarding'] === null || $row['amount_boarding'] === '' ? 'n' : (float) $row['amount_boarding']) . '|'
+				. ($row['amount_day'] === null || $row['amount_day'] === '' ? 'n' : (float) $row['amount_day']);
+			if (!isset($siblings[$group])) {
+				$siblings[$group] = ['signature' => $signature, 'row' => $row, 'mixed' => false];
+				continue;
+			}
+			if ($siblings[$group]['signature'] !== $signature) {
+				$siblings[$group]['mixed'] = true;
+			}
+		}
+
+		$now = date('Y-m-d H:i:s');
+		$created = 0;
+		foreach ($classes as $class) {
+			$classId = (int) $class['id'];
+			$levelId = (int) $class['level'];
+			$deptId = (int) $class['department'];
+			foreach ($siblings as $group => $pack) {
+				$parts = explode(':', $group, 4);
+				if (count($parts) < 4 || (int) $parts[0] !== $levelId || (int) $parts[1] !== $deptId) {
+					continue;
+				}
+				$term = (int) $parts[2];
+				$titleKey = $parts[3];
+				if (!empty($pack['mixed']) || isset($owned[$classId . ':' . $term . ':' . $titleKey])) {
+					continue;
+				}
+				$src = $pack['row'];
+				$amount = (float) ($src['amount'] ?? 0);
+				$boarding = ($src['amount_boarding'] === null || $src['amount_boarding'] === '') ? null : (float) $src['amount_boarding'];
+				$day = ($src['amount_day'] === null || $src['amount_day'] === '') ? null : (float) $src['amount_day'];
+				if ($amount <= 0 && ($boarding === null || $boarding <= 0) && ($day === null || $day <= 0)) {
+					continue;
+				}
+				$db->table('extra_fees')->insert([
+					'school_id' => $schoolId,
+					'title' => (string) $src['title'],
+					'academic_year' => $academicYear,
+					'type_id' => $classId,
+					'type' => 0,
+					'term' => $term,
+					'amount' => $amount,
+					'amount_boarding' => $boarding,
+					'amount_day' => $day,
+					'created_by' => (int) ($src['created_by'] ?? 0),
+					'created_at' => $now,
+					'updated_at' => $now,
+				]);
+				$owned[$classId . ':' . $term . ':' . $titleKey] = true;
+				$created++;
+			}
+		}
+		return $created;
 	}
 
 	/**

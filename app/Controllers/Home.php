@@ -19304,6 +19304,7 @@ public function getApplicationDocs($id = null)
 		$data['currentTerm'] = (int) ($this->data['term'] ?? 1);
 		(new FeesRecordModel())->ensureSchema();
 		(new SchoolFeesModel())->ensureSiblingClassFees((int) $school_id, (int) $data['selectedYear']);
+		(new ExtraFeesModel())->ensureSiblingClassExtras((int) $school_id, (int) $data['selectedYear']);
 		$data['selectedYearTitle'] = '';
 		foreach ($data['years'] as $yr) {
 			if ((int) $yr['id'] === $data['selectedYear']) {
@@ -20304,6 +20305,8 @@ public function getApplicationDocs($id = null)
 		$school_id = $this->session->get("soma_school_id");
 		$schoolFees = new SchoolFeesModel();
 		$extraFees = new ExtraFeesModel();
+		$extraFees->ensureSchema();
+		$extraFees->ensureSiblingClassExtras((int) $school_id, (int) $year);
 		$classMdl = new ClassesModel();
 		$studentRow = (new StudentModel())->select('studying_mode')->find($student);
 		$studyingMode = (int) ($studentRow['studying_mode'] ?? 1);
@@ -20410,6 +20413,7 @@ public function getApplicationDocs($id = null)
 
 		$schoolFees->ensureSchema();
 		$schoolFees->ensureSiblingClassFees($school_id, $year);
+		$extraFees->ensureSiblingClassExtras($school_id, $year);
 		$schoolRows = $schoolFees->linesForClass(
 			$school_id,
 			$year,
@@ -20534,7 +20538,7 @@ public function getApplicationDocs($id = null)
 		$data = $this->data;
 		$extrafeesmodel = new ExtraFeesModel();
 		$school_id = $this->session->get("soma_school_id");
-		$row = $extrafeesmodel->select("extra_fees.amount,extra_fees.amount_boarding,extra_fees.amount_day,extra_fees.type,sum(fr.amount) as paid_amt")
+		$row = $extrafeesmodel->select("extra_fees.title,extra_fees.amount,extra_fees.amount_boarding,extra_fees.amount_day,extra_fees.type,sum(fr.amount) as paid_amt")
 				->join("fees_records fr", "fr.fees_id=extra_fees.id AND fr.student_id=$student and fr.fees_type=1 and fr.status=1", "LEFT")
 				->where("extra_fees.school_id", $school_id)
 				->where("extra_fees.id", $extra)
