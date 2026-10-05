@@ -61,6 +61,14 @@ if [ "$HAS" = "0" ]; then
 else
   echo COLUMNS_EXIST
 fi
+NOTE=$(docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -N -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='staffs' AND COLUMN_NAME='contract_notice_for'")
+if [ "$NOTE" = "0" ]; then
+  docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -e "ALTER TABLE staffs ADD COLUMN contract_notice_for DATE NULL DEFAULT NULL"
+  echo NOTICE_ADDED
+else
+  echo NOTICE_EXIST
+fi
+grep -q emailLeadersNewStaff /opt/xander-school/app/app/Controllers/Home.php && echo OK leaders
 echo DONE
 """
     _, o, e = c.exec_command(cmd, timeout=180)

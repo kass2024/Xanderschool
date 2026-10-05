@@ -357,30 +357,33 @@
 
 	};
 
-	$(document).on('change', '.staff-contract-input', function () {
-		var staffId = $(this).data('staff-id');
-		var inputs = $('.staff-contract-input[data-staff-id="' + staffId + '"]');
-		var start = '';
-		var end = '';
-		inputs.each(function () {
-			if ($(this).data('which') === 'end') end = $(this).val();
-			else start = $(this).val();
-		});
-		inputs.prop('disabled', true);
-		$.post('<?= base_url('save_staff_contract'); ?>', {
-			staff_id: staffId,
-			contract_start: start,
-			contract_end: end
-		}, function (data) {
-			if (data && data.error) {
-				toastada.error(data.error);
-			} else if (data && data.success) {
-				toastada.success(data.success);
-			}
-		}, 'json').fail(function () {
-			toastada.error('Could not save the contract dates.');
-		}).always(function () {
-			inputs.prop('disabled', false);
-		});
-	});
+	var contractSaveTimer = null;
+	function queueStaffContractSave() {
+		clearTimeout(contractSaveTimer);
+		contractSaveTimer = setTimeout(function () {
+			var inputs = $('.staff-contract-input');
+			if (!inputs.length) return;
+			var staffId = inputs.first().data('staff-id');
+			var start = '';
+			var end = '';
+			inputs.each(function () {
+				if ($(this).data('which') === 'end') end = $(this).val();
+				else start = $(this).val();
+			});
+			$.post('<?= base_url('save_staff_contract'); ?>', {
+				staff_id: staffId,
+				contract_start: start,
+				contract_end: end
+			}, function (data) {
+				if (data && data.error) {
+					toastada.error(data.error);
+				} else {
+					toastada.success('Saved');
+				}
+			}, 'json').fail(function () {
+				toastada.error('Could not save the contract dates.');
+			});
+		}, 400);
+	}
+	$(document).on('change blur', '.staff-contract-input', queueStaffContractSave);
 </script>

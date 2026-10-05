@@ -190,6 +190,7 @@ class Home extends BaseController
 			$this->data['is_master_school_user'] = school_hierarchy_can_switch();
 			$this->data['viewing_child_school'] = $this->data['is_master_school_user']
 				&& (int) $this->session->get('soma_school_id') !== (int) $this->data['soma_home_school_id'];
+			$this->maybeNotifyExpiringStaffContracts();
 //			echo $this->data['remaining_sms'];die();
 //			echo "<pre>";var_dump($this->data);die();
 		}
@@ -2210,6 +2211,9 @@ public function testEmail()
 			if (!$db->fieldExists('contract_end', 'staffs')) {
 				$db->query('ALTER TABLE `staffs` ADD COLUMN `contract_end` DATE NULL DEFAULT NULL');
 			}
+			if (!$db->fieldExists('contract_notice_for', 'staffs')) {
+				$db->query('ALTER TABLE `staffs` ADD COLUMN `contract_notice_for` DATE NULL DEFAULT NULL');
+			}
 		}
 		$done = true;
 	}
@@ -2247,7 +2251,8 @@ public function testEmail()
 		$this->ensureStaffContractColumns();
 		$id = (int) $this->request->getPost('staff_id');
 		$schoolId = (int) $this->session->get('soma_school_id');
-		$staff = (new StaffModel())->select('id')->where('id', $id)->where('school_id', $schoolId)->get(1)->getRowArray();
+		$staff = (new StaffModel())->select('id, fname, lname, email, phone, post, contract_end, contract_notice_for')
+			->where('id', $id)->where('school_id', $schoolId)->get(1)->getRowArray();
 		if (!$staff) {
 			return $this->response->setJSON(['error' => 'Staff not found.']);
 		}
@@ -2255,11 +2260,190 @@ public function testEmail()
 		if ($dates['error']) {
 			return $this->response->setJSON(['error' => $dates['error']]);
 		}
-		\Config\Database::connect()->table('staffs')->where('id', $id)->where('school_id', $schoolId)->update([
+		$update = [
 			'contract_start' => $dates['start'],
 			'contract_end' => $dates['end'],
-		]);
-		return $this->response->setJSON(['success' => 'Contract dates saved.']);
+		];
+		$warned = $this->maybeEmailContractEnding($schoolId, $staff, $dates['end']);
+		if ($warned) {
+			$update['contract_notice_for'] = $dates['end'];
+		} elseif ($dates['end'] === null || $this->contractDaysLeft($dates['end']) > 15) {
+			$update['contract_notice_for'] = null;
+		}
+		\Config\Database::connect()->table('staffs')->where('id', $id)->where('school_id', $schoolId)->update($update);
+		return $this->response->setJSON(['success' => 'Saved']);
+	}
+
+	private function contractDaysLeft(?string $end): int
+	{
+		$end = substr(trim((string) $end), 0, 10);
+		if ($end === '' || $end === '0000-00-00') {
+			return 9999;
+		}
+		$today = strtotime(date('Y-m-d'));
+		$endTs = strtotime($end);
+		if ($today === false || $endTs === false) {
+			return 9999;
+		}
+		return (int) round(($endTs - $today) / 86400);
+	}
+
+	/**
+	 * @return array<string, string> email => name
+	 */
+	private function coordinatorAndDirectorEmails(int $schoolId): array
+	{
+		if ($schoolId < 1) {
+			return [];
+		}
+		$rows = \Config\Database::connect()->table('staffs s')
+			->select('s.fname, s.lname, s.email, s.post')
+			->where('s.school_id', $schoolId)
+			->whereIn('s.status', [1, 2])
+			->get()->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$email = strtolower(trim((string) ($row['email'] ?? '')));
+			if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+				continue;
+			}
+			$postId = (int) ($row['post'] ?? 0);
+			if (!\Config\MenuClearance::isCoordinatorPost($postId) && !\Config\MenuClearance::isDirectorPost($postId)) {
+				continue;
+			}
+			$out[$email] = trim((string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? ''));
+		}
+		return $out;
+	}
+
+	private function emailCoordinatorAndDirector(int $schoolId, string $subject, string $html): void
+	{
+		foreach ($this->coordinatorAndDirectorEmails($schoolId) as $email => $name) {
+			$error = null;
+			$this->_send_email($email, $subject, $html, $error);
+		}
+	}
+
+	/**
+	 * @param array<string, mixed> $staff
+	 */
+	private function emailLeadersNewStaff(int $schoolId, array $staff): void
+	{
+		$school = trim((string) ($this->data['school_name'] ?? 'the school'));
+		$name = trim((string) ($staff['fname'] ?? '') . ' ' . (string) ($staff['lname'] ?? ''));
+		$postTitle = trim((string) ($staff['post_title'] ?? ''));
+		if ($postTitle === '' && !empty($staff['post'])) {
+			$postRow = \Config\Database::connect()->table('posts')->select('title')->where('id', (int) $staff['post'])->get(1)->getRowArray();
+			$postTitle = (string) ($postRow['title'] ?? '');
+		}
+		$start = $this->contractDateLabel($staff['contract_start'] ?? null);
+		$end = $this->contractDateLabel($staff['contract_end'] ?? null);
+		$html = '<p>A new staff member was added at <strong>' . esc($school) . '</strong>.</p>'
+			. '<p><strong>Name:</strong> ' . esc($name) . '<br>'
+			. '<strong>Post:</strong> ' . esc($postTitle !== '' ? $postTitle : 'Not set') . '<br>'
+			. '<strong>Phone:</strong> ' . esc((string) ($staff['phone'] ?? '')) . '<br>'
+			. '<strong>Email:</strong> ' . esc((string) ($staff['email'] ?? '')) . '<br>'
+			. '<strong>Contract start:</strong> ' . esc($start) . '<br>'
+			. '<strong>Contract end:</strong> ' . esc($end) . '</p>';
+		$this->emailCoordinatorAndDirector($schoolId, 'New staff added — ' . $name, $html);
+	}
+
+	/**
+	 * @param list<string> $names
+	 */
+	private function emailLeadersImportedStaff(int $schoolId, array $names): void
+	{
+		$names = array_values(array_filter(array_map('strval', $names)));
+		if ($names === []) {
+			return;
+		}
+		$school = trim((string) ($this->data['school_name'] ?? 'the school'));
+		$items = '';
+		foreach ($names as $name) {
+			$items .= '<li>' . esc($name) . '</li>';
+		}
+		$html = '<p>' . count($names) . ' new staff member' . (count($names) === 1 ? ' was' : 's were')
+			. ' added at <strong>' . esc($school) . '</strong>.</p><ul>' . $items . '</ul>';
+		$this->emailCoordinatorAndDirector($schoolId, 'New staff added — ' . $school, $html);
+	}
+
+	private function contractDateLabel($value): string
+	{
+		$value = substr(trim((string) $value), 0, 10);
+		if ($value === '' || $value === '0000-00-00') {
+			return 'Not set';
+		}
+		$ts = strtotime($value);
+		return $ts ? date('d M Y', $ts) : 'Not set';
+	}
+
+	/**
+	 * Email once when a contract end date is inside the next 15 days.
+	 *
+	 * @param array<string, mixed> $staff
+	 */
+	private function maybeEmailContractEnding(int $schoolId, array $staff, ?string $end): bool
+	{
+		$end = substr(trim((string) $end), 0, 10);
+		$days = $this->contractDaysLeft($end);
+		if ($end === '' || $days < 0 || $days > 15) {
+			return false;
+		}
+		$already = substr(trim((string) ($staff['contract_notice_for'] ?? '')), 0, 10);
+		if ($already === $end) {
+			return false;
+		}
+		$school = trim((string) ($this->data['school_name'] ?? 'the school'));
+		$name = trim((string) ($staff['fname'] ?? '') . ' ' . (string) ($staff['lname'] ?? ''));
+		$when = $days === 0 ? 'today' : ($days === 1 ? 'tomorrow' : 'in ' . $days . ' days');
+		$html = '<p>The contract for <strong>' . esc($name) . '</strong> at <strong>' . esc($school) . '</strong> ends <strong>' . esc($when) . '</strong> (' . esc($this->contractDateLabel($end)) . ').</p>'
+			. '<p>Phone: ' . esc((string) ($staff['phone'] ?? '')) . '<br>Email: ' . esc((string) ($staff['email'] ?? '')) . '</p>';
+		$this->emailCoordinatorAndDirector($schoolId, 'Staff contract ends ' . $when . ' — ' . $name, $html);
+		return true;
+	}
+
+	private function notifyExpiringStaffContracts(int $schoolId): void
+	{
+		if ($schoolId < 1) {
+			return;
+		}
+		$this->ensureStaffContractColumns();
+		$today = date('Y-m-d');
+		$until = date('Y-m-d', strtotime('+15 days'));
+		$rows = \Config\Database::connect()->table('staffs')
+			->select('id, fname, lname, email, phone, contract_end, contract_notice_for')
+			->where('school_id', $schoolId)
+			->whereIn('status', [1, 2])
+			->where('contract_end >=', $today)
+			->where('contract_end <=', $until)
+			->get()->getResultArray();
+		foreach ($rows as $row) {
+			$end = substr((string) ($row['contract_end'] ?? ''), 0, 10);
+			if (!$this->maybeEmailContractEnding($schoolId, $row, $end)) {
+				continue;
+			}
+			\Config\Database::connect()->table('staffs')->where('id', (int) $row['id'])->update([
+				'contract_notice_for' => $end,
+			]);
+		}
+	}
+
+	private function maybeNotifyExpiringStaffContracts(): void
+	{
+		$schoolId = (int) $this->session->get('soma_school_id');
+		if ($schoolId < 1) {
+			return;
+		}
+		$key = 'staff_contract_warn_' . $schoolId . '_' . date('Ymd');
+		if ($this->session->get($key)) {
+			return;
+		}
+		$this->session->set($key, 1);
+		try {
+			$this->notifyExpiringStaffContracts($schoolId);
+		} catch (\Throwable $e) {
+			log_message('error', 'Staff contract reminder failed: {msg}', ['msg' => $e->getMessage()]);
+		}
 	}
 
 	public function generate_staff_cards()
@@ -10944,6 +11128,19 @@ public function attendanceCard()
 			$html_msg = view("emails/staff_creation", $data);
 			$emailError = null;
 			$sent = $this->_send_email($email, lang("app.welcomeOnSomanet"), $html_msg, $emailError);
+			try {
+				$this->emailLeadersNewStaff((int) $school_id, [
+					'fname' => $fname,
+					'lname' => $lname,
+					'phone' => $phone,
+					'email' => $email,
+					'post' => $post,
+					'contract_start' => $contract['start'],
+					'contract_end' => $contract['end'],
+				]);
+			} catch (\Throwable $mailError) {
+				log_message('error', 'New staff leader email failed: {msg}', ['msg' => $mailError->getMessage()]);
+			}
 			if (! $sent) {
 				return $this->response->setJSON(array(
 					"success" => lang("app.userSaved"),
@@ -12109,8 +12306,6 @@ public function getApplicationDocs($id = null)
 		$i = 1;
 		foreach ($students as $student) {
 			$remaining = ($student['discipline_max'] - $student['total_marks']);
-			$phone = strlen(trim($student["ft_phone"])) > 4 ? $student["ft_phone"] : (strlen(trim($student["mt_phone"])) > 4 ? $student["mt_phone"] :
-					(strlen(trim($student["gd_phone"])) > 4 ? $student["gd_phone"] : ""));
 			if ($type == 1) {
 				//permission
 				$color = false ? "color:orangered" : "";
@@ -12124,15 +12319,18 @@ public function getApplicationDocs($id = null)
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>";
 			} else if ($type == 3) {
-				//sms
-				$chk_val = strlen($phone) == 0 ? "disabled" : "checked";
-				$color = strlen($phone) == 0 ? "color:orangered" : "";
+				//sms — every Rwandan father, mother, and guardian line
+				$parentLines = $this->_parent_rwandan_lines($student);
+				$phoneLabel = htmlspecialchars(implode(', ', array_values($parentLines)), ENT_QUOTES, 'UTF-8');
+				$lineCount = count($parentLines);
+				$chk_val = $lineCount === 0 ? "disabled" : "checked";
+				$color = $lineCount === 0 ? "color:orangered" : "";
 				echo "<tr class='disc_row' id=" . $student['regno'] . $type . " style='$color'>
-				<td><input type='checkbox' $chk_val class='chk_item' value='" . $student['id'] . "' name='studentId[]'></td>
+				<td><input type='checkbox' $chk_val class='chk_item' data-lines='" . $lineCount . "' value='" . $student['id'] . "' name='studentId[]'></td>
 				<td>" . $student['regno'] . "</td>
 				<td>" . $student['stdnames'] . "</td>
 				<td>" . $student['level_name'] . " " . $student['title'] . " " . $student['code'] . " </td>
-				<td>" . $phone . "</td>
+				<td>" . $phoneLabel . "</td>
 				<td style='text-align: center;'>
 				<span class='btn-sm btn-danger' id='removerow'>" . lang("app.remove") . "</span></td>
 				</tr>";
@@ -13646,6 +13844,7 @@ public function getApplicationDocs($id = null)
 		}
 
 		$imported = 0;
+		$importedNames = [];
 		$skipped = 0;
 		$empty = 0;
 		$i = 0;
@@ -13702,6 +13901,7 @@ public function getApplicationDocs($id = null)
 					'updateVersion' => $update_v,
 				]);
 				$imported++;
+				$importedNames[] = trim($fname . ' ' . $lname);
 			} catch (\Exception $e) {
 				if ((int) $e->getCode() === 1062) {
 					$skipped++;
@@ -13714,6 +13914,11 @@ public function getApplicationDocs($id = null)
 
 		if ($imported > 0) {
 			HeyStarDeviceStore::requestStaffSync((int) $school_id);
+			try {
+				$this->emailLeadersImportedStaff((int) $school_id, $importedNames);
+			} catch (\Throwable $mailError) {
+				log_message('error', 'Imported staff leader email failed: {msg}', ['msg' => $mailError->getMessage()]);
+			}
 		}
 		$msg = $imported . ' staff imported successfully';
 		if ($skipped > 0) {

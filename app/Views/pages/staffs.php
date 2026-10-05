@@ -1,6 +1,6 @@
 <div class="app-inner-layout app-inner-layout-page">
 <link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>">
-<link rel="stylesheet" href="<?= base_url('assets/css/staff-share-access.css?v=2') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/staff-share-access.css?v=3') ?>">
 	<div class="app-inner-layout__wrapper">
 		<div class="app-inner-layout__content">
 			<div class="tab-content">
@@ -706,35 +706,56 @@
 			});
 		}
 
+		var contractSaveTimers = {};
+		function markContractStatus(input, text, ok) {
+			var cell = input.closest('td') || input.parentElement;
+			var note = cell.querySelector('.staff-contract-saved');
+			if (!note) {
+				note = document.createElement('div');
+				note.className = 'staff-contract-saved';
+				cell.appendChild(note);
+			}
+			note.textContent = text;
+			note.style.color = ok ? '#15803d' : '#b91c1c';
+		}
+		function queueContractSave(input) {
+			var staffId = input.getAttribute('data-staff-id');
+			if (!staffId) return;
+			clearTimeout(contractSaveTimers[staffId]);
+			markContractStatus(input, 'Saving…', true);
+			contractSaveTimers[staffId] = setTimeout(function () {
+				var inputs = document.querySelectorAll('.staff-contract-input[data-staff-id="' + staffId + '"]');
+				var start = '', end = '';
+				inputs.forEach(function (field) {
+					if (field.getAttribute('data-which') === 'end') end = field.value;
+					else start = field.value;
+				});
+				var body = new URLSearchParams();
+				body.set('staff_id', staffId);
+				body.set('contract_start', start);
+				body.set('contract_end', end);
+				fetch('<?= base_url('save_staff_contract'); ?>', {
+					method: 'POST',
+					headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' },
+					credentials: 'same-origin',
+					body: body.toString()
+				}).then(function (r) { return r.json(); }).then(function (res) {
+					inputs.forEach(function (field) {
+						markContractStatus(field, res && res.error ? res.error : 'Saved', !(res && res.error));
+					});
+				}).catch(function () {
+					inputs.forEach(function (field) {
+						markContractStatus(field, 'Not saved', false);
+					});
+				});
+			}, 400);
+		}
 		document.addEventListener('change', function (e) {
-			if (!e.target || !e.target.classList.contains('staff-contract-input')) return;
-			var staffId = e.target.getAttribute('data-staff-id');
-			var inputs = document.querySelectorAll('.staff-contract-input[data-staff-id="' + staffId + '"]');
-			var start = '', end = '';
-			inputs.forEach(function (input) {
-				if (input.getAttribute('data-which') === 'end') end = input.value;
-				else start = input.value;
-				input.disabled = true;
-			});
-			var body = new URLSearchParams();
-			body.set('staff_id', staffId);
-			body.set('contract_start', start);
-			body.set('contract_end', end);
-			fetch('<?= base_url('save_staff_contract'); ?>', {
-				method: 'POST',
-				headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' },
-				credentials: 'same-origin',
-				body: body.toString()
-			}).then(function (r) { return r.json(); }).then(function (res) {
-				if (res.error) {
-					Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'error', title: 'Contract dates', text: res.error }));
-				}
-			}).catch(function () {
-				Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'error', title: 'Contract dates', text: 'Could not save the contract dates.' }));
-			}).finally(function () {
-				inputs.forEach(function (input) { input.disabled = false; });
-			});
+			if (e.target && e.target.classList.contains('staff-contract-input')) queueContractSave(e.target);
 		});
+		document.addEventListener('blur', function (e) {
+			if (e.target && e.target.classList.contains('staff-contract-input')) queueContractSave(e.target);
+		}, true);
 		refreshStaffShareCount();
 	});
 </script>
