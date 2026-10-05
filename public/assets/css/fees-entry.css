@@ -384,6 +384,34 @@
   padding: 8px 12px;
 }
 
+tr.fe-history-cancelled td.fe-strike {
+  color: #b91c1c;
+  text-decoration: line-through;
+}
+
+tr.fe-history-cancelled td.fe-history-status,
+tr.fe-history-cancelled td.fe-history-action {
+  color: #b91c1c;
+  text-decoration: none;
+}
+
+.fe-cancel-reason {
+  color: #b91c1c;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  margin-top: 4px;
+  max-width: 220px;
+  white-space: normal;
+}
+
+.fe-history-action {
+  white-space: nowrap;
+}
+
+.fe-history-action .btn + .btn {
+  margin-left: 4px;
+}
+
 .fe-amount-paid { color: #15803d; font-weight: 700; }
 .fe-amount-due { color: #b45309; font-weight: 700; }
 

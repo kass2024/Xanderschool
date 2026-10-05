@@ -10,6 +10,7 @@ class FeesRecordModel extends Model
 		'student_id', 'fees_type', 'amount', 'fees_id', 'apiId', 'refNo',
 		'bank_name', 'payment_mode', 'due_date', 'status', 'created_by',
 		'is_installment', 'promised_date', 'reminder_sent_at',
+		'cancel_reason', 'cancelled_by', 'cancelled_at',
 	];
 	protected $useTimestamps = true;
 	protected $primaryKey = 'id';
@@ -51,6 +52,27 @@ class FeesRecordModel extends Model
 			'bank_name',
 			'VARCHAR(120) NULL DEFAULT NULL',
 			'`refNo`'
+		);
+		$this->ensureColumn(
+			$db,
+			'fees_records',
+			'cancel_reason',
+			'VARCHAR(255) NULL DEFAULT NULL',
+			'`bank_name`'
+		);
+		$this->ensureColumn(
+			$db,
+			'fees_records',
+			'cancelled_by',
+			'INT NULL DEFAULT NULL',
+			'`cancel_reason`'
+		);
+		$this->ensureColumn(
+			$db,
+			'fees_records',
+			'cancelled_at',
+			'DATETIME NULL DEFAULT NULL',
+			'`cancelled_by`'
 		);
 		$this->allowSharedFeeReferences($db);
 		self::$schemaReady = true;

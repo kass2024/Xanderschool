@@ -20590,16 +20590,67 @@ public function getApplicationDocs($id = null)
 		}
 	}
 
-	public
-	function cancel_fee_record($id)
+	public function cancel_fee_record($id)
 	{
-		$fMdl = new FeesRecordModel();
-		try {
-			$fMdl->save(['id' => $id, 'status' => -1]);
+		return $this->setFeeRecordCancelled((int) $id, true);
+	}
 
-			return $this->response->setJSON(array("success" => lang("app.feesRecordCancelled")));
+	public function revoke_fee_record($id)
+	{
+		return $this->setFeeRecordCancelled((int) $id, false);
+	}
+
+	private function setFeeRecordCancelled(int $id, bool $cancel)
+	{
+		$this->_preset();
+		$this->denyUnlessFeeOperator(true);
+		if ($id < 1) {
+			return $this->response->setJSON(['error' => 'Payment not found.']);
+		}
+		$reason = trim((string) $this->request->getPost('reason'));
+		if ($cancel && strlen($reason) < 3) {
+			return $this->response->setJSON(['error' => 'Enter a reason for cancelling this payment.']);
+		}
+		if (strlen($reason) > 255) {
+			$reason = substr($reason, 0, 255);
+		}
+		$fMdl = new FeesRecordModel();
+		$fMdl->ensureSchema();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = $fMdl->select('fees_records.id, fees_records.status')
+			->join('students s', 's.id = fees_records.student_id')
+			->where('fees_records.id', $id)
+			->where('s.school_id', $schoolId)
+			->get(1)->getRowArray();
+		if (!$row) {
+			return $this->response->setJSON(['error' => 'Payment not found.']);
+		}
+		$isCancelled = (int) ($row['status'] ?? 0) === -1;
+		if ($cancel && $isCancelled) {
+			return $this->response->setJSON(['error' => 'This payment is already cancelled.']);
+		}
+		if (!$cancel && !$isCancelled) {
+			return $this->response->setJSON(['error' => 'This payment is not cancelled.']);
+		}
+		try {
+			if ($cancel) {
+				$fMdl->update($id, [
+					'status' => -1,
+					'cancel_reason' => $reason,
+					'cancelled_by' => (int) $this->session->get('soma_id'),
+					'cancelled_at' => date('Y-m-d H:i:s'),
+				]);
+				return $this->response->setJSON(['success' => 'Payment cancelled. It no longer counts as paid.']);
+			}
+			$fMdl->update($id, [
+				'status' => 1,
+				'cancel_reason' => null,
+				'cancelled_by' => null,
+				'cancelled_at' => null,
+			]);
+			return $this->response->setJSON(['success' => 'Cancellation revoked. This payment counts as paid again.']);
 		} catch (\Exception $e) {
-			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
 		}
 	}
 
@@ -24203,7 +24254,7 @@ public function assign_card()
 		$feesRecordMdl = new FeesRecordModel();
 		$feesRecordMdl->ensureSchema();
 		$extraFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,1 as type,fees_records.created_at as date,
-		concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,fees_records.bank_name,
+		concat(extra.title,' (Extra fees)') as item,extra.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,fees_records.bank_name,fees_records.cancel_reason,
 		TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 				->join("extra_fees extra", "fees_records.fees_id=extra.id and fees_records.fees_type=1")
 				->join("academic_year ac", "ac.id=extra.academic_year")
@@ -24213,7 +24264,7 @@ public function assign_card()
 				->orderBy("fees_records.id", 'DESC')
 				->get()->getResultArray();
 		$schoolFees = $feesRecordMdl->select("fees_records.id,fees_records.amount,0 as type,fees_records.created_at as date
-		,if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,fees_records.bank_name,
+		,if(fees_records.fees_type=0,'School fees','item') as item,sf.term,fees_records.payment_mode,fees_records.status,fees_records.refNo,fees_records.bank_name,fees_records.cancel_reason,
 		TRIM(CONCAT(COALESCE(st.fname,''),' ',COALESCE(st.lname,''))) as recorded_by_name")
 				->join("school_fees sf", "sf.id=fees_records.fees_id and fees_records.fees_type=0")
 				->join("academic_year ac", "ac.id=sf.academic_year")

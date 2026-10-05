@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/fees-entry.css?v=9') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/fees-entry.css?v=10') ?>">
 <link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>">
 
 <div class="fe-page card-scan-page">
@@ -121,6 +121,31 @@
 					</div>
 				</div>
 			</main>
+		</div>
+
+		<div class="modal fade" id="mdlCancelFee" tabindex="-1" role="dialog">
+			<div class="modal-dialog" role="document">
+				<div class="modal-content">
+					<form id="frmCancelFee">
+						<div class="modal-header">
+							<h5 class="modal-title">Cancel payment</h5>
+							<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+								<span aria-hidden="true">×</span>
+							</button>
+						</div>
+						<div class="modal-body">
+							<p class="text-muted mb-2">This payment will stay on the history in red, and it will no longer count as paid.</p>
+							<label for="feCancelReason">Reason</label>
+							<textarea id="feCancelReason" class="form-control" rows="3" maxlength="255" required placeholder="Why is this payment being cancelled?"></textarea>
+							<input type="hidden" id="feCancelFeeId" value="">
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+							<button type="submit" class="btn btn-danger" id="btnConfirmCancelFee">Cancel payment</button>
+						</div>
+					</form>
+				</div>
+			</div>
 		</div>
 
 		<!-- Legacy hidden selects — kept for modals and existing fee APIs -->
@@ -741,6 +766,9 @@ $(function () {
 			$('#historyTable tbody').html('');
 			return;
 		}
+		function feHist(value) {
+			return $('<div>').text(value == null ? '' : value).html();
+		}
 		$.getJSON('<?= base_url('getFeesHistoricalAjax/') ?>' + studentId + '/' + year, function (data) {
 			let rows1 = '';
 			checkedItems = [];
@@ -748,34 +776,86 @@ $(function () {
 				const rowKey = String(record.id) + ':' + String(record.type);
 				const statusNum = parseInt(record.status, 10);
 				const isCancelled = statusNum === -1;
-				const canPrint = !isCancelled;
-				let style = '';
-				if (isCancelled) style = 'color:red;text-decoration:line-through;';
-				const refCell = record.refNo ? record.refNo : '—';
-				const modeLabel = paymentModeToString(record.payment_mode, record.bank_name);
-				let statusCell = isCancelled ? '—' : "<span class='badge badge-success'><?= esc(lang('app.feeStatusApproved')); ?></span>";
-				let actions = '';
-				if (canPrint) {
-					actions = "<button type='button' class='btn btn-sm btn-success btn-print-receipt' data-rows='" + rowKey + "'>" +
-						"<i class='fa fa-print'></i> <?= esc(lang('app.printReceipt')); ?></button>";
+				const refCell = record.refNo ? feHist(record.refNo) : '—';
+				const modeLabel = feHist(paymentModeToString(record.payment_mode, record.bank_name));
+				const reason = String(record.cancel_reason || '').trim();
+				let statusCell = "<span class='badge badge-success'><?= esc(lang('app.feeStatusApproved')); ?></span>";
+				let actions = "<button type='button' class='btn btn-sm btn-success btn-print-receipt' data-rows='" + rowKey + "'>" +
+					"<i class='fa fa-print'></i> <?= esc(lang('app.printReceipt')); ?></button> " +
+					"<button type='button' class='btn btn-sm btn-outline-danger btn-cancel-fee' data-id='" + feHist(record.id) + "'>Cancel</button>";
+				if (isCancelled) {
+					statusCell = "<span class='badge badge-danger'>Cancelled</span>";
+					if (reason) {
+						statusCell += "<div class='fe-cancel-reason'>" + feHist(reason) + "</div>";
+					}
+					actions = "<button type='button' class='btn btn-sm btn-outline-primary btn-revoke-fee' data-id='" + feHist(record.id) + "'>Revoke cancel</button>";
 				}
-				rows1 += "<tr style='" + style + "'>" +
-					'<td>' + (canPrint ? "<input type='checkbox' name='toPrint[]' class='checkedItem' value='" + rowKey + "'>" : '') + '</td>' +
-					'<td>' + (index + 1) + '</td>' +
-					'<td>' + getJsTermToString(record.term) + '</td> ' +
-					'<td>' + record.item + '</td> ' +
-					'<td>' + record.amount + ' Rwf</td>' +
-					'<td>' + modeLabel + '</td>' +
-					'<td>' + refCell + '</td>' +
-					'<td>' + record.date + '</td>' +
-					'<td>' + (record.recorded_by_name || '—') + '</td>' +
-					'<td>' + statusCell + '</td>' +
-					'<td>' + actions + '</td>' +
+				rows1 += "<tr class='" + (isCancelled ? 'fe-history-cancelled' : '') + "'>" +
+					'<td class="fe-history-action">' + (isCancelled ? '' : "<input type='checkbox' name='toPrint[]' class='checkedItem' value='" + rowKey + "'>") + '</td>' +
+					'<td class="fe-strike">' + (index + 1) + '</td>' +
+					'<td class="fe-strike">' + feHist(getJsTermToString(record.term)) + '</td>' +
+					'<td class="fe-strike">' + feHist(record.item) + '</td>' +
+					'<td class="fe-strike">' + feHist(record.amount) + ' Rwf</td>' +
+					'<td class="fe-strike">' + modeLabel + '</td>' +
+					'<td class="fe-strike">' + refCell + '</td>' +
+					'<td class="fe-strike">' + feHist(record.date) + '</td>' +
+					'<td class="fe-strike">' + feHist(record.recorded_by_name || '—') + '</td>' +
+					'<td class="fe-history-status">' + statusCell + '</td>' +
+					'<td class="fe-history-action">' + actions + '</td>' +
 					'</tr>';
 			});
 			$('#historyTable tbody').html(rows1);
 		});
 	}
+
+	$(document).on('click', '.btn-cancel-fee', function () {
+		$('#feCancelFeeId').val($(this).attr('data-id'));
+		$('#feCancelReason').val('');
+		$('#mdlCancelFee').modal('show');
+	});
+
+	$('#frmCancelFee').on('submit', function (e) {
+		e.preventDefault();
+		const id = $('#feCancelFeeId').val();
+		const reason = ($('#feCancelReason').val() || '').trim();
+		if (!id || reason.length < 3) {
+			toastada.error('Enter a reason for cancelling this payment.');
+			return;
+		}
+		const $btn = $('#btnConfirmCancelFee').prop('disabled', true);
+		$.post('<?= base_url('cancel_fee_record/'); ?>' + id, { reason: reason }, function (res) {
+			if (res && res.success) {
+				toastada.success(res.success);
+				$('#mdlCancelFee').modal('hide');
+				reloadSummaryReport();
+			} else {
+				toastada.error((res && res.error) ? res.error : 'Could not cancel this payment.');
+			}
+		}, 'json').fail(function () {
+			toastada.error('Could not cancel this payment.');
+		}).always(function () {
+			$btn.prop('disabled', false);
+		});
+	});
+
+	$(document).on('click', '.btn-revoke-fee', function () {
+		const id = $(this).attr('data-id');
+		if (!id) return;
+		if (!window.confirm('Restore this payment? It will count as paid again.')) return;
+		const $btn = $(this).prop('disabled', true);
+		$.post('<?= base_url('revoke_fee_record/'); ?>' + id, {}, function (res) {
+			if (res && res.success) {
+				toastada.success(res.success);
+				reloadSummaryReport();
+			} else {
+				toastada.error((res && res.error) ? res.error : 'Could not revoke this cancellation.');
+				$btn.prop('disabled', false);
+			}
+		}, 'json').fail(function () {
+			toastada.error('Could not revoke this cancellation.');
+			$btn.prop('disabled', false);
+		});
+	});
 
 	$(document).on('click', '.btn-print-receipt', function () {
 		openFeeThermalReceipt($(this).attr('data-rows'), $('#select_student').val());
