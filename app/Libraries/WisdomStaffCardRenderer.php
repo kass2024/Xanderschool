@@ -20,6 +20,7 @@ class WisdomStaffCardRenderer
 	public const TEMPLATE_KANZENZE = 'assets/images/background/wisdom_staff_card_kanzenze.png';
 	public const TEMPLATE_NGORORERO = 'assets/images/background/wisdom_staff_card_ngororero.png';
 	public const TEMPLATE_NYABIHU = 'assets/images/background/wisdom_staff_card_nyabihu.png';
+	public const TEMPLATE_RUNDA = 'assets/images/background/wisdom_staff_card_runda.png';
 	public const TEMPLATE_SUSA = 'assets/images/background/wisdom_staff_card_susa.png';
 	/** Default / campus card (backward compatible). */
 	public const TEMPLATE = self::TEMPLATE_MUSANZE;
@@ -188,6 +189,7 @@ class WisdomStaffCardRenderer
 			'NYAMASHEKE' => 'assets/images/background/wisdom_staff_card_nyamasheke.png',
 			'RUBAVU' => 'assets/images/background/wisdom_staff_card_rubavu.png',
 			'RUBENGERA' => 'assets/images/background/wisdom_staff_card_rubengera.png',
+			'RUNDA' => self::TEMPLATE_RUNDA,
 			'SUSA' => self::TEMPLATE_SUSA,
 		];
 		foreach ($map as $key => $path) {
