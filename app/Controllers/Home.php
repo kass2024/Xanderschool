@@ -14675,7 +14675,12 @@ public function getApplicationDocs($id = null)
 						$termMdl->incrementSMS($pending['active_term'], $sms_count);
 						$smsRMdl->save(array("id" => $pending['id'], "status" => 1, "sent_on" => time()));
 					} else {
-						$smsRMdl->save(array("id" => $pending['id'], "status" => 2, "fail_reason" => is_array($result) ? ($result['content'] ?? 'SMS failed') : 'SMS failed'));
+						$reason = is_array($result) ? (string) ($result['content'] ?? 'SMS failed') : 'SMS failed';
+						$smsRMdl->save(array("id" => $pending['id'], "status" => 2, "fail_reason" => $reason));
+						if (stripos($reason, 'MTN blocked') !== false) {
+							log_message('error', 'background SMS stopped: SwiftQOM MTN route is blocked');
+							break;
+						}
 					}
 				} catch (\Exception $e) {
 					log_message('error', 'background SMS: {msg}', ['msg' => $e->getMessage()]);
