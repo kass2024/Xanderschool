@@ -282,6 +282,31 @@ class SecondaryTimetableCriteria
 		if (!$this->mathWindowAllows($row, $slotStart, $slotEnd)) {
 			return false;
 		}
+		if ($this->isMorningHomeScience($row)) {
+			$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+			$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+			if ($day < 0 || $day > 4 || $start < (10 * 60) || $end > (12 * 60) || $end <= $start) {
+				return false;
+			}
+			if (!\App\Models\TimetableSchemaModel::isTeachingDayLessonSlotTimes($slotStart, $slotEnd)) {
+				return false;
+			}
+			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+		}
+		if ($this->isSodLevel34($row) && $day >= 0 && $day <= 4) {
+			if (!\App\Models\TimetableSchemaModel::isTeachingDayLessonSlotTimes($slotStart, $slotEnd)) {
+				return false;
+			}
+			$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+			$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+			if ($start < (7 * 60) || $end > (15 * 60 + 40)) {
+				return false;
+			}
+			if ($this->clinicalBlocksClass($row, $day, $slotStart, $slotEnd)) {
+				return false;
+			}
+			return $this->teacherAllows($row, $day, $slotStart, $slotEnd);
+		}
 		if ($this->isFixedEveningActivity($row)) {
 			if (!\App\Models\TimetableSchemaModel::isLibraryHomeScienceClock($slotStart, $slotEnd)) {
 				return false;
@@ -362,6 +387,9 @@ class SecondaryTimetableCriteria
 		if (!self::isSecondaryTrack($row) || $day < 0 || $day > 3) {
 			return false;
 		}
+		if ($this->isSodLevel34($row)) {
+			return false;
+		}
 		if ($this->isFixedEveningActivity($row) || $this->requiresAfterLessons($row) || $this->isClinicalAttachmentCourse($row)) {
 			return false;
 		}
@@ -369,9 +397,54 @@ class SecondaryTimetableCriteria
 			&& \App\Models\TimetableSchemaModel::slotClock($slotEnd) === '16:20:00';
 	}
 
-	/** Library and Clubs and Home Science sit only at 16:40–17:30. */
+	/** S1–S3 Home Science is a morning lesson (10:00–12:00), not the 16:40 activity. */
+	private function isMorningHomeScience(array $row): bool
+	{
+		if (self::afterLessonFamily((string) ($row['course_title'] ?? '')) !== 'home_science') {
+			return false;
+		}
+		$level = $this->entryLevel($row);
+		if (!in_array($level, ['S1', 'S2', 'S3'], true)) {
+			$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+			$level = (string) ($meta['level'] ?? $level);
+		}
+		return in_array($level, ['S1', 'S2', 'S3'], true);
+	}
+
+	/** Level 3 and Level 4 Software Development stay inside 07:00–15:40. */
+	private function isSodLevel34(array $row): bool
+	{
+		if (!self::isSecondaryTrack($row)) {
+			return false;
+		}
+		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+		$dept = $meta !== null ? (string) ($meta['dept'] ?? '') : $this->entryDept($row);
+		$level = $meta !== null ? (string) ($meta['level'] ?? '') : $this->entryLevel($row);
+		if ($dept !== 'SOD') {
+			$dept = $this->entryDept($row);
+		}
+		if (!in_array($level, ['L3', 'L4'], true)) {
+			$level = $this->entryLevel($row);
+		}
+		return $dept === 'SOD' && in_array($level, ['L3', 'L4'], true);
+	}
+
+	/** On Level 3 and Level 4 SOD, French and Chinese follow the core courses. */
+	private function isSodLanguageAfterCore(array $row): bool
+	{
+		if (!$this->isSodLevel34($row)) {
+			return false;
+		}
+		$t = $this->courseTitle($row);
+		return strpos($t, 'french') !== false || strpos($t, 'chinese') !== false;
+	}
+
+	/** Library and Clubs, and Home Science from S4 up, sit only at 16:40–17:30. */
 	public function isFixedEveningActivity(array $row): bool
 	{
+		if ($this->isMorningHomeScience($row)) {
+			return false;
+		}
 		$family = self::afterLessonFamily((string) ($row['course_title'] ?? ''));
 		return $family === 'library_clubs' || $family === 'home_science';
 	}
@@ -404,6 +477,9 @@ class SecondaryTimetableCriteria
 
 	public function requiresAfterLessons(array $row): bool
 	{
+		if ($this->isMorningHomeScience($row)) {
+			return false;
+		}
 		if (self::isAfterLessonCourseTitle((string) ($row['course_title'] ?? ''))) {
 			return true;
 		}
@@ -598,6 +674,19 @@ class SecondaryTimetableCriteria
 					$scopedApplicable[] = $w;
 				}
 			}
+			if ($scope === 'home_science_s123' && $this->isMorningHomeScience($row)) {
+				$scopedApplicable[] = $w;
+			}
+			if ($scope === 'kiswahili_s1') {
+				$title = $this->courseTitle($row);
+				$kisLevel = $this->entryLevel($row);
+				if ($kisLevel === '') {
+					$kisLevel = $level;
+				}
+				if (strpos($title, 'kiswahili') !== false && $kisLevel === 'S1') {
+					$scopedApplicable[] = $w;
+				}
+			}
 		}
 
 		// Scoped-only windows (e.g. Eric @ SOD L3) do not restrict other classes.
@@ -759,7 +848,7 @@ class SecondaryTimetableCriteria
 		if ($this->isPrioritySubject($row) || $this->isAnpMainExtra($row)) {
 			return 4;
 		}
-		if ($this->isAnpSecondWave($row)) {
+		if ($this->isAnpSecondWave($row) || $this->isSodLanguageAfterCore($row)) {
 			return 9;
 		}
 		return 5;
@@ -1309,7 +1398,8 @@ class SecondaryTimetableCriteria
 			['subject' => 'computer', 'level' => 'S6', 'depts' => ['MPC', 'MCE'], 'label' => 'Computer Science S6 MPC + MCE'],
 			['subject' => 'computer', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S5 Stream 1 + Stream 2'],
 			['subject' => 'computer', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'ICT S4 Stream 1 + Stream 2'],
-			['subject' => 'chemistry', 'level' => 'S6', 'depts' => ['MCB', 'PCB'], 'label' => 'Chemistry S6 MCB + PCB'],
+			['subject' => 'chemistry', 'level' => 'S6', 'depts' => ['ANP', 'MCB', 'PCB'], 'label' => 'Chemistry S6 ANP + MCB + PCB'],
+			['subject' => 'chemistry', 'level' => 'S4', 'depts' => ['ANP', 'ST1'], 'label' => 'Chemistry S4 ANP + Stream 1'],
 			['subject' => 'physics', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'Physics S4 Stream 1 + Stream 2'],
 			['subject' => 'physics', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'Physics S5 Stream 1 + Stream 2'],
 			['subject' => 'physics', 'level' => 'S6', 'depts' => ['PCB', 'PCM', 'MPC', 'ANP', 'MPG'], 'label' => 'Physics S6 PCB + PCM + MPC + ANP + MPG'],
@@ -1346,6 +1436,7 @@ class SecondaryTimetableCriteria
 		$out = [
 			['group' => 'Scope', 'title' => 'High school only', 'detail' => 'These locked rules apply to O Level, A Level, TVET and Special. Nursery and primary are never included.'],
 			['group' => 'Day end', 'title' => 'Normal courses', 'detail' => 'Normal courses finish by 15:40 Monday to Thursday. On Friday they finish by 15:00, so 15:00–15:40 is not a normal lesson. Special activities, farming, library, and night periods stay on their own bells.'],
+			['group' => 'Day end', 'title' => 'Level 3 and Level 4 SOD', 'detail' => 'These courses start at 07:00 and finish by 15:40, including Friday. The 15:40–16:20 row is not used. Core courses are placed before French and Chinese.'],
 			['group' => 'Day end', 'title' => 'S4, S5 and S6 ANP', 'detail' => 'These classes teach 07:00–16:20, including 15:40–16:20, Monday to Friday.'],
 			['group' => 'Priority', 'title' => 'Schedule first', 'detail' => 'Clinical attachment, medical pathology, surgical pathology, pharmacology, MCH, fundamentals of nursing, ethics, biology, chemistry, physics, mathematics, and English. Medical and surgical pathology are not taught in S4 ANP. S4 Kinyarwanda is with these main courses. Named teacher availability is kept.'],
 			['group' => 'Priority', 'title' => 'S6 ANP after main courses', 'detail' => 'French, Kinyarwanda, and ICT.'],
@@ -1355,7 +1446,7 @@ class SecondaryTimetableCriteria
 			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
 			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching period of the class (15:00–15:40; on Friday 14:20–15:00). For S4, S5 and S6 ANP the last period is 15:40–16:20. If that cell is taken, the other lesson is moved earlier. Never 13:40. At most one PE period per class day.'],
-			['group' => 'After lessons', 'title' => 'Library and Clubs / Home Science', 'detail' => '16:40–17:30 only, for the listed classes. Same teacher shares one clock. Not during the teaching day and not at chapel, dinner, or preps.'],
+			['group' => 'After lessons', 'title' => 'Library and Clubs / Home Science', 'detail' => '16:40–17:30 only, for the listed classes. S1 A, S1 B, S1 C, S1 D, S2 A, S2 B and S3 Home Science is the exception: NDAGIJIMANA John teaches it at 10:00–12:00. Same teacher shares one clock. Not at chapel, dinner, or preps.'],
 			['group' => 'After lessons', 'title' => 'Evening bells', 'detail' => '17:30–18:00 chapel, 18:00–19:00 dinner, 19:00–21:00 preps.'],
 			['group' => 'After lessons', 'title' => 'Farming', 'detail' => 'After lessons (15:40–17:30), never night. Same teacher shares one clock.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
@@ -1372,7 +1463,9 @@ class SecondaryTimetableCriteria
 			['group' => 'Windows', 'title' => 'Varlette', 'detail' => 'Thursday 09:00–12:00 and Friday 08:00–12:00. S4, S5 and S6 MCH are three different classes.'],
 			['group' => 'Windows', 'title' => 'Marguerite', 'detail' => 'Monday 07:00–10:00, Wednesday 08:00–10:00, and Thursday 07:00–16:20.'],
 			['group' => 'Windows', 'title' => 'Linea / Linear', 'detail' => 'Thursday 09:00–15:40. Friday 09:20–10:00 is the 09:00–09:40 lesson.'],
-			['group' => 'Windows', 'title' => 'Jean Pierre Bunezero', 'detail' => 'Every weekday 10:40–12:00.'],
+			['group' => 'Windows', 'title' => 'Jean Pierre Bunezero', 'detail' => 'Every weekday 10:00–12:00 and 13:40–15:40.'],
+			['group' => 'Windows', 'title' => 'NDAGIJIMANA John', 'detail' => 'Home Science for S1, S2 and S3, every weekday 10:00–12:00.'],
+			['group' => 'Windows', 'title' => 'ISHARA NYORHA CHRISPIN', 'detail' => 'Kiswahili for S1 A–D. Tuesday 10:40–12:00, Wednesday 07:40–08:20, Friday 10:00–14:20. The Friday 13:40 bell ends at 14:20 so the period covering 14:10 can be used.'],
 			['group' => 'Windows', 'title' => 'NTAZIKA Elias', 'detail' => 'Management Accounting, every weekday 10:00–12:00.'],
 			['group' => 'Windows', 'title' => 'IZABAYO Patience', 'detail' => 'Taxation: Tuesday 07:00–10:00, then Friday 13:00–15:00.'],
 		];
@@ -1862,9 +1955,19 @@ class SecondaryTimetableCriteria
 			['day' => 4, 'start' => 9 * 60, 'end' => 9 * 60 + 40, 'scope' => null],
 		];
 		$midMorning = [];
+		$bunezero = [];
+		$johnHome = [];
 		foreach ([0, 1, 2, 3, 4] as $day) {
 			$midMorning[] = ['day' => $day, 'start' => 10 * 60 + 40, 'end' => 12 * 60, 'scope' => null];
+			$bunezero[] = ['day' => $day, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null];
+			$bunezero[] = ['day' => $day, 'start' => 13 * 60 + 40, 'end' => 15 * 60 + 40, 'scope' => null];
+			$johnHome[] = ['day' => $day, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => 'home_science_s123'];
 		}
+		$ishara = [
+			['day' => 1, 'start' => 10 * 60 + 40, 'end' => 12 * 60, 'scope' => 'kiswahili_s1'],
+			['day' => 2, 'start' => 7 * 60 + 40, 'end' => 8 * 60 + 20, 'scope' => 'kiswahili_s1'],
+			['day' => 4, 'start' => 10 * 60, 'end' => 14 * 60 + 20, 'scope' => 'kiswahili_s1'],
+		];
 		$lateMorning = [];
 		foreach ([0, 1, 2, 3, 4] as $day) {
 			$lateMorning[] = ['day' => $day, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null];
@@ -1901,7 +2004,10 @@ class SecondaryTimetableCriteria
 			'linea' => $linear,
 			'kubahoni' => $linear,
 			'rinea' => $linear,
-			'bunezero' => $midMorning,
+			'bunezero' => $bunezero,
+			'ndagijimana john' => $johnHome,
+			'ishara' => $ishara,
+			'nyorha' => $ishara,
 			'ntazika' => $lateMorning,
 			// IZABAYO PATIENCE: Tuesday 07:00–10:00, Friday 13:00–15:00.
 			'izabayo patience' => $patienceWindows,

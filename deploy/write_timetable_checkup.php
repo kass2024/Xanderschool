@@ -144,34 +144,64 @@ $weekend = (int) $db->query("
 ")->getRowArray()['n'];
 
 $windows = [
-	135 => [[3, 9 * 60, 12 * 60], [4, 8 * 60 + 30, 12 * 60]],
+	135 => [[3, 9 * 60, 12 * 60], [4, 8 * 60, 12 * 60]],
 	137 => [[0, 7 * 60, 10 * 60], [2, 8 * 60, 10 * 60], [3, 7 * 60, 16 * 60 + 20]],
 	136 => [[3, 9 * 60, 15 * 60 + 40], [4, 9 * 60, 9 * 60 + 40]],
-	126 => [[0, 10 * 60 + 40, 12 * 60], [1, 10 * 60 + 40, 12 * 60], [2, 10 * 60 + 40, 12 * 60], [3, 10 * 60 + 40, 12 * 60], [4, 10 * 60 + 40, 12 * 60]],
+	126 => array_merge(...array_map(static function (int $day): array {
+		return [[$day, 10 * 60, 12 * 60], [$day, 13 * 60 + 40, 15 * 60 + 40]];
+	}, [0, 1, 2, 3, 4])),
 	77 => [[0, 10 * 60, 12 * 60], [1, 10 * 60, 12 * 60], [2, 10 * 60, 12 * 60], [3, 10 * 60, 12 * 60], [4, 10 * 60, 12 * 60]],
 	140 => [[1, 7 * 60, 10 * 60], [4, 13 * 60, 15 * 60]],
+	220 => array_merge(...array_map(static function (int $day): array {
+		return [[$day, 10 * 60, 12 * 60]];
+	}, [0, 1, 2, 3, 4])),
+	69 => [[1, 10 * 60 + 40, 12 * 60], [2, 7 * 60 + 40, 8 * 60 + 20], [4, 10 * 60, 14 * 60 + 20]],
+];
+$windowScope = [
+	220 => ['needle' => 'home science', 'levels' => ['S1', 'S2', 'S3']],
+	69 => ['needle' => 'kiswahili', 'levels' => ['S1']],
 ];
 $windowNames = [
-	135 => 'NTABANGANYIMANA Varlette — Thursday 09:00–12:00, Friday 08:30–12:00',
+	135 => 'NTABANGANYIMANA Varlette — Thursday 09:00–12:00, Friday 08:00–12:00',
 	137 => 'MARGUERITTE Uwimana — Monday 07:00–10:00, Wednesday 08:00–10:00, Thursday 07:00–16:20',
 	136 => 'LINEA Kubahoniyesu — Thursday 09:00–15:40, Friday 09:00–09:40',
-	126 => 'Jean Pierre Bunezero — weekdays 10:40–12:00',
+	126 => 'Jean Pierre Bunezero — weekdays 10:00–12:00 and 13:40–15:40',
+	220 => 'NDAGIJIMANA John — Home Science S1–S3, weekdays 10:00–12:00',
+	69 => 'ISHARA NYORHA CHRISPIN — Kiswahili S1, Tue 10:40–12:00, Wed 07:40–08:20, Fri 10:00–14:20',
 	77 => 'NTAZIKA Elias — weekdays 10:00–12:00',
 	140 => 'IZABAYO Patience — Tuesday 07:00–10:00, Friday 13:00–15:00',
 ];
 $namedLessons = $db->query("
-	SELECT te.staff_id, te.day_of_week, ts.start_time, ts.end_time, co.title, te.class_id
+	SELECT te.staff_id, te.day_of_week, ts.start_time, ts.end_time, co.title, te.class_id, l.title AS level_name
 	FROM timetable_entries te
 	JOIN timetable_slots ts ON ts.id = te.slot_id
 	JOIN courses co ON co.id = te.course_id
+	LEFT JOIN classes cl ON cl.id = te.class_id
+	LEFT JOIN levels l ON l.id = cl.level
 	WHERE te.schedule_id = {$scheduleId} AND te.slot_id > 0 AND te.day_of_week >= 0
-		AND te.staff_id IN (135,137,136,126,77,140)
+		AND te.staff_id IN (135,137,136,126,77,140,220,69)
 	ORDER BY te.staff_id, te.day_of_week, ts.start_time
 ")->getResultArray();
 $outside = [];
 $namedCounts = [];
 foreach ($namedLessons as $lesson) {
 	$staffId = (int) $lesson['staff_id'];
+	if (isset($windowScope[$staffId])) {
+		$title = strtolower((string) $lesson['title']);
+		$level = strtoupper(trim((string) ($lesson['level_name'] ?? '')));
+		if (strpos($title, $windowScope[$staffId]['needle']) === false) {
+			continue;
+		}
+		$levelOk = false;
+		foreach ($windowScope[$staffId]['levels'] as $want) {
+			if (preg_match('/\b' . $want . '\b/', $level) === 1) {
+				$levelOk = true;
+			}
+		}
+		if (!$levelOk) {
+			continue;
+		}
+	}
 	$namedCounts[$staffId] = ($namedCounts[$staffId] ?? 0) + 1;
 	$start = $mins($lesson['start_time']);
 	$end = $mins($lesson['end_time']);
@@ -277,6 +307,107 @@ $base = rtrim((string) (config('App')->baseURL ?? ''), '/');
 $generated = date('Y-m-d H:i');
 $title = (string) ($schedule['title'] ?? 'Final Version');
 
+$caseLines = [];
+$addCase = static function (string $name, bool $ok, string $detail) use (&$caseLines): void {
+	$caseLines[] = ['name' => $name, 'ok' => $ok, 'detail' => $detail];
+};
+$alice = $db->query("
+	SELECT c.title, c.credit,
+		(SELECT COUNT(*) FROM timetable_entries te
+			WHERE te.schedule_id = {$scheduleId} AND te.class_id = 221 AND te.course_id = c.id
+			AND te.slot_id > 0 AND te.day_of_week >= 0 AND te.day_of_week <> 0) AS placed,
+		(SELECT COUNT(*) FROM timetable_entries te
+			WHERE te.schedule_id = {$scheduleId} AND te.class_id = 221 AND te.course_id = c.id
+			AND te.slot_id > 0 AND te.day_of_week = 0) AS monday
+	FROM courses c WHERE c.id IN (513, 517)
+")->getResultArray();
+$aliceOk = true;
+$aliceDetail = [];
+foreach ($alice as $row) {
+	$aliceDetail[] = $row['title'] . ' ' . (int) $row['placed'] . '/' . (int) $row['credit'];
+	if ((int) $row['placed'] < (int) $row['credit'] || (int) $row['monday'] > 0) {
+		$aliceOk = false;
+	}
+}
+$addCase('Alice, Level 4 SOD', $aliceOk, $aliceDetail === [] ? 'Courses not found' : implode('; ', $aliceDetail) . ($aliceOk ? '' : ' (Monday is still blocked)'));
+
+$sodLate = (int) ($db->query("
+	SELECT COUNT(*) n
+	FROM timetable_entries te
+	JOIN timetable_slots ts ON ts.id = te.slot_id
+	JOIN classes cl ON cl.id = te.class_id
+	LEFT JOIN levels l ON l.id = cl.level
+	LEFT JOIN departments d ON d.id = cl.department
+	WHERE te.schedule_id = {$scheduleId} AND te.slot_id > 0 AND te.day_of_week >= 0
+		AND ts.end_time > '15:40:00'
+		AND (UPPER(d.code) = 'SOD' OR UPPER(cl.title) LIKE '%SOD%')
+		AND (UPPER(CONCAT(l.title, ' ', cl.title)) REGEXP 'LEVEL[[:space:]]*[34]|L[[:space:]]*[34]')
+")->getRowArray()['n'] ?? 0);
+$addCase('Level 3 and Level 4 SOD finish by 15:40', $sodLate === 0, $sodLate === 0 ? 'No lesson ends after 15:40' : $sodLate . ' lessons still end after 15:40');
+
+$chemSets = [];
+$chemRows = $db->query("
+	SELECT te.class_id, te.day_of_week d, TIME_FORMAT(ts.start_time, '%H:%i') st
+	FROM timetable_entries te
+	JOIN timetable_slots ts ON ts.id = te.slot_id
+	WHERE te.schedule_id = {$scheduleId} AND te.course_id = 507 AND te.slot_id > 0
+		AND te.class_id IN (195, 232, 231, 225, 229)
+")->getResultArray();
+foreach ($chemRows as $row) {
+	$chemSets[(int) $row['class_id']][] = $row['d'] . ' ' . $row['st'];
+}
+foreach ($chemSets as $classId => $list) {
+	sort($list);
+	$chemSets[$classId] = $list;
+}
+$s6same = ($chemSets[195] ?? []) !== [] && ($chemSets[195] ?? []) === ($chemSets[232] ?? []) && ($chemSets[195] ?? []) === ($chemSets[231] ?? []);
+$s4same = ($chemSets[225] ?? []) !== [] && ($chemSets[225] ?? []) === ($chemSets[229] ?? []);
+$addCase('Chemistry S6 ANP + MCB + PCB', $s6same, $s6same ? 'One shared clock' : 'The three classes do not share every chemistry period');
+$addCase('Chemistry S4 ANP + Stream 1', $s4same, $s4same ? 'One shared clock' : 'S4 ANP and S4 Stream 1 do not share every chemistry period');
+
+$buaClash = (int) ($db->query("
+	SELECT COUNT(*) n FROM (
+		SELECT te.day_of_week, ts.start_time
+		FROM timetable_entries te
+		JOIN timetable_slots ts ON ts.id = te.slot_id
+		WHERE te.schedule_id = {$scheduleId} AND te.staff_id = 94 AND te.slot_id > 0 AND te.day_of_week >= 0
+		GROUP BY te.day_of_week, ts.start_time
+		HAVING COUNT(DISTINCT te.course_id) > 1
+			AND SUM(CASE WHEN te.class_id = 220 AND te.course_id = 471 THEN 1 ELSE 0 END) > 0
+	) x
+")->getRowArray()['n'] ?? 0);
+$addCase('Bua English and Level 3 business', $buaClash === 0, $buaClash === 0 ? 'Those two courses are not in the same hour' : $buaClash . ' overlapping hours');
+
+$mch = $db->query("
+	SELECT cl.id, c.credit,
+		(SELECT COUNT(*) FROM timetable_entries te
+			WHERE te.schedule_id = {$scheduleId} AND te.class_id = cl.id AND te.course_id = c.id
+			AND te.slot_id > 0 AND te.day_of_week >= 0) AS placed
+	FROM course_records cr
+	JOIN courses c ON c.id = cr.course
+	JOIN classes cl ON cl.id = cr.class
+	WHERE cl.id IN (229, 230) AND cr.year = 16 AND c.title LIKE '%MCH%'
+")->getResultArray();
+$mchOk = $mch !== [];
+$mchDetail = [];
+foreach ($mch as $row) {
+	$mchDetail[] = 'class ' . $row['id'] . ' ' . (int) $row['placed'] . '/' . (int) $row['credit'];
+	if ((int) $row['placed'] < (int) $row['credit']) {
+		$mchOk = false;
+	}
+}
+$addCase('MCH S4 ANP and S5 ANP', $mchOk, $mchDetail === [] ? 'Not found' : implode('; ', $mchDetail));
+
+$homeLate = (int) ($db->query("
+	SELECT COUNT(*) n
+	FROM timetable_entries te
+	JOIN timetable_slots ts ON ts.id = te.slot_id
+	WHERE te.schedule_id = {$scheduleId} AND te.course_id = 505 AND te.slot_id > 0
+		AND te.class_id IN (189, 251, 252, 270, 190, 253, 191)
+		AND (ts.start_time < '10:00:00' OR ts.end_time > '12:00:00')
+")->getRowArray()['n'] ?? 0);
+$addCase('Home Science S1–S3', $homeLate === 0, $homeLate === 0 ? 'All of those periods are at 10:00–12:00' : $homeLate . ' periods are still outside 10:00–12:00');
+
 ob_start();
 ?>
 <!DOCTYPE html>
@@ -314,7 +445,7 @@ ul{margin:8px 0 0;padding-left:18px}
 <body>
 <div class="wrap">
 <h1>Final timetable checkup</h1>
-<p class="sub">Wisdom School Rwanda · <?= $h($title) ?> · academic year 2026–2027, term 1 · high school rebuilt and unlocked · checked <?= $h($generated) ?></p>
+<p class="sub">Wisdom School Rwanda · <?= $h($title) ?> · academic year 2026–2027, term 1 · high school criteria applied case by case on the locked grid · checked <?= $h($generated) ?></p>
 <div class="linkbox">
 	<strong>Full report, no login required</strong><br>
 	<a href="<?= $h($base . '/timetable-final-checkup.html') ?>"><?= $h($base . '/timetable-final-checkup.html') ?></a>
@@ -337,10 +468,23 @@ ul{margin:8px 0 0;padding-left:18px}
 <li>Combined courses still share one clock, the same rule as the first version. Mathematics with Sub Math is one of those shared lessons.</li>
 <li>A class period does not hold two teachers. Extra Physical Education periods that used to sit on top of another subject are highlighted instead.</li>
 <li>Teachers without a special window are on Monday–Thursday through 15:40 and Friday through 15:00. Weekend is used only when a teacher was requested for it.</li>
-<li>S4, S5 and S6 ANP still teach 07:00–16:20. Evening Library and Clubs, Home Science, chapel, dinner and preps are unchanged.</li>
+<li>S4, S5 and S6 ANP still teach 07:00–16:20. Level 3 and Level 4 SOD stay inside 07:00–15:40. S1–S3 Home Science is at 10:00–12:00. Other Home Science, Library and Clubs, chapel, dinner and preps stay on the evening bells.</li>
+<li>The locked grid was kept. Only the requested high-school cases were moved or added.</li>
 <li>Version 1 remains stored and was not overwritten.</li>
 </ul>
 </div>
+
+<h2>High school cases</h2>
+<table>
+<tr><th>Case</th><th>Result</th><th>Detail</th></tr>
+<?php foreach ($caseLines as $case): ?>
+<tr>
+	<td><?= $h($case['name']) ?></td>
+	<td class="<?= $case['ok'] ? 'ok' : 'bad' ?>"><?= $case['ok'] ? 'Fits' : 'Still open' ?></td>
+	<td><?= $h($case['detail']) ?></td>
+</tr>
+<?php endforeach; ?>
+</table>
 
 <h2>Kept in Manage Course, not on the timetable</h2>
 <div class="note">
