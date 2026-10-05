@@ -240,6 +240,52 @@ class BaseController extends Controller
 		return '';
 	}
 
+	/**
+	 * Rwandan mobile line as 2507XXXXXXXX. Empty when the number is missing or not a Rwandan line.
+	 */
+	protected function _rwandan_parent_msisdn($phone): string
+	{
+		$digits = preg_replace('/\D+/', '', (string) $phone);
+		if (!is_string($digits) || $digits === '') {
+			return '';
+		}
+		if (strncmp($digits, '00', 2) === 0) {
+			$digits = substr($digits, 2);
+		}
+		if (strncmp($digits, '2500', 4) === 0 && isset($digits[4]) && $digits[4] === '7') {
+			$digits = '250' . substr($digits, 4, 9);
+		} elseif (strncmp($digits, '250', 3) === 0) {
+			$digits = substr($digits, 0, 12);
+		} elseif (isset($digits[0]) && $digits[0] === '0') {
+			$digits = '250' . substr($digits, 1, 9);
+		} elseif (strlen($digits) === 9 && $digits[0] === '7') {
+			$digits = '250' . $digits;
+		} else {
+			return '';
+		}
+		return preg_match('/^2507\d{8}$/', $digits) ? $digits : '';
+	}
+
+	/**
+	 * Unique Rwandan lines for father, mother, and guardian.
+	 * Keys are normalized 2507XXXXXXXX numbers; values are the numbers as stored.
+	 *
+	 * @return array<string, string>
+	 */
+	protected function _parent_rwandan_lines(array $row): array
+	{
+		$lines = [];
+		foreach (['ft_phone', 'mt_phone', 'gd_phone'] as $field) {
+			$raw = trim((string) ($row[$field] ?? ''));
+			$msisdn = $this->_rwandan_parent_msisdn($raw);
+			if ($msisdn === '' || isset($lines[$msisdn])) {
+				continue;
+			}
+			$lines[$msisdn] = $raw !== '' ? $raw : $msisdn;
+		}
+		return $lines;
+	}
+
 	/** Provider/error payload as a string for SMS logs and UI. */
 	protected function _smsFailReason($fail): string
 	{

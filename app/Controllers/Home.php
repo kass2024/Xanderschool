@@ -14476,103 +14476,77 @@ public function getApplicationDocs($id = null)
 			return $this->response->setJSON(['error' => "SMS can not be sent, Remaining balance is " . $this->data['remaining_sms']]);
 		}
 		if ($type == "dep") {
-			//send to selected departments
 			$ids = $this->request->getPost("dept_id");
-			$sent = 0;
-			$all = 0;
-			if (count($ids) == 0) {
-				return $this->response->setJSON(array("error" => lang("app.optionsErr")));
-			}
-			$sid = $smsMdl->insert(array("school_id" => $this->session->get("soma_school_id")
-			, "active_term" => $this->data['active_term'], "content" => $message, "recipient_type" => 0
-			, "subject" => "Communication"));
-			if ($sid === false)
-				return $this->response->setJSON(array("error" => lang("app.smsErr")));
-			foreach ($ids as $id) {
-				$phones = $stMdl->get_student("d.id={$id} AND (ft_phone!='' OR mt_phone!='' OR gd_phone!='')", null, "students.id,ft_phone,mt_phone,gd_phone");
-
-				foreach ($phones as $phone) {
-					$all++;
-					$p = strlen(trim($phone["ft_phone"])) > 4 ? $phone["ft_phone"] : (strlen(trim($phone["mt_phone"])) > 4 ? $phone["mt_phone"] :
-							(strlen(trim($phone["gd_phone"])) > 4 ? $phone["gd_phone"] : ""));
-					try {
-						$smsRMdl->save(array("sms_record_id" => $sid, "receiver_id" => $phone['id'], "phone" => $p, "status" => 0));
-						$sent++;
-					} catch (\Exception $e) {
-						//future use
-						return $this->response->setJSON(array("error" => "Error: " . $e));
-					}
-				}
-			}
-			$param = base_url("background_process/2");
-			$command = "curl $param > /dev/null &";
-			exec($command);
-			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all", "sms_id" => $sid));
+			$idSql = "d.id=%d";
 		} else if ($type == "class") {
-			//send to selected departments
 			$ids = $this->request->getPost("class_id");
-			if (count($ids) == 0) {
-				return $this->response->setJSON(array("error" => lang("app.optionsErr")));
-			}
-			$sent = 0;
-			$all = 0;
-			$sid = $smsMdl->insert(array("school_id" => $this->session->get("soma_school_id")
-			, "active_term" => $this->data['active_term'], "content" => $message, "recipient_type" => 0
-			, "subject" => "Communication"));
-			if ($sid === false)
-				return $this->response->setJSON(array("error" => lang("app.smsErr")));
-			foreach ($ids as $id) {
-				$phones = $stMdl->get_student("c.id={$id} AND (ft_phone!='' OR mt_phone!='' OR gd_phone!='')", null, "students.id,ft_phone,mt_phone,gd_phone");
-				foreach ($phones as $phone) {
-					$all++;
-					$p = strlen(trim($phone["ft_phone"])) > 4 ? $phone["ft_phone"] : (strlen(trim($phone["mt_phone"])) > 4 ? $phone["mt_phone"] :
-							(strlen(trim($phone["gd_phone"])) > 4 ? $phone["gd_phone"] : ""));
-					try {
-						$smsRMdl->save(array("sms_record_id" => $sid, "receiver_id" => $phone['id'], "phone" => $p, "status" => 0));
-						$sent++;
-					} catch (\Exception $e) {
-						//future use
-						return $this->response->setJSON(array("error" => "Error: " . $e));
-					}
-				}
-			}
-			$param = base_url("background_process/2");
-			$command = "curl $param > /dev/null &";
-			exec($command);
-			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all", "sms_id" => $sid));
+			$idSql = "c.id=%d";
 		} else if ($type == "student") {
-			//send to selected departments
 			$ids = $this->request->getPost("studentId");
-			if (count($ids) == 0) {
-				return $this->response->setJSON(array("error" => lang("app.optionsErr")));
+			$idSql = "students.id=%d";
+		} else {
+			return $this->response->setJSON(array("error" => lang("app.optionsErr")));
+		}
+		if (!is_array($ids) || count($ids) == 0) {
+			return $this->response->setJSON(array("error" => lang("app.optionsErr")));
+		}
+		$modeSql = $this->parentSmsAudienceSql((int) $mode_boarding, (int) $mode_day);
+		if ($type !== "student" && $modeSql === "") {
+			return $this->response->setJSON(array("error" => lang("app.optionsErr")));
+		}
+		if ($type === "student") {
+			$modeSql = "1=1";
+		}
+		$sid = $smsMdl->insert(array("school_id" => $this->session->get("soma_school_id")
+		, "active_term" => $this->data['active_term'], "content" => $message, "recipient_type" => 0
+		, "subject" => "Communication"));
+		if ($sid === false)
+			return $this->response->setJSON(array("error" => lang("app.smsErr")));
+		$sent = 0;
+		$all = 0;
+		foreach ($ids as $id) {
+			$id = (int) $id;
+			if ($id < 1) {
+				continue;
 			}
-			$sent = 0;
-			$all = 0;
-			$sid = $smsMdl->insert(array("school_id" => $this->session->get("soma_school_id")
-			, "active_term" => $this->data['active_term'], "content" => $message, "recipient_type" => 0
-			, "subject" => "Communication"));
-			if ($sid === false)
-				return $this->response->setJSON(array("error" => lang("app.smsErr")));
-			foreach ($ids as $id) {
-				$phones = $stMdl->get_student("students.id={$id} AND (ft_phone!='' OR mt_phone!='' OR gd_phone!='')", null, "students.id,ft_phone,mt_phone,gd_phone");
-				foreach ($phones as $phone) {
+			$students = $stMdl->get_student(sprintf($idSql, $id) . " AND {$modeSql}", null, "students.id,students.studying_mode,ft_phone,mt_phone,gd_phone");
+			$seenStudents = [];
+			foreach ($students as $student) {
+				$studentId = (int) ($student['id'] ?? 0);
+				if ($studentId < 1 || isset($seenStudents[$studentId])) {
+					continue;
+				}
+				$seenStudents[$studentId] = true;
+				foreach (array_keys($this->_parent_rwandan_lines($student)) as $msisdn) {
 					$all++;
-					$p = strlen(trim($phone["ft_phone"])) > 4 ? $phone["ft_phone"] : (strlen(trim($phone["mt_phone"])) > 4 ? $phone["mt_phone"] :
-							(strlen(trim($phone["gd_phone"])) > 4 ? $phone["gd_phone"] : ""));
 					try {
-						$smsRMdl->save(array("sms_record_id" => $sid, "receiver_id" => $phone['id'], "phone" => $p, "status" => 0));
+						$smsRMdl->save(array("sms_record_id" => $sid, "receiver_id" => $studentId, "phone" => $msisdn, "status" => 0));
 						$sent++;
 					} catch (\Exception $e) {
-						//future use
-						return $this->response->setJSON(array("error" => "Error: " . $e));
+						return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 					}
 				}
 			}
-			$param = base_url("background_process/2");
-			$command = "curl $param > /dev/null &";
-			exec($command);
-			return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all", "sms_id" => $sid));
 		}
+		$param = base_url("background_process/2");
+		$command = "curl $param > /dev/null &";
+		exec($command);
+		return $this->response->setJSON(array("success" => lang("app.beSent") . " $sent" . lang("app.over") . " $all", "sms_id" => $sid));
+	}
+
+	/** Boarding is studying_mode 0, day is 1. Empty when neither audience is selected. */
+	private function parentSmsAudienceSql(int $boarding, int $day): string
+	{
+		if ($boarding === 1 && $day === 1) {
+			return "1=1";
+		}
+		if ($boarding === 1) {
+			return "students.studying_mode=0";
+		}
+		if ($day === 1) {
+			return "students.studying_mode=1";
+		}
+		return "";
 	}
 
 	public

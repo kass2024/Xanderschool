@@ -478,20 +478,71 @@ AND `students`.`school_id`={$_SESSION['soma_school_id']} AND students.status=1")
 
 	public function student_department_phone()
 	{
-		$data = $this->db->query("SELECT d.id,sum(if(st.studying_mode=0,1,0)) as boarding,sum(if((st.studying_mode=0 AND (ft_phone!='' OR mt_phone!='' OR gd_phone!='')),1,0)) as boarding_phone
-,sum(if(st.studying_mode=1,1,0)) as day,sum(if((st.studying_mode=1 AND (ft_phone!='' OR mt_phone!='' OR gd_phone!='')),1,0)) as day_phone,d.title,d.code from students st
+		$agg = $this->parentPhoneAggregateSql();
+		$scope = $this->parentPhoneScopeSql();
+		$data = $this->db->query("SELECT d.id,{$agg},d.title,d.code from students st
 inner join class_records cl on st.id = cl.student inner join classes c on c.id = cl.class inner join departments d on d.id = c.department
-where st.school_id={$_SESSION['soma_school_id']} AND st.status=1 group by d.id");
+where {$scope} group by d.id");
 		return $data->getResultArray();
 	}
 
 	public function student_class_phone()
 	{
-		$data = $this->db->query("SELECT c.id,sum(if(st.studying_mode=0,1,0)) as boarding,sum(if((st.studying_mode=0 AND (ft_phone!='' OR mt_phone!='' OR gd_phone!='')),1,0)) as boarding_phone
-,sum(if(st.studying_mode=1,1,0)) as day,sum(if((st.studying_mode=1 AND (ft_phone!='' OR mt_phone!='' OR gd_phone!='')),1,0)) as day_phone,c.title as class,d.code,l.title as level from students st
+		$agg = $this->parentPhoneAggregateSql();
+		$scope = $this->parentPhoneScopeSql();
+		$data = $this->db->query("SELECT c.id,{$agg},c.title as class,d.code,l.title as level from students st
 inner join class_records cl on st.id = cl.student inner join classes c on c.id = cl.class inner join departments d on d.id = c.department
- inner join levels l on l.id = c.level where st.school_id={$_SESSION['soma_school_id']}  AND st.status=1 group by c.id");
+ inner join levels l on l.id = c.level where {$scope} group by c.id");
 		return $data->getResultArray();
+	}
+
+	/**
+	 * Same rules as BaseController::_rwandan_parent_msisdn: 2507 + 8 digits, once per distinct line.
+	 */
+	private function rwParentMsisdnSql(string $column): string
+	{
+		$clean = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL({$column},''),'+',''),' ',''),'-',''),'(',''),')',''),'.','')";
+		return "CASE
+			WHEN {$clean} REGEXP '^25007[0-9]{8}$' THEN CONCAT('250', SUBSTRING({$clean}, 5, 9))
+			WHEN {$clean} REGEXP '^0025007[0-9]{8}$' THEN CONCAT('250', SUBSTRING({$clean}, 7, 9))
+			WHEN {$clean} REGEXP '^2507[0-9]{8}$' THEN {$clean}
+			WHEN {$clean} REGEXP '^002507[0-9]{8}$' THEN SUBSTRING({$clean}, 3, 12)
+			WHEN {$clean} REGEXP '^07[0-9]{8}$' THEN CONCAT('250', SUBSTRING({$clean}, 2, 9))
+			WHEN {$clean} REGEXP '^7[0-9]{8}$' THEN CONCAT('250', {$clean})
+			ELSE ''
+		END";
+	}
+
+	private function rwParentLineCountSql(string $alias = 'st'): string
+	{
+		$ft = $this->rwParentMsisdnSql("{$alias}.ft_phone");
+		$mt = $this->rwParentMsisdnSql("{$alias}.mt_phone");
+		$gd = $this->rwParentMsisdnSql("{$alias}.gd_phone");
+		return "((CASE WHEN ({$ft}) <> '' THEN 1 ELSE 0 END)"
+			. " + (CASE WHEN ({$mt}) <> '' AND ({$mt}) <> ({$ft}) THEN 1 ELSE 0 END)"
+			. " + (CASE WHEN ({$gd}) <> '' AND ({$gd}) <> ({$ft}) AND ({$gd}) <> ({$mt}) THEN 1 ELSE 0 END))";
+	}
+
+	private function parentPhoneAggregateSql(): string
+	{
+		$lines = $this->rwParentLineCountSql('st');
+		return "sum(if(st.studying_mode=0,1,0)) as boarding"
+			. ",sum(if(st.studying_mode=0,{$lines},0)) as boarding_phone"
+			. ",sum(if(st.studying_mode=0 AND ({$lines})>0,1,0)) as boarding_with"
+			. ",sum(if(st.studying_mode=1,1,0)) as day"
+			. ",sum(if(st.studying_mode=1,{$lines},0)) as day_phone"
+			. ",sum(if(st.studying_mode=1 AND ({$lines})>0,1,0)) as day_with";
+	}
+
+	private function parentPhoneScopeSql(): string
+	{
+		$schoolId = (int) ($_SESSION['soma_school_id'] ?? 0);
+		$year = (int) ($_SESSION['soma_academics_year'] ?? 0);
+		$sql = "st.school_id={$schoolId} AND st.status=1 AND cl.status=1";
+		if ($year > 0) {
+			$sql .= " AND cl.year={$year}";
+		}
+		return $sql;
 	}
 
 	public function search_student_api($hint, $school, $type = 0)

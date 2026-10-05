@@ -1,4 +1,28 @@
-<div class="main-card mb-3 card col-sm-12 col-md-12 col-lg-12">
+<style>
+	.comm-portal .card-body > form { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+	.comm-portal .comm-recipients, .comm-portal .comm-compose { float: none !important; width: auto; max-width: 100%; padding: 0; }
+	.comm-portal .comm-recipients { flex: 1 1 340px; min-width: 0; }
+	.comm-portal .comm-compose { flex: 1 1 280px; background: #fff; border: 1px solid #e6e8ee; border-radius: 12px; padding: 14px; }
+	.comm-progress { flex: 1 1 100%; background: #fff; border: 1px solid #e6e8ee; border-radius: 12px; padding: 14px; }
+	.comm-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+	.comm-kpi { border-radius: 10px; padding: 10px 12px; background: #f8fafc; border-top: 4px solid #1d4ed8; }
+	.comm-kpi b { display: block; font-size: 1.35rem; line-height: 1.1; }
+	.comm-kpi span { color: #6b7280; font-size: .78rem; }
+	.comm-kpi.green { border-top-color: #16a34a; } .comm-kpi.green b { color: #16a34a; }
+	.comm-kpi.red { border-top-color: #dc2626; } .comm-kpi.red b { color: #dc2626; }
+	.comm-kpi.blue b { color: #1d4ed8; }
+	.comm-bar-track { height: 14px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+	.comm-bar { height: 100%; width: 0; background: #1d4ed8; color: #fff; font-size: 11px; text-align: center; line-height: 14px; }
+	.comm-failed { list-style: none; margin: 10px 0 0; padding: 0; max-height: 240px; overflow: auto; }
+	.comm-failed li { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0; border-bottom: 1px solid #fee2e2; color: #991b1b; }
+	.comm-failed li span { color: #6b7280; }
+	@media (max-width: 700px) {
+		.comm-kpis { grid-template-columns: 1fr; }
+		.comm-portal .card-header .nav { display: flex; flex-wrap: wrap; gap: 6px; }
+		.comm-portal #btn_send_sms { width: 100% !important; }
+	}
+</style>
+<div class="main-card mb-3 card col-sm-12 col-md-12 col-lg-12 comm-portal">
 	<div class="card-header">
 		<div class="btn-actions-pane-left">
 			<div class="nav">
@@ -13,26 +37,31 @@
 		<span class="pull-right"><?= lang("app.parentMessaging"); ?></span>
 	</div>
 	<div class="card-body">
-		<form class="validate autoSubmit" action="<?=base_url('send_multiple_sms');?>">
+		<form class="validate comm-sms-form" action="<?=base_url('send_multiple_sms');?>">
 			<input type="hidden" id="type" value="dep" name="type">
-			<div class="tab-content col-sm-12 col-lg-7 col-md-7 pull-left">
+			<div class="tab-content comm-recipients">
 				<div class="tab-pane active" id="tab-department" role="tabpanel">
 					<div class="card-body">
 						<div class="position-relative form-group">
 							<div>
 								<?php
 								foreach ($departments as $dept) {
+									$phoneLines = (int) $dept['boarding_phone'] + (int) $dept['day_phone'];
+									$missingParents = (int) $dept['boarding'] + (int) $dept['day'] - (int) ($dept['boarding_with'] ?? 0) - (int) ($dept['day_with'] ?? 0);
+									if ($missingParents < 0) {
+										$missingParents = 0;
+									}
 									?>
 									<div class="custom-checkbox custom-control" style="margin-bottom: 10px">
 										<input type="checkbox" name="dept_id[]"
-											   data-boarding="<?= $dept['boarding_phone']; ?>"
-											   data-day="<?= $dept['day_phone']; ?>"
+											   data-boarding="<?= (int) $dept['boarding_phone']; ?>"
+											   data-day="<?= (int) $dept['day_phone']; ?>"
 											   id="chk_dept<?= $dept['id'];?>" value="<?= $dept['id']; ?>" class="custom-control-input chk_item">
 										<label class="custom-control-label" for="chk_dept<?= $dept['id']; ?>"><?= lang("app.fromParent"); ?> <?= $dept['title']; ?>
 											<span class="text-boxed text-success"><i
-													class="fa fa-phone"><?= $dept['boarding_phone'] + $dept['day_phone']; ?></i> </span>
+													class="fa fa-phone"><?= $phoneLines; ?></i> </span>
 											<span class="text-boxed text-danger"><i
-													class="fa fa-times"><?= $dept['boarding'] + $dept['day'] - $dept['day_phone'] - $dept['boarding_phone']; ?></i> </span>
+													class="fa fa-times"><?= $missingParents; ?></i> </span>
 										</label>
 									</div>
 									<?php
@@ -48,17 +77,22 @@
 							<div>
 								<?php
 								foreach ($classes as $class) {
+									$phoneLines = (int) $class['boarding_phone'] + (int) $class['day_phone'];
+									$missingParents = (int) $class['boarding'] + (int) $class['day'] - (int) ($class['boarding_with'] ?? 0) - (int) ($class['day_with'] ?? 0);
+									if ($missingParents < 0) {
+										$missingParents = 0;
+									}
 									?>
 									<div class="custom-checkbox custom-control" style="margin-bottom: 10px">
 										<input type="checkbox" name="class_id[]"
-											   data-boarding="<?= $class['boarding_phone']; ?>"
-											   data-day="<?= $class['day_phone']; ?>"
+											   data-boarding="<?= (int) $class['boarding_phone']; ?>"
+											   data-day="<?= (int) $class['day_phone']; ?>"
 											   id="chk_class<?= $class['id'];?>" value="<?= $class['id']; ?>" class="custom-control-input chk_item">
 										<label class="custom-control-label" for="chk_class<?= $class['id']; ?>"><?= lang("app.fromParent"); ?><?= $class['level'].' '.$class['code'].' '.$class['class']; ?>
 											<span class="text-boxed text-success"><i
-													class="fa fa-phone"><?= $class['boarding_phone'] + $class['day_phone']; ?></i> </span>
+													class="fa fa-phone"><?= $phoneLines; ?></i> </span>
 											<span class="text-boxed text-danger"><i
-													class="fa fa-times"><?= $class['boarding'] + $class['day'] - $class['day_phone'] - $class['boarding_phone']; ?></i> </span>
+													class="fa fa-times"><?= $missingParents; ?></i> </span>
 										</label>
 									</div>
 									<?php
@@ -106,7 +140,7 @@
 					<span class="badge badge-primary" id="sms_to_send" style="font-size: 25pt">0</span>
 				</div>
 			</div>
-			<div class="col-lg-5 col-md-5 col-sm-12 pull-left">
+			<div class="comm-compose">
 				<div style="background:white;padding: 10px">
 					<div class="row" style="">
 						<div class="position-relative form-group">
@@ -141,8 +175,7 @@
 
 							<center>
 								<button type="submit" class="btn btn-success btn-lg"
-										style="width: 50%;font-size: 14px;" id="btn_send_sms" disabled
-										data-target="<?= base_url('messaging/parents'); ?>"><i
+										style="width: 50%;font-size: 14px;" id="btn_send_sms" disabled><i
 										class="typcn typcn-messages"></i>
 									<?= lang("app.endSMS"); ?>
 								</button>
@@ -150,6 +183,16 @@
 						</div>
 					</div>
 				</div>
+			</div>
+			<div class="comm-progress" id="commProgress" style="display:none">
+				<strong id="commStatusLabel">Sending messages…</strong>
+				<div class="comm-kpis">
+					<div class="comm-kpi blue"><b id="commPending">0</b><span>Waiting</span></div>
+					<div class="comm-kpi green"><b id="commSent">0</b><span>Delivered</span></div>
+					<div class="comm-kpi red"><b id="commFailed">0</b><span>Failed</span></div>
+				</div>
+				<div class="comm-bar-track"><div class="comm-bar" id="commBar">0%</div></div>
+				<ul class="comm-failed" id="commFailedList"></ul>
 			</div>
 		</form>
 	</div>
@@ -220,7 +263,8 @@
 		$.each($(".chk_item"), function () {
 			if ($(this).is(":checked")) {
 				if (type=="student"){
-					total_sms_count += 1;
+					var lines = parseInt($(this).attr("data-lines"), 10);
+					total_sms_count += (lines > 0 ? lines : 1);
 				}else {
 					var boarding = $("#chk-boarding").is(":checked") ? $(this).data("boarding") : 0;
 					var day = $("#chk-day").is(":checked") ? $(this).data("day") : 0;
@@ -235,6 +279,65 @@
 		} else {
 			$("#btn_send_sms").prop("disabled", false);
 		}
+	}
+	var commPoll = null;
+	$(".comm-sms-form").on("submit", function (e) {
+		e.preventDefault();
+		e.stopImmediatePropagation();
+		var form = $(this);
+		var btn = $("#btn_send_sms");
+		var original = btn.html();
+		btn.prop("disabled", true).html('<i class="fa fa-spinner fa-spin"></i> Sending…');
+		$.ajax({
+			url: form.attr("action"),
+			type: "POST",
+			data: form.serialize(),
+			dataType: "json"
+		}).done(function (data) {
+			btn.html(original);
+			if (data.error) {
+				toastada.error(data.error);
+				btn.prop("disabled", false);
+				return;
+			}
+			toastada.success(data.success || "Messages queued.");
+			if (data.sms_id) {
+				commWatch(data.sms_id);
+			} else {
+				btn.prop("disabled", false);
+			}
+		}).fail(function () {
+			btn.html(original).prop("disabled", false);
+			toastada.error("Could not send messages.");
+		});
+	});
+	function commWatch(smsId) {
+		if (commPoll) clearInterval(commPoll);
+		$("#commProgress").show();
+		$("#commStatusLabel").text("Sending messages…");
+		$("#commFailedList").empty();
+		function tick() {
+			$.getJSON("<?= base_url('sms_delivery_status/'); ?>" + smsId, function (res) {
+				if (!res || res.error) return;
+				$("#commPending").text(res.pending);
+				$("#commSent").text(res.sent);
+				$("#commFailed").text(res.failed);
+				$("#commBar").css("width", res.percent + "%").text(res.percent + "%");
+				var html = "";
+				$.each(res.failed_list || [], function (_, row) {
+					html += "<li><b>" + $("<div>").text(row.name).html() + "</b> " + $("<div>").text(row.phone).html() + " <span>" + $("<div>").text(row.reason).html() + "</span></li>";
+				});
+				$("#commFailedList").html(html);
+				if (res.pending === 0) {
+					clearInterval(commPoll);
+					commPoll = null;
+					$("#commStatusLabel").text(res.failed > 0 ? "Finished. Some messages failed." : "All messages delivered.");
+					$("#btn_send_sms").prop("disabled", false);
+				}
+			});
+		}
+		tick();
+		commPoll = setInterval(tick, 2000);
 	}
 	function formatRepoSelection(repo, isClass = false) {
 		var id = repo.id;
