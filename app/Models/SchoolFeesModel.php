@@ -394,6 +394,133 @@ class SchoolFeesModel extends Model
 	}
 
 	/**
+	 * Give every regular class the same school fee as its siblings in the same level and department.
+	 * A class with its own row is left unchanged. Holiday classes are skipped.
+	 * Sibling amounts must already agree; mixed amounts are not copied.
+	 */
+	public function ensureSiblingClassFees(int $schoolId, int $academicYear): int
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $academicYear < 1) {
+			return 0;
+		}
+		static $done = [];
+		$key = $schoolId . ':' . $academicYear;
+		if (isset($done[$key])) {
+			return 0;
+		}
+		$done[$key] = true;
+
+		$db = \Config\Database::connect();
+		$notHoliday = "IFNULL(%s,'') NOT LIKE '%%Holiday%%'";
+		$classes = $db->table('classes c')
+			->select('c.id, c.level, c.department')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
+			->where('c.school_id', $schoolId)
+			->where(sprintf($notHoliday, 'c.title'), null, false)
+			->where(sprintf($notHoliday, 'l.title'), null, false)
+			->where(sprintf($notHoliday, 'd.title'), null, false)
+			->where(sprintf($notHoliday, 'd.code'), null, false)
+			->where(sprintf($notHoliday, 'f.title'), null, false)
+			->get()->getResultArray();
+		if ($classes === []) {
+			return 0;
+		}
+
+		$feeRows = $db->table('school_fees sf')
+			->select('sf.class_id, sf.level, sf.department, sf.term, sf.amount, sf.amount_boarding, sf.amount_day, sf.created_by')
+			->join('classes c', 'c.id = sf.class_id')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->where('sf.school_id', $schoolId)
+			->where('sf.academic_year', $academicYear)
+			->where('sf.class_id >', 0)
+			->where(sprintf($notHoliday, 'c.title'), null, false)
+			->where(sprintf($notHoliday, 'l.title'), null, false)
+			->where(sprintf($notHoliday, 'd.title'), null, false)
+			->where(sprintf($notHoliday, 'd.code'), null, false)
+			->get()->getResultArray();
+
+		$levelWide = [];
+		foreach ($db->table('school_fees')
+			->select('level, department, term')
+			->where('school_id', $schoolId)
+			->where('academic_year', $academicYear)
+			->groupStart()
+				->where('class_id IS NULL', null, false)
+				->orWhere('class_id', 0)
+			->groupEnd()
+			->get()->getResultArray() as $row) {
+			$levelWide[(int) $row['level'] . ':' . (int) $row['department'] . ':' . (int) $row['term']] = true;
+		}
+
+		$byClassTerm = [];
+		$siblings = [];
+		foreach ($feeRows as $row) {
+			$term = (int) ($row['term'] ?? 0);
+			$classId = (int) ($row['class_id'] ?? 0);
+			if ($term < 1 || $classId < 1) {
+				continue;
+			}
+			$byClassTerm[$classId . ':' . $term] = true;
+			$group = (int) $row['level'] . ':' . (int) $row['department'] . ':' . $term;
+			$signature = (float) ($row['amount'] ?? 0) . '|'
+				. ($row['amount_boarding'] === null || $row['amount_boarding'] === '' ? 'n' : (float) $row['amount_boarding']) . '|'
+				. ($row['amount_day'] === null || $row['amount_day'] === '' ? 'n' : (float) $row['amount_day']);
+			if (!isset($siblings[$group])) {
+				$siblings[$group] = ['signature' => $signature, 'row' => $row, 'mixed' => false];
+				continue;
+			}
+			if ($siblings[$group]['signature'] !== $signature) {
+				$siblings[$group]['mixed'] = true;
+			}
+		}
+
+		$now = date('Y-m-d H:i:s');
+		$created = 0;
+		foreach ($classes as $class) {
+			$classId = (int) $class['id'];
+			$levelId = (int) $class['level'];
+			$deptId = (int) $class['department'];
+			for ($term = 1; $term <= 3; $term++) {
+				if (isset($byClassTerm[$classId . ':' . $term])) {
+					continue;
+				}
+				$group = $levelId . ':' . $deptId . ':' . $term;
+				if (isset($levelWide[$group]) || !isset($siblings[$group]) || !empty($siblings[$group]['mixed'])) {
+					continue;
+				}
+				$src = $siblings[$group]['row'];
+				$amount = (float) ($src['amount'] ?? 0);
+				$boarding = ($src['amount_boarding'] === null || $src['amount_boarding'] === '') ? null : (float) $src['amount_boarding'];
+				$day = ($src['amount_day'] === null || $src['amount_day'] === '') ? null : (float) $src['amount_day'];
+				if ($amount <= 0 && ($boarding === null || $boarding <= 0) && ($day === null || $day <= 0)) {
+					continue;
+				}
+				$db->table('school_fees')->insert([
+					'school_id' => $schoolId,
+					'level' => $levelId,
+					'department' => $deptId,
+					'class_id' => $classId,
+					'amount' => $amount,
+					'amount_boarding' => $boarding,
+					'amount_day' => $day,
+					'term' => $term,
+					'academic_year' => $academicYear,
+					'created_by' => (int) ($src['created_by'] ?? 0),
+					'created_at' => $now,
+					'updated_at' => $now,
+				]);
+				$byClassTerm[$classId . ':' . $term] = true;
+				$created++;
+			}
+		}
+		return $created;
+	}
+
+	/**
 	 * Attach paid amounts and real scholarships. Payment rows are only read.
 	 *
 	 * @param list<array<string,mixed>> $rows

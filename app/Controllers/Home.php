@@ -19303,6 +19303,7 @@ public function getApplicationDocs($id = null)
 		$data['selectedYear'] = (int) $this->data['academic_year'];
 		$data['currentTerm'] = (int) ($this->data['term'] ?? 1);
 		(new FeesRecordModel())->ensureSchema();
+		(new SchoolFeesModel())->ensureSiblingClassFees((int) $school_id, (int) $data['selectedYear']);
 		$data['selectedYearTitle'] = '';
 		foreach ($data['years'] as $yr) {
 			if ((int) $yr['id'] === $data['selectedYear']) {
@@ -20320,6 +20321,7 @@ public function getApplicationDocs($id = null)
 				->where("classes.id", $class)
 				->get()->getRowArray();
 		$schoolFees->ensureSchema();
+		$schoolFees->ensureSiblingClassFees((int) $school_id, (int) $year);
 		$schoolfrees = $schoolFees->linesForClass(
 			(int) $school_id,
 			(int) $year,
@@ -20407,6 +20409,7 @@ public function getApplicationDocs($id = null)
 		$items = [];
 
 		$schoolFees->ensureSchema();
+		$schoolFees->ensureSiblingClassFees($school_id, $year);
 		$schoolRows = $schoolFees->linesForClass(
 			$school_id,
 			$year,
