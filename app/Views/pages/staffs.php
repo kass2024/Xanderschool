@@ -1,6 +1,6 @@
 <div class="app-inner-layout app-inner-layout-page">
 <link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>">
-<link rel="stylesheet" href="<?= base_url('assets/css/staff-share-access.css') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/staff-share-access.css?v=2') ?>">
 	<div class="app-inner-layout__wrapper">
 		<div class="app-inner-layout__content">
 			<div class="tab-content">
@@ -67,9 +67,6 @@
 								<button type="button" id="btnShareSelectedStaff" class="btn btn-sm btn-info" disabled>
 									<i class="fa fa-share-alt"></i> Share access to selected
 								</button>
-								<button type="button" id="btnStaffSmsTest" class="btn btn-sm btn-outline-success">
-									<i class="fa fa-comment"></i> SMS test (Test Staff)
-								</button>
 								<span id="staffShareCount">None selected</span>
 							</div>
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
@@ -90,6 +87,8 @@
 												<th><?= lang("app.shift");?></th>
 												<th><?= lang("app.lastLogin");?></th>
 												<th><?= lang("app.createdTime");?> </th>
+												<th>Contract start</th>
+												<th>Contract end</th>
 												<th><?= lang("app.status");?></th>
 												<th class="staff-actions-col">Actions</th>
 											</tr>
@@ -97,6 +96,15 @@
 											<tbody>
 											<?php
 											helper('qonics');
+											$canSetStaffContract = \Config\MenuClearance::canSetStaffContract((int) ($_SESSION['soma_post'] ?? 0));
+											$staffContractDay = static function ($value): string {
+												$value = trim((string) $value);
+												if ($value === '' || $value === '0000-00-00') {
+													return '';
+												}
+												$ts = strtotime($value);
+												return $ts ? date('Y-m-d', $ts) : '';
+											};
 											foreach ($staffs as $staff) {
 												$status = $staff['status']==1 || $staff['status']==2?'<label class="text-success lnk" data-toggle="update" data-href="change_status/staff/0" data-target="'.$staff["id"].'">'.lang("app.active").'</label>'
 													:'<label class="text-danger lnk" data-toggle="update" data-href="change_status/staff/1" data-target="'.$staff["id"].'">'.lang("app.locked").'</label>';
@@ -141,6 +149,28 @@
 												<td data-shift="<?=$staff['shift_id'];?>" data-shift_title="<?=$staff['shift_title'];?>"><?=$shift;?></td>
 												<td><?=date("Y-d-m H:i:s",$staff['last_login']);?></td>
 												<td><?=$staff['created_at'];?></td>
+												<?php
+												$contractStart = $staffContractDay($staff['contract_start'] ?? '');
+												$contractEnd = $staffContractDay($staff['contract_end'] ?? '');
+												?>
+												<td class="staff-contract-cell">
+													<?php if ($canSetStaffContract): ?>
+														<input type="date" class="form-control form-control-sm staff-contract-input"
+															data-staff-id="<?= (int) $staff['id']; ?>" data-which="start"
+															value="<?= esc($contractStart, 'attr'); ?>" title="Contract start, optional">
+													<?php else: ?>
+														<?= $contractStart !== '' ? esc(date('d M Y', strtotime($contractStart))) : '—'; ?>
+													<?php endif; ?>
+												</td>
+												<td class="staff-contract-cell">
+													<?php if ($canSetStaffContract): ?>
+														<input type="date" class="form-control form-control-sm staff-contract-input"
+															data-staff-id="<?= (int) $staff['id']; ?>" data-which="end"
+															value="<?= esc($contractEnd, 'attr'); ?>" title="Contract end, optional">
+													<?php else: ?>
+														<?= $contractEnd !== '' ? esc(date('d M Y', strtotime($contractEnd))) : '—'; ?>
+													<?php endif; ?>
+												</td>
 												<td><?=$status;?></td>
 												<td class="staff-actions-cell">
 													<div class="staff-actions-wrap">
@@ -676,37 +706,35 @@
 			});
 		}
 
-		var smsTestBtn = document.getElementById('btnStaffSmsTest');
-		if (smsTestBtn) {
-			smsTestBtn.addEventListener('click', function () {
-				Swal.fire(Object.assign({}, ssaSwalBase, {
-					title: 'Send SMS test',
-					html: 'Send a test SMS to the staff member named <strong>Test Staff</strong>? The password is not changed.',
-					icon: 'question',
-					showCancelButton: true,
-					confirmButtonText: 'Send test',
-					cancelButtonText: 'Cancel'
-				})).then(function (choice) {
-					if (!choice.isConfirmed) return;
-					smsTestBtn.disabled = true;
-					fetch('<?= base_url('send_staff_sms_test'); ?>', {
-						method: 'POST',
-						headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-						credentials: 'same-origin'
-					}).then(function (r) { return r.json(); }).then(function (res) {
-						if (res.success) {
-							Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'success', title: 'SMS sent', text: res.success }));
-						} else {
-							Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'error', title: 'SMS test failed', text: res.error || 'Could not send.' }));
-						}
-					}).catch(function (err) {
-						Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'error', title: 'Network error', text: err.message || 'Request failed.' }));
-					}).finally(function () {
-						smsTestBtn.disabled = false;
-					});
-				});
+		document.addEventListener('change', function (e) {
+			if (!e.target || !e.target.classList.contains('staff-contract-input')) return;
+			var staffId = e.target.getAttribute('data-staff-id');
+			var inputs = document.querySelectorAll('.staff-contract-input[data-staff-id="' + staffId + '"]');
+			var start = '', end = '';
+			inputs.forEach(function (input) {
+				if (input.getAttribute('data-which') === 'end') end = input.value;
+				else start = input.value;
+				input.disabled = true;
 			});
-		}
+			var body = new URLSearchParams();
+			body.set('staff_id', staffId);
+			body.set('contract_start', start);
+			body.set('contract_end', end);
+			fetch('<?= base_url('save_staff_contract'); ?>', {
+				method: 'POST',
+				headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' },
+				credentials: 'same-origin',
+				body: body.toString()
+			}).then(function (r) { return r.json(); }).then(function (res) {
+				if (res.error) {
+					Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'error', title: 'Contract dates', text: res.error }));
+				}
+			}).catch(function () {
+				Swal.fire(Object.assign({}, ssaSwalBase, { icon: 'error', title: 'Contract dates', text: 'Could not save the contract dates.' }));
+			}).finally(function () {
+				inputs.forEach(function (input) { input.disabled = false; });
+			});
+		});
 		refreshStaffShareCount();
 	});
 </script>

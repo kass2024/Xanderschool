@@ -64,6 +64,22 @@
 								Work shift can be assigned later from <strong>View all staffs</strong> or
 								<strong>School settings → Staff attendance settings</strong>.
 							</p>
+							<?php if (\Config\MenuClearance::canSetStaffContract((int) ($_SESSION['soma_post'] ?? 0))): ?>
+							<div class="row">
+								<div class="col-md-6">
+									<div class="form-group">
+										<label>Contract start <span class="text-muted">(optional)</span></label>
+										<input class="form-control" type="date" name="contract_start">
+									</div>
+								</div>
+								<div class="col-md-6">
+									<div class="form-group">
+										<label>Contract end <span class="text-muted">(optional)</span></label>
+										<input class="form-control" type="date" name="contract_end">
+									</div>
+								</div>
+							</div>
+							<?php endif; ?>
 							<div class="row">
 								<div class="col-md-6">
 									<div class="form-group">

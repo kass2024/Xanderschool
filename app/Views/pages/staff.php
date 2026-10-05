@@ -56,6 +56,41 @@
 					<span data-value="<?= $staff['address']; ?>" data-target="address"
 						  class="spedit">&nbsp;<?= $staff['address']; ?></span>
 				</div>
+				<?php
+				$canSetStaffContract = \Config\MenuClearance::canSetStaffContract((int) ($_SESSION['soma_post'] ?? 0));
+				$contractDay = static function ($value): string {
+					$value = trim((string) $value);
+					if ($value === '' || $value === '0000-00-00') {
+						return '';
+					}
+					$ts = strtotime($value);
+					return $ts ? date('Y-m-d', $ts) : '';
+				};
+				$contractStart = $contractDay($staff['contract_start'] ?? '');
+				$contractEnd = $contractDay($staff['contract_end'] ?? '');
+				?>
+				<div class="form-group">
+					<label>Contract start:</label>
+					<?php if ($canSetStaffContract): ?>
+						<input type="date" class="form-control staff-contract-input" style="max-width:220px;display:inline-block;"
+							data-staff-id="<?= (int) $staff['id']; ?>" data-which="start"
+							value="<?= esc($contractStart, 'attr'); ?>">
+						<span class="text-muted small">Optional</span>
+					<?php else: ?>
+						<span><?= $contractStart !== '' ? esc(date('d M Y', strtotime($contractStart))) : '—'; ?></span>
+					<?php endif; ?>
+				</div>
+				<div class="form-group">
+					<label>Contract end:</label>
+					<?php if ($canSetStaffContract): ?>
+						<input type="date" class="form-control staff-contract-input" style="max-width:220px;display:inline-block;"
+							data-staff-id="<?= (int) $staff['id']; ?>" data-which="end"
+							value="<?= esc($contractEnd, 'attr'); ?>">
+						<span class="text-muted small">Optional</span>
+					<?php else: ?>
+						<span><?= $contractEnd !== '' ? esc(date('d M Y', strtotime($contractEnd))) : '—'; ?></span>
+					<?php endif; ?>
+				</div>
 			</div>
 		</div>
 	<div class="col-sm-12 col-md-5 col-lg-5 pull-left">
@@ -321,4 +356,31 @@
 	Upload.prototype.progressHandling = function (event) {
 
 	};
+
+	$(document).on('change', '.staff-contract-input', function () {
+		var staffId = $(this).data('staff-id');
+		var inputs = $('.staff-contract-input[data-staff-id="' + staffId + '"]');
+		var start = '';
+		var end = '';
+		inputs.each(function () {
+			if ($(this).data('which') === 'end') end = $(this).val();
+			else start = $(this).val();
+		});
+		inputs.prop('disabled', true);
+		$.post('<?= base_url('save_staff_contract'); ?>', {
+			staff_id: staffId,
+			contract_start: start,
+			contract_end: end
+		}, function (data) {
+			if (data && data.error) {
+				toastada.error(data.error);
+			} else if (data && data.success) {
+				toastada.success(data.success);
+			}
+		}, 'json').fail(function () {
+			toastada.error('Could not save the contract dates.');
+		}).always(function () {
+			inputs.prop('disabled', false);
+		});
+	});
 </script>

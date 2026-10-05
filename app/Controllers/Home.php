@@ -2196,6 +2196,72 @@ public function testEmail()
 		$done = true;
 	}
 
+	private function ensureStaffContractColumns(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists('staffs')) {
+			if (!$db->fieldExists('contract_start', 'staffs')) {
+				$db->query('ALTER TABLE `staffs` ADD COLUMN `contract_start` DATE NULL DEFAULT NULL');
+			}
+			if (!$db->fieldExists('contract_end', 'staffs')) {
+				$db->query('ALTER TABLE `staffs` ADD COLUMN `contract_end` DATE NULL DEFAULT NULL');
+			}
+		}
+		$done = true;
+	}
+
+	/**
+	 * @return array{start:?string,end:?string,error:?string}
+	 */
+	private function postedStaffContract(): array
+	{
+		$out = ['start' => null, 'end' => null, 'error' => null];
+		foreach (['contract_start' => 'start', 'contract_end' => 'end'] as $postKey => $key) {
+			$raw = trim((string) $this->request->getPost($postKey));
+			if ($raw === '') {
+				continue;
+			}
+			$dt = \DateTime::createFromFormat('Y-m-d', $raw);
+			if (!$dt || $dt->format('Y-m-d') !== $raw) {
+				$out['error'] = 'Enter a valid contract date, or leave it empty.';
+				return $out;
+			}
+			$out[$key] = $raw;
+		}
+		if ($out['start'] !== null && $out['end'] !== null && $out['end'] < $out['start']) {
+			$out['error'] = 'Contract end date cannot be before the start date.';
+		}
+		return $out;
+	}
+
+	public function save_staff_contract()
+	{
+		$this->_preset(1, 3);
+		if (!\Config\MenuClearance::canSetStaffContract((int) $this->session->get('soma_post'))) {
+			return $this->response->setJSON(['error' => 'Only the Head Teacher, Director, or Coordinator can set contract dates.']);
+		}
+		$this->ensureStaffContractColumns();
+		$id = (int) $this->request->getPost('staff_id');
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$staff = (new StaffModel())->select('id')->where('id', $id)->where('school_id', $schoolId)->get(1)->getRowArray();
+		if (!$staff) {
+			return $this->response->setJSON(['error' => 'Staff not found.']);
+		}
+		$dates = $this->postedStaffContract();
+		if ($dates['error']) {
+			return $this->response->setJSON(['error' => $dates['error']]);
+		}
+		\Config\Database::connect()->table('staffs')->where('id', $id)->where('school_id', $schoolId)->update([
+			'contract_start' => $dates['start'],
+			'contract_end' => $dates['end'],
+		]);
+		return $this->response->setJSON(['success' => 'Contract dates saved.']);
+	}
+
 	public function generate_staff_cards()
 	{
 		$this->_preset(1, 3);
@@ -8080,6 +8146,7 @@ public function attendanceCard()
 	{
 		$this->_preset(1, 3);
 		$this->ensureStaffRfidColumn();
+		$this->ensureStaffContractColumns();
 		$data = $this->data;
 		$data['title'] = lang("app.staffLists");
 		$data['subtitle'] = lang("app.viewAllStaff");
@@ -9051,78 +9118,6 @@ public function attendanceCard()
 		return false;
 	}
 
-	/** Send a plain SMS test to the staff member named Test Staff. Does not change the password. */
-	public function send_staff_sms_test()
-	{
-		$this->_preset(1, 3);
-		$schoolId = (int) $this->session->get('soma_school_id');
-		$row = $this->findTestStaff($schoolId);
-		if (!$row) {
-			return $this->response->setJSON(['error' => 'No staff named Test Staff was found in this school.']);
-		}
-		$sent = $this->deliverStaffSmsTest($row);
-		if (empty($sent['ok'])) {
-			return $this->response->setJSON(['error' => $sent['error'] ?? 'SMS test failed.']);
-		}
-		$name = trim(($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''));
-		return $this->response->setJSON([
-			'success' => 'SMS test sent to ' . $name . '.',
-			'staff' => $name,
-		]);
-	}
-
-	private function findTestStaff(int $schoolId): ?array
-	{
-		if ($schoolId < 1) {
-			return null;
-		}
-		$rows = \Config\Database::connect()->query(
-			"SELECT id, fname, lname, phone, school_id FROM staffs WHERE school_id = ? AND (LOWER(fname) LIKE '%test%' OR LOWER(lname) LIKE '%test%')",
-			[$schoolId]
-		)->getResultArray();
-		foreach ($rows as $row) {
-			$name = strtolower(trim(preg_replace('/\s+/', ' ', ($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''))));
-			if ($name === 'test staff' || $name === 'staff test' || $name === 'testing staff') {
-				return $row;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * @param array<string, mixed> $row
-	 * @return array{ok:bool, error:string}
-	 */
-	private function deliverStaffSmsTest(array $row): array
-	{
-		$phone = trim((string) ($row['phone'] ?? ''));
-		$name = trim(($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''));
-		if ($phone === '') {
-			return ['ok' => false, 'error' => $name . ' has no phone number.'];
-		}
-		$message = 'Wisdom School SMS test for ' . $name . '. If you received this, staff SMS is working.';
-		$smsResult = null;
-		$ok = $this->sendSMS($phone, $message, $smsResult, null, 8);
-		$fail = $ok ? '' : $this->_smsFailReason($smsResult);
-		$schoolId = (int) ($row['school_id'] ?? 0);
-		$termId = 0;
-		if ($schoolId > 0) {
-			$school = (new SchoolModel())->select('active_term')->where('id', $schoolId)->get(1)->getRowArray();
-			$termId = (int) ($school['active_term'] ?? 0);
-		}
-		if ($termId < 1) {
-			$termId = (int) ($this->data['active_term'] ?? 0);
-		}
-		if ($termId > 0) {
-			$smsCount = $ok ? (int) ceil(strlen($message) / (defined('PER_SMS') ? PER_SMS : 160)) : 0;
-			$this->_save_sms($termId, $phone, $message, 'Staff SMS test', (int) ($row['id'] ?? 0), 1, $smsCount, $fail);
-		}
-		if (!$ok) {
-			return ['ok' => false, 'error' => 'SMS failed' . ($fail !== '' ? ': ' . $fail : '')];
-		}
-		return ['ok' => true, 'error' => ''];
-	}
-
 	public function students()
 	{
 		$this->_preset(1, 3, 4, 5, 6);
@@ -9434,6 +9429,7 @@ public function attendanceCard()
 	public function staff($id)
 	{
 		$this->_preset(1, 3);
+		$this->ensureStaffContractColumns();
 		$data = $this->data;
 		$data['title'] = lang("app.viewStaff");
 		$stfMdl = new StaffModel();
@@ -9455,6 +9451,7 @@ public function attendanceCard()
 	public function profile()
 	{
 		$this->_preset();
+		$this->ensureStaffContractColumns();
 		$data = $this->data;
 		$data['title'] = lang("app.viewStaff");
 		$stfMdl = new StaffModel();
@@ -10910,8 +10907,16 @@ public function attendanceCard()
 		$address = $this->request->getPost("address");
 			$shift = (int) ($this->request->getPost("shift") ?? 0);
 		$default_password = $this->_smsSafePassword(8);
+		$contract = ['start' => null, 'end' => null, 'error' => null];
+		if (\Config\MenuClearance::canSetStaffContract((int) $this->session->get('soma_post'))) {
+			$contract = $this->postedStaffContract();
+			if ($contract['error']) {
+				return $this->response->setJSON(['error' => $contract['error']]);
+			}
+		}
 		try {
 			$staffMdl = new StaffModel();
+			$this->ensureStaffContractColumns();
 			$school_id = $this->session->get("soma_school_id");
 			$uvMdl = new UpdateVersionModel();
 			$update_v = 1;
@@ -10919,7 +10924,8 @@ public function attendanceCard()
 			if ($update_v_data != null)
 				$update_v = $update_v_data->version;
 			$id = $staffMdl->insert(array("school_id" => $school_id, "fname" => $fname, "lname" => $lname, "phone" => $phone, "email" => $email, "password" => password_hash($default_password, PASSWORD_DEFAULT)
-			, "status" => 2, "post" => $post, "shift_id" => $shift > 0 ? $shift : 0, "country" => $country, "city" => $city, "address" => $address, "updateVersion" => $update_v));
+			, "status" => 2, "post" => $post, "shift_id" => $shift > 0 ? $shift : 0, "country" => $country, "city" => $city, "address" => $address
+			, "contract_start" => $contract['start'], "contract_end" => $contract['end'], "updateVersion" => $update_v));
 			HeyStarDeviceStore::requestStaffSync((int) $school_id);
 			$name = $fname . " " . strtoupper(substr($lname, 0, 1)) . ".";
 			$loginUser = trim((string) $email) !== '' ? trim((string) $email) : trim((string) $phone);

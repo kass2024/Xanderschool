@@ -749,6 +749,12 @@ class MenuClearance
 		], true);
 	}
 
+	/** Contract dates on a staff record: Head Teacher, Director, or Coordinator. */
+	public static function canSetStaffContract($postId)
+	{
+		return self::canLockMarksEditing($postId);
+	}
+
 	public static function postTitle($postId)
 	{
 		static $cache = [];
