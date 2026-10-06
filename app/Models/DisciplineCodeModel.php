@@ -72,8 +72,8 @@ class DisciplineCodeModel extends Model
 		$total = (int) $this->where('school_id', $schoolId)->countAllResults();
 		$active = (int) $this->where('school_id', $schoolId)->where('active', 1)->countAllResults();
 		if ($total > 0 && $active < 1) {
-			$this->builder()->where('school_id', $schoolId)->update(['active' => 1]);
-			$active = $total;
+			$this->reactivateOfficialRows($schoolId);
+			return;
 		}
 		if ($active > 0) {
 			return;
@@ -81,12 +81,12 @@ class DisciplineCodeModel extends Model
 		$this->insertMissingCatalogRows($schoolId);
 	}
 
-	/** Revised Amabwiriza 2026. Bump this when the official document changes again. */
-	private const CATALOG_REVISION = '2026-avuguruye';
+	/** School rules and regulations. Bump this when the official document changes again. */
+	private const CATALOG_REVISION = 'school-rules-doc';
 
 	/**
-	 * Schools that already have conduct codes receive new catalog laws,
-	 * and the revised 2026 document replaces the official laws once.
+	 * Schools that already have conduct codes receive the school rules catalog,
+	 * and that document replaces the official laws once per revision.
 	 */
 	public function ensureCatalogUpdates(int $schoolId): void
 	{
@@ -117,7 +117,6 @@ class DisciplineCodeModel extends Model
 		$this->seedIfEmpty($schoolId);
 		$this->insertMissingCatalogRows($schoolId);
 		$this->applyRevisedCatalog($schoolId);
-		$this->correctLosingStudentCard($schoolId);
 	}
 
 	private function applyRevisedCatalog(int $schoolId): void
@@ -157,19 +156,17 @@ class DisciplineCodeModel extends Model
 					'second_sanction_rw' => (string) ($sr[1] ?? ''),
 					'third_sanction_en' => (string) ($se[2] ?? ''),
 					'third_sanction_rw' => (string) ($sr[2] ?? ''),
+					'active' => 1,
 					'updated_at' => $now,
 				];
-				$existing = $db->table('discipline_codes')
-					->select('id')
+				$db->table('discipline_codes')
 					->where('school_id', $schoolId)
 					->where('category_key', $key)
 					->where('code_no', $no)
-					->get(1)->getRowArray();
-				if (is_array($existing) && !empty($existing['id'])) {
-					$db->table('discipline_codes')->where('id', (int) $existing['id'])->update($payload);
-				}
+					->update($payload);
 			}
 		}
+		$this->deactivateRetiredCatalogRows($schoolId, $now);
 		if (is_array($saved) && !empty($saved['school_id'])) {
 			$db->table('discipline_catalog_revision')->where('school_id', $schoolId)->update(['revision' => self::CATALOG_REVISION]);
 		} else {
@@ -180,25 +177,67 @@ class DisciplineCodeModel extends Model
 		}
 	}
 
-	/** Losing a student card is always 10 marks plus 50,000 RWF. No 1st/2nd/3rd ladder. */
+	/** Retired. The school rules document has no losing-student-card law. */
 	private function correctLosingStudentCard(int $schoolId): void
 	{
-		\Config\Database::connect()->table('discipline_codes')
+	}
+
+	/** @return array<string,bool> */
+	private function officialCatalogIndex(): array
+	{
+		$live = [];
+		foreach (WisdomDisciplineCatalog::categories() as $cat) {
+			$key = (string) ($cat['key'] ?? '');
+			foreach ($cat['items'] as $item) {
+				$no = (int) ($item['no'] ?? 0);
+				if ($key !== '' && $no > 0) {
+					$live[$key . '|' . $no] = true;
+				}
+			}
+		}
+		return $live;
+	}
+
+	private function reactivateOfficialRows(int $schoolId): void
+	{
+		$live = $this->officialCatalogIndex();
+		$db = \Config\Database::connect();
+		$rows = $db->table('discipline_codes')
+			->select('id, category_key, code_no, active')
 			->where('school_id', $schoolId)
-			->where('category_key', 'behavior')
-			->where('code_no', 13)
-			->update([
-				'first_marks' => 10,
-				'second_marks' => 10,
-				'third_marks' => 10,
-				'first_sanction_en' => 'Pay 50,000 RWF',
-				'second_sanction_en' => 'Pay 50,000 RWF',
-				'third_sanction_en' => 'Pay 50,000 RWF',
-				'first_sanction_rw' => 'Kwishyura 50,000 RWF',
-				'second_sanction_rw' => 'Kwishyura 50,000 RWF',
-				'third_sanction_rw' => 'Kwishyura 50,000 RWF',
-				'updated_at' => date('Y-m-d H:i:s'),
+			->get()->getResultArray();
+		$now = date('Y-m-d H:i:s');
+		foreach ($rows as $row) {
+			$k = (string) ($row['category_key'] ?? '') . '|' . (int) ($row['code_no'] ?? 0);
+			if (!isset($live[$k]) || (int) ($row['active'] ?? 0) === 1) {
+				continue;
+			}
+			$db->table('discipline_codes')->where('id', (int) $row['id'])->update([
+				'active' => 1,
+				'updated_at' => $now,
 			]);
+		}
+	}
+
+	private function deactivateRetiredCatalogRows(int $schoolId, string $now): void
+	{
+		$live = $this->officialCatalogIndex();
+		$db = \Config\Database::connect();
+		$rows = $db->table('discipline_codes')
+			->select('id, category_key, code_no')
+			->where('school_id', $schoolId)
+			->where('active', 1)
+			->get()->getResultArray();
+		foreach ($rows as $row) {
+			$k = (string) ($row['category_key'] ?? '') . '|' . (int) ($row['code_no'] ?? 0);
+			if (isset($live[$k])) {
+				continue;
+			}
+			$db->table('discipline_codes')->where('id', (int) $row['id'])->update([
+				'active' => 0,
+				'updated_at' => $now,
+			]);
+		}
 	}
 
 	private function insertMissingCatalogRows(int $schoolId): void

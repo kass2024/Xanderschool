@@ -46,7 +46,7 @@ foreach ($discipline_codes as $row) {
 	</button>
 	<div class="dcode-body">
 	<p class="text-muted small mb-2 mt-2">
-		School conduct codes from the revised 2026 discipline document (Amabwiriza avuguruye). Edit, add, or deactivate a law.
+		School conduct codes from the school rules and regulations (English and Kinyarwanda). Edit, add, or deactivate a law.
 		Behaviour entry uses these codes only — marks for 1st, 2nd and 3rd time are applied automatically.
 	</p>
 	<div class="dcode-toolbar">
