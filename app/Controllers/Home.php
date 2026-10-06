@@ -17109,8 +17109,8 @@ public function getApplicationDocs($id = null)
 				->join("faculty f", "f.id=d.faculty_id")
 				->where("classes.id", $class)->get()->getRow();
 		$factId = $classVerify ? (int) $classVerify->fac_id : 0;
-		if ($factId === 19 && !in_array((int) $period, [3, 4], true)) {
-			echo "Choose Midterm or End of Term Exam.";
+		if ($factId === 19 && nursery_exam_title((int) $period) === '') {
+			echo "Select an exam: End of Month 1 Exam, End of Month 2 Exam, Midterm, or End of Term Exam.";
 			return;
 		}
 		$wisdomNurserySlip = $factId === 19
@@ -17837,7 +17837,7 @@ public function getApplicationDocs($id = null)
 				->where("marks.course_id", $course)
 				->where("at.academic_year", $year)
 				->where("marks.mark_type", 1)//cat
-				->where("(marks.class_id NOT IN ({$nurseryClassSql}) OR (marks.period IN (1,2,3,4) AND (marks.cat_type IS NULL OR TRIM(marks.cat_type) = '')))", null, false)
+				->where("(marks.class_id NOT IN ({$nurseryClassSql}) OR (marks.period = 4 AND (marks.cat_type IS NULL OR TRIM(marks.cat_type) = '')))", null, false)
 //			->where($cat_filter)//direct cat filter
 				->where("marks.student_id", $student);
 		if ($term != 4) {

@@ -145,12 +145,14 @@
 			var $term = $("#term");
 			$("#period_wrap").show();
 			if (nursery) {
-				$("#period_label").text("Marks");
-				rebuildPeriod($period,
-					'<option selected disabled>Select marks</option>' +
-					'<option value="3">Midterm</option>' +
-					'<option value="4">End of Term Exam</option>'
-				);
+				$("#period_label").text(periodLabel);
+				rebuildPeriod($period, <?= json_encode(
+					'<option selected disabled>' . lang('app.selectPeriod') . '</option>'
+					. '<option value="1">End of Month 1 Exam</option>'
+					. '<option value="2">End of Month 2 Exam</option>'
+					. '<option value="3">Midterm</option>'
+					. '<option value="4">End of Term Exam</option>'
+				); ?>);
 				var active = String($term.data("active") || "");
 				if (active === "1" || active === "2" || active === "3") {
 					$term.val(active).trigger("change");
