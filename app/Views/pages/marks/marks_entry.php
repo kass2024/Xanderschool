@@ -716,7 +716,7 @@ body.marks-entry-body .select2-search__field {
 	function populate_marks() {
 		var id = $("#select_class").val() + "/";
 		var mt = $("#marktype").val() + "/";
-		var ct = (classIsNursery() ? "" : ($("#catype").val() || "")) + "/";
+		var ct = (classIsNursery() ? "none" : ($("#catype").val() || "")) + "/";
 		var course = $("#select_course").val() + "/";
 		var period = $("#period1").val().length == 0 ? '0/' : ($("#period1").val() + "/");
 		var term = $("#term").val();

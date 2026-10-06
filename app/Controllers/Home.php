@@ -16526,6 +16526,9 @@ public function getApplicationDocs($id = null)
 			die();
 		}
 		helper('qonics');
+		if ($ct === 'none' || $ct === '-') {
+			$ct = '';
+		}
 		if (class_is_nursery((int) $class)) {
 			$mt = 1;
 			$ct = '';
