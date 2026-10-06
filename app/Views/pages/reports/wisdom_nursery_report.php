@@ -1,72 +1,177 @@
 <style>
-	.nr-slip {
-		width: 100%;
-		max-width: 820px;
-		margin: 0 auto 18px;
-		font-family: "Times New Roman", Times, serif;
-		color: #111;
-		page-break-inside: avoid;
-		page-break-after: always;
-	}
+	.nr-sheet, .nr-sheet * { box-sizing: border-box; }
 	.nr-sheet {
-		border: 3px solid #000;
-		padding: 14px 16px 16px;
+		font-family: "Century Gothic", CenturyGothic, "Tw Cen MT", sans-serif;
+		font-weight: 700;
+		color: #231f20;
 		background: #fff;
-		box-sizing: border-box;
 	}
-	.nr-head { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-	.nr-head td { border: 0; vertical-align: top; padding: 0; }
-	.nr-logo { width: 92px; height: auto; display: block; }
-	.nr-school {
-		font-size: 11px;
-		font-weight: bold;
+	.nr-page {
+		width: 746pt;
+		height: 511pt;
+		margin: 0 auto 16px;
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		page-break-after: always;
+		break-after: page;
+	}
+	.nr-slip {
+		width: 355pt;
+		height: 510pt;
+		flex: 0 0 355pt;
+		border: 1.9pt solid #231f20;
+		padding: 5pt 10pt 6pt 5pt;
+		background: #fff;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+	}
+	.nr-top {
+		display: flex;
+		align-items: flex-start;
+		min-height: 62pt;
+		margin-bottom: 4pt;
+	}
+	.nr-logo-wrap {
+		width: 58pt;
+		flex: 0 0 58pt;
+		padding-top: 4pt;
 		text-align: center;
-		margin-top: 4px;
-		letter-spacing: .2px;
 	}
-	.nr-line { font-size: 15px; margin: 0 0 7px; line-height: 1.35; }
-	.nr-lab { font-weight: normal; }
-	.nr-fill {
-		border-bottom: 1px dotted #222;
-		display: inline-block;
-		min-width: 180px;
-		padding: 0 8px 1px;
-		font-weight: bold;
+	.nr-logo {
+		width: 46pt;
+		height: 52pt;
+		object-fit: contain;
+		display: block;
+		margin: 0 auto;
 	}
-	.nr-fill.wide { min-width: 280px; }
-	.nr-fill.mid { min-width: 140px; }
-	.nr-table { width: 100%; border-collapse: collapse; margin: 8px 0 10px; }
+	.nr-meta { flex: 1; min-width: 0; padding-top: 1pt; }
+	.nr-h {
+		display: flex;
+		align-items: flex-end;
+		font-size: 10.86pt;
+		line-height: 1;
+		height: 16.5pt;
+		white-space: nowrap;
+	}
+	.nr-h .k { font-weight: 700; }
+	.nr-ul {
+		border-bottom: 0.9pt solid #231f20;
+		flex: 1;
+		min-width: 18pt;
+		margin: 0 6pt 1pt 3pt;
+		padding: 0 3pt;
+		font-size: 10.86pt;
+		font-weight: 700;
+		line-height: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.nr-ul.short { flex: 0 1 78pt; }
+	.nr-ul.mid { flex: 0 1 92pt; }
+	.nr-ul.tiny { flex: 0 0 36pt; }
+	.nr-table {
+		width: 331pt;
+		border-collapse: collapse;
+		margin: 0 0 8pt 2pt;
+		table-layout: fixed;
+	}
 	.nr-table th, .nr-table td {
-		border: 1px solid #111;
-		padding: 6px 8px;
-		font-size: 14px;
+		border: 0.9pt solid #231f20 !important;
+		padding: 0 3pt !important;
+		font-weight: 700 !important;
+		vertical-align: middle !important;
+		background: #fff !important;
+		line-height: 1.05 !important;
 	}
 	.nr-table th {
-		text-align: center;
-		font-weight: bold;
+		font-family: "Century Gothic", CenturyGothic, "Tw Cen MT", sans-serif !important;
+		font-size: 9.73pt !important;
+		text-align: center !important;
 		text-transform: uppercase;
-		letter-spacing: .3px;
+		height: 26pt;
 	}
-	.nr-table td.sub { text-transform: uppercase; }
-	.nr-table td.ctr { text-align: center; }
-	.nr-table tr.total td { font-weight: bold; }
-	.nr-block { font-size: 15px; margin: 8px 0 4px; line-height: 1.7; }
+	.nr-table td {
+		font-family: "Century Gothic", CenturyGothic, "Tw Cen MT", sans-serif !important;
+		font-size: 10.98pt !important;
+		height: 20pt;
+		text-transform: none;
+		overflow: hidden;
+	}
+	.nr-table td.sub {
+		font-size: 8.6pt !important;
+		line-height: 1.05 !important;
+		text-transform: uppercase;
+		white-space: normal !important;
+		word-break: break-word;
+	}
+	.nr-table td.num {
+		font-family: Arial, Helvetica, sans-serif !important;
+		font-size: 10.98pt !important;
+		font-weight: 700 !important;
+		text-align: center !important;
+		text-transform: none;
+	}
+	.nr-table td.ctr { text-align: center !important; }
+	.nr-table tr.total td { font-size: 11pt !important; }
+	.nr-foot { width: 331pt; margin-left: 2pt; }
+	.nr-row {
+		display: flex;
+		align-items: flex-end;
+		height: 19.6pt;
+		font-size: 11pt;
+		font-weight: 700;
+		line-height: 1;
+		white-space: nowrap;
+	}
 	.nr-dots {
-		border-bottom: 1px dotted #222;
-		display: inline-block;
-		min-width: 70%;
-		height: 1.1em;
+		flex: 1 1 auto;
+		border-bottom: 1pt dotted #231f20;
+		height: 0;
+		margin: 0 2pt 2pt;
+		min-width: 8pt;
 	}
-	.nr-sign { float: right; min-width: 180px; }
+	.nr-dots.tail { flex: 0 0 28pt; }
+	.nr-signlab { margin-left: 4pt; }
+	.nr-name {
+		max-width: 120pt;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		padding: 0 2pt;
+		font-weight: 700;
+	}
+	@media screen {
+		.nr-sheet { overflow-x: auto; padding-bottom: 8px; }
+	}
 	@media print {
-		.nr-slip { max-width: none; margin: 0; }
-		.nr-sheet { border-width: 2px; }
+		@page { size: A4 landscape; margin: 34pt 39pt 50pt 57pt; }
+		.app-sidebar-wrapper,
+		.app-sidebar,
+		.app-sidebar-overlay,
+		.header-mobile-wrapper,
+		.app-header,
+		.app-footer,
+		.app-page-title,
+		.ui-theme-settings,
+		.fixed-header { display: none !important; }
+		.app-container, .app-main, .app-main__outer, .app-main__inner {
+			margin: 0 !important;
+			padding: 0 !important;
+			width: auto !important;
+			background: #fff !important;
+			display: block !important;
+		}
+		.nr-sheet { overflow: visible; }
+		.nr-page { width: auto; height: auto; margin: 0; }
+		.nr-slip { break-inside: avoid; page-break-inside: avoid; }
 	}
 </style>
 <?php
 $grades = $grades ?? [];
 $pupilCount = (int) ($nursery_pupil_count ?? 0);
 $classTeacher = trim((string) ($nursery_class_teacher ?? ''));
+$headTeacher = trim((string) ($nursery_head_teacher ?? ''));
 $courseInitials = $nursery_course_initials ?? [];
 $termNo = (int) ($term ?? 0);
 $termLabel = $termNo === 4 ? 'Annual' : (string) \App\Controllers\Home::TermToStr($termNo);
@@ -120,7 +225,7 @@ $subjectScore = static function (array $core) use ($termNo, $catOnly) {
 };
 
 $studentReg = isset($_GET['student']) ? $_GET['student'] : false;
-$printed = 0;
+$cards = [];
 if (!isset($students) || count($students) === 0) {
 	echo '<h1>' . lang('app.noStudentFound') . '</h1>';
 }
@@ -131,7 +236,6 @@ foreach ($students as $student) {
 	if ($studentReg !== false && (string) $student['id'] !== (string) $studentReg) {
 		continue;
 	}
-	$printed++;
 	$pupil = trim((string) ($student['fname'] ?? '') . ' ' . (string) ($student['lname'] ?? ''));
 	$classLabel = trim((string) ($student['level_name'] ?? '') . ' ' . (string) ($student['title'] ?? '') . ' ' . (string) ($student['code'] ?? ''));
 	$courses = $student['courses'] ?? [];
@@ -158,8 +262,6 @@ foreach ($students as $student) {
 		];
 	}
 	$totalPct = ($maxTotal > 0 && $scored > 0) ? ($scoreTotal * 100 / $maxTotal) : null;
-	$totalComment = $mentionFor($totalPct);
-
 	$conductText = '';
 	if ($discMax > 0) {
 		if ($termNo === 4) {
@@ -179,100 +281,89 @@ foreach ($students as $student) {
 		$conductMention = $mentionFor($conductPct);
 		$conductText = $fmt($conduct) . '/' . $fmt($discMax);
 		if ($conductMention !== '') {
-			$conductText .= ' — ' . $conductMention;
+			$conductText .= ' - ' . $conductMention;
 		}
 	}
+	ob_start();
 	?>
-	<div class="nr-slip" id="printable">
-		<div class="nr-sheet">
-			<table class="nr-head">
-				<tr>
-					<td style="width:110px;">
-						<?php if (!empty($school_logo)): ?>
-							<img src="<?= base_url('assets/images/logo/' . $school_logo); ?>" class="nr-logo" alt="">
-						<?php endif; ?>
-						<div class="nr-school"><?= esc(strtoupper((string) ($school_name ?? ''))); ?></div>
-					</td>
-					<td>
-						<div class="nr-line"><span class="nr-lab">Names:</span> <span class="nr-fill wide"><?= esc($pupil); ?></span></div>
-						<div class="nr-line">
-							<span class="nr-lab">Results for Term:</span> <span class="nr-fill mid"><?= esc($termLabel); ?></span>
-							&nbsp;&nbsp; <span class="nr-lab">Year:</span> <span class="nr-fill mid"><?= esc($yearLabel); ?></span>
-						</div>
-						<div class="nr-line">
-							<span class="nr-lab">Class:</span> <span class="nr-fill mid"><?= esc($classLabel); ?></span>
-							&nbsp;&nbsp; <span class="nr-lab">Number of Pupils:</span> <span class="nr-fill" style="min-width:70px;"><?= $pupilCount > 0 ? (int) $pupilCount : ''; ?></span>
-						</div>
-					</td>
-				</tr>
-			</table>
-
-			<table class="nr-table">
-				<thead>
-				<tr>
-					<th style="width:34%;">Subject</th>
-					<th style="width:16%;">Full marks</th>
-					<th style="width:16%;">Score</th>
-					<th style="width:22%;">Comment</th>
-					<th style="width:12%;">Initials</th>
-				</tr>
-				</thead>
-				<tbody>
-				<?php foreach ($rows as $row): ?>
-					<tr>
-						<td class="sub"><?= esc($row['title']); ?></td>
-						<td class="ctr"><?= $fmt($row['full']); ?></td>
-						<td class="ctr"><?= $row['score'] === null ? '' : $fmt($row['score']); ?></td>
-						<td class="ctr"><?= esc($row['comment']); ?></td>
-						<td class="ctr"><?= esc($row['initials']); ?></td>
-					</tr>
-				<?php endforeach; ?>
-				<?php if ($rows === []): ?>
-					<tr><td colspan="5" class="ctr">No subjects are assigned to this class for this term.</td></tr>
+	<div class="nr-slip">
+		<div class="nr-top">
+			<div class="nr-logo-wrap">
+				<?php if (!empty($school_logo)): ?>
+					<img src="<?= base_url('assets/images/logo/' . $school_logo); ?>" class="nr-logo" alt="">
 				<?php endif; ?>
-				<tr class="total">
-					<td>TOTAL</td>
-					<td class="ctr"><?= $maxTotal > 0 ? $fmt($maxTotal) : ''; ?></td>
-					<td class="ctr"><?= $scored > 0 ? $fmt($scoreTotal) : ''; ?></td>
-					<td class="ctr"><?= esc($totalComment); ?></td>
-					<td></td>
+			</div>
+			<div class="nr-meta">
+				<div class="nr-h"><span class="k">Names:</span><span class="nr-ul"><?= esc($pupil); ?></span></div>
+				<div class="nr-h">
+					<span class="k">Results for Term:</span><span class="nr-ul mid"><?= esc($termLabel); ?></span>
+					<span class="k">Year:</span><span class="nr-ul short"><?= esc($yearLabel); ?></span>
+				</div>
+				<div class="nr-h">
+					<span class="k">Class:</span><span class="nr-ul mid"><?= esc($classLabel); ?></span>
+					<span class="k">Number of Pupils:</span><span class="nr-ul tiny"><?= $pupilCount > 0 ? (int) $pupilCount : ''; ?></span>
+				</div>
+			</div>
+		</div>
+		<table class="nr-table">
+			<thead>
+			<tr>
+				<th style="width:23%;">Subject</th>
+				<th style="width:12.3%;">Full<br>marks</th>
+				<th style="width:15%;">Score</th>
+				<th style="width:36.7%;">Comment</th>
+				<th style="width:13%;">Initials</th>
+			</tr>
+			</thead>
+			<tbody>
+			<?php foreach ($rows as $row): ?>
+				<tr>
+					<td class="sub"><?= esc($row['title']); ?></td>
+					<td class="num"><?= $fmt($row['full']); ?></td>
+					<td class="num"><?= $row['score'] === null ? '' : $fmt($row['score']); ?></td>
+					<td class="ctr"><?= esc($row['comment']); ?></td>
+					<td class="ctr"><?= esc($row['initials']); ?></td>
 				</tr>
-				</tbody>
-			</table>
-
-			<div class="nr-block">Conduct: <span class="nr-dots" style="min-width:78%;"><?= esc($conductText); ?></span></div>
-
-			<div class="nr-block">
-				Class teacher's comment:<span class="nr-dots" style="min-width:58%;"></span>
-				<span class="nr-sign">sign: <span class="nr-dots" style="min-width:120px;"><?= esc($classTeacher); ?></span></span>
-			</div>
-			<div class="nr-block"><span class="nr-dots" style="min-width:100%;"></span></div>
-
-			<div class="nr-block">
-				Head teacher's comment:<span class="nr-dots" style="min-width:55%;"></span>
-				<span class="nr-sign">sign:
-					<?php if (!empty($headmaster_signature) && strlen((string) $headmaster_signature) > 5): ?>
-						<img src="<?= base_url('assets/images/signatures/' . $headmaster_signature); ?>" alt="" style="max-height:42px;vertical-align:middle;">
-					<?php else: ?>
-						<span class="nr-dots" style="min-width:120px;"><?= esc((string) ($head_master ?? '')); ?></span>
-					<?php endif; ?>
-				</span>
-			</div>
-			<div class="nr-block"><span class="nr-dots" style="min-width:100%;"></span></div>
-
-			<div class="nr-block">
-				Parent's comment:<span class="nr-dots" style="min-width:62%;"></span>
-				<span class="nr-sign">sign: <span class="nr-dots" style="min-width:120px;"></span></span>
-			</div>
-			<div class="nr-block"><span class="nr-dots" style="min-width:100%;"></span></div>
-
-			<div class="nr-block">Next term begins on: <span class="nr-dots" style="min-width:62%;"></span></div>
-			<div class="nr-block">Next term ends on: <span class="nr-dots" style="min-width:64%;"></span></div>
+			<?php endforeach; ?>
+			<?php if ($rows === []): ?>
+				<tr><td colspan="5" class="ctr">No subjects are assigned to this class for this term.</td></tr>
+			<?php endif; ?>
+			<tr class="total">
+				<td>TOTAL</td>
+				<td class="num"><?= $maxTotal > 0 ? $fmt($maxTotal) : ''; ?></td>
+				<td class="num"><?= $scored > 0 ? $fmt($scoreTotal) : ''; ?></td>
+				<td></td>
+				<td></td>
+			</tr>
+			</tbody>
+		</table>
+		<div class="nr-foot">
+			<div class="nr-row"><span>Conduct:</span><?php if ($conductText !== ''): ?><span class="nr-name" style="max-width:220pt;"><?= esc($conductText); ?></span><?php endif; ?><span class="nr-dots"></span></div>
+			<div class="nr-row"><span>Class teacher's comment:</span><span class="nr-dots"></span></div>
+			<div class="nr-row"><span class="nr-dots"></span><span class="nr-signlab">sign:</span><?php if ($classTeacher !== ''): ?><span class="nr-name"><?= esc($classTeacher); ?></span><?php endif; ?><span class="nr-dots tail"></span></div>
+			<div class="nr-row"><span>Head teacher's comment:</span><span class="nr-dots"></span></div>
+			<div class="nr-row"><span class="nr-dots"></span><span class="nr-signlab">sign:</span><?php if ($headTeacher !== ''): ?><span class="nr-name"><?= esc($headTeacher); ?></span><?php endif; ?><span class="nr-dots tail"></span></div>
+			<div class="nr-row"><span>Parent's comment:</span><span class="nr-dots"></span></div>
+			<div class="nr-row"><span class="nr-dots"></span><span class="nr-signlab">sign:</span><span class="nr-dots tail"></span></div>
+			<div class="nr-row"><span>Next term begins on:</span><span class="nr-dots"></span></div>
+			<div class="nr-row"><span>Next term ends on:</span><span class="nr-dots"></span></div>
 		</div>
 	</div>
 	<?php
+	$cards[] = ob_get_clean();
 }
-if ($printed === 0 && isset($students) && count($students) > 0) {
+if ($cards === [] && isset($students) && count($students) > 0) {
 	echo '<h1>' . lang('app.noStudentFound') . '</h1>';
 }
-?>
+if ($cards !== []) {
+	echo '<div class="nr-sheet">';
+	foreach (array_chunk($cards, 2) as $pair) {
+		echo '<div class="nr-page">';
+		echo $pair[0];
+		if (isset($pair[1])) {
+			echo $pair[1];
+		}
+		echo '</div>';
+	}
+	echo '</div>';
+}

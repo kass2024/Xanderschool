@@ -17338,6 +17338,15 @@ public function getApplicationDocs($id = null)
 					->where("classes.id", $class)
 					->get()->getRowArray();
 				$data['nursery_class_teacher'] = trim((string) ($mentorRow['mentor_name'] ?? ''));
+				$headTeacherRow = \Config\Database::connect()->query(
+					"SELECT s.fname, s.lname FROM staffs s
+					 LEFT JOIN posts p ON p.id = s.post
+					 WHERE s.school_id = ? AND s.status != 0
+					 AND (s.post = ? OR LOWER(TRIM(p.title)) IN ('head teacher', 'headteacher'))
+					 ORDER BY s.id ASC LIMIT 1",
+					[(int) $school_id, \App\Models\PostsModel::HEAD_TEACHER_ID]
+				)->getRowArray();
+				$data['nursery_head_teacher'] = trim((string) (($headTeacherRow['fname'] ?? '') . ' ' . ($headTeacherRow['lname'] ?? '')));
 				$initials = [];
 				$lecturers = \Config\Database::connect()->table('course_records cr')
 					->select('cr.course, s.fname, s.lname')
@@ -17521,13 +17530,15 @@ public function getApplicationDocs($id = null)
 					$wkhtmltopdf->setTitle(lang("app.rtudentProgressReport"));
 					$wkhtmltopdf->setHtml(utf8_decode($html));
 					$wkhtmltopdf->setPageSize("A4");
-					if ($fact == 19 && in_array($school_id, [54])) {
+					$wisdomNurserySlip = ((int) $fact === 19)
+						&& (is_wisdom_school((int) $school_id) || !in_array((int) $school_id, [28, 30, 31, 42]));
+					if ($wisdomNurserySlip) {
 						$wkhtmltopdf->setOrientation("landscape");
+						$wkhtmltopdf->setMargins(array("top" => 12, "left" => 20, "right" => 14, "bottom" => 18));
 					} else {
 						$wkhtmltopdf->setOrientation("portrait");
+						$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
 					}
-					// $wkhtmltopdf->setOptions(array("page-width" => "278px", "page-height" => "430px"));
-					$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
 					$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "student_progress_report" . time() . ".pdf");
 				} catch (\Exception $e) {
 					echo $e->getMessage();
