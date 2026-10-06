@@ -418,7 +418,6 @@ $(function () {
     $("label[for='notify_parent']").text(remarks
       ? t("Send remarks to parent", "Ohereza ibitekerezo ku mubyeyi")
       : t("Notify parent", "Menyesha umubyeyi"));
-    if (remarks) $("#notify_parent").prop("checked", true);
   }
 
   function showSanction(text) {
@@ -660,7 +659,9 @@ $(function () {
   });
 
   $(document).on("click", ".disc-action-btn", function () {
-    $("#choose_disc_type").val(String($(this).data("type"))).trigger("change");
+    const type = String($(this).data("type"));
+    if (type === "0") $("#notify_parent").prop("checked", true);
+    $("#choose_disc_type").val(type).trigger("change");
   });
 
   $(document).on("click", ".disc-code-item", function () {
