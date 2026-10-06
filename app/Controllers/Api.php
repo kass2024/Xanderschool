@@ -2974,7 +2974,7 @@ public function get_boarding_classes()
 	}
 
 	/**
-	 * Phone permission menu. Today's finished slips come first.
+	 * Phone permission menu: given today, justified, and waiting to justify.
 	 */
 	public function permission_dashboard($school_id)
 	{
@@ -3011,6 +3011,7 @@ public function get_boarding_classes()
 
 			$rows = $db->query(
 				"SELECT p.id, p.student_id, p.destination, p.reason, p.leave_time, p.return_time, p.status,
+					p.created_at,
 					TRIM(CONCAT(s.fname, ' ', s.lname)) AS name,
 					IFNULL(s.regno, '') AS regno,
 					IFNULL(s.photo, '') AS photo,
@@ -3036,7 +3037,10 @@ public function get_boarding_classes()
 
 			$doneRows = [];
 			$waitRows = [];
+			$givenRows = [];
 			foreach ($rows as $row) {
+				$leave = (string) $row['leave_time'];
+				$back = (string) $row['return_time'];
 				$item = [
 					'id' => (int) $row['id'],
 					'student_id' => (int) $row['student_id'],
@@ -3046,10 +3050,15 @@ public function get_boarding_classes()
 					'class_label' => trim((string) $row['class_label']),
 					'destination' => (string) $row['destination'],
 					'reason' => (string) $row['reason'],
-					'leave_time' => (string) $row['leave_time'],
-					'return_time' => (string) $row['return_time'],
+					'leave_time' => $leave,
+					'return_time' => $back,
+					'created_at' => (string) $row['created_at'],
 					'status' => (string) $row['status'],
+					'out_now' => ($leave !== '' && $back !== '' && $leave <= $now && $back >= $now) ? 1 : 0,
 				];
+				if (substr((string) $row['created_at'], 0, 10) === $today) {
+					$givenRows[] = $item;
+				}
 				if ((string) $row['status'] === '1') {
 					$doneRows[] = $item;
 				} else {
@@ -3064,6 +3073,7 @@ public function get_boarding_classes()
 				'justified_today' => $justified,
 				'waiting' => $waiting,
 				'out_now' => $outNow,
+				'given' => $givenRows,
 				'done' => $doneRows,
 				'waiting_list' => $waitRows,
 			]);
