@@ -14991,6 +14991,11 @@ public function getApplicationDocs($id = null)
 			(int) $this->session->get('soma_school_id'),
 			(int) $year
 		);
+		$postedPeriod = $this->request->getPost("period");
+		if (is_array($postedPeriod)) {
+			$postedPeriod = reset($postedPeriod);
+		}
+		$period = ($postedPeriod === null || $postedPeriod === '') ? 0 : $postedPeriod;
 		$nurseryClass = class_is_nursery((int) $class);
 		if (($nurseryOnlyTeacher || $nurseryClass) && (int) $mark_type !== 1) {
 			return $this->response->setJSON(array("error" => "Nursery classes record exams only: End of Month 1 Exam, End of Month 2 Exam, Midterm, and End of Term Exam."));
@@ -15004,7 +15009,6 @@ public function getApplicationDocs($id = null)
 		$Exammarks = $this->request->getPost("marksE[]");
 		$catType = $this->request->getPost("catType") == null ? '' : $this->request->getPost("catType");
 		$outof = $this->request->getPost("outofmarks");
-		$period = $this->request->getPost("period") == null ? 0 : $this->request->getPost("period");
 		$courseProgRow = (new CourseModel())->select('program_type')->where('id', (int) $course_id)->get(1)->getRowArray();
 		$isHolidayCourse = is_holiday_course_program($courseProgRow['program_type'] ?? '');
 		if ((int) $mark_type === holiday_coaching_mark_type()) {
