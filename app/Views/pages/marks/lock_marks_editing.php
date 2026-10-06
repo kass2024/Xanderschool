@@ -1,7 +1,6 @@
 <style>
 	.lock-marks-page { padding: 8px 4px 24px; }
-	.lock-marks-page h4 { margin: 0 0 6px; }
-	.lock-marks-lead { color: #4b5563; margin-bottom: 14px; }
+	.lock-marks-page h4 { margin: 0 0 14px; }
 	.lock-school-bar {
 		display: flex;
 		justify-content: space-between;
@@ -59,11 +58,6 @@
 		<div class="alert alert-danger">Only the Coordinator, Director, or Head Teacher can lock marks editing.</div>
 	<?php else: ?>
 		<h4>Lock Marks editing</h4>
-		<p class="lock-marks-lead">
-			Lock one course, every course of one teacher, or every teacher for this term.
-			A locked course blocks quizzes, tests, homework, and exams.
-			A locked period in School settings still blocks marks entry for that period.
-		</p>
 		<?php if (!empty($teachers)): ?>
 			<div class="lock-school-bar">
 				<input type="search" class="form-control lock-marks-search" id="lockMarksSearch" placeholder="Search teacher or course">

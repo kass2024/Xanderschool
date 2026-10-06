@@ -18,13 +18,6 @@
 	line-height: 1.3;
 	margin-top: 4px;
 }
-.marks-max-live {
-	display: block;
-	margin-top: 6px;
-	color: #1d4ed8;
-	font-size: 13px;
-	font-weight: 600;
-}
 .marks-filters {
 	display: flex;
 	flex-wrap: wrap;
@@ -117,17 +110,6 @@ body.marks-entry-body .select2-search__field {
 	margin-bottom: 6px;
 }
 .marks-field strong { font-size: 15px; }
-.marks-help {
-	display: block;
-	background: #f8fafc;
-	border: 1px solid #e2e8f0;
-	border-radius: 8px;
-	padding: 10px 12px;
-	font-size: 13px;
-	line-height: 1.45;
-	color: #475569;
-	margin: 0 0 12px;
-}
 .marks-entry-actions {
 	display: flex;
 	flex-direction: column;
@@ -380,21 +362,13 @@ body.marks-entry-body .select2-search__field {
 					<div class="marks-field">
 						<span>Marks editing</span>
 						<a class="btn btn-sm btn-warning" href="<?= base_url('lock_marks_editing'); ?>">Lock Marks editing</a>
-						<small class="marks-max-live">Lock or unlock each teacher and course. A lock blocks quizzes, tests, homework, and exams.</small>
 					</div>
-				<?php else: ?>
-					<p class="marks-help">You enter marks only for courses assigned to you. If the Coordinator, Director, or Head Teacher locks this course, quizzes, tests, homework, and exams cannot be entered or changed.</p>
 				<?php endif; ?>
 				<div class="marks-field">
 					<label for="outofmarks"><?= lang("app.totalMarks"); ?></label>
 					<input type="number" min="0" step="any" class="form-control" name="outofmarks" required
 						   id="outofmarks">
-					<small class="marks-max-live" id="marksMaxLive"></small>
 				</div>
-				<?php if (!empty($nursery_marks_only)): ?>
-					<p class="marks-help">Record the mark for this exam. Nursery uses End of Month 1 Exam, End of Month 2 Exam, Midterm, and End of Term Exam. Quizzes, tests, homework, and the regular exam are not used.</p>
-				<?php endif; ?>
-				<p class="marks-help">Leave empty (grey <strong>-</strong>) if the student did not sit the test — it counts as 0 in totals. Enter <strong>0</strong> only when they scored zero.</p>
 				<div class="marks-field">
 					<label for="examDate"><?= lang("app.dateGiven"); ?></label>
 					<input type="date" class="form-control" name="examDate" required id="examDate" value="<?= date('Y-m-d'); ?>">
@@ -514,6 +488,12 @@ body.marks-entry-body .select2-search__field {
 				showAssignedTeacher();
 				resetView();
 				$("#dv_marks").html("<h3 style=\"text-align: center;margin: 24px 8px\"><?= lang("app.selectCourseAndClass"); ?></h3>");
+				var $real = $("#select_class option").filter(function () {
+					return $(this).val() && !$(this).is(":disabled");
+				});
+				if ($real.length === 1) {
+					$("#select_class").val($real.first().val()).trigger("change");
+				}
 			});
 		});
 
@@ -653,7 +633,11 @@ body.marks-entry-body .select2-search__field {
 		if (<?= !empty($nursery_marks_only) ? 'true' : 'false'; ?>) {
 			return true;
 		}
-		return String($("#select_class option:selected").data("nursery")) === "1";
+		var $opt = $("#select_class option:selected");
+		if (String($opt.attr("data-nursery")) === "1") {
+			return true;
+		}
+		return /\b(nursery|baby class|middle class|top class|n1|n2|n3)\b/i.test($opt.text() || "");
 	}
 
 	function hideCatType() {
@@ -793,8 +777,6 @@ body.marks-entry-body .select2-search__field {
 			return true;
 		}
 		function refreshMarksMaxLive() {
-			var max = marksOutOf();
-			$("#marksMaxLive").text(max === null ? "" : ("Each mark must be 0–" + max));
 			$(".marks-entry-input").each(function () {
 				checkMarkAgainstTotal($(this), true);
 			});
