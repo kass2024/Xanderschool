@@ -1,174 +1,83 @@
 <style>
-	.nr-sheet, .nr-sheet * { box-sizing: border-box; }
+	body { margin: 0; }
+	.nr-sheet { }
 	.nr-sheet {
-		font-family: "Century Gothic", CenturyGothic, "Tw Cen MT", sans-serif;
+		font-family: "Century Gothic", CenturyGothic, dejavusans, sans-serif;
 		font-weight: 700;
 		color: #231f20;
 		background: #fff;
 	}
-	.nr-page {
-		width: 746pt;
-		height: 511pt;
-		margin: 0 auto 16px;
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		page-break-after: always;
-		break-after: page;
+	table.nr-page {
+		width: 100%;
+		border-collapse: collapse;
+		margin: 0 0 8px;
 	}
-	.nr-slip {
-		width: 355pt;
-		height: 510pt;
-		flex: 0 0 355pt;
-		border: 1.9pt solid #231f20;
-		padding: 5pt 10pt 6pt 5pt;
+	table.nr-page td.nr-slot { width: 48%; vertical-align: top; }
+	table.nr-page td.nr-gap { width: 4%; }
+	table.nr-slip {
+		width: 100%;
+		border-collapse: collapse;
 		background: #fff;
-		overflow: hidden;
-		display: flex;
-		flex-direction: column;
 	}
-	.nr-slip.periodic .nr-top { min-height: 0; margin-bottom: 1pt; }
-	.nr-slip.periodic .nr-table td { height: 18.4pt; }
-	.nr-slip.periodic .nr-row { height: 17.6pt; }
-	.nr-period { letter-spacing: .3pt; }
-	.nr-top {
-		display: flex;
-		align-items: flex-start;
-		min-height: 62pt;
-		margin-bottom: 4pt;
+	table.nr-slip td.nr-body {
+		border: 1.5pt solid #231f20;
+		padding: 5pt 6pt 6pt;
+		vertical-align: top;
 	}
-	.nr-logo-wrap {
-		width: 58pt;
-		flex: 0 0 58pt;
-		padding-top: 4pt;
+	table.nr-head { width: 100%; border-collapse: collapse; margin: 0 0 3pt; }
+	table.nr-head td { border: 0; vertical-align: top; padding: 0; }
+	.nr-logo { width: 42pt; height: 46pt; }
+	table.nr-line { width: 100%; border-collapse: collapse; margin: 0; }
+	table.nr-line td {
+		border: 0;
+		font-size: 9.5pt;
+		font-weight: 700;
+		padding: 0 1pt;
+		height: 13.5pt;
+		vertical-align: bottom;
+		font-family: "Century Gothic", CenturyGothic, dejavusans, sans-serif;
+	}
+	table.nr-line td.fill { border-bottom: 0.8pt dotted #231f20; }
+	table.nr-line td.lab { white-space: nowrap; padding-right: 3pt; }
+	table.nr-line td.sign { white-space: nowrap; padding-left: 3pt; }
+	table.nr-marks {
+		width: 100%;
+		border-collapse: collapse;
+		margin: 2pt 0 4pt;
+	}
+	table.nr-marks th, table.nr-marks td {
+		border: 0.8pt solid #231f20;
+		padding: 1pt 2pt;
+		font-weight: 700;
+		vertical-align: middle;
+		font-family: "Century Gothic", CenturyGothic, dejavusans, sans-serif;
+		line-height: 1.05;
+	}
+	table.nr-marks th {
+		font-size: 8pt;
+		text-align: center;
+		text-transform: uppercase;
+		height: 16pt;
+	}
+	table.nr-marks td {
+		font-size: 8.2pt;
+		height: 13.2pt;
+	}
+	table.nr-marks td.sub { text-transform: uppercase; }
+	table.nr-marks td.num {
+		font-family: Arial, Helvetica, dejavusans, sans-serif;
+		font-size: 9pt;
 		text-align: center;
 	}
-	.nr-logo {
-		width: 46pt;
-		height: 52pt;
-		object-fit: contain;
-		display: block;
-		margin: 0 auto;
-	}
-	.nr-meta { flex: 1; min-width: 0; padding-top: 1pt; }
-	.nr-h {
-		display: flex;
-		align-items: flex-end;
-		font-size: 10.86pt;
-		line-height: 1;
-		height: 16.5pt;
-		white-space: nowrap;
-	}
-	.nr-h .k { font-weight: 700; }
-	.nr-ul {
-		border-bottom: 0.9pt solid #231f20;
-		flex: 1;
-		min-width: 18pt;
-		margin: 0 6pt 1pt 3pt;
-		padding: 0 3pt;
-		font-size: 10.86pt;
-		font-weight: 700;
-		line-height: 1;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.nr-ul.short { flex: 0 1 78pt; }
-	.nr-ul.mid { flex: 0 1 92pt; }
-	.nr-ul.tiny { flex: 0 0 36pt; }
-	.nr-table {
-		width: 331pt;
-		border-collapse: collapse;
-		margin: 0 0 8pt 2pt;
-		table-layout: fixed;
-	}
-	.nr-table th, .nr-table td {
-		border: 0.9pt solid #231f20 !important;
-		padding: 0 3pt !important;
-		font-weight: 700 !important;
-		vertical-align: middle !important;
-		background: #fff !important;
-		line-height: 1.05 !important;
-	}
-	.nr-table th {
-		font-family: "Century Gothic", CenturyGothic, "Tw Cen MT", sans-serif !important;
-		font-size: 9.73pt !important;
-		text-align: center !important;
-		text-transform: uppercase;
-		height: 26pt;
-	}
-	.nr-table td {
-		font-family: "Century Gothic", CenturyGothic, "Tw Cen MT", sans-serif !important;
-		font-size: 10.98pt !important;
-		height: 20pt;
-		text-transform: none;
-		overflow: hidden;
-	}
-	.nr-table td.sub {
-		font-size: 8.6pt !important;
-		line-height: 1.05 !important;
-		text-transform: uppercase;
-		white-space: normal !important;
-		word-break: break-word;
-	}
-	.nr-table td.num {
-		font-family: Arial, Helvetica, sans-serif !important;
-		font-size: 10.98pt !important;
-		font-weight: 700 !important;
-		text-align: center !important;
-		text-transform: none;
-	}
-	.nr-table td.ctr { text-align: center !important; }
-	.nr-table tr.total td { font-size: 11pt !important; }
-	.nr-foot { width: 331pt; margin-left: 2pt; }
-	.nr-row {
-		display: flex;
-		align-items: flex-end;
-		height: 19.6pt;
-		font-size: 11pt;
-		font-weight: 700;
-		line-height: 1;
-		white-space: nowrap;
-	}
-	.nr-dots {
-		flex: 1 1 auto;
-		border-bottom: 1pt dotted #231f20;
-		height: 0;
-		margin: 0 2pt 2pt;
-		min-width: 8pt;
-	}
-	.nr-dots.tail { flex: 0 0 28pt; }
-	.nr-signlab { margin-left: 4pt; }
-	.nr-name {
-		max-width: 120pt;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		padding: 0 2pt;
-		font-weight: 700;
-	}
-	@media screen {
-		.nr-sheet { overflow-x: auto; padding-bottom: 8px; }
-	}
+	table.nr-marks td.ctr { text-align: center; }
+	table.nr-marks tr.total td { font-size: 9pt; }
 	@media print {
-		@page { size: A4 landscape; margin: 34pt 39pt 50pt 57pt; }
-		.app-sidebar-wrapper,
-		.app-sidebar,
-		.app-sidebar-overlay,
-		.header-mobile-wrapper,
-		.app-header,
-		.app-footer,
-		.app-page-title,
-		.ui-theme-settings,
-		.fixed-header { display: none !important; }
+		.app-sidebar-wrapper, .app-sidebar, .app-sidebar-overlay,
+		.header-mobile-wrapper, .app-header, .app-footer, .app-page-title,
+		.ui-theme-settings, .fixed-header { display: none !important; }
 		.app-container, .app-main, .app-main__outer, .app-main__inner {
-			margin: 0 !important;
-			padding: 0 !important;
-			width: auto !important;
-			background: #fff !important;
-			display: block !important;
+			margin: 0 !important; padding: 0 !important; width: auto !important; background: #fff !important;
 		}
-		.nr-sheet { overflow: visible; }
-		.nr-page { width: auto; height: auto; margin: 0; }
-		.nr-slip { break-inside: avoid; page-break-inside: avoid; }
 	}
 </style>
 <?php
@@ -182,6 +91,35 @@ $courseInitials = $nursery_course_initials ?? [];
 $termNo = (int) ($term ?? 0);
 $termLabel = $termNo === 4 ? 'Annual' : (string) \App\Controllers\Home::TermToStr($termNo);
 $yearLabel = (string) ($academic_year_title ?? '');
+$logoSrc = '';
+if (!empty($school_logo)) {
+	$logoFile = FCPATH . 'assets/images/logo/' . $school_logo;
+	if (!empty($pdf) && is_file($logoFile)) {
+		$logoSrc = str_replace('\\', '/', $logoFile);
+	} else {
+		$logoSrc = base_url('assets/images/logo/' . $school_logo);
+	}
+}
+$line = static function (string $label, string $value = '', string $tailLabel = '', string $tailValue = '') {
+	echo '<table class="nr-line" width="100%"><tr>';
+	if ($label !== '') {
+		echo '<td class="lab">' . $label . '</td>';
+	}
+	echo '<td class="fill">' . ($value !== '' ? esc($value) : '&nbsp;') . '</td>';
+	if ($tailLabel !== '') {
+		echo '<td class="lab">' . $tailLabel . '</td>';
+		echo '<td class="fill">' . ($tailValue !== '' ? esc($tailValue) : '&nbsp;') . '</td>';
+	}
+	echo '</tr></table>';
+};
+$signLine = static function (string $name) {
+	echo '<table class="nr-line" width="100%"><tr>';
+	echo '<td class="fill">&nbsp;</td>';
+	echo '<td class="lab">sign:</td>';
+	echo '<td class="sign">' . ($name !== '' ? esc($name) : '&nbsp;') . '</td>';
+	echo '<td class="fill" style="width:16%;">&nbsp;</td>';
+	echo '</tr></table>';
+};
 $discMax = (float) ($discipline_max ?? 0);
 
 $fmt = static function ($n) {
@@ -292,72 +230,70 @@ foreach ($students as $student) {
 	}
 	ob_start();
 	?>
-	<div class="nr-slip<?= $nurseryPeriodic ? ' periodic' : ''; ?>">
-		<div class="nr-top">
-			<div class="nr-logo-wrap">
-				<?php if (!empty($school_logo)): ?>
-					<img src="<?= base_url('assets/images/logo/' . $school_logo); ?>" class="nr-logo" alt="">
-				<?php endif; ?>
-			</div>
-			<div class="nr-meta">
-				<?php if ($nurseryPeriodic): ?>
-					<div class="nr-h"><span class="k nr-period">PERIODIC REPORT</span><span class="nr-ul mid">Period <?= $periodNo > 0 ? $periodNo : ''; ?></span></div>
-				<?php endif; ?>
-				<div class="nr-h"><span class="k">Names:</span><span class="nr-ul"><?= esc($pupil); ?></span></div>
-				<div class="nr-h">
-					<span class="k">Results for Term:</span><span class="nr-ul mid"><?= esc($termLabel); ?></span>
-					<span class="k">Year:</span><span class="nr-ul short"><?= esc($yearLabel); ?></span>
-				</div>
-				<div class="nr-h">
-					<span class="k">Class:</span><span class="nr-ul mid"><?= esc($classLabel); ?></span>
-					<span class="k">Number of Pupils:</span><span class="nr-ul tiny"><?= $pupilCount > 0 ? (int) $pupilCount : ''; ?></span>
-				</div>
-			</div>
-		</div>
-		<table class="nr-table">
-			<thead>
-			<tr>
-				<th style="width:23%;">Subject</th>
-				<th style="width:12.3%;">Full<br>marks</th>
-				<th style="width:15%;">Score</th>
-				<th style="width:36.7%;">Comment</th>
-				<th style="width:13%;">Initials</th>
-			</tr>
-			</thead>
-			<tbody>
-			<?php foreach ($rows as $row): ?>
-				<tr>
-					<td class="sub"><?= esc($row['title']); ?></td>
-					<td class="num"><?= $fmt($row['full']); ?></td>
-					<td class="num"><?= $row['score'] === null ? '' : $fmt($row['score']); ?></td>
-					<td class="ctr"><?= esc($row['comment']); ?></td>
-					<td class="ctr"><?= esc($row['initials']); ?></td>
-				</tr>
-			<?php endforeach; ?>
-			<?php if ($rows === []): ?>
-				<tr><td colspan="5" class="ctr">No subjects are assigned to this class for this term.</td></tr>
-			<?php endif; ?>
-			<tr class="total">
-				<td>TOTAL</td>
-				<td class="num"><?= $maxTotal > 0 ? $fmt($maxTotal) : ''; ?></td>
-				<td class="num"><?= $scored > 0 ? $fmt($scoreTotal) : ''; ?></td>
-				<td></td>
-				<td></td>
-			</tr>
-			</tbody>
-		</table>
-		<div class="nr-foot">
-			<div class="nr-row"><span>Conduct:</span><?php if ($conductText !== ''): ?><span class="nr-name" style="max-width:220pt;"><?= esc($conductText); ?></span><?php endif; ?><span class="nr-dots"></span></div>
-			<div class="nr-row"><span>Class teacher's comment:</span><span class="nr-dots"></span></div>
-			<div class="nr-row"><span class="nr-dots"></span><span class="nr-signlab">sign:</span><?php if ($classTeacher !== ''): ?><span class="nr-name"><?= esc($classTeacher); ?></span><?php endif; ?><span class="nr-dots tail"></span></div>
-			<div class="nr-row"><span>Head teacher's comment:</span><span class="nr-dots"></span></div>
-			<div class="nr-row"><span class="nr-dots"></span><span class="nr-signlab">sign:</span><?php if ($headTeacher !== ''): ?><span class="nr-name"><?= esc($headTeacher); ?></span><?php endif; ?><span class="nr-dots tail"></span></div>
-			<div class="nr-row"><span>Parent's comment:</span><span class="nr-dots"></span></div>
-			<div class="nr-row"><span class="nr-dots"></span><span class="nr-signlab">sign:</span><span class="nr-dots tail"></span></div>
-			<div class="nr-row"><span>Next term begins on:</span><span class="nr-dots"></span></div>
-			<div class="nr-row"><span>Next term ends on:</span><span class="nr-dots"></span></div>
-		</div>
-	</div>
+	<table class="nr-slip" width="100%">
+		<tr>
+			<td class="nr-body">
+				<table class="nr-head" width="100%">
+					<tr>
+						<td style="width:48pt;">
+							<?php if ($logoSrc !== ''): ?>
+								<img src="<?= esc($logoSrc); ?>" class="nr-logo" alt="">
+							<?php endif; ?>
+						</td>
+						<td>
+							<?php if ($nurseryPeriodic): ?>
+								<?php $line('PERIODIC REPORT', $periodNo > 0 ? 'Period ' . $periodNo : ''); ?>
+							<?php endif; ?>
+							<?php $line('Names:', $pupil); ?>
+							<?php $line('Results for Term:', $termLabel, 'Year:', $yearLabel); ?>
+							<?php $line('Class:', $classLabel, 'Number of Pupils:', $pupilCount > 0 ? (string) $pupilCount : ''); ?>
+						</td>
+					</tr>
+				</table>
+				<table class="nr-marks" width="100%">
+					<thead>
+					<tr>
+						<th style="width:24%;">Subject</th>
+						<th style="width:12%;">Full<br>marks</th>
+						<th style="width:14%;">Score</th>
+						<th style="width:36%;">Comment</th>
+						<th style="width:14%;">Initials</th>
+					</tr>
+					</thead>
+					<tbody>
+					<?php foreach ($rows as $row): ?>
+						<tr>
+							<td class="sub"><?= esc($row['title']); ?></td>
+							<td class="num"><?= $fmt($row['full']); ?></td>
+							<td class="num"><?= $row['score'] === null ? '' : $fmt($row['score']); ?></td>
+							<td class="ctr"><?= esc($row['comment']); ?></td>
+							<td class="ctr"><?= esc($row['initials']); ?></td>
+						</tr>
+					<?php endforeach; ?>
+					<?php if ($rows === []): ?>
+						<tr><td colspan="5" class="ctr">No subjects are assigned to this class for this term.</td></tr>
+					<?php endif; ?>
+					<tr class="total">
+						<td>TOTAL</td>
+						<td class="num"><?= $maxTotal > 0 ? $fmt($maxTotal) : ''; ?></td>
+						<td class="num"><?= $scored > 0 ? $fmt($scoreTotal) : ''; ?></td>
+						<td></td>
+						<td></td>
+					</tr>
+					</tbody>
+				</table>
+				<?php $line('Conduct:', $conductText); ?>
+				<?php $line("Class teacher's comment:"); ?>
+				<?php $signLine($classTeacher); ?>
+				<?php $line("Head teacher's comment:"); ?>
+				<?php $signLine($headTeacher); ?>
+				<?php $line("Parent's comment:"); ?>
+				<?php $signLine(''); ?>
+				<?php $line('Next term begins on:'); ?>
+				<?php $line('Next term ends on:'); ?>
+			</td>
+		</tr>
+	</table>
 	<?php
 	$cards[] = ob_get_clean();
 }
@@ -366,13 +302,17 @@ if ($cards === [] && isset($students) && count($students) > 0) {
 }
 if ($cards !== []) {
 	echo '<div class="nr-sheet">';
-	foreach (array_chunk($cards, 2) as $pair) {
-		echo '<div class="nr-page">';
-		echo $pair[0];
-		if (isset($pair[1])) {
-			echo $pair[1];
+	$pairs = array_chunk($cards, 2);
+	$last = count($pairs) - 1;
+	foreach ($pairs as $i => $pair) {
+		echo '<table class="nr-page" width="100%"><tr>';
+		echo '<td class="nr-slot">' . $pair[0] . '</td>';
+		echo '<td class="nr-gap"></td>';
+		echo '<td class="nr-slot">' . ($pair[1] ?? '') . '</td>';
+		echo '</tr></table>';
+		if ($i < $last) {
+			echo '<div style="page-break-after:always;"></div>';
 		}
-		echo '</div>';
 	}
 	echo '</div>';
 }

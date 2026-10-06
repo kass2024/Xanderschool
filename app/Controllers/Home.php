@@ -16978,6 +16978,32 @@ public function getApplicationDocs($id = null)
 	}
 
 
+
+	private function streamNurserySheetPdf(string $html, string $filename): void
+	{
+		$dir = WRITEPATH . 'mpdf';
+		if (!is_dir($dir)) {
+			mkdir($dir, 0775, true);
+		}
+		$mpdf = new \Mpdf\Mpdf([
+			'mode' => 'utf-8',
+			'format' => 'A4-L',
+			'margin_left' => 8,
+			'margin_right' => 8,
+			'margin_top' => 7,
+			'margin_bottom' => 7,
+			'margin_header' => 0,
+			'margin_footer' => 0,
+			'default_font' => 'dejavusans',
+			'tempDir' => $dir,
+		]);
+		$mpdf->shrink_tables_to_fit = 1;
+		$mpdf->SetDisplayMode('fullpage');
+		$mpdf->WriteHTML($html);
+		$mpdf->Output($filename, \Mpdf\Output\Destination::INLINE);
+		exit;
+	}
+
 	public
 	function get_periodic_slip()
 	{
@@ -17168,6 +17194,9 @@ public function getApplicationDocs($id = null)
 			// }
 			// die($view);
 			$html = $view;
+			if ($wisdomNurserySlip) {
+				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf');
+			}
 			try {
 				$mask = FCPATH . "assets/templates/*.html";
 				array_map('unlink', glob($mask));//clear previous cards
@@ -17175,13 +17204,8 @@ public function getApplicationDocs($id = null)
 				$wkhtmltopdf->setTitle(lang("app.rtudentProgressReport"));
 				$wkhtmltopdf->setHtml(utf8_decode($html));
 				$wkhtmltopdf->setPageSize("A4");
-				if ($wisdomNurserySlip) {
-					$wkhtmltopdf->setOrientation("landscape");
-					$wkhtmltopdf->setMargins(array("top" => 12, "left" => 20, "right" => 14, "bottom" => 18));
-				} else {
-					$wkhtmltopdf->setOrientation("portrait");
-					$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
-				}
+				$wkhtmltopdf->setOrientation("portrait");
+				$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
 				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "student_periodic_report" . time() . ".pdf");
 			} catch (\Exception $e) {
 				echo $e->getMessage();
@@ -17584,7 +17608,11 @@ public function getApplicationDocs($id = null)
 				// 	die();
 				// }
 				$html = $view;
-				// echo $html;die();
+				$wisdomNurserySlip = ((int) $fact === 19)
+					&& (is_wisdom_school((int) $school_id) || !in_array((int) $school_id, [28, 30, 31, 42]));
+				if ($wisdomNurserySlip) {
+					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf');
+				}
 				try {
 					$mask = FCPATH . "assets/templates/*.html";
 					array_map('unlink', glob($mask));//clear previous cards
@@ -17592,15 +17620,8 @@ public function getApplicationDocs($id = null)
 					$wkhtmltopdf->setTitle(lang("app.rtudentProgressReport"));
 					$wkhtmltopdf->setHtml(utf8_decode($html));
 					$wkhtmltopdf->setPageSize("A4");
-					$wisdomNurserySlip = ((int) $fact === 19)
-						&& (is_wisdom_school((int) $school_id) || !in_array((int) $school_id, [28, 30, 31, 42]));
-					if ($wisdomNurserySlip) {
-						$wkhtmltopdf->setOrientation("landscape");
-						$wkhtmltopdf->setMargins(array("top" => 12, "left" => 20, "right" => 14, "bottom" => 18));
-					} else {
-						$wkhtmltopdf->setOrientation("portrait");
-						$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
-					}
+					$wkhtmltopdf->setOrientation("portrait");
+					$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
 					$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "student_progress_report" . time() . ".pdf");
 				} catch (\Exception $e) {
 					echo $e->getMessage();
