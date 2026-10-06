@@ -1,7 +1,15 @@
 <style>
 	body { margin: 0; }
+<?php if (empty($pdf)): ?>
+	@font-face {
+		font-family: nurserygothic;
+		src: url("<?= base_url('assets/fonts/texgyreadventor-bold.ttf'); ?>") format("truetype");
+		font-weight: 700;
+		font-style: normal;
+	}
+<?php endif; ?>
 	.nr-sheet {
-		font-family: "Century Gothic", CenturyGothic, dejavusans, sans-serif;
+		font-family: nurserygothic, "Century Gothic", CenturyGothic, sans-serif;
 		font-weight: 700;
 		color: #231f20;
 		background: #eef1f4;
@@ -12,7 +20,7 @@
 		height: 210mm;
 		box-sizing: border-box;
 		background: #fff;
-		padding: 12.15mm 13.69mm 17.85mm 20.26mm;
+		padding: 12.15mm 12.5mm 17.85mm 20.26mm;
 	}
 	table.nr-slip {
 		width: 116.9mm;
@@ -35,7 +43,7 @@
 		padding: 0 0.4mm;
 		height: 7.1mm;
 		vertical-align: bottom;
-		font-family: "Century Gothic", CenturyGothic, dejavusans, sans-serif;
+		font-family: nurserygothic, "Century Gothic", CenturyGothic, sans-serif;
 	}
 	table.nr-line td.fill { border-bottom: 0.8pt dotted #231f20; }
 	table.nr-line td.lab { white-space: nowrap; padding-right: 3pt; }
@@ -50,7 +58,7 @@
 		padding: 0 0.6mm;
 		font-weight: 700;
 		vertical-align: middle;
-		font-family: "Century Gothic", CenturyGothic, dejavusans, sans-serif;
+		font-family: nurserygothic, "Century Gothic", CenturyGothic, sans-serif;
 		line-height: 1.05;
 	}
 	table.nr-marks th {
@@ -63,7 +71,7 @@
 	}
 	table.nr-marks td.sub { text-transform: uppercase; }
 	table.nr-marks td.num {
-		font-family: Arial, Helvetica, dejavusans, sans-serif;
+		font-family: nurserygothic, "Century Gothic", CenturyGothic, sans-serif;
 		font-size: 11pt;
 		text-align: center;
 	}
@@ -263,22 +271,12 @@ foreach ($students as $student) {
 				<?php
 				$headMm = 9.2;
 				$totalMm = 9.8;
-				$titleMm = ($nurseryPeriodic && $periodNo > 0) ? 4.2 : 0;
-				$boxMm = 80.1 - $titleMm;
+				$boxMm = 80.1;
 				$rowMm = ($boxMm - $headMm - $totalMm) / max(1, count($rows));
 				$rowMm = max(4.2, $rowMm);
 				$markH = ' style="height:' . round($rowMm, 2) . 'mm;"';
 				$headS = 'height:' . $headMm . 'mm;';
 				?>
-				<?php if ($nurseryPeriodic && $periodNo > 0): ?>
-					<?php
-					$examTitle = function_exists('nursery_exam_title') ? nursery_exam_title($periodNo) : '';
-					if ($examTitle === '') {
-						$examTitle = 'Exams';
-					}
-					?>
-					<table width="116.9mm" style="margin:0;border-collapse:collapse;"><tr><td style="height:4.2mm;text-align:center;font-weight:bold;font-size:10.5pt;padding:0;"><?= esc($examTitle); ?></td></tr></table>
-				<?php endif; ?>
 				<table class="nr-marks" width="116.9mm">
 					<thead>
 					<tr>
@@ -313,9 +311,9 @@ foreach ($students as $student) {
 				</table>
 				<?php $footLine('Conduct:', $conductText); ?>
 				<?php $footLine("Class teacher's comment:"); ?>
-				<?php $signLine($classTeacher); ?>
+				<?php $signLine(''); ?>
 				<?php $footLine("Head teacher's comment:"); ?>
-				<?php $signLine($headTeacher); ?>
+				<?php $signLine(''); ?>
 				<?php $footLine("Parent's comment:"); ?>
 				<?php $signLine(''); ?>
 				<?php $footLine('Next term begins on:'); ?>

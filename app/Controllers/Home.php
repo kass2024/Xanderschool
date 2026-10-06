@@ -17049,25 +17049,38 @@ public function getApplicationDocs($id = null)
 	}
 
 
-
 	private function streamNurserySheetPdf(string $html, string $filename): void
 	{
 		$dir = WRITEPATH . 'mpdf';
 		if (!is_dir($dir)) {
 			mkdir($dir, 0775, true);
 		}
-		$mpdf = new \Mpdf\Mpdf([
+		$fontFile = FCPATH . 'assets/fonts/texgyreadventor-bold.ttf';
+		$mpdfConfig = [
 			'mode' => 'utf-8',
 			'format' => 'A4-L',
 			'margin_left' => 20.26,
-			'margin_right' => 13.69,
+			'margin_right' => 12.5,
 			'margin_top' => 12.15,
 			'margin_bottom' => 17.85,
 			'margin_header' => 0,
 			'margin_footer' => 0,
 			'default_font' => 'dejavusans',
 			'tempDir' => $dir,
-		]);
+		];
+		if (is_file($fontFile)) {
+			$fontDirs = (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'];
+			$fontData = (new \Mpdf\Config\FontVariables())->getDefaults()['fontdata'];
+			$mpdfConfig['fontDir'] = array_merge($fontDirs, [dirname($fontFile)]);
+			$mpdfConfig['fontdata'] = $fontData + [
+				'nurserygothic' => [
+					'R' => basename($fontFile),
+					'B' => basename($fontFile),
+				],
+			];
+			$mpdfConfig['default_font'] = 'nurserygothic';
+		}
+		$mpdf = new \Mpdf\Mpdf($mpdfConfig);
 		$mpdf->shrink_tables_to_fit = 0;
 		$mpdf->SetDisplayMode('fullpage');
 		$mpdf->WriteHTML($html);
