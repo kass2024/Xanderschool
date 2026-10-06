@@ -2487,13 +2487,9 @@ public function check_school($option)
 						if (staff_teaches_nursery_only($teacherId, (int) $school_id, (int) ($this->data['academic_year'] ?? 0))) {
 							if ($markType !== 1) {
 								return $this->response->setJSON([
-									'error' => 'Nursery courses use CAT only.',
+									'error' => 'Nursery courses use CAT only. Enter quizzes, tests, and homework; they are combined into the CAT score.',
 									'last_id' => $last_id,
 								]);
-							}
-							$courseMaxRow = (new CourseModel())->select('marks')->where('id', (int) ($info['course_id'] ?? 0))->get(1)->getRowArray();
-							if ($courseMaxRow && $courseMaxRow['marks'] !== '' && $courseMaxRow['marks'] !== null) {
-								$info['out_of'] = $courseMaxRow['marks'];
 							}
 						}
 						if (!staff_owns_course_class($teacherId, (int) ($info['course_id'] ?? 0), (int) ($info['class_id'] ?? 0), (int) ($this->data['academic_year'] ?? 0))) {

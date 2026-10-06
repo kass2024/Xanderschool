@@ -379,9 +379,12 @@ body.marks-entry-body .select2-search__field {
 				<div class="marks-field">
 					<label for="outofmarks"><?= lang("app.totalMarks"); ?></label>
 					<input type="number" min="0" step="any" class="form-control" name="outofmarks" required
-						   id="outofmarks"<?= !empty($nursery_marks_only) ? ' readonly' : ''; ?>>
-					<small class="marks-max-live" id="marksMaxLive"><?= !empty($nursery_marks_only) ? 'Full marks come from the course. A course set to 100 is marked out of 100.' : ''; ?></small>
+						   id="outofmarks">
+					<small class="marks-max-live" id="marksMaxLive"></small>
 				</div>
+				<?php if (!empty($nursery_marks_only)): ?>
+					<p class="marks-help">CAT is the continuous assessment: enter each quiz, test, and homework with its own total. They are combined into one CAT score on the report, the same way as other classes. The report full marks stay the maximum set on the course.</p>
+				<?php endif; ?>
 				<p class="marks-help">Leave empty (grey <strong>-</strong>) if the student did not sit the test — it counts as 0 in totals. Enter <strong>0</strong> only when they scored zero.</p>
 				<div class="marks-field">
 					<label for="examDate"><?= lang("app.dateGiven"); ?></label>
@@ -445,16 +448,6 @@ body.marks-entry-body .select2-search__field {
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@7.12.15/dist/sweetalert2.all.min.js"></script>
 <script>
-	window.NURSERY_MARKS_ONLY = <?= !empty($nursery_marks_only) ? 'true' : 'false'; ?>;
-	function applyNurseryCourseMax() {
-		if (!window.NURSERY_MARKS_ONLY) return;
-		var id = $("#select_course").val();
-		var max = $("#course_marks" + id).data("course");
-		if (max === undefined || max === null || max === "") return;
-		$("#outofmarks").val(max).prop("readonly", true);
-		$("#marksMaxLive").text("Full marks are " + max + ", from the course.");
-		if (typeof refreshMarksMaxLive === "function") refreshMarksMaxLive();
-	}
 	$(function () {
 		$('body').addClass('marks-entry-body');
 		function initMarksSelect2($scope) {
@@ -511,7 +504,6 @@ body.marks-entry-body .select2-search__field {
 				initMarksSelect2($("#select_class_div"));
 				showAssignedTeacher();
 				resetView();
-				applyNurseryCourseMax();
 				$("#dv_marks").html("<h3 style=\"text-align: center;margin: 24px 8px\"><?= lang("app.selectCourseAndClass"); ?></h3>");
 			});
 		});
@@ -576,9 +568,7 @@ body.marks-entry-body .select2-search__field {
 		$('[type="submit"]').prop("disabled", true);
 		$("#dv_marks").html("");
 		// $("#form")[0].reset();
-		if (!window.NURSERY_MARKS_ONLY) {
-			$('#outofmarks').val("").prop('disabled', false).prop('readonly', false);
-		}
+		$('#outofmarks').val("").prop('disabled', false).prop('readonly', false);
 		var today = new Date();
 		var yyyy = today.getFullYear();
 		var mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -713,7 +703,6 @@ body.marks-entry-body .select2-search__field {
 		$("#export_pdf").prop("href", "<?= base_url(''); ?>get_student_marks/" + mt + ct + id + course + period + term+"/"+$("[name='year']").val() + "?pdf").removeClass("disabled");
 		$("#dv_marks").load("<?= base_url(''); ?>get_student_marks/" + mt + ct + id + course + period + term+"/"+$("[name='year']").val(), function () {
 			bindMarksEntryInputs();
-			applyNurseryCourseMax();
 		});
 	}
 

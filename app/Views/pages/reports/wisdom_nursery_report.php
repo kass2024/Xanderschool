@@ -99,7 +99,8 @@ $catOnly = static function ($cat) {
 	}
 	return null;
 };
-// Nursery uses CAT only. Full marks are the course maxima (courses.marks).
+// Score is the class CAT: quizzes, tests, and homework combined the same way as other classes.
+// Full marks are the course maxima (courses.marks). Exam is not included.
 $subjectScore = static function (array $core) use ($termNo, $catOnly) {
 	$result = $core['result'] ?? [];
 	if ($termNo === 4) {

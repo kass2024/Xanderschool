@@ -14999,12 +14999,6 @@ public function getApplicationDocs($id = null)
 		$Exammarks = $this->request->getPost("marksE[]");
 		$catType = $this->request->getPost("catType") == null ? '' : $this->request->getPost("catType");
 		$outof = $this->request->getPost("outofmarks");
-		if ($nurseryOnlyTeacher) {
-			$courseMaxRow = (new CourseModel())->select('marks')->where('id', (int) $course_id)->get(1)->getRowArray();
-			if ($courseMaxRow && $courseMaxRow['marks'] !== '' && $courseMaxRow['marks'] !== null) {
-				$outof = $courseMaxRow['marks'];
-			}
-		}
 		$period = $this->request->getPost("period") == null ? 0 : $this->request->getPost("period");
 		$courseProgRow = (new CourseModel())->select('program_type')->where('id', (int) $course_id)->get(1)->getRowArray();
 		$isHolidayCourse = is_holiday_course_program($courseProgRow['program_type'] ?? '');
@@ -16782,7 +16776,6 @@ public function getApplicationDocs($id = null)
 			if ($showNurseryMention) {
 				$html_script .= $this->nurseryMentionScript($nurseryBands);
 			}
-			$html_script .= "<script>if (window.applyNurseryCourseMax) applyNurseryCourseMax();</script>";
 			echo $html . $html_script;
 		}
 	}

@@ -1168,6 +1168,9 @@
 								<?php endif; ?>
 								<?php endif; ?>
 							</select>
+							<?php if (!empty($nursery_marks_only)): ?>
+								<small class="text-muted d-block mt-1">CAT is quizzes, tests, and homework combined into one score, the same way as other classes.</small>
+							<?php endif; ?>
 						</div>
 						<div class="form-group" id="active_term">
 							<label><?= lang("app.activeTerm"); ?></label>
