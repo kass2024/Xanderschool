@@ -185,6 +185,11 @@ class Home extends BaseController
 			$this->data['active_term_id'] = $skl->active_term_id;
 			$this->data['school_id'] = $this->session->get("soma_school_id");
 			helper('qonics');
+			$this->data['nursery_marks_only'] = staff_teaches_nursery_only(
+				(int) $this->session->get('soma_id'),
+				(int) $this->session->get('soma_school_id'),
+				(int) ($skl->academic_year ?? 0)
+			);
 			$this->data['soma_home_school_id'] = school_hierarchy_home_id();
 			$this->data['master_child_schools'] = school_hierarchy_accessible_schools();
 			$this->data['is_master_school_user'] = school_hierarchy_can_switch();
@@ -14886,7 +14891,20 @@ public function getApplicationDocs($id = null)
 		$term = $term == null ? $sessionTerm : $term;
 		$academic_year = $academic_year == null ? $sessionYear : $academic_year;
 		$markType = (int) $this->request->getGet('marktype');
-		$isHolidayMarks = $markType === holiday_coaching_mark_type() || is_holiday_term_choice($term);
+		$nurseryOnly = staff_teaches_nursery_only(
+			(int) $this->session->get('soma_id'),
+			(int) $school_id,
+			(int) $academic_year
+		);
+		$data['nursery_marks_only'] = $nurseryOnly;
+		if ($nurseryOnly) {
+			$markType = 1;
+			if (is_holiday_term_choice($term)) {
+				$term = $sessionTerm;
+			}
+		}
+		$data['marktype'] = $markType;
+		$isHolidayMarks = !$nurseryOnly && ($markType === holiday_coaching_mark_type() || is_holiday_term_choice($term));
 		if ($isHolidayMarks) {
 			$markType = holiday_coaching_mark_type();
 			$term = holiday_coaching_term_choice();
@@ -14967,12 +14985,26 @@ public function getApplicationDocs($id = null)
 		}
 		$course_id = $this->request->getPost("course");
 		$mark_type = $this->request->getPost("marktype");
+		$nurseryOnlyTeacher = staff_teaches_nursery_only(
+			(int) $this->session->get('soma_id'),
+			(int) $this->session->get('soma_school_id'),
+			(int) $year
+		);
+		if ($nurseryOnlyTeacher && (int) $mark_type !== 1) {
+			return $this->response->setJSON(array("error" => "Nursery courses use CAT only."));
+		}
 		$examDate = strtotime($this->request->getPost("examDate"));
 		$marks = $this->request->getPost("marks[]");
 		$Catmarks = $this->request->getPost("marksC[]");
 		$Exammarks = $this->request->getPost("marksE[]");
 		$catType = $this->request->getPost("catType") == null ? '' : $this->request->getPost("catType");
 		$outof = $this->request->getPost("outofmarks");
+		if ($nurseryOnlyTeacher) {
+			$courseMaxRow = (new CourseModel())->select('marks')->where('id', (int) $course_id)->get(1)->getRowArray();
+			if ($courseMaxRow && $courseMaxRow['marks'] !== '' && $courseMaxRow['marks'] !== null) {
+				$outof = $courseMaxRow['marks'];
+			}
+		}
 		$period = $this->request->getPost("period") == null ? 0 : $this->request->getPost("period");
 		$courseProgRow = (new CourseModel())->select('program_type')->where('id', (int) $course_id)->get(1)->getRowArray();
 		$isHolidayCourse = is_holiday_course_program($courseProgRow['program_type'] ?? '');
@@ -16750,6 +16782,7 @@ public function getApplicationDocs($id = null)
 			if ($showNurseryMention) {
 				$html_script .= $this->nurseryMentionScript($nurseryBands);
 			}
+			$html_script .= "<script>if (window.applyNurseryCourseMax) applyNurseryCourseMax();</script>";
 			echo $html . $html_script;
 		}
 	}

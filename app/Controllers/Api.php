@@ -343,7 +343,8 @@ class Api extends BaseController
 									$academicTypeId = 1;
 								}
 							}
-							$data['assessmentTypes'] = marks_assessment_types($result->school_id, $academicTypeId);
+							$catOnly = staff_teaches_nursery_only($result->id, $result->school_id, (int) ($result->academic_year ?? 0));
+							$data['assessmentTypes'] = marks_assessment_types($result->school_id, $academicTypeId, $catOnly);
 							// Level clearance → Android / mobile menu tiles
 							try {
 								$clearance = new \App\Models\PostMenuClearanceModel();
@@ -495,7 +496,11 @@ class Api extends BaseController
 			'classes' => $classes,
 			'courses' => $coursesData,
 			'filled_cats' => $filledCats,
-			'assessmentTypes' => marks_assessment_types($school_id, $academicTypeId),
+			'assessmentTypes' => marks_assessment_types(
+				$school_id,
+				$academicTypeId,
+				staff_teaches_nursery_only($teacher_id, $school_id, (int) ($school->academic_year ?? 0))
+			),
 		]);
 	}
 
@@ -518,6 +523,9 @@ class Api extends BaseController
 		helper('qonics');
 		if (!staff_owns_course_class($teacher_id, $course_id, $class_id, (int) ($this->data['academic_year'] ?? 0))) {
 			return $this->response->setJSON(['error' => 'This course is not assigned to you']);
+		}
+		if ($mark_type !== 1 && staff_teaches_nursery_only($teacher_id, $school_id, (int) ($this->data['academic_year'] ?? 0))) {
+			return $this->response->setJSON(['error' => 'Nursery courses use CAT only.']);
 		}
 		if (period_is_locked((int) ($this->data['active_term'] ?? 0), $period)) {
 			return $this->response->setJSON(['error' => 'Period ' . $period . ' is locked. No marks can be entered or changed.']);
@@ -2476,6 +2484,18 @@ public function check_school($option)
 						$markType = (int) ($info['mark_type'] ?? 0);
 						$catType = normalizeCatTypeCode($info['cat_type'] ?? '');
 						$teacherId = (int) ($info['created_by'] ?? 0);
+						if (staff_teaches_nursery_only($teacherId, (int) $school_id, (int) ($this->data['academic_year'] ?? 0))) {
+							if ($markType !== 1) {
+								return $this->response->setJSON([
+									'error' => 'Nursery courses use CAT only.',
+									'last_id' => $last_id,
+								]);
+							}
+							$courseMaxRow = (new CourseModel())->select('marks')->where('id', (int) ($info['course_id'] ?? 0))->get(1)->getRowArray();
+							if ($courseMaxRow && $courseMaxRow['marks'] !== '' && $courseMaxRow['marks'] !== null) {
+								$info['out_of'] = $courseMaxRow['marks'];
+							}
+						}
 						if (!staff_owns_course_class($teacherId, (int) ($info['course_id'] ?? 0), (int) ($info['class_id'] ?? 0), (int) ($this->data['academic_year'] ?? 0))) {
 							return $this->response->setJSON([
 								'error' => 'You can only enter marks for courses assigned to you.',

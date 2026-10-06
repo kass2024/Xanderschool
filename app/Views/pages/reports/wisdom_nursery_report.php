@@ -93,24 +93,19 @@ $mentionFor = static function ($pct) use ($grades) {
 	}
 	return '';
 };
-$combinePair = static function ($cat, $exam) {
-	$nums = [];
-	foreach ([$cat, $exam] as $v) {
-		if ($v !== null && $v !== '' && is_numeric($v)) {
-			$nums[] = (float) $v;
-		}
+$catOnly = static function ($cat) {
+	if ($cat !== null && $cat !== '' && is_numeric($cat)) {
+		return (float) $cat;
 	}
-	if ($nums === []) {
-		return null;
-	}
-	return array_sum($nums) / count($nums);
+	return null;
 };
-$subjectScore = static function (array $core) use ($termNo, $combinePair) {
+// Nursery uses CAT only. Full marks are the course maxima (courses.marks).
+$subjectScore = static function (array $core) use ($termNo, $catOnly) {
 	$result = $core['result'] ?? [];
 	if ($termNo === 4) {
 		$parts = [];
 		for ($t = 1; $t <= 3; $t++) {
-			$s = $combinePair($result['cat'][$t] ?? null, $result['exam'][$t] ?? null);
+			$s = $catOnly($result['cat'][$t] ?? null);
 			if ($s !== null) {
 				$parts[] = $s;
 			}
@@ -120,7 +115,7 @@ $subjectScore = static function (array $core) use ($termNo, $combinePair) {
 		}
 		return array_sum($parts) / count($parts);
 	}
-	return $combinePair($result['marks'] ?? null, $result['exam_marks'] ?? null);
+	return $catOnly($result['marks'] ?? null);
 };
 
 $studentReg = isset($_GET['student']) ? $_GET['student'] : false;

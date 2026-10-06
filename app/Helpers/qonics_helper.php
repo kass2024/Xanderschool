@@ -1995,17 +1995,65 @@ if (!function_exists('staff_name_initials')) {
 	}
 }
 
+if (!function_exists('staff_teaches_nursery_only')) {
+	/**
+	 * True when every course assigned to this teacher this year is a nursery class.
+	 * Holiday courses are ignored. No assignments returns false.
+	 */
+	function staff_teaches_nursery_only($staffId, $schoolId, $yearId): bool
+	{
+		$staffId = (int) $staffId;
+		$schoolId = (int) $schoolId;
+		$yearId = (int) $yearId;
+		if ($staffId < 1 || $schoolId < 1 || $yearId < 1) {
+			return false;
+		}
+		try {
+			$rows = \Config\Database::connect()->table('course_records r')
+				->select('f.id as fac_id, f.title, f.abbrev')
+				->join('courses c', 'c.id = r.course')
+				->join('classes cl', 'cl.id = r.class')
+				->join('departments d', 'd.id = cl.department')
+				->join('faculty f', 'f.id = d.faculty_id')
+				->where('r.lecturer', $staffId)
+				->where('r.year', $yearId)
+				->where('c.school_id', $schoolId)
+				->where("IFNULL(c.program_type,'') <> 'holiday'", null, false)
+				->groupBy('f.id, f.title, f.abbrev')
+				->get()->getResultArray();
+		} catch (\Throwable $e) {
+			return false;
+		}
+		if ($rows === []) {
+			return false;
+		}
+		foreach ($rows as $row) {
+			$facId = (int) ($row['fac_id'] ?? 0);
+			$label = strtolower(trim((string) ($row['title'] ?? '') . ' ' . (string) ($row['abbrev'] ?? '')));
+			if ($facId !== 19 && strpos($label, 'nursery') === false) {
+				return false;
+			}
+		}
+		return true;
+	}
+}
 if (!function_exists('marks_assessment_types')) {
 	/**
 	 * Marks entry types for web + mobile. Holiday coaching is Wisdom-only and has no period.
+	 * Nursery-only teachers get CAT alone.
 	 *
 	 * @return array<int, array{id:int, academic_type_id:int, title:string, requires_period:bool}>
 	 */
-	function marks_assessment_types($schoolId, $academicTypeId = 1)
+	function marks_assessment_types($schoolId, $academicTypeId = 1, $catOnly = false)
 	{
 		$academicTypeId = (int) $academicTypeId;
 		if ($academicTypeId < 1) {
 			$academicTypeId = 1;
+		}
+		if ($catOnly) {
+			return [
+				['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'CAT', 'requires_period' => true],
+			];
 		}
 		$types = [
 			['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'CAT', 'requires_period' => true],

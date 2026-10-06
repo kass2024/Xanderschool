@@ -297,7 +297,7 @@ body.marks-entry-body .select2-search__field {
 		?>
 		<div class="marks-filters">
 			<?php
-			$type = $_GET['marktype'];
+			$type = $marktype ?? ($_GET['marktype'] ?? 1);
 			if ($type == 4) {
 				?>
 				<div class="marks-filter-item">
@@ -327,7 +327,7 @@ body.marks-entry-body .select2-search__field {
 				</select>
 			</div>
 			<?php
-			$type = $_GET['marktype'];
+			$type = $marktype ?? ($_GET['marktype'] ?? 1);
 			if ($type == 1) {
 				?>
 				<div class="marks-filter-item" id="cat_type_div" style="display:none;">
@@ -338,7 +338,7 @@ body.marks-entry-body .select2-search__field {
 				</div>
 				<?php
 			} ?>
-			<input type="hidden" value="<?php echo $_GET['marktype']; ?>" name="marktype" id="marktype">
+			<input type="hidden" value="<?php echo (int) ($marktype ?? ($_GET['marktype'] ?? 1)); ?>" name="marktype" id="marktype">
 			<input type="hidden" value="<?php echo isset($_GET['period']) ? $_GET['period'] : ''; ?>" name="period"
 				   id="period1">
 			<input type="hidden" value="<?php echo $_GET['term']; ?>" name="term" id="term">
@@ -352,7 +352,7 @@ body.marks-entry-body .select2-search__field {
 				<?php
 				$period_str = !isset($_GET['period']) || $_GET['period'] == 0 ? "" : "#" . lang("app.period") . ':' . $_GET['period'];
 				?>
-				<h4><?= \App\Controllers\Home::marksTypeToStr($_GET['marktype']) . ' ' . $period_str ?></h4>
+				<h4><?= \App\Controllers\Home::marksTypeToStr($marktype ?? ($_GET['marktype'] ?? 1)) . ' ' . $period_str ?></h4>
 				<div class="marks-field">
 					<span><?= lang("app.selectedAcademic"); ?></span>
 					<strong><?= $academic_year ?></strong>
@@ -379,8 +379,8 @@ body.marks-entry-body .select2-search__field {
 				<div class="marks-field">
 					<label for="outofmarks"><?= lang("app.totalMarks"); ?></label>
 					<input type="number" min="0" step="any" class="form-control" name="outofmarks" required
-						   id="outofmarks">
-					<small class="marks-max-live" id="marksMaxLive"></small>
+						   id="outofmarks"<?= !empty($nursery_marks_only) ? ' readonly' : ''; ?>>
+					<small class="marks-max-live" id="marksMaxLive"><?= !empty($nursery_marks_only) ? 'Full marks come from the course. A course set to 100 is marked out of 100.' : ''; ?></small>
 				</div>
 				<p class="marks-help">Leave empty (grey <strong>-</strong>) if the student did not sit the test — it counts as 0 in totals. Enter <strong>0</strong> only when they scored zero.</p>
 				<div class="marks-field">
@@ -445,6 +445,16 @@ body.marks-entry-body .select2-search__field {
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@7.12.15/dist/sweetalert2.all.min.js"></script>
 <script>
+	window.NURSERY_MARKS_ONLY = <?= !empty($nursery_marks_only) ? 'true' : 'false'; ?>;
+	function applyNurseryCourseMax() {
+		if (!window.NURSERY_MARKS_ONLY) return;
+		var id = $("#select_course").val();
+		var max = $("#course_marks" + id).data("course");
+		if (max === undefined || max === null || max === "") return;
+		$("#outofmarks").val(max).prop("readonly", true);
+		$("#marksMaxLive").text("Full marks are " + max + ", from the course.");
+		if (typeof refreshMarksMaxLive === "function") refreshMarksMaxLive();
+	}
 	$(function () {
 		$('body').addClass('marks-entry-body');
 		function initMarksSelect2($scope) {
@@ -501,6 +511,7 @@ body.marks-entry-body .select2-search__field {
 				initMarksSelect2($("#select_class_div"));
 				showAssignedTeacher();
 				resetView();
+				applyNurseryCourseMax();
 				$("#dv_marks").html("<h3 style=\"text-align: center;margin: 24px 8px\"><?= lang("app.selectCourseAndClass"); ?></h3>");
 			});
 		});
@@ -565,7 +576,9 @@ body.marks-entry-body .select2-search__field {
 		$('[type="submit"]').prop("disabled", true);
 		$("#dv_marks").html("");
 		// $("#form")[0].reset();
-		$('#outofmarks').val("").prop('disabled', false).prop('readonly', false);
+		if (!window.NURSERY_MARKS_ONLY) {
+			$('#outofmarks').val("").prop('disabled', false).prop('readonly', false);
+		}
 		var today = new Date();
 		var yyyy = today.getFullYear();
 		var mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -700,6 +713,7 @@ body.marks-entry-body .select2-search__field {
 		$("#export_pdf").prop("href", "<?= base_url(''); ?>get_student_marks/" + mt + ct + id + course + period + term+"/"+$("[name='year']").val() + "?pdf").removeClass("disabled");
 		$("#dv_marks").load("<?= base_url(''); ?>get_student_marks/" + mt + ct + id + course + period + term+"/"+$("[name='year']").val(), function () {
 			bindMarksEntryInputs();
+			applyNurseryCourseMax();
 		});
 	}
 
