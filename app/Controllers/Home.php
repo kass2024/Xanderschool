@@ -17109,6 +17109,10 @@ public function getApplicationDocs($id = null)
 				->join("faculty f", "f.id=d.faculty_id")
 				->where("classes.id", $class)->get()->getRow();
 		$factId = $classVerify ? (int) $classVerify->fac_id : 0;
+		if ($factId === 19 && !in_array((int) $period, [3, 4], true)) {
+			echo "Choose Midterm or End of Term Exam.";
+			return;
+		}
 		$wisdomNurserySlip = $factId === 19
 			&& (is_wisdom_school((int) $school_id) || !in_array((int) $school_id, [28, 30, 31, 54, 42]));
 		$StudentModel = new StudentModel();
@@ -17170,11 +17174,7 @@ public function getApplicationDocs($id = null)
 						->where("marks.student_id", $student['id']);
 				if ($factId === 19) {
 					$resultBuilder->where("(marks.cat_type IS NULL OR TRIM(marks.cat_type) = '')", null, false);
-					if ((int) $period < 1) {
-						$resultBuilder->whereIn("marks.period", [1, 2, 3, 4]);
-					} else {
-						$resultBuilder->where("marks.period", (int) $period);
-					}
+					$resultBuilder->where("marks.period", (int) $period);
 				} else {
 					$resultBuilder->where("marks.period", $period);
 				}

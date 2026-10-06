@@ -91,7 +91,7 @@
 		</div>
 		<div class="form-group col-sm-3 col-md-2 col-lg-2">
 			<label><?= lang("app.term"); ?>:</label>
-			<select class="form-control select2" id="term" name="term" required>
+			<select class="form-control select2" id="term" name="term" required data-active="<?= (int) ($term ?? 0); ?>">
 				<option selected disabled><?= lang("app.selectTerm"); ?> </option>
 				<option value="1"><?= lang("app.term1"); ?> </option>
 				<option value="2"><?= lang("app.term2"); ?> </option>
@@ -99,7 +99,7 @@
 			</select>
 		</div>
 		<div class="form-group col-sm-3 col-md-2 col-lg-2" id="period_wrap">
-			<label><?= lang("app.period"); ?> :</label>
+			<label id="period_label"><?= lang("app.period"); ?> :</label>
 			<select class="form-control select2" id="period" name="period" required>
 				<option selected disabled><?= lang("app.selectPeriod"); ?> </option>
 				<option value="1" data-generic="<?= esc(lang("app.period1")); ?>"><?= lang("app.period1"); ?> </option>
@@ -125,13 +125,40 @@
 </form>
 <script>
 	$(function () {
+		var genericPeriodHtml = $("#period").html();
+		var periodLabel = <?= json_encode(lang("app.period")); ?>;
+		function rebuildPeriod($period, html) {
+			var enhanced = $period.hasClass("select2-hidden-accessible");
+			if (enhanced) {
+				$period.select2("destroy");
+			}
+			$period.html(html);
+			$period.prop("disabled", false).prop("required", true);
+			if (enhanced) {
+				$period.select2();
+			}
+		}
 		function syncPeriod() {
 			var fac = parseInt($("#select_class option:selected").data("fac"), 10);
 			var nursery = fac === 19;
 			var $period = $("#period");
-			$("#period_wrap").toggle(!nursery);
-			$period.prop("disabled", nursery);
-			$period.prop("required", !nursery);
+			var $term = $("#term");
+			$("#period_wrap").show();
+			if (nursery) {
+				$("#period_label").text("Marks");
+				rebuildPeriod($period,
+					'<option selected disabled>Select marks</option>' +
+					'<option value="3">Midterm</option>' +
+					'<option value="4">End of Term Exam</option>'
+				);
+				var active = String($term.data("active") || "");
+				if (active === "1" || active === "2" || active === "3") {
+					$term.val(active).trigger("change");
+				}
+			} else {
+				$("#period_label").text(periodLabel);
+				rebuildPeriod($period, genericPeriodHtml);
+			}
 		}
 		$("#select_class").on("change", function () {
 			syncPeriod();
