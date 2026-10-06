@@ -9,7 +9,7 @@ namespace Config;
 class MenuClearance
 {
 	/** Posts that always have full menu access (cannot be restricted). */
-	const FULL_ACCESS_POSTS = [1, 3, 18, 25, 26, 29, 30]; // Head master, DoS, Headmistress, Head Teacher, Deputy Head Teacher, Director, Deputy Director
+	const FULL_ACCESS_POSTS = [1, 3, 15, 18, 25, 26, 29, 30]; // Head master, DoS, Executive Principal, Headmistress, Head Teacher, Deputy Head Teacher, Director, Deputy Director
 
 	/** Head master, Headmistress, and Head Teacher (same school-head rights). */
 	const HEAD_MASTER_EQUIVALENT_POSTS = [1, 18, 25];
@@ -59,9 +59,9 @@ class MenuClearance
 	const CHILD_BUDGET_PREPARE_POSTS = [8, 9, 28]; // Cashier, Accountant, Chief Accountant
 	const CHILD_BUDGET_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26, 29, 30]; // Head master, DOS, Dean, Executive Principal, Headmistress, Head Teacher, Deputy Head Teacher, Director, Deputy Director
 	/** Fees Entry + school/extra fee settings. */
-	const FEE_OPERATOR_POSTS = [8, 9, 24, 28, 29]; // Cashier, Accountant, Director of Finance, Chief Accountant, Director
+	const FEE_OPERATOR_POSTS = [8, 9, 15, 24, 28, 29]; // Cashier, Accountant, Executive Principal, Director of Finance, Chief Accountant, Director
 	/** Fees report only (no entry, no settings, no SMS). */
-	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 15, 18, 25, 26, 30];
+	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 18, 25, 26, 30];
 	/** Budget Dashboard “All branches” / cross-school rollup (master school only). */
 	const BUDGET_CROSS_BRANCH_DASHBOARD_POSTS = [15, 19, 24]; // Executive Principal, Budget Manager, Director of Finance
 
@@ -268,7 +268,8 @@ class MenuClearance
 
 	public static function canManageFees($postId)
 	{
-		return in_array((int) $postId, self::FEE_OPERATOR_POSTS, true);
+		$postId = (int) $postId;
+		return in_array($postId, self::FEE_OPERATOR_POSTS, true) || self::isExecutivePrincipalPost($postId);
 	}
 
 	public static function canViewFeesReport($postId)
@@ -284,8 +285,8 @@ class MenuClearance
 	}
 
 	/**
-	 * Director of Finance / Cashier / Accountant / Director: full fee menus.
-	 * Headmaster / Executive Principal / Headmistress / DOS / Dean: fees report only.
+	 * Director of Finance / Cashier / Accountant / Director / Executive Principal: full fee menus.
+	 * Headmaster / Headmistress / DOS / Dean: fees report only.
 	 * Everyone else: no fee entry or settings.
 	 *
 	 * @param string[] $keys
@@ -689,7 +690,21 @@ class MenuClearance
 	 */
 	public static function isFullAccessPost($postId)
 	{
-		return in_array((int) $postId, self::FULL_ACCESS_POSTS, true);
+		$postId = (int) $postId;
+		if (in_array($postId, self::FULL_ACCESS_POSTS, true)) {
+			return true;
+		}
+		return self::isExecutivePrincipalPost($postId);
+	}
+
+	/** Executive Principal (post 15). Same sidebar as Director. */
+	public static function isExecutivePrincipalPost($postId)
+	{
+		$postId = (int) $postId;
+		if ($postId === 15) {
+			return true;
+		}
+		return self::postTitle($postId) === 'executive principal';
 	}
 
 	/**
@@ -735,7 +750,7 @@ class MenuClearance
 	public static function canLockMarksEditing($postId)
 	{
 		$postId = (int) $postId;
-		if (self::canToggleSavedCatEdit($postId) || self::isHeadMasterEquivalent($postId)) {
+		if (self::isExecutivePrincipalPost($postId) || self::canToggleSavedCatEdit($postId) || self::isHeadMasterEquivalent($postId)) {
 			return true;
 		}
 		$title = self::postTitle($postId);
@@ -802,7 +817,7 @@ class MenuClearance
 		if (strpos($t, 'customer care') !== false) {
 			return true;
 		}
-		if ($t === 'director') {
+		if ($t === 'director' || $t === 'executive principal') {
 			return true;
 		}
 		if (strpos($t, 'head of discipline') !== false || strpos($t, 'dean of discipline') !== false) {
