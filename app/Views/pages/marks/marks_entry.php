@@ -328,7 +328,7 @@ body.marks-entry-body .select2-search__field {
 			</div>
 			<?php
 			$type = $marktype ?? ($_GET['marktype'] ?? 1);
-			if ($type == 1) {
+			if ($type == 1 && empty($nursery_marks_only)) {
 				?>
 				<div class="marks-filter-item" id="cat_type_div" style="display:none;">
 					<label for="catype"><?= lang("app.catType"); ?></label>
@@ -350,9 +350,18 @@ body.marks-entry-body .select2-search__field {
 		<div class="marks-entry-grid">
 			<div class="marks-entry-card">
 				<?php
-				$period_str = !isset($_GET['period']) || $_GET['period'] == 0 ? "" : "#" . lang("app.period") . ':' . $_GET['period'];
+				$entryPeriod = (int) ($_GET['period'] ?? 0);
+				if (!empty($nursery_marks_only)) {
+					$entryHeading = nursery_exam_title($entryPeriod);
+					if ($entryHeading === '') {
+						$entryHeading = 'Exams';
+					}
+				} else {
+					$period_str = !isset($_GET['period']) || $_GET['period'] == 0 ? "" : "#" . lang("app.period") . ':' . $_GET['period'];
+					$entryHeading = \App\Controllers\Home::marksTypeToStr($marktype ?? ($_GET['marktype'] ?? 1)) . ' ' . $period_str;
+				}
 				?>
-				<h4><?= \App\Controllers\Home::marksTypeToStr($marktype ?? ($_GET['marktype'] ?? 1)) . ' ' . $period_str ?></h4>
+				<h4 id="marks_entry_title"><?= esc($entryHeading); ?></h4>
 				<div class="marks-field">
 					<span><?= lang("app.selectedAcademic"); ?></span>
 					<strong><?= $academic_year ?></strong>
@@ -383,7 +392,7 @@ body.marks-entry-body .select2-search__field {
 					<small class="marks-max-live" id="marksMaxLive"></small>
 				</div>
 				<?php if (!empty($nursery_marks_only)): ?>
-					<p class="marks-help">CAT is the continuous assessment: enter each quiz, test, and homework with its own total. They are combined into one CAT score on the report, the same way as other classes. The report full marks stay the maximum set on the course.</p>
+					<p class="marks-help">Record the mark for this exam. Nursery uses End of Month 1 Exam, End of Month 2 Exam, Midterm, and End of Term Exam. Quizzes, tests, homework, and the regular exam are not used.</p>
 				<?php endif; ?>
 				<p class="marks-help">Leave empty (grey <strong>-</strong>) if the student did not sit the test — it counts as 0 in totals. Enter <strong>0</strong> only when they scored zero.</p>
 				<div class="marks-field">
@@ -515,6 +524,15 @@ body.marks-entry-body .select2-search__field {
 				hideCatType();
 				return;
 			}
+			if (classIsNursery()) {
+				hideCatType();
+				$("#marktype").val("1");
+				var titles = <?= json_encode(nursery_exam_periods()); ?>;
+				var title = titles[String($("#period1").val())] || "Exams";
+				$("#marks_entry_title").text(title);
+				populate_marks();
+				return;
+			}
 			refreshCatTypes(populate_marks);
 		})
 		$("#catype").on("change", function () {
@@ -631,6 +649,13 @@ body.marks-entry-body .select2-search__field {
 		window.applyingCatOptions = false;
 	}
 
+	function classIsNursery() {
+		if (<?= !empty($nursery_marks_only) ? 'true' : 'false'; ?>) {
+			return true;
+		}
+		return String($("#select_class option:selected").data("nursery")) === "1";
+	}
+
 	function hideCatType() {
 		var $box = $("#cat_type_div");
 		if (!$box.length) {
@@ -648,7 +673,7 @@ body.marks-entry-body .select2-search__field {
 		}
 		var classId = $("#select_class").val();
 		var course = $("#select_course").val();
-		if (!classId || !course) {
+		if (!classId || !course || classIsNursery()) {
 			hideCatType();
 			if (typeof done === "function") done();
 			return;
@@ -691,13 +716,13 @@ body.marks-entry-body .select2-search__field {
 	function populate_marks() {
 		var id = $("#select_class").val() + "/";
 		var mt = $("#marktype").val() + "/";
-		var ct = ($("#catype").val() || "") + "/";
+		var ct = (classIsNursery() ? "" : ($("#catype").val() || "")) + "/";
 		var course = $("#select_course").val() + "/";
 		var period = $("#period1").val().length == 0 ? '0/' : ($("#period1").val() + "/");
 		var term = $("#term").val();
 		if ($("#select_class").val() == null || $("#select_course").val() == null)
 			return;
-		if ($("#catype").length && !$("#catype").val())
+		if (!classIsNursery() && $("#catype").length && !$("#catype").val())
 			return;
 		resetView();
 		$("#export_pdf").prop("href", "<?= base_url(''); ?>get_student_marks/" + mt + ct + id + course + period + term+"/"+$("[name='year']").val() + "?pdf").removeClass("disabled");

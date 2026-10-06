@@ -2037,10 +2037,49 @@ if (!function_exists('staff_teaches_nursery_only')) {
 		return true;
 	}
 }
+if (!function_exists('nursery_exam_periods')) {
+	/** Nursery exams stored as mark type 1, one row per period, with no quiz/test/homework code. */
+	function nursery_exam_periods(): array
+	{
+		return [
+			1 => 'End of Month 1 Exam',
+			2 => 'End of Month 2 Exam',
+			3 => 'Midterm',
+			4 => 'End of Term Exam',
+		];
+	}
+}
+
+if (!function_exists('nursery_exam_title')) {
+	function nursery_exam_title($period): string
+	{
+		$map = nursery_exam_periods();
+		return $map[(int) $period] ?? '';
+	}
+}
+
+if (!function_exists('class_is_nursery')) {
+	function class_is_nursery($classId): bool
+	{
+		$classId = (int) $classId;
+		if ($classId < 1) {
+			return false;
+		}
+		$row = \Config\Database::connect()->query(
+			'SELECT f.id AS fac_id FROM classes c
+			 JOIN departments d ON d.id = c.department
+			 JOIN faculty f ON f.id = d.faculty_id
+			 WHERE c.id = ? LIMIT 1',
+			[$classId]
+		)->getRowArray();
+		return (int) ($row['fac_id'] ?? 0) === 19;
+	}
+}
+
 if (!function_exists('marks_assessment_types')) {
 	/**
 	 * Marks entry types for web + mobile. Holiday coaching is Wisdom-only and has no period.
-	 * Nursery-only teachers get CAT alone.
+	 * Nursery-only teachers get Exams alone (the four named periods).
 	 *
 	 * @return array<int, array{id:int, academic_type_id:int, title:string, requires_period:bool}>
 	 */
@@ -2052,7 +2091,7 @@ if (!function_exists('marks_assessment_types')) {
 		}
 		if ($catOnly) {
 			return [
-				['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'CAT', 'requires_period' => true],
+				['id' => 1, 'academic_type_id' => $academicTypeId, 'title' => 'Exams', 'requires_period' => true],
 			];
 		}
 		$types = [

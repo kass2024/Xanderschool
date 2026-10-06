@@ -89,10 +89,10 @@
 			<label><?= lang("app.period"); ?> :</label>
 			<select class="form-control select2" id="period" name="period" required>
 				<option selected disabled><?= lang("app.selectPeriod"); ?> </option>
-				<option value="1"><?= lang("app.period1"); ?> </option>
-				<option value="2"><?= lang("app.period2"); ?> </option>
-				<option value="3"><?= lang("app.period3"); ?> </option>
-				<option value="4"><?= lang("app.period4"); ?> </option>
+				<option value="1" data-generic="<?= esc(lang("app.period1")); ?>"><?= lang("app.period1"); ?> </option>
+				<option value="2" data-generic="<?= esc(lang("app.period2")); ?>"><?= lang("app.period2"); ?> </option>
+				<option value="3" data-generic="<?= esc(lang("app.period3")); ?>"><?= lang("app.period3"); ?> </option>
+				<option value="4" data-generic="<?= esc(lang("app.period4")); ?>"><?= lang("app.period4"); ?> </option>
 			</select>
 		</div>
 
@@ -103,7 +103,7 @@
 				<?php
 				foreach ($classes as $class) {
 					?>
-					<option
+					<option data-fac="<?= (int) ($class['facul_id'] ?? 0); ?>"
 						value="<?= $class['id']; ?>"> <?= $class['level_name'] . " " . $class['code'] . " " . $class['title']; ?></option>
 					<?php
 				} ?>
@@ -126,10 +126,23 @@
 </form>
 <script>
 	$(function () {
-		$("#select_class").on("change", function (e) {
-			var val = $(this).val();
-			var year = $("#select_year").val();
-			//$("#select_course").load("<?//= base_url(); ?>//get_course/" + val + "/" + year + "/1");
+		var nurseryExams = <?= json_encode(nursery_exam_periods()); ?>;
+		function paintPeriods() {
+			var fac = parseInt($("#select_class option:selected").data("fac"), 10);
+			$("#period option").each(function () {
+				var value = $(this).val();
+				if (!value) {
+					return;
+				}
+				if (fac === 19 && nurseryExams[value]) {
+					$(this).text(nurseryExams[value]);
+					return;
+				}
+				$(this).text($(this).data("generic") || $(this).text());
+			});
+		}
+		$("#select_class").on("change", function () {
+			paintPeriods();
 		});
 		// $(document).on("click","#btn_generate",function (e) {
 		// 	e.preventDefault();

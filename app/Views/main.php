@@ -1386,7 +1386,7 @@
 							<label><?= lang("app.type"); ?></label>
 							<select required class="select2" name="marktype" id="marks_type" data-nursery-only="<?= !empty($nursery_marks_only) ? '1' : '0'; ?>">
 								<?php if (!empty($nursery_marks_only)): ?>
-								<option value="1" selected><?= lang("app.cat"); ?></option>
+								<option value="1" selected>Exams</option>
 								<?php else: ?>
 								<option disabled selected><?= lang("app.marksTtype"); ?></option>
 								<option value="1"><?= lang("app.cat").(in_array($_SESSION['soma_school_id'], [55])?" ".lang("app.or")." ".lang("app.assessmentFormative"):""); ?></option>
@@ -1405,9 +1405,6 @@
 								<?php endif; ?>
 								<?php endif; ?>
 							</select>
-							<?php if (!empty($nursery_marks_only)): ?>
-								<small class="text-muted d-block mt-1">CAT is quizzes, tests, and homework combined into one score, the same way as other classes.</small>
-							<?php endif; ?>
 						</div>
 						<div class="form-group" id="active_term">
 							<label><?= lang("app.activeTerm"); ?></label>
@@ -1443,11 +1440,14 @@
 							<?php $lockedPeriodsUi = $locked_periods ?? []; ?>
 							<select class="select2" name="period" id="marks_period_select">
 								<option disabled selected><?= lang("app.selectPeriod"); ?></option>
-								<?php for ($pi = 1; $pi <= 4; $pi++):
+								<?php
+								$nurseryPeriodLabels = !empty($nursery_marks_only) ? nursery_exam_periods() : [];
+								for ($pi = 1; $pi <= 4; $pi++):
 									$plocked = in_array($pi, $lockedPeriodsUi, true);
+									$periodLabel = $nurseryPeriodLabels[$pi] ?? lang('app.period' . $pi);
 									?>
 									<option value="<?= $pi; ?>"<?= $plocked ? ' disabled' : ''; ?>>
-										<?= lang('app.period' . $pi); ?><?= $plocked ? ' (Locked)' : ''; ?>
+										<?= esc($periodLabel); ?><?= $plocked ? ' (Locked)' : ''; ?>
 									</option>
 								<?php endfor; ?>
 							</select>

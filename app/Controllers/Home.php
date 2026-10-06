@@ -2129,7 +2129,7 @@ public function testEmail()
 			->get()->getResultArray();
 	}
 
-	/** Live mention column on nursery marks entry (Excellent, â€¦ from Grade Setting). */
+	/** Live mention column on nursery marks entry (Excellent, … from Grade Setting). */
 	private function nurseryMentionScript(array $bands): string
 	{
 		$json = json_encode(array_values($bands), JSON_UNESCAPED_UNICODE);
@@ -11655,7 +11655,7 @@ public function attendanceCard()
 		$year = $yearId ?? $this->data['academic_year'];
 		if ($course > 0) {
 			$builder = $classMdl->select("classes.id,classes.title,d.title as department_name,d.code,l.title as level_name
-											,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name
+											,f.id as fac_id,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name
 											,concat(lec.fname,' ',lec.lname) as lecturer_name")
 					->join("departments d", "d.id=classes.department")
 					->join("levels l", "l.id=classes.level")
@@ -11678,7 +11678,8 @@ public function attendanceCard()
 			echo "<option selected disabled>" . lang("app.selectClass") . "</option>";
 			foreach ($classes as $classe) {
 				$lecturer = htmlspecialchars(trim((string) ($classe['lecturer_name'] ?? '')), ENT_QUOTES);
-				echo "<option value='" . $classe['id'] . "' data-lecturer='" . $lecturer . "'>" . $classe['level_name'] . " " . $classe['code'] . " " . $classe['title'] . "</option>";
+				$nurseryFlag = (int) ($classe['fac_id'] ?? 0) === 19 ? '1' : '0';
+				echo "<option value='" . $classe['id'] . "' data-lecturer='" . $lecturer . "' data-nursery='" . $nurseryFlag . "'>" . $classe['level_name'] . " " . $classe['code'] . " " . $classe['title'] . "</option>";
 			}
 		}
 	}
@@ -14990,8 +14991,12 @@ public function getApplicationDocs($id = null)
 			(int) $this->session->get('soma_school_id'),
 			(int) $year
 		);
-		if ($nurseryOnlyTeacher && (int) $mark_type !== 1) {
-			return $this->response->setJSON(array("error" => "Nursery courses use CAT only."));
+		$nurseryClass = class_is_nursery((int) $class);
+		if (($nurseryOnlyTeacher || $nurseryClass) && (int) $mark_type !== 1) {
+			return $this->response->setJSON(array("error" => "Nursery classes record exams only: End of Month 1 Exam, End of Month 2 Exam, Midterm, and End of Term Exam."));
+		}
+		if ($nurseryClass && nursery_exam_title((int) $period) === '') {
+			return $this->response->setJSON(array("error" => "Select an exam: End of Month 1 Exam, End of Month 2 Exam, Midterm, or End of Term Exam."));
 		}
 		$examDate = strtotime($this->request->getPost("examDate"));
 		$marks = $this->request->getPost("marks[]");
@@ -15035,7 +15040,9 @@ public function getApplicationDocs($id = null)
 				"error" => "Marks editing is locked for you on this course. Quizzes, tests, homework, and exams stay blocked until the Coordinator or Director unlocks it under Marks."
 			));
 		}
-		if ((int) $mark_type === 1) {
+		if ($nurseryClass) {
+			$catType = '';
+		} elseif ((int) $mark_type === 1) {
 			$catType = normalizeCatTypeCode($catType);
 			$sequenceError = $this->catSequenceError($catType, (int) $class, (int) $course_id, $term, (int) $period);
 			if ($sequenceError !== null) {
@@ -15390,10 +15397,12 @@ public function getApplicationDocs($id = null)
 		}
 		$db = \Config\Database::connect();
 		$record = $db->table('course_records r')
-			->select("r.id, r.course, r.class, r.lecturer, r.term, r.year, c.title as course_title, c.code as course_code, l.title as level_name, cl.title as class_title, concat(st.fname,' ',st.lname) as teacher")
+			->select("r.id, r.course, r.class, r.lecturer, r.term, r.year, c.title as course_title, c.code as course_code, l.title as level_name, cl.title as class_title, f.id as fac_id, concat(st.fname,' ',st.lname) as teacher")
 			->join('courses c', 'c.id = r.course')
 			->join('classes cl', 'cl.id = r.class')
 			->join('levels l', 'l.id = cl.level')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->join('faculty f', 'f.id = d.faculty_id', 'left')
 			->join('staffs st', 'st.id = r.lecturer', 'left')
 			->where('r.id', $recordId)
 			->where('cl.school_id', $schoolId)
@@ -15467,11 +15476,51 @@ public function getApplicationDocs($id = null)
 		}
 		$columns = [];
 		$cells = [];
+		$nurserySheet = (int) ($record['fac_id'] ?? 0) === 19;
+		helper('qonics');
+		if ($nurserySheet) {
+			foreach (nursery_exam_periods() as $examPeriod => $examTitle) {
+				$key = '1|P' . $examPeriod . '|' . $examPeriod;
+				$columns[$key] = [
+					'key' => $key,
+					'code' => 'P' . $examPeriod,
+					'label' => $examTitle,
+					'kind' => 'Exam',
+					'max' => 0,
+					'when' => $examPeriod,
+					'date_short' => '',
+					'date_long' => '',
+					'topic' => '',
+					'sort' => $examPeriod,
+				];
+			}
+		}
 		foreach ($markRows as $mark) {
 			$markType = (int) ($mark['mark_type'] ?? 0);
 			$code = strtoupper(trim((string) ($mark['cat_type'] ?? '')));
 			$label = '';
 			$kind = '';
+			if ($nurserySheet) {
+				if ($markType !== 1 || preg_match('/^[QTH]\d+$/', $code)) {
+					continue;
+				}
+				$examPeriod = (int) ($mark['period'] ?? 0);
+				$examTitle = nursery_exam_title($examPeriod);
+				if ($examTitle === '') {
+					continue;
+				}
+				$key = '1|P' . $examPeriod . '|' . $examPeriod;
+				$when = $this->markSheetTimestamp($mark['examDate'] ?? 0);
+				if ((int) ($mark['outof'] ?? 0) > (int) $columns[$key]['max']) {
+					$columns[$key]['max'] = (int) $mark['outof'];
+				}
+				if ($when > 0) {
+					$columns[$key]['date_short'] = date('d M', $when);
+					$columns[$key]['date_long'] = date('d M Y', $when);
+				}
+				$cells[(int) $mark['student_id']][$key] = self::displayMarkEntry($mark['marks'], $mark['id']);
+				continue;
+			}
 			if (preg_match('/^[QTH]\d+$/', $code)) {
 				$label = function_exists('catTypeStr') ? catTypeStr($code) : $code;
 				$kind = $code[0] === 'Q' ? 'Quiz' : ($code[0] === 'H' ? 'Homework' : 'Test');
@@ -15510,12 +15559,18 @@ public function getApplicationDocs($id = null)
 			$studentId = (int) $mark['student_id'];
 			$cells[$studentId][$key] = self::displayMarkEntry($mark['marks'], $mark['id']);
 		}
-		uasort($columns, static function ($a, $b) {
-			if ($a['when'] !== $b['when']) {
-				return $a['when'] <=> $b['when'];
-			}
-			return strcmp($a['code'], $b['code']);
-		});
+		if ($nurserySheet) {
+			uasort($columns, static function ($a, $b) {
+				return ((int) ($a['sort'] ?? 0)) <=> ((int) ($b['sort'] ?? 0));
+			});
+		} else {
+			uasort($columns, static function ($a, $b) {
+				if ($a['when'] !== $b['when']) {
+					return $a['when'] <=> $b['when'];
+				}
+				return strcmp($a['code'], $b['code']);
+			});
+		}
 		$maxTotal = 0;
 		foreach ($columns as $col) {
 			$maxTotal += (int) $col['max'];
@@ -15524,20 +15579,22 @@ public function getApplicationDocs($id = null)
 		foreach ($students as $student) {
 			$sid = (int) $student['id'];
 			$obtained = 0;
+			$sat = false;
 			foreach ($columns as $col) {
 				$raw = $cells[$sid][$col['key']] ?? '';
 				if ($raw !== '' && is_numeric($raw)) {
 					$obtained += (float) $raw;
+					$sat = true;
 				}
 			}
 			$percent = $maxTotal > 0 ? round(($obtained / $maxTotal) * 100, 1) : 0;
-			$remark = $this->markSheetRemark($percent, $columns !== []);
+			$remark = $this->markSheetRemark($percent, $nurserySheet ? $sat : $columns !== []);
 			$sheetStudents[] = [
 				'name' => $student['name'],
 				'regno' => $student['regno'],
 				'cells' => $cells[$sid] ?? [],
-				'total' => $columns === [] ? '' : $this->markSheetNumber($obtained),
-				'percent' => $columns === [] ? '' : number_format($percent, 1) . '%',
+				'total' => ($columns === [] || ($nurserySheet && !$sat)) ? '' : $this->markSheetNumber($obtained),
+				'percent' => ($columns === [] || ($nurserySheet && !$sat)) ? '' : number_format($percent, 1) . '%',
 				'remark' => $remark['text'],
 				'remark_class' => $remark['class'],
 			];
@@ -15545,7 +15602,7 @@ public function getApplicationDocs($id = null)
 		$subject = trim($record['course_title'] . ($record['course_code'] !== '' ? ' (' . $record['course_code'] . ')' : ''));
 		$logoFile = (string) ($this->data['school_logo'] ?? '');
 		$sheet = [
-			'title' => 'Marks sheet — ' . $subject,
+			'title' => ($nurserySheet ? 'Exams sheet — ' : 'Marks sheet — ') . $subject,
 			'school' => (string) ($this->data['school_name'] ?? ''),
 			'subject' => $subject,
 			'class_label' => trim($record['level_name'] . ' ' . $record['class_title']),
@@ -16339,8 +16396,11 @@ public function getApplicationDocs($id = null)
 		$period = (int) ($this->request->getGet('period') ?? 0);
 		$year = $this->request->getGet('year') ?: $this->data['academic_year'];
 		$termId = $this->resolveMarksTermId($this->request->getGet('term'), $year);
-		if (!staff_owns_course_class((int) $this->session->get('soma_id'), $course, $class, (int) $year)) {
+		if (!staff_owns_course_class((int) $this->session->get('soma_id'), $course, $class, (int) $year) || class_is_nursery($class)) {
 			$filled = [];
+			if (class_is_nursery($class)) {
+				return $this->response->setJSON(['groups' => []]);
+			}
 		} else {
 			$filled = $this->filledCatTypes($class, $course, $termId, $period);
 		}
@@ -16466,6 +16526,10 @@ public function getApplicationDocs($id = null)
 			die();
 		}
 		helper('qonics');
+		if (class_is_nursery((int) $class)) {
+			$mt = 1;
+			$ct = '';
+		}
 		$periodicOn = (int) ($this->data['periodic'] ?? 0) === 1;
 		if ($periodicOn && !$isHolidayMarks && (int) $period < 1) {
 			echo '<div class="alert alert-danger" style="margin:1rem;">Select a period before entering marks.</div>';
@@ -17089,7 +17153,7 @@ public function getApplicationDocs($id = null)
 			$records[$a] = $student;
 			$tot = 0;
 			foreach ($this->get_courses($student['class'], $term, $year) as $core) {
-				$core['result'] = $MarksModel->select("(sum(" . self::sqlMarkValue('marks.marks') . "/marks.outof*c.marks)/count(marks.id)) as marks")
+				$resultBuilder = $MarksModel->select("(sum(" . self::sqlMarkValue('marks.marks') . "/marks.outof*c.marks)/count(marks.id)) as marks")
 						->join("active_term at", "at.id=marks.term")
 						->join("courses c", "c.id=marks.course_id")
 						->where("marks.course_id", $core['id'])
@@ -17097,8 +17161,11 @@ public function getApplicationDocs($id = null)
 						->where("at.academic_year", $year)
 						->where("marks.mark_type", 1)//cat
 						->where("marks.period", $period)
-						->where("marks.student_id", $student['id'])
-						->get()->getRowArray();
+						->where("marks.student_id", $student['id']);
+				if ($factId === 19) {
+					$resultBuilder->where("(marks.cat_type IS NULL OR TRIM(marks.cat_type) = '')", null, false);
+				}
+				$core['result'] = $resultBuilder->get()->getRowArray();
 				if (!is_null($core['result']['marks'])) {
 					$tot += $core['result']['marks'];
 				}
@@ -17750,12 +17817,14 @@ public function getApplicationDocs($id = null)
 //		echo $cat_filter;die();
 
 //		//cat marks
+		$nurseryClassSql = 'SELECT c.id FROM classes c JOIN departments d ON d.id = c.department JOIN faculty f ON f.id = d.faculty_id WHERE f.id = 19';
 		$catBuilder = $MarksModel->select("(sum(" . self::sqlMarkValue('marks.marks') . "/marks.outof*c.marks)/count(marks.id)) as marks,at.term")
 				->join("active_term at", "at.id=marks.term")
 				->join("courses c", "c.id=marks.course_id")
 				->where("marks.course_id", $course)
 				->where("at.academic_year", $year)
 				->where("marks.mark_type", 1)//cat
+				->where("(marks.class_id NOT IN ({$nurseryClassSql}) OR (marks.period IN (1,2,3,4) AND (marks.cat_type IS NULL OR TRIM(marks.cat_type) = '')))", null, false)
 //			->where($cat_filter)//direct cat filter
 				->where("marks.student_id", $student);
 		if ($term != 4) {
@@ -17768,7 +17837,8 @@ public function getApplicationDocs($id = null)
 				->join("courses c", "c.id=marks.course_id")
 				->where("marks.course_id", $course)
 				->where("at.academic_year", $year)
-				->where("marks.mark_type", 2)//cat
+				->where("marks.mark_type", 2)//exam
+				->where("marks.class_id NOT IN ({$nurseryClassSql})", null, false)
 				->where("marks.student_id", $student);
 		if ($term != 4) {
 			$examBuilder->where("at.term", $term);

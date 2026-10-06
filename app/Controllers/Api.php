@@ -524,8 +524,15 @@ class Api extends BaseController
 		if (!staff_owns_course_class($teacher_id, $course_id, $class_id, (int) ($this->data['academic_year'] ?? 0))) {
 			return $this->response->setJSON(['error' => 'This course is not assigned to you']);
 		}
-		if ($mark_type !== 1 && staff_teaches_nursery_only($teacher_id, $school_id, (int) ($this->data['academic_year'] ?? 0))) {
-			return $this->response->setJSON(['error' => 'Nursery courses use CAT only.']);
+		$nurseryClass = class_is_nursery($class_id);
+		if ($nurseryClass) {
+			$mark_type = 1;
+			$cat_type = '';
+			if (nursery_exam_title($period) === '') {
+				return $this->response->setJSON(['error' => 'Select an exam: End of Month 1 Exam, End of Month 2 Exam, Midterm, or End of Term Exam.']);
+			}
+		} elseif ($mark_type !== 1 && staff_teaches_nursery_only($teacher_id, $school_id, (int) ($this->data['academic_year'] ?? 0))) {
+			return $this->response->setJSON(['error' => 'Nursery classes record exams only.']);
 		}
 		if (period_is_locked((int) ($this->data['active_term'] ?? 0), $period)) {
 			return $this->response->setJSON(['error' => 'Period ' . $period . ' is locked. No marks can be entered or changed.']);
@@ -2484,13 +2491,25 @@ public function check_school($option)
 						$markType = (int) ($info['mark_type'] ?? 0);
 						$catType = normalizeCatTypeCode($info['cat_type'] ?? '');
 						$teacherId = (int) ($info['created_by'] ?? 0);
-						if (staff_teaches_nursery_only($teacherId, (int) $school_id, (int) ($this->data['academic_year'] ?? 0))) {
+						$nurseryClass = class_is_nursery((int) ($info['class_id'] ?? 0));
+						if ($nurseryClass || staff_teaches_nursery_only($teacherId, (int) $school_id, (int) ($this->data['academic_year'] ?? 0))) {
 							if ($markType !== 1) {
 								return $this->response->setJSON([
-									'error' => 'Nursery courses use CAT only. Enter quizzes, tests, and homework; they are combined into the CAT score.',
+									'error' => 'Nursery classes record exams only: End of Month 1 Exam, End of Month 2 Exam, Midterm, and End of Term Exam.',
 									'last_id' => $last_id,
 								]);
 							}
+						}
+						if ($nurseryClass) {
+							if (nursery_exam_title((int) ($info['period'] ?? 0)) === '') {
+								return $this->response->setJSON([
+									'error' => 'Select an exam: End of Month 1 Exam, End of Month 2 Exam, Midterm, or End of Term Exam.',
+									'last_id' => $last_id,
+								]);
+							}
+							$catType = '';
+							$info['cat_type'] = '';
+							$info['mark_type'] = 1;
 						}
 						if (!staff_owns_course_class($teacherId, (int) ($info['course_id'] ?? 0), (int) ($info['class_id'] ?? 0), (int) ($this->data['academic_year'] ?? 0))) {
 							return $this->response->setJSON([
@@ -2499,7 +2518,7 @@ public function check_school($option)
 							]);
 						}
 						$sheetKey = (int) $info['class_id'] . ':' . (int) $info['course_id'] . ':' . (int) ($info['period'] ?? 0);
-						if ($markType === 1) {
+						if ($markType === 1 && !$nurseryClass) {
 							if (!isset($unlocked[$sheetKey])) {
 								$saved = $mMdl->select('cat_type')
 									->where('class_id', (int) $info['class_id'])

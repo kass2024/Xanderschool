@@ -242,7 +242,13 @@ foreach ($students as $student) {
 						</td>
 						<td>
 							<?php if ($nurseryPeriodic): ?>
-								<?php $line('PERIODIC REPORT', $periodNo > 0 ? 'Period ' . $periodNo : ''); ?>
+								<?php
+								$examTitle = function_exists('nursery_exam_title') ? nursery_exam_title($periodNo) : '';
+								if ($examTitle === '') {
+									$examTitle = 'Exams';
+								}
+								?>
+								<table width="100%"><tr><td style="text-align:center;font-weight:bold;font-size:11pt;padding:0 0 3pt;"><?= esc($examTitle); ?></td></tr></table>
 							<?php endif; ?>
 							<?php $line('Names:', $pupil); ?>
 							<?php $line('Results for Term:', $termLabel, 'Year:', $yearLabel); ?>
