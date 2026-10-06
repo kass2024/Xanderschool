@@ -17052,16 +17052,16 @@ public function getApplicationDocs($id = null)
 		$mpdf = new \Mpdf\Mpdf([
 			'mode' => 'utf-8',
 			'format' => 'A4-L',
-			'margin_left' => 8,
-			'margin_right' => 8,
-			'margin_top' => 7,
-			'margin_bottom' => 7,
+			'margin_left' => 20.2,
+			'margin_right' => 13.6,
+			'margin_top' => 12.0,
+			'margin_bottom' => 17.6,
 			'margin_header' => 0,
 			'margin_footer' => 0,
 			'default_font' => 'dejavusans',
 			'tempDir' => $dir,
 		]);
-		$mpdf->shrink_tables_to_fit = 1;
+		$mpdf->shrink_tables_to_fit = 0;
 		$mpdf->SetDisplayMode('fullpage');
 		$mpdf->WriteHTML($html);
 		$mpdf->Output($filename, \Mpdf\Output\Destination::INLINE);
