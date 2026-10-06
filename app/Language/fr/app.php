@@ -511,7 +511,7 @@ return [
 	"useGradingSystem" => "Utiliser le système de mentions/couleurs",
 	"useGradingYes" => "Oui — mentions/couleurs sur les bulletins",
 	"useGradingNo" => "Non — bulletins basés sur les notes numériques",
-	"gradingSystemHint" => "Si Non, les bulletins affichent les notes numériques au lieu des mentions/couleurs.",
+	"gradingSystemHint" => "Les bulletins de la maternelle affichent toujours la note chiffrée, et le commentaire est la mention de cette liste (Excellent, …). La saisie des notes affiche aussi cette mention. Si Non, les autres bulletins affichent les notes numériques.",
 	"gradingSystemSaved" => "Préférence du système de notation enregistrée",
    	"intouchSetting" => 'Réglage Intouch',
 	"colorTitle" => "Mention",

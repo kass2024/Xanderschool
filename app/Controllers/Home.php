@@ -2090,6 +2090,79 @@ public function testEmail()
 		return (int) ($row['use_grading_system'] ?? 1) === 1;
 	}
 
+	/**
+	 * Grade mentions for a nursery class.
+	 * Null when the class is not nursery. Empty list when nursery has no mentions yet.
+	 *
+	 * @return list<array<string,mixed>>|null
+	 */
+	private function nurseryGradeBandsForClass(int $classId): ?array
+	{
+		if ($classId < 1) {
+			return null;
+		}
+		$row = (new ClassesModel())->select('f.id as fac_id, f.title, f.abbrev')
+			->join('departments d', 'd.id=classes.department')
+			->join('faculty f', 'f.id=d.faculty_id')
+			->where('classes.id', $classId)
+			->get()->getRowArray();
+		if (!$row) {
+			return null;
+		}
+		$facId = (int) ($row['fac_id'] ?? 0);
+		$label = strtolower(trim((string) ($row['title'] ?? '') . ' ' . (string) ($row['abbrev'] ?? '')));
+		$isNursery = $facId === 19 || strpos($label, 'nursery') !== false;
+		if (!$isNursery) {
+			return null;
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		return (new GradeModel())->select('color_title,min_point,max_point,color')
+			->where('school_id', $schoolId)
+			->where('faculty_id', $facId > 0 ? $facId : 19)
+			->orderBy('max_point', 'DESC')
+			->orderBy('min_point', 'DESC')
+			->get()->getResultArray();
+	}
+
+	/** Live mention column on nursery marks entry (Excellent, â€¦ from Grade Setting). */
+	private function nurseryMentionScript(array $bands): string
+	{
+		$json = json_encode(array_values($bands), JSON_UNESCAPED_UNICODE);
+		return "<script>
+window.NURSERY_GRADE_BANDS = {$json};
+function refreshNurseryMentions() {
+	var bands = window.NURSERY_GRADE_BANDS || [];
+	$('#marks_table tbody tr').each(function () {
+		var vals = [];
+		$(this).find('.marks-entry-input').each(function () {
+			var raw = $.trim($(this).val() || '');
+			if (raw === '' || raw === '-') return;
+			var v = parseFloat(raw);
+			if (isFinite(v)) vals.push(v);
+		});
+		var outof = parseFloat($('#outofmarks').val());
+		var label = '';
+		if (vals.length && isFinite(outof) && outof > 0) {
+			var mark = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+			var pct = mark / outof * 100;
+			for (var i = 0; i < bands.length; i++) {
+				var min = parseFloat(bands[i].min_point);
+				var max = parseFloat(bands[i].max_point);
+				if (pct + 0.001 >= min && pct - 0.001 <= max) {
+					label = bands[i].color_title || '';
+					break;
+				}
+			}
+		}
+		$(this).find('.nursery-mention').text(label);
+	});
+}
+$(document).off('input.nurseryMention change.nurseryMention')
+	.on('input.nurseryMention change.nurseryMention', '.marks-entry-input, #outofmarks', refreshNurseryMentions);
+refreshNurseryMentions();
+</script>";
+	}
+
 	private function ensureStaffCardSchema()
 	{
 		static $done = false;
@@ -6590,9 +6663,8 @@ public function scanCard()
 		$color = $this->request->getPost("color");
 		$schoolId = (int) $this->session->get("soma_school_id");
 
-		if (!$this->schoolUsesGradingSystem($schoolId)) {
-			return $this->response->setJSON(['error' => 'Grading system is disabled. Enable it first to add mentions.']);
-		}
+		// Mentions stay editable when reports use normal marks.
+		// Nursery comments and marks entry still read this list.
 
 		// Always lock educational path to Nursery
 		$facMdl = new FacultyModel();
@@ -16386,6 +16458,10 @@ public function getApplicationDocs($id = null)
 		$ct = normalizeCatTypeCode($ct);
 		$StudentModel = new StudentModel();
 		$html_script = "";
+		$nurseryBands = $this->nurseryGradeBandsForClass((int) $class);
+		$showNurseryMention = is_array($nurseryBands);
+		$mentionHead = $showNurseryMention ? "<th>" . lang("app.colorTitle") . "</th>" : "";
+		$mentionCell = $showNurseryMention ? "<td class=\"nursery-mention\" style=\"text-align:center;font-weight:700;min-width:110px;\"></td>" : "";
 		$lockSavedCat = marks_course_locked(
 			(int) $this->session->get('soma_school_id'),
 			(int) $active_term,
@@ -16450,7 +16526,7 @@ public function getApplicationDocs($id = null)
 
 //			$result = array_column($exams, 'marks');
 //			var_dump($result); die();
-			$html .= "<th>" . lang("app.cat") . " /" . $cats[0]['outof'] . "</th><th>" . lang("app.exam") . " /" . $cats[0]['outof_ex'] . "</th>";
+			$html .= "<th>" . lang("app.cat") . " /" . $cats[0]['outof'] . "</th><th>" . lang("app.exam") . " /" . $cats[0]['outof_ex'] . "</th>" . $mentionHead;
 			$html .= '</tr>
 						</thead><tbody>';
 			$i = 0;
@@ -16467,7 +16543,7 @@ public function getApplicationDocs($id = null)
 				<input type='hidden' value='" . $student['mark_id_ex'] . "' name='marks_id1[]' class='mark_id'></td>
 				<td>" . $student['name'] . "<input type='hidden' value='" . $student['id'] . "' name='discId[]'></td>
 				<td><input type='text' inputmode='decimal' name='marksC[]' class='form-control marks-entry-input' value='" . $dispC . "' placeholder='-' autocomplete='off' data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
-				<td><input type='text' inputmode='decimal' name='marksE[]' class='form-control marks-entry-input' value='" . $dispE . "' placeholder='-' autocomplete='off' data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td></tr>";
+				<td><input type='text' inputmode='decimal' name='marksE[]' class='form-control marks-entry-input' value='" . $dispE . "' placeholder='-' autocomplete='off' data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>" . $mentionCell . "</tr>";
 				$i++;
 			}
 			$html .= '</tbody>
@@ -16532,7 +16608,7 @@ public function getApplicationDocs($id = null)
 					->orderBy("students.fname")
 					->orderBy("students.lname")
 					->get()->getResultArray();
-			$html .= "<th>" . lang("app.marks") . "</th>";
+			$html .= "<th>" . lang("app.marks") . "</th>" . $mentionHead;
 			$html .= '</tr></thead><tbody>';
 			$outof = "";
 			$required = $mt == 9 ? "" : "required";
@@ -16547,6 +16623,7 @@ public function getApplicationDocs($id = null)
 				<td>" . $student['regno'] . "<input type='hidden' value='" . $student['mark_id'] . "' name='marks_id[]' class='mark_id'></td>
 				<td>" . $student['name'] . "<input type='hidden' value='" . $student['id'] . "' name='discId[]'></td>
 				<td><input type='text' inputmode='decimal' name='marks[]' class='form-control marks-entry-input' value='" . $disp . "' placeholder='-' autocomplete='off' data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
+				" . $mentionCell . "
 				</tr>
 				";
 			}
@@ -16592,7 +16669,7 @@ public function getApplicationDocs($id = null)
 					->orderBy("students.fname")
 					->orderBy("students.lname")
 					->get()->getResultArray();
-			$html .= "<th>" . lang("app.marks") . "</th>";
+			$html .= "<th>" . lang("app.marks") . "</th>" . $mentionHead;
 			$html .= '</tr></thead><tbody>';
 			$outof = "";
 			$required = $mt == 9 ? "" : "required";
@@ -16607,6 +16684,7 @@ public function getApplicationDocs($id = null)
 				<td>" . $student['regno'] . "<input type='hidden' value='" . $student['mark_id'] . "' name='marks_id[]' class='mark_id'></td>
 				<td>" . $student['name'] . "<input type='hidden' value='" . $student['id'] . "' name='discId[]'></td>
 				<td><input type='text' inputmode='decimal' name='marks[]' class='form-control marks-entry-input' value='" . $disp . "' placeholder='-' autocomplete='off' data-parsley-le=\"#outofmarks\" data-parsley-le-message=\"" . lang("app.shouldBeLess") . "\"></td>
+				" . $mentionCell . "
 				</tr>
 				";
 			}
@@ -16668,6 +16746,9 @@ public function getApplicationDocs($id = null)
 					$('#dv_marks').prepend('<div id=\"cat-edit-lock-note\" class=\"alert alert-info\" style=\"margin:8px;\">Marks editing is locked for you on this course. Quizzes, tests, homework, and exams cannot be entered or changed until the Coordinator or Director unlocks it under Marks → Lock Marks editing.</div>');
 				}
 </script>";
+			}
+			if ($showNurseryMention) {
+				$html_script .= $this->nurseryMentionScript($nurseryBands);
 			}
 			echo $html . $html_script;
 		}
@@ -17211,6 +17292,39 @@ public function getApplicationDocs($id = null)
 			$data['grades'] = $useGrading
 				? $gradeMdl->select("color_title,max_point,min_point,color")->where("faculty_id", $fact)->where("school_id", $school_id)->get()->getResultArray()
 				: [];
+			if ((int) $fact === 19) {
+				// Nursery comments always come from Grade Setting, even on normal marks reports.
+				$data['grades'] = $gradeMdl->select("color_title,max_point,min_point,color")
+					->where("faculty_id", $fact)
+					->where("school_id", $school_id)
+					->orderBy("max_point", "DESC")
+					->orderBy("min_point", "DESC")
+					->get()->getResultArray();
+				$pupilCount = 0;
+				foreach ($data['students'] as $stRow) {
+					if (isset($stRow['id'])) {
+						$pupilCount++;
+					}
+				}
+				$data['nursery_pupil_count'] = $pupilCount;
+				$mentorRow = (new ClassesModel())->select("concat(s.fname,' ',s.lname) as mentor_name")
+					->join("staffs s", "s.id=classes.mentor", "LEFT")
+					->where("classes.id", $class)
+					->get()->getRowArray();
+				$data['nursery_class_teacher'] = trim((string) ($mentorRow['mentor_name'] ?? ''));
+				$initials = [];
+				$lecturers = \Config\Database::connect()->table('course_records cr')
+					->select('cr.course, s.fname, s.lname')
+					->join('staffs s', 's.id = cr.lecturer', 'left')
+					->where('cr.class', $class)
+					->where('cr.year', $year)
+					->get()->getResultArray();
+				foreach ($lecturers as $lec) {
+					$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
+					$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
+				}
+				$data['nursery_course_initials'] = $initials;
+			}
 			if (isset($_GET['publish']) && $this->request->getGet("publish") == "sms") {
 				$smsRMdl = new SmsRecipientModel();
 				$smsMdl = new SmsModel();
@@ -17330,12 +17444,11 @@ public function getApplicationDocs($id = null)
 					$view = view("pages/reports/primary_report_slip" . $annualTag, $data);
 				}
 			} else if ($fact == 19) {
-				//Change some specific report
-				/**
-				 * 28. Bright Stars Foundation Academy
-				 * 30. Bright Academy
-				 */
-				if (in_array($school_id, [28])) {
+				// Wisdom nursery slip: score + comment from Grade Setting.
+				// Other named schools keep their own nursery layouts.
+				if (is_wisdom_school((int) $school_id)) {
+					$view = view("pages/reports/wisdom_nursery_report", $data);
+				} else if (in_array($school_id, [28])) {
 					$view = view("pages/reports/specific/bsfa/bsfa_nursery" . $annualTag, $data);
 				} else if (in_array($school_id, [30])) {
 					// $view = view("pages/reports/specific/bright_academy_nursery", $data);
@@ -17347,7 +17460,7 @@ public function getApplicationDocs($id = null)
 				} else if (in_array($school_id, [42])) {
 					$view = view("pages/reports/apace_nursery_report_slip" . $annualTag, $data);
 				} else {
-					$view = view("pages/reports/nursery_report_slip" . $annualTag, $data);
+					$view = view("pages/reports/wisdom_nursery_report", $data);
 				}
 			} else {
 				if (in_array($school_id, [52])) {

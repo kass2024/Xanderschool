@@ -513,7 +513,7 @@ return [
    'useGradingSystem'            => 'Use grading system (mentions/colors)',
    'useGradingYes'               => 'Yes — mention/color grades on reports',
    'useGradingNo'                => 'No — normal marks-based reports',
-   'gradingSystemHint'           => 'If No, report slips show numeric marks instead of color/mention grades.',
+   'gradingSystemHint'           => 'Nursery reports always show the numeric score, and the Comment is the mention from this list (Excellent, Very good, …). Marks entry still shows that mention next to the number. If No, other report slips show numeric marks instead of color boxes.',
    'gradingSystemSaved'          => 'Grading system preference saved',
    'intouchSetting'              => 'Intouch Setting',
    'colorTitle'                  => 'Mention',

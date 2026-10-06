@@ -1633,7 +1633,7 @@
 						<p class="text-muted mt-2 mb-0" style="font-size:.82rem;"><?= lang("app.gradingSystemHint"); ?></p>
 						<span id="gradingSystemSaveStatus" class="text-muted ml-2" style="font-size:.82rem;"></span>
 					</div>
-					<div id="gradeMentionsPanel" style="<?= $useGradingOn ? '' : 'display:none;'; ?>">
+					<div id="gradeMentionsPanel">
 					<form method="POST" action="<?= base_url('manipulate_grade'); ?>" id="gradeMentionForm" class="validate">
 					<div class="col-sm-12 col-md-6 col-lg-5" style="float:left;">
 						<?php
@@ -2969,17 +2969,12 @@ $(document).on("click","#btn-remove-discipline",function () {
  <script>
 	 $(function () {
 		 var gradingSaveUrl = <?= json_encode(base_url('manipulate_grading_system')); ?>;
-		 function setGradeMentionsVisible(on) {
-			 if (on) {
-				 $("#gradeMentionsPanel").show();
-			 } else {
-				 $("#gradeMentionsPanel").hide();
-			 }
+		 function setGradeMentionsVisible() {
+			 $("#gradeMentionsPanel").show();
 		 }
 		 $("#gradingSystemToggle input[name='use_grading_system_ui']").on("change", function () {
 			 var val = $(this).val();
-			 var on = val === "1";
-			 setGradeMentionsVisible(on);
+			 setGradeMentionsVisible();
 			 var $status = $("#gradingSystemSaveStatus");
 			 $status.text("Saving…");
 			 $.ajax({
