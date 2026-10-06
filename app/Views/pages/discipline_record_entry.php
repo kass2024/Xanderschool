@@ -40,7 +40,7 @@ $discGroups = $discipline_code_groups ?? [];
 
     <div class="disc-entry-search">
       <?= view('pages/partials/card_scan_search', ['classes' => $classes, 'use_lang' => false]) ?>
-      <link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>?v=conduct-app">
+      <link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>?v=conduct-sanction">
     </div>
 
     <div id="discSaveFlash" class="disc-entry-flash" role="alert" style="display:none">
@@ -181,6 +181,8 @@ $(function () {
   const saveBtnHtml = $saveBtn.html();
   const isRw = <?= $discLang === 'rw' ? 'true' : 'false'; ?>;
   const remarkTpl = <?= json_encode($discLang === 'rw' ? ($remark_tpl_rw ?? '') : ($remark_tpl_en ?? '')); ?>;
+  const sanctionTpl = <?= json_encode($discLang === 'rw' ? ($sanction_tpl_rw ?? '') : ($sanction_tpl_en ?? '')); ?>;
+  const zeroTpl = <?= json_encode($discLang === 'rw' ? ($zero_tpl_rw ?? '') : ($zero_tpl_en ?? '')); ?>;
   let saving = false;
   let discCounts = {};
 
@@ -263,10 +265,16 @@ $(function () {
     return ($row.find("td").eq(2).text() || "").trim();
   }
 
-  function remarkText(name, law) {
+  function fillLetter(tpl, name, law, marks) {
     const who = name || t("your child", "umwana wawe");
     const rule = law || t("a school rule", "itegeko ry'ishuri");
-    return String(remarkTpl || "").split("{NAME}").join(who).split("{LAW}").join(rule);
+    return String(tpl || "").split("{NAME}").join(who).split("{LAW}").join(rule).split("{MARKS}").join(String(marks));
+  }
+
+  function parentLetter(name, law, marks) {
+    if (isRemarks()) return fillLetter(remarkTpl, name, law, marks);
+    if (!(parseInt(marks, 10) > 0)) return fillLetter(zeroTpl, name, law, 0);
+    return fillLetter(sanctionTpl, name, law, marks);
   }
 
   function buildCodeList() {
@@ -459,10 +467,10 @@ $(function () {
       $("#reduce_marks_display").text("0").removeClass("has-marks");
       $("#discOccurApplied").text(t("Mistake committed", "Ikosa ryakozwe") + ": " + title);
       showSanction(sanction);
-      $preview.text(remarkText(firstStudentName(), title)).removeAttr("hidden");
+      $preview.text(parentLetter(firstStudentName(), title, 0)).removeAttr("hidden");
       return;
     }
-    $preview.attr("hidden", true).text("");
+    $preview.text(parentLetter(firstStudentName(), title, marks)).removeAttr("hidden");
     if (marks > 0) {
       $("#reduce_marks_display").text("\u2212" + marks).addClass("has-marks");
     } else {
@@ -501,7 +509,7 @@ $(function () {
         const title = (selectedCodeOption().attr("data-title") || "").toString();
         const who = names[first.id] || firstStudentName();
         $("#discOccurApplied").text(t("Mistake committed", "Ikosa ryakozwe") + ": " + title);
-        $("#discRemarkPreview").text(remarkText(who, title)).removeAttr("hidden");
+        $("#discRemarkPreview").text(parentLetter(who, title, 0)).removeAttr("hidden");
         if (res.students.length > 1) {
           const extra = res.students.slice(1).map(function (s) { return names[s.id] || ("#" + s.id); }).join(", ");
           $("#discSanction").text(t("Also", "Na") + ": " + extra).removeAttr("hidden");
@@ -517,6 +525,8 @@ $(function () {
       }
       $("#discOccurApplied").text(line);
       if (first.sanction) showSanction(first.sanction);
+      const title = (selectedCodeOption().attr("data-title") || "").toString();
+      $("#discRemarkPreview").text(parentLetter(names[first.id] || firstStudentName(), title, marks)).removeAttr("hidden");
       if (marks === 0) {
         $("#discOccurApplied").append(" · " + t("No marks this time. It is still saved.", "Nta manota kuri iyi nshuro. Bizabikwa."));
       }

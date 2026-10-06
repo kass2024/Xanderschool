@@ -32,7 +32,7 @@ VERIFY = [
     ("app/Views/pages/discipline_record_entry.php", "disc-action-btn"),
     ("app/Views/pages/discipline_record_entry.php", "Send remarks to parent"),
     ("app/Views/pages/discipline_record_entry.php", "Reduce discipline marks"),
-    ("app/Controllers/BaseController.php", "Law: {$law}"),
+    ("app/Controllers/BaseController.php", "DISCIPLINARY SANCTION"),
     ("app/Controllers/Home.php", "discipline_occurrence_map"),
     ("public/assets/css/card-scan-ui.css", "disc-step"),
 ]

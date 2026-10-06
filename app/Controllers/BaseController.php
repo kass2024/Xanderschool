@@ -682,26 +682,19 @@ class BaseController extends Controller
 			'message' => $message,
 		];
 	}
-	public function get_discipline_msg($name,$marks,$reason,$sendRemarks = false,$lang = null){
+	public function get_discipline_msg($name, $marks, $reason, $sendRemarks = false, $lang = null, $activeTermId = null, $schoolId = null){
 		$lang = strtolower(trim((string) $lang));
 		if ($lang !== 'rw' && $lang !== 'en') {
 			$lang = \App\Models\DisciplineCodeModel::discLang();
 		}
 		$name = trim((string) $name);
 		$reason = trim((string) $reason);
+		$marksToken = is_string($marks) && !is_numeric(trim($marks));
+		$marksLabel = $marksToken ? trim((string) $marks) : (string) (int) $marks;
 		$marks = (int) $marks;
+		$law = $this->disciplineLawTitle($reason, $lang);
+		$date = date('d M Y');
 		if ($sendRemarks) {
-			$law = $reason;
-			if (preg_match('/^(.*?)(?:\s+\(|\s+\x{2014}\s+|\s+—\s+)/u', $reason, $cut)) {
-				$clean = trim((string) ($cut[1] ?? ''));
-				if ($clean !== '') {
-					$law = $clean;
-				}
-			}
-			if ($law === '') {
-				$law = $lang === 'rw' ? 'itegeko ry\'ishuri' : 'a school rule';
-			}
-			$date = date('d M Y');
 			if ($lang === 'rw') {
 				return "ITEGEKWA\n\n"
 					. "Mubyeyi,\n"
@@ -723,16 +716,123 @@ class BaseController extends Controller
 				. "The School Administration\n"
 				. "Date: {$date}";
 		}
-		if ($marks <= 0) {
+		if ($marks <= 0 && !$marksToken) {
 			if ($lang === 'rw') {
-				return "Babyeyi, {$name}: {$reason}. Nta manota yakuweho. Iyi nshuro yabitswe. Murakoze.";
+				return "Babyeyi, {$name}: {$law}. Nta manota yakuweho. Iyi nshuro yabitswe. Murakoze.";
 			}
-			return "Dear parent, {$name}: {$reason}. No marks were deducted. This offence is recorded. Thank you.";
+			return "Dear parent, {$name}: {$law}. No marks were deducted. This offence is recorded. Thank you.";
 		}
+		$school = $this->disciplineSchoolId($schoolId);
+		$term = $this->disciplineTermCode($activeTermId, $school);
+		$place = $this->disciplinePlace($school);
 		if ($lang === 'rw') {
-			return "Babyeyi, {$name} yakuweho amanota {$marks} y'imyitwarire: {$reason}. Murakoze.";
+			return "IGIHANO\n\n"
+				. "Mubyeyi,\n\n"
+				. "Ubuyobozi bw'ishuri bwabonye ko umwana wawe {$name} yakomeje kwica amategeko muri iki gihembwe.\n\n"
+				. "Itegeko: {$law}\n\n"
+				. "Komite y'imyitwarire yafashe icyemezo cyo gukuraho amanota {$marksLabel} ku manota rusange y'igihembwe.\n"
+				. "Iki gihano kizagaragara ku ifishi y'amanota ya {$term}.\n\n"
+				. "Icyitonderwa: Umunyeshuri araburwa ko iyo yongera kugira iyo myitwarire azahabwa igihano kirenze aka.\n\n"
+				. "Byakorewe {$place},\n"
+				. "Ku wa {$date}\n\n"
+				. "Ubuyobozi bw'ishuri";
 		}
-		return "Dear parent, {$name} lost {$marks} conduct marks: {$reason}. Thank you.";
+		return "DISCIPLINARY SANCTION\n\n"
+			. "Dear Parent,\n\n"
+			. "The School Administration has noted repeated misconduct by your child {$name} during this term.\n\n"
+			. "Law: {$law}\n\n"
+			. "The Disciplinary Committee has decided to deduct {$marksLabel} marks from the quarterly general total.\n"
+			. "This sanction will be shown on the {$term} report card.\n\n"
+			. "Note: The student is warned that any repetition will lead to a heavier punishment.\n\n"
+			. "Done at {$place},\n"
+			. "On {$date}\n\n"
+			. "School Administration";
+	}
+
+	private function disciplineLawTitle(string $reason, string $lang): string
+	{
+		$law = trim($reason);
+		if (preg_match('/^(.*?)(?:\s+\(|\s+\x{2014}\s+|\s+—\s+)/u', $law, $cut)) {
+			$clean = trim((string) ($cut[1] ?? ''));
+			if ($clean !== '') {
+				$law = $clean;
+			}
+		}
+		if ($law === '' || $law === '{LAW}') {
+			return $law === '{LAW}' ? '{LAW}' : ($lang === 'rw' ? "itegeko ry'ishuri" : 'a school rule');
+		}
+		return $law;
+	}
+
+	private function disciplineSchoolId($schoolId): int
+	{
+		$id = (int) $schoolId;
+		if ($id > 0) {
+			return $id;
+		}
+		if ($this->session) {
+			$id = (int) $this->session->get('soma_school_id');
+		}
+		if ($id <= 0 && isset($this->data['school_id'])) {
+			$id = (int) $this->data['school_id'];
+		}
+		return $id;
+	}
+
+	private function disciplineTermCode($activeTermId, int $schoolId): string
+	{
+		$termNo = 0;
+		try {
+			$db = \Config\Database::connect();
+			if ((int) $activeTermId > 0) {
+				$row = $db->table('active_term')->select('term')->where('id', (int) $activeTermId)->get()->getRowArray();
+				$termNo = (int) ($row['term'] ?? 0);
+			}
+			if ($termNo < 1 && $schoolId > 0) {
+				$row = $db->table('schools s')
+					->select('at.term')
+					->join('active_term at', 'at.id = s.active_term', 'left')
+					->where('s.id', $schoolId)
+					->get()->getRowArray();
+				$termNo = (int) ($row['term'] ?? 0);
+			}
+		} catch (\Throwable $e) {
+			$termNo = 0;
+		}
+		if ($termNo < 1 || $termNo > 3) {
+			$termNo = 1;
+		}
+		return 'T' . $termNo;
+	}
+
+	private function disciplinePlace(int $schoolId): string
+	{
+		$campuses = ['BURERA', 'FUMBWE', 'KABARORE', 'KANZENZE', 'KAYONZA', 'KIRAMURUZI', 'MUSANZE', 'MUYUMBU', 'NGORORERO', 'NYABIHU', 'NYAMASHEKE', 'RUBAVU', 'RUBENGERA', 'RUNDA', 'SUSA'];
+		$name = '';
+		$address = '';
+		if ($schoolId > 0) {
+			try {
+				$row = (new \App\Models\SchoolModel())->select('name,address')->where('id', $schoolId)->first();
+				if (is_array($row)) {
+					$name = strtoupper((string) ($row['name'] ?? ''));
+					$address = trim((string) ($row['address'] ?? ''));
+				}
+			} catch (\Throwable $e) {
+				$name = '';
+			}
+		}
+		if ($name === '' && $this->session) {
+			$name = strtoupper(trim((string) $this->session->get('soma_school')));
+		}
+		foreach ($campuses as $campus) {
+			if ($name !== '' && strpos($name, $campus) !== false) {
+				return ucfirst(strtolower($campus));
+			}
+		}
+		if ($address !== '' && strlen($address) <= 40 && strpos($address, ',') === false) {
+			return $address;
+		}
+		return 'Musanze';
 	}
 	public function get_permisson_msg($name,$destination,$reason){
 		$lang = \App\Models\DisciplineCodeModel::discLang();

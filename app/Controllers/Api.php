@@ -2611,7 +2611,9 @@ public function check_school($option)
 									$info['marks'],
 									$info['comment'],
 									(int) ($info['type'] ?? 1) === 0,
-									($batchLang === 'rw' || $batchLang === 'en') ? $batchLang : null
+									($batchLang === 'rw' || $batchLang === 'en') ? $batchLang : null,
+									(int) ($this->data['active_term'] ?? 0),
+									(int) ($info['school_id'] ?? 0)
 								);
                                 
                                 if ($this->sendSMS($phone, $msg, $result)) {
@@ -3861,7 +3863,7 @@ public function get_boarding_classes()
 				$st_data = $this->_get_parent_phone($student_id);
 				$phone = $st_data['phone'];
 				if (strlen($phone) > 3) {
-					$msg = $this->get_discipline_msg($st_data['name'], $marks, $sendRemarks ? $title : $comment, $sendRemarks, $lang);
+					$msg = $this->get_discipline_msg($st_data['name'], $marks, $sendRemarks ? $title : $comment, $sendRemarks, $lang, (int) $active, (int) $school_id);
 //					if ($this->_send_sms($phone, $msg, $result, $this->data['remaining_sms'], $this->data['school_acronym'])) {
 //						//save sent sms
 //						$sms_count = (int)ceil(strlen($msg) / PER_SMS);

@@ -11910,8 +11910,14 @@ public function attendanceCard()
 		$data['classes'] = $this->classesWithoutHoliday($data['classes']);
 		$data['discipline_code_groups'] = $discCodeMdl->groupedCodes((int) $this->session->get('soma_school_id'), true);
 		$data['disc_lang'] = \App\Models\DisciplineCodeModel::discLang();
-		$data['remark_tpl_en'] = $this->get_discipline_msg('{NAME}', 0, '{LAW}', true, 'en');
-		$data['remark_tpl_rw'] = $this->get_discipline_msg('{NAME}', 0, '{LAW}', true, 'rw');
+		$letterTerm = (int) ($data['activeTerm']['id'] ?? 0);
+		$letterSchool = (int) $this->session->get('soma_school_id');
+		$data['remark_tpl_en'] = $this->get_discipline_msg('{NAME}', 0, '{LAW}', true, 'en', $letterTerm, $letterSchool);
+		$data['remark_tpl_rw'] = $this->get_discipline_msg('{NAME}', 0, '{LAW}', true, 'rw', $letterTerm, $letterSchool);
+		$data['sanction_tpl_en'] = $this->get_discipline_msg('{NAME}', '{MARKS}', '{LAW}', false, 'en', $letterTerm, $letterSchool);
+		$data['sanction_tpl_rw'] = $this->get_discipline_msg('{NAME}', '{MARKS}', '{LAW}', false, 'rw', $letterTerm, $letterSchool);
+		$data['zero_tpl_en'] = $this->get_discipline_msg('{NAME}', 0, '{LAW}', false, 'en', $letterTerm, $letterSchool);
+		$data['zero_tpl_rw'] = $this->get_discipline_msg('{NAME}', 0, '{LAW}', false, 'rw', $letterTerm, $letterSchool);
 		$data['content'] = view("pages/discipline_record_entry", $data);
 		return view('main', $data);
 	}
@@ -12765,7 +12771,7 @@ public function getApplicationDocs($id = null)
 					$st_data = $this->_get_parent_phone($formid);
 					$phone = $st_data['phone'];
 					if (strlen($phone) > 3) {
-						$msg = $this->get_discipline_msg($st_data['name'], $marks, $sendRemarks ? $title : $comment, $sendRemarks, $lang);
+						$msg = $this->get_discipline_msg($st_data['name'], $marks, $sendRemarks ? $title : $comment, $sendRemarks, $lang, (int) $active, (int) $school_id);
 						if ($this->sendSMS($phone, $msg, $result)) {
 							//save sent sms
 							$sms_count = (int)ceil(strlen($msg) / PER_SMS);
