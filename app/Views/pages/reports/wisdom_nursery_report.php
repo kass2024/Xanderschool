@@ -27,6 +27,10 @@
 		display: flex;
 		flex-direction: column;
 	}
+	.nr-slip.periodic .nr-top { min-height: 0; margin-bottom: 1pt; }
+	.nr-slip.periodic .nr-table td { height: 18.4pt; }
+	.nr-slip.periodic .nr-row { height: 17.6pt; }
+	.nr-period { letter-spacing: .3pt; }
 	.nr-top {
 		display: flex;
 		align-items: flex-start;
@@ -172,6 +176,8 @@ $grades = $grades ?? [];
 $pupilCount = (int) ($nursery_pupil_count ?? 0);
 $classTeacher = trim((string) ($nursery_class_teacher ?? ''));
 $headTeacher = trim((string) ($nursery_head_teacher ?? ''));
+$nurseryPeriodic = !empty($nursery_periodic);
+$periodNo = (int) ($period ?? 0);
 $courseInitials = $nursery_course_initials ?? [];
 $termNo = (int) ($term ?? 0);
 $termLabel = $termNo === 4 ? 'Annual' : (string) \App\Controllers\Home::TermToStr($termNo);
@@ -286,7 +292,7 @@ foreach ($students as $student) {
 	}
 	ob_start();
 	?>
-	<div class="nr-slip">
+	<div class="nr-slip<?= $nurseryPeriodic ? ' periodic' : ''; ?>">
 		<div class="nr-top">
 			<div class="nr-logo-wrap">
 				<?php if (!empty($school_logo)): ?>
@@ -294,6 +300,9 @@ foreach ($students as $student) {
 				<?php endif; ?>
 			</div>
 			<div class="nr-meta">
+				<?php if ($nurseryPeriodic): ?>
+					<div class="nr-h"><span class="k nr-period">PERIODIC REPORT</span><span class="nr-ul mid">Period <?= $periodNo > 0 ? $periodNo : ''; ?></span></div>
+				<?php endif; ?>
 				<div class="nr-h"><span class="k">Names:</span><span class="nr-ul"><?= esc($pupil); ?></span></div>
 				<div class="nr-h">
 					<span class="k">Results for Term:</span><span class="nr-ul mid"><?= esc($termLabel); ?></span>

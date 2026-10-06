@@ -17007,10 +17007,13 @@ public function getApplicationDocs($id = null)
 			die();
 		}
 		$classMdl = new ClassesModel();
-		$classVerify = $classMdl->select("f.abbrev")
+		$classVerify = $classMdl->select("f.abbrev, f.id as fac_id")
 				->join("departments d", "d.id=classes.department")
 				->join("faculty f", "f.id=d.faculty_id")
 				->where("classes.id", $class)->get()->getRow();
+		$factId = $classVerify ? (int) $classVerify->fac_id : 0;
+		$wisdomNurserySlip = $factId === 19
+			&& (is_wisdom_school((int) $school_id) || !in_array((int) $school_id, [28, 30, 31, 54, 42]));
 		$StudentModel = new StudentModel();
 		$gradesMdl = new GradeModel();
 		$data['page'] = "Result_record";
@@ -17021,11 +17024,18 @@ public function getApplicationDocs($id = null)
 		$data['grades'] = $useGrading
 			? $gradesMdl->select("color_title,max_point,min_point,color")->where("school_id", $school_id)->get()->getResultArray()
 			: [];
+		$disciplineSelect = "sum(di.marks) as displine_marks";
+		$disciplineJoin = 'disciplines di';
+		$disciplineOn = 'di.student_id=students.id AND di.active_term = ' . (int) $active_term->id;
+		if ($wisdomNurserySlip) {
+			$disciplineSelect = "group_concat(di.marks,':',di.term) as displine_marks";
+			$disciplineJoin = "(select sum(di.marks) as marks,at.term,di.active_term,di.student_id from disciplines di inner join active_term as at ON at.id = di.active_term where di.school_id=" . (int) $school_id . " group by di.active_term,di.student_id) as di";
+		}
 		$students = $StudentModel->select("students.id,students.regno,
 														students.photo,students.fname,students.dob,
 														students.lname,c.id as class_id,
 														c.title,d.title as department_name,
-														sum(di.marks) as displine_marks,d.id as department_id,
+														{$disciplineSelect},d.id as department_id,
 														d.code,l.title as level_name,f.title as fac_title,
 														f.type,f.abbrev as faculty_code,f.id as fac_id,
 														c.level,c.id as class,cr.year")
@@ -17036,7 +17046,7 @@ public function getApplicationDocs($id = null)
 				->join('faculty f', 'f.id=d.faculty_id')
 				->join('schools sk', 'sk.id=students.school_id')
 				// ->join("active_term at", "at.id=sk.active_term")
-				->join('disciplines di', 'di.student_id=students.id AND di.active_term = ' . $active_term->id, 'LEFT')
+				->join($disciplineJoin, $disciplineOn, 'LEFT')
 				->where("c.school_id", $school_id)
 				// ->where("sk.active_term", $active_term->id)
 				->where("cr.status", "1")
@@ -17085,13 +17095,61 @@ public function getApplicationDocs($id = null)
 //		}
 		/** 28 BRIGHT STARS ACADEMY FOUNDATION */
 		$view = view("pages/reports/student_period_report", $data);
-		if ($this->session->get("soma_school_id") == 28 && $classVerify->abbrev == 'Nursery') {
+		if ($this->session->get("soma_school_id") == 28 && $classVerify && $classVerify->abbrev == 'Nursery') {
 
 			$view = view("pages/reports/custom/bright_stars", $data);
 		}
 		if ($this->session->get("soma_school_id") == 52) {
 
 			$view = view("pages/reports/custom/cyungo_periodic_report", $data);
+		}
+		if ($wisdomNurserySlip) {
+			$data['grades'] = $gradesMdl->select("color_title,max_point,min_point,color")
+				->where("faculty_id", 19)
+				->where("school_id", $school_id)
+				->orderBy("max_point", "DESC")
+				->orderBy("min_point", "DESC")
+				->get()->getResultArray();
+			$yearRow = (new \App\Models\AcademicYearModel())->select('title')->where('id', (int) $year)->get()->getRowArray();
+			if (!empty($yearRow['title'])) {
+				$data['academic_year_title'] = $yearRow['title'];
+			}
+			$pupilCount = 0;
+			foreach ($data['students'] as $stRow) {
+				if (isset($stRow['id'])) {
+					$pupilCount++;
+				}
+			}
+			$data['nursery_pupil_count'] = $pupilCount;
+			$data['nursery_periodic'] = true;
+			$data['period'] = $period;
+			$mentorRow = (new ClassesModel())->select("concat(s.fname,' ',s.lname) as mentor_name")
+				->join("staffs s", "s.id=classes.mentor", "LEFT")
+				->where("classes.id", $class)
+				->get()->getRowArray();
+			$data['nursery_class_teacher'] = trim((string) ($mentorRow['mentor_name'] ?? ''));
+			$headTeacherRow = \Config\Database::connect()->query(
+				"SELECT s.fname, s.lname FROM staffs s
+				 LEFT JOIN posts p ON p.id = s.post
+				 WHERE s.school_id = ? AND s.status != 0
+				 AND (s.post = ? OR LOWER(TRIM(p.title)) IN ('head teacher', 'headteacher'))
+				 ORDER BY s.id ASC LIMIT 1",
+				[(int) $school_id, \App\Models\PostsModel::HEAD_TEACHER_ID]
+			)->getRowArray();
+			$data['nursery_head_teacher'] = trim((string) (($headTeacherRow['fname'] ?? '') . ' ' . ($headTeacherRow['lname'] ?? '')));
+			$initials = [];
+			$lecturers = \Config\Database::connect()->table('course_records cr')
+				->select('cr.course, s.fname, s.lname')
+				->join('staffs s', 's.id = cr.lecturer', 'left')
+				->where('cr.class', $class)
+				->where('cr.year', $year)
+				->get()->getResultArray();
+			foreach ($lecturers as $lec) {
+				$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
+				$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
+			}
+			$data['nursery_course_initials'] = $initials;
+			$view = view("pages/reports/wisdom_nursery_report", $data);
 		}
 		if ($pdf) {
 			/**
@@ -17117,9 +17175,13 @@ public function getApplicationDocs($id = null)
 				$wkhtmltopdf->setTitle(lang("app.rtudentProgressReport"));
 				$wkhtmltopdf->setHtml(utf8_decode($html));
 				$wkhtmltopdf->setPageSize("A4");
-				$wkhtmltopdf->setOrientation("portrait");
-				// $wkhtmltopdf->setOptions(array("page-width" => "278px", "page-height" => "430px"));
-				$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
+				if ($wisdomNurserySlip) {
+					$wkhtmltopdf->setOrientation("landscape");
+					$wkhtmltopdf->setMargins(array("top" => 12, "left" => 20, "right" => 14, "bottom" => 18));
+				} else {
+					$wkhtmltopdf->setOrientation("portrait");
+					$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
+				}
 				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "student_periodic_report" . time() . ".pdf");
 			} catch (\Exception $e) {
 				echo $e->getMessage();
