@@ -864,7 +864,7 @@ tr.staff-has-courses > td.staff-teaching-col {
 
 .disc-entry-page .disc-code-list {
 	margin-top: 8px;
-	max-height: 280px;
+	max-height: 460px;
 	overflow: auto;
 	border: 1px solid #e2e8f0;
 	border-radius: 10px;
@@ -872,13 +872,13 @@ tr.staff-has-courses > td.staff-teaching-col {
 }
 
 .disc-entry-page .disc-code-cat {
-	padding: 8px 12px 4px;
+	padding: 10px 12px 4px;
 	font-size: 0.72rem;
 	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-	color: #64748b;
-	background: #eef2f7;
+	color: #0369a1;
+	background: #f8fafc;
 	position: sticky;
 	top: 0;
 }
@@ -888,12 +888,185 @@ tr.staff-has-courses > td.staff-teaching-col {
 	width: 100%;
 	text-align: left;
 	border: 0;
-	background: transparent;
-	padding: 8px 12px;
-	font-size: 0.86rem;
+	border-bottom: 1px solid #e2e8f0;
+	background: #fff;
+	padding: 12px;
+	font-size: 0.95rem;
 	color: #0f172a;
 	cursor: pointer;
 	line-height: 1.35;
+}
+
+.disc-entry-page .disc-code-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+}
+
+.disc-entry-page .disc-code-now {
+	flex: 0 0 72px;
+	text-align: center;
+	color: #64748b;
+}
+
+.disc-entry-page .disc-code-now b {
+	display: block;
+	font-size: 1.25rem;
+	line-height: 1.1;
+}
+
+.disc-entry-page .disc-code-now.has-marks b {
+	color: #0369a1;
+}
+
+.disc-entry-page .disc-code-now small {
+	display: block;
+	font-size: 0.68rem;
+	font-weight: 600;
+}
+
+.disc-entry-page .disc-code-steps {
+	display: flex;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.disc-entry-page .disc-step {
+	flex: 1 1 0;
+	text-align: center;
+	background: #f1f5f9;
+	color: #0f172a;
+	border-radius: 8px;
+	padding: 6px 4px;
+	font-size: 0.78rem;
+	font-weight: 600;
+}
+
+.disc-entry-page .disc-step.is-on {
+	background: #0ea5e9;
+	color: #fff;
+}
+
+.disc-entry-page .disc-action-panel {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	border-radius: 12px;
+	padding: 12px;
+	margin-bottom: 12px;
+}
+
+.disc-entry-page .disc-action-menu {
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	overflow: hidden;
+	margin-bottom: 10px;
+}
+
+.disc-entry-page .disc-action-btn {
+	display: block;
+	width: 100%;
+	text-align: left;
+	background: #fff;
+	border: 0;
+	border-bottom: 1px solid #e2e8f0;
+	padding: 12px 14px;
+	font-size: 0.95rem;
+	color: #0f172a;
+	cursor: pointer;
+}
+
+.disc-entry-page .disc-action-btn:last-child {
+	border-bottom: 0;
+}
+
+.disc-entry-page .disc-action-btn.is-on {
+	background: #e0f2fe;
+	color: #0369a1;
+	font-weight: 700;
+}
+
+.disc-entry-page .disc-deduct-label {
+	font-size: 0.68rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #64748b;
+	margin-top: 4px;
+}
+
+.disc-entry-page .disc-deduct-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-top: 2px;
+}
+
+.disc-entry-page .disc-deduct-marks {
+	font-size: 1.75rem;
+	font-weight: 800;
+	color: #64748b;
+	line-height: 1;
+	min-width: 48px;
+}
+
+.disc-entry-page .disc-deduct-marks.has-marks {
+	color: #0369a1;
+}
+
+.disc-entry-page .disc-deduct-occ {
+	flex: 1;
+	font-size: 0.9rem;
+	color: #0f172a;
+}
+
+.disc-entry-page .disc-deduct-sanction {
+	margin-top: 4px;
+	font-size: 0.82rem;
+	color: #64748b;
+}
+
+.disc-entry-page .disc-remark-preview {
+	margin: 8px 0 0;
+	padding: 10px 12px;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	white-space: pre-wrap;
+	font-family: inherit;
+	font-size: 0.78rem;
+	line-height: 1.45;
+	color: #0f172a;
+	max-height: 220px;
+	overflow: auto;
+}
+
+.disc-entry-page .disc-code-text {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.disc-entry-page .disc-code-marks {
+	flex: 0 0 auto;
+	font-size: 0.72rem;
+	font-weight: 700;
+	color: #1d4ed8;
+	background: #eff6ff;
+	border-radius: 999px;
+	padding: 2px 8px;
+	white-space: nowrap;
+}
+
+.disc-zero-note {
+	margin: 8px 0 0;
+	color: #9a3412;
+	font-weight: 600;
+}
+
+.disc-entry-page .disc-pill.is-now {
+	background: #dcfce7;
+	border-color: #16a34a;
+	color: #166534;
+	font-weight: 700;
 }
 
 .disc-entry-page .disc-code-item:hover {
@@ -913,12 +1086,80 @@ tr.staff-has-courses > td.staff-teaching-col {
 	font-size: 0.86rem;
 }
 
-@media (max-width: 992px) {
+@media (max-width: 1100px) {
 	.disc-entry-page .disc-entry-grid {
 		grid-template-columns: 1fr;
 	}
+	.disc-entry-page .disc-entry-search,
+	.disc-entry-page .disc-entry-inner {
+		max-width: 100%;
+	}
+	.perm-entry-page .card-scan-workspace .pull-left,
+	.perm-entry-page .col-md-6,
+	.perm-entry-page .col-md-5,
+	.perm-entry-page .col-lg-4 {
+		width: 100% !important;
+		max-width: 100%;
+		float: none !important;
+		padding-left: 0;
+		padding-right: 0;
+	}
+	.perm-entry-page .card-scan-form-wrap,
+	.perm-entry-page .card-scan-table-wrap {
+		margin-bottom: 14px;
+	}
+}
+
+@media (max-width: 768px) {
+	.disc-entry-page .disc-entry-inner {
+		padding: 0 8px 20px;
+	}
 	.disc-entry-page .disc-kpi-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
+	}
+	.disc-entry-page .disc-kpi {
+		padding: 10px 8px;
+	}
+	.disc-entry-page .disc-kpi-value {
+		font-size: 1.2rem;
+	}
+	.disc-entry-page .disc-kpi-label {
+		font-size: 0.65rem;
+	}
+	.disc-entry-page .disc-entry-panel {
+		padding: 12px;
+	}
+	.disc-entry-page .disc-entry-table-wrap {
+		max-height: 260px;
+	}
+	.disc-entry-page .disc-code-list {
+		max-height: 220px;
+	}
+	.disc-entry-page .disc-entry-table-wrap table {
+		font-size: 0.78rem;
+	}
+	.disc-entry-page .disc-lang-bar {
+		justify-content: stretch;
+	}
+	.disc-entry-page .disc-lang-switch {
+		width: 100%;
+	}
+	.disc-entry-page .disc-lang-btn {
+		flex: 1;
+	}
+	.perm-entry-page .app-inner-layout__wrapper {
+		padding-left: 8px !important;
+		padding-right: 8px !important;
+	}
+}
+
+@media (max-width: 480px) {
+	.disc-entry-page .disc-code-steps {
+		flex-direction: column;
+	}
+	.disc-entry-page .disc-occur-pills span {
+		width: 100%;
 	}
 }
 

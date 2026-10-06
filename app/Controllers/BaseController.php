@@ -691,10 +691,37 @@ class BaseController extends Controller
 		$reason = trim((string) $reason);
 		$marks = (int) $marks;
 		if ($sendRemarks) {
-			if ($lang === 'rw') {
-				return "Babyeyi, {$name} yakoze iki kosa: {$reason}. Murakoze.";
+			$law = $reason;
+			if (preg_match('/^(.*?)(?:\s+\(|\s+\x{2014}\s+|\s+—\s+)/u', $reason, $cut)) {
+				$clean = trim((string) ($cut[1] ?? ''));
+				if ($clean !== '') {
+					$law = $clean;
+				}
 			}
-			return "Dear parent, {$name} committed this mistake: {$reason}. Thank you.";
+			if ($law === '') {
+				$law = $lang === 'rw' ? 'itegeko ry\'ishuri' : 'a school rule';
+			}
+			$date = date('d M Y');
+			if ($lang === 'rw') {
+				return "ITEGEKWA\n\n"
+					. "Mubyeyi,\n"
+					. "Ubuyobozi bw'ishuri bwabonye ko umwana wawe {$name} yavunye amabwiriza n'amategeko y'ishuri.\n\n"
+					. "Itegeko: {$law}\n\n"
+					. "Iyi ni umuburo ukomeye. Agomba guhindura iyo myitwarire ako kanya.\n"
+					. "Niba bitagenze neza, amanota y'igihembwe azakuwaho cyangwa ashobora guhagarikwa, kubera: {$law}.\n\n"
+					. "Twiteze impinduka yuzuye uyu munsi.\n\n"
+					. "Ubuyobozi bw'ishuri\n"
+					. "Itariki: {$date}";
+			}
+			return "WARNING\n\n"
+				. "Dear Parent,\n"
+				. "The School Administration has noted that your child {$name} has broken the School Rules and Regulations.\n\n"
+				. "Law: {$law}\n\n"
+				. "This is a serious warning. Your child must change this behaviour immediately.\n"
+				. "Failure to comply will lead to deduction of marks from the quarterly conduct marks, or suspension, because of: {$law}.\n\n"
+				. "We expect a complete change from today.\n\n"
+				. "The School Administration\n"
+				. "Date: {$date}";
 		}
 		if ($marks <= 0) {
 			if ($lang === 'rw') {

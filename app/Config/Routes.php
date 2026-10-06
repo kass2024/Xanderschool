@@ -349,6 +349,7 @@ $routes->post('manipulate_attendance_area', 'Home::manipulate_attendance_area');
 $routes->post('manipulate_heystar_device', 'Home::manipulate_heystar_device');
 $routes->post('manipulate_discipline_code', 'Home::manipulate_discipline_code');
 $routes->post('discipline_code_preview', 'Home::discipline_code_preview');
+$routes->post('discipline_occurrence_map', 'Home::discipline_occurrence_map');
 $routes->get('discipline_codes_json', 'Home::discipline_codes_json');
 $routes->post('set_disc_lang', 'Home::set_disc_lang');
 $routes->get('set_disc_lang', 'Home::set_disc_lang');

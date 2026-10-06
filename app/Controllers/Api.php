@@ -3861,7 +3861,7 @@ public function get_boarding_classes()
 				$st_data = $this->_get_parent_phone($student_id);
 				$phone = $st_data['phone'];
 				if (strlen($phone) > 3) {
-					$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment, $sendRemarks, $lang);
+					$msg = $this->get_discipline_msg($st_data['name'], $marks, $sendRemarks ? $title : $comment, $sendRemarks, $lang);
 //					if ($this->_send_sms($phone, $msg, $result, $this->data['remaining_sms'], $this->data['school_acronym'])) {
 //						//save sent sms
 //						$sms_count = (int)ceil(strlen($msg) / PER_SMS);

@@ -11910,6 +11910,8 @@ public function attendanceCard()
 		$data['classes'] = $this->classesWithoutHoliday($data['classes']);
 		$data['discipline_code_groups'] = $discCodeMdl->groupedCodes((int) $this->session->get('soma_school_id'), true);
 		$data['disc_lang'] = \App\Models\DisciplineCodeModel::discLang();
+		$data['remark_tpl_en'] = $this->get_discipline_msg('{NAME}', 0, '{LAW}', true, 'en');
+		$data['remark_tpl_rw'] = $this->get_discipline_msg('{NAME}', 0, '{LAW}', true, 'rw');
 		$data['content'] = view("pages/discipline_record_entry", $data);
 		return view('main', $data);
 	}
@@ -12763,7 +12765,7 @@ public function getApplicationDocs($id = null)
 					$st_data = $this->_get_parent_phone($formid);
 					$phone = $st_data['phone'];
 					if (strlen($phone) > 3) {
-						$msg = $this->get_discipline_msg($st_data['name'], $marks, $comment, $sendRemarks);
+						$msg = $this->get_discipline_msg($st_data['name'], $marks, $sendRemarks ? $title : $comment, $sendRemarks, $lang);
 						if ($this->sendSMS($phone, $msg, $result)) {
 							//save sent sms
 							$sms_count = (int)ceil(strlen($msg) / PER_SMS);
@@ -12886,6 +12888,29 @@ public function getApplicationDocs($id = null)
 			],
 			'students' => $students,
 		]);
+	}
+
+	public function discipline_occurrence_map()
+	{
+		$this->_preset();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$termId = (int) $this->request->getPost('active_term');
+		$studentId = (int) $this->request->getPost('student_id');
+		$map = [];
+		if ($schoolId > 0 && $termId > 0 && $studentId > 0) {
+			$rows = \Config\Database::connect()->table('disciplines')
+				->select('code_id, COUNT(*) AS c')
+				->where('school_id', $schoolId)
+				->where('student_id', $studentId)
+				->where('active_term', $termId)
+				->where('code_id >', 0)
+				->groupBy('code_id')
+				->get()->getResultArray();
+			foreach ($rows as $row) {
+				$map[(string) (int) ($row['code_id'] ?? 0)] = (int) ($row['c'] ?? 0);
+			}
+		}
+		return $this->response->setJSON(['success' => 1, 'counts' => $map]);
 	}
 
 	public function manipulate_discipline_code()

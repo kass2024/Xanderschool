@@ -40,6 +40,7 @@ $discGroups = $discipline_code_groups ?? [];
 
     <div class="disc-entry-search">
       <?= view('pages/partials/card_scan_search', ['classes' => $classes, 'use_lang' => false]) ?>
+      <link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>?v=conduct-app">
     </div>
 
     <div id="discSaveFlash" class="disc-entry-flash" role="alert" style="display:none">
@@ -134,34 +135,27 @@ $discGroups = $discipline_code_groups ?? [];
             </select>
             <input type="search" id="disc_code_filter" class="form-control" autocomplete="off"
                    placeholder="<?= disc_t('Search by number or words…', 'Shakisha nimero cyangwa amagambo…'); ?>">
+            <p class="disc-code-hint" id="discCodeHint"><?= disc_t('The blue step is deducted automatically for this student.', 'Icyiciro cy\'ubururu ni cyo kigabanywa ubwacyo kuri uyu munyeshuri.'); ?></p>
             <div class="disc-code-list" id="discCodeList" role="listbox"></div>
-            <p class="disc-code-hint" id="discCodeHint"><?= disc_t('Reason and marks are taken from this law. You cannot type them.', 'Impamvu n\'amanota biva ku itegeko. Ntushobora kubyandika.'); ?></p>
           </div>
 
-          <div class="disc-occur-box" id="discOccurBox" hidden>
-            <div class="disc-occur-schedule" id="discOccurSchedule"></div>
-            <div class="disc-occur-applied" id="discOccurApplied"></div>
-          </div>
-
-          <div class="disc-form-group">
-            <label for="choose_disc_type"><?= disc_t('After this code', 'Nyuma y\'iki tegeko'); ?></label>
-            <select class="form-control" id="choose_disc_type" name="discipline_type">
-              <option value="1" selected><?= disc_t('Reduce discipline marks', 'Gugabanya amanota y\'imyitwarire'); ?></option>
-              <option value="0"><?= disc_t('Send remarks to parent', 'Ohereza ibitekerezo ku mubyeyi'); ?></option>
-            </select>
-          </div>
-
-          <div class="disc-form-group" id="reduce_marks">
-            <label><?= disc_t('Marks to deduct', 'Amanota agabanywa'); ?></label>
-            <input type="text" id="reduce_marks_display" class="form-control disc-marks-input" readonly
-                   placeholder="<?= disc_t('Automatic', 'Bikora ubwabyo'); ?>">
-          </div>
-
-          <p class="disc-code-hint" id="discRemarkPreview" hidden></p>
-
-          <div class="disc-form-group disc-form-check" id="send_sms">
-            <input type="checkbox" name="sms" value="1" id="notify_parent">
-            <label for="notify_parent"><?= disc_t('Notify parent by SMS', 'Menyesha umubyeyi kuri SMS'); ?></label>
+          <div class="disc-action-panel">
+            <input type="hidden" name="discipline_type" id="choose_disc_type" value="1">
+            <div class="disc-action-menu" id="discActionMenu">
+              <button type="button" class="disc-action-btn" data-type="0"><?= disc_t('Send remarks to parent', 'Ohereza ibitekerezo ku mubyeyi'); ?></button>
+              <button type="button" class="disc-action-btn is-on" data-type="1"><?= disc_t('Reduce discipline marks', 'Gugabanya amanota y\'imyitwarire'); ?></button>
+            </div>
+            <div class="disc-deduct-label" id="discDeductLabel"><?= disc_t('Automatic deduction', 'Imanota zigabanywa ubwazo'); ?></div>
+            <div class="disc-deduct-row">
+              <div class="disc-deduct-marks" id="reduce_marks_display">—</div>
+              <div class="disc-deduct-occ" id="discOccurApplied"><?= disc_t('Tap a code. Marks are taken automatically.', 'Kanda itegeko. Amanota afatwa ubwazo.'); ?></div>
+            </div>
+            <div class="disc-deduct-sanction" id="discSanction" hidden></div>
+            <pre class="disc-remark-preview" id="discRemarkPreview" hidden></pre>
+            <div class="disc-form-group disc-form-check" id="send_sms">
+              <input type="checkbox" name="sms" value="1" id="notify_parent">
+              <label for="notify_parent"><?= disc_t('Notify parent', 'Menyesha umubyeyi'); ?></label>
+            </div>
           </div>
 
           <div class="disc-form-actions">
@@ -186,7 +180,9 @@ $(function () {
   const $saveBtn = $("#discSaveBtn");
   const saveBtnHtml = $saveBtn.html();
   const isRw = <?= $discLang === 'rw' ? 'true' : 'false'; ?>;
+  const remarkTpl = <?= json_encode($discLang === 'rw' ? ($remark_tpl_rw ?? '') : ($remark_tpl_en ?? '')); ?>;
   let saving = false;
+  let discCounts = {};
 
   function t(en, rw) { return isRw ? rw : en; }
 
@@ -213,7 +209,7 @@ $(function () {
     $.get("<?= base_url(); ?>get_student/" + id, function (data) {
       $table.append(data);
       updateEmptyState();
-      refreshOccurrence();
+      loadCounts();
     });
   }
 
@@ -238,33 +234,97 @@ $(function () {
     return $("#disc_code_id option").filter(function () { return parseInt($(this).val(), 10) > 0; }).length;
   }
 
+  function esc(value) {
+    return $("<div/>").text(value == null ? "" : String(value)).html();
+  }
+
+  function stepWord(n) {
+    if (isRw) return String(n);
+    if (n <= 1) return "1st";
+    if (n === 2) return "2nd";
+    return "3rd";
+  }
+
+  function nextStep(id) {
+    const prev = parseInt(discCounts[String(id)] || 0, 10) || 0;
+    let n = prev + 1;
+    if (n < 1) n = 1;
+    if (n > 3) n = 3;
+    return n;
+  }
+
+  function firstStudentId() {
+    const v = $table.find("input[name='discId[]']").first().val();
+    return parseInt(v, 10) || 0;
+  }
+
+  function firstStudentName() {
+    const $row = $table.find("tr.disc_row").first();
+    return ($row.find("td").eq(2).text() || "").trim();
+  }
+
+  function remarkText(name, law) {
+    const who = name || t("your child", "umwana wawe");
+    const rule = law || t("a school rule", "itegeko ry'ishuri");
+    return String(remarkTpl || "").split("{NAME}").join(who).split("{LAW}").join(rule);
+  }
+
   function buildCodeList() {
     const $list = $("#discCodeList");
     $list.empty();
     const selected = $("#disc_code_id").val();
+    const remarks = isRemarks();
     $("#disc_code_id optgroup").each(function () {
       const cat = $(this).attr("label") || "";
-      $list.append(`<div class="disc-code-cat">${$("<div/>").text(cat).html()}</div>`);
+      $list.append(`<div class="disc-code-cat">${esc(cat)}</div>`);
       $(this).find("option").each(function () {
         const id = $(this).val();
         if (!id) return;
         const text = $(this).text().trim();
         const isSel = String(id) === String(selected);
-        const m1 = $(this).attr("data-m1") || 0;
-        const m2 = $(this).attr("data-m2") || 0;
-        const m3 = $(this).attr("data-m3") || 0;
+        const m1 = parseInt($(this).attr("data-m1"), 10) || 0;
+        const m2 = parseInt($(this).attr("data-m2"), 10) || 0;
+        const m3 = parseInt($(this).attr("data-m3"), 10) || 0;
+        const s1 = $(this).attr("data-s1") || "";
+        const s2 = $(this).attr("data-s2") || "";
+        const s3 = $(this).attr("data-s3") || "";
+        const flat = String(m1) === String(m2) && String(m2) === String(m3) && s1 === s2 && s2 === s3;
+        const n = flat ? 1 : nextStep(id);
+        const marks = [m1, m2, m3][n - 1] || 0;
+        const nowMarks = remarks ? 0 : marks;
+        let nowLabel = t("now", "ubu");
+        if (remarks) nowLabel = t("remarks", "ibitekerezo");
+        else if (flat) nowLabel = t("every time", "buri gihe");
+        else if (nowMarks <= 0) nowLabel = t("no marks", "nta manota");
+        const nowText = (!remarks && nowMarks > 0) ? ("\u2212" + nowMarks) : "0";
+        let steps = "";
+        if (flat) {
+          const pay = s1 ? esc(s1) : esc(t("Every time", "Buri gihe"));
+          steps = `<span class="disc-step${remarks ? "" : " is-on"}">${pay}</span>`;
+        } else {
+          [m1, m2, m3].forEach(function (mark, index) {
+            const step = index + 1;
+            const on = !remarks && step === n;
+            const shown = mark > 0 ? ("\u2212" + mark) : "0";
+            steps += `<span class="disc-step${on ? " is-on" : ""}">${stepWord(step)}  ${shown}</span>`;
+          });
+        }
         $list.append(
           `<button type="button" class="disc-code-item${isSel ? " is-selected" : ""}" data-id="${id}" role="option">` +
-          `<span class="disc-code-text">${$("<div/>").text(text).html()}</span>` +
-          `<span class="disc-code-marks">${m1} / ${m2} / ${m3}</span></button>`
+          `<span class="disc-code-head">` +
+          `<span class="disc-code-text">${esc(text)}</span>` +
+          `<span class="disc-code-now${(!remarks && nowMarks > 0) ? " has-marks" : ""}">` +
+          `<b>${nowText}</b><small>${esc(nowLabel)}</small></span></span>` +
+          `<span class="disc-code-steps">${steps}</span></button>`
         );
       });
     });
-    const n = optionCount();
-    $("#discKpis [data-kpi='codes']").text(n);
-    if (!n) {
+    const count = optionCount();
+    $("#discKpis [data-kpi='codes']").text(count);
+    if (!count) {
       $list.html('<div class="disc-code-empty">' + t("No conduct codes found. Loading school laws…", "Nta mabwiriza yabonetse. Turimo gukurura amategeko…") + "</div>");
     }
+    filterCodeList();
   }
 
   function filterCodeList() {
@@ -347,65 +407,72 @@ $(function () {
 
   function paintAction() {
     const remarks = isRemarks();
-    $("#reduce_marks").toggle(!remarks);
-    $("#send_sms").show();
+    $("#discActionMenu .disc-action-btn").removeClass("is-on");
+    $("#discActionMenu .disc-action-btn[data-type='" + (remarks ? "0" : "1") + "']").addClass("is-on");
+    $("#discCodeHint").text(remarks
+      ? t("The parent receives the mistake committed. Marks stay the same.", "Umubyeyi abona ikosa ryakozwe. Amanota ntigabanywa.")
+      : t("The blue step is deducted automatically for this student.", "Icyiciro cy'ubururu ni cyo kigabanywa ubwacyo kuri uyu munyeshuri."));
+    $("#discDeductLabel").text(remarks
+      ? t("Remark to parent", "Igitekerezo ku mubyeyi")
+      : t("Automatic deduction", "Imanota zigabanywa ubwazo"));
     $("label[for='notify_parent']").text(remarks
-      ? t("Send remarks to parent (includes the mistake)", "Ohereza ibitekerezo ku mubyeyi (harimo ikosa)")
-      : t("Notify parent by SMS", "Menyesha umubyeyi kuri SMS"));
+      ? t("Send remarks to parent", "Ohereza ibitekerezo ku mubyeyi")
+      : t("Notify parent", "Menyesha umubyeyi"));
     if (remarks) $("#notify_parent").prop("checked", true);
-    const title = (selectedCodeOption().data("title") || "").toString();
-    const $preview = $("#discRemarkPreview");
-    if (remarks && title) {
-      $preview.text(t("Parent remark: ", "Igitekerezo ku mubyeyi: ") + title).removeAttr("hidden");
-    } else {
-      $preview.attr("hidden", true).text("");
+  }
+
+  function showSanction(text) {
+    const value = String(text || "").trim();
+    const $line = $("#discSanction");
+    if (!value) {
+      $line.attr("hidden", true).text("");
+      return;
     }
+    $line.text(value).removeAttr("hidden");
   }
 
   function renderSchedule() {
     const $opt = selectedCodeOption();
     const id = parseInt($opt.val(), 10) || 0;
-    const $box = $("#discOccurBox");
     paintAction();
+    const $preview = $("#discRemarkPreview");
     if (!id) {
-      $box.attr("hidden", true);
-      $("#reduce_marks_display").val("");
+      $("#reduce_marks_display").text("—").removeClass("has-marks");
+      $("#discOccurApplied").text(isRemarks()
+        ? t("Choose a law, then send the warning to the parent.", "Hitamo itegeko, hanyuma wohereze umuburo ku mubyeyi.")
+        : t("Tap a code. Marks are taken automatically.", "Kanda itegeko. Amanota afatwa ubwazo."));
+      showSanction("");
+      $preview.attr("hidden", true).text("");
       return;
     }
-    const m1 = $opt.data("m1") || 0, m2 = $opt.data("m2") || 0, m3 = $opt.data("m3") || 0;
-    const s1 = $opt.data("s1") || "", s2 = $opt.data("s2") || "", s3 = $opt.data("s3") || "";
+    const m1 = parseInt($opt.attr("data-m1"), 10) || 0;
+    const m2 = parseInt($opt.attr("data-m2"), 10) || 0;
+    const m3 = parseInt($opt.attr("data-m3"), 10) || 0;
+    const s1 = $opt.attr("data-s1") || "";
+    const s2 = $opt.attr("data-s2") || "";
+    const s3 = $opt.attr("data-s3") || "";
+    const flat = String(m1) === String(m2) && String(m2) === String(m3) && s1 === s2 && s2 === s3;
+    const n = flat ? 1 : nextStep(id);
+    const marks = [m1, m2, m3][n - 1] || 0;
+    const sanction = [s1, s2, s3][n - 1] || "";
+    const title = ($opt.attr("data-title") || $opt.text() || "").toString().trim();
     if (isRemarks()) {
-      const title = ($opt.data("title") || $opt.text() || "").toString().trim();
-      const mistake = [title, s1].filter(function (part) { return String(part).trim() !== ""; }).join(" — ");
-      $("#discOccurSchedule").html(
-        `<strong>${t("Remark to parent", "Igitekerezo ku mubyeyi")}</strong>` +
-        `<div class="disc-occur-pills">` +
-          `<span class="disc-pill is-now">${t("Mistake committed", "Ikosa ryakozwe")}: ${$("<div/>").text(mistake).html()}</span>` +
-        `</div>`
-      );
-      $box.removeAttr("hidden");
-      $("#reduce_marks_display").val("0");
+      $("#reduce_marks_display").text("0").removeClass("has-marks");
+      $("#discOccurApplied").text(t("Mistake committed", "Ikosa ryakozwe") + ": " + title);
+      showSanction(sanction);
+      $preview.text(remarkText(firstStudentName(), title)).removeAttr("hidden");
       return;
     }
-    if (String(m1) === String(m2) && String(m2) === String(m3) && s1 === s2 && s2 === s3) {
-      $("#discOccurSchedule").html(
-        `<strong>${t("Automatic deduction", "Imanota zigabanywa ubwazo")}</strong>` +
-        `<div class="disc-occur-pills">` +
-          `<span class="disc-pill is-now">${t("Every time", "Buri gihe")}: <b>${m1}</b>${s1 ? " · " + $("<div/>").text(s1).html() : ""}</span>` +
-        `</div>`
-      );
-      $box.removeAttr("hidden");
-      return;
+    $preview.attr("hidden", true).text("");
+    if (marks > 0) {
+      $("#reduce_marks_display").text("\u2212" + marks).addClass("has-marks");
+    } else {
+      $("#reduce_marks_display").text("0").removeClass("has-marks");
     }
-    $("#discOccurSchedule").html(
-      `<strong>${t("Deduction schedule", "Amanota agabanywa")}</strong>` +
-      `<div class="disc-occur-pills">` +
-        `<span class="disc-pill" data-n="1">${t("1st time", "Bwa mbere")}: <b>${m1}</b>${s1 ? " · " + $("<div/>").text(s1).html() : ""}</span>` +
-        `<span class="disc-pill" data-n="2">${t("2nd time", "Bwa kabiri")}: <b>${m2}</b>${s2 ? " · " + $("<div/>").text(s2).html() : ""}</span>` +
-        `<span class="disc-pill" data-n="3">${t("3rd time", "Bwa gatatu")}: <b>${m3}</b>${s3 ? " · " + $("<div/>").text(s3).html() : ""}</span>` +
-      `</div>`
-    );
-    $box.removeAttr("hidden");
+    $("#discOccurApplied").text(flat
+      ? t("Every time", "Buri gihe")
+      : (stepWord(n) + " " + t("time", "nshuro")));
+    showSanction(sanction);
   }
 
   function refreshOccurrence() {
@@ -417,45 +484,60 @@ $(function () {
       const v = parseInt($(this).val(), 10);
       if (v) ids.push(v);
     });
-    if (!codeId || !ids.length) {
-      $("#discOccurApplied").empty();
-      const $opt = selectedCodeOption();
-      if (codeId) $("#reduce_marks_display").val(isRemarks() ? 0 : ($opt.data("m1") || 0));
-      return;
-    }
+    if (!codeId || !ids.length) return;
     $.post("<?= base_url('discipline_code_preview'); ?>", {
       code_id: codeId,
       active_term: $("#disc_active_term").val(),
       discId: ids
     }).done(function (res) {
-      if (!res || !res.students) return;
-      let html = `<strong>${t("For selected students", "Ku banyeshuri bahiswemo")}</strong><ul>`;
+      if (!res || !res.students || !res.students.length) return;
       const names = {};
       $table.find("tr.disc_row").each(function () {
         const id = $(this).find("input[name='discId[]']").val() || $(this).attr("id");
         names[id] = $(this).find("td").eq(2).text().trim() || ("#" + id);
       });
-      let firstMarks = null;
       const remarks = isRemarks();
-      res.students.forEach(function (s) {
-        if (firstMarks === null) firstMarks = remarks ? 0 : s.marks;
-        if (remarks) {
-          const title = (selectedCodeOption().data("title") || "").toString();
-          const mistake = [title, s.sanction].filter(function (part) { return String(part || "").trim() !== ""; }).join(" — ");
-          html += `<li>${names[s.id] || ("#" + s.id)} — ${t("Mistake committed", "Ikosa ryakozwe")}: ${$("<div/>").text(mistake).html()}</li>`;
-        } else {
-          html += `<li>${names[s.id] || ("#" + s.id)} — <b>${s.label}</b> → ${s.marks} ${t("marks", "amanota")}${s.sanction ? " · " + s.sanction : ""}</li>`;
+      const first = res.students[0];
+      if (remarks) {
+        const title = (selectedCodeOption().attr("data-title") || "").toString();
+        const who = names[first.id] || firstStudentName();
+        $("#discOccurApplied").text(t("Mistake committed", "Ikosa ryakozwe") + ": " + title);
+        $("#discRemarkPreview").text(remarkText(who, title)).removeAttr("hidden");
+        if (res.students.length > 1) {
+          const extra = res.students.slice(1).map(function (s) { return names[s.id] || ("#" + s.id); }).join(", ");
+          $("#discSanction").text(t("Also", "Na") + ": " + extra).removeAttr("hidden");
         }
-      });
-      html += "</ul>";
-      if (!remarks && parseInt(firstMarks, 10) === 0) {
-        html += `<p class="disc-zero-note">${t("No marks this time. It is still saved and the parent can be notified. The next time this code is used, it will be the next offence.", "Nta manota kuri iyi nshuro. Bizabikwa kandi umubyeyi ashobora kumenyeshwa. Igihe gikurikira iki tegeko rizaba indi nshuro.")}</p>`;
+        return;
       }
-      $("#discOccurApplied").html(html);
-      const occ = res.students[0] ? parseInt(res.students[0].occurrence, 10) : 1;
-      $("#discOccurSchedule .disc-pill").removeClass("is-now");
-      $("#discOccurSchedule .disc-pill[data-n='" + occ + "']").addClass("is-now");
-      if (firstMarks !== null) $("#reduce_marks_display").val(firstMarks);
+      const marks = parseInt(first.marks, 10) || 0;
+      if (marks > 0) $("#reduce_marks_display").text("\u2212" + marks).addClass("has-marks");
+      else $("#reduce_marks_display").text("0").removeClass("has-marks");
+      let line = (names[first.id] || ("#" + first.id)) + " — " + (first.label || "") + " → " + marks + " " + t("marks", "amanota");
+      if (res.students.length > 1) {
+        line += " · " + t("and", "na") + " " + (res.students.length - 1) + " " + t("more", "abandi");
+      }
+      $("#discOccurApplied").text(line);
+      if (first.sanction) showSanction(first.sanction);
+      if (marks === 0) {
+        $("#discOccurApplied").append(" · " + t("No marks this time. It is still saved.", "Nta manota kuri iyi nshuro. Bizabikwa."));
+      }
+    });
+  }
+
+  function loadCounts() {
+    const studentId = firstStudentId();
+    if (!studentId) {
+      discCounts = {};
+      buildCodeList();
+      return;
+    }
+    $.post("<?= base_url('discipline_occurrence_map'); ?>", {
+      student_id: studentId,
+      active_term: $("#disc_active_term").val()
+    }).done(function (res) {
+      discCounts = (res && res.counts) ? res.counts : {};
+      buildCodeList();
+      refreshOccurrence();
     });
   }
 
@@ -466,16 +548,18 @@ $(function () {
     $("#disc_code_filter").val("");
     $(".disc-code-item").removeClass("is-selected");
     filterCodeList();
+    discCounts = {};
     $("#notify_parent").prop("checked", false);
     $("#student_search_input").val("");
     $("#student_search_box").hide().empty();
-    $("#choose_disc_type").val("1").trigger("change");
+    $("#choose_disc_type").val("1");
     if ($("#search_class").data("select2")) {
       $("#search_class").val(null).trigger("change");
     }
-    $("#send_sms, #reduce_marks").show();
-    $("#discOccurBox").attr("hidden", true);
-    $("#reduce_marks_display").val("");
+    $("#discRemarkPreview").attr("hidden", true).text("");
+    $("#discSanction").attr("hidden", true).text("");
+    buildCodeList();
+    renderSchedule();
     setScanStatus(t("Ready for next card...", "Tegura indi kariti..."), "");
     $("#successAlert").hide();
   }
@@ -516,7 +600,7 @@ $(function () {
     $(this).closest("tr").fadeOut(200, function () {
       $(this).remove();
       updateEmptyState();
-      refreshOccurrence();
+      loadCounts();
     });
   });
 
@@ -526,7 +610,7 @@ $(function () {
       $table.append(data);
       ensureDiscIdsInsideForm();
       updateEmptyState();
-      refreshOccurrence();
+      loadCounts();
     });
   });
 
@@ -571,7 +655,12 @@ $(function () {
   }
 
   $("#choose_disc_type").on("change", function () {
+    buildCodeList();
     refreshOccurrence();
+  });
+
+  $(document).on("click", ".disc-action-btn", function () {
+    $("#choose_disc_type").val(String($(this).data("type"))).trigger("change");
   });
 
   $(document).on("click", ".disc-code-item", function () {
@@ -630,7 +719,7 @@ $(function () {
 });
 
 function bootSelects() {
-  $("#choose_disc_type, #search_class").each(function () {
+  $("#search_class").each(function () {
     const $el = $(this);
     if ($el.data("select2")) {
       try { $el.select2("destroy"); } catch (e) {}
