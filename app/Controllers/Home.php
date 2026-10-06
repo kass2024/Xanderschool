@@ -17160,10 +17160,16 @@ public function getApplicationDocs($id = null)
 						->where("at.term", $term)
 						->where("at.academic_year", $year)
 						->where("marks.mark_type", 1)//cat
-						->where("marks.period", $period)
 						->where("marks.student_id", $student['id']);
 				if ($factId === 19) {
 					$resultBuilder->where("(marks.cat_type IS NULL OR TRIM(marks.cat_type) = '')", null, false);
+					if ((int) $period < 1) {
+						$resultBuilder->whereIn("marks.period", [1, 2, 3, 4]);
+					} else {
+						$resultBuilder->where("marks.period", (int) $period);
+					}
+				} else {
+					$resultBuilder->where("marks.period", $period);
 				}
 				$core['result'] = $resultBuilder->get()->getRowArray();
 				if (!is_null($core['result']['marks'])) {

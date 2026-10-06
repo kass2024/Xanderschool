@@ -77,26 +77,6 @@
 			</select>
 		</div>
 		<div class="form-group col-sm-3 col-md-2 col-lg-2">
-			<label><?= lang("app.term"); ?>:</label>
-			<select class="form-control select2" id="term" name="term" required>
-				<option selected disabled><?= lang("app.selectTerm"); ?> </option>
-				<option value="1"><?= lang("app.term1"); ?> </option>
-				<option value="2"><?= lang("app.term2"); ?> </option>
-				<option value="3"><?= lang("app.term3"); ?> </option>
-			</select>
-		</div>
-		<div class="form-group col-sm-3 col-md-2 col-lg-2">
-			<label><?= lang("app.period"); ?> :</label>
-			<select class="form-control select2" id="period" name="period" required>
-				<option selected disabled><?= lang("app.selectPeriod"); ?> </option>
-				<option value="1" data-generic="<?= esc(lang("app.period1")); ?>"><?= lang("app.period1"); ?> </option>
-				<option value="2" data-generic="<?= esc(lang("app.period2")); ?>"><?= lang("app.period2"); ?> </option>
-				<option value="3" data-generic="<?= esc(lang("app.period3")); ?>"><?= lang("app.period3"); ?> </option>
-				<option value="4" data-generic="<?= esc(lang("app.period4")); ?>"><?= lang("app.period4"); ?> </option>
-			</select>
-		</div>
-
-		<div class="form-group col-sm-3 col-md-2 col-lg-2">
 			<label><?= lang("app.sClass"); ?> :</label>
 			<select class="form-control select2" name="class" id="select_class" required>
 				<option selected disabled><?= lang("app.chooseClass"); ?></option>
@@ -107,6 +87,25 @@
 						value="<?= $class['id']; ?>"> <?= $class['level_name'] . " " . $class['code'] . " " . $class['title']; ?></option>
 					<?php
 				} ?>
+			</select>
+		</div>
+		<div class="form-group col-sm-3 col-md-2 col-lg-2">
+			<label><?= lang("app.term"); ?>:</label>
+			<select class="form-control select2" id="term" name="term" required>
+				<option selected disabled><?= lang("app.selectTerm"); ?> </option>
+				<option value="1"><?= lang("app.term1"); ?> </option>
+				<option value="2"><?= lang("app.term2"); ?> </option>
+				<option value="3"><?= lang("app.term3"); ?> </option>
+			</select>
+		</div>
+		<div class="form-group col-sm-3 col-md-2 col-lg-2" id="period_wrap">
+			<label><?= lang("app.period"); ?> :</label>
+			<select class="form-control select2" id="period" name="period" required>
+				<option selected disabled><?= lang("app.selectPeriod"); ?> </option>
+				<option value="1" data-generic="<?= esc(lang("app.period1")); ?>"><?= lang("app.period1"); ?> </option>
+				<option value="2" data-generic="<?= esc(lang("app.period2")); ?>"><?= lang("app.period2"); ?> </option>
+				<option value="3" data-generic="<?= esc(lang("app.period3")); ?>"><?= lang("app.period3"); ?> </option>
+				<option value="4" data-generic="<?= esc(lang("app.period4")); ?>"><?= lang("app.period4"); ?> </option>
 			</select>
 		</div>
 		<br>
@@ -126,23 +125,16 @@
 </form>
 <script>
 	$(function () {
-		var nurseryExams = <?= json_encode(nursery_exam_periods()); ?>;
-		function paintPeriods() {
+		function syncPeriod() {
 			var fac = parseInt($("#select_class option:selected").data("fac"), 10);
-			$("#period option").each(function () {
-				var value = $(this).val();
-				if (!value) {
-					return;
-				}
-				if (fac === 19 && nurseryExams[value]) {
-					$(this).text(nurseryExams[value]);
-					return;
-				}
-				$(this).text($(this).data("generic") || $(this).text());
-			});
+			var nursery = fac === 19;
+			var $period = $("#period");
+			$("#period_wrap").toggle(!nursery);
+			$period.prop("disabled", nursery);
+			$period.prop("required", !nursery);
 		}
 		$("#select_class").on("change", function () {
-			paintPeriods();
+			syncPeriod();
 		});
 		// $(document).on("click","#btn_generate",function (e) {
 		// 	e.preventDefault();

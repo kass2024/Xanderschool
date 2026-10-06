@@ -242,7 +242,7 @@ foreach ($students as $student) {
 							<?php endif; ?>
 						</td>
 						<td>
-							<?php if ($nurseryPeriodic): ?>
+							<?php if ($nurseryPeriodic && $periodNo > 0): ?>
 								<?php
 								$examTitle = function_exists('nursery_exam_title') ? nursery_exam_title($periodNo) : '';
 								if ($examTitle === '') {
