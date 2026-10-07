@@ -15,11 +15,20 @@
 		height: 210mm;
 		box-sizing: border-box;
 		background: #fff;
-		padding: 8mm 10mm 8mm 14mm;
+		padding: 12mm 13.7mm 8mm 20.2mm;
 	}
-	.wp-card { width: 124.5mm; vertical-align: top; }
-	.wp-id, .wp-grid { border-collapse: collapse; width: 124.5mm; }
-	.wp-id td { border: 0; padding: 0; vertical-align: bottom; color: #231f20; }
+	.wp-card { width: 125.3mm; vertical-align: top; }
+	.wp-id, .wp-grid { border-collapse: collapse; width: 125.3mm; table-layout: fixed; }
+	.wp-id td {
+		border: 0;
+		padding: 0;
+		vertical-align: bottom;
+		color: #231f20;
+		white-space: nowrap;
+		overflow: hidden;
+		height: 5.4mm;
+		line-height: 5.4mm;
+	}
 	.wp-logo { width: 14mm; height: 16mm; display: block; }
 	.wp-id .lab {
 		font-family: <?= !empty($pdf) ? 'nurserygothic' : '"Century Gothic", CenturyGothic, nurserygothic, sans-serif'; ?>;
@@ -89,7 +98,7 @@
 		.wp-paper { transform: none !important; margin: 0; page-break-after: always; }
 		.wp-fit:last-child .wp-paper { page-break-after: auto; }
 	}
-	@page { size: A4 landscape; margin: 0; }
+	@page { size: 297mm 210mm; margin: 12mm 13.7mm 8mm 20.2mm; }
 <?php endif; ?>
 </style>
 <?php
@@ -156,8 +165,8 @@ $num = static function ($value) use ($fmt) {
 };
 $periodic = !empty($primary_periodic);
 $cols = $periodic
-	? [36.0, 18.0, 18.0, 14.0, 22.0, 16.5]
-	: [20.1, 8.5, 10.7, 9.4, 9.3, 9.7, 8.6, 11.3, 17.3, 19.6];
+	? [42.0, 16.0, 16.0, 14.0, 22.0, 15.3]
+	: [20.25, 8.61, 10.83, 9.52, 9.42, 9.84, 8.71, 11.43, 17.46, 19.26];
 $span = $periodic ? 6 : 10;
 $periodicRank = [];
 if ($periodic && isset($students)) {
@@ -240,28 +249,39 @@ foreach ($students ?? [] as $student) {
 	if ($streamLabel === '') {
 		$streamLabel = trim((string) ($student['department_name'] ?? ''));
 	}
+	$fitPt = static function (string $text, float $widthMm, float $maxPt = 10.3): string {
+		$len = max(1, mb_strlen($text));
+		$pt = min($maxPt, ($widthMm / $len) / 0.20);
+		return number_format(max(7.2, $pt), 2, '.', '');
+	};
+	$namePt = $fitPt($name, 46);
+	$yearPt = $fitPt($yearLabel, 22);
+	$termPt = $fitPt($termLabel, 40);
+	$streamPt = $fitPt($streamLabel, 28);
+	$classPt = $fitPt($classLabel, 78);
+	$idCell = 'height:5.4mm;line-height:5.4mm;white-space:nowrap;overflow:hidden;vertical-align:bottom;';
 	?>
 	<table class="wp-id">
 		<tr>
-			<td rowspan="3" style="width:16mm;vertical-align:top;">
+			<td rowspan="3" style="width:16mm;vertical-align:middle;height:16.2mm;line-height:normal;white-space:normal;">
 				<?php if ($logoSrc !== ''): ?>
 					<img class="wp-logo" src="<?= esc($logoSrc); ?>" alt="">
 				<?php endif; ?>
 			</td>
-			<td class="lab" style="width:16mm;<?= $h('6.2'); ?>">Names:</td>
-			<td class="val" style="width:38mm;<?= $h('6.2'); ?>"><?= esc($name); ?></td>
-			<td class="lab" style="width:28mm;<?= $h('6.2'); ?>">Academic Year</td>
-			<td class="val" style="<?= $h('6.2'); ?>"><?= esc($yearLabel); ?></td>
+			<td class="lab" style="width:18mm;<?= $idCell; ?>">Names:</td>
+			<td class="val" style="width:48mm;<?= $idCell; ?>font-size:<?= $namePt; ?>pt;"><?= esc($name); ?></td>
+			<td class="lab" style="width:28mm;<?= $idCell; ?>">Academic Year</td>
+			<td class="val" style="<?= $idCell; ?>font-size:<?= $yearPt; ?>pt;"><?= esc($yearLabel); ?></td>
 		</tr>
 		<tr>
-			<td class="lab" style="<?= $h('6.2'); ?>">Term:</td>
-			<td class="val" style="<?= $h('6.2'); ?>"><?= esc($termLabel); ?></td>
-			<td class="lab" style="<?= $h('6.2'); ?>">Stream:</td>
-			<td class="val" style="<?= $h('6.2'); ?>"><?= esc($streamLabel); ?></td>
+			<td class="lab" style="<?= $idCell; ?>">Term:</td>
+			<td class="val" style="<?= $idCell; ?>font-size:<?= $termPt; ?>pt;"><?= esc($termLabel); ?></td>
+			<td class="lab" style="<?= $idCell; ?>">Stream:</td>
+			<td class="val" style="<?= $idCell; ?>font-size:<?= $streamPt; ?>pt;"><?= esc($streamLabel); ?></td>
 		</tr>
 		<tr>
-			<td class="lab" style="<?= $h('6.2'); ?>">Class:</td>
-			<td class="val" colspan="3" style="<?= $h('6.2'); ?>"><?= esc($classLabel); ?></td>
+			<td class="lab" style="<?= $idCell; ?>">Class:</td>
+			<td class="val" colspan="3" style="<?= $idCell; ?>font-size:<?= $classPt; ?>pt;"><?= esc($classLabel); ?></td>
 		</tr>
 	</table>
 	<table class="wp-grid">
@@ -447,7 +467,9 @@ foreach ($students ?? [] as $student) {
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>"><?= str_repeat('.', 36); ?> Sign: <?= str_repeat('.', 16); ?></td></tr>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Head teacher's Comment: <?= str_repeat('.', 38); ?></td></tr>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>"><?= str_repeat('.', 38); ?> Sign: <?= str_repeat('.', 14); ?></td></tr>
+		<?php if (!$periodic): ?>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>
+		<?php endif; ?>
 	</table>
 	<?php
 	$cards[] = ob_get_clean();
@@ -457,10 +479,10 @@ if ($cards !== []) {
 	$pairs = array_chunk($cards, 2);
 	foreach ($pairs as $i => $pair) {
 		$right = $pair[1] ?? '';
-		$pairTable = '<table style="width:260.5mm;border-collapse:collapse;"><tr>'
-			. '<td class="wp-card" style="width:124.5mm;vertical-align:top;">' . $pair[0] . '</td>'
-			. '<td style="width:11.5mm;border:0;">&nbsp;</td>'
-			. '<td class="wp-card" style="width:124.5mm;vertical-align:top;">' . ($right !== '' ? $right : '&nbsp;') . '</td>'
+		$pairTable = '<table style="width:263mm;border-collapse:collapse;"><tr>'
+			. '<td class="wp-card" style="width:125.3mm;vertical-align:top;">' . $pair[0] . '</td>'
+			. '<td style="width:12.4mm;border:0;">&nbsp;</td>'
+			. '<td class="wp-card" style="width:125.3mm;vertical-align:top;">' . ($right !== '' ? $right : '&nbsp;') . '</td>'
 			. '</tr></table>';
 		if (!empty($pdf)) {
 			if ($i > 0) {

@@ -17053,7 +17053,7 @@ public function getApplicationDocs($id = null)
 	}
 
 
-	private function streamNurserySheetPdf(string $html, string $filename): void
+	private function streamNurserySheetPdf(string $html, string $filename, ?array $margins = null): void
 	{
 		$dir = WRITEPATH . 'mpdf';
 		if (!is_dir($dir)) {
@@ -17062,11 +17062,12 @@ public function getApplicationDocs($id = null)
 		$fontFile = FCPATH . 'assets/fonts/texgyreadventor-bold.ttf';
 		$mpdfConfig = [
 			'mode' => 'utf-8',
-			'format' => 'A4-L',
-			'margin_left' => 20.26,
-			'margin_right' => 13.69,
-			'margin_top' => 12.15,
-			'margin_bottom' => 17.85,
+			'format' => [297, 210],
+			'orientation' => 'P',
+			'margin_left' => $margins['left'] ?? 20.26,
+			'margin_right' => $margins['right'] ?? 13.69,
+			'margin_top' => $margins['top'] ?? 12.15,
+			'margin_bottom' => $margins['bottom'] ?? 17.85,
 			'margin_header' => 0,
 			'margin_footer' => 0,
 			'default_font' => 'dejavusans',
@@ -17362,7 +17363,11 @@ public function getApplicationDocs($id = null)
 			// }
 			// die($view);
 			$html = $view;
-			if ($wisdomNurserySlip || $wisdomPrimaryPeriodic) {
+			if ($wisdomPrimaryPeriodic) {
+				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf', [
+					'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 8.0,
+				]);
+			} elseif ($wisdomNurserySlip) {
 				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf');
 			}
 			try {
@@ -17808,7 +17813,11 @@ public function getApplicationDocs($id = null)
 				$wisdomPrimarySlip = ((int) $fact === 3)
 					&& is_wisdom_school((int) $school_id)
 					&& (int) $term !== 4;
-				if ($wisdomNurserySlip || $wisdomPrimarySlip) {
+				if ($wisdomPrimarySlip) {
+					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf', [
+						'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 8.0,
+					]);
+				} elseif ($wisdomNurserySlip) {
 					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf');
 				}
 				try {
