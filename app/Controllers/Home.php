@@ -17234,7 +17234,27 @@ public function getApplicationDocs($id = null)
 					$resultBuilder->where("(marks.cat_type IS NULL OR TRIM(marks.cat_type) = '')", null, false);
 					$resultBuilder->where("marks.period", (int) $period);
 				} else {
-					$resultBuilder->where("marks.period", $period);
+					// Quizzes and tests saved before a period was chosen are stored as period 0.
+					// Use the selected period when it has marks, otherwise those direct CAT marks.
+					$periodInt = (int) $period;
+					$termInt = (int) $term;
+					$yearInt = (int) $year;
+					$resultBuilder->where("marks.marks >=", 0);
+					$resultBuilder->where(
+						"(marks.period = {$periodInt} OR ((marks.period = 0 OR marks.period IS NULL) AND NOT EXISTS (
+							SELECT 1 FROM marks mpref
+							INNER JOIN active_term atpref ON atpref.id = mpref.term
+							WHERE mpref.student_id = marks.student_id
+							  AND mpref.course_id = marks.course_id
+							  AND mpref.mark_type = 1
+							  AND mpref.marks >= 0
+							  AND mpref.period = {$periodInt}
+							  AND atpref.term = {$termInt}
+							  AND atpref.academic_year = {$yearInt}
+						)))",
+						null,
+						false
+					);
 				}
 				$core['result'] = $resultBuilder->get()->getRowArray();
 				if (!is_null($core['result']['marks'])) {
