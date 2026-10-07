@@ -143,21 +143,19 @@ $mm = static function (float $pt): string {
 };
 $linePt = 115.6 * 2.83465;
 $dotPt = 3.08;
-$footLine = static function (string $label, string $value, float $hMm) use ($advPt, $mm, $linePt, $dotPt) {
+$footLine = static function (string $label, string $value, float $hMm, bool $dots = true) use ($advPt, $mm, $linePt, $dotPt) {
 	$prefix = $label;
 	if ($value !== '') {
 		$prefix .= ' ' . $value;
-	} elseif ($label === 'Conduct:') {
-		$prefix .= ' ';
 	}
 	$used = $advPt($prefix);
 	$remain = max(0, $linePt - $used - 1.2);
-	$n = (int) floor($remain / $dotPt);
+	$n = $dots ? (int) floor($remain / $dotPt) : 0;
 	$labelMm = $mm($used + 0.6);
 	$cell = 'height:' . $hMm . 'mm;line-height:' . $hMm . 'mm;vertical-align:top;';
 	echo '<table class="nr-foot"><tr style="height:' . $hMm . 'mm">';
 	echo '<td style="width:' . $labelMm . 'mm;' . $cell . '">' . esc($prefix) . '</td>';
-	echo '<td style="' . $cell . '">' . str_repeat('.', max(0, $n)) . '</td>';
+	echo '<td style="' . $cell . '">' . ($n > 0 ? str_repeat('.', $n) : '') . '</td>';
 	echo '</tr></table>';
 };
 $signLine = static function (float $hMm) {
@@ -288,12 +286,7 @@ foreach ($students as $student) {
 			$deduct = (float) extractDisciplineMarks($student['displine_marks'] ?? '', $termNo);
 			$conduct = max(0, $discMax - $deduct);
 		}
-		$conductPct = $conduct * 100 / $discMax;
-		$conductMention = $mentionFor($conductPct);
 		$conductText = $fmt($conduct) . '/' . $fmt($discMax);
-		if ($conductMention !== '') {
-			$conductText .= ' - ' . $conductMention;
-		}
 	}
 	ob_start();
 	?>
@@ -382,7 +375,7 @@ foreach ($students as $student) {
 					</tbody>
 				</table>
 				<div class="nr-footwrap">
-					<?php $footLine('Conduct:', $conductText, 7.66); ?>
+					<?php $footLine('Conduct:', $conductText, 7.66, false); ?>
 					<?php $footLine("Class teacher's comment:", '', 7.26); ?>
 					<?php $signLine(7.89); ?>
 					<?php $footLine("Head teacher's comment:", '', 7.26); ?>
