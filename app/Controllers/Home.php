@@ -17318,6 +17318,33 @@ public function getApplicationDocs($id = null)
 			$data['nursery_course_initials'] = $initials;
 			$view = view("pages/reports/wisdom_nursery_report", $data);
 		}
+		$wisdomPrimaryPeriodic = $factId === 3 && is_wisdom_school((int) $school_id);
+		if ($wisdomPrimaryPeriodic) {
+			$data['grades'] = $gradesMdl->select("color_title,max_point,min_point,color")
+				->where("faculty_id", 3)
+				->where("school_id", $school_id)
+				->orderBy("max_point", "DESC")
+				->orderBy("min_point", "DESC")
+				->get()->getResultArray();
+			$yearRow = (new \App\Models\AcademicYearModel())->select('title')->where('id', (int) $year)->get()->getRowArray();
+			if (!empty($yearRow['title'])) {
+				$data['academic_year_title'] = $yearRow['title'];
+			}
+			$initials = [];
+			$lecturers = \Config\Database::connect()->table('course_records cr')
+				->select('cr.course, s.fname, s.lname')
+				->join('staffs s', 's.id = cr.lecturer', 'left')
+				->where('cr.class', $class)
+				->where('cr.year', $year)
+				->get()->getResultArray();
+			foreach ($lecturers as $lec) {
+				$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
+				$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
+			}
+			$data['primary_course_initials'] = $initials;
+			$data['primary_periodic'] = true;
+			$view = view("pages/reports/wisdom_primary_report", $data);
+		}
 		if ($pdf) {
 			/**
 			 * List of customized school report
@@ -17335,7 +17362,7 @@ public function getApplicationDocs($id = null)
 			// }
 			// die($view);
 			$html = $view;
-			if ($wisdomNurserySlip) {
+			if ($wisdomNurserySlip || $wisdomPrimaryPeriodic) {
 				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf');
 			}
 			try {

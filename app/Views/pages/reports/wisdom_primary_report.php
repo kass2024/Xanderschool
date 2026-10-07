@@ -154,7 +154,50 @@ $num = static function ($value) use ($fmt) {
 	}
 	return $fmt($value);
 };
-$cols = [20.1, 8.5, 10.7, 9.4, 9.3, 9.7, 8.6, 11.3, 17.3, 19.6];
+$periodic = !empty($primary_periodic);
+$cols = $periodic
+	? [36.0, 18.0, 18.0, 14.0, 22.0, 16.5]
+	: [20.1, 8.5, 10.7, 9.4, 9.3, 9.7, 8.6, 11.3, 17.3, 19.6];
+$span = $periodic ? 6 : 10;
+$periodicRank = [];
+if ($periodic && isset($students)) {
+	$rankTotals = [];
+	foreach ($students as $rankStudent) {
+		if (!isset($rankStudent['id'])) {
+			continue;
+		}
+		$sum = 0.0;
+		$has = false;
+		foreach ($rankStudent['courses'] ?? [] as $rankCore) {
+			if ($isBehaviour($rankCore)) {
+				continue;
+			}
+			$mark = $rankCore['result']['marks'] ?? null;
+			if ($mark !== null && $mark !== '') {
+				$sum += (float) $mark;
+				$has = true;
+			}
+		}
+		$rankTotals[(int) $rankStudent['id']] = $has ? $sum : null;
+	}
+	$ordered = $rankTotals;
+	arsort($ordered, SORT_NUMERIC);
+	$place = 0;
+	$seen = 0;
+	$prev = null;
+	foreach ($ordered as $sid => $sum) {
+		$seen++;
+		if ($sum === null) {
+			$periodicRank[$sid] = '';
+			continue;
+		}
+		if ($prev === null || abs($sum - $prev) > 0.001) {
+			$place = $seen;
+			$prev = $sum;
+		}
+		$periodicRank[$sid] = $place;
+	}
+}
 $col = static function (int $i) use ($cols) {
 	return 'width:' . $cols[$i] . 'mm;';
 };
@@ -223,7 +266,18 @@ foreach ($students ?? [] as $student) {
 	</table>
 	<table class="wp-grid">
 		<?php
-		$markHead = function () use ($col, $h) {
+		$markHead = function () use ($col, $h, $periodic) {
+			if ($periodic) {
+				echo '<tr>';
+				echo '<td class="wp-head" style="' . $col(0) . $h('6.4') . '"></td>';
+				echo '<td class="wp-head" style="' . $col(1) . '">Full Marks</td>';
+				echo '<td class="wp-head" style="' . $col(2) . '">Score</td>';
+				echo '<td class="wp-head" style="' . $col(3) . '">Grade</td>';
+				echo '<td class="wp-head" style="' . $col(4) . '">Comment</td>';
+				echo '<td class="wp-head" style="' . $col(5) . '">INITIALS</td>';
+				echo '</tr>';
+				return;
+			}
 			echo '<tr>';
 			echo '<td class="wp-head" style="' . $col(0) . $h('6.4') . '"></td>';
 			echo '<td class="wp-head" colspan="3">Maximum<br>per term</td>';
@@ -238,10 +292,42 @@ foreach ($students ?? [] as $student) {
 			}
 			echo '</tr>';
 		};
-		$printSection = function (string $title, array $rows, bool $withHead) use ($col, $h, $fmt, $num, $scoreOf, $mentionFor, $courseInitials, $markHead) {
-			echo '<tr><td class="wp-sec" colspan="10" style="' . $h('5.6') . '">' . esc($title) . '</td></tr>';
+		$printSection = function (string $title, array $rows, bool $withHead) use ($col, $h, $fmt, $num, $scoreOf, $mentionFor, $courseInitials, $markHead, $periodic, $span) {
+			echo '<tr><td class="wp-sec" colspan="' . $span . '" style="' . $h('5.6') . '">' . esc($title) . '</td></tr>';
 			if ($withHead) {
 				$markHead();
+			}
+			if ($periodic) {
+				$maxFull = 0.0;
+				$scoreSum = 0.0;
+				$anyScore = false;
+				foreach ($rows as $core) {
+					$full = (float) ($core['marks'] ?? 0);
+					$raw = $core['result']['marks'] ?? null;
+					$score = ($raw === null || $raw === '') ? null : (float) $raw;
+					$maxFull += $full;
+					if ($score !== null) {
+						$scoreSum += $score;
+						$anyScore = true;
+					}
+					$pct = ($full > 0 && $score !== null) ? ($score * 100 / $full) : null;
+					$cid = (int) ($core['id'] ?? 0);
+					echo '<tr>';
+					echo '<td class="wp-sub" style="' . $col(0) . $h('4.8') . '">' . esc((string) ($core['title'] ?? '')) . '</td>';
+					echo '<td class="wp-num" style="' . $col(1) . '">' . $fmt($full) . '</td>';
+					echo '<td class="wp-num" style="' . $col(2) . '">' . $num($score) . '</td>';
+					echo '<td class="wp-ctr" style="' . $col(3) . '"></td>';
+					echo '<td class="wp-ctr" style="' . $col(4) . '">' . esc($mentionFor($pct)) . '</td>';
+					echo '<td class="wp-ctr" style="' . $col(5) . '">' . esc((string) ($courseInitials[$cid] ?? '')) . '</td>';
+					echo '</tr>';
+				}
+				echo '<tr class="wp-total">';
+				echo '<td class="wp-sub" style="' . $h('5.2') . '">TOTAL</td>';
+				echo '<td class="wp-num">' . ($rows === [] ? '' : $fmt($maxFull)) . '</td>';
+				echo '<td class="wp-num">' . ($anyScore ? $fmt($scoreSum) : '') . '</td>';
+				echo '<td></td><td></td><td></td>';
+				echo '</tr>';
+				return [$maxFull, $anyScore ? $scoreSum : null];
 			}
 			$maxMid = $maxEx = $maxTot = 0.0;
 			$scoreMid = $scoreEx = $scoreTot = 0.0;
@@ -303,27 +389,47 @@ foreach ($students ?? [] as $student) {
 			}
 		}
 		$pctText = ($scored && $allMax > 0) ? $fmt($allScore * 100 / $allMax) . '%' : '';
-		$termKey = termToStr($termNo);
-		$position = $my_position[$termKey]['total'][$student['id']] ?? '';
-		$outOf = isset($my_position[$termKey]['total']) ? count($my_position[$termKey]['total']) : 0;
+		if ($periodic) {
+			$position = $periodicRank[(int) $student['id']] ?? '';
+			$outOf = 0;
+			foreach ($periodicRank as $rankPlace) {
+				if ($rankPlace !== '') {
+					$outOf++;
+				}
+			}
+		} else {
+			$termKey = termToStr($termNo);
+			$position = $my_position[$termKey]['total'][$student['id']] ?? '';
+			$outOf = isset($my_position[$termKey]['total']) ? count($my_position[$termKey]['total']) : 0;
+		}
 		$positionText = ($position !== '' && $outOf > 0) ? $position . ' Out of ' . $outOf : '';
 		$conductTot = null;
 		if ($discMax > 0) {
-			$deduct = (float) extractDisciplineMarks($student['displine_marks'] ?? '', $termNo);
+			if ($periodic) {
+				$deduct = (float) ($student['displine_marks'] ?? 0);
+			} else {
+				$deduct = (float) extractDisciplineMarks($student['displine_marks'] ?? '', $termNo);
+			}
 			$conductTot = max(0, $discMax - $deduct);
 		}
 		$half = $discMax > 0 ? $discMax / 2 : null;
+		$rest = $span - 1;
 		?>
 		<tr>
 			<td class="wp-sub" style="<?= $h('5.0'); ?>">Percentage</td>
-			<td colspan="9" class="wp-ctr"><?= esc($pctText); ?></td>
+			<td colspan="<?= $rest; ?>" class="wp-ctr"><?= esc($pctText); ?></td>
 		</tr>
 		<tr>
 			<td class="wp-sub" style="<?= $h('5.0'); ?>">POSITION</td>
-			<td colspan="9" class="wp-ctr"><?= esc($positionText); ?></td>
+			<td colspan="<?= $rest; ?>" class="wp-ctr"><?= esc($positionText); ?></td>
 		</tr>
 		<tr>
 			<td class="wp-sub" style="<?= $h('5.0'); ?>">CONDUCT</td>
+			<?php if ($periodic): ?>
+			<td class="wp-num"><?= $discMax > 0 ? $fmt($discMax) : ''; ?></td>
+			<td class="wp-num"><?= $num($conductTot); ?></td>
+			<td></td><td></td><td></td>
+			<?php else: ?>
 			<td class="wp-num"><?= $num($half); ?></td>
 			<td class="wp-num"><?= $num($half); ?></td>
 			<td class="wp-num"><?= $discMax > 0 ? $fmt($discMax) : ''; ?></td>
@@ -331,16 +437,17 @@ foreach ($students ?? [] as $student) {
 			<td class="wp-num"></td>
 			<td class="wp-num"><?= $num($conductTot); ?></td>
 			<td></td><td></td><td></td>
+			<?php endif; ?>
 		</tr>
 		<tr>
 			<td class="wp-sub" style="<?= $h('5.0'); ?>">DECISION</td>
-			<td colspan="9" class="wp-ctr"><?= esc((string) ($student['decision'] ?? '')); ?><?= trim((string) ($student['decision'] ?? '')) === '' ? str_repeat('.', 48) : ''; ?></td>
+			<td colspan="<?= $rest; ?>" class="wp-ctr"><?= esc((string) ($student['decision'] ?? '')); ?><?= trim((string) ($student['decision'] ?? '')) === '' ? str_repeat('.', 48) : ''; ?></td>
 		</tr>
-		<tr><td class="wp-foot" colspan="10" style="<?= $h('5.6'); ?>">Class teacher's comment:<?= str_repeat('.', 42); ?></td></tr>
-		<tr><td class="wp-foot" colspan="10" style="<?= $h('5.6'); ?>"><?= str_repeat('.', 36); ?> Sign: <?= str_repeat('.', 16); ?></td></tr>
-		<tr><td class="wp-foot" colspan="10" style="<?= $h('5.6'); ?>">Head teacher's Comment: <?= str_repeat('.', 38); ?></td></tr>
-		<tr><td class="wp-foot" colspan="10" style="<?= $h('5.6'); ?>"><?= str_repeat('.', 38); ?> Sign: <?= str_repeat('.', 14); ?></td></tr>
-		<tr><td class="wp-foot" colspan="10" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Class teacher's comment:<?= str_repeat('.', 42); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>"><?= str_repeat('.', 36); ?> Sign: <?= str_repeat('.', 16); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Head teacher's Comment: <?= str_repeat('.', 38); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>"><?= str_repeat('.', 38); ?> Sign: <?= str_repeat('.', 14); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>
 	</table>
 	<?php
 	$cards[] = ob_get_clean();
