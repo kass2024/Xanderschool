@@ -8,75 +8,71 @@
 		font-style: normal;
 	}
 <?php endif; ?>
-	.nr-sheet {
-		font-family: nurserygothic, "Century Gothic", CenturyGothic, sans-serif;
+	.nr-sheet, .nr-slip, .nr-id, .nr-marks, .nr-foot, .nr-sign {
+		font-family: <?= !empty($pdf) ? 'nurserygothic' : '"Century Gothic", CenturyGothic, nurserygothic, sans-serif'; ?>;
 		font-weight: 700;
 		color: #231f20;
-		background: #eef1f4;
 	}
+	.nr-sheet { background: <?= !empty($pdf) ? '#fff' : '#eef1f4'; ?>; }
 	.nr-fit { width: 100%; overflow: hidden; }
 	.nr-paper {
 		width: 297mm;
 		height: 210mm;
 		box-sizing: border-box;
 		background: #fff;
-		padding: 12.15mm 12.5mm 17.85mm 20.26mm;
+		padding: 12.15mm 13.69mm 17.85mm 20.26mm;
 	}
-	table.nr-slip {
-		width: 116.9mm;
-		border-collapse: collapse;
-		background: #fff;
+	.nr-slip { width: 116.89mm; border-collapse: collapse; background: #fff; }
+	.nr-slip td.nr-body { border: 0; padding: 0 0 0 0.72mm; vertical-align: top; }
+	.nr-id { border-collapse: collapse; }
+	.nr-id td { border: 0; padding: 0; vertical-align: bottom; font-size: 10.86pt; font-weight: 700; line-height: 1; white-space: nowrap; }
+	.nr-id td.fill { border-bottom: 0.96pt solid #231f20; padding: 0 0.4mm 0.2mm 0.5mm; }
+	.nr-id td.gap { border: 0; }
+	.nr-id td.exam {
+		vertical-align: middle;
+		font-size: 10pt;
+		padding: 0 0 0 0.2mm;
+		white-space: nowrap;
 	}
-	table.nr-slip td.nr-body {
-		border: 0;
-		padding: 0;
-		vertical-align: top;
-	}
-	table.nr-head { width: 100%; border-collapse: collapse; margin: 0; }
-	table.nr-head td { border: 0; vertical-align: top; padding: 0; margin: 0; }
-	.nr-logo { width: 16.1mm; height: 18.3mm; }
-	table.nr-line { width: 100%; border-collapse: collapse; margin: 0; }
-	table.nr-line td {
-		border: 0;
-		font-size: 10.9pt;
-		font-weight: 700;
-		padding: 0 0.4mm;
-		height: 7.1mm;
-		vertical-align: bottom;
-		font-family: nurserygothic, "Century Gothic", CenturyGothic, sans-serif;
-	}
-	table.nr-line td.fill { border-bottom: 0.8pt dotted #231f20; }
-	table.nr-line td.lab { white-space: nowrap; padding-right: 3pt; }
-	table.nr-line td.sign { white-space: nowrap; padding-left: 3pt; }
-	table.nr-marks {
-		width: 116.9mm;
-		border-collapse: collapse;
-		margin: 0;
-	}
-	table.nr-marks th, table.nr-marks td {
-		border: 0.68pt solid #231f20;
-		padding: 0 0.6mm;
+	.nr-logo { width: 16.14mm; height: 19.13mm; margin: 1.56mm 0 0 2.38mm; display: block; }
+	.nr-marks { width: 116.89mm; border-collapse: collapse; }
+	.nr-marks th, .nr-marks td {
+		border: 0.96pt solid #231f20;
+		padding: 0 0.7mm;
 		font-weight: 700;
 		vertical-align: middle;
-		font-family: nurserygothic, "Century Gothic", CenturyGothic, sans-serif;
+		font-family: <?= !empty($pdf) ? 'nurserygothic' : '"Century Gothic", CenturyGothic, nurserygothic, sans-serif'; ?>;
 		line-height: 1.05;
 	}
-	table.nr-marks th {
-		font-size: 9.7pt;
+	.nr-marks th {
+		font-size: 9.73pt;
 		text-align: center;
 		text-transform: uppercase;
+		padding: 0 0.4mm;
 	}
-	table.nr-marks td {
-		font-size: 11pt;
-	}
-	table.nr-marks td.sub { text-transform: uppercase; }
-	table.nr-marks td.num {
-		font-family: nurserygothic, "Century Gothic", CenturyGothic, sans-serif;
-		font-size: 11pt;
+	.nr-marks td { font-size: 10.98pt; }
+	.nr-marks td.sub { text-transform: uppercase; padding-left: 1.1mm; }
+	.nr-marks td.num {
+		font-family: <?= !empty($pdf) ? 'nurseryarial, nurserygothic' : 'Arial, Helvetica, sans-serif'; ?>;
+		font-size: 10.98pt;
+		font-weight: 700;
 		text-align: center;
 	}
-	table.nr-marks td.ctr { text-align: center; }
-	table.nr-marks tr.total td { font-size: 11pt; }
+	.nr-marks td.ctr { text-align: center; }
+	.nr-footwrap { width: 115.6mm; margin-left: 1.11mm; padding-top: 4.39mm; }
+	.nr-foot, .nr-sign { width: 115.6mm; border-collapse: collapse; table-layout: fixed; }
+	.nr-foot td, .nr-sign td {
+		border: 0;
+		padding: 0;
+		margin: 0;
+		font-size: 11pt;
+		font-weight: 700;
+		line-height: 11pt;
+		vertical-align: top;
+		white-space: nowrap;
+		font-family: <?= !empty($pdf) ? 'nurserygothic' : '"Century Gothic", CenturyGothic, nurserygothic, sans-serif'; ?>;
+	}
+	.nr-sign td.sig { font-size: 11pt; }
 <?php if (empty($pdf)): ?>
 	@media print {
 		.app-sidebar-wrapper, .app-sidebar, .app-sidebar-overlay,
@@ -96,14 +92,15 @@
 <?php
 $grades = $grades ?? [];
 $pupilCount = (int) ($nursery_pupil_count ?? 0);
-$classTeacher = trim((string) ($nursery_class_teacher ?? ''));
-$headTeacher = trim((string) ($nursery_head_teacher ?? ''));
-$nurseryPeriodic = !empty($nursery_periodic);
 $periodNo = (int) ($period ?? 0);
 $courseInitials = $nursery_course_initials ?? [];
 $termNo = (int) ($term ?? 0);
 $termLabel = $termNo === 4 ? 'Annual' : (string) \App\Controllers\Home::TermToStr($termNo);
 $yearLabel = (string) ($academic_year_title ?? '');
+$examTitle = trim((string) ($nursery_exam_title ?? ''));
+if ($examTitle === '' && !empty($nursery_periodic)) {
+	$examTitle = nursery_exam_title($periodNo);
+}
 $logoSrc = '';
 if (!empty($school_logo)) {
 	$logoFile = FCPATH . 'assets/images/logo/' . $school_logo;
@@ -113,32 +110,79 @@ if (!empty($school_logo)) {
 		$logoSrc = base_url('assets/images/logo/' . $school_logo);
 	}
 }
-$lineH = ' style="height:7.1mm;vertical-align:middle;"';
-$footH = ' style="height:7.6mm;"';
-$line = static function (string $label, string $value = '', string $tailLabel = '', string $tailValue = '') use ($lineH) {
-	echo '<table class="nr-line" width="100%"><tr>';
-	if ($label !== '') {
-		echo '<td class="lab"' . $lineH . '>' . $label . '</td>';
+// Century Gothic Bold / TeX Gyre Adventor advances at 11pt, used to fill dotted rules.
+$glyphPt = [
+	32 => 3.08, 39 => 2.42, 45 => 4.62, 46 => 3.08, 47 => 6.27, 58 => 3.08,
+	48 => 6.16, 49 => 6.16, 50 => 6.16, 51 => 6.16, 52 => 6.16, 53 => 6.16, 54 => 6.16, 55 => 6.16, 56 => 6.16, 57 => 6.16,
+	65 => 8.14, 66 => 6.38, 67 => 8.58, 68 => 7.70, 69 => 5.72, 70 => 5.28, 71 => 9.24, 72 => 7.48, 73 => 3.08, 74 => 5.28,
+	75 => 6.82, 76 => 4.84, 77 => 9.90, 78 => 8.14, 79 => 9.24, 80 => 6.16, 81 => 9.24, 82 => 6.38, 83 => 5.72, 84 => 4.62,
+	85 => 7.04, 86 => 7.70, 87 => 9.90, 88 => 7.48, 89 => 6.82, 90 => 5.50,
+	97 => 7.26, 98 => 7.26, 99 => 7.04, 100 => 7.26, 101 => 7.04, 102 => 3.08, 103 => 7.26, 104 => 6.60, 105 => 2.64,
+	106 => 2.86, 107 => 6.38, 108 => 2.64, 109 => 10.34, 110 => 6.60, 111 => 7.04, 112 => 7.26, 113 => 7.26, 114 => 3.52,
+	115 => 4.84, 116 => 3.30, 117 => 6.60, 118 => 6.16, 119 => 8.80, 120 => 6.16, 121 => 6.38, 122 => 5.06,
+];
+$advPt = static function (string $text) use ($glyphPt): float {
+	$w = 0.0;
+	$len = strlen($text);
+	for ($i = 0; $i < $len; $i++) {
+		$o = ord($text[$i]);
+		if ($o < 128) {
+			$w += $glyphPt[$o] ?? 6.6;
+			continue;
+		}
+		if (($o & 0xC0) !== 0x80) {
+			$w += 6.6;
+		}
 	}
-	echo '<td class="fill"' . $lineH . '>' . ($value !== '' ? esc($value) : '&nbsp;') . '</td>';
-	if ($tailLabel !== '') {
-		echo '<td class="lab"' . $lineH . '>' . $tailLabel . '</td>';
-		echo '<td class="fill"' . $lineH . '>' . ($tailValue !== '' ? esc($tailValue) : '&nbsp;') . '</td>';
+	return $w;
+};
+$mm = static function (float $pt): string {
+	return rtrim(rtrim(number_format($pt / 2.83465, 2, '.', ''), '0'), '.');
+};
+$linePt = 115.6 * 2.83465;
+$dotPt = 3.08;
+$footLine = static function (string $label, string $value, float $hMm) use ($advPt, $mm, $linePt, $dotPt) {
+	$prefix = $label;
+	if ($value !== '') {
+		$prefix .= ' ' . $value;
+	} elseif ($label === 'Conduct:') {
+		$prefix .= ' ';
 	}
+	$used = $advPt($prefix);
+	$remain = max(0, $linePt - $used - 1.2);
+	$n = (int) floor($remain / $dotPt);
+	$labelMm = $mm($used + 0.6);
+	$cell = 'height:' . $hMm . 'mm;line-height:' . $hMm . 'mm;vertical-align:top;';
+	echo '<table class="nr-foot"><tr style="height:' . $hMm . 'mm">';
+	echo '<td style="width:' . $labelMm . 'mm;' . $cell . '">' . esc($prefix) . '</td>';
+	echo '<td style="' . $cell . '">' . str_repeat('.', max(0, $n)) . '</td>';
 	echo '</tr></table>';
 };
-$signLine = static function (string $name) use ($footH) {
-	echo '<table class="nr-line" width="100%"><tr>';
-	echo '<td class="fill"' . $footH . '>&nbsp;</td>';
-	echo '<td class="lab"' . $footH . '>sign:</td>';
-	echo '<td class="sign"' . $footH . '>' . ($name !== '' ? esc($name) : '&nbsp;') . '</td>';
-	echo '<td class="fill" style="width:16%;height:7.6mm;">&nbsp;</td>';
+$signLine = static function (float $hMm) {
+	$lead = str_repeat('.', 74);
+	$tail = str_repeat('.', 23);
+	$cell = 'height:' . $hMm . 'mm;line-height:' . $hMm . 'mm;vertical-align:top;';
+	echo '<table class="nr-sign"><tr style="height:' . $hMm . 'mm">';
+	echo '<td style="width:81.5mm;' . $cell . '">' . $lead . '</td>';
+	echo '<td class="sig" style="width:8.8mm;' . $cell . '">sign:</td>';
+	echo '<td style="width:25.3mm;' . $cell . '">' . $tail . '</td>';
 	echo '</tr></table>';
 };
-$footLine = static function (string $label, string $value = '') use ($footH) {
-	echo '<table class="nr-line" width="100%"><tr>';
-	echo '<td class="lab"' . $footH . '>' . $label . '</td>';
-	echo '<td class="fill"' . $footH . '>' . ($value !== '' ? esc($value) : '&nbsp;') . '</td>';
+$idLine = static function (array $parts, float $hMm) {
+	$sum = 0.0;
+	foreach ($parts as $part) {
+		$sum += (float) $part[1];
+	}
+	$w = rtrim(rtrim(number_format($sum, 2, '.', ''), '0'), '.');
+	echo '<table class="nr-id" width="' . $w . 'mm" style="width:' . $w . 'mm;height:' . $hMm . 'mm;table-layout:fixed;"><tr style="height:' . $hMm . 'mm">';
+	foreach ($parts as $part) {
+		$kind = $part[0];
+		$w = $part[1];
+		$text = $part[2] ?? '';
+		echo '<td class="' . $kind . '" style="width:' . $w . 'mm;height:' . $hMm . 'mm">';
+		echo $text !== '' ? esc($text) : '&nbsp;';
+		echo '</td>';
+	}
 	echo '</tr></table>';
 };
 $discMax = (float) ($discipline_max ?? 0);
@@ -251,40 +295,55 @@ foreach ($students as $student) {
 	}
 	ob_start();
 	?>
-	<table class="nr-slip" width="100%">
+	<table class="nr-slip" width="116.89mm">
 		<tr>
-			<td class="nr-body"<?= !empty($pdf) ? ' style="border:0;padding:0;"' : ''; ?>>
-				<table class="nr-head" width="100%">
+			<td class="nr-body">
+				<table class="nr-id" width="118.3mm">
 					<tr>
-						<td style="width:48pt;">
+						<td rowspan="4" style="width:25.11mm;vertical-align:top;border:0;padding:0;">
 							<?php if ($logoSrc !== ''): ?>
 								<img src="<?= esc($logoSrc); ?>" class="nr-logo" alt="">
 							<?php endif; ?>
 						</td>
-						<td>
-							<?php $line('Names:', $pupil); ?>
-							<?php $line('Results for Term:', $termLabel, 'Year:', $yearLabel); ?>
-							<?php $line('Class:', $classLabel, 'Number of Pupils:', $pupilCount > 0 ? (string) $pupilCount : ''); ?>
+						<td style="border:0;padding:0;vertical-align:top;">
+							<?php $idLine([['lab', 14.2, 'Names:'], ['fill', 79.9, $pupil]], 5.26); ?>
+							<?php $idLine([
+								['lab', 29.3, 'Results for Term:'],
+								['fill', 28.0, $termLabel],
+								['gap', 2.9, ''],
+								['lab', 9.7, 'Year:'],
+								['fill', 20.6, $yearLabel],
+							], 6.61); ?>
+							<?php $idLine([
+								['lab', 10.9, 'Class:'],
+								['fill', 29.4, $classLabel],
+								['gap', 2.3, ''],
+								['lab', 32.2, 'Number of Pupils:'],
+								['fill', 15.7, $pupilCount > 0 ? (string) $pupilCount : ''],
+							], 7.56); ?>
+							<table class="nr-id"><tr style="height:4.32mm">
+								<td class="exam" style="height:4.32mm"><?= $examTitle !== '' ? esc($examTitle) : '&nbsp;'; ?></td>
+							</tr></table>
 						</td>
 					</tr>
 				</table>
 				<?php
-				$headMm = 9.2;
-				$totalMm = 9.8;
-				$boxMm = 80.1;
+				$headMm = 9.14;
+				$totalMm = 9.84;
+				$boxMm = 80.14;
 				$rowMm = ($boxMm - $headMm - $totalMm) / max(1, count($rows));
 				$rowMm = max(4.2, $rowMm);
 				$markH = ' style="height:' . round($rowMm, 2) . 'mm;"';
 				$headS = 'height:' . $headMm . 'mm;';
 				?>
-				<table class="nr-marks" width="116.9mm">
+				<table class="nr-marks" width="116.89mm">
 					<thead>
 					<tr>
-						<th width="26.9mm" style="width:26.9mm;<?= $headS; ?>">Subject</th>
-						<th width="14.4mm" style="width:14.4mm;<?= $headS; ?>">Full<br>marks</th>
-						<th width="17.6mm" style="width:17.6mm;<?= $headS; ?>">Score</th>
-						<th width="42.9mm" style="width:42.9mm;<?= $headS; ?>">Comment</th>
-						<th width="15.1mm" style="width:15.1mm;<?= $headS; ?>">Initials</th>
+						<th style="width:26.94mm;<?= $headS; ?>">Subject</th>
+						<th style="width:14.37mm;<?= $headS; ?>">Full<br>marks</th>
+						<th style="width:17.56mm;<?= $headS; ?>">Score</th>
+						<th style="width:42.87mm;<?= $headS; ?>">Comment</th>
+						<th style="width:15.15mm;<?= $headS; ?>">Initials</th>
 					</tr>
 					</thead>
 					<tbody>
@@ -309,15 +368,17 @@ foreach ($students as $student) {
 					</tr>
 					</tbody>
 				</table>
-				<?php $footLine('Conduct:', $conductText); ?>
-				<?php $footLine("Class teacher's comment:"); ?>
-				<?php $signLine(''); ?>
-				<?php $footLine("Head teacher's comment:"); ?>
-				<?php $signLine(''); ?>
-				<?php $footLine("Parent's comment:"); ?>
-				<?php $signLine(''); ?>
-				<?php $footLine('Next term begins on:'); ?>
-				<?php $footLine('Next term ends on:'); ?>
+				<div class="nr-footwrap">
+					<?php $footLine('Conduct:', $conductText, 7.66); ?>
+					<?php $footLine("Class teacher's comment:", '', 7.26); ?>
+					<?php $signLine(7.89); ?>
+					<?php $footLine("Head teacher's comment:", '', 7.26); ?>
+					<?php $signLine(7.78); ?>
+					<?php $footLine("Parent's comment:", '', 7.26); ?>
+					<?php $signLine(7.89); ?>
+					<?php $footLine('Next term begins on:', '', 8.54); ?>
+					<?php $footLine('Next term ends on:', '', 5.50); ?>
+				</div>
 			</td>
 		</tr>
 	</table>
@@ -330,12 +391,16 @@ if ($cards === [] && isset($students) && count($students) > 0) {
 if ($cards !== []) {
 	echo '<div class="nr-sheet">';
 	$pairs = array_chunk($cards, 2);
-	$cell = 'width="125.27mm" height="180mm" style="width:125.27mm;height:180mm;border:1.93pt solid #231f20;vertical-align:top;padding:0.2mm 4.2mm 0.4mm 1.8mm;"';
+	$cell = 'width="124.2mm" height="180mm" style="width:124.2mm;height:180mm;border:1.93pt solid #231f20;vertical-align:top;padding:0;"';
 	foreach ($pairs as $i => $pair) {
-		$pairTable = '<table width="263.05mm" style="width:263.05mm;border-collapse:collapse;"><tr>'
+		$right = $pair[1] ?? '';
+		$rightCell = $right !== ''
+			? '<td ' . $cell . '>' . $right . '</td>'
+			: '<td width="124.2mm" style="width:124.2mm;border:0;">&nbsp;</td>';
+		$pairTable = '<table width="260.91mm" style="width:260.91mm;border-collapse:collapse;"><tr>'
 			. '<td ' . $cell . '>' . $pair[0] . '</td>'
 			. '<td width="12.51mm" style="width:12.51mm;border:0;">&nbsp;</td>'
-			. '<td ' . $cell . '>' . ($pair[1] ?? '') . '</td>'
+			. $rightCell
 			. '</tr></table>';
 		if (!empty($pdf)) {
 			if ($i > 0) {

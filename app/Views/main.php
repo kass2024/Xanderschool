@@ -956,7 +956,7 @@
 					</div>
 					<div style="display: flex;flex-direction: column;margin: 0 auto;text-align: center">
 						<h5 style="font-weight: bold"><?= $school_name; ?></h5>
-						<h5><?= $academic_year_title; ?> - Term <?= $term; ?></h5>
+						<h5><?= $academic_year_title; ?> - Term <?= $term; ?><?= !empty($nursery_exam_title) ? ' - ' . esc($nursery_exam_title) : ''; ?></h5>
 					</div>
 					<div class="app-header-right">
 						<div class="search-wrapper">

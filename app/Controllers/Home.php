@@ -17060,7 +17060,7 @@ public function getApplicationDocs($id = null)
 			'mode' => 'utf-8',
 			'format' => 'A4-L',
 			'margin_left' => 20.26,
-			'margin_right' => 12.5,
+			'margin_right' => 13.69,
 			'margin_top' => 12.15,
 			'margin_bottom' => 17.85,
 			'margin_header' => 0,
@@ -17071,13 +17071,32 @@ public function getApplicationDocs($id = null)
 		if (is_file($fontFile)) {
 			$fontDirs = (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'];
 			$fontData = (new \Mpdf\Config\FontVariables())->getDefaults()['fontdata'];
-			$mpdfConfig['fontDir'] = array_merge($fontDirs, [dirname($fontFile)]);
-			$mpdfConfig['fontdata'] = $fontData + [
+			$extraDirs = [dirname($fontFile)];
+			$extraFonts = [
 				'nurserygothic' => [
 					'R' => basename($fontFile),
 					'B' => basename($fontFile),
 				],
 			];
+			$arialCandidates = [
+				FCPATH . 'assets/fonts/arialbd.ttf',
+				'C:/Windows/Fonts/arialbd.ttf',
+				'/usr/share/fonts/truetype/msttcorefonts/Arial_Bold.ttf',
+				'/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+				'/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf',
+			];
+			foreach ($arialCandidates as $arialFile) {
+				if (is_file($arialFile)) {
+					$extraDirs[] = dirname($arialFile);
+					$extraFonts['nurseryarial'] = [
+						'R' => basename($arialFile),
+						'B' => basename($arialFile),
+					];
+					break;
+				}
+			}
+			$mpdfConfig['fontDir'] = array_merge($fontDirs, $extraDirs);
+			$mpdfConfig['fontdata'] = $fontData + $extraFonts;
 			$mpdfConfig['default_font'] = 'nurserygothic';
 		}
 		$mpdf = new \Mpdf\Mpdf($mpdfConfig);
@@ -17242,6 +17261,10 @@ public function getApplicationDocs($id = null)
 			$data['nursery_pupil_count'] = $pupilCount;
 			$data['nursery_periodic'] = true;
 			$data['period'] = $period;
+			$data['nursery_exam_title'] = nursery_exam_title((int) $period);
+			if ($data['nursery_exam_title'] !== '') {
+				$data['subtitle'] = $data['nursery_exam_title'];
+			}
 			$mentorRow = (new ClassesModel())->select("concat(s.fname,' ',s.lname) as mentor_name")
 				->join("staffs s", "s.id=classes.mentor", "LEFT")
 				->where("classes.id", $class)
@@ -17538,6 +17561,12 @@ public function getApplicationDocs($id = null)
 					$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
 				}
 				$data['nursery_course_initials'] = $initials;
+				$data['nursery_exam_title'] = 'End of Term Exam';
+				$wisdomNurserySheet = is_wisdom_school((int) $school_id)
+					|| !in_array((int) $school_id, [28, 30, 31, 54, 42], true);
+				if ($wisdomNurserySheet) {
+					$data['subtitle'] = 'End of Term Exam';
+				}
 			}
 			if (isset($_GET['publish']) && $this->request->getGet("publish") == "sms") {
 				$smsRMdl = new SmsRecipientModel();
