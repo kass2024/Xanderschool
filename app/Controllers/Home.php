@@ -17365,7 +17365,7 @@ public function getApplicationDocs($id = null)
 			$html = $view;
 			if ($wisdomPrimaryPeriodic) {
 				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf', [
-					'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 8.0,
+					'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 13.0,
 				]);
 			} elseif ($wisdomNurserySlip) {
 				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf');
@@ -17815,7 +17815,7 @@ public function getApplicationDocs($id = null)
 					&& (int) $term !== 4;
 				if ($wisdomPrimarySlip) {
 					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf', [
-						'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 8.0,
+						'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 13.0,
 					]);
 				} elseif ($wisdomNurserySlip) {
 					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf');

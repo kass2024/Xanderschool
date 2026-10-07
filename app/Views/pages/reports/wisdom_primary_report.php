@@ -15,25 +15,23 @@
 		height: 210mm;
 		box-sizing: border-box;
 		background: #fff;
-		padding: 12mm 13.7mm 8mm 20.2mm;
+		padding: 12mm 13.7mm 13mm 20.2mm;
 	}
 	.wp-card { width: 125.3mm; vertical-align: top; }
 	.wp-id, .wp-grid { border-collapse: collapse; width: 125.3mm; table-layout: fixed; }
 	.wp-id td {
 		border: 0;
-		padding: 0;
+		padding: 0 0.4mm;
 		vertical-align: bottom;
 		color: #231f20;
-		white-space: nowrap;
+		white-space: normal;
 		overflow: hidden;
-		height: 5.4mm;
-		line-height: 5.4mm;
 	}
 	.wp-logo { width: 14mm; height: 16mm; display: block; }
 	.wp-id .lab {
 		font-family: <?= !empty($pdf) ? 'nurserygothic' : '"Century Gothic", CenturyGothic, nurserygothic, sans-serif'; ?>;
 		font-weight: 700;
-		font-size: 10.5pt;
+		font-size: 9.5pt;
 		white-space: nowrap;
 		padding-right: 1mm;
 	}
@@ -71,9 +69,8 @@
 	.wp-sub, .wp-num, .wp-ctr, .wp-total td {
 		font-family: <?= !empty($pdf) ? 'nurserygothic' : '"Century Gothic", CenturyGothic, nurserygothic, sans-serif'; ?>;
 		font-size: 8.5pt;
-		height: 4.8mm;
 	}
-	.wp-sub { text-transform: uppercase; padding-left: 1mm; }
+	.wp-sub { text-transform: uppercase; padding-left: 1mm; white-space: normal; overflow: hidden; vertical-align: middle; }
 	.wp-num, .wp-ctr { text-align: center; }
 	.wp-total td { background: #c2b59b; height: 5.2mm; }
 	.wp-foot {
@@ -98,7 +95,7 @@
 		.wp-paper { transform: none !important; margin: 0; page-break-after: always; }
 		.wp-fit:last-child .wp-paper { page-break-after: auto; }
 	}
-	@page { size: 297mm 210mm; margin: 12mm 13.7mm 8mm 20.2mm; }
+	@page { size: 297mm 210mm; margin: 12mm 13.7mm 13mm 20.2mm; }
 <?php endif; ?>
 </style>
 <?php
@@ -210,8 +207,73 @@ if ($periodic && isset($students)) {
 $col = static function (int $i) use ($cols) {
 	return 'width:' . $cols[$i] . 'mm;';
 };
-$h = static function (string $mm) {
-	return 'height:' . $mm . 'mm;line-height:' . $mm . 'mm;';
+$scale = 1.0;
+$h = static function (string $mm) use (&$scale) {
+	$v = (float) $mm * $scale;
+	return 'height:' . number_format($v, 2, '.', '') . 'mm;line-height:' . number_format($v, 2, '.', '') . 'mm;';
+};
+$splitWords = static function (array $words, int $lines): array {
+	$n = count($words);
+	if ($lines <= 1 || $n <= 1) {
+		return [implode(' ', $words)];
+	}
+	$lines = min($lines, $n);
+	$total = 0;
+	foreach ($words as $word) {
+		$total += mb_strlen($word);
+	}
+	$groups = [];
+	$index = 0;
+	for ($line = 0; $line < $lines; $line++) {
+		$remainLines = $lines - $line;
+		$remainWords = $n - $index;
+		if ($remainLines <= 1) {
+			$groups[] = implode(' ', array_slice($words, $index));
+			break;
+		}
+		$target = $total / $lines;
+		$take = 1;
+		$len = mb_strlen($words[$index]);
+		while ($index + $take < $n && ($remainWords - $take) > ($remainLines - 1) && $len < $target) {
+			$take++;
+			$len += mb_strlen($words[$index + $take - 1]);
+		}
+		$groups[] = implode(' ', array_slice($words, $index, $take));
+		$index += $take;
+	}
+	return $groups;
+};
+$packText = static function (string $text, float $widthMm, int $maxLines, float $maxPt, float $minPt) use ($splitWords): array {
+	$text = trim((string) preg_replace('/\s+/u', ' ', $text));
+	$widthMm = max(8.0, $widthMm);
+	if ($text === '') {
+		return ['html' => '', 'pt' => $maxPt, 'lines' => 1];
+	}
+	$k = 0.23;
+	$words = preg_split('/\s+/u', $text) ?: [$text];
+	$lines = 1;
+	$groups = [$text];
+	$pt = ($widthMm * 0.96) / (max(1, mb_strlen($text)) * $k);
+	if ($pt < $minPt && count($words) > 1) {
+		$limit = min($maxLines, count($words));
+		for ($try = 2; $try <= $limit; $try++) {
+			$groups = $splitWords($words, $try);
+			$longest = 1;
+			foreach ($groups as $group) {
+				$longest = max($longest, mb_strlen($group));
+			}
+			$pt = ($widthMm * 0.96) / ($longest * $k);
+			$lines = $try;
+			if ($pt >= $minPt) {
+				break;
+			}
+		}
+	}
+	$pt = min($maxPt, max($minPt, $pt));
+	$html = implode('<br>', array_map(static function ($line) {
+		return esc($line);
+	}, $groups));
+	return ['html' => $html, 'pt' => $pt, 'lines' => $lines];
 };
 
 $studentReg = isset($_GET['student']) ? $_GET['student'] : false;
@@ -249,39 +311,83 @@ foreach ($students ?? [] as $student) {
 	if ($streamLabel === '') {
 		$streamLabel = trim((string) ($student['department_name'] ?? ''));
 	}
-	$fitPt = static function (string $text, float $widthMm, float $maxPt = 10.3): string {
-		$len = max(1, mb_strlen($text));
-		$pt = min($maxPt, ($widthMm / $len) / 0.20);
-		return number_format(max(7.2, $pt), 2, '.', '');
+	$namePack = $packText($name, 46, 2, 10.0, 7.0);
+	$yearPack = $packText($yearLabel, 18, 2, 10.0, 7.0);
+	$termPack = $packText($termLabel, 46, 2, 10.5, 7.0);
+	$streamPack = $packText($streamLabel, 22, 2, 10.5, 7.0);
+	$classPack = $packText($classLabel, 94, 2, 10.5, 7.0);
+	$idLine = 4.6;
+	$nameLines = max($namePack['lines'], $yearPack['lines']);
+	$termLines = max($termPack['lines'], $streamPack['lines']);
+	$classLines = $classPack['lines'];
+	$idRow = static function (int $lines, float $pt = 0) use ($idLine): string {
+		$mm = $lines * $idLine;
+		$font = $pt > 0 ? 'font-size:' . number_format($pt, 2, '.', '') . 'pt;' : '';
+		return 'height:' . number_format($mm, 2, '.', '') . 'mm;line-height:' . number_format($idLine, 2, '.', '') . 'mm;vertical-align:bottom;overflow:hidden;' . $font;
 	};
-	$namePt = $fitPt($name, 46);
-	$yearPt = $fitPt($yearLabel, 22);
-	$termPt = $fitPt($termLabel, 40);
-	$streamPt = $fitPt($streamLabel, 28);
-	$classPt = $fitPt($classLabel, 78);
-	$idCell = 'height:5.4mm;line-height:5.4mm;white-space:nowrap;overflow:hidden;vertical-align:bottom;';
+	$subWidth = max(10.0, $cols[0] - 2.2);
+	$subjectUnits = 0.0;
+	$visibleSections = 0;
+	foreach (['exam', 'non', 'cocu'] as $bucket) {
+		if ($groups[$bucket] === []) {
+			continue;
+		}
+		$visibleSections++;
+		foreach ($groups[$bucket] as $core) {
+			$packed = $packText(mb_strtoupper((string) ($core['title'] ?? '')), $subWidth, 3, 8.5, 6.4);
+			$subjectUnits += max(4.8, $packed['lines'] * 4.15);
+		}
+	}
+	$headMm = $visibleSections > 0 ? ($periodic ? 6.4 : 11.0) : 0.0;
+	$footLines = 4 + ($periodic ? 0 : 1);
+	$natural = ($visibleSections * 5.6) + $headMm + $subjectUnits + ($visibleSections * 5.2) + (4 * 5.0) + ($footLines * 5.6);
+	$extraId = max(0, (($nameLines + $termLines + $classLines) - 3) * $idLine);
+	$tableTarget = 164.9 - $extraId;
+	$scale = $natural > 0 ? ($tableTarget / $natural) : 1.0;
+	$subjectCell = static function (string $title) use ($packText, $subWidth, $col, &$scale): string {
+		$packed = $packText(mb_strtoupper($title), $subWidth, 3, 8.5, 6.4);
+		$base = max(4.8, $packed['lines'] * 4.15);
+		$mm = $base * $scale;
+		$line = $mm / max(1, $packed['lines']);
+		$pt = $packed['pt'];
+		if ($scale < 1) {
+			$pt = max(6.0, $pt * $scale);
+		}
+		$need = $pt * 0.38;
+		if ($line < $need && $need > 0) {
+			$pt = $line / 0.38;
+		}
+		return '<td class="wp-sub" style="' . $col(0) . 'height:' . number_format($mm, 2, '.', '') . 'mm;line-height:' . number_format($line, 2, '.', '') . 'mm;font-size:' . number_format($pt, 2, '.', '') . 'pt;">' . $packed['html'] . '</td>';
+	};
 	?>
 	<table class="wp-id">
+		<colgroup>
+			<col style="width:13mm">
+			<col style="width:14.5mm">
+			<col style="width:48mm">
+			<col style="width:30mm">
+			<col style="width:19.8mm">
+		</colgroup>
 		<tr>
-			<td rowspan="3" style="width:16mm;vertical-align:middle;height:16.2mm;line-height:normal;white-space:normal;">
+			<td rowspan="3" style="width:13mm;vertical-align:middle;white-space:normal;overflow:visible;height:<?= number_format(($nameLines + $termLines + $classLines) * $idLine, 2, '.', ''); ?>mm;line-height:normal;">
 				<?php if ($logoSrc !== ''): ?>
 					<img class="wp-logo" src="<?= esc($logoSrc); ?>" alt="">
 				<?php endif; ?>
 			</td>
-			<td class="lab" style="width:18mm;<?= $idCell; ?>">Names:</td>
-			<td class="val" style="width:48mm;<?= $idCell; ?>font-size:<?= $namePt; ?>pt;"><?= esc($name); ?></td>
-			<td class="lab" style="width:28mm;<?= $idCell; ?>">Academic Year</td>
-			<td class="val" style="<?= $idCell; ?>font-size:<?= $yearPt; ?>pt;"><?= esc($yearLabel); ?></td>
+			<td class="lab" style="width:14.5mm;<?= $idRow($nameLines); ?>">Names:</td>
+			<td class="val" style="width:48mm;<?= $idRow($nameLines, $namePack['pt']); ?>"><?= $namePack['html']; ?></td>
+			<td class="lab" style="width:30mm;font-size:9pt;<?= $idRow($nameLines); ?>">Academic Year</td>
+			<td class="val" style="width:19.8mm;<?= $idRow($nameLines, $yearPack['pt']); ?>"><?= $yearPack['html']; ?></td>
 		</tr>
 		<tr>
-			<td class="lab" style="<?= $idCell; ?>">Term:</td>
-			<td class="val" style="<?= $idCell; ?>font-size:<?= $termPt; ?>pt;"><?= esc($termLabel); ?></td>
-			<td class="lab" style="<?= $idCell; ?>">Stream:</td>
-			<td class="val" style="<?= $idCell; ?>font-size:<?= $streamPt; ?>pt;"><?= esc($streamLabel); ?></td>
+			<td class="lab" style="<?= $idRow($termLines); ?>">Term:</td>
+			<td class="val" style="<?= $idRow($termLines, $termPack['pt']); ?>"><?= $termPack['html']; ?></td>
+			<td class="lab" style="<?= $idRow($termLines); ?>">Stream:</td>
+			<td class="val" style="<?= $idRow($termLines, $streamPack['pt']); ?>"><?= $streamPack['html']; ?></td>
 		</tr>
 		<tr>
-			<td class="lab" style="<?= $idCell; ?>">Class:</td>
-			<td class="val" colspan="3" style="<?= $idCell; ?>font-size:<?= $classPt; ?>pt;"><?= esc($classLabel); ?></td>
+			<td class="lab" style="<?= $idRow($classLines); ?>">Class:</td>
+			<td class="val" colspan="3" style="<?= $idRow($classLines, $classPack['pt']); ?>"><?= $classPack['html']; ?></td>
 		</tr>
 	</table>
 	<table class="wp-grid">
@@ -312,7 +418,10 @@ foreach ($students ?? [] as $student) {
 			}
 			echo '</tr>';
 		};
-		$printSection = function (string $title, array $rows, bool $withHead) use ($col, $h, $fmt, $num, $scoreOf, $mentionFor, $courseInitials, $markHead, $periodic, $span) {
+		$printSection = function (string $title, array $rows, bool $withHead) use ($col, $h, $fmt, $num, $scoreOf, $mentionFor, $courseInitials, $markHead, $periodic, $span, $subjectCell) {
+			if ($rows === []) {
+				return [0.0, null];
+			}
 			echo '<tr><td class="wp-sec" colspan="' . $span . '" style="' . $h('5.6') . '">' . esc($title) . '</td></tr>';
 			if ($withHead) {
 				$markHead();
@@ -333,7 +442,7 @@ foreach ($students ?? [] as $student) {
 					$pct = ($full > 0 && $score !== null) ? ($score * 100 / $full) : null;
 					$cid = (int) ($core['id'] ?? 0);
 					echo '<tr>';
-					echo '<td class="wp-sub" style="' . $col(0) . $h('4.8') . '">' . esc((string) ($core['title'] ?? '')) . '</td>';
+					echo $subjectCell((string) ($core['title'] ?? ''));
 					echo '<td class="wp-num" style="' . $col(1) . '">' . $fmt($full) . '</td>';
 					echo '<td class="wp-num" style="' . $col(2) . '">' . $num($score) . '</td>';
 					echo '<td class="wp-ctr" style="' . $col(3) . '"></td>';
@@ -372,7 +481,7 @@ foreach ($students ?? [] as $student) {
 				$pct = ($full > 0 && $tot !== null) ? ($tot * 100 / ($full * 2)) : null;
 				$cid = (int) ($core['id'] ?? 0);
 				echo '<tr>';
-				echo '<td class="wp-sub" style="' . $col(0) . $h('4.8') . '">' . esc((string) ($core['title'] ?? '')) . '</td>';
+				echo $subjectCell((string) ($core['title'] ?? ''));
 				echo '<td class="wp-num" style="' . $col(1) . '">' . $fmt($full) . '</td>';
 				echo '<td class="wp-num" style="' . $col(2) . '">' . $fmt($full) . '</td>';
 				echo '<td class="wp-num" style="' . $col(3) . '">' . $fmt($full * 2) . '</td>';
@@ -396,9 +505,17 @@ foreach ($students ?? [] as $student) {
 			echo '</tr>';
 			return [$maxTot, $anyScore ? $scoreTot : null];
 		};
-		[$examMax, $examScore] = $printSection('Core subjects/ Examinable subjects', $groups['exam'], true);
-		[$nonMax, $nonScore] = $printSection('Non – Examinable Subjects:', $groups['non'], false);
-		[$cocuMax, $cocuScore] = $printSection('Co-curricula activities', $groups['cocu'], false);
+		$wantHead = true;
+		$openSection = function (string $title, array $rows) use (&$wantHead, $printSection) {
+			$head = $wantHead && $rows !== [];
+			if ($rows !== []) {
+				$wantHead = false;
+			}
+			return $printSection($title, $rows, $head);
+		};
+		[$examMax, $examScore] = $openSection('Core subjects/ Examinable subjects', $groups['exam']);
+		[$nonMax, $nonScore] = $openSection('Non – Examinable Subjects:', $groups['non']);
+		[$cocuMax, $cocuScore] = $openSection('Co-curricula activities', $groups['cocu']);
 		$allMax = $examMax + $nonMax + $cocuMax;
 		$allScore = 0.0;
 		$scored = false;
