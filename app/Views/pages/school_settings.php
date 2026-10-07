@@ -572,6 +572,13 @@
 		color: #e2e8f0;
 		font-weight: 560;
 	}
+	.ss-period-row .ss-period-nursery {
+		display: block;
+		font-size: .78rem;
+		color: #93c5fd;
+		font-weight: 600;
+		margin-top: .1rem;
+	}
 	.ss-period-row .ss-period-status {
 		font-size: .75rem;
 		margin-left: .4rem;
@@ -884,6 +891,18 @@
 							}
 						}
 						$usePeriod = (int) ($settings['use_period'] ?? 0) === 1;
+						$schoolHasNursery = false;
+						$settingsSchoolId = (int) ($_SESSION['soma_school_id'] ?? 0);
+						if ($settingsSchoolId > 0) {
+							$schoolHasNursery = (bool) \Config\Database::connect()->query(
+								'SELECT 1 AS ok FROM classes c
+								 JOIN departments d ON d.id = c.department
+								 JOIN faculty f ON f.id = d.faculty_id
+								 WHERE c.school_id = ? AND f.id = 19 LIMIT 1',
+								[$settingsSchoolId]
+							)->getRowArray();
+						}
+						$nurseryLockLabels = $schoolHasNursery ? nursery_exam_periods() : [];
 						?>
 						<div class="ss-term-card">
 							<h4><?= lang("app.activeTerm"); ?></h4>
@@ -902,7 +921,7 @@
 							<?php if ($usePeriod): ?>
 								<div class="ss-periods-box" id="ss_periods_box">
 									<h5>Periods for this term</h5>
-									<p class="ss-period-hint">Lock a period to block every marks entry for it: quizzes, tests, homework, and exams. Teachers cannot open or save marks until you unlock the period.</p>
+									<p class="ss-period-hint">Lock a period to block every marks entry for it: quizzes, tests, homework, and exams. Teachers cannot open or save marks until you unlock the period.<?php if ($schoolHasNursery): ?> Nursery uses the same locks: End of Month 1 Exam, End of Month 2 Exam, Midterm, and End of Term Exam.<?php endif; ?></p>
 									<?php for ($p = 1; $p <= 4; $p++):
 										$isLocked = in_array($p, $lockedPeriods, true);
 										?>
@@ -910,6 +929,9 @@
 											<div>
 												<span class="ss-period-label"><?= lang('app.period' . $p); ?></span>
 												<span class="ss-period-status"><?= $isLocked ? 'Locked' : 'Open'; ?></span>
+												<?php if (!empty($nurseryLockLabels[$p])): ?>
+													<span class="ss-period-nursery"><?= esc($nurseryLockLabels[$p]); ?></span>
+												<?php endif; ?>
 											</div>
 											<button type="button"
 													class="btn-period-lock <?= $isLocked ? 'btn-unlock' : 'btn-lock'; ?>"
