@@ -101,6 +101,8 @@ $examTitle = trim((string) ($nursery_exam_title ?? ''));
 if ($examTitle === '' && !empty($nursery_periodic)) {
 	$examTitle = nursery_exam_title($periodNo);
 }
+$endOfTermSheet = strcasecmp($examTitle, 'End of Term Exam') === 0;
+$resultsValue = $endOfTermSheet ? $termLabel : $examTitle;
 $logoSrc = '';
 if (!empty($school_logo)) {
 	$logoFile = FCPATH . 'assets/images/logo/' . $school_logo;
@@ -307,13 +309,24 @@ foreach ($students as $student) {
 						</td>
 						<td style="border:0;padding:0;vertical-align:top;">
 							<?php $idLine([['lab', 14.2, 'Names:'], ['fill', 79.9, $pupil]], 5.26); ?>
-							<?php $idLine([
-								['lab', 29.3, 'Results for Term:'],
-								['fill', 28.0, $termLabel],
-								['gap', 2.9, ''],
-								['lab', 9.7, 'Year:'],
-								['fill', 20.6, $yearLabel],
-							], 6.61); ?>
+							<?php
+							$resultsParts = $endOfTermSheet
+								? [
+									['lab', 29.3, 'Results for Term:'],
+									['fill', 28.0, $termLabel],
+									['gap', 2.9, ''],
+									['lab', 9.7, 'Year:'],
+									['fill', 20.6, $yearLabel],
+								]
+								: [
+									['lab', 19.5, 'Results for:'],
+									['fill', 42.0, $resultsValue],
+									['gap', 2.3, ''],
+									['lab', 9.7, 'Year:'],
+									['fill', 20.6, $yearLabel],
+								];
+							$idLine($resultsParts, 6.61);
+							?>
 							<?php $idLine([
 								['lab', 10.9, 'Class:'],
 								['fill', 29.4, $classLabel],
@@ -322,7 +335,7 @@ foreach ($students as $student) {
 								['fill', 15.7, $pupilCount > 0 ? (string) $pupilCount : ''],
 							], 7.56); ?>
 							<table class="nr-id"><tr style="height:4.32mm">
-								<td class="exam" style="height:4.32mm"><?= $examTitle !== '' ? esc($examTitle) : '&nbsp;'; ?></td>
+								<td class="exam" style="height:4.32mm">&nbsp;</td>
 							</tr></table>
 						</td>
 					</tr>
