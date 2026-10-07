@@ -86,17 +86,6 @@
 			</select>
 		</div>
 		<div class="form-group col-sm-3 col-md-2 col-lg-2">
-			<label><?= lang("app.period"); ?> :</label>
-			<select class="form-control select2" id="period" name="period" required>
-				<option selected disabled><?= lang("app.selectPeriod"); ?> </option>
-				<option value="1" data-generic="<?= esc(lang("app.period1")); ?>"><?= lang("app.period1"); ?> </option>
-				<option value="2" data-generic="<?= esc(lang("app.period2")); ?>"><?= lang("app.period2"); ?> </option>
-				<option value="3" data-generic="<?= esc(lang("app.period3")); ?>"><?= lang("app.period3"); ?> </option>
-				<option value="4" data-generic="<?= esc(lang("app.period4")); ?>"><?= lang("app.period4"); ?> </option>
-			</select>
-		</div>
-
-		<div class="form-group col-sm-3 col-md-2 col-lg-2">
 			<label><?= lang("app.sClass"); ?> :</label>
 			<select class="form-control select2" name="class" id="select_class" required>
 				<option selected disabled><?= lang("app.chooseClass"); ?></option>
@@ -107,6 +96,16 @@
 						value="<?= $class['id']; ?>"> <?= $class['level_name'] . " " . $class['code'] . " " . $class['title']; ?></option>
 					<?php
 				} ?>
+			</select>
+		</div>
+		<div class="form-group col-sm-3 col-md-2 col-lg-2">
+			<label><?= lang("app.period"); ?> :</label>
+			<select class="form-control select2" id="period" name="period" required>
+				<option selected disabled><?= lang("app.selectPeriod"); ?> </option>
+				<option value="1" data-generic="<?= esc(lang("app.period1")); ?>"><?= lang("app.period1"); ?> </option>
+				<option value="2" data-generic="<?= esc(lang("app.period2")); ?>"><?= lang("app.period2"); ?> </option>
+				<option value="3" data-generic="<?= esc(lang("app.period3")); ?>"><?= lang("app.period3"); ?> </option>
+				<option value="4" data-generic="<?= esc(lang("app.period4")); ?>"><?= lang("app.period4"); ?> </option>
 			</select>
 		</div>
 		<div class="form-group col-sm-3 col-md-2 col-lg-2">
