@@ -17099,6 +17099,23 @@ public function getApplicationDocs($id = null)
 					break;
 				}
 			}
+			$timesCandidates = [
+				FCPATH . 'assets/fonts/timesbd.ttf',
+				'C:/Windows/Fonts/timesbd.ttf',
+				'/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf',
+				'/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf',
+				'/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf',
+			];
+			foreach ($timesCandidates as $timesFile) {
+				if (is_file($timesFile)) {
+					$extraDirs[] = dirname($timesFile);
+					$extraFonts['nurserytimes'] = [
+						'R' => basename($timesFile),
+						'B' => basename($timesFile),
+					];
+					break;
+				}
+			}
 			$mpdfConfig['fontDir'] = array_merge($fontDirs, $extraDirs);
 			$mpdfConfig['fontdata'] = $fontData + $extraFonts;
 			$mpdfConfig['default_font'] = 'nurserygothic';
@@ -17681,7 +17698,28 @@ public function getApplicationDocs($id = null)
 				 * 28. Bright Stars Foundation Academy
 				 * 30. Bright Academy
 				 */
-				if (in_array($school_id, [28])) {
+				$wisdomPrimarySheet = is_wisdom_school((int) $school_id) && (int) $term !== 4;
+				if ($wisdomPrimarySheet) {
+					$data['grades'] = $gradeMdl->select("color_title,max_point,min_point,color")
+						->where("faculty_id", 3)
+						->where("school_id", $school_id)
+						->orderBy("max_point", "DESC")
+						->orderBy("min_point", "DESC")
+						->get()->getResultArray();
+					$initials = [];
+					$lecturers = \Config\Database::connect()->table('course_records cr')
+						->select('cr.course, s.fname, s.lname')
+						->join('staffs s', 's.id = cr.lecturer', 'left')
+						->where('cr.class', $class)
+						->where('cr.year', $year)
+						->get()->getResultArray();
+					foreach ($lecturers as $lec) {
+						$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
+						$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
+					}
+					$data['primary_course_initials'] = $initials;
+					$view = view("pages/reports/wisdom_primary_report", $data);
+				} else if (in_array($school_id, [28])) {
 					if ($term == 4) {
 						$view = view("pages/reports/specific/bsfa/bright_primary" . $annualTag, $data);
 					} else {
@@ -17740,7 +17778,10 @@ public function getApplicationDocs($id = null)
 				$html = $view;
 				$wisdomNurserySlip = ((int) $fact === 19)
 					&& (is_wisdom_school((int) $school_id) || !in_array((int) $school_id, [28, 30, 31, 42]));
-				if ($wisdomNurserySlip) {
+				$wisdomPrimarySlip = ((int) $fact === 3)
+					&& is_wisdom_school((int) $school_id)
+					&& (int) $term !== 4;
+				if ($wisdomNurserySlip || $wisdomPrimarySlip) {
 					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf');
 				}
 				try {
