@@ -382,8 +382,10 @@ foreach ($students as $student) {
 					<?php $signLine(7.78); ?>
 					<?php $footLine("Parent's comment:", '', 7.26); ?>
 					<?php $signLine(7.89); ?>
+					<?php if ($endOfTermSheet): ?>
 					<?php $footLine('Next term begins on:', '', 8.54); ?>
 					<?php $footLine('Next term ends on:', '', 5.50); ?>
+					<?php endif; ?>
 				</div>
 			</td>
 		</tr>
