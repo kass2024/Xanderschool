@@ -16067,6 +16067,10 @@ public function getApplicationDocs($id = null)
 			$class = $this->request->getPost("class");
 			$course = $this->request->getPost("course");
 			$period = $this->request->getPost("period");
+			if ((int) $period === 4 && class_is_nursery($class)) {
+				echo "End of Term Exam is on the student progress report.";
+				die();
+			}
 			$StudentModel = new StudentModel();
 			$courseMdl = new CourseModel();
 			$atMdl = new ActiveTermModel();
@@ -17141,8 +17145,12 @@ public function getApplicationDocs($id = null)
 				->join("faculty f", "f.id=d.faculty_id")
 				->where("classes.id", $class)->get()->getRow();
 		$factId = $classVerify ? (int) $classVerify->fac_id : 0;
+		if ($factId === 19 && (int) $period === 4) {
+			echo "End of Term Exam is on the student progress report.";
+			return;
+		}
 		if ($factId === 19 && nursery_exam_title((int) $period) === '') {
-			echo "Select an exam: End of Month 1 Exam, End of Month 2 Exam, Midterm, or End of Term Exam.";
+			echo "Select an exam: End of Month 1 Exam, End of Month 2 Exam, or Midterm.";
 			return;
 		}
 		$wisdomNurserySlip = $factId === 19

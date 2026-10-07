@@ -139,20 +139,27 @@
 </form>
 <script>
 	$(function () {
-		var nurseryExams = <?= json_encode(nursery_exam_periods()); ?>;
+		var genericPeriodHtml = $("#period").html();
+		var nurseryPeriodHtml = <?= json_encode(
+			'<option selected disabled>' . lang('app.selectPeriod') . '</option>'
+			. '<option value="1">End of Month 1 Exam</option>'
+			. '<option value="2">End of Month 2 Exam</option>'
+			. '<option value="3">Midterm</option>'
+		); ?>;
+		function rebuildPeriod($period, html) {
+			var enhanced = $period.hasClass("select2-hidden-accessible");
+			if (enhanced) {
+				$period.select2("destroy");
+			}
+			$period.html(html);
+			if (enhanced) {
+				$period.select2();
+			}
+		}
 		function paintPeriods() {
 			var fac = parseInt($("#select_class option:selected").data("fac"), 10);
-			$("#period option").each(function () {
-				var value = $(this).val();
-				if (!value) {
-					return;
-				}
-				if (fac === 19 && nurseryExams[value]) {
-					$(this).text(nurseryExams[value]);
-					return;
-				}
-				$(this).text($(this).data("generic") || $(this).text());
-			});
+			var $period = $("#period");
+			rebuildPeriod($period, fac === 19 ? nurseryPeriodHtml : genericPeriodHtml);
 		}
 		$("#select_class").on("change", function (e) {
 			paintPeriods();

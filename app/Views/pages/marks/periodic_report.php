@@ -151,7 +151,6 @@
 					. '<option value="1">End of Month 1 Exam</option>'
 					. '<option value="2">End of Month 2 Exam</option>'
 					. '<option value="3">Midterm</option>'
-					. '<option value="4">End of Term Exam</option>'
 				); ?>);
 				var active = String($term.data("active") || "");
 				if (active === "1" || active === "2" || active === "3") {
