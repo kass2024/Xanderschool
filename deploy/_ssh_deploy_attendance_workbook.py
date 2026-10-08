@@ -59,11 +59,22 @@ foreach ($data['schools'] as $school) {
 		$badHs++;
 		echo "BAD_HS\t";
 	}
+	$postBits = [];
+	foreach ($school['posts'] as $post => $people) {
+		$in = 0;
+		foreach ($people as $person) {
+			$in += (int) ($person['present'] ?? 0);
+		}
+		$postBits[] = $post . '=' . count($people) . '/p' . $in;
+	}
 	echo $short
 		. "\tenrolled=" . (int) $school['expected']
 		. "\tF=" . (int) $school['expected_f']
 		. "\tM=" . (int) $school['expected_m']
 		. "\tpresent=" . (int) $school['present']
+		. "\tteachers=" . (int) $school['teachers']['present'] . '/' . (int) $school['teachers']['missing']
+		. "\tsupport=" . (int) $school['support']['present'] . '/' . (int) $school['support']['missing']
+		. "\tPOSTS " . implode(', ', $postBits)
 		. "\t" . implode(' | ', $bands) . PHP_EOL;
 }
 $t = $data['totals'];

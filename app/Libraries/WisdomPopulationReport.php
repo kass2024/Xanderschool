@@ -17,8 +17,9 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * Musanze present uses the school gate for day scholars and the boarding device for boarders.
  * Other schools present uses the daily register.
  * Girls and boys follow the dashboard: a student who is not a girl is counted as a boy.
- * Teachers are staff whose post is Teacher.
- * Support staff are everyone else whose shift is not Academic staff.
+ * On the all-schools sheet, a teacher is any staff member with courses assigned this year.
+ * Everyone else who is due today is support staff.
+ * Each school sheet lists staff under the post they hold.
  */
 class WisdomPopulationReport
 {
@@ -62,7 +63,7 @@ class WisdomPopulationReport
 		self::writeSummary($spreadsheet->getActiveSheet(), $data);
 		$used = ['all schools' => true];
 		foreach ($data['schools'] as $school) {
-			if (!self::schoolHasClasses($school)) {
+			if (!self::schoolHasClasses($school) && ($school['posts'] ?? []) === []) {
 				continue;
 			}
 			$sheet = $spreadsheet->createSheet();
@@ -119,6 +120,7 @@ class WisdomPopulationReport
 					'other' => [],
 				],
 				'teacher_levels' => [],
+				'posts' => [],
 			];
 		}
 		if ($bySchool !== []) {
@@ -359,10 +361,11 @@ class WisdomPopulationReport
 			return;
 		}
 		$idList = implode(',', array_map('intval', array_keys($bySchool)));
-		$hasSex = in_array('sex', $db->getFieldNames('staffs'), true);
+		$fields = $db->getFieldNames('staffs');
+		$hasSex = in_array('sex', $fields, true);
 		$sexCol = $hasSex ? 's.sex' : "'' AS sex";
 		$rows = $db->query(
-			"SELECT s.id, s.school_id, {$sexCol}, p.title AS post_title, sh.title AS shift_title, sh.options AS shift_options
+			"SELECT s.id, s.school_id, s.fname, s.lname, {$sexCol}, p.title AS post_title, sh.title AS shift_title, sh.options AS shift_options
 			FROM staffs s
 			LEFT JOIN posts p ON p.id = s.post
 			LEFT JOIN shifts sh ON sh.id = s.shift_id
@@ -395,15 +398,8 @@ class WisdomPopulationReport
 				'title' => (string) ($staff['shift_title'] ?? ''),
 				'options' => (string) ($staff['shift_options'] ?? '[]'),
 			];
-			$isTeacher = self::isTeacherPost((string) ($staff['post_title'] ?? ''));
-			$academic = self::isAcademicShift($shift['title']);
-			if ($isTeacher) {
-				$bucket = 'teachers';
-			} elseif (!$academic) {
-				$bucket = 'support';
-			} else {
-				continue;
-			}
+			$hasCourses = isset($levels[$staffId]);
+			$bucket = $hasCourses ? 'teachers' : 'support';
 			$hasShift = trim($shift['options']) !== '' && $shift['options'] !== '[]';
 			$window = StaffShiftClock::windowFor($shift, $noon);
 			$timeIn = $clocks[$staffId] ?? 0;
@@ -417,11 +413,20 @@ class WisdomPopulationReport
 			} else {
 				$bySchool[$sid][$bucket]['missing']++;
 			}
-			if (!$isTeacher) {
+			$post = trim((string) ($staff['post_title'] ?? ''));
+			if ($post === '') {
+				$post = 'No post';
+			}
+			$name = trim(trim((string) ($staff['fname'] ?? '')) . ' ' . trim((string) ($staff['lname'] ?? '')));
+			$bySchool[$sid]['posts'][$post][] = [
+				'name' => $name !== '' ? $name : 'Staff',
+				'present' => $present ? 1 : 0,
+			];
+			if (!$hasCourses) {
 				continue;
 			}
 			$sexKnown = trim((string) ($staff['sex'] ?? '')) !== '';
-			$groups = $levels[$staffId] ?? ['unassigned'];
+			$groups = $levels[$staffId];
 			foreach ($groups as $group) {
 				if (!isset($bySchool[$sid]['teacher_levels'][$group])) {
 					$bySchool[$sid]['teacher_levels'][$group] = [
@@ -440,6 +445,20 @@ class WisdomPopulationReport
 				}
 			}
 		}
+		foreach ($bySchool as $sid => $school) {
+			if (($school['posts'] ?? []) === []) {
+				continue;
+			}
+			uksort($bySchool[$sid]['posts'], static function (string $a, string $b): int {
+				return strcasecmp($a, $b);
+			});
+			foreach ($bySchool[$sid]['posts'] as $post => $people) {
+				usort($people, static function (array $a, array $b): int {
+					return strcasecmp((string) $a['name'], (string) $b['name']);
+				});
+				$bySchool[$sid]['posts'][$post] = $people;
+			}
+		}
 	}
 
 	/**
@@ -455,9 +474,13 @@ class WisdomPopulationReport
 			"SELECT cr.lecturer, l.title AS level_name, c.title AS class_title, d.title AS dept_title
 			FROM course_records cr
 			INNER JOIN classes c ON c.id = cr.class
+			INNER JOIN schools sch ON sch.id = c.school_id
+			LEFT JOIN active_term atr ON atr.id = sch.active_term
 			LEFT JOIN levels l ON l.id = c.level
 			LEFT JOIN departments d ON d.id = c.department
-			WHERE cr.year = " . (int) $yearId . " AND c.school_id IN ({$idList}) AND cr.lecturer > 0"
+			WHERE c.school_id IN ({$idList})
+				AND cr.lecturer > 0
+				AND cr.year = IFNULL(atr.academic_year, " . (int) $yearId . ")"
 		)->getResultArray();
 		foreach ($rows as $row) {
 			$lecturer = (int) ($row['lecturer'] ?? 0);
@@ -486,7 +509,7 @@ class WisdomPopulationReport
 		$sheet->mergeCells('A1:O1');
 		$sheet->setCellValue('A1', 'WISDOM SCHOOLS — ATTENDANCE');
 		$sheet->mergeCells('A2:O2');
-		$sheet->setCellValue('A2', 'Date ' . $data['date_label'] . '    ·    Enrolled students match the dashboard, holiday classes excluded    ·    Musanze present = school gate for day scholars and boarding device for boarders    ·    Other schools present = daily register    ·    Teachers = post is Teacher    ·    Support staff = shift is not Academic staff');
+		$sheet->setCellValue('A2', 'Date ' . $data['date_label'] . '    ·    Enrolled students match the dashboard, holiday classes excluded    ·    Musanze present = school gate for day scholars and boarding device for boarders    ·    Other schools present = daily register    ·    Teachers = staff with assigned courses this year    ·    Support staff = everyone else due today');
 		$sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16)->getColor()->setRGB(self::NAVY);
 		$sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('475569');
 		$sheet->getRowDimension(1)->setRowHeight(24);
@@ -648,7 +671,7 @@ class WisdomPopulationReport
 		$sheet->mergeCells('A1:G1');
 		$sheet->setCellValue('A1', $school['name']);
 		$sheet->mergeCells('A2:G2');
-		$sheet->setCellValue('A2', 'ATTENDANCE BY CLASS');
+		$sheet->setCellValue('A2', 'ATTENDANCE BY CLASS AND STAFF POST');
 		$presentNote = !empty($school['is_master'])
 			? 'Present = school gate for day scholars and boarding device for boarders'
 			: 'Present = daily register';
@@ -721,15 +744,85 @@ class WisdomPopulationReport
 			$lastTable = $row;
 			$row += 2;
 		}
+		self::writeStaffPosts($sheet, $school, $row, $firstTable);
 		if ($firstTable > 0) {
 			$sheet->freezePane('A' . ($firstTable + 1));
 		}
-		foreach (['A' => 6, 'B' => 28, 'C' => 12, 'D' => 12, 'E' => 12, 'F' => 12, 'G' => 12] as $col => $width) {
+		foreach (['A' => 6, 'B' => 36, 'C' => 12, 'D' => 12, 'E' => 12, 'F' => 12, 'G' => 12] as $col => $width) {
 			$sheet->getColumnDimension($col)->setWidth($width);
 		}
 		$sheet->getPageSetup()->setFitToPage(true)->setFitToWidth(1)->setFitToHeight(0);
 		$sheet->getHeaderFooter()->setOddFooter('&L' . $school['short'] . '&R&P / &N');
 		unset($lastTable);
+	}
+
+	/**
+	 * Staff due today, grouped by the post they hold.
+	 *
+	 * @param array<string, mixed> $school
+	 */
+	private static function writeStaffPosts(Worksheet $sheet, array $school, int $row, int &$firstTable): void
+	{
+		$posts = $school['posts'] ?? [];
+		if ($posts === []) {
+			return;
+		}
+		$sheet->mergeCells("A{$row}:D{$row}");
+		$sheet->setCellValue('A' . $row, 'STAFF BY POST');
+		$sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+			'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 12],
+			'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::TEAL]],
+		]);
+		$row += 2;
+		foreach ($posts as $post => $people) {
+			$sheet->mergeCells("A{$row}:D{$row}");
+			$sheet->setCellValue('A' . $row, (string) $post);
+			$sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+				'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 11],
+				'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::NAVY]],
+			]);
+			$row++;
+			$header = $row;
+			if ($firstTable === 0) {
+				$firstTable = $header;
+			}
+			$sheet->fromArray(['S/N', 'Name', 'Present', 'Absent'], null, 'A' . $row);
+			$sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+				'font' => ['bold' => true, 'color' => ['rgb' => self::NAVY], 'size' => 9],
+				'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::LIGHT]],
+				'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+			]);
+			$row++;
+			$n = 1;
+			$present = 0;
+			$absent = 0;
+			foreach ($people as $person) {
+				$isIn = (int) ($person['present'] ?? 0) === 1;
+				$sheet->fromArray([$n, (string) $person['name'], $isIn ? 1 : 0, $isIn ? 0 : 1], null, 'A' . $row);
+				if ($n % 2 === 0) {
+					$sheet->getStyle("A{$row}:D{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB(self::ALT);
+				}
+				if ($isIn) {
+					$present++;
+				} else {
+					$absent++;
+				}
+				$n++;
+				$row++;
+			}
+			$sheet->fromArray(['', strtoupper((string) $post) . ' TOTAL', $present, $absent], null, 'A' . $row);
+			$sheet->getStyle("A{$row}:D{$row}")->applyFromArray([
+				'font' => ['bold' => true],
+				'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::TOTAL]],
+			]);
+			$sheet->getStyle('A' . $header . ':D' . $row)->applyFromArray([
+				'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+				'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
+			]);
+			$sheet->getStyle('A' . ($header + 1) . ':A' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+			$sheet->getStyle('C' . ($header + 1) . ':D' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+			$row += 2;
+		}
 	}
 
 	/**
@@ -752,7 +845,7 @@ class WisdomPopulationReport
 		$sheet->mergeCells('A1:E1');
 		$sheet->setCellValue('A1', 'TEACHERS ATTENDANCE SUMMARY');
 		$sheet->mergeCells('A2:E2');
-		$sheet->setCellValue('A2', 'Date: ' . $data['date_label'] . '    ·    Post is Teacher only    ·    Male and female are those present today');
+		$sheet->setCellValue('A2', 'Date: ' . $data['date_label'] . '    ·    Staff with assigned courses this year    ·    Male and female are those present today');
 		$sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16)->getColor()->setRGB(self::NAVY);
 		$sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('475569');
 		$labels = [
@@ -826,16 +919,6 @@ class WisdomPopulationReport
 		}
 		$sheet->getPageSetup()->setFitToPage(true)->setFitToWidth(1)->setFitToHeight(0);
 		$sheet->getHeaderFooter()->setOddFooter('&LTeachers&R&P / &N');
-	}
-
-	private static function isTeacherPost(string $title): bool
-	{
-		return strcasecmp(trim($title), 'Teacher') === 0;
-	}
-
-	private static function isAcademicShift(string $title): bool
-	{
-		return stripos($title, 'academic') !== false;
 	}
 
 	private static function isGirl($sex): bool
