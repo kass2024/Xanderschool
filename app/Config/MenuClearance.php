@@ -730,6 +730,39 @@ class MenuClearance
 		return $postId === 27;
 	}
 
+	/** Head Teacher, Customer Care, or Director. Not Deputy Director or Director of Finance. */
+	public static function canViewFamilies($postId)
+	{
+		$postId = (int) $postId;
+		if ($postId === \App\Models\PostsModel::HEAD_TEACHER_ID || $postId === \App\Models\PostsModel::DIRECTOR_ID) {
+			return true;
+		}
+		$title = self::postTitle($postId);
+		return in_array($title, ['head teacher', 'headteacher', 'customer care', 'director'], true);
+	}
+
+	/** Chief Accountant (post 28). Same dashboard as the Executive Principal, without Marks. */
+	public static function isChiefAccountantPost($postId)
+	{
+		$postId = (int) $postId;
+		if ($postId === 28) {
+			return true;
+		}
+		return self::postTitle($postId) === 'chief accountant';
+	}
+
+	/**
+	 * @param string[] $keys
+	 * @return string[]
+	 */
+	public static function withoutMarksMenus(array $keys)
+	{
+		$drop = array_flip(self::marksMenuKeys());
+		return array_values(array_filter($keys, static function ($key) use ($drop) {
+			return !isset($drop[$key]);
+		}));
+	}
+
 	/** School Director (post 29). Director of studies and Director of Finance stay out. */
 	public static function isDirectorPost($postId)
 	{
@@ -812,6 +845,9 @@ class MenuClearance
 	 */
 	public static function canUseMaterialAndDormitory($postId)
 	{
+		if (self::isChiefAccountantPost($postId)) {
+			return true;
+		}
 		$t = self::postTitle((int) $postId);
 		if ($t === '') {
 			return false;
@@ -844,6 +880,9 @@ class MenuClearance
 	public static function applyRoleMenuPolicy(array $keys, $postId)
 	{
 		$postId = (int) $postId;
+		if (self::isChiefAccountantPost($postId)) {
+			$keys = array_values(array_unique(array_merge(self::allKeys(), $keys)));
+		}
 		if (self::isTeacherPost($postId)) {
 			$drop = array_flip(self::groupKeys('behavior'));
 			$keys = array_values(array_filter($keys, static function ($k) use ($drop) {
@@ -859,6 +898,9 @@ class MenuClearance
 				return $k !== 'student_material_check' && $k !== 'hostel_allocate';
 			}));
 		}
+		if (self::isChiefAccountantPost($postId)) {
+			$keys = self::withoutMarksMenus($keys);
+		}
 		return array_values(array_unique($keys));
 	}
 
@@ -872,6 +914,9 @@ class MenuClearance
 	public static function seesAllMarksMenus($postId)
 	{
 		$postId = (int) $postId;
+		if (self::isChiefAccountantPost($postId)) {
+			return false;
+		}
 		if (self::isFullAccessPost($postId) || self::isHeadMasterEquivalent($postId)) {
 			return true;
 		}

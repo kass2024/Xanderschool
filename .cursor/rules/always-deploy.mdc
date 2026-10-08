@@ -1,0 +1,36 @@
+---
+description: Always deploy Xander School MIS to VPS after code changes
+alwaysApply: true
+---
+
+# Always deploy Xander School
+
+After finishing any feature, fix, or meaningful code change in this project:
+
+1. **Commit** the relevant changed files (do not leave completed work only on disk).
+2. **Push** to `origin` (`main` unless told otherwise). Remote: `https://github.com/kass2024/Xanderschool.git`.
+3. **Deploy to VPS** so production matches local. Prefer a Paramiko script under `deploy/_ssh_deploy_*.py` that:
+   - SFTPs changed files to `/opt/xander-school/app`
+   - Runs `docker compose -f docker-compose.prod.yml --env-file .env.production restart app` from `/opt/xander-school/deploy`
+   - Calls `opcache_reset()` in the `xander_school_app` container
+   - Verifies key strings on the remote files
+   - Smoke-checks the live app before calling the deploy done. A deploy that leaves a 500 is not finished.
+
+## Do not ship a 500
+
+- Deploy a file together with every other file that calls it. Never replace `app/Config/MenuClearance.php` with an older copy. The live menu helper calls `isChiefAccountantPost()`, `canViewFamilies()`, and `withoutMarksMenus()`. If those methods are missing, `/dashboard` and `/budget/dashboard` return HTTP 500.
+- After restart, from inside `xander_school_app`, fail the deploy unless all of these pass:
+  - `Config\MenuClearance::isChiefAccountantPost(28)` returns true
+  - `canViewFamilies` and `withoutMarksMenus` exist
+  - `http://127.0.0.1/login` and `http://127.0.0.1/forget/reset` are not 500
+- `app/Views/errors/html/production.php` must stay on the server. Without it, a PHP error becomes a second crash and the browser shows a generic 500.
+
+Host: `66.29.135.120`. Do this by default unless the user explicitly says not to deploy.
+Do not commit secrets, `.env`, or unrelated dirty files. If SSH fails, retry; tell the user if production is still out of date.
+
+## Pedagogical Documents goal
+
+Main target for AI plans:
+
+- **TVET:** Curriculum + Chronogram → extract modules/LO/IC, map chronogram weeks/hours → Scheme of Work (TVET sample: Javascript fundamental scheme of work.docx).
+- **REB:** Syllabus + Weeks breakdown (never "chronogram" in UI) → extract subjects/units/lessons, map weekly schedule → REB Scheme of Work (P6 SRS sample).
