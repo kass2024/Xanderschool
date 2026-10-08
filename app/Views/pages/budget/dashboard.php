@@ -11,7 +11,7 @@
 </div>
 <?php } ?>
 
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=11" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=12" rel="stylesheet">
 <style>
 .bd-ai-card{border:1px solid #c5d8f0;border-radius:10px;overflow:hidden;background:#fff;}
 .bd-ai-head{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;background:linear-gradient(90deg,#eef5ff,#f8fbff);}
@@ -28,9 +28,13 @@
 </style>
 
 <div class="bp-hero mb-3">
-	<h2><i class="fa fa-chart-line"></i> Budget Dashboard</h2>
-	<p class="bp-meta mb-0"><?= esc($branch_label ?? 'Your school'); ?></p>
+	<h2><i class="fa fa-chart-line"></i> <?= !empty($finance_desk) ? esc($finance_desk['role'] . ' dashboard') : 'Budget Dashboard'; ?></h2>
+	<p class="bp-meta mb-0"><?= !empty($finance_desk['is_central']) ? 'All Wisdom schools' : esc($branch_label ?? 'Your school'); ?><?= !empty($finance_desk) ? ' · figures come from each school’s uploaded budget' : ''; ?></p>
 </div>
+
+<?php if (!empty($finance_desk)) { ?>
+<?= view('pages/budget/partials/finance_desk', ['desk' => $finance_desk]); ?>
+<?php } ?>
 
 <?php if (!empty($ai_enabled) || !empty($gemini_enabled)) { ?>
 <div class="bd-ai-card mb-4" id="aiPanel">
@@ -46,6 +50,7 @@
 </div>
 <?php } ?>
 
+<?php if (empty($finance_desk)) { ?>
 <?php
 $fp = $fees_projection ?? null;
 if (is_array($fp)) {
@@ -193,13 +198,15 @@ if (is_array($fp)) {
 	<div class="col-md-3"><div class="card border-success"><div class="card-body text-center"><h3><?= (int)($stats['awaiting_receipt'] ?? 0); ?></h3><small class="text-muted">Awaiting receipt</small></div></div></div>
 </div>
 
+<?php } ?>
+
 <div class="row mb-3">
 	<div class="col-lg-7">
 <?php if (!empty($budget_view_only)) { ?>
 <span class="badge badge-secondary mb-3 p-2"><i class="fa fa-eye"></i> View only</span>
 <?php } ?>
 
-<?php if (!empty($budget_pipeline) || !empty($cash_pipeline)) { ?>
+<?php if (empty($finance_desk) && (!empty($budget_pipeline) || !empty($cash_pipeline))) { ?>
 <div class="card mb-3">
 	<div class="card-header"><i class="fa fa-project-diagram"></i> Approval progress</div>
 	<div class="card-body">

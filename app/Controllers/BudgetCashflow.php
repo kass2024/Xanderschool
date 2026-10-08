@@ -186,6 +186,252 @@ class BudgetCashflow extends Home
 		return $out;
 	}
 
+	/**
+	 * Cross-school money picture for the Chief Accountant and the Director of Finance.
+	 * Amounts come from uploaded budgets, not from a fees calculation.
+	 */
+	protected function financeDeskSnapshot(array $c, $db): array
+	{
+		$postId = (int) $c['postId'];
+		$isChief = $postId === 28;
+		CashRequestApprovalPolicy::ensureSchema();
+		$branches = $c['branchCtx']->accessibleBranches($c['staffId'], $postId, $c['schoolId'], !empty($c['isCentral']));
+		if (!$branches && !empty($c['branch'])) {
+			$one = $c['branch'];
+			$one['display_name'] = $c['branchCtx']->displayBranchName($one, false);
+			$branches = [$one];
+		}
+		$branchIds = array_values(array_unique(array_map(static function ($br) {
+			return (int) ($br['id'] ?? 0);
+		}, $branches)));
+		$branchIds = array_values(array_filter($branchIds));
+
+		$schoolIds = array_values(array_unique(array_filter(array_map(static function ($br) {
+			return (int) ($br['school_id'] ?? 0);
+		}, $branches))));
+		$schoolNames = [];
+		if ($schoolIds) {
+			foreach ($db->table('schools')->select('id, name')->whereIn('id', $schoolIds)->get()->getResultArray() as $school) {
+				$schoolNames[(int) $school['id']] = (string) $school['name'];
+			}
+		}
+
+		$latestByBranch = [];
+		if ($branchIds) {
+			$rows = $db->table('budgets')
+				->whereIn('branch_id', $branchIds)
+				->whereNotIn('status', ['CANCELLED', 'REJECTED', 'SUPERSEDED'])
+				->orderBy('id', 'DESC')
+				->get()->getResultArray();
+			foreach ($rows as $row) {
+				$bid = (int) $row['branch_id'];
+				if (!isset($latestByBranch[$bid])) {
+					$latestByBranch[$bid] = $row;
+				}
+			}
+		}
+		$budgetIds = array_map(static function ($row) {
+			return (int) $row['id'];
+		}, $latestByBranch);
+		$termMap = $this->termFiguresForBudgets($db, $budgetIds);
+
+		$requests = [];
+		if ($branchIds) {
+			$requests = $db->table('cash_requests')
+				->select('id, request_no, branch_id, status, approval_chain, requested_amount, purpose, payee_name')
+				->whereIn('branch_id', $branchIds)
+				->whereNotIn('status', ['DRAFT', 'CANCELLED', 'VOIDED', 'REJECTED', 'CLOSED'])
+				->orderBy('id', 'DESC')
+				->get()->getResultArray();
+		}
+
+		$budgetQueueStatuses = $isChief
+			? ['SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW']
+			: ['DEPUTY_DIRECTOR_REVIEW'];
+		$requestQueueStatus = $isChief ? 'HEADTEACHER_APPROVED' : 'CHIEF_ACCOUNTANT_APPROVED';
+
+		$group = [
+			'income' => 0.0,
+			'expense' => 0.0,
+			'surplus' => 0.0,
+			'terms' => [
+				1 => ['income' => 0.0, 'expense' => 0.0],
+				2 => ['income' => 0.0, 'expense' => 0.0],
+				3 => ['income' => 0.0, 'expense' => 0.0],
+			],
+		];
+		$schools = [];
+		$budgetQueue = [];
+		$approvedSchools = 0;
+		$queueBudgetIncome = 0.0;
+
+		foreach ($branches as $br) {
+			$bid = (int) ($br['id'] ?? 0);
+			if ($bid < 1) {
+				continue;
+			}
+			$schoolId = (int) ($br['school_id'] ?? 0);
+			$schoolName = $schoolNames[$schoolId] ?? (string) ($br['display_name'] ?? 'School');
+			$budget = $latestByBranch[$bid] ?? null;
+			$status = (string) ($budget['status'] ?? '');
+			$income = $budget ? (float) ($budget['total_income'] ?? 0) : 0.0;
+			$expense = $budget ? (float) ($budget['total_expenses'] ?? 0) : 0.0;
+			$needsBudget = $budget && in_array($status, $budgetQueueStatuses, true);
+			$schoolRequests = array_values(array_filter($requests, static function ($req) use ($bid) {
+				return (int) ($req['branch_id'] ?? 0) === $bid;
+			}));
+			$needsRequest = 0;
+			$requestAmount = 0.0;
+			foreach ($schoolRequests as $req) {
+				if ((string) ($req['status'] ?? '') !== $requestQueueStatus) {
+					continue;
+				}
+				$chain = strtolower((string) ($req['approval_chain'] ?? ''));
+				if ($chain !== '' && $chain !== 'wisdom') {
+					continue;
+				}
+				$needsRequest++;
+				$requestAmount += (float) ($req['requested_amount'] ?? 0);
+			}
+			if ($status === 'APPROVED' && $budget) {
+				$approvedSchools++;
+				$group['income'] += $income;
+				$group['expense'] += $expense;
+				$group['surplus'] += ($income - $expense);
+				$figures = $termMap[(int) $budget['id']] ?? [];
+				for ($termNo = 1; $termNo <= 3; $termNo++) {
+					$group['terms'][$termNo]['income'] += (float) ($figures[$termNo]['income'] ?? 0);
+					$group['terms'][$termNo]['expense'] += (float) ($figures[$termNo]['expense'] ?? 0);
+				}
+			}
+			if ($needsBudget) {
+				$queueBudgetIncome += $income;
+				$budgetQueue[] = [
+					'id' => (int) $budget['id'],
+					'school' => $schoolName,
+					'title' => (string) ($budget['title'] ?? $schoolName),
+					'status' => $status,
+					'income' => $income,
+					'expense' => $expense,
+				];
+			}
+			$schools[] = [
+				'branch_id' => $bid,
+				'school' => $schoolName,
+				'budget_id' => $budget ? (int) $budget['id'] : 0,
+				'title' => $budget ? (string) ($budget['title'] ?? '') : '',
+				'status' => $status,
+				'income' => $income,
+				'expense' => $expense,
+				'surplus' => $income - $expense,
+				'terms' => $budget ? ($termMap[(int) $budget['id']] ?? []) : [],
+				'needs_you_budget' => $needsBudget,
+				'needs_you_request' => $needsRequest,
+				'request_amount' => $requestAmount,
+			];
+		}
+
+		usort($schools, static function ($a, $b) {
+			$rank = static function ($row) {
+				if (!empty($row['needs_you_budget']) || !empty($row['needs_you_request'])) {
+					return 0;
+				}
+				if (($row['status'] ?? '') !== 'APPROVED') {
+					return 1;
+				}
+				return 2;
+			};
+			$diff = $rank($a) - $rank($b);
+			if ($diff !== 0) {
+				return $diff;
+			}
+			return strcasecmp((string) $a['school'], (string) $b['school']);
+		});
+
+		$requestQueue = [];
+		$queueRequestAmount = 0.0;
+		$moneyAllowed = 0.0;
+		$moneyAllowedCount = 0;
+		$activeRequests = 0;
+		foreach ($requests as $req) {
+			$status = (string) ($req['status'] ?? '');
+			$amount = (float) ($req['requested_amount'] ?? 0);
+			$activeRequests++;
+			if ($status === 'FINANCE_AUTHORIZED') {
+				$moneyAllowed += $amount;
+				$moneyAllowedCount++;
+			}
+			if ($status !== $requestQueueStatus) {
+				continue;
+			}
+			$chain = strtolower((string) ($req['approval_chain'] ?? ''));
+			if ($chain !== '' && $chain !== 'wisdom') {
+				continue;
+			}
+			$queueRequestAmount += $amount;
+			if (count($requestQueue) >= 12) {
+				continue;
+			}
+			$branchId = (int) ($req['branch_id'] ?? 0);
+			$schoolName = 'School';
+			foreach ($schools as $school) {
+				if ((int) $school['branch_id'] === $branchId) {
+					$schoolName = $school['school'];
+					break;
+				}
+			}
+			$requestQueue[] = [
+				'id' => (int) $req['id'],
+				'request_no' => (string) ($req['request_no'] ?? ''),
+				'school' => $schoolName,
+				'purpose' => (string) ($req['purpose'] ?? ''),
+				'payee' => (string) ($req['payee_name'] ?? ''),
+				'amount' => $amount,
+			];
+		}
+
+		$paid = 0.0;
+		if ($branchIds) {
+			try {
+				$paidRow = $db->query(
+					'SELECT COALESCE(SUM(p.amount),0) AS t FROM cash_request_payments p
+					INNER JOIN cash_requests cr ON cr.id = p.cash_request_id
+					WHERE cr.branch_id IN (' . implode(',', array_map('intval', $branchIds)) . ") AND p.status = 'completed'"
+				)->getRowArray();
+				$paid = (float) ($paidRow['t'] ?? 0);
+			} catch (\Throwable $e) {
+				$paid = 0.0;
+			}
+		}
+
+		return [
+			'role' => $isChief ? 'Chief Accountant' : 'Director of Finance',
+			'role_key' => $isChief ? 'chief' : 'finance',
+			'is_central' => !empty($c['isCentral']),
+			'school_count' => count($schools),
+			'approved_schools' => $approvedSchools,
+			'group' => $group,
+			'schools' => $schools,
+			'budget_queue' => $budgetQueue,
+			'budget_queue_income' => $queueBudgetIncome,
+			'request_queue' => $requestQueue,
+			'request_queue_count' => count(array_filter($requests, static function ($req) use ($requestQueueStatus) {
+				if ((string) ($req['status'] ?? '') !== $requestQueueStatus) {
+					return false;
+				}
+				$chain = strtolower((string) ($req['approval_chain'] ?? ''));
+				return $chain === '' || $chain === 'wisdom';
+			})),
+			'request_queue_amount' => $queueRequestAmount,
+			'money_allowed' => $moneyAllowed,
+			'money_allowed_count' => $moneyAllowedCount,
+			'paid' => $paid,
+			'active_requests' => $activeRequests,
+			'budget_wait_label' => $isChief ? 'Budgets waiting for you' : 'Budgets waiting for final approval',
+			'request_wait_label' => $isChief ? 'Requests after the Head Teacher' : 'Requests after the Chief Accountant',
+		];
+	}
+
 	protected function denyPerm($perm)
 	{
 		$perms = new BudgetPermissionService();
@@ -298,6 +544,11 @@ class BudgetCashflow extends Home
 		$data['budget_view_only'] = \Config\MenuClearance::isChildBudgetViewOnly($c['postId'], $c['schoolId']);
 		$data['can_prepare_budget'] = \Config\MenuClearance::canPrepareBudgetAtSchool($c['postId'], $c['schoolId'])
 			&& $c['perms']->can($c['staffId'], $c['postId'], 'budget.prepare');
+		$data['finance_desk'] = null;
+		if (in_array((int) $c['postId'], [24, 28], true)) {
+			$data['finance_desk'] = $this->financeDeskSnapshot($c, $db);
+			$data['title'] = $data['finance_desk']['role'] . ' dashboard';
+		}
 
 		$feesSvc = new SchoolFeesBudgetProjectionService();
 		$data['fees_projection'] = $feesSvc->projectForSchool((int) $c['schoolId']);
