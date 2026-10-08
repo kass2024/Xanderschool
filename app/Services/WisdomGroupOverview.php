@@ -19,6 +19,42 @@ class WisdomGroupOverview
 		return in_array((int) $postId, self::LEADER_POSTS, true);
 	}
 
+	/**
+	 * Customer Care sees the same attendance monitor as the directors,
+	 * for Wisdom School Musanze only.
+	 */
+	public function musanzeOnlyMonitor($postId): bool
+	{
+		$postId = (int) $postId;
+		if ($postId === 32) {
+			return true;
+		}
+		return \Config\MenuClearance::postTitle($postId) === 'customer care';
+	}
+
+	/** @return array{id: int, name: string}|null */
+	public function wisdomMusanzeSchool(): ?array
+	{
+		$rows = \Config\Database::connect()->table('schools')->select('id, name, acronym')->get()->getResultArray();
+		$fallback = null;
+		foreach ($rows as $row) {
+			$name = strtoupper(trim((string) preg_replace('/\s+/', ' ', (string) ($row['name'] ?? ''))));
+			$acr = strtoupper(trim((string) ($row['acronym'] ?? '')));
+			$mentionsMusanze = strpos($name, 'MUSANZE') !== false || $acr === 'MUSANZE' || strpos($acr, 'MUSANZE') !== false;
+			if (!$mentionsMusanze || (!$this->nameIsWisdom($name) && !$this->nameIsWisdom($acr))) {
+				continue;
+			}
+			$item = ['id' => (int) $row['id'], 'name' => (string) ($row['name'] ?? '')];
+			if ($name === 'WISDOM SCHOOL MUSANZE') {
+				return $item;
+			}
+			if ($fallback === null) {
+				$fallback = $item;
+			}
+		}
+		return $fallback;
+	}
+
 	public function canMonitor($postId)
 	{
 		return in_array((int) $postId, self::MONITOR_POSTS, true);

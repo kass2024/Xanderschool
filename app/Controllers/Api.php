@@ -3779,6 +3779,16 @@ public function get_boarding_classes()
 		$postId = (int) ($this->request->getPost('post_id') ?: $this->request->getGet('post_id'));
 		$yearId = (int) ($this->data['academic_year'] ?? 0);
 		$overview = new \App\Services\WisdomGroupOverview();
+		if ($overview->musanzeOnlyMonitor($postId)) {
+			$musanze = $overview->wisdomMusanzeSchool();
+			if (!$musanze) {
+				return $this->response->setJSON(['error' => 'Wisdom School Musanze was not found.']);
+			}
+			$data = $overview->schoolSummary((int) $musanze['id'], $yearId);
+			$data['scope'] = 'musanze';
+			$data['success'] = 1;
+			return $this->response->setJSON($data);
+		}
 		if (!$overview->canMonitor($postId)) {
 			return $this->response->setJSON([
 				'error' => 'Only Director, Deputy Director, Executive Principal, and Director of Finance can open all schools monitoring.',
@@ -3805,7 +3815,13 @@ public function get_boarding_classes()
 		$postId = (int) ($this->request->getPost('post_id') ?: $this->request->getGet('post_id'));
 		$areaId = (int) ($this->request->getPost('area_id') ?: $this->request->getGet('area_id'));
 		$overview = new \App\Services\WisdomGroupOverview();
-		if (!$overview->canMonitor($postId)) {
+		if ($overview->musanzeOnlyMonitor($postId)) {
+			$musanze = $overview->wisdomMusanzeSchool();
+			if (!$musanze) {
+				return $this->response->setJSON(['error' => 'Wisdom School Musanze was not found.']);
+			}
+			$schoolId = (int) $musanze['id'];
+		} elseif (!$overview->canMonitor($postId)) {
 			return $this->response->setJSON([
 				'error' => 'Only Director, Deputy Director, Executive Principal, and Director of Finance can open all schools monitoring.',
 			]);
@@ -3825,7 +3841,13 @@ public function get_boarding_classes()
 		helper('qonics');
 		$postId = (int) ($this->request->getPost('post_id') ?: $this->request->getGet('post_id'));
 		$overview = new \App\Services\WisdomGroupOverview();
-		if (!$overview->canMonitor($postId)) {
+		if ($overview->musanzeOnlyMonitor($postId)) {
+			$musanze = $overview->wisdomMusanzeSchool();
+			if (!$musanze) {
+				return $this->response->setJSON(['error' => 'Wisdom School Musanze was not found.']);
+			}
+			$schoolId = (int) $musanze['id'];
+		} elseif (!$overview->canMonitor($postId)) {
 			return $this->response->setJSON([
 				'error' => 'Only Director, Deputy Director, Executive Principal, and Director of Finance can open all schools monitoring.',
 			]);
@@ -5799,6 +5821,17 @@ public function permission_card_scan()
 		return $this->response->setJSON(AttendanceScanService::bootstrap($schoolId));
 	}
 
+	/** Customer Care location attendance always records at Wisdom School Musanze. */
+	private function attendanceSchoolForPost(int $schoolId, int $postId): int
+	{
+		$overview = new \App\Services\WisdomGroupOverview();
+		if (!$overview->musanzeOnlyMonitor($postId)) {
+			return $schoolId;
+		}
+		$school = $overview->wisdomMusanzeSchool();
+		return $school ? (int) $school['id'] : $schoolId;
+	}
+
 	/**
 	 * Phone location attendance: active locations and today's clocks only.
 	 */
@@ -5806,6 +5839,8 @@ public function permission_card_scan()
 	{
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 		$schoolId = (int) ($this->request->getPost('school_id') ?: $this->request->getGet('school_id') ?: 0);
+		$postId = (int) ($this->request->getPost('post_id') ?: $this->request->getGet('post_id') ?: 0);
+		$schoolId = $this->attendanceSchoolForPost($schoolId, $postId);
 		if ($schoolId <= 0) {
 			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
 		}
@@ -5858,6 +5893,7 @@ public function permission_card_scan()
 	{
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 		$schoolId = (int) $this->request->getPost('school_id');
+		$schoolId = $this->attendanceSchoolForPost($schoolId, (int) $this->request->getPost('post_id'));
 		$card = trim((string) ($this->request->getPost('card') ?? ''));
 		$areaId = (int) ($this->request->getPost('area_id') ?: $this->request->getPost('area') ?: 0);
 		$eventTime = (int) $this->request->getPost('time');
@@ -5900,6 +5936,7 @@ public function permission_card_scan()
 	{
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 		$schoolId = (int) $this->request->getPost('school_id');
+		$schoolId = $this->attendanceSchoolForPost($schoolId, (int) $this->request->getPost('post_id'));
 		if ($schoolId <= 0) {
 			return $this->response->setJSON(['success' => 0, 'message' => 'school_id is required']);
 		}
