@@ -21,20 +21,16 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 <div class="card border-0 shadow-sm mb-4">
 	<div class="card-body">
 		<h5 class="font-weight-bold mb-1"><i class="fa fa-file-excel text-success"></i> Upload Excel budget</h5>
-		<p class="text-muted small mb-3">Upload this school's own Excel budget. Line names can differ from school to school, and School Fees stay exactly as they are in the file. Only one budget is allowed for each academic year. After it is approved it stays locked until the Chief Accountant opens Term I, Term II, or Term III.</p>
+		<p class="text-muted small mb-3">Upload this school's own Excel budget. The budget is named after the school you are logged into. Line names can differ from school to school, and School Fees stay exactly as they are in the file. Only one budget is allowed for each academic year. After it is approved it stays locked until the Chief Accountant opens Term I, Term II, or Term III.</p>
 		<form id="frmUploadBudget" enctype="multipart/form-data">
 			<div class="form-row">
-				<div class="form-group col-md-5 mb-2">
+				<div class="form-group col-md-8 mb-2">
 					<label class="small font-weight-bold">Excel file (.xlsx)</label>
 					<input type="file" name="budget_file" id="budgetFile" class="form-control" accept=".xlsx,.xls" required>
 				</div>
-				<div class="form-group col-md-3 mb-2">
+				<div class="form-group col-md-4 mb-2">
 					<label class="small font-weight-bold">Academic year</label>
 					<input class="form-control" name="academic_year" value="<?= date('Y'); ?>-<?= substr((string) (date('Y') + 1), -2); ?>" placeholder="2026-27">
-				</div>
-				<div class="form-group col-md-4 mb-2">
-					<label class="small font-weight-bold">Title (optional)</label>
-					<input class="form-control" name="title" placeholder="Taken from the Excel sheet if empty">
 				</div>
 			</div>
 			<button type="submit" class="btn btn-primary" id="btnUploadBudget"><i class="fa fa-upload"></i> Upload and extract lines</button>

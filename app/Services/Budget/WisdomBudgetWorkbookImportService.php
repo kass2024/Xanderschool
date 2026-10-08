@@ -120,16 +120,12 @@ class WisdomBudgetWorkbookImportService
 		if ($yearBlock) {
 			return ['success' => false, 'error' => $yearBlock];
 		}
-		$title = trim((string) ($ctx['title'] ?? ''));
+		$title = trim((string) ($ctx['school_name'] ?? ''));
 		if ($title === '') {
-			$school = trim((string) ($parsed['school_name'] ?? ''));
-			$period = trim((string) ($parsed['period_hint'] ?? ''));
-			$title = $school !== '' ? $school : 'Annual Budget';
-			if ($period !== '') {
-				$title .= ' — ' . $period;
-			} elseif ($year !== '') {
-				$title .= ' ' . $year;
-			}
+			$title = 'Annual Budget';
+		}
+		if ($year !== '') {
+			$title .= ' ' . $year;
 		}
 		if (strlen($title) > 180) {
 			$title = substr($title, 0, 180);

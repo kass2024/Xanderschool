@@ -987,12 +987,13 @@ class BudgetCashflow extends Home
 		}
 		$fullPath = WRITEPATH . 'uploads/budget/prepared/' . basename($stored['stored_path']);
 		$periodId = $this->ensureAnnualBudgetPeriod($c['orgId'], (int) $c['branchId'], $c['staffId']);
+		$schoolRow = \Config\Database::connect()->table('schools')->select('name')->where('id', (int) $c['schoolId'])->get(1)->getRowArray();
 		$result = (new WisdomBudgetWorkbookImportService())->importIntoBranch($fullPath, [
 			'org_id' => $c['orgId'],
 			'branch_id' => (int) $c['branchId'],
 			'staff_id' => $c['staffId'],
 			'period_id' => $periodId,
-			'title' => trim((string) $this->request->getPost('title')),
+			'school_name' => trim((string) ($schoolRow['name'] ?? '')),
 			'academic_year' => trim((string) $this->request->getPost('academic_year')),
 			'original_name' => $stored['original_name'] ?? '',
 			'stored_path' => $stored['stored_path'] ?? '',
