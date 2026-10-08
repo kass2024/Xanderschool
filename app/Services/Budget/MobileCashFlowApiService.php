@@ -39,32 +39,64 @@ class MobileCashFlowApiService
 		return $this->enrichLines($rows);
 	}
 
+	/** Branches this person may review. Chief Accountant and Director of Finance see every school. */
+	public function branchIdsFor(array $ctx): array
+	{
+		$postId = (int) ($ctx['post_id'] ?? 0);
+		$own = (int) ($ctx['branch_id'] ?? 0);
+		if (!in_array($postId, [24, 28], true)) {
+			return $own > 0 ? [$own] : [];
+		}
+		$rows = (new BranchContextService())->accessibleBranchIds(
+			(int) ($ctx['staff_id'] ?? 0),
+			$postId,
+			(int) ($ctx['school_id'] ?? 0)
+		);
+		$ids = array_values(array_unique(array_filter(array_map('intval', array_column($rows, 'id')))));
+		if (!$ids && $own > 0) {
+			$ids = [$own];
+		}
+		return $ids;
+	}
+
 	/**
-	 * Pending inbox — mirrors web BudgetCashflow::requests?tab=pending
-	 * (amount-tier chains: short / medium / full).
+	 * Pending inbox for the phone.
+	 * Wisdom chain: Head Teacher, then Chief Accountant, then Director of Finance.
+	 *
+	 * @param int|array $branchId
 	 */
-	public function listPending(int $branchId, int $postId): array
+	public function listPending($branchId, int $postId): array
 	{
 		CashRequestApprovalPolicy::ensureSchema();
 		$db = \Config\Database::connect();
+		$branchIds = is_array($branchId)
+			? array_values(array_filter(array_map('intval', $branchId)))
+			: [(int) $branchId];
+		if (!$branchIds) {
+			return [];
+		}
 		$statusMap = [
-			20 => ['HEADTEACHER_APPROVED'], // Procurement after HM (full/medium)
+			20 => ['HEADTEACHER_APPROVED'],
 			19 => ['PROCUREMENT_APPROVED'],
 			21 => ['BUDGET_APPROVED'],
 			22 => ['FINANCE_AUTHORIZED'],
-			// DoF: short at HEADTEACHER_APPROVED; medium at PROCUREMENT_APPROVED; full at BUDGET_APPROVED
-			24 => ['HEADTEACHER_APPROVED', 'PROCUREMENT_APPROVED', 'BUDGET_APPROVED', 'FINANCE_AUTHORIZED'],
-			9 => ['FINANCE_AUTHORIZED', 'PAID'],
+			24 => ['HEADTEACHER_APPROVED', 'PROCUREMENT_APPROVED', 'BUDGET_APPROVED', 'CHIEF_ACCOUNTANT_APPROVED', 'FINANCE_AUTHORIZED'],
+			28 => ['HEADTEACHER_APPROVED'],
+			9 => ['FINANCE_AUTHORIZED', 'PAID', 'RETURNED_TO_ACCOUNTANT'],
+			8 => ['RETURNED_TO_ACCOUNTANT'],
 			1 => ['SUBMITTED'],
 			18 => ['SUBMITTED'],
+			25 => ['SUBMITTED'],
 		];
 		$statuses = $statusMap[$postId] ?? [];
 		if (!$statuses) {
 			return [];
 		}
 		$rows = $db->table('cash_requests cr')
-			->select('cr.id, cr.request_no, cr.status, cr.payee_name, cr.purpose, cr.requested_amount, cr.approval_chain, cr.request_date, cr.created_by')
-			->where('cr.branch_id', $branchId)
+			->select('cr.id, cr.request_no, cr.status, cr.payee_name, cr.purpose, cr.requested_amount, cr.approval_chain, cr.request_date, cr.created_by, cr.branch_id, s.name as school_name')
+			->join('branches b', 'b.id = cr.branch_id', 'left')
+			->join('schools s', 's.id = b.school_id', 'left')
+			->whereIn('cr.branch_id', $branchIds)
 			->whereIn('cr.status', $statuses)
 			->orderBy('cr.id', 'DESC')
 			->limit(100)
@@ -77,6 +109,9 @@ class MobileCashFlowApiService
 				if ($st === 'FINANCE_AUTHORIZED') {
 					return true;
 				}
+				if ($st === 'CHIEF_ACCOUNTANT_APPROVED') {
+					return $chain === 'wisdom' || $chain === '';
+				}
 				if ($st === 'HEADTEACHER_APPROVED') {
 					return $chain === 'short';
 				}
@@ -88,10 +123,15 @@ class MobileCashFlowApiService
 				}
 				return false;
 			}));
+		} elseif ((int) $postId === 28) {
+			$rows = array_values(array_filter($rows, static function ($r) {
+				$chain = strtolower((string) ($r['approval_chain'] ?? ''));
+				return $chain === '' || $chain === 'wisdom';
+			}));
 		} elseif ((int) $postId === 20) {
 			$rows = array_values(array_filter($rows, static function ($r) {
 				$chain = strtolower((string) ($r['approval_chain'] ?? 'full'));
-				return $chain !== 'short';
+				return $chain !== 'short' && $chain !== 'wisdom';
 			}));
 		}
 
@@ -139,42 +179,49 @@ class MobileCashFlowApiService
 	/**
 	 * Dashboard KPIs aligned with web Budget & Cash Flow dashboard.
 	 */
-	public function dashboardStats(int $branchId, int $staffId, int $postId): array
+	public function dashboardStats($branchId, int $staffId, int $postId): array
 	{
 		CashRequestApprovalPolicy::ensureSchema();
 		$db = \Config\Database::connect();
+		$branchIds = is_array($branchId)
+			? array_values(array_filter(array_map('intval', $branchId)))
+			: [(int) $branchId];
+		if (!$branchIds) {
+			$branchIds = [0];
+		}
 
 		$active = (int) $db->table('cash_requests')
-			->where('branch_id', $branchId)
+			->whereIn('branch_id', $branchIds)
 			->whereNotIn('status', ['DRAFT', 'CLOSED', 'CANCELLED', 'REJECTED', 'VOIDED'])
 			->countAllResults();
 		$awaitingPayment = (int) $db->table('cash_requests')
-			->where('branch_id', $branchId)
+			->whereIn('branch_id', $branchIds)
 			->where('status', 'FINANCE_AUTHORIZED')
 			->countAllResults();
 		$awaitingReceipt = (int) $db->table('cash_requests')
-			->where('branch_id', $branchId)
+			->whereIn('branch_id', $branchIds)
 			->where('status', 'PAID')
 			->countAllResults();
 		$myDrafts = (int) $db->table('cash_requests')
-			->where('branch_id', $branchId)
+			->whereIn('branch_id', $branchIds)
 			->where('created_by', $staffId)
 			->whereIn('status', ['DRAFT', 'RETURNED_TO_ACCOUNTANT'])
 			->countAllResults();
 		$myActive = (int) $db->table('cash_requests')
-			->where('branch_id', $branchId)
+			->whereIn('branch_id', $branchIds)
 			->where('created_by', $staffId)
 			->whereNotIn('status', ['DRAFT', 'CLOSED', 'CANCELLED', 'REJECTED', 'VOIDED'])
 			->countAllResults();
 
-		$pendingRows = $this->listPending($branchId, $postId);
+		$pendingRows = $this->listPending($branchIds, $postId);
 		$pendingMine = count($pendingRows);
 
 		$pipeline = [
-			'SUBMITTED' => (int) $db->table('cash_requests')->where('branch_id', $branchId)->where('status', 'SUBMITTED')->countAllResults(),
-			'HEADTEACHER_APPROVED' => (int) $db->table('cash_requests')->where('branch_id', $branchId)->where('status', 'HEADTEACHER_APPROVED')->countAllResults(),
-			'PROCUREMENT_APPROVED' => (int) $db->table('cash_requests')->where('branch_id', $branchId)->where('status', 'PROCUREMENT_APPROVED')->countAllResults(),
-			'BUDGET_APPROVED' => (int) $db->table('cash_requests')->where('branch_id', $branchId)->where('status', 'BUDGET_APPROVED')->countAllResults(),
+			'SUBMITTED' => (int) $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'SUBMITTED')->countAllResults(),
+			'HEADTEACHER_APPROVED' => (int) $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'HEADTEACHER_APPROVED')->countAllResults(),
+			'CHIEF_ACCOUNTANT_APPROVED' => (int) $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'CHIEF_ACCOUNTANT_APPROVED')->countAllResults(),
+			'PROCUREMENT_APPROVED' => (int) $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'PROCUREMENT_APPROVED')->countAllResults(),
+			'BUDGET_APPROVED' => (int) $db->table('cash_requests')->whereIn('branch_id', $branchIds)->where('status', 'BUDGET_APPROVED')->countAllResults(),
 			'FINANCE_AUTHORIZED' => $awaitingPayment,
 			'PAID' => $awaitingReceipt,
 		];
@@ -184,7 +231,7 @@ class MobileCashFlowApiService
 			$row = $db->table('cash_request_payments crp')
 				->selectSum('crp.amount', 'total')
 				->join('cash_requests cr', 'cr.id = crp.cash_request_id')
-				->where('cr.branch_id', $branchId)
+				->whereIn('cr.branch_id', $branchIds)
 				->where('crp.status', 'completed')
 				->get(1)->getRowArray();
 			$totalPaid = (float) ($row['total'] ?? 0);
@@ -210,20 +257,32 @@ class MobileCashFlowApiService
 	public function allowedActions(int $postId, string $status, string $chain = 'full'): array
 	{
 		$chain = strtolower(trim($chain)) ?: CashRequestApprovalPolicy::CHAIN_FULL;
+		$session = session();
+		$previousPost = $session->get('soma_post');
+		$session->set('soma_post', $postId);
 		$ui = CashRequestWorkflowService::uiActionsForRequest([
 			'status' => $status,
 			'approval_chain' => $chain,
 		]);
+		if ($previousPost === null) {
+			$session->remove('soma_post');
+		} else {
+			$session->set('soma_post', $previousPost);
+		}
 
 		$postActionMap = [
 			1 => ['headteacher_approve', 'return', 'reject'],
 			18 => ['headteacher_approve', 'return', 'reject'],
+			25 => ['headteacher_approve', 'return', 'reject'],
+			26 => ['headteacher_approve', 'return', 'reject'],
 			20 => ['procurement_approve', 'return', 'reject'],
 			19 => ['budget_approve', 'return', 'reject'],
 			21 => ['final_approve', 'return', 'reject'],
 			24 => ['final_approve', 'return', 'reject', 'pay'],
+			28 => ['chief_accountant_approve', 'return'],
 			22 => ['pay', 'partial_pay'],
-			9 => ['pay', 'confirm_receipt', 'close'],
+			9 => ['pay', 'confirm_receipt', 'close', 'submit'],
+			8 => ['submit'],
 		];
 		$allowedForPost = $postActionMap[$postId] ?? [];
 		if ((int) $postId === 24) {
@@ -243,6 +302,9 @@ class MobileCashFlowApiService
 		}
 		if ($status === 'PAID' && in_array('confirm_receipt', $allowedForPost, true)) {
 			$actions[] = 'confirm_receipt';
+		}
+		if (in_array($status, ['DRAFT', 'RETURNED_TO_ACCOUNTANT'], true) && in_array('submit', $allowedForPost, true)) {
+			$actions[] = 'submit';
 		}
 
 		return array_values(array_unique($actions));

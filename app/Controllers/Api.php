@@ -5491,8 +5491,15 @@ public function permission_card_scan()
 		if (!$ctx || $ctx['branch_id'] <= 0) {
 			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
 		}
+		$rows = $api->listRequests($ctx['branch_id'], $staffId);
+		foreach ($rows as &$row) {
+			if (in_array((string) ($row['status'] ?? ''), ['DRAFT', 'RETURNED_TO_ACCOUNTANT'], true)) {
+				$row['actions'] = ['submit'];
+			}
+		}
+		unset($row);
 		return $this->response->setJSON([
-			'requests' => $api->listRequests($ctx['branch_id'], $staffId),
+			'requests' => $rows,
 		]);
 	}
 
@@ -5505,7 +5512,7 @@ public function permission_card_scan()
 		if (!$ctx || $ctx['branch_id'] <= 0) {
 			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
 		}
-		$rows = $api->listPending($ctx['branch_id'], $ctx['post_id']);
+		$rows = $api->listPending($api->branchIdsFor($ctx), $ctx['post_id']);
 		foreach ($rows as &$row) {
 			$chain = (string) ($row['approval_chain'] ?? 'full');
 			$row['actions'] = $api->allowedActions($ctx['post_id'], (string) $row['status'], $chain);
@@ -5536,7 +5543,7 @@ public function permission_card_scan()
 		if (!$ctx || $ctx['branch_id'] <= 0) {
 			return $this->response->setJSON(['error' => 'Staff or branch not found.']);
 		}
-		$stats = $api->dashboardStats($ctx['branch_id'], $staffId, (int) $ctx['post_id']);
+		$stats = $api->dashboardStats($api->branchIdsFor($ctx), $staffId, (int) $ctx['post_id']);
 		$stats['success'] = true;
 		return $this->response->setJSON($stats);
 	}
@@ -5552,9 +5559,11 @@ public function permission_card_scan()
 		if (!$ctx || $ctx['org_id'] <= 0) {
 			return $this->response->setJSON(['error' => 'Staff or org not found.']);
 		}
-		$resolved = \App\Services\Budget\CashRequestApprovalPolicy::resolveChain((int) $ctx['org_id'], $amount);
-		$resolved['success'] = true;
-		return $this->response->setJSON($resolved);
+		return $this->response->setJSON([
+			'success' => true,
+			'chain' => \App\Services\Budget\CashRequestApprovalPolicy::CHAIN_WISDOM,
+			'steps_label' => \App\Services\Budget\CashRequestApprovalPolicy::chainLabels()[\App\Services\Budget\CashRequestApprovalPolicy::CHAIN_WISDOM],
+		]);
 	}
 
 	public function save_cash_flow_request()
@@ -5599,7 +5608,6 @@ public function permission_card_scan()
 				return $this->response->setJSON(['error' => 'Attach a supporting document before submitting.']);
 			}
 		}
-		$resolved = \App\Services\Budget\CashRequestApprovalPolicy::resolveChain((int) $ctx['org_id'], $amount);
 		$urgency = trim((string) $this->request->getPost('urgency')) ?: 'normal';
 		if (!in_array($urgency, ['low', 'normal', 'high', 'urgent'], true)) {
 			$urgency = 'normal';
@@ -5616,7 +5624,7 @@ public function permission_card_scan()
 			'purpose' => $purpose,
 			'currency' => 'RWF',
 			'requested_amount' => $amount,
-			'approval_chain' => $resolved['chain'],
+			'approval_chain' => \App\Services\Budget\CashRequestApprovalPolicy::CHAIN_WISDOM,
 			'payment_method' => $payMethod,
 			'urgency' => $urgency,
 			'status' => 'DRAFT',
@@ -5674,8 +5682,8 @@ public function permission_card_scan()
 			'success' => $submitNow ? 'Cash request submitted.' : 'Cash request saved as draft.',
 			'request_id' => $requestId,
 			'request_no' => $row['request_no'],
-			'approval_chain' => $resolved['chain'],
-			'approval_steps_label' => $resolved['steps_label'] ?? '',
+			'approval_chain' => \App\Services\Budget\CashRequestApprovalPolicy::CHAIN_WISDOM,
+			'approval_steps_label' => \App\Services\Budget\CashRequestApprovalPolicy::chainLabels()[\App\Services\Budget\CashRequestApprovalPolicy::CHAIN_WISDOM],
 		]);
 	}
 
