@@ -4,6 +4,7 @@
 
 <div class="cr-hero">
 	<h4 class="mb-1"><i class="fa fa-file-invoice-dollar"></i> <?= esc($title ?? 'New Cash Request'); ?></h4>
+	<p class="mb-0 small">The accountant requests money from a budget line and can attach supporting documents. The Head Teacher approves or sends it back with a reason, then the Chief Accountant, then the Director of Finance. Money is allowed only after the Director of Finance signs.</p>
 </div>
 
 <?php if (empty($budgets)) { ?>

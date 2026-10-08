@@ -15,6 +15,7 @@ class CashRequestApprovalPolicy
 	public const CHAIN_SHORT = 'short';
 	public const CHAIN_MEDIUM = 'medium';
 	public const CHAIN_FULL = 'full';
+	public const CHAIN_WISDOM = 'wisdom';
 
 	/** Default when master has not configured tiers yet. */
 	public static function defaultTiers(): array
@@ -39,6 +40,7 @@ class CashRequestApprovalPolicy
 			self::CHAIN_SHORT => 'Headmaster → Director of Finance',
 			self::CHAIN_MEDIUM => 'Headmaster → Procurement → Director of Finance',
 			self::CHAIN_FULL => 'Headmaster → Procurement → Budget Manager → Director of Finance',
+			self::CHAIN_WISDOM => 'Accountant → Head Teacher → Chief Accountant → Director of Finance',
 		];
 	}
 
@@ -48,6 +50,7 @@ class CashRequestApprovalPolicy
 			self::CHAIN_SHORT => ['Headmaster', 'Director of Finance', 'Pay'],
 			self::CHAIN_MEDIUM => ['Headmaster', 'Procurement', 'Director of Finance', 'Pay'],
 			self::CHAIN_FULL => ['Headmaster', 'Procurement', 'Budget Manager', 'Director of Finance', 'Pay'],
+			self::CHAIN_WISDOM => ['Accountant', 'Head Teacher', 'Chief Accountant', 'Director of Finance'],
 		];
 		return $map[$chain] ?? $map[self::CHAIN_FULL];
 	}
@@ -69,6 +72,34 @@ class CashRequestApprovalPolicy
 			$names = array_column($cols, 'Field');
 			if (!in_array('approval_chain', $names, true)) {
 				$db->query("ALTER TABLE cash_requests ADD COLUMN approval_chain VARCHAR(20) NOT NULL DEFAULT 'full' AFTER requested_amount");
+			}
+			foreach ([
+				'headteacher_signature' => 'VARCHAR(255) NULL',
+				'chief_accountant_signature' => 'VARCHAR(255) NULL',
+				'finance_signature' => 'VARCHAR(255) NULL',
+			] as $col => $def) {
+				if (!in_array($col, $names, true)) {
+					$db->query("ALTER TABLE cash_requests ADD COLUMN `$col` $def");
+				}
+			}
+			$status = $db->query("SHOW COLUMNS FROM cash_requests LIKE 'status'")->getRowArray();
+			$type = (string) ($status['Type'] ?? '');
+			if ($type !== '' && strpos($type, 'CHIEF_ACCOUNTANT_APPROVED') === false) {
+				$db->query("ALTER TABLE cash_requests MODIFY status ENUM('DRAFT','SUBMITTED','HEADTEACHER_APPROVED','PROCUREMENT_APPROVED','BUDGET_APPROVED','CHIEF_ACCOUNTANT_APPROVED','FINANCE_AUTHORIZED','RETURNED_TO_ACCOUNTANT','REJECTED','PARTIALLY_PAID','PAID','RECEIPT_CONFIRMED','CLOSED','CANCELLED','VOIDED') NOT NULL DEFAULT 'DRAFT'");
+			}
+		} catch (\Throwable $e) {
+			// ignore
+		}
+		try {
+			$schoolCols = $db->query('SHOW COLUMNS FROM schools')->getResultArray();
+			$schoolNames = array_column($schoolCols, 'Field');
+			foreach ([
+				'chief_accountant_signature' => 'VARCHAR(255) NULL',
+				'finance_director_signature' => 'VARCHAR(255) NULL',
+			] as $col => $def) {
+				if (!in_array($col, $schoolNames, true)) {
+					$db->query("ALTER TABLE schools ADD COLUMN `$col` $def");
+				}
 			}
 		} catch (\Throwable $e) {
 			// ignore
@@ -168,6 +199,12 @@ class CashRequestApprovalPolicy
 		if ($status === 'SUBMITTED') {
 			return ['headteacher_approve'];
 		}
+		if ($chain === self::CHAIN_WISDOM && $status === 'HEADTEACHER_APPROVED') {
+			return ['chief_accountant_approve'];
+		}
+		if ($chain === self::CHAIN_WISDOM && $status === 'CHIEF_ACCOUNTANT_APPROVED') {
+			return ['final_approve'];
+		}
 		if ($status === 'HEADTEACHER_APPROVED') {
 			if ($chain === self::CHAIN_SHORT) {
 				return ['final_approve'];
@@ -188,6 +225,9 @@ class CashRequestApprovalPolicy
 
 	public static function flowStatuses(string $chain): array
 	{
+		if ($chain === self::CHAIN_WISDOM) {
+			return ['SUBMITTED', 'HEADTEACHER_APPROVED', 'CHIEF_ACCOUNTANT_APPROVED', 'FINANCE_AUTHORIZED'];
+		}
 		if ($chain === self::CHAIN_SHORT) {
 			return ['SUBMITTED', 'HEADTEACHER_APPROVED', 'FINANCE_AUTHORIZED', 'PAID'];
 		}
@@ -199,6 +239,14 @@ class CashRequestApprovalPolicy
 
 	public static function flowLabels(string $chain): array
 	{
+		if ($chain === self::CHAIN_WISDOM) {
+			return [
+				['SUBMITTED', 'Head Teacher'],
+				['HEADTEACHER_APPROVED', 'Chief Accountant'],
+				['CHIEF_ACCOUNTANT_APPROVED', 'Director of Finance'],
+				['FINANCE_AUTHORIZED', 'Money allowed'],
+			];
+		}
 		if ($chain === self::CHAIN_SHORT) {
 			return [
 				['SUBMITTED', 'Submitted'],

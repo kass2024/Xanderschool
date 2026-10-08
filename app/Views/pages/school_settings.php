@@ -1053,6 +1053,31 @@
 							<span class="text-muted">Max 5MB · jpg / png</span>
 						</div>
 					</div>
+					<?php
+					$rolePost = (int) ($_SESSION['soma_post'] ?? 0);
+					$roleSigs = [];
+					if ($rolePost === 28) {
+						$roleSigs[] = ['chief_accountant', 'Chief Accountant signature', $settings['chief_accountant_signature'] ?? ''];
+					}
+					if ($rolePost === 24) {
+						$roleSigs[] = ['finance_director', 'Director of Finance signature', $settings['finance_director_signature'] ?? ''];
+					}
+					foreach ($roleSigs as $roleSig) {
+						$hasRoleSig = strlen($roleSig[2]) > 4;
+						$roleSrc = $hasRoleSig ? base_url('assets/images/signatures/' . $roleSig[2]) : $avatarFb;
+					?>
+					<div class="ss-upload-card">
+						<h4><?= esc($roleSig[1]); ?></h4>
+						<img src="<?= esc($roleSrc, 'attr'); ?>" id="img_role_<?= esc($roleSig[0], 'attr'); ?>"
+							 class="ss-upload-preview<?= $hasRoleSig ? '' : ' is-empty'; ?>"
+							 alt="<?= esc($roleSig[1]); ?>" data-fallback="<?= esc($avatarFb, 'attr'); ?>">
+						<input type="file" class="in-role-signature" data-role="<?= esc($roleSig[0], 'attr'); ?>" accept="image/png,image/jpeg,image/webp" style="display:none">
+						<div class="ss-upload-zone dv-role-signature" data-role="<?= esc($roleSig[0], 'attr'); ?>">
+							<p>Upload signature</p>
+							<span class="text-muted">Used on cash-request approval</span>
+						</div>
+					</div>
+					<?php } ?>
 				</div>
 			</div>
 		</div>
@@ -2724,6 +2749,29 @@
 			}
 			setImgReal($("#img_discipline_signature"), upload.getSource());
 			upload.doUpload("upload_image/discipline_signature", $("#dv_select_discipline_signature p"), $("#img_discipline_signature"));
+		});
+		$(document).on("click", ".dv-role-signature", function () {
+			$(this).siblings(".in-role-signature").trigger("click");
+		});
+		$(document).on("change", ".in-role-signature", function () {
+			var role = $(this).data("role");
+			var file = this.files[0];
+			if (!file) return;
+			var data = new FormData();
+			data.append("role", role);
+			data.append("signature", file);
+			$.ajax({
+				url: "<?= base_url('budget/upload_role_signature'); ?>",
+				type: "POST",
+				data: data,
+				processData: false,
+				contentType: false,
+				dataType: "json"
+			}).done(function (r) {
+				if (r.error) { toastada.error(r.error); return; }
+				$("#img_role_" + role).attr("src", r.url).removeClass("is-empty");
+				toastada.success(r.success || "Signature saved");
+			}).fail(function () { toastada.error("Signature upload failed"); });
 		});
 
 		$(document).on("click", ".dv_select_img_backg", function () {

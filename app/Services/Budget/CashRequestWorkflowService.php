@@ -53,6 +53,15 @@ class CashRequestWorkflowService
 			'RETURNED_TO_ACCOUNTANT' => ['submit' => 'SUBMITTED', 'cancel' => 'CANCELLED'],
 		];
 
+		if ($chain === CashRequestApprovalPolicy::CHAIN_WISDOM) {
+			$base['HEADTEACHER_APPROVED']['chief_accountant_approve'] = 'CHIEF_ACCOUNTANT_APPROVED';
+			$base['CHIEF_ACCOUNTANT_APPROVED'] = [
+				'final_approve' => 'FINANCE_AUTHORIZED',
+				'return' => 'RETURNED_TO_ACCOUNTANT',
+			];
+			return $base;
+		}
+
 		if ($chain === CashRequestApprovalPolicy::CHAIN_SHORT) {
 			$base['HEADTEACHER_APPROVED']['final_approve'] = 'FINANCE_AUTHORIZED';
 			$base['HEADTEACHER_APPROVED']['reject'] = 'REJECTED';
@@ -82,17 +91,14 @@ class CashRequestWorkflowService
 			CashRequestApprovalPolicy::CHAIN_SHORT,
 			CashRequestApprovalPolicy::CHAIN_MEDIUM,
 			CashRequestApprovalPolicy::CHAIN_FULL,
+			CashRequestApprovalPolicy::CHAIN_WISDOM,
 		], true)) {
 			$chain = CashRequestApprovalPolicy::CHAIN_FULL;
 		}
 
-		// On submit: lock the chain from amount + master settings
+		// Every new submission follows Accountant → Head Teacher → Chief Accountant → Director of Finance.
 		if ($action === 'submit') {
-			$resolved = CashRequestApprovalPolicy::resolveChain(
-				(int) ($req['organization_id'] ?? 0),
-				(float) ($req['requested_amount'] ?? 0)
-			);
-			$chain = $resolved['chain'];
+			$chain = CashRequestApprovalPolicy::CHAIN_WISDOM;
 			$db->table('cash_requests')->where('id', (int) $requestId)->update([
 				'approval_chain' => $chain,
 				'updated_at' => date('Y-m-d H:i:s'),
@@ -106,8 +112,21 @@ class CashRequestWorkflowService
 			return ['success' => false, 'error' => "Action '$action' not allowed from status $current for this amount chain."];
 		}
 		$newStatus = $map[$action];
-		if (!$this->actionPermitted($action, $postId)) {
+		if (in_array($action, ['return', 'reject'], true) && trim((string) $comment) === '') {
+			return ['success' => false, 'error' => 'A reason is required so the accountant can correct the request.'];
+		}
+		if (!$this->actionPermitted($action, $postId, $chain)) {
 			return ['success' => false, 'error' => 'Permission denied for this action.'];
+		}
+		$signatureUpdate = [];
+		if ($chain === CashRequestApprovalPolicy::CHAIN_WISDOM) {
+			$stamped = $this->stampApprovalSignature($action, (int) (session('soma_school_id') ?? 0));
+			if (!empty($stamped['error'])) {
+				return ['success' => false, 'error' => $stamped['error']];
+			}
+			if (!empty($stamped['column'])) {
+				$signatureUpdate[$stamped['column']] = $stamped['file'];
+			}
 		}
 
 		$db->transStart();
@@ -116,6 +135,7 @@ class CashRequestWorkflowService
 			|| ($action === 'final_approve' && in_array($chain, [
 				CashRequestApprovalPolicy::CHAIN_SHORT,
 				CashRequestApprovalPolicy::CHAIN_MEDIUM,
+				CashRequestApprovalPolicy::CHAIN_WISDOM,
 			], true));
 
 		if ($needsCommitment) {
@@ -161,6 +181,9 @@ class CashRequestWorkflowService
 		if ($action === 'submit') {
 			$update['approval_chain'] = $chain;
 		}
+		if ($signatureUpdate) {
+			$update = array_merge($update, $signatureUpdate);
+		}
 		$db->table('cash_requests')->where('id', (int) $requestId)->update($update);
 		$db->table('cash_request_actions')->insert([
 			'cash_request_id' => (int) $requestId,
@@ -179,11 +202,47 @@ class CashRequestWorkflowService
 		return ['success' => true, 'status' => $newStatus, 'approval_chain' => $chain];
 	}
 
-	private function actionPermitted($action, $postId)
+	/** @return array{error?:string,column?:string,file?:string} */
+	private function stampApprovalSignature(string $action, int $schoolId): array
 	{
+		$map = [
+			'headteacher_approve' => ['column' => 'headteacher_signature', 'school_col' => 'headmaster_signature', 'who' => 'Head Teacher'],
+			'chief_accountant_approve' => ['column' => 'chief_accountant_signature', 'school_col' => 'chief_accountant_signature', 'who' => 'Chief Accountant'],
+			'final_approve' => ['column' => 'finance_signature', 'school_col' => 'finance_director_signature', 'who' => 'Director of Finance'],
+		];
+		if (!isset($map[$action])) {
+			return [];
+		}
+		CashRequestApprovalPolicy::ensureSchema();
+		if ($schoolId < 1) {
+			return ['error' => 'Upload the ' . $map[$action]['who'] . ' signature in School settings before approving.'];
+		}
+		$row = \Config\Database::connect()->table('schools')->where('id', $schoolId)->get(1)->getRowArray();
+		$file = trim((string) ($row[$map[$action]['school_col']] ?? ''));
+		if (strlen($file) < 5) {
+			return ['error' => 'Upload the ' . $map[$action]['who'] . ' signature in School settings before approving.'];
+		}
+		return ['column' => $map[$action]['column'], 'file' => $file];
+	}
+
+	private function actionPermitted($action, $postId, string $chain = '')
+	{
+		$postId = (int) $postId;
+		if ($chain === CashRequestApprovalPolicy::CHAIN_WISDOM) {
+			if ($action === 'headteacher_approve' || ($action === 'return' && $postId !== 28 && $postId !== 24)) {
+				return in_array($postId, [1, 18, 25], true);
+			}
+			if ($action === 'chief_accountant_approve' || ($action === 'return' && $postId === 28)) {
+				return $postId === 28;
+			}
+			if ($action === 'final_approve' || ($action === 'return' && $postId === 24)) {
+				return $postId === 24;
+			}
+		}
 		$map = [
 			'submit' => 'cash_request.submit',
 			'headteacher_approve' => 'cash_request.headteacher_approve',
+			'chief_accountant_approve' => 'cash_request.budget_review',
 			'procurement_approve' => 'cash_request.procurement_review',
 			'budget_approve' => 'cash_request.budget_review',
 			'final_approve' => 'cash_request.final_approve',
@@ -202,6 +261,10 @@ class CashRequestWorkflowService
 	private function notifyNextStep($status, $req, string $chain = CashRequestApprovalPolicy::CHAIN_FULL)
 	{
 		$url = base_url('budget/cash_request_view/' . $req['id']);
+		if ($chain === CashRequestApprovalPolicy::CHAIN_WISDOM) {
+			$this->notifyWisdomStep($status, $req, $url);
+			return;
+		}
 		$postMap = [
 			'SUBMITTED' => 1, // Headmaster first
 			'HEADTEACHER_APPROVED' => ($chain === CashRequestApprovalPolicy::CHAIN_SHORT) ? 24 : 20,
@@ -216,6 +279,45 @@ class CashRequestWorkflowService
 		// Also ping headmistress on submit
 		if ($status === 'SUBMITTED') {
 			$this->notify->notifyPost(18, 'Cash request ' . $req['request_no'], 'Awaiting headmaster approval', $url, $req['branch_id']);
+		}
+	}
+
+	private function notifyWisdomStep(string $status, array $req, string $url): void
+	{
+		$db = \Config\Database::connect();
+		$branch = $db->table('branches')->where('id', (int) ($req['branch_id'] ?? 0))->get(1)->getRowArray();
+		$schoolId = (int) ($branch['school_id'] ?? 0);
+		$title = 'Cash request ' . ($req['request_no'] ?? '');
+		$notifySchool = function (array $posts, string $body) use ($schoolId, $title, $url, $req) {
+			foreach ($posts as $postId) {
+				foreach ($this->notify->activeStaffByPost((int) $postId, $schoolId > 0 ? $schoolId : null) as $staff) {
+					$this->notify->notifyStaff((int) $staff['id'], $title, $body, $url, $req['branch_id'] ?? null);
+				}
+			}
+		};
+		if ($status === 'SUBMITTED') {
+			$notifySchool([1, 18, 25], 'The accountant submitted a request. Approve it or send it back with a reason.');
+			return;
+		}
+		if ($status === 'HEADTEACHER_APPROVED') {
+			foreach ($this->notify->activeStaffByPost(28) as $staff) {
+				$this->notify->notifyStaff((int) $staff['id'], $title, 'Head Teacher approved. Chief Accountant review is next.', $url, $req['branch_id'] ?? null);
+			}
+			return;
+		}
+		if ($status === 'CHIEF_ACCOUNTANT_APPROVED') {
+			foreach ($this->notify->activeStaffByPost(24) as $staff) {
+				$this->notify->notifyStaff((int) $staff['id'], $title, 'Chief Accountant approved. Director of Finance gives the final approval.', $url, $req['branch_id'] ?? null);
+			}
+			return;
+		}
+		if ($status === 'RETURNED_TO_ACCOUNTANT') {
+			$notifySchool([8, 9], 'The request was sent back with a reason. Correct it and submit again.');
+			$notifySchool([1, 18, 25], 'A cash request was returned. The accountant will correct it and send it again.');
+			return;
+		}
+		if ($status === 'FINANCE_AUTHORIZED') {
+			$notifySchool([8, 9], 'Director of Finance approved. The money for this request is allowed.');
 		}
 	}
 
@@ -250,6 +352,23 @@ class CashRequestWorkflowService
 	{
 		$chain = strtolower(trim((string) ($req['approval_chain'] ?? CashRequestApprovalPolicy::CHAIN_FULL))) ?: CashRequestApprovalPolicy::CHAIN_FULL;
 		$status = (string) ($req['status'] ?? '');
+		if ($chain === CashRequestApprovalPolicy::CHAIN_WISDOM) {
+			$postId = (int) ($_SESSION['soma_post'] ?? 0);
+			$out = [];
+			if ($status === 'SUBMITTED' && in_array($postId, [1, 18, 25], true)) {
+				$out['headteacher_approve'] = 'Approve — Head Teacher';
+				$out['return'] = 'Reject and send back to the accountant';
+			}
+			if ($status === 'HEADTEACHER_APPROVED' && $postId === 28) {
+				$out['chief_accountant_approve'] = 'Approve — Chief Accountant';
+				$out['return'] = 'Reject and send back with a reason';
+			}
+			if ($status === 'CHIEF_ACCOUNTANT_APPROVED' && $postId === 24) {
+				$out['final_approve'] = 'Final approval — Director of Finance';
+				$out['return'] = 'Return with a reason';
+			}
+			return $out;
+		}
 		$labels = [
 			'headteacher_approve' => 'Headmaster approve',
 			'procurement_approve' => 'Procurement approve',

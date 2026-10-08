@@ -4,6 +4,9 @@
 $r = $request;
 $chain = $approval_chain ?? ($r['approval_chain'] ?? 'full');
 $statusFlow = ['DRAFT','SUBMITTED','HEADTEACHER_APPROVED','PROCUREMENT_APPROVED','BUDGET_APPROVED','FINANCE_AUTHORIZED','PAID','RECEIPT_CONFIRMED','CLOSED'];
+if ($chain === 'wisdom') {
+	$statusFlow = ['DRAFT','SUBMITTED','HEADTEACHER_APPROVED','CHIEF_ACCOUNTANT_APPROVED','FINANCE_AUTHORIZED','PAID'];
+}
 $currentIdx = array_search($r['status'], $statusFlow, true);
 if ($currentIdx === false) {
 	$currentIdx = 0;
@@ -45,6 +48,29 @@ $wfActions = $wf_actions ?? \App\Services\Budget\CashRequestWorkflowService::uiA
 	<p><strong>Purpose:</strong> <?= esc($r['purpose']); ?></p>
 	<p class="mb-0 small text-muted">Request date: <?= esc($r['request_date']); ?> · Payment method: <?= esc($r['payment_method'] ?? '—'); ?></p>
 </div>
+
+<?php
+$sigBase = base_url('assets/images/signatures/');
+$sigCards = [
+	['Head Teacher', $r['headteacher_signature'] ?? ''],
+	['Chief Accountant', $r['chief_accountant_signature'] ?? ''],
+	['Director of Finance', $r['finance_signature'] ?? ''],
+];
+$anySig = false;
+foreach ($sigCards as $sigCard) { if (strlen($sigCard[1]) > 4) { $anySig = true; } }
+if ($anySig) { ?>
+<div class="cr-section">
+	<div class="cr-section-title"><i class="fa fa-pen-fancy"></i> Approval signatures</div>
+	<div class="d-flex flex-wrap" style="gap:1rem">
+		<?php foreach ($sigCards as $sigCard) { if (strlen($sigCard[1]) < 5) continue; ?>
+		<div>
+			<div class="small text-muted"><?= esc($sigCard[0]); ?></div>
+			<img src="<?= esc($sigBase . $sigCard[1], 'attr'); ?>" alt="<?= esc($sigCard[0]); ?>" style="height:64px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:4px">
+		</div>
+		<?php } ?>
+	</div>
+</div>
+<?php } ?>
 
 <div class="cr-section">
 	<div class="cr-section-title"><i class="fa fa-chart-pie"></i> Request items (<?= count($lines); ?>)</div>

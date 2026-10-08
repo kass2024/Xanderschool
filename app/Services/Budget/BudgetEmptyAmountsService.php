@@ -4,7 +4,7 @@ namespace App\Services\Budget;
 
 /**
  * Restore full budget line structure with empty amounts (Director fills manually).
- * School Fees is filled from fees management × student counts.
+ * School Fees stays as stored. It is never recalculated from fees settings.
  */
 class BudgetEmptyAmountsService
 {
@@ -29,20 +29,8 @@ class BudgetEmptyAmountsService
 				$setup = $decoded;
 			}
 		}
-		$yearHint = $setup['academic_year'] ?? null;
-		$proj = (new SchoolFeesBudgetProjectionService())->projectForSchool($schoolId, $yearHint);
+		$proj = ['success' => false];
 		$schoolFeesApplied = null;
-		if (!empty($proj['success'])) {
-			$schoolFeesApplied = $this->applySchoolFeesLine($db, $budgetId, $proj);
-			if ((int) ($setup['enrollment'] ?? 0) < 1) {
-				$setup['enrollment'] = (int) ($proj['total_students'] ?? 0);
-			}
-			if (empty($setup['academic_year']) && !empty($proj['academic_year_title'])) {
-				$setup['academic_year'] = $proj['academic_year_title'];
-			}
-			$setup['fees_projection_at'] = date('Y-m-d H:i:s');
-			$setup['fees_projection_notes'] = $proj['notes'] ?? '';
-		}
 
 		$setup['amounts_cleared_for_dof_at'] = date('Y-m-d H:i:s');
 		unset($setup['excel_filled_at'], $setup['excel_source']);

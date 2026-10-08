@@ -21,7 +21,7 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 <div class="card border-0 shadow-sm mb-4">
 	<div class="card-body">
 		<h5 class="font-weight-bold mb-1"><i class="fa fa-file-excel text-success"></i> Upload Excel budget</h5>
-		<p class="text-muted small mb-3">Upload this school's own Excel budget. Line names can differ from school to school. The system reads each line and its Term I, Term II, and Term III amounts. The Chief Accountant approves first, then the Director of Finance. Cash requests stay closed until both have approved. You can cancel or delete an upload and send a new file.</p>
+		<p class="text-muted small mb-3">Upload this school's own Excel budget. Line names can differ from school to school, and School Fees stay exactly as they are in the file. Only one budget is allowed for each academic year. After it is approved it stays locked until the Chief Accountant opens Term I, Term II, or Term III.</p>
 		<form id="frmUploadBudget" enctype="multipart/form-data">
 			<div class="form-row">
 				<div class="form-group col-md-5 mb-2">

@@ -9,8 +9,11 @@ $canAddLines = !empty($can_add_lines);
 $canManageStructure = $canAddLines && empty($budget_branch_fill);
 $sectionOptions = $section_options ?? ['INCOME', 'OPERATING EXPENSES', 'ADMINISTRATIVE COSTS', 'FINANCE COSTS'];
 $academicYear = $setup['academic_year'] ?? '';
-$branchFillMode = !empty($budget_branch_fill);
 $enrollment = (int) ($setup['enrollment'] ?? 0);
+$branchFillMode = !empty($budget_branch_fill);
+$unlockedTerms = $unlocked_terms ?? [1 => true, 2 => true, 3 => true];
+$termLockMode = !empty($term_lock_mode);
+$viewOnly = !empty($view_only);
 ?>
 
 <div class="budget-workspace bp-ui-v2" id="budgetWorkspace" data-budget-id="<?= (int)$budget['id']; ?>">
@@ -38,6 +41,28 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 		<?php } ?>
 	</div>
 	<?= view('pages/budget/partials/term_kpi_board'); ?>
+	<?php if ($viewOnly) { ?>
+	<div class="alert alert-light border mt-3 mb-0 text-dark">Head teachers can follow this budget. Editing stays closed.</div>
+	<?php } elseif ($termLockMode) { ?>
+	<div class="alert alert-light border mt-3 mb-0 text-dark">
+		This approved budget is locked for the year.
+		<?php if (!empty($can_unlock_terms)) { ?>
+		The accountant can change only a term you open.
+		<?php } else { ?>
+		Open terms: <?= !empty($unlockedTerms[1]) ? 'Term I ' : ''; ?><?= !empty($unlockedTerms[2]) ? 'Term II ' : ''; ?><?= !empty($unlockedTerms[3]) ? 'Term III' : ''; ?>
+		<?php if (empty($unlockedTerms[1]) && empty($unlockedTerms[2]) && empty($unlockedTerms[3])) { ?>None yet.<?php } ?>
+		<?php } ?>
+	</div>
+	<?php } ?>
+	<?php if (!empty($can_unlock_terms)) { ?>
+	<div class="mt-3 d-flex flex-wrap" style="gap:.5rem">
+		<?php foreach ([1 => 'Term I', 2 => 'Term II', 3 => 'Term III'] as $tn => $tlabel) { ?>
+		<button type="button" class="btn btn-sm <?= !empty($unlockedTerms[$tn]) ? 'btn-warning' : 'btn-outline-light'; ?> btn-unlock-term" data-term="<?= $tn; ?>" data-allow="<?= !empty($unlockedTerms[$tn]) ? '0' : '1'; ?>">
+			<?= !empty($unlockedTerms[$tn]) ? 'Lock' : 'Allow'; ?> <?= $tlabel; ?>
+		</button>
+		<?php } ?>
+	</div>
+	<?php } ?>
 	<div class="bp-progress mt-2"><div class="bp-progress-bar" id="progressBar" style="width:0%"></div></div>
 </div>
 <?php if (!empty($excel_upload)) { ?>
@@ -172,12 +197,14 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 				<?php continue; }
 				$ro = $canEdit ? '' : 'readonly disabled';
 				$catLower = strtolower(trim((string)($ln['category'] ?? '')));
-				$isSchoolFees = strpos($catLower, 'school fee') !== false;
+				$t1ro = ($canEdit && (!$termLockMode || !empty($unlockedTerms[1]))) ? '' : 'readonly disabled';
+				$t2ro = ($canEdit && (!$termLockMode || !empty($unlockedTerms[2]))) ? '' : 'readonly disabled';
+				$t3ro = ($canEdit && (!$termLockMode || !empty($unlockedTerms[3]))) ? '' : 'readonly disabled';
 				$canMoveUp = $canManageStructure && $editPos > 0;
 				$canMoveDown = $canManageStructure && $editPos < ($editCount - 1);
 				$editPos++;
 			?>
-				<article class="budget-line bp-line-entry<?= $isSchoolFees ? ' is-school-fees' : ''; ?>"
+				<article class="budget-line bp-line-entry"
 					data-line-id="<?= $lid; ?>"
 					data-income="<?= $isIncome ? '1' : '0'; ?>"
 					data-section="<?= esc($secKey); ?>"
@@ -186,16 +213,13 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 					<div class="bp-line-top">
 						<div class="bp-line-name">
 							<strong><?= esc($ln['category']); ?></strong>
-							<?php if ($isSchoolFees) { ?><span class="bp-chip auto">Auto</span><?php } ?>
 						</div>
 						<?php if ($canManageStructure) { ?>
 						<div class="bp-line-actions">
 							<button type="button" class="bp-icon-btn bp-drag-handle" title="Drag to reorder" draggable="false"><i class="fa fa-bars"></i></button>
 							<button type="button" class="bp-icon-btn btn-move-line" data-dir="up" title="Move up" <?= $canMoveUp ? '' : 'disabled'; ?>><i class="fa fa-arrow-up"></i></button>
 							<button type="button" class="bp-icon-btn btn-move-line" data-dir="down" title="Move down" <?= $canMoveDown ? '' : 'disabled'; ?>><i class="fa fa-arrow-down"></i></button>
-							<?php if (!$isSchoolFees) { ?>
-							<button type="button" class="bp-icon-btn danger btn-delete-line" title="Delete (also removes from child schools)"><i class="fa fa-trash"></i></button>
-							<?php } ?>
+							<button type="button" class="bp-icon-btn danger btn-delete-line" title="Delete this line"><i class="fa fa-trash"></i></button>
 						</div>
 						<?php } ?>
 					</div>
@@ -203,13 +227,13 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 					<input type="text" class="form-control form-control-sm bp-line-notes" name="lines[<?= $lid; ?>][assumptions]" value="<?= esc($ln['assumptions'] ?? ''); ?>" placeholder="Notes (optional)" <?= $ro; ?>>
 					<div class="bp-term-grid">
 						<label class="bp-term-field t1"><span>Term I</span>
-							<input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-1" name="lines[<?= $lid; ?>][term_1_amount]" value="<?= $t1 > 0 ? esc($t1) : ''; ?>" placeholder="0" <?= $ro; ?>>
+							<input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-1" name="lines[<?= $lid; ?>][term_1_amount]" value="<?= $t1 > 0 ? esc($t1) : ''; ?>" placeholder="0" <?= $t1ro; ?>>
 						</label>
 						<label class="bp-term-field t2"><span>Term II</span>
-							<input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-2" name="lines[<?= $lid; ?>][term_2_amount]" value="<?= $t2 > 0 ? esc($t2) : ''; ?>" placeholder="0" <?= $ro; ?>>
+							<input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-2" name="lines[<?= $lid; ?>][term_2_amount]" value="<?= $t2 > 0 ? esc($t2) : ''; ?>" placeholder="0" <?= $t2ro; ?>>
 						</label>
 						<label class="bp-term-field t3"><span>Term III</span>
-							<input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-3" name="lines[<?= $lid; ?>][term_3_amount]" value="<?= $t3 > 0 ? esc($t3) : ''; ?>" placeholder="0" <?= $ro; ?>>
+							<input type="number" step="0.01" min="0" class="form-control form-control-sm text-right inp-term inp-term-3" name="lines[<?= $lid; ?>][term_3_amount]" value="<?= $t3 > 0 ? esc($t3) : ''; ?>" placeholder="0" <?= $t3ro; ?>>
 						</label>
 						<div class="bp-term-annual">
 							<span>Annual</span>
@@ -319,7 +343,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 </div>
 <?php } ?>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=11"></script>
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=12"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,
@@ -333,12 +357,28 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 	moveLineUrl: '<?= base_url('budget/move_budget_line'); ?>',
 	reorderLineUrl: '<?= base_url('budget/reorder_budget_lines'); ?>',
 	fillExcelUrl: '<?= base_url('budget/fill_budget_from_excel'); ?>',
-	fillSchoolFeesUrl: '<?= empty($excel_upload) ? base_url('budget/fill_school_fees_income') : ''; ?>',
+	fillSchoolFeesUrl: '',
 	resetEmptyUrl: '<?= base_url('budget/reset_budget_empty_amounts'); ?>',
 	redirectUrl: '<?= base_url('budget/prepare'); ?>',
 	submitConfirm: <?= json_encode((int) ($_SESSION['soma_post'] ?? 0) === 28
 		? "Submit this budget to the Director of Finance?\n\nYou prepared it as Chief Accountant, so the first approval step is skipped.\nCash requests stay closed until the Director of Finance approves."
 		: "Submit this budget?\n\n1) Chief Accountant approves first\n2) Director of Finance approves second\n\nCash requests stay closed until both approve."); ?>
+});
+$('.btn-unlock-term').on('click', function () {
+	var $btn = $(this);
+	var term = $btn.data('term');
+	var allow = String($btn.data('allow')) === '1';
+	if (!confirm((allow ? 'Allow editing of this term?' : 'Lock this term again?'))) return;
+	$btn.prop('disabled', true);
+	$.post('<?= base_url('budget/unlock_budget_term'); ?>', {
+		budget_id: <?= (int) $budget['id']; ?>,
+		term: term,
+		allow: allow ? 1 : 0
+	}, function (r) {
+		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
+		toastada.success(r.message || 'Updated');
+		location.reload();
+	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Could not update the term lock'); });
 });
 $('#btnCancelBudget').on('click', function () {
 	if (!confirm('Cancel this budget so you can upload a new Excel file?')) return;

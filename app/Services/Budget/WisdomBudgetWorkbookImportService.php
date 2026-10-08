@@ -112,6 +112,14 @@ class WisdomBudgetWorkbookImportService
 		if ($year === '') {
 			$year = (string) ($parsed['academic_year'] ?? '');
 		}
+		$replaceId = 0;
+		if ($existing && (int) ($db->table('cash_requests')->where('budget_id', (int) $existing['id'])->countAllResults()) < 1) {
+			$replaceId = (int) $existing['id'];
+		}
+		$yearBlock = BudgetYearLock::blockNewBudget($db, $branchId, $year, $replaceId);
+		if ($yearBlock) {
+			return ['success' => false, 'error' => $yearBlock];
+		}
 		$title = trim((string) ($ctx['title'] ?? ''));
 		if ($title === '') {
 			$school = trim((string) ($parsed['school_name'] ?? ''));

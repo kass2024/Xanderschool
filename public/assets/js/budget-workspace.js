@@ -409,40 +409,6 @@ var BudgetWorkspace = (function () {
 				});
 			}
 
-			// Silent auto-sync School Fees from fees settings × students (always refresh on open)
-			function autoRefreshSchoolFees() {
-				if (!cfg.fillSchoolFeesUrl || !cfg.canEdit) return;
-				var $row = $('.budget-line').filter(function () {
-					var cat = String($(this).data('category') || '');
-					return cat.indexOf('school fee') !== -1 || cat === 'fees';
-				}).first();
-				if (!$row.length) return;
-				$.post(cfg.fillSchoolFeesUrl, { budget_id: cfg.budgetId, apply: 1 }, function (r) {
-					if (r.error || !r.projection) return;
-					var p = r.projection;
-					var t1 = p.term_1 > 0 ? p.term_1 : '';
-					var t2 = p.term_2 > 0 ? p.term_2 : '';
-					var t3 = p.term_3 > 0 ? p.term_3 : '';
-					var changed =
-						String($row.find('.inp-term-1').val() || '') !== String(t1) ||
-						String($row.find('.inp-term-2').val() || '') !== String(t2) ||
-						String($row.find('.inp-term-3').val() || '') !== String(t3);
-					$row.find('.inp-term-1').val(t1);
-					$row.find('.inp-term-2').val(t2);
-					$row.find('.inp-term-3').val(t3);
-					if (p.notes) $row.find('input[name*="[assumptions]"]').val(p.notes);
-					if (p.total_students && (!$('#setupEnrollment').val() || parseInt($('#setupEnrollment').val(), 10) === 0)) {
-						$('#setupEnrollment').val(p.total_students);
-					}
-					refreshUI();
-					if (changed) {
-						dirty = false;
-						$('#saveStatus').addClass('saved').html('<i class="fa fa-check"></i> School Fees synced from fees settings');
-					}
-				}, 'json');
-			}
-			autoRefreshSchoolFees();
-
 			if (cfg.canAddLines) {
 				$('#btnAddBudgetLine').on('click', function () { openAddModal(null); });
 				$(document).on('click', '.bp-btn-add-line', function () {

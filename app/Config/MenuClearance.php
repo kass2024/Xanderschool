@@ -70,7 +70,7 @@ class MenuClearance
 	/** @deprecated alias — use CHILD_BUDGET_VIEW_POSTS */
 	const BUDGET_VIEW_ONLY_POSTS = self::CHILD_BUDGET_VIEW_POSTS;
 
-	/** Menu keys leaders may see (no prepare). */
+	/** Menu keys leaders may see. Prepare and review are view-only for these posts. */
 	public static function childBudgetViewKeys()
 	{
 		return [
@@ -79,6 +79,9 @@ class MenuClearance
 			'budget_dashboard',
 			'budget_reports',
 			'budget_audit',
+			'budget_prepare',
+			'budget_review',
+			'budget_approved',
 			'budget_cash_requests',
 			'budget_pending',
 			'budget_procurement',
