@@ -11,7 +11,12 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
  * All-schools attendance workbook in the Wisdom population layout.
- * Student present/absent come from the daily register, not card in/out.
+ * Each school sheet lists only the classes that school has.
+ * Child schools stop at primary: nursery (N1–N3 or Baby / Middle / Top) and primary (P1–P6).
+ * High school (S1–S6) and TVET appear only where those classes exist.
+ * Musanze present uses the school gate for day scholars and the boarding device for boarders.
+ * Other schools present uses the daily register.
+ * Girls and boys follow the dashboard: a student who is not a girl is counted as a boy.
  * Teachers are staff whose post is Teacher.
  * Support staff are everyone else whose shift is not Academic staff.
  */
@@ -57,16 +62,12 @@ class WisdomPopulationReport
 		self::writeSummary($spreadsheet->getActiveSheet(), $data);
 		$used = ['all schools' => true];
 		foreach ($data['schools'] as $school) {
-			if ($school['np'] !== []) {
-				$sheet = $spreadsheet->createSheet();
-				$sheet->setTitle(self::sheetTitle($school['short'] . ' N&P', $used));
-				self::writeClassSheet($sheet, $school, $date, 'np');
+			if (!self::schoolHasClasses($school)) {
+				continue;
 			}
-			if ($school['hs'] !== []) {
-				$sheet = $spreadsheet->createSheet();
-				$sheet->setTitle(self::sheetTitle($school['short'] . ' HS', $used));
-				self::writeClassSheet($sheet, $school, $date, 'hs');
-			}
+			$sheet = $spreadsheet->createSheet();
+			$sheet->setTitle(self::sheetTitle((string) $school['short'], $used));
+			self::writeSchoolSheet($sheet, $school, $date);
 		}
 		$teachers = $spreadsheet->createSheet();
 		$teachers->setTitle(self::sheetTitle('TEACHERS', $used));
@@ -109,13 +110,19 @@ class WisdomPopulationReport
 				'present' => 0,
 				'teachers' => $blankStaff,
 				'support' => $blankStaff,
-				'np' => [],
-				'hs' => [],
+				'is_master' => $id === (int) $masterId,
+				'bands' => [
+					'nursery' => [],
+					'primary' => [],
+					'high_school' => [],
+					'tvet' => [],
+					'other' => [],
+				],
 				'teacher_levels' => [],
 			];
 		}
 		if ($bySchool !== []) {
-			self::fillStudents($bySchool, $yearId, $date);
+			self::fillStudents($bySchool, (int) $masterId, $yearId, $date);
 			self::fillStaff($bySchool, $yearId, $date);
 		}
 		$rows = array_values($bySchool);
@@ -151,22 +158,17 @@ class WisdomPopulationReport
 	/**
 	 * @param array<int, array<string, mixed>> $bySchool
 	 */
-	private static function fillStudents(array &$bySchool, int $yearId, string $date): void
+	private static function fillStudents(array &$bySchool, int $masterId, int $yearId, string $date): void
 	{
 		$db = \Config\Database::connect();
 		if (!$db->tableExists('students') || !$db->tableExists('class_records')) {
 			return;
 		}
 		$idList = implode(',', array_map('intval', array_keys($bySchool)));
-		$day = $db->escape($date);
 		$yearId = (int) $yearId;
-		$presentJoin = $db->tableExists('daily_attendance')
-			? "LEFT JOIN (SELECT DISTINCT student_id FROM daily_attendance WHERE DATE(datee) = {$day}) da ON da.student_id = s.id"
-			: '';
-		$presentSelect = $presentJoin !== '' ? 'CASE WHEN da.student_id IS NULL THEN 0 ELSE 1 END' : '0';
+		$presentIds = self::presentStudentIds($db, $bySchool, $masterId, $date);
 		$sql = "SELECT s.school_id, s.id, s.sex, s.studying_mode,
-				c.id AS class_id, c.title AS class_title, l.title AS level_name, d.code AS dept_code, d.title AS dept_title,
-				{$presentSelect} AS present
+				c.id AS class_id, c.title AS class_title, l.title AS level_name, d.code AS dept_code, d.title AS dept_title
 			FROM students s
 			INNER JOIN schools sch ON sch.id = s.school_id
 			LEFT JOIN active_term atr ON atr.id = sch.active_term
@@ -175,7 +177,6 @@ class WisdomPopulationReport
 			INNER JOIN classes c ON c.id = cr.class
 			LEFT JOIN levels l ON l.id = c.level
 			LEFT JOIN departments d ON d.id = c.department
-			{$presentJoin}
 			WHERE s.school_id IN ({$idList})
 				AND s.status = 1
 				AND IFNULL(c.title,'') NOT LIKE '%Holiday%'
@@ -190,72 +191,162 @@ class WisdomPopulationReport
 				continue;
 			}
 			$seen[$studentId] = true;
-			$gender = self::gender($row['sex'] ?? '');
-			$present = (int) ($row['present'] ?? 0) === 1;
-			$boarding = (int) ($row['studying_mode'] ?? 1) === 0;
+			$girl = self::isGirl($row['sex'] ?? '');
+			$present = isset($presentIds[$studentId]);
 			$bySchool[$sid]['expected']++;
+			if ($girl) {
+				$bySchool[$sid]['expected_f']++;
+			} else {
+				$bySchool[$sid]['expected_m']++;
+			}
 			if ($present) {
 				$bySchool[$sid]['present']++;
-			}
-			if ($gender === 'F') {
-				$bySchool[$sid]['expected_f']++;
-				if ($present) {
+				if ($girl) {
 					$bySchool[$sid]['present_f']++;
-				}
-			} elseif ($gender === 'M') {
-				$bySchool[$sid]['expected_m']++;
-				if ($present) {
+				} else {
 					$bySchool[$sid]['present_m']++;
 				}
 			}
-			$group = (new \App\Models\HostelSchemaModel())->resolveLevelGroupFromTitle(
-				trim((string) ($row['level_name'] ?? '') . ' ' . (string) ($row['class_title'] ?? ''))
+			$band = self::classBand(
+				(string) ($row['level_name'] ?? ''),
+				(string) ($row['class_title'] ?? ''),
+				(string) ($row['dept_title'] ?? '')
 			);
-			$bucket = $group === 'high_school' ? 'hs' : 'np';
 			$classId = (int) ($row['class_id'] ?? 0);
 			$key = $sid . ':' . $classId;
 			if (!isset($classes[$key])) {
 				$label = \App\Models\SchoolFeesModel::displayLabel($row);
 				$classes[$key] = [
 					'school_id' => $sid,
-					'bucket' => $bucket,
-					'group' => $group === '' ? 'primary' : $group,
+					'band' => $band,
 					'label' => $label !== '' ? $label : 'Class',
-					'rank' => self::classRank($label, $group),
+					'rank' => self::classRank($label, $band),
 					'boys' => 0,
 					'girls' => 0,
-					'total' => 0,
-					'absent' => 0,
-					'boarders' => 0,
+					'present' => 0,
 					'enrolled' => 0,
 				];
 			}
 			$classes[$key]['enrolled']++;
+			if ($girl) {
+				$classes[$key]['girls']++;
+			} else {
+				$classes[$key]['boys']++;
+			}
 			if ($present) {
-				$classes[$key]['total']++;
-				if ($gender === 'M') {
-					$classes[$key]['boys']++;
-				} elseif ($gender === 'F') {
-					$classes[$key]['girls']++;
-				}
-				if ($boarding) {
-					$classes[$key]['boarders']++;
-				}
+				$classes[$key]['present']++;
 			}
 		}
 		foreach ($classes as $class) {
 			$sid = (int) $class['school_id'];
-			$class['absent'] = max(0, (int) $class['enrolled'] - (int) $class['total']);
-			$bucket = $class['bucket'] === 'hs' ? 'hs' : 'np';
-			$bySchool[$sid][$bucket][] = $class;
+			$band = (string) $class['band'];
+			if (!isset($bySchool[$sid]['bands'][$band])) {
+				$band = 'other';
+			}
+			$bySchool[$sid]['bands'][$band][] = $class;
 		}
 		foreach ($bySchool as $sid => $school) {
-			foreach (['np', 'hs'] as $bucket) {
-				usort($bySchool[$sid][$bucket], static function (array $a, array $b): int {
+			foreach (array_keys($school['bands']) as $band) {
+				usort($bySchool[$sid]['bands'][$band], static function (array $a, array $b): int {
 					return $a['rank'] <=> $b['rank'];
 				});
 			}
 		}
+	}
+
+	/**
+	 * Present students, using the same rule as the dashboard.
+	 * Master: day scholars at the school gate, boarders on the boarding device.
+	 * Child schools: the daily register. Child schools stop at primary, so no high-school device rule.
+	 *
+	 * @param array<int, array<string, mixed>> $bySchool
+	 * @return array<int, true>
+	 */
+	private static function presentStudentIds($db, array $bySchool, int $masterId, string $date): array
+	{
+		$present = [];
+		$childIds = [];
+		foreach (array_keys($bySchool) as $sid) {
+			$sid = (int) $sid;
+			if ($sid > 0 && $sid !== $masterId) {
+				$childIds[] = $sid;
+			}
+		}
+		if ($childIds !== [] && $db->tableExists('daily_attendance')) {
+			$idList = implode(',', $childIds);
+			$day = $db->escape($date);
+			$rows = $db->query(
+				"SELECT DISTINCT da.student_id
+				FROM daily_attendance da
+				INNER JOIN students s ON s.id = da.student_id
+				WHERE s.school_id IN ({$idList}) AND DATE(da.datee) = {$day}"
+			)->getResultArray();
+			foreach ($rows as $row) {
+				$id = (int) ($row['student_id'] ?? 0);
+				if ($id > 0) {
+					$present[$id] = true;
+				}
+			}
+		}
+		if ($masterId < 1 || !isset($bySchool[$masterId])) {
+			return $present;
+		}
+		$start = strtotime($date . ' 00:00:00');
+		$end = $start + 86400;
+		$gateIds = self::gateAreaIds($db, $masterId);
+		if ($gateIds !== [] && $db->tableExists('attendance_records')) {
+			$rows = $db->query(
+				'SELECT DISTINCT ar.user_id
+				FROM attendance_records ar
+				INNER JOIN students s ON s.id = ar.user_id
+				WHERE ar.school_id = ' . (int) $masterId . '
+					AND ar.user_type = 0
+					AND IFNULL(s.studying_mode, 1) = 1
+					AND ar.area_id IN (' . implode(',', $gateIds) . ')
+					AND ar.time_in >= ' . (int) $start . '
+					AND ar.time_in < ' . (int) $end
+			)->getResultArray();
+			foreach ($rows as $row) {
+				$id = (int) ($row['user_id'] ?? 0);
+				if ($id > 0) {
+					$present[$id] = true;
+				}
+			}
+		}
+		if ($db->tableExists('boarding_attendance')) {
+			$day = $db->escape($date);
+			$rows = $db->query(
+				'SELECT DISTINCT ba.student_id
+				FROM boarding_attendance ba
+				INNER JOIN students s ON s.id = ba.student_id
+				WHERE s.school_id = ' . (int) $masterId . '
+					AND IFNULL(s.studying_mode, 1) = 0
+					AND DATE(ba.datee) = ' . $day
+			)->getResultArray();
+			foreach ($rows as $row) {
+				$id = (int) ($row['student_id'] ?? 0);
+				if ($id > 0) {
+					$present[$id] = true;
+				}
+			}
+		}
+		return $present;
+	}
+
+	/** @return list<int> */
+	private static function gateAreaIds($db, int $schoolId): array
+	{
+		if ($schoolId < 1 || !$db->tableExists('attendance_areas')) {
+			return [];
+		}
+		$ids = [];
+		foreach ($db->table('attendance_areas')->select('id, name')->where('school_id', $schoolId)->where('active', 1)->get()->getResultArray() as $area) {
+			$name = strtolower(trim((string) preg_replace('/[^a-z0-9]+/i', ' ', (string) ($area['name'] ?? ''))));
+			if ($name === 'gate' || $name === 'school gate' || strpos($name, 'school gate') !== false || substr($name, -5) === ' gate') {
+				$ids[] = (int) $area['id'];
+			}
+		}
+		return $ids;
 	}
 
 	/**
@@ -329,7 +420,7 @@ class WisdomPopulationReport
 			if (!$isTeacher) {
 				continue;
 			}
-			$gender = self::gender($staff['sex'] ?? '');
+			$sexKnown = trim((string) ($staff['sex'] ?? '')) !== '';
 			$groups = $levels[$staffId] ?? ['unassigned'];
 			foreach ($groups as $group) {
 				if (!isset($bySchool[$sid]['teacher_levels'][$group])) {
@@ -339,10 +430,10 @@ class WisdomPopulationReport
 				}
 				if ($present) {
 					$bySchool[$sid]['teacher_levels'][$group]['present']++;
-					if ($gender === 'M') {
-						$bySchool[$sid]['teacher_levels'][$group]['male']++;
-					} elseif ($gender === 'F') {
+					if ($sexKnown && self::isGirl($staff['sex'] ?? '')) {
 						$bySchool[$sid]['teacher_levels'][$group]['female']++;
+					} elseif ($sexKnown) {
+						$bySchool[$sid]['teacher_levels'][$group]['male']++;
 					}
 				} else {
 					$bySchool[$sid]['teacher_levels'][$group]['missing']++;
@@ -361,24 +452,23 @@ class WisdomPopulationReport
 			return $out;
 		}
 		$rows = $db->query(
-			"SELECT cr.lecturer, l.title AS level_name, c.title AS class_title
+			"SELECT cr.lecturer, l.title AS level_name, c.title AS class_title, d.title AS dept_title
 			FROM course_records cr
 			INNER JOIN classes c ON c.id = cr.class
 			LEFT JOIN levels l ON l.id = c.level
+			LEFT JOIN departments d ON d.id = c.department
 			WHERE cr.year = " . (int) $yearId . " AND c.school_id IN ({$idList}) AND cr.lecturer > 0"
 		)->getResultArray();
-		$schema = new \App\Models\HostelSchemaModel();
 		foreach ($rows as $row) {
 			$lecturer = (int) ($row['lecturer'] ?? 0);
 			if ($lecturer < 1) {
 				continue;
 			}
-			$group = $schema->resolveLevelGroupFromTitle(
-				trim((string) ($row['level_name'] ?? '') . ' ' . (string) ($row['class_title'] ?? ''))
+			$group = self::classBand(
+				(string) ($row['level_name'] ?? ''),
+				(string) ($row['class_title'] ?? ''),
+				(string) ($row['dept_title'] ?? '')
 			);
-			if ($group === '') {
-				$group = 'primary';
-			}
 			$out[$lecturer][$group] = $group;
 		}
 		foreach ($out as $id => $groups) {
@@ -396,7 +486,7 @@ class WisdomPopulationReport
 		$sheet->mergeCells('A1:O1');
 		$sheet->setCellValue('A1', 'WISDOM SCHOOLS — ATTENDANCE');
 		$sheet->mergeCells('A2:O2');
-		$sheet->setCellValue('A2', 'Date ' . $data['date_label'] . '    ·    Expected students match the dashboard, holiday classes excluded    ·    Present and absent are from the daily register, not card in/out    ·    Teachers = post is Teacher    ·    Support staff = shift is not Academic staff');
+		$sheet->setCellValue('A2', 'Date ' . $data['date_label'] . '    ·    Enrolled students match the dashboard, holiday classes excluded    ·    Musanze present = school gate for day scholars and boarding device for boarders    ·    Other schools present = daily register    ·    Teachers = post is Teacher    ·    Support staff = shift is not Academic staff');
 		$sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16)->getColor()->setRGB(self::NAVY);
 		$sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('475569');
 		$sheet->getRowDimension(1)->setRowHeight(24);
@@ -520,79 +610,135 @@ class WisdomPopulationReport
 	/**
 	 * @param array<string, mixed> $school
 	 */
-	private static function writeClassSheet(Worksheet $sheet, array $school, string $date, string $kind): void
+	private static function schoolHasClasses(array $school): bool
 	{
-		$isHs = $kind === 'hs';
-		$title = $isHs ? 'HIGH SCHOOL ATTENDANCE' : 'NURSERY AND PRIMARY ATTENDANCE';
-		$sheet->mergeCells('A1:F1');
+		foreach (self::bandOrder() as $band) {
+			if (($school['bands'][$band] ?? []) !== []) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** @return list<string> */
+	private static function bandOrder(): array
+	{
+		return ['nursery', 'primary', 'tvet', 'high_school', 'other'];
+	}
+
+	private static function bandLabel(string $band): string
+	{
+		$labels = [
+			'nursery' => 'NURSERY',
+			'primary' => 'PRIMARY',
+			'tvet' => 'TVET',
+			'high_school' => 'HIGH SCHOOL',
+			'other' => 'OTHER CLASSES',
+		];
+		return $labels[$band] ?? strtoupper($band);
+	}
+
+	/**
+	 * One sheet per school, with a section only for a stage that school actually has.
+	 *
+	 * @param array<string, mixed> $school
+	 */
+	private static function writeSchoolSheet(Worksheet $sheet, array $school, string $date): void
+	{
+		$sheet->mergeCells('A1:G1');
 		$sheet->setCellValue('A1', $school['name']);
-		$sheet->mergeCells('A2:F2');
-		$sheet->setCellValue('A2', $title);
-		$sheet->mergeCells('A3:F3');
-		$sheet->setCellValue('A3', 'Date: ' . date('d/m/Y', strtotime($date)) . '    ·    Present figures are from the daily register');
+		$sheet->mergeCells('A2:G2');
+		$sheet->setCellValue('A2', 'ATTENDANCE BY CLASS');
+		$presentNote = !empty($school['is_master'])
+			? 'Present = school gate for day scholars and boarding device for boarders'
+			: 'Present = daily register';
+		$sheet->mergeCells('A3:G3');
+		$sheet->setCellValue('A3', 'Date: ' . date('d/m/Y', strtotime($date)) . '    ·    Girls and boys are enrolled students    ·    ' . $presentNote);
 		$sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14)->getColor()->setRGB(self::NAVY);
 		$sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
 		$sheet->getStyle('A3')->getFont()->setSize(9)->getColor()->setRGB('475569');
+		$sheet->getRowDimension(1)->setRowHeight(22);
+		$sheet->getRowDimension(3)->setRowHeight(18);
 
-		$headers = $isHs
-			? ['S/N', 'Class', 'Boys', 'Girls', 'Total', 'Boarders']
-			: ['S/N', 'Class', 'Boys', 'Girls', 'Total', 'Absent'];
-		$sheet->fromArray($headers, null, 'A5');
-		$sheet->getStyle('A5:F5')->applyFromArray([
-			'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-			'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::NAVY]],
-			'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-		]);
-		$sheet->freezePane('A6');
-
-		$classes = $isHs ? ($school['hs'] ?? []) : ($school['np'] ?? []);
-		$row = 6;
-		$n = 1;
-		$sums = ['boys' => 0, 'girls' => 0, 'total' => 0, 'extra' => 0];
-		$currentGroup = '';
-		foreach ($classes as $class) {
-			if (!$isHs && $class['group'] !== $currentGroup) {
-				if ($currentGroup !== '') {
-					self::classTotalRow($sheet, $row, $currentGroup === 'nursery' ? 'NURSERY TOTAL' : 'PRIMARY TOTAL', $sums);
-					$row++;
-					$sums = ['boys' => 0, 'girls' => 0, 'total' => 0, 'extra' => 0];
-					$n = 1;
-				}
-				$currentGroup = (string) $class['group'];
+		$row = 5;
+		$firstTable = 0;
+		$lastTable = 0;
+		foreach (self::bandOrder() as $band) {
+			$classes = $school['bands'][$band] ?? [];
+			if ($classes === []) {
+				continue;
 			}
-			$extra = $isHs ? (int) $class['boarders'] : (int) $class['absent'];
-			$sheet->fromArray([$n, $class['label'], (int) $class['boys'], (int) $class['girls'], (int) $class['total'], $extra], null, 'A' . $row);
-			if ($n % 2 === 0) {
-				$sheet->getStyle("A{$row}:F{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB(self::ALT);
-			}
-			$sums['boys'] += (int) $class['boys'];
-			$sums['girls'] += (int) $class['girls'];
-			$sums['total'] += (int) $class['total'];
-			$sums['extra'] += $extra;
-			$n++;
+			$sheet->mergeCells("A{$row}:G{$row}");
+			$sheet->setCellValue('A' . $row, self::bandLabel($band));
+			$sheet->getStyle("A{$row}:G{$row}")->applyFromArray([
+				'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 11],
+				'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::NAVY]],
+			]);
 			$row++;
+			$header = $row;
+			if ($firstTable === 0) {
+				$firstTable = $header;
+			}
+			$sheet->fromArray(['S/N', 'Class', 'Girls', 'Boys', 'Enrolled', 'Present', 'Absent'], null, 'A' . $row);
+			$sheet->getStyle("A{$row}:G{$row}")->applyFromArray([
+				'font' => ['bold' => true, 'color' => ['rgb' => self::NAVY], 'size' => 9],
+				'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::LIGHT]],
+				'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+			]);
+			$row++;
+			$n = 1;
+			$sums = ['girls' => 0, 'boys' => 0, 'enrolled' => 0, 'present' => 0, 'absent' => 0];
+			foreach ($classes as $class) {
+				$enrolled = (int) $class['enrolled'];
+				$present = (int) $class['present'];
+				$absent = max(0, $enrolled - $present);
+				$sheet->fromArray([
+					$n,
+					$class['label'],
+					(int) $class['girls'],
+					(int) $class['boys'],
+					$enrolled,
+					$present,
+					$absent,
+				], null, 'A' . $row);
+				if ($n % 2 === 0) {
+					$sheet->getStyle("A{$row}:G{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB(self::ALT);
+				}
+				$sums['girls'] += (int) $class['girls'];
+				$sums['boys'] += (int) $class['boys'];
+				$sums['enrolled'] += $enrolled;
+				$sums['present'] += $present;
+				$sums['absent'] += $absent;
+				$n++;
+				$row++;
+			}
+			self::classTotalRow($sheet, $row, self::bandLabel($band) . ' TOTAL', $sums);
+			$sheet->getStyle('A' . $header . ':G' . $row)->applyFromArray([
+				'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+				'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
+			]);
+			$sheet->getStyle('C' . ($header + 1) . ':G' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+			$lastTable = $row;
+			$row += 2;
 		}
-		$label = $isHs ? 'TOTAL' : ($currentGroup === 'nursery' ? 'NURSERY TOTAL' : 'PRIMARY TOTAL');
-		self::classTotalRow($sheet, $row, $label, $sums);
-		$sheet->getStyle('A5:F' . $row)->applyFromArray([
-			'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
-			'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
-		]);
-		$sheet->getStyle('C6:F' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-		foreach (['A' => 6, 'B' => 28, 'C' => 12, 'D' => 12, 'E' => 12, 'F' => 14] as $col => $width) {
+		if ($firstTable > 0) {
+			$sheet->freezePane('A' . ($firstTable + 1));
+		}
+		foreach (['A' => 6, 'B' => 28, 'C' => 12, 'D' => 12, 'E' => 12, 'F' => 12, 'G' => 12] as $col => $width) {
 			$sheet->getColumnDimension($col)->setWidth($width);
 		}
 		$sheet->getPageSetup()->setFitToPage(true)->setFitToWidth(1)->setFitToHeight(0);
 		$sheet->getHeaderFooter()->setOddFooter('&L' . $school['short'] . '&R&P / &N');
+		unset($lastTable);
 	}
 
 	/**
-	 * @param array{boys:int,girls:int,total:int,extra:int} $sums
+	 * @param array{girls:int,boys:int,enrolled:int,present:int,absent:int} $sums
 	 */
 	private static function classTotalRow(Worksheet $sheet, int $row, string $label, array $sums): void
 	{
-		$sheet->fromArray(['', $label, $sums['boys'], $sums['girls'], $sums['total'], $sums['extra']], null, 'A' . $row);
-		$sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
+		$sheet->fromArray(['', $label, $sums['girls'], $sums['boys'], $sums['enrolled'], $sums['present'], $sums['absent']], null, 'A' . $row);
+		$sheet->getStyle("A{$row}:G{$row}")->applyFromArray([
 			'font' => ['bold' => true],
 			'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::TOTAL]],
 		]);
@@ -612,7 +758,9 @@ class WisdomPopulationReport
 		$labels = [
 			'nursery' => 'Nursery',
 			'primary' => 'Primary',
+			'tvet' => 'TVET',
 			'high_school' => 'High school',
+			'other' => 'Other classes',
 			'unassigned' => 'Not assigned to a class',
 		];
 		$row = 4;
@@ -635,7 +783,7 @@ class WisdomPopulationReport
 			]);
 			$header = $row;
 			$row++;
-			$order = ['nursery', 'primary', 'high_school', 'unassigned'];
+			$order = ['nursery', 'primary', 'tvet', 'high_school', 'other', 'unassigned'];
 			$seenPeopleNote = false;
 			foreach ($order as $key) {
 				if (!isset($levels[$key])) {
@@ -690,16 +838,21 @@ class WisdomPopulationReport
 		return stripos($title, 'academic') !== false;
 	}
 
-	private static function gender($sex): string
+	private static function isGirl($sex): bool
 	{
 		$g = strtoupper(trim((string) $sex));
-		if (in_array($g, ['F', 'FEMALE', 'GIRL', 'W', 'WOMAN'], true)) {
-			return 'F';
+		if ($g === '') {
+			return false;
 		}
-		if (in_array($g, ['M', 'MALE', 'BOY', 'MAN'], true)) {
-			return 'M';
+		if (in_array($g, ['F', 'FEMALE', 'GIRL', 'GIRLS', 'FEMININ', 'FEMININE', 'GORE'], true)) {
+			return true;
 		}
-		return '';
+		return $g[0] === 'F';
+	}
+
+	private static function gender($sex): string
+	{
+		return self::isGirl($sex) ? 'F' : 'M';
 	}
 
 	private static function shortName(string $name): string
@@ -710,13 +863,55 @@ class WisdomPopulationReport
 	}
 
 	/**
+	 * Nursery, primary, TVET, or high school. High school is only S1–S6 and senior labels.
+	 * N1–N3, Baby, Middle, and Top stay nursery. Child schools stop at primary.
+	 */
+	private static function classBand(string $level, string $class, string $dept = ''): string
+	{
+		$level = strtolower(trim($level));
+		$class = strtolower(trim($class));
+		$dept = strtolower(trim($dept));
+		$hay = trim($level . ' ' . $class . ' ' . $dept);
+		if ($hay === '') {
+			return 'other';
+		}
+		$nursery = strpos($hay, 'nursery') !== false
+			|| strpos($hay, 'maternelle') !== false
+			|| strpos($hay, 'baby') !== false
+			|| strpos($hay, 'middle class') !== false
+			|| strpos($hay, 'top class') !== false
+			|| preg_match('/(^|[^a-z0-9])n[1-3]([^0-9]|$)/', $hay) === 1;
+		if ($nursery) {
+			return 'nursery';
+		}
+		if (strpos($level, 'primary') !== false || strpos($class, 'primary') !== false || preg_match('/(^|[^a-z0-9])p[1-6]([^0-9]|$)/', $level . ' ' . $class) === 1) {
+			return 'primary';
+		}
+		if (preg_match('/\blevel\s*[0-9]/', $hay) === 1 || strpos($hay, 'tvet') !== false) {
+			return 'tvet';
+		}
+		if (
+			preg_match('/(^|[^a-z0-9])s[1-6]([^0-9]|$)/', $level . ' ' . $class) === 1
+			|| strpos($hay, 'senior') !== false
+			|| strpos($hay, 'high school') !== false
+			|| strpos($hay, 'secondary') !== false
+			|| preg_match('/\bo[\s\']*-?level\b/', $hay) === 1
+			|| preg_match('/\ba[\s\']*-?level\b/', $hay) === 1
+		) {
+			return 'high_school';
+		}
+		return 'other';
+	}
+
+	/**
 	 * @return array{0:int,1:int,2:string}
 	 */
 	private static function classRank(string $label, string $group): array
 	{
 		$l = strtolower($label);
-		$band = $group === 'nursery' ? 0 : ($group === 'primary' ? 1 : 2);
-		if (preg_match('/\b(?:n|p|s)\s*\.?\s*(\d+)/i', $label, $m) || preg_match('/(?:nursery|primary|senior|s)\s*(\d+)/i', $l, $m)) {
+		$order = ['nursery' => 0, 'primary' => 1, 'tvet' => 2, 'high_school' => 3, 'other' => 4];
+		$band = $order[$group] ?? 4;
+		if (preg_match('/\b(?:level|n|p|s)\s*\.?\s*(\d+)/i', $label, $m)) {
 			return [$band, (int) $m[1], $l];
 		}
 		if (strpos($l, 'baby') !== false) {
