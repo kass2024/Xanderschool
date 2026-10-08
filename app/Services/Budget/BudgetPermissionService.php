@@ -21,6 +21,20 @@ class BudgetPermissionService
 			return in_array($permKey, \Config\BudgetPermissions::ALL, true);
 		}
 
+		// Chief Accountant logged in at the master school: prepare, see every child budget, approve first.
+		if ($postId === 28 && $this->onMasterSchool()) {
+			$masterKeys = [
+				'budget.prepare', 'budget.edit_own', 'budget.submit', 'budget.periods.manage',
+				'budget.templates.view', 'budget.templates.upload', 'budget.view_reports', 'budget.export',
+				'budget.view_all_branches', 'budget.chief_accountant_approve', 'budget.return', 'budget.reject',
+				'cash_request.view_audit', 'cash_request.create', 'cash_request.edit_own', 'cash_request.submit',
+				'cash_request.confirm_receipt', 'cash_request.close', 'cash_request.manage_documents',
+			];
+			if (in_array($permKey, $masterKeys, true)) {
+				return true;
+			}
+		}
+
 		$db = \Config\Database::connect();
 		$row = $db->table('post_budget_permissions')
 			->where('post_id', $postId)
@@ -64,6 +78,20 @@ class BudgetPermissionService
 		}
 
 		return true;
+	}
+
+	/** True when this login is the Wisdom master school (not a child campus). */
+	private function onMasterSchool()
+	{
+		$schoolId = (int) session('soma_school_id');
+		if ($schoolId < 1) {
+			return false;
+		}
+		try {
+			return (new \App\Services\SchoolHierarchyService())->isMasterSchool($schoolId);
+		} catch (\Throwable $e) {
+			return false;
+		}
 	}
 
 	public function denyRedirect($permKey)

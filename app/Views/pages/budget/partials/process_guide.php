@@ -10,10 +10,10 @@ $ctx = $ctx ?? 'full';
 	<div class="bp-action-grid">
 		<?php if ($ctx === 'full' || $ctx === 'prep') { ?>
 		<a class="btn btn-outline-primary btn-sm bp-action-btn" href="<?= base_url('budget/prepare'); ?>">
-			<span class="bp-action-num">1</span> Prepare budget
+			<span class="bp-action-num">1</span> Upload Excel
 		</a>
 		<a class="btn btn-outline-primary btn-sm bp-action-btn" href="<?= base_url('budget/prepare?tab=review'); ?>">
-			<span class="bp-action-num">2</span> Budget review
+			<span class="bp-action-num">2</span> Chief Accountant, then Finance
 		</a>
 		<?php } ?>
 		<?php if ($ctx === 'full' || $ctx === 'execution') { ?>

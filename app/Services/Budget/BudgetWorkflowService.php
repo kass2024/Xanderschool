@@ -5,28 +5,57 @@ namespace App\Services\Budget;
 class BudgetWorkflowService
 {
 	/**
-	 * Status = who must act next (strict 3-step chain).
-	 * 1) SUBMITTED / PROCUREMENT_REVIEW → Procurement
-	 * 2) BUDGET_MANAGER_REVIEW → Budget Manager
-	 * 3) DEPUTY_DIRECTOR_REVIEW → Director of Finance (only step that can APPROVE)
+	 * Excel upload chain:
+	 * 1) DRAFT / RETURNED → submit → Chief Accountant
+	 * 2) CHIEF_ACCOUNTANT_REVIEW → Director of Finance
+	 * 3) DEPUTY_DIRECTOR_REVIEW → APPROVED (cash requests may start)
+	 * Legacy procurement / budget-manager rows can still move forward.
 	 */
 	private static $transitions = [
-		'DRAFT' => ['submit' => 'SUBMITTED'],
-		'SUBMITTED' => ['procurement_review' => 'BUDGET_MANAGER_REVIEW', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
-		// Legacy alias: older rows used PROCUREMENT_REVIEW as "waiting for Budget Manager"
-		'PROCUREMENT_REVIEW' => [
-			'budget_review' => 'DEPUTY_DIRECTOR_REVIEW',
+		'DRAFT' => ['submit' => 'CHIEF_ACCOUNTANT_REVIEW', 'cancel' => 'CANCELLED'],
+		'RETURNED' => ['submit' => 'CHIEF_ACCOUNTANT_REVIEW', 'cancel' => 'CANCELLED'],
+		'CHIEF_ACCOUNTANT_REVIEW' => [
+			'chief_accountant_approve' => 'DEPUTY_DIRECTOR_REVIEW',
 			'return' => 'RETURNED',
 			'reject' => 'REJECTED',
+			'cancel' => 'CANCELLED',
 		],
-		'BUDGET_MANAGER_REVIEW' => ['budget_review' => 'DEPUTY_DIRECTOR_REVIEW', 'return' => 'RETURNED', 'reject' => 'REJECTED'],
-		'DEPUTY_DIRECTOR_REVIEW' => ['approve' => 'APPROVED', 'reject' => 'REJECTED', 'return' => 'RETURNED'],
-		'RETURNED' => ['submit' => 'SUBMITTED'],
+		'DEPUTY_DIRECTOR_REVIEW' => [
+			'approve' => 'APPROVED',
+			'reject' => 'REJECTED',
+			'return' => 'RETURNED',
+			'cancel' => 'CANCELLED',
+		],
+		'APPROVED' => ['cancel' => 'CANCELLED'],
+		'SUBMITTED' => [
+			'chief_accountant_approve' => 'DEPUTY_DIRECTOR_REVIEW',
+			'procurement_review' => 'BUDGET_MANAGER_REVIEW',
+			'return' => 'RETURNED',
+			'reject' => 'REJECTED',
+			'cancel' => 'CANCELLED',
+		],
+		'PROCUREMENT_REVIEW' => [
+			'budget_review' => 'DEPUTY_DIRECTOR_REVIEW',
+			'chief_accountant_approve' => 'DEPUTY_DIRECTOR_REVIEW',
+			'return' => 'RETURNED',
+			'reject' => 'REJECTED',
+			'cancel' => 'CANCELLED',
+		],
+		'BUDGET_MANAGER_REVIEW' => [
+			'budget_review' => 'DEPUTY_DIRECTOR_REVIEW',
+			'chief_accountant_approve' => 'DEPUTY_DIRECTOR_REVIEW',
+			'return' => 'RETURNED',
+			'reject' => 'REJECTED',
+			'cancel' => 'CANCELLED',
+		],
+		'REJECTED' => ['cancel' => 'CANCELLED', 'submit' => 'CHIEF_ACCOUNTANT_REVIEW'],
 	];
 
-	/** Thin school budget chain: which permission unlocks each action. */
+	/** Which permission unlocks each action. */
 	private static $actionPerms = [
 		'submit' => 'budget.submit',
+		'cancel' => 'budget.prepare',
+		'chief_accountant_approve' => 'budget.chief_accountant_approve',
 		'procurement_review' => 'budget.review_procurement',
 		'budget_review' => 'budget.review_budget',
 		'approve' => 'budget.final_approve',
@@ -36,19 +65,24 @@ class BudgetWorkflowService
 
 	/** Statuses each review role should see in the Review queue. */
 	private static $reviewQueueByPerm = [
+		'budget.chief_accountant_approve' => ['CHIEF_ACCOUNTANT_REVIEW', 'SUBMITTED'],
 		'budget.review_procurement' => ['SUBMITTED'],
 		'budget.review_budget' => ['PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW'],
 		'budget.final_approve' => ['DEPUTY_DIRECTOR_REVIEW'],
-		'budget.return' => ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW'],
+		'budget.return' => ['SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW'],
 	];
 
-	/** Human labels for the mandatory 3-step verification. */
 	public static function approvalChainLabels(): array
 	{
 		return [
+			'submit' => 'Submit',
+			'cancel' => 'Cancel',
+			'chief_accountant_approve' => 'Chief Accountant',
 			'procurement_review' => 'Procurement',
 			'budget_review' => 'Budget Manager',
 			'approve' => 'Director of Finance',
+			'return' => 'Return',
+			'reject' => 'Reject',
 		];
 	}
 
@@ -71,8 +105,9 @@ class BudgetWorkflowService
 	public static function reviewStatusesForUser(BudgetPermissionService $perms, int $staffId, int $postId): array
 	{
 		if ($perms->can($staffId, $postId, 'budget.view_all_branches')
-			|| $perms->can($staffId, $postId, 'budget.final_approve')) {
-			return ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'RETURNED', 'REJECTED'];
+			|| $perms->can($staffId, $postId, 'budget.final_approve')
+			|| $perms->can($staffId, $postId, 'budget.chief_accountant_approve')) {
+			return ['SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'RETURNED', 'REJECTED'];
 		}
 		$statuses = [];
 		foreach (self::$reviewQueueByPerm as $perm => $list) {
@@ -92,13 +127,33 @@ class BudgetWorkflowService
 			if ($need && !$perms->can($staffId, $postId, $need)) {
 				continue;
 			}
-			// Never expose DoF final approve before Budget Manager step is done
 			if ($action === 'approve' && $status !== 'DEPUTY_DIRECTOR_REVIEW') {
+				continue;
+			}
+			// Director of Finance does the second step only. Chief Accountant does the first.
+			if ($action === 'chief_accountant_approve' && (int) $postId === 24) {
+				continue;
+			}
+			if ($action === 'approve' && (int) $postId === 28) {
 				continue;
 			}
 			$out[] = $action;
 		}
 		return $out;
+	}
+
+	/**
+	 * Review buttons for one budget. The person who prepared it cannot approve it.
+	 */
+	public static function actionsForBudget(array $budget, BudgetPermissionService $perms, int $staffId, int $postId): array
+	{
+		$actions = self::allowedActionsForStatus((string) ($budget['status'] ?? ''), $perms, $staffId, $postId);
+		if ((int) ($budget['prepared_by'] ?? 0) === $staffId) {
+			$actions = array_values(array_filter($actions, static function ($action) {
+				return !in_array($action, ['chief_accountant_approve', 'approve'], true);
+			}));
+		}
+		return $actions;
 	}
 
 	/**
@@ -138,12 +193,16 @@ class BudgetWorkflowService
 	public static function pendingApproverLabel(string $status): string
 	{
 		$map = [
-			'SUBMITTED' => 'Waiting for Procurement',
+			'DRAFT' => 'Draft — review extracted lines, then submit',
+			'SUBMITTED' => 'Waiting for Chief Accountant',
+			'CHIEF_ACCOUNTANT_REVIEW' => 'Waiting for Chief Accountant',
 			'PROCUREMENT_REVIEW' => 'Waiting for Budget Manager',
 			'BUDGET_MANAGER_REVIEW' => 'Waiting for Budget Manager',
 			'DEPUTY_DIRECTOR_REVIEW' => 'Waiting for Director of Finance',
-			'RETURNED' => 'Returned — resubmit',
-			'REJECTED' => 'Rejected',
+			'APPROVED' => 'Approved — cash requests can start',
+			'RETURNED' => 'Returned — upload a correction or resubmit',
+			'REJECTED' => 'Rejected — delete or upload a new file',
+			'CANCELLED' => 'Cancelled — upload a new Excel budget',
 		];
 		return $map[$status] ?? $status;
 	}
@@ -159,6 +218,7 @@ class BudgetWorkflowService
 	{
 		return [
 			'SUBMITTED',
+			'CHIEF_ACCOUNTANT_REVIEW',
 			'PROCUREMENT_REVIEW',
 			'BUDGET_MANAGER_REVIEW',
 			'DEPUTY_DIRECTOR_REVIEW',
@@ -216,15 +276,42 @@ class BudgetWorkflowService
 		}
 
 		$current = $b['status'];
+		if ($action === 'chief_accountant_approve' && (int) $postId !== 28) {
+			return ['success' => false, 'error' => 'Only the Chief Accountant can complete the first approval.'];
+		}
+		if ($action === 'chief_accountant_approve' && (int) ($b['prepared_by'] ?? 0) === (int) $actorId) {
+			return ['success' => false, 'error' => 'You prepared this budget. Another Chief Accountant must approve it, or submit it so the Director of Finance can approve.'];
+		}
 		if ($action === 'approve' && $current !== 'DEPUTY_DIRECTOR_REVIEW') {
-			return ['success' => false, 'error' => 'Director of Finance can approve only after Procurement and Budget Manager.'];
+			return ['success' => false, 'error' => 'Director of Finance can approve only after the Chief Accountant.'];
+		}
+		if ($action === 'approve' && (int) ($b['prepared_by'] ?? 0) === (int) $actorId && (int) $postId !== 24) {
+			return ['success' => false, 'error' => 'You prepared this budget, so you cannot give the final approval.'];
 		}
 		$new = self::$transitions[$current][$action] ?? null;
+		if ($action === 'submit' && (int) $postId === 28) {
+			$new = 'DEPUTY_DIRECTOR_REVIEW';
+		}
 		if (!$new) {
 			return ['success' => false, 'error' => 'Invalid step for status ' . $current . '.'];
 		}
-		// Enforce mandatory prior steps for final approve
+		if ($action === 'cancel') {
+			$cashCount = $db->table('cash_requests')->where('budget_id', (int) $budgetId)->countAllResults();
+			if ($cashCount > 0) {
+				return ['success' => false, 'error' => 'Cannot cancel: cash requests already use this budget.'];
+			}
+			$canPrepare = $perms->can((int) $actorId, (int) $postId, 'budget.prepare')
+				|| $perms->can((int) $actorId, (int) $postId, 'budget.edit_own');
+			$isPreparer = (int) ($b['prepared_by'] ?? 0) === (int) $actorId;
+			if (!$isPreparer && !$canPrepare && !$perms->can((int) $actorId, (int) $postId, 'budget.edit_submitted')) {
+				return ['success' => false, 'error' => 'Only the person who prepared this budget can cancel it.'];
+			}
+		}
 		if ($action === 'approve') {
+			$hasChief = $db->table('budget_approval_actions')
+				->where('budget_id', (int) $budgetId)
+				->where('action', 'chief_accountant_approve')
+				->countAllResults();
 			$hasProcurement = $db->table('budget_approval_actions')
 				->where('budget_id', (int) $budgetId)
 				->where('action', 'procurement_review')
@@ -233,8 +320,15 @@ class BudgetWorkflowService
 				->where('budget_id', (int) $budgetId)
 				->where('action', 'budget_review')
 				->countAllResults();
-			if ($hasProcurement < 1 || $hasBudgetMgr < 1) {
-				return ['success' => false, 'error' => 'Cannot final-approve: Procurement and Budget Manager must approve first.'];
+			$preparerPost = 0;
+			if (!empty($b['prepared_by'])) {
+				$preparer = $db->table('staffs')->select('post')->where('id', (int) $b['prepared_by'])->get(1)->getRowArray();
+				$preparerPost = (int) ($preparer['post'] ?? 0);
+			}
+			$legacyOk = $hasProcurement > 0 && $hasBudgetMgr > 0;
+			$chiefOk = $hasChief > 0 || $preparerPost === 28;
+			if (!$legacyOk && !$chiefOk) {
+				return ['success' => false, 'error' => 'Cannot approve: the Chief Accountant must approve this budget first.'];
 			}
 		}
 		$db->table('budgets')->where('id', (int) $budgetId)->update([
@@ -281,20 +375,12 @@ class BudgetWorkflowService
 			return ['success' => false, 'error' => 'Cannot delete: cash requests already use this budget.'];
 		}
 
-		$softStatuses = ['DRAFT', 'RETURNED', 'REJECTED', 'SUBMITTED', 'CANCELLED'];
-		if (in_array($status, $softStatuses, true)) {
-			if (!$canPrepare && !$canFinal) {
-				return ['success' => false, 'error' => 'You cannot delete this budget.'];
-			}
-		} elseif ($status === 'APPROVED') {
-			if (!$canFinal) {
-				return ['success' => false, 'error' => 'Only finance final approver can delete an unused approved budget.'];
-			}
-		} else {
-			// In review pipeline — preparer or final approver may withdraw if no spending
-			if (!$canPrepare && !$canFinal) {
-				return ['success' => false, 'error' => 'You cannot delete a budget in review.'];
-			}
+		$canChief = $perms->can($actorId, $postId, 'budget.chief_accountant_approve');
+		if (!$canPrepare && !$canFinal && !$canChief) {
+			return ['success' => false, 'error' => 'You cannot delete this budget.'];
+		}
+		if ($status === 'APPROVED' && !$canPrepare && !$canFinal) {
+			return ['success' => false, 'error' => 'You cannot delete this approved budget.'];
 		}
 
 		$db->transStart();

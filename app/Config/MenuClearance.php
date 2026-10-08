@@ -63,7 +63,7 @@ class MenuClearance
 	/** Fees report only (no entry, no settings, no SMS). */
 	const FEE_REPORT_VIEW_POSTS = [1, 3, 4, 18, 25, 26, 30];
 	/** Budget Dashboard “All branches” / cross-school rollup (master school only). */
-	const BUDGET_CROSS_BRANCH_DASHBOARD_POSTS = [15, 19, 24]; // Executive Principal, Budget Manager, Director of Finance
+	const BUDGET_CROSS_BRANCH_DASHBOARD_POSTS = [15, 19, 24, 28]; // Executive Principal, Budget Manager, Director of Finance, Chief Accountant
 
 	/** @deprecated alias — use CHILD_BUDGET_PREPARE_POSTS */
 	const BUDGET_PREPARE_POSTS = self::CHILD_BUDGET_PREPARE_POSTS;
@@ -149,6 +149,11 @@ class MenuClearance
 
 		// Director of Finance — never strip; ensure full budget menus
 		if (in_array($postId, self::FINANCE_FULL_CONTROL_POSTS, true)) {
+			return array_values(array_unique(array_merge($keys, self::budgetMenuKeys(), ['finance'], self::feeMenuKeys())));
+		}
+
+		// Chief Accountant on the master school prepares, and reviews every child-school budget.
+		if ($postId === 28 && !$isChild) {
 			return array_values(array_unique(array_merge($keys, self::budgetMenuKeys(), ['finance'], self::feeMenuKeys())));
 		}
 

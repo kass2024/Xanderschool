@@ -20,9 +20,10 @@
 			<tbody>
 			<?php
 			$labels = [
+				'chief_accountant_approve' => ['Chief Accountant — Approve', 'primary'],
 				'procurement_review' => ['Procurement OK', 'info'],
 				'budget_review' => ['Budget Manager OK', 'info'],
-				'approve' => ['Director of Finance — Final approve', 'success'],
+				'approve' => ['Director of Finance — Approve', 'success'],
 				'return' => ['Return', 'warning'],
 				'reject' => ['Reject', 'danger'],
 			];
@@ -45,13 +46,14 @@
 				<td class="text-success"><?= number_format((float)($b['total_income'] ?? 0), 0); ?></td>
 				<td class="text-danger"><?= number_format((float)($b['total_expenses'] ?? 0), 0); ?></td>
 				<td class="text-right">
+					<a href="<?= base_url('budget/edit_budget/' . (int) $b['id']); ?>" class="btn btn-sm btn-outline-secondary mb-1"><i class="fa fa-list"></i> View lines</a>
 					<?php if (function_exists('budget_permission_allowed') && budget_permission_allowed('budget.edit_submitted')) { ?>
 					<a href="<?= base_url('budget/edit_budget/' . (int) $b['id']); ?>" class="btn btn-sm btn-warning mb-1"><i class="fa fa-edit"></i> Edit</a>
 					<?php } ?>
 					<?php
 					// Only show the step action that belongs to this status (hide return/reject noise for non-actors optionally)
 					$stepActions = array_values(array_filter($actions, static function ($a) {
-						return in_array($a, ['procurement_review', 'budget_review', 'approve'], true);
+						return in_array($a, ['chief_accountant_approve', 'procurement_review', 'budget_review', 'approve'], true);
 					}));
 					$otherActions = array_values(array_filter($actions, static function ($a) {
 						return in_array($a, ['return', 'reject'], true);

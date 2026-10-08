@@ -157,7 +157,8 @@ var BudgetWorkspace = (function () {
 			toastada.error('Enter at least one term amount before submitting. Empty lines can stay blank.');
 			return;
 		}
-		if (!confirm('Submit this budget for approval?\n\nIt will stay in review until ALL THREE approve:\n1) Procurement\n2) Budget Manager\n3) Director of Finance\n\nApprovers will get SMS and email.')) return;
+		var chain = cfg.submitConfirm || 'Submit this budget?\n\n1) Chief Accountant approves first\n2) Director of Finance approves second\n\nCash requests stay closed until both approve.';
+		if (!confirm(chain)) return;
 		saveAll(function () {
 			$.post(cfg.submitUrl, { budget_id: cfg.budgetId }, function (r) {
 				if (r.error) { toastada.error(r.error); return; }

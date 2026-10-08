@@ -44,6 +44,14 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 	</div>
 	<div class="bp-progress mt-2"><div class="bp-progress-bar" id="progressBar" style="width:0%"></div></div>
 </div>
+<?php if (!empty($excel_upload)) { ?>
+<div class="alert alert-info mt-3 mb-0">
+	<strong>Extracted from Excel.</strong>
+	<?= esc($setup['excel_file'] ?? 'Uploaded workbook'); ?>
+	<?php if (!empty($setup['excel_period'])) { ?> · <?= esc($setup['excel_period']); ?><?php } ?>
+	· Chief Accountant approves first, then the Director of Finance. Cash requests open only after both approvals. Cancel this budget if you need to upload a replacement.
+</div>
+<?php } ?>
 
 <div class="bp-stepper" id="bpStepper">
 	<button type="button" class="bp-step active" data-tab="setup" data-step="1">
@@ -83,7 +91,10 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 		<?php } ?>
 		<button type="button" class="btn btn-primary btn-sm" id="btnSave"><i class="fa fa-save"></i> Save</button>
 		<?php if ($canSubmit) { ?>
-		<button type="button" class="btn btn-success btn-sm" id="btnSubmit"><i class="fa fa-paper-plane"></i> Submit</button>
+		<button type="button" class="btn btn-success btn-sm" id="btnSubmit"><i class="fa fa-paper-plane"></i> <?= esc($submit_label ?? 'Submit to Chief Accountant'); ?></button>
+		<?php } ?>
+		<?php if (!empty($can_cancel)) { ?>
+		<button type="button" class="btn btn-outline-warning btn-sm ml-1" id="btnCancelBudget"><i class="fa fa-ban"></i> Cancel</button>
 		<?php } ?>
 		<?php } else { ?>
 		<span class="badge badge-info p-2">Read-only — <?= esc($budget['status']); ?></span>
@@ -254,7 +265,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 	</tbody>
 </table>
 <?php if ($canSubmit) { ?>
-<button type="button" class="btn btn-success btn-block mt-2" id="btnSubmitSummary"><i class="fa fa-paper-plane"></i> Submit budget for approval</button>
+<button type="button" class="btn btn-success btn-block mt-2" id="btnSubmitSummary"><i class="fa fa-paper-plane"></i> <?= esc($submit_label ?? 'Submit to Chief Accountant'); ?></button>
 <?php } elseif ($isFinanceAdjust) { ?>
 <span class="badge badge-warning p-2 mt-2 d-inline-block"><i class="fa fa-user-tie"></i> Finance adjust — <?= esc($budget['status']); ?></span>
 <?php } ?>
@@ -317,7 +328,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 </div>
 <?php } ?>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=9"></script>
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=10"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,
@@ -331,7 +342,20 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 	moveLineUrl: '<?= base_url('budget/move_budget_line'); ?>',
 	reorderLineUrl: '<?= base_url('budget/reorder_budget_lines'); ?>',
 	fillExcelUrl: '<?= base_url('budget/fill_budget_from_excel'); ?>',
-	fillSchoolFeesUrl: '<?= base_url('budget/fill_school_fees_income'); ?>',
+	fillSchoolFeesUrl: '<?= empty($excel_upload) ? base_url('budget/fill_school_fees_income') : ''; ?>',
 	resetEmptyUrl: '<?= base_url('budget/reset_budget_empty_amounts'); ?>',
-	redirectUrl: '<?= base_url('budget/prepare'); ?>'
-});</script>
+	redirectUrl: '<?= base_url('budget/prepare'); ?>',
+	submitConfirm: <?= json_encode((int) ($_SESSION['soma_post'] ?? 0) === 28
+		? "Submit this budget to the Director of Finance?\n\nYou prepared it as Chief Accountant, so the first approval step is skipped.\nCash requests stay closed until the Director of Finance approves."
+		: "Submit this budget?\n\n1) Chief Accountant approves first\n2) Director of Finance approves second\n\nCash requests stay closed until both approve."); ?>
+});
+$('#btnCancelBudget').on('click', function () {
+	if (!confirm('Cancel this budget so you can upload a new Excel file?')) return;
+	var $btn = $(this).prop('disabled', true);
+	$.post('<?= base_url('budget/cancel_budget'); ?>', { budget_id: <?= (int) $budget['id']; ?> }, function (r) {
+		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
+		toastada.success(r.success || 'Cancelled');
+		location.href = '<?= base_url('budget/prepare'); ?>';
+	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Cancel failed'); });
+});
+</script>

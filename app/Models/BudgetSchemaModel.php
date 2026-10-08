@@ -35,7 +35,26 @@ class BudgetSchemaModel extends Model
 				// Table may already exist
 			}
 		}
+		$this->ensureBudgetStatusEnum($db);
 		self::$ready = true;
+	}
+
+	/** Add Chief Accountant review status on databases created before this step. */
+	private function ensureBudgetStatusEnum($db)
+	{
+		try {
+			$row = $db->query("SHOW COLUMNS FROM budgets LIKE 'status'")->getRowArray();
+			$type = strtolower((string) ($row['Type'] ?? $row['type'] ?? ''));
+			if ($type === '' || strpos($type, 'chief_accountant_review') !== false) {
+				return;
+			}
+			if (strpos($type, 'enum(') === false) {
+				return;
+			}
+			$db->query("ALTER TABLE budgets MODIFY status ENUM('DRAFT','SUBMITTED','PROCUREMENT_REVIEW','BUDGET_MANAGER_REVIEW','CHIEF_ACCOUNTANT_REVIEW','DEPUTY_DIRECTOR_REVIEW','APPROVED','RETURNED','REJECTED','CANCELLED','SUPERSEDED') NOT NULL DEFAULT 'DRAFT'");
+		} catch (\Throwable $e) {
+			// Fresh install already has the column, or the alter is not permitted.
+		}
 	}
 
 	public function seedFoundation($schoolId, $staffId = 0)
@@ -88,6 +107,8 @@ class BudgetSchemaModel extends Model
 			22 => 'Finance Officer',
 			23 => 'Internal Auditor',
 			24 => 'Director of Finance',
+			25 => 'Head Teacher',
+			26 => 'Deputy Head Teacher',
 		];
 		foreach ($newPosts as $id => $title) {
 			$row = $db->table('posts')->where('id', $id)->get(1)->getRowArray();
@@ -111,7 +132,7 @@ class BudgetSchemaModel extends Model
 
 	private function seedPostPermissions($db)
 	{
-		for ($pid = 1; $pid <= 24; $pid++) {
+		for ($pid = 1; $pid <= 30; $pid++) {
 			foreach (\Config\BudgetPermissions::defaultForPost($pid) as $perm) {
 				if ($db->table('post_budget_permissions')->where('post_id', $pid)->where('perm_key', $perm)->countAllResults()) {
 					continue;

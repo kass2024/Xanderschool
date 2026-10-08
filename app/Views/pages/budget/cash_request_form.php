@@ -8,7 +8,7 @@
 
 <?php if (empty($budgets)) { ?>
 <div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between">
-	<span><i class="fa fa-exclamation-triangle"></i> No approved budget yet</span>
+	<span><i class="fa fa-exclamation-triangle"></i> No approved budget yet. Upload the Excel budget, then wait for the Chief Accountant and the Director of Finance.</span>
 	<a href="<?= base_url('budget/prepare'); ?>" class="btn btn-sm btn-warning">Prepare budget</a>
 </div>
 <?php } ?>

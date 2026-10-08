@@ -13,25 +13,48 @@
 
 <?php if ($tab === 'budgets') { ?>
 
-<div class="row mb-4">
-	<div class="col-lg-8">
-		<?php if (\Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESSION['soma_post'] ?? 0)) && function_exists('budget_permission_allowed') && budget_permission_allowed('budget.prepare')) { ?>
-		<button class="btn btn-primary btn-lg shadow-sm" id="btnNewBudget"><i class="fa fa-plus-circle"></i> Start annual budget</button>
-		<?php } elseif (\Config\MenuClearance::isBudgetViewOnlyPost((int) ($_SESSION['soma_post'] ?? 0))) { ?>
-		<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-outline-secondary"><i class="fa fa-eye"></i> View dashboard</a>
-		<?php } ?>
+<?php
+$canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESSION['soma_post'] ?? 0))
+	&& function_exists('budget_permission_allowed') && budget_permission_allowed('budget.prepare');
+?>
+<?php if ($canUploadBudget) { ?>
+<div class="card border-0 shadow-sm mb-4">
+	<div class="card-body">
+		<h5 class="font-weight-bold mb-1"><i class="fa fa-file-excel text-success"></i> Upload Excel budget</h5>
+		<p class="text-muted small mb-3">Fill the Wisdom template, upload it, and the system extracts every budget line with its amount. The Chief Accountant approves first, then the Director of Finance. Cash requests stay closed until both have approved. You can cancel or delete your upload and send a new file.</p>
+		<form id="frmUploadBudget" enctype="multipart/form-data">
+			<div class="form-row">
+				<div class="form-group col-md-5 mb-2">
+					<label class="small font-weight-bold">Excel file (.xlsx)</label>
+					<input type="file" name="budget_file" id="budgetFile" class="form-control" accept=".xlsx,.xls" required>
+				</div>
+				<div class="form-group col-md-3 mb-2">
+					<label class="small font-weight-bold">Academic year</label>
+					<input class="form-control" name="academic_year" value="<?= date('Y'); ?>-<?= substr((string) (date('Y') + 1), -2); ?>" placeholder="2026-27">
+				</div>
+				<div class="form-group col-md-4 mb-2">
+					<label class="small font-weight-bold">Title (optional)</label>
+					<input class="form-control" name="title" placeholder="Taken from the Excel sheet if empty">
+				</div>
+			</div>
+			<button type="submit" class="btn btn-primary" id="btnUploadBudget"><i class="fa fa-upload"></i> Upload and extract lines</button>
+			<?php if (!empty($wisdom_template_ready)) { ?>
+			<a class="btn btn-outline-success" href="<?= base_url('budget/download_wisdom_template'); ?>"><i class="fa fa-download"></i> Download template</a>
+			<?php } ?>
+		</form>
 	</div>
 </div>
+<?php } elseif (\Config\MenuClearance::isBudgetViewOnlyPost((int) ($_SESSION['soma_post'] ?? 0))) { ?>
+<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-outline-secondary mb-3"><i class="fa fa-eye"></i> View dashboard</a>
+<?php } ?>
 
 <div class="row mb-4">
 	<div class="col-lg-7">
 <?php if (empty($budgets)) { ?>
 <div class="bp-empty">
 	<i class="fa fa-file-invoice-dollar d-block"></i>
-	<h5>No annual budget yet</h5>
-	<?php if (\Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESSION['soma_post'] ?? 0))) { ?>
-	<button class="btn btn-primary" id="btnNewBudget2">Start annual budget</button>
-	<?php } ?>
+	<h5>No budget uploaded yet</h5>
+	<p class="text-muted">Upload the Wisdom Excel budget. Lines and amounts are extracted here.</p>
 </div>
 <?php } else { ?>
 <?php
@@ -45,7 +68,7 @@ foreach ($budgets as $b) {
 	<div class="d-flex justify-content-between align-items-start mb-2">
 		<div>
 			<h5 class="mb-1 font-weight-bold"><?= esc($b['title']); ?></h5>
-			<span class="badge badge-<?= $statusClass; ?>"><?= esc($b['status']); ?></span>
+			<span class="badge badge-<?= $statusClass; ?>"><?= esc($b['pending_label'] ?? $b['status']); ?></span>
 		</div>
 		<div class="text-right">
 			<?php
@@ -55,10 +78,11 @@ foreach ($budgets as $b) {
 			?>
 			<?php if ($viewOnlyUi) { ?>
 			<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-sm btn-outline-secondary mb-1"><i class="fa fa-eye"></i> View on dashboard</a>
-			<?php } elseif ($canPrepareUi && $isPreparerEdit) { ?>
-			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-primary mb-1"><i class="fa fa-edit"></i> Open budget</a>
-			<?php } elseif ($canFinanceAdjust && $isSubmittedPipeline) { ?>
-			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-warning mb-1" title="Director of Finance — edit submitted / approved budget"><i class="fa fa-edit"></i> Edit</a>
+			<?php } else { ?>
+			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-primary mb-1"><i class="fa fa-eye"></i> <?= ($canPrepareUi && $isPreparerEdit) || ($canFinanceAdjust && $isSubmittedPipeline) ? 'Open budget' : 'View lines'; ?></a>
+			<?php } ?>
+			<?php if ($canPrepareUi && !in_array($b['status'], ['CANCELLED'], true)) { ?>
+			<button type="button" class="btn btn-sm btn-outline-warning mb-1 btn-cancel-budget" data-id="<?= (int)$b['id']; ?>" data-title="<?= esc($b['title']); ?>"><i class="fa fa-ban"></i> Cancel</button>
 			<?php } ?>
 			<?php if (!$viewOnlyUi && $b['status'] === 'APPROVED') { ?>
 			<a href="<?= base_url('budget/cash_request_form'); ?>" class="btn btn-sm btn-success mb-1"><i class="fa fa-money-bill"></i> New request</a>
@@ -82,25 +106,41 @@ foreach ($budgets as $b) {
 	<div class="col-lg-5"><?= view('pages/budget/partials/process_guide', ['ctx' => 'full', 'compact' => true]); ?></div>
 </div>
 
-<div class="modal fade" id="mdlBudget"><div class="modal-dialog"><form class="modal-content" id="frmBudget">
-<div class="modal-header bg-primary text-white"><h5 class="modal-title"><i class="fa fa-calendar-check"></i> New annual budget</h5><button type="button" class="close text-white" data-dismiss="modal">&times;</button></div>
-<div class="modal-body">
-	<div class="form-group"><label class="font-weight-bold">Budget title</label><input class="form-control" name="title" placeholder="e.g. Annual Budget 2025-26" value="Annual Budget <?= date('Y'); ?>-<?= substr((string)(date('Y')+1), -2); ?>"></div>
-	<div class="form-group"><label class="font-weight-bold">Academic year</label><input class="form-control" name="academic_year" value="<?= date('Y'); ?>-<?= substr((string)(date('Y')+1), -2); ?>" placeholder="2025-26"></div>
-</div>
-<div class="modal-footer"><button type="button" class="btn btn-light" data-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Open budget grid <i class="fa fa-arrow-right"></i></button></div>
-</form></div></div>
-
 <script>
-function openBudgetModal(){ $('#mdlBudget').modal('show'); }
-$('#btnNewBudget, #btnNewBudget2').on('click', openBudgetModal);
-$('#frmBudget').on('submit',function(e){
+$('#frmUploadBudget').on('submit', function (e) {
 	e.preventDefault();
-	var $btn=$(this).find('[type=submit]').prop('disabled',true).html('<i class="fa fa-spinner fa-spin"></i> Creating...');
-	$.post('<?= base_url('budget/create_budget'); ?>',$(this).serialize(),function(r){
-		if(r.error){ toastada.error(r.error); $btn.prop('disabled',false).html('Open budget grid <i class="fa fa-arrow-right"></i>'); return; }
-		location.href='<?= base_url('budget/edit_budget/'); ?>'+r.budget_id;
-	},'json').fail(function(){ $btn.prop('disabled',false).html('Open budget grid <i class="fa fa-arrow-right"></i>'); });
+	var $btn = $('#btnUploadBudget').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Extracting...');
+	var data = new FormData(this);
+	$.ajax({
+		url: '<?= base_url('budget/upload_prepared_budget'); ?>',
+		type: 'POST',
+		data: data,
+		processData: false,
+		contentType: false,
+		dataType: 'json'
+	}).done(function (r) {
+		if (r.error) {
+			toastada.error(r.error);
+			$btn.prop('disabled', false).html('<i class="fa fa-upload"></i> Upload and extract lines');
+			return;
+		}
+		toastada.success(r.success || 'Budget extracted');
+		location.href = '<?= base_url('budget/edit_budget/'); ?>' + r.budget_id;
+	}).fail(function () {
+		$btn.prop('disabled', false).html('<i class="fa fa-upload"></i> Upload and extract lines');
+		toastada.error('Upload failed. Use the Wisdom .xlsx template.');
+	});
+});
+$(document).on('click', '.btn-cancel-budget', function () {
+	var id = $(this).data('id');
+	var title = $(this).data('title') || 'this budget';
+	if (!confirm('Cancel "' + title + '"?\n\nYou can then upload a new Excel file. Budgets that already have cash requests cannot be cancelled.')) return;
+	var $btn = $(this).prop('disabled', true);
+	$.post('<?= base_url('budget/cancel_budget'); ?>', { budget_id: id }, function (r) {
+		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
+		toastada.success(r.success || 'Cancelled');
+		location.reload();
+	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Cancel failed'); });
 });
 $(document).on('click', '.btn-del-budget', function () {
 	var id = $(this).data('id');

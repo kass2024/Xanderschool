@@ -21,6 +21,7 @@ use App\Services\Budget\TermExpensesBudgetImportService;
 use App\Services\Budget\GeminiBudgetAnalysisService;
 use App\Services\Budget\SchoolFeesBudgetProjectionService;
 use App\Services\Budget\BudgetEmptyAmountsService;
+use App\Services\Budget\WisdomBudgetWorkbookImportService;
 use App\Services\Budget\CashRequestApprovalPolicy;
 use App\Services\SchoolHierarchyService;
 
@@ -869,6 +870,11 @@ class BudgetCashflow extends Home
 			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
 			: session('soma_school');
 		$data['budgets'] = $db->table('budgets')->where('branch_id', $c['branchId'])->orderBy('id', 'DESC')->get()->getResultArray();
+		foreach ($data['budgets'] as &$budgetRow) {
+			$budgetRow['pending_label'] = BudgetWorkflowService::pendingApproverLabel((string) ($budgetRow['status'] ?? ''));
+		}
+		unset($budgetRow);
+		$data['wisdom_template_ready'] = (new WisdomBudgetWorkbookImportService())->templatePath() !== null;
 		$data['periods'] = $db->table('budget_periods')->where('branch_id', $c['branchId'])->orderBy('start_date', 'DESC')->get()->getResultArray();
 		$data['templates'] = $db->table('budget_templates')->where('organization_id', $c['orgId'])->where('status', 'active')->get()->getResultArray();
 		$data['active_template'] = $data['templates'][0] ?? null;
@@ -926,8 +932,8 @@ class BudgetCashflow extends Home
 						'name' => $rb['branch_name'],
 						'organization_id' => $rb['organization_id'],
 					], $c['isCentral']);
-					$rb['allowed_actions'] = BudgetWorkflowService::allowedActionsForStatus(
-						$rb['status'], $c['perms'], $c['staffId'], $c['postId']
+					$rb['allowed_actions'] = BudgetWorkflowService::actionsForBudget(
+						$rb, $c['perms'], $c['staffId'], $c['postId']
 					);
 					$rb['pending_label'] = BudgetWorkflowService::pendingApproverLabel((string) $rb['status']);
 				}
@@ -1009,6 +1015,83 @@ class BudgetCashflow extends Home
 		}
 		$db->transComplete();
 		return $this->response->setJSON(['success' => 'Annual budget workspace ready.', 'budget_id' => $budgetId]);
+	}
+
+	/**
+	 * Accountant uploads the Wisdom Excel budget. Lines and amounts are extracted into a draft.
+	 */
+	public function upload_prepared_budget()
+	{
+		$this->bootBudget();
+		$this->denyPerm('budget.prepare');
+		$c = $this->ctx();
+		if (!\Config\MenuClearance::canPrepareBudgetAtSchool($c['postId'], $c['schoolId'])) {
+			return $this->response->setJSON(['error' => 'Only Cashier, Accountant, Chief Accountant, or Director of Finance can upload a budget.']);
+		}
+		if ((int) $c['branchId'] < 1) {
+			return $this->response->setJSON(['error' => 'No school branch is linked to your account.']);
+		}
+		$file = $this->request->getFile('budget_file');
+		$doc = new DocumentStorageService();
+		$stored = $doc->storeUpload($file, 'budget/prepared');
+		if (empty($stored['success'])) {
+			return $this->response->setJSON(['error' => $stored['error'] ?? 'Upload failed.']);
+		}
+		$fullPath = WRITEPATH . 'uploads/budget/prepared/' . basename($stored['stored_path']);
+		$periodId = $this->ensureAnnualBudgetPeriod($c['orgId'], (int) $c['branchId'], $c['staffId']);
+		$result = (new WisdomBudgetWorkbookImportService())->importIntoBranch($fullPath, [
+			'org_id' => $c['orgId'],
+			'branch_id' => (int) $c['branchId'],
+			'staff_id' => $c['staffId'],
+			'period_id' => $periodId,
+			'title' => trim((string) $this->request->getPost('title')),
+			'academic_year' => trim((string) $this->request->getPost('academic_year')),
+			'original_name' => $stored['original_name'] ?? '',
+			'stored_path' => $stored['stored_path'] ?? '',
+		]);
+		if (empty($result['success'])) {
+			return $this->response->setJSON(['error' => $result['error'] ?? 'Could not extract the budget.']);
+		}
+		$income = number_format((float) ($result['total_income'] ?? 0), 0);
+		$expense = number_format((float) ($result['total_expenses'] ?? 0), 0);
+		return $this->response->setJSON([
+			'success' => 'Extracted ' . (int) ($result['line_count'] ?? 0) . ' budget lines. Income ' . $income . ' RWF, expenses ' . $expense . ' RWF. Submit it for Chief Accountant approval.',
+			'budget_id' => (int) $result['budget_id'],
+			'result' => $result,
+		]);
+	}
+
+	public function download_wisdom_template()
+	{
+		$this->bootBudget();
+		$this->denyMenu('budget_prepare');
+		$path = (new WisdomBudgetWorkbookImportService())->templatePath();
+		if (!$path) {
+			return redirect()->to(base_url('budget/prepare'))->with('error', 'The Wisdom budget Excel template is not installed.');
+		}
+		return $this->response->download($path, null)->setFileName('WISDOM_BUDGET_TEMPLATE.xlsx');
+	}
+
+	/** Preparer withdraws a budget that has no cash requests, then can upload a new Excel file. */
+	public function cancel_budget()
+	{
+		$this->bootBudget();
+		$this->denyPerm('budget.prepare');
+		$c = $this->ctx();
+		$id = (int) $this->request->getPost('budget_id');
+		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
+		if ($c['branchId'] > 0 && !in_array((int) $c['branchId'], array_map('intval', $branchIds), true)) {
+			$branchIds[] = (int) $c['branchId'];
+		}
+		$wf = new BudgetWorkflowService();
+		$result = $wf->transition($id, 'cancel', $c['staffId'], $c['postId'], $this->request->getPost('comment'), [
+			'perms' => $c['perms'],
+			'allowed_branch_ids' => $branchIds,
+		]);
+		if (!empty($result['error'])) {
+			return $this->response->setJSON(['error' => $result['error']]);
+		}
+		return $this->response->setJSON(['success' => 'Budget cancelled. Upload a new Excel file when you are ready.']);
 	}
 
 	/** Master: default template. Child: copy line structure from master budget (quantities zero). */
@@ -1133,8 +1216,9 @@ class BudgetCashflow extends Home
 		$budgetSchoolId = (int) ($branchRow['school_id'] ?? $c['schoolId']);
 
 		// First DoF finance-adjust open: restore full lines, clear false Excel amounts, keep School Fees only
+		$fromExcel = (($setup['source'] ?? '') === WisdomBudgetWorkbookImportService::SOURCE);
 		$forceEmpty = (int) ($this->request->getGet('reset_empty') ?? 0) === 1;
-		if ($canEdit && $isFinanceAdjust && ($forceEmpty || empty($setup['amounts_cleared_for_dof_at']))) {
+		if ($canEdit && $isFinanceAdjust && !$fromExcel && ($forceEmpty || empty($setup['amounts_cleared_for_dof_at']))) {
 			(new BudgetEmptyAmountsService())->resetEmptyExceptSchoolFees($id, $budgetSchoolId, (int) $c['staffId']);
 			$budget = $db->table('budgets b')
 				->select('b.*, bp.title as period_title, bp.start_date, bp.end_date')
@@ -1177,6 +1261,12 @@ class BudgetCashflow extends Home
 		$data['is_finance_adjust'] = $isFinanceAdjust;
 		$data['can_submit'] = $canEdit && in_array($status, BudgetWorkflowService::preparerEditableStatuses(), true)
 			&& $c['perms']->can($c['staffId'], $c['postId'], 'budget.submit');
+		$data['excel_upload'] = (($setup['source'] ?? '') === WisdomBudgetWorkbookImportService::SOURCE);
+		$data['submit_label'] = ((int) $c['postId'] === 28)
+			? 'Submit to Director of Finance'
+			: 'Submit to Chief Accountant';
+		$data['can_cancel'] = $c['perms']->can($c['staffId'], $c['postId'], 'budget.prepare')
+			&& !in_array($status, ['CANCELLED'], true);
 		$data['can_add_lines'] = $c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_submitted');
 		$sectionKeys = array_keys($data['sections'] ?? []);
 		$data['section_options'] = $sectionKeys ?: ['INCOME', 'OPERATING EXPENSES', 'ADMINISTRATIVE COSTS', 'FINANCE COSTS'];
@@ -1872,18 +1962,25 @@ class BudgetCashflow extends Home
 		$actionLabel = $chain[$action] ?? $action;
 
 		if ($action === 'submit') {
+			$hierarchy = new SchoolHierarchyService();
+			$masterId = $hierarchy->isChildSchool($schoolId) ? (int) $hierarchy->masterSchoolId($schoolId) : $schoolId;
+			$waitingForFinance = $status === 'DEPUTY_DIRECTOR_REVIEW';
 			$msgTitle = 'Budget submitted for approval';
-			$msgBody = $branchLabel . ' — "' . $title . '" was submitted. Verification required: Procurement → Budget Manager → Director of Finance.';
-			// All 3 approvers
-			foreach ($notify->approverContacts($schoolId) as $staff) {
+			$msgBody = $waitingForFinance
+				? $branchLabel . ' — "' . $title . '" was prepared by the Chief Accountant and is waiting for the Director of Finance.'
+				: $branchLabel . ' — "' . $title . '" is waiting for the Chief Accountant, then the Director of Finance.';
+			$nextPost = $waitingForFinance ? 24 : 28;
+			$nextSchool = $waitingForFinance ? ($masterId > 0 ? $masterId : $schoolId) : ($masterId > 0 ? $masterId : null);
+			foreach ($notify->activeStaffByPost($nextPost, $nextSchool) as $staff) {
 				$notify->notifyStaff((int) $staff['id'], $msgTitle, $msgBody, $reviewUrl, (int) $budget['branch_id']);
 				$this->sendBudgetContactAlert($staff, $msgTitle, $msgBody);
 			}
-			// Preparer (accountant / head who prepared)
 			$preparer = $notify->staffById((int) ($budget['prepared_by'] ?? 0));
 			if ($preparer) {
 				$pTitle = 'Your budget was submitted';
-				$pBody = '"' . $title . '" is now awaiting Procurement, Budget Manager, and Director of Finance approval. It stays in review until all three approve.';
+				$pBody = $waitingForFinance
+					? '"' . $title . '" is waiting for the Director of Finance. Cash requests stay closed until that approval.'
+					: '"' . $title . '" is waiting for the Chief Accountant, then the Director of Finance. Cash requests stay closed until both approve.';
 				$notify->notifyStaff((int) $preparer['id'], $pTitle, $pBody, $prepareUrl, (int) $budget['branch_id']);
 				$this->sendBudgetContactAlert($preparer, $pTitle, $pBody);
 			}
@@ -1897,7 +1994,10 @@ class BudgetCashflow extends Home
 		}
 		if ($action === 'approve' && $status === 'APPROVED') {
 			$pTitle = 'Budget approved';
-			$pBody = '"' . $title . '" (' . $branchLabel . ') is fully approved after Procurement, Budget Manager, and Director of Finance.';
+			$pBody = '"' . $title . '" (' . $branchLabel . ') is approved. Cash requests can now start from this budget.';
+		} elseif ($action === 'chief_accountant_approve') {
+			$pTitle = 'Chief Accountant approved the budget';
+			$pBody = '"' . $title . '" (' . $branchLabel . ') is now waiting for the Director of Finance.';
 		} elseif ($action === 'return') {
 			$pTitle = 'Budget returned';
 			$pBody = '"' . $title . '" was returned for changes. Status: ' . $status . '.';
@@ -1913,7 +2013,9 @@ class BudgetCashflow extends Home
 
 		// After procurement / budget manager, nudge next role
 		$nextPost = null;
-		if ($action === 'procurement_review') {
+		if ($action === 'chief_accountant_approve') {
+			$nextPost = 24;
+		} elseif ($action === 'procurement_review') {
 			$nextPost = 19;
 		} elseif ($action === 'budget_review') {
 			$nextPost = 24;
@@ -1921,7 +2023,9 @@ class BudgetCashflow extends Home
 		if ($nextPost) {
 			$nTitle = 'Budget awaiting your approval';
 			$nBody = $branchLabel . ' — "' . $title . '" needs your review. Status: ' . $status . '.';
-			foreach ($notify->activeStaffByPost($nextPost, $schoolId) as $staff) {
+			$hierarchy = new SchoolHierarchyService();
+			$notifySchool = $hierarchy->isChildSchool($schoolId) ? (int) $hierarchy->masterSchoolId($schoolId) : $schoolId;
+			foreach ($notify->activeStaffByPost($nextPost, $notifySchool > 0 ? $notifySchool : $schoolId) as $staff) {
 				$notify->notifyStaff((int) $staff['id'], $nTitle, $nBody, $reviewUrl, (int) $budget['branch_id']);
 				$this->sendBudgetContactAlert($staff, $nTitle, $nBody);
 			}
@@ -2116,7 +2220,7 @@ class BudgetCashflow extends Home
 		$budget = $db->table('budgets')->where('id', $budgetId)->where('branch_id', $c['branchId'])
 			->where('status', 'APPROVED')->get(1)->getRowArray();
 		if (!$budget) {
-			return $this->response->setJSON(['error' => 'Budget must be APPROVED before raising cash requests.']);
+			return $this->response->setJSON(['error' => 'Cash requests start only after the Chief Accountant and then the Director of Finance have approved this budget.']);
 		}
 
 		// Multi-item payload (preferred). Fallback to legacy single-line fields.
