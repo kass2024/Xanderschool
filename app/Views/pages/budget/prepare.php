@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=5" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=11" rel="stylesheet">
 
 <?php $tab = $tab ?? 'budgets'; ?>
 
@@ -21,7 +21,7 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 <div class="card border-0 shadow-sm mb-4">
 	<div class="card-body">
 		<h5 class="font-weight-bold mb-1"><i class="fa fa-file-excel text-success"></i> Upload Excel budget</h5>
-		<p class="text-muted small mb-3">Fill the Wisdom template, upload it, and the system extracts every budget line with its amount. The Chief Accountant approves first, then the Director of Finance. Cash requests stay closed until both have approved. You can cancel or delete your upload and send a new file.</p>
+		<p class="text-muted small mb-3">Upload this school's own Excel budget. Line names can differ from school to school. The system reads each line and its Term I, Term II, and Term III amounts. The Chief Accountant approves first, then the Director of Finance. Cash requests stay closed until both have approved. You can cancel or delete an upload and send a new file.</p>
 		<form id="frmUploadBudget" enctype="multipart/form-data">
 			<div class="form-row">
 				<div class="form-group col-md-5 mb-2">
@@ -38,9 +38,6 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 				</div>
 			</div>
 			<button type="submit" class="btn btn-primary" id="btnUploadBudget"><i class="fa fa-upload"></i> Upload and extract lines</button>
-			<?php if (!empty($wisdom_template_ready)) { ?>
-			<a class="btn btn-outline-success" href="<?= base_url('budget/download_wisdom_template'); ?>"><i class="fa fa-download"></i> Download template</a>
-			<?php } ?>
 		</form>
 	</div>
 </div>
@@ -54,7 +51,7 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 <div class="bp-empty">
 	<i class="fa fa-file-invoice-dollar d-block"></i>
 	<h5>No budget uploaded yet</h5>
-	<p class="text-muted">Upload the Wisdom Excel budget. Lines and amounts are extracted here.</p>
+	<p class="text-muted">Upload this school's Excel file. Its own budget lines and term amounts are extracted here.</p>
 </div>
 <?php } else { ?>
 <?php
@@ -99,6 +96,9 @@ foreach ($budgets as $b) {
 		<div class="col-4">Expenses (year)<br><strong class="text-danger"><?= number_format((float)$b['total_expenses'], 0); ?></strong></div>
 		<div class="col-4">Surplus<br><strong class="<?= (float)$b['surplus_deficit'] >= 0 ? 'text-success' : 'text-danger'; ?>"><?= number_format((float)$b['surplus_deficit'], 0); ?></strong></div>
 	</div>
+	<?php if (!empty($b['terms'])) { ?>
+	<div class="mt-3"><?= view('pages/budget/partials/term_kpi_board', ['term_figures' => $b['terms']]); ?></div>
+	<?php } ?>
 </div>
 <?php } ?>
 <?php } ?>

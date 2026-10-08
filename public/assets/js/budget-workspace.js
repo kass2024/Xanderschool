@@ -80,7 +80,7 @@ var BudgetWorkspace = (function () {
 		});
 
 		$.each(sectionTotals, function (sec, amt) {
-			$('[data-section-total="' + sec + '"]').text(fmt(amt) + ' RWF');
+			$('[data-section-total="' + sec + '"]').text(fmt(amt));
 			$('.total-row[data-section="' + sec + '"] .line-annual-display').text(fmt(amt));
 		});
 
@@ -90,17 +90,15 @@ var BudgetWorkspace = (function () {
 		$('#kpiSurplus,#summarySurplus').text(fmt(surplus));
 		$('#kpiSurplus').closest('.bp-kpi').toggleClass('pos', surplus >= 0).toggleClass('neg', surplus < 0);
 
-		$('#footTerm1').text(fmt(termExp.t1));
-		$('#footTerm2').text(fmt(termExp.t2));
-		$('#footTerm3').text(fmt(termExp.t3));
-		$('#footAnnualExp').text(fmt(expense));
-
-		$('#sumT1Inc').text(fmt(termInc.t1)); $('#sumT1Exp').text(fmt(termExp.t1)); $('#sumT1Net').text(fmt(termInc.t1 - termExp.t1));
-		$('#sumT2Inc').text(fmt(termInc.t2)); $('#sumT2Exp').text(fmt(termExp.t2)); $('#sumT2Net').text(fmt(termInc.t2 - termExp.t2));
-		$('#sumT3Inc').text(fmt(termInc.t3)); $('#sumT3Exp').text(fmt(termExp.t3)); $('#sumT3Net').text(fmt(termInc.t3 - termExp.t3));
-		$('#kpiT1Net').text(fmt(termInc.t1 - termExp.t1));
-		$('#kpiT2Net').text(fmt(termInc.t2 - termExp.t2));
-		$('#kpiT3Net').text(fmt(termInc.t3 - termExp.t3));
+		function paintTerm(n, inc, exp) {
+			var net = inc - exp;
+			$('.kpi-t' + n + '-inc, #sumT' + n + 'Inc').text(fmt(inc));
+			$('.kpi-t' + n + '-exp, #sumT' + n + 'Exp').text(fmt(exp));
+			$('.kpi-t' + n + '-net, #sumT' + n + 'Net').text(fmt(net)).removeClass('pos neg').addClass(net >= 0 ? 'pos' : 'neg');
+		}
+		paintTerm(1, termInc.t1, termExp.t1);
+		paintTerm(2, termInc.t2, termExp.t2);
+		paintTerm(3, termInc.t3, termExp.t3);
 
 		var pct = total ? Math.round((filled / total) * 100) : 0;
 		$('#kpiProgress').text(pct + '%');

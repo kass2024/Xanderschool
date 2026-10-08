@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=10" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=11" rel="stylesheet">
 
 <?php
 $statusBadge = $budget['status'] === 'DRAFT' ? 'secondary' : ($budget['status'] === 'APPROVED' ? 'success' : 'warning');
@@ -37,11 +37,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 		<div class="bp-kpi"><label>Enrollment</label><strong id="kpiEnrollment"><?= number_format($enrollment); ?></strong><small>students</small></div>
 		<?php } ?>
 	</div>
-	<div class="bp-kpi-row bp-kpi-terms" id="kpiTermStrip">
-		<div class="bp-kpi-term t1"><label>Term I net</label><strong id="kpiT1Net">0</strong></div>
-		<div class="bp-kpi-term t2"><label>Term II net</label><strong id="kpiT2Net">0</strong></div>
-		<div class="bp-kpi-term t3"><label>Term III net</label><strong id="kpiT3Net">0</strong></div>
-	</div>
+	<?= view('pages/budget/partials/term_kpi_board'); ?>
 	<div class="bp-progress mt-2"><div class="bp-progress-bar" id="progressBar" style="width:0%"></div></div>
 </div>
 <?php if (!empty($excel_upload)) { ?>
@@ -132,6 +128,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 
 <!-- THREE-TERM BUDGET GRID -->
 <div class="bp-panel" id="panel-plan">
+<div class="bp-term-board-sticky"><?= view('pages/budget/partials/term_kpi_board'); ?></div>
 
 <?php foreach ($sections as $secKey => $sec) {
 	if (empty($sec['lines'])) continue;
@@ -146,12 +143,15 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 <div class="bp-section bp-term-section" data-section="<?= esc($secKey); ?>">
 	<div class="bp-section-head <?= $isIncome ? 'income' : 'expense'; ?>">
 		<span><i class="fa fa-<?= $isIncome ? 'arrow-down' : 'arrow-up'; ?>"></i> <?= esc($secKey); ?></span>
-		<span class="d-flex align-items-center">
-			<span class="bp-section-total mr-2" data-section-total="<?= esc($secKey); ?>">0 RWF</span>
-			<?php if ($canAddLines) { ?>
-			<button type="button" class="btn btn-sm btn-light bp-btn-add-line" data-section="<?= esc($secKey); ?>" title="Add row in this section"><i class="fa fa-plus"></i></button>
-			<?php } ?>
+		<span class="bp-section-terms">
+			<span><em>Term I</em><b class="section-t1" data-section="<?= esc($secKey); ?>">0</b></span>
+			<span><em>Term II</em><b class="section-t2" data-section="<?= esc($secKey); ?>">0</b></span>
+			<span><em>Term III</em><b class="section-t3" data-section="<?= esc($secKey); ?>">0</b></span>
+			<span><em>Year</em><b class="bp-section-total" data-section-total="<?= esc($secKey); ?>">0</b></span>
 		</span>
+		<?php if ($canAddLines) { ?>
+		<button type="button" class="btn btn-sm btn-light bp-btn-add-line" data-section="<?= esc($secKey); ?>" title="Add row in this section"><i class="fa fa-plus"></i></button>
+		<?php } ?>
 	</div>
 	<div class="bp-lines-stack">
 			<?php
@@ -221,24 +221,15 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 			<div class="bp-section-foot">
 				<span>Section subtotal</span>
 				<span class="bp-foot-terms">
-					<span class="section-t1" data-section="<?= esc($secKey); ?>">0</span>
-					<span class="section-t2" data-section="<?= esc($secKey); ?>">0</span>
-					<span class="section-t3" data-section="<?= esc($secKey); ?>">0</span>
+					<span><em>Term I</em> <b class="section-t1" data-section="<?= esc($secKey); ?>">0</b></span>
+					<span><em>Term II</em> <b class="section-t2" data-section="<?= esc($secKey); ?>">0</b></span>
+					<span><em>Term III</em> <b class="section-t3" data-section="<?= esc($secKey); ?>">0</b></span>
 				</span>
 				<strong data-section-total-foot="<?= esc($secKey); ?>">0</strong>
 			</div>
 	</div>
 </div>
 <?php } ?>
-
-<div class="card border-primary mt-3"><div class="card-body py-2">
-	<div class="row text-center small">
-		<div class="col-3"><span class="text-muted">Term I total (expenses)</span><br><strong id="footTerm1">0</strong></div>
-		<div class="col-3"><span class="text-muted">Term II total (expenses)</span><br><strong id="footTerm2">0</strong></div>
-		<div class="col-3"><span class="text-muted">Term III total (expenses)</span><br><strong id="footTerm3">0</strong></div>
-		<div class="col-3"><span class="text-muted">Full year expenses</span><br><strong class="text-danger" id="footAnnualExp">0</strong></div>
-	</div>
-</div></div>
 
 <div class="bp-nav-footer">
 	<button type="button" class="btn btn-outline-secondary btnPrev" data-prev="setup"><i class="fa fa-arrow-left"></i> Back</button>
@@ -328,7 +319,7 @@ $enrollment = (int) ($setup['enrollment'] ?? 0);
 </div>
 <?php } ?>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=10"></script>
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=11"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,

@@ -11,7 +11,7 @@
 </div>
 <?php } ?>
 
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=6" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=11" rel="stylesheet">
 <style>
 .bd-ai-card{border:1px solid #c5d8f0;border-radius:10px;overflow:hidden;background:#fff;}
 .bd-ai-head{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;background:linear-gradient(90deg,#eef5ff,#f8fbff);}
@@ -148,6 +148,9 @@ if (is_array($fp)) {
 	<div class="bp-kpi income"><label>Fee revenue (plan)</label><strong><?= number_format((float)$f['total_income'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
 	<div class="bp-kpi"><label>Period</label><strong class="small"><?= esc($f['period_title'] ?: '—'); ?></strong></div>
 </div>
+<?php if (!empty($f['terms'])) { ?>
+<div class="mb-4"><?= view('pages/budget/partials/term_kpi_board', ['term_figures' => $f['terms']]); ?></div>
+<?php } ?>
 <?php if (empty($f['budget'])) { ?>
 <div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between">
 	<span><i class="fa fa-exclamation-triangle"></i> No approved budget yet</span>

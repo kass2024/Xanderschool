@@ -77,10 +77,22 @@ class BudgetCashflow extends Home
 		$availSvc = new BudgetAvailabilityService();
 		$lineVariances = [];
 		$totalUsed = 0.0;
+		$termPlan = [
+			1 => ['income' => 0.0, 'expense' => 0.0],
+			2 => ['income' => 0.0, 'expense' => 0.0],
+			3 => ['income' => 0.0, 'expense' => 0.0],
+		];
 		if ($budget) {
 			$lines = $db->table('budget_lines')->where('budget_id', (int) $budget['id'])
 				->orderBy('sort_order', 'ASC')->get()->getResultArray();
 			foreach ($lines as $line) {
+				if (empty($line['is_total_row'])) {
+					$isIncomeLine = stripos((string) ($line['section_label'] ?? ''), 'INCOME') !== false;
+					for ($termNo = 1; $termNo <= 3; $termNo++) {
+						$termAmt = (float) ($line['term_' . $termNo . '_amount'] ?? 0);
+						$termPlan[$termNo][$isIncomeLine ? 'income' : 'expense'] += $termAmt;
+					}
+				}
 				if (stripos($line['section_label'] ?? '', 'INCOME') !== false) {
 					continue;
 				}
@@ -133,7 +145,45 @@ class BudgetCashflow extends Home
 			'variance_pct' => $variancePct,
 			'enrollment' => $enrollment,
 			'line_variances' => $lineVariances,
+			'terms' => $termPlan,
 		];
+	}
+
+	/**
+	 * Income and expense totals for Term I, II, and III, keyed by budget id.
+	 *
+	 * @param array<int, int|string> $budgetIds
+	 * @return array<int, array<int, array{income: float, expense: float}>>
+	 */
+	protected function termFiguresForBudgets($db, array $budgetIds): array
+	{
+		$budgetIds = array_values(array_filter(array_map('intval', $budgetIds)));
+		$out = [];
+		if (!$budgetIds) {
+			return $out;
+		}
+		$rows = $db->table('budget_lines')
+			->select('budget_id, section_label, is_total_row, term_1_amount, term_2_amount, term_3_amount')
+			->whereIn('budget_id', $budgetIds)
+			->get()->getResultArray();
+		foreach ($rows as $line) {
+			if (!empty($line['is_total_row'])) {
+				continue;
+			}
+			$id = (int) $line['budget_id'];
+			if (!isset($out[$id])) {
+				$out[$id] = [
+					1 => ['income' => 0.0, 'expense' => 0.0],
+					2 => ['income' => 0.0, 'expense' => 0.0],
+					3 => ['income' => 0.0, 'expense' => 0.0],
+				];
+			}
+			$isIncome = stripos((string) ($line['section_label'] ?? ''), 'INCOME') !== false;
+			for ($termNo = 1; $termNo <= 3; $termNo++) {
+				$out[$id][$termNo][$isIncome ? 'income' : 'expense'] += (float) ($line['term_' . $termNo . '_amount'] ?? 0);
+			}
+		}
+		return $out;
 	}
 
 	protected function denyPerm($perm)
@@ -870,11 +920,12 @@ class BudgetCashflow extends Home
 			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
 			: session('soma_school');
 		$data['budgets'] = $db->table('budgets')->where('branch_id', $c['branchId'])->orderBy('id', 'DESC')->get()->getResultArray();
+		$termMap = $this->termFiguresForBudgets($db, array_column($data['budgets'], 'id'));
 		foreach ($data['budgets'] as &$budgetRow) {
 			$budgetRow['pending_label'] = BudgetWorkflowService::pendingApproverLabel((string) ($budgetRow['status'] ?? ''));
+			$budgetRow['terms'] = $termMap[(int) $budgetRow['id']] ?? null;
 		}
 		unset($budgetRow);
-		$data['wisdom_template_ready'] = (new WisdomBudgetWorkbookImportService())->templatePath() !== null;
 		$data['periods'] = $db->table('budget_periods')->where('branch_id', $c['branchId'])->orderBy('start_date', 'DESC')->get()->getResultArray();
 		$data['templates'] = $db->table('budget_templates')->where('organization_id', $c['orgId'])->where('status', 'active')->get()->getResultArray();
 		$data['active_template'] = $data['templates'][0] ?? null;
