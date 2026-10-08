@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=12" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=14" rel="stylesheet">
 
 <div class="budget-cr-form">
 
@@ -117,10 +117,18 @@
 		</div>
 	</div>
 
-	<div class="alert alert-info py-2 small d-none mt-2 mb-0" id="scanWaitBox">
-		<i class="fa fa-spinner fa-spin"></i>
-		Waiting for SmartSMS… Session open for <strong id="scanWaitMins">30</strong> min
-		(<span id="scanCountdown">30:00</span>). Capture with the student-photo camera, then this form will append the file.
+	<div class="cr-scan-wait d-none" id="scanWaitBox">
+		<div class="cr-scan-orb" aria-hidden="true">
+			<span class="cr-scan-orb-spin"></span>
+			<i class="fa fa-mobile-alt"></i>
+		</div>
+		<div class="cr-scan-wait-body">
+			<div class="cr-scan-wait-title">Waiting for the phone upload</div>
+			<div class="cr-scan-wait-sub">The phone camera opens when you tap Smart Scan. Fit the page, tap the circle, and this form attaches the file.</div>
+			<div class="cr-scan-meter" aria-hidden="true"><span></span></div>
+			<div class="cr-scan-wait-meta">Time left <strong id="scanCountdown">30:00</strong> <span class="d-none" id="scanWaitMins">30</span></div>
+		</div>
+		<button type="button" class="btn btn-sm btn-outline-secondary" id="btnCancelScan">Cancel</button>
 	</div>
 	<ul class="cr-doc-list" id="docPreview"></ul>
 	<?php if (!empty($documents)) { ?>
@@ -593,20 +601,14 @@ function startScanCountdown(expiresIn) {
 
 function openSmartSmsAmScan(r) {
 	var token = r.token || '';
-	var intentLink = r.intent_link || ('intent://amscan?token=' + encodeURIComponent(token)
-		+ '#Intent;scheme=smartsms;package=com.xandertech.smartsms;end');
 	var deepLink = r.deep_link || ('smartsms://amscan?token=' + encodeURIComponent(token));
 	try {
-		window.location.href = intentLink;
-	} catch (e1) {
-		try {
-			var ifr = document.createElement('iframe');
-			ifr.style.display = 'none';
-			ifr.src = deepLink;
-			document.body.appendChild(ifr);
-			setTimeout(function () { try { document.body.removeChild(ifr); } catch (e2) {} }, 2500);
-		} catch (e3) {}
-	}
+		var ifr = document.createElement('iframe');
+		ifr.style.display = 'none';
+		ifr.src = deepLink;
+		document.body.appendChild(ifr);
+		setTimeout(function () { try { document.body.removeChild(ifr); } catch (e2) {} }, 2000);
+	} catch (e3) {}
 }
 
 function startScanPoll(token, expiresIn) {
@@ -644,10 +646,10 @@ function startScanPoll(token, expiresIn) {
 	}, 1500);
 }
 
+$('#btnCancelScan').on('click', function () { stopScanPoll(); });
 $('#btnScanPhone').on('click', function () {
 	$.post('<?= base_url('budget/scan_session_start'); ?>', {}, function (r) {
 		if (r.error) { toastada.error(r.error); return; }
-		toastada.info('Smart Scan open for ' + Math.round((r.expires_in || 1800) / 60) + ' minutes. Capture on your phone…');
 		startScanPoll(r.token, r.expires_in || 1800);
 		openSmartSmsAmScan(r);
 	}, 'json');
