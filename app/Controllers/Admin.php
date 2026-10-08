@@ -973,6 +973,9 @@ class Admin extends BaseController
 			// Create new school
 			$data['status']     = 1;
 			$data['created_by'] = $this->session->get('soma_admin_id');
+			if (trim((string) $email) !== '' && (new StaffModel())->emailUsedByAnotherStaff((string) $email)) {
+				return $this->response->setJSON(['error' => 'This email is already used by a staff account. One email can belong to only one school.']);
+			}
 			$school_id = $schoolMdl->insert($data);
 			//CREATE DEFAULT STAFF ACCOUNT
 			$staffMdl         = new StaffModel();
@@ -1315,6 +1318,9 @@ class Admin extends BaseController
 					'status'    => 2,
 				]);
 			} else {
+				if (trim((string) $email) !== '' && $staffMdl->emailUsedByAnotherStaff((string) $email)) {
+					return $this->response->setJSON(['error' => 'This email is already used by a staff account. One email can belong to only one school.']);
+				}
 				$staffId = (int) $staffMdl->insert([
 					'school_id'  => $schoolId,
 					'fname'      => $fname,

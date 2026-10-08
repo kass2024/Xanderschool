@@ -10999,6 +10999,15 @@ public function attendanceCard()
 		if (strlen($target) == 0) {
 			return $this->response->setJSON(array("error" => lang("app.pleaseProvide")));
 		}
+		if ($target === 'email') {
+			$val = trim((string) $val);
+			if ($val !== '' && ! filter_var($val, FILTER_VALIDATE_EMAIL)) {
+				return $this->response->setJSON(array("error" => "Enter a valid email address."));
+			}
+			if ((new StaffModel())->emailUsedByAnotherStaff($val, (int) $id)) {
+				return $this->response->setJSON(array("error" => lang("app.emailAlready")));
+			}
+		}
 		//echo "id:$id,target: $target,val: $val";die();
 		$uvMdl = new UpdateVersionModel();
 		$update_v = 1;
@@ -11177,6 +11186,10 @@ public function attendanceCard()
 		}
 		try {
 			$staffMdl = new StaffModel();
+			$email = trim((string) $email);
+			if ($staffMdl->emailUsedByAnotherStaff($email)) {
+				return $this->response->setJSON(array("error" => lang("app.emailAlready")));
+			}
 			$this->ensureStaffContractColumns();
 			$school_id = $this->session->get("soma_school_id");
 			$uvMdl = new UpdateVersionModel();
@@ -13987,6 +14000,11 @@ public function getApplicationDocs($id = null)
 			}
 
 			if ($postId === null || $email === '' || $lname === '') {
+				$skipped++;
+				$i++;
+				continue;
+			}
+			if ($staffMdl->emailUsedByAnotherStaff($email)) {
 				$skipped++;
 				$i++;
 				continue;

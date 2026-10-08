@@ -1612,17 +1612,10 @@ public function sync($option, $school_id)
 			}
 			$currentEmail = trim((string) ($existing['email'] ?? ''));
 			if ($email !== '' && strcasecmp($email, $currentEmail) !== 0) {
-				$dup = $db->table('staffs')
-					->select('id')
-					->where('school_id', $schoolId)
-					->where('email', $email)
-					->where('id !=', $staffId)
-					->get(1)
-					->getRowArray();
-				if ($dup !== null) {
+				if ((new StaffModel())->emailUsedByAnotherStaff($email, $staffId)) {
 					return $this->response->setJSON([
 						'success' => false,
-						'error' => 'This email is already used by another staff.',
+						'error' => 'This email is already used by a staff account. One email can belong to only one school.',
 					]);
 				}
 			}

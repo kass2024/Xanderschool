@@ -144,4 +144,24 @@ AND `staffs`.`school_id`={$_SESSION['soma_school_id']}");
 		return $updated !== false;
 	}
 
+	/**
+	 * One email belongs to one staff account, across every school.
+	 */
+	public function emailUsedByAnotherStaff(string $email, int $exceptStaffId = 0): bool
+	{
+		$email = strtolower(trim($email));
+		if ($email === '') {
+			return false;
+		}
+		$sql = 'SELECT id FROM staffs WHERE LOWER(TRIM(email)) = ?';
+		$params = [$email];
+		if ($exceptStaffId > 0) {
+			$sql .= ' AND id <> ?';
+			$params[] = $exceptStaffId;
+		}
+		$sql .= ' LIMIT 1';
+		$row = \Config\Database::connect()->query($sql, $params)->getRowArray();
+		return ! empty($row);
+	}
+
 }

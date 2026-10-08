@@ -922,7 +922,7 @@ return [
 	"staffCreation" => "Création de personnel",
 	"welcomeOnSomanet" => "Bienvenue sur Somanet",
 	"userSaved" => "Utilisateur enregistré avec succès ",
-	"emailAlready" => "L'e-mail existait déjà",
+	"emailAlready" => "Cet e-mail est déjà utilisé par un compte du personnel. Un e-mail ne peut appartenir qu'à une seule école.",
 	"errorOccurred" => "Une erreur s'est produite:",
 	"classSaved" => "Classe enregistrée avec succès",
 	"classExist" => "Erreur: la classe existe déjà",

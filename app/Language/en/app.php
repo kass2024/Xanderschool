@@ -930,7 +930,7 @@ return [
    'staffCreation'               => 'Staff creation',
    'welcomeOnSomanet'            => 'Welcome on SmartSMS',
    'userSaved'                   => 'User Successful saved',
-   'emailAlready'                => 'Email already existed',
+   'emailAlready'                => 'This email is already used by a staff account. One email can belong to only one school.',
    'errorOccurred'               => 'Error occurred: ',
    'classSaved'                  => 'Class Saved Successful',
    'classExist'                  => 'Error: Class already exists',

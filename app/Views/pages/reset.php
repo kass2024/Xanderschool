@@ -5,7 +5,8 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta http-equiv="Content-Language" content="en">
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-	<title>Somanet - login</title>
+	<title>XanderTech SmartSMS — Reset password</title>
+	<link rel="icon" href="<?= base_url('assets/images/xander-x-3d.png'); ?>">
 	<meta name="viewport"
 		  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
 	<meta name="description" content="school management system">
@@ -26,8 +27,12 @@
 				<div class="h-100 d-flex bg-white justify-content-center align-items-center col-md-12 col-lg-12">
 					<div class="mx-auto app-login-box"
 						 style="border: 1px solid#cdcdcd;padding: 20px;width: 420px;border-radius: 8px;background-color:#fff;position:relative;">
-						<div class="app-logo" style="width: 100%;height: auto;margin-bottom: 10px">
-							<img src="<?= base_url('assets/images/somanet.png'); ?>" style="width: 100%">
+						<div class="app-logo" style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:12px">
+							<img src="<?= base_url('assets/images/xander-x-3d.png'); ?>" alt="XanderTech" style="width:56px;height:56px;object-fit:contain;background:#000;border-radius:14px;padding:4px">
+							<div style="line-height:1.15">
+								<div style="font-weight:800;color:#0b1f4a;font-size:1.35rem">XanderTech</div>
+								<div style="color:#64748b;font-size:.85rem">SmartSMS</div>
+							</div>
 						</div>
 						<h4 class="mb-0" style="text-align: center;">
 							<span class="d-block"><?= lang("app.welcomeBack"); ?></span>
@@ -74,9 +79,9 @@
 									</div>
 								</div>
 								<label
-									style="position: absolute;font-size: 10pt;bottom: 0;">Somanet <?= version; ?></label>
+									style="position: absolute;font-size: 10pt;bottom: 0;">SmartSMS <?= version; ?></label>
 								<label style="position: absolute;font-size: 10pt;bottom: 0;right:10px"><?= lang("app.poweredBy"); ?> <a
-										href="http://www.bbdigitech.com" target="_blank" class="alert-link">BDS Ltd</a></label>
+										href="https://xandertech.rw" target="_blank" class="alert-link">XanderTech</a></label>
 							</form>
 
 						</div>
