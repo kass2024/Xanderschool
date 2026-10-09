@@ -127,7 +127,7 @@ $classPhone = trim((string) ($secondary_class_teacher_phone ?? ''));
 $headTeacher = trim((string) ($secondary_head_teacher ?? ''));
 $headPhone = trim((string) ($secondary_head_teacher_phone ?? ''));
 $classSignImg = report_signature_img($report_class_signature ?? '', !empty($pdf), 4.4);
-$headSignImg = report_signature_img($report_head_signature ?? '', !empty($pdf), 4.4);
+$headSignImg = report_signature_img($report_head_signature ?? '', !empty($pdf), 5.4);
 
 $fmt = static function ($n) {
 	if ($n === null || $n === '') {

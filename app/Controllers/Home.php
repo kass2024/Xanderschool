@@ -17832,13 +17832,9 @@ public function getApplicationDocs($id = null)
 				'phone' => trim((string) ($mentor['phone'] ?? '')),
 			];
 		}
-		$head = \Config\Database::connect()->query(
-			"SELECT s.signature FROM staffs s
-			 LEFT JOIN posts p ON p.id = s.post
-			 WHERE s.school_id = ? AND s.status != 0
-			 AND (s.post = ? OR LOWER(TRIM(p.title)) IN ('head teacher', 'headteacher'))
-			 ORDER BY s.id ASC LIMIT 1",
-			[$schoolId, \App\Models\PostsModel::HEAD_TEACHER_ID]
+		$schoolSign = \Config\Database::connect()->query(
+			"SELECT headmaster_signature FROM schools WHERE id = ?",
+			[$schoolId]
 		)->getRowArray();
 		$first = $classIds[0];
 		$sharedSign = '';
@@ -17853,7 +17849,7 @@ public function getApplicationDocs($id = null)
 		$data['report_class_signature'] = trim((string) ($data['report_stream_label'] ?? '')) !== ''
 			? $sharedSign
 			: ($signatures[$first] ?? '');
-		$data['report_head_signature'] = staff_signature_file($head['signature'] ?? '');
+		$data['report_head_signature'] = school_signature_file($schoolSign['headmaster_signature'] ?? '');
 		if (trim((string) ($data['secondary_class_teacher'] ?? '')) === '') {
 			$data['secondary_class_teacher'] = $teachers[$first]['name'] ?? '';
 			$data['secondary_class_teacher_phone'] = $teachers[$first]['phone'] ?? '';

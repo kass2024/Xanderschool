@@ -697,7 +697,7 @@ foreach ($students ?? [] as $student) {
 			: (string) (($report_class_signatures ?? [])[(int) ($student['class'] ?? 0)] ?? ($report_class_signature ?? ''));
 		$commentBlock("Class teacher's comment:", $classComment, report_signature_img($classSignFile, !empty($pdf), 9.2), true);
 		?>
-		<?php $commentBlock("Head teacher's comment:", $headComment, report_signature_img($report_head_signature ?? '', !empty($pdf), 4.8)); ?>
+		<?php $commentBlock("Head teacher's comment:", $headComment, report_signature_img($report_head_signature ?? '', !empty($pdf), 9.2), true); ?>
 		<?php if (!$periodic): ?>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>
 		<?php endif; ?>

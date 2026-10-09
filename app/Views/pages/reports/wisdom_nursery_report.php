@@ -469,7 +469,7 @@ foreach ($students as $student) {
 						: (string) (($report_class_signatures ?? [])[(int) ($student['class'] ?? 0)] ?? ($report_class_signature ?? ''));
 					$commentLine("Class teacher's comment:", $classComment, 8.4, report_signature_img($classSignFile, !empty($pdf), 9.2), true);
 					?>
-					<?php $commentLine("Head teacher's comment:", $headComment, 8.4, report_signature_img($report_head_signature ?? '', !empty($pdf), 5.2)); ?>
+					<?php $commentLine("Head teacher's comment:", $headComment, 8.4, report_signature_img($report_head_signature ?? '', !empty($pdf), 9.2), true); ?>
 					<?php $footLine("Parent's comment:", '', 8); ?>
 					<?php $signLine(8); ?>
 					<?php if ($endOfTermSheet): ?>

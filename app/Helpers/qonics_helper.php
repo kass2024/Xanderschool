@@ -389,10 +389,25 @@ if (!function_exists('staff_signature_file')) {
 	}
 }
 
+if (!function_exists('school_signature_file')) {
+	function school_signature_file($file): string
+	{
+		$file = basename(str_replace('\\', '/', (string) $file));
+		if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}\.(?:jpg|jpeg|png)$/i', $file)) {
+			return '';
+		}
+		return is_file(FCPATH . 'assets/images/signatures/' . $file) ? $file : '';
+	}
+}
+
 if (!function_exists('report_signature_img')) {
 	function report_signature_img($file, $pdf = false, $heightMm = 5.2): string
 	{
-		$file = staff_signature_file($file);
+		$saved = (string) $file;
+		$file = staff_signature_file($saved);
+		if ($file === '') {
+			$file = school_signature_file($saved);
+		}
 		if ($file === '') {
 			return '';
 		}
