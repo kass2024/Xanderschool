@@ -15735,7 +15735,7 @@ public function getApplicationDocs($id = null)
 				->where('class_id', (int) $record['class'])
 				->where('course_id', (int) $record['course'])
 				->where('term', $termId)
-				->whereIn('mark_type', [1, 2, holiday_coaching_mark_type()])
+				->whereIn('mark_type', [1, 2])
 				->orderBy('id', 'ASC')
 				->get()->getResultArray();
 		}
@@ -16846,7 +16846,7 @@ public function getApplicationDocs($id = null)
 			echo '<div class="alert alert-danger" style="margin:1rem;">Select a period before entering marks.</div>';
 			die();
 		}
-		if ((int) $period < 1 && !class_is_nursery((int) $class) && class_faculty_id((int) $class) === 3) {
+		if (!$isHolidayMarks && (int) $period < 1 && !class_is_nursery((int) $class) && class_faculty_id((int) $class) === 3) {
 			$period = 1;
 		}
 		if ((int) $period > 0 && period_is_locked($active_term, $period)) {

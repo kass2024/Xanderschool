@@ -2234,6 +2234,9 @@ if (!function_exists('primary_cat_period')) {
 	function primary_cat_period($classId, $markType, $period): int
 	{
 		$period = (int) $period;
+		if ((int) $markType === holiday_coaching_mark_type()) {
+			return $period;
+		}
 		if ($period >= 1 || class_is_nursery((int) $classId)) {
 			return $period;
 		}
