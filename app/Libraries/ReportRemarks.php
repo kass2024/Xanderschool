@@ -120,16 +120,9 @@ class ReportRemarks
 		$avg = array_sum(array_column($scored, 'pct')) / count($scored);
 		$best = $scored[0]['title'];
 		$weak = $scored[count($scored) - 1]['title'];
-		$blank = [];
-		foreach ($pupil['subjects'] ?? [] as $subject) {
-			if (($subject['score'] ?? null) === null && trim((string) ($subject['title'] ?? '')) !== '') {
-				$blank[] = (string) $subject['title'];
-			}
-		}
-		$blankText = self::joinSubjects(array_slice($blank, 0, 3));
-		if ($blankText !== '' && $avg >= 75) {
-			$class = $first . ' is full in ' . $best . '. ' . $blank[0] . ' is not in yet.';
-			$head = 'Finish ' . $blank[0] . ' before this report closes.';
+		if (count($scored) === 1) {
+			$class = $first . ' is ' . self::tone($avg) . ' in ' . $best . '.';
+			$head = 'Keep that standard in ' . $best . '.';
 		} elseif ($avg >= 80) {
 			$class = $first . ' is secure in ' . $best . ', and ' . $weak . ' is the soft spot.';
 			$head = 'Keep ' . $weak . ' from slipping.';
@@ -165,8 +158,8 @@ class ReportRemarks
 						continue;
 					}
 					$ready[(int) $id] = [
-						'class_teacher' => self::clip((string) ($lines['class_teacher'] ?? ''), 12),
-						'head_teacher' => self::clip((string) ($lines['head_teacher'] ?? ''), 10),
+						'class_teacher' => self::clip((string) ($lines['class_teacher'] ?? ''), 16),
+						'head_teacher' => self::clip((string) ($lines['head_teacher'] ?? ''), 12),
 					];
 				}
 				if ($ready !== []) {
@@ -175,25 +168,49 @@ class ReportRemarks
 			}
 		}
 		$brief = [];
+		$allowed = [];
 		foreach ($chunk as $pupil) {
+			$id = (int) $pupil['id'];
 			$lines = [];
+			$blank = [];
 			foreach ($pupil['subjects'] ?? [] as $subject) {
+				$title = trim((string) ($subject['title'] ?? ''));
+				if ($title === '') {
+					continue;
+				}
 				$score = $subject['score'] ?? null;
 				$full = (float) ($subject['full'] ?? 0);
-				$lines[] = $subject['title'] . ': ' . ($score === null ? 'no mark' : self::num($score) . '/' . self::num($full));
+				if ($score === null || $full <= 0) {
+					$blank[] = $title;
+					continue;
+				}
+				$lines[] = $title . ': ' . self::num((float) $score) . '/' . self::num($full);
+			}
+			$allowed[$id] = ['scored' => $lines, 'blank' => $blank];
+			if ($lines === []) {
+				continue;
 			}
 			$brief[] = [
-				'id' => (int) $pupil['id'],
+				'id' => $id,
 				'call' => self::calledName((string) ($pupil['name'] ?? '')),
-				'marks' => $lines,
+				'filled_marks' => $lines,
+				'comment_on' => count($lines) === 1
+					? 'Only this one subject has a mark. Talk about that subject alone.'
+					: 'These are the only marks in. Name the strongest and, if it is different, the weakest among them.',
 			];
 		}
+		if ($brief === []) {
+			return [];
+		}
 		$prompt = "You write the two handwritten lines on a nursery or primary report in Rwanda.\n"
-			. "Sound like two different adults who looked at this child's marks, not like a form.\n"
-			. "Every child in this list must get different sentences. Do not reuse a sentence. Do not say \"doing well, especially\" or \"Good work. Keep it up.\"\n"
+			. "Sound like two different adults who looked at this child's filled marks, not like a form.\n"
+			. "Every child must get different sentences. Do not reuse a sentence.\n"
 			. "Use the call name. One sentence each.\n"
-			. "class_teacher: at most 12 words. Name one strong subject and one low or blank subject. If a subject has no mark, say it is not in yet.\n"
-			. "head_teacher: at most 10 words. One different line for the parent. Do not repeat the class teacher.\n"
+			. "class_teacher: at most 16 words. Comment only on subjects listed in filled_marks.\n"
+			. "Never name a subject that is not in filled_marks. Never say a result is awaited, missing, blank, or not in yet.\n"
+			. "If only one subject is filled, comment on that subject only.\n"
+			. "If several are filled, talk about those present results: the strong one and the weaker one.\n"
+			. "head_teacher: at most 12 words. A different line for the parent, still only about filled subjects.\n"
 			. "No scores, no percentages, no labels like Excellent.\n"
 			. "Return JSON only: {\"comments\":[{\"id\":1,\"class_teacher\":\"...\",\"head_teacher\":\"...\"}]}\n\n"
 			. json_encode($brief, JSON_UNESCAPED_UNICODE);
@@ -202,7 +219,7 @@ class ReportRemarks
 			$text = self::extractText($raw);
 			$json = self::parseJson($text);
 			$comments = is_array($json['comments'] ?? null) ? $json['comments'] : (array_is_list($json ?? []) ? $json : []);
-			$out = self::normalize($comments);
+			$out = self::keepPresentOnly(self::normalize($comments), $allowed);
 			if ($out !== []) {
 				$dir = dirname($cacheFile);
 				if (!is_dir($dir)) {
@@ -229,11 +246,63 @@ class ReportRemarks
 				continue;
 			}
 			$out[$id] = [
-				'class_teacher' => self::clip((string) ($row['class_teacher'] ?? ''), 12),
-				'head_teacher' => self::clip((string) ($row['head_teacher'] ?? ''), 10),
+				'class_teacher' => self::clip((string) ($row['class_teacher'] ?? ''), 16),
+				'head_teacher' => self::clip((string) ($row['head_teacher'] ?? ''), 12),
 			];
 		}
 		return $out;
+	}
+
+	private static function tone(float $pct): string
+	{
+		if ($pct >= 80) {
+			return 'strong';
+		}
+		if ($pct >= 60) {
+			return 'steady';
+		}
+		if ($pct >= 50) {
+			return 'uneven';
+		}
+		return 'behind';
+	}
+
+	/**
+	 * Drop a line that names a subject with no mark, so the scored-only fallback is used.
+	 *
+	 * @param array<int, array{class_teacher:string,head_teacher:string}> $out
+	 * @param array<int, array{scored:list<string>,blank:list<string>}> $allowed
+	 * @return array<int, array{class_teacher:string,head_teacher:string}>
+	 */
+	private static function keepPresentOnly(array $out, array $allowed): array
+	{
+		foreach ($out as $id => $lines) {
+			$blank = $allowed[(int) $id]['blank'] ?? [];
+			foreach (['class_teacher', 'head_teacher'] as $key) {
+				if (self::mentionsAbsent((string) ($lines[$key] ?? ''), $blank)) {
+					$out[$id][$key] = '';
+				}
+			}
+		}
+		return $out;
+	}
+
+	/** @param list<string> $blankTitles */
+	private static function mentionsAbsent(string $text, array $blankTitles): bool
+	{
+		$lower = strtolower($text);
+		foreach (['awaited', 'not in yet', 'no mark', 'not yet', 'still blank', 'missing', 'not filled', 'no score', 'still to come'] as $bad) {
+			if (strpos($lower, $bad) !== false) {
+				return true;
+			}
+		}
+		foreach ($blankTitles as $title) {
+			$title = strtolower(trim($title));
+			if (strlen($title) >= 3 && strpos($lower, $title) !== false) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function request(string $prompt): array
@@ -399,6 +468,6 @@ class ReportRemarks
 				$pupil['subjects'] ?? [],
 			];
 		}
-		return WRITEPATH . 'cache/report_remarks_v2/' . sha1(json_encode($payload)) . '.json';
+		return WRITEPATH . 'cache/report_remarks_v3/' . sha1(json_encode($payload)) . '.json';
 	}
 }
