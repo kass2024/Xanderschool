@@ -4045,6 +4045,8 @@ refreshNurseryMentions();
 			->where('c.school_id', $schoolId)
 			->where('r.year', $year)
 			->where("IFNULL(c.program_type,'') <> 'holiday'", null, false)
+			->where("IFNULL(cl.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(l.title,'') NOT LIKE '%Holiday%'", null, false)
 			->groupBy('s.id')
 			->groupBy('c.id')
 			->orderBy('s.fname')
@@ -15463,7 +15465,7 @@ public function getApplicationDocs($id = null)
 		$data['page'] = "get_periodic_marks";
 		$cMdl = new ClassesModel();
 		$school_id = $this->session->get("soma_school_id");
-		$data['classes'] = $cMdl->get_classes();
+		$data['classes'] = $this->classesWithoutHoliday($cMdl->get_classes());
 		$acMdl = new AcademicYearModel();
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
 				->orderBy("id", 'DESC')->get()->getResultArray();
@@ -15658,6 +15660,8 @@ public function getApplicationDocs($id = null)
 			->join('staffs st', 'st.id = r.lecturer', 'left')
 			->where('cl.school_id', $schoolId)
 			->where('r.year', $yearId)
+			->where("IFNULL(cl.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(l.title,'') NOT LIKE '%Holiday%'", null, false)
 			->orderBy('l.id', 'ASC')
 			->orderBy('cl.title', 'ASC')
 			->orderBy('c.title', 'ASC');
@@ -15963,7 +15967,7 @@ public function getApplicationDocs($id = null)
 			$cMdl = new ClassesModel();
 			$termMdl = new TermModel();
 			$school_id = $this->session->get("soma_school_id");
-			$data['classes'] = $cMdl->get_classes();
+			$data['classes'] = $this->classesWithoutHoliday($cMdl->get_classes());
 			$data['school_id'] = $school_id;
 			$acMdl = new AcademicYearModel();
 			$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
@@ -16330,7 +16334,7 @@ public function getApplicationDocs($id = null)
 			$data['page'] = "get_periodic_marks";
 			$cMdl = new ClassesModel();
 			$school_id = $this->session->get("soma_school_id");
-			$data['classes'] = $cMdl->get_classes();
+			$data['classes'] = $this->classesWithoutHoliday($cMdl->get_classes());
 			$acMdl = new AcademicYearModel();
 			$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
 					->orderBy("id", 'DESC')->get()->getResultArray();
@@ -16575,7 +16579,7 @@ public function getApplicationDocs($id = null)
 		$data['page'] = "proclamation_list";
 		$acMdl = new AcademicYearModel();
 		$cMdl = new ClassesModel();
-		$data['classes'] = $cMdl->get_classes();
+		$data['classes'] = $this->classesWithoutHoliday($cMdl->get_classes());
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
 				->orderBy("id", 'DESC')->get()->getResultArray();
 		if (!isset($_POST['class'])) {
@@ -17345,6 +17349,7 @@ public function getApplicationDocs($id = null)
 				->join("staffs s", "s.id=classes.mentor", "LEFT")
 				->where("classes.school_id", $this->session->get("soma_school_id"))
 				->get()->getResultArray();
+		$data['classes'] = $this->classesWithoutHoliday($data['classes']);
 		$data['subtitle'] = lang("app.resultRecord");
 		$data['page'] = "Result_record";
 		$data['content'] = view("pages/reports/marks_report", $data);
@@ -18357,7 +18362,7 @@ public function getApplicationDocs($id = null)
 		$data['page'] = "Result_record";
 		$cMdl = new ClassesModel();
 		$school_id = $this->session->get("soma_school_id");
-		$data['classes'] = $cMdl->get_classes();
+		$data['classes'] = $this->classesWithoutHoliday($cMdl->get_classes());
 		$acMdl = new AcademicYearModel();
 		$data['years'] = $acMdl->select('id,title')->where("school_id", $school_id)
 				->orderBy("id", 'DESC')->get()->getResultArray();
@@ -24560,6 +24565,7 @@ public function assign_card()
 				->join("faculty f", "f.id=d.faculty_id")
 				->where("classes.school_id", $school_id)
 				->get()->getResultArray();
+		$data['classes'] = $this->classesWithoutHoliday($data['classes']);
 		if (isset($_POST['class'])) {
 			//fetch class deliberation data
 			$atMdl = new ActiveTermModel();
@@ -24666,6 +24672,7 @@ public function assign_card()
 				->where("dr.status", 0)
 				->groupBy("classes.id")
 				->get()->getResultArray();
+		$data['classes'] = $this->classesWithoutHoliday($data['classes']);
 		$data['content'] = view("pages/finish_deliberation", $data);
 		return view('main', $data);
 	}
@@ -24908,6 +24915,7 @@ public function assign_card()
 //			->where("cr.year",$year)
 				->groupBy("classes.id")
 				->get()->getResultArray();
+		$criterias = $this->classesWithoutHoliday($criterias);
 		$i = 1;
 		foreach ($criterias as $criteria) {
 			echo "
@@ -26080,6 +26088,7 @@ public function assign_card()
 				->join("staffs s", "s.id=classes.mentor", "LEFT")
 				->where("classes.school_id", $this->session->get("soma_school_id"))
 				->get()->getResultArray();
+		$data['classes'] = $this->classesWithoutHoliday($data['classes']);
 		$data['activeTerm'] = $SchoolModel->select("at.term,at.id")
 				->join("active_term at", "at.id=schools.active_term")
 				->where("at.school_id", $this->session->get("soma_school_id"))
