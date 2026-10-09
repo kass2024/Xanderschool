@@ -401,7 +401,7 @@ if (!function_exists('school_signature_file')) {
 }
 
 if (!function_exists('report_signature_img')) {
-	function report_signature_img($file, $pdf = false, $heightMm = 5.2): string
+	function report_signature_img($file, $pdf = false, $heightMm = 5.2, $maxWidthMm = 34): string
 	{
 		$saved = (string) $file;
 		$file = staff_signature_file($saved);
@@ -416,7 +416,8 @@ if (!function_exists('report_signature_img')) {
 			? str_replace('\\', '/', $path)
 			: (base_url('assets/images/signatures/' . rawurlencode($file)) . '?v=' . filemtime($path));
 		$h = number_format((float) $heightMm, 1, '.', '');
-		return '<img src="' . htmlspecialchars($src, ENT_QUOTES, 'UTF-8') . '" alt="" style="height:' . $h . 'mm;max-height:' . $h . 'mm;max-width:34mm;width:auto;vertical-align:bottom;">';
+		$w = number_format((float) $maxWidthMm, 1, '.', '');
+		return '<img src="' . htmlspecialchars($src, ENT_QUOTES, 'UTF-8') . '" alt="" style="height:' . $h . 'mm;max-height:' . $h . 'mm;max-width:' . $w . 'mm;width:auto;vertical-align:bottom;">';
 	}
 }
 

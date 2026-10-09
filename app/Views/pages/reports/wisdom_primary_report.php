@@ -441,7 +441,7 @@ foreach ($students ?? [] as $student) {
 		}
 		return $lines;
 	};
-	$commentBlock = static function (string $label, string $text, string $signHtml = '', bool $raisedSign = false) use ($wrapComment, $span) {
+	$commentBlock = static function (string $label, string $text, string $signHtml = '') use ($wrapComment, $span) {
 		$labelMm = 58.0;
 		$signMm = 40.0;
 		$textMm = 186.0 - $labelMm - $signMm;
@@ -451,15 +451,12 @@ foreach ($students ?? [] as $student) {
 		}
 		$lineMm = 5.2;
 		$last = count($lines) - 1;
-		$raised = $raisedSign && $signHtml !== '';
-		$signRowMm = $raised ? 14.4 : $lineMm;
-		$blockMm = number_format(((count($lines) - 1) * $lineMm) + $signRowMm, 2, '.', '');
+		$blockMm = number_format(count($lines) * $lineMm, 2, '.', '');
 		echo '<tr><td class="wp-foot" colspan="' . $span . '" style="height:' . $blockMm . 'mm;line-height:normal;white-space:normal;padding:0.2mm 0.4mm;vertical-align:bottom;">';
 		echo '<table style="width:186mm;border-collapse:collapse;table-layout:fixed;"><tbody>';
 		foreach ($lines as $i => $line) {
-			$rowMm = ($i === $last && $raised) ? $signRowMm : $lineMm;
-			$cell = 'height:' . $rowMm . 'mm;line-height:' . ($raised && $i === $last ? '4.2' : $rowMm) . 'mm;vertical-align:bottom;border:0;padding:0;font-weight:700;';
-			echo '<tr style="height:' . $rowMm . 'mm">';
+			$cell = 'height:' . $lineMm . 'mm;line-height:' . $lineMm . 'mm;vertical-align:bottom;border:0;padding:0;font-weight:700;';
+			echo '<tr style="height:' . $lineMm . 'mm">';
 			echo '<td style="width:' . $labelMm . 'mm;' . $cell . 'white-space:nowrap;">' . ($i === 0 ? esc($label) : '') . '</td>';
 			if ($line === '') {
 				echo '<td style="width:' . $textMm . 'mm;' . $cell . '">' . str_repeat('.', 42) . '</td>';
@@ -467,17 +464,12 @@ foreach ($students ?? [] as $student) {
 				echo '<td style="width:' . $textMm . 'mm;' . $cell . 'color:#1d4ed8;border-bottom:0.9pt dotted #1d4ed8;white-space:nowrap;">' . esc($line) . '</td>';
 			}
 			$signCell = '';
-			if ($i === $last && $raised) {
-				$signCell = '<table style="width:' . $signMm . 'mm;border-collapse:collapse;"><tr>'
-					. '<td style="height:3.6mm;border:0;padding:0;font-size:8pt;font-weight:700;line-height:3.6mm;white-space:nowrap;">Sign: ' . str_repeat('.', 12) . '</td></tr><tr>'
-					. '<td style="height:10.2mm;border:0;border-bottom:1.1pt dotted #1e3a5f;padding:0 0 0.15mm;vertical-align:bottom;">' . $signHtml . '</td>'
-					. '</tr></table>';
-			} elseif ($i === $last && $signHtml !== '') {
-				$signCell = $signHtml;
+			if ($i === $last && $signHtml !== '') {
+				$signCell = '<span style="white-space:nowrap;vertical-align:bottom;">Sign: ' . $signHtml . '</span>';
 			} elseif ($i === $last) {
 				$signCell = ' Sign: ' . str_repeat('.', 12);
 			}
-			echo '<td style="width:' . $signMm . 'mm;' . $cell . 'white-space:nowrap;line-height:normal;">' . $signCell . '</td>';
+			echo '<td style="width:' . $signMm . 'mm;' . $cell . 'white-space:nowrap;overflow:visible;">' . $signCell . '</td>';
 			echo '</tr>';
 		}
 		echo '</tbody></table></td></tr>';
@@ -695,9 +687,9 @@ foreach ($students ?? [] as $student) {
 		$classSignFile = trim((string) ($report_stream_label ?? '')) !== ''
 			? (string) ($report_class_signature ?? '')
 			: (string) (($report_class_signatures ?? [])[(int) ($student['class'] ?? 0)] ?? ($report_class_signature ?? ''));
-		$commentBlock("Class teacher's comment:", $classComment, report_signature_img($classSignFile, !empty($pdf), 9.2), true);
+		$commentBlock("Class teacher's comment:", $classComment, report_signature_img($classSignFile, !empty($pdf), 6.4, 28));
 		?>
-		<?php $commentBlock("Head teacher's comment:", $headComment, report_signature_img($report_head_signature ?? '', !empty($pdf), 9.2), true); ?>
+		<?php $commentBlock("Head teacher's comment:", $headComment, report_signature_img($report_head_signature ?? '', !empty($pdf), 6.4, 28)); ?>
 		<?php if (!$periodic): ?>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>
 		<?php endif; ?>
