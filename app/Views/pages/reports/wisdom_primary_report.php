@@ -319,18 +319,13 @@ foreach ($students ?? [] as $student) {
 	ob_start();
 	$name = trim((string) ($student['fname'] ?? '') . ' ' . (string) ($student['lname'] ?? ''));
 	$classLabel = trim((string) ($student['level_name'] ?? '') . ' ' . (string) ($student['title'] ?? ''));
-	$streamLabel = trim((string) ($student['code'] ?? ''));
-	if ($streamLabel === '') {
-		$streamLabel = trim((string) ($student['department_name'] ?? ''));
-	}
 	$namePack = $packText($name, 70, 2, 11.0, 8.0);
 	$yearPack = $packText($yearLabel, 28, 2, 11.0, 8.0);
-	$termPack = $packText($termLabel, 70, 2, 11.0, 8.0);
-	$streamPack = $packText($streamLabel, 28, 2, 11.0, 8.0);
+	$termPack = $packText($termLabel, 140, 2, 11.0, 8.0);
 	$classPack = $packText($classLabel, 140, 2, 11.0, 8.0);
 	$idLine = 4.6;
 	$nameLines = max($namePack['lines'], $yearPack['lines']);
-	$termLines = max($termPack['lines'], $streamPack['lines']);
+	$termLines = $termPack['lines'];
 	$classLines = $classPack['lines'];
 	$idRow = static function (int $lines, float $pt = 0) use ($idLine): string {
 		$mm = $lines * $idLine;
@@ -470,9 +465,7 @@ foreach ($students ?? [] as $student) {
 		</tr>
 		<tr>
 			<td class="lab" style="<?= $idRow($termLines); ?>">Term:</td>
-			<td class="val" style="<?= $idRow($termLines, $termPack['pt']); ?>"><?= $termPack['html']; ?></td>
-			<td class="lab" style="<?= $idRow($termLines); ?>">Stream:</td>
-			<td class="val" style="<?= $idRow($termLines, $streamPack['pt']); ?>"><?= $streamPack['html']; ?></td>
+			<td class="val" colspan="3" style="<?= $idRow($termLines, $termPack['pt']); ?>"><?= $termPack['html']; ?></td>
 		</tr>
 		<tr>
 			<td class="lab" style="<?= $idRow($classLines); ?>">Class:</td>

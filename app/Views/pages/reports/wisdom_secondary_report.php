@@ -254,14 +254,12 @@ foreach ($students ?? [] as $student) {
 	$deptName = trim((string) ($student['department_name'] ?? ''));
 	$facTitle = trim((string) ($student['fac_title'] ?? ''));
 	$classLabel = trim($levelName . ' ' . ($deptCode !== '' ? $deptCode : $classTitle));
-	$streamLabel = $classTitle !== '' ? $classTitle : $deptCode;
 	$program = $deptName !== '' ? $deptName : $facTitle;
 	if ($anp && (strcasecmp($program, 'Nursing ANP') === 0 || strcasecmp($program, 'ANP') === 0 || $program === '')) {
 		$program = 'Associated Nursing Program';
 	}
 	$sid = (int) $student['id'];
 	$classPos = $classRanks[$sid] ?? '';
-	$combPos = $comboRank[$sid] ?? $classPos;
 	$say = $remarks[$sid] ?? [];
 	$classComment = trim((string) ($say['class_teacher'] ?? ''));
 	$headComment = trim((string) ($say['head_teacher'] ?? ''));
@@ -345,20 +343,16 @@ foreach ($students ?? [] as $student) {
 			<td class="v"><?= esc($yearLabel); ?></td>
 		</tr>
 		<tr>
-			<td class="k">Stream</td>
-			<td class="v"><?= esc($streamLabel); ?></td>
 			<td class="k">Term</td>
 			<td class="v"><?= esc((string) $termNo); ?></td>
 			<td class="k">Program</td>
 			<td class="v"><?= esc($program); ?></td>
-		</tr>
-		<tr>
 			<td class="k">Class position</td>
 			<td class="v"><?= esc((string) $classPos); ?></td>
-			<td class="k">Combination pos.</td>
-			<td class="v"><?= esc((string) $combPos); ?></td>
+		</tr>
+		<tr>
 			<td class="k">Report</td>
-			<td class="v"><?= esc($periodic ? 'Mid-term' : 'End of term'); ?></td>
+			<td class="v" colspan="5"><?= esc($periodic ? 'Mid-term' : 'End of term'); ?></td>
 		</tr>
 	</table>
 	<table class="ws-grid">
