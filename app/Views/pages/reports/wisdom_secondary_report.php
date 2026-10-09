@@ -266,6 +266,13 @@ foreach ($students ?? [] as $student) {
 		$program = 'Associated Nursing Program';
 	}
 	$sid = (int) $student['id'];
+	$studentClassId = (int) ($student['class'] ?? $student['class_id'] ?? 0);
+	$teacherRow = ($secondary_class_teachers ?? [])[$studentClassId] ?? null;
+	if (is_array($teacherRow)) {
+		$classTeacher = trim((string) ($teacherRow['name'] ?? $classTeacher));
+		$classPhone = trim((string) ($teacherRow['phone'] ?? $classPhone));
+	}
+	$classSignImg = report_signature_img(($report_class_signatures ?? [])[$studentClassId] ?? ($report_class_signature ?? ''), !empty($pdf), 4.4);
 	$classPos = $classRanks[$sid] ?? '';
 	$say = $remarks[$sid] ?? [];
 	$classComment = trim((string) ($say['class_teacher'] ?? ''));

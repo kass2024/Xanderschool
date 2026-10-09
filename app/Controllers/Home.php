@@ -503,6 +503,54 @@ public function testEmail()
 	}
 
 	/**
+	 * One class id, or every stream of a level such as P2 A and P2 B.
+	 *
+	 * @return array{ids:list<int>,label:string,combined:bool,error:string}
+	 */
+	private function reportClassSelection(string $token, int $schoolId): array
+	{
+		$token = trim($token);
+		if (preg_match('/^g\d+l\d+$/', $token)) {
+			$picked = $this->periodicStreamSelection($token, $schoolId);
+			$ids = $picked['ids'];
+			return [
+				'ids' => $ids,
+				'label' => $picked['label'],
+				'combined' => count($ids) > 1,
+				'error' => count($ids) > 1 ? '' : 'Choose a class, or a level that has more than one stream.',
+			];
+		}
+		$id = (int) $token;
+		return [
+			'ids' => $id > 0 ? [$id] : [],
+			'label' => '',
+			'combined' => false,
+			'error' => $id > 0 ? '' : 'Select a class.',
+		];
+	}
+
+	/** @param list<int> $classIds @return array<int,string> */
+	private function courseInitialsForClasses(array $classIds, int $year): array
+	{
+		$classIds = array_values(array_filter(array_map('intval', $classIds)));
+		if ($classIds === [] || $year < 1) {
+			return [];
+		}
+		$rows = \Config\Database::connect()->table('course_records cr')
+			->select('cr.course, s.fname, s.lname')
+			->join('staffs s', 's.id = cr.lecturer', 'left')
+			->whereIn('cr.class', $classIds)
+			->where('cr.year', $year)
+			->get()->getResultArray();
+		$initials = [];
+		foreach ($rows as $row) {
+			$name = trim((string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? ''));
+			$initials[(int) $row['course']] = $name !== '' ? get_first_letters($name) : '';
+		}
+		return $initials;
+	}
+
+	/**
 	 * Discipline / permission lists never include holiday coaching rows.
 	 *
 	 * @param list<array<string,mixed>> $students
@@ -12730,6 +12778,18 @@ public function getApplicationDocs($id = null)
 		$isClass = (int) $isClass;
 		if ($type === 2 && $isClass === 1 && (int) $id === 0) {
 			$students = $StudentModel->get_student(null, null, null, false, $academicYear);
+		} elseif ($isClass === 1 && preg_match('/^g\d+l\d+$/', (string) $id)) {
+			$picked = $this->periodicStreamSelection((string) $id, (int) $this->session->get('soma_school_id'));
+			$students = [];
+			foreach ($picked['ids'] as $streamClassId) {
+				foreach ($StudentModel->get_student($streamClassId, 'c.id', null, false, $academicYear) as $row) {
+					$sid = (int) ($row['id'] ?? 0);
+					if ($sid > 0) {
+						$students[$sid] = $row;
+					}
+				}
+			}
+			$students = array_values($students);
 		} else {
 			$key = $isClass == 0 ? "students.id" : "c.id";
 			$students = $StudentModel->get_student($id, $key, null, false, $academicYear);
@@ -17687,16 +17747,19 @@ public function getApplicationDocs($id = null)
 		exit;
 	}
 
-	private function reportClassPdfFilename($classId): string
+	private function reportClassPdfFilename($classId, string $label = ''): string
 	{
-		$row = (new ClassesModel())->select('l.title AS level_name, d.code, classes.title')
-			->join('departments d', 'd.id = classes.department', 'LEFT')
-			->join('levels l', 'l.id = classes.level', 'LEFT')
-			->where('classes.id', (int) $classId)
-			->get()->getRowArray();
-		$name = trim(preg_replace('/\s+/', ' ', trim(
-			(string) ($row['level_name'] ?? '') . ' ' . (string) ($row['code'] ?? '') . ' ' . (string) ($row['title'] ?? '')
-		)));
+		$name = trim($label);
+		if ($name === '') {
+			$row = (new ClassesModel())->select('l.title AS level_name, d.code, classes.title')
+				->join('departments d', 'd.id = classes.department', 'LEFT')
+				->join('levels l', 'l.id = classes.level', 'LEFT')
+				->where('classes.id', (int) $classId)
+				->get()->getRowArray();
+			$name = trim(preg_replace('/\s+/', ' ', trim(
+				(string) ($row['level_name'] ?? '') . ' ' . (string) ($row['code'] ?? '') . ' ' . (string) ($row['title'] ?? '')
+			)));
+		}
 		$name = trim((string) preg_replace('/[<>:"\/\\\\|?*]+/', ' ', $name));
 		$name = trim((string) preg_replace('/\s+/', ' ', $name));
 		if ($name === '') {
@@ -17748,12 +17811,27 @@ public function getApplicationDocs($id = null)
 	private function attachReportSignerSignatures(array &$data, int $schoolId, int $classId): void
 	{
 		$this->ensureStaffContractColumns();
-		$mentor = \Config\Database::connect()->query(
-			"SELECT s.signature FROM classes c
+		$classIds = array_values(array_filter(array_map('intval', $data['report_class_ids'] ?? [])));
+		if ($classIds === []) {
+			$classIds = [$classId];
+		}
+		$idList = implode(',', $classIds);
+		$mentors = $idList === '' ? [] : \Config\Database::connect()->query(
+			"SELECT c.id, s.signature, s.fname, s.lname, s.phone FROM classes c
 			 LEFT JOIN staffs s ON s.id = c.mentor AND s.status != 0
-			 WHERE c.id = ? AND c.school_id = ? LIMIT 1",
-			[$classId, $schoolId]
-		)->getRowArray();
+			 WHERE c.id IN ({$idList}) AND c.school_id = ?",
+			[$schoolId]
+		)->getResultArray();
+		$signatures = [];
+		$teachers = [];
+		foreach ($mentors as $mentor) {
+			$cid = (int) ($mentor['id'] ?? 0);
+			$signatures[$cid] = staff_signature_file($mentor['signature'] ?? '');
+			$teachers[$cid] = [
+				'name' => trim((string) (($mentor['fname'] ?? '') . ' ' . ($mentor['lname'] ?? ''))),
+				'phone' => trim((string) ($mentor['phone'] ?? '')),
+			];
+		}
 		$head = \Config\Database::connect()->query(
 			"SELECT s.signature FROM staffs s
 			 LEFT JOIN posts p ON p.id = s.post
@@ -17762,8 +17840,15 @@ public function getApplicationDocs($id = null)
 			 ORDER BY s.id ASC LIMIT 1",
 			[$schoolId, \App\Models\PostsModel::HEAD_TEACHER_ID]
 		)->getRowArray();
-		$data['report_class_signature'] = staff_signature_file($mentor['signature'] ?? '');
+		$first = $classIds[0];
+		$data['report_class_signatures'] = $signatures;
+		$data['secondary_class_teachers'] = $teachers;
+		$data['report_class_signature'] = $signatures[$first] ?? '';
 		$data['report_head_signature'] = staff_signature_file($head['signature'] ?? '');
+		if (trim((string) ($data['secondary_class_teacher'] ?? '')) === '') {
+			$data['secondary_class_teacher'] = $teachers[$first]['name'] ?? '';
+			$data['secondary_class_teacher_phone'] = $teachers[$first]['phone'] ?? '';
+		}
 	}
 
 	private function attachWisdomSecondaryReport(array &$data, int $schoolId, int $classId, int $year, string $band, bool $periodic): void
@@ -17774,18 +17859,11 @@ public function getApplicationDocs($id = null)
 		if (!empty($yearRow['title'])) {
 			$data['academic_year_title'] = $yearRow['title'];
 		}
-		$initials = [];
-		$lecturers = \Config\Database::connect()->table('course_records cr')
-			->select('cr.course, s.fname, s.lname')
-			->join('staffs s', 's.id = cr.lecturer', 'left')
-			->where('cr.class', $classId)
-			->where('cr.year', $year)
-			->get()->getResultArray();
-		foreach ($lecturers as $lec) {
-			$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
-			$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
+		$streamClassIds = array_values(array_filter(array_map('intval', $data['report_class_ids'] ?? [])));
+		if ($streamClassIds === []) {
+			$streamClassIds = [$classId];
 		}
-		$data['secondary_course_initials'] = $initials;
+		$data['secondary_course_initials'] = $this->courseInitialsForClasses($streamClassIds, $year);
 		$mentor = \Config\Database::connect()->query(
 			"SELECT s.fname, s.lname, s.phone FROM classes c
 			 LEFT JOIN staffs s ON s.id = c.mentor
@@ -17889,7 +17967,17 @@ public function getApplicationDocs($id = null)
 		if (!empty($yearRow['title'])) {
 			$data['academic_year_title'] = $yearRow['title'];
 		}
-		$courses = $this->get_courses($classId, 4, $year);
+		$streamClassIds = array_values(array_filter(array_map('intval', $data['report_class_ids'] ?? [])));
+		if ($streamClassIds === []) {
+			$streamClassIds = [$classId];
+		}
+		$courses = [];
+		foreach ($streamClassIds as $streamClassId) {
+			foreach ($this->get_courses($streamClassId, 4, $year) as $course) {
+				$courses[(int) $course['id']] = $course;
+			}
+		}
+		$courses = array_values($courses);
 		$courseMax = [];
 		foreach ($courses as $course) {
 			$courseMax[(int) $course['id']] = (float) ($course['marks'] ?? 0);
@@ -18031,18 +18119,28 @@ public function getApplicationDocs($id = null)
 		$pdf = $this->request->getPost("pdf");
 		$year = $this->request->getPost("year");
 		$term = $this->request->getPost("term");
-		$class = $this->request->getPost("class");
+		$classToken = trim((string) $this->request->getPost("class"));
 		$period = $this->request->getPost("period");
 
 		$this->_preset();
+		$school_id = $this->session->get("soma_school_id");
+		$classPick = $this->reportClassSelection($classToken, (int) $school_id);
+		if ($classPick['error'] !== '') {
+			echo $classPick['error'];
+			return;
+		}
+		$classIds = $classPick['ids'];
+		$class = $classIds[0];
+		$streamLabel = $classPick['label'];
 		$data = $this->data;
+		$data['report_class_ids'] = $classIds;
+		$data['report_stream_label'] = $streamLabel;
 		$data['title'] = lang("app.resultRecord");
 		$data['subtitle'] = lang("app.resultRecord");
 		$data['year'] = $year;
 		$data['period'] = $period;
 		$data['term'] = $term;
 		$atMdl = new ActiveTermModel();
-		$school_id = $this->session->get("soma_school_id");
 		$active_term = $atMdl->select("id")->where("term", $term)
 				->where("academic_year", $year)->where("school_id", $school_id)
 				->get(1)->getRow();
@@ -18102,7 +18200,7 @@ public function getApplicationDocs($id = null)
 				->where("c.school_id", $school_id)
 				// ->where("sk.active_term", $active_term->id)
 				->where("cr.status", "1")
-				->where("c.id", $class)
+				->whereIn("c.id", $classIds)
 				->where("cr.year", $year)
 				->orderBy("students.fname", "ASC")
 				->groupBy('students.id')
@@ -18227,18 +18325,7 @@ public function getApplicationDocs($id = null)
 				[(int) $school_id, \App\Models\PostsModel::HEAD_TEACHER_ID]
 			)->getRowArray();
 			$data['nursery_head_teacher'] = trim((string) (($headTeacherRow['fname'] ?? '') . ' ' . ($headTeacherRow['lname'] ?? '')));
-			$initials = [];
-			$lecturers = \Config\Database::connect()->table('course_records cr')
-				->select('cr.course, s.fname, s.lname')
-				->join('staffs s', 's.id = cr.lecturer', 'left')
-				->where('cr.class', $class)
-				->where('cr.year', $year)
-				->get()->getResultArray();
-			foreach ($lecturers as $lec) {
-				$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
-				$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
-			}
-			$data['nursery_course_initials'] = $initials;
+			$data['nursery_course_initials'] = $this->courseInitialsForClasses($classIds, (int) $year);
 			$this->attachReportSignerSignatures($data, (int) $school_id, (int) $class);
 			$view = view("pages/reports/wisdom_nursery_report", $data);
 		}
@@ -18256,18 +18343,7 @@ public function getApplicationDocs($id = null)
 			if (!empty($yearRow['title'])) {
 				$data['academic_year_title'] = $yearRow['title'];
 			}
-			$initials = [];
-			$lecturers = \Config\Database::connect()->table('course_records cr')
-				->select('cr.course, s.fname, s.lname')
-				->join('staffs s', 's.id = cr.lecturer', 'left')
-				->where('cr.class', $class)
-				->where('cr.year', $year)
-				->get()->getResultArray();
-			foreach ($lecturers as $lec) {
-				$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
-				$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
-			}
-			$data['primary_course_initials'] = $initials;
+			$data['primary_course_initials'] = $this->courseInitialsForClasses($classIds, (int) $year);
 			$data['primary_periodic'] = true;
 			$this->attachReportSignerSignatures($data, (int) $school_id, (int) $class);
 			$view = view("pages/reports/wisdom_primary_report", $data);
@@ -18299,7 +18375,7 @@ public function getApplicationDocs($id = null)
 			// }
 			// die($view);
 			$html = $view;
-			$pdfName = $this->reportClassPdfFilename($class);
+			$pdfName = $this->reportClassPdfFilename($class, $streamLabel);
 			if ($wisdomPrimaryPeriodic) {
 				$this->streamNurserySheetPdf($html, $pdfName, [
 					'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 13.0,
@@ -18337,7 +18413,7 @@ public function getApplicationDocs($id = null)
 		ini_set('memory_limit', '4096M');
 		$this->ensurePrimaryGradeLetterColumn();
 		session_write_close();
-		if ($class == null || !ctype_digit((string) $class)) {
+		if ($class === null || $class === '' || !preg_match('/^(?:\d+|g\d+l\d+)$/', (string) $class)) {
 			$class = $_GET['class'] ?? null;
 			$term = $_GET['term'] ?? $term;
 			$year = $_GET['year'] ?? $year;
@@ -18347,6 +18423,14 @@ public function getApplicationDocs($id = null)
 
 		$this->_preset();
 		$school_id = $this->session->get("soma_school_id");
+		$classPick = $this->reportClassSelection((string) $class, (int) $school_id);
+		if ($classPick['error'] !== '') {
+			echo $classPick['error'];
+			return;
+		}
+		$classIds = $classPick['ids'];
+		$class = $classIds[0];
+		$streamLabel = $classPick['label'];
 		$classModel = new ClassesModel();
 		$classRow = $classModel->select('classes.id, f.id AS fac_id, f.type AS fac_type, f.abbrev AS faculty_code, f.title AS fac_title, l.title AS level_name, d.code')
 				->join('departments d', 'd.id = classes.department')
@@ -18367,7 +18451,7 @@ public function getApplicationDocs($id = null)
 			]);
 		}
 		$isTvet = !in_array($fact, [1, 2, 3, 19], true);
-		$useWdaNewFormat = $isTvet && !in_array((int) $school_id, [52], true) && $secondaryBand === '';
+		$useWdaNewFormat = $isTvet && count($classIds) === 1 && !in_array((int) $school_id, [52], true) && $secondaryBand === '';
 
 		if ($useWdaNewFormat) {
 			$pdfMode = isset($_GET['pdf']);
@@ -18417,6 +18501,8 @@ public function getApplicationDocs($id = null)
 			$data['page'] = "Result_record";
 			$data['class_id'] = $class;
 			$data['school_id'] = $school_id;
+			$data['report_class_ids'] = $classIds;
+			$data['report_stream_label'] = $streamLabel;
 			$students = $StudentModel->select("students.id,students.regno,
 															students.photo,students.fname,students.dob,
 															students.lname,c.id as class_id,
@@ -18438,7 +18524,7 @@ public function getApplicationDocs($id = null)
 					->where("c.school_id", $school_id)
 					// ->where("sk.active_term", $active_term->id)
 					->where("cr.status", "1")
-					->where("c.id", $class)
+					->whereIn("c.id", $classIds)
 					->where("cr.year", $year)
 					->orderBy("students.fname", "ASC")
 					->groupBy('students.id')
@@ -18591,18 +18677,7 @@ public function getApplicationDocs($id = null)
 					[(int) $school_id, \App\Models\PostsModel::HEAD_TEACHER_ID]
 				)->getRowArray();
 				$data['nursery_head_teacher'] = trim((string) (($headTeacherRow['fname'] ?? '') . ' ' . ($headTeacherRow['lname'] ?? '')));
-				$initials = [];
-				$lecturers = \Config\Database::connect()->table('course_records cr')
-					->select('cr.course, s.fname, s.lname')
-					->join('staffs s', 's.id = cr.lecturer', 'left')
-					->where('cr.class', $class)
-					->where('cr.year', $year)
-					->get()->getResultArray();
-				foreach ($lecturers as $lec) {
-					$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
-					$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
-				}
-				$data['nursery_course_initials'] = $initials;
+				$data['nursery_course_initials'] = $this->courseInitialsForClasses($classIds, (int) $year);
 				$data['nursery_exam_title'] = 'End of Term Exam';
 				$wisdomNurserySheet = is_wisdom_school((int) $school_id)
 					|| !in_array((int) $school_id, [28, 30, 31, 54, 42], true);
@@ -18733,18 +18808,7 @@ public function getApplicationDocs($id = null)
 						->orderBy("max_point", "DESC")
 						->orderBy("min_point", "DESC")
 						->get()->getResultArray();
-					$initials = [];
-					$lecturers = \Config\Database::connect()->table('course_records cr')
-						->select('cr.course, s.fname, s.lname')
-						->join('staffs s', 's.id = cr.lecturer', 'left')
-						->where('cr.class', $class)
-						->where('cr.year', $year)
-						->get()->getResultArray();
-					foreach ($lecturers as $lec) {
-						$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
-						$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
-					}
-					$data['primary_course_initials'] = $initials;
+					$data['primary_course_initials'] = $this->courseInitialsForClasses($classIds, (int) $year);
 					$this->attachReportSignerSignatures($data, (int) $school_id, (int) $class);
 					$view = view("pages/reports/wisdom_primary_report", $data);
 				} else if (in_array($school_id, [28])) {
@@ -18806,7 +18870,7 @@ public function getApplicationDocs($id = null)
 				// 	die();
 				// }
 				$html = $view;
-				$pdfName = $this->reportClassPdfFilename($class);
+				$pdfName = $this->reportClassPdfFilename($class, $streamLabel);
 				$wisdomNurserySlip = ((int) $fact === 19)
 					&& (is_wisdom_school((int) $school_id) || !in_array((int) $school_id, [28, 30, 31, 42]));
 				$wisdomPrimarySlip = ((int) $fact === 3)

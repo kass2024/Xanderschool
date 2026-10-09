@@ -452,7 +452,7 @@ foreach ($students as $student) {
 				</table>
 				<div class="nr-footwrap">
 					<?php $footLine('Conduct:', $conductText, 8, false); ?>
-					<?php $commentLine("Class teacher's comment:", $classComment, 8.4, report_signature_img($report_class_signature ?? '', !empty($pdf), 5.2)); ?>
+					<?php $commentLine("Class teacher's comment:", $classComment, 8.4, report_signature_img(($report_class_signatures ?? [])[(int) ($student['class'] ?? 0)] ?? ($report_class_signature ?? ''), !empty($pdf), 5.2)); ?>
 					<?php $commentLine("Head teacher's comment:", $headComment, 8.4, report_signature_img($report_head_signature ?? '', !empty($pdf), 5.2)); ?>
 					<?php $footLine("Parent's comment:", '', 8); ?>
 					<?php $signLine(8); ?>

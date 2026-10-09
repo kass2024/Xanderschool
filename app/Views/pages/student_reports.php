@@ -91,13 +91,7 @@
 			<label><?= lang("app.sClass");?>:</label>
 			<select class="form-control select2" name="class" id="select_class" required>
 				<option selected disabled><?= lang("app.selectClass");?></option>
-				<?php
-				foreach ($classes as $class) {
-					?>
-					<option
-						data-id="<?= $class['facul_id']; ?>" id="faculty<?= $class['id']; ?>" value="<?= $class['id']; ?>"> <?= $class['level_name'] . " " . $class['code'] . " " . $class['title']; ?></option>
-					<?php
-				} ?>
+				<?php echo view('pages/partials/class_stream_options', ['classes' => $classes]); ?>
 			</select>
 		</div>
 		<div class="form-group col-sm-4 col-md-2 col-lg-2" id="studentDiv" style="display: none">
@@ -242,6 +236,11 @@
 		syncHolidayReportUi();
 
 		$("#form").on("submit", function (e) {
+			if (isHolidayReport() && /^g\d+l\d+$/.test(String($("#select_class").val() || ""))) {
+				e.preventDefault();
+				if (window.toastada) toastada.error("Choose one class for the holiday coaching report.");
+				return false;
+			}
 			if (!$("#useStudent").prop("checked")) {
 				$("#select_student").prop("disabled", true).val(null);
 			}
@@ -277,6 +276,10 @@
 			}
 			if (reportType === "holiday_coaching") {
 				term = "1";
+			}
+			if (reportType === "holiday_coaching" && /^g\d+l\d+$/.test(String(classe))) {
+				if (window.toastada) toastada.error("Choose one class for the holiday coaching report.");
+				return;
 			}
 			if (reportType === "holiday_coaching" && !hcReady) {
 				if (window.toastada) toastada.error($("#hcAssignStatus").text() || "Assign holiday coaching courses to this class first.");

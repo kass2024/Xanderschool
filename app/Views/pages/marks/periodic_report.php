@@ -80,13 +80,7 @@
 			<label><?= lang("app.sClass"); ?> :</label>
 			<select class="form-control select2" name="class" id="select_class" required>
 				<option selected disabled><?= lang("app.chooseClass"); ?></option>
-				<?php
-				foreach ($classes as $class) {
-					?>
-					<option data-fac="<?= (int) ($class['facul_id'] ?? 0); ?>"
-						value="<?= $class['id']; ?>"> <?= $class['level_name'] . " " . $class['code'] . " " . $class['title']; ?></option>
-					<?php
-				} ?>
+				<?php echo view('pages/partials/class_stream_options', ['classes' => $classes]); ?>
 			</select>
 		</div>
 		<div class="form-group col-sm-3 col-md-2 col-lg-2">
