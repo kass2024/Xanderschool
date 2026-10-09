@@ -57,39 +57,24 @@
 						  class="spedit">&nbsp;<?= $staff['address']; ?></span>
 				</div>
 				<?php
-				$canSetStaffContract = \Config\MenuClearance::canSetStaffContract((int) ($_SESSION['soma_post'] ?? 0));
-				$contractDay = static function ($value): string {
+				$contractLabel = static function ($value): string {
 					$value = trim((string) $value);
 					if ($value === '' || $value === '0000-00-00') {
 						return '';
 					}
 					$ts = strtotime($value);
-					return $ts ? date('Y-m-d', $ts) : '';
+					return $ts ? date('d M Y', $ts) : '';
 				};
-				$contractStart = $contractDay($staff['contract_start'] ?? '');
-				$contractEnd = $contractDay($staff['contract_end'] ?? '');
+				$contractStart = $contractLabel($staff['contract_start'] ?? '');
+				$contractEnd = $contractLabel($staff['contract_end'] ?? '');
 				?>
 				<div class="form-group">
 					<label>Contract start:</label>
-					<?php if ($canSetStaffContract): ?>
-						<input type="date" class="form-control staff-contract-input" style="max-width:220px;display:inline-block;"
-							data-staff-id="<?= (int) $staff['id']; ?>" data-which="start"
-							value="<?= esc($contractStart, 'attr'); ?>">
-						<span class="text-muted small">Optional</span>
-					<?php else: ?>
-						<span><?= $contractStart !== '' ? esc(date('d M Y', strtotime($contractStart))) : '—'; ?></span>
-					<?php endif; ?>
+					<span><?= $contractStart !== '' ? esc($contractStart) : '—'; ?></span>
 				</div>
 				<div class="form-group">
 					<label>Contract end:</label>
-					<?php if ($canSetStaffContract): ?>
-						<input type="date" class="form-control staff-contract-input" style="max-width:220px;display:inline-block;"
-							data-staff-id="<?= (int) $staff['id']; ?>" data-which="end"
-							value="<?= esc($contractEnd, 'attr'); ?>">
-						<span class="text-muted small">Optional</span>
-					<?php else: ?>
-						<span><?= $contractEnd !== '' ? esc(date('d M Y', strtotime($contractEnd))) : '—'; ?></span>
-					<?php endif; ?>
+					<span><?= $contractEnd !== '' ? esc($contractEnd) : '—'; ?></span>
 				</div>
 			</div>
 		</div>
@@ -122,6 +107,34 @@
 				<p style="margin: 30px 0 0;font-weight: 600;"><?= lang("app.uploadPhoto");?></p>
 				<label class="text-muted" style="font-style: italic;font-size: 10pt;"><?= lang("app.totalSize");?></label>
 			</div>
+		</div>
+		<?php
+		$signatureFile = staff_signature_file($staff['signature'] ?? '');
+		$signatureSrc = $signatureFile !== ''
+			? base_url('assets/images/signatures/' . rawurlencode($signatureFile)) . '?v=' . filemtime(FCPATH . 'assets/images/signatures/' . $signatureFile)
+			: '';
+		$canSignStaff = (int) ($staff['id'] ?? 0) === (int) ($_SESSION['soma_id'] ?? 0)
+			|| is_head_master_equivalent()
+			|| \Config\MenuClearance::canSetStaffContract((int) ($_SESSION['soma_post'] ?? 0));
+		?>
+		<div class="boxed" style="background:#fff;clear:both;">
+			<h4>Electronic signature</h4>
+			<p class="text-muted" style="font-size:10pt;margin-bottom:8px;">This signature is printed on the periodic report when this person is the class teacher or the head teacher.</p>
+			<?php if ($signatureSrc !== ''): ?>
+				<img id="staff-signature-preview" src="<?= esc($signatureSrc); ?>" alt="Saved signature" style="display:block;height:52px;max-width:100%;background:#fff;border:1px solid #e5e7eb;margin-bottom:8px;">
+			<?php else: ?>
+				<img id="staff-signature-preview" alt="" style="display:none;height:52px;max-width:100%;background:#fff;border:1px solid #e5e7eb;margin-bottom:8px;">
+			<?php endif; ?>
+			<?php if ($canSignStaff): ?>
+				<canvas id="staff-sign-pad" width="640" height="160" style="width:100%;height:140px;border:1px dashed #94a3b8;background:#fff;touch-action:none;cursor:crosshair;display:block;"></canvas>
+				<div style="margin-top:8px;">
+					<button type="button" class="btn btn-sm btn-light" id="staff-sign-clear">Clear</button>
+					<button type="button" class="btn btn-sm btn-primary" id="staff-sign-save">Save signature</button>
+					<button type="button" class="btn btn-sm btn-outline-danger" id="staff-sign-remove" <?= $signatureSrc === '' ? 'style="display:none;"' : ''; ?>>Remove</button>
+				</div>
+			<?php elseif ($signatureSrc === ''): ?>
+				<span>—</span>
+			<?php endif; ?>
 		</div>
 	</div>
 </div>
@@ -200,13 +213,12 @@
 				}
 				$.post("<?=base_url('edit_staff/');?>" + type, "id=" + id + "&target=" + target + "&val=" + val, function (data) {
 					if (data.hasOwnProperty("error")) {
-						toastada.error('<?= lang("app.saveStaffFail");?>' + data.msg);
+						toastada.error('<?= lang("app.saveStaffFail");?>' + (data.error || data.msg || ''));
 					} else if (data.hasOwnProperty("success")) {
 						sp.html(data.result);
 						sp.data("value", val);
 						toastada.success('<?= lang("app.staffSaved");?>');
 					} else {
-						//unknown error
 						toastada.error('<?= lang("app.fatalErr");?>');
 					}
 				}).fail(function () {
@@ -225,7 +237,7 @@
 			var val = spchk.is(":checked") ? 1 : 0;
 			$.post("<?=base_url('edit_staff/');?>" + type, "id=" + id + "&target=" + target + "&val=" + val, function (data) {
 				if (data.hasOwnProperty("error")) {
-					toastada.error('<?= lang("app.saveStaffFail");?>' + data.msg);
+					toastada.error('<?= lang("app.saveStaffFail");?>' + (data.error || data.msg || ''));
 				} else if (data.hasOwnProperty("success")) {
 					sp.html(data.result);
 					sp.data("value", val);
@@ -357,33 +369,106 @@
 
 	};
 
-	var contractSaveTimer = null;
-	function queueStaffContractSave() {
-		clearTimeout(contractSaveTimer);
-		contractSaveTimer = setTimeout(function () {
-			var inputs = $('.staff-contract-input');
-			if (!inputs.length) return;
-			var staffId = inputs.first().data('staff-id');
-			var start = '';
-			var end = '';
-			inputs.each(function () {
-				if ($(this).data('which') === 'end') end = $(this).val();
-				else start = $(this).val();
-			});
-			$.post('<?= base_url('save_staff_contract'); ?>', {
-				staff_id: staffId,
-				contract_start: start,
-				contract_end: end
-			}, function (data) {
+	(function () {
+		var canvas = document.getElementById('staff-sign-pad');
+		if (!canvas) return;
+		var ctx = canvas.getContext('2d');
+		var drawing = false;
+		var last = null;
+		function fit() {
+			var rect = canvas.getBoundingClientRect();
+			var ratio = window.devicePixelRatio || 1;
+			var w = Math.max(1, Math.round(rect.width * ratio));
+			var h = Math.max(1, Math.round(rect.height * ratio));
+			if (canvas.width !== w || canvas.height !== h) {
+				canvas.width = w;
+				canvas.height = h;
+			}
+			ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+			ctx.lineWidth = 2.4;
+			ctx.lineCap = 'round';
+			ctx.lineJoin = 'round';
+			ctx.strokeStyle = '#111827';
+		}
+		fit();
+		function point(e) {
+			var rect = canvas.getBoundingClientRect();
+			var src = e.touches && e.touches[0] ? e.touches[0] : e;
+			return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+		}
+		function start(e) {
+			drawing = true;
+			last = point(e);
+			if (e.cancelable) e.preventDefault();
+		}
+		function move(e) {
+			if (!drawing) return;
+			var p = point(e);
+			ctx.beginPath();
+			ctx.moveTo(last.x, last.y);
+			ctx.lineTo(p.x, p.y);
+			ctx.stroke();
+			last = p;
+			if (e.cancelable) e.preventDefault();
+		}
+		function stop() {
+			drawing = false;
+			last = null;
+		}
+		canvas.addEventListener('mousedown', start);
+		canvas.addEventListener('mousemove', move);
+		window.addEventListener('mouseup', stop);
+		canvas.addEventListener('touchstart', start, { passive: false });
+		canvas.addEventListener('touchmove', move, { passive: false });
+		canvas.addEventListener('touchend', stop);
+		document.getElementById('staff-sign-clear').addEventListener('click', function () {
+			fit();
+			ctx.clearRect(0, 0, canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height);
+		});
+		function postSignature(payload) {
+			$.post('<?= base_url('save_staff_signature'); ?>', payload, function (data) {
 				if (data && data.error) {
 					toastada.error(data.error);
-				} else {
-					toastada.success('Saved');
+					return;
+				}
+				toastada.success(data && data.success ? data.success : 'Saved');
+				var preview = document.getElementById('staff-signature-preview');
+				var removeBtn = document.getElementById('staff-sign-remove');
+				if (data && data.src && preview) {
+					preview.src = data.src;
+					preview.style.display = 'block';
+					if (removeBtn) removeBtn.style.display = '';
+				}
+				if (payload.clear === '1' && preview) {
+					preview.style.display = 'none';
+					preview.removeAttribute('src');
+					if (removeBtn) removeBtn.style.display = 'none';
 				}
 			}, 'json').fail(function () {
-				toastada.error('Could not save the contract dates.');
+				toastada.error('Could not save the signature.');
 			});
-		}, 400);
-	}
-	$(document).on('change blur', '.staff-contract-input', queueStaffContractSave);
+		}
+		document.getElementById('staff-sign-save').addEventListener('click', function () {
+			var rect = canvas.getBoundingClientRect();
+			var out = document.createElement('canvas');
+			out.width = Math.max(1, Math.round(rect.width));
+			out.height = Math.max(1, Math.round(rect.height));
+			var ink = out.getContext('2d');
+			ink.fillStyle = '#ffffff';
+			ink.fillRect(0, 0, out.width, out.height);
+			ink.drawImage(canvas, 0, 0, out.width, out.height);
+			postSignature({
+				staff_id: $('#staff_section').data('id'),
+				signature: out.toDataURL('image/png')
+			});
+		});
+		var removeBtn = document.getElementById('staff-sign-remove');
+		if (removeBtn) {
+			removeBtn.addEventListener('click', function () {
+				postSignature({ staff_id: $('#staff_section').data('id'), clear: '1' });
+				fit();
+				ctx.clearRect(0, 0, canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height);
+			});
+		}
+	})();
 </script>

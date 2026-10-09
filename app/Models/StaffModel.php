@@ -7,7 +7,7 @@ class StaffModel extends Model
 {
 	protected $table="staffs";
 	protected $allowedFields = ["school_id","fname","lname","phone","email","password","status","lastlogin"
-    ,"next_login","post","shift_id","country","city","address","photo","card","face_enrolled","contract_start","contract_end","created_by","updated_by","updateVersion","reset_exp"];
+    ,"next_login","post","shift_id","country","city","address","photo","card","face_enrolled","contract_start","contract_end","signature","created_by","updated_by","updateVersion","reset_exp"];
 	protected $useTimestamps = true;
 	protected $primaryKey = "id";
 	public function checkUser($email,$key="staffs.email"){

@@ -422,7 +422,7 @@ foreach ($students ?? [] as $student) {
 		}
 		return $lines;
 	};
-	$commentBlock = static function (string $label, string $text) use ($wrapComment, $span) {
+	$commentBlock = static function (string $label, string $text, string $signHtml = '') use ($wrapComment, $span) {
 		$labelMm = 58.0;
 		$signMm = 40.0;
 		$textMm = 186.0 - $labelMm - $signMm;
@@ -444,7 +444,11 @@ foreach ($students ?? [] as $student) {
 			} else {
 				echo '<td style="width:' . $textMm . 'mm;' . $cell . 'color:#1d4ed8;border-bottom:0.9pt dotted #1d4ed8;white-space:nowrap;">' . esc($line) . '</td>';
 			}
-			echo '<td style="width:' . $signMm . 'mm;' . $cell . 'white-space:nowrap;">' . ($i === $last ? (' Sign: ' . str_repeat('.', 12)) : '') . '</td>';
+			$signCell = '';
+			if ($i === $last) {
+				$signCell = $signHtml !== '' ? $signHtml : (' Sign: ' . str_repeat('.', 12));
+			}
+			echo '<td style="width:' . $signMm . 'mm;' . $cell . 'white-space:nowrap;">' . $signCell . '</td>';
 			echo '</tr>';
 		}
 		echo '</tbody></table></td></tr>';
@@ -669,8 +673,8 @@ foreach ($students ?? [] as $student) {
 			<td class="wp-sub" style="<?= $h('5.0'); ?>">DECISION</td>
 			<td colspan="<?= $rest; ?>" class="wp-ctr"><?= esc((string) ($student['decision'] ?? '')); ?><?= trim((string) ($student['decision'] ?? '')) === '' ? str_repeat('.', 48) : ''; ?></td>
 		</tr>
-		<?php $commentBlock("Class teacher's comment:", $classComment); ?>
-		<?php $commentBlock("Head teacher's comment:", $headComment); ?>
+		<?php $commentBlock("Class teacher's comment:", $classComment, report_signature_img($report_class_signature ?? '', !empty($pdf), 4.8)); ?>
+		<?php $commentBlock("Head teacher's comment:", $headComment, report_signature_img($report_head_signature ?? '', !empty($pdf), 4.8)); ?>
 		<?php if (!$periodic): ?>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>
 		<?php endif; ?>

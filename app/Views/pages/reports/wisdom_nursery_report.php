@@ -191,7 +191,7 @@ $wrapWords = static function (string $text, float $maxPt) use ($advPt): array {
 	}
 	return $lines;
 };
-$commentLine = static function (string $label, string $text, float $hMm) use ($advPt, $mm, $linePt, $dotPt, $wrapWords) {
+$commentLine = static function (string $label, string $text, float $hMm, string $signHtml = '') use ($advPt, $mm, $linePt, $dotPt, $wrapWords) {
 	$text = trim($text);
 	$sign = 'sign:';
 	$tailDots = 18;
@@ -216,7 +216,9 @@ $commentLine = static function (string $label, string $text, float $hMm) use ($a
 		} else {
 			echo '<td class="nr-on-line" style="width:' . $mm($midPt) . 'mm;' . $cell . 'white-space:nowrap;">' . esc($line) . '</td>';
 		}
-		if ($i === $last) {
+		if ($i === $last && $signHtml !== '') {
+			echo '<td colspan="2" style="width:' . $mm($signPt + $tailPt) . 'mm;' . $cell . 'white-space:nowrap;">' . $signHtml . '</td>';
+		} elseif ($i === $last) {
 			echo '<td style="width:' . $mm($signPt) . 'mm;' . $cell . 'white-space:nowrap;">' . $sign . '</td>';
 			echo '<td style="width:' . $mm($tailPt) . 'mm;' . $cell . 'white-space:nowrap;">' . str_repeat('.', $tailDots) . '</td>';
 		} else {
@@ -450,8 +452,8 @@ foreach ($students as $student) {
 				</table>
 				<div class="nr-footwrap">
 					<?php $footLine('Conduct:', $conductText, 8, false); ?>
-					<?php $commentLine("Class teacher's comment:", $classComment, 8.4); ?>
-					<?php $commentLine("Head teacher's comment:", $headComment, 8.4); ?>
+					<?php $commentLine("Class teacher's comment:", $classComment, 8.4, report_signature_img($report_class_signature ?? '', !empty($pdf), 5.2)); ?>
+					<?php $commentLine("Head teacher's comment:", $headComment, 8.4, report_signature_img($report_head_signature ?? '', !empty($pdf), 5.2)); ?>
 					<?php $footLine("Parent's comment:", '', 8); ?>
 					<?php $signLine(8); ?>
 					<?php if ($endOfTermSheet): ?>

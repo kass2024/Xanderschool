@@ -2377,6 +2377,9 @@ refreshNurseryMentions();
 			if (!$db->fieldExists('contract_notice_for', 'staffs')) {
 				$db->query('ALTER TABLE `staffs` ADD COLUMN `contract_notice_for` DATE NULL DEFAULT NULL');
 			}
+			if (!$db->fieldExists('signature', 'staffs')) {
+				$db->query('ALTER TABLE `staffs` ADD COLUMN `signature` VARCHAR(80) NULL DEFAULT NULL');
+			}
 		}
 		$done = true;
 	}
@@ -2408,33 +2411,116 @@ refreshNurseryMentions();
 	public function save_staff_contract()
 	{
 		$this->_preset(1, 3);
-		if (!\Config\MenuClearance::canSetStaffContract((int) $this->session->get('soma_post'))) {
-			return $this->response->setJSON(['error' => 'Only the Head Teacher, Director, or Coordinator can set contract dates.']);
-		}
+		return $this->response->setJSON(['error' => 'Contract dates cannot be changed from the staff profile.']);
+	}
+
+	public function save_staff_signature()
+	{
+		$this->_preset(1, 3);
 		$this->ensureStaffContractColumns();
 		$id = (int) $this->request->getPost('staff_id');
 		$schoolId = (int) $this->session->get('soma_school_id');
-		$staff = (new StaffModel())->select('id, fname, lname, email, phone, post, contract_end, contract_notice_for')
+		$staff = (new StaffModel())->select('id, signature')
 			->where('id', $id)->where('school_id', $schoolId)->get(1)->getRowArray();
 		if (!$staff) {
 			return $this->response->setJSON(['error' => 'Staff not found.']);
 		}
-		$dates = $this->postedStaffContract();
-		if ($dates['error']) {
-			return $this->response->setJSON(['error' => $dates['error']]);
+		$own = (int) $this->session->get('soma_id') === $id;
+		$allowed = $own
+			|| is_head_master_equivalent()
+			|| \Config\MenuClearance::canSetStaffContract((int) $this->session->get('soma_post'));
+		if (!$allowed) {
+			return $this->response->setJSON(['error' => 'You can only save your own signature.']);
 		}
-		$update = [
-			'contract_start' => $dates['start'],
-			'contract_end' => $dates['end'],
-		];
-		$warned = $this->maybeEmailContractEnding($schoolId, $staff, $dates['end']);
-		if ($warned) {
-			$update['contract_notice_for'] = $dates['end'];
-		} elseif ($dates['end'] === null || $this->contractDaysLeft($dates['end']) > 15) {
-			$update['contract_notice_for'] = null;
+		$dir = FCPATH . 'assets/images/signatures/';
+		if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+			return $this->response->setJSON(['error' => 'Could not store the signature.']);
 		}
-		\Config\Database::connect()->table('staffs')->where('id', $id)->where('school_id', $schoolId)->update($update);
-		return $this->response->setJSON(['success' => 'Saved']);
+		$file = 'staff-' . $id . '.png';
+		$path = $dir . $file;
+		$clear = (string) $this->request->getPost('clear') === '1';
+		if ($clear) {
+			if (is_file($path)) {
+				@unlink($path);
+			}
+			\Config\Database::connect()->table('staffs')->where('id', $id)->where('school_id', $schoolId)->update(['signature' => null]);
+			return $this->response->setJSON(['success' => 'Signature removed.']);
+		}
+		$raw = (string) $this->request->getPost('signature');
+		if (!preg_match('#^data:image/png;base64,#', $raw)) {
+			return $this->response->setJSON(['error' => 'Draw the signature, then save it.']);
+		}
+		$binary = base64_decode(substr($raw, strpos($raw, ',') + 1), true);
+		if ($binary === false || strlen($binary) < 80 || strlen($binary) > 1500000) {
+			return $this->response->setJSON(['error' => 'That signature could not be read.']);
+		}
+		$image = @imagecreatefromstring($binary);
+		if (!$image) {
+			return $this->response->setJSON(['error' => 'That signature could not be read.']);
+		}
+		$width = imagesx($image);
+		$height = imagesy($image);
+		if ($width < 20 || $height < 20 || $width > 2000 || $height > 1200) {
+			imagedestroy($image);
+			return $this->response->setJSON(['error' => 'That signature could not be read.']);
+		}
+		$minX = $width;
+		$minY = $height;
+		$maxX = 0;
+		$maxY = 0;
+		$ink = 0;
+		for ($y = 0; $y < $height; $y++) {
+			for ($x = 0; $x < $width; $x++) {
+				$rgb = imagecolorat($image, $x, $y);
+				$alpha = ($rgb >> 24) & 0x7F;
+				$r = ($rgb >> 16) & 255;
+				$g = ($rgb >> 8) & 255;
+				$b = $rgb & 255;
+				if ($alpha > 100 || ($r > 245 && $g > 245 && $b > 245)) {
+					continue;
+				}
+				$ink++;
+				if ($x < $minX) {
+					$minX = $x;
+				}
+				if ($y < $minY) {
+					$minY = $y;
+				}
+				if ($x > $maxX) {
+					$maxX = $x;
+				}
+				if ($y > $maxY) {
+					$maxY = $y;
+				}
+			}
+		}
+		if ($ink < 40) {
+			imagedestroy($image);
+			return $this->response->setJSON(['error' => 'Draw the signature, then save it.']);
+		}
+		$pad = 8;
+		$minX = max(0, $minX - $pad);
+		$minY = max(0, $minY - $pad);
+		$maxX = min($width - 1, $maxX + $pad);
+		$maxY = min($height - 1, $maxY + $pad);
+		$cropW = $maxX - $minX + 1;
+		$cropH = $maxY - $minY + 1;
+		$out = imagecreatetruecolor($cropW, $cropH);
+		$white = imagecolorallocate($out, 255, 255, 255);
+		imagefill($out, 0, 0, $white);
+		imagecopy($out, $image, 0, 0, $minX, $minY, $cropW, $cropH);
+		imagedestroy($image);
+		imagesavealpha($out, false);
+		if (!imagepng($out, $path, 6)) {
+			imagedestroy($out);
+			return $this->response->setJSON(['error' => 'Could not store the signature.']);
+		}
+		imagedestroy($out);
+		\Config\Database::connect()->table('staffs')->where('id', $id)->where('school_id', $schoolId)->update(['signature' => $file]);
+		return $this->response->setJSON([
+			'success' => 'Signature saved. It will appear on the periodic report when this staff member is the class teacher or the head teacher.',
+			'src' => base_url('assets/images/signatures/' . rawurlencode($file)) . '?v=' . filemtime($path),
+		]);
 	}
 
 	private function contractDaysLeft(?string $end): int
@@ -17529,6 +17615,27 @@ public function getApplicationDocs($id = null)
 	/**
 	 * @param array<string,mixed> $data
 	 */
+	private function attachReportSignerSignatures(array &$data, int $schoolId, int $classId): void
+	{
+		$this->ensureStaffContractColumns();
+		$mentor = \Config\Database::connect()->query(
+			"SELECT s.signature FROM classes c
+			 LEFT JOIN staffs s ON s.id = c.mentor AND s.status != 0
+			 WHERE c.id = ? AND c.school_id = ? LIMIT 1",
+			[$classId, $schoolId]
+		)->getRowArray();
+		$head = \Config\Database::connect()->query(
+			"SELECT s.signature FROM staffs s
+			 LEFT JOIN posts p ON p.id = s.post
+			 WHERE s.school_id = ? AND s.status != 0
+			 AND (s.post = ? OR LOWER(TRIM(p.title)) IN ('head teacher', 'headteacher'))
+			 ORDER BY s.id ASC LIMIT 1",
+			[$schoolId, \App\Models\PostsModel::HEAD_TEACHER_ID]
+		)->getRowArray();
+		$data['report_class_signature'] = staff_signature_file($mentor['signature'] ?? '');
+		$data['report_head_signature'] = staff_signature_file($head['signature'] ?? '');
+	}
+
 	private function attachWisdomSecondaryReport(array &$data, int $schoolId, int $classId, int $year, string $band, bool $periodic): void
 	{
 		$data['secondary_band'] = $band;
@@ -17567,6 +17674,7 @@ public function getApplicationDocs($id = null)
 		)->getRowArray();
 		$data['secondary_head_teacher'] = trim((string) (($head['fname'] ?? '') . ' ' . ($head['lname'] ?? '')));
 		$data['secondary_head_teacher_phone'] = trim((string) ($head['phone'] ?? ''));
+		$this->attachReportSignerSignatures($data, $schoolId, $classId);
 		$data['secondary_combo_rank'] = $this->secondaryCombinationRanks(
 			$schoolId,
 			$classId,
@@ -18001,6 +18109,7 @@ public function getApplicationDocs($id = null)
 				$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
 			}
 			$data['nursery_course_initials'] = $initials;
+			$this->attachReportSignerSignatures($data, (int) $school_id, (int) $class);
 			$view = view("pages/reports/wisdom_nursery_report", $data);
 		}
 		$wisdomPrimaryPeriodic = $factId === 3 && is_wisdom_school((int) $school_id);
@@ -18030,6 +18139,7 @@ public function getApplicationDocs($id = null)
 			}
 			$data['primary_course_initials'] = $initials;
 			$data['primary_periodic'] = true;
+			$this->attachReportSignerSignatures($data, (int) $school_id, (int) $class);
 			$view = view("pages/reports/wisdom_primary_report", $data);
 		}
 		$wisdomSecondaryPeriodic = false;
@@ -18505,6 +18615,7 @@ public function getApplicationDocs($id = null)
 						$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
 					}
 					$data['primary_course_initials'] = $initials;
+					$this->attachReportSignerSignatures($data, (int) $school_id, (int) $class);
 					$view = view("pages/reports/wisdom_primary_report", $data);
 				} else if (in_array($school_id, [28])) {
 					if ($term == 4) {
@@ -18523,6 +18634,7 @@ public function getApplicationDocs($id = null)
 				// Wisdom nursery slip: score + comment from Grade Setting.
 				// Other named schools keep their own nursery layouts.
 				if (is_wisdom_school((int) $school_id)) {
+					$this->attachReportSignerSignatures($data, (int) $school_id, (int) $class);
 					$view = view("pages/reports/wisdom_nursery_report", $data);
 				} else if (in_array($school_id, [28])) {
 					$view = view("pages/reports/specific/bsfa/bsfa_nursery" . $annualTag, $data);
@@ -18536,6 +18648,7 @@ public function getApplicationDocs($id = null)
 				} else if (in_array($school_id, [42])) {
 					$view = view("pages/reports/apace_nursery_report_slip" . $annualTag, $data);
 				} else {
+					$this->attachReportSignerSignatures($data, (int) $school_id, (int) $class);
 					$view = view("pages/reports/wisdom_nursery_report", $data);
 				}
 			} else {

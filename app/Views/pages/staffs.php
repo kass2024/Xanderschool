@@ -96,7 +96,6 @@
 											<tbody>
 											<?php
 											helper('qonics');
-											$canSetStaffContract = \Config\MenuClearance::canSetStaffContract((int) ($_SESSION['soma_post'] ?? 0));
 											$staffContractDay = static function ($value): string {
 												$value = trim((string) $value);
 												if ($value === '' || $value === '0000-00-00') {
@@ -154,22 +153,10 @@
 												$contractEnd = $staffContractDay($staff['contract_end'] ?? '');
 												?>
 												<td class="staff-contract-cell">
-													<?php if ($canSetStaffContract): ?>
-														<input type="date" class="form-control form-control-sm staff-contract-input"
-															data-staff-id="<?= (int) $staff['id']; ?>" data-which="start"
-															value="<?= esc($contractStart, 'attr'); ?>" title="Contract start, optional">
-													<?php else: ?>
-														<?= $contractStart !== '' ? esc(date('d M Y', strtotime($contractStart))) : '—'; ?>
-													<?php endif; ?>
+													<?= $contractStart !== '' ? esc(date('d M Y', strtotime($contractStart))) : '—'; ?>
 												</td>
 												<td class="staff-contract-cell">
-													<?php if ($canSetStaffContract): ?>
-														<input type="date" class="form-control form-control-sm staff-contract-input"
-															data-staff-id="<?= (int) $staff['id']; ?>" data-which="end"
-															value="<?= esc($contractEnd, 'attr'); ?>" title="Contract end, optional">
-													<?php else: ?>
-														<?= $contractEnd !== '' ? esc(date('d M Y', strtotime($contractEnd))) : '—'; ?>
-													<?php endif; ?>
+													<?= $contractEnd !== '' ? esc(date('d M Y', strtotime($contractEnd))) : '—'; ?>
 												</td>
 												<td><?=$status;?></td>
 												<td class="staff-actions-cell">

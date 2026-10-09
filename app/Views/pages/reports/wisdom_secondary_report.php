@@ -126,6 +126,8 @@ $classTeacher = trim((string) ($secondary_class_teacher ?? ''));
 $classPhone = trim((string) ($secondary_class_teacher_phone ?? ''));
 $headTeacher = trim((string) ($secondary_head_teacher ?? ''));
 $headPhone = trim((string) ($secondary_head_teacher_phone ?? ''));
+$classSignImg = report_signature_img($report_class_signature ?? '', !empty($pdf), 4.4);
+$headSignImg = report_signature_img($report_head_signature ?? '', !empty($pdf), 4.4);
 
 $fmt = static function ($n) {
 	if ($n === null || $n === '') {
@@ -444,12 +446,12 @@ foreach ($students ?? [] as $student) {
 		<tr>
 			<td style="width:70mm;">Class teacher: <?= esc($classTeacher); ?></td>
 			<td style="width:52mm;">Tel: <?= esc($classPhone); ?></td>
-			<td>Signature: ............</td>
+			<td><?= $classSignImg !== '' ? $classSignImg : 'Signature: ............'; ?></td>
 		</tr>
 		<tr>
 			<td>Head teacher: <?= esc($headTeacher); ?></td>
 			<td>Tel: <?= esc($headPhone); ?></td>
-			<td>Signature: ............</td>
+			<td><?= $headSignImg !== '' ? $headSignImg : 'Signature: ............'; ?></td>
 		</tr>
 		<tr>
 			<td colspan="3">Parent/Guardian's comment: <?= str_repeat('.', 70); ?></td>

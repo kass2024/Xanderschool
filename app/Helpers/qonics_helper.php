@@ -378,6 +378,33 @@ if (!function_exists('is_head_master_equivalent')) {
 	}
 }
 
+if (!function_exists('staff_signature_file')) {
+	function staff_signature_file($file): string
+	{
+		$file = basename(str_replace('\\', '/', (string) $file));
+		if (!preg_match('/^staff-\d+\.png$/', $file)) {
+			return '';
+		}
+		return is_file(FCPATH . 'assets/images/signatures/' . $file) ? $file : '';
+	}
+}
+
+if (!function_exists('report_signature_img')) {
+	function report_signature_img($file, $pdf = false, $heightMm = 5.2): string
+	{
+		$file = staff_signature_file($file);
+		if ($file === '') {
+			return '';
+		}
+		$path = FCPATH . 'assets/images/signatures/' . $file;
+		$src = !empty($pdf)
+			? str_replace('\\', '/', $path)
+			: (base_url('assets/images/signatures/' . rawurlencode($file)) . '?v=' . filemtime($path));
+		$h = number_format((float) $heightMm, 1, '.', '');
+		return '<img src="' . htmlspecialchars($src, ENT_QUOTES, 'UTF-8') . '" alt="" style="height:' . $h . 'mm;max-height:' . $h . 'mm;max-width:34mm;width:auto;vertical-align:bottom;">';
+	}
+}
+
 if (!function_exists('is_head_master_or_dos')) {
 	function is_head_master_or_dos($postId = null)
 	{
