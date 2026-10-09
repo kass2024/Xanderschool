@@ -17841,9 +17841,18 @@ public function getApplicationDocs($id = null)
 			[$schoolId, \App\Models\PostsModel::HEAD_TEACHER_ID]
 		)->getRowArray();
 		$first = $classIds[0];
+		$sharedSign = '';
+		foreach ($classIds as $cid) {
+			if (($signatures[$cid] ?? '') !== '') {
+				$sharedSign = $signatures[$cid];
+				break;
+			}
+		}
 		$data['report_class_signatures'] = $signatures;
 		$data['secondary_class_teachers'] = $teachers;
-		$data['report_class_signature'] = $signatures[$first] ?? '';
+		$data['report_class_signature'] = trim((string) ($data['report_stream_label'] ?? '')) !== ''
+			? $sharedSign
+			: ($signatures[$first] ?? '');
 		$data['report_head_signature'] = staff_signature_file($head['signature'] ?? '');
 		if (trim((string) ($data['secondary_class_teacher'] ?? '')) === '') {
 			$data['secondary_class_teacher'] = $teachers[$first]['name'] ?? '';

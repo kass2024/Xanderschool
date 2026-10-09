@@ -340,7 +340,10 @@ foreach ($students ?? [] as $student) {
 	};
 	ob_start();
 	$name = trim((string) ($student['fname'] ?? '') . ' ' . (string) ($student['lname'] ?? ''));
-	$classLabel = trim((string) ($student['level_name'] ?? '') . ' ' . (string) ($student['title'] ?? ''));
+	$streamClassName = trim((string) ($report_stream_label ?? ''));
+	$classLabel = $streamClassName !== ''
+		? $streamClassName
+		: trim((string) ($student['level_name'] ?? '') . ' ' . (string) ($student['title'] ?? ''));
 	$namePack = $packText($name, 70, 2, 11.0, 8.0);
 	$yearPack = $packText($yearLabel, 28, 2, 11.0, 8.0);
 	$termPack = $packText($termLabel, 140, 2, 11.0, 8.0);
@@ -438,7 +441,7 @@ foreach ($students ?? [] as $student) {
 		}
 		return $lines;
 	};
-	$commentBlock = static function (string $label, string $text, string $signHtml = '') use ($wrapComment, $span) {
+	$commentBlock = static function (string $label, string $text, string $signHtml = '', bool $raisedSign = false) use ($wrapComment, $span) {
 		$labelMm = 58.0;
 		$signMm = 40.0;
 		$textMm = 186.0 - $labelMm - $signMm;
@@ -448,12 +451,15 @@ foreach ($students ?? [] as $student) {
 		}
 		$lineMm = 5.2;
 		$last = count($lines) - 1;
-		$blockMm = number_format(count($lines) * $lineMm, 2, '.', '');
+		$raised = $raisedSign && $signHtml !== '';
+		$signRowMm = $raised ? 14.4 : $lineMm;
+		$blockMm = number_format(((count($lines) - 1) * $lineMm) + $signRowMm, 2, '.', '');
 		echo '<tr><td class="wp-foot" colspan="' . $span . '" style="height:' . $blockMm . 'mm;line-height:normal;white-space:normal;padding:0.2mm 0.4mm;vertical-align:bottom;">';
 		echo '<table style="width:186mm;border-collapse:collapse;table-layout:fixed;"><tbody>';
 		foreach ($lines as $i => $line) {
-			$cell = 'height:' . $lineMm . 'mm;line-height:' . $lineMm . 'mm;vertical-align:bottom;border:0;padding:0;font-weight:700;';
-			echo '<tr style="height:' . $lineMm . 'mm">';
+			$rowMm = ($i === $last && $raised) ? $signRowMm : $lineMm;
+			$cell = 'height:' . $rowMm . 'mm;line-height:' . ($raised && $i === $last ? '4.2' : $rowMm) . 'mm;vertical-align:bottom;border:0;padding:0;font-weight:700;';
+			echo '<tr style="height:' . $rowMm . 'mm">';
 			echo '<td style="width:' . $labelMm . 'mm;' . $cell . 'white-space:nowrap;">' . ($i === 0 ? esc($label) : '') . '</td>';
 			if ($line === '') {
 				echo '<td style="width:' . $textMm . 'mm;' . $cell . '">' . str_repeat('.', 42) . '</td>';
@@ -461,10 +467,17 @@ foreach ($students ?? [] as $student) {
 				echo '<td style="width:' . $textMm . 'mm;' . $cell . 'color:#1d4ed8;border-bottom:0.9pt dotted #1d4ed8;white-space:nowrap;">' . esc($line) . '</td>';
 			}
 			$signCell = '';
-			if ($i === $last) {
-				$signCell = $signHtml !== '' ? $signHtml : (' Sign: ' . str_repeat('.', 12));
+			if ($i === $last && $raised) {
+				$signCell = '<table style="width:' . $signMm . 'mm;border-collapse:collapse;"><tr>'
+					. '<td style="height:3.6mm;border:0;padding:0;font-size:8pt;font-weight:700;line-height:3.6mm;white-space:nowrap;">Sign: ' . str_repeat('.', 12) . '</td></tr><tr>'
+					. '<td style="height:10.2mm;border:0;border-bottom:1.1pt dotted #1e3a5f;padding:0 0 0.15mm;vertical-align:bottom;">' . $signHtml . '</td>'
+					. '</tr></table>';
+			} elseif ($i === $last && $signHtml !== '') {
+				$signCell = $signHtml;
+			} elseif ($i === $last) {
+				$signCell = ' Sign: ' . str_repeat('.', 12);
 			}
-			echo '<td style="width:' . $signMm . 'mm;' . $cell . 'white-space:nowrap;">' . $signCell . '</td>';
+			echo '<td style="width:' . $signMm . 'mm;' . $cell . 'white-space:nowrap;line-height:normal;">' . $signCell . '</td>';
 			echo '</tr>';
 		}
 		echo '</tbody></table></td></tr>';
@@ -678,7 +691,12 @@ foreach ($students ?? [] as $student) {
 			<td class="wp-sub" style="<?= $h('5.0'); ?>">DECISION</td>
 			<td colspan="<?= $rest; ?>" class="wp-ctr"><?= esc((string) ($student['decision'] ?? '')); ?><?= trim((string) ($student['decision'] ?? '')) === '' ? str_repeat('.', 48) : ''; ?></td>
 		</tr>
-		<?php $commentBlock("Class teacher's comment:", $classComment, report_signature_img(($report_class_signatures ?? [])[(int) ($student['class'] ?? 0)] ?? ($report_class_signature ?? ''), !empty($pdf), 4.8)); ?>
+		<?php
+		$classSignFile = trim((string) ($report_stream_label ?? '')) !== ''
+			? (string) ($report_class_signature ?? '')
+			: (string) (($report_class_signatures ?? [])[(int) ($student['class'] ?? 0)] ?? ($report_class_signature ?? ''));
+		$commentBlock("Class teacher's comment:", $classComment, report_signature_img($classSignFile, !empty($pdf), 9.2), true);
+		?>
 		<?php $commentBlock("Head teacher's comment:", $headComment, report_signature_img($report_head_signature ?? '', !empty($pdf), 4.8)); ?>
 		<?php if (!$periodic): ?>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>

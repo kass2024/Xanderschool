@@ -191,7 +191,7 @@ $wrapWords = static function (string $text, float $maxPt) use ($advPt): array {
 	}
 	return $lines;
 };
-$commentLine = static function (string $label, string $text, float $hMm, string $signHtml = '') use ($advPt, $mm, $linePt, $dotPt, $wrapWords) {
+$commentLine = static function (string $label, string $text, float $hMm, string $signHtml = '', bool $raisedSign = false) use ($advPt, $mm, $linePt, $dotPt, $wrapWords) {
 	$text = trim($text);
 	$sign = 'sign:';
 	$tailDots = 18;
@@ -205,10 +205,12 @@ $commentLine = static function (string $label, string $text, float $hMm, string 
 	}
 	$lineMm = count($lines) > 1 ? 5.2 : max(5.2, $hMm);
 	$last = count($lines) - 1;
+	$raised = $raisedSign && $signHtml !== '';
 	echo '<table class="nr-foot">';
 	foreach ($lines as $i => $line) {
-		$cell = 'height:' . $lineMm . 'mm;line-height:' . $lineMm . 'mm;vertical-align:bottom;';
-		echo '<tr style="height:' . $lineMm . 'mm">';
+		$rowMm = ($i === $last && $raised) ? 14.4 : $lineMm;
+		$cell = 'height:' . $rowMm . 'mm;line-height:' . $rowMm . 'mm;vertical-align:bottom;';
+		echo '<tr style="height:' . $rowMm . 'mm">';
 		echo '<td style="width:' . $mm($labelPt) . 'mm;' . $cell . 'white-space:nowrap;">' . ($i === 0 ? esc($label) : '') . '</td>';
 		if ($line === '') {
 			$n = (int) floor(($midPt * 0.94) / $dotPt);
@@ -216,7 +218,13 @@ $commentLine = static function (string $label, string $text, float $hMm, string 
 		} else {
 			echo '<td class="nr-on-line" style="width:' . $mm($midPt) . 'mm;' . $cell . 'white-space:nowrap;">' . esc($line) . '</td>';
 		}
-		if ($i === $last && $signHtml !== '') {
+		if ($i === $last && $raised) {
+			echo '<td colspan="2" style="width:' . $mm($signPt + $tailPt) . 'mm;height:14.4mm;border:0;padding:0;vertical-align:bottom;white-space:nowrap;">'
+				. '<table style="width:100%;border-collapse:collapse;"><tr>'
+				. '<td style="height:3.6mm;border:0;padding:0;font-size:8pt;font-weight:700;line-height:3.6mm;white-space:nowrap;">sign: ' . str_repeat('.', $tailDots) . '</td></tr><tr>'
+				. '<td style="height:10.2mm;border:0;border-bottom:1.1pt dotted #1e3a5f;padding:0 0 0.15mm;vertical-align:bottom;">' . $signHtml . '</td>'
+				. '</tr></table></td>';
+		} elseif ($i === $last && $signHtml !== '') {
 			echo '<td colspan="2" style="width:' . $mm($signPt + $tailPt) . 'mm;' . $cell . 'white-space:nowrap;">' . $signHtml . '</td>';
 		} elseif ($i === $last) {
 			echo '<td style="width:' . $mm($signPt) . 'mm;' . $cell . 'white-space:nowrap;">' . $sign . '</td>';
@@ -317,7 +325,10 @@ foreach ($students as $student) {
 		continue;
 	}
 	$pupil = trim((string) ($student['fname'] ?? '') . ' ' . (string) ($student['lname'] ?? ''));
-	$classLabel = trim((string) ($student['level_name'] ?? '') . ' ' . (string) ($student['title'] ?? '') . ' ' . (string) ($student['code'] ?? ''));
+	$streamClassName = trim((string) ($report_stream_label ?? ''));
+	$classLabel = $streamClassName !== ''
+		? $streamClassName
+		: trim((string) ($student['level_name'] ?? '') . ' ' . (string) ($student['title'] ?? '') . ' ' . (string) ($student['code'] ?? ''));
 	$courses = $student['courses'] ?? [];
 	$maxTotal = 0.0;
 	$scoreTotal = 0.0;
@@ -452,7 +463,12 @@ foreach ($students as $student) {
 				</table>
 				<div class="nr-footwrap">
 					<?php $footLine('Conduct:', $conductText, 8, false); ?>
-					<?php $commentLine("Class teacher's comment:", $classComment, 8.4, report_signature_img(($report_class_signatures ?? [])[(int) ($student['class'] ?? 0)] ?? ($report_class_signature ?? ''), !empty($pdf), 5.2)); ?>
+					<?php
+					$classSignFile = trim((string) ($report_stream_label ?? '')) !== ''
+						? (string) ($report_class_signature ?? '')
+						: (string) (($report_class_signatures ?? [])[(int) ($student['class'] ?? 0)] ?? ($report_class_signature ?? ''));
+					$commentLine("Class teacher's comment:", $classComment, 8.4, report_signature_img($classSignFile, !empty($pdf), 9.2), true);
+					?>
 					<?php $commentLine("Head teacher's comment:", $headComment, 8.4, report_signature_img($report_head_signature ?? '', !empty($pdf), 5.2)); ?>
 					<?php $footLine("Parent's comment:", '', 8); ?>
 					<?php $signLine(8); ?>
