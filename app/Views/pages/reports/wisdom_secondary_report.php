@@ -92,12 +92,17 @@ $heading = [
 	'rtb' => 'RTB',
 	'special' => 'ANP A-LEVEL',
 ][$band] ?? 'A-LEVEL';
-$kind = $periodic ? 'MID-TERM' : 'END OF TERM';
-$cardTitle = $heading . ' ' . $kind . ' ' . $roman . ' REPORT CARD';
 $periodNo = (int) ($period ?? 0);
-$periodNames = [1 => 'END OF MONTH 1', 2 => 'END OF MONTH 2', 3 => 'MIDTERM'];
-$periodBit = $periodic ? ($periodNames[$periodNo] ?? ('PERIOD ' . $periodNo)) : 'END OF TERM';
-$subtitle = $periodBit . ' TEST COMPILATION · SCORES ADJUSTED TO 100%';
+$periodLabel = $periodNo > 0 ? ('PERIOD ' . $periodNo) : '';
+if ($periodic) {
+	$cardTitle = $heading . ' PERIODIC REPORT';
+	$subtitle = $periodLabel;
+	$reportKind = $periodLabel !== '' ? $periodLabel : 'PERIODIC REPORT';
+} else {
+	$cardTitle = $heading . ' END OF TERM ' . $roman . ' REPORT';
+	$subtitle = '';
+	$reportKind = 'End of term';
+}
 
 $assetSrc = static function (string $relative) use ($pdf) {
 	$file = FCPATH . ltrim($relative, '/');
@@ -326,7 +331,7 @@ foreach ($students ?? [] as $student) {
 				<div class="ws-school"><?= esc($schoolName); ?></div>
 				<div class="ws-moto"><?= esc($boxLine); ?><br>School Motto: <?= esc($moto); ?></div>
 				<div class="ws-title"><?= esc($cardTitle); ?></div>
-				<div class="ws-sub"><?= esc($subtitle); ?></div>
+				<?php if ($subtitle !== ''): ?><div class="ws-sub"><?= esc($subtitle); ?></div><?php endif; ?>
 			</td>
 			<td style="width:22mm;border:0;vertical-align:middle;text-align:right;">
 				<?php if ($logoSrc !== ''): ?><img class="ws-logo" src="<?= esc($logoSrc); ?>" alt="" style="margin-left:auto;"><?php endif; ?>
@@ -352,7 +357,7 @@ foreach ($students ?? [] as $student) {
 		</tr>
 		<tr>
 			<td class="k">Report</td>
-			<td class="v" colspan="5"><?= esc($periodic ? 'Mid-term' : 'End of term'); ?></td>
+			<td class="v" colspan="5"><?= esc($reportKind); ?></td>
 		</tr>
 	</table>
 	<table class="ws-grid">

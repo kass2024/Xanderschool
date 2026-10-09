@@ -15,13 +15,7 @@ _m = re.search(r'PASSWORD = os\.environ\.get\("VPS_PASSWORD", "([^"]*)"\)', _src
 PASSWORD = _m.group(1) if _m else ""
 REMOTE_APP = "/opt/xander-school/app"
 FILES = [
-    "app/Controllers/Home.php",
-    "app/Helpers/qonics_helper.php",
-    "app/Views/pages/student_reports.php",
     "app/Views/pages/reports/wisdom_secondary_report.php",
-    "app/Views/pages/reports/wisdom_secondary_progress.php",
-    "app/Views/pages/reports/wisdom_primary_report.php",
-    "app/Views/pages/reports/wisdom_nursery_report.php",
 ]
 
 
@@ -47,6 +41,11 @@ docker exec xander_school_app php -l /var/www/html/app/Controllers/Home.php
 docker exec xander_school_app php -l /var/www/html/app/Helpers/qonics_helper.php
 docker exec xander_school_app php -l /var/www/html/app/Views/pages/reports/wisdom_secondary_progress.php
 docker exec xander_school_app php -l /var/www/html/app/Views/pages/reports/wisdom_secondary_report.php
+docker exec xander_school_app grep -n "PERIODIC REPORT" /var/www/html/app/Views/pages/reports/wisdom_secondary_report.php | head -1
+if docker exec xander_school_app grep -q "SCORES ADJUSTED" /var/www/html/app/Views/pages/reports/wisdom_secondary_report.php; then
+  echo "SCORES ADJUSTED still present"
+  exit 1
+fi
 docker exec xander_school_app php -l /var/www/html/app/Views/pages/reports/wisdom_primary_report.php
 docker exec xander_school_app php -l /var/www/html/app/Views/pages/reports/wisdom_nursery_report.php
 docker exec xander_school_app grep -n "REPORT_PAGE" /var/www/html/app/Controllers/Home.php | head -1
