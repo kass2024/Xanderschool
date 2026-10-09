@@ -2597,6 +2597,7 @@ refreshNurseryMentions();
 		imagecopy($out, $image, 0, 0, $minX, $minY, $cropW, $cropH);
 		imagedestroy($image);
 		imagesavealpha($out, false);
+		tint_signature_blue($out);
 		if (!imagepng($out, $path, 6)) {
 			imagedestroy($out);
 			return $this->response->setJSON(['error' => 'Could not store the signature.']);
@@ -17838,12 +17839,18 @@ public function getApplicationDocs($id = null)
 		)->getRowArray();
 		$first = $classIds[0];
 		$sharedSign = '';
+		$sharedName = '';
+		$sharedPhone = '';
 		foreach ($classIds as $cid) {
 			if (($signatures[$cid] ?? '') !== '') {
 				$sharedSign = $signatures[$cid];
+				$sharedName = $teachers[$cid]['name'] ?? '';
+				$sharedPhone = $teachers[$cid]['phone'] ?? '';
 				break;
 			}
 		}
+		$data['report_stream_teacher_name'] = $sharedName;
+		$data['report_stream_teacher_phone'] = $sharedPhone;
 		$data['report_class_signatures'] = $signatures;
 		$data['secondary_class_teachers'] = $teachers;
 		$data['report_class_signature'] = trim((string) ($data['report_stream_label'] ?? '')) !== ''
@@ -18112,6 +18119,7 @@ public function getApplicationDocs($id = null)
 			$sheets[] = $student;
 		}
 		$data['progress_students'] = $sheets;
+		$this->attachReportSignerSignatures($data, $schoolId, $classId);
 	}
 
 	public

@@ -205,7 +205,17 @@ foreach ($sheets as $student) {
 	}
 	$sid = (int) $student['id'];
 	$name = trim((string) ($student['fname'] ?? '') . ' ' . mb_strtoupper((string) ($student['lname'] ?? '')));
-	$classLabel = trim((string) ($student['level_name'] ?? '') . ' ' . (string) (($student['code'] ?? '') !== '' ? $student['code'] : ($student['title'] ?? '')));
+	$streamName = trim((string) ($report_stream_label ?? ''));
+	$streamOlevel = $band === 'o_level' && $streamName !== '';
+	$classLabel = $streamOlevel
+		? $streamName
+		: trim((string) ($student['level_name'] ?? '') . ' ' . (string) (($student['code'] ?? '') !== '' ? $student['code'] : ($student['title'] ?? '')));
+	$progressClassId = (int) ($student['class'] ?? $student['class_id'] ?? 0);
+	$progressSignFile = $streamOlevel
+		? (string) ($report_class_signature ?? '')
+		: (string) (($report_class_signatures ?? [])[$progressClassId] ?? ($report_class_signature ?? ''));
+	$progressSignImg = report_signature_img($progressSignFile, !empty($pdf), $annualSheet ? 6.2 : 7.2, 36);
+	$progressHeadImg = report_signature_img($report_head_signature ?? '', !empty($pdf), 8.0, 36);
 	$lines = [];
 	foreach ($student['progress_courses'] ?? [] as $line) {
 		$offered = $line['offered'] ?? [];
@@ -411,7 +421,7 @@ foreach ($sheets as $student) {
 			</tr>
 			<tr>
 				<td class="wsp-sub" colspan="4">Teacher's signature</td>
-				<td class="wsp-sign" colspan="<?= $annualSheet ? 14 : 4; ?>"></td>
+				<td class="wsp-sign" colspan="<?= $annualSheet ? 14 : 4; ?>"><?= $progressSignImg; ?></td>
 			</tr>
 			<tr>
 				<td class="wsp-sub" colspan="4">Parent's signature</td>
@@ -448,7 +458,7 @@ foreach ($sheets as $student) {
 			<td>
 				<div>Headmaster</div>
 				<div><?= esc((string) ($head_master ?? '')); ?></div>
-				<div style="margin-top:3mm;">Signature and stamp</div>
+				<div style="margin-top:1.2mm;"><?= $progressHeadImg !== '' ? $progressHeadImg : 'Signature and stamp'; ?></div>
 			</td>
 		</tr>
 	</table>

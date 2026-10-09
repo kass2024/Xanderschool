@@ -260,19 +260,32 @@ foreach ($students ?? [] as $student) {
 	$deptCode = trim((string) ($student['code'] ?? ''));
 	$deptName = trim((string) ($student['department_name'] ?? ''));
 	$facTitle = trim((string) ($student['fac_title'] ?? ''));
-	$classLabel = trim($levelName . ' ' . ($deptCode !== '' ? $deptCode : $classTitle));
+	$streamName = trim((string) ($report_stream_label ?? ''));
+	$streamOlevel = $band === 'o_level' && $streamName !== '';
+	$classLabel = $streamOlevel
+		? $streamName
+		: trim($levelName . ' ' . ($deptCode !== '' ? $deptCode : $classTitle));
 	$program = $deptName !== '' ? $deptName : $facTitle;
 	if ($anp && (strcasecmp($program, 'Nursing ANP') === 0 || strcasecmp($program, 'ANP') === 0 || $program === '')) {
 		$program = 'Associated Nursing Program';
 	}
 	$sid = (int) $student['id'];
 	$studentClassId = (int) ($student['class'] ?? $student['class_id'] ?? 0);
-	$teacherRow = ($secondary_class_teachers ?? [])[$studentClassId] ?? null;
-	if (is_array($teacherRow)) {
-		$classTeacher = trim((string) ($teacherRow['name'] ?? $classTeacher));
-		$classPhone = trim((string) ($teacherRow['phone'] ?? $classPhone));
+	if ($streamOlevel) {
+		$sharedTeacher = trim((string) ($report_stream_teacher_name ?? ''));
+		if ($sharedTeacher !== '') {
+			$classTeacher = $sharedTeacher;
+			$classPhone = trim((string) ($report_stream_teacher_phone ?? ''));
+		}
+		$classSignImg = report_signature_img($report_class_signature ?? '', !empty($pdf), 4.4);
+	} else {
+		$teacherRow = ($secondary_class_teachers ?? [])[$studentClassId] ?? null;
+		if (is_array($teacherRow)) {
+			$classTeacher = trim((string) ($teacherRow['name'] ?? $classTeacher));
+			$classPhone = trim((string) ($teacherRow['phone'] ?? $classPhone));
+		}
+		$classSignImg = report_signature_img(($report_class_signatures ?? [])[$studentClassId] ?? ($report_class_signature ?? ''), !empty($pdf), 4.4);
 	}
-	$classSignImg = report_signature_img(($report_class_signatures ?? [])[$studentClassId] ?? ($report_class_signature ?? ''), !empty($pdf), 4.4);
 	$classPos = $classRanks[$sid] ?? '';
 	$say = $remarks[$sid] ?? [];
 	$classComment = trim((string) ($say['class_teacher'] ?? ''));
@@ -427,21 +440,17 @@ foreach ($students ?? [] as $student) {
 	</table>
 	<?php
 	$commentRow = static function (string $label, string $text) use ($wrap, $commentLineMm) {
-		$lines = $wrap($text, 62);
+		$lines = $wrap($text, 90);
 		$lineMm = number_format($commentLineMm, 1, '.', '');
 		echo '<div class="ws-comment"><b>' . esc($label) . '</b></div>';
-		$last = count($lines) - 1;
-		foreach ($lines as $i => $line) {
+		foreach ($lines as $line) {
 			echo '<table style="width:186mm;border-collapse:collapse;table-layout:fixed;"><tr>';
-			echo '<td style="width:146mm;border:0;height:' . $lineMm . 'mm;line-height:' . $lineMm . 'mm;vertical-align:bottom;padding:0;font-size:9pt;">';
+			echo '<td style="border:0;height:' . $lineMm . 'mm;line-height:' . $lineMm . 'mm;vertical-align:bottom;padding:0;font-size:9pt;">';
 			if ($line === '') {
-				echo '<span style="color:#94a3b8;">' . str_repeat('.', 78) . '</span>';
+				echo '<span style="color:#94a3b8;">' . str_repeat('.', 96) . '</span>';
 			} else {
 				echo '<span class="ws-on">' . esc($line) . '</span>';
 			}
-			echo '</td>';
-			echo '<td style="width:40mm;border:0;height:' . $lineMm . 'mm;font-size:8.5pt;font-weight:700;vertical-align:bottom;">';
-			echo $i === $last ? ('Sign: ' . str_repeat('.', 12)) : '';
 			echo '</td></tr></table>';
 		}
 	};

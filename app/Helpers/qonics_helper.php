@@ -389,6 +389,40 @@ if (!function_exists('staff_signature_file')) {
 	}
 }
 
+if (!function_exists('tint_signature_blue')) {
+	function tint_signature_blue($image): void
+	{
+		if (!$image) {
+			return;
+		}
+		$width = imagesx($image);
+		$height = imagesy($image);
+		$blueR = 29;
+		$blueG = 78;
+		$blueB = 216;
+		for ($y = 0; $y < $height; $y++) {
+			for ($x = 0; $x < $width; $x++) {
+				$rgba = imagecolorat($image, $x, $y);
+				$alpha = ($rgba >> 24) & 0x7F;
+				if ($alpha > 100) {
+					continue;
+				}
+				$r = ($rgba >> 16) & 255;
+				$g = ($rgba >> 8) & 255;
+				$b = $rgba & 255;
+				$ink = 1 - ((($r + $g + $b) / 3) / 255);
+				if ($ink < 0.06) {
+					continue;
+				}
+				$nr = (int) round(255 + ($blueR - 255) * $ink);
+				$ng = (int) round(255 + ($blueG - 255) * $ink);
+				$nb = (int) round(255 + ($blueB - 255) * $ink);
+				imagesetpixel($image, $x, $y, imagecolorallocate($image, $nr, $ng, $nb));
+			}
+		}
+	}
+}
+
 if (!function_exists('school_signature_file')) {
 	function school_signature_file($file): string
 	{

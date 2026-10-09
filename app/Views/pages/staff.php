@@ -388,7 +388,7 @@
 			ctx.lineWidth = 2.4;
 			ctx.lineCap = 'round';
 			ctx.lineJoin = 'round';
-			ctx.strokeStyle = '#111827';
+			ctx.strokeStyle = '#1d4ed8';
 		}
 		fit();
 		function point(e) {
