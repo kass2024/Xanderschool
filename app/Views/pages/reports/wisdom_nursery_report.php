@@ -68,7 +68,7 @@
 		font-size: 11pt;
 		border-bottom: 0.9pt dotted #1d4ed8;
 		white-space: nowrap;
-		overflow: hidden;
+		overflow: visible;
 		line-height: 1.15;
 		vertical-align: bottom;
 	}
@@ -169,26 +169,63 @@ $footLine = static function (string $label, string $value, float $hMm, bool $dot
 	echo '<td style="' . $cell . '">' . ($n > 0 ? str_repeat('.', $n) : '') . '</td>';
 	echo '</tr></table>';
 };
-$commentLine = static function (string $label, string $text, float $hMm) use ($advPt, $mm, $linePt, $dotPt) {
+$wrapWords = static function (string $text, float $maxPt) use ($advPt): array {
+	$text = trim((string) preg_replace('/\s+/u', ' ', $text));
+	if ($text === '') {
+		return [];
+	}
+	$words = preg_split('/\s+/u', $text) ?: [];
+	$lines = [];
+	$cur = '';
+	foreach ($words as $word) {
+		$try = $cur === '' ? $word : ($cur . ' ' . $word);
+		if ($cur !== '' && $advPt($try) > $maxPt) {
+			$lines[] = $cur;
+			$cur = $word;
+			continue;
+		}
+		$cur = $try;
+	}
+	if ($cur !== '') {
+		$lines[] = $cur;
+	}
+	return $lines;
+};
+$commentLine = static function (string $label, string $text, float $hMm) use ($advPt, $mm, $linePt, $dotPt, $wrapWords) {
 	$text = trim($text);
 	$sign = 'sign:';
-	$tailDots = 22;
-	$labelPt = $advPt($label) + 1.6;
-	$signPt = $advPt($sign) + 1.4;
+	$tailDots = 18;
+	$labelPt = $advPt($label) + 2.2;
+	$signPt = $advPt($sign) + 2.2;
 	$tailPt = $tailDots * $dotPt;
-	$midPt = max(24.0, $linePt - $labelPt - $signPt - $tailPt - 1.5);
-	$cell = 'height:' . $hMm . 'mm;line-height:1.15;vertical-align:bottom;';
-	echo '<table class="nr-foot"><tr style="height:' . $hMm . 'mm">';
-	echo '<td style="width:' . $mm($labelPt) . 'mm;' . $cell . 'white-space:nowrap;">' . esc($label) . '</td>';
-	if ($text === '') {
-		$n = (int) floor($midPt / $dotPt);
-		echo '<td style="' . $cell . '">' . str_repeat('.', max(8, $n)) . '</td>';
-	} else {
-		echo '<td class="nr-on-line" style="width:' . $mm($midPt) . 'mm;' . $cell . '">' . esc($text) . '</td>';
+	$midPt = max(48.0, $linePt - $labelPt - $signPt - $tailPt - 3.0);
+	$lines = $wrapWords($text, $midPt * 0.94);
+	if ($lines === []) {
+		$lines = [''];
 	}
-	echo '<td style="width:' . $mm($signPt) . 'mm;' . $cell . 'white-space:nowrap;">' . $sign . '</td>';
-	echo '<td style="width:' . $mm($tailPt) . 'mm;' . $cell . 'white-space:nowrap;">' . str_repeat('.', $tailDots) . '</td>';
-	echo '</tr></table>';
+	$lineMm = count($lines) > 1 ? 5.2 : max(5.2, $hMm);
+	$last = count($lines) - 1;
+	echo '<table class="nr-foot">';
+	foreach ($lines as $i => $line) {
+		$cell = 'height:' . $lineMm . 'mm;line-height:' . $lineMm . 'mm;vertical-align:bottom;';
+		echo '<tr style="height:' . $lineMm . 'mm">';
+		echo '<td style="width:' . $mm($labelPt) . 'mm;' . $cell . 'white-space:nowrap;">' . ($i === 0 ? esc($label) : '') . '</td>';
+		if ($line === '') {
+			$n = (int) floor(($midPt * 0.94) / $dotPt);
+			echo '<td style="width:' . $mm($midPt) . 'mm;' . $cell . '">' . str_repeat('.', max(8, $n)) . '</td>';
+		} else {
+			echo '<td class="nr-on-line" style="width:' . $mm($midPt) . 'mm;' . $cell . 'white-space:nowrap;">' . esc($line) . '</td>';
+		}
+		if ($i === $last) {
+			echo '<td style="width:' . $mm($signPt) . 'mm;' . $cell . 'white-space:nowrap;">' . $sign . '</td>';
+			echo '<td style="width:' . $mm($tailPt) . 'mm;' . $cell . 'white-space:nowrap;">' . str_repeat('.', $tailDots) . '</td>';
+		} else {
+			echo '<td style="width:' . $mm($signPt) . 'mm;' . $cell . '"></td>';
+			echo '<td style="width:' . $mm($tailPt) . 'mm;' . $cell . '"></td>';
+		}
+		echo '</tr>';
+	}
+	echo '</table>';
 };
 $signLine = static function (float $hMm) {
 	$lead = str_repeat('.', 118);

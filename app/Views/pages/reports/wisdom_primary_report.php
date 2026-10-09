@@ -351,8 +351,33 @@ foreach ($students ?? [] as $student) {
 		}
 	}
 	$headMm = $visibleSections > 0 ? ($periodic ? 6.4 : 11.0) : 0.0;
+	$say = $report_remarks[(int) ($student['id'] ?? 0)] ?? [];
+	$classComment = trim((string) ($say['class_teacher'] ?? ''));
+	$headComment = trim((string) ($say['head_teacher'] ?? ''));
+	$commentWidth = 88.0;
+	$commentLines = static function (string $text) use ($commentWidth): int {
+		$text = trim((string) preg_replace('/\s+/u', ' ', $text));
+		if ($text === '') {
+			return 1;
+		}
+		$maxChars = max(12, (int) floor(($commentWidth * 0.96) / (10 * 0.23)));
+		$words = preg_split('/\s+/u', $text) ?: [];
+		$lines = 1;
+		$len = 0;
+		foreach ($words as $word) {
+			$add = $len === 0 ? mb_strlen($word) : (mb_strlen($word) + 1);
+			if ($len > 0 && $len + $add > $maxChars) {
+				$lines++;
+				$len = mb_strlen($word);
+				continue;
+			}
+			$len += $add;
+		}
+		return $lines;
+	};
 	$footLines = 4 + ($periodic ? 0 : 1);
-	$natural = ($visibleSections * 5.6) + $headMm + $subjectUnits + ($visibleSections * 5.2) + (4 * 5.0) + ($footLines * 5.6);
+	$extraComment = max(0, $commentLines($classComment) - 1) + max(0, $commentLines($headComment) - 1);
+	$natural = ($visibleSections * 5.6) + $headMm + $subjectUnits + ($visibleSections * 5.2) + (4 * 5.0) + ($footLines * 5.6) + ($extraComment * 5.2);
 	$extraId = max(0, (($nameLines + $termLines + $classLines) - 3) * $idLine);
 	$tableTarget = 225 - $extraId;
 	$scale = $natural > 0 ? ($tableTarget / $natural) : 1.0;
@@ -373,9 +398,56 @@ foreach ($students ?? [] as $student) {
 	};
 	?>
 	<?php
-	$say = $report_remarks[(int) ($student['id'] ?? 0)] ?? [];
-	$classComment = trim((string) ($say['class_teacher'] ?? ''));
-	$headComment = trim((string) ($say['head_teacher'] ?? ''));
+	$wrapComment = static function (string $text, float $widthMm): array {
+		$text = trim((string) preg_replace('/\s+/u', ' ', $text));
+		if ($text === '') {
+			return [];
+		}
+		$maxChars = max(12, (int) floor(($widthMm * 0.96) / (10 * 0.23)));
+		$words = preg_split('/\s+/u', $text) ?: [];
+		$lines = [];
+		$cur = '';
+		foreach ($words as $word) {
+			$try = $cur === '' ? $word : ($cur . ' ' . $word);
+			if ($cur !== '' && mb_strlen($try) > $maxChars) {
+				$lines[] = $cur;
+				$cur = $word;
+				continue;
+			}
+			$cur = $try;
+		}
+		if ($cur !== '') {
+			$lines[] = $cur;
+		}
+		return $lines;
+	};
+	$commentBlock = static function (string $label, string $text) use ($wrapComment, $span) {
+		$labelMm = 58.0;
+		$signMm = 40.0;
+		$textMm = 186.0 - $labelMm - $signMm;
+		$lines = $wrapComment($text, $textMm);
+		if ($lines === []) {
+			$lines = [''];
+		}
+		$lineMm = 5.2;
+		$last = count($lines) - 1;
+		$blockMm = number_format(count($lines) * $lineMm, 2, '.', '');
+		echo '<tr><td class="wp-foot" colspan="' . $span . '" style="height:' . $blockMm . 'mm;line-height:normal;white-space:normal;padding:0.2mm 0.4mm;vertical-align:bottom;">';
+		echo '<table style="width:186mm;border-collapse:collapse;table-layout:fixed;"><tbody>';
+		foreach ($lines as $i => $line) {
+			$cell = 'height:' . $lineMm . 'mm;line-height:' . $lineMm . 'mm;vertical-align:bottom;border:0;padding:0;font-weight:700;';
+			echo '<tr style="height:' . $lineMm . 'mm">';
+			echo '<td style="width:' . $labelMm . 'mm;' . $cell . 'white-space:nowrap;">' . ($i === 0 ? esc($label) : '') . '</td>';
+			if ($line === '') {
+				echo '<td style="width:' . $textMm . 'mm;' . $cell . '">' . str_repeat('.', 42) . '</td>';
+			} else {
+				echo '<td style="width:' . $textMm . 'mm;' . $cell . 'color:#1d4ed8;border-bottom:0.9pt dotted #1d4ed8;white-space:nowrap;">' . esc($line) . '</td>';
+			}
+			echo '<td style="width:' . $signMm . 'mm;' . $cell . 'white-space:nowrap;">' . ($i === $last ? (' Sign: ' . str_repeat('.', 12)) : '') . '</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table></td></tr>';
+	};
 	?>
 	<table class="wp-id">
 		<colgroup>
@@ -597,8 +669,8 @@ foreach ($students ?? [] as $student) {
 			<td class="wp-sub" style="<?= $h('5.0'); ?>">DECISION</td>
 			<td colspan="<?= $rest; ?>" class="wp-ctr"><?= esc((string) ($student['decision'] ?? '')); ?><?= trim((string) ($student['decision'] ?? '')) === '' ? str_repeat('.', 48) : ''; ?></td>
 		</tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="height:auto;line-height:1.25;white-space:normal;vertical-align:bottom;padding-top:0.8mm;padding-bottom:0.3mm;">Class teacher's comment: <?php if ($classComment !== ''): ?><span style="color:#1d4ed8;border-bottom:0.9pt dotted #1d4ed8;"><?= esc($classComment); ?></span><?php else: ?><?= str_repeat('.', 42); ?><?php endif; ?> &nbsp; Sign: <?= str_repeat('.', 16); ?></td></tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="height:auto;line-height:1.25;white-space:normal;vertical-align:bottom;padding-top:0.8mm;padding-bottom:0.3mm;">Head teacher's comment: <?php if ($headComment !== ''): ?><span style="color:#1d4ed8;border-bottom:0.9pt dotted #1d4ed8;"><?= esc($headComment); ?></span><?php else: ?><?= str_repeat('.', 42); ?><?php endif; ?> &nbsp; Sign: <?= str_repeat('.', 16); ?></td></tr>
+		<?php $commentBlock("Class teacher's comment:", $classComment); ?>
+		<?php $commentBlock("Head teacher's comment:", $headComment); ?>
 		<?php if (!$periodic): ?>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>
 		<?php endif; ?>
