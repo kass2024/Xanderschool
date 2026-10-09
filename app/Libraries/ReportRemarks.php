@@ -75,7 +75,7 @@ class ReportRemarks
 		if ($out === [] || self::apiKey() === '') {
 			return $out;
 		}
-		foreach (array_chunk($pupils, 12) as $chunk) {
+		foreach (array_chunk($pupils, 8) as $chunk) {
 			$written = self::ask($chunk);
 			foreach ($written as $id => $lines) {
 				if (!isset($out[$id])) {
@@ -95,7 +95,7 @@ class ReportRemarks
 	/** @param array{id:int,name:string,subjects:list<array{title:string,score:?float,full:float}>} $pupil */
 	private static function fallback(array $pupil): array
 	{
-		$first = self::firstName((string) ($pupil['name'] ?? ''));
+		$first = self::calledName((string) ($pupil['name'] ?? ''));
 		$scored = [];
 		foreach ($pupil['subjects'] ?? [] as $subject) {
 			$full = (float) ($subject['full'] ?? 0);
@@ -120,22 +120,32 @@ class ReportRemarks
 		$avg = array_sum(array_column($scored, 'pct')) / count($scored);
 		$best = $scored[0]['title'];
 		$weak = $scored[count($scored) - 1]['title'];
-		if ($avg >= 80) {
-			$class = $first . ' is doing well, especially in ' . $best . '.';
-			$head = 'Good work. Keep it up.';
+		$blank = [];
+		foreach ($pupil['subjects'] ?? [] as $subject) {
+			if (($subject['score'] ?? null) === null && trim((string) ($subject['title'] ?? '')) !== '') {
+				$blank[] = (string) $subject['title'];
+			}
+		}
+		$blankText = self::joinSubjects(array_slice($blank, 0, 3));
+		if ($blankText !== '' && $avg >= 75) {
+			$class = $first . ' is full in ' . $best . '. ' . $blank[0] . ' is not in yet.';
+			$head = 'Finish ' . $blank[0] . ' before this report closes.';
+		} elseif ($avg >= 80) {
+			$class = $first . ' is secure in ' . $best . ', and ' . $weak . ' is the soft spot.';
+			$head = 'Keep ' . $weak . ' from slipping.';
 		} elseif ($avg >= 60) {
-			$class = $first . ' is fair. ' . $best . ' is stronger than ' . $weak . '.';
-			$head = 'A fair result. More effort will help.';
+			$class = $first . ' is steady in ' . $best . ', but ' . $weak . ' is behind.';
+			$head = 'Practice ' . $weak . ' a little every day.';
 		} elseif ($avg >= 50) {
-			$class = $first . ' needs more practice, mainly in ' . $weak . '.';
-			$head = 'Please give more time to the weaker subjects.';
+			$class = $first . ' is uneven. ' . $weak . ' needs the most work.';
+			$head = 'Sit with ' . $first . ' on ' . $weak . '.';
 		} else {
-			$class = $first . ' is struggling, most of all in ' . $weak . '.';
-			$head = 'Needs close follow-up at school and at home.';
+			$class = $first . ' is behind, most clearly in ' . $weak . '.';
+			$head = 'Daily practice in ' . $weak . ' comes first.';
 		}
 		return [
-			'class_teacher' => self::clip($class, 16),
-			'head_teacher' => self::clip($head, 14),
+			'class_teacher' => self::clip($class, 12),
+			'head_teacher' => self::clip($head, 10),
 		];
 	}
 
@@ -155,8 +165,8 @@ class ReportRemarks
 						continue;
 					}
 					$ready[(int) $id] = [
-						'class_teacher' => self::clip((string) ($lines['class_teacher'] ?? ''), 16),
-						'head_teacher' => self::clip((string) ($lines['head_teacher'] ?? ''), 14),
+						'class_teacher' => self::clip((string) ($lines['class_teacher'] ?? ''), 12),
+						'head_teacher' => self::clip((string) ($lines['head_teacher'] ?? ''), 10),
 					];
 				}
 				if ($ready !== []) {
@@ -174,16 +184,17 @@ class ReportRemarks
 			}
 			$brief[] = [
 				'id' => (int) $pupil['id'],
-				'name' => (string) ($pupil['name'] ?? ''),
+				'call' => self::calledName((string) ($pupil['name'] ?? '')),
 				'marks' => $lines,
 			];
 		}
-		$prompt = "You are a nursery or primary class teacher, then the head teacher, writing on a report card in Rwanda.\n"
-			. "Write like a person talking to a parent. Short, plain, warm. Not a speech.\n"
-			. "For each child return class_teacher and head_teacher.\n"
-			. "class_teacher: one sentence, 16 words maximum. Use the child's first name. Mention the strongest subject and, only if one subject is clearly weaker, that subject too.\n"
-			. "head_teacher: one sentence, 14 words maximum. Do not repeat the class teacher. No list of subjects. No scores. No percentage.\n"
-			. "If marks are missing, say so in a few words.\n"
+		$prompt = "You write the two handwritten lines on a nursery or primary report in Rwanda.\n"
+			. "Sound like two different adults who looked at this child's marks, not like a form.\n"
+			. "Every child in this list must get different sentences. Do not reuse a sentence. Do not say \"doing well, especially\" or \"Good work. Keep it up.\"\n"
+			. "Use the call name. One sentence each.\n"
+			. "class_teacher: at most 12 words. Name one strong subject and one low or blank subject. If a subject has no mark, say it is not in yet.\n"
+			. "head_teacher: at most 10 words. One different line for the parent. Do not repeat the class teacher.\n"
+			. "No scores, no percentages, no labels like Excellent.\n"
 			. "Return JSON only: {\"comments\":[{\"id\":1,\"class_teacher\":\"...\",\"head_teacher\":\"...\"}]}\n\n"
 			. json_encode($brief, JSON_UNESCAPED_UNICODE);
 		try {
@@ -218,8 +229,8 @@ class ReportRemarks
 				continue;
 			}
 			$out[$id] = [
-				'class_teacher' => self::clip((string) ($row['class_teacher'] ?? ''), 16),
-				'head_teacher' => self::clip((string) ($row['head_teacher'] ?? ''), 14),
+				'class_teacher' => self::clip((string) ($row['class_teacher'] ?? ''), 12),
+				'head_teacher' => self::clip((string) ($row['head_teacher'] ?? ''), 10),
 			];
 		}
 		return $out;
@@ -238,9 +249,10 @@ class ReportRemarks
 				'parts' => [['text' => $prompt]],
 			]],
 			'generationConfig' => [
-				'temperature' => 0.7,
-				'maxOutputTokens' => 2048,
+				'temperature' => 0.8,
+				'maxOutputTokens' => 4096,
 				'responseMimeType' => 'application/json',
+				'thinkingConfig' => ['thinkingBudget' => 0],
 			],
 		], JSON_UNESCAPED_UNICODE);
 		$ch = curl_init($url);
@@ -258,6 +270,14 @@ class ReportRemarks
 		$raw = curl_exec($ch);
 		$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$err = curl_error($ch);
+		if ($raw !== false && $code >= 400 && stripos((string) $raw, 'thinking') !== false) {
+			$retry = json_decode((string) $body, true);
+			unset($retry['generationConfig']['thinkingConfig']);
+			curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($retry, JSON_UNESCAPED_UNICODE));
+			$raw = curl_exec($ch);
+			$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+			$err = curl_error($ch);
+		}
 		curl_close($ch);
 		if ($raw === false) {
 			throw new \RuntimeException($err !== '' ? $err : 'AI request failed');
@@ -278,6 +298,13 @@ class ReportRemarks
 		foreach ($data['candidates'][0]['content']['parts'] ?? [] as $part) {
 			if (is_array($part) && !empty($part['text']) && empty($part['thought'])) {
 				$buf .= $part['text'];
+			}
+		}
+		if (trim($buf) === '') {
+			foreach ($data['candidates'][0]['content']['parts'] ?? [] as $part) {
+				if (is_array($part) && !empty($part['text'])) {
+					$buf .= $part['text'];
+				}
 			}
 		}
 		return trim($buf);
@@ -310,11 +337,32 @@ class ReportRemarks
 		return trim($key, " \t\"'");
 	}
 
-	private static function firstName(string $name): string
+	private static function calledName(string $name): string
 	{
 		$parts = preg_split('/\s+/', trim($name)) ?: [];
-		$first = trim((string) ($parts[0] ?? ''));
-		return $first !== '' ? $first : 'This child';
+		$parts = array_values(array_filter($parts, static function ($part) {
+			return trim((string) $part) !== '';
+		}));
+		$pick = $parts === [] ? 'This child' : (string) $parts[count($parts) - 1];
+		return ucwords(strtolower($pick));
+	}
+
+	/** @param list<string> $titles */
+	private static function joinSubjects(array $titles): string
+	{
+		$titles = array_values(array_filter(array_map('trim', $titles)));
+		$n = count($titles);
+		if ($n === 0) {
+			return '';
+		}
+		if ($n === 1) {
+			return $titles[0];
+		}
+		if ($n === 2) {
+			return $titles[0] . ' and ' . $titles[1];
+		}
+		$last = array_pop($titles);
+		return implode(', ', $titles) . ' and ' . $last;
 	}
 
 	private static function clip(string $text, int $words): string
@@ -351,6 +399,6 @@ class ReportRemarks
 				$pupil['subjects'] ?? [],
 			];
 		}
-		return WRITEPATH . 'cache/report_remarks/' . sha1(json_encode($payload)) . '.json';
+		return WRITEPATH . 'cache/report_remarks_v2/' . sha1(json_encode($payload)) . '.json';
 	}
 }

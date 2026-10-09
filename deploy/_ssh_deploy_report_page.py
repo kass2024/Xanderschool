@@ -58,8 +58,9 @@ foreach (["/login", "/forget/reset"] as $path) {
     if (strpos($status, " 500") !== false) { exit(1); }
 }
 '
-docker exec xander_school_app grep -n "A4 portrait" /var/www/html/app/Views/pages/reports/wisdom_nursery_report.php | head -2
-docker exec xander_school_app grep -n "report_remarks" /var/www/html/app/Controllers/Home.php | head -4
+docker exec xander_school_app grep -n "nr-on-line" /var/www/html/app/Views/pages/reports/wisdom_nursery_report.php | head -2
+docker exec xander_school_app grep -n "report_remarks_v2" /var/www/html/app/Libraries/ReportRemarks.php | head -2
+docker exec xander_school_app php -r '$ok = preg_match("/GOOGLE_AI_API_KEY=/", file_get_contents("/var/www/html/.env")); echo $ok ? "key_present\n" : "key_missing\n"; if (!$ok) exit(1);'
 echo DONE
 """
     _, o, e = c.exec_command(cmd, timeout=240)

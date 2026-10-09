@@ -585,10 +585,8 @@ foreach ($students ?? [] as $student) {
 			<td class="wp-sub" style="<?= $h('5.0'); ?>">DECISION</td>
 			<td colspan="<?= $rest; ?>" class="wp-ctr"><?= esc((string) ($student['decision'] ?? '')); ?><?= trim((string) ($student['decision'] ?? '')) === '' ? str_repeat('.', 48) : ''; ?></td>
 		</tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="height:auto;line-height:1.25;white-space:normal;padding-top:1mm;padding-bottom:1mm;">Class teacher's comment: <?= $classComment !== '' ? esc($classComment) : str_repeat('.', 48); ?></td></tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('6.2'); ?>"><?= str_repeat('.', 70); ?> Sign: <?= str_repeat('.', 22); ?></td></tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="height:auto;line-height:1.25;white-space:normal;padding-top:1mm;padding-bottom:1mm;">Head teacher's comment: <?= $headComment !== '' ? esc($headComment) : str_repeat('.', 48); ?></td></tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('6.2'); ?>"><?= str_repeat('.', 70); ?> Sign: <?= str_repeat('.', 22); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="height:auto;line-height:1.25;white-space:normal;vertical-align:bottom;padding-top:0.8mm;padding-bottom:0.3mm;">Class teacher's comment: <?php if ($classComment !== ''): ?><span style="color:#1d4ed8;border-bottom:0.9pt dotted #1d4ed8;"><?= esc($classComment); ?></span><?php else: ?><?= str_repeat('.', 42); ?><?php endif; ?> &nbsp; Sign: <?= str_repeat('.', 16); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="height:auto;line-height:1.25;white-space:normal;vertical-align:bottom;padding-top:0.8mm;padding-bottom:0.3mm;">Head teacher's comment: <?php if ($headComment !== ''): ?><span style="color:#1d4ed8;border-bottom:0.9pt dotted #1d4ed8;"><?= esc($headComment); ?></span><?php else: ?><?= str_repeat('.', 42); ?><?php endif; ?> &nbsp; Sign: <?= str_repeat('.', 16); ?></td></tr>
 		<?php if (!$periodic): ?>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>
 		<?php endif; ?>

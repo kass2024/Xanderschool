@@ -61,13 +61,16 @@
 	.nr-marks td.ctr { text-align: center; }
 	.nr-footwrap { width: 184mm; margin-left: 1mm; padding-top: 3mm; }
 	.nr-foot, .nr-sign { width: 184mm; border-collapse: collapse; table-layout: fixed; }
-	.nr-note {
+	.nr-foot td.nr-on-line {
 		font-family: <?= !empty($pdf) ? 'nurserygothic' : '"Century Gothic", CenturyGothic, nurserygothic, sans-serif'; ?>;
-		font-size: 11pt;
+		color: #1d4ed8;
 		font-weight: 700;
-		line-height: 1.25;
-		white-space: normal;
-		padding-top: 1.2mm;
+		font-size: 11pt;
+		border-bottom: 0.9pt dotted #1d4ed8;
+		white-space: nowrap;
+		overflow: hidden;
+		line-height: 1.15;
+		vertical-align: bottom;
 	}
 	.nr-foot td, .nr-sign td {
 		border: 0;
@@ -166,13 +169,26 @@ $footLine = static function (string $label, string $value, float $hMm, bool $dot
 	echo '<td style="' . $cell . '">' . ($n > 0 ? str_repeat('.', $n) : '') . '</td>';
 	echo '</tr></table>';
 };
-$commentLine = static function (string $label, string $text, float $hMm) use ($footLine) {
+$commentLine = static function (string $label, string $text, float $hMm) use ($advPt, $mm, $linePt, $dotPt) {
 	$text = trim($text);
+	$sign = 'sign:';
+	$tailDots = 22;
+	$labelPt = $advPt($label) + 1.6;
+	$signPt = $advPt($sign) + 1.4;
+	$tailPt = $tailDots * $dotPt;
+	$midPt = max(24.0, $linePt - $labelPt - $signPt - $tailPt - 1.5);
+	$cell = 'height:' . $hMm . 'mm;line-height:1.15;vertical-align:bottom;';
+	echo '<table class="nr-foot"><tr style="height:' . $hMm . 'mm">';
+	echo '<td style="width:' . $mm($labelPt) . 'mm;' . $cell . 'white-space:nowrap;">' . esc($label) . '</td>';
 	if ($text === '') {
-		$footLine($label, '', $hMm);
-		return;
+		$n = (int) floor($midPt / $dotPt);
+		echo '<td style="' . $cell . '">' . str_repeat('.', max(8, $n)) . '</td>';
+	} else {
+		echo '<td class="nr-on-line" style="width:' . $mm($midPt) . 'mm;' . $cell . '">' . esc($text) . '</td>';
 	}
-	echo '<div class="nr-note" style="min-height:' . $hMm . 'mm;">' . esc($label . ' ' . $text) . '</div>';
+	echo '<td style="width:' . $mm($signPt) . 'mm;' . $cell . 'white-space:nowrap;">' . $sign . '</td>';
+	echo '<td style="width:' . $mm($tailPt) . 'mm;' . $cell . 'white-space:nowrap;">' . str_repeat('.', $tailDots) . '</td>';
+	echo '</tr></table>';
 };
 $signLine = static function (float $hMm) {
 	$lead = str_repeat('.', 118);
@@ -397,10 +413,8 @@ foreach ($students as $student) {
 				</table>
 				<div class="nr-footwrap">
 					<?php $footLine('Conduct:', $conductText, 8, false); ?>
-					<?php $commentLine("Class teacher's comment:", $classComment, 8); ?>
-					<?php $signLine(8); ?>
-					<?php $commentLine("Head teacher's comment:", $headComment, 8); ?>
-					<?php $signLine(8); ?>
+					<?php $commentLine("Class teacher's comment:", $classComment, 8.4); ?>
+					<?php $commentLine("Head teacher's comment:", $headComment, 8.4); ?>
 					<?php $footLine("Parent's comment:", '', 8); ?>
 					<?php $signLine(8); ?>
 					<?php if ($endOfTermSheet): ?>
