@@ -98,6 +98,11 @@ $termTotal = static function ($cat, $exam) {
 	.wsp-table tr.alt td { background: #f3f7fb; }
 	.wsp-sub { text-align: left; padding-left: 1.4mm; }
 	.wsp-total td { background: #e8eef5; }
+	.wsp-extra { margin-top: 1.6mm; width: <?= $cardW; ?>; border-collapse: collapse; }
+	.wsp-extra td { border: 0.6pt solid #1e3a5f; vertical-align: top; font-size: <?= $annualSheet ? '7.5pt' : '8.5pt'; ?>; font-weight: 700; padding: 1.2mm 1.6mm; }
+	.wsp-sign { height: <?= $annualSheet ? '7mm' : '9mm'; ?>; }
+	.wsp-jury { margin: 0; padding-left: 4mm; }
+	.wsp-jury li { list-style: disc; }
 <?php if (empty($pdf)): ?>
 	@media print {
 		.app-sidebar-wrapper, .app-sidebar, .app-sidebar-overlay,
@@ -119,6 +124,76 @@ if ($sheets === []) {
 	echo '<h1>' . lang('app.noStudentFound') . '</h1>';
 }
 $studentReg = isset($_GET['student']) ? (string) $_GET['student'] : '';
+$placeFor = static function (array $scores): array {
+	$ranked = [];
+	foreach ($scores as $sid => $score) {
+		if ($score !== null) {
+			$ranked[(int) $sid] = (float) $score;
+		}
+	}
+	arsort($ranked, SORT_NUMERIC);
+	$places = [];
+	$place = 0;
+	$seen = 0;
+	$prev = null;
+	foreach ($ranked as $sid => $score) {
+		$seen++;
+		if ($prev === null || abs($score - $prev) > 0.001) {
+			$place = $seen;
+			$prev = $score;
+		}
+		$places[(int) $sid] = $place;
+	}
+	return $places;
+};
+$scoreBag = [1 => [], 2 => [], 3 => [], 4 => []];
+$classSize = 0;
+foreach ($sheets as $rankStudent) {
+	if (empty($rankStudent['id'])) {
+		continue;
+	}
+	$classSize++;
+	$sid = (int) $rankStudent['id'];
+	$termGot = [1 => null, 2 => null, 3 => null];
+	$annualGot = null;
+	foreach ($rankStudent['progress_courses'] ?? [] as $line) {
+		$terms = $line['terms'] ?? [];
+		foreach ([1, 2, 3] as $colTerm) {
+			$got = $termTotal($terms[$colTerm]['cat'] ?? null, $terms[$colTerm]['exam'] ?? null);
+			if ($got === null) {
+				continue;
+			}
+			$termGot[$colTerm] = ($termGot[$colTerm] ?? 0) + $got;
+		}
+		if (($line['annual_op'] ?? null) !== null) {
+			$annualGot = ($annualGot ?? 0) + (float) $line['annual_op'];
+		}
+	}
+	foreach ([1, 2, 3] as $colTerm) {
+		$scoreBag[$colTerm][$sid] = $termGot[$colTerm];
+	}
+	$scoreBag[4][$sid] = $annualGot;
+}
+$places = [];
+foreach ([1, 2, 3, 4] as $colTerm) {
+	$places[$colTerm] = $placeFor($scoreBag[$colTerm]);
+}
+$placeText = static function (int $sid, int $colTerm) use ($places, $classSize): string {
+	$place = $places[$colTerm][$sid] ?? null;
+	if ($classSize < 1) {
+		return '-';
+	}
+	return ($place === null ? '' : (string) $place) . ' / ' . $classSize;
+};
+$discMax = (float) ($discipline_max ?? 0);
+$conductText = static function ($student, int $colTerm) use ($discMax, $markText): string {
+	$max = $discMax;
+	$penalty = (float) extractDisciplineMarks($student['displine_marks'] ?? '', $colTerm);
+	if ($max <= 0) {
+		return '-';
+	}
+	return $markText($max - $penalty) . ' / ' . $markText($max);
+};
 $cards = [];
 foreach ($sheets as $student) {
 	if (empty($student['id'])) {
@@ -127,6 +202,7 @@ foreach ($sheets as $student) {
 	if ($studentReg !== '' && (string) $student['id'] !== $studentReg) {
 		continue;
 	}
+	$sid = (int) $student['id'];
 	$name = trim((string) ($student['fname'] ?? '') . ' ' . mb_strtoupper((string) ($student['lname'] ?? '')));
 	$classLabel = trim((string) ($student['level_name'] ?? '') . ' ' . (string) (($student['code'] ?? '') !== '' ? $student['code'] : ($student['title'] ?? '')));
 	$lines = [];
@@ -141,7 +217,7 @@ foreach ($sheets as $student) {
 	$sumMaxEx = 0.0;
 	$sumTerm = [];
 	foreach ($showTerms as $colTerm) {
-		$sumTerm[$colTerm] = ['cat' => 0.0, 'exam' => 0.0, 'any' => false];
+		$sumTerm[$colTerm] = ['cat' => 0.0, 'exam' => 0.0, 'base' => 0.0, 'any' => false];
 	}
 	$sumPctGot = 0.0;
 	$sumPctMax = 0.0;
@@ -249,6 +325,7 @@ foreach ($sheets as $student) {
 						$sumTerm[$colTerm]['any'] = true;
 						$sumTerm[$colTerm]['cat'] += (float) ($cat ?? 0);
 						$sumTerm[$colTerm]['exam'] += (float) ($exam ?? 0);
+						$sumTerm[$colTerm]['base'] += $max * 2;
 					}
 					?>
 					<td><?= esc($markText($cat)); ?></td>
@@ -288,7 +365,82 @@ foreach ($sheets as $student) {
 					<td><?= esc($pctText($sumPctMax > 0 ? ($sumPctGot * 100 / $sumPctMax) : null)); ?></td>
 				<?php endif; ?>
 			</tr>
+			<tr>
+				<td class="wsp-sub" colspan="4">%</td>
+				<?php if ($annualSheet):
+					foreach ($showTerms as $colTerm):
+						$got = $sumTerm[$colTerm]['any'] ? ($sumTerm[$colTerm]['cat'] + $sumTerm[$colTerm]['exam']) : null;
+						$base = (float) $sumTerm[$colTerm]['base'];
+						?>
+						<td colspan="3"><?= esc($pctText($base > 0 && $got !== null ? ($got * 100 / $base) : null)); ?></td>
+					<?php endforeach; ?>
+					<td colspan="3"><?= esc($pctText($annualAny && $sumAnnualMax > 0 ? ($sumAnnualOp * 100 / $sumAnnualMax) : null)); ?></td>
+					<td colspan="2">-</td>
+				<?php else:
+					$onePct = $sumPctMax > 0 ? ($sumPctGot * 100 / $sumPctMax) : null;
+					?>
+					<td colspan="3"><?= esc($pctText($onePct)); ?></td>
+					<td><?= esc($pctText($onePct)); ?></td>
+				<?php endif; ?>
+			</tr>
+			<tr>
+				<td class="wsp-sub" colspan="4">Position</td>
+				<?php if ($annualSheet):
+					foreach ($showTerms as $colTerm): ?>
+						<td colspan="3"><?= esc($placeText($sid, $colTerm)); ?></td>
+					<?php endforeach; ?>
+					<td colspan="3"><?= esc($placeText($sid, 4)); ?></td>
+					<td colspan="2"></td>
+				<?php else: ?>
+					<td colspan="4"><?= esc($placeText($sid, $showTerms[0])); ?></td>
+				<?php endif; ?>
+			</tr>
+			<tr>
+				<td class="wsp-sub" colspan="4">Teacher's signature</td>
+				<td class="wsp-sign" colspan="<?= $annualSheet ? 14 : 4; ?>"></td>
+			</tr>
+			<tr>
+				<td class="wsp-sub" colspan="4">Parent's signature</td>
+				<td class="wsp-sign" colspan="<?= $annualSheet ? 14 : 4; ?>"></td>
+			</tr>
 		</tbody>
+	</table>
+	<?php
+	$verdictOptions = [
+		'1' => 'Promoted',
+		'2' => 'Advised to repeat',
+		'4' => 'Discontinued',
+		'3' => 'Proposed to resit',
+	];
+	$chosenVerdict = (string) ($student['decision'] ?? '');
+	$conductTerms = $annualSheet ? [1, 2, 3] : $showTerms;
+	?>
+	<table class="wsp-extra">
+		<tr>
+			<td style="width:58%;">
+				<?php if ($annualSheet): ?>
+					<div>VERDICT OF THE JURY</div>
+					<ul class="wsp-jury">
+						<?php foreach ($verdictOptions as $code => $label): ?>
+							<li><?= $chosenVerdict === (string) $code ? '&#9632; ' : ''; ?><?= esc($label); ?></li>
+						<?php endforeach; ?>
+					</ul>
+				<?php endif; ?>
+				<div style="margin-top:1.2mm;">OBSERVATIONS</div>
+				<?php foreach ($conductTerms as $colTerm): ?>
+					<div><?= $termHeads[$colTerm]; ?>: <?= str_repeat('.', $annualSheet ? 28 : 36); ?></div>
+				<?php endforeach; ?>
+			</td>
+			<td>
+				<div>CONDUCT</div>
+				<?php foreach ($conductTerms as $colTerm): ?>
+					<div><?= $termHeads[$colTerm]; ?>: <?= esc($conductText($student, $colTerm)); ?></div>
+				<?php endforeach; ?>
+				<div style="margin-top:2mm;">Headmaster</div>
+				<div><?= esc((string) ($head_master ?? '')); ?></div>
+				<div style="margin-top:3mm;">Signature and stamp</div>
+			</td>
+		</tr>
 	</table>
 	<?php
 	$cards[] = ob_get_clean();

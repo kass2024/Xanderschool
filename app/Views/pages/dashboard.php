@@ -568,7 +568,15 @@
 						</div>
 
 					</div>
-					<?php $showFinanceData = !\Config\MenuClearance::isAcademicStaffPost((int) session('soma_post')); ?>
+					<?php
+					$showFinanceData = !\Config\MenuClearance::isAcademicStaffPost((int) session('soma_post'));
+					$full = 0;
+					$half = 0;
+					$none = 0;
+					$extrafull = 0;
+					$extrahalf = 0;
+					$extranone = 0;
+					?>
 					<?php if ($showFinanceData) : ?>
 					<div class="mb-3 card">
 						<div class="card-header-tab card-header">
@@ -585,7 +593,7 @@
 							<div class="col-sm-12 col-md-12 col-xl-12">
 								<div class="row">
 									<!-- DONUT CHART -->
-									<?php $full=0; $half=0; $none=0; $schoolFeesDeposit=0; $extrafeesdeposit=0;
+									<?php $schoolFeesDeposit=0; $extrafeesdeposit=0;
 									foreach ($schoolfees as $fees){
 										$expectedScl=$fees['expected'];
 										if($fees['expected']==$fees['paid']) {
@@ -600,7 +608,7 @@
 									}
 
 									?>
-									<?php $extrafull=0; $extrahalf=0; $extranone=0;
+									<?php
 									foreach ($extrafees as $fees){
 										$expectedExt=$fees['expected'];
 										if($fees['expected']==$fees['paid']) {
@@ -1066,11 +1074,6 @@
 				show: true
 			}
 		})
-		function labelFormatter(label, series) {
-			return '<div style="font-size:13px; text-align:center; padding:2px; color: #fff; font-weight: 600;">'
-				+ label
-				+ '<br>'
-		}
 		/*
 		 * END DONUT CHART
 		 */
@@ -1110,7 +1113,7 @@
 		function labelFormatter(label, series) {
 			return '<div style="font-size:13px; text-align:center; padding:2px; color: #fff; font-weight: 600;">'
 				+ label
-				+ '<br>'
+				+ '<br></div>';
 		}
 		/*
 		 * END DONUT CHART
