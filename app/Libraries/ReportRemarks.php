@@ -75,21 +75,39 @@ class ReportRemarks
 		if ($out === [] || self::apiKey() === '') {
 			return $out;
 		}
+		$jobs = [];
 		foreach (array_chunk($pupils, 8) as $chunk) {
-			$written = self::ask($chunk);
-			foreach ($written as $id => $lines) {
-				if (!isset($out[$id])) {
-					continue;
+			$written = self::cached($chunk);
+			if ($written === null) {
+				$job = self::job($chunk);
+				if ($job !== null) {
+					$jobs[] = $job;
 				}
-				if ($lines['class_teacher'] !== '') {
-					$out[$id]['class_teacher'] = $lines['class_teacher'];
-				}
-				if ($lines['head_teacher'] !== '') {
-					$out[$id]['head_teacher'] = $lines['head_teacher'];
-				}
+				continue;
 			}
+			self::mergeLines($out, $written);
+		}
+		foreach (self::postParallel($jobs) as $written) {
+			self::mergeLines($out, $written);
 		}
 		return $out;
+	}
+
+	/** @param array<int, array{class_teacher:string,head_teacher:string}> $out
+	 * @param array<int, array{class_teacher:string,head_teacher:string}> $written */
+	private static function mergeLines(array &$out, array $written): void
+	{
+		foreach ($written as $id => $lines) {
+			if (!isset($out[$id])) {
+				continue;
+			}
+			if ($lines['class_teacher'] !== '') {
+				$out[$id]['class_teacher'] = $lines['class_teacher'];
+			}
+			if ($lines['head_teacher'] !== '') {
+				$out[$id]['head_teacher'] = $lines['head_teacher'];
+			}
+		}
 	}
 
 	/** @param array{id:int,name:string,subjects:list<array{title:string,score:?float,full:float}>} $pupil */
@@ -142,31 +160,37 @@ class ReportRemarks
 		];
 	}
 
-	/**
-	 * @param list<array{id:int,name:string,subjects:list<array{title:string,score:?float,full:float}>}> $chunk
-	 * @return array<int, array{class_teacher:string,head_teacher:string}>
-	 */
-	private static function ask(array $chunk): array
+	/** @param list<array{id:int,name:string,subjects:list<array{title:string,score:?float,full:float}>}> $chunk
+	 * @return array<int, array{class_teacher:string,head_teacher:string}>|null */
+	private static function cached(array $chunk): ?array
 	{
 		$cacheFile = self::cacheFile($chunk);
-		if (is_file($cacheFile) && (time() - (int) filemtime($cacheFile)) < 43200) {
-			$cached = json_decode((string) file_get_contents($cacheFile), true);
-			if (is_array($cached)) {
-				$ready = [];
-				foreach ($cached as $id => $lines) {
-					if (!is_array($lines)) {
-						continue;
-					}
-					$ready[(int) $id] = [
-						'class_teacher' => self::clip((string) ($lines['class_teacher'] ?? ''), 16),
-						'head_teacher' => self::clip((string) ($lines['head_teacher'] ?? ''), 12),
-					];
-				}
-				if ($ready !== []) {
-					return $ready;
-				}
-			}
+		if (!is_file($cacheFile) || (time() - (int) filemtime($cacheFile)) >= 43200) {
+			return null;
 		}
+		$cached = json_decode((string) file_get_contents($cacheFile), true);
+		if (!is_array($cached)) {
+			return null;
+		}
+		$ready = [];
+		foreach ($cached as $id => $lines) {
+			if (!is_array($lines)) {
+				continue;
+			}
+			$ready[(int) $id] = [
+				'class_teacher' => self::clip((string) ($lines['class_teacher'] ?? ''), 16),
+				'head_teacher' => self::clip((string) ($lines['head_teacher'] ?? ''), 12),
+			];
+		}
+		return $ready === [] ? null : $ready;
+	}
+
+	/**
+	 * @param list<array{id:int,name:string,subjects:list<array{title:string,score:?float,full:float}>}> $chunk
+	 * @return array{cache:string,prompt:string,allowed:array<int, array{scored:list<string>,blank:list<string>}>}|null
+	 */
+	private static function job(array $chunk): ?array
+	{
 		$brief = [];
 		$allowed = [];
 		foreach ($chunk as $pupil) {
@@ -200,7 +224,7 @@ class ReportRemarks
 			];
 		}
 		if ($brief === []) {
-			return [];
+			return null;
 		}
 		$prompt = "You write the two handwritten lines on a nursery or primary report in Rwanda.\n"
 			. "Sound like two different adults who looked at this child's filled marks, not like a form.\n"
@@ -214,23 +238,132 @@ class ReportRemarks
 			. "No scores, no percentages, no labels like Excellent.\n"
 			. "Return JSON only: {\"comments\":[{\"id\":1,\"class_teacher\":\"...\",\"head_teacher\":\"...\"}]}\n\n"
 			. json_encode($brief, JSON_UNESCAPED_UNICODE);
-		try {
-			$raw = self::request($prompt);
-			$text = self::extractText($raw);
-			$json = self::parseJson($text);
-			$comments = is_array($json['comments'] ?? null) ? $json['comments'] : (array_is_list($json ?? []) ? $json : []);
-			$out = self::keepPresentOnly(self::normalize($comments), $allowed);
-			if ($out !== []) {
+		return [
+			'cache' => self::cacheFile($chunk),
+			'prompt' => $prompt,
+			'allowed' => $allowed,
+		];
+	}
+
+	/**
+	 * Ask every uncached group at once. A failed group keeps the plain fallback.
+	 *
+	 * @param list<array{cache:string,prompt:string,allowed:array<int, array{scored:list<string>,blank:list<string>}>}> $jobs
+	 * @return list<array<int, array{class_teacher:string,head_teacher:string}>>
+	 */
+	private static function postParallel(array $jobs): array
+	{
+		if ($jobs === []) {
+			return [];
+		}
+		$model = trim((string) (env('GEMINI_MODEL') ?: env('GOOGLE_AI_MODEL') ?: 'gemini-2.5-flash'));
+		if ($model === '') {
+			$model = 'gemini-2.5-flash';
+		}
+		$url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent';
+		$key = self::apiKey();
+		$ready = [];
+		foreach (array_chunk($jobs, 4) as $wave) {
+			$multi = curl_multi_init();
+			$handles = [];
+			foreach ($wave as $i => $job) {
+				$body = json_encode([
+					'contents' => [[
+						'role' => 'user',
+						'parts' => [['text' => $job['prompt']]],
+					]],
+					'generationConfig' => [
+						'temperature' => 0.8,
+						'maxOutputTokens' => 4096,
+						'responseMimeType' => 'application/json',
+						'thinkingConfig' => ['thinkingBudget' => 0],
+					],
+				], JSON_UNESCAPED_UNICODE);
+				$ch = curl_init($url);
+				curl_setopt_array($ch, [
+					CURLOPT_POST => true,
+					CURLOPT_HTTPHEADER => [
+						'Content-Type: application/json; charset=utf-8',
+						'x-goog-api-key: ' . $key,
+					],
+					CURLOPT_POSTFIELDS => $body,
+					CURLOPT_RETURNTRANSFER => true,
+					CURLOPT_TIMEOUT => 45,
+					CURLOPT_CONNECTTIMEOUT => 10,
+				]);
+				curl_multi_add_handle($multi, $ch);
+				$handles[] = ['ch' => $ch, 'job' => $job, 'body' => $body];
+			}
+			$running = null;
+			do {
+				$state = curl_multi_exec($multi, $running);
+				if ($running) {
+					curl_multi_select($multi, 1.0);
+				}
+			} while ($running && $state === CURLM_OK);
+			foreach ($handles as $handle) {
+				$ch = $handle['ch'];
+				$raw = curl_multi_getcontent($ch);
+				$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+				curl_multi_remove_handle($multi, $ch);
+				curl_close($ch);
+				if (($raw === false || $raw === null || $code >= 400) && is_string($raw) && stripos($raw, 'thinking') !== false) {
+					try {
+						$retryBody = json_decode((string) $handle['body'], true);
+						unset($retryBody['generationConfig']['thinkingConfig']);
+						$again = self::requestBody($url, $key, json_encode($retryBody, JSON_UNESCAPED_UNICODE));
+						$raw = $again['raw'];
+						$code = $again['code'];
+					} catch (\Throwable $e) {
+						$raw = false;
+						$code = 0;
+					}
+				}
+				if (!is_string($raw) || $raw === '' || $code >= 400) {
+					continue;
+				}
+				$data = json_decode($raw, true);
+				if (!is_array($data)) {
+					continue;
+				}
+				$json = self::parseJson(self::extractText($data));
+				$comments = is_array($json['comments'] ?? null) ? $json['comments'] : (array_is_list($json ?? []) ? $json : []);
+				$out = self::keepPresentOnly(self::normalize($comments), $handle['job']['allowed']);
+				if ($out === []) {
+					continue;
+				}
+				$cacheFile = $handle['job']['cache'];
 				$dir = dirname($cacheFile);
 				if (!is_dir($dir)) {
 					mkdir($dir, 0775, true);
 				}
 				file_put_contents($cacheFile, json_encode($out));
+				$ready[] = $out;
 			}
-			return $out;
-		} catch (\Throwable $e) {
-			return [];
+			curl_multi_close($multi);
 		}
+		return $ready;
+	}
+
+	/** @return array{raw:string,code:int} */
+	private static function requestBody(string $url, string $key, string $body): array
+	{
+		$ch = curl_init($url);
+		curl_setopt_array($ch, [
+			CURLOPT_POST => true,
+			CURLOPT_HTTPHEADER => [
+				'Content-Type: application/json; charset=utf-8',
+				'x-goog-api-key: ' . $key,
+			],
+			CURLOPT_POSTFIELDS => $body,
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_TIMEOUT => 45,
+			CURLOPT_CONNECTTIMEOUT => 10,
+		]);
+		$raw = curl_exec($ch);
+		$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		curl_close($ch);
+		return ['raw' => is_string($raw) ? $raw : '', 'code' => $code];
 	}
 
 	/** @param list<mixed>|array<mixed> $rows */
@@ -303,62 +436,6 @@ class ReportRemarks
 			}
 		}
 		return false;
-	}
-
-	private static function request(string $prompt): array
-	{
-		$model = trim((string) (env('GEMINI_MODEL') ?: env('GOOGLE_AI_MODEL') ?: 'gemini-2.5-flash'));
-		if ($model === '') {
-			$model = 'gemini-2.5-flash';
-		}
-		$url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent';
-		$body = json_encode([
-			'contents' => [[
-				'role' => 'user',
-				'parts' => [['text' => $prompt]],
-			]],
-			'generationConfig' => [
-				'temperature' => 0.8,
-				'maxOutputTokens' => 4096,
-				'responseMimeType' => 'application/json',
-				'thinkingConfig' => ['thinkingBudget' => 0],
-			],
-		], JSON_UNESCAPED_UNICODE);
-		$ch = curl_init($url);
-		curl_setopt_array($ch, [
-			CURLOPT_POST => true,
-			CURLOPT_HTTPHEADER => [
-				'Content-Type: application/json; charset=utf-8',
-				'x-goog-api-key: ' . self::apiKey(),
-			],
-			CURLOPT_POSTFIELDS => $body,
-			CURLOPT_RETURNTRANSFER => true,
-			CURLOPT_TIMEOUT => 60,
-			CURLOPT_CONNECTTIMEOUT => 15,
-		]);
-		$raw = curl_exec($ch);
-		$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-		$err = curl_error($ch);
-		if ($raw !== false && $code >= 400 && stripos((string) $raw, 'thinking') !== false) {
-			$retry = json_decode((string) $body, true);
-			unset($retry['generationConfig']['thinkingConfig']);
-			curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($retry, JSON_UNESCAPED_UNICODE));
-			$raw = curl_exec($ch);
-			$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-			$err = curl_error($ch);
-		}
-		curl_close($ch);
-		if ($raw === false) {
-			throw new \RuntimeException($err !== '' ? $err : 'AI request failed');
-		}
-		if ($code >= 400) {
-			throw new \RuntimeException('AI HTTP ' . $code);
-		}
-		$data = json_decode($raw, true);
-		if (!is_array($data)) {
-			throw new \RuntimeException('AI returned invalid JSON');
-		}
-		return $data;
 	}
 
 	private static function extractText(array $data): string

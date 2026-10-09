@@ -17712,8 +17712,11 @@ public function getApplicationDocs($id = null)
 		}
 		@ini_set('pcre.backtrack_limit', '5000000');
 		@ini_set('pcre.recursion_limit', '5000000');
+		@set_time_limit(300);
 		$mpdf = new \Mpdf\Mpdf($mpdfConfig);
 		$mpdf->shrink_tables_to_fit = 0;
+		$mpdf->useSubstitutions = false;
+		$mpdf->packTableData = true;
 		$mpdf->SetDisplayMode('fullpage');
 		$mpdf->SetTitle(preg_replace('/\.pdf$/i', '', $filename) ?: $filename);
 		$mpdf->SetAutoPageBreak(true, (float) ($mpdfConfig['margin_bottom'] ?? 10));
@@ -17738,11 +17741,12 @@ public function getApplicationDocs($id = null)
 		if ($css !== '') {
 			$mpdf->WriteHTML($css, \Mpdf\HTMLParserMode::HEADER_CSS);
 		}
-		foreach ($parts as $i => $part) {
-			if ($i > 0) {
+		$pageCount = count($parts);
+		for ($offset = 0; $offset < $pageCount; $offset += 8) {
+			if ($offset > 0) {
 				$mpdf->AddPage();
 			}
-			$mpdf->WriteHTML($part, \Mpdf\HTMLParserMode::HTML_BODY);
+			$mpdf->WriteHTML(implode('<pagebreak />', array_slice($parts, $offset, 8)), \Mpdf\HTMLParserMode::HTML_BODY);
 		}
 		$mpdf->Output($filename, \Mpdf\Output\Destination::INLINE);
 		exit;
@@ -18221,51 +18225,30 @@ public function getApplicationDocs($id = null)
 		$records = array();
 		// var_dump($students);echo $active_term->id;die();
 		$a = 0;
-		$MarksModel = new MarksModel();
+		$courseIds = [];
+		$coursesByClass = [];
+		foreach ($classIds as $cid) {
+			$coursesByClass[(int) $cid] = $this->get_courses($cid, $term, $year);
+			foreach ($coursesByClass[(int) $cid] as $core) {
+				$courseIds[(int) $core['id']] = (int) $core['id'];
+			}
+		}
+		$studentIds = [];
+		foreach ($students as $student) {
+			$studentIds[] = (int) $student['id'];
+		}
+		$periodicMarks = $this->periodicScoreMap($studentIds, array_values($courseIds), (int) $year, (int) $term, (int) $period, (int) $factId);
 		foreach ($students as $student) {
 			$records[$a] = $student;
 			$tot = 0;
-			foreach ($this->get_courses($student['class'], $term, $year) as $core) {
-				$periodicMax = ($factId === 3) ? '100' : 'c.marks';
-				$resultBuilder = $MarksModel->select("(sum(" . self::sqlMarkValue('marks.marks') . "/marks.outof*" . $periodicMax . ")/count(marks.id)) as marks")
-						->join("active_term at", "at.id=marks.term")
-						->join("courses c", "c.id=marks.course_id")
-						->where("marks.course_id", $core['id'])
-						->where("at.term", $term)
-						->where("at.academic_year", $year)
-						->where("marks.mark_type", 1)//cat
-						->where("marks.student_id", $student['id']);
-				if ($factId === 19) {
-					$resultBuilder->where("(marks.cat_type IS NULL OR TRIM(marks.cat_type) = '')", null, false);
-					$resultBuilder->where("marks.period", (int) $period);
-				} else {
-					// Period 0 CAT still counts for the selected period until it is moved onto that period.
-					$periodInt = (int) $period;
-					$termInt = (int) $term;
-					$yearInt = (int) $year;
-					$resultBuilder->where("marks.marks >=", 0);
-					$resultBuilder->where(
-						"(marks.period = {$periodInt} OR ((marks.period = 0 OR marks.period IS NULL) AND NOT EXISTS (
-							SELECT 1 FROM marks mpref
-							INNER JOIN active_term atpref ON atpref.id = mpref.term
-							WHERE mpref.student_id = marks.student_id
-							  AND mpref.course_id = marks.course_id
-							  AND mpref.mark_type = 1
-							  AND mpref.marks >= 0
-							  AND mpref.period = {$periodInt}
-							  AND atpref.term = {$termInt}
-							  AND atpref.academic_year = {$yearInt}
-						)))",
-						null,
-						false
-					);
-				}
-				$core['result'] = $resultBuilder->get()->getRowArray();
+			foreach ($coursesByClass[(int) $student['class']] ?? [] as $core) {
+				$mark = $periodicMarks[(int) $student['id']][(int) $core['id']] ?? null;
+				$core['result'] = ['marks' => $mark];
 				if ($factId === 3) {
 					$core['marks'] = 100;
 				}
-				if (!is_null($core['result']['marks'])) {
-					$tot += $core['result']['marks'];
+				if (!is_null($mark)) {
+					$tot += $mark;
 				}
 
 				$records[$a]['courses'][] = $core;
@@ -18544,6 +18527,19 @@ public function getApplicationDocs($id = null)
 					->get()->getResultArray();
 			$records = array();
 			// echo "<pre>";var_dump($students);die();
+			$progressCourseIds = [];
+			$coursesByClass = [];
+			foreach ($classIds as $cid) {
+				$coursesByClass[(int) $cid] = $this->get_courses($cid, $term, $year);
+				foreach ($coursesByClass[(int) $cid] as $core) {
+					$progressCourseIds[(int) $core['id']] = (int) $core['id'];
+				}
+			}
+			$progressStudentIds = [];
+			foreach ($students as $student) {
+				$progressStudentIds[] = (int) $student['id'];
+			}
+			$progressScores = $this->progressScoreMap($progressStudentIds, array_values($progressCourseIds), (int) $year, (int) $term);
 			$a = 0;
 			$positions = [];
 			$pickTermMark = static function (array $bag, int $wanted) {
@@ -18571,12 +18567,12 @@ public function getApplicationDocs($id = null)
 
 				$student_cat_info = null;
 				$student_exam_info = null;
-				foreach ($this->get_courses($student['class'], $term, $year) as $core) {
+				foreach ($coursesByClass[(int) $student['class']] ?? [] as $core) {
 					$offeredTerms = array_values(array_filter(array_map('intval', explode(',', (string) ($core['term1'] ?? '')))));
 					if ($term !== 4 && $offeredTerms !== [] && !in_array($term, $offeredTerms, true)) {
 						continue;
 					}
-					$result = $this->__result($core['id'], $student['id'], $term, $year);
+					$result = $progressScores[(int) $student['id']][(int) $core['id']] ?? ['cat' => [], 'exam' => []];
 					if ($term !== 4) {
 						$catMark = $pickTermMark($result['cat'] ?? [], $term);
 						$examMark = $pickTermMark($result['exam'] ?? [], $term);
@@ -18990,9 +18986,165 @@ public function getApplicationDocs($id = null)
 		}
 	}
 
+	/**
+	 * Same periodic average as the old per-pupil query, loaded once for the class.
+	 *
+	 * @param list<int> $studentIds
+	 * @param list<int> $courseIds
+	 * @return array<int, array<int, mixed>>
+	 */
+	private function periodicScoreMap(array $studentIds, array $courseIds, int $year, int $term, int $period, int $factId): array
+	{
+		$studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds))));
+		$courseIds = array_values(array_unique(array_filter(array_map('intval', $courseIds))));
+		if ($studentIds === [] || $courseIds === [] || $year < 1) {
+			return [];
+		}
+		$sid = implode(',', $studentIds);
+		$cid = implode(',', $courseIds);
+		$markExpr = self::sqlMarkValue('m.marks');
+		$maxExpr = $factId === 3 ? '100' : 'c.marks';
+		if ($factId === 19) {
+			$sql = "SELECT m.student_id, m.course_id,
+				(SUM({$markExpr}/m.outof*{$maxExpr})/COUNT(m.id)) AS marks
+				FROM marks m
+				INNER JOIN active_term at ON at.id = m.term
+				INNER JOIN courses c ON c.id = m.course_id
+				WHERE m.mark_type = 1
+				  AND at.term = ?
+				  AND at.academic_year = ?
+				  AND m.period = ?
+				  AND (m.cat_type IS NULL OR TRIM(m.cat_type) = '')
+				  AND m.student_id IN ({$sid})
+				  AND m.course_id IN ({$cid})
+				GROUP BY m.student_id, m.course_id";
+			$binds = [$term, $year, $period];
+		} else {
+			$sql = "SELECT m.student_id, m.course_id,
+				(SUM({$markExpr}/m.outof*{$maxExpr})/COUNT(m.id)) AS marks
+				FROM marks m
+				INNER JOIN active_term at ON at.id = m.term
+				INNER JOIN courses c ON c.id = m.course_id
+				WHERE m.mark_type = 1
+				  AND m.marks >= 0
+				  AND at.term = ?
+				  AND at.academic_year = ?
+				  AND m.student_id IN ({$sid})
+				  AND m.course_id IN ({$cid})
+				  AND (
+					m.period = ?
+					OR (
+					  (m.period = 0 OR m.period IS NULL)
+					  AND NOT EXISTS (
+						SELECT 1 FROM marks mpref
+						INNER JOIN active_term atpref ON atpref.id = mpref.term
+						WHERE mpref.student_id = m.student_id
+						  AND mpref.course_id = m.course_id
+						  AND mpref.mark_type = 1
+						  AND mpref.marks >= 0
+						  AND mpref.period = ?
+						  AND atpref.term = ?
+						  AND atpref.academic_year = ?
+					  )
+					)
+				  )
+				GROUP BY m.student_id, m.course_id";
+			$binds = [$term, $year, $period, $period, $term, $year];
+		}
+		$rows = \Config\Database::connect()->query($sql, $binds)->getResultArray();
+		$map = [];
+		foreach ($rows as $row) {
+			$map[(int) $row['student_id']][(int) $row['course_id']] = $row['marks'];
+		}
+		return $map;
+	}
+
+	/**
+	 * CAT and exam for a whole class. Same figures as __result(), without one query per subject.
+	 *
+	 * @param list<int> $studentIds
+	 * @param list<int> $courseIds
+	 * @return array<int, array<int, array{cat: array<int, mixed>, exam: array<int, mixed>}>>
+	 */
+	private function progressScoreMap(array $studentIds, array $courseIds, int $year, int $term): array
+	{
+		$studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds))));
+		$courseIds = array_values(array_unique(array_filter(array_map('intval', $courseIds))));
+		if ($studentIds === [] || $courseIds === [] || $year < 1) {
+			return [];
+		}
+		$sid = implode(',', $studentIds);
+		$cid = implode(',', $courseIds);
+		$markExpr = self::sqlMarkValue('m.marks');
+		$nursery = 'SELECT c.id FROM classes c JOIN departments d ON d.id = c.department JOIN faculty f ON f.id = d.faculty_id WHERE f.id = 19';
+		$termSql = $term === 4 ? '' : ' AND at.term = ' . (int) $term;
+		$db = \Config\Database::connect();
+		$catRows = $db->query(
+			"SELECT m.student_id, m.course_id, at.term AS term_no, at.id AS at_id,
+				(SUM({$markExpr}/m.outof*c.marks)/COUNT(m.id)) AS marks
+			 FROM marks m
+			 INNER JOIN active_term at ON at.id = m.term
+			 INNER JOIN courses c ON c.id = m.course_id
+			 WHERE m.mark_type = 1
+			   AND at.academic_year = ?
+			   AND m.student_id IN ({$sid})
+			   AND m.course_id IN ({$cid})
+			   {$termSql}
+			   AND (m.class_id NOT IN ({$nursery}) OR (m.period = 4 AND (m.cat_type IS NULL OR TRIM(m.cat_type) = '')))
+			 GROUP BY m.student_id, m.course_id, at.id
+			 ORDER BY at.id",
+			[$year]
+		)->getResultArray();
+		$examRows = $db->query(
+			"SELECT m.student_id, m.course_id, m.id AS mark_id, at.term AS term_no, at.id AS at_id,
+				({$markExpr}/m.outof*c.marks) AS marks
+			 FROM marks m
+			 INNER JOIN active_term at ON at.id = m.term
+			 INNER JOIN courses c ON c.id = m.course_id
+			 WHERE m.mark_type = 2
+			   AND at.academic_year = ?
+			   AND m.student_id IN ({$sid})
+			   AND m.course_id IN ({$cid})
+			   {$termSql}
+			   AND m.class_id NOT IN ({$nursery})
+			 ORDER BY at.id, m.id",
+			[$year]
+		)->getResultArray();
+		$map = [];
+		foreach ($catRows as $row) {
+			$map[(int) $row['student_id']][(int) $row['course_id']]['cat'][(int) $row['term_no']] = $row['marks'];
+		}
+		$examSeen = [];
+		foreach ($examRows as $row) {
+			$studentId = (int) $row['student_id'];
+			$courseId = (int) $row['course_id'];
+			$atId = (int) $row['at_id'];
+			$markId = (int) $row['mark_id'];
+			if (isset($examSeen[$studentId][$courseId][$atId]) && $examSeen[$studentId][$courseId][$atId] >= $markId) {
+				continue;
+			}
+			$examSeen[$studentId][$courseId][$atId] = $markId;
+			$map[$studentId][$courseId]['exam'][(int) $row['term_no']] = $row['marks'];
+		}
+		foreach ($map as $studentId => $courses) {
+			foreach ($courses as $courseId => $bag) {
+				$map[$studentId][$courseId] = [
+					'cat' => $bag['cat'] ?? [],
+					'exam' => $bag['exam'] ?? [],
+				];
+			}
+		}
+		return $map;
+	}
+
 	public
 	function get_courses($class_id, $term, $year)
 	{
+		static $cache = [];
+		$key = (int) $class_id . '|' . (string) $term . '|' . (string) $year;
+		if (array_key_exists($key, $cache)) {
+			return $cache[$key];
+		}
 		$courseModel = new CourseModel();
 		$subjectBuilder = $courseModel->select("courses.id,courses.title,courses.code,courses.marks,courses.credit
 		,cs.title as category, $term as term, cr.term as term1")
@@ -19010,7 +19162,8 @@ public function getApplicationDocs($id = null)
 			$subjectBuilder->where("find_in_set($term,cr.term)>0");
 		}
 		$subjectBuilder->where("IFNULL(courses.program_type,'') <> 'holiday'");
-		return $subjectBuilder->get()->getResultArray();
+		$cache[$key] = $subjectBuilder->get()->getResultArray();
+		return $cache[$key];
 	}
 
 	public
