@@ -1,38 +1,31 @@
 <style>
-	.wsp-wrap { background: #fff; color: #111; }
-	.wsp-page { page-break-after: always; margin: 0 0 12mm; }
+	.wsp-sheet { background: <?= !empty($pdf) ? '#fff' : '#eef1f4'; ?>; color: #111; }
+	.wsp-page { page-break-after: always; background: #fff; }
 	.wsp-page:last-child { page-break-after: auto; }
-	.wsp-title {
-		margin: 0 0 4mm;
-		text-align: center;
-		font-size: 16pt;
-		font-weight: 700;
-		letter-spacing: 0.4px;
-	}
-	.wsp-id { width: 100%; border-collapse: collapse; margin-bottom: 3mm; }
-	.wsp-id td { border: none; font-size: 11pt; padding: 0.6mm 1mm; vertical-align: middle; }
-	.wsp-id .lab { width: 38mm; white-space: nowrap; }
-	.wsp-name {
-		display: inline-block;
-		min-width: 70mm;
-		border: 0.8pt solid #111;
-		padding: 0.4mm 2mm;
-		font-weight: 700;
-	}
-	.wsp-year { text-align: right; white-space: nowrap; font-weight: 700; }
-	.wsp-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+	.wsp-head, .wsp-id, .wsp-table { border-collapse: collapse; width: 100%; }
+	.wsp-crest, .wsp-logo { width: 16mm; height: 16mm; display: block; }
+	.wsp-republic { font-size: 8.5pt; font-weight: 700; letter-spacing: 0.3px; text-align: center; line-height: 1.15; }
+	.wsp-school { font-size: 11pt; font-weight: 700; text-align: center; line-height: 1.15; margin-top: 0.4mm; }
+	.wsp-moto { font-size: 8pt; text-align: center; line-height: 1.15; }
+	.wsp-title { font-size: 10.5pt; font-weight: 700; text-align: center; margin-top: 1.2mm; }
+	.wsp-id { margin-top: 1.6mm; margin-bottom: 1.6mm; }
+	.wsp-id td { border: 0.6pt solid #1e3a5f; padding: 0.5mm 1.2mm; vertical-align: middle; }
+	.wsp-id .k { font-size: 7.5pt; font-weight: 700; width: 32mm; background: #f4f7fb; }
+	.wsp-id .v { font-size: 8pt; font-weight: 700; }
+	.wsp-table { table-layout: fixed; }
 	.wsp-table th, .wsp-table td {
-		border: 0.6pt solid #111;
+		border: 0.6pt solid #1e3a5f;
 		padding: 0.5mm 0.4mm;
 		text-align: center;
 		font-size: 7.5pt;
 		font-weight: 700;
 		line-height: 1.15;
 	}
-	.wsp-table th { background: #fff; }
+	.wsp-table th { background: #1e3a5f; color: #fff; }
+	.wsp-table tr.alt td { background: #f3f7fb; }
 	.wsp-sub { text-align: left; padding-left: 1.2mm; font-size: 7.5pt; }
-	.wsp-sit { border-left: 1.4pt solid #111; }
-	.wsp-total td { background: #f3f3f3; }
+	.wsp-sit { border-left: 1.4pt solid #1e3a5f; }
+	.wsp-total td { background: #e8eef5; }
 <?php if (empty($pdf)): ?>
 	.wsp-scroll { overflow-x: auto; }
 	@media print {
@@ -50,6 +43,45 @@
 <?php
 $sheets = $progress_students ?? [];
 $yearLabel = trim((string) ($academic_year_title ?? ''));
+$schoolName = trim((string) ($school_name ?? ''));
+$pobox = trim((string) ($school_pobox ?? ''));
+$address = trim((string) ($school_address ?? ''));
+$moto = trim((string) ($school_moto ?? ''));
+if ($moto === '') {
+	$moto = 'FEARING GOD IS KNOWLEDGE';
+}
+$boxLine = 'P.O. BOX: ' . ($pobox !== '' ? $pobox : '—');
+if ($address !== '') {
+	$boxLine .= ', ' . $address;
+}
+$band = (string) ($secondary_band ?? 'o_level');
+$heading = [
+	'o_level' => 'O-LEVEL',
+	'a_level' => 'A-LEVEL',
+	'rtb' => 'RTB',
+	'special' => 'ANP A-LEVEL',
+][$band] ?? 'A-LEVEL';
+$termNo = (int) ($term ?? 0);
+$roman = [1 => 'I', 2 => 'II', 3 => 'III'][$termNo] ?? (string) $termNo;
+$cardTitle = $heading . ' PROGRESSIVE SCHOOL REPORT';
+if ($roman !== '') {
+	$cardTitle .= ' · TERM ' . $roman;
+}
+$assetSrc = static function (string $relative) use ($pdf) {
+	$file = FCPATH . ltrim($relative, '/');
+	if (!is_file($file)) {
+		return '';
+	}
+	if (!empty($pdf)) {
+		return str_replace('\\', '/', $file);
+	}
+	return base_url($relative);
+};
+$crestSrc = $assetSrc('assets/images/holiday_coaching/rwanda_coat_of_arms.jpeg');
+$logoSrc = '';
+if (!empty($school_logo)) {
+	$logoSrc = $assetSrc('assets/images/logo/' . $school_logo);
+}
 $markText = static function ($n): string {
 	if ($n === null || $n === '') {
 		return '-';
@@ -92,21 +124,33 @@ foreach ($sheets as $student) {
 	}
 	$shown++;
 	?>
-	<div class="wsp-wrap wsp-page">
-		<h1 class="wsp-title">PROGRESSIVE SCHOOL REPORT</h1>
+	<div class="wsp-sheet wsp-page">
+		<table class="wsp-head">
+			<tr>
+				<td style="width:22mm;border:0;vertical-align:middle;">
+					<?php if ($crestSrc !== ''): ?><img class="wsp-crest" src="<?= esc($crestSrc); ?>" alt=""><?php endif; ?>
+				</td>
+				<td style="border:0;text-align:center;vertical-align:middle;">
+					<div class="wsp-republic">REPUBLIC OF RWANDA<br>MINISTRY OF EDUCATION</div>
+					<div class="wsp-school"><?= esc($schoolName); ?></div>
+					<div class="wsp-moto"><?= esc($boxLine); ?><br>School Motto: <?= esc($moto); ?></div>
+					<div class="wsp-title"><?= esc($cardTitle); ?></div>
+				</td>
+				<td style="width:22mm;border:0;vertical-align:middle;text-align:right;">
+					<?php if ($logoSrc !== ''): ?><img class="wsp-logo" src="<?= esc($logoSrc); ?>" alt="" style="margin-left:auto;"><?php endif; ?>
+				</td>
+			</tr>
+		</table>
 		<table class="wsp-id">
 			<tr>
-				<td class="lab">Student's name:</td>
-				<td><span class="wsp-name"><?= esc($name); ?></span></td>
-				<td class="wsp-year">School Year: <?= esc($yearLabel); ?></td>
-			</tr>
-			<tr>
-				<td class="lab">Student's number:</td>
-				<td colspan="2"><?= esc((string) ($student['regno'] ?? '')); ?></td>
-			</tr>
-			<tr>
-				<td class="lab">Class:</td>
-				<td colspan="2"><?= esc($classLabel); ?></td>
+				<td class="k">Student's name</td>
+				<td class="v"><?= esc($name); ?></td>
+				<td class="k">Student's number</td>
+				<td class="v"><?= esc((string) ($student['regno'] ?? '')); ?></td>
+				<td class="k">Class</td>
+				<td class="v"><?= esc($classLabel); ?></td>
+				<td class="k">School Year</td>
+				<td class="v"><?= esc($yearLabel); ?></td>
 			</tr>
 		</table>
 		<div class="<?= empty($pdf) ? 'wsp-scroll' : ''; ?>">
@@ -142,7 +186,7 @@ foreach ($sheets as $student) {
 				</tr>
 			</thead>
 			<tbody>
-			<?php foreach ($lines as $line):
+			<?php foreach ($lines as $lineIndex => $line):
 				$max = (float) ($line['max'] ?? 0);
 				$sumMaxCat += $max;
 				$sumMaxEx += $max;
@@ -153,7 +197,7 @@ foreach ($sheets as $student) {
 					$sumAnnualOp += (float) $line['annual_op'];
 				}
 				?>
-				<tr>
+				<tr class="<?= $lineIndex % 2 === 1 ? 'alt' : ''; ?>">
 					<td class="wsp-sub"><?= esc(mb_strtoupper((string) ($line['title'] ?? ''))); ?></td>
 					<td><?= esc($markText($max)); ?></td>
 					<td><?= esc($markText($max)); ?></td>
