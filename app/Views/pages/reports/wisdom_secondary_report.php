@@ -95,7 +95,7 @@ $heading = [
 $periodNo = (int) ($period ?? 0);
 $periodLabel = $periodNo > 0 ? ('PERIOD ' . $periodNo) : '';
 if ($periodic) {
-	$cardTitle = $heading . ' PERIODIC REPORT';
+	$cardTitle = 'PERIODIC REPORT';
 	$subtitle = $periodLabel;
 	$reportKind = $periodLabel !== '' ? $periodLabel : 'PERIODIC REPORT';
 } else {

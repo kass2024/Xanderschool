@@ -15,9 +15,7 @@ _m = re.search(r'PASSWORD = os\.environ\.get\("VPS_PASSWORD", "([^"]*)"\)', _src
 PASSWORD = _m.group(1) if _m else ""
 REMOTE_APP = "/opt/xander-school/app"
 FILES = [
-    "app/Controllers/Home.php",
-    "app/Views/pages/marks/periodic_report.php",
-    "app/Views/pages/student_reports.php",
+    "app/Views/pages/reports/wisdom_secondary_report.php",
 ]
 
 
