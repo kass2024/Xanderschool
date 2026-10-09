@@ -177,43 +177,59 @@ $cols = $periodic
 	? [62.3, 23.8, 23.8, 20.8, 32.6, 22.7]
 	: [30.1, 12.8, 16.1, 14.1, 14.0, 14.6, 12.9, 17.0, 25.9, 28.5];
 $span = $periodic ? 6 : 10;
-$periodicRank = [];
-if ($periodic && isset($students)) {
-	$rankTotals = [];
+$sheetRank = [];
+$reportPupilCount = 0;
+if (isset($students)) {
+	$rankPct = [];
 	foreach ($students as $rankStudent) {
 		if (!isset($rankStudent['id'])) {
 			continue;
 		}
+		$reportPupilCount++;
 		$sum = 0.0;
-		$has = false;
+		$max = 0.0;
 		foreach ($rankStudent['courses'] ?? [] as $rankCore) {
 			if ($isBehaviour($rankCore)) {
 				continue;
 			}
-			$mark = $rankCore['result']['marks'] ?? null;
-			if ($mark !== null && $mark !== '') {
+			$full = (float) ($rankCore['marks'] ?? 0);
+			if ($periodic) {
+				$mark = $rankCore['result']['marks'] ?? null;
+				if ($mark === null || $mark === '') {
+					continue;
+				}
 				$sum += (float) $mark;
-				$has = true;
+				$max += $full;
+				continue;
+			}
+			$mid = $rankCore['result']['marks'] ?? null;
+			$ex = $rankCore['result']['exam_marks'] ?? null;
+			$midOk = $mid !== null && $mid !== '';
+			$exOk = $ex !== null && $ex !== '';
+			if ($midOk) {
+				$sum += (float) $mid;
+				$max += $full;
+			}
+			if ($exOk) {
+				$sum += (float) $ex;
+				$max += $full;
 			}
 		}
-		$rankTotals[(int) $rankStudent['id']] = $has ? $sum : null;
+		if ($max > 0) {
+			$rankPct[(int) $rankStudent['id']] = $sum / $max;
+		}
 	}
-	$ordered = $rankTotals;
-	arsort($ordered, SORT_NUMERIC);
+	arsort($rankPct, SORT_NUMERIC);
 	$place = 0;
 	$seen = 0;
 	$prev = null;
-	foreach ($ordered as $sid => $sum) {
+	foreach ($rankPct as $sid => $pct) {
 		$seen++;
-		if ($sum === null) {
-			$periodicRank[$sid] = '';
-			continue;
-		}
-		if ($prev === null || abs($sum - $prev) > 0.001) {
+		if ($prev === null || abs($pct - $prev) > 0.00001) {
 			$place = $seen;
-			$prev = $sum;
+			$prev = $pct;
 		}
-		$periodicRank[$sid] = $place;
+		$sheetRank[(int) $sid] = $place;
 	}
 }
 $col = static function (int $i) use ($cols) {
@@ -527,8 +543,8 @@ foreach ($students ?? [] as $student) {
 					$full = (float) ($core['marks'] ?? 0);
 					$raw = $core['result']['marks'] ?? null;
 					$score = ($raw === null || $raw === '') ? null : (float) $raw;
-					$maxFull += $full;
 					if ($score !== null) {
+						$maxFull += $full;
 						$scoreSum += $score;
 						$anyScore = true;
 					}
@@ -545,7 +561,7 @@ foreach ($students ?? [] as $student) {
 				}
 				echo '<tr class="wp-total">';
 				echo '<td class="wp-sub" style="' . $h('5.2') . '">TOTAL</td>';
-				echo '<td class="wp-num">' . ($rows === [] ? '' : $fmt($maxFull)) . '</td>';
+				echo '<td class="wp-num">' . ($maxFull > 0 ? $fmt($maxFull) : '') . '</td>';
 				echo '<td class="wp-num">' . ($anyScore ? $fmt($scoreSum) : '') . '</td>';
 				echo '<td></td><td></td><td></td>';
 				echo '</tr>';
@@ -557,19 +573,19 @@ foreach ($students ?? [] as $student) {
 			foreach ($rows as $core) {
 				$full = (float) ($core['marks'] ?? 0);
 				[$mid, $ex, $tot] = $scoreOf($core);
-				$maxMid += $full;
-				$maxEx += $full;
-				$maxTot += $full * 2;
 				if ($mid !== null) {
+					$maxMid += $full;
 					$scoreMid += $mid;
 					$anyScore = true;
 				}
 				if ($ex !== null) {
+					$maxEx += $full;
 					$scoreEx += $ex;
 					$anyScore = true;
 				}
-				if ($tot !== null) {
-					$scoreTot += $tot;
+				if ($mid !== null || $ex !== null) {
+					$maxTot += ($mid !== null ? $full : 0) + ($ex !== null ? $full : 0);
+					$scoreTot += (float) ($mid ?? 0) + (float) ($ex ?? 0);
 				}
 				$pct = ($full > 0 && $tot !== null) ? ($tot * 100 / ($full * 2)) : null;
 				$cid = (int) ($core['id'] ?? 0);
@@ -588,9 +604,9 @@ foreach ($students ?? [] as $student) {
 			}
 			echo '<tr class="wp-total">';
 			echo '<td class="wp-sub" style="' . $h('5.2') . '">TOTAL</td>';
-			echo '<td class="wp-num">' . ($rows === [] ? '' : $fmt($maxMid)) . '</td>';
-			echo '<td class="wp-num">' . ($rows === [] ? '' : $fmt($maxEx)) . '</td>';
-			echo '<td class="wp-num">' . ($rows === [] ? '' : $fmt($maxTot)) . '</td>';
+			echo '<td class="wp-num">' . ($maxMid > 0 ? $fmt($maxMid) : '') . '</td>';
+			echo '<td class="wp-num">' . ($maxEx > 0 ? $fmt($maxEx) : '') . '</td>';
+			echo '<td class="wp-num">' . ($maxTot > 0 ? $fmt($maxTot) : '') . '</td>';
 			echo '<td class="wp-num">' . ($anyScore ? $fmt($scoreMid) : '') . '</td>';
 			echo '<td class="wp-num">' . ($anyScore ? $fmt($scoreEx) : '') . '</td>';
 			echo '<td class="wp-num">' . ($anyScore ? $fmt($scoreTot) : '') . '</td>';
@@ -619,19 +635,8 @@ foreach ($students ?? [] as $student) {
 			}
 		}
 		$pctText = ($scored && $allMax > 0) ? $fmt($allScore * 100 / $allMax) . '%' : '';
-		if ($periodic) {
-			$position = $periodicRank[(int) $student['id']] ?? '';
-			$outOf = 0;
-			foreach ($periodicRank as $rankPlace) {
-				if ($rankPlace !== '') {
-					$outOf++;
-				}
-			}
-		} else {
-			$termKey = termToStr($termNo);
-			$position = $my_position[$termKey]['total'][$student['id']] ?? '';
-			$outOf = isset($my_position[$termKey]['total']) ? count($my_position[$termKey]['total']) : 0;
-		}
+		$position = $sheetRank[(int) $student['id']] ?? '';
+		$outOf = $reportPupilCount;
 		$positionText = ($position !== '' && $outOf > 0) ? $position . ' Out of ' . $outOf : '';
 		$conductTot = null;
 		if ($discMax > 0) {

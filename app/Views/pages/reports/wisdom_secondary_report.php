@@ -226,7 +226,7 @@ if (isset($students)) {
 			$sum += $score;
 			$n++;
 		}
-		$totals[(int) $rankStudent['id']] = $n > 0 ? $sum : null;
+		$totals[(int) $rankStudent['id']] = $n > 0 ? ($sum / $n) : null;
 	}
 	$ordered = $totals;
 	arsort($ordered, SORT_NUMERIC);
@@ -294,8 +294,8 @@ foreach ($students ?? [] as $student) {
 			'meta' => $meta,
 			'initials' => (string) ($initials[(int) ($core['id'] ?? 0)] ?? ''),
 		];
-		$sumFull += 100;
 		if ($score !== null) {
+			$sumFull += 100;
 			$sumScore += $score;
 			$scored++;
 			if ($best === null || $score > $best['score']) {
