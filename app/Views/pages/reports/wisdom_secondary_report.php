@@ -17,41 +17,41 @@
 	.ws-moto { font-size: 8pt; text-align: center; line-height: 1.15; }
 	.ws-title { font-size: 10.5pt; font-weight: 700; text-align: center; margin-top: 1.2mm; }
 	.ws-sub { font-size: 8pt; font-weight: 700; text-align: center; }
-	.ws-id td, .ws-grid td, .ws-scale td, .ws-sign td { border: 0.6pt solid #1e3a5f; padding: 0.4mm 1mm; vertical-align: middle; }
-	.ws-id { margin-top: 1.6mm; }
-	.ws-id .k { font-size: 7.5pt; font-weight: 700; width: 28mm; background: #f4f7fb; }
-	.ws-id .v { font-size: 8pt; font-weight: 700; }
-	.ws-grid { margin-top: 1.6mm; }
+	.ws-id td, .ws-grid td, .ws-scale td, .ws-sign td { border: 0.6pt solid #1e3a5f; padding: 0.8mm 1.2mm; vertical-align: middle; }
+	.ws-id { margin-top: 2mm; }
+	.ws-id .k { font-size: 8pt; font-weight: 700; width: 28mm; background: #f4f7fb; }
+	.ws-id .v { font-size: 9pt; font-weight: 700; }
+	.ws-grid { margin-top: 2mm; }
 	.ws-grid th {
 		background: #1e3a5f;
 		color: #fff;
-		font-size: 7.5pt;
+		font-size: 8pt;
 		font-weight: 700;
 		text-align: center;
 		border: 0.6pt solid #1e3a5f;
-		padding: 0.6mm 0.8mm;
+		padding: 1mm 0.8mm;
 	}
-	.ws-grid td { font-size: 8pt; }
+	.ws-grid td { font-size: 9pt; line-height: 1.15; padding-top: 0.4mm; padding-bottom: 0.4mm; }
 	.ws-grid tr.alt td { background: #f3f7fb; }
 	.ws-name { text-align: left; font-weight: 700; }
 	.ws-ctr { text-align: center; }
 	.ws-total td { background: #e8eef5; font-weight: 700; }
-	.ws-sum { font-size: 8pt; font-weight: 700; margin: 1.2mm 0; }
-	.ws-scale { margin-top: 0.6mm; }
-	.ws-scale td { text-align: center; font-size: 7pt; font-weight: 700; color: #fff; line-height: 1.15; padding: 0.6mm 0.4mm; }
+	.ws-sum { font-size: 9pt; font-weight: 700; margin: 1.2mm 0; }
+	.ws-scale { margin-top: 1.4mm; }
+	.ws-scale td { text-align: center; font-size: 7.5pt; font-weight: 700; color: #fff; line-height: 1.2; padding: 1.1mm 0.6mm; }
 	.ws-comment {
-		font-size: 8.5pt;
+		font-size: 9pt;
 		font-weight: 700;
-		padding: 0.4mm 0;
+		padding: 0.8mm 0 0.2mm;
 	}
 	.ws-on {
 		color: #1d4ed8;
 		border-bottom: 0.8pt dotted #1d4ed8;
 		white-space: nowrap;
 	}
-	.ws-sign { margin-top: 1mm; }
-	.ws-sign td { font-size: 8pt; font-weight: 700; border: 0.6pt solid #1e3a5f; height: 6.2mm; }
-	.ws-note { font-size: 7pt; margin-top: 1mm; }
+	.ws-sign { margin-top: 1.6mm; }
+	.ws-sign td { font-size: 8.5pt; font-weight: 700; border: 0.6pt solid #1e3a5f; height: 7.2mm; }
+	.ws-note { font-size: 8pt; margin-top: 1.4mm; }
 <?php if (empty($pdf)): ?>
 	@media print {
 		.app-sidebar-wrapper, .app-sidebar, .app-sidebar-overlay,
@@ -318,7 +318,18 @@ foreach ($students ?? [] as $student) {
 	}
 
 	$rowCount = max(1, count($rows));
-	$rowMm = $rowCount > 14 ? 4.4 : ($rowCount > 10 ? 5.0 : 5.8);
+	$commentLineCount = count($wrap($classComment, 62))
+		+ count($wrap($headComment, 62))
+		+ count($wrap($inspiration, 62));
+	$commentLineMm = 6.0;
+	$fixedMm = 95 + (3 * 5.6) + ($commentLineCount * $commentLineMm);
+	$roomMm = 270 - $fixedMm;
+	$rowMm = $roomMm / $rowCount;
+	if ($rowMm > 11) {
+		$rowMm = 11;
+	} elseif ($rowMm < 6.2) {
+		$rowMm = max(5.0, $roomMm / $rowCount);
+	}
 	ob_start();
 	?>
 	<table class="ws-head">
@@ -339,7 +350,7 @@ foreach ($students ?? [] as $student) {
 		</tr>
 	</table>
 	<table class="ws-id">
-		<tr>
+		<tr style="height:7.4mm;">
 			<td class="k">Student Name</td>
 			<td class="v" style="width:48mm;"><?= esc($name); ?></td>
 			<td class="k">Class</td>
@@ -347,7 +358,7 @@ foreach ($students ?? [] as $student) {
 			<td class="k">Academic Year</td>
 			<td class="v"><?= esc($yearLabel); ?></td>
 		</tr>
-		<tr>
+		<tr style="height:7.4mm;">
 			<td class="k">Term</td>
 			<td class="v"><?= esc((string) $termNo); ?></td>
 			<td class="k">Program</td>
@@ -355,7 +366,7 @@ foreach ($students ?? [] as $student) {
 			<td class="k">Class position</td>
 			<td class="v"><?= esc((string) $classPos); ?></td>
 		</tr>
-		<tr>
+		<tr style="height:7.4mm;">
 			<td class="k">Report</td>
 			<td class="v" colspan="5"><?= esc($reportKind); ?></td>
 		</tr>
@@ -372,17 +383,19 @@ foreach ($students ?? [] as $student) {
 			</tr>
 		</thead>
 		<tbody>
-		<?php foreach ($rows as $i => $row): ?>
-			<tr class="<?= $i % 2 === 1 ? 'alt' : ''; ?>" style="height:<?= number_format($rowMm, 2, '.', ''); ?>mm;">
-				<td class="ws-name"><?= esc($row['title']); ?></td>
-				<td class="ws-ctr">100</td>
-				<td class="ws-ctr"><?= $row['score'] === null ? '' : esc($fmt($row['score'])); ?></td>
-				<td class="ws-ctr"><?= esc($row['meta']['descriptor']); ?></td>
-				<td class="ws-ctr"><?= esc($row['meta']['note']); ?></td>
-				<td class="ws-ctr"><?= esc($row['initials']); ?></td>
+		<?php
+		$rowH = number_format($rowMm, 2, '.', '');
+		foreach ($rows as $i => $row): ?>
+			<tr class="<?= $i % 2 === 1 ? 'alt' : ''; ?>">
+				<td class="ws-name" style="height:<?= $rowH; ?>mm;"><?= esc($row['title']); ?></td>
+				<td class="ws-ctr" style="height:<?= $rowH; ?>mm;">100</td>
+				<td class="ws-ctr" style="height:<?= $rowH; ?>mm;"><?= $row['score'] === null ? '' : esc($fmt($row['score'])); ?></td>
+				<td class="ws-ctr" style="height:<?= $rowH; ?>mm;"><?= esc($row['meta']['descriptor']); ?></td>
+				<td class="ws-ctr" style="height:<?= $rowH; ?>mm;"><?= esc($row['meta']['note']); ?></td>
+				<td class="ws-ctr" style="height:<?= $rowH; ?>mm;"><?= esc($row['initials']); ?></td>
 			</tr>
 		<?php endforeach; ?>
-			<tr class="ws-total">
+			<tr class="ws-total" style="height:8mm;">
 				<td>TOTAL (<?= (int) $sumFull; ?>)</td>
 				<td class="ws-ctr"><?= $sumFull > 0 ? (int) $sumFull : ''; ?></td>
 				<td class="ws-ctr"><?= $scored > 0 ? esc($fmt($sumScore)) : ''; ?></td>
@@ -404,20 +417,21 @@ foreach ($students ?? [] as $student) {
 		</tr>
 	</table>
 	<?php
-	$commentRow = static function (string $label, string $text) use ($wrap) {
+	$commentRow = static function (string $label, string $text) use ($wrap, $commentLineMm) {
 		$lines = $wrap($text, 62);
+		$lineMm = number_format($commentLineMm, 1, '.', '');
 		echo '<div class="ws-comment"><b>' . esc($label) . '</b></div>';
 		$last = count($lines) - 1;
 		foreach ($lines as $i => $line) {
 			echo '<table style="width:186mm;border-collapse:collapse;table-layout:fixed;"><tr>';
-			echo '<td style="width:146mm;border:0;height:4.6mm;line-height:4.6mm;vertical-align:bottom;padding:0;">';
+			echo '<td style="width:146mm;border:0;height:' . $lineMm . 'mm;line-height:' . $lineMm . 'mm;vertical-align:bottom;padding:0;font-size:9pt;">';
 			if ($line === '') {
 				echo '<span style="color:#94a3b8;">' . str_repeat('.', 78) . '</span>';
 			} else {
 				echo '<span class="ws-on">' . esc($line) . '</span>';
 			}
 			echo '</td>';
-			echo '<td style="width:40mm;border:0;height:4.6mm;font-size:8pt;font-weight:700;vertical-align:bottom;">';
+			echo '<td style="width:40mm;border:0;height:' . $lineMm . 'mm;font-size:8.5pt;font-weight:700;vertical-align:bottom;">';
 			echo $i === $last ? ('Sign: ' . str_repeat('.', 12)) : '';
 			echo '</td></tr></table>';
 		}
