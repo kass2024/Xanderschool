@@ -17357,17 +17357,18 @@ public function getApplicationDocs($id = null)
 	}
 
 
-	private function streamNurserySheetPdf(string $html, string $filename, ?array $margins = null): void
+	private function streamNurserySheetPdf(string $html, string $filename, ?array $margins = null, ?string $orientation = null): void
 	{
 		$dir = WRITEPATH . 'mpdf';
 		if (!is_dir($dir)) {
 			mkdir($dir, 0775, true);
 		}
 		$fontFile = FCPATH . 'assets/fonts/texgyreadventor-bold.ttf';
+		$landscape = $orientation === 'L';
 		$mpdfConfig = [
 			'mode' => 'utf-8',
 			'format' => 'A4',
-			'orientation' => 'P',
+			'orientation' => $landscape ? 'L' : 'P',
 			'margin_left' => 12,
 			'margin_right' => 12,
 			'margin_top' => 10,
@@ -17377,6 +17378,13 @@ public function getApplicationDocs($id = null)
 			'default_font' => 'dejavusans',
 			'tempDir' => $dir,
 		];
+		if ($landscape && is_array($margins)) {
+			foreach (['left', 'right', 'top', 'bottom'] as $edge) {
+				if (isset($margins[$edge])) {
+					$mpdfConfig['margin_' . $edge] = $margins[$edge];
+				}
+			}
+		}
 		if (is_file($fontFile)) {
 			$fontDirs = (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'];
 			$fontData = (new \Mpdf\Config\FontVariables())->getDefaults()['fontdata'];
@@ -17578,6 +17586,142 @@ public function getApplicationDocs($id = null)
 		} catch (\Throwable $e) {
 			return [];
 		}
+	}
+
+	/**
+	 * Progressive sheet for O-level, A-level, RTB, and special.
+	 * CAT is the sum of quiz, test, and homework scores. Maxima stay on the course marks.
+	 *
+	 * @param array<string,mixed> $data
+	 */
+	private function attachWisdomSecondaryProgress(array &$data, int $schoolId, int $classId, int $year): void
+	{
+		$yearRow = (new \App\Models\AcademicYearModel())->select('title')->where('id', $year)->get()->getRowArray();
+		if (!empty($yearRow['title'])) {
+			$data['academic_year_title'] = $yearRow['title'];
+		}
+		$courses = $this->get_courses($classId, 4, $year);
+		$courseMax = [];
+		foreach ($courses as $course) {
+			$courseMax[(int) $course['id']] = (float) ($course['marks'] ?? 0);
+		}
+		$studentIds = [];
+		foreach ($data['students'] ?? [] as $student) {
+			if (!empty($student['id'])) {
+				$studentIds[] = (int) $student['id'];
+			}
+		}
+		$bag = [];
+		if ($studentIds !== [] && $courseMax !== []) {
+			$db = \Config\Database::connect();
+			$idList = implode(',', $studentIds);
+			$rows = $db->query(
+				"SELECT m.student_id, m.course_id, at.term AS term_no, m.mark_type,
+					SUM(IF(COALESCE(m.marks,0) < 0, 0, COALESCE(m.marks,0))) AS raw_sum,
+					SUM(CASE WHEN m.outof IS NULL OR m.outof = 0 THEN 0
+						ELSE IF(COALESCE(m.marks,0) < 0, 0, COALESCE(m.marks,0)) / m.outof END) AS ratio_sum,
+					SUM(CASE WHEN m.outof IS NULL OR m.outof = 0 THEN 0 ELSE 1 END) AS ratio_n,
+					COUNT(m.id) AS n
+				 FROM marks m
+				 INNER JOIN active_term at ON at.id = m.term
+				 WHERE at.school_id = ? AND at.academic_year = ? AND at.term IN (1,2,3)
+				   AND m.mark_type IN (1,2,3)
+				   AND m.student_id IN ({$idList})
+				 GROUP BY m.student_id, m.course_id, at.term, m.mark_type",
+				[$schoolId, $year]
+			)->getResultArray();
+			foreach ($rows as $row) {
+				$sid = (int) $row['student_id'];
+				$cid = (int) $row['course_id'];
+				$termNo = (int) $row['term_no'];
+				$type = (int) $row['mark_type'];
+				if (!isset($courseMax[$cid]) || $termNo < 1 || $termNo > 3) {
+					continue;
+				}
+				$n = (int) $row['n'];
+				if ($n < 1) {
+					continue;
+				}
+				if (!isset($bag[$sid][$cid])) {
+					$bag[$sid][$cid] = [
+						'terms' => [
+							1 => ['cat' => null, 'exam' => null],
+							2 => ['cat' => null, 'exam' => null],
+							3 => ['cat' => null, 'exam' => null],
+						],
+						'sitting_term' => 0,
+						'sitting_ratio' => null,
+					];
+				}
+				if ($type === 1) {
+					$bag[$sid][$cid]['terms'][$termNo]['cat'] = (float) $row['raw_sum'];
+					continue;
+				}
+				$ratioN = (int) $row['ratio_n'];
+				if ($ratioN < 1) {
+					continue;
+				}
+				$ratio = ((float) $row['ratio_sum']) / $ratioN;
+				if ($type === 2) {
+					$bag[$sid][$cid]['terms'][$termNo]['exam'] = $ratio * $courseMax[$cid];
+					continue;
+				}
+				if ($type === 3 && $termNo >= (int) $bag[$sid][$cid]['sitting_term']) {
+					$bag[$sid][$cid]['sitting_term'] = $termNo;
+					$bag[$sid][$cid]['sitting_ratio'] = $ratio;
+				}
+			}
+		}
+		$sheets = [];
+		foreach ($data['students'] ?? [] as $student) {
+			if (empty($student['id'])) {
+				continue;
+			}
+			$sid = (int) $student['id'];
+			$lines = [];
+			foreach ($courses as $course) {
+				$cid = (int) $course['id'];
+				$max = $courseMax[$cid] ?? 0.0;
+				$found = $bag[$sid][$cid] ?? null;
+				$terms = $found['terms'] ?? [
+					1 => ['cat' => null, 'exam' => null],
+					2 => ['cat' => null, 'exam' => null],
+					3 => ['cat' => null, 'exam' => null],
+				];
+				$parts = 0;
+				$obtained = 0.0;
+				foreach ([1, 2, 3] as $termNo) {
+					$cat = $terms[$termNo]['cat'];
+					$exam = $terms[$termNo]['exam'];
+					if ($cat === null && $exam === null) {
+						continue;
+					}
+					$parts++;
+					$obtained += (float) ($cat ?? 0) + (float) ($exam ?? 0);
+				}
+				$annualMax = $parts > 0 ? ($max * 2 * $parts) : null;
+				$annualPct = ($annualMax !== null && $annualMax > 0) ? ($obtained * 100 / $annualMax) : null;
+				$sittingOp = null;
+				$sittingPct = null;
+				if ($found && $found['sitting_ratio'] !== null) {
+					$sittingOp = ((float) $found['sitting_ratio']) * $max * 2;
+					$sittingPct = ((float) $found['sitting_ratio']) * 100;
+				}
+				$lines[] = [
+					'title' => (string) ($course['title'] ?? ''),
+					'max' => $max,
+					'terms' => $terms,
+					'annual_max' => $annualMax,
+					'annual_op' => $parts > 0 ? $obtained : null,
+					'annual_pct' => $annualPct,
+					'sitting_op' => $sittingOp,
+					'sitting_pct' => $sittingPct,
+				];
+			}
+			$student['progress_courses'] = $lines;
+			$sheets[] = $student;
+		}
+		$data['progress_students'] = $sheets;
 	}
 
 	public
@@ -18240,8 +18384,9 @@ public function getApplicationDocs($id = null)
 				if ($fromStudent !== '') {
 					$secondaryBand = $fromStudent;
 				}
-				$this->attachWisdomSecondaryReport($data, (int) $school_id, (int) $class, (int) $year, $secondaryBand, false);
-				$view = view("pages/reports/wisdom_secondary_report", $data);
+				$data['secondary_band'] = $secondaryBand;
+				$this->attachWisdomSecondaryProgress($data, (int) $school_id, (int) $class, (int) $year);
+				$view = view("pages/reports/wisdom_secondary_progress", $data);
 			} else if ($fact == 1 || $fact == 2) {
 				if (in_array($school_id, [30])) {
 					$view = view("pages/reports/custom/brightAcademy/bright_academy_o_level" . $annualTag, $data);
@@ -18344,8 +18489,8 @@ public function getApplicationDocs($id = null)
 					]);
 				} elseif ($secondaryBand !== '') {
 					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf', [
-						'left' => 12, 'right' => 12, 'top' => 8, 'bottom' => 8,
-					]);
+						'left' => 6, 'right' => 6, 'top' => 6, 'bottom' => 6,
+					], 'L');
 				} elseif ($wisdomNurserySlip) {
 					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf');
 				}
