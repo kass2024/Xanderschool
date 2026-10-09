@@ -26526,6 +26526,9 @@ public function assign_card()
 	function pocket_money()
 	{
 		$this->_preset(1, 3, 14);
+		if (!\Config\MenuClearance::canUsePocketMoney((int) $this->session->get('soma_post'))) {
+			return redirect()->to(base_url('dashboard'));
+		}
 		$data = $this->data;
 		$data['title'] = lang("app.PocketMoney");
 		$data['subtitle'] = lang("app.PocketMoney");
@@ -26550,6 +26553,9 @@ public function assign_card()
 	public function pocket_money_live()
 	{
 		$this->_preset(1, 3, 14);
+		if (!\Config\MenuClearance::canUsePocketMoney((int) $this->session->get('soma_post'))) {
+			return $this->response->setStatusCode(403)->setJSON(['error' => 'Pocket money is locked.']);
+		}
 		$service = new \App\Services\Pocket\PocketWalletService();
 		$pack = $service->schoolReport(
 			(int) $this->session->get('soma_school_id'),
@@ -26704,6 +26710,9 @@ public function assign_card()
 
 	public function pocket_money_reverse()
 	{
+		if (!\Config\MenuClearance::canUsePocketMoney((int) $this->session->get('soma_post'))) {
+			return redirect()->to(base_url('dashboard'));
+		}
 		$this->_preset(1, 3, 14);
 		if (strtolower($this->request->getMethod()) !== 'post') {
 			return redirect()->to(base_url('pocket_money'));
@@ -26725,6 +26734,9 @@ public function assign_card()
 
 	public function pocket_money_retry()
 	{
+		if (!\Config\MenuClearance::canUsePocketMoney((int) $this->session->get('soma_post'))) {
+			return redirect()->to(base_url('dashboard'));
+		}
 		$this->_preset(1, 3, 14);
 		if (strtolower($this->request->getMethod()) !== 'post') {
 			return redirect()->to(base_url('pocket_money'));

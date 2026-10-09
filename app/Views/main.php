@@ -227,6 +227,32 @@
 									</ul>
 								</li>
 							<?php } ?>
+							<?php if (menu_clearance_allowed('families')) { ?>
+							<li class="app-sidebar__heading">Families</li>
+							<li>
+								<a href="#">
+									<i class="metismenu-icon fa fa-users"></i>
+									Families
+									<i class="metismenu-state-icon fa fa-caret-down"></i>
+								</a>
+								<ul class="mm-collapse">
+									<li>
+										<a href="<?= base_url('families'); ?>">
+											<i class="metismenu-icon"></i>
+											All families
+										</a>
+									</li>
+									<?php foreach (\App\Services\FamilyLists::definitions() as $familyMenu): ?>
+									<li>
+										<a href="<?= base_url('families/sheet/' . $familyMenu['slug']); ?>">
+											<i class="metismenu-icon"></i>
+											<?= esc($familyMenu['name']); ?>
+										</a>
+									</li>
+									<?php endforeach; ?>
+								</ul>
+							</li>
+							<?php } ?>
 							<?php if (menu_clearance_allowed('classes')) { ?>
 								<li>
 									<a href="<?= base_url('classes'); ?>">
@@ -853,12 +879,23 @@
 							<?php } ?>
 							<?php if (menu_clearance_allowed('pocket_money')) { ?>
 								<li class="app-sidebar__heading"><?= lang("app.PocketMoney"); ?></li>
+								<?php if (\Config\MenuClearance::canUsePocketMoney((int) session('soma_post'))) { ?>
 								<li>
 									<a href="<?= base_url('pocket_money'); ?>">
 										<i class="metismenu-icon typcn typcn-group-outline"></i>
 										<?= lang("app.PocketMoney"); ?>
 									</a>
 								</li>
+								<?php } ?>
+								<li>
+									<a href="<?= base_url('canteen'); ?>">
+										<i class="metismenu-icon pe-7s-coffee"></i>
+										Canteen
+									</a>
+								</li>
+							<?php } ?>
+							<?php if (menu_clearance_allowed('leave_application') || menu_clearance_allowed('leave_management')) { ?>
+							<li class="app-sidebar__heading">Leave</li>
 							<?php } ?>
 							<?php if (menu_clearance_allowed('leave_application')) { ?>
 							<li>
@@ -877,6 +914,7 @@
 								</li>
 							<?php } ?>
 							<?php if (menu_clearance_allowed('settings')) { ?>
+								<li class="app-sidebar__heading">Prep</li>
 								<li class="<?= (!empty($page) && $page === 'prep_invigilation') ? 'mm-active' : ''; ?>">
 									<a href="<?= base_url('prep_invigilation'); ?>">
 										<i class="metismenu-icon fa fa-calendar"></i>
@@ -1385,12 +1423,20 @@
 						<div class="form-group" id="marks_type_group">
 							<label><?= lang("app.type"); ?></label>
 							<select required class="select2" name="marktype" id="marks_type" data-nursery-only="<?= !empty($nursery_marks_only) ? '1' : '0'; ?>">
+								<?php
+								$lockedTypesUi = array_map('intval', $locked_mark_types ?? [2, 3, 9, 11]);
+								$lockedOpt = static function ($id, $label) use ($lockedTypesUi) {
+									$locked = in_array((int) $id, $lockedTypesUi, true);
+									return '<option value="' . (int) $id . '"' . ($locked ? ' disabled' : '') . '>'
+										. esc($label) . ($locked ? ' (Locked)' : '') . '</option>';
+								};
+								?>
 								<?php if (!empty($nursery_marks_only)): ?>
 								<option value="1" selected>Exams</option>
 								<?php else: ?>
 								<option disabled selected><?= lang("app.marksTtype"); ?></option>
 								<option value="1"><?= lang("app.cat").(in_array($_SESSION['soma_school_id'], [55])?" ".lang("app.or")." ".lang("app.assessmentFormative"):""); ?></option>
-								<option value="2"><?= lang("app.exam").(in_array($_SESSION['soma_school_id'], [55])?" ".lang("app.or")." ". lang("app.assessmentComprehensive"):""); ?></option>
+								<?= $lockedOpt(2, lang("app.exam").(in_array($_SESSION['soma_school_id'], [55])?" ".lang("app.or")." ". lang("app.assessmentComprehensive"):"")); ?>
 								<?php
 								if(in_array($_SESSION['soma_school_id'], [55])){
 									?>
@@ -1398,10 +1444,10 @@
 									<?php
 								}
 								?>
-								<option value="3"><?= lang("app.secondSitting"); ?></option>
-								<option value="9"><?= lang("app.reAssess"); ?></option>
+								<?= $lockedOpt(3, lang("app.secondSitting")); ?>
+								<?= $lockedOpt(9, lang("app.reAssess")); ?>
 								<?php if (is_wisdom_school()): ?>
-									<option value="11"><?= lang("app.holidayCoaching"); ?></option>
+									<?= $lockedOpt(11, lang("app.holidayCoaching")); ?>
 								<?php endif; ?>
 								<?php endif; ?>
 							</select>
@@ -3881,7 +3927,7 @@ if ($page == "pendingRegistration") {
 				applyMarksHolidayMode();
 				return;
 			}
-			<?php if ((int) $periodic === 1) { ?>
+			<?php if ((int) $periodic === 1 || !empty($nursery_marks_only)) { ?>
 			var periodVal = $("#marks_period_select").val();
 			var $opt = $("#marks_period_select option:selected");
 			if (!periodVal || $opt.is(":disabled") || /\(Locked\)/.test($opt.text())) {
@@ -3895,7 +3941,7 @@ if ($page == "pendingRegistration") {
 		$("#marks_type").on("change", function () {
 			applyMarksHolidayMode();
 			var mark = String($(this).val() || "");
-			if (mark !== "11" <?=$periodic == 0 ? ' && false' : ' && true';?>)
+			if (mark !== "11" <?= ((int) $periodic === 1 || !empty($nursery_marks_only)) ? ' && true' : ' && false'; ?>)
 			{
 				$('[name="period"]').prop("required", true);
 				$("#periodd").show();

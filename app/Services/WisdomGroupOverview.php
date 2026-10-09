@@ -19,6 +19,12 @@ class WisdomGroupOverview
 		return in_array((int) $postId, self::LEADER_POSTS, true);
 	}
 
+	/** Customer Care may use the Wisdom Musanze master dashboard. */
+	public function isCustomerCarePost($postId)
+	{
+		return \Config\MenuClearance::postTitle((int) $postId) === 'customer care';
+	}
+
 	/**
 	 * Customer Care sees the same attendance monitor as the directors,
 	 * for Wisdom School Musanze only.
@@ -104,9 +110,10 @@ class WisdomGroupOverview
 	public function showGroupDashboard($homeSchoolId, $postId, $currentSchoolId)
 	{
 		$homeSchoolId = (int) $homeSchoolId;
+		$canSee = $this->isLeaderPost($postId) || $this->isCustomerCarePost($postId);
 		return $homeSchoolId > 0
 			&& $homeSchoolId === (int) $currentSchoolId
-			&& $this->isLeaderPost($postId)
+			&& $canSee
 			&& $this->isWisdomMaster($homeSchoolId);
 	}
 
