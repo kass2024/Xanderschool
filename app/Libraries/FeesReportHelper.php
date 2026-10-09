@@ -318,7 +318,9 @@ class FeesReportHelper
 		array $termsList,
 		string $feesScope = self::FEES_BOTH
 	) {
-		$feesScope = self::normalizeFeesScope($feesScope);
+		$incomeCore = strtolower(trim($feesScope)) === 'income';
+		$feesScope = self::normalizeFeesScope($incomeCore ? self::FEES_BOTH : $feesScope);
+		$extraTitleSql = $incomeCore ? self::incomeExtraTitleSql('ex') : '';
 		$schoolAmtExpr = '(' . SchoolFeesModel::sqlExpectedFromSums('sf') . ' + coalesce(fd.amount,0))';
 		$extraAmtExpr = '(' . ExtraFeesModel::sqlExpectedFromSums('ex') . ' + COALESCE(student.amount,0))';
 		$schoolPaidExpr = '(COALESCE(fr.amount,0))';
@@ -374,9 +376,9 @@ class FeesReportHelper
 			) group by sf.level,sf.department) sf", 'sf.level=l.id and sf.department=d.id', 'LEFT')
 			->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $schoolId AND (fd.comment IS NULL OR (fd.comment NOT LIKE 'Set from Create Fee%' AND fd.comment NOT LIKE 'Set from pending registration%')) group by fd.student,sf.level,sf.department) fd", 'fd.level=l.id and fd.department=d.id AND fd.student=students.id', 'LEFT')
 			->join("(select " . ExtraFeesModel::sqlModeSumSelect('ex') . ",ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
-			ex.academic_year=$academic and ex.school_id = $schoolId group by ex.type_id) ex", 'ex.type_id=cl.id', 'LEFT')
+			ex.academic_year=$academic and ex.school_id = $schoolId $extraTitleSql group by ex.type_id) ex", 'ex.type_id=cl.id', 'LEFT')
 			->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=1 and ex.term IN ($termsIn) and
-			ex.academic_year=$academic and ex.school_id = $schoolId
+			ex.academic_year=$academic and ex.school_id = $schoolId $extraTitleSql
 			AND NOT EXISTS (
 				SELECT 1 FROM extra_fees cx
 				INNER JOIN class_records crx ON crx.student = ex.type_id AND crx.year = ex.academic_year
@@ -388,13 +390,20 @@ class FeesReportHelper
 			->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join school_fees sc ON sc.id = fr.fees_id
 			where fr.fees_type=0 and fr.status=1 and fr.amount > 1 and sc.term IN ($termsIn) and sc.academic_year=$academic and sc.school_id = $schoolId group by fr.student_id) fr", 'fr.student_id=students.id', 'LEFT')
 			->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join extra_fees ex ON ex.id = fr.fees_id
-			where fr.fees_type=1 and fr.status=1 and fr.amount > 1 and ex.type_id=$classId and ex.type=0 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $schoolId group by fr.student_id) extraPaid", 'extraPaid.student_id=students.id', 'LEFT')
+			where fr.fees_type=1 and fr.status=1 and fr.amount > 1 and ex.type_id=$classId and ex.type=0 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $schoolId $extraTitleSql group by fr.student_id) extraPaid", 'extraPaid.student_id=students.id', 'LEFT')
 			->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr
 			inner join extra_fees ex ON ex.id = fr.fees_id and ex.type_id = fr.student_id
-			where fr.fees_type=1 and fr.status=1 and fr.amount > 1 and ex.type=1 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $schoolId group by fr.student_id) extraPaidSingle", 'extraPaidSingle.student_id=students.id', 'LEFT')
+			where fr.fees_type=1 and fr.status=1 and fr.amount > 1 and ex.type=1 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $schoolId $extraTitleSql group by fr.student_id) extraPaidSingle", 'extraPaidSingle.student_id=students.id', 'LEFT')
 			->where('cr.year', $academic)
 			->where('cl.id', $classId)
 			->groupBy('students.id');
+	}
+
+	/** School fees plus feeding, transport, and registration. Other extra fees stay out. */
+	private static function incomeExtraTitleSql(string $alias): string
+	{
+		$t = "LOWER(TRIM({$alias}.title))";
+		return "AND ({$t} IN ('feeding','transport') OR {$t} LIKE '%regist%')";
 	}
 
 	private static function extraTitleKey(string $title): string
@@ -693,7 +702,6 @@ class FeesReportHelper
 		array $termsList,
 		string $feesScope = self::FEES_BOTH
 	): array {
-		$feesScope = self::normalizeFeesScope($feesScope);
 		$sections = ['nursery', 'primary', 'reb', 'rtb', 'anp'];
 		$bySection = array_fill_keys($sections, []);
 		$rows = [];
@@ -706,7 +714,7 @@ class FeesReportHelper
 			if ($classId < 1) {
 				continue;
 			}
-			$classStudents = self::studentsQuery($studentMdl, $classId, $schoolId, $academic, $termsIn, $termsList, $feesScope)
+			$classStudents = self::studentsQuery($studentMdl, $classId, $schoolId, $academic, $termsIn, $termsList, 'income')
 				->get()->getResultArray();
 			$totalDue = 0.0;
 			$totalPaid = 0.0;

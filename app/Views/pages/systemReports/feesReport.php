@@ -335,7 +335,8 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 
 			<?php elseif ($isIncomeSummary) : ?>
 			<div class="fr-income-banner">
-				<div class="fr-income-banner-title">Summary of income<?= $feesScope !== 'both' ? ' · ' . esc($feesScopeLabels[$feesScope] ?? $feesScope) : ''; ?></div>
+				<div class="fr-income-banner-title">Summary of income</div>
+				<div class="fr-income-banner-meta">School fees, transport, registration and feeding</div>
 				<div class="fr-income-banner-meta"><?= esc($selectedYearTitle); ?> · <?= esc($termLabel); ?></div>
 			</div>
 			<div class="fr-income-kpi-row">

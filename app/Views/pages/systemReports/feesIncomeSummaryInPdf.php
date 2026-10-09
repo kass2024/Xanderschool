@@ -71,9 +71,7 @@ $stats = $stats ?? [];
 <div class="report-title">SUMMARY OF INCOME — <?= $termTitle; ?> · <?= $yearTitle; ?></div>
 <div class="meta">
 	<?= esc($school_name ?? ''); ?>
-	<?php if (($feesScope ?? 'both') === 'school') : ?> · School fees only
-	<?php elseif (($feesScope ?? 'both') === 'extra') : ?> · Extra fees only
-	<?php endif; ?>
+	· School fees, transport, registration and feeding
 </div>
 <div class="kpi-row">
 	<span class="kpi-due">Due: <?= number_format((float) ($stats['total_expected'] ?? 0)); ?></span>
