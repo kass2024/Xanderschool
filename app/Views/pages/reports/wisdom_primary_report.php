@@ -11,14 +11,14 @@
 	.wp-sheet { background: <?= !empty($pdf) ? '#fff' : '#eef1f4'; ?>; }
 	.wp-fit { width: 100%; overflow: hidden; }
 	.wp-paper {
-		width: 297mm;
-		height: 210mm;
+		width: 210mm;
+		height: 297mm;
 		box-sizing: border-box;
 		background: #fff;
-		padding: 12mm 13.7mm 13mm 20.2mm;
+		padding: 10mm 12mm;
 	}
-	.wp-card { width: 125.3mm; vertical-align: top; }
-	.wp-id, .wp-grid { border-collapse: collapse; width: 125.3mm; table-layout: fixed; }
+	.wp-card { width: 186mm; vertical-align: top; }
+	.wp-id, .wp-grid { border-collapse: collapse; width: 186mm; table-layout: fixed; }
 	.wp-id td {
 		border: 0;
 		padding: 0 0.4mm;
@@ -80,7 +80,7 @@
 		border-left: 0 !important;
 		border-right: 0 !important;
 		padding-left: 1.2mm !important;
-		white-space: nowrap;
+		white-space: normal;
 	}
 <?php if (empty($pdf)): ?>
 	@media print {
@@ -95,7 +95,7 @@
 		.wp-paper { transform: none !important; margin: 0; page-break-after: always; }
 		.wp-fit:last-child .wp-paper { page-break-after: auto; }
 	}
-	@page { size: 297mm 210mm; margin: 12mm 13.7mm 13mm 20.2mm; }
+		@page { size: A4 portrait; margin: 0; }
 <?php endif; ?>
 </style>
 <?php
@@ -162,8 +162,8 @@ $num = static function ($value) use ($fmt) {
 };
 $periodic = !empty($primary_periodic);
 $cols = $periodic
-	? [42.0, 16.0, 16.0, 14.0, 22.0, 15.3]
-	: [20.25, 8.61, 10.83, 9.52, 9.42, 9.84, 8.71, 11.43, 17.46, 19.26];
+	? [62.3, 23.8, 23.8, 20.8, 32.6, 22.7]
+	: [30.1, 12.8, 16.1, 14.1, 14.0, 14.6, 12.9, 17.0, 25.9, 28.5];
 $span = $periodic ? 6 : 10;
 $periodicRank = [];
 if ($periodic && isset($students)) {
@@ -311,11 +311,11 @@ foreach ($students ?? [] as $student) {
 	if ($streamLabel === '') {
 		$streamLabel = trim((string) ($student['department_name'] ?? ''));
 	}
-	$namePack = $packText($name, 46, 2, 10.0, 7.0);
-	$yearPack = $packText($yearLabel, 18, 2, 10.0, 7.0);
-	$termPack = $packText($termLabel, 46, 2, 10.5, 7.0);
-	$streamPack = $packText($streamLabel, 22, 2, 10.5, 7.0);
-	$classPack = $packText($classLabel, 94, 2, 10.5, 7.0);
+	$namePack = $packText($name, 70, 2, 11.0, 8.0);
+	$yearPack = $packText($yearLabel, 28, 2, 11.0, 8.0);
+	$termPack = $packText($termLabel, 70, 2, 11.0, 8.0);
+	$streamPack = $packText($streamLabel, 28, 2, 11.0, 8.0);
+	$classPack = $packText($classLabel, 140, 2, 11.0, 8.0);
 	$idLine = 4.6;
 	$nameLines = max($namePack['lines'], $yearPack['lines']);
 	$termLines = max($termPack['lines'], $streamPack['lines']);
@@ -342,7 +342,7 @@ foreach ($students ?? [] as $student) {
 	$footLines = 4 + ($periodic ? 0 : 1);
 	$natural = ($visibleSections * 5.6) + $headMm + $subjectUnits + ($visibleSections * 5.2) + (4 * 5.0) + ($footLines * 5.6);
 	$extraId = max(0, (($nameLines + $termLines + $classLines) - 3) * $idLine);
-	$tableTarget = 164.9 - $extraId;
+	$tableTarget = 225 - $extraId;
 	$scale = $natural > 0 ? ($tableTarget / $natural) : 1.0;
 	$subjectCell = static function (string $title) use ($packText, $subWidth, $col, &$scale): string {
 		$packed = $packText(mb_strtoupper($title), $subWidth, 3, 8.5, 6.4);
@@ -360,24 +360,29 @@ foreach ($students ?? [] as $student) {
 		return '<td class="wp-sub" style="' . $col(0) . 'height:' . number_format($mm, 2, '.', '') . 'mm;line-height:' . number_format($line, 2, '.', '') . 'mm;font-size:' . number_format($pt, 2, '.', '') . 'pt;">' . $packed['html'] . '</td>';
 	};
 	?>
+	<?php
+	$say = $report_remarks[(int) ($student['id'] ?? 0)] ?? [];
+	$classComment = trim((string) ($say['class_teacher'] ?? ''));
+	$headComment = trim((string) ($say['head_teacher'] ?? ''));
+	?>
 	<table class="wp-id">
 		<colgroup>
-			<col style="width:13mm">
-			<col style="width:14.5mm">
-			<col style="width:48mm">
-			<col style="width:30mm">
-			<col style="width:19.8mm">
+			<col style="width:18mm">
+			<col style="width:22mm">
+			<col style="width:72mm">
+			<col style="width:42mm">
+			<col style="width:32mm">
 		</colgroup>
 		<tr>
-			<td rowspan="3" style="width:13mm;vertical-align:middle;white-space:normal;overflow:visible;height:<?= number_format(($nameLines + $termLines + $classLines) * $idLine, 2, '.', ''); ?>mm;line-height:normal;">
+			<td rowspan="3" style="width:18mm;vertical-align:middle;white-space:normal;overflow:visible;height:<?= number_format(($nameLines + $termLines + $classLines) * $idLine, 2, '.', ''); ?>mm;line-height:normal;">
 				<?php if ($logoSrc !== ''): ?>
 					<img class="wp-logo" src="<?= esc($logoSrc); ?>" alt="">
 				<?php endif; ?>
 			</td>
-			<td class="lab" style="width:14.5mm;<?= $idRow($nameLines); ?>">Names:</td>
-			<td class="val" style="width:48mm;<?= $idRow($nameLines, $namePack['pt']); ?>"><?= $namePack['html']; ?></td>
-			<td class="lab" style="width:30mm;font-size:9pt;<?= $idRow($nameLines); ?>">Academic Year</td>
-			<td class="val" style="width:19.8mm;<?= $idRow($nameLines, $yearPack['pt']); ?>"><?= $yearPack['html']; ?></td>
+			<td class="lab" style="width:22mm;<?= $idRow($nameLines); ?>">Names:</td>
+			<td class="val" style="width:72mm;<?= $idRow($nameLines, $namePack['pt']); ?>"><?= $namePack['html']; ?></td>
+			<td class="lab" style="width:42mm;font-size:10pt;<?= $idRow($nameLines); ?>">Academic Year</td>
+			<td class="val" style="width:32mm;<?= $idRow($nameLines, $yearPack['pt']); ?>"><?= $yearPack['html']; ?></td>
 		</tr>
 		<tr>
 			<td class="lab" style="<?= $idRow($termLines); ?>">Term:</td>
@@ -580,10 +585,10 @@ foreach ($students ?? [] as $student) {
 			<td class="wp-sub" style="<?= $h('5.0'); ?>">DECISION</td>
 			<td colspan="<?= $rest; ?>" class="wp-ctr"><?= esc((string) ($student['decision'] ?? '')); ?><?= trim((string) ($student['decision'] ?? '')) === '' ? str_repeat('.', 48) : ''; ?></td>
 		</tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Class teacher's comment:<?= str_repeat('.', 42); ?></td></tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>"><?= str_repeat('.', 36); ?> Sign: <?= str_repeat('.', 16); ?></td></tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Head teacher's Comment: <?= str_repeat('.', 38); ?></td></tr>
-		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>"><?= str_repeat('.', 38); ?> Sign: <?= str_repeat('.', 14); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="height:auto;line-height:1.25;white-space:normal;padding-top:1mm;padding-bottom:1mm;">Class teacher's comment: <?= $classComment !== '' ? esc($classComment) : str_repeat('.', 48); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('6.2'); ?>"><?= str_repeat('.', 70); ?> Sign: <?= str_repeat('.', 22); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="height:auto;line-height:1.25;white-space:normal;padding-top:1mm;padding-bottom:1mm;">Head teacher's comment: <?= $headComment !== '' ? esc($headComment) : str_repeat('.', 48); ?></td></tr>
+		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('6.2'); ?>"><?= str_repeat('.', 70); ?> Sign: <?= str_repeat('.', 22); ?></td></tr>
 		<?php if (!$periodic): ?>
 		<tr><td class="wp-foot" colspan="<?= $span; ?>" style="<?= $h('5.6'); ?>">Next term begins on: <?= str_repeat('.', 14); ?> and ends on: <?= str_repeat('.', 16); ?></td></tr>
 		<?php endif; ?>
@@ -593,22 +598,18 @@ foreach ($students ?? [] as $student) {
 }
 if ($cards !== []) {
 	echo '<div class="wp-sheet">';
-	$pairs = array_chunk($cards, 2);
-	foreach ($pairs as $i => $pair) {
-		$right = $pair[1] ?? '';
-		$pairTable = '<table style="width:263mm;border-collapse:collapse;"><tr>'
-			. '<td class="wp-card" style="width:125.3mm;vertical-align:top;">' . $pair[0] . '</td>'
-			. '<td style="width:12.4mm;border:0;">&nbsp;</td>'
-			. '<td class="wp-card" style="width:125.3mm;vertical-align:top;">' . ($right !== '' ? $right : '&nbsp;') . '</td>'
+	foreach ($cards as $i => $card) {
+		$page = '<table style="width:186mm;border-collapse:collapse;"><tr>'
+			. '<td class="wp-card" style="width:186mm;vertical-align:top;">' . $card . '</td>'
 			. '</tr></table>';
 		if (!empty($pdf)) {
 			if ($i > 0) {
 				echo '<pagebreak />';
 			}
-			echo $pairTable;
+			echo $page;
 			continue;
 		}
-		echo '<div class="wp-fit"><div class="wp-paper">' . $pairTable . '</div></div>';
+		echo '<div class="wp-fit"><div class="wp-paper">' . $page . '</div></div>';
 	}
 	echo '</div>';
 	if (empty($pdf)) {

@@ -108,7 +108,7 @@ class Home extends BaseController
 			$skl = $schoolMdl->select("schools.name,schools.slogan,schools.extra_sms,schools.head_master
 			,schools.head_master_gender,schools.headmaster_signature,schools.acronym,p.sms_limit,at.academic_year,schools.status
 			,schools.email,schools.phone,schools.website,schools.active_term,schools.logo,schools.in_time,schools.leave_time,schools.address
-			,schools.tolerance,schools.pobox,at.term,at.sms_usage,schools.discipline_max,at.use_period,at.locked_periods
+			,schools.tolerance,schools.pobox,at.term,at.sms_usage,schools.discipline_max,at.use_period,at.locked_periods,at.locked_mark_types
 			,ac.title as academic_year_title, ac.id AS academic_year_id, at.id as active_term_id,date_format(schools.created_at,'%Y') as start_year")
 					->join("packages p", "p.id=schools.package")
 					->join("active_term at", "at.id=schools.active_term", "LEFT")
@@ -158,6 +158,9 @@ class Home extends BaseController
 			$this->data['discipline_max'] = $skl->discipline_max;
 			$this->data['periodic'] = $skl->use_period;
 			$this->data['locked_periods'] = $this->parseLockedPeriods($skl->locked_periods ?? '');
+			$this->data['locked_mark_types'] = function_exists('parse_locked_mark_types')
+				? parse_locked_mark_types($skl->locked_mark_types ?? '2,3,9,11')
+				: [2, 3, 9, 11];
 			$this->data['school_address'] = $skl->address;
 			$this->data['school_acronym'] = $skl->acronym;
 			$this->data['school_moto'] = $skl->slogan;
@@ -289,7 +292,12 @@ public function testEmail()
 			$currentId = (int) $schoolId;
 			$yearId = (int) ($this->data['academic_year'] ?? 0);
 			if ($overview->showGroupDashboard($homeId, $postId, $currentId)) {
-				$data['wisdom_group'] = $overview->summary($homeId, $yearId);
+				if ($overview->isCustomerCarePost($postId) && !$overview->isLeaderPost($postId)) {
+					$data['wisdom_group'] = $overview->schoolSummary($currentId, $yearId);
+					$data['wisdom_group']['single'] = false;
+				} else {
+					$data['wisdom_group'] = $overview->summary($homeId, $yearId);
+				}
 			}
 			if ($overview->showAccountantDashboard($homeId, $postId, $currentId)) {
 				$data['accountant_watch'] = $overview->accountantAttendance($homeId);
@@ -311,7 +319,8 @@ public function testEmail()
 		$overview = new \App\Services\WisdomGroupOverview();
 		$homeId = (int) school_hierarchy_home_id();
 		$postId = (int) $this->session->get('soma_post');
-		if (!$overview->isLeaderPost($postId) || !$overview->isWisdomMaster($homeId)) {
+		$customerCareOnly = $overview->isCustomerCarePost($postId) && !$overview->isLeaderPost($postId);
+		if ((!$overview->isLeaderPost($postId) && !$customerCareOnly) || !$overview->isWisdomMaster($homeId)) {
 			return redirect()->to(base_url('dashboard'));
 		}
 		$allowed = [];
@@ -322,6 +331,10 @@ public function testEmail()
 			}
 		}
 		$schoolId = (int) $schoolId;
+		if ($customerCareOnly) {
+			$schoolId = $homeId;
+			$allowed = isset($allowed[$homeId]) ? [$homeId => $allowed[$homeId]] : $allowed;
+		}
 		if ($schoolId > 0 && !isset($allowed[$schoolId])) {
 			return redirect()->to(base_url('dashboard'));
 		}
@@ -3249,6 +3262,7 @@ refreshNurseryMentions();
 		$this->_preset(1, 3);
 		$this->ensurePeriodLocksSchema();
 		$this->ensureUseGradingSchema();
+		new \App\Services\Pocket\PocketWalletService();
 		$data = $this->data;
 		$settingsMdl = new SchoolModel();
 		$faculityModel = new FacultyModel();
@@ -3330,6 +3344,9 @@ refreshNurseryMentions();
 		$hostelSchema->ensureSchema();
 		$data['hostels'] = $hostelSchema->listHostels($schoolId, true);
 		$data['hostel_settings'] = $hostelSchema->getSchoolSettings($schoolId);
+		$visitorSettingsMdl = new StudentVisitorModel();
+		$visitorSettingsMdl->ensureSchema();
+		$data['visitor_kiosk_mode'] = $visitorSettingsMdl->getSettings($schoolId)['kiosk_mode'] ?? 'normal';
 		$discCodeMdl = new \App\Models\DisciplineCodeModel();
 		$discCodeMdl->ensureSchema();
 		$discCodeMdl->seedIfEmpty($schoolId);
@@ -3773,6 +3790,9 @@ refreshNurseryMentions();
 		if (!in_array('allow_cat_edit', $fields, true)) {
 			$db->query("ALTER TABLE `active_term` ADD COLUMN `allow_cat_edit` TINYINT(1) NOT NULL DEFAULT 0");
 		}
+		if (!in_array('locked_mark_types', $fields, true)) {
+			$db->query("ALTER TABLE `active_term` ADD COLUMN `locked_mark_types` VARCHAR(32) NOT NULL DEFAULT '2,3,9,11' AFTER `locked_periods`");
+		}
 		$done = true;
 	}
 
@@ -3811,7 +3831,9 @@ refreshNurseryMentions();
 		if ($termId <= 0) {
 			return $this->response->setJSON(['error' => 'No active term set']);
 		}
-		if ((int) ($this->data['periodic'] ?? 0) !== 1) {
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$childSchool = MenuClearance::isChildSchoolId($schoolId);
+		if ((int) ($this->data['periodic'] ?? 0) !== 1 && !$childSchool) {
 			return $this->response->setJSON(['error' => 'Enable the periodic system for this term first']);
 		}
 		$mdl = new ActiveTermModel();
@@ -3831,7 +3853,11 @@ refreshNurseryMentions();
 			}));
 		}
 		sort($locked);
-		$mdl->save(['id' => $termId, 'locked_periods' => implode(',', $locked)]);
+		$saveLock = ['id' => $termId, 'locked_periods' => implode(',', $locked)];
+		if ($childSchool) {
+			$saveLock['use_period'] = 1;
+		}
+		$mdl->save($saveLock);
 		$msg = $lock === 1
 			? ('Period ' . $period . ' is now locked. Teachers cannot enter marks for it.')
 			: ('Period ' . $period . ' is unlocked. Marks entry is allowed again.');
@@ -3839,6 +3865,51 @@ refreshNurseryMentions();
 			'success' => $msg,
 			'locked_periods' => $locked,
 			'period' => $period,
+			'locked' => $lock === 1,
+		]);
+	}
+
+	/** Lock Exam, Second sitting, Re-assessment, and Holiday coaching. CAT stays open. */
+	public function toggle_mark_type_lock()
+	{
+		$this->_preset(1, 3);
+		$this->ensurePeriodLocksSchema();
+		helper('qonics');
+		$markType = (int) $this->request->getPost('mark_type');
+		$lock = (int) $this->request->getPost('lock');
+		if (!in_array($markType, locked_mark_type_ids(), true)) {
+			return $this->response->setJSON(['error' => 'CAT stays open. Only the other entry types can be locked.']);
+		}
+		$termId = (int) ($this->data['active_term'] ?? 0);
+		if ($termId <= 0) {
+			return $this->response->setJSON(['error' => 'No active term set']);
+		}
+		$mdl = new ActiveTermModel();
+		$row = $mdl->select('id, locked_mark_types')->find($termId);
+		if (!$row) {
+			return $this->response->setJSON(['error' => 'Active term not found']);
+		}
+		$raw = is_array($row) ? ($row['locked_mark_types'] ?? '2,3,9,11') : ($row->locked_mark_types ?? '2,3,9,11');
+		$locked = parse_locked_mark_types($raw);
+		if ($lock === 1) {
+			if (!in_array($markType, $locked, true)) {
+				$locked[] = $markType;
+			}
+		} else {
+			$locked = array_values(array_filter($locked, static function ($id) use ($markType) {
+				return (int) $id !== $markType;
+			}));
+		}
+		sort($locked);
+		$mdl->save(['id' => $termId, 'locked_mark_types' => implode(',', $locked)]);
+		$label = mark_type_lock_label($markType);
+		$msg = $lock === 1
+			? ($label . ' is locked. Teachers cannot enter it.')
+			: ($label . ' is unlocked.');
+		return $this->response->setJSON([
+			'success' => $msg,
+			'locked_mark_types' => $locked,
+			'mark_type' => $markType,
 			'locked' => $lock === 1,
 		]);
 	}
@@ -11671,8 +11742,8 @@ public function attendanceCard()
 											,f.id as fac_id,f.type,f.abbrev as faculty_code,concat(s.fname,' ',s.lname) as mentor_name
 											,concat(lec.fname,' ',lec.lname) as lecturer_name")
 					->join("departments d", "d.id=classes.department")
-					->join("levels l", "l.id=classes.level")
-					->join("faculty f", "f.id=d.faculty_id")
+					->join("levels l", "l.id=classes.level", "LEFT")
+					->join("faculty f", "f.id=d.faculty_id", "LEFT")
 					->join("staffs s", "s.id=classes.mentor", "LEFT")
 					->join("course_records cr", "cr.class=classes.id")
 					->join("staffs lec", "lec.id=cr.lecturer", "LEFT")
@@ -11691,8 +11762,15 @@ public function attendanceCard()
 			echo "<option selected disabled>" . lang("app.selectClass") . "</option>";
 			foreach ($classes as $classe) {
 				$lecturer = htmlspecialchars(trim((string) ($classe['lecturer_name'] ?? '')), ENT_QUOTES);
-				$nurseryFlag = (int) ($classe['fac_id'] ?? 0) === 19 ? '1' : '0';
-				echo "<option value='" . $classe['id'] . "' data-lecturer='" . $lecturer . "' data-nursery='" . $nurseryFlag . "'>" . $classe['level_name'] . " " . $classe['code'] . " " . $classe['title'] . "</option>";
+				$levelName = trim((string) ($classe['level_name'] ?? ''));
+				$classTitle = trim((string) ($classe['title'] ?? ''));
+				$deptCode = trim((string) ($classe['code'] ?? ''));
+				$label = trim($levelName . ' ' . $deptCode . ' ' . $classTitle);
+				if ($label === '') {
+					$label = 'Class ' . (int) $classe['id'];
+				}
+				$nurseryFlag = ((int) ($classe['fac_id'] ?? 0) === 19 || label_is_nursery($levelName . ' ' . $classTitle . ' ' . ($classe['faculty_code'] ?? ''))) ? '1' : '0';
+				echo "<option value='" . $classe['id'] . "' data-lecturer='" . $lecturer . "' data-nursery='" . $nurseryFlag . "'>" . htmlspecialchars($label, ENT_QUOTES) . "</option>";
 			}
 		}
 	}
@@ -15048,13 +15126,20 @@ public function getApplicationDocs($id = null)
 			return $this->response->setJSON(array("error" => lang("app.pleaseAddErr")));
 		}
 		helper('qonics');
+		$period = primary_cat_period((int) $class, (int) $mark_type, (int) $period);
 		$periodicOn = (int) ($this->data['periodic'] ?? 0) === 1;
 		if ($periodicOn && (int) $mark_type !== holiday_coaching_mark_type() && (int) $period < 1) {
 			return $this->response->setJSON(array("error" => "Select a period. Marks cannot be entered without a period while the periodic system is on."));
 		}
 		if ((int) $period > 0 && period_is_locked($term, $period)) {
+			$periodLabel = $nurseryClass ? (nursery_exam_title((int) $period) ?: ('Period ' . (int) $period)) : ('Period ' . (int) $period);
 			return $this->response->setJSON(array(
-				"error" => "Period " . (int) $period . " is locked. No marks can be entered or changed until the school admin unlocks it."
+				"error" => $periodLabel . " is locked. No marks can be entered or changed until the school admin unlocks it."
+			));
+		}
+		if (mark_type_is_locked($term, (int) $mark_type)) {
+			return $this->response->setJSON(array(
+				"error" => mark_type_lock_label((int) $mark_type) . " is locked. Only CAT is open until it is unlocked in School Settings."
 			));
 		}
 		if (marks_course_locked((int) $this->session->get('soma_school_id'), (int) $term, (int) $created_by, (int) $course_id)) {
@@ -16125,7 +16210,12 @@ public function getApplicationDocs($id = null)
 			$max_total = 0;
 			$cols = 2;
 			$course_ids = [];
+			$primaryPeriodic = class_faculty_id((int) $class) === 3;
+			$periodicOutOf = $primaryPeriodic ? '100' : 'c.marks';
 			foreach ($courses as $item) {
+				if ($primaryPeriodic) {
+					$item['marks'] = 100;
+				}
 				$max_total += $item['marks'];
 				$html .= "<th class='rotate-45'><div><label>" . $item['title'] . "</label></div></th>";
 				$course_header[] = $item['id'];
@@ -16141,7 +16231,7 @@ public function getApplicationDocs($id = null)
 														  CAST(sum(m.total) as float) as total1")
 					->join("class_records cr", "students.id=cr.student AND cr.year=$year")
 					->join("course_records r", "cr.class=r.class AND cr.year=$year")
-					->join("(select distinct m.mark_type,m.student_id,m.course_id,m.period,concat(m.course_id,':',coalesce((sum(" . self::sqlMarkValue('m.marks') . "/m.outof*c.marks)/count(m.id)),0),':',c.marks) as marks,coalesce((sum(" . self::sqlMarkValue('m.marks') . "/m.outof*c.marks)/count(m.id)),0) as total from marks m
+					->join("(select distinct m.mark_type,m.student_id,m.course_id,m.period,concat(m.course_id,':',coalesce((sum(" . self::sqlMarkValue('m.marks') . "/m.outof*" . $periodicOutOf . ")/count(m.id)),0),':'," . $periodicOutOf . ") as marks,coalesce((sum(" . self::sqlMarkValue('m.marks') . "/m.outof*" . $periodicOutOf . ")/count(m.id)),0) as total from marks m
 				 inner join courses c on c.id = m.course_id where m.mark_type=1 and m.period=$period and m.term={$active_term->id} and m.course_id in ($course_ids_str) group by m.student_id,m.course_id order by m.course_id) as m"
 							, "students.id=m.student_id and m.course_id=r.course and $course_filter", "LEFT")
 					->where("r.class", $class)
@@ -16536,6 +16626,20 @@ public function getApplicationDocs($id = null)
 	function get_student_marks($mt, $ct = '', $class, $course, $period = 0, $term = null, $yearId = null)
 	{
 		$this->_preset();
+		helper('qonics');
+		if ($ct === 'none' || $ct === '-' || $ct === 'undefined') {
+			$ct = '';
+		}
+		// An empty cat segment (/1//class/...) is dropped by the web server, so the class id
+		// lands in $ct. Put nursery classes back in the right place before the sheet loads.
+		if ($ct !== '' && ctype_digit((string) $ct) && class_is_nursery((int) $ct)) {
+			$yearId = $term;
+			$term = $period;
+			$period = $course;
+			$course = $class;
+			$class = (int) $ct;
+			$ct = '';
+		}
 		$active_term = $this->data['active_term'];
 		$year = $yearId ?? $this->data['academic_year'];
 		$isHolidayMarks = (int) $mt === holiday_coaching_mark_type() || is_holiday_term_choice($term);
@@ -16563,6 +16667,9 @@ public function getApplicationDocs($id = null)
 		if ($periodicOn && !$isHolidayMarks && (int) $period < 1) {
 			echo '<div class="alert alert-danger" style="margin:1rem;">Select a period before entering marks.</div>';
 			die();
+		}
+		if ((int) $period < 1 && !class_is_nursery((int) $class) && class_faculty_id((int) $class) === 3) {
+			$period = 1;
 		}
 		if ((int) $period > 0 && period_is_locked($active_term, $period)) {
 			echo '<div class="alert alert-danger" style="margin:1rem;">'
@@ -17080,12 +17187,12 @@ public function getApplicationDocs($id = null)
 		$fontFile = FCPATH . 'assets/fonts/texgyreadventor-bold.ttf';
 		$mpdfConfig = [
 			'mode' => 'utf-8',
-			'format' => [297, 210],
+			'format' => 'A4',
 			'orientation' => 'P',
-			'margin_left' => $margins['left'] ?? 20.26,
-			'margin_right' => $margins['right'] ?? 13.69,
-			'margin_top' => $margins['top'] ?? 12.15,
-			'margin_bottom' => $margins['bottom'] ?? 17.85,
+			'margin_left' => 12,
+			'margin_right' => 12,
+			'margin_top' => 10,
+			'margin_bottom' => 10,
 			'margin_header' => 0,
 			'margin_footer' => 0,
 			'default_font' => 'dejavusans',
@@ -17240,7 +17347,8 @@ public function getApplicationDocs($id = null)
 			$records[$a] = $student;
 			$tot = 0;
 			foreach ($this->get_courses($student['class'], $term, $year) as $core) {
-				$resultBuilder = $MarksModel->select("(sum(" . self::sqlMarkValue('marks.marks') . "/marks.outof*c.marks)/count(marks.id)) as marks")
+				$periodicMax = ($factId === 3) ? '100' : 'c.marks';
+				$resultBuilder = $MarksModel->select("(sum(" . self::sqlMarkValue('marks.marks') . "/marks.outof*" . $periodicMax . ")/count(marks.id)) as marks")
 						->join("active_term at", "at.id=marks.term")
 						->join("courses c", "c.id=marks.course_id")
 						->where("marks.course_id", $core['id'])
@@ -17252,8 +17360,7 @@ public function getApplicationDocs($id = null)
 					$resultBuilder->where("(marks.cat_type IS NULL OR TRIM(marks.cat_type) = '')", null, false);
 					$resultBuilder->where("marks.period", (int) $period);
 				} else {
-					// Quizzes and tests saved before a period was chosen are stored as period 0.
-					// Use the selected period when it has marks, otherwise those direct CAT marks.
+					// Period 0 CAT still counts for the selected period until it is moved onto that period.
 					$periodInt = (int) $period;
 					$termInt = (int) $term;
 					$yearInt = (int) $year;
@@ -17275,6 +17382,9 @@ public function getApplicationDocs($id = null)
 					);
 				}
 				$core['result'] = $resultBuilder->get()->getRowArray();
+				if ($factId === 3) {
+					$core['marks'] = 100;
+				}
 				if (!is_null($core['result']['marks'])) {
 					$tot += $core['result']['marks'];
 				}
@@ -17288,6 +17398,12 @@ public function getApplicationDocs($id = null)
 		// echo '<pre>';var_dump($records);die();
 		$data['students'] = $records;
 		$fact = count($data['students']) > 0 ? $data['students'][0]["fac_id"] : 0;
+		if (is_wisdom_school((int) $school_id) && in_array((int) $factId, [3, 19], true)) {
+			@set_time_limit(180);
+			$data['report_remarks'] = \App\Libraries\ReportRemarks::forPupils(
+				\App\Libraries\ReportRemarks::pupilsFromRecords($data['students'])
+			);
+		}
 		$view = "";
 //		$pdf = false;
 		$data['pdf'] = $pdf;
@@ -17609,6 +17725,12 @@ public function getApplicationDocs($id = null)
 			// echo '<pre>';var_dump($records);die();
 			$data['students'] = $records;
 			$fact = count($data['students']) > 0 ? $data['students'][0]["fac_id"] : 0;
+			if (is_wisdom_school((int) $school_id) && in_array((int) $fact, [3, 19], true)) {
+				@set_time_limit(180);
+				$data['report_remarks'] = \App\Libraries\ReportRemarks::forPupils(
+					\App\Libraries\ReportRemarks::pupilsFromRecords($data['students'])
+				);
+			}
 			$gradeMdl = new GradeModel();
 			$useGrading = $this->schoolUsesGradingSystem((int) $school_id);
 			$data['use_grading_system'] = $useGrading;
@@ -22897,10 +23019,19 @@ public function assign_card()
 		$school_id = (int) $this->session->get('soma_school_id');
 		$visitorMdl = new StudentVisitorModel();
 		$visitorMdl->ensureSchema();
-		$visitorMdl->saveSettings($school_id, [
-			'card_sharing' => (int) $this->request->getPost('card_sharing'),
-			'min_visitors' => (int) $this->request->getPost('min_visitors'),
-		]);
+		$payload = [];
+		if ($this->request->getPost('card_sharing') !== null) {
+			$payload['card_sharing'] = (int) $this->request->getPost('card_sharing');
+		}
+		if ($this->request->getPost('min_visitors') !== null) {
+			$payload['min_visitors'] = (int) $this->request->getPost('min_visitors');
+		}
+		if ($this->request->getPost('kiosk_mode') !== null) {
+			$payload['kiosk_mode'] = strtolower(trim((string) $this->request->getPost('kiosk_mode'))) === 'visiting'
+				? 'visiting'
+				: 'normal';
+		}
+		$visitorMdl->saveSettings($school_id, $payload);
 		return $this->response->setJSON([
 			'success' => true,
 			'settings' => $visitorMdl->getSettings($school_id),
@@ -23073,20 +23204,12 @@ public function assign_card()
 			];
 		}
 
-		$resolvedGroup = $visitorMdl->expandSharedVisitGroup($schoolId, $activeVisitors);
+		// Only students registered on this card. Do not pull other parents by name or phone.
 		$studentIds = [];
-		foreach (($resolvedGroup['student_ids'] ?? []) as $studentId) {
-			$studentId = (int) $studentId;
+		foreach ($activeVisitors as $visitor) {
+			$studentId = (int) ($visitor['student_id'] ?? 0);
 			if ($studentId > 0) {
 				$studentIds[$studentId] = $studentId;
-			}
-		}
-		if (empty($studentIds)) {
-			foreach ($activeVisitors as $visitor) {
-				$studentId = (int) ($visitor['student_id'] ?? 0);
-				if ($studentId > 0) {
-					$studentIds[$studentId] = $studentId;
-				}
 			}
 		}
 
@@ -23136,10 +23259,7 @@ public function assign_card()
 
 		$visitMdl = new VisitorVisitModel();
 		$toggles = [];
-		$displayVisitors = $resolvedGroup['visitors'] ?? [];
-		if (empty($displayVisitors)) {
-			$displayVisitors = $validVisitors;
-		}
+		$displayVisitors = $validVisitors;
 		$formattedVisitors = [];
 		$formattedStudents = [];
 		$primaryVisitor = null;
@@ -25973,6 +26093,62 @@ public function assign_card()
 		}
 	}
 
+	public function canteen()
+	{
+		$this->_preset(1, 3, 14);
+		$service = new \App\Services\Pocket\PocketWalletService();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$data = $this->data;
+		$data['title'] = 'Canteen';
+		$data['subtitle'] = 'Canteen menu';
+		$data['page'] = 'canteen';
+		$data['items'] = $service->canteenItems($schoolId);
+		$school = (new \App\Models\SchoolModel())->select('canteen_phone')->where('id', $schoolId)->get(1)->getRowArray();
+		$data['canteen_phone'] = (string) ($school['canteen_phone'] ?? '');
+		$data['content'] = view('pages/canteen', $data);
+
+		return view('main', $data);
+	}
+
+	public function canteen_save()
+	{
+		$this->_preset(1, 3, 14);
+		if (strtolower($this->request->getMethod()) !== 'post') {
+			return redirect()->to(base_url('canteen'));
+		}
+		try {
+			$service = new \App\Services\Pocket\PocketWalletService();
+			$service->saveCanteenItem(
+				(int) $this->session->get('soma_school_id'),
+				(int) $this->request->getPost('id'),
+				(string) $this->request->getPost('name'),
+				(int) $this->request->getPost('price'),
+				(int) $this->request->getPost('stock')
+			);
+			$this->session->setFlashdata('success', 'Menu saved. The till will use this stock.');
+		} catch (\Throwable $e) {
+			$this->session->setFlashdata('error', $e->getMessage());
+		}
+
+		return redirect()->to(base_url('canteen'));
+	}
+
+	public function canteen_delete()
+	{
+		$this->_preset(1, 3, 14);
+		if (strtolower($this->request->getMethod()) !== 'post') {
+			return redirect()->to(base_url('canteen'));
+		}
+		$service = new \App\Services\Pocket\PocketWalletService();
+		$service->deleteCanteenItem(
+			(int) $this->session->get('soma_school_id'),
+			(int) $this->request->getPost('id')
+		);
+		$this->session->setFlashdata('success', 'Item removed.');
+
+		return redirect()->to(base_url('canteen'));
+	}
+
 	public
 	function pocket_money()
 	{
@@ -25981,28 +26157,66 @@ public function assign_card()
 		$data['title'] = lang("app.PocketMoney");
 		$data['subtitle'] = lang("app.PocketMoney");
 		$data['page'] = "PocketMoney";
-		$school_id = $this->session->get("soma_school_id");
-		$Mdl = new PaymentModel();
-		$data['money'] = $Mdl->db->query("select (SELECT SUM(amount) from payment_transactions p1 inner join students st1 on st1.id = p1.student_id where st1.school_id={$school_id} and p1.type=0 and p1.status=1) as transfer,
-												 (SELECT COALESCE (COUNT(amount),0) from payment_transactions p2 inner join students st2 on st2.id = p2.student_id where st2.school_id={$school_id} and p2.type=0 and p2.status=1) as transferNum,
-												 (SELECT SUM(amount) from payment_transactions p3 inner join students st3 on st3.id = p3.student_id where st3.school_id={$school_id} and p3.type=1 and p3.status=1) as payment,
-												 (SELECT COUNT(amount) from payment_transactions p4 inner join students st4 on st4.id = p4.student_id where st4.school_id={$school_id} and p4.type=1 and p4.status=1) as paymentNum,
-												 (SELECT SUM(amount) from payment_transactions p5 inner join students st5 on st5.id = p5.student_id where st5.school_id={$school_id} and p5.type=2 and p5.status=1) as withdraw,
-												 (SELECT COUNT(amount) from payment_transactions p6 inner join students st6 on st6.id = p6.student_id where st6.school_id={$school_id} and p6.type=2 and p6.status=1) as withdrawNum")->getRowArray();
-		$data['activeStudent'] = count($Mdl->select("payment_transactions.id")
-				->join('students s', 'payment_transactions.student_id = s.id')
-				->where("payment_transactions.status", 1)
-				->where('s.school_id', $school_id)
-				->groupBy("student_id")->get()->getResultArray());
-		$data['transactions'] = $Mdl->select("payment_transactions.*")
-				->join('students s', 'payment_transactions.student_id = s.id')
-				->where('s.school_id', $school_id)
-				->where("payment_transactions.status", 1)
-				->orderBy("payment_transactions.id", "DESC")
-				->limit(10)
-				->get()->getResultArray();
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$service = new \App\Services\Pocket\PocketWalletService();
+		$pack = $service->schoolReport(
+			$schoolId,
+			(string) $this->request->getGet('report'),
+			(string) $this->request->getGet('from'),
+			(string) $this->request->getGet('to'),
+			(string) $this->request->getGet('q')
+		);
+		if ($this->request->getGet('export') === 'csv') {
+			return $this->pocketReportCsv($pack);
+		}
+		$data = array_merge($data, $pack);
 		$data['content'] = view("pages/pocketMoney", $data);
 		return view('main', $data);
+	}
+
+	public function pocket_money_live()
+	{
+		$this->_preset(1, 3, 14);
+		$service = new \App\Services\Pocket\PocketWalletService();
+		$pack = $service->schoolReport(
+			(int) $this->session->get('soma_school_id'),
+			(string) $this->request->getGet('report'),
+			(string) $this->request->getGet('from'),
+			(string) $this->request->getGet('to'),
+			(string) $this->request->getGet('q')
+		);
+		$movements = $pack['report'] === 'overview' ? ($pack['latest'] ?? []) : ($pack['rows'] ?? []);
+		$items = [];
+		foreach ($movements as $row) {
+			$status = (int) $row['status'];
+			$items[] = [
+				'id' => (int) $row['id'],
+				'status' => $status,
+				'label' => $status === 1 ? 'Completed' : ($status === 2 ? 'Failed' : 'Pending'),
+				'waiting' => !empty($row['waiting']),
+				'sentBack' => !empty($row['sent_back']),
+				'error' => (string) ($row['error'] ?? ''),
+				'sendBack' => (int) ($row['send_back'] ?? 0),
+				'phone' => (string) ($row['phone'] ?? ''),
+				'schoolPhone' => (string) ($row['school_phone'] ?? ''),
+				'name' => (string) ($row['name'] ?? ''),
+			];
+		}
+		$summary = $pack['summary'] ?? [];
+
+		return $this->response->setJSON([
+			'items' => $items,
+			'cards' => [
+				'topup' => ['value' => (int) round((float) ($summary['topup_amount'] ?? 0)), 'sub' => (int) ($summary['topup_count'] ?? 0) . ' records', 'money' => true],
+				'payment' => ['value' => (int) round((float) ($summary['payment_amount'] ?? 0)), 'sub' => (int) ($summary['payment_count'] ?? 0) . ' records', 'money' => true],
+				'withdraw' => ['value' => (int) round((float) ($summary['withdraw_amount'] ?? 0)), 'sub' => (int) ($summary['withdraw_count'] ?? 0) . ' records', 'money' => true],
+				'refund' => ['value' => (int) round((float) ($summary['refund_amount'] ?? 0)), 'sub' => (int) ($summary['refund_count'] ?? 0) . ' records', 'money' => true],
+				'held' => ['value' => (int) ($pack['held'] ?? 0), 'sub' => (int) ($pack['fundedStudents'] ?? 0) . ' records', 'money' => true],
+				'active' => ['value' => (int) ($pack['activeStudents'] ?? 0), 'sub' => 'students', 'money' => false],
+				'pending' => ['value' => (int) ($summary['pending_count'] ?? 0), 'sub' => 'waiting', 'money' => false],
+				'failed' => ['value' => (int) ($summary['failed_count'] ?? 0), 'sub' => 'failed', 'money' => false],
+			],
+		]);
 	}
 
 	public
@@ -26110,14 +26324,101 @@ public function assign_card()
 	function transactions()
 	{
 		$this->_preset(1, 3, 14);
-		$data = $this->data;
-		$data['title'] = "Transactions";
-		$data['subtitle'] = "Transactions";
-		$data['page'] = "Transactions";
-		$Mdl = new PaymentModel();
-		$data['transactions'] = $Mdl->select("*")->where("status", 1)->get()->getResultArray();
-		$data['content'] = view("pages/transactions", $data);
-		return view('main', $data);
+		$query = $this->request->getGet();
+		$query['report'] = 'ledger';
+		return redirect()->to(base_url('pocket_money') . '?' . http_build_query($query));
+	}
+
+	public function pocket_money_reverse()
+	{
+		$this->_preset(1, 3, 14);
+		if (strtolower($this->request->getMethod()) !== 'post') {
+			return redirect()->to(base_url('pocket_money'));
+		}
+		$paymentId = (int) $this->request->getPost('payment_id');
+		try {
+			$service = new \App\Services\Pocket\PocketWalletService();
+			$message = $service->reverseToSender(
+				(int) $this->session->get('soma_school_id'),
+				(int) $this->session->get('soma_id'),
+				$paymentId
+			);
+			$this->session->setFlashdata('success', $message);
+		} catch (\Throwable $e) {
+			$this->session->setFlashdata('error', $e->getMessage());
+		}
+		return redirect()->to(base_url('pocket_money?report=ledger'));
+	}
+
+	public function pocket_money_retry()
+	{
+		$this->_preset(1, 3, 14);
+		if (strtolower($this->request->getMethod()) !== 'post') {
+			return redirect()->to(base_url('pocket_money'));
+		}
+		$paymentId = (int) $this->request->getPost('payment_id');
+		try {
+			$service = new \App\Services\Pocket\PocketWalletService();
+			$message = $service->retryRefund(
+				(int) $this->session->get('soma_school_id'),
+				(int) $this->session->get('soma_id'),
+				$paymentId
+			);
+			$this->session->setFlashdata('success', $message);
+		} catch (\Throwable $e) {
+			$this->session->setFlashdata('error', $e->getMessage());
+		}
+		return redirect()->to(base_url('pocket_money?report=ledger'));
+	}
+
+	private function pocketReportCsv(array $pack)
+	{
+		$report = (string) ($pack['report'] ?? 'overview');
+		$filename = 'pocket-' . $report . '-' . date('Ymd') . '.csv';
+		$rows = [];
+		if ($report === 'canteen') {
+			$rows[] = ['Student', 'Reg no', 'Class', 'Received', 'Used at canteen', 'Still to spend', 'Visits', 'What they took'];
+			foreach ($pack['canteenRows'] as $row) {
+				$rows[] = [$row['name'], $row['regno'], $row['class_name'], $row['loaded'], $row['used'], $row['remaining'], $row['visits'], $row['items']];
+			}
+		} elseif ($report === 'balances') {
+			$rows[] = ['Student', 'Reg no', 'Class', 'Card', 'Balance', 'Last activity'];
+			foreach ($pack['balances'] as $row) {
+				$rows[] = [$row['name'], $row['regno'], $row['class_name'], $row['card'], $row['wallet_balance'], $row['last_at']];
+			}
+		} elseif ($report === 'daily') {
+			$rows[] = ['Day', 'Top-ups', 'Card spends', 'Sent back', 'Transactions'];
+			foreach ($pack['daily'] as $row) {
+				$rows[] = [$row['day'], $row['topups'], $row['spends'], $row['refunds'], $row['txns']];
+			}
+		} elseif ($report === 'classes') {
+			$rows[] = ['Class', 'Students', 'Top-ups', 'Card spends', 'Sent back'];
+			foreach ($pack['classes'] as $row) {
+				$rows[] = [$row['class_name'], $row['students'], $row['topups'], $row['spends'], $row['refunds']];
+			}
+		} else {
+			$rows[] = ['Date', 'Student', 'Reg no', 'Class', 'Type', 'Status', 'Amount', 'Sender', 'Card balance', 'Txn ID', 'Reference'];
+			$movements = $report === 'overview' ? ($pack['latest'] ?? []) : ($pack['rows'] ?? []);
+			foreach ($movements as $row) {
+				$rows[] = [
+					$row['created_at'], $row['name'], $row['regno'], $row['class_name'],
+					transactions_words($row['type']), $row['status'], $row['amount'],
+					$row['phone'] ?: $row['source'], $row['wallet'], $row['txn_id'], $row['reference'],
+				];
+			}
+		}
+		$body = '';
+		foreach ($rows as $line) {
+			$escaped = array_map(static function ($value) {
+				$value = str_replace('"', '""', (string) $value);
+				return '"' . $value . '"';
+			}, $line);
+			$body .= implode(',', $escaped) . "\r\n";
+		}
+		return $this->response
+			->setHeader('Content-Type', 'text/csv; charset=UTF-8')
+			->setHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+			->setBody($body);
 	}
 
 	public
