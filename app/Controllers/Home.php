@@ -17433,6 +17433,153 @@ public function getApplicationDocs($id = null)
 		exit;
 	}
 
+	/**
+	 * O-level, A-level, RTB, and special (ANP) use the secondary report card.
+	 * Primary and nursery stay on their own slips.
+	 *
+	 * @param array<string,mixed> $row
+	 */
+	private function wisdomSecondaryBandFromRow(array $row): string
+	{
+		$facId = (int) ($row['fac_id'] ?? 0);
+		if (in_array($facId, [3, 19], true)) {
+			return '';
+		}
+		$type = (int) ($row['type'] ?? $row['fac_type'] ?? 0);
+		$level = strtoupper(trim((string) ($row['level_name'] ?? '')));
+		$code = strtoupper(trim((string) ($row['code'] ?? '')));
+		$abbrev = strtoupper(trim((string) ($row['faculty_code'] ?? $row['abbrev'] ?? '')));
+		$fac = strtolower(trim((string) ($row['fac_title'] ?? '')));
+		$blob = $code . ' ' . $abbrev . ' ' . $fac . ' ' . $level;
+		if ($type === \App\Models\FacultyModel::TYPE_SPECIAL || preg_match('/\bANP\b/', $blob) || strpos($fac, 'nurs') !== false) {
+			return 'special';
+		}
+		if ($type === \App\Models\FacultyModel::TYPE_TVET) {
+			return 'rtb';
+		}
+		$reb = $type === \App\Models\FacultyModel::TYPE_REB || in_array($facId, [1, 2], true);
+		if (!$reb) {
+			return '';
+		}
+		if (preg_match('/\b(S\s*[4-6]|SENIOR\s*[4-6]|A[\s-]*LEVEL)\b/', $level)) {
+			return 'a_level';
+		}
+		return 'o_level';
+	}
+
+	/**
+	 * @param array<string,mixed> $data
+	 */
+	private function attachWisdomSecondaryReport(array &$data, int $schoolId, int $classId, int $year, string $band, bool $periodic): void
+	{
+		$data['secondary_band'] = $band;
+		$data['secondary_periodic'] = $periodic;
+		$yearRow = (new \App\Models\AcademicYearModel())->select('title')->where('id', $year)->get()->getRowArray();
+		if (!empty($yearRow['title'])) {
+			$data['academic_year_title'] = $yearRow['title'];
+		}
+		$initials = [];
+		$lecturers = \Config\Database::connect()->table('course_records cr')
+			->select('cr.course, s.fname, s.lname')
+			->join('staffs s', 's.id = cr.lecturer', 'left')
+			->where('cr.class', $classId)
+			->where('cr.year', $year)
+			->get()->getResultArray();
+		foreach ($lecturers as $lec) {
+			$name = trim((string) ($lec['fname'] ?? '') . ' ' . (string) ($lec['lname'] ?? ''));
+			$initials[(int) $lec['course']] = $name !== '' ? get_first_letters($name) : '';
+		}
+		$data['secondary_course_initials'] = $initials;
+		$mentor = \Config\Database::connect()->query(
+			"SELECT s.fname, s.lname, s.phone FROM classes c
+			 LEFT JOIN staffs s ON s.id = c.mentor
+			 WHERE c.id = ? LIMIT 1",
+			[$classId]
+		)->getRowArray();
+		$data['secondary_class_teacher'] = trim((string) (($mentor['fname'] ?? '') . ' ' . ($mentor['lname'] ?? '')));
+		$data['secondary_class_teacher_phone'] = trim((string) ($mentor['phone'] ?? ''));
+		$head = \Config\Database::connect()->query(
+			"SELECT s.fname, s.lname, s.phone FROM staffs s
+			 LEFT JOIN posts p ON p.id = s.post
+			 WHERE s.school_id = ? AND s.status != 0
+			 AND (s.post = ? OR LOWER(TRIM(p.title)) IN ('head teacher', 'headteacher'))
+			 ORDER BY s.id ASC LIMIT 1",
+			[$schoolId, \App\Models\PostsModel::HEAD_TEACHER_ID]
+		)->getRowArray();
+		$data['secondary_head_teacher'] = trim((string) (($head['fname'] ?? '') . ' ' . ($head['lname'] ?? '')));
+		$data['secondary_head_teacher_phone'] = trim((string) ($head['phone'] ?? ''));
+		$data['secondary_combo_rank'] = $this->secondaryCombinationRanks(
+			$schoolId,
+			$classId,
+			$year,
+			(int) ($data['term'] ?? 0),
+			$periodic,
+			(int) ($data['period'] ?? 0)
+		);
+		if (empty($data['report_remarks']) && !empty($data['students'])) {
+			@set_time_limit(180);
+			$data['report_remarks'] = \App\Libraries\ReportRemarks::forPupils(
+				\App\Libraries\ReportRemarks::pupilsFromRecords($data['students'])
+			);
+		}
+	}
+
+	/** @return array<int,int> student id => combination place */
+	private function secondaryCombinationRanks(int $schoolId, int $classId, int $year, int $term, bool $periodic, int $period): array
+	{
+		try {
+			$db = \Config\Database::connect();
+			$meta = $db->query('SELECT department, level FROM classes WHERE id = ? AND school_id = ?', [$classId, $schoolId])->getRowArray();
+			if (!$meta) {
+				return [];
+			}
+			$countRow = $db->query(
+				"SELECT COUNT(*) AS n FROM classes WHERE school_id = ? AND department = ? AND level = ? AND IFNULL(title,'') NOT LIKE '%Holiday%'",
+				[$schoolId, (int) $meta['department'], (int) $meta['level']]
+			)->getRowArray();
+			if ((int) ($countRow['n'] ?? 0) < 2) {
+				return [];
+			}
+			$markSql = $periodic
+				? ' AND mk.mark_type = 1 AND mk.marks >= 0 AND (mk.period = ? OR mk.period = 0 OR mk.period IS NULL)'
+				: ' AND mk.mark_type IN (1, 2) AND mk.marks >= 0';
+			$binds = [$year, $schoolId, (int) $meta['department'], (int) $meta['level'], $term, $year];
+			if ($periodic) {
+				$binds[] = $period;
+			}
+			$rows = $db->query(
+				"SELECT mk.student_id AS sid, AVG(mk.marks / NULLIF(mk.outof, 0) * 100) AS pct
+				 FROM marks mk
+				 INNER JOIN active_term at ON at.id = mk.term
+				 INNER JOIN class_records cr ON cr.student = mk.student_id AND cr.year = ? AND cr.status = 1
+				 INNER JOIN classes c ON c.id = cr.class AND c.school_id = ? AND c.department = ? AND c.level = ?
+				 WHERE at.term = ? AND at.academic_year = ? {$markSql}
+				 GROUP BY mk.student_id
+				 HAVING pct IS NOT NULL",
+				$binds
+			)->getResultArray();
+			usort($rows, static function ($a, $b) {
+				return ((float) ($b['pct'] ?? 0)) <=> ((float) ($a['pct'] ?? 0));
+			});
+			$ranks = [];
+			$place = 0;
+			$seen = 0;
+			$prev = null;
+			foreach ($rows as $row) {
+				$seen++;
+				$pct = (float) ($row['pct'] ?? 0);
+				if ($prev === null || abs($pct - $prev) > 0.001) {
+					$place = $seen;
+					$prev = $pct;
+				}
+				$ranks[(int) $row['sid']] = $place;
+			}
+			return $ranks;
+		} catch (\Throwable $e) {
+			return [];
+		}
+	}
+
 	public
 	function get_periodic_slip()
 	{
@@ -17682,6 +17829,16 @@ public function getApplicationDocs($id = null)
 			$data['primary_periodic'] = true;
 			$view = view("pages/reports/wisdom_primary_report", $data);
 		}
+		$wisdomSecondaryPeriodic = false;
+		$secondaryBand = '';
+		if (is_wisdom_school((int) $school_id) && !in_array($factId, [3, 19], true) && !empty($data['students'][0]['id'])) {
+			$secondaryBand = $this->wisdomSecondaryBandFromRow($data['students'][0]);
+		}
+		if ($secondaryBand !== '') {
+			$this->attachWisdomSecondaryReport($data, (int) $school_id, (int) $class, (int) $year, $secondaryBand, true);
+			$wisdomSecondaryPeriodic = true;
+			$view = view("pages/reports/wisdom_secondary_report", $data);
+		}
 		if ($pdf) {
 			/**
 			 * List of customized school report
@@ -17702,6 +17859,10 @@ public function getApplicationDocs($id = null)
 			if ($wisdomPrimaryPeriodic) {
 				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf', [
 					'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 13.0,
+				]);
+			} elseif ($wisdomSecondaryPeriodic) {
+				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf', [
+					'left' => 12, 'right' => 12, 'top' => 8, 'bottom' => 8,
 				]);
 			} elseif ($wisdomNurserySlip) {
 				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf');
@@ -17742,14 +17903,26 @@ public function getApplicationDocs($id = null)
 		$this->_preset();
 		$school_id = $this->session->get("soma_school_id");
 		$classModel = new ClassesModel();
-		$classRow = $classModel->select('classes.id, f.id AS fac_id')
+		$classRow = $classModel->select('classes.id, f.id AS fac_id, f.type AS fac_type, f.abbrev AS faculty_code, f.title AS fac_title, l.title AS level_name, d.code')
 				->join('departments d', 'd.id = classes.department')
 				->join('faculty f', 'f.id = d.faculty_id')
+				->join('levels l', 'l.id = classes.level', 'LEFT')
 				->where('classes.id', $class)
 				->get()->getRow();
 		$fact = $classRow ? (int) $classRow->fac_id : 0;
+		$secondaryBand = '';
+		if ($classRow && is_wisdom_school((int) $school_id) && (int) $term !== 4) {
+			$secondaryBand = $this->wisdomSecondaryBandFromRow([
+				'fac_id' => (int) $classRow->fac_id,
+				'fac_type' => (int) $classRow->fac_type,
+				'faculty_code' => (string) $classRow->faculty_code,
+				'fac_title' => (string) $classRow->fac_title,
+				'level_name' => (string) $classRow->level_name,
+				'code' => (string) $classRow->code,
+			]);
+		}
 		$isTvet = !in_array($fact, [1, 2, 3, 19], true);
-		$useWdaNewFormat = $isTvet && !in_array((int) $school_id, [52], true);
+		$useWdaNewFormat = $isTvet && !in_array((int) $school_id, [52], true) && $secondaryBand === '';
 
 		if ($useWdaNewFormat) {
 			$pdfMode = isset($_GET['pdf']);
@@ -18062,7 +18235,14 @@ public function getApplicationDocs($id = null)
 			if ($term == 4) {
 				$data['isFinalClass'] = in_array($students[0]['level_id'], [3, 6, 9, 15, 18, 21, 25, 27]);
 			}
-			if ($fact == 1 || $fact == 2) {
+			if ($secondaryBand !== '') {
+				$fromStudent = $this->wisdomSecondaryBandFromRow($data['students'][0] ?? []);
+				if ($fromStudent !== '') {
+					$secondaryBand = $fromStudent;
+				}
+				$this->attachWisdomSecondaryReport($data, (int) $school_id, (int) $class, (int) $year, $secondaryBand, false);
+				$view = view("pages/reports/wisdom_secondary_report", $data);
+			} else if ($fact == 1 || $fact == 2) {
 				if (in_array($school_id, [30])) {
 					$view = view("pages/reports/custom/brightAcademy/bright_academy_o_level" . $annualTag, $data);
 				} else {
@@ -18161,6 +18341,10 @@ public function getApplicationDocs($id = null)
 				if ($wisdomPrimarySlip) {
 					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf', [
 						'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 13.0,
+					]);
+				} elseif ($secondaryBand !== '') {
+					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf', [
+						'left' => 12, 'right' => 12, 'top' => 8, 'bottom' => 8,
 					]);
 				} elseif ($wisdomNurserySlip) {
 					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf');
