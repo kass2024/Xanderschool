@@ -18980,6 +18980,9 @@ public function getApplicationDocs($id = null)
 	function school_fees_management()
 	{
 		$this->_preset();
+		if ($this->academicFinanceBlocked()) {
+			return redirect()->to(base_url('dashboard'));
+		}
 		$this->denyUnlessFeeOperator();
 		$data = $this->data;
 		$schoolFee = new SchoolFeesModel();
@@ -19699,6 +19702,9 @@ public function getApplicationDocs($id = null)
 	function extra_fees_management()
 	{
 		$this->_preset();
+		if ($this->academicFinanceBlocked()) {
+			return redirect()->to(base_url('dashboard'));
+		}
 		$this->denyUnlessFeeOperator();
 		$data = $this->data;
 		$classMdl = new ClassesModel();
@@ -25339,10 +25345,18 @@ public function assign_card()
 		}
 	}
 
+	private function academicFinanceBlocked()
+	{
+		return \Config\MenuClearance::isAcademicStaffPost((int) $this->session->get('soma_post'));
+	}
+
 	public
 	function school_fees_payments($type)
 	{
 		$this->_preset();
+		if ($this->academicFinanceBlocked()) {
+			return redirect()->to(base_url('dashboard'));
+		}
 		$data = $this->data;
 		$schoolFeesModel = new SchoolFeesModel();
 		$extraFeesModel = new ExtraFeesModel();
@@ -25393,6 +25407,9 @@ public function assign_card()
 	function extra_fees_payments($type)
 	{
 		$this->_preset();
+		if ($this->academicFinanceBlocked()) {
+			return redirect()->to(base_url('dashboard'));
+		}
 		$data = $this->data;
 		$data['title'] = lang("app.paymentView");
 		$extraFeesModel = new ExtraFeesModel();
@@ -25579,6 +25596,9 @@ public function assign_card()
 	function feesReport($pdf)
 	{
 		$this->_preset(1, 3, 4, 5, 6);
+		if ($this->academicFinanceBlocked()) {
+			return redirect()->to(base_url('dashboard'));
+		}
 		$canFeesActions = MenuClearance::canActOnFeesReport((int) $this->session->get('soma_post'));
 		if ((int) $pdf === 2 && !$canFeesActions) {
 			return $this->response->setJSON(['error' => lang('app.accessDenied')]);
@@ -26599,9 +26619,12 @@ public function assign_card()
 	}
 
 	public
-	function finance_records(): string
+	function finance_records()
 	{
 		$this->_preset(1, 3, 14);
+		if ($this->academicFinanceBlocked()) {
+			return redirect()->to(base_url('dashboard'));
+		}
 		$data = $this->data;
 		$data['title'] = lang("app.financeDashboard");
 		$data['subtitle'] = lang("app.financeData");
@@ -26623,6 +26646,9 @@ public function assign_card()
 	public
 	function getPaymentTransactions($filter = 0, $search = null)
 	{
+		if ($this->academicFinanceBlocked()) {
+			return '';
+		}
 		$filterQuery = "1=1";//all
 		if ($filter == 1) {
 			//failed

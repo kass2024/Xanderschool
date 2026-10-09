@@ -849,6 +849,34 @@ class MenuClearance
 	}
 
 	/**
+	 * Classroom teachers and similar academic posts. School leaders and finance posts stay out.
+	 */
+	public static function isAcademicStaffPost($postId)
+	{
+		$postId = (int) $postId;
+		if (self::isTeacherPost($postId)) {
+			return true;
+		}
+		if (self::isFullAccessPost($postId) || self::isChiefAccountantPost($postId) || self::isHeadMasterEquivalent($postId)) {
+			return false;
+		}
+		if (in_array($postId, self::FINANCE_FULL_CONTROL_POSTS, true) || in_array($postId, self::FEE_OPERATOR_POSTS, true)) {
+			return false;
+		}
+		$t = self::postTitle($postId);
+		if ($t === '') {
+			return false;
+		}
+		if (strpos($t, 'finance') !== false || strpos($t, 'account') !== false || strpos($t, 'cashier') !== false || strpos($t, 'bursar') !== false) {
+			return false;
+		}
+		if (preg_match('/\b(head|deputy|director|principal|dean|coordinator)\b/', $t)) {
+			return false;
+		}
+		return (bool) preg_match('/\b(teacher|tutor|lecturer|instructor|academic)\b/', $t);
+	}
+
+	/**
 	 * Material Check and Dormitories: Patron, Matron, Customer Care, Director,
 	 * Head of Discipline, Deputy HT Discipline.
 	 */
@@ -896,6 +924,11 @@ class MenuClearance
 			$drop = array_flip(self::groupKeys('behavior'));
 			$keys = array_values(array_filter($keys, static function ($k) use ($drop) {
 				return !isset($drop[$k]);
+			}));
+		}
+		if (self::isAcademicStaffPost($postId)) {
+			$keys = array_values(array_filter($keys, static function ($k) {
+				return !self::isFinanceMenuKey($k);
 			}));
 		}
 		if (self::canUseMaterialAndDormitory($postId)) {

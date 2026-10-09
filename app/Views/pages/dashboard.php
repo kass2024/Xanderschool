@@ -568,6 +568,8 @@
 						</div>
 
 					</div>
+					<?php $showFinanceData = !\Config\MenuClearance::isAcademicStaffPost((int) session('soma_post')); ?>
+					<?php if ($showFinanceData) : ?>
 					<div class="mb-3 card">
 						<div class="card-header-tab card-header">
 							<div
@@ -654,6 +656,7 @@
 						</div>
 
 					</div>
+					<?php endif; ?>
 					<div class="mb-3 card">
 						<div class="card-header-tab card-header">
 							<div
@@ -694,6 +697,7 @@
 						</div>
 
 					</div>
+					<?php if ($showFinanceData) : ?>
 					<div class="mb-3 card">
 						<div class="card-header-tab card-header">
 							<div
@@ -804,6 +808,7 @@
 						</div>
 					</div>
 					<?php endif; ?>
+					<?php endif; ?>
 
 					<div class="mb-3 card">
 						<div class="card-header-tab card-header">
@@ -854,6 +859,7 @@
 	$(function () {
 
 		// Get context with jQuery - using jQuery's .get() method.
+		<?php if (!empty($showFinanceData)) : ?>
 		var pieChartCanvas = $('#pieChart').get(0).getContext('2d')
 		var pieChartCanvas2 = $('#pieChart2').get(0).getContext('2d')
 		var pieChart       = new Chart(pieChartCanvas)
@@ -953,6 +959,7 @@
 		//Create pie or douhnut chart
 		// You can switch between pie and douhnut using the method below.
 		pieChart2.Doughnut(PieData2, pieOptions2)
+		<?php endif; ?>
 //--------------
 		var areaChartData = {
 			labels  : ['<?= lang("app.jan"); ?>', '<?= lang("app.feb");?>', '<?= lang("app.mar");?>', '<?= lang("app.apr");?>', '<?= lang("app.may");?>', '<?= lang("app.jun");?>', '<?= lang("app.jul");?>','<?= lang("app.aug");?>','<?= lang("app.sep");?>','<?= lang("app.oct");?>','<?= lang("app.nov");?>','<?= lang("app.dec");?>'],
