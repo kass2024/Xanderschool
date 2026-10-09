@@ -465,6 +465,44 @@ public function testEmail()
 	}
 
 	/**
+	 * Classes that share one level and department, such as P2 A and P2 B.
+	 *
+	 * @return array{ids:list<int>,label:string}
+	 */
+	private function periodicStreamSelection(string $token, int $schoolId): array
+	{
+		$empty = ['ids' => [], 'label' => ''];
+		if ($schoolId < 1 || !preg_match('/^g(\d+)l(\d+)$/', $token, $match)) {
+			return $empty;
+		}
+		$rows = \Config\Database::connect()->table('classes c')
+			->select('c.id, c.title, l.title as level_name, d.code, d.title as department_name')
+			->join('departments d', 'd.id = c.department', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->where('c.school_id', $schoolId)
+			->where('c.department', (int) $match[1])
+			->where('c.level', (int) $match[2])
+			->orderBy('c.title', 'ASC')
+			->get()->getResultArray();
+		$ids = [];
+		$label = '';
+		foreach ($rows as $row) {
+			if ($this->classLooksLikeHoliday($row)) {
+				continue;
+			}
+			$ids[] = (int) $row['id'];
+			if ($label === '') {
+				$label = trim((string) ($row['level_name'] ?? ''));
+				$code = trim((string) ($row['code'] ?? ''));
+				if ($code !== '' && !preg_match('/^-+$/', $code)) {
+					$label = trim($label . ' ' . $code);
+				}
+			}
+		}
+		return ['ids' => $ids, 'label' => $label !== '' ? $label : 'All streams'];
+	}
+
+	/**
 	 * Discipline / permission lists never include holiday coaching rows.
 	 *
 	 * @param list<array<string,mixed>> $students
@@ -12041,15 +12079,36 @@ public function attendanceCard()
 	public function get_course($val, $year, $type = 0)
 	{
 		$courseModel = new CourseModel();
-		$courses = $courseModel->select("courses.id,courses.title,courses.code,courses.marks,r.term,courses.credit,cs.title as category,r.id record_id,r.class,concat(s.fname,' ',s.lname) as mentor_name")
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$stream = $this->periodicStreamSelection((string) $val, $schoolId);
+		$builder = $courseModel->select("courses.id,courses.title,courses.code,courses.marks,r.term,courses.credit,cs.title as category,r.id record_id,r.class,concat(s.fname,' ',s.lname) as mentor_name")
 				->join("course_category cs", "cs.id=courses.category")
 				->join("course_records r", "courses.id=r.course")
 				->join("staffs s", "s.id=r.lecturer")
-				->where("courses.school_id", $this->session->get("soma_school_id"))
-				->where("r.class", $val)
-				->where("r.year", $year)
-				->groupBy("courses.id")
-				->get()->getResultArray();
+				->where("courses.school_id", $schoolId)
+				->where("r.year", $year);
+		if ($stream['ids'] !== []) {
+			$builder->whereIn("r.class", $stream['ids']);
+		} else {
+			$builder->where("r.class", $val);
+		}
+		$courses = $builder->groupBy("courses.id")->get()->getResultArray();
+		if ($stream['ids'] !== [] && (int) $type !== 0) {
+			$seenCourse = [];
+			$uniqueCourses = [];
+			foreach ($courses as $course) {
+				$key = strtoupper(trim((string) ($course['code'] ?? '')));
+				if ($key === '') {
+					$key = 'T:' . strtoupper(trim((string) ($course['title'] ?? '')));
+				}
+				if (isset($seenCourse[$key])) {
+					continue;
+				}
+				$seenCourse[$key] = true;
+				$uniqueCourses[] = $course;
+			}
+			$courses = $uniqueCourses;
+		}
 
 		if ($type == 0) {
 			//use table
@@ -16431,9 +16490,20 @@ public function getApplicationDocs($id = null)
 			$pdf = $this->request->getPost("pdf");
 			$year = $this->request->getPost("year");
 			$term = $this->request->getPost("term");
-			$class = $this->request->getPost("class");
+			$classToken = trim((string) $this->request->getPost("class"));
 			$course = $this->request->getPost("course");
 			$period = $this->request->getPost("period");
+			$school_id = $this->session->get("soma_school_id");
+			$stream = $this->periodicStreamSelection($classToken, (int) $school_id);
+			$combined = $stream['ids'] !== [];
+			if ($combined && count($stream['ids']) < 2) {
+				echo "Choose a class, or a level that has more than one stream.";
+				die();
+			}
+			$classIds = $combined ? $stream['ids'] : [(int) $classToken];
+			$class = $classIds[0];
+			$classIn = implode(',', array_map('intval', $classIds));
+			$classMatch = $combined ? "in ($classIn)" : "= $class";
 			if ((int) $period === 4 && class_is_nursery($class)) {
 				echo "End of Term Exam is on the student progress report.";
 				die();
@@ -16441,7 +16511,6 @@ public function getApplicationDocs($id = null)
 			$StudentModel = new StudentModel();
 			$courseMdl = new CourseModel();
 			$atMdl = new ActiveTermModel();
-			$school_id = $this->session->get("soma_school_id");
 			$active_term = $atMdl->select("id")->where("term", $term)
 					->where("academic_year", $year)->where("school_id", $school_id)
 					->get(1)->getRow();
@@ -16450,27 +16519,70 @@ public function getApplicationDocs($id = null)
 				die();
 			}
 			$builder = $courseMdl->select("courses.id,courses.title,courses.code,courses.marks")
-					->join("course_records r", "courses.id=r.course and class=$class and find_in_set($term,r.term)>0")
-					->join("marks m", "courses.id=m.course_id and period=$period and class_id=$class and m.term=" . $active_term->id)
+					->join("course_records r", "courses.id=r.course and r.class $classMatch and find_in_set($term,r.term)>0")
+					->join("marks m", "courses.id=m.course_id and period=$period and m.class_id $classMatch and m.term=" . $active_term->id)
 					->where("courses.school_id", $this->session->get("soma_school_id"))
-					->where("r.class", $class)
+					->whereIn("r.class", $classIds)
 					->where("r.year", $year);
 			$course_filter = "1=1";
 			if ($course != 0) {
-				//single  course
-				$builder->where("courses.id", $course);
-				$course_filter = "m.course_id=$course";
+				$courseIds = [(int) $course];
+				if ($combined) {
+					$pickedCourse = $courseMdl->select('id,code,title')->where('id', (int) $course)
+						->where('school_id', $school_id)->get(1)->getRowArray();
+					$pickedCode = strtoupper(trim((string) ($pickedCourse['code'] ?? '')));
+					$pickedTitle = strtoupper(trim((string) ($pickedCourse['title'] ?? '')));
+					$siblings = \Config\Database::connect()->table('courses c')
+						->select('c.id, c.code, c.title')
+						->join('course_records r', 'r.course = c.id')
+						->whereIn('r.class', $classIds)
+						->where('c.school_id', $school_id)
+						->groupBy('c.id')
+						->get()->getResultArray();
+					$courseIds = [];
+					foreach ($siblings as $sibling) {
+						$sameCode = $pickedCode !== '' && strtoupper(trim((string) $sibling['code'])) === $pickedCode;
+						$sameTitle = $pickedCode === '' && $pickedTitle !== '' && strtoupper(trim((string) $sibling['title'])) === $pickedTitle;
+						if ($sameCode || $sameTitle || (int) $sibling['id'] === (int) $course) {
+							$courseIds[] = (int) $sibling['id'];
+						}
+					}
+					if ($courseIds === []) {
+						$courseIds = [(int) $course];
+					}
+				}
+				$courseIdsSql = implode(',', $courseIds);
+				$builder->whereIn("courses.id", $courseIds);
+				$course_filter = "m.course_id in ($courseIdsSql)";
 			}
 			$builder->groupBy("courses.id");
 			$builder->orderBy("courses.id");
 			$courses = $builder->get()->getResultArray();
+			if ($combined) {
+				$groupedCourses = [];
+				foreach ($courses as $item) {
+					$key = strtoupper(trim((string) ($item['code'] ?? '')));
+					if ($key === '') {
+						$key = 'T:' . strtoupper(trim((string) ($item['title'] ?? '')));
+					}
+					if (!isset($groupedCourses[$key])) {
+						$item['member_ids'] = [(int) $item['id']];
+						$groupedCourses[$key] = $item;
+					} else {
+						$groupedCourses[$key]['member_ids'][] = (int) $item['id'];
+					}
+				}
+				$courses = array_values($groupedCourses);
+			}
 			if (count($courses) == 0) {
 				echo "No course marks found on the selected period,term and academic year, please try again later";
 				die();
 			}
-			$html .= "<table style='border: 0px' border='1'><tr><th colspan='3'></th>";
+			$leadCols = $combined ? 4 : 3;
+			$html .= "<table style='border: 0px' border='1'><tr><th colspan='" . $leadCols . "'></th>";
 			$course_header = array();
 			$course_header_code = array();
+			$courseIdSets = [];
 			$max_total = 0;
 			$cols = 2;
 			$course_ids = [];
@@ -16480,30 +16592,40 @@ public function getApplicationDocs($id = null)
 				if ($primaryPeriodic) {
 					$item['marks'] = 100;
 				}
+				$memberIds = $item['member_ids'] ?? [(int) $item['id']];
 				$max_total += $item['marks'];
 				$html .= "<th class='rotate-45'><div><label>" . $item['title'] . "</label></div></th>";
 				$course_header[] = $item['id'];
 				$course_header_code[] = $item['code'];
-				$course_ids[] = $item['id'];
+				$courseIdSets[(int) $item['id']] = array_map('intval', $memberIds);
+				foreach ($memberIds as $memberId) {
+					$course_ids[] = (int) $memberId;
+				}
 				$cols++;
 			}
 			$course_ids_str = implode(",", $course_ids);
-			$students = $StudentModel->select("students.id,
-														  students.regno,
-														  concat(students.fname,' ',students.lname) as name,
-														  group_concat(m.marks) as marks,
-														  CAST(sum(m.total) as float) as total1")
+			$studentSelect = "students.id, students.regno, concat(students.fname,' ',students.lname) as name, group_concat(m.marks) as marks, CAST(sum(m.total) as float) as total1";
+			if ($combined) {
+				$studentSelect .= ", concat(lv.title,' ',cl.title) as stream_name";
+			}
+			$studentBuilder = $StudentModel->select($studentSelect)
 					->join("class_records cr", "students.id=cr.student AND cr.year=$year")
 					->join("course_records r", "cr.class=r.class AND cr.year=$year")
 					->join("(select distinct m.mark_type,m.student_id,m.course_id,m.period,concat(m.course_id,':',coalesce((sum(" . self::sqlMarkValue('m.marks') . "/m.outof*" . $periodicOutOf . ")/count(m.id)),0),':'," . $periodicOutOf . ") as marks,coalesce((sum(" . self::sqlMarkValue('m.marks') . "/m.outof*" . $periodicOutOf . ")/count(m.id)),0) as total from marks m
 				 inner join courses c on c.id = m.course_id where m.mark_type=1 and m.period=$period and m.term={$active_term->id} and m.course_id in ($course_ids_str) group by m.student_id,m.course_id order by m.course_id) as m"
-							, "students.id=m.student_id and m.course_id=r.course and $course_filter", "LEFT")
-					->where("r.class", $class)
+							, "students.id=m.student_id and m.course_id=r.course and $course_filter", "LEFT");
+			if ($combined) {
+				$studentBuilder->join('classes cl', 'cl.id = cr.class', 'left')
+					->join('levels lv', 'lv.id = cl.level', 'left');
+			}
+			$students = $studentBuilder->whereIn("r.class", $classIds)
 					->where("cr.status", "1")
 					->where("students.status", "1")
 					->where("$course_filter")
 					->groupBy("students.id")
 					->orderBy("total1", "DESC")
+					->orderBy("students.fname", "ASC")
+					->orderBy("students.lname", "ASC")
 					->get()->getResultArray();
 
 //			echo $course_ids_str.'<pre>';var_dump($students);die();
@@ -16530,12 +16652,13 @@ public function getApplicationDocs($id = null)
 					$msg = lang("app.names") . ":" . $student['name'] . "\n\rPOSITION:" . $ii . "\n\r\n\r" . lang("app.marks") . ":\n\r";
 					$ch = 0;
 					foreach ($course_header as $h) {
-						if ($current_course >= $h)//skip previous set data
+						if (!$combined && $current_course >= $h)//skip previous set data
 							continue;
-						$dts = explode(",", $student['marks']);
+						$columnIds = $courseIdSets[(int) $h] ?? [(int) $h];
+						$dts = explode(",", (string) $student['marks']);
 						foreach ($dts as $dt) {
 							$dtt = explode(":", $dt);
-							if ($dtt[0] == $h) {
+							if (in_array((int) ($dtt[0] ?? 0), $columnIds, true)) {
 								//column match
 								$row_total += $dtt[1];
 								$msg .= $course_header_code[$ch] . ":" . number_format($dtt[1]) . "/" . $dtt[2] . "\n\r";
@@ -16576,7 +16699,10 @@ public function getApplicationDocs($id = null)
 				$html .= "<th class='rotate-45'><div><label>" . lang("app.total") . "</label></div></th>";
 				$html .= "<th class='rotate-45'><div><label>" . lang("app.percentage") . "</label></div></th>";
 				$html .= "</tr>";
-				$html .= "<tr><td style='min-width: 60px;'><strong>" . lang("app.order") . "</strong></td><td><strong" . lang("app.regno") . "</strong></td><td><strong>" . lang("app.studentName") . "</strong></td>";
+				$html .= "<tr><td style='min-width: 60px;'><strong>" . lang("app.order") . "</strong></td><td><strong>" . lang("app.regno") . "</strong></td><td><strong>" . lang("app.studentName") . "</strong></td>";
+				if ($combined) {
+					$html .= "<td><strong>Class</strong></td>";
+				}
 				foreach ($courses as $item) {
 					$html .= "<td><strong> /" . $item['marks'] . "</strong></td>";
 				}
@@ -16599,13 +16725,17 @@ public function getApplicationDocs($id = null)
 				<td style='text-align: center'>" . $ii . "</td>
 				<td>" . $student['regno'] . "</td>
 				<td>" . $student['name'] . "</td>";
+					if ($combined) {
+						$html .= "<td>" . htmlspecialchars((string) ($student['stream_name'] ?? ''), ENT_QUOTES, 'UTF-8') . "</td>";
+					}
 					foreach ($course_header as $h) {
-						if ($current_course >= $h)//skip previous set data
+						if (!$combined && $current_course >= $h)//skip previous set data
 							continue;
-						$dts = explode(",", $student['marks']);
+						$columnIds = $courseIdSets[(int) $h] ?? [(int) $h];
+						$dts = explode(",", (string) $student['marks']);
 						foreach ($dts as $dt) {
 							$dtt = explode(":", $dt);
-							if ($dtt[0] == $h) {
+							if (in_array((int) ($dtt[0] ?? 0), $columnIds, true)) {
 								//column match
 								$row_total += $dtt[1];
 								$color = $dtt[2] / 2 > $dtt[1] ? "color:red;text-decoration:underline" : "";
@@ -16629,7 +16759,7 @@ public function getApplicationDocs($id = null)
 					$this->_preset();
 					$data = $this->data;
 					$classMdl = new ClassesModel();
-					$data["class"] = $classMdl->get_class_name($class);
+					$data["class"] = $combined ? $stream['label'] : $classMdl->get_class_name($class);
 					$data["period"] = $period;
 					$data["content"] = $html;
 					$html = view("templates/student_results", $data);

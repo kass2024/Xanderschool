@@ -77,7 +77,7 @@ class ClassesModel extends Model
 			WHEN LOWER(TRIM(classes.title)) = 'holiday' THEN 90
 			ELSE 40
 		END)";
-		$data = $this->select("classes.id,if(classes.title='','-----',classes.title) as title,d.title as department_name,d.id as department_id,d.code,l.title as level_name
+		$data = $this->select("classes.id,classes.level as level_id,if(classes.title='','-----',classes.title) as title,d.title as department_name,d.id as department_id,d.code,l.title as level_name
 			,f.type,f.abbrev as faculty_code,f.id as facul_id,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf,
 		(select count(cc.id) from class_records cc where cc.class=classes.id and cc.year=" . $year . ") as students,
 		(select count(c1.id) from course_records c1 where c1.class=classes.id and c1.year=" . $year . ") as courses

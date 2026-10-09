@@ -90,7 +90,30 @@
 			<select class="form-control select2" name="class" id="select_class" required>
 				<option selected disabled><?= lang("app.chooseClass"); ?></option>
 				<?php
+				$streamGroups = [];
 				foreach ($classes as $class) {
+					$streamKey = (int) ($class['department_id'] ?? 0) . ':' . (int) ($class['level_id'] ?? 0);
+					if ((int) ($class['level_id'] ?? 0) > 0) {
+						$streamGroups[$streamKey][] = $class;
+					}
+				}
+				$streamShown = [];
+				foreach ($classes as $class) {
+					$deptId = (int) ($class['department_id'] ?? 0);
+					$levelId = (int) ($class['level_id'] ?? 0);
+					$streamKey = $deptId . ':' . $levelId;
+					if ($levelId > 0 && count($streamGroups[$streamKey] ?? []) > 1 && empty($streamShown[$streamKey])) {
+						$streamShown[$streamKey] = true;
+						$streamLabel = trim((string) ($class['level_name'] ?? ''));
+						$streamCode = trim((string) ($class['code'] ?? ''));
+						if ($streamCode !== '' && !preg_match('/^-+$/', $streamCode)) {
+							$streamLabel = trim($streamLabel . ' ' . $streamCode);
+						}
+						?>
+						<option data-fac="<?= (int) ($class['facul_id'] ?? 0); ?>"
+							value="g<?= $deptId; ?>l<?= $levelId; ?>"> <?= esc($streamLabel); ?></option>
+						<?php
+					}
 					?>
 					<option data-fac="<?= (int) ($class['facul_id'] ?? 0); ?>"
 						value="<?= $class['id']; ?>"> <?= $class['level_name'] . " " . $class['code'] . " " . $class['title']; ?></option>
