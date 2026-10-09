@@ -305,6 +305,12 @@ foreach ($students ?? [] as $student) {
 		if ($isBehaviour($core)) {
 			continue;
 		}
+		if (!$periodic && $termNo >= 1 && $termNo <= 3) {
+			$offered = array_values(array_filter(array_map('intval', explode(',', (string) ($core['term1'] ?? '')))));
+			if ($offered !== [] && !in_array($termNo, $offered, true)) {
+				continue;
+			}
+		}
 		$groups[$bucketFor($core)][] = $core;
 	}
 	$scoreOf = static function (array $core) {
@@ -474,7 +480,7 @@ foreach ($students ?? [] as $student) {
 	</table>
 	<table class="wp-grid">
 		<?php
-		$markHead = function () use ($col, $h, $periodic) {
+		$markHead = function () use ($col, $h, $periodic, $termLabel) {
 			if ($periodic) {
 				echo '<tr>';
 				echo '<td class="wp-head" style="' . $col(0) . $h('6.4') . '"></td>';
@@ -486,10 +492,11 @@ foreach ($students ?? [] as $student) {
 				echo '</tr>';
 				return;
 			}
+			$scoreTitle = $termLabel !== '' ? $termLabel : 'SCORE';
 			echo '<tr>';
 			echo '<td class="wp-head" style="' . $col(0) . $h('6.4') . '"></td>';
 			echo '<td class="wp-head" colspan="3">Maximum<br>per term</td>';
-			echo '<td class="wp-head" colspan="3">SCORE</td>';
+			echo '<td class="wp-head" colspan="3">' . esc($scoreTitle) . '</td>';
 			echo '<td class="wp-head" rowspan="2" style="' . $col(7) . '">Grade</td>';
 			echo '<td class="wp-head" rowspan="2" style="' . $col(8) . '">Comment</td>';
 			echo '<td class="wp-head" rowspan="2" style="' . $col(9) . '">INITIALS</td>';

@@ -18050,6 +18050,7 @@ public function getApplicationDocs($id = null)
 			$term = $_GET['term'];
 			$year = $_GET['year'];
 		}
+		$term = (int) $term;
 
 
 		$this->_preset();
@@ -18154,6 +18155,22 @@ public function getApplicationDocs($id = null)
 			// echo "<pre>";var_dump($students);die();
 			$a = 0;
 			$positions = [];
+			$pickTermMark = static function (array $bag, int $wanted) {
+				if ($bag === []) {
+					return null;
+				}
+				if (array_key_exists($wanted, $bag)) {
+					$value = $bag[$wanted];
+				} elseif (count($bag) === 1) {
+					$value = reset($bag);
+				} else {
+					return null;
+				}
+				if ($value === null || $value === '') {
+					return null;
+				}
+				return (float) $value;
+			};
 			foreach ($students as $student) {
 				$records[$a] = $student;
 				$tot = 0;
@@ -18164,11 +18181,23 @@ public function getApplicationDocs($id = null)
 				$student_cat_info = null;
 				$student_exam_info = null;
 				foreach ($this->get_courses($student['class'], $term, $year) as $core) {
+					$offeredTerms = array_values(array_filter(array_map('intval', explode(',', (string) ($core['term1'] ?? '')))));
+					if ($term !== 4 && $offeredTerms !== [] && !in_array($term, $offeredTerms, true)) {
+						continue;
+					}
 					$result = $this->__result($core['id'], $student['id'], $term, $year);
-					if ($term != 4) {
-						$core['result'] = ['marks' => $result['cat'][$term] ?? null
-							, 'exam_marks' => $result['exam'][$term] ?? null
-						];
+					if ($term !== 4) {
+						$catMark = $pickTermMark($result['cat'] ?? [], $term);
+						$examMark = $pickTermMark($result['exam'] ?? [], $term);
+						$core['result'] = ['marks' => $catMark, 'exam_marks' => $examMark];
+						if ($catMark !== null) {
+							$tot += $catMark;
+							$student_cat_info += $catMark;
+						}
+						if ($examMark !== null) {
+							$tot += $examMark;
+							$student_exam_info += $examMark;
+						}
 					} else {
 						$core['result'] = $result;
 						if (in_array('1', explode(',', $core['term1']))) {
@@ -18183,18 +18212,14 @@ public function getApplicationDocs($id = null)
 							$tot3 += $result['cat'][3] ?? null;
 							$tot3 += $result['exam'][3] ?? null;
 						}
-
-					}
-					// var_dump($result); die();
-					if (count($result['cat']) != 0) {
-						$tot += marksTotal($result['cat']);
-						$student_cat_info += marksTotal($result['cat']);
-					}
-
-					if (count($result['exam']) != 0) {
-						$tot += marksTotal($result['exam']);
-						// $tot += $core['result']['exam_marks'];
-						$student_exam_info += marksTotal($result['exam']);
+						if (count($result['cat']) != 0) {
+							$tot += marksTotal($result['cat']);
+							$student_cat_info += marksTotal($result['cat']);
+						}
+						if (count($result['exam']) != 0) {
+							$tot += marksTotal($result['exam']);
+							$student_exam_info += marksTotal($result['exam']);
+						}
 					}
 					$records[$a]['courses'][] = $core;
 				}
