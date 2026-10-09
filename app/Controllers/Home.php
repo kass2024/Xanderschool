@@ -17438,6 +17438,7 @@ public function getApplicationDocs($id = null)
 		$mpdf = new \Mpdf\Mpdf($mpdfConfig);
 		$mpdf->shrink_tables_to_fit = 0;
 		$mpdf->SetDisplayMode('fullpage');
+		$mpdf->SetTitle(preg_replace('/\.pdf$/i', '', $filename) ?: $filename);
 		$marker = '<!--REPORT_PAGE-->';
 		$html = str_replace(['<pagebreak />', '<pagebreak/>', '<pagebreak>'], $marker, $html);
 		$style = '';
@@ -17462,6 +17463,27 @@ public function getApplicationDocs($id = null)
 		}
 		$mpdf->Output($filename, \Mpdf\Output\Destination::INLINE);
 		exit;
+	}
+
+	private function reportClassPdfFilename($classId): string
+	{
+		$row = (new ClassesModel())->select('l.title AS level_name, d.code, classes.title')
+			->join('departments d', 'd.id = classes.department', 'LEFT')
+			->join('levels l', 'l.id = classes.level', 'LEFT')
+			->where('classes.id', (int) $classId)
+			->get()->getRowArray();
+		$name = trim(preg_replace('/\s+/', ' ', trim(
+			(string) ($row['level_name'] ?? '') . ' ' . (string) ($row['code'] ?? '') . ' ' . (string) ($row['title'] ?? '')
+		)));
+		$name = trim((string) preg_replace('/[<>:"\/\\\\|?*]+/', ' ', $name));
+		$name = trim((string) preg_replace('/\s+/', ' ', $name));
+		if ($name === '') {
+			$name = 'class-report';
+		}
+		if (strlen($name) > 120) {
+			$name = rtrim(substr($name, 0, 120));
+		}
+		return $name . '.pdf';
 	}
 
 	/**
@@ -17756,7 +17778,7 @@ public function getApplicationDocs($id = null)
 	}
 
 	public
-	function get_periodic_slip()
+	function get_periodic_slip($downloadName = null)
 	{
 		ini_set('memory_limit', '4096M');
 		$this->ensurePrimaryGradeLetterColumn();
@@ -18031,27 +18053,28 @@ public function getApplicationDocs($id = null)
 			// }
 			// die($view);
 			$html = $view;
+			$pdfName = $this->reportClassPdfFilename($class);
 			if ($wisdomPrimaryPeriodic) {
-				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf', [
+				$this->streamNurserySheetPdf($html, $pdfName, [
 					'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 13.0,
 				]);
 			} elseif ($wisdomSecondaryPeriodic) {
-				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf', [
+				$this->streamNurserySheetPdf($html, $pdfName, [
 					'left' => 12, 'right' => 12, 'top' => 8, 'bottom' => 8,
 				]);
 			} elseif ($wisdomNurserySlip) {
-				$this->streamNurserySheetPdf($html, 'student_periodic_report.pdf');
+				$this->streamNurserySheetPdf($html, $pdfName);
 			}
 			try {
 				$mask = FCPATH . "assets/templates/*.html";
 				array_map('unlink', glob($mask));//clear previous cards
 				$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
-				$wkhtmltopdf->setTitle(lang("app.rtudentProgressReport"));
+				$wkhtmltopdf->setTitle(preg_replace('/\.pdf$/i', '', $pdfName));
 				$wkhtmltopdf->setHtml(utf8_decode($html));
 				$wkhtmltopdf->setPageSize("A4");
 				$wkhtmltopdf->setOrientation("portrait");
 				$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
-				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "student_periodic_report" . time() . ".pdf");
+				$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, $pdfName);
 			} catch (\Exception $e) {
 				echo $e->getMessage();
 			}
@@ -18068,10 +18091,10 @@ public function getApplicationDocs($id = null)
 		ini_set('memory_limit', '4096M');
 		$this->ensurePrimaryGradeLetterColumn();
 		session_write_close();
-		if ($class == null) {
-			$class = $_GET['class'];
-			$term = $_GET['term'];
-			$year = $_GET['year'];
+		if ($class == null || !ctype_digit((string) $class)) {
+			$class = $_GET['class'] ?? null;
+			$term = $_GET['term'] ?? $term;
+			$year = $_GET['year'] ?? $year;
 		}
 		$term = (int) $term;
 
@@ -18534,34 +18557,35 @@ public function getApplicationDocs($id = null)
 				// 	die();
 				// }
 				$html = $view;
+				$pdfName = $this->reportClassPdfFilename($class);
 				$wisdomNurserySlip = ((int) $fact === 19)
 					&& (is_wisdom_school((int) $school_id) || !in_array((int) $school_id, [28, 30, 31, 42]));
 				$wisdomPrimarySlip = ((int) $fact === 3)
 					&& is_wisdom_school((int) $school_id)
 					&& (int) $term !== 4;
 				if ($wisdomPrimarySlip) {
-					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf', [
+					$this->streamNurserySheetPdf($html, $pdfName, [
 						'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 13.0,
 					]);
 				} elseif ($secondaryBand !== '') {
 					$annualSheet = (int) $term === 4;
-					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf', $annualSheet
+					$this->streamNurserySheetPdf($html, $pdfName, $annualSheet
 						? ['left' => 6, 'right' => 6, 'top' => 6, 'bottom' => 6]
 						: ['left' => 12, 'right' => 12, 'top' => 8, 'bottom' => 8],
 						$annualSheet ? 'L' : 'P');
 				} elseif ($wisdomNurserySlip) {
-					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf');
+					$this->streamNurserySheetPdf($html, $pdfName);
 				}
 				try {
 					$mask = FCPATH . "assets/templates/*.html";
 					array_map('unlink', glob($mask));//clear previous cards
 					$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
-					$wkhtmltopdf->setTitle(lang("app.rtudentProgressReport"));
+					$wkhtmltopdf->setTitle(preg_replace('/\.pdf$/i', '', $pdfName));
 					$wkhtmltopdf->setHtml(utf8_decode($html));
 					$wkhtmltopdf->setPageSize("A4");
 					$wkhtmltopdf->setOrientation("portrait");
 					$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
-					$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "student_progress_report" . time() . ".pdf");
+					$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, $pdfName);
 				} catch (\Exception $e) {
 					echo $e->getMessage();
 				}
@@ -19148,12 +19172,13 @@ public function getApplicationDocs($id = null)
 						array_map('unlink', $files);
 					}
 					$wkhtmltopdf = new Wkhtmltopdf(array('path' => FCPATH . 'assets/templates/'));
-					$wkhtmltopdf->setTitle(lang("app.rtudentProgressReport"));
+					$wdaName = $this->reportClassPdfFilename($class);
+					$wkhtmltopdf->setTitle(preg_replace('/\.pdf$/i', '', $wdaName));
 					$wkhtmltopdf->setHtml(utf8_decode($html));
 					$wkhtmltopdf->setPageSize("A4");
 					$wkhtmltopdf->setOrientation("portrait");
 					$wkhtmltopdf->setMargins(array("top" => 2, "left" => 2, "right" => 2, "bottom" => 2));
-					$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, "student_progress_report" . time() . ".pdf");
+					$wkhtmltopdf->output(Wkhtmltopdf::MODE_EMBEDDED, $wdaName);
 				} catch (\Exception $e) {
 					echo htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
 				}

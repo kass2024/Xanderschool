@@ -245,6 +245,11 @@
 			if (!$("#useStudent").prop("checked")) {
 				$("#select_student").prop("disabled", true).val(null);
 			}
+			var submitter = e.originalEvent && e.originalEvent.submitter;
+			var isPdf = submitter && submitter.name === "pdf";
+			var base = reportTypeBase();
+			var label = $.trim($("#select_class option:selected").text()).replace(/[<>:"/\\|?*]+/g, " ").replace(/\s+/g, " ");
+			$(this).attr("action", (isPdf && !isHolidayReport() && label) ? base + "/" + encodeURIComponent(label) : base);
 			if (isHolidayReport()) {
 				$("#select_term").prop("required", false).prop("disabled", true).removeAttr("required");
 				if (!hcReady) {

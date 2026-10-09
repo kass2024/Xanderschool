@@ -164,6 +164,13 @@
 		$("#select_class").on("change", function () {
 			syncPeriod();
 		});
+		var periodicBase = "<?= base_url('get_periodic_slip'); ?>";
+		$("#form").on("submit", function (e) {
+			var submitter = e.originalEvent && e.originalEvent.submitter;
+			var isPdf = submitter && submitter.name === "pdf";
+			var label = $.trim($("#select_class option:selected").text()).replace(/[<>:"/\\|?*]+/g, " ").replace(/\s+/g, " ");
+			$(this).attr("action", (isPdf && label) ? periodicBase + "/" + encodeURIComponent(label) : periodicBase);
+		});
 		// $(document).on("click","#btn_generate",function (e) {
 		// 	e.preventDefault();
 		// 	$.post($("#form").prop("action"), $("#form").serialize(), function (data) {
