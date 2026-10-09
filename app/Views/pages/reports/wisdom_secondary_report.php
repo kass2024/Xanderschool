@@ -50,7 +50,7 @@
 		white-space: nowrap;
 	}
 	.ws-sign { margin-top: 1.6mm; }
-	.ws-sign td { font-size: 8.5pt; font-weight: 700; border: 0.6pt solid #1e3a5f; height: 7.2mm; }
+	.ws-sign td { font-size: 8.5pt; font-weight: 700; border: 0.6pt solid #1e3a5f; height: 6.2mm; }
 	.ws-note { font-size: 8pt; margin-top: 1.4mm; }
 <?php if (empty($pdf)): ?>
 	@media print {
@@ -62,7 +62,7 @@
 		}
 		.ws-sheet { background: #fff; }
 		.ws-fit { height: auto !important; overflow: visible !important; }
-		.ws-paper { transform: none !important; margin: 0; page-break-after: always; }
+		.ws-paper { transform: none !important; margin: 0; height: auto; page-break-after: always; break-after: page; }
 		.ws-fit:last-child .ws-paper { page-break-after: auto; }
 	}
 	@page { size: A4 portrait; margin: 0; }
@@ -321,14 +321,14 @@ foreach ($students ?? [] as $student) {
 	$commentLineCount = count($wrap($classComment, 62))
 		+ count($wrap($headComment, 62))
 		+ count($wrap($inspiration, 62));
-	$commentLineMm = 6.0;
-	$fixedMm = 95 + (3 * 5.6) + ($commentLineCount * $commentLineMm);
-	$roomMm = 270 - $fixedMm;
+	$commentLineMm = 5.2;
+	$fixedMm = 108 + ($commentLineCount * $commentLineMm);
+	$roomMm = 256 - $fixedMm;
 	$rowMm = $roomMm / $rowCount;
-	if ($rowMm > 11) {
-		$rowMm = 11;
-	} elseif ($rowMm < 6.2) {
-		$rowMm = max(5.0, $roomMm / $rowCount);
+	if ($rowMm > 8.6) {
+		$rowMm = 8.6;
+	} elseif ($rowMm < 4.8) {
+		$rowMm = max(4.4, $roomMm / $rowCount);
 	}
 	ob_start();
 	?>
@@ -350,25 +350,25 @@ foreach ($students ?? [] as $student) {
 		</tr>
 	</table>
 	<table class="ws-id">
-		<tr style="height:7.4mm;">
-			<td class="k">Student Name</td>
-			<td class="v" style="width:48mm;"><?= esc($name); ?></td>
-			<td class="k">Class</td>
-			<td class="v"><?= esc($classLabel); ?></td>
-			<td class="k">Academic Year</td>
-			<td class="v"><?= esc($yearLabel); ?></td>
+		<tr>
+			<td class="k" style="height:6.2mm;">Student Name</td>
+			<td class="v" style="width:48mm;height:6.2mm;"><?= esc($name); ?></td>
+			<td class="k" style="height:6.2mm;">Class</td>
+			<td class="v" style="height:6.2mm;"><?= esc($classLabel); ?></td>
+			<td class="k" style="height:6.2mm;">Academic Year</td>
+			<td class="v" style="height:6.2mm;"><?= esc($yearLabel); ?></td>
 		</tr>
-		<tr style="height:7.4mm;">
-			<td class="k">Term</td>
-			<td class="v"><?= esc((string) $termNo); ?></td>
-			<td class="k">Program</td>
-			<td class="v"><?= esc($program); ?></td>
-			<td class="k">Class position</td>
-			<td class="v"><?= esc((string) $classPos); ?></td>
+		<tr>
+			<td class="k" style="height:6.2mm;">Term</td>
+			<td class="v" style="height:6.2mm;"><?= esc((string) $termNo); ?></td>
+			<td class="k" style="height:6.2mm;">Program</td>
+			<td class="v" style="height:6.2mm;"><?= esc($program); ?></td>
+			<td class="k" style="height:6.2mm;">Class position</td>
+			<td class="v" style="height:6.2mm;"><?= esc((string) $classPos); ?></td>
 		</tr>
-		<tr style="height:7.4mm;">
-			<td class="k">Report</td>
-			<td class="v" colspan="5"><?= esc($reportKind); ?></td>
+		<tr>
+			<td class="k" style="height:6.2mm;">Report</td>
+			<td class="v" colspan="5" style="height:6.2mm;"><?= esc($reportKind); ?></td>
 		</tr>
 	</table>
 	<table class="ws-grid">
@@ -395,11 +395,11 @@ foreach ($students ?? [] as $student) {
 				<td class="ws-ctr" style="height:<?= $rowH; ?>mm;"><?= esc($row['initials']); ?></td>
 			</tr>
 		<?php endforeach; ?>
-			<tr class="ws-total" style="height:8mm;">
-				<td>TOTAL (<?= (int) $sumFull; ?>)</td>
-				<td class="ws-ctr"><?= $sumFull > 0 ? (int) $sumFull : ''; ?></td>
-				<td class="ws-ctr"><?= $scored > 0 ? esc($fmt($sumScore)) : ''; ?></td>
-				<td class="ws-ctr" colspan="3">
+			<tr class="ws-total">
+				<td style="height:6.4mm;">TOTAL (<?= (int) $sumFull; ?>)</td>
+				<td class="ws-ctr" style="height:6.4mm;"><?= $sumFull > 0 ? (int) $sumFull : ''; ?></td>
+				<td class="ws-ctr" style="height:6.4mm;"><?= $scored > 0 ? esc($fmt($sumScore)) : ''; ?></td>
+				<td class="ws-ctr" colspan="3" style="height:6.4mm;">
 					Average: <?= $average === null ? '' : esc($fmt($average) . '%'); ?>
 					&nbsp; Grade: <?= esc($overall['letter']); ?>
 					&nbsp; Decision: <?= esc($overall['decision']); ?>
@@ -465,14 +465,14 @@ foreach ($students ?? [] as $student) {
 }
 if ($cards !== []) {
 	sort_report_cards_by_position($cards);
-	if (!empty($pdf)) {
+		if (!empty($pdf)) {
 		$firstSheet = true;
 		foreach ($cards as $card) {
 			if (!$firstSheet) {
-				echo '<!--REPORT_PAGE-->';
+				echo '<pagebreak />';
 			}
 			$firstSheet = false;
-			echo '<table style="width:186mm;border-collapse:collapse;"><tr><td class="ws-card" style="width:186mm;vertical-align:top;">' . $card['html'] . '</td></tr></table>';
+			echo $card['html'];
 		}
 	} else {
 	echo '<div class="ws-sheet">';

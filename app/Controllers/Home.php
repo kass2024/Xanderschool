@@ -17439,11 +17439,16 @@ public function getApplicationDocs($id = null)
 		$mpdf->shrink_tables_to_fit = 0;
 		$mpdf->SetDisplayMode('fullpage');
 		$mpdf->SetTitle(preg_replace('/\.pdf$/i', '', $filename) ?: $filename);
+		$mpdf->SetAutoPageBreak(true, (float) ($mpdfConfig['margin_bottom'] ?? 10));
 		$marker = '<!--REPORT_PAGE-->';
-		$html = str_replace(['<pagebreak />', '<pagebreak/>', '<pagebreak>'], $marker, $html);
-		$style = '';
-		if (preg_match('/<style\b[^>]*>.*?<\/style>/is', $html, $styleMatch)) {
-			$style = $styleMatch[0];
+		$html = str_replace(
+			['<pagebreak />', '<pagebreak/>', '<pagebreak>', '<pagebreak></pagebreak>'],
+			$marker,
+			$html
+		);
+		$css = '';
+		if (preg_match('/<style\b[^>]*>(.*?)<\/style>/is', $html, $styleMatch)) {
+			$css = $styleMatch[1];
 			$html = str_replace($styleMatch[0], '', $html);
 		}
 		$parts = preg_split('/' . preg_quote($marker, '/') . '/', $html) ?: [];
@@ -17451,15 +17456,16 @@ public function getApplicationDocs($id = null)
 			return $part !== '';
 		}));
 		if ($parts === []) {
-			$parts = [$html];
+			$parts = [trim($html)];
 		}
-		$firstSheet = true;
-		foreach ($parts as $part) {
-			if (!$firstSheet) {
+		if ($css !== '') {
+			$mpdf->WriteHTML($css, \Mpdf\HTMLParserMode::HEADER_CSS);
+		}
+		foreach ($parts as $i => $part) {
+			if ($i > 0) {
 				$mpdf->AddPage();
 			}
-			$firstSheet = false;
-			$mpdf->WriteHTML($style . $part);
+			$mpdf->WriteHTML($part, \Mpdf\HTMLParserMode::HTML_BODY);
 		}
 		$mpdf->Output($filename, \Mpdf\Output\Destination::INLINE);
 		exit;
