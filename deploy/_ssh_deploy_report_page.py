@@ -16,7 +16,6 @@ PASSWORD = _m.group(1) if _m else ""
 REMOTE_APP = "/opt/xander-school/app"
 FILES = [
     "app/Views/pages/dashboard.php",
-    "app/Views/pages/reports/wisdom_secondary_progress.php",
 ]
 
 
