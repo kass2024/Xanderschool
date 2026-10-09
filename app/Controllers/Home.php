@@ -17378,7 +17378,7 @@ public function getApplicationDocs($id = null)
 			'default_font' => 'dejavusans',
 			'tempDir' => $dir,
 		];
-		if ($landscape && is_array($margins)) {
+		if ($orientation !== null && is_array($margins)) {
 			foreach (['left', 'right', 'top', 'bottom'] as $edge) {
 				if (isset($margins[$edge])) {
 					$mpdfConfig['margin_' . $edge] = $margins[$edge];
@@ -17707,9 +17707,17 @@ public function getApplicationDocs($id = null)
 					$sittingOp = ((float) $found['sitting_ratio']) * $max * 2;
 					$sittingPct = ((float) $found['sitting_ratio']) * 100;
 				}
+				$offered = [];
+				foreach (explode(',', (string) ($course['term1'] ?? '')) as $offeredTerm) {
+					$offeredTerm = (int) trim($offeredTerm);
+					if ($offeredTerm >= 1 && $offeredTerm <= 3) {
+						$offered[] = $offeredTerm;
+					}
+				}
 				$lines[] = [
 					'title' => (string) ($course['title'] ?? ''),
 					'max' => $max,
+					'offered' => $offered,
 					'terms' => $terms,
 					'annual_max' => $annualMax,
 					'annual_op' => $parts > 0 ? $obtained : null,
@@ -18055,7 +18063,7 @@ public function getApplicationDocs($id = null)
 				->get()->getRow();
 		$fact = $classRow ? (int) $classRow->fac_id : 0;
 		$secondaryBand = '';
-		if ($classRow && is_wisdom_school((int) $school_id) && (int) $term !== 4) {
+		if ($classRow && is_wisdom_school((int) $school_id)) {
 			$secondaryBand = $this->wisdomSecondaryBandFromRow([
 				'fac_id' => (int) $classRow->fac_id,
 				'fac_type' => (int) $classRow->fac_type,
@@ -18488,9 +18496,11 @@ public function getApplicationDocs($id = null)
 						'left' => 20.2, 'right' => 13.7, 'top' => 12.0, 'bottom' => 13.0,
 					]);
 				} elseif ($secondaryBand !== '') {
-					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf', [
-						'left' => 6, 'right' => 6, 'top' => 6, 'bottom' => 6,
-					], 'L');
+					$annualSheet = (int) $term === 4;
+					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf', $annualSheet
+						? ['left' => 6, 'right' => 6, 'top' => 6, 'bottom' => 6]
+						: ['left' => 12, 'right' => 12, 'top' => 8, 'bottom' => 8],
+						$annualSheet ? 'L' : 'P');
 				} elseif ($wisdomNurserySlip) {
 					$this->streamNurserySheetPdf($html, 'student_progress_report.pdf');
 				}
