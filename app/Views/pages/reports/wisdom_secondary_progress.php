@@ -97,6 +97,7 @@ $termTotal = static function ($cat, $exam) {
 	.wsp-table th { background: #1e3a5f; color: #fff; font-size: <?= $annualSheet ? '6.5pt' : '8pt'; ?>; }
 	.wsp-table tr.alt td { background: #f3f7fb; }
 	.wsp-sub { text-align: left; padding-left: 1.4mm; }
+	.wsp-conduct td { background: #fff6e0; }
 	.wsp-total td { background: #e8eef5; }
 	.wsp-extra { margin-top: 1.6mm; width: <?= $cardW; ?>; border-collapse: collapse; }
 	.wsp-extra td { border: 0.6pt solid #1e3a5f; vertical-align: top; font-size: <?= $annualSheet ? '7.5pt' : '8.5pt'; ?>; font-weight: 700; padding: 1.2mm 1.6mm; }
@@ -343,6 +344,19 @@ foreach ($sheets as $student) {
 				<?php endif; ?>
 			</tr>
 		<?php endforeach; ?>
+			<tr class="wsp-conduct">
+				<td class="wsp-sub">CONDUCT</td>
+				<?php if ($annualSheet): ?>
+					<td colspan="3"></td>
+					<?php foreach ($showTerms as $colTerm): ?>
+						<td colspan="3"><?= esc($conductText($student, $colTerm)); ?></td>
+					<?php endforeach; ?>
+					<td colspan="3"></td>
+					<td colspan="2"></td>
+				<?php else: ?>
+					<td colspan="7"><?= esc($conductText($student, $showTerms[0])); ?></td>
+				<?php endif; ?>
+			</tr>
 			<tr class="wsp-total">
 				<td class="wsp-sub">TOTAL</td>
 				<td><?= esc($markText($sumMaxCat)); ?></td>
@@ -432,11 +446,7 @@ foreach ($sheets as $student) {
 				<?php endforeach; ?>
 			</td>
 			<td>
-				<div>CONDUCT</div>
-				<?php foreach ($conductTerms as $colTerm): ?>
-					<div><?= $termHeads[$colTerm]; ?>: <?= esc($conductText($student, $colTerm)); ?></div>
-				<?php endforeach; ?>
-				<div style="margin-top:2mm;">Headmaster</div>
+				<div>Headmaster</div>
 				<div><?= esc((string) ($head_master ?? '')); ?></div>
 				<div style="margin-top:3mm;">Signature and stamp</div>
 			</td>
