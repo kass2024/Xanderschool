@@ -121,18 +121,30 @@ $fmt = static function ($n) {
 	$s = number_format((float) $n, 1, '.', '');
 	return rtrim(rtrim($s, '0'), '.');
 };
-$mentionFor = static function ($pct) use ($grades) {
+$bandFor = static function ($pct) use ($grades) {
 	if ($pct === null || $grades === []) {
-		return '';
+		return null;
 	}
-	foreach ($grades as $grade) {
+	$sorted = $grades;
+	usort($sorted, static function ($a, $b) {
+		return ((float) ($b['max_point'] ?? 0)) <=> ((float) ($a['max_point'] ?? 0));
+	});
+	foreach ($sorted as $grade) {
 		$min = (float) ($grade['min_point'] ?? 0);
 		$max = (float) ($grade['max_point'] ?? 0);
-		if ($pct + 0.001 >= $min && $pct - 0.001 <= $max) {
-			return (string) ($grade['color_title'] ?? '');
+		if ($pct + 0.001 >= $min && $pct <= $max + 0.999) {
+			return $grade;
 		}
 	}
-	return '';
+	return null;
+};
+$gradeLetterFor = static function ($pct) use ($bandFor) {
+	$band = $bandFor($pct);
+	return $band ? trim((string) ($band['grade_letter'] ?? '')) : '';
+};
+$mentionFor = static function ($pct) use ($bandFor) {
+	$band = $bandFor($pct);
+	return $band ? (string) ($band['color_title'] ?? '') : '';
 };
 $bucketFor = static function (array $core): string {
 	$category = strtolower(trim((string) ($core['category'] ?? '')));
@@ -423,7 +435,7 @@ foreach ($students ?? [] as $student) {
 			}
 			echo '</tr>';
 		};
-		$printSection = function (string $title, array $rows, bool $withHead) use ($col, $h, $fmt, $num, $scoreOf, $mentionFor, $courseInitials, $markHead, $periodic, $span, $subjectCell) {
+		$printSection = function (string $title, array $rows, bool $withHead) use ($col, $h, $fmt, $num, $scoreOf, $mentionFor, $gradeLetterFor, $courseInitials, $markHead, $periodic, $span, $subjectCell) {
 			if ($rows === []) {
 				return [0.0, null];
 			}
@@ -450,7 +462,7 @@ foreach ($students ?? [] as $student) {
 					echo $subjectCell((string) ($core['title'] ?? ''));
 					echo '<td class="wp-num" style="' . $col(1) . '">' . $fmt($full) . '</td>';
 					echo '<td class="wp-num" style="' . $col(2) . '">' . $num($score) . '</td>';
-					echo '<td class="wp-ctr" style="' . $col(3) . '"></td>';
+					echo '<td class="wp-ctr" style="' . $col(3) . '">' . esc($gradeLetterFor($pct)) . '</td>';
 					echo '<td class="wp-ctr" style="' . $col(4) . '">' . esc($mentionFor($pct)) . '</td>';
 					echo '<td class="wp-ctr" style="' . $col(5) . '">' . esc((string) ($courseInitials[$cid] ?? '')) . '</td>';
 					echo '</tr>';
@@ -493,7 +505,7 @@ foreach ($students ?? [] as $student) {
 				echo '<td class="wp-num" style="' . $col(4) . '">' . $num($mid) . '</td>';
 				echo '<td class="wp-num" style="' . $col(5) . '">' . $num($ex) . '</td>';
 				echo '<td class="wp-num" style="' . $col(6) . '">' . $num($tot) . '</td>';
-				echo '<td class="wp-ctr" style="' . $col(7) . '"></td>';
+				echo '<td class="wp-ctr" style="' . $col(7) . '">' . esc($gradeLetterFor($pct)) . '</td>';
 				echo '<td class="wp-ctr" style="' . $col(8) . '">' . esc($mentionFor($pct)) . '</td>';
 				echo '<td class="wp-ctr" style="' . $col(9) . '">' . esc((string) ($courseInitials[$cid] ?? '')) . '</td>';
 				echo '</tr>';

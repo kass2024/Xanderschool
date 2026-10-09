@@ -2093,6 +2093,78 @@ public function testEmail()
 		$done = true;
 	}
 
+	private function ensurePrimaryGradeLetterColumn(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists('grade') && !$db->fieldExists('grade_letter', 'grade')) {
+			$db->query("ALTER TABLE `grade` ADD COLUMN `grade_letter` VARCHAR(8) NULL DEFAULT NULL AFTER `faculty_id`");
+		}
+		$done = true;
+	}
+
+	/** @return array<string, mixed>|null */
+	private function primaryFaculty(): ?array
+	{
+		$facMdl = new FacultyModel();
+		$byId = $facMdl->where('id', 3)->first();
+		if (is_array($byId) && stripos((string) ($byId['title'] ?? ''), 'Primary') !== false) {
+			return $byId;
+		}
+		foreach ($facMdl->findAll() as $fac) {
+			if (is_array($fac) && stripos((string) ($fac['title'] ?? ''), 'Primary') !== false) {
+				return $fac;
+			}
+		}
+		return is_array($byId) ? $byId : null;
+	}
+
+	/**
+	 * International percentage bands. Inserted once per school until someone edits them.
+	 *
+	 * @return list<array{0:string,1:string,2:int,3:int,4:string}>
+	 */
+	private function internationalPrimaryBands(): array
+	{
+		return [
+			['A', 'Excellent', 100, 90, '#16a34a'],
+			['B', 'Very good', 89, 80, '#22c55e'],
+			['C', 'Good', 79, 70, '#84cc16'],
+			['D', 'Fair', 69, 60, '#eab308'],
+			['E', 'Pass', 59, 50, '#f97316'],
+			['F', 'Fail', 49, 0, '#dc2626'],
+		];
+	}
+
+	private function seedPrimaryGradeScale(int $schoolId, int $facultyId): void
+	{
+		if ($schoolId < 1 || $facultyId < 1) {
+			return;
+		}
+		$this->ensurePrimaryGradeLetterColumn();
+		$grade = new GradeModel();
+		$exists = $grade->where('school_id', $schoolId)->where('faculty_id', $facultyId)->countAllResults();
+		if ($exists > 0) {
+			return;
+		}
+		$createdBy = (int) $this->session->get('soma_id');
+		foreach ($this->internationalPrimaryBands() as $band) {
+			$grade->insert([
+				'faculty_id' => $facultyId,
+				'school_id' => $schoolId,
+				'grade_letter' => $band[0],
+				'color_title' => $band[1],
+				'max_point' => $band[2],
+				'min_point' => $band[3],
+				'color' => $band[4],
+				'created_by' => $createdBy,
+			]);
+		}
+	}
+
 	/**
 	 * Whether the school uses mention/color grading on report slips.
 	 * Defaults to true (legacy behavior). Safe if column is missing.
@@ -3285,12 +3357,32 @@ refreshNurseryMentions();
 			}
 		}
 		$data['nursery_faculty'] = $nurseryFaculty;
-		$data['colors'] = $grade->select("grade.id,grade.color_title,grade.max_point,grade.min_point,grade.color,f.title")
+		$this->ensurePrimaryGradeLetterColumn();
+		$primaryFaculty = $this->primaryFaculty();
+		$data['primary_faculty'] = $primaryFaculty;
+		$primaryId = (int) ($primaryFaculty['id'] ?? 0);
+		if ($primaryId > 0) {
+			$this->seedPrimaryGradeScale($schoolId, $primaryId);
+		}
+		$nurseryId = (int) ($nurseryFaculty['id'] ?? 0);
+		$colorQuery = $grade->select("grade.id,grade.grade_letter,grade.color_title,grade.max_point,grade.min_point,grade.color,f.title")
 				->join("faculty f", "f.id=grade.faculty_id", "LEFT")
-				->where("grade.school_id", $schoolId)
+				->where("grade.school_id", $schoolId);
+		if ($nurseryId > 0) {
+			$colorQuery->where("grade.faculty_id", $nurseryId);
+		}
+		$data['colors'] = $colorQuery
 				->orderBy('grade.max_point', 'DESC')
 				->orderBy('grade.min_point', 'DESC')
 				->get()->getResultArray();
+		$data['primary_grades'] = $primaryId > 0
+			? (new GradeModel())->select("id,grade_letter,color_title,max_point,min_point,color")
+				->where("school_id", $schoolId)
+				->where("faculty_id", $primaryId)
+				->orderBy("max_point", "DESC")
+				->orderBy("min_point", "DESC")
+				->get()->getResultArray()
+			: [];
 		$data['title'] = lang("app.settings");
 		$data['subtitle'] = lang("app.schoolSettings");
 		$data['page'] = "settings";
@@ -6787,6 +6879,88 @@ public function scanCard()
 					'min_point' => $min,
 					'color' => $data['color'],
 					'title' => $nursery['title'] ?? 'Nursery',
+				],
+			]);
+		} catch (\Exception $e) {
+			return $this->response->setJSON(['error' => 'Error: ' . $e->getMessage()]);
+		}
+	}
+
+	public function manipulate_primary_grade()
+	{
+		$this->_preset();
+		$this->ensurePrimaryGradeLetterColumn();
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$primary = $this->primaryFaculty();
+		$facId = (int) ($primary['id'] ?? 0);
+		if ($facId < 1) {
+			return $this->response->setJSON(['error' => 'Primary educational path not found.']);
+		}
+		$letter = strtoupper(trim((string) $this->request->getPost('grade_letter')));
+		$comment = trim((string) $this->request->getPost('color_title'));
+		$max = $this->request->getPost('max_point');
+		$min = $this->request->getPost('min_point');
+		$id = (int) $this->request->getPost('grade_id');
+		if ($letter === '' || !preg_match('/^[A-Z][A-Z0-9+*]{0,3}$/', $letter)) {
+			return $this->response->setJSON(['error' => 'Grade must be a letter such as A or B.']);
+		}
+		if ($comment === '') {
+			return $this->response->setJSON(['error' => 'Comment is required.']);
+		}
+		if ($max === '' || $min === '' || !is_numeric($max) || !is_numeric($min)) {
+			return $this->response->setJSON(['error' => 'Max and Min points must be numbers.']);
+		}
+		$maxN = (float) $max;
+		$minN = (float) $min;
+		if ($minN < 0 || $maxN > 100 || $minN > $maxN) {
+			return $this->response->setJSON(['error' => 'The mark range must sit between 0 and 100.']);
+		}
+		$grade = new GradeModel();
+		$others = $grade->select('id,min_point,max_point,grade_letter')
+			->where('school_id', $schoolId)
+			->where('faculty_id', $facId)
+			->findAll();
+		foreach ($others as $row) {
+			if ((int) ($row['id'] ?? 0) === $id) {
+				continue;
+			}
+			$lo = (float) ($row['min_point'] ?? 0);
+			$hi = (float) ($row['max_point'] ?? 0);
+			if ($minN <= $hi && $lo <= $maxN) {
+				return $this->response->setJSON(['error' => 'That range overlaps ' . ($row['grade_letter'] ?? 'another grade') . '.']);
+			}
+		}
+		$data = [
+			'faculty_id' => $facId,
+			'school_id' => $schoolId,
+			'grade_letter' => $letter,
+			'color_title' => $comment,
+			'max_point' => $maxN,
+			'min_point' => $minN,
+			'color' => '#1d4ed8',
+			'created_by' => (int) $this->session->get('soma_id'),
+		];
+		try {
+			$write = new GradeModel();
+			if ($id > 0) {
+				$owned = $write->where('id', $id)->where('school_id', $schoolId)->where('faculty_id', $facId)->first();
+				if (!$owned) {
+					return $this->response->setJSON(['error' => 'Grade not found.']);
+				}
+				$write->update($id, $data);
+			} else {
+				$write->insert($data);
+				$id = (int) $write->getInsertID();
+			}
+			return $this->response->setJSON([
+				'success' => 'Primary grade saved',
+				'grade' => [
+					'id' => $id,
+					'grade_letter' => $letter,
+					'color_title' => $comment,
+					'max_point' => $maxN,
+					'min_point' => $minN,
+					'title' => $primary['title'] ?? 'Primary',
 				],
 			]);
 		} catch (\Exception $e) {
@@ -17258,6 +17432,7 @@ public function getApplicationDocs($id = null)
 	function get_periodic_slip()
 	{
 		ini_set('memory_limit', '4096M');
+		$this->ensurePrimaryGradeLetterColumn();
 		session_write_close();
 
 		$pdf = $this->request->getPost("pdf");
@@ -17306,7 +17481,7 @@ public function getApplicationDocs($id = null)
 		$useGrading = $this->schoolUsesGradingSystem((int) $school_id);
 		$data['use_grading_system'] = $useGrading;
 		$data['grades'] = $useGrading
-			? $gradesMdl->select("color_title,max_point,min_point,color")->where("school_id", $school_id)->get()->getResultArray()
+			? $gradesMdl->select("grade_letter,color_title,max_point,min_point,color")->where("school_id", $school_id)->get()->getResultArray()
 			: [];
 		$disciplineSelect = "sum(di.marks) as displine_marks";
 		$disciplineJoin = 'disciplines di';
@@ -17475,8 +17650,10 @@ public function getApplicationDocs($id = null)
 		}
 		$wisdomPrimaryPeriodic = $factId === 3 && is_wisdom_school((int) $school_id);
 		if ($wisdomPrimaryPeriodic) {
-			$data['grades'] = $gradesMdl->select("color_title,max_point,min_point,color")
-				->where("faculty_id", 3)
+			$primaryFacId = (int) (($this->primaryFaculty()['id'] ?? 0) ?: 3);
+			$this->seedPrimaryGradeScale((int) $school_id, $primaryFacId);
+			$data['grades'] = $gradesMdl->select("grade_letter,color_title,max_point,min_point,color")
+				->where("faculty_id", $primaryFacId)
 				->where("school_id", $school_id)
 				->orderBy("max_point", "DESC")
 				->orderBy("min_point", "DESC")
@@ -17548,6 +17725,7 @@ public function getApplicationDocs($id = null)
 	{
 		// var_dump($_GET); die();
 		ini_set('memory_limit', '4096M');
+		$this->ensurePrimaryGradeLetterColumn();
 		session_write_close();
 		if ($class == null) {
 			$class = $_GET['class'];
@@ -17735,7 +17913,7 @@ public function getApplicationDocs($id = null)
 			$useGrading = $this->schoolUsesGradingSystem((int) $school_id);
 			$data['use_grading_system'] = $useGrading;
 			$data['grades'] = $useGrading
-				? $gradeMdl->select("color_title,max_point,min_point,color")->where("faculty_id", $fact)->where("school_id", $school_id)->get()->getResultArray()
+				? $gradeMdl->select("grade_letter,color_title,max_point,min_point,color")->where("faculty_id", $fact)->where("school_id", $school_id)->get()->getResultArray()
 				: [];
 			if ((int) $fact === 19) {
 				// Nursery comments always come from Grade Setting, even on normal marks reports.
@@ -17892,8 +18070,10 @@ public function getApplicationDocs($id = null)
 				 */
 				$wisdomPrimarySheet = is_wisdom_school((int) $school_id) && (int) $term !== 4;
 				if ($wisdomPrimarySheet) {
-					$data['grades'] = $gradeMdl->select("color_title,max_point,min_point,color")
-						->where("faculty_id", 3)
+					$primaryFacId = (int) (($this->primaryFaculty()['id'] ?? 0) ?: 3);
+					$this->seedPrimaryGradeScale((int) $school_id, $primaryFacId);
+					$data['grades'] = $gradeMdl->select("grade_letter,color_title,max_point,min_point,color")
+						->where("faculty_id", $primaryFacId)
 						->where("school_id", $school_id)
 						->orderBy("max_point", "DESC")
 						->orderBy("min_point", "DESC")

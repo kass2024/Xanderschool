@@ -15,10 +15,11 @@ _m = re.search(r'PASSWORD = os\.environ\.get\("VPS_PASSWORD", "([^"]*)"\)', _src
 PASSWORD = _m.group(1) if _m else ""
 REMOTE_APP = "/opt/xander-school/app"
 FILES = [
-    "app/Libraries/ReportRemarks.php",
-    "app/Views/pages/reports/wisdom_nursery_report.php",
-    "app/Views/pages/reports/wisdom_primary_report.php",
     "app/Controllers/Home.php",
+    "app/Models/GradeModel.php",
+    "app/Helpers/qonics_helper.php",
+    "app/Views/pages/school_settings.php",
+    "app/Views/pages/reports/wisdom_primary_report.php",
 ]
 
 
@@ -58,9 +59,34 @@ foreach (["/login", "/forget/reset"] as $path) {
     if (strpos($status, " 500") !== false) { exit(1); }
 }
 '
-docker exec xander_school_app grep -n "nr-on-line" /var/www/html/app/Views/pages/reports/wisdom_nursery_report.php | head -2
-docker exec xander_school_app grep -n "report_remarks_v2" /var/www/html/app/Libraries/ReportRemarks.php | head -2
-docker exec xander_school_app php -r '$ok = preg_match("/GOOGLE_AI_API_KEY=/", file_get_contents("/var/www/html/.env")); echo $ok ? "key_present\n" : "key_missing\n"; if (!$ok) exit(1);'
+docker exec xander_school_app grep -n "Primary — grade and comment" /var/www/html/app/Views/pages/school_settings.php | head -1
+docker exec xander_school_app grep -n "gradeLetterFor" /var/www/html/app/Views/pages/reports/wisdom_primary_report.php | head -1
+ENVF=/opt/xander-school/deploy/.env.production
+DB=$(grep -E '^DB_DATABASE=' "$ENVF" | head -1 | cut -d= -f2-)
+U=$(grep -E '^DB_USERNAME=' "$ENVF" | head -1 | cut -d= -f2-)
+P=$(grep -E '^DB_PASSWORD=' "$ENVF" | head -1 | cut -d= -f2-)
+HAS=$(docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -N -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='grade' AND COLUMN_NAME='grade_letter'")
+if [ "$HAS" = "0" ]; then
+  docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -e "ALTER TABLE grade ADD COLUMN grade_letter VARCHAR(8) NULL DEFAULT NULL AFTER faculty_id"
+  echo COLUMN_ADDED
+else
+  echo COLUMN_EXIST
+fi
+docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -e "
+INSERT INTO grade (faculty_id, school_id, grade_letter, color_title, max_point, min_point, color, created_by, created_at, updated_at)
+SELECT 3, s.id, b.letter, b.comment, b.max_point, b.min_point, b.color, 0, NOW(), NOW()
+FROM schools s
+JOIN (
+  SELECT 'A' letter, 'Excellent' comment, 100 max_point, 90 min_point, '#16a34a' color
+  UNION ALL SELECT 'B', 'Very good', 89, 80, '#22c55e'
+  UNION ALL SELECT 'C', 'Good', 79, 70, '#84cc16'
+  UNION ALL SELECT 'D', 'Fair', 69, 60, '#eab308'
+  UNION ALL SELECT 'E', 'Pass', 59, 50, '#f97316'
+  UNION ALL SELECT 'F', 'Fail', 49, 0, '#dc2626'
+) b
+WHERE NOT EXISTS (SELECT 1 FROM grade g WHERE g.school_id = s.id AND g.faculty_id = 3);
+"
+docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -N -e "SELECT school_id, grade_letter, color_title, min_point, max_point FROM grade WHERE faculty_id=3 AND school_id=27 ORDER BY max_point DESC"
 echo DONE
 """
     _, o, e = c.exec_command(cmd, timeout=240)

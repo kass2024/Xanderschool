@@ -67,6 +67,7 @@ if (!function_exists('menu_clearance_allowed')) {
 			if (\Config\MenuClearance::isFullAccessPost($postId)
 				|| \Config\MenuClearance::isCoordinatorPost($postId)
 				|| \Config\MenuClearance::isHeadMasterEquivalent($postId)
+				|| \Config\MenuClearance::isChiefAccountantPost($postId)
 				|| \Config\MenuClearance::canEnterAllCourseMarks($postId, \Config\MenuClearance::postTitle($postId))) {
 				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, [
 					'pedagogical',
@@ -81,6 +82,15 @@ if (!function_exists('menu_clearance_allowed')) {
 					$cacheKeys,
 					\Config\MenuClearance::marksMenuKeys()
 				)));
+			}
+			if (\Config\MenuClearance::isChiefAccountantPost($postId)) {
+				$cacheKeys = \Config\MenuClearance::withoutMarksMenus($cacheKeys);
+			}
+			$cacheKeys = array_values(array_filter($cacheKeys, static function ($key) {
+				return $key !== 'families' && strpos((string) $key, 'families/') !== 0;
+			}));
+			if (\Config\MenuClearance::canViewFamilies($postId)) {
+				$cacheKeys[] = 'families';
 			}
 		}
 
@@ -757,6 +767,10 @@ if (!function_exists('grade_letter')) {
 		// die($marks);
 		foreach ($grades as $grade) {
 			if ($grade['min_point'] <= $marks && $grade['max_point'] >= $marks) {
+				$letter = trim((string) ($grade['grade_letter'] ?? ''));
+				if ($letter !== '') {
+					return $letter;
+				}
 				return get_first_letters($grade['color_title']); //$grade['color'];
 			}
 		}
@@ -1163,6 +1177,89 @@ if (!function_exists('period_is_locked')) {
 			}
 		}
 		return false;
+	}
+}
+
+if (!function_exists('locked_mark_type_ids')) {
+	/** Entry types that can be locked. CAT (1) stays open unless it is not in this list. */
+	function locked_mark_type_ids(): array
+	{
+		return [2, 3, 9, 11];
+	}
+}
+
+if (!function_exists('mark_type_lock_label')) {
+	function mark_type_lock_label($markType): string
+	{
+		switch ((int) $markType) {
+			case 2:
+				return 'Exam';
+			case 3:
+				return 'Second sitting';
+			case 9:
+				return 'Re-assessment';
+			case 11:
+				return 'Holiday coaching';
+			default:
+				return 'CAT';
+		}
+	}
+}
+
+if (!function_exists('parse_locked_mark_types')) {
+	function parse_locked_mark_types($raw): array
+	{
+		$allowed = array_flip(locked_mark_type_ids());
+		$out = [];
+		foreach (explode(',', (string) $raw) as $part) {
+			$n = (int) trim($part);
+			if (isset($allowed[$n]) && !in_array($n, $out, true)) {
+				$out[] = $n;
+			}
+		}
+		sort($out);
+		return $out;
+	}
+}
+
+if (!function_exists('ensure_locked_mark_types_column')) {
+	function ensure_locked_mark_types_column(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists('active_term') && !$db->fieldExists('locked_mark_types', 'active_term')) {
+			$db->query("ALTER TABLE `active_term` ADD COLUMN `locked_mark_types` VARCHAR(32) NOT NULL DEFAULT '2,3,9,11'");
+		}
+		$done = true;
+	}
+}
+
+if (!function_exists('mark_type_is_locked')) {
+	function mark_type_is_locked($activeTermId, $markType): bool
+	{
+		ensure_locked_mark_types_column();
+		$markType = (int) $markType;
+		if ($markType === 4) {
+			return mark_type_is_locked($activeTermId, 2);
+		}
+		if (!in_array($markType, locked_mark_type_ids(), true)) {
+			return false;
+		}
+		$activeTermId = (int) $activeTermId;
+		if ($activeTermId < 1) {
+			return true;
+		}
+		$row = \Config\Database::connect()->table('active_term')
+			->select('locked_mark_types')
+			->where('id', $activeTermId)
+			->get(1)->getRowArray();
+		if (!$row || !array_key_exists('locked_mark_types', $row) || $row['locked_mark_types'] === null) {
+			return true;
+		}
+		return in_array($markType, parse_locked_mark_types($row['locked_mark_types']), true);
 	}
 }
 
@@ -2058,6 +2155,14 @@ if (!function_exists('nursery_exam_title')) {
 	}
 }
 
+if (!function_exists('label_is_nursery')) {
+	function label_is_nursery($label): bool
+	{
+		$hay = strtolower(trim((string) $label));
+		return (bool) preg_match('/\b(nursery|baby class|middle class|top class|n1|n2|n3)\b/', $hay);
+	}
+}
+
 if (!function_exists('class_is_nursery')) {
 	function class_is_nursery($classId): bool
 	{
@@ -2066,13 +2171,54 @@ if (!function_exists('class_is_nursery')) {
 			return false;
 		}
 		$row = \Config\Database::connect()->query(
-			'SELECT f.id AS fac_id FROM classes c
+			'SELECT f.id AS fac_id, f.title AS faculty_title, f.abbrev, l.title AS level_name, c.title AS class_title
+			 FROM classes c
 			 JOIN departments d ON d.id = c.department
-			 JOIN faculty f ON f.id = d.faculty_id
+			 LEFT JOIN faculty f ON f.id = d.faculty_id
+			 LEFT JOIN levels l ON l.id = c.level
 			 WHERE c.id = ? LIMIT 1',
 			[$classId]
 		)->getRowArray();
-		return (int) ($row['fac_id'] ?? 0) === 19;
+		if (!$row) {
+			return false;
+		}
+		if ((int) ($row['fac_id'] ?? 0) === 19) {
+			return true;
+		}
+		return label_is_nursery(
+			($row['faculty_title'] ?? '') . ' ' . ($row['abbrev'] ?? '') . ' ' .
+			($row['level_name'] ?? '') . ' ' . ($row['class_title'] ?? '')
+		);
+	}
+}
+
+if (!function_exists('class_faculty_id')) {
+	function class_faculty_id($classId): int
+	{
+		$classId = (int) $classId;
+		if ($classId < 1) {
+			return 0;
+		}
+		$row = \Config\Database::connect()->query(
+			'SELECT d.faculty_id FROM classes c JOIN departments d ON d.id = c.department WHERE c.id = ? LIMIT 1',
+			[$classId]
+		)->getRowArray();
+		return (int) ($row['faculty_id'] ?? 0);
+	}
+}
+
+if (!function_exists('primary_cat_period')) {
+	/** Primary marks are never stored on period 0. A missing period is Period 1. */
+	function primary_cat_period($classId, $markType, $period): int
+	{
+		$period = (int) $period;
+		if ($period >= 1 || class_is_nursery((int) $classId)) {
+			return $period;
+		}
+		if (class_faculty_id($classId) === 3) {
+			return 1;
+		}
+		return $period;
 	}
 }
 

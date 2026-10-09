@@ -893,6 +893,7 @@
 						$usePeriod = (int) ($settings['use_period'] ?? 0) === 1;
 						$schoolHasNursery = false;
 						$settingsSchoolId = (int) ($_SESSION['soma_school_id'] ?? 0);
+						$isChildSchool = \Config\MenuClearance::isChildSchoolId($settingsSchoolId);
 						if ($settingsSchoolId > 0) {
 							$schoolHasNursery = (bool) \Config\Database::connect()->query(
 								'SELECT 1 AS ok FROM classes c
@@ -918,10 +919,24 @@
 									<i class="fa fa-exchange"></i> <?= lang("app.changeActiveTerm"); ?>
 								</button>
 							</div>
-							<?php if ($usePeriod): ?>
+							<?php
+							$lockedMarkTypes = function_exists('parse_locked_mark_types')
+								? parse_locked_mark_types($settings['locked_mark_types'] ?? '2,3,9,11')
+								: [2, 3, 9, 11];
+							$entryTypeRows = [
+								1 => 'CAT',
+								2 => 'Exam',
+								3 => 'Second sitting',
+								9 => 'Re-assessment',
+							];
+							if (function_exists('is_wisdom_school') && is_wisdom_school($settingsSchoolId)) {
+								$entryTypeRows[11] = 'Holiday coaching';
+							}
+							?>
+							<?php if ($usePeriod || $isChildSchool): ?>
 								<div class="ss-periods-box" id="ss_periods_box">
 									<h5>Periods for this term</h5>
-									<p class="ss-period-hint">Lock a period to block every marks entry for it: quizzes, tests, homework, and exams. Teachers cannot open or save marks until you unlock the period.<?php if ($schoolHasNursery): ?> Nursery uses the same locks: End of Month 1 Exam, End of Month 2 Exam, Midterm, and End of Term Exam.<?php endif; ?></p>
+									<p class="ss-period-hint">Lock a period to block every marks entry for it: quizzes, tests, homework, and exams. Teachers cannot open or save marks until you unlock the period.</p>
 									<?php for ($p = 1; $p <= 4; $p++):
 										$isLocked = in_array($p, $lockedPeriods, true);
 										?>
@@ -929,9 +944,6 @@
 											<div>
 												<span class="ss-period-label"><?= lang('app.period' . $p); ?></span>
 												<span class="ss-period-status"><?= $isLocked ? 'Locked' : 'Open'; ?></span>
-												<?php if (!empty($nurseryLockLabels[$p])): ?>
-													<span class="ss-period-nursery"><?= esc($nurseryLockLabels[$p]); ?></span>
-												<?php endif; ?>
 											</div>
 											<button type="button"
 													class="btn-period-lock <?= $isLocked ? 'btn-unlock' : 'btn-lock'; ?>"
@@ -941,10 +953,74 @@
 											</button>
 										</div>
 									<?php endfor; ?>
+									<?php if ($schoolHasNursery): ?>
+										<h5 style="margin-top:16px;">Nursery exams</h5>
+										<p class="ss-period-hint">These use the same locks as Period 1 to Period 4. Locking an exam here blocks nursery marks entry for that exam.</p>
+										<?php foreach ($nurseryLockLabels as $p => $examName):
+											$isLocked = in_array((int) $p, $lockedPeriods, true);
+											?>
+											<div class="ss-period-row<?= $isLocked ? ' is-locked' : ''; ?>" data-period="<?= (int) $p; ?>">
+												<div>
+													<span class="ss-period-label"><?= esc($examName); ?></span>
+													<span class="ss-period-status"><?= $isLocked ? 'Locked' : 'Open'; ?></span>
+												</div>
+												<button type="button"
+														class="btn-period-lock <?= $isLocked ? 'btn-unlock' : 'btn-lock'; ?>"
+														data-period="<?= (int) $p; ?>"
+														data-lock="<?= $isLocked ? '0' : '1'; ?>">
+													<?= $isLocked ? 'Unlock' : 'Lock'; ?>
+												</button>
+											</div>
+										<?php endforeach; ?>
+									<?php endif; ?>
+								</div>
+							<?php elseif ($schoolHasNursery): ?>
+								<div class="ss-periods-box" id="ss_periods_box">
+									<h5>Nursery exams</h5>
+									<p class="ss-period-hint">Lock an exam to block nursery marks entry for it. Teachers cannot open or save that exam until you unlock it.</p>
+									<?php foreach (nursery_exam_periods() as $p => $examName):
+										$isLocked = in_array((int) $p, $lockedPeriods, true);
+										?>
+										<div class="ss-period-row<?= $isLocked ? ' is-locked' : ''; ?>" data-period="<?= (int) $p; ?>">
+											<div>
+												<span class="ss-period-label"><?= esc($examName); ?></span>
+												<span class="ss-period-status"><?= $isLocked ? 'Locked' : 'Open'; ?></span>
+											</div>
+											<button type="button"
+													class="btn-period-lock <?= $isLocked ? 'btn-unlock' : 'btn-lock'; ?>"
+													data-period="<?= (int) $p; ?>"
+													data-lock="<?= $isLocked ? '0' : '1'; ?>">
+												<?= $isLocked ? 'Unlock' : 'Lock'; ?>
+											</button>
+										</div>
+									<?php endforeach; ?>
 								</div>
 							<?php else: ?>
 								<p class="ss-periods-off">Periodic system is off. Use <strong>Change Active Term</strong> and enable “Use periodic option in marks” to manage periods here.</p>
 							<?php endif; ?>
+							<div class="ss-periods-box" id="ss_entry_types" style="margin-top:14px;">
+								<h5>Entry types</h5>
+								<p class="ss-period-hint">CAT stays open. Exam, second sitting, re-assessment, and holiday coaching stay locked until you unlock them here.</p>
+								<?php foreach ($entryTypeRows as $typeId => $typeLabel):
+									$canLock = (int) $typeId !== 1;
+									$isLocked = $canLock && in_array((int) $typeId, $lockedMarkTypes, true);
+									?>
+									<div class="ss-period-row<?= $isLocked ? ' is-locked' : ''; ?>" data-mark-type="<?= (int) $typeId; ?>">
+										<div>
+											<span class="ss-period-label"><?= esc($typeLabel); ?></span>
+											<span class="ss-period-status"><?= $isLocked ? 'Locked' : 'Open'; ?></span>
+										</div>
+										<?php if ($canLock): ?>
+											<button type="button"
+													class="btn-mark-type-lock <?= $isLocked ? 'btn-unlock' : 'btn-lock'; ?>"
+													data-mark-type="<?= (int) $typeId; ?>"
+													data-lock="<?= $isLocked ? '0' : '1'; ?>">
+												<?= $isLocked ? 'Unlock' : 'Lock'; ?>
+											</button>
+										<?php endif; ?>
+									</div>
+								<?php endforeach; ?>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -1345,6 +1421,66 @@
 						'school_id' => $school_id ?? 0,
 						'wisdom_school_id' => $wisdom_school_id ?? 0,
 					]); ?>
+				</div>
+			</div>
+		</div>
+
+		<div class="card ss-acc-item" id="parent-visiting-kiosk">
+			<div id="headingParentVisiting" class="b-radius-0 card-header">
+				<button type="button" data-toggle="collapse" data-target="#collapseParentVisiting" aria-expanded="false"
+						aria-controls="collapseParentVisiting" class="text-left m-0 p-0 btn btn-link btn-block">
+					<h5 class="m-0 p-0"><span class="ss-acc-ico"><i class="fa fa-users"></i></span>Parent visiting</h5>
+					<i class="fa fa-chevron-down ss-acc-chevron"></i>
+				</button>
+			</div>
+			<div id="collapseParentVisiting" data-parent="#accordion" class="collapse">
+				<div class="card-body">
+					<?php $pvKioskMode = (($visitor_kiosk_mode ?? 'normal') === 'visiting') ? 'visiting' : 'normal'; ?>
+					<p class="mb-2">This sets the attendance device. An online device switches within a few seconds.</p>
+					<div class="btn-group mb-3" role="group" aria-label="Parent visiting device mode">
+						<button type="button" class="btn <?= $pvKioskMode === 'normal' ? 'btn-primary' : 'btn-outline-primary'; ?>" id="pvModeNormal" data-mode="normal">Normal</button>
+						<button type="button" class="btn <?= $pvKioskMode === 'visiting' ? 'btn-primary' : 'btn-outline-primary'; ?>" id="pvModeVisiting" data-mode="visiting">Visiting only</button>
+					</div>
+					<p class="mb-1" id="pvModeHelp">
+						<?= $pvKioskMode === 'visiting'
+							? 'Visiting only: a dayscholar card shows that student and the registered parents. No visit is saved for a dayscholar. Boarding visits stay as they are.'
+							: 'Normal: the device keeps checking dayscholar attendance and parent visiting, including boarding students.'; ?>
+					</p>
+					<small class="text-muted" id="pvModeStatus"></small>
+					<script>
+					(function () {
+						var help = {
+							normal: "Normal: the device keeps checking dayscholar attendance and parent visiting, including boarding students.",
+							visiting: "Visiting only: a dayscholar card shows that student and the registered parents. No visit is saved for a dayscholar. Boarding visits stay as they are."
+						};
+						function paint(mode) {
+							document.getElementById("pvModeNormal").className = "btn " + (mode === "normal" ? "btn-primary" : "btn-outline-primary");
+							document.getElementById("pvModeVisiting").className = "btn " + (mode === "visiting" ? "btn-primary" : "btn-outline-primary");
+							document.getElementById("pvModeHelp").textContent = help[mode] || help.normal;
+						}
+						function save(mode) {
+							var status = document.getElementById("pvModeStatus");
+							status.textContent = "Saving…";
+							var body = new URLSearchParams({ kiosk_mode: mode });
+							fetch("<?= base_url('parent_visiting/save_settings'); ?>", {
+								method: "POST",
+								headers: { "Content-Type": "application/x-www-form-urlencoded" },
+								body: body.toString()
+							}).then(function (r) { return r.json(); }).then(function (res) {
+								if (res && res.success && res.settings) {
+									paint(res.settings.kiosk_mode === "visiting" ? "visiting" : "normal");
+									status.textContent = "Saved. The device picks this up on the next sync.";
+								} else {
+									status.textContent = "Could not save. Refresh and try again.";
+								}
+							}).catch(function () {
+								status.textContent = "Could not save. Refresh and try again.";
+							});
+						}
+						document.getElementById("pvModeNormal").addEventListener("click", function () { save("normal"); });
+						document.getElementById("pvModeVisiting").addEventListener("click", function () { save("visiting"); });
+					})();
+					</script>
 				</div>
 			</div>
 		</div>
@@ -1758,6 +1894,85 @@
 								</tbody>
 							</table>
 						</div>
+					</div>
+					<?php
+					$primaryFac = $primary_faculty ?? null;
+					$primaryId = (int) ($primaryFac['id'] ?? 0);
+					$primaryTitle = $primaryFac['title'] ?? 'Primary';
+					$primaryGrades = $primary_grades ?? [];
+					?>
+					<div class="col-sm-12" style="clear:both;margin-top:18px;padding-top:16px;border-top:1px solid #e2e8f0;">
+						<label><b>Primary — grade and comment</b></label>
+						<p class="text-muted" style="font-size:.82rem;margin-bottom:10px;">
+							<?= esc($primaryTitle); ?> reports use this scale. The international bands are filled in already. Change a row, or add another.
+						</p>
+						<?php if ($primaryId <= 0): ?>
+							<small class="text-danger">Primary path not found in Educational paths.</small>
+						<?php else: ?>
+						<form method="POST" action="<?= base_url('manipulate_primary_grade'); ?>" id="primaryGradeForm">
+							<input type="hidden" name="grade_id" id="primaryGradeId" value="">
+							<div class="row">
+								<div class="col-sm-6 col-md-2">
+									<div class="form-group">
+										<label>Grade</label>
+										<input class="form-control" type="text" name="grade_letter" id="primaryGradeLetter" placeholder="A" maxlength="4" required autocomplete="off">
+									</div>
+								</div>
+								<div class="col-sm-6 col-md-3">
+									<div class="form-group">
+										<label>Comment</label>
+										<input class="form-control" type="text" name="color_title" id="primaryGradeComment" placeholder="Excellent" maxlength="40" required autocomplete="off">
+									</div>
+								</div>
+								<div class="col-sm-6 col-md-2">
+									<div class="form-group">
+										<label><?= lang("app.minPoint"); ?></label>
+										<input class="form-control" type="number" name="min_point" id="primaryGradeMin" min="0" max="100" step="1" required>
+									</div>
+								</div>
+								<div class="col-sm-6 col-md-2">
+									<div class="form-group">
+										<label><?= lang("app.maxPoint"); ?></label>
+										<input class="form-control" type="number" name="max_point" id="primaryGradeMax" min="0" max="100" step="1" required>
+									</div>
+								</div>
+								<div class="col-sm-12 col-md-3">
+									<div class="form-group">
+										<label>&nbsp;</label>
+										<button type="submit" class="btn btn-success btn-block" id="btnSavePrimaryGrade"><?= lang("app.saveChanges"); ?></button>
+										<button type="button" class="btn btn-link btn-sm" id="btnCancelPrimaryGrade" style="display:none;">Cancel edit</button>
+									</div>
+								</div>
+							</div>
+						</form>
+						<table width="100%" border="1" id="primaryGradeTable">
+							<thead>
+							<tr style="background:#c2b59b;">
+								<th>Grade</th>
+								<th>Comment</th>
+								<th><?= lang("app.minPoint"); ?></th>
+								<th><?= lang("app.maxPoint"); ?></th>
+								<th></th>
+							</tr>
+							</thead>
+							<tbody id="primaryGradeBody">
+							<?php foreach ($primaryGrades as $band): ?>
+							<tr data-id="<?= (int) $band['id']; ?>" data-letter="<?= esc($band['grade_letter'] ?? '', 'attr'); ?>" data-comment="<?= esc($band['color_title'] ?? '', 'attr'); ?>" data-min="<?= (float) $band['min_point']; ?>" data-max="<?= (float) $band['max_point']; ?>">
+								<td><?= esc($band['grade_letter'] ?? ''); ?></td>
+								<td><?= esc($band['color_title'] ?? ''); ?></td>
+								<td><?= esc($band['min_point']); ?></td>
+								<td><?= esc($band['max_point']); ?></td>
+								<td>
+									<button type="button" class="btn btn-sm btn-outline-primary primary-grade-edit">Edit</button>
+									<a class="btn btn-sm btn-danger" data-toggle="modal" data-target="#DeleteGradeModal" data-id="<?= (int) $band['id']; ?>">
+										<i class="fa fa-trash" style="color:white"></i>
+									</a>
+								</td>
+							</tr>
+							<?php endforeach; ?>
+							</tbody>
+						</table>
+						<?php endif; ?>
 					</div>
 					</div>
 				</div>
@@ -3145,6 +3360,74 @@ $(document).on("click","#btn-remove-discipline",function () {
 				 }
 			 });
 		 });
+
+		 function resetPrimaryGradeForm() {
+			 $("#primaryGradeId").val("");
+			 $("#primaryGradeLetter, #primaryGradeComment, #primaryGradeMin, #primaryGradeMax").val("");
+			 $("#btnCancelPrimaryGrade").hide();
+			 $("#btnSavePrimaryGrade").text(<?= json_encode(lang("app.saveChanges")); ?>);
+		 }
+		 function primaryGradeRow(g) {
+			 var esc = function (v) { return $("<div>").text(v == null ? "" : String(v)).html(); };
+			 return '<tr data-id="' + g.id + '" data-letter="' + esc(g.grade_letter) + '" data-comment="' + esc(g.color_title) + '" data-min="' + (parseFloat(g.min_point) || 0) + '" data-max="' + (parseFloat(g.max_point) || 0) + '">'
+				 + '<td>' + esc(g.grade_letter) + '</td>'
+				 + '<td>' + esc(g.color_title) + '</td>'
+				 + '<td>' + esc(g.min_point) + '</td>'
+				 + '<td>' + esc(g.max_point) + '</td>'
+				 + '<td><button type="button" class="btn btn-sm btn-outline-primary primary-grade-edit">Edit</button> '
+				 + '<a class="btn btn-sm btn-danger" data-toggle="modal" data-target="#DeleteGradeModal" data-id="' + g.id + '"><i class="fa fa-trash" style="color:white"></i></a></td>'
+				 + '</tr>';
+		 }
+		 $("#primaryGradeBody").on("click", ".primary-grade-edit", function () {
+			 var $tr = $(this).closest("tr");
+			 $("#primaryGradeId").val($tr.data("id"));
+			 $("#primaryGradeLetter").val($tr.data("letter"));
+			 $("#primaryGradeComment").val($tr.data("comment"));
+			 $("#primaryGradeMin").val($tr.data("min"));
+			 $("#primaryGradeMax").val($tr.data("max"));
+			 $("#btnCancelPrimaryGrade").show();
+			 $("#btnSavePrimaryGrade").text("Update");
+			 $("#primaryGradeLetter").focus();
+		 });
+		 $("#btnCancelPrimaryGrade").on("click", resetPrimaryGradeForm);
+		 $("#primaryGradeForm").on("submit", function (e) {
+			 e.preventDefault();
+			 e.stopImmediatePropagation();
+			 var $form = $(this);
+			 var $btn = $("#btnSavePrimaryGrade");
+			 var html = $btn.html();
+			 $btn.prop("disabled", true).text("Saving…");
+			 $.ajax({
+				 url: $form.attr("action"),
+				 type: "POST",
+				 dataType: "json",
+				 data: $form.serialize(),
+				 success: function (data) {
+					 $btn.prop("disabled", false).html(html);
+					 if (data && data.error) {
+						 if (window.toastada) toastada.error(data.error);
+						 return;
+					 }
+					 if (data && data.grade) {
+						 var g = data.grade;
+						 var $old = $("#primaryGradeBody tr[data-id='" + g.id + "']");
+						 if ($old.length) {
+							 $old.replaceWith(primaryGradeRow(g));
+						 } else {
+							 $("#primaryGradeBody").append(primaryGradeRow(g));
+						 }
+						 resetPrimaryGradeForm();
+						 if (window.toastada) toastada.success(data.success || "Saved");
+						 return;
+					 }
+					 if (window.toastada) toastada.error("Save failed");
+				 },
+				 error: function () {
+					 $btn.prop("disabled", false).html(html);
+					 if (window.toastada) toastada.error("System error — try again");
+				 }
+			 });
+		 });
 	 });
  </script>
 <script>
@@ -3220,6 +3503,7 @@ $(document).on("click","#btn-remove-discipline",function () {
 			'#hostels-settings': '#collapseHostels',
 			'#staff-attendance-settings': '#collapseStaffAttendance',
 			'#student-inout-areas': '#collapseAttendanceAreas',
+			'#parent-visiting-kiosk': '#collapseParentVisiting',
 			'#timetable-settings': '#collapseTimetable',
 			'#pedagogical-documents': '#collapsePedagogical',
 			'#logo-signatures': '#collapseLogoSig'
@@ -3234,6 +3518,15 @@ $(document).on("click","#btn-remove-discipline",function () {
 			}, 280);
 		}
 
+		function paintLockRow($row, nowLocked) {
+			$row.toggleClass('is-locked', nowLocked);
+			$row.find('.ss-period-status').first().text(nowLocked ? 'Locked' : 'Open');
+			$row.find('.btn-period-lock, .btn-mark-type-lock')
+				.toggleClass('btn-lock', !nowLocked)
+				.toggleClass('btn-unlock', nowLocked)
+				.data('lock', nowLocked ? 0 : 1)
+				.text(nowLocked ? 'Unlock' : 'Lock');
+		}
 		$('#ss_periods_box').on('click', '.btn-period-lock', function () {
 			var $btn = $(this);
 			if ($btn.data('busy')) return;
@@ -3249,15 +3542,11 @@ $(document).on("click","#btn-remove-discipline",function () {
 					if (res && res.success) {
 						if (window.toastada) toastada.success(res.success);
 						else alert(res.success);
-						var $row = $btn.closest('.ss-period-row');
-						var nowLocked = !!res.locked;
-						$row.toggleClass('is-locked', nowLocked);
-						$row.find('.ss-period-status').text(nowLocked ? 'Locked' : 'Open');
-						$btn
-							.toggleClass('btn-lock', !nowLocked)
-							.toggleClass('btn-unlock', nowLocked)
-							.data('lock', nowLocked ? 0 : 1)
-							.text(nowLocked ? 'Unlock' : 'Lock');
+						$('#ss_periods_box .ss-period-row').each(function () {
+							if (String($(this).data('period')) === String(period)) {
+								paintLockRow($(this), !!res.locked);
+							}
+						});
 					} else {
 						var err = (res && res.error) ? res.error : 'Could not update period lock';
 						if (window.toastada) toastada.error(err);
@@ -3267,6 +3556,37 @@ $(document).on("click","#btn-remove-discipline",function () {
 				error: function () {
 					if (window.toastada) toastada.error('Could not update period lock');
 					else alert('Could not update period lock');
+				},
+				complete: function () {
+					$btn.data('busy', 0).prop('disabled', false);
+				}
+			});
+		});
+		$('#ss_entry_types').on('click', '.btn-mark-type-lock', function () {
+			var $btn = $(this);
+			if ($btn.data('busy')) return;
+			var markType = $btn.data('markType');
+			var lock = $btn.data('lock');
+			$btn.data('busy', 1).prop('disabled', true);
+			$.ajax({
+				url: "<?= base_url('toggle_mark_type_lock'); ?>",
+				type: "POST",
+				dataType: "json",
+				data: { mark_type: markType, lock: lock },
+				success: function (res) {
+					if (res && res.success) {
+						if (window.toastada) toastada.success(res.success);
+						else alert(res.success);
+						paintLockRow($btn.closest('.ss-period-row'), !!res.locked);
+					} else {
+						var err = (res && res.error) ? res.error : 'Could not update entry lock';
+						if (window.toastada) toastada.error(err);
+						else alert(err);
+					}
+				},
+				error: function () {
+					if (window.toastada) toastada.error('Could not update entry lock');
+					else alert('Could not update entry lock');
 				},
 				complete: function () {
 					$btn.data('busy', 0).prop('disabled', false);
