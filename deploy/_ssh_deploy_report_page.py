@@ -15,7 +15,13 @@ _m = re.search(r'PASSWORD = os\.environ\.get\("VPS_PASSWORD", "([^"]*)"\)', _src
 PASSWORD = _m.group(1) if _m else ""
 REMOTE_APP = "/opt/xander-school/app"
 FILES = [
+    "app/Controllers/Home.php",
+    "app/Helpers/qonics_helper.php",
+    "app/Views/pages/student_reports.php",
+    "app/Views/pages/reports/wisdom_secondary_report.php",
     "app/Views/pages/reports/wisdom_secondary_progress.php",
+    "app/Views/pages/reports/wisdom_primary_report.php",
+    "app/Views/pages/reports/wisdom_nursery_report.php",
 ]
 
 
@@ -38,7 +44,13 @@ sleep 8
 docker exec xander_school_app php -r 'if (function_exists("opcache_reset")) { opcache_reset(); echo "opcache ok\n"; }'
 docker exec xander_school_app php -l /var/www/html/app/Libraries/ReportRemarks.php
 docker exec xander_school_app php -l /var/www/html/app/Controllers/Home.php
+docker exec xander_school_app php -l /var/www/html/app/Helpers/qonics_helper.php
 docker exec xander_school_app php -l /var/www/html/app/Views/pages/reports/wisdom_secondary_progress.php
+docker exec xander_school_app php -l /var/www/html/app/Views/pages/reports/wisdom_secondary_report.php
+docker exec xander_school_app php -l /var/www/html/app/Views/pages/reports/wisdom_primary_report.php
+docker exec xander_school_app php -l /var/www/html/app/Views/pages/reports/wisdom_nursery_report.php
+docker exec xander_school_app grep -n "REPORT_PAGE" /var/www/html/app/Controllers/Home.php | head -1
+docker exec xander_school_app grep -n "sort_report_cards_by_position" /var/www/html/app/Views/pages/reports/wisdom_secondary_progress.php | head -1
 docker exec xander_school_app grep -n "wsp-conduct" /var/www/html/app/Views/pages/reports/wisdom_secondary_progress.php | head -1
 docker exec xander_school_app grep -n "PROGRESSIVE SCHOOL REPORT" /var/www/html/app/Views/pages/reports/wisdom_secondary_progress.php | head -1
 docker exec xander_school_app php -r '

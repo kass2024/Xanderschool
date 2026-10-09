@@ -453,20 +453,28 @@ foreach ($sheets as $student) {
 		</tr>
 	</table>
 	<?php
-	$cards[] = ob_get_clean();
+	$rankTerm = $annualSheet ? 4 : (int) $showTerms[0];
+	$cards[] = [
+		'html' => ob_get_clean(),
+		'pos' => $places[$rankTerm][$sid] ?? '',
+		'name' => $name,
+	];
 }
 if ($cards !== []) {
+	sort_report_cards_by_position($cards);
 	if (!empty($pdf)) {
-		foreach ($cards as $i => $card) {
-			if ($i > 0) {
-				echo '<pagebreak />';
+		$firstSheet = true;
+		foreach ($cards as $card) {
+			if (!$firstSheet) {
+				echo '<!--REPORT_PAGE-->';
 			}
-			echo '<div class="wsp-card">' . $card . '</div>';
+			$firstSheet = false;
+			echo '<div class="wsp-card">' . $card['html'] . '</div>';
 		}
 	} else {
 		echo '<div class="wsp-sheet">';
 		foreach ($cards as $card) {
-			echo '<div class="wsp-fit"><div class="wsp-paper"><div class="wsp-card">' . $card . '</div></div></div>';
+			echo '<div class="wsp-fit"><div class="wsp-paper"><div class="wsp-card">' . $card['html'] . '</div></div></div>';
 		}
 		echo '</div>';
 		echo '<script>(function(){function fit(){document.querySelectorAll(".wsp-fit").forEach(function(box){var paper=box.querySelector(".wsp-paper");if(!paper){return;}paper.style.transform="none";var avail=box.clientWidth||paper.offsetWidth;var scale=Math.min(1,avail/paper.offsetWidth);paper.style.transformOrigin="top left";paper.style.transform="scale("+scale+")";box.style.height=(paper.offsetHeight*scale)+"px";});}fit();window.addEventListener("resize",fit);})();</script>';

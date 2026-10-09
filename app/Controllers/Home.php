@@ -17433,10 +17433,33 @@ public function getApplicationDocs($id = null)
 			$mpdfConfig['fontdata'] = $fontData + $extraFonts;
 			$mpdfConfig['default_font'] = 'nurserygothic';
 		}
+		@ini_set('pcre.backtrack_limit', '5000000');
+		@ini_set('pcre.recursion_limit', '5000000');
 		$mpdf = new \Mpdf\Mpdf($mpdfConfig);
 		$mpdf->shrink_tables_to_fit = 0;
 		$mpdf->SetDisplayMode('fullpage');
-		$mpdf->WriteHTML($html);
+		$marker = '<!--REPORT_PAGE-->';
+		$html = str_replace(['<pagebreak />', '<pagebreak/>', '<pagebreak>'], $marker, $html);
+		$style = '';
+		if (preg_match('/<style\b[^>]*>.*?<\/style>/is', $html, $styleMatch)) {
+			$style = $styleMatch[0];
+			$html = str_replace($styleMatch[0], '', $html);
+		}
+		$parts = preg_split('/' . preg_quote($marker, '/') . '/', $html) ?: [];
+		$parts = array_values(array_filter(array_map('trim', $parts), static function ($part) {
+			return $part !== '';
+		}));
+		if ($parts === []) {
+			$parts = [$html];
+		}
+		$firstSheet = true;
+		foreach ($parts as $part) {
+			if (!$firstSheet) {
+				$mpdf->AddPage();
+			}
+			$firstSheet = false;
+			$mpdf->WriteHTML($style . $part);
+		}
 		$mpdf->Output($filename, \Mpdf\Output\Destination::INLINE);
 		exit;
 	}

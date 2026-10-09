@@ -140,13 +140,16 @@
 <?php endif; ?>
 <script>
 	$(function () {
-		$("#useStudent").on("click",function () {
-			if($(this).prop("checked")==true){
-				$("#studentDiv").show();
-			}else {
-				$("#studentDiv").hide();
+		function syncSingleStudent() {
+			var on = $("#useStudent").prop("checked") === true;
+			$("#studentDiv").toggle(on);
+			$("#select_student").prop("disabled", !on);
+			if (!on) {
+				$("#select_student").val(null).trigger("change");
 			}
-		});
+		}
+		$("#useStudent").on("click", syncSingleStudent);
+		syncSingleStudent();
 
 		$("#select_class").on("change",function () {
 			var classe=$(this).val();
@@ -229,10 +232,7 @@
 			$("#useStudent").prop("checked", single);
 			$(".hc-mode-btn").removeClass("is-on");
 			$(".hc-mode-btn[data-mode='" + (single ? "student" : "class") + "']").addClass("is-on");
-			$("#studentDiv").toggle(single);
-			if (!single) {
-				$("#select_student").val(null).trigger("change");
-			}
+			syncSingleStudent();
 		}
 		$("#select_report_type").on("change select2:select", syncHolidayReportUi);
 		$("#select_year").on("change", refreshHolidayAssignment);
@@ -242,6 +242,9 @@
 		syncHolidayReportUi();
 
 		$("#form").on("submit", function (e) {
+			if (!$("#useStudent").prop("checked")) {
+				$("#select_student").prop("disabled", true).val(null);
+			}
 			if (isHolidayReport()) {
 				$("#select_term").prop("required", false).prop("disabled", true).removeAttr("required");
 				if (!hcReady) {

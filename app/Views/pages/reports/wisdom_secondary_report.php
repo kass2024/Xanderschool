@@ -438,22 +438,31 @@ foreach ($students ?? [] as $student) {
 	</table>
 	<div class="ws-note">This report card is valid only when signed by the Head Teacher.</div>
 	<?php
-	$cards[] = ob_get_clean();
+	$cards[] = [
+		'html' => ob_get_clean(),
+		'pos' => $classPos,
+		'name' => $name,
+	];
 }
 if ($cards !== []) {
-	echo '<div class="ws-sheet">';
-	foreach ($cards as $i => $card) {
-		$page = '<table style="width:186mm;border-collapse:collapse;"><tr><td class="ws-card" style="width:186mm;vertical-align:top;">' . $card . '</td></tr></table>';
-		if (!empty($pdf)) {
-			if ($i > 0) {
-				echo '<pagebreak />';
+	sort_report_cards_by_position($cards);
+	if (!empty($pdf)) {
+		$firstSheet = true;
+		foreach ($cards as $card) {
+			if (!$firstSheet) {
+				echo '<!--REPORT_PAGE-->';
 			}
-			echo $page;
-			continue;
+			$firstSheet = false;
+			echo '<table style="width:186mm;border-collapse:collapse;"><tr><td class="ws-card" style="width:186mm;vertical-align:top;">' . $card['html'] . '</td></tr></table>';
 		}
+	} else {
+	echo '<div class="ws-sheet">';
+	foreach ($cards as $card) {
+		$page = '<table style="width:186mm;border-collapse:collapse;"><tr><td class="ws-card" style="width:186mm;vertical-align:top;">' . $card['html'] . '</td></tr></table>';
 		echo '<div class="ws-fit"><div class="ws-paper">' . $page . '</div></div>';
 	}
 	echo '</div>';
+	}
 	if (empty($pdf)) {
 		echo '<script>(function(){function fit(){document.querySelectorAll(".ws-fit").forEach(function(box){var paper=box.querySelector(".ws-paper");if(!paper){return;}paper.style.transform="none";var avail=box.clientWidth||paper.offsetWidth;var scale=Math.min(1,avail/paper.offsetWidth);paper.style.transformOrigin="top left";paper.style.transform="scale("+scale+")";box.style.height=(paper.offsetHeight*scale)+"px";});}fit();window.addEventListener("resize",fit);})();</script>';
 	}

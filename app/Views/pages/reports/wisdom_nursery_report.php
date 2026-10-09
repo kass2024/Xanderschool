@@ -463,26 +463,58 @@ foreach ($students as $student) {
 		</tr>
 	</table>
 	<?php
-	$cards[] = ob_get_clean();
+	$cards[] = [
+		'html' => ob_get_clean(),
+		'score' => $totalPct,
+		'name' => $pupil,
+	];
 }
 if ($cards === [] && isset($students) && count($students) > 0) {
 	echo '<h1>' . lang('app.noStudentFound') . '</h1>';
 }
 if ($cards !== []) {
-	echo '<div class="nr-sheet">';
-	$cell = 'width="186mm" style="width:186mm;border:1.4pt solid #231f20;vertical-align:top;padding:1.5mm;"';
+	$ranked = [];
 	foreach ($cards as $i => $card) {
-		$page = '<table width="186mm" style="width:186mm;border-collapse:collapse;"><tr><td ' . $cell . '>' . $card . '</td></tr></table>';
-		if (!empty($pdf)) {
-			if ($i > 0) {
-				echo '<pagebreak />';
-			}
-			echo $page;
-			continue;
+		if (($card['score'] ?? null) !== null && $card['score'] !== '') {
+			$ranked[$i] = (float) $card['score'];
 		}
+	}
+	arsort($ranked, SORT_NUMERIC);
+	$place = 0;
+	$seen = 0;
+	$prev = null;
+	foreach ($ranked as $i => $score) {
+		$seen++;
+		if ($prev === null || abs($score - $prev) > 0.001) {
+			$place = $seen;
+			$prev = $score;
+		}
+		$cards[$i]['pos'] = $place;
+	}
+	foreach ($cards as $i => $card) {
+		if (!isset($card['pos'])) {
+			$cards[$i]['pos'] = '';
+		}
+	}
+	sort_report_cards_by_position($cards);
+	$cell = 'width="186mm" style="width:186mm;border:1.4pt solid #231f20;vertical-align:top;padding:1.5mm;"';
+	if (!empty($pdf)) {
+		$firstSheet = true;
+		foreach ($cards as $card) {
+			if (!$firstSheet) {
+				echo '<!--REPORT_PAGE-->';
+			}
+			$firstSheet = false;
+			echo '<table width="186mm" style="width:186mm;border-collapse:collapse;"><tr><td ' . $cell . '>' . $card['html'] . '</td></tr></table>';
+		}
+	} else {
+	echo '<div class="nr-sheet">';
+	foreach ($cards as $card) {
+		$page = '<table width="186mm" style="width:186mm;border-collapse:collapse;"><tr><td ' . $cell . '>' . $card['html'] . '</td></tr></table>';
 		echo '<div class="nr-fit"><div class="nr-paper">' . $page . '</div></div>';
 	}
 	echo '</div>';
+	}
 	if (empty($pdf)) {
 		echo '<script>(function(){function fit(){document.querySelectorAll(".nr-fit").forEach(function(box){var paper=box.querySelector(".nr-paper");if(!paper){return;}paper.style.transform="none";var avail=box.clientWidth||paper.offsetWidth;var scale=Math.min(1,avail/paper.offsetWidth);paper.style.transformOrigin="top left";paper.style.transform="scale("+scale+")";box.style.height=(paper.offsetHeight*scale)+"px";});}fit();window.addEventListener("resize",fit);})();</script>';
 	}

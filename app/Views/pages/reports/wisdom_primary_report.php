@@ -676,24 +676,35 @@ foreach ($students ?? [] as $student) {
 		<?php endif; ?>
 	</table>
 	<?php
-	$cards[] = ob_get_clean();
+	$cards[] = [
+		'html' => ob_get_clean(),
+		'pos' => $position ?? '',
+		'name' => $name,
+	];
 }
 if ($cards !== []) {
-	echo '<div class="wp-sheet">';
-	foreach ($cards as $i => $card) {
-		$page = '<table style="width:186mm;border-collapse:collapse;"><tr>'
-			. '<td class="wp-card" style="width:186mm;vertical-align:top;">' . $card . '</td>'
-			. '</tr></table>';
-		if (!empty($pdf)) {
-			if ($i > 0) {
-				echo '<pagebreak />';
+	sort_report_cards_by_position($cards);
+	if (!empty($pdf)) {
+		$firstSheet = true;
+		foreach ($cards as $card) {
+			if (!$firstSheet) {
+				echo '<!--REPORT_PAGE-->';
 			}
-			echo $page;
-			continue;
+			$firstSheet = false;
+			echo '<table style="width:186mm;border-collapse:collapse;"><tr>'
+				. '<td class="wp-card" style="width:186mm;vertical-align:top;">' . $card['html'] . '</td>'
+				. '</tr></table>';
 		}
+	} else {
+	echo '<div class="wp-sheet">';
+	foreach ($cards as $card) {
+		$page = '<table style="width:186mm;border-collapse:collapse;"><tr>'
+			. '<td class="wp-card" style="width:186mm;vertical-align:top;">' . $card['html'] . '</td>'
+			. '</tr></table>';
 		echo '<div class="wp-fit"><div class="wp-paper">' . $page . '</div></div>';
 	}
 	echo '</div>';
+	}
 	if (empty($pdf)) {
 		echo '<script>(function(){function fit(){document.querySelectorAll(".wp-fit").forEach(function(box){var paper=box.querySelector(".wp-paper");if(!paper){return;}paper.style.transform="none";var avail=box.clientWidth||paper.offsetWidth;var scale=Math.min(1,avail/paper.offsetWidth);paper.style.transformOrigin="top left";paper.style.transform="scale("+scale+")";box.style.height=(paper.offsetHeight*scale)+"px";});}fit();window.addEventListener("resize",fit);})();</script>';
 	}

@@ -452,6 +452,28 @@ if (!function_exists('cmp')) {
 		return ($a['total'] < $b['total']) ? 1 : -1;
 	}
 }
+
+if (!function_exists('sort_report_cards_by_position')) {
+	/**
+	 * @param array<int,array{html:string,pos:mixed,name?:string}> $cards
+	 */
+	function sort_report_cards_by_position(array &$cards): void
+	{
+		usort($cards, static function ($a, $b) {
+			$pa = $a['pos'] ?? '';
+			$pb = $b['pos'] ?? '';
+			$aEmpty = $pa === '' || $pa === null;
+			$bEmpty = $pb === '' || $pb === null;
+			if ($aEmpty !== $bEmpty) {
+				return $aEmpty ? 1 : -1;
+			}
+			if (!$aEmpty && (int) $pa !== (int) $pb) {
+				return ((int) $pa) <=> ((int) $pb);
+			}
+			return strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+		});
+	}
+}
 if (!function_exists('get_months')) {
 	function get_months()
 	{
