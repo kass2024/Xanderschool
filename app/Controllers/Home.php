@@ -15352,7 +15352,7 @@ public function getApplicationDocs($id = null)
 				try {
 					$pending['remaining_sms'] = $this->_sms_balance($pending['sms_limit'], $pending['sms_usage'], $pending['extra_sms']);
 					$result = null;
-					if ($this->sendSMS($pending['phone'], $pending['content'], $result)) {
+					if ($this->sendSMS($pending['phone'], $pending['content'], $result, null, 30, (int) $pending['school_id'])) {
 						$sms_count = (int) ceil(strlen($pending['content']) / PER_SMS);
 						if (($pending['sms_limit'] - $pending['sms_usage']) <= 0 && $pending['extra_sms'] > 0) {
 							$schoolMdl = new SchoolModel();
@@ -27827,7 +27827,8 @@ public function assign_card()
 		string $levelName,
 		string $code,
 		string $momoPayCode = '',
-		string $momoPayName = ''
+		string $momoPayName = '',
+		int $schoolId = 0
 	): void {
 		$sms = "Dear {$parentNames}, application for {$studentNames} at {$schoolName} ({$levelName}) was received. Registration code: {$code}.";
 		if ($momoPayCode !== '') {
@@ -27837,7 +27838,7 @@ public function assign_card()
 		$smsResult = '';
 		if (strlen(preg_replace('/\D/', '', $parentPhone)) >= 9) {
 			try {
-				$this->sendSMS($parentPhone, $sms, $smsResult);
+				$this->sendSMS($parentPhone, $sms, $smsResult, null, 30, $schoolId);
 			} catch (\Throwable $e) {
 				log_message('error', 'Application SMS failed: ' . $e->getMessage());
 			}
@@ -28624,7 +28625,8 @@ public function assign_card()
             $levelName,
             $code,
             $momoPay['code'],
-            $momoPay['name']
+            $momoPay['name'],
+            (int) $school
         );
         return $this->response->setJSON([
             'success'        => 'Application submitted. The school will review and approve it.',
@@ -28741,7 +28743,7 @@ public function assign_card()
 	{
 		$appMdl = new StudentApplicationModel();
 		$row = $appMdl->select('applications.fname,applications.lname,applications.phoneNumber,applications.parentNames,
-			applications.parentPhoneNumber,applications.email,applications.code,d.code as dept_code,l.title as levelName,s.name as schoolName,s.acronym')
+			applications.parentPhoneNumber,applications.email,applications.code,applications.schoolId,d.code as dept_code,l.title as levelName,s.name as schoolName,s.acronym')
 			->join('departments d', 'd.id = applications.department_id', 'left')
 			->join('levels l', 'l.id = applications.level', 'left')
 			->join('schools s', 's.id = applications.schoolId', 'left')
@@ -28753,7 +28755,7 @@ public function assign_card()
 
 		$message = "{$row->fname} {$row->lname} Wasabye umwanya mu mwaka wa {$row->levelName} {$row->dept_code} code yawe ikuranga uhawe ni {$row->code} yikoreshe usoze kuzuza ibisabwa uhabwe umwanya wasabye.";
 		try {
-			$this->sendSMS($row->phoneNumber, $message, $result);
+			$this->sendSMS($row->phoneNumber, $message, $result, null, 30, (int) $row->schoolId);
 		} catch (\Throwable $e) {
 			log_message('warning', 'Registration paid SMS failed: ' . $e->getMessage());
 		}
@@ -28764,7 +28766,10 @@ public function assign_card()
 			trim($row->fname . ' ' . $row->lname),
 			(string) ($row->schoolName ?? $row->acronym),
 			(string) $row->levelName,
-			(string) $row->code
+			(string) $row->code,
+			'',
+			'',
+			(int) $row->schoolId
 		);
 	}
 

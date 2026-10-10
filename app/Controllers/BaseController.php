@@ -373,6 +373,15 @@ class BaseController extends Controller
 		if ($schoolId < 1 && isset($this->session)) {
 			$schoolId = (int) $this->session->get('soma_school_id');
 		}
+		if ($schoolId < 1 && isset($this->request)) {
+			$postedSchool = (int) $this->request->getPost('school_id');
+			if ($postedSchool < 1) {
+				$postedSchool = (int) $this->request->getGet('school_id');
+			}
+			if ($postedSchool > 0) {
+				$schoolId = $postedSchool;
+			}
+		}
 		$account = $this->schoolSmsAccount($schoolId);
 		if (($account['provider'] ?? '') === 'intouch') {
 			return $this->sendIntouchSms($phone, $message, $result, $account, (int) $timeout);

@@ -2003,7 +2003,7 @@
 										<input type="radio" name="sms_provider" value="intouch" class="d-none" <?= $smsProvider === 'intouch' ? 'checked' : ''; ?>> InTouch
 									</label>
 								</div>
-								<small class="text-muted d-block mt-2">SwiftQom is the provider in use now. Choose InTouch to send with the InTouch account.</small>
+								<small class="text-muted d-block mt-2"><?= $smsProvider === 'intouch' ? 'Messages are sent with the InTouch account below.' : 'Messages are sent with SwiftQom.'; ?></small>
 								<?php if (!empty($sms_master_child_count)): ?>
 									<small class="text-muted d-block mt-1"><?= lang('app.intouchCopiesToChildren'); ?></small>
 								<?php endif; ?>

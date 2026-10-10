@@ -1001,7 +1001,7 @@ class Admin extends BaseController
 			$msg  = $smsPack['body'];
 			$msg2 = $smsPack['log'];
 			$result = null;
-            if ($this->sendSMS($phone, $msg, $result))
+            if ($this->sendSMS($phone, $msg, $result, null, 30, (int) $school_id))
 			{
 				//save sent sms
 				$smsMdl = new SmsModel();
@@ -1352,7 +1352,7 @@ class Admin extends BaseController
 				$errors[] = 'No phone number';
 			} else {
 				$smsResult = null;
-				if ($this->sendSMS($phone, $smsBody, $smsResult)) {
+				if ($this->sendSMS($phone, $smsBody, $smsResult, null, 30, $schoolId)) {
 					try {
 						$smsMdl = new SmsModel();
 						$smsMdl->save([
