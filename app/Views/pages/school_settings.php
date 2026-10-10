@@ -830,7 +830,7 @@
 								  class="spedit">&nbsp;<?= $settings['email']; ?></span>
 						</div>
 						<div class="form-group">
-							<label><?= lang("app.headMaster"); ?>:</label>
+							<label>Head Teacher:</label>
 							<span data-value="<?= $settings['head_master']; ?>" data-target="head_master"
 								  class="spedit">&nbsp;<?= $settings['head_master']; ?></span>
 						</div>
@@ -1058,8 +1058,7 @@
 				$hasSigMatron = strlen($settings['matron_signature'] ?? '') > 4;
 				$hasSigPatron = strlen($settings['patron_signature'] ?? '') > 4;
 				$hasSigDisc = strlen($settings['discipline_signature'] ?? '') > 4;
-				$hmGender = $head_master_gender ?? ($settings['head_master_gender'] ?? 'M');
-				$headLabel = lang('app.' . ($hmGender === 'F' ? 'schoolHeadmistress' : 'schoolHeadmaster'));
+				$headLabel = 'Head Teacher';
 				?>
 				<div class="ss-brand-grid" id="ss_brand_assets"
 					 data-fallback="<?= esc($avatarFb, 'attr'); ?>"
@@ -1566,7 +1565,7 @@
 		$bkVisitor = $hasBkVisitor ? base_url('assets/images/background/' . $settings['vi_card_background']) : $fallbackImg;
 		$previewSchool = esc($settings['name'] ?? 'School', 'attr');
 		$previewMoto = esc($settings['slogan'] ?? 'SmartSMS', 'attr');
-		$previewHead = esc($settings['head_master'] ?? 'Headmaster', 'attr');
+		$previewHead = esc($settings['head_master'] ?? 'Head Teacher', 'attr');
 		$photoPlaceholder = base_url('assets/images/white_blank.png');
 		$cardLayoutResolved = \App\Libraries\CardLayout::resolve($settings['card_layout'] ?? null, $cardTemplate, $cardOri);
 		$sfCardLayoutResolved = \App\Libraries\CardLayout::resolveStaff($settings['sf_card_layout'] ?? null, $sfCardTemplate, $sfCardOri);
