@@ -42,6 +42,32 @@
 		font-size: 10pt;
 		padding: 0 1mm 0.3mm;
 	}
+	.wp-banner { width: 186mm; border-collapse: collapse; margin: 0 0 2.4mm 0; }
+	.wp-banner td {
+		border: 0;
+		padding: 0;
+		text-align: center;
+		font-weight: 700;
+		font-family: <?= !empty($pdf) ? 'nurserygothic' : '"Century Gothic", CenturyGothic, nurserygothic, sans-serif'; ?>;
+	}
+	.wp-banner-title {
+		background: #1487bc;
+		color: #ffffff;
+		font-size: 18pt;
+		height: 10mm;
+		line-height: 10mm;
+		letter-spacing: 1.4pt;
+	}
+	.wp-banner-term, .wp-banner-period {
+		width: 93mm;
+		height: 7mm;
+		line-height: 7mm;
+		font-size: 12pt;
+		color: #0b4f6c;
+		background: #e7f4f9;
+		letter-spacing: 0.6pt;
+	}
+	.wp-banner-period { border-left: 1.2pt solid #1487bc; }
 	.wp-grid { margin-top: 2.2mm; }
 	.wp-grid td, .wp-grid th {
 		border: 0.7pt solid #231f20;
@@ -347,11 +373,7 @@ foreach ($students ?? [] as $student) {
 		: trim((string) ($student['level_name'] ?? '') . ' ' . (string) ($student['title'] ?? ''));
 	$namePack = $packText($name, 70, 2, 11.0, 8.0);
 	$yearPack = $packText($yearLabel, 28, 2, 11.0, 8.0);
-	$termShown = $termLabel;
-	if ($periodic && $periodNo > 0) {
-		$termShown = trim($termLabel . ($termLabel !== '' ? ', ' : '') . 'Period ' . $periodNo);
-	}
-	$termPack = $packText($termShown, 140, 2, 11.0, 8.0);
+	$termPack = $packText($termLabel, 140, 2, 11.0, 8.0);
 	$classPack = $packText($classLabel, 140, 2, 11.0, 8.0);
 	$idLine = 4.6;
 	$nameLines = max($namePack['lines'], $yearPack['lines']);
@@ -404,7 +426,8 @@ foreach ($students ?? [] as $student) {
 	$extraComment = max(0, $commentLines($classComment) - 1) + max(0, $commentLines($headComment) - 1);
 	$natural = ($visibleSections * 5.6) + $headMm + $subjectUnits + ($visibleSections * 5.2) + (4 * 5.0) + ($footLines * 5.6) + ($extraComment * 5.2);
 	$extraId = max(0, (($nameLines + $termLines + $classLines) - 3) * $idLine);
-	$tableTarget = 225 - $extraId;
+	$bannerMm = $periodic ? 19.4 : 0.0;
+	$tableTarget = 225 - $extraId - $bannerMm;
 	$scale = $natural > 0 ? ($tableTarget / $natural) : 1.0;
 	$subjectCell = static function (string $title) use ($packText, $subWidth, $col, &$scale): string {
 		$packed = $packText(mb_strtoupper($title), $subWidth, 3, 8.5, 6.4);
@@ -480,6 +503,17 @@ foreach ($students ?? [] as $student) {
 		echo '</tbody></table></td></tr>';
 	};
 	?>
+	<?php if ($periodic): ?>
+	<table class="wp-banner" width="186mm">
+		<tr>
+			<td class="wp-banner-title" colspan="2">PERIODIC REPORT</td>
+		</tr>
+		<tr>
+			<td class="wp-banner-term">TERM <?= $termNo > 0 ? (int) $termNo : ''; ?></td>
+			<td class="wp-banner-period">PERIOD <?= $periodNo > 0 ? (int) $periodNo : ''; ?></td>
+		</tr>
+	</table>
+	<?php endif; ?>
 	<table class="wp-id">
 		<colgroup>
 			<col style="width:18mm">
