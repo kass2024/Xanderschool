@@ -8,6 +8,9 @@ namespace App\Libraries;
  */
 class ReportRemarks
 {
+	/** @var array<int, string> */
+	private static $sexOf = [];
+
 	/**
 	 * @param list<array<string, mixed>> $records
 	 * @return list<array{id:int,name:string,subjects:list<array{title:string,score:?float,full:float}>}>
@@ -52,6 +55,7 @@ class ReportRemarks
 			$pupils[] = [
 				'id' => (int) $student['id'],
 				'name' => trim((string) ($student['fname'] ?? '') . ' ' . (string) ($student['lname'] ?? '')),
+				'sex' => (string) ($student['sex'] ?? ''),
 				'subjects' => $subjects,
 			];
 		}
@@ -64,12 +68,14 @@ class ReportRemarks
 	 */
 	public static function forPupils(array $pupils): array
 	{
+		self::$sexOf = [];
 		$out = [];
 		foreach ($pupils as $pupil) {
 			$id = (int) ($pupil['id'] ?? 0);
 			if ($id < 1) {
 				continue;
 			}
+			self::$sexOf[$id] = self::sexCode($pupil['sex'] ?? '');
 			$out[$id] = self::fallback($pupil);
 		}
 		if ($out === [] || self::apiKey() === '') {
@@ -178,8 +184,8 @@ class ReportRemarks
 				continue;
 			}
 			$ready[(int) $id] = [
-				'class_teacher' => self::clip((string) ($lines['class_teacher'] ?? ''), 16),
-				'head_teacher' => self::clip((string) ($lines['head_teacher'] ?? ''), 12),
+				'class_teacher' => self::clip((string) ($lines['class_teacher'] ?? ''), 16, self::$sexOf[(int) $id] ?? ''),
+				'head_teacher' => self::clip((string) ($lines['head_teacher'] ?? ''), 12, self::$sexOf[(int) $id] ?? ''),
 			];
 		}
 		return $ready === [] ? null : $ready;
@@ -214,9 +220,12 @@ class ReportRemarks
 			if ($lines === []) {
 				continue;
 			}
+			$sex = self::sexCode($pupil['sex'] ?? '');
 			$brief[] = [
 				'id' => $id,
 				'call' => self::calledName((string) ($pupil['name'] ?? '')),
+				'gender' => $sex,
+				'pronouns' => $sex === 'F' ? 'she, her' : ($sex === 'M' ? 'he, him, his' : ''),
 				'filled_marks' => $lines,
 				'comment_on' => count($lines) === 1
 					? 'Only this one subject has a mark. Talk about that subject alone.'
@@ -230,7 +239,8 @@ class ReportRemarks
 			. "Sound like two different adults who looked at this child's filled marks, not like a form.\n"
 			. "Every child must get different sentences. Do not reuse a sentence.\n"
 			. "Use the call name. One sentence each.\n"
-			. "Never use he, she, him, her, his, hers, himself, herself, boy, or girl. A name does not show gender. Repeat the call name instead.\n"
+			. "The gender field is the sex saved on the student. F uses she and her. M uses he, him, and his. Do not guess from the name.\n"
+			. "When gender is empty, repeat the call name and do not use he, she, him, her, or his.\n"
 			. "class_teacher: at most 16 words. Comment only on subjects listed in filled_marks.\n"
 			. "Never name a subject that is not in filled_marks. Never say a result is awaited, missing, blank, or not in yet.\n"
 			. "If only one subject is filled, comment on that subject only.\n"
@@ -380,8 +390,8 @@ class ReportRemarks
 				continue;
 			}
 			$out[$id] = [
-				'class_teacher' => self::clip((string) ($row['class_teacher'] ?? ''), 16),
-				'head_teacher' => self::clip((string) ($row['head_teacher'] ?? ''), 12),
+				'class_teacher' => self::clip((string) ($row['class_teacher'] ?? ''), 16, self::$sexOf[$id] ?? ''),
+				'head_teacher' => self::clip((string) ($row['head_teacher'] ?? ''), 12, self::$sexOf[$id] ?? ''),
 			];
 		}
 		return $out;
@@ -512,24 +522,61 @@ class ReportRemarks
 		return implode(', ', $titles) . ' and ' . $last;
 	}
 
-	private static function ungender(string $text): string
+	private static function sexCode($sex): string
 	{
-		$text = preg_replace('/\b(her|his)\s+(?=(?:with|to|and|or|for|in|on|at|from|by|of|a|an|the|is|was|be|into|about)\b)/iu', 'the learner ', $text) ?? $text;
-		$text = preg_replace('/\b(her|his)\s+(?=\p{L})/iu', 'the ', $text) ?? $text;
-		$text = preg_replace('/\b(herself|himself|hers|she|he|her|him|his)\b/iu', 'the learner', $text) ?? $text;
-		$text = preg_replace('/\b(?:this\s+)?(?:boy|girl)\b/iu', 'the learner', $text) ?? $text;
-		$text = preg_replace('/\bthe\s+the\b/iu', 'the', $text) ?? $text;
-		$text = preg_replace('/\bthe learner\s+the learner\b/iu', 'the learner', $text) ?? $text;
-		$text = preg_replace('/\s{2,}/', ' ', $text) ?? $text;
-		$text = trim($text);
-		return preg_replace_callback('/(^|[.!?]\s+)([a-z])/u', static function (array $m): string {
-			return $m[1] . strtoupper($m[2]);
+		$s = strtoupper(trim((string) $sex));
+		if (in_array($s, ['F', 'FEMALE', 'GIRL'], true)) {
+			return 'F';
+		}
+		if (in_array($s, ['M', 'MALE', 'BOY'], true)) {
+			return 'M';
+		}
+		return '';
+	}
+
+	private static function swapWord(string $text, string $from, string $to): string
+	{
+		return preg_replace_callback('/\b' . $from . '\b/iu', static function (array $m) use ($to): string {
+			$src = $m[0];
+			if (strtoupper($src) === $src && strlen($src) > 1) {
+				return strtoupper($to);
+			}
+			if (ctype_upper($src[0])) {
+				return ucfirst($to);
+			}
+			return $to;
 		}, $text) ?? $text;
 	}
 
-	private static function clip(string $text, int $words): string
+	/** Keep she/her or he/his lined up with the sex saved on the student. */
+	private static function matchSex(string $text, string $sex): string
 	{
-		$text = self::ungender($text);
+		if ($sex === 'F') {
+			$text = self::swapWord($text, 'himself', 'herself');
+			$text = self::swapWord($text, 'he', 'she');
+			$text = self::swapWord($text, 'his', 'her');
+			$text = self::swapWord($text, 'him', 'her');
+			$text = self::swapWord($text, 'boy', 'girl');
+			return $text;
+		}
+		if ($sex === 'M') {
+			$text = self::swapWord($text, 'herself', 'himself');
+			$text = self::swapWord($text, 'she', 'he');
+			$text = self::swapWord($text, 'hers', 'his');
+			$text = preg_replace_callback('/\b(her)\s+(?!(?:with|to|and|or|for|in|on|at|from|by|of|a|an|the|is|was|be|into|about)\b)(?=\p{L})/iu', static function (array $m): string {
+				return (ctype_upper($m[1][0]) ? 'His' : 'his') . ' ';
+			}, $text) ?? $text;
+			$text = self::swapWord($text, 'her', 'him');
+			$text = self::swapWord($text, 'girl', 'boy');
+		}
+		return $text;
+	}
+
+	private static function clip(string $text, int $words, string $sex = ''): string
+	{
+		if ($sex === 'F' || $sex === 'M') {
+			$text = self::matchSex($text, $sex);
+		}
 		$text = trim((string) preg_replace('/\s+/', ' ', $text));
 		$text = trim($text, "\"'");
 		if ($text === '') {
@@ -559,9 +606,10 @@ class ReportRemarks
 		foreach ($chunk as $pupil) {
 			$payload[] = [
 				(int) ($pupil['id'] ?? 0),
+				self::sexCode($pupil['sex'] ?? ''),
 				$pupil['subjects'] ?? [],
 			];
 		}
-		return WRITEPATH . 'cache/report_remarks_v4/' . sha1(json_encode($payload)) . '.json';
+		return WRITEPATH . 'cache/report_remarks_v5/' . sha1(json_encode($payload)) . '.json';
 	}
 }

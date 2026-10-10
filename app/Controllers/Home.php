@@ -18217,7 +18217,7 @@ public function getApplicationDocs($id = null)
 			$disciplineSelect = "group_concat(di.marks,':',di.term) as displine_marks";
 			$disciplineJoin = "(select sum(di.marks) as marks,at.term,di.active_term,di.student_id from disciplines di inner join active_term as at ON at.id = di.active_term where di.school_id=" . (int) $school_id . " group by di.active_term,di.student_id) as di";
 		}
-		$students = $StudentModel->select("students.id,students.regno,
+		$students = $StudentModel->select("students.id,students.regno,students.sex,
 														students.photo,students.fname,students.dob,
 														students.lname,c.id as class_id,
 														c.title,d.title as department_name,
@@ -18518,7 +18518,7 @@ public function getApplicationDocs($id = null)
 			$data['school_id'] = $school_id;
 			$data['report_class_ids'] = $classIds;
 			$data['report_stream_label'] = $streamLabel;
-			$students = $StudentModel->select("students.id,students.regno,
+			$students = $StudentModel->select("students.id,students.regno,students.sex,
 															students.photo,students.fname,students.dob,
 															students.lname,c.id as class_id,
 															c.title,d.title as department_name,
