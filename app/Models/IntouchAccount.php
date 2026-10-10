@@ -20,6 +20,12 @@ class IntouchAccount extends Model{
 			if (!$db->fieldExists('sender', 'intouch_accounts')) {
 				$db->query("ALTER TABLE `intouch_accounts` ADD COLUMN `sender` VARCHAR(20) NULL DEFAULT NULL");
 			}
+			if (!$db->fieldExists('created_at', 'intouch_accounts')) {
+				$db->query("ALTER TABLE `intouch_accounts` ADD COLUMN `created_at` DATETIME NULL DEFAULT NULL");
+			}
+			if (!$db->fieldExists('updated_at', 'intouch_accounts')) {
+				$db->query("ALTER TABLE `intouch_accounts` ADD COLUMN `updated_at` DATETIME NULL DEFAULT NULL");
+			}
 		}
 		$done = true;
 	}
