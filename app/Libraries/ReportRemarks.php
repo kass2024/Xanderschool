@@ -230,6 +230,7 @@ class ReportRemarks
 			. "Sound like two different adults who looked at this child's filled marks, not like a form.\n"
 			. "Every child must get different sentences. Do not reuse a sentence.\n"
 			. "Use the call name. One sentence each.\n"
+			. "Never use he, she, him, her, his, hers, himself, herself, boy, or girl. A name does not show gender. Repeat the call name instead.\n"
 			. "class_teacher: at most 16 words. Comment only on subjects listed in filled_marks.\n"
 			. "Never name a subject that is not in filled_marks. Never say a result is awaited, missing, blank, or not in yet.\n"
 			. "If only one subject is filled, comment on that subject only.\n"
@@ -511,8 +512,24 @@ class ReportRemarks
 		return implode(', ', $titles) . ' and ' . $last;
 	}
 
+	private static function ungender(string $text): string
+	{
+		$text = preg_replace('/\b(her|his)\s+(?=(?:with|to|and|or|for|in|on|at|from|by|of|a|an|the|is|was|be|into|about)\b)/iu', 'the learner ', $text) ?? $text;
+		$text = preg_replace('/\b(her|his)\s+(?=\p{L})/iu', 'the ', $text) ?? $text;
+		$text = preg_replace('/\b(herself|himself|hers|she|he|her|him|his)\b/iu', 'the learner', $text) ?? $text;
+		$text = preg_replace('/\b(?:this\s+)?(?:boy|girl)\b/iu', 'the learner', $text) ?? $text;
+		$text = preg_replace('/\bthe\s+the\b/iu', 'the', $text) ?? $text;
+		$text = preg_replace('/\bthe learner\s+the learner\b/iu', 'the learner', $text) ?? $text;
+		$text = preg_replace('/\s{2,}/', ' ', $text) ?? $text;
+		$text = trim($text);
+		return preg_replace_callback('/(^|[.!?]\s+)([a-z])/u', static function (array $m): string {
+			return $m[1] . strtoupper($m[2]);
+		}, $text) ?? $text;
+	}
+
 	private static function clip(string $text, int $words): string
 	{
+		$text = self::ungender($text);
 		$text = trim((string) preg_replace('/\s+/', ' ', $text));
 		$text = trim($text, "\"'");
 		if ($text === '') {
@@ -545,6 +562,6 @@ class ReportRemarks
 				$pupil['subjects'] ?? [],
 			];
 		}
-		return WRITEPATH . 'cache/report_remarks_v3/' . sha1(json_encode($payload)) . '.json';
+		return WRITEPATH . 'cache/report_remarks_v4/' . sha1(json_encode($payload)) . '.json';
 	}
 }
