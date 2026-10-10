@@ -1213,8 +1213,8 @@ class PocketWalletService
 
 	protected function requirePin(string $pin): void
 	{
-		if (!preg_match('/^\d{4,6}$/', trim($pin))) {
-			throw new \InvalidArgumentException('Use a PIN of 4 to 6 digits.');
+		if (!preg_match('/^\d{4}$/', trim($pin))) {
+			throw new \InvalidArgumentException('Use a 4-digit PIN.');
 		}
 	}
 
