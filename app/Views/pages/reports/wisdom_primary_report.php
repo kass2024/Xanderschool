@@ -377,7 +377,7 @@ foreach ($students ?? [] as $student) {
 	$classPack = $packText($classLabel, 140, 2, 11.0, 8.0);
 	$idLine = 4.6;
 	$nameLines = max($namePack['lines'], $yearPack['lines']);
-	$termLines = $termPack['lines'];
+	$termLines = $periodic ? 0 : $termPack['lines'];
 	$classLines = $classPack['lines'];
 	$idRow = static function (int $lines, float $pt = 0) use ($idLine): string {
 		$mm = $lines * $idLine;
@@ -425,9 +425,10 @@ foreach ($students ?? [] as $student) {
 	$footLines = 4 + ($periodic ? 0 : 1);
 	$extraComment = max(0, $commentLines($classComment) - 1) + max(0, $commentLines($headComment) - 1);
 	$natural = ($visibleSections * 5.6) + $headMm + $subjectUnits + ($visibleSections * 5.2) + (4 * 5.0) + ($footLines * 5.6) + ($extraComment * 5.2);
-	$extraId = max(0, (($nameLines + $termLines + $classLines) - 3) * $idLine);
+	$idBase = $periodic ? 2 : 3;
+	$extraId = max(0, (($nameLines + $termLines + $classLines) - $idBase) * $idLine);
 	$bannerMm = $periodic ? 19.4 : 0.0;
-	$tableTarget = 225 - $extraId - $bannerMm;
+	$tableTarget = 225 - $extraId - $bannerMm + ($periodic ? $idLine : 0);
 	$scale = $natural > 0 ? ($tableTarget / $natural) : 1.0;
 	$subjectCell = static function (string $title) use ($packText, $subWidth, $col, &$scale): string {
 		$packed = $packText(mb_strtoupper($title), $subWidth, 3, 8.5, 6.4);
@@ -523,7 +524,7 @@ foreach ($students ?? [] as $student) {
 			<col style="width:32mm">
 		</colgroup>
 		<tr>
-			<td rowspan="3" style="width:18mm;vertical-align:middle;white-space:normal;overflow:visible;height:<?= number_format(($nameLines + $termLines + $classLines) * $idLine, 2, '.', ''); ?>mm;line-height:normal;">
+			<td rowspan="<?= $periodic ? 2 : 3; ?>" style="width:18mm;vertical-align:middle;white-space:normal;overflow:visible;height:<?= number_format(($nameLines + $termLines + $classLines) * $idLine, 2, '.', ''); ?>mm;line-height:normal;">
 				<?php if ($logoSrc !== ''): ?>
 					<img class="wp-logo" src="<?= esc($logoSrc); ?>" alt="">
 				<?php endif; ?>
@@ -533,10 +534,12 @@ foreach ($students ?? [] as $student) {
 			<td class="lab" style="width:42mm;font-size:10pt;<?= $idRow($nameLines); ?>">Academic Year</td>
 			<td class="val" style="width:32mm;<?= $idRow($nameLines, $yearPack['pt']); ?>"><?= $yearPack['html']; ?></td>
 		</tr>
+		<?php if (!$periodic): ?>
 		<tr>
 			<td class="lab" style="<?= $idRow($termLines); ?>">Term:</td>
 			<td class="val" colspan="3" style="<?= $idRow($termLines, $termPack['pt']); ?>"><?= $termPack['html']; ?></td>
 		</tr>
+		<?php endif; ?>
 		<tr>
 			<td class="lab" style="<?= $idRow($classLines); ?>">Class:</td>
 			<td class="val" colspan="3" style="<?= $idRow($classLines, $classPack['pt']); ?>"><?= $classPack['html']; ?></td>
