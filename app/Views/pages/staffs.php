@@ -96,6 +96,7 @@
 											<tbody>
 											<?php
 											helper('qonics');
+											$canManageStaffActions = can_manage_staff_list_actions();
 											$staffContractDay = static function ($value): string {
 												$value = trim((string) $value);
 												if ($value === '' || $value === '0000-00-00') {
@@ -176,6 +177,7 @@
 																	<i class="fa fa-print"></i> Print card
 																</button>
 															<?php endif; ?>
+															<?php if ($canManageStaffActions): ?>
 															<?php if ($hasCard): ?>
 																<button type="button" class="btn btn-sm btn-warning btn-staff-change-card"
 																	data-id="<?= (int)$staff['id']; ?>"
@@ -206,6 +208,7 @@
 																	<i class="fa fa-user-times"></i> Remove face
 																</button>
 															<?php endif; ?>
+															<?php endif; ?>
 														</div>
 														<button type="button" class="btn btn-sm btn-info btn-staff-share-access"
 															data-id="<?= (int)$staff['id']; ?>"
@@ -213,12 +216,14 @@
 															title="Reset password and share login">
 															<i class="fa fa-share-alt"></i> Share access
 														</button>
+														<?php if ($canManageStaffActions): ?>
 														<label class="staff-delete-link typcn typcn-delete link" data-toggle="delete"
 															data-title="Staff #<?=$staff['fname'];?>"
 															data-target="<?=$staff['id'];?>" <?=$disable;?> data-href="delete_staff"
 															title="Delete staff member">
 															<?= lang("app.del");?>
 														</label>
+														<?php endif; ?>
 													</div>
 												</td>
 											</tr>

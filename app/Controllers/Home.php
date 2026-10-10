@@ -12261,6 +12261,10 @@ public function attendanceCard()
 
 	public function delete_staff()
 	{
+		helper('qonics');
+		if (!can_manage_staff_list_actions()) {
+			return $this->response->setJSON(['error' => 'Only the Director or Headmaster can delete a staff member.']);
+		}
 		$id = $this->request->getPost("data");
 		$stfMdl = new StaffModel();
 		try {

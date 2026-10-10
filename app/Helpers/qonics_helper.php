@@ -370,6 +370,22 @@ if (!function_exists('can_manage_student_lock_delete')) {
 	}
 }
 
+if (!function_exists('can_manage_staff_list_actions')) {
+	/** Director or Headmaster may change cards, remove a face, and delete staff. */
+	function can_manage_staff_list_actions()
+	{
+		$postId = (int) ($_SESSION['soma_post'] ?? 0);
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($_SESSION['soma_post_title'] ?? ''))));
+		if (\Config\MenuClearance::isDirectorPost($postId) || $title === 'director') {
+			return true;
+		}
+		if (in_array($postId, [1, 18], true)) {
+			return true;
+		}
+		return in_array($title, ['head master', 'headmaster', 'head mistress', 'headmistress'], true);
+	}
+}
+
 if (!function_exists('is_head_master_equivalent')) {
 	function is_head_master_equivalent($postId = null)
 	{
