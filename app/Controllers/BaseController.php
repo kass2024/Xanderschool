@@ -58,6 +58,47 @@ class BaseController extends Controller
 		//--------------------------------------------------------------------
 		// E.g.:
 		$this->session = \Config\Services::session();
+		$this->blockChiefAccountantMarks();
+	}
+
+	/** Chief Accountant uses the Executive Principal dashboard, and cannot open Marks. */
+	private function blockChiefAccountantMarks(): void
+	{
+		try {
+		$postId = (int) ($this->session->get('soma_post') ?? 0);
+		if (!\Config\MenuClearance::isChiefAccountantPost($postId)) {
+			return;
+		}
+		$uri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+		$path = strtolower(trim((string) parse_url($uri, PHP_URL_PATH), '/'));
+		$path = preg_replace('#^(index\\.php/)+#', '', $path);
+		$first = explode('/', $path)[0] ?? '';
+		$blocked = [
+			'marks_entry',
+			'manipulate_marks',
+			'get_uploaded_marks',
+			'get_periodic_report',
+			'get_periodic_marks',
+			'get_periodic_slip',
+			'student_report',
+			'student_report_slip',
+			'proclamation_list',
+			'student_term_results',
+			'class-deliberation',
+			'finish_deliberation',
+			'deliberation',
+			'deliberation_settings',
+			'lock_marks_editing',
+		];
+		if (!in_array($first, $blocked, true)) {
+			return;
+		}
+		helper('url');
+		header('Location: ' . base_url('dashboard'));
+		exit;
+		} catch (\Throwable $e) {
+			return;
+		}
 	}
 	public function change_status($type,$value){
 		switch ($type){
@@ -320,14 +361,22 @@ class BaseController extends Controller
 		}
 
 		// SwiftQOM only accepts the registered sender_id; school acronyms are rejected.
-		return $this->sendSMS($phone, $message, $result);
+		return $this->sendSMS($phone, $message, $result, null, 30, $school_id);
 	}
 
-	public function sendSMS($phone, $message, &$result, $sender = null, $timeout = 30): bool
+	public function sendSMS($phone, $message, &$result, $sender = null, $timeout = 30, $schoolId = null): bool
 	{
 		$smsConfig = config('Sms');
 		$smsType = $smsConfig->type;
-		$sender = trim((string) ($smsConfig->swiftqomSender ?: 'SWIFTQOM'));
+		$sender = trim((string) ($sender ?: ($smsConfig->swiftqomSender ?: 'SWIFTQOM')));
+		$schoolId = (int) ($schoolId ?? 0);
+		if ($schoolId < 1 && isset($this->session)) {
+			$schoolId = (int) $this->session->get('soma_school_id');
+		}
+		$account = $this->schoolSmsAccount($schoolId);
+		if (($account['provider'] ?? '') === 'intouch') {
+			return $this->sendIntouchSms($phone, $message, $result, $account, (int) $timeout);
+		}
 
 		$this->_comms_debug('SMS', 'sendSMS start', [
 			'sms.type' => $smsType,
@@ -447,6 +496,103 @@ class BaseController extends Controller
 			? ($delivery['error'] !== '' ? $delivery['error'] : 'SMS was not delivered')
 			: 'SMS was accepted but delivery is not confirmed (' . ($delivery['status'] !== '' ? $delivery['status'] : 'pending') . ').';
 		$result = ["code" => 400, "content" => $why];
+		return false;
+	}
+
+	/** @return array{provider:string,username:string,password:string,sender:string} */
+	protected function schoolSmsAccount(int $schoolId): array
+	{
+		$blank = ['provider' => 'swiftqom', 'username' => '', 'password' => '', 'sender' => ''];
+		if ($schoolId < 1) {
+			return $blank;
+		}
+		try {
+			$model = new \App\Models\IntouchAccount();
+			$model->ensureSchema();
+			$row = $model->where('school_id', $schoolId)->first();
+		} catch (\Throwable $e) {
+			return $blank;
+		}
+		if (!is_array($row)) {
+			return $blank;
+		}
+		$provider = strtolower(trim((string) ($row['provider'] ?? 'swiftqom')));
+		if ($provider !== 'intouch') {
+			$provider = 'swiftqom';
+		}
+		return [
+			'provider' => $provider,
+			'username' => trim((string) ($row['username'] ?? '')),
+			'password' => (string) ($row['password'] ?? ''),
+			'sender' => trim((string) ($row['sender'] ?? '')),
+		];
+	}
+
+	/** InTouch HTTP API: basic auth, form body, recipients as 07XXXXXXXX. */
+	protected function sendIntouchSms(string $phone, string $message, &$result, array $account, int $timeout): bool
+	{
+		$username = trim((string) ($account['username'] ?? ''));
+		$password = (string) ($account['password'] ?? '');
+		if ($username === '' || $password === '') {
+			$result = ['code' => 400, 'content' => 'Save the InTouch username and passcode in School settings.'];
+			return false;
+		}
+		$normalized = $this->_normalize_rw_phone($phone);
+		if ($normalized === '' || strlen($normalized) < 12) {
+			$result = ['code' => 400, 'content' => 'Invalid phone number'];
+			return false;
+		}
+		$recipient = '0' . substr($normalized, 3, 9);
+		$sender = preg_replace('/[^A-Za-z0-9]/', '', (string) ($account['sender'] ?? ''));
+		$sender = substr((string) $sender, 0, 11);
+		if ($sender === '') {
+			$sender = 'SCHOOL';
+		}
+		$timeout = $timeout < 4 ? 8 : $timeout;
+		$this->_comms_debug('SMS', 'intouch: request prepared', [
+			'phone' => $recipient,
+			'sender' => $sender,
+			'username' => $username,
+		]);
+		try {
+			$req = \Config\Services::curlrequest()->request('POST', 'https://www.intouchsms.co.rw/api/sendsms/.json', [
+				'auth' => [$username, $password, 'basic'],
+				'form_params' => [
+					'sender' => $sender,
+					'recipients' => $recipient,
+					'message' => $message,
+				],
+				'verify' => false,
+				'http_errors' => false,
+				'timeout' => $timeout,
+				'connect_timeout' => min(5, $timeout),
+			]);
+		} catch (\Throwable $e) {
+			$result = ['code' => 500, 'content' => $e->getMessage()];
+			$this->_comms_debug('SMS', 'intouch: HTTP exception', ['error' => $e->getMessage()]);
+			return false;
+		}
+		$httpCode = $req->getStatusCode();
+		$body = (string) $req->getBody();
+		$this->_comms_debug('SMS', 'intouch: provider response', [
+			'http_code' => $httpCode,
+			'body' => mb_substr($body, 0, 500),
+		]);
+		$resData = json_decode($body);
+		$success = is_object($resData) && isset($resData->success) && ($resData->success === true || $resData->success === 1 || $resData->success === '1');
+		$detailStatus = '';
+		if (is_object($resData) && isset($resData->details[0]->status)) {
+			$detailStatus = strtoupper(trim((string) $resData->details[0]->status));
+		}
+		if ($httpCode === 200 && $success && !in_array($detailStatus, ['E', 'U'], true)) {
+			$result = ['code' => 200, 'content' => 'sent'];
+			return true;
+		}
+		$why = 'InTouch did not send the SMS.';
+		if (is_object($resData)) {
+			$why = (string) ($resData->message ?? $resData->error ?? $resData->summary->message ?? $why);
+		}
+		$result = ['code' => 400, 'content' => $why !== '' ? $why : 'InTouch did not send the SMS.'];
 		return false;
 	}
 

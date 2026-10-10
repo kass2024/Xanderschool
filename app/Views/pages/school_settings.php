@@ -1436,7 +1436,7 @@
 			<div id="collapseParentVisiting" data-parent="#accordion" class="collapse">
 				<div class="card-body">
 					<?php $pvKioskMode = (($visitor_kiosk_mode ?? 'normal') === 'visiting') ? 'visiting' : 'normal'; ?>
-					<p class="mb-2">This sets the attendance device. An online device switches within a few seconds.</p>
+					<p class="mb-2">This sets the attendance device. An online device switches immediately.</p>
 					<div class="btn-group mb-3" role="group" aria-label="Parent visiting device mode">
 						<button type="button" class="btn <?= $pvKioskMode === 'normal' ? 'btn-primary' : 'btn-outline-primary'; ?>" id="pvModeNormal" data-mode="normal">Normal</button>
 						<button type="button" class="btn <?= $pvKioskMode === 'visiting' ? 'btn-primary' : 'btn-outline-primary'; ?>" id="pvModeVisiting" data-mode="visiting">Visiting only</button>
@@ -1469,7 +1469,7 @@
 							}).then(function (r) { return r.json(); }).then(function (res) {
 								if (res && res.success && res.settings) {
 									paint(res.settings.kiosk_mode === "visiting" ? "visiting" : "normal");
-									status.textContent = "Saved. The device picks this up on the next sync.";
+									status.textContent = "Saved. An online device switches immediately.";
 								} else {
 									status.textContent = "Could not save. Refresh and try again.";
 								}
@@ -1987,17 +1987,37 @@
 				</button>
 			</div>
 			<div id="collapseOne4" data-parent="#accordion" class="collapse">
+				<?php
+				$smsProvider = (($intouch_info['provider'] ?? 'swiftqom') === 'intouch') ? 'intouch' : 'swiftqom';
+				?>
 				<form method="POST" action="<?=base_url('manipulate_intouch');?>/<?= $intouch_info['school_id'] ?>" class="validate autoSubmit">
 					<div class="card-body">
 						<div class="col-sm-12 col-md-6 col-lg-5">
-
 							<div class="form-group">
-								<label><?= lang("app.titleUsername"); ?></label>
-								<input class="form-control" type="text" name="intouch_username" value="<?= $intouch_info['username'] ?>">
+								<label>Provider</label>
+								<div class="btn-group d-flex" role="group" aria-label="SMS provider">
+									<label class="btn <?= $smsProvider === 'swiftqom' ? 'btn-primary' : 'btn-outline-primary'; ?> mb-0">
+										<input type="radio" name="sms_provider" value="swiftqom" class="d-none" <?= $smsProvider === 'swiftqom' ? 'checked' : ''; ?>> SwiftQom
+									</label>
+									<label class="btn <?= $smsProvider === 'intouch' ? 'btn-primary' : 'btn-outline-primary'; ?> mb-0">
+										<input type="radio" name="sms_provider" value="intouch" class="d-none" <?= $smsProvider === 'intouch' ? 'checked' : ''; ?>> InTouch
+									</label>
+								</div>
+								<small class="text-muted d-block mt-2">SwiftQom is the provider in use now. Choose InTouch to send with the InTouch account.</small>
 							</div>
-							<div class="form-group">
-								<label><?= lang("app.password"); ?></label>
-								<input class="form-control" type="password" name="intouch_password" value="<?= $intouch_info['password'] ?>">
+							<div id="sms-intouch-fields" style="<?= $smsProvider === 'intouch' ? '' : 'display:none'; ?>">
+								<div class="form-group">
+									<label><?= lang("app.titleUsername"); ?></label>
+									<input class="form-control" type="text" name="intouch_username" value="<?= esc($intouch_info['username'] ?? ''); ?>" autocomplete="off">
+								</div>
+								<div class="form-group">
+									<label>Passcode</label>
+									<input class="form-control" type="password" name="intouch_password" value="<?= esc($intouch_info['password'] ?? ''); ?>" autocomplete="new-password">
+								</div>
+								<div class="form-group">
+									<label>Sender name</label>
+									<input class="form-control" type="text" name="intouch_sender" maxlength="11" value="<?= esc($intouch_info['sender'] ?? ''); ?>" placeholder="School name on the phone">
+								</div>
 							</div>
 							<div class="form-group">
 								<center><button type="submit" class="btn btn-success btn-lg" data-target="reload"><b><?= lang("app.saveChanges"); ?></b></button></center>
@@ -2005,6 +2025,40 @@
 						</div>
 					</div>
 				</form>
+				<script>
+					(function () {
+						var labels = document.querySelectorAll('#collapseOne4 input[name="sms_provider"]');
+						function paint() {
+							var chosen = 'swiftqom';
+							labels.forEach(function (input) {
+								var label = input.closest('label');
+								if (input.checked) {
+									chosen = input.value;
+									label.classList.add('btn-primary');
+									label.classList.remove('btn-outline-primary');
+								} else {
+									label.classList.remove('btn-primary');
+									label.classList.add('btn-outline-primary');
+								}
+							});
+							var box = document.getElementById('sms-intouch-fields');
+							if (box) {
+								box.style.display = chosen === 'intouch' ? '' : 'none';
+							}
+						}
+						labels.forEach(function (input) {
+							input.addEventListener('change', paint);
+							var label = input.closest('label');
+							if (label) {
+								label.addEventListener('click', function () {
+									input.checked = true;
+									paint();
+								});
+							}
+						});
+						paint();
+					})();
+				</script>
 			</div>
 		</div>
 	</div>

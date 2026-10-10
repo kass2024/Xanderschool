@@ -3563,7 +3563,21 @@ refreshNurseryMentions();
 		$data['title'] = lang("app.settings");
 		$data['subtitle'] = lang("app.schoolSettings");
 		$data['page'] = "settings";
-		$data['intouch_info'] = (new IntouchAccount())->where('school_id', $schoolId)->get()->getResultArray()[0] ?? ['school_id' => $schoolId, "username" => "", "password" => ""];
+		$intouchMdl = new IntouchAccount();
+		$intouchMdl->ensureSchema();
+		$data['intouch_info'] = $intouchMdl->where('school_id', $schoolId)->get()->getResultArray()[0] ?? [
+			'school_id' => $schoolId,
+			'username' => 'Xandertech',
+			'password' => '',
+			'provider' => 'swiftqom',
+			'sender' => '',
+		];
+		if (trim((string) ($data['intouch_info']['username'] ?? '')) === '') {
+			$data['intouch_info']['username'] = 'Xandertech';
+		}
+		if (trim((string) ($data['intouch_info']['provider'] ?? '')) === '') {
+			$data['intouch_info']['provider'] = 'swiftqom';
+		}
 		$data['app_settings'] = (new ApplicationSettingsModel())->forSchool($schoolId);
 		$feeSvc = new ApplicationRegistrationFeeService();
 		$feeSvc->ensureSchema();
@@ -7325,19 +7339,33 @@ public function attendanceCard()
 	public function manipulate_intouch($school_id)
 	{
 		$this->_preset();
-		$data = $this->data;
-
 		$intouchSetting = new IntouchAccount();
-
+		$intouchSetting->ensureSchema();
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$provider = strtolower(trim((string) $this->request->getPost('sms_provider')));
+		if (!in_array($provider, ['swiftqom', 'intouch'], true)) {
+			$provider = 'swiftqom';
+		}
+		$username = trim((string) $this->request->getPost('intouch_username'));
+		$password = (string) $this->request->getPost('intouch_password');
+		$sender = substr(preg_replace('/[^A-Za-z0-9]/', '', (string) $this->request->getPost('intouch_sender')), 0, 11);
+		$record_exists = $intouchSetting->where('school_id', $schoolId)->first();
+		if ($password === '' && $record_exists) {
+			$password = (string) ($record_exists['password'] ?? '');
+		}
+		if ($provider === 'intouch' && $username === '') {
+			return $this->response->setJSON(['error' => 'Enter the InTouch username.']);
+		}
+		if ($provider === 'intouch' && $password === '') {
+			return $this->response->setJSON(['error' => 'Enter the InTouch passcode.']);
+		}
 		$data_info = [
-				"school_id" => $this->session->get("soma_school_id"),
-				"username" => $this->request->getPost('intouch_username'),
-				"password" => $this->request->getPost('intouch_username'),
+			'school_id' => $schoolId,
+			'provider' => $provider,
+			'username' => $username,
+			'password' => $password,
+			'sender' => $sender,
 		];
-
-		$record_exists = $intouchSetting->where('school_id', $this->session->get("soma_school_id"))->first();
-
-		// var_dump($record_exists);
 		try {
 			if ($record_exists) {
 				$intouchSetting->update($record_exists['id'], $data_info);
