@@ -58,8 +58,8 @@
 		line-height: 10mm;
 		letter-spacing: 1.4pt;
 	}
-	.wp-banner-term, .wp-banner-period {
-		width: 93mm;
+	.wp-banner-meta {
+		width: 186mm;
 		height: 7mm;
 		line-height: 7mm;
 		font-size: 12pt;
@@ -67,7 +67,6 @@
 		background: #e7f4f9;
 		letter-spacing: 0.6pt;
 	}
-	.wp-banner-period { border-left: 1.2pt solid #1487bc; }
 	.wp-grid { margin-top: 2.2mm; }
 	.wp-grid td, .wp-grid th {
 		border: 0.7pt solid #231f20;
@@ -505,13 +504,16 @@ foreach ($students ?? [] as $student) {
 	};
 	?>
 	<?php if ($periodic): ?>
-	<table class="wp-banner" width="186mm">
+	<?php
+		$termBanner = 'TERM' . ($termNo > 0 ? ' ' . (int) $termNo : '');
+		$periodBanner = 'PERIOD' . ($periodNo > 0 ? ' ' . (int) $periodNo : '');
+	?>
+	<table class="wp-banner" width="186mm" style="width:186mm;border-collapse:collapse;">
 		<tr>
-			<td class="wp-banner-title" colspan="2">PERIODIC REPORT</td>
+			<td class="wp-banner-title" width="186mm" style="width:186mm;">PERIODIC REPORT</td>
 		</tr>
 		<tr>
-			<td class="wp-banner-term">TERM <?= $termNo > 0 ? (int) $termNo : ''; ?></td>
-			<td class="wp-banner-period">PERIOD <?= $periodNo > 0 ? (int) $periodNo : ''; ?></td>
+			<td class="wp-banner-meta" width="186mm" style="width:186mm;"><?= esc($termBanner); ?>&nbsp;&nbsp;&nbsp;&nbsp;<?= esc($periodBanner); ?></td>
 		</tr>
 	</table>
 	<?php endif; ?>
