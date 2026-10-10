@@ -849,6 +849,8 @@ return [
    'schoolSettings'              => 'School Settings',
    'gradeSaved'                  => 'Grade saved',
    'intouchSaved'                  => 'SMS provider saved',
+   'intouchSavedChildren'          => 'SMS provider saved for this school and its child schools',
+   'intouchCopiesToChildren'       => 'Saving here also switches every child school to this provider.',
 	'grading'                    => 'Grading',
 	'grades'                      => 'Grades',
 	'nextTermStarts'             => 'Next term begins on',

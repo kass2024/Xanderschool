@@ -2004,6 +2004,9 @@
 									</label>
 								</div>
 								<small class="text-muted d-block mt-2">SwiftQom is the provider in use now. Choose InTouch to send with the InTouch account.</small>
+								<?php if (!empty($sms_master_child_count)): ?>
+									<small class="text-muted d-block mt-1"><?= lang('app.intouchCopiesToChildren'); ?></small>
+								<?php endif; ?>
 							</div>
 							<div id="sms-intouch-fields" style="<?= $smsProvider === 'intouch' ? '' : 'display:none'; ?>">
 								<div class="form-group">

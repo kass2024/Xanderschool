@@ -846,6 +846,8 @@ return [
 	"schoolSettings" => "Paramètres de l'école",
 	"gradeSaved " => " Note enregistrée ",
 	"intouchSaved " => "Fournisseur SMS enregistré ",
+	"intouchSavedChildren" => "Fournisseur SMS enregistré pour cette école et ses écoles enfants",
+	"intouchCopiesToChildren" => "Enregistrer ici applique aussi ce fournisseur à chaque école enfant.",
 	"grades " => "Grades",
 	"CommunicationPortal" => "Portail de communication",
 	"parentMessagingPortal" => "Portail de messagerie des parents",

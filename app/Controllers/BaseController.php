@@ -514,6 +514,25 @@ class BaseController extends Controller
 			return $blank;
 		}
 		if (!is_array($row)) {
+			$masterId = 0;
+			try {
+				$db = \Config\Database::connect();
+				if ($db->fieldExists('master_school_id', 'schools')) {
+					$school = $db->table('schools')->select('master_school_id')->where('id', $schoolId)->get()->getRowArray();
+					$masterId = (int) ($school['master_school_id'] ?? 0);
+				}
+			} catch (\Throwable $e) {
+				$masterId = 0;
+			}
+			if ($masterId > 0 && $masterId !== $schoolId) {
+				try {
+					$row = (new \App\Models\IntouchAccount())->where('school_id', $masterId)->first();
+				} catch (\Throwable $e) {
+					$row = null;
+				}
+			}
+		}
+		if (!is_array($row)) {
 			return $blank;
 		}
 		$provider = strtolower(trim((string) ($row['provider'] ?? 'swiftqom')));

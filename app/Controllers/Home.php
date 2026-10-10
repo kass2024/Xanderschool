@@ -3578,6 +3578,17 @@ refreshNurseryMentions();
 		if (trim((string) ($data['intouch_info']['provider'] ?? '')) === '') {
 			$data['intouch_info']['provider'] = 'swiftqom';
 		}
+		$data['sms_master_child_count'] = 0;
+		try {
+			$smsHierarchy = new \App\Models\SchoolHierarchyModel();
+			$smsHierarchy->ensureSchema();
+			$smsSchool = $smsHierarchy->find($schoolId);
+			if (is_array($smsSchool) && !empty($smsSchool['is_master'])) {
+				$data['sms_master_child_count'] = count($smsHierarchy->childSchools($schoolId));
+			}
+		} catch (\Throwable $e) {
+			$data['sms_master_child_count'] = 0;
+		}
 		$data['app_settings'] = (new ApplicationSettingsModel())->forSchool($schoolId);
 		$feeSvc = new ApplicationRegistrationFeeService();
 		$feeSvc->ensureSchema();
@@ -7372,10 +7383,53 @@ public function attendanceCard()
 			} else {
 				$intouchSetting->save($data_info);
 			}
-			return $this->response->setJSON(array("success" => lang("app.intouchSaved")));
+			$childCount = $this->copySmsProviderToChildSchools($schoolId, $data_info);
+			$saved = $childCount > 0 ? lang('app.intouchSavedChildren') : lang('app.intouchSaved');
+			return $this->response->setJSON(array("success" => $saved));
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}
+	}
+
+	/** When the master school changes SMS provider, every child school uses the same account. */
+	private function copySmsProviderToChildSchools(int $schoolId, array $data): int
+	{
+		$hierarchy = new \App\Models\SchoolHierarchyModel();
+		$hierarchy->ensureSchema();
+		$school = $hierarchy->find($schoolId);
+		if (!is_array($school) || empty($school['is_master'])) {
+			return 0;
+		}
+		$children = $hierarchy->childSchools($schoolId);
+		if ($children === []) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$now = date('Y-m-d H:i:s');
+		$count = 0;
+		foreach ($children as $child) {
+			$childId = (int) ($child['id'] ?? 0);
+			if ($childId < 1 || $childId === $schoolId) {
+				continue;
+			}
+			$payload = [
+				'school_id' => $childId,
+				'provider' => $data['provider'] ?? 'swiftqom',
+				'username' => $data['username'] ?? '',
+				'password' => $data['password'] ?? '',
+				'sender' => $data['sender'] ?? '',
+				'updated_at' => $now,
+			];
+			$existing = $db->table('intouch_accounts')->where('school_id', $childId)->get()->getRowArray();
+			if ($existing) {
+				$db->table('intouch_accounts')->where('id', (int) $existing['id'])->update($payload);
+			} else {
+				$payload['created_at'] = $now;
+				$db->table('intouch_accounts')->insert($payload);
+			}
+			$count++;
+		}
+		return $count;
 	}
 
 	public function delete_grade()
