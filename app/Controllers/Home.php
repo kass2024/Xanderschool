@@ -1072,7 +1072,7 @@ public function testEmail()
 		$db = \Config\Database::connect();
 		$yearKey = (string) $yearId;
 		$source = $db->query(
-			'SELECT id, student, class, year FROM class_records WHERE student = ? AND year = ? AND class = ? LIMIT 1',
+			'SELECT id, student, class, year FROM class_records WHERE student = ? AND year = ? AND class = ? ORDER BY status DESC, id DESC LIMIT 1',
 			[$studentId, $yearKey, $fromClassId]
 		)->getRowArray();
 		if (!$source) {
@@ -1081,17 +1081,19 @@ public function testEmail()
 		}
 
 		$dest = $db->query(
-			'SELECT id, student, class, year FROM class_records WHERE student = ? AND year = ? AND class = ? LIMIT 1',
+			'SELECT id, student, class, year FROM class_records WHERE student = ? AND year = ? AND class = ? ORDER BY status DESC, id DESC LIMIT 1',
 			[$studentId, $yearKey, $toClassId]
 		)->getRowArray();
 
 		$db->transStart();
 
 		if ($dest && (int) $dest['id'] !== (int) $source['id']) {
+			$keepId = (int) $dest['id'];
+			$db->query('UPDATE class_records SET status = 1 WHERE id = ?', [$keepId]);
 			$db->query('DELETE FROM class_records WHERE id = ?', [(int) $source['id']]);
-			$db->query('UPDATE class_records SET status = 1 WHERE id = ?', [(int) $dest['id']]);
 		} else {
-			$db->query('UPDATE class_records SET class = ?, status = 1 WHERE id = ?', [$toClassId, (int) $source['id']]);
+			$keepId = (int) $source['id'];
+			$db->query('UPDATE class_records SET class = ?, status = 1 WHERE id = ?', [$toClassId, $keepId]);
 		}
 
 		// Same person already sitting in the destination class (different student id / regno).
@@ -1110,31 +1112,17 @@ public function testEmail()
 			$db->query('DELETE FROM class_records WHERE id = ?', [(int) $mate['cr_id']]);
 		}
 
-		// Never keep two enrollment rows for the same student in the same class/year.
-		$dupRows = $db->query(
-			'SELECT id FROM class_records WHERE student = ? AND year = ? AND class = ? ORDER BY id ASC',
-			[$studentId, $yearKey, $toClassId]
-		)->getResultArray();
-		if (count($dupRows) > 1) {
-			array_shift($dupRows);
-			foreach ($dupRows as $extra) {
-				$db->query('DELETE FROM class_records WHERE id = ?', [(int) $extra['id']]);
-			}
-		}
-
-		$keep = $db->query(
-			'SELECT id FROM class_records WHERE student = ? AND year = ? AND class = ? ORDER BY id DESC LIMIT 1',
-			[$studentId, $yearKey, $toClassId]
-		)->getRowArray();
-		if ($keep) {
-			$db->query('UPDATE class_records SET status = 1 WHERE id = ?', [(int) $keep['id']]);
-			(new ClassRecordModel())->dropOtherClassesForStudentYear(
-				$studentId,
-				$yearKey,
-				(int) $keep['id'],
-				$toClassId
-			);
-		}
+		// Extra copies of this class must not replace the row we just kept active.
+		$db->query(
+			'DELETE FROM class_records WHERE student = ? AND year = ? AND class = ? AND id <> ?',
+			[$studentId, $yearKey, $toClassId, $keepId]
+		);
+		(new ClassRecordModel())->dropOtherClassesForStudentYear(
+			$studentId,
+			$yearKey,
+			$keepId,
+			$toClassId
+		);
 
 		$this->remapStudentRecordsOnClassMove(
 			$db,
@@ -1154,6 +1142,20 @@ public function testEmail()
 			$update_v = $update_v_data->version;
 		}
 		$db->query('UPDATE students SET updateVersion = ? WHERE id = ? AND school_id = ?', [$update_v, $studentId, $schoolId]);
+
+		// Last write of the move: the destination enrollment stays on the student list.
+		$db->query(
+			'UPDATE class_records SET class = ?, status = 1 WHERE id = ? AND student = ?',
+			[$toClassId, $keepId, $studentId]
+		);
+		$alive = $db->query(
+			'SELECT id FROM class_records WHERE id = ? AND student = ? AND year = ? AND class = ? AND status = 1',
+			[$keepId, $studentId, $yearKey, $toClassId]
+		)->getRowArray();
+		if (!$alive) {
+			$db->transRollback();
+			return ['ok' => false, 'error' => 'Could not keep ' . trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? '')) . ' on the new class list.'];
+		}
 
 		$db->transComplete();
 		if ($db->transStatus() === false) {
@@ -9846,7 +9848,7 @@ public function attendanceCard()
 		$studentMdl->backfillFromRegistration($school_id);
 		$classId = (int) $classe;
 		$yearFilter = (int) $yearId;
-		$list = $studentMdl->get_student_simple("c.id = {$classId} and cr.year={$yearFilter} and cr.status = 1 and students.status IN (1,2)", null);
+		$list = $studentMdl->get_student_simple("c.id = {$classId} and cr.year={$yearFilter} and students.status IN (1,2) and " . $this->enrollmentVisibleSql(), null);
 		$unique = [];
 		foreach ($list as $row) {
 			$sid = (int) ($row['id'] ?? 0);
@@ -9885,7 +9887,7 @@ public function attendanceCard()
 			if ($idsInGroup !== []) {
 				$idList = implode(',', array_map('intval', array_keys($idsInGroup)));
 				$list = $studentMdl->get_student_simple(
-					"students.id IN ({$idList}) and cr.year={$kpiYear} and cr.status = 1 and students.status IN (1,2)",
+					"students.id IN ({$idList}) and cr.year={$kpiYear} and students.status IN (1,2) and " . $this->enrollmentVisibleSql(),
 					null
 				);
 				$unique = [];
@@ -9916,6 +9918,15 @@ public function attendanceCard()
 	}
 
 	/**
+	 * A class row is shown when it is active, or when it is the student's only enrollment for that year.
+	 * A move must not hide an active student who has no other live class.
+	 */
+	private function enrollmentVisibleSql(): string
+	{
+		return '(cr.status = 1 OR NOT EXISTS (SELECT 1 FROM class_records cr_live WHERE cr_live.student = students.id AND cr_live.year = cr.year AND IFNULL(cr_live.status,0) = 1))';
+	}
+
+	/**
 	 * Active enrollments for KPI grouping (unique later by student id).
 	 *
 	 * @return list<array<string,mixed>>
@@ -9938,7 +9949,7 @@ public function attendanceCard()
 			->join('faculty f', 'f.id = d.faculty_id', 'left')
 			->where('students.school_id', $schoolId)
 			->where('cr.year', $yearId)
-			->where('cr.status', 1)
+			->where($this->enrollmentVisibleSql(), null, false)
 			->whereIn('students.status', [1, 2])
 			->get()->getResultArray();
 		$out = [];
