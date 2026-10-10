@@ -103,6 +103,7 @@ $grades = $grades ?? [];
 $courseInitials = $primary_course_initials ?? [];
 $termNo = (int) ($term ?? 0);
 $termLabel = (string) \App\Controllers\Home::TermToStr($termNo);
+$periodNo = (int) ($period ?? 0);
 $yearLabel = (string) ($academic_year_title ?? '');
 $discMax = (float) ($discipline_max ?? 0);
 $logoSrc = '';
@@ -346,7 +347,11 @@ foreach ($students ?? [] as $student) {
 		: trim((string) ($student['level_name'] ?? '') . ' ' . (string) ($student['title'] ?? ''));
 	$namePack = $packText($name, 70, 2, 11.0, 8.0);
 	$yearPack = $packText($yearLabel, 28, 2, 11.0, 8.0);
-	$termPack = $packText($termLabel, 140, 2, 11.0, 8.0);
+	$termShown = $termLabel;
+	if ($periodic && $periodNo > 0) {
+		$termShown = trim($termLabel . ($termLabel !== '' ? ', ' : '') . 'Period ' . $periodNo);
+	}
+	$termPack = $packText($termShown, 140, 2, 11.0, 8.0);
 	$classPack = $packText($classLabel, 140, 2, 11.0, 8.0);
 	$idLine = 4.6;
 	$nameLines = max($namePack['lines'], $yearPack['lines']);

@@ -330,8 +330,8 @@ foreach ($students as $student) {
 	foreach ($courses as $core) {
 		$full = (float) ($core['marks'] ?? 0);
 		$score = $subjectScore($core);
-		$maxTotal += $full;
 		if ($score !== null) {
+			$maxTotal += $full;
 			$scoreTotal += $score;
 			$scored++;
 		}
@@ -416,8 +416,10 @@ foreach ($students as $student) {
 				<?php
 				$headMm = 10;
 				$totalMm = 10;
+				$showPercentage = !empty($nursery_periodic);
+				$pctMm = $showPercentage ? 8 : 0;
 				$boxMm = $endOfTermSheet ? 145 : 162;
-				$rowMm = ($boxMm - $headMm - $totalMm) / max(1, count($rows));
+				$rowMm = ($boxMm - $headMm - $totalMm - $pctMm) / max(1, count($rows));
 				$rowMm = max(4.2, $rowMm);
 				$markH = ' style="height:' . round($rowMm, 2) . 'mm;"';
 				$headS = 'height:' . $headMm . 'mm;';
@@ -452,6 +454,14 @@ foreach ($students as $student) {
 						<td></td>
 						<td></td>
 					</tr>
+					<?php if ($showPercentage): ?>
+					<tr class="total">
+						<td style="height:<?= $pctMm; ?>mm;">PERCENTAGE</td>
+						<td class="num" colspan="2"><?= $totalPct !== null ? $fmt($totalPct) . '%' : ''; ?></td>
+						<td></td>
+						<td></td>
+					</tr>
+					<?php endif; ?>
 					</tbody>
 				</table>
 				<div class="nr-footwrap">
