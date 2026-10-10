@@ -26,6 +26,18 @@ class IntouchAccount extends Model{
 			if (!$db->fieldExists('updated_at', 'intouch_accounts')) {
 				$db->query("ALTER TABLE `intouch_accounts` ADD COLUMN `updated_at` DATETIME NULL DEFAULT NULL");
 			}
+			foreach ($db->getFieldData('intouch_accounts') as $field) {
+				$type = strtolower((string) ($field->type ?? ''));
+				if (strpos($type, 'int') === false) {
+					continue;
+				}
+				if ($field->name === 'username') {
+					$db->query("ALTER TABLE `intouch_accounts` MODIFY `username` VARCHAR(255) NOT NULL");
+				}
+				if ($field->name === 'password') {
+					$db->query("ALTER TABLE `intouch_accounts` MODIFY `password` VARCHAR(255) NOT NULL");
+				}
+			}
 		}
 		$done = true;
 	}

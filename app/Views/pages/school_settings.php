@@ -2012,7 +2012,14 @@
 								</div>
 								<div class="form-group">
 									<label>Passcode</label>
-									<input class="form-control" type="password" name="intouch_password" value="<?= esc($intouch_info['password'] ?? ''); ?>" autocomplete="new-password">
+									<div class="input-group">
+										<input class="form-control" type="password" id="intouch_password" name="intouch_password" value="<?= esc($intouch_info['password'] ?? '', 'attr'); ?>" autocomplete="off">
+										<div class="input-group-append">
+											<button type="button" class="btn btn-outline-secondary" id="intouchPassEye" aria-label="Show passcode">
+												<i class="fa fa-eye"></i>
+											</button>
+										</div>
+									</div>
 								</div>
 								<div class="form-group">
 									<label>Sender name</label>
@@ -2057,6 +2064,20 @@
 							}
 						});
 						paint();
+						var eye = document.getElementById('intouchPassEye');
+						var pass = document.getElementById('intouch_password');
+						if (eye && pass) {
+							eye.addEventListener('click', function () {
+								var icon = eye.querySelector('i');
+								var show = pass.getAttribute('type') === 'password';
+								pass.setAttribute('type', show ? 'text' : 'password');
+								eye.setAttribute('aria-label', show ? 'Hide passcode' : 'Show passcode');
+								if (icon) {
+									icon.classList.toggle('fa-eye', !show);
+									icon.classList.toggle('fa-eye-slash', show);
+								}
+							});
+						}
 					})();
 				</script>
 			</div>
