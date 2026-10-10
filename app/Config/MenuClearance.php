@@ -766,10 +766,11 @@ class MenuClearance
 		}));
 	}
 
-	/** Pocket money stays with Head master, Director of studies, and the pocket post. */
+	/** Pocket money transactions: school leaders and the pocket post. */
 	public static function canUsePocketMoney($postId)
 	{
-		return in_array((int) $postId, [1, 3, 14], true);
+		$postId = (int) $postId;
+		return $postId === 14 || self::isFullAccessPost($postId);
 	}
 
 	/** School Director (post 29). Director of studies and Director of Finance stay out. */
