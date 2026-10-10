@@ -2306,6 +2306,17 @@ if (!function_exists('class_faculty_id')) {
 	}
 }
 
+if (!function_exists('cat_mark_period')) {
+	/** Test 1 always belongs to period 1. Other assessments keep the period that was chosen. */
+	function cat_mark_period($catType, $period): int
+	{
+		if (normalizeCatTypeCode($catType) === 'T1') {
+			return 1;
+		}
+		return (int) $period;
+	}
+}
+
 if (!function_exists('primary_cat_period')) {
 	/** Primary marks are never stored on period 0. A missing period is Period 1. */
 	function primary_cat_period($classId, $markType, $period): int

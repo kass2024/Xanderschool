@@ -1089,8 +1089,9 @@ public function testEmail()
 
 		if ($dest && (int) $dest['id'] !== (int) $source['id']) {
 			$db->query('DELETE FROM class_records WHERE id = ?', [(int) $source['id']]);
+			$db->query('UPDATE class_records SET status = 1 WHERE id = ?', [(int) $dest['id']]);
 		} else {
-			$db->query('UPDATE class_records SET class = ? WHERE id = ?', [$toClassId, (int) $source['id']]);
+			$db->query('UPDATE class_records SET class = ?, status = 1 WHERE id = ?', [$toClassId, (int) $source['id']]);
 		}
 
 		// Same person already sitting in the destination class (different student id / regno).
@@ -1126,6 +1127,7 @@ public function testEmail()
 			[$studentId, $yearKey, $toClassId]
 		)->getRowArray();
 		if ($keep) {
+			$db->query('UPDATE class_records SET status = 1 WHERE id = ?', [(int) $keep['id']]);
 			(new ClassRecordModel())->dropOtherClassesForStudentYear(
 				$studentId,
 				$yearKey,
@@ -15509,6 +15511,9 @@ public function getApplicationDocs($id = null)
 		}
 		helper('qonics');
 		$period = primary_cat_period((int) $class, (int) $mark_type, (int) $period);
+		if ((int) $mark_type === 1 && !$nurseryClass) {
+			$period = cat_mark_period($catType, $period);
+		}
 		$periodicOn = (int) ($this->data['periodic'] ?? 0) === 1;
 		if ($periodicOn && (int) $mark_type !== holiday_coaching_mark_type() && (int) $period < 1) {
 			return $this->response->setJSON(array("error" => "Select a period. Marks cannot be entered without a period while the periodic system is on."));
@@ -17117,6 +17122,9 @@ public function getApplicationDocs($id = null)
 		if (class_is_nursery((int) $class)) {
 			$mt = 1;
 			$ct = '';
+		}
+		if (!$isHolidayMarks && !class_is_nursery((int) $class) && normalizeCatTypeCode($ct) === 'T1') {
+			$period = 1;
 		}
 		$periodicOn = (int) ($this->data['periodic'] ?? 0) === 1;
 		if ($periodicOn && !$isHolidayMarks && (int) $period < 1) {
