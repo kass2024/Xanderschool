@@ -1442,7 +1442,7 @@
 					</div>
 					<p class="mb-1" id="pvModeHelp">
 						<?= $pvKioskMode === 'visiting'
-							? 'Visiting only: a dayscholar card shows that student and the registered parents. No visit is saved for a dayscholar. Boarding visits stay as they are.'
+							? 'Visiting only: a dayscholar card records a visit and shows that student and the registered parents. The next card can be tapped right away.'
 							: 'Normal: the device keeps checking dayscholar attendance and parent visiting, including boarding students.'; ?>
 					</p>
 					<small class="text-muted" id="pvModeStatus"></small>
@@ -1450,7 +1450,7 @@
 					(function () {
 						var help = {
 							normal: "Normal: the device keeps checking dayscholar attendance and parent visiting, including boarding students.",
-							visiting: "Visiting only: a dayscholar card shows that student and the registered parents. No visit is saved for a dayscholar. Boarding visits stay as they are."
+							visiting: "Visiting only: a dayscholar card records a visit and shows that student and the registered parents. The next card can be tapped right away."
 						};
 						function paint(mode) {
 							document.getElementById("pvModeNormal").className = "btn " + (mode === "normal" ? "btn-primary" : "btn-outline-primary");
