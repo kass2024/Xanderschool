@@ -72,6 +72,7 @@
 							</div>
 						</div>
 						<div class="card-body">
+							<?php echo view('pages/reports/_wisdom_school_switch'); ?>
 							<div class="staff-share-toolbar">
 								<label class="staff-share-all">
 									<input type="checkbox" id="staffShareSelectAll"> Select

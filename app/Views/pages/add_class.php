@@ -39,6 +39,7 @@
 		height: 32px;
 	}
 </style>
+<?php echo view('pages/reports/_wisdom_school_switch'); ?>
 <div class="class-toolbar">
 	<button class="btn btn-success btn-lg" data-toggle="modal" data-target="#exampleModal"><?= lang("app.addNewClass");?></button>
 	<div class="staff-export-bar" role="group" aria-label="Export smart class list">

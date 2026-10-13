@@ -108,15 +108,21 @@
 							</li>
 							<?php
 							helper('qonics');
-							$childSchoolMenu = school_hierarchy_accessible_schools();
+							$exportSchools = wisdom_export_schools();
+							$pickChildForExport = count($exportSchools) > 1;
+							$childSchoolMenu = $pickChildForExport ? $exportSchools : school_hierarchy_accessible_schools();
 							if (count($childSchoolMenu) > 1) {
 								$activeSchoolId = (int) session('soma_school_id');
 								$homeSchoolId = school_hierarchy_home_id();
+								$exportNext = trim(uri_string(), '/');
+								if ($exportNext === '' || $exportNext === 'dashboard' || strpos($exportNext, 'wisdom-') === 0) {
+									$exportNext = 'staffs';
+								}
 								?>
 							<li>
 								<a href="#">
 									<i class="metismenu-icon typcn typcn-flow-children"></i>
-									Child schools
+									<?= $pickChildForExport ? 'Export from school' : 'Child schools'; ?>
 									<i class="metismenu-state-icon fa fa-caret-down"></i>
 								</a>
 								<ul class="mm-collapse">
@@ -124,12 +130,15 @@
 										$csid = (int) ($cs['id'] ?? 0);
 										$isActive = $csid === $activeSchoolId;
 										$isHome = $csid === $homeSchoolId;
+										$schoolHref = $pickChildForExport
+											? base_url('switch-school/' . $csid) . '?next=' . rawurlencode($exportNext)
+											: base_url('dashboard');
 										?>
 									<li>
-										<a href="<?= base_url('dashboard'); ?>" class="<?= $isHome ? 'font-weight-bold' : ''; ?>">
+										<a href="<?= $schoolHref; ?>" class="<?= $isActive ? 'mm-active font-weight-bold' : ($isHome ? 'font-weight-bold' : ''); ?>">
 											<i class="metismenu-icon"></i>
 											<?= esc($cs['name'] ?? ''); ?>
-											<?php if ($isHome) { ?><small class="text-warning"> (your school)</small><?php } ?>
+											<?php if ($isHome) { ?><small class="text-warning"> (master)</small><?php } ?>
 										</a>
 									</li>
 									<?php } ?>
@@ -1251,6 +1260,15 @@
 					</div>
 					<div class="app-header-overlay d-none animated fadeIn"></div>
 				</div>
+				<?php
+				$exportHomeId = function_exists('school_hierarchy_home_id') ? (int) school_hierarchy_home_id() : 0;
+				$exportCurrentId = (int) session('soma_school_id');
+				if ($exportHomeId > 0 && $exportCurrentId > 0 && $exportCurrentId !== $exportHomeId && function_exists('wisdom_can_pick_child_export') && wisdom_can_pick_child_export()) { ?>
+				<div class="alert alert-info" style="margin:12px 15px;">
+					Exports on this page use <strong><?= esc((string) session('soma_school')); ?></strong>.
+					<a href="<?= base_url('reset-school'); ?>">Back to the master school</a>
+				</div>
+				<?php } ?>
 				<?= $content; ?>
 			</div>
 			<div class="app-wrapper-footer">

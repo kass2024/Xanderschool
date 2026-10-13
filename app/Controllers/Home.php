@@ -244,13 +244,33 @@ public function testEmail()
 		return $this->response->setJSON(array("success" => "language changed"));
 	}
 
-	/** Child-school menu returns to the logged-in school dashboard. It does not open another school. */
+	/** Director and Director of Finance pick a Wisdom child school, then export from it. */
 	public function switch_school_context($targetId = 0)
 	{
 		if ($this->session->get($this->log_status) == null) {
 			return redirect()->to(base_url('login'));
 		}
-		return redirect()->to(base_url('dashboard'));
+		helper('qonics');
+		$targetId = (int) $targetId;
+		$allowed = [];
+		foreach (wisdom_export_schools() as $school) {
+			$id = (int) ($school['id'] ?? 0);
+			if ($id > 0) {
+				$allowed[$id] = (string) ($school['name'] ?? '');
+			}
+		}
+		if (!isset($allowed[$targetId])) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		$this->session->set([
+			'soma_school_id' => $targetId,
+			'soma_school' => $allowed[$targetId],
+		]);
+		$next = trim((string) $this->request->getGet('next'), '/');
+		if ($next === '' || $next === 'dashboard' || strpos($next, '..') !== false || !preg_match('#^[A-Za-z0-9_./-]+$#', $next)) {
+			$next = 'staffs';
+		}
+		return redirect()->to(base_url($next));
 	}
 
 	/** Return to home (master) school context. */

@@ -191,6 +191,39 @@ if (!function_exists('school_hierarchy_accessible_schools')) {
 	}
 }
 
+if (!function_exists('wisdom_can_pick_child_export')) {
+	/** Director and Director of Finance may export a Wisdom child school. */
+	function wisdom_can_pick_child_export($postId = null)
+	{
+		$postId = (int) ($postId ?? ($_SESSION['soma_post'] ?? 0));
+		if ($postId === 24 || \Config\MenuClearance::isDirectorPost($postId)) {
+			return true;
+		}
+		return \Config\MenuClearance::postTitle($postId) === 'director of finance';
+	}
+}
+
+if (!function_exists('wisdom_export_schools')) {
+	/** Master plus child schools, only for Director and Director of Finance on a Wisdom master. */
+	function wisdom_export_schools()
+	{
+		if (!wisdom_can_pick_child_export()) {
+			return [];
+		}
+		$homeId = school_hierarchy_home_id();
+		try {
+			$overview = new \App\Services\WisdomGroupOverview();
+			if ($homeId < 1 || !$overview->isWisdomMaster($homeId)) {
+				return [];
+			}
+			$schools = $overview->schools($homeId);
+			return is_array($schools) ? $schools : [];
+		} catch (\Throwable $e) {
+			return [];
+		}
+	}
+}
+
 if (!function_exists('budget_can_manage_line_structure')) {
 	function budget_can_manage_line_structure()
 	{
