@@ -1,0 +1,4348 @@
+{
+ "chapters": [
+  {
+   "id": "login",
+   "label": "Sign in"
+  },
+  {
+   "id": "settings",
+   "label": "Settings"
+  },
+  {
+   "id": "profile",
+   "label": "Profile"
+  },
+  {
+   "id": "students",
+   "label": "Students"
+  },
+  {
+   "id": "families",
+   "label": "Families"
+  },
+  {
+   "id": "classes",
+   "label": "Classes"
+  },
+  {
+   "id": "course",
+   "label": "Course"
+  },
+  {
+   "id": "behavior",
+   "label": "Behavior"
+  },
+  {
+   "id": "permissions",
+   "label": "Permissions"
+  },
+  {
+   "id": "visiting",
+   "label": "Visiting"
+  },
+  {
+   "id": "marks",
+   "label": "Marks"
+  },
+  {
+   "id": "pedagogical",
+   "label": "Pedagogical"
+  },
+  {
+   "id": "messaging",
+   "label": "Messaging"
+  },
+  {
+   "id": "attendance",
+   "label": "Attendance"
+  },
+  {
+   "id": "staff",
+   "label": "Staffs"
+  },
+  {
+   "id": "finance",
+   "label": "Finance"
+  },
+  {
+   "id": "assets",
+   "label": "Assets"
+  },
+  {
+   "id": "transport",
+   "label": "Transport"
+  },
+  {
+   "id": "pocket",
+   "label": "Pocket money"
+  },
+  {
+   "id": "leave",
+   "label": "Leave"
+  },
+  {
+   "id": "prep",
+   "label": "Prep"
+  }
+ ],
+ "steps": [
+  {
+   "id": "email",
+   "ch": "login",
+   "title": "Type the email",
+   "say": "On the sign-in page, click the email box and type the staff email. Recover Password is there if they have forgotten it.",
+   "kind": "login",
+   "fields": [
+    {
+     "label": "Email",
+     "value": "Enter your Email",
+     "hot": true
+    },
+    {
+     "label": "Password",
+     "value": "Enter your Password"
+    }
+   ],
+   "recover": true,
+   "button": "Login to Dashboard",
+   "quick": true
+  },
+  {
+   "id": "pass",
+   "ch": "login",
+   "title": "Type the password",
+   "say": "Click the password box and type the password. It must be at least 6 characters. Keep me logged in is optional.",
+   "kind": "login",
+   "fields": [
+    {
+     "label": "Email",
+     "value": "staff@example.com"
+    },
+    {
+     "label": "Password",
+     "value": "Enter your Password",
+     "hot": true
+    }
+   ],
+   "recover": true,
+   "button": "Login to Dashboard"
+  },
+  {
+   "id": "login",
+   "ch": "login",
+   "title": "Open the dashboard",
+   "say": "Click Login to Dashboard. The next screen shows the school name and the active term.",
+   "kind": "login",
+   "fields": [
+    {
+     "label": "Email",
+     "value": "staff@example.com"
+    },
+    {
+     "label": "Password",
+     "value": "••••••••"
+    }
+   ],
+   "button": "Login to Dashboard",
+   "buttonHot": true
+  },
+  {
+   "id": "photo",
+   "ch": "settings",
+   "title": "Open the photo menu",
+   "say": "Settings, My profile, Change Active Term, Change password, and Logout are under the photo at the top right, not in the left menu. Click the photo.",
+   "kind": "photo",
+   "page": "Dashboard"
+  },
+  {
+   "id": "settings",
+   "ch": "settings",
+   "title": "Open Settings",
+   "say": "Click Settings. Only posts allowed to manage the school see this line.",
+   "kind": "drop",
+   "page": "Dashboard",
+   "links": [
+    "Settings",
+    "My profile",
+    "Change Active Term",
+    "Change password",
+    "Logout"
+   ],
+   "hot": "Settings"
+  },
+  {
+   "id": "basic-phone",
+   "ch": "settings",
+   "title": "Edit the school phone",
+   "say": "Open Basic school info. Double-click the phone value, type the school number, then press Enter or click outside. That saves it. Escape cancels.",
+   "kind": "form",
+   "page": "Basic school info",
+   "fields": [
+    {
+     "label": "School name",
+     "value": "Wisdom School Musanze"
+    },
+    {
+     "label": "Phone",
+     "value": "0780000000",
+     "hot": true
+    },
+    {
+     "label": "Email",
+     "value": "school@example.com"
+    },
+    {
+     "label": "Head Teacher",
+     "value": "Aline Uwase"
+    }
+   ],
+   "buttonHot": false,
+   "note": "Double-click a value, edit it, then press Enter to save.",
+   "crumb": "Settings · Basic school info"
+  },
+  {
+   "id": "logo",
+   "ch": "settings",
+   "title": "Logo and signatures",
+   "say": "Click Logo and signatures. Upload the school logo, then the Head Teacher, matron, patron, and discipline signatures. Each upload saves that picture.",
+   "kind": "menu",
+   "links": [
+    "Basic school info",
+    "Logo & signatures",
+    "Online registration fees & documents",
+    "Student required materials"
+   ],
+   "hot": "Logo & signatures",
+   "page": "Settings",
+   "note": "Upload replaces the current picture and saves it."
+  },
+  {
+   "id": "regfees",
+   "ch": "settings",
+   "title": "Registration fees",
+   "say": "Click Online registration fees and documents. Set the fee and the documents a new family must upload, then save that block.",
+   "kind": "menu",
+   "links": [
+    "Logo & signatures",
+    "Online registration fees & documents",
+    "Student required materials",
+    "Dormitories"
+   ],
+   "hot": "Online registration fees & documents",
+   "page": "Settings",
+   "note": "Save the block before you leave it."
+  },
+  {
+   "id": "materials",
+   "ch": "settings",
+   "title": "Required materials",
+   "say": "Click Student required materials. Add each item a student must bring, then save the list.",
+   "kind": "menu",
+   "links": [
+    "Online registration fees & documents",
+    "Student required materials",
+    "Dormitories",
+    "Staff attendance settings"
+   ],
+   "hot": "Student required materials",
+   "page": "Settings",
+   "note": "These items are what Required Material Check looks for later."
+  },
+  {
+   "id": "set-dorm",
+   "ch": "settings",
+   "title": "Dormitory setup",
+   "say": "Click Dormitories. Add the dormitory name and save it. Assigning a student to a room is done later from the Students menu.",
+   "kind": "menu",
+   "links": [
+    "Student required materials",
+    "Dormitories",
+    "Staff attendance settings",
+    "Student IN/OUT attendance locations"
+   ],
+   "hot": "Dormitories",
+   "page": "Settings",
+   "note": "Save the dormitory before you assign students."
+  },
+  {
+   "id": "set-att",
+   "ch": "settings",
+   "title": "Staff attendance times",
+   "say": "Click Staff attendance settings. Set the arrival and leaving times, then save.",
+   "kind": "menu",
+   "links": [
+    "Dormitories",
+    "Staff attendance settings",
+    "Student IN/OUT attendance locations",
+    "Parent visiting"
+   ],
+   "hot": "Staff attendance settings",
+   "page": "Settings",
+   "note": "These times are what the staff attendance report uses."
+  },
+  {
+   "id": "set-loc",
+   "ch": "settings",
+   "title": "IN/OUT locations",
+   "say": "Click Student IN/OUT attendance locations. Type the gate or place name and click Add.",
+   "kind": "menu",
+   "links": [
+    "Staff attendance settings",
+    "Student IN/OUT attendance locations",
+    "Parent visiting",
+    "Timetable periods & breaks"
+   ],
+   "hot": "Student IN/OUT attendance locations",
+   "page": "Settings",
+   "note": "Add each place the card reader uses."
+  },
+  {
+   "id": "set-visit",
+   "ch": "settings",
+   "title": "Parent visiting setup",
+   "say": "Click Parent visiting. Set how visits work for this school, then save the block.",
+   "kind": "menu",
+   "links": [
+    "Student IN/OUT attendance locations",
+    "Parent visiting",
+    "Timetable periods & breaks",
+    "Pedagogical documents"
+   ],
+   "hot": "Parent visiting",
+   "page": "Settings",
+   "note": "Save before you open the visiting menu."
+  },
+  {
+   "id": "set-time",
+   "ch": "settings",
+   "title": "Timetable periods",
+   "say": "Click Timetable periods and breaks. Set the period times, then save.",
+   "kind": "menu",
+   "links": [
+    "Parent visiting",
+    "Timetable periods & breaks",
+    "Pedagogical documents",
+    "Card options"
+   ],
+   "hot": "Timetable periods & breaks",
+   "page": "Settings",
+   "note": "The timetable menu uses these periods."
+  },
+  {
+   "id": "set-ped",
+   "ch": "settings",
+   "title": "Pedagogical documents setup",
+   "say": "Click Pedagogical documents. Choose how schemes and lesson plans are stored, then save.",
+   "kind": "menu",
+   "links": [
+    "Timetable periods & breaks",
+    "Pedagogical documents",
+    "Card options",
+    "Grade Setting"
+   ],
+   "hot": "Pedagogical documents",
+   "page": "Settings",
+   "note": "Teachers use the Pedagogical Documents menu after this is saved."
+  },
+  {
+   "id": "set-card",
+   "ch": "settings",
+   "title": "Card options",
+   "say": "Click Card options. Set how student and staff cards are printed, then save.",
+   "kind": "menu",
+   "links": [
+    "Pedagogical documents",
+    "Card options",
+    "Grade Setting",
+    "SMS provider"
+   ],
+   "hot": "Card options",
+   "page": "Settings",
+   "note": "Generate student cards and Generate staff cards use these options."
+  },
+  {
+   "id": "set-grade",
+   "ch": "settings",
+   "title": "Grade setting",
+   "say": "Click Grade Setting. Set the mark ranges and the grade names, then save.",
+   "kind": "menu",
+   "links": [
+    "Card options",
+    "Grade Setting",
+    "SMS provider"
+   ],
+   "hot": "Grade Setting",
+   "page": "Settings",
+   "note": "Reports use these grades after you save."
+  },
+  {
+   "id": "set-sms",
+   "ch": "settings",
+   "title": "SMS provider",
+   "say": "Click SMS provider. Check the provider and the remaining SMS credit, then save if you changed it. Messages only go out while credit remains.",
+   "kind": "menu",
+   "links": [
+    "Grade Setting",
+    "SMS provider"
+   ],
+   "hot": "SMS provider",
+   "page": "Settings",
+   "note": "Parents messaging and discipline SMS both use this credit."
+  },
+  {
+   "id": "term-open",
+   "ch": "settings",
+   "title": "Open Change Active Term",
+   "say": "Open the photo menu again and click Change Active Term. Marks, fees, and attendance all use the term you set here.",
+   "kind": "drop",
+   "page": "Dashboard",
+   "links": [
+    "Settings",
+    "My profile",
+    "Change Active Term",
+    "Change password",
+    "Logout"
+   ],
+   "hot": "Change Active Term"
+  },
+  {
+   "id": "term-year",
+   "ch": "settings",
+   "title": "Choose the academic year",
+   "say": "Click Academic Year and choose the year, for example 2026-2027. Add new only when that year does not exist yet.",
+   "kind": "form",
+   "page": "Change Active Term",
+   "fields": [
+    {
+     "label": "Academic Year",
+     "value": "2026-2027",
+     "hot": true
+    },
+    {
+     "label": "Term",
+     "value": "Select Term"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Photo menu · Change Active Term"
+  },
+  {
+   "id": "term-term",
+   "ch": "settings",
+   "title": "Choose the term",
+   "say": "Click Term and choose First Term, Second Term, or Third Term.",
+   "kind": "form",
+   "page": "Change Active Term",
+   "fields": [
+    {
+     "label": "Academic Year",
+     "value": "2026-2027"
+    },
+    {
+     "label": "Term",
+     "value": "First Term",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Photo menu · Change Active Term"
+  },
+  {
+   "id": "term-save",
+   "ch": "settings",
+   "title": "Save the active term",
+   "say": "Type your password to confirm, then click Save Changes. The header will show the new term.",
+   "kind": "form",
+   "page": "Change Active Term",
+   "fields": [
+    {
+     "label": "Academic Year",
+     "value": "2026-2027"
+    },
+    {
+     "label": "Term",
+     "value": "First Term"
+    },
+    {
+     "label": "Password",
+     "value": "••••••••",
+     "hot": true
+    }
+   ],
+   "button": "Save Changes",
+   "buttonHot": true,
+   "crumb": "Photo menu · Change Active Term"
+  },
+  {
+   "id": "pwd-open",
+   "ch": "settings",
+   "title": "Open Change password",
+   "say": "Open the photo menu and click Change password. Every staff member can change their own password here.",
+   "kind": "drop",
+   "page": "Dashboard",
+   "links": [
+    "Settings",
+    "My profile",
+    "Change Active Term",
+    "Change password",
+    "Logout"
+   ],
+   "hot": "Change password"
+  },
+  {
+   "id": "pwd-now",
+   "ch": "settings",
+   "title": "Type the current password",
+   "say": "Click Current password and type the password they use today.",
+   "kind": "form",
+   "page": "Change password",
+   "fields": [
+    {
+     "label": "Current password",
+     "value": "Current password",
+     "hot": true
+    },
+    {
+     "label": "New Password",
+     "value": "New Password"
+    },
+    {
+     "label": "Confirm Password",
+     "value": "Confirm Password"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Photo menu · Change password"
+  },
+  {
+   "id": "pwd-new",
+   "ch": "settings",
+   "title": "Type the new password",
+   "say": "Click New Password and type at least 6 characters.",
+   "kind": "form",
+   "page": "Change password",
+   "fields": [
+    {
+     "label": "Current password",
+     "value": "••••••••"
+    },
+    {
+     "label": "New Password",
+     "value": "New password",
+     "hot": true
+    },
+    {
+     "label": "Confirm Password",
+     "value": "Confirm Password"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Photo menu · Change password"
+  },
+  {
+   "id": "pwd-save",
+   "ch": "settings",
+   "title": "Confirm and save the password",
+   "say": "Click Confirm Password and type the same new password, then click Change password.",
+   "kind": "form",
+   "page": "Change password",
+   "fields": [
+    {
+     "label": "Current password",
+     "value": "••••••••"
+    },
+    {
+     "label": "New Password",
+     "value": "••••••••"
+    },
+    {
+     "label": "Confirm Password",
+     "value": "Same new password",
+     "hot": true
+    }
+   ],
+   "button": "Change password",
+   "buttonHot": true,
+   "crumb": "Photo menu · Change password"
+  },
+  {
+   "id": "profile",
+   "ch": "profile",
+   "title": "Open My profile",
+   "say": "Open the photo menu and click My profile. Every staff member can open this, including people who cannot open Settings.",
+   "kind": "drop",
+   "page": "Dashboard",
+   "links": [
+    "Settings",
+    "My profile",
+    "Change Active Term",
+    "Change password",
+    "Logout"
+   ],
+   "hot": "My profile"
+  },
+  {
+   "id": "id-nation",
+   "ch": "profile",
+   "title": "Choose Rwandan or not",
+   "say": "On the Identity card, click Rwandan for a national ID, or Non-Rwandan for a passport.",
+   "kind": "form",
+   "page": "My profile",
+   "fields": [
+    {
+     "label": "Nationality",
+     "value": "Rwandan",
+     "hot": true
+    },
+    {
+     "label": "Document",
+     "value": "ID or passport file"
+    }
+   ],
+   "buttonHot": false,
+   "note": "The full identity form, including someone filling it for another staff member, is in the identity guide.",
+   "crumb": "My profile · Identity"
+  },
+  {
+   "id": "id-file",
+   "ch": "profile",
+   "title": "Upload the ID or passport",
+   "say": "Click the file box and choose the ID or passport. JPG, PNG, or PDF, up to 5 megabytes.",
+   "kind": "form",
+   "page": "My profile",
+   "fields": [
+    {
+     "label": "Nationality",
+     "value": "Rwandan"
+    },
+    {
+     "label": "Document",
+     "value": "national-id.jpg",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "My profile · Identity"
+  },
+  {
+   "id": "id-save",
+   "ch": "profile",
+   "title": "Save identity",
+   "say": "Click Save identity. The record is stored on this profile.",
+   "kind": "form",
+   "page": "My profile",
+   "fields": [
+    {
+     "label": "Nationality",
+     "value": "Rwandan"
+    },
+    {
+     "label": "Document",
+     "value": "national-id.jpg"
+    }
+   ],
+   "button": "Save identity",
+   "buttonHot": true,
+   "crumb": "My profile · Identity"
+  },
+  {
+   "id": "dash",
+   "ch": "students",
+   "title": "Dashboard",
+   "say": "Click Dashboard any time to return home. Leaders see the school summary. Other posts see the panel allowed for their role.",
+   "kind": "menu",
+   "links": [
+    "Dashboard",
+    "Students",
+    "Classes",
+    "Course"
+   ],
+   "hot": "Dashboard",
+   "page": "Dashboard",
+   "note": "The centre of the header shows the school and the active term."
+  },
+  {
+   "id": "school-switch",
+   "ch": "students",
+   "title": "Export from school",
+   "say": "If Export from school or Child schools is on the menu, click the school name before you export. Back to master school returns you. Skip this when the menu is not there.",
+   "kind": "menu",
+   "links": [
+    "Dashboard",
+    "Export from school",
+    "Wisdom School Musanze",
+    "Back to master school"
+   ],
+   "hot": "Wisdom School Musanze",
+   "page": "Export from school",
+   "note": "A named school uses its own records. Do not export the master school when you meant a child school."
+  },
+  {
+   "id": "stu-reg",
+   "ch": "students",
+   "title": "Register new student",
+   "say": "Open Students, then Register new student. If this line is missing, that post cannot register.",
+   "kind": "menu",
+   "links": [
+    "Register new student",
+    "View students",
+    "Pending review",
+    "Dismissed students",
+    "Generate student cards",
+    "Student Photo",
+    "Assign Card",
+    "Required Material Check",
+    "Dormitories"
+   ],
+   "hot": "Register new student",
+   "page": "Register new student",
+   "note": "Example: register Jean Mukiza in S3 A."
+  },
+  {
+   "id": "stu-fname",
+   "ch": "students",
+   "title": "First name",
+   "say": "Click the first name and type Jean.",
+   "kind": "form",
+   "page": "Register new student",
+   "fields": [
+    {
+     "label": "First name",
+     "value": "Jean",
+     "hot": true
+    },
+    {
+     "label": "Last name",
+     "value": "Last name"
+    },
+    {
+     "label": "Class",
+     "value": "Select class"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Register new student"
+  },
+  {
+   "id": "stu-lname",
+   "ch": "students",
+   "title": "Last name",
+   "say": "Click the last name and type Mukiza.",
+   "kind": "form",
+   "page": "Register new student",
+   "fields": [
+    {
+     "label": "First name",
+     "value": "Jean"
+    },
+    {
+     "label": "Last name",
+     "value": "Mukiza",
+     "hot": true
+    },
+    {
+     "label": "Class",
+     "value": "Select class"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Register new student"
+  },
+  {
+   "id": "stu-class",
+   "ch": "students",
+   "title": "Class",
+   "say": "Click the class and choose S3 A.",
+   "kind": "form",
+   "page": "Register new student",
+   "fields": [
+    {
+     "label": "First name",
+     "value": "Jean"
+    },
+    {
+     "label": "Last name",
+     "value": "Mukiza"
+    },
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Register new student"
+  },
+  {
+   "id": "stu-phone",
+   "ch": "students",
+   "title": "Parent phone",
+   "say": "Click the parent phone and type the number that should receive SMS.",
+   "kind": "form",
+   "page": "Register new student",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A"
+    },
+    {
+     "label": "Parent phone",
+     "value": "0780000000",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Register new student"
+  },
+  {
+   "id": "stu-save",
+   "ch": "students",
+   "title": "Save the student",
+   "say": "Click Save. Jean Mukiza is now in the student list.",
+   "kind": "form",
+   "page": "Register new student",
+   "fields": [
+    {
+     "label": "First name",
+     "value": "Jean"
+    },
+    {
+     "label": "Last name",
+     "value": "Mukiza"
+    },
+    {
+     "label": "Class",
+     "value": "S3 A"
+    },
+    {
+     "label": "Parent phone",
+     "value": "0780000000"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Students · Register new student"
+  },
+  {
+   "id": "stu-view",
+   "ch": "students",
+   "title": "View students",
+   "say": "Click View students. This is the list you search when a parent or a teacher asks about one child.",
+   "kind": "menu",
+   "links": [
+    "Register new student",
+    "View students",
+    "Pending review",
+    "Dismissed students",
+    "Generate student cards",
+    "Student Photo",
+    "Assign Card",
+    "Required Material Check",
+    "Dormitories"
+   ],
+   "hot": "View students",
+   "page": "View students",
+   "note": "Search by name, registration number, or parent phone."
+  },
+  {
+   "id": "stu-search",
+   "ch": "students",
+   "title": "Search the student",
+   "say": "Click the search box and type Mukiza.",
+   "kind": "form",
+   "page": "View students",
+   "fields": [
+    {
+     "label": "Search",
+     "value": "Mukiza",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · View students"
+  },
+  {
+   "id": "stu-open",
+   "ch": "students",
+   "title": "Open the student",
+   "say": "Click the name Jean Mukiza to open the record, then save any change the post is allowed to make.",
+   "kind": "form",
+   "page": "View students",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza · S3 A",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Students · View students"
+  },
+  {
+   "id": "stu-pending",
+   "ch": "students",
+   "title": "Pending review",
+   "say": "Click Pending review. These are registrations that are not approved yet.",
+   "kind": "menu",
+   "links": [
+    "Register new student",
+    "View students",
+    "Pending review",
+    "Dismissed students",
+    "Generate student cards",
+    "Student Photo",
+    "Assign Card",
+    "Required Material Check",
+    "Dormitories"
+   ],
+   "hot": "Pending review",
+   "page": "Pending review",
+   "note": "Open the row, check the details, then approve."
+  },
+  {
+   "id": "stu-approve",
+   "ch": "students",
+   "title": "Approve the registration",
+   "say": "Click the pending row for the student, check the class, then click Approve.",
+   "kind": "form",
+   "page": "Pending review",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza",
+     "hot": true
+    }
+   ],
+   "button": "Approve",
+   "buttonHot": true,
+   "crumb": "Students · Pending review"
+  },
+  {
+   "id": "stu-dismiss",
+   "ch": "students",
+   "title": "Dismissed students",
+   "say": "Click Dismissed students. Use this list to find a student who has left, not to register a new one.",
+   "kind": "menu",
+   "links": [
+    "Register new student",
+    "View students",
+    "Pending review",
+    "Dismissed students",
+    "Generate student cards",
+    "Student Photo",
+    "Assign Card",
+    "Required Material Check",
+    "Dormitories"
+   ],
+   "hot": "Dismissed students",
+   "page": "Dismissed students",
+   "note": "Search the name. Open the row to see why they left."
+  },
+  {
+   "id": "stu-dismiss-search",
+   "ch": "students",
+   "title": "Find a dismissed student",
+   "say": "Click search and type the name. Open the row to read the record. There is no save on this list.",
+   "kind": "form",
+   "page": "Dismissed students",
+   "fields": [
+    {
+     "label": "Search",
+     "value": "Mukiza",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Dismissed students"
+  },
+  {
+   "id": "stu-cards",
+   "ch": "students",
+   "title": "Generate student cards",
+   "say": "Click Generate student cards.",
+   "kind": "menu",
+   "links": [
+    "Register new student",
+    "View students",
+    "Pending review",
+    "Dismissed students",
+    "Generate student cards",
+    "Student Photo",
+    "Assign Card",
+    "Required Material Check",
+    "Dormitories"
+   ],
+   "hot": "Generate student cards",
+   "page": "Generate student cards",
+   "note": "Pick the class first so you do not print the whole school by mistake."
+  },
+  {
+   "id": "stu-cards-class",
+   "ch": "students",
+   "title": "Choose the class",
+   "say": "Click the class and choose S3 A.",
+   "kind": "form",
+   "page": "Generate student cards",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Generate student cards"
+  },
+  {
+   "id": "stu-cards-go",
+   "ch": "students",
+   "title": "Generate the cards",
+   "say": "Click Generate. The cards use the photo and the card options saved in Settings.",
+   "kind": "form",
+   "page": "Generate student cards",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A"
+    }
+   ],
+   "button": "Generate",
+   "buttonHot": true,
+   "crumb": "Students · Generate student cards"
+  },
+  {
+   "id": "stu-photo",
+   "ch": "students",
+   "title": "Student Photo",
+   "say": "Click Student Photo.",
+   "kind": "menu",
+   "links": [
+    "Register new student",
+    "View students",
+    "Pending review",
+    "Dismissed students",
+    "Generate student cards",
+    "Student Photo",
+    "Assign Card",
+    "Required Material Check",
+    "Dormitories"
+   ],
+   "hot": "Student Photo",
+   "page": "Student Photo",
+   "note": "Use a head-and-shoulders picture on a white background."
+  },
+  {
+   "id": "stu-photo-pick",
+   "ch": "students",
+   "title": "Choose the student",
+   "say": "Search Jean Mukiza and click his name.",
+   "kind": "form",
+   "page": "Student Photo",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Student Photo"
+  },
+  {
+   "id": "stu-photo-file",
+   "ch": "students",
+   "title": "Choose the photo",
+   "say": "Click the file box and choose the portrait.",
+   "kind": "form",
+   "page": "Student Photo",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Photo",
+     "value": "portrait.jpg",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Student Photo"
+  },
+  {
+   "id": "stu-photo-save",
+   "ch": "students",
+   "title": "Save the photo",
+   "say": "Click Save. The new picture is the one that prints on the card.",
+   "kind": "form",
+   "page": "Student Photo",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Photo",
+     "value": "portrait.jpg"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Students · Student Photo"
+  },
+  {
+   "id": "stu-assign",
+   "ch": "students",
+   "title": "Assign Card",
+   "say": "Click Assign Card.",
+   "kind": "menu",
+   "links": [
+    "Register new student",
+    "View students",
+    "Pending review",
+    "Dismissed students",
+    "Generate student cards",
+    "Student Photo",
+    "Assign Card",
+    "Required Material Check",
+    "Dormitories"
+   ],
+   "hot": "Assign Card",
+   "page": "Assign Card",
+   "note": "One card belongs to one student. The page says Card Saved when the tap is stored."
+  },
+  {
+   "id": "stu-assign-search",
+   "ch": "students",
+   "title": "Find the student",
+   "say": "Search Jean Mukiza and click his name.",
+   "kind": "form",
+   "page": "Assign Card",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Assign Card"
+  },
+  {
+   "id": "stu-assign-tap",
+   "ch": "students",
+   "title": "Tap the card",
+   "say": "Click the card box and tap the student's card, or type the card number. The page saves it and shows Card Saved.",
+   "kind": "form",
+   "page": "Assign Card",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Card",
+     "value": "Tap the card",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Assign Card"
+  },
+  {
+   "id": "stu-mat",
+   "ch": "students",
+   "title": "Required Material Check",
+   "say": "Click Required Material Check.",
+   "kind": "menu",
+   "links": [
+    "Register new student",
+    "View students",
+    "Pending review",
+    "Dismissed students",
+    "Generate student cards",
+    "Student Photo",
+    "Assign Card",
+    "Required Material Check",
+    "Dormitories"
+   ],
+   "hot": "Required Material Check",
+   "page": "Required Material Check",
+   "note": "The items come from Student required materials in Settings."
+  },
+  {
+   "id": "stu-mat-class",
+   "ch": "students",
+   "title": "Choose the class",
+   "say": "Click the class and choose S3 A.",
+   "kind": "form",
+   "page": "Required Material Check",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Required Material Check"
+  },
+  {
+   "id": "stu-mat-tick",
+   "ch": "students",
+   "title": "Tick what the student brought",
+   "say": "On Jean Mukiza's row, tick each item he brought.",
+   "kind": "form",
+   "page": "Required Material Check",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Items",
+     "value": "Tick the items he brought",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Required Material Check"
+  },
+  {
+   "id": "stu-mat-save",
+   "ch": "students",
+   "title": "Save the check",
+   "say": "Click Save. The check is stored for that day.",
+   "kind": "form",
+   "page": "Required Material Check",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A"
+    },
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Students · Required Material Check"
+  },
+  {
+   "id": "stu-dorm",
+   "ch": "students",
+   "title": "Dormitories",
+   "say": "Click Dormitories under Students. This assigns a student to a room. Creating the dormitory itself is done in Settings.",
+   "kind": "menu",
+   "links": [
+    "Register new student",
+    "View students",
+    "Pending review",
+    "Dismissed students",
+    "Generate student cards",
+    "Student Photo",
+    "Assign Card",
+    "Required Material Check",
+    "Dormitories"
+   ],
+   "hot": "Dormitories",
+   "page": "Dormitories",
+   "note": "Example: put Jean Mukiza in room 12."
+  },
+  {
+   "id": "stu-dorm-who",
+   "ch": "students",
+   "title": "Choose the student",
+   "say": "Search Jean Mukiza and click his name.",
+   "kind": "form",
+   "page": "Dormitories",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza",
+     "hot": true
+    },
+    {
+     "label": "Room",
+     "value": "Room"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Dormitories"
+  },
+  {
+   "id": "stu-dorm-room",
+   "ch": "students",
+   "title": "Choose the room",
+   "say": "Click the room and choose room 12.",
+   "kind": "form",
+   "page": "Dormitories",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Room",
+     "value": "Room 12",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Students · Dormitories"
+  },
+  {
+   "id": "stu-dorm-save",
+   "ch": "students",
+   "title": "Save the room",
+   "say": "Click Save. Jean Mukiza is now in that room.",
+   "kind": "form",
+   "page": "Dormitories",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Room",
+     "value": "Room 12"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Students · Dormitories"
+  },
+  {
+   "id": "fam-all",
+   "ch": "families",
+   "title": "All families",
+   "say": "Open Families, then All families. If Families is missing, that post cannot open family sheets.",
+   "kind": "menu",
+   "links": [
+    "All families",
+    "Family sheet"
+   ],
+   "hot": "All families",
+   "page": "All families",
+   "note": "Search the parent name or the phone."
+  },
+  {
+   "id": "fam-search",
+   "ch": "families",
+   "title": "Search a family",
+   "say": "Click search and type the parent name, for example Uwase.",
+   "kind": "form",
+   "page": "All families",
+   "fields": [
+    {
+     "label": "Search",
+     "value": "Uwase",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Families · All families"
+  },
+  {
+   "id": "fam-open",
+   "ch": "families",
+   "title": "Open the family",
+   "say": "Click the family name to open the sheet of children linked to that parent.",
+   "kind": "form",
+   "page": "All families",
+   "fields": [
+    {
+     "label": "Family",
+     "value": "Aline Uwase",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Families · All families"
+  },
+  {
+   "id": "fam-sheet",
+   "ch": "families",
+   "title": "Each family sheet",
+   "say": "Under Families, every named sheet is its own submenu. Click that sheet name, search the family, and open it. Repeat for each sheet name you see. Do not skip one.",
+   "kind": "menu",
+   "links": [
+    "All families",
+    "Family sheet"
+   ],
+   "hot": "Family sheet",
+   "page": "Family sheet",
+   "note": "The sheet names differ by school. Open each one the same way."
+  },
+  {
+   "id": "cls-open",
+   "ch": "classes",
+   "title": "Classes",
+   "say": "Click Classes. This menu has no submenu. The list is the page.",
+   "kind": "menu",
+   "links": [
+    "Classes",
+    "Course"
+   ],
+   "hot": "Classes",
+   "page": "Classes",
+   "note": "Each class belongs to a level. Marks and attendance start from a class."
+  },
+  {
+   "id": "cls-row",
+   "ch": "classes",
+   "title": "Open one class",
+   "say": "Click S3 A to open that class. Save only if you changed the class name, level, or department.",
+   "kind": "form",
+   "page": "Classes",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Classes"
+  },
+  {
+   "id": "crs-cat",
+   "ch": "course",
+   "title": "Course Category",
+   "say": "Open Course, then Course Category.",
+   "kind": "menu",
+   "links": [
+    "Course Category",
+    "Create Course",
+    "Manage Course"
+   ],
+   "hot": "Course Category",
+   "page": "Course Category",
+   "note": "A category groups subjects, for example Sciences."
+  },
+  {
+   "id": "crs-cat-name",
+   "ch": "course",
+   "title": "Category name",
+   "say": "Click the name and type Sciences.",
+   "kind": "form",
+   "page": "Course Category",
+   "fields": [
+    {
+     "label": "Category",
+     "value": "Sciences",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Course · Course Category"
+  },
+  {
+   "id": "crs-cat-save",
+   "ch": "course",
+   "title": "Save the category",
+   "say": "Click Save. The category can now be chosen when you create a course.",
+   "kind": "form",
+   "page": "Course Category",
+   "fields": [
+    {
+     "label": "Category",
+     "value": "Sciences"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Course · Course Category"
+  },
+  {
+   "id": "crs-new",
+   "ch": "course",
+   "title": "Create Course",
+   "say": "Click Create Course.",
+   "kind": "menu",
+   "links": [
+    "Course Category",
+    "Create Course",
+    "Manage Course"
+   ],
+   "hot": "Create Course",
+   "page": "Create Course",
+   "note": "Example: Mathematics in the Sciences category."
+  },
+  {
+   "id": "crs-new-name",
+   "ch": "course",
+   "title": "Course name",
+   "say": "Click the course name and type Mathematics.",
+   "kind": "form",
+   "page": "Create Course",
+   "fields": [
+    {
+     "label": "Course",
+     "value": "Mathematics",
+     "hot": true
+    },
+    {
+     "label": "Category",
+     "value": "Category"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Course · Create Course"
+  },
+  {
+   "id": "crs-new-cat",
+   "ch": "course",
+   "title": "Course category",
+   "say": "Click the category and choose Sciences.",
+   "kind": "form",
+   "page": "Create Course",
+   "fields": [
+    {
+     "label": "Course",
+     "value": "Mathematics"
+    },
+    {
+     "label": "Category",
+     "value": "Sciences",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Course · Create Course"
+  },
+  {
+   "id": "crs-new-save",
+   "ch": "course",
+   "title": "Save the course",
+   "say": "Click Save. Mathematics now exists and can be assigned.",
+   "kind": "form",
+   "page": "Create Course",
+   "fields": [
+    {
+     "label": "Course",
+     "value": "Mathematics"
+    },
+    {
+     "label": "Category",
+     "value": "Sciences"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Course · Create Course"
+  },
+  {
+   "id": "crs-man",
+   "ch": "course",
+   "title": "Manage Course",
+   "say": "Click Manage Course. This is where a course is assigned to a class and a teacher.",
+   "kind": "menu",
+   "links": [
+    "Course Category",
+    "Create Course",
+    "Manage Course"
+   ],
+   "hot": "Manage Course",
+   "page": "Manage Course",
+   "note": "A teacher's marks follow the courses assigned here."
+  },
+  {
+   "id": "crs-man-pick",
+   "ch": "course",
+   "title": "Choose the course",
+   "say": "Click the course and choose Mathematics for S3 A.",
+   "kind": "form",
+   "page": "Manage Course",
+   "fields": [
+    {
+     "label": "Course",
+     "value": "Mathematics · S3 A",
+     "hot": true
+    },
+    {
+     "label": "Teacher",
+     "value": "Teacher"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Course · Manage Course"
+  },
+  {
+   "id": "crs-man-save",
+   "ch": "course",
+   "title": "Save the assignment",
+   "say": "Choose the teacher, then click Save.",
+   "kind": "form",
+   "page": "Manage Course",
+   "fields": [
+    {
+     "label": "Course",
+     "value": "Mathematics · S3 A"
+    },
+    {
+     "label": "Teacher",
+     "value": "Aline Uwase",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Course · Manage Course"
+  },
+  {
+   "id": "beh-open",
+   "ch": "behavior",
+   "title": "Record Entry",
+   "say": "Open Behavior, then Record Entry. If Behavior is missing, that post cannot write a discipline case.",
+   "kind": "menu",
+   "links": [
+    "Record Entry",
+    "Completed Discipline Entry",
+    "Discipline Record"
+   ],
+   "hot": "Record Entry",
+   "page": "Record Entry",
+   "note": "Example: Jean Mukiza in S3 A, one conduct code, then Save."
+  },
+  {
+   "id": "beh-search",
+   "ch": "behavior",
+   "title": "Search the student",
+   "say": "Click Search by Student and type Mukiza. You can also use Search by Class or Scan by Card.",
+   "kind": "form",
+   "page": "Record Entry",
+   "fields": [
+    {
+     "label": "Search by Student",
+     "value": "Mukiza",
+     "hot": true
+    },
+    {
+     "label": "Search by Class",
+     "value": "S3 A"
+    },
+    {
+     "label": "Scan by Card",
+     "value": "Tap the card"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Behavior · Record Entry"
+  },
+  {
+   "id": "beh-pick",
+   "ch": "behavior",
+   "title": "Add the student",
+   "say": "Click Jean Mukiza so his name appears in the student list. The case is saved for the students in that list.",
+   "kind": "form",
+   "page": "Record Entry",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza · S3 A",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "note": "The list stays empty until you click the name.",
+   "crumb": "Behavior · Record Entry"
+  },
+  {
+   "id": "beh-code",
+   "ch": "behavior",
+   "title": "Choose the conduct code",
+   "say": "Click School conduct code and search by the number or the words. Click the code that matches what happened.",
+   "kind": "form",
+   "page": "Record Entry",
+   "fields": [
+    {
+     "label": "Active term",
+     "value": "First Term"
+    },
+    {
+     "label": "School conduct code",
+     "value": "Search the code, then click it",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "note": "The blue step is deducted automatically for this student.",
+   "crumb": "Behavior · Record Entry"
+  },
+  {
+   "id": "beh-action",
+   "ch": "behavior",
+   "title": "Reduce discipline marks",
+   "say": "Leave Reduce discipline marks selected when marks should go down. Send remarks to parent only sends a remark and does not reduce marks.",
+   "kind": "form",
+   "page": "Record Entry",
+   "fields": [
+    {
+     "label": "Action",
+     "value": "Reduce discipline marks",
+     "hot": true
+    },
+    {
+     "label": "Send remarks to parent",
+     "value": "Remark only"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Behavior · Record Entry"
+  },
+  {
+   "id": "beh-sms",
+   "ch": "behavior",
+   "title": "Notify the parent",
+   "say": "Tick Notify parent only when the parent should receive an SMS. Leave it off when you only want the record saved.",
+   "kind": "form",
+   "page": "Record Entry",
+   "fields": [
+    {
+     "label": "Notify parent",
+     "value": "Tick to send SMS",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Behavior · Record Entry"
+  },
+  {
+   "id": "beh-save",
+   "ch": "behavior",
+   "title": "Save the discipline record",
+   "say": "Click Save. The page says the record was saved and is ready for the next student.",
+   "kind": "form",
+   "page": "Record Entry",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza · S3 A"
+    },
+    {
+     "label": "Conduct code",
+     "value": "Selected"
+    },
+    {
+     "label": "Action",
+     "value": "Reduce discipline marks"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Behavior · Record Entry"
+  },
+  {
+   "id": "beh-done",
+   "ch": "behavior",
+   "title": "Completed Discipline Entry",
+   "say": "Click Completed Discipline Entry. This list shows cases already saved.",
+   "kind": "menu",
+   "links": [
+    "Record Entry",
+    "Completed Discipline Entry",
+    "Discipline Record"
+   ],
+   "hot": "Completed Discipline Entry",
+   "page": "Completed Discipline Entry",
+   "note": "Open Jean Mukiza's row to confirm the code and the marks that were taken."
+  },
+  {
+   "id": "beh-done-row",
+   "ch": "behavior",
+   "title": "Open the saved case",
+   "say": "Click Jean Mukiza's row. Check the code and the marks, then save only if you are correcting that case.",
+   "kind": "form",
+   "page": "Completed Discipline Entry",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Behavior · Completed Discipline Entry"
+  },
+  {
+   "id": "beh-rec",
+   "ch": "behavior",
+   "title": "Discipline Record",
+   "say": "Click Discipline Record. Use this to look up a past case.",
+   "kind": "menu",
+   "links": [
+    "Record Entry",
+    "Completed Discipline Entry",
+    "Discipline Record"
+   ],
+   "hot": "Discipline Record",
+   "page": "Discipline Record",
+   "note": "Search the student. This page is the history, not the place to start a new case."
+  },
+  {
+   "id": "beh-rec-search",
+   "ch": "behavior",
+   "title": "Find the record",
+   "say": "Click search and type Mukiza, then open the row.",
+   "kind": "form",
+   "page": "Discipline Record",
+   "fields": [
+    {
+     "label": "Search",
+     "value": "Mukiza",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Behavior · Discipline Record"
+  },
+  {
+   "id": "per-open",
+   "ch": "permissions",
+   "title": "Permission Entry",
+   "say": "Open Permissions, then Permission Entry. Use this when a student is allowed out of school.",
+   "kind": "menu",
+   "links": [
+    "Permission Entry",
+    "Permission report"
+   ],
+   "hot": "Permission Entry",
+   "page": "Permission Entry",
+   "note": "Example: Jean Mukiza leaves for a clinic and returns the same day."
+  },
+  {
+   "id": "per-search",
+   "ch": "permissions",
+   "title": "Add the student",
+   "say": "Search Mukiza and click Jean Mukiza so he is in the list.",
+   "kind": "form",
+   "page": "Permission Entry",
+   "fields": [
+    {
+     "label": "Search by Student",
+     "value": "Jean Mukiza",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Permissions · Permission Entry"
+  },
+  {
+   "id": "per-time",
+   "ch": "permissions",
+   "title": "Leave and return time",
+   "say": "Click Leave Time and Return Time and set when he leaves and when he must be back.",
+   "kind": "form",
+   "page": "Permission Entry",
+   "fields": [
+    {
+     "label": "Active term",
+     "value": "First Term"
+    },
+    {
+     "label": "Leave Time & Return Time",
+     "value": "Today, 10:00 to 14:00",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Permissions · Permission Entry"
+  },
+  {
+   "id": "per-dest",
+   "ch": "permissions",
+   "title": "Destination",
+   "say": "Click Destination and type where he is going, for example Clinic.",
+   "kind": "form",
+   "page": "Permission Entry",
+   "fields": [
+    {
+     "label": "Destination",
+     "value": "Clinic",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Permissions · Permission Entry"
+  },
+  {
+   "id": "per-reason",
+   "ch": "permissions",
+   "title": "Reason",
+   "say": "Click Reason and type why he is leaving. At least a few words.",
+   "kind": "form",
+   "page": "Permission Entry",
+   "fields": [
+    {
+     "label": "Reason",
+     "value": "Medical visit",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Permissions · Permission Entry"
+  },
+  {
+   "id": "per-save",
+   "ch": "permissions",
+   "title": "Save the permission",
+   "say": "Tick Notify parent by SMS only if the parent should be told. Then click Save.",
+   "kind": "form",
+   "page": "Permission Entry",
+   "fields": [
+    {
+     "label": "Destination",
+     "value": "Clinic"
+    },
+    {
+     "label": "Reason",
+     "value": "Medical visit"
+    },
+    {
+     "label": "Notify parent by SMS",
+     "value": "Optional"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Permissions · Permission Entry"
+  },
+  {
+   "id": "per-rep",
+   "ch": "permissions",
+   "title": "Permission report",
+   "say": "Click Permission report.",
+   "kind": "menu",
+   "links": [
+    "Permission Entry",
+    "Permission report"
+   ],
+   "hot": "Permission report",
+   "page": "Permission report",
+   "note": "Leaders use this list to see who was allowed out."
+  },
+  {
+   "id": "per-rep-go",
+   "ch": "permissions",
+   "title": "Open the report",
+   "say": "Choose the dates, then click the button that shows the report. Jean Mukiza's clinic permission should be on it.",
+   "kind": "form",
+   "page": "Permission report",
+   "fields": [
+    {
+     "label": "From date",
+     "value": "Today",
+     "hot": true
+    },
+    {
+     "label": "To date",
+     "value": "Today"
+    }
+   ],
+   "button": "Show",
+   "buttonHot": true,
+   "crumb": "Permissions · Permission report"
+  },
+  {
+   "id": "pv-assign",
+   "ch": "visiting",
+   "title": "Assign visitors",
+   "say": "Open Parent visiting, then Assign visitors.",
+   "kind": "menu",
+   "links": [
+    "Assign visitors",
+    "Print visitor cards",
+    "Verify visit",
+    "Visiting report"
+   ],
+   "hot": "Assign visitors",
+   "page": "Assign visitors",
+   "note": "Example: Aline Uwase visits Jean Mukiza."
+  },
+  {
+   "id": "pv-student",
+   "ch": "visiting",
+   "title": "Choose the student",
+   "say": "Search Jean Mukiza and click his name.",
+   "kind": "form",
+   "page": "Assign visitors",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Parent visiting · Assign visitors"
+  },
+  {
+   "id": "pv-name",
+   "ch": "visiting",
+   "title": "Visitor name",
+   "say": "Click the visitor name and type Aline Uwase, and the phone if the form asks for it.",
+   "kind": "form",
+   "page": "Assign visitors",
+   "fields": [
+    {
+     "label": "Visitor",
+     "value": "Aline Uwase",
+     "hot": true
+    },
+    {
+     "label": "Phone",
+     "value": "0780000000"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Parent visiting · Assign visitors"
+  },
+  {
+   "id": "pv-save",
+   "ch": "visiting",
+   "title": "Save the visitor and card",
+   "say": "Click Save visitor and card when they need a card. Click Save visitor only when no card is needed.",
+   "kind": "form",
+   "page": "Assign visitors",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Visitor",
+     "value": "Aline Uwase"
+    }
+   ],
+   "button": "Save visitor & card",
+   "buttonHot": true,
+   "crumb": "Parent visiting · Assign visitors"
+  },
+  {
+   "id": "pv-cards",
+   "ch": "visiting",
+   "title": "Print visitor cards",
+   "say": "Click Print visitor cards.",
+   "kind": "menu",
+   "links": [
+    "Assign visitors",
+    "Print visitor cards",
+    "Verify visit",
+    "Visiting report"
+   ],
+   "hot": "Print visitor cards",
+   "page": "Print visitor cards",
+   "note": "Print Aline Uwase's card after it is saved."
+  },
+  {
+   "id": "pv-print",
+   "ch": "visiting",
+   "title": "Print the card",
+   "say": "Select Aline Uwase, then click Print.",
+   "kind": "form",
+   "page": "Print visitor cards",
+   "fields": [
+    {
+     "label": "Visitor",
+     "value": "Aline Uwase",
+     "hot": true
+    }
+   ],
+   "button": "Print",
+   "buttonHot": true,
+   "crumb": "Parent visiting · Print visitor cards"
+  },
+  {
+   "id": "pv-verify",
+   "ch": "visiting",
+   "title": "Verify visit",
+   "say": "Click Verify visit. This is the gate check when the visitor arrives.",
+   "kind": "menu",
+   "links": [
+    "Assign visitors",
+    "Print visitor cards",
+    "Verify visit",
+    "Visiting report"
+   ],
+   "hot": "Verify visit",
+   "page": "Verify visit",
+   "note": "Search the visitor or scan the card, then confirm they are allowed in."
+  },
+  {
+   "id": "pv-verify-go",
+   "ch": "visiting",
+   "title": "Confirm the visit",
+   "say": "Click Aline Uwase, then confirm the visit.",
+   "kind": "form",
+   "page": "Verify visit",
+   "fields": [
+    {
+     "label": "Visitor",
+     "value": "Aline Uwase",
+     "hot": true
+    }
+   ],
+   "button": "Confirm",
+   "buttonHot": true,
+   "crumb": "Parent visiting · Verify visit"
+  },
+  {
+   "id": "pv-report",
+   "ch": "visiting",
+   "title": "Parent visiting report",
+   "say": "Click Visiting report under Parent visiting.",
+   "kind": "menu",
+   "links": [
+    "Assign visitors",
+    "Print visitor cards",
+    "Verify visit",
+    "Visiting report"
+   ],
+   "hot": "Visiting report",
+   "page": "Visiting report",
+   "note": "This report is the parent visits. Daily visiting has its own report."
+  },
+  {
+   "id": "pv-report-go",
+   "ch": "visiting",
+   "title": "Show the parent visits",
+   "say": "Choose the day, then show the report.",
+   "kind": "form",
+   "page": "Visiting report",
+   "fields": [
+    {
+     "label": "Date",
+     "value": "Today",
+     "hot": true
+    }
+   ],
+   "button": "Show",
+   "buttonHot": true,
+   "crumb": "Parent visiting · Visiting report"
+  },
+  {
+   "id": "dv-inside",
+   "ch": "visiting",
+   "title": "Currently inside",
+   "say": "Open Daily visiting, then Currently inside. This is the live list of guests on the campus now.",
+   "kind": "menu",
+   "links": [
+    "Currently inside",
+    "Visiting report"
+   ],
+   "hot": "Currently inside",
+   "page": "Currently inside",
+   "note": "A name stays here until they are signed out."
+  },
+  {
+   "id": "dv-report",
+   "ch": "visiting",
+   "title": "Daily visiting report",
+   "say": "Click Visiting report under Daily visiting. This is for other guests, not the parent-visitor cards.",
+   "kind": "menu",
+   "links": [
+    "Currently inside",
+    "Visiting report"
+   ],
+   "hot": "Visiting report",
+   "page": "Visiting report",
+   "note": "Choose the day and show the report."
+  },
+  {
+   "id": "dv-report-go",
+   "ch": "visiting",
+   "title": "Show the daily report",
+   "say": "Choose today, then click the button that shows the report.",
+   "kind": "form",
+   "page": "Visiting report",
+   "fields": [
+    {
+     "label": "Date",
+     "value": "Today",
+     "hot": true
+    }
+   ],
+   "button": "Show",
+   "buttonHot": true,
+   "crumb": "Daily visiting · Visiting report"
+  },
+  {
+   "id": "mk-open",
+   "ch": "marks",
+   "title": "Marks Entry",
+   "say": "Open Marks, then Marks Entry. A window opens before the mark sheet.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Marks Entry",
+   "page": "Marks Entry",
+   "note": "Example: CAT marks for Mathematics, class S3 A, Jean Mukiza scores 16 out of 20."
+  },
+  {
+   "id": "mk-type",
+   "ch": "marks",
+   "title": "Marks type",
+   "say": "Click the marks type and choose CAT. A locked type cannot be selected until a leader unlocks it.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Type",
+     "value": "CAT",
+     "hot": true
+    },
+    {
+     "label": "Active term",
+     "value": "First Term"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-term",
+   "ch": "marks",
+   "title": "Active term",
+   "say": "Check the active term. Leaders can change it here. Other posts keep the term already set in the header.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Type",
+     "value": "CAT"
+    },
+    {
+     "label": "Active term",
+     "value": "First Term",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-go",
+   "ch": "marks",
+   "title": "Open the mark sheet",
+   "say": "Click Go. The mark sheet for that type and term opens.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Type",
+     "value": "CAT"
+    },
+    {
+     "label": "Active term",
+     "value": "First Term"
+    }
+   ],
+   "button": "Go",
+   "buttonHot": true,
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-course",
+   "ch": "marks",
+   "title": "Choose the course",
+   "say": "Click Course and choose Mathematics.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Course",
+     "value": "Mathematics",
+     "hot": true
+    },
+    {
+     "label": "Class",
+     "value": "Class"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-class",
+   "ch": "marks",
+   "title": "Choose the class",
+   "say": "Click Class and choose S3 A.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Course",
+     "value": "Mathematics"
+    },
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-cat",
+   "ch": "marks",
+   "title": "Cat type",
+   "say": "Click Cat Type and choose the assessment, for example CAT 1.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Cat Type",
+     "value": "CAT 1",
+     "hot": true
+    },
+    {
+     "label": "Total Marks",
+     "value": "Total Marks"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-total",
+   "ch": "marks",
+   "title": "Total marks",
+   "say": "Click Total Marks and type 20.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Cat Type",
+     "value": "CAT 1"
+    },
+    {
+     "label": "Total Marks",
+     "value": "20",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-date",
+   "ch": "marks",
+   "title": "Date given",
+   "say": "Click Date Given and choose the day of the assessment.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Total Marks",
+     "value": "20"
+    },
+    {
+     "label": "Date Given",
+     "value": "Today",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-score",
+   "ch": "marks",
+   "title": "Type the student's mark",
+   "say": "On Jean Mukiza's row, click the mark box and type 16. A mark above the total is rejected.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Jean Mukiza",
+     "value": "16",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "note": "Do this for each student on the sheet before you save.",
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-save",
+   "ch": "marks",
+   "title": "Save the marks",
+   "say": "Click Save. The marks for Mathematics, S3 A, stay on this term.",
+   "kind": "form",
+   "page": "Marks Entry",
+   "fields": [
+    {
+     "label": "Course",
+     "value": "Mathematics"
+    },
+    {
+     "label": "Class",
+     "value": "S3 A"
+    },
+    {
+     "label": "Jean Mukiza",
+     "value": "16 / 20"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Marks · Marks Entry"
+  },
+  {
+   "id": "mk-lock",
+   "ch": "marks",
+   "title": "Lock Marks editing",
+   "say": "Click Lock Marks editing when this post is allowed. Locking stops teachers changing marks after the deadline. Skip it when the line is missing.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Lock Marks editing",
+   "page": "Lock Marks editing",
+   "note": "Unlock only when a correction was approved."
+  },
+  {
+   "id": "mk-sheet",
+   "ch": "marks",
+   "title": "Marks sheet",
+   "say": "Click Marks sheet to see marks already saved.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Marks sheet",
+   "page": "Marks sheet",
+   "note": "Choose the class and the course, then open the sheet. Export PDF is on this page."
+  },
+  {
+   "id": "mk-sheet-go",
+   "ch": "marks",
+   "title": "Open the saved sheet",
+   "say": "Choose S3 A and Mathematics, then open the sheet. Jean Mukiza should show 16.",
+   "kind": "form",
+   "page": "Marks sheet",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    },
+    {
+     "label": "Course",
+     "value": "Mathematics"
+    }
+   ],
+   "button": "Open",
+   "buttonHot": true,
+   "crumb": "Marks · Marks sheet"
+  },
+  {
+   "id": "mk-prog",
+   "ch": "marks",
+   "title": "Progress Reports",
+   "say": "Click Progress Reports.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Progress Reports",
+   "page": "Progress Reports",
+   "note": "Pick the class, then export or publish."
+  },
+  {
+   "id": "mk-prog-go",
+   "ch": "marks",
+   "title": "Produce the progress report",
+   "say": "Choose S3 A, then click the export button to download the report.",
+   "kind": "form",
+   "page": "Progress Reports",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "button": "Export",
+   "buttonHot": true,
+   "crumb": "Marks · Progress Reports"
+  },
+  {
+   "id": "mk-periodic",
+   "ch": "marks",
+   "title": "Periodic report",
+   "say": "Click Periodic report. Choose the class and the period, then open or export it.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Periodic report",
+   "page": "Periodic report",
+   "note": "This report follows the periodic assessment, not the end-of-term list."
+  },
+  {
+   "id": "mk-periodic-go",
+   "ch": "marks",
+   "title": "Open the periodic report",
+   "say": "Choose S3 A and the period, then export.",
+   "kind": "form",
+   "page": "Periodic report",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    },
+    {
+     "label": "Period",
+     "value": "Period 1"
+    }
+   ],
+   "button": "Export",
+   "buttonHot": true,
+   "crumb": "Marks · Periodic report"
+  },
+  {
+   "id": "mk-result",
+   "ch": "marks",
+   "title": "Periodic Result",
+   "say": "Under the results group, click Periodic Result.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Periodic Result",
+   "page": "Periodic Result",
+   "note": "Choose the class and open the result. Publish via SMS only when the school still has SMS credit."
+  },
+  {
+   "id": "mk-result-go",
+   "ch": "marks",
+   "title": "Open the periodic result",
+   "say": "Choose S3 A, then export. Use Publish via SMS only after a leader has checked the result.",
+   "kind": "form",
+   "page": "Periodic Result",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "button": "Export",
+   "buttonHot": true,
+   "crumb": "Marks · Periodic Result"
+  },
+  {
+   "id": "mk-proc",
+   "ch": "marks",
+   "title": "Proclamation list",
+   "say": "Click Proclamation list.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Proclamation list",
+   "page": "Proclamation list",
+   "note": "Choose the class and export the list."
+  },
+  {
+   "id": "mk-proc-go",
+   "ch": "marks",
+   "title": "Export the proclamation list",
+   "say": "Choose S3 A, then click Export.",
+   "kind": "form",
+   "page": "Proclamation list",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "button": "Export",
+   "buttonHot": true,
+   "crumb": "Marks · Proclamation list"
+  },
+  {
+   "id": "mk-termlist",
+   "ch": "marks",
+   "title": "Term proclamation list",
+   "say": "Click Term proclamation list. This is the end-of-term list, separate from the periodic one.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Term proclamation list",
+   "page": "Term proclamation list",
+   "note": "Choose the class and export."
+  },
+  {
+   "id": "mk-termlist-go",
+   "ch": "marks",
+   "title": "Export the term list",
+   "say": "Choose S3 A and First Term, then click Export.",
+   "kind": "form",
+   "page": "Term proclamation list",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    },
+    {
+     "label": "Term",
+     "value": "First Term"
+    }
+   ],
+   "button": "Export",
+   "buttonHot": true,
+   "crumb": "Marks · Term proclamation list"
+  },
+  {
+   "id": "mk-delib",
+   "ch": "marks",
+   "title": "Deliberation",
+   "say": "Open Deliberation, then the Deliberation line. This is where the class decision is recorded.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Deliberation",
+   "page": "Deliberation",
+   "note": "Record the decision for each student, then save."
+  },
+  {
+   "id": "mk-delib-save",
+   "ch": "marks",
+   "title": "Save the deliberation",
+   "say": "Set Jean Mukiza's decision, then click Save.",
+   "kind": "form",
+   "page": "Deliberation",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Decision",
+     "value": "Promoted",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Marks · Deliberation"
+  },
+  {
+   "id": "mk-finish",
+   "ch": "marks",
+   "title": "Finish deliberation",
+   "say": "Click Finish deliberation only when every decision is saved. Finishing moves students to the new class and cannot be undone.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Finish deliberation",
+   "page": "Finish deliberation",
+   "note": "Do not click it during a practice. Leaders use it at the end of the term."
+  },
+  {
+   "id": "mk-finish-go",
+   "ch": "marks",
+   "title": "Confirm finish",
+   "say": "Read the warning. Click the finish button only when the class decisions are final.",
+   "kind": "form",
+   "page": "Finish deliberation",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "button": "Finish deliberation",
+   "buttonHot": true,
+   "note": "After this, students move to the new class and there is no way back.",
+   "crumb": "Marks · Finish deliberation"
+  },
+  {
+   "id": "mk-delset",
+   "ch": "marks",
+   "title": "Deliberation settings",
+   "say": "Click Deliberation settings. Set the rules the deliberation uses, then save.",
+   "kind": "menu",
+   "links": [
+    "Marks Entry",
+    "Lock Marks editing",
+    "Marks sheet",
+    "Progress Reports",
+    "Periodic report",
+    "Periodic Result",
+    "Proclamation list",
+    "Term proclamation list",
+    "Deliberation",
+    "Finish deliberation",
+    "Deliberation settings"
+   ],
+   "hot": "Deliberation settings",
+   "page": "Deliberation settings",
+   "note": "Save the rules before the class deliberation starts."
+  },
+  {
+   "id": "mk-delset-save",
+   "ch": "marks",
+   "title": "Save the deliberation rules",
+   "say": "Set the criteria, then click Save.",
+   "kind": "form",
+   "page": "Deliberation settings",
+   "fields": [
+    {
+     "label": "Criteria",
+     "value": "Pass mark and promotion rule",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Marks · Deliberation settings"
+  },
+  {
+   "id": "ped-an",
+   "ch": "pedagogical",
+   "title": "Analyse syllabus and curriculum",
+   "say": "Open Pedagogical Documents, then Analyse Syllabus and Weeks, or Curriculum. REB classes use Syllabus and Weeks breakdown. TVET classes use Curriculum and Chronogram.",
+   "kind": "menu",
+   "links": [
+    "Analyse Syllabus & Weeks / Curriculum",
+    "Scheme of Work",
+    "Session / Lesson Plan",
+    "Timetable Management"
+   ],
+   "hot": "Analyse Syllabus & Weeks / Curriculum",
+   "page": "Analyse",
+   "note": "Upload the two documents for that class, then run the analysis."
+  },
+  {
+   "id": "ped-an-go",
+   "ch": "pedagogical",
+   "title": "Run the analysis",
+   "say": "Choose the class, upload the syllabus or curriculum and the weekly file, then click the button that starts the analysis.",
+   "kind": "form",
+   "page": "Analyse",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    },
+    {
+     "label": "Files",
+     "value": "Syllabus and weeks breakdown"
+    }
+   ],
+   "button": "Analyse",
+   "buttonHot": true,
+   "crumb": "Pedagogical Documents · Analyse"
+  },
+  {
+   "id": "ped-sow",
+   "ch": "pedagogical",
+   "title": "Scheme of Work",
+   "say": "Click Scheme of Work.",
+   "kind": "menu",
+   "links": [
+    "Analyse Syllabus & Weeks / Curriculum",
+    "Scheme of Work",
+    "Session / Lesson Plan",
+    "Timetable Management"
+   ],
+   "hot": "Scheme of Work",
+   "page": "Scheme of Work",
+   "note": "It is built from the analysis. Open it, check the weeks, then save."
+  },
+  {
+   "id": "ped-sow-save",
+   "ch": "pedagogical",
+   "title": "Save the scheme",
+   "say": "Check Mathematics for S3 A, then click Save.",
+   "kind": "form",
+   "page": "Scheme of Work",
+   "fields": [
+    {
+     "label": "Course",
+     "value": "Mathematics · S3 A",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Pedagogical Documents · Scheme of Work"
+  },
+  {
+   "id": "ped-sess",
+   "ch": "pedagogical",
+   "title": "Session plan",
+   "say": "Click Session or Lesson Plan.",
+   "kind": "menu",
+   "links": [
+    "Analyse Syllabus & Weeks / Curriculum",
+    "Scheme of Work",
+    "Session / Lesson Plan",
+    "Timetable Management"
+   ],
+   "hot": "Session / Lesson Plan",
+   "page": "Session / Lesson Plan",
+   "note": "Open the lesson, complete it, then save."
+  },
+  {
+   "id": "ped-sess-save",
+   "ch": "pedagogical",
+   "title": "Save the lesson plan",
+   "say": "Fill the lesson for this week, then click Save.",
+   "kind": "form",
+   "page": "Session / Lesson Plan",
+   "fields": [
+    {
+     "label": "Lesson",
+     "value": "This week's lesson",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Pedagogical Documents · Session / Lesson Plan"
+  },
+  {
+   "id": "ped-time",
+   "ch": "pedagogical",
+   "title": "Timetable",
+   "say": "Click Timetable Management. A teacher who only has My timetable opens that line instead and reads their own week.",
+   "kind": "menu",
+   "links": [
+    "Analyse Syllabus & Weeks / Curriculum",
+    "Scheme of Work",
+    "Session / Lesson Plan",
+    "Timetable Management"
+   ],
+   "hot": "Timetable Management",
+   "page": "Timetable Management",
+   "note": "Place the lesson, then save the timetable."
+  },
+  {
+   "id": "ped-time-save",
+   "ch": "pedagogical",
+   "title": "Save the timetable",
+   "say": "Put Mathematics for S3 A in the period, then click Save.",
+   "kind": "form",
+   "page": "Timetable Management",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A"
+    },
+    {
+     "label": "Lesson",
+     "value": "Mathematics",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Pedagogical Documents · Timetable"
+  },
+  {
+   "id": "msg-par",
+   "ch": "messaging",
+   "title": "Parents messaging",
+   "say": "Open Messaging, then Parents messaging. SMS goes out only when Settings still shows SMS credit.",
+   "kind": "menu",
+   "links": [
+    "Parents messaging",
+    "Employees messaging"
+   ],
+   "hot": "Parents messaging",
+   "page": "Parents messaging",
+   "note": "Example: tell S3 A parents about a meeting."
+  },
+  {
+   "id": "msg-par-who",
+   "ch": "messaging",
+   "title": "Choose the parents",
+   "say": "Click the audience and choose S3 A, or the whole school if that is what was asked.",
+   "kind": "form",
+   "page": "Parents messaging",
+   "fields": [
+    {
+     "label": "Audience",
+     "value": "S3 A parents",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Messaging · Parents messaging"
+  },
+  {
+   "id": "msg-par-text",
+   "ch": "messaging",
+   "title": "Write the message",
+   "say": "Click the message and type the text parents should receive.",
+   "kind": "form",
+   "page": "Parents messaging",
+   "fields": [
+    {
+     "label": "Message",
+     "value": "Meeting on Friday at 10:00.",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Messaging · Parents messaging"
+  },
+  {
+   "id": "msg-par-send",
+   "ch": "messaging",
+   "title": "Send to parents",
+   "say": "Click Send. Wait until the page confirms it was sent.",
+   "kind": "form",
+   "page": "Parents messaging",
+   "fields": [
+    {
+     "label": "Audience",
+     "value": "S3 A parents"
+    },
+    {
+     "label": "Message",
+     "value": "Meeting on Friday at 10:00."
+    }
+   ],
+   "button": "Send",
+   "buttonHot": true,
+   "crumb": "Messaging · Parents messaging"
+  },
+  {
+   "id": "msg-emp",
+   "ch": "messaging",
+   "title": "Employees messaging",
+   "say": "Click Employees messaging. This sends to staff, not to parents.",
+   "kind": "menu",
+   "links": [
+    "Parents messaging",
+    "Employees messaging"
+   ],
+   "hot": "Employees messaging",
+   "page": "Employees messaging",
+   "note": "Choose the staff group, write the message, then send."
+  },
+  {
+   "id": "msg-emp-who",
+   "ch": "messaging",
+   "title": "Choose the staff",
+   "say": "Click the audience and choose the staff group.",
+   "kind": "form",
+   "page": "Employees messaging",
+   "fields": [
+    {
+     "label": "Audience",
+     "value": "All staff",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Messaging · Employees messaging"
+  },
+  {
+   "id": "msg-emp-text",
+   "ch": "messaging",
+   "title": "Write the staff message",
+   "say": "Click the message and type it.",
+   "kind": "form",
+   "page": "Employees messaging",
+   "fields": [
+    {
+     "label": "Message",
+     "value": "Staff meeting at 16:00.",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Messaging · Employees messaging"
+  },
+  {
+   "id": "msg-emp-send",
+   "ch": "messaging",
+   "title": "Send to staff",
+   "say": "Click Send.",
+   "kind": "form",
+   "page": "Employees messaging",
+   "fields": [
+    {
+     "label": "Audience",
+     "value": "All staff"
+    },
+    {
+     "label": "Message",
+     "value": "Staff meeting at 16:00."
+    }
+   ],
+   "button": "Send",
+   "buttonHot": true,
+   "crumb": "Messaging · Employees messaging"
+  },
+  {
+   "id": "att-rec",
+   "ch": "attendance",
+   "title": "Record attendance",
+   "say": "Open Student Attendance, then Record attendance. A window opens.",
+   "kind": "menu",
+   "links": [
+    "Record attendance",
+    "Student IN/OUT Attendance",
+    "Attendance report"
+   ],
+   "hot": "Record attendance",
+   "page": "Record attendance",
+   "note": "Example: mark Jean Mukiza present today."
+  },
+  {
+   "id": "att-student",
+   "ch": "attendance",
+   "title": "Choose the student",
+   "say": "Click the student box and choose Jean Mukiza.",
+   "kind": "form",
+   "page": "Record attendance",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza",
+     "hot": true
+    },
+    {
+     "label": "Date",
+     "value": "Date"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Student Attendance · Record attendance"
+  },
+  {
+   "id": "att-date",
+   "ch": "attendance",
+   "title": "Choose the date",
+   "say": "Click the date and choose today.",
+   "kind": "form",
+   "page": "Record attendance",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Date",
+     "value": "Today",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Student Attendance · Record attendance"
+  },
+  {
+   "id": "att-save",
+   "ch": "attendance",
+   "title": "Save the attendance",
+   "say": "Click Save record.",
+   "kind": "form",
+   "page": "Record attendance",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Date",
+     "value": "Today"
+    }
+   ],
+   "button": "Save record",
+   "buttonHot": true,
+   "crumb": "Student Attendance · Record attendance"
+  },
+  {
+   "id": "att-inout",
+   "ch": "attendance",
+   "title": "Student IN/OUT Attendance",
+   "say": "Click Student IN/OUT Attendance. It opens the card page. A tap at the gate records in or out. There is no separate save button.",
+   "kind": "menu",
+   "links": [
+    "Record attendance",
+    "Student IN/OUT Attendance",
+    "Attendance report"
+   ],
+   "hot": "Student IN/OUT Attendance",
+   "page": "Student IN/OUT Attendance",
+   "note": "The places were added under Settings, Student IN/OUT attendance locations."
+  },
+  {
+   "id": "att-rep",
+   "ch": "attendance",
+   "title": "Attendance report",
+   "say": "Click Attendance report.",
+   "kind": "menu",
+   "links": [
+    "Record attendance",
+    "Student IN/OUT Attendance",
+    "Attendance report"
+   ],
+   "hot": "Attendance report",
+   "page": "Attendance report",
+   "note": "Choose the class and the month, then generate."
+  },
+  {
+   "id": "att-rep-go",
+   "ch": "attendance",
+   "title": "Generate the attendance report",
+   "say": "Choose S3 A, then click Generate.",
+   "kind": "form",
+   "page": "Attendance report",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A",
+     "hot": true
+    }
+   ],
+   "button": "Generate",
+   "buttonHot": true,
+   "crumb": "Student Attendance · Attendance report"
+  },
+  {
+   "id": "att-staff",
+   "ch": "attendance",
+   "title": "Staff attendance report",
+   "say": "Open Staff Attendance, then Attendance Report.",
+   "kind": "menu",
+   "links": [
+    "Attendance Report",
+    "Record Attendance With card"
+   ],
+   "hot": "Attendance Report",
+   "page": "Attendance Report",
+   "note": "Choose the staff member and the dates, then generate."
+  },
+  {
+   "id": "att-staff-go",
+   "ch": "attendance",
+   "title": "Generate the staff report",
+   "say": "Choose Aline Uwase, then click Generate. PDF all exports everyone.",
+   "kind": "form",
+   "page": "Attendance Report",
+   "fields": [
+    {
+     "label": "Staff",
+     "value": "Aline Uwase",
+     "hot": true
+    }
+   ],
+   "button": "Generate",
+   "buttonHot": true,
+   "crumb": "Staff Attendance · Attendance Report"
+  },
+  {
+   "id": "att-card",
+   "ch": "attendance",
+   "title": "Record attendance with card",
+   "say": "Click Record Attendance With card. Staff tap their card. The page records the time. There is no extra save.",
+   "kind": "menu",
+   "links": [
+    "Attendance Report",
+    "Record Attendance With card"
+   ],
+   "hot": "Record Attendance With card",
+   "page": "Record Attendance With card",
+   "note": "The arrival times come from Staff attendance settings."
+  },
+  {
+   "id": "hr-add",
+   "ch": "staff",
+   "title": "Add new staff",
+   "say": "Under HR, open Staffs, then Add new staff. A window opens.",
+   "kind": "menu",
+   "links": [
+    "Add new staff",
+    "View all staffs",
+    "Generate staff cards"
+   ],
+   "hot": "Add new staff",
+   "page": "Add new staff",
+   "note": "Example: add Aline Uwase as Support."
+  },
+  {
+   "id": "hr-name",
+   "ch": "staff",
+   "title": "Staff name",
+   "say": "Click the name and type Aline Uwase.",
+   "kind": "form",
+   "page": "Add new staff",
+   "fields": [
+    {
+     "label": "Name",
+     "value": "Aline Uwase",
+     "hot": true
+    },
+    {
+     "label": "Post",
+     "value": "Post"
+    },
+    {
+     "label": "Email",
+     "value": "Email"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Staffs · Add new staff"
+  },
+  {
+   "id": "hr-post",
+   "ch": "staff",
+   "title": "Post",
+   "say": "Click the post and choose the job, for example Support.",
+   "kind": "form",
+   "page": "Add new staff",
+   "fields": [
+    {
+     "label": "Name",
+     "value": "Aline Uwase"
+    },
+    {
+     "label": "Post",
+     "value": "Support",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Staffs · Add new staff"
+  },
+  {
+   "id": "hr-email",
+   "ch": "staff",
+   "title": "Staff email",
+   "say": "Click the email and type the address they will use to sign in.",
+   "kind": "form",
+   "page": "Add new staff",
+   "fields": [
+    {
+     "label": "Post",
+     "value": "Support"
+    },
+    {
+     "label": "Email",
+     "value": "aline@example.com",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Staffs · Add new staff"
+  },
+  {
+   "id": "hr-save",
+   "ch": "staff",
+   "title": "Save the staff member",
+   "say": "Click Save. They can then open My profile and fill identity.",
+   "kind": "form",
+   "page": "Add new staff",
+   "fields": [
+    {
+     "label": "Name",
+     "value": "Aline Uwase"
+    },
+    {
+     "label": "Post",
+     "value": "Support"
+    },
+    {
+     "label": "Email",
+     "value": "aline@example.com"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Staffs · Add new staff"
+  },
+  {
+   "id": "hr-list",
+   "ch": "staff",
+   "title": "View all staffs",
+   "say": "Click View all staffs.",
+   "kind": "menu",
+   "links": [
+    "Add new staff",
+    "View all staffs",
+    "Generate staff cards"
+   ],
+   "hot": "View all staffs",
+   "page": "View all staffs",
+   "note": "Search a name, open it, and use Excel, PDF, Courses PDF, or IDs PDF when that post may export."
+  },
+  {
+   "id": "hr-search",
+   "ch": "staff",
+   "title": "Search a staff member",
+   "say": "Click search and type Uwase, then click Aline Uwase.",
+   "kind": "form",
+   "page": "View all staffs",
+   "fields": [
+    {
+     "label": "Search",
+     "value": "Uwase",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Staffs · View all staffs"
+  },
+  {
+   "id": "hr-ids",
+   "ch": "staff",
+   "title": "Download the IDs PDF",
+   "say": "Click IDs PDF when the post is allowed. The Director of Finance uses this to download identifications. Choose the school first if Export from school is on the menu.",
+   "kind": "form",
+   "page": "View all staffs",
+   "fields": [
+    {
+     "label": "Export",
+     "value": "IDs PDF",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Staffs · View all staffs"
+  },
+  {
+   "id": "hr-cards",
+   "ch": "staff",
+   "title": "Generate staff cards",
+   "say": "Click Generate staff cards.",
+   "kind": "menu",
+   "links": [
+    "Add new staff",
+    "View all staffs",
+    "Generate staff cards"
+   ],
+   "hot": "Generate staff cards",
+   "page": "Generate staff cards",
+   "note": "Choose the staff, then generate. The photo must already be on the profile."
+  },
+  {
+   "id": "hr-cards-go",
+   "ch": "staff",
+   "title": "Generate the staff card",
+   "say": "Choose Aline Uwase, then click Generate.",
+   "kind": "form",
+   "page": "Generate staff cards",
+   "fields": [
+    {
+     "label": "Staff",
+     "value": "Aline Uwase",
+     "hot": true
+    }
+   ],
+   "button": "Generate",
+   "buttonHot": true,
+   "crumb": "Staffs · Generate staff cards"
+  },
+  {
+   "id": "fee-open",
+   "ch": "finance",
+   "title": "Fees Entry",
+   "say": "Open Finance, then Fees Management, then Fees Entry.",
+   "kind": "menu",
+   "links": [
+    "Fees Entry",
+    "School fees management",
+    "Extra fees management",
+    "Fees report"
+   ],
+   "hot": "Fees Entry",
+   "page": "Fees Entry",
+   "note": "Example: record a payment for Jean Mukiza."
+  },
+  {
+   "id": "fee-search",
+   "ch": "finance",
+   "title": "Find the student",
+   "say": "Search Jean Mukiza and click his name. The fees summary opens.",
+   "kind": "form",
+   "page": "Fees Entry",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Finance · Fees Entry"
+  },
+  {
+   "id": "fee-invoice",
+   "ch": "finance",
+   "title": "Record invoice",
+   "say": "Click Record Invoice.",
+   "kind": "form",
+   "page": "Fees Entry",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    }
+   ],
+   "button": "Record Invoice",
+   "buttonHot": true,
+   "crumb": "Finance · Fees Entry"
+  },
+  {
+   "id": "fee-amount",
+   "ch": "finance",
+   "title": "Amount received",
+   "say": "Tick the fee line, then type the amount received. It cannot be more than the balance.",
+   "kind": "form",
+   "page": "Record Invoice",
+   "fields": [
+    {
+     "label": "Fee",
+     "value": "School fees"
+    },
+    {
+     "label": "Amount received",
+     "value": "50000",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Finance · Fees Entry"
+  },
+  {
+   "id": "fee-mode",
+   "ch": "finance",
+   "title": "Payment mode",
+   "say": "Click the payment mode and choose how the money was paid.",
+   "kind": "form",
+   "page": "Record Invoice",
+   "fields": [
+    {
+     "label": "Amount received",
+     "value": "50000"
+    },
+    {
+     "label": "Payment mode",
+     "value": "Cash",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Finance · Fees Entry"
+  },
+  {
+   "id": "fee-save",
+   "ch": "finance",
+   "title": "Save the payment",
+   "say": "Click Save. Then print the receipt from Payment history if the parent needs it.",
+   "kind": "form",
+   "page": "Record Invoice",
+   "fields": [
+    {
+     "label": "Student",
+     "value": "Jean Mukiza"
+    },
+    {
+     "label": "Amount received",
+     "value": "50000"
+    },
+    {
+     "label": "Payment mode",
+     "value": "Cash"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Finance · Fees Entry"
+  },
+  {
+   "id": "sch-fee",
+   "ch": "finance",
+   "title": "School fees management",
+   "say": "Click School fees management. This sets the fee. It does not record a payment.",
+   "kind": "menu",
+   "links": [
+    "Fees Entry",
+    "School fees management",
+    "Extra fees management",
+    "Fees report"
+   ],
+   "hot": "School fees management",
+   "page": "School fees management",
+   "note": "Set the amount for the class, then save."
+  },
+  {
+   "id": "sch-amount",
+   "ch": "finance",
+   "title": "Set the school fee",
+   "say": "Choose S3 A and type the fee amount.",
+   "kind": "form",
+   "page": "School fees management",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A"
+    },
+    {
+     "label": "Amount",
+     "value": "100000",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Finance · School fees management"
+  },
+  {
+   "id": "sch-save",
+   "ch": "finance",
+   "title": "Save the school fee",
+   "say": "Click Save.",
+   "kind": "form",
+   "page": "School fees management",
+   "fields": [
+    {
+     "label": "Class",
+     "value": "S3 A"
+    },
+    {
+     "label": "Amount",
+     "value": "100000"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Finance · School fees management"
+  },
+  {
+   "id": "ex-fee",
+   "ch": "finance",
+   "title": "Extra fees management",
+   "say": "Click Extra fees management.",
+   "kind": "menu",
+   "links": [
+    "Fees Entry",
+    "School fees management",
+    "Extra fees management",
+    "Fees report"
+   ],
+   "hot": "Extra fees management",
+   "page": "Extra fees management",
+   "note": "Example: a uniform fee."
+  },
+  {
+   "id": "ex-name",
+   "ch": "finance",
+   "title": "Extra fee name",
+   "say": "Click the name and type Uniform.",
+   "kind": "form",
+   "page": "Extra fees management",
+   "fields": [
+    {
+     "label": "Name",
+     "value": "Uniform",
+     "hot": true
+    },
+    {
+     "label": "Amount",
+     "value": "Amount"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Finance · Extra fees management"
+  },
+  {
+   "id": "ex-amount",
+   "ch": "finance",
+   "title": "Extra fee amount",
+   "say": "Click the amount and type it.",
+   "kind": "form",
+   "page": "Extra fees management",
+   "fields": [
+    {
+     "label": "Name",
+     "value": "Uniform"
+    },
+    {
+     "label": "Amount",
+     "value": "15000",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Finance · Extra fees management"
+  },
+  {
+   "id": "ex-save",
+   "ch": "finance",
+   "title": "Save the extra fee",
+   "say": "Click Save. It can then be charged from Fees Entry, Add extra.",
+   "kind": "form",
+   "page": "Extra fees management",
+   "fields": [
+    {
+     "label": "Name",
+     "value": "Uniform"
+    },
+    {
+     "label": "Amount",
+     "value": "15000"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Finance · Extra fees management"
+  },
+  {
+   "id": "fee-rep",
+   "ch": "finance",
+   "title": "Fees report",
+   "say": "Click Fees report.",
+   "kind": "menu",
+   "links": [
+    "Fees Entry",
+    "School fees management",
+    "Extra fees management",
+    "Fees report"
+   ],
+   "hot": "Fees report",
+   "page": "Fees report",
+   "note": "This is the summary the Director of Finance checks."
+  },
+  {
+   "id": "fee-rep-go",
+   "ch": "finance",
+   "title": "Open the fees report",
+   "say": "Choose the term, then open or export the report.",
+   "kind": "form",
+   "page": "Fees report",
+   "fields": [
+    {
+     "label": "Term",
+     "value": "First Term",
+     "hot": true
+    }
+   ],
+   "button": "Export",
+   "buttonHot": true,
+   "crumb": "Finance · Fees report"
+  },
+  {
+   "id": "bud-dash",
+   "ch": "finance",
+   "title": "Budget dashboard",
+   "say": "Under Finance, open Budget and Cash Flow, then Dashboard.",
+   "kind": "menu",
+   "links": [
+    "Dashboard",
+    "Prepare Budget",
+    "Requests & Approvals",
+    "Reports"
+   ],
+   "hot": "Dashboard",
+   "page": "Budget dashboard",
+   "note": "This is the budget home, not the school dashboard."
+  },
+  {
+   "id": "bud-prep",
+   "ch": "finance",
+   "title": "Prepare Budget",
+   "say": "Click Prepare Budget.",
+   "kind": "menu",
+   "links": [
+    "Dashboard",
+    "Prepare Budget",
+    "Requests & Approvals",
+    "Reports"
+   ],
+   "hot": "Prepare Budget",
+   "page": "Prepare Budget",
+   "note": "Upload the budget file, then extract the lines."
+  },
+  {
+   "id": "bud-upload",
+   "ch": "finance",
+   "title": "Upload the budget",
+   "say": "Choose the file, then click Upload and extract lines.",
+   "kind": "form",
+   "page": "Prepare Budget",
+   "fields": [
+    {
+     "label": "File",
+     "value": "budget.xlsx",
+     "hot": true
+    }
+   ],
+   "button": "Upload and extract lines",
+   "buttonHot": true,
+   "crumb": "Budget · Prepare Budget"
+  },
+  {
+   "id": "bud-req",
+   "ch": "finance",
+   "title": "Requests and approvals",
+   "say": "Click Requests and Approvals.",
+   "kind": "menu",
+   "links": [
+    "Dashboard",
+    "Prepare Budget",
+    "Requests & Approvals",
+    "Reports"
+   ],
+   "hot": "Requests & Approvals",
+   "page": "Requests & Approvals",
+   "note": "A new request starts here and moves through approval."
+  },
+  {
+   "id": "bud-new",
+   "ch": "finance",
+   "title": "New cash request",
+   "say": "Click New request. Fill the amount and the reason, then submit it.",
+   "kind": "form",
+   "page": "Requests & Approvals",
+   "fields": [
+    {
+     "label": "Amount",
+     "value": "20000",
+     "hot": true
+    },
+    {
+     "label": "Reason",
+     "value": "Classroom supplies"
+    }
+   ],
+   "button": "Submit",
+   "buttonHot": true,
+   "crumb": "Budget · Requests & Approvals"
+  },
+  {
+   "id": "bud-rep",
+   "ch": "finance",
+   "title": "Budget reports",
+   "say": "Click Reports under Budget and Cash Flow. Open the report a leader asked for. This is separate from Fees report.",
+   "kind": "menu",
+   "links": [
+    "Dashboard",
+    "Prepare Budget",
+    "Requests & Approvals",
+    "Reports"
+   ],
+   "hot": "Reports",
+   "page": "Budget reports",
+   "note": "Use it to check requests, payments, and the audit trail."
+  },
+  {
+   "id": "as-open",
+   "ch": "assets",
+   "title": "Fixed assets",
+   "say": "Open Fixed assets.",
+   "kind": "menu",
+   "links": [
+    "Fixed assets",
+    "Library"
+   ],
+   "hot": "Fixed assets",
+   "page": "Fixed assets",
+   "note": "Example: register one classroom desk."
+  },
+  {
+   "id": "as-name",
+   "ch": "assets",
+   "title": "Asset name",
+   "say": "Click the name and type Desk, and the location if the form asks.",
+   "kind": "form",
+   "page": "Fixed assets",
+   "fields": [
+    {
+     "label": "Name",
+     "value": "Desk",
+     "hot": true
+    },
+    {
+     "label": "Location",
+     "value": "S3 A"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Asset Management · Fixed assets"
+  },
+  {
+   "id": "as-save",
+   "ch": "assets",
+   "title": "Save the asset",
+   "say": "Click Save.",
+   "kind": "form",
+   "page": "Fixed assets",
+   "fields": [
+    {
+     "label": "Name",
+     "value": "Desk"
+    },
+    {
+     "label": "Location",
+     "value": "S3 A"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Asset Management · Fixed assets"
+  },
+  {
+   "id": "lib-open",
+   "ch": "assets",
+   "title": "Library",
+   "say": "Click Library.",
+   "kind": "menu",
+   "links": [
+    "Fixed assets",
+    "Library"
+   ],
+   "hot": "Library",
+   "page": "Library",
+   "note": "Add a book or record a borrow, then save."
+  },
+  {
+   "id": "lib-save",
+   "ch": "assets",
+   "title": "Save the book",
+   "say": "Type the book title, then click Save.",
+   "kind": "form",
+   "page": "Library",
+   "fields": [
+    {
+     "label": "Title",
+     "value": "Mathematics S3",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Asset Management · Library"
+  },
+  {
+   "id": "bus-open",
+   "ch": "transport",
+   "title": "Bus Management",
+   "say": "Open Transport Management, then Bus Management.",
+   "kind": "menu",
+   "links": [
+    "Bus Management",
+    "Route management"
+   ],
+   "hot": "Bus Management",
+   "page": "Bus Management",
+   "note": "Add the bus, then save."
+  },
+  {
+   "id": "bus-save",
+   "ch": "transport",
+   "title": "Save the bus",
+   "say": "Type the bus name or plate, then click Save.",
+   "kind": "form",
+   "page": "Bus Management",
+   "fields": [
+    {
+     "label": "Bus",
+     "value": "Bus 1",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Transport · Bus Management"
+  },
+  {
+   "id": "rt-open",
+   "ch": "transport",
+   "title": "Route management",
+   "say": "Click Route management.",
+   "kind": "menu",
+   "links": [
+    "Bus Management",
+    "Route management"
+   ],
+   "hot": "Route management",
+   "page": "Route management",
+   "note": "Add the route and the bus that runs it, then save."
+  },
+  {
+   "id": "rt-save",
+   "ch": "transport",
+   "title": "Save the route",
+   "say": "Type the route name, then click Save.",
+   "kind": "form",
+   "page": "Route management",
+   "fields": [
+    {
+     "label": "Route",
+     "value": "Musanze town",
+     "hot": true
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Transport · Route management"
+  },
+  {
+   "id": "pk-open",
+   "ch": "pocket",
+   "title": "Pocket Money",
+   "say": "Click Pocket Money.",
+   "kind": "menu",
+   "links": [
+    "Pocket Money",
+    "Canteen"
+   ],
+   "hot": "Pocket Money",
+   "page": "Pocket Money",
+   "note": "Choose the dates and click Apply to see the transactions."
+  },
+  {
+   "id": "pk-apply",
+   "ch": "pocket",
+   "title": "Show pocket money",
+   "say": "Set the dates, then click Apply. Send back is a separate button on a row and needs the agent to approve.",
+   "kind": "form",
+   "page": "Pocket Money",
+   "fields": [
+    {
+     "label": "From date",
+     "value": "This month",
+     "hot": true
+    }
+   ],
+   "button": "Apply",
+   "buttonHot": true,
+   "crumb": "Pocket Money"
+  },
+  {
+   "id": "can-open",
+   "ch": "pocket",
+   "title": "Canteen",
+   "say": "Click Canteen.",
+   "kind": "menu",
+   "links": [
+    "Pocket Money",
+    "Canteen"
+   ],
+   "hot": "Canteen",
+   "page": "Canteen",
+   "note": "Add an item with its price, then save."
+  },
+  {
+   "id": "can-name",
+   "ch": "pocket",
+   "title": "Canteen item",
+   "say": "Click the item name and type Bread.",
+   "kind": "form",
+   "page": "Canteen",
+   "fields": [
+    {
+     "label": "Item",
+     "value": "Bread",
+     "hot": true
+    },
+    {
+     "label": "Price",
+     "value": "Price"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Canteen"
+  },
+  {
+   "id": "can-price",
+   "ch": "pocket",
+   "title": "Canteen price",
+   "say": "Click the price and type the amount in francs.",
+   "kind": "form",
+   "page": "Canteen",
+   "fields": [
+    {
+     "label": "Item",
+     "value": "Bread"
+    },
+    {
+     "label": "Price",
+     "value": "500",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Canteen"
+  },
+  {
+   "id": "can-save",
+   "ch": "pocket",
+   "title": "Save the canteen item",
+   "say": "Click Save. Add item is for another row. Remove deletes one.",
+   "kind": "form",
+   "page": "Canteen",
+   "fields": [
+    {
+     "label": "Item",
+     "value": "Bread"
+    },
+    {
+     "label": "Price",
+     "value": "500"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Canteen"
+  },
+  {
+   "id": "lv-open",
+   "ch": "leave",
+   "title": "Leave Application",
+   "say": "Click Leave Application.",
+   "kind": "menu",
+   "links": [
+    "Leave Application",
+    "Leave Management"
+   ],
+   "hot": "Leave Application",
+   "page": "Leave Application",
+   "note": "A staff member asks for their own leave here."
+  },
+  {
+   "id": "lv-apply",
+   "ch": "leave",
+   "title": "Apply for leave",
+   "say": "Click Apply for Leave.",
+   "kind": "form",
+   "page": "Leave Application",
+   "fields": [],
+   "button": "Apply for Leave",
+   "buttonHot": true,
+   "crumb": "Leave · Leave Application"
+  },
+  {
+   "id": "lv-from",
+   "ch": "leave",
+   "title": "From date",
+   "say": "Click From date and choose the first day.",
+   "kind": "form",
+   "page": "Apply for Leave",
+   "fields": [
+    {
+     "label": "From date",
+     "value": "Monday",
+     "hot": true
+    },
+    {
+     "label": "To date",
+     "value": "To date"
+    },
+    {
+     "label": "Reason",
+     "value": "Reason"
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Leave · Leave Application"
+  },
+  {
+   "id": "lv-to",
+   "ch": "leave",
+   "title": "To date",
+   "say": "Click To date and choose the last day.",
+   "kind": "form",
+   "page": "Apply for Leave",
+   "fields": [
+    {
+     "label": "From date",
+     "value": "Monday"
+    },
+    {
+     "label": "To date",
+     "value": "Wednesday",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Leave · Leave Application"
+  },
+  {
+   "id": "lv-reason",
+   "ch": "leave",
+   "title": "Leave reason",
+   "say": "Click Reason and type why, for example Family.",
+   "kind": "form",
+   "page": "Apply for Leave",
+   "fields": [
+    {
+     "label": "To date",
+     "value": "Wednesday"
+    },
+    {
+     "label": "Reason",
+     "value": "Family",
+     "hot": true
+    }
+   ],
+   "buttonHot": false,
+   "crumb": "Leave · Leave Application"
+  },
+  {
+   "id": "lv-save",
+   "ch": "leave",
+   "title": "Submit the leave",
+   "say": "Click Save. The request waits in Leave Management.",
+   "kind": "form",
+   "page": "Apply for Leave",
+   "fields": [
+    {
+     "label": "From date",
+     "value": "Monday"
+    },
+    {
+     "label": "To date",
+     "value": "Wednesday"
+    },
+    {
+     "label": "Reason",
+     "value": "Family"
+    }
+   ],
+   "button": "Save",
+   "buttonHot": true,
+   "crumb": "Leave · Leave Application"
+  },
+  {
+   "id": "lv-man",
+   "ch": "leave",
+   "title": "Leave Management",
+   "say": "Click Leave Management. This is for the posts that approve leave.",
+   "kind": "menu",
+   "links": [
+    "Leave Application",
+    "Leave Management"
+   ],
+   "hot": "Leave Management",
+   "page": "Leave Management",
+   "note": "Open the request, approve it, and print it if a paper copy is needed."
+  },
+  {
+   "id": "lv-approve",
+   "ch": "leave",
+   "title": "Approve the leave",
+   "say": "Click Aline Uwase's request, then click Approve. Print is on the same row.",
+   "kind": "form",
+   "page": "Leave Management",
+   "fields": [
+    {
+     "label": "Staff",
+     "value": "Aline Uwase",
+     "hot": true
+    }
+   ],
+   "button": "Approve",
+   "buttonHot": true,
+   "crumb": "Leave · Leave Management"
+  },
+  {
+   "id": "prep-open",
+   "ch": "prep",
+   "title": "Preps invigilation",
+   "say": "Click Preps invigilation.",
+   "kind": "menu",
+   "links": [
+    "Preps invigilation",
+    "Prep attendance"
+   ],
+   "hot": "Preps invigilation",
+   "page": "Preps invigilation",
+   "note": "Set who supervises, then save."
+  },
+  {
+   "id": "prep-save",
+   "ch": "prep",
+   "title": "Save preps invigilation",
+   "say": "Choose the prep and the staff member, then click Save preps invigilation.",
+   "kind": "form",
+   "page": "Preps invigilation",
+   "fields": [
+    {
+     "label": "Prep",
+     "value": "Evening prep"
+    },
+    {
+     "label": "Staff",
+     "value": "Aline Uwase",
+     "hot": true
+    }
+   ],
+   "button": "Save preps invigilation",
+   "buttonHot": true,
+   "crumb": "Prep · Preps invigilation"
+  },
+  {
+   "id": "prep-att",
+   "ch": "prep",
+   "title": "Prep attendance",
+   "say": "Click Prep attendance.",
+   "kind": "menu",
+   "links": [
+    "Preps invigilation",
+    "Prep attendance"
+   ],
+   "hot": "Prep attendance",
+   "page": "Prep attendance",
+   "note": "Choose the day and show the report."
+  },
+  {
+   "id": "prep-show",
+   "ch": "prep",
+   "title": "Show prep attendance",
+   "say": "Choose today, then click Show report.",
+   "kind": "form",
+   "page": "Prep attendance",
+   "fields": [
+    {
+     "label": "Date",
+     "value": "Today",
+     "hot": true
+    }
+   ],
+   "button": "Show report",
+   "buttonHot": true,
+   "crumb": "Prep · Prep attendance"
+  },
+  {
+   "id": "logout",
+   "ch": "prep",
+   "title": "Log out",
+   "say": "Open the photo menu and click Logout when the work is finished.",
+   "kind": "drop",
+   "page": "Dashboard",
+   "links": [
+    "Settings",
+    "My profile",
+    "Change Active Term",
+    "Change password",
+    "Logout"
+   ],
+   "hot": "Logout"
+  }
+ ]
+}

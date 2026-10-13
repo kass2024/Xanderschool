@@ -39,30 +39,26 @@ class Guide extends Controller
 	/** @return array<string, string> */
 	public static function lines(): array
 	{
-		return [
-			'email' => 'On the sign-in page, click the email box and type the staff email. Recover Password is there if they have forgotten it.',
-			'pass' => 'Click the password box and type the password. It must be at least 6 characters. Keep me logged in is optional.',
-			'login' => 'Click Login to Dashboard. The next screen shows the school name and the active term.',
-			'photo' => 'Settings and My profile are under the photo at the top right, not in the left menu. Click the photo.',
-			'settings' => 'Click Settings. Only posts allowed to manage the school see this. Change active term is in the same menu.',
-			'basic' => 'Click Basic school info. Double-click a value to edit it, then press Enter or click outside to save. Escape cancels.',
-			'logo' => 'Click Logo and signatures for the school logo and the Head Teacher signature. The blocks below cover grades, attendance, and the SMS provider.',
-			'profile' => 'Open the photo menu again and click My profile. Every staff member can open this.',
-			'identity' => 'On My profile, choose Rwandan or Non-Rwandan, upload the ID or passport, then click Save identity.',
-			'dash' => 'Click Dashboard any time to return home. The panel depends on the staff post.',
-			'students' => 'Open Students, then View students. Register, pending review, cards, photos, and dormitories are in the same group when allowed.',
-			'classes' => 'Click Classes to open the class list. Marks and attendance start from a class.',
-			'course' => 'Open Course, then Manage Course. Category groups subjects, and Create Course adds one.',
-			'behavior' => 'Open Behavior, then Record Entry, to write a discipline case. Discipline Record lists them later.',
-			'permits' => 'Open Permissions, then Permission Entry, when a student is allowed out. Permission report lists them.',
-			'visit' => 'Daily visiting shows who is currently inside. Parent visiting is for assigning visitors and printing their cards.',
-			'marks' => 'Open Marks, then Marks Entry. Marks sheet and progress reports are in the same menu.',
-			'msg' => 'Open Messaging, then Parents messaging, to send SMS to families. Employees messaging sends to staff.',
-			'att' => 'Under Attendance, click Record attendance for the class. The report shows who was absent.',
-			'staffs' => 'Under HR, open Staffs, then View all staffs. IDs PDF is on that page for the posts allowed to download it.',
-			'finance' => 'Open Finance, then School fees management. Fees Entry records a payment, and Fees report is the summary.',
-			'leave' => 'Leave Application is where staff ask for leave. Pocket Money, Canteen, and Prep are further down when the post is allowed. Logout is under the photo.',
-		];
+		$file = FCPATH . 'guides/staff-system-steps.json';
+		if (!is_file($file)) {
+			return [];
+		}
+		$data = json_decode((string) file_get_contents($file), true);
+		if (!is_array($data)) {
+			return [];
+		}
+		$lines = [];
+		foreach ($data['steps'] ?? [] as $step) {
+			if (!is_array($step)) {
+				continue;
+			}
+			$id = strtolower(preg_replace('/[^a-z0-9_-]/', '', (string) ($step['id'] ?? '')) ?? '');
+			$say = trim((string) ($step['say'] ?? ''));
+			if ($id !== '' && $say !== '') {
+				$lines[$id] = $say;
+			}
+		}
+		return $lines;
 	}
 
 	private function synthesize(string $line, string $file): bool
