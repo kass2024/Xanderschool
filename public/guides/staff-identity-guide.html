@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Staff identity guide — Wisdom schools</title>
+	<style>
+		:root { --navy:#012F6B; --ink:#0f172a; --muted:#475569; --line:#e2e8f0; --bg:#f4f7fb; }
+		* { box-sizing: border-box; }
+		body { margin:0; font-family: "Segoe UI", Arial, sans-serif; color:var(--ink); background:var(--bg); }
+		header.top { background:var(--navy); color:#fff; padding:28px 20px 22px; }
+		header.top h1 { margin:0 0 6px; font-size:28px; }
+		header.top p { margin:0; max-width:820px; color:#dbe7f5; }
+		main { max-width:980px; margin:0 auto; padding:22px 16px 60px; }
+		nav.toc { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 18px; margin-bottom:22px; }
+		nav.toc a { color:var(--navy); font-weight:650; text-decoration:none; margin-right:14px; display:inline-block; margin-top:6px; }
+		section { background:#fff; border:1px solid var(--line); border-radius:16px; padding:18px 18px 8px; margin:0 0 18px; }
+		h2 { margin:0 0 8px; color:var(--navy); font-size:22px; }
+		h3 { margin:16px 0 6px; font-size:17px; }
+		p, li { line-height:1.5; color:#1e293b; }
+		.who { width:100%; border-collapse:collapse; margin:10px 0 16px; }
+		.who th, .who td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+		.who th { background:#e8eef7; color:var(--navy); }
+		.shot { margin:12px 0 18px; border:1px solid #cbd5e1; border-radius:12px; overflow:hidden; background:#f8fafc; }
+		.shot figcaption { background:#071633; color:#fff; padding:8px 12px; font-size:13px; font-weight:700; }
+		.screen { background:#eef2f6; padding:14px; }
+		.appbar { background:#fff; border-bottom:1px solid #e5e7eb; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; }
+		.appbar b { color:var(--navy); letter-spacing:.03em; }
+		.appbar span { color:#64748b; font-size:13px; }
+		.card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; }
+		.card-h { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid #e5e7eb; flex-wrap:wrap; }
+		.btns { display:flex; gap:6px; flex-wrap:wrap; }
+		.btn { border:0; border-radius:8px; color:#fff; font-weight:700; font-size:13px; padding:7px 10px; }
+		.excel { background:#157347; } .pdf { background:#b02a37; } .courses { background:#0b57d0; } .ids { background:#0f4c5c; box-shadow:0 0 0 3px #fde68a; }
+		.note { font-size:12px; color:#64748b; padding:8px 12px; }
+		table.grid { width:100%; border-collapse:collapse; font-size:13px; }
+		table.grid th, table.grid td { border-top:1px solid #e5e7eb; padding:8px; text-align:left; }
+		table.grid th { background:#f8fafc; color:#334155; font-size:12px; }
+		.sid { background:#fff; border:1px solid #e4ebf4; border-radius:16px; padding:16px; margin:8px; }
+		.sid h4 { margin:0 0 4px; }
+		.lead { color:#5c6b80; font-size:13px; margin:0 0 12px; }
+		.pills { display:flex; gap:8px; margin-bottom:12px; }
+		.pill { border:1px solid #d7e0ec; border-radius:999px; padding:7px 12px; font-weight:700; background:#f7f9fc; font-size:13px; }
+		.pill.on { background:#071633; color:#fff; border-color:#071633; }
+		.fields { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+		.fields label { display:block; font-size:12px; color:#5c6b80; font-weight:700; margin-bottom:4px; }
+		.fields .box, .fields select.box { border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; background:#fff; color:#0f172a; font-size:14px; }
+		.full { grid-column:1 / -1; }
+		.save { margin-top:12px; background:#0b57d0; color:#fff; border:0; border-radius:8px; padding:8px 14px; font-weight:700; }
+		.call { background:#fff7ed; border:1px solid #fdba74; border-radius:10px; padding:10px 12px; margin:8px 0 14px; }
+		.pdfpage { background:#fff; border:1.5px solid var(--navy); margin:8px; padding:14px; }
+		.pdfpage .logo { width:54px; height:54px; border-radius:8px; background:var(--navy); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:800; }
+		.pdfpage h3 { text-align:center; margin:6px 0 2px; color:var(--navy); letter-spacing:.04em; }
+		.pdfpage .sub { text-align:center; color:#475569; font-size:12px; font-style:italic; }
+		.pdfpage .contact { text-align:center; color:#334155; font-size:12px; }
+		.banner { background:var(--navy); color:#fff; text-align:center; font-weight:800; padding:6px; margin:10px 0; }
+		.idscan { border:1px dashed #94a3b8; border-radius:8px; padding:18px; text-align:center; color:#334155; background:#f8fafc; margin-top:8px; }
+		ol.steps { padding-left:20px; }
+		ol.steps li { margin:0 0 8px; }
+		footer { color:#64748b; font-size:13px; padding:8px 4px 20px; }
+		@media (max-width:700px) { .fields { grid-template-columns:1fr; } }
+		@media print { body { background:#fff; } section, nav.toc { break-inside:avoid; } }
+	</style>
+</head>
+<body>
+<header class="top">
+	<h1>How to record staff identity and download it</h1>
+	<p>From the staff member, accountant, Chief Accountant, or Head Teacher filling the form, to the Director of Finance downloading the identifications PDF. Wisdom School Musanze and its child schools.</p>
+</header>
+<main>
+	<nav class="toc">
+		<a href="#who">Who does what</a>
+		<a href="#self">Fill your own profile</a>
+		<a href="#foreign">Non-Rwandan details</a>
+		<a href="#leaders">Fill for another staff member</a>
+		<a href="#download">Director of Finance download</a>
+		<a href="#pdf">What the PDF contains</a>
+	</nav>
+
+	<section id="who">
+		<h2>1. Who does what</h2>
+		<table class="who">
+			<tr><th>Person</th><th>What they do</th></tr>
+			<tr><td>Each staff member</td><td>Opens <strong>My profile</strong> and fills their own identity, including the ID or passport upload.</td></tr>
+			<tr><td>Accountant, Chief Accountant, Head Teacher</td><td>Open <strong>Staff</strong>, click the person’s name, and fill the same identity form for them.</td></tr>
+			<tr><td>Director and Director of Finance</td><td>On the staff list, choose the Wisdom school, tick people or search, then click <strong>IDs PDF</strong>. The file includes the uploaded ID or passport.</td></tr>
+		</table>
+	</section>
+
+	<section id="self">
+		<h2>2. A staff member updates their own information</h2>
+		<ol class="steps">
+			<li>Sign in, then open the profile menu at the top right and choose <strong>My profile</strong>.</li>
+			<li>On the Identity card, choose <strong>Rwandan</strong> or <strong>Non-Rwandan</strong>.</li>
+			<li>Fill the fields for that choice. Upload the ID or passport as a JPG, PNG, or PDF, no larger than 5 MB.</li>
+			<li>Click <strong>Save identity</strong>. The page reloads when the save succeeds.</li>
+		</ol>
+		<figure class="shot">
+			<figcaption>Screenshot — Rwandan identity on My profile</figcaption>
+			<div class="screen">
+				<div class="appbar"><div><b>WISDOM SCHOOL MUSANZE</b><br><span>My profile</span></div><span>Profile menu → My profile</span></div>
+				<div class="sid">
+					<h4>Identity</h4>
+					<p class="lead">Choose nationality. You can fill this on your own profile. An accountant, Chief Accountant, or Head Teacher can fill it for any staff member.</p>
+					<div class="pills"><span class="pill on">Rwandan</span><span class="pill">Non-Rwandan</span></div>
+					<div class="fields">
+						<div><label>First name</label><div class="box">Aline</div></div>
+						<div><label>Last name</label><div class="box">Uwase</div></div>
+						<div><label>National ID</label><div class="box">1199080012345678</div></div>
+						<div><label>Telephone No (optional)</label><div class="box">0788000000</div></div>
+						<div><label>Email (optional)</label><div class="box">aline.uwase@example.com</div></div>
+						<div class="full"><label>Upload of ID or passport</label><div class="box">Choose file — national-id.jpg</div></div>
+					</div>
+					<button class="save">Save identity</button>
+				</div>
+			</div>
+		</figure>
+		<div class="call">The national ID must be 16 digits. Phone and email are optional for Rwandan staff. The upload is required the first time.</div>
+	</section>
+
+	<section id="foreign">
+		<h2>3. Non-Rwandan staff: ID or passport</h2>
+		<p>Choose <strong>Non-Rwandan</strong>. Fill every field below, choose <strong>ID</strong> or <strong>Passport</strong>, then upload that document.</p>
+		<figure class="shot">
+			<figcaption>Screenshot — Non-Rwandan identity, with ID or passport upload</figcaption>
+			<div class="screen">
+				<div class="sid">
+					<div class="pills"><span class="pill">Rwandan</span><span class="pill on">Non-Rwandan</span></div>
+					<div class="fields">
+						<div><label>First name</label><div class="box">Jean</div></div>
+						<div><label>Last name</label><div class="box">Mukiza</div></div>
+						<div><label>Sex</label><div class="box">Male</div></div>
+						<div><label>Date of birth</label><div class="box">12 Apr 1990</div></div>
+						<div><label>Telephone No</label><div class="box">0788111222</div></div>
+						<div><label>Email (optional)</label><div class="box">jean.mukiza@example.com</div></div>
+						<div><label>Nature of identification</label><div class="box">Passport</div></div>
+						<div><label>Passport / NID No</label><div class="box">PA1234567</div></div>
+						<div><label>Father's name</label><div class="box">Pierre Mukiza</div></div>
+						<div><label>Mother's name</label><div class="box">Marie Uwimana</div></div>
+						<div><label>Province of residence</label><div class="box">Northern</div></div>
+						<div><label>District of residence</label><div class="box">Musanze</div></div>
+						<div class="full"><label>Sector of residence</label><div class="box">Muhoza</div></div>
+						<div class="full"><label>Upload of ID or passport</label><div class="box">Choose file — passport.pdf</div></div>
+					</div>
+					<button class="save">Save identity</button>
+				</div>
+			</div>
+		</figure>
+	</section>
+
+	<section id="leaders">
+		<h2>4. Accountant, Chief Accountant, or Head Teacher fills it for a staff member</h2>
+		<ol class="steps">
+			<li>Open <strong>Staff</strong> in the side menu.</li>
+			<li>Click the staff member’s name. That opens the same Identity card.</li>
+			<li>Fill the Rwandan or Non-Rwandan fields and upload the ID or passport.</li>
+			<li>Click <strong>Save identity</strong>.</li>
+		</ol>
+		<p>A staff member who is not one of those three posts can save only their own profile. They cannot change another person’s identity.</p>
+	</section>
+
+	<section id="download">
+		<h2>5. Director of Finance downloads the identifications</h2>
+		<ol class="steps">
+			<li>Sign in as Director of Finance and open <strong>Staff</strong>.</li>
+			<li>If the file should be for a child school, use <strong>Export from school</strong> and pick that campus. The note at the top names the school the export will use.</li>
+			<li>Tick one person, tick several, or type in the search box. Search also matches national ID, passport number, and parent names.</li>
+			<li>Click the dark <strong>IDs PDF</strong> button. The same choice is in the menu on the right as <strong>Identifications PDF</strong>.</li>
+		</ol>
+		<figure class="shot">
+			<figcaption>Screenshot — Staff list: choose the school, tick people, click IDs PDF</figcaption>
+			<div class="screen">
+				<div class="appbar"><div><b>WISDOM SCHOOL MUSANZE</b><br><span>2026-2027 · Term 1 · Staff list</span></div><span>Signed in as Director of Finance</span></div>
+				<div class="card">
+					<div class="card-h">
+						<strong>Staff lists</strong>
+						<div class="btns">
+							<span class="btn excel">Excel</span>
+							<span class="btn pdf">PDF</span>
+							<span class="btn courses">Courses PDF</span>
+							<span class="btn ids">IDs PDF</span>
+						</div>
+					</div>
+					<div style="padding:12px;">
+						<label style="font-weight:700;display:block;margin-bottom:6px;">Export from school</label>
+						<div class="box" style="max-width:420px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;">Wisdom School Burera</div>
+					</div>
+					<div class="note">Select &nbsp;·&nbsp; Share access to selected &nbsp;·&nbsp; 2 selected &nbsp;·&nbsp; IDs PDF uses the ticked staff, or everyone the search shows.</div>
+					<table class="grid">
+						<tr><th></th><th>Names</th><th>Phone</th><th>Email</th><th>Privilege</th></tr>
+						<tr><td><input type="checkbox" checked></td><td>Aline Uwase</td><td>0788000000</td><td>aline.uwase@example.com</td><td>Teacher</td></tr>
+						<tr><td><input type="checkbox" checked></td><td>Jean Mukiza</td><td>0788111222</td><td>jean.mukiza@example.com</td><td>Teacher</td></tr>
+						<tr><td><input type="checkbox"></td><td>Other staff</td><td>—</td><td>—</td><td>Teacher</td></tr>
+					</table>
+				</div>
+			</div>
+		</figure>
+		<div class="call">If nobody is ticked, type a search first. The PDF then includes everyone that search shows. If the search is empty and nobody is ticked, the page asks you to choose staff before it downloads.</div>
+	</section>
+
+	<section id="pdf">
+		<h2>6. What the Director of Finance receives</h2>
+		<p>Each person gets a page with the school letterhead and logo, the identity fields, and the uploaded photo. If the upload was a PDF, those pages are attached after the identity sheets, with the staff member’s name.</p>
+		<figure class="shot">
+			<figcaption>Screenshot — Identification PDF with school branding and the uploaded document</figcaption>
+			<div class="screen">
+				<div class="pdfpage">
+					<div style="text-align:center;"><span class="logo">WS</span></div>
+					<h3>WISDOM SCHOOL BURERA</h3>
+					<div class="sub">School slogan</div>
+					<div class="contact">Burera, Rwanda · Tel: 0788000013 · Email: admin.bur@wisdomschools.rw</div>
+					<div class="banner">STAFF IDENTIFICATION</div>
+					<strong>ALINE UWASE</strong>
+					<div class="contact" style="text-align:left;">Rwandan · 2026-2027 · First Term · 1 of 2</div>
+					<table class="who">
+						<tr><td>Full names</td><td>ALINE UWASE</td></tr>
+						<tr><td>Nationality</td><td>Rwandan</td></tr>
+						<tr><td>National ID</td><td>1199080012345678</td></tr>
+						<tr><td>Telephone No</td><td>0788000000</td></tr>
+					</table>
+					<div class="idscan">Uploaded ID or passport<br>The photo or the PDF pages of the document appear here for the leaders.</div>
+				</div>
+			</div>
+		</figure>
+	</section>
+	<footer>Wisdom schools · Staff identity and IDs PDF. Sample names in the screens are examples, not live records.</footer>
+</main>
+</body>
+</html>
