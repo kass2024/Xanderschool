@@ -9115,13 +9115,30 @@ public function attendanceCard()
 		}
 		unset($row);
 		$school = $this->schoolMetaForStaffExport();
-		$logoPath = '';
-		if ($school['logo'] !== '') {
-			$candidate = FCPATH . 'assets/images/logo/' . $school['logo'];
-			if (is_file($candidate)) {
-				$logoPath = \App\Libraries\MpdfReport::imageFileForPdf($candidate, 240);
+		$brandRow = \Config\Database::connect()->table('schools')
+			->select('name, slogan, logo, website, phone, email, address, pobox, header_text_1, header_text_2')
+			->where('id', $schoolId)
+			->get(1)
+			->getRowArray();
+		if (is_array($brandRow)) {
+			foreach (['name', 'slogan', 'logo', 'website', 'phone', 'email', 'address', 'pobox'] as $brandKey) {
+				if (trim((string) ($school[$brandKey] ?? '')) === '') {
+					$school[$brandKey] = (string) ($brandRow[$brandKey] ?? '');
+				}
+			}
+			$school['header_1'] = (string) ($brandRow['header_text_1'] ?? '');
+			$school['header_2'] = (string) ($brandRow['header_text_2'] ?? '');
+		}
+		helper('qonics');
+		$logoName = basename(str_replace('\\', '/', trim((string) ($school['logo'] ?? ''))));
+		$logoFile = '';
+		if ($logoName !== '') {
+			$try = asset_fs_path('assets/images/logo/' . $logoName);
+			if (is_file($try)) {
+				$logoFile = $try;
 			}
 		}
+		$logoPath = $logoFile !== '' ? \App\Libraries\MpdfReport::imageFileForPdf($logoFile, 720) : '';
 		$html = view('pages/reports/staff_identifications_pdf', [
 			'school' => $school,
 			'logo_src' => $logoPath,
@@ -9131,10 +9148,14 @@ public function attendanceCard()
 			'printed_at' => date('d M Y H:i'),
 		]);
 		$slug = preg_replace('/[^A-Za-z0-9]+/', '_', $school['name']) ?: 'school';
+		$footerSchool = htmlspecialchars(trim((string) ($school['name'] ?? 'School')), ENT_QUOTES, 'UTF-8');
 		\App\Libraries\MpdfReport::stream($html, $slug . '_staff_identifications.pdf', [
 			'title' => 'Staff identifications',
 			'orientation' => 'P',
 			'margin' => 12,
+			'footer' => '<table width="100%" style="font-size:8pt;color:#334155;border-top:1px solid #012F6B;">'
+				. '<tr><td>' . $footerSchool . '</td>'
+				. '<td style="text-align:right;">Staff identification · Page {PAGENO} / {nbpg}</td></tr></table>',
 		]);
 	}
 

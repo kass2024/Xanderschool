@@ -108,7 +108,13 @@ class MpdfReport
 			return '';
 		}
 		$jpeg = self::flattenToJpegBytes($raw, max(80, $maxEdge));
-		$bytes = ($jpeg !== '') ? $jpeg : $raw;
+		if ($jpeg !== '') {
+			$bytes = $jpeg;
+		} elseif (strncmp($raw, "\xFF\xD8", 2) === 0 || strncmp($raw, "\x89PNG", 4) === 0 || strncmp($raw, 'GIF8', 4) === 0) {
+			$bytes = $raw;
+		} else {
+			return '';
+		}
 		$name = 'logo_' . md5($absPath . '|' . (string) @filemtime($absPath) . '|' . strlen($bytes) . '|' . $maxEdge);
 		self::$imageVars[$name] = $bytes;
 

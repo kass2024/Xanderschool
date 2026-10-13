@@ -8,12 +8,15 @@
 
 $schoolName = trim((string) ($school['name'] ?? 'School'));
 $slogan = trim((string) ($school['slogan'] ?? ''));
+$header1 = trim((string) ($school['header_1'] ?? ''));
+$header2 = trim((string) ($school['header_2'] ?? ''));
 $logoSrc = trim((string) ($logo_src ?? ''));
 $contact = array_filter([
 	trim((string) ($school['address'] ?? '')) ?: null,
 	!empty($school['pobox']) ? 'P.O. Box ' . $school['pobox'] : null,
 	!empty($school['phone']) ? 'Tel: ' . $school['phone'] : null,
 	!empty($school['email']) ? 'Email: ' . $school['email'] : null,
+	!empty($school['website']) ? $school['website'] : null,
 ]);
 $dash = static function ($value): string {
 	$text = trim((string) $value);
@@ -41,11 +44,11 @@ $total = count($staffs);
 		body { font-family: dejavusanscondensed, sans-serif; font-size: 10.5pt; color: #0f172a; }
 		.sheet { page-break-after: always; }
 		.sheet-last { page-break-after: auto; }
-		.hdr { border: 1.4pt solid #012F6B; padding: 8px 10px; margin-bottom: 10px; }
-		.hdr-logo { width: 62px; }
-		.hdr-logo img { width: 54px; height: auto; }
-		.name { font-size: 15pt; font-weight: bold; color: #012F6B; text-transform: uppercase; margin: 0; }
-		.slogan { font-size: 8.5pt; color: #475569; margin: 1px 0 0; }
+		.letter { width: 100%; border-collapse: collapse; border-bottom: 2.4pt solid #012F6B; margin-bottom: 8px; }
+		.letter td { text-align: center; padding: 0 0 8px; }
+		.gov { font-size: 8pt; letter-spacing: 0.4px; text-transform: uppercase; color: #334155; margin: 0; }
+		.name { font-size: 16pt; font-weight: bold; color: #012F6B; text-transform: uppercase; margin: 2px 0 0; }
+		.slogan { font-size: 9pt; font-style: italic; color: #475569; margin: 1px 0 0; }
 		.contact { font-size: 8pt; color: #334155; margin: 3px 0 0; }
 		.banner { background: #012F6B; color: #fff; text-align: center; font-size: 12pt; font-weight: bold; letter-spacing: 0.4px; padding: 6px 8px; margin: 0 0 8px; }
 		.who { font-size: 14pt; font-weight: bold; color: #0f172a; margin: 0 0 2px; }
@@ -93,12 +96,14 @@ $total = count($staffs);
 	}
 	?>
 	<div class="<?= $index === $total - 1 ? 'sheet-last' : 'sheet'; ?>">
-		<table class="hdr" width="100%">
+		<table class="letter" width="100%">
 			<tr>
-				<?php if ($logoSrc !== ''): ?>
-				<td class="hdr-logo" width="62"><img src="<?= esc($logoSrc, 'attr'); ?>" alt=""></td>
-				<?php endif; ?>
 				<td>
+					<?php if ($logoSrc !== ''): ?>
+					<img src="<?= htmlspecialchars($logoSrc, ENT_QUOTES, 'UTF-8'); ?>" width="78" height="78" alt="">
+					<?php endif; ?>
+					<?php if ($header1 !== ''): ?><p class="gov"><?= esc($header1) ?></p><?php endif; ?>
+					<?php if ($header2 !== ''): ?><p class="gov"><?= esc($header2) ?></p><?php endif; ?>
 					<p class="name"><?= esc($schoolName) ?></p>
 					<?php if ($slogan !== ''): ?><p class="slogan"><?= esc($slogan) ?></p><?php endif; ?>
 					<?php if ($contact !== []): ?><p class="contact"><?= esc(implode('  ·  ', $contact)) ?></p><?php endif; ?>
