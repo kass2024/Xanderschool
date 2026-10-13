@@ -1,5 +1,5 @@
 <div class="app-inner-layout app-inner-layout-page">
-<link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css?v=ids1') ?>">
 <link rel="stylesheet" href="<?= base_url('assets/css/staff-share-access.css?v=3') ?>">
 	<div class="app-inner-layout__wrapper">
 		<div class="app-inner-layout__content">
@@ -32,6 +32,15 @@
 										<i class="fa fa-graduation-cap"></i>
 										<span>Courses PDF</span>
 									</a>
+									<?php if (!empty($can_export_identities)): ?>
+									<button type="button"
+											id="btnExportStaffIdentities"
+											class="btn btn-sm staff-export-btn staff-export-ids"
+											title="PDF of identifications for the ticked staff, or everyone the search shows">
+										<i class="fa fa-id-card"></i>
+										<span>IDs PDF</span>
+									</button>
+									<?php endif; ?>
 								</div>
 								<div class="btn-group dropdown">
 									<button type="button" data-toggle="dropdown" aria-haspopup="true"
@@ -55,6 +64,9 @@
 										<a href="<?= base_url('export_staff_list_excel'); ?>" class="dropdown-item"><i class="fa fa-file-excel"></i> Export Excel</a>
 										<a href="<?= base_url('export_staff_list_pdf'); ?>" class="dropdown-item" target="_blank"><i class="fa fa-file-pdf"></i> Export PDF</a>
 										<a href="<?= base_url('export_staff_courses_pdf'); ?>" class="dropdown-item" target="_blank"><i class="fa fa-graduation-cap"></i> Courses &amp; periods PDF</a>
+										<?php if (!empty($can_export_identities)): ?>
+										<a href="javascript:void(0)" class="dropdown-item" id="btnExportStaffIdentitiesMenu"><i class="fa fa-id-card"></i> Identifications PDF</a>
+										<?php endif; ?>
 									</div>
 								</div>
 							</div>
@@ -68,7 +80,13 @@
 									<i class="fa fa-share-alt"></i> Share access to selected
 								</button>
 								<span id="staffShareCount">None selected</span>
+								<?php if (!empty($can_export_identities)): ?>
+								<span class="text-muted small">IDs PDF uses the ticked staff, or everyone the search shows.</span>
+								<?php endif; ?>
 							</div>
+							<?php if (!empty($can_export_identities)): ?>
+							<form id="staffIdentityExportForm" method="post" action="<?= base_url('export_staff_identifications_pdf'); ?>" target="_blank" style="display:none"></form>
+							<?php endif; ?>
 							<div id="example_wrapper" class="dataTables_wrapper dt-bootstrap4">
 								<div class="row">
 									<div class="col-sm-12">
@@ -128,7 +146,19 @@
 												?>
 											<tr data-id="<?=$staff['id'];?>" class="<?= $hasLoad ? 'staff-has-courses' : ''; ?>">
 												<td><input type="checkbox" class="staff-share-check" value="<?= (int) $staff['id']; ?>"></td>
-												<td><a href="<?=base_url('staff/'.$staff['id']);?>" class="link"><?=$staffName;?></a></td>
+												<td><a href="<?=base_url('staff/'.$staff['id']);?>" class="link"><?=$staffName;?></a><?php
+													$identitySearch = trim(implode(' ', array_filter([
+														(string) ($staff['national_id'] ?? ''),
+														(string) ($staff['document_no'] ?? ''),
+														(string) ($staff['father_name'] ?? ''),
+														(string) ($staff['mother_name'] ?? ''),
+														($staff['identity_kind'] ?? '') === 'foreign' ? 'non-rwandan passport foreign' : '',
+														($staff['identity_kind'] ?? '') === 'rwandan' ? 'rwandan national id' : '',
+													], static function ($part) {
+														return trim((string) $part) !== '';
+													})));
+													if ($identitySearch !== ''):
+												?><span style="display:none"><?= esc($identitySearch); ?></span><?php endif; ?></td>
 												<td data-order="<?= $taughtPeriods; ?>" class="all staff-teaching-col">
 													<?php if ($hasLoad): ?>
 													<span class="staff-load-pills" title="<?= $taughtCourses; ?> assigned course<?= $taughtCourses === 1 ? '' : 's'; ?>, <?= $taughtPeriods; ?> weekly period<?= $taughtPeriods === 1 ? '' : 's'; ?>">
@@ -462,11 +492,19 @@
 
 		var selectedStaffShareIds = [];
 
+		function staffTable() {
+			if (window.jQuery && jQuery.fn.dataTable && jQuery.fn.dataTable.isDataTable && jQuery.fn.dataTable.isDataTable('#example')) {
+				return jQuery('#example').DataTable();
+			}
+			return null;
+		}
+
 		function selectedStaffIds() {
 			var ids = [];
 			var nodes;
-			if (window.jQuery && jQuery.fn.dataTable && jQuery.fn.dataTable.isDataTable && jQuery.fn.dataTable.isDataTable('#example')) {
-				nodes = jQuery('#example').DataTable().$('.staff-share-check:checked').toArray();
+			var dt = staffTable();
+			if (dt) {
+				nodes = dt.$('.staff-share-check:checked').toArray();
 			} else {
 				nodes = document.querySelectorAll('.staff-share-check:checked');
 			}
@@ -475,6 +513,53 @@
 				if (id > 0) ids.push(id);
 			});
 			return ids;
+		}
+
+		function searchedStaffIds() {
+			var ids = [];
+			var dt = staffTable();
+			if (dt) {
+				dt.rows({ search: 'applied' }).every(function () {
+					var box = this.node().querySelector('.staff-share-check');
+					var id = box ? parseInt(box.value, 10) : 0;
+					if (id > 0) ids.push(id);
+				});
+				return ids;
+			}
+			Array.prototype.forEach.call(document.querySelectorAll('.staff-share-check'), function (el) {
+				var id = parseInt(el.value, 10);
+				if (id > 0) ids.push(id);
+			});
+			return ids;
+		}
+
+		function exportStaffIdentities() {
+			var selected = selectedStaffIds();
+			var dt = staffTable();
+			var search = dt ? String(dt.search() || '').trim() : '';
+			var ids = selected;
+			if (!ids.length) {
+				if (search === '') {
+					Swal.fire({ icon: 'info', title: 'Choose staff', text: 'Tick one or more staff, or type in the search box, then export their identifications.' });
+					return;
+				}
+				ids = searchedStaffIds();
+			}
+			if (!ids.length) {
+				Swal.fire({ icon: 'info', title: 'No matches', text: 'The search did not match any staff.' });
+				return;
+			}
+			var form = document.getElementById('staffIdentityExportForm');
+			if (!form) return;
+			Array.prototype.forEach.call(form.querySelectorAll('input[name="ids[]"]'), function (node) { node.remove(); });
+			ids.forEach(function (id) {
+				var input = document.createElement('input');
+				input.type = 'hidden';
+				input.name = 'ids[]';
+				input.value = String(id);
+				form.appendChild(input);
+			});
+			form.submit();
 		}
 
 		function refreshStaffShareCount() {
@@ -680,12 +765,27 @@
 			if (e.target && (e.target.classList.contains('staff-share-check') || e.target.id === 'staffShareSelectAll' || e.target.id === 'staffShareSelectAllHead')) {
 				if (e.target.id === 'staffShareSelectAll' || e.target.id === 'staffShareSelectAllHead') {
 					var on = e.target.checked;
-					document.querySelectorAll('.staff-share-check').forEach(function (box) { box.checked = on; });
+					var visible = {};
+					var dtAll = staffTable();
+					if (dtAll) {
+						dtAll.rows({ search: 'applied' }).every(function () {
+							var box = this.node().querySelector('.staff-share-check');
+							if (box) visible[box.value] = true;
+						});
+					}
+					document.querySelectorAll('.staff-share-check').forEach(function (box) {
+						box.checked = on && (!dtAll || !!visible[box.value]);
+					});
 					var other = document.getElementById(e.target.id === 'staffShareSelectAll' ? 'staffShareSelectAllHead' : 'staffShareSelectAll');
 					if (other) other.checked = on;
 				}
 				refreshStaffShareCount();
 			}
+		});
+
+		['btnExportStaffIdentities', 'btnExportStaffIdentitiesMenu'].forEach(function (id) {
+			var exportBtn = document.getElementById(id);
+			if (exportBtn) exportBtn.addEventListener('click', exportStaffIdentities);
 		});
 
 		var shareSelectedBtn = document.getElementById('btnShareSelectedStaff');

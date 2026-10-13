@@ -97,7 +97,7 @@ class MpdfReport
 	 * Embed a local logo as mPDF imageVars (HTTP / data-URI logos fail inside Docker).
 	 * Returns src="var:name" which ImageProcessor reads from $mpdf->imageVars.
 	 */
-	public static function imageFileForPdf(string $absPath): string
+	public static function imageFileForPdf(string $absPath, int $maxEdge = 240): string
 	{
 		$absPath = realpath($absPath) ?: $absPath;
 		if ($absPath === '' || !is_file($absPath)) {
@@ -107,15 +107,15 @@ class MpdfReport
 		if ($raw === false || $raw === '') {
 			return '';
 		}
-		$jpeg = self::flattenToJpegBytes($raw);
+		$jpeg = self::flattenToJpegBytes($raw, max(80, $maxEdge));
 		$bytes = ($jpeg !== '') ? $jpeg : $raw;
-		$name = 'logo_' . md5($absPath . '|' . (string) @filemtime($absPath) . '|' . strlen($bytes));
+		$name = 'logo_' . md5($absPath . '|' . (string) @filemtime($absPath) . '|' . strlen($bytes) . '|' . $maxEdge);
 		self::$imageVars[$name] = $bytes;
 
 		return 'var:' . $name;
 	}
 
-	private static function flattenToJpegBytes(string $raw): string
+	private static function flattenToJpegBytes(string $raw, int $maxEdge = 240): string
 	{
 		$src = @imagecreatefromstring($raw);
 		if ($src === false) {
@@ -123,7 +123,7 @@ class MpdfReport
 		}
 		$sw = imagesx($src);
 		$sh = imagesy($src);
-		$scale = min(1.0, 240 / max(1, $sw), 240 / max(1, $sh));
+		$scale = min(1.0, $maxEdge / max(1, $sw), $maxEdge / max(1, $sh));
 		$dw = max(1, (int) round($sw * $scale));
 		$dh = max(1, (int) round($sh * $scale));
 		$dst = imagecreatetruecolor($dw, $dh);

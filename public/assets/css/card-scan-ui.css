@@ -358,6 +358,17 @@
 	color: #fff !important;
 }
 
+.staff-export-ids {
+	background: #0f4c5c;
+	border-color: #0b3a46;
+	color: #fff !important;
+}
+
+.staff-export-ids:hover {
+	background: #0b3a46;
+	color: #fff !important;
+}
+
 @media (max-width: 576px) {
 	.staff-list-header-actions {
 		width: 100%;

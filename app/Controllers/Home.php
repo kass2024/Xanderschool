@@ -8971,6 +8971,7 @@ public function attendanceCard()
 		$yearId = (int) ($data['academic_year'] ?? $data['academic_year_id'] ?? 0);
 		$term = (int) ($data['term'] ?? 0);
 		$data['staffs'] = \App\Libraries\StaffTeachingLoad::attach($data['staffs'], $schoolId, $yearId, $term);
+		$data['can_export_identities'] = \Config\MenuClearance::canEditStaffIdentity((int) $this->session->get('soma_post'));
 		$data['content'] = view("pages/staffs", $data);
 		return view('main', $data);
 	}
@@ -9007,6 +9008,114 @@ public function attendanceCard()
 			'website' => (string) ($this->data['school_website'] ?? ''),
 			'logo' => (string) ($this->data['school_logo'] ?? ''),
 		];
+	}
+
+	public function export_staff_identifications_pdf()
+	{
+		$this->_preset(1, 3);
+		$this->ensureStaffIdentityColumns();
+		if (!\Config\MenuClearance::canEditStaffIdentity((int) $this->session->get('soma_post'))) {
+			echo 'Only an accountant, Head Teacher, or Director can export staff identifications.';
+			return;
+		}
+		$rawIds = $this->request->getPost('ids');
+		if (!is_array($rawIds)) {
+			$rawIds = $rawIds === null || $rawIds === '' ? [] : explode(',', (string) $rawIds);
+		}
+		$ids = [];
+		foreach ($rawIds as $rawId) {
+			$id = (int) $rawId;
+			if ($id > 0) {
+				$ids[$id] = $id;
+			}
+		}
+		$ids = array_values($ids);
+		if ($ids === []) {
+			echo 'Select staff, or search and export the matches.';
+			return;
+		}
+		if (count($ids) > 400) {
+			echo 'Export at most 400 staff at a time.';
+			return;
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$rows = (new StaffModel())->select('staffs.*, p.title as post_title')
+			->join('posts p', 'p.id=staffs.post', 'left')
+			->where('staffs.school_id', $schoolId)
+			->whereIn('staffs.id', $ids)
+			->orderBy('staffs.fname', 'ASC')
+			->orderBy('staffs.lname', 'ASC')
+			->get()->getResultArray();
+		if ($rows === []) {
+			echo 'No matching staff were found.';
+			return;
+		}
+		$address = new AddressModel();
+		$provinceNames = [];
+		foreach ($address->getProvince() as $province) {
+			$provinceNames[(int) $province['id']] = (string) $province['title'];
+		}
+		$districtIds = [];
+		$sectorIds = [];
+		foreach ($rows as $row) {
+			$districtId = (int) ($row['res_district'] ?? 0);
+			$sectorId = (int) ($row['res_sector'] ?? 0);
+			if ($districtId > 0) {
+				$districtIds[$districtId] = $districtId;
+			}
+			if ($sectorId > 0) {
+				$sectorIds[$sectorId] = $sectorId;
+			}
+		}
+		$db = \Config\Database::connect();
+		$districtNames = [];
+		if ($districtIds !== []) {
+			foreach ($db->table('soma_district')->select('id, title')->whereIn('id', array_values($districtIds))->get()->getResultArray() as $district) {
+				$districtNames[(int) $district['id']] = (string) $district['title'];
+			}
+		}
+		$sectorNames = [];
+		if ($sectorIds !== []) {
+			foreach ($db->table('soma_sector')->select('id, title')->whereIn('id', array_values($sectorIds))->get()->getResultArray() as $sector) {
+				$sectorNames[(int) $sector['id']] = (string) $sector['title'];
+			}
+		}
+		$idDir = rtrim(WRITEPATH, '/\\') . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'staff_ids' . DIRECTORY_SEPARATOR;
+		foreach ($rows as &$row) {
+			$row['province_name'] = $provinceNames[(int) ($row['res_province'] ?? 0)] ?? '';
+			$row['district_name'] = $districtNames[(int) ($row['res_district'] ?? 0)] ?? '';
+			$row['sector_name'] = $sectorNames[(int) ($row['res_sector'] ?? 0)] ?? '';
+			$row['id_image'] = '';
+			$copy = basename((string) ($row['id_copy'] ?? ''));
+			$ext = strtolower(pathinfo($copy, PATHINFO_EXTENSION));
+			if ($copy !== '' && in_array($ext, ['jpg', 'jpeg', 'png'], true) && is_file($idDir . $copy)) {
+				$row['id_image'] = \App\Libraries\MpdfReport::imageFileForPdf($idDir . $copy, 900);
+			}
+			$row['id_is_pdf'] = $copy !== '' && $ext === 'pdf';
+		}
+		unset($row);
+		$school = $this->schoolMetaForStaffExport();
+		$logoPath = '';
+		if ($school['logo'] !== '') {
+			$candidate = FCPATH . 'assets/images/logo/' . $school['logo'];
+			if (is_file($candidate)) {
+				$logoPath = \App\Libraries\MpdfReport::imageFileForPdf($candidate, 240);
+			}
+		}
+		$html = view('pages/reports/staff_identifications_pdf', [
+			'school' => $school,
+			'logo_src' => $logoPath,
+			'staffs' => $rows,
+			'year_title' => (string) ($this->data['academic_year_title'] ?? ''),
+			'term_label' => (string) self::TermToStr($this->data['term'] ?? 0),
+			'printed_at' => date('d M Y H:i'),
+		]);
+		$slug = preg_replace('/[^A-Za-z0-9]+/', '_', $school['name']) ?: 'school';
+		\App\Libraries\MpdfReport::stream($html, $slug . '_staff_identifications.pdf', [
+			'title' => 'Staff identifications',
+			'orientation' => 'P',
+			'margin' => 12,
+		]);
 	}
 
 	public function export_staff_list_excel()
