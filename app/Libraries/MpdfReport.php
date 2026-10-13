@@ -63,6 +63,33 @@ class MpdfReport
 		}
 		$mpdf->SetHTMLFooter($footer);
 		$mpdf->WriteHTML($html);
+		foreach (($opts['append_pdfs'] ?? []) as $item) {
+			$path = (string) ($item['path'] ?? '');
+			$label = trim((string) ($item['label'] ?? 'Staff'));
+			if ($path === '' || !is_file($path)) {
+				continue;
+			}
+			try {
+				$count = $mpdf->setSourceFile($path);
+			} catch (\Throwable $e) {
+				continue;
+			}
+			$safeLabel = htmlspecialchars($label !== '' ? $label : 'Staff', ENT_QUOTES, 'UTF-8');
+			$mpdf->AddPage();
+			$mpdf->WriteHTML('<p style="font-size:11pt;color:#012F6B;font-weight:bold;">' . $safeLabel . ' — uploaded ID or passport</p>');
+			for ($pageNo = 1; $pageNo <= $count; $pageNo++) {
+				try {
+					$tpl = $mpdf->importPage($pageNo);
+					$size = $mpdf->getTemplateSize($tpl);
+					$mpdf->AddPageByArray([
+						'orientation' => ($size['width'] ?? 0) > ($size['height'] ?? 0) ? 'L' : 'P',
+					]);
+					$mpdf->useTemplate($tpl);
+				} catch (\Throwable $e) {
+					break;
+				}
+			}
+		}
 		$pdf = $mpdf->Output($filename, Destination::STRING_RETURN);
 		if (!is_string($pdf) || strncmp($pdf, '%PDF', 4) !== 0) {
 			throw new \RuntimeException('mPDF returned empty output.');

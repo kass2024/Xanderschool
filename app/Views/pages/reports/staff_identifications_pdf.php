@@ -134,13 +134,13 @@ $total = count($staffs);
 		</table>
 		<?php if (!empty($staff['id_image'])): ?>
 		<div class="idbox">
-			<p class="idcap">Uploaded identification</p>
-			<img src="<?= esc((string) $staff['id_image'], 'attr'); ?>" alt="Identification">
+			<p class="idcap">Uploaded ID or passport</p>
+			<img src="<?= htmlspecialchars((string) $staff['id_image'], ENT_QUOTES, 'UTF-8'); ?>" width="520" alt="Identification">
 		</div>
 		<?php elseif (!empty($staff['id_is_pdf'])): ?>
-		<p class="note">An identification PDF is stored on this staff profile.</p>
-		<?php elseif ($kind === 'rwandan'): ?>
-		<p class="note">No identification image has been uploaded.</p>
+		<p class="note">The uploaded ID or passport PDF is attached after these pages.</p>
+		<?php else: ?>
+		<p class="note">No ID or passport has been uploaded.</p>
 		<?php endif; ?>
 	</div>
 <?php endforeach; ?>

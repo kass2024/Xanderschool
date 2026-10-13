@@ -94,7 +94,7 @@ $field = static function (string $key) use ($staff): string {
 					<input class="form-control" type="email" name="email" value="<?= $field('email'); ?>" <?= $rwOn ? '' : 'disabled'; ?>>
 				</div>
 				<div class="full">
-					<label>Upload of ID</label>
+					<label>Upload of ID or passport</label>
 					<div class="sid-file">
 						<?php if ($canEditStaff): ?>
 							<input type="file" name="id_copy" accept="image/jpeg,image/png,application/pdf" <?= $rwOn ? '' : 'disabled'; ?>>
@@ -176,6 +176,19 @@ $field = static function (string $key) use ($staff): string {
 							<option value="<?= (int) $sector['id']; ?>" <?= (int) ($staff['res_sector'] ?? 0) === (int) $sector['id'] ? 'selected' : ''; ?>><?= esc($sector['title']); ?></option>
 						<?php endforeach; ?>
 					</select>
+				</div>
+				<div class="full">
+					<label>Upload of ID or passport</label>
+					<div class="sid-file">
+						<?php if ($canEditStaff): ?>
+							<input type="file" name="id_copy" accept="image/jpeg,image/png,application/pdf" <?= $fnOn ? '' : 'disabled'; ?>>
+						<?php endif; ?>
+						<?php if ($idCopyUrl !== ''): ?>
+							<a href="<?= esc($idCopyUrl); ?>" target="_blank" rel="noopener">View uploaded ID or passport</a>
+						<?php elseif (!$canEditStaff): ?>
+							<span class="text-muted">No ID or passport uploaded</span>
+						<?php endif; ?>
+					</div>
 				</div>
 			</div>
 		</div>

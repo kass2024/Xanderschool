@@ -9111,7 +9111,8 @@ public function attendanceCard()
 			if ($copy !== '' && in_array($ext, ['jpg', 'jpeg', 'png'], true) && is_file($idDir . $copy)) {
 				$row['id_image'] = \App\Libraries\MpdfReport::imageFileForPdf($idDir . $copy, 900);
 			}
-			$row['id_is_pdf'] = $copy !== '' && $ext === 'pdf';
+			$row['id_is_pdf'] = $copy !== '' && $ext === 'pdf' && is_file($idDir . $copy);
+			$row['id_pdf_path'] = $row['id_is_pdf'] ? $idDir . $copy : '';
 		}
 		unset($row);
 		$school = $this->schoolMetaForStaffExport();
@@ -9149,6 +9150,16 @@ public function attendanceCard()
 		]);
 		$slug = preg_replace('/[^A-Za-z0-9]+/', '_', $school['name']) ?: 'school';
 		$footerSchool = htmlspecialchars(trim((string) ($school['name'] ?? 'School')), ENT_QUOTES, 'UTF-8');
+		$appendPdfs = [];
+		foreach ($rows as $row) {
+			$path = (string) ($row['id_pdf_path'] ?? '');
+			if ($path !== '' && is_file($path)) {
+				$appendPdfs[] = [
+					'path' => $path,
+					'label' => trim((string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? '')),
+				];
+			}
+		}
 		\App\Libraries\MpdfReport::stream($html, $slug . '_staff_identifications.pdf', [
 			'title' => 'Staff identifications',
 			'orientation' => 'P',
@@ -9156,6 +9167,7 @@ public function attendanceCard()
 			'footer' => '<table width="100%" style="font-size:8pt;color:#334155;border-top:1px solid #012F6B;">'
 				. '<tr><td>' . $footerSchool . '</td>'
 				. '<td style="text-align:right;">Staff identification · Page {PAGENO} / {nbpg}</td></tr></table>',
+			'append_pdfs' => $appendPdfs,
 		]);
 	}
 
@@ -11853,6 +11865,18 @@ public function attendanceCard()
 			if ($documentNo === '') {
 				return $this->response->setJSON(['error' => 'Passport or NID number is required.']);
 			}
+			$file = $this->request->getFile('id_copy');
+			$hasNew = $file && $file->isValid() && !$file->hasMoved();
+			if (!$hasNew && trim((string) ($staff['id_copy'] ?? '')) === '') {
+				return $this->response->setJSON(['error' => 'Upload a copy of the ID or passport.']);
+			}
+			if ($hasNew) {
+				$stored = $this->storeStaffIdCopy($id, $file, (string) ($staff['id_copy'] ?? ''));
+				if ($stored['error'] !== '') {
+					return $this->response->setJSON(['error' => $stored['error']]);
+				}
+				$data['id_copy'] = $stored['name'];
+			}
 			$father = trim((string) $this->request->getPost('father_name'));
 			$mother = trim((string) $this->request->getPost('mother_name'));
 			if ($father === '' || $mother === '') {
@@ -11926,7 +11950,7 @@ public function attendanceCard()
 		$okMime = in_array($mime, ['image/jpeg', 'image/png', 'application/pdf'], true);
 		$okExt = in_array($ext, ['jpg', 'jpeg', 'png', 'pdf'], true);
 		if (!$okMime && !$okExt) {
-			return ['name' => '', 'error' => 'Upload a JPG, PNG, or PDF of the ID.'];
+			return ['name' => '', 'error' => 'Upload a JPG, PNG, or PDF of the ID or passport.'];
 		}
 		if ($file->getSize() > 5 * 1024 * 1024) {
 			return ['name' => '', 'error' => 'The ID file must be 5MB or smaller.'];
