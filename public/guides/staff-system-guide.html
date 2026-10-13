@@ -94,7 +94,41 @@
 		.gate[hidden] { display:none; }
 		.gate .card { max-width:420px; text-align:center; }
 		.gate button { background:#ff7a18; color:#fff; border:0; border-radius:10px; padding:10px 16px; font-weight:800; cursor:pointer; font-family:inherit; }
-		@media (max-width:860px) { .layout { grid-template-columns:1fr; } .app { grid-template-columns:1fr; } .side { display:none; } .scene.show-side .side { display:block; } }
+		@media (max-width:860px) {
+			.wrap { padding:8px 8px 12px; }
+			.head { display:block; margin-bottom:8px; }
+			.head h1 { font-size:18px; }
+			.head p { font-size:13px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+			.journeys { margin-top:8px; }
+			.journeys button { padding:7px 10px; font-size:13px; }
+			.layout { display:flex; flex-direction:column; gap:8px; }
+			.rail { order:2; }
+			.stage { order:1; }
+			.find { min-width:0; margin-bottom:6px !important; }
+			.steps { display:flex; gap:6px; max-height:none; overflow-x:auto; overflow-y:hidden; padding:6px; -webkit-overflow-scrolling:touch; }
+			.steps button { flex:0 0 auto; width:auto; white-space:nowrap; background:#f8fafc; border:1px solid #e2e8f0; padding:8px 10px; }
+			.steps button small { display:none; }
+			.scene, .app, .login { min-height:0; }
+			.login { align-items:flex-start; padding:10px 8px 14px; }
+			.auth { padding:14px 12px 12px; }
+			.auth h2 { font-size:18px; }
+			.quick { grid-template-columns:1fr 1fr; }
+			.app { grid-template-columns:1fr; }
+			.side { display:none; }
+			.scene.show-side .side { display:flex; flex-wrap:wrap; align-items:center; gap:4px; padding:8px; }
+			.scene.show-side .side .logo, .scene.show-side .side .h { display:none; }
+			.scene.show-side .side .link { width:auto; border-radius:8px; padding:7px 8px; }
+			.top { grid-template-columns:1fr auto; padding:8px; }
+			.school small { display:none; }
+			.school b { font-size:12px; }
+			.drop { position:relative; right:auto; top:auto; width:auto; margin:8px; }
+			.card, .sid, .acc { margin:8px; }
+			.coach { flex-direction:column; align-items:stretch; gap:8px; position:sticky; bottom:0; z-index:20; }
+			.coach p { font-size:13px; }
+			.navbtns { display:grid; grid-template-columns:1fr 1fr; }
+			.navbtns button { min-height:42px; }
+			#pointer { width:34px; height:34px; }
+		}
 		@media (prefers-reduced-motion: reduce) { #pointer { transition-duration:.2s; } }
 	</style>
 </head>
@@ -122,7 +156,7 @@
 		</div>
 	</div>
 	<div class="layout">
-		<div>
+		<div class="rail">
 			<input class="find" id="find" type="search" placeholder="Find a menu, e.g. fees" style="width:100%;margin-bottom:8px;">
 			<div class="steps" id="stepList"></div>
 		</div>
@@ -482,6 +516,11 @@
 		var box = hot.getBoundingClientRect();
 		var midX = (box.left + box.right) / 2;
 		var stageMid = (stage.left + stage.right) / 2;
+		if (window.matchMedia("(max-width: 860px)").matches) {
+			tag.classList.remove("pos-left", "pos-right", "pos-below");
+			tag.classList.add("pos-below");
+			return;
+		}
 		var nearTop = (box.top - stage.top) < 64;
 		var short = box.height < 56;
 		var wide = box.width > 150;
@@ -549,28 +588,40 @@
 		return new Promise(function (resolve) {
 			var hot = document.querySelector(".scene.on .hot");
 			if (!hot) { resolve(); return; }
-			var box = hot.getBoundingClientRect();
-			var x = box.left + Math.min(28, box.width * 0.35);
-			var y = box.top + Math.min(18, box.height * 0.45);
-			if (!pointer.classList.contains("on")) {
-				pointer.classList.add("on");
-				pointer.style.transition = "none";
-				pointer.style.left = (x - 160) + "px";
-				pointer.style.top = (y + 90) + "px";
+			var stage = document.querySelector(".stage");
+			if (window.matchMedia("(max-width: 860px)").matches && stage) {
+				stage.scrollIntoView({ block: "start", behavior: "auto" });
 			}
-			requestAnimationFrame(function () {
-				requestAnimationFrame(function () {
-					pointer.style.transition = "";
-					pointer.style.left = x + "px";
-					pointer.style.top = y + "px";
-				});
-			});
+			hot.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+			var chip = document.querySelector("#stepList button.on");
+			if (chip) chip.scrollIntoView({ inline: "center", block: "nearest", behavior: "auto" });
 			setTimeout(function () {
 				if (token !== my) { resolve(); return; }
-				pointer.classList.add("tap");
-				clickTick();
-				setTimeout(function () { pointer.classList.remove("tap"); resolve(); }, 180);
-			}, 1150);
+				var box = hot.getBoundingClientRect();
+				var x = box.left + Math.min(28, Math.max(12, box.width * 0.35));
+				var y = box.top + Math.min(22, Math.max(10, box.height * 0.45));
+				x = Math.max(12, Math.min(window.innerWidth - 36, x));
+				y = Math.max(12, Math.min(window.innerHeight - 36, y));
+				if (!pointer.classList.contains("on")) {
+					pointer.classList.add("on");
+					pointer.style.transition = "none";
+					pointer.style.left = Math.max(8, x - 80) + "px";
+					pointer.style.top = Math.min(window.innerHeight - 48, y + 70) + "px";
+				}
+				requestAnimationFrame(function () {
+					requestAnimationFrame(function () {
+						pointer.style.transition = "";
+						pointer.style.left = x + "px";
+						pointer.style.top = y + "px";
+					});
+				});
+				setTimeout(function () {
+					if (token !== my) { resolve(); return; }
+					pointer.classList.add("tap");
+					clickTick();
+					setTimeout(function () { pointer.classList.remove("tap"); resolve(); }, 160);
+				}, 1150);
+			}, 40);
 		});
 	}
 	function show() {
@@ -587,6 +638,12 @@
 		document.getElementById("next").textContent = index === list.length - 1 ? "Done" : "Next";
 		renderList();
 		placeTag();
+		if (window.matchMedia("(max-width: 860px)").matches) {
+			var stageEl = document.querySelector(".stage");
+			if (stageEl) stageEl.scrollIntoView({ block: "start", behavior: "auto" });
+			var chip = document.querySelector("#stepList button.on");
+			if (chip) chip.scrollIntoView({ inline: "center", block: "nearest", behavior: "auto" });
+		}
 		if (!started) return;
 		var dwell = new Promise(function (resolve) { setTimeout(resolve, 2400); });
 		Promise.all([speak(id, say, my), movePointer(my), dwell]).then(function () {
