@@ -340,11 +340,7 @@ class PocketWalletService
 			throw new \RuntimeException('A payment is already waiting on the phone. Approve it, or wait a moment and try again.', 409);
 		}
 
-		$regno = preg_replace('/[^A-Za-z0-9]/', '', (string) $student['regno']);
-		if ($regno === null || $regno === '') {
-			$regno = 'STU';
-		}
-		$regno = substr($regno, 0, 16);
+		$payNote = $this->pocketCreditDescription($student);
 		$receiver = $this->schoolReceiver($gateway, $student);
 		if ($receiver === '') {
 			throw new \RuntimeException('Set MOMO account (pocket money) in Settings. The registration fees number is not used for pocket money.', 409);
@@ -381,7 +377,7 @@ class PocketWalletService
 				'amount' => $amount,
 				'fee_from_payer' => true,
 				'idempotency_key' => 'pkt' . (int) $paymentId,
-				'description' => 'Student wallet ' . $regno,
+				'description' => $payNote,
 			]);
 		} catch (\Throwable $e) {
 			$payments->update((int) $paymentId, [
@@ -411,9 +407,9 @@ class PocketWalletService
 			'txn_fee' => $fee,
 			'extra_options' => json_encode($extra),
 		]);
-		$message = 'Approve ' . number_format($debit) . ' RWF on your phone. '
+		$message = 'Approve ' . number_format($debit) . ' RWF on your phone for ' . $payNote . '. '
 			. number_format($fee) . ' RWF is the charge, taken from you. '
-			. number_format($amount) . ' RWF reaches the pocket money account and this card.';
+			. number_format($amount) . ' RWF reaches the pocket money account for this student.';
 
 		return [
 			'paymentId' => (int) $paymentId,
@@ -707,6 +703,20 @@ class PocketWalletService
 		$this->db->table('students')->where('id', (int) $student['id'])->update([
 			'wallet_pin' => sha1($pin),
 		]);
+	}
+
+	/** MoMo text on the pocket money phone: registration number, then the student's full name. */
+	protected function pocketCreditDescription(array $student): string
+	{
+		$regno = preg_replace('/[^A-Za-z0-9]/', '', (string) ($student['regno'] ?? ''));
+		$regno = substr($regno !== null && $regno !== '' ? $regno : 'STU', 0, 20);
+		$name = trim(preg_replace('/\s+/', ' ', (string) ($student['name'] ?? '')));
+		$text = trim($regno . ' ' . $name);
+		if (function_exists('mb_strcut')) {
+			return rtrim(mb_strcut($text, 0, 80, 'UTF-8'));
+		}
+
+		return rtrim(substr($text, 0, 80));
 	}
 
 	protected function schoolReceiver(BesoftGatewayClient $gateway, array $student): string
