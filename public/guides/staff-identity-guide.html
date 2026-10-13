@@ -2,228 +2,479 @@
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
+	<title>Staff identity — click-through guide</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Staff identity guide — Wisdom schools</title>
 	<style>
-		:root { --navy:#012F6B; --ink:#0f172a; --muted:#475569; --line:#e2e8f0; --bg:#f4f7fb; }
+		:root { --navy:#0B1220; --cyan:#0EA5E9; --flash:#ff7a18; --ink:#0f172a; --muted:#64748b; }
 		* { box-sizing: border-box; }
-		body { margin:0; font-family: "Segoe UI", Arial, sans-serif; color:var(--ink); background:var(--bg); }
-		header.top { background:var(--navy); color:#fff; padding:28px 20px 22px; }
-		header.top h1 { margin:0 0 6px; font-size:28px; }
-		header.top p { margin:0; max-width:820px; color:#dbe7f5; }
-		main { max-width:980px; margin:0 auto; padding:22px 16px 60px; }
-		nav.toc { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 18px; margin-bottom:22px; }
-		nav.toc a { color:var(--navy); font-weight:650; text-decoration:none; margin-right:14px; display:inline-block; margin-top:6px; }
-		section { background:#fff; border:1px solid var(--line); border-radius:16px; padding:18px 18px 8px; margin:0 0 18px; }
-		h2 { margin:0 0 8px; color:var(--navy); font-size:22px; }
-		h3 { margin:16px 0 6px; font-size:17px; }
-		p, li { line-height:1.5; color:#1e293b; }
-		.who { width:100%; border-collapse:collapse; margin:10px 0 16px; }
-		.who th, .who td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
-		.who th { background:#e8eef7; color:var(--navy); }
-		.shot { margin:12px 0 18px; border:1px solid #cbd5e1; border-radius:12px; overflow:hidden; background:#f8fafc; }
-		.shot figcaption { background:#071633; color:#fff; padding:8px 12px; font-size:13px; font-weight:700; }
-		.screen { background:#eef2f6; padding:14px; }
-		.appbar { background:#fff; border-bottom:1px solid #e5e7eb; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; }
-		.appbar b { color:var(--navy); letter-spacing:.03em; }
-		.appbar span { color:#64748b; font-size:13px; }
-		.card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; }
+		body { margin:0; font-family:"Segoe UI", Arial, sans-serif; background:#e8eef6; color:var(--ink); }
+		.wrap { max-width:1180px; margin:0 auto; padding:16px 14px 28px; }
+		.head { display:flex; justify-content:space-between; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; }
+		.head h1 { margin:0; font-size:22px; color:#0B1220; }
+		.head p { margin:4px 0 0; color:var(--muted); font-size:14px; }
+		.journeys { display:flex; gap:8px; flex-wrap:wrap; }
+		.journeys button { border:1px solid #cbd5e1; background:#fff; border-radius:999px; padding:8px 12px; font-weight:700; cursor:pointer; color:#0f172a; }
+		.journeys button.on { background:#0B1220; color:#fff; border-color:#0B1220; }
+		.layout { display:grid; grid-template-columns:250px 1fr; gap:12px; }
+		.steps { background:#fff; border:1px solid #dbe3ee; border-radius:14px; padding:8px; }
+		.steps button { display:block; width:100%; text-align:left; border:0; background:transparent; border-radius:10px; padding:8px 10px; cursor:pointer; color:#334155; font-size:13px; }
+		.steps button.on { background:#fff4eb; color:#9a3412; font-weight:800; }
+		.steps button small { display:block; color:#94a3b8; font-weight:600; }
+		.stage { background:#fff; border:1px solid #dbe3ee; border-radius:14px; overflow:visible; }
+		.coach { display:flex; gap:10px; align-items:center; justify-content:space-between; padding:12px 14px; background:#0B1220; color:#fff; }
+		.coach b { color:#fdba74; }
+		.coach p { margin:0; font-size:15px; }
+		.navbtns { display:flex; gap:8px; flex-shrink:0; }
+		.navbtns button { border:0; border-radius:8px; padding:8px 12px; font-weight:800; cursor:pointer; }
+		.navbtns .back { background:#1e293b; color:#fff; }
+		.navbtns .next { background:var(--flash); color:#fff; }
+		.scene { display:none; background:#f1f4f6; min-height:540px; position:relative; }
+		.scene.on { display:block; }
+		.app { display:grid; grid-template-columns:196px 1fr; min-height:540px; }
+		.side { background:linear-gradient(180deg,#0B1220,#1A2336); color:#e2e8f0; padding:12px 0; }
+		.logo { margin:0 12px 12px; background:#000; color:#fff; border-radius:8px; font-weight:800; font-size:12px; padding:8px 10px; letter-spacing:.04em; }
+		.side .h { color:#38BDF8; font-size:11px; letter-spacing:.06em; padding:10px 14px 4px; }
+		.side a, .side button.link { display:block; width:100%; text-align:left; color:#e2e8f0; text-decoration:none; padding:7px 14px; font-size:13px; background:none; border:0; font-family:inherit; }
+		.side .sub { padding-left:28px; color:#cbd5e1; font-size:12px; }
+		.side .on { background:rgba(14,165,233,.16); color:#fff; }
+		.main { display:flex; flex-direction:column; min-width:0; }
+		.top { background:#fff; border-bottom:1px solid #e5e7eb; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:8px 12px; gap:8px; }
+		.top .title { font-weight:700; }
+		.top .title span, .school small { display:block; color:#64748b; font-weight:500; font-size:12px; }
+		.school { text-align:center; }
+		.school b { display:block; }
+		.right { display:flex; justify-content:flex-end; align-items:center; gap:10px; }
+		.search { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:6px 8px; color:#94a3b8; font-size:12px; min-width:120px; }
+		.ava { width:36px; height:36px; border-radius:8px; background:#0EA5E9; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:800; }
+		.card { background:#fff; margin:12px; border:1px solid #e5e7eb; border-radius:10px; overflow:visible; }
 		.card-h { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid #e5e7eb; flex-wrap:wrap; }
 		.btns { display:flex; gap:6px; flex-wrap:wrap; }
-		.btn { border:0; border-radius:8px; color:#fff; font-weight:700; font-size:13px; padding:7px 10px; }
-		.excel { background:#157347; } .pdf { background:#b02a37; } .courses { background:#0b57d0; } .ids { background:#0f4c5c; box-shadow:0 0 0 3px #fde68a; }
-		.note { font-size:12px; color:#64748b; padding:8px 12px; }
-		table.grid { width:100%; border-collapse:collapse; font-size:13px; }
-		table.grid th, table.grid td { border-top:1px solid #e5e7eb; padding:8px; text-align:left; }
-		table.grid th { background:#f8fafc; color:#334155; font-size:12px; }
-		.sid { background:#fff; border:1px solid #e4ebf4; border-radius:16px; padding:16px; margin:8px; }
-		.sid h4 { margin:0 0 4px; }
-		.lead { color:#5c6b80; font-size:13px; margin:0 0 12px; }
-		.pills { display:flex; gap:8px; margin-bottom:12px; }
-		.pill { border:1px solid #d7e0ec; border-radius:999px; padding:7px 12px; font-weight:700; background:#f7f9fc; font-size:13px; }
+		.btn { border:0; border-radius:8px; color:#fff; font-weight:700; font-size:12px; padding:6px 9px; font-family:inherit; }
+		.excel { background:#157347; } .pdf { background:#b02a37; } .courses { background:#0EA5E9; } .ids { background:#0f4c5c; }
+		.hint { font-size:12px; color:#64748b; padding:8px 12px; }
+		table { width:100%; border-collapse:collapse; font-size:13px; }
+		th, td { border-top:1px solid #e5e7eb; padding:8px 10px; text-align:left; }
+		th { background:#f8fafc; color:#475569; font-size:12px; }
+		.name { color:#0284C7; font-weight:700; background:none; border:0; padding:0; font-family:inherit; cursor:pointer; }
+		.drop { position:absolute; right:12px; top:58px; width:230px; background:#fff; border:1px solid #e5e7eb; border-radius:10px; box-shadow:0 12px 30px rgba(15,23,42,.18); z-index:4; overflow:visible; }
+		.drop .who { background:#0EA5E9; color:#fff; padding:10px 12px; border-radius:10px 10px 0 0; }
+		.drop button, .drop a { display:block; width:100%; text-align:left; background:#fff; border:0; padding:10px 12px; font-family:inherit; font-weight:700; color:#0f172a; cursor:pointer; }
+		.sid { margin:12px; background:#fff; border:1px solid #e4ebf4; border-radius:16px; padding:14px; }
+		.sid h3 { margin:0 0 4px; }
+		.lead { color:#5c6b80; font-size:13px; margin:0 0 10px; }
+		.pills { display:flex; gap:8px; margin-bottom:10px; }
+		.pill { border:1px solid #d7e0ec; border-radius:999px; padding:7px 12px; font-weight:800; background:#f7f9fc; font-family:inherit; cursor:pointer; }
 		.pill.on { background:#071633; color:#fff; border-color:#071633; }
-		.fields { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-		.fields label { display:block; font-size:12px; color:#5c6b80; font-weight:700; margin-bottom:4px; }
-		.fields .box, .fields select.box { border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; background:#fff; color:#0f172a; font-size:14px; }
+		.grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+		.grid label { display:block; font-size:11px; color:#5c6b80; font-weight:800; margin-bottom:3px; }
+		.box { border:1px solid #cbd5e1; border-radius:8px; padding:7px 8px; background:#fff; font-size:13px; }
 		.full { grid-column:1 / -1; }
-		.save { margin-top:12px; background:#0b57d0; color:#fff; border:0; border-radius:8px; padding:8px 14px; font-weight:700; }
-		.call { background:#fff7ed; border:1px solid #fdba74; border-radius:10px; padding:10px 12px; margin:8px 0 14px; }
-		.pdfpage { background:#fff; border:1.5px solid var(--navy); margin:8px; padding:14px; }
-		.pdfpage .logo { width:54px; height:54px; border-radius:8px; background:var(--navy); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:800; }
-		.pdfpage h3 { text-align:center; margin:6px 0 2px; color:var(--navy); letter-spacing:.04em; }
-		.pdfpage .sub { text-align:center; color:#475569; font-size:12px; font-style:italic; }
-		.pdfpage .contact { text-align:center; color:#334155; font-size:12px; }
-		.banner { background:var(--navy); color:#fff; text-align:center; font-weight:800; padding:6px; margin:10px 0; }
-		.idscan { border:1px dashed #94a3b8; border-radius:8px; padding:18px; text-align:center; color:#334155; background:#f8fafc; margin-top:8px; }
-		ol.steps { padding-left:20px; }
-		ol.steps li { margin:0 0 8px; }
-		footer { color:#64748b; font-size:13px; padding:8px 4px 20px; }
-		@media (max-width:700px) { .fields { grid-template-columns:1fr; } }
-		@media print { body { background:#fff; } section, nav.toc { break-inside:avoid; } }
+		.save { margin-top:10px; background:#0EA5E9; color:#fff; border:0; border-radius:8px; padding:8px 14px; font-weight:800; font-family:inherit; cursor:pointer; }
+		.select { border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; background:#fff; font-weight:700; font-family:inherit; }
+		.pdfpage { background:#fff; border:2px solid #012F6B; margin:16px; padding:16px; }
+		.pdfpage h2 { text-align:center; color:#012F6B; margin:6px 0 2px; font-size:18px; }
+		.banner { background:#012F6B; color:#fff; text-align:center; font-weight:800; padding:6px; margin:8px 0; }
+		.logo-mark { width:52px; height:52px; margin:0 auto; border-radius:8px; background:#012F6B; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; }
+		.scan { border:1px dashed #94a3b8; border-radius:8px; text-align:center; padding:16px; color:#334155; background:#f8fafc; }
+		.done { text-align:center; padding:28px 16px; }
+		.hot { position:relative; z-index:3; }
+		.hot::after {
+			content:"";
+			position:absolute;
+			inset:-7px;
+			border:3px solid var(--flash);
+			border-radius:12px;
+			animation:flash 1s ease-out infinite;
+			pointer-events:none;
+		}
+		.tag {
+			position:absolute;
+			z-index:6;
+			background:var(--flash);
+			color:#fff;
+			font-size:12px;
+			font-weight:800;
+			padding:4px 8px;
+			border-radius:8px;
+			white-space:nowrap;
+			pointer-events:none;
+		}
+		.tag::after { content:""; position:absolute; border:6px solid transparent; }
+		.tag.pos-left { right:calc(100% + 12px); left:auto; top:50%; bottom:auto; transform:translateY(-50%); }
+		.tag.pos-left::after { left:100%; top:50%; transform:translateY(-50%); border-left-color:var(--flash); }
+		.tag.pos-right { left:calc(100% + 12px); right:auto; top:50%; bottom:auto; transform:translateY(-50%); }
+		.tag.pos-right::after { right:100%; left:auto; top:50%; transform:translateY(-50%); border-right-color:var(--flash); }
+		.tag.pos-below { left:50%; right:auto; top:calc(100% + 12px); bottom:auto; transform:translateX(-50%); }
+		.tag.pos-below::after { left:50%; bottom:100%; top:auto; transform:translateX(-50%); border-bottom-color:var(--flash); }
+		@keyframes flash {
+			0% { box-shadow:0 0 0 0 rgba(255,122,24,.7); }
+			70% { box-shadow:0 0 0 14px rgba(255,122,24,0); }
+			100% { box-shadow:0 0 0 0 rgba(255,122,24,0); }
+		}
+		@keyframes bob { 50% { transform:translateX(-50%) translateY(-3px); } }
+		@media (max-width:860px) {
+			.layout { grid-template-columns:1fr; }
+			.app { grid-template-columns:1fr; }
+			.side { display:none; }
+			.scene.show-side .side { display:block; }
+			.grid { grid-template-columns:1fr; }
+		}
 	</style>
 </head>
 <body>
-<header class="top">
-	<h1>How to record staff identity and download it</h1>
-	<p>From the staff member, accountant, Chief Accountant, or Head Teacher filling the form, to the Director of Finance downloading the identifications PDF. Wisdom School Musanze and its child schools.</p>
-</header>
-<main>
-	<nav class="toc">
-		<a href="#who">Who does what</a>
-		<a href="#self">Fill your own profile</a>
-		<a href="#foreign">Non-Rwandan details</a>
-		<a href="#leaders">Fill for another staff member</a>
-		<a href="#download">Director of Finance download</a>
-		<a href="#pdf">What the PDF contains</a>
-	</nav>
+<div class="wrap">
+	<div class="head">
+		<div>
+			<h1>Staff identity, step by step</h1>
+			<p>Click the flashing control. The orange ring is where you click in the school system. Names on these screens are examples.</p>
+		</div>
+		<div class="journeys" id="journeys">
+			<button type="button" data-j="self" class="on">Fill my own profile</button>
+			<button type="button" data-j="foreign">Non-Rwandan / passport</button>
+			<button type="button" data-j="leader">Fill for a staff member</button>
+			<button type="button" data-j="finance">Director of Finance download</button>
+		</div>
+	</div>
+	<div class="layout">
+		<div class="steps" id="stepList"></div>
+		<div class="stage">
+			<div id="scenes">
 
-	<section id="who">
-		<h2>1. Who does what</h2>
-		<table class="who">
-			<tr><th>Person</th><th>What they do</th></tr>
-			<tr><td>Each staff member</td><td>Opens <strong>My profile</strong> and fills their own identity, including the ID or passport upload.</td></tr>
-			<tr><td>Accountant, Chief Accountant, Head Teacher</td><td>Open <strong>Staff</strong>, click the person’s name, and fill the same identity form for them.</td></tr>
-			<tr><td>Director and Director of Finance</td><td>On the staff list, choose the Wisdom school, tick people or search, then click <strong>IDs PDF</strong>. The file includes the uploaded ID or passport.</td></tr>
-		</table>
-	</section>
-
-	<section id="self">
-		<h2>2. A staff member updates their own information</h2>
-		<ol class="steps">
-			<li>Sign in, then open the profile menu at the top right and choose <strong>My profile</strong>.</li>
-			<li>On the Identity card, choose <strong>Rwandan</strong> or <strong>Non-Rwandan</strong>.</li>
-			<li>Fill the fields for that choice. Upload the ID or passport as a JPG, PNG, or PDF, no larger than 5 MB.</li>
-			<li>Click <strong>Save identity</strong>. The page reloads when the save succeeds.</li>
-		</ol>
-		<figure class="shot">
-			<figcaption>Screenshot — Rwandan identity on My profile</figcaption>
-			<div class="screen">
-				<div class="appbar"><div><b>WISDOM SCHOOL MUSANZE</b><br><span>My profile</span></div><span>Profile menu → My profile</span></div>
-				<div class="sid">
-					<h4>Identity</h4>
-					<p class="lead">Choose nationality. You can fill this on your own profile. An accountant, Chief Accountant, or Head Teacher can fill it for any staff member.</p>
-					<div class="pills"><span class="pill on">Rwandan</span><span class="pill">Non-Rwandan</span></div>
-					<div class="fields">
-						<div><label>First name</label><div class="box">Aline</div></div>
-						<div><label>Last name</label><div class="box">Uwase</div></div>
-						<div><label>National ID</label><div class="box">1199080012345678</div></div>
-						<div><label>Telephone No (optional)</label><div class="box">0788000000</div></div>
-						<div><label>Email (optional)</label><div class="box">aline.uwase@example.com</div></div>
-						<div class="full"><label>Upload of ID or passport</label><div class="box">Choose file — national-id.jpg</div></div>
-					</div>
-					<button class="save">Save identity</button>
-				</div>
-			</div>
-		</figure>
-		<div class="call">The national ID must be 16 digits. Phone and email are optional for Rwandan staff. The upload is required the first time.</div>
-	</section>
-
-	<section id="foreign">
-		<h2>3. Non-Rwandan staff: ID or passport</h2>
-		<p>Choose <strong>Non-Rwandan</strong>. Fill every field below, choose <strong>ID</strong> or <strong>Passport</strong>, then upload that document.</p>
-		<figure class="shot">
-			<figcaption>Screenshot — Non-Rwandan identity, with ID or passport upload</figcaption>
-			<div class="screen">
-				<div class="sid">
-					<div class="pills"><span class="pill">Rwandan</span><span class="pill on">Non-Rwandan</span></div>
-					<div class="fields">
-						<div><label>First name</label><div class="box">Jean</div></div>
-						<div><label>Last name</label><div class="box">Mukiza</div></div>
-						<div><label>Sex</label><div class="box">Male</div></div>
-						<div><label>Date of birth</label><div class="box">12 Apr 1990</div></div>
-						<div><label>Telephone No</label><div class="box">0788111222</div></div>
-						<div><label>Email (optional)</label><div class="box">jean.mukiza@example.com</div></div>
-						<div><label>Nature of identification</label><div class="box">Passport</div></div>
-						<div><label>Passport / NID No</label><div class="box">PA1234567</div></div>
-						<div><label>Father's name</label><div class="box">Pierre Mukiza</div></div>
-						<div><label>Mother's name</label><div class="box">Marie Uwimana</div></div>
-						<div><label>Province of residence</label><div class="box">Northern</div></div>
-						<div><label>District of residence</label><div class="box">Musanze</div></div>
-						<div class="full"><label>Sector of residence</label><div class="box">Muhoza</div></div>
-						<div class="full"><label>Upload of ID or passport</label><div class="box">Choose file — passport.pdf</div></div>
-					</div>
-					<button class="save">Save identity</button>
-				</div>
-			</div>
-		</figure>
-	</section>
-
-	<section id="leaders">
-		<h2>4. Accountant, Chief Accountant, or Head Teacher fills it for a staff member</h2>
-		<ol class="steps">
-			<li>Open <strong>Staff</strong> in the side menu.</li>
-			<li>Click the staff member’s name. That opens the same Identity card.</li>
-			<li>Fill the Rwandan or Non-Rwandan fields and upload the ID or passport.</li>
-			<li>Click <strong>Save identity</strong>.</li>
-		</ol>
-		<p>A staff member who is not one of those three posts can save only their own profile. They cannot change another person’s identity.</p>
-	</section>
-
-	<section id="download">
-		<h2>5. Director of Finance downloads the identifications</h2>
-		<ol class="steps">
-			<li>Sign in as Director of Finance and open <strong>Staff</strong>.</li>
-			<li>If the file should be for a child school, use <strong>Export from school</strong> and pick that campus. The note at the top names the school the export will use.</li>
-			<li>Tick one person, tick several, or type in the search box. Search also matches national ID, passport number, and parent names.</li>
-			<li>Click the dark <strong>IDs PDF</strong> button. The same choice is in the menu on the right as <strong>Identifications PDF</strong>.</li>
-		</ol>
-		<figure class="shot">
-			<figcaption>Screenshot — Staff list: choose the school, tick people, click IDs PDF</figcaption>
-			<div class="screen">
-				<div class="appbar"><div><b>WISDOM SCHOOL MUSANZE</b><br><span>2026-2027 · Term 1 · Staff list</span></div><span>Signed in as Director of Finance</span></div>
-				<div class="card">
-					<div class="card-h">
-						<strong>Staff lists</strong>
-						<div class="btns">
-							<span class="btn excel">Excel</span>
-							<span class="btn pdf">PDF</span>
-							<span class="btn courses">Courses PDF</span>
-							<span class="btn ids">IDs PDF</span>
+				<section class="scene" data-id="photo" data-title="Open your photo" data-say="Click your photo at the top right. That menu is on every page after you sign in.">
+					<div class="app"><div class="side" id="sideHome"></div><div class="main">
+						<div class="top">
+							<div class="title">Dashboard<span>Home</span></div>
+							<div class="school"><b>WISDOM SCHOOL MUSANZE</b><small>2026-2027 - Term 1</small></div>
+							<div class="right"><div class="search">Search</div>
+								<button class="hot" type="button" data-go><span class="ava">AU</span><span class="tag">Click here</span></button>
+							</div>
 						</div>
-					</div>
-					<div style="padding:12px;">
-						<label style="font-weight:700;display:block;margin-bottom:6px;">Export from school</label>
-						<div class="box" style="max-width:420px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;">Wisdom School Burera</div>
-					</div>
-					<div class="note">Select &nbsp;·&nbsp; Share access to selected &nbsp;·&nbsp; 2 selected &nbsp;·&nbsp; IDs PDF uses the ticked staff, or everyone the search shows.</div>
-					<table class="grid">
-						<tr><th></th><th>Names</th><th>Phone</th><th>Email</th><th>Privilege</th></tr>
-						<tr><td><input type="checkbox" checked></td><td>Aline Uwase</td><td>0788000000</td><td>aline.uwase@example.com</td><td>Teacher</td></tr>
-						<tr><td><input type="checkbox" checked></td><td>Jean Mukiza</td><td>0788111222</td><td>jean.mukiza@example.com</td><td>Teacher</td></tr>
-						<tr><td><input type="checkbox"></td><td>Other staff</td><td>—</td><td>—</td><td>Teacher</td></tr>
-					</table>
-				</div>
-			</div>
-		</figure>
-		<div class="call">If nobody is ticked, type a search first. The PDF then includes everyone that search shows. If the search is empty and nobody is ticked, the page asks you to choose staff before it downloads.</div>
-	</section>
+						<div class="card"><div class="card-h"><strong>Today</strong></div><div class="hint">Attendance, visitors, and school totals stay on the dashboard. Identity is under your photo.</div></div>
+					</div></div>
+				</section>
 
-	<section id="pdf">
-		<h2>6. What the Director of Finance receives</h2>
-		<p>Each person gets a page with the school letterhead and logo, the identity fields, and the uploaded photo. If the upload was a PDF, those pages are attached after the identity sheets, with the staff member’s name.</p>
-		<figure class="shot">
-			<figcaption>Screenshot — Identification PDF with school branding and the uploaded document</figcaption>
-			<div class="screen">
-				<div class="pdfpage">
-					<div style="text-align:center;"><span class="logo">WS</span></div>
-					<h3>WISDOM SCHOOL BURERA</h3>
-					<div class="sub">School slogan</div>
-					<div class="contact">Burera, Rwanda · Tel: 0788000013 · Email: admin.bur@wisdomschools.rw</div>
-					<div class="banner">STAFF IDENTIFICATION</div>
-					<strong>ALINE UWASE</strong>
-					<div class="contact" style="text-align:left;">Rwandan · 2026-2027 · First Term · 1 of 2</div>
-					<table class="who">
-						<tr><td>Full names</td><td>ALINE UWASE</td></tr>
-						<tr><td>Nationality</td><td>Rwandan</td></tr>
-						<tr><td>National ID</td><td>1199080012345678</td></tr>
-						<tr><td>Telephone No</td><td>0788000000</td></tr>
-					</table>
-					<div class="idscan">Uploaded ID or passport<br>The photo or the PDF pages of the document appear here for the leaders.</div>
+				<section class="scene" data-id="profile" data-title="Choose My profile" data-say="In the menu that opens, click My profile. That is your own identity form.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top">
+							<div class="title">Dashboard<span>Home</span></div>
+							<div class="school"><b>WISDOM SCHOOL MUSANZE</b><small>2026-2027 - Term 1</small></div>
+							<div class="right"><div class="search">Search</div><span class="ava">AU</span></div>
+						</div>
+						<div class="drop">
+							<div class="who"><b>Aline Uwase</b><br><small>Teacher</small></div>
+							<div style="padding:8px 12px;color:#64748b;font-size:12px;font-weight:800;">Activity</div>
+							<button class="hot" type="button" data-go>My profile<span class="tag">Click here</span></button>
+							<button type="button">Logout</button>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="rwandan" data-title="Choose Rwandan" data-say="On the Identity card, click Rwandan when the person has a Rwandan national ID.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">My profile<span>Identity</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="sid">
+							<h3>Identity</h3>
+							<p class="lead">You can fill this on your own profile. An accountant, Chief Accountant, or Head Teacher can fill it for any staff member.</p>
+							<div class="pills">
+								<button class="pill hot" type="button" data-go>Rwandan<span class="tag">Click here</span></button>
+								<button class="pill" type="button">Non-Rwandan</button>
+							</div>
+							<div class="grid">
+								<div><label>First name</label><div class="box">Aline</div></div>
+								<div><label>Last name</label><div class="box">Uwase</div></div>
+							</div>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="nid" data-title="Type the national ID" data-say="Type the 16-digit national ID. Phone and email are optional for Rwandan staff.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">My profile<span>Identity</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="sid">
+							<div class="pills"><span class="pill on">Rwandan</span><span class="pill">Non-Rwandan</span></div>
+							<div class="grid">
+								<div><label>First name</label><div class="box">Aline</div></div>
+								<div><label>Last name</label><div class="box">Uwase</div></div>
+								<div class="hot" data-go style="cursor:pointer"><label>National ID</label><div class="box">1199080012345678</div><span class="tag">Type here</span></div>
+								<div><label>Telephone No (optional)</label><div class="box">0788000000</div></div>
+								<div><label>Email (optional)</label><div class="box">aline.uwase@example.com</div></div>
+							</div>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="upload" data-title="Upload the ID or passport" data-say="Click Choose file and pick a JPG, PNG, or PDF of the ID or passport. The file must be 5 MB or smaller.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">My profile<span>Identity</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="sid">
+							<div class="pills"><span class="pill on">Rwandan</span><span class="pill">Non-Rwandan</span></div>
+							<div class="grid">
+								<div class="full hot" data-go style="cursor:pointer">
+									<label>Upload of ID or passport</label>
+									<div class="box">Choose file — national-id.jpg</div>
+									<span class="tag">Click here</span>
+								</div>
+							</div>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="save" data-title="Save identity" data-say="Click Save identity. The page reloads when the save succeeds. Leaders will see this record in the IDs PDF.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">My profile<span>Identity</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="sid">
+							<div class="pills"><span class="pill on">Rwandan</span><span class="pill">Non-Rwandan</span></div>
+							<div class="grid">
+								<div><label>National ID</label><div class="box">1199080012345678</div></div>
+								<div><label>Upload of ID or passport</label><div class="box">national-id.jpg</div></div>
+							</div>
+							<button class="save hot" type="button" data-go>Save identity<span class="tag">Click here</span></button>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="foreign" data-title="Choose Non-Rwandan" data-say="Click Non-Rwandan when the document is a foreign ID or a passport. The extra fields appear under that choice.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">My profile<span>Identity</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">JM</span></div></div>
+						<div class="sid">
+							<h3>Identity</h3>
+							<div class="pills">
+								<button class="pill" type="button">Rwandan</button>
+								<button class="pill hot" type="button" data-go>Non-Rwandan<span class="tag">Click here</span></button>
+							</div>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="passport" data-title="Fill the passport details" data-say="Fill sex, date of birth, phone, choose ID or Passport, the document number, father, mother, province, district, and sector. Then upload the file and click Save identity.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">My profile<span>Identity</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">JM</span></div></div>
+						<div class="sid">
+							<div class="pills"><span class="pill">Rwandan</span><span class="pill on">Non-Rwandan</span></div>
+							<div class="grid">
+								<div><label>Sex</label><div class="box">Male</div></div>
+								<div><label>Date of birth</label><div class="box">12 Apr 1990</div></div>
+								<div><label>Nature of identification</label><div class="box">Passport</div></div>
+								<div><label>Passport / NID No</label><div class="box">PA1234567</div></div>
+								<div><label>Father's name</label><div class="box">Pierre Mukiza</div></div>
+								<div><label>Mother's name</label><div class="box">Marie Uwimana</div></div>
+								<div><label>Province / District / Sector</label><div class="box">Northern · Musanze · Muhoza</div></div>
+								<div class="hot" data-go style="cursor:pointer"><label>Upload of ID or passport</label><div class="box">Choose file — passport.pdf</div><span class="tag">Click here</span></div>
+							</div>
+							<button class="save" type="button">Save identity</button>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="menu" data-title="Open View all staffs" data-say="Accountant, Chief Accountant, and Head Teacher: open Staffs in the left menu, then click View all staffs.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<div class="h">HR DEPT</div>
+						<button class="link on" type="button">Staffs</button>
+						<button class="link sub" type="button">Add staff</button>
+						<button class="link sub hot" type="button" data-go>View all staffs<span class="tag">Click here</span></button>
+					</div><div class="main">
+						<div class="top"><div class="title">Dashboard</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">CA</span></div></div>
+						<div class="card"><div class="hint">A staff member who is not one of those posts can save only their own profile.</div></div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="name" data-title="Open the staff member" data-say="Click the person's name. The same Identity card opens, and you fill it the same way as your own profile.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">Staff lists</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">CA</span></div></div>
+						<div class="card">
+							<table>
+								<tr><th>Names</th><th>Phone</th><th>Privilege</th></tr>
+								<tr><td><button class="name hot" type="button" data-go>Aline Uwase<span class="tag">Click here</span></button></td><td>0788000000</td><td>Teacher</td></tr>
+								<tr><td><span class="name">Jean Mukiza</span></td><td>0788111222</td><td>Teacher</td></tr>
+							</table>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="school" data-title="Choose the school" data-say="Director or Director of Finance: open Staff, then use Export from school and pick the Wisdom campus the PDF should come from.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">Staff lists<span>Signed in as Director of Finance</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">DF</span></div></div>
+						<div class="card">
+							<div class="card-h"><strong>Staff lists</strong><div class="btns"><span class="btn excel">Excel</span><span class="btn pdf">PDF</span><span class="btn courses">Courses PDF</span><span class="btn ids">IDs PDF</span></div></div>
+							<div style="padding:12px;">
+								<label style="font-weight:800;font-size:12px;">Export from school</label><br>
+								<button class="select hot" type="button" data-go>Wisdom School Burera<span class="tag">Click here</span></button>
+							</div>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="tick" data-title="Tick the people" data-say="Tick one person or several. If a search is on, Select ticks only the people that search is showing.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">Staff lists</div><div class="school"><b>WISDOM SCHOOL BURERA</b></div><div class="right"><span class="ava">DF</span></div></div>
+						<div class="card">
+							<div class="hint">Select · 1 selected · IDs PDF uses the ticked staff, or everyone the search shows.</div>
+							<table>
+								<tr><th></th><th>Names</th><th>Privilege</th></tr>
+								<tr><td><button class="hot" type="button" data-go style="width:18px;height:18px;border:2px solid #0f172a;background:#0EA5E9;border-radius:3px;"><span class="tag">Click here</span></button></td><td>Aline Uwase</td><td>Teacher</td></tr>
+								<tr><td><span style="display:inline-block;width:18px;height:18px;border:2px solid #94a3b8;border-radius:3px;"></span></td><td>Jean Mukiza</td><td>Teacher</td></tr>
+							</table>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="search" data-title="Or use the search" data-say="Leave the ticks empty and type in Search. It matches the name, phone, email, national ID, passport number, and parent names. Then go on to IDs PDF.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">Staff lists</div><div class="school"><b>WISDOM SCHOOL BURERA</b></div><div class="right"><span class="ava">DF</span></div></div>
+						<div class="card">
+							<div class="card-h"><strong>Staff lists</strong>
+								<button class="search hot" type="button" data-go style="color:#0f172a;font-weight:700;">Search: 1199080012345678<span class="tag">Type here</span></button>
+							</div>
+							<div class="hint">Nobody is ticked. IDs PDF will include everyone this search shows.</div>
+							<table><tr><th>Names</th><th>National ID</th></tr><tr><td>Aline Uwase</td><td>1199080012345678</td></tr></table>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="ids" data-title="Click IDs PDF" data-say="Click the dark IDs PDF button. The same download is in the menu on the right as Identifications PDF. If nothing is ticked and the search is empty, the page asks you to choose staff first.">
+					<div class="app"><div class="side"></div><div class="main">
+						<div class="top"><div class="title">Staff lists</div><div class="school"><b>WISDOM SCHOOL BURERA</b></div><div class="right"><span class="ava">DF</span></div></div>
+						<div class="card">
+							<div class="card-h"><strong>Staff lists</strong>
+								<div class="btns">
+									<span class="btn excel">Excel</span><span class="btn pdf">PDF</span><span class="btn courses">Courses PDF</span>
+									<button class="btn ids hot" type="button" data-go>IDs PDF<span class="tag">Click here</span></button>
+								</div>
+							</div>
+							<div class="hint">2 selected · Aline Uwase, Jean Mukiza</div>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="result" data-title="Open the PDF" data-say="Each person gets a page with the school logo and letterhead, the identity fields, and the uploaded photo. A PDF upload is attached on the following pages with the person's name.">
+					<div class="pdfpage">
+						<div class="logo-mark">WS</div>
+						<h2>WISDOM SCHOOL BURERA</h2>
+						<div style="text-align:center;color:#475569;font-size:12px;">Burera, Rwanda · Tel: 0788000013 · Email: admin.bur@wisdomschools.rw</div>
+						<div class="banner">STAFF IDENTIFICATION</div>
+						<strong>ALINE UWASE</strong>
+						<table>
+							<tr><td>Nationality</td><td>Rwandan</td></tr>
+							<tr><td>National ID</td><td>1199080012345678</td></tr>
+							<tr><td>Telephone No</td><td>0788000000</td></tr>
+						</table>
+						<div class="scan">Uploaded ID or passport<br>The photo, or the PDF pages of the document, are in this file for the Director of Finance.</div>
+					</div>
+				</section>
+
+			</div>
+			<div class="coach">
+				<p id="say"></p>
+				<div class="navbtns">
+					<button class="back" type="button" id="back">Back</button>
+					<button class="next" type="button" id="next">Next</button>
 				</div>
 			</div>
-		</figure>
-	</section>
-	<footer>Wisdom schools · Staff identity and IDs PDF. Sample names in the screens are examples, not live records.</footer>
-</main>
+		</div>
+	</div>
+</div>
+<script>
+(function () {
+	var journeys = {
+		self: ["photo", "profile", "rwandan", "nid", "upload", "save"],
+		foreign: ["photo", "profile", "foreign", "passport", "save"],
+		leader: ["menu", "name", "rwandan", "nid", "upload", "save"],
+		finance: ["school", "tick", "search", "ids", "result"]
+	};
+	var current = "self";
+	var index = 0;
+	var scenes = Array.prototype.slice.call(document.querySelectorAll(".scene"));
+	var byId = {};
+	scenes.forEach(function (el) { byId[el.getAttribute("data-id")] = el; });
+	var sideHome = document.getElementById("sideHome");
+	document.querySelectorAll(".scene .side").forEach(function (el) {
+		if (!el.innerHTML.trim()) {
+			el.innerHTML = '<div class="logo">XANDERTECH</div><div class="h">MAIN</div><button class="link on" type="button">Dashboard</button><div class="h">HR DEPT</div><button class="link" type="button">Staffs</button>';
+		}
+	});
+	if (sideHome && !sideHome.innerHTML.trim()) {
+		sideHome.innerHTML = '<div class="logo">XANDERTECH</div><div class="h">MAIN</div><button class="link on" type="button">Dashboard</button><div class="h">HR DEPT</div><button class="link" type="button">Staffs</button>';
+	}
+
+	function ids() { return journeys[current]; }
+
+	function renderList() {
+		var box = document.getElementById("stepList");
+		box.innerHTML = "";
+		ids().forEach(function (id, i) {
+			var b = document.createElement("button");
+			b.type = "button";
+			b.className = i === index ? "on" : "";
+			b.innerHTML = "<small>Step " + (i + 1) + "</small>" + byId[id].getAttribute("data-title");
+			b.addEventListener("click", function () { index = i; show(); });
+			box.appendChild(b);
+		});
+	}
+
+	function show() {
+		var id = ids()[index];
+		scenes.forEach(function (el) { el.classList.toggle("on", el.getAttribute("data-id") === id); });
+		var n = index + 1;
+		var total = ids().length;
+		document.getElementById("say").innerHTML = "<b>Step " + n + " of " + total + ".</b> " + byId[id].getAttribute("data-say");
+		document.getElementById("next").textContent = index === total - 1 ? "Done" : "Next";
+		renderList();
+		placeTag();
+	}
+
+	function placeTag() {
+		var scene = document.querySelector(".scene.on");
+		if (!scene) return;
+		var hot = scene.querySelector(".hot");
+		var tag = hot ? hot.querySelector(".tag") : null;
+		if (!tag) return;
+		var stage = scene.getBoundingClientRect();
+		var box = hot.getBoundingClientRect();
+		var midX = (box.left + box.right) / 2;
+		var stageMid = (stage.left + stage.right) / 2;
+		var nearTop = (box.top - stage.top) < 64;
+		var short = box.height < 56;
+		var wide = box.width > 150;
+		tag.classList.remove("pos-left", "pos-right", "pos-below");
+		if (nearTop) {
+			tag.classList.add("pos-below");
+		} else if (short && wide && midX > stageMid) {
+			tag.classList.add("pos-left");
+		} else if (short && wide) {
+			tag.classList.add("pos-right");
+		} else {
+			tag.classList.add("pos-below");
+		}
+	}
+
+	function go(delta) {
+		var total = ids().length;
+		index = Math.max(0, Math.min(total - 1, index + delta));
+		show();
+	}
+
+	document.getElementById("back").addEventListener("click", function () { go(-1); });
+	document.getElementById("next").addEventListener("click", function () { go(1); });
+	document.getElementById("scenes").addEventListener("click", function (ev) {
+		if (ev.target.closest("[data-go]")) { go(1); }
+	});
+	document.getElementById("journeys").addEventListener("click", function (ev) {
+		var btn = ev.target.closest("button");
+		if (!btn) return;
+		current = btn.getAttribute("data-j");
+		index = 0;
+		Array.prototype.forEach.call(document.querySelectorAll("#journeys button"), function (b) {
+			b.classList.toggle("on", b === btn);
+		});
+		show();
+	});
+	document.addEventListener("keydown", function (ev) {
+		if (ev.key === "ArrowRight") go(1);
+		if (ev.key === "ArrowLeft") go(-1);
+	});
+	show();
+})();
+</script>
 </body>
 </html>
