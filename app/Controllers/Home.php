@@ -298,8 +298,7 @@ public function testEmail()
 				} else {
 					$data['wisdom_group'] = $overview->summary($homeId, $yearId);
 				}
-			}
-			if ($overview->showAccountantDashboard($homeId, $postId, $currentId)) {
+			} elseif ($overview->showAccountantDashboard($homeId, $postId, $currentId)) {
 				$data['accountant_watch'] = $overview->accountantAttendance($homeId);
 			}
 		} catch (\Throwable $e) {
@@ -320,7 +319,8 @@ public function testEmail()
 		$homeId = (int) school_hierarchy_home_id();
 		$postId = (int) $this->session->get('soma_post');
 		$customerCareOnly = $overview->isCustomerCarePost($postId) && !$overview->isLeaderPost($postId);
-		if ((!$overview->isLeaderPost($postId) && !$customerCareOnly) || !$overview->isWisdomMaster($homeId)) {
+		$chiefAccountant = \Config\MenuClearance::isChiefAccountantPost($postId);
+		if ((!$overview->isLeaderPost($postId) && !$customerCareOnly && !$chiefAccountant) || !$overview->isWisdomMaster($homeId)) {
 			return redirect()->to(base_url('dashboard'));
 		}
 		$allowed = [];
@@ -394,7 +394,7 @@ public function testEmail()
 			\App\Models\PostsModel::DIRECTOR_ID,
 		];
 		$overview = new \App\Services\WisdomGroupOverview();
-		if (!in_array($postId, $allowed, true) || !$overview->isWisdomMaster($homeId)) {
+		if ((!in_array($postId, $allowed, true) && !\Config\MenuClearance::isChiefAccountantPost($postId)) || !$overview->isWisdomMaster($homeId)) {
 			return redirect()->to(base_url('dashboard'));
 		}
 		$yearId = (int) ($this->data['academic_year'] ?? $this->data['academic_year_id'] ?? 0);

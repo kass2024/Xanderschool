@@ -110,7 +110,9 @@ class WisdomGroupOverview
 	public function showGroupDashboard($homeSchoolId, $postId, $currentSchoolId)
 	{
 		$homeSchoolId = (int) $homeSchoolId;
-		$canSee = $this->isLeaderPost($postId) || $this->isCustomerCarePost($postId);
+		$canSee = $this->isLeaderPost($postId)
+			|| $this->isCustomerCarePost($postId)
+			|| \Config\MenuClearance::isChiefAccountantPost($postId);
 		return $homeSchoolId > 0
 			&& $homeSchoolId === (int) $currentSchoolId
 			&& $canSee
