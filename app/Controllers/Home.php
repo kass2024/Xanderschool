@@ -2472,6 +2472,49 @@ refreshNurseryMentions();
 			}
 		}
 		$done = true;
+		$this->ensureStaffIdentityColumns();
+	}
+
+	private function ensureStaffIdentityColumns(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists('staffs')) {
+			$columns = [
+				'identity_kind' => "VARCHAR(16) NULL DEFAULT NULL",
+				'national_id' => "VARCHAR(20) NULL DEFAULT NULL",
+				'id_copy' => "VARCHAR(120) NULL DEFAULT NULL",
+				'sex' => "CHAR(1) NULL DEFAULT NULL",
+				'dob' => "DATE NULL DEFAULT NULL",
+				'id_nature' => "VARCHAR(16) NULL DEFAULT NULL",
+				'document_no' => "VARCHAR(40) NULL DEFAULT NULL",
+				'father_name' => "VARCHAR(80) NULL DEFAULT NULL",
+				'mother_name' => "VARCHAR(80) NULL DEFAULT NULL",
+				'res_province' => "INT NULL DEFAULT NULL",
+				'res_district' => "INT NULL DEFAULT NULL",
+				'res_sector' => "INT NULL DEFAULT NULL",
+			];
+			foreach ($columns as $name => $ddl) {
+				if (!$db->fieldExists($name, 'staffs')) {
+					$db->query('ALTER TABLE `staffs` ADD COLUMN `' . $name . '` ' . $ddl);
+				}
+			}
+		}
+		$done = true;
+	}
+
+	private function mayEditStaffRecord(int $staffId): bool
+	{
+		if ($staffId < 1) {
+			return false;
+		}
+		if ((int) $this->session->get('soma_id') === $staffId) {
+			return true;
+		}
+		return \Config\MenuClearance::canEditStaffIdentity((int) $this->session->get('soma_post'));
 	}
 
 	/**
@@ -10220,6 +10263,7 @@ public function attendanceCard()
 		$data['staff'] = $staff;
 		$data['subtitle'] = $staff['fname'] . ' ' . $staff['lname'] . lang("app.profile");
 		$data['page'] = "students";
+		$data = array_merge($data, $this->staffIdentityViewData($staff));
 		$data['content'] = view("pages/staff", $data);
 		return view('main', $data);
 	}
@@ -10242,8 +10286,26 @@ public function attendanceCard()
 		$data['staff'] = $staff;
 		$data['subtitle'] = $staff['fname'] . ' ' . $staff['lname'] . lang("app.profile");
 		$data['page'] = "students";
+		$data = array_merge($data, $this->staffIdentityViewData($staff));
 		$data['content'] = view("pages/staff", $data);
 		return view('main', $data);
+	}
+
+	/**
+	 * @param array<string,mixed> $staff
+	 * @return array<string,mixed>
+	 */
+	private function staffIdentityViewData(array $staff): array
+	{
+		$address = new AddressModel();
+		$provinceId = (int) ($staff['res_province'] ?? 0);
+		$districtId = (int) ($staff['res_district'] ?? 0);
+		return [
+			'can_edit_staff' => $this->mayEditStaffRecord((int) ($staff['id'] ?? 0)),
+			'identity_provinces' => $address->getProvince(),
+			'identity_districts' => $provinceId > 0 ? $address->getAddress('soma_district', $provinceId, 'province') : [],
+			'identity_sectors' => $districtId > 0 ? $address->getAddress('soma_sector', $districtId, 'district') : [],
+		];
 	}
 
 	public function course_category()
@@ -11508,11 +11570,24 @@ public function attendanceCard()
 
 	public function edit_staff($type = "text", $link = "s")
 	{
-		$id = $this->request->getPost("id");
-		$target = $this->request->getPost("target");
+		$this->_preset();
+		$id = (int) $this->request->getPost("id");
+		$target = (string) $this->request->getPost("target");
 		$val = $this->request->getPost("val");
 		if (strlen($target) == 0) {
 			return $this->response->setJSON(array("error" => lang("app.pleaseProvide")));
+		}
+		$editable = ['fname', 'lname', 'phone', 'email', 'address'];
+		if (!in_array($target, $editable, true)) {
+			return $this->response->setJSON(array("error" => "That field cannot be changed here."));
+		}
+		$schoolId = (int) $this->session->get("soma_school_id");
+		$existing = (new StaffModel())->select('id')->where('id', $id)->where('school_id', $schoolId)->get(1)->getRowArray();
+		if ($existing === null) {
+			return $this->response->setJSON(array("error" => "Staff not found."));
+		}
+		if (!$this->mayEditStaffRecord($id)) {
+			return $this->response->setJSON(array("error" => "You can update your own profile. An accountant, Head Teacher, or Director can update other staff."));
 		}
 		if ($target === 'email') {
 			$val = trim((string) $val);
@@ -11552,6 +11627,172 @@ public function attendanceCard()
 		} catch (\Exception $e) {
 			return $this->response->setJSON(array("error" => "Error: " . $e->getMessage()));
 		}
+	}
+
+	public function save_staff_identity()
+	{
+		$this->_preset();
+		$this->ensureStaffIdentityColumns();
+		$id = (int) $this->request->getPost('staff_id');
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$staff = (new StaffModel())->select('id, id_copy, email')
+			->where('id', $id)->where('school_id', $schoolId)->get(1)->getRowArray();
+		if ($staff === null) {
+			return $this->response->setJSON(['error' => 'Staff not found.']);
+		}
+		if (!$this->mayEditStaffRecord($id)) {
+			return $this->response->setJSON(['error' => 'You can update your own profile. An accountant, Head Teacher, or Director can update other staff.']);
+		}
+		$postedKind = (string) $this->request->getPost('identity_kind');
+		if (!in_array($postedKind, ['rwandan', 'foreign'], true)) {
+			return $this->response->setJSON(['error' => 'Choose Rwandan or Non-Rwandan.']);
+		}
+		$fname = trim((string) $this->request->getPost('fname'));
+		$lname = trim((string) $this->request->getPost('lname'));
+		if ($fname === '' || $lname === '') {
+			return $this->response->setJSON(['error' => 'Names are required.']);
+		}
+		$data = [
+			'fname' => $fname,
+			'lname' => $lname,
+			'identity_kind' => $postedKind,
+			'updated_by' => (int) $this->session->get('soma_id'),
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		$email = '';
+		if ($postedKind === 'rwandan') {
+			$nid = preg_replace('/\s+/', '', (string) $this->request->getPost('national_id'));
+			if (!preg_match('/^\d{16}$/', $nid)) {
+				return $this->response->setJSON(['error' => 'National ID must be 16 digits.']);
+			}
+			$file = $this->request->getFile('id_copy');
+			$hasNew = $file && $file->isValid() && !$file->hasMoved();
+			if (!$hasNew && trim((string) ($staff['id_copy'] ?? '')) === '') {
+				return $this->response->setJSON(['error' => 'Upload a copy of the national ID.']);
+			}
+			if ($hasNew) {
+				$stored = $this->storeStaffIdCopy($id, $file, (string) ($staff['id_copy'] ?? ''));
+				if ($stored['error'] !== '') {
+					return $this->response->setJSON(['error' => $stored['error']]);
+				}
+				$data['id_copy'] = $stored['name'];
+			}
+			$data['national_id'] = $nid;
+			$data['phone'] = trim((string) $this->request->getPost('phone'));
+			$email = trim((string) $this->request->getPost('email'));
+		} else {
+			$sex = strtoupper(trim((string) $this->request->getPost('sex')));
+			if (!in_array($sex, ['M', 'F'], true)) {
+				return $this->response->setJSON(['error' => 'Choose sex.']);
+			}
+			$dob = trim((string) $this->request->getPost('dob'));
+			$dt = \DateTime::createFromFormat('Y-m-d', $dob);
+			if (!$dt || $dt->format('Y-m-d') !== $dob) {
+				return $this->response->setJSON(['error' => 'Enter a valid date of birth.']);
+			}
+			$phone = trim((string) $this->request->getPost('phone'));
+			if ($phone === '') {
+				return $this->response->setJSON(['error' => 'Telephone number is required.']);
+			}
+			$email = trim((string) $this->request->getPost('email'));
+			$nature = (string) $this->request->getPost('id_nature');
+			if (!in_array($nature, ['id', 'passport'], true)) {
+				return $this->response->setJSON(['error' => 'Choose ID or Passport.']);
+			}
+			$documentNo = trim((string) $this->request->getPost('document_no'));
+			if ($documentNo === '') {
+				return $this->response->setJSON(['error' => 'Passport or NID number is required.']);
+			}
+			$father = trim((string) $this->request->getPost('father_name'));
+			$mother = trim((string) $this->request->getPost('mother_name'));
+			if ($father === '' || $mother === '') {
+				return $this->response->setJSON(['error' => "Father's name and mother's name are required."]);
+			}
+			$province = (int) $this->request->getPost('res_province');
+			$district = (int) $this->request->getPost('res_district');
+			$sector = (int) $this->request->getPost('res_sector');
+			if ($province < 1 || $district < 1 || $sector < 1) {
+				return $this->response->setJSON(['error' => 'Province, district, and sector of residence are required.']);
+			}
+			$data['sex'] = $sex;
+			$data['dob'] = $dob;
+			$data['phone'] = $phone;
+			$data['id_nature'] = $nature;
+			$data['document_no'] = $documentNo;
+			$data['father_name'] = $father;
+			$data['mother_name'] = $mother;
+			$data['res_province'] = $province;
+			$data['res_district'] = $district;
+			$data['res_sector'] = $sector;
+		}
+		if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+			return $this->response->setJSON(['error' => 'Enter a valid email address, or leave it empty.']);
+		}
+		if ($email !== '' && strcasecmp($email, trim((string) ($staff['email'] ?? ''))) !== 0) {
+			if ((new StaffModel())->emailUsedByAnotherStaff($email, $id)) {
+				return $this->response->setJSON(['error' => lang('app.emailAlready')]);
+			}
+		}
+		$data['email'] = $email;
+		try {
+			$updated = \Config\Database::connect()->table('staffs')->where('id', $id)->where('school_id', $schoolId)->update($data);
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => 'Could not save the identity details.']);
+		}
+		if ($updated === false) {
+			return $this->response->setJSON(['error' => 'Could not save the identity details.']);
+		}
+		return $this->response->setJSON(['success' => 'Identity details saved.']);
+	}
+
+	public function staff_id_copy($id = 0)
+	{
+		$this->_preset();
+		$this->ensureStaffIdentityColumns();
+		$id = (int) $id;
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = (new StaffModel())->select('id_copy')
+			->where('id', $id)->where('school_id', $schoolId)->get(1)->getRowArray();
+		$name = basename((string) ($row['id_copy'] ?? ''));
+		$path = WRITEPATH . 'uploads/staff_ids/' . $name;
+		if ($name === '' || !is_file($path)) {
+			return $this->response->setStatusCode(404)->setBody('ID copy not found.');
+		}
+		$ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+		$mime = $ext === 'pdf' ? 'application/pdf' : ($ext === 'png' ? 'image/png' : 'image/jpeg');
+		return $this->response->setHeader('Content-Type', $mime)
+			->setHeader('Content-Disposition', 'inline; filename="' . $name . '"')
+			->setBody((string) file_get_contents($path));
+	}
+
+	/**
+	 * @param \CodeIgniter\HTTP\Files\UploadedFile $file
+	 * @return array{name:string,error:string}
+	 */
+	private function storeStaffIdCopy(int $staffId, $file, string $previous): array
+	{
+		$mime = (string) $file->getMimeType();
+		$ext = strtolower((string) $file->getExtension());
+		$okMime = in_array($mime, ['image/jpeg', 'image/png', 'application/pdf'], true);
+		$okExt = in_array($ext, ['jpg', 'jpeg', 'png', 'pdf'], true);
+		if (!$okMime && !$okExt) {
+			return ['name' => '', 'error' => 'Upload a JPG, PNG, or PDF of the ID.'];
+		}
+		if ($file->getSize() > 5 * 1024 * 1024) {
+			return ['name' => '', 'error' => 'The ID file must be 5MB or smaller.'];
+		}
+		$dir = WRITEPATH . 'uploads/staff_ids/';
+		if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+			return ['name' => '', 'error' => 'Could not store the ID copy.'];
+		}
+		$saveExt = $ext === 'png' ? 'png' : ($ext === 'pdf' ? 'pdf' : 'jpg');
+		$name = 'staff-' . $staffId . '-' . date('YmdHis') . '.' . $saveExt;
+		$file->move($dir, $name, true);
+		$old = basename($previous);
+		if ($old !== '' && $old !== $name && is_file($dir . $old)) {
+			@unlink($dir . $old);
+		}
+		return ['name' => $name, 'error' => ''];
 	}
 
 	public function manipulate_course_category($id = null)

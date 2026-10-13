@@ -733,6 +733,12 @@ class MenuClearance
 		return $postId === 27;
 	}
 
+	/** Customer Care may file leave for another staff member. */
+	public static function isCustomerCarePost($postId)
+	{
+		return strpos(self::postTitle((int) $postId), 'customer care') !== false;
+	}
+
 	/** Head Teacher, Customer Care, or Director. Not Deputy Director or Director of Finance. */
 	public static function canViewFamilies($postId)
 	{
@@ -816,6 +822,20 @@ class MenuClearance
 	public static function canSetStaffContract($postId)
 	{
 		return self::canLockMarksEditing($postId);
+	}
+
+	/** Accountant, Head Teacher, or Director may fill another staff member's identity. */
+	public static function canEditStaffIdentity($postId)
+	{
+		$postId = (int) $postId;
+		if (self::isHeadMasterEquivalent($postId) || self::isDirectorPost($postId)) {
+			return true;
+		}
+		if (in_array($postId, [9, 28], true)) {
+			return true;
+		}
+		$title = self::postTitle($postId);
+		return in_array($title, ['accountant', 'chief accountant', 'head teacher', 'headteacher', 'director'], true);
 	}
 
 	public static function postTitle($postId)

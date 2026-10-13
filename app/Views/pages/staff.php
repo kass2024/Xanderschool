@@ -23,38 +23,178 @@
 			left:50%;color:#ffffff;
 		}
 	}
-
+	.sid-card { background:#fff; border:1px solid #e4ebf4; border-radius:16px; padding:18px 18px 8px; margin:0 15px 16px; box-shadow:0 1px 2px rgba(7,22,51,.04); }
+	.sid-card h4 { margin:0 0 4px; font-weight:700; }
+	.sid-card .sid-lead { color:#5c6b80; font-size:13px; margin:0 0 14px; font-weight:500; }
+	.sid-switch { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+	.sid-switch label { margin:0; border:1px solid #d7e0ec; border-radius:999px; padding:8px 14px; cursor:pointer; font-weight:600; background:#f7f9fc; }
+	.sid-switch input { margin-right:6px; }
+	.sid-switch label.is-on { background:#071633; color:#fff; border-color:#071633; }
+	.sid-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px 16px; }
+	.sid-grid .full { grid-column:1 / -1; }
+	.sid-grid label { display:block; font-size:12px; color:#5c6b80; font-weight:600; margin-bottom:4px; }
+	.sid-grid .form-control, .sid-grid select { width:100%; }
+	.sid-file { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+	.sid-file a { font-weight:600; }
+	.sid-actions { margin:14px 0 10px; }
+	@media (max-width: 800px) { .sid-grid { grid-template-columns:1fr; } }
 </style>
+<?php
+$canEditStaff = !empty($can_edit_staff);
+$identityKind = (string) ($staff['identity_kind'] ?? '');
+$idCopyName = basename((string) ($staff['id_copy'] ?? ''));
+$idCopyUrl = $idCopyName !== '' ? base_url('staff_id_copy/' . (int) $staff['id']) : '';
+$dobValue = trim((string) ($staff['dob'] ?? ''));
+if ($dobValue === '0000-00-00') {
+	$dobValue = '';
+}
+$field = static function (string $key) use ($staff): string {
+	return esc((string) ($staff[$key] ?? ''));
+};
+?>
 <i class="fa fa-question-circle ihelp" data-toggle="tooltip" title="Double click value to enable edit mode then press enter or outside to save or escape key to cancel"></i>
+<div class="sid-card" id="staff-identity">
+	<h4>Identity</h4>
+	<p class="sid-lead">Choose nationality. Each staff member can update this from their profile. An accountant, Head Teacher, or Director can update it for any staff member.</p>
+	<form id="staff-identity-form" enctype="multipart/form-data">
+		<input type="hidden" name="staff_id" value="<?= (int) $staff['id']; ?>">
+		<div class="sid-switch">
+			<label class="<?= $identityKind === 'rwandan' ? 'is-on' : ''; ?>">
+				<input type="radio" name="identity_kind" value="rwandan" <?= $identityKind === 'rwandan' ? 'checked' : ''; ?> <?= $canEditStaff ? '' : 'disabled'; ?>>
+				Rwandan
+			</label>
+			<label class="<?= $identityKind === 'foreign' ? 'is-on' : ''; ?>">
+				<input type="radio" name="identity_kind" value="foreign" <?= $identityKind === 'foreign' ? 'checked' : ''; ?> <?= $canEditStaff ? '' : 'disabled'; ?>>
+				Non-Rwandan
+			</label>
+		</div>
+		<div class="sid-grid">
+			<div>
+				<label>First name</label>
+				<input class="form-control" name="fname" value="<?= $field('fname'); ?>" <?= $canEditStaff ? 'required' : 'disabled'; ?>>
+			</div>
+			<div>
+				<label>Last name</label>
+				<input class="form-control" name="lname" value="<?= $field('lname'); ?>" <?= $canEditStaff ? 'required' : 'disabled'; ?>>
+			</div>
+		</div>
+		<?php $rwOn = $identityKind === 'rwandan' && $canEditStaff; $fnOn = $identityKind === 'foreign' && $canEditStaff; ?>
+		<div class="sid-panel" data-kind="rwandan" <?= $identityKind === 'rwandan' ? '' : 'style="display:none;"'; ?>>
+			<div class="sid-grid" style="margin-top:12px;">
+				<div>
+					<label>National ID</label>
+					<input class="form-control" name="national_id" inputmode="numeric" maxlength="16" value="<?= $field('national_id'); ?>" placeholder="16 digits" <?= $rwOn ? '' : 'disabled'; ?>>
+				</div>
+				<div>
+					<label>Telephone No (optional)</label>
+					<input class="form-control" name="phone" value="<?= $field('phone'); ?>" <?= $rwOn ? '' : 'disabled'; ?>>
+				</div>
+				<div>
+					<label>Email (optional)</label>
+					<input class="form-control" type="email" name="email" value="<?= $field('email'); ?>" <?= $rwOn ? '' : 'disabled'; ?>>
+				</div>
+				<div class="full">
+					<label>Upload of ID</label>
+					<div class="sid-file">
+						<?php if ($canEditStaff): ?>
+							<input type="file" name="id_copy" accept="image/jpeg,image/png,application/pdf" <?= $rwOn ? '' : 'disabled'; ?>>
+						<?php endif; ?>
+						<?php if ($idCopyUrl !== ''): ?>
+							<a href="<?= esc($idCopyUrl); ?>" target="_blank" rel="noopener">View uploaded ID</a>
+						<?php elseif (!$canEditStaff): ?>
+							<span class="text-muted">No ID uploaded</span>
+						<?php endif; ?>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="sid-panel" data-kind="foreign" <?= $identityKind === 'foreign' ? '' : 'style="display:none;"'; ?>>
+			<div class="sid-grid" style="margin-top:12px;">
+				<div>
+					<label>Sex</label>
+					<select class="form-control" name="sex" <?= $fnOn ? '' : 'disabled'; ?>>
+						<option value="">Select</option>
+						<option value="M" <?= ($staff['sex'] ?? '') === 'M' ? 'selected' : ''; ?>>Male</option>
+						<option value="F" <?= ($staff['sex'] ?? '') === 'F' ? 'selected' : ''; ?>>Female</option>
+					</select>
+				</div>
+				<div>
+					<label>Date of birth</label>
+					<input class="form-control" type="date" name="dob" value="<?= esc($dobValue); ?>" <?= $fnOn ? '' : 'disabled'; ?>>
+				</div>
+				<div>
+					<label>Telephone No</label>
+					<input class="form-control" name="phone" value="<?= $field('phone'); ?>" <?= $fnOn ? '' : 'disabled'; ?>>
+				</div>
+				<div>
+					<label>Email (optional)</label>
+					<input class="form-control" type="email" name="email" value="<?= $field('email'); ?>" <?= $fnOn ? '' : 'disabled'; ?>>
+				</div>
+				<div>
+					<label>Nature of identification</label>
+					<select class="form-control" name="id_nature" <?= $fnOn ? '' : 'disabled'; ?>>
+						<option value="">Select</option>
+						<option value="id" <?= ($staff['id_nature'] ?? '') === 'id' ? 'selected' : ''; ?>>ID</option>
+						<option value="passport" <?= ($staff['id_nature'] ?? '') === 'passport' ? 'selected' : ''; ?>>Passport</option>
+					</select>
+				</div>
+				<div>
+					<label>Passport / NID No</label>
+					<input class="form-control" name="document_no" value="<?= $field('document_no'); ?>" <?= $fnOn ? '' : 'disabled'; ?>>
+				</div>
+				<div>
+					<label>Father's name</label>
+					<input class="form-control" name="father_name" value="<?= $field('father_name'); ?>" <?= $fnOn ? '' : 'disabled'; ?>>
+				</div>
+				<div>
+					<label>Mother's name</label>
+					<input class="form-control" name="mother_name" value="<?= $field('mother_name'); ?>" <?= $fnOn ? '' : 'disabled'; ?>>
+				</div>
+				<div>
+					<label>Province of residence</label>
+					<select class="form-control" name="res_province" id="sid_province" <?= $fnOn ? '' : 'disabled'; ?>>
+						<option value="">Select</option>
+						<?php foreach ($identity_provinces ?? [] as $province): ?>
+							<option value="<?= (int) $province['id']; ?>" <?= (int) ($staff['res_province'] ?? 0) === (int) $province['id'] ? 'selected' : ''; ?>><?= esc($province['title']); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<div>
+					<label>District of residence</label>
+					<select class="form-control" name="res_district" id="sid_district" <?= $fnOn ? '' : 'disabled'; ?>>
+						<option value="">Select</option>
+						<?php foreach ($identity_districts ?? [] as $district): ?>
+							<option value="<?= (int) $district['id']; ?>" <?= (int) ($staff['res_district'] ?? 0) === (int) $district['id'] ? 'selected' : ''; ?>><?= esc($district['title']); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<div>
+					<label>Sector of residence</label>
+					<select class="form-control" name="res_sector" id="sid_sector" <?= $fnOn ? '' : 'disabled'; ?>>
+						<option value="">Select</option>
+						<?php foreach ($identity_sectors ?? [] as $sector): ?>
+							<option value="<?= (int) $sector['id']; ?>" <?= (int) ($staff['res_sector'] ?? 0) === (int) $sector['id'] ? 'selected' : ''; ?>><?= esc($sector['title']); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+			</div>
+		</div>
+		<?php if ($canEditStaff): ?>
+			<div class="sid-actions">
+				<button type="submit" class="btn btn-primary" id="sid-save">Save identity</button>
+			</div>
+		<?php endif; ?>
+	</form>
+</div>
 <div class="row" id="staff_section" data-id="<?= $staff['id']; ?>">
 		<hr style="width: 100%;float: left"/>
 		<div class="col-sm-12 col-md-6 col-lg-6 pull-left">
 			<div class="boxed" style="background:white;padding: 20px">
 				<h4><?= lang("app.staffInformation");?></h4>
 				<div class="form-group">
-					<label><?= lang("app.firstName");?>:</label>
-					<span data-value="<?= $staff['fname']; ?>" data-target="fname"
-						  class="spedit">&nbsp;<?= $staff['fname']; ?></span>
-				</div>
-				<div class="form-group">
-					<label><?= lang("app.lastName");?>:</label>
-					<span data-value="<?= $staff['lname']; ?>" data-target="lname"
-						  class="spedit">&nbsp;<?= $staff['lname']; ?></span>
-				</div>
-				<div class="form-group">
-					<label><?= lang("app.phone");?>:</label>
-					<span data-value="<?= $staff['phone']; ?>" data-target="phone"
-						  class="spedit">&nbsp;<?= $staff['phone']; ?></span>
-				</div>
-				<div class="form-group">
-					<label><?= lang("app.email");?>:</label>
-					<span data-value="<?= $staff['email']; ?>" data-target="email"
-						  class="spedit">&nbsp;<?= $staff['email']; ?></span>
-				</div>
-				<div class="form-group">
 					<label><?= lang("app.address");?>:</label>
-					<span data-value="<?= $staff['address']; ?>" data-target="address"
-						  class="spedit">&nbsp;<?= $staff['address']; ?></span>
+					<span data-value="<?= esc($staff['address'] ?? '', 'attr'); ?>" data-target="address"
+						  class="<?= $canEditStaff ? 'spedit' : ''; ?>">&nbsp;<?= esc($staff['address'] ?? ''); ?></span>
 				</div>
 				<?php
 				$contractLabel = static function ($value): string {
@@ -471,4 +611,74 @@
 			});
 		}
 	})();
+	var canEditIdentity = <?= $canEditStaff ? 'true' : 'false'; ?>;
+	function applyIdentityKind(kind) {
+		$('.sid-panel').each(function () {
+			var on = $(this).data('kind') === kind;
+			$(this).toggle(on);
+			$(this).find(':input').prop('disabled', !(on && canEditIdentity));
+		});
+		$('.sid-switch label').removeClass('is-on');
+		$('.sid-switch input[value="' + kind + '"]').closest('label').addClass('is-on');
+	}
+	$('.sid-switch input').on('change', function () {
+		applyIdentityKind($(this).val());
+	});
+	var pickedKind = $('.sid-switch input:checked').val() || '';
+	if (pickedKind) {
+		applyIdentityKind(pickedKind);
+	}
+	$('#sid_province').on('change', function () {
+		var val = $(this).val();
+		$('#sid_district').html('<option value="">Select</option>');
+		$('#sid_sector').html('<option value="">Select</option>');
+		if (!val) {
+			return;
+		}
+		$.get(window.base_url + 'get_address/district', { key: 'province', val: val }, function (html) {
+			$('#sid_district').html(html);
+		});
+	});
+	$('#sid_district').on('change', function () {
+		var val = $(this).val();
+		$('#sid_sector').html('<option value="">Select</option>');
+		if (!val) {
+			return;
+		}
+		$.get(window.base_url + 'get_address/sector', { key: 'district', val: val }, function (html) {
+			$('#sid_sector').html(html);
+		});
+	});
+	$('#staff-identity-form').on('submit', function (e) {
+		e.preventDefault();
+		if (!canEditIdentity) {
+			return;
+		}
+		var kind = $('.sid-switch input:checked').val();
+		if (!kind) {
+			toastada.error('Choose Rwandan or Non-Rwandan.');
+			return;
+		}
+		var btn = $('#sid-save');
+		btn.prop('disabled', true);
+		$.ajax({
+			url: window.base_url + 'save_staff_identity',
+			type: 'POST',
+			data: new FormData(this),
+			processData: false,
+			contentType: false,
+			dataType: 'json'
+		}).done(function (data) {
+			if (data && data.error) {
+				toastada.error(data.error);
+				btn.prop('disabled', false);
+				return;
+			}
+			toastada.success((data && data.success) ? data.success : 'Saved');
+			window.location.reload();
+		}).fail(function () {
+			toastada.error('Could not save the identity details.');
+			btn.prop('disabled', false);
+		});
+	});
 </script>
