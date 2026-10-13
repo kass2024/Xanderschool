@@ -77,15 +77,41 @@
 		.tag.pos-below { left:50%; top:calc(100% + 12px); transform:translateX(-50%); }
 		.tag.pos-below::after { left:50%; bottom:100%; top:auto; transform:translateX(-50%); border-bottom-color:var(--flash); }
 		@keyframes flash { 0% { box-shadow:0 0 0 0 rgba(255,122,24,.7); } 70% { box-shadow:0 0 0 14px rgba(255,122,24,0); } 100% { box-shadow:0 0 0 0 rgba(255,122,24,0); } }
+		#pointer { position:fixed; z-index:80; width:28px; height:28px; left:40px; top:70%; margin-left:-2px; margin-top:-2px; pointer-events:none; opacity:0; filter:drop-shadow(0 2px 2px rgba(0,0,0,.45)); transition:left 1.8s cubic-bezier(.42,.02,.18,1), top 1.8s cubic-bezier(.42,.02,.18,1), opacity .2s; }
+		#pointer.on { opacity:1; }
+		#pointer.tap { transform:scale(.82); transition:left 1.8s cubic-bezier(.42,.02,.18,1), top 1.8s cubic-bezier(.42,.02,.18,1), transform .12s ease; }
+		.login { background:#f4f1ea; }
+		.auth { max-width:420px; border-radius:22px; padding:22px 20px 16px; box-shadow:0 18px 48px rgba(11,31,74,.12); border:1px solid #e2e8f0; }
+		.auth-head { display:flex; align-items:center; gap:10px; margin-bottom:2px; }
+		.auth-head img { width:42px; height:42px; object-fit:contain; }
+		.auth h2 { color:#0b1f4a; font-size:22px; }
+		.auth label { text-transform:uppercase; letter-spacing:.04em; color:#0b1f4a; font-size:11px; }
+		.auth .box { display:flex; align-items:center; gap:8px; border-radius:12px; min-height:44px; }
+		.auth .go { background:#0b1f4a; border-radius:12px; display:flex; justify-content:center; align-items:center; gap:8px; }
+		.quick { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:12px; }
+		.quick span { border:1px solid #e2e8f0; border-radius:10px; padding:8px 4px; text-align:center; font-size:11px; font-weight:700; color:#0b1f4a; background:#fff; }
+		.gate { position:fixed; inset:0; background:rgba(11,18,32,.55); z-index:90; display:flex; align-items:center; justify-content:center; padding:16px; }
+		.gate[hidden] { display:none; }
+		.gate .card { max-width:420px; text-align:center; }
+		.gate button { background:#ff7a18; color:#fff; border:0; border-radius:10px; padding:10px 16px; font-weight:800; cursor:pointer; font-family:inherit; }
 		@media (max-width:860px) { .layout { grid-template-columns:1fr; } .app { grid-template-columns:1fr; } .side { display:none; } .scene.show-side .side { display:block; } }
+		@media (prefers-reduced-motion: reduce) { #pointer { transition-duration:.2s; } }
 	</style>
 </head>
 <body>
+<div class="gate" id="gate">
+	<div class="card">
+		<h3>Start the spoken tour</h3>
+		<p>The cursor moves slowly to each button, and Gemini reads the step aloud. You can pause or turn the sound off at any time.</p>
+		<button type="button" id="startTour">Start with sound</button>
+	</div>
+</div>
+<svg id="pointer" viewBox="0 0 24 24" aria-hidden="true"><path fill="#111" d="M4 2l16 12-7 1-3 7z"/><path fill="#fff" d="M6 5l10 8-4.2.6L9 19z"/></svg>
 <div class="wrap">
 	<div class="head">
 		<div>
 			<h1>Staff support guide</h1>
-			<p>Walk a staff member from sign-in, through Settings and My profile, then down the side menu. The orange ring is the click. A missing menu means that post is not allowed to open it. Identity details are in the <a href="staff-identity-guide.html">identity guide</a>.</p>
+			<p>The tour uses the sign-in screen and menus as staff see them. A cursor moves to each button and a voice explains the step. A missing menu means that post cannot open it. Identity details are in the <a href="staff-identity-guide.html">identity guide</a>.</p>
 		</div>
 		<div class="journeys" id="journeys">
 			<button type="button" data-j="all" class="on">Full tour</button>
@@ -103,39 +129,45 @@
 		<div class="stage">
 			<div id="scenes">
 
-				<section class="scene" data-id="email" data-ch="login" data-title="Type the email" data-say="On the sign-in page, click Email and type the staff email. Use Recover Password if they have forgotten it.">
+				<section class="scene" data-id="email" data-ch="login" data-title="Type the email" data-say="On the sign-in page, click the email box and type the staff email. Recover Password is there if they have forgotten it.">
 					<div class="login"><div class="auth">
-						<h2>Welcome back</h2>
+						<div class="auth-head"><img src="../assets/images/xander-x-3d.png" alt=""><h2>Welcome back</h2></div>
 						<p>Please sign in to your account.</p>
 						<label>Email</label>
-						<button class="box hot" type="button" data-go style="width:100%;text-align:left;">Enter your Email<span class="tag">Click here</span></button>
+						<button class="box hot" type="button" data-go style="width:100%;text-align:left;">✉ Enter your Email<span class="tag">Click here</span></button>
 						<label>Password</label>
-						<div class="box">Enter your Password</div>
+						<div class="box">🔒 Enter your Password</div>
 						<div class="rec">Recover Password</div>
-						<button class="go" type="button">Login to Dashboard</button>
+						<div class="box" style="margin-top:8px;">☐ Keep me logged in</div>
+						<button class="go" type="button">Login to Dashboard →</button>
+						<div class="quick"><span>Platform Admin</span><span>School Admin</span><span>Teacher</span><span>Accountant</span><span>Student marks</span><span>Online Registration</span></div>
 					</div></div>
 				</section>
 
-				<section class="scene" data-id="pass" data-ch="login" data-title="Type the password" data-say="Click Password and type it. The password is at least 6 characters. Keep me logged in is optional.">
+				<section class="scene" data-id="pass" data-ch="login" data-title="Type the password" data-say="Click the password box and type the password. It must be at least 6 characters. Keep me logged in is optional.">
 					<div class="login"><div class="auth">
-						<h2>Welcome back</h2>
+						<div class="auth-head"><img src="../assets/images/xander-x-3d.png" alt=""><h2>Welcome back</h2></div>
 						<p>Please sign in to your account.</p>
 						<label>Email</label>
-						<div class="box">staff@example.com</div>
+						<div class="box">✉ staff@example.com</div>
 						<label>Password</label>
-						<button class="box hot" type="button" data-go style="width:100%;text-align:left;">Enter your Password<span class="tag">Click here</span></button>
-						<button class="go" type="button">Login to Dashboard</button>
+						<button class="box hot" type="button" data-go style="width:100%;text-align:left;">🔒 Enter your Password<span class="tag">Click here</span></button>
+						<div class="rec">Recover Password</div>
+						<div class="box" style="margin-top:8px;">☐ Keep me logged in</div>
+						<button class="go" type="button">Login to Dashboard →</button>
 					</div></div>
 				</section>
 
-				<section class="scene" data-id="login" data-ch="login" data-title="Open the dashboard" data-say="Click Login to Dashboard. The next screen is the school dashboard, with the school name and the term in the centre.">
+				<section class="scene" data-id="login" data-ch="login" data-title="Open the dashboard" data-say="Click Login to Dashboard. The next screen shows the school name and the active term.">
 					<div class="login"><div class="auth">
-						<h2>Welcome back</h2>
+						<div class="auth-head"><img src="../assets/images/xander-x-3d.png" alt=""><h2>Welcome back</h2></div>
+						<p>Please sign in to your account.</p>
 						<label>Email</label>
-						<div class="box">staff@example.com</div>
+						<div class="box">✉ staff@example.com</div>
 						<label>Password</label>
-						<div class="box">••••••••</div>
-						<button class="go hot" type="button" data-go>Login to Dashboard<span class="tag">Click here</span></button>
+						<div class="box">🔒 ••••••••</div>
+						<div class="box" style="margin-top:8px;">☐ Keep me logged in</div>
+						<button class="go hot" type="button" data-go>Login to Dashboard →<span class="tag">Click here</span></button>
 					</div></div>
 				</section>
 
@@ -390,6 +422,8 @@
 			<div class="coach">
 				<p id="say"></p>
 				<div class="navbtns">
+					<button class="back" type="button" id="soundBtn">Sound on</button>
+					<button class="back" type="button" id="autoBtn">Pause</button>
 					<button class="back" type="button" id="back">Back</button>
 					<button class="next" type="button" id="next">Next</button>
 				</div>
@@ -457,26 +491,134 @@
 		else if (short && wide) tag.classList.add("pos-right");
 		else tag.classList.add("pos-below");
 	}
+	var started = false;
+	var auto = true;
+	var muted = false;
+	var token = 0;
+	var audio = new Audio();
+	var pointer = document.getElementById("pointer");
+
+	function stopVoice() {
+		token++;
+		try { audio.pause(); } catch (e) {}
+		audio = new Audio();
+		if (window.speechSynthesis) speechSynthesis.cancel();
+	}
+	function clickTick() {
+		try {
+			var ctx = new (window.AudioContext || window.webkitAudioContext)();
+			var osc = ctx.createOscillator();
+			var gain = ctx.createGain();
+			osc.frequency.value = 880;
+			gain.gain.value = 0.04;
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+			osc.start();
+			osc.stop(ctx.currentTime + 0.06);
+		} catch (e) {}
+	}
+	function speak(id, say, my) {
+		return new Promise(function (resolve) {
+			if (!started || muted) { resolve(); return; }
+			var finished = false;
+			function done() { if (!finished) { finished = true; resolve(); } }
+			var next = new Audio("../guide/voice/" + encodeURIComponent(id));
+			audio = next;
+			next.onended = done;
+			next.onerror = function () { browserVoice(say).then(done); };
+			var played = next.play();
+			if (played && played.catch) {
+				played.catch(function () { browserVoice(say).then(done); });
+			}
+			setTimeout(function () { if (token === my) done(); }, 28000);
+		});
+	}
+	function browserVoice(say) {
+		return new Promise(function (resolve) {
+			if (!window.speechSynthesis) { resolve(); return; }
+			var utter = new SpeechSynthesisUtterance(say);
+			utter.rate = 0.92;
+			utter.onend = function () { resolve(); };
+			utter.onerror = function () { resolve(); };
+			speechSynthesis.cancel();
+			speechSynthesis.speak(utter);
+		});
+	}
+	function movePointer(my) {
+		return new Promise(function (resolve) {
+			var hot = document.querySelector(".scene.on .hot");
+			if (!hot) { resolve(); return; }
+			var box = hot.getBoundingClientRect();
+			var x = box.left + Math.min(28, box.width * 0.35);
+			var y = box.top + Math.min(18, box.height * 0.45);
+			if (!pointer.classList.contains("on")) {
+				pointer.classList.add("on");
+				pointer.style.transition = "none";
+				pointer.style.left = (x - 160) + "px";
+				pointer.style.top = (y + 90) + "px";
+			}
+			requestAnimationFrame(function () {
+				requestAnimationFrame(function () {
+					pointer.style.transition = "";
+					pointer.style.left = x + "px";
+					pointer.style.top = y + "px";
+				});
+			});
+			setTimeout(function () {
+				if (token !== my) { resolve(); return; }
+				pointer.classList.add("tap");
+				clickTick();
+				setTimeout(function () { pointer.classList.remove("tap"); resolve(); }, 180);
+			}, 1900);
+		});
+	}
 	function show() {
+		stopVoice();
+		var my = token;
 		var list = ids();
 		if (!list.length) { renderList(); return; }
 		if (index >= list.length) index = list.length - 1;
 		if (index < 0) index = 0;
 		var id = list[index];
 		scenes.forEach(function (el) { el.classList.toggle("on", el.getAttribute("data-id") === id); });
-		document.getElementById("say").innerHTML = "<b>Step " + (index + 1) + " of " + list.length + ".</b> " + byId[id].getAttribute("data-say");
+		var say = byId[id].getAttribute("data-say");
+		document.getElementById("say").innerHTML = "<b>Step " + (index + 1) + " of " + list.length + ".</b> " + say;
 		document.getElementById("next").textContent = index === list.length - 1 ? "Done" : "Next";
 		renderList();
 		placeTag();
+		if (!started) return;
+		var dwell = new Promise(function (resolve) { setTimeout(resolve, 4600); });
+		Promise.all([speak(id, say, my), movePointer(my), dwell]).then(function () {
+			if (token !== my || !auto || !started) return;
+			if (index >= ids().length - 1) return;
+			setTimeout(function () { if (token === my && auto) go(1); }, 600);
+		});
 	}
 	function go(delta) {
 		index += delta;
 		show();
 	}
-	document.getElementById("back").addEventListener("click", function () { go(-1); });
+	document.getElementById("back").addEventListener("click", function () { auto = false; document.getElementById("autoBtn").textContent = "Resume"; go(-1); });
 	document.getElementById("next").addEventListener("click", function () { go(1); });
 	document.getElementById("scenes").addEventListener("click", function (ev) {
-		if (ev.target.closest("[data-go]")) go(1);
+		if (ev.target.closest("[data-go]")) { auto = false; document.getElementById("autoBtn").textContent = "Resume"; go(1); }
+	});
+	document.getElementById("autoBtn").addEventListener("click", function () {
+		auto = !auto;
+		this.textContent = auto ? "Pause" : "Resume";
+		if (!auto) stopVoice();
+		else if (started) show();
+	});
+	document.getElementById("soundBtn").addEventListener("click", function () {
+		muted = !muted;
+		this.textContent = muted ? "Sound off" : "Sound on";
+		if (muted) stopVoice();
+	});
+	document.getElementById("startTour").addEventListener("click", function () {
+		started = true;
+		pointer.classList.add("on");
+		document.getElementById("gate").hidden = true;
+		show();
 	});
 	document.getElementById("journeys").addEventListener("click", function (ev) {
 		var btn = ev.target.closest("button");
