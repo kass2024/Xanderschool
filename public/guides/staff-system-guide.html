@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Staff support guide — SmartSMS</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<style>
+		:root { --navy:#0B1220; --cyan:#0EA5E9; --flash:#ff7a18; --ink:#0f172a; --muted:#64748b; }
+		* { box-sizing: border-box; }
+		body { margin:0; font-family:"Segoe UI", Arial, sans-serif; background:#e8eef6; color:var(--ink); }
+		.wrap { max-width:1180px; margin:0 auto; padding:16px 14px 28px; }
+		.head { display:flex; justify-content:space-between; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; }
+		.head h1 { margin:0; font-size:22px; color:#0B1220; }
+		.head p { margin:4px 0 0; color:var(--muted); font-size:14px; max-width:640px; }
+		.head a { color:#0369a1; font-weight:700; }
+		.journeys { display:flex; gap:8px; flex-wrap:wrap; }
+		.journeys button, .find { border:1px solid #cbd5e1; background:#fff; border-radius:999px; padding:8px 12px; font-weight:700; cursor:pointer; color:#0f172a; font-family:inherit; }
+		.journeys button.on { background:#0B1220; color:#fff; border-color:#0B1220; }
+		.find { border-radius:10px; min-width:180px; font-weight:600; }
+		.layout { display:grid; grid-template-columns:260px 1fr; gap:12px; }
+		.steps { background:#fff; border:1px solid #dbe3ee; border-radius:14px; padding:8px; max-height:640px; overflow:auto; }
+		.steps button { display:block; width:100%; text-align:left; border:0; background:transparent; border-radius:10px; padding:8px 10px; cursor:pointer; color:#334155; font-size:13px; }
+		.steps button.on { background:#fff4eb; color:#9a3412; font-weight:800; }
+		.steps button small { display:block; color:#94a3b8; font-weight:600; }
+		.stage { background:#fff; border:1px solid #dbe3ee; border-radius:14px; overflow:visible; }
+		.coach { display:flex; gap:10px; align-items:center; justify-content:space-between; padding:12px 14px; background:#0B1220; color:#fff; border-radius:0 0 14px 14px; }
+		.coach b { color:#fdba74; }
+		.coach p { margin:0; font-size:15px; }
+		.navbtns { display:flex; gap:8px; flex-shrink:0; }
+		.navbtns button { border:0; border-radius:8px; padding:8px 12px; font-weight:800; cursor:pointer; font-family:inherit; }
+		.navbtns .back { background:#1e293b; color:#fff; }
+		.navbtns .next { background:var(--flash); color:#fff; }
+		.scene { display:none; background:#f1f4f6; min-height:520px; position:relative; }
+		.scene.on { display:block; }
+		.app { display:grid; grid-template-columns:210px 1fr; min-height:520px; }
+		.side { background:linear-gradient(180deg,#0B1220,#1A2336); color:#e2e8f0; padding:12px 0 16px; }
+		.logo { margin:0 12px 12px; background:#000; color:#fff; border-radius:8px; font-weight:800; font-size:12px; padding:8px 10px; letter-spacing:.04em; }
+		.side .h { color:#38BDF8; font-size:11px; letter-spacing:.06em; padding:10px 14px 4px; }
+		.side .link { display:block; width:100%; text-align:left; color:#e2e8f0; padding:6px 14px; font-size:13px; background:none; border:0; font-family:inherit; }
+		.side .sub { padding-left:26px; color:#cbd5e1; font-size:12px; }
+		.side .on { background:rgba(14,165,233,.16); color:#fff; }
+		.main { display:flex; flex-direction:column; min-width:0; }
+		.top { background:#fff; border-bottom:1px solid #e5e7eb; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:8px 12px; gap:8px; }
+		.top .title { font-weight:700; }
+		.top .title span, .school small { display:block; color:#64748b; font-weight:500; font-size:12px; }
+		.school { text-align:center; }
+		.school b { display:block; }
+		.right { display:flex; justify-content:flex-end; align-items:center; gap:10px; }
+		.ava { width:36px; height:36px; border-radius:8px; background:#0EA5E9; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:800; }
+		.card { background:#fff; margin:12px; border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; }
+		.card h3 { margin:0 0 6px; font-size:16px; }
+		.card p, .card li { margin:0 0 6px; color:#334155; font-size:14px; line-height:1.45; }
+		.drop { position:absolute; right:12px; top:58px; width:240px; background:#fff; border:1px solid #e5e7eb; border-radius:10px; box-shadow:0 12px 30px rgba(15,23,42,.18); z-index:4; }
+		.drop .who { background:#0EA5E9; color:#fff; padding:10px 12px; border-radius:10px 10px 0 0; }
+		.drop button { display:block; width:100%; text-align:left; background:#fff; border:0; padding:10px 12px; font-family:inherit; font-weight:700; color:#0f172a; cursor:pointer; }
+		.acc { margin:12px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; overflow:visible; }
+		.acc button.row, .acc .row { display:flex; width:100%; text-align:left; gap:8px; align-items:center; border:0; border-bottom:1px solid #e5e7eb; background:#fff; padding:12px 14px; font-weight:800; font-family:inherit; cursor:pointer; }
+		.acc .row span.ico { width:28px; height:28px; border-radius:8px; background:#e0f2fe; color:#0369a1; display:inline-flex; align-items:center; justify-content:center; font-size:13px; }
+		.login { min-height:520px; display:flex; align-items:center; justify-content:center; background:#f4f1ea; padding:24px; }
+		.auth { width:100%; max-width:380px; background:#fff; border-radius:18px; padding:22px 22px 18px; box-shadow:0 18px 48px rgba(11,31,74,.12); }
+		.auth h2 { margin:0 0 4px; color:#0b1f4a; }
+		.auth p { margin:0 0 14px; color:#64748b; }
+		.auth label { display:block; font-size:12px; font-weight:800; color:#475569; margin:8px 0 4px; }
+		.auth .box, .box { border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; background:#fff; }
+		.auth .go { width:100%; margin-top:14px; background:#0b1f4a; color:#fff; border:0; border-radius:10px; padding:11px; font-weight:800; font-family:inherit; cursor:pointer; }
+		.auth .rec { display:block; text-align:right; color:#0369a1; font-size:12px; font-weight:700; margin-top:6px; }
+		.sid { margin:12px; background:#fff; border:1px solid #e4ebf4; border-radius:16px; padding:14px; }
+		.pill { display:inline-block; border-radius:999px; padding:6px 10px; font-weight:800; background:#071633; color:#fff; font-size:13px; }
+		.hot { position:relative; z-index:3; }
+		.hot::after { content:""; position:absolute; inset:-7px; border:3px solid var(--flash); border-radius:12px; animation:flash 1s ease-out infinite; pointer-events:none; }
+		.tag { position:absolute; z-index:6; background:var(--flash); color:#fff; font-size:12px; font-weight:800; padding:4px 8px; border-radius:8px; white-space:nowrap; pointer-events:none; }
+		.tag::after { content:""; position:absolute; border:6px solid transparent; }
+		.tag.pos-left { right:calc(100% + 12px); left:auto; top:50%; transform:translateY(-50%); }
+		.tag.pos-left::after { left:100%; top:50%; transform:translateY(-50%); border-left-color:var(--flash); }
+		.tag.pos-right { left:calc(100% + 12px); top:50%; transform:translateY(-50%); }
+		.tag.pos-right::after { right:100%; left:auto; top:50%; transform:translateY(-50%); border-right-color:var(--flash); }
+		.tag.pos-below { left:50%; top:calc(100% + 12px); transform:translateX(-50%); }
+		.tag.pos-below::after { left:50%; bottom:100%; top:auto; transform:translateX(-50%); border-bottom-color:var(--flash); }
+		@keyframes flash { 0% { box-shadow:0 0 0 0 rgba(255,122,24,.7); } 70% { box-shadow:0 0 0 14px rgba(255,122,24,0); } 100% { box-shadow:0 0 0 0 rgba(255,122,24,0); } }
+		@media (max-width:860px) { .layout { grid-template-columns:1fr; } .app { grid-template-columns:1fr; } .side { display:none; } .scene.show-side .side { display:block; } }
+	</style>
+</head>
+<body>
+<div class="wrap">
+	<div class="head">
+		<div>
+			<h1>Staff support guide</h1>
+			<p>Walk a staff member from sign-in, through Settings and My profile, then down the side menu. The orange ring is the click. A missing menu means that post is not allowed to open it. Identity details are in the <a href="staff-identity-guide.html">identity guide</a>.</p>
+		</div>
+		<div class="journeys" id="journeys">
+			<button type="button" data-j="all" class="on">Full tour</button>
+			<button type="button" data-j="login">Sign in</button>
+			<button type="button" data-j="settings">Settings</button>
+			<button type="button" data-j="profile">Profile</button>
+			<button type="button" data-j="menu">Side menu</button>
+		</div>
+	</div>
+	<div class="layout">
+		<div>
+			<input class="find" id="find" type="search" placeholder="Find a menu, e.g. fees" style="width:100%;margin-bottom:8px;">
+			<div class="steps" id="stepList"></div>
+		</div>
+		<div class="stage">
+			<div id="scenes">
+
+				<section class="scene" data-id="email" data-ch="login" data-title="Type the email" data-say="On the sign-in page, click Email and type the staff email. Use Recover Password if they have forgotten it.">
+					<div class="login"><div class="auth">
+						<h2>Welcome back</h2>
+						<p>Please sign in to your account.</p>
+						<label>Email</label>
+						<button class="box hot" type="button" data-go style="width:100%;text-align:left;">Enter your Email<span class="tag">Click here</span></button>
+						<label>Password</label>
+						<div class="box">Enter your Password</div>
+						<div class="rec">Recover Password</div>
+						<button class="go" type="button">Login to Dashboard</button>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="pass" data-ch="login" data-title="Type the password" data-say="Click Password and type it. The password is at least 6 characters. Keep me logged in is optional.">
+					<div class="login"><div class="auth">
+						<h2>Welcome back</h2>
+						<p>Please sign in to your account.</p>
+						<label>Email</label>
+						<div class="box">staff@example.com</div>
+						<label>Password</label>
+						<button class="box hot" type="button" data-go style="width:100%;text-align:left;">Enter your Password<span class="tag">Click here</span></button>
+						<button class="go" type="button">Login to Dashboard</button>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="login" data-ch="login" data-title="Open the dashboard" data-say="Click Login to Dashboard. The next screen is the school dashboard, with the school name and the term in the centre.">
+					<div class="login"><div class="auth">
+						<h2>Welcome back</h2>
+						<label>Email</label>
+						<div class="box">staff@example.com</div>
+						<label>Password</label>
+						<div class="box">••••••••</div>
+						<button class="go hot" type="button" data-go>Login to Dashboard<span class="tag">Click here</span></button>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="photo" data-ch="settings" data-title="Open the photo menu" data-say="Settings and My profile are not on the left menu. Click the photo at the top right. Start with Settings, then My profile.">
+					<div class="app"><div class="side" data-side="home"></div><div class="main">
+						<div class="top">
+							<div class="title">Dashboard<span>Home</span></div>
+							<div class="school"><b>WISDOM SCHOOL MUSANZE</b><small>2026-2027 - Term 1</small></div>
+							<div class="right"><button class="hot" type="button" data-go><span class="ava">AU</span><span class="tag">Click here</span></button></div>
+						</div>
+						<div class="card"><h3>You are signed in</h3><p>The centre of the header shows the school and the active term. The left menu depends on the staff post.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="settings" data-ch="settings" data-title="Open Settings" data-say="Click Settings. Only posts allowed to manage the school see this line. Change active term is in the same menu.">
+					<div class="app"><div class="side" data-side="home"></div><div class="main">
+						<div class="top"><div class="title">Dashboard</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="drop">
+							<div class="who"><b>Aline Uwase</b><br><small>Support</small></div>
+							<div style="padding:8px 12px;color:#64748b;font-size:12px;font-weight:800;">Activity</div>
+							<button class="hot" type="button" data-go>Settings<span class="tag">Click here</span></button>
+							<button type="button">My profile</button>
+							<button type="button">Change active term</button>
+							<button type="button">Logout</button>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="basic" data-ch="settings" data-title="Basic school info" data-say="Click Basic school info. Double-click a value to edit it, then press Enter or click outside to save. Esc cancels. School name, phone, email, address, and Head Teacher are in this block.">
+					<div class="app"><div class="side" data-side="home"></div><div class="main">
+						<div class="top"><div class="title">Settings<span>School settings</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="acc">
+							<button class="row hot" type="button" data-go><span class="ico">1</span> Basic school info<span class="tag">Click here</span></button>
+							<div class="row"><span class="ico">2</span> Logo &amp; signatures</div>
+							<div class="row"><span class="ico">3</span> Grade setting</div>
+							<div class="row"><span class="ico">4</span> SMS provider</div>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="logo" data-ch="settings" data-title="Logo and the other blocks" data-say="Click Logo and signatures for the school logo, Head Teacher, matron, patron, and discipline signatures. Further down are registration fees, dormitories, attendance locations, timetable, pedagogical documents, card options, grade setting, and the SMS provider.">
+					<div class="app"><div class="side" data-side="home"></div><div class="main">
+						<div class="top"><div class="title">Settings<span>School settings</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="acc">
+							<div class="row"><span class="ico">1</span> Basic school info</div>
+							<button class="row hot" type="button" data-go><span class="ico">2</span> Logo &amp; signatures<span class="tag">Click here</span></button>
+							<div class="row"><span class="ico">3</span> Staff attendance settings</div>
+							<div class="row"><span class="ico">4</span> Grade setting</div>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="profile" data-ch="profile" data-title="Open My profile" data-say="Open the photo menu again and click My profile. Every staff member can open this, including people who cannot open Settings.">
+					<div class="app"><div class="side" data-side="home"></div><div class="main">
+						<div class="top"><div class="title">Dashboard</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="drop">
+							<div class="who"><b>Aline Uwase</b><br><small>Support</small></div>
+							<button type="button">Settings</button>
+							<button class="hot" type="button" data-go>My profile<span class="tag">Click here</span></button>
+							<button type="button">Logout</button>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene" data-id="identity" data-ch="profile" data-title="Fill identity" data-say="On My profile, use the Identity card. Choose Rwandan or Non-Rwandan, upload the ID or passport, then click Save identity. The step-by-step for that form is the identity guide.">
+					<div class="app"><div class="side" data-side="home"></div><div class="main">
+						<div class="top"><div class="title">My profile<span>Identity</span></div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="sid">
+							<h3 style="margin:0 0 8px;">Identity</h3>
+							<span class="pill hot" data-go style="cursor:pointer;">Rwandan<span class="tag">Click here</span></span>
+							<span class="pill" style="background:#e2e8f0;color:#0f172a;margin-left:8px;">Non-Rwandan</span>
+							<p style="margin:12px 0 0;">Then upload the ID or passport and click Save identity. Accountant, Chief Accountant, and Head Teacher can fill this for another staff member from Staffs.</p>
+						</div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="dash" data-ch="menu" data-title="Dashboard" data-say="Click Dashboard any time to return home. Leaders see the school summary. Other posts see the panel allowed for their role.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<div class="h">MENU</div>
+						<button class="link on hot" type="button" data-go>Dashboard<span class="tag">Click here</span></button>
+						<div class="h">STUDENTS</div>
+						<button class="link" type="button">Students</button>
+						<button class="link" type="button">Classes</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Dashboard</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="card"><h3>Home</h3><p>Counts, attendance, and visitors for the posts that are allowed to see them. The active term in the header is the term the pages use.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="students" data-ch="menu" data-title="Students" data-say="Open Students, then View students. The same group has Register new student, Pending review, Dismissed students, student cards, Student Photo, Assign Card, Required Material Check, and Dormitories, when the post is allowed.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<button class="link on" type="button">Students</button>
+						<button class="link sub" type="button">Register new student</button>
+						<button class="link sub hot" type="button" data-go>View students<span class="tag">Click here</span></button>
+						<button class="link sub" type="button">Pending review</button>
+						<button class="link sub" type="button">Student cards</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Students</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Student list</h3><p>Search a student, open the name, and update the record the post is allowed to change. Families, when shown, is the next heading and lists family sheets.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="classes" data-ch="menu" data-title="Classes" data-say="Click Classes to open the class list. Use it to see classes and the exports allowed for that post. Director and Director of Finance can pick Export from school before an export.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<button class="link hot on" type="button" data-go>Classes<span class="tag">Click here</span></button>
+						<button class="link" type="button">Course</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Classes</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Class list</h3><p>Each class belongs to a level and a department. Student lists, marks, and attendance all start from a class.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="course" data-ch="menu" data-title="Course" data-say="Open Course. Course Category groups subjects. Create Course adds one. Manage Course is where courses are assigned and maintained.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<button class="link on" type="button">Course</button>
+						<button class="link sub" type="button">Course Category</button>
+						<button class="link sub" type="button">Create Course</button>
+						<button class="link sub hot" type="button" data-go>Manage Course<span class="tag">Click here</span></button>
+					</div><div class="main">
+						<div class="top"><div class="title">Course</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Courses</h3><p>A teacher’s marks and timetable follow the courses assigned here.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="behavior" data-ch="menu" data-title="Behavior" data-say="Open Behavior, then Record Entry to write a discipline case. Completed Discipline Entry and Discipline Record are the follow-up lists.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<button class="link on" type="button">Behavior</button>
+						<button class="link sub hot" type="button" data-go>Record Entry<span class="tag">Click here</span></button>
+						<button class="link sub" type="button">Discipline Record</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Behavior</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Discipline</h3><p>Record the student, the case, and the outcome. The record list is for looking one up later.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="permits" data-ch="menu" data-title="Permissions" data-say="Open Permissions. Permission Entry records a student leave from school. Permission report lists them.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<button class="link on" type="button">Permissions</button>
+						<button class="link sub hot" type="button" data-go>Permission Entry<span class="tag">Click here</span></button>
+						<button class="link sub" type="button">Permission report</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Permissions</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Student permission</h3><p>Use this when a student is allowed out. The report is what leaders check.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="visit" data-ch="menu" data-title="Visitors" data-say="Parent visiting covers Assign visitors, Print visitor cards, Verify visit, and Visiting report. Daily visiting covers Currently inside and Visiting report for other guests.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<button class="link" type="button">Parent visiting</button>
+						<button class="link on" type="button">Daily visiting</button>
+						<button class="link sub hot" type="button" data-go>Currently inside<span class="tag">Click here</span></button>
+						<button class="link sub" type="button">Visiting report</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Daily visiting</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Who is on the campus</h3><p>Currently inside is the live list. The report is for a past day.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="marks" data-ch="menu" data-title="Marks" data-say="Open Marks. Marks Entry is where a teacher types marks. Marks sheet lists what was saved. Progress Reports, periodic result, proclamation lists, and Deliberation are further down the same menu for the posts allowed to use them.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<div class="h">MARKS</div>
+						<button class="link on" type="button">Marks</button>
+						<button class="link sub hot" type="button" data-go>Marks Entry<span class="tag">Click here</span></button>
+						<button class="link sub" type="button">Marks sheet</button>
+						<button class="link sub" type="button">Progress Reports</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Marks</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Marks for the active term</h3><p>Pick the class and the course. Lock Marks editing, when shown, stops changes after the deadline.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="msg" data-ch="menu" data-title="Messaging" data-say="Open Messaging. Parents messaging sends to families. Employees messaging sends to staff. SMS only goes out when the school still has SMS credit, shown in Settings.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<div class="h">MESSAGING</div>
+						<button class="link on" type="button">Messaging</button>
+						<button class="link sub hot" type="button" data-go>Parents messaging<span class="tag">Click here</span></button>
+						<button class="link sub" type="button">Employees messaging</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Messaging</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>SMS</h3><p>Choose the audience, write the message, and send. The bell at the top of the page is for notifications inside the system, not parent SMS.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="att" data-ch="menu" data-title="Attendance" data-say="Under Attendance, Student Attendance has Record attendance and Attendance report. Staff Attendance has Attendance Report and Record Attendance With card.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<div class="h">ATTENDANCE</div>
+						<button class="link on" type="button">Student Attendance</button>
+						<button class="link sub hot" type="button" data-go>Record attendance<span class="tag">Click here</span></button>
+						<button class="link sub" type="button">Attendance report</button>
+						<button class="link" type="button">Staff Attendance</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Attendance</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Daily presence</h3><p>Record the class for the day, then use the report when a leader asks who was absent.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="staffs" data-ch="menu" data-title="Staffs" data-say="Under HR DEPARTMENT, open Staffs, then View all staffs. Add new staff and Generate staff cards are in the same list. IDs PDF is on the staff list for the Director of Finance and the posts allowed to download identifications.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<div class="h">HR DEPARTMENT</div>
+						<button class="link on" type="button">Staffs</button>
+						<button class="link sub" type="button">Add new staff</button>
+						<button class="link sub hot" type="button" data-go>View all staffs<span class="tag">Click here</span></button>
+						<button class="link sub" type="button">Generate staff cards</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Staff lists</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Staff list</h3><p>Click a name to open that person. Excel, PDF, Courses PDF, and IDs PDF are on this page when the post may export.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="finance" data-ch="menu" data-title="Finance" data-say="Open Finance, then Fees Management. Fees Entry records a payment. School fees management and Extra fees management set the amounts. Fees report is the summary. Budget and Cash Flow, when shown, has Dashboard, Prepare Budget, Requests and Approvals, and Reports.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<div class="h">FINANCE</div>
+						<button class="link on" type="button">Finance</button>
+						<button class="link sub" type="button">Fees Entry</button>
+						<button class="link sub hot" type="button" data-go>School fees management<span class="tag">Click here</span></button>
+						<button class="link sub" type="button">Fees report</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Finance</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div></div></div>
+						<div class="card"><h3>Fees</h3><p>Set the fee, then record payments in Fees Entry. The report is what the Director of Finance checks.</p></div>
+					</div></div>
+				</section>
+
+				<section class="scene show-side" data-id="leave" data-ch="menu" data-title="Leave, pocket money, and the rest" data-say="Leave Application is where a staff member asks for leave. Leave Management is for the posts that approve it. Further down, when allowed: Fixed assets, Transport Management, Pocket Money, Canteen, Preps invigilation, and Prep attendance. Logout is under the photo menu.">
+					<div class="app"><div class="side">
+						<div class="logo">XANDERTECH</div>
+						<div class="h">LEAVE</div>
+						<button class="link hot on" type="button" data-go>Leave Application<span class="tag">Click here</span></button>
+						<button class="link" type="button">Leave Management</button>
+						<div class="h">ALSO</div>
+						<button class="link" type="button">Pocket Money</button>
+						<button class="link" type="button">Canteen</button>
+						<button class="link" type="button">Preps invigilation</button>
+					</div><div class="main">
+						<div class="top"><div class="title">Leave</div><div class="school"><b>WISDOM SCHOOL MUSANZE</b></div><div class="right"><span class="ava">AU</span></div></div>
+						<div class="card"><h3>End of the menu</h3><p>If a block is missing, do not look for a hidden switch. That post simply does not have it. Sign out from the photo menu, Logout.</p></div>
+					</div></div>
+				</section>
+
+			</div>
+			<div class="coach">
+				<p id="say"></p>
+				<div class="navbtns">
+					<button class="back" type="button" id="back">Back</button>
+					<button class="next" type="button" id="next">Next</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<script>
+(function () {
+	var scenes = Array.prototype.slice.call(document.querySelectorAll(".scene"));
+	var byId = {};
+	scenes.forEach(function (el) { byId[el.getAttribute("data-id")] = el; });
+	var home = '<div class="logo">XANDERTECH</div><div class="h">MENU</div><button class="link on" type="button">Dashboard</button><button class="link" type="button">Students</button><div class="h">HR DEPARTMENT</div><button class="link" type="button">Staffs</button>';
+	document.querySelectorAll("[data-side]").forEach(function (el) { el.innerHTML = home; });
+	var chapter = "all";
+	var index = 0;
+	var query = "";
+
+	function allIds() {
+		return scenes.map(function (el) { return el.getAttribute("data-id"); });
+	}
+	function ids() {
+		return allIds().filter(function (id) {
+			var el = byId[id];
+			if (chapter !== "all" && el.getAttribute("data-ch") !== chapter) return false;
+			if (!query) return true;
+			var blob = (el.getAttribute("data-title") + " " + el.getAttribute("data-say")).toLowerCase();
+			return blob.indexOf(query) !== -1;
+		});
+	}
+	function renderList() {
+		var box = document.getElementById("stepList");
+		var list = ids();
+		box.innerHTML = "";
+		if (!list.length) {
+			box.innerHTML = "<p style='padding:8px;color:#64748b;'>No step matches that search.</p>";
+			return;
+		}
+		list.forEach(function (id, i) {
+			var b = document.createElement("button");
+			b.type = "button";
+			b.className = i === index ? "on" : "";
+			var ch = byId[id].getAttribute("data-ch");
+			b.innerHTML = "<small>" + ch + " · " + (i + 1) + "</small>" + byId[id].getAttribute("data-title");
+			b.addEventListener("click", function () { index = i; show(); });
+			box.appendChild(b);
+		});
+	}
+	function placeTag() {
+		var scene = document.querySelector(".scene.on");
+		if (!scene) return;
+		var hot = scene.querySelector(".hot");
+		var tag = hot ? hot.querySelector(".tag") : null;
+		if (!tag) return;
+		var stage = scene.getBoundingClientRect();
+		var box = hot.getBoundingClientRect();
+		var midX = (box.left + box.right) / 2;
+		var stageMid = (stage.left + stage.right) / 2;
+		var nearTop = (box.top - stage.top) < 64;
+		var short = box.height < 56;
+		var wide = box.width > 150;
+		tag.classList.remove("pos-left", "pos-right", "pos-below");
+		if (nearTop) tag.classList.add("pos-below");
+		else if (short && wide && midX > stageMid) tag.classList.add("pos-left");
+		else if (short && wide) tag.classList.add("pos-right");
+		else tag.classList.add("pos-below");
+	}
+	function show() {
+		var list = ids();
+		if (!list.length) { renderList(); return; }
+		if (index >= list.length) index = list.length - 1;
+		if (index < 0) index = 0;
+		var id = list[index];
+		scenes.forEach(function (el) { el.classList.toggle("on", el.getAttribute("data-id") === id); });
+		document.getElementById("say").innerHTML = "<b>Step " + (index + 1) + " of " + list.length + ".</b> " + byId[id].getAttribute("data-say");
+		document.getElementById("next").textContent = index === list.length - 1 ? "Done" : "Next";
+		renderList();
+		placeTag();
+	}
+	function go(delta) {
+		index += delta;
+		show();
+	}
+	document.getElementById("back").addEventListener("click", function () { go(-1); });
+	document.getElementById("next").addEventListener("click", function () { go(1); });
+	document.getElementById("scenes").addEventListener("click", function (ev) {
+		if (ev.target.closest("[data-go]")) go(1);
+	});
+	document.getElementById("journeys").addEventListener("click", function (ev) {
+		var btn = ev.target.closest("button");
+		if (!btn) return;
+		chapter = btn.getAttribute("data-j");
+		index = 0;
+		Array.prototype.forEach.call(document.querySelectorAll("#journeys button"), function (b) {
+			b.classList.toggle("on", b === btn);
+		});
+		show();
+	});
+	document.getElementById("find").addEventListener("input", function () {
+		query = this.value.trim().toLowerCase();
+		index = 0;
+		show();
+	});
+	document.addEventListener("keydown", function (ev) {
+		if (ev.target.id === "find") return;
+		if (ev.key === "ArrowRight") go(1);
+		if (ev.key === "ArrowLeft") go(-1);
+	});
+	show();
+})();
+</script>
+</body>
+</html>
