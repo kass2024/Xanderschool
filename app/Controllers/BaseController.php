@@ -364,7 +364,7 @@ class BaseController extends Controller
 		return $this->sendSMS($phone, $message, $result, null, 30, $school_id);
 	}
 
-	public function sendSMS($phone, $message, &$result, $sender = null, $timeout = 30, $schoolId = null): bool
+	public function sendSMS($phone, $message, &$result, $sender = null, $timeout = 30, $schoolId = null, bool $confirmDelivery = true): bool
 	{
 		$smsConfig = config('Sms');
 		$smsType = $smsConfig->type;
@@ -479,6 +479,11 @@ class BaseController extends Controller
 			$result = ["code" => 400, "content" => 'SMS provider did not return a message id, so delivery was not confirmed.'];
 			$this->_comms_debug('SMS', 'swiftqom: accepted without message id', []);
 			return false;
+		}
+
+		if (!$confirmDelivery) {
+			$result = ["code" => 200, "content" => 'accepted'];
+			return true;
 		}
 
 		$delivery = ['state' => 'pending', 'error' => '', 'status' => ''];

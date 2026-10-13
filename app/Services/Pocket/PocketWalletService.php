@@ -78,7 +78,7 @@ class PocketWalletService
 		$this->requirePin($pin);
 		$parent = $this->db->query('SELECT * FROM pocket_parents WHERE phone = ? LIMIT 1', [$phone])->getRowArray();
 		if (!$parent || (int) $parent['status'] !== 1) {
-			throw new \RuntimeException('Phone or PIN is not correct.', 401);
+			throw new PocketAuthException('No account uses this phone number. Create an account.', 404, 'unknown_phone');
 		}
 		if (!empty($parent['locked_until']) && strtotime((string) $parent['locked_until']) > time()) {
 			throw new \RuntimeException('Too many attempts. Try again in a few minutes.', 429);
@@ -91,7 +91,7 @@ class PocketWalletService
 				'locked_until' => $lock,
 				'updated_at' => $this->now(),
 			]);
-			throw new \RuntimeException('Phone or PIN is not correct.', 401);
+			throw new PocketAuthException('This phone has an account. The PIN is not correct.', 401, 'wrong_pin');
 		}
 		$this->db->table('pocket_parents')->where('id', (int) $parent['id'])->update([
 			'failed_count' => 0,
@@ -112,10 +112,10 @@ class PocketWalletService
 		$phone = $this->requireMsisdn($phone);
 		$parent = $this->db->query('SELECT id, status, reset_expires FROM pocket_parents WHERE phone = ? LIMIT 1', [$phone])->getRowArray();
 		if (!$parent || (int) $parent['status'] !== 1) {
-			throw new \RuntimeException('No Pocket account uses that phone. Create one instead.', 404);
+			throw new PocketAuthException('No account uses this phone number. Create an account.', 404, 'unknown_phone');
 		}
-		if (!empty($parent['reset_expires']) && strtotime((string) $parent['reset_expires']) > time() + 540) {
-			throw new \RuntimeException('A code was just sent. Wait a minute, then try again.', 429);
+		if (!empty($parent['reset_expires']) && strtotime((string) $parent['reset_expires']) > time() + 580) {
+			throw new \RuntimeException('A code was just sent. Wait a few seconds, then try again.', 429);
 		}
 		$code = (string) random_int(100000, 999999);
 		$this->db->table('pocket_parents')->where('id', (int) $parent['id'])->update([
@@ -151,7 +151,7 @@ class PocketWalletService
 		}
 		$parent = $this->db->query('SELECT * FROM pocket_parents WHERE phone = ? LIMIT 1', [$phone])->getRowArray();
 		if (!$parent || (int) $parent['status'] !== 1) {
-			throw new \RuntimeException('No Pocket account uses that phone.', 404);
+			throw new PocketAuthException('No account uses this phone number. Create an account.', 404, 'unknown_phone');
 		}
 		$expires = strtotime((string) ($parent['reset_expires'] ?? ''));
 		if ($expires === false || $expires < time() || !password_verify($code, (string) ($parent['reset_hash'] ?? ''))) {
@@ -1238,10 +1238,23 @@ class PocketWalletService
 				 WHERE p.phone = ? ORDER BY l.id DESC LIMIT 1',
 				[$phone]
 			)->getRowArray();
+			$linked = is_array($row) ? (int) ($row['school_id'] ?? 0) : 0;
+			if ($linked > 0) {
+				return $linked;
+			}
+		} catch (\Throwable $e) {
+		}
+		try {
+			$row = $this->db->query(
+				"SELECT id FROM schools
+				 WHERE pocket_money_phone IS NOT NULL AND TRIM(pocket_money_phone) <> ''
+				 ORDER BY id ASC LIMIT 1"
+			)->getRowArray();
 		} catch (\Throwable $e) {
 			return 0;
 		}
-		return (int) ($row['school_id'] ?? 0);
+
+		return is_array($row) ? (int) ($row['id'] ?? 0) : 0;
 	}
 
 	protected function requireAmount($raw, int $min = self::MIN_AMOUNT): int
@@ -2253,5 +2266,17 @@ class PocketWalletService
 			$this->db->transRollback();
 			log_message('error', 'Pocket refund restore failed: ' . $e->getMessage());
 		}
+	}
+}
+
+class PocketAuthException extends \RuntimeException
+{
+	/** @var string */
+	public $reason;
+
+	public function __construct(string $message, int $code, string $reason)
+	{
+		parent::__construct($message, $code);
+		$this->reason = $reason;
 	}
 }

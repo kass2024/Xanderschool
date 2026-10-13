@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Services\Pocket\PocketAuthException;
 use App\Services\Pocket\PocketWalletService;
 use CodeIgniter\HTTP\Response;
 
@@ -74,17 +75,21 @@ class PocketApi extends BaseController
 				(string) $draft['message'],
 				$result,
 				null,
-				20,
-				(int) ($draft['schoolId'] ?? 0)
+				12,
+				(int) ($draft['schoolId'] ?? 0),
+				false
 			);
-			$detail = trim((string) ($result['content'] ?? ''));
-			$accepted = $sent || stripos($detail, 'delivery is not confirmed') !== false;
-			if (!$accepted) {
+			if (!$sent) {
 				$this->wallet->clearPinReset((string) $draft['phone']);
+				$detail = trim((string) ($result['content'] ?? ''));
 				throw new \RuntimeException($detail !== '' ? $detail : 'The SMS could not be sent. Try again.', 502);
 			}
 
-			return ['ok' => true, 'message' => 'A code was sent by SMS. Enter it with your new PIN.'];
+			return [
+				'ok' => true,
+				'reason' => 'code_sent',
+				'message' => 'The code is on its way. It should arrive in a few seconds.',
+			];
 		});
 	}
 
@@ -329,6 +334,13 @@ class PocketApi extends BaseController
 			return $this->ok($work());
 		} catch (\InvalidArgumentException $e) {
 			return $this->fail(422, $e->getMessage());
+		} catch (PocketAuthException $e) {
+			$code = (int) $e->getCode();
+			if ($code < 400 || $code > 599) {
+				$code = 400;
+			}
+
+			return $this->fail($code, $e->getMessage(), $e->reason);
 		} catch (\RuntimeException $e) {
 			$code = (int) $e->getCode();
 			if ($code < 400 || $code > 599) {
@@ -399,10 +411,13 @@ class PocketApi extends BaseController
 		return $this->response->setContentType('application/json')->setJSON($data);
 	}
 
-	protected function fail(int $status, string $message)
+	protected function fail(int $status, string $message, string $reason = '')
 	{
-		return $this->response->setStatusCode($status)->setContentType('application/json')->setJSON([
-			'message' => $message,
-		]);
+		$payload = ['message' => $message];
+		if ($reason !== '') {
+			$payload['reason'] = $reason;
+		}
+
+		return $this->response->setStatusCode($status)->setContentType('application/json')->setJSON($payload);
 	}
 }
