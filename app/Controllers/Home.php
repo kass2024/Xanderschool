@@ -8991,7 +8991,7 @@ public function attendanceCard()
 		$yearId = (int) ($data['academic_year'] ?? $data['academic_year_id'] ?? 0);
 		$term = (int) ($data['term'] ?? 0);
 		$data['staffs'] = \App\Libraries\StaffTeachingLoad::attach($data['staffs'], $schoolId, $yearId, $term);
-		$data['can_export_identities'] = \Config\MenuClearance::canEditStaffIdentity((int) $this->session->get('soma_post'));
+		$data['can_export_identities'] = \Config\MenuClearance::canExportStaffIdentities((int) $this->session->get('soma_post'));
 		$data['content'] = view("pages/staffs", $data);
 		return view('main', $data);
 	}
@@ -9034,8 +9034,8 @@ public function attendanceCard()
 	{
 		$this->_preset(1, 3);
 		$this->ensureStaffIdentityColumns();
-		if (!\Config\MenuClearance::canEditStaffIdentity((int) $this->session->get('soma_post'))) {
-			echo 'Only an accountant, Head Teacher, or Director can export staff identifications.';
+		if (!\Config\MenuClearance::canExportStaffIdentities((int) $this->session->get('soma_post'))) {
+			echo 'Only an accountant, Chief Accountant, Head Teacher, Director, or Director of Finance can export staff identifications.';
 			return;
 		}
 		$rawIds = $this->request->getPost('ids');
@@ -11737,7 +11737,7 @@ public function attendanceCard()
 			return $this->response->setJSON(array("error" => "Staff not found."));
 		}
 		if (!$this->mayEditStaffRecord($id)) {
-			return $this->response->setJSON(array("error" => "You can update your own profile. An accountant, Head Teacher, or Director can update other staff."));
+			return $this->response->setJSON(array("error" => "You can update your own profile. An accountant, Chief Accountant, or Head Teacher can update other staff."));
 		}
 		if ($target === 'email') {
 			$val = trim((string) $val);
@@ -11791,7 +11791,7 @@ public function attendanceCard()
 			return $this->response->setJSON(['error' => 'Staff not found.']);
 		}
 		if (!$this->mayEditStaffRecord($id)) {
-			return $this->response->setJSON(['error' => 'You can update your own profile. An accountant, Head Teacher, or Director can update other staff.']);
+			return $this->response->setJSON(['error' => 'You can update your own profile. An accountant, Chief Accountant, or Head Teacher can update other staff.']);
 		}
 		$postedKind = (string) $this->request->getPost('identity_kind');
 		if (!in_array($postedKind, ['rwandan', 'foreign'], true)) {

@@ -55,7 +55,7 @@ $field = static function (string $key) use ($staff): string {
 <i class="fa fa-question-circle ihelp" data-toggle="tooltip" title="Double click value to enable edit mode then press enter or outside to save or escape key to cancel"></i>
 <div class="sid-card" id="staff-identity">
 	<h4>Identity</h4>
-	<p class="sid-lead">Choose nationality. Each staff member can update this from their profile. An accountant, Head Teacher, or Director can update it for any staff member.</p>
+	<p class="sid-lead">Choose nationality. You can fill this on your own profile. An accountant, Chief Accountant, or Head Teacher can fill it for any staff member.</p>
 	<form id="staff-identity-form" enctype="multipart/form-data">
 		<input type="hidden" name="staff_id" value="<?= (int) $staff['id']; ?>">
 		<div class="sid-switch">

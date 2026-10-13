@@ -824,18 +824,35 @@ class MenuClearance
 		return self::canLockMarksEditing($postId);
 	}
 
-	/** Accountant, Head Teacher, or Director may fill another staff member's identity. */
-	public static function canEditStaffIdentity($postId)
+	/** Director of Finance (post 24). */
+	public static function isDirectorOfFinancePost($postId)
 	{
 		$postId = (int) $postId;
-		if (self::isHeadMasterEquivalent($postId) || self::isDirectorPost($postId)) {
-			return true;
-		}
-		if (in_array($postId, [9, 28], true)) {
+		if ($postId === 24) {
 			return true;
 		}
 		$title = self::postTitle($postId);
-		return in_array($title, ['accountant', 'chief accountant', 'head teacher', 'headteacher', 'director'], true);
+		return $title === 'director of finance' || $title === 'finance director';
+	}
+
+	/** Accountant, Chief Accountant, Head Teacher, or Director may fill another staff member's identity. */
+	public static function canEditStaffIdentity($postId)
+	{
+		$postId = (int) $postId;
+		if (self::isHeadMasterEquivalent($postId) || self::isDirectorPost($postId) || self::isChiefAccountantPost($postId)) {
+			return true;
+		}
+		if ($postId === 9) {
+			return true;
+		}
+		$title = self::postTitle($postId);
+		return in_array($title, ['accountant', 'chief accountant', 'chief account', 'head teacher', 'headteacher', 'director'], true);
+	}
+
+	/** Identity PDF: the people who fill identities, plus the Director of Finance. */
+	public static function canExportStaffIdentities($postId)
+	{
+		return self::canEditStaffIdentity($postId) || self::isDirectorOfFinancePost($postId);
 	}
 
 	public static function postTitle($postId)
