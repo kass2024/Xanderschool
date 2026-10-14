@@ -482,7 +482,7 @@ class PocketWalletService
 	}
 
 	/**
-	 * Students at this school matching a name or registration number.
+	 * Students at this acronym's school only, matching a name or registration number.
 	 * Used to record a palm when the physical card is not at the till.
 	 *
 	 * @return array<string, mixed>
@@ -505,10 +505,8 @@ class PocketWalletService
 
 		(new \App\Models\StudentModel())->ensureCardNfcColumn();
 		$hasNfc = $this->db->fieldExists('card_nfc', 'students');
-		$scope = $this->posSchoolScope($schoolId);
-		$scopePlaceholders = implode(',', array_fill(0, count($scope), '?'));
 		$clauses = [];
-		$params = $scope;
+		$params = [$schoolId];
 		foreach ($tokens as $token) {
 			$like = '%' . $token . '%';
 			$parts = [
@@ -545,7 +543,7 @@ class PocketWalletService
 			LEFT JOIN classes c ON c.id = cr.class
 			LEFT JOIN departments d ON d.id = c.department
 			LEFT JOIN levels l ON l.id = c.level
-			WHERE students.status = 1 AND students.school_id IN ({$scopePlaceholders})
+			WHERE students.status = 1 AND students.school_id = ?
 			AND " . implode(' AND ', $clauses) . "
 			ORDER BY
 				CASE
@@ -558,7 +556,6 @@ class PocketWalletService
 		$params[] = $prefix;
 		$rows = $this->db->query($sql, $params)->getResultArray();
 		$students = [];
-		$showCampus = count($scope) > 1;
 		foreach ($rows as $row) {
 			$name = trim(preg_replace('/\s+/', ' ', trim((string) $row['fname']) . ' ' . trim((string) $row['lname'])));
 			$row['name'] = $name !== '' ? $name : 'Student';
@@ -566,60 +563,10 @@ class PocketWalletService
 			if ($card === '' && trim((string) ($row['card_nfc'] ?? '')) !== '') {
 				$row['card'] = $row['card_nfc'];
 			}
-			if ($showCampus && trim((string) ($row['school_name'] ?? '')) !== '') {
-				$className = trim((string) ($row['class_name'] ?? ''));
-				$row['class_name'] = trim($className . ' · ' . trim((string) $row['school_name']));
-			}
 			$students[] = $this->publicStudent($row, false);
 		}
 
 		return ['students' => $students];
-	}
-
-	/**
-	 * This campus plus its master school and sibling campuses.
-	 *
-	 * @return list<int>
-	 */
-	protected function posSchoolScope(int $schoolId): array
-	{
-		$schoolId = (int) $schoolId;
-		if ($schoolId <= 0) {
-			return [];
-		}
-		$scope = [$schoolId];
-		try {
-			if ($this->db->fieldExists('is_master', 'schools') && $this->db->fieldExists('master_school_id', 'schools')) {
-				$row = $this->db->table('schools')
-					->select('is_master, master_school_id')
-					->where('id', $schoolId)
-					->get()
-					->getRowArray();
-				$masterId = (int) ($row['master_school_id'] ?? 0);
-				if (!empty($row['is_master'])) {
-					$masterId = $schoolId;
-				}
-				if ($masterId > 0) {
-					$scope[] = $masterId;
-					$children = $this->db->table('schools')
-						->select('id')
-						->where('master_school_id', $masterId)
-						->get()
-						->getResultArray();
-					foreach ($children as $child) {
-						$childId = (int) ($child['id'] ?? 0);
-						if ($childId > 0) {
-							$scope[] = $childId;
-						}
-					}
-				}
-			}
-		} catch (\Throwable $e) {
-			$scope = [$schoolId];
-		}
-		$scope = array_values(array_unique(array_filter(array_map('intval', $scope))));
-
-		return $scope !== [] ? $scope : [$schoolId];
 	}
 
 	public function posPreview(int $schoolId, string $card): array
