@@ -278,6 +278,22 @@ class PocketApi extends BaseController
 		});
 	}
 
+	public function posStudents()
+	{
+		if (($denied = $this->posAuth()) instanceof Response) {
+			return $denied;
+		}
+
+		return $this->guard(function () {
+			$school = $this->wallet->schoolByAcronym((string) $this->request->getGet('acronym'));
+
+			return $this->wallet->posSearchStudents(
+				(int) $school['id'],
+				(string) $this->request->getGet('q')
+			);
+		});
+	}
+
 	public function posPreview()
 	{
 		if (($denied = $this->posAuth()) instanceof Response) {

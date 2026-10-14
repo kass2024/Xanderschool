@@ -176,6 +176,7 @@ $routes->post('api/pocket/pos/preview', 'PocketApi::posPreview');
 $routes->post('api/pocket/pos/charge', 'PocketApi::posCharge');
 $routes->get('api/pocket/pos/schools', 'PocketApi::posSchools');
 $routes->get('api/pocket/pos/catalog', 'PocketApi::posCatalog');
+$routes->get('api/pocket/pos/students', 'PocketApi::posStudents');
 $routes->post('api/pocket/pos/palm', 'PocketApi::posPalmSave');
 $routes->get('api/pocket/pos/palms', 'PocketApi::posPalms');
 $routes->post('api/pocket/pos/palm/delete', 'PocketApi::posPalmDelete');

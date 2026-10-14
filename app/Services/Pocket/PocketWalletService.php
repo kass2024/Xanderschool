@@ -481,6 +481,52 @@ class PocketWalletService
 		];
 	}
 
+	/**
+	 * Students at this school matching a name or registration number.
+	 * Used to record a palm when the physical card is not at the till.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function posSearchStudents(int $schoolId, string $q): array
+	{
+		$q = trim(preg_replace('/\s+/', ' ', $q) ?? '');
+		$q = str_replace(['%', '_', '\\'], '', $q);
+		if (strlen($q) < 2 || strlen($q) > 40) {
+			return ['students' => []];
+		}
+		$like = '%' . $q . '%';
+		$sql = "SELECT students.id, students.regno, students.fname, students.lname, students.photo,
+			students.card, students.wallet_balance, students.wallet_pin, students.school_id, students.status,
+			sk.name AS school_name,
+			TRIM(CONCAT(IFNULL(l.title,''), ' ', IFNULL(d.code,''), ' ', IFNULL(c.title,''))) AS class_name
+			FROM students
+			LEFT JOIN schools sk ON sk.id = students.school_id
+			LEFT JOIN class_records cr ON cr.id = (
+				SELECT MAX(id) FROM class_records WHERE student = students.id AND status = 1
+			)
+			LEFT JOIN classes c ON c.id = cr.class
+			LEFT JOIN departments d ON d.id = c.department
+			LEFT JOIN levels l ON l.id = c.level
+			WHERE students.status = 1 AND students.school_id = ?
+			AND (
+				students.regno LIKE ?
+				OR students.fname LIKE ?
+				OR students.lname LIKE ?
+				OR CONCAT(students.fname, ' ', students.lname) LIKE ?
+			)
+			ORDER BY students.fname ASC, students.lname ASC
+			LIMIT 15";
+		$rows = $this->db->query($sql, [$schoolId, $like, $like, $like, $like])->getResultArray();
+		$students = [];
+		foreach ($rows as $row) {
+			$name = trim(preg_replace('/\s+/', ' ', trim((string) $row['fname']) . ' ' . trim((string) $row['lname'])));
+			$row['name'] = $name !== '' ? $name : 'Student';
+			$students[] = $this->publicStudent($row, false);
+		}
+
+		return ['students' => $students];
+	}
+
 	public function posPreview(int $schoolId, string $card): array
 	{
 		$student = $this->studentByCard($schoolId, $card);
