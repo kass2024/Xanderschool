@@ -976,6 +976,107 @@ class PocketWalletService
 		];
 	}
 
+	/**
+	 * Security backup of the vein template recorded on a till.
+	 * The till restores from this copy so payment matches the same palm.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function savePosPalm(int $schoolId, string $card, string $name, string $className, string $feature, int $studentId, int $savedAt): array
+	{
+		$card = strtoupper(trim($card));
+		$feature = preg_replace('/\s+/', '', $feature) ?? '';
+		if (strlen($card) < 4) {
+			throw new \InvalidArgumentException('Scan the student card before saving the palm.');
+		}
+		if (!preg_match('/^[A-Za-z0-9+\/=]+$/', $feature) || strlen($feature) < 40 || strlen($feature) > 12000) {
+			throw new \InvalidArgumentException('Palm template was not valid.');
+		}
+		$student = $this->studentByCard($schoolId, $card);
+		if (!$student) {
+			throw new \RuntimeException('No student card matches this palm.', 404);
+		}
+		if ($savedAt < 1) {
+			$savedAt = (int) round(microtime(true) * 1000);
+		}
+		$name = trim(preg_replace('/\s+/', ' ', $name) ?? '');
+		if ($name === '') {
+			$name = (string) $student['name'];
+		}
+		$className = trim(preg_replace('/\s+/', ' ', $className) ?? '');
+		if ($className === '') {
+			$className = trim((string) ($student['class_name'] ?? ''));
+		}
+		$row = [
+			'school_id' => $schoolId,
+			'student_id' => (int) $student['id'],
+			'card_uid' => substr($card, 0, 40),
+			'student_name' => substr($name, 0, 120),
+			'class_name' => substr($className, 0, 120),
+			'feature' => $feature,
+			'saved_at' => $savedAt,
+			'updated_at' => $this->now(),
+		];
+		$existing = $this->db->query(
+			'SELECT id, saved_at FROM pos_palm_backups WHERE school_id = ? AND card_uid = ? LIMIT 1',
+			[$schoolId, $row['card_uid']]
+		)->getRowArray();
+		if ($existing && (int) $existing['saved_at'] > $savedAt) {
+			return ['saved' => true, 'card' => $row['card_uid'], 'kept' => 'server'];
+		}
+		if ($existing) {
+			unset($row['school_id'], $row['card_uid']);
+			$this->db->table('pos_palm_backups')->where('id', (int) $existing['id'])->update($row);
+		} else {
+			$this->db->table('pos_palm_backups')->insert($row);
+		}
+
+		return ['saved' => true, 'card' => $card, 'studentId' => (int) $student['id']];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function listPosPalms(int $schoolId): array
+	{
+		$rows = $this->db->query(
+			'SELECT student_id, card_uid, student_name, class_name, feature, saved_at
+			 FROM pos_palm_backups WHERE school_id = ? ORDER BY student_name ASC, id ASC',
+			[$schoolId]
+		)->getResultArray();
+		$palms = [];
+		foreach ($rows as $row) {
+			$feature = (string) ($row['feature'] ?? '');
+			if ($feature === '') {
+				continue;
+			}
+			$palms[] = [
+				'studentId' => (int) $row['student_id'],
+				'card' => (string) $row['card_uid'],
+				'name' => (string) $row['student_name'],
+				'className' => (string) $row['class_name'],
+				'feature' => $feature,
+				'savedAt' => (int) $row['saved_at'],
+			];
+		}
+
+		return ['palms' => $palms];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function deletePosPalm(int $schoolId, string $card): array
+	{
+		$card = strtoupper(trim($card));
+		if (strlen($card) < 4) {
+			throw new \InvalidArgumentException('Scan the student card.');
+		}
+		$this->db->table('pos_palm_backups')->where('school_id', $schoolId)->where('card_uid', $card)->delete();
+
+		return ['deleted' => true, 'card' => $card];
+	}
+
 	public function canteenItems(int $schoolId): array
 	{
 		return $this->db->query(
@@ -1368,6 +1469,22 @@ class PocketWalletService
 		if (!$stockColumn) {
 			$this->db->query("ALTER TABLE canteen_items ADD COLUMN stock INT NOT NULL DEFAULT 0 AFTER price");
 		}
+		$this->db->query(
+			"CREATE TABLE IF NOT EXISTS pos_palm_backups (
+				id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+				school_id INT UNSIGNED NOT NULL,
+				student_id INT UNSIGNED NOT NULL DEFAULT 0,
+				card_uid VARCHAR(40) NOT NULL,
+				student_name VARCHAR(120) NOT NULL DEFAULT '',
+				class_name VARCHAR(120) NOT NULL DEFAULT '',
+				feature MEDIUMTEXT NOT NULL,
+				saved_at BIGINT NOT NULL,
+				updated_at DATETIME NOT NULL,
+				PRIMARY KEY (id),
+				UNIQUE KEY school_card (school_id, card_uid),
+				KEY school_id (school_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+		);
 		self::$ready = true;
 	}
 

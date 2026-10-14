@@ -298,6 +298,58 @@ class PocketApi extends BaseController
 		});
 	}
 
+	public function posPalmSave()
+	{
+		if (($denied = $this->posAuth()) instanceof Response) {
+			return $denied;
+		}
+
+		return $this->guard(function () {
+			$body = $this->body();
+			$school = $this->wallet->schoolByAcronym((string) ($body['acronym'] ?? ''));
+
+			return $this->wallet->savePosPalm(
+				(int) $school['id'],
+				(string) ($body['card'] ?? ''),
+				(string) ($body['name'] ?? ''),
+				(string) ($body['className'] ?? ''),
+				(string) ($body['feature'] ?? ''),
+				(int) ($body['studentId'] ?? 0),
+				(int) ($body['savedAt'] ?? 0)
+			);
+		});
+	}
+
+	public function posPalms()
+	{
+		if (($denied = $this->posAuth()) instanceof Response) {
+			return $denied;
+		}
+
+		return $this->guard(function () {
+			$school = $this->wallet->schoolByAcronym((string) $this->request->getGet('acronym'));
+
+			return $this->wallet->listPosPalms((int) $school['id']);
+		});
+	}
+
+	public function posPalmDelete()
+	{
+		if (($denied = $this->posAuth()) instanceof Response) {
+			return $denied;
+		}
+
+		return $this->guard(function () {
+			$body = $this->body();
+			$school = $this->wallet->schoolByAcronym((string) ($body['acronym'] ?? ''));
+
+			return $this->wallet->deletePosPalm(
+				(int) $school['id'],
+				(string) ($body['card'] ?? '')
+			);
+		});
+	}
+
 	public function posCharge()
 	{
 		if (($denied = $this->posAuth()) instanceof Response) {

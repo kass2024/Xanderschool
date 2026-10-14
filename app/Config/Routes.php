@@ -74,6 +74,9 @@ $routes->setAutoRoute(true);
 // route since we don't have to scan directories.
 $routes->get('/', 'Home::index');
 $routes->get('/login', 'Home::login');
+$routes->get('families', 'Families::index');
+$routes->get('families/sheet/(:segment)', 'Families::sheet/$1');
+$routes->get('families/export/(:segment)', 'Families::export/$1');
 $routes->get('parent-update/(:segment)', 'Home::parent_update/$1');
 $routes->post('parent-update/(:segment)', 'Home::parent_update/$1');
 $routes->get('/messaging/employees', 'Home::messaging_employees');
@@ -154,6 +157,29 @@ $routes->post('desktop_sync/tick', 'DesktopSync::localTick');
 
 $routes->get('api/get_staff_list', 'Api::get_staff_list');
 $routes->post('api/update_staff_profile', 'Api::update_staff_profile');
+$routes->get('api/pocket/health', 'PocketApi::health');
+$routes->post('api/pocket/register', 'PocketApi::register');
+$routes->post('api/pocket/login', 'PocketApi::login');
+$routes->post('api/pocket/recover', 'PocketApi::recover');
+$routes->post('api/pocket/recover-confirm', 'PocketApi::recoverConfirm');
+$routes->post('api/pocket/logout', 'PocketApi::logout');
+$routes->get('api/pocket/me', 'PocketApi::me');
+$routes->post('api/pocket/lookup', 'PocketApi::lookup');
+$routes->post('api/pocket/link', 'PocketApi::link');
+$routes->post('api/pocket/unlink', 'PocketApi::unlink');
+$routes->get('api/pocket/wallets', 'PocketApi::wallets');
+$routes->get('api/pocket/ledger/(:num)', 'PocketApi::ledger/$1');
+$routes->post('api/pocket/spend-pin', 'PocketApi::spendPin');
+$routes->post('api/pocket/topup', 'PocketApi::topup');
+$routes->get('api/pocket/topup/(:num)', 'PocketApi::topupStatus/$1');
+$routes->post('api/pocket/pos/preview', 'PocketApi::posPreview');
+$routes->post('api/pocket/pos/charge', 'PocketApi::posCharge');
+$routes->get('api/pocket/pos/schools', 'PocketApi::posSchools');
+$routes->get('api/pocket/pos/catalog', 'PocketApi::posCatalog');
+$routes->post('api/pocket/pos/palm', 'PocketApi::posPalmSave');
+$routes->get('api/pocket/pos/palms', 'PocketApi::posPalms');
+$routes->post('api/pocket/pos/palm/delete', 'PocketApi::posPalmDelete');
+$routes->post('api/pocket/besoft-webhook', 'PocketApi::besoftWebhook');
 $routes->add('api', 'Api::index');
 $routes->add('api/(:any)', 'Api::$1');
 // ✅ Add this line before the wildcard
@@ -178,6 +204,9 @@ $routes->post('parent_visiting/delete_visitor', 'Home::parent_visiting_delete_vi
 $routes->post('parent_visiting/assign_card', 'Home::parent_visiting_assign_card');
 $routes->post('parent_visiting/scan', 'Home::parent_visiting_scan');
 $routes->get('parent_visiting/students', 'Home::parent_visiting_students_json');
+$routes->get('parent_visiting/student_search', 'Home::parent_visiting_student_search');
+$routes->post('parent_visiting/manual_visit', 'Home::parent_visiting_manual_visit');
+$routes->get('parent_visiting/receipt/(:num)', 'Home::parent_visiting_receipt/$1');
 $routes->get('parent_visiting/student_visitors/(:num)', 'Home::parent_visiting_student_visitors/$1');
 
 // Daily gate visitors (independent from parent visiting)
