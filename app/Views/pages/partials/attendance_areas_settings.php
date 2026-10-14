@@ -180,6 +180,7 @@ $(function () {
 	function hsApplyEvent(ev) {
 		if (!ev) return;
 		if (ev.type === 'progress') {
+			if (ev.device_ip && !hsIpTouched) $('#hsIp').val(ev.device_ip);
 			hsSetProgress(ev.sent || 0, ev.total || 0, ev.label || '');
 			if (ev.line) {
 				$('#hsList').append('<li>' + hsEsc(ev.line) + '</li>');
@@ -264,7 +265,20 @@ $(function () {
 	}
 	var hsIpTouched = false;
 	$('#hsIp').on('input', function () { hsIpTouched = true; });
-	function hsDiscover() {
+	function hsRememberIp(res) {
+		if (!res || !res.device_ip || hsIpTouched) return;
+		var prev = $('#hsIp').val().trim();
+		if (res.source === 'lan' || !prev) {
+			$('#hsIp').val(res.device_ip);
+		}
+		if (res.device_key && !$('#hsKey').val().trim()) {
+			$('#hsKey').val(res.device_key);
+		}
+		if (res.source === 'lan' && prev && prev !== res.device_ip) {
+			$.post('<?= base_url('manipulate_heystar_device'); ?>', hsPayload('save'));
+		}
+	}
+	function hsServerDiscover() {
 		$.ajax({
 			url: '<?= base_url('manipulate_heystar_device'); ?>',
 			type: 'POST',
@@ -277,17 +291,37 @@ $(function () {
 			dataType: 'json',
 			timeout: 20000,
 			success: function (res) {
-				if (res && res.device_ip && !hsIpTouched) {
-					$('#hsIp').val(res.device_ip);
+				hsRememberIp(res);
+				if (!$('#hsIpNote').text() || ($('#hsIpNote').text().indexOf('Checking') === 0)) {
+					$('#hsIpNote').text((res && res.message) ? res.message : '');
 				}
-				if (res && res.device_key && !$('#hsKey').val().trim()) {
-					$('#hsKey').val(res.device_key);
-				}
-				$('#hsIpNote').text((res && res.message) ? res.message : '');
 			},
 			error: function () {
-				$('#hsIpNote').text('Could not check the school network. The last saved address stays in the box.');
+				if (!$('#hsIpNote').text()) {
+					$('#hsIpNote').text('Could not check the school network. The last saved address stays in the box.');
+				}
 			}
+		});
+	}
+	function hsLocalDiscover() {
+		$('#hsIpNote').text('Checking the terminal on this Wi-Fi…');
+		return fetch('http://127.0.0.1:8788/discover', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({
+				device_ip: $('#hsIp').val().trim(),
+				device_key: $('#hsKey').val().trim(),
+				password: $('#hsPwd').val().trim()
+			})
+		}).then(function (resp) { return resp.json(); }).then(function (res) {
+			hsRememberIp(res);
+			$('#hsIpNote').text((res && res.message) ? res.message : '');
+			return res;
+		});
+	}
+	function hsDiscover() {
+		hsLocalDiscover().catch(function () {
+			hsServerDiscover();
 		});
 	}
 	hsDiscover();
@@ -314,24 +348,27 @@ $(function () {
 		$btn.prop('disabled', true);
 		$('#hsList').empty();
 		$('#hsProgressBar').css('width', '8%');
-		hsSetProgress(0, 0, 'Checking the terminal…');
+		hsSetProgress(0, 0, 'Checking the terminal on this Wi-Fi…');
 		hsTell(true, '');
-		var body = hsPayload('sync_changes');
-		body.stream = '1';
-		fetch('<?= base_url('manipulate_heystar_device'); ?>', {
-			method: 'POST',
-			headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
-			body: new URLSearchParams(body).toString(),
-			credentials: 'same-origin'
-		}).then(function (resp) {
-			return hsReadStream(resp);
-		}).then(function (mode) {
-			if (mode === 'lan') return hsLocalSync();
-		}).catch(function () {
-			hsTell(false, 'Could not reach the server to start the update.');
-		}).then(function () {
-			$btn.prop('disabled', false);
-		});
+		var startSend = function () {
+			var body = hsPayload('sync_changes');
+			body.stream = '1';
+			fetch('<?= base_url('manipulate_heystar_device'); ?>', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
+				body: new URLSearchParams(body).toString(),
+				credentials: 'same-origin'
+			}).then(function (resp) {
+				return hsReadStream(resp);
+			}).then(function (mode) {
+				if (mode === 'lan') return hsLocalSync();
+			}).catch(function () {
+				hsTell(false, 'Could not reach the server to start the update.');
+			}).then(function () {
+				$btn.prop('disabled', false);
+			});
+		};
+		hsLocalDiscover().catch(function () { return null; }).then(startSend);
 	});
 });
 </script>
