@@ -43,12 +43,12 @@
 					<div class="section">
 						<?= $obj->get_leave($leaves['type']);?>
 						<input type="checkbox" checked></div><br>
-				<?php if($leaves['type']==4){?>
+				<?php if($leaves['type']==4 || $leaves['type']==5){?>
 				<div><b><?= lang("app.appReason"); ?> </b> <span><?=$leaves['reason'];?></span></div><br>
 				<?php }?>
 				<div>
 					<i><?= lang("app.note"); ?> :</i>
-					<p><i<?= lang("app.execess1day"); ?> ></i></p>
+					<p><i><?= lang("app.execess1day"); ?></i></p>
 					<p><i><?= lang("app.attached"); ?> </i></p>
 				</div>
 
@@ -56,14 +56,26 @@
 	</table><br>
 	<table width="100%" border="1">
 		<tr><td colspan="2">
+				<?php if ((int) $leaves['type'] === 5 && (int) $leaves['toDate'] > (int) $leaves['fromDate'] && ((int) $leaves['toDate'] - (int) $leaves['fromDate']) <= 43200) {
+					$leaveHours = round(((int) $leaves['toDate'] - (int) $leaves['fromDate']) / 3600, 2);
+				?>
+				<p>Hours requested: <?=$leaveHours;?> h</p>
+				<div style="width: 50%" class="pull-left"><p><?=lang("app.lDate"); ?> <?=date("d-M-Y H:i",$leaves['fromDate']);?></p></div>
+				<div style="width: 50%" class="pull-left"><p> <?= lang("app.to");?>: <?=date("H:i",$leaves['toDate']);?></p></div>
+				<?php } else if ((int) $leaves['type'] === 5) { ?>
+				<p>Short permission: <?=$leaves['days'];?> day(s)</p>
+				<div style="width: 50%" class="pull-left"><p><?=lang("app.lDate"); ?> <?=date("d-M-Y",$leaves['fromDate']);?></p></div>
+				<div style="width: 50%" class="pull-left"><p> <?= lang("app.to");?>: <?=date("d-M-Y",$leaves['toDate']);?></p></div>
+				<?php } else { ?>
 				<p><?= lang("app.daysRequest"); ?>  <?=$leaves['days'];?> <?= lang("app.dayss");?></p>
 				<div style="width: 50%" class="pull-left"><p><?=lang("app.lDate"); ?> <?=date("d-M-Y",$leaves['fromDate']);?></p></div>
 				<div style="width: 50%" class="pull-left"><p> <?= lang("app.to");?>:<?=date("d-M-Y",$leaves['toDate']);?></p></div>
+				<?php } ?>
 				<p><?= lang("app.addresDuringLeave"); ?> : <?=$leaves['address'];?> </p>
 				<div style="width: 50%" class="pull-left"><p><?= lang("app.tel"); ?> :<?=$leaves['staff_phone'];?> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></div>
 				<div style="width: 50%" class="pull-left"><p><?= lang("app.fax"); ?> :</p></div>
 				<div style="width: 50%" class="pull-left"><p><?= lang("app.appSign"); ?>:................ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></div>
-				<div style="width: 50%" class="pull-left"><p<?= lang("app.date"); ?> >:<?=date("d-M-Y");?></p></div>
+				<div style="width: 50%" class="pull-left"><p><?= lang("app.date"); ?>: <?=date("d-M-Y");?></p></div>
 			</td></tr>
 	</table><br>
 	<table width="100%" border="1" style="background-color: #d6dbdd">

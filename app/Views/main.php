@@ -2808,77 +2808,175 @@ if ($page == "add_classes") {
 	</div>
 </div>
 <?php if ($page == "apply_leave") { ?>
+	<style>
+		#apply_leave_model .leave-dialog { max-width: 640px; margin: 28px auto; }
+		#apply_leave_model .leave-sheet { border: 0; border-radius: 18px; overflow: visible; box-shadow: 0 24px 60px rgba(15, 39, 68, .28); }
+		#apply_leave_model .leave-sheet-head {
+			display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+			padding: 22px 24px 18px; background: linear-gradient(135deg, #0f2744 0%, #1d4e89 100%); color: #fff;
+			border-radius: 18px 18px 0 0;
+		}
+		#apply_leave_model .leave-kicker { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #93c5fd; font-weight: 700; }
+		#apply_leave_model .leave-sheet-head h5 { margin: 4px 0 6px; font-size: 22px; font-weight: 700; color: #fff; }
+		#apply_leave_model .leave-sheet-head p { margin: 0; color: #dbeafe; font-size: 13px; line-height: 1.45; }
+		#apply_leave_model .leave-x { background: transparent; border: 0; color: #fff; font-size: 28px; line-height: 1; opacity: .8; }
+		#apply_leave_model .leave-sheet-body { padding: 20px 24px 8px; background: #f8fafc; }
+		#apply_leave_model .leave-field { margin-bottom: 14px; }
+		#apply_leave_model .leave-field label, #apply_leave_model .leave-label {
+			display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; color: #334155;
+		}
+		#apply_leave_model .leave-field .form-control, #apply_leave_model .leave-field .select2-container .select2-selection {
+			border-radius: 10px; border-color: #d7dee7; min-height: 42px;
+		}
+		#apply_leave_model .leave-row { display: flex; gap: 12px; }
+		#apply_leave_model .leave-row > div { flex: 1; }
+		#apply_leave_model .leave-switch { display: flex; gap: 8px; margin-bottom: 12px; }
+		#apply_leave_model .leave-switch button, #apply_leave_model .leave-chips button {
+			border: 1px solid #d7dee7; background: #fff; color: #334155; border-radius: 999px;
+			padding: 8px 14px; font-weight: 700; font-size: 13px;
+		}
+		#apply_leave_model .leave-switch button.is-on, #apply_leave_model .leave-chips button.is-on {
+			background: #0f766e; border-color: #0f766e; color: #fff;
+		}
+		#apply_leave_model .leave-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+		#apply_leave_model .leave-panel {
+			background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; margin-bottom: 14px;
+		}
+		#apply_leave_model .leave-note {
+			background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 12px;
+			padding: 10px 12px; font-size: 12.5px; line-height: 1.45; margin-bottom: 14px;
+		}
+		#apply_leave_model .leave-preview {
+			background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; border-radius: 12px;
+			padding: 10px 12px; font-size: 13px; margin-bottom: 8px;
+		}
+		#apply_leave_model .leave-sheet-foot {
+			display: flex; justify-content: flex-end; gap: 8px; padding: 14px 24px 18px; background: #fff; border-top: 1px solid #e2e8f0;
+			border-radius: 0 0 18px 18px;
+		}
+	</style>
 	<div class="modal fade" id="apply_leave_model" tabindex="-1" role="dialog">
-		<div class="modal-dialog" role="document">
-			<div class="modal-content">
-				<form action="<?= base_url('manipulate_leave'); ?>" class="autoSubmit validate">
-					<div class="modal-header">
-						<h5 class="modal-title" id="exampleModalLabel"><?= lang("app.leaveApplication"); ?></h5>
-						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
-							<span aria-hidden="true">×</span>
-						</button>
+		<div class="modal-dialog leave-dialog" role="document">
+			<div class="modal-content leave-sheet">
+				<form action="<?= base_url('manipulate_leave'); ?>" class="autoSubmit validate" id="leave-apply-form">
+					<div class="leave-sheet-head">
+						<div>
+							<div class="leave-kicker">Gate permission</div>
+							<h5><?= lang("app.leaveApplication"); ?></h5>
+							<p>An approved permission lets the staff card open the gate. The tablet must be online.</p>
+						</div>
+						<button type="button" class="leave-x" data-dismiss="modal" aria-label="Close">&times;</button>
 					</div>
-					<div class="modal-body">
-						<div class="col-sm-12 col-md-12 col-lg-12 pull-left">
-							<div class="form-group" style="display: flex">
-								<div style="width: 100%;float:left;padding-right: 5px;">
-									<label><?= lang("app.typeofleave"); ?></label>
-									<select class="form-control select2" required id="leave_type" name="type">
-										<option selected disabled><?= lang("app.selectLeaveType"); ?></option>
-										<option value="1"><?= lang("app.annualLeave"); ?></option>
-										<option value="2"><?= lang("app.sickLeave"); ?></option>
-										<option value="3"><?= lang("app.maternityLeave"); ?></option>
-										<option value="4"><?= lang("app.unpaidLeave"); ?></option>
-									</select>
+					<div class="leave-sheet-body">
+						<?php if (!empty($apply_for_others)) { ?>
+						<div class="leave-field">
+							<label><?= lang("app.staffName"); ?></label>
+							<select class="form-control select2" name="staff_id" required>
+								<option selected disabled value=""><?= lang("app.selectStaff"); ?></option>
+								<?php foreach (($leave_staff ?? []) as $leaveStaff) { ?>
+									<option value="<?= (int) $leaveStaff['id']; ?>"><?= esc($leaveStaff['name']); ?></option>
+								<?php } ?>
+							</select>
+						</div>
+						<?php } ?>
+						<div class="leave-field">
+							<label><?= lang("app.typeofleave"); ?></label>
+							<select class="form-control select2" required id="leave_type" name="type">
+								<option selected disabled value=""><?= lang("app.selectLeaveType"); ?></option>
+								<option value="5"><?= lang("app.shortPermission"); ?> — hours or a few days</option>
+								<option value="1"><?= lang("app.annualLeave"); ?></option>
+								<option value="2"><?= lang("app.sickLeave"); ?></option>
+								<option value="3"><?= lang("app.maternityLeave"); ?></option>
+								<option value="4"><?= lang("app.unpaidLeave"); ?></option>
+							</select>
+						</div>
+						<div id="leave-short" style="display:none;">
+							<div class="leave-panel">
+								<div class="leave-label">How long</div>
+								<div class="leave-switch" id="leave-span-switch">
+									<button type="button" class="is-on" data-span="hours">A few hours</button>
+									<button type="button" data-span="days">1–3 days</button>
 								</div>
-							</div>
-							<div class="form-group" style="display: flex;" id="reason">
-								<div style="width: 100%;float:left;padding-right: 5px;">
-									<label><?= lang("app.unpaidReason"); ?></label>
-									<textarea class="form-control" placeholder="Reason" name="reason"></textarea>
+								<input type="hidden" name="span" id="leave_span" value="hours" disabled>
+								<div class="leave-hours-fields">
+									<div class="leave-row">
+										<div class="leave-field">
+											<label><?= lang("app.from"); ?></label>
+											<input type="date" class="form-control" name="fdate" id="short_date">
+										</div>
+										<div class="leave-field">
+											<label>Start time</label>
+											<input type="time" class="form-control" name="ftime" id="short_time">
+										</div>
+									</div>
+									<div class="leave-field">
+										<label>Hours</label>
+										<div class="leave-chips" data-target="leave_hours">
+											<button type="button" data-value="1">1 h</button>
+											<button type="button" class="is-on" data-value="2">2 h</button>
+											<button type="button" data-value="3">3 h</button>
+											<button type="button" data-value="4">4 h</button>
+											<button type="button" data-value="6">6 h</button>
+											<button type="button" data-value="8">8 h</button>
+										</div>
+										<input type="hidden" name="hours" id="leave_hours" value="2">
+									</div>
 								</div>
-							</div>
-							<div class="form-group" style="display: flex">
-								<div style="width: 100%;float:left;padding-right: 5px;">
-									<div>
-										<i><?= lang("app.note"); ?><br>
-											<?= lang("app.execess1day"); ?><br>
-											<?= lang("app.attached"); ?></i>
+								<div class="leave-days-fields" style="display:none;">
+									<div class="leave-row">
+										<div class="leave-field">
+											<label><?= lang("app.from"); ?></label>
+											<input type="date" class="form-control" id="short_day_date">
+										</div>
+										<div class="leave-field">
+											<label>Days</label>
+											<div class="leave-chips" data-target="leave_short_days">
+												<button type="button" class="is-on" data-value="1">1 day</button>
+												<button type="button" data-value="2">2 days</button>
+												<button type="button" data-value="3">3 days</button>
+											</div>
+											<input type="hidden" name="short_days" id="leave_short_days" value="1">
+										</div>
 									</div>
 								</div>
 							</div>
-							<div class="form-group" style="display: flex">
-								<div style="width: 100%;float:left;padding-right: 5px;">
-									<label><?= lang("app.daysRequest"); ?></label>
-									<input type="number" class="form-control" name="days">
-								</div>
-							</div>
-							<div class="form-group" style="display: flex">
-								<div style="width: 50%;float:left;padding-right: 5px;">
-									<label><?= lang("app.from"); ?></label>
-									<input type="date" class="form-control" name="fdate" required>
-								</div>
-								<div style="width: 50%;float:left;padding-left: 5px">
-									<label><?= lang("app.to"); ?></label>
-									<input type="date" class="form-control" name="tdate" required>
-								</div>
-							</div>
-
-							<div class="form-group" style="display: flex">
-								<div style="width: 100%;float:left;padding-right: 5px;">
-									<label><?= lang("app.addresDuringLeave"); ?></label>
-									<input type="text" name="address" class="form-control">
-								</div>
-							</div>
-
 						</div>
+						<div id="leave-regular">
+							<div class="leave-row">
+								<div class="leave-field">
+									<label><?= lang("app.daysRequest"); ?></label>
+									<input type="number" min="1" class="form-control" name="days" id="leave_days">
+								</div>
+							</div>
+							<div class="leave-row">
+								<div class="leave-field">
+									<label><?= lang("app.from"); ?></label>
+									<input type="date" class="form-control" name="fdate" id="reg_from">
+								</div>
+								<div class="leave-field">
+									<label><?= lang("app.to"); ?></label>
+									<input type="date" class="form-control" name="tdate" id="reg_to">
+								</div>
+							</div>
+						</div>
+						<div class="leave-field" id="reason">
+							<label id="leave-reason-label"><?= lang("app.unpaidReason"); ?></label>
+							<textarea class="form-control" placeholder="Reason" name="reason" id="leave_reason" rows="3"></textarea>
+						</div>
+						<div class="leave-note" id="leave-note">
+							<strong><?= lang("app.note"); ?></strong><br>
+							<?= lang("app.execess1day"); ?><br>
+							<?= lang("app.attached"); ?>
+						</div>
+						<div class="leave-field">
+							<label><?= lang("app.addresDuringLeave"); ?></label>
+							<input type="text" name="address" class="form-control" placeholder="Where they will be">
+						</div>
+						<div class="leave-preview" id="leave-preview">Choose a leave type to see when the gate will open.</div>
 					</div>
-					<div class="modal-footer">
-						<!--						<label style="position: absolute;left: 20px;">Close this if you are done</label>-->
-						<button type="button" class="btn btn-secondary"
-								data-dismiss="modal"><?= lang("app.close"); ?></button>
-						<button type="submit" class="btn btn-gradient-primary"
-								data-target="reload"><?= lang("app.saveChanges"); ?></button>
+					<div class="leave-sheet-foot">
+						<button type="button" class="btn btn-secondary" data-dismiss="modal"><?= lang("app.close"); ?></button>
+						<button type="submit" class="btn btn-gradient-primary" data-target="reload"><?= lang("app.saveChanges"); ?></button>
 					</div>
 				</form>
 			</div>
@@ -4035,15 +4133,78 @@ if ($page == "pendingRegistration") {
 			$("#stafflabel").text(staff);
 			return;
 		});
-		// $("#reason").hide();
-		$("#leave_type").on("change", function (e) {
-			var types = $(this).val();
-			if (types == 4) {
-				$("#reason").show();
-			} else {
-				$("#reason").hide();
+		function leaveChipOn(group, value) {
+			var box = $('.leave-chips[data-target="' + group + '"]');
+			box.find("button").removeClass("is-on");
+			box.find('button[data-value="' + value + '"]').addClass("is-on");
+			$("#" + group).val(value);
+		}
+		function leaveSyncForm() {
+			var type = String($("#leave_type").val() || "");
+			var shortLeave = type === "5";
+			var span = $("#leave_span").val() || "hours";
+			$("#leave-short").toggle(shortLeave);
+			$("#leave-regular").toggle(!shortLeave);
+			$("#leave-note").toggle(type === "2" || type === "3");
+			$("#leave-short :input").prop("disabled", !shortLeave);
+			$("#leave-regular :input").prop("disabled", shortLeave);
+			if (shortLeave) {
+				var hoursMode = span === "hours";
+				$(".leave-hours-fields").toggle(hoursMode);
+				$(".leave-days-fields").toggle(!hoursMode);
+				$(".leave-hours-fields :input").prop("disabled", !hoursMode);
+				$(".leave-days-fields :input").prop("disabled", hoursMode);
+				$("#leave_span").prop("disabled", false);
+				if (!hoursMode) {
+					$("#short_date").val($("#short_day_date").val()).prop("disabled", false);
+					$("#short_time, #leave_hours").prop("disabled", true);
+				}
 			}
+			var needReason = type === "4" || type === "5";
+			$("#leave_reason").prop("required", needReason);
+			$("#leave-reason-label").text(type === "5" ? "Reason for this short permission" : (type === "4" ? "<?= lang("app.unpaidReason"); ?>" : "Reason"));
+			var preview = "Choose a leave type to see when the gate will open.";
+			if (shortLeave && span === "hours") {
+				var day = $("#short_date").val();
+				var time = $("#short_time").val();
+				var hours = $("#leave_hours").val() || "2";
+				preview = day && time
+					? ("After approval, the gate shows green for " + hours + " hour(s) from " + day + " " + time + ". The tablet must be online.")
+					: "Pick the day, start time, and how many hours.";
+			} else if (shortLeave) {
+				var start = $("#short_day_date").val() || $("#short_date").val();
+				var days = $("#leave_short_days").val() || "1";
+				preview = start
+					? ("After approval, the gate shows green for " + days + " day(s) starting " + start + ". The tablet must be online.")
+					: "Pick the start day and 1, 2, or 3 days.";
+			} else if (type !== "") {
+				var from = $("#reg_from").val();
+				var to = $("#reg_to").val();
+				preview = from && to
+					? ("After approval, the gate shows green from " + from + " through " + to + ". The tablet must be online.")
+					: "Pick the from and to dates.";
+			}
+			$("#leave-preview").text(preview);
+		}
+		$("#leave_type").on("change", leaveSyncForm);
+		$("#leave-span-switch button").on("click", function () {
+			$("#leave-span-switch button").removeClass("is-on");
+			$(this).addClass("is-on");
+			$("#leave_span").val($(this).data("span"));
+			leaveSyncForm();
 		});
+		$(document).on("click", "#apply_leave_model .leave-chips button", function () {
+			leaveChipOn($(this).closest(".leave-chips").data("target"), $(this).data("value"));
+			leaveSyncForm();
+		});
+		$("#short_date, #short_time, #short_day_date, #reg_from, #reg_to").on("change input", function () {
+			if (this.id === "short_day_date") {
+				$("#short_date").val($(this).val());
+			}
+			leaveSyncForm();
+		});
+		$("#apply_leave_model").on("shown.bs.modal", leaveSyncForm);
+		$("#leave-apply-form").on("submit", leaveSyncForm);
 		// $("#select2Input").select2({ dropdownParent: "#modal-container" });
 		$("#editBook").on("show.bs.modal", function (e) {
 			var id = $(e.relatedTarget).data("id");
