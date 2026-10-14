@@ -494,9 +494,47 @@ class PocketWalletService
 		if (strlen($q) < 2 || strlen($q) > 40) {
 			return ['students' => []];
 		}
-		$like = '%' . $q . '%';
+		$tokens = preg_split('/\s+/', $q) ?: [];
+		$tokens = array_values(array_filter($tokens, static function ($token) {
+			return strlen((string) $token) >= 2;
+		}));
+		$tokens = array_slice($tokens, 0, 4);
+		if ($tokens === []) {
+			return ['students' => []];
+		}
+
+		(new \App\Models\StudentModel())->ensureCardNfcColumn();
+		$hasNfc = $this->db->fieldExists('card_nfc', 'students');
+		$scope = $this->posSchoolScope($schoolId);
+		$scopePlaceholders = implode(',', array_fill(0, count($scope), '?'));
+		$clauses = [];
+		$params = $scope;
+		foreach ($tokens as $token) {
+			$like = '%' . $token . '%';
+			$parts = [
+				'students.regno LIKE ?',
+				'students.fname LIKE ?',
+				'students.lname LIKE ?',
+				"CONCAT(students.fname, ' ', students.lname) LIKE ?",
+				"CONCAT(students.lname, ' ', students.fname) LIKE ?",
+				'IFNULL(c.title, \'\') LIKE ?',
+				'IFNULL(students.card, \'\') LIKE ?',
+			];
+			$bind = array_fill(0, count($parts), $like);
+			if ($hasNfc) {
+				$parts[] = "IFNULL(students.card_nfc, '') LIKE ?";
+				$bind[] = $like;
+			}
+			$clauses[] = '(' . implode(' OR ', $parts) . ')';
+			$params = array_merge($params, $bind);
+		}
+		$prefix = $tokens[0] . '%';
+		$exact = $q;
+		$params[] = $exact;
+		$params[] = $prefix;
+		$nfcSelect = $hasNfc ? 'students.card_nfc' : "'' AS card_nfc";
 		$sql = "SELECT students.id, students.regno, students.fname, students.lname, students.photo,
-			students.card, students.wallet_balance, students.wallet_pin, students.school_id, students.status,
+			students.card, {$nfcSelect}, students.wallet_balance, students.wallet_pin, students.school_id, students.status,
 			sk.name AS school_name,
 			TRIM(CONCAT(IFNULL(l.title,''), ' ', IFNULL(d.code,''), ' ', IFNULL(c.title,''))) AS class_name
 			FROM students
@@ -507,24 +545,81 @@ class PocketWalletService
 			LEFT JOIN classes c ON c.id = cr.class
 			LEFT JOIN departments d ON d.id = c.department
 			LEFT JOIN levels l ON l.id = c.level
-			WHERE students.status = 1 AND students.school_id = ?
-			AND (
-				students.regno LIKE ?
-				OR students.fname LIKE ?
-				OR students.lname LIKE ?
-				OR CONCAT(students.fname, ' ', students.lname) LIKE ?
-			)
-			ORDER BY students.fname ASC, students.lname ASC
-			LIMIT 15";
-		$rows = $this->db->query($sql, [$schoolId, $like, $like, $like, $like])->getResultArray();
+			WHERE students.status = 1 AND students.school_id IN ({$scopePlaceholders})
+			AND " . implode(' AND ', $clauses) . "
+			ORDER BY
+				CASE
+					WHEN UPPER(TRIM(students.regno)) = UPPER(?) THEN 0
+					WHEN students.fname LIKE ? OR students.lname LIKE ? THEN 1
+					ELSE 2
+				END,
+				students.fname ASC, students.lname ASC
+			LIMIT 20";
+		$params[] = $prefix;
+		$rows = $this->db->query($sql, $params)->getResultArray();
 		$students = [];
+		$showCampus = count($scope) > 1;
 		foreach ($rows as $row) {
 			$name = trim(preg_replace('/\s+/', ' ', trim((string) $row['fname']) . ' ' . trim((string) $row['lname'])));
 			$row['name'] = $name !== '' ? $name : 'Student';
+			$card = trim((string) ($row['card'] ?? ''));
+			if ($card === '' && trim((string) ($row['card_nfc'] ?? '')) !== '') {
+				$row['card'] = $row['card_nfc'];
+			}
+			if ($showCampus && trim((string) ($row['school_name'] ?? '')) !== '') {
+				$className = trim((string) ($row['class_name'] ?? ''));
+				$row['class_name'] = trim($className . ' · ' . trim((string) $row['school_name']));
+			}
 			$students[] = $this->publicStudent($row, false);
 		}
 
 		return ['students' => $students];
+	}
+
+	/**
+	 * This campus plus its master school and sibling campuses.
+	 *
+	 * @return list<int>
+	 */
+	protected function posSchoolScope(int $schoolId): array
+	{
+		$schoolId = (int) $schoolId;
+		if ($schoolId <= 0) {
+			return [];
+		}
+		$scope = [$schoolId];
+		try {
+			if ($this->db->fieldExists('is_master', 'schools') && $this->db->fieldExists('master_school_id', 'schools')) {
+				$row = $this->db->table('schools')
+					->select('is_master, master_school_id')
+					->where('id', $schoolId)
+					->get()
+					->getRowArray();
+				$masterId = (int) ($row['master_school_id'] ?? 0);
+				if (!empty($row['is_master'])) {
+					$masterId = $schoolId;
+				}
+				if ($masterId > 0) {
+					$scope[] = $masterId;
+					$children = $this->db->table('schools')
+						->select('id')
+						->where('master_school_id', $masterId)
+						->get()
+						->getResultArray();
+					foreach ($children as $child) {
+						$childId = (int) ($child['id'] ?? 0);
+						if ($childId > 0) {
+							$scope[] = $childId;
+						}
+					}
+				}
+			}
+		} catch (\Throwable $e) {
+			$scope = [$schoolId];
+		}
+		$scope = array_values(array_unique(array_filter(array_map('intval', $scope))));
+
+		return $scope !== [] ? $scope : [$schoolId];
 	}
 
 	public function posPreview(int $schoolId, string $card): array

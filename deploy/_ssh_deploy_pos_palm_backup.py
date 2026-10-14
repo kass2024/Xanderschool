@@ -45,8 +45,7 @@ docker exec xander_school_app php -r 'if (function_exists("opcache_reset")) { op
 docker exec xander_school_app php -l /var/www/html/app/Config/Routes.php
 docker exec xander_school_app php -l /var/www/html/app/Controllers/PocketApi.php
 docker exec xander_school_app php -l /var/www/html/app/Services/Pocket/PocketWalletService.php
-docker exec xander_school_app grep -n "function savePosPalm" /var/www/html/app/Services/Pocket/PocketWalletService.php
-docker exec xander_school_app grep -n "pos/palm" /var/www/html/app/Config/Routes.php
+docker exec xander_school_app grep -n "CONCAT(students.lname" /var/www/html/app/Services/Pocket/PocketWalletService.php
 docker exec xander_school_app php -r '
 require "/var/www/html/app/Config/MenuClearance.php";
 if (!\Config\MenuClearance::isChiefAccountantPost(28)) { fwrite(STDERR, "isChiefAccountantPost failed\n"); exit(1); }
