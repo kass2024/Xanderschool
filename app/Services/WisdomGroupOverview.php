@@ -321,6 +321,7 @@ class WisdomGroupOverview
 					'boys_present' => (int) $split['boys'],
 					'source' => 'device',
 				];
+				$rows[$i]['day_taps'] = $this->dayScholarTapSummary($id, (int) $yearId);
 				$rows[$i]['daily_visitors'] = $this->dailyVisitorPulse($id);
 				$rows[$i]['parent_visits'] = $this->parentVisitPulse($id, (int) $yearId);
 				continue;
@@ -459,6 +460,134 @@ class WisdomGroupOverview
 			'girls' => $girls,
 			'boys' => max(0, $total - $girls),
 		];
+	}
+
+	/**
+	 * Day scholars at the school gate today: morning arrival, lunch out, back from lunch, evening leave.
+	 *
+	 * @return array{morning:int,lunch:int,back:int,evening:int}
+	 */
+	public function dayScholarTapSummary(int $schoolId, int $yearId): array
+	{
+		$blank = ['morning' => 0, 'lunch' => 0, 'back' => 0, 'evening' => 0];
+		$base = $this->dayScholarTapBaseSql($schoolId, $yearId);
+		if ($base === null) {
+			return $blank;
+		}
+		try {
+			$row = \Config\Database::connect()->query(
+				'SELECT COUNT(*) AS morning,
+					SUM(lunch_at > 0) AS lunch,
+					SUM(back_at > 0) AS back,
+					SUM(time_out > 0) AS evening
+				FROM (' . $base . ') taps'
+			)->getRowArray();
+		} catch (\Throwable $e) {
+			return $blank;
+		}
+		return [
+			'morning' => (int) ($row['morning'] ?? 0),
+			'lunch' => (int) ($row['lunch'] ?? 0),
+			'back' => (int) ($row['back'] ?? 0),
+			'evening' => (int) ($row['evening'] ?? 0),
+		];
+	}
+
+	/**
+	 * Students behind one day-scholar tap. Kind is morning, lunch, back, or evening.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	public function dayScholarTapList(int $schoolId, int $yearId, string $kind): array
+	{
+		$kind = $this->dayScholarTapKind($kind);
+		$base = $this->dayScholarTapBaseSql($schoolId, $yearId);
+		if ($base === null) {
+			return [];
+		}
+		$where = [
+			'morning' => '1=1',
+			'lunch' => 'taps.lunch_at > 0',
+			'back' => 'taps.back_at > 0',
+			'evening' => 'taps.time_out > 0',
+		][$kind];
+		$db = \Config\Database::connect();
+		try {
+			$rows = $db->query(
+				'SELECT taps.id, taps.time_in, taps.lunch_at, taps.back_at, taps.time_out,
+					s.sex, s.regno, ' . $this->classSelect('s') . '
+				FROM (' . $base . ') taps
+				INNER JOIN students s ON s.id = taps.id
+				' . $this->classJoins('s', $yearId) . '
+				WHERE ' . $where . '
+				ORDER BY student_name'
+			)->getResultArray();
+		} catch (\Throwable $e) {
+			return [];
+		}
+		$list = [];
+		foreach ($rows as $row) {
+			$class = trim((string) ($row['class_title'] ?? ''));
+			if ($class === '') {
+				$class = trim((string) ($row['level_title'] ?? ''));
+			}
+			$list[] = [
+				'id' => (int) ($row['id'] ?? 0),
+				'name' => trim((string) ($row['student_name'] ?? '')),
+				'sex' => (string) ($row['sex'] ?? ''),
+				'regno' => (string) ($row['regno'] ?? ''),
+				'class' => $class,
+				'time_in' => (int) ($row['time_in'] ?? 0),
+				'lunch_at' => (int) ($row['lunch_at'] ?? 0),
+				'back_at' => (int) ($row['back_at'] ?? 0),
+				'time_out' => (int) ($row['time_out'] ?? 0),
+			];
+		}
+		return $list;
+	}
+
+	public function dayScholarTapKind(string $kind): string
+	{
+		$kind = strtolower(trim($kind));
+		return in_array($kind, ['morning', 'lunch', 'back', 'evening'], true) ? $kind : 'morning';
+	}
+
+	/**
+	 * One row per enrolled day scholar who tapped the school gate today.
+	 */
+	private function dayScholarTapBaseSql(int $schoolId, int $yearId): ?string
+	{
+		if ($schoolId < 1 || $yearId < 1) {
+			return null;
+		}
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('attendance_records') || !$db->tableExists('students') || !$db->tableExists('class_records')) {
+			return null;
+		}
+		$gateIds = $this->gateAreaIds($schoolId);
+		if ($gateIds === []) {
+			return null;
+		}
+		$hasLunch = $db->fieldExists('lunch_at', 'attendance_records') && $db->fieldExists('back_at', 'attendance_records');
+		$lunchSelect = $hasLunch
+			? 'MAX(CASE WHEN COALESCE(ar.lunch_at, 0) > 0 THEN ar.lunch_at ELSE 0 END) AS lunch_at,
+				MAX(CASE WHEN COALESCE(ar.back_at, 0) > 0 THEN ar.back_at ELSE 0 END) AS back_at'
+			: '0 AS lunch_at, 0 AS back_at';
+		$todayStart = strtotime(date('Y-m-d') . ' 00:00:00');
+		$todayEnd = $todayStart + 86400;
+		return 'SELECT es.id,
+				MIN(ar.time_in) AS time_in,
+				MAX(CASE WHEN COALESCE(ar.time_out, 0) > 0 THEN ar.time_out ELSE 0 END) AS time_out,
+				' . $lunchSelect . '
+			FROM (' . $this->enrolledFlagsSql($schoolId, $yearId) . ') es
+			INNER JOIN attendance_records ar ON ar.user_id = es.id
+				AND ar.school_id = ' . (int) $schoolId . '
+				AND ar.user_type = 0
+				AND ar.area_id IN (' . implode(',', array_map('intval', $gateIds)) . ')
+				AND ar.time_in >= ' . $todayStart . '
+				AND ar.time_in < ' . $todayEnd . '
+			WHERE es.studying_mode = 1
+			GROUP BY es.id';
 	}
 
 	/**

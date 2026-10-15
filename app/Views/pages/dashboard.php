@@ -273,6 +273,26 @@
 						.wg-metrics a.metric-absent { background: #fef2f2; border: 2px solid #dc2626; }
 						.wg-metrics a.metric-absent strong, .wg-metrics a.metric-absent em { color: #dc2626; }
 						.wg-metrics a:hover strong { text-decoration: underline; }
+						.wg-day { margin: 12px 0 4px; }
+						.wg-day-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+						.wg-day-head h5 { margin: 0; font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #1d4ed8; }
+						.wg-day-head span { color: #64748b; font-size: .75rem; }
+						.wg-taps { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+						.wg-tap { display: block; text-decoration: none; color: inherit; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 12px 10px; min-width: 0; }
+						.wg-tap:hover { box-shadow: 0 6px 16px rgba(15, 23, 42, .1); transform: translateY(-1px); }
+						.wg-tap .step { font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+						.wg-tap b { display: block; margin-top: 2px; font-size: 1.85rem; line-height: 1; }
+						.wg-tap strong { display: block; margin-top: 4px; font-size: .92rem; color: #0f172a; }
+						.wg-tap small { display: block; margin-top: 2px; color: #64748b; font-size: .75rem; }
+						.wg-tap.arrive { border-top: 4px solid #16a34a; }
+						.wg-tap.arrive .step, .wg-tap.arrive b { color: #15803d; }
+						.wg-tap.lunch { border-top: 4px solid #d97706; }
+						.wg-tap.lunch .step, .wg-tap.lunch b { color: #b45309; }
+						.wg-tap.back { border-top: 4px solid #2563eb; }
+						.wg-tap.back .step, .wg-tap.back b { color: #1d4ed8; }
+						.wg-tap.leave { border-top: 4px solid #7c3aed; }
+						.wg-tap.leave .step, .wg-tap.leave b { color: #6d28d9; }
+						@media (min-width: 900px) { .wg-taps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 						.wg-ranks { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
 						.wg-rank { background: rgba(255,255,255,.9); border-radius: 10px; padding: 8px 10px; }
 						.wg-rank h5 { margin: 0 0 6px; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
@@ -380,6 +400,43 @@
 						<div class="wg-master">
 							<div class="wg-badge"><?= $wgSingle ? 'Your school' : 'Master school'; ?></div>
 							<h3><?= esc($wgMaster['name']); ?></h3>
+							<?php
+								$dayTaps = $wgMaster['day_taps'] ?? ['morning' => 0, 'lunch' => 0, 'back' => 0, 'evening' => 0];
+								$tapBase = base_url('wisdom-day-scholar/' . (int) $wgMaster['id'] . '/');
+								$arrived = (int) ($dayTaps['morning'] ?? 0);
+							?>
+							<div class="wg-day">
+								<div class="wg-day-head">
+									<h5>Day scholars · 4 taps today</h5>
+									<span>School gate · click a card to see who</span>
+								</div>
+								<div class="wg-taps">
+									<a class="wg-tap arrive" href="<?= $tapBase; ?>morning">
+										<span class="step">1 · Morning</span>
+										<b><?= $arrived; ?></b>
+										<strong>Arrived</strong>
+										<small>Came in this morning</small>
+									</a>
+									<a class="wg-tap lunch" href="<?= $tapBase; ?>lunch">
+										<span class="step">2 · Lunch out</span>
+										<b><?= (int) ($dayTaps['lunch'] ?? 0); ?></b>
+										<strong>Went out</strong>
+										<small>Left for lunch<?php if ($arrived > 0): ?> · <?= (int) ($dayTaps['lunch'] ?? 0); ?> of <?= $arrived; ?><?php endif; ?></small>
+									</a>
+									<a class="wg-tap back" href="<?= $tapBase; ?>back">
+										<span class="step">3 · Lunch back</span>
+										<b><?= (int) ($dayTaps['back'] ?? 0); ?></b>
+										<strong>Returned</strong>
+										<small>Back from lunch<?php if ($arrived > 0): ?> · <?= (int) ($dayTaps['back'] ?? 0); ?> of <?= $arrived; ?><?php endif; ?></small>
+									</a>
+									<a class="wg-tap leave" href="<?= $tapBase; ?>evening">
+										<span class="step">4 · Evening</span>
+										<b><?= (int) ($dayTaps['evening'] ?? 0); ?></b>
+										<strong>Left school</strong>
+										<small>Went home<?php if ($arrived > 0): ?> · <?= (int) ($dayTaps['evening'] ?? 0); ?> of <?= $arrived; ?><?php endif; ?></small>
+									</a>
+								</div>
+							</div>
 							<div class="wg-metrics">
 								<div><strong><?= (int) $wgMaster['students']; ?></strong><em>Students</em></div>
 								<div><strong><?= (int) $wgMaster['boys']; ?></strong><em>Boys</em></div>
@@ -387,7 +444,7 @@
 								<div><strong><?= (int) $wgMaster['staff']; ?></strong><em>Staff</em></div>
 								<?php $matt = $wgMaster['att_summary'] ?? []; ?>
 								<div><strong><?= (int) ($matt['daily_present'] ?? 0); ?></strong><em>Total present</em><br><small>School gate and boarding</small></div>
-								<div><strong><?= (int) ($matt['day_present'] ?? 0); ?></strong><em>Dayscholar present</em><br><small>School gate</small></div>
+								<a href="<?= $tapBase; ?>morning"><strong><?= (int) ($matt['day_present'] ?? 0); ?></strong><em>Dayscholar present</em><br><small>School gate · see who</small></a>
 								<div><strong><?= (int) ($matt['board_present'] ?? 0); ?></strong><em>Boarding present</em><br><small>Boarding device</small></div>
 								<div><strong><?= (int) ($matt['girls_present'] ?? 0); ?></strong><em>Girls present</em></div>
 								<div><strong><?= (int) ($matt['boys_present'] ?? 0); ?></strong><em>Boys present</em></div>
