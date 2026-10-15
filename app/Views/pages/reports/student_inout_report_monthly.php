@@ -116,7 +116,7 @@ if ($show_header) {
 					$("#ioDayCaption").text("Day " + day);
 				}
 				var $vis = day === "all" ? $(".io-visit-row") : $(".io-visit-row[data-day='" + day + "']");
-				var ins = $vis.length, outs = $vis.filter("[data-out='1']").length;
+				var ins = $vis.filter("[data-morning='1']").length, outs = $vis.filter("[data-out='1']").length;
 				$("#ioDayIn").text(ins);
 				$("#ioDayOut").text(outs);
 				$("#ioDayMiss").text(ins - outs);
@@ -149,6 +149,9 @@ foreach ($visits as $vv) {
 		continue;
 	}
 	$dayKpi['in']++;
+	if (($vv['in'] ?? '') === '') {
+		$dayKpi['in']--;
+	}
 	if (!empty($vv['lunch'])) {
 		$dayKpi['lunch']++;
 	}
@@ -284,7 +287,7 @@ foreach ($visits as $vv) {
 						$hide = ($defaultDay > 0 && $day !== $defaultDay);
 						$complete = !empty($v['complete']);
 						?>
-						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-day="<?= $day; ?>" data-out="<?= $complete ? '1' : '0'; ?>" data-lunch="<?= !empty($v['lunch']) ? '1' : '0'; ?>" data-back="<?= !empty($v['back']) ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
+						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-day="<?= $day; ?>" data-out="<?= $complete ? '1' : '0'; ?>" data-morning="<?= ($v['in'] ?? '') !== '' ? '1' : '0'; ?>" data-lunch="<?= !empty($v['lunch']) ? '1' : '0'; ?>" data-back="<?= !empty($v['back']) ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
 							<td><?= $n++; ?></td>
 							<td>
 								<strong><?= esc(trim(($v['fname'] ?? '') . ' ' . ($v['lname'] ?? ''))); ?></strong>
@@ -293,7 +296,7 @@ foreach ($visits as $vv) {
 							<?php if ($showClassCol) : ?><td><?= esc($v['class_name'] ?? ''); ?></td><?php endif; ?>
 							<td><?= sprintf('%02d', $day); ?></td>
 							<?php if (!$singleArea) : ?><td><?= esc($v['area'] ?? ''); ?></td><?php endif; ?>
-							<td><span class="io-time in"><?= esc($v['in'] ?? '—'); ?></span></td>
+							<td><?= ($v['in'] ?? '') !== '' ? '<span class="io-time in">' . esc($v['in']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>
 							<?php if ($gateTaps): ?>
 							<td><?= !empty($v['lunch']) ? '<span class="io-time lunch">' . esc($v['lunch']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>
 							<td><?= !empty($v['back']) ? '<span class="io-time back">' . esc($v['back']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>

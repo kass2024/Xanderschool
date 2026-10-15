@@ -15,7 +15,9 @@ USER = "root"
 PASSWORD = os.environ.get("VPS_PASSWORD", "6W7sa2g4dMEwcN80ZU")
 REMOTE = "/opt/xander-school/app"
 FILES = [
+    "app/Libraries/AttendanceScanService.php",
     "app/Models/AttendanceAreaModel.php",
+    "app/Services/WisdomGroupOverview.php",
     "app/Views/pages/reports/student_inout_report_monthly.php",
     "public/assets/css/inout-report.css",
 ]
@@ -40,7 +42,19 @@ cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 8
 docker exec xander_school_app php -r 'if (function_exists("opcache_reset")) { opcache_reset(); echo "opcache_reset OK\n"; }'
+docker exec xander_school_app php -l /var/www/html/app/Libraries/AttendanceScanService.php
 docker exec xander_school_app php -l /var/www/html/app/Models/AttendanceAreaModel.php
+docker exec xander_school_app grep -n "function placeDayStamps" /var/www/html/app/Libraries/AttendanceScanService.php
+docker exec -i xander_school_app php <<'PHP'
+<?php
+define('FCPATH', '/var/www/html/public/');
+chdir(FCPATH);
+require '/var/www/html/app/Config/Paths.php';
+$paths = new Config\Paths();
+$app = require rtrim($paths->systemDirectory, '/ ') . '/bootstrap.php';
+$app->initialize();
+echo 'corrected ' . \App\Libraries\AttendanceScanService::correctGateTapSlots(0) . PHP_EOL;
+PHP
 docker exec xander_school_app php -l /var/www/html/app/Views/pages/reports/student_inout_report_monthly.php
 docker exec xander_school_app grep -n "gate_taps" /var/www/html/app/Models/AttendanceAreaModel.php
 docker exec xander_school_app grep -n "Lunch out" /var/www/html/app/Views/pages/reports/student_inout_report_monthly.php
@@ -63,7 +77,7 @@ foreach (["/login", "/forget/reset", "/student-report/inout/monthly"] as $path) 
 '
 echo DONE
 """
-    _stdin, stdout, stderr = client.exec_command(checks, timeout=240)
+    _stdin, stdout, stderr = client.exec_command(checks, timeout=420)
     sys.stdout.buffer.write(stdout.read())
     sys.stderr.buffer.write(stderr.read())
     code = stdout.channel.recv_exit_status()

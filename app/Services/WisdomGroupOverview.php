@@ -470,13 +470,15 @@ class WisdomGroupOverview
 	public function dayScholarTapSummary(int $schoolId, int $yearId): array
 	{
 		$blank = ['morning' => 0, 'lunch' => 0, 'back' => 0, 'evening' => 0];
+		\App\Libraries\AttendanceScanService::correctGateTapSlotsOnce($schoolId);
 		$base = $this->dayScholarTapBaseSql($schoolId, $yearId);
 		if ($base === null) {
 			return $blank;
 		}
 		try {
+			$cut = $this->morningCutoffMinute($schoolId);
 			$row = \Config\Database::connect()->query(
-				'SELECT COUNT(*) AS morning,
+				'SELECT SUM(CASE WHEN (HOUR(FROM_UNIXTIME(time_in)) * 60 + MINUTE(FROM_UNIXTIME(time_in))) < ' . (int) $cut . ' THEN 1 ELSE 0 END) AS morning,
 					SUM(lunch_at > 0) AS lunch,
 					SUM(back_at > 0) AS back,
 					SUM(time_out > 0) AS evening
@@ -501,12 +503,13 @@ class WisdomGroupOverview
 	public function dayScholarTapList(int $schoolId, int $yearId, string $kind): array
 	{
 		$kind = $this->dayScholarTapKind($kind);
+		$cut = $this->morningCutoffMinute($schoolId);
 		$base = $this->dayScholarTapBaseSql($schoolId, $yearId);
 		if ($base === null) {
 			return [];
 		}
 		$where = [
-			'morning' => '1=1',
+			'morning' => '(HOUR(FROM_UNIXTIME(taps.time_in)) * 60 + MINUTE(FROM_UNIXTIME(taps.time_in))) < ' . (int) $cut,
 			'lunch' => 'taps.lunch_at > 0',
 			'back' => 'taps.back_at > 0',
 			'evening' => 'taps.time_out > 0',
@@ -531,13 +534,18 @@ class WisdomGroupOverview
 			if ($class === '') {
 				$class = trim((string) ($row['level_title'] ?? ''));
 			}
+			$timeIn = (int) ($row['time_in'] ?? 0);
+			$minute = $timeIn > 0 ? ((int) date('G', $timeIn)) * 60 + (int) date('i', $timeIn) : 0;
+			if ($timeIn > 0 && $minute >= $cut) {
+				$timeIn = 0;
+			}
 			$list[] = [
 				'id' => (int) ($row['id'] ?? 0),
 				'name' => trim((string) ($row['student_name'] ?? '')),
 				'sex' => (string) ($row['sex'] ?? ''),
 				'regno' => (string) ($row['regno'] ?? ''),
 				'class' => $class,
-				'time_in' => (int) ($row['time_in'] ?? 0),
+				'time_in' => $timeIn,
 				'lunch_at' => (int) ($row['lunch_at'] ?? 0),
 				'back_at' => (int) ($row['back_at'] ?? 0),
 				'time_out' => (int) ($row['time_out'] ?? 0),
@@ -550,6 +558,20 @@ class WisdomGroupOverview
 	{
 		$kind = strtolower(trim($kind));
 		return in_array($kind, ['morning', 'lunch', 'back', 'evening'], true) ? $kind : 'morning';
+	}
+
+	/** Minute of day when lunch starts, minus the five-minute early window. */
+	private function morningCutoffMinute(int $schoolId): int
+	{
+		$starts = [];
+		foreach (\App\Libraries\AttendanceScanService::dayClockWindows($schoolId) as $windows) {
+			$start = (int) ($windows['lunch_start'] ?? 0);
+			if ($start > 0) {
+				$starts[] = $start;
+			}
+		}
+		$lunch = $starts !== [] ? min($starts) : (12 * 60);
+		return max(0, $lunch - 5);
 	}
 
 	/**

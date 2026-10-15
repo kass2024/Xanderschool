@@ -137,6 +137,395 @@ class AttendanceScanService
 			'visitors' => self::visitorList($schoolId),
 			'visitor_visits_today' => self::visitorVisitsToday($schoolId),
 			'prep_rota' => (new \App\Models\PrepTimetableModel())->deviceRota($schoolId),
+			'day_clock' => self::dayClockWindows($schoolId),
+			'visit_mode' => self::visitKioskMode($schoolId),
+		];
+	}
+
+	/**
+	 * Kiosk parent-visiting mode from school settings. normal | visiting.
+	 */
+	public static function visitKioskMode(int $schoolId): string
+	{
+		try {
+			$settings = (new \App\Models\StudentVisitorModel())->getSettings($schoolId);
+			return (($settings['kiosk_mode'] ?? 'normal') === 'visiting') ? 'visiting' : 'normal';
+		} catch (\Throwable $e) {
+			return 'normal';
+		}
+	}
+
+	/**
+	 * Lunch, return-after-lunch, and evening windows from the live timetable.
+	 * Morning presence is not limited to a window.
+	 *
+	 * @return array<string,array<string,int>>
+	 */
+	public static function dayClockWindows(int $schoolId): array
+	{
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('timetable_slots')) {
+			return [];
+		}
+		$tracks = [
+			'nursery' => [\App\Libraries\TimetableTrack::NURSERY],
+			'primary' => [\App\Libraries\TimetableTrack::PRIMARY],
+			'high_school' => [
+				\App\Libraries\TimetableTrack::O_LEVEL,
+				\App\Libraries\TimetableTrack::A_LEVEL,
+				\App\Libraries\TimetableTrack::RTB,
+				\App\Libraries\TimetableTrack::SPECIAL,
+				\App\Libraries\TimetableTrack::ALL,
+			],
+		];
+		$out = [];
+		foreach ($tracks as $phase => $keys) {
+			foreach ($keys as $track) {
+				$rows = $db->table('timetable_slots')
+					->where('school_id', $schoolId)
+					->where('track_key', $track)
+					->orderBy('sort_order', 'ASC')
+					->get()
+					->getResultArray();
+				$windows = self::windowsFromSlots($rows);
+				if ($windows !== null) {
+					$out[$phase] = $windows;
+					break;
+				}
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $slots
+	 * @return array<string,int>|null
+	 */
+	private static function windowsFromSlots(array $slots): ?array
+	{
+		$lunchStart = -1;
+		$lunchEnd = -1;
+		$dayEnd = -1;
+		foreach ($slots as $slot) {
+			$label = strtoupper(trim((string) ($slot['label'] ?? '') . ' ' . (string) ($slot['break_label'] ?? '')));
+			$start = self::clockToMinutes((string) ($slot['start_time'] ?? ''));
+			$end = self::clockToMinutes((string) ($slot['end_time'] ?? ''));
+			if ($end > $dayEnd) {
+				$dayEnd = $end;
+			}
+			if ($lunchStart < 0 && strpos($label, 'LUNCH') !== false && $start >= 0 && $end > $start) {
+				$lunchStart = $start;
+				$lunchEnd = $end;
+			}
+		}
+		if ($lunchStart < 0 || $lunchEnd <= $lunchStart || $dayEnd <= $lunchEnd) {
+			return null;
+		}
+		$backStart = $lunchEnd;
+		$backEnd = min($lunchEnd + 45, max($lunchEnd + 20, $dayEnd - 40));
+		if ($backEnd <= $backStart) {
+			$backEnd = $backStart + 40;
+		}
+		$eveningStart = max($backEnd, $dayEnd - 30);
+		$eveningEnd = $dayEnd + 45;
+		return [
+			'lunch_start' => $lunchStart,
+			'lunch_end' => $lunchEnd,
+			'back_start' => $backStart,
+			'back_end' => $backEnd,
+			'evening_start' => $eveningStart,
+			'evening_end' => $eveningEnd,
+		];
+	}
+
+	private static function clockToMinutes(string $clock): int
+	{
+		if (!preg_match('/^(\d{1,2}):(\d{2})/', trim($clock), $m)) {
+			return -1;
+		}
+		return ((int) $m[1]) * 60 + (int) $m[2];
+	}
+
+	/** Nursery, primary, or high school. Same buckets as the gate kiosk. */
+	public static function phaseForClassName(string $className): string
+	{
+		$s = strtolower($className);
+		if (strpos($s, 'baby') !== false || strpos($s, 'middle') !== false || strpos($s, 'top') !== false || strpos($s, 'nursery') !== false) {
+			return 'nursery';
+		}
+		if (strpos($s, 'primary') !== false || preg_match('/\bp\s*[1-6]\b/', $s)) {
+			return 'primary';
+		}
+		return 'high_school';
+	}
+
+	/**
+	 * @return array{lunch_start:int,lunch_end:int,back_start:int,back_end:int,evening_start:int,evening_end:int}
+	 */
+	public static function windowsForPhase(int $schoolId, string $phase): array
+	{
+		$all = self::dayClockWindows($schoolId);
+		if (!empty($all[$phase]) && is_array($all[$phase])) {
+			return $all[$phase];
+		}
+		if ($phase === 'nursery') {
+			return [
+				'lunch_start' => 12 * 60,
+				'lunch_end' => 13 * 60,
+				'back_start' => 13 * 60,
+				'back_end' => 13 * 60 + 45,
+				'evening_start' => 16 * 60,
+				'evening_end' => 17 * 60 + 15,
+			];
+		}
+		return [
+			'lunch_start' => 12 * 60,
+			'lunch_end' => 13 * 60 + 10,
+			'back_start' => 13 * 60 + 10,
+			'back_end' => 13 * 60 + 55,
+			'evening_start' => 16 * 60,
+			'evening_end' => 17 * 60 + 15,
+		];
+	}
+
+	/** morning, lunch, back, or evening. A missed earlier tap stays empty. */
+	public static function slotForMinute(int $minute, array $windows): string
+	{
+		$lunchStart = (int) ($windows['lunch_start'] ?? (12 * 60));
+		$lunchEnd = (int) ($windows['lunch_end'] ?? (13 * 60 + 10));
+		$backStart = (int) ($windows['back_start'] ?? $lunchEnd);
+		$backEnd = (int) ($windows['back_end'] ?? ($lunchEnd + 45));
+		$eveningStart = (int) ($windows['evening_start'] ?? (16 * 60));
+		$checkout = ($eveningStart > 0 && $eveningStart < 14 * 60) ? $eveningStart : 14 * 60;
+		if ($minute < $lunchStart - 5) {
+			return 'morning';
+		}
+		if ($minute <= $lunchEnd + 5) {
+			return 'lunch';
+		}
+		if ($minute >= $backStart && $minute <= $backEnd) {
+			return 'back';
+		}
+		if ($minute >= $checkout) {
+			return 'evening';
+		}
+		return 'back';
+	}
+
+	/**
+	 * Put each saved stamp in the clock it belongs to. The first stamp of a slot wins, except evening which keeps the latest.
+	 *
+	 * @param list<int> $epochs
+	 * @return array{morning:int,lunch:int,back:int,evening:int}
+	 */
+	public static function placeDayStamps(array $epochs, array $windows): array
+	{
+		$out = ['morning' => 0, 'lunch' => 0, 'back' => 0, 'evening' => 0];
+		foreach ($epochs as $epoch) {
+			$epoch = (int) $epoch;
+			if ($epoch < 1000000000) {
+				continue;
+			}
+			$minute = ((int) date('G', $epoch)) * 60 + (int) date('i', $epoch);
+			$slot = self::slotForMinute($minute, $windows);
+			if ($slot === 'evening') {
+				if ($epoch >= $out['evening']) {
+					$out['evening'] = $epoch;
+				}
+				continue;
+			}
+			if ($out[$slot] === 0 || $epoch < $out[$slot]) {
+				$out[$slot] = $epoch;
+			}
+		}
+		return $out;
+	}
+
+	/** Move gate taps that were stored in the wrong column. Safe to run again. */
+	public static function correctGateTapSlots(int $schoolId = 0): int
+	{
+		self::ensureDayMarkColumns();
+		$db = \Config\Database::connect();
+		if (!$db->tableExists('attendance_records') || !$db->tableExists('attendance_areas')) {
+			return 0;
+		}
+		$schoolIds = [];
+		if ($schoolId > 0) {
+			$schoolIds[] = $schoolId;
+		} else {
+			foreach ($db->table('attendance_areas')->select('school_id')->groupBy('school_id')->get()->getResultArray() as $row) {
+				$sid = (int) ($row['school_id'] ?? 0);
+				if ($sid > 0) {
+					$schoolIds[] = $sid;
+				}
+			}
+		}
+		$updated = 0;
+		foreach ($schoolIds as $sid) {
+			$gateIds = [];
+			foreach ($db->table('attendance_areas')->select('id, name')->where('school_id', $sid)->get()->getResultArray() as $area) {
+				if (self::isSchoolGateArea((string) ($area['name'] ?? ''))) {
+					$gateIds[] = (int) $area['id'];
+				}
+			}
+			if ($gateIds === []) {
+				continue;
+			}
+			$rows = $db->query(
+				'SELECT ar.id, ar.user_id, ar.time_in, ar.time_out, ar.lunch_at, ar.back_at,
+					TRIM(CONCAT(COALESCE(l.title, ""), " ", COALESCE(c.title, ""))) AS class_name
+				FROM attendance_records ar
+				LEFT JOIN class_records cr ON cr.id = (
+					SELECT cr2.id FROM class_records cr2 WHERE cr2.student = ar.user_id ORDER BY cr2.id DESC LIMIT 1
+				)
+				LEFT JOIN classes c ON c.id = cr.class
+				LEFT JOIN levels l ON l.id = c.level
+				WHERE ar.school_id = ' . (int) $sid . '
+					AND ar.user_type = 0
+					AND ar.area_id IN (' . implode(',', $gateIds) . ')'
+			)->getResultArray();
+			foreach ($rows as $row) {
+				$windows = self::windowsForPhase($sid, self::phaseForClassName((string) ($row['class_name'] ?? '')));
+				$placed = self::placeDayStamps([
+					(int) ($row['time_in'] ?? 0),
+					(int) ($row['lunch_at'] ?? 0),
+					(int) ($row['back_at'] ?? 0),
+					(int) ($row['time_out'] ?? 0),
+				], $windows);
+				$timeIn = (int) ($row['time_in'] ?? 0);
+				$newIn = $placed['morning'] > 0 ? $placed['morning'] : $timeIn;
+				$changes = [];
+				if ($newIn !== $timeIn && $placed['morning'] > 0) {
+					$changes['time_in'] = $newIn;
+				}
+				if ((int) ($row['lunch_at'] ?? 0) !== $placed['lunch']) {
+					$changes['lunch_at'] = $placed['lunch'];
+				}
+				if ((int) ($row['back_at'] ?? 0) !== $placed['back']) {
+					$changes['back_at'] = $placed['back'];
+				}
+				if ((int) ($row['time_out'] ?? 0) !== $placed['evening']) {
+					$changes['time_out'] = $placed['evening'];
+				}
+				if ($changes === []) {
+					continue;
+				}
+				$db->table('attendance_records')->where('id', (int) $row['id'])->update($changes);
+				$updated++;
+			}
+		}
+		return $updated;
+	}
+
+	public static function correctGateTapSlotsOnce(int $schoolId): int
+	{
+		if ($schoolId < 1) {
+			return 0;
+		}
+		$flag = WRITEPATH . 'cache/gate_slots_v1_' . $schoolId . '.flag';
+		if (is_file($flag)) {
+			return 0;
+		}
+		$updated = self::correctGateTapSlots($schoolId);
+		if (!is_dir(dirname($flag))) {
+			@mkdir(dirname($flag), 0775, true);
+		}
+		@file_put_contents($flag, (string) $updated);
+		return $updated;
+	}
+
+	private static function studentClassLabel($db, int $studentId, int $schoolId): string
+	{
+		$year = self::academicYear($schoolId);
+		$row = $db->query(
+			'SELECT TRIM(CONCAT(COALESCE(l.title, ""), " ", COALESCE(c.title, ""))) AS class_name
+			FROM class_records cr
+			INNER JOIN classes c ON c.id = cr.class
+			LEFT JOIN levels l ON l.id = c.level
+			WHERE cr.student = ' . (int) $studentId . ' AND cr.year = ' . (int) $year . '
+			ORDER BY cr.id DESC LIMIT 1'
+		)->getRowArray();
+		return trim((string) ($row['class_name'] ?? ''));
+	}
+
+	private static function slotForStudentTime($db, $student, int $schoolId, int $time): string
+	{
+		$label = self::studentClassLabel($db, (int) ($student->id ?? 0), $schoolId);
+		$windows = self::windowsForPhase($schoolId, self::phaseForClassName($label));
+		$minute = ((int) date('G', $time)) * 60 + (int) date('i', $time);
+		return self::slotForMinute($minute, $windows);
+	}
+
+	private static function ensureDayMarkColumns(): void
+	{
+		static $ready = false;
+		if ($ready) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		foreach (['lunch_at', 'back_at'] as $column) {
+			if (!$db->fieldExists($column, 'attendance_records')) {
+				$db->query("ALTER TABLE `attendance_records` ADD COLUMN `{$column}` INT NOT NULL DEFAULT 0");
+			}
+		}
+		$ready = true;
+	}
+
+	/**
+	 * Lunch or after-lunch tap. Does not replace morning presence or evening leave.
+	 *
+	 * @param object $student
+	 * @return array<string,mixed>
+	 */
+	private static function applyDayScholarMark($db, $student, int $schoolId, int $areaId, string $areaName, int $eventTime, string $wanted): array
+	{
+		self::ensureDayMarkColumns();
+		$column = $wanted === 'LUNCH' ? 'lunch_at' : 'back_at';
+		$time = $eventTime > 1000000000 ? $eventTime : time();
+		$todayStart = strtotime('today', $time);
+		$todayEnd = strtotime('tomorrow', $time) - 1;
+		$row = $db->table('attendance_records')
+			->where('user_id', $student->id)
+			->where('school_id', $schoolId)
+			->where('area_id', $areaId)
+			->where('user_type', 0)
+			->where('time_in >=', $todayStart)
+			->where('time_in <=', $todayEnd)
+			->orderBy('id', 'ASC')
+			->get()
+			->getRow();
+		$already = false;
+		if (!$row) {
+			$db->table('attendance_records')->insert([
+				'user_id' => $student->id,
+				'user_type' => 0,
+				'time_in' => $time,
+				'time_out' => 0,
+				$column => $time,
+				'school_id' => $schoolId,
+				'area_id' => $areaId,
+				'shift_id' => 1,
+			]);
+		} else {
+			$existing = (int) ($row->{$column} ?? 0);
+			if ($existing > 0) {
+				$already = true;
+				$time = $existing;
+			} else {
+				$db->table('attendance_records')->where('id', $row->id)->update([$column => $time]);
+			}
+		}
+		return [
+			'success' => 1,
+			'already' => $already ? 1 : 0,
+			'kind' => 'student',
+			'status' => $wanted,
+			'time' => date('H:i', $time),
+			'message' => $already
+				? ($wanted === 'LUNCH' ? 'Lunch already clocked' : 'Already back from lunch')
+				: ($wanted === 'LUNCH' ? 'Lunch clock saved' : 'Back from lunch'),
+			'person' => self::studentPayload($student, '', ''),
+			'area' => ['id' => $areaId, 'name' => $areaName],
 		];
 	}
 
@@ -155,8 +544,9 @@ class AttendanceScanService
 		$todayStart = strtotime('today');
 		$todayEnd = strtotime('tomorrow') - 1;
 		$day = date('Y-m-d');
+		self::ensureDayMarkColumns();
 		$rows = $db->table('attendance_records')
-			->select('user_id, area_id, time_in, time_out')
+			->select('user_id, area_id, time_in, time_out, lunch_at, back_at')
 			->whereIn('school_id', $scopeSchoolIds)
 			->where('user_type', 0)
 			->where('time_in >=', $todayStart)
@@ -181,6 +571,8 @@ class AttendanceScanService
 				'day' => $day,
 				'time_in' => (int) ($r['time_in'] ?? 0),
 				'time_out' => (int) ($r['time_out'] ?? 0),
+				'lunch_at' => (int) ($r['lunch_at'] ?? 0),
+				'back_at' => (int) ($r['back_at'] ?? 0),
 			];
 		}
 		return array_values($out);
@@ -433,18 +825,26 @@ class AttendanceScanService
 			$students[] = $cardRow;
 		}
 
-		$visitorRows = $db->table('student_visitors')
-			->select('id, names, card')
-			->whereIn('school_id', $scopeSchoolIds)
-			->where('status', 1)
+		$visitorRows = $db->table('student_visitors v')
+			->select("v.id, v.student_id, v.names, v.phone, v.relationship, v.card, v.photo, s.studying_mode, CONCAT(s.fname, ' ', s.lname) AS student_name, s.regno AS student_regno")
+			->join('students s', 's.id = v.student_id', 'left')
+			->whereIn('v.school_id', $scopeSchoolIds)
+			->where('v.status', 1)
 			->get()
 			->getResultArray();
 		$visitors = [];
 		foreach ($visitorRows as $r) {
 			$visitors[] = [
 				'id' => (int) ($r['id'] ?? 0),
+				'student_id' => (int) ($r['student_id'] ?? 0),
 				'names' => trim((string) ($r['names'] ?? '')),
+				'phone' => (string) ($r['phone'] ?? ''),
+				'relationship' => (string) ($r['relationship'] ?? ''),
+				'photo' => (string) ($r['photo'] ?? ''),
 				'card' => strtoupper(trim((string) ($r['card'] ?? ''))),
+				'student_name' => trim((string) ($r['student_name'] ?? '')),
+				'student_regno' => (string) ($r['student_regno'] ?? ''),
+				'studying_mode' => (int) ($r['studying_mode'] ?? -1),
 			];
 		}
 
@@ -471,6 +871,31 @@ class AttendanceScanService
 			'visitors' => $visitors,
 			'staff' => $staff,
 			'prep_rota' => (new \App\Models\PrepTimetableModel())->deviceRota($schoolId),
+			'visit_mode' => self::visitKioskMode($schoolId),
+		];
+	}
+
+	/**
+	 * Allowed visitors for one student. Does not clock a visit.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function allowedVisitorsForStudent(int $schoolId, int $studentId): array
+	{
+		$studentId = (int) $studentId;
+		$visitors = [];
+		if ($schoolId > 0 && $studentId > 0) {
+			foreach (self::visitorList($schoolId) as $row) {
+				if ((int) ($row['student_id'] ?? 0) === $studentId) {
+					$visitors[] = $row;
+				}
+			}
+		}
+		return [
+			'success' => 1,
+			'student_id' => $studentId,
+			'visitors' => $visitors,
+			'visit_mode' => self::visitKioskMode($schoolId),
 		];
 	}
 
@@ -858,7 +1283,7 @@ class AttendanceScanService
 	private static function applyStudentEventInner(int $schoolId, int $studentId, int $areaId, int $eventTime = 0, string $wanted = ''): array
 	{
 		$wanted = strtoupper(trim($wanted));
-		if ($wanted !== 'IN' && $wanted !== 'OUT') {
+		if (!in_array($wanted, ['IN', 'OUT', 'LUNCH', 'BACK'], true)) {
 			return self::scanStudent($schoolId, $studentId, $areaId, $eventTime);
 		}
 
@@ -921,11 +1346,24 @@ class AttendanceScanService
 				'message' => 'Transport not paid',
 			];
 		}
-		if (self::isEntryOnlyArea($areaName) && $wanted === 'OUT') {
+		if (self::isEntryOnlyArea($areaName) && $wanted !== 'IN') {
 			$wanted = 'IN';
 		}
 
+		if ($wanted === 'LUNCH' || $wanted === 'BACK') {
+			return self::applyDayScholarMark($db, $student, $schoolId, $areaId, $areaName, $eventTime, $wanted);
+		}
+
 		$time = $eventTime > 1000000000 ? $eventTime : time();
+		if ($wanted === 'IN' && self::isSchoolGateArea($areaName)) {
+			$slot = self::slotForStudentTime($db, $student, $schoolId, $time);
+			if ($slot === 'lunch' || $slot === 'back') {
+				return self::applyDayScholarMark($db, $student, $schoolId, $areaId, $areaName, $time, $slot === 'lunch' ? 'LUNCH' : 'BACK');
+			}
+			if ($slot === 'evening') {
+				$wanted = 'OUT';
+			}
+		}
 		$todayStart = strtotime('today', $time);
 		$todayEnd = strtotime('tomorrow', $time) - 1;
 		$row = $db->table('attendance_records')
@@ -2386,8 +2824,105 @@ class AttendanceScanService
 	 * @param array<string,mixed> $in
 	 * @return array<string,mixed>
 	 */
+	/**
+	 * Boarding students for the HeyStar terminal. Card text is the server value,
+	 * not the staff byte-reversed conversion.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	public static function heystarBoardingRoster(int $schoolId): array
+	{
+		if ($schoolId <= 0) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		(new \App\Models\StudentModel())->ensureCardNfcColumn();
+		$hasNfc = $db->fieldExists('card_nfc', 'students');
+		$select = 'id, fname, lname, card' . ($hasNfc ? ', card_nfc' : '');
+		$rows = $db->table('students')
+			->select($select)
+			->where('school_id', $schoolId)
+			->where('status', 1)
+			->where('studying_mode', 0)
+			->orderBy('fname', 'ASC')
+			->orderBy('lname', 'ASC')
+			->get()
+			->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id <= 0) {
+				continue;
+			}
+			$stored = trim((string) ($row['card'] ?? ''));
+			$nfc = $hasNfc ? trim((string) ($row['card_nfc'] ?? '')) : '';
+			helper('card_uid');
+			$cardNo = $stored !== '' ? heystar_card_no_from_stored($stored) : '';
+			$name = trim((string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? ''));
+			$out[] = [
+				'id' => $id,
+				'sn' => 'S' . $id,
+				'name' => $name,
+				'card' => $stored,
+				'card_nfc' => $nfc,
+				'cardNo' => $cardNo,
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * HeyStar student (sn S{id}). Card value is not rewritten here.
+	 * A look is saved in boarding attendance, never in staff attendance.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function clockBoardingStudent(int $schoolId, int $studentId, int $eventTime = 0): array
+	{
+		if ($schoolId <= 0 || $studentId <= 0) {
+			return ['success' => 0, 'message' => 'Student not found'];
+		}
+		if ($eventTime <= 0) {
+			$eventTime = time();
+		}
+		$db = \Config\Database::connect();
+		$student = $db->table('students')
+			->select('id, fname, lname, studying_mode')
+			->where('id', $studentId)
+			->where('school_id', $schoolId)
+			->where('status', 1)
+			->get()
+			->getRow();
+		if (!$student || (int) ($student->studying_mode ?? 1) !== 0) {
+			return ['success' => 0, 'message' => 'Boarding student not found'];
+		}
+		$recent = $db->table('boarding_attendance')
+			->select('clock_time')
+			->where('student_id', $studentId)
+			->orderBy('id', 'DESC')
+			->get(1)
+			->getRow();
+		if ($recent && strtotime((string) $recent->clock_time) > ($eventTime - 120)) {
+			return ['success' => 1, 'already' => 1, 'student_id' => $studentId];
+		}
+		$term = $db->table('schools')->select('active_term')->where('id', $schoolId)->get()->getRow();
+		$db->table('boarding_attendance')->insert([
+			'student_id' => $studentId,
+			'datee' => date('Y-m-d', $eventTime),
+			'clock_time' => date('Y-m-d H:i:s', $eventTime),
+			'active_term' => (int) ($term->active_term ?? 0),
+		]);
+		return [
+			'success' => 1,
+			'student_id' => $studentId,
+			'name' => trim((string) $student->fname . ' ' . (string) $student->lname),
+			'status' => 'IN',
+		];
+	}
+
 	public static function ingestHeyStarRecord(array $in): array
 	{
+		self::rememberHeyStarLanIp($in);
 		HeyStarDeviceStore::ensureSchema();
 		$ack = ['result' => 1, 'code' => '000'];
 		$schoolId = (int) ($in['school_id'] ?? 0);
@@ -2417,6 +2952,9 @@ class AttendanceScanService
 		}
 
 		$sn = trim((string) ($in['personSn'] ?? ''));
+		if (preg_match('/^S(\d+)$/', $sn, $m)) {
+			return array_merge($ack, self::clockBoardingStudent($schoolId, (int) $m[1], $eventTime));
+		}
 		if (preg_match('/^T(\d+)$/', $sn, $m)) {
 			$staffId = (int) $m[1];
 			self::enrollFaceFromHeyStar($schoolId, $staffId, null);
@@ -2470,9 +3008,19 @@ class AttendanceScanService
 	 */
 	public static function ingestHeyStarHeartbeat(array $in): void
 	{
-		$schoolId = (int) ($in['school_id'] ?? 0);
+		self::rememberHeyStarLanIp($in);
+	}
+
+	/**
+	 * Keep the terminal's school-network address when the device reports it.
+	 * A public address is ignored so the saved IP stays the one on the Wi-Fi.
+	 *
+	 * @param array<string,mixed> $in
+	 */
+	public static function rememberHeyStarLanIp(array $in): void
+	{
 		$deviceKey = trim((string) ($in['deviceKey'] ?? ''));
-		$ip = trim((string) ($in['ip'] ?? ''));
+		$schoolId = (int) ($in['school_id'] ?? 0);
 		if ($schoolId <= 0 && $deviceKey !== '') {
 			$dev = HeyStarDeviceStore::forDeviceKey($deviceKey);
 			$schoolId = $dev ? (int) $dev['school_id'] : 0;
@@ -2480,13 +3028,42 @@ class AttendanceScanService
 		if ($schoolId <= 0) {
 			return;
 		}
+		$stored = HeyStarDeviceStore::forSchool($schoolId);
+		$storedKey = is_array($stored) ? trim((string) ($stored['device_key'] ?? '')) : '';
+		if ($deviceKey !== '' && $storedKey !== '' && strcasecmp($storedKey, $deviceKey) !== 0) {
+			return;
+		}
 		$data = ['last_seen' => time()];
 		if ($deviceKey !== '') {
 			$data['device_key'] = $deviceKey;
 		}
+		$ip = self::privateIpFromPayload($in);
 		if ($ip !== '') {
 			$data['device_ip'] = $ip;
 		}
 		HeyStarDeviceStore::save($schoolId, $data);
+	}
+
+	/**
+	 * @param array<string,mixed> $in
+	 */
+	private static function privateIpFromPayload(array $in): string
+	{
+		$candidates = [
+			$in['ip'] ?? '',
+			$in['deviceIp'] ?? '',
+			$in['devIp'] ?? '',
+			$in['localIp'] ?? '',
+		];
+		if (isset($in['data']) && is_array($in['data'])) {
+			$candidates[] = $in['data']['ip'] ?? '';
+		}
+		foreach ($candidates as $ip) {
+			$ip = trim((string) $ip);
+			if (HeyStarClient::isPrivateIp($ip) && $ip !== '127.0.0.1') {
+				return $ip;
+			}
+		}
+		return '';
 	}
 }

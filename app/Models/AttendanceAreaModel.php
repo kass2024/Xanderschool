@@ -371,6 +371,12 @@ class AttendanceAreaModel extends Model
 			];
 		}
 
+		$classByStudent = [];
+		foreach ($students as $s) {
+			$classByStudent[(int) $s['id']] = (string) ($s['class_name'] ?? '');
+		}
+		\App\Libraries\AttendanceScanService::correctGateTapSlotsOnce($schoolId);
+
 		$seenAreaStudent = [];
 		$inCount = 0;
 		$outCount = 0;
@@ -391,12 +397,22 @@ class AttendanceAreaModel extends Model
 			$tback = (int) ($r['back_at'] ?? 0);
 			$day = (int) date('j', $tin);
 			$aname = $areaNames[$aid] ?? ('Area #' . $aid);
-			$inHm = date('H:i', $tin);
+			$gateRow = $this->isSchoolGateName($aname);
+			if ($gateRow) {
+				$phase = \App\Libraries\AttendanceScanService::phaseForClassName($classByStudent[$sid] ?? '');
+				$windows = \App\Libraries\AttendanceScanService::windowsForPhase($schoolId, $phase);
+				$placed = \App\Libraries\AttendanceScanService::placeDayStamps([$tin, $tlunch, $tback, $tout], $windows);
+				$tin = (int) $placed['morning'];
+				$tlunch = (int) $placed['lunch'];
+				$tback = (int) $placed['back'];
+				$tout = (int) $placed['evening'];
+			}
+			$inHm = $tin > 0 ? date('H:i', $tin) : '';
 			$outHm = $tout > 0 ? date('H:i', $tout) : '';
 			$lunchHm = $tlunch > 0 ? date('H:i', $tlunch) : '';
 			$backHm = $tback > 0 ? date('H:i', $tback) : '';
 			$dur = '';
-			if ($tout > $tin) {
+			if ($tin > 0 && $tout > $tin) {
 				$mins = (int) floor(($tout - $tin) / 60);
 				$dur = $mins >= 60
 					? ((int) floor($mins / 60)) . 'h ' . ($mins % 60) . 'm'
@@ -425,9 +441,7 @@ class AttendanceAreaModel extends Model
 			if (!isset($dayStats[$day])) {
 				$dayStats[$day] = ['day' => $day, 'in_count' => 0, 'out_count' => 0, 'missing_out' => 0, 'students' => []];
 			}
-			$dayStats[$day]['in_count']++;
 			$dayStats[$day]['students'][$sid] = true;
-			$inCount++;
 			$scannedIds[$sid] = true;
 			if (!isset($areaStats[$aid])) {
 				$areaStats[$aid] = [
@@ -441,7 +455,11 @@ class AttendanceAreaModel extends Model
 					'missing_out' => 0,
 				];
 			}
-			$areaStats[$aid]['in_count']++;
+			$areaStats[$aid]['in_count'] += $inHm !== '' ? 1 : 0;
+			if ($inHm !== '') {
+				$inCount++;
+				$dayStats[$day]['in_count']++;
+			}
 			if ($tlunch > 0) {
 				$lunchCount++;
 				$areaStats[$aid]['lunch_count']++;
