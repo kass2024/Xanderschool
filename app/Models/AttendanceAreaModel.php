@@ -343,6 +343,7 @@ class AttendanceAreaModel extends Model
 		foreach ($areas as $a) {
 			$areaNames[(int) $a['id']] = (string) $a['name'];
 		}
+		$gateTaps = $areaId > 0 && $this->isSchoolGateName((string) ($areaNames[$areaId] ?? ''));
 
 		$db = \Config\Database::connect();
 		$stQ = $db->table('students s')
@@ -360,6 +361,12 @@ class AttendanceAreaModel extends Model
 		if ($classId > 0) {
 			$stQ->where('cr.class', $classId);
 		}
+		if ($gateTaps) {
+			$stQ->groupStart()
+				->where('s.studying_mode', 1)
+				->orWhere('s.studying_mode', 'Day')
+				->groupEnd();
+		}
 		$students = $stQ->groupBy('s.id, s.fname, s.lname, s.regno, l.title, d.code, c.title, c.id')
 			->orderBy('s.fname', 'ASC')->orderBy('s.lname', 'ASC')->get()->getResultArray();
 
@@ -371,7 +378,21 @@ class AttendanceAreaModel extends Model
 		$hasLunch = $db->tableExists('attendance_records')
 			&& $db->fieldExists('lunch_at', 'attendance_records')
 			&& $db->fieldExists('back_at', 'attendance_records');
-		$gateTaps = $areaId > 0 && $this->isSchoolGateName((string) ($areaNames[$areaId] ?? ''));
+		$sectionOf = [];
+		foreach ($students as &$studentRow) {
+			$section = \App\Libraries\AttendanceScanService::phaseForClassName((string) ($studentRow['class_name'] ?? ''));
+			if (!in_array($section, ['nursery', 'primary', 'high_school'], true)) {
+				$section = 'high_school';
+			}
+			$studentRow['section'] = $section;
+			$sectionOf[(int) $studentRow['id']] = $section;
+		}
+		unset($studentRow);
+		$sectionTaps = [
+			'nursery' => ['in' => [], 'lunch' => [], 'back' => [], 'out' => []],
+			'primary' => ['in' => [], 'lunch' => [], 'back' => [], 'out' => []],
+			'high_school' => ['in' => [], 'lunch' => [], 'back' => [], 'out' => []],
+		];
 		$recs = [];
 		if ($ids !== [] && $db->tableExists('attendance_records')) {
 			$recQ = $db->table('attendance_records')
@@ -461,8 +482,10 @@ class AttendanceAreaModel extends Model
 				'area_id' => $aid,
 				'area' => $aname,
 			];
+			$studentSection = $sectionOf[$sid] ?? 'high_school';
 			$visits[] = [
 				'student_id' => $sid,
+				'section' => $studentSection,
 				'day' => $day,
 				'in' => $inHm,
 				'out' => $outHm,
@@ -496,18 +519,21 @@ class AttendanceAreaModel extends Model
 				$dayStats[$day]['in_count']++;
 				$gateStudentTaps['in'][$sid] = true;
 				$gateAreaTaps[$aid]['in'][$sid] = true;
+				$sectionTaps[$studentSection]['in'][$sid] = true;
 			}
 			if ($tlunch > 0) {
 				$lunchCount++;
 				$areaStats[$aid]['lunch_count']++;
 				$gateStudentTaps['lunch'][$sid] = true;
 				$gateAreaTaps[$aid]['lunch'][$sid] = true;
+				$sectionTaps[$studentSection]['lunch'][$sid] = true;
 			}
 			if ($tback > 0) {
 				$backCount++;
 				$areaStats[$aid]['back_count']++;
 				$gateStudentTaps['back'][$sid] = true;
 				$gateAreaTaps[$aid]['back'][$sid] = true;
+				$sectionTaps[$studentSection]['back'][$sid] = true;
 			}
 			$key = $sid . ':' . $aid;
 			if (!isset($seenAreaStudent[$key])) {
@@ -520,6 +546,7 @@ class AttendanceAreaModel extends Model
 				$dayStats[$day]['out_count']++;
 				$gateStudentTaps['out'][$sid] = true;
 				$gateAreaTaps[$aid]['out'][$sid] = true;
+				$sectionTaps[$studentSection]['out'][$sid] = true;
 			} else {
 				$missingOut++;
 				$areaStats[$aid]['missing_out']++;
@@ -551,6 +578,7 @@ class AttendanceAreaModel extends Model
 					'lname' => $s['lname'],
 					'regno' => $s['regno'],
 					'class_name' => $s['class_name'],
+					'section' => $s['section'] ?? 'high_school',
 				];
 			}
 		}
@@ -566,6 +594,7 @@ class AttendanceAreaModel extends Model
 				'lname' => $st['lname'],
 				'regno' => $st['regno'],
 				'class_name' => $st['class_name'],
+				'section' => $st['section'] ?? 'high_school',
 			];
 		}
 
@@ -575,6 +604,7 @@ class AttendanceAreaModel extends Model
 			$v['lname'] = $st['lname'] ?? '';
 			$v['regno'] = $st['regno'] ?? '';
 			$v['class_name'] = $st['class_name'] ?? '';
+			$v['section'] = $st['section'] ?? ($v['section'] ?? 'high_school');
 		}
 		unset($v);
 
@@ -645,6 +675,34 @@ class AttendanceAreaModel extends Model
 				$areaStats[$aid]['out_count'] = count($gateAreaTaps[$aid]['out'] ?? []);
 			}
 		}
+		$sectionLabels = ['nursery' => 'Nursery', 'primary' => 'Primary', 'high_school' => 'High School'];
+		$sections = [];
+		if ($gateTaps) {
+			foreach ($sectionLabels as $key => $label) {
+				$enrolled = 0;
+				$seen = 0;
+				foreach ($sectionOf as $sid => $sec) {
+					if ($sec !== $key) {
+						continue;
+					}
+					$enrolled++;
+					if (isset($scannedIds[$sid])) {
+						$seen++;
+					}
+				}
+				$sections[] = [
+					'key' => $key,
+					'label' => $label,
+					'students' => $enrolled,
+					'scanned' => $seen,
+					'morning' => count($sectionTaps[$key]['in'] ?? []),
+					'lunch' => count($sectionTaps[$key]['lunch'] ?? []),
+					'back' => count($sectionTaps[$key]['back'] ?? []),
+					'evening' => count($sectionTaps[$key]['out'] ?? []),
+					'coverage' => $enrolled > 0 ? (int) round($seen / $enrolled * 100) : 0,
+				];
+			}
+		}
 		$schoolName = '';
 		$schoolRow = $db->table('schools')->select('name')->where('id', $schoolId)->get(1)->getRowArray();
 		if ($schoolRow) {
@@ -674,6 +732,7 @@ class AttendanceAreaModel extends Model
 			'missing_out' => $missingNamed,
 			'single_area' => $areaId > 0,
 			'gate_taps' => $gateTaps,
+			'sections' => $sections,
 		];
 		if ($schoolName !== '') {
 			$report['school_name'] = $schoolName;

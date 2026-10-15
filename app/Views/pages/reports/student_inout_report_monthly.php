@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=4">
+<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=5">
 <?php
 if ($show_header) {
 	$inoutSchoolId = (new \App\Models\AttendanceAreaModel())->inoutSchoolId((int) session('soma_school_id'));
@@ -105,6 +105,37 @@ if ($show_header) {
 				$(".io-pane").attr("hidden", true);
 				$("#" + pane).removeAttr("hidden");
 			});
+			function ioSyncSections() {
+				$(".io-sec-head").each(function () {
+					var s = String($(this).data("section"));
+					var secOn = String($(".io-section.is-on").data("section") || "");
+					if (secOn && secOn !== s) {
+						$(this).hide();
+						return;
+					}
+					$(this).toggle($(".io-visit-row[data-section='" + s + "']:visible").length > 0);
+				});
+			}
+			$("#report_content").on("click", ".io-section", function () {
+				var already = $(this).hasClass("is-on");
+				$(".io-section").removeClass("is-on");
+				if (!already) {
+					$(this).addClass("is-on");
+				}
+				var sec = String($(".io-section.is-on").data("section") || "");
+				var day = String($(".io-day.active").data("day") || "all");
+				var tap = String($(".io-kpi[data-tap].is-on").data("tap") || "");
+				var attr = tap === "lunch" ? "lunch" : (tap === "back" ? "back" : (tap === "evening" ? "out" : (tap === "morning" ? "morning" : "")));
+				$(".io-visit-row").each(function () {
+					var $row = $(this);
+					var show = true;
+					if (sec && String($row.data("section")) !== sec) show = false;
+					if (show && day !== "all" && String($row.data("day")) !== day) show = false;
+					if (show && attr && String($row.data(attr)) !== "1") show = false;
+					$row.toggle(show);
+				});
+				ioSyncSections();
+			});
 			$("#report_content").on("click", ".io-kpi[data-tap]", function () {
 				var tap = String($(this).data("tap") || "");
 				var attr = tap === "lunch" ? "lunch" : (tap === "back" ? "back" : (tap === "evening" ? "out" : "morning"));
@@ -124,6 +155,13 @@ if ($show_header) {
 					$("#ioDayBack").text($vis.filter("[data-back='1']").length);
 				}
 				$("#ioDayEmpty").toggle($vis.length === 0);
+				var secOn = String($(".io-section.is-on").data("section") || "");
+				if (secOn) {
+					$(".io-visit-row:visible").filter(function () {
+						return String($(this).data("section")) !== secOn;
+					}).hide();
+				}
+				ioSyncSections();
 			});
 			$("#report_content").on("click", ".io-day", function () {
 				$(".io-kpi[data-tap]").removeClass("is-on");
@@ -151,6 +189,13 @@ if ($show_header) {
 					$("#ioDayBack").text($vis.filter("[data-back='1']").length);
 				}
 				$("#ioDayEmpty").toggle($vis.length === 0);
+				var secOn = String($(".io-section.is-on").data("section") || "");
+				if (secOn) {
+					$(".io-visit-row:visible").filter(function () {
+						return String($(this).data("section")) !== secOn;
+					}).hide();
+				}
+				ioSyncSections();
 			});
 		});
 	</script>
@@ -193,7 +238,7 @@ foreach ($visits as $vv) {
 ?>
 <div id="printable">
 	<div class="io-kpi-grid">
-		<div class="io-kpi"><div class="lbl">Students</div><div class="val"><?= (int) ($kpi['students'] ?? 0); ?></div></div>
+		<div class="io-kpi"><div class="lbl"><?= $gateTaps ? 'Day scholars' : 'Students'; ?></div><div class="val"><?= (int) ($kpi['students'] ?? 0); ?></div></div>
 		<div class="io-kpi blue"><div class="lbl">Scanned</div><div class="val"><?= (int) ($kpi['scanned'] ?? 0); ?></div></div>
 		<?php if ($gateTaps): ?>
 		<button type="button" class="io-kpi in" data-tap="morning"><div class="lbl">1 · Morning</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></button>
@@ -207,6 +252,24 @@ foreach ($visits as $vv) {
 		<?php endif; ?>
 		<div class="io-kpi"><div class="lbl">Coverage</div><div class="val"><?= (int) ($kpi['coverage'] ?? 0); ?>%</div></div>
 	</div>
+	<?php if ($gateTaps && !empty($sections)): ?>
+	<p class="io-gate-note">School gate counts day scholars only. Boarding students are not included. Click a section to see just that group.</p>
+	<div class="io-sections">
+		<?php foreach ($sections as $sec): ?>
+		<button type="button" class="io-section is-<?= esc($sec['key']); ?>" data-section="<?= esc($sec['key']); ?>">
+			<h5><?= esc($sec['label']); ?></h5>
+			<div class="sec-line">
+				<span><b><?= (int) $sec['students']; ?></b> students</span>
+				<span><b><?= (int) $sec['scanned']; ?></b> scanned</span>
+				<span class="m-in"><b><?= (int) $sec['morning']; ?></b> morning</span>
+				<span class="m-lunch"><b><?= (int) $sec['lunch']; ?></b> lunch</span>
+				<span class="m-back"><b><?= (int) $sec['back']; ?></b> back</span>
+				<span class="m-eve"><b><?= (int) $sec['evening']; ?></b> evening</span>
+			</div>
+		</button>
+		<?php endforeach; ?>
+	</div>
+	<?php endif; ?>
 
 	<?php if (!empty($show_locations) && count($areaStats) > 0) : ?>
 		<div class="io-area-map">
@@ -308,12 +371,42 @@ foreach ($visits as $vv) {
 					<tbody>
 					<?php
 					$n = 1;
-					foreach ($visits as $v) :
+					$visitGroups = ['nursery' => [], 'primary' => [], 'high_school' => []];
+					if ($gateTaps) {
+						foreach ($visits as $groupedVisit) {
+							$groupKey = (string) ($groupedVisit['section'] ?? 'high_school');
+							if (!isset($visitGroups[$groupKey])) {
+								$groupKey = 'high_school';
+							}
+							$visitGroups[$groupKey][] = $groupedVisit;
+						}
+					} else {
+						$visitGroups = ['all' => $visits];
+					}
+					$sectionTitles = ['nursery' => 'Nursery', 'primary' => 'Primary', 'high_school' => 'High School', 'all' => ''];
+					foreach ($visitGroups as $groupKey => $groupVisits) :
+						if ($groupVisits === []) {
+							continue;
+						}
+						if ($gateTaps) :
+							$colspan = 8 + ($showClassCol ? 1 : 0) + ($singleArea ? 0 : 1);
+							$sectionVisible = false;
+							foreach ($groupVisits as $checkVisit) {
+								if ($defaultDay < 1 || (int) ($checkVisit['day'] ?? 0) === $defaultDay) {
+									$sectionVisible = true;
+									break;
+								}
+							}
+							?>
+						<tr class="io-sec-head" data-section="<?= esc($groupKey); ?>"<?= $sectionVisible ? '' : ' style="display:none"'; ?>><td colspan="<?= (int) $colspan; ?>"><?= esc($sectionTitles[$groupKey] ?? 'High School'); ?></td></tr>
+						<?php endif;
+					foreach ($groupVisits as $v) :
 						$day = (int) $v['day'];
 						$hide = ($defaultDay > 0 && $day !== $defaultDay);
 						$complete = !empty($v['complete']);
+						$rowSection = (string) ($v['section'] ?? $groupKey);
 						?>
-						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-day="<?= $day; ?>" data-out="<?= ($v['out'] ?? '') !== '' ? '1' : '0'; ?>" data-morning="<?= ($v['in'] ?? '') !== '' ? '1' : '0'; ?>" data-lunch="<?= !empty($v['lunch']) ? '1' : '0'; ?>" data-back="<?= !empty($v['back']) ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
+						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-section="<?= esc($rowSection); ?>" data-day="<?= $day; ?>" data-out="<?= ($v['out'] ?? '') !== '' ? '1' : '0'; ?>" data-morning="<?= ($v['in'] ?? '') !== '' ? '1' : '0'; ?>" data-lunch="<?= !empty($v['lunch']) ? '1' : '0'; ?>" data-back="<?= !empty($v['back']) ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
 							<td><?= $n++; ?></td>
 							<td>
 								<strong><?= esc(trim(($v['fname'] ?? '') . ' ' . ($v['lname'] ?? ''))); ?></strong>
@@ -356,6 +449,7 @@ foreach ($visits as $vv) {
 							</td>
 							<?php endif; ?>
 						</tr>
+					<?php endforeach; ?>
 					<?php endforeach; ?>
 					</tbody>
 				</table>
