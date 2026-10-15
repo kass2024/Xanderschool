@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=2">
+<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=3">
 <?php
 if ($show_header) {
 	$months = get_months();
@@ -120,6 +120,10 @@ if ($show_header) {
 				$("#ioDayIn").text(ins);
 				$("#ioDayOut").text(outs);
 				$("#ioDayMiss").text(ins - outs);
+				if ($("#ioDayLunch").length) {
+					$("#ioDayLunch").text($vis.filter("[data-lunch='1']").length);
+					$("#ioDayBack").text($vis.filter("[data-back='1']").length);
+				}
 				$("#ioDayEmpty").toggle($vis.length === 0);
 			});
 		});
@@ -138,12 +142,19 @@ $singleArea = !empty($single_area);
 $showClassCol = (($classe ?? '') === 'All classes');
 $never = $never_scanned ?? [];
 $missing = $missing_out ?? [];
-$dayKpi = ['in' => 0, 'out' => 0, 'miss' => 0];
+$gateTaps = !empty($gate_taps);
+$dayKpi = ['in' => 0, 'out' => 0, 'miss' => 0, 'lunch' => 0, 'back' => 0];
 foreach ($visits as $vv) {
 	if ($defaultDay > 0 && (int) $vv['day'] !== $defaultDay) {
 		continue;
 	}
 	$dayKpi['in']++;
+	if (!empty($vv['lunch'])) {
+		$dayKpi['lunch']++;
+	}
+	if (!empty($vv['back'])) {
+		$dayKpi['back']++;
+	}
 	if (!empty($vv['complete'])) {
 		$dayKpi['out']++;
 	} else {
@@ -155,9 +166,16 @@ foreach ($visits as $vv) {
 	<div class="io-kpi-grid">
 		<div class="io-kpi"><div class="lbl">Students</div><div class="val"><?= (int) ($kpi['students'] ?? 0); ?></div></div>
 		<div class="io-kpi blue"><div class="lbl">Scanned</div><div class="val"><?= (int) ($kpi['scanned'] ?? 0); ?></div></div>
+		<?php if ($gateTaps): ?>
+		<div class="io-kpi in"><div class="lbl">1 · Morning</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></div>
+		<div class="io-kpi lunch"><div class="lbl">2 · Lunch out</div><div class="val"><?= (int) ($kpi['lunch_count'] ?? 0); ?></div></div>
+		<div class="io-kpi back"><div class="lbl">3 · Back</div><div class="val"><?= (int) ($kpi['back_count'] ?? 0); ?></div></div>
+		<div class="io-kpi leave"><div class="lbl">4 · Evening</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></div>
+		<?php else: ?>
 		<div class="io-kpi in"><div class="lbl">IN taps</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></div>
 		<div class="io-kpi out"><div class="lbl">OUT / checkout</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></div>
 		<div class="io-kpi warn"><div class="lbl">Missing OUT</div><div class="val"><?= (int) ($kpi['missing_out'] ?? 0); ?></div></div>
+		<?php endif; ?>
 		<div class="io-kpi"><div class="lbl">Coverage</div><div class="val"><?= (int) ($kpi['coverage'] ?? 0); ?>%</div></div>
 	</div>
 
@@ -168,8 +186,15 @@ foreach ($visits as $vv) {
 					<div class="an"><?= esc($as['name']); ?></div>
 					<div class="as">
 						<span><b><?= (int) $as['students']; ?></b> students</span>
+						<?php if ($gateTaps): ?>
+						<span><b><?= (int) $as['in_count']; ?></b> morning</span>
+						<span><b><?= (int) ($as['lunch_count'] ?? 0); ?></b> lunch</span>
+						<span><b><?= (int) ($as['back_count'] ?? 0); ?></b> back</span>
+						<span><b><?= (int) $as['out_count']; ?></b> evening</span>
+						<?php else: ?>
 						<span><b><?= (int) $as['in_count']; ?></b> IN</span>
 						<span><b><?= (int) $as['out_count']; ?></b> OUT</span>
+						<?php endif; ?>
 					</div>
 				</button>
 			<?php endforeach; ?>
@@ -177,8 +202,8 @@ foreach ($visits as $vv) {
 	<?php endif; ?>
 
 	<div class="io-tabs">
-		<button type="button" class="io-tab active" data-pane="ioPaneGrid">Daily IN / OUT</button>
-		<button type="button" class="io-tab" data-pane="ioPaneMissing">Missing OUT (<?= count($missing); ?>)</button>
+		<button type="button" class="io-tab active" data-pane="ioPaneGrid"><?= $gateTaps ? 'Daily 4 taps' : 'Daily IN / OUT'; ?></button>
+		<button type="button" class="io-tab" data-pane="ioPaneMissing"><?= $gateTaps ? 'No evening leave' : 'Missing OUT'; ?> (<?= count($missing); ?>)</button>
 		<button type="button" class="io-tab" data-pane="ioPaneNever">Never scanned (<?= count($never); ?>)</button>
 	</div>
 
@@ -219,9 +244,16 @@ foreach ($visits as $vv) {
 				</div>
 				<div class="io-day-kpis">
 					<div><span class="lbl">Showing</span> <strong id="ioDayCaption"><?= $defaultDay > 0 ? 'Day ' . $defaultDay : 'All activity days'; ?></strong></div>
+					<?php if ($gateTaps): ?>
+					<div class="io-dk"><span class="in">Morning</span> <b id="ioDayIn"><?= (int) $dayKpi['in']; ?></b></div>
+					<div class="io-dk"><span class="lunch">Lunch out</span> <b id="ioDayLunch"><?= (int) $dayKpi['lunch']; ?></b></div>
+					<div class="io-dk"><span class="back">Back</span> <b id="ioDayBack"><?= (int) $dayKpi['back']; ?></b></div>
+					<div class="io-dk"><span class="leave">Evening</span> <b id="ioDayOut"><?= (int) $dayKpi['out']; ?></b></div>
+					<?php else: ?>
 					<div class="io-dk"><span class="in">IN</span> <b id="ioDayIn"><?= (int) $dayKpi['in']; ?></b></div>
 					<div class="io-dk"><span class="out">OUT</span> <b id="ioDayOut"><?= (int) $dayKpi['out']; ?></b></div>
 					<div class="io-dk"><span class="miss">No checkout</span> <b id="ioDayMiss"><?= (int) $dayKpi['miss']; ?></b></div>
+					<?php endif; ?>
 				</div>
 				<table class="io-log">
 					<thead>
@@ -231,9 +263,16 @@ foreach ($visits as $vv) {
 						<?php if ($showClassCol) : ?><th>Class</th><?php endif; ?>
 						<th>Day</th>
 						<?php if (!$singleArea) : ?><th>Location</th><?php endif; ?>
+						<?php if ($gateTaps): ?>
+						<th>Morning</th>
+						<th>Lunch out</th>
+						<th>Back</th>
+						<th>Evening</th>
+						<?php else: ?>
 						<th>IN</th>
 						<th>OUT / checkout</th>
 						<th>Duration</th>
+						<?php endif; ?>
 						<th>Status</th>
 					</tr>
 					</thead>
@@ -245,7 +284,7 @@ foreach ($visits as $vv) {
 						$hide = ($defaultDay > 0 && $day !== $defaultDay);
 						$complete = !empty($v['complete']);
 						?>
-						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-day="<?= $day; ?>" data-out="<?= $complete ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
+						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-day="<?= $day; ?>" data-out="<?= $complete ? '1' : '0'; ?>" data-lunch="<?= !empty($v['lunch']) ? '1' : '0'; ?>" data-back="<?= !empty($v['back']) ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
 							<td><?= $n++; ?></td>
 							<td>
 								<strong><?= esc(trim(($v['fname'] ?? '') . ' ' . ($v['lname'] ?? ''))); ?></strong>
@@ -255,6 +294,22 @@ foreach ($visits as $vv) {
 							<td><?= sprintf('%02d', $day); ?></td>
 							<?php if (!$singleArea) : ?><td><?= esc($v['area'] ?? ''); ?></td><?php endif; ?>
 							<td><span class="io-time in"><?= esc($v['in'] ?? '—'); ?></span></td>
+							<?php if ($gateTaps): ?>
+							<td><?= !empty($v['lunch']) ? '<span class="io-time lunch">' . esc($v['lunch']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>
+							<td><?= !empty($v['back']) ? '<span class="io-time back">' . esc($v['back']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>
+							<td><?= $complete ? '<span class="io-time leave">' . esc($v['out']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>
+							<td>
+								<?php if ($complete) : ?>
+									<span class="io-st done">Left school</span>
+								<?php elseif (!empty($v['back'])) : ?>
+									<span class="io-st open">Back from lunch</span>
+								<?php elseif (!empty($v['lunch'])) : ?>
+									<span class="io-st open">Out for lunch</span>
+								<?php else : ?>
+									<span class="io-st open">Arrived</span>
+								<?php endif; ?>
+							</td>
+							<?php else: ?>
 							<td>
 								<?php if ($complete) : ?>
 									<span class="io-time out"><?= esc($v['out']); ?></span>
@@ -270,6 +325,7 @@ foreach ($visits as $vv) {
 									<span class="io-st open">Still inside</span>
 								<?php endif; ?>
 							</td>
+							<?php endif; ?>
 						</tr>
 					<?php endforeach; ?>
 					</tbody>
@@ -293,8 +349,12 @@ foreach ($visits as $vv) {
 					<th>Class</th>
 					<th>Location</th>
 					<th>Day</th>
-					<th>IN</th>
-					<th>OUT / checkout</th>
+					<th><?= $gateTaps ? 'Morning' : 'IN'; ?></th>
+					<?php if ($gateTaps): ?>
+					<th>Lunch out</th>
+					<th>Back</th>
+					<?php endif; ?>
+					<th><?= $gateTaps ? 'Evening' : 'OUT / checkout'; ?></th>
 				</tr>
 				</thead>
 				<tbody>
@@ -307,7 +367,11 @@ foreach ($visits as $vv) {
 						<td><?= esc($row['area'] ?? ''); ?></td>
 						<td><?= (int) ($row['day'] ?? 0); ?></td>
 						<td><span class="io-time in"><?= esc($row['in'] ?? ''); ?></span></td>
-						<td><span class="io-time none">No checkout</span></td>
+						<?php if ($gateTaps): ?>
+						<td><?= !empty($row['lunch']) ? '<span class="io-time lunch">' . esc($row['lunch']) . '</span>' : '—'; ?></td>
+						<td><?= !empty($row['back']) ? '<span class="io-time back">' . esc($row['back']) . '</span>' : '—'; ?></td>
+						<?php endif; ?>
+						<td><?php if ($gateTaps): ?><span class="io-time dash">—</span><?php else: ?><span class="io-time none">No checkout</span><?php endif; ?></td>
 					</tr>
 				<?php endforeach; ?>
 				</tbody>

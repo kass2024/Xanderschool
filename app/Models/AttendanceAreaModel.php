@@ -336,10 +336,14 @@ class AttendanceAreaModel extends Model
 			$ids[] = (int) $s['id'];
 		}
 
+		$hasLunch = $db->tableExists('attendance_records')
+			&& $db->fieldExists('lunch_at', 'attendance_records')
+			&& $db->fieldExists('back_at', 'attendance_records');
+		$gateTaps = $areaId > 0 && $this->isSchoolGateName((string) ($areaNames[$areaId] ?? ''));
 		$recs = [];
 		if ($ids !== [] && $db->tableExists('attendance_records')) {
 			$recQ = $db->table('attendance_records')
-				->select('user_id, area_id, time_in, time_out')
+				->select('user_id, area_id, time_in, time_out' . ($hasLunch ? ', lunch_at, back_at' : ''))
 				->where('user_type', 0)
 				->where("DATE_FORMAT(FROM_UNIXTIME(time_in),'%m-%Y') = " . $db->escape($monthYm), null, false)
 				->whereIn('user_id', $ids);
@@ -361,6 +365,8 @@ class AttendanceAreaModel extends Model
 				'students' => 0,
 				'in_count' => 0,
 				'out_count' => 0,
+				'lunch_count' => 0,
+				'back_count' => 0,
 				'missing_out' => 0,
 			];
 		}
@@ -368,6 +374,8 @@ class AttendanceAreaModel extends Model
 		$seenAreaStudent = [];
 		$inCount = 0;
 		$outCount = 0;
+		$lunchCount = 0;
+		$backCount = 0;
 		$missingOut = 0;
 		$scannedIds = [];
 		$missingOutRows = [];
@@ -379,10 +387,14 @@ class AttendanceAreaModel extends Model
 			$aid = (int) $r['area_id'];
 			$tin = (int) $r['time_in'];
 			$tout = (int) ($r['time_out'] ?? 0);
+			$tlunch = (int) ($r['lunch_at'] ?? 0);
+			$tback = (int) ($r['back_at'] ?? 0);
 			$day = (int) date('j', $tin);
 			$aname = $areaNames[$aid] ?? ('Area #' . $aid);
 			$inHm = date('H:i', $tin);
 			$outHm = $tout > 0 ? date('H:i', $tout) : '';
+			$lunchHm = $tlunch > 0 ? date('H:i', $tlunch) : '';
+			$backHm = $tback > 0 ? date('H:i', $tback) : '';
 			$dur = '';
 			if ($tout > $tin) {
 				$mins = (int) floor(($tout - $tin) / 60);
@@ -393,6 +405,8 @@ class AttendanceAreaModel extends Model
 			$byStudent[$sid][$day][] = [
 				'in' => $inHm,
 				'out' => $outHm,
+				'lunch' => $lunchHm,
+				'back' => $backHm,
 				'area_id' => $aid,
 				'area' => $aname,
 			];
@@ -401,6 +415,8 @@ class AttendanceAreaModel extends Model
 				'day' => $day,
 				'in' => $inHm,
 				'out' => $outHm,
+				'lunch' => $lunchHm,
+				'back' => $backHm,
 				'duration' => $dur,
 				'area_id' => $aid,
 				'area' => $aname,
@@ -420,10 +436,20 @@ class AttendanceAreaModel extends Model
 					'students' => 0,
 					'in_count' => 0,
 					'out_count' => 0,
+					'lunch_count' => 0,
+					'back_count' => 0,
 					'missing_out' => 0,
 				];
 			}
 			$areaStats[$aid]['in_count']++;
+			if ($tlunch > 0) {
+				$lunchCount++;
+				$areaStats[$aid]['lunch_count']++;
+			}
+			if ($tback > 0) {
+				$backCount++;
+				$areaStats[$aid]['back_count']++;
+			}
 			$key = $sid . ':' . $aid;
 			if (!isset($seenAreaStudent[$key])) {
 				$seenAreaStudent[$key] = true;
@@ -441,6 +467,8 @@ class AttendanceAreaModel extends Model
 					'student_id' => $sid,
 					'day' => $day,
 					'in' => $inHm,
+					'lunch' => $lunchHm,
+					'back' => $backHm,
 					'area' => $aname,
 				];
 			}
@@ -533,6 +561,8 @@ class AttendanceAreaModel extends Model
 				'never' => max(0, $total - $scanned),
 				'in_count' => $inCount,
 				'out_count' => $outCount,
+				'lunch_count' => $lunchCount,
+				'back_count' => $backCount,
 				'missing_out' => $missingOut,
 				'coverage' => $total > 0 ? (int) round($scanned / $total * 100) : 0,
 			],
@@ -540,6 +570,16 @@ class AttendanceAreaModel extends Model
 			'never_scanned' => $never,
 			'missing_out' => $missingNamed,
 			'single_area' => $areaId > 0,
+			'gate_taps' => $gateTaps,
 		];
+	}
+
+	private function isSchoolGateName(string $name): bool
+	{
+		$n = strtolower(trim($name));
+		$n = preg_replace('/[^a-z0-9]+/', ' ', $n);
+		$n = trim((string) $n);
+		return $n === 'gate' || $n === 'school gate' || strpos($n, 'school gate') !== false
+			|| substr($n, -5) === ' gate';
 	}
 }

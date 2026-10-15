@@ -45,6 +45,9 @@
 .io-kpi.out .val { color: #dc2626; }
 .io-kpi.warn .val { color: #c2410c; }
 .io-kpi.blue .val { color: #0369a1; }
+.io-kpi.lunch .val { color: #b45309; }
+.io-kpi.back .val { color: #1d4ed8; }
+.io-kpi.leave .val { color: #6d28d9; }
 
 .io-area-map {
 	display: grid;
@@ -162,7 +165,14 @@
 }
 .io-time.in { background: #ecfdf5; color: #059669; }
 .io-time.out { background: #fef2f2; color: #dc2626; }
+.io-time.lunch { background: #fffbeb; color: #b45309; }
+.io-time.back { background: #eff6ff; color: #1d4ed8; }
+.io-time.leave { background: #f5f3ff; color: #6d28d9; }
 .io-time.none { background: #ffedd5; color: #c2410c; font-weight: 700; }
+.io-time.dash { background: #f8fafc; color: #94a3b8; font-weight: 700; }
+.io-dk .lunch { color: #b45309; font-weight: 800; }
+.io-dk .back { color: #1d4ed8; font-weight: 800; }
+.io-dk .leave { color: #6d28d9; font-weight: 800; }
 .io-st {
 	display: inline-block;
 	font-size: .75rem;
