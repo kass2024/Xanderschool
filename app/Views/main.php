@@ -2809,8 +2809,14 @@ if ($page == "add_classes") {
 </div>
 <?php if ($page == "apply_leave") { ?>
 	<style>
-		#apply_leave_model .leave-dialog { max-width: 640px; margin: 28px auto; }
-		#apply_leave_model .leave-sheet { border: 0; border-radius: 18px; overflow: visible; box-shadow: 0 24px 60px rgba(15, 39, 68, .28); }
+		#apply_leave_model .leave-dialog { max-width: 640px; margin: 16px auto; width: calc(100% - 24px); }
+		#apply_leave_model .leave-sheet {
+			border: 0; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px rgba(15, 39, 68, .28);
+			display: flex; flex-direction: column; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px);
+		}
+		#apply_leave_model #leave-apply-form {
+			display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; height: 100%;
+		}
 		#apply_leave_model .leave-sheet-head {
 			display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
 			padding: 22px 24px 18px; background: linear-gradient(135deg, #0f2744 0%, #1d4e89 100%); color: #fff;
@@ -2819,21 +2825,27 @@ if ($page == "add_classes") {
 		#apply_leave_model .leave-kicker { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #93c5fd; font-weight: 700; }
 		#apply_leave_model .leave-sheet-head h5 { margin: 4px 0 6px; font-size: 22px; font-weight: 700; color: #fff; }
 		#apply_leave_model .leave-sheet-head p { margin: 0; color: #dbeafe; font-size: 13px; line-height: 1.45; }
-		#apply_leave_model .leave-x { background: transparent; border: 0; color: #fff; font-size: 28px; line-height: 1; opacity: .8; }
-		#apply_leave_model .leave-sheet-body { padding: 20px 24px 8px; background: #f8fafc; }
+		#apply_leave_model .leave-x {
+			background: transparent; border: 0; color: #fff; font-size: 28px; line-height: 1; opacity: .85;
+			width: 44px; height: 44px; flex: 0 0 auto; padding: 0;
+		}
+		#apply_leave_model .leave-sheet-body {
+			padding: 20px 24px 8px; background: #f8fafc; overflow-y: auto; -webkit-overflow-scrolling: touch;
+			min-height: 0; flex: 1 1 auto;
+		}
 		#apply_leave_model .leave-field { margin-bottom: 14px; }
 		#apply_leave_model .leave-field label, #apply_leave_model .leave-label {
 			display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; color: #334155;
 		}
 		#apply_leave_model .leave-field .form-control, #apply_leave_model .leave-field .select2-container .select2-selection {
-			border-radius: 10px; border-color: #d7dee7; min-height: 42px;
+			border-radius: 10px; border-color: #d7dee7; min-height: 46px; font-size: 16px; width: 100%; max-width: 100%;
 		}
-		#apply_leave_model .leave-row { display: flex; gap: 12px; }
-		#apply_leave_model .leave-row > div { flex: 1; }
+		#apply_leave_model .leave-row { display: flex; gap: 12px; flex-wrap: wrap; }
+		#apply_leave_model .leave-row > div { flex: 1 1 160px; min-width: 0; }
 		#apply_leave_model .leave-switch { display: flex; gap: 8px; margin-bottom: 12px; }
 		#apply_leave_model .leave-switch button, #apply_leave_model .leave-chips button {
 			border: 1px solid #d7dee7; background: #fff; color: #334155; border-radius: 999px;
-			padding: 8px 14px; font-weight: 700; font-size: 13px;
+			padding: 10px 16px; min-height: 44px; font-weight: 700; font-size: 15px; touch-action: manipulation;
 		}
 		#apply_leave_model .leave-switch button.is-on, #apply_leave_model .leave-chips button.is-on {
 			background: #0f766e; border-color: #0f766e; color: #fff;
@@ -2869,7 +2881,34 @@ if ($page == "add_classes") {
 		#apply_leave_model .leave-staff-picked { margin-top: 6px; color: #166534; font-size: 12px; font-weight: 700; }
 		#apply_leave_model .leave-sheet-foot {
 			display: flex; justify-content: flex-end; gap: 8px; padding: 14px 24px 18px; background: #fff; border-top: 1px solid #e2e8f0;
-			border-radius: 0 0 18px 18px;
+			border-radius: 0 0 18px 18px; flex: 0 0 auto;
+		}
+		#apply_leave_model .leave-sheet-foot .btn { min-height: 46px; font-size: 16px; touch-action: manipulation; }
+		@media (max-width: 640px) {
+			#apply_leave_model.modal { padding: 0 !important; }
+			#apply_leave_model .leave-dialog {
+				width: 100%; max-width: none; height: 100%; margin: 0;
+			}
+			#apply_leave_model .leave-sheet {
+				height: 100%; max-height: 100vh; max-height: 100dvh; border-radius: 0;
+			}
+			#apply_leave_model .leave-sheet-head { border-radius: 0; padding: 14px 12px 14px 16px; }
+			#apply_leave_model .leave-sheet-head h5 { font-size: 18px; }
+			#apply_leave_model .leave-sheet-head p { font-size: 13px; }
+			#apply_leave_model .leave-sheet-body { padding: 14px 14px 8px; }
+			#apply_leave_model .leave-row { flex-direction: column; gap: 0; }
+			#apply_leave_model .leave-row > div { flex: 1 1 auto; width: 100%; }
+			#apply_leave_model .leave-panel { padding: 12px; }
+			#apply_leave_model .leave-switch { display: grid; grid-template-columns: 1fr 1fr; }
+			#apply_leave_model .leave-switch button { width: 100%; }
+			#apply_leave_model .leave-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+			#apply_leave_model .leave-chips button { width: 100%; padding: 10px 6px; }
+			#apply_leave_model .leave-staff-list { max-height: 38vh; }
+			#apply_leave_model .leave-staff-list button { min-height: 48px; align-items: center; }
+			#apply_leave_model .leave-sheet-foot {
+				border-radius: 0; padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+			}
+			#apply_leave_model .leave-sheet-foot .btn { flex: 1; }
 		}
 	</style>
 	<div class="modal fade" id="apply_leave_model" tabindex="-1" role="dialog">

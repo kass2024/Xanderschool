@@ -21,6 +21,12 @@
 	.leave-pill.is-wait { background: #fef3c7; color: #92400e; }
 	.leave-pill.is-no { background: #fee2e2; color: #991b1b; }
 	.leave-type { font-weight: 700; color: #0f2744; }
+	@media (max-width: 640px) {
+		.leave-board { padding: 8px 10px 20px; }
+		.leave-top { flex-direction: column; align-items: stretch; }
+		.leave-apply { width: 100%; }
+		.leave-table { font-size: 13px; }
+	}
 </style>
 <div class="leave-board">
 	<div class="leave-top">
