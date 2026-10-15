@@ -251,6 +251,12 @@ class FacultyModel extends Model
 			$this->removeKayonzaAnpClasses($schoolId);
 			return 0;
 		}
+		if ($this->db->fieldExists('master_school_id', 'schools')) {
+			$schoolRow = $this->db->table('schools')->select('master_school_id')->where('id', $schoolId)->get(1)->getRowArray();
+			if ($schoolRow && (int) ($schoolRow['master_school_id'] ?? 0) > 0) {
+				return 0;
+			}
+		}
 		$ensured = $this->ensureSpecialNursingAnp();
 		$deptId = (int) ($ensured['department']['id'] ?? 0);
 		$facId = (int) ($ensured['faculty']['id'] ?? 0);

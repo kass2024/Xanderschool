@@ -606,6 +606,31 @@ class AttendanceAreaModel extends Model
 			}
 		}
 
+		if ($gateTaps && $visits !== []) {
+			$merged = [];
+			foreach ($visits as $visit) {
+				$key = (int) $visit['student_id'] . ':' . (int) $visit['day'];
+				if (!isset($merged[$key])) {
+					$merged[$key] = $visit;
+					continue;
+				}
+				foreach (['in', 'lunch', 'back', 'out'] as $field) {
+					$current = (string) ($merged[$key][$field] ?? '');
+					$next = (string) ($visit[$field] ?? '');
+					if ($next === '') {
+						continue;
+					}
+					if ($current === '' || ($field === 'out' && $next > $current)) {
+						$merged[$key][$field] = $next;
+					}
+				}
+				if (!empty($visit['complete']) || ($merged[$key]['out'] ?? '') !== '') {
+					$merged[$key]['complete'] = true;
+				}
+			}
+			$visits = array_values($merged);
+		}
+
 		$total = count($students);
 		$scanned = count($scannedIds);
 		if ($gateTaps) {

@@ -39,6 +39,15 @@
 	padding: 14px 16px;
 	box-shadow: 0 1px 3px rgba(15, 23, 42, .06);
 }
+button.io-kpi {
+	display: block;
+	width: 100%;
+	text-align: left;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+button.io-kpi.is-on { border-color: #012F6B; box-shadow: 0 0 0 2px rgba(1, 47, 107, .25); }
 .io-kpi .lbl { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
 .io-kpi .val { font-size: 1.55rem; font-weight: 800; line-height: 1.15; margin-top: 2px; color: #0f172a; }
 .io-kpi.in .val { color: #059669; }

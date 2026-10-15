@@ -403,6 +403,66 @@ class SchoolHierarchyService
 		return $file;
 	}
 
+	/**
+	 * Child campuses keep a class only when at least one student is enrolled in it.
+	 *
+	 * @return list<array{id:int,name:string,deleted:int}>
+	 */
+	public function deleteEmptyChildClasses(): array
+	{
+		$this->ensureSchema();
+		$db = \Config\Database::connect();
+		if (!$db->fieldExists('master_school_id', 'schools') || !$db->tableExists('classes') || !$db->tableExists('class_records')) {
+			return [];
+		}
+		$schools = $db->table('schools')->select('id, name')->where('master_school_id >', 0)->get()->getResultArray();
+		$done = [];
+		foreach ($schools as $school) {
+			$schoolId = (int) ($school['id'] ?? 0);
+			if ($schoolId < 1) {
+				continue;
+			}
+			$rows = $db->query(
+				'SELECT c.id FROM classes c
+				WHERE c.school_id = ?
+				AND NOT EXISTS (SELECT 1 FROM class_records cr WHERE cr.class = c.id LIMIT 1)',
+				[$schoolId]
+			)->getResultArray();
+			$ids = [];
+			foreach ($rows as $row) {
+				$id = (int) ($row['id'] ?? 0);
+				if ($id > 0) {
+					$ids[] = $id;
+				}
+			}
+			if ($ids === []) {
+				continue;
+			}
+			try {
+				$db->transStart();
+				if ($db->tableExists('course_records')) {
+					$db->table('course_records')->whereIn('class', $ids)->delete();
+				}
+				if ($db->tableExists('school_fees') && $db->fieldExists('class_id', 'school_fees')) {
+					$db->table('school_fees')->where('school_id', $schoolId)->whereIn('class_id', $ids)->delete();
+				}
+				$db->table('classes')->where('school_id', $schoolId)->whereIn('id', $ids)->delete();
+				$db->transComplete();
+				if (!$db->transStatus()) {
+					continue;
+				}
+			} catch (\Throwable $e) {
+				continue;
+			}
+			$done[] = [
+				'id' => $schoolId,
+				'name' => (string) ($school['name'] ?? ''),
+				'deleted' => count($ids),
+			];
+		}
+		return $done;
+	}
+
 	private function isWisdomMasterSchoolRow($school, $masterId)
 	{
 		if (!is_array($school)) {

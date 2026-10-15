@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=3">
+<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=4">
 <?php
 if ($show_header) {
 	$inoutSchoolId = (new \App\Models\AttendanceAreaModel())->inoutSchoolId((int) session('soma_school_id'));
@@ -105,7 +105,28 @@ if ($show_header) {
 				$(".io-pane").attr("hidden", true);
 				$("#" + pane).removeAttr("hidden");
 			});
+			$("#report_content").on("click", ".io-kpi[data-tap]", function () {
+				var tap = String($(this).data("tap") || "");
+				var attr = tap === "lunch" ? "lunch" : (tap === "back" ? "back" : (tap === "evening" ? "out" : "morning"));
+				$(".io-kpi[data-tap]").removeClass("is-on");
+				$(this).addClass("is-on");
+				$(".io-day").removeClass("active");
+				$(".io-day[data-day='all']").addClass("active");
+				$(".io-visit-row").hide();
+				var $vis = $(".io-visit-row[data-" + attr + "='1']");
+				$vis.show();
+				var labels = { morning: "Morning", lunch: "Lunch out", back: "Back", evening: "Evening" };
+				$("#ioDayCaption").text((labels[tap] || "Taps") + " · " + $vis.length + " students");
+				$("#ioDayIn").text($vis.filter("[data-morning='1']").length);
+				$("#ioDayOut").text($vis.filter("[data-out='1']").length);
+				if ($("#ioDayLunch").length) {
+					$("#ioDayLunch").text($vis.filter("[data-lunch='1']").length);
+					$("#ioDayBack").text($vis.filter("[data-back='1']").length);
+				}
+				$("#ioDayEmpty").toggle($vis.length === 0);
+			});
 			$("#report_content").on("click", ".io-day", function () {
+				$(".io-kpi[data-tap]").removeClass("is-on");
 				var day = String($(this).data("day"));
 				$(".io-day").removeClass("active");
 				$(this).addClass("active");
@@ -175,10 +196,10 @@ foreach ($visits as $vv) {
 		<div class="io-kpi"><div class="lbl">Students</div><div class="val"><?= (int) ($kpi['students'] ?? 0); ?></div></div>
 		<div class="io-kpi blue"><div class="lbl">Scanned</div><div class="val"><?= (int) ($kpi['scanned'] ?? 0); ?></div></div>
 		<?php if ($gateTaps): ?>
-		<div class="io-kpi in"><div class="lbl">1 · Morning</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></div>
-		<div class="io-kpi lunch"><div class="lbl">2 · Lunch out</div><div class="val"><?= (int) ($kpi['lunch_count'] ?? 0); ?></div></div>
-		<div class="io-kpi back"><div class="lbl">3 · Back</div><div class="val"><?= (int) ($kpi['back_count'] ?? 0); ?></div></div>
-		<div class="io-kpi leave"><div class="lbl">4 · Evening</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></div>
+		<button type="button" class="io-kpi in" data-tap="morning"><div class="lbl">1 · Morning</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></button>
+		<button type="button" class="io-kpi lunch" data-tap="lunch"><div class="lbl">2 · Lunch out</div><div class="val"><?= (int) ($kpi['lunch_count'] ?? 0); ?></div></button>
+		<button type="button" class="io-kpi back" data-tap="back"><div class="lbl">3 · Back</div><div class="val"><?= (int) ($kpi['back_count'] ?? 0); ?></div></button>
+		<button type="button" class="io-kpi leave" data-tap="evening"><div class="lbl">4 · Evening</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></button>
 		<?php else: ?>
 		<div class="io-kpi in"><div class="lbl">IN taps</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></div>
 		<div class="io-kpi out"><div class="lbl">OUT / checkout</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></div>
@@ -246,7 +267,7 @@ foreach ($visits as $vv) {
 						?>
 						<button type="button" class="io-day<?= $d === $defaultDay ? ' active' : ''; ?>" data-day="<?= $d; ?>">
 							<?= sprintf('%02d', $d); ?>
-							<small><?= (int) $ds['in_count']; ?> IN</small>
+							<small><?= (int) $ds['in_count']; ?> in<?php if ($gateTaps): ?> · <?= (int) $ds['out_count']; ?> eve<?php endif; ?></small>
 						</button>
 					<?php endforeach; ?>
 				</div>
@@ -292,7 +313,7 @@ foreach ($visits as $vv) {
 						$hide = ($defaultDay > 0 && $day !== $defaultDay);
 						$complete = !empty($v['complete']);
 						?>
-						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-day="<?= $day; ?>" data-out="<?= $complete ? '1' : '0'; ?>" data-morning="<?= ($v['in'] ?? '') !== '' ? '1' : '0'; ?>" data-lunch="<?= !empty($v['lunch']) ? '1' : '0'; ?>" data-back="<?= !empty($v['back']) ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
+						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-day="<?= $day; ?>" data-out="<?= ($v['out'] ?? '') !== '' ? '1' : '0'; ?>" data-morning="<?= ($v['in'] ?? '') !== '' ? '1' : '0'; ?>" data-lunch="<?= !empty($v['lunch']) ? '1' : '0'; ?>" data-back="<?= !empty($v['back']) ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
 							<td><?= $n++; ?></td>
 							<td>
 								<strong><?= esc(trim(($v['fname'] ?? '') . ' ' . ($v['lname'] ?? ''))); ?></strong>
@@ -305,7 +326,7 @@ foreach ($visits as $vv) {
 							<?php if ($gateTaps): ?>
 							<td><?= !empty($v['lunch']) ? '<span class="io-time lunch">' . esc($v['lunch']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>
 							<td><?= !empty($v['back']) ? '<span class="io-time back">' . esc($v['back']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>
-							<td><?= $complete ? '<span class="io-time leave">' . esc($v['out']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>
+							<td><?= ($v['out'] ?? '') !== '' ? '<span class="io-time leave">' . esc($v['out']) . '</span>' : '<span class="io-time dash">—</span>'; ?></td>
 							<td>
 								<?php if ($complete) : ?>
 									<span class="io-st done">Left school</span>
