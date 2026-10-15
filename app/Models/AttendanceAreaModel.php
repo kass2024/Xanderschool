@@ -362,10 +362,7 @@ class AttendanceAreaModel extends Model
 			$stQ->where('cr.class', $classId);
 		}
 		if ($gateTaps) {
-			$stQ->groupStart()
-				->where('s.studying_mode', 1)
-				->orWhere('s.studying_mode', 'Day')
-				->groupEnd();
+			$stQ->where('s.studying_mode', 1);
 		}
 		$students = $stQ->groupBy('s.id, s.fname, s.lname, s.regno, l.title, d.code, c.title, c.id')
 			->orderBy('s.fname', 'ASC')->orderBy('s.lname', 'ASC')->get()->getResultArray();
