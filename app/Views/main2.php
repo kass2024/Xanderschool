@@ -626,9 +626,16 @@
 										<?= lang("app.PocketMoney"); ?>
 									</a>
 								</li>
+								<li>
+									<a href="<?= base_url('canteen'); ?>">
+										<i class="metismenu-icon pe-7s-coffee"></i>
+										Canteen
+									</a>
+								</li>
 								<?php
 							}
 							?>
+							<li class="app-sidebar__heading">Leave</li>
 							<li>
 								<a href="<?= base_url('leave_application'); ?>">
 									<i class="metismenu-icon typcn typcn-chart-pie-outline"></i>
@@ -2405,7 +2412,9 @@ if ($page == "add_classes") {
 										<option selected disabled><?= lang("app.selectFaculty"); ?></option>
 										<option value="1"><?= lang("app.wda"); ?></option>
 										<option value="2"><?= lang("app.reb"); ?></option>
+										<?php if (strpos(strtoupper((string) session('soma_school')), 'KAYONZA') === false): ?>
 										<option value="3"><?= lang("app.special"); ?></option>
+										<?php endif; ?>
 									</select>
 								</div>
 								<div class="col-sm-12" id="select_faculty">

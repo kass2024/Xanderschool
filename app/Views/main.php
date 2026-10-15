@@ -2659,7 +2659,9 @@ if ($page == "add_classes") {
 										<option selected disabled><?= lang("app.selectFaculty"); ?></option>
 										<option value="1"><?= lang("app.wda"); ?></option>
 										<option value="2"><?= lang("app.reb"); ?></option>
+										<?php if (strpos(strtoupper((string) session('soma_school')), 'KAYONZA') === false): ?>
 										<option value="3"><?= lang("app.special"); ?></option>
+										<?php endif; ?>
 									</select>
 								</div>
 								<div class="col-sm-12" id="select_faculty">

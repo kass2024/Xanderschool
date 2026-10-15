@@ -619,6 +619,9 @@
 							</div>
 							<div class="st-kpi-grid">
 								<?php foreach ($stKpiTiles as $tile):
+									if ($tile['key'] === 'anp' && strpos(strtoupper((string) session('soma_school')), 'KAYONZA') !== false) {
+										continue;
+									}
 									$n = $stKpiVal($tile['key']);
 									$active = ($tile['key'] === 'total' && $stKpiGroup === '') || ($stKpiGroup === $tile['key']);
 									$href = !empty($tile['href'])

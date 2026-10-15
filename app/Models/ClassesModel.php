@@ -13,6 +13,20 @@ class ClassesModel extends Model
 	protected $createdField = 'created_at';
 	protected $updatedField = 'updated_at';
 
+	public function insert($data = null, bool $returnID = true)
+	{
+		$row = is_array($data) ? $data : [];
+		$schoolId = (int) ($row['school_id'] ?? 0);
+		$deptId = (int) ($row['department'] ?? 0);
+		if ($schoolId > 0 && $deptId > 0) {
+			$faculty = new FacultyModel();
+			if ($faculty->isWisdomKayonza($schoolId) && $faculty->departmentIsAnp($deptId)) {
+				throw new \RuntimeException('Wisdom School Kayonza does not have an ANP class.');
+			}
+		}
+		return parent::insert($data, $returnID);
+	}
+
 	public function get_classes($schoolId = 0)
 	{
 		$year = (int) ($_SESSION['soma_academics_year'] ?? 0);
@@ -77,7 +91,8 @@ class ClassesModel extends Model
 			WHEN LOWER(TRIM(classes.title)) = 'holiday' THEN 90
 			ELSE 40
 		END)";
-		$data = $this->select("classes.id,classes.level as level_id,if(classes.title='','-----',classes.title) as title,d.title as department_name,d.id as department_id,d.code,l.title as level_name
+		$resolvedSchool = (int) $schoolId > 0 ? (int) $schoolId : (int) ($_SESSION["soma_school_id"] ?? 0);
+		$builder = $this->select("classes.id,classes.level as level_id,if(classes.title='','-----',classes.title) as title,d.title as department_name,d.id as department_id,d.code,l.title as level_name
 			,f.type,f.abbrev as faculty_code,f.id as facul_id,concat(s.fname,' ',s.lname) as mentor_name,s.id as idstf,
 		(select count(cc.id) from class_records cc where cc.class=classes.id and cc.year=" . $year . ") as students,
 		(select count(c1.id) from course_records c1 where c1.class=classes.id and c1.year=" . $year . ") as courses
@@ -86,7 +101,13 @@ class ClassesModel extends Model
 			->join("levels l", "l.id=classes.level", "LEFT")
 			->join("faculty f", "f.id=d.faculty_id", "LEFT")
 			->join("staffs s", "s.id=classes.mentor", "LEFT")
-			->where("classes.school_id", (int) $schoolId > 0 ? (int) $schoolId : (int) ($_SESSION["soma_school_id"] ?? 0))
+			->where("classes.school_id", $resolvedSchool);
+		if ((new FacultyModel())->isWisdomKayonza($resolvedSchool)) {
+			$builder->where('IFNULL(f.type,0) != ' . (int) FacultyModel::TYPE_SPECIAL, null, false)
+				->where("UPPER(TRIM(IFNULL(d.code,''))) != 'ANP'", null, false)
+				->where("UPPER(IFNULL(d.title,'')) NOT LIKE '%ANP%'", null, false);
+		}
+		$data = $builder
 			->groupBy("classes.id")
 			->orderBy($stageOrder, 'ASC', false)
 			->orderBy($levelOrder, 'ASC', false)
