@@ -258,7 +258,31 @@
 					?>
 					<style>
 						.wg-wrap { margin-bottom: 16px; }
-						.wg-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+						.wg-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+						.wg-people { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 12px; }
+						.wg-people h5, .wg-band h5 { margin: 0 0 8px; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+						.wg-people .is-students, .wg-band.students { background: #fff; border: 1px solid #dbeafe; border-radius: 14px; padding: 12px; }
+						.wg-people .is-students h5, .wg-band.students h5 { color: #1d4ed8; }
+						.wg-people .is-staff, .wg-band.staff { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #0f766e; border-radius: 14px; padding: 12px; }
+						.wg-people .is-staff h5, .wg-band.staff h5 { color: #0f766e; }
+						.wg-split { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 12px; }
+						.wg-smart { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+						.wg-smart a, .wg-smart div { display: block; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; min-width: 0; text-decoration: none; color: inherit; }
+						.wg-smart b { display: block; font-size: 1.45rem; line-height: 1.05; color: #0f172a; }
+						.wg-smart em { display: block; margin-top: 3px; font-style: normal; font-size: .78rem; font-weight: 700; color: #334155; }
+						.wg-smart small { display: block; margin-top: 2px; color: #64748b; font-size: .72rem; }
+						.wg-smart .good { border-top: 3px solid #16a34a; }
+						.wg-smart .good b { color: #15803d; }
+						.wg-smart .bad { border-top: 3px solid #dc2626; background: #fff7f7; }
+						.wg-smart .bad b { color: #dc2626; }
+						.wg-smart a:hover { border-color: #1d4ed8; box-shadow: 0 4px 14px rgba(15, 23, 42, .08); }
+						@media (min-width: 900px) {
+							.wg-people { grid-template-columns: minmax(0, 1.6fr) minmax(240px, .7fr); align-items: start; }
+							.wg-master .wg-split { grid-template-columns: minmax(0, 1.7fr) minmax(200px, .7fr); align-items: start; }
+							.wg-master .wg-band.students .wg-smart { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+							.wg-master .wg-band.staff .wg-smart { grid-template-columns: 1fr; }
+							.wg-card .wg-band.staff .wg-smart { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+						}
 						.wg-kpi { background: #fff; border: 1px solid #e6e8ee; border-top: 4px solid #1d4ed8; border-radius: 12px; padding: 12px 14px; min-width: 0; }
 						.wg-kpi b { display: block; font-size: 1.55rem; line-height: 1.1; color: #1d4ed8; }
 						.wg-kpi.green { border-top-color: #16a34a; }
@@ -377,24 +401,39 @@
 							.wg-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 							.wg-grid { grid-template-columns: 1fr 1fr; }
 						}
-						@media (min-width: 1100px) {
-							.wg-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-						}
 					</style>
 					<div class="wg-wrap">
 						<?php if (in_array((int) session('soma_post'), [\App\Models\PostsModel::PRINCIPAL_ID, \App\Models\PostsModel::DIRECTOR_ID], true) || \Config\MenuClearance::isChiefAccountantPost(session('soma_post'))): ?>
 						<a class="wg-book" href="<?= base_url('wisdom-population-report'); ?>">Attendance workbook</a>
 						<?php endif; ?>
-						<div class="wg-kpis">
-							<div class="wg-kpi"><b><?= (int) $wgTotals['students']; ?></b><span><?= $wgSingle ? 'Students' : 'Students, all schools'; ?></span></div>
-							<div class="wg-kpi green"><b><?= (int) $wgTotals['boys']; ?></b><span>Boys</span></div>
-							<div class="wg-kpi red"><b><?= (int) $wgTotals['girls']; ?></b><span>Girls</span></div>
-							<div class="wg-kpi"><b><?= (int) $wgTotals['staff']; ?></b><span>Staff</span></div>
-							<div class="wg-kpi green"><b><?= (int) $wgTotals['students_present']; ?></b><span>Students in today</span></div>
-							<div class="wg-kpi"><b><?= (int) $wgTotals['student_out']; ?></b><span>Students out today</span></div>
-							<div class="wg-kpi"><b><?= (int) $wgTotals['student_inside']; ?></b><span>Students still inside</span></div>
-							<a class="wg-kpi green" href="<?= base_url('wisdom-staff-today/0/in'); ?>"><b><?= (int) $wgTotals['staff_present']; ?></b><span>Staff in today</span></a>
-							<a class="wg-kpi red" href="<?= base_url('wisdom-staff-today/0/absent'); ?>"><b><?= (int) $wgTotals['staff_absent']; ?></b><span>Staff absent today</span></a>
+						<?php
+							$wgStu = (int) $wgTotals['students'];
+							$wgStuIn = (int) $wgTotals['students_present'];
+							$wgStuPct = $wgStu > 0 ? (int) round($wgStuIn * 100 / $wgStu) : 0;
+							$wgStf = (int) $wgTotals['staff'];
+							$wgStfIn = (int) $wgTotals['staff_present'];
+							$wgStfPct = $wgStf > 0 ? (int) round($wgStfIn * 100 / $wgStf) : 0;
+						?>
+						<div class="wg-people">
+							<section class="is-students">
+								<h5>Students<?= $wgSingle ? '' : ' · all schools'; ?></h5>
+								<div class="wg-kpis">
+									<div class="wg-kpi"><b><?= $wgStu; ?></b><span>Enrolled</span></div>
+									<div class="wg-kpi"><b><?= (int) $wgTotals['boys']; ?></b><span>Boys</span></div>
+									<div class="wg-kpi"><b><?= (int) $wgTotals['girls']; ?></b><span>Girls</span></div>
+									<div class="wg-kpi green"><b><?= $wgStuIn; ?></b><span>In today · <?= $wgStuPct; ?>%</span></div>
+									<div class="wg-kpi"><b><?= (int) $wgTotals['student_out']; ?></b><span>Out today</span></div>
+									<div class="wg-kpi"><b><?= (int) $wgTotals['student_inside']; ?></b><span>Still inside</span></div>
+								</div>
+							</section>
+							<section class="is-staff">
+								<h5>Staff<?= $wgSingle ? '' : ' · all schools'; ?></h5>
+								<div class="wg-kpis">
+									<div class="wg-kpi"><b><?= $wgStf; ?></b><span>On roll</span></div>
+									<a class="wg-kpi green" href="<?= base_url('wisdom-staff-today/0/in'); ?>"><b><?= $wgStfIn; ?></b><span>In today · <?= $wgStfPct; ?>%</span></a>
+									<a class="wg-kpi red" href="<?= base_url('wisdom-staff-today/0/absent'); ?>"><b><?= (int) $wgTotals['staff_absent']; ?></b><span>Absent today</span></a>
+								</div>
+							</section>
 						</div>
 						<?php if ($wgMaster): ?>
 						<div class="wg-master">
@@ -437,22 +476,73 @@
 									</a>
 								</div>
 							</div>
-							<div class="wg-metrics">
-								<div><strong><?= (int) $wgMaster['students']; ?></strong><em>Students</em></div>
-								<div><strong><?= (int) $wgMaster['boys']; ?></strong><em>Boys</em></div>
-								<div><strong><?= (int) $wgMaster['girls']; ?></strong><em>Girls</em></div>
-								<div><strong><?= (int) $wgMaster['staff']; ?></strong><em>Staff</em></div>
-								<?php $matt = $wgMaster['att_summary'] ?? []; ?>
-								<div><strong><?= (int) ($matt['daily_present'] ?? 0); ?></strong><em>Total present</em><br><small>School gate and boarding</small></div>
-								<a href="<?= $tapBase; ?>morning"><strong><?= (int) ($matt['day_present'] ?? 0); ?></strong><em>Dayscholar present</em><br><small>School gate · see who</small></a>
-								<div><strong><?= (int) ($matt['board_present'] ?? 0); ?></strong><em>Boarding present</em><br><small>Boarding device</small></div>
-								<div><strong><?= (int) ($matt['girls_present'] ?? 0); ?></strong><em>Girls present</em></div>
-								<div><strong><?= (int) ($matt['boys_present'] ?? 0); ?></strong><em>Boys present</em></div>
-								<div><strong><?= (int) ($matt['daily_absent'] ?? 0); ?></strong><em>Absent students</em><br><small>Not recorded on the device</small></div>
-								<div><strong><?= (int) $wgMaster['student_out']; ?></strong><em>Students out</em></div>
-								<div><strong><?= (int) $wgMaster['student_inside']; ?></strong><em>Still inside</em></div>
-								<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/in'); ?>"><strong><?= (int) $wgMaster['staff_present']; ?></strong><em>Staff in today</em></a>
-								<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/absent'); ?>"><strong><?= (int) $wgMaster['staff_absent']; ?></strong><em>Staff absent today</em></a>
+							<?php
+								$matt = $wgMaster['att_summary'] ?? [];
+								$enrolled = (int) $wgMaster['students'];
+								$present = (int) ($matt['daily_present'] ?? 0);
+								$absent = (int) ($matt['daily_absent'] ?? 0);
+								$presentPct = $enrolled > 0 ? (int) round($present * 100 / $enrolled) : 0;
+								$staffRoll = (int) $wgMaster['staff'];
+								$staffIn = (int) $wgMaster['staff_present'];
+								$staffOut = (int) $wgMaster['staff_absent'];
+								$staffPct = $staffRoll > 0 ? (int) round($staffIn * 100 / $staffRoll) : 0;
+							?>
+							<div class="wg-split">
+								<section class="wg-band students">
+									<h5>Students</h5>
+									<div class="wg-smart">
+										<div>
+											<b><?= $enrolled; ?></b>
+											<em>Enrolled</em>
+											<small><?= (int) $wgMaster['boys']; ?> boys · <?= (int) $wgMaster['girls']; ?> girls</small>
+										</div>
+										<div class="good">
+											<b><?= $present; ?></b>
+											<em>Present · <?= $presentPct; ?>%</em>
+											<small><?= (int) ($matt['girls_present'] ?? 0); ?> girls · <?= (int) ($matt['boys_present'] ?? 0); ?> boys</small>
+										</div>
+										<div class="bad">
+											<b><?= $absent; ?></b>
+											<em>Absent</em>
+											<small>Not recorded on the device</small>
+										</div>
+										<a href="<?= $tapBase; ?>morning">
+											<b><?= (int) ($matt['day_present'] ?? 0); ?></b>
+											<em>Day scholars</em>
+											<small>School gate · see who</small>
+										</a>
+										<div>
+											<b><?= (int) ($matt['board_present'] ?? 0); ?></b>
+											<em>Boarding</em>
+											<small>Boarding device</small>
+										</div>
+										<div>
+											<b><?= (int) $wgMaster['student_inside']; ?></b>
+											<em>Still inside</em>
+											<small><?= (int) $wgMaster['student_out']; ?> already out</small>
+										</div>
+									</div>
+								</section>
+								<section class="wg-band staff">
+									<h5>Staff</h5>
+									<div class="wg-smart">
+										<div>
+											<b><?= $staffRoll; ?></b>
+											<em>On roll</em>
+											<small>This school</small>
+										</div>
+										<a class="good" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/in'); ?>">
+											<b><?= $staffIn; ?></b>
+											<em>In today · <?= $staffPct; ?>%</em>
+											<small>See who is in</small>
+										</a>
+										<a class="bad" href="<?= base_url('wisdom-staff-today/' . (int) $wgMaster['id'] . '/absent'); ?>">
+											<b><?= $staffOut; ?></b>
+											<em>Absent today</em>
+											<small>See who is missing</small>
+										</a>
+									</div>
+								</section>
 							</div>
 							<?php
 								$wgVisitors = $wgMaster['daily_visitors'] ?? [];
@@ -540,13 +630,21 @@
 							?>
 							<div class="wg-card <?= $wgTone; ?>" data-school-name="<?= esc(strtolower($campus['name'])); ?>">
 								<h4><?= esc($campus['name']); ?></h4>
-								<div class="wg-metrics">
-									<div><strong><?= (int) $campus['students']; ?></strong><em>Students</em></div>
-									<div><strong><?= (int) $campus['boys']; ?></strong><em>Boys</em></div>
-									<div><strong><?= (int) $campus['girls']; ?></strong><em>Girls</em></div>
-									<div><strong><?= (int) $campus['staff']; ?></strong><em>Staff</em></div>
-									<a class="metric-in" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/in'); ?>"><strong><?= (int) $campus['staff_present']; ?></strong><em>Staff in</em></a>
-									<a class="metric-absent" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/absent'); ?>"><strong><?= (int) $campus['staff_absent']; ?></strong><em>Staff absent</em></a>
+								<div class="wg-split">
+									<section class="wg-band students">
+										<h5>Students</h5>
+										<div class="wg-smart">
+											<div><b><?= (int) $campus['students']; ?></b><em>Enrolled</em><small><?= (int) $campus['boys']; ?> boys · <?= (int) $campus['girls']; ?> girls</small></div>
+										</div>
+									</section>
+									<section class="wg-band staff">
+										<h5>Staff</h5>
+										<div class="wg-smart">
+											<div><b><?= (int) $campus['staff']; ?></b><em>On roll</em></div>
+											<a class="good" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/in'); ?>"><b><?= (int) $campus['staff_present']; ?></b><em>In today</em></a>
+											<a class="bad" href="<?= base_url('wisdom-staff-today/' . (int) $campus['id'] . '/absent'); ?>"><b><?= (int) $campus['staff_absent']; ?></b><em>Absent</em></a>
+										</div>
+									</section>
 								</div>
 								<?php $att = $campus['att_summary'] ?? []; ?>
 								<div class="wg-att">
