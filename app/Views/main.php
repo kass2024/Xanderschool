@@ -2850,6 +2850,23 @@ if ($page == "add_classes") {
 			background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; border-radius: 12px;
 			padding: 10px 12px; font-size: 13px; margin-bottom: 8px;
 		}
+		#apply_leave_model .leave-staff-pick { position: relative; }
+		#apply_leave_model .leave-staff-list {
+			position: absolute; left: 0; right: 0; top: calc(100% - 8px); z-index: 40;
+			background: #fff; border: 1px solid #d7dee7; border-radius: 12px; max-height: 240px; overflow: auto;
+			box-shadow: 0 16px 36px rgba(15, 39, 68, .16);
+		}
+		#apply_leave_model .leave-staff-list button {
+			display: flex; width: 100%; justify-content: space-between; gap: 12px; text-align: left;
+			border: 0; border-bottom: 1px solid #f1f5f9; background: #fff; padding: 9px 12px; color: #1e293b; font-weight: 700;
+		}
+		#apply_leave_model .leave-staff-list button span { font-weight: 500; color: #64748b; }
+		#apply_leave_model .leave-staff-list button.is-on,
+		#apply_leave_model .leave-staff-list button:hover { background: #1d4e89; color: #fff; }
+		#apply_leave_model .leave-staff-list button.is-on span,
+		#apply_leave_model .leave-staff-list button:hover span { color: #dbeafe; }
+		#apply_leave_model .leave-staff-list .muted { padding: 10px 12px; color: #64748b; }
+		#apply_leave_model .leave-staff-picked { margin-top: 6px; color: #166534; font-size: 12px; font-weight: 700; }
 		#apply_leave_model .leave-sheet-foot {
 			display: flex; justify-content: flex-end; gap: 8px; padding: 14px 24px 18px; background: #fff; border-top: 1px solid #e2e8f0;
 			border-radius: 0 0 18px 18px;
@@ -2869,14 +2886,12 @@ if ($page == "add_classes") {
 					</div>
 					<div class="leave-sheet-body">
 						<?php if (!empty($apply_for_others)) { ?>
-						<div class="leave-field">
+						<div class="leave-field leave-staff-pick">
 							<label><?= lang("app.staffName"); ?></label>
-							<select class="form-control select2" name="staff_id" required>
-								<option selected disabled value=""><?= lang("app.selectStaff"); ?></option>
-								<?php foreach (($leave_staff ?? []) as $leaveStaff) { ?>
-									<option value="<?= (int) $leaveStaff['id']; ?>"><?= esc($leaveStaff['name']); ?></option>
-								<?php } ?>
-							</select>
+							<input type="text" class="form-control" id="leave-staff-q" placeholder="Type a name or phone number" autocomplete="off">
+							<input type="hidden" name="staff_id" id="leave-staff-id" value="">
+							<div class="leave-staff-picked" id="leave-staff-picked" style="display:none;"></div>
+							<div class="leave-staff-list" id="leave-staff-list" style="display:none;"></div>
 						</div>
 						<?php } ?>
 						<div class="leave-field">
@@ -4163,25 +4178,28 @@ if ($page == "pendingRegistration") {
 			var needReason = type === "4" || type === "5";
 			$("#leave_reason").prop("required", needReason);
 			$("#leave-reason-label").text(type === "5" ? "Reason for this short permission" : (type === "4" ? "<?= lang("app.unpaidReason"); ?>" : "Reason"));
+			var ready = leaveAutoApprove
+				? "Saving this approves it in your name. The gate shows green "
+				: "After approval, the gate shows green ";
 			var preview = "Choose a leave type to see when the gate will open.";
 			if (shortLeave && span === "hours") {
 				var day = $("#short_date").val();
 				var time = $("#short_time").val();
 				var hours = $("#leave_hours").val() || "2";
 				preview = day && time
-					? ("After approval, the gate shows green for " + hours + " hour(s) from " + day + " " + time + ". The tablet must be online.")
+					? (ready + "for " + hours + " hour(s) from " + day + " " + time + ". The tablet must be online.")
 					: "Pick the day, start time, and how many hours.";
 			} else if (shortLeave) {
 				var start = $("#short_day_date").val() || $("#short_date").val();
 				var days = $("#leave_short_days").val() || "1";
 				preview = start
-					? ("After approval, the gate shows green for " + days + " day(s) starting " + start + ". The tablet must be online.")
+					? (ready + "for " + days + " day(s) starting " + start + ". The tablet must be online.")
 					: "Pick the start day and 1, 2, or 3 days.";
 			} else if (type !== "") {
 				var from = $("#reg_from").val();
 				var to = $("#reg_to").val();
 				preview = from && to
-					? ("After approval, the gate shows green from " + from + " through " + to + ". The tablet must be online.")
+					? (ready + "from " + from + " through " + to + ". The tablet must be online.")
 					: "Pick the from and to dates.";
 			}
 			$("#leave-preview").text(preview);
@@ -4203,8 +4221,126 @@ if ($page == "pendingRegistration") {
 			}
 			leaveSyncForm();
 		});
-		$("#apply_leave_model").on("shown.bs.modal", leaveSyncForm);
+		$("#apply_leave_model").on("shown.bs.modal", function () {
+			leaveSyncForm();
+			$("#leave-staff-q").trigger("focus");
+		});
 		$("#leave-apply-form").on("submit", leaveSyncForm);
+		var leaveStaff = <?= json_encode(!empty($apply_for_others) ? ($leave_staff ?? []) : [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+		var leaveAutoApprove = <?= !empty($apply_for_others) ? 'true' : 'false'; ?>;
+		var leaveStaffIndex = -1;
+		function leaveStaffHits(query) {
+			var q = $.trim(query || "").toLowerCase();
+			if (q === "") {
+				return [];
+			}
+			var bits = q.split(/\s+/);
+			var hits = [];
+			for (var i = 0; i < leaveStaff.length; i++) {
+				var person = leaveStaff[i];
+				var name = String(person.name || "").toLowerCase();
+				var phone = String(person.phone || "").replace(/\s+/g, "");
+				var ok = true;
+				for (var b = 0; b < bits.length; b++) {
+					var bit = bits[b];
+					if (name.indexOf(bit) === -1 && phone.indexOf(bit.replace(/\s+/g, "")) === -1) {
+						ok = false;
+						break;
+					}
+				}
+				if (ok) {
+					hits.push(person);
+				}
+				if (hits.length >= 12) {
+					break;
+				}
+			}
+			return hits;
+		}
+		function leaveStaffPick(person) {
+			$("#leave-staff-id").val(person.id);
+			$("#leave-staff-q").val(person.name);
+			$("#leave-staff-picked").css("color", "#166534").text("Selected: " + person.name).show();
+			$("#leave-staff-list").hide();
+		}
+		function leaveStaffRender() {
+			var box = $("#leave-staff-list");
+			if (!box.length) {
+				return;
+			}
+			var hits = leaveStaffHits($("#leave-staff-q").val());
+			box.empty();
+			leaveStaffIndex = hits.length ? 0 : -1;
+			if ($.trim($("#leave-staff-q").val()) === "") {
+				box.hide();
+				return;
+			}
+			if (!hits.length) {
+				box.append($("<div class='muted'>").text("No staff member matches that name.")).show();
+				return;
+			}
+			$.each(hits, function (idx, person) {
+				var btn = $("<button type='button'>").attr("data-id", person.id).attr("data-name", person.name);
+				btn.append($("<strong>").text(person.name));
+				if (person.phone) {
+					btn.append($("<span>").text(person.phone));
+				}
+				if (idx === 0) {
+					btn.addClass("is-on");
+				}
+				box.append(btn);
+			});
+			box.show();
+		}
+		$("#leave-staff-q").on("input", function () {
+			$("#leave-staff-id").val("");
+			$("#leave-staff-picked").hide();
+			leaveStaffRender();
+		});
+		$("#leave-staff-q").on("keydown", function (e) {
+			var buttons = $("#leave-staff-list button");
+			if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+				if (!buttons.length) {
+					return;
+				}
+				e.preventDefault();
+				leaveStaffIndex += e.key === "ArrowDown" ? 1 : -1;
+				if (leaveStaffIndex < 0) {
+					leaveStaffIndex = buttons.length - 1;
+				}
+				if (leaveStaffIndex >= buttons.length) {
+					leaveStaffIndex = 0;
+				}
+				buttons.removeClass("is-on").eq(leaveStaffIndex).addClass("is-on");
+			} else if (e.key === "Enter" && $("#leave-staff-list").is(":visible")) {
+				e.preventDefault();
+				var chosen = buttons.filter(".is-on").first();
+				if (chosen.length) {
+					leaveStaffPick({id: chosen.data("id"), name: chosen.data("name")});
+				}
+			} else if (e.key === "Escape") {
+				$("#leave-staff-list").hide();
+			}
+		});
+		$(document).on("click", "#leave-staff-list button", function () {
+			leaveStaffPick({id: $(this).data("id"), name: $(this).data("name")});
+		});
+		$(document).on("mousedown", function (e) {
+			if (!$(e.target).closest(".leave-staff-pick").length) {
+				$("#leave-staff-list").hide();
+			}
+		});
+		var leaveApplyForm = document.getElementById("leave-apply-form");
+		if (leaveApplyForm && document.getElementById("leave-staff-id")) {
+			leaveApplyForm.addEventListener("submit", function (e) {
+				if (!$("#leave-staff-id").val()) {
+					e.preventDefault();
+					e.stopPropagation();
+					$("#leave-staff-picked").text("Type a name and pick the staff member.").css("color", "#b45309").show();
+					$("#leave-staff-q").trigger("focus");
+				}
+			}, true);
+		}
 		// $("#select2Input").select2({ dropdownParent: "#modal-container" });
 		$("#editBook").on("show.bs.modal", function (e) {
 			var id = $(e.relatedTarget).data("id");
