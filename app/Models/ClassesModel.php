@@ -13,7 +13,7 @@ class ClassesModel extends Model
 	protected $createdField = 'created_at';
 	protected $updatedField = 'updated_at';
 
-	public function get_classes()
+	public function get_classes($schoolId = 0)
 	{
 		$year = (int) ($_SESSION['soma_academics_year'] ?? 0);
 		if ($year <= 0) {
@@ -86,7 +86,7 @@ class ClassesModel extends Model
 			->join("levels l", "l.id=classes.level", "LEFT")
 			->join("faculty f", "f.id=d.faculty_id", "LEFT")
 			->join("staffs s", "s.id=classes.mentor", "LEFT")
-			->where("classes.school_id", $_SESSION["soma_school_id"])
+			->where("classes.school_id", (int) $schoolId > 0 ? (int) $schoolId : (int) ($_SESSION["soma_school_id"] ?? 0))
 			->groupBy("classes.id")
 			->orderBy($stageOrder, 'ASC', false)
 			->orderBy($levelOrder, 'ASC', false)

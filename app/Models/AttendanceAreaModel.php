@@ -80,9 +80,36 @@ class AttendanceAreaModel extends Model
 		return $row;
 	}
 
+	/**
+	 * Gate report on the Wisdom master shows Wisdom School Musanze only.
+	 * A child campus keeps its own students.
+	 */
+	public function inoutSchoolId(int $schoolId): int
+	{
+		$schoolId = (int) $schoolId;
+		if ($schoolId < 1) {
+			return $schoolId;
+		}
+		try {
+			$overview = new \App\Services\WisdomGroupOverview();
+			$musanze = $overview->wisdomMusanzeSchool();
+			$musanzeId = (int) ($musanze['id'] ?? 0);
+			if ($musanzeId < 1 || $schoolId === $musanzeId) {
+				return $schoolId;
+			}
+			if ($overview->isWisdomMaster($schoolId)) {
+				return $musanzeId;
+			}
+		} catch (\Throwable $e) {
+			return $schoolId;
+		}
+		return $schoolId;
+	}
+
 	public function getForSchool(int $schoolId, int $areaId): ?array
 	{
 		$this->ensureSchema();
+		$schoolId = $this->inoutSchoolId($schoolId);
 		if ($areaId <= 0 || $schoolId <= 0) {
 			return null;
 		}
@@ -304,6 +331,7 @@ class AttendanceAreaModel extends Model
 	public function monthReport(int $schoolId, string $monthYm, int $classId, int $areaId, int $academicYear): array
 	{
 		$this->ensureSchema();
+		$schoolId = $this->inoutSchoolId($schoolId);
 		$parts = explode('-', $monthYm);
 		$mm = isset($parts[0]) ? (int) $parts[0] : (int) date('n');
 		$yy = isset($parts[1]) ? (int) $parts[1] : (int) date('Y');
@@ -324,7 +352,11 @@ class AttendanceAreaModel extends Model
 			->join('levels l', 'l.id = c.level', 'left')
 			->join('departments d', 'd.id = c.department', 'left')
 			->where('s.school_id', $schoolId)
-			->where('cr.year', $academicYear);
+			->where('s.status', 1)
+			->where('c.school_id', $schoolId)
+			->where('cr.year', $academicYear)
+			->where("IFNULL(c.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(l.title,'') NOT LIKE '%Holiday%'", null, false);
 		if ($classId > 0) {
 			$stQ->where('cr.class', $classId);
 		}
@@ -345,6 +377,7 @@ class AttendanceAreaModel extends Model
 			$recQ = $db->table('attendance_records')
 				->select('user_id, area_id, time_in, time_out' . ($hasLunch ? ', lunch_at, back_at' : ''))
 				->where('user_type', 0)
+				->where('school_id', $schoolId)
 				->where("DATE_FORMAT(FROM_UNIXTIME(time_in),'%m-%Y') = " . $db->escape($monthYm), null, false)
 				->whereIn('user_id', $ids);
 			if ($areaId > 0) {
@@ -378,6 +411,8 @@ class AttendanceAreaModel extends Model
 		\App\Libraries\AttendanceScanService::correctGateTapSlotsOnce($schoolId);
 
 		$seenAreaStudent = [];
+		$gateStudentTaps = ['in' => [], 'lunch' => [], 'back' => [], 'out' => []];
+		$gateAreaTaps = [];
 		$inCount = 0;
 		$outCount = 0;
 		$lunchCount = 0;
@@ -459,14 +494,20 @@ class AttendanceAreaModel extends Model
 			if ($inHm !== '') {
 				$inCount++;
 				$dayStats[$day]['in_count']++;
+				$gateStudentTaps['in'][$sid] = true;
+				$gateAreaTaps[$aid]['in'][$sid] = true;
 			}
 			if ($tlunch > 0) {
 				$lunchCount++;
 				$areaStats[$aid]['lunch_count']++;
+				$gateStudentTaps['lunch'][$sid] = true;
+				$gateAreaTaps[$aid]['lunch'][$sid] = true;
 			}
 			if ($tback > 0) {
 				$backCount++;
 				$areaStats[$aid]['back_count']++;
+				$gateStudentTaps['back'][$sid] = true;
+				$gateAreaTaps[$aid]['back'][$sid] = true;
 			}
 			$key = $sid . ':' . $aid;
 			if (!isset($seenAreaStudent[$key])) {
@@ -477,6 +518,8 @@ class AttendanceAreaModel extends Model
 				$outCount++;
 				$areaStats[$aid]['out_count']++;
 				$dayStats[$day]['out_count']++;
+				$gateStudentTaps['out'][$sid] = true;
+				$gateAreaTaps[$aid]['out'][$sid] = true;
 			} else {
 				$missingOut++;
 				$areaStats[$aid]['missing_out']++;
@@ -565,7 +608,24 @@ class AttendanceAreaModel extends Model
 
 		$total = count($students);
 		$scanned = count($scannedIds);
-		return [
+		if ($gateTaps) {
+			$inCount = count($gateStudentTaps['in']);
+			$lunchCount = count($gateStudentTaps['lunch']);
+			$backCount = count($gateStudentTaps['back']);
+			$outCount = count($gateStudentTaps['out']);
+			foreach ($areaStats as $aid => $stat) {
+				$areaStats[$aid]['in_count'] = count($gateAreaTaps[$aid]['in'] ?? []);
+				$areaStats[$aid]['lunch_count'] = count($gateAreaTaps[$aid]['lunch'] ?? []);
+				$areaStats[$aid]['back_count'] = count($gateAreaTaps[$aid]['back'] ?? []);
+				$areaStats[$aid]['out_count'] = count($gateAreaTaps[$aid]['out'] ?? []);
+			}
+		}
+		$schoolName = '';
+		$schoolRow = $db->table('schools')->select('name')->where('id', $schoolId)->get(1)->getRowArray();
+		if ($schoolRow) {
+			$schoolName = (string) ($schoolRow['name'] ?? '');
+		}
+		$report = [
 			'students' => $students,
 			'visits' => $visits,
 			'active_days' => $daysOut,
@@ -590,6 +650,10 @@ class AttendanceAreaModel extends Model
 			'single_area' => $areaId > 0,
 			'gate_taps' => $gateTaps,
 		];
+		if ($schoolName !== '') {
+			$report['school_name'] = $schoolName;
+		}
+		return $report;
 	}
 
 	private function isSchoolGateName(string $name): bool

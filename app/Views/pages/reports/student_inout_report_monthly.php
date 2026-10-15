@@ -1,6 +1,11 @@
 <link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=3">
 <?php
 if ($show_header) {
+	$inoutSchoolId = (new \App\Models\AttendanceAreaModel())->inoutSchoolId((int) session('soma_school_id'));
+	if ($inoutSchoolId > 0 && $inoutSchoolId !== (int) session('soma_school_id')) {
+		$classes = (new \App\Models\ClassesModel())->get_classes($inoutSchoolId);
+		$attendance_areas = (new \App\Models\AttendanceAreaModel())->listAreas($inoutSchoolId, false);
+	}
 	$months = get_months();
 	$defaultMonth = (int) ($default_month ?? date('n'));
 	$defaultYear = (int) ($default_year ?? date('Y'));
