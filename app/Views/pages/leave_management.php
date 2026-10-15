@@ -59,7 +59,7 @@ $fmt = static function ($value): string {
 	<div class="leave-top">
 		<div>
 			<h2><?= esc($title); ?></h2>
-			<p>See who was given permission, who is still out, and when they came back. Filter by one day or a date range.</p>
+			<p>One list for every permission in the dates you pick. Approve or deny it here, and see when they went out and came back.</p>
 		</div>
 		<form class="leave-filter" method="get" action="<?= base_url('leave_management'); ?>">
 			<div>
@@ -80,51 +80,48 @@ $fmt = static function ($value): string {
 		<div class="leave-kpi"><span>Not used yet</span><strong><?= (int) $kpi['unused']; ?></strong></div>
 		<div class="leave-kpi is-wait"><span>Waiting approval</span><strong><?= (int) $pending; ?></strong></div>
 	</div>
+	<?php
+		$gateById = [];
+		foreach (($gate_rows ?? []) as $gateRow) {
+			$gateId = (int) ($gateRow['leave_id'] ?? $gateRow['id'] ?? 0);
+			if ($gateId > 0) {
+				$gateById[$gateId] = $gateRow;
+			}
+		}
+		$fromTs = strtotime(($range_from ?? '') . ' 00:00:00');
+		$toTs = strtotime(($range_to ?? '') . ' 23:59:59');
+		$list = [];
+		foreach ($leaves as $leave) {
+			$leaveId = (int) ($leave['id'] ?? 0);
+			$gate = $gateById[$leaveId] ?? null;
+			$trip = (string) ($gate['trip'] ?? '');
+			$overlaps = $fromTs && $toTs
+				&& (int) ($leave['fromDate'] ?? 0) <= $toTs
+				&& (int) ($leave['toDate'] ?? 0) >= $fromTs;
+			if (!$overlaps && (int) ($leave['status'] ?? 0) !== 0 && $trip !== 'out') {
+				continue;
+			}
+			$leave['went_out_at'] = $gate['went_out_at'] ?? '';
+			$leave['returned_at'] = $gate['returned_at'] ?? '';
+			$leave['trip'] = $trip;
+			$list[] = $leave;
+		}
+		usort($list, static function ($a, $b) {
+			$rank = static function ($row) {
+				if ((int) ($row['status'] ?? 0) === 0) {
+					return 0;
+				}
+				if (($row['trip'] ?? '') === 'out') {
+					return 1;
+				}
+				return 2;
+			};
+			$diff = $rank($a) <=> $rank($b);
+			return $diff !== 0 ? $diff : ((int) ($b['fromDate'] ?? 0) <=> (int) ($a['fromDate'] ?? 0));
+		});
+	?>
 	<div class="card leave-card">
-		<h3>Given permissions · <?= esc(date('d M Y', strtotime($range_from))); ?> – <?= esc(date('d M Y', strtotime($range_to))); ?></h3>
-		<div class="card-body">
-			<div class="table-responsive">
-				<table class="table table-hover leave-table" id="leave-moves">
-					<thead>
-					<tr>
-						<th>Staff</th>
-						<th><?= lang("app.leaveType"); ?></th>
-						<th><?= lang("app.reason"); ?></th>
-						<th>Permission</th>
-						<th>Went out</th>
-						<th>Returned</th>
-						<th>Gate</th>
-					</tr>
-					</thead>
-					<tbody>
-					<?php foreach (($gate_rows ?? []) as $row) {
-						$trip = (string) ($row['trip'] ?? 'unused');
-						$gateLabel = $trip === 'back' ? 'Back' : ($trip === 'out' ? 'Still out' : 'Not used');
-						$gateClass = $trip === 'back' ? 'is-ok' : ($trip === 'out' ? 'is-out' : 'is-wait');
-						$leaveBits = [
-							'type' => $row['type'] ?? 0,
-							'fromDate' => $row['fromDate'] ?? 0,
-							'toDate' => $row['toDate'] ?? 0,
-							'days' => $row['days'] ?? 0,
-						];
-					?>
-						<tr class="<?= $trip === 'out' ? 'is-out' : ($trip === 'back' ? 'is-back' : ''); ?>">
-							<td><?= esc($row['staff'] ?? ''); ?></td>
-							<td class="leave-type"><?= esc($obj->leaveTypeTostr($row['type'] ?? 0)); ?></td>
-							<td><?= esc($row['reason'] ?? ''); ?></td>
-							<td><?= esc($obj->leaveFromLabel($leaveBits)); ?><?= $obj->leaveToLabel($leaveBits) !== '' ? ' – ' . esc($obj->leaveToLabel($leaveBits)) : ''; ?></td>
-							<td><?= esc($fmt($row['went_out_at'] ?? '')); ?></td>
-							<td><?= esc($fmt($row['returned_at'] ?? '')); ?></td>
-							<td><span class="leave-pill <?= $gateClass; ?>"><?= esc($gateLabel); ?></span></td>
-						</tr>
-					<?php } ?>
-					</tbody>
-				</table>
-			</div>
-		</div>
-	</div>
-	<div class="card leave-card">
-		<h3>Approve or deny</h3>
+		<h3>Approve or deny · <?= esc(date('d M Y', strtotime($range_from))); ?> – <?= esc(date('d M Y', strtotime($range_to))); ?></h3>
 		<div class="card-body">
 			<div class="table-responsive">
 				<table style="width: 100%;" id="example" class="table table-hover leave-table dataTable" role="grid">
@@ -134,29 +131,41 @@ $fmt = static function ($value): string {
 						<th><?= lang("app.names"); ?></th>
 						<th><?= lang("app.leaveType"); ?></th>
 						<th><?= lang("app.reason"); ?></th>
-						<th><?= lang("app.leaveFrom"); ?></th>
-						<th><?= lang("app.leaveTo"); ?></th>
-						<th><?= lang("app.address"); ?></th>
+						<th>Permission</th>
+						<th>Went out</th>
+						<th>Returned</th>
+						<th>Gate</th>
 						<th><?= lang("app.status"); ?></th>
 						<th><?= lang("app.approvedBy"); ?></th>
-						<th></th>
 						<th></th>
 					</tr>
 					</thead>
 					<tbody>
-					<?php $i = 1; foreach ($leaves as $leave) {
+					<?php $i = 1; foreach ($list as $leave) {
 						$code = (int) $leave['status'];
-						$row = $code === 1 ? 'is-approved' : ($code === 2 ? 'is-denied' : 'is-pending');
+						$trip = (string) ($leave['trip'] ?? '');
+						if ($code === 1 && $trip === '') {
+							$trip = 'unused';
+						}
 						$open = $code === 0;
+						$row = $trip === 'out' ? 'is-out' : ($trip === 'back' ? 'is-back' : ($code === 1 ? 'is-approved' : ($code === 2 ? 'is-denied' : 'is-pending')));
+						if ($code !== 1) {
+							$gateLabel = '—';
+							$gateClass = '';
+						} else {
+							$gateLabel = $trip === 'back' ? 'Back' : ($trip === 'out' ? 'Still out' : 'Not used');
+							$gateClass = $trip === 'back' ? 'is-ok' : ($trip === 'out' ? 'is-out' : 'is-wait');
+						}
 					?>
 						<tr class="<?= $row; ?>">
 							<td><?= $i; ?></td>
 							<td><?= esc($leave['staff']); ?></td>
 							<td class="leave-type"><?= esc($obj->leaveTypeTostr($leave['type'])); ?></td>
 							<td><?= esc($leave['reason']); ?></td>
-							<td><?= esc($obj->leaveFromLabel($leave)); ?></td>
-							<td><?= esc($obj->leaveToLabel($leave)); ?></td>
-							<td><?= esc($leave['address']); ?></td>
+							<td><?= esc($obj->leaveFromLabel($leave)); ?><?= $obj->leaveToLabel($leave) !== '' ? ' – ' . esc($obj->leaveToLabel($leave)) : ''; ?></td>
+							<td><?= esc($fmt($leave['went_out_at'] ?? '')); ?></td>
+							<td><?= esc($fmt($leave['returned_at'] ?? '')); ?></td>
+							<td><?php if ($gateClass !== '') { ?><span class="leave-pill <?= $gateClass; ?>"><?= esc($gateLabel); ?></span><?php } else { echo '—'; } ?></td>
 							<td><?= $obj->leaveStatusBadge($leave['status']); ?></td>
 							<td><?= $code === 0 || trim((string) ($leave['approver'] ?? '')) === '' ? '—' : esc($leave['approver']); ?></td>
 							<td style="white-space:nowrap;">
@@ -164,13 +173,11 @@ $fmt = static function ($value): string {
 									data-toggle="modal" data-target="#approve_Modal"
 									data-name="<?= esc($leave['staff'], 'attr'); ?>"
 									data-id="<?= (int) $leave['id']; ?>"
-									data-mail="<?= esc($leave['email'], 'attr'); ?>"><?= lang("app.approve"); ?></button>
+									data-mail="<?= esc($leave['email'] ?? '', 'attr'); ?>"><?= lang("app.approve"); ?></button>
 								<button type="button" class="leave-act is-no" <?= $open ? '' : 'disabled'; ?>
 									data-toggle="modal" data-target="#deny_Modal"
 									data-id="<?= (int) $leave['id']; ?>"
-									data-mail="<?= esc($leave['email'], 'attr'); ?>"><?= lang("app.deny"); ?></button>
-							</td>
-							<td>
+									data-mail="<?= esc($leave['email'] ?? '', 'attr'); ?>"><?= lang("app.deny"); ?></button>
 								<?php if ($code === 1) { ?>
 									<a href="<?= base_url('print_leave/' . (int) $leave['id']); ?>" target="_blank" class="btn btn-sm btn-success"><?= lang("app.print"); ?></a>
 								<?php } ?>
