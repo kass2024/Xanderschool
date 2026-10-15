@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=5">
+<link rel="stylesheet" href="<?= base_url('assets/css/inout-report.css'); ?>?v=6">
 <?php
 if ($show_header) {
 	$inoutSchoolId = (new \App\Models\AttendanceAreaModel())->inoutSchoolId((int) session('soma_school_id'));
@@ -84,6 +84,7 @@ if ($show_header) {
 				$("#btn_generate").text('<?= lang("app.pleaseWait"); ?>').prop("disabled", true);
 				$("#report_content").load("<?= base_url('student_inout_monthly_report_data/false'); ?>?" + params(), function () {
 					$("#btn_generate").html('<i class="fa fa-chart-bar"></i> <?= lang("app.generate"); ?>').prop("disabled", false);
+					ioResetFromDom();
 				});
 			});
 			$("#btn_print").on("click", function () {
@@ -93,109 +94,211 @@ if ($show_header) {
 				}
 				window.print();
 			});
-			$("#report_content").on("click", ".io-area-card[data-area]", function () {
-				var id = $(this).data("area");
-				$("#select_area").val(String(id)).trigger("change");
-				$("#btn_generate").click();
-			});
-			$("#report_content").on("click", ".io-tab", function () {
-				var pane = $(this).data("pane");
+			var ioFilter = { sec: "", day: "all", tap: "", area: "" };
+			function ioResetFromDom() {
+				ioFilter = { sec: "", day: String($("#report_content .io-day.active").data("day") || "all"), tap: "", area: "" };
+			}
+			function ioTapAttr(tap) {
+				if (tap === "lunch") return "lunch";
+				if (tap === "back") return "back";
+				if (tap === "evening") return "out";
+				if (tap === "morning") return "morning";
+				return "";
+			}
+			function ioUnique($rows) {
+				var seen = {}, n = 0;
+				$rows.each(function () {
+					var id = String($(this).data("student") || "");
+					if (!id || seen[id]) return;
+					seen[id] = 1;
+					n++;
+				});
+				return n;
+			}
+			function ioRenumber($rows) {
+				var i = 1;
+				$rows.each(function () { $(this).find(".io-n").text(i++); });
+			}
+			function ioShowPane(pane) {
 				$(".io-tab").removeClass("active");
-				$(this).addClass("active");
+				$(".io-tab[data-pane='" + pane + "']").addClass("active");
 				$(".io-pane").attr("hidden", true);
 				$("#" + pane).removeAttr("hidden");
-			});
+			}
 			function ioSyncSections() {
 				$(".io-sec-head").each(function () {
 					var s = String($(this).data("section"));
-					var secOn = String($(".io-section.is-on").data("section") || "");
-					if (secOn && secOn !== s) {
+					if (ioFilter.sec && ioFilter.sec !== s) {
 						$(this).hide();
 						return;
 					}
 					$(this).toggle($(".io-visit-row[data-section='" + s + "']:visible").length > 0);
 				});
 			}
-			$("#report_content").on("click", ".io-section", function () {
-				var already = $(this).hasClass("is-on");
+			function ioMark() {
+				$(".io-kpi[data-tap], .io-metric, .io-dk-card, .io-sec-metric").removeClass("is-on");
 				$(".io-section").removeClass("is-on");
-				if (!already) {
-					$(this).addClass("is-on");
+				if (ioFilter.tap) {
+					$(".io-kpi[data-tap='" + ioFilter.tap + "']").addClass("is-on");
+					$(".io-metric[data-tap='" + ioFilter.tap + "']").filter(function () {
+						var a = String($(this).data("area") || "");
+						return !ioFilter.area || a === String(ioFilter.area);
+					}).addClass("is-on");
+					if (ioFilter.day !== "all") {
+						$(".io-dk-card[data-daytap='" + ioFilter.tap + "']").addClass("is-on");
+					}
 				}
-				var sec = String($(".io-section.is-on").data("section") || "");
-				var day = String($(".io-day.active").data("day") || "all");
-				var tap = String($(".io-kpi[data-tap].is-on").data("tap") || "");
-				var attr = tap === "lunch" ? "lunch" : (tap === "back" ? "back" : (tap === "evening" ? "out" : (tap === "morning" ? "morning" : "")));
+				if (ioFilter.sec) {
+					$(".io-section[data-section='" + ioFilter.sec + "']").addClass("is-on");
+					$(".io-sec-metric[data-section='" + ioFilter.sec + "'][data-tap='" + ioFilter.tap + "']").addClass("is-on");
+				}
+			}
+			function ioFillDayCards() {
+				var day = String(ioFilter.day);
+				var sec = ioFilter.sec;
+				var $rows = $(".io-visit-row").filter(function () {
+					if (day !== "all" && String($(this).data("day")) !== day) return false;
+					if (sec && String($(this).data("section")) !== sec) return false;
+					return true;
+				});
+				function count(attr) {
+					var $hit = $rows.filter("[data-" + attr + "='1']");
+					return day === "all" ? ioUnique($hit) : $hit.length;
+				}
+				$("#ioDayIn").text(count("morning"));
+				$("#ioDayOut").text(count("out"));
+				if ($("#ioDayLunch").length) {
+					$("#ioDayLunch").text(count("lunch"));
+					$("#ioDayBack").text(count("back"));
+				}
+				if ($("#ioDayMiss").length) {
+					$("#ioDayMiss").text(Math.max(0, count("morning") - count("out")));
+				}
+			}
+			function ioApply() {
+				var monthList = !ioFilter.area && String(ioFilter.day) === "all" && (ioFilter.tap === "roster" || ioFilter.tap === "scanned" || ioFilter.tap === "morning" || ioFilter.tap === "lunch" || ioFilter.tap === "back" || ioFilter.tap === "evening" || ioFilter.tap === "miss");
+				var labels = { morning: "Morning", lunch: "Lunch out", back: "Back", evening: "Evening", scanned: "Scanned", roster: "Day scholars", miss: "No checkout" };
+				if (monthList) {
+					$("#ioDayTools, #ioLogWrap").hide();
+					$("#ioRosterWrap").show();
+					$(".io-roster-row").each(function () {
+						var $row = $(this);
+						var show = true;
+						if (ioFilter.sec && String($row.data("section")) !== ioFilter.sec) show = false;
+						if (show && ioFilter.tap === "scanned" && String($row.data("scanned")) !== "1") show = false;
+						if (show && ioFilter.tap === "morning" && String($row.data("morning")) !== "1") show = false;
+						if (show && ioFilter.tap === "lunch" && String($row.data("lunch")) !== "1") show = false;
+						if (show && ioFilter.tap === "back" && String($row.data("back")) !== "1") show = false;
+						if (show && ioFilter.tap === "evening" && String($row.data("out")) !== "1") show = false;
+						if (show && ioFilter.tap === "miss" && !(String($row.data("morning")) === "1" && String($row.data("out")) !== "1")) show = false;
+						$row.toggle(show);
+					});
+					var $vis = $(".io-roster-row:visible");
+					ioRenumber($vis);
+					var title = labels[ioFilter.tap] || "Students";
+					if (ioFilter.sec) title = ($(".io-section[data-section='" + ioFilter.sec + "'] h5").text() || title) + " · " + title;
+					$("#ioRosterCaption").text(title + " · " + $vis.length + " students");
+					$("#ioRosterEmpty").toggle($vis.length === 0);
+					return;
+				}
+				$("#ioRosterWrap").hide();
+				$("#ioDayTools, #ioLogWrap").show();
+				var attr = ioTapAttr(ioFilter.tap);
+				var day = String(ioFilter.day);
 				$(".io-visit-row").each(function () {
 					var $row = $(this);
 					var show = true;
-					if (sec && String($row.data("section")) !== sec) show = false;
+					if (ioFilter.sec && String($row.data("section")) !== ioFilter.sec) show = false;
 					if (show && day !== "all" && String($row.data("day")) !== day) show = false;
-					if (show && attr && String($row.data(attr)) !== "1") show = false;
+					if (show && ioFilter.tap === "miss") {
+						show = String($row.data("morning")) === "1" && String($row.data("out")) !== "1";
+					} else if (show && attr && String($row.data(attr)) !== "1") {
+						show = false;
+					}
+					if (show && ioFilter.area && String($row.data("area")) !== String(ioFilter.area)) show = false;
 					$row.toggle(show);
 				});
-				ioSyncSections();
-			});
-			$("#report_content").on("click", ".io-kpi[data-tap]", function () {
-				var tap = String($(this).data("tap") || "");
-				var attr = tap === "lunch" ? "lunch" : (tap === "back" ? "back" : (tap === "evening" ? "out" : "morning"));
-				$(".io-kpi[data-tap]").removeClass("is-on");
-				$(this).addClass("is-on");
-				$(".io-day").removeClass("active");
-				$(".io-day[data-day='all']").addClass("active");
-				$(".io-visit-row").hide();
-				var $vis = $(".io-visit-row[data-" + attr + "='1']");
-				$vis.show();
-				var labels = { morning: "Morning", lunch: "Lunch out", back: "Back", evening: "Evening" };
-				$("#ioDayCaption").text((labels[tap] || "Taps") + " · " + $vis.length + " students");
-				$("#ioDayIn").text($vis.filter("[data-morning='1']").length);
-				$("#ioDayOut").text($vis.filter("[data-out='1']").length);
-				if ($("#ioDayLunch").length) {
-					$("#ioDayLunch").text($vis.filter("[data-lunch='1']").length);
-					$("#ioDayBack").text($vis.filter("[data-back='1']").length);
-				}
-				$("#ioDayEmpty").toggle($vis.length === 0);
-				var secOn = String($(".io-section.is-on").data("section") || "");
-				if (secOn) {
-					$(".io-visit-row:visible").filter(function () {
-						return String($(this).data("section")) !== secOn;
-					}).hide();
-				}
-				ioSyncSections();
-			});
-			$("#report_content").on("click", ".io-day", function () {
-				$(".io-kpi[data-tap]").removeClass("is-on");
-				var day = String($(this).data("day"));
-				$(".io-day").removeClass("active");
-				$(this).addClass("active");
 				if (day === "all") {
-					$(".io-visit-row").show();
 					$(".io-inv-block").show();
-					$("#ioDayCaption").text("All activity days");
 				} else {
-					$(".io-visit-row").hide();
-					$(".io-visit-row[data-day='" + day + "']").show();
 					$(".io-inv-block").hide();
 					$(".io-inv-block[data-day='" + day + "']").show();
-					$("#ioDayCaption").text("Day " + day);
 				}
-				var $vis = day === "all" ? $(".io-visit-row") : $(".io-visit-row[data-day='" + day + "']");
-				var ins = $vis.filter("[data-morning='1']").length, outs = $vis.filter("[data-out='1']").length;
-				$("#ioDayIn").text(ins);
-				$("#ioDayOut").text(outs);
-				$("#ioDayMiss").text(ins - outs);
-				if ($("#ioDayLunch").length) {
-					$("#ioDayLunch").text($vis.filter("[data-lunch='1']").length);
-					$("#ioDayBack").text($vis.filter("[data-back='1']").length);
-				}
-				$("#ioDayEmpty").toggle($vis.length === 0);
-				var secOn = String($(".io-section.is-on").data("section") || "");
-				if (secOn) {
-					$(".io-visit-row:visible").filter(function () {
-						return String($(this).data("section")) !== secOn;
-					}).hide();
-				}
+				var $vis = $(".io-visit-row:visible");
+				ioRenumber($vis);
+				var cap = day === "all" ? "All days" : ("Day " + day);
+				if (ioFilter.tap && labels[ioFilter.tap]) cap += " · " + labels[ioFilter.tap];
+				cap += " · " + ioUnique($vis) + " students";
+				$("#ioDayCaption").text(cap);
+				$("#ioDayEmpty").toggle($vis.length === 0 && $(".io-visit-row").length > 0);
 				ioSyncSections();
+			}
+			function ioPickList(tap, area) {
+				ioFilter.tap = tap || "";
+				ioFilter.area = area || "";
+				if (!ioFilter.area) {
+					ioFilter.day = "all";
+					$(".io-day").removeClass("active");
+					$(".io-day[data-day='all']").addClass("active");
+				}
+				ioFillDayCards();
+				ioMark();
+				ioApply();
+				ioShowPane("ioPaneGrid");
+				var el = document.getElementById("ioPaneGrid");
+				if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+			}
+			$("#report_content").on("click", ".io-tab", function () {
+				var pane = String($(this).data("pane") || "");
+				if (pane === "ioPaneGrid") {
+					ioFilter.tap = "";
+					ioFilter.area = "";
+					ioFilter.sec = "";
+					ioMark();
+					ioApply();
+				}
+				ioShowPane(pane);
+			});
+			$("#report_content").on("click", ".io-kpi[data-tap], .io-metric", function () {
+				ioPickList(String($(this).data("tap") || ""), String($(this).data("area") || ""));
+			});
+			$("#report_content").on("click", ".io-dk-card", function () {
+				ioFilter.tap = String($(this).data("daytap") || "");
+				ioFilter.area = "";
+				ioMark();
+				ioApply();
+				ioShowPane("ioPaneGrid");
+			});
+			$("#report_content").on("click", ".io-day", function () {
+				ioFilter.day = String($(this).data("day") || "all");
+				ioFilter.tap = "";
+				ioFilter.area = "";
+				$(".io-day").removeClass("active");
+				$(this).addClass("active");
+				ioFillDayCards();
+				ioMark();
+				ioApply();
+			});
+			$("#report_content").on("click", ".io-sec-metric", function () {
+				var sec = String($(this).data("section") || "");
+				var tap = String($(this).data("tap") || "");
+				if (ioFilter.sec === sec && ioFilter.tap === tap && $(this).hasClass("is-on")) {
+					ioFilter.sec = "";
+					ioFilter.tap = "";
+				} else {
+				ioFilter.sec = sec;
+				ioFilter.tap = tap;
+				ioFilter.area = "";
+				ioFilter.day = "all";
+				$(".io-day").removeClass("active");
+				$(".io-day[data-day='all']").addClass("active");
+				}
+				ioFillDayCards();
+				ioMark();
+				ioApply();
+				ioShowPane("ioPaneGrid");
+				var el = document.getElementById("ioPaneGrid");
+				if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
 			});
 		});
 	</script>
@@ -238,35 +341,35 @@ foreach ($visits as $vv) {
 ?>
 <div id="printable">
 	<div class="io-kpi-grid">
-		<div class="io-kpi"><div class="lbl"><?= $gateTaps ? 'Day scholars' : 'Students'; ?></div><div class="val"><?= (int) ($kpi['students'] ?? 0); ?></div></div>
-		<div class="io-kpi blue"><div class="lbl">Scanned</div><div class="val"><?= (int) ($kpi['scanned'] ?? 0); ?></div></div>
+		<button type="button" class="io-kpi" data-tap="roster"><div class="lbl"><?= $gateTaps ? 'Day scholars' : 'Students'; ?></div><div class="val"><?= (int) ($kpi['students'] ?? 0); ?></div></button>
+		<button type="button" class="io-kpi blue" data-tap="scanned"><div class="lbl">Scanned</div><div class="val"><?= (int) ($kpi['scanned'] ?? 0); ?></div></button>
 		<?php if ($gateTaps): ?>
 		<button type="button" class="io-kpi in" data-tap="morning"><div class="lbl">1 · Morning</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></button>
 		<button type="button" class="io-kpi lunch" data-tap="lunch"><div class="lbl">2 · Lunch out</div><div class="val"><?= (int) ($kpi['lunch_count'] ?? 0); ?></div></button>
 		<button type="button" class="io-kpi back" data-tap="back"><div class="lbl">3 · Back</div><div class="val"><?= (int) ($kpi['back_count'] ?? 0); ?></div></button>
 		<button type="button" class="io-kpi leave" data-tap="evening"><div class="lbl">4 · Evening</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></button>
 		<?php else: ?>
-		<div class="io-kpi in"><div class="lbl">IN taps</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></div>
-		<div class="io-kpi out"><div class="lbl">OUT / checkout</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></div>
-		<div class="io-kpi warn"><div class="lbl">Missing OUT</div><div class="val"><?= (int) ($kpi['missing_out'] ?? 0); ?></div></div>
+		<button type="button" class="io-kpi in" data-tap="morning"><div class="lbl">IN taps</div><div class="val"><?= (int) ($kpi['in_count'] ?? 0); ?></div></button>
+		<button type="button" class="io-kpi out" data-tap="evening"><div class="lbl">OUT / checkout</div><div class="val"><?= (int) ($kpi['out_count'] ?? 0); ?></div></button>
+		<button type="button" class="io-kpi warn" data-tap="miss"><div class="lbl">Missing OUT</div><div class="val"><?= (int) ($kpi['missing_out'] ?? 0); ?></div></button>
 		<?php endif; ?>
 		<div class="io-kpi"><div class="lbl">Coverage</div><div class="val"><?= (int) ($kpi['coverage'] ?? 0); ?>%</div></div>
 	</div>
 	<?php if ($gateTaps && !empty($sections)): ?>
-	<p class="io-gate-note">School gate counts day scholars only. Boarding students are not included. Click a section to see just that group.</p>
+	<p class="io-gate-note">School gate counts day scholars only. Boarding students are not included. Click a number to list those students.</p>
 	<div class="io-sections">
 		<?php foreach ($sections as $sec): ?>
-		<button type="button" class="io-section is-<?= esc($sec['key']); ?>" data-section="<?= esc($sec['key']); ?>">
+		<div class="io-section is-<?= esc($sec['key']); ?>" data-section="<?= esc($sec['key']); ?>">
 			<h5><?= esc($sec['label']); ?></h5>
 			<div class="sec-line">
-				<span><b><?= (int) $sec['students']; ?></b> students</span>
-				<span><b><?= (int) $sec['scanned']; ?></b> scanned</span>
-				<span class="m-in"><b><?= (int) $sec['morning']; ?></b> morning</span>
-				<span class="m-lunch"><b><?= (int) $sec['lunch']; ?></b> lunch</span>
-				<span class="m-back"><b><?= (int) $sec['back']; ?></b> back</span>
-				<span class="m-eve"><b><?= (int) $sec['evening']; ?></b> evening</span>
+				<button type="button" class="io-sec-metric" data-section="<?= esc($sec['key']); ?>" data-tap="roster"><b><?= (int) $sec['students']; ?></b> students</button>
+				<button type="button" class="io-sec-metric" data-section="<?= esc($sec['key']); ?>" data-tap="scanned"><b><?= (int) $sec['scanned']; ?></b> scanned</button>
+				<button type="button" class="io-sec-metric m-in" data-section="<?= esc($sec['key']); ?>" data-tap="morning"><b><?= (int) $sec['morning']; ?></b> morning</button>
+				<button type="button" class="io-sec-metric m-lunch" data-section="<?= esc($sec['key']); ?>" data-tap="lunch"><b><?= (int) $sec['lunch']; ?></b> lunch</button>
+				<button type="button" class="io-sec-metric m-back" data-section="<?= esc($sec['key']); ?>" data-tap="back"><b><?= (int) $sec['back']; ?></b> back</button>
+				<button type="button" class="io-sec-metric m-eve" data-section="<?= esc($sec['key']); ?>" data-tap="evening"><b><?= (int) $sec['evening']; ?></b> evening</button>
 			</div>
-		</button>
+		</div>
 		<?php endforeach; ?>
 	</div>
 	<?php endif; ?>
@@ -274,29 +377,43 @@ foreach ($visits as $vv) {
 	<?php if (!empty($show_locations) && count($areaStats) > 0) : ?>
 		<div class="io-area-map">
 			<?php foreach ($areaStats as $as) : ?>
-				<button type="button" class="io-area-card<?= $singleArea ? ' active' : ''; ?>" data-area="<?= (int) $as['id']; ?>">
+				<div class="io-area-board">
 					<div class="an"><?= esc($as['name']); ?></div>
-					<div class="as">
-						<span><b><?= (int) $as['students']; ?></b> students</span>
+					<div class="io-metric-grid">
+						<button type="button" class="io-metric" data-tap="scanned" data-area="<?= $singleArea ? '' : (int) $as['id']; ?>">
+							<span class="lbl">Students</span><span class="val"><?= (int) $as['students']; ?></span>
+						</button>
 						<?php if ($gateTaps): ?>
-						<span><b><?= (int) $as['in_count']; ?></b> morning</span>
-						<span><b><?= (int) ($as['lunch_count'] ?? 0); ?></b> lunch</span>
-						<span><b><?= (int) ($as['back_count'] ?? 0); ?></b> back</span>
-						<span><b><?= (int) $as['out_count']; ?></b> evening</span>
+						<button type="button" class="io-metric in" data-tap="morning" data-area="<?= $singleArea ? '' : (int) $as['id']; ?>">
+							<span class="lbl">Morning</span><span class="val"><?= (int) $as['in_count']; ?></span>
+						</button>
+						<button type="button" class="io-metric lunch" data-tap="lunch" data-area="<?= $singleArea ? '' : (int) $as['id']; ?>">
+							<span class="lbl">Lunch out</span><span class="val"><?= (int) ($as['lunch_count'] ?? 0); ?></span>
+						</button>
+						<button type="button" class="io-metric back" data-tap="back" data-area="<?= $singleArea ? '' : (int) $as['id']; ?>">
+							<span class="lbl">Back</span><span class="val"><?= (int) ($as['back_count'] ?? 0); ?></span>
+						</button>
+						<button type="button" class="io-metric leave" data-tap="evening" data-area="<?= $singleArea ? '' : (int) $as['id']; ?>">
+							<span class="lbl">Evening</span><span class="val"><?= (int) $as['out_count']; ?></span>
+						</button>
 						<?php else: ?>
-						<span><b><?= (int) $as['in_count']; ?></b> IN</span>
-						<span><b><?= (int) $as['out_count']; ?></b> OUT</span>
+						<button type="button" class="io-metric in" data-tap="morning" data-area="<?= $singleArea ? '' : (int) $as['id']; ?>">
+							<span class="lbl">IN</span><span class="val"><?= (int) $as['in_count']; ?></span>
+						</button>
+						<button type="button" class="io-metric leave" data-tap="evening" data-area="<?= $singleArea ? '' : (int) $as['id']; ?>">
+							<span class="lbl">OUT</span><span class="val"><?= (int) $as['out_count']; ?></span>
+						</button>
 						<?php endif; ?>
 					</div>
-				</button>
+				</div>
 			<?php endforeach; ?>
 		</div>
 	<?php endif; ?>
 
-	<div class="io-tabs">
-		<button type="button" class="io-tab active" data-pane="ioPaneGrid"><?= $gateTaps ? 'Daily 4 taps' : 'Daily IN / OUT'; ?></button>
-		<button type="button" class="io-tab" data-pane="ioPaneMissing"><?= $gateTaps ? 'No evening leave' : 'Missing OUT'; ?> (<?= count($missing); ?>)</button>
-		<button type="button" class="io-tab" data-pane="ioPaneNever">Never scanned (<?= count($never); ?>)</button>
+	<div class="io-list-kpis">
+		<button type="button" class="io-tab io-list-card active" data-pane="ioPaneGrid"><span class="lbl"><?= $gateTaps ? 'Daily 4 taps' : 'Daily IN / OUT'; ?></span><span class="val"><?= (int) ($kpi['scanned'] ?? 0); ?></span></button>
+		<button type="button" class="io-tab io-list-card warn" data-pane="ioPaneMissing"><span class="lbl"><?= $gateTaps ? 'No evening leave' : 'Missing OUT'; ?></span><span class="val"><?= count($missing); ?></span></button>
+		<button type="button" class="io-tab io-list-card" data-pane="ioPaneNever"><span class="lbl">Never scanned</span><span class="val"><?= count($never); ?></span></button>
 	</div>
 
 	<div class="io-pane" id="ioPaneGrid">
@@ -323,6 +440,7 @@ foreach ($visits as $vv) {
 			<?php if (count($activeDays) === 0) : ?>
 				<div class="io-empty">No NFC IN/OUT scans for this filter in <?= esc($month_label ?? ''); ?>.</div>
 			<?php else : ?>
+				<div id="ioDayTools">
 				<div class="io-daybar">
 					<button type="button" class="io-day<?= $defaultDay === 0 ? ' active' : ''; ?>" data-day="all">All days</button>
 					<?php foreach ($activeDays as $ds) :
@@ -334,19 +452,76 @@ foreach ($visits as $vv) {
 						</button>
 					<?php endforeach; ?>
 				</div>
-				<div class="io-day-kpis">
-					<div><span class="lbl">Showing</span> <strong id="ioDayCaption"><?= $defaultDay > 0 ? 'Day ' . $defaultDay : 'All activity days'; ?></strong></div>
+				<p class="io-day-caption" id="ioDayCaption"><?= $defaultDay > 0 ? 'Day ' . $defaultDay : 'All activity days'; ?></p>
+				<div class="io-day-kpis io-day-cards">
 					<?php if ($gateTaps): ?>
-					<div class="io-dk"><span class="in">Morning</span> <b id="ioDayIn"><?= (int) $dayKpi['in']; ?></b></div>
-					<div class="io-dk"><span class="lunch">Lunch out</span> <b id="ioDayLunch"><?= (int) $dayKpi['lunch']; ?></b></div>
-					<div class="io-dk"><span class="back">Back</span> <b id="ioDayBack"><?= (int) $dayKpi['back']; ?></b></div>
-					<div class="io-dk"><span class="leave">Evening</span> <b id="ioDayOut"><?= (int) $dayKpi['out']; ?></b></div>
+					<button type="button" class="io-dk-card in" data-daytap="morning"><span class="lbl">Morning</span><span class="val" id="ioDayIn"><?= (int) $dayKpi['in']; ?></span></button>
+					<button type="button" class="io-dk-card lunch" data-daytap="lunch"><span class="lbl">Lunch out</span><span class="val" id="ioDayLunch"><?= (int) $dayKpi['lunch']; ?></span></button>
+					<button type="button" class="io-dk-card back" data-daytap="back"><span class="lbl">Back</span><span class="val" id="ioDayBack"><?= (int) $dayKpi['back']; ?></span></button>
+					<button type="button" class="io-dk-card leave" data-daytap="evening"><span class="lbl">Evening</span><span class="val" id="ioDayOut"><?= (int) $dayKpi['out']; ?></span></button>
 					<?php else: ?>
-					<div class="io-dk"><span class="in">IN</span> <b id="ioDayIn"><?= (int) $dayKpi['in']; ?></b></div>
-					<div class="io-dk"><span class="out">OUT</span> <b id="ioDayOut"><?= (int) $dayKpi['out']; ?></b></div>
-					<div class="io-dk"><span class="miss">No checkout</span> <b id="ioDayMiss"><?= (int) $dayKpi['miss']; ?></b></div>
+					<button type="button" class="io-dk-card in" data-daytap="morning"><span class="lbl">IN</span><span class="val" id="ioDayIn"><?= (int) $dayKpi['in']; ?></span></button>
+					<button type="button" class="io-dk-card leave" data-daytap="evening"><span class="lbl">OUT</span><span class="val" id="ioDayOut"><?= (int) $dayKpi['out']; ?></span></button>
+					<button type="button" class="io-dk-card warn" data-daytap="miss"><span class="lbl">No checkout</span><span class="val" id="ioDayMiss"><?= (int) $dayKpi['miss']; ?></span></button>
 					<?php endif; ?>
 				</div>
+				</div>
+				<div id="ioRosterWrap" hidden>
+					<p class="io-day-caption" id="ioRosterCaption"></p>
+					<table class="io-log">
+						<thead>
+						<tr>
+							<th>#</th>
+							<th>Student</th>
+							<th>Class</th>
+							<th>Section</th>
+						</tr>
+						</thead>
+						<tbody>
+						<?php
+						$sectionTitles = ['nursery' => 'Nursery', 'primary' => 'Primary', 'high_school' => 'High School'];
+						$tapFlags = [];
+						foreach ($visits as $flagVisit) {
+							$flagId = (int) ($flagVisit['student_id'] ?? 0);
+							if ($flagId < 1) {
+								continue;
+							}
+							if (!isset($tapFlags[$flagId])) {
+								$tapFlags[$flagId] = ['morning' => 0, 'lunch' => 0, 'back' => 0, 'out' => 0];
+							}
+							if (($flagVisit['in'] ?? '') !== '') {
+								$tapFlags[$flagId]['morning'] = 1;
+							}
+							if (!empty($flagVisit['lunch'])) {
+								$tapFlags[$flagId]['lunch'] = 1;
+							}
+							if (!empty($flagVisit['back'])) {
+								$tapFlags[$flagId]['back'] = 1;
+							}
+							if (($flagVisit['out'] ?? '') !== '') {
+								$tapFlags[$flagId]['out'] = 1;
+							}
+						}
+						foreach ($students as $rosterStudent) :
+							$rosterSection = (string) ($rosterStudent['section'] ?? 'high_school');
+							$rosterId = (int) ($rosterStudent['id'] ?? 0);
+							$flags = $tapFlags[$rosterId] ?? ['morning' => 0, 'lunch' => 0, 'back' => 0, 'out' => 0];
+							?>
+						<tr class="io-roster-row" data-section="<?= esc($rosterSection); ?>" data-student="<?= $rosterId; ?>" data-scanned="<?= !empty($rosterStudent['scanned']) ? '1' : '0'; ?>" data-morning="<?= (int) $flags['morning']; ?>" data-lunch="<?= (int) $flags['lunch']; ?>" data-back="<?= (int) $flags['back']; ?>" data-out="<?= (int) $flags['out']; ?>">
+							<td class="io-n"></td>
+							<td>
+								<strong><?= esc(trim(($rosterStudent['fname'] ?? '') . ' ' . ($rosterStudent['lname'] ?? ''))); ?></strong>
+								<div class="io-reg"><?= esc($rosterStudent['regno'] ?? ''); ?></div>
+							</td>
+							<td><?= esc($rosterStudent['class_name'] ?? ''); ?></td>
+							<td><?= esc($sectionTitles[$rosterSection] ?? 'High School'); ?></td>
+						</tr>
+						<?php endforeach; ?>
+						</tbody>
+					</table>
+					<div class="io-empty" id="ioRosterEmpty" hidden>No students in this list.</div>
+				</div>
+				<div id="ioLogWrap">
 				<table class="io-log">
 					<thead>
 					<tr>
@@ -406,8 +581,8 @@ foreach ($visits as $vv) {
 						$complete = !empty($v['complete']);
 						$rowSection = (string) ($v['section'] ?? $groupKey);
 						?>
-						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-section="<?= esc($rowSection); ?>" data-day="<?= $day; ?>" data-out="<?= ($v['out'] ?? '') !== '' ? '1' : '0'; ?>" data-morning="<?= ($v['in'] ?? '') !== '' ? '1' : '0'; ?>" data-lunch="<?= !empty($v['lunch']) ? '1' : '0'; ?>" data-back="<?= !empty($v['back']) ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
-							<td><?= $n++; ?></td>
+						<tr class="io-visit-row<?= $complete ? '' : ' is-miss'; ?>" data-student="<?= (int) ($v['student_id'] ?? 0); ?>" data-area="<?= (int) ($v['area_id'] ?? 0); ?>" data-section="<?= esc($rowSection); ?>" data-day="<?= $day; ?>" data-out="<?= ($v['out'] ?? '') !== '' ? '1' : '0'; ?>" data-morning="<?= ($v['in'] ?? '') !== '' ? '1' : '0'; ?>" data-lunch="<?= !empty($v['lunch']) ? '1' : '0'; ?>" data-back="<?= !empty($v['back']) ? '1' : '0'; ?>"<?= $hide ? ' style="display:none"' : ''; ?>>
+							<td class="io-n"><?= $n++; ?></td>
 							<td>
 								<strong><?= esc(trim(($v['fname'] ?? '') . ' ' . ($v['lname'] ?? ''))); ?></strong>
 								<div class="io-reg"><?= esc($v['regno'] ?? ''); ?></div>
@@ -454,6 +629,7 @@ foreach ($visits as $vv) {
 					</tbody>
 				</table>
 				<div class="io-empty" id="ioDayEmpty" hidden>No scans on this day.</div>
+				</div>
 			<?php endif; ?>
 			<div style="text-align:right;color:#94a3b8;margin-top:8px;font-size:.8rem;"><?= lang("app.generatedbySomanet"); ?></div>
 		</div>
