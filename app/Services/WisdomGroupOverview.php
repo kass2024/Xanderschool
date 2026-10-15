@@ -19,6 +19,64 @@ class WisdomGroupOverview
 		return in_array((int) $postId, self::LEADER_POSTS, true);
 	}
 
+	/**
+	 * One teacher sees the Director dashboard. Match the staff record, not the post,
+	 * so other teachers stay on the teacher dashboard.
+	 */
+	public function isAliceNamahoro(): bool
+	{
+		static $cached = null;
+		if ($cached !== null) {
+			return $cached;
+		}
+		$staffId = 0;
+		try {
+			if (function_exists('session')) {
+				$staffId = (int) (session('soma_id') ?? 0);
+			}
+		} catch (\Throwable $e) {
+			return $cached = false;
+		}
+		if ($staffId < 1) {
+			return $cached = false;
+		}
+		try {
+			$row = \Config\Database::connect()->table('staffs')
+				->select('fname, lname')
+				->where('id', $staffId)
+				->get(1)
+				->getRowArray();
+		} catch (\Throwable $e) {
+			return $cached = false;
+		}
+		if (!$row) {
+			return $cached = false;
+		}
+		$parts = preg_split('/\s+/', strtoupper(trim((string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? ''))));
+		$parts = array_values(array_filter($parts, static function ($part) {
+			return $part !== '';
+		}));
+		sort($parts);
+		return $cached = ($parts === ['ALICE', 'NAMAHORO']);
+	}
+
+	/** Wisdom master id for the Director dashboard, including a child-school login. */
+	public function wisdomDashboardMasterId($schoolId): int
+	{
+		$schoolId = (int) $schoolId;
+		if ($this->isWisdomMaster($schoolId)) {
+			return $schoolId;
+		}
+		if (!$this->isAliceNamahoro()) {
+			return 0;
+		}
+		$master = (new SchoolHierarchyService())->masterSchoolId($schoolId);
+		if ($master > 0 && $this->isWisdomMaster($master)) {
+			return $master;
+		}
+		return 0;
+	}
+
 	/** Customer Care may use the Wisdom Musanze master dashboard. */
 	public function isCustomerCarePost($postId)
 	{
@@ -110,13 +168,18 @@ class WisdomGroupOverview
 	public function showGroupDashboard($homeSchoolId, $postId, $currentSchoolId)
 	{
 		$homeSchoolId = (int) $homeSchoolId;
+		$alice = $this->isAliceNamahoro();
 		$canSee = $this->isLeaderPost($postId)
 			|| $this->isCustomerCarePost($postId)
-			|| \Config\MenuClearance::isChiefAccountantPost($postId);
-		return $homeSchoolId > 0
-			&& $homeSchoolId === (int) $currentSchoolId
-			&& $canSee
-			&& $this->isWisdomMaster($homeSchoolId);
+			|| \Config\MenuClearance::isChiefAccountantPost($postId)
+			|| $alice;
+		if ($homeSchoolId < 1 || $homeSchoolId !== (int) $currentSchoolId || !$canSee) {
+			return false;
+		}
+		if ($this->isWisdomMaster($homeSchoolId)) {
+			return true;
+		}
+		return $alice && $this->wisdomDashboardMasterId($homeSchoolId) > 0;
 	}
 
 	/**
@@ -152,6 +215,12 @@ class WisdomGroupOverview
 
 	public function summary($masterId, $yearId)
 	{
+		if ($this->isAliceNamahoro()) {
+			$resolved = $this->wisdomDashboardMasterId((int) $masterId);
+			if ($resolved > 0) {
+				$masterId = $resolved;
+			}
+		}
 		$built = $this->summarize($this->schools($masterId), $yearId, (int) $masterId);
 		$built['single'] = false;
 		return $built;

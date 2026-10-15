@@ -403,7 +403,7 @@
 						}
 					</style>
 					<div class="wg-wrap">
-						<?php if (in_array((int) session('soma_post'), [\App\Models\PostsModel::PRINCIPAL_ID, \App\Models\PostsModel::DIRECTOR_ID], true) || \Config\MenuClearance::isChiefAccountantPost(session('soma_post'))): ?>
+						<?php if (in_array((int) session('soma_post'), [\App\Models\PostsModel::PRINCIPAL_ID, \App\Models\PostsModel::DIRECTOR_ID], true) || \Config\MenuClearance::isChiefAccountantPost(session('soma_post')) || (new \App\Services\WisdomGroupOverview())->isAliceNamahoro()): ?>
 						<a class="wg-book" href="<?= base_url('wisdom-population-report'); ?>">Attendance workbook</a>
 						<?php endif; ?>
 						<?php

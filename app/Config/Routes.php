@@ -186,9 +186,9 @@ $routes->add('api/(:any)', 'Api::$1');
 // ✅ Add this line before the wildcard
 $routes->get('home/testEmail', 'Home::testEmail');
 $routes->get('switch-school/(:num)', 'Home::switch_school_context/$1');
-$routes->get('wisdom-staff-today/(:num)/(:segment)', 'Home::wisdom_staff_today/$1/$2');
+$routes->get('wisdom-staff-today/(:num)/(:segment)', 'DayScholar::staffToday/$1/$2');
 $routes->get('wisdom-day-scholar/(:num)/(:segment)', 'DayScholar::today/$1/$2');
-$routes->get('wisdom-population-report', 'Home::wisdom_population_report');
+$routes->get('wisdom-population-report', 'DayScholar::populationReport');
 $routes->get('reset-school', 'Home::reset_school_context');
 $routes->post('share_staff_access', 'Home::share_staff_access');
 
