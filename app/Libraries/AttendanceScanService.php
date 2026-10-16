@@ -221,6 +221,15 @@ class AttendanceScanService
 		if ($lunchStart < 0 || $lunchEnd <= $lunchStart || $dayEnd <= $lunchEnd) {
 			return null;
 		}
+		// Morning gate attendance runs until noon. A timetable lunch before 12:00
+		// must not pull the gate into lunch mode.
+		$noon = 12 * 60;
+		if ($lunchStart < $noon) {
+			$lunchStart = $noon;
+		}
+		if ($lunchEnd <= $lunchStart) {
+			$lunchEnd = $lunchStart + 60;
+		}
 		$backStart = $lunchEnd;
 		$backEnd = min($lunchEnd + 45, max($lunchEnd + 20, $dayEnd - 40));
 		if ($backEnd <= $backStart) {
@@ -297,10 +306,14 @@ class AttendanceScanService
 		$backEnd = (int) ($windows['back_end'] ?? ($lunchEnd + 45));
 		$eveningStart = (int) ($windows['evening_start'] ?? (16 * 60));
 		$checkout = ($eveningStart > 0 && $eveningStart < 14 * 60) ? $eveningStart : 14 * 60;
-		if ($minute < $lunchStart - 5) {
+		$noon = 12 * 60;
+		if ($lunchStart < $noon) {
+			$lunchStart = $noon;
+		}
+		if ($minute < $lunchStart) {
 			return 'morning';
 		}
-		if ($minute <= $lunchEnd + 5) {
+		if ($minute <= $lunchEnd) {
 			return 'lunch';
 		}
 		if ($minute >= $backStart && $minute <= $backEnd) {
@@ -1350,19 +1363,20 @@ class AttendanceScanService
 			$wanted = 'IN';
 		}
 
-		if ($wanted === 'LUNCH' || $wanted === 'BACK') {
-			return self::applyDayScholarMark($db, $student, $schoolId, $areaId, $areaName, $eventTime, $wanted);
-		}
-
 		$time = $eventTime > 1000000000 ? $eventTime : time();
-		if ($wanted === 'IN' && self::isSchoolGateArea($areaName)) {
+		if (self::isSchoolGateArea($areaName) && in_array($wanted, ['IN', 'LUNCH', 'BACK'], true)) {
 			$slot = self::slotForStudentTime($db, $student, $schoolId, $time);
-			if ($slot === 'lunch' || $slot === 'back') {
+			if ($slot === 'morning') {
+				$wanted = 'IN';
+			} elseif ($slot === 'lunch' || $slot === 'back') {
 				return self::applyDayScholarMark($db, $student, $schoolId, $areaId, $areaName, $time, $slot === 'lunch' ? 'LUNCH' : 'BACK');
-			}
-			if ($slot === 'evening') {
+			} elseif ($wanted === 'IN' && $slot === 'evening') {
 				$wanted = 'OUT';
 			}
+		}
+
+		if ($wanted === 'LUNCH' || $wanted === 'BACK') {
+			return self::applyDayScholarMark($db, $student, $schoolId, $areaId, $areaName, $eventTime, $wanted);
 		}
 		$todayStart = strtotime('today', $time);
 		$todayEnd = strtotime('tomorrow', $time) - 1;
