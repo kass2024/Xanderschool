@@ -779,4 +779,257 @@ class FeesReportHelper
 		}
 		return date('d/m/Y', $ts);
 	}
+
+	public static function termName(int $term): string
+	{
+		$names = [1 => 'First term', 2 => 'Second term', 3 => 'Third term'];
+		return $names[$term] ?? ('Term ' . $term);
+	}
+
+	/**
+	 * One fold per fee item and selected term. School fees and each extra fee stay separate.
+	 *
+	 * @param list<array<string,mixed>> $students
+	 * @return list<array<string,mixed>>
+	 */
+	public static function termFeeSections(
+		array $students,
+		int $schoolId,
+		int $academic,
+		array $termsList,
+		int $classId,
+		string $feesScope = self::FEES_BOTH
+	): array {
+		$feesScope = self::normalizeFeesScope($feesScope);
+		$includeSchool = ($feesScope !== self::FEES_EXTRA);
+		$includeExtra = ($feesScope !== self::FEES_SCHOOL);
+		$termsList = array_values(array_filter(array_map('intval', $termsList), static function ($t) {
+			return $t >= 1 && $t <= 3;
+		}));
+		if ($students === [] || $classId < 1 || $termsList === []) {
+			return [];
+		}
+		$db = \Config\Database::connect();
+		$class = $db->table('classes')->select('level, department')->where('id', $classId)->get(1)->getRowArray();
+		$levelId = (int) ($class['level'] ?? 0);
+		$deptId = (int) ($class['department'] ?? 0);
+		$studentIds = array_values(array_unique(array_filter(array_map('intval', array_column($students, 'student_id')))));
+		$schoolByTerm = [];
+		if ($includeSchool) {
+			foreach ((new SchoolFeesModel())->linesForClass($schoolId, $academic, $classId, $levelId, $deptId) as $line) {
+				$term = (int) ($line['term'] ?? 0);
+				if (in_array($term, $termsList, true)) {
+					$schoolByTerm[$term] = $line;
+				}
+			}
+		}
+		$discountMap = [];
+		$schoolPaidMap = [];
+		if ($includeSchool && $studentIds !== []) {
+			$in = implode(',', $termsList);
+			$idIn = implode(',', $studentIds);
+			$discRows = $db->query(
+				"SELECT fd.student, sf.term, SUM(fd.amount) AS amount
+				FROM school_fees_discount fd
+				INNER JOIN school_fees sf ON sf.id = fd.feesId
+				WHERE sf.school_id = ? AND sf.academic_year = ? AND sf.term IN ($in)
+				AND fd.student IN ($idIn)
+				AND (fd.comment IS NULL OR (fd.comment NOT LIKE 'Set from Create Fee%' AND fd.comment NOT LIKE 'Set from pending registration%'))
+				GROUP BY fd.student, sf.term",
+				[$schoolId, $academic]
+			)->getResultArray();
+			foreach ($discRows as $disc) {
+				$discountMap[(int) $disc['student']][(int) $disc['term']] = (float) ($disc['amount'] ?? 0);
+			}
+			$paidRows = $db->table('fees_records fr')
+				->select('fr.student_id, sc.term, SUM(fr.amount) AS paid', false)
+				->join('school_fees sc', 'sc.id = fr.fees_id')
+				->where('fr.fees_type', 0)
+				->where('fr.status', 1)
+				->where('fr.amount >', 1)
+				->whereIn('fr.student_id', $studentIds)
+				->whereIn('sc.term', $termsList)
+				->where('sc.academic_year', $academic)
+				->where('sc.school_id', $schoolId)
+				->groupBy('fr.student_id')
+				->groupBy('sc.term')
+				->get()->getResultArray();
+			foreach ($paidRows as $paid) {
+				$schoolPaidMap[(int) $paid['student_id']][(int) $paid['term']] = (float) ($paid['paid'] ?? 0);
+			}
+		}
+		$extraLabels = [];
+		$classExtra = [];
+		$studentExtra = [];
+		$extraPaid = [];
+		if ($includeExtra) {
+			$classExtras = $db->table('extra_fees')
+				->select('title, term, amount, amount_boarding, amount_day')
+				->where('school_id', $schoolId)
+				->where('academic_year', $academic)
+				->where('type', 0)
+				->where('type_id', $classId)
+				->whereIn('term', $termsList)
+				->get()->getResultArray();
+			foreach ($classExtras as $ex) {
+				$key = self::extraTitleKey((string) ($ex['title'] ?? ''));
+				$term = (int) ($ex['term'] ?? 0);
+				if ($key === '' || $term < 1) {
+					continue;
+				}
+				$extraLabels[$key] = self::preferExtraTitle($extraLabels[$key] ?? '', (string) $ex['title']);
+				$classExtra[$key][$term][] = $ex;
+			}
+			if ($studentIds !== []) {
+				$studentExtras = $db->table('extra_fees')
+					->select('title, term, amount, amount_boarding, amount_day, type_id')
+					->where('school_id', $schoolId)
+					->where('academic_year', $academic)
+					->where('type', 1)
+					->whereIn('type_id', $studentIds)
+					->whereIn('term', $termsList)
+					->get()->getResultArray();
+				foreach ($studentExtras as $ex) {
+					$key = self::extraTitleKey((string) ($ex['title'] ?? ''));
+					$term = (int) ($ex['term'] ?? 0);
+					$sid = (int) ($ex['type_id'] ?? 0);
+					if ($key === '' || $term < 1 || $sid < 1) {
+						continue;
+					}
+					$extraLabels[$key] = self::preferExtraTitle($extraLabels[$key] ?? '', (string) $ex['title']);
+					$studentExtra[$sid][$key][$term][] = $ex;
+				}
+				$paidRows = $db->table('fees_records fr')
+					->select('fr.student_id, ex.title, ex.term, SUM(fr.amount) AS paid', false)
+					->join('extra_fees ex', 'ex.id = fr.fees_id')
+					->where('fr.fees_type', 1)
+					->where('fr.status', 1)
+					->where('fr.amount >', 1)
+					->whereIn('fr.student_id', $studentIds)
+					->whereIn('ex.term', $termsList)
+					->where('ex.academic_year', $academic)
+					->where('ex.school_id', $schoolId)
+					->groupBy('fr.student_id')
+					->groupBy('ex.title')
+					->groupBy('ex.term')
+					->get()->getResultArray();
+				foreach ($paidRows as $paid) {
+					$key = self::extraTitleKey((string) ($paid['title'] ?? ''));
+					$sid = (int) ($paid['student_id'] ?? 0);
+					$term = (int) ($paid['term'] ?? 0);
+					if ($key === '' || $sid < 1 || $term < 1) {
+						continue;
+					}
+					$extraLabels[$key] = self::preferExtraTitle($extraLabels[$key] ?? '', (string) $paid['title']);
+					$extraPaid[$sid][$key][$term] = (float) ($extraPaid[$sid][$key][$term] ?? 0) + (float) ($paid['paid'] ?? 0);
+				}
+			}
+		}
+		uksort($extraLabels, static function ($a, $b) use ($extraLabels) {
+			return strnatcasecmp($extraLabels[$a], $extraLabels[$b]);
+		});
+
+		$sections = [];
+		foreach ($termsList as $term) {
+			if ($includeSchool) {
+				$rows = [];
+				foreach ($students as $student) {
+					$sid = (int) ($student['student_id'] ?? 0);
+					$mode = (int) ($student['studying_mode'] ?? 1);
+					$expected = isset($schoolByTerm[$term])
+						? SchoolFeesModel::expectedForMode($schoolByTerm[$term], $mode)
+						: 0.0;
+					$expected = max(0, $expected + (float) ($discountMap[$sid][$term] ?? 0));
+					$paid = (float) ($schoolPaidMap[$sid][$term] ?? 0);
+					if ($expected <= 0 && $paid <= 0) {
+						continue;
+					}
+					$rows[] = self::feeSectionRow($student, $expected, $paid);
+				}
+				if ($rows !== []) {
+					$sections[] = self::feeSection('school-' . $term, 'school', 'School fees', $term, $rows);
+				}
+			}
+			if ($includeExtra) {
+				foreach ($extraLabels as $key => $title) {
+					$rows = [];
+					foreach ($students as $student) {
+						$sid = (int) ($student['student_id'] ?? 0);
+						$mode = (int) ($student['studying_mode'] ?? 1);
+						if (isset($classExtra[$key][$term])) {
+							$expected = self::expectedFromExtraRows($classExtra[$key][$term], $mode);
+						} else {
+							$expected = self::expectedFromExtraRows($studentExtra[$sid][$key][$term] ?? [], $mode);
+						}
+						$paid = (float) ($extraPaid[$sid][$key][$term] ?? 0);
+						if ($expected <= 0 && $paid <= 0) {
+							continue;
+						}
+						$rows[] = self::feeSectionRow($student, $expected, $paid);
+					}
+					if ($rows !== []) {
+						$sections[] = self::feeSection('extra-' . $key . '-' . $term, 'extra', $title, $term, $rows);
+					}
+				}
+			}
+		}
+		return $sections;
+	}
+
+	/** @param array<string,mixed> $student */
+	private static function feeSectionRow(array $student, float $expected, float $paid): array
+	{
+		$norm = self::normalizeCollectionAmounts($expected, $paid);
+		return [
+			'student_id' => (int) ($student['student_id'] ?? 0),
+			'regno' => (string) ($student['regno'] ?? ''),
+			'name' => (string) ($student['student'] ?? ''),
+			'expected' => $norm['due'],
+			'paid' => $norm['paid'],
+			'balance' => $norm['balance'],
+		];
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $rows
+	 * @return array<string,mixed>
+	 */
+	private static function feeSection(string $id, string $kind, string $title, int $term, array $rows): array
+	{
+		$expected = 0.0;
+		$paid = 0.0;
+		$balance = 0.0;
+		$full = 0;
+		$partial = 0;
+		$zero = 0;
+		foreach ($rows as $row) {
+			$expected += (float) $row['expected'];
+			$paid += (float) $row['paid'];
+			$balance += (float) $row['balance'];
+			if ((float) $row['paid'] <= 0) {
+				$zero++;
+			} elseif ((float) $row['balance'] <= 0) {
+				$full++;
+			} else {
+				$partial++;
+			}
+		}
+		$percent = $expected > 0 ? min(100.0, ($paid / $expected) * 100) : 0.0;
+		return [
+			'id' => $id,
+			'kind' => $kind,
+			'title' => $title,
+			'term' => $term,
+			'term_label' => self::termName($term),
+			'expected' => $expected,
+			'paid' => $paid,
+			'balance' => $balance,
+			'percent' => $percent,
+			'students' => count($rows),
+			'full' => $full,
+			'partial' => $partial,
+			'zero' => $zero,
+			'rows' => $rows,
+		];
+	}
 }

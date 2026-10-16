@@ -113,6 +113,7 @@ $sigBase = base_url('assets/images/signatures/');
 			<img class="ws-sig-img" src="<?= esc($sigBase . $prepSig, 'attr'); ?>" alt="Signature">
 			<?php } else { ?>
 			<span class="ws-sign-line">______________________________</span>
+			<div class="small text-muted">Uses the signature saved on your <a href="<?= base_url('profile'); ?>">profile</a>. Draw it there or upload a picture.</div>
 			<?php } ?>
 		</td>
 	</tr>

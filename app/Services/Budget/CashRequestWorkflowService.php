@@ -220,14 +220,14 @@ class CashRequestWorkflowService
 		if (!isset($map[$action])) {
 			return [];
 		}
-		CashRequestApprovalPolicy::ensureSchema();
-		if ($schoolId < 1) {
-			return ['error' => 'Upload the ' . $map[$action]['who'] . ' signature in School settings before approving.'];
+		$staffId = (int) (session('soma_id') ?? 0);
+		if ($staffId < 1) {
+			return ['error' => 'Save your signature on your profile before approving. You can draw it or upload a picture.'];
 		}
-		$row = \Config\Database::connect()->table('schools')->where('id', $schoolId)->get(1)->getRowArray();
-		$file = trim((string) ($row[$map[$action]['school_col']] ?? ''));
-		if (strlen($file) < 5) {
-			return ['error' => 'Upload the ' . $map[$action]['who'] . ' signature in School settings before approving.'];
+		$row = \Config\Database::connect()->table('staffs')->select('signature')->where('id', $staffId)->get(1)->getRowArray();
+		$file = function_exists('staff_signature_file') ? staff_signature_file($row['signature'] ?? '') : '';
+		if ($file === '') {
+			return ['error' => 'Save your signature on your profile before approving. You can draw it or upload a picture.'];
 		}
 		return ['column' => $map[$action]['column'], 'file' => $file];
 	}

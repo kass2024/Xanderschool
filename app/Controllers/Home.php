@@ -2604,7 +2604,7 @@ refreshNurseryMentions();
 			return $this->response->setJSON(['error' => 'Draw the signature, then save it.']);
 		}
 		$binary = base64_decode(substr($raw, strpos($raw, ',') + 1), true);
-		if ($binary === false || strlen($binary) < 80 || strlen($binary) > 1500000) {
+		if ($binary === false || strlen($binary) < 80 || strlen($binary) > 6000000) {
 			return $this->response->setJSON(['error' => 'That signature could not be read.']);
 		}
 		$image = @imagecreatefromstring($binary);
@@ -2613,7 +2613,20 @@ refreshNurseryMentions();
 		}
 		$width = imagesx($image);
 		$height = imagesy($image);
-		if ($width < 20 || $height < 20 || $width > 2000 || $height > 1200) {
+		if ($width > 1600 || $height > 900) {
+			$scale = min(1600 / $width, 900 / $height);
+			$nw = max(20, (int) round($width * $scale));
+			$nh = max(20, (int) round($height * $scale));
+			$scaled = imagecreatetruecolor($nw, $nh);
+			$bg = imagecolorallocate($scaled, 255, 255, 255);
+			imagefill($scaled, 0, 0, $bg);
+			imagecopyresampled($scaled, $image, 0, 0, 0, 0, $nw, $nh, $width, $height);
+			imagedestroy($image);
+			$image = $scaled;
+			$width = $nw;
+			$height = $nh;
+		}
+		if ($width < 20 || $height < 20) {
 			imagedestroy($image);
 			return $this->response->setJSON(['error' => 'That signature could not be read.']);
 		}
@@ -2672,7 +2685,7 @@ refreshNurseryMentions();
 		imagedestroy($out);
 		\Config\Database::connect()->table('staffs')->where('id', $id)->where('school_id', $schoolId)->update(['signature' => $file]);
 		return $this->response->setJSON([
-			'success' => 'Signature saved. It will appear on the periodic report when this staff member is the class teacher or the head teacher.',
+			'success' => 'Signature saved. It is used on expense requests, approvals, and reports.',
 			'src' => base_url('assets/images/signatures/' . rawurlencode($file)) . '?v=' . filemtime($path),
 		]);
 	}
@@ -26958,6 +26971,9 @@ public function assign_card()
 		$students = $enriched['students'];
 		$data['students'] = $students;
 		$data['extraFeeColumns'] = $enriched['extraFeeColumns'];
+		$data['feeSections'] = ($withDetailed && (int) $classe > 0)
+			? FeesReportHelper::termFeeSections($students, (int) $school_id, (int) $academic, $termsList, (int) $classe, $feesScope)
+			: [];
 		$data['incomeSummary'] = $incomeSummary;
 		$data['reportType'] = $reportType;
 		$data['reportTypeLabels'] = FeesReportHelper::reportTypeLabels();

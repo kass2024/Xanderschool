@@ -272,7 +272,7 @@ $field = static function (string $key) use ($staff): string {
 		?>
 		<div class="boxed" style="background:#fff;clear:both;">
 			<h4>Electronic signature</h4>
-			<p class="text-muted" style="font-size:10pt;margin-bottom:8px;">This signature is printed on the periodic report when this person is the class teacher or the head teacher.</p>
+			<p class="text-muted" style="font-size:10pt;margin-bottom:8px;">This signature is used on expense requests, approvals, and reports. Draw it below, or upload a picture of a signature.</p>
 			<?php if ($signatureSrc !== ''): ?>
 				<img id="staff-signature-preview" src="<?= esc($signatureSrc); ?>" alt="Saved signature" style="display:block;height:52px;max-width:100%;background:#fff;border:1px solid #e5e7eb;margin-bottom:8px;">
 			<?php else: ?>
@@ -282,7 +282,9 @@ $field = static function (string $key) use ($staff): string {
 				<canvas id="staff-sign-pad" width="640" height="160" style="width:100%;height:140px;border:1px dashed #94a3b8;background:#fff;touch-action:none;cursor:crosshair;display:block;"></canvas>
 				<div style="margin-top:8px;">
 					<button type="button" class="btn btn-sm btn-light" id="staff-sign-clear">Clear</button>
-					<button type="button" class="btn btn-sm btn-primary" id="staff-sign-save">Save signature</button>
+					<button type="button" class="btn btn-sm btn-primary" id="staff-sign-save">Save drawn signature</button>
+					<button type="button" class="btn btn-sm btn-outline-primary" id="staff-sign-upload">Upload signature</button>
+					<input type="file" id="staff-sign-file" accept="image/png,image/jpeg,image/jpg,image/webp" style="display:none;">
 					<button type="button" class="btn btn-sm btn-outline-danger" id="staff-sign-remove" <?= $signatureSrc === '' ? 'style="display:none;"' : ''; ?>>Remove</button>
 				</div>
 			<?php elseif ($signatureSrc === ''): ?>
@@ -601,6 +603,44 @@ $field = static function (string $key) use ($staff): string {
 				toastada.error('Could not save the signature.');
 			});
 		}
+		document.getElementById('staff-sign-upload').addEventListener('click', function () {
+			document.getElementById('staff-sign-file').click();
+		});
+		document.getElementById('staff-sign-file').addEventListener('change', function () {
+			var file = this.files && this.files[0];
+			this.value = '';
+			if (!file) return;
+			if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.type || '')) {
+				toastada.error('Upload a PNG or JPG picture of the signature.');
+				return;
+			}
+			var reader = new FileReader();
+			reader.onload = function () {
+				var img = new Image();
+				img.onload = function () {
+					var maxW = 1200;
+					var scale = img.width > maxW ? maxW / img.width : 1;
+					var w = Math.max(1, Math.round(img.width * scale));
+					var h = Math.max(1, Math.round(img.height * scale));
+					var canvasUp = document.createElement('canvas');
+					canvasUp.width = w;
+					canvasUp.height = h;
+					var ctxUp = canvasUp.getContext('2d');
+					ctxUp.fillStyle = '#ffffff';
+					ctxUp.fillRect(0, 0, w, h);
+					ctxUp.drawImage(img, 0, 0, w, h);
+					postSignature({
+						staff_id: '<?= (int) ($staff['id'] ?? 0); ?>',
+						signature: canvasUp.toDataURL('image/png')
+					});
+				};
+				img.onerror = function () {
+					toastada.error('That picture could not be read.');
+				};
+				img.src = reader.result;
+			};
+			reader.readAsDataURL(file);
+		});
 		document.getElementById('staff-sign-save').addEventListener('click', function () {
 			var rect = canvas.getBoundingClientRect();
 			var out = document.createElement('canvas');

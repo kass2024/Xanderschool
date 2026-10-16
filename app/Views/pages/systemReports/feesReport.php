@@ -97,7 +97,7 @@ $isClassBalance = ($reportType === 'class_balance');
 $isIncomeSummary = ($reportType === 'income_summary');
 $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 ?>
-<link rel="stylesheet" href="<?= base_url('assets/css/fees-report.css'); ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/fees-report.css'); ?>?v=5">
 
 <div class="fr-page" id="feesReportPage">
 	<div class="fr-center">
@@ -426,110 +426,77 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 			</div>
 			<?php endif; ?>
 
+			<?php $feeSections = $feeSections ?? []; ?>
 			<div class="fr-search-row">
-				<input type="text" class="form-control" id="frSearch" placeholder="Filter table by name or reg no…" style="max-width:320px;">
+				<input type="text" class="form-control" id="frSearch" placeholder="Filter by name or reg no…" style="max-width:320px;">
+				<span class="fr-fold-hint"><?= count($feeSections); ?> item<?= count($feeSections) === 1 ? '' : 's'; ?> · open a row to see students</span>
 			</div>
 
-			<div class="fr-table-wrap">
-				<table class="table mb-0 fr-detail-table" id="frFeesTable">
-					<thead>
-					<tr>
-						<th>#</th>
-						<th><?= lang('app.regNo'); ?></th>
-						<th><?= lang('app.names'); ?></th>
-						<th><?= lang('app.slipReference'); ?></th>
-						<th>Payment method</th>
-						<?php if ($showSchoolFees) : ?>
-						<th class="text-right">School fees</th>
-						<?php endif; ?>
-						<?php if ($showExtraFees) : ?>
-						<?php foreach (($extraFeeColumns ?? []) as $feeTitle) : ?>
-							<th class="text-right fr-extra-col"><?= esc($feeTitle); ?></th>
-						<?php endforeach; ?>
-						<th class="text-right">Extra total</th>
-						<?php endif; ?>
-						<th class="text-right">Paid</th>
-						<th class="text-right">Balance</th>
-						<th>Status</th>
-						<th><?= lang('app.recordedBy'); ?></th>
-						<?php if ($filter != '1' && $canFeesActions) : ?><th></th><?php endif; ?>
-					</tr>
-					</thead>
-					<tbody>
-					<?php $a = 1; foreach ($students as $student) :
-						$amt = (float) ($student['amount'] ?? 0);
-						$schoolAmt = (float) ($student['school_amount'] ?? 0);
-						$extraAmt = (float) ($student['extra_amount'] ?? 0);
-						$paid = (float) ($student['paid'] ?? 0);
-						$st = fr_payment_status($amt, $paid);
-						$pct = $amt > 0 ? min(100, round(($paid / $amt) * 100)) : 0;
-						$refs = trim((string) ($student['ref_nos'] ?? ''));
-						$actors = trim((string) ($student['recorded_by_names'] ?? ''));
-						$payModes = trim((string) ($student['payment_modes'] ?? ''));
-						$breakdown = $student['extra_breakdown'] ?? [];
-						$search = strtolower($student['student'] . ' ' . $student['regno'] . ' ' . $refs . ' ' . $actors . ' ' . $payModes);
-						$sid = (int) $student['student_id'];
-						?>
-						<tr data-search="<?= esc($search, 'attr'); ?>" data-student-id="<?= $sid; ?>" data-regno="<?= esc($student['regno'], 'attr'); ?>" data-name="<?= esc($student['student'], 'attr'); ?>">
-							<td><?= $a++; ?></td>
-							<td>
-								<a href="<?= base_url('student/' . $sid); ?>" class="font-weight-bold">
-									<?= esc($student['regno']); ?>
-								</a>
-							</td>
-							<td><?= esc($student['student']); ?></td>
-							<td class="fr-ref-cell">
-								<?php if ($refs !== '') : ?>
-									<span class="fr-ref"><?= esc($refs); ?></span>
-								<?php else : ?>
-									—
-								<?php endif; ?>
-							</td>
-							<td class="fr-pay-cell">
-								<?php if ($payModes !== '') : ?>
-									<span class="fr-pay"><?= esc($payModes); ?></span>
-								<?php else : ?>
-									<span class="text-muted">—</span>
-								<?php endif; ?>
-							</td>
-							<?php if ($showSchoolFees) : ?>
-							<td class="text-right fr-amount-school"><?= fr_fee_item_cell($schoolAmt, (float) ($student['school_paid'] ?? 0)); ?></td>
-							<?php endif; ?>
-							<?php if ($showExtraFees) : ?>
-							<?php foreach (($extraFeeColumns ?? []) as $feeTitle) :
-								$exp = (float) ($breakdown[$feeTitle]['expected'] ?? 0);
-								$feePaid = (float) ($breakdown[$feeTitle]['paid'] ?? 0);
-								?>
-								<td class="text-right fr-extra-col"><?= fr_fee_item_cell($exp, $feePaid); ?></td>
-							<?php endforeach; ?>
-							<td class="text-right fr-amount-extra"><?= fr_fee_item_cell($extraAmt, (float) ($student['extra_paid'] ?? 0)); ?></td>
-							<?php endif; ?>
-							<td class="text-right fr-amount-paid">
-								<?= number_format($paid); ?>
-								<span class="fr-mini-bar" title="<?= $pct; ?>%"><span style="width:<?= $pct; ?>%"></span></span>
-							</td>
-							<td class="text-right fr-amount-remain"><?= $st['remain'] > 0 ? number_format($st['remain']) : '—'; ?></td>
-							<td><span class="fr-badge <?= esc($st['class']); ?>"><?= esc($st['label']); ?></span></td>
-							<td class="fr-actor-cell">
-								<?php if ($actors !== '') : ?>
-									<span class="fr-actor"><?= esc($actors); ?></span>
-								<?php else : ?>
-									<span class="text-muted">—</span>
-								<?php endif; ?>
-							</td>
-							<?php if ($filter != '1' && $canFeesActions) : ?>
-							<td class="text-right">
-								<?php if ($st['remain'] > 0) : ?>
-									<button type="button" class="btn btn-link btn-sm fr-btn-sms-row p-0" data-student-id="<?= $sid; ?>" title="Send balance SMS">
-										<i class="fa fa-sms text-info"></i>
-									</button>
-								<?php endif; ?>
-							</td>
-							<?php endif; ?>
-						</tr>
-					<?php endforeach; ?>
-					</tbody>
-				</table>
+			<div class="fr-folds" id="frFolds">
+			<?php $foldOpen = true; foreach ($feeSections as $section) :
+				$pct = (float) ($section['percent'] ?? 0);
+				?>
+				<section class="fr-fold<?= $foldOpen ? ' open' : ''; ?> fr-fold-<?= esc($section['kind'], 'attr'); ?>" data-fold="<?= esc($section['id'], 'attr'); ?>">
+					<button type="button" class="fr-fold-head" aria-expanded="<?= $foldOpen ? 'true' : 'false'; ?>">
+						<span class="fr-fold-chevron" aria-hidden="true"></span>
+						<span class="fr-fold-title">
+							<strong><?= esc($section['title']); ?></strong>
+							<em><?= esc($section['term_label']); ?> only · <?= (int) $section['students']; ?> student<?= (int) $section['students'] === 1 ? '' : 's'; ?></em>
+						</span>
+						<span class="fr-fold-stat"><b><?= number_format((float) $section['expected']); ?></b><small>Expected</small></span>
+						<span class="fr-fold-stat paid"><b><?= number_format((float) $section['paid']); ?></b><small>Collected</small></span>
+						<span class="fr-fold-stat<?= (float) $section['balance'] > 0 ? ' bal' : ''; ?>"><b><?= number_format((float) $section['balance']); ?></b><small>Outstanding</small></span>
+						<span class="fr-fold-pct"><?= number_format($pct, 0); ?>%</span>
+						<span class="fr-fold-bar" aria-hidden="true"><span style="width:<?= number_format($pct, 1, '.', ''); ?>%"></span></span>
+					</button>
+					<div class="fr-fold-body">
+						<div class="fr-table-wrap">
+							<table class="table mb-0 fr-fold-table">
+								<thead>
+								<tr>
+									<th>#</th>
+									<th><?= lang('app.regNo'); ?></th>
+									<th><?= lang('app.names'); ?></th>
+									<th class="text-right">Expected</th>
+									<th class="text-right">Paid</th>
+									<th class="text-right">Balance</th>
+									<th>Status</th>
+									<?php if ($filter != '1' && $canFeesActions) : ?><th></th><?php endif; ?>
+								</tr>
+								</thead>
+								<tbody>
+								<?php $n = 1; foreach ($section['rows'] as $row) :
+									$st = fr_payment_status((float) $row['expected'], (float) $row['paid']);
+									$search = strtolower($row['name'] . ' ' . $row['regno']);
+									?>
+									<tr class="fr-fold-row" data-search="<?= esc($search, 'attr'); ?>" data-student-id="<?= (int) $row['student_id']; ?>" data-regno="<?= esc($row['regno'], 'attr'); ?>" data-name="<?= esc($row['name'], 'attr'); ?>">
+										<td><?= $n++; ?></td>
+										<td><a href="<?= base_url('student/' . (int) $row['student_id']); ?>" class="font-weight-bold"><?= esc($row['regno']); ?></a></td>
+										<td><?= esc($row['name']); ?></td>
+										<td class="text-right"><?= number_format((float) $row['expected']); ?></td>
+										<td class="text-right"><?= number_format((float) $row['paid']); ?></td>
+										<td class="text-right"><?= (float) $row['balance'] > 0 ? number_format((float) $row['balance']) : '—'; ?></td>
+										<td><span class="fr-badge <?= esc($st['class']); ?>"><?= esc($st['label']); ?></span></td>
+										<?php if ($filter != '1' && $canFeesActions) : ?>
+										<td class="text-right">
+											<?php if ((float) $row['balance'] > 0) : ?>
+												<button type="button" class="btn btn-link btn-sm fr-btn-sms-row p-0" data-student-id="<?= (int) $row['student_id']; ?>" title="Send balance SMS">
+													<i class="fa fa-sms text-info"></i>
+												</button>
+											<?php endif; ?>
+										</td>
+										<?php endif; ?>
+									</tr>
+								<?php endforeach; ?>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</section>
+			<?php $foldOpen = false; endforeach; ?>
+			<?php if ($feeSections === []) : ?>
+				<div class="fr-empty"><p>No fee items for the selected term.</p></div>
+			<?php endif; ?>
 			</div>
 
 			<?php endif; ?>
@@ -618,8 +585,27 @@ $(function () {
 		frLoadReport();
 	});
 
+	$('#frFolds').on('click', '.fr-fold-head', function () {
+		const $fold = $(this).closest('.fr-fold');
+		const open = !$fold.hasClass('open');
+		$fold.toggleClass('open', open);
+		$(this).attr('aria-expanded', open ? 'true' : 'false');
+	});
+
 	$('#frSearch').on('input', function () {
 		const q = $(this).val().toLowerCase().trim();
+		$('#frFolds .fr-fold').each(function () {
+			let any = false;
+			$(this).find('.fr-fold-row').each(function () {
+				const show = !q || String($(this).data('search') || '').indexOf(q) !== -1;
+				$(this).toggle(show);
+				if (show) any = true;
+			});
+			$(this).toggle(any);
+			if (q && any) {
+				$(this).addClass('open');
+			}
+		});
 		$('#frFeesTable tbody tr').each(function () {
 			const show = !q || String($(this).data('search') || '').indexOf(q) !== -1;
 			$(this).toggle(show);
@@ -631,7 +617,7 @@ $(function () {
 		const raw = $('#frSmsSearch').val().trim();
 		if (!raw) return 0;
 		let found = 0;
-		$('#frFeesTable tbody tr').each(function () {
+		$('#frFeesTable tbody tr, .fr-fold-row').each(function () {
 			const reg = String($(this).data('regno') || '');
 			const name = String($(this).data('name') || '');
 			const label = reg + ' — ' + name;
