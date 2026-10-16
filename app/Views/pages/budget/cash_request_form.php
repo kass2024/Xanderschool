@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=15" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=16" rel="stylesheet">
 <?php
 $reqRow = $request ?? [];
 $wsName = strtoupper(trim((string) ($school_name ?? 'Wisdom School')));
@@ -122,17 +122,22 @@ $sigBase = base_url('assets/images/signatures/');
 <div class="ws-banner">2. Purpose of Purchase</div>
 <table class="ws-grid">
 	<tr>
-		<td><textarea class="ws-purpose" name="purpose" rows="3" placeholder="What is this payment for?" required><?= esc($reqRow['purpose'] ?? ''); ?></textarea></td>
+		<td class="ws-write">
+			<label class="ws-field-lab" for="wsPurpose">Write the purpose here</label>
+			<textarea class="ws-purpose" id="wsPurpose" name="purpose" rows="4" placeholder="Example: Buy exercise books and chalk for level 3 SOD." required><?= esc($reqRow['purpose'] ?? ''); ?></textarea>
+		</td>
 	</tr>
 </table>
 
 <div class="ws-banner">3. Description of Materials / Items and Amounts</div>
+<p class="ws-item-help">For each row: choose the budget line, write what you are buying, then type the amount yourself.</p>
 <table class="ws-grid ws-items" id="tblRequestItems">
 	<thead>
 		<tr>
 			<th class="ws-no">No.</th>
 			<th>Description of Materials / Items</th>
-			<th>Amount (FRW)</th>
+			<th class="ws-amt-head">Amount (FRW)</th>
+			<th class="ws-rm-head"></th>
 		</tr>
 	</thead>
 	<tbody id="requestItemsBody"></tbody>
@@ -140,6 +145,7 @@ $sigBase = base_url('assets/images/signatures/');
 		<tr>
 			<td colspan="2" style="text-align:right">TOTAL</td>
 			<td id="kpiItemTotal">0</td>
+			<td></td>
 		</tr>
 	</tfoot>
 </table>
@@ -372,9 +378,15 @@ function frwWords(n) {
 	return text.charAt(0).toUpperCase() + text.slice(1) + ' Rwandan francs';
 }
 
+function parseMoney(v) {
+	var s = String(v || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
+	var n = parseFloat(s);
+	return isNaN(n) ? 0 : n;
+}
+
 function rowBlank($tr) {
 	var lid = $tr.find('.item-line').val();
-	var amt = parseFloat($tr.find('.item-amount').val()) || 0;
+	var amt = parseMoney($tr.find('.item-amount').val());
 	var desc = $.trim($tr.find('.item-desc').val() || '');
 	return !lid && amt <= 0 && desc === '';
 }
@@ -383,11 +395,17 @@ function addItemRow(preset) {
 	preset = preset || {};
 	var $tr = $('<tr class="cr-item-row">'
 		+ '<td class="ws-no"></td>'
-		+ '<td class="ws-desc-cell"><select name="item_budget_line_id[]" class="form-control form-control-sm item-line">' + lineOptionsHtml + '</select>'
-		+ '<input type="text" name="item_description[]" class="form-control form-control-sm item-desc" placeholder="Description of materials / items" value="">'
+		+ '<td class="ws-desc-cell">'
+		+ '<label class="ws-field-lab">Budget line</label>'
+		+ '<select name="item_budget_line_id[]" class="form-control form-control-sm item-line">' + lineOptionsHtml + '</select>'
+		+ '<label class="ws-field-lab">Description — type what you are buying</label>'
+		+ '<textarea name="item_description[]" class="form-control item-desc" rows="2" placeholder="Example: 40 exercise books, 10 boxes of chalk"></textarea>'
 		+ '<div class="item-remain ws-remain">—</div></td>'
-		+ '<td class="ws-amt-cell"><input type="number" step="0.01" min="0" name="item_amount[]" class="form-control form-control-sm item-amount" placeholder="0">'
-		+ '<button type="button" class="ws-rm btn-rm-item" title="Remove item">&times;</button></td>'
+		+ '<td class="ws-amt-cell">'
+		+ '<label class="ws-field-lab">Type the amount</label>'
+		+ '<input type="text" inputmode="decimal" autocomplete="off" name="item_amount[]" class="form-control item-amount" placeholder="25000">'
+		+ '</td>'
+		+ '<td class="ws-rm-cell"><button type="button" class="ws-rm btn-rm-item" title="Remove item">&times;</button></td>'
 		+ '</tr>');
 	$('#requestItemsBody').append($tr);
 	if (preset.budget_line_id) {
@@ -397,7 +415,8 @@ function addItemRow(preset) {
 		$tr.find('.item-desc').val(preset.description);
 	}
 	if (preset.amount) {
-		$tr.find('.item-amount').val(preset.amount);
+		var presetAmt = parseMoney(preset.amount);
+		$tr.find('.item-amount').val(presetAmt > 0 ? presetAmt.toLocaleString() : '');
 	}
 	refreshItemRow($tr);
 	recalcItems();
@@ -405,7 +424,7 @@ function addItemRow(preset) {
 
 function refreshItemRow($tr) {
 	var lid = $tr.find('.item-line').val();
-	var amt = parseFloat($tr.find('.item-amount').val()) || 0;
+	var amt = parseMoney($tr.find('.item-amount').val());
 	var av = lineData[lid];
 	var $remain = $tr.find('.item-remain');
 	$tr.removeClass('table-danger table-warning');
@@ -419,7 +438,7 @@ function refreshItemRow($tr) {
 	$('#requestItemsBody tr').each(function () {
 		if (this === $tr[0]) return;
 		if (String($(this).find('.item-line').val()) === String(lid)) {
-			usedSame += parseFloat($(this).find('.item-amount').val()) || 0;
+			usedSame += parseMoney($(this).find('.item-amount').val());
 		}
 	});
 	var left = remain - usedSame;
@@ -434,11 +453,6 @@ function refreshItemRow($tr) {
 	} else {
 		$remain.addClass('text-success').removeClass('text-danger text-warning');
 	}
-	var cat = $tr.find('.item-line option:selected').data('cat');
-	var $desc = $tr.find('.item-desc');
-	if (cat && (!$desc.val() || $desc.data('auto') === 1)) {
-		$desc.val(cat).data('auto', 1);
-	}
 }
 
 function recalcItems() {
@@ -450,7 +464,7 @@ function recalcItems() {
 		var $tr = $(this);
 		refreshItemRow($tr);
 		var lid = $tr.find('.item-line').val();
-		var amt = parseFloat($tr.find('.item-amount').val()) || 0;
+		var amt = parseMoney($tr.find('.item-amount').val());
 		if (amt > 0) {
 			total += amt;
 			count += 1;
@@ -572,11 +586,14 @@ $(document).on('click', '.btn-rm-item', function () {
 	recalcItems();
 });
 $(document).on('change', '.item-line', function () {
-	var $tr = $(this).closest('tr');
-	$tr.find('.item-desc').data('auto', 1);
 	recalcItems();
 });
 $(document).on('input', '.item-amount', recalcItems);
+$(document).on('blur', '.item-amount', function () {
+	var n = parseMoney($(this).val());
+	$(this).val(n > 0 ? n.toLocaleString() : '');
+	recalcItems();
+});
 $(document).on('input', '.item-desc', function () {
 	$(this).data('auto', 0);
 });
@@ -723,7 +740,7 @@ function validateSubmit() {
 		var $tr = $(this);
 		if (rowBlank($tr)) return;
 		var lid = $tr.find('.item-line').val();
-		var amt = parseFloat($tr.find('.item-amount').val()) || 0;
+		var amt = parseMoney($tr.find('.item-amount').val());
 		if (!lid || amt <= 0) { ok = false; }
 		if (lid && amt > 0) { total += amt; rows++; }
 	});

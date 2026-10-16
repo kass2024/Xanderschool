@@ -326,6 +326,7 @@ $routes->get('budget/cash_request_form', 'BudgetCashflow::cash_request_form');
 $routes->get('budget/cash_request_form/(:num)', 'BudgetCashflow::cash_request_form/$1');
 $routes->post('budget/save_cash_request', 'BudgetCashflow::save_cash_request');
 $routes->get('budget/cash_request_view/(:num)', 'BudgetCashflow::cash_request_view/$1');
+$routes->get('budget/cash_request_pdf/(:num)', 'BudgetCashflow::cash_request_pdf/$1');
 $routes->post('budget/cash_request_action', 'BudgetCashflow::cash_request_action');
 $routes->get('budget/pending_actions', 'BudgetCashflow::pending_actions');
 $routes->get('budget/procurement_review', 'BudgetCashflow::procurement_review');

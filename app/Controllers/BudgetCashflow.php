@@ -23,6 +23,7 @@ use App\Services\Budget\SchoolFeesBudgetProjectionService;
 use App\Services\Budget\BudgetEmptyAmountsService;
 use App\Services\Budget\WisdomBudgetWorkbookImportService;
 use App\Services\Budget\CashRequestApprovalPolicy;
+use App\Services\Budget\CashRequestFilingPdf;
 use App\Services\SchoolHierarchyService;
 
 class BudgetCashflow extends Home
@@ -2551,7 +2552,7 @@ class BudgetCashflow extends Home
 		if (is_array($lineIds) && count($lineIds) > 0) {
 			foreach ($lineIds as $i => $lid) {
 				$lid = (int) $lid;
-				$amt = (float) ($lineAmounts[$i] ?? 0);
+				$amt = (float) str_replace(',', '', (string) ($lineAmounts[$i] ?? '0'));
 				$desc = trim((string) ($lineDescs[$i] ?? ''));
 				if ($lid <= 0 && $amt <= 0 && $desc === '') {
 					continue;
@@ -2801,14 +2802,22 @@ class BudgetCashflow extends Home
 		$this->bootBudget();
 		$c = $this->ctx();
 		$wf = new CashRequestWorkflowService();
+		$requestId = (int) $this->request->getPost('request_id');
 		$res = $wf->transition(
-			(int) $this->request->getPost('request_id'),
+			$requestId,
 			$this->request->getPost('action'),
 			$c['staffId'],
 			$c['postId'],
 			$this->request->getPost('comment'),
 			['override' => $this->request->getPost('override'), 'override_reason' => $this->request->getPost('override_reason')]
 		);
+		if (!empty($res['success']) && ($res['status'] ?? '') === 'FINANCE_AUTHORIZED') {
+			try {
+				CashRequestFilingPdf::ensure($requestId, true);
+			} catch (\Throwable $e) {
+				log_message('error', 'Expense filing PDF: ' . $e->getMessage());
+			}
+		}
 		return $this->response->setJSON($res);
 	}
 
@@ -3072,6 +3081,26 @@ class BudgetCashflow extends Home
 			$out[] = $ln;
 		}
 		return $this->response->setJSON(['lines' => $out]);
+	}
+
+	public function cash_request_pdf($id = null)
+	{
+		$this->bootBudget();
+		$this->denyMenu('budget_cash_requests');
+		try {
+			$doc = CashRequestFilingPdf::ensure((int) $id, false);
+		} catch (\Throwable $e) {
+			log_message('error', 'Expense filing PDF: ' . $e->getMessage());
+			return redirect()->back()->with('error', 'The filing PDF could not be created.');
+		}
+		if (!$doc) {
+			return redirect()->back()->with('error', 'The filing PDF is saved after the Director of Finance authorizes the request.');
+		}
+		$path = WRITEPATH . str_replace(['writable/', '\\'], ['', DIRECTORY_SEPARATOR], (string) ($doc['stored_path'] ?? ''));
+		if (!is_file($path)) {
+			return redirect()->back()->with('error', 'The filing PDF could not be found.');
+		}
+		return $this->response->download($path, null)->setFileName((string) ($doc['original_name'] ?? 'expense-request.pdf'));
 	}
 
 	public function cash_request_document($docId = null)

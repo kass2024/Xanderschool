@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=15" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=16" rel="stylesheet">
 
 <?php
 $r = $request;
@@ -115,6 +115,9 @@ $submitted = !in_array($r['status'], ['DRAFT', 'CANCELLED'], true);
 			<span class="badge badge-info ml-2"><?= esc($approval_steps_label ?? $chain); ?></span>
 		</div>
 		<div>
+			<?php if (\App\Services\Budget\CashRequestFilingPdf::isApproved((string) ($r['status'] ?? ''))) { ?>
+			<a href="<?= base_url('budget/cash_request_pdf/' . (int) $r['id']); ?>" class="btn btn-sm btn-danger mr-1"><i class="fa fa-file-pdf"></i> Download approved PDF</a>
+			<?php } ?>
 			<button type="button" class="btn btn-sm btn-light mr-1" onclick="window.print()"><i class="fa fa-print"></i> Print</button>
 			<a href="<?= base_url('budget/requests'); ?>" class="btn btn-sm btn-light"><i class="fa fa-arrow-left"></i> All requests</a>
 		</div>
@@ -246,7 +249,7 @@ $submitted = !in_array($r['status'], ['DRAFT', 'CANCELLED'], true);
 	<div class="cr-section-title"><i class="fa fa-paperclip"></i> Supporting documents</div>
 	<ul class="cr-doc-list">
 		<?php foreach ($documents as $doc) { ?>
-		<li><span><i class="fa fa-file-pdf"></i> <?= esc($doc['original_name']); ?> <small class="text-muted">(<?= esc($doc['doc_type']); ?>)</small></span>
+		<li><span><i class="fa fa-file-pdf"></i> <?= esc($doc['original_name']); ?> <small class="text-muted">(<?= ($doc['doc_type'] ?? '') === 'approved_form' ? 'Approved form for filing' : esc($doc['doc_type']); ?>)</small></span>
 		<a href="<?= base_url('budget/cash_request_document/'.$doc['id']); ?>" class="btn btn-sm btn-outline-primary" target="_blank"><i class="fa fa-download"></i> Download</a></li>
 		<?php } ?>
 	</ul>
