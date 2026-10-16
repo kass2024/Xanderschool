@@ -119,6 +119,64 @@
   transition: width 0.4s ease;
 }
 
+.fr-select-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+.fr-select-table th,
+.fr-select-table td {
+  border: 1px solid #d5deea;
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+.fr-select-table th {
+  width: 11%;
+  background: #eef3f9;
+  color: #1e3a5f;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.fr-select-table td { width: 22%; }
+.fr-select-table .form-control { width: 100%; height: 34px; }
+.fr-term-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+}
+.fr-select-table .fr-term-all,
+.fr-select-table .fr-term-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #0f172a;
+  cursor: pointer;
+}
+.fr-select-table .fr-term-chip input,
+.fr-select-table .fr-term-all input {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+  margin: 0;
+}
+.fr-select-table .fr-term-chip span,
+.fr-select-table .fr-term-chip.active span,
+.fr-select-table .fr-term-chip input:checked + span {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  border-radius: 0;
+}
+
 .fr-filter-card {
   background: #fff;
   border-radius: 14px;

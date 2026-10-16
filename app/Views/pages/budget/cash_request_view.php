@@ -6,6 +6,8 @@ $chain = $approval_chain ?? ($r['approval_chain'] ?? 'full');
 $statusFlow = ['DRAFT','SUBMITTED','HEADTEACHER_APPROVED','PROCUREMENT_APPROVED','BUDGET_APPROVED','FINANCE_AUTHORIZED','PAID','RECEIPT_CONFIRMED','CLOSED'];
 if ($chain === 'wisdom') {
 	$statusFlow = ['DRAFT','SUBMITTED','HEADTEACHER_APPROVED','CHIEF_ACCOUNTANT_APPROVED','FINANCE_AUTHORIZED','PAID'];
+} elseif ($chain === 'wisdom_chief') {
+	$statusFlow = ['DRAFT','SUBMITTED','HEADTEACHER_APPROVED','FINANCE_AUTHORIZED','PAID'];
 }
 $currentIdx = array_search($r['status'], $statusFlow, true);
 if ($currentIdx === false) {

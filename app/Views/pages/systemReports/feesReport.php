@@ -97,111 +97,78 @@ $isClassBalance = ($reportType === 'class_balance');
 $isIncomeSummary = ($reportType === 'income_summary');
 $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 ?>
-<link rel="stylesheet" href="<?= base_url('assets/css/fees-report.css'); ?>?v=5">
+<link rel="stylesheet" href="<?= base_url('assets/css/fees-report.css'); ?>?v=6">
 
 <div class="fr-page" id="feesReportPage">
 	<div class="fr-center">
 
-		<header class="fr-header">
-			<h2><?= esc(lang('app.feesReport')); ?></h2>
-			<p>
-				<?php if ($hasResults) : ?>
-					<?php if ($isIncomeSummary) : ?>
-						School-wide · <?= esc($selectedYearTitle); ?> · <?= esc($termLabel); ?>
-					<?php else : ?>
-						<?= esc($classLabel); ?> · <?= esc($selectedYearTitle); ?> · <?= esc($termLabel); ?>
-					<?php endif; ?>
-					<?php if ($feesScope !== 'both') : ?>
-						· <?= esc($feesScopeLabels[$feesScope] ?? $feesScope); ?> only
-					<?php endif; ?>
-				<?php else : ?>
-					Choose filters below — report updates automatically
-				<?php endif; ?>
-			</p>
-			<?php $actor = trim((string) (session('soma_name') ?? '')); if ($actor !== '') : ?>
-				<p class="fr-logged-as"><?= esc(lang('app.actingAs')); ?>: <strong><?= esc($actor); ?></strong></p>
-			<?php endif; ?>
-		</header>
-
 		<div class="fr-filter-card" id="frFilterCard">
 			<form id="view_students_form" method="get" action="<?= base_url('system-report/fees'); ?>">
-				<div class="fr-filter-row">
-					<div class="fr-field">
-						<label for="frReportType">Report type</label>
-						<select class="form-control select2" id="frReportType" name="rtype">
-							<?php foreach ($reportTypeLabels as $rtypeKey => $rtypeLabel) : ?>
-								<option value="<?= esc($rtypeKey, 'attr'); ?>" <?= $reportType === $rtypeKey ? 'selected' : ''; ?>>
-									<?= esc($rtypeLabel); ?>
-								</option>
-							<?php endforeach; ?>
-						</select>
-					</div>
-					<div class="fr-field<?= $isIncomeSummary ? ' fr-field-hidden' : ''; ?>" id="frClassField">
-						<label for="choose_class"><?= lang('app.sClass'); ?></label>
-						<select class="form-control select2" id="choose_class" name="c"<?= $isIncomeSummary ? '' : ' required'; ?>>
-							<?php if ((int) $class_id <= 0) : ?>
-								<option value="" disabled selected><?= lang('app.chooseClass'); ?></option>
-							<?php endif; ?>
-							<?php foreach ($classes as $classe) : ?>
-								<option value="<?= (int) $classe['id']; ?>" <?= (int) $classe['id'] === (int) $class_id ? 'selected' : ''; ?>>
-									<?= esc("{$classe['level_name']} {$classe['dept_code']} {$classe['title']}"); ?>
-								</option>
-							<?php endforeach; ?>
-						</select>
-					</div>
-					<div class="fr-field">
-						<label><?= lang('app.academicYear'); ?></label>
-						<select class="form-control select2" name="academic">
-							<?php foreach ($years as $year) : ?>
-								<option value="<?= (int) $year['id']; ?>" <?= (int) $year['id'] === (int) $year_id ? 'selected' : ''; ?>>
-									<?= esc($year['title']); ?>
-								</option>
-							<?php endforeach; ?>
-						</select>
-					</div>
-					<div class="fr-field fr-field-terms">
-						<label><?= lang('app.term'); ?></label>
-						<div class="fr-term-picker">
-							<label class="fr-term-all">
-								<input type="checkbox" id="frAllTerms">
-								<span>All terms</span>
-							</label>
-							<div class="fr-term-chips" id="frTermChips">
-								<label class="fr-term-chip t1">
-									<input type="checkbox" name="term[]" value="1" class="fr-term-cb"<?= in_array(1, $selectedTerms, true) ? ' checked' : ''; ?>>
-									<span><?= lang('app.term1'); ?></span>
-								</label>
-								<label class="fr-term-chip t2">
-									<input type="checkbox" name="term[]" value="2" class="fr-term-cb"<?= in_array(2, $selectedTerms, true) ? ' checked' : ''; ?>>
-									<span><?= lang('app.term2'); ?></span>
-								</label>
-								<label class="fr-term-chip t3">
-									<input type="checkbox" name="term[]" value="3" class="fr-term-cb"<?= in_array(3, $selectedTerms, true) ? ' checked' : ''; ?>>
-									<span><?= lang('app.term3'); ?></span>
-								</label>
+				<table class="fr-select-table">
+					<tr>
+						<th>Report type</th>
+						<td>
+							<select class="form-control" id="frReportType" name="rtype">
+								<?php foreach ($reportTypeLabels as $rtypeKey => $rtypeLabel) : ?>
+									<option value="<?= esc($rtypeKey, 'attr'); ?>" <?= $reportType === $rtypeKey ? 'selected' : ''; ?>>
+										<?= esc($rtypeLabel); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+						</td>
+						<th id="frClassLabel"<?= $isIncomeSummary ? ' class="fr-field-hidden"' : ''; ?>><?= lang('app.sClass'); ?></th>
+						<td id="frClassField"<?= $isIncomeSummary ? ' class="fr-field-hidden"' : ''; ?>>
+							<select class="form-control" id="choose_class" name="c"<?= $isIncomeSummary ? '' : ' required'; ?>>
+								<?php if ((int) $class_id <= 0) : ?>
+									<option value="" disabled selected><?= lang('app.chooseClass'); ?></option>
+								<?php endif; ?>
+								<?php foreach ($classes as $classe) : ?>
+									<option value="<?= (int) $classe['id']; ?>" <?= (int) $classe['id'] === (int) $class_id ? 'selected' : ''; ?>>
+										<?= esc("{$classe['level_name']} {$classe['dept_code']} {$classe['title']}"); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+						</td>
+						<th><?= lang('app.academicYear'); ?></th>
+						<td>
+							<select class="form-control" name="academic">
+								<?php foreach ($years as $year) : ?>
+									<option value="<?= (int) $year['id']; ?>" <?= (int) $year['id'] === (int) $year_id ? 'selected' : ''; ?>>
+										<?= esc($year['title']); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+						</td>
+					</tr>
+					<tr>
+						<th><?= lang('app.term'); ?></th>
+						<td>
+							<div class="fr-term-checks">
+								<label class="fr-term-all"><input type="checkbox" id="frAllTerms"> All terms</label>
+								<label class="fr-term-chip"><input type="checkbox" name="term[]" value="1" class="fr-term-cb"<?= in_array(1, $selectedTerms, true) ? ' checked' : ''; ?>> <?= lang('app.term1'); ?></label>
+								<label class="fr-term-chip"><input type="checkbox" name="term[]" value="2" class="fr-term-cb"<?= in_array(2, $selectedTerms, true) ? ' checked' : ''; ?>> <?= lang('app.term2'); ?></label>
+								<label class="fr-term-chip"><input type="checkbox" name="term[]" value="3" class="fr-term-cb"<?= in_array(3, $selectedTerms, true) ? ' checked' : ''; ?>> <?= lang('app.term3'); ?></label>
 							</div>
-						</div>
-					</div>
-					<div class="fr-field fr-field-fees-scope">
-						<label>Fees type</label>
-						<input type="hidden" name="fscope" id="frFeesScopeInput" value="<?= esc($feesScope); ?>">
-						<div class="fr-status-pills" id="frFeesScopePills" role="group" aria-label="Fees type filter">
-							<button type="button" class="fr-status-pill pill-all<?= $feesScope === 'both' ? ' active' : ''; ?>" data-fscope="both">Both</button>
-							<button type="button" class="fr-status-pill pill-school<?= $feesScope === 'school' ? ' active active-green' : ''; ?>" data-fscope="school">School fees</button>
-							<button type="button" class="fr-status-pill pill-extra<?= $feesScope === 'extra' ? ' active active-amber' : ''; ?>" data-fscope="extra">Extra fees</button>
-						</div>
-					</div>
-					<div class="fr-field<?= $isIncomeSummary ? ' fr-field-hidden' : ''; ?>" id="frFilterStatusField">
-						<label>Payment status</label>
-						<input type="hidden" name="filter" id="frFilterInput" value="<?= esc($filter); ?>">
-						<div class="fr-status-pills" id="frStatusPills" role="group" aria-label="Payment status filter">
-							<button type="button" class="fr-status-pill pill-all<?= $filter === '0' ? ' active' : ''; ?>" data-filter="0">All</button>
-							<button type="button" class="fr-status-pill pill-full<?= $filter === '1' ? ' active active-green' : ''; ?>" data-filter="1">Full paid</button>
-							<button type="button" class="fr-status-pill pill-partial<?= $filter === '2' ? ' active active-amber' : ''; ?>" data-filter="2">Partial</button>
-							<button type="button" class="fr-status-pill pill-zero<?= $filter === '3' ? ' active active-red' : ''; ?>" data-filter="3">Zero payment</button>
-						</div>
-					</div>
-				</div>
+						</td>
+						<th>Fees type</th>
+						<td>
+							<select class="form-control" name="fscope" id="frFeesScopeInput">
+								<option value="both"<?= $feesScope === 'both' ? ' selected' : ''; ?>>Both</option>
+								<option value="school"<?= $feesScope === 'school' ? ' selected' : ''; ?>>School fees</option>
+								<option value="extra"<?= $feesScope === 'extra' ? ' selected' : ''; ?>>Extra fees</option>
+							</select>
+						</td>
+						<th id="frFilterStatusLabel"<?= $isIncomeSummary ? ' class="fr-field-hidden"' : ''; ?>>Payment status</th>
+						<td id="frFilterStatusField"<?= $isIncomeSummary ? ' class="fr-field-hidden"' : ''; ?>>
+							<select class="form-control" name="filter" id="frFilterInput">
+								<option value="0"<?= (string) $filter === '0' ? ' selected' : ''; ?>>All</option>
+								<option value="1"<?= (string) $filter === '1' ? ' selected' : ''; ?>>Full paid</option>
+								<option value="2"<?= (string) $filter === '2' ? ' selected' : ''; ?>>Partial</option>
+								<option value="3"<?= (string) $filter === '3' ? ' selected' : ''; ?>>Zero payment</option>
+							</select>
+						</td>
+					</tr>
+				</table>
 			</form>
 		</div>
 
@@ -527,7 +494,7 @@ $(function () {
 
 	function frToggleClassField() {
 		const income = frIsIncomeSummary();
-		$('#frClassField, #frFilterStatusField').toggleClass('fr-field-hidden', income);
+		$('#frClassField, #frClassLabel, #frFilterStatusField, #frFilterStatusLabel').toggleClass('fr-field-hidden', income);
 		$('#choose_class').prop('required', !income).prop('disabled', income);
 	}
 
@@ -559,31 +526,7 @@ $(function () {
 	frSyncTermChips();
 	frToggleClassField();
 
-	$('#frReportType').on('change', frLoadReport);
-	$form.find('select[name="c"], select[name="academic"]').on('change', frLoadReport);
-
-	$('#frStatusPills .fr-status-pill').on('click', function () {
-		const f = String($(this).data('filter'));
-		if ($('#frFilterInput').val() === f) return;
-		$('#frFilterInput').val(f);
-		$('#frStatusPills .fr-status-pill').removeClass('active active-green active-amber active-red');
-		$(this).addClass('active');
-		if (f === '1') $(this).addClass('active-green');
-		if (f === '2') $(this).addClass('active-amber');
-		if (f === '3') $(this).addClass('active-red');
-		frLoadReport();
-	});
-
-	$('#frFeesScopePills .fr-status-pill').on('click', function () {
-		const s = String($(this).data('fscope') || 'both');
-		if ($('#frFeesScopeInput').val() === s) return;
-		$('#frFeesScopeInput').val(s);
-		$('#frFeesScopePills .fr-status-pill').removeClass('active active-green active-amber active-red');
-		$(this).addClass('active');
-		if (s === 'school') $(this).addClass('active-green');
-		if (s === 'extra') $(this).addClass('active-amber');
-		frLoadReport();
-	});
+	$form.find('select').on('change', frLoadReport);
 
 	$('#frFolds').on('click', '.fr-fold-head', function () {
 		const $fold = $(this).closest('.fr-fold');

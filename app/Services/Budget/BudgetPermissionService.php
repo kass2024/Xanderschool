@@ -35,6 +35,13 @@ class BudgetPermissionService
 			}
 		}
 
+		// Chief Accountant can raise a request on any campus. Approval still skips their own step.
+		if ($postId === 28 && in_array($permKey, [
+			'cash_request.create', 'cash_request.edit_own', 'cash_request.submit', 'cash_request.manage_documents',
+		], true)) {
+			return true;
+		}
+
 		$db = \Config\Database::connect();
 		$row = $db->table('post_budget_permissions')
 			->where('post_id', $postId)

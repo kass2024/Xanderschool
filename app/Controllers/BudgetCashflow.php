@@ -953,8 +953,17 @@ class BudgetCashflow extends Home
 		$this->bootBudget();
 		$c = $this->ctx();
 		$amount = (float) ($this->request->getGet('amount') ?? $this->request->getPost('amount') ?? 0);
-		$resolved = CashRequestApprovalPolicy::resolveChain((int) $c['orgId'], $amount);
-		return $this->response->setJSON($resolved);
+		$chain = ((int) $c['postId'] === 28)
+			? CashRequestApprovalPolicy::CHAIN_WISDOM_CHIEF
+			: CashRequestApprovalPolicy::CHAIN_WISDOM;
+		return $this->response->setJSON([
+			'chain' => $chain,
+			'label' => CashRequestApprovalPolicy::chainLabels()[$chain],
+			'steps' => CashRequestApprovalPolicy::chainStepNames($chain),
+			'steps_label' => CashRequestApprovalPolicy::chainLabels()[$chain],
+			'max_amount' => null,
+			'amount' => $amount,
+		]);
 	}
 
 	public function templates()
@@ -2443,7 +2452,7 @@ class BudgetCashflow extends Home
 							return true;
 						}
 						if ($st === 'HEADTEACHER_APPROVED') {
-							return $chain === 'short';
+							return $chain === 'short' || $chain === 'wisdom_chief';
 						}
 						if ($st === 'PROCUREMENT_APPROVED') {
 							return $chain === 'medium';
@@ -2598,6 +2607,9 @@ class BudgetCashflow extends Home
 			if (!$bLine) {
 				return $this->response->setJSON(['error' => 'Item #' . ($idx + 1) . ': invalid budget line for this budget.']);
 			}
+			if (stripos((string) ($bLine['section_label'] ?? ''), 'INCOME') !== false) {
+				return $this->response->setJSON(['error' => 'Item #' . ($idx + 1) . ': a request cannot use an income line. Choose an expense line.']);
+			}
 			$desc = trim((string) ($it['description'] ?? ''));
 			if ($desc === '') {
 				$desc = (string) ($bLine['category'] ?? 'Cash request item');
@@ -2651,7 +2663,9 @@ class BudgetCashflow extends Home
 			'purpose' => trim((string) $this->request->getPost('purpose')),
 			'currency' => 'RWF',
 			'requested_amount' => round($total, 2),
-			'approval_chain' => \App\Services\Budget\CashRequestApprovalPolicy::CHAIN_WISDOM,
+			'approval_chain' => ((int) $c['postId'] === 28)
+				? \App\Services\Budget\CashRequestApprovalPolicy::CHAIN_WISDOM_CHIEF
+				: \App\Services\Budget\CashRequestApprovalPolicy::CHAIN_WISDOM,
 			'payment_method' => $this->request->getPost('payment_method'),
 			'urgency' => $this->request->getPost('urgency') ?: 'normal',
 			'internal_notes' => $this->request->getPost('internal_notes'),
@@ -3058,7 +3072,7 @@ class BudgetCashflow extends Home
 		$db = \Config\Database::connect();
 		$availSvc = new BudgetAvailabilityService();
 		$calc = new BudgetCalculationService();
-		// All real budget lines (income + expenses) — exclude section total rows only
+		// Expense lines only. Income cannot be used on a cash request.
 		$lines = $db->table('budget_lines')
 			->where('budget_id', (int) $budgetId)
 			->where('is_total_row', 0)
@@ -3078,6 +3092,9 @@ class BudgetCashflow extends Home
 			$ln['availability'] = $availSvc->lineAvailability((int) $ln['id']);
 			$ln['section'] = $ln['section_label'] ?? '';
 			$ln['is_income'] = (stripos((string) ($ln['section_label'] ?? ''), 'INCOME') !== false) ? 1 : 0;
+			if ($ln['is_income']) {
+				continue;
+			}
 			$out[] = $ln;
 		}
 		return $this->response->setJSON(['lines' => $out]);

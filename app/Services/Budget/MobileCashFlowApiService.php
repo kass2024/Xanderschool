@@ -148,6 +148,9 @@ class MobileCashFlowApiService
 			$budgetId = (int) $budgets[0]['id'];
 			$availSvc = new BudgetAvailabilityService();
 			foreach ($db->table('budget_lines')->where('budget_id', $budgetId)->where('is_total_row', 0)->orderBy('sort_order')->get()->getResultArray() as $ln) {
+				if (stripos((string) ($ln['section_label'] ?? ''), 'INCOME') !== false) {
+					continue;
+				}
 				$av = $availSvc->lineAvailability((int) $ln['id']);
 				$lines[] = [
 					'id' => (int) $ln['id'],

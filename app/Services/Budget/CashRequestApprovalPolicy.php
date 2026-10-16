@@ -16,6 +16,8 @@ class CashRequestApprovalPolicy
 	public const CHAIN_MEDIUM = 'medium';
 	public const CHAIN_FULL = 'full';
 	public const CHAIN_WISDOM = 'wisdom';
+	/** Chief Accountant is the requester, so that step is skipped. */
+	public const CHAIN_WISDOM_CHIEF = 'wisdom_chief';
 
 	/** Default when master has not configured tiers yet. */
 	public static function defaultTiers(): array
@@ -41,6 +43,7 @@ class CashRequestApprovalPolicy
 			self::CHAIN_MEDIUM => 'Headmaster → Procurement → Director of Finance',
 			self::CHAIN_FULL => 'Headmaster → Procurement → Budget Manager → Director of Finance',
 			self::CHAIN_WISDOM => 'Accountant → Head Teacher → Chief Accountant → Director of Finance',
+			self::CHAIN_WISDOM_CHIEF => 'Chief Accountant → Head Teacher → Director of Finance',
 		];
 	}
 
@@ -51,6 +54,7 @@ class CashRequestApprovalPolicy
 			self::CHAIN_MEDIUM => ['Headmaster', 'Procurement', 'Director of Finance', 'Pay'],
 			self::CHAIN_FULL => ['Headmaster', 'Procurement', 'Budget Manager', 'Director of Finance', 'Pay'],
 			self::CHAIN_WISDOM => ['Accountant', 'Head Teacher', 'Chief Accountant', 'Director of Finance'],
+			self::CHAIN_WISDOM_CHIEF => ['Chief Accountant', 'Head Teacher', 'Director of Finance'],
 		];
 		return $map[$chain] ?? $map[self::CHAIN_FULL];
 	}
@@ -205,6 +209,9 @@ class CashRequestApprovalPolicy
 		if ($status === 'SUBMITTED') {
 			return ['headteacher_approve'];
 		}
+		if ($chain === self::CHAIN_WISDOM_CHIEF && $status === 'HEADTEACHER_APPROVED') {
+			return ['final_approve'];
+		}
 		if ($chain === self::CHAIN_WISDOM && $status === 'HEADTEACHER_APPROVED') {
 			return ['chief_accountant_approve'];
 		}
@@ -231,6 +238,9 @@ class CashRequestApprovalPolicy
 
 	public static function flowStatuses(string $chain): array
 	{
+		if ($chain === self::CHAIN_WISDOM_CHIEF) {
+			return ['SUBMITTED', 'HEADTEACHER_APPROVED', 'FINANCE_AUTHORIZED'];
+		}
 		if ($chain === self::CHAIN_WISDOM) {
 			return ['SUBMITTED', 'HEADTEACHER_APPROVED', 'CHIEF_ACCOUNTANT_APPROVED', 'FINANCE_AUTHORIZED'];
 		}
@@ -245,6 +255,13 @@ class CashRequestApprovalPolicy
 
 	public static function flowLabels(string $chain): array
 	{
+		if ($chain === self::CHAIN_WISDOM_CHIEF) {
+			return [
+				['SUBMITTED', 'Head Teacher'],
+				['HEADTEACHER_APPROVED', 'Director of Finance'],
+				['FINANCE_AUTHORIZED', 'Money allowed'],
+			];
+		}
 		if ($chain === self::CHAIN_WISDOM) {
 			return [
 				['SUBMITTED', 'Head Teacher'],

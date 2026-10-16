@@ -5615,6 +5615,9 @@ public function permission_card_scan()
 		if (!$bLine) {
 			return $this->response->setJSON(['error' => 'Invalid budget line.']);
 		}
+		if (stripos((string) ($bLine['section_label'] ?? ''), 'INCOME') !== false) {
+			return $this->response->setJSON(['error' => 'A request cannot use an income line. Choose an expense line.']);
+		}
 		$purpose = trim((string) $this->request->getPost('purpose'));
 		$payee = trim((string) $this->request->getPost('payee_name'));
 		if ($purpose === '' || $payee === '') {
