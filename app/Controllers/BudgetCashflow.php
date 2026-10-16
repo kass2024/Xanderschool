@@ -2500,9 +2500,18 @@ class BudgetCashflow extends Home
 		$c = $this->ctx();
 		$db = \Config\Database::connect();
 		$data = $this->data;
-		$data['title'] = $id ? 'Edit Cash Request' : 'New Cash Request';
+		$data['title'] = $id ? 'Edit Expense Request' : 'Expense Request Form';
 		$data['page'] = 'budget_cash_requests';
 		$data['request'] = $id ? $db->table('cash_requests')->where('id', (int)$id)->get(1)->getRowArray() : null;
+		$staffRow = (new BudgetNotificationService())->staffById((int) $c['staffId']);
+		$data['preparer_phone'] = trim((string) ($staffRow['phone'] ?? ''));
+		$data['preparer_signature'] = '';
+		try {
+			$sigRow = $db->table('staffs')->select('signature')->where('id', (int) $c['staffId'])->get(1)->getRowArray();
+			$data['preparer_signature'] = function_exists('staff_signature_file') ? staff_signature_file($sigRow['signature'] ?? '') : '';
+		} catch (\Throwable $e) {
+			$data['preparer_signature'] = '';
+		}
 		$data['budgets'] = $db->table('budgets')->where('branch_id', $c['branchId'])->where('status','APPROVED')->orderBy('id','DESC')->get()->getResultArray();
 		$data['is_accountant'] = ((int) $c['postId'] === 9);
 		$data['lines'] = $id ? $db->table('cash_request_lines')->where('cash_request_id', (int)$id)->get()->getResultArray() : [];
@@ -2606,6 +2615,13 @@ class BudgetCashflow extends Home
 			foreach ($byLine as $lid => $need) {
 				$avail = $availSvc->lineAvailability((int) $lid);
 				$left = $avail ? (float) $avail['available'] : 0.0;
+				if ($id > 0) {
+					$ownHeld = (float) ($db->query(
+						"SELECT COALESCE(SUM(amount),0) AS t FROM budget_commitments WHERE cash_request_id = ? AND budget_line_id = ? AND status = 'open'",
+						[$id, (int) $lid]
+					)->getRowArray()['t'] ?? 0);
+					$left += $ownHeld;
+				}
 				if ($need > $left) {
 					$cat = '';
 					foreach ($normalized as $n) {
@@ -2638,6 +2654,12 @@ class BudgetCashflow extends Home
 			'payment_method' => $this->request->getPost('payment_method'),
 			'urgency' => $this->request->getPost('urgency') ?: 'normal',
 			'internal_notes' => $this->request->getPost('internal_notes'),
+			'prepared_by_name' => trim((string) $this->request->getPost('prepared_by_name')),
+			'prepared_position' => trim((string) $this->request->getPost('prepared_position')),
+			'prepared_phone' => trim((string) $this->request->getPost('prepared_phone')),
+			'payee_contact' => trim((string) $this->request->getPost('payee_contact')),
+			'payee_account' => trim((string) $this->request->getPost('payee_account')),
+			'payee_bank' => trim((string) $this->request->getPost('payee_bank')),
 			'updated_by' => $c['staffId'],
 			'updated_at' => date('Y-m-d H:i:s'),
 		];
@@ -2744,6 +2766,16 @@ class BudgetCashflow extends Home
 		$data['actions'] = $db->table('cash_request_actions')->where('cash_request_id', $id)->orderBy('id')->get()->getResultArray();
 		$data['payments'] = $db->table('cash_request_payments')->where('cash_request_id', $id)->get()->getResultArray();
 		$data['documents'] = $db->table('cash_request_documents')->where('cash_request_id', $id)->orderBy('id')->get()->getResultArray();
+		$data['creator'] = null;
+		try {
+			$data['creator'] = $db->table('staffs s')
+				->select('s.fname, s.lname, s.phone, s.signature, p.title as post_title')
+				->join('posts p', 'p.id = s.post', 'left')
+				->where('s.id', (int) ($req['created_by'] ?? 0))
+				->get(1)->getRowArray();
+		} catch (\Throwable $e) {
+			$data['creator'] = null;
+		}
 		$data['availability'] = [];
 		foreach ($data['lines'] as $ln) {
 			if (!empty($ln['budget_line_id'])) {

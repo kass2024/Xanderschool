@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=3" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=15" rel="stylesheet">
 
 <?php
 $r = $request;
@@ -13,11 +13,100 @@ if ($currentIdx === false) {
 }
 $steps = $approval_flow ?? \App\Services\Budget\CashRequestApprovalPolicy::flowLabels($chain);
 $wfActions = $wf_actions ?? \App\Services\Budget\CashRequestWorkflowService::uiActionsForRequest($r);
+$wsName = strtoupper(trim((string) ($school_name ?? 'Wisdom School')));
+$wsMotto = trim((string) ($school_moto ?? ''));
+if ($wsMotto === '' && strpos($wsName, 'WISDOM') !== false) {
+	$wsMotto = 'Fearing God is knowledge';
+}
+$wsWeb = trim((string) ($school_website ?? ''));
+if ($wsWeb === '' && strpos($wsName, 'WISDOM') !== false) {
+	$wsWeb = 'www.wisdomschoolrwanda.com';
+}
+$wsLogo = trim((string) ($school_logo ?? ''));
+$creator = $creator ?? [];
+$prepName = trim((string) ($r['prepared_by_name'] ?? ''));
+if ($prepName === '') {
+	$prepName = trim((string) (($creator['fname'] ?? '') . ' ' . ($creator['lname'] ?? '')));
+}
+$prepPos = trim((string) ($r['prepared_position'] ?? ''));
+if ($prepPos === '') {
+	$prepPos = trim((string) ($creator['post_title'] ?? ''));
+}
+$prepPhone = trim((string) ($r['prepared_phone'] ?? ''));
+if ($prepPhone === '') {
+	$prepPhone = trim((string) ($creator['phone'] ?? ''));
+}
+$prepSig = function_exists('staff_signature_file') ? staff_signature_file($creator['signature'] ?? '') : '';
+$sigBase = base_url('assets/images/signatures/');
+$actWhen = [];
+foreach ($actions as $act) {
+	$actWhen[$act['action']] = $act['created_at'] ?? '';
+}
+$fmtDate = static function ($value) {
+	$value = trim((string) $value);
+	if ($value === '') {
+		return '';
+	}
+	$ts = strtotime($value);
+	return $ts ? date('d/m/Y', $ts) : $value;
+};
+if (!function_exists('ws_frw_words')) {
+	function ws_frw_words($amount): string
+	{
+		$n = (int) round((float) $amount);
+		if ($n <= 0) {
+			return '';
+		}
+		$ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+		$tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+		$chunk = null;
+		$chunk = static function ($num) use (&$chunk, $ones, $tens) {
+			$num = (int) $num;
+			if ($num < 20) {
+				return $ones[$num];
+			}
+			if ($num < 100) {
+				return $tens[(int) floor($num / 10)] . ($num % 10 ? '-' . $ones[$num % 10] : '');
+			}
+			return $ones[(int) floor($num / 100)] . ' hundred' . ($num % 100 ? ' ' . $chunk($num % 100) : '');
+		};
+		$parts = [];
+		foreach ([1000000000 => 'billion', 1000000 => 'million', 1000 => 'thousand'] as $scale => $label) {
+			$v = (int) floor($n / $scale);
+			if ($v > 0) {
+				$parts[] = $chunk($v) . ' ' . $label;
+				$n %= $scale;
+			}
+		}
+		if ($n > 0) {
+			$parts[] = $chunk($n);
+		}
+		$text = implode(' ', $parts);
+		return ucfirst($text) . ' Rwandan francs';
+	}
+}
+$lineNames = [];
+$itemTotal = 0.0;
+foreach ($lines as $ln) {
+	$itemTotal += (float) ($ln['amount'] ?? 0);
+	$cat = trim((string) ($ln['budget_category'] ?? ''));
+	if ($cat !== '' && !in_array($cat, $lineNames, true)) {
+		$lineNames[] = $cat;
+	}
+}
+$sigCell = static function ($file) use ($sigBase) {
+	$file = trim((string) $file);
+	if (strlen($file) < 5) {
+		return 'Signature: ____________';
+	}
+	return '<img class="ws-sig-img" src="' . esc($sigBase . $file, 'attr') . '" alt="Signature">';
+};
+$submitted = !in_array($r['status'], ['DRAFT', 'CANCELLED'], true);
 ?>
 
 <div class="budget-cr-view budget-cr-form">
 
-<div class="cr-hero">
+<div class="cr-hero ws-no-print">
 	<div class="d-flex flex-wrap justify-content-between align-items-start">
 		<div>
 			<h4 class="mb-1"><?= esc($r['request_no']); ?></h4>
@@ -25,7 +114,10 @@ $wfActions = $wf_actions ?? \App\Services\Budget\CashRequestWorkflowService::uiA
 			<span class="ml-2"><?= number_format((float)$r['requested_amount'], 0); ?> RWF</span>
 			<span class="badge badge-info ml-2"><?= esc($approval_steps_label ?? $chain); ?></span>
 		</div>
-		<a href="<?= base_url('budget/requests'); ?>" class="btn btn-sm btn-light"><i class="fa fa-arrow-left"></i> All requests</a>
+		<div>
+			<button type="button" class="btn btn-sm btn-light mr-1" onclick="window.print()"><i class="fa fa-print"></i> Print</button>
+			<a href="<?= base_url('budget/requests'); ?>" class="btn btn-sm btn-light"><i class="fa fa-arrow-left"></i> All requests</a>
+		</div>
 	</div>
 </div>
 
@@ -42,66 +134,115 @@ $wfActions = $wf_actions ?? \App\Services\Budget\CashRequestWorkflowService::uiA
 <div class="row">
 <div class="col-lg-7">
 
-<div class="cr-section">
-	<div class="cr-section-title"><i class="fa fa-info-circle"></i> Request details</div>
-	<p><strong>Payee:</strong> <?= esc($r['payee_name']); ?> (<?= esc($r['payee_type'] ?? 'supplier'); ?>)</p>
-	<p><strong>Purpose:</strong> <?= esc($r['purpose']); ?></p>
-	<p class="mb-0 small text-muted">Request date: <?= esc($r['request_date']); ?> · Payment method: <?= esc($r['payment_method'] ?? '—'); ?></p>
-</div>
-
-<?php
-$sigBase = base_url('assets/images/signatures/');
-$sigCards = [
-	['Head Teacher', $r['headteacher_signature'] ?? ''],
-	['Chief Accountant', $r['chief_accountant_signature'] ?? ''],
-	['Director of Finance', $r['finance_signature'] ?? ''],
-];
-$anySig = false;
-foreach ($sigCards as $sigCard) { if (strlen($sigCard[1]) > 4) { $anySig = true; } }
-if ($anySig) { ?>
-<div class="cr-section">
-	<div class="cr-section-title"><i class="fa fa-pen-fancy"></i> Approval signatures</div>
-	<div class="d-flex flex-wrap" style="gap:1rem">
-		<?php foreach ($sigCards as $sigCard) { if (strlen($sigCard[1]) < 5) continue; ?>
-		<div>
-			<div class="small text-muted"><?= esc($sigCard[0]); ?></div>
-			<img src="<?= esc($sigBase . $sigCard[1], 'attr'); ?>" alt="<?= esc($sigCard[0]); ?>" style="height:64px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:4px">
-		</div>
-		<?php } ?>
-	</div>
-</div>
-<?php } ?>
-
-<div class="cr-section">
-	<div class="cr-section-title"><i class="fa fa-chart-pie"></i> Request items (<?= count($lines); ?>)</div>
-	<div class="table-responsive">
-		<table class="table table-sm mb-0">
-			<thead class="thead-light"><tr><th>Budget line</th><th>Description</th><th class="text-right">Amount</th><th class="text-right">Remaining</th></tr></thead>
-			<tbody>
-			<?php
-			$itemTotal = 0.0;
-			foreach ($lines as $ln) {
-				$itemTotal += (float) ($ln['amount'] ?? 0);
-				$av = !empty($ln['budget_line_id']) ? ($availability[$ln['budget_line_id']] ?? null) : null;
-			?>
-			<tr>
-				<td>
-					<strong><?= esc($ln['budget_category'] ?? '—'); ?></strong>
-					<?php if (!empty($ln['section_label'])) { ?><br><small class="text-muted"><?= esc($ln['section_label']); ?></small><?php } ?>
-				</td>
-				<td><?= esc($ln['description'] ?? ''); ?></td>
-				<td class="text-right"><?= number_format((float)($ln['amount'] ?? 0), 0); ?></td>
-				<td class="text-right"><?= $av ? number_format((float)$av['available'], 0) . ' RWF' : '—'; ?></td>
-			</tr>
+<div class="ws-erf">
+<table class="ws-head">
+	<tr>
+		<td style="width:90px">
+			<?php if ($wsLogo !== '') { ?>
+			<img class="ws-logo" src="<?= base_url('assets/images/logo/' . $wsLogo); ?>" alt="">
 			<?php } ?>
-			</tbody>
-			<tfoot><tr class="font-weight-bold"><td colspan="2" class="text-right">Total</td><td class="text-right"><?= number_format($itemTotal, 0); ?> RWF</td><td></td></tr></tfoot>
-		</table>
-	</div>
+		</td>
+		<td>
+			<div class="ws-school"><?= esc($wsName); ?></div>
+			<?php if ($wsMotto !== '') { ?><div class="ws-motto">"<?= esc($wsMotto); ?>"</div><?php } ?>
+			<?php if ($wsWeb !== '') { ?><div class="ws-web"><?= esc($wsWeb); ?></div><?php } ?>
+		</td>
+		<td style="width:90px"></td>
+	</tr>
+</table>
+<hr class="ws-rule">
+<div class="ws-title">EXPENSE REQUEST FORM</div>
+<table class="ws-grid">
+	<tr>
+		<td class="ws-lab narrow">School</td>
+		<td><?= esc($wsName); ?></td>
+		<td class="ws-lab narrow">Date</td>
+		<td><?= esc($fmtDate($r['request_date'] ?? '')); ?></td>
+	</tr>
+</table>
+<div class="ws-banner">1. Department Request Details</div>
+<table class="ws-grid">
+	<tr><td class="ws-lab">Prepared by (Names)</td><td colspan="3"><?= esc($prepName); ?></td></tr>
+	<tr><td class="ws-lab">Position</td><td colspan="3"><?= esc($prepPos); ?></td></tr>
+	<tr>
+		<td class="ws-lab">Tel.</td>
+		<td><?= esc($prepPhone); ?></td>
+		<td class="ws-lab narrow">Date</td>
+		<td><?= esc($fmtDate($r['request_date'] ?? '')); ?></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Signature</td>
+		<td colspan="3"><?= $prepSig !== '' ? '<img class="ws-sig-img" src="' . esc($sigBase . $prepSig, 'attr') . '" alt="Signature">' : '______________________________'; ?></td>
+	</tr>
+</table>
+<div class="ws-banner">2. Purpose of Purchase</div>
+<table class="ws-grid"><tr><td style="min-height:64px"><?= nl2br(esc($r['purpose'] ?? '')); ?></td></tr></table>
+<div class="ws-banner">3. Description of Materials / Items and Amounts</div>
+<table class="ws-grid ws-items">
+	<thead><tr><th class="ws-no">No.</th><th>Description of Materials / Items</th><th>Amount (FRW)</th></tr></thead>
+	<tbody>
+	<?php
+	$n = 0;
+	foreach ($lines as $ln) {
+		$n++;
+		$desc = trim((string) ($ln['description'] ?? ''));
+		$cat = trim((string) ($ln['budget_category'] ?? ''));
+		if ($cat !== '' && strcasecmp($cat, $desc) !== 0) {
+			$desc = $cat . ($desc !== '' ? ' — ' . $desc : '');
+		}
+	?>
+	<tr>
+		<td class="ws-no"><?= $n; ?></td>
+		<td><?= esc($desc); ?></td>
+		<td><?= number_format((float) ($ln['amount'] ?? 0), 0); ?></td>
+	</tr>
+	<?php } ?>
+	<?php for ($pad = $n + 1; $pad <= 4; $pad++) { ?>
+	<tr><td class="ws-no"><?= $pad; ?></td><td></td><td></td></tr>
+	<?php } ?>
+	</tbody>
+	<tfoot><tr><td colspan="2" style="text-align:right">TOTAL</td><td><?= number_format($itemTotal, 0); ?></td></tr></tfoot>
+</table>
+<div class="ws-banner">4. Budget Information</div>
+<table class="ws-grid">
+	<tr><td class="ws-lab">Budget line description</td><td><?= esc($lineNames ? implode('; ', $lineNames) : '—'); ?></td></tr>
+	<tr><td class="ws-lab">Total amount in FRW requested (in figures)</td><td><?= number_format($itemTotal, 0); ?></td></tr>
+	<tr><td class="ws-lab">Total amount in FRW (in words)</td><td><?= esc(ws_frw_words($itemTotal)); ?></td></tr>
+</table>
+<div class="ws-banner">5. Payment Details</div>
+<table class="ws-grid">
+	<tr><td class="ws-lab">Payment to be made to</td><td><?= esc($r['payee_name'] ?? ''); ?></td></tr>
+	<tr><td class="ws-lab">Contact Info:</td><td><?= esc($r['payee_contact'] ?? ''); ?></td></tr>
+	<tr><td class="ws-lab">Payment / Account Number:</td><td><?= esc($r['payee_account'] ?? ''); ?></td></tr>
+	<tr><td class="ws-lab">Bank Name:</td><td><?= esc($r['payee_bank'] ?? ''); ?></td></tr>
+</table>
+<div class="ws-banner">6. Verification and Approval</div>
+<table class="ws-grid">
+	<tr>
+		<td class="ws-lab">Verified by the Accountant</td>
+		<td><?= $submitted ? $sigCell($prepSig) : 'Signature: ____________'; ?></td>
+		<td><?= $submitted && !empty($actWhen['submit']) ? 'Date: ' . esc($fmtDate($actWhen['submit'])) : 'Date: ____________'; ?></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Verified by the Headteacher</td>
+		<td><?= $sigCell($r['headteacher_signature'] ?? ''); ?></td>
+		<td><?= !empty($actWhen['headteacher_approve']) ? 'Date: ' . esc($fmtDate($actWhen['headteacher_approve'])) : 'Date: ____________'; ?></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Approved by the Chief Accountant</td>
+		<td><?= $sigCell($r['chief_accountant_signature'] ?? ''); ?></td>
+		<td><?= !empty($actWhen['chief_accountant_approve']) ? 'Date: ' . esc($fmtDate($actWhen['chief_accountant_approve'])) : 'Date: ____________'; ?></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Authorized by the Director of Finance</td>
+		<td><?= $sigCell($r['finance_signature'] ?? ''); ?></td>
+		<td><?= !empty($actWhen['final_approve']) ? 'Date: ' . esc($fmtDate($actWhen['final_approve'])) : 'Date: ____________'; ?></td>
+	</tr>
+</table>
 </div>
 
 <?php if (!empty($documents)) { ?>
-<div class="cr-section">
+<div class="cr-section ws-no-print">
 	<div class="cr-section-title"><i class="fa fa-paperclip"></i> Supporting documents</div>
 	<ul class="cr-doc-list">
 		<?php foreach ($documents as $doc) { ?>
@@ -113,7 +254,7 @@ if ($anySig) { ?>
 <?php } ?>
 
 <?php if (!empty($payments)) { ?>
-<div class="cr-section">
+<div class="cr-section ws-no-print">
 	<div class="cr-section-title"><i class="fa fa-money-check"></i> Payments</div>
 	<ul class="list-group list-group-flush">
 	<?php foreach ($payments as $p) { ?>
@@ -125,7 +266,7 @@ if ($anySig) { ?>
 
 </div>
 
-<div class="col-lg-5">
+<div class="col-lg-5 ws-no-print">
 
 <div class="cr-section">
 	<div class="cr-section-title"><i class="fa fa-gavel"></i> Your actions</div>

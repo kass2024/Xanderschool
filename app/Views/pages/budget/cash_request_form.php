@@ -1,90 +1,217 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=14" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=15" rel="stylesheet">
+<?php
+$reqRow = $request ?? [];
+$wsName = strtoupper(trim((string) ($school_name ?? 'Wisdom School')));
+$wsMotto = trim((string) ($school_moto ?? ''));
+if ($wsMotto === '' && strpos($wsName, 'WISDOM') !== false) {
+	$wsMotto = 'Fearing God is knowledge';
+}
+$wsWeb = trim((string) ($school_website ?? ''));
+if ($wsWeb === '' && strpos($wsName, 'WISDOM') !== false) {
+	$wsWeb = 'www.wisdomschoolrwanda.com';
+}
+$wsLogo = trim((string) ($school_logo ?? ''));
+$prepName = trim((string) ($reqRow['prepared_by_name'] ?? ''));
+if ($prepName === '') {
+	$prepName = trim((string) (session('soma_name') ?? ''));
+}
+$prepPos = trim((string) ($reqRow['prepared_position'] ?? ''));
+if ($prepPos === '') {
+	$prepPos = trim((string) (session('soma_post_title') ?? ''));
+}
+$prepPhone = trim((string) ($reqRow['prepared_phone'] ?? ''));
+if ($prepPhone === '') {
+	$prepPhone = trim((string) ($preparer_phone ?? ''));
+}
+$prepSig = trim((string) ($preparer_signature ?? ''));
+$sigBase = base_url('assets/images/signatures/');
+?>
 
-<div class="budget-cr-form">
-
-<div class="cr-hero">
-	<h4 class="mb-1"><i class="fa fa-file-invoice-dollar"></i> <?= esc($title ?? 'New Cash Request'); ?></h4>
-	<p class="mb-0 small">The accountant requests money from a budget line and can attach supporting documents. The Head Teacher approves or sends it back with a reason, then the Chief Accountant, then the Director of Finance. Money is allowed only after the Director of Finance signs.</p>
-</div>
+<div class="budget-cr-form ws-erf-wrap">
 
 <?php if (empty($budgets)) { ?>
-<div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between">
+<div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between ws-no-print">
 	<span><i class="fa fa-exclamation-triangle"></i> No approved budget yet. Upload the Excel budget, then wait for the Chief Accountant and the Director of Finance.</span>
 	<a href="<?= base_url('budget/prepare'); ?>" class="btn btn-sm btn-warning">Prepare budget</a>
 </div>
 <?php } ?>
 
 <form id="frmCR" enctype="multipart/form-data">
-<input type="hidden" name="id" value="<?= (int)($request['id'] ?? 0); ?>">
+<input type="hidden" name="id" value="<?= (int)($reqRow['id'] ?? 0); ?>">
+<input type="hidden" name="budget_period_id" id="budget_period_id" value="<?= (int)($reqRow['budget_period_id'] ?? 0); ?>">
+<input type="hidden" name="requested_amount" id="requested_amount" value="<?= esc($reqRow['requested_amount'] ?? ''); ?>">
+<input type="hidden" name="required_payment_date" value="<?= esc($reqRow['required_payment_date'] ?? ''); ?>">
+<input type="hidden" name="urgency" value="<?= esc($reqRow['urgency'] ?? 'normal'); ?>">
+<input type="hidden" name="payment_method" value="<?= esc($reqRow['payment_method'] ?? 'bank'); ?>">
+<input type="hidden" name="payee_type" value="<?= esc($reqRow['payee_type'] ?? 'supplier'); ?>">
+<input type="hidden" name="internal_notes" value="<?= esc($reqRow['internal_notes'] ?? ''); ?>">
 
-<div class="cr-section">
-	<div class="cr-section-title d-flex flex-wrap justify-content-between align-items-center">
-		<span><i class="fa fa-link"></i> Budget &amp; request items <span class="text-danger">*</span></span>
-		<button type="button" class="btn btn-sm btn-outline-success" id="btnAddItem" <?= empty($budgets) ? 'disabled' : ''; ?>>
-			<i class="fa fa-plus"></i> Add item
-		</button>
+<div class="ws-erf-bar ws-no-print">
+	<div>
+		<label>Approved budget</label>
+		<select name="budget_id" id="budget_id" class="form-control form-control-sm" required <?= empty($budgets) ? 'disabled' : ''; ?>>
+			<?php if (empty($budgets)) { ?><option value="">— No approved budget —</option><?php } ?>
+			<?php foreach ($budgets as $b) { ?>
+			<option value="<?= (int)$b['id']; ?>" data-period="<?= (int)($b['budget_period_id'] ?? 0); ?>" <?= isset($reqRow['budget_id']) && (int)$reqRow['budget_id']===(int)$b['id']?'selected':''; ?>><?= esc($b['title']); ?> (<?= number_format((float)$b['total_expenses'],0); ?> RWF)</option>
+			<?php } ?>
+		</select>
 	</div>
-	<div class="form-row mb-3">
-		<div class="col-md-6 form-group mb-0">
-			<label class="font-weight-bold">Approved budget</label>
-			<select name="budget_id" id="budget_id" class="form-control" required <?= empty($budgets) ? 'disabled' : ''; ?>>
-				<?php if (empty($budgets)) { ?><option value="">— No approved budget —</option><?php } ?>
-				<?php foreach ($budgets as $b) { ?>
-				<option value="<?= (int)$b['id']; ?>" data-period="<?= (int)($b['budget_period_id'] ?? 0); ?>" <?= isset($request['budget_id']) && (int)$request['budget_id']===(int)$b['id']?'selected':''; ?>><?= esc($b['title']); ?> (<?= number_format((float)$b['total_expenses'],0); ?> RWF)</option>
-				<?php } ?>
-			</select>
-		</div>
-		<input type="hidden" name="budget_period_id" id="budget_period_id" value="<?= (int)($request['budget_period_id'] ?? 0); ?>">
-		<div class="col-md-6 d-flex align-items-end">
-			<div class="bp-kpi-row w-100 mb-0" id="itemsKpiStrip">
-				<div class="bp-kpi"><label>Items</label><strong id="kpiItemCount">0</strong></div>
-				<div class="bp-kpi income"><label>Total</label><strong id="kpiItemTotal">0</strong><small>RWF</small></div>
-			</div>
-		</div>
-	</div>
-
-	<div class="table-responsive">
-		<table class="table table-sm cr-items-table mb-0" id="tblRequestItems">
-			<thead class="thead-light">
-				<tr>
-					<th style="min-width:220px">Budget line</th>
-					<th>Description</th>
-					<th style="width:140px">Amount (RWF)</th>
-					<th style="width:150px">Remaining</th>
-					<th style="width:44px"></th>
-				</tr>
-			</thead>
-			<tbody id="requestItemsBody"></tbody>
-		</table>
-	</div>
-	<div id="itemsWarnBox" class="cr-avail-box danger mt-2" style="display:none"></div>
-	<div id="chainPreviewBox" class="bp-kpi-row mt-3 mb-0" style="display:none">
-		<div class="bp-kpi income w-100">
-			<label>Approval chain for this total</label>
-			<strong class="small d-block" id="chainPreviewLabel">—</strong>
-			<small class="text-muted d-block mt-1" id="chainPreviewSteps"></small>
-		</div>
-	</div>
-	<input type="hidden" name="requested_amount" id="requested_amount" value="<?= esc($request['requested_amount'] ?? ''); ?>">
+	<button type="button" class="btn btn-sm btn-outline-primary" id="btnAddItem" <?= empty($budgets) ? 'disabled' : ''; ?>>
+		<i class="fa fa-plus"></i> Add item
+	</button>
+	<span class="small text-muted pb-1">Items <strong id="kpiItemCount">0</strong></span>
 </div>
 
-<div class="cr-section">
-	<div class="cr-section-title"><i class="fa fa-user"></i> Payee &amp; purpose</div>
-	<div class="form-row">
-		<div class="col-md-3 form-group"><label class="font-weight-bold">Request date</label><input type="date" class="form-control" name="request_date" value="<?= esc($request['request_date'] ?? date('Y-m-d')); ?>" required></div>
-		<div class="col-md-3 form-group"><label class="font-weight-bold">Payment needed by</label><input type="date" class="form-control" name="required_payment_date" value="<?= esc($request['required_payment_date'] ?? ''); ?>"></div>
-		<div class="col-md-3 form-group"><label class="font-weight-bold">Urgency</label><select name="urgency" class="form-control"><option value="normal">Normal</option><option value="urgent" <?= ($request['urgency'] ?? '')==='urgent'?'selected':''; ?>>Urgent</option></select></div>
-		<div class="col-md-3 form-group"><label class="font-weight-bold">Payment method</label><select name="payment_method" class="form-control"><option value="bank">Bank transfer</option><option value="momo">Mobile money</option><option value="cheque">Cheque</option><option value="cash">Cash</option></select></div>
-	</div>
-	<div class="form-row">
-		<div class="col-md-6 form-group"><label class="font-weight-bold">Payee name <span class="text-danger">*</span></label><input class="form-control" name="payee_name" value="<?= esc($request['payee_name'] ?? ''); ?>" placeholder="Supplier or staff name" required></div>
-		<div class="col-md-6 form-group"><label class="font-weight-bold">Payee type</label><select name="payee_type" class="form-control"><option value="supplier">Supplier</option><option value="staff">Staff</option><option value="contractor">Contractor</option><option value="other">Other</option></select></div>
-	</div>
-	<div class="form-group"><label class="font-weight-bold">Purpose / justification <span class="text-danger">*</span></label><textarea class="form-control" name="purpose" rows="2" placeholder="What is this payment for?" required><?= esc($request['purpose'] ?? ''); ?></textarea></div>
-	<div class="form-group mb-0"><label class="font-weight-bold">Internal notes</label><textarea class="form-control" name="internal_notes" rows="2"><?= esc($request['internal_notes'] ?? ''); ?></textarea></div>
+<div class="ws-erf">
+<table class="ws-head">
+	<tr>
+		<td style="width:90px">
+			<?php if ($wsLogo !== '') { ?>
+			<img class="ws-logo" src="<?= base_url('assets/images/logo/' . $wsLogo); ?>" alt="">
+			<?php } ?>
+		</td>
+		<td>
+			<div class="ws-school"><?= esc($wsName); ?></div>
+			<?php if ($wsMotto !== '') { ?><div class="ws-motto">"<?= esc($wsMotto); ?>"</div><?php } ?>
+			<?php if ($wsWeb !== '') { ?><div class="ws-web"><?= esc($wsWeb); ?></div><?php } ?>
+		</td>
+		<td style="width:90px"></td>
+	</tr>
+</table>
+<hr class="ws-rule">
+<div class="ws-title">EXPENSE REQUEST FORM</div>
+
+<table class="ws-grid">
+	<tr>
+		<td class="ws-lab narrow">School</td>
+		<td><?= esc($wsName); ?></td>
+		<td class="ws-lab narrow">Date</td>
+		<td style="width:22%"><input type="date" class="form-control" name="request_date" value="<?= esc($reqRow['request_date'] ?? date('Y-m-d')); ?>" required></td>
+	</tr>
+</table>
+
+<div class="ws-banner">1. Department Request Details</div>
+<table class="ws-grid">
+	<tr>
+		<td class="ws-lab">Prepared by (Names)</td>
+		<td colspan="3"><input class="form-control" name="prepared_by_name" value="<?= esc($prepName); ?>" required></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Position</td>
+		<td colspan="3"><input class="form-control" name="prepared_position" value="<?= esc($prepPos); ?>"></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Tel.</td>
+		<td><input class="form-control" name="prepared_phone" value="<?= esc($prepPhone); ?>"></td>
+		<td class="ws-lab narrow">Date</td>
+		<td><input type="date" class="form-control" id="prepDateMirror" value="<?= esc($reqRow['request_date'] ?? date('Y-m-d')); ?>"></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Signature</td>
+		<td colspan="3">
+			<?php if ($prepSig !== '') { ?>
+			<img class="ws-sig-img" src="<?= esc($sigBase . $prepSig, 'attr'); ?>" alt="Signature">
+			<?php } else { ?>
+			<span class="ws-sign-line">______________________________</span>
+			<?php } ?>
+		</td>
+	</tr>
+</table>
+
+<div class="ws-banner">2. Purpose of Purchase</div>
+<table class="ws-grid">
+	<tr>
+		<td><textarea class="ws-purpose" name="purpose" rows="3" placeholder="What is this payment for?" required><?= esc($reqRow['purpose'] ?? ''); ?></textarea></td>
+	</tr>
+</table>
+
+<div class="ws-banner">3. Description of Materials / Items and Amounts</div>
+<table class="ws-grid ws-items" id="tblRequestItems">
+	<thead>
+		<tr>
+			<th class="ws-no">No.</th>
+			<th>Description of Materials / Items</th>
+			<th>Amount (FRW)</th>
+		</tr>
+	</thead>
+	<tbody id="requestItemsBody"></tbody>
+	<tfoot>
+		<tr>
+			<td colspan="2" style="text-align:right">TOTAL</td>
+			<td id="kpiItemTotal">0</td>
+		</tr>
+	</tfoot>
+</table>
+<div id="itemsWarnBox" class="cr-avail-box danger mt-2" style="display:none"></div>
+
+<div class="ws-banner">4. Budget Information</div>
+<table class="ws-grid">
+	<tr>
+		<td class="ws-lab">Budget line description</td>
+		<td id="budgetLineSummary">—</td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Total amount in FRW requested (in figures)</td>
+		<td id="wsFigures">0</td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Total amount in FRW (in words)</td>
+		<td id="amountWords"></td>
+	</tr>
+</table>
+<div id="budgetRemainNote" class="small text-muted px-1 pt-1"></div>
+
+<div class="ws-banner">5. Payment Details</div>
+<table class="ws-grid">
+	<tr>
+		<td class="ws-lab">Payment to be made to</td>
+		<td><input class="form-control" name="payee_name" value="<?= esc($reqRow['payee_name'] ?? ''); ?>" required></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Contact Info:</td>
+		<td><input class="form-control" name="payee_contact" value="<?= esc($reqRow['payee_contact'] ?? ''); ?>"></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Payment / Account Number:</td>
+		<td><input class="form-control" name="payee_account" value="<?= esc($reqRow['payee_account'] ?? ''); ?>"></td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Bank Name:</td>
+		<td><input class="form-control" name="payee_bank" value="<?= esc($reqRow['payee_bank'] ?? ''); ?>"></td>
+	</tr>
+</table>
+
+<div class="ws-banner">6. Verification and Approval</div>
+<table class="ws-grid">
+	<tr>
+		<td class="ws-lab">Verified by the Accountant</td>
+		<td class="ws-sign-line">Signature: ____________</td>
+		<td class="ws-sign-line">Date: ____________</td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Verified by the Headteacher</td>
+		<td class="ws-sign-line">Signature: ____________</td>
+		<td class="ws-sign-line">Date: ____________</td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Approved by the Chief Accountant</td>
+		<td class="ws-sign-line">Signature: ____________</td>
+		<td class="ws-sign-line">Date: ____________</td>
+	</tr>
+	<tr>
+		<td class="ws-lab">Authorized by the Director of Finance</td>
+		<td class="ws-sign-line">Signature: ____________</td>
+		<td class="ws-sign-line">Date: ____________</td>
+	</tr>
+</table>
+
+<div id="chainPreviewBox" class="small text-muted px-1 pt-2 ws-no-print" style="display:none">
+	<strong id="chainPreviewLabel">—</strong>
+	<div id="chainPreviewSteps"></div>
+</div>
 </div>
 
-<div class="cr-section border-warning">
+<div class="cr-section border-warning ws-no-print mt-3">
 	<div class="cr-section-title"><i class="fa fa-paperclip"></i> Supporting documents <span class="text-danger">*</span> <small class="font-weight-normal text-muted">(required to submit)</small></div>
 
 	<div class="cr-attach-panel">
@@ -170,7 +297,7 @@
 	</div>
 </div>
 
-<div class="d-flex flex-wrap">
+<div class="d-flex flex-wrap ws-actions ws-no-print">
 	<a href="<?= base_url('budget/requests'); ?>" class="btn btn-light mr-2 mb-2"><i class="fa fa-arrow-left"></i> Cancel</a>
 	<button type="submit" class="btn btn-outline-primary mr-2 mb-2" <?= empty($budgets) ? 'disabled' : ''; ?>><i class="fa fa-save"></i> Save draft</button>
 	<button type="button" class="btn btn-success mb-2" id="btnSubmitCR" <?= empty($budgets) ? 'disabled' : ''; ?>><i class="fa fa-paper-plane"></i> Submit for approval</button>
@@ -219,14 +346,47 @@ function buildLineOptionsHtml(lines) {
 	return h;
 }
 
+function frwWords(n) {
+	n = Math.round(Number(n) || 0);
+	if (n <= 0) return '';
+	var ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+	var tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+	function chunk(num) {
+		if (num < 20) return ones[num];
+		if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 ? '-' + ones[num % 10] : '');
+		return ones[Math.floor(num / 100)] + ' hundred' + (num % 100 ? ' ' + chunk(num % 100) : '');
+	}
+	var parts = [];
+	var scales = [[1000000000, 'billion'], [1000000, 'million'], [1000, 'thousand']];
+	var num = n;
+	for (var i = 0; i < scales.length; i++) {
+		var v = Math.floor(num / scales[i][0]);
+		if (v) {
+			parts.push(chunk(v) + ' ' + scales[i][1]);
+			num %= scales[i][0];
+		}
+	}
+	if (num) parts.push(chunk(num));
+	var text = parts.join(' ');
+	return text.charAt(0).toUpperCase() + text.slice(1) + ' Rwandan francs';
+}
+
+function rowBlank($tr) {
+	var lid = $tr.find('.item-line').val();
+	var amt = parseFloat($tr.find('.item-amount').val()) || 0;
+	var desc = $.trim($tr.find('.item-desc').val() || '');
+	return !lid && amt <= 0 && desc === '';
+}
+
 function addItemRow(preset) {
 	preset = preset || {};
 	var $tr = $('<tr class="cr-item-row">'
-		+ '<td><select name="item_budget_line_id[]" class="form-control form-control-sm item-line" required>' + lineOptionsHtml + '</select></td>'
-		+ '<td><input type="text" name="item_description[]" class="form-control form-control-sm item-desc" placeholder="Item description" value=""></td>'
-		+ '<td><input type="number" step="0.01" min="0.01" name="item_amount[]" class="form-control form-control-sm item-amount" placeholder="0" required></td>'
-		+ '<td class="item-remain small text-muted align-middle">—</td>'
-		+ '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-rm-item" title="Remove item">&times;</button></td>'
+		+ '<td class="ws-no"></td>'
+		+ '<td class="ws-desc-cell"><select name="item_budget_line_id[]" class="form-control form-control-sm item-line">' + lineOptionsHtml + '</select>'
+		+ '<input type="text" name="item_description[]" class="form-control form-control-sm item-desc" placeholder="Description of materials / items" value="">'
+		+ '<div class="item-remain ws-remain">—</div></td>'
+		+ '<td class="ws-amt-cell"><input type="number" step="0.01" min="0" name="item_amount[]" class="form-control form-control-sm item-amount" placeholder="0">'
+		+ '<button type="button" class="ws-rm btn-rm-item" title="Remove item">&times;</button></td>'
 		+ '</tr>');
 	$('#requestItemsBody').append($tr);
 	if (preset.budget_line_id) {
@@ -262,7 +422,8 @@ function refreshItemRow($tr) {
 		}
 	});
 	var left = remain - usedSame;
-	$remain.text(Number(left).toLocaleString() + ' RWF');
+	var after = left - amt;
+	$remain.text('Remaining ' + Number(after).toLocaleString() + ' FRW');
 	if (amt > left) {
 		$remain.addClass('text-danger').removeClass('text-warning text-success');
 		$tr.addClass('table-danger');
@@ -310,9 +471,39 @@ function recalcItems() {
 				+ ' but only ' + Number(remain).toLocaleString() + ' RWF remaining');
 		}
 	});
+	var rowNo = 0;
+	$('#requestItemsBody tr').each(function () {
+		rowNo += 1;
+		$(this).find('.ws-no').text(rowNo);
+	});
+	var lineNames = [];
+	var seenLine = {};
+	$('#requestItemsBody .item-line').each(function () {
+		var lid = $(this).val();
+		if (!lid || seenLine[lid]) return;
+		seenLine[lid] = 1;
+		var name = String($(this).find('option:selected').text() || '').split(' - remaining')[0].trim();
+		if (name && name.charAt(0) !== '—' && name.indexOf('Select') !== 0) lineNames.push(name);
+	});
+	$('#budgetLineSummary').text(lineNames.length ? lineNames.join('; ') : '—');
 	$('#kpiItemCount').text(count);
 	$('#kpiItemTotal').text(Number(total).toLocaleString());
+	$('#wsFigures').text(total > 0 ? Number(total).toLocaleString() : '0');
+	$('#amountWords').text(total > 0 ? frwWords(total) : '');
 	$('#requested_amount').val(total > 0 ? total : '');
+	var remainBits = [];
+	Object.keys(byLine).forEach(function (lid) {
+		var av = lineData[lid];
+		if (!av || !byLine[lid]) return;
+		var remain = parseFloat(av.available) || 0;
+		var name = $('#requestItemsBody .item-line').filter(function () {
+			return String($(this).val()) === String(lid);
+		}).first().find('option:selected').text() || ('Line #' + lid);
+		name = String(name).split(' - remaining')[0].trim();
+		remainBits.push(name + ' deducts ' + Number(byLine[lid]).toLocaleString()
+			+ ' FRW — remaining ' + Number(remain - byLine[lid]).toLocaleString() + ' FRW');
+	});
+	$('#budgetRemainNote').text(remainBits.length ? remainBits.join(' · ') : '');
 	if (over.length) {
 		$('#itemsWarnBox').html('<strong>Over budget:</strong> ' + over.join('; ')).show();
 	} else {
@@ -346,9 +537,10 @@ function loadLines(done) {
 		}
 		$('#requestItemsBody').empty();
 		if (!presets.length) {
-			addItemRow();
+			for (var n = 0; n < 4; n++) addItemRow();
 		} else {
 			presets.forEach(function (p) { addItemRow(p); });
+			while ($('#requestItemsBody tr').length < 4) addItemRow();
 		}
 		recalcItems();
 		if (typeof done === 'function') done();
@@ -515,13 +707,22 @@ function closeDocViewer() {
 }
 $('#crDocViewerClose, #crDocViewerCloseBtn').on('click', closeDocViewer);
 
+$('input[name="request_date"]').on('change', function () {
+	$('#prepDateMirror').val($(this).val());
+});
+$('#prepDateMirror').on('change', function () {
+	$('input[name="request_date"]').val($(this).val());
+});
+
 function validateSubmit() {
 	var ok = true;
 	var total = 0;
 	var rows = 0;
 	$('#requestItemsBody tr').each(function () {
-		var lid = $(this).find('.item-line').val();
-		var amt = parseFloat($(this).find('.item-amount').val()) || 0;
+		var $tr = $(this);
+		if (rowBlank($tr)) return;
+		var lid = $tr.find('.item-line').val();
+		var amt = parseFloat($tr.find('.item-amount').val()) || 0;
 		if (!lid || amt <= 0) { ok = false; }
 		if (lid && amt > 0) { total += amt; rows++; }
 	});

@@ -131,12 +131,19 @@ class CashRequestWorkflowService
 
 		$db->transStart();
 
-		$needsCommitment = ($action === 'budget_approve')
+		// Submitting a request reserves the money on each budget line immediately.
+		// Later approval keeps that reservation; it does not reserve the amount again.
+		$needsCommitment = ($action === 'submit')
+			|| ($action === 'budget_approve')
 			|| ($action === 'final_approve' && in_array($chain, [
 				CashRequestApprovalPolicy::CHAIN_SHORT,
 				CashRequestApprovalPolicy::CHAIN_MEDIUM,
 				CashRequestApprovalPolicy::CHAIN_WISDOM,
 			], true));
+
+		if ($action === 'submit') {
+			$this->commitments->releaseForRequest($requestId, $actorId);
+		}
 
 		if ($needsCommitment) {
 			$existingOpen = (int) $db->table('budget_commitments')
@@ -167,7 +174,7 @@ class CashRequestWorkflowService
 				}
 			}
 		}
-		if ($action === 'reject') {
+		if (in_array($action, ['reject', 'return', 'cancel'], true)) {
 			$this->commitments->releaseForRequest($requestId, $actorId);
 		}
 		$update = [

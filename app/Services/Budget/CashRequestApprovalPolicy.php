@@ -77,6 +77,12 @@ class CashRequestApprovalPolicy
 				'headteacher_signature' => 'VARCHAR(255) NULL',
 				'chief_accountant_signature' => 'VARCHAR(255) NULL',
 				'finance_signature' => 'VARCHAR(255) NULL',
+				'prepared_by_name' => 'VARCHAR(180) NULL',
+				'prepared_position' => 'VARCHAR(120) NULL',
+				'prepared_phone' => 'VARCHAR(40) NULL',
+				'payee_contact' => 'VARCHAR(180) NULL',
+				'payee_account' => 'VARCHAR(80) NULL',
+				'payee_bank' => 'VARCHAR(120) NULL',
 			] as $col => $def) {
 				if (!in_array($col, $names, true)) {
 					$db->query("ALTER TABLE cash_requests ADD COLUMN `$col` $def");

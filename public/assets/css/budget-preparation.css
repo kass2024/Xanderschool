@@ -940,3 +940,126 @@ a.fd-kpi:hover { text-decoration: none; border-color: #93c5fd; }
 @media (max-width: 640px) {
 	.fd-kpis { grid-template-columns: 1fr; }
 }
+
+/* Wisdom expense request form — matches the school paper form */
+.ws-erf-wrap { max-width: 920px; margin: 0 auto 1.5rem; }
+.ws-erf-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .5rem .75rem;
+	align-items: flex-end;
+	margin-bottom: .75rem;
+}
+.ws-erf-bar label { font-size: .75rem; font-weight: 700; color: #1f3864; display: block; margin-bottom: .15rem; }
+.ws-erf-bar .form-control { min-width: 260px; }
+.ws-erf {
+	background: #fff;
+	color: #1a1a1a;
+	border: 1px solid #d7dee6;
+	padding: 18px 22px 22px;
+	font-family: Calibri, "Segoe UI", sans-serif;
+}
+.ws-head { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+.ws-head td { border: 0; vertical-align: middle; padding: 0 6px; }
+.ws-logo { width: 72px; height: 60px; object-fit: contain; display: block; }
+.ws-school {
+	text-align: center;
+	color: #1f3864;
+	font-weight: 700;
+	font-size: 20px;
+	letter-spacing: .02em;
+	line-height: 1.15;
+}
+.ws-motto { text-align: center; color: #1f3864; font-style: italic; font-size: 13px; }
+.ws-web { text-align: center; color: #444; font-size: 12px; }
+.ws-rule { border: 0; border-bottom: 3px solid #1f3864; margin: 8px 0 10px; }
+.ws-title {
+	text-align: center;
+	color: #1f3864;
+	font-weight: 700;
+	font-size: 18px;
+	letter-spacing: .04em;
+	margin: 0 0 10px;
+}
+.ws-banner {
+	background: #1f3864;
+	color: #fff;
+	font-weight: 700;
+	font-size: 13px;
+	padding: 4px 8px;
+	margin: 12px 0 0;
+}
+.ws-grid { width: 100%; border-collapse: collapse; }
+.ws-grid th, .ws-grid td {
+	border: 1px solid #9aa7b0;
+	padding: 4px 8px;
+	vertical-align: middle;
+	font-size: 13px;
+}
+.ws-grid .ws-lab {
+	background: #dce6f1;
+	color: #1f3864;
+	font-weight: 700;
+	width: 34%;
+	white-space: nowrap;
+}
+.ws-grid .ws-lab.narrow { width: 18%; }
+.ws-purpose {
+	min-height: 72px;
+	width: 100%;
+	border: 0;
+	resize: vertical;
+	background: transparent;
+	padding: 6px;
+	font-size: 13px;
+}
+.ws-erf .form-control,
+.ws-erf .form-control-sm {
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	height: auto;
+	padding: 2px 4px;
+	font-size: 13px;
+}
+.ws-erf .form-control:focus,
+.ws-erf .form-control-sm:focus { background: #f8fbff; box-shadow: none; }
+.ws-items .ws-no { width: 42px; text-align: center; }
+.ws-items thead th { background: #dce6f1; color: #1f3864; font-weight: 700; text-align: left; }
+.ws-items tfoot td { background: #dce6f1; color: #1f3864; font-weight: 700; }
+.ws-items .ws-amt-cell { width: 160px; position: relative; }
+.ws-items .item-amount { text-align: right; }
+.ws-desc-cell .item-line { margin-bottom: 2px; font-weight: 600; color: #1f3864; }
+.ws-remain { font-size: 11px; color: #64748b; padding: 0 4px 2px; }
+.ws-remain.text-danger { color: #b42318; }
+.ws-remain.text-success { color: #157347; }
+.ws-remain.text-warning { color: #b45309; }
+.ws-rm {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	border: 0;
+	background: transparent;
+	color: #b42318;
+	font-size: 16px;
+	line-height: 1;
+	padding: 0 4px;
+	cursor: pointer;
+}
+.ws-sig-img { height: 42px; max-width: 140px; object-fit: contain; display: block; }
+.ws-sign-line { color: #334155; letter-spacing: .02em; }
+.ws-docs { margin-top: 12px; }
+.ws-erf .cr-doc-zone { border-radius: 0; }
+.ws-actions { margin-top: 12px; }
+@media print {
+	.app-sidebar-wrapper, .app-sidebar, .app-sidebar-overlay,
+	.header-mobile-wrapper, .app-header, .app-footer, .app-page-title,
+	.ui-theme-settings, .fixed-header, .ws-no-print, .cr-flow-steps { display: none !important; }
+	.app-container, .app-main, .app-main__outer, .app-main__inner {
+		margin: 0 !important; padding: 0 !important; width: auto !important; background: #fff !important;
+	}
+	.ws-erf-wrap { max-width: none; }
+	.ws-erf { border: 0; padding: 0; }
+	.ws-rm { display: none !important; }
+}
