@@ -1199,7 +1199,7 @@ class AttendanceScanService
 			->getRow();
 
 		// First tap of the day is IN. Later taps are OUT only after 10 minutes.
-		// Cafeteria and dormitory (including evening preps) never check out.
+		// Cafeteria, dormitory, and evening prep never check out and have no clock window.
 		$entryOnly = self::isEntryOnlyArea($areaName);
 		$status = 'IN';
 		if (!$attendance) {
@@ -2021,10 +2021,20 @@ class AttendanceScanService
 		return strpos($n, 'transport') !== false;
 	}
 
-	/** Cafeteria and dormitory record IN only. No checkout, including evening preps. */
+	/** Cafeteria, dormitory, and evening prep record IN only. No clock window and no checkout. */
 	private static function isEntryOnlyArea(string $name): bool
 	{
-		return self::isCafeteriaArea($name) || self::isDormitoryArea($name);
+		return self::isCafeteriaArea($name) || self::isDormitoryArea($name) || self::isEveningPrepArea($name);
+	}
+
+	/** Evening prep accepts a student tap at any time. Morning prep is not included. */
+	private static function isEveningPrepArea(string $name): bool
+	{
+		$n = strtolower(trim($name));
+		$n = preg_replace('/[^a-z0-9]+/', ' ', $n);
+		$n = trim((string) $n);
+		return strpos($n, 'evening') !== false
+			&& (strpos($n, 'prep') !== false || strpos($n, 'preparation') !== false);
 	}
 
 	/**
