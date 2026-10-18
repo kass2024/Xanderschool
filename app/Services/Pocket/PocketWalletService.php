@@ -282,6 +282,9 @@ class PocketWalletService
 		$rows = $exact ? [$exact] : $this->studentsByPrefix($regno);
 		$matches = [];
 		foreach ($rows as $student) {
+			if (!$this->hasClass($student)) {
+				continue;
+			}
 			$linked = $this->db->query(
 				'SELECT id FROM pocket_links WHERE parent_id = ? AND student_id = ? LIMIT 1',
 				[$parentId, (int) $student['id']]
@@ -311,8 +314,8 @@ class PocketWalletService
 	public function link(int $parentId, int $studentId, string $spendPin): array
 	{
 		$student = $this->studentById($studentId);
-		if (!$student) {
-			throw new \RuntimeException('Student not found.', 404);
+		if (!$student || !$this->hasClass($student)) {
+			throw new \RuntimeException('This student is not in a class.', 404);
 		}
 		$this->savedCard($student);
 		$now = $this->now();
@@ -360,7 +363,7 @@ class PocketWalletService
 		$students = [];
 		foreach ($rows as $row) {
 			$student = $this->studentById((int) $row['student_id']);
-			if ($student) {
+			if ($student && ($this->isAgent($parentId) || $this->hasClass($student))) {
 				$public = $this->publicStudent($student, true);
 				$public['relation'] = (string) ($row['relation'] ?? '');
 				$students[] = $public;
@@ -1353,7 +1356,7 @@ class PocketWalletService
 			LEFT JOIN classes c ON c.id = cr.class
 			LEFT JOIN departments d ON d.id = c.department
 			LEFT JOIN levels l ON l.id = c.level
-			WHERE students.status = 1 AND students.regno LIKE ?
+			WHERE students.status = 1 AND {$this->enrolledSql('students')} AND students.regno LIKE ?
 			ORDER BY students.regno ASC
 			LIMIT 8";
 		$rows = $this->db->query($sql, [$prefix . '%'])->getResultArray();
@@ -1527,6 +1530,7 @@ class PocketWalletService
 				({$ft}) AS ft_norm, ({$mt}) AS mt_norm, ({$gd}) AS gd_norm
 			FROM students
 			WHERE students.status = 1
+			  AND {$this->enrolledSql('students')}
 			  AND (({$ft}) = ? OR ({$mt}) = ? OR ({$gd}) = ?)
 			ORDER BY students.fname ASC, students.lname ASC
 			LIMIT 24";
@@ -1634,6 +1638,20 @@ class PocketWalletService
 			'registeredAs' => $names === [] ? '' : (string) array_key_first($names),
 			'relation' => $relations === [] ? '' : (string) array_key_first($relations),
 		];
+	}
+
+	protected function enrolledSql(string $alias = 'students'): string
+	{
+		return "EXISTS (
+			SELECT 1 FROM class_records cr_en
+			INNER JOIN classes c_en ON c_en.id = cr_en.class
+			WHERE cr_en.student = {$alias}.id AND cr_en.status = 1
+		)";
+	}
+
+	protected function hasClass(array $student): bool
+	{
+		return trim((string) ($student['class_name'] ?? '')) !== '';
 	}
 
 	protected function parentMsisdnSql(string $column): string

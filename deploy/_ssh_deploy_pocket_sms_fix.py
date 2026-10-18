@@ -15,7 +15,6 @@ _m = re.search(r'PASSWORD = os\.environ\.get\("VPS_PASSWORD", "([^"]*)"\)', _src
 PASSWORD = _m.group(1) if _m else ""
 REMOTE_APP = "/opt/xander-school/app"
 FILES = [
-    "app/Controllers/PocketApi.php",
     "app/Services/Pocket/PocketWalletService.php",
 ]
 
@@ -37,9 +36,8 @@ cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 12
 docker exec xander_school_app php -r 'if (function_exists("opcache_reset")) { opcache_reset(); echo "opcache ok\n"; }'
-docker exec xander_school_app php -l /var/www/html/app/Controllers/PocketApi.php
 docker exec xander_school_app php -l /var/www/html/app/Services/Pocket/PocketWalletService.php
-docker exec xander_school_app grep -n "function otpText" /var/www/html/app/Services/Pocket/PocketWalletService.php
+docker exec xander_school_app grep -n "function enrolledSql" /var/www/html/app/Services/Pocket/PocketWalletService.php
 docker exec xander_school_app php -r '
 require "/var/www/html/app/Config/MenuClearance.php";
 if (!\Config\MenuClearance::isChiefAccountantPost(28)) { fwrite(STDERR, "isChiefAccountantPost failed\n"); exit(1); }
@@ -67,6 +65,13 @@ foreach (["/login", "/forget/reset", "/api/pocket/health"] as $path) {
   sleep 5
 done
 test "$ok" = 1
+ENVF=/opt/xander-school/deploy/.env.production
+DB=$(grep -E '^DB_DATABASE=' "$ENVF" | head -1 | cut -d= -f2-)
+U=$(grep -E '^DB_USERNAME=' "$ENVF" | head -1 | cut -d= -f2-)
+P=$(grep -E '^DB_PASSWORD=' "$ENVF" | head -1 | cut -d= -f2-)
+docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -e "DELETE l FROM pocket_links l LEFT JOIN class_records cr ON cr.student = l.student_id AND cr.status = 1 WHERE cr.id IS NULL"
+echo "links left:"
+docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -N -e "SELECT COUNT(*) FROM pocket_links"
 echo DONE
 """
     stdin, stdout, stderr = c.exec_command(cmd, timeout=240)
