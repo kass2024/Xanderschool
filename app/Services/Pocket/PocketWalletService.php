@@ -58,7 +58,7 @@ class PocketWalletService
 	 *
 	 * @return array{phone:string,message:string,schoolId:int,studentCount:int}
 	 */
-	public function prepareSignup(string $name, string $phone, string $pin): array
+	public function prepareSignup(string $name, string $phone, string $pin, string $appHash = ''): array
 	{
 		$name = $this->cleanName($name);
 		$phone = $this->requireMsisdn($phone);
@@ -94,7 +94,7 @@ class PocketWalletService
 
 		return [
 			'phone' => $phone,
-			'message' => 'Xander Pocket code: ' . $code . '. Use it to create your account. It expires in 10 minutes. Do not share it.',
+			'message' => $this->otpText($code, $appHash),
 			'schoolId' => $schoolId,
 			'studentCount' => count($matches),
 		];
@@ -183,7 +183,7 @@ class PocketWalletService
 	 *
 	 * @return array{phone:string,message:string,schoolId:int}
 	 */
-	public function preparePinReset(string $phone): array
+	public function preparePinReset(string $phone, string $appHash = ''): array
 	{
 		$phone = $this->requireMsisdn($phone);
 		$parent = $this->db->query('SELECT id, status, reset_expires FROM pocket_parents WHERE phone = ? LIMIT 1', [$phone])->getRowArray();
@@ -202,7 +202,7 @@ class PocketWalletService
 
 		return [
 			'phone' => $phone,
-			'message' => 'Xander Pocket code: ' . $code . '. It expires in 10 minutes. Do not share it.',
+			'message' => $this->otpText($code, $appHash),
 			'schoolId' => $this->pocketSmsSchoolId($phone),
 		];
 	}
@@ -1483,6 +1483,17 @@ class PocketWalletService
 				'role' => (string) ($parent['role'] ?? 'parent'),
 			],
 		];
+	}
+
+	protected function otpText(string $code, string $appHash): string
+	{
+		$text = '<#> Xander Pocket code: ' . $code . '. It expires in 10 minutes.';
+		$appHash = trim($appHash);
+		if (preg_match('#^[A-Za-z0-9+/]{11}$#', $appHash)) {
+			$text .= "\n" . $appHash;
+		}
+
+		return $text;
 	}
 
 	protected function requireMsisdn(string $phone): string

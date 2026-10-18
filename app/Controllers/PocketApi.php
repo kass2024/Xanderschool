@@ -51,7 +51,8 @@ class PocketApi extends BaseController
 			$draft = $this->wallet->prepareSignup(
 				(string) ($body['name'] ?? ''),
 				(string) ($body['phone'] ?? ''),
-				(string) ($body['pin'] ?? '')
+				(string) ($body['pin'] ?? ''),
+				(string) ($body['appHash'] ?? '')
 			);
 			$result = [];
 			$sent = $this->sendSMS(
@@ -106,7 +107,10 @@ class PocketApi extends BaseController
 	{
 		return $this->guard(function () {
 			$body = $this->body();
-			$draft = $this->wallet->preparePinReset((string) ($body['phone'] ?? ''));
+			$draft = $this->wallet->preparePinReset(
+				(string) ($body['phone'] ?? ''),
+				(string) ($body['appHash'] ?? '')
+			);
 			$result = [];
 			$sent = $this->sendSMS(
 				(string) $draft['phone'],
