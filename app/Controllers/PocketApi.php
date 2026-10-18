@@ -41,13 +41,51 @@ class PocketApi extends BaseController
 
 	public function register()
 	{
+		return $this->fail(400, 'Verify the SMS code to create an account.');
+	}
+
+	public function registerStart()
+	{
 		return $this->guard(function () {
 			$body = $this->body();
-
-			return $this->wallet->register(
+			$draft = $this->wallet->prepareSignup(
 				(string) ($body['name'] ?? ''),
 				(string) ($body['phone'] ?? ''),
 				(string) ($body['pin'] ?? '')
+			);
+			$result = [];
+			$sent = $this->sendSMS(
+				(string) $draft['phone'],
+				(string) $draft['message'],
+				$result,
+				null,
+				12,
+				(int) ($draft['schoolId'] ?? 0),
+				false
+			);
+			if (!$sent) {
+				$this->wallet->clearSignup((string) $draft['phone']);
+				$detail = trim((string) ($result['content'] ?? ''));
+				throw new \RuntimeException($detail !== '' ? $detail : 'The SMS could not be sent. Try again.', 502);
+			}
+
+			return [
+				'ok' => true,
+				'reason' => 'code_sent',
+				'message' => 'The code is on its way. It should arrive in a few seconds.',
+				'studentCount' => (int) ($draft['studentCount'] ?? 0),
+			];
+		});
+	}
+
+	public function registerConfirm()
+	{
+		return $this->guard(function () {
+			$body = $this->body();
+
+			return $this->wallet->confirmSignup(
+				(string) ($body['phone'] ?? ''),
+				(string) ($body['code'] ?? '')
 			);
 		});
 	}

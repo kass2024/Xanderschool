@@ -49,6 +49,17 @@ class PocketWalletService
 
 	public function register(string $name, string $phone, string $pin): array
 	{
+		unset($name, $phone, $pin);
+		throw new \RuntimeException('Verify the SMS code to create an account.', 400);
+	}
+
+	/**
+	 * Store a signup draft and the SMS code. The account is created only after the code matches.
+	 *
+	 * @return array{phone:string,message:string,schoolId:int,studentCount:int}
+	 */
+	public function prepareSignup(string $name, string $phone, string $pin): array
+	{
 		$name = $this->cleanName($name);
 		$phone = $this->requireMsisdn($phone);
 		$this->requirePin($pin);
@@ -56,11 +67,66 @@ class PocketWalletService
 		if ($exists) {
 			throw new \RuntimeException('This phone already has a Pocket account. Sign in instead.', 409);
 		}
+		$draft = $this->db->query('SELECT expires_at FROM pocket_signups WHERE phone = ? LIMIT 1', [$phone])->getRowArray();
+		if ($draft && !empty($draft['expires_at']) && strtotime((string) $draft['expires_at']) > time() + 580) {
+			throw new \RuntimeException('A code was just sent. Wait a few seconds, then try again.', 429);
+		}
+		$matches = $this->studentsMatchingParentPhone($phone);
+		$code = (string) random_int(100000, 999999);
 		$now = $this->now();
-		$this->db->table('pocket_parents')->insert([
+		$row = [
 			'phone' => $phone,
 			'name' => $name,
 			'pin_hash' => password_hash($pin, PASSWORD_DEFAULT),
+			'code_hash' => password_hash($code, PASSWORD_DEFAULT),
+			'expires_at' => date('Y-m-d H:i:s', time() + 600),
+			'updated_at' => $now,
+		];
+		if ($draft) {
+			$this->db->table('pocket_signups')->where('phone', $phone)->update($row);
+		} else {
+			$this->db->table('pocket_signups')->insert($row);
+		}
+		$schoolId = $matches === [] ? 0 : (int) ($matches[0]['school_id'] ?? 0);
+		if ($schoolId < 1) {
+			$schoolId = $this->pocketSmsSchoolId($phone);
+		}
+
+		return [
+			'phone' => $phone,
+			'message' => 'Xander Pocket code: ' . $code . '. Use it to create your account. It expires in 10 minutes. Do not share it.',
+			'schoolId' => $schoolId,
+			'studentCount' => count($matches),
+		];
+	}
+
+	public function clearSignup(string $phone): void
+	{
+		$phone = $this->requireMsisdn($phone);
+		$this->db->table('pocket_signups')->where('phone', $phone)->delete();
+	}
+
+	public function confirmSignup(string $phone, string $code): array
+	{
+		$phone = $this->requireMsisdn($phone);
+		$code = trim($code);
+		if (!preg_match('/^\d{6}$/', $code)) {
+			throw new \InvalidArgumentException('Enter the 6-digit code from the SMS.');
+		}
+		$exists = $this->db->query('SELECT id FROM pocket_parents WHERE phone = ? LIMIT 1', [$phone])->getRow();
+		if ($exists) {
+			throw new \RuntimeException('This phone already has a Pocket account. Sign in instead.', 409);
+		}
+		$draft = $this->db->query('SELECT * FROM pocket_signups WHERE phone = ? LIMIT 1', [$phone])->getRowArray();
+		$expires = $draft ? strtotime((string) ($draft['expires_at'] ?? '')) : false;
+		if (!$draft || $expires === false || $expires < time() || !password_verify($code, (string) ($draft['code_hash'] ?? ''))) {
+			throw new \RuntimeException('That code is not correct or it has expired.', 401);
+		}
+		$now = $this->now();
+		$this->db->table('pocket_parents')->insert([
+			'phone' => $phone,
+			'name' => (string) $draft['name'],
+			'pin_hash' => (string) $draft['pin_hash'],
 			'failed_count' => 0,
 			'locked_until' => null,
 			'status' => 1,
@@ -68,8 +134,18 @@ class PocketWalletService
 			'updated_at' => $now,
 		]);
 		$id = (int) $this->db->insertID();
+		if ($id < 1) {
+			throw new \RuntimeException('Could not create the account. Try again.', 500);
+		}
+		$attached = $this->attachMatchedStudents($id, $phone);
+		$this->db->table('pocket_signups')->where('phone', $phone)->delete();
+		$session = $this->issueSession($id);
+		$session['students'] = $attached['students'];
+		$session['registeredAs'] = $attached['registeredAs'];
+		$session['relation'] = $attached['relation'];
+		$session['studentCount'] = count($attached['students']);
 
-		return $this->issueSession($id);
+		return $session;
 	}
 
 	public function login(string $phone, string $pin): array
@@ -240,6 +316,8 @@ class PocketWalletService
 		}
 		$this->savedCard($student);
 		$now = $this->now();
+		$parent = $this->db->query('SELECT phone FROM pocket_parents WHERE id = ? LIMIT 1', [$parentId])->getRowArray();
+		$relation = $parent ? $this->relationForStudentPhone($studentId, (string) $parent['phone']) : '';
 		$linked = $this->db->query(
 			'SELECT id FROM pocket_links WHERE parent_id = ? AND student_id = ? LIMIT 1',
 			[$parentId, $studentId]
@@ -248,12 +326,17 @@ class PocketWalletService
 			$this->db->table('pocket_links')->insert([
 				'parent_id' => $parentId,
 				'student_id' => $studentId,
+				'relation' => $relation,
 				'created_at' => $now,
 			]);
+		} elseif ($relation !== '') {
+			$this->db->table('pocket_links')->where('id', (int) $linked->id)->update(['relation' => $relation]);
 		}
 		$fresh = $this->studentById($studentId);
+		$public = $this->publicStudent($fresh, true);
+		$public['relation'] = $relation;
 
-		return $this->publicStudent($fresh, true);
+		return $public;
 	}
 
 	public function unlink(int $parentId, int $studentId): void
@@ -270,7 +353,7 @@ class PocketWalletService
 			)->getResultArray();
 		} else {
 			$rows = $this->db->query(
-				'SELECT student_id FROM pocket_links WHERE parent_id = ? ORDER BY id DESC',
+				'SELECT student_id, relation FROM pocket_links WHERE parent_id = ? ORDER BY id DESC',
 				[$parentId]
 			)->getResultArray();
 		}
@@ -278,7 +361,9 @@ class PocketWalletService
 		foreach ($rows as $row) {
 			$student = $this->studentById((int) $row['student_id']);
 			if ($student) {
-				$students[] = $this->publicStudent($student, true);
+				$public = $this->publicStudent($student, true);
+				$public['relation'] = (string) ($row['relation'] ?? '');
+				$students[] = $public;
 			}
 		}
 
@@ -1417,6 +1502,144 @@ class PocketWalletService
 		}
 	}
 
+	/**
+	 * Active students whose father, mother, or guardian phone is this line.
+	 *
+	 * @return array<int, array{id:int,school_id:int,relation:string,registeredAs:string}>
+	 */
+	protected function studentsMatchingParentPhone(string $phone): array
+	{
+		$ft = $this->parentMsisdnSql('students.ft_phone');
+		$mt = $this->parentMsisdnSql('students.mt_phone');
+		$gd = $this->parentMsisdnSql('students.gd_phone');
+		$sql = "SELECT students.id, students.school_id, students.father, students.mother, students.guardian,
+				({$ft}) AS ft_norm, ({$mt}) AS mt_norm, ({$gd}) AS gd_norm
+			FROM students
+			WHERE students.status = 1
+			  AND (({$ft}) = ? OR ({$mt}) = ? OR ({$gd}) = ?)
+			ORDER BY students.fname ASC, students.lname ASC
+			LIMIT 24";
+		$rows = $this->db->query($sql, [$phone, $phone, $phone])->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$picked = $this->pickParentRelation($row, $phone);
+			$out[] = [
+				'id' => (int) $row['id'],
+				'school_id' => (int) ($row['school_id'] ?? 0),
+				'relation' => $picked['relation'],
+				'registeredAs' => $picked['registeredAs'],
+			];
+		}
+
+		return $out;
+	}
+
+	protected function relationForStudentPhone(int $studentId, string $phone): string
+	{
+		if ($studentId < 1 || $phone === '') {
+			return '';
+		}
+		$ft = $this->parentMsisdnSql('ft_phone');
+		$mt = $this->parentMsisdnSql('mt_phone');
+		$gd = $this->parentMsisdnSql('gd_phone');
+		$row = $this->db->query(
+			"SELECT father, mother, guardian, ({$ft}) AS ft_norm, ({$mt}) AS mt_norm, ({$gd}) AS gd_norm
+			 FROM students WHERE id = ? AND status = 1 LIMIT 1",
+			[$studentId]
+		)->getRowArray();
+		if (!$row) {
+			return '';
+		}
+		$picked = $this->pickParentRelation($row, $phone);
+
+		return $picked['relation'] === 'parent' ? '' : $picked['relation'];
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @return array{relation:string,registeredAs:string}
+	 */
+	protected function pickParentRelation(array $row, string $phone): array
+	{
+		if ((string) ($row['ft_norm'] ?? '') === $phone) {
+			return ['relation' => 'father', 'registeredAs' => trim((string) ($row['father'] ?? ''))];
+		}
+		if ((string) ($row['mt_norm'] ?? '') === $phone) {
+			return ['relation' => 'mother', 'registeredAs' => trim((string) ($row['mother'] ?? ''))];
+		}
+		if ((string) ($row['gd_norm'] ?? '') === $phone) {
+			return ['relation' => 'guardian', 'registeredAs' => trim((string) ($row['guardian'] ?? ''))];
+		}
+
+		return ['relation' => 'parent', 'registeredAs' => ''];
+	}
+
+	/**
+	 * Link every student already filed under this parent phone. A missing card still appears.
+	 *
+	 * @return array{students:array<int, array>,registeredAs:string,relation:string}
+	 */
+	protected function attachMatchedStudents(int $parentId, string $phone): array
+	{
+		$matches = $this->studentsMatchingParentPhone($phone);
+		$now = $this->now();
+		$students = [];
+		$names = [];
+		$relations = [];
+		foreach ($matches as $match) {
+			$student = $this->studentById((int) $match['id']);
+			if (!$student) {
+				continue;
+			}
+			$relation = (string) $match['relation'];
+			$existing = $this->db->query(
+				'SELECT id FROM pocket_links WHERE parent_id = ? AND student_id = ? LIMIT 1',
+				[$parentId, (int) $match['id']]
+			)->getRow();
+			if (!$existing) {
+				$this->db->table('pocket_links')->insert([
+					'parent_id' => $parentId,
+					'student_id' => (int) $match['id'],
+					'relation' => $relation,
+					'created_at' => $now,
+				]);
+			} else {
+				$this->db->table('pocket_links')->where('id', (int) $existing->id)->update(['relation' => $relation]);
+			}
+			$public = $this->publicStudent($student, true);
+			$public['relation'] = $relation;
+			$students[] = $public;
+			$registeredAs = (string) $match['registeredAs'];
+			if ($registeredAs !== '') {
+				$names[$registeredAs] = ($names[$registeredAs] ?? 0) + 1;
+			}
+			$relations[$relation] = ($relations[$relation] ?? 0) + 1;
+		}
+		arsort($names);
+		arsort($relations);
+
+		return [
+			'students' => $students,
+			'registeredAs' => $names === [] ? '' : (string) array_key_first($names),
+			'relation' => $relations === [] ? '' : (string) array_key_first($relations),
+		];
+	}
+
+	protected function parentMsisdnSql(string $column): string
+	{
+		$clean = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL({$column},''),'+',''),' ',''),'-',''),'(',''),')',''),'.','')";
+
+		return "CASE
+			WHEN {$clean} REGEXP '^25007[0-9]{8}$' THEN CONCAT('250', SUBSTRING({$clean}, 5, 9))
+			WHEN {$clean} REGEXP '^0025007[0-9]{8}$' THEN CONCAT('250', SUBSTRING({$clean}, 7, 9))
+			WHEN {$clean} REGEXP '^2507[0-9]{8}$' THEN {$clean}
+			WHEN {$clean} REGEXP '^002507[0-9]{8}$' THEN SUBSTRING({$clean}, 3, 12)
+			WHEN {$clean} REGEXP '^07[0-9]{8}$' THEN CONCAT('250', SUBSTRING({$clean}, 2, 9))
+			WHEN {$clean} REGEXP '^7[0-9]{8}$' THEN CONCAT('250', {$clean})
+			ELSE ''
+		END";
+	}
+
 	protected function pocketSmsSchoolId(string $phone): int
 	{
 		try {
@@ -1522,18 +1745,34 @@ class PocketWalletService
 		if (!$resetColumn) {
 			$this->db->query("ALTER TABLE pocket_parents ADD COLUMN reset_hash VARCHAR(255) NULL, ADD COLUMN reset_expires DATETIME NULL");
 		}
+		$this->db->query(
+			"CREATE TABLE IF NOT EXISTS pocket_signups (
+				phone VARCHAR(16) NOT NULL,
+				name VARCHAR(120) NOT NULL,
+				pin_hash VARCHAR(255) NOT NULL,
+				code_hash VARCHAR(255) NOT NULL,
+				expires_at DATETIME NOT NULL,
+				updated_at DATETIME NOT NULL,
+				PRIMARY KEY (phone)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+		);
 		$this->ensureAgent();
 		$this->db->query(
 			"CREATE TABLE IF NOT EXISTS pocket_links (
 				id INT UNSIGNED NOT NULL AUTO_INCREMENT,
 				parent_id INT UNSIGNED NOT NULL,
 				student_id INT UNSIGNED NOT NULL,
+				relation VARCHAR(20) NOT NULL DEFAULT '',
 				created_at DATETIME NOT NULL,
 				PRIMARY KEY (id),
 				UNIQUE KEY parent_student (parent_id, student_id),
 				KEY student_id (student_id)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 		);
+		$relationColumn = $this->db->query("SHOW COLUMNS FROM pocket_links LIKE 'relation'")->getRowArray();
+		if (!$relationColumn) {
+			$this->db->query("ALTER TABLE pocket_links ADD COLUMN relation VARCHAR(20) NOT NULL DEFAULT '' AFTER student_id");
+		}
 		$canteenColumn = $this->db->query("SHOW COLUMNS FROM schools LIKE 'canteen_phone'")->getRowArray();
 		if (!$canteenColumn) {
 			$this->db->query("ALTER TABLE schools ADD COLUMN canteen_phone VARCHAR(20) NOT NULL DEFAULT ''");

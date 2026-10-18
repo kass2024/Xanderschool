@@ -159,6 +159,8 @@ $routes->get('api/get_staff_list', 'Api::get_staff_list');
 $routes->post('api/update_staff_profile', 'Api::update_staff_profile');
 $routes->get('api/pocket/health', 'PocketApi::health');
 $routes->post('api/pocket/register', 'PocketApi::register');
+$routes->post('api/pocket/register-start', 'PocketApi::registerStart');
+$routes->post('api/pocket/register-confirm', 'PocketApi::registerConfirm');
 $routes->post('api/pocket/login', 'PocketApi::login');
 $routes->post('api/pocket/recover', 'PocketApi::recover');
 $routes->post('api/pocket/recover-confirm', 'PocketApi::recoverConfirm');
