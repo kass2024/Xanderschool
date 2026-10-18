@@ -174,6 +174,7 @@ class PocketWalletService
 			'locked_until' => null,
 			'updated_at' => $this->now(),
 		]);
+		$this->syncParentStudents((int) $parent['id'], true);
 
 		return $this->issueSession((int) $parent['id']);
 	}
@@ -241,6 +242,7 @@ class PocketWalletService
 			'reset_expires' => null,
 			'updated_at' => $this->now(),
 		]);
+		$this->syncParentStudents((int) $parent['id'], true);
 
 		return $this->issueSession((int) $parent['id']);
 	}
@@ -350,6 +352,9 @@ class PocketWalletService
 
 	public function wallets(int $parentId): array
 	{
+		if (!$this->isAgent($parentId)) {
+			$this->syncParentStudents($parentId, false);
+		}
 		if ($this->isAgent($parentId)) {
 			$rows = $this->db->query(
 				'SELECT id AS student_id FROM students WHERE status = 1 AND wallet_balance > 0 ORDER BY wallet_balance DESC LIMIT 400'
@@ -1590,6 +1595,33 @@ class PocketWalletService
 	}
 
 	/**
+	 * Attach students whose parent phone was saved or changed after the account was created.
+	 */
+	protected function syncParentStudents(int $parentId, bool $force): void
+	{
+		if ($parentId < 1 || $this->isAgent($parentId)) {
+			return;
+		}
+		$row = $this->db->query(
+			'SELECT phone, links_checked_at FROM pocket_parents WHERE id = ? AND status = 1 LIMIT 1',
+			[$parentId]
+		)->getRowArray();
+		if (!$row) {
+			return;
+		}
+		if (!$force) {
+			$checked = strtotime((string) ($row['links_checked_at'] ?? ''));
+			if ($checked !== false && $checked > time() - 15) {
+				return;
+			}
+		}
+		$this->attachMatchedStudents($parentId, (string) $row['phone']);
+		$this->db->table('pocket_parents')->where('id', $parentId)->update([
+			'links_checked_at' => $this->now(),
+		]);
+	}
+
+	/**
 	 * Link every student already filed under this parent phone. A missing card still appears.
 	 *
 	 * @return array{students:array<int, array>,registeredAs:string,relation:string}
@@ -1773,6 +1805,10 @@ class PocketWalletService
 		$resetColumn = $this->db->query("SHOW COLUMNS FROM pocket_parents LIKE 'reset_hash'")->getRowArray();
 		if (!$resetColumn) {
 			$this->db->query("ALTER TABLE pocket_parents ADD COLUMN reset_hash VARCHAR(255) NULL, ADD COLUMN reset_expires DATETIME NULL");
+		}
+		$checkedColumn = $this->db->query("SHOW COLUMNS FROM pocket_parents LIKE 'links_checked_at'")->getRowArray();
+		if (!$checkedColumn) {
+			$this->db->query("ALTER TABLE pocket_parents ADD COLUMN links_checked_at DATETIME NULL");
 		}
 		$this->db->query(
 			"CREATE TABLE IF NOT EXISTS pocket_signups (
