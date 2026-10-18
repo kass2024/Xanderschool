@@ -36,7 +36,7 @@ def main() -> int:
 set -e
 cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
-sleep 8
+sleep 12
 docker exec xander_school_app php -r 'if (function_exists("opcache_reset")) { opcache_reset(); echo "opcache ok\n"; }'
 docker exec xander_school_app php -l /var/www/html/app/Config/Routes.php
 docker exec xander_school_app php -l /var/www/html/app/Controllers/PocketApi.php
@@ -52,19 +52,25 @@ foreach (["canViewFamilies", "withoutMarksMenus"] as $m) {
 }
 echo "methods ok\n";
 '
-docker exec xander_school_app php -r '
+ok=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  if docker exec xander_school_app php -r '
 foreach (["/login", "/forget/reset", "/api/pocket/health"] as $path) {
-    $ctx = stream_context_create(["http" => ["timeout" => 30, "ignore_errors" => true]]);
+    $ctx = stream_context_create(["http" => ["timeout" => 20, "ignore_errors" => true]]);
     $body = @file_get_contents("http://127.0.0.1".$path, false, $ctx);
     $status = $http_response_header[0] ?? "no-status";
     echo $path, " ", $status, "\n";
-    if (strpos($status, " 500") !== false) { exit(1); }
-    if ($path === "/api/pocket/health" && strpos((string) $body, "Xander Pocket") === false) {
-        fwrite(STDERR, "health body unexpected\n");
-        exit(1);
-    }
+    if (strpos($status, " 500") !== false) { exit(2); }
+    if ($path === "/api/pocket/health" && strpos((string) $body, "Xander Pocket") === false) { exit(3); }
 }
-'
+'; then
+    ok=1
+    break
+  fi
+  echo "app not ready, retry $i"
+  sleep 5
+done
+test "$ok" = 1
 ENVF=/opt/xander-school/deploy/.env.production
 DB=$(grep -E '^DB_DATABASE=' "$ENVF" | head -1 | cut -d= -f2-)
 U=$(grep -E '^DB_USERNAME=' "$ENVF" | head -1 | cut -d= -f2-)
@@ -78,7 +84,12 @@ $ctx = stream_context_create(["http" => ["timeout" => 30, "ignore_errors" => tru
 $body = @file_get_contents("http://127.0.0.1/api/pocket/health", false, $ctx);
 echo $body, "\n";
 '
-docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -N -e "SELECT phone, role FROM pocket_parents"
+LEFT=$(docker exec xander_school_mysql mysql -u"$U" -p"$P" "$DB" -N -e "SELECT COUNT(*) FROM pocket_parents")
+echo "parents left: $LEFT"
+if [ "$LEFT" != "0" ]; then
+  echo "pocket accounts still exist"
+  exit 1
+fi
 echo DONE
 """
     stdin, stdout, stderr = c.exec_command(cmd, timeout=300)

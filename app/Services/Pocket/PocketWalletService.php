@@ -1756,7 +1756,6 @@ class PocketWalletService
 				PRIMARY KEY (phone)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 		);
-		$this->ensureAgent();
 		$this->db->query(
 			"CREATE TABLE IF NOT EXISTS pocket_links (
 				id INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1813,35 +1812,6 @@ class PocketWalletService
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 		);
 		self::$ready = true;
-	}
-
-	protected function ensureAgent(): void
-	{
-		$phone = '250780699435';
-		$existing = $this->db->query('SELECT id, role FROM pocket_parents WHERE phone = ? LIMIT 1', [$phone])->getRowArray();
-		$now = $this->now();
-		if ($existing) {
-			if ((string) ($existing['role'] ?? '') !== 'agent') {
-				$this->db->table('pocket_parents')->where('id', (int) $existing['id'])->update([
-					'role' => 'agent',
-					'name' => 'Pocket agent',
-					'updated_at' => $now,
-				]);
-			}
-
-			return;
-		}
-		$this->db->table('pocket_parents')->insert([
-			'phone' => $phone,
-			'name' => 'Pocket agent',
-			'role' => 'agent',
-			'pin_hash' => password_hash('258046', PASSWORD_DEFAULT),
-			'failed_count' => 0,
-			'locked_until' => null,
-			'status' => 1,
-			'created_at' => $now,
-			'updated_at' => $now,
-		]);
 	}
 
 	protected function isAgent(int $parentId): bool
