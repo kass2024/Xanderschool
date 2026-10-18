@@ -332,10 +332,15 @@ class PocketWalletService
 				'parent_id' => $parentId,
 				'student_id' => $studentId,
 				'relation' => $relation,
+				'source' => 'manual',
 				'created_at' => $now,
 			]);
-		} elseif ($relation !== '') {
-			$this->db->table('pocket_links')->where('id', (int) $linked->id)->update(['relation' => $relation]);
+		} else {
+			$patch = ['source' => 'manual'];
+			if ($relation !== '') {
+				$patch['relation'] = $relation;
+			}
+			$this->db->table('pocket_links')->where('id', (int) $linked->id)->update($patch);
 		}
 		$fresh = $this->studentById($studentId);
 		$public = $this->publicStudent($fresh, true);
@@ -1538,7 +1543,7 @@ class PocketWalletService
 			  AND {$this->enrolledSql('students')}
 			  AND (({$ft}) = ? OR ({$mt}) = ? OR ({$gd}) = ?)
 			ORDER BY students.fname ASC, students.lname ASC
-			LIMIT 24";
+			LIMIT 80";
 		$rows = $this->db->query($sql, [$phone, $phone, $phone])->getResultArray();
 		$out = [];
 		foreach ($rows as $row) {
@@ -1611,7 +1616,7 @@ class PocketWalletService
 		}
 		if (!$force) {
 			$checked = strtotime((string) ($row['links_checked_at'] ?? ''));
-			if ($checked !== false && $checked > time() - 15) {
+			if ($checked !== false && $checked > time() - 8) {
 				return;
 			}
 		}
@@ -1633,25 +1638,32 @@ class PocketWalletService
 		$students = [];
 		$names = [];
 		$relations = [];
+		$keepIds = [];
 		foreach ($matches as $match) {
+			$keepIds[] = (int) $match['id'];
 			$student = $this->studentById((int) $match['id']);
 			if (!$student) {
 				continue;
 			}
 			$relation = (string) $match['relation'];
 			$existing = $this->db->query(
-				'SELECT id FROM pocket_links WHERE parent_id = ? AND student_id = ? LIMIT 1',
+				'SELECT id, source FROM pocket_links WHERE parent_id = ? AND student_id = ? LIMIT 1',
 				[$parentId, (int) $match['id']]
-			)->getRow();
+			)->getRowArray();
 			if (!$existing) {
 				$this->db->table('pocket_links')->insert([
 					'parent_id' => $parentId,
 					'student_id' => (int) $match['id'],
 					'relation' => $relation,
+					'source' => 'phone',
 					'created_at' => $now,
 				]);
 			} else {
-				$this->db->table('pocket_links')->where('id', (int) $existing->id)->update(['relation' => $relation]);
+				$patch = ['relation' => $relation];
+				if ((string) ($existing['source'] ?? '') !== 'manual') {
+					$patch['source'] = 'phone';
+				}
+				$this->db->table('pocket_links')->where('id', (int) $existing['id'])->update($patch);
 			}
 			$public = $this->publicStudent($student, true);
 			$public['relation'] = $relation;
@@ -1664,12 +1676,30 @@ class PocketWalletService
 		}
 		arsort($names);
 		arsort($relations);
+		$this->dropStalePhoneLinks($parentId, $keepIds);
 
 		return [
 			'students' => $students,
 			'registeredAs' => $names === [] ? '' : (string) array_key_first($names),
 			'relation' => $relations === [] ? '' : (string) array_key_first($relations),
 		];
+	}
+
+	/**
+	 * A student added from the parent phone stays only while that phone is still on the record.
+	 *
+	 * @param int[] $keepIds
+	 */
+	protected function dropStalePhoneLinks(int $parentId, array $keepIds): void
+	{
+		$sql = "DELETE FROM pocket_links WHERE parent_id = ? AND (source = 'phone' OR source = '' OR source IS NULL)";
+		$params = [$parentId];
+		$keepIds = array_values(array_unique(array_filter(array_map('intval', $keepIds))));
+		if ($keepIds !== []) {
+			$sql .= ' AND student_id NOT IN (' . implode(',', array_fill(0, count($keepIds), '?')) . ')';
+			$params = array_merge($params, $keepIds);
+		}
+		$this->db->query($sql, $params);
 	}
 
 	protected function enrolledSql(string $alias = 'students'): string
@@ -1836,6 +1866,10 @@ class PocketWalletService
 		$relationColumn = $this->db->query("SHOW COLUMNS FROM pocket_links LIKE 'relation'")->getRowArray();
 		if (!$relationColumn) {
 			$this->db->query("ALTER TABLE pocket_links ADD COLUMN relation VARCHAR(20) NOT NULL DEFAULT '' AFTER student_id");
+		}
+		$sourceColumn = $this->db->query("SHOW COLUMNS FROM pocket_links LIKE 'source'")->getRowArray();
+		if (!$sourceColumn) {
+			$this->db->query("ALTER TABLE pocket_links ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'phone' AFTER relation");
 		}
 		$canteenColumn = $this->db->query("SHOW COLUMNS FROM schools LIKE 'canteen_phone'")->getRowArray();
 		if (!$canteenColumn) {
