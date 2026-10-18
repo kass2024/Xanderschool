@@ -28025,6 +28025,71 @@ public function assign_card()
 		return redirect()->to(base_url('pocket_money?report=ledger'));
 	}
 
+	public function parents_account()
+	{
+		$this->_preset(1, 3, 14);
+		if (!\Config\MenuClearance::canUsePocketMoney((int) $this->session->get('soma_post'))) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		$service = new \App\Services\Pocket\PocketWalletService();
+		$data = $this->data;
+		$data['title'] = 'Parents account';
+		$data['subtitle'] = 'Parents account';
+		$data['page'] = 'parents_account';
+		$data['q'] = trim((string) $this->request->getGet('q'));
+		$data['accounts'] = $service->schoolParentAccounts((int) $this->session->get('soma_school_id'), $data['q']);
+		$data['content'] = view('pages/parents_account', $data);
+
+		return view('main', $data);
+	}
+
+	public function parents_account_status()
+	{
+		$this->_preset(1, 3, 14);
+		if (!\Config\MenuClearance::canUsePocketMoney((int) $this->session->get('soma_post'))) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		if (strtolower($this->request->getMethod()) !== 'post') {
+			return redirect()->to(base_url('parents_account'));
+		}
+		try {
+			$service = new \App\Services\Pocket\PocketWalletService();
+			$message = $service->setSchoolParentStatus(
+				(int) $this->session->get('soma_school_id'),
+				(int) $this->request->getPost('parent_id'),
+				(int) $this->request->getPost('status')
+			);
+			$this->session->setFlashdata('success', $message);
+		} catch (\Throwable $e) {
+			$this->session->setFlashdata('error', $e->getMessage());
+		}
+
+		return redirect()->to(base_url('parents_account'));
+	}
+
+	public function parents_account_delete()
+	{
+		$this->_preset(1, 3, 14);
+		if (!\Config\MenuClearance::canUsePocketMoney((int) $this->session->get('soma_post'))) {
+			return redirect()->to(base_url('dashboard'));
+		}
+		if (strtolower($this->request->getMethod()) !== 'post') {
+			return redirect()->to(base_url('parents_account'));
+		}
+		try {
+			$service = new \App\Services\Pocket\PocketWalletService();
+			$message = $service->deleteSchoolParentAccount(
+				(int) $this->session->get('soma_school_id'),
+				(int) $this->request->getPost('parent_id')
+			);
+			$this->session->setFlashdata('success', $message);
+		} catch (\Throwable $e) {
+			$this->session->setFlashdata('error', $e->getMessage());
+		}
+
+		return redirect()->to(base_url('parents_account'));
+	}
+
 	private function pocketReportCsv(array $pack)
 	{
 		$report = (string) ($pack['report'] ?? 'overview');

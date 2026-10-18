@@ -1840,6 +1840,14 @@ class PocketWalletService
 				KEY school_id (school_id)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 		);
+		$this->db->query(
+			"CREATE TABLE IF NOT EXISTS pocket_account_hides (
+				school_id INT UNSIGNED NOT NULL,
+				parent_id INT UNSIGNED NOT NULL,
+				created_at DATETIME NOT NULL,
+				PRIMARY KEY (school_id, parent_id)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+		);
 		self::$ready = true;
 	}
 
@@ -1848,6 +1856,197 @@ class PocketWalletService
 		$row = $this->db->query('SELECT role FROM pocket_parents WHERE id = ? LIMIT 1', [$parentId])->getRowArray();
 
 		return (string) ($row['role'] ?? '') === 'agent';
+	}
+
+	/**
+	 * Parent pocket accounts that belong to students in a class at this school.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function schoolParentAccounts(int $schoolId, string $q = ''): array
+	{
+		$schoolId = (int) $schoolId;
+		$q = trim(preg_replace('/[%_\\\\]/', '', $q) ?? '');
+		$q = function_exists('mb_strtolower') ? mb_strtolower($q) : strtolower($q);
+		$enrolled = $this->enrolledSql('s');
+		$ft = $this->parentMsisdnSql('s.ft_phone');
+		$mt = $this->parentMsisdnSql('s.mt_phone');
+		$gd = $this->parentMsisdnSql('s.gd_phone');
+		$rows = $this->db->query(
+			"SELECT p.id, p.name, p.phone, p.status, p.created_at
+			 FROM pocket_parents p
+			 WHERE (p.role IS NULL OR p.role <> 'agent')
+			 AND (
+				EXISTS (
+					SELECT 1 FROM pocket_links l
+					INNER JOIN students s ON s.id = l.student_id
+					WHERE l.parent_id = p.id AND s.school_id = ? AND s.status = 1 AND {$enrolled}
+				)
+				OR (
+					NOT EXISTS (
+						SELECT 1 FROM pocket_account_hides h
+						WHERE h.parent_id = p.id AND h.school_id = ?
+					)
+					AND EXISTS (
+						SELECT 1 FROM students s
+						WHERE s.school_id = ? AND s.status = 1 AND {$enrolled}
+						AND (({$ft}) = p.phone OR ({$mt}) = p.phone OR ({$gd}) = p.phone)
+					)
+				)
+			 )
+			 ORDER BY p.name ASC, p.id ASC",
+			[$schoolId, $schoolId, $schoolId]
+		)->getResultArray();
+		$accounts = [];
+		foreach ($rows as $row) {
+			$students = $this->schoolStudentsForParent($schoolId, (int) $row['id'], (string) $row['phone']);
+			$account = [
+				'id' => (int) $row['id'],
+				'name' => (string) $row['name'],
+				'phone' => $this->localPhone((string) $row['phone']),
+				'phoneRaw' => (string) $row['phone'],
+				'status' => (int) $row['status'],
+				'createdAt' => (string) $row['created_at'],
+				'students' => $students,
+			];
+			if ($q !== '' && !$this->accountMatches($account, $q)) {
+				continue;
+			}
+			$accounts[] = $account;
+		}
+
+		return $accounts;
+	}
+
+	public function setSchoolParentStatus(int $schoolId, int $parentId, int $status): string
+	{
+		$account = $this->schoolParentOrFail($schoolId, $parentId);
+		$status = $status === 1 ? 1 : 0;
+		$this->db->table('pocket_parents')->where('id', $parentId)->update([
+			'status' => $status,
+			'updated_at' => $this->now(),
+		]);
+		if ($status !== 1) {
+			$this->db->table('pocket_sessions')->where('parent_id', $parentId)->delete();
+		}
+
+		return $status === 1
+			? $account['name'] . ' can sign in again.'
+			: $account['name'] . ' is disabled and cannot sign in.';
+	}
+
+	public function deleteSchoolParentAccount(int $schoolId, int $parentId): string
+	{
+		$account = $this->schoolParentOrFail($schoolId, $parentId);
+		$this->db->query(
+			'DELETE l FROM pocket_links l
+			 INNER JOIN students s ON s.id = l.student_id
+			 WHERE l.parent_id = ? AND s.school_id = ?',
+			[$parentId, $schoolId]
+		);
+		$other = $this->db->query(
+			'SELECT COUNT(*) AS total FROM pocket_links WHERE parent_id = ?',
+			[$parentId]
+		)->getRowArray();
+		if ((int) ($other['total'] ?? 0) > 0) {
+			$this->db->query(
+				'INSERT IGNORE INTO pocket_account_hides (school_id, parent_id, created_at) VALUES (?, ?, ?)',
+				[$schoolId, $parentId, $this->now()]
+			);
+
+			return $account['name'] . ' was removed from this school. The account remains for students at another school.';
+		}
+		$this->db->table('pocket_sessions')->where('parent_id', $parentId)->delete();
+		$this->db->table('pocket_links')->where('parent_id', $parentId)->delete();
+		$this->db->table('pocket_account_hides')->where('parent_id', $parentId)->delete();
+		$this->db->table('pocket_signups')->where('phone', $account['phoneRaw'])->delete();
+		$this->db->table('pocket_parents')->where('id', $parentId)->delete();
+
+		return $account['name'] . ' was permanently deleted. Student card balances are unchanged.';
+	}
+
+	/**
+	 * @param array<string, mixed> $account
+	 */
+	protected function accountMatches(array $account, string $q): bool
+	{
+		$hay = strtolower($account['name'] . ' ' . $account['phone'] . ' ' . $account['phoneRaw']);
+		foreach ($account['students'] as $student) {
+			$hay .= ' ' . strtolower($student['name'] . ' ' . $student['regno'] . ' ' . $student['className']);
+		}
+
+		return strpos($hay, $q) !== false;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	protected function schoolParentOrFail(int $schoolId, int $parentId): array
+	{
+		foreach ($this->schoolParentAccounts($schoolId, '') as $account) {
+			if ((int) $account['id'] === $parentId) {
+				return $account;
+			}
+		}
+		throw new \RuntimeException('This parent account is not at this school.', 404);
+	}
+
+	/**
+	 * @return array<int, array<string, string>>
+	 */
+	protected function schoolStudentsForParent(int $schoolId, int $parentId, string $phone): array
+	{
+		$enrolled = $this->enrolledSql('s');
+		$ft = $this->parentMsisdnSql('s.ft_phone');
+		$mt = $this->parentMsisdnSql('s.mt_phone');
+		$gd = $this->parentMsisdnSql('s.gd_phone');
+		$rows = $this->db->query(
+			"SELECT s.id, s.regno, s.fname, s.lname,
+				TRIM(CONCAT(IFNULL(lv.title,''), ' ', IFNULL(d.code,''), ' ', IFNULL(c.title,''))) AS class_name,
+				CASE
+					WHEN ({$ft}) = ? THEN 'father'
+					WHEN ({$mt}) = ? THEN 'mother'
+					WHEN ({$gd}) = ? THEN 'guardian'
+					ELSE IFNULL(l.relation, '')
+				END AS relation
+			 FROM students s
+			 LEFT JOIN pocket_links l ON l.student_id = s.id AND l.parent_id = ?
+			 LEFT JOIN class_records cr ON cr.id = (
+				SELECT MAX(id) FROM class_records WHERE student = s.id AND status = 1
+			 )
+			 LEFT JOIN classes c ON c.id = cr.class
+			 LEFT JOIN departments d ON d.id = c.department
+			 LEFT JOIN levels lv ON lv.id = c.level
+			 WHERE s.school_id = ? AND s.status = 1 AND {$enrolled}
+			 AND (
+				l.id IS NOT NULL
+				OR ({$ft}) = ? OR ({$mt}) = ? OR ({$gd}) = ?
+			 )
+			 ORDER BY s.fname ASC, s.lname ASC",
+			[$phone, $phone, $phone, $parentId, $schoolId, $phone, $phone, $phone]
+		)->getResultArray();
+		$students = [];
+		foreach ($rows as $row) {
+			$name = trim(preg_replace('/\s+/', ' ', trim((string) $row['fname']) . ' ' . trim((string) $row['lname'])));
+			$students[] = [
+				'name' => $name !== '' ? $name : 'Student',
+				'regno' => (string) $row['regno'],
+				'className' => trim((string) $row['class_name']),
+				'relation' => (string) $row['relation'],
+			];
+		}
+
+		return $students;
+	}
+
+	protected function localPhone(string $phone): string
+	{
+		$phone = trim($phone);
+		if (preg_match('/^250(7\d{8})$/', $phone, $match)) {
+			return '0' . $match[1];
+		}
+
+		return $phone;
 	}
 
 	/**

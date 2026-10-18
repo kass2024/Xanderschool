@@ -895,6 +895,12 @@
 										<?= lang("app.PocketMoney"); ?>
 									</a>
 								</li>
+								<li class="<?= (!empty($page) && $page === 'parents_account') ? 'mm-active' : ''; ?>">
+									<a href="<?= base_url('parents_account'); ?>">
+										<i class="metismenu-icon pe-7s-users"></i>
+										Parents account
+									</a>
+								</li>
 								<?php } ?>
 								<li>
 									<a href="<?= base_url('canteen'); ?>">

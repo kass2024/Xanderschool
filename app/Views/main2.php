@@ -627,6 +627,12 @@
 									</a>
 								</li>
 								<li>
+									<a href="<?= base_url('parents_account'); ?>">
+										<i class="metismenu-icon pe-7s-users"></i>
+										Parents account
+									</a>
+								</li>
+								<li>
 									<a href="<?= base_url('canteen'); ?>">
 										<i class="metismenu-icon pe-7s-coffee"></i>
 										Canteen
