@@ -979,6 +979,183 @@ class FeesReportHelper
 		return $sections;
 	}
 
+	/**
+	 * Merge fee folds from multiple classes (All-classes report).
+	 *
+	 * @param list<array<string,mixed>> $into
+	 * @param list<array<string,mixed>> $from
+	 * @return list<array<string,mixed>>
+	 */
+	public static function mergeFeeSections(array $into, array $from): array
+	{
+		$byId = [];
+		foreach ($into as $section) {
+			$id = (string) ($section['id'] ?? '');
+			if ($id === '') {
+				continue;
+			}
+			$byId[$id] = $section;
+		}
+		foreach ($from as $section) {
+			$id = (string) ($section['id'] ?? '');
+			if ($id === '') {
+				continue;
+			}
+			if (!isset($byId[$id])) {
+				$byId[$id] = $section;
+				continue;
+			}
+			$existing = $byId[$id];
+			$seen = [];
+			foreach ($existing['rows'] as $row) {
+				$seen[(int) ($row['student_id'] ?? 0)] = true;
+			}
+			foreach ($section['rows'] as $row) {
+				$sid = (int) ($row['student_id'] ?? 0);
+				if ($sid > 0 && isset($seen[$sid])) {
+					continue;
+				}
+				$existing['rows'][] = $row;
+				if ($sid > 0) {
+					$seen[$sid] = true;
+				}
+			}
+			$byId[$id] = self::feeSection(
+				$id,
+				(string) ($existing['kind'] ?? 'extra'),
+				(string) ($existing['title'] ?? ''),
+				(int) ($existing['term'] ?? 0),
+				$existing['rows']
+			);
+		}
+
+		return array_values($byId);
+	}
+
+	/**
+	 * Load students for one or every report class (c=0 → all).
+	 *
+	 * @param list<array<string,mixed>> $classes
+	 * @return array{students: list<array<string,mixed>>, extraFeeColumns: list<string>}
+	 */
+	public static function loadReportStudents(
+		StudentModel $studentMdl,
+		array $classes,
+		int $classId,
+		bool $allClasses,
+		int $schoolId,
+		int $academic,
+		string $termsIn,
+		array $termsList,
+		string $feesScope,
+		int $filter,
+		bool $withDetailed,
+		bool $withLastPayment
+	): array {
+		$targetIds = [];
+		if ($allClasses) {
+			foreach ($classes as $classRow) {
+				$cid = (int) ($classRow['id'] ?? 0);
+				if ($cid > 0) {
+					$targetIds[] = $cid;
+				}
+			}
+		} elseif ($classId > 0) {
+			$targetIds[] = $classId;
+		}
+
+		$students = [];
+		$extraFeeColumns = [];
+		$seenStudents = [];
+		foreach ($targetIds as $cid) {
+			$query = self::studentsQuery($studentMdl, $cid, $schoolId, $academic, $termsIn, $termsList, $feesScope);
+			if ($filter === 1) {
+				$query->having('paid', 'amount', false);
+			} elseif ($filter === 2) {
+				$query->having('paid !=', 'amount', false)->having('paid >', 0, false);
+			} elseif ($filter === 3) {
+				$query->having('paid', 0, false);
+			}
+			$chunk = $query->get()->getResultArray();
+			if ($chunk === []) {
+				continue;
+			}
+			$enriched = self::enrichStudents(
+				$chunk,
+				$schoolId,
+				$academic,
+				$termsList,
+				$cid,
+				$withDetailed,
+				$withLastPayment,
+				$feesScope
+			);
+			foreach ($enriched['extraFeeColumns'] as $col) {
+				$col = (string) $col;
+				if ($col !== '' && !in_array($col, $extraFeeColumns, true)) {
+					$extraFeeColumns[] = $col;
+				}
+			}
+			foreach ($enriched['students'] as $row) {
+				$sid = (int) ($row['student_id'] ?? 0);
+				if ($sid > 0 && isset($seenStudents[$sid])) {
+					continue;
+				}
+				if ($sid > 0) {
+					$seenStudents[$sid] = true;
+				}
+				$students[] = $row;
+			}
+		}
+
+		return [
+			'students' => $students,
+			'extraFeeColumns' => $extraFeeColumns,
+		];
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $classes
+	 * @param list<array<string,mixed>> $students
+	 * @return list<array<string,mixed>>
+	 */
+	public static function buildFeeSectionsForClasses(
+		array $classes,
+		array $students,
+		int $classId,
+		bool $allClasses,
+		int $schoolId,
+		int $academic,
+		array $termsList,
+		string $feesScope
+	): array {
+		if (!$allClasses) {
+			return $classId > 0
+				? self::termFeeSections($students, $schoolId, $academic, $termsList, $classId, $feesScope)
+				: [];
+		}
+
+		$sections = [];
+		foreach ($classes as $classRow) {
+			$cid = (int) ($classRow['id'] ?? 0);
+			if ($cid < 1) {
+				continue;
+			}
+			$classStudents = array_values(array_filter($students, static function ($row) use ($cid) {
+				return (int) ($row['id'] ?? 0) === $cid;
+			}));
+			if ($classStudents === []) {
+				continue;
+			}
+			$sections = self::mergeFeeSections(
+				$sections,
+				self::termFeeSections($classStudents, $schoolId, $academic, $termsList, $cid, $feesScope)
+			);
+		}
+
+		return $sections;
+	}
+
 	/** @param array<string,mixed> $student */
 	private static function feeSectionRow(array $student, float $expected, float $paid): array
 	{

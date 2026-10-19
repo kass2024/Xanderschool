@@ -118,12 +118,14 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 						</td>
 						<th id="frClassLabel"<?= $isIncomeSummary ? ' class="fr-field-hidden"' : ''; ?>><?= lang('app.sClass'); ?></th>
 						<td id="frClassField"<?= $isIncomeSummary ? ' class="fr-field-hidden"' : ''; ?>>
+							<?php $allClassesSelected = ((string) $class_id === '0'); ?>
 							<select class="form-control" id="choose_class" name="c"<?= $isIncomeSummary ? '' : ' required'; ?>>
-								<?php if ((int) $class_id <= 0) : ?>
+								<?php if (!$allClassesSelected && (int) $class_id <= 0) : ?>
 									<option value="" disabled selected><?= lang('app.chooseClass'); ?></option>
 								<?php endif; ?>
+								<option value="0"<?= $allClassesSelected ? ' selected' : ''; ?>>All</option>
 								<?php foreach ($classes as $classe) : ?>
-									<option value="<?= (int) $classe['id']; ?>" <?= (int) $classe['id'] === (int) $class_id ? 'selected' : ''; ?>>
+									<option value="<?= (int) $classe['id']; ?>" <?= !$allClassesSelected && (int) $classe['id'] === (int) $class_id ? 'selected' : ''; ?>>
 										<?= esc("{$classe['level_name']} {$classe['dept_code']} {$classe['title']}"); ?>
 									</option>
 								<?php endforeach; ?>
@@ -177,7 +179,7 @@ $smsBaseUrl = base_url('system-report/fees/2?' . $qp);
 				<div class="fr-empty">
 					<i class="fa fa-chart-bar"></i>
 					<h4>No report loaded</h4>
-					<p>No classes found for this school, or select a class above to view fees collection.</p>
+					<p>No classes found for this school, or select a class (or All) above to view fees collection.</p>
 				</div>
 			</div>
 		<?php else : ?>
@@ -502,7 +504,7 @@ $(function () {
 		frToggleClassField();
 		if (!frIsIncomeSummary()) {
 			const cls = $('#choose_class').val();
-			if (!cls) return;
+			if (cls === null || cls === '') return;
 		}
 		if ($('.fr-term-cb:checked').length === 0) {
 			toastada.error('Select at least one term.');

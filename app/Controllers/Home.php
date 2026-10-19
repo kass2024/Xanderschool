@@ -26860,7 +26860,9 @@ public function assign_card()
 		$data['title'] = lang("app.studentsLists");
 		$data['subtitle'] = lang("app.viewAllStudent");
 		$data['page'] = "students";
-		$classe = $this->request->getGet("c") ?? "-1";
+		$classeRaw = $this->request->getGet("c");
+		$classe = $classeRaw ?? "-1";
+		$isAllClasses = $classeRaw !== null && $classeRaw !== '' && (string) $classeRaw === '0';
 		$academic = $this->request->getGet("academic") ?? $data['academic_year'];
 		$filter = $this->request->getGet("filter") ?? "0";
 		$reportType = FeesReportHelper::normalizeReportType($this->request->getGet('rtype'));
@@ -26914,7 +26916,7 @@ public function assign_card()
 				break;
 			}
 		}
-		if ($needsClass && (int) $classe > 0 && empty($data['classe']) && !empty($data['classes'])) {
+		if ($needsClass && !$isAllClasses && (int) $classe > 0 && empty($data['classe']) && !empty($data['classes'])) {
 			$redir = [
 				'c' => $data['classes'][0]['id'],
 				'academic' => $academic,
@@ -26927,7 +26929,7 @@ public function assign_card()
 			}
 			return redirect()->to(site_url('system-report/fees?' . http_build_query($redir)));
 		}
-		if ($pdf != 1 && $pdf != 2 && $needsClass && (int) $classe <= 0 && !empty($data['classes'])) {
+		if ($pdf != 1 && $pdf != 2 && $needsClass && !$isAllClasses && (int) $classe <= 0 && !empty($data['classes'])) {
 			$redir = [
 				'c' => $data['classes'][0]['id'],
 				'academic' => $academic,
@@ -26939,21 +26941,6 @@ public function assign_card()
 				$redir['fscope'] = $feesScope;
 			}
 			return redirect()->to(site_url('system-report/fees?' . http_build_query($redir)));
-		}
-
-		$students = [];
-		if ($needsClass && (int) $classe > 0) {
-		$studentsQuery = FeesReportHelper::studentsQuery($studentMdl, (int) $classe, (int) $school_id, (int) $academic, $termsIn, $termsList, $feesScope);
-
-		if ($filter == 1) {
-			$studentsQuery->having("paid", "amount", false);
-		} else if ($filter == 2) {
-			$studentsQuery->having("paid !=", 'amount', false)
-					->having("paid >", 0, false);
-		} else if ($filter == 3) {
-			$studentsQuery->having("paid", 0, false);
-		}
-		$students = $studentsQuery->get()->getResultArray();
 		}
 
 		$incomeSummary = [];
@@ -26970,28 +26957,46 @@ public function assign_card()
 		}
 		$withDetailed = ($reportType === FeesReportHelper::TYPE_DETAILED);
 		$withLastPayment = ($reportType === FeesReportHelper::TYPE_CLASS_BALANCE);
-		$enriched = FeesReportHelper::enrichStudents(
-			$students,
-			(int) $school_id,
-			(int) $academic,
-			$termsList,
-			(int) $classe,
-			$withDetailed,
-			$withLastPayment,
-			$feesScope
-		);
-		$students = $enriched['students'];
+		$students = [];
+		$extraFeeColumns = [];
+		if ($needsClass && ($isAllClasses || (int) $classe > 0)) {
+			$loaded = FeesReportHelper::loadReportStudents(
+				$studentMdl,
+				$data['classes'],
+				(int) $classe,
+				$isAllClasses,
+				(int) $school_id,
+				(int) $academic,
+				$termsIn,
+				$termsList,
+				$feesScope,
+				(int) $filter,
+				$withDetailed,
+				$withLastPayment
+			);
+			$students = $loaded['students'];
+			$extraFeeColumns = $loaded['extraFeeColumns'];
+		}
 		$data['students'] = $students;
-		$data['extraFeeColumns'] = $enriched['extraFeeColumns'];
-		$data['feeSections'] = ($withDetailed && (int) $classe > 0)
-			? FeesReportHelper::termFeeSections($students, (int) $school_id, (int) $academic, $termsList, (int) $classe, $feesScope)
+		$data['extraFeeColumns'] = $extraFeeColumns;
+		$data['feeSections'] = ($withDetailed && ($isAllClasses || (int) $classe > 0))
+			? FeesReportHelper::buildFeeSectionsForClasses(
+				$data['classes'],
+				$students,
+				(int) $classe,
+				$isAllClasses,
+				(int) $school_id,
+				(int) $academic,
+				$termsList,
+				$feesScope
+			)
 			: [];
 		$data['incomeSummary'] = $incomeSummary;
 		$data['reportType'] = $reportType;
 		$data['reportTypeLabels'] = FeesReportHelper::reportTypeLabels();
 		$data['feesScope'] = $feesScope;
 		$data['feesScopeLabels'] = FeesReportHelper::feesScopeLabels();
-		$data['class_id'] = $classe;
+		$data['class_id'] = $isAllClasses ? '0' : $classe;
 		$data['year_id'] = $academic;
 		$data['term'] = $term;
 		$data['selected_terms'] = $termsList;
@@ -26999,9 +27004,9 @@ public function assign_card()
 		$data['pdf'] = $pdf;
 		$data['hasResults'] = ($reportType === FeesReportHelper::TYPE_INCOME_SUMMARY)
 			? !empty($data['classes'])
-			: ((int) $classe > 0);
+			: ($isAllClasses || (int) $classe > 0);
 		$data['queryParams'] = http_build_query(array_filter([
-			'c' => $needsClass ? $classe : null,
+			'c' => $needsClass ? ($isAllClasses ? '0' : $classe) : null,
 			'academic' => $academic,
 			'term' => $termsList,
 			'filter' => $filter,
@@ -27070,7 +27075,9 @@ public function assign_card()
 			}
 		}
 		$data['classLabel'] = '';
-		if (!empty($data['classes'])) {
+		if ($isAllClasses) {
+			$data['classLabel'] = 'All classes';
+		} elseif (!empty($data['classes'])) {
 			foreach ($data['classes'] as $clRow) {
 				if ((int) $clRow['id'] === (int) $classe) {
 					$data['classLabel'] = trim(($clRow['level_name'] ?? '') . ' ' . ($clRow['dept_code'] ?? '') . ' ' . ($clRow['title'] ?? ''));
@@ -27123,7 +27130,7 @@ public function assign_card()
 				echo $e->getMessage();
 			}
 		} else if ($pdf == 2) {
-			if (!$needsClass || (int) $classe <= 0) {
+			if (!$needsClass || (!$isAllClasses && (int) $classe <= 0) || empty($students)) {
 				return $this->response->setJSON(['error' => 'SMS is available for class reports only.']);
 			}
 			//send sms
