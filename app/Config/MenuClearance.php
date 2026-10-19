@@ -981,6 +981,12 @@ class MenuClearance
 		if (self::isChiefAccountantPost($postId)) {
 			$keys = self::withoutMarksMenus($keys);
 		}
+		// Phone leave board and the Leave Management page follow this key.
+		if (self::isExecutivePrincipalPost($postId)
+			|| self::isDirectorPost($postId)
+			|| self::isCustomerCarePost($postId)) {
+			$keys[] = 'leave_management';
+		}
 		return array_values(array_unique($keys));
 	}
 
@@ -1226,6 +1232,7 @@ class MenuClearance
 		return [
 			'discipline' => self::groupVisibleForKeys($allowedKeys, 'behavior')
 				|| $has('discipline_record_entry') || $has('discipline_record'),
+			'visiting' => self::groupVisibleForKeys($allowedKeys, 'parent_visiting'),
 			'permission' => self::groupVisibleForKeys($allowedKeys, 'permissions')
 				|| $has('permission_entry') || $has('permission_record'),
 			'students' => self::groupVisibleForKeys($allowedKeys, 'students')
