@@ -16,6 +16,9 @@ class TimetableStagingService
 	/** @var SecondaryTimetableCriteria|null */
 	private $secondaryCriteria = null;
 
+	/** @var array<int,string> */
+	private $slotClockCache = [];
+
 	/** @return string */
 	private function assignmentKey(int $courseRecordId, int $classId, int $courseId, int $staffId): string
 	{
@@ -178,6 +181,343 @@ class TimetableStagingService
 	}
 
 	/**
+	 * Drop timetable lessons that would put a course above its Manage Course periods.
+	 * A combined group shares one total: distinct clocks cannot exceed that credit.
+	 * An unaligned extra is moved onto a shared clock when the class cell is free.
+	 *
+	 * @return int rows removed
+	 */
+	public function capPeriodsToManageCourse(int $scheduleId, int $schoolId): int
+	{
+		if ($scheduleId <= 0 || $schoolId <= 0) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$this->assignmentMeta = $this->loadAssignmentMeta($scheduleId, $schoolId);
+		if ($this->assignmentMeta === []) {
+			return 0;
+		}
+		$this->secondaryCriteria = new SecondaryTimetableCriteria();
+		$this->secondaryCriteria->hydrateFromAssignments(array_values($this->assignmentMeta));
+		$this->secondaryCriteria->hydrateCustomRules((new TimetableCriteriaStore())->listForSchool($schoolId, true));
+
+		$scheduled = $this->scheduledEntries($scheduleId, $schoolId);
+		if ($scheduled === []) {
+			return 0;
+		}
+
+		$removed = 0;
+		$removed += $this->capSingleCourseRows($db, $scheduled);
+		$scheduled = $this->scheduledEntries($scheduleId, $schoolId);
+		$removed += $this->capCombinedClocks($db, $scheduled);
+
+		return $removed;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $scheduled
+	 */
+	private function capSingleCourseRows($db, array $scheduled): int
+	{
+		$byKey = [];
+		foreach ($scheduled as $entry) {
+			$key = $this->keyFromEntry($entry);
+			$byKey[$key][] = $entry;
+		}
+		$deleteIds = [];
+		foreach ($byKey as $key => $rows) {
+			$meta = $this->assignmentMeta[$key] ?? $this->metaForEntry($rows[0]);
+			if ($this->secondaryCriteria !== null && $this->secondaryCriteria->combineGroupKey($meta) !== '') {
+				continue;
+			}
+			$needed = TimetableGeneratorService::weeklyHoursFromCourse($meta);
+			if ($needed <= 0 || count($rows) <= $needed) {
+				continue;
+			}
+			foreach ($this->rowsBeyondLimit($rows, $needed) as $id) {
+				$deleteIds[] = $id;
+			}
+		}
+		return $this->deleteEntryIds($db, $deleteIds);
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $scheduled
+	 */
+	private function capCombinedClocks($db, array $scheduled): int
+	{
+		if ($this->secondaryCriteria === null) {
+			return 0;
+		}
+		$groups = [];
+		foreach ($this->assignmentMeta as $row) {
+			$groupKey = $this->secondaryCriteria->combineGroupKey($row);
+			if ($groupKey === '') {
+				continue;
+			}
+			$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
+			if (!isset($groups[$groupKey])) {
+				$groups[$groupKey] = ['target' => $hours, 'members' => []];
+			} elseif ($hours > (int) $groups[$groupKey]['target']) {
+				$groups[$groupKey]['target'] = $hours;
+			}
+			$classId = (int) ($row['class_id'] ?? 0);
+			$courseId = (int) ($row['course_id'] ?? 0);
+			if ($classId > 0 && $courseId > 0) {
+				$groups[$groupKey]['members'][$classId . ':' . $courseId] = true;
+			}
+		}
+
+		$busy = [];
+		foreach ($scheduled as $entry) {
+			$classId = (int) ($entry['class_id'] ?? 0);
+			$day = (int) ($entry['day_of_week'] ?? -1);
+			$slotId = (int) ($entry['slot_id'] ?? 0);
+			if ($classId > 0 && $day >= 0 && $slotId > 0) {
+				$busy[$classId . ':' . $day . ':' . $slotId] = (int) ($entry['id'] ?? 0);
+			}
+		}
+
+		$removed = 0;
+		foreach ($groups as $group) {
+			$target = (int) ($group['target'] ?? 0);
+			$members = $group['members'] ?? [];
+			if ($target <= 0 || $members === []) {
+				continue;
+			}
+			$entries = [];
+			foreach ($scheduled as $entry) {
+				$member = (int) ($entry['class_id'] ?? 0) . ':' . (int) ($entry['course_id'] ?? 0);
+				if (isset($members[$member])) {
+					$entries[] = $entry;
+				}
+			}
+			if ($entries === []) {
+				continue;
+			}
+
+			$byClock = [];
+			foreach ($entries as $entry) {
+				$clock = $this->entryClockKey($entry);
+				$byClock[$clock][] = $entry;
+			}
+			if (count($byClock) <= $target) {
+				continue;
+			}
+
+			$ranked = [];
+			foreach ($byClock as $clock => $rows) {
+				$classes = [];
+				$locked = 0;
+				foreach ($rows as $row) {
+					$classes[(int) ($row['class_id'] ?? 0)] = true;
+					if ($this->entryIsLocked($row)) {
+						$locked++;
+					}
+				}
+				$ranked[] = [
+					'clock' => $clock,
+					'cover' => count($classes),
+					'locked' => $locked,
+					'rows' => $rows,
+				];
+			}
+			usort($ranked, static function (array $a, array $b): int {
+				if ($a['cover'] !== $b['cover']) {
+					return $b['cover'] <=> $a['cover'];
+				}
+				if ($a['locked'] !== $b['locked']) {
+					return $b['locked'] <=> $a['locked'];
+				}
+				return strcmp((string) $a['clock'], (string) $b['clock']);
+			});
+
+			$keep = array_slice($ranked, 0, $target);
+			$drop = array_slice($ranked, $target);
+			$hostByClock = [];
+			$classClocks = [];
+			foreach ($keep as $bucket) {
+				$hostByClock[$bucket['clock']] = $bucket['rows'][0];
+				foreach ($bucket['rows'] as $row) {
+					$classClocks[(int) ($row['class_id'] ?? 0)][$bucket['clock']] = true;
+				}
+			}
+
+			$deleteIds = [];
+			foreach ($drop as $bucket) {
+				foreach ($bucket['rows'] as $row) {
+					$entryId = (int) ($row['id'] ?? 0);
+					$classId = (int) ($row['class_id'] ?? 0);
+					$moved = false;
+					if ($entryId > 0 && $classId > 0) {
+						foreach ($hostByClock as $clock => $host) {
+							if (!empty($classClocks[$classId][$clock])) {
+								continue;
+							}
+							$day = (int) ($host['day_of_week'] ?? -1);
+							$slotId = (int) ($host['slot_id'] ?? 0);
+							if ($day < 0 || $slotId <= 0) {
+								continue;
+							}
+							$busyKey = $classId . ':' . $day . ':' . $slotId;
+							$occupant = (int) ($busy[$busyKey] ?? 0);
+							if ($occupant > 0 && $occupant !== $entryId) {
+								continue;
+							}
+							$db->table('timetable_entries')->where('id', $entryId)->update([
+								'day_of_week' => $day,
+								'slot_id' => $slotId,
+							]);
+							$busy[$busyKey] = $entryId;
+							$classClocks[$classId][$clock] = true;
+							$moved = true;
+							break;
+						}
+					}
+					if (!$moved && $entryId > 0) {
+						$deleteIds[] = $entryId;
+					}
+				}
+			}
+			$removed += $this->deleteEntryIds($db, $deleteIds);
+		}
+
+		return $removed;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $rows
+	 * @return list<int>
+	 */
+	private function rowsBeyondLimit(array $rows, int $keep): array
+	{
+		if (count($rows) <= $keep) {
+			return [];
+		}
+		usort($rows, function (array $a, array $b): int {
+			$lock = (int) $this->entryIsLocked($b) <=> (int) $this->entryIsLocked($a);
+			if ($lock !== 0) {
+				return $lock;
+			}
+			return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+		});
+		$ids = [];
+		foreach (array_slice($rows, $keep) as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id > 0) {
+				$ids[] = $id;
+			}
+		}
+		return $ids;
+	}
+
+	/** @param list<int> $ids */
+	private function deleteEntryIds($db, array $ids): int
+	{
+		$ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+		if ($ids === []) {
+			return 0;
+		}
+		$db->table('timetable_entries')->whereIn('id', $ids)->delete();
+		return count($ids);
+	}
+
+	/** @param array<string,mixed> $entry */
+	private function entryClockKey(array $entry): string
+	{
+		return (int) ($entry['day_of_week'] ?? -1)
+			. '|' . substr((string) ($entry['start_time'] ?? ''), 0, 5)
+			. '|' . substr((string) ($entry['end_time'] ?? ''), 0, 5);
+	}
+
+	/**
+	 * Combined classes share one Manage Course total. A new clock past that total is refused.
+	 *
+	 * @param array<string,mixed> $entry
+	 * @param list<array<string,mixed>> $scheduled
+	 */
+	private function placingCombinedWouldExceed(array $entry, int $day, int $slotId, array $scheduled): bool
+	{
+		if ($this->secondaryCriteria === null || $this->assignmentMeta === [] || $day < 0 || $slotId <= 0) {
+			return false;
+		}
+		$meta = $this->metaForEntry($entry);
+		$groupKey = $this->secondaryCriteria->combineGroupKey($meta);
+		if ($groupKey === '') {
+			return false;
+		}
+		$target = 0;
+		$members = [];
+		foreach ($this->assignmentMeta as $row) {
+			if ($this->secondaryCriteria->combineGroupKey($row) !== $groupKey) {
+				continue;
+			}
+			$hours = TimetableGeneratorService::weeklyHoursFromCourse($row);
+			if ($hours > $target) {
+				$target = $hours;
+			}
+			$classId = (int) ($row['class_id'] ?? 0);
+			$courseId = (int) ($row['course_id'] ?? 0);
+			if ($classId > 0 && $courseId > 0) {
+				$members[$classId . ':' . $courseId] = true;
+			}
+		}
+		if ($target <= 0 || $members === []) {
+			return false;
+		}
+		$newClock = $day . '|' . $this->slotClockLabel($slotId);
+		$clocks = [];
+		foreach ($scheduled as $row) {
+			$member = (int) ($row['class_id'] ?? 0) . ':' . (int) ($row['course_id'] ?? 0);
+			if (!isset($members[$member])) {
+				continue;
+			}
+			$clock = $this->entryClockKey($row);
+			if ($clock !== '-1||') {
+				$clocks[$clock] = true;
+			}
+		}
+		if (isset($clocks[$newClock])) {
+			return false;
+		}
+		return count($clocks) >= $target;
+	}
+
+	private function slotClockLabel(int $slotId): string
+	{
+		if ($slotId <= 0) {
+			return '|';
+		}
+		if (!isset($this->slotClockCache[$slotId])) {
+			$row = \Config\Database::connect()->table('timetable_slots')
+				->select('start_time, end_time')
+				->where('id', $slotId)
+				->get(1)->getRowArray();
+			$this->slotClockCache[$slotId] = substr((string) ($row['start_time'] ?? ''), 0, 5)
+				. '|' . substr((string) ($row['end_time'] ?? ''), 0, 5);
+		}
+		return $this->slotClockCache[$slotId];
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $scheduled
+	 * @return list<array<string,mixed>>
+	 */
+	private function rememberPlacedClock(array $scheduled, array $entry, int $day, int $slotId): array
+	{
+		$clock = $this->slotClockLabel($slotId);
+		$parts = explode('|', $clock);
+		$scheduled[] = [
+			'class_id' => (int) ($entry['class_id'] ?? 0),
+			'course_id' => (int) ($entry['course_id'] ?? 0),
+			'day_of_week' => $day,
+			'start_time' => $parts[0] ?? '',
+			'end_time' => $parts[1] ?? '',
+		];
+		return $scheduled;
+	}
+
+	/**
 	 * @param list<array<string,mixed>> $assignments
 	 * @return array{scheduled:int,staging:int,remaining:int}
 	 */
@@ -316,6 +656,9 @@ class TimetableStagingService
 			if ($found === null) {
 				continue;
 			}
+			if ($this->placingCombinedWouldExceed($entry, (int) $found['day'], (int) $found['slot_id'], $scheduled)) {
+				continue;
+			}
 
 			$db->table('timetable_entries')->where('id', (int) $entry['id'])->update([
 				'day_of_week' => $found['day'],
@@ -324,6 +667,7 @@ class TimetableStagingService
 			$entry['day_of_week'] = $found['day'];
 			$entry['slot_id'] = $found['slot_id'];
 			$this->addScheduledEntry($state, $entry);
+			$scheduled = $this->rememberPlacedClock($scheduled, $entry, (int) $found['day'], (int) $found['slot_id']);
 			$scheduledByKey[$key] = $have + 1;
 			$placed++;
 		}
@@ -892,6 +1236,9 @@ class TimetableStagingService
 			if ($found === null) {
 				continue;
 			}
+			if ($this->placingCombinedWouldExceed($entry, (int) $found['day'], (int) $found['slot_id'], $scheduled)) {
+				continue;
+			}
 			$lock = $this->secondaryCriteria !== null && (
 				$this->secondaryCriteria->isCombinedAssignment($meta)
 				|| $this->secondaryCriteria->requiresAfterLessons($meta)
@@ -908,6 +1255,7 @@ class TimetableStagingService
 			$entry['day_of_week'] = $found['day'];
 			$entry['slot_id'] = $found['slot_id'];
 			$this->addScheduledEntry($state, $entry);
+			$scheduled = $this->rememberPlacedClock($scheduled, $entry, (int) $found['day'], (int) $found['slot_id']);
 			$scheduledByKey[$key] = $have + 1;
 			$placed++;
 		}

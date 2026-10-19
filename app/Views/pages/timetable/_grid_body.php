@@ -93,6 +93,8 @@ foreach ($grid ?? [] as $scanRow) {
 				Same total as Manage Course. Each class keeps its own periods on this timetable.
 				<?php if ($periodsMatch): ?>
 					<span class="tt-period-match">All <?= $teachingAssigned ?> teaching periods are on this timetable.</span>
+				<?php elseif ($onTimetable > $teachingAssigned): ?>
+					<span class="tt-period-short"><?= $onTimetable ?> on this timetable, <?= $onTimetable - $teachingAssigned ?> above Manage Course. Extra periods are not kept.</span>
 				<?php else: ?>
 					<span class="tt-period-short"><?= $onTimetable ?> on this timetable, <?= $teachingAssigned - $onTimetable ?> still do not fit without two teachers in one class.</span>
 				<?php endif; ?>

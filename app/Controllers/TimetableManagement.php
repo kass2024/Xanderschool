@@ -1386,6 +1386,7 @@ class TimetableManagement extends Home
 			]);
 		}
 
+		$stagingSvc->capPeriodsToManageCourse($scheduleId, $schoolId);
 		$this->lockAllPlacedEntries($scheduleId, $phase === 'all' ? [] : $classIdList);
 
 		$collisionReport = $this->buildCollisionReport(
@@ -2670,6 +2671,11 @@ class TimetableManagement extends Home
 			} catch (\Throwable $e) {
 				log_message('error', 'Timetable collision park skipped: {msg}', ['msg' => $e->getMessage()]);
 			}
+			try {
+				(new TimetableStagingService())->capPeriodsToManageCourse((int) $schedule['id'], $schoolId);
+			} catch (\Throwable $e) {
+				log_message('error', 'Timetable period cap skipped: {msg}', ['msg' => $e->getMessage()]);
+			}
 			$builder = $db->table('timetable_entries te')
 				->select('te.*, c.title AS course_title, c.code AS course_code,
 					cl.title AS class_title, cl.level AS class_level_id,
@@ -3034,7 +3040,12 @@ class TimetableManagement extends Home
 		}
 
 		$data['period_counter'] = null;
-		if ($mode === 'teacher' && $entityId > 0) {
+		if ($mode === 'teacher' && $entityId > 0 && $schedule) {
+			try {
+				(new TimetableStagingService())->capPeriodsToManageCourse((int) $schedule['id'], $schoolId);
+			} catch (\Throwable $e) {
+				log_message('error', 'Timetable period cap skipped: {msg}', ['msg' => $e->getMessage()]);
+			}
 			$data['period_counter'] = \App\Libraries\StaffTeachingLoad::counterForTeacher(
 				$schoolId,
 				$year,
