@@ -265,6 +265,9 @@ class SecondaryTimetableCriteria
 	 */
 	public function morningScoreDelta(array $row, ?string $slotStart, ?string $slotEnd): int
 	{
+		if ($this->isRwirangiraRow($row) && $this->isPlainMathematics($row)) {
+			return $this->isMorningSlotByTimes($slotStart, $slotEnd) ? -900 : 1600;
+		}
 		if (!$this->prefersMorning($row)) {
 			return 0;
 		}
@@ -732,9 +735,19 @@ class SecondaryTimetableCriteria
 			return $start >= (7 * 60) && $end <= (12 * 60);
 		}
 		if ($level === 'S1') {
+			// RWIRANGIRA's S1 mathematics uses the whole morning, not only after 10:00.
+			if ($this->isRwirangiraRow($row)) {
+				return true;
+			}
 			return $start >= (10 * 60);
 		}
 		return true;
+	}
+
+	private function isRwirangiraRow(array $row): bool
+	{
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
+		return $teacher !== '' && strpos($teacher, 'rwirangira') !== false;
 	}
 
 	private function isPlainMathematics(array $row): bool
@@ -1452,6 +1465,7 @@ class SecondaryTimetableCriteria
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
 			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00. S4 ST1 and ST2 Mathematics stay inside 07:00–12:00. S1 Mathematics is after break or after lunch.'],
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Varlette, Marguerite and Linea teach S4, S5 and S6 ANP only inside the times listed under Windows.'],
+			['group' => 'Morning', 'title' => 'RWIRANGIRA JEAN CLAUDE', 'detail' => 'Mathematics, including S1, fills 07:00–12:00 first. Keep those morning periods continuous. A lesson stays after 12:00 only when every morning cell is already taken or the other course cannot move.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Teachers not named in this document use normal placement and fill from morning periods first.'],
 			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Farming and Library and Clubs also combine when the teacher is the same (each activity keeps its own clock). Different academic subjects or different teachers are never combined.'],
