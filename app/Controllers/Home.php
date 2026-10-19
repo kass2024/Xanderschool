@@ -27016,19 +27016,34 @@ public function assign_card()
 			return $v !== null && $v !== '';
 		}));
 
-		$totalExpected = 0;
-		$totalSchoolExpected = 0;
-		$totalExtraExpected = 0;
-		$totalPaid = 0;
-		$fullPaid = 0;
-		$partialPaid = 0;
-		$zeroPaid = 0;
 		if ($reportType === FeesReportHelper::TYPE_INCOME_SUMMARY) {
 			$incomeGrand = FeesReportHelper::summarizeIncomeRows($incomeSummary);
 			$totalExpected = (float) ($incomeGrand['total_due'] ?? 0);
 			$totalPaid = (float) ($incomeGrand['total_paid'] ?? 0);
 			$totalRemain = (float) ($incomeGrand['balance'] ?? 0);
+			$data['stats'] = [
+				'total_students' => count($students),
+				'total_expected' => $totalExpected,
+				'total_school_expected' => 0,
+				'total_extra_expected' => 0,
+				'total_paid' => $totalPaid,
+				'total_remain' => $totalRemain,
+				'full_paid' => 0,
+				'partial_paid' => 0,
+				'zero_paid' => 0,
+				'collection_rate' => $totalExpected > 0 ? min(100, round(max(0, $totalPaid / $totalExpected) * 100, 1)) : 0,
+			];
+		} elseif ($reportType === FeesReportHelper::TYPE_DETAILED && !empty($data['feeSections'])) {
+			// One ledger: KPI cards = sum of fee folds (school / extra / collected / outstanding).
+			$data['stats'] = FeesReportHelper::statsFromFeeSections($data['feeSections'], $students);
 		} else {
+			$totalExpected = 0;
+			$totalSchoolExpected = 0;
+			$totalExtraExpected = 0;
+			$totalPaid = 0;
+			$fullPaid = 0;
+			$partialPaid = 0;
+			$zeroPaid = 0;
 			foreach ($students as $row) {
 				$amt = (float) ($row['amount'] ?? 0);
 				$schoolAmt = max(0, (float) ($row['school_amount'] ?? 0));
@@ -27050,19 +27065,19 @@ public function assign_card()
 				}
 			}
 			$totalRemain = max(0, $totalExpected - $totalPaid);
+			$data['stats'] = [
+				'total_students' => count($students),
+				'total_expected' => $totalExpected,
+				'total_school_expected' => $totalSchoolExpected,
+				'total_extra_expected' => $totalExtraExpected,
+				'total_paid' => $totalPaid,
+				'total_remain' => $totalRemain,
+				'full_paid' => $fullPaid,
+				'partial_paid' => $partialPaid,
+				'zero_paid' => $zeroPaid,
+				'collection_rate' => $totalExpected > 0 ? min(100, round(max(0, $totalPaid / $totalExpected) * 100, 1)) : 0,
+			];
 		}
-		$data['stats'] = [
-			'total_students' => count($students),
-			'total_expected' => $totalExpected,
-			'total_school_expected' => $totalSchoolExpected,
-			'total_extra_expected' => $totalExtraExpected,
-			'total_paid' => $totalPaid,
-			'total_remain' => $totalRemain ?? max(0, $totalExpected - $totalPaid),
-			'full_paid' => $fullPaid,
-			'partial_paid' => $partialPaid,
-			'zero_paid' => $zeroPaid,
-			'collection_rate' => $totalExpected > 0 ? min(100, round(max(0, $totalPaid / $totalExpected) * 100, 1)) : 0,
-		];
 
 		$data['selectedYearTitle'] = '';
 		foreach ($data['years'] as $yr) {

@@ -359,16 +359,18 @@ class FeesReportHelper
 			->join("(select " . SchoolFeesModel::sqlModeSumSelect('sf') . ",sf.level,sf.department from school_fees sf where sf.term IN ($termsIn) and
 			sf.academic_year=$academic and sf.school_id = $schoolId and sf.id IN (
 				select MAX(sx.id) from school_fees sx
+				inner join classes cx on cx.id = $classId
 				where sx.school_id = $schoolId and sx.academic_year = $academic and sx.term IN ($termsIn)
 				and (
 					sx.class_id = $classId
 					OR (
 						(sx.class_id IS NULL OR sx.class_id = 0)
+						AND sx.level = cx.level
+						AND sx.department = cx.department
 						AND NOT EXISTS (
 							SELECT 1 FROM school_fees sy
 							WHERE sy.school_id = sx.school_id AND sy.academic_year = sx.academic_year
-							AND sy.term = sx.term AND sy.level = sx.level AND sy.department = sx.department
-							AND sy.class_id = $classId
+							AND sy.term = sx.term AND sy.class_id = $classId
 						)
 					)
 				)
@@ -939,10 +941,10 @@ class FeesReportHelper
 				foreach ($students as $student) {
 					$sid = (int) ($student['student_id'] ?? 0);
 					$mode = (int) ($student['studying_mode'] ?? 1);
+					$discount = (float) ($discountMap[$sid][$term] ?? 0);
 					$expected = isset($schoolByTerm[$term])
-						? SchoolFeesModel::expectedForMode($schoolByTerm[$term], $mode)
+						? SchoolFeesModel::expectedForStudent($schoolByTerm[$term], $mode, $discount)
 						: 0.0;
-					$expected = max(0, $expected + (float) ($discountMap[$sid][$term] ?? 0));
 					$paid = (float) ($schoolPaidMap[$sid][$term] ?? 0);
 					if ($expected <= 0 && $paid <= 0) {
 						continue;
@@ -1167,6 +1169,85 @@ class FeesReportHelper
 			'expected' => $norm['due'],
 			'paid' => $norm['paid'],
 			'balance' => $norm['balance'],
+		];
+	}
+
+	/**
+	 * KPI totals must match fee folds on the detailed report (one ledger).
+	 *
+	 * @param list<array<string,mixed>> $feeSections
+	 * @param list<array<string,mixed>> $students enrolled roster (fallback headcount)
+	 * @return array<string,float|int>
+	 */
+	public static function statsFromFeeSections(array $feeSections, array $students = []): array
+	{
+		$totalSchoolExpected = 0.0;
+		$totalExtraExpected = 0.0;
+		$totalPaid = 0.0;
+		$totalRemain = 0.0;
+		$perStudent = [];
+
+		foreach ($feeSections as $section) {
+			$kind = (string) ($section['kind'] ?? '');
+			$expected = max(0.0, (float) ($section['expected'] ?? 0));
+			$paid = max(0.0, (float) ($section['paid'] ?? 0));
+			$balance = max(0.0, (float) ($section['balance'] ?? 0));
+			if ($kind === 'school') {
+				$totalSchoolExpected += $expected;
+			} else {
+				$totalExtraExpected += $expected;
+			}
+			$totalPaid += $paid;
+			$totalRemain += $balance;
+
+			foreach (($section['rows'] ?? []) as $row) {
+				$sid = (int) ($row['student_id'] ?? 0);
+				if ($sid < 1) {
+					continue;
+				}
+				if (!isset($perStudent[$sid])) {
+					$perStudent[$sid] = ['expected' => 0.0, 'paid' => 0.0];
+				}
+				$perStudent[$sid]['expected'] += max(0.0, (float) ($row['expected'] ?? 0));
+				$perStudent[$sid]['paid'] += max(0.0, (float) ($row['paid'] ?? 0));
+			}
+		}
+
+		$totalExpected = $totalSchoolExpected + $totalExtraExpected;
+		$fullPaid = 0;
+		$partialPaid = 0;
+		$zeroPaid = 0;
+		foreach ($perStudent as $totals) {
+			$due = max(0.0, (float) $totals['expected']);
+			$paid = max(0.0, (float) $totals['paid']);
+			$norm = self::normalizeCollectionAmounts($due, $paid);
+			if ($norm['paid'] <= 0) {
+				$zeroPaid++;
+			} elseif ($norm['balance'] <= 0 && $due > 0) {
+				$fullPaid++;
+			} elseif ($norm['paid'] > 0) {
+				$partialPaid++;
+			}
+		}
+
+		$studentCount = count($perStudent);
+		if ($studentCount < 1 && $students !== []) {
+			$studentCount = count($students);
+		}
+
+		return [
+			'total_students' => $studentCount,
+			'total_expected' => $totalExpected,
+			'total_school_expected' => $totalSchoolExpected,
+			'total_extra_expected' => $totalExtraExpected,
+			'total_paid' => $totalPaid,
+			'total_remain' => $totalRemain,
+			'full_paid' => $fullPaid,
+			'partial_paid' => $partialPaid,
+			'zero_paid' => $zeroPaid,
+			'collection_rate' => $totalExpected > 0
+				? min(100, round(max(0, $totalPaid / $totalExpected) * 100, 1))
+				: 0,
 		];
 	}
 
