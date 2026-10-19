@@ -68,12 +68,21 @@ set -e
 cd /opt/xander-school/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app
 sleep 6
-docker exec xander_school_app php -r 'opcache_reset(); echo "opcache\\n";'
-docker exec xander_school_app php -r 'require "/var/www/html/vendor/autoload.php"; echo (Config\\MenuClearance::isChiefAccountantPost(28) ? "chief_ok\\n" : "chief_bad\\n"); echo (method_exists("Config\\\\MenuClearance","canViewFamilies") ? "families_ok\\n" : "families_bad\\n"); echo (method_exists("Config\\\\MenuClearance","withoutMarksMenus") ? "marks_ok\\n" : "marks_bad\\n");'
+docker exec xander_school_app php -r 'if (function_exists("opcache_reset")) {{ opcache_reset(); echo "opcache\\n"; }}'
+docker exec xander_school_app php -r 'require "/var/www/html/app/Config/MenuClearance.php"; echo (\\Config\\MenuClearance::isChiefAccountantPost(28) ? "chief_ok\\n" : "chief_bad\\n"); echo (method_exists("Config\\\\MenuClearance","canViewFamilies") ? "families_ok\\n" : "families_bad\\n"); echo (method_exists("Config\\\\MenuClearance","withoutMarksMenus") ? "marks_ok\\n" : "marks_bad\\n");'
 {verify}
-docker exec xander_school_app php -r 'define("FCPATH","/var/www/html/public/"); require "/var/www/html/app/Config/Paths.php"; $paths=new Config\\Paths(); chdir(FCPATH); require rtrim($paths->systemDirectory,"/ ")."/bootstrap.php"; (new App\\Models\\AttendanceAreaModel())->ensureSchema(); $f=Config\\Database::connect()->getFieldNames("attendance_areas"); echo (in_array("schedule_on",$f,true)?"schedule_on_ok\\n":"schedule_on_bad\\n"); echo (in_array("daily_start",$f,true)?"daily_start_ok\\n":"daily_start_bad\\n");'
-docker exec xander_school_app curl -sS -o /dev/null -w 'login:%{{http_code}}\\n' http://127.0.0.1/login
-docker exec xander_school_app curl -sS -o /dev/null -w 'reset:%{{http_code}}\\n' http://127.0.0.1/forget/reset
+docker exec xander_school_app php -r 'define("FCPATH","/var/www/html/public/"); require "/var/www/html/app/Config/Paths.php"; $paths=new Config\\Paths(); chdir(FCPATH); $app=require rtrim($paths->systemDirectory,"/ ")."/bootstrap.php"; (new App\\Models\\AttendanceAreaModel())->ensureSchema(); $f=Config\\Database::connect()->getFieldNames("attendance_areas"); echo (in_array("schedule_on",$f,true)?"schedule_on_ok\\n":"schedule_on_bad\\n"); echo (in_array("daily_start",$f,true)?"daily_start_ok\\n":"daily_start_bad\\n");'
+login=000
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  login=$(docker exec xander_school_app curl -sS -o /dev/null -w '%{{http_code}}' http://127.0.0.1/login || true)
+  echo login:$login
+  if [ "$login" = "200" ]; then break; fi
+  sleep 4
+done
+reset=$(docker exec xander_school_app curl -sS -o /dev/null -w '%{{http_code}}' http://127.0.0.1/forget/reset || true)
+echo reset:$reset
+test "$login" = "200"
+test "$reset" != "500"
 echo DONE
 """
     _, o, e = c.exec_command(cmd, timeout=240)
