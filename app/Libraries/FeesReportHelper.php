@@ -396,6 +396,9 @@ class FeesReportHelper
 			where fr.fees_type=1 and fr.status=1 and fr.amount > 1 and ex.type=1 and ex.term IN ($termsIn) and ex.academic_year=$academic and ex.school_id = $schoolId $extraTitleSql group by fr.student_id) extraPaidSingle", 'extraPaidSingle.student_id=students.id', 'LEFT')
 			->where('cr.year', $academic)
 			->where('cl.id', $classId)
+			// Dismissed / locked students (status not 1 or 2) never appear in fees reports.
+			->whereIn('students.status', [1, 2, '1', '2'])
+			->where('cr.status', 1)
 			->groupBy('students.id');
 	}
 

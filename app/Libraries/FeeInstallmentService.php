@@ -69,6 +69,8 @@ class FeeInstallmentService
 			LEFT JOIN school_fees sf ON sf.id = fr.fees_id AND fr.fees_type = 0
 			LEFT JOIN extra_fees ex ON ex.id = fr.fees_id AND fr.fees_type = 1
 			WHERE st.school_id = ?
+				AND st.status IN (1, 2)
+				AND cr.status = 1
 				AND fr.status = 1
 				AND fr.is_installment = 1
 				AND fr.promised_date IS NOT NULL
@@ -111,6 +113,7 @@ class FeeInstallmentService
 			concat(students.fname,\' \',students.lname) as student,students.ft_phone,students.mt_phone,students.gd_phone')
 			->join('students', 'students.id=fees_records.student_id')
 			->where('students.school_id', $schoolId)
+			->whereIn('students.status', [1, 2, '1', '2'])
 			->where('fees_records.status', 1)
 			->where('fees_records.is_installment', 1)
 			->where('fees_records.promised_date <=', $today)

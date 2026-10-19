@@ -1250,7 +1250,9 @@ public function testEmail()
 				->join("fees_records fr", "fr.fees_id=sf.id and fr.student_id=students.id and fr.fees_type=0 and fr.status=1", "LEFT ")
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
-				->where("sf.school_id", $school_id);
+				->where("sf.school_id", $school_id)
+				->whereIn('students.status', [1, 2, '1', '2'])
+				->where('cr.status', 1);
 		$this->applyRegularClassFilter($schoolfeesQ);
 		$data['schoolfees'] = $schoolfeesQ->groupBy("students.id")->get()->getResultArray();
 		$extrafeesQ = $studentMdl->select("students.id,ex.amount as expected,sum(fr.amount) as paid")
@@ -1261,7 +1263,9 @@ public function testEmail()
 				->join("fees_records fr", "fr.fees_id=ex.id and fr.student_id=students.id and fr.fees_type=1 and fr.status=1", "LEFT ")
 //			->having("ex.term",$this->data['term'])
 				->where("ex.academic_year", $this->data['academic_year'])
-				->where("ex.school_id", $school_id);
+				->where("ex.school_id", $school_id)
+				->whereIn('students.status', [1, 2, '1', '2'])
+				->where('cr.status', 1);
 		$this->applyRegularClassFilter($extrafeesQ);
 		$data['extrafees'] = $extrafeesQ->groupBy("students.id")->get()->getResultArray();
 		$data['scl_due_dates'] = $studentMdl->select("students.id,(sf.amount+coalesce(fd.amount,0)) as expected,sum(fr.amount) as paid
@@ -1284,7 +1288,9 @@ public function testEmail()
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
 				->where("sf.school_id", $school_id)
-				->where("fr.due_date <=", date("Y-m-d"));
+				->where("fr.due_date <=", date("Y-m-d"))
+				->whereIn('students.status', [1, 2, '1', '2'])
+				->where('cr.status', 1);
 		$this->applyRegularClassFilter($studentMdl);
 		$data['scl_due_dates'] = $studentMdl
 				->groupBy("students.id")
@@ -1311,7 +1317,9 @@ public function testEmail()
 				->where("ex.term", $this->data['term'])
 				->where("ex.academic_year", $this->data['academic_year'])
 				->where("ex.school_id", $school_id)
-				->where("fr.due_date <=", date("Y-m-d"));
+				->where("fr.due_date <=", date("Y-m-d"))
+				->whereIn('students.status', [1, 2, '1', '2'])
+				->where('cr.status', 1);
 		$this->applyRegularClassFilter($studentMdl);
 		$data['ext_due_dates'] = $studentMdl
 				->groupBy("students.id")
@@ -26637,6 +26645,8 @@ public function assign_card()
 				->where("sf.term", $this->data['term'])
 				->where("sf.academic_year", $this->data['academic_year'])
 				->where("sf.school_id", $school_id)
+				->whereIn('students.status', [1, 2, '1', '2'])
+				->where('cr.status', 1)
 				->groupBy("students.id")
 				->get()->getResultArray();
 		$data['content'] = view("pages/PaymentReportView", $data);
@@ -26686,6 +26696,8 @@ public function assign_card()
 				->where("ex.term", $this->data['term'])
 				->where("ex.academic_year", $this->data['academic_year'])
 				->where("ex.school_id", $school_id)
+				->whereIn('students.status', [1, 2, '1', '2'])
+				->where('cr.status', 1)
 				->groupBy("students.id")
 				->get()->getResultArray();
 		$data['content'] = view("pages/ExtraPaymentReportView", $data);
