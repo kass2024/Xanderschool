@@ -12,7 +12,7 @@ class AttendanceAreaModel extends Model
 	protected $table = 'attendance_areas';
 	protected $primaryKey = 'id';
 	protected $returnType = 'array';
-	protected $allowedFields = ['school_id', 'name', 'sort_order', 'active'];
+	protected $allowedFields = ['school_id', 'name', 'sort_order', 'active', 'schedule_on', 'daily_start'];
 	protected $useTimestamps = true;
 
 	/** @var bool */
@@ -38,6 +38,23 @@ class AttendanceAreaModel extends Model
 			KEY `idx_aa_school` (`school_id`, `active`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+		if ($db->tableExists('attendance_areas')) {
+			if (!$db->fieldExists('schedule_on', 'attendance_areas')) {
+				try {
+					$db->query("ALTER TABLE `attendance_areas` ADD COLUMN `schedule_on` TINYINT(1) NOT NULL DEFAULT 0 AFTER `active`");
+				} catch (\Throwable $e) {
+					// column may exist
+				}
+			}
+			if (!$db->fieldExists('daily_start', 'attendance_areas')) {
+				try {
+					$db->query("ALTER TABLE `attendance_areas` ADD COLUMN `daily_start` CHAR(5) NULL DEFAULT NULL AFTER `schedule_on`");
+				} catch (\Throwable $e) {
+					// column may exist
+				}
+			}
+		}
+
 		if ($db->tableExists('attendance_records')) {
 			$fields = $db->getFieldNames('attendance_records');
 			if (!in_array('area_id', $fields, true)) {
@@ -60,6 +77,71 @@ class AttendanceAreaModel extends Model
 		self::$schemaReady = true;
 	}
 
+	/**
+	 * HH:MM, or empty when the value is not a clock time.
+	 */
+	public static function normalizeDailyStart(string $raw): string
+	{
+		$raw = trim($raw);
+		if (!preg_match('/^(\d{1,2}):(\d{2})/', $raw, $m)) {
+			return '';
+		}
+		$hour = (int) $m[1];
+		$minute = (int) $m[2];
+		if ($hour > 23 || $minute > 59) {
+			return '';
+		}
+		return sprintf('%02d:%02d', $hour, $minute);
+	}
+
+	/**
+	 * @param array<string,mixed> $area
+	 * @return array{schedule_on:int,daily_start:string}
+	 */
+	public static function scheduleState(array $area): array
+	{
+		$start = self::normalizeDailyStart((string) ($area['daily_start'] ?? ''));
+		$on = (int) ($area['schedule_on'] ?? 0) === 1 && $start !== '';
+		return [
+			'schedule_on' => $on ? 1 : 0,
+			'daily_start' => $start,
+		];
+	}
+
+	/**
+	 * Start clock when the switch is on and today's time has not reached it yet.
+	 *
+	 * @param array<string,mixed> $area
+	 */
+	public static function closedUntil(array $area, int $now = 0): string
+	{
+		$state = self::scheduleState($area);
+		if ($state['schedule_on'] !== 1) {
+			return '';
+		}
+		$now = $now > 0 ? $now : time();
+		if (date('H:i', $now) < $state['daily_start']) {
+			return $state['daily_start'];
+		}
+		return '';
+	}
+
+	/**
+	 * @param array<string,mixed> $area
+	 */
+	public static function notStartedMessage(array $area, int $now = 0): string
+	{
+		$start = self::closedUntil($area, $now);
+		if ($start === '') {
+			return '';
+		}
+		$name = trim((string) ($area['name'] ?? ''));
+		if ($name === '') {
+			$name = 'This location';
+		}
+		return $name . ' starts at ' . $start;
+	}
+
 	public function listAreas(int $schoolId, bool $activeOnly = true): array
 	{
 		$this->ensureSchema();
@@ -69,6 +151,39 @@ class AttendanceAreaModel extends Model
 			$b->where('active', 1);
 		}
 		return $b->orderBy('sort_order', 'ASC')->orderBy('name', 'ASC')->findAll();
+	}
+
+	/**
+	 * @return array{ok:bool,error?:string,area?:array{id:int,name:string,schedule_on:int,daily_start:string}}
+	 */
+	public function saveSchedule(int $schoolId, int $id, int $on, string $start): array
+	{
+		$this->ensureSchema();
+		$row = $this->where('school_id', $schoolId)->where('id', $id)->first();
+		if (!$row || (int) ($row['active'] ?? 0) !== 1) {
+			return ['ok' => false, 'error' => 'Location not found.'];
+		}
+		$start = self::normalizeDailyStart($start);
+		$on = $on === 1 ? 1 : 0;
+		if ($on === 1 && $start === '') {
+			return ['ok' => false, 'error' => 'Choose the daily start time.'];
+		}
+		$data = ['schedule_on' => $on];
+		if ($start !== '') {
+			$data['daily_start'] = $start;
+		}
+		$this->update($id, $data);
+		$saved = $this->find($id) ?: $row;
+		$state = self::scheduleState(array_merge($saved, $data));
+		return [
+			'ok' => true,
+			'area' => [
+				'id' => $id,
+				'name' => (string) ($saved['name'] ?? $row['name'] ?? ''),
+				'schedule_on' => $state['schedule_on'],
+				'daily_start' => $state['daily_start'] !== '' ? $state['daily_start'] : $start,
+			],
+		];
 	}
 
 	public function getActiveForSchool(int $schoolId, int $areaId): ?array
@@ -263,11 +378,14 @@ class AttendanceAreaModel extends Model
 		$out = [];
 		foreach ($areas as $a) {
 			$id = (int) $a['id'];
+			$schedule = self::scheduleState($a);
 			$out[] = [
 				'id' => $id,
 				'name' => (string) ($a['name'] ?? ''),
 				'inside' => $counts[$id]['inside'] ?? 0,
 				'checked_in' => $counts[$id]['checked_in'] ?? 0,
+				'schedule_on' => $schedule['schedule_on'],
+				'daily_start' => $schedule['daily_start'],
 			];
 		}
 		return $out;

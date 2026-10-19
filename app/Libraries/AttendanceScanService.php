@@ -113,10 +113,7 @@ class AttendanceScanService
 		$areaMdl = new AttendanceAreaModel();
 		$locations = [];
 		foreach ($areaMdl->listAreas($schoolId, true) as $area) {
-			$locations[] = [
-				'id' => (int) $area['id'],
-				'name' => (string) ($area['name'] ?? ''),
-			];
+			$locations[] = self::locationPayload($area);
 		}
 
 		return [
@@ -1069,12 +1066,36 @@ class AttendanceScanService
 	}
 
 	/**
+	 * @param array<string,mixed> $area
+	 * @return array{id:int,name:string,schedule_on:int,daily_start:string}
+	 */
+	public static function locationPayload(array $area): array
+	{
+		$schedule = AttendanceAreaModel::scheduleState($area);
+		return [
+			'id' => (int) ($area['id'] ?? 0),
+			'name' => (string) ($area['name'] ?? ''),
+			'schedule_on' => $schedule['schedule_on'],
+			'daily_start' => $schedule['daily_start'],
+		];
+	}
+
+	/**
 	 * Card tap: students only. Staff must clock by face.
 	 *
 	 * @return array<string,mixed>
 	 */
 	public static function scanCard(int $schoolId, string $cardRaw, int $areaId, int $eventTime = 0): array
 	{
+		if ($areaId > 0) {
+			$area = self::resolveArea($schoolId, $areaId);
+			if ($area) {
+				$wait = AttendanceAreaModel::notStartedMessage($area, $eventTime);
+				if ($wait !== '') {
+					return ['success' => 0, 'message' => $wait];
+				}
+			}
+		}
 		$owner = CardRegistry::lookup($schoolId, $cardRaw);
 		if (!$owner) {
 			return ['success' => 0, 'message' => 'Card not found'];
@@ -1091,6 +1112,17 @@ class AttendanceScanService
 			);
 		}
 		if ($owner['type'] === 'student') {
+			if (!empty($owner['disabled'])) {
+				return [
+					'success' => 0,
+					'disabled' => 1,
+					'message' => 'This student card is disabled.',
+					'status' => 'DISABLED',
+					'student' => [
+						'name' => (string) ($owner['name'] ?? ''),
+					],
+				];
+			}
 			$ownerSchoolId = (int) ($owner['school_id'] ?? $schoolId);
 			return self::scanStudent($ownerSchoolId, (int) $owner['id'], $areaId, $eventTime);
 		}
@@ -1113,6 +1145,10 @@ class AttendanceScanService
 			return ['success' => 0, 'message' => 'Invalid attendance location'];
 		}
 		$areaName = (string) ($area['name'] ?? '');
+		$notStarted = AttendanceAreaModel::notStartedMessage($area, $eventTime);
+		if ($notStarted !== '') {
+			return ['success' => 0, 'message' => $notStarted];
+		}
 
 		$db = \Config\Database::connect();
 		$student = $db->table('students')
@@ -1311,6 +1347,10 @@ class AttendanceScanService
 			return ['success' => 0, 'message' => 'Invalid attendance location'];
 		}
 		$areaName = (string) ($area['name'] ?? '');
+		$notStarted = AttendanceAreaModel::notStartedMessage($area, $eventTime);
+		if ($notStarted !== '') {
+			return ['success' => 0, 'message' => $notStarted];
+		}
 
 		$db = \Config\Database::connect();
 		$student = $db->table('students')

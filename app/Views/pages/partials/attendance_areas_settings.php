@@ -6,12 +6,37 @@ $areas = $attendance_areas ?? [];
 	.aa-intro { margin-bottom: 1rem; }
 	.aa-add-form { display: flex; gap: .5rem; align-items: stretch; max-width: 520px; margin-bottom: 1rem; }
 	.aa-add-form input { flex: 1; }
-	.aa-list { max-width: 560px; }
+	.aa-list { max-width: 720px; }
 	.aa-item {
 		display: flex; align-items: center; justify-content: space-between; gap: .75rem;
 		padding: .65rem .85rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: .45rem;
 	}
 	.aa-item strong { color: #0f172a; }
+	.aa-name { flex: 1; min-width: 110px; }
+	.aa-schedule { display: flex; align-items: center; gap: .55rem; flex-shrink: 0; }
+	.aa-switch {
+		display: inline-flex; align-items: center; gap: .4rem; margin: 0; cursor: pointer;
+		user-select: none; font-size: .78rem; font-weight: 650; color: #64748b;
+	}
+	.aa-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+	.aa-knob {
+		width: 40px; height: 22px; border-radius: 999px; background: #cbd5e1; position: relative;
+		transition: background .2s ease; flex-shrink: 0;
+	}
+	.aa-knob::after {
+		content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+		border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, .25);
+		transition: transform .2s ease;
+	}
+	.aa-switch input:checked + .aa-knob { background: #16a34a; }
+	.aa-switch input:checked + .aa-knob::after { transform: translateX(18px); }
+	.aa-switch input:focus-visible + .aa-knob { box-shadow: 0 0 0 3px rgba(22, 163, 74, .28); }
+	.aa-switch.is-on { color: #166534; }
+	.aa-time {
+		width: 118px; height: 34px; border: 1px solid #cbd5e1; border-radius: 8px;
+		padding: 0 .4rem; font-size: .9rem; color: #0f172a; background: #fff;
+	}
+	.aa-time[hidden] { display: none !important; }
 	.aa-empty { color: #64748b; padding: .5rem 0; }
 </style>
 
@@ -20,6 +45,8 @@ $areas = $attendance_areas ?? [];
 		Define locations used on <strong>Student IN/OUT Attendance</strong> (NFC card scanner), for example
 		Library, Cafeteria, School gate. Staff must choose a location before scanning.
 		The monthly in/out report uses the same layout for every location — pick the location to filter.
+		Turn on <strong>Daily start</strong> and set the clock time that location opens every day.
+		Before that time, card taps at the location are not accepted.
 	</p>
 
 	<form id="aaAddForm" class="aa-add-form">
@@ -31,9 +58,22 @@ $areas = $attendance_areas ?? [];
 		<?php if (empty($areas)) : ?>
 			<p class="aa-empty">No locations yet. Add Library, Cafeteria, or any location above.</p>
 		<?php else : ?>
-			<?php foreach ($areas as $a) : ?>
+			<?php foreach ($areas as $a) :
+				$aaState = \App\Models\AttendanceAreaModel::scheduleState($a);
+				$aaOn = (int) $aaState['schedule_on'] === 1;
+				$aaStart = (string) ($a['daily_start'] ?? '');
+				$aaStart = \App\Models\AttendanceAreaModel::normalizeDailyStart($aaStart);
+				?>
 				<div class="aa-item" data-id="<?= (int) $a['id']; ?>">
-					<strong><?= esc($a['name']); ?></strong>
+					<strong class="aa-name"><?= esc($a['name']); ?></strong>
+					<div class="aa-schedule">
+						<label class="aa-switch<?= $aaOn ? ' is-on' : ''; ?>">
+							<input type="checkbox" class="aa-on" data-id="<?= (int) $a['id']; ?>"<?= $aaOn ? ' checked' : ''; ?>>
+							<span class="aa-knob" aria-hidden="true"></span>
+							<span>Daily start</span>
+						</label>
+						<input type="time" class="aa-time" data-id="<?= (int) $a['id']; ?>" value="<?= esc($aaStart, 'attr'); ?>" aria-label="Daily start time for <?= esc($a['name'], 'attr'); ?>"<?= $aaOn ? '' : ' hidden'; ?>>
+					</div>
 					<button type="button" class="btn btn-link btn-sm text-danger aa-del" data-id="<?= (int) $a['id']; ?>" title="Remove">
 						<i class="fa fa-trash"></i>
 					</button>
@@ -376,8 +416,31 @@ $(function () {
 <script>
 $(function () {
 	let areas = <?= json_encode(array_map(static function ($a) {
-		return ['id' => (int) $a['id'], 'name' => $a['name']];
+		$start = \App\Models\AttendanceAreaModel::normalizeDailyStart((string) ($a['daily_start'] ?? ''));
+		$on = (int) ($a['schedule_on'] ?? 0) === 1 && $start !== '';
+		return [
+			'id' => (int) $a['id'],
+			'name' => $a['name'],
+			'schedule_on' => $on ? 1 : 0,
+			'daily_start' => $start,
+		];
 	}, $areas), JSON_UNESCAPED_UNICODE); ?>;
+
+	function aaEsc(text) {
+		return $('<span>').text(text == null ? '' : String(text)).html();
+	}
+
+	function aaAttr(text) {
+		return aaEsc(text).replace(/"/g, '&quot;');
+	}
+
+	function areaById(id) {
+		id = parseInt(id, 10);
+		for (let i = 0; i < areas.length; i++) {
+			if (areas[i].id === id) return areas[i];
+		}
+		return null;
+	}
 
 	function renderList() {
 		const $el = $('#aaList');
@@ -387,11 +450,41 @@ $(function () {
 		}
 		let html = '';
 		areas.forEach(function (a) {
+			const on = parseInt(a.schedule_on, 10) === 1 && !!a.daily_start;
 			html += '<div class="aa-item" data-id="' + a.id + '">' +
-				'<strong>' + $('<span>').text(a.name).html() + '</strong>' +
+				'<strong class="aa-name">' + aaEsc(a.name) + '</strong>' +
+				'<div class="aa-schedule">' +
+				'<label class="aa-switch' + (on ? ' is-on' : '') + '">' +
+				'<input type="checkbox" class="aa-on" data-id="' + a.id + '"' + (on ? ' checked' : '') + '>' +
+				'<span class="aa-knob" aria-hidden="true"></span><span>Daily start</span></label>' +
+				'<input type="time" class="aa-time" data-id="' + a.id + '" value="' + aaAttr(a.daily_start || '') + '" aria-label="Daily start time for ' + aaAttr(a.name) + '"' + (on ? '' : ' hidden') + '>' +
+				'</div>' +
 				'<button type="button" class="btn btn-link btn-sm text-danger aa-del" data-id="' + a.id + '"><i class="fa fa-trash"></i></button></div>';
 		});
 		$el.html(html);
+	}
+
+	function saveSchedule(area, revert) {
+		$.post('<?= base_url('manipulate_attendance_area'); ?>', {
+			action: 'schedule',
+			id: area.id,
+			schedule_on: area.schedule_on ? 1 : 0,
+			daily_start: area.daily_start || ''
+		}, function (res) {
+			if (res && res.success && res.area) {
+				area.schedule_on = res.area.schedule_on ? 1 : 0;
+				area.daily_start = res.area.daily_start || area.daily_start || '';
+				if (window.toastada) toastada.success(res.success);
+				return;
+			}
+			if (typeof revert === 'function') revert();
+			renderList();
+			if (window.toastada) toastada.error((res && res.error) || 'Could not save the start time.');
+		}, 'json').fail(function () {
+			if (typeof revert === 'function') revert();
+			renderList();
+			if (window.toastada) toastada.error('Could not save the start time.');
+		});
 	}
 
 	$('#aaAddForm').on('submit', function (e) {
@@ -408,6 +501,57 @@ $(function () {
 				toastada.error((res && res.error) || 'Could not add location.');
 			}
 		}, 'json');
+	});
+
+	$(document).on('change', '.aa-on', function () {
+		const area = areaById($(this).data('id'));
+		if (!area) return;
+		const on = $(this).is(':checked');
+		const $item = $(this).closest('.aa-item');
+		const $time = $item.find('.aa-time');
+		const previousOn = area.schedule_on ? 1 : 0;
+		$item.find('.aa-switch').toggleClass('is-on', on);
+		if (on) {
+			$time.removeAttr('hidden');
+			if (!$time.val()) {
+				$time.trigger('focus');
+				return;
+			}
+			area.schedule_on = 1;
+			area.daily_start = $time.val();
+			saveSchedule(area, function () {
+				area.schedule_on = previousOn;
+			});
+			return;
+		}
+		$time.attr('hidden', 'hidden');
+		area.schedule_on = 0;
+		saveSchedule(area, function () {
+			area.schedule_on = previousOn;
+		});
+	});
+
+	$(document).on('change', '.aa-time', function () {
+		const area = areaById($(this).data('id'));
+		if (!area) return;
+		const value = ($(this).val() || '').trim();
+		const $item = $(this).closest('.aa-item');
+		const previousStart = area.daily_start || '';
+		const previousOn = area.schedule_on ? 1 : 0;
+		if (!value) {
+			if ($item.find('.aa-on').is(':checked') && window.toastada) {
+				toastada.error('Choose the daily start time.');
+			}
+			return;
+		}
+		area.daily_start = value;
+		area.schedule_on = 1;
+		$item.find('.aa-on').prop('checked', true);
+		$item.find('.aa-switch').addClass('is-on');
+		saveSchedule(area, function () {
+			area.daily_start = previousStart;
+			area.schedule_on = previousOn;
+		});
 	});
 
 	$(document).on('click', '.aa-del', function () {

@@ -328,6 +328,12 @@ body {
 }
 
 .area-tile .aname { display: block; font-weight: 800; font-size: 1.02rem; color: var(--text); }
+.area-tile .astart { display: none; margin-top: 6px; color: #b45309; font-size: .78rem; font-weight: 700; }
+.area-tile.is-waiting { cursor: not-allowed; opacity: .72; background: #f8fafc; }
+.area-tile.is-waiting:hover, .area-tile.is-waiting:focus {
+	transform: none; box-shadow: none; border-color: var(--line);
+}
+.area-tile.is-waiting .astart { display: block; }
 .area-tile .astats { display: flex; gap: 10px; margin-top: 10px; color: var(--muted); font-size: .78rem; font-weight: 650; }
 .area-tile .astats b { color: var(--brand); font-size: 1rem; }
 
@@ -392,11 +398,19 @@ $fallbackPhoto = profile_photo_url(null);
 			</p>
 		<?php else : ?>
 			<div class="area-grid" id="areaGrid">
-				<?php foreach ($areas as $area) : ?>
+				<?php foreach ($areas as $area) :
+					$areaStart = (string) ($area['daily_start'] ?? '');
+					$areaScheduled = (int) ($area['schedule_on'] ?? 0) === 1 && $areaStart !== '';
+					?>
 					<button type="button" class="area-tile"
 						data-id="<?= (int) $area['id']; ?>"
-						data-name="<?= esc($area['name'], 'attr'); ?>">
+						data-name="<?= esc($area['name'], 'attr'); ?>"
+						data-scheduled="<?= $areaScheduled ? '1' : '0'; ?>"
+						data-start="<?= esc($areaStart, 'attr'); ?>">
 						<span class="aname"><?= esc($area['name']); ?></span>
+						<?php if ($areaScheduled) : ?>
+							<span class="astart">Starts daily at <?= esc($areaStart); ?></span>
+						<?php endif; ?>
 						<span class="astats">
 							<span><b><?= (int) ($area['inside'] ?? 0); ?></b> inside</span>
 							<span><b><?= (int) ($area['checked_in'] ?? 0); ?></b> in today</span>
@@ -601,8 +615,36 @@ document.addEventListener("DOMContentLoaded", function () {
 		readyLabel.textContent = "Select a location first";
 	}
 
+	function minutesNow() {
+		const d = new Date();
+		return d.getHours() * 60 + d.getMinutes();
+	}
+
+	function startMinutes(hhmm) {
+		const parts = String(hhmm || "").split(":");
+		if (parts.length < 2) return -1;
+		const h = parseInt(parts[0], 10);
+		const m = parseInt(parts[1], 10);
+		if (isNaN(h) || isNaN(m)) return -1;
+		return h * 60 + m;
+	}
+
+	function refreshAreaWindows() {
+		document.querySelectorAll(".area-tile").forEach(function (btn) {
+			const scheduled = btn.getAttribute("data-scheduled") === "1";
+			const start = startMinutes(btn.getAttribute("data-start"));
+			const waiting = scheduled && start >= 0 && minutesNow() < start;
+			btn.classList.toggle("is-waiting", waiting);
+			btn.disabled = waiting;
+		});
+	}
+
+	refreshAreaWindows();
+	setInterval(refreshAreaWindows, 15000);
+
 	document.querySelectorAll(".area-tile").forEach(function (btn) {
 		btn.addEventListener("click", function () {
+			if (btn.disabled || btn.classList.contains("is-waiting")) return;
 			lockArea(btn.getAttribute("data-id"), btn.getAttribute("data-name"));
 		});
 	});
@@ -643,6 +685,7 @@ document.addEventListener("DOMContentLoaded", function () {
 			.then(function (data) {
 				applyDashboard(data);
 				if (data.success) showStudent(data);
+				else if (data.disabled && data.student) showDisabled(data);
 				else showError(data.message || "Card not registered");
 			})
 			.catch(function () { showError("Connection error — try again"); })
@@ -671,6 +714,20 @@ document.addEventListener("DOMContentLoaded", function () {
 			flash("flash-red");
 		}
 		setReadyState("ready", "Scan complete — ready for next card");
+	}
+
+	function showDisabled(data) {
+		document.getElementById("name").textContent = (data.student && data.student.name) || "Student";
+		document.getElementById("regno").textContent = (data.student && data.student.regno) ? ("Reg: " + data.student.regno) : "";
+		document.getElementById("className").textContent = (data.student && data.student.class) || "";
+		document.getElementById("scanTime").textContent = data.message || "This student card is disabled.";
+		const statusEl = document.getElementById("status");
+		statusEl.textContent = "DISABLED";
+		statusEl.className = "status out";
+		delete photoEl.dataset.fallbackApplied;
+		photoEl.src = ((data.student && data.student.photo) || fallbackPhoto);
+		flash("flash-red");
+		setReadyState("error", "This student card is disabled.");
 	}
 
 	function showError(msg) {
