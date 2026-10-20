@@ -8,6 +8,7 @@
 /** @var float $feeTotalAmount */
 /** @var int $feeLevelCount */
 $feeGroups = $feeGroups ?? \App\Models\SchoolFeesModel::groupByLevelDept($fees ?? []);
+$studentOverrideCounts = $studentOverrideCounts ?? [];
 $uniqueLevels = [];
 foreach ($feeGroups as $g) {
 	$uniqueLevels[$g['display_label']] = $g['display_label'];
@@ -181,6 +182,13 @@ ksort($uniqueLevels, SORT_NATURAL | SORT_FLAG_CASE);
 												$gModes[$gt] = $tf ? \App\Models\SchoolFeesModel::modeAmounts($tf) : ['boarding' => null, 'day' => null];
 											}
 											?>
+											<?php $customStudents = (int) ($studentOverrideCounts[(int) ($group['class_id'] ?? 0)] ?? 0); ?>
+											<button type="button" class="btn btn-sm btn-outline-success sfStudentBtn"
+												data-class-id="<?= (int) ($group['class_id'] ?? 0); ?>"
+												data-label="<?= esc($group['display_label'], 'attr'); ?>"
+												<?= (int) ($group['class_id'] ?? 0) > 0 ? '' : 'disabled'; ?>>
+												<i class="fa fa-user"></i> One student<?php if ($customStudents > 0) : ?> <span class="sf-custom-count"><?= $customStudents; ?></span><?php endif; ?>
+											</button>
 											<button type="button" class="btn btn-sm btn-outline-primary editGroupBtn"
 												data-level-id="<?= (int) $group['level_id']; ?>"
 												data-dept-id="<?= (int) $group['department_id']; ?>"
@@ -294,6 +302,67 @@ ksort($uniqueLevels, SORT_NATURAL | SORT_FLAG_CASE);
 	</div>
 </div>
 
+<style>
+	.sf-row-actions{white-space:normal;}
+	#mdlStudentAmount .modal-dialog{max-width:980px;}
+	.stu-amt-layout{display:grid;grid-template-columns:280px 1fr;gap:16px;min-height:360px;}
+	.stu-amt-side{border:1px solid #e5e7eb;border-radius:12px;display:flex;flex-direction:column;min-height:0;}
+	.stu-amt-side input{border:0;border-bottom:1px solid #e5e7eb;border-radius:12px 12px 0 0;}
+	.stu-amt-list{overflow:auto;max-height:420px;}
+	.stu-amt-person{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #f1f5f9;background:#fff;padding:8px 12px;cursor:pointer;}
+	.stu-amt-person:hover{background:#f8fafc;}
+	.stu-amt-person.active{background:#ecfdf5;}
+	.stu-amt-person small{display:block;color:#64748b;}
+	.stu-amt-tag{display:inline-block;margin-left:6px;background:#fef3c7;color:#92400e;border-radius:999px;padding:0 7px;font-size:.68rem;font-weight:700;}
+	.sf-custom-count{display:inline-block;min-width:1.1rem;padding:0 5px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:.72rem;}
+	.stu-amt-editor{border:1px solid #e5e7eb;border-radius:12px;padding:14px;}
+	.stu-amt-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
+	.stu-amt-mode{background:#e0e7ff;color:#3730a3;border-radius:999px;padding:2px 8px;font-size:.75rem;font-weight:700;}
+	.stu-amt-mode.day{background:#ecfdf5;color:#047857;}
+	.stu-amt-diff{font-size:.75rem;font-weight:700;}
+	.stu-amt-diff.down{color:#b45309;}
+	.stu-amt-diff.up{color:#047857;}
+	.stu-amt-empty{color:#64748b;padding:28px 8px;text-align:center;}
+	@media(max-width:800px){.stu-amt-layout{grid-template-columns:1fr;}}
+</style>
+<div class="modal fade" id="mdlStudentAmount" tabindex="-1" role="dialog">
+	<div class="modal-dialog modal-lg" role="document">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">One student — <span id="stuAmtTitle">class</span></h5>
+				<button type="button" class="close" data-dismiss="modal"><span>×</span></button>
+			</div>
+			<div class="modal-body">
+				<p class="text-muted small">The class boarding and day amounts stay as they are. Pick a student and type the amount only that student should pay. Leave it equal to the class amount to follow the class again.</p>
+				<div id="stuAmtLoading" class="stu-amt-empty">Loading class…</div>
+				<div id="stuAmtBody" class="stu-amt-layout" style="display:none">
+					<div class="stu-amt-side">
+						<input type="search" id="stuAmtFilter" class="form-control" placeholder="Search name or reg no">
+						<div class="stu-amt-list" id="stuAmtList"></div>
+					</div>
+					<div class="stu-amt-editor">
+						<div id="stuAmtHint" class="stu-amt-empty">Select a student.</div>
+						<div id="stuAmtForm" style="display:none">
+							<div class="stu-amt-meta">
+								<strong id="stuAmtName"></strong>
+								<span id="stuAmtMode" class="stu-amt-mode"></span>
+							</div>
+							<table class="table table-sm mb-2">
+								<thead><tr><th>Term</th><th>Class amount</th><th>This student</th><th></th></tr></thead>
+								<tbody id="stuAmtTerms"></tbody>
+							</table>
+							<div class="custom-control custom-checkbox mb-2">
+								<input type="checkbox" class="custom-control-input" id="stuAmtSame">
+								<label class="custom-control-label" for="stuAmtSame">Use the first term’s amount for every term</label>
+							</div>
+							<button type="button" class="btn btn-success" id="stuAmtSave">Save this student</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
 <script>
 (function ($) {
 	function applyFilters() {
@@ -384,6 +453,168 @@ ksort($uniqueLevels, SORT_NATURAL | SORT_FLAG_CASE);
 					$b.prop('disabled', false);
 				}
 			});
+		});
+
+		var stuPanel = null;
+		var stuSelected = 0;
+		var stuSaved = false;
+		function stuMoney(n) {
+			var v = Math.round(Number(n) || 0);
+			return v.toLocaleString();
+		}
+		function stuClassAmount(term, mode) {
+			if (!term) return 0;
+			var raw = mode === 0 ? term.boarding : term.day;
+			if (raw === null || raw === undefined || raw === '') {
+				raw = mode === 0 ? term.day : term.boarding;
+			}
+			return Number(raw || 0);
+		}
+		function stuRenderList() {
+			var q = ($('#stuAmtFilter').val() || '').toLowerCase().trim();
+			var html = '';
+			var rows = (stuPanel.students || []).slice().sort(function (a, b) {
+				return (b.custom ? 1 : 0) - (a.custom ? 1 : 0);
+			});
+			rows.forEach(function (st) {
+				var hay = ((st.regno || '') + ' ' + (st.name || '')).toLowerCase();
+				if (q && hay.indexOf(q) === -1) return;
+				html += '<button type="button" class="stu-amt-person' + (st.id === stuSelected ? ' active' : '') + '" data-id="' + st.id + '">' +
+					$('<div>').text(st.name || '').html() +
+					(st.custom ? '<span class="stu-amt-tag">Custom</span>' : '') +
+					'<small>' + $('<div>').text((st.regno || '') + ' · ' + (st.mode_label || '')).html() + '</small></button>';
+			});
+			if (!html) html = '<div class="stu-amt-empty">No student matches.</div>';
+			$('#stuAmtList').html(html);
+		}
+		function stuRenderEditor() {
+			var st = null;
+			(stuPanel.students || []).forEach(function (row) { if (row.id === stuSelected) st = row; });
+			if (!st) {
+				$('#stuAmtHint').show();
+				$('#stuAmtForm').hide();
+				return;
+			}
+			$('#stuAmtHint').hide();
+			$('#stuAmtForm').show();
+			$('#stuAmtName').text((st.regno ? st.regno + ' · ' : '') + st.name);
+			$('#stuAmtMode').text(st.mode_label || '').toggleClass('day', st.mode !== 0);
+			var html = '';
+			(stuPanel.terms || []).forEach(function (term) {
+				var classAmt = stuClassAmount(term, st.mode);
+				var own = st.amounts && st.amounts[term.term] !== undefined ? st.amounts[term.term] : classAmt;
+				html += '<tr data-term="' + term.term + '" data-class="' + classAmt + '">' +
+					'<td>' + $('<div>').text(term.label || '').html() + '</td>' +
+					'<td>' + stuMoney(classAmt) + '</td>' +
+					'<td><input type="number" min="0" step="1" class="form-control form-control-sm stu-amt-input" value="' + Math.round(Number(own) || 0) + '"></td>' +
+					'<td class="stu-amt-diff"></td></tr>';
+			});
+			if (!html) html = '<tr><td colspan="4" class="text-muted">No school fee is set for this class yet.</td></tr>';
+			$('#stuAmtTerms').html(html);
+			$('#stuAmtSame').prop('checked', false);
+			stuMarkDiff();
+		}
+		function stuMarkDiff() {
+			$('#stuAmtTerms tr').each(function () {
+				var classAmt = Number($(this).data('class') || 0);
+				var own = Number($(this).find('.stu-amt-input').val() || 0);
+				var $d = $(this).find('.stu-amt-diff').removeClass('up down').text('');
+				if (Math.abs(own - classAmt) < 0.5) return;
+				var delta = own - classAmt;
+				$d.addClass(delta < 0 ? 'down' : 'up').text((delta > 0 ? '+' : '') + stuMoney(delta));
+			});
+		}
+		function stuOpen(classId, label) {
+			stuSelected = 0;
+			stuPanel = null;
+			$('#mdlStudentAmount').attr('data-class-id', classId);
+			$('#stuAmtTitle').text(label || 'class');
+			$('#stuAmtLoading').show().text('Loading class…');
+			$('#stuAmtBody').hide();
+			$('#mdlStudentAmount').modal('show');
+			$.getJSON('<?= base_url('school_fee_student_panel'); ?>', { class_id: classId, year: <?= (int) $selectedYear; ?> }, function (res) {
+				if (!res.success) {
+					$('#stuAmtLoading').text(res.error || 'Could not load this class.');
+					return;
+				}
+				stuPanel = res;
+				$('#stuAmtTitle').text(res.class_label || label || 'class');
+				$('#stuAmtLoading').hide();
+				$('#stuAmtBody').show();
+				$('#stuAmtFilter').val('');
+				stuRenderList();
+				stuRenderEditor();
+			}).fail(function () {
+				$('#stuAmtLoading').text('Could not load this class.');
+			});
+		}
+		$(document).off('click.sfStu', '.sfStudentBtn').on('click.sfStu', '.sfStudentBtn', function () {
+			var $b = $(this);
+			if (!$b.data('class-id')) return;
+			stuOpen($b.data('class-id'), $b.data('label'));
+		});
+		$(document).on('input', '#stuAmtFilter', stuRenderList);
+		$(document).on('click', '#stuAmtList .stu-amt-person', function () {
+			stuSelected = parseInt($(this).data('id'), 10) || 0;
+			stuRenderList();
+			stuRenderEditor();
+		});
+		$(document).on('input', '#stuAmtTerms .stu-amt-input', function () {
+			if ($('#stuAmtSame').is(':checked')) {
+				var v = $(this).val();
+				$('#stuAmtTerms .stu-amt-input').val(v);
+			}
+			stuMarkDiff();
+		});
+		$(document).on('change', '#stuAmtSame', function () {
+			if (!this.checked) return;
+			var v = $('#stuAmtTerms .stu-amt-input').first().val();
+			$('#stuAmtTerms .stu-amt-input').val(v);
+			stuMarkDiff();
+		});
+		$(document).on('click', '#stuAmtSave', function () {
+			if (!stuPanel || !stuSelected) return;
+			var data = {
+				class_id: $('#mdlStudentAmount').attr('data-class-id') || 0,
+				student_id: stuSelected,
+				year: <?= (int) $selectedYear; ?>
+			};
+			$('#stuAmtTerms tr').each(function () {
+				var term = $(this).data('term');
+				if (term) data['amount_' + term] = $(this).find('.stu-amt-input').val();
+			});
+			var $btn = $(this).prop('disabled', true);
+			$.post('<?= base_url('save_school_fee_student'); ?>', data, function (res) {
+				$btn.prop('disabled', false);
+				if (!res.success) {
+					toastada.error(res.error || 'Save failed');
+					return;
+				}
+				toastada.success(res.success);
+				stuSaved = true;
+				var st = null;
+				(stuPanel.students || []).forEach(function (row) { if (row.id === stuSelected) st = row; });
+				if (st) {
+					st.amounts = {};
+					st.custom = false;
+					$('#stuAmtTerms tr').each(function () {
+						var term = $(this).data('term');
+						var classAmt = Number($(this).data('class') || 0);
+						var own = Number($(this).find('.stu-amt-input').val() || 0);
+						if (term && Math.abs(own - classAmt) >= 0.5) {
+							st.amounts[term] = own;
+							st.custom = true;
+						}
+					});
+				}
+				stuRenderList();
+			}, 'json').fail(function () {
+				$btn.prop('disabled', false);
+				toastada.error('Save failed');
+			});
+		});
+		$('#mdlStudentAmount').on('hidden.bs.modal', function () {
+			if (stuSaved) window.location.reload();
 		});
 
 		$(document).off('click.sfDel', '.delButton').on('click.sfDel', '.delButton', function (e) {

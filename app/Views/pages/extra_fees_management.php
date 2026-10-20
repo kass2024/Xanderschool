@@ -13,6 +13,7 @@
 
 $feeGroups = $feeGroups ?? \App\Models\ExtraFeesModel::groupByClassAndTitle($fees ?? []);
 $groupCount = (int) ($groupCount ?? count($feeGroups));
+$studentOverrideCounts = $studentOverrideCounts ?? [];
 
 $uniqueClasses = [];
 $uniqueTitles = [];
@@ -246,6 +247,16 @@ ksort($uniqueTitles, SORT_NATURAL | SORT_FLAG_CASE);
 												$gModes[$gt] = $tf ? \App\Models\ExtraFeesModel::modeAmounts($tf) : ['boarding' => null, 'day' => null];
 											}
 											?>
+											<?php
+											$customKey = (int) $group['class_id'] . '|' . strtolower(trim((string) $group['title']));
+											$customStudents = (int) ($studentOverrideCounts[$customKey] ?? 0);
+											?>
+											<button type="button" class="btn btn-sm btn-outline-success efStudentBtn"
+												data-class-id="<?= (int) $group['class_id']; ?>"
+												data-title="<?= esc($group['title'], 'attr'); ?>"
+												data-label="<?= esc($group['display_label'] . ' · ' . $group['title'], 'attr'); ?>">
+												<i class="fa fa-user"></i> One student<?php if ($customStudents > 0) : ?> <span class="sf-custom-count"><?= $customStudents; ?></span><?php endif; ?>
+											</button>
 											<button type="button" class="btn btn-sm btn-outline-primary editGroupBtn"
 												data-class-id="<?= (int) $group['class_id']; ?>"
 												data-title="<?= esc($group['title'], 'attr'); ?>"
@@ -355,6 +366,67 @@ ksort($uniqueTitles, SORT_NATURAL | SORT_FLAG_CASE);
 	</div>
 </div>
 
+<style>
+	#mdlEfStudent .modal-dialog{max-width:980px;}
+	.stu-amt-layout{display:grid;grid-template-columns:280px 1fr;gap:16px;min-height:360px;}
+	.stu-amt-side{border:1px solid #e5e7eb;border-radius:12px;display:flex;flex-direction:column;min-height:0;}
+	.stu-amt-side input{border:0;border-bottom:1px solid #e5e7eb;border-radius:12px 12px 0 0;}
+	.stu-amt-list{overflow:auto;max-height:420px;}
+	.stu-amt-person{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #f1f5f9;background:#fff;padding:8px 12px;cursor:pointer;}
+	.stu-amt-person:hover{background:#f8fafc;}
+	.stu-amt-person.active{background:#ecfdf5;}
+	.stu-amt-person small{display:block;color:#64748b;}
+	.stu-amt-tag{display:inline-block;margin-left:6px;background:#fef3c7;color:#92400e;border-radius:999px;padding:0 7px;font-size:.68rem;font-weight:700;}
+	.sf-custom-count{display:inline-block;min-width:1.1rem;padding:0 5px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:.72rem;}
+	.stu-amt-editor{border:1px solid #e5e7eb;border-radius:12px;padding:14px;}
+	.stu-amt-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
+	.stu-amt-mode{background:#e0e7ff;color:#3730a3;border-radius:999px;padding:2px 8px;font-size:.75rem;font-weight:700;}
+	.stu-amt-mode.day{background:#ecfdf5;color:#047857;}
+	.stu-amt-diff{font-size:.75rem;font-weight:700;}
+	.stu-amt-diff.down{color:#b45309;}
+	.stu-amt-diff.up{color:#047857;}
+	.stu-amt-empty{color:#64748b;padding:28px 8px;text-align:center;}
+	.sf-row-actions{white-space:normal;}
+	@media(max-width:800px){.stu-amt-layout{grid-template-columns:1fr;}}
+</style>
+<div class="modal fade" id="mdlEfStudent" tabindex="-1" role="dialog">
+	<div class="modal-dialog modal-lg" role="document">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">One student — <span id="efStuTitle">extra fee</span></h5>
+				<button type="button" class="close" data-dismiss="modal"><span>×</span></button>
+			</div>
+			<div class="modal-body">
+				<p class="text-muted small">The class amount for this extra fee stays the same. Pick one student and set a different amount. Matching the class amount again removes that student’s personal fee.</p>
+				<div id="efStuLoading" class="stu-amt-empty">Loading class…</div>
+				<div id="efStuBody" class="stu-amt-layout" style="display:none">
+					<div class="stu-amt-side">
+						<input type="search" id="efStuFilter" class="form-control" placeholder="Search name or reg no">
+						<div class="stu-amt-list" id="efStuList"></div>
+					</div>
+					<div class="stu-amt-editor">
+						<div id="efStuHint" class="stu-amt-empty">Select a student.</div>
+						<div id="efStuForm" style="display:none">
+							<div class="stu-amt-meta">
+								<strong id="efStuName"></strong>
+								<span id="efStuMode" class="stu-amt-mode"></span>
+							</div>
+							<table class="table table-sm mb-2">
+								<thead><tr><th>Term</th><th>Class amount</th><th>This student</th><th></th></tr></thead>
+								<tbody id="efStuTerms"></tbody>
+							</table>
+							<div class="custom-control custom-checkbox mb-2">
+								<input type="checkbox" class="custom-control-input" id="efStuSame">
+								<label class="custom-control-label" for="efStuSame">Use the first term’s amount for every term</label>
+							</div>
+							<button type="button" class="btn btn-success" id="efStuSave">Save this student</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
 <script>
 $(function () {
 	$('#academicYearSelect').on('change', function () {
@@ -450,6 +522,156 @@ $(function () {
 			toastada.error('Save failed.');
 			$btn.prop('disabled', false);
 		});
+	});
+
+	let efStuPanel = null;
+	let efStuSelected = 0;
+	let efStuSaved = false;
+	let efStuClass = 0;
+	let efStuFeeTitle = '';
+	function efMoney(n) { return Math.round(Number(n) || 0).toLocaleString(); }
+	function efClassAmount(term, mode) {
+		if (!term) return 0;
+		let raw = mode === 0 ? term.boarding : term.day;
+		if (raw === null || raw === undefined || raw === '') raw = mode === 0 ? term.day : term.boarding;
+		return Number(raw || 0);
+	}
+	function efRenderList() {
+		const q = ($('#efStuFilter').val() || '').toLowerCase().trim();
+		let html = '';
+		const rows = (efStuPanel.students || []).slice().sort(function (a, b) {
+			return (b.custom ? 1 : 0) - (a.custom ? 1 : 0);
+		});
+		rows.forEach(function (st) {
+			const hay = ((st.regno || '') + ' ' + (st.name || '')).toLowerCase();
+			if (q && hay.indexOf(q) === -1) return;
+			html += '<button type="button" class="stu-amt-person' + (st.id === efStuSelected ? ' active' : '') + '" data-id="' + st.id + '">' +
+				$('<div>').text(st.name || '').html() +
+				(st.custom ? '<span class="stu-amt-tag">Custom</span>' : '') +
+				'<small>' + $('<div>').text((st.regno || '') + ' · ' + (st.mode_label || '')).html() + '</small></button>';
+		});
+		$('#efStuList').html(html || '<div class="stu-amt-empty">No student matches.</div>');
+	}
+	function efMarkDiff() {
+		$('#efStuTerms tr').each(function () {
+			const classAmt = Number($(this).data('class') || 0);
+			const own = Number($(this).find('.ef-stu-input').val() || 0);
+			const $d = $(this).find('.stu-amt-diff').removeClass('up down').text('');
+			if (Math.abs(own - classAmt) < 0.5) return;
+			const delta = own - classAmt;
+			$d.addClass(delta < 0 ? 'down' : 'up').text((delta > 0 ? '+' : '') + efMoney(delta));
+		});
+	}
+	function efRenderEditor() {
+		let st = null;
+		(efStuPanel.students || []).forEach(function (row) { if (row.id === efStuSelected) st = row; });
+		if (!st) {
+			$('#efStuHint').show();
+			$('#efStuForm').hide();
+			return;
+		}
+		$('#efStuHint').hide();
+		$('#efStuForm').show();
+		$('#efStuName').text((st.regno ? st.regno + ' · ' : '') + st.name);
+		$('#efStuMode').text(st.mode_label || '').toggleClass('day', st.mode !== 0);
+		let html = '';
+		(efStuPanel.terms || []).forEach(function (term) {
+			const classAmt = efClassAmount(term, st.mode);
+			const own = st.amounts && st.amounts[term.term] !== undefined ? st.amounts[term.term] : classAmt;
+			html += '<tr data-term="' + term.term + '" data-class="' + classAmt + '"><td>' +
+				$('<div>').text(term.label || '').html() + '</td><td>' + efMoney(classAmt) +
+				'</td><td><input type="number" min="0" step="1" class="form-control form-control-sm ef-stu-input" value="' +
+				Math.round(Number(own) || 0) + '"></td><td class="stu-amt-diff"></td></tr>';
+		});
+		$('#efStuTerms').html(html || '<tr><td colspan="4" class="text-muted">No amount is set for this extra fee yet.</td></tr>');
+		$('#efStuSame').prop('checked', false);
+		efMarkDiff();
+	}
+	$(document).on('click', '.efStudentBtn', function () {
+		const $b = $(this);
+		efStuClass = parseInt($b.data('class-id'), 10) || 0;
+		efStuFeeTitle = $b.data('title') || '';
+		efStuSelected = 0;
+		efStuPanel = null;
+		$('#efStuTitle').text($b.data('label') || efStuFeeTitle);
+		$('#efStuLoading').show().text('Loading class…');
+		$('#efStuBody').hide();
+		$('#mdlEfStudent').modal('show');
+		$.getJSON('<?= base_url('extra_fee_class_panel'); ?>', {
+			class_id: efStuClass,
+			title: efStuFeeTitle,
+			year: efYear
+		}, function (res) {
+			if (!res.success) {
+				$('#efStuLoading').text(res.error || 'Could not load this class.');
+				return;
+			}
+			efStuPanel = res;
+			$('#efStuLoading').hide();
+			$('#efStuBody').show();
+			$('#efStuFilter').val('');
+			efRenderList();
+			efRenderEditor();
+		}).fail(function () {
+			$('#efStuLoading').text('Could not load this class.');
+		});
+	});
+	$(document).on('input', '#efStuFilter', efRenderList);
+	$(document).on('click', '#efStuList .stu-amt-person', function () {
+		efStuSelected = parseInt($(this).data('id'), 10) || 0;
+		efRenderList();
+		efRenderEditor();
+	});
+	$(document).on('input', '#efStuTerms .ef-stu-input', function () {
+		if ($('#efStuSame').is(':checked')) {
+			$('#efStuTerms .ef-stu-input').val($(this).val());
+		}
+		efMarkDiff();
+	});
+	$(document).on('change', '#efStuSame', function () {
+		if (!this.checked) return;
+		$('#efStuTerms .ef-stu-input').val($('#efStuTerms .ef-stu-input').first().val());
+		efMarkDiff();
+	});
+	$(document).on('click', '#efStuSave', function () {
+		if (!efStuPanel || !efStuSelected) return;
+		const data = { class_id: efStuClass, student_id: efStuSelected, title: efStuFeeTitle, year: efYear };
+		$('#efStuTerms tr').each(function () {
+			const term = $(this).data('term');
+			if (term) data['amount_' + term] = $(this).find('.ef-stu-input').val();
+		});
+		const $btn = $(this).prop('disabled', true);
+		$.post('<?= base_url('save_extra_fee_student_class'); ?>', data, function (res) {
+			$btn.prop('disabled', false);
+			if (!res.success) {
+				toastada.error(res.error || 'Save failed.');
+				return;
+			}
+			toastada.success(res.success);
+			efStuSaved = true;
+			let st = null;
+			(efStuPanel.students || []).forEach(function (row) { if (row.id === efStuSelected) st = row; });
+			if (st) {
+				st.amounts = {};
+				st.custom = false;
+				$('#efStuTerms tr').each(function () {
+					const term = $(this).data('term');
+					const classAmt = Number($(this).data('class') || 0);
+					const own = Number($(this).find('.ef-stu-input').val() || 0);
+					if (term && Math.abs(own - classAmt) >= 0.5) {
+						st.amounts[term] = own;
+						st.custom = true;
+					}
+				});
+			}
+			efRenderList();
+		}, 'json').fail(function () {
+			$btn.prop('disabled', false);
+			toastada.error('Save failed.');
+		});
+	});
+	$('#mdlEfStudent').on('hidden.bs.modal', function () {
+		if (efStuSaved) window.location.reload();
 	});
 
 	function efApplyFilters() {

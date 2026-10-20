@@ -320,9 +320,11 @@ class FeesReportHelper
 	) {
 		$incomeCore = strtolower(trim($feesScope)) === 'income';
 		$feesScope = self::normalizeFeesScope($incomeCore ? self::FEES_BOTH : $feesScope);
+		(new SchoolFeesModel())->ensureSchema();
 		$extraTitleSql = $incomeCore ? self::incomeExtraTitleSql('ex') : '';
-		$schoolAmtExpr = '(' . SchoolFeesModel::sqlExpectedFromSums('sf') . ' + coalesce(fd.amount,0))';
-		$extraAmtExpr = '(' . ExtraFeesModel::sqlExpectedFromSums('ex') . ' + COALESCE(student.amount,0))';
+		$extraTitleStudentSql = $incomeCore ? self::incomeExtraTitleSql('ex_s') : '';
+		$schoolAmtExpr = '(' . SchoolFeesModel::sqlExpectedFromSums('sf') . ' + coalesce(fd.amount,0) - COALESCE(sfo.replaced,0) + COALESCE(sfo.override_total,0))';
+		$extraAmtExpr = '(' . ExtraFeesModel::sqlExpectedFromSums('ex') . ' + COALESCE(student.amount,0) - COALESCE(exrep.replaced,0))';
 		$schoolPaidExpr = '(COALESCE(fr.amount,0))';
 		$extraPaidExpr = '(COALESCE(extraPaid.amount,0) + COALESCE(extraPaidSingle.amount,0))';
 		if ($feesScope === self::FEES_SCHOOL) {
@@ -376,19 +378,61 @@ class FeesReportHelper
 				)
 				group by sx.term
 			) group by sf.level,sf.department) sf", 'sf.level=l.id and sf.department=d.id', 'LEFT')
-			->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $schoolId AND (fd.comment IS NULL OR (fd.comment NOT LIKE 'Set from Create Fee%' AND fd.comment NOT LIKE 'Set from pending registration%')) group by fd.student,sf.level,sf.department) fd", 'fd.level=l.id and fd.department=d.id AND fd.student=students.id', 'LEFT')
+			->join("(select sum(fd.amount) as amount,fd.student,sf.level,sf.department from school_fees_discount fd inner join school_fees sf on sf.id=fd.feesId where sf.term IN ($termsIn) and sf.academic_year=$academic and sf.school_id = $schoolId AND (fd.comment IS NULL OR (fd.comment NOT LIKE 'Set from Create Fee%' AND fd.comment NOT LIKE 'Set from pending registration%')) AND NOT EXISTS (SELECT 1 FROM school_fee_student_amounts ovx WHERE ovx.student_id = fd.student AND ovx.school_id = sf.school_id AND ovx.academic_year = sf.academic_year AND ovx.term = sf.term) group by fd.student,sf.level,sf.department) fd", 'fd.level=l.id and fd.department=d.id AND fd.student=students.id', 'LEFT')
 			->join("(select " . ExtraFeesModel::sqlModeSumSelect('ex') . ",ex.type_id from extra_fees ex where ex.type=0 and ex.term IN ($termsIn) and
 			ex.academic_year=$academic and ex.school_id = $schoolId $extraTitleSql group by ex.type_id) ex", 'ex.type_id=cl.id', 'LEFT')
 			->join("(select sum(ex.amount) as amount,ex.type_id from extra_fees ex where ex.type=1 and ex.term IN ($termsIn) and
 			ex.academic_year=$academic and ex.school_id = $schoolId $extraTitleSql
-			AND NOT EXISTS (
-				SELECT 1 FROM extra_fees cx
-				INNER JOIN class_records crx ON crx.student = ex.type_id AND crx.year = ex.academic_year
-				WHERE cx.school_id = ex.school_id AND cx.academic_year = ex.academic_year
-					AND cx.term = ex.term AND cx.type = 0 AND cx.type_id = crx.class
-					AND LOWER(cx.title) = LOWER(ex.title)
-			)
 			group by ex.type_id) student", 'student.type_id=students.id', 'LEFT')
+			->join("(SELECT ov.student_id, SUM(ov.amount) AS override_total, SUM(
+				CASE WHEN st.studying_mode = 0 THEN
+					CASE WHEN sf.amount_boarding IS NOT NULL THEN sf.amount_boarding WHEN sf.amount_day IS NOT NULL THEN 0 ELSE COALESCE(sf.amount,0) END
+				ELSE
+					CASE WHEN sf.amount_day IS NOT NULL THEN sf.amount_day WHEN sf.amount_boarding IS NOT NULL THEN 0 ELSE COALESCE(sf.amount,0) END
+				END
+			) AS replaced
+			FROM school_fee_student_amounts ov
+			INNER JOIN students st ON st.id = ov.student_id
+			INNER JOIN school_fees sf ON sf.school_id = ov.school_id AND sf.academic_year = ov.academic_year AND sf.term = ov.term
+				AND sf.id IN (
+					select MAX(sx.id) from school_fees sx
+					inner join classes cx on cx.id = $classId
+					where sx.school_id = $schoolId and sx.academic_year = $academic and sx.term IN ($termsIn)
+					and (
+						sx.class_id = $classId
+						OR (
+							(sx.class_id IS NULL OR sx.class_id = 0)
+							AND sx.level = cx.level AND sx.department = cx.department
+							AND NOT EXISTS (
+								SELECT 1 FROM school_fees sy
+								WHERE sy.school_id = sx.school_id AND sy.academic_year = sx.academic_year
+								AND sy.term = sx.term AND sy.class_id = $classId
+							)
+						)
+					)
+					group by sx.term
+				)
+			WHERE ov.school_id = $schoolId AND ov.academic_year = $academic AND ov.term IN ($termsIn)
+			GROUP BY ov.student_id) sfo", 'sfo.student_id = students.id', 'LEFT')
+			->join("(SELECT ex_s.type_id AS student_id, SUM(
+				CASE WHEN st.studying_mode = 0 THEN
+					CASE WHEN ex_c.amount_boarding IS NOT NULL THEN ex_c.amount_boarding
+						WHEN LOWER(TRIM(ex_c.title)) IN ('feeding','transport') THEN COALESCE(ex_c.amount,0)
+						WHEN ex_c.amount_day IS NOT NULL THEN 0 ELSE COALESCE(ex_c.amount,0) END
+				ELSE
+					CASE WHEN ex_c.amount_day IS NOT NULL THEN ex_c.amount_day
+						WHEN LOWER(TRIM(ex_c.title)) IN ('feeding','transport') THEN COALESCE(ex_c.amount,0)
+						WHEN ex_c.amount_boarding IS NOT NULL THEN 0 ELSE COALESCE(ex_c.amount,0) END
+				END
+			) AS replaced
+			FROM extra_fees ex_s
+			INNER JOIN students st ON st.id = ex_s.type_id
+			INNER JOIN extra_fees ex_c ON ex_c.school_id = ex_s.school_id AND ex_c.academic_year = ex_s.academic_year
+				AND ex_c.term = ex_s.term AND ex_c.type = 0 AND ex_c.type_id = $classId
+				AND LOWER(TRIM(ex_c.title)) = LOWER(TRIM(ex_s.title))
+			WHERE ex_s.school_id = $schoolId AND ex_s.academic_year = $academic AND ex_s.type = 1
+				AND ex_s.term IN ($termsIn) $extraTitleStudentSql
+			GROUP BY ex_s.type_id) exrep", 'exrep.student_id = students.id', 'LEFT')
 			->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join school_fees sc ON sc.id = fr.fees_id
 			where fr.fees_type=0 and fr.status=1 and fr.amount > 1 and sc.term IN ($termsIn) and sc.academic_year=$academic and sc.school_id = $schoolId group by fr.student_id) fr", 'fr.student_id=students.id', 'LEFT')
 			->join("(select fr.student_id,sum(fr.amount) as amount from fees_records fr inner join extra_fees ex ON ex.id = fr.fees_id
@@ -444,7 +488,9 @@ class FeesReportHelper
 		$byTerm = [];
 		foreach ($rows as $ex) {
 			$term = (int) ($ex['term'] ?? 0);
-			$amount = ExtraFeesModel::expectedForMode($ex, $mode);
+			$amount = ((int) ($ex['type'] ?? 0) === 1)
+				? (float) ($ex['amount'] ?? 0)
+				: ExtraFeesModel::expectedForMode($ex, $mode);
 			if (!isset($byTerm[$term]) || $amount > $byTerm[$term]) {
 				$byTerm[$term] = $amount;
 			}
@@ -628,6 +674,7 @@ class FeesReportHelper
 						continue;
 					}
 					$extraFeeLabels[$key] = self::preferExtraTitle($extraFeeLabels[$key] ?? '', $title);
+					$ex['type'] = 1;
 					$studentExtraDefs[$sid][$key][] = $ex;
 				}
 
@@ -671,10 +718,12 @@ class FeesReportHelper
 			$breakdown = [];
 			if ($withDetailed && $includeExtra) {
 				foreach ($extraFeeLabels as $key => $title) {
-					if (isset($classExtraDefs[$key])) {
+					if (!empty($studentExtraDefs[$sid][$key])) {
+						$expected = self::expectedFromExtraRows($studentExtraDefs[$sid][$key], $mode);
+					} elseif (isset($classExtraDefs[$key])) {
 						$expected = self::expectedFromExtraRows($classExtraDefs[$key], $mode);
 					} else {
-						$expected = self::expectedFromExtraRows($studentExtraDefs[$sid][$key] ?? [], $mode);
+						$expected = 0.0;
 					}
 					$paid = (float) ($extraPaidMap[$sid][$key] ?? 0);
 					$breakdown[$title] = [
@@ -830,6 +879,19 @@ class FeesReportHelper
 		}
 		$discountMap = [];
 		$schoolPaidMap = [];
+		$overrideMap = [];
+		if ($includeSchool && $studentIds !== []) {
+			(new SchoolFeesModel())->ensureSchema();
+			$ovRows = $db->table('school_fee_student_amounts')
+				->where('school_id', $schoolId)
+				->where('academic_year', $academic)
+				->whereIn('student_id', $studentIds)
+				->whereIn('term', $termsList)
+				->get()->getResultArray();
+			foreach ($ovRows as $ov) {
+				$overrideMap[(int) ($ov['student_id'] ?? 0)][(int) ($ov['term'] ?? 0)] = (float) ($ov['amount'] ?? 0);
+			}
+		}
 		if ($includeSchool && $studentIds !== []) {
 			$in = implode(',', $termsList);
 			$idIn = implode(',', $studentIds);
@@ -902,6 +964,7 @@ class FeesReportHelper
 						continue;
 					}
 					$extraLabels[$key] = self::preferExtraTitle($extraLabels[$key] ?? '', (string) $ex['title']);
+					$ex['type'] = 1;
 					$studentExtra[$sid][$key][$term][] = $ex;
 				}
 				$paidRows = $db->table('fees_records fr')
@@ -942,9 +1005,13 @@ class FeesReportHelper
 					$sid = (int) ($student['student_id'] ?? 0);
 					$mode = (int) ($student['studying_mode'] ?? 1);
 					$discount = (float) ($discountMap[$sid][$term] ?? 0);
-					$expected = isset($schoolByTerm[$term])
-						? SchoolFeesModel::expectedForStudent($schoolByTerm[$term], $mode, $discount)
-						: 0.0;
+					if (isset($overrideMap[$sid][$term])) {
+						$expected = max(0, (float) $overrideMap[$sid][$term]);
+					} else {
+						$expected = isset($schoolByTerm[$term])
+							? SchoolFeesModel::expectedForStudent($schoolByTerm[$term], $mode, $discount)
+							: 0.0;
+					}
 					$paid = (float) ($schoolPaidMap[$sid][$term] ?? 0);
 					if ($expected <= 0 && $paid <= 0) {
 						continue;
@@ -961,10 +1028,12 @@ class FeesReportHelper
 					foreach ($students as $student) {
 						$sid = (int) ($student['student_id'] ?? 0);
 						$mode = (int) ($student['studying_mode'] ?? 1);
-						if (isset($classExtra[$key][$term])) {
+						if (!empty($studentExtra[$sid][$key][$term])) {
+							$expected = self::expectedFromExtraRows($studentExtra[$sid][$key][$term], $mode);
+						} elseif (isset($classExtra[$key][$term])) {
 							$expected = self::expectedFromExtraRows($classExtra[$key][$term], $mode);
 						} else {
-							$expected = self::expectedFromExtraRows($studentExtra[$sid][$key][$term] ?? [], $mode);
+							$expected = 0.0;
 						}
 						$paid = (float) ($extraPaid[$sid][$key][$term] ?? 0);
 						if ($expected <= 0 && $paid <= 0) {

@@ -300,17 +300,87 @@ class ExtraFeesModel extends Model
 	 */
 	public static function preferStudentOverrides(array $rows): array
 	{
-		$studentKeys = [];
-		foreach ($rows as $row) {
+		$studentIndex = [];
+		foreach ($rows as $i => $row) {
 			if ((int) ($row['type'] ?? 0) === 1) {
-				$studentKeys[self::extraFeeKey($row)] = true;
+				$studentIndex[self::extraFeeKey($row)] = $i;
 			}
+		}
+		$classPaid = [];
+		foreach ($rows as $row) {
+			$key = self::extraFeeKey($row);
+			if ((int) ($row['type'] ?? 0) !== 0 || !isset($studentIndex[$key])) {
+				continue;
+			}
+			$classPaid[$key] = ($classPaid[$key] ?? 0) + (float) ($row['paid'] ?? $row['paidextra'] ?? 0);
 		}
 		$out = [];
 		foreach ($rows as $row) {
-			if ((int) ($row['type'] ?? 0) === 0 && isset($studentKeys[self::extraFeeKey($row)])) {
+			$key = self::extraFeeKey($row);
+			if ((int) ($row['type'] ?? 0) === 0 && isset($studentIndex[$key])) {
 				continue;
 			}
+			if ((int) ($row['type'] ?? 0) === 1 && !empty($classPaid[$key])) {
+				$extra = (float) $classPaid[$key];
+				if (array_key_exists('paid', $row) || array_key_exists('paidextra', $row)) {
+					if (array_key_exists('paid', $row)) {
+						$row['paid'] = (float) ($row['paid'] ?? 0) + $extra;
+					}
+					if (array_key_exists('paidextra', $row)) {
+						$row['paidextra'] = (float) ($row['paidextra'] ?? 0) + $extra;
+					}
+				} else {
+					$row['paid'] = $extra;
+				}
+			}
+			$out[] = $row;
+		}
+		return $out;
+	}
+
+	/**
+	 * One row per title and term. Case and extra spaces do not create a second Feeding line.
+	 * Payments on either copy are added together. The amount kept is the larger expected value.
+	 *
+	 * @param list<array<string,mixed>> $rows
+	 * @return list<array<string,mixed>>
+	 */
+	public static function collapseSameTitle(array $rows, int $studyingMode): array
+	{
+		$merged = [];
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$key = self::extraFeeKey($row);
+			$expected = ((int) ($row['type'] ?? 0) === 1)
+				? (float) ($row['amount'] ?? 0)
+				: self::expectedForMode($row, $studyingMode);
+			$paid = (float) ($row['paid'] ?? $row['paidextra'] ?? 0);
+			if (!isset($merged[$key])) {
+				$row['_collapsed_expected'] = $expected;
+				$row['_collapsed_paid'] = $paid;
+				$merged[$key] = $row;
+				continue;
+			}
+			$merged[$key]['_collapsed_paid'] = (float) $merged[$key]['_collapsed_paid'] + $paid;
+			if ($expected > (float) $merged[$key]['_collapsed_expected']) {
+				$paidSum = (float) $merged[$key]['_collapsed_paid'];
+				$row['_collapsed_expected'] = $expected;
+				$row['_collapsed_paid'] = $paidSum;
+				$merged[$key] = $row;
+			}
+		}
+		$out = [];
+		foreach ($merged as $row) {
+			$paid = (float) ($row['_collapsed_paid'] ?? 0);
+			if (array_key_exists('paidextra', $row)) {
+				$row['paidextra'] = $paid;
+			}
+			if (array_key_exists('paid', $row)) {
+				$row['paid'] = $paid;
+			}
+			unset($row['_collapsed_expected'], $row['_collapsed_paid']);
 			$out[] = $row;
 		}
 		return $out;
@@ -689,6 +759,106 @@ class ExtraFeesModel extends Model
 			return (int) $existing['id'];
 		}
 		return (int) $this->insert($payload);
+	}
+
+	/**
+	 * How many students in each class already have their own copy of an extra fee.
+	 *
+	 * @return array<string,int> "classId|lower title" => students
+	 */
+	public function studentOverrideCounts(int $schoolId, int $yearId): array
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $yearId < 1) {
+			return [];
+		}
+		$rows = $this->db->query(
+			"SELECT cr.class AS class_id, LOWER(TRIM(ex.title)) AS title_key, COUNT(DISTINCT ex.type_id) AS n
+			FROM extra_fees ex
+			INNER JOIN class_records cr ON cr.student = ex.type_id AND cr.year = ex.academic_year AND cr.status = 1
+			WHERE ex.school_id = ? AND ex.academic_year = ? AND ex.type = 1
+			GROUP BY cr.class, LOWER(TRIM(ex.title))",
+			[$schoolId, $yearId]
+		)->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$key = (int) ($row['class_id'] ?? 0) . '|' . (string) ($row['title_key'] ?? '');
+			$out[$key] = (int) ($row['n'] ?? 0);
+		}
+		return $out;
+	}
+
+	/**
+	 * Save one student's extra-fee amount. Matching the class amount removes the personal copy
+	 * and keeps any payment already recorded on the class fee.
+	 */
+	public function saveStudentClassOverride(
+		int $schoolId,
+		int $yearId,
+		int $studentId,
+		int $classId,
+		string $title,
+		int $term,
+		float $amount,
+		?float $classAmount,
+		int $createdBy
+	): string {
+		if ($classAmount !== null && abs($amount - $classAmount) < 0.5) {
+			$this->clearStudentOverride($schoolId, $yearId, $studentId, $classId, $title, $term);
+			return 'cleared';
+		}
+		$id = $this->upsertStudentExtraFee($schoolId, $yearId, $studentId, $title, $term, $amount, $createdBy);
+		return $id > 0 ? 'set' : 'skipped';
+	}
+
+	public function clearStudentOverride(int $schoolId, int $yearId, int $studentId, int $classId, string $title, int $term): void
+	{
+		$this->ensureSchema();
+		$title = trim($title);
+		if ($schoolId < 1 || $yearId < 1 || $studentId < 1 || $term < 1 || $title === '') {
+			return;
+		}
+		$existing = $this->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('type', 1)
+			->where('type_id', $studentId)
+			->where('term', $term)
+			->where('title', $title)
+			->get(1)->getRowArray();
+		if (!$existing) {
+			$want = strtolower($title);
+			foreach ($this->where('school_id', $schoolId)
+				->where('academic_year', $yearId)
+				->where('type', 1)
+				->where('type_id', $studentId)
+				->where('term', $term)
+				->get()->getResultArray() as $candidate) {
+				if (strtolower(trim((string) ($candidate['title'] ?? ''))) === $want) {
+					$existing = $candidate;
+					break;
+				}
+			}
+		}
+		if (!$existing) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		$classFee = $classId > 0 ? $this->findClassFeeByTitle($schoolId, $yearId, $classId, $title, $term) : null;
+		if ($classFee) {
+			$db->table('fees_records')
+				->where('fees_type', 1)
+				->where('fees_id', (int) $existing['id'])
+				->update(['fees_id' => (int) $classFee['id']]);
+		} else {
+			$paid = (int) $db->table('fees_records')
+				->where('fees_type', 1)
+				->where('fees_id', (int) $existing['id'])
+				->countAllResults();
+			if ($paid > 0) {
+				return;
+			}
+		}
+		$this->delete((int) $existing['id']);
 	}
 
 	/**

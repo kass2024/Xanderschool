@@ -28,19 +28,43 @@ class FeeInstallmentService
 			->get()->getRowArray()['paid'] ?? 0;
 
 		if ($feesType === 0) {
-			$row = (new SchoolFeesModel())->select('school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount')
+			$fees = new SchoolFeesModel();
+			$fees->ensureSchema();
+			$row = $fees->select('school_fees.school_id,school_fees.academic_year,school_fees.term,school_fees.amount,school_fees.amount_boarding,school_fees.amount_day,coalesce(fd.amount,0) as discount')
 				->join(SchoolFeesModel::scholarshipDiscountSubquery($studentId) . ' fd', 'fd.feesId=school_fees.id', 'LEFT')
 				->where('school_fees.id', $feesId)
 				->get()->getRowArray();
+			if ($row) {
+				$ov = \Config\Database::connect()->table('school_fee_student_amounts')
+					->where('student_id', $studentId)
+					->where('school_id', (int) ($row['school_id'] ?? 0))
+					->where('academic_year', (int) ($row['academic_year'] ?? 0))
+					->where('term', (int) ($row['term'] ?? 0))
+					->get(1)->getRowArray();
+				if ($ov) {
+					$row['student_amount'] = (float) ($ov['amount'] ?? 0);
+				}
+			}
 			$expected = $row ? SchoolFeesModel::expectedForStudent($row, $studyingMode, (float) ($row['discount'] ?? 0)) : 0.0;
 		} else {
 			$row = (new ExtraFeesModel())->find($feesId);
 			if (!$row) {
 				return 0.0;
 			}
-			$expected = ((int) ($row['type'] ?? 0) === 1)
-				? (float) ($row['amount'] ?? 0)
-				: ExtraFeesModel::expectedForMode($row, $studyingMode);
+			if ((int) ($row['type'] ?? 0) === 0) {
+				$personal = (new ExtraFeesModel())->where('school_id', (int) ($row['school_id'] ?? 0))
+					->where('academic_year', (int) ($row['academic_year'] ?? 0))
+					->where('type', 1)
+					->where('type_id', $studentId)
+					->where('term', (int) ($row['term'] ?? 0))
+					->where('title', (string) ($row['title'] ?? ''))
+					->get(1)->getRowArray();
+				$expected = $personal
+					? (float) ($personal['amount'] ?? 0)
+					: ExtraFeesModel::expectedForMode($row, $studyingMode);
+			} else {
+				$expected = (float) ($row['amount'] ?? 0);
+			}
 		}
 
 		return max(0.0, $expected - $paid);

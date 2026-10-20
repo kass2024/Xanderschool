@@ -2230,6 +2230,17 @@ class AttendanceScanService
 				->where('term', $term)
 				->get()
 				->getResultArray();
+			$schoolOverride = [];
+			if ($db->tableExists('school_fee_student_amounts')) {
+				foreach ($db->table('school_fee_student_amounts')
+					->select('student_id, amount')
+					->whereIn('school_id', $scope)
+					->where('academic_year', $year)
+					->where('term', $term)
+					->get()->getResultArray() as $ov) {
+					$schoolOverride[(int) ($ov['student_id'] ?? 0)] = (float) ($ov['amount'] ?? 0);
+				}
+			}
 			$schoolByKey = [];
 			$schoolFeeIds = [];
 			foreach ($schoolRows as $row) {
@@ -2252,7 +2263,7 @@ class AttendanceScanService
 				}
 			}
 			$extraRows = $db->table('extra_fees')
-				->select('id, title, type, type_id, amount, amount_boarding, amount_day')
+				->select('id, title, type, type_id, term, amount, amount_boarding, amount_day')
 				->whereIn('school_id', $scope)
 				->where('academic_year', $year)
 				->where('term', $term)
@@ -2338,6 +2349,9 @@ class AttendanceScanService
 					foreach ($rows as $row) {
 						$feeId = (int) ($row['id'] ?? 0);
 						$disc = (float) ($discount[$sid . ':' . $feeId] ?? 0);
+						if (array_key_exists($sid, $schoolOverride)) {
+							$row['student_amount'] = $schoolOverride[$sid];
+						}
 						$schoolExpected += \App\Models\SchoolFeesModel::expectedForStudent($row, $mode, $disc);
 						$schoolPaid += (float) ($paid[$sid . ':2:' . $feeId] ?? 0);
 					}
@@ -2355,6 +2369,7 @@ class AttendanceScanService
 						$rowsForStudent[] = $fee;
 					}
 				}
+				$rowsForStudent = \App\Models\ExtraFeesModel::preferStudentOverrides($rowsForStudent);
 				foreach ($rowsForStudent as $fee) {
 					$kind = (int) ($fee['type'] ?? 0);
 					$expected = $kind === 1

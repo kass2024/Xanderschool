@@ -32,6 +32,20 @@ class SchoolFeesModel extends Model
 		if (!$db->fieldExists('amount_day', 'school_fees')) {
 			$db->query('ALTER TABLE `school_fees` ADD COLUMN `amount_day` decimal(15,2) DEFAULT NULL AFTER `amount_boarding`');
 		}
+		$db->query("CREATE TABLE IF NOT EXISTS `school_fee_student_amounts` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+			`school_id` INT NOT NULL,
+			`academic_year` INT NOT NULL,
+			`student_id` INT NOT NULL,
+			`term` TINYINT NOT NULL,
+			`amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+			`created_by` INT NULL,
+			`created_at` DATETIME NULL,
+			`updated_at` DATETIME NULL,
+			PRIMARY KEY (`id`),
+			UNIQUE KEY `uq_sfsa_student_term` (`school_id`, `academic_year`, `student_id`, `term`),
+			KEY `idx_sfsa_class_year` (`school_id`, `academic_year`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 	}
 
 	/**
@@ -266,6 +280,9 @@ class SchoolFeesModel extends Model
 
 	public static function expectedForStudent(array $row, int $studyingMode, float $discount = 0): float
 	{
+		if (array_key_exists('student_amount', $row) && $row['student_amount'] !== null && $row['student_amount'] !== '') {
+			return max(0, (float) $row['student_amount']);
+		}
 		$modeAmt = self::expectedForMode($row, $studyingMode);
 		$base = (float) ($row['amount'] ?? 0);
 		$legacyExpected = $base + $discount;
@@ -309,19 +326,23 @@ class SchoolFeesModel extends Model
 	/**
 	 * SQL twin of expectedForStudent(). $discountExpr is a numeric SQL expression (for example fd.amount).
 	 */
-	public static function sqlExpectedForStudent(string $alias, string $discountExpr, string $modeCol = 'students.studying_mode'): string
+	public static function sqlExpectedForStudent(string $alias, string $discountExpr, string $modeCol = 'students.studying_mode', string $overrideExpr = ''): string
 	{
 		$mode = "CASE WHEN {$modeCol} = 0 THEN COALESCE({$alias}.amount_boarding,0) ELSE COALESCE({$alias}.amount_day,0) END";
 		$other = "CASE WHEN {$modeCol} = 0 THEN COALESCE({$alias}.amount_day,0) ELSE COALESCE({$alias}.amount_boarding,0) END";
 		$legacy = "(COALESCE({$alias}.amount,0) + COALESCE({$discountExpr},0))";
 		$hasSplit = "({$alias}.amount_boarding IS NOT NULL OR {$alias}.amount_day IS NOT NULL)";
-		return "(CASE
+		$inner = "(CASE
 			WHEN NOT {$hasSplit} THEN GREATEST(0, CASE WHEN {$legacy} > 0 THEN {$legacy} ELSE COALESCE({$alias}.amount,0) END)
 			WHEN ABS({$legacy} - ({$mode})) < 0.01 OR ABS(COALESCE({$discountExpr},0)) < 0.01 THEN ({$mode})
 			WHEN ({$other}) > 0 AND ABS({$legacy} - ({$other})) < 0.01 AND ABS({$legacy} - ({$mode})) >= 0.01 THEN ({$mode})
 			WHEN ({$mode}) > 0 AND {$legacy} <= 0.01 AND ABS(({$mode}) + COALESCE({$discountExpr},0)) > 0.01 THEN ({$mode})
 			ELSE GREATEST(0, {$legacy})
 		END)";
+		if ($overrideExpr === '') {
+			return $inner;
+		}
+		return "(CASE WHEN {$overrideExpr} IS NOT NULL THEN GREATEST(0, {$overrideExpr}) ELSE {$inner} END)";
 	}
 
 	/**
@@ -571,14 +592,109 @@ class SchoolFeesModel extends Model
 			$discMap[(int) ($discRow['feesId'] ?? 0)] = (float) ($discRow['amount'] ?? 0);
 		}
 
+		$year = 0;
+		foreach ($rows as $row) {
+			$year = (int) ($row['academic_year'] ?? $year);
+			if ($year > 0) {
+				break;
+			}
+		}
+		$overrideMap = [];
+		if ($year > 0 && $db->tableExists('school_fee_student_amounts')) {
+			$ovRows = $db->table('school_fee_student_amounts')
+				->where('student_id', $studentId)
+				->where('academic_year', $year)
+				->get()->getResultArray();
+			foreach ($ovRows as $ovRow) {
+				$overrideMap[(int) ($ovRow['term'] ?? 0)] = (float) ($ovRow['amount'] ?? 0);
+			}
+		}
+
 		foreach ($rows as &$row) {
 			$fid = (int) ($row['id'] ?? 0);
 			$row['paid'] = $paidMap[$fid] ?? 0.0;
 			$row['discount'] = $discMap[$fid] ?? 0.0;
 			$row['due_date'] = $dueMap[$fid] ?? ($row['due_date'] ?? null);
+			$term = (int) ($row['term'] ?? 0);
+			if (array_key_exists($term, $overrideMap)) {
+				$row['student_amount'] = $overrideMap[$term];
+			}
 		}
 		unset($row);
 		return $rows;
+	}
+
+	/**
+	 * Students in a class who pay a school-fee amount other than the class default.
+	 *
+	 * @return array<int,int> class_id => distinct students
+	 */
+	public function overrideCountsByClass(int $schoolId, int $yearId): array
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $yearId < 1) {
+			return [];
+		}
+		$rows = $this->db->query(
+			"SELECT cr.class AS class_id, COUNT(DISTINCT ov.student_id) AS n
+			FROM school_fee_student_amounts ov
+			INNER JOIN class_records cr ON cr.student = ov.student_id AND cr.year = ov.academic_year AND cr.status = 1
+			WHERE ov.school_id = ? AND ov.academic_year = ?
+			GROUP BY cr.class",
+			[$schoolId, $yearId]
+		)->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$out[(int) ($row['class_id'] ?? 0)] = (int) ($row['n'] ?? 0);
+		}
+		return $out;
+	}
+
+	public function saveStudentTermAmount(int $schoolId, int $yearId, int $studentId, int $term, float $amount, int $createdBy): void
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $yearId < 1 || $studentId < 1 || $term < 1 || $term > 3) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		$now = date('Y-m-d H:i:s');
+		$existing = $db->table('school_fee_student_amounts')
+			->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('student_id', $studentId)
+			->where('term', $term)
+			->get(1)->getRowArray();
+		if ($existing) {
+			$db->table('school_fee_student_amounts')->where('id', (int) $existing['id'])->update([
+				'amount' => $amount,
+				'updated_at' => $now,
+			]);
+			return;
+		}
+		$db->table('school_fee_student_amounts')->insert([
+			'school_id' => $schoolId,
+			'academic_year' => $yearId,
+			'student_id' => $studentId,
+			'term' => $term,
+			'amount' => $amount,
+			'created_by' => $createdBy > 0 ? $createdBy : null,
+			'created_at' => $now,
+			'updated_at' => $now,
+		]);
+	}
+
+	public function clearStudentTermAmount(int $schoolId, int $yearId, int $studentId, int $term): void
+	{
+		$this->ensureSchema();
+		if ($schoolId < 1 || $yearId < 1 || $studentId < 1 || $term < 1) {
+			return;
+		}
+		\Config\Database::connect()->table('school_fee_student_amounts')
+			->where('school_id', $schoolId)
+			->where('academic_year', $yearId)
+			->where('student_id', $studentId)
+			->where('term', $term)
+			->delete();
 	}
 
 	/** SQL: sum boarding/day without falling back to the other mode's amount. */
