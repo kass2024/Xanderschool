@@ -726,6 +726,9 @@
 	border-radius: 14px;
 	padding: .8rem .9rem .95rem;
 	box-shadow: 0 8px 22px rgba(15, 23, 42, .08);
+	container-type: inline-size;
+	container-name: termcard;
+	min-width: 0;
 }
 .bp-hero .bp-term-card { border-color: transparent; }
 .bp-term-card header {
@@ -740,7 +743,15 @@
 	margin-bottom: .65rem;
 }
 .bp-term-card .bp-term-unit { letter-spacing: .04em; color: #94a3b8; font-weight: 700; }
-.bp-term-card .bp-term-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .35rem; }
+.bp-term-card .bp-term-metrics {
+	display: flex;
+	flex-direction: column;
+	gap: .4rem;
+}
+.bp-term-card .bp-term-metrics > div {
+	min-width: 0;
+	container-type: inline-size;
+}
 .bp-term-card .bp-term-metrics label {
 	display: block;
 	font-size: .62rem;
@@ -748,15 +759,47 @@
 	letter-spacing: .04em;
 	text-transform: uppercase;
 	color: #64748b;
-	margin: 0 0 .15rem;
+	margin: 0 0 .05rem;
 }
 .bp-term-card .bp-term-metrics strong {
 	display: block;
-	font-size: 1.02rem;
+	max-width: 100%;
+	font-size: clamp(0.68rem, 11cqi, 1.05rem);
 	font-weight: 800;
 	color: #0f172a;
 	font-variant-numeric: tabular-nums;
 	line-height: 1.15;
+	white-space: nowrap;
+}
+@container termcard (min-width: 460px) {
+	.bp-term-card .bp-term-metrics {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: .35rem;
+	}
+}
+.bp-year-figures {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: .35rem .75rem;
+}
+.bp-year-figures > div {
+	min-width: 0;
+	container-type: inline-size;
+}
+.bp-year-figures span {
+	display: block;
+	font-size: .75rem;
+	color: #64748b;
+}
+.bp-year-figures strong {
+	display: block;
+	max-width: 100%;
+	font-size: clamp(0.68rem, 10cqi, 1.05rem);
+	font-weight: 800;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.25;
+	white-space: nowrap;
 }
 .bp-term-card .metric-inc strong { color: #047857; }
 .bp-term-card .metric-exp strong { color: #b91c1c; }

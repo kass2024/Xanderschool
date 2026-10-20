@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=11" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=18" rel="stylesheet">
 
 <?php $tab = $tab ?? 'budgets'; ?>
 
@@ -87,10 +87,10 @@ foreach ($budgets as $b) {
 			<?php } ?>
 		</div>
 	</div>
-	<div class="row small text-muted mb-0">
-		<div class="col-4">Income (year)<br><strong class="text-success"><?= number_format((float)$b['total_income'], 0); ?></strong></div>
-		<div class="col-4">Expenses (year)<br><strong class="text-danger"><?= number_format((float)$b['total_expenses'], 0); ?></strong></div>
-		<div class="col-4">Surplus<br><strong class="<?= (float)$b['surplus_deficit'] >= 0 ? 'text-success' : 'text-danger'; ?>"><?= number_format((float)$b['surplus_deficit'], 0); ?></strong></div>
+	<div class="bp-year-figures">
+		<div><span>Income (year)</span><strong class="text-success"><?= number_format((float)$b['total_income'], 0); ?></strong></div>
+		<div><span>Expenses (year)</span><strong class="text-danger"><?= number_format((float)$b['total_expenses'], 0); ?></strong></div>
+		<div><span>Surplus</span><strong class="<?= (float)$b['surplus_deficit'] >= 0 ? 'text-success' : 'text-danger'; ?>"><?= number_format((float)$b['surplus_deficit'], 0); ?></strong></div>
 	</div>
 	<?php if (!empty($b['terms'])) { ?>
 	<div class="mt-3"><?= view('pages/budget/partials/term_kpi_board', ['term_figures' => $b['terms']]); ?></div>

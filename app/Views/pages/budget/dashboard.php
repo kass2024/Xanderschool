@@ -11,7 +11,7 @@
 </div>
 <?php } ?>
 
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=12" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=18" rel="stylesheet">
 <style>
 .bd-ai-card{border:1px solid #c5d8f0;border-radius:10px;overflow:hidden;background:#fff;}
 .bd-ai-head{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;background:linear-gradient(90deg,#eef5ff,#f8fbff);}
