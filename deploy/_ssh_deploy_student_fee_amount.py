@@ -42,13 +42,41 @@ def main() -> int:
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(HOST, username=USER, password=password(), timeout=90, banner_timeout=90)
+    transport = c.get_transport()
+    if transport is not None:
+        transport.set_keepalive(15)
     sftp = c.open_sftp()
+    # Home.php is large; a dropped packet must not leave a half-written controller.
+    sftp.get_channel().settimeout(120)
     for rel in FILES:
         remote = f"{REMOTE}/{rel}"
-        print("PUT", rel)
+        print("PUT", rel, flush=True)
         c.exec_command(f"mkdir -p {remote.rsplit('/', 1)[0]}")
         time.sleep(0.05)
-        sftp.put(str(ROOT / rel), remote)
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                sftp.put(str(ROOT / rel), remote + ".uploading")
+                sftp.posix_rename(remote + ".uploading", remote)
+                last_error = None
+                break
+            except Exception as exc:
+                last_error = exc
+                print(f"retry {attempt} {rel}: {exc}", flush=True)
+                time.sleep(2)
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+                c.close()
+                c.connect(HOST, username=USER, password=password(), timeout=90, banner_timeout=90)
+                transport = c.get_transport()
+                if transport is not None:
+                    transport.set_keepalive(15)
+                sftp = c.open_sftp()
+                sftp.get_channel().settimeout(120)
+        if last_error is not None:
+            raise last_error
     sftp.close()
 
     cmd = r"""
