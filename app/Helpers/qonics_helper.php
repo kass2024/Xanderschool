@@ -86,6 +86,12 @@ if (!function_exists('menu_clearance_allowed')) {
 			if (\Config\MenuClearance::isChiefAccountantPost($postId)) {
 				$cacheKeys = \Config\MenuClearance::withoutMarksMenus($cacheKeys);
 			}
+			if (\Config\MenuClearance::isAliceNamahoroAtMusanze()) {
+				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, [
+					'settings',
+					'pocket_money',
+				])));
+			}
 			$cacheKeys = array_values(array_filter($cacheKeys, static function ($key) {
 				return $key !== 'families' && strpos((string) $key, 'families/') !== 0;
 			}));

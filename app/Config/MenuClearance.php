@@ -772,11 +772,27 @@ class MenuClearance
 		}));
 	}
 
-	/** Pocket money transactions: school leaders and the pocket post. */
+	/** Alice Namahoro, while logged in at Wisdom School Musanze. */
+	public static function isAliceNamahoroAtMusanze(): bool
+	{
+		try {
+			$overview = new \App\Services\WisdomGroupOverview();
+			if (!$overview->isAliceNamahoro()) {
+				return false;
+			}
+			$schoolId = (int) (session('soma_school_id') ?? 0);
+			$musanze = $overview->wisdomMusanzeSchool();
+			return $musanze !== null && (int) ($musanze['id'] ?? 0) === $schoolId && $schoolId > 0;
+		} catch (\Throwable $e) {
+			return false;
+		}
+	}
+
+	/** Pocket money transactions: school leaders, the pocket post, and Alice at Musanze. */
 	public static function canUsePocketMoney($postId)
 	{
 		$postId = (int) $postId;
-		return $postId === 14 || self::isFullAccessPost($postId);
+		return $postId === 14 || self::isFullAccessPost($postId) || self::isAliceNamahoroAtMusanze();
 	}
 
 	/** School Director (post 29). Director of studies and Director of Finance stay out. */
