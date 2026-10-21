@@ -883,7 +883,7 @@
 										<div class="btn-group">
 											<a data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"
 											   class="p-0 btn">
-												<img class="rounded"
+												<img class="rounded js-session-avatar"
 													 src="<?= base_url('assets/images/profile/' . $_SESSION['soma_picture']); ?>"
 													 alt="" width="42">
 												<i class="fa fa-angle-down ml-2 opacity-8"></i>
@@ -897,7 +897,7 @@
 															<div class="widget-content p-0">
 																<div class="widget-content-wrapper">
 																	<div class="widget-content-left mr-3">
-																		<img class="rounded-circle"
+																		<img class="rounded-circle js-session-avatar"
 																			 src="<?= base_url('assets/images/profile/' . $_SESSION['soma_picture']); ?>"
 																			 alt=""
 																			 width="42">

@@ -84,7 +84,12 @@
 								<div class="col-md-6">
 									<div class="form-group">
 										<label><?= lang("app.country"); ?></label>
-										<?= view('pages/partials/country_select_staff'); ?>
+										<?= view('pages/partials/country_select_staff', [
+											'country_selected' => '',
+											'country_select_id' => 'country',
+											'country_required' => true,
+											'country_disabled' => false,
+										]); ?>
 									</div>
 								</div>
 								<div class="col-md-6">

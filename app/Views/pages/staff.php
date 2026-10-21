@@ -37,7 +37,17 @@
 	.sid-file { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 	.sid-file a { font-weight:600; }
 	.sid-actions { margin:14px 0 10px; }
-	@media (max-width: 800px) { .sid-grid { grid-template-columns:1fr; } }
+	.sp-layout { display:grid; grid-template-columns:240px minmax(0,1fr); gap:22px; align-items:start; }
+	.sp-photo { background:#f6f8fb; border:1px solid #e4ebf4; border-radius:16px; padding:18px 16px 14px; text-align:center; }
+	.sp-avatar-wrap { position:relative; width:148px; height:148px; margin:0 auto 14px; }
+	.sp-avatar { width:148px; height:148px; border-radius:50%; object-fit:cover; background:#fff; border:4px solid #fff; box-shadow:0 0 0 1px #d5deea, 0 10px 24px rgba(7,22,51,.12); display:block; }
+	.sp-avatar-remove { position:absolute; top:6px; right:6px; width:28px; height:28px; border:2px solid #fff; border-radius:50%; background:#dc3545; color:#fff; font-size:14px; line-height:24px; padding:0; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.18); }
+	.sp-drop { display:block; border:1.5px dashed #8ea4bf; border-radius:12px; background:#fff; padding:14px 10px; cursor:pointer; margin:0; transition:border-color .15s, background .15s; }
+	.sp-drop:hover, .sp-drop.is-over { border-color:#071633; background:#eef3fb; }
+	.sp-drop strong { display:block; font-size:13px; color:#071633; font-weight:700; }
+	.sp-drop span { display:block; margin-top:4px; color:#5c6b80; font-size:12px; font-weight:500; }
+	.sp-photo-note { margin:10px 0 0; color:#5c6b80; font-size:12px; font-weight:500; line-height:1.45; }
+	@media (max-width: 800px) { .sid-grid, .sp-layout { grid-template-columns:1fr; } }
 </style>
 <?php
 $canEditStaff = !empty($can_edit_staff);
@@ -51,11 +61,88 @@ if ($dobValue === '0000-00-00') {
 $field = static function (string $key) use ($staff): string {
 	return esc((string) ($staff[$key] ?? ''));
 };
+helper('qonics');
+$resolved = resolve_profile_photo($staff['photo'] ?? '');
+$hasPhoto = $resolved !== null;
+$photo = $hasPhoto ? profile_photo_url($resolved) : profile_photo_url(null);
+$fallbackPhoto = profile_photo_url(null);
+$editingSelf = (int) ($staff['id'] ?? 0) === (int) ($_SESSION['soma_id'] ?? 0);
+$lock = $canEditStaff ? '' : 'disabled';
 ?>
-<i class="fa fa-question-circle ihelp" data-toggle="tooltip" title="Double click value to enable edit mode then press enter or outside to save or escape key to cancel"></i>
+<div class="sid-card" id="staff-profile">
+	<h4>Staff profile</h4>
+	<p class="sid-lead">Update the name, email, phone, address, and profile photo. Email and phone are used for login and messages.</p>
+	<form id="staff-profile-form">
+		<input type="hidden" name="staff_id" value="<?= (int) $staff['id']; ?>">
+		<div class="sp-layout">
+			<div class="sp-photo">
+				<div class="sp-avatar-wrap">
+					<img src="<?= esc($photo); ?>" id="img_photo" class="sp-avatar" alt="Staff photo">
+					<?php if ($canEditStaff): ?>
+						<button type="button" id="btn_remove_photo" class="sp-avatar-remove" title="<?= esc(lang('app.removePhoto')); ?>" <?= $hasPhoto ? '' : 'style="display:none;"'; ?>>
+							<i class="fa fa-times"></i>
+						</button>
+					<?php endif; ?>
+				</div>
+				<?php if ($canEditStaff): ?>
+					<label class="sp-drop" id="dv_select_img">
+						<input type="file" id="in_student_photo" accept="image/jpeg,image/jpg,image/png" hidden>
+						<strong id="sp-photo-status">Click or drop a photo</strong>
+						<span>JPG or PNG, up to 5 MB</span>
+					</label>
+					<p class="sp-photo-note">The photo is cropped to a head-and-shoulders portrait on a white background.</p>
+				<?php elseif (!$hasPhoto): ?>
+					<p class="sp-photo-note">No profile photo yet.</p>
+				<?php endif; ?>
+			</div>
+			<div>
+				<div class="sid-grid">
+					<div>
+						<label for="sp-fname">First name</label>
+						<input class="form-control" id="sp-fname" name="fname" value="<?= $field('fname'); ?>" maxlength="100" <?= $canEditStaff ? 'required' : 'disabled'; ?>>
+					</div>
+					<div>
+						<label for="sp-lname">Last name</label>
+						<input class="form-control" id="sp-lname" name="lname" value="<?= $field('lname'); ?>" maxlength="100" <?= $canEditStaff ? 'required' : 'disabled'; ?>>
+					</div>
+					<div>
+						<label for="sp-email">Email</label>
+						<input class="form-control" id="sp-email" type="email" name="email" value="<?= $field('email'); ?>" maxlength="100" placeholder="name@school.com" <?= $lock; ?>>
+					</div>
+					<div>
+						<label for="sp-phone">Phone number</label>
+						<input class="form-control" id="sp-phone" name="phone" value="<?= $field('phone'); ?>" maxlength="20" inputmode="tel" placeholder="07..." <?= $lock; ?>>
+					</div>
+					<div>
+						<label for="staff_country">Country</label>
+						<?= view('pages/partials/country_select_staff', [
+							'country_selected' => (string) ($staff['country'] ?? ''),
+							'country_select_id' => 'staff_country',
+							'country_required' => false,
+							'country_disabled' => !$canEditStaff,
+						]); ?>
+					</div>
+					<div>
+						<label for="sp-city">City</label>
+						<input class="form-control" id="sp-city" name="city" value="<?= $field('city'); ?>" maxlength="100" <?= $lock; ?>>
+					</div>
+					<div class="full">
+						<label for="sp-address">Address</label>
+						<input class="form-control" id="sp-address" name="address" value="<?= $field('address'); ?>" maxlength="500" <?= $lock; ?>>
+					</div>
+				</div>
+				<?php if ($canEditStaff): ?>
+					<div class="sid-actions sp-save">
+						<button type="submit" class="btn btn-primary" id="sp-save">Save profile</button>
+					</div>
+				<?php endif; ?>
+			</div>
+		</div>
+	</form>
+</div>
 <div class="sid-card" id="staff-identity">
 	<h4>Identity</h4>
-	<p class="sid-lead">Choose nationality. You can fill this on your own profile. An accountant, Chief Accountant, or Head Teacher can fill it for any staff member.</p>
+	<p class="sid-lead">Choose nationality and upload the identification document. An accountant, Chief Accountant, or Head Teacher can fill this for any staff member.</p>
 	<form id="staff-identity-form" enctype="multipart/form-data">
 		<input type="hidden" name="staff_id" value="<?= (int) $staff['id']; ?>">
 		<div class="sid-switch">
@@ -68,30 +155,12 @@ $field = static function (string $key) use ($staff): string {
 				Non-Rwandan
 			</label>
 		</div>
-		<div class="sid-grid">
-			<div>
-				<label>First name</label>
-				<input class="form-control" name="fname" value="<?= $field('fname'); ?>" <?= $canEditStaff ? 'required' : 'disabled'; ?>>
-			</div>
-			<div>
-				<label>Last name</label>
-				<input class="form-control" name="lname" value="<?= $field('lname'); ?>" <?= $canEditStaff ? 'required' : 'disabled'; ?>>
-			</div>
-		</div>
 		<?php $rwOn = $identityKind === 'rwandan' && $canEditStaff; $fnOn = $identityKind === 'foreign' && $canEditStaff; ?>
 		<div class="sid-panel" data-kind="rwandan" <?= $identityKind === 'rwandan' ? '' : 'style="display:none;"'; ?>>
 			<div class="sid-grid" style="margin-top:12px;">
 				<div>
 					<label>National ID</label>
 					<input class="form-control" name="national_id" inputmode="numeric" maxlength="16" value="<?= $field('national_id'); ?>" placeholder="16 digits" <?= $rwOn ? '' : 'disabled'; ?>>
-				</div>
-				<div>
-					<label>Telephone No (optional)</label>
-					<input class="form-control" name="phone" value="<?= $field('phone'); ?>" <?= $rwOn ? '' : 'disabled'; ?>>
-				</div>
-				<div>
-					<label>Email (optional)</label>
-					<input class="form-control" type="email" name="email" value="<?= $field('email'); ?>" <?= $rwOn ? '' : 'disabled'; ?>>
 				</div>
 				<div class="full">
 					<label>Upload of ID or passport</label>
@@ -121,14 +190,6 @@ $field = static function (string $key) use ($staff): string {
 				<div>
 					<label>Date of birth</label>
 					<input class="form-control" type="date" name="dob" value="<?= esc($dobValue); ?>" <?= $fnOn ? '' : 'disabled'; ?>>
-				</div>
-				<div>
-					<label>Telephone No</label>
-					<input class="form-control" name="phone" value="<?= $field('phone'); ?>" <?= $fnOn ? '' : 'disabled'; ?>>
-				</div>
-				<div>
-					<label>Email (optional)</label>
-					<input class="form-control" type="email" name="email" value="<?= $field('email'); ?>" <?= $fnOn ? '' : 'disabled'; ?>>
 				</div>
 				<div>
 					<label>Nature of identification</label>
@@ -203,12 +264,7 @@ $field = static function (string $key) use ($staff): string {
 		<hr style="width: 100%;float: left"/>
 		<div class="col-sm-12 col-md-6 col-lg-6 pull-left">
 			<div class="boxed" style="background:white;padding: 20px">
-				<h4><?= lang("app.staffInformation");?></h4>
-				<div class="form-group">
-					<label><?= lang("app.address");?>:</label>
-					<span data-value="<?= esc($staff['address'] ?? '', 'attr'); ?>" data-target="address"
-						  class="<?= $canEditStaff ? 'spedit' : ''; ?>">&nbsp;<?= esc($staff['address'] ?? ''); ?></span>
-				</div>
+				<h4>Contract</h4>
 				<?php
 				$contractLabel = static function ($value): string {
 					$value = trim((string) $value);
@@ -237,28 +293,6 @@ $field = static function (string $key) use ($staff): string {
 			<div style="margin-left: 20px">
 				<label><?= lang("app.post");?>: <?= $staff['post_title']; ?></label><br/>
 				<label><?= lang("app.school");?>: <?= $_SESSION['soma_school']; ?></label><br/>
-			</div>
-		</div>
-		<div class="boxed" style="background-color: white;display: flow-root;">
-			<h4><?= lang("app.staffPhoto");?></h4>
-			<?php
-			helper('qonics');
-			$resolved = resolve_profile_photo($staff['photo'] ?? '');
-			$hasPhoto = $resolved !== null;
-			$photo = $hasPhoto ? profile_photo_url($resolved) : profile_photo_url(null);
-			$fallbackPhoto = profile_photo_url(null);
-			?>
-			<div style="position:relative;float:left;width:100px;height:100px;">
-				<img src="<?= esc($photo); ?>" id="img_photo" alt="" style="width:100px;height:100px;border-radius:50%;background:#FFFFFF;border:1px solid #4C5B5C;object-fit:cover;display:block;">
-				<button type="button" id="btn_remove_photo" title="<?= esc(lang('app.removePhoto')); ?>"
-					style="position:absolute;top:0;right:0;width:24px;height:24px;border:none;border-radius:50%;background:#dc3545;color:#fff;font-size:12px;line-height:24px;padding:0;cursor:pointer;<?= $hasPhoto ? '' : 'display:none;'; ?>">
-					<i class="fa fa-times"></i>
-				</button>
-			</div>
-			<input type="file" id="in_student_photo" accept="image/jpeg,image/jpg,image/png" style="display: none;overflow: hidden">
-			<div style="border: 1px dashed #bababa;float: left;width: calc(100% - 110px);margin-left: 10px;height: 100px;cursor: pointer;text-align: center;" id="dv_select_img">
-				<p style="margin: 30px 0 0;font-weight: 600;"><?= lang("app.uploadPhoto");?></p>
-				<label class="text-muted" style="font-style: italic;font-size: 10pt;"><?= lang("app.totalSize");?></label>
 			</div>
 		</div>
 		<?php
@@ -406,11 +440,17 @@ $field = static function (string $key) use ($staff): string {
 				toastada.error('<?= lang("app.systemErr");?>');
 			});
 		});
-		$(document).on("click","#dv_select_img",function () {
-			$("#in_student_photo")[0].click();
-		});
+		window.staffEditingSelf = <?= $editingSelf ? 'true' : 'false'; ?>;
+		window.staffPhotoFallback = <?= json_encode($fallbackPhoto); ?>;
 		function toggleStaffPhotoRemove(show) {
 			$("#btn_remove_photo").toggle(!!show);
+		}
+		window.toggleStaffPhotoRemove = toggleStaffPhotoRemove;
+		function applyStaffPhoto(src) {
+			$("#img_photo").prop("src", src);
+			if (window.staffEditingSelf) {
+				$(".js-session-avatar").attr("src", src);
+			}
 		}
 		function removeStaffPhoto() {
 			if (!confirm("<?= esc(lang('app.removeStaffPhotoConfirm'), 'js'); ?>")) {
@@ -421,7 +461,7 @@ $field = static function (string $key) use ($staff): string {
 				if (data.hasOwnProperty("error")) {
 					toastada.error(data.error);
 				} else if (data.hasOwnProperty("success")) {
-					$("#img_photo").prop("src", <?= json_encode($fallbackPhoto) ?>);
+					applyStaffPhoto(window.staffPhotoFallback);
 					$("#in_student_photo").val("");
 					toggleStaffPhotoRemove(false);
 					toastada.success(data.success);
@@ -437,22 +477,71 @@ $field = static function (string $key) use ($staff): string {
 			e.stopPropagation();
 			removeStaffPhoto();
 		});
-		$("#in_student_photo").on("change", function (e) {
-			var file = $(this)[0].files[0];
-			var upload = new Upload(file);
-			// maby check size or type here with upload.getSize() and upload.getType()
-			if (upload.getType()!="image/jpg" && upload.getType()!="image/jpeg" && upload.getType()!="image/png"){
-				toastada.error('<?= lang("app.allowedOnly");?>')
+		function uploadStaffPhotoFile(file) {
+			if (!file) {
 				return;
 			}
-			if (upload.getSize()> 5*1024*1024){
+			var upload = new Upload(file);
+			var type = (upload.getType() || '').toLowerCase();
+			var name = (upload.getName() || '').toLowerCase();
+			var typeOk = type === "image/jpg" || type === "image/jpeg" || type === "image/png" || /\.(jpe?g|png)$/.test(name);
+			if (!typeOk) {
+				toastada.error('<?= lang("app.allowedOnly");?>');
+				return;
+			}
+			if (upload.getSize() > 5 * 1024 * 1024) {
 				toastada.error('<?= lang("app.sizeNeeded");?>');
 				return;
 			}
-			// execute upload
-			$("#img_photo").prop("src",upload.getSource());
-			var id = $("#staff_section").data("id");
-			upload.doUpload("upload_image/staff_picture",$("#dv_select_img p"),$("#img_photo"),id);
+			upload.previousSrc = $("#img_photo").attr("src");
+			$("#img_photo").prop("src", upload.getSource());
+			upload.doUpload("upload_image/staff_picture", $("#sp-photo-status"), $("#img_photo"), $("#staff_section").data("id"));
+		}
+		$("#in_student_photo").on("change", function () {
+			uploadStaffPhotoFile(this.files && this.files[0]);
+			this.value = "";
+		});
+		var dropZone = document.getElementById("dv_select_img");
+		if (dropZone) {
+			["dragenter", "dragover"].forEach(function (name) {
+				dropZone.addEventListener(name, function (e) {
+					e.preventDefault();
+					dropZone.classList.add("is-over");
+				});
+			});
+			["dragleave", "drop"].forEach(function (name) {
+				dropZone.addEventListener(name, function (e) {
+					e.preventDefault();
+					dropZone.classList.remove("is-over");
+				});
+			});
+			dropZone.addEventListener("drop", function (e) {
+				var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+				uploadStaffPhotoFile(file);
+			});
+		}
+		if ($.fn.select2 && $("#staff_country").length) {
+			$("#staff_country").select2({ width: "100%" });
+		}
+		$("#staff-profile-form").on("submit", function (e) {
+			e.preventDefault();
+			if (!canEditIdentity) {
+				return;
+			}
+			var btn = $("#sp-save");
+			btn.prop("disabled", true);
+			$.post(window.base_url + "save_staff_profile", $(this).serialize(), function (data) {
+				if (data && data.error) {
+					toastada.error(data.error);
+					btn.prop("disabled", false);
+					return;
+				}
+				toastada.success((data && data.success) ? data.success : "Saved");
+				window.location.reload();
+			}, "json").fail(function () {
+				toastada.error("Could not save the staff profile.");
+				btn.prop("disabled", false);
+			});
 		});
 	});
 
@@ -491,24 +580,28 @@ $field = static function (string $key) use ($staff): string {
 				return myXhr;
 			},
 			success: function (data) {
-				// your callback here
-				loader.text('<?= lang("app.upLoad");?>');
+				loader.text("Click or drop a photo");
 				if (data.hasOwnProperty("error")){
 					toastada.error('<?= lang("app.upLoadErr");?>' +data.error);
-					img.prop("src","");
+					if (that.previousSrc) img.prop("src", that.previousSrc);
 				}else if (data.hasOwnProperty("success")){
 					toastada.success(data.success);
-					toggleStaffPhotoRemove(true);
+					if (data.photo) {
+						img.prop("src", data.photo);
+						if (window.staffEditingSelf) {
+							$(".js-session-avatar").attr("src", data.photo);
+						}
+					}
+					if (window.toggleStaffPhotoRemove) window.toggleStaffPhotoRemove(true);
 				}else{
 					toastada.error('<?= lang("app.fatalErr");?>');
-					img.prop("src","");
+					if (that.previousSrc) img.prop("src", that.previousSrc);
 				}
 			},
 			error: function (error) {
-				// handle error
 				toastada.error('<?= lang("app.systemErr");?>');
-				img.prop("src","");
-				loader.text('<?= lang("app.uploadPhoto");?>');
+				if (that.previousSrc) img.prop("src", that.previousSrc);
+				loader.text("Click or drop a photo");
 			},
 			async: true,
 			data: formData,
