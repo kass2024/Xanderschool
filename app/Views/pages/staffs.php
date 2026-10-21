@@ -1,5 +1,5 @@
 <div class="app-inner-layout app-inner-layout-page">
-<link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css?v=ids1') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/card-scan-ui.css?v=mail1') ?>">
 <link rel="stylesheet" href="<?= base_url('assets/css/staff-share-access.css?v=3') ?>">
 	<div class="app-inner-layout__wrapper">
 		<div class="app-inner-layout__content">
@@ -12,6 +12,12 @@
 							</div>
 							<div class="btn-actions-pane-right actions-icon-btn staff-list-header-actions">
 								<div class="staff-export-bar" role="group" aria-label="Export staff list">
+									<a href="<?= base_url('export_staff_mailbox_excel'); ?>"
+									   class="btn btn-sm staff-export-btn staff-export-mail"
+									   title="Download school mailbox login link, email, and default password">
+										<i class="fa fa-envelope"></i>
+										<span>Mailbox Excel</span>
+									</a>
 									<a href="<?= base_url('export_staff_list_excel'); ?>"
 									   class="btn btn-sm staff-export-btn staff-export-excel"
 									   title="Download full staff list as Excel">
@@ -61,6 +67,7 @@
 										<a href="javascript:void(0)" class="dropdown-item btn-share-all-staff" data-channel="both"><i class="fa fa-share-alt"></i> Reset &amp; share via SMS + Email</a>
 										<div class="dropdown-divider"></div>
 										<h6 tabindex="-1" class="dropdown-header">Export list</h6>
+										<a href="<?= base_url('export_staff_mailbox_excel'); ?>" class="dropdown-item"><i class="fa fa-envelope"></i> Mailbox Excel</a>
 										<a href="<?= base_url('export_staff_list_excel'); ?>" class="dropdown-item"><i class="fa fa-file-excel"></i> Export Excel</a>
 										<a href="<?= base_url('export_staff_list_pdf'); ?>" class="dropdown-item" target="_blank"><i class="fa fa-file-pdf"></i> Export PDF</a>
 										<a href="<?= base_url('export_staff_courses_pdf'); ?>" class="dropdown-item" target="_blank"><i class="fa fa-graduation-cap"></i> Courses &amp; periods PDF</a>

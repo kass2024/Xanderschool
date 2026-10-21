@@ -11,6 +11,25 @@ class StaffModel extends Model
     ,"identity_kind","national_id","id_copy","sex","dob","id_nature","document_no","father_name","mother_name","res_province","res_district","res_sector"];
 	protected $useTimestamps = true;
 	protected $primaryKey = "id";
+
+	public function ensureSchoolEmailColumns(): void
+	{
+		static $ready = false;
+		if ($ready) {
+			return;
+		}
+		$db = \Config\Database::connect();
+		if ($db->tableExists($this->table)) {
+			if (!$db->fieldExists('school_email', $this->table)) {
+				$db->query("ALTER TABLE `{$this->table}` ADD COLUMN `school_email` VARCHAR(120) NULL DEFAULT NULL");
+			}
+			if (!$db->fieldExists('school_email_password', $this->table)) {
+				$db->query("ALTER TABLE `{$this->table}` ADD COLUMN `school_email_password` VARCHAR(64) NULL DEFAULT NULL");
+			}
+		}
+		$ready = true;
+	}
+
 	public function checkUser($email,$key="staffs.email"){
 		$res = $this->select("staffs.id,staffs.photo,staffs.school_id,fname,lname,staffs.email,password,staffs.status,post
 		,p.title as post_title,sc.name as school_name,sc.status as school_status,sc.active_term,at.academic_year,at.term,at.use_period

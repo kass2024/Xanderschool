@@ -324,6 +324,17 @@
 	text-decoration: none;
 }
 
+.staff-export-mail {
+	background: #6d28d9;
+	border-color: #5b21b6;
+	color: #fff !important;
+}
+
+.staff-export-mail:hover {
+	background: #5b21b6;
+	color: #fff !important;
+}
+
 .staff-export-excel {
 	background: #157347;
 	border-color: #146c43;
