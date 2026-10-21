@@ -786,6 +786,7 @@
 <!-- edit tip shown inside Basic school info -->
 <div class="settings settings-page-wrap" id="settings_section" data-id="<?= $settings['id']; ?>">
 	<div id="accordion" class="accordion-wrapper mb-3 ss-accordion">
+		<?php if (!\Config\MenuClearance::isAliceNamahoroAtMusanze()): ?>
 		<div class="card ss-acc-item">
 			<div id="headingOne" class="card-header">
 				<button type="button" data-toggle="collapse" data-target="#collapseOne1" aria-expanded="false"
@@ -1032,6 +1033,7 @@
 				</div>
 			</div>
 		</div>
+		<?php endif; ?>
 
 		<div class="card ss-acc-item" id="logo-signatures">
 			<div id="headingLogoSig" class="b-radius-0 card-header">

@@ -19,6 +19,7 @@ REMOTE = "/opt/xander-school/app"
 FILES = [
     "app/Config/MenuClearance.php",
     "app/Helpers/qonics_helper.php",
+    "app/Views/pages/school_settings.php",
 ]
 
 
@@ -44,6 +45,8 @@ sleep 8
 docker exec xander_school_app php -r 'if (function_exists("opcache_reset")) { opcache_reset(); echo "opcache_reset OK\n"; }'
 docker exec xander_school_app php -l /var/www/html/app/Config/MenuClearance.php
 docker exec xander_school_app php -l /var/www/html/app/Helpers/qonics_helper.php
+docker exec xander_school_app php -l /var/www/html/app/Views/pages/school_settings.php
+docker exec xander_school_app grep -n "isAliceNamahoroAtMusanze" /var/www/html/app/Views/pages/school_settings.php
 docker exec xander_school_app grep -n "function isAliceNamahoroAtMusanze" /var/www/html/app/Config/MenuClearance.php
 docker exec xander_school_app grep -n "isAliceNamahoroAtMusanze" /var/www/html/app/Helpers/qonics_helper.php
 docker exec xander_school_app php -r '
