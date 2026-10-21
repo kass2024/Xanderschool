@@ -7,7 +7,6 @@ use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Font;
-use PhpOffice\PhpSpreadsheet\Style\Protection;
 use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
@@ -243,7 +242,7 @@ class StudentEmailListExporter
 		}
 
 		self::fitColumns($sheet, $maxLens);
-		self::lockHeader($sheet, $headerRow, $dataStart, $lastData);
+		$sheet->getProtection()->setSheet(false);
 
 		$page = $sheet->getPageSetup();
 		$page->setOrientation(PageSetup::ORIENTATION_LANDSCAPE);
@@ -275,35 +274,6 @@ class StudentEmailListExporter
 			$sheet->getColumnDimensionByColumn($col)->setWidth($width);
 			$sheet->getColumnDimensionByColumn($col)->setAutoSize(false);
 		}
-	}
-
-	private static function lockHeader(
-		Worksheet $sheet,
-		int $headerRow,
-		int $dataStart,
-		int $lastData
-	): void {
-		$lastCol = self::LAST_COL;
-		$sheet->getStyle("A1:{$lastCol}{$headerRow}")
-			->getProtection()
-			->setLocked(Protection::PROTECTION_PROTECTED);
-
-		$unlockEnd = max($lastData, $dataStart + 40);
-		$sheet->getStyle("A{$dataStart}:{$lastCol}{$unlockEnd}")
-			->getProtection()
-			->setLocked(Protection::PROTECTION_UNPROTECTED);
-
-		$protection = $sheet->getProtection();
-		$protection->setSheet(true);
-		$protection->setPassword('');
-		$protection->setSort(false);
-		$protection->setInsertRows(false);
-		$protection->setInsertColumns(false);
-		$protection->setDeleteRows(false);
-		$protection->setDeleteColumns(false);
-		$protection->setFormatCells(false);
-		$protection->setFormatRows(false);
-		$protection->setFormatColumns(true);
 	}
 
 	private static function textLen(string $text): int

@@ -201,6 +201,7 @@ class StaffMailboxExporter
 		$sheet->getPageMargins()->setLeft(0.4);
 		$sheet->getPageMargins()->setRight(0.4);
 		$sheet->getHeaderFooter()->setOddFooter('&L' . $webmail . '&RPage &P of &N');
+		$sheet->getProtection()->setSheet(false);
 	}
 
 	private static function textLen(string $text): int

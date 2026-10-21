@@ -6,13 +6,12 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Style\Protection;
 use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
  * Smart student list: one workbook, one sheet per class (Level+title).
- * Each sheet has a locked school header + columns: #, Names, Gender, Studying.
+ * Each sheet has a school header + columns: #, Names, Gender, Studying.
  */
 class SmartStudentSheetsExporter
 {
@@ -282,42 +281,7 @@ class SmartStudentSheetsExporter
 		$sheet->getColumnDimension('E')->setWidth(36);
 		$sheet->getColumnDimension('F')->setWidth(18);
 
-		self::lockHeader($sheet, $headerRow, $dataStart, $lastData);
-	}
-
-	/**
-	 * Freeze is already set; lock branding/meta/column headers so they cannot be edited.
-	 * Student data rows stay editable.
-	 */
-	private static function lockHeader(
-		Worksheet $sheet,
-		int $headerRow,
-		int $dataStart,
-		int $lastData
-	): void {
-		$headerSpan = self::HEADER_LAST_COL;
-		$lastCol = self::LAST_COL;
-
-		$sheet->getStyle("A1:{$headerSpan}{$headerRow}")
-			->getProtection()
-			->setLocked(Protection::PROTECTION_PROTECTED);
-
-		$unlockEnd = max($lastData, $dataStart + 40);
-		$sheet->getStyle("A{$dataStart}:{$lastCol}{$unlockEnd}")
-			->getProtection()
-			->setLocked(Protection::PROTECTION_UNPROTECTED);
-
-		$protection = $sheet->getProtection();
-		$protection->setSheet(true);
-		$protection->setPassword('');
-		$protection->setSort(false);
-		$protection->setInsertRows(false);
-		$protection->setInsertColumns(false);
-		$protection->setDeleteRows(false);
-		$protection->setDeleteColumns(false);
-		$protection->setFormatCells(false);
-		$protection->setFormatRows(false);
-		$protection->setFormatColumns(false);
+		$sheet->getProtection()->setSheet(false);
 	}
 
 	/**
