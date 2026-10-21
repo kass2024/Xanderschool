@@ -109,6 +109,13 @@ $lock = $canEditStaff ? '' : 'disabled';
 						<label for="sp-email">Email</label>
 						<input class="form-control" id="sp-email" type="email" name="email" value="<?= $field('email'); ?>" maxlength="100" placeholder="name@school.com" <?= $lock; ?>>
 					</div>
+					<?php if (trim((string) ($staff['school_email'] ?? '')) !== ''): ?>
+					<div class="full">
+						<label for="sp-school-email">School email</label>
+						<input class="form-control" id="sp-school-email" type="email" value="<?= $field('school_email'); ?>" readonly>
+						<p class="sid-lead" style="margin:6px 0 0;">School mailbox on wisdomschoolrwanda.com. Sign-in still uses the email above.</p>
+					</div>
+					<?php endif; ?>
 					<div>
 						<label for="sp-phone">Phone number</label>
 						<input class="form-control" id="sp-phone" name="phone" value="<?= $field('phone'); ?>" maxlength="20" inputmode="tel" placeholder="07..." <?= $lock; ?>>

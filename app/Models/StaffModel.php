@@ -6,7 +6,7 @@ use CodeIgniter\Model;
 class StaffModel extends Model
 {
 	protected $table="staffs";
-	protected $allowedFields = ["school_id","fname","lname","phone","email","password","status","lastlogin"
+	protected $allowedFields = ["school_id","fname","lname","phone","email","school_email","school_email_password","password","status","lastlogin"
     ,"next_login","post","shift_id","country","city","address","photo","card","face_enrolled","contract_start","contract_end","signature","created_by","updated_by","updateVersion","reset_exp"
     ,"identity_kind","national_id","id_copy","sex","dob","id_nature","document_no","father_name","mother_name","res_province","res_district","res_sector"];
 	protected $useTimestamps = true;
