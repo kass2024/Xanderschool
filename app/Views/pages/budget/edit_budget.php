@@ -120,6 +120,12 @@ $viewOnly = !empty($view_only);
 		<?php } ?>
 		<?php } else { ?>
 		<span class="badge badge-info p-2">Read-only — <?= esc($budget['status']); ?></span>
+		<?php if (\Config\MenuClearance::isDirectorPost((int) ($_SESSION['soma_post'] ?? 0))) { ?>
+		<?php if (!in_array($budget['status'], ['APPROVED', 'CANCELLED'], true)) { ?>
+		<button type="button" class="btn btn-success btn-sm ml-1" id="btnDirectorApprove"><i class="fa fa-check"></i> Approve</button>
+		<?php } ?>
+		<button type="button" class="btn btn-outline-danger btn-sm ml-1" id="btnDirectorDelete"><i class="fa fa-trash"></i> Delete</button>
+		<?php } ?>
 		<?php } ?>
 	</div>
 </div>
@@ -380,6 +386,24 @@ $('.btn-unlock-term').on('click', function () {
 		toastada.success(r.message || 'Updated');
 		location.reload();
 	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Could not update the term lock'); });
+});
+$('#btnDirectorApprove').on('click', function () {
+	if (!confirm('Approve this budget now?\n\nThis is the Director\'s approval. It does not wait for the Chief Accountant or the Director of Finance.')) return;
+	var $btn = $(this).prop('disabled', true);
+	$.post('<?= base_url('budget/budget_action'); ?>', { budget_id: <?= (int) $budget['id']; ?>, action: 'director_approve' }, function (r) {
+		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
+		toastada.success('Budget approved');
+		location.reload();
+	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Approval failed'); });
+});
+$('#btnDirectorDelete').on('click', function () {
+	if (!confirm('Delete this budget?\n\nLines and approval history will be removed. Budgets with cash requests cannot be deleted.')) return;
+	var $btn = $(this).prop('disabled', true);
+	$.post('<?= base_url('budget/delete_budget'); ?>', { budget_id: <?= (int) $budget['id']; ?> }, function (r) {
+		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
+		toastada.success(r.success || 'Deleted');
+		location.href = '<?= base_url('budget/prepare'); ?>';
+	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Delete failed'); });
 });
 $('#btnCancelBudget').on('click', function () {
 	if (!confirm('Cancel this budget so you can upload a new Excel file?')) return;

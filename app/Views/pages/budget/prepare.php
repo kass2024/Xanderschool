@@ -54,6 +54,7 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 $postIdSession = (int) ($_SESSION['soma_post'] ?? 0);
 $canPrepareUi = \Config\MenuClearance::canPrepareBudgetAtSchool($postIdSession);
 $viewOnlyUi = \Config\MenuClearance::isBudgetViewOnlyPost($postIdSession);
+$isDirectorUi = \Config\MenuClearance::isDirectorPost($postIdSession);
 foreach ($budgets as $b) {
 	$statusClass = $b['status'] === 'DRAFT' ? 'secondary' : ($b['status'] === 'APPROVED' ? 'success' : 'info');
 ?>
@@ -71,7 +72,13 @@ foreach ($budgets as $b) {
 			$isSubmittedPipeline = in_array($b['status'], ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'APPROVED', 'REJECTED'], true);
 			?>
 			<?= view('pages/budget/partials/excel_download', ['budget' => $b]); ?>
-			<?php if ($viewOnlyUi) { ?>
+			<?php if ($isDirectorUi && !in_array($b['status'], ['APPROVED', 'CANCELLED'], true)) { ?>
+			<button type="button" class="btn btn-sm btn-success mb-1 btn-director-approve" data-id="<?= (int) $b['id']; ?>" data-title="<?= esc($b['title']); ?>"><i class="fa fa-check"></i> Approve</button>
+			<?php } ?>
+			<?php if ($isDirectorUi) { ?>
+			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-outline-primary mb-1"><i class="fa fa-list"></i> View lines</a>
+			<button type="button" class="btn btn-sm btn-outline-danger mb-1 btn-del-budget" data-id="<?= (int) $b['id']; ?>" data-title="<?= esc($b['title']); ?>"><i class="fa fa-trash"></i> Delete</button>
+			<?php } elseif ($viewOnlyUi) { ?>
 			<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-sm btn-outline-secondary mb-1"><i class="fa fa-eye"></i> View on dashboard</a>
 			<?php } else { ?>
 			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-primary mb-1"><i class="fa fa-eye"></i> <?= ($canPrepareUi && $isPreparerEdit) || ($canFinanceAdjust && $isSubmittedPipeline) ? 'Open budget' : 'View lines'; ?></a>
@@ -139,6 +146,17 @@ $(document).on('click', '.btn-cancel-budget', function () {
 		toastada.success(r.success || 'Cancelled');
 		location.reload();
 	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Cancel failed'); });
+});
+$(document).on('click', '.btn-director-approve', function () {
+	var id = $(this).data('id');
+	var title = $(this).data('title') || 'this budget';
+	if (!confirm('Approve "' + title + '" now?\n\nThis is the Director\'s approval. It does not wait for the Chief Accountant or the Director of Finance.')) return;
+	var $btn = $(this).prop('disabled', true);
+	$.post('<?= base_url('budget/budget_action'); ?>', { budget_id: id, action: 'director_approve' }, function (r) {
+		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
+		toastada.success('Budget approved');
+		location.reload();
+	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Approval failed'); });
 });
 $(document).on('click', '.btn-del-budget', function () {
 	var id = $(this).data('id');

@@ -104,6 +104,9 @@ class BudgetWorkflowService
 	 */
 	public static function reviewStatusesForUser(BudgetPermissionService $perms, int $staffId, int $postId): array
 	{
+		if (\Config\MenuClearance::isDirectorPost($postId)) {
+			return ['DRAFT', 'RETURNED', 'SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'REJECTED'];
+		}
 		if ($perms->can($staffId, $postId, 'budget.view_all_branches')
 			|| $perms->can($staffId, $postId, 'budget.final_approve')
 			|| $perms->can($staffId, $postId, 'budget.chief_accountant_approve')) {
@@ -152,6 +155,10 @@ class BudgetWorkflowService
 			$actions = array_values(array_filter($actions, static function ($action) {
 				return !in_array($action, ['chief_accountant_approve', 'approve'], true);
 			}));
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if (\Config\MenuClearance::isDirectorPost($postId) && !in_array($status, ['APPROVED', 'CANCELLED'], true)) {
+			$actions[] = 'director_approve';
 		}
 		return $actions;
 	}
@@ -263,8 +270,12 @@ class BudgetWorkflowService
 		}
 
 		$perms = $opts['perms'] ?? new BudgetPermissionService();
+		$directorSole = $action === 'director_approve';
+		if ($directorSole && !\Config\MenuClearance::isDirectorPost((int) $postId)) {
+			return ['success' => false, 'error' => 'Only the Director can approve a budget in one step.'];
+		}
 		$need = self::$actionPerms[$action] ?? null;
-		if ($need && !$perms->can((int) $actorId, (int) $postId, $need)) {
+		if (!$directorSole && $need && !$perms->can((int) $actorId, (int) $postId, $need)) {
 			return ['success' => false, 'error' => 'You are not allowed to perform this approval step.'];
 		}
 
@@ -282,13 +293,16 @@ class BudgetWorkflowService
 		if ($action === 'chief_accountant_approve' && (int) ($b['prepared_by'] ?? 0) === (int) $actorId) {
 			return ['success' => false, 'error' => 'You prepared this budget. Another Chief Accountant must approve it, or submit it so the Director of Finance can approve.'];
 		}
+		if ($directorSole && in_array($current, ['APPROVED', 'CANCELLED'], true)) {
+			return ['success' => false, 'error' => 'This budget cannot be approved.'];
+		}
 		if ($action === 'approve' && $current !== 'DEPUTY_DIRECTOR_REVIEW') {
 			return ['success' => false, 'error' => 'Director of Finance can approve only after the Chief Accountant.'];
 		}
 		if ($action === 'approve' && (int) ($b['prepared_by'] ?? 0) === (int) $actorId && (int) $postId !== 24) {
 			return ['success' => false, 'error' => 'You prepared this budget, so you cannot give the final approval.'];
 		}
-		$new = self::$transitions[$current][$action] ?? null;
+		$new = $directorSole ? 'APPROVED' : (self::$transitions[$current][$action] ?? null);
 		if ($action === 'submit' && (int) $postId === 28) {
 			$new = 'DEPUTY_DIRECTOR_REVIEW';
 		}
@@ -307,7 +321,7 @@ class BudgetWorkflowService
 				return ['success' => false, 'error' => 'Only the person who prepared this budget can cancel it.'];
 			}
 		}
-		if ($action === 'approve') {
+		if ($action === 'approve' && !$directorSole) {
 			$hasChief = $db->table('budget_approval_actions')
 				->where('budget_id', (int) $budgetId)
 				->where('action', 'chief_accountant_approve')
@@ -376,10 +390,11 @@ class BudgetWorkflowService
 		}
 
 		$canChief = $perms->can($actorId, $postId, 'budget.chief_accountant_approve');
-		if (!$canPrepare && !$canFinal && !$canChief) {
+		$isDirector = \Config\MenuClearance::isDirectorPost($postId);
+		if (!$isDirector && !$canPrepare && !$canFinal && !$canChief) {
 			return ['success' => false, 'error' => 'You cannot delete this budget.'];
 		}
-		if ($status === 'APPROVED' && !$canPrepare && !$canFinal) {
+		if (!$isDirector && $status === 'APPROVED' && !$canPrepare && !$canFinal) {
 			return ['success' => false, 'error' => 'You cannot delete this approved budget.'];
 		}
 
