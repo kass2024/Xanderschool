@@ -294,7 +294,8 @@
 
 .budget-cr-form .cr-avail-box.danger { background: #fef2f2; border-color: #fecaca; }
 
-.budget-cr-form .cr-doc-zone { border: 2px dashed #cbd5e1; border-radius: 12px; padding: 1.25rem; text-align: center; background: #f8fafc; cursor: pointer; transition: border-color .2s, background .2s; }
+.budget-cr-form .cr-doc-zone { position: relative; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 1.25rem; text-align: center; background: #f8fafc; cursor: pointer; transition: border-color .2s, background .2s; }
+.budget-cr-form .cr-file-hit { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; font-size: 0; z-index: 2; }
 
 .budget-cr-form .cr-doc-zone:hover, .budget-cr-form .cr-doc-zone.dragover { border-color: #0d6efd; background: #eff6ff; }
 

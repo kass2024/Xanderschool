@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=19" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=21" rel="stylesheet">
 <?php
 $reqRow = $request ?? [];
 $wsName = strtoupper(trim((string) ($school_name ?? 'Wisdom School')));
@@ -243,14 +243,14 @@ if ($requestTerm < 1 || $requestTerm > 3) {
 	<div class="cr-attach-panel">
 		<div class="cr-doc-zone" id="docZone">
 			<i class="fa fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
-			<div>Drag files here or click <strong>Attach file</strong></div>
-			<input type="file" name="documents[]" id="docInput" multiple accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" style="display:none">
+			<div>Drag files here or click to choose from this computer</div>
+			<input type="file" name="documents[]" id="docInput" class="cr-file-hit" multiple accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx">
 		</div>
 
 		<div class="cr-attach-actions">
-			<button type="button" class="btn btn-outline-primary cr-attach-btn" id="btnBrowseDocs">
+			<label for="docInput" class="btn btn-outline-primary cr-attach-btn mb-0" id="btnBrowseDocs">
 				<i class="fa fa-paperclip"></i> Attach file
-			</button>
+			</label>
 			<span class="cr-attach-or">or append</span>
 			<button type="button" class="btn btn-success cr-attach-btn" id="btnScanPhone">
 				<i class="fa fa-mobile-alt"></i> Smart Scan (phone)
@@ -630,8 +630,6 @@ $(document).on('input', '.item-desc', function () {
 });
 loadLines();
 
-$('#docZone').on('click', function () { $('#docInput').click(); });
-$('#btnBrowseDocs').on('click', function (e) { e.preventDefault(); e.stopPropagation(); $('#docInput').click(); });
 $('#docZone').on('dragover', function (e) { e.preventDefault(); $(this).addClass('dragover'); });
 $('#docZone').on('dragleave drop', function (e) { e.preventDefault(); $(this).removeClass('dragover'); });
 $('#docZone').on('drop', function (e) {
