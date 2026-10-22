@@ -1,9 +1,15 @@
+<?php
+$schoolTerm = (int) ($current_term ?? 0);
+if ($schoolTerm < 1 || $schoolTerm > 3) {
+	$schoolTerm = 0;
+}
+$viewLabels = [0 => 'Full year', 1 => 'Term I', 2 => 'Term II', 3 => 'Term III'];
+?>
 <div class="bp-term-switch mb-3" id="budgetTermSwitch">
 	<span class="small font-weight-bold text-muted mr-1">View</span>
-	<button type="button" class="btn btn-sm btn-primary" data-view-term="0">Full year</button>
-	<button type="button" class="btn btn-sm btn-outline-primary" data-view-term="1">Term I</button>
-	<button type="button" class="btn btn-sm btn-outline-primary" data-view-term="2">Term II</button>
-	<button type="button" class="btn btn-sm btn-outline-primary" data-view-term="3">Term III</button>
+	<?php foreach ($viewLabels as $viewNo => $viewLabel) { ?>
+	<button type="button" class="btn btn-sm <?= $schoolTerm === $viewNo ? 'btn-primary' : 'btn-outline-primary'; ?>" data-view-term="<?= $viewNo; ?>"><?= $viewLabel; ?></button>
+	<?php } ?>
 </div>
 <script>
 (function () {
@@ -61,7 +67,6 @@
 			var href = String($(this).attr('href') || '').split('?')[0];
 			$(this).attr('href', term > 0 ? (href + '?term=' + term) : href);
 		});
-		try { sessionStorage.setItem('wisdomBudgetTerm', String(term)); } catch (e) {}
 		if (window.history && window.history.replaceState) {
 			var url = new URL(window.location.href);
 			if (term > 0) url.searchParams.set('term', String(term));
@@ -80,10 +85,10 @@
 	});
 	window.applyBudgetTermView = applyTermView;
 	$(function () {
-		var start = 0;
+		var start = <?= (int) $schoolTerm; ?>;
 		try {
-			var q = new URLSearchParams(window.location.search).get('term');
-			start = parseInt(q || sessionStorage.getItem('wisdomBudgetTerm') || '0', 10) || 0;
+			var params = new URLSearchParams(window.location.search);
+			if (params.has('term')) start = parseInt(params.get('term'), 10) || 0;
 		} catch (e2) {}
 		if (start >= 1 && start <= 3) applyTermView(start);
 		else document.body.classList.add('bp-term-live');

@@ -34,11 +34,12 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 				</div>
 				<div class="form-group col-md-4 mb-2">
 					<label class="small font-weight-bold">Term</label>
+					<?php $uploadTerm = (int) ($term ?? 0); ?>
 					<select class="form-control" name="budget_term" required>
-						<option value="">— Select term —</option>
-						<option value="1">Term I</option>
-						<option value="2">Term II</option>
-						<option value="3">Term III</option>
+						<option value="" <?= ($uploadTerm < 1 || $uploadTerm > 3) ? 'selected' : ''; ?>>— Select term —</option>
+						<option value="1" <?= $uploadTerm === 1 ? 'selected' : ''; ?>>Term I</option>
+						<option value="2" <?= $uploadTerm === 2 ? 'selected' : ''; ?>>Term II</option>
+						<option value="3" <?= $uploadTerm === 3 ? 'selected' : ''; ?>>Term III</option>
 					</select>
 				</div>
 			</div>
@@ -49,7 +50,7 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 <?php } ?>
 
 <div class="d-flex flex-wrap align-items-center justify-content-between">
-	<?= view('pages/budget/partials/term_view_switch'); ?>
+	<?= view('pages/budget/partials/term_view_switch', ['current_term' => (int) ($term ?? 0)]); ?>
 	<?php if (\Config\MenuClearance::isBudgetViewOnlyPost((int) ($_SESSION['soma_post'] ?? 0))) { ?>
 	<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-outline-secondary mb-3"><i class="fa fa-eye"></i> View dashboard</a>
 	<?php } ?>

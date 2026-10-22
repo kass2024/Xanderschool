@@ -30,7 +30,7 @@
 <div class="bp-hero mb-3">
 	<h2><i class="fa fa-chart-line"></i> <?= !empty($finance_desk) ? esc($finance_desk['role'] . ' dashboard') : 'Budget Dashboard'; ?></h2>
 	<p class="bp-meta mb-2"><?= !empty($finance_desk['is_central']) ? 'All Wisdom schools' : esc($branch_label ?? 'Your school'); ?><?= !empty($finance_desk) ? ' · figures come from each school’s uploaded budget' : ''; ?></p>
-	<?= view('pages/budget/partials/term_view_switch'); ?>
+	<?= view('pages/budget/partials/term_view_switch', ['current_term' => (int) ($term ?? 0)]); ?>
 </div>
 
 <?php if (!empty($finance_desk)) { ?>

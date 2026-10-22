@@ -25,6 +25,10 @@ if ($prepPhone === '') {
 }
 $prepSig = trim((string) ($preparer_signature ?? ''));
 $sigBase = base_url('assets/images/signatures/');
+$requestTerm = (int) ($reqRow['budget_term'] ?? 0);
+if ($requestTerm < 1 || $requestTerm > 3) {
+	$requestTerm = (int) ($term ?? 0);
+}
 ?>
 
 <div class="budget-cr-form ws-erf-wrap">
@@ -59,10 +63,10 @@ $sigBase = base_url('assets/images/signatures/');
 	<div>
 		<label>Term</label>
 		<select name="budget_term" id="budget_term" class="form-control form-control-sm" required <?= empty($budgets) ? 'disabled' : ''; ?>>
-			<option value="">— Select term —</option>
-			<option value="1" <?= (int) ($reqRow['budget_term'] ?? 0) === 1 ? 'selected' : ''; ?>>Term I</option>
-			<option value="2" <?= (int) ($reqRow['budget_term'] ?? 0) === 2 ? 'selected' : ''; ?>>Term II</option>
-			<option value="3" <?= (int) ($reqRow['budget_term'] ?? 0) === 3 ? 'selected' : ''; ?>>Term III</option>
+			<option value="" <?= ($requestTerm < 1 || $requestTerm > 3) ? 'selected' : ''; ?>>— Select term —</option>
+			<option value="1" <?= $requestTerm === 1 ? 'selected' : ''; ?>>Term I</option>
+			<option value="2" <?= $requestTerm === 2 ? 'selected' : ''; ?>>Term II</option>
+			<option value="3" <?= $requestTerm === 3 ? 'selected' : ''; ?>>Term III</option>
 		</select>
 	</div>
 	<button type="button" class="btn btn-sm btn-outline-primary" id="btnAddItem" <?= empty($budgets) ? 'disabled' : ''; ?>>
@@ -165,8 +169,7 @@ $sigBase = base_url('assets/images/signatures/');
 	<tr>
 		<td class="ws-lab">Term</td>
 		<td id="budgetTermLabel"><?php
-			$savedTermNo = (int) ($reqRow['budget_term'] ?? 0);
-			echo esc([1 => 'Term I', 2 => 'Term II', 3 => 'Term III'][$savedTermNo] ?? '—');
+			echo esc([1 => 'Term I', 2 => 'Term II', 3 => 'Term III'][$requestTerm] ?? '—');
 		?></td>
 	</tr>
 	<tr>
