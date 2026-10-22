@@ -128,12 +128,19 @@ var BudgetWorkspace = (function () {
 	function saveAll(callback) {
 		if (!cfg.canEdit) { if (callback) callback({}); return; }
 		$.post(cfg.saveUrl, $('#frmBudgetWorkspace').serialize(), function (r) {
-			if (r.error) { if (typeof toastada !== 'undefined') toastada.error(r.error); return; }
+			if (r.error) {
+				if (typeof toastada !== 'undefined') toastada.error(r.error);
+				if (callback) callback(r);
+				return;
+			}
 			dirty = false;
 			$('#saveStatus').addClass('saved').html('<i class="fa fa-check"></i> Saved online');
 			if (r.totals) refreshUI();
 			if (callback) callback(r);
-		}, 'json');
+		}, 'json').fail(function () {
+			if (typeof toastada !== 'undefined') toastada.error('Could not save the budget.');
+			if (callback) callback({ error: 'Could not save the budget.' });
+		});
 	}
 
 	function saveSetup() {
@@ -150,6 +157,22 @@ var BudgetWorkspace = (function () {
 		}, 'json');
 	}
 
+	function paintSubmitProgress(pct, stage, step) {
+		pct = Math.max(0, Math.min(100, pct));
+		$('#budgetSubmitFill').css('width', pct + '%');
+		$('#budgetSubmitPct').text(Math.round(pct) + '%');
+		$('#budgetSubmitStage').text(stage);
+		$('#budgetSubmitProgress .bp-smart-steps span').each(function () {
+			var n = parseInt($(this).attr('data-step'), 10);
+			$(this).toggleClass('is-done', n < step).toggleClass('is-on', n === step);
+		});
+	}
+
+	function resetSubmitProgress() {
+		$('#budgetSubmitProgress').prop('hidden', true);
+		$('#btnSubmit, #btnSubmitSummary').prop('disabled', false);
+	}
+
 	function submitBudget() {
 		if (!anyAmountFilled()) {
 			toastada.error('Enter at least one term amount before submitting. Empty lines can stay blank.');
@@ -157,12 +180,43 @@ var BudgetWorkspace = (function () {
 		}
 		var chain = cfg.submitConfirm || 'Submit this budget?\n\n1) The head teacher of this school approves first\n2) Chief Accountant approves second\n3) Director of Finance approves last\n\nCash requests stay closed until all three approve.';
 		if (!confirm(chain)) return;
-		saveAll(function () {
+		var crept = 46;
+		var creep = null;
+		function stopCreep() { if (creep) { clearInterval(creep); creep = null; } }
+		$('#btnSubmit, #btnSubmitSummary').prop('disabled', true);
+		$('#budgetSubmitProgress').prop('hidden', false);
+		paintSubmitProgress(8, 'Saving the budget lines', 1);
+		saveAll(function (saved) {
+			if (!saved || saved.error) {
+				stopCreep();
+				resetSubmitProgress();
+				return;
+			}
+			paintSubmitProgress(48, 'Checking the term amounts', 2);
+			creep = setInterval(function () {
+				if (crept < 72) {
+					crept += 3;
+					paintSubmitProgress(crept, 'Checking the term amounts', 2);
+				} else if (crept < 92) {
+					crept += 2;
+					paintSubmitProgress(crept, 'Sending the budget for approval', 3);
+				}
+			}, 280);
 			$.post(cfg.submitUrl, { budget_id: cfg.budgetId }, function (r) {
-				if (r.error) { toastada.error(r.error); return; }
-				toastada.success(r.success || r.status ? 'Submitted — approvers notified' : 'Submitted for approval');
-				location.href = cfg.redirectUrl;
-			}, 'json');
+				stopCreep();
+				if (r.error) {
+					toastada.error(r.error);
+					resetSubmitProgress();
+					return;
+				}
+				paintSubmitProgress(100, 'Head Teacher notified', 5);
+				toastada.success(r.success || (r.status ? 'Submitted — approvers notified' : 'Submitted for approval'));
+				setTimeout(function () { location.href = cfg.redirectUrl; }, 450);
+			}, 'json').fail(function () {
+				stopCreep();
+				toastada.error('Submit failed');
+				resetSubmitProgress();
+			});
 		});
 	}
 

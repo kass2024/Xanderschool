@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=18" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=20" rel="stylesheet">
 
 <?php
 $statusBadge = $budget['status'] === 'DRAFT' ? 'secondary' : ($budget['status'] === 'APPROVED' ? 'success' : 'warning');
@@ -124,6 +124,22 @@ $viewOnly = !empty($view_only);
 		<button type="button" class="btn btn-success btn-sm ml-1" id="btnHeadTeacherApprove"><i class="fa fa-check"></i> Approve</button>
 		<?php } ?>
 		<?php } ?>
+		<?php if (\Config\MenuClearance::isDirectorPost((int) ($_SESSION['soma_post'] ?? 0)) && !in_array($budget['status'] ?? '', ['APPROVED', 'CANCELLED'], true)) { ?>
+		<button type="button" class="btn btn-success btn-sm ml-1" id="btnDirectorApprove"><i class="fa fa-check"></i> Approve now</button>
+		<?php } ?>
+	</div>
+</div>
+<div id="budgetSubmitProgress" class="bp-smart-progress" hidden>
+	<div class="bp-smart-top">
+		<strong id="budgetSubmitStage">Saving the budget lines</strong>
+		<span id="budgetSubmitPct">0%</span>
+	</div>
+	<div class="bp-smart-track"><div class="bp-smart-fill" id="budgetSubmitFill"></div></div>
+	<div class="bp-smart-steps">
+		<span data-step="1">Save lines</span>
+		<span data-step="2">Check amounts</span>
+		<span data-step="3">Submit</span>
+		<span data-step="4">Notify</span>
 	</div>
 </div>
 
@@ -347,7 +363,7 @@ $viewOnly = !empty($view_only);
 </div>
 <?php } ?>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=13"></script>
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=14"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,
@@ -381,6 +397,15 @@ $('.btn-unlock-term').on('click', function () {
 		toastada.success(r.message || 'Updated');
 		location.reload();
 	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Could not update the term lock'); });
+});
+$('#btnDirectorApprove').on('click', function () {
+	if (!confirm('Approve this budget now?\n\nThis skips the Head Teacher, the Chief Accountant, and the Director of Finance. Cash requests can start immediately.')) return;
+	var $btn = $(this).prop('disabled', true);
+	$.post('<?= base_url('budget/budget_action'); ?>', { budget_id: <?= (int) $budget['id']; ?>, action: 'director_approve' }, function (r) {
+		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
+		toastada.success('Budget approved');
+		location.href = '<?= base_url('budget/prepare'); ?>';
+	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Approval failed'); });
 });
 $('#btnHeadTeacherApprove').on('click', function () {
 	if (!confirm('Approve this budget as the head teacher of this school?\n\nIt then goes to the Chief Accountant, and after that to the Director of Finance.')) return;

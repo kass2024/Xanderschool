@@ -1914,13 +1914,14 @@ class BudgetCashflow extends Home
 		if ($action === 'headteacher_approve' && !\Config\MenuClearance::isHeadMasterEquivalent($c['postId'])) {
 			return $this->response->setJSON(['error' => 'Only the head teacher of this school can approve this step.']);
 		}
-		if ($action === 'director_approve') {
-			return $this->response->setJSON(['error' => 'Approval order is the school Head Teacher, then the Chief Accountant, then the Director of Finance.']);
+		if ($action === 'director_approve' && !\Config\MenuClearance::isDirectorPost($c['postId'])) {
+			return $this->response->setJSON(['error' => 'Only the Director can approve a budget without the earlier steps.']);
 		}
 		$need = BudgetWorkflowService::permissionForAction($action);
-		if ($action !== 'headteacher_approve' && $need) {
+		$skipPerm = $action === 'headteacher_approve' || $action === 'director_approve';
+		if (!$skipPerm && $need) {
 			$this->denyPerm($need);
-		} elseif ($action !== 'headteacher_approve') {
+		} elseif (!$skipPerm) {
 			return $this->response->setJSON(['error' => 'Unknown approval action.']);
 		}
 		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
@@ -2474,7 +2475,7 @@ class BudgetCashflow extends Home
 		if (!$preparer) {
 			return;
 		}
-		if ($action === 'approve' && $status === 'APPROVED') {
+		if (($action === 'approve' || $action === 'director_approve') && $status === 'APPROVED') {
 			$pTitle = 'Budget approved';
 			$pBody = '"' . $title . '" (' . $branchLabel . ') is approved. Cash requests can now start from this budget.';
 		} elseif ($action === 'headteacher_approve') {

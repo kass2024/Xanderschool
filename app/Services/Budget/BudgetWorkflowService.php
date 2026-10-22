@@ -89,6 +89,7 @@ class BudgetWorkflowService
 			'procurement_review' => 'Procurement',
 			'budget_review' => 'Budget Manager',
 			'approve' => 'Director of Finance',
+			'director_approve' => 'Director',
 			'return' => 'Return',
 			'reject' => 'Reject',
 		];
@@ -170,6 +171,10 @@ class BudgetWorkflowService
 			$actions = array_values(array_filter($actions, static function ($action) {
 				return !in_array($action, ['headteacher_approve', 'chief_accountant_approve', 'approve'], true);
 			}));
+		}
+		$status = (string) ($budget['status'] ?? '');
+		if (\Config\MenuClearance::isDirectorPost($postId) && !in_array($status, ['APPROVED', 'CANCELLED'], true)) {
+			array_unshift($actions, 'director_approve');
 		}
 		return $actions;
 	}
@@ -283,7 +288,37 @@ class BudgetWorkflowService
 
 		$perms = $opts['perms'] ?? new BudgetPermissionService();
 		if ($action === 'director_approve') {
-			return ['success' => false, 'error' => 'Approval order is the school Head Teacher, then the Chief Accountant, then the Director of Finance.'];
+			$current = (string) $b['status'];
+			if (!\Config\MenuClearance::isDirectorPost((int) $postId)) {
+				return ['success' => false, 'error' => 'Only the Director can approve a budget without the earlier steps.'];
+			}
+			if (!empty($opts['allowed_branch_ids'])) {
+				$allowed = array_map('intval', $opts['allowed_branch_ids']);
+				if (!in_array((int) $b['branch_id'], $allowed, true)) {
+					return ['success' => false, 'error' => 'This budget belongs to another school/branch.'];
+				}
+			}
+			if ($current === 'CANCELLED') {
+				return ['success' => false, 'error' => 'A cancelled budget cannot be approved. Upload a new file.'];
+			}
+			$db->table('budgets')->where('id', (int) $budgetId)->update([
+				'status' => 'APPROVED',
+				'updated_by' => $actorId,
+				'updated_at' => date('Y-m-d H:i:s'),
+			]);
+			$db->table('budget_approval_actions')->insert([
+				'budget_id' => (int) $budgetId,
+				'actor_id' => (int) $actorId,
+				'actor_post_id' => (int) $postId,
+				'action' => 'director_approve',
+				'previous_status' => $current,
+				'new_status' => 'APPROVED',
+				'comment' => $comment,
+				'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+				'created_at' => date('Y-m-d H:i:s'),
+			]);
+			$this->audit->log('budget', (int) $budgetId, 'director_approve', $actorId, ['status' => $current], ['status' => 'APPROVED'], $b['organization_id'], $b['branch_id']);
+			return ['success' => true, 'status' => 'APPROVED'];
 		}
 		$need = self::$actionPerms[$action] ?? null;
 		if ($action !== 'headteacher_approve' && $need && !$perms->can((int) $actorId, (int) $postId, $need)) {

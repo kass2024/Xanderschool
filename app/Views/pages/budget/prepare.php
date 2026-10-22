@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=19" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=20" rel="stylesheet">
 
 <?php $tab = $tab ?? 'budgets'; ?>
 
@@ -44,6 +44,19 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 				</div>
 			</div>
 			<button type="submit" class="btn btn-primary" id="btnUploadBudget"><i class="fa fa-upload"></i> Upload and extract lines</button>
+			<div id="budgetUploadProgress" class="bp-smart-progress" hidden>
+				<div class="bp-smart-top">
+					<strong id="budgetUploadStage">Uploading the Excel file</strong>
+					<span id="budgetUploadPct">0%</span>
+				</div>
+				<div class="bp-smart-track"><div class="bp-smart-fill" id="budgetUploadFill"></div></div>
+				<div class="bp-smart-steps">
+					<span data-step="1">Upload</span>
+					<span data-step="2">Read workbook</span>
+					<span data-step="3">Extract lines</span>
+					<span data-step="4">Save term</span>
+				</div>
+			</div>
 		</form>
 	</div>
 </div>
@@ -90,6 +103,9 @@ foreach ($budgets as $b) {
 			$isSubmittedPipeline = in_array($b['status'], ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'APPROVED', 'REJECTED'], true);
 			?>
 			<?= view('pages/budget/partials/excel_download', ['budget' => $b]); ?>
+			<?php if ($isDirectorUi && !in_array($b['status'], ['APPROVED', 'CANCELLED'], true)) { ?>
+			<button type="button" class="btn btn-sm btn-success mb-1 btn-director-approve" data-id="<?= (int) $b['id']; ?>" data-title="<?= esc($b['title']); ?>"><i class="fa fa-check"></i> Approve now</button>
+			<?php } ?>
 			<?php if (\Config\MenuClearance::isHeadMasterEquivalent($postIdSession) && ($b['status'] ?? '') === 'HEADTEACHER_REVIEW') { ?>
 			<button type="button" class="btn btn-sm btn-success mb-1 btn-ht-approve" data-id="<?= (int) $b['id']; ?>" data-title="<?= esc($b['title']); ?>"><i class="fa fa-check"></i> Approve</button>
 			<?php } ?>
@@ -143,9 +159,39 @@ foreach ($budgets as $b) {
 </div>
 
 <script>
+function paintBudgetProgress(prefix, pct, stage, step) {
+	pct = Math.max(0, Math.min(100, pct));
+	$('#' + prefix + 'Fill').css('width', pct + '%');
+	$('#' + prefix + 'Pct').text(Math.round(pct) + '%');
+	$('#' + prefix + 'Stage').text(stage);
+	$('#' + prefix + 'Progress .bp-smart-steps span').each(function () {
+		var n = parseInt($(this).attr('data-step'), 10);
+		$(this).toggleClass('is-done', n < step).toggleClass('is-on', n === step);
+	});
+}
 $('#frmUploadBudget').on('submit', function (e) {
 	e.preventDefault();
-	var $btn = $('#btnUploadBudget').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Extracting...');
+	var $btn = $('#btnUploadBudget').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Working...');
+	var $bar = $('#budgetUploadProgress').prop('hidden', false);
+	var creep = null;
+	var crept = 54;
+	function stopCreep() { if (creep) { clearInterval(creep); creep = null; } }
+	function startCreep() {
+		if (creep) return;
+		creep = setInterval(function () {
+			if (crept < 74) {
+				crept += 2;
+				paintBudgetProgress('budgetUpload', crept, 'Reading the workbook', 2);
+			} else if (crept < 90) {
+				crept += 1.4;
+				paintBudgetProgress('budgetUpload', crept, 'Extracting lines for this term', 3);
+			} else if (crept < 96) {
+				crept += 0.6;
+				paintBudgetProgress('budgetUpload', crept, 'Saving the budget', 4);
+			}
+		}, 380);
+	}
+	paintBudgetProgress('budgetUpload', 2, 'Uploading the Excel file', 1);
 	var data = new FormData(this);
 	$.ajax({
 		url: '<?= base_url('budget/upload_prepared_budget'); ?>',
@@ -153,19 +199,39 @@ $('#frmUploadBudget').on('submit', function (e) {
 		data: data,
 		processData: false,
 		contentType: false,
-		dataType: 'json'
+		dataType: 'json',
+		xhr: function () {
+			var xhr = $.ajaxSettings.xhr();
+			if (xhr.upload) {
+				xhr.upload.addEventListener('progress', function (ev) {
+					if (!ev.lengthComputable || !ev.total) return;
+					var pct = Math.max(2, Math.round((ev.loaded / ev.total) * 52));
+					paintBudgetProgress('budgetUpload', pct, 'Uploading the Excel file', 1);
+					if (ev.loaded >= ev.total) startCreep();
+				});
+			}
+			return xhr;
+		}
 	}).done(function (r) {
+		stopCreep();
 		if (r.error) {
 			toastada.error(r.error);
+			$bar.prop('hidden', true);
 			$btn.prop('disabled', false).html('<i class="fa fa-upload"></i> Upload and extract lines');
 			return;
 		}
+		paintBudgetProgress('budgetUpload', 100, 'Budget saved', 5);
 		toastada.success(r.success || 'Budget extracted');
-		location.href = '<?= base_url('budget/edit_budget/'); ?>' + r.budget_id;
+		setTimeout(function () {
+			location.href = '<?= base_url('budget/edit_budget/'); ?>' + r.budget_id;
+		}, 400);
 	}).fail(function () {
+		stopCreep();
+		$bar.prop('hidden', true);
 		$btn.prop('disabled', false).html('<i class="fa fa-upload"></i> Upload and extract lines');
 		toastada.error('Upload failed. Use the Wisdom .xlsx template.');
 	});
+	setTimeout(startCreep, 700);
 });
 $(document).on('click', '.btn-cancel-budget', function () {
 	var id = $(this).data('id');
@@ -177,6 +243,17 @@ $(document).on('click', '.btn-cancel-budget', function () {
 		toastada.success(r.success || 'Cancelled');
 		location.reload();
 	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Cancel failed'); });
+});
+$(document).on('click', '.btn-director-approve', function () {
+	var id = $(this).data('id');
+	var title = $(this).data('title') || 'this budget';
+	if (!confirm('Approve "' + title + '" now?\n\nThis skips the Head Teacher, the Chief Accountant, and the Director of Finance. Cash requests can start immediately.')) return;
+	var $btn = $(this).prop('disabled', true);
+	$.post('<?= base_url('budget/budget_action'); ?>', { budget_id: id, action: 'director_approve' }, function (r) {
+		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
+		toastada.success('Budget approved');
+		location.reload();
+	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Approval failed'); });
 });
 $(document).on('click', '.btn-ht-approve', function () {
 	var id = $(this).data('id');
