@@ -36,6 +36,7 @@ class BudgetCashflow extends Home
 		$schema = new BudgetSchemaModel();
 		$schema->ensureSchema();
 		$schema->seedFoundation($schoolId, $staffId);
+		BudgetWorkflowService::parkUntilHeadTeacher();
 		return [$schoolId, $staffId];
 	}
 
@@ -194,7 +195,8 @@ class BudgetCashflow extends Home
 	protected function financeDeskSnapshot(array $c, $db): array
 	{
 		$postId = (int) $c['postId'];
-		$isChief = $postId === 28;
+		$isChief = \Config\MenuClearance::isChiefAccountantPost($postId);
+		$isDirectorView = \Config\MenuClearance::isDirectorPost($postId);
 		CashRequestApprovalPolicy::ensureSchema();
 		$branches = $c['branchCtx']->accessibleBranches($c['staffId'], $postId, $c['schoolId'], !empty($c['isCentral']));
 		if (!$branches && !empty($c['branch'])) {
@@ -251,9 +253,7 @@ class BudgetCashflow extends Home
 				->get()->getResultArray();
 		}
 
-		$budgetQueueStatuses = $isChief
-			? ['SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW']
-			: ['DEPUTY_DIRECTOR_REVIEW'];
+		$budgetQueueStatuses = ['HEADTEACHER_REVIEW', 'SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW'];
 		$requestQueueStatus = $isChief ? 'HEADTEACHER_APPROVED' : 'CHIEF_ACCOUNTANT_APPROVED';
 
 		$group = [
@@ -415,8 +415,8 @@ class BudgetCashflow extends Home
 		}
 
 		return [
-			'role' => $isChief ? 'Chief Accountant' : 'Director of Finance',
-			'role_key' => $isChief ? 'chief' : 'finance',
+			'role' => $isDirectorView ? 'Director' : ($isChief ? 'Chief Accountant' : 'Director of Finance'),
+			'role_key' => $isDirectorView ? 'director' : ($isChief ? 'chief' : 'finance'),
 			'is_central' => !empty($c['isCentral']),
 			'school_count' => count($schools),
 			'approved_schools' => $approvedSchools,
@@ -437,7 +437,7 @@ class BudgetCashflow extends Home
 			'money_allowed_count' => $moneyAllowedCount,
 			'paid' => $paid,
 			'active_requests' => $activeRequests,
-			'budget_wait_label' => $isChief ? 'Budgets waiting for you' : 'Budgets waiting for final approval',
+			'budget_wait_label' => 'Budgets waiting for approval',
 			'request_wait_label' => $isChief ? 'Requests after the Head Teacher' : 'Requests after the Chief Accountant',
 		];
 	}
@@ -555,7 +555,9 @@ class BudgetCashflow extends Home
 		$data['can_prepare_budget'] = \Config\MenuClearance::canPrepareBudgetAtSchool($c['postId'], $c['schoolId'])
 			&& $c['perms']->can($c['staffId'], $c['postId'], 'budget.prepare');
 		$data['finance_desk'] = null;
-		if (in_array((int) $c['postId'], [24, 28], true)) {
+		$deskPost = in_array((int) $c['postId'], [24, 28], true)
+			|| ($c['branchCtx']->seesEverySchoolBudget($c['postId'], $c['schoolId']) && \Config\MenuClearance::isDirectorPost($c['postId']));
+		if ($deskPost) {
 			$data['finance_desk'] = $this->financeDeskSnapshot($c, $db);
 			$data['title'] = $data['finance_desk']['role'] . ' dashboard';
 		}
@@ -1082,9 +1084,34 @@ class BudgetCashflow extends Home
 		$data['branch_label'] = $c['branch']
 			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
 			: session('soma_school');
+		$data['show_all_schools'] = $c['branchCtx']->seesEverySchoolBudget($c['postId'], $c['schoolId']);
+		$budgetQuery = $db->table('budgets b')
+			->select('b.*, br.name as branch_name, br.organization_id, br.school_id as budget_school_id')
+			->join('branches br', 'br.id = b.branch_id', 'left');
+		if (!empty($data['show_all_schools'])) {
+			$allBranchIds = array_map('intval', array_column(
+				$c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']),
+				'id'
+			));
+			if ((int) $c['branchId'] > 0 && !in_array((int) $c['branchId'], $allBranchIds, true)) {
+				$allBranchIds[] = (int) $c['branchId'];
+			}
+			$waiting = ['HEADTEACHER_REVIEW', 'SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'RETURNED'];
+			if ($allBranchIds) {
+				$budgetQuery->whereIn('b.branch_id', $allBranchIds)
+					->groupStart()
+						->where('b.branch_id', (int) $c['branchId'])
+						->orWhereIn('b.status', $waiting)
+					->groupEnd();
+			} else {
+				$budgetQuery->where('b.branch_id', $c['branchId']);
+			}
+		} else {
+			$budgetQuery->where('b.branch_id', $c['branchId']);
+		}
 		$data['budgets'] = $this->attachUploaderNames(
 			$db,
-			$db->table('budgets')->where('branch_id', $c['branchId'])->orderBy('id', 'DESC')->get()->getResultArray()
+			$budgetQuery->where('b.status !=', 'CANCELLED')->orderBy('b.id', 'DESC')->get()->getResultArray()
 		);
 		$termMap = $this->termFiguresForBudgets($db, array_column($data['budgets'], 'id'));
 		foreach ($data['budgets'] as &$budgetRow) {
@@ -1609,9 +1636,7 @@ class BudgetCashflow extends Home
 		$data['can_submit'] = $canEdit && in_array($status, BudgetWorkflowService::preparerEditableStatuses(), true)
 			&& $c['perms']->can($c['staffId'], $c['postId'], 'budget.submit');
 		$data['excel_upload'] = (($setup['source'] ?? '') === WisdomBudgetWorkbookImportService::SOURCE);
-		$data['submit_label'] = ((int) $c['postId'] === 28)
-			? 'Submit to Director of Finance'
-			: 'Submit to Chief Accountant';
+		$data['submit_label'] = 'Submit to Head Teacher';
 		$data['can_cancel'] = $c['perms']->can($c['staffId'], $c['postId'], 'budget.prepare')
 			&& !in_array($status, ['CANCELLED'], true);
 		$data['can_add_lines'] = $c['perms']->can($c['staffId'], $c['postId'], 'budget.edit_submitted');
@@ -1826,13 +1851,16 @@ class BudgetCashflow extends Home
 		$c = $this->ctx();
 		$action = trim((string) $this->request->getPost('action'));
 		$id = (int) $this->request->getPost('budget_id');
-		if ($action === 'director_approve' && !\Config\MenuClearance::isDirectorPost($c['postId'])) {
-			return $this->response->setJSON(['error' => 'Only the Director can approve a budget in one step.']);
+		if ($action === 'headteacher_approve' && !\Config\MenuClearance::isHeadMasterEquivalent($c['postId'])) {
+			return $this->response->setJSON(['error' => 'Only the head teacher of this school can approve this step.']);
+		}
+		if ($action === 'director_approve') {
+			return $this->response->setJSON(['error' => 'Approval order is the school Head Teacher, then the Chief Accountant, then the Director of Finance.']);
 		}
 		$need = BudgetWorkflowService::permissionForAction($action);
-		if ($action !== 'director_approve' && $need) {
+		if ($action !== 'headteacher_approve' && $need) {
 			$this->denyPerm($need);
-		} elseif ($action !== 'director_approve') {
+		} elseif ($action !== 'headteacher_approve') {
 			return $this->response->setJSON(['error' => 'Unknown approval action.']);
 		}
 		$branchIds = array_column($c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']), 'id');
@@ -2359,25 +2387,22 @@ class BudgetCashflow extends Home
 		$actionLabel = $chain[$action] ?? $action;
 
 		if ($action === 'submit') {
-			$hierarchy = new SchoolHierarchyService();
-			$masterId = $hierarchy->isChildSchool($schoolId) ? (int) $hierarchy->masterSchoolId($schoolId) : $schoolId;
-			$waitingForFinance = $status === 'DEPUTY_DIRECTOR_REVIEW';
 			$msgTitle = 'Budget submitted for approval';
-			$msgBody = $waitingForFinance
-				? $branchLabel . ' — "' . $title . '" was prepared by the Chief Accountant and is waiting for the Director of Finance.'
-				: $branchLabel . ' — "' . $title . '" is waiting for the Chief Accountant, then the Director of Finance.';
-			$nextPost = $waitingForFinance ? 24 : 28;
-			$nextSchool = $waitingForFinance ? ($masterId > 0 ? $masterId : $schoolId) : ($masterId > 0 ? $masterId : null);
-			foreach ($notify->activeStaffByPost($nextPost, $nextSchool) as $staff) {
+			$msgBody = $branchLabel . ' — "' . $title . '" is waiting for the head teacher of this school, then the Chief Accountant, then the Director of Finance.';
+			$heads = $db->table('staffs')
+				->select('id, fname, lname, email, phone, school_id, post')
+				->where('school_id', $schoolId)
+				->whereIn('post', [1, 18, 25])
+				->whereIn('status', [1, 2])
+				->get()->getResultArray();
+			foreach ($heads as $staff) {
 				$notify->notifyStaff((int) $staff['id'], $msgTitle, $msgBody, $reviewUrl, (int) $budget['branch_id']);
 				$this->sendBudgetContactAlert($staff, $msgTitle, $msgBody);
 			}
 			$preparer = $notify->staffById((int) ($budget['prepared_by'] ?? 0));
 			if ($preparer) {
 				$pTitle = 'Your budget was submitted';
-				$pBody = $waitingForFinance
-					? '"' . $title . '" is waiting for the Director of Finance. Cash requests stay closed until that approval.'
-					: '"' . $title . '" is waiting for the Chief Accountant, then the Director of Finance. Cash requests stay closed until both approve.';
+				$pBody = '"' . $title . '" is waiting for the head teacher of this school. Cash requests stay closed until the Head Teacher, Chief Accountant, and Director of Finance have approved.';
 				$notify->notifyStaff((int) $preparer['id'], $pTitle, $pBody, $prepareUrl, (int) $budget['branch_id']);
 				$this->sendBudgetContactAlert($preparer, $pTitle, $pBody);
 			}
@@ -2389,11 +2414,12 @@ class BudgetCashflow extends Home
 		if (!$preparer) {
 			return;
 		}
-		if (($action === 'approve' || $action === 'director_approve') && $status === 'APPROVED') {
+		if ($action === 'approve' && $status === 'APPROVED') {
 			$pTitle = 'Budget approved';
-			$pBody = $action === 'director_approve'
-				? '"' . $title . '" (' . $branchLabel . ') was approved by the Director. Cash requests can now start.'
-				: '"' . $title . '" (' . $branchLabel . ') is approved. Cash requests can now start from this budget.';
+			$pBody = '"' . $title . '" (' . $branchLabel . ') is approved. Cash requests can now start from this budget.';
+		} elseif ($action === 'headteacher_approve') {
+			$pTitle = 'Head Teacher approved the budget';
+			$pBody = '"' . $title . '" (' . $branchLabel . ') is now waiting for the Chief Accountant.';
 		} elseif ($action === 'chief_accountant_approve') {
 			$pTitle = 'Chief Accountant approved the budget';
 			$pBody = '"' . $title . '" (' . $branchLabel . ') is now waiting for the Director of Finance.';
@@ -2412,7 +2438,9 @@ class BudgetCashflow extends Home
 
 		// After procurement / budget manager, nudge next role
 		$nextPost = null;
-		if ($action === 'chief_accountant_approve') {
+		if ($action === 'headteacher_approve') {
+			$nextPost = 28;
+		} elseif ($action === 'chief_accountant_approve') {
 			$nextPost = 24;
 		} elseif ($action === 'procurement_review') {
 			$nextPost = 19;

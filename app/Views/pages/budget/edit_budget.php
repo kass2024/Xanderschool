@@ -70,7 +70,7 @@ $viewOnly = !empty($view_only);
 	<strong>Extracted from Excel.</strong>
 	<?= esc($setup['excel_file'] ?? 'Uploaded workbook'); ?>
 	<?php if (!empty($setup['excel_period'])) { ?> · <?= esc($setup['excel_period']); ?><?php } ?>
-	· Chief Accountant approves first, then the Director of Finance. Cash requests open only after both approvals. Cancel this budget if you need to upload a replacement.
+	· The head teacher of this school approves first, then the Chief Accountant, then the Director of Finance. Cash requests open only after those three approvals.
 	<?= view('pages/budget/partials/excel_download', ['budget' => $budget, 'btn_class' => 'btn btn-sm btn-success ml-2']); ?>
 </div>
 <?php } ?>
@@ -113,18 +113,15 @@ $viewOnly = !empty($view_only);
 		<?php } ?>
 		<button type="button" class="btn btn-primary btn-sm" id="btnSave"><i class="fa fa-save"></i> Save</button>
 		<?php if ($canSubmit) { ?>
-		<button type="button" class="btn btn-success btn-sm" id="btnSubmit"><i class="fa fa-paper-plane"></i> <?= esc($submit_label ?? 'Submit to Chief Accountant'); ?></button>
+		<button type="button" class="btn btn-success btn-sm" id="btnSubmit"><i class="fa fa-paper-plane"></i> <?= esc($submit_label ?? 'Submit to Head Teacher'); ?></button>
 		<?php } ?>
 		<?php if (!empty($can_cancel)) { ?>
 		<button type="button" class="btn btn-outline-warning btn-sm ml-1" id="btnCancelBudget"><i class="fa fa-ban"></i> Cancel</button>
 		<?php } ?>
 		<?php } else { ?>
 		<span class="badge badge-info p-2">Read-only — <?= esc($budget['status']); ?></span>
-		<?php if (\Config\MenuClearance::isDirectorPost((int) ($_SESSION['soma_post'] ?? 0))) { ?>
-		<?php if (!in_array($budget['status'], ['APPROVED', 'CANCELLED'], true)) { ?>
-		<button type="button" class="btn btn-success btn-sm ml-1" id="btnDirectorApprove"><i class="fa fa-check"></i> Approve</button>
-		<?php } ?>
-		<button type="button" class="btn btn-outline-danger btn-sm ml-1" id="btnDirectorDelete"><i class="fa fa-trash"></i> Delete</button>
+		<?php if (\Config\MenuClearance::isHeadMasterEquivalent((int) ($_SESSION['soma_post'] ?? 0)) && ($budget['status'] ?? '') === 'HEADTEACHER_REVIEW') { ?>
+		<button type="button" class="btn btn-success btn-sm ml-1" id="btnHeadTeacherApprove"><i class="fa fa-check"></i> Approve</button>
 		<?php } ?>
 		<?php } ?>
 	</div>
@@ -287,7 +284,7 @@ $viewOnly = !empty($view_only);
 	</tbody>
 </table>
 <?php if ($canSubmit) { ?>
-<button type="button" class="btn btn-success btn-block mt-2" id="btnSubmitSummary"><i class="fa fa-paper-plane"></i> <?= esc($submit_label ?? 'Submit to Chief Accountant'); ?></button>
+<button type="button" class="btn btn-success btn-block mt-2" id="btnSubmitSummary"><i class="fa fa-paper-plane"></i> <?= esc($submit_label ?? 'Submit to Head Teacher'); ?></button>
 <?php } elseif ($isFinanceAdjust) { ?>
 <span class="badge badge-warning p-2 mt-2 d-inline-block"><i class="fa fa-user-tie"></i> Finance adjust — <?= esc($budget['status']); ?></span>
 <?php } ?>
@@ -350,7 +347,7 @@ $viewOnly = !empty($view_only);
 </div>
 <?php } ?>
 
-<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=12"></script>
+<script src="<?= base_url('assets/js/budget-workspace.js'); ?>?v=13"></script>
 <script>BudgetWorkspace.init({
 	budgetId: <?= (int)$budget['id']; ?>,
 	canEdit: <?= $canEdit ? 'true' : 'false'; ?>,
@@ -367,9 +364,7 @@ $viewOnly = !empty($view_only);
 	fillSchoolFeesUrl: '',
 	resetEmptyUrl: '<?= base_url('budget/reset_budget_empty_amounts'); ?>',
 	redirectUrl: '<?= base_url('budget/prepare'); ?>',
-	submitConfirm: <?= json_encode((int) ($_SESSION['soma_post'] ?? 0) === 28
-		? "Submit this budget to the Director of Finance?\n\nYou prepared it as Chief Accountant, so the first approval step is skipped.\nCash requests stay closed until the Director of Finance approves."
-		: "Submit this budget?\n\n1) Chief Accountant approves first\n2) Director of Finance approves second\n\nCash requests stay closed until both approve."); ?>
+	submitConfirm: <?= json_encode("Submit this budget?\n\n1) The head teacher of this school approves first\n2) Chief Accountant approves second\n3) Director of Finance approves last\n\nCash requests stay closed until all three approve."); ?>
 });
 $('.btn-unlock-term').on('click', function () {
 	var $btn = $(this);
@@ -387,23 +382,14 @@ $('.btn-unlock-term').on('click', function () {
 		location.reload();
 	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Could not update the term lock'); });
 });
-$('#btnDirectorApprove').on('click', function () {
-	if (!confirm('Approve this budget now?\n\nThis is the Director\'s approval. It does not wait for the Chief Accountant or the Director of Finance.')) return;
+$('#btnHeadTeacherApprove').on('click', function () {
+	if (!confirm('Approve this budget as the head teacher of this school?\n\nIt then goes to the Chief Accountant, and after that to the Director of Finance.')) return;
 	var $btn = $(this).prop('disabled', true);
-	$.post('<?= base_url('budget/budget_action'); ?>', { budget_id: <?= (int) $budget['id']; ?>, action: 'director_approve' }, function (r) {
+	$.post('<?= base_url('budget/budget_action'); ?>', { budget_id: <?= (int) $budget['id']; ?>, action: 'headteacher_approve' }, function (r) {
 		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
-		toastada.success('Budget approved');
+		toastada.success('Sent to the Chief Accountant');
 		location.reload();
 	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Approval failed'); });
-});
-$('#btnDirectorDelete').on('click', function () {
-	if (!confirm('Delete this budget?\n\nLines and approval history will be removed. Budgets with cash requests cannot be deleted.')) return;
-	var $btn = $(this).prop('disabled', true);
-	$.post('<?= base_url('budget/delete_budget'); ?>', { budget_id: <?= (int) $budget['id']; ?> }, function (r) {
-		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
-		toastada.success(r.success || 'Deleted');
-		location.href = '<?= base_url('budget/prepare'); ?>';
-	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Delete failed'); });
 });
 $('#btnCancelBudget').on('click', function () {
 	if (!confirm('Cancel this budget so you can upload a new Excel file?')) return;

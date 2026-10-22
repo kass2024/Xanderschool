@@ -87,6 +87,23 @@ class BranchContextService
 		return $hierarchy->isMasterSchool($homeId);
 	}
 
+	/**
+	 * Master-school Director, Chief Accountant, and Director of Finance see every child budget.
+	 */
+	public function seesEverySchoolBudget($postId, $schoolId): bool
+	{
+		$postId = (int) $postId;
+		$watch = \Config\MenuClearance::isDirectorPost($postId)
+			|| \Config\MenuClearance::isChiefAccountantPost($postId)
+			|| \Config\MenuClearance::isDirectorOfFinancePost($postId);
+		if (!$watch) {
+			return false;
+		}
+		$homeId = (int) $this->homeSchoolId($schoolId);
+		$hierarchy = new SchoolHierarchyService();
+		return $hierarchy->isMasterSchool($homeId) || $hierarchy->isMasterSchool((int) $schoolId);
+	}
+
 	/** Branch IDs this user may access (always scoped to their org). */
 	public function accessibleBranchIds($staffId, $postId, $schoolId)
 	{
@@ -98,18 +115,20 @@ class BranchContextService
 		}
 		$orgId = (int) $branch['organization_id'];
 
-		if ($this->hasCentralDashboard($staffId, $postId, $schoolId)) {
-			$hierarchy = new SchoolHierarchyService();
-			$homeId = $this->homeSchoolId($schoolId);
-			if ($hierarchy->isMasterSchool($homeId)) {
-				$childIds = array_column($hierarchy->childSchools($homeId), 'id');
-				$schoolIds = array_values(array_unique(array_merge([$homeId], $childIds)));
-				return $db->table('branches')->select('id')
-					->where('organization_id', $orgId)
-					->whereIn('school_id', $schoolIds)
-					->where('status', 1)
-					->get()->getResultArray();
-			}
+		$hierarchy = new SchoolHierarchyService();
+		$homeId = (int) $this->homeSchoolId($schoolId);
+		$masterId = $hierarchy->isMasterSchool($homeId) ? $homeId : ($hierarchy->isMasterSchool((int) $schoolId) ? (int) $schoolId : 0);
+		$seeAllBudgets = $masterId > 0 && ($this->hasCentralDashboard($staffId, $postId, $schoolId) || $this->seesEverySchoolBudget($postId, $schoolId));
+		if ($seeAllBudgets) {
+			$childIds = array_column($hierarchy->childSchools($masterId), 'id');
+			$schoolIds = array_values(array_unique(array_merge([$masterId], $childIds)));
+			return $db->table('branches')->select('id')
+				->where('organization_id', $orgId)
+				->whereIn('school_id', $schoolIds)
+				->where('status', 1)
+				->get()->getResultArray();
+		}
+		if ($this->hasCentralDashboard($staffId, $postId, $schoolId) && $masterId < 1) {
 			return $db->table('branches')->select('id')
 				->where('organization_id', $orgId)->where('status', 1)
 				->get()->getResultArray();

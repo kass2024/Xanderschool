@@ -6,14 +6,21 @@ class BudgetWorkflowService
 {
 	/**
 	 * Excel upload chain:
-	 * 1) DRAFT / RETURNED → submit → Chief Accountant
-	 * 2) CHIEF_ACCOUNTANT_REVIEW → Director of Finance
-	 * 3) DEPUTY_DIRECTOR_REVIEW → APPROVED (cash requests may start)
+	 * 1) DRAFT / RETURNED → submit → Head Teacher of that school
+	 * 2) HEADTEACHER_REVIEW → Chief Accountant
+	 * 3) CHIEF_ACCOUNTANT_REVIEW → Director of Finance
+	 * 4) DEPUTY_DIRECTOR_REVIEW → APPROVED (cash requests may start)
 	 * Legacy procurement / budget-manager rows can still move forward.
 	 */
 	private static $transitions = [
-		'DRAFT' => ['submit' => 'CHIEF_ACCOUNTANT_REVIEW', 'cancel' => 'CANCELLED'],
-		'RETURNED' => ['submit' => 'CHIEF_ACCOUNTANT_REVIEW', 'cancel' => 'CANCELLED'],
+		'DRAFT' => ['submit' => 'HEADTEACHER_REVIEW', 'cancel' => 'CANCELLED'],
+		'RETURNED' => ['submit' => 'HEADTEACHER_REVIEW', 'cancel' => 'CANCELLED'],
+		'HEADTEACHER_REVIEW' => [
+			'headteacher_approve' => 'CHIEF_ACCOUNTANT_REVIEW',
+			'return' => 'RETURNED',
+			'reject' => 'REJECTED',
+			'cancel' => 'CANCELLED',
+		],
 		'CHIEF_ACCOUNTANT_REVIEW' => [
 			'chief_accountant_approve' => 'DEPUTY_DIRECTOR_REVIEW',
 			'return' => 'RETURNED',
@@ -48,7 +55,7 @@ class BudgetWorkflowService
 			'reject' => 'REJECTED',
 			'cancel' => 'CANCELLED',
 		],
-		'REJECTED' => ['cancel' => 'CANCELLED', 'submit' => 'CHIEF_ACCOUNTANT_REVIEW'],
+		'REJECTED' => ['cancel' => 'CANCELLED', 'submit' => 'HEADTEACHER_REVIEW'],
 	];
 
 	/** Which permission unlocks each action. */
@@ -65,11 +72,11 @@ class BudgetWorkflowService
 
 	/** Statuses each review role should see in the Review queue. */
 	private static $reviewQueueByPerm = [
-		'budget.chief_accountant_approve' => ['CHIEF_ACCOUNTANT_REVIEW', 'SUBMITTED'],
+		'budget.chief_accountant_approve' => ['HEADTEACHER_REVIEW', 'CHIEF_ACCOUNTANT_REVIEW', 'SUBMITTED'],
 		'budget.review_procurement' => ['SUBMITTED'],
 		'budget.review_budget' => ['PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW'],
-		'budget.final_approve' => ['DEPUTY_DIRECTOR_REVIEW'],
-		'budget.return' => ['SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW'],
+		'budget.final_approve' => ['HEADTEACHER_REVIEW', 'CHIEF_ACCOUNTANT_REVIEW', 'DEPUTY_DIRECTOR_REVIEW'],
+		'budget.return' => ['SUBMITTED', 'HEADTEACHER_REVIEW', 'CHIEF_ACCOUNTANT_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW'],
 	];
 
 	public static function approvalChainLabels(): array
@@ -77,6 +84,7 @@ class BudgetWorkflowService
 		return [
 			'submit' => 'Submit',
 			'cancel' => 'Cancel',
+			'headteacher_approve' => 'Head Teacher',
 			'chief_accountant_approve' => 'Chief Accountant',
 			'procurement_review' => 'Procurement',
 			'budget_review' => 'Budget Manager',
@@ -104,13 +112,17 @@ class BudgetWorkflowService
 	 */
 	public static function reviewStatusesForUser(BudgetPermissionService $perms, int $staffId, int $postId): array
 	{
-		if (\Config\MenuClearance::isDirectorPost($postId)) {
-			return ['DRAFT', 'RETURNED', 'SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'REJECTED'];
-		}
-		if ($perms->can($staffId, $postId, 'budget.view_all_branches')
+		$waiting = ['HEADTEACHER_REVIEW', 'SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'RETURNED', 'REJECTED'];
+		if (\Config\MenuClearance::isDirectorPost($postId)
+			|| \Config\MenuClearance::isChiefAccountantPost($postId)
+			|| \Config\MenuClearance::isDirectorOfFinancePost($postId)
+			|| $perms->can($staffId, $postId, 'budget.view_all_branches')
 			|| $perms->can($staffId, $postId, 'budget.final_approve')
 			|| $perms->can($staffId, $postId, 'budget.chief_accountant_approve')) {
-			return ['SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'RETURNED', 'REJECTED'];
+			return $waiting;
+		}
+		if (\Config\MenuClearance::isHeadMasterEquivalent($postId)) {
+			return ['HEADTEACHER_REVIEW'];
 		}
 		$statuses = [];
 		foreach (self::$reviewQueueByPerm as $perm => $list) {
@@ -133,7 +145,10 @@ class BudgetWorkflowService
 			if ($action === 'approve' && $status !== 'DEPUTY_DIRECTOR_REVIEW') {
 				continue;
 			}
-			// Director of Finance does the second step only. Chief Accountant does the first.
+			if ($action === 'headteacher_approve' && !\Config\MenuClearance::isHeadMasterEquivalent($postId)) {
+				continue;
+			}
+			// Director of Finance does the last step only. Chief Accountant does the middle step.
 			if ($action === 'chief_accountant_approve' && (int) $postId === 24) {
 				continue;
 			}
@@ -153,12 +168,8 @@ class BudgetWorkflowService
 		$actions = self::allowedActionsForStatus((string) ($budget['status'] ?? ''), $perms, $staffId, $postId);
 		if ((int) ($budget['prepared_by'] ?? 0) === $staffId) {
 			$actions = array_values(array_filter($actions, static function ($action) {
-				return !in_array($action, ['chief_accountant_approve', 'approve'], true);
+				return !in_array($action, ['headteacher_approve', 'chief_accountant_approve', 'approve'], true);
 			}));
-		}
-		$status = (string) ($budget['status'] ?? '');
-		if (\Config\MenuClearance::isDirectorPost($postId) && !in_array($status, ['APPROVED', 'CANCELLED'], true)) {
-			$actions[] = 'director_approve';
 		}
 		return $actions;
 	}
@@ -201,7 +212,8 @@ class BudgetWorkflowService
 	{
 		$map = [
 			'DRAFT' => 'Draft — review extracted lines, then submit',
-			'SUBMITTED' => 'Waiting for Chief Accountant',
+			'SUBMITTED' => 'Waiting for Head Teacher',
+			'HEADTEACHER_REVIEW' => 'Waiting for Head Teacher',
 			'CHIEF_ACCOUNTANT_REVIEW' => 'Waiting for Chief Accountant',
 			'PROCUREMENT_REVIEW' => 'Waiting for Budget Manager',
 			'BUDGET_MANAGER_REVIEW' => 'Waiting for Budget Manager',
@@ -270,13 +282,15 @@ class BudgetWorkflowService
 		}
 
 		$perms = $opts['perms'] ?? new BudgetPermissionService();
-		$directorSole = $action === 'director_approve';
-		if ($directorSole && !\Config\MenuClearance::isDirectorPost((int) $postId)) {
-			return ['success' => false, 'error' => 'Only the Director can approve a budget in one step.'];
+		if ($action === 'director_approve') {
+			return ['success' => false, 'error' => 'Approval order is the school Head Teacher, then the Chief Accountant, then the Director of Finance.'];
 		}
 		$need = self::$actionPerms[$action] ?? null;
-		if (!$directorSole && $need && !$perms->can((int) $actorId, (int) $postId, $need)) {
+		if ($action !== 'headteacher_approve' && $need && !$perms->can((int) $actorId, (int) $postId, $need)) {
 			return ['success' => false, 'error' => 'You are not allowed to perform this approval step.'];
+		}
+		if ($action === 'headteacher_approve' && !\Config\MenuClearance::isHeadMasterEquivalent((int) $postId)) {
+			return ['success' => false, 'error' => 'Only the head teacher of this school can approve this step.'];
 		}
 
 		if (!empty($opts['allowed_branch_ids'])) {
@@ -287,25 +301,25 @@ class BudgetWorkflowService
 		}
 
 		$current = $b['status'];
-		if ($action === 'chief_accountant_approve' && (int) $postId !== 28) {
-			return ['success' => false, 'error' => 'Only the Chief Accountant can complete the first approval.'];
+		if ($action === 'headteacher_approve' && !$this->actorBelongsToBudgetSchool($db, (int) $actorId, (int) $b['branch_id'])) {
+			return ['success' => false, 'error' => 'The head teacher of this school must approve this budget.'];
+		}
+		if ($action === 'chief_accountant_approve' && (int) $postId !== 28 && !\Config\MenuClearance::isChiefAccountantPost((int) $postId)) {
+			return ['success' => false, 'error' => 'Only the Chief Accountant can complete this approval.'];
+		}
+		if ($action === 'chief_accountant_approve' && !$this->hasApprovalAction($db, (int) $budgetId, 'headteacher_approve')) {
+			return ['success' => false, 'error' => 'The head teacher of this school must approve this budget before the Chief Accountant.'];
 		}
 		if ($action === 'chief_accountant_approve' && (int) ($b['prepared_by'] ?? 0) === (int) $actorId) {
-			return ['success' => false, 'error' => 'You prepared this budget. Another Chief Accountant must approve it, or submit it so the Director of Finance can approve.'];
-		}
-		if ($directorSole && in_array($current, ['APPROVED', 'CANCELLED'], true)) {
-			return ['success' => false, 'error' => 'This budget cannot be approved.'];
+			return ['success' => false, 'error' => 'You prepared this budget. The head teacher approves first, then another Chief Accountant.'];
 		}
 		if ($action === 'approve' && $current !== 'DEPUTY_DIRECTOR_REVIEW') {
-			return ['success' => false, 'error' => 'Director of Finance can approve only after the Chief Accountant.'];
+			return ['success' => false, 'error' => 'Director of Finance can approve only after the Head Teacher and the Chief Accountant.'];
 		}
 		if ($action === 'approve' && (int) ($b['prepared_by'] ?? 0) === (int) $actorId && (int) $postId !== 24) {
 			return ['success' => false, 'error' => 'You prepared this budget, so you cannot give the final approval.'];
 		}
-		$new = $directorSole ? 'APPROVED' : (self::$transitions[$current][$action] ?? null);
-		if ($action === 'submit' && (int) $postId === 28) {
-			$new = 'DEPUTY_DIRECTOR_REVIEW';
-		}
+		$new = self::$transitions[$current][$action] ?? null;
 		if (!$new) {
 			return ['success' => false, 'error' => 'Invalid step for status ' . $current . '.'];
 		}
@@ -321,7 +335,7 @@ class BudgetWorkflowService
 				return ['success' => false, 'error' => 'Only the person who prepared this budget can cancel it.'];
 			}
 		}
-		if ($action === 'approve' && !$directorSole) {
+		if ($action === 'approve') {
 			$hasChief = $db->table('budget_approval_actions')
 				->where('budget_id', (int) $budgetId)
 				->where('action', 'chief_accountant_approve')
@@ -334,13 +348,12 @@ class BudgetWorkflowService
 				->where('budget_id', (int) $budgetId)
 				->where('action', 'budget_review')
 				->countAllResults();
-			$preparerPost = 0;
-			if (!empty($b['prepared_by'])) {
-				$preparer = $db->table('staffs')->select('post')->where('id', (int) $b['prepared_by'])->get(1)->getRowArray();
-				$preparerPost = (int) ($preparer['post'] ?? 0);
-			}
 			$legacyOk = $hasProcurement > 0 && $hasBudgetMgr > 0;
-			$chiefOk = $hasChief > 0 || $preparerPost === 28;
+			$chiefOk = $hasChief > 0;
+			$headOk = $this->hasApprovalAction($db, (int) $budgetId, 'headteacher_approve');
+			if (!$headOk) {
+				return ['success' => false, 'error' => 'Cannot approve: the head teacher of this school must approve this budget first.'];
+			}
 			if (!$legacyOk && !$chiefOk) {
 				return ['success' => false, 'error' => 'Cannot approve: the Chief Accountant must approve this budget first.'];
 			}
@@ -412,5 +425,60 @@ class BudgetWorkflowService
 		}
 		$this->audit->log('budget', $budgetId, 'delete', $actorId, ['status' => $status, 'title' => $b['title'] ?? ''], [], $b['organization_id'] ?? 0, $b['branch_id'] ?? 0);
 		return ['success' => true, 'message' => 'Budget deleted.'];
+	}
+
+	/** Budgets already in later steps, with no head-teacher approval, go back to that step. */
+	public static function parkUntilHeadTeacher(): void
+	{
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$done = true;
+		$db = \Config\Database::connect();
+		try {
+			$rows = $db->table('budgets')
+				->select('id')
+				->whereIn('status', ['SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW'])
+				->get()->getResultArray();
+			foreach ($rows as $row) {
+				$id = (int) ($row['id'] ?? 0);
+				if ($id < 1 || self::hasApprovalAction($db, $id, 'headteacher_approve')) {
+					continue;
+				}
+				$db->table('budgets')->where('id', $id)->update([
+					'status' => 'HEADTEACHER_REVIEW',
+					'updated_at' => date('Y-m-d H:i:s'),
+				]);
+			}
+		} catch (\Throwable $e) {
+		}
+	}
+
+	private static function hasApprovalAction($db, int $budgetId, string $action): bool
+	{
+		try {
+			return $db->table('budget_approval_actions')
+				->where('budget_id', $budgetId)
+				->where('action', $action)
+				->countAllResults() > 0;
+		} catch (\Throwable $e) {
+			return false;
+		}
+	}
+
+	private function actorBelongsToBudgetSchool($db, int $actorId, int $branchId): bool
+	{
+		$branch = $db->table('branches')->select('school_id')->where('id', $branchId)->get(1)->getRowArray();
+		$budgetSchool = (int) ($branch['school_id'] ?? 0);
+		if ($budgetSchool < 1) {
+			return false;
+		}
+		$staff = $db->table('staffs')->select('school_id')->where('id', $actorId)->get(1)->getRowArray();
+		$staffSchool = (int) ($staff['school_id'] ?? 0);
+		if ($staffSchool < 1) {
+			$staffSchool = (int) session('soma_school_id');
+		}
+		return $staffSchool === $budgetSchool;
 	}
 }

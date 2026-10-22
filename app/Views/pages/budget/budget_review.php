@@ -20,11 +20,11 @@
 			<tbody>
 			<?php
 			$labels = [
+				'headteacher_approve' => ['Head Teacher — Approve', 'primary'],
 				'chief_accountant_approve' => ['Chief Accountant — Approve', 'primary'],
 				'procurement_review' => ['Procurement OK', 'info'],
 				'budget_review' => ['Budget Manager OK', 'info'],
 				'approve' => ['Director of Finance — Approve', 'success'],
-				'director_approve' => ['Director — Approve', 'success'],
 				'return' => ['Return', 'warning'],
 				'reject' => ['Reject', 'danger'],
 			];
@@ -55,7 +55,7 @@
 					<?php
 					// Only show the step action that belongs to this status (hide return/reject noise for non-actors optionally)
 					$stepActions = array_values(array_filter($actions, static function ($a) {
-						return in_array($a, ['chief_accountant_approve', 'procurement_review', 'budget_review', 'approve', 'director_approve'], true);
+						return in_array($a, ['headteacher_approve', 'chief_accountant_approve', 'procurement_review', 'budget_review', 'approve'], true);
 					}));
 					$otherActions = array_values(array_filter($actions, static function ($a) {
 						return in_array($a, ['return', 'reject'], true);
@@ -94,7 +94,7 @@ $('.btn-act').on('click', function () {
 	var id = $(this).data('id');
 	var promptText = 'Comment (optional):';
 	if (action === 'approve') promptText = 'Final approval comment (optional):';
-	if (action === 'director_approve') promptText = 'Director approval. Chief Accountant and Director of Finance are not required.\n\nComment (optional):';
+	if (action === 'headteacher_approve') promptText = 'Head Teacher approval. The Chief Accountant and Director of Finance still approve after you.\n\nComment (optional):';
 	var c = prompt(promptText) || '';
 	var $btn = $(this).prop('disabled', true);
 	$.post('<?= base_url('budget/budget_action'); ?>', { budget_id: id, action: action, comment: c }, function (r) {

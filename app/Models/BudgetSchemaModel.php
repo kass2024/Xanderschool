@@ -45,13 +45,13 @@ class BudgetSchemaModel extends Model
 		try {
 			$row = $db->query("SHOW COLUMNS FROM budgets LIKE 'status'")->getRowArray();
 			$type = strtolower((string) ($row['Type'] ?? $row['type'] ?? ''));
-			if ($type === '' || strpos($type, 'chief_accountant_review') !== false) {
+			if ($type === '' || strpos($type, 'headteacher_review') !== false) {
 				return;
 			}
 			if (strpos($type, 'enum(') === false) {
 				return;
 			}
-			$db->query("ALTER TABLE budgets MODIFY status ENUM('DRAFT','SUBMITTED','PROCUREMENT_REVIEW','BUDGET_MANAGER_REVIEW','CHIEF_ACCOUNTANT_REVIEW','DEPUTY_DIRECTOR_REVIEW','APPROVED','RETURNED','REJECTED','CANCELLED','SUPERSEDED') NOT NULL DEFAULT 'DRAFT'");
+			$db->query("ALTER TABLE budgets MODIFY status ENUM('DRAFT','SUBMITTED','HEADTEACHER_REVIEW','PROCUREMENT_REVIEW','BUDGET_MANAGER_REVIEW','CHIEF_ACCOUNTANT_REVIEW','DEPUTY_DIRECTOR_REVIEW','APPROVED','RETURNED','REJECTED','CANCELLED','SUPERSEDED') NOT NULL DEFAULT 'DRAFT'");
 		} catch (\Throwable $e) {
 			// Fresh install already has the column, or the alter is not permitted.
 		}

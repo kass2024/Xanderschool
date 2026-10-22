@@ -4,7 +4,8 @@ $group = $desk['group'] ?? [];
 $schools = $desk['schools'] ?? [];
 $statusLabels = [
 	'DRAFT' => 'Draft',
-	'SUBMITTED' => 'With Chief Accountant',
+	'SUBMITTED' => 'With Head Teacher',
+	'HEADTEACHER_REVIEW' => 'With Head Teacher',
 	'CHIEF_ACCOUNTANT_REVIEW' => 'With Chief Accountant',
 	'DEPUTY_DIRECTOR_REVIEW' => 'With Director of Finance',
 	'APPROVED' => 'Approved',
@@ -17,6 +18,7 @@ $statusClass = [
 	'REJECTED' => 'bad',
 	'DEPUTY_DIRECTOR_REVIEW' => 'wait',
 	'CHIEF_ACCOUNTANT_REVIEW' => 'wait',
+	'HEADTEACHER_REVIEW' => 'wait',
 	'SUBMITTED' => 'wait',
 ];
 $money = static function ($amount) {

@@ -62,6 +62,9 @@ foreach ($budgets as $b) {
 	<div class="d-flex justify-content-between align-items-start mb-2">
 		<div>
 			<h5 class="mb-1 font-weight-bold"><?= esc($b['title']); ?></h5>
+			<?php if (!empty($show_all_schools) && !empty($b['branch_name'])) { ?>
+			<div class="small text-muted mb-1"><i class="fa fa-school"></i> <?= esc($b['branch_name']); ?></div>
+			<?php } ?>
 			<span class="badge badge-<?= $statusClass; ?>"><?= esc($b['pending_label'] ?? $b['status']); ?></span>
 			<?= view('pages/budget/partials/excel_download', ['budget' => $b, 'show_name' => true]); ?>
 		</div>
@@ -72,8 +75,8 @@ foreach ($budgets as $b) {
 			$isSubmittedPipeline = in_array($b['status'], ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'APPROVED', 'REJECTED'], true);
 			?>
 			<?= view('pages/budget/partials/excel_download', ['budget' => $b]); ?>
-			<?php if ($isDirectorUi && !in_array($b['status'], ['APPROVED', 'CANCELLED'], true)) { ?>
-			<button type="button" class="btn btn-sm btn-success mb-1 btn-director-approve" data-id="<?= (int) $b['id']; ?>" data-title="<?= esc($b['title']); ?>"><i class="fa fa-check"></i> Approve</button>
+			<?php if (\Config\MenuClearance::isHeadMasterEquivalent($postIdSession) && ($b['status'] ?? '') === 'HEADTEACHER_REVIEW') { ?>
+			<button type="button" class="btn btn-sm btn-success mb-1 btn-ht-approve" data-id="<?= (int) $b['id']; ?>" data-title="<?= esc($b['title']); ?>"><i class="fa fa-check"></i> Approve</button>
 			<?php } ?>
 			<?php if ($isDirectorUi) { ?>
 			<a href="<?= base_url('budget/edit_budget/'.$b['id']); ?>" class="btn btn-sm btn-outline-primary mb-1"><i class="fa fa-list"></i> View lines</a>
@@ -147,14 +150,14 @@ $(document).on('click', '.btn-cancel-budget', function () {
 		location.reload();
 	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Cancel failed'); });
 });
-$(document).on('click', '.btn-director-approve', function () {
+$(document).on('click', '.btn-ht-approve', function () {
 	var id = $(this).data('id');
 	var title = $(this).data('title') || 'this budget';
-	if (!confirm('Approve "' + title + '" now?\n\nThis is the Director\'s approval. It does not wait for the Chief Accountant or the Director of Finance.')) return;
+	if (!confirm('Approve "' + title + '" as the head teacher of this school?\n\nIt then goes to the Chief Accountant, and after that to the Director of Finance.')) return;
 	var $btn = $(this).prop('disabled', true);
-	$.post('<?= base_url('budget/budget_action'); ?>', { budget_id: id, action: 'director_approve' }, function (r) {
+	$.post('<?= base_url('budget/budget_action'); ?>', { budget_id: id, action: 'headteacher_approve' }, function (r) {
 		if (r.error) { toastada.error(r.error); $btn.prop('disabled', false); return; }
-		toastada.success('Budget approved');
+		toastada.success('Sent to the Chief Accountant');
 		location.reload();
 	}, 'json').fail(function () { $btn.prop('disabled', false); toastada.error('Approval failed'); });
 });
