@@ -63,7 +63,7 @@ foreach ($budgets as $b) {
 		<div>
 			<h5 class="mb-1 font-weight-bold"><?= esc($b['title']); ?></h5>
 			<span class="badge badge-<?= $statusClass; ?>"><?= esc($b['pending_label'] ?? $b['status']); ?></span>
-			<?= view('pages/budget/partials/excel_download', ['budget' => $b, 'show_name' => true, 'btn_class' => 'd-none']); ?>
+			<?= view('pages/budget/partials/excel_download', ['budget' => $b, 'show_name' => true]); ?>
 		</div>
 		<div class="text-right">
 			<?php

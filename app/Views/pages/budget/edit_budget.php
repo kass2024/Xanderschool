@@ -71,7 +71,7 @@ $viewOnly = !empty($view_only);
 	<?= esc($setup['excel_file'] ?? 'Uploaded workbook'); ?>
 	<?php if (!empty($setup['excel_period'])) { ?> · <?= esc($setup['excel_period']); ?><?php } ?>
 	· Chief Accountant approves first, then the Director of Finance. Cash requests open only after both approvals. Cancel this budget if you need to upload a replacement.
-	<?= view('pages/budget/partials/excel_download', ['budget' => $budget, 'btn_class' => 'btn btn-sm btn-outline-primary ml-2']); ?>
+	<?= view('pages/budget/partials/excel_download', ['budget' => $budget, 'btn_class' => 'btn btn-sm btn-success ml-2']); ?>
 </div>
 <?php } ?>
 
