@@ -1150,13 +1150,8 @@ class BudgetCashflow extends Home
 			if ((int) $c['branchId'] > 0 && !in_array((int) $c['branchId'], $allBranchIds, true)) {
 				$allBranchIds[] = (int) $c['branchId'];
 			}
-			$waiting = ['HEADTEACHER_REVIEW', 'SUBMITTED', 'CHIEF_ACCOUNTANT_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'RETURNED'];
 			if ($allBranchIds) {
-				$budgetQuery->whereIn('b.branch_id', $allBranchIds)
-					->groupStart()
-						->where('b.branch_id', (int) $c['branchId'])
-						->orWhereIn('b.status', $waiting)
-					->groupEnd();
+				$budgetQuery->whereIn('b.branch_id', $allBranchIds);
 			} else {
 				$budgetQuery->where('b.branch_id', $c['branchId']);
 			}
@@ -2616,7 +2611,14 @@ class BudgetCashflow extends Home
 				18 => ['SUBMITTED'],
 				25 => ['SUBMITTED'],
 			];
-			$statuses = $statusMap[$postId] ?? [];
+			if (\Config\MenuClearance::isDirectorPost((int) $postId)) {
+				$openForDirector = ['DRAFT', 'SUBMITTED', 'HEADTEACHER_APPROVED', 'CHIEF_ACCOUNTANT_APPROVED', 'PROCUREMENT_APPROVED', 'BUDGET_APPROVED', 'RETURNED_TO_ACCOUNTANT'];
+				$data['requests'] = $db->table('cash_requests')->whereIn('branch_id', $branchIds ?: [0])
+					->whereIn('status', $openForDirector)->orderBy('id', 'DESC')->get()->getResultArray();
+				$statuses = [];
+			} else {
+				$statuses = $statusMap[$postId] ?? [];
+			}
 			if ($statuses) {
 				$rows = $db->table('cash_requests')->whereIn('status', $statuses)
 					->whereIn('branch_id', $branchIds)->orderBy('id', 'DESC')->get()->getResultArray();

@@ -117,6 +117,9 @@ class CashRequestWorkflowService
 		}
 
 		$current = $req['status'];
+		if ($action === 'director_approve') {
+			return $this->directorApprove($db, $req, (int) $requestId, (int) $actorId, (int) $postId, $comment);
+		}
 		$map = $this->transitionsFor($chain)[$current] ?? [];
 		if (!isset($map[$action])) {
 			return ['success' => false, 'error' => "Action '$action' not allowed from status $current for this amount chain."];
@@ -218,6 +221,83 @@ class CashRequestWorkflowService
 		$this->notifyNextStep($newStatus, $req, $chain);
 		$db->transComplete();
 		return ['success' => true, 'status' => $newStatus, 'approval_chain' => $chain];
+	}
+
+	/**
+	 * Director approves the request in one step. Other posts keep the normal chain.
+	 */
+	private function directorApprove($db, array $req, int $requestId, int $actorId, int $postId, $comment): array
+	{
+		if (!\Config\MenuClearance::isDirectorPost($postId)) {
+			return ['success' => false, 'error' => 'Only the Director can approve a request without the earlier steps.'];
+		}
+		$current = (string) ($req['status'] ?? '');
+		$open = ['DRAFT', 'SUBMITTED', 'HEADTEACHER_APPROVED', 'CHIEF_ACCOUNTANT_APPROVED', 'PROCUREMENT_APPROVED', 'BUDGET_APPROVED', 'RETURNED_TO_ACCOUNTANT'];
+		if (!in_array($current, $open, true)) {
+			return ['success' => false, 'error' => 'This request is already past approval.'];
+		}
+		$db->transStart();
+		$existingOpen = (int) $db->table('budget_commitments')
+			->where('cash_request_id', $requestId)
+			->where('status', 'open')
+			->countAllResults();
+		if ($existingOpen < 1) {
+			$lines = $db->table('cash_request_lines')->where('cash_request_id', $requestId)->get()->getResultArray();
+			foreach ($lines as $ln) {
+				if (empty($ln['budget_line_id'])) {
+					continue;
+				}
+				$res = $this->commitments->createCommitment(
+					$requestId,
+					$ln['budget_line_id'],
+					$ln['amount'],
+					$req['organization_id'],
+					$req['branch_id'],
+					$actorId,
+					false,
+					null
+				);
+				if (!$res['success']) {
+					$db->transRollback();
+					return $res;
+				}
+			}
+		}
+		$update = [
+			'status' => 'FINANCE_AUTHORIZED',
+			'authorized_amount' => $req['requested_amount'],
+			'updated_by' => $actorId,
+			'updated_at' => date('Y-m-d H:i:s'),
+		];
+		$staff = $db->table('staffs')->select('signature')->where('id', $actorId)->get(1)->getRowArray();
+		$file = function_exists('staff_signature_file') ? staff_signature_file($staff['signature'] ?? '') : '';
+		if ($file !== '') {
+			$update['finance_signature'] = $file;
+		}
+		$db->table('cash_requests')->where('id', $requestId)->update($update);
+		$db->table('cash_request_actions')->insert([
+			'cash_request_id' => $requestId,
+			'actor_id' => $actorId,
+			'actor_post_id' => $postId,
+			'action' => 'director_approve',
+			'previous_status' => $current,
+			'new_status' => 'FINANCE_AUTHORIZED',
+			'comment' => $comment,
+			'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+			'created_at' => date('Y-m-d H:i:s'),
+		]);
+		$this->audit->log('cash_request', $requestId, 'director_approve', $actorId, ['status' => $current], ['status' => 'FINANCE_AUTHORIZED'], $req['organization_id'], $req['branch_id']);
+		$url = base_url('budget/cash_request_view/' . $requestId);
+		$branch = $db->table('branches')->where('id', (int) ($req['branch_id'] ?? 0))->get(1)->getRowArray();
+		$schoolId = (int) ($branch['school_id'] ?? 0);
+		$title = 'Cash request ' . ($req['request_no'] ?? '');
+		foreach ([8, 9] as $notifyPost) {
+			foreach ($this->notify->activeStaffByPost($notifyPost, $schoolId > 0 ? $schoolId : null) as $staffRow) {
+				$this->notify->notifyStaff((int) $staffRow['id'], $title, 'The Director approved this request. The money is allowed.', $url, $req['branch_id'] ?? null);
+			}
+		}
+		$db->transComplete();
+		return ['success' => true, 'status' => 'FINANCE_AUTHORIZED', 'approval_chain' => (string) ($req['approval_chain'] ?? '')];
 	}
 
 	/** @return array{error?:string,column?:string,file?:string} */
@@ -377,6 +457,11 @@ class CashRequestWorkflowService
 	{
 		$chain = strtolower(trim((string) ($req['approval_chain'] ?? CashRequestApprovalPolicy::CHAIN_FULL))) ?: CashRequestApprovalPolicy::CHAIN_FULL;
 		$status = (string) ($req['status'] ?? '');
+		$directorButton = [];
+		$directorOpen = ['DRAFT', 'SUBMITTED', 'HEADTEACHER_APPROVED', 'CHIEF_ACCOUNTANT_APPROVED', 'PROCUREMENT_APPROVED', 'BUDGET_APPROVED', 'RETURNED_TO_ACCOUNTANT'];
+		if (\Config\MenuClearance::isDirectorPost((int) ($_SESSION['soma_post'] ?? 0)) && in_array($status, $directorOpen, true)) {
+			$directorButton['director_approve'] = 'Approve now — Director';
+		}
 		if ($chain === CashRequestApprovalPolicy::CHAIN_WISDOM_CHIEF) {
 			$postId = (int) ($_SESSION['soma_post'] ?? 0);
 			$out = [];
@@ -388,7 +473,7 @@ class CashRequestWorkflowService
 				$out['final_approve'] = 'Final approval — Director of Finance';
 				$out['return'] = 'Return with a reason';
 			}
-			return $out;
+			return $directorButton + $out;
 		}
 		if ($chain === CashRequestApprovalPolicy::CHAIN_WISDOM) {
 			$postId = (int) ($_SESSION['soma_post'] ?? 0);
@@ -405,7 +490,7 @@ class CashRequestWorkflowService
 				$out['final_approve'] = 'Final approval — Director of Finance';
 				$out['return'] = 'Return with a reason';
 			}
-			return $out;
+			return $directorButton + $out;
 		}
 		$labels = [
 			'headteacher_approve' => 'Headmaster approve',
@@ -428,6 +513,6 @@ class CashRequestWorkflowService
 			|| ($status === 'PROCUREMENT_APPROVED' && $chain === CashRequestApprovalPolicy::CHAIN_MEDIUM)) {
 			$out['reject'] = $labels['reject'];
 		}
-		return $out;
+		return $directorButton + $out;
 	}
 }

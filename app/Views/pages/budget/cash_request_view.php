@@ -311,6 +311,7 @@ $('.btn-wf').on('click', function () {
 	}
 	if (action === 'budget_approve' && !confirm('Confirm budget line has sufficient uncommitted funds for this request?')) return;
 	if (action === 'final_approve' && !confirm('Authorize payment for this request?')) return;
+	if (action === 'director_approve' && !confirm('Approve this request now?\n\nThis skips the Head Teacher, the Chief Accountant, and the Director of Finance. The money is allowed immediately.')) return;
 	var $btn = $(this).prop('disabled', true);
 	$.post('<?= base_url('budget/cash_request_action'); ?>', {
 		request_id: <?= (int)$r['id']; ?>,
