@@ -16,6 +16,40 @@ class WisdomBudgetWorkbookImportService
 {
 	public const SOURCE = 'wisdom_excel_upload';
 
+	/**
+	 * Original workbook saved when an accountant uploaded this budget.
+	 *
+	 * @return array{path:string,name:string}|null
+	 */
+	public static function workbookFile(?array $budget): ?array
+	{
+		if (!$budget) {
+			return null;
+		}
+		$notes = $budget['notes'] ?? null;
+		$decoded = is_array($notes) ? $notes : json_decode((string) $notes, true);
+		if (!is_array($decoded) || ($decoded['source'] ?? '') !== self::SOURCE) {
+			return null;
+		}
+		$stored = str_replace('\\', '/', (string) ($decoded['excel_stored_path'] ?? ''));
+		$base = basename($stored);
+		if (!preg_match('/^[a-f0-9]{32}\.(xlsx|xls)$/i', $base)) {
+			return null;
+		}
+		$path = WRITEPATH . 'uploads/budget/prepared/' . $base;
+		if (!is_file($path)) {
+			return null;
+		}
+		$name = str_replace(['"', "\r", "\n", '/', '\\'], '', trim((string) ($decoded['excel_file'] ?? '')));
+		if ($name === '' || !preg_match('/\.(xlsx|xls)$/i', $name)) {
+			$name = 'budget-' . (int) ($budget['id'] ?? $budget['budget_id'] ?? 0) . '.' . strtolower(pathinfo($base, PATHINFO_EXTENSION));
+		}
+		if (strlen($name) > 180) {
+			$name = substr($name, -180);
+		}
+		return ['path' => $path, 'name' => $name];
+	}
+
 	private const SECTION_HEADERS = [
 		'INCOME' => 'income',
 		'EXPENSES' => 'banner',

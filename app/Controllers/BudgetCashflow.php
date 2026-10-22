@@ -234,6 +234,11 @@ class BudgetCashflow extends Home
 		$budgetIds = array_map(static function ($row) {
 			return (int) $row['id'];
 		}, $latestByBranch);
+		$namedBudgets = $this->attachUploaderNames($db, array_values($latestByBranch));
+		$latestByBranch = [];
+		foreach ($namedBudgets as $namedBudget) {
+			$latestByBranch[(int) $namedBudget['branch_id']] = $namedBudget;
+		}
 		$termMap = $this->termFiguresForBudgets($db, $budgetIds);
 
 		$requests = [];
@@ -314,6 +319,8 @@ class BudgetCashflow extends Home
 					'status' => $status,
 					'income' => $income,
 					'expense' => $expense,
+					'notes' => (string) ($budget['notes'] ?? ''),
+					'uploader_name' => (string) ($budget['uploader_name'] ?? ''),
 				];
 			}
 			$schools[] = [
@@ -321,6 +328,8 @@ class BudgetCashflow extends Home
 				'school' => $schoolName,
 				'budget_id' => $budget ? (int) $budget['id'] : 0,
 				'title' => $budget ? (string) ($budget['title'] ?? '') : '',
+				'notes' => $budget ? (string) ($budget['notes'] ?? '') : '',
+				'uploader_name' => $budget ? (string) ($budget['uploader_name'] ?? '') : '',
 				'status' => $status,
 				'income' => $income,
 				'expense' => $expense,
@@ -1073,7 +1082,10 @@ class BudgetCashflow extends Home
 		$data['branch_label'] = $c['branch']
 			? $c['branchCtx']->displaySchoolBranchLabel($c['schoolId'], $c['branch'], false)
 			: session('soma_school');
-		$data['budgets'] = $db->table('budgets')->where('branch_id', $c['branchId'])->orderBy('id', 'DESC')->get()->getResultArray();
+		$data['budgets'] = $this->attachUploaderNames(
+			$db,
+			$db->table('budgets')->where('branch_id', $c['branchId'])->orderBy('id', 'DESC')->get()->getResultArray()
+		);
 		$termMap = $this->termFiguresForBudgets($db, array_column($data['budgets'], 'id'));
 		foreach ($data['budgets'] as &$budgetRow) {
 			$budgetRow['pending_label'] = BudgetWorkflowService::pendingApproverLabel((string) ($budgetRow['status'] ?? ''));
@@ -1143,7 +1155,7 @@ class BudgetCashflow extends Home
 					$rb['pending_label'] = BudgetWorkflowService::pendingApproverLabel((string) $rb['status']);
 				}
 				unset($rb);
-				$data['review_budgets'] = $rows;
+				$data['review_budgets'] = $this->attachUploaderNames($db, $rows);
 			}
 		}
 		if ($tab === 'approved') {
@@ -1160,6 +1172,7 @@ class BudgetCashflow extends Home
 				], $c['isCentral']);
 			}
 			unset($b);
+			$data['approved_budgets'] = $this->attachUploaderNames($db, $data['approved_budgets']);
 		}
 		$data['content'] = view('pages/budget/prepare', $data);
 		return view('main', $data);
@@ -1280,6 +1293,58 @@ class BudgetCashflow extends Home
 			return redirect()->to(base_url('budget/prepare'))->with('error', 'The Wisdom budget Excel template is not installed.');
 		}
 		return $this->response->download($path, null)->setFileName('WISDOM_BUDGET_TEMPLATE.xlsx');
+	}
+
+	/** Download the Excel file an accountant uploaded for one budget. */
+	public function download_prepared_excel($id = null)
+	{
+		$this->bootBudget();
+		$this->denyMenuAny(['budget_prepare', 'budget_review', 'budget_approved', 'budget_dashboard']);
+		$c = $this->ctx();
+		$id = (int) $id;
+		$db = \Config\Database::connect();
+		$allowedBranchIds = array_map('intval', array_column(
+			$c['branchCtx']->accessibleBranchIds($c['staffId'], $c['postId'], $c['schoolId']),
+			'id'
+		));
+		if ((int) $c['branchId'] > 0 && !in_array((int) $c['branchId'], $allowedBranchIds, true)) {
+			$allowedBranchIds[] = (int) $c['branchId'];
+		}
+		if (!$allowedBranchIds) {
+			$allowedBranchIds = [(int) $c['branchId']];
+		}
+		$budget = $db->table('budgets')->where('id', $id)->whereIn('branch_id', $allowedBranchIds)->get(1)->getRowArray();
+		if (!$budget) {
+			return redirect()->to(base_url('budget/prepare'))->with('error', 'Budget not found.');
+		}
+		$file = WisdomBudgetWorkbookImportService::workbookFile($budget);
+		if (!$file) {
+			return redirect()->back()->with('error', 'The uploaded Excel file is not on the server.');
+		}
+		return $this->response->download($file['path'], null)->setFileName($file['name']);
+	}
+
+	/** @param array<int,array<string,mixed>> $rows */
+	protected function attachUploaderNames($db, array $rows): array
+	{
+		$ids = [];
+		foreach ($rows as $row) {
+			$id = (int) ($row['prepared_by'] ?? 0);
+			if ($id > 0) {
+				$ids[$id] = $id;
+			}
+		}
+		$names = [];
+		if ($ids) {
+			foreach ($db->table('staffs')->select('id, fname, lname')->whereIn('id', array_values($ids))->get()->getResultArray() as $staff) {
+				$names[(int) $staff['id']] = trim((string) ($staff['fname'] ?? '') . ' ' . (string) ($staff['lname'] ?? ''));
+			}
+		}
+		foreach ($rows as &$row) {
+			$row['uploader_name'] = $names[(int) ($row['prepared_by'] ?? 0)] ?? '';
+		}
+		unset($row);
+		return $rows;
 	}
 
 	/** Preparer withdraws a budget that has no cash requests, then can upload a new Excel file. */
@@ -1590,6 +1655,13 @@ class BudgetCashflow extends Home
 		if (!BudgetWorkflowService::canEditBudgetAmounts($status, $c['perms'], $c['staffId'], $c['postId'])) {
 			return $this->response->setJSON(['error' => 'Budget is not editable.']);
 		}
+		$existingNotes = [];
+		if (!empty($budget['notes'])) {
+			$decodedNotes = json_decode((string) $budget['notes'], true);
+			if (is_array($decodedNotes)) {
+				$existingNotes = $decodedNotes;
+			}
+		}
 		$setup = [
 			'academic_year' => trim((string) $this->request->getPost('academic_year')),
 			'planning_type' => 'three_term_annual',
@@ -1599,6 +1671,14 @@ class BudgetCashflow extends Home
 			'prepared_by' => session('soma_name'),
 			'updated_at' => date('Y-m-d H:i:s'),
 		];
+		foreach (['source', 'excel_file', 'excel_stored_path', 'excel_school', 'excel_period', 'excel_term', 'prepared_by_excel', 'verified_by_excel', 'uploaded_at'] as $keepKey) {
+			if (array_key_exists($keepKey, $existingNotes)) {
+				$setup[$keepKey] = $existingNotes[$keepKey];
+			}
+		}
+		if (($existingNotes['source'] ?? '') === WisdomBudgetWorkbookImportService::SOURCE) {
+			$setup['planning_type'] = 'excel_upload';
+		}
 		$title = trim((string) $this->request->getPost('title'));
 		$update = [
 			'notes' => json_encode($setup),

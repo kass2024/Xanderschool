@@ -311,6 +311,7 @@ $routes->post('budget/cancel_budget', 'BudgetCashflow::cancel_budget');
 $routes->post('budget/unlock_budget_term', 'BudgetCashflow::unlock_budget_term');
 $routes->post('budget/upload_role_signature', 'BudgetCashflow::upload_role_signature');
 $routes->get('budget/download_wisdom_template', 'BudgetCashflow::download_wisdom_template');
+$routes->get('budget/download_prepared_excel/(:num)', 'BudgetCashflow::download_prepared_excel/$1');
 $routes->get('budget/edit_budget/(:num)', 'BudgetCashflow::edit_budget/$1');
 $routes->post('budget/save_budget_lines', 'BudgetCashflow::save_budget_lines');
 $routes->post('budget/save_budget_setup', 'BudgetCashflow::save_budget_setup');

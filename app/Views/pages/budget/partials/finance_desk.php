@@ -86,9 +86,12 @@ $money = static function ($amount) {
 				<li>
 					<div>
 						<strong><?= esc($item['school']); ?></strong>
-						<span><?= esc($statusLabels[$item['status']] ?? $item['status']); ?> · Income <?= $money($item['income']); ?> · Expenses <?= $money($item['expense']); ?></span>
+						<span><?= esc($statusLabels[$item['status']] ?? $item['status']); ?> · Income <?= $money($item['income']); ?> · Expenses <?= $money($item['expense']); ?><?php if (!empty($item['uploader_name'])) { ?> · <?= esc($item['uploader_name']); ?><?php } ?></span>
 					</div>
-					<a class="btn btn-sm btn-primary" href="<?= base_url('budget/edit_budget/' . (int) $item['id']); ?>">Open</a>
+					<div class="fd-list-end">
+						<?= view('pages/budget/partials/excel_download', ['budget' => $item, 'btn_class' => 'btn btn-sm btn-outline-success']); ?>
+						<a class="btn btn-sm btn-primary" href="<?= base_url('budget/edit_budget/' . (int) $item['id']); ?>">Open</a>
+					</div>
 				</li>
 				<?php } ?>
 			</ul>
@@ -134,12 +137,13 @@ $money = static function ($amount) {
 						<th class="num">Term I</th>
 						<th class="num">Term II</th>
 						<th class="num">Term III</th>
+						<th>Excel</th>
 						<th>Waiting</th>
 					</tr>
 				</thead>
 				<tbody>
 				<?php if (!$schools) { ?>
-					<tr><td colspan="9" class="fd-empty">No schools are linked to this account.</td></tr>
+					<tr><td colspan="10" class="fd-empty">No schools are linked to this account.</td></tr>
 				<?php } ?>
 				<?php foreach ($schools as $school) {
 					$st = (string) ($school['status'] ?? '');
@@ -164,6 +168,12 @@ $money = static function ($amount) {
 						<td class="num"><?= $school['budget_id'] ? $money($termNet($school['terms'], 1)) : '—'; ?></td>
 						<td class="num"><?= $school['budget_id'] ? $money($termNet($school['terms'], 2)) : '—'; ?></td>
 						<td class="num"><?= $school['budget_id'] ? $money($termNet($school['terms'], 3)) : '—'; ?></td>
+						<td>
+							<?php if (!empty($school['budget_id'])) { ?>
+							<?= view('pages/budget/partials/excel_download', ['budget' => $school, 'btn_class' => 'btn btn-sm btn-outline-success']); ?>
+							<?php if (!empty($school['uploader_name'])) { ?><div class="small text-muted"><?= esc($school['uploader_name']); ?></div><?php } ?>
+							<?php } else { ?><span class="text-muted">—</span><?php } ?>
+						</td>
 						<td>
 							<?php if (!empty($school['needs_you_budget'])) { ?><span class="fd-pill">Budget</span><?php } ?>
 							<?php if (!empty($school['needs_you_request'])) { ?><span class="fd-pill"><?= (int) $school['needs_you_request']; ?> request<?= (int) $school['needs_you_request'] === 1 ? '' : 's'; ?></span><?php } ?>

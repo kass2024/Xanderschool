@@ -62,6 +62,7 @@ foreach ($budgets as $b) {
 		<div>
 			<h5 class="mb-1 font-weight-bold"><?= esc($b['title']); ?></h5>
 			<span class="badge badge-<?= $statusClass; ?>"><?= esc($b['pending_label'] ?? $b['status']); ?></span>
+			<?= view('pages/budget/partials/excel_download', ['budget' => $b, 'show_name' => true, 'btn_class' => 'd-none']); ?>
 		</div>
 		<div class="text-right">
 			<?php
@@ -69,6 +70,7 @@ foreach ($budgets as $b) {
 			$isPreparerEdit = in_array($b['status'], ['DRAFT', 'RETURNED'], true);
 			$isSubmittedPipeline = in_array($b['status'], ['SUBMITTED', 'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW', 'DEPUTY_DIRECTOR_REVIEW', 'APPROVED', 'REJECTED'], true);
 			?>
+			<?= view('pages/budget/partials/excel_download', ['budget' => $b]); ?>
 			<?php if ($viewOnlyUi) { ?>
 			<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-sm btn-outline-secondary mb-1"><i class="fa fa-eye"></i> View on dashboard</a>
 			<?php } else { ?>

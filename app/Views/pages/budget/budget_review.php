@@ -46,6 +46,7 @@
 				<td class="text-success"><?= number_format((float)($b['total_income'] ?? 0), 0); ?></td>
 				<td class="text-danger"><?= number_format((float)($b['total_expenses'] ?? 0), 0); ?></td>
 				<td class="text-right">
+					<?= view('pages/budget/partials/excel_download', ['budget' => $b]); ?>
 					<a href="<?= base_url('budget/edit_budget/' . (int) $b['id']); ?>" class="btn btn-sm btn-outline-secondary mb-1"><i class="fa fa-list"></i> View lines</a>
 					<?php if (function_exists('budget_permission_allowed') && budget_permission_allowed('budget.edit_submitted')) { ?>
 					<a href="<?= base_url('budget/edit_budget/' . (int) $b['id']); ?>" class="btn btn-sm btn-warning mb-1"><i class="fa fa-edit"></i> Edit</a>
