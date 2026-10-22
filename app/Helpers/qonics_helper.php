@@ -90,7 +90,24 @@ if (!function_exists('menu_clearance_allowed')) {
 				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, [
 					'settings',
 					'pocket_money',
+					'canteen',
+					'pocket_money_report',
 				])));
+			}
+			$cacheKeys = \Config\MenuClearance::expandPocketMenus($cacheKeys);
+			if (\Config\MenuClearance::isAliceNamahoroAtMusanze()) {
+				$pocketKeep = [
+					'pocket_money' => true,
+					'canteen' => true,
+					'pocket_money_report' => true,
+				];
+				$pocketDrop = array_flip(\Config\MenuClearance::pocketMenuKeys());
+				$cacheKeys = array_values(array_filter($cacheKeys, static function ($key) use ($pocketKeep, $pocketDrop) {
+					if (!isset($pocketDrop[$key])) {
+						return true;
+					}
+					return isset($pocketKeep[$key]);
+				}));
 			}
 			$cacheKeys = array_values(array_filter($cacheKeys, static function ($key) {
 				return $key !== 'families' && strpos((string) $key, 'families/') !== 0;
