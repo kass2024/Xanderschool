@@ -143,7 +143,7 @@ if ($requestTerm < 1 || $requestTerm > 3) {
 </table>
 
 <div class="ws-banner">3. Description of Materials / Items and Amounts</div>
-<p class="ws-item-help">Select the term first. Each budget line then comes from that term only. Write what you are buying, then type the amount yourself.</p>
+<p class="ws-item-help">Select the term first. Start with the first item. Another row appears only when you add it, or when this request already has that item.</p>
 <table class="ws-grid ws-items" id="tblRequestItems">
 	<thead>
 		<tr>
@@ -546,20 +546,27 @@ function recalcItems() {
 	refreshChainPreview(total);
 }
 
+function itemHasContent(p) {
+	return !!(p && (p.budget_line_id || parseMoney(p.amount) > 0 || $.trim(p.description || '')));
+}
+function paintItemRows(presets) {
+	var rows = (presets || []).filter(itemHasContent);
+	$('#requestItemsBody').empty();
+	if (!rows.length) {
+		addItemRow();
+		return;
+	}
+	rows.forEach(function (p) { addItemRow(p); });
+}
 function loadLines(done) {
 	var bid = $('#budget_id').val();
 	var term = $('#budget_term').val();
 	var termLabels = {1: 'Term I', 2: 'Term II', 3: 'Term III'};
 	$('#budgetTermLabel').text(termLabels[term] || '—');
-	if (!bid) {
-		lineOptionsHtml = '<option value="">— Select budget first —</option>';
-		$('#requestItemsBody .item-line').html(lineOptionsHtml);
-		if (typeof done === 'function') done();
-		return;
-	}
-	if (!term) {
-		lineOptionsHtml = '<option value="">— Select the term first —</option>';
-		$('#requestItemsBody .item-line').html(lineOptionsHtml);
+	if (!bid || !term) {
+		lineOptionsHtml = '<option value="">' + (!bid ? '— Select budget first —' : '— Select the term first —') + '</option>';
+		if (!$('#requestItemsBody tr').length) addItemRow();
+		else $('#requestItemsBody .item-line').html(lineOptionsHtml);
 		if (typeof done === 'function') done();
 		return;
 	}
@@ -569,24 +576,19 @@ function loadLines(done) {
 		lineOptionsHtml = lines.length ? buildLineOptionsHtml(lines) : '<option value="">— No expense lines in this term —</option>';
 		var presets = [];
 		$('#requestItemsBody tr').each(function () {
+			var $tr = $(this);
+			if (rowBlank($tr)) return;
 			presets.push({
-				budget_line_id: $(this).find('.item-line').val(),
-				description: $(this).find('.item-desc').val(),
-				amount: $(this).find('.item-amount').val()
+				budget_line_id: $tr.find('.item-line').val(),
+				description: $tr.find('.item-desc').val(),
+				amount: $tr.find('.item-amount').val()
 			});
 		});
 		if (!presets.length && existingItems.length) {
 			presets = existingItems.slice();
 			existingItems = [];
 		}
-		$('#requestItemsBody').empty();
-		if (!presets.length) {
-			for (var n = 0; n < 4; n++) addItemRow();
-		} else {
-			presets.forEach(function (p) { addItemRow(p); });
-			while ($('#requestItemsBody tr').length < 4) addItemRow();
-		}
-		recalcItems();
+		paintItemRows(presets);
 		if (typeof done === 'function') done();
 	});
 }
