@@ -1106,7 +1106,8 @@ a.fd-kpi:hover { text-decoration: none; border-color: #93c5fd; }
 }
 .ws-erf .form-control:focus,
 .ws-erf .form-control-sm:focus { background: #f8fbff; box-shadow: none; }
-.ws-items .ws-no { width: 42px; text-align: center; vertical-align: top; padding-top: 14px; }
+.ws-add-item { margin: .65rem 0 1rem; }
+.ws-add-item .btn { font-weight: 700; }
 .ws-items thead th { background: #dce6f1; color: #1f3864; font-weight: 700; text-align: left; }
 .ws-items tfoot td { background: #dce6f1; color: #1f3864; font-weight: 700; }
 .ws-items .ws-amt-cell { width: 168px; vertical-align: top; }

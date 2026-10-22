@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=21" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=22" rel="stylesheet">
 <?php
 $reqRow = $request ?? [];
 $wsName = strtoupper(trim((string) ($school_name ?? 'Wisdom School')));
@@ -69,7 +69,7 @@ if ($requestTerm < 1 || $requestTerm > 3) {
 			<option value="3" <?= $requestTerm === 3 ? 'selected' : ''; ?>>Term III</option>
 		</select>
 	</div>
-	<button type="button" class="btn btn-sm btn-outline-primary" id="btnAddItem" <?= empty($budgets) ? 'disabled' : ''; ?>>
+	<button type="button" class="btn btn-sm btn-primary btn-add-item" id="btnAddItem" <?= empty($budgets) ? 'disabled' : ''; ?>>
 		<i class="fa fa-plus"></i> Add item
 	</button>
 	<span class="small text-muted pb-1">Items <strong id="kpiItemCount">0</strong></span>
@@ -162,6 +162,11 @@ if ($requestTerm < 1 || $requestTerm > 3) {
 		</tr>
 	</tfoot>
 </table>
+<div class="ws-add-item ws-no-print">
+	<button type="button" class="btn btn-primary btn-add-item" <?= empty($budgets) ? 'disabled' : ''; ?>>
+		<i class="fa fa-plus"></i> Add item
+	</button>
+</div>
 <div id="itemsWarnBox" class="cr-avail-box danger mt-2" style="display:none"></div>
 
 <div class="ws-banner">4. Budget Information</div>
@@ -607,7 +612,7 @@ function refreshChainPreview(amt) {
 }
 
 $('#budget_id, #budget_term').on('change', function () { loadLines(); });
-$('#btnAddItem').on('click', function () { addItemRow(); });
+$(document).on('click', '.btn-add-item', function () { addItemRow(); });
 $(document).on('click', '.btn-rm-item', function () {
 	if ($('#requestItemsBody tr').length <= 1) {
 		toastada.error('Keep at least one item.');
