@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=16" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=19" rel="stylesheet">
 <?php
 $reqRow = $request ?? [];
 $wsName = strtoupper(trim((string) ($school_name ?? 'Wisdom School')));
@@ -54,6 +54,15 @@ $sigBase = base_url('assets/images/signatures/');
 			<?php foreach ($budgets as $b) { ?>
 			<option value="<?= (int)$b['id']; ?>" data-period="<?= (int)($b['budget_period_id'] ?? 0); ?>" <?= isset($reqRow['budget_id']) && (int)$reqRow['budget_id']===(int)$b['id']?'selected':''; ?>><?= esc($b['title']); ?> (<?= number_format((float)$b['total_expenses'],0); ?> RWF)</option>
 			<?php } ?>
+		</select>
+	</div>
+	<div>
+		<label>Term</label>
+		<select name="budget_term" id="budget_term" class="form-control form-control-sm" required <?= empty($budgets) ? 'disabled' : ''; ?>>
+			<option value="">— Select term —</option>
+			<option value="1" <?= (int) ($reqRow['budget_term'] ?? 0) === 1 ? 'selected' : ''; ?>>Term I</option>
+			<option value="2" <?= (int) ($reqRow['budget_term'] ?? 0) === 2 ? 'selected' : ''; ?>>Term II</option>
+			<option value="3" <?= (int) ($reqRow['budget_term'] ?? 0) === 3 ? 'selected' : ''; ?>>Term III</option>
 		</select>
 	</div>
 	<button type="button" class="btn btn-sm btn-outline-primary" id="btnAddItem" <?= empty($budgets) ? 'disabled' : ''; ?>>
@@ -130,7 +139,7 @@ $sigBase = base_url('assets/images/signatures/');
 </table>
 
 <div class="ws-banner">3. Description of Materials / Items and Amounts</div>
-<p class="ws-item-help">For each row: choose the budget line, write what you are buying, then type the amount yourself.</p>
+<p class="ws-item-help">Select the term first. Each budget line then comes from that term only. Write what you are buying, then type the amount yourself.</p>
 <table class="ws-grid ws-items" id="tblRequestItems">
 	<thead>
 		<tr>
@@ -153,6 +162,13 @@ $sigBase = base_url('assets/images/signatures/');
 
 <div class="ws-banner">4. Budget Information</div>
 <table class="ws-grid">
+	<tr>
+		<td class="ws-lab">Term</td>
+		<td id="budgetTermLabel"><?php
+			$savedTermNo = (int) ($reqRow['budget_term'] ?? 0);
+			echo esc([1 => 'Term I', 2 => 'Term II', 3 => 'Term III'][$savedTermNo] ?? '—');
+		?></td>
+	</tr>
 	<tr>
 		<td class="ws-lab">Budget line description</td>
 		<td id="budgetLineSummary">—</td>
@@ -529,15 +545,25 @@ function recalcItems() {
 
 function loadLines(done) {
 	var bid = $('#budget_id').val();
+	var term = $('#budget_term').val();
+	var termLabels = {1: 'Term I', 2: 'Term II', 3: 'Term III'};
+	$('#budgetTermLabel').text(termLabels[term] || '—');
 	if (!bid) {
 		lineOptionsHtml = '<option value="">— Select budget first —</option>';
 		$('#requestItemsBody .item-line').html(lineOptionsHtml);
 		if (typeof done === 'function') done();
 		return;
 	}
+	if (!term) {
+		lineOptionsHtml = '<option value="">— Select the term first —</option>';
+		$('#requestItemsBody .item-line').html(lineOptionsHtml);
+		if (typeof done === 'function') done();
+		return;
+	}
 	syncPeriod();
-	$.getJSON('<?= base_url('budget/get_budget_lines_json/'); ?>' + bid, function (r) {
-		lineOptionsHtml = buildLineOptionsHtml(r.lines || []);
+	$.getJSON('<?= base_url('budget/get_budget_lines_json/'); ?>' + bid + '?term=' + encodeURIComponent(term), function (r) {
+		var lines = r.lines || [];
+		lineOptionsHtml = lines.length ? buildLineOptionsHtml(lines) : '<option value="">— No expense lines in this term —</option>';
 		var presets = [];
 		$('#requestItemsBody tr').each(function () {
 			presets.push({
@@ -575,7 +601,7 @@ function refreshChainPreview(amt) {
 	}, 250);
 }
 
-$('#budget_id').on('change', function () { loadLines(); });
+$('#budget_id, #budget_term').on('change', function () { loadLines(); });
 $('#btnAddItem').on('click', function () { addItemRow(); });
 $(document).on('click', '.btn-rm-item', function () {
 	if ($('#requestItemsBody tr').length <= 1) {
@@ -762,6 +788,10 @@ function validateSubmit() {
 }
 
 function postForm(submitNow) {
+	if (!$('#budget_term').val()) {
+		toastada.error('Select Term I, Term II, or Term III first.');
+		return;
+	}
 	if (submitNow && !validateSubmit()) return;
 	recalcItems();
 	var fd = new FormData(document.getElementById('frmCR'));

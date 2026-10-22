@@ -11,7 +11,7 @@
 </div>
 <?php } ?>
 
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=18" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=19" rel="stylesheet">
 <style>
 .bd-ai-card{border:1px solid #c5d8f0;border-radius:10px;overflow:hidden;background:#fff;}
 .bd-ai-head{display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;background:linear-gradient(90deg,#eef5ff,#f8fbff);}
@@ -29,7 +29,8 @@
 
 <div class="bp-hero mb-3">
 	<h2><i class="fa fa-chart-line"></i> <?= !empty($finance_desk) ? esc($finance_desk['role'] . ' dashboard') : 'Budget Dashboard'; ?></h2>
-	<p class="bp-meta mb-0"><?= !empty($finance_desk['is_central']) ? 'All Wisdom schools' : esc($branch_label ?? 'Your school'); ?><?= !empty($finance_desk) ? ' · figures come from each school’s uploaded budget' : ''; ?></p>
+	<p class="bp-meta mb-2"><?= !empty($finance_desk['is_central']) ? 'All Wisdom schools' : esc($branch_label ?? 'Your school'); ?><?= !empty($finance_desk) ? ' · figures come from each school’s uploaded budget' : ''; ?></p>
+	<?= view('pages/budget/partials/term_view_switch'); ?>
 </div>
 
 <?php if (!empty($finance_desk)) { ?>
@@ -146,11 +147,30 @@ if (is_array($fp)) {
 <?php if (!empty($financials)) {
 	$f = $financials;
 ?>
+<?php
+$dashTerms = $f['terms'] ?? [];
+$dashUsed = $f['term_used'] ?? [1 => 0, 2 => 0, 3 => 0];
+$dashExp = [
+	1 => (float) ($dashTerms[1]['expense'] ?? 0),
+	2 => (float) ($dashTerms[2]['expense'] ?? 0),
+	3 => (float) ($dashTerms[3]['expense'] ?? 0),
+];
+$dashInc = [
+	1 => (float) ($dashTerms[1]['income'] ?? 0),
+	2 => (float) ($dashTerms[2]['income'] ?? 0),
+	3 => (float) ($dashTerms[3]['income'] ?? 0),
+];
+$dashVar = [
+	1 => $dashExp[1] - (float) ($dashUsed[1] ?? 0),
+	2 => $dashExp[2] - (float) ($dashUsed[2] ?? 0),
+	3 => $dashExp[3] - (float) ($dashUsed[3] ?? 0),
+];
+?>
 <div class="bp-kpi-row mb-4">
-	<div class="bp-kpi"><label>Total budget (expenses)</label><strong><?= number_format((float)$f['total_budget'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
-	<div class="bp-kpi expense"><label>Total used</label><strong><?= number_format((float)$f['total_actual'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
-	<div class="bp-kpi <?= (float)$f['variance'] >= 0 ? 'surplus pos' : 'surplus neg'; ?>"><label>Variance</label><strong><?= number_format((float)$f['variance'], 0); ?></strong><small class="text-muted d-block"><?= (float)$f['variance_pct']; ?>% remaining</small></div>
-	<div class="bp-kpi income"><label>Fee revenue (plan)</label><strong><?= number_format((float)$f['total_income'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
+	<div class="bp-kpi"><label class="term-label" data-label-y="Total budget (expenses)" data-label-1="Term I expenses" data-label-2="Term II expenses" data-label-3="Term III expenses">Total budget (expenses)</label><strong class="term-money" data-y="<?= (float) $f['total_budget']; ?>" data-t1="<?= $dashExp[1]; ?>" data-t2="<?= $dashExp[2]; ?>" data-t3="<?= $dashExp[3]; ?>"><?= number_format((float)$f['total_budget'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
+	<div class="bp-kpi expense"><label class="term-label" data-label-y="Total used" data-label-1="Term I used" data-label-2="Term II used" data-label-3="Term III used">Total used</label><strong class="term-money" data-y="<?= (float) $f['total_actual']; ?>" data-t1="<?= (float) ($dashUsed[1] ?? 0); ?>" data-t2="<?= (float) ($dashUsed[2] ?? 0); ?>" data-t3="<?= (float) ($dashUsed[3] ?? 0); ?>"><?= number_format((float)$f['total_actual'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
+	<div class="bp-kpi <?= (float)$f['variance'] >= 0 ? 'surplus pos' : 'surplus neg'; ?>"><label>Variance</label><strong class="term-money term-surplus" data-y="<?= (float) $f['variance']; ?>" data-t1="<?= $dashVar[1]; ?>" data-t2="<?= $dashVar[2]; ?>" data-t3="<?= $dashVar[3]; ?>"><?= number_format((float)$f['variance'], 0); ?></strong><small class="text-muted d-block">RWF remaining</small></div>
+	<div class="bp-kpi income"><label class="term-label" data-label-y="Fee revenue (plan)" data-label-1="Term I income" data-label-2="Term II income" data-label-3="Term III income">Fee revenue (plan)</label><strong class="term-money" data-y="<?= (float) $f['total_income']; ?>" data-t1="<?= $dashInc[1]; ?>" data-t2="<?= $dashInc[2]; ?>" data-t3="<?= $dashInc[3]; ?>"><?= number_format((float)$f['total_income'], 0); ?></strong><small class="text-muted d-block">RWF</small></div>
 	<div class="bp-kpi"><label>Period</label><strong class="small"><?= esc($f['period_title'] ?: '—'); ?></strong></div>
 </div>
 <?php if (!empty($f['terms'])) { ?>
@@ -165,7 +185,7 @@ if (is_array($fp)) {
 <div class="card mb-4">
 	<div class="card-header d-flex justify-content-between align-items-center">
 		<span><i class="fa fa-table"></i> Budget utilization by line</span>
-		<small class="text-muted">Budget · Used · Variance (B − C)</small>
+		<small class="text-muted term-label" data-label-y="Full year · Budget · Used · Variance" data-label-1="Term I · Budget · Used · Variance" data-label-2="Term II · Budget · Used · Variance" data-label-3="Term III · Budget · Used · Variance">Full year · Budget · Used · Variance</small>
 	</div>
 	<div class="card-body p-0 table-responsive">
 		<table class="table table-sm table-hover mb-0">
@@ -174,14 +194,20 @@ if (is_array($fp)) {
 			<?php foreach ($f['line_variances'] as $lv) {
 				$rowClass = !empty($lv['is_total_row']) ? 'font-weight-bold table-secondary' : '';
 				$varClass = (float)$lv['variance'] < 0 ? 'text-danger' : 'text-success';
+				$tb = $lv['term_budget'] ?? [1 => 0, 2 => 0, 3 => 0];
+				$tu = $lv['term_used'] ?? [1 => 0, 2 => 0, 3 => 0];
 			?>
-			<tr class="<?= $rowClass; ?>">
+			<tr class="term-line <?= $rowClass; ?>"
+				data-budget-y="<?= (float) $lv['budget']; ?>"
+				data-budget-t1="<?= (float) ($tb[1] ?? 0); ?>" data-budget-t2="<?= (float) ($tb[2] ?? 0); ?>" data-budget-t3="<?= (float) ($tb[3] ?? 0); ?>"
+				data-used-y="<?= (float) $lv['used']; ?>"
+				data-used-t1="<?= (float) ($tu[1] ?? 0); ?>" data-used-t2="<?= (float) ($tu[2] ?? 0); ?>" data-used-t3="<?= (float) ($tu[3] ?? 0); ?>">
 				<td><?= esc($lv['section']); ?></td>
 				<td><?= esc($lv['category']); ?></td>
-				<td class="text-right"><?= number_format((float)$lv['budget'], 0); ?></td>
-				<td class="text-right"><?= number_format((float)$lv['used'], 0); ?></td>
-				<td class="text-right <?= $varClass; ?>"><?= number_format((float)$lv['variance'], 0); ?></td>
-				<td class="text-right"><?= (float)$lv['utilization_pct']; ?>%</td>
+				<td class="text-right js-budget"><?= number_format((float)$lv['budget'], 0); ?></td>
+				<td class="text-right js-used"><?= number_format((float)$lv['used'], 0); ?></td>
+				<td class="text-right js-var <?= $varClass; ?>"><?= number_format((float)$lv['variance'], 0); ?></td>
+				<td class="text-right js-pct"><?= (float)$lv['utilization_pct']; ?>%</td>
 			</tr>
 			<?php } ?>
 			</tbody>

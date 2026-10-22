@@ -42,19 +42,33 @@ $money = static function ($amount) {
 			<strong><?= (int) ($desk['approved_schools'] ?? 0); ?><span>/<?= (int) ($desk['school_count'] ?? 0); ?></span></strong>
 			<small>One approved budget per school</small>
 		</div>
+		<?php
+		$gTerms = $group['terms'] ?? [];
+		$gInc = [
+			1 => (float) ($gTerms[1]['income'] ?? 0),
+			2 => (float) ($gTerms[2]['income'] ?? 0),
+			3 => (float) ($gTerms[3]['income'] ?? 0),
+		];
+		$gExp = [
+			1 => (float) ($gTerms[1]['expense'] ?? 0),
+			2 => (float) ($gTerms[2]['expense'] ?? 0),
+			3 => (float) ($gTerms[3]['expense'] ?? 0),
+		];
+		$gNet = [1 => $gInc[1] - $gExp[1], 2 => $gInc[2] - $gExp[2], 3 => $gInc[3] - $gExp[3]];
+		?>
 		<div class="fd-kpi income">
-			<label>Approved income</label>
-			<strong><?= $money($group['income'] ?? 0); ?></strong>
-			<small>RWF from approved Excel budgets</small>
+			<label class="term-label" data-label-y="Approved income" data-label-1="Term I income" data-label-2="Term II income" data-label-3="Term III income">Approved income</label>
+			<strong class="term-money" data-y="<?= (float) ($group['income'] ?? 0); ?>" data-t1="<?= $gInc[1]; ?>" data-t2="<?= $gInc[2]; ?>" data-t3="<?= $gInc[3]; ?>"><?= $money($group['income'] ?? 0); ?></strong>
+			<small class="term-label" data-label-y="RWF from approved Excel budgets" data-label-1="RWF in Term I" data-label-2="RWF in Term II" data-label-3="RWF in Term III">RWF from approved Excel budgets</small>
 		</div>
 		<div class="fd-kpi expense">
-			<label>Approved expenses</label>
-			<strong><?= $money($group['expense'] ?? 0); ?></strong>
+			<label class="term-label" data-label-y="Approved expenses" data-label-1="Term I expenses" data-label-2="Term II expenses" data-label-3="Term III expenses">Approved expenses</label>
+			<strong class="term-money" data-y="<?= (float) ($group['expense'] ?? 0); ?>" data-t1="<?= $gExp[1]; ?>" data-t2="<?= $gExp[2]; ?>" data-t3="<?= $gExp[3]; ?>"><?= $money($group['expense'] ?? 0); ?></strong>
 			<small>RWF</small>
 		</div>
-		<div class="fd-kpi <?= ((float) ($group['surplus'] ?? 0)) >= 0 ? 'income' : 'expense'; ?>">
+		<div class="fd-kpi js-surplus-kpi <?= ((float) ($group['surplus'] ?? 0)) >= 0 ? 'income' : 'expense'; ?>">
 			<label>Surplus</label>
-			<strong><?= $money($group['surplus'] ?? 0); ?></strong>
+			<strong class="term-money term-surplus" data-y="<?= (float) ($group['surplus'] ?? 0); ?>" data-t1="<?= $gNet[1]; ?>" data-t2="<?= $gNet[2]; ?>" data-t3="<?= $gNet[3]; ?>"><?= $money($group['surplus'] ?? 0); ?></strong>
 			<small>Income minus expenses</small>
 		</div>
 		<a class="fd-kpi" href="<?= base_url('budget/requests?tab=payments'); ?>">
@@ -164,9 +178,14 @@ $money = static function ($amount) {
 							<?php } ?>
 						</td>
 						<td><span class="fd-status <?= esc($statusClass[$st] ?? 'idle'); ?>"><?= esc($st === '' ? 'No budget' : ($statusLabels[$st] ?? $st)); ?></span></td>
-						<td class="num"><?= $school['budget_id'] ? $money($school['income']) : '—'; ?></td>
-						<td class="num"><?= $school['budget_id'] ? $money($school['expense']) : '—'; ?></td>
-						<td class="num <?= $net >= 0 ? 'pos' : 'neg'; ?>"><?= $school['budget_id'] ? $money($net) : '—'; ?></td>
+						<?php
+						$sTerms = $school['terms'] ?? [];
+						$sInc = [1 => (float) ($sTerms[1]['income'] ?? 0), 2 => (float) ($sTerms[2]['income'] ?? 0), 3 => (float) ($sTerms[3]['income'] ?? 0)];
+						$sExp = [1 => (float) ($sTerms[1]['expense'] ?? 0), 2 => (float) ($sTerms[2]['expense'] ?? 0), 3 => (float) ($sTerms[3]['expense'] ?? 0)];
+						?>
+						<td class="num"><?php if (!empty($school['budget_id'])) { ?><span class="term-money" data-y="<?= (float) $school['income']; ?>" data-t1="<?= $sInc[1]; ?>" data-t2="<?= $sInc[2]; ?>" data-t3="<?= $sInc[3]; ?>"><?= $money($school['income']); ?></span><?php } else { ?>—<?php } ?></td>
+						<td class="num"><?php if (!empty($school['budget_id'])) { ?><span class="term-money" data-y="<?= (float) $school['expense']; ?>" data-t1="<?= $sExp[1]; ?>" data-t2="<?= $sExp[2]; ?>" data-t3="<?= $sExp[3]; ?>"><?= $money($school['expense']); ?></span><?php } else { ?>—<?php } ?></td>
+						<td class="num <?= $net >= 0 ? 'pos' : 'neg'; ?>"><?php if (!empty($school['budget_id'])) { ?><span class="term-money term-surplus" data-y="<?= $net; ?>" data-t1="<?= $sInc[1] - $sExp[1]; ?>" data-t2="<?= $sInc[2] - $sExp[2]; ?>" data-t3="<?= $sInc[3] - $sExp[3]; ?>"><?= $money($net); ?></span><?php } else { ?>—<?php } ?></td>
 						<td class="num"><?= $school['budget_id'] ? $money($termNet($school['terms'], 1)) : '—'; ?></td>
 						<td class="num"><?= $school['budget_id'] ? $money($termNet($school['terms'], 2)) : '—'; ?></td>
 						<td class="num"><?= $school['budget_id'] ? $money($termNet($school['terms'], 3)) : '—'; ?></td>

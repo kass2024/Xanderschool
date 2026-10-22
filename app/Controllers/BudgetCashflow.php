@@ -79,11 +79,47 @@ class BudgetCashflow extends Home
 		$availSvc = new BudgetAvailabilityService();
 		$lineVariances = [];
 		$totalUsed = 0.0;
+		$termUsedTotals = [1 => 0.0, 2 => 0.0, 3 => 0.0];
+		$termSpend = [];
 		$termPlan = [
 			1 => ['income' => 0.0, 'expense' => 0.0],
 			2 => ['income' => 0.0, 'expense' => 0.0],
 			3 => ['income' => 0.0, 'expense' => 0.0],
 		];
+		if ($budget) {
+			try {
+				CashRequestApprovalPolicy::ensureSchema();
+				$budgetKey = (int) $budget['id'];
+				$commitRows = $db->query(
+					"SELECT bc.budget_line_id, cr.budget_term, COALESCE(SUM(bc.amount),0) AS t
+					FROM budget_commitments bc
+					INNER JOIN cash_requests cr ON cr.id = bc.cash_request_id
+					WHERE cr.budget_id = ? AND bc.status = 'open' AND cr.budget_term IN (1,2,3)
+					GROUP BY bc.budget_line_id, cr.budget_term",
+					[$budgetKey]
+				)->getResultArray();
+				foreach ($commitRows as $spendRow) {
+					$termSpend[(int) $spendRow['budget_line_id']][(int) $spendRow['budget_term']] = (float) $spendRow['t'];
+				}
+				$paidRows = $db->query(
+					"SELECT crl.budget_line_id, cr.budget_term, COALESCE(SUM(p.amount),0) AS t
+					FROM cash_request_payments p
+					INNER JOIN cash_requests cr ON cr.id = p.cash_request_id
+					INNER JOIN cash_request_lines crl ON crl.cash_request_id = cr.id
+					WHERE cr.budget_id = ? AND p.status = 'completed' AND cr.budget_term IN (1,2,3)
+					AND cr.status IN ('PAID','RECEIPT_CONFIRMED','CLOSED','PARTIALLY_PAID')
+					GROUP BY crl.budget_line_id, cr.budget_term",
+					[$budgetKey]
+				)->getResultArray();
+				foreach ($paidRows as $spendRow) {
+					$lineKey = (int) $spendRow['budget_line_id'];
+					$termKey = (int) $spendRow['budget_term'];
+					$termSpend[$lineKey][$termKey] = ($termSpend[$lineKey][$termKey] ?? 0) + (float) $spendRow['t'];
+				}
+			} catch (\Throwable $e) {
+				$termSpend = [];
+			}
+		}
 		if ($budget) {
 			$lines = $db->table('budget_lines')->where('budget_id', (int) $budget['id'])
 				->orderBy('sort_order', 'ASC')->get()->getResultArray();
@@ -112,6 +148,21 @@ class BudgetCashflow extends Home
 				if (empty($line['is_total_row'])) {
 					$totalUsed += $displayUsed;
 				}
+				$termBudget = [
+					1 => (float) ($line['term_1_amount'] ?? 0),
+					2 => (float) ($line['term_2_amount'] ?? 0),
+					3 => (float) ($line['term_3_amount'] ?? 0),
+				];
+				$termUsed = [
+					1 => round((float) ($termSpend[(int) $line['id']][1] ?? 0), 2),
+					2 => round((float) ($termSpend[(int) $line['id']][2] ?? 0), 2),
+					3 => round((float) ($termSpend[(int) $line['id']][3] ?? 0), 2),
+				];
+				if (empty($line['is_total_row'])) {
+					foreach ($termUsed as $termNo => $termSpent) {
+						$termUsedTotals[$termNo] += $termSpent;
+					}
+				}
 				$lineVariances[] = [
 					'id' => (int) $line['id'],
 					'section' => $line['section_label'],
@@ -121,6 +172,8 @@ class BudgetCashflow extends Home
 					'variance' => round($budgetAmt - $displayUsed, 2),
 					'is_total_row' => (int) ($line['is_total_row'] ?? 0),
 					'utilization_pct' => $budgetAmt > 0 ? round(($displayUsed / $budgetAmt) * 100, 1) : 0,
+					'term_budget' => $termBudget,
+					'term_used' => $termUsed,
 				];
 			}
 		}
@@ -148,6 +201,7 @@ class BudgetCashflow extends Home
 			'enrollment' => $enrollment,
 			'line_variances' => $lineVariances,
 			'terms' => $termPlan,
+			'term_used' => $termUsedTotals,
 		];
 	}
 
@@ -1280,6 +1334,10 @@ class BudgetCashflow extends Home
 		if ((int) $c['branchId'] < 1) {
 			return $this->response->setJSON(['error' => 'No school branch is linked to your account.']);
 		}
+		$budgetTerm = (int) $this->request->getPost('budget_term');
+		if ($budgetTerm < 1 || $budgetTerm > 3) {
+			return $this->response->setJSON(['error' => 'Select Term I, Term II, or Term III for this budget.']);
+		}
 		$file = $this->request->getFile('budget_file');
 		$doc = new DocumentStorageService();
 		$stored = $doc->storeUpload($file, 'budget/prepared');
@@ -1296,6 +1354,7 @@ class BudgetCashflow extends Home
 			'period_id' => $periodId,
 			'school_name' => trim((string) ($schoolRow['name'] ?? '')),
 			'academic_year' => trim((string) $this->request->getPost('academic_year')),
+			'budget_term' => $budgetTerm,
 			'original_name' => $stored['original_name'] ?? '',
 			'stored_path' => $stored['stored_path'] ?? '',
 		]);
@@ -1304,8 +1363,9 @@ class BudgetCashflow extends Home
 		}
 		$income = number_format((float) ($result['total_income'] ?? 0), 0);
 		$expense = number_format((float) ($result['total_expenses'] ?? 0), 0);
+		$termName = [1 => 'Term I', 2 => 'Term II', 3 => 'Term III'][$budgetTerm] ?? 'the selected term';
 		return $this->response->setJSON([
-			'success' => 'Extracted ' . (int) ($result['line_count'] ?? 0) . ' budget lines. Income ' . $income . ' RWF, expenses ' . $expense . ' RWF. Submit it for Chief Accountant approval.',
+			'success' => 'Extracted ' . (int) ($result['line_count'] ?? 0) . ' budget lines into ' . $termName . '. Income ' . $income . ' RWF, expenses ' . $expense . ' RWF. Submit it to the head teacher.',
 			'budget_id' => (int) $result['budget_id'],
 			'result' => $result,
 		]);
@@ -2658,9 +2718,13 @@ class BudgetCashflow extends Home
 		$id = (int) $this->request->getPost('id');
 		$submitNow = (bool) $this->request->getPost('submit_now');
 		$budgetId = (int) $this->request->getPost('budget_id');
+		$budgetTerm = (int) $this->request->getPost('budget_term');
 
 		if ($budgetId <= 0) {
 			return $this->response->setJSON(['error' => 'Select an approved budget.']);
+		}
+		if ($budgetTerm < 1 || $budgetTerm > 3) {
+			return $this->response->setJSON(['error' => 'Select Term I, Term II, or Term III before choosing a budget line.']);
 		}
 
 		$budget = $db->table('budgets')->where('id', $budgetId)->where('branch_id', $c['branchId'])
@@ -2726,6 +2790,9 @@ class BudgetCashflow extends Home
 			if (stripos((string) ($bLine['section_label'] ?? ''), 'INCOME') !== false) {
 				return $this->response->setJSON(['error' => 'Item #' . ($idx + 1) . ': a request cannot use an income line. Choose an expense line.']);
 			}
+			if ((float) ($bLine['term_' . $budgetTerm . '_amount'] ?? 0) <= 0) {
+				return $this->response->setJSON(['error' => 'Item #' . ($idx + 1) . ': ' . ($bLine['category'] ?? 'this line') . ' has no amount in the selected term.']);
+			}
 			$desc = trim((string) ($it['description'] ?? ''));
 			if ($desc === '') {
 				$desc = (string) ($bLine['category'] ?? 'Cash request item');
@@ -2741,10 +2808,15 @@ class BudgetCashflow extends Home
 		}
 
 		if ($submitNow) {
+			$ownTerm = 0;
+			if ($id > 0) {
+				$ownRow = $db->table('cash_requests')->select('budget_term')->where('id', $id)->get(1)->getRowArray();
+				$ownTerm = (int) ($ownRow['budget_term'] ?? 0);
+			}
 			foreach ($byLine as $lid => $need) {
-				$avail = $availSvc->lineAvailability((int) $lid);
+				$avail = $availSvc->lineAvailability((int) $lid, $budgetTerm);
 				$left = $avail ? (float) $avail['available'] : 0.0;
-				if ($id > 0) {
+				if ($id > 0 && $ownTerm === $budgetTerm) {
 					$ownHeld = (float) ($db->query(
 						"SELECT COALESCE(SUM(amount),0) AS t FROM budget_commitments WHERE cash_request_id = ? AND budget_line_id = ? AND status = 'open'",
 						[$id, (int) $lid]
@@ -2760,7 +2832,7 @@ class BudgetCashflow extends Home
 						}
 					}
 					return $this->response->setJSON([
-						'error' => ($cat ?: 'A budget line') . ' exceeds remaining budget (need '
+						'error' => ($cat ?: 'A budget line') . ' exceeds the remaining amount for this term (need '
 							. number_format($need, 0) . ' / available ' . number_format($left, 0) . ' RWF).',
 					]);
 				}
@@ -2772,6 +2844,7 @@ class BudgetCashflow extends Home
 			'branch_id' => $c['branchId'],
 			'budget_id' => $budgetId,
 			'budget_period_id' => (int) $this->request->getPost('budget_period_id') ?: null,
+			'budget_term' => $budgetTerm,
 			'request_date' => $this->request->getPost('request_date') ?: date('Y-m-d'),
 			'required_payment_date' => $this->request->getPost('required_payment_date'),
 			'payee_name' => trim((string) $this->request->getPost('payee_name')),
@@ -3188,6 +3261,8 @@ class BudgetCashflow extends Home
 		$db = \Config\Database::connect();
 		$availSvc = new BudgetAvailabilityService();
 		$calc = new BudgetCalculationService();
+		$term = (int) $this->request->getGet('term');
+		$useTerm = $term >= 1 && $term <= 3;
 		// Expense lines only. Income cannot be used on a cash request.
 		$lines = $db->table('budget_lines')
 			->where('budget_id', (int) $budgetId)
@@ -3205,12 +3280,15 @@ class BudgetCashflow extends Home
 					$ln['annual_amount'] = $annual;
 				}
 			}
-			$ln['availability'] = $availSvc->lineAvailability((int) $ln['id']);
 			$ln['section'] = $ln['section_label'] ?? '';
 			$ln['is_income'] = (stripos((string) ($ln['section_label'] ?? ''), 'INCOME') !== false) ? 1 : 0;
 			if ($ln['is_income']) {
 				continue;
 			}
+			if ($useTerm && (float) ($ln['term_' . $term . '_amount'] ?? 0) <= 0) {
+				continue;
+			}
+			$ln['availability'] = $availSvc->lineAvailability((int) $ln['id'], $useTerm ? $term : null);
 			$out[] = $ln;
 		}
 		return $this->response->setJSON(['lines' => $out]);

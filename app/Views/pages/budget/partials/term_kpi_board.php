@@ -17,7 +17,7 @@ $termMeta = [
 	$exp = (float) ($termFigures[$n]['expense'] ?? 0);
 	$net = $inc - $exp;
 ?>
-	<article class="bp-term-card <?= $meta['class']; ?>">
+	<article class="bp-term-card <?= $meta['class']; ?>" data-term="<?= (int) $n; ?>">
 		<header>
 			<span><?= $meta['label']; ?></span>
 			<span class="bp-term-unit">RWF</span>

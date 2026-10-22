@@ -805,6 +805,13 @@
 .bp-term-card .metric-exp strong { color: #b91c1c; }
 .bp-term-card .metric-net strong.pos { color: #047857; }
 .bp-term-card .metric-net strong.neg { color: #b91c1c; }
+.bp-term-switch { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.bp-term-switch .btn { border-radius: 999px; }
+body.bp-term-live .bp-term-card { cursor: pointer; }
+body.bp-term-live .bp-term-card.is-on { box-shadow: 0 0 0 2px #1d4ed8; }
+body.bp-term-live .bp-term-card.is-off { display: none; }
+body.bp-term-live .bp-term-board:has(.is-off) { grid-template-columns: minmax(0, 28rem); }
+.ws-erf-bar select#budget_term { min-width: 150px; width: 160px; }
 .bp-term-card.t1 { border-top: 4px solid #10b981; }
 .bp-term-card.t2 { border-top: 4px solid #f59e0b; }
 .bp-term-card.t3 { border-top: 4px solid #3b82f6; }

@@ -1,4 +1,4 @@
-<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=18" rel="stylesheet">
+<link href="<?= base_url('assets/css/budget-preparation.css'); ?>?v=19" rel="stylesheet">
 
 <?php $tab = $tab ?? 'budgets'; ?>
 
@@ -21,25 +21,39 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 <div class="card border-0 shadow-sm mb-4">
 	<div class="card-body">
 		<h5 class="font-weight-bold mb-1"><i class="fa fa-file-excel text-success"></i> Upload Excel budget</h5>
-		<p class="text-muted small mb-3">Upload this school's own Excel budget. The budget is named after the school you are logged into. Line names can differ from school to school, and School Fees stay exactly as they are in the file. Only one budget is allowed for each academic year. After it is approved it stays locked until the Chief Accountant opens Term I, Term II, or Term III.</p>
+		<p class="text-muted small mb-3">Upload this school's own Excel budget and choose the term those amounts belong to. Line names can differ from school to school, and School Fees stay exactly as they are in the file. Only one budget is allowed for each academic year. Uploading again for another term keeps the amounts already saved in the other terms.</p>
 		<form id="frmUploadBudget" enctype="multipart/form-data">
 			<div class="form-row">
-				<div class="form-group col-md-8 mb-2">
+				<div class="form-group col-md-5 mb-2">
 					<label class="small font-weight-bold">Excel file (.xlsx)</label>
 					<input type="file" name="budget_file" id="budgetFile" class="form-control" accept=".xlsx,.xls" required>
 				</div>
-				<div class="form-group col-md-4 mb-2">
+				<div class="form-group col-md-3 mb-2">
 					<label class="small font-weight-bold">Academic year</label>
 					<input class="form-control" name="academic_year" value="<?= date('Y'); ?>-<?= substr((string) (date('Y') + 1), -2); ?>" placeholder="2026-27">
+				</div>
+				<div class="form-group col-md-4 mb-2">
+					<label class="small font-weight-bold">Term</label>
+					<select class="form-control" name="budget_term" required>
+						<option value="">— Select term —</option>
+						<option value="1">Term I</option>
+						<option value="2">Term II</option>
+						<option value="3">Term III</option>
+					</select>
 				</div>
 			</div>
 			<button type="submit" class="btn btn-primary" id="btnUploadBudget"><i class="fa fa-upload"></i> Upload and extract lines</button>
 		</form>
 	</div>
 </div>
-<?php } elseif (\Config\MenuClearance::isBudgetViewOnlyPost((int) ($_SESSION['soma_post'] ?? 0))) { ?>
-<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-outline-secondary mb-3"><i class="fa fa-eye"></i> View dashboard</a>
 <?php } ?>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between">
+	<?= view('pages/budget/partials/term_view_switch'); ?>
+	<?php if (\Config\MenuClearance::isBudgetViewOnlyPost((int) ($_SESSION['soma_post'] ?? 0))) { ?>
+	<a href="<?= base_url('budget/dashboard'); ?>" class="btn btn-outline-secondary mb-3"><i class="fa fa-eye"></i> View dashboard</a>
+	<?php } ?>
+</div>
 
 <div class="row mb-4">
 	<div class="col-lg-7">
@@ -99,10 +113,23 @@ foreach ($budgets as $b) {
 			<?php } ?>
 		</div>
 	</div>
+	<?php
+	$cardTerms = $b['terms'] ?? [];
+	$cardInc = [
+		1 => (float) ($cardTerms[1]['income'] ?? 0),
+		2 => (float) ($cardTerms[2]['income'] ?? 0),
+		3 => (float) ($cardTerms[3]['income'] ?? 0),
+	];
+	$cardExp = [
+		1 => (float) ($cardTerms[1]['expense'] ?? 0),
+		2 => (float) ($cardTerms[2]['expense'] ?? 0),
+		3 => (float) ($cardTerms[3]['expense'] ?? 0),
+	];
+	?>
 	<div class="bp-year-figures">
-		<div><span>Income (year)</span><strong class="text-success"><?= number_format((float)$b['total_income'], 0); ?></strong></div>
-		<div><span>Expenses (year)</span><strong class="text-danger"><?= number_format((float)$b['total_expenses'], 0); ?></strong></div>
-		<div><span>Surplus</span><strong class="<?= (float)$b['surplus_deficit'] >= 0 ? 'text-success' : 'text-danger'; ?>"><?= number_format((float)$b['surplus_deficit'], 0); ?></strong></div>
+		<div><span class="term-label" data-label-y="Income (year)" data-label-1="Income (Term I)" data-label-2="Income (Term II)" data-label-3="Income (Term III)">Income (year)</span><strong class="text-success term-money" data-y="<?= (float) $b['total_income']; ?>" data-t1="<?= $cardInc[1]; ?>" data-t2="<?= $cardInc[2]; ?>" data-t3="<?= $cardInc[3]; ?>"><?= number_format((float)$b['total_income'], 0); ?></strong></div>
+		<div><span class="term-label" data-label-y="Expenses (year)" data-label-1="Expenses (Term I)" data-label-2="Expenses (Term II)" data-label-3="Expenses (Term III)">Expenses (year)</span><strong class="text-danger term-money" data-y="<?= (float) $b['total_expenses']; ?>" data-t1="<?= $cardExp[1]; ?>" data-t2="<?= $cardExp[2]; ?>" data-t3="<?= $cardExp[3]; ?>"><?= number_format((float)$b['total_expenses'], 0); ?></strong></div>
+		<div><span class="term-label" data-label-y="Surplus" data-label-1="Surplus (Term I)" data-label-2="Surplus (Term II)" data-label-3="Surplus (Term III)">Surplus</span><strong class="term-money term-surplus <?= (float)$b['surplus_deficit'] >= 0 ? 'text-success' : 'text-danger'; ?>" data-y="<?= (float) $b['surplus_deficit']; ?>" data-t1="<?= $cardInc[1] - $cardExp[1]; ?>" data-t2="<?= $cardInc[2] - $cardExp[2]; ?>" data-t3="<?= $cardInc[3] - $cardExp[3]; ?>"><?= number_format((float)$b['surplus_deficit'], 0); ?></strong></div>
 	</div>
 	<?php if (!empty($b['terms'])) { ?>
 	<div class="mt-3"><?= view('pages/budget/partials/term_kpi_board', ['term_figures' => $b['terms']]); ?></div>

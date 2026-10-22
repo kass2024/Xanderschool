@@ -127,7 +127,7 @@ class WisdomBudgetWorkbookImportService
 
 		$openStatuses = [
 			'DRAFT', 'RETURNED', 'REJECTED', 'CANCELLED', 'SUBMITTED',
-			'CHIEF_ACCOUNTANT_REVIEW', 'DEPUTY_DIRECTOR_REVIEW',
+			'HEADTEACHER_REVIEW', 'CHIEF_ACCOUNTANT_REVIEW', 'DEPUTY_DIRECTOR_REVIEW',
 			'PROCUREMENT_REVIEW', 'BUDGET_MANAGER_REVIEW',
 		];
 		$existing = $db->table('budgets')
@@ -165,7 +165,25 @@ class WisdomBudgetWorkbookImportService
 			$title = substr($title, 0, 180);
 		}
 
-		$termIndex = (int) ($parsed['term_index'] ?? 0);
+		$chosenTerm = (int) ($ctx['budget_term'] ?? 0);
+		$termIndex = ($chosenTerm >= 1 && $chosenTerm <= 3) ? $chosenTerm : (int) ($parsed['term_index'] ?? 0);
+		$preserveOtherTerms = $chosenTerm >= 1 && $chosenTerm <= 3;
+		$excelByTerm = [];
+		if ($existing && !empty($existing['notes'])) {
+			$oldNotes = json_decode((string) $existing['notes'], true);
+			if (is_array($oldNotes) && !empty($oldNotes['excel_by_term']) && is_array($oldNotes['excel_by_term'])) {
+				$excelByTerm = $oldNotes['excel_by_term'];
+			} elseif (is_array($oldNotes) && !empty($oldNotes['excel_stored_path'])) {
+				$excelByTerm[(string) ((int) ($oldNotes['excel_term'] ?? 0))] = [
+					'excel_file' => (string) ($oldNotes['excel_file'] ?? ''),
+					'excel_stored_path' => (string) ($oldNotes['excel_stored_path'] ?? ''),
+				];
+			}
+		}
+		$excelByTerm[(string) $termIndex] = [
+			'excel_file' => (string) ($ctx['original_name'] ?? basename($filePath)),
+			'excel_stored_path' => (string) ($ctx['stored_path'] ?? ''),
+		];
 		$notes = [
 			'source' => self::SOURCE,
 			'academic_year' => $year,
@@ -175,6 +193,7 @@ class WisdomBudgetWorkbookImportService
 			'excel_school' => (string) ($parsed['school_name'] ?? ''),
 			'excel_period' => (string) ($parsed['period_hint'] ?? ''),
 			'excel_term' => $termIndex,
+			'excel_by_term' => $excelByTerm,
 			'prepared_by_excel' => (string) ($parsed['prepared_by'] ?? ''),
 			'verified_by_excel' => (string) ($parsed['verified_by'] ?? ''),
 			'uploaded_at' => date('Y-m-d H:i:s'),
@@ -182,8 +201,15 @@ class WisdomBudgetWorkbookImportService
 		];
 
 		$db->transStart();
+		$preservedLines = [];
 		if ($existing) {
 			$budgetId = (int) $existing['id'];
+			if ($preserveOtherTerms) {
+				$oldLines = $db->table('budget_lines')->where('budget_id', $budgetId)->where('is_total_row', 0)->get()->getResultArray();
+				foreach ($oldLines as $oldLine) {
+					$preservedLines[$this->lineMatchKey((string) ($oldLine['section_label'] ?? ''), (string) ($oldLine['category'] ?? ''))] = $oldLine;
+				}
+			}
 			$db->table('budget_lines')->where('budget_id', $budgetId)->delete();
 			try {
 				$db->table('budget_approval_actions')->where('budget_id', $budgetId)->delete();
@@ -221,9 +247,20 @@ class WisdomBudgetWorkbookImportService
 		}
 
 		$order = 0;
+		$seenKeys = [];
 		foreach ($parsed['rows'] as $row) {
 			$amount = round((float) ($row['amount'] ?? 0), 2);
+			$section = (string) ($row['section'] ?? 'OPERATING EXPENSES');
+			$category = mb_substr((string) $row['category'], 0, 180);
+			$key = $this->lineMatchKey($section, $category);
+			$seenKeys[$key] = true;
+			$prev = $preservedLines[$key] ?? null;
 			$terms = [1 => 0.0, 2 => 0.0, 3 => 0.0];
+			if ($prev && $preserveOtherTerms) {
+				$terms[1] = (float) ($prev['term_1_amount'] ?? 0);
+				$terms[2] = (float) ($prev['term_2_amount'] ?? 0);
+				$terms[3] = (float) ($prev['term_3_amount'] ?? 0);
+			}
 			if ($termIndex >= 1 && $termIndex <= 3) {
 				$terms[$termIndex] = $amount;
 			} else {
@@ -232,12 +269,12 @@ class WisdomBudgetWorkbookImportService
 				$terms[2] = $share;
 				$terms[3] = round($amount - ($share * 2), 2);
 			}
-			$section = (string) ($row['section'] ?? 'OPERATING EXPENSES');
+			$annual = round($terms[1] + $terms[2] + $terms[3], 2);
 			$isIncome = stripos($section, 'INCOME') !== false;
 			$db->table('budget_lines')->insert([
 				'budget_id' => $budgetId,
 				'section_label' => $section,
-				'category' => mb_substr((string) $row['category'], 0, 180),
+				'category' => $category,
 				'description' => (string) ($row['note'] ?? ''),
 				'quantity' => $isIncome ? ($row['quantity'] ?? null) : null,
 				'unit_cost' => $isIncome ? ($row['unit_cost'] ?? null) : null,
@@ -246,12 +283,49 @@ class WisdomBudgetWorkbookImportService
 				'term_1_amount' => $terms[1],
 				'term_2_amount' => $terms[2],
 				'term_3_amount' => $terms[3],
-				'annual_amount' => $amount,
-				'user_amount' => $amount,
+				'annual_amount' => $annual,
+				'user_amount' => $annual,
 				'is_total_row' => 0,
 				'is_editable' => 1,
 				'sort_order' => $order++,
 			]);
+		}
+		if ($preserveOtherTerms) {
+			foreach ($preservedLines as $key => $oldLine) {
+				if (isset($seenKeys[$key])) {
+					continue;
+				}
+				$terms = [
+					1 => (float) ($oldLine['term_1_amount'] ?? 0),
+					2 => (float) ($oldLine['term_2_amount'] ?? 0),
+					3 => (float) ($oldLine['term_3_amount'] ?? 0),
+				];
+				if ($termIndex >= 1 && $termIndex <= 3) {
+					$terms[$termIndex] = 0.0;
+				}
+				$annual = round($terms[1] + $terms[2] + $terms[3], 2);
+				if ($annual <= 0) {
+					continue;
+				}
+				$db->table('budget_lines')->insert([
+					'budget_id' => $budgetId,
+					'section_label' => (string) ($oldLine['section_label'] ?? ''),
+					'category' => (string) ($oldLine['category'] ?? ''),
+					'description' => (string) ($oldLine['description'] ?? ''),
+					'quantity' => $oldLine['quantity'] ?? null,
+					'unit_cost' => $oldLine['unit_cost'] ?? null,
+					'frequency' => 1,
+					'calculation_mode' => 'term_sum',
+					'term_1_amount' => $terms[1],
+					'term_2_amount' => $terms[2],
+					'term_3_amount' => $terms[3],
+					'annual_amount' => $annual,
+					'user_amount' => $annual,
+					'is_total_row' => 0,
+					'is_editable' => 1,
+					'sort_order' => $order++,
+				]);
+			}
 		}
 		$totals = (new BudgetCalculationService())->recalculateBudgetTotals($budgetId);
 		$db->transComplete();
@@ -271,6 +345,15 @@ class WisdomBudgetWorkbookImportService
 			'period_hint' => $parsed['period_hint'] ?? '',
 			'term_index' => $termIndex,
 		];
+	}
+
+	private function lineMatchKey(string $section, string $category): string
+	{
+		$norm = static function (string $value): string {
+			$value = trim((string) preg_replace('/\s+/', ' ', $value));
+			return function_exists('mb_strtoupper') ? mb_strtoupper($value) : strtoupper($value);
+		};
+		return $norm($section) . '|' . $norm($category);
 	}
 
 	private function pickSheet($spreadsheet): ?Worksheet

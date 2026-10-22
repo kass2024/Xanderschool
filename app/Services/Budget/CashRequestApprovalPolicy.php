@@ -77,6 +77,9 @@ class CashRequestApprovalPolicy
 			if (!in_array('approval_chain', $names, true)) {
 				$db->query("ALTER TABLE cash_requests ADD COLUMN approval_chain VARCHAR(20) NOT NULL DEFAULT 'full' AFTER requested_amount");
 			}
+			if (!in_array('budget_term', $names, true)) {
+				$db->query('ALTER TABLE cash_requests ADD COLUMN budget_term TINYINT UNSIGNED NULL AFTER budget_period_id');
+			}
 			foreach ([
 				'headteacher_signature' => 'VARCHAR(255) NULL',
 				'chief_accountant_signature' => 'VARCHAR(255) NULL',
