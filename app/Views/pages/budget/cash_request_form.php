@@ -368,7 +368,7 @@ function buildLineOptionsHtml(lines) {
 		h += '<optgroup label="' + $('<div>').text(sec).html() + '">';
 		$.each(groups[sec], function (j, l) {
 			var availNum = l.availability ? Number(l.availability.available) : 0;
-			var avail = ' - remaining ' + availNum.toLocaleString() + ' RWF';
+			var avail = ' - remaining ' + formatMoney(availNum) + ' RWF';
 			h += '<option value="' + l.id + '" data-cat="' + $('<div>').text(l.category).html() + '">'
 				+ $('<div>').text(l.category).html() + avail + '</option>';
 		});
@@ -402,10 +402,23 @@ function frwWords(n) {
 	return text.charAt(0).toUpperCase() + text.slice(1) + ' Rwandan francs';
 }
 
+function formatMoney(n) {
+	return Math.round(Number(n) || 0).toLocaleString('en-US');
+}
 function parseMoney(v) {
-	var s = String(v || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
+	var s = String(v || '').replace(/[\s\u00a0\u202f]/g, '').replace(/,/g, '');
+	if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
 	var n = parseFloat(s);
 	return isNaN(n) ? 0 : n;
+}
+function amountsByLine() {
+	var byLine = {};
+	$('#requestItemsBody tr').each(function () {
+		var lid = $(this).find('.item-line').val();
+		if (!lid) return;
+		byLine[lid] = (byLine[lid] || 0) + parseMoney($(this).find('.item-amount').val());
+	});
+	return byLine;
 }
 
 function rowBlank($tr) {
@@ -440,61 +453,65 @@ function addItemRow(preset) {
 	}
 	if (preset.amount) {
 		var presetAmt = parseMoney(preset.amount);
-		$tr.find('.item-amount').val(presetAmt > 0 ? presetAmt.toLocaleString() : '');
+		$tr.find('.item-amount').val(presetAmt > 0 ? formatMoney(presetAmt) : '');
 	}
 	refreshItemRow($tr);
 	recalcItems();
 }
 
-function refreshItemRow($tr) {
-	var lid = $tr.find('.item-line').val();
-	var amt = parseMoney($tr.find('.item-amount').val());
+function refreshItemRow($tr, byLine) {
+	var lid = String($tr.find('.item-line').val() || '');
 	var av = lineData[lid];
 	var $remain = $tr.find('.item-remain');
 	$tr.removeClass('table-danger table-warning');
+	$remain.removeClass('text-danger text-warning text-success');
 	if (!lid || !av) {
-		$remain.text('—').removeClass('text-danger text-warning text-success');
+		$remain.text('—');
 		return;
 	}
-	var remain = parseFloat(av.available) || 0;
-	// Deduct other rows on same budget line
-	var usedSame = 0;
-	$('#requestItemsBody tr').each(function () {
-		if (this === $tr[0]) return;
-		if (String($(this).find('.item-line').val()) === String(lid)) {
-			usedSame += parseMoney($(this).find('.item-amount').val());
-		}
-	});
-	var left = remain - usedSame;
-	var after = left - amt;
-	$remain.text('Remaining ' + Number(after).toLocaleString() + ' FRW');
-	if (amt > left) {
-		$remain.addClass('text-danger').removeClass('text-warning text-success');
+	var ceiling = parseFloat(av.available) || 0;
+	var used = byLine[lid] || 0;
+	var left = ceiling - used;
+	$remain.text('Remaining ' + formatMoney(left) + ' FRW');
+	if (left < 0) {
+		$remain.addClass('text-danger');
 		$tr.addClass('table-danger');
-	} else if (amt > left * 0.8) {
-		$remain.addClass('text-warning').removeClass('text-danger text-success');
+	} else if (used > 0 && ceiling > 0 && used >= ceiling * 0.8) {
+		$remain.addClass('text-warning');
 		$tr.addClass('table-warning');
 	} else {
-		$remain.addClass('text-success').removeClass('text-danger text-warning');
+		$remain.addClass('text-success');
 	}
+}
+function paintLineRemainings(byLine) {
+	$('#requestItemsBody .item-line').each(function () {
+		var $sel = $(this);
+		var current = $sel.val();
+		$sel.find('option').each(function () {
+			var id = String($(this).val() || '');
+			if (!id || !lineData[id]) return;
+			var name = $(this).attr('data-cat') || '';
+			var ceiling = parseFloat(lineData[id].available) || 0;
+			var left = ceiling - (byLine[id] || 0);
+			$(this).text(name + ' - remaining ' + formatMoney(left) + ' RWF');
+		});
+		if (current) $sel.val(current);
+	});
 }
 
 function recalcItems() {
 	var total = 0;
 	var count = 0;
 	var over = [];
-	var byLine = {};
+	var byLine = amountsByLine();
+	paintLineRemainings(byLine);
 	$('#requestItemsBody tr').each(function () {
 		var $tr = $(this);
-		refreshItemRow($tr);
-		var lid = $tr.find('.item-line').val();
+		refreshItemRow($tr, byLine);
 		var amt = parseMoney($tr.find('.item-amount').val());
 		if (amt > 0) {
 			total += amt;
 			count += 1;
-		}
-		if (lid) {
-			byLine[lid] = (byLine[lid] || 0) + amt;
 		}
 	});
 	Object.keys(byLine).forEach(function (lid) {
@@ -627,7 +644,7 @@ $(document).on('change', '.item-line', function () {
 $(document).on('input', '.item-amount', recalcItems);
 $(document).on('blur', '.item-amount', function () {
 	var n = parseMoney($(this).val());
-	$(this).val(n > 0 ? n.toLocaleString() : '');
+	$(this).val(n > 0 ? formatMoney(n) : '');
 	recalcItems();
 });
 $(document).on('input', '.item-desc', function () {
