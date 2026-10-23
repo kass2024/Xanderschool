@@ -521,7 +521,7 @@ class Api extends BaseController
 		}
 		$this->_preset($school_id);
 		helper('qonics');
-		if (!staff_owns_course_class($teacher_id, $course_id, $class_id, (int) ($this->data['academic_year'] ?? 0))) {
+		if (!staff_may_enter_course_marks($teacher_id, $course_id, $class_id, (int) ($this->data['academic_year'] ?? 0))) {
 			return $this->response->setJSON(['error' => 'This course is not assigned to you']);
 		}
 		$nurseryClass = class_is_nursery($class_id);
@@ -2504,7 +2504,7 @@ public function check_school($option)
 							$info['cat_type'] = '';
 							$info['mark_type'] = 1;
 						}
-						if (!staff_owns_course_class($teacherId, (int) ($info['course_id'] ?? 0), (int) ($info['class_id'] ?? 0), (int) ($this->data['academic_year'] ?? 0))) {
+						if (!staff_may_enter_course_marks($teacherId, (int) ($info['course_id'] ?? 0), (int) ($info['class_id'] ?? 0), (int) ($this->data['academic_year'] ?? 0))) {
 							return $this->response->setJSON([
 								'error' => 'You can only enter marks for courses assigned to you.',
 								'last_id' => $last_id,

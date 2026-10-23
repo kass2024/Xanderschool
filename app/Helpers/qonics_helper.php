@@ -1456,6 +1456,35 @@ if (!function_exists('staff_owns_course_class')) {
 	}
 }
 
+if (!function_exists('staff_may_enter_course_marks')) {
+	/**
+	 * Assigned teacher, or a school leader who may fill marks the teacher has not entered
+	 * (DOS, DOS primary, Head Teacher, Head master, Headmistress).
+	 */
+	function staff_may_enter_course_marks($staffId, $courseId, $classId, $yearId): bool
+	{
+		if (staff_owns_course_class($staffId, $courseId, $classId, $yearId)) {
+			return true;
+		}
+		$staffId = (int) $staffId;
+		$postId = 0;
+		$postTitle = '';
+		try {
+			$session = session();
+			if ($staffId > 0 && $staffId === (int) ($session->get('soma_id') ?? 0)) {
+				$postId = (int) ($session->get('soma_post') ?? 0);
+				$postTitle = (string) ($session->get('soma_post_title') ?? '');
+			} elseif ($staffId > 0) {
+				$row = \Config\Database::connect()->table('staffs')->select('post')->where('id', $staffId)->get(1)->getRowArray();
+				$postId = (int) ($row['post'] ?? 0);
+			}
+		} catch (\Throwable $e) {
+			$postId = 0;
+		}
+		return \Config\MenuClearance::canEnterAllCourseMarks($postId, $postTitle);
+	}
+}
+
 if (!function_exists('symbolsText')) {
 	function symbolsText($type)
 	{

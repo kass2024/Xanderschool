@@ -1058,7 +1058,7 @@ class MenuClearance
 
 	/**
 	 * May enter / edit marks for every course in the school (not only assigned classes).
-	 * Director, Head master, Head Teacher, Director of studies, DHT ACADEMICS.
+	 * Director, Head master, Head Teacher, Director of studies (including DOS primary), DHT ACADEMICS.
 	 */
 	public static function canEnterAllCourseMarks($postId, $postTitle = '')
 	{
@@ -1067,6 +1067,9 @@ class MenuClearance
 			return true;
 		}
 		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) $postTitle)));
+		if ($title === '') {
+			$title = self::postTitle($postId);
+		}
 		if ($title === '') {
 			return false;
 		}
@@ -1082,6 +1085,9 @@ class MenuClearance
 			'head teacher',
 			'headteacher',
 			'director of studies',
+			'dos primary',
+			'director of studies primary',
+			'primary dos',
 			'dean of studies',
 			'dht academics',
 			'deputy ht academics',
@@ -1089,6 +1095,12 @@ class MenuClearance
 			'deputy headteacher academics',
 		];
 		if (in_array($title, $allowed, true)) {
+			return true;
+		}
+		if (strpos($title, 'director of studies') !== false || $title === 'dos') {
+			return true;
+		}
+		if (preg_match('/\bdos\b/', $title) && preg_match('/\bprimary\b/', $title)) {
 			return true;
 		}
 		if (preg_match('/\bdht\b.*\bacademic/', $title)) {

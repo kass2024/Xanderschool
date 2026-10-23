@@ -12634,8 +12634,7 @@ public function attendanceCard()
 					->orderBy("d.code")
 					->orderBy("l.title");
 
-			if ($assignedOnly === 1 || !MenuClearance::canEnterAllCourseMarks((int) $this->session->get("soma_post"), (string) $this->session->get('soma_post_title'))) {
-				// Marks entry always passes assignedOnly=1, so leaders cannot open another teacher's class.
+			if (!MenuClearance::canEnterAllCourseMarks((int) $this->session->get("soma_post"), (string) $this->session->get('soma_post_title'))) {
 				$builder->where("cr.lecturer", (int) $this->session->get("soma_id"));
 			}
 			$classes = $this->classesWithoutHoliday($builder->get()->getResultArray());
@@ -12924,7 +12923,7 @@ public function attendanceCard()
 		$rows = $marksMdl->select('id, course_id, class_id')->whereIn('id', $idList)->findAll();
 		$staffId = (int) $this->session->get('soma_id');
 		foreach ($rows as $row) {
-			if (!staff_owns_course_class($staffId, (int) ($row['course_id'] ?? 0), (int) ($row['class_id'] ?? 0), (int) $year)) {
+			if (!staff_may_enter_course_marks($staffId, (int) ($row['course_id'] ?? 0), (int) ($row['class_id'] ?? 0), (int) $year)) {
 				return $this->response->setJSON(array("error" => "You can only change marks for courses assigned to you."));
 			}
 		}
@@ -14614,7 +14613,7 @@ public function getApplicationDocs($id = null)
 			if ($active_term == null) {
 				return $this->response->setJSON(array("error" => "invalid term data, please try again later"));
 			}
-			if (!staff_owns_course_class((int) $this->session->get('soma_id'), (int) $post_course, (int) $post_class, (int) $year)) {
+			if (!staff_may_enter_course_marks((int) $this->session->get('soma_id'), (int) $post_course, (int) $post_class, (int) $year)) {
 				return $this->response->setJSON(array("error" => "You can only enter marks for courses assigned to you."));
 			}
 			if ($file_class != $post_class) {
@@ -15918,6 +15917,7 @@ public function getApplicationDocs($id = null)
 			}
 		}
 		$data['marktype'] = $markType;
+		$data['marks_all_courses'] = $this->staffCanEnterAllCourseMarks();
 		$isHolidayMarks = !$nurseryOnly && ($markType === holiday_coaching_mark_type() || is_holiday_term_choice($term));
 		if ($isHolidayMarks) {
 			$markType = holiday_coaching_mark_type();
@@ -15963,8 +15963,10 @@ public function getApplicationDocs($id = null)
 				$builder->where("find_in_set($term,r.term) !=0");
 				$builder->where("IFNULL(courses.program_type,'') <> 'holiday'");
 			}
-			// Leaders included: Headmaster, Director, DHT Academics, and every other post.
-			$builder->where("r.lecturer", (int) $this->session->get("soma_id"));
+			$data['marks_all_courses'] = $this->staffCanEnterAllCourseMarks();
+			if (!$data['marks_all_courses']) {
+				$builder->where("r.lecturer", (int) $this->session->get("soma_id"));
+			}
 			$data['courses'] = $builder->get()->getResultArray();
 		}
 		$data['soma_name'] = $this->session->get("soma_name");
@@ -16036,7 +16038,7 @@ public function getApplicationDocs($id = null)
 			return $this->response->setJSON(array("error" => "Holiday coaching courses use the Holiday coaching marks type and stay out of CAT/Exam"));
 		}
 		$created_by = $this->session->get("soma_id");
-		if (!staff_owns_course_class((int) $created_by, (int) $course_id, (int) $class, (int) $year)) {
+		if (!staff_may_enter_course_marks((int) $created_by, (int) $course_id, (int) $class, (int) $year)) {
 			return $this->response->setJSON(array("error" => "You can only enter marks for courses assigned to you."));
 		}
 		if (!is_array($student_id)) {
@@ -17505,7 +17507,7 @@ public function getApplicationDocs($id = null)
 		$period = (int) ($this->request->getGet('period') ?? 0);
 		$year = $this->request->getGet('year') ?: $this->data['academic_year'];
 		$termId = $this->resolveMarksTermId($this->request->getGet('term'), $year);
-		if (!staff_owns_course_class((int) $this->session->get('soma_id'), $course, $class, (int) $year) || class_is_nursery($class)) {
+		if (!staff_may_enter_course_marks((int) $this->session->get('soma_id'), $course, $class, (int) $year) || class_is_nursery($class)) {
 			$filled = [];
 			if (class_is_nursery($class)) {
 				return $this->response->setJSON(['groups' => []]);
@@ -17644,7 +17646,7 @@ public function getApplicationDocs($id = null)
 			}
 			$active_term = $resolvedTerm;
 		}
-		if (!staff_owns_course_class((int) $this->session->get('soma_id'), (int) $course, (int) $class, (int) $year)) {
+		if (!staff_may_enter_course_marks((int) $this->session->get('soma_id'), (int) $course, (int) $class, (int) $year)) {
 			echo '<div class="alert alert-danger" style="margin:1rem;">You can only enter marks for courses assigned to you.</div>';
 			die();
 		}

@@ -297,7 +297,7 @@ body.marks-entry-body .select2-search__field {
 						?>
 						<option id="course_marks<?= $course['id']; ?>" data-course="<?= $course['marks']; ?>"
 								value="<?= $course['id']; ?>"> <?= $course['title']; ?>
-							-<?= $course['code']; ?></option>
+							-<?= $course['code']; ?><?php if (!empty($marks_all_courses) && trim((string) ($course['mentor_name'] ?? '')) !== '') { ?> (<?= htmlspecialchars($course['mentor_name'], ENT_QUOTES); ?>)<?php } ?></option>
 						<?php
 					} ?>
 				</select>
