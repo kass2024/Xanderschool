@@ -13,7 +13,7 @@ if (!$expired && $envelope) {
 			'parent' => (string) $doc['parent'],
 			'regno' => (string) $doc['regno'],
 			'signed' => !empty($doc['signed']),
-			'stamp' => (string) ($doc['signed_at'] ?? ''),
+			'stamp' => ($doc['signed_at'] ?? '') !== '' ? ((string) $doc['signed_at'] . '-2') : '',
 			'file' => base_url('consent-sign/' . $token . '/file/' . $id),
 			'sign' => base_url('consent-sign/' . $token . '/sign/' . $id),
 			'download' => base_url('consent-sign/' . $token . '/download/' . $id),
