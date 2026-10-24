@@ -13,6 +13,7 @@ if (!$expired && $envelope) {
 			'parent' => (string) $doc['parent'],
 			'regno' => (string) $doc['regno'],
 			'signed' => !empty($doc['signed']),
+			'stamp' => (string) ($doc['signed_at'] ?? ''),
 			'file' => base_url('consent-sign/' . $token . '/file/' . $id),
 			'sign' => base_url('consent-sign/' . $token . '/sign/' . $id),
 			'download' => base_url('consent-sign/' . $token . '/download/' . $id),
@@ -132,6 +133,7 @@ $copy = $lang === 'rw' ? [
 		.sheet { position: relative; background: #fff; margin: 0 auto 16px; box-shadow: 0 10px 28px rgba(0,0,0,.25); }
 		.sheet canvas { display: block; width: 100%; height: auto; }
 		.sign-tab { position: absolute; z-index: 2; background: var(--yellow); color: #1f2937; border: 0; border-radius: 4px 4px 0 0; font-weight: 800; letter-spacing: .04em; cursor: pointer; box-shadow: 0 6px 16px rgba(0,0,0,.2); }
+		.sign-ink { position: absolute; z-index: 2; object-fit: contain; object-position: left bottom; pointer-events: none; background: transparent; }
 		.status { position: sticky; top: 0; z-index: 3; margin: 0 auto; width: min(860px, calc(100% - 28px)); }
 		.toast { margin-top: 12px; background: #102033; color: #fff; border-radius: 10px; padding: 10px 12px; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 		.note, .empty, .stage-msg { max-width: 560px; margin: 48px auto; background: #fff; border-radius: 16px; padding: 28px; text-align: center; }
@@ -229,6 +231,7 @@ $copy = $lang === 'rw' ? [
 		var current = 0;
 		var query = '';
 		var mode = 'draw';
+		var pdfCache = {};
 		var drawing = false;
 		var pad = document.getElementById('pad');
 		var ctx = pad.getContext('2d');
@@ -301,6 +304,59 @@ $copy = $lang === 'rw' ? [
 			if (!w || w < 240) w = 860;
 			return Math.max(320, Math.min(820, w - 36));
 		}
+		function fileKey(item) {
+			return item.file + '|' + (item.stamp || (item.signed ? 's' : 'u'));
+		}
+		function loadBytes(item) {
+			var key = fileKey(item);
+			if (pdfCache[key]) return pdfCache[key];
+			pdfCache[key] = fetch(item.file + '?v=' + encodeURIComponent(item.stamp || (item.signed ? 's' : 'u'))).then(function (res) {
+				if (!res.ok) throw new Error('pdf');
+				return res.arrayBuffer();
+			}).catch(function (err) {
+				delete pdfCache[key];
+				throw err;
+			});
+			return pdfCache[key];
+		}
+		function prefetchAround(index) {
+			var ahead = 0;
+			for (var i = index + 1; i < PACK.docs.length && ahead < 2; i++) {
+				if (PACK.docs[i].signed) continue;
+				loadBytes(PACK.docs[i]).catch(function () {});
+				ahead++;
+			}
+		}
+		function placeSign(sheet, viewport) {
+			var rect = viewport.convertToViewportRectangle([SIGN.x, SIGN.y, SIGN.x + SIGN.w, SIGN.y + SIGN.h]);
+			var left = Math.min(rect[0], rect[2]);
+			var top = Math.min(rect[1], rect[3]);
+			var width = Math.abs(rect[2] - rect[0]);
+			var height = Math.max(28, Math.abs(rect[3] - rect[1]));
+			if (doc().signed && !doc().ink) return;
+			if (doc().ink) {
+				var img = document.createElement('img');
+				img.className = 'sign-ink';
+				img.alt = '';
+				img.src = doc().ink;
+				img.style.left = left + 'px';
+				img.style.top = top + 'px';
+				img.style.width = width + 'px';
+				img.style.height = height + 'px';
+				sheet.appendChild(img);
+				return;
+			}
+			var tab = document.createElement('button');
+			tab.type = 'button';
+			tab.className = 'sign-tab';
+			tab.textContent = COPY.sign;
+			tab.style.left = left + 'px';
+			tab.style.top = top + 'px';
+			tab.style.width = width + 'px';
+			tab.style.height = height + 'px';
+			tab.addEventListener('click', openModal);
+			sheet.appendChild(tab);
+		}
 		function openDoc(index) {
 			current = index;
 			renderList();
@@ -310,64 +366,48 @@ $copy = $lang === 'rw' ? [
 				return;
 			}
 			var ticket = ++openDoc.ticket;
+			var item = doc();
+			if (item.signed) item.ink = '';
 			window.clearTimeout(openDoc.timer);
 			openDoc.timer = window.setTimeout(function () {
 				if (ticket !== openDoc.ticket || stage.querySelector('canvas')) return;
 				stage.innerHTML = '<p class="note">' + COPY.previewFail + '</p>';
 			}, 20000);
 			pdfjsLib.GlobalWorkerOptions.workerSrc = <?= json_encode(base_url('assets/vendor/pdfjs/pdf.worker.min.js')); ?>;
-			fetch(doc().file + '?v=' + Date.now()).then(function (res) {
-				if (!res.ok) throw new Error('pdf');
-				return res.arrayBuffer();
-			}).then(function (buf) {
+			loadBytes(item).then(function (buf) {
 				if (ticket !== openDoc.ticket) return null;
-				return pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+				return pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
 			}).then(function (pdf) {
 				if (!pdf || ticket !== openDoc.ticket) return;
 				var width = pageWidth();
-				var painted = false;
-				var chain = Promise.resolve();
+				var jobs = [];
 				for (var pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
-					(function (pageNo) {
-						chain = chain.then(function () {
-							if (ticket !== openDoc.ticket) return;
-							return pdf.getPage(pageNo).then(function (page) {
-								if (ticket !== openDoc.ticket) return;
-								if (!painted) {
-									stage.innerHTML = '';
-									painted = true;
-								}
-								var base = page.getViewport({ scale: 1 });
-								var viewport = page.getViewport({ scale: width / base.width });
-								var sheet = document.createElement('div');
-								sheet.className = 'sheet';
-								sheet.style.width = viewport.width + 'px';
-								sheet.style.minHeight = viewport.height + 'px';
-								var canvas = document.createElement('canvas');
-								canvas.width = viewport.width;
-								canvas.height = viewport.height;
-								sheet.appendChild(canvas);
-								stage.appendChild(sheet);
-								return page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise.then(function () {
-									if (pageNo !== 2 || ticket !== openDoc.ticket) return;
-									var rect = viewport.convertToViewportRectangle([SIGN.x, SIGN.y, SIGN.x + SIGN.w, SIGN.y + SIGN.h]);
-									var tab = document.createElement('button');
-									tab.type = 'button';
-									tab.className = 'sign-tab';
-									tab.textContent = doc().signed ? COPY.signed : COPY.sign;
-									tab.style.left = Math.min(rect[0], rect[2]) + 'px';
-									tab.style.top = Math.min(rect[1], rect[3]) + 'px';
-									tab.style.width = Math.abs(rect[2] - rect[0]) + 'px';
-									tab.style.height = Math.max(28, Math.abs(rect[3] - rect[1])) + 'px';
-									tab.addEventListener('click', openModal);
-									sheet.appendChild(tab);
-									window.clearTimeout(openDoc.timer);
-								});
-							});
-						});
-					})(pageNo);
+					jobs.push(pdf.getPage(pageNo));
 				}
-				return chain;
+				return Promise.all(jobs).then(function (pages) {
+					if (ticket !== openDoc.ticket) return;
+					stage.innerHTML = '';
+					return Promise.all(pages.map(function (page, index) {
+						var base = page.getViewport({ scale: 1 });
+						var viewport = page.getViewport({ scale: width / base.width });
+						var sheet = document.createElement('div');
+						sheet.className = 'sheet';
+						sheet.style.width = viewport.width + 'px';
+						sheet.style.minHeight = viewport.height + 'px';
+						var canvas = document.createElement('canvas');
+						canvas.width = viewport.width;
+						canvas.height = viewport.height;
+						sheet.appendChild(canvas);
+						stage.appendChild(sheet);
+						return page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise.then(function () {
+							if (ticket !== openDoc.ticket || index !== 1) return;
+							placeSign(sheet, viewport);
+							window.clearTimeout(openDoc.timer);
+						});
+					}));
+				});
+			}).then(function () {
+				if (ticket === openDoc.ticket) prefetchAround(index);
 			}).catch(function () {
 				if (ticket !== openDoc.ticket) return;
 				stage.innerHTML = '<p class="note">' + COPY.previewFail + '</p>';
@@ -480,13 +520,29 @@ $copy = $lang === 'rw' ? [
 						return;
 					}
 					doc().signed = true;
+					doc().stamp = (res.data && res.data.signed_at) || String(Date.now());
+					doc().ink = pad.toDataURL('image/png');
 					closeModal();
+					var old = stage.querySelector('.sign-tab');
+					if (old) {
+						var img = document.createElement('img');
+						img.className = 'sign-ink';
+						img.alt = '';
+						img.src = doc().ink;
+						img.style.left = old.style.left;
+						img.style.top = old.style.top;
+						img.style.width = old.style.width;
+						img.style.height = old.style.height;
+						old.replaceWith(img);
+					} else {
+						openDoc(current);
+					}
+					renderList();
 					var next = null;
 					PACK.docs.forEach(function (item, index) {
 						if (next === null && index !== current && !item.signed) next = index;
 					});
 					toast(next === null ? COPY.done : COPY.saved, next);
-					openDoc(current);
 				})
 				.catch(function () {
 					button.disabled = false;

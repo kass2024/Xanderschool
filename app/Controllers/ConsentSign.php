@@ -325,6 +325,7 @@ class ConsentSign extends Home
 	private function sendPdf(string $path, string $filename, bool $attachment): void
 	{
 		$filename = str_replace(['"', "\r", "\n"], '', $filename);
+		$version = trim((string) $this->request->getGet('v'));
 		if (function_exists('session_status') && session_status() === PHP_SESSION_ACTIVE) {
 			session_write_close();
 		}
@@ -334,7 +335,7 @@ class ConsentSign extends Home
 		header('Content-Type: application/pdf');
 		header('Content-Disposition: ' . ($attachment ? 'attachment' : 'inline') . '; filename="' . $filename . '"');
 		header('Content-Length: ' . (string) filesize($path));
-		header('Cache-Control: private, no-store');
+		header('Cache-Control: ' . ($version !== '' ? 'private, max-age=86400' : 'private, no-store'));
 		header('X-Content-Type-Options: nosniff');
 		readfile($path);
 		exit;
