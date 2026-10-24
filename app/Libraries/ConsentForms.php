@@ -681,23 +681,89 @@ class ConsentForms
 		return false;
 	}
 
+	/**
+	 * Cut away the empty canvas so the ink can sit larger on the signature line.
+	 */
+	private function croppedSignature(string $png): string
+	{
+		if (!function_exists('imagecreatefrompng')) {
+			return $png;
+		}
+		$image = @imagecreatefrompng($png);
+		if (!$image) {
+			return $png;
+		}
+		$width = imagesx($image);
+		$height = imagesy($image);
+		$minX = $width;
+		$minY = $height;
+		$maxX = -1;
+		$maxY = -1;
+		for ($y = 0; $y < $height; $y++) {
+			for ($x = 0; $x < $width; $x++) {
+				$color = imagecolorat($image, $x, $y);
+				$alpha = ($color >> 24) & 0x7F;
+				$red = ($color >> 16) & 0xFF;
+				$green = ($color >> 8) & 0xFF;
+				$blue = $color & 0xFF;
+				if ($alpha >= 20 || ($red >= 245 && $green >= 245 && $blue >= 245)) {
+					continue;
+				}
+				if ($x < $minX) {
+					$minX = $x;
+				}
+				if ($y < $minY) {
+					$minY = $y;
+				}
+				if ($x > $maxX) {
+					$maxX = $x;
+				}
+				if ($y > $maxY) {
+					$maxY = $y;
+				}
+			}
+		}
+		if ($maxX < $minX || $maxY < $minY) {
+			imagedestroy($image);
+			return $png;
+		}
+		$minX = max(0, $minX - 2);
+		$minY = max(0, $minY - 2);
+		$maxX = min($width - 1, $maxX + 2);
+		$maxY = min($height - 1, $maxY + 2);
+		$cropW = $maxX - $minX + 1;
+		$cropH = $maxY - $minY + 1;
+		$out = imagecreatetruecolor($cropW, $cropH);
+		imagealphablending($out, false);
+		imagesavealpha($out, true);
+		$clear = imagecolorallocatealpha($out, 0, 0, 0, 127);
+		imagefilledrectangle($out, 0, 0, $cropW, $cropH, $clear);
+		imagecopy($out, $image, 0, 0, $minX, $minY, $cropW, $cropH);
+		imagedestroy($image);
+		$dest = $png . '.crop.png';
+		imagepng($out, $dest);
+		imagedestroy($out);
+		return is_file($dest) ? $dest : $png;
+	}
+
 	private function stamp(string $source, string $png, string $dest): void
 	{
 		require_once APPPATH . 'ThirdParty/fpdf.php';
+		$png = $this->croppedSignature($png);
 		$pdf = new \setasign\Fpdi\Fpdi('P', 'pt', [612, 792]);
 		$count = $pdf->setSourceFile($source);
 		$info = @getimagesize($png);
-		$ratio = ($info && $info[1] > 0) ? ($info[0] / $info[1]) : 4;
-		$boxW = 200.0;
-		$boxH = 46.0;
+		$ratio = ($info && $info[1] > 0) ? ($info[0] / $info[1]) : 3;
+		$boxW = 240.0;
+		$boxH = 50.0;
 		$width = $boxW;
 		$height = $width / $ratio;
 		if ($height > $boxH) {
 			$height = $boxH;
 			$width = $height * $ratio;
 		}
-		$x = 78.0;
-		$y = 444.0 - $height;
+		$x = 74.0;
+		$y = 446.0 - $height;
 		for ($pageNo = 1; $pageNo <= $count; $pageNo++) {
 			$template = $pdf->importPage($pageNo);
 			$size = $pdf->getTemplateSize($template);
@@ -708,5 +774,8 @@ class ConsentForms
 			}
 		}
 		$pdf->Output('F', $dest);
+		if (substr($png, -9) === '.crop.png') {
+			@unlink($png);
+		}
 	}
 }

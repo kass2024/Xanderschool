@@ -227,7 +227,7 @@ $copy = $lang === 'rw' ? [
 	(function () {
 		var PACK = <?= json_encode($pack, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
 		var COPY = <?= json_encode($copy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
-		var SIGN = { x: 78, y: 348, w: 200, h: 44 };
+		var SIGN = { x: 74, y: 346, w: 240, h: 50 };
 		var current = 0;
 		var query = '';
 		var mode = 'draw';
@@ -414,6 +414,38 @@ $copy = $lang === 'rw' ? [
 			});
 		}
 		openDoc.ticket = 0;
+		function croppedInk() {
+			var w = pad.width;
+			var h = pad.height;
+			var data = ctx.getImageData(0, 0, w, h).data;
+			var minX = w;
+			var minY = h;
+			var maxX = -1;
+			var maxY = -1;
+			for (var y = 0; y < h; y++) {
+				for (var x = 0; x < w; x++) {
+					var i = (y * w + x) * 4;
+					if (data[i + 3] > 20 && (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245)) {
+						if (x < minX) minX = x;
+						if (y < minY) minY = y;
+						if (x > maxX) maxX = x;
+						if (y > maxY) maxY = y;
+					}
+				}
+			}
+			if (maxX < minX) return pad.toDataURL('image/png');
+			minX = Math.max(0, minX - 2);
+			minY = Math.max(0, minY - 2);
+			maxX = Math.min(w - 1, maxX + 2);
+			maxY = Math.min(h - 1, maxY + 2);
+			var cw = maxX - minX + 1;
+			var ch = maxY - minY + 1;
+			var out = document.createElement('canvas');
+			out.width = cw;
+			out.height = ch;
+			out.getContext('2d').drawImage(pad, minX, minY, cw, ch, 0, 0, cw, ch);
+			return out.toDataURL('image/png');
+		}
 		function inkCount() {
 			var data = ctx.getImageData(0, 0, pad.width, pad.height).data;
 			var ink = 0;
@@ -521,7 +553,7 @@ $copy = $lang === 'rw' ? [
 					}
 					doc().signed = true;
 					doc().stamp = (res.data && res.data.signed_at) || String(Date.now());
-					doc().ink = pad.toDataURL('image/png');
+					doc().ink = croppedInk();
 					closeModal();
 					var old = stage.querySelector('.sign-tab');
 					if (old) {
