@@ -273,7 +273,12 @@ $copy = $lang === 'rw' ? [
 				return;
 			}
 			pdfjsLib.GlobalWorkerOptions.workerSrc = <?= json_encode(base_url('assets/vendor/pdfjs/pdf.worker.min.js')); ?>;
-			pdfjsLib.getDocument({ url: doc().file + '?v=' + Date.now(), disableRange: true, disableStream: true }).promise.then(function (pdf) {
+			fetch(doc().file + '?v=' + Date.now()).then(function (res) {
+				if (!res.ok) throw new Error('pdf');
+				return res.arrayBuffer();
+			}).then(function (buf) {
+				return pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+			}).then(function (pdf) {
 				stage.innerHTML = '';
 				var width = Math.min(820, stage.parentElement.clientWidth - 28);
 				var chain = Promise.resolve();
