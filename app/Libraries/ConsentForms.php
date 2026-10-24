@@ -754,8 +754,8 @@ class ConsentForms
 		$count = $pdf->setSourceFile($source);
 		$info = @getimagesize($png);
 		$ratio = ($info && $info[1] > 0) ? ($info[0] / $info[1]) : 3;
-		$boxW = 240.0;
-		$boxH = 50.0;
+		$boxW = 220.0;
+		$boxH = 40.0;
 		$width = $boxW;
 		$height = $width / $ratio;
 		if ($height > $boxH) {

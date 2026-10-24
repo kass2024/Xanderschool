@@ -13,7 +13,7 @@ if (!$expired && $envelope) {
 			'parent' => (string) $doc['parent'],
 			'regno' => (string) $doc['regno'],
 			'signed' => !empty($doc['signed']),
-			'stamp' => ($doc['signed_at'] ?? '') !== '' ? ((string) $doc['signed_at'] . '-2') : '',
+			'stamp' => ($doc['signed_at'] ?? '') !== '' ? ((string) $doc['signed_at'] . '-3') : '',
 			'file' => base_url('consent-sign/' . $token . '/file/' . $id),
 			'sign' => base_url('consent-sign/' . $token . '/sign/' . $id),
 			'download' => base_url('consent-sign/' . $token . '/download/' . $id),
@@ -227,7 +227,7 @@ $copy = $lang === 'rw' ? [
 	(function () {
 		var PACK = <?= json_encode($pack, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
 		var COPY = <?= json_encode($copy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
-		var SIGN = { x: 74, y: 346, w: 240, h: 50 };
+		var SIGN = { x: 74, y: 346, w: 220, h: 40 };
 		var current = 0;
 		var query = '';
 		var mode = 'draw';
