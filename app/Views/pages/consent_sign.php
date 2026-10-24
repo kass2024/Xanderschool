@@ -92,16 +92,16 @@ $copy = $lang === 'rw' ? [
 <html lang="<?= $lang === 'rw' ? 'rw' : 'en'; ?>">
 <head>
 	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 	<meta name="robots" content="noindex">
 	<title><?= esc($copy['title']); ?></title>
 	<style>
 		:root { --ink:#102033; --yellow:#f5b400; --paper:#f4f1ea; --line:#d7deE8; }
 		* { box-sizing: border-box; }
 		html, body { margin: 0; height: 100%; }
-		body { font-family: "Segoe UI", sans-serif; color: var(--ink); background: #e7edf2; }
+		body { min-height: 100%; min-height: 100dvh; display: flex; flex-direction: column; font-family: "Segoe UI", sans-serif; color: var(--ink); background: #e7edf2; }
 		button, input { font: inherit; }
-		.top { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line); }
+		.top { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top)); background: #fff; border-bottom: 1px solid var(--line); }
 		.brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 260px; }
 		.mark { width: 34px; height: 34px; border-radius: 8px; background: var(--ink); color: #fff; display: grid; place-items: center; font-weight: 700; flex: 0 0 auto; }
 		.brand h1 { margin: 0; font-size: 16px; }
@@ -113,18 +113,24 @@ $copy = $lang === 'rw' ? [
 		.btn.primary { background: var(--yellow); border-color: #e2a400; font-weight: 700; }
 		.btn.dark { background: var(--ink); color: #fff; border-color: var(--ink); }
 		.btn:disabled { opacity: .55; cursor: default; }
-		.shell { height: calc(100vh - 86px); min-height: 420px; display: grid; grid-template-columns: 300px 1fr; }
+		.shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 340px 1fr; }
 		.docs { background: #fff; border-right: 1px solid var(--line); overflow: auto; padding: 14px; }
+		.list-toggle { display: none; }
 		.docs h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #64748b; }
 		.find { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
 		.count { margin: 0 0 10px; color: #64748b; font-size: 12px; font-weight: 700; }
-		.doc { width: 100%; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+		.doc { width: 100%; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; display: flex; align-items: flex-start; gap: 10px; }
 		.doc.on { border-color: var(--ink); box-shadow: inset 4px 0 0 var(--yellow); }
 		.doc.done { background: #dcfce7; border-color: #86efac; }
 		.doc.done.on { box-shadow: inset 4px 0 0 #16a34a; }
 		.doc.done b { color: #14532d; }
-		.doc b { display: block; font-size: 14px; }
-		.doc span { display: block; color: #64748b; font-size: 12px; margin-top: 3px; }
+		.num { flex: 0 0 auto; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 8px; background: #eef2f6; color: #334155; font-style: normal; font-size: 12px; font-weight: 800; display: grid; place-items: center; }
+		.doc.on .num { background: var(--ink); color: #fff; }
+		.doc.done .num { background: #bbf7d0; color: #14532d; }
+		.doc.done.on .num { background: #166534; color: #fff; }
+		.meta { min-width: 0; flex: 1; }
+		.doc b { display: block; font-size: 14px; overflow-wrap: anywhere; }
+		.doc .who { display: block; color: #64748b; font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
 		.tag { display: inline-block; margin-top: 6px; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
 		.tag.wait { background: #fff4cc; color: #8a5a00; }
 		.tag.ok { background: #dcfce7; color: #166534; }
@@ -152,13 +158,27 @@ $copy = $lang === 'rw' ? [
 		#typed { width: 100%; margin-top: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; }
 		.hint { color: #64748b; font-size: 13px; padding: 0 16px 12px; }
 		@media (max-width: 800px) {
-			.shell { grid-template-columns: 1fr; height: auto; }
-			.docs { display: flex; gap: 8px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
-			.docs h2 { display: none; }
-			.doc { min-width: 210px; margin: 0; }
-			.top { height: auto; flex-wrap: wrap; padding: 10px; }
-			.stage-wrap { min-height: 70vh; }
-			.hide-sm { display: none; }
+			.shell { display: flex; flex-direction: column; }
+			.brand { flex: 1 1 100%; }
+			.brand p, .docs h2 { display: none; }
+			.top { padding: 8px 10px; padding-top: calc(8px + env(safe-area-inset-top)); }
+			.top-actions { width: 100%; flex-wrap: wrap; }
+			.top-actions .btn { min-height: 44px; justify-content: center; flex: 1 1 auto; }
+			.docs { border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 10px; overflow: hidden; flex: 0 1 auto; }
+			.list-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 12px; text-align: left; font-weight: 700; }
+			.list-toggle span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+			.list-toggle small { flex: 0 0 auto; color: #64748b; font-weight: 700; }
+			.docs.shut .list-panel { display: none; }
+			.list-panel { max-height: 42dvh; overflow: auto; margin-top: 8px; }
+			.doc { min-height: 44px; }
+			.stage-wrap { flex: 1 1 auto; min-height: 46dvh; }
+			.stage { width: calc(100% - 12px); margin: 8px auto 28px; }
+			.status { width: calc(100% - 12px); }
+			.modal { align-items: flex-end; padding: 0; }
+			.card { width: 100%; max-height: 94dvh; border-radius: 18px 18px 0 0; overflow: auto; }
+			.card footer { flex-wrap: wrap; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+			.card footer .btn { min-height: 44px; }
+			canvas#pad { height: min(46vw, 220px); }
 		}
 	</style>
 </head>
@@ -175,7 +195,7 @@ $copy = $lang === 'rw' ? [
 			<div class="mark">S</div>
 			<div>
 				<h1><?= esc($copy['title']); ?></h1>
-				<p><?= esc($pack['school'] !== '' ? $pack['school'] . ' · ' . $copy['intro'] : $copy['intro']); ?></p>
+				<p class="hide-sm"><?= esc($pack['school'] !== '' ? $pack['school'] . ' · ' . $copy['intro'] : $copy['intro']); ?></p>
 			</div>
 		</div>
 		<div class="top-actions">
@@ -189,11 +209,17 @@ $copy = $lang === 'rw' ? [
 		</div>
 	</header>
 	<div class="shell">
-		<aside class="docs">
-			<h2><?= esc($copy['docs']); ?></h2>
-			<input id="docSearch" class="find" type="search" placeholder="<?= esc($copy['find']); ?>" autocomplete="off">
-			<p class="count" id="docCount"></p>
-			<div id="docList"></div>
+		<aside class="docs" id="docAside">
+			<button type="button" class="list-toggle" id="listToggle" aria-expanded="true">
+				<span id="listToggleLabel"></span>
+				<small id="listToggleCount"></small>
+			</button>
+			<div class="list-panel" id="listPanel">
+				<h2><?= esc($copy['docs']); ?></h2>
+				<input id="docSearch" class="find" type="search" inputmode="search" placeholder="<?= esc($copy['find']); ?>" autocomplete="off">
+				<p class="count" id="docCount"></p>
+				<div id="docList"></div>
+			</div>
 		</aside>
 		<main class="stage-wrap" id="stageWrap">
 			<div class="status" id="status"></div>
@@ -249,23 +275,36 @@ $copy = $lang === 'rw' ? [
 			PACK.docs.forEach(function (item) { if (item.signed) n++; });
 			return n;
 		}
+		function phoneLayout() {
+			return window.matchMedia('(max-width: 800px)').matches;
+		}
 		function renderList() {
 			list.innerHTML = '';
 			var shown = 0;
 			PACK.docs.forEach(function (item, index) {
-				var blob = (item.student + ' ' + (item.parent || '') + ' ' + item.regno).toLowerCase();
-				if (query && blob.indexOf(query) === -1) return;
+				var number = String(index + 1);
+				var blob = (number + ' ' + item.student + ' ' + (item.parent || '') + ' ' + item.regno).toLowerCase();
+				if (query && /^\d+$/.test(query)) {
+					if (number.indexOf(query) !== 0) return;
+				} else if (query && blob.indexOf(query) === -1) return;
 				shown++;
 				var button = document.createElement('button');
 				button.type = 'button';
 				button.className = 'doc' + (index === current ? ' on' : '') + (item.signed ? ' done' : '');
-				button.innerHTML = '<b></b><span></span><em class="tag"></em>';
+				button.innerHTML = '<i class="num"></i><span class="meta"><b></b><span class="who"></span><em class="tag"></em></span>';
+				button.querySelector('.num').textContent = number;
 				button.querySelector('b').textContent = item.student;
-				button.querySelector('span').textContent = item.parent || item.regno;
+				button.querySelector('.who').textContent = item.parent || item.regno;
 				var tag = button.querySelector('em');
 				tag.textContent = item.signed ? COPY.signed : COPY.sign;
 				tag.className = 'tag ' + (item.signed ? 'ok' : 'wait');
-				button.addEventListener('click', function () { openDoc(index); });
+				button.addEventListener('click', function () {
+					if (phoneLayout()) {
+						document.getElementById('docAside').classList.add('shut');
+						document.getElementById('listToggle').setAttribute('aria-expanded', 'false');
+					}
+					openDoc(index);
+				});
 				list.appendChild(button);
 			});
 			if (!shown) {
@@ -274,8 +313,13 @@ $copy = $lang === 'rw' ? [
 				empty.textContent = COPY.find;
 				list.appendChild(empty);
 			}
+			var countText = signedCount() + ' / ' + PACK.docs.length + ' ' + COPY.signedOf;
 			var count = document.getElementById('docCount');
-			if (count) count.textContent = signedCount() + ' / ' + PACK.docs.length + ' ' + COPY.signedOf;
+			if (count) count.textContent = countText;
+			var toggleCount = document.getElementById('listToggleCount');
+			if (toggleCount) toggleCount.textContent = countText;
+			var toggleLabel = document.getElementById('listToggleLabel');
+			if (toggleLabel) toggleLabel.textContent = (current + 1) + '. ' + doc().student;
 			document.getElementById('downloadOne').href = doc().download;
 			document.getElementById('signBtn').textContent = doc().signed ? COPY.signAgain : COPY.sign;
 			var chosen = list.querySelector('.doc.on');
@@ -301,8 +345,9 @@ $copy = $lang === 'rw' ? [
 		function pageWidth() {
 			var box = document.getElementById('stageWrap');
 			var w = box ? box.clientWidth : 0;
-			if (!w || w < 240) w = 860;
-			return Math.max(320, Math.min(820, w - 36));
+			if (!w || w < 200) w = Math.min(860, window.innerWidth || 860);
+			var pad = w < 700 ? 16 : 36;
+			return Math.max(240, Math.min(820, w - pad));
 		}
 		function fileKey(item) {
 			return item.file + '|' + (item.stamp || (item.signed ? 's' : 'u'));
@@ -386,6 +431,7 @@ $copy = $lang === 'rw' ? [
 				}
 				return Promise.all(jobs).then(function (pages) {
 					if (ticket !== openDoc.ticket) return;
+					drawnWidth = width;
 					stage.innerHTML = '';
 					return Promise.all(pages.map(function (page, index) {
 						var base = page.getViewport({ scale: 1 });
@@ -584,6 +630,18 @@ $copy = $lang === 'rw' ? [
 		document.getElementById('docSearch').addEventListener('input', function () {
 			query = this.value.trim().toLowerCase();
 			renderList();
+		});
+		document.getElementById('listToggle').addEventListener('click', function () {
+			var aside = document.getElementById('docAside');
+			var shut = aside.classList.toggle('shut');
+			this.setAttribute('aria-expanded', shut ? 'false' : 'true');
+		});
+		var drawnWidth = 0;
+		window.addEventListener('resize', function () {
+			var width = pageWidth();
+			if (Math.abs(width - drawnWidth) < 24) return;
+			window.clearTimeout(openDoc.resizeTimer);
+			openDoc.resizeTimer = window.setTimeout(function () { openDoc(current); }, 180);
 		});
 		var start = 0;
 		PACK.docs.some(function (item, index) {
