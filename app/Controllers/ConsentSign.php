@@ -24,6 +24,8 @@ class ConsentSign extends Home
 		}
 		unset($group);
 		$data['catalog'] = $catalog;
+		$board = $this->forms()->schoolBoard((int) $this->session->get('soma_school_id'), (int) $this->session->get('soma_id'));
+		$data['boardUrl'] = $board['token'] !== '' ? base_url('consent-sign/' . $board['token']) : '';
 		$data['content'] = view('pages/consent_forms', $data);
 		return view('main', $data);
 	}
@@ -323,6 +325,12 @@ class ConsentSign extends Home
 	private function sendPdf(string $path, string $filename, bool $attachment): void
 	{
 		$filename = str_replace(['"', "\r", "\n"], '', $filename);
+		if (function_exists('session_status') && session_status() === PHP_SESSION_ACTIVE) {
+			session_write_close();
+		}
+		while (ob_get_level() > 0) {
+			ob_end_clean();
+		}
 		header('Content-Type: application/pdf');
 		header('Content-Disposition: ' . ($attachment ? 'attachment' : 'inline') . '; filename="' . $filename . '"');
 		header('Content-Length: ' . (string) filesize($path));

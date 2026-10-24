@@ -7,7 +7,7 @@ $groups = $catalog['groups'] ?? [];
 		<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
 			<div>
 				<h4 style="margin:0 0 4px;">Consent signing</h4>
-				<p style="margin:0;color:#64748b;">Each parent gets one link. If they have more than one child, the link opens every form. A signature saves on the form. They can download one form or all of them. Links last 30 days.</p>
+				<p style="margin:0;color:#64748b;">One link lists every student. Open a name, sign that form, and the name turns green. Parents can still get their own link by SMS. Links last 30 days.</p>
 			</div>
 			<div style="display:flex;gap:8px;flex-wrap:wrap;">
 				<button type="button" class="btn btn-outline-dark" id="consentCreate">Create links</button>
@@ -15,6 +15,15 @@ $groups = $catalog['groups'] ?? [];
 				<a class="btn btn-outline-primary" href="<?= base_url('consent-forms/download-all'); ?>">Download all</a>
 			</div>
 		</div>
+		<?php if (!empty($boardUrl)): ?>
+			<div class="consent-link-box" style="border:1px solid #e2a400;background:#fff8e1;border-radius:12px;padding:14px;margin-bottom:14px;">
+				<strong>One link for every student</strong>
+				<p style="margin:6px 0 8px;color:#64748b;">The sidebar lists all students. Choose one, sign, and that student is highlighted in green.</p>
+				<input class="form-control consent-url" readonly value="<?= esc($boardUrl); ?>" style="margin-bottom:8px;">
+				<button type="button" class="btn btn-sm btn-dark consent-copy">Copy link</button>
+				<a class="btn btn-sm btn-outline-dark" href="<?= esc($boardUrl); ?>" target="_blank" rel="noopener">Open</a>
+			</div>
+		<?php endif; ?>
 		<div id="consentAlert" class="alert d-none" role="alert"></div>
 		<p style="font-weight:600;"><?= (int) $catalog['signed']; ?> signed of <?= (int) $catalog['total']; ?> forms</p>
 		<?php if (empty($catalog['ready'])): ?>
@@ -121,7 +130,7 @@ $groups = $catalog['groups'] ?? [];
 		share(String(ids), true, $(this));
 	});
 	$(document).on('click', '.consent-copy', function () {
-		var input = $(this).closest('td').find('.consent-url')[0];
+		var input = $(this).closest('td, .consent-link-box').find('.consent-url')[0];
 		if (!input) return;
 		input.select();
 		if (navigator.clipboard && navigator.clipboard.writeText) {

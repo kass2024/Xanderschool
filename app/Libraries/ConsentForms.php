@@ -187,6 +187,37 @@ class ConsentForms
 	}
 
 	/**
+	 * One link that lists every consent form for the school.
+	 *
+	 * @return array{token: string, total: int, signed: int, expires_at: string}
+	 */
+	public function schoolBoard(int $schoolId, int $userId): array
+	{
+		$this->ensureSchema();
+		$indexed = $this->indexedStudents($schoolId);
+		if ($indexed === []) {
+			return ['token' => '', 'total' => 0, 'signed' => 0, 'expires_at' => ''];
+		}
+		$rows = array_values($indexed);
+		usort($rows, static function ($a, $b) {
+			return strcasecmp((string) $a['student'], (string) $b['student']);
+		});
+		$group = $this->issueGroup($schoolId, 'all', $rows, $userId);
+		$signed = 0;
+		foreach ($group['docs'] as $doc) {
+			if (!empty($doc['signed'])) {
+				$signed++;
+			}
+		}
+		return [
+			'token' => (string) $group['token'],
+			'total' => count($group['docs']),
+			'signed' => $signed,
+			'expires_at' => (string) $group['expires_at'],
+		];
+	}
+
+	/**
 	 * @return array<string, mixed>|null
 	 */
 	public function envelope(string $token): ?array

@@ -30,8 +30,10 @@ $toggle = base_url('consent-sign/' . $token);
 $copy = $lang === 'rw' ? [
 	'brand' => 'Gusinya',
 	'title' => 'Sinyisha uburenganzira',
-	'intro' => 'Soma impapuro zose, usinye umurongo w\'umukono, kandi bizabikwa ako kanya.',
-	'docs' => 'Impapuro',
+	'intro' => 'Hitamo umunyeshuri, sinyisha ifishi, kandi izagaragara yemewe.',
+	'docs' => 'Abanyeshuri',
+	'find' => 'Shaka umunyeshuri',
+	'signedOf' => 'byasinywe',
 	'sign' => 'Sinyisha',
 	'signed' => 'Byasinywe',
 	'signAgain' => 'Ongera usinye',
@@ -57,8 +59,10 @@ $copy = $lang === 'rw' ? [
 ] : [
 	'brand' => 'Sign',
 	'title' => 'Sign the consent form',
-	'intro' => 'Read every form, sign on the signature line, and it saves immediately.',
-	'docs' => 'Documents',
+	'intro' => 'Choose a student, sign that form, and the name turns green.',
+	'docs' => 'Students',
+	'find' => 'Find a student',
+	'signedOf' => 'signed',
 	'sign' => 'Sign',
 	'signed' => 'Signed',
 	'signAgain' => 'Sign again',
@@ -96,11 +100,11 @@ $copy = $lang === 'rw' ? [
 		html, body { margin: 0; height: 100%; }
 		body { font-family: "Segoe UI", sans-serif; color: var(--ink); background: #e7edf2; }
 		button, input { font: inherit; }
-		.top { height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; background: #fff; border-bottom: 1px solid var(--line); }
-		.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-		.mark { width: 34px; height: 34px; border-radius: 8px; background: var(--ink); color: #fff; display: grid; place-items: center; font-weight: 700; }
+		.top { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line); }
+		.brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 260px; }
+		.mark { width: 34px; height: 34px; border-radius: 8px; background: var(--ink); color: #fff; display: grid; place-items: center; font-weight: 700; flex: 0 0 auto; }
 		.brand h1 { margin: 0; font-size: 16px; }
-		.brand p { margin: 2px 0 0; color: #64748b; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.brand p { margin: 2px 0 0; color: #64748b; font-size: 12px; }
 		.top-actions, .lang { display: flex; gap: 8px; align-items: center; }
 		.lang a { color: #64748b; text-decoration: none; font-size: 13px; }
 		.lang a.on { color: var(--ink); font-weight: 700; }
@@ -108,11 +112,16 @@ $copy = $lang === 'rw' ? [
 		.btn.primary { background: var(--yellow); border-color: #e2a400; font-weight: 700; }
 		.btn.dark { background: var(--ink); color: #fff; border-color: var(--ink); }
 		.btn:disabled { opacity: .55; cursor: default; }
-		.shell { height: calc(100% - 64px); display: grid; grid-template-columns: 280px 1fr; }
+		.shell { height: calc(100vh - 86px); min-height: 420px; display: grid; grid-template-columns: 300px 1fr; }
 		.docs { background: #fff; border-right: 1px solid var(--line); overflow: auto; padding: 14px; }
-		.docs h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #64748b; }
+		.docs h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #64748b; }
+		.find { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+		.count { margin: 0 0 10px; color: #64748b; font-size: 12px; font-weight: 700; }
 		.doc { width: 100%; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
-		.doc.on { border-color: var(--ink); box-shadow: inset 3px 0 0 var(--yellow); }
+		.doc.on { border-color: var(--ink); box-shadow: inset 4px 0 0 var(--yellow); }
+		.doc.done { background: #dcfce7; border-color: #86efac; }
+		.doc.done.on { box-shadow: inset 4px 0 0 #16a34a; }
+		.doc.done b { color: #14532d; }
 		.doc b { display: block; font-size: 14px; }
 		.doc span { display: block; color: #64748b; font-size: 12px; margin-top: 3px; }
 		.tag { display: inline-block; margin-top: 6px; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
@@ -125,7 +134,7 @@ $copy = $lang === 'rw' ? [
 		.sign-tab { position: absolute; z-index: 2; background: var(--yellow); color: #1f2937; border: 0; border-radius: 4px 4px 0 0; font-weight: 800; letter-spacing: .04em; cursor: pointer; box-shadow: 0 6px 16px rgba(0,0,0,.2); }
 		.status { position: sticky; top: 0; z-index: 3; margin: 0 auto; width: min(860px, calc(100% - 28px)); }
 		.toast { margin-top: 12px; background: #102033; color: #fff; border-radius: 10px; padding: 10px 12px; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
-		.note, .empty { max-width: 560px; margin: 48px auto; background: #fff; border-radius: 16px; padding: 28px; text-align: center; }
+		.note, .empty, .stage-msg { max-width: 560px; margin: 48px auto; background: #fff; border-radius: 16px; padding: 28px; text-align: center; }
 		.modal { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 20; }
 		.modal.show { display: flex; }
 		.card { width: min(640px, 100%); background: #fff; border-radius: 16px; overflow: hidden; }
@@ -180,6 +189,8 @@ $copy = $lang === 'rw' ? [
 	<div class="shell">
 		<aside class="docs">
 			<h2><?= esc($copy['docs']); ?></h2>
+			<input id="docSearch" class="find" type="search" placeholder="<?= esc($copy['find']); ?>" autocomplete="off">
+			<p class="count" id="docCount"></p>
 			<div id="docList"></div>
 		</aside>
 		<main class="stage-wrap" id="stageWrap">
@@ -216,6 +227,7 @@ $copy = $lang === 'rw' ? [
 		var COPY = <?= json_encode($copy, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
 		var SIGN = { x: 78, y: 348, w: 200, h: 44 };
 		var current = 0;
+		var query = '';
 		var mode = 'draw';
 		var drawing = false;
 		var pad = document.getElementById('pad');
@@ -229,12 +241,21 @@ $copy = $lang === 'rw' ? [
 		function unsignedLeft() {
 			return PACK.docs.some(function (item) { return !item.signed; });
 		}
+		function signedCount() {
+			var n = 0;
+			PACK.docs.forEach(function (item) { if (item.signed) n++; });
+			return n;
+		}
 		function renderList() {
 			list.innerHTML = '';
+			var shown = 0;
 			PACK.docs.forEach(function (item, index) {
+				var blob = (item.student + ' ' + (item.parent || '') + ' ' + item.regno).toLowerCase();
+				if (query && blob.indexOf(query) === -1) return;
+				shown++;
 				var button = document.createElement('button');
 				button.type = 'button';
-				button.className = 'doc' + (index === current ? ' on' : '');
+				button.className = 'doc' + (index === current ? ' on' : '') + (item.signed ? ' done' : '');
 				button.innerHTML = '<b></b><span></span><em class="tag"></em>';
 				button.querySelector('b').textContent = item.student;
 				button.querySelector('span').textContent = item.parent || item.regno;
@@ -244,8 +265,18 @@ $copy = $lang === 'rw' ? [
 				button.addEventListener('click', function () { openDoc(index); });
 				list.appendChild(button);
 			});
+			if (!shown) {
+				var empty = document.createElement('p');
+				empty.className = 'count';
+				empty.textContent = COPY.find;
+				list.appendChild(empty);
+			}
+			var count = document.getElementById('docCount');
+			if (count) count.textContent = signedCount() + ' / ' + PACK.docs.length + ' ' + COPY.signedOf;
 			document.getElementById('downloadOne').href = doc().download;
 			document.getElementById('signBtn').textContent = doc().signed ? COPY.signAgain : COPY.sign;
+			var chosen = list.querySelector('.doc.on');
+			if (chosen && chosen.scrollIntoView) chosen.scrollIntoView({ block: 'nearest' });
 		}
 		function toast(message, next) {
 			status.innerHTML = '';
@@ -264,40 +295,61 @@ $copy = $lang === 'rw' ? [
 			}
 			status.appendChild(box);
 		}
+		function pageWidth() {
+			var box = document.getElementById('stageWrap');
+			var w = box ? box.clientWidth : 0;
+			if (!w || w < 240) w = 860;
+			return Math.max(320, Math.min(820, w - 36));
+		}
 		function openDoc(index) {
 			current = index;
 			renderList();
-			stage.innerHTML = '<p class="note">' + COPY.loading + '</p>';
+			stage.innerHTML = '<p class="stage-msg">' + COPY.loading + '</p>';
 			if (!window.pdfjsLib) {
 				stage.innerHTML = '<p class="note">' + COPY.previewFail + '</p>';
 				return;
 			}
+			var ticket = ++openDoc.ticket;
+			window.clearTimeout(openDoc.timer);
+			openDoc.timer = window.setTimeout(function () {
+				if (ticket !== openDoc.ticket || stage.querySelector('canvas')) return;
+				stage.innerHTML = '<p class="note">' + COPY.previewFail + '</p>';
+			}, 20000);
 			pdfjsLib.GlobalWorkerOptions.workerSrc = <?= json_encode(base_url('assets/vendor/pdfjs/pdf.worker.min.js')); ?>;
 			fetch(doc().file + '?v=' + Date.now()).then(function (res) {
 				if (!res.ok) throw new Error('pdf');
 				return res.arrayBuffer();
 			}).then(function (buf) {
+				if (ticket !== openDoc.ticket) return null;
 				return pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
 			}).then(function (pdf) {
-				stage.innerHTML = '';
-				var width = Math.min(820, stage.parentElement.clientWidth - 28);
+				if (!pdf || ticket !== openDoc.ticket) return;
+				var width = pageWidth();
+				var painted = false;
 				var chain = Promise.resolve();
 				for (var pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
 					(function (pageNo) {
 						chain = chain.then(function () {
+							if (ticket !== openDoc.ticket) return;
 							return pdf.getPage(pageNo).then(function (page) {
+								if (ticket !== openDoc.ticket) return;
+								if (!painted) {
+									stage.innerHTML = '';
+									painted = true;
+								}
 								var base = page.getViewport({ scale: 1 });
 								var viewport = page.getViewport({ scale: width / base.width });
 								var sheet = document.createElement('div');
 								sheet.className = 'sheet';
+								sheet.style.width = viewport.width + 'px';
+								sheet.style.minHeight = viewport.height + 'px';
 								var canvas = document.createElement('canvas');
 								canvas.width = viewport.width;
 								canvas.height = viewport.height;
 								sheet.appendChild(canvas);
-								sheet.style.width = viewport.width + 'px';
 								stage.appendChild(sheet);
 								return page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise.then(function () {
-									if (pageNo !== 2) return;
+									if (pageNo !== 2 || ticket !== openDoc.ticket) return;
 									var rect = viewport.convertToViewportRectangle([SIGN.x, SIGN.y, SIGN.x + SIGN.w, SIGN.y + SIGN.h]);
 									var tab = document.createElement('button');
 									tab.type = 'button';
@@ -309,6 +361,7 @@ $copy = $lang === 'rw' ? [
 									tab.style.height = Math.max(28, Math.abs(rect[3] - rect[1])) + 'px';
 									tab.addEventListener('click', openModal);
 									sheet.appendChild(tab);
+									window.clearTimeout(openDoc.timer);
 								});
 							});
 						});
@@ -316,9 +369,11 @@ $copy = $lang === 'rw' ? [
 				}
 				return chain;
 			}).catch(function () {
+				if (ticket !== openDoc.ticket) return;
 				stage.innerHTML = '<p class="note">' + COPY.previewFail + '</p>';
 			});
 		}
+		openDoc.ticket = 0;
 		function inkCount() {
 			var data = ctx.getImageData(0, 0, pad.width, pad.height).data;
 			var ink = 0;
@@ -437,6 +492,10 @@ $copy = $lang === 'rw' ? [
 					button.disabled = false;
 					document.getElementById('modalHint').textContent = COPY.fail;
 				});
+		});
+		document.getElementById('docSearch').addEventListener('input', function () {
+			query = this.value.trim().toLowerCase();
+			renderList();
 		});
 		var start = 0;
 		PACK.docs.some(function (item, index) {
