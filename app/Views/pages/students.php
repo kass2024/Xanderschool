@@ -689,6 +689,10 @@
 												<button type="button" id="btnSendParentLinkSms" class="btn btn-success">
 													<i class="fa fa-comment"></i> SMS parent links
 												</button>
+												<button type="button" id="btnSendConsentSms" class="btn btn-dark">
+													<i class="fa fa-pencil"></i> SMS consent to sign
+												</button>
+												<a class="btn btn-outline-dark" href="<?= base_url('consent-forms'); ?>">Consent forms</a>
 											</div>
 										</div>
 										<div class="students-table-scroll">
@@ -1005,6 +1009,7 @@ foreach ($students as $st) {
 	var LIVE_SEARCH_API = "<?= site_url('students_live_search'); ?>";
 	var SMS_API = "<?= site_url('sendStudentAdmissionSms'); ?>";
 	var PARENT_SMS_API = "<?= site_url('send_parent_update_sms'); ?>";
+	var CONSENT_SHARE_API = "<?= site_url('consent-sign/share'); ?>";
 	var MOVE_API = "<?= site_url('move_students_class'); ?>";
 	var EDIT_FIELD_API = "<?= site_url('edit_student/text'); ?>";
 	var SAVE_CLASS_API = "<?= site_url('saveClassStudents'); ?>";
@@ -2106,6 +2111,37 @@ foreach ($students as $st) {
 			alert('Could not create the link');
 		}).always(function () {
 			$btn.data('busy', 0);
+		});
+	});
+
+	$(document).on('click', '#btnSendConsentSms', function () {
+		var ids = selectedIds();
+		if (!ids.length) {
+			showAlert('warning', 'Select students first, then click SMS consent to sign.');
+			return;
+		}
+		if (!confirm('Send a signing link by SMS? A parent with more than one child gets one link for all of their consent forms.')) {
+			return;
+		}
+		var $btn = $(this);
+		var orig = $btn.html();
+		$btn.prop('disabled', true).text('Sending…');
+		showAlert('info', 'Sending consent signing links…');
+		$.ajax({
+			url: CONSENT_SHARE_API,
+			type: 'POST',
+			dataType: 'json',
+			data: withCsrf({ studentIds: ids.join(','), send_sms: '1' })
+		}).done(function (res) {
+			if (res && res.success) {
+				showAlert('success', res.message || 'Consent links sent.');
+			} else {
+				showAlert('danger', (res && (res.error || res.message)) || 'The consent link was not sent.');
+			}
+		}).fail(function () {
+			showAlert('danger', 'Could not send the consent signing link.');
+		}).always(function () {
+			$btn.prop('disabled', false).html(orig);
 		});
 	});
 

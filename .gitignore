@@ -173,3 +173,5 @@ desktop-app/php-runtime/dev/
 desktop-app/php-runtime/*.txt
 !desktop-app/php-runtime/README.md
 
+
+/writable/consent/
