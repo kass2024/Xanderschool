@@ -12,8 +12,9 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * The workbook must match WISDOM_SCHOOL_BUDGET_TOTALS: the same line names,
  * columns, and formulas. A school may change only quantities (No of Children)
  * and money (Fees, Budget, and Expenses).
- * Income for a line is children × fees, which is the Total Income formula.
- * Expense money is the Budget column (not the Expenses column, and not the balance).
+ * Income for a line is children × fees. The term total is cell D9 on the official sheet.
+ * Expense money is the Budget column. The term total is cell E40.
+ * If Budget is blank and the Expenses column has an amount, that amount is used.
  * The heading must read BUDGETS TERM … ACAD YEAR, and that term must be the
  * term selected on upload.
  */
@@ -357,6 +358,14 @@ class WisdomBudgetWorkbookImportService
 			}
 		}
 		$totals = (new BudgetCalculationService())->recalculateBudgetTotals($budgetId);
+		$totals = $this->applyHeadlineTotals(
+			$db,
+			$budgetId,
+			$termIndex,
+			(float) ($parsed['sheet_income'] ?? 0),
+			(float) ($parsed['sheet_expenses'] ?? 0),
+			$totals
+		);
 		$db->transComplete();
 		if (!$db->transStatus()) {
 			return ['success' => false, 'error' => 'Could not save the extracted budget.'];
@@ -370,10 +379,65 @@ class WisdomBudgetWorkbookImportService
 			'lines_with_money' => (int) ($parsed['lines_with_money'] ?? 0),
 			'total_income' => $totals['income'] ?? 0,
 			'total_expenses' => $totals['expenses'] ?? 0,
+			'sheet_income' => (float) ($parsed['sheet_income'] ?? 0),
+			'sheet_expenses' => (float) ($parsed['sheet_expenses'] ?? 0),
 			'school_name' => $parsed['school_name'] ?? '',
 			'period_hint' => $parsed['period_hint'] ?? '',
 			'term_index' => $termIndex,
 		];
+	}
+
+	/**
+	 * Keep the saved totals on the official cells: D9 for income and E40 for expenses.
+	 * Other terms already stored on the same budget stay in the annual total.
+	 *
+	 * @param array{income?:float,expenses?:float,surplus?:float} $totals
+	 * @return array{income?:float,expenses?:float,surplus?:float}
+	 */
+	private function applyHeadlineTotals($db, int $budgetId, int $termIndex, float $sheetIncome, float $sheetExpenses, array $totals): array
+	{
+		if ($termIndex < 1 || $termIndex > 3 || ($sheetIncome <= 0 && $sheetExpenses <= 0)) {
+			return $totals;
+		}
+		$lines = $db->table('budget_lines')->where('budget_id', $budgetId)->where('is_total_row', 0)->get()->getResultArray();
+		$thisIncome = 0.0;
+		$thisExpense = 0.0;
+		$otherIncome = 0.0;
+		$otherExpense = 0.0;
+		foreach ($lines as $line) {
+			$isIncome = stripos((string) ($line['section_label'] ?? ''), 'INCOME') !== false;
+			for ($t = 1; $t <= 3; $t++) {
+				$amt = (float) ($line['term_' . $t . '_amount'] ?? 0);
+				if ($t === $termIndex) {
+					if ($isIncome) {
+						$thisIncome += $amt;
+					} else {
+						$thisExpense += $amt;
+					}
+				} elseif ($isIncome) {
+					$otherIncome += $amt;
+				} else {
+					$otherExpense += $amt;
+				}
+			}
+		}
+		$income = ($sheetIncome > 0 && abs($thisIncome - $sheetIncome) <= 1)
+			? round($otherIncome + $sheetIncome, 2)
+			: (float) ($totals['income'] ?? 0);
+		$expense = ($sheetExpenses > 0 && abs($thisExpense - $sheetExpenses) <= 1)
+			? round($otherExpense + $sheetExpenses, 2)
+			: (float) ($totals['expenses'] ?? 0);
+		$surplus = round($income - $expense, 2);
+		$db->table('budgets')->where('id', $budgetId)->update([
+			'total_income' => $income,
+			'total_expenses' => $expense,
+			'surplus_deficit' => $surplus,
+			'updated_at' => date('Y-m-d H:i:s'),
+		]);
+		$totals['income'] = $income;
+		$totals['expenses'] = $expense;
+		$totals['surplus'] = $surplus;
+		return $totals;
 	}
 
 	private function lineMatchKey(string $section, string $category): string
@@ -425,7 +489,7 @@ class WisdomBudgetWorkbookImportService
 		$termIndex = $this->termIndex($blob);
 		$academicYear = $this->academicYear($blob);
 
-		$cols = ['children' => 2, 'fees' => 3, 'total' => 4, 'budget' => 5];
+		$cols = ['children' => 2, 'fees' => 3, 'total' => 4, 'budget' => 5, 'spent' => 6];
 		$mode = null;
 		$section = 'OPERATING EXPENSES';
 		$rows = [];
@@ -495,16 +559,26 @@ class WisdomBudgetWorkbookImportService
 			}
 
 			$budget = $this->num($this->cell($sheet, $cols['budget'], $r));
+			$spent = $this->num($this->cell($sheet, $cols['spent'], $r));
+			// Official total is the Budget column (E40). Use Expenses only when Budget is blank.
+			if ($budget !== null && abs($budget) > 0) {
+				$amount = $budget;
+			} elseif ($spent !== null && abs($spent) > 0) {
+				$amount = $spent;
+			} else {
+				$amount = 0.0;
+			}
 			$rows[] = [
 				'section' => $section,
 				'category' => $label,
-				'amount' => round((float) ($budget ?? 0), 2),
+				'amount' => round((float) $amount, 2),
 				'quantity' => null,
 				'unit_cost' => null,
 				'note' => '',
 			];
 		}
 
+		$headline = $this->headlineTotals($sheet, $cols);
 		return [
 			'rows' => $rows,
 			'school_name' => $schoolName,
@@ -514,6 +588,50 @@ class WisdomBudgetWorkbookImportService
 			'prepared_by' => $preparedBy,
 			'verified_by' => $verifiedBy,
 			'enrollment' => $enrollment,
+			'sheet_income' => $headline['income'],
+			'sheet_expenses' => $headline['expenses'],
+		];
+	}
+
+	/**
+	 * Official workbook: total income is D9 and total expenses are E40.
+	 * A sheet that shifted by a row is read from the TOTAL INCOME and TOTAL EXPENSES labels.
+	 * When E40 is blank, the Expenses column on that total row is used.
+	 *
+	 * @param array{children:int,fees:int,total:int,budget:int,spent:int} $cols
+	 * @return array{income:float,expenses:float}
+	 */
+	private function headlineTotals(Worksheet $sheet, array $cols): array
+	{
+		$income = null;
+		$expenses = null;
+		$highest = min(80, max(1, (int) $sheet->getHighestRow()));
+		for ($r = 1; $r <= $highest; $r++) {
+			$label = strtoupper(trim((string) preg_replace('/\s+/', ' ', (string) $this->rawCell($sheet, 1, $r))));
+			if (preg_match('/^TOTAL\s+INCOME\b/', $label)) {
+				$income = $this->num($this->cell($sheet, (int) $cols['total'], $r));
+			}
+			if (preg_match('/^TOTAL\s+EXPENSES\b/', $label)) {
+				$fromBudget = $this->num($this->cell($sheet, (int) $cols['budget'], $r));
+				$fromSpent = $this->num($this->cell($sheet, (int) $cols['spent'], $r));
+				if ($fromBudget !== null && abs($fromBudget) > 0) {
+					$expenses = $fromBudget;
+				} elseif ($fromSpent !== null && abs($fromSpent) > 0) {
+					$expenses = $fromSpent;
+				} else {
+					$expenses = 0.0;
+				}
+			}
+		}
+		if ($income === null) {
+			$income = $this->num($this->cell($sheet, 4, 9));
+		}
+		if ($expenses === null) {
+			$expenses = $this->num($this->cell($sheet, 5, 40));
+		}
+		return [
+			'income' => round((float) ($income ?? 0), 2),
+			'expenses' => round((float) ($expenses ?? 0), 2),
 		];
 	}
 
@@ -819,6 +937,8 @@ class WisdomBudgetWorkbookImportService
 				$cols['total'] = $c;
 			} elseif ($text === 'budget') {
 				$cols['budget'] = $c;
+			} elseif ($text === 'expenses' || $text === 'expense') {
+				$cols['spent'] = $c;
 			}
 		}
 		return $cols;
