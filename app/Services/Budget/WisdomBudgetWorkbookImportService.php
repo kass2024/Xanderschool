@@ -7,14 +7,25 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Reads a Wisdom budget workbook (SUMMARY sheet) and stores every budget line with its amount.
+ * Reads the official Wisdom budget workbook and stores every budget line.
  *
- * Income money is Total Income, or children × fees when that cell is empty.
- * Expense money is the Budget column (not actual expenses, not the balance).
+ * The workbook must match WISDOM_SCHOOL_BUDGET_TOTALS: the same line names,
+ * columns, and formulas. A school may change only quantities (No of Children)
+ * and money (Fees, Budget, and Expenses).
+ * Income for a line is children × fees, which is the Total Income formula.
+ * Expense money is the Budget column (not the Expenses column, and not the balance).
+ * The heading must read BUDGETS TERM … ACAD YEAR, and that term must be the
+ * term selected on upload.
  */
 class WisdomBudgetWorkbookImportService
 {
 	public const SOURCE = 'wisdom_excel_upload';
+
+	/** @var \PhpOffice\PhpSpreadsheet\Spreadsheet|null */
+	private $officialBook;
+
+	/** @var Worksheet|null */
+	private $officialSheet;
 
 	/**
 	 * Original workbook saved when an accountant uploaded this budget.
@@ -72,7 +83,7 @@ class WisdomBudgetWorkbookImportService
 		return null;
 	}
 
-	public function parseFile(string $filePath): array
+	public function parseFile(string $filePath, int $expectedTerm = 0): array
 	{
 		if (!is_file($filePath)) {
 			return ['success' => false, 'error' => 'Excel file was not found.'];
@@ -80,11 +91,28 @@ class WisdomBudgetWorkbookImportService
 		try {
 			$spreadsheet = IOFactory::load($filePath);
 		} catch (\Throwable $e) {
-			return ['success' => false, 'error' => 'Could not read this Excel file. Use the Wisdom budget template (.xlsx).'];
+			return ['success' => false, 'error' => 'Could not read this Excel file. Use the official Wisdom budget workbook (.xlsx).'];
 		}
 		$sheet = $this->pickSheet($spreadsheet);
 		if (!$sheet) {
-			return ['success' => false, 'error' => 'No SUMMARY sheet with an INCOME block was found.'];
+			return ['success' => false, 'error' => 'No sheet with the INCOME block from the official Wisdom budget workbook was found.'];
+		}
+		$problems = $this->officialFormatProblems($sheet);
+		if ($problems) {
+			return [
+				'success' => false,
+				'error' => 'This workbook was rejected because it does not match the official Wisdom budget format. '
+					. 'Keep every line name, column, and formula. Only the quantities (No of Children) and the money (Fees, Budget, and Expenses) may change. '
+					. implode(' ', array_slice($problems, 0, 4)),
+			];
+		}
+		$heading = trim((string) $this->rawCell($sheet, 1, 2));
+		$fileTerm = $this->headingTerm($heading);
+		if ($expectedTerm >= 1 && $expectedTerm <= 3 && $fileTerm !== $expectedTerm) {
+			return [
+				'success' => false,
+				'error' => $this->termMismatchMessage($fileTerm, $expectedTerm, $heading),
+			];
 		}
 		$parsed = $this->parseSheet($sheet);
 		if (empty($parsed['rows'])) {
@@ -97,7 +125,7 @@ class WisdomBudgetWorkbookImportService
 			}
 		}
 		if ($withMoney < 1) {
-			return ['success' => false, 'error' => 'The file has line titles but no amounts. Fill Total Income and the Budget column, then upload again.'];
+			return ['success' => false, 'error' => 'The file has the official lines but no amounts. Fill No of Children, Fees, and the Budget column, then upload again.'];
 		}
 		$parsed['success'] = true;
 		$parsed['lines_with_money'] = $withMoney;
@@ -111,7 +139,8 @@ class WisdomBudgetWorkbookImportService
 	 */
 	public function importIntoBranch(string $filePath, array $ctx): array
 	{
-		$parsed = $this->parseFile($filePath);
+		$chosenTerm = (int) ($ctx['budget_term'] ?? 0);
+		$parsed = $this->parseFile($filePath, $chosenTerm);
 		if (empty($parsed['success'])) {
 			return $parsed;
 		}
@@ -165,9 +194,9 @@ class WisdomBudgetWorkbookImportService
 			$title = substr($title, 0, 180);
 		}
 
-		$chosenTerm = (int) ($ctx['budget_term'] ?? 0);
-		$termIndex = ($chosenTerm >= 1 && $chosenTerm <= 3) ? $chosenTerm : (int) ($parsed['term_index'] ?? 0);
-		$preserveOtherTerms = $chosenTerm >= 1 && $chosenTerm <= 3;
+		$fileTerm = (int) ($parsed['term_index'] ?? 0);
+		$termIndex = ($fileTerm >= 1 && $fileTerm <= 3) ? $fileTerm : $chosenTerm;
+		$preserveOtherTerms = $termIndex >= 1 && $termIndex <= 3;
 		$excelByTerm = [];
 		if ($existing && !empty($existing['notes'])) {
 			$oldNotes = json_decode((string) $existing['notes'], true);
@@ -444,8 +473,9 @@ class WisdomBudgetWorkbookImportService
 			if ($mode === 'income') {
 				$children = $this->num($this->cell($sheet, $cols['children'], $r));
 				$fees = $this->num($this->cell($sheet, $cols['fees'], $r));
-				$total = $this->num($this->cell($sheet, $cols['total'], $r));
-				$amount = $total !== null ? $total : (($children ?? 0) * ($fees ?? 0));
+				// Official format: Total Income = No of Children × Fees.
+				$amount = round((float) ($children ?? 0) * (float) ($fees ?? 0), 2);
+				$unitCost = $fees;
 				$note = '';
 				if ($children !== null || $fees !== null) {
 					$note = trim(($children !== null ? $this->fmt($children) . ' × ' : '') . ($fees !== null ? $this->fmt($fees) : ''));
@@ -458,7 +488,7 @@ class WisdomBudgetWorkbookImportService
 					'category' => $label,
 					'amount' => round((float) $amount, 2),
 					'quantity' => $children,
-					'unit_cost' => $fees,
+					'unit_cost' => $unitCost,
 					'note' => $note,
 				];
 				continue;
@@ -485,6 +515,282 @@ class WisdomBudgetWorkbookImportService
 			'verified_by' => $verifiedBy,
 			'enrollment' => $enrollment,
 		];
+	}
+
+	/**
+	 * Cells a school is allowed to type into: quantity and money only.
+	 *
+	 * @return array<string,string> address => human label
+	 */
+	private function moneyInputAddresses(Worksheet $sheet): array
+	{
+		$highest = min(80, max(1, (int) $sheet->getHighestRow()));
+		$mode = null;
+		$map = [];
+		for ($r = 1; $r <= $highest; $r++) {
+			$label = trim((string) $this->rawCell($sheet, 1, $r));
+			if ($label === '') {
+				continue;
+			}
+			$upper = strtoupper(preg_replace('/\s+/', ' ', $label));
+			if (isset(self::SECTION_HEADERS[$upper])) {
+				$mode = self::SECTION_HEADERS[$upper] === 'income' ? 'income' : 'expense';
+				continue;
+			}
+			if (preg_match('/^TOTAL\b/i', $label) || $mode === null) {
+				continue;
+			}
+			if ($mode === 'income') {
+				$map['B' . $r] = 'No of Children for ' . $label;
+				$map['C' . $r] = 'Fees for ' . $label;
+			} else {
+				$map['E' . $r] = 'Budget for ' . $label;
+				$map['F' . $r] = 'Expenses for ' . $label;
+			}
+		}
+		return $map;
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function officialFormatProblems(Worksheet $sheet): array
+	{
+		$canon = $this->canonicalSheet();
+		if (!$canon) {
+			return ['The official Wisdom budget workbook is not installed.'];
+		}
+		$inputs = $this->moneyInputAddresses($canon);
+		$problems = [];
+		$maxRow = min(80, max((int) $canon->getHighestRow(), (int) $sheet->getHighestRow(), 1));
+		for ($r = 1; $r <= $maxRow; $r++) {
+			for ($c = 1; $c <= 7; $c++) {
+				if ($r === 1 && $c <= 2) {
+					continue;
+				}
+				if ($this->isMergeSlave($canon, $c, $r)) {
+					continue;
+				}
+				$addr = Coordinate::stringFromColumnIndex($c) . $r;
+				$canonRaw = $this->rawCell($canon, $c, $r);
+				$uploadRaw = $this->rawCell($sheet, $c, $r);
+				$canonEmpty = $canonRaw === null || $canonRaw === '';
+				$uploadEmpty = $uploadRaw === null || $uploadRaw === '';
+				if ($r === 2 && $c === 1) {
+					$heading = is_string($uploadRaw) ? $uploadRaw : '';
+					if ($this->headingTerm($heading) < 1) {
+						$problems[] = 'Row 2 must be the term heading, for example BUDGETS TERM I ACAD YEAR 2026-2027.';
+					}
+					continue;
+				}
+				if (isset($inputs[$addr])) {
+					if ($uploadEmpty) {
+						continue;
+					}
+					if (is_string($uploadRaw) && isset($uploadRaw[0]) && $uploadRaw[0] === '=') {
+						$problems[] = $inputs[$addr] . ' must be a number. Only the quantity and the money amounts may change.';
+						continue;
+					}
+					if ($this->num($uploadRaw) === null) {
+						$problems[] = $inputs[$addr] . ' must be a number.';
+					}
+					continue;
+				}
+				$canonFormula = is_string($canonRaw) && isset($canonRaw[0]) && $canonRaw[0] === '=';
+				$uploadFormula = is_string($uploadRaw) && isset($uploadRaw[0]) && $uploadRaw[0] === '=';
+				if ($canonFormula) {
+					if (!$uploadFormula || !$this->formulasMatch((string) $canonRaw, (string) $uploadRaw)) {
+						$problems[] = 'Cell ' . $addr . ' must keep the formula ' . $canonRaw . '.';
+					}
+					continue;
+				}
+				if (!$canonEmpty && is_string($canonRaw)) {
+					$want = $this->normLabel($canonRaw);
+					$gotRaw = $uploadEmpty ? '' : (is_scalar($uploadRaw) ? (string) $uploadRaw : '');
+					if ($want !== $this->normLabel($gotRaw)) {
+						$shown = trim($canonRaw);
+						$problems[] = $gotRaw === ''
+							? 'Cell ' . $addr . ' must stay "' . $shown . '".'
+							: 'Cell ' . $addr . ' must stay "' . $shown . '" (found "' . trim($gotRaw) . '").';
+					}
+					continue;
+				}
+				if (!$canonEmpty && is_numeric($canonRaw)) {
+					$got = $this->num($uploadRaw);
+					if ($got === null || abs($got - (float) $canonRaw) > 0.009) {
+						$problems[] = 'Cell ' . $addr . ' must stay ' . $canonRaw . '.';
+					}
+					continue;
+				}
+				if ($canonEmpty && !$uploadEmpty) {
+					$problems[] = 'Cell ' . $addr . ' must stay empty. Only quantities and money amounts may be filled in.';
+				}
+			}
+			if (count($problems) >= 8) {
+				break;
+			}
+		}
+		return $problems;
+	}
+
+	private function canonicalSheet(): ?Worksheet
+	{
+		if ($this->officialSheet instanceof Worksheet) {
+			return $this->officialSheet;
+		}
+		$path = $this->templatePath();
+		if (!$path) {
+			return null;
+		}
+		try {
+			$this->officialBook = IOFactory::load($path);
+		} catch (\Throwable $e) {
+			return null;
+		}
+		$this->officialSheet = $this->officialBook->getSheet(0);
+		return $this->officialSheet;
+	}
+
+	private function isMergeSlave(Worksheet $sheet, int $col, int $row): bool
+	{
+		try {
+			$coord = Coordinate::stringFromColumnIndex($col) . $row;
+			$range = $sheet->getCell($coord)->getMergeRange();
+		} catch (\Throwable $e) {
+			return false;
+		}
+		if (!is_string($range) || strpos($range, ':') === false) {
+			return false;
+		}
+		$start = strtoupper(explode(':', $range)[0]);
+		return $start !== strtoupper($coord);
+	}
+
+	private function headingTerm(string $text): int
+	{
+		$t = strtoupper(trim((string) preg_replace('/\s+/', ' ', $text)));
+		if (!preg_match('/\bBUDGETS?\s+TERM\s+(III|II|I|[123])\b/', $t)) {
+			return 0;
+		}
+		if (!preg_match('/\bACAD(?:EMIC)?\s+YEAR\b/', $t)) {
+			return 0;
+		}
+		if (!preg_match('/20\d{2}/', $t)) {
+			return 0;
+		}
+		return $this->termIndex($t);
+	}
+
+	private function termName(int $term): string
+	{
+		return [1 => 'Term I', 2 => 'Term II', 3 => 'Term III'][$term] ?? 'that term';
+	}
+
+	private function termMismatchMessage(int $fileTerm, int $expected, string $heading): string
+	{
+		$fileName = $this->termName($fileTerm);
+		$selected = $this->termName($expected);
+		return 'This Excel heading is "' . trim($heading) . '", which is ' . $fileName
+			. '. You selected ' . $selected
+			. '. Choose ' . $fileName . ' on the upload form, or change the heading so it names ' . $selected . '.';
+	}
+
+	private function normLabel($value): string
+	{
+		if ($value instanceof \PhpOffice\PhpSpreadsheet\RichText\RichText) {
+			$value = $value->getPlainText();
+		}
+		$text = trim((string) preg_replace('/\s+/', ' ', (string) $value));
+		$text = rtrim($text, '.');
+		return function_exists('mb_strtoupper') ? mb_strtoupper($text) : strtoupper($text);
+	}
+
+	private function normFormula(string $formula): string
+	{
+		$formula = strtoupper(trim($formula));
+		if ($formula !== '' && isset($formula[0]) && $formula[0] === '=') {
+			$formula = substr($formula, 1);
+		}
+		return str_replace([' ', '$'], '', $formula);
+	}
+
+	private function formulasMatch(string $left, string $right): bool
+	{
+		$a = $this->normFormula($left);
+		$b = $this->normFormula($right);
+		if ($a === $b) {
+			return true;
+		}
+		$strip = static function (string $formula): string {
+			if (preg_match('/^SUM\(([^()]*)\)$/', $formula, $m) && strpos($m[1], ':') === false && strpos($m[1], ',') === false) {
+				return $m[1];
+			}
+			return $formula;
+		};
+		return $strip($a) === $strip($b);
+	}
+
+	private function sheetSnapshot(Worksheet $sheet): string
+	{
+		$highest = min(60, max(1, (int) $sheet->getHighestRow()));
+		$lines = [];
+		for ($r = 1; $r <= $highest; $r++) {
+			$parts = [];
+			for ($c = 1; $c <= 7; $c++) {
+				$raw = $this->rawCell($sheet, $c, $r);
+				if ($raw === null || $raw === '') {
+					continue;
+				}
+				$shown = is_string($raw) ? $raw : (string) $raw;
+				if (strlen($shown) > 80) {
+					$shown = substr($shown, 0, 80);
+				}
+				$parts[] = Coordinate::stringFromColumnIndex($c) . '=' . $shown;
+			}
+			if ($parts) {
+				$lines[] = $r . ': ' . implode(' | ', $parts);
+			}
+		}
+		$text = implode("\n", $lines);
+		if (strlen($text) > 12000) {
+			$text = substr($text, 0, 12000);
+		}
+		return $text;
+	}
+
+	private function rawCell(Worksheet $sheet, int $col, int $row)
+	{
+		try {
+			$value = $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $row)->getValue();
+		} catch (\Throwable $e) {
+			return null;
+		}
+		if ($value instanceof \PhpOffice\PhpSpreadsheet\RichText\RichText) {
+			$value = $value->getPlainText();
+		}
+		if (is_string($value)) {
+			$value = trim(preg_replace('/\s+/', ' ', $value));
+		}
+		return $value;
+	}
+
+	private function formula(Worksheet $sheet, int $col, int $row): string
+	{
+		$value = $this->rawCell($sheet, $col, $row);
+		if (!is_string($value)) {
+			return '';
+		}
+		$value = trim($value);
+		return (strlen($value) > 1 && $value[0] === '=') ? $value : '';
+	}
+
+	private function formulaColumn(string $formula): ?string
+	{
+		if (!preg_match_all('/\b([A-Z]{1,3})\d+\b/', strtoupper($formula), $m)) {
+			return null;
+		}
+		$cols = array_values(array_unique($m[1]));
+		return count($cols) === 1 ? $cols[0] : null;
 	}
 
 	private function rowLooksLikeHeader(Worksheet $sheet, int $row): bool

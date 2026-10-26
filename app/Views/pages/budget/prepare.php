@@ -21,7 +21,8 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 <div class="card border-0 shadow-sm mb-4">
 	<div class="card-body">
 		<h5 class="font-weight-bold mb-1"><i class="fa fa-file-excel text-success"></i> Upload Excel budget</h5>
-		<p class="text-muted small mb-3">Upload this school's own Excel budget and choose the term those amounts belong to. Line names can differ from school to school, and School Fees stay exactly as they are in the file. Only one budget is allowed for each academic year. Uploading again for another term keeps the amounts already saved in the other terms.</p>
+		<p class="text-muted small mb-2">Upload the official Wisdom workbook. Every line name, column, and formula must stay as they are. Fill in only the quantities (No of Children) and the money (Fees, Budget, and Expenses). The heading must name the term, for example BUDGETS TERM I ACAD YEAR 2026-2027, and that term must be the same term you select here. Uploading again for another term keeps the amounts already saved in the other terms. Only one budget is allowed for each academic year.</p>
+		<p class="small mb-3"><a href="<?= base_url('budget/download_wisdom_template'); ?>"><i class="fa fa-download"></i> Download the official workbook</a></p>
 		<form id="frmUploadBudget" enctype="multipart/form-data">
 			<div class="form-row">
 				<div class="form-group col-md-5 mb-2">
@@ -75,7 +76,7 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 <div class="bp-empty">
 	<i class="fa fa-file-invoice-dollar d-block"></i>
 	<h5>No budget uploaded yet</h5>
-	<p class="text-muted">Upload this school's Excel file. Its own budget lines and term amounts are extracted here.</p>
+	<p class="text-muted">Upload the official Wisdom workbook for the term named in its heading. Only the quantities and the money amounts are read from the file.</p>
 </div>
 <?php } else { ?>
 <?php

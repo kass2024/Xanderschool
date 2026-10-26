@@ -25,6 +25,64 @@ class GeminiBudgetAnalysisService
 		return trim($key, " \t\"'");
 	}
 
+	/**
+	 * Legacy sheet review. Budget upload does not use this.
+	 * The official workbook is checked in WisdomBudgetWorkbookImportService:
+	 * line names and formulas must match, and only quantity and money may change.
+	 *
+	 * @return array{checked:bool,matches:bool,reason:string}
+	 */
+	public function reviewTermBudgetSheet(string $sheetText): array
+	{
+		$fail = ['checked' => false, 'matches' => true, 'reason' => ''];
+		$sheetText = trim($sheetText);
+		if ($sheetText === '' || !$this->isConfigured()) {
+			return $fail;
+		}
+		$prompt = 'You check school budget Excel uploads for Wisdom schools in Rwanda. '
+			. 'The required workbook is titled like "BUDGETS TERM I ACAD YEAR 2026-2027". '
+			. 'Line names, section headings, columns, and formulas must match that official workbook. '
+			. 'Only quantities (No of Children) and money amounts (Fees, Budget, and Expenses) may change. '
+			. 'Reject a renamed line, an added line, a removed line, or a different kind of file. '
+			. 'Income is No of Children times Fees. Do not judge the arithmetic. '
+			. 'Return JSON only: {"matches_template": true or false, "reason": "one short sentence"}. '
+			. "Sheet:\n" . $sheetText;
+		$payload = [
+			'contents' => [[
+				'role' => 'user',
+				'parts' => [['text' => $prompt]],
+			]],
+			'generationConfig' => [
+				'responseMimeType' => 'application/json',
+				'temperature' => 0,
+			],
+		];
+		$models = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-latest'];
+		foreach ($models as $model) {
+			try {
+				$data = $this->request($model, $payload);
+				$text = $this->extractText($data);
+				$parsed = json_decode($text, true);
+				if (!is_array($parsed) && preg_match('/\{.*\}/s', $text, $m)) {
+					$parsed = json_decode($m[0], true);
+				}
+				if (!is_array($parsed) || !array_key_exists('matches_template', $parsed)) {
+					continue;
+				}
+				$match = $parsed['matches_template'];
+				$matches = $match === true || $match === 1 || $match === 'true';
+				return [
+					'checked' => true,
+					'matches' => $matches,
+					'reason' => trim((string) ($parsed['reason'] ?? '')),
+				];
+			} catch (\Throwable $e) {
+				$this->lastError = $e->getMessage();
+			}
+		}
+		return $fail;
+	}
+
 	public function analyzeDashboard(array $context): ?array
 	{
 		if (!$this->isConfigured()) {
