@@ -1099,6 +1099,64 @@ class AttendanceScanService
 	}
 
 	/**
+	 * Once a location's consider-lateness clock has passed, every enrolled student
+	 * who never tapped there today loses 5 discipline marks. Parents are not told.
+	 */
+	public static function chargeUntappedLateness(int $schoolId): int
+	{
+		if ($schoolId < 1) {
+			return 0;
+		}
+		$now = time();
+		$clock = AttendanceAreaModel::schoolClock($now);
+		$moment = AttendanceAreaModel::schoolMoment($now);
+		$dayStart = $moment->setTime(0, 0, 0)->getTimestamp();
+		$dayEnd = $moment->setTime(23, 59, 59)->getTimestamp();
+		$areaMdl = new AttendanceAreaModel();
+		$areas = $areaMdl->listAreas($schoolId, true);
+		$db = \Config\Database::connect();
+		$year = self::academicYear($schoolId);
+		$disc = new \App\Models\DisciplineModel();
+		$charged = 0;
+		foreach ($areas as $area) {
+			$state = AttendanceAreaModel::scheduleState($area);
+			if ($state['schedule_on'] !== 1 || $state['consider_lateness'] === '' || $clock < $state['consider_lateness']) {
+				continue;
+			}
+			$areaId = (int) ($area['id'] ?? 0);
+			if ($areaId < 1) {
+				continue;
+			}
+			$name = (string) ($area['name'] ?? '');
+			$sql = 'SELECT DISTINCT s.id
+				FROM students s
+				INNER JOIN class_records cr ON cr.student = s.id AND cr.year = ? AND cr.status = 1
+				WHERE s.school_id = ? AND s.status IN (1, 2)
+				AND NOT EXISTS (
+					SELECT 1 FROM attendance_records ar
+					WHERE ar.user_id = s.id AND ar.user_type = 0 AND ar.area_id = ?
+					AND ar.time_in >= ? AND ar.time_in <= ?
+				)';
+			$params = [$year, $schoolId, $areaId, $dayStart, $dayEnd];
+			if (self::isSchoolGateArea($name)) {
+				$sql .= ' AND (s.studying_mode IS NULL OR s.studying_mode <> 0)';
+			} elseif (self::isDormitoryArea($name)) {
+				$sql .= ' AND s.studying_mode = 0';
+			}
+			$rows = $db->query($sql, $params)->getResultArray();
+			$ids = [];
+			foreach ($rows as $row) {
+				$ids[] = (int) ($row['id'] ?? 0);
+			}
+			if ($ids === []) {
+				continue;
+			}
+			$charged += $disc->recordUntappedLateness($schoolId, $area, $ids, $now);
+		}
+		return $charged;
+	}
+
+	/**
 	 * Card tap: students only. Staff must clock by face.
 	 *
 	 * @return array<string,mixed>

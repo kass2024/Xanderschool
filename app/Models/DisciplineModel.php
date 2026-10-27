@@ -73,7 +73,7 @@ class DisciplineModel extends Model{
 		}
 		$this->ensureLatenessColumn();
 		$areaId = (int) ($area['id'] ?? 0);
-		$day = date('Y-m-d', $eventTime);
+		$day = \App\Models\AttendanceAreaModel::schoolDay($eventTime);
 		$key = $schoolId . ':' . $studentId . ':' . $areaId . ':' . $day;
 		$db = \Config\Database::connect();
 		$exists = $db->table('disciplines')->where('lateness_key', $key)->countAllResults();
@@ -90,7 +90,7 @@ class DisciplineModel extends Model{
 			$name = 'Location';
 		}
 		$cut = \App\Models\AttendanceAreaModel::normalizeDailyStart((string) ($area['consider_lateness'] ?? ''));
-		$comment = 'Late at ' . $name . '. Arrived ' . date('H:i', $eventTime) . '. Consider lateness ' . $cut . '.';
+		$comment = 'Late at ' . $name . '. Arrived ' . \App\Models\AttendanceAreaModel::schoolClock($eventTime) . '. Consider lateness ' . $cut . '.';
 		try {
 			$this->insert([
 				'school_id' => $schoolId,
@@ -110,6 +110,98 @@ class DisciplineModel extends Model{
 			return false;
 		}
 		return true;
+	}
+
+	/**
+	 * Students who never tapped this location today, after the consider-lateness clock.
+	 * Parents are not notified. One charge per student, location, and day.
+	 *
+	 * @param array<string,mixed> $area
+	 * @param list<int> $studentIds
+	 */
+	public function recordUntappedLateness(int $schoolId, array $area, array $studentIds, int $eventTime): int
+	{
+		if ($schoolId < 1 || $eventTime < 1 || !\App\Models\AttendanceAreaModel::isLate($area, $eventTime)) {
+			return 0;
+		}
+		$this->ensureLatenessColumn();
+		$ids = [];
+		foreach ($studentIds as $id) {
+			$id = (int) $id;
+			if ($id > 0) {
+				$ids[$id] = $id;
+			}
+		}
+		if ($ids === []) {
+			return 0;
+		}
+		$db = \Config\Database::connect();
+		$term = $db->table('schools')->select('active_term')->where('id', $schoolId)->get()->getRow();
+		$activeTerm = (int) ($term->active_term ?? 0);
+		if ($activeTerm < 1) {
+			return 0;
+		}
+		$areaId = (int) ($area['id'] ?? 0);
+		$day = \App\Models\AttendanceAreaModel::schoolDay($eventTime);
+		$name = trim((string) ($area['name'] ?? ''));
+		if ($name === '') {
+			$name = 'Location';
+		}
+		$cut = \App\Models\AttendanceAreaModel::normalizeDailyStart((string) ($area['consider_lateness'] ?? ''));
+		$comment = 'Late at ' . $name . '. No tap by ' . $cut . '. Consider lateness ' . $cut . '.';
+		$keys = [];
+		foreach ($ids as $id) {
+			$keys[$schoolId . ':' . $id . ':' . $areaId . ':' . $day] = $id;
+		}
+		$existing = [];
+		foreach (array_chunk(array_keys($keys), 400) as $chunk) {
+			$found = $db->table('disciplines')->select('lateness_key')->whereIn('lateness_key', $chunk)->get()->getResultArray();
+			foreach ($found as $row) {
+				$existing[(string) ($row['lateness_key'] ?? '')] = true;
+			}
+		}
+		$stamp = date('Y-m-d H:i:s');
+		$batch = [];
+		foreach ($keys as $key => $id) {
+			if (isset($existing[$key])) {
+				continue;
+			}
+			$batch[] = [
+				'school_id' => $schoolId,
+				'type' => 1,
+				'code_id' => 0,
+				'occurrence' => 1,
+				'student_id' => $id,
+				'active_term' => $activeTerm,
+				'comment' => $comment,
+				'marks' => self::LATENESS_MARKS,
+				'notify_parent' => 0,
+				'created_by' => 0,
+				'voided' => 0,
+				'lateness_key' => $key,
+				'created_at' => $stamp,
+				'updated_at' => $stamp,
+			];
+		}
+		if ($batch === []) {
+			return 0;
+		}
+		$written = 0;
+		foreach (array_chunk($batch, 200) as $chunk) {
+			try {
+				$db->table('disciplines')->insertBatch($chunk);
+				$written += count($chunk);
+			} catch (\Throwable $e) {
+				foreach ($chunk as $row) {
+					try {
+						$db->table('disciplines')->insert($row);
+						$written++;
+					} catch (\Throwable $e2) {
+					}
+				}
+			}
+		}
+		return $written;
 	}
 
 	/**
@@ -194,6 +286,14 @@ class DisciplineModel extends Model{
 		if ($schoolId < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
 			return $empty;
 		}
+		$today = \App\Models\AttendanceAreaModel::schoolDay();
+		if ($start <= $today && $today <= $end) {
+			try {
+				\App\Libraries\AttendanceScanService::chargeUntappedLateness($schoolId);
+			} catch (\Throwable $e) {
+				log_message('error', 'untapped lateness: ' . $e->getMessage());
+			}
+		}
 		$db = \Config\Database::connect();
 		$dayExpr = "SUBSTRING_INDEX(d.lateness_key, ':', -1)";
 		$q = $db->table('disciplines d')
@@ -227,6 +327,10 @@ class DisciplineModel extends Model{
 			if (preg_match('/^Late at (.+)\. Arrived (\d{2}:\d{2})\. Consider lateness (\d{2}:\d{2})\./', $comment, $m)) {
 				$row['place'] = $m[1];
 				$row['arrived'] = $m[2];
+				$row['cutoff'] = $m[3];
+			} elseif (preg_match('/^Late at (.+)\. No tap by (\d{2}:\d{2})\. Consider lateness (\d{2}:\d{2})\./', $comment, $m)) {
+				$row['place'] = $m[1];
+				$row['arrived'] = 'No tap';
 				$row['cutoff'] = $m[3];
 			}
 			$place = $row['place'] !== '' ? $row['place'] : 'Location';

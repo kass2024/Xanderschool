@@ -47,7 +47,7 @@ $periodLabel = (string) ($period_label ?? '');
 <div class="late-page">
 	<div class="late-hero">
 		<h2>Lateness</h2>
-		<p><?= esc($periodLabel); ?> · Each late arrival deducts 5 discipline marks. Parents are not notified.</p>
+		<p><?= esc($periodLabel); ?> · Each late arrival, and each student who does not tap by the consider-lateness time, deducts 5 discipline marks. Parents are not notified.</p>
 	</div>
 
 	<form class="late-panel" id="lateForm" method="get" action="<?= base_url('lateness_report'); ?>">
@@ -114,7 +114,7 @@ $periodLabel = (string) ($period_label ?? '');
 		<?php if (empty($rows)) : ?>
 			<div class="late-empty">
 				<strong>No lateness in this period</strong>
-				Arrivals at or after a location's consider-lateness time will appear here.
+				A tap at or after the consider-lateness time, or no tap once that time has passed, appears here.
 			</div>
 		<?php else : ?>
 			<table class="table table-hover mb-0">
