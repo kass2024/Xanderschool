@@ -907,12 +907,16 @@
 .drm-class.is-open .drm-class-body { display: block; }
 .drm-student {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(220px, 340px);
+	grid-template-columns: minmax(180px, 1.2fr) minmax(140px, 180px) minmax(210px, 280px);
 	align-items: center;
 	gap: 16px;
 	padding: 10px 14px;
 	border-top: 1px solid #f1f5f9;
 }
+.drm-now, .drm-move { display: flex; flex-direction: column; gap: 3px; min-width: 0; margin: 0; }
+.drm-now span, .drm-move span { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; color: #64748b; }
+.drm-now-name { font-size: 0.95rem; color: #0f766e; }
+.drm-now-name.is-empty { color: #b45309; font-weight: 700; }
 .drm-student:hover { background: #f8fafc; }
 .drm-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .drm-who strong { display: block; line-height: 1.2; }

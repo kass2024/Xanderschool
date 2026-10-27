@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=8">
+<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=9">
 <?php
 $hostels = $hostels ?? [];
 $roster = $roster ?? [];
@@ -66,7 +66,7 @@ $openCount = max(0, $studentCount - $assignedCount);
 		<div class="drm-hero-copy">
 			<div class="drm-kicker"><i class="fa fa-bed"></i> Boarding housing</div>
 			<h4>Dormitories</h4>
-			<p>Boarding students are listed by class, including everyone already in a dormitory. Change the dormitory on a student to move them. Day scholars who have no bed stay off this list.</p>
+			<p>Each student shows the dormitory they are in now. Use Move to when they should change dormitory. Day scholars who have no bed stay off this list.</p>
 		</div>
 		<div class="drm-year">
 			<label for="drmYear">Academic year</label>
@@ -159,8 +159,9 @@ $openCount = max(0, $studentCount - $assignedCount);
 								$sid = (int) ($st['id'] ?? 0);
 								$sex = $normSex($st['sex'] ?? '');
 								$hid = (int) ($st['hostel_id'] ?? 0);
+								$hostelName = trim((string) ($st['hostel_name'] ?? ''));
 								$name = trim((string) ($st['fname'] ?? '') . ' ' . (string) ($st['lname'] ?? ''));
-								$hay = strtolower($name . ' ' . (string) ($st['regno'] ?? '') . ' ' . $classSearch);
+								$hay = strtolower($name . ' ' . (string) ($st['regno'] ?? '') . ' ' . $hostelName . ' ' . $classSearch);
 							?>
 								<div class="drm-student" data-search="<?= esc($hay, 'attr'); ?>" data-assigned="<?= $hid > 0 ? '1' : '0'; ?>">
 									<div class="drm-who">
@@ -173,18 +174,28 @@ $openCount = max(0, $studentCount - $assignedCount);
 											<span class="hst-gender-badge <?= $sex === 'F' ? 'hst-gender-f' : 'hst-gender-m'; ?>"><?= $sex === 'F' ? 'Female' : 'Male'; ?></span>
 										<?php endif; ?>
 									</div>
-									<select class="form-control form-control-sm drm-assign" data-student="<?= $sid; ?>" data-current="<?= $hid; ?>" title="Move to another dormitory">
-										<option value="">Unassigned</option>
-										<?php foreach ($hostels as $h) :
-											$hg = strtoupper((string) ($h['gender'] ?? 'M')) === 'F' ? 'F' : 'M';
-											if ($sex !== '' && $hg !== $sex) continue;
-											$optId = (int) $h['id'];
-										?>
-											<option value="<?= $optId; ?>" data-hostel="<?= $optId; ?>" data-name="<?= esc((string) ($h['name'] ?? ''), 'attr'); ?>" data-gender="<?= $hg === 'F' ? 'Female' : 'Male'; ?>" <?= $optId === $hid ? 'selected' : ''; ?>>
-												<?= esc((string) ($h['name'] ?? 'Dormitory')); ?> · <?= $hg === 'F' ? 'Female' : 'Male'; ?> · <?= (int) ($h['free_beds'] ?? 0); ?> free
-											</option>
-										<?php endforeach; ?>
-									</select>
+									<div class="drm-now">
+										<span>Current dormitory</span>
+										<strong class="drm-now-name<?= $hostelName === '' ? ' is-empty' : ''; ?>"><?= esc($hostelName !== '' ? $hostelName : 'No dormitory'); ?></strong>
+									</div>
+									<label class="drm-move">
+										<span>Move to</span>
+										<select class="form-control form-control-sm drm-assign" data-student="<?= $sid; ?>" data-current="<?= $hid; ?>">
+											<option value="">Choose dormitory</option>
+											<?php if ($hid > 0) : ?>
+												<option value="remove">Remove from dormitory</option>
+											<?php endif; ?>
+											<?php foreach ($hostels as $h) :
+												$hg = strtoupper((string) ($h['gender'] ?? 'M')) === 'F' ? 'F' : 'M';
+												if ($sex !== '' && $hg !== $sex) continue;
+												$optId = (int) $h['id'];
+											?>
+												<option value="<?= $optId; ?>" data-hostel="<?= $optId; ?>" data-name="<?= esc((string) ($h['name'] ?? ''), 'attr'); ?>" data-gender="<?= $hg === 'F' ? 'Female' : 'Male'; ?>" <?= $optId === $hid ? 'disabled' : ''; ?>>
+													<?= esc((string) ($h['name'] ?? 'Dormitory')); ?> · <?= $hg === 'F' ? 'Female' : 'Male'; ?> · <?= (int) ($h['free_beds'] ?? 0); ?> free
+												</option>
+											<?php endforeach; ?>
+										</select>
+									</label>
 								</div>
 							<?php endforeach; ?>
 						</div>
@@ -278,27 +289,48 @@ $openCount = max(0, $studentCount - $assignedCount);
 	$('#drmClasses').on('click', '.drm-class-head', function () { $(this).closest('.drm-class').toggleClass('is-open'); });
 	$('#drmExpand').on('click', function () { $('.drm-class:visible').addClass('is-open'); });
 	$('#drmCollapse').on('click', function () { $('.drm-class').removeClass('is-open'); });
+	function paintMove($sel, hostelId, hostelName) {
+		var $row = $sel.closest('.drm-student');
+		var name = $.trim(hostelName || '');
+		$row.find('.drm-now-name').text(name || 'No dormitory').toggleClass('is-empty', name === '');
+		$sel.attr('data-current', hostelId || 0);
+		$row.attr('data-assigned', hostelId > 0 ? '1' : '0');
+		var $remove = $sel.find('option[value="remove"]');
+		if (hostelId > 0) {
+			if (!$remove.length) {
+				$sel.find('option[value=""]').after('<option value="remove">Remove from dormitory</option>');
+			}
+		} else {
+			$remove.remove();
+		}
+		$sel.find('option[data-hostel]').prop('disabled', false);
+		if (hostelId > 0) {
+			$sel.find('option[value="' + hostelId + '"]').prop('disabled', true);
+		}
+		$sel.val('');
+	}
 	$('#drmClasses').on('change', '.drm-assign', function () {
 		var $sel = $(this);
 		var studentId = parseInt($sel.data('student'), 10) || 0;
-		var next = parseInt($sel.val(), 10) || 0;
-		var prev = parseInt($sel.attr('data-current'), 10) || 0;
-		if (!studentId || next === prev) return;
+		var raw = String($sel.val() || '');
+		if (!studentId || raw === '') return;
+		var remove = raw === 'remove';
+		var next = remove ? 0 : (parseInt(raw, 10) || 0);
+		var nextName = remove ? '' : ($sel.find('option:selected').attr('data-name') || '');
 		$sel.prop('disabled', true);
 		var payload = { student_id: studentId, year: yearId };
 		var url = unassignUrl;
 		if (next > 0) { url = assignUrl; payload.hostel_id = next; }
 		$.post(url, payload).done(function (res) {
-			if (res && res.error) { $sel.val(prev ? String(prev) : ''); toast(res.error, false); return; }
-			$sel.attr('data-current', next);
-			$sel.closest('.drm-student').attr('data-assigned', next > 0 ? '1' : '0');
+			if (res && res.error) { $sel.val(''); toast(res.error, false); return; }
+			paintMove($sel, next, nextName);
 			applyBeds(res || {});
 			recount();
 			applyFilter();
 			toast((res && res.success) || 'Saved.', true);
 		}).fail(function () {
-			$sel.val(prev ? String(prev) : '');
-			toast('Could not save this assignment.', false);
+			$sel.val('');
+			toast('Could not save this move.', false);
 		}).always(function () { $sel.prop('disabled', false); });
 	});
 })(jQuery);
