@@ -397,6 +397,37 @@ class HostelSchemaModel extends Model
 	}
 
 	/**
+	 * Compact occupancy for the allocation page after a move.
+	 *
+	 * @return array{hostels:list<array{id:int,occupied:int,max_beds:int,free_beds:int}>,beds:array{used:int,free:int,capacity:int}}
+	 */
+	public function occupancySnapshot(int $schoolId, int $yearId): array
+	{
+		$used = 0;
+		$free = 0;
+		$capacity = 0;
+		$rows = [];
+		foreach ($this->listHostelsWithOccupancy($schoolId, $yearId) as $hostel) {
+			$occupied = (int) ($hostel['occupied'] ?? 0);
+			$maxBeds = (int) ($hostel['max_beds'] ?? 0);
+			$freeBeds = (int) ($hostel['free_beds'] ?? 0);
+			$used += $occupied;
+			$free += $freeBeds;
+			$capacity += $maxBeds;
+			$rows[] = [
+				'id' => (int) ($hostel['id'] ?? 0),
+				'occupied' => $occupied,
+				'max_beds' => $maxBeds,
+				'free_beds' => $freeBeds,
+			];
+		}
+		return [
+			'hostels' => $rows,
+			'beds' => ['used' => $used, 'free' => $free, 'capacity' => $capacity],
+		];
+	}
+
+	/**
 	 * Assigned students grouped under each dormitory for the year.
 	 *
 	 * @return list<array{id:int,name:string,gender:string,gender_label:string,max_beds:int,occupied:int,students:list<array{name:string,regno:string,gender:string,class:string}>}>
@@ -647,7 +678,7 @@ class HostelSchemaModel extends Model
 
 		if ($existing) {
 			$db->table('hostel_allocations')->where('id', (int) $existing['id'])->update($payload);
-			return ['ok' => true, 'allocation_id' => (int) $existing['id']];
+			return ['ok' => true, 'allocation_id' => (int) $existing['id'], 'moved' => true];
 		}
 
 		$payload['created_at'] = $now;
@@ -678,7 +709,8 @@ class HostelSchemaModel extends Model
 		?int $classId = null,
 		?int $departmentId = null,
 		bool $unallocatedOnly = false,
-		bool $allStudents = false
+		bool $allStudents = false,
+		bool $includeAllocated = false
 	): array {
 		$this->ensureSchema();
 		$db = \Config\Database::connect();
@@ -702,7 +734,14 @@ class HostelSchemaModel extends Model
 			->where("IFNULL(d.title,'') NOT LIKE '%Holiday%'", null, false)
 			->where("IFNULL(d.code,'') NOT LIKE '%Holiday%'", null, false);
 		if (!$allStudents) {
-			$b->where('students.studying_mode', self::MODE_BOARDING);
+			if ($includeAllocated) {
+				$b->groupStart()
+					->where('students.studying_mode', self::MODE_BOARDING)
+					->orWhere('ha.id IS NOT NULL', null, false)
+					->groupEnd();
+			} else {
+				$b->where('students.studying_mode', self::MODE_BOARDING);
+			}
 		}
 
 		if ($classId !== null && $classId > 0) {

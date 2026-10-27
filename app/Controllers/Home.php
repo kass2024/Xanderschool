@@ -22368,6 +22368,7 @@ public function getApplicationDocs($id = null)
 		$data['years'] = (new AcademicYearModel())->select('id,title')->where('school_id', $schoolId)
 			->orderBy('id', 'DESC')->get()->getResultArray();
 		$data['hostels'] = $mdl->listHostelsWithOccupancy($schoolId, $year);
+		$data['roster'] = $mdl->listBoardingCandidates($schoolId, $year, null, null, false, false, true);
 		$data['hostel_settings'] = $mdl->getSchoolSettings($schoolId);
 		$classMdl = new ClassesModel();
 		$data['classes'] = $classMdl->select('classes.id,classes.title,d.id as department_id,d.code as dept_code,l.title as level_name')
@@ -22434,7 +22435,13 @@ public function getApplicationDocs($id = null)
 		if (!$res['ok']) {
 			return $this->response->setJSON(['error' => $res['error'] ?? 'Allocation failed.']);
 		}
-		return $this->response->setJSON(['success' => 'Student allocated to hostel.']);
+		$message = !empty($res['moved'])
+			? 'Student moved to the other dormitory.'
+			: 'Student assigned to the dormitory.';
+		return $this->response->setJSON(array_merge(
+			['success' => $message],
+			$mdl->occupancySnapshot($schoolId, $year)
+		));
 	}
 
 	public function hostel_assign_class()
@@ -22520,7 +22527,10 @@ public function getApplicationDocs($id = null)
 		$year = (int) ($this->request->getPost('year') ?: ($this->data['academic_year'] ?? 0));
 		$mdl = new \App\Models\HostelSchemaModel();
 		$mdl->unallocateStudent($schoolId, $studentId, $year);
-		return $this->response->setJSON(['success' => 'Student removed from hostel.']);
+		return $this->response->setJSON(array_merge(
+			['success' => 'Student removed from the dormitory.'],
+			$mdl->occupancySnapshot($schoolId, $year)
+		));
 	}
 
 	public function hostel_residents()

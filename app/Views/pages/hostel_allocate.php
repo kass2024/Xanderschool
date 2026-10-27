@@ -66,7 +66,7 @@ $openCount = max(0, $studentCount - $assignedCount);
 		<div class="drm-hero-copy">
 			<div class="drm-kicker"><i class="fa fa-bed"></i> Boarding housing</div>
 			<h4>Dormitories</h4>
-			<p>Boarding students only, folded by class. Day scholars stay off this list. Search by name, registration number, or class.</p>
+			<p>Boarding students are listed by class, including everyone already in a dormitory. Change the dormitory on a student to move them. Day scholars who have no bed stay off this list.</p>
 		</div>
 		<div class="drm-year">
 			<label for="drmYear">Academic year</label>
@@ -144,7 +144,7 @@ $openCount = max(0, $studentCount - $assignedCount);
 					}
 					$classSearch = strtolower($group['label']);
 				?>
-					<section class="drm-class" data-search="<?= esc($classSearch, 'attr'); ?>">
+					<section class="drm-class is-open" data-search="<?= esc($classSearch, 'attr'); ?>">
 						<button type="button" class="drm-class-head">
 							<span class="drm-class-name"><?= esc($group['label']); ?></span>
 							<span class="drm-class-meta">
@@ -173,7 +173,7 @@ $openCount = max(0, $studentCount - $assignedCount);
 											<span class="hst-gender-badge <?= $sex === 'F' ? 'hst-gender-f' : 'hst-gender-m'; ?>"><?= $sex === 'F' ? 'Female' : 'Male'; ?></span>
 										<?php endif; ?>
 									</div>
-									<select class="form-control form-control-sm drm-assign" data-student="<?= $sid; ?>" data-current="<?= $hid; ?>">
+									<select class="form-control form-control-sm drm-assign" data-student="<?= $sid; ?>" data-current="<?= $hid; ?>" title="Move to another dormitory">
 										<option value="">Unassigned</option>
 										<?php foreach ($hostels as $h) :
 											$hg = strtoupper((string) ($h['gender'] ?? 'M')) === 'F' ? 'F' : 'M';
