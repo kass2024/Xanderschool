@@ -51,6 +51,45 @@
 		bottom: 0;
 	}
 
+	.periodic-student-search { position: relative; }
+	.periodic-student-search .form-control { padding-right: 28px; }
+	.periodic-student-clear {
+		position: absolute;
+		right: 6px;
+		top: 4px;
+		border: 0;
+		background: transparent;
+		color: #64748b;
+		font-size: 18px;
+		line-height: 1;
+	}
+	.periodic-student-results {
+		display: none;
+		position: absolute;
+		z-index: 30;
+		left: 0;
+		right: 0;
+		max-height: 280px;
+		overflow: auto;
+		background: #fff;
+		border: 1px solid #dbe3ef;
+		border-radius: 8px;
+		box-shadow: 0 12px 28px rgba(15, 23, 42, .14);
+	}
+	.periodic-student-results.is-open { display: block; }
+	.periodic-student-item {
+		display: block;
+		width: 100%;
+		text-align: left;
+		border: 0;
+		border-bottom: 1px solid #eef2f7;
+		background: #fff;
+		padding: 8px 10px;
+	}
+	.periodic-student-item:hover { background: #eff6ff; }
+	.periodic-student-item strong { display: block; }
+	.periodic-student-item small { color: #64748b; }
+
 	th {
 		position: relative;
 		min-width: 50px;
@@ -101,6 +140,17 @@
 				<option value="3" data-generic="<?= esc(lang("app.period3")); ?>"><?= lang("app.period3"); ?> </option>
 				<option value="4" data-generic="<?= esc(lang("app.period4")); ?>"><?= lang("app.period4"); ?> </option>
 			</select>
+		</div>
+		<br>
+		<div class="form-group col-sm-6 col-md-3 col-lg-3">
+			<label>Single student</label>
+			<div class="periodic-student-search">
+				<input type="search" class="form-control" id="periodicStudentSearch" placeholder="Name or registration number" autocomplete="off">
+				<input type="hidden" name="student_id" id="periodicStudentId" value="">
+				<button type="button" class="periodic-student-clear" id="periodicStudentClear" hidden aria-label="Clear student">&times;</button>
+				<div class="periodic-student-results" id="periodicStudentResults"></div>
+			</div>
+			<small class="text-muted" id="periodicStudentHint">Leave empty to print the whole class.</small>
 		</div>
 		<br>
 		<div class="form-group" style="margin-top: 5px">
@@ -159,10 +209,74 @@
 			syncPeriod();
 		});
 		var periodicBase = "<?= base_url('get_periodic_slip'); ?>";
+		var searchTimer;
+		function clearPeriodicStudent() {
+			$("#periodicStudentId").val("");
+			$("#periodicStudentSearch").val("");
+			$("#periodicStudentClear").prop("hidden", true);
+			$("#periodicStudentHint").text("Leave empty to print the whole class.");
+			$("#periodicStudentResults").removeClass("is-open").empty();
+			$("#select_class").prop("required", true);
+		}
+		function pickPeriodicStudent(st) {
+			$("#periodicStudentId").val(st.id);
+			$("#periodicStudentSearch").val(st.name + (st.regno ? " — " + st.regno : ""));
+			$("#periodicStudentClear").prop("hidden", false);
+			$("#periodicStudentHint").text(st.class_label ? ("Report for this student only · " + st.class_label) : "Report for this student only.");
+			$("#periodicStudentResults").removeClass("is-open").empty();
+			var $class = $("#select_class");
+			if (st.class_id && $class.find("option[value='" + st.class_id + "']").length) {
+				$class.val(String(st.class_id)).trigger("change");
+			}
+			$class.prop("required", false);
+		}
+		$("#periodicStudentSearch").on("input", function () {
+			var q = $.trim(this.value);
+			$("#periodicStudentId").val("");
+			$("#periodicStudentClear").prop("hidden", q === "");
+			$("#select_class").prop("required", true);
+			$("#periodicStudentHint").text("Leave empty to print the whole class.");
+			clearTimeout(searchTimer);
+			if (q.length < 2) {
+				$("#periodicStudentResults").removeClass("is-open").empty();
+				return;
+			}
+			searchTimer = setTimeout(function () {
+				$.getJSON("<?= base_url('periodic_report_student_search'); ?>", {
+					q: q,
+					year: $("#select_year").val() || "",
+					class: $("#select_class").val() || ""
+				}).done(function (res) {
+					var rows = (res && res.students) || [];
+					var $box = $("#periodicStudentResults").empty();
+					if (!rows.length) {
+						$box.append("<div class='periodic-student-item'><small>No student found.</small></div>");
+					}
+					rows.forEach(function (st) {
+						var $btn = $("<button type='button' class='periodic-student-item'></button>");
+						$btn.append($("<strong></strong>").text(st.name || "Student"));
+						$btn.append($("<small></small>").text([st.regno, st.class_label].filter(Boolean).join(" · ")));
+						$btn.on("click", function () { pickPeriodicStudent(st); });
+						$box.append($btn);
+					});
+					$box.addClass("is-open");
+				});
+			}, 220);
+		});
+		$("#periodicStudentClear").on("click", clearPeriodicStudent);
+		$(document).on("click", function (e) {
+			if (!$(e.target).closest(".periodic-student-search").length) {
+				$("#periodicStudentResults").removeClass("is-open");
+			}
+		});
 		$("#form").on("submit", function (e) {
+			var hasStudent = parseInt($("#periodicStudentId").val(), 10) > 0;
+			$("#select_class").prop("required", !hasStudent);
 			var submitter = e.originalEvent && e.originalEvent.submitter;
 			var isPdf = submitter && submitter.name === "pdf";
-			var label = $.trim($("#select_class option:selected").text()).replace(/[<>:"/\\|?*]+/g, " ").replace(/\s+/g, " ");
+			var studentLabel = hasStudent ? $.trim($("#periodicStudentSearch").val()) : "";
+			var label = studentLabel || $.trim($("#select_class option:selected").text());
+			label = label.replace(/[<>:"/\\|?*]+/g, " ").replace(/\s+/g, " ");
 			$(this).attr("action", (isPdf && label) ? periodicBase + "/" + encodeURIComponent(label) : periodicBase);
 		});
 		// $(document).on("click","#btn_generate",function (e) {
