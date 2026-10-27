@@ -13,7 +13,7 @@ class HostelSchemaModel extends Model
 	protected $table = 'hostels';
 	protected $primaryKey = 'id';
 	protected $returnType = 'array';
-	protected $allowedFields = ['school_id', 'name', 'max_beds', 'gender', 'level_group', 'sort_order', 'active'];
+	protected $allowedFields = ['school_id', 'name', 'max_beds', 'gender', 'in_charge_staff_id', 'level_group', 'sort_order', 'active'];
 	protected $useTimestamps = true;
 
 	/** @var bool */
@@ -36,6 +36,7 @@ class HostelSchemaModel extends Model
 			`name` VARCHAR(160) NOT NULL,
 			`max_beds` INT UNSIGNED NOT NULL DEFAULT 1,
 			`gender` CHAR(1) NOT NULL DEFAULT 'M',
+			`in_charge_staff_id` INT UNSIGNED NULL DEFAULT NULL,
 			`level_group` VARCHAR(30) NOT NULL DEFAULT '',
 			`sort_order` INT NOT NULL DEFAULT 0,
 			`active` TINYINT(1) NOT NULL DEFAULT 1,
@@ -70,6 +71,10 @@ class HostelSchemaModel extends Model
 		$columns = array_map('strtolower', $db->getFieldNames('hostels'));
 		if (!in_array('level_group', $columns, true)) {
 			$db->query("ALTER TABLE `hostels` ADD COLUMN `level_group` VARCHAR(30) NOT NULL DEFAULT '' AFTER `gender`");
+		}
+		$columns = array_map('strtolower', $db->getFieldNames('hostels'));
+		if (!in_array('in_charge_staff_id', $columns, true)) {
+			$db->query("ALTER TABLE `hostels` ADD COLUMN `in_charge_staff_id` INT UNSIGNED NULL DEFAULT NULL AFTER `gender`");
 		}
 
 		self::$schemaReady = true;
@@ -262,6 +267,86 @@ class HostelSchemaModel extends Model
 		foreach ($hostels as &$hostel) {
 			$hostel['level_group'] = $this->normalizeLevelGroup((string) ($hostel['level_group'] ?? ''));
 			$hostel['level_group_label'] = $this->levelGroupLabel((string) ($hostel['level_group'] ?? ''));
+			$hostel['in_charge_staff_id'] = (int) ($hostel['in_charge_staff_id'] ?? 0);
+		}
+		unset($hostel);
+		return $this->attachInChargeNames($hostels);
+	}
+
+	/**
+	 * Matron, patron, customer care, and other leaders. Teachers are left out.
+	 *
+	 * @return list<array{id:int,name:string,post_title:string}>
+	 */
+	public function listChargeStaff(int $schoolId): array
+	{
+		$this->ensureSchema();
+		$rows = \Config\Database::connect()->table('staffs s')
+			->select('s.id, s.fname, s.lname, s.post, p.title AS post_title')
+			->join('posts p', 'p.id = s.post', 'left')
+			->where('s.school_id', $schoolId)
+			->whereIn('s.status', [1, 2])
+			->orderBy('s.fname', 'ASC')
+			->orderBy('s.lname', 'ASC')
+			->get()->getResultArray();
+		$out = [];
+		foreach ($rows as $row) {
+			$postId = (int) ($row['post'] ?? 0);
+			if (!\Config\MenuClearance::canChargeDormitory($postId)) {
+				continue;
+			}
+			$name = trim(preg_replace('/\s+/', ' ', (string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? '')));
+			if ($name === '') {
+				continue;
+			}
+			$out[] = [
+				'id' => (int) ($row['id'] ?? 0),
+				'name' => $name,
+				'post_title' => trim((string) ($row['post_title'] ?? '')),
+			];
+		}
+		return $out;
+	}
+
+	public function chargeStaffIdForSchool(int $schoolId, int $staffId): int
+	{
+		if ($staffId < 1) {
+			return 0;
+		}
+		foreach ($this->listChargeStaff($schoolId) as $staff) {
+			if ((int) $staff['id'] === $staffId) {
+				return $staffId;
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * @param list<array<string,mixed>> $hostels
+	 * @return list<array<string,mixed>>
+	 */
+	private function attachInChargeNames(array $hostels): array
+	{
+		$ids = [];
+		foreach ($hostels as $hostel) {
+			$id = (int) ($hostel['in_charge_staff_id'] ?? 0);
+			if ($id > 0) {
+				$ids[$id] = $id;
+			}
+		}
+		$names = [];
+		if ($ids !== []) {
+			$rows = \Config\Database::connect()->table('staffs')
+				->select('id, fname, lname')
+				->whereIn('id', array_values($ids))
+				->get()->getResultArray();
+			foreach ($rows as $row) {
+				$names[(int) $row['id']] = trim(preg_replace('/\s+/', ' ', (string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? '')));
+			}
+		}
+		foreach ($hostels as &$hostel) {
+			$id = (int) ($hostel['in_charge_staff_id'] ?? 0);
+			$hostel['in_charge_name'] = $id > 0 ? (string) ($names[$id] ?? '') : '';
 		}
 		unset($hostel);
 		return $hostels;

@@ -1,61 +1,37 @@
 <?php
 /** @var array $hostels */
-/** @var array $hostel_settings */
+/** @var list<array{id:int,name:string,post_title:string}> $hostel_charge_staff */
 $hostels = $hostels ?? [];
-$hostelSettings = $hostel_settings ?? ['separate_by_level' => false];
-$separateByLevel = !empty($hostelSettings['separate_by_level']);
+$hostelChargeStaff = $hostel_charge_staff ?? [];
 ?>
-<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=4">
+<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=5">
 
 <div class="hst-settings" id="hstSettings">
 	<p class="text-muted hst-intro">
-		Create hostels with a name, maximum beds, and gender (Male or Female). Only boarding students can later be allocated to these hostels.
+		Create dormitories with a name, maximum beds, and gender (Male or Female). Students are assigned to these dormitories from the Dormitories page.
 	</p>
-
-	<div class="hst-card mb-3">
-		<h6><i class="fa fa-shield"></i> Allocation rules</h6>
-		<p class="text-muted small mb-3">
-			Control whether students from different school groups may share the same hostel. Nursery stays separate, Primary stays separate, and every other level is treated as High School.
-		</p>
-		<label class="hst-rule-toggle <?= $separateByLevel ? 'is-on' : ''; ?>" id="hstLevelRuleLabel">
-			<input type="checkbox" id="hstSeparateByLevel" <?= $separateByLevel ? 'checked' : ''; ?>>
-			<span class="hst-rule-switch" aria-hidden="true"></span>
-			<span class="hst-rule-copy">
-				<strong>Keep levels separate in each hostel</strong>
-				<small>When ON, Nursery, Primary, and High School students cannot mix in the same hostel. For WISDOM SCHOOL RWANDA, O Level, A Level, ANP, and all other non-primary/non-nursery levels are treated as High School.</small>
-			</span>
-		</label>
-		<div id="hstRuleSaveMsg" class="hst-rule-msg" style="display:none;"></div>
-	</div>
 
 	<div class="hst-card">
 		<div class="hst-catalog-head">
-			<h6 class="mb-0"><i class="fa fa-bed"></i> Hostel catalog</h6>
+			<h6 class="mb-0"><i class="fa fa-bed"></i> Dormitory catalog</h6>
 			<a href="<?= base_url('export_hostel_assignment_excel'); ?>" class="btn btn-success btn-sm" id="hstExportExcel">
 				<i class="fa fa-file-excel"></i> Export to Excel
 			</a>
 		</div>
 		<p class="text-muted small mb-3">
-			Create hostels by gender and level group, for example <strong>Primary Girls Hostel</strong> or <strong>High School Boys Hostel</strong>.
+			Create dormitories by gender, for example <strong>Girls Dormitory</strong> or <strong>Boys Dormitory</strong>.
+			The person in charge is a matron, patron, customer care officer, or another school leader. Teachers are not on that list.
 			Export makes one sheet per class and gender (P1 Girls, P1 Boys) with student name, class, and a hostel dropdown.
 		</p>
 		<form id="hstAddForm" class="hst-add-form">
 			<div class="form-row align-items-end">
 				<div class="col-md-3">
 					<label class="small font-weight-bold">Hostel name</label>
-					<input type="text" class="form-control form-control-sm" id="hstName" placeholder="e.g. Primary Girls Hostel" required maxlength="160">
+					<input type="text" class="form-control form-control-sm" id="hstName" placeholder="e.g. Girls Dormitory" required maxlength="160">
 				</div>
 				<div class="col-md-2">
 					<label class="small font-weight-bold">Max beds</label>
 					<input type="number" class="form-control form-control-sm" id="hstBeds" min="1" max="9999" value="40" required>
-				</div>
-				<div class="col-md-3">
-					<label class="small font-weight-bold">Level group</label>
-					<select class="form-control form-control-sm" id="hstLevelGroup" required>
-						<option value="nursery">Nursery</option>
-						<option value="primary">Primary</option>
-						<option value="high_school" selected>High School</option>
-					</select>
 				</div>
 				<div class="col-md-2">
 					<label class="small font-weight-bold">Gender</label>
@@ -64,9 +40,18 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 						<option value="F">Female</option>
 					</select>
 				</div>
+				<div class="col-md-3">
+					<label class="small font-weight-bold">Person in charge</label>
+					<select class="form-control form-control-sm" id="hstCharge">
+						<option value="">— None —</option>
+						<?php foreach ($hostelChargeStaff as $staff) : ?>
+							<option value="<?= (int) $staff['id']; ?>"><?= esc($staff['name']); ?><?= $staff['post_title'] !== '' ? ' — ' . esc($staff['post_title']) : ''; ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
 				<div class="col-md-2">
 					<button type="submit" class="btn btn-success btn-sm btn-block">
-						<i class="fa fa-plus"></i> Add hostel
+						<i class="fa fa-plus"></i> Add dormitory
 					</button>
 				</div>
 			</div>
@@ -77,9 +62,9 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 				<thead>
 				<tr>
 					<th>Name</th>
-					<th style="width:130px">Level group</th>
 					<th style="width:110px">Max beds</th>
 					<th style="width:110px">Gender</th>
+					<th>Person in charge</th>
 					<th style="width:150px">Actions</th>
 				</tr>
 				</thead>
@@ -91,18 +76,19 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 						<tr
 							data-id="<?= (int) $h['id']; ?>"
 							data-name="<?= esc($h['name']); ?>"
-							data-level-group="<?= esc($h['level_group'] ?? ''); ?>"
 							data-max-beds="<?= (int) $h['max_beds']; ?>"
 							data-gender="<?= esc($h['gender']); ?>"
+							data-charge-id="<?= (int) ($h['in_charge_staff_id'] ?? 0); ?>"
+							data-charge-name="<?= esc((string) ($h['in_charge_name'] ?? '')); ?>"
 						>
 							<td><strong><?= esc($h['name']); ?></strong></td>
-							<td><?= esc($h['level_group_label'] ?? ''); ?></td>
 							<td><?= (int) $h['max_beds']; ?></td>
 							<td>
 								<span class="hst-gender-badge hst-gender-<?= strtoupper((string) $h['gender']) === 'F' ? 'f' : 'm'; ?>">
 									<?= strtoupper((string) $h['gender']) === 'F' ? 'Female' : 'Male'; ?>
 								</span>
 							</td>
+							<td><?= esc((string) ($h['in_charge_name'] ?? '')) !== '' ? esc((string) $h['in_charge_name']) : '—'; ?></td>
 							<td class="text-center">
 								<button type="button" class="btn btn-outline-primary btn-sm hst-edit" data-id="<?= (int) $h['id']; ?>" title="Edit">
 									<i class="fa fa-edit"></i> Edit
@@ -122,6 +108,8 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 
 <script>
 (function ($) {
+	var chargeStaff = <?= json_encode(array_values($hostelChargeStaff), JSON_UNESCAPED_UNICODE); ?>;
+
 	function toast(msg, ok) {
 		if (typeof toastr !== 'undefined') {
 			ok ? toastr.success(msg) : toastr.error(msg);
@@ -135,15 +123,32 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 		return '<span class="hst-gender-badge hst-gender-' + (isF ? 'f' : 'm') + '">' + (isF ? 'Female' : 'Male') + '</span>';
 	}
 
-	function levelGroupLabel(group) {
-		group = String(group || '').toLowerCase();
-		if (group === 'nursery') {
-			return 'Nursery';
+	function escHtml(value) {
+		return $('<div>').text(value == null ? '' : String(value)).html();
+	}
+
+	function chargeName(id) {
+		id = parseInt(id, 10) || 0;
+		for (var i = 0; i < chargeStaff.length; i++) {
+			if (parseInt(chargeStaff[i].id, 10) === id) {
+				return chargeStaff[i].name || '';
+			}
 		}
-		if (group === 'primary') {
-			return 'Primary';
-		}
-		return 'High School';
+		return '';
+	}
+
+	function chargeSelect(selected) {
+		selected = parseInt(selected, 10) || 0;
+		var html = '<select class="form-control form-control-sm hst-edit-charge"><option value="">— None —</option>';
+		chargeStaff.forEach(function (staff) {
+			var id = parseInt(staff.id, 10) || 0;
+			var label = staff.name || '';
+			if (staff.post_title) {
+				label += ' — ' + staff.post_title;
+			}
+			html += '<option value="' + id + '"' + (id === selected ? ' selected' : '') + '>' + escHtml(label) + '</option>';
+		});
+		return html + '</select>';
 	}
 
 	function syncHostelNameSuggestion() {
@@ -152,8 +157,7 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 			return;
 		}
 		var gender = ($('#hstGender').val() || 'M') === 'F' ? 'Girls' : 'Boys';
-		var group = levelGroupLabel($('#hstLevelGroup').val() || 'high_school');
-		$name.attr('placeholder', group + ' ' + gender + ' Hostel');
+		$name.attr('placeholder', gender + ' Dormitory');
 	}
 
 	function ensureTableBody() {
@@ -170,31 +174,24 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 
 	function rowHtml(h) {
 		var name = h.name || '';
-		var levelGroup = h.level_group || '';
-		var levelGroupLabelText = h.level_group_label || levelGroupLabel(levelGroup);
 		var beds = parseInt(h.max_beds, 10) || 0;
 		var gender = h.gender || 'M';
 		var id = parseInt(h.id, 10) || 0;
+		var chargeId = parseInt(h.in_charge_staff_id, 10) || 0;
+		var charge = h.in_charge_name || chargeName(chargeId);
 		return '' +
-			'<tr data-id="' + id + '" data-name="' + $('<div>').text(name).html() + '" data-level-group="' + $('<div>').text(levelGroup).html() + '" data-max-beds="' + beds + '" data-gender="' + $('<div>').text(gender).html() + '">' +
-			'<td><strong>' + $('<div>').text(name).html() + '</strong></td>' +
-			'<td>' + $('<div>').text(levelGroupLabelText).html() + '</td>' +
+			'<tr data-id="' + id + '" data-name="' + escHtml(name) + '" data-max-beds="' + beds + '" data-gender="' + escHtml(gender) + '" data-charge-id="' + chargeId + '" data-charge-name="' + escHtml(charge) + '">' +
+			'<td><strong>' + escHtml(name) + '</strong></td>' +
 			'<td>' + beds + '</td>' +
 			'<td>' + genderBadge(gender) + '</td>' +
+			'<td>' + (charge ? escHtml(charge) : '—') + '</td>' +
 			'<td class="text-center">' + actionButtons(id) + '</td>' +
 			'</tr>';
 	}
 
-	function editRowHtml(id, name, levelGroup, beds, gender) {
+	function editRowHtml(id, name, beds, gender, chargeId) {
 		return '' +
-			'<td><input type="text" class="form-control form-control-sm hst-edit-name" value="' + $('<div>').text(name).html() + '" maxlength="160"></td>' +
-			'<td>' +
-				'<select class="form-control form-control-sm hst-edit-level">' +
-					'<option value="nursery"' + (levelGroup === 'nursery' ? ' selected' : '') + '>Nursery</option>' +
-					'<option value="primary"' + (levelGroup === 'primary' ? ' selected' : '') + '>Primary</option>' +
-					'<option value="high_school"' + (levelGroup === 'high_school' ? ' selected' : '') + '>High School</option>' +
-				'</select>' +
-			'</td>' +
+			'<td><input type="text" class="form-control form-control-sm hst-edit-name" value="' + escHtml(name) + '" maxlength="160"></td>' +
 			'<td><input type="number" class="form-control form-control-sm hst-edit-beds" value="' + beds + '" min="1" max="9999"></td>' +
 			'<td>' +
 				'<select class="form-control form-control-sm hst-edit-gender">' +
@@ -202,42 +199,19 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 					'<option value="F"' + (String(gender).toUpperCase() === 'F' ? ' selected' : '') + '>Female</option>' +
 				'</select>' +
 			'</td>' +
+			'<td>' + chargeSelect(chargeId) + '</td>' +
 			'<td class="text-center">' +
 				'<button type="button" class="btn btn-success btn-sm hst-save mr-1" data-id="' + id + '" title="Save"><i class="fa fa-save"></i> Save</button>' +
 				'<button type="button" class="btn btn-secondary btn-sm hst-cancel" data-id="' + id + '" title="Cancel"><i class="fa fa-times"></i></button>' +
 			'</td>';
 	}
 
-	function saveLevelRule() {
-		var on = $('#hstSeparateByLevel').is(':checked');
-		$('#hstLevelRuleLabel').toggleClass('is-on', on);
-		var $msg = $('#hstRuleSaveMsg');
-		$msg.text('Saving…').removeClass('is-ok is-err').show();
-		$.post('<?= base_url('manipulate_hostel'); ?>', {
-			action: 'save_settings',
-			separate_by_level: on ? 1 : 0
-		}).done(function (res) {
-			if (res.error) {
-				$msg.text(res.error).addClass('is-err');
-				toast(res.error, false);
-				return;
-			}
-			$msg.text(res.success || 'Rule saved.').addClass('is-ok');
-			toast(res.success || 'Rule saved.', true);
-		}).fail(function () {
-			$msg.text('Could not save rule.').addClass('is-err');
-			toast('Could not save rule.', false);
-		});
-	}
-
-	$('#hstSeparateByLevel').on('change', saveLevelRule);
-
 	$('#hstAddForm').on('submit', function (e) {
 		e.preventDefault();
 		var name = $.trim($('#hstName').val() || '');
 		var beds = parseInt($('#hstBeds').val(), 10) || 0;
-		var levelGroup = $('#hstLevelGroup').val() || 'high_school';
 		var gender = $('#hstGender').val() || 'M';
+		var chargeId = parseInt($('#hstCharge').val(), 10) || 0;
 		if (!name || beds < 1) {
 			toast('Enter hostel name and max beds.', false);
 			return;
@@ -246,8 +220,8 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 			action: 'add',
 			name: name,
 			max_beds: beds,
-			level_group: levelGroup,
-			gender: gender
+			gender: gender,
+			in_charge_staff_id: chargeId
 		}).done(function (res) {
 			if (res.error) {
 				toast(res.error, false);
@@ -258,14 +232,14 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 			$tb.append(rowHtml({
 				id: h.id,
 				name: h.name || name,
-				level_group: h.level_group || levelGroup,
-				level_group_label: h.level_group_label || levelGroupLabel(h.level_group || levelGroup),
 				max_beds: h.max_beds || beds,
-				gender: h.gender || gender
+				gender: h.gender || gender,
+				in_charge_staff_id: h.in_charge_staff_id || chargeId,
+				in_charge_name: h.in_charge_name || chargeName(chargeId)
 			}));
 			$('#hstName').val('');
-			$('#hstLevelGroup').val('high_school');
 			$('#hstGender').val('M');
+			$('#hstCharge').val('');
 			syncHostelNameSuggestion();
 			toast(res.success || 'Hostel added.', true);
 		}).fail(function () {
@@ -280,10 +254,10 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 			return;
 		}
 		var name = String($row.data('name') || '');
-		var levelGroup = String($row.data('level-group') || 'high_school');
 		var beds = parseInt($row.data('max-beds'), 10) || 1;
 		var gender = String($row.data('gender') || 'M');
-		$row.html(editRowHtml(id, name, levelGroup, beds, gender));
+		var chargeId = parseInt($row.data('charge-id'), 10) || 0;
+		$row.html(editRowHtml(id, name, beds, gender, chargeId));
 	});
 
 	$(document).on('click', '.hst-cancel', function () {
@@ -291,10 +265,10 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 		$row.replaceWith(rowHtml({
 			id: parseInt($row.data('id'), 10) || 0,
 			name: String($row.data('name') || ''),
-			level_group: String($row.data('level-group') || 'high_school'),
-			level_group_label: levelGroupLabel(String($row.data('level-group') || 'high_school')),
 			max_beds: parseInt($row.data('max-beds'), 10) || 1,
-			gender: String($row.data('gender') || 'M')
+			gender: String($row.data('gender') || 'M'),
+			in_charge_staff_id: parseInt($row.data('charge-id'), 10) || 0,
+			in_charge_name: String($row.data('charge-name') || '')
 		}));
 	});
 
@@ -302,9 +276,9 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 		var $row = $(this).closest('tr');
 		var id = parseInt($(this).data('id'), 10) || 0;
 		var name = $.trim($row.find('.hst-edit-name').val() || '');
-		var levelGroup = $row.find('.hst-edit-level').val() || 'high_school';
 		var beds = parseInt($row.find('.hst-edit-beds').val(), 10) || 0;
 		var gender = $row.find('.hst-edit-gender').val() || 'M';
+		var chargeId = parseInt($row.find('.hst-edit-charge').val(), 10) || 0;
 		if (!id || !name || beds < 1) {
 			toast('Enter hostel name and valid max beds.', false);
 			return;
@@ -313,9 +287,9 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 			action: 'update',
 			id: id,
 			name: name,
-			level_group: levelGroup,
 			max_beds: beds,
-			gender: gender
+			gender: gender,
+			in_charge_staff_id: chargeId
 		}).done(function (res) {
 			if (res.error) {
 				toast(res.error, false);
@@ -325,10 +299,10 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 			$row.replaceWith(rowHtml({
 				id: h.id || id,
 				name: h.name || name,
-				level_group: h.level_group || levelGroup,
-				level_group_label: h.level_group_label || levelGroupLabel(h.level_group || levelGroup),
 				max_beds: h.max_beds || beds,
-				gender: h.gender || gender
+				gender: h.gender || gender,
+				in_charge_staff_id: h.in_charge_staff_id || chargeId,
+				in_charge_name: h.in_charge_name || chargeName(chargeId)
 			}));
 			toast(res.success || 'Hostel updated.', true);
 		}).fail(function () {
@@ -357,7 +331,7 @@ $separateByLevel = !empty($hostelSettings['separate_by_level']);
 		});
 	});
 
-	$('#hstLevelGroup, #hstGender').on('change', syncHostelNameSuggestion);
+	$('#hstGender').on('change', syncHostelNameSuggestion);
 	syncHostelNameSuggestion();
 })(jQuery);
 </script>
