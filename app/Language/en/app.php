@@ -1005,6 +1005,7 @@ return [
    'rtudentRsults'               => 'Student Results',
    'studentMarksreport'          => 'Student marks report',
    'disciplineRecord'            => 'Discipline Record',
+   'latenessReport'              => 'Lateness',
    'resultRecord'                => 'Result Record',
    'rtudentProgressReport'       => 'Student progress report',
    'schoolFees'                  => 'School Fees',

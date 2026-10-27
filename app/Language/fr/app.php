@@ -998,6 +998,7 @@ return [
 	"rtudentRsults" => "Résultats de l’élève",
 	"studentMarksreport" => "Rapport sur les notes des ’élèves ",
 	"disciplineRecord" => "Dossier de discipline",
+	"latenessReport" => "Retards",
 	"resultRecord" => "Enregistrement de résultat",
 	"rtudentProgressReport" => "Rapport de progression de l'élève",
 	"schoolFees" => "Frais scolaires",

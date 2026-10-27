@@ -1082,6 +1082,23 @@ class AttendanceScanService
 	}
 
 	/**
+	 * One late arrival takes 5 discipline marks. Parents are not told.
+	 *
+	 * @param array<string,mixed> $area
+	 */
+	private static function chargeLateness(int $schoolId, int $studentId, array $area, int $eventTime): void
+	{
+		if ($studentId < 1 || $eventTime < 1) {
+			return;
+		}
+		try {
+			(new \App\Models\DisciplineModel())->recordLateness($schoolId, $studentId, $area, $eventTime);
+		} catch (\Throwable $e) {
+			log_message('error', 'lateness discipline: ' . $e->getMessage());
+		}
+	}
+
+	/**
 	 * Card tap: students only. Staff must clock by face.
 	 *
 	 * @return array<string,mixed>
@@ -1266,6 +1283,7 @@ class AttendanceScanService
 			$timeIn = (int) ($attendance->time_in ?? 0);
 			if ($timeIn > 0 && ($time - $timeIn) < self::STUDENT_OUT_AFTER_IN_SECONDS) {
 				$school = $db->table('schools')->select('name, email, phone, logo')->where('id', $schoolId)->get()->getRow();
+				self::chargeLateness($schoolId, (int) $student->id, $area, $timeIn);
 				return [
 					'success' => 1,
 					'already' => 1,
@@ -1296,6 +1314,9 @@ class AttendanceScanService
 		}
 
 		$school = $db->table('schools')->select('name, email, phone, logo')->where('id', $schoolId)->get()->getRow();
+		if ($status === 'IN') {
+			self::chargeLateness($schoolId, (int) $student->id, $area, $time);
+		}
 
 		return [
 			'success' => 1,
@@ -1468,6 +1489,7 @@ class AttendanceScanService
 			} else {
 				$timeIn = (int) ($row->time_in ?? 0);
 				if ($timeIn > 0 && ($time - $timeIn) < self::STUDENT_OUT_AFTER_IN_SECONDS) {
+					self::chargeLateness($schoolId, (int) $student->id, $area, $timeIn);
 					return [
 						'success' => 1,
 						'already' => 1,
@@ -1492,6 +1514,9 @@ class AttendanceScanService
 		$lateStamp = $time;
 		if ($already && $row) {
 			$lateStamp = (int) ($row->time_in ?? $time);
+		}
+		if ($status === 'IN') {
+			self::chargeLateness($schoolId, (int) $student->id, $area, $lateStamp);
 		}
 		return [
 			'success' => 1,
