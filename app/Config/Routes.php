@@ -238,6 +238,8 @@ $routes->get('asset_management/assets', 'AssetManagement::assets');
 $routes->get('asset_management/asset_view/(:num)', 'AssetManagement::asset_view/$1');
 $routes->post('asset_management/save_asset', 'AssetManagement::save_asset');
 $routes->post('asset_management/save_simple_asset', 'AssetManagement::save_simple_asset');
+$routes->get('asset_management/download_simple_template', 'AssetManagement::download_simple_template');
+$routes->post('asset_management/upload_simple_excel', 'AssetManagement::upload_simple_excel');
 $routes->post('asset_management/distribute_asset', 'AssetManagement::distribute_asset');
 $routes->post('asset_management/save_quick_location', 'AssetManagement::save_quick_location');
 $routes->post('asset_management/stock_move', 'AssetManagement::stock_move');
