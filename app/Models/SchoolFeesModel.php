@@ -542,6 +542,35 @@ class SchoolFeesModel extends Model
 	}
 
 	/**
+	 * Approved school-fee payments for this student, keyed by "academicYear:term".
+	 *
+	 * A payment stays on the school_fees row that was current when it was recorded.
+	 * A later class row for the same term must still reduce the remaining balance.
+	 *
+	 * @return array<string,float>
+	 */
+	public function approvedSchoolFeePaidByTerm(int $studentId): array
+	{
+		if ($studentId < 1) {
+			return [];
+		}
+		$rows = \Config\Database::connect()->query(
+			'SELECT sf.academic_year, sf.term, COALESCE(SUM(fr.amount),0) AS paid
+			 FROM fees_records fr
+			 INNER JOIN school_fees sf ON sf.id = fr.fees_id
+			 WHERE fr.student_id = ? AND fr.fees_type = 0 AND IFNULL(fr.status, 1) <> -1
+			 GROUP BY sf.academic_year, sf.term',
+			[$studentId]
+		)->getResultArray();
+		$map = [];
+		foreach ($rows as $row) {
+			$key = (int) ($row['academic_year'] ?? 0) . ':' . (int) ($row['term'] ?? 0);
+			$map[$key] = (float) ($row['paid'] ?? 0);
+		}
+		return $map;
+	}
+
+	/**
 	 * Attach paid amounts and real scholarships. Payment rows are only read.
 	 *
 	 * @param list<array<string,mixed>> $rows
@@ -571,7 +600,7 @@ class SchoolFeesModel extends Model
 			->select('fees_id, SUM(amount) AS paid, MAX(due_date) AS due_date', false)
 			->where('student_id', $studentId)
 			->where('fees_type', 0)
-			->where('status', 1)
+			->where('status <>', -1)
 			->whereIn('fees_id', $ids)
 			->groupBy('fees_id')
 			->get()->getResultArray();
@@ -580,6 +609,7 @@ class SchoolFeesModel extends Model
 			$paidMap[$fid] = (float) ($paidRow['paid'] ?? 0);
 			$dueMap[$fid] = $paidRow['due_date'] ?? null;
 		}
+		$termPaid = $this->approvedSchoolFeePaidByTerm($studentId);
 
 		$discMap = [];
 		$idList = implode(',', $ids);
@@ -612,7 +642,8 @@ class SchoolFeesModel extends Model
 
 		foreach ($rows as &$row) {
 			$fid = (int) ($row['id'] ?? 0);
-			$row['paid'] = $paidMap[$fid] ?? 0.0;
+			$termKey = (int) ($row['academic_year'] ?? 0) . ':' . (int) ($row['term'] ?? 0);
+			$row['paid'] = $termPaid[$termKey] ?? ($paidMap[$fid] ?? 0.0);
 			$row['discount'] = $discMap[$fid] ?? 0.0;
 			$row['due_date'] = $dueMap[$fid] ?? ($row['due_date'] ?? null);
 			$term = (int) ($row['term'] ?? 0);

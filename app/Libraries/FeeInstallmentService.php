@@ -19,13 +19,16 @@ class FeeInstallmentService
 	 */
 	public static function lineBalance(int $studentId, int $feesType, int $feesId, int $studyingMode = 1): float
 	{
-		$paid = (float) (new FeesRecordModel())
-			->selectSum('amount', 'paid')
-			->where('student_id', $studentId)
-			->where('fees_type', $feesType)
-			->where('fees_id', $feesId)
-			->where('status', 1)
-			->get()->getRowArray()['paid'] ?? 0;
+		$paid = 0.0;
+		if ($feesType !== 0) {
+			$paid = (float) (new FeesRecordModel())
+				->selectSum('amount', 'paid')
+				->where('student_id', $studentId)
+				->where('fees_type', $feesType)
+				->where('fees_id', $feesId)
+				->where('status <>', -1)
+				->get()->getRowArray()['paid'] ?? 0;
+		}
 
 		if ($feesType === 0) {
 			$fees = new SchoolFeesModel();
@@ -46,6 +49,10 @@ class FeeInstallmentService
 				}
 			}
 			$expected = $row ? SchoolFeesModel::expectedForStudent($row, $studyingMode, (float) ($row['discount'] ?? 0)) : 0.0;
+			if ($row) {
+				$termKey = (int) ($row['academic_year'] ?? 0) . ':' . (int) ($row['term'] ?? 0);
+				$paid = (float) ($fees->approvedSchoolFeePaidByTerm($studentId)[$termKey] ?? 0);
+			}
 		} else {
 			$row = (new ExtraFeesModel())->find($feesId);
 			if (!$row) {
