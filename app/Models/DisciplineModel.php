@@ -112,4 +112,138 @@ class DisciplineModel extends Model{
 		return true;
 	}
 
+	/**
+	 * @param array<string,mixed> $in
+	 * @return array{mode:string,start:string,end:string,label:string,date:string,week:string,month:string,from:string,to:string}
+	 */
+	public static function latenessWindow(array $in): array
+	{
+		$mode = strtolower(trim((string) ($in['mode'] ?? 'day')));
+		if (!in_array($mode, ['day', 'week', 'month', 'range'], true)) {
+			$mode = 'day';
+		}
+		$validDay = static function (string $raw): string {
+			return preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw) ? $raw : '';
+		};
+		$today = date('Y-m-d');
+		$day = $validDay(trim((string) ($in['date'] ?? ''))) ?: $today;
+		$weekOf = $validDay(trim((string) ($in['week'] ?? ''))) ?: $today;
+		$monthRaw = trim((string) ($in['month'] ?? ''));
+		if (!preg_match('/^\d{4}-\d{2}$/', $monthRaw)) {
+			$monthRaw = date('Y-m');
+		}
+		$from = $validDay(trim((string) ($in['from'] ?? '')));
+		$to = $validDay(trim((string) ($in['to'] ?? '')));
+		if ($mode === 'week') {
+			$ts = strtotime($weekOf);
+			$dow = (int) date('N', $ts);
+			$start = date('Y-m-d', strtotime('-' . ($dow - 1) . ' days', $ts));
+			$end = date('Y-m-d', strtotime('+' . (7 - $dow) . ' days', $ts));
+		} elseif ($mode === 'month') {
+			$start = $monthRaw . '-01';
+			$end = date('Y-m-t', strtotime($start));
+		} elseif ($mode === 'range') {
+			if ($from === '') {
+				$from = date('Y-m-01');
+			}
+			if ($to === '') {
+				$to = $today;
+			}
+			if ($from > $to) {
+				$swap = $from;
+				$from = $to;
+				$to = $swap;
+			}
+			$start = $from;
+			$end = $to;
+		} else {
+			$start = $day;
+			$end = $day;
+		}
+		$fmt = static function (string $ymd): string {
+			$ts = strtotime($ymd);
+			return $ts ? date('j M Y', $ts) : $ymd;
+		};
+		if ($start === $end) {
+			$label = $fmt($start);
+		} elseif ($mode === 'month') {
+			$label = date('F Y', strtotime($start));
+		} else {
+			$label = $fmt($start) . ' – ' . $fmt($end);
+		}
+		return [
+			'mode' => $mode,
+			'start' => $start,
+			'end' => $end,
+			'label' => $label,
+			'date' => $day,
+			'week' => $weekOf,
+			'month' => $monthRaw,
+			'from' => $mode === 'range' ? $start : ($from !== '' ? $from : date('Y-m-01')),
+			'to' => $mode === 'range' ? $end : ($to !== '' ? $to : $today),
+		];
+	}
+
+	/**
+	 * @return array{rows:list<array<string,mixed>>,students:int,arrivals:int,marks:int,places:array<string,int>}
+	 */
+	public function listLateness(int $schoolId, string $start, string $end, int $classId = 0): array
+	{
+		$this->ensureLatenessColumn();
+		$empty = ['rows' => [], 'students' => 0, 'arrivals' => 0, 'marks' => 0, 'places' => []];
+		if ($schoolId < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
+			return $empty;
+		}
+		$db = \Config\Database::connect();
+		$dayExpr = "SUBSTRING_INDEX(d.lateness_key, ':', -1)";
+		$q = $db->table('disciplines d')
+			->select("d.id, d.marks, d.comment, d.created_at, s.id AS student_id, s.fname, s.lname, s.regno, {$dayExpr} AS late_day, MAX(CONCAT(COALESCE(l.title,''),' ',COALESCE(dp.code,''),' ',COALESCE(c.title,''))) AS class_name", false)
+			->join('students s', 's.id = d.student_id')
+			->join('class_records cr', 'cr.student = s.id AND cr.status = 1', 'left')
+			->join('classes c', 'c.id = cr.class', 'left')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments dp', 'dp.id = c.department', 'left')
+			->where('d.school_id', $schoolId)
+			->where($dayExpr . ' >= ' . $db->escape($start), null, false)
+			->where($dayExpr . ' <= ' . $db->escape($end), null, false)
+			->where('IFNULL(d.voided,0) = 0', null, false)
+			->groupBy('d.id, d.marks, d.comment, d.created_at, s.id, s.fname, s.lname, s.regno, ' . $dayExpr, false)
+			->orderBy('late_day', 'DESC')
+			->orderBy('s.fname', 'ASC');
+		if ($classId > 0) {
+			$q->where('cr.class', $classId);
+		}
+		$rows = $q->get()->getResultArray();
+		$students = [];
+		$marks = 0;
+		$places = [];
+		foreach ($rows as &$row) {
+			$students[(int) ($row['student_id'] ?? 0)] = true;
+			$marks += (int) ($row['marks'] ?? 0);
+			$comment = (string) ($row['comment'] ?? '');
+			$row['place'] = '';
+			$row['arrived'] = '';
+			$row['cutoff'] = '';
+			if (preg_match('/^Late at (.+)\. Arrived (\d{2}:\d{2})\. Consider lateness (\d{2}:\d{2})\./', $comment, $m)) {
+				$row['place'] = $m[1];
+				$row['arrived'] = $m[2];
+				$row['cutoff'] = $m[3];
+			}
+			$place = $row['place'] !== '' ? $row['place'] : 'Location';
+			if (!isset($places[$place])) {
+				$places[$place] = 0;
+			}
+			$places[$place]++;
+		}
+		unset($row);
+		arsort($places);
+		return [
+			'rows' => $rows,
+			'students' => count($students),
+			'arrivals' => count($rows),
+			'marks' => $marks,
+			'places' => $places,
+		];
+	}
+
 }
