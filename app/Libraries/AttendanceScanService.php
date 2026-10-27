@@ -1099,8 +1099,9 @@ class AttendanceScanService
 	}
 
 	/**
-	 * Once a location's consider-lateness clock has passed, every enrolled student
-	 * who never tapped there today loses 5 discipline marks. Parents are not told.
+	 * Once a location's consider-lateness clock has passed, each active student
+	 * counted on the school dashboard who never tapped there today loses 5 discipline marks.
+	 * Dismissed students and Holiday classes are left out. Parents are not told.
 	 */
 	public static function chargeUntappedLateness(int $schoolId): int
 	{
@@ -1131,7 +1132,11 @@ class AttendanceScanService
 			$sql = 'SELECT DISTINCT s.id
 				FROM students s
 				INNER JOIN class_records cr ON cr.student = s.id AND cr.year = ? AND cr.status = 1
-				WHERE s.school_id = ? AND s.status IN (1, 2)
+				INNER JOIN classes cl ON cl.id = cr.class
+				LEFT JOIN levels l ON l.id = cl.level
+				WHERE s.school_id = ? AND s.status = 1
+				AND IFNULL(cl.title, \'\') NOT LIKE \'%Holiday%\'
+				AND IFNULL(l.title, \'\') NOT LIKE \'%Holiday%\'
 				AND NOT EXISTS (
 					SELECT 1 FROM attendance_records ar
 					WHERE ar.user_id = s.id AND ar.user_type = 0 AND ar.area_id = ?
