@@ -51,6 +51,15 @@
 		bottom: 0;
 	}
 
+	.periodic-single-toggle {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-bottom: 4px;
+		font-weight: 600;
+		position: static;
+	}
+	.periodic-single-toggle input { margin: 0; }
 	.periodic-student-search { position: relative; }
 	.periodic-student-search .form-control { padding-right: 28px; }
 	.periodic-student-clear {
@@ -115,12 +124,26 @@
 				?>
 			</select>
 		</div>
-		<div class="form-group col-sm-3 col-md-2 col-lg-2">
-			<label><?= lang("app.sClass"); ?> :</label>
-			<select class="form-control select2" name="class" id="select_class" required>
-				<option selected disabled><?= lang("app.chooseClass"); ?></option>
-				<?php echo view('pages/partials/class_stream_options', ['classes' => $classes]); ?>
-			</select>
+		<div class="form-group col-sm-6 col-md-3 col-lg-3">
+			<label class="periodic-single-toggle">
+				<input type="checkbox" id="periodicSingleStudent"> Single student
+			</label>
+			<div id="periodicClassWrap">
+				<label><?= lang("app.sClass"); ?> :</label>
+				<select class="form-control select2" name="class" id="select_class" required>
+					<option selected disabled><?= lang("app.chooseClass"); ?></option>
+					<?php echo view('pages/partials/class_stream_options', ['classes' => $classes]); ?>
+				</select>
+			</div>
+			<div id="periodicStudentWrap" hidden>
+				<div class="periodic-student-search">
+					<input type="search" class="form-control" id="periodicStudentSearch" placeholder="Name or registration number" autocomplete="off">
+					<input type="hidden" name="student_id" id="periodicStudentId" value="" disabled>
+					<button type="button" class="periodic-student-clear" id="periodicStudentClear" hidden aria-label="Clear student">&times;</button>
+					<div class="periodic-student-results" id="periodicStudentResults"></div>
+				</div>
+				<small class="text-muted" id="periodicStudentHint">Type a name or registration number.</small>
+			</div>
 		</div>
 		<div class="form-group col-sm-3 col-md-2 col-lg-2">
 			<label><?= lang("app.term"); ?>:</label>
@@ -140,17 +163,6 @@
 				<option value="3" data-generic="<?= esc(lang("app.period3")); ?>"><?= lang("app.period3"); ?> </option>
 				<option value="4" data-generic="<?= esc(lang("app.period4")); ?>"><?= lang("app.period4"); ?> </option>
 			</select>
-		</div>
-		<br>
-		<div class="form-group col-sm-6 col-md-3 col-lg-3">
-			<label>Single student</label>
-			<div class="periodic-student-search">
-				<input type="search" class="form-control" id="periodicStudentSearch" placeholder="Name or registration number" autocomplete="off">
-				<input type="hidden" name="student_id" id="periodicStudentId" value="">
-				<button type="button" class="periodic-student-clear" id="periodicStudentClear" hidden aria-label="Clear student">&times;</button>
-				<div class="periodic-student-results" id="periodicStudentResults"></div>
-			</div>
-			<small class="text-muted" id="periodicStudentHint">Leave empty to print the whole class.</small>
 		</div>
 		<br>
 		<div class="form-group" style="margin-top: 5px">
@@ -210,32 +222,37 @@
 		});
 		var periodicBase = "<?= base_url('get_periodic_slip'); ?>";
 		var searchTimer;
+		function setSingleStudentMode(on) {
+			$("#periodicClassWrap").toggle(!on);
+			$("#periodicStudentWrap").prop("hidden", !on);
+			$("#select_class").prop("required", !on).prop("disabled", on);
+			$("#periodicStudentId").prop("disabled", !on);
+			if (!on) {
+				clearPeriodicStudent();
+			}
+		}
 		function clearPeriodicStudent() {
 			$("#periodicStudentId").val("");
 			$("#periodicStudentSearch").val("");
 			$("#periodicStudentClear").prop("hidden", true);
-			$("#periodicStudentHint").text("Leave empty to print the whole class.");
+			$("#periodicStudentHint").text("Type a name or registration number.");
 			$("#periodicStudentResults").removeClass("is-open").empty();
-			$("#select_class").prop("required", true);
 		}
 		function pickPeriodicStudent(st) {
 			$("#periodicStudentId").val(st.id);
-			$("#periodicStudentSearch").val(st.name + (st.regno ? " — " + st.regno : ""));
+			$("#periodicStudentSearch").val(st.name + (st.regno ? " - " + st.regno : ""));
 			$("#periodicStudentClear").prop("hidden", false);
-			$("#periodicStudentHint").text(st.class_label ? ("Report for this student only · " + st.class_label) : "Report for this student only.");
+			$("#periodicStudentHint").text(st.class_label ? ("This report only · " + st.class_label) : "This report only.");
 			$("#periodicStudentResults").removeClass("is-open").empty();
-			var $class = $("#select_class");
-			if (st.class_id && $class.find("option[value='" + st.class_id + "']").length) {
-				$class.val(String(st.class_id)).trigger("change");
-			}
-			$class.prop("required", false);
 		}
+		$("#periodicSingleStudent").on("change", function () {
+			setSingleStudentMode(this.checked);
+		});
 		$("#periodicStudentSearch").on("input", function () {
 			var q = $.trim(this.value);
 			$("#periodicStudentId").val("");
 			$("#periodicStudentClear").prop("hidden", q === "");
-			$("#select_class").prop("required", true);
-			$("#periodicStudentHint").text("Leave empty to print the whole class.");
+			$("#periodicStudentHint").text("Type a name or registration number.");
 			clearTimeout(searchTimer);
 			if (q.length < 2) {
 				$("#periodicStudentResults").removeClass("is-open").empty();
@@ -244,8 +261,7 @@
 			searchTimer = setTimeout(function () {
 				$.getJSON("<?= base_url('periodic_report_student_search'); ?>", {
 					q: q,
-					year: $("#select_year").val() || "",
-					class: $("#select_class").val() || ""
+					year: $("#select_year").val() || ""
 				}).done(function (res) {
 					var rows = (res && res.students) || [];
 					var $box = $("#periodicStudentResults").empty();
@@ -270,8 +286,16 @@
 			}
 		});
 		$("#form").on("submit", function (e) {
-			var hasStudent = parseInt($("#periodicStudentId").val(), 10) > 0;
-			$("#select_class").prop("required", !hasStudent);
+			var single = $("#periodicSingleStudent").is(":checked");
+			var hasStudent = single && parseInt($("#periodicStudentId").val(), 10) > 0;
+			if (single && !hasStudent) {
+				e.preventDefault();
+				$("#periodicStudentHint").text("Choose a student from the search list.");
+				$("#periodicStudentSearch").trigger("focus");
+				return;
+			}
+			$("#select_class").prop("required", !single).prop("disabled", single);
+			$("#periodicStudentId").prop("disabled", !single);
 			var submitter = e.originalEvent && e.originalEvent.submitter;
 			var isPdf = submitter && submitter.name === "pdf";
 			var studentLabel = hasStudent ? $.trim($("#periodicStudentSearch").val()) : "";
