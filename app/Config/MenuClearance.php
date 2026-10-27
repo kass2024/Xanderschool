@@ -223,6 +223,9 @@ class MenuClearance
 		if (in_array($postId, self::FINANCE_FULL_CONTROL_POSTS, true)) {
 			return true;
 		}
+		if (self::headTeacherPlacesOwnOrders($postId, (int) $schoolId)) {
+			return true;
+		}
 		return in_array($postId, self::CHILD_BUDGET_PREPARE_POSTS, true);
 	}
 
@@ -253,7 +256,46 @@ class MenuClearance
 	 */
 	public static function isChildBudgetViewOnly($postId, $schoolId = 0)
 	{
+		if (self::headTeacherPlacesOwnOrders($postId, (int) $schoolId)) {
+			return false;
+		}
 		return in_array((int) $postId, self::CHILD_BUDGET_VIEW_POSTS, true);
+	}
+
+	/**
+	 * Wisdom School Kanzenze has no accountant. The head teacher uploads the budget
+	 * and places cash requests. Other schools keep the accountant step.
+	 */
+	public static function isKanzenzeSchool($schoolId)
+	{
+		static $cache = [];
+		$schoolId = (int) $schoolId;
+		if ($schoolId < 1) {
+			return false;
+		}
+		if (array_key_exists($schoolId, $cache)) {
+			return $cache[$schoolId];
+		}
+		try {
+			$row = \Config\Database::connect()->table('schools')->select('name')->where('id', $schoolId)->get(1)->getRowArray();
+			$name = strtolower(trim((string) ($row['name'] ?? '')));
+			$cache[$schoolId] = strpos($name, 'kanzenze') !== false;
+		} catch (\Throwable $e) {
+			$cache[$schoolId] = false;
+		}
+		return $cache[$schoolId];
+	}
+
+	public static function headTeacherPlacesOwnOrders($postId, $schoolId = 0)
+	{
+		if (!self::isHeadMasterEquivalent((int) $postId)) {
+			return false;
+		}
+		$schoolId = (int) $schoolId;
+		if ($schoolId < 1) {
+			$schoolId = (int) ($_SESSION['soma_school_id'] ?? 0);
+		}
+		return self::isKanzenzeSchool($schoolId);
 	}
 
 	/** Alias for clarity. */

@@ -380,7 +380,9 @@ $viewOnly = !empty($view_only);
 	fillSchoolFeesUrl: '',
 	resetEmptyUrl: '<?= base_url('budget/reset_budget_empty_amounts'); ?>',
 	redirectUrl: '<?= base_url('budget/prepare'); ?>',
-	submitConfirm: <?= json_encode("Submit this budget?\n\n1) The head teacher of this school approves first\n2) Chief Accountant approves second\n3) Director of Finance approves last\n\nCash requests stay closed until all three approve."); ?>
+	submitConfirm: <?= json_encode(\Config\MenuClearance::headTeacherPlacesOwnOrders((int) ($_SESSION['soma_post'] ?? 0))
+		? "Submit this budget?\n\nYou are placing it as Head Teacher because this school has no accountant.\n\n1) Chief Accountant approves next\n2) Director of Finance approves last\n\nCash requests stay closed until both approve."
+		: "Submit this budget?\n\n1) The head teacher of this school approves first\n2) Chief Accountant approves second\n3) Director of Finance approves last\n\nCash requests stay closed until all three approve."); ?>
 });
 $('.btn-unlock-term').on('click', function () {
 	var $btn = $(this);

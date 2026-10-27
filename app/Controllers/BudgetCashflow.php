@@ -2443,24 +2443,41 @@ class BudgetCashflow extends Home
 		$actionLabel = $chain[$action] ?? $action;
 
 		if ($action === 'submit') {
-			$msgTitle = 'Budget submitted for approval';
-			$msgBody = $branchLabel . ' — "' . $title . '" is waiting for the head teacher of this school, then the Chief Accountant, then the Director of Finance.';
+			$placedByHead = $status === 'CHIEF_ACCOUNTANT_REVIEW';
+			$msgTitle = $placedByHead ? 'Budget placed by the Head Teacher' : 'Budget submitted for approval';
+			$msgBody = $placedByHead
+				? $branchLabel . ' — "' . $title . '" was placed by the Head Teacher. The Chief Accountant reviews it next, then the Director of Finance.'
+				: $branchLabel . ' — "' . $title . '" is waiting for the head teacher of this school, then the Chief Accountant, then the Director of Finance.';
 			$heads = $db->table('staffs')
 				->select('id, fname, lname, email, phone, school_id, post')
 				->where('school_id', $schoolId)
 				->whereIn('post', [1, 18, 25])
 				->whereIn('status', [1, 2])
 				->get()->getResultArray();
-			foreach ($heads as $staff) {
-				$notify->notifyStaff((int) $staff['id'], $msgTitle, $msgBody, $reviewUrl, (int) $budget['branch_id']);
-				$this->sendBudgetContactAlert($staff, $msgTitle, $msgBody);
+			if (!$placedByHead) {
+				foreach ($heads as $staff) {
+					$notify->notifyStaff((int) $staff['id'], $msgTitle, $msgBody, $reviewUrl, (int) $budget['branch_id']);
+					$this->sendBudgetContactAlert($staff, $msgTitle, $msgBody);
+				}
 			}
 			$preparer = $notify->staffById((int) ($budget['prepared_by'] ?? 0));
 			if ($preparer) {
 				$pTitle = 'Your budget was submitted';
-				$pBody = '"' . $title . '" is waiting for the head teacher of this school. Cash requests stay closed until the Head Teacher, Chief Accountant, and Director of Finance have approved.';
+				$pBody = $placedByHead
+					? '"' . $title . '" is with the Chief Accountant. Cash requests stay closed until the Chief Accountant and the Director of Finance approve.'
+					: '"' . $title . '" is waiting for the head teacher of this school. Cash requests stay closed until the Head Teacher, Chief Accountant, and Director of Finance have approved.';
 				$notify->notifyStaff((int) $preparer['id'], $pTitle, $pBody, $prepareUrl, (int) $budget['branch_id']);
 				$this->sendBudgetContactAlert($preparer, $pTitle, $pBody);
+			}
+			if ($placedByHead) {
+				$nTitle = 'Budget awaiting your approval';
+				$nBody = $branchLabel . ' — "' . $title . '" was placed by the Head Teacher and needs the Chief Accountant.';
+				$hierarchy = new SchoolHierarchyService();
+				$notifySchool = $hierarchy->isChildSchool($schoolId) ? (int) $hierarchy->masterSchoolId($schoolId) : $schoolId;
+				foreach ($notify->activeStaffByPost(28, $notifySchool > 0 ? $notifySchool : $schoolId) as $staff) {
+					$notify->notifyStaff((int) $staff['id'], $nTitle, $nBody, $reviewUrl, (int) $budget['branch_id']);
+					$this->sendBudgetContactAlert($staff, $nTitle, $nBody);
+				}
 			}
 			return;
 		}
@@ -2609,7 +2626,9 @@ class BudgetCashflow extends Home
 				8 => ['RETURNED_TO_ACCOUNTANT'],
 				1 => ['SUBMITTED'],
 				18 => ['SUBMITTED'],
-				25 => ['SUBMITTED'],
+				25 => \Config\MenuClearance::headTeacherPlacesOwnOrders((int) $postId)
+					? ['SUBMITTED', 'RETURNED_TO_ACCOUNTANT', 'DRAFT']
+					: ['SUBMITTED'],
 			];
 			if (\Config\MenuClearance::isDirectorPost((int) $postId)) {
 				$openForDirector = ['DRAFT', 'SUBMITTED', 'HEADTEACHER_APPROVED', 'CHIEF_ACCOUNTANT_APPROVED', 'PROCUREMENT_APPROVED', 'BUDGET_APPROVED', 'RETURNED_TO_ACCOUNTANT'];

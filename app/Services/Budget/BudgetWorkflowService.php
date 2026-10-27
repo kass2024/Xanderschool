@@ -355,6 +355,11 @@ class BudgetWorkflowService
 			return ['success' => false, 'error' => 'You prepared this budget, so you cannot give the final approval.'];
 		}
 		$new = self::$transitions[$current][$action] ?? null;
+		$placesOwnOrder = $action === 'submit'
+			&& \Config\MenuClearance::headTeacherPlacesOwnOrders((int) $postId, $this->schoolIdForBranch($db, (int) ($b['branch_id'] ?? 0)));
+		if ($placesOwnOrder && in_array($current, ['DRAFT', 'RETURNED', 'REJECTED'], true)) {
+			$new = 'CHIEF_ACCOUNTANT_REVIEW';
+		}
 		if (!$new) {
 			return ['success' => false, 'error' => 'Invalid step for status ' . $current . '.'];
 		}
@@ -409,6 +414,19 @@ class BudgetWorkflowService
 			'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
 			'created_at' => date('Y-m-d H:i:s'),
 		]);
+		if (!empty($placesOwnOrder)) {
+			$db->table('budget_approval_actions')->insert([
+				'budget_id' => (int) $budgetId,
+				'actor_id' => (int) $actorId,
+				'actor_post_id' => (int) $postId,
+				'action' => 'headteacher_approve',
+				'previous_status' => $current,
+				'new_status' => $new,
+				'comment' => 'Head Teacher placed this budget. This school has no accountant.',
+				'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+				'created_at' => date('Y-m-d H:i:s'),
+			]);
+		}
 		$this->audit->log('budget', (int) $budgetId, $action, $actorId, ['status' => $current], ['status' => $new], $b['organization_id'], $b['branch_id']);
 		return ['success' => true, 'status' => $new];
 	}
@@ -500,6 +518,15 @@ class BudgetWorkflowService
 		} catch (\Throwable $e) {
 			return false;
 		}
+	}
+
+	private function schoolIdForBranch($db, int $branchId): int
+	{
+		if ($branchId < 1) {
+			return 0;
+		}
+		$branch = $db->table('branches')->select('school_id')->where('id', $branchId)->get(1)->getRowArray();
+		return (int) ($branch['school_id'] ?? 0);
 	}
 
 	private function actorBelongsToBudgetSchool($db, int $actorId, int $branchId): bool

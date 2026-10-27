@@ -125,6 +125,15 @@ class CashRequestWorkflowService
 			return ['success' => false, 'error' => "Action '$action' not allowed from status $current for this amount chain."];
 		}
 		$newStatus = $map[$action];
+		$branchRow = $db->table('branches')->select('school_id')->where('id', (int) ($req['branch_id'] ?? 0))->get(1)->getRowArray();
+		$requestSchoolId = (int) ($branchRow['school_id'] ?? 0);
+		$placesOwnOrder = $action === 'submit' && \Config\MenuClearance::headTeacherPlacesOwnOrders((int) $postId, $requestSchoolId);
+		if ($placesOwnOrder) {
+			$newStatus = 'HEADTEACHER_APPROVED';
+			if (trim((string) $comment) === '' || $comment === 'Submitted by accountant') {
+				$comment = 'Head Teacher placed this request. This school has no accountant.';
+			}
+		}
 		if (in_array($action, ['return', 'reject'], true) && trim((string) $comment) === '') {
 			return ['success' => false, 'error' => 'A reason is required so the accountant can correct the request.'];
 		}
@@ -132,8 +141,9 @@ class CashRequestWorkflowService
 			return ['success' => false, 'error' => 'Permission denied for this action.'];
 		}
 		$signatureUpdate = [];
+		$signatureAction = !empty($placesOwnOrder) ? 'headteacher_approve' : $action;
 		if ($chain === CashRequestApprovalPolicy::CHAIN_WISDOM || $chain === CashRequestApprovalPolicy::CHAIN_WISDOM_CHIEF) {
-			$stamped = $this->stampApprovalSignature($action, (int) (session('soma_school_id') ?? 0));
+			$stamped = $this->stampApprovalSignature($signatureAction, (int) (session('soma_school_id') ?? 0));
 			if (!empty($stamped['error'])) {
 				return ['success' => false, 'error' => $stamped['error']];
 			}
@@ -217,6 +227,19 @@ class CashRequestWorkflowService
 			'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
 			'created_at' => date('Y-m-d H:i:s'),
 		]);
+		if (!empty($placesOwnOrder)) {
+			$db->table('cash_request_actions')->insert([
+				'cash_request_id' => (int) $requestId,
+				'actor_id' => (int) $actorId,
+				'actor_post_id' => (int) $postId,
+				'action' => 'headteacher_approve',
+				'previous_status' => $current,
+				'new_status' => $newStatus,
+				'comment' => 'Head Teacher placed this request. This school has no accountant.',
+				'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+				'created_at' => date('Y-m-d H:i:s'),
+			]);
+		}
 		$this->audit->log('cash_request', (int) $requestId, $action, $actorId, ['status' => $current], ['status' => $newStatus, 'chain' => $chain], $req['organization_id'], $req['branch_id']);
 		$this->notifyNextStep($newStatus, $req, $chain);
 		$db->transComplete();

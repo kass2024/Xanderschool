@@ -42,6 +42,14 @@ class BudgetPermissionService
 			return true;
 		}
 
+		// Kanzenze has no accountant. The head teacher prepares the budget and places the request.
+		if (MenuClearance::headTeacherPlacesOwnOrders($postId) && in_array($permKey, [
+			'budget.prepare', 'budget.edit_own', 'budget.submit',
+			'cash_request.create', 'cash_request.edit_own', 'cash_request.submit', 'cash_request.manage_documents',
+		], true)) {
+			return true;
+		}
+
 		$db = \Config\Database::connect();
 		$row = $db->table('post_budget_permissions')
 			->where('post_id', $postId)
