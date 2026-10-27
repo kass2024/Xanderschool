@@ -1067,7 +1067,7 @@ class AttendanceScanService
 
 	/**
 	 * @param array<string,mixed> $area
-	 * @return array{id:int,name:string,schedule_on:int,daily_start:string}
+	 * @return array{id:int,name:string,schedule_on:int,daily_start:string,consider_lateness:string}
 	 */
 	public static function locationPayload(array $area): array
 	{
@@ -1077,6 +1077,7 @@ class AttendanceScanService
 			'name' => (string) ($area['name'] ?? ''),
 			'schedule_on' => $schedule['schedule_on'],
 			'daily_start' => $schedule['daily_start'],
+			'consider_lateness' => $schedule['consider_lateness'],
 		];
 	}
 
@@ -1270,6 +1271,7 @@ class AttendanceScanService
 					'already' => 1,
 					'kind' => 'student',
 					'status' => 'IN',
+					'late' => AttendanceAreaModel::isLate($area, $timeIn) ? 1 : 0,
 					'time' => date('H:i', $timeIn),
 					'message' => 'Already IN',
 					'person' => self::studentPayload($student, $className, $records->records ?? ''),
@@ -1299,6 +1301,7 @@ class AttendanceScanService
 			'success' => 1,
 			'kind' => 'student',
 			'status' => $status,
+			'late' => ($status === 'IN' && AttendanceAreaModel::isLate($area, $time)) ? 1 : 0,
 			'time' => date('H:i', $time),
 			'message' => $status === 'IN' ? 'Student IN' : 'Student OUT',
 			'person' => self::studentPayload($student, $className, $records->records ?? ''),
@@ -1470,6 +1473,7 @@ class AttendanceScanService
 						'already' => 1,
 						'kind' => 'student',
 						'status' => 'IN',
+						'late' => AttendanceAreaModel::isLate($area, $timeIn) ? 1 : 0,
 						'time' => date('H:i', $timeIn),
 						'message' => 'Already In',
 						'person' => self::studentPayload($student, '', ''),
@@ -1485,11 +1489,16 @@ class AttendanceScanService
 			}
 		}
 
+		$lateStamp = $time;
+		if ($already && $row) {
+			$lateStamp = (int) ($row->time_in ?? $time);
+		}
 		return [
 			'success' => 1,
 			'already' => $already ? 1 : 0,
 			'kind' => 'student',
 			'status' => $status,
+			'late' => ($status === 'IN' && AttendanceAreaModel::isLate($area, $lateStamp)) ? 1 : 0,
 			'time' => date('H:i', $time),
 			'message' => $already
 				? ($wanted === 'IN' ? 'Already IN' : 'Already OUT')

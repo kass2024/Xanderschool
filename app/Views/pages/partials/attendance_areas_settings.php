@@ -6,7 +6,13 @@ $areas = $attendance_areas ?? [];
 	.aa-intro { margin-bottom: 1rem; }
 	.aa-add-form { display: flex; gap: .5rem; align-items: stretch; max-width: 520px; margin-bottom: 1rem; }
 	.aa-add-form input { flex: 1; }
-	.aa-list { max-width: 720px; }
+	.aa-list { max-width: 1040px; }
+	.aa-clocks { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+	.aa-clocks[hidden] { display: none !important; }
+	.aa-late {
+		display: inline-flex; align-items: center; gap: .35rem; margin: 0;
+		font-size: .78rem; font-weight: 700; color: #9a3412; white-space: nowrap;
+	}
 	.aa-item {
 		display: flex; align-items: center; justify-content: space-between; gap: .75rem;
 		padding: .65rem .85rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: .45rem;
@@ -47,6 +53,7 @@ $areas = $attendance_areas ?? [];
 		The monthly in/out report uses the same layout for every location — pick the location to filter.
 		Turn on <strong>Daily start</strong> and set the clock time that location opens every day.
 		Before that time, card taps at the location are not accepted.
+		<strong>Consider lateness</strong> is the time after which an arrival counts as late.
 	</p>
 
 	<form id="aaAddForm" class="aa-add-form">
@@ -63,6 +70,7 @@ $areas = $attendance_areas ?? [];
 				$aaOn = (int) $aaState['schedule_on'] === 1;
 				$aaStart = (string) ($a['daily_start'] ?? '');
 				$aaStart = \App\Models\AttendanceAreaModel::normalizeDailyStart($aaStart);
+				$aaLate = \App\Models\AttendanceAreaModel::normalizeDailyStart((string) ($a['consider_lateness'] ?? ''));
 				?>
 				<div class="aa-item" data-id="<?= (int) $a['id']; ?>">
 					<strong class="aa-name"><?= esc($a['name']); ?></strong>
@@ -72,7 +80,13 @@ $areas = $attendance_areas ?? [];
 							<span class="aa-knob" aria-hidden="true"></span>
 							<span>Daily start</span>
 						</label>
-						<input type="time" class="aa-time" data-id="<?= (int) $a['id']; ?>" value="<?= esc($aaStart, 'attr'); ?>" aria-label="Daily start time for <?= esc($a['name'], 'attr'); ?>"<?= $aaOn ? '' : ' hidden'; ?>>
+						<div class="aa-clocks"<?= $aaOn ? '' : ' hidden'; ?>>
+							<input type="time" class="aa-time" data-id="<?= (int) $a['id']; ?>" value="<?= esc($aaStart, 'attr'); ?>" aria-label="Daily start time for <?= esc($a['name'], 'attr'); ?>">
+							<label class="aa-late">
+								<span>Consider lateness</span>
+								<input type="time" class="aa-time aa-late-time" data-id="<?= (int) $a['id']; ?>" value="<?= esc($aaLate, 'attr'); ?>" aria-label="Consider lateness for <?= esc($a['name'], 'attr'); ?>">
+							</label>
+						</div>
 					</div>
 					<button type="button" class="btn btn-link btn-sm text-danger aa-del" data-id="<?= (int) $a['id']; ?>" title="Remove">
 						<i class="fa fa-trash"></i>
@@ -417,12 +431,14 @@ $(function () {
 $(function () {
 	let areas = <?= json_encode(array_map(static function ($a) {
 		$start = \App\Models\AttendanceAreaModel::normalizeDailyStart((string) ($a['daily_start'] ?? ''));
+		$late = \App\Models\AttendanceAreaModel::normalizeDailyStart((string) ($a['consider_lateness'] ?? ''));
 		$on = (int) ($a['schedule_on'] ?? 0) === 1 && $start !== '';
 		return [
 			'id' => (int) $a['id'],
 			'name' => $a['name'],
 			'schedule_on' => $on ? 1 : 0,
 			'daily_start' => $start,
+			'consider_lateness' => $late,
 		];
 	}, $areas), JSON_UNESCAPED_UNICODE); ?>;
 
@@ -457,8 +473,11 @@ $(function () {
 				'<label class="aa-switch' + (on ? ' is-on' : '') + '">' +
 				'<input type="checkbox" class="aa-on" data-id="' + a.id + '"' + (on ? ' checked' : '') + '>' +
 				'<span class="aa-knob" aria-hidden="true"></span><span>Daily start</span></label>' +
-				'<input type="time" class="aa-time" data-id="' + a.id + '" value="' + aaAttr(a.daily_start || '') + '" aria-label="Daily start time for ' + aaAttr(a.name) + '"' + (on ? '' : ' hidden') + '>' +
-				'</div>' +
+				'<div class="aa-clocks"' + (on ? '' : ' hidden') + '>' +
+				'<input type="time" class="aa-time" data-id="' + a.id + '" value="' + aaAttr(a.daily_start || '') + '" aria-label="Daily start time for ' + aaAttr(a.name) + '">' +
+				'<label class="aa-late"><span>Consider lateness</span>' +
+				'<input type="time" class="aa-time aa-late-time" data-id="' + a.id + '" value="' + aaAttr(a.consider_lateness || '') + '" aria-label="Consider lateness for ' + aaAttr(a.name) + '"></label>' +
+				'</div></div>' +
 				'<button type="button" class="btn btn-link btn-sm text-danger aa-del" data-id="' + a.id + '"><i class="fa fa-trash"></i></button></div>';
 		});
 		$el.html(html);
@@ -469,11 +488,13 @@ $(function () {
 			action: 'schedule',
 			id: area.id,
 			schedule_on: area.schedule_on ? 1 : 0,
-			daily_start: area.daily_start || ''
+			daily_start: area.daily_start || '',
+			consider_lateness: area.consider_lateness || ''
 		}, function (res) {
 			if (res && res.success && res.area) {
 				area.schedule_on = res.area.schedule_on ? 1 : 0;
 				area.daily_start = res.area.daily_start || area.daily_start || '';
+				area.consider_lateness = res.area.consider_lateness || '';
 				if (window.toastada) toastada.success(res.success);
 				return;
 			}
@@ -508,23 +529,25 @@ $(function () {
 		if (!area) return;
 		const on = $(this).is(':checked');
 		const $item = $(this).closest('.aa-item');
-		const $time = $item.find('.aa-time');
+		const $clocks = $item.find('.aa-clocks');
+		const $time = $item.find('.aa-time').not('.aa-late-time');
 		const previousOn = area.schedule_on ? 1 : 0;
 		$item.find('.aa-switch').toggleClass('is-on', on);
 		if (on) {
-			$time.removeAttr('hidden');
+			$clocks.removeAttr('hidden');
 			if (!$time.val()) {
 				$time.trigger('focus');
 				return;
 			}
 			area.schedule_on = 1;
 			area.daily_start = $time.val();
+			area.consider_lateness = $item.find('.aa-late-time').val() || '';
 			saveSchedule(area, function () {
 				area.schedule_on = previousOn;
 			});
 			return;
 		}
-		$time.attr('hidden', 'hidden');
+		$clocks.attr('hidden', 'hidden');
 		area.schedule_on = 0;
 		saveSchedule(area, function () {
 			area.schedule_on = previousOn;
@@ -532,6 +555,7 @@ $(function () {
 	});
 
 	$(document).on('change', '.aa-time', function () {
+		if ($(this).hasClass('aa-late-time')) return;
 		const area = areaById($(this).data('id'));
 		if (!area) return;
 		const value = ($(this).val() || '').trim();
@@ -545,12 +569,33 @@ $(function () {
 			return;
 		}
 		area.daily_start = value;
+		area.consider_lateness = $item.find('.aa-late-time').val() || '';
 		area.schedule_on = 1;
 		$item.find('.aa-on').prop('checked', true);
 		$item.find('.aa-switch').addClass('is-on');
+		$item.find('.aa-clocks').removeAttr('hidden');
 		saveSchedule(area, function () {
 			area.daily_start = previousStart;
 			area.schedule_on = previousOn;
+		});
+	});
+
+	$(document).on('change', '.aa-late-time', function () {
+		const area = areaById($(this).data('id'));
+		if (!area) return;
+		const $item = $(this).closest('.aa-item');
+		const start = ($item.find('.aa-time').not('.aa-late-time').val() || '').trim();
+		const previousLate = area.consider_lateness || '';
+		if (!start) {
+			if (window.toastada) toastada.error('Choose the daily start time first.');
+			$(this).val(previousLate);
+			return;
+		}
+		area.daily_start = start;
+		area.consider_lateness = ($(this).val() || '').trim();
+		area.schedule_on = 1;
+		saveSchedule(area, function () {
+			area.consider_lateness = previousLate;
 		});
 	});
 

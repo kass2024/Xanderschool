@@ -227,6 +227,7 @@ body {
 }
 
 .status.in { background: var(--in-bg); color: var(--in); }
+.status.late { background: #ffedd5; color: #c2410c; }
 .status.out { background: var(--out-bg); color: var(--out); }
 
 .hint {
@@ -329,6 +330,7 @@ body {
 
 .area-tile .aname { display: block; font-weight: 800; font-size: 1.02rem; color: var(--text); }
 .area-tile .astart { display: none; margin-top: 6px; color: #b45309; font-size: .78rem; font-weight: 700; }
+.area-tile .alate { display: block; margin-top: 4px; color: #c2410c; font-size: .78rem; font-weight: 700; }
 .area-tile.is-waiting { cursor: not-allowed; opacity: .72; background: #f8fafc; }
 .area-tile.is-waiting:hover, .area-tile.is-waiting:focus {
 	transform: none; box-shadow: none; border-color: var(--line);
@@ -400,16 +402,21 @@ $fallbackPhoto = profile_photo_url(null);
 			<div class="area-grid" id="areaGrid">
 				<?php foreach ($areas as $area) :
 					$areaStart = (string) ($area['daily_start'] ?? '');
+					$areaLate = \App\Models\AttendanceAreaModel::normalizeDailyStart((string) ($area['consider_lateness'] ?? ''));
 					$areaScheduled = (int) ($area['schedule_on'] ?? 0) === 1 && $areaStart !== '';
 					?>
 					<button type="button" class="area-tile"
 						data-id="<?= (int) $area['id']; ?>"
 						data-name="<?= esc($area['name'], 'attr'); ?>"
 						data-scheduled="<?= $areaScheduled ? '1' : '0'; ?>"
-						data-start="<?= esc($areaStart, 'attr'); ?>">
+						data-start="<?= esc($areaStart, 'attr'); ?>"
+						data-late="<?= esc($areaLate, 'attr'); ?>">
 						<span class="aname"><?= esc($area['name']); ?></span>
 						<?php if ($areaScheduled) : ?>
 							<span class="astart">Starts daily at <?= esc($areaStart); ?></span>
+						<?php endif; ?>
+						<?php if ($areaLate !== '') : ?>
+							<span class="alate">Late from <?= esc($areaLate); ?></span>
 						<?php endif; ?>
 						<span class="astats">
 							<span><b><?= (int) ($area['inside'] ?? 0); ?></b> inside</span>
@@ -706,7 +713,11 @@ document.addEventListener("DOMContentLoaded", function () {
 		photoEl.src = ((data.student && data.student.photo) || fallbackPhoto) + (String((data.student && data.student.photo) || "").indexOf("?") >= 0 ? "&" : "?") + "r=" + Date.now();
 		const statusEl = document.getElementById("status");
 		statusEl.textContent = data.status || "";
-		if (data.status === "IN") {
+		if (data.status === "IN" && data.late) {
+			statusEl.textContent = "LATE";
+			statusEl.className = "status late";
+			flash("flash-green");
+		} else if (data.status === "IN") {
 			statusEl.className = "status in";
 			flash("flash-green");
 		} else {
