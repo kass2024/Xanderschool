@@ -94,6 +94,12 @@ if (!function_exists('menu_clearance_allowed')) {
 					'pocket_money_report',
 				])));
 			}
+			try {
+				if ((new \App\Services\WisdomGroupOverview())->isAliceNamahoro()) {
+					$cacheKeys = array_values(array_unique(array_merge($cacheKeys, ['staffs'])));
+				}
+			} catch (\Throwable $e) {
+			}
 			$cacheKeys = \Config\MenuClearance::expandPocketMenus($cacheKeys);
 			if (\Config\MenuClearance::isAliceNamahoroAtMusanze()) {
 				$pocketKeep = [
@@ -215,19 +221,26 @@ if (!function_exists('school_hierarchy_accessible_schools')) {
 }
 
 if (!function_exists('wisdom_can_pick_child_export')) {
-	/** Director and Director of Finance may export a Wisdom child school. */
+	/** Director, Director of Finance, and Alice Namahoro may export a Wisdom child school. */
 	function wisdom_can_pick_child_export($postId = null)
 	{
 		$postId = (int) ($postId ?? ($_SESSION['soma_post'] ?? 0));
 		if ($postId === 24 || \Config\MenuClearance::isDirectorPost($postId)) {
 			return true;
 		}
-		return \Config\MenuClearance::postTitle($postId) === 'director of finance';
+		if (\Config\MenuClearance::postTitle($postId) === 'director of finance') {
+			return true;
+		}
+		try {
+			return (new \App\Services\WisdomGroupOverview())->isAliceNamahoro();
+		} catch (\Throwable $e) {
+			return false;
+		}
 	}
 }
 
 if (!function_exists('wisdom_export_schools')) {
-	/** Master plus child schools, only for Director and Director of Finance on a Wisdom master. */
+	/** Master plus child schools for Director, Director of Finance, and Alice Namahoro. */
 	function wisdom_export_schools()
 	{
 		if (!wisdom_can_pick_child_export()) {
@@ -236,10 +249,17 @@ if (!function_exists('wisdom_export_schools')) {
 		$homeId = school_hierarchy_home_id();
 		try {
 			$overview = new \App\Services\WisdomGroupOverview();
+			$masterId = $homeId;
 			if ($homeId < 1 || !$overview->isWisdomMaster($homeId)) {
-				return [];
+				if (!$overview->isAliceNamahoro()) {
+					return [];
+				}
+				$masterId = $overview->wisdomDashboardMasterId($homeId);
+				if ($masterId < 1) {
+					return [];
+				}
 			}
-			$schools = $overview->schools($homeId);
+			$schools = $overview->schools($masterId);
 			return is_array($schools) ? $schools : [];
 		} catch (\Throwable $e) {
 			return [];
