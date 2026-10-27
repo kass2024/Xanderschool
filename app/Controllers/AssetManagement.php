@@ -117,10 +117,7 @@ class AssetManagement extends Home
 		$data['locations'] = $locMdl->listForSchool($schoolId);
 		$data['categories'] = $catMdl->listForSchool($schoolId);
 		$data['moves'] = $moves;
-		$data['type_suggestions'] = [
-			'Furniture', 'Electronic Equipment', 'Kitchen material',
-			'Cleaning material', 'School material', 'House',
-		];
+		$data['type_suggestions'] = $this->simpleAssetTypes($schoolId);
 		$data['content'] = view('pages/assets/simple_register', $data);
 		return view('main', $data);
 	}
@@ -151,55 +148,337 @@ class AssetManagement extends Home
 		$this->denyUnless('asset_dashboard');
 	}
 
+	/**
+	 * @return list<string>
+	 */
+	private function simpleAssetTypes(int $schoolId): array
+	{
+		$types = [
+			'Furniture', 'Electronic Equipment', 'Kitchen material',
+			'Cleaning material', 'School material', 'House',
+		];
+		try {
+			foreach ((new AssetCategoryModel())->listForSchool($schoolId) as $cat) {
+				$name = trim((string) ($cat['name'] ?? ''));
+				if ($name === '') {
+					continue;
+				}
+				$known = false;
+				foreach ($types as $type) {
+					if (strcasecmp($type, $name) === 0) {
+						$known = true;
+						break;
+					}
+				}
+				if (!$known) {
+					$types[] = $name;
+				}
+			}
+		} catch (\Throwable $e) {
+		}
+		return $types;
+	}
+
+	public function download_simple_template()
+	{
+		$schoolId = $this->bootAssets();
+		$this->denyUnlessAsset();
+		$types = $this->simpleAssetTypes($schoolId);
+		$locations = (new AssetLocationModel())->listForSchool($schoolId);
+
+		$spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+		$sheet = $spreadsheet->getActiveSheet();
+		$sheet->setTitle('Assets');
+		$sheet->fromArray([[
+			'Asset type', 'Description', 'Quantity', 'Damaged', 'Location', 'Age',
+		]], null, 'A1');
+		$sheet->getStyle('A1:F1')->applyFromArray([
+			'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+			'fill' => [
+				'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+				'startColor' => ['rgb' => '0B1F4A'],
+			],
+		]);
+		$sheet->freezePane('A2');
+		foreach (['A' => 28, 'B' => 36, 'C' => 14, 'D' => 14, 'E' => 28, 'F' => 12] as $col => $width) {
+			$sheet->getColumnDimension($col)->setWidth($width);
+		}
+		$sheet->setCellValue('H1', 'Asset type: open the dropdown and choose one. Location: choose a saved place, or type a new name. A new location is saved and appears in the list next time. Age is Old or New.');
+		$sheet->getColumnDimension('H')->setWidth(42);
+		$sheet->getStyle('H1')->getAlignment()->setWrapText(true);
+
+		$lists = $spreadsheet->createSheet();
+		$lists->setTitle('Lists');
+		$lists->setCellValue('A1', 'Asset type');
+		$row = 2;
+		foreach ($types as $type) {
+			$lists->setCellValue('A' . $row, $type);
+			$row++;
+		}
+		$typeEnd = max(2, $row - 1);
+		$lists->setCellValue('B1', 'Location');
+		$locRow = 2;
+		foreach ($locations as $loc) {
+			$name = trim((string) ($loc['name'] ?? ''));
+			if ($name === '') {
+				continue;
+			}
+			$lists->setCellValue('B' . $locRow, $name);
+			$locRow++;
+		}
+		$locEnd = $locRow - 1;
+		$lists->setCellValue('C1', 'Age');
+		$lists->setCellValue('C2', 'Old');
+		$lists->setCellValue('C3', 'New');
+		$lists->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
+
+		$typeFormula = "='Lists'!\$A\$2:\$A\${$typeEnd}";
+		$ageFormula = "='Lists'!\$C\$2:\$C\$3";
+		$locFormula = $locEnd >= 2 ? "='Lists'!\$B\$2:\$B\${$locEnd}" : '';
+		for ($r = 2; $r <= 500; $r++) {
+			$this->applyExcelList($sheet, 'A' . $r, $typeFormula, true, 'Asset type', 'Choose an asset type from the list.');
+			$this->applyExcelList($sheet, 'F' . $r, $ageFormula, true, 'Age', 'Choose Old or New.');
+			if ($locFormula !== '') {
+				$this->applyExcelList($sheet, 'E' . $r, $locFormula, false, 'Location', 'Choose a saved location, or type a new one. New locations are saved for next time.');
+			}
+		}
+		$spreadsheet->setActiveSheetIndex(0);
+
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment;filename="Fixed_asset_register.xlsx"');
+		header('Cache-Control: max-age=0');
+		$writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+		$writer->save('php://output');
+		exit;
+	}
+
+	public function upload_simple_excel()
+	{
+		$schoolId = $this->bootAssets();
+		$this->denyUnlessAsset();
+		$actorId = (int) $this->session->get('soma_id');
+		$file = $this->request->getFile('excel');
+		if (!$file || !$file->isValid()) {
+			return $this->response->setJSON(['error' => 'Choose an Excel file to upload.']);
+		}
+		$ext = strtolower((string) $file->getExtension());
+		if (!in_array($ext, ['xlsx', 'xls'], true)) {
+			return $this->response->setJSON(['error' => 'Upload an .xlsx or .xls file.']);
+		}
+		try {
+			$spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file->getTempName());
+		} catch (\Throwable $e) {
+			return $this->response->setJSON(['error' => 'Could not read that Excel file.']);
+		}
+		$sheet = $spreadsheet->getSheetByName('Assets') ?: $spreadsheet->getActiveSheet();
+		$highest = (int) $sheet->getHighestRow();
+		$headerRow = 0;
+		$map = [];
+		for ($r = 1; $r <= min(5, $highest); $r++) {
+			$found = [];
+			for ($c = 1; $c <= 8; $c++) {
+				$label = strtolower(trim((string) $sheet->getCellByColumnAndRow($c, $r)->getValue()));
+				if ($label === 'asset type' || $label === 'type') {
+					$found['type'] = $c;
+				} elseif ($label === 'description' || $label === 'name' || $label === 'item') {
+					$found['name'] = $c;
+				} elseif ($label === 'quantity' || $label === 'qty') {
+					$found['qty'] = $c;
+				} elseif ($label === 'damaged' || $label === 'damaged (ibyangiye)') {
+					$found['damaged'] = $c;
+				} elseif ($label === 'location') {
+					$found['location'] = $c;
+				} elseif ($label === 'age') {
+					$found['age'] = $c;
+				}
+			}
+			if (isset($found['name'], $found['type'], $found['location'])) {
+				$headerRow = $r;
+				$map = $found;
+				break;
+			}
+		}
+		if ($headerRow < 1) {
+			return $this->response->setJSON(['error' => 'The file needs columns: Asset type, Description, Quantity, Damaged, Location, Age. Download the template and fill that sheet.']);
+		}
+
+		$allowed = [];
+		foreach ($this->simpleAssetTypes($schoolId) as $type) {
+			$allowed[strtolower($type)] = $type;
+		}
+		$saved = 0;
+		$newLocations = [];
+		$errors = [];
+		$locMdl = new AssetLocationModel();
+		$knownLocations = [];
+		foreach ($locMdl->listForSchool($schoolId) as $loc) {
+			$knownLocations[strtolower(trim((string) ($loc['name'] ?? '')))] = true;
+		}
+
+		for ($r = $headerRow + 1; $r <= $highest; $r++) {
+			$cell = function ($key) use ($sheet, $map, $r) {
+				if (!isset($map[$key])) {
+					return '';
+				}
+				return trim((string) $sheet->getCellByColumnAndRow($map[$key], $r)->getFormattedValue());
+			};
+			$name = $cell('name');
+			$typeRaw = $cell('type');
+			$location = $cell('location');
+			if ($name === '' && $typeRaw === '' && $location === '') {
+				continue;
+			}
+			$typeKey = strtolower($typeRaw);
+			if ($typeRaw === '' || !isset($allowed[$typeKey])) {
+				$errors[] = 'Row ' . $r . ': choose an asset type from the dropdown.';
+				continue;
+			}
+			if ($name === '') {
+				$errors[] = 'Row ' . $r . ': description is required.';
+				continue;
+			}
+			if ($location === '') {
+				$errors[] = 'Row ' . $r . ': location is required.';
+				continue;
+			}
+			$qty = (float) str_replace(',', '', $cell('qty'));
+			if ($qty <= 0) {
+				$qty = 1;
+			}
+			$damaged = (float) str_replace(',', '', $cell('damaged'));
+			$age = strtolower($cell('age'));
+			$result = $this->recordSimpleAsset($schoolId, $actorId, [
+				'id' => 0,
+				'name' => $name,
+				'asset_type' => $allowed[$typeKey],
+				'location_name' => $location,
+				'location_id' => 0,
+				'quantity' => $qty,
+				'qty_damaged' => $damaged,
+				'age_flag' => $age === 'new' ? 'new' : 'old',
+			]);
+			if (!empty($result['error'])) {
+				$errors[] = 'Row ' . $r . ': ' . $result['error'];
+				continue;
+			}
+			$saved++;
+			$locKey = strtolower($location);
+			if (!isset($knownLocations[$locKey])) {
+				$knownLocations[$locKey] = true;
+				$newLocations[] = $location;
+			}
+		}
+		if ($saved < 1) {
+			return $this->response->setJSON([
+				'error' => $errors ? implode(' ', array_slice($errors, 0, 4)) : 'No asset rows were found.',
+			]);
+		}
+		$message = $saved . ' asset row' . ($saved === 1 ? '' : 's') . ' saved.';
+		if ($newLocations) {
+			$message .= ' New locations saved: ' . implode(', ', $newLocations) . '. They will be in the location list next time.';
+		}
+		if ($errors) {
+			$message .= ' ' . count($errors) . ' row' . (count($errors) === 1 ? '' : 's') . ' skipped.';
+		}
+		return $this->response->setJSON(['success' => $message, 'saved' => $saved, 'errors' => $errors]);
+	}
+
+	private function applyExcelList($sheet, string $cell, string $formula, bool $strict, string $title, string $prompt): void
+	{
+		$validation = new \PhpOffice\PhpSpreadsheet\Cell\DataValidation();
+		$validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+		$validation->setErrorStyle($strict
+			? \PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_STOP
+			: \PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_WARNING);
+		$validation->setAllowBlank(true);
+		$validation->setShowInputMessage(true);
+		$validation->setShowErrorMessage(true);
+		$validation->setShowDropDown(true);
+		$validation->setErrorTitle($title);
+		$validation->setError($strict ? 'Choose a value from the list.' : 'This value is not in the list yet. Continue if you want to save it as a new location.');
+		$validation->setPromptTitle($title);
+		$validation->setPrompt($prompt);
+		$validation->setFormula1($formula);
+		$sheet->getCell($cell)->setDataValidation($validation);
+	}
+
 	public function save_simple_asset()
 	{
 		$schoolId = $this->bootAssets();
 		$this->denyUnlessAsset();
 		$actorId = (int) $this->session->get('soma_id');
+		$result = $this->recordSimpleAsset($schoolId, $actorId, [
+			'id' => (int) $this->request->getPost('id'),
+			'name' => (string) $this->request->getPost('name'),
+			'asset_type' => (string) $this->request->getPost('asset_type'),
+			'location_name' => (string) $this->request->getPost('location_name'),
+			'location_id' => (int) $this->request->getPost('location_id'),
+			'quantity' => $this->request->getPost('quantity'),
+			'qty_damaged' => $this->request->getPost('qty_damaged'),
+			'age_flag' => (string) $this->request->getPost('age_flag'),
+		]);
+		return $this->response->setJSON($result);
+	}
+
+	/**
+	 * @param array<string,mixed> $input
+	 * @return array{success?:string,error?:string}
+	 */
+	private function recordSimpleAsset(int $schoolId, int $actorId, array $input): array
+	{
 		$assetMdl = new AssetModel();
 		$schema = new AssetSchemaModel();
 		$catMdl = new AssetCategoryModel();
 		$locMdl = new AssetLocationModel();
 		$histMdl = new AssetStatusHistoryModel();
 
-		$id = (int) $this->request->getPost('id');
-		$name = trim((string) $this->request->getPost('name'));
-		$type = trim((string) $this->request->getPost('asset_type'));
-		$locationName = trim((string) $this->request->getPost('location_name'));
-		$locationId = (int) $this->request->getPost('location_id');
-		$qty = (float) $this->request->getPost('quantity');
-		$damaged = (float) $this->request->getPost('qty_damaged');
-		$age = strtolower(trim((string) $this->request->getPost('age_flag')));
+		$id = (int) ($input['id'] ?? 0);
+		$name = trim((string) ($input['name'] ?? ''));
+		$type = trim((string) ($input['asset_type'] ?? ''));
+		$locationName = trim((string) ($input['location_name'] ?? ''));
+		$locationId = (int) ($input['location_id'] ?? 0);
+		$qty = (float) ($input['quantity'] ?? 0);
+		$damaged = (float) ($input['qty_damaged'] ?? 0);
+		$age = strtolower(trim((string) ($input['age_flag'] ?? '')));
 		if ($age !== 'new') {
 			$age = 'old';
 		}
 		if ($name === '') {
-			return $this->response->setJSON(['error' => 'Description is required.']);
+			return ['error' => 'Description is required.'];
 		}
 		if ($qty <= 0) {
-			return $this->response->setJSON(['error' => 'Quantity must be greater than 0.']);
+			return ['error' => 'Quantity must be greater than 0.'];
 		}
 		if ($damaged < 0) {
 			$damaged = 0;
 		}
 		if ($damaged > $qty) {
-			return $this->response->setJSON(['error' => 'Damaged quantity cannot exceed total quantity.']);
+			return ['error' => 'Damaged quantity cannot exceed total quantity.'];
 		}
 		if ($type === '') {
 			$type = 'General';
 		}
 		if ($locationId <= 0 && $locationName === '') {
-			return $this->response->setJSON(['error' => 'Location is required.']);
+			return ['error' => 'Location is required.'];
 		}
 
 		$cat = $catMdl->findOrCreateByName($schoolId, $type, $actorId);
 		if ($locationId > 0) {
 			$loc = $locMdl->where('school_id', $schoolId)->where('id', $locationId)->first();
 		} else {
-			$loc = $locMdl->findOrCreateByName($schoolId, $locationName, $actorId);
+			$loc = null;
+			foreach ($locMdl->listForSchool($schoolId) as $existing) {
+				if (strcasecmp(trim((string) ($existing['name'] ?? '')), $locationName) === 0) {
+					$loc = $existing;
+					break;
+				}
+			}
+			if (!$loc) {
+				$loc = $locMdl->findOrCreateByName($schoolId, $locationName, $actorId);
+			}
 		}
 		if (!$cat || !$loc) {
-			return $this->response->setJSON(['error' => 'Could not save type or location.']);
+			return ['error' => 'Could not save type or location.'];
 		}
 
 		$good = max(0, $qty - $damaged);
@@ -210,7 +489,7 @@ class AssetManagement extends Home
 			if ($id > 0) {
 				$existing = $assetMdl->where('school_id', $schoolId)->where('id', $id)->first();
 				if (!$existing) {
-					return $this->response->setJSON(['error' => 'Asset not found.']);
+					return ['error' => 'Asset not found.'];
 				}
 				$assetMdl->save([
 					'id' => $id,
@@ -236,7 +515,7 @@ class AssetManagement extends Home
 					'notes' => 'Updated qty ' . $qty . ' (damaged ' . $damaged . ')',
 					'created_at' => $now,
 				]);
-				return $this->response->setJSON(['success' => 'Asset updated.']);
+				return ['success' => 'Asset updated.'];
 			}
 
 			$lot = $assetMdl->findLot($schoolId, $name, (int) $cat['id'], (int) $loc['id']);
@@ -262,7 +541,7 @@ class AssetManagement extends Home
 					'notes' => 'Added ' . $qty . ' to existing stock',
 					'created_at' => $now,
 				]);
-				return $this->response->setJSON(['success' => 'Quantity added to existing stock at this location.']);
+				return ['success' => 'Quantity added to existing stock at this location.'];
 			}
 
 			$code = $schema->nextAssetCode($schoolId, $cat['category_code']);
@@ -294,9 +573,9 @@ class AssetManagement extends Home
 				'notes' => 'Registered ' . $qty,
 				'created_at' => $now,
 			]);
-			return $this->response->setJSON(['success' => 'Asset recorded.']);
+			return ['success' => 'Asset recorded.'];
 		} catch (\Throwable $e) {
-			return $this->response->setJSON(['error' => 'Could not save: ' . $e->getMessage()]);
+			return ['error' => 'Could not save: ' . $e->getMessage()];
 		}
 	}
 

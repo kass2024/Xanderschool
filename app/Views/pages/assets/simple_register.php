@@ -1,39 +1,93 @@
+<?php
+$amQty = (float) ($totals['qty'] ?? 0);
+$amGood = (float) ($totals['good'] ?? 0);
+$amDmg = (float) ($totals['damaged'] ?? 0);
+$amGoodPct = $amQty > 0 ? (int) round($amGood / $amQty * 100) : 0;
+$amDmgPct = $amQty > 0 ? (int) round($amDmg / $amQty * 100) : 0;
+$amTypes = is_array($grouped ?? null) ? count($grouped) : 0;
+$amLocs = is_array($locations ?? null) ? count($locations) : 0;
+?>
 <style>
 .am-wrap{max-width:1200px}
-.am-stat{border-radius:12px;padding:16px 18px;background:#fff;border:1px solid #e8edf5;height:100%}
-.am-stat h3{margin:0;font-size:1.6rem;font-weight:700;color:#0b1f4a}
-.am-stat span{display:block;color:#64748b;font-size:.82rem;margin-top:2px}
-.am-stat.navy{border-top:3px solid #0b1f4a}
-.am-stat.ok{border-top:3px solid #10b981}
-.am-stat.warn{border-top:3px solid #f59e0b}
-.am-stat.info{border-top:3px solid #2563eb}
-.am-card{border:1px solid #e8edf5;border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.am-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.am-head h4{margin:0;font-weight:700;color:#0b1f4a}
+.am-head p{margin:4px 0 0;color:#64748b;font-size:.88rem}
+.am-actions{display:flex;flex-wrap:wrap;gap:8px}
+.am-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+@media (max-width:991px){.am-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.am-stat{border-radius:14px;padding:16px 16px 14px;background:#fff;border:1px solid #e8edf5;box-shadow:0 8px 20px rgba(15,23,42,.04);min-height:118px;position:relative;overflow:hidden}
+.am-stat .am-ico{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;margin-bottom:10px}
+.am-stat h3{margin:0;font-size:1.85rem;font-weight:750;letter-spacing:-.03em;line-height:1}
+.am-stat span{display:block;color:#64748b;font-size:.8rem;margin-top:6px}
+.am-bar{height:6px;border-radius:99px;background:#eef2f7;margin-top:12px;overflow:hidden}
+.am-bar i{display:block;height:100%;border-radius:99px}
+.am-stat.navy h3{color:#0b1f4a}.am-stat.navy .am-ico{background:#e8eefc;color:#1d4ed8}.am-stat.navy .am-bar i{background:#1d4ed8}
+.am-stat.ok h3{color:#047857}.am-stat.ok .am-ico{background:#d1fae5;color:#047857}.am-stat.ok .am-bar i{background:#10b981}
+.am-stat.warn h3{color:#b45309}.am-stat.warn .am-ico{background:#ffedd5;color:#c2410c}.am-stat.warn .am-bar i{background:#f59e0b}
+.am-stat.info h3{color:#1e3a8a}.am-stat.info .am-ico{background:#dbeafe;color:#1d4ed8}.am-stat.info .am-bar i{background:#2563eb}
+.am-types{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.am-chip{background:#fff;border:1px solid #e8edf5;border-radius:999px;padding:6px 12px;font-size:.8rem;color:#334155}
+.am-chip b{color:#0b1f4a}
+.am-card{border:1px solid #e8edf5;border-radius:14px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .am-type{background:#f8fafc;font-weight:600;color:#0b1f4a}
 .am-good{color:#047857;font-weight:600}
 .am-bad{color:#b91c1c;font-weight:600}
 .am-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.75rem;background:#eef2ff;color:#3730a3}
 .am-pill.old{background:#f1f5f9;color:#475569}
+#tblSimpleAssets thead th{border-top:0;color:#64748b;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}
 </style>
 <div class="am-wrap">
-	<div class="d-flex justify-content-between align-items-center mb-3">
+	<div class="am-head">
 		<div>
-			<h4 class="mb-0">Fixed asset register</h4>
-			<small class="text-muted">Register items, then use In / Out to receive or issue stock. Move sends stock to another location.</small>
+			<h4>Fixed asset register</h4>
+			<p>Stock in good condition and damaged items, by type and location. Download the Excel sheet, fill it, and upload the full register.</p>
 		</div>
-		<div>
-			<button type="button" class="btn btn-outline-secondary btn-sm mr-1" data-toggle="modal" data-target="#mdlLocation"><i class="fa fa-map-marker-alt"></i> New location</button>
-			<button type="button" class="btn btn-primary btn-sm" data-toggle="collapse" data-target="#amForm"><i class="fa fa-plus"></i> Record asset</button>
+		<div class="am-actions">
+			<a class="btn btn-outline-primary btn-sm" href="<?= base_url('asset_management/download_simple_template'); ?>"><i class="fa fa-download"></i> Excel template</a>
+			<button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#mdlExcel"><i class="fa fa-file-excel"></i> Upload Excel</button>
+			<button type="button" class="btn btn-outline-secondary btn-sm" data-toggle="modal" data-target="#mdlLocation"><i class="fa fa-map-marker-alt"></i> New location</button>
+			<button type="button" class="btn btn-success btn-sm" data-toggle="collapse" data-target="#amForm"><i class="fa fa-plus"></i> Record asset</button>
 		</div>
 	</div>
 
-	<div class="row">
-		<div class="col-md-3 mb-3"><div class="am-stat navy"><h3><?= number_format((float)$totals['qty'], 0); ?></h3><span>Total quantity</span></div></div>
-		<div class="col-md-3 mb-3"><div class="am-stat ok"><h3><?= number_format((float)$totals['good'], 0); ?></h3><span>In good condition</span></div></div>
-		<div class="col-md-3 mb-3"><div class="am-stat warn"><h3><?= number_format((float)$totals['damaged'], 0); ?></h3><span>Damaged (ibyangiye)</span></div></div>
-		<div class="col-md-3 mb-3"><div class="am-stat info"><h3><?= (int)$totals['lots']; ?></h3><span>Records · <?= count($locations); ?> locations</span></div></div>
+	<div class="am-kpis">
+		<div class="am-stat navy">
+			<div class="am-ico"><i class="fa fa-boxes"></i></div>
+			<h3><?= number_format($amQty, 0); ?></h3>
+			<span>Total quantity</span>
+			<div class="am-bar"><i style="width:100%"></i></div>
+		</div>
+		<div class="am-stat ok">
+			<div class="am-ico"><i class="fa fa-check"></i></div>
+			<h3><?= number_format($amGood, 0); ?></h3>
+			<span>In good condition · <?= $amGoodPct; ?>%</span>
+			<div class="am-bar"><i style="width:<?= $amGoodPct; ?>%"></i></div>
+		</div>
+		<div class="am-stat warn">
+			<div class="am-ico"><i class="fa fa-exclamation-triangle"></i></div>
+			<h3><?= number_format($amDmg, 0); ?></h3>
+			<span>Damaged (ibyangiye) · <?= $amDmgPct; ?>%</span>
+			<div class="am-bar"><i style="width:<?= $amDmgPct; ?>%"></i></div>
+		</div>
+		<div class="am-stat info">
+			<div class="am-ico"><i class="fa fa-map-marker-alt"></i></div>
+			<h3><?= $amLocs; ?></h3>
+			<span><?= (int) ($totals['lots'] ?? 0); ?> records · <?= $amTypes; ?> asset type<?= $amTypes === 1 ? '' : 's'; ?></span>
+			<div class="am-bar"><i style="width:<?= $amLocs > 0 ? 100 : 0; ?>%"></i></div>
+		</div>
 	</div>
+	<?php if (!empty($grouped)) { ?>
+	<div class="am-types">
+		<?php foreach ($grouped as $g) {
+			$gQty = (float) ($g['qty'] ?? 0);
+			$gShare = $amQty > 0 ? (int) round($gQty / $amQty * 100) : 0;
+		?>
+			<span class="am-chip"><?= esc($g['type']); ?> <b><?= number_format($gQty, 0); ?></b> · <?= $gShare; ?>%</span>
+		<?php } ?>
+	</div>
+	<?php } ?>
 
-	<div class="collapse mb-3 show" id="amForm">
+	<div class="collapse mb-3" id="amForm">
 		<div class="am-card p-3">
 			<form id="frmSimpleAsset">
 				<input type="hidden" name="id" id="sa_id" value="">
@@ -105,7 +159,7 @@
 				</thead>
 				<tbody>
 				<?php if (empty($grouped)) { ?>
-					<tr><td colspan="8" class="text-center text-muted py-4">No assets yet. Record desks, chairs, kitchen items, and electronics above.</td></tr>
+					<tr><td colspan="8" class="text-center text-muted py-4">No assets yet. Upload the Excel template, or record desks, chairs, kitchen items, and electronics.</td></tr>
 				<?php } ?>
 				<?php foreach ($grouped as $g) { ?>
 					<tr class="am-type">
@@ -246,6 +300,29 @@
 	</div>
 </div>
 
+<div class="modal fade" id="mdlExcel" tabindex="-1">
+	<div class="modal-dialog">
+		<form class="modal-content" id="frmExcel" enctype="multipart/form-data">
+			<div class="modal-header">
+				<h5 class="modal-title">Upload full asset Excel</h5>
+				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+			</div>
+			<div class="modal-body">
+				<p class="text-muted mb-2">Download the template first. In Excel, <strong>Asset type</strong> is a dropdown. For <strong>Location</strong>, type the place the first time. After this upload, that location is in the dropdown the next time you download the sheet.</p>
+				<div class="form-group mb-0">
+					<label>Excel file</label>
+					<input type="file" class="form-control" name="excel" id="excel_file" accept=".xlsx,.xls" required>
+				</div>
+				<div class="small text-danger mt-2" id="excel_errors" style="display:none"></div>
+			</div>
+			<div class="modal-footer">
+				<a class="btn btn-light" href="<?= base_url('asset_management/download_simple_template'); ?>">Download template</a>
+				<button type="submit" class="btn btn-primary" id="btnUploadExcel"><i class="fa fa-upload"></i> Upload</button>
+			</div>
+		</form>
+	</div>
+</div>
+
 <div class="modal fade" id="mdlLocation" tabindex="-1">
 	<div class="modal-dialog modal-sm">
 		<form class="modal-content" id="frmLocation">
@@ -342,6 +419,34 @@ $(function () {
 			$('#mdlDistribute').modal('hide');
 			reloadSoon();
 		}, 'json').fail(function () { toastErr('Could not distribute'); });
+	});
+
+	$('#frmExcel').on('submit', function (e) {
+		e.preventDefault();
+		var file = $('#excel_file')[0].files[0];
+		if (!file) { toastErr('Choose an Excel file'); return; }
+		var data = new FormData();
+		data.append('excel', file);
+		$('#btnUploadExcel').prop('disabled', true);
+		$('#excel_errors').hide().text('');
+		$.ajax({
+			url: '<?= base_url('asset_management/upload_simple_excel'); ?>',
+			type: 'POST',
+			data: data,
+			processData: false,
+			contentType: false,
+			dataType: 'json'
+		}).done(function (res) {
+			if (res.error && !res.success) { toastErr(res.error); $('#btnUploadExcel').prop('disabled', false); return; }
+			if (res.errors && res.errors.length) {
+				$('#excel_errors').text(res.errors.slice(0, 6).join(' ')).show();
+			}
+			toastOk(res.success || 'Uploaded');
+			reloadSoon();
+		}).fail(function () {
+			toastErr('Could not upload the Excel file');
+			$('#btnUploadExcel').prop('disabled', false);
+		});
 	});
 
 	$('#frmLocation').on('submit', function (e) {
