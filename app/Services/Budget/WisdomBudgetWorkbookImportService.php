@@ -9,11 +9,12 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 /**
  * Reads the official Wisdom budget workbook and stores every budget line.
  *
- * The workbook must match WISDOM_SCHOOL_BUDGET_TOTALS: the same line names,
- * columns, and formulas. A school may change only quantities (No of Children)
- * and money (Fees, Budget, and Expenses).
- * Income for a line is children × fees. The term total is cell D9 on the official sheet.
- * Expense money is the Budget column. The term total is cell E40.
+ * Only the summary sheet is read. Other sheets in the same workbook are ignored.
+ * Line names must be the official Wisdom names. A school may leave a line out,
+ * move a line up or down, write children × fees in either order, or type a
+ * total when the quantity cells are blank. Quantities and money may change.
+ * Income for a line is children × fees, or the typed total when that product is empty.
+ * Expense money is the Budget column. A shifted total row is read from its label.
  * If Budget is blank and the Expenses column has an amount, that amount is used.
  * The heading must read BUDGETS TERM … ACAD YEAR, and that term must be the
  * term selected on upload.
@@ -103,7 +104,7 @@ class WisdomBudgetWorkbookImportService
 			return [
 				'success' => false,
 				'error' => 'This workbook was rejected because it does not match the official Wisdom budget format. '
-					. 'Keep every line name, column, and formula. Only the quantities (No of Children) and the money (Fees, Budget, and Expenses) may change. '
+					. 'Keep the official line names. Quantities, fees, and budget amounts may change, and a total may be typed when the quantity is blank. Other sheets are ignored. '
 					. implode(' ', array_slice($problems, 0, 4)),
 			];
 		}
@@ -453,9 +454,12 @@ class WisdomBudgetWorkbookImportService
 	{
 		$fallback = null;
 		foreach ($spreadsheet->getWorksheetIterator() as $sheet) {
-			$title = strtoupper(preg_replace('/\s+/', '', $sheet->getTitle()));
+			$title = strtoupper((string) preg_replace('/\s+/', '', $sheet->getTitle()));
 			if (strpos($title, 'SUMMARY') !== false) {
 				return $sheet;
+			}
+			if (strpos($title, 'PETTY') !== false || strpos($title, 'OTHER') !== false) {
+				continue;
 			}
 			if ($fallback === null && $this->sheetHasIncome($sheet)) {
 				$fallback = $sheet;
@@ -537,8 +541,13 @@ class WisdomBudgetWorkbookImportService
 			if ($mode === 'income') {
 				$children = $this->num($this->cell($sheet, $cols['children'], $r));
 				$fees = $this->num($this->cell($sheet, $cols['fees'], $r));
+				$typedTotal = $this->num($this->cell($sheet, $cols['total'], $r));
 				// Official format: Total Income = No of Children × Fees.
+				// A typed total is kept when the quantity or the fee is blank.
 				$amount = round((float) ($children ?? 0) * (float) ($fees ?? 0), 2);
+				if ($amount <= 0 && $typedTotal !== null && abs($typedTotal) > 0) {
+					$amount = round($typedTotal, 2);
+				}
 				$unitCost = $fees;
 				$note = '';
 				if ($children !== null || $fees !== null) {
@@ -670,6 +679,10 @@ class WisdomBudgetWorkbookImportService
 	}
 
 	/**
+	 * The summary sheet is enough. Line names must be official names, but a
+	 * school may skip a line, shift the rows, swap a multiplication, or type
+	 * a total. Other sheets are not checked.
+	 *
 	 * @return list<string>
 	 */
 	private function officialFormatProblems(Worksheet $sheet): array
@@ -678,74 +691,105 @@ class WisdomBudgetWorkbookImportService
 		if (!$canon) {
 			return ['The official Wisdom budget workbook is not installed.'];
 		}
-		$inputs = $this->moneyInputAddresses($canon);
+		$official = $this->officialLineNames($canon);
 		$problems = [];
-		$maxRow = min(80, max((int) $canon->getHighestRow(), (int) $sheet->getHighestRow(), 1));
-		for ($r = 1; $r <= $maxRow; $r++) {
-			for ($c = 1; $c <= 7; $c++) {
-				if ($r === 1 && $c <= 2) {
-					continue;
-				}
-				if ($this->isMergeSlave($canon, $c, $r)) {
-					continue;
-				}
-				$addr = Coordinate::stringFromColumnIndex($c) . $r;
-				$canonRaw = $this->rawCell($canon, $c, $r);
-				$uploadRaw = $this->rawCell($sheet, $c, $r);
-				$canonEmpty = $canonRaw === null || $canonRaw === '';
-				$uploadEmpty = $uploadRaw === null || $uploadRaw === '';
-				if ($r === 2 && $c === 1) {
-					$heading = is_string($uploadRaw) ? $uploadRaw : '';
-					if ($this->headingTerm($heading) < 1) {
-						$problems[] = 'Row 2 must be the term heading, for example BUDGETS TERM I ACAD YEAR 2026-2027.';
-					}
-					continue;
-				}
-				if (isset($inputs[$addr])) {
-					if ($uploadEmpty) {
-						continue;
-					}
-					if (is_string($uploadRaw) && isset($uploadRaw[0]) && $uploadRaw[0] === '=') {
-						$problems[] = $inputs[$addr] . ' must be a number. Only the quantity and the money amounts may change.';
-						continue;
-					}
-					if ($this->num($uploadRaw) === null) {
-						$problems[] = $inputs[$addr] . ' must be a number.';
-					}
-					continue;
-				}
-				$canonFormula = is_string($canonRaw) && isset($canonRaw[0]) && $canonRaw[0] === '=';
-				$uploadFormula = is_string($uploadRaw) && isset($uploadRaw[0]) && $uploadRaw[0] === '=';
-				if ($canonFormula) {
-					if (!$uploadFormula || !$this->formulasMatch((string) $canonRaw, (string) $uploadRaw)) {
-						$problems[] = 'Cell ' . $addr . ' must keep the formula ' . $canonRaw . '.';
-					}
-					continue;
-				}
-				if (!$canonEmpty && is_string($canonRaw)) {
-					$want = $this->normLabel($canonRaw);
-					$gotRaw = $uploadEmpty ? '' : (is_scalar($uploadRaw) ? (string) $uploadRaw : '');
-					if ($want !== $this->normLabel($gotRaw)) {
-						$shown = trim($canonRaw);
-						$problems[] = $gotRaw === ''
-							? 'Cell ' . $addr . ' must stay "' . $shown . '".'
-							: 'Cell ' . $addr . ' must stay "' . $shown . '" (found "' . trim($gotRaw) . '").';
-					}
-					continue;
-				}
-				if (!$canonEmpty && is_numeric($canonRaw)) {
-					$got = $this->num($uploadRaw);
-					if ($got === null || abs($got - (float) $canonRaw) > 0.009) {
-						$problems[] = 'Cell ' . $addr . ' must stay ' . $canonRaw . '.';
-					}
-					continue;
-				}
-				if ($canonEmpty && !$uploadEmpty) {
-					$problems[] = 'Cell ' . $addr . ' must stay empty. Only quantities and money amounts may be filled in.';
-				}
+		$heading = $this->rawCell($sheet, 1, 2);
+		$heading = is_string($heading) ? $heading : '';
+		if ($this->headingTerm($heading) < 1) {
+			$problems[] = 'Row 2 must be the term heading, for example BUDGETS TERM I ACAD YEAR 2026-2027.';
+		}
+		$mode = null;
+		$highest = min(80, max(1, (int) $sheet->getHighestRow()));
+		for ($r = 3; $r <= $highest; $r++) {
+			$label = trim((string) $this->rawCell($sheet, 1, $r));
+			if ($label === '') {
+				continue;
+			}
+			if (preg_match('/^(PREPARED|VERIFIED|VERFIED|CHECKED|APPROVED)\s+BY\b/i', $label)) {
+				continue;
+			}
+			$upper = strtoupper(preg_replace('/\s+/', ' ', $label));
+			if (isset(self::SECTION_HEADERS[$upper])) {
+				$mode = self::SECTION_HEADERS[$upper] === 'income' ? 'income' : 'expense';
+				continue;
+			}
+			if (preg_match('/^TOTAL\b/i', $label) || $this->rowLooksLikeHeader($sheet, $r)) {
+				continue;
+			}
+			if (!isset($official[$this->normLabel($label)])) {
+				$problems[] = 'Line "' . $label . '" is not on the official Wisdom budget. Keep the official line names.';
+				continue;
+			}
+			if ($mode === 'income') {
+				$problems = array_merge($problems, $this->incomeCellProblems($sheet, $r, $label));
+			} elseif ($mode === 'expense') {
+				$problems = array_merge($problems, $this->moneyCellProblems($sheet, $r, $label, [5 => 'Budget', 6 => 'Expenses']));
 			}
 			if (count($problems) >= 8) {
 				break;
+			}
+		}
+		return $problems;
+	}
+
+	/**
+	 * @return array<string,bool>
+	 */
+	private function officialLineNames(Worksheet $sheet): array
+	{
+		$names = [];
+		$highest = min(80, max(1, (int) $sheet->getHighestRow()));
+		for ($r = 3; $r <= $highest; $r++) {
+			$label = trim((string) $this->rawCell($sheet, 1, $r));
+			if ($label === '') {
+				continue;
+			}
+			$upper = strtoupper(preg_replace('/\s+/', ' ', $label));
+			if (isset(self::SECTION_HEADERS[$upper]) || preg_match('/^TOTAL\b/i', $label)) {
+				continue;
+			}
+			$names[$this->normLabel($label)] = true;
+		}
+		return $names;
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function incomeCellProblems(Worksheet $sheet, int $row, string $label): array
+	{
+		$problems = $this->moneyCellProblems($sheet, $row, $label, [2 => 'No of Children', 3 => 'Fees']);
+		$children = $this->num($this->rawCell($sheet, 2, $row));
+		$fees = $this->num($this->rawCell($sheet, 3, $row));
+		$product = round((float) ($children ?? 0) * (float) ($fees ?? 0), 2);
+		$totalRaw = $this->rawCell($sheet, 4, $row);
+		$isFormula = is_string($totalRaw) && isset($totalRaw[0]) && $totalRaw[0] === '=';
+		if ($isFormula || $totalRaw === null || $totalRaw === '') {
+			return $problems;
+		}
+		$typed = $this->num($totalRaw);
+		if ($typed === null) {
+			$problems[] = 'Total income for ' . $label . ' must be a number or a formula.';
+		} elseif ($product > 0 && abs($typed - $product) > 1) {
+			$problems[] = 'Cell D' . $row . ' for ' . $label . ' must equal No of Children × Fees.';
+		}
+		return $problems;
+	}
+
+	/**
+	 * @param array<int,string> $columns
+	 * @return list<string>
+	 */
+	private function moneyCellProblems(Worksheet $sheet, int $row, string $label, array $columns): array
+	{
+		$problems = [];
+		foreach ($columns as $col => $name) {
+			$raw = $this->rawCell($sheet, (int) $col, $row);
+			if ($raw === null || $raw === '') {
+				continue;
+			}
+			if ((is_string($raw) && isset($raw[0]) && $raw[0] === '=') || $this->num($raw) === null) {
+				$problems[] = $name . ' for ' . $label . ' must be a number.';
 			}
 		}
 		return $problems;
