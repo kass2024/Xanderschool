@@ -1121,7 +1121,11 @@ class AttendanceScanService
 		$charged = 0;
 		foreach ($areas as $area) {
 			$state = AttendanceAreaModel::scheduleState($area);
+			$armed = trim((string) ($area['lateness_from'] ?? ''));
 			if ($state['schedule_on'] !== 1 || $state['consider_lateness'] === '' || $clock < $state['consider_lateness']) {
+				continue;
+			}
+			if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $armed) || $moment->format('Y-m-d') < $armed) {
 				continue;
 			}
 			$areaId = (int) ($area['id'] ?? 0);
