@@ -56,7 +56,7 @@ class ClinicVisitModel extends Model
 		}
 		$db = \Config\Database::connect();
 		return $db->query(
-			"SELECT v.id, v.student_id, v.visit_date, v.disease, v.outcome, v.hospital_cost, v.transport, v.note,
+			"SELECT v.id, v.student_id, v.visit_date, v.disease, v.outcome, v.hospital_cost, v.transport, v.note, v.created_at,
 				TRIM(CONCAT(s.fname, ' ', s.lname)) AS student_name, s.regno,
 				MAX(CONCAT(COALESCE(l.title,''), ' ', COALESCE(dp.code,''), ' ', COALESCE(c.title,''))) AS class_name
 			FROM clinic_visits v
@@ -66,7 +66,7 @@ class ClinicVisitModel extends Model
 			LEFT JOIN levels l ON l.id = c.level
 			LEFT JOIN departments dp ON dp.id = c.department
 			WHERE v.school_id = ? AND v.visit_date = ?
-			GROUP BY v.id, v.student_id, v.visit_date, v.disease, v.outcome, v.hospital_cost, v.transport, v.note, s.fname, s.lname, s.regno
+			GROUP BY v.id, v.student_id, v.visit_date, v.disease, v.outcome, v.hospital_cost, v.transport, v.note, v.created_at, s.fname, s.lname, s.regno
 			ORDER BY v.id DESC",
 			[$schoolId, $date]
 		)->getResultArray();
