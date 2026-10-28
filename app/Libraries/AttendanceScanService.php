@@ -1196,6 +1196,103 @@ class AttendanceScanService
 	}
 
 	/**
+	 * Boarding students who tapped at a lateness location before its consider-lateness clock.
+	 *
+	 * @return array{rows:list<array<string,mixed>>,arrivals:int,students:int,places:array<string,int>}
+	 */
+	public static function earlyArrivals(int $schoolId, string $start, string $end, int $classId = 0): array
+	{
+		$empty = ['rows' => [], 'arrivals' => 0, 'students' => 0, 'places' => []];
+		if ($schoolId < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
+			return $empty;
+		}
+		$zone = new \DateTimeZone('Africa/Kigali');
+		$fromTs = (new \DateTimeImmutable($start . ' 00:00:00', $zone))->getTimestamp();
+		$toTs = (new \DateTimeImmutable($end . ' 23:59:59', $zone))->getTimestamp();
+		$db = \Config\Database::connect();
+		$schoolId = (int) $schoolId;
+		$year = (int) self::academicYear($schoolId);
+		$fromTs = (int) $fromTs;
+		$toTs = (int) $toTs;
+		$classId = (int) $classId;
+		$sql = "SELECT ar.user_id AS student_id, ar.area_id, ar.time_in,
+				aa.name AS place, aa.consider_lateness AS cutoff,
+				s.fname, s.lname, s.regno,
+				TRIM(CONCAT(COALESCE(l.title,''), ' ', COALESCE(dp.code,''), ' ', COALESCE(cl.title,''))) AS class_name
+			FROM attendance_records ar
+			INNER JOIN attendance_areas aa ON aa.id = ar.area_id AND aa.school_id = {$schoolId}
+			INNER JOIN students s ON s.id = ar.user_id AND s.school_id = {$schoolId}
+			INNER JOIN class_records cr ON cr.student = s.id AND cr.year = {$year} AND cr.status = 1
+			INNER JOIN classes cl ON cl.id = cr.class
+			LEFT JOIN levels l ON l.id = cl.level
+			LEFT JOIN departments dp ON dp.id = cl.department
+			LEFT JOIN faculty f ON f.id = dp.faculty_id
+			WHERE ar.user_type = 0
+			AND ar.time_in >= {$fromTs} AND ar.time_in <= {$toTs}
+			AND TRIM(IFNULL(aa.consider_lateness, '')) <> ''
+			AND " . self::latenessScopeSql();
+		if ($classId > 0) {
+			$sql .= " AND cr.class = {$classId}";
+		}
+		$rows = $db->query($sql)->getResultArray();
+		$best = [];
+		foreach ($rows as $row) {
+			$ts = (int) ($row['time_in'] ?? 0);
+			if ($ts < 1) {
+				continue;
+			}
+			$cutoff = AttendanceAreaModel::normalizeDailyStart((string) ($row['cutoff'] ?? ''));
+			$clock = AttendanceAreaModel::schoolClock($ts);
+			$day = AttendanceAreaModel::schoolDay($ts);
+			if ($cutoff === '' || $clock >= $cutoff || $day < $start || $day > $end) {
+				continue;
+			}
+			$key = (int) ($row['student_id'] ?? 0) . ':' . (int) ($row['area_id'] ?? 0) . ':' . $day;
+			if (isset($best[$key]) && $best[$key]['ts'] <= $ts) {
+				continue;
+			}
+			$best[$key] = [
+				'ts' => $ts,
+				'student_id' => (int) ($row['student_id'] ?? 0),
+				'fname' => (string) ($row['fname'] ?? ''),
+				'lname' => (string) ($row['lname'] ?? ''),
+				'regno' => (string) ($row['regno'] ?? ''),
+				'class_name' => trim((string) ($row['class_name'] ?? '')),
+				'place' => (string) ($row['place'] ?? ''),
+				'arrived' => $clock,
+				'cutoff' => $cutoff,
+				'late_day' => $day,
+			];
+		}
+		$list = array_values($best);
+		usort($list, static function (array $a, array $b): int {
+			$byDay = strcmp((string) $b['late_day'], (string) $a['late_day']);
+			if ($byDay !== 0) {
+				return $byDay;
+			}
+			$byTime = strcmp((string) $a['arrived'], (string) $b['arrived']);
+			if ($byTime !== 0) {
+				return $byTime;
+			}
+			return strcmp((string) $a['fname'] . $a['lname'], (string) $b['fname'] . $b['lname']);
+		});
+		$students = [];
+		$places = [];
+		foreach ($list as $row) {
+			$students[$row['student_id']] = true;
+			$place = $row['place'] !== '' ? $row['place'] : 'Location';
+			$places[$place] = ($places[$place] ?? 0) + 1;
+		}
+		arsort($places);
+		return [
+			'rows' => $list,
+			'arrivals' => count($list),
+			'students' => count($students),
+			'places' => $places,
+		];
+	}
+
+	/**
 	 * Card tap: students only. Staff must clock by face.
 	 *
 	 * @return array<string,mixed>
