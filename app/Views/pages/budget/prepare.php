@@ -45,6 +45,7 @@ $canUploadBudget = \Config\MenuClearance::canPrepareBudgetAtSchool((int) ($_SESS
 				</div>
 			</div>
 			<button type="submit" class="btn btn-primary" id="btnUploadBudget"><i class="fa fa-upload"></i> Upload and extract lines</button>
+			<div id="budgetUploadError" class="alert alert-danger mt-3 mb-0" hidden></div>
 			<div id="budgetUploadProgress" class="bp-smart-progress" hidden>
 				<div class="bp-smart-top">
 					<strong id="budgetUploadStage">Uploading the Excel file</strong>
@@ -192,6 +193,7 @@ $('#frmUploadBudget').on('submit', function (e) {
 			}
 		}, 380);
 	}
+	$('#budgetUploadError').prop('hidden', true).empty();
 	paintBudgetProgress('budgetUpload', 2, 'Uploading the Excel file', 1);
 	var data = new FormData(this);
 	$.ajax({
@@ -216,7 +218,17 @@ $('#frmUploadBudget').on('submit', function (e) {
 	}).done(function (r) {
 		stopCreep();
 		if (r.error) {
-			toastada.error(r.error);
+			var lines = (r.problems && r.problems.length) ? r.problems : [r.error];
+			var html = '<strong>This workbook was not accepted.</strong><ul class="mb-0 mt-2 pl-3">';
+			lines.forEach(function (line) {
+				html += '<li></li>';
+			});
+			var $box = $('#budgetUploadError').html(html).prop('hidden', false);
+			$box.find('li').each(function (i) { $(this).text(lines[i]); });
+			if ($box[0] && $box[0].scrollIntoView) {
+				$box[0].scrollIntoView({block: 'nearest'});
+			}
+			toastada.error(lines[0]);
 			$bar.prop('hidden', true);
 			$btn.prop('disabled', false).html('<i class="fa fa-upload"></i> Upload and extract lines');
 			return;

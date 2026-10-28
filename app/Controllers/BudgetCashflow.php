@@ -1354,7 +1354,10 @@ class BudgetCashflow extends Home
 			'stored_path' => $stored['stored_path'] ?? '',
 		]);
 		if (empty($result['success'])) {
-			return $this->response->setJSON(['error' => $result['error'] ?? 'Could not extract the budget.']);
+			return $this->response->setJSON([
+				'error' => $result['error'] ?? 'Could not extract the budget.',
+				'problems' => array_values($result['problems'] ?? []),
+			]);
 		}
 		$income = number_format((float) ($result['total_income'] ?? 0), 0);
 		$expense = number_format((float) ($result['total_expenses'] ?? 0), 0);

@@ -101,11 +101,11 @@ class WisdomBudgetWorkbookImportService
 		}
 		$problems = $this->officialFormatProblems($sheet);
 		if ($problems) {
+			$shown = array_slice($problems, 0, 8);
 			return [
 				'success' => false,
-				'error' => 'This workbook was rejected because it does not match the official Wisdom budget format. '
-					. 'Keep the official line names. Quantities, fees, and budget amounts may change, and a total may be typed when the quantity is blank. Other sheets are ignored. '
-					. implode(' ', array_slice($problems, 0, 4)),
+				'error' => $this->rejectionMessage($shown),
+				'problems' => $shown,
 			];
 		}
 		$heading = trim((string) $this->rawCell($sheet, 1, 2));
@@ -771,9 +771,50 @@ class WisdomBudgetWorkbookImportService
 		if ($typed === null) {
 			$problems[] = 'Total income for ' . $label . ' must be a number or a formula.';
 		} elseif ($product > 0 && abs($typed - $product) > 1) {
-			$problems[] = 'Cell D' . $row . ' for ' . $label . ' must equal No of Children × Fees.';
+			$childrenN = (float) ($children ?? 0);
+			$feesN = (float) ($fees ?? 0);
+			$line = $label . ': Total Income D' . $row . ' is ' . $this->moneyText($typed)
+				. ', but No of Children ' . $this->moneyText($childrenN)
+				. ' × Fees ' . $this->moneyText($feesN)
+				. ' = ' . $this->moneyText($product) . '.';
+			if ($childrenN > 1 && abs($typed - $feesN) <= 1) {
+				$line .= ' Fees has the same figure as Total Income, so it is not the fee for one child.';
+			}
+			$problems[] = $line;
 		}
 		return $problems;
+	}
+
+	/**
+	 * @param list<string> $problems
+	 */
+	private function rejectionMessage(array $problems): string
+	{
+		$aboutNames = false;
+		foreach ($problems as $problem) {
+			if (strpos($problem, 'is not on the official') !== false
+				|| strpos($problem, 'Row 2 must') !== false
+				|| strpos($problem, 'not installed') !== false) {
+				$aboutNames = true;
+				break;
+			}
+		}
+		$detail = implode(' ', $problems);
+		if ($aboutNames) {
+			return 'This workbook was rejected because it does not match the official Wisdom budget format. '
+				. 'Keep the official line names. Quantities, fees, and budget amounts may change, and a total may be typed when the quantity is blank. Other sheets are ignored. '
+				. $detail;
+		}
+		return 'This workbook was rejected because these amounts do not follow the budget rules. ' . $detail;
+	}
+
+	private function moneyText(float $n): string
+	{
+		$rounded = round($n, 2);
+		if (abs($rounded - round($rounded)) < 0.001) {
+			return number_format((float) round($rounded), 0, '.', ',');
+		}
+		return number_format($rounded, 2, '.', ',');
 	}
 
 	/**
