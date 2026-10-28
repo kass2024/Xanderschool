@@ -71,6 +71,9 @@ class DisciplineModel extends Model{
 		if (!\App\Models\AttendanceAreaModel::isLate($area, $eventTime)) {
 			return false;
 		}
+		if (!\App\Libraries\AttendanceScanService::studentInLatenessScope($schoolId, $studentId)) {
+			return false;
+		}
 		$this->ensureLatenessColumn();
 		$areaId = (int) ($area['id'] ?? 0);
 		$day = \App\Models\AttendanceAreaModel::schoolDay($eventTime);

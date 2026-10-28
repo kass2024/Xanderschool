@@ -1099,9 +1099,45 @@ class AttendanceScanService
 	}
 
 	/**
-	 * Once a location's consider-lateness clock has passed, each active student
-	 * counted on the school dashboard who never tapped there today loses 5 discipline marks.
-	 * Dismissed students and Holiday classes are left out. Parents are not told.
+	 * Boarding students outside nursery and primary. Day scholars, nursery, and primary are not charged.
+	 */
+	public static function studentInLatenessScope(int $schoolId, int $studentId): bool
+	{
+		if ($schoolId < 1 || $studentId < 1) {
+			return false;
+		}
+		$db = \Config\Database::connect();
+		$row = $db->query(
+			'SELECT s.id
+			FROM students s
+			INNER JOIN class_records cr ON cr.student = s.id AND cr.year = ? AND cr.status = 1
+			INNER JOIN classes cl ON cl.id = cr.class
+			LEFT JOIN levels l ON l.id = cl.level
+			LEFT JOIN departments dp ON dp.id = cl.department
+			LEFT JOIN faculty f ON f.id = dp.faculty_id
+			WHERE s.id = ? AND s.school_id = ? AND ' . self::latenessScopeSql() . '
+			LIMIT 1',
+			[self::academicYear($schoolId), $studentId, $schoolId]
+		)->getRowArray();
+		return $row !== null;
+	}
+
+	private static function latenessScopeSql(): string
+	{
+		return "s.status = 1
+			AND (s.studying_mode = 0 OR s.studying_mode IS NULL)
+			AND IFNULL(cl.title, '') NOT LIKE '%Holiday%'
+			AND IFNULL(l.title, '') NOT LIKE '%Holiday%'
+			AND LOWER(IFNULL(f.title, '')) NOT LIKE '%primary%'
+			AND LOWER(IFNULL(f.title, '')) NOT LIKE '%nursery%'
+			AND LOWER(IFNULL(l.title, '')) NOT REGEXP '^(p[1-6]|baby class|middle class|top class|nursery)([[:space:]]|$)'
+			AND LOWER(IFNULL(cl.title, '')) NOT REGEXP '^(baby class|middle class|top class|nursery)([[:space:]]|$)'";
+	}
+
+	/**
+	 * Once a location's consider-lateness clock has passed, each boarding student
+	 * outside nursery and primary who never tapped there today loses 5 discipline marks.
+	 * Parents are not told.
 	 */
 	public static function chargeUntappedLateness(int $schoolId): int
 	{
@@ -1132,26 +1168,20 @@ class AttendanceScanService
 			if ($areaId < 1) {
 				continue;
 			}
-			$name = (string) ($area['name'] ?? '');
 			$sql = 'SELECT DISTINCT s.id
 				FROM students s
 				INNER JOIN class_records cr ON cr.student = s.id AND cr.year = ? AND cr.status = 1
 				INNER JOIN classes cl ON cl.id = cr.class
 				LEFT JOIN levels l ON l.id = cl.level
-				WHERE s.school_id = ? AND s.status = 1
-				AND IFNULL(cl.title, \'\') NOT LIKE \'%Holiday%\'
-				AND IFNULL(l.title, \'\') NOT LIKE \'%Holiday%\'
+				LEFT JOIN departments dp ON dp.id = cl.department
+				LEFT JOIN faculty f ON f.id = dp.faculty_id
+				WHERE s.school_id = ? AND ' . self::latenessScopeSql() . '
 				AND NOT EXISTS (
 					SELECT 1 FROM attendance_records ar
 					WHERE ar.user_id = s.id AND ar.user_type = 0 AND ar.area_id = ?
 					AND ar.time_in >= ? AND ar.time_in <= ?
 				)';
 			$params = [$year, $schoolId, $areaId, $dayStart, $dayEnd];
-			if (self::isSchoolGateArea($name)) {
-				$sql .= ' AND (s.studying_mode IS NULL OR s.studying_mode <> 0)';
-			} elseif (self::isDormitoryArea($name)) {
-				$sql .= ' AND s.studying_mode = 0';
-			}
 			$rows = $db->query($sql, $params)->getResultArray();
 			$ids = [];
 			foreach ($rows as $row) {
