@@ -999,6 +999,8 @@ return [
 	"studentMarksreport" => "Rapport sur les notes des ’élèves ",
 	"disciplineRecord" => "Dossier de discipline",
 	"latenessReport" => "Retards",
+	"clinic" => "Infirmerie",
+	"clinicDaily" => "Rapport du jour",
 	"resultRecord" => "Enregistrement de résultat",
 	"rtudentProgressReport" => "Rapport de progression de l'élève",
 	"schoolFees" => "Frais scolaires",
