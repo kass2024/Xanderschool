@@ -22,6 +22,7 @@ $periodLabel = (string) ($period_label ?? '');
 	.late-filters .form-control { min-width: 160px; }
 	.late-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
 	.late-kpi { background: #fff; border: 1px solid #e8edf3; border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(15, 23, 42, .05); }
+	button.late-kpi { width: 100%; font: inherit; color: inherit; appearance: none; -webkit-appearance: none; }
 	.late-kpi span { display: block; color: #64748b; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
 	.late-kpi strong { display: block; margin-top: 4px; font-size: 1.55rem; color: #0f172a; line-height: 1.1; }
 	.late-kpi.is-marks strong { color: #c2410c; }
@@ -37,7 +38,14 @@ $periodLabel = (string) ($period_label ?? '');
 	.late-early { display: inline-block; background: #dcfce7; color: #166534; border-radius: 999px; padding: 3px 10px; font-weight: 800; }
 	.late-kpi.is-early strong { color: #166534; }
 	.late-place.is-early { background: #dcfce7; color: #166534; }
-	.late-section { margin: 18px 0 8px; font-size: 1.05rem; font-weight: 800; color: #0f172a; }
+	.late-section { margin: 0 0 8px; font-size: 1.05rem; font-weight: 800; color: #0f172a; }
+	.late-views { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+	.late-view {
+		border: 1px solid #e2e8f0; background: #fff; color: #334155;
+		border-radius: 999px; padding: 7px 14px; font-weight: 700; cursor: pointer;
+	}
+	.late-view.is-on { background: #0f172a; border-color: #0f172a; color: #fff; }
+	.late-view.is-early.is-on { background: #166534; border-color: #166534; }
 	.late-time { font-weight: 800; color: #0f172a; }
 	.late-cut { color: #64748b; font-size: .82rem; }
 	.late-empty { padding: 36px 16px; text-align: center; color: #64748b; }
@@ -95,7 +103,7 @@ $periodLabel = (string) ($period_label ?? '');
 				</select>
 			</div>
 			<button type="submit" class="btn btn-success">Show</button>
-			<button type="button" class="btn btn-outline-secondary" onclick="window.print()">Print</button>
+			<a class="btn btn-outline-secondary" href="<?= base_url('lateness_report_pdf') . (($pdf_query ?? '') !== '' ? '?' . $pdf_query : ''); ?>">PDF</a>
 		</div>
 	</form>
 
@@ -103,10 +111,16 @@ $periodLabel = (string) ($period_label ?? '');
 		<div class="late-kpi"><span>Period</span><strong style="font-size:1.05rem;padding-top:6px;"><?= esc($periodLabel); ?></strong></div>
 		<div class="late-kpi"><span>Students</span><strong><?= (int) ($late_students ?? 0); ?></strong></div>
 		<div class="late-kpi"><span>Late arrivals</span><strong><?= (int) ($late_arrivals ?? 0); ?></strong></div>
-		<div class="late-kpi is-early"><span>Came early</span><strong><?= (int) ($early_arrivals ?? 0); ?></strong></div>
+		<button type="button" class="late-kpi is-early" id="lateEarlyKpi" style="text-align:left;cursor:pointer;"><span>Came early</span><strong><?= (int) ($early_arrivals ?? 0); ?></strong></button>
 		<div class="late-kpi is-marks"><span>Marks deducted</span><strong><?= (int) ($late_marks ?? 0); ?></strong></div>
 	</div>
 
+	<div class="late-views">
+		<button type="button" class="late-view is-on" data-view="late">Late arrivals</button>
+		<button type="button" class="late-view is-early" data-view="early">Came early<?php if ((int) ($early_arrivals ?? 0) > 0) : ?> · <?= (int) $early_arrivals; ?><?php endif; ?></button>
+	</div>
+
+	<div data-late-pane="late">
 	<?php if (!empty($late_places)) : ?>
 		<div class="late-places">
 			<?php foreach ($late_places as $place => $count) : ?>
@@ -158,7 +172,9 @@ $periodLabel = (string) ($period_label ?? '');
 			</table>
 		<?php endif; ?>
 	</div>
+	</div>
 
+	<div data-late-pane="early" hidden>
 	<h3 class="late-section">Came early</h3>
 	<?php if (!empty($early_places)) : ?>
 		<div class="late-places">
@@ -208,6 +224,7 @@ $periodLabel = (string) ($period_label ?? '');
 			</table>
 		<?php endif; ?>
 	</div>
+	</div>
 </div>
 <script>
 (function () {
@@ -229,5 +246,18 @@ $periodLabel = (string) ($period_label ?? '');
 			form.submit();
 		});
 	});
+	function showPane(view) {
+		document.querySelectorAll('[data-late-pane]').forEach(function (el) {
+			el.hidden = el.getAttribute('data-late-pane') !== view;
+		});
+		document.querySelectorAll('.late-view').forEach(function (btn) {
+			btn.classList.toggle('is-on', btn.getAttribute('data-view') === view);
+		});
+	}
+	document.querySelectorAll('.late-view').forEach(function (btn) {
+		btn.addEventListener('click', function () { showPane(btn.getAttribute('data-view')); });
+	});
+	var earlyKpi = document.getElementById('lateEarlyKpi');
+	if (earlyKpi) earlyKpi.addEventListener('click', function () { showPane('early'); });
 })();
 </script>
