@@ -7,28 +7,20 @@
 	<title>XanderTech SmartSMS — Sign in</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 	<meta name="description" content="Sign in to XanderTech SmartSMS.">
-	<meta name="theme-color" content="#0b1f4a">
+	<meta name="theme-color" content="#f6f1e6">
 	<link rel="icon" href="<?= base_url('assets/images/xander-x-3d.png'); ?>">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-	<noscript><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
-	<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.11.2/css/all.css" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
 	<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
 	<style>
 		:root {
-			--navy: #0b1f4a;
-			--navy-mid: #132a5c;
-			--gold: #d4af37;
-			--gold-soft: #f0d77a;
-			--gold-deep: #b8941f;
-			--bg: #f4f1ea;
-			--bg-soft: #faf8f4;
-			--ink: #1e293b;
-			--muted: #64748b;
-			--line: #e2e8f0;
-			--card: #ffffff;
-			--shadow: 0 18px 48px rgba(11, 31, 74, .12);
+			--navy: #1b2744;
+			--gold: #e0b84a;
+			--gold-deep: #c9962a;
+			--ink: #1b2744;
+			--muted: #8b93a3;
+			--line: #ece4d4;
 			--safe-t: env(safe-area-inset-top, 0px);
 			--safe-b: env(safe-area-inset-bottom, 0px);
 			--safe-l: env(safe-area-inset-left, 0px);
@@ -39,28 +31,28 @@
 			margin: 0;
 			min-height: 100%;
 			min-height: 100dvh;
-			font-family: "Outfit", "Segoe UI", sans-serif;
+			font-family: "DM Sans", "Segoe UI", sans-serif;
 			color: var(--ink);
-			background: var(--bg);
+			background: #f6f1e6;
 			overflow-x: hidden;
 			-webkit-text-size-adjust: 100%;
 		}
-		.deco {
+		.stage {
 			position: fixed;
 			inset: 0;
 			pointer-events: none;
-			z-index: 0;
 			overflow: hidden;
+			z-index: 0;
 		}
-		.deco span {
+		.band {
 			position: absolute;
-			border-radius: 50%;
-			opacity: .4;
+			border-radius: 28px;
+			transform: rotate(32deg);
 		}
-		.deco .d1 { width: 10px; height: 10px; background: #fde68a; top: 10%; left: 8%; }
-		.deco .d2 { width: 8px; height: 8px; background: #93c5fd; top: 78%; right: 12%; }
-		.deco .d3 { width: 220px; height: 220px; background: rgba(212, 175, 55, .12); top: -80px; right: -60px; }
-		.deco .d4 { width: 180px; height: 180px; background: rgba(11, 31, 74, .08); bottom: -70px; left: -50px; }
+		.b1 { width: 280px; height: 140%; left: -150px; top: -18%; background: linear-gradient(180deg, #fff 0%, #f4e7c6 55%, #e4c56a 100%); opacity: .95; }
+		.b2 { width: 120px; height: 80%; left: 70px; top: 8%; background: linear-gradient(180deg, rgba(255,255,255,.2), #f8f1df 30%, #edd9a2); opacity: .8; }
+		.b3 { width: 240px; height: 130%; right: -130px; top: -12%; background: linear-gradient(200deg, #fff, #f3e6c2 40%, #e8d08a); }
+		.b4 { width: 90px; height: 46%; right: 90px; bottom: -8%; background: linear-gradient(180deg, #f8f1df, #e7d7a4); opacity: .7; }
 
 		.page {
 			position: relative;
@@ -70,232 +62,174 @@
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			padding: calc(20px + var(--safe-t)) calc(16px + var(--safe-r)) calc(72px + var(--safe-b)) calc(16px + var(--safe-l));
+			padding: calc(28px + var(--safe-t)) calc(16px + var(--safe-r)) calc(72px + var(--safe-b)) calc(16px + var(--safe-l));
 		}
-		.auth-wrap {
-			width: 100%;
-			max-width: 440px;
-			animation: rise .5s ease both;
-		}
+		.auth-wrap { width: 100%; max-width: 440px; animation: rise .45s ease both; }
 		.auth {
-			background: var(--card);
-			border-radius: 22px;
-			padding: 28px 24px 22px;
-			box-shadow: var(--shadow);
-			border: 1px solid var(--line);
+			position: relative;
+			background: #fff;
+			border-radius: 28px;
+			padding: 36px 32px 28px;
+			border: 1px solid #f0e4c8;
+			box-shadow: 0 22px 50px rgba(176, 140, 48, .14), inset 0 3px 0 #e0b84a;
 		}
-		.auth-head {
-			display: flex;
-			align-items: center;
-			gap: 12px;
-			margin-bottom: 4px;
+		.brand {
+			display: block;
+			height: 58px;
+			width: auto;
+			margin: 4px auto 22px;
+			border-radius: 10px;
+			box-shadow: 0 10px 22px rgba(180, 140, 40, .28);
 		}
-		.auth-head img { width: 42px; height: 42px; object-fit: contain; flex-shrink: 0; }
-		.auth h2 {
+		.auth h1 {
 			margin: 0;
-			font-size: 1.35rem;
+			text-align: center;
+			font-family: Manrope, "DM Sans", sans-serif;
+			font-size: 34px;
 			font-weight: 800;
-			color: var(--navy);
-			line-height: 1.2;
+			letter-spacing: -.6px;
+			color: #1b2744;
 		}
 		.auth .sub {
-			margin: 0 0 20px;
-			color: var(--muted);
-			font-size: .9rem;
+			margin: 8px 0 26px;
+			text-align: center;
+			color: #8d95a3;
+			font-size: 15px;
 		}
 
 		.field { margin-bottom: 14px; }
-		.field label {
-			display: block;
-			font-size: .75rem;
-			font-weight: 700;
-			color: var(--navy);
-			margin-bottom: 6px;
-			text-transform: uppercase;
-			letter-spacing: .04em;
-		}
-		.input-wrap {
-			position: relative;
-			display: flex;
-			align-items: center;
-		}
-		.input-wrap > i.left {
+		.sr {
 			position: absolute;
-			left: 14px;
-			color: #94a3b8;
-			font-size: .9rem;
+			width: 1px;
+			height: 1px;
+			padding: 0;
+			margin: -1px;
+			overflow: hidden;
+			clip: rect(0, 0, 0, 0);
+			border: 0;
+		}
+		.input-wrap { position: relative; display: flex; align-items: center; }
+		.input-wrap .ico {
+			position: absolute;
+			left: 16px;
+			width: 18px;
+			height: 18px;
+			color: #c6a035;
 			pointer-events: none;
 		}
 		.form-control {
 			width: 100%;
-			border: 1.5px solid var(--line);
-			background: var(--bg-soft);
+			border: 1.5px solid #ece4d4;
+			background: #fff;
 			border-radius: 14px;
-			padding: 13px 44px 13px 42px;
+			padding: 14px 48px;
 			font-size: 16px;
 			font-family: inherit;
 			color: var(--ink);
-			min-height: 48px;
-			transition: border-color .2s, box-shadow .2s, background .2s;
+			min-height: 54px;
+			transition: border-color .2s, box-shadow .2s;
 		}
+		.form-control::placeholder { color: #b0b6c2; }
 		.form-control:focus {
 			outline: none;
-			border-color: var(--gold);
-			background: #fff;
-			box-shadow: 0 0 0 3px rgba(212, 175, 55, .2);
+			border-color: #e0b84a;
+			box-shadow: 0 0 0 4px rgba(224, 184, 74, .18);
 		}
 		.toggle-pass {
 			position: absolute;
 			right: 8px;
 			border: 0;
 			background: transparent;
-			color: #94a3b8;
+			color: #c6a035;
 			cursor: pointer;
-			padding: 10px;
-			min-width: 44px;
-			min-height: 44px;
+			width: 40px;
+			height: 40px;
+			display: grid;
+			place-items: center;
+			padding: 0;
 		}
+		.toggle-pass svg { width: 18px; height: 18px; }
+		.toggle-pass .eye-off { display: none; }
+		.toggle-pass.is-shown .eye-on { display: none; }
+		.toggle-pass.is-shown .eye-off { display: block; }
 		.field-row {
 			display: flex;
 			justify-content: space-between;
 			align-items: center;
 			gap: 10px;
-			margin: 4px 0 16px;
-			font-size: .86rem;
-			flex-wrap: wrap;
+			margin: 2px 2px 16px;
+			font-size: 13px;
 		}
 		.form-check {
 			display: flex;
 			align-items: center;
 			gap: 8px;
-			color: var(--muted);
+			color: #8d95a3;
 			cursor: pointer;
-			min-height: 32px;
 		}
-		.form-check input { width: 16px; height: 16px; }
+		.form-check input { accent-color: #c6a035; width: 15px; height: 15px; }
 		.link-muted {
-			color: var(--navy-mid);
-			font-weight: 600;
+			color: #a7842a;
+			font-weight: 700;
 			text-decoration: none;
-			font-size: .86rem;
-			padding: 4px 0;
 		}
-		.link-muted:hover { color: var(--navy); text-decoration: underline; }
-
+		.link-muted:hover { text-decoration: underline; }
 		.btn-login {
+			position: relative;
 			width: 100%;
 			border: 0;
-			border-radius: 14px;
-			padding: 14px 18px;
-			min-height: 50px;
+			border-radius: 16px;
+			min-height: 56px;
+			padding: 14px 56px;
 			font-family: inherit;
-			font-weight: 700;
-			font-size: 1rem;
-			color: #0b1220;
+			font-weight: 800;
+			font-size: 17px;
+			color: #fff;
 			cursor: pointer;
-			background: linear-gradient(135deg, var(--gold-soft) 0%, var(--gold) 50%, var(--gold-deep) 100%);
-			box-shadow: 0 10px 28px rgba(184, 148, 31, .35);
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			gap: 10px;
-			transition: transform .15s, box-shadow .15s;
+			text-align: center;
+			background: linear-gradient(180deg, #f0d078 0%, #e0b44a 42%, #c9962a 100%);
+			box-shadow: 0 12px 28px rgba(201, 150, 42, .35);
 		}
-		.btn-login:hover {
-			transform: translateY(-1px);
-			box-shadow: 0 14px 32px rgba(184, 148, 31, .42);
-		}
-		.btn-login:disabled { opacity: .7; cursor: wait; transform: none; }
+		.btn-login:hover { filter: brightness(1.03); }
+		.btn-login:disabled { opacity: .7; cursor: wait; }
 		.btn-login .arr {
-			width: 28px; height: 28px;
+			position: absolute;
+			right: 12px;
+			top: 50%;
+			transform: translateY(-50%);
+			width: 32px;
+			height: 32px;
 			border-radius: 50%;
-			background: rgba(255,255,255,.35);
-			display: grid; place-items: center;
-			font-size: .75rem;
-			flex-shrink: 0;
-		}
-
-		.divider {
-			display: flex;
-			align-items: center;
-			gap: 12px;
-			margin: 20px 0 14px;
-			color: var(--muted);
-			font-size: .75rem;
-			font-weight: 600;
-			text-transform: uppercase;
-			letter-spacing: .06em;
-		}
-		.divider::before, .divider::after {
-			content: "";
-			flex: 1;
-			height: 1px;
-			background: var(--line);
-		}
-
-		.quick-grid {
+			background: rgba(255,255,255,.28);
+			border: 1px solid rgba(255,255,255,.55);
 			display: grid;
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-			gap: 8px;
+			place-items: center;
 		}
-		.quick-btn {
-			display: flex;
-			flex-direction: column;
-			align-items: center;
-			justify-content: center;
-			gap: 6px;
-			padding: 12px 6px;
-			min-height: 72px;
-			border: 1.5px solid var(--line);
-			border-radius: 14px;
-			background: var(--bg-soft);
-			color: var(--navy);
-			text-decoration: none;
-			font-size: .7rem;
-			font-weight: 600;
-			text-align: center;
-			line-height: 1.25;
-			transition: border-color .2s, background .2s;
-			cursor: pointer;
-			font-family: inherit;
-		}
-		.quick-btn:hover, .quick-btn:focus {
-			border-color: var(--gold);
-			background: rgba(212,175,55,.08);
-			color: var(--navy);
-			outline: none;
-		}
-		.quick-btn i {
-			font-size: 1.05rem;
-			color: var(--gold-deep);
-		}
+		.btn-login .arr svg { width: 16px; height: 16px; }
 
-		.auth-foot {
-			margin-top: 16px;
-			text-align: center;
-			font-size: .82rem;
-			color: var(--muted);
-			line-height: 1.5;
+		.extra {
+			margin-top: 18px;
+			display: flex;
+			flex-wrap: wrap;
+			justify-content: center;
+			gap: 8px 14px;
+			font-size: 13px;
 		}
-		.auth-foot a {
-			color: var(--navy);
+		.extra a {
+			color: #8a6a22;
 			font-weight: 700;
 			text-decoration: none;
 		}
-		.auth-foot a:hover { text-decoration: underline; }
+		.extra a:hover { text-decoration: underline; }
 		.panel-foot {
 			display: flex;
 			justify-content: space-between;
 			gap: 8px;
 			margin-top: 16px;
-			padding-top: 14px;
-			border-top: 1px solid var(--line);
-			font-size: .72rem;
-			color: #94a3b8;
-			flex-wrap: wrap;
+			font-size: 12px;
+			color: #a0a7b4;
 		}
-		.panel-foot a { color: var(--navy-mid); font-weight: 600; text-decoration: none; }
-
+		.panel-foot a { color: #8a6a22; font-weight: 700; text-decoration: none; }
 		.alert {
 			background: #fef2f2;
 			border: 1px solid #fecaca;
@@ -306,57 +240,38 @@
 		}
 		.alert-heading { font-weight: 700; display: block; margin-bottom: 4px; }
 		.alert p { margin: 0; font-size: .88rem; }
-
 		.lang {
 			position: fixed;
 			z-index: 2;
-			right: calc(12px + var(--safe-r));
-			bottom: calc(12px + var(--safe-b));
-			font-size: .8rem;
-			color: var(--muted);
+			right: calc(14px + var(--safe-r));
+			bottom: calc(14px + var(--safe-b));
+			font-size: 13px;
+			color: #8d95a3;
 			display: flex;
 			gap: 8px;
 			align-items: center;
 			background: rgba(255,255,255,.92);
-			padding: 6px 12px;
+			padding: 8px 12px;
 			border-radius: 999px;
-			border: 1px solid var(--line);
-			box-shadow: 0 4px 12px rgba(0,0,0,.06);
+			border: 1px solid #efe4cc;
+			box-shadow: 0 8px 20px rgba(176, 140, 48, .12);
 		}
 		.lang a {
-			color: var(--navy);
+			color: #1b2744;
 			text-decoration: none;
 			display: inline-flex;
 			gap: 5px;
 			align-items: center;
-			font-weight: 600;
-			min-height: 28px;
+			font-weight: 700;
 		}
-
 		@keyframes rise {
-			from { opacity: 0; transform: translateY(12px); }
-			to { opacity: 1; transform: translateY(0); }
+			from { opacity: 0; transform: translateY(10px); }
+			to { opacity: 1; transform: none; }
 		}
-
 		@media (max-width: 480px) {
-			.page { padding: calc(12px + var(--safe-t)) 12px calc(68px + var(--safe-b)); }
-			.auth {
-				padding: 22px 16px 18px;
-				border-radius: 18px;
-			}
-			.auth h2 { font-size: 1.2rem; }
-			.quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-			.quick-btn { min-height: 68px; font-size: .68rem; }
-			.field-row { margin-bottom: 14px; }
-		}
-		@media (max-width: 360px) {
-			.auth-head img { width: 36px; height: 36px; }
-			.btn-login { font-size: .95rem; }
-		}
-		@media (max-height: 720px) and (max-width: 480px) {
-			.page { align-items: flex-start; }
-			.auth { padding-top: 18px; }
-			.quick-btn { min-height: 60px; padding: 10px 6px; }
+			.auth { padding: 28px 18px 22px; border-radius: 22px; }
+			.auth h1 { font-size: 28px; }
+			.brand { height: 50px; }
 		}
 		@media (prefers-reduced-motion: reduce) {
 			*, *::before, *::after { animation: none !important; transition: none !important; }
@@ -366,20 +281,18 @@
 <body>
 <?php
 if (!isset($email)) { $email = ''; }
-$logoX = base_url('assets/images/xander-x-3d.png');
+$logo = base_url('assets/images/xander-tech-wordmark.jpg');
 ?>
 
-<div class="deco" aria-hidden="true">
-	<span class="d1"></span><span class="d2"></span><span class="d3"></span><span class="d4"></span>
+<div class="stage" aria-hidden="true">
+	<i class="band b1"></i><i class="band b2"></i><i class="band b3"></i><i class="band b4"></i>
 </div>
 
 <div class="page">
 	<div class="auth-wrap">
 		<section class="auth" id="loginCard">
-			<div class="auth-head">
-				<img src="<?= $logoX; ?>" alt="XanderTech">
-				<h2>Welcome back</h2>
-			</div>
+			<img class="brand" src="<?= $logo; ?>" alt="Xander Tech LLC">
+			<h1>Welcome back</h1>
 			<p class="sub"><?= lang('app.account'); ?></p>
 
 			<form method="post" action="<?= base_url('login_pro'); ?>" id="frm_login">
@@ -391,26 +304,24 @@ $logoX = base_url('assets/images/xander-x-3d.png');
 				<?php } ?>
 
 				<div class="field">
-					<label for="email"><?= lang('app.email'); ?></label>
+					<label class="sr" for="email"><?= lang('app.email'); ?></label>
 					<div class="input-wrap">
-						<i class="fas fa-envelope left"></i>
+						<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 7l8 6 8-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
 						<input name="email" id="email" type="text" class="form-control"
-							   placeholder="<?= lang('app.enterEmail'); ?>" required minlength="4"
+							   placeholder="<?= lang('app.email'); ?>" required minlength="4"
 							   value="<?= esc($email); ?>" autocomplete="username" inputmode="email">
 					</div>
 				</div>
 
 				<div class="field">
-					<div class="field-row" style="margin-bottom:6px;">
-						<label for="examplePassword" style="margin:0;"><?= lang('app.password'); ?></label>
-						<a href="javascript:void(0);" class="link-muted btnrecover"><?= lang('app.recover'); ?></a>
-					</div>
+					<label class="sr" for="examplePassword"><?= lang('app.password'); ?></label>
 					<div class="input-wrap">
-						<i class="fas fa-lock left"></i>
+						<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
 						<input name="password" id="examplePassword" type="password" class="form-control"
-							   placeholder="<?= lang('app.enterPass'); ?>" required minlength="6" autocomplete="current-password">
-						<button type="button" class="toggle-pass" id="togglePass" aria-label="Show password">
-							<i class="fas fa-eye"></i>
+							   placeholder="<?= lang('app.password'); ?>" required minlength="6" autocomplete="current-password">
+						<button type="button" class="toggle-pass" id="togglePass" aria-label="Show password" aria-pressed="false">
+							<svg class="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+							<svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4l18 16M10.5 6.2A10 10 0 0 1 12 6c6.5 0 10 6 10 6a18 18 0 0 1-4.1 4.6M6.1 8.4C3.8 10 2 12 2 12s3.5 6 10 6c1.2 0 2.3-.2 3.3-.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
 						</button>
 					</div>
 				</div>
@@ -420,11 +331,12 @@ $logoX = base_url('assets/images/xander-x-3d.png');
 						<input name="check" id="exampleCheck" type="checkbox">
 						<span><?= lang('app.keep'); ?></span>
 					</label>
+					<a href="javascript:void(0);" class="link-muted btnrecover"><?= lang('app.recover'); ?></a>
 				</div>
 
 				<button class="btn-login" type="submit">
-					<?= lang('app.loginDashboard'); ?>
-					<span class="arr"><i class="fas fa-arrow-right"></i></span>
+					<?= lang('app.login'); ?>
+					<span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
 				</button>
 
 				<div class="panel-foot">
@@ -435,11 +347,11 @@ $logoX = base_url('assets/images/xander-x-3d.png');
 
 			<form class="autoSubmit validate" method="post" action="<?= base_url('reset_password'); ?>" id="frm_reset" style="display:none;">
 				<div class="field">
-					<label for="reset_email"><?= lang('app.email'); ?></label>
+					<label class="sr" for="reset_email"><?= lang('app.email'); ?></label>
 					<div class="input-wrap">
-						<i class="fas fa-envelope left"></i>
+						<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 7l8 6 8-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
 						<input name="email" id="reset_email" type="text" class="form-control"
-							   placeholder="<?= lang('app.enterEmail'); ?>" required minlength="4"
+							   placeholder="<?= lang('app.email'); ?>" required minlength="4"
 							   value="<?= esc($email); ?>" inputmode="email">
 					</div>
 				</div>
@@ -449,42 +361,13 @@ $logoX = base_url('assets/images/xander-x-3d.png');
 				<button class="btn-login" type="submit"><?= lang('app.resetlink'); ?></button>
 			</form>
 
-			<div id="quickAccessBlock">
-				<div class="divider">Or quick access</div>
-				<div class="quick-grid">
-					<a class="quick-btn is-link" href="<?= base_url('admin/login'); ?>" title="XanderTech platform admin">
-						<i class="fas fa-crown"></i>
-						Platform Admin
-					</a>
-					<button type="button" class="quick-btn" data-focus="login" title="Head Master, Secretary, DOS">
-						<i class="fas fa-user-tie"></i>
-						School Admin
-					</button>
-					<button type="button" class="quick-btn" data-focus="login" title="Teachers sign in with staff email">
-						<i class="fas fa-chalkboard-teacher"></i>
-						Teacher
-					</button>
-					<button type="button" class="quick-btn" data-focus="login" title="Accountant, Cashier (post 8–9)">
-						<i class="fas fa-calculator"></i>
-						Accountant
-					</button>
-					<a class="quick-btn is-link" href="<?= base_url('student-marks'); ?>">
-						<i class="fas fa-graduation-cap"></i>
-						<?= lang('app.studentMarks'); ?>
-					</a>
-					<a class="quick-btn is-link" href="<?= base_url('application'); ?>">
-						<i class="fas fa-file-signature"></i>
-						<?= lang('app.onlineRegistration'); ?>
-					</a>
-				</div>
-				<p class="auth-foot">
-					New to SmartSMS?
-					<a href="<?= base_url('application'); ?>">Apply for online registration</a>
-					<br>
-					<a href="<?= base_url('/'); ?>">Public home</a>
-				</p>
-			</div>
 		</section>
+		<div id="quickAccessBlock" class="extra">
+			<a href="<?= base_url('admin/login'); ?>">Platform admin</a>
+			<a href="<?= base_url('student-marks'); ?>"><?= lang('app.studentMarks'); ?></a>
+			<a href="<?= base_url('application'); ?>"><?= lang('app.onlineRegistration'); ?></a>
+			<a href="<?= base_url('/'); ?>">Home</a>
+		</div>
 	</div>
 </div>
 
@@ -508,19 +391,9 @@ $logoX = base_url('assets/images/xander-x-3d.png');
 
 		$("#togglePass").on("click", function () {
 			var input = $("#examplePassword");
-			var icon = $(this).find("i");
-			if (input.attr("type") === "password") {
-				input.attr("type", "text");
-				icon.removeClass("fa-eye").addClass("fa-eye-slash");
-			} else {
-				input.attr("type", "password");
-				icon.removeClass("fa-eye-slash").addClass("fa-eye");
-			}
-		});
-
-		$("[data-focus='login']").on("click", function () {
-			$("#email").focus();
-			$("#loginCard")[0].scrollIntoView({ behavior: "smooth", block: "center" });
+			var show = input.attr("type") === "password";
+			input.attr("type", show ? "text" : "password");
+			$(this).toggleClass("is-shown", show).attr("aria-pressed", show ? "true" : "false");
 		});
 
 		$(document).on("click", ".lang_switcher", function () {
