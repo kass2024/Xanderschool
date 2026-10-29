@@ -30,16 +30,8 @@ $mark = static function (int $on): string {
 ?>
 <header class="gx-head">
 	<div class="gx-wrap gx-bar">
-		<a class="gx-brand" href="#home-section" aria-label="Xander Tech SmartSMS">
-			<span class="gx-mark" aria-hidden="true">
-				<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
-					<path d="M6 6l12 12M18 6L6 18"/>
-				</svg>
-			</span>
-			<span>
-				<strong>XANDER TECH</strong>
-				<small>SCHOOL MANAGEMENT</small>
-			</span>
+		<a class="gx-brand" href="#home-section" aria-label="Xander Tech">
+			<img class="gx-logo" src="<?= base_url('assets/images/xander-tech-wordmark.jpg'); ?>" alt="Xander Tech LLC">
 		</a>
 		<nav class="gx-links" id="gxLinks" aria-label="Primary">
 			<a href="#home-section">Overview</a>
@@ -158,8 +150,8 @@ $mark = static function (int $on): string {
 			</div>
 			<a class="gx-choose" href="#packages" style="background:linear-gradient(180deg,#E8C56A,#C9962A);border-radius:999px;padding:14px 22px;font-weight:800;color:#1C2128;white-space:nowrap">Explore packages</a>
 		</div>
-		<div class="gx-pkgs">
-			<article class="gx-pkg">
+		<div class="gx-pkgs" id="gxPkgs">
+			<article class="gx-pkg" data-plan="trial">
 				<div class="gx-tag">FREE TRIAL</div>
 				<h3>Trial</h3>
 				<p class="desc">Explore before committing.</p>
@@ -169,9 +161,9 @@ $mark = static function (int $on): string {
 					<li><span class="plus">+</span> Up to 50 students</li>
 					<li><span class="plus">+</span> Upgrade anytime</li>
 				</ul>
-				<a class="gx-choose" href="#contact-section">Choose package</a>
+				<button class="gx-choose" type="button" data-plan="trial">Choose package</button>
 			</article>
-			<article class="gx-pkg">
+			<article class="gx-pkg" data-plan="essential">
 				<div class="gx-tag">PACKAGE A</div>
 				<h3>Essential</h3>
 				<p class="desc">Core school administration.</p>
@@ -181,9 +173,9 @@ $mark = static function (int $on): string {
 					<li><span class="plus">+</span> Student and staff records</li>
 					<li><span class="plus">+</span> Attendance and reports</li>
 				</ul>
-				<a class="gx-choose" href="#contact-section">Choose package</a>
+				<button class="gx-choose" type="button" data-plan="essential">Choose package</button>
 			</article>
-			<article class="gx-pkg featured">
+			<article class="gx-pkg featured" data-plan="professional">
 				<div class="gx-tag">PACKAGE B</div>
 				<h3>Professional</h3>
 				<p class="desc">Connected school operations.</p>
@@ -193,9 +185,9 @@ $mark = static function (int $on): string {
 					<li><span class="plus">+</span> Fees and finances</li>
 					<li><span class="plus">+</span> Pocket money and transport</li>
 				</ul>
-				<a class="gx-choose" href="#contact-section">Selected plan</a>
+				<button class="gx-choose" type="button" data-plan="professional">Selected plan</button>
 			</article>
-			<article class="gx-pkg">
+			<article class="gx-pkg" data-plan="complete">
 				<div class="gx-tag">PACKAGE C</div>
 				<h3>Complete</h3>
 				<p class="desc">Advanced school capabilities.</p>
@@ -205,8 +197,45 @@ $mark = static function (int $on): string {
 					<li><span class="plus">+</span> Facial recognition</li>
 					<li><span class="plus">+</span> Custom workflows</li>
 				</ul>
-				<a class="gx-choose" href="#contact-section">Choose package</a>
+				<button class="gx-choose" type="button" data-plan="complete">Choose package</button>
 			</article>
+		</div>
+		<div class="gx-picked" id="gxPicked">
+			<div class="gx-picked-mods">
+				<div class="gx-tag" id="gxPickedTag">PACKAGE B</div>
+				<h3 id="gxPickedTitle">Professional</h3>
+				<p class="gx-picked-count" id="gxPickedCount"></p>
+				<ul id="gxPickedList"></ul>
+			</div>
+			<form class="gx-pay" id="gxPay" method="post" action="#">
+				<h3>Pay for this package</h3>
+				<p class="gx-pay-lead">Same payment methods as Xander Learning Hub: Mobile Money on your phone, or a card through Stripe.</p>
+				<div class="gx-methods" id="gxMethods">
+					<button type="button" class="on" data-method="momo">Mobile Money</button>
+					<button type="button" data-method="stripe">Card · Stripe</button>
+				</div>
+				<p class="gx-momo-funds" id="gxMomoFunds">Funds are received on MoMo: 0781 976 400</p>
+				<label class="gx-field" id="gxStudentsWrap">Number of students
+					<input type="number" min="1" max="20000" value="100" id="gxStudents" inputmode="numeric">
+				</label>
+				<p class="gx-total" id="gxTotal"></p>
+				<label class="gx-field">Your name
+					<input id="gxPayName" autocomplete="name" placeholder="School contact name">
+				</label>
+				<label class="gx-field">Email for PDF receipt
+					<input type="email" id="gxPayEmail" required placeholder="you@school.com" autocomplete="email">
+				</label>
+				<label class="gx-field" id="gxPhoneWrap">Mobile Money number
+					<input id="gxPayPhone" inputmode="tel" placeholder="0788 XXX XXX" autocomplete="tel">
+				</label>
+				<button class="gx-pay-btn" type="submit" id="gxPayBtn">Pay with Mobile Money</button>
+				<ol class="gx-how" id="gxHow">
+					<li>Choose a package and the number of students.</li>
+					<li>Enter the email that should receive the PDF receipt.</li>
+					<li id="gxHowPay">Approve Mobile Money to 0781 976 400, the same receiver as Xander Learning Hub.</li>
+				</ol>
+				<p class="gx-pay-status" id="gxPayStatus" hidden></p>
+			</form>
 		</div>
 		<h3 id="modules" style="margin-top:48px">Compare actual school modules</h3>
 		<div class="gx-table-wrap">
@@ -291,6 +320,154 @@ $mark = static function (int $on): string {
 			window.location.href = 'mailto:admissions@xanderglobalscholars.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
 		});
 	}
+	var plans = {
+		trial: { tag: 'FREE TRIAL', name: 'Trial', price: 0, unit: 'Proposed: 30 days', col: 0 },
+		essential: { tag: 'PACKAGE A', name: 'Essential', price: 22.87, unit: 'per student / year', col: 1 },
+		professional: { tag: 'PACKAGE B', name: 'Professional', price: 37.98, unit: 'per student / year', col: 2 },
+		complete: { tag: 'PACKAGE C', name: 'Complete', price: 51.78, unit: 'per student / year', col: 3 }
+	};
+	var moduleRows = <?= json_encode($modules, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+	var currentPlan = 'professional';
+	var payMethod = 'momo';
+	var picked = document.getElementById('gxPicked');
+	var studentsInput = document.getElementById('gxStudents');
+	var momoFunds = document.getElementById('gxMomoFunds');
+	var phoneWrap = document.getElementById('gxPhoneWrap');
+	var studentsWrap = document.getElementById('gxStudentsWrap');
+	var methods = document.getElementById('gxMethods');
+	var payBtn = document.getElementById('gxPayBtn');
+	var howPay = document.getElementById('gxHowPay');
+	var totalEl = document.getElementById('gxTotal');
+	var statusEl = document.getElementById('gxPayStatus');
+
+	function money(amount) {
+		return '$' + amount.toFixed(2);
+	}
+
+	function selectPlan(id, scroll) {
+		if (!plans[id]) return;
+		currentPlan = id;
+		document.querySelectorAll('.gx-pkg').forEach(function (card) {
+			var on = card.getAttribute('data-plan') === id;
+			card.classList.toggle('featured', on);
+			var btn = card.querySelector('.gx-choose');
+			if (btn) btn.textContent = on ? 'Selected plan' : 'Choose package';
+		});
+		var plan = plans[id];
+		document.getElementById('gxPickedTag').textContent = plan.tag;
+		document.getElementById('gxPickedTitle').textContent = plan.name + ' modules';
+		var included = moduleRows.filter(function (row) { return row[plan.col + 1]; });
+		document.getElementById('gxPickedCount').textContent = included.length + (included.length === 1 ? ' module included' : ' modules included');
+		var list = document.getElementById('gxPickedList');
+		list.textContent = '';
+		included.forEach(function (row) {
+			var item = document.createElement('li');
+			item.textContent = row[0];
+			list.appendChild(item);
+		});
+		document.querySelectorAll('.gx-table tr').forEach(function (tr) {
+			Array.prototype.forEach.call(tr.children, function (cell, index) {
+				cell.classList.toggle('gx-col-on', index === plan.col + 1);
+			});
+		});
+		var trial = plan.price === 0;
+		if (studentsWrap) studentsWrap.hidden = trial;
+		if (methods) methods.hidden = trial;
+		renderPay();
+		if (statusEl) {
+			statusEl.hidden = true;
+			statusEl.textContent = '';
+		}
+		if (scroll && picked) picked.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
+	function renderPay() {
+		var plan = plans[currentPlan];
+		var students = Math.max(1, parseInt(studentsInput && studentsInput.value, 10) || 1);
+		var trial = plan.price === 0;
+		var momo = payMethod === 'momo';
+		if (momoFunds) momoFunds.hidden = trial || !momo;
+		if (phoneWrap) phoneWrap.hidden = trial || !momo;
+		if (totalEl) {
+			totalEl.textContent = trial
+				? 'Free · up to 50 students'
+				: money(plan.price * students) + ' · ' + students + ' students ' + plan.unit;
+		}
+		if (payBtn) payBtn.textContent = trial ? 'Request free trial' : (momo ? 'Pay with Mobile Money' : 'Pay safely with Stripe');
+		if (howPay) {
+			howPay.textContent = trial
+				? 'Tell us the school name and we will confirm the 30-day trial.'
+				: (momo
+					? 'Pay Mobile Money to 0781 976 400, the same receiver as Xander Learning Hub, then approve it on your phone.'
+					: 'Card payments use Stripe, the same secure checkout as Xander Learning Hub. We email the payment link to you.');
+		}
+		document.querySelectorAll('#gxMethods button').forEach(function (button) {
+			button.classList.toggle('on', button.getAttribute('data-method') === payMethod);
+		});
+	}
+
+	document.querySelectorAll('.gx-pkg').forEach(function (card) {
+		card.addEventListener('click', function () {
+			selectPlan(card.getAttribute('data-plan'), true);
+		});
+	});
+	if (studentsInput) studentsInput.addEventListener('input', renderPay);
+	if (methods) {
+		methods.addEventListener('click', function (event) {
+			var button = event.target.closest('button');
+			if (!button) return;
+			payMethod = button.getAttribute('data-method') || 'momo';
+			renderPay();
+		});
+	}
+	var payForm = document.getElementById('gxPay');
+	if (payForm) {
+		payForm.addEventListener('submit', function (event) {
+			event.preventDefault();
+			event.stopPropagation();
+			var plan = plans[currentPlan];
+			var students = Math.max(1, parseInt(studentsInput && studentsInput.value, 10) || 1);
+			var name = (document.getElementById('gxPayName').value || '').trim();
+			var email = (document.getElementById('gxPayEmail').value || '').trim();
+			var phone = (document.getElementById('gxPayPhone').value || '').trim();
+			var trial = plan.price === 0;
+			var momo = payMethod === 'momo';
+			if (!trial && momo && phone.replace(/\D/g, '').length < 9) {
+				if (statusEl) {
+					statusEl.hidden = false;
+					statusEl.textContent = 'Enter the Mobile Money number that should approve this payment.';
+				}
+				document.getElementById('gxPayPhone').focus();
+				return;
+			}
+			var amount = trial ? 'Free' : money(plan.price * students);
+			var method = trial ? 'Free trial' : (momo ? 'Mobile Money' : 'Stripe card');
+			var lines = [
+				'Package: ' + plan.name,
+				'Students: ' + (trial ? 'up to 50' : String(students)),
+				'Amount: ' + amount,
+				'Method: ' + method,
+				'Name: ' + name,
+				'Receipt email: ' + email
+			];
+			if (!trial && momo) {
+				lines.push('Mobile Money number: ' + phone);
+				lines.push('Pay to MoMo: 0781 976 400');
+			}
+			var subject = (trial ? 'SmartSMS trial' : 'SmartSMS payment') + ' — ' + plan.name;
+			window.location.href = 'mailto:admissions@xanderglobalscholars.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(lines.join('\n'));
+			if (statusEl) {
+				statusEl.hidden = false;
+				statusEl.textContent = trial
+					? 'Trial request opened for ' + email + '. We will confirm the 30-day Trial and its modules.'
+					: (momo
+						? 'Pay ' + amount + ' with Mobile Money to 0781 976 400 from ' + phone + '. Your receipt request for ' + email + ' is ready to send.'
+						: 'Stripe checkout for ' + amount + ' will be emailed to ' + email + ', the same card method as Xander Learning Hub.');
+			}
+		});
+	}
+	selectPlan('professional', false);
+
 	document.querySelectorAll('.lang_switcher').forEach(function (link) {
 		link.addEventListener('click', function () {
 			var lang = link.getAttribute('data-target');
