@@ -123,6 +123,7 @@
 											<?php
 											helper('qonics');
 											$canManageStaffActions = can_manage_staff_list_actions();
+											$canChangeStaffCard = can_change_staff_card();
 											$staffContractDay = static function ($value): string {
 												$value = trim((string) $value);
 												if ($value === '' || $value === '0000-00-00') {
@@ -215,8 +216,8 @@
 																	<i class="fa fa-print"></i> Print card
 																</button>
 															<?php endif; ?>
-															<?php if ($canManageStaffActions): ?>
 															<?php if ($hasCard): ?>
+																<?php if ($canChangeStaffCard): ?>
 																<button type="button" class="btn btn-sm btn-warning btn-staff-change-card"
 																	data-id="<?= (int)$staff['id']; ?>"
 																	data-name="<?= $staffName; ?>"
@@ -224,13 +225,16 @@
 																	title="Change RFID card">
 																	<i class="fa fa-sync"></i> Change
 																</button>
+																<?php endif; ?>
+																<?php if ($canManageStaffActions): ?>
 																<button type="button" class="btn btn-sm btn-outline-danger btn-staff-remove-card"
 																	data-id="<?= (int)$staff['id']; ?>"
 																	data-name="<?= $staffName; ?>"
 																	title="Remove RFID card">
 																	<i class="fa fa-id-card"></i> Remove card
 																</button>
-															<?php else: ?>
+																<?php endif; ?>
+															<?php elseif ($canChangeStaffCard): ?>
 																<button type="button" class="btn btn-sm btn-primary btn-staff-assign-card"
 																	data-id="<?= (int)$staff['id']; ?>"
 																	data-name="<?= $staffName; ?>"
@@ -238,14 +242,13 @@
 																	<i class="fa fa-wifi"></i> Assign card
 																</button>
 															<?php endif; ?>
-															<?php if ($hasFace): ?>
+															<?php if ($canManageStaffActions && $hasFace): ?>
 																<button type="button" class="btn btn-sm btn-outline-danger btn-staff-remove-face"
 																	data-id="<?= (int)$staff['id']; ?>"
 																	data-name="<?= $staffName; ?>"
 																	title="Remove enrolled face">
 																	<i class="fa fa-user-times"></i> Remove face
 																</button>
-															<?php endif; ?>
 															<?php endif; ?>
 														</div>
 														<button type="button" class="btn btn-sm btn-info btn-staff-share-access"

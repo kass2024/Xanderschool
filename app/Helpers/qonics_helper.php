@@ -462,6 +462,30 @@ if (!function_exists('can_manage_staff_list_actions')) {
 	}
 }
 
+if (!function_exists('is_head_teacher_post')) {
+	/** Every Head Teacher post, including a school that stored the title under another id. */
+	function is_head_teacher_post($postId = null, $postTitle = null)
+	{
+		$postId = (int) ($postId ?? ($_SESSION['soma_post'] ?? 0));
+		if ($postId === \App\Models\PostsModel::HEAD_TEACHER_ID) {
+			return true;
+		}
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($postTitle ?? ($_SESSION['soma_post_title'] ?? '')))));
+		if ($title === '' && $postId > 0) {
+			$title = \Config\MenuClearance::postTitle($postId);
+		}
+		return in_array($title, ['head teacher', 'headteacher'], true);
+	}
+}
+
+if (!function_exists('can_change_staff_card')) {
+	/** Director, Headmaster, Headmistress, and every Head Teacher may change a staff RFID card. */
+	function can_change_staff_card()
+	{
+		return can_manage_staff_list_actions() || is_head_teacher_post();
+	}
+}
+
 if (!function_exists('is_head_master_equivalent')) {
 	function is_head_master_equivalent($postId = null)
 	{
