@@ -45,7 +45,6 @@ $mark = static function (int $on): string {
 			<a href="#home-section">Overview</a>
 			<a class="gx-on" href="#packages">Packages</a>
 			<a href="#modules">Modules</a>
-			<a href="#packages">Pricing</a>
 			<a href="<?= base_url('student-marks'); ?>"><?= lang('app.studentMarks'); ?></a>
 			<a href="<?= base_url('application'); ?>"><?= lang('app.onlineRegistration'); ?></a>
 			<span class="gx-lang">
