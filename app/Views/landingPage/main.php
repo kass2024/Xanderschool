@@ -356,8 +356,6 @@ $mark = static function (int $on): string {
 	var moduleRows = <?= json_encode($modules, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 	var currentPlan = 'professional';
 	var payMethod = 'momo';
-	var usdToRwf = <?= (int) env('PACKAGE_USD_TO_RWF', 1450); ?>;
-	var payTimer = null;
 	var picked = document.getElementById('gxPicked');
 	var studentsInput = document.getElementById('gxStudents');
 	var phoneWrap = document.getElementById('gxPhoneWrap');
@@ -366,6 +364,26 @@ $mark = static function (int $on): string {
 	var payBtn = document.getElementById('gxPayBtn');
 	var totalEl = document.getElementById('gxTotal');
 	var statusEl = document.getElementById('gxPayStatus');
+	var pollTimer = null;
+
+	function clearStatus() {
+		if (!statusEl) return;
+		statusEl.hidden = true;
+		statusEl.textContent = '';
+	}
+
+	function stopPoll() {
+		if (pollTimer) {
+			clearInterval(pollTimer);
+			pollTimer = null;
+		}
+	}
+
+	function showStatus(text) {
+		if (!statusEl) return;
+		statusEl.hidden = false;
+		statusEl.textContent = text;
+	}
 
 	function money(amount) {
 		return '$' + amount.toFixed(2);
@@ -401,10 +419,8 @@ $mark = static function (int $on): string {
 		if (studentsWrap) studentsWrap.hidden = trial;
 		if (methods) methods.hidden = trial;
 		renderPay();
-		if (statusEl) {
-			statusEl.hidden = true;
-			statusEl.textContent = '';
-		}
+		clearStatus();
+		stopPoll();
 		if (scroll && picked) picked.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
@@ -415,22 +431,14 @@ $mark = static function (int $on): string {
 		var momo = payMethod === 'momo';
 		if (phoneWrap) phoneWrap.hidden = trial || !momo;
 		if (totalEl) {
-			if (trial) {
-				totalEl.textContent = 'Free';
-			} else if (momo) {
-				totalEl.textContent = Math.round(plan.price * students * usdToRwf).toLocaleString() + ' RWF';
-			} else {
-				totalEl.textContent = money(plan.price * students);
-			}
+			totalEl.textContent = trial
+				? 'Free · up to 50 students'
+				: money(plan.price * students) + ' · ' + students + ' students ' + plan.unit;
 		}
-		if (payBtn) payBtn.textContent = trial ? 'Free trial' : (momo ? 'Pay with Mobile Money' : 'Pay safely with Stripe');
+		if (payBtn) payBtn.textContent = trial ? 'Request free trial' : (momo ? 'Pay with Mobile Money' : 'Pay safely with Stripe');
 		document.querySelectorAll('#gxMethods button').forEach(function (button) {
 			button.classList.toggle('on', button.getAttribute('data-method') === payMethod);
 		});
-		if (statusEl && !payBtn.disabled) {
-			statusEl.hidden = true;
-			statusEl.textContent = '';
-		}
 	}
 
 	document.querySelectorAll('.gx-pkg').forEach(function (card) {
@@ -444,36 +452,12 @@ $mark = static function (int $on): string {
 			var button = event.target.closest('button');
 			if (!button) return;
 			payMethod = button.getAttribute('data-method') || 'momo';
+			clearStatus();
+			stopPoll();
 			renderPay();
 		});
 	}
 	var payForm = document.getElementById('gxPay');
-	function showStatus(text) {
-		if (!statusEl) return;
-		statusEl.hidden = false;
-		statusEl.textContent = text;
-	}
-	function pollPayment(reference) {
-		if (payTimer) clearInterval(payTimer);
-		var tries = 0;
-		payTimer = setInterval(function () {
-			tries += 1;
-			if (tries > 40) {
-				clearInterval(payTimer);
-				if (payBtn) payBtn.disabled = false;
-				return;
-			}
-			fetch('<?= base_url('packagecheckout/status'); ?>?reference=' + encodeURIComponent(reference), { headers: { 'Accept': 'application/json' } })
-				.then(function (response) { return response.json(); })
-				.then(function (data) {
-					if (!data || data.state === 'pending') return;
-					clearInterval(payTimer);
-					if (payBtn) payBtn.disabled = false;
-					showStatus(data.message || (data.state === 'paid' ? 'Payment received.' : 'The payment was not approved.'));
-				})
-				.catch(function () {});
-		}, 3000);
-	}
 	if (payForm) {
 		payForm.addEventListener('submit', function (event) {
 			event.preventDefault();
@@ -486,7 +470,10 @@ $mark = static function (int $on): string {
 			var trial = plan.price === 0;
 			var momo = payMethod === 'momo';
 			if (trial) {
-				showStatus('Free');
+				var trialSubject = 'SmartSMS trial — ' + plan.name;
+				var trialBody = 'Name: ' + name + '\nEmail: ' + email + '\nPackage: Trial';
+				window.location.href = 'mailto:admissions@xanderglobalscholars.com?subject=' + encodeURIComponent(trialSubject) + '&body=' + encodeURIComponent(trialBody);
+				showStatus('Trial request ready to send.');
 				return;
 			}
 			if (momo && phone.replace(/\D/g, '').length < 9) {
@@ -494,9 +481,15 @@ $mark = static function (int $on): string {
 				document.getElementById('gxPayPhone').focus();
 				return;
 			}
+			if (!email) {
+				showStatus('Enter the email for the receipt.');
+				document.getElementById('gxPayEmail').focus();
+				return;
+			}
+			stopPoll();
 			if (payBtn) payBtn.disabled = true;
-			showStatus(momo ? 'Sending the prompt to your phone…' : 'Opening card checkout…');
-			fetch('<?= base_url('packagecheckout/start'); ?>', {
+			showStatus('Starting payment…');
+			fetch(payForm.action, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
 				body: JSON.stringify({
@@ -508,28 +501,59 @@ $mark = static function (int $on): string {
 					method: momo ? 'momo' : 'stripe'
 				})
 			}).then(function (response) {
-				return response.json().then(function (data) { return { ok: response.ok, data: data }; });
+				return response.json().then(function (json) {
+					return { ok: response.ok, json: json || {} };
+				});
 			}).then(function (result) {
-				var data = result.data || {};
-				if (!result.ok || !data.ok) {
-					if (payBtn) payBtn.disabled = false;
-					showStatus(data.message || 'Payment could not start.');
+				if (payBtn) payBtn.disabled = false;
+				var json = result.json;
+				if (!result.ok || !json.ok) {
+					showStatus(json.message || 'Payment could not start.');
 					return;
 				}
-				if (data.checkout_url) {
-					window.location.href = data.checkout_url;
+				if (json.checkout_url) {
+					window.location.href = json.checkout_url;
 					return;
 				}
-				showStatus(data.message || 'Approve the prompt on your phone.');
-				if (data.reference) pollPayment(data.reference);
-				else if (payBtn) payBtn.disabled = false;
+				showStatus(json.message || 'Approve the prompt on your phone.');
+				if (json.reference) pollPayment(json.reference);
 			}).catch(function () {
 				if (payBtn) payBtn.disabled = false;
-				showStatus('Payment could not start.');
+				showStatus('Payment could not start. Try again.');
 			});
 		});
 	}
+
+	function pollPayment(reference) {
+		stopPoll();
+		var tries = 0;
+		pollTimer = setInterval(function () {
+			tries += 1;
+			if (tries > 40) {
+				stopPoll();
+				showStatus('Still waiting. Approve the prompt on your phone, then refresh this page.');
+				return;
+			}
+			fetch('<?= base_url('packagecheckout/status'); ?>?reference=' + encodeURIComponent(reference), {
+				headers: { 'Accept': 'application/json' }
+			}).then(function (response) { return response.json(); }).then(function (json) {
+				if (!json || !json.ok) return;
+				if (json.state === 'paid') {
+					stopPoll();
+					showStatus('Payment received.');
+				} else if (json.state === 'failed') {
+					stopPoll();
+					showStatus(json.message || 'The payment was not approved.');
+				}
+			}).catch(function () {});
+		}, 3000);
+	}
+
 	selectPlan('professional', false);
+	if (new URLSearchParams(window.location.search).get('package') === 'paid') {
+		showStatus('Payment received.');
+		if (picked) picked.scrollIntoView({ block: 'start' });
+	}
 
 	document.querySelectorAll('.lang_switcher').forEach(function (link) {
 		link.addEventListener('click', function () {

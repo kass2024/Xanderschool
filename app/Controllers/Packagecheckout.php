@@ -90,7 +90,7 @@ class Packagecheckout extends Controller
 	 */
 	private function startStripe(string $label, string $email, string $name, string $plan, int $students, float $usd)
 	{
-		$secret = trim((string) env('STRIPE_SECRET_KEY', ''));
+		$secret = $this->stripeSecret();
 		if ($secret === '') {
 			return $this->fail('Card payment is not configured.');
 		}
@@ -187,7 +187,6 @@ class Packagecheckout extends Controller
 				'title' => 'SmartSMS package',
 				'details' => $label,
 				'message' => 'SMARTSMS',
-				'use_transfer' => false,
 				'mno' => 'mtn',
 			]);
 		} catch (\Throwable $e) {
@@ -215,19 +214,43 @@ class Packagecheckout extends Controller
 		]);
 	}
 
+	private function stripeSecret(): string
+	{
+		$hub = trim((string) env('HUB_STRIPE_SECRET_KEY', ''));
+		if ($hub !== '') {
+			return $hub;
+		}
+
+		return trim((string) env('STRIPE_SECRET_KEY', ''));
+	}
+
 	private function gateway(): MopayGatewayClient
 	{
 		$base = (new \Config\Mopay())->toArray();
-		foreach ([
+		$map = [
 			'project_slug' => 'HUB_MOPAY_PROJECT_SLUG',
 			'message_prefix' => 'HUB_MOPAY_MESSAGE_PREFIX',
+			'account_id' => 'HUB_MOPAY_ACCOUNT_ID',
+			'auth_key' => 'HUB_MOPAY_AUTH_KEY',
+			'bearer_token' => 'HUB_MOPAY_BEARER_TOKEN',
+			'server_base_url' => 'HUB_MOPAY_SERVER_BASE_URL',
+			'token_url' => 'HUB_MOPAY_TOKEN_URL',
+			'category' => 'HUB_MOPAY_CATEGORY',
+			'callback_signing_key' => 'HUB_MOPAY_CALLBACK_SIGNING_KEY',
+			'callback_url' => 'HUB_MOPAY_CALLBACK_URL',
+			'default_country_code' => 'HUB_MOPAY_DEFAULT_COUNTRY_CODE',
+			'default_mno' => 'HUB_MOPAY_DEFAULT_MNO',
+			'default_currency' => 'HUB_MOPAY_DEFAULT_CURRENCY',
+			'receiver_account_no' => 'HUB_MOPAY_RECEIVER_ACCOUNT_NO',
 			'payment_title' => 'HUB_MOPAY_PAYMENT_TITLE',
 			'payment_details' => 'HUB_MOPAY_PAYMENT_DETAILS',
-		] as $field => $envKey) {
+		];
+		foreach ($map as $field => $envKey) {
 			$value = trim((string) env($envKey, ''));
-			if ($value !== '') {
-				$base[$field] = $value;
+			if ($value === '') {
+				continue;
 			}
+			$base[$field] = $field === 'server_base_url' ? rtrim($value, '/') : $value;
 		}
 
 		return MopayGatewayClient::fromConfig($base);
