@@ -241,14 +241,12 @@ $mark = static function (int $on): string {
 				<p class="gx-picked-count" id="gxPickedCount"></p>
 				<ul id="gxPickedList"></ul>
 			</div>
-			<form class="gx-pay" id="gxPay" method="post" action="#">
+			<form class="gx-pay" id="gxPay" method="post" action="<?= base_url('packagecheckout/start'); ?>">
 				<h3>Pay for this package</h3>
-				<p class="gx-pay-lead">Same payment methods as Xander Learning Hub: Mobile Money on your phone, or a card through Stripe.</p>
 				<div class="gx-methods" id="gxMethods">
 					<button type="button" class="on" data-method="momo">Mobile Money</button>
 					<button type="button" data-method="stripe">Card · Stripe</button>
 				</div>
-				<p class="gx-momo-funds" id="gxMomoFunds">Funds are received on MoMo: 0781 976 400</p>
 				<label class="gx-field" id="gxStudentsWrap">Number of students
 					<input type="number" min="1" max="20000" value="100" id="gxStudents" inputmode="numeric">
 				</label>
@@ -263,11 +261,6 @@ $mark = static function (int $on): string {
 					<input id="gxPayPhone" inputmode="tel" placeholder="0788 XXX XXX" autocomplete="tel">
 				</label>
 				<button class="gx-pay-btn" type="submit" id="gxPayBtn">Pay with Mobile Money</button>
-				<ol class="gx-how" id="gxHow">
-					<li>Choose a package and the number of students.</li>
-					<li>Enter the email that should receive the PDF receipt.</li>
-					<li id="gxHowPay">Approve Mobile Money to 0781 976 400, the same receiver as Xander Learning Hub.</li>
-				</ol>
 				<p class="gx-pay-status" id="gxPayStatus" hidden></p>
 			</form>
 		</div>
@@ -363,14 +356,14 @@ $mark = static function (int $on): string {
 	var moduleRows = <?= json_encode($modules, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 	var currentPlan = 'professional';
 	var payMethod = 'momo';
+	var usdToRwf = <?= (int) env('PACKAGE_USD_TO_RWF', 1450); ?>;
+	var payTimer = null;
 	var picked = document.getElementById('gxPicked');
 	var studentsInput = document.getElementById('gxStudents');
-	var momoFunds = document.getElementById('gxMomoFunds');
 	var phoneWrap = document.getElementById('gxPhoneWrap');
 	var studentsWrap = document.getElementById('gxStudentsWrap');
 	var methods = document.getElementById('gxMethods');
 	var payBtn = document.getElementById('gxPayBtn');
-	var howPay = document.getElementById('gxHowPay');
 	var totalEl = document.getElementById('gxTotal');
 	var statusEl = document.getElementById('gxPayStatus');
 
@@ -420,24 +413,24 @@ $mark = static function (int $on): string {
 		var students = Math.max(1, parseInt(studentsInput && studentsInput.value, 10) || 1);
 		var trial = plan.price === 0;
 		var momo = payMethod === 'momo';
-		if (momoFunds) momoFunds.hidden = trial || !momo;
 		if (phoneWrap) phoneWrap.hidden = trial || !momo;
 		if (totalEl) {
-			totalEl.textContent = trial
-				? 'Free · up to 50 students'
-				: money(plan.price * students) + ' · ' + students + ' students ' + plan.unit;
+			if (trial) {
+				totalEl.textContent = 'Free';
+			} else if (momo) {
+				totalEl.textContent = Math.round(plan.price * students * usdToRwf).toLocaleString() + ' RWF';
+			} else {
+				totalEl.textContent = money(plan.price * students);
+			}
 		}
-		if (payBtn) payBtn.textContent = trial ? 'Request free trial' : (momo ? 'Pay with Mobile Money' : 'Pay safely with Stripe');
-		if (howPay) {
-			howPay.textContent = trial
-				? 'Tell us the school name and we will confirm the 30-day trial.'
-				: (momo
-					? 'Pay Mobile Money to 0781 976 400, the same receiver as Xander Learning Hub, then approve it on your phone.'
-					: 'Card payments use Stripe, the same secure checkout as Xander Learning Hub. We email the payment link to you.');
-		}
+		if (payBtn) payBtn.textContent = trial ? 'Free trial' : (momo ? 'Pay with Mobile Money' : 'Pay safely with Stripe');
 		document.querySelectorAll('#gxMethods button').forEach(function (button) {
 			button.classList.toggle('on', button.getAttribute('data-method') === payMethod);
 		});
+		if (statusEl && !payBtn.disabled) {
+			statusEl.hidden = true;
+			statusEl.textContent = '';
+		}
 	}
 
 	document.querySelectorAll('.gx-pkg').forEach(function (card) {
@@ -455,6 +448,32 @@ $mark = static function (int $on): string {
 		});
 	}
 	var payForm = document.getElementById('gxPay');
+	function showStatus(text) {
+		if (!statusEl) return;
+		statusEl.hidden = false;
+		statusEl.textContent = text;
+	}
+	function pollPayment(reference) {
+		if (payTimer) clearInterval(payTimer);
+		var tries = 0;
+		payTimer = setInterval(function () {
+			tries += 1;
+			if (tries > 40) {
+				clearInterval(payTimer);
+				if (payBtn) payBtn.disabled = false;
+				return;
+			}
+			fetch('<?= base_url('packagecheckout/status'); ?>?reference=' + encodeURIComponent(reference), { headers: { 'Accept': 'application/json' } })
+				.then(function (response) { return response.json(); })
+				.then(function (data) {
+					if (!data || data.state === 'pending') return;
+					clearInterval(payTimer);
+					if (payBtn) payBtn.disabled = false;
+					showStatus(data.message || (data.state === 'paid' ? 'Payment received.' : 'The payment was not approved.'));
+				})
+				.catch(function () {});
+		}, 3000);
+	}
 	if (payForm) {
 		payForm.addEventListener('submit', function (event) {
 			event.preventDefault();
@@ -466,38 +485,48 @@ $mark = static function (int $on): string {
 			var phone = (document.getElementById('gxPayPhone').value || '').trim();
 			var trial = plan.price === 0;
 			var momo = payMethod === 'momo';
-			if (!trial && momo && phone.replace(/\D/g, '').length < 9) {
-				if (statusEl) {
-					statusEl.hidden = false;
-					statusEl.textContent = 'Enter the Mobile Money number that should approve this payment.';
-				}
+			if (trial) {
+				showStatus('Free');
+				return;
+			}
+			if (momo && phone.replace(/\D/g, '').length < 9) {
+				showStatus('Enter the Mobile Money number that should approve this payment.');
 				document.getElementById('gxPayPhone').focus();
 				return;
 			}
-			var amount = trial ? 'Free' : money(plan.price * students);
-			var method = trial ? 'Free trial' : (momo ? 'Mobile Money' : 'Stripe card');
-			var lines = [
-				'Package: ' + plan.name,
-				'Students: ' + (trial ? 'up to 50' : String(students)),
-				'Amount: ' + amount,
-				'Method: ' + method,
-				'Name: ' + name,
-				'Receipt email: ' + email
-			];
-			if (!trial && momo) {
-				lines.push('Mobile Money number: ' + phone);
-				lines.push('Pay to MoMo: 0781 976 400');
-			}
-			var subject = (trial ? 'SmartSMS trial' : 'SmartSMS payment') + ' — ' + plan.name;
-			window.location.href = 'mailto:admissions@xanderglobalscholars.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(lines.join('\n'));
-			if (statusEl) {
-				statusEl.hidden = false;
-				statusEl.textContent = trial
-					? 'Trial request opened for ' + email + '. We will confirm the 30-day Trial and its modules.'
-					: (momo
-						? 'Pay ' + amount + ' with Mobile Money to 0781 976 400 from ' + phone + '. Your receipt request for ' + email + ' is ready to send.'
-						: 'Stripe checkout for ' + amount + ' will be emailed to ' + email + ', the same card method as Xander Learning Hub.');
-			}
+			if (payBtn) payBtn.disabled = true;
+			showStatus(momo ? 'Sending the prompt to your phone…' : 'Opening card checkout…');
+			fetch('<?= base_url('packagecheckout/start'); ?>', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+				body: JSON.stringify({
+					plan: currentPlan,
+					students: students,
+					name: name,
+					email: email,
+					phone: phone,
+					method: momo ? 'momo' : 'stripe'
+				})
+			}).then(function (response) {
+				return response.json().then(function (data) { return { ok: response.ok, data: data }; });
+			}).then(function (result) {
+				var data = result.data || {};
+				if (!result.ok || !data.ok) {
+					if (payBtn) payBtn.disabled = false;
+					showStatus(data.message || 'Payment could not start.');
+					return;
+				}
+				if (data.checkout_url) {
+					window.location.href = data.checkout_url;
+					return;
+				}
+				showStatus(data.message || 'Approve the prompt on your phone.');
+				if (data.reference) pollPayment(data.reference);
+				else if (payBtn) payBtn.disabled = false;
+			}).catch(function () {
+				if (payBtn) payBtn.disabled = false;
+				showStatus('Payment could not start.');
+			});
 		});
 	}
 	selectPlan('professional', false);
