@@ -1,362 +1,284 @@
+<?php $goldHome = empty($type) && empty($page); ?>
 <!doctype html>
-<html lang="en">
+<html lang="<?= esc($_COOKIE['lang'] ?? 'en'); ?>">
 <head>
-  <title>SmartSMS</title>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-
-  <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,700" rel="stylesheet">
-  <link rel="stylesheet" href="fonts/icomoon/style.css">
-
-  <link rel="stylesheet" href="<?= base_url(); ?>assets/landing/css/bootstrap.min.css">
-  <link rel="stylesheet" href="<?= base_url(); ?>assets/landing/css/jquery-ui.css">
-  <link rel="stylesheet" href="<?= base_url(); ?>assets/landing/css/owl.carousel.min.css">
-  <link rel="stylesheet" href="<?= base_url(); ?>assets/landing/css/owl.theme.default.min.css">
-  <link rel="stylesheet" href="<?= base_url(); ?>assets/landing/css/jquery.fancybox.min.css">
-  <link rel="stylesheet" href="<?= base_url(); ?>assets/landing/css/bootstrap-datepicker.css">
-  <link rel="stylesheet" href="fonts/flaticon/font/flaticon.css">
-  <link rel="stylesheet" href="<?= base_url(); ?>assets/landing/css/aos.css">
-  <link rel="stylesheet" href="<?= base_url(); ?>assets/landing/css/style.css">
-
-  <!-- Favicon -->
-  <link rel="favorite icon" href="<?= base_url(); ?>assets/landing/images/about.png">
-
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.0.3/css/font-awesome.css">
-
-  <style>
-    /* ----- minor visual helpers from your original ----- */
-    #serv1:hover,#serv2:hover,#serv3:hover,#serv4:hover,#serv5:hover,#serv6:hover,#serv7:hover,#serv8:hover,#serv9:hover{
-      box-shadow:0 0 .2em .2em #8c0000;border-radius:.4em
-    }
-    #mobi_bg{background-image:url('<?=base_url();?>assets/landing/soma_pics/mobi_bg2.jpg');background-size:35em;border-radius:2em}
-    #opac{background-color:skyblue;opacity:.8;height:10em;border-radius:2em;width:103%;margin-left:-1.5%}
-    #down:hover{background-color:blue}
-    .sticky-wrapper.is-sticky .site-navbar .lang_switcher{color:#333!important}
-
-    /* ----- mobile drawer + backdrop ----- */
-    .mobile-backdrop{
-      position:fixed;inset:0;background:rgba(15,23,42,.45);
-      opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:9997;
-    }
-    .mobile-backdrop.open{opacity:1;pointer-events:auto}
-    .site-mobile-menu{
-      position:fixed;top:0;bottom:0;left:0;width:86%;max-width:360px;background:#fff;
-      transform:translateX(-105%);transition:transform .28s ease;z-index:9998;
-      box-shadow:0 10px 40px rgba(0,0,0,.2);display:flex;flex-direction:column
-    }
-    .site-mobile-menu.open{transform:translateX(0)}
-    .site-mobile-menu-header{padding:18px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between}
-    .site-mobile-menu-title{font-weight:700;margin:0;font-size:1.05rem}
-    .site-mobile-menu-close{cursor:pointer;font-size:1.4rem;line-height:1;color:#111;background:transparent;border:0}
-    .site-mobile-menu-body{overflow:auto;padding:8px 0;flex:1}
-    .mobile-nav{list-style:none;margin:0;padding:0}
-    .mobile-nav li a{display:block;padding:14px 18px;font-size:1.05rem;color:#111;text-decoration:none}
-    .mobile-nav li a:hover,.mobile-nav li a:focus{background:#f3f4f6}
-    .mobile-lang{padding:8px 16px;border-top:1px solid #e5e7eb}
-    .mobile-lang a{margin-right:14px;text-decoration:none}
-    .mobile-trigger{position:absolute;top:8px;right:12px;z-index:9999}
-    body.nav-open{overflow:hidden}
-    @media (min-width:1200px){ .mobile-backdrop,.site-mobile-menu{display:none} }
-
-    /* header z-index so it stays above content when sticky */
-    .site-navbar{z-index:1000;}
-  </style>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	<title>SmartSMS — XanderTech Smart School Management System</title>
+	<meta name="description" content="XanderTech SmartSMS — manage students, attendance, exams, fees, and parent communication in one smart school platform.">
+	<link rel="icon" href="<?= base_url('assets/images/xander-x-3d.png'); ?>">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<?php if ($goldHome): ?>
+		<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
+		<link rel="stylesheet" href="<?= base_url('assets/css/smartsms-gold.css'); ?>?v=1">
+	<?php else: ?>
+		<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,550;9..144,650&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+		<noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,550;9..144,650&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+		<link rel="stylesheet" href="<?= base_url('assets/css/smartsms-landing.css'); ?>">
+	<?php endif; ?>
+	<?php if (!empty($type)): ?>
+		<link rel="stylesheet" href="<?= base_url('assets/landing/css/bootstrap.min.css'); ?>">
+		<link rel="stylesheet" href="<?= base_url('assets/landing/css/style.css'); ?>">
+	<?php endif; ?>
 </head>
+<body class="<?= $goldHome ? 'gold-home' : 'ss-landing'; ?><?= empty($type) ? '' : ' ss-has-type'; ?>">
 
-<body data-spy="scroll" data-target=".site-navbar-target" data-offset="80">
-<div id="overlayer" style="<?=empty($type)?'':'display:none';?>"></div>
-<div class="loader" style="<?=empty($type)?'':'display:none';?>">
-  <div class="spinner-border text-primary" role="status"><span class="sr-only">Loading...</span></div>
+<?php if (empty($type) && !$goldHome): ?>
+<header class="ss-nav" id="ssNav" role="banner">
+	<div class="ss-nav__inner">
+		<a class="ss-brand" href="<?= base_url('/'); ?>" aria-label="SmartSMS home">
+			<img src="<?= base_url('assets/images/xander-wordmark-3d.png'); ?>" alt="XanderTech SmartSMS" style="background:#000;border-radius:8px;padding:4px;">
+			<span class="ss-brand__text">
+				<strong>SmartSMS</strong>
+				<span>XanderTech</span>
+			</span>
+		</a>
+
+		<nav class="ss-nav__desktop" aria-label="Primary">
+			<ul class="ss-nav__links" id="desktopMenu">
+				<li><a href="<?= base_url('/'); ?>#home-section"><?= lang('app.home'); ?></a></li>
+				<li><a href="<?= base_url('student-marks'); ?>" class="<?= (isset($page) && strtolower((string)$page) === 'marks') ? 'is-active' : ''; ?>"><?= lang('app.studentMarks'); ?></a></li>
+				<li><a href="<?= base_url('application'); ?>" class="<?= (isset($page) && strtolower((string)$page) === 'application') ? 'is-active' : ''; ?>"><?= lang('app.onlineRegistration'); ?></a></li>
+				<li><a href="<?= base_url('/'); ?>#about-section"><?= lang('app.about'); ?></a></li>
+				<li><a href="<?= base_url('/'); ?>#services-section"><?= lang('app.features'); ?></a></li>
+				<li><a href="<?= base_url('/'); ?>#contact-section"><?= lang('app.contact'); ?></a></li>
+			</ul>
+		</nav>
+
+		<div class="ss-nav__actions">
+			<div class="ss-lang">
+				<a href="javascript:void(0)" class="lang_switcher" data-target="en"><img src="<?= base_url('assets/images/en-flag.png'); ?>" alt=""> En</a>
+				<a href="javascript:void(0)" class="lang_switcher" data-target="fr"><img src="<?= base_url('assets/images/fr-flag.png'); ?>" alt=""> Fr</a>
+			</div>
+			<a class="ss-btn ss-btn--ghost" href="<?= base_url('login'); ?>"><?= lang('app.login'); ?></a>
+			<button class="ss-burger" id="ssBurger" type="button" aria-label="Open menu" aria-controls="ssDrawer" aria-expanded="false">
+				<span></span><span></span><span></span>
+			</button>
+		</div>
+	</div>
+</header>
+
+<div class="ss-drawer" id="ssDrawer" aria-hidden="true">
+	<div class="ss-drawer__scrim" id="ssScrim"></div>
+	<div class="ss-drawer__panel" role="dialog" aria-label="Mobile menu">
+		<button class="ss-drawer__close" id="ssClose" type="button" aria-label="Close menu">&times;</button>
+		<ul class="ss-drawer__links" id="ssDrawerLinks"></ul>
+		<div class="ss-lang">
+			<a href="javascript:void(0)" class="lang_switcher" data-target="en"><img src="<?= base_url('assets/images/en-flag.png'); ?>" alt=""> English</a>
+			<a href="javascript:void(0)" class="lang_switcher" data-target="fr"><img src="<?= base_url('assets/images/fr-flag.png'); ?>" alt=""> Français</a>
+		</div>
+		<a class="ss-btn ss-btn--primary" href="<?= base_url('login'); ?>"><?= lang('app.login'); ?></a>
+	</div>
 </div>
+<?php endif; ?>
 
-<div class="site-wrap">
+<?= $content; ?>
 
-  <!-- Backdrop for mobile -->
-  <div class="mobile-backdrop" id="mobileBackdrop" aria-hidden="true"></div>
+<?php if (empty($type) && !$goldHome): ?>
+<footer class="ss-footer">
+	<div class="ss-wrap ss-footer__grid">
+		<div>
+			<h4>XanderTech SmartSMS</h4>
+			<p>Smart School Management System for attendance, exams, fees, and parent communication — flexible for every school.</p>
+		</div>
+		<div>
+			<h4><?= lang('app.links'); ?></h4>
+			<ul>
+				<li><a href="<?= base_url('/'); ?>#about-section"><?= lang('app.aboutUs'); ?></a></li>
+				<li><a href="<?= base_url('/'); ?>#services-section"><?= lang('app.features'); ?></a></li>
+				<li><a href="<?= base_url('application'); ?>" class="<?= (isset($page) && strtolower((string)$page) === 'application') ? 'is-active' : ''; ?>"><?= lang('app.onlineRegistration'); ?></a></li>
+				<li><a href="<?= base_url('login'); ?>"><?= lang('app.login'); ?></a></li>
+			</ul>
+		</div>
+		<div>
+			<h4><?= lang('app.contactUs'); ?></h4>
+			<ul>
+				<li>XanderTech LLC</li>
+				<li><a href="tel:+250783609519">+250 783 609 519</a></li>
+				<li><a href="mailto:admissions@xanderglobalscholars.com">admissions@xanderglobalscholars.com</a></li>
+			</ul>
+		</div>
+	</div>
+	<div class="ss-wrap ss-footer__copy">
+		&copy; <span id="ssYear"></span> XanderTech · SmartSMS. All rights reserved.
+	</div>
+</footer>
 
-  <!-- Mobile Drawer -->
-  <div class="site-mobile-menu site-navbar-target" id="mobileMenu" aria-label="Mobile menu" aria-hidden="true">
-    <div class="site-mobile-menu-header">
-      <h3 class="site-mobile-menu-title">Menu</h3>
-      <button class="site-mobile-menu-close" id="mobileClose" aria-label="Close menu" type="button">
-        <span class="icon-close2"></span>
-      </button>
-    </div>
-    <div class="site-mobile-menu-body" id="mobileMenuBody"><!-- populated by JS --></div>
-    <div class="mobile-lang">
-      <a href="javascript:void" class="lang_switcher" data-target="en"><img src="<?=base_url('assets/images/en-flag.png');?>" width="20" height="20"> En</a>
-      <a href="javascript:void" class="lang_switcher" data-target="fr"><img src="<?=base_url('assets/images/fr-flag.png');?>" width="25" height="25"> Fr</a>
-    </div>
-  </div>
+<script src="<?= base_url('assets/landing/js/jquery-3.3.1.min.js'); ?>"></script>
+<script>
+(function () {
+	var nav = document.getElementById('ssNav');
+	var body = document.body;
+	var burger = document.getElementById('ssBurger');
+	var drawer = document.getElementById('ssDrawer');
+	var closeBtn = document.getElementById('ssClose');
+	var scrim = document.getElementById('ssScrim');
+	var drawerLinks = document.getElementById('ssDrawerLinks');
+	var year = document.getElementById('ssYear');
+	if (year) year.textContent = new Date().getFullYear();
 
-  <?php if (empty($type)){ ?>
-  <!-- ===== Header / Desktop Nav ===== -->
-  <header class="site-navbar js-sticky-header site-navbar-target" role="banner">
-    <div class="container">
-      <div class="row align-items-center">
+	// Keep header solid/fixed for readability while scrolling
+	if (nav) nav.classList.add('is-solid');
+	window.addEventListener('scroll', function () {
+		if (!nav) return;
+		nav.classList.add('is-solid');
+	}, { passive: true });
 
-        <div class="col-10 col-xl-2">
-          <img src="<?=base_url('assets/images/Logo1.jpg');?>" style="max-height:54px" alt="SmartSMS">
-        </div>
+	function buildDrawer() {
+		if (!drawerLinks) return;
+		drawerLinks.innerHTML = '';
+		document.querySelectorAll('#desktopMenu a').forEach(function (a) {
+			var li = document.createElement('li');
+			var link = document.createElement('a');
+			link.href = a.getAttribute('href') || '#';
+			link.textContent = a.textContent;
+			li.appendChild(link);
+			drawerLinks.appendChild(li);
+		});
+	}
 
-        <div class="col-10 col-md-10 d-none d-xl-block">
-          <nav class="site-navigation position-relative text-right" role="navigation">
-            <ul class="site-menu main-menu js-clone-nav mr-auto d-none d-lg-block" id="desktopMenu">
-              <li><a href="#home-section" class="nav-link"><?= lang("app.home");?></a></li>
-              <li><a href="<?=base_url('student-marks');?>" class="nav-link"><?= lang("app.studentMarks");?></a></li>
-              <li><a href="<?=base_url('application');?>" class="nav-link"><?= lang("app.onlineRegistration");?></a></li>
-              <li><a href="#about-section" class="nav-link"><?= lang("app.about");?></a></li>
-              <li><a href="#services-section" class="nav-link"><?= lang("app.features");?></a></li>
-              <li><a href="#contact-section" class="nav-link"><?= lang("app.contact");?></a></li>
-              <li><a href="<?= base_url('login'); ?>" class="nav-link"><?= lang("app.login"); ?></a></li>
-            </ul>
-            <div class="lang" style="position:fixed;right:20px;top:20px;">
-              <a style="color:#fefefe;" href="javascript:void" class="lang_switcher" data-target="en"><img src="<?=base_url('assets/images/en-flag.png');?>" width="20" height="20">En</a>
-              <a style="color:#fefefe;" href="javascript:void" class="lang_switcher" data-target="fr"><img src="<?=base_url('assets/images/fr-flag.png');?>" width="25" height="25">Fr</a>
-            </div>
-          </nav>
-        </div>
+	function openNav() {
+		buildDrawer();
+		body.classList.add('nav-open');
+		if (burger) burger.setAttribute('aria-expanded', 'true');
+		if (drawer) drawer.setAttribute('aria-hidden', 'false');
+	}
+	function closeNav() {
+		body.classList.remove('nav-open');
+		if (burger) burger.setAttribute('aria-expanded', 'false');
+		if (drawer) drawer.setAttribute('aria-hidden', 'true');
+	}
 
-        <!-- Mobile trigger -->
-        <div class="col-12 d-inline-block d-xl-none ml-md-0 py-3 mobile-trigger" style="position:absolute;top:0;">
-          <a href="#" class="site-menu-toggle js-menu-toggle float-right" id="mobileOpen" aria-label="Open menu" aria-haspopup="true" aria-controls="mobileMenu">
-            <span class="fa fa-bars"></span>
-          </a>
-        </div>
+	if (burger) burger.addEventListener('click', function () {
+		body.classList.contains('nav-open') ? closeNav() : openNav();
+	});
+	if (closeBtn) closeBtn.addEventListener('click', closeNav);
+	if (scrim) scrim.addEventListener('click', closeNav);
 
-      </div>
-    </div>
-  </header>
-  <?php } ?>
+	document.addEventListener('click', function (e) {
+		var a = e.target.closest('a');
+		if (!a) return;
+		var href = a.getAttribute('href') || '';
+		var hash = '';
+		if (href.charAt(0) === '#' && href.length > 1) {
+			hash = href;
+		} else {
+			try {
+				var u = new URL(a.href, window.location.href);
+				var herePath = window.location.pathname.replace(/\/+$/, '') || '/';
+				var therePath = u.pathname.replace(/\/+$/, '') || '/';
+				var onHome = (herePath === '/' || /\/index\.php$/i.test(herePath));
+				var toHome = (therePath === '/' || /\/index\.php$/i.test(therePath));
+				if (onHome && toHome && u.hash && u.hash.length > 1) {
+					hash = u.hash;
+				}
+			} catch (err) {}
+		}
+		if (hash) {
+			var el = document.querySelector(hash);
+			if (!el) return;
+			e.preventDefault();
+			closeNav();
+			var top = el.getBoundingClientRect().top + window.pageYOffset - 76;
+			window.scrollTo({ top: top, behavior: 'smooth' });
+			if (history && history.replaceState) {
+				history.replaceState(null, '', hash);
+			}
+		} else if (body.classList.contains('nav-open') && a.closest('#ssDrawer')) {
+			closeNav();
+		}
+	});
 
-  <!-- ===== PAGE CONTENT (your sections must exist with these IDs) ===== -->
-  <?=$content;?>
+	// Arrive from another page with /#about-section etc.
+	if (window.location.hash && window.location.hash.length > 1) {
+		setTimeout(function () {
+			var el = document.querySelector(window.location.hash);
+			if (!el) return;
+			var top = el.getBoundingClientRect().top + window.pageYOffset - 76;
+			window.scrollTo({ top: top, behavior: 'smooth' });
+		}, 120);
+	}
 
-  <?php if (empty($type)){ ?>
-  <!-- ===== Footer ===== -->
-  <footer class="site-footer">
-    <div class="container-fluid">
-      <div class="row">
-        <div class="col-md-9">
-          <div class="row">
-            <div class="col-md-5">
-              <h2 class="footer-heading mb-4"><?= lang("app.aboutUs");?></h2>
-              <p><b>SmartSMS</b> is a platform for your school information management. It’s a complete
-                packaged solution. It is flexible, you can still choose features you want to use and
-                leave out what you don’t need.</p>
-            </div>
-            <div class="col-md-3 ml-auto">
-              <h2 class="footer-heading mb-4"><?= lang("app.links");?></h2>
-              <ul class="list-unstyled">
-                <li><a href="#about-section" class="smoothscroll"><?= lang("app.aboutUs");?></a></li>
-                <li><a href="#services-section" class="smoothscroll"><?= lang("app.features");?></a></li>
-                <li><a href="#contact-section" class="smoothscroll"><?= lang("app.contactUs");?></a></li>
-              </ul>
-            </div>
-            <div class="col-md-3 footer-social">
-              <h2 class="footer-heading mb-4"><?= lang("app.followUs");?></h2>
-              <a href="#" class="pl-0 pr-3"><span class="icon-facebook"></span></a>
-              <a href="#" class="pl-3 pr-3"><span class="icon-twitter"></span></a>
-              <a href="#" class="pl-3 pr-3"><span class="icon-instagram"></span></a>
-              <a href="#" class="pl-3 pr-3"><span class="icon-linkedin"></span></a>
-            </div>
-          </div>
-        </div>
-      </div>
+	document.addEventListener('keydown', function (e) {
+		if (e.key === 'Escape') closeNav();
+	});
 
-      <div class="row pt-5 mt-5 text-center">
-        <div class="col-md-12">
-          <div class="border-top pt-5">
-            <p class="copyright"><small>
-              Copyright &copy;<script>document.write(new Date().getFullYear());</script>
-              All rights reserved | Powered by <a href="http://www.bbdigitech.com">SmartSMS Systems Ltd</a>
-            </small></p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </footer>
+	// Reveal on scroll
+	var nodes = document.querySelectorAll('.ss-reveal');
+	if ('IntersectionObserver' in window) {
+		var io = new IntersectionObserver(function (entries) {
+			entries.forEach(function (entry) {
+				if (entry.isIntersecting) {
+					entry.target.classList.add('is-in');
+					io.unobserve(entry.target);
+				}
+			});
+		}, { threshold: 0.15 });
+		nodes.forEach(function (n) { io.observe(n); });
+	} else {
+		nodes.forEach(function (n) { n.classList.add('is-in'); });
+	}
 
-  <!-- ===== Scripts ===== -->
-  <script src="<?= base_url(); ?>assets/landing/js/jquery-3.3.1.min.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/jquery-ui.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/popper.min.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/bootstrap.min.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/owl.carousel.min.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/jquery.countdown.min.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/jquery.easing.1.3.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/aos.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/jquery.fancybox.min.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/jquery.sticky.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/isotope.pkgd.min.js"></script>
-  <script src="<?= base_url(); ?>assets/landing/js/main.js"></script>
+	// Hero education slideshow
+	(function initHeroSlider() {
+		var slides = Array.prototype.slice.call(document.querySelectorAll('#ssHeroSlider .ss-hero__slide'));
+		var dots = Array.prototype.slice.call(document.querySelectorAll('#ssHeroDots .ss-hero__dot'));
+		if (!slides.length) return;
+		var idx = slides.findIndex(function (s) { return s.classList.contains('is-active'); });
+		if (idx < 0) idx = 0;
+		var timer = null;
 
-  <script>
-    /* =========================
-       Language + form handlers
-       ========================= */
-    $(function () {
-      var active_btn = null;
+		function goTo(next) {
+			if (!slides.length) return;
+			idx = ((next % slides.length) + slides.length) % slides.length;
+			slides.forEach(function (s, i) { s.classList.toggle('is-active', i === idx); });
+			dots.forEach(function (d, i) {
+				var on = i === idx;
+				d.classList.toggle('is-active', on);
+				d.setAttribute('aria-selected', on ? 'true' : 'false');
+			});
+		}
+		function next() { goTo(idx + 1); }
+		function start() {
+			stop();
+			timer = window.setInterval(next, 5500);
+		}
+		function stop() {
+			if (timer) window.clearInterval(timer);
+			timer = null;
+		}
 
-      $(document).on("click",".lang_switcher",function () {
-        var lang = $(this).data("target");
-        $.getJSON("<?=base_url('set_lang/');?>"+lang,function (json) {
-          if (json && json.success){ location.reload(); }
-          else{ alert("Changing language failed"); }
-        });
-      });
+		dots.forEach(function (dot) {
+			dot.addEventListener('click', function () {
+				var n = parseInt(dot.getAttribute('data-index'), 10);
+				if (!isNaN(n)) goTo(n);
+				start();
+			});
+		});
 
-      $(document).on("click", "form [type='submit']", function () { active_btn = $(this); });
-      if ($("form").parsley) { $("form").parsley(); }
+		var hero = document.getElementById('home-section');
+		if (hero) {
+			hero.addEventListener('mouseenter', stop);
+			hero.addEventListener('mouseleave', start);
+		}
+		document.addEventListener('visibilitychange', function () {
+			document.hidden ? stop() : start();
+		});
+		start();
+	})();
 
-      $(".btnrecover").on("click",function () { $("#frm_reset").slideDown(300); $("#frm_login").slideUp(300); });
-      $(".btnback").on("click",function () { $("#frm_reset").slideUp(300); $("#frm_login").slideDown(300); });
-
-      $(".autoSubmit").on("submit", function (e) {
-        e.preventDefault();
-        var form=$(this), btn=active_btn, btn_txt=btn.text();
-        btn.text("Please wait...").prop("disabled",true);
-        $.post(form.prop("action"), $(this).serialize(), function (data) {
-          btn.text(btn_txt).prop("disabled",false);
-          if (data.error){ toastada.error(data.error); }
-          else if (data.success){
-            if (btn.data("target")){
-              toastada.success(data.success);
-              var target=btn.data("target");
-              if (target.startsWith("#")){ $(target).modal('hide'); return; }
-              if (target=="reload"){ setTimeout(function(){ location.reload(); },1500); return; }
-              setTimeout(function(){ location.href=btn.data("target"); },1500);
-            }else{ toastada.success(data.success); form.trigger("reset"); }
-          }else{ toastada.error("Fatal error occurred, if the problem persist please contact system admin"); }
-        }).fail(function(){ btn.text(btn_txt).prop("disabled",false); toastada.error("System server error, please try again later"); });
-      });
-
-      $('.toggle').click(function(e){ e.preventDefault(); $(this).toggleClass('toggle-on'); });
-    });
-
-    /* =========================
-       Mobile drawer (clone desktop)
-       ========================= */
-    (function(){
-      var $drawer   = $('#mobileMenu');
-      var $backdrop = $('#mobileBackdrop');
-      var $openBtn  = $('#mobileOpen');
-      var $closeBtn = $('#mobileClose');
-      var $body     = $('#mobileMenuBody');
-
-      function buildMobileMenu(){
-        $body.empty();
-        var $ul = $('<ul class="mobile-nav"></ul>');
-        $('#desktopMenu > li > a').each(function(){
-          var href = $(this).attr('href') || '#';
-          var text = $(this).text();
-          $ul.append('<li><a class="mobile-link" href="'+href+'">'+text+'</a></li>');
-        });
-        $body.append($ul);
-      }
-
-      function openDrawer(e){
-        if(e){ e.preventDefault(); }
-        buildMobileMenu();
-        $('body').addClass('nav-open').addClass('offcanvas-menu'); // kill template race
-        $drawer.addClass('open').attr('aria-hidden','false');
-        $backdrop.addClass('open').attr('aria-hidden','false');
-        setTimeout(function(){ $drawer.find('a,button').first().trigger('focus'); }, 50);
-      }
-
-      function reallyHideDrawer(){
-        // hard hide, even if other scripts try to keep it open
-        $drawer.removeClass('open').attr('aria-hidden','true').css('transform','translateX(-105%)');
-        $backdrop.removeClass('open').attr('aria-hidden','true');
-      }
-
-      function closeDrawer(){
-        $('body').removeClass('nav-open offcanvas-menu');
-        reallyHideDrawer();
-        $openBtn.trigger('focus');
-      }
-
-      // Ensure single handler
-      $(document).off('click', '.js-menu-toggle').on('click', '.js-menu-toggle', openDrawer);
-      $closeBtn.on('click', closeDrawer);
-      $backdrop.on('click', closeDrawer);
-
-      // ✅ Close drawer AND smooth-scroll when tapping any in-page link in the drawer
-      $(document).on('click', '#mobileMenu a', function(e){
-        var href = $(this).attr('href') || '';
-        // external link: just close and let browser navigate
-        if (!href.startsWith('#') || href.length === 1) { closeDrawer(); return; }
-
-        // in-page link: prevent default, close, then smooth scroll
-        e.preventDefault();
-        closeDrawer();
-
-        // smooth scroll with header offset
-        var HEADER_OFFSET = 80;
-        var el = document.querySelector(href);
-        if (!el) return;
-        var rect = el.getBoundingClientRect();
-        var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        var top = rect.top + scrollTop - HEADER_OFFSET;
-        setTimeout(function(){ window.scrollTo({ top: top, behavior: 'smooth' }); }, 60);
-      });
-
-      $(document).on('keydown', function(e){ if (e.key === 'Escape') closeDrawer(); });
-
-      $(window).on('load', buildMobileMenu);
-    })();
-
-    /* =========================
-       Smooth scroll (desktop + footer etc.)
-       ========================= */
-    (function(){
-      var HEADER_OFFSET = 80; // match body data-offset
-      function isHashLink(el){
-        var href = el.getAttribute('href') || '';
-        return href.startsWith('#') && href.length > 1;
-      }
-      function scrollToHash(hash){
-        var el = document.querySelector(hash);
-        if (!el) return;
-        var rect = el.getBoundingClientRect();
-        var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        var top = rect.top + scrollTop - HEADER_OFFSET;
-        window.scrollTo({ top: top, behavior: 'smooth' });
-      }
-      document.addEventListener('click', function(e){
-        var a = e.target.closest('a');
-        if (!a) return;
-        if (isHashLink(a)) {
-          // If drawer is open for any reason, force-close before scrolling
-          if (document.body.classList.contains('nav-open') || document.body.classList.contains('offcanvas-menu')) {
-            document.body.classList.remove('nav-open','offcanvas-menu');
-            document.getElementById('mobileMenu')?.classList.remove('open');
-            document.getElementById('mobileBackdrop')?.classList.remove('open');
-          }
-          e.preventDefault();
-          scrollToHash(a.getAttribute('href'));
-        }
-      });
-      window.addEventListener('load', function(){
-        if (window.location.hash && document.querySelector(window.location.hash)){
-          setTimeout(function(){ scrollToHash(window.location.hash); }, 10);
-        }
-      });
-    })();
-
-    /* ===== Price toggle (kept) ===== */
-    $(document).ready(function () {
-      var ckbox = $('#priceChecked');
-      $('input').on('click',function () {
-        if (ckbox.is(':checked')) {
-          $(".price").text('50,000 RWF').removeClass("important2").addClass("important1");
-        } else {
-          $(".price").text('400,000 RWF').removeClass("important1").addClass("important2");
-        }
-      });
-    });
-  </script>
-  <?php } ?>
-</div>
+	// Language
+	$(document).on('click', '.lang_switcher', function () {
+		var lang = $(this).data('target');
+		$.getJSON('<?= base_url('set_lang/'); ?>' + lang, function (json) {
+			if (json && json.success) location.reload();
+			else alert('Changing language failed');
+		});
+	});
+})();
+</script>
+<?php endif; ?>
 </body>
 </html>

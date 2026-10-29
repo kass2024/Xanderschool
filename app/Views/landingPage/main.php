@@ -1,506 +1,299 @@
-<!--first section/ main services & picture starts-->
-<div class="site-blocks-cover overlay"
-	 style="background-image: url('<?= base_url(); ?>assets/landing/soma_pics/dash2.jpg');" data-aos="fade"
-	 id="home-section">
+<?php
+$logo = base_url('assets/images/xander-tech-gold.jpg');
+$modules = [
+	['Student records', 1, 1, 1, 1],
+	['Classes and courses', 1, 1, 1, 1],
+	['Attendance', 1, 1, 1, 1],
+	['Staff and HR', 0, 1, 1, 1],
+	['Marks and reports', 1, 1, 1, 1],
+	['Discipline and permissions', 0, 1, 1, 1],
+	['Parent visits', 0, 1, 1, 1],
+	['Communication', 0, 1, 1, 1],
+	['Card management', 0, 1, 1, 1],
+	['School dashboard', 1, 1, 1, 1],
+	['School fees', 0, 0, 1, 1],
+	['Finances', 0, 0, 1, 1],
+	['School assets', 0, 0, 1, 1],
+	['Library', 0, 0, 1, 1],
+	['Transport', 0, 0, 1, 1],
+	['Pocket money', 0, 0, 1, 1],
+	['Teaching plans', 0, 0, 1, 1],
+	['Timetables', 0, 0, 1, 1],
+	['Advanced reports', 0, 0, 1, 1],
+	['Facial recognition integration', 0, 0, 0, 1],
+	['Advanced digital identification', 0, 0, 0, 1],
+	['Customized workflows', 0, 0, 0, 1],
+	['Full customization', 0, 0, 0, 1],
+];
+$mark = static function (int $on): string {
+	return $on ? '<span class="yes">✓</span>' : '—';
+};
+?>
+<header class="gx-head">
+	<div class="gx-wrap gx-bar">
+		<a class="gx-logo" href="#home-section" aria-label="Xander Tech SmartSMS">
+			<img src="<?= esc($logo); ?>" alt="Xander Tech LLC">
+		</a>
+		<nav class="gx-links" id="gxLinks" aria-label="Primary">
+			<a href="#home-section"><?= lang('app.home'); ?></a>
+			<a href="<?= base_url('student-marks'); ?>"><?= lang('app.studentMarks'); ?></a>
+			<a href="<?= base_url('application'); ?>"><?= lang('app.onlineRegistration'); ?></a>
+			<a href="#about-section"><?= lang('app.about'); ?></a>
+			<a href="#services-section"><?= lang('app.features'); ?></a>
+			<a href="#packages">Packages</a>
+			<a href="#contact-section"><?= lang('app.contact'); ?></a>
+			<span class="gx-lang">
+				<a href="javascript:void(0)" class="lang_switcher" data-target="en"><img src="<?= base_url('assets/images/en-flag.png'); ?>" alt=""> EN</a>
+				<span>|</span>
+				<a href="javascript:void(0)" class="lang_switcher" data-target="fr"><img src="<?= base_url('assets/images/fr-flag.png'); ?>" alt=""> FR</a>
+			</span>
+			<a class="gx-login" href="<?= base_url('login'); ?>"><?= lang('app.login'); ?></a>
+		</nav>
+		<button class="gx-hamb" type="button" aria-label="Toggle navigation" aria-expanded="false" id="gxHamb">☰</button>
+	</div>
+</header>
 
-	<div class="container">
-		<div class="row align-items-center justify-content-center">
-
-
-			<div class="col-md-10 mt-lg-5 text-center">
-				<div class="single-text owl-carousel">
-					<div class="slide">
-						<h1 class="text-uppercase" data-aos="fade-up"><?= lang("app.communication");?> </h1>
-						<p class="mb-5 desc" data-aos="fade-up" data-aos-delay="100"><?= lang("app.brings");?> </p>
-					</div>
-
-					<div class="slide">
-						<h1 class="text-uppercase" data-aos="fade-up"><?= lang("app.visualisation");?></h1>
-						<p class="mb-5 desc" data-aos="fade-up" data-aos-delay="100"><?= lang("app.theSchool");?> </p>
-						<div data-aos="fade-up" data-aos-delay="100">
-						</div>
-					</div>
-
-					<div class="slide">
-						<h1 class="text-uppercase" data-aos="fade-up"><?= lang("app.examsMarks");?> </h1>
-						<p class="mb-5 desc" data-aos="fade-up" data-aos-delay="100"><?= lang("app.packaged");?> </p>
-					</div>
-
-				</div>
+<section class="gx-hero" id="home-section">
+	<div class="gx-wrap gx-hero-grid">
+		<div>
+			<p class="gx-eyebrow">Modern school management, simplified</p>
+			<h1>One smart platform.<br><span>Every school need.</span></h1>
+			<p class="gx-lead">Bring students, staff, academics, attendance, finances and parent communication together in one beautifully simple school management experience.</p>
+			<div class="gx-actions">
+				<a class="gx-btn gx-btn-primary" href="<?= base_url('application'); ?>">Start Online Registration →</a>
+				<a class="gx-btn gx-btn-ghost" href="<?= base_url('login'); ?>">Access School Portal</a>
 			</div>
+			<p class="gx-checks">✓ Secure records &nbsp; ✓ Smarter reporting &nbsp; ✓ Connected families</p>
+		</div>
+		<aside class="gx-dash" aria-label="School overview">
+			<div class="gx-dash__top"><span>School overview</span><span>Dashboard preview</span></div>
+			<div class="gx-stats">
+				<div class="gx-stat"><span>Students</span><strong>1,248</strong></div>
+				<div class="gx-stat"><span>Attendance</span><strong>96%</strong></div>
+				<div class="gx-stat"><span>Classes</span><strong>32</strong></div>
+			</div>
+			<div class="gx-bars">
+				<p>Academic performance overview</p>
+				<div class="gx-bar"><i style="width:86%"></i></div>
+				<div class="gx-bar"><i style="width:72%"></i></div>
+				<div class="gx-bar"><i style="width:64%"></i></div>
+			</div>
+		</aside>
+	</div>
+</section>
 
+<section class="gx-section" id="about-section">
+	<div class="gx-wrap gx-split">
+		<div>
+			<div class="gx-kicker">About SmartSMS</div>
+			<h2>Built for the way modern schools work.</h2>
+			<p class="gx-copy">SmartSMS helps school administrators, teachers and families stay aligned — from student records and class structures to marks, fees and messaging.</p>
+			<ul class="gx-list">
+				<li>Student and staff records in one secure place</li>
+				<li>Attendance, exams and reports without spreadsheets</li>
+				<li>Clearer communication with parents and guardians</li>
+			</ul>
+		</div>
+		<div class="gx-panel">
+			<strong>Everything connected</strong>
+			<p class="gx-copy">Students · Staff · Academics · Families</p>
+			<p class="gx-copy">One record for the school day: who is present, how they are progressing, what is owed, and what families need to know.</p>
 		</div>
 	</div>
+</section>
 
-	<a href="#next" class="mouse smoothscroll">
-        <span class="mouse-icon">
-          <span class="mouse-wheel"></span>
-        </span>
-	</a>
-</div>
-
-<div class="site-section" id="next">
-	<div class="container">
-		<div class="row mb-5" style="background-color:#8c0000;padding:8px;">
-			<div class="col-md-4 text-center" data-aos="fade-up" data-aos-delay="">
-				<img src="<?= base_url(); ?>assets/landing/soma_pics/comm.jpg" alt=""
-					 style="width:10em;height:8em; border-radius:2em;box-shadow:0em 0em 0.2em 0.2em #8c0000;">
-				<h3 class="card-title"><?= lang("app.communication");?></h3>
-				<p><font color="white"><?= lang("app.brings");?> </font></p>
-			</div>
-			<div class="col-md-4 text-center" data-aos="fade-up" data-aos-delay="100">
-				<img src="<?= base_url(); ?>assets/landing/soma_pics/img.jpg" alt=""
-					 style="width:10em;height:8em; border-radius:2em;box-shadow:0em 0em 0.2em 0.2em #8c0000;">
-				<h3 class="card-title"><?= lang("app.visualisation");?></h3>
-				<p><font color="white"><?= lang("app.theSchool");?></font></p>
-			</div>
-			<div class="col-md-4 text-center" data-aos="fade-up" data-aos-delay="100">
-				<img src="<?= base_url(); ?>assets/landing/soma_pics/exam.jpg" alt=""
-					 style="width:10em;height:8em; border-radius:2em;box-shadow:0em 0em 0.2em 0.2em #8c0000;">
-				<h3 class="card-title"><?= lang("app.examsMarks");?></h3>
-				<p><font color="white"><?= lang("app.packaged");?></font>
-				</p>
-			</div>
-
+<section class="gx-section gx-soft" id="services-section">
+	<div class="gx-wrap">
+		<div class="gx-kicker">Core capabilities</div>
+		<h2>Everything your school runs on.</h2>
+		<p class="gx-copy">Powerful tools, thoughtfully organized so your team can focus on education, not paperwork.</p>
+		<div class="gx-grid">
+			<article class="gx-card"><div class="gx-symbol">▥</div><h3>Insights &amp; dashboards</h3><p>View enrollment, attendance and school performance at a glance.</p></article>
+			<article class="gx-card"><div class="gx-symbol">▤</div><h3>Exams &amp; report cards</h3><p>Manage marks, exams and consistent student progress reports.</p></article>
+			<article class="gx-card"><div class="gx-symbol">$</div><h3>Fees &amp; accounting</h3><p>Track school fees, payments and outstanding balances clearly.</p></article>
+			<article class="gx-card"><div class="gx-symbol">✉</div><h3>Parent communication</h3><p>Keep families informed through school-approved SMS updates.</p></article>
+			<article class="gx-card"><div class="gx-symbol">✓</div><h3>Attendance tracking</h3><p>Organize student and staff attendance, permissions and discipline.</p></article>
+			<article class="gx-card"><div class="gx-symbol">▦</div><h3>Student management</h3><p>Manage registrations, profiles, classes and academic records.</p></article>
 		</div>
-
-		<!--first section/ main services & picture ends-->
-
-		<!--About us starts-->
-
-		<div class="site-section cta-big-image" id="about-section">
-			<div class="container">
-				<div class="row mb-5 justify-content-center">
-					<div class="col-md-8 text-center">
-						<h2 class="section-title mb-3" data-aos="fade-up" data-aos-delay=""><?= lang("app.aboutUs");?> </h2>
-						<p class="lead" data-aos="fade-up" data-aos-delay="100">
-							<font color="#000">
-								<b>SmartSMS</b> <?= lang("app.");?> is a platform for your school information management. It’s a complete
-								packaged solution. It is flexible, you can still choose features you want to use and
-								leave out what you don’t need.</p>
-						</font>
-					</div>
-				</div>
-				<div class="row">
-					<div class="col-lg-6 mb-5" data-aos="fade-up" data-aos-delay="">
-						<figure class="circle-bg">
-							<img src="<?= base_url(); ?>assets/landing/images/about.png" alt=""
-								 class="img-fluid">
-						</figure>
-					</div>
-					<div class="col-lg-5 ml-auto" data-aos="fade-up" data-aos-delay="100">
-
-						<h3 class="text-black mb-4"><?= lang("app.weSolve");?></h3>
-
-						<p><b>SmartSMS</b> <?= lang("app.");?> came to solve all educational issues you used to meet at you daily basis
-							as it is an efficient platform for attendance managements of students and staffs , exams and mark management
-							communication management between schools authorities and parents whose children enrolled
-							in schools, permission management to the students and technology enhancement .</p>
-
-					</div>
-				</div>
-
-			</div>
-		</div>
-		<!--About us ends-->
-
-		<!--how we work section starts-->
-		<section class="site-section">
-			<div class="container">
-
-				<div class="row mb-5 justify-content-center">
-					<div class="col-md-7 text-center">
-						<h2 class="section-title mb-3" data-aos="fade-up" data-aos-delay=""><?= lang("app.how");?></h2>
-						<p class="lead" data-aos="fade-up" data-aos-delay="100"><?= lang("app.");?> As we are here for you we do every
-							thing to satisty your needs.</p>
-					</div>
-				</div>
-
-				<div class="row align-items-lg-center">
-					<div class="col-lg-6 mb-5" data-aos="fade-up" data-aos-delay="">
-
-						<div class="owl-carousel slide-one-item-alt">
-							<img src="<?= base_url(); ?>assets/landing/soma_pics/logo2.jpg" alt="Image"
-								 class="img-fluid">
-							<img src="<?= base_url(); ?>assets/landing/soma_pics/groupe.png" alt="Image"
-								 class="img-fluid">
-						</div>
-						<div class="custom-direction">
-							<a href="#" class="custom-prev"><span><span
-										class="icon-keyboard_backspace"></span></span></a><a href="#"
-																							 class="custom-next"><span><span
-										class="icon-keyboard_backspace"></span></span></a>
-						</div>
-
-					</div>
-					<div class="col-lg-5 ml-auto" data-aos="fade-up" data-aos-delay="100">
-
-						<div class="owl-carousel slide-one-item-alt-text">
-							<div>
-								<h2 class="section-title mb-3"><?= lang("app.");?> 01. Using our website</h2>
-								<p>We'll be able to manage students and staffs regarding to cost and time saving 
-									and developing technology in our school.</p>
-							</div>
-							<div>
-								<h2 class="section-title mb-3"><?= lang("app.");?> 02. Using our mobile app</h2>
-								<p>Through our mobile application downloaded on google playstore, all members of our
-									school will view their infos on their cards .</p>
-
-							</div>
-
-						</div>
-
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<!--how we work section ends-->
-
-		<!--Features section starts-->
-		<section class="site-section border-bottom bg-light" id="services-section">
-			<div class="container">
-				<div class="row mb-5">
-					<div class="col-12 text-center" data-aos="fade">
-						<h2 class="section-title mb-3"> SmartSMS <?= lang("app.features");?> </h2>
-					</div>
-				</div>
-				<div class="row align-items-stretch">
-					<div class="col-md-6 col-lg-4 mb-4 mb-lg-4 text-center" data-aos="fade-up" id="serv1"
-						 style="padding:5px;">
-						<div class="unit-4">
-							<div class="unit-4-icon">
-								<img src="<?= base_url(); ?>assets/landing/soma_pics/img.jpg" alt=""
-									 style="width:6em;height:5em; border-radius:0.4em;" class="img-fluid w-30 mb-6">
-							</div>
-							<div>
-								<h3><?= lang("app.visualisation");?> </h3>
-								<p><?= lang("app.");?> the administrator is able to view, edit and manage employees by organizing
-							attendances and time saving</p>
-							</div>
-						</div>
-					</div>
-					<div class="col-md-6 col-lg-4 mb-4 mb-lg-4 text-center" data-aos="fade-up" data-aos-delay="100"
-						 id="serv2" style="padding:5px;">
-						<div class="unit-4">
-							<div class="unit-4-icon">
-								<img src="<?= base_url(); ?>assets/landing/soma_pics/report cards.jpg" alt=""
-									 style="width:6em;height:5em; border-radius:0.4em;" class="img-fluid w-30 mb-6">
-							</div>
-							<div>
-								<h3><?= lang("app.reportCards");?> </h3>
-								<p><?= lang("app.");?> SmartSMS makes it easy for a school to generate, download and print student report
-									card</p>
-							</div>
-						</div>
-					</div>
-					<div class="col-md-6 col-lg-4 mb-4 mb-lg-4 text-center" data-aos="fade-up" data-aos-delay="200"
-						 id="serv3" style="padding:5px;">
-						<div class="unit-4">
-							<div class="unit-4-icon">
-								<img src="<?= base_url(); ?>assets/landing/soma_pics/accounting.jpg" alt=""
-									 style="width:6em;height:5em; border-radius:0.4em;" class="img-fluid w-30 mb-6">
-							</div>
-							<div>
-								<h3><?= lang("app.accounting");?> </h3>
-								<p><?= lang("app.");?> SmartSMS makes it easy for accountants to manage school accounts.</p>
-							</div>
-						</div>
-					</div>
-
-
-					<div class="col-md-6 col-lg-4 mb-4 mb-lg-4 text-center" data-aos="fade-up" id="serv4"
-						 style="padding:5px;">
-						<div class="unit-4">
-							<div class="unit-4-icon">
-								<img src="<?= base_url(); ?>assets/landing/soma_pics/comm.jpg" alt=""
-									 style="width:6em;height:5em; border-radius:0.4em;" class="img-fluid w-30 mb-6">
-							</div>
-							<div>
-								<h3><?= lang("app.communication");?> </h3>
-								<p><?= lang("app.");?> SmartSMS brings you a complete sms solution to directly communicate with parents
-									even in remote areas without internet.
-								</p>
-							</div>
-						</div>
-					</div>
-					<div class="col-md-6 col-lg-4 mb-4 mb-lg-4 text-center" data-aos="fade-up" data-aos-delay="100"
-						 id="serv5" style="padding:5px;">
-						<div class="unit-4">
-							<div class="unit-4-icon">
-								<img src="<?= base_url(); ?>assets/landing/soma_pics/exam.jpg" alt=""
-									 style="width:6em;height:5em; border-radius:0.4em;" class="img-fluid w-30 mb-6">
-							</div>
-							<div>
-								<h3><?= lang("app.examsMarks");?></h3>
-								<p><?= lang("app.");?> Management of marks , reports and how exams done in easy way by cost and energy saving.</p>
-							</div>
-						</div>
-					</div>
-					<div class="col-md-6 col-lg-4 mb-4 mb-lg-4 text-center" data-aos="fade-up" data-aos-delay="200"
-						 id="serv6" style="padding:5px;">
-						<div class="unit-4">
-							<div class="unit-4-icon">
-								<img src="<?= base_url(); ?>assets/landing/soma_pics/att.jpg" alt=""
-									 style="width:6em;height:5em; border-radius:0.4em;" class="img-fluid w-30 mb-6">
-							</div>
-							<div>
-								<h3><?= lang("app.helpCenter");?> </h3>
-								<p><?= lang("app.");?> School administrations, staffs and students does attendance daily and their infos displayed in app 
-								to enhance technology 
-								.</p>
-							</div>
-						</div>
-					</div>
-
-					<div class="col-md-6 col-lg-4 mb-4 mb-lg-4 text-center" data-aos="fade-up" data-aos-delay="200"
-						 id="serv7" style="padding:5px;">
-						<div class="unit-4">
-							<div class="unit-4-icon">
-								<img src="<?= base_url(); ?>assets/landing/soma_pics/notification.png" alt=""
-									 style="width:6em;height:5em; border-radius:0.4em;" class="img-fluid w-30 mb-6">
-							</div>
-							<div>
-								<h3><?= lang("app.notifications");?> </h3>
-								<p><?= lang("app.");?> Get your personalised updates about your class or students perfomance.</p>
-							</div>
-						</div>
-					</div>
-
-					<div class="col-md-6 col-lg-4 mb-4 mb-lg-4 text-center" data-aos="fade-up" data-aos-delay="200"
-						 id="serv8" style="padding:5px;">
-						<div class="unit-4">
-							<div class="unit-4-icon">
-								<img src="<?= base_url(); ?>assets/landing/soma_pics/chat.jpg" alt=""
-									 style="width:6em;height:5em; border-radius:0.4em;" class="img-fluid w-30 mb-6">
-							</div>
-							<div>
-								<h3><?= lang("app.chatRoom");?> </h3>
-								<p><?= lang("app.");?> Administartors may communicate with parents through sms .</p>
-							</div>
-						</div>
-					</div>
-
-					<div class="col-md-6 col-lg-4 mb-4 mb-lg-4 text-center" data-aos="fade-up" data-aos-delay="200"
-						 id="serv9" style="padding:5px;">
-						<div class="unit-4">
-							<div class="unit-4-icon">
-								<img src="<?= base_url(); ?>assets/landing/soma_pics/hub.png" alt=""
-									 style="width:6em;height:5em; border-radius:0.4em;" class="img-fluid w-30 mb-6">
-							</div>
-							<div>
-								<h3><?= lang("app.hub");?> </h3>
-								<p><?= lang("app.");?> If you have a question, idea or suggestion please let us know and we are getting
-									back to you soon.</p>
-							</div>
-						</div>
-					</div>
-
-				</div>
-			</div>
-		</section>
-		<!--Features section ends-->
-
-		<!--Download app section starts-->
-		<section class="site-section" id="blog-section">
-			<div class="container-fluid text-center">
-				<div class="col-sm-12 col-md-12" id="mobi_bg">
-					<div id="opac">
-						<br>
-						<h2><b><font color="white"><?= lang("app.mobile");?> </font></b></h2>
-						<a href="./app_SmartSMS.apk">
-							<button class="btn btn-secondary" id="down"><?= lang("app.download");?> SmartSMS </button>
-						</a>
-						<a href="./app_SmartSMS_fingerprint.apk">
-							<button class="btn btn-secondary" id="down"><?= lang("app.download");?> STUDENT ATTENDANCE </button>
-						</a>
-					</div>
-				</div>
-			</div>
-		</section>
-		<!--Download app section ends-->
-
-		<!--Pricing section starts-->
-		<section class="site-section bg-light" id="pricing-section">
-			<div class="container">
-				<div class="row mb-5">
-					<div class="col-12 text-center" data-aos="fade-up">
-						<h2 class="section-title mb-3"><?= lang("app.pricing");?> </h2>
-						<div class="mid">
-
-							<label class="rocker">
-								<input type="checkbox" id="priceChecked" checked>
-								<span class="switch-left">TERM</span>
-								<!--<span class="switch-right">TERM</span>-->
-							</label>
-
-						</div>
-					</div>
-				</div>
-				<div class="row mb-5">
-					<div class="col-md-6 mb-4 mb-lg-0 col-lg-4" data-aos="fade-up" data-aos-delay="">
-						<div class="pricing">
-							<h3 class="text-center text-black"><?= lang("TSS PRIVATE ");?> </h3>
-							<div class="price text-center mb-4 ">
-								<span><label class="price important1">TRADES & FEES</label></span>
-							</div>
-							<ul class="list-unstyled ul-check success mb-5">
-
-                                <li>BOARDING : 348500 RWF</li>
-								<li>DAY SCHOOLER: 290500 RWF</li>
-								<li>Multimedia Production</li>
-								<li>Networking and Internet Technology</li>
-								<li>Computer System and Architecture</li>
-								<li>Building and Construction Services</li>
-								<li>Electronics and Telecommunication</li>
-								<li>Food and Beverage Operation</li>
-								<li>Software Development</li>
-								<li>Tourism</li>
-							</ul>
-							<p class="text-center">
-								<a href="#" class="btn btn-secondary"><?= lang("app.now");?> </a>
-							</p>
-						</div>
-					</div>
-					<div class="col-md-6 mb-4 mb-lg-0 col-lg-4 pricing-popular" data-aos="fade-up" data-aos-delay="100">
-						<div class="pricing">
-							<h3 class="text-center text-black"><?= lang("app.premium");?> </h3>
-							<div class="price text-center mb-4 ">
-								<span><label class="price important1">TRADES & FEES</label></span>
-							</div>
-							<ul class="list-unstyled ul-check success mb-5">
-
-                                <li>BOARDING : 142000 RWF</li>
-								<li>DAY SCHOOLER:142000  RWF</li>
-								<li>Multimedia Production</li>
-								<li>Networking and Internet Technology</li>
-								<li>Computer System and Architecture</li>
-								<li>Building and Construction Services</li>
-								<li>Electronics and Telecommunication</li>
-								<li>Food and Beverage Operation</li>
-								<li>Software Development</li>
-								<li>Tourism</li>
-						   
-							</ul>
-							<p class="text-center">
-								<a href="#" class="btn btn-primary"><?= lang("app.now");?></a>
-							</p>
-						</div>
-					</div>
-					<div class="col-md-6 mb-4 mb-lg-0 col-lg-4 pricing-popular" data-aos="fade-up" data-aos-delay="100">
-						<div class="pricing">
-							<h3 class="text-center text-black"><?= lang("app.groupe");?> </h3>
-							<div class="price text-center mb-4 ">
-								<span><label class="price important1">TRADES & FEES</label></span>
-							</div>
-							<ul class="list-unstyled ul-check success mb-5">
-								<li>BOARDING: 328000 RWF</li>
-								<li>DAY SCHOOLER: 270500 RWF</li>
-								<li>O'LEVEL(S1,S2,S3)</li>
-								<li>A'LEVEL (PCB,MCE)</li>
-								<li>Science Steam 1 </li>
-								<li>Science Steam 2</li>
-								
-							
-							</ul>
-							<p class="text-center">
-								<a href="#" class="btn btn-secondary"><?= lang("app.now");?></a>
-							</p>
-						</div>
-					</div>
-				</div>
-			</div>
-		</section>
-		<!--Pricing section ends-->
-
-		<!--Contact us section starts-->
-		<section class="site-section bg-light" id="contact-section" data-aos="fade">
-			<div class="container">
-				<div class="row mb-5">
-					<div class="col-12 text-center">
-						<h2 class="section-title mb-3"><?= lang("app.contactUs");?></h2>
-					</div>
-				</div>
-				<div class="row mb-5">
-
-
-					<div class="col-md-4 text-center">
-						<p class="mb-4">
-							<span class="icon-room d-block h2 text-primary"></span>
-							<span>SmartSMS Systems Ltd </span>
-							<span>4th Floor Makuza Peace Plaza, KN 4 AV. 10 Kigali</span>
-						</p>
-					</div>
-					<div class="col-md-4 text-center">
-						<p class="mb-4">
-							<span class="icon-phone d-block h2 text-primary"></span>
-							<a href="#">+250-783-609-519</a>
-						</p>
-					</div>
-					<div class="col-md-4 text-center">
-						<p class="mb-0">
-							<span class="icon-mail_outline d-block h2 text-primary"></span>
-							<a href="#">dadydaniel001@gmail.com</a>
-						</p>
-					</div>
-				</div>
-				<div class="row">
-					<div class="col-md-12 mb-5">
-
-						<form action="#" class="p-5 bg-white">
-
-							<h2 class="h4 text-black mb-5"><?= lang("app.contactForm");?></h2>
-
-							<div class="row form-group">
-								<div class="col-md-6 mb-3 mb-md-0">
-									<label class="text-black" for="fname"><?= lang("app.firstName");?></label>
-									<input type="text" id="fname" class="form-control">
-								</div>
-								<div class="col-md-6">
-									<label class="text-black" for="lname"><?= lang("app.lastName");?></label>
-									<input type="text" id="lname" class="form-control">
-								</div>
-							</div>
-
-							<div class="row form-group">
-
-								<div class="col-md-12">
-									<label class="text-black" for="email"><?= lang("app.email");?></label>
-									<input type="email" id="email" class="form-control">
-								</div>
-							</div>
-
-							<div class="row form-group">
-
-								<div class="col-md-12">
-									<label class="text-black" for="subject"><?= lang("app.subject");?></label>
-									<input type="subject" id="subject" class="form-control">
-								</div>
-							</div>
-
-							<div class="row form-group">
-								<div class="col-md-12">
-									<label class="text-black" for="message"><?= lang("app.message");?></label>
-									<textarea name="message" id="message" cols="30" rows="7" class="form-control"
-											  placeholder="<?= lang("app.write");?>"></textarea>
-								</div>
-							</div>
-
-							<div class="row form-group">
-								<div class="col-md-12">
-									<input type="submit" value="<?= lang("app.sendMessage");?>"
-										   class="btn btn-primary btn-md text-white">
-								</div>
-							</div>
-
-
-						</form>
-					</div>
-
-				</div>
-			</div>
-		</section>
-		<!--Contact us section ends-->
 	</div>
-</div>
-<!-- .site-wrap -->
+</section>
+
+<section class="gx-section">
+	<div class="gx-wrap">
+		<div class="gx-kicker">How it works</div>
+		<h2>Simple to start. Powerful to scale.</h2>
+		<p class="gx-copy">A clear workflow for school teams, students and families.</p>
+		<div class="gx-steps">
+			<article class="gx-step"><b>01 / SETUP</b><h3>Configure your school</h3><p>Set classes, staff roles, academic periods and student records.</p></article>
+			<article class="gx-step"><b>02 / OPERATE</b><h3>Manage everyday work</h3><p>Take attendance, enter marks, track fees and coordinate teams.</p></article>
+			<article class="gx-step"><b>03 / CONNECT</b><h3>Keep families informed</h3><p>Share results, registration information and approved updates.</p></article>
+		</div>
+		<div class="gx-band" style="margin-top:28px">
+			<div>
+				<h2 style="color:#fff;margin:0">Ready to make school management easier?</h2>
+				<p>Access your school portal or start online registration today.</p>
+			</div>
+			<div class="gx-actions">
+				<a class="gx-btn gx-btn-primary" href="<?= base_url('login'); ?>">School Login →</a>
+				<a class="gx-btn gx-btn-light" href="<?= base_url('student-marks'); ?>">View Student Marks</a>
+			</div>
+		</div>
+	</div>
+</section>
+
+<section class="gx-section" id="packages">
+	<div class="gx-wrap">
+		<div class="gx-kicker">Flexible plans for every school</div>
+		<h2>Simple pricing. Powerful possibilities.</h2>
+		<p class="gx-copy">From essential student records to complete school operations, find the right SmartSMS plan for your school.</p>
+		<div class="gx-pkgs">
+			<article class="gx-pkg">
+				<div class="gx-tag">FREE TRIAL</div>
+				<h3>Trial</h3>
+				<p class="desc">Proposed 30-day evaluation</p>
+				<div class="gx-price">Free<small>Proposed trial terms</small></div>
+				<ul>
+					<li><span class="yes">✓</span> Up to 50 students (proposed)</li>
+					<li><span class="yes">✓</span> Student records and classes</li>
+					<li><span class="yes">✓</span> Attendance and marks</li>
+					<li><span class="yes">✓</span> School dashboard</li>
+				</ul>
+				<a class="gx-btn gx-btn-primary" href="#contact-section">Request trial →</a>
+			</article>
+			<article class="gx-pkg">
+				<div class="gx-tag">PACKAGE A</div>
+				<h3>Essential</h3>
+				<p class="desc">Core school management</p>
+				<div class="gx-price">$22.87<small>per student / year · USD</small></div>
+				<ul>
+					<li><span class="yes">✓</span> 10 core modules</li>
+					<li><span class="yes">✓</span> Student and staff attendance</li>
+					<li><span class="yes">✓</span> Marks and progress reports</li>
+					<li><span class="yes">✓</span> Parent visits and messaging</li>
+				</ul>
+				<a class="gx-btn gx-btn-primary" href="#contact-section">Request quotation →</a>
+			</article>
+			<article class="gx-pkg featured">
+				<div class="gx-tag">PACKAGE B</div>
+				<h3>Professional</h3>
+				<p class="desc">Manage daily school operations</p>
+				<div class="gx-price">$37.98<small>per student / year · USD</small></div>
+				<ul>
+					<li><span class="yes">✓</span> All 10 Essential modules</li>
+					<li><span class="yes">✓</span> School fees and finances</li>
+					<li><span class="yes">✓</span> Pocket money, library, transport</li>
+					<li><span class="yes">✓</span> Teaching plans and advanced reports</li>
+				</ul>
+				<a class="gx-btn gx-btn-primary" href="#contact-section">Request quotation →</a>
+			</article>
+			<article class="gx-pkg">
+				<div class="gx-tag">PACKAGE C</div>
+				<h3>Complete</h3>
+				<p class="desc">Advanced school solutions</p>
+				<div class="gx-price">$51.78<small>per student / year · USD</small></div>
+				<ul>
+					<li><span class="yes">✓</span> All 19 Professional modules</li>
+					<li><span class="yes">✓</span> Facial recognition integration</li>
+					<li><span class="yes">✓</span> Advanced digital identification</li>
+					<li><span class="yes">✓</span> Customized workflows and full customization</li>
+				</ul>
+				<a class="gx-btn gx-btn-primary" href="#contact-section">Request quotation →</a>
+			</article>
+		</div>
+		<h3 style="margin-top:42px">Compare all 23 package modules</h3>
+		<div class="gx-table-wrap">
+			<table class="gx-table">
+				<thead>
+					<tr>
+						<th>Module</th>
+						<th>Trial*</th>
+						<th>Essential</th>
+						<th>Professional</th>
+						<th>Complete</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ($modules as $row): ?>
+						<tr>
+							<td><?= esc($row[0]); ?></td>
+							<td><?= $mark($row[1]); ?></td>
+							<td><?= $mark($row[2]); ?></td>
+							<td><?= $mark($row[3]); ?></td>
+							<td><?= $mark($row[4]); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+		<p class="gx-note">*Free Trial is a proposed offering; its duration, limits and access require approval. Official paid rates are per student per year. Setup, devices, cards and separately quoted services may add costs. Installation, training and technical support are included with paid packages.</p>
+	</div>
+</section>
+
+<section class="gx-section gx-soft" id="contact-section">
+	<div class="gx-wrap gx-contact">
+		<div>
+			<div class="gx-kicker">Let's talk</div>
+			<h2>Let's build a smarter school together.</h2>
+			<p class="gx-copy">Have a question about SmartSMS? Contact the XanderTech team.</p>
+			<div class="gx-meta">
+				<div>📍 Kigali, Rwanda</div>
+				<div>☎ <a href="tel:+250783609519">+250 783 609 519</a></div>
+				<div>✉ <a href="mailto:admissions@xanderglobalscholars.com">admissions@xanderglobalscholars.com</a></div>
+			</div>
+		</div>
+		<form class="gx-form" id="gxContact" method="post" action="#">
+			<input name="fname" aria-label="First name" placeholder="First name" required autocomplete="given-name">
+			<input name="lname" aria-label="Last name" placeholder="Last name" required autocomplete="family-name">
+			<input class="wide" type="email" name="email" aria-label="Email" placeholder="Email address" required autocomplete="email">
+			<input class="wide" name="subject" aria-label="Subject" placeholder="Subject" required>
+			<textarea name="message" aria-label="Message" placeholder="How can we help?" rows="5" required></textarea>
+			<button class="gx-btn gx-btn-primary" type="submit">Send Message →</button>
+		</form>
+	</div>
+</section>
+
+<footer class="gx-foot">
+	<div class="gx-wrap">© <?= date('Y'); ?> <strong>XanderTech · SmartSMS</strong>. All rights reserved. School management, made simple.</div>
+</footer>
+<script>
+(function () {
+	var hamb = document.getElementById('gxHamb');
+	var links = document.getElementById('gxLinks');
+	if (hamb && links) {
+		hamb.addEventListener('click', function () {
+			var open = links.classList.toggle('open');
+			hamb.setAttribute('aria-expanded', open ? 'true' : 'false');
+		});
+		links.addEventListener('click', function (event) {
+			if (event.target.closest('a')) links.classList.remove('open');
+		});
+	}
+	var form = document.getElementById('gxContact');
+	if (form) {
+		form.addEventListener('submit', function (event) {
+			event.preventDefault();
+			var data = new FormData(form);
+			var subject = (data.get('subject') || 'SmartSMS enquiry').toString();
+			var body = [
+				'Name: ' + (data.get('fname') || '') + ' ' + (data.get('lname') || ''),
+				'Email: ' + (data.get('email') || ''),
+				'',
+				(data.get('message') || '').toString()
+			].join('\n');
+			window.location.href = 'mailto:admissions@xanderglobalscholars.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+		});
+	}
+	document.querySelectorAll('.lang_switcher').forEach(function (link) {
+		link.addEventListener('click', function () {
+			var lang = link.getAttribute('data-target');
+			fetch('<?= base_url('set_lang/'); ?>' + encodeURIComponent(lang), { headers: { 'Accept': 'application/json' } })
+				.then(function (response) { return response.json(); })
+				.then(function (json) {
+					if (json && json.success) location.reload();
+					else alert('Changing language failed');
+				})
+				.catch(function () { alert('Changing language failed'); });
+		});
+	});
+})();
+</script>
