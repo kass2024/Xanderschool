@@ -34,18 +34,39 @@ $mark = static function (int $on): string {
 			<img class="gx-logo" src="<?= base_url('assets/images/xander-tech-wordmark.jpg'); ?>" alt="Xander Tech LLC">
 		</a>
 		<nav class="gx-links" id="gxLinks" aria-label="Primary">
-			<a href="#home-section">Overview</a>
-			<a class="gx-on" href="#packages">Packages</a>
-			<a href="#modules">Modules</a>
-			<a href="<?= base_url('student-marks'); ?>"><?= lang('app.studentMarks'); ?></a>
-			<a href="<?= base_url('application'); ?>"><?= lang('app.onlineRegistration'); ?></a>
+			<a href="#home-section">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+				Overview
+			</a>
+			<a class="gx-on" href="#packages">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+				Packages
+			</a>
+			<a href="#modules">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+				Modules
+			</a>
+			<a href="<?= base_url('student-marks'); ?>">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 10 12 5l9.5 5L12 15z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 12.2V16.5c0 .2 2.1 2.5 5 2.5s5-2.3 5-2.5v-4.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+				<?= lang('app.studentMarks'); ?>
+			</a>
+			<a href="<?= base_url('application'); ?>">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7.2L18.5 8V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14 3.6V8h4.4M8.5 12.5h7M8.5 16h4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+				<?= lang('app.onlineRegistration'); ?>
+			</a>
 			<span class="gx-lang">
 				<a href="javascript:void(0)" class="lang_switcher" data-target="en"><img src="<?= base_url('assets/images/en-flag.png'); ?>" alt=""> EN</a>
 				<span>|</span>
 				<a href="javascript:void(0)" class="lang_switcher" data-target="fr"><img src="<?= base_url('assets/images/fr-flag.png'); ?>" alt=""> FR</a>
 			</span>
-			<a class="gx-quote" href="#contact-section">Get a quote</a>
-			<a class="gx-login" href="<?= base_url('login'); ?>"><?= lang('app.login'); ?></a>
+			<a class="gx-quote" href="#contact-section">
+				Get a quote
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+			</a>
+			<a class="gx-login" href="<?= base_url('login'); ?>">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 19.2c1.3-3 3.5-4.4 6.5-4.4s5.2 1.4 6.5 4.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+				<?= lang('app.login'); ?>
+			</a>
 		</nav>
 		<button class="gx-hamb" type="button" aria-label="Open menu" aria-expanded="false" id="gxHamb">☰</button>
 	</div>
