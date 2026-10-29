@@ -1,5 +1,4 @@
 <?php
-$logo = base_url('assets/images/xander-tech-gold.jpg');
 $modules = [
 	['Student records', 1, 1, 1, 1],
 	['Classes and courses', 1, 1, 1, 1],
@@ -31,25 +30,33 @@ $mark = static function (int $on): string {
 ?>
 <header class="gx-head">
 	<div class="gx-wrap gx-bar">
-		<a class="gx-logo" href="#home-section" aria-label="Xander Tech SmartSMS">
-			<img src="<?= esc($logo); ?>" alt="Xander Tech LLC">
+		<a class="gx-brand" href="#home-section" aria-label="Xander Tech SmartSMS">
+			<span class="gx-mark" aria-hidden="true">
+				<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+					<path d="M6 6l12 12M18 6L6 18"/>
+				</svg>
+			</span>
+			<span>
+				<strong>XANDER TECH</strong>
+				<small>SCHOOL MANAGEMENT</small>
+			</span>
 		</a>
 		<nav class="gx-links" id="gxLinks" aria-label="Primary">
-			<a href="#home-section"><?= lang('app.home'); ?></a>
+			<a href="#home-section">Overview</a>
+			<a class="gx-on" href="#packages">Packages</a>
+			<a href="#modules">Modules</a>
+			<a href="#packages">Pricing</a>
 			<a href="<?= base_url('student-marks'); ?>"><?= lang('app.studentMarks'); ?></a>
 			<a href="<?= base_url('application'); ?>"><?= lang('app.onlineRegistration'); ?></a>
-			<a href="#about-section"><?= lang('app.about'); ?></a>
-			<a href="#services-section"><?= lang('app.features'); ?></a>
-			<a href="#packages">Packages</a>
-			<a href="#contact-section"><?= lang('app.contact'); ?></a>
 			<span class="gx-lang">
 				<a href="javascript:void(0)" class="lang_switcher" data-target="en"><img src="<?= base_url('assets/images/en-flag.png'); ?>" alt=""> EN</a>
 				<span>|</span>
 				<a href="javascript:void(0)" class="lang_switcher" data-target="fr"><img src="<?= base_url('assets/images/fr-flag.png'); ?>" alt=""> FR</a>
 			</span>
+			<a class="gx-quote" href="#contact-section">Get a quote</a>
 			<a class="gx-login" href="<?= base_url('login'); ?>"><?= lang('app.login'); ?></a>
 		</nav>
-		<button class="gx-hamb" type="button" aria-label="Toggle navigation" aria-expanded="false" id="gxHamb">☰</button>
+		<button class="gx-hamb" type="button" aria-label="Open menu" aria-expanded="false" id="gxHamb">☰</button>
 	</div>
 </header>
 
@@ -143,64 +150,66 @@ $mark = static function (int $on): string {
 
 <section class="gx-section" id="packages">
 	<div class="gx-wrap">
-		<div class="gx-kicker">Flexible plans for every school</div>
-		<h2>Simple pricing. Powerful possibilities.</h2>
-		<p class="gx-copy">From essential student records to complete school operations, find the right SmartSMS plan for your school.</p>
+		<h2>Choose a plan that grows with your school</h2>
+		<p class="gx-copy">A refined pricing experience with the menu always in view, and a clear list of what each package includes.</p>
+		<div class="gx-plan-banner">
+			<div>
+				<h3>One platform. Every school operation.</h3>
+				<p>Student records / Academics / Finances / Identification / Operations</p>
+			</div>
+			<a class="gx-choose" href="#packages" style="background:linear-gradient(180deg,#E8C56A,#C9962A);border-radius:999px;padding:14px 22px;font-weight:800;color:#1C2128;white-space:nowrap">Explore packages</a>
+		</div>
 		<div class="gx-pkgs">
 			<article class="gx-pkg">
 				<div class="gx-tag">FREE TRIAL</div>
 				<h3>Trial</h3>
-				<p class="desc">Proposed 30-day evaluation</p>
-				<div class="gx-price">Free<small>Proposed trial terms</small></div>
+				<p class="desc">Explore before committing.</p>
+				<div class="gx-price">Free<small>Proposed: 30 days</small></div>
 				<ul>
-					<li><span class="yes">✓</span> Up to 50 students (proposed)</li>
-					<li><span class="yes">✓</span> Student records and classes</li>
-					<li><span class="yes">✓</span> Attendance and marks</li>
-					<li><span class="yes">✓</span> School dashboard</li>
+					<li><span class="plus">+</span> 5 demo modules</li>
+					<li><span class="plus">+</span> Up to 50 students</li>
+					<li><span class="plus">+</span> Upgrade anytime</li>
 				</ul>
-				<a class="gx-btn gx-btn-primary" href="#contact-section">Request trial →</a>
+				<a class="gx-choose" href="#contact-section">Choose package</a>
 			</article>
 			<article class="gx-pkg">
 				<div class="gx-tag">PACKAGE A</div>
 				<h3>Essential</h3>
-				<p class="desc">Core school management</p>
-				<div class="gx-price">$22.87<small>per student / year · USD</small></div>
+				<p class="desc">Core school administration.</p>
+				<div class="gx-price">$22.87<small>per student / year</small></div>
 				<ul>
-					<li><span class="yes">✓</span> 10 core modules</li>
-					<li><span class="yes">✓</span> Student and staff attendance</li>
-					<li><span class="yes">✓</span> Marks and progress reports</li>
-					<li><span class="yes">✓</span> Parent visits and messaging</li>
+					<li><span class="plus">+</span> 10 core modules</li>
+					<li><span class="plus">+</span> Student and staff records</li>
+					<li><span class="plus">+</span> Attendance and reports</li>
 				</ul>
-				<a class="gx-btn gx-btn-primary" href="#contact-section">Request quotation →</a>
+				<a class="gx-choose" href="#contact-section">Choose package</a>
 			</article>
 			<article class="gx-pkg featured">
 				<div class="gx-tag">PACKAGE B</div>
 				<h3>Professional</h3>
-				<p class="desc">Manage daily school operations</p>
-				<div class="gx-price">$37.98<small>per student / year · USD</small></div>
+				<p class="desc">Connected school operations.</p>
+				<div class="gx-price">$37.98<small>per student / year</small></div>
 				<ul>
-					<li><span class="yes">✓</span> All 10 Essential modules</li>
-					<li><span class="yes">✓</span> School fees and finances</li>
-					<li><span class="yes">✓</span> Pocket money, library, transport</li>
-					<li><span class="yes">✓</span> Teaching plans and advanced reports</li>
+					<li><span class="plus">+</span> 19 modules</li>
+					<li><span class="plus">+</span> Fees and finances</li>
+					<li><span class="plus">+</span> Pocket money and transport</li>
 				</ul>
-				<a class="gx-btn gx-btn-primary" href="#contact-section">Request quotation →</a>
+				<a class="gx-choose" href="#contact-section">Selected plan</a>
 			</article>
 			<article class="gx-pkg">
 				<div class="gx-tag">PACKAGE C</div>
 				<h3>Complete</h3>
-				<p class="desc">Advanced school solutions</p>
-				<div class="gx-price">$51.78<small>per student / year · USD</small></div>
+				<p class="desc">Advanced school capabilities.</p>
+				<div class="gx-price">$51.78<small>per student / year</small></div>
 				<ul>
-					<li><span class="yes">✓</span> All 19 Professional modules</li>
-					<li><span class="yes">✓</span> Facial recognition integration</li>
-					<li><span class="yes">✓</span> Advanced digital identification</li>
-					<li><span class="yes">✓</span> Customized workflows and full customization</li>
+					<li><span class="plus">+</span> 23 assigned modules</li>
+					<li><span class="plus">+</span> Facial recognition</li>
+					<li><span class="plus">+</span> Custom workflows</li>
 				</ul>
-				<a class="gx-btn gx-btn-primary" href="#contact-section">Request quotation →</a>
+				<a class="gx-choose" href="#contact-section">Choose package</a>
 			</article>
 		</div>
-		<h3 style="margin-top:42px">Compare all 23 package modules</h3>
+		<h3 id="modules" style="margin-top:48px">Compare actual school modules</h3>
 		<div class="gx-table-wrap">
 			<table class="gx-table">
 				<thead>
