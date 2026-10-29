@@ -9,7 +9,7 @@ use CodeIgniter\Controller;
  * Public package checkout. Card payments use the same Stripe account as
  * e-learning.school. Mobile Money uses the shared MoPay account.
  */
-class PackageCheckout extends Controller
+class Packagecheckout extends Controller
 {
 	/** @var array<string, float> */
 	private $plans = [
