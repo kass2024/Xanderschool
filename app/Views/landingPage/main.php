@@ -429,7 +429,7 @@ $mark = static function (int $on): string {
 		var students = Math.max(1, parseInt(studentsInput && studentsInput.value, 10) || 1);
 		var trial = plan.price === 0;
 		var momo = payMethod === 'momo';
-		if (phoneWrap) phoneWrap.hidden = trial || !momo;
+		if (phoneWrap) phoneWrap.classList.toggle('is-off', trial || !momo);
 		if (totalEl) {
 			totalEl.textContent = trial
 				? 'Free · up to 50 students'

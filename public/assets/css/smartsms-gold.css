@@ -318,7 +318,7 @@ body.gold-home a { color: inherit; text-decoration: none; }
 	font-weight: 700;
 }
 .gx-picked-mods li::before { content: "✓  "; color: #A47C16; font-weight: 800; }
-.gx-field[hidden], .gx-methods[hidden], #gxStudentsWrap[hidden], .gx-pay-status[hidden] { display: none !important; }
+.gx-field.is-off, .gx-field[hidden], .gx-methods[hidden], #gxStudentsWrap[hidden], .gx-pay-status[hidden] { display: none !important; }
 .gx-methods { display: flex; gap: 8px; margin: 14px 0; }
 .gx-methods button {
 	flex: 1;

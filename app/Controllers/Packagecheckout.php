@@ -100,8 +100,12 @@ class Packagecheckout extends Controller
 			return $this->fail('The amount is too small to charge.');
 		}
 
-		$success = rtrim(base_url(), '/') . '/?package=paid';
-		$cancel = rtrim(base_url(), '/') . '/#packages';
+		$origin = rtrim((string) base_url(), '/');
+		if ($origin === '' || strpos($origin, 'localhost') !== false || strpos($origin, '127.0.0.1') !== false) {
+			$origin = 'https://schoolmis.xanderglobalacademy.com';
+		}
+		$success = $origin . '/?package=paid';
+		$cancel = $origin . '/#packages';
 		$body = http_build_query([
 			'mode' => 'payment',
 			'success_url' => $success,
