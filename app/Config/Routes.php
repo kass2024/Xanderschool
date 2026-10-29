@@ -407,6 +407,8 @@ $routes->post('set_disc_lang', 'Home::set_disc_lang');
 $routes->get('set_disc_lang', 'Home::set_disc_lang');
 
 $routes->get('guide/voice/(:segment)', 'Guide::voice/$1');
+$routes->post('packagecheckout/start', 'Packagecheckout::start');
+$routes->get('packagecheckout/status', 'Packagecheckout::status');
 $routes->add('(:any)', 'Home::$1');
 $routes->get('/home/editRegno/(:num)', 'Home::editRegno/$1');
 $routes->post('/home/updateRegno/(:num)', 'Home::updateRegno/$1');
