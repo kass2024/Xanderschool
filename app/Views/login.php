@@ -49,10 +49,10 @@
 			border-radius: 28px;
 			transform: rotate(32deg);
 		}
-		.b1 { width: 280px; height: 140%; left: -150px; top: -18%; background: linear-gradient(180deg, #fff 0%, #f4e7c6 55%, #e4c56a 100%); opacity: .95; }
-		.b2 { width: 120px; height: 80%; left: 70px; top: 8%; background: linear-gradient(180deg, rgba(255,255,255,.2), #f8f1df 30%, #edd9a2); opacity: .8; }
-		.b3 { width: 240px; height: 130%; right: -130px; top: -12%; background: linear-gradient(200deg, #fff, #f3e6c2 40%, #e8d08a); }
-		.b4 { width: 90px; height: 46%; right: 90px; bottom: -8%; background: linear-gradient(180deg, #f8f1df, #e7d7a4); opacity: .7; }
+		.b1 { width: 340px; height: 150%; left: -180px; top: -22%; background: linear-gradient(160deg, #fff 0%, #f8edd4 48%, #e7c86e 100%); }
+		.b2 { width: 150px; height: 90%; left: 40px; top: -6%; background: linear-gradient(180deg, rgba(255,255,255,.15), #f6ead0 40%, #edd7a0); opacity: .85; }
+		.b3 { width: 280px; height: 140%; right: -150px; top: -8%; background: linear-gradient(200deg, #fff 10%, #f4e6c4 55%, #e8d08a); }
+		.b4 { width: 120px; height: 55%; right: 40px; bottom: -16%; background: linear-gradient(180deg, #fbf6ea, #e8d7a6); opacity: .75; }
 
 		.page {
 			position: relative;
@@ -67,19 +67,21 @@
 		.auth-wrap { width: 100%; max-width: 440px; animation: rise .45s ease both; }
 		.auth {
 			position: relative;
-			background: #fff;
-			border-radius: 28px;
-			padding: 36px 32px 28px;
-			border: 1px solid #f0e4c8;
-			box-shadow: 0 22px 50px rgba(176, 140, 48, .14), inset 0 3px 0 #e0b84a;
+			background: #fffefb;
+			border-radius: 30px;
+			padding: 34px 32px 30px;
+			border: 1.5px solid #e4c56a;
+			box-shadow:
+				0 0 0 8px rgba(255, 252, 245, .72),
+				0 28px 60px rgba(176, 140, 48, .18);
 		}
 		.brand {
 			display: block;
-			height: 58px;
+			height: 62px;
 			width: auto;
-			margin: 4px auto 22px;
-			border-radius: 10px;
-			box-shadow: 0 10px 22px rgba(180, 140, 40, .28);
+			margin: 2px auto 22px;
+			border-radius: 12px;
+			box-shadow: 0 12px 24px rgba(180, 140, 40, .32);
 		}
 		.auth h1 {
 			margin: 0;
@@ -207,6 +209,7 @@
 		}
 		.btn-login .arr svg { width: 16px; height: 16px; }
 
+		.recover-line { margin: 14px 0 0; text-align: center; font-size: 13px; }
 		.extra {
 			margin-top: 18px;
 			display: flex;
@@ -326,23 +329,11 @@ $logo = base_url('assets/images/xander-tech-wordmark.jpg');
 					</div>
 				</div>
 
-				<div class="field-row">
-					<label class="form-check">
-						<input name="check" id="exampleCheck" type="checkbox">
-						<span><?= lang('app.keep'); ?></span>
-					</label>
-					<a href="javascript:void(0);" class="link-muted btnrecover"><?= lang('app.recover'); ?></a>
-				</div>
-
 				<button class="btn-login" type="submit">
 					<?= lang('app.login'); ?>
 					<span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
 				</button>
-
-				<div class="panel-foot">
-					<span>SmartSMS <?= version; ?></span>
-					<span><?= lang('app.poweredBy'); ?><a href="https://xandertech.rw" target="_blank" rel="noopener">XanderTech</a></span>
-				</div>
+				<p class="recover-line"><a href="javascript:void(0);" class="link-muted btnrecover"><?= lang('app.recover'); ?></a></p>
 			</form>
 
 			<form class="autoSubmit validate" method="post" action="<?= base_url('reset_password'); ?>" id="frm_reset" style="display:none;">
