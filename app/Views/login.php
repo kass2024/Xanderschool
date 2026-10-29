@@ -354,7 +354,6 @@ $logo = base_url('assets/images/xander-tech-wordmark.jpg');
 
 		</section>
 		<div id="quickAccessBlock" class="extra">
-			<a href="<?= base_url('admin/login'); ?>">Platform admin</a>
 			<a href="<?= base_url('student-marks'); ?>"><?= lang('app.studentMarks'); ?></a>
 			<a href="<?= base_url('application'); ?>"><?= lang('app.onlineRegistration'); ?></a>
 			<a href="<?= base_url('/'); ?>">Home</a>
