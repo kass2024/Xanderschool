@@ -404,7 +404,7 @@ body.gold-home a { color: inherit; text-decoration: none; }
 	.gx-links { gap: 2px; font-size: 13px; }
 	.gx-quote { padding: 8px 12px 8px 14px !important; }
 }
-@media (max-width: 980px) {
+@media (max-width: 1220px) {
 	.gx-hamb { display: grid; place-items: center; }
 	.gx-links {
 		display: none;
@@ -425,6 +425,8 @@ body.gold-home a { color: inherit; text-decoration: none; }
 	.gx-links > a { font-size: 16px; padding: 10px 12px; }
 	.gx-quote, .gx-login { justify-content: center; margin-left: 0; }
 	.gx-lang { margin: 4px 0; }
+}
+@media (max-width: 980px) {
 	.gx-plan-banner { flex-direction: column; align-items: flex-start; }
 	.gx-hero-grid, .gx-split, .gx-contact, .gx-grid, .gx-steps, .gx-pkgs, .gx-picked { grid-template-columns: 1fr; }
 	.gx-band { flex-direction: column; align-items: flex-start; }

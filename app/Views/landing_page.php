@@ -11,7 +11,7 @@
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<?php if ($goldHome): ?>
 		<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
-		<link rel="stylesheet" href="<?= base_url('assets/css/smartsms-gold.css'); ?>?v=4">
+		<link rel="stylesheet" href="<?= base_url('assets/css/smartsms-gold.css'); ?>?v=5">
 	<?php else: ?>
 		<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,550;9..144,650&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 		<noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,550;9..144,650&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
