@@ -91,11 +91,24 @@ $mark = static function (int $on): string {
 				<div class="gx-stat"><span>Attendance</span><strong>96%</strong></div>
 				<div class="gx-stat"><span>Classes</span><strong>32</strong></div>
 			</div>
-			<div class="gx-bars">
-				<p>Academic performance overview</p>
-				<div class="gx-bar"><i style="width:86%"></i></div>
-				<div class="gx-bar"><i style="width:72%"></i></div>
-				<div class="gx-bar"><i style="width:64%"></i></div>
+			<div class="gx-perf">
+				<div class="gx-perf__head">
+					<p>Academic performance overview</p>
+					<span>Term 1</span>
+				</div>
+				<div class="gx-perf__row">
+					<div><strong>Mathematics</strong><b>86%</b></div>
+					<div class="gx-meter" role="img" aria-label="Mathematics 86 percent"><i style="width:86%"></i></div>
+				</div>
+				<div class="gx-perf__row">
+					<div><strong>English</strong><b>72%</b></div>
+					<div class="gx-meter" role="img" aria-label="English 72 percent"><i style="width:72%"></i></div>
+				</div>
+				<div class="gx-perf__row">
+					<div><strong>Sciences</strong><b>64%</b></div>
+					<div class="gx-meter" role="img" aria-label="Sciences 64 percent"><i style="width:64%"></i></div>
+				</div>
+				<p class="gx-perf__note">Class average <strong>74%</strong> across 32 classes</p>
 			</div>
 		</aside>
 	</div>
