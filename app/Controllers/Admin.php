@@ -470,7 +470,9 @@ class Admin extends BaseController
 			'page' => 'level_clearance',
 			'posts' => $posts,
 			'menuTree' => MenuClearance::tree(),
-			'fullAccessPosts' => MenuClearance::FULL_ACCESS_POSTS,
+			'fullAccessPosts' => array_values(array_filter(MenuClearance::FULL_ACCESS_POSTS, static function ($id) {
+				return !MenuClearance::isCustomizableLeaderPost((int) $id);
+			})),
 			'clearanceByPost' => $clearanceByPost,
 			'customByPost' => $customByPost,
 			'defaultsByPost' => [],
@@ -603,7 +605,7 @@ class Admin extends BaseController
 		if ($postId < 1) {
 			return $this->response->setJSON(['error' => 'Invalid post']);
 		}
-		if (MenuClearance::isFullAccessPost($postId)) {
+		if (MenuClearance::isMenuLockedPost($postId)) {
 			return $this->response->setJSON([
 				'error' => 'This post always has full access and cannot be restricted',
 				'menus' => MenuClearance::allKeys(),

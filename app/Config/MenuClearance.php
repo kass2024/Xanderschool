@@ -408,6 +408,7 @@ class MenuClearance
 					['key' => 'assign-card', 'label' => 'Assign Card'],
 					['key' => 'student_material_check', 'label' => 'Required Material Check'],
 					['key' => 'hostel_allocate', 'label' => 'Dormitories'],
+					['key' => 'dormitory_attendance', 'label' => 'Dormitory attendance'],
 				],
 			],
 			[
@@ -431,6 +432,14 @@ class MenuClearance
 					['key' => 'discipline_record_entry', 'label' => 'Record Entry'],
 					['key' => 'completedDisciplineMarks', 'label' => 'Completed Discipline Marks'],
 					['key' => 'discipline_record', 'label' => 'Discipline Record'],
+					['key' => 'lateness_report', 'label' => 'Lateness'],
+				],
+			],
+			[
+				'key' => 'clinic',
+				'label' => 'Clinic',
+				'children' => [
+					['key' => 'clinic_daily', 'label' => 'Daily report'],
 				],
 			],
 			[
@@ -566,6 +575,28 @@ class MenuClearance
 				],
 			],
 			[
+				'key' => 'stock_management',
+				'label' => 'Stock management',
+				'children' => [
+					['key' => 'stk_dashboard', 'label' => 'Dashboard'],
+					['key' => 'stk_entry', 'label' => 'Stock entry'],
+					['key' => 'stk_issue', 'label' => 'Stock issue'],
+					['key' => 'stk_items', 'label' => 'Items'],
+					['key' => 'stk_categories', 'label' => 'Categories'],
+					['key' => 'stk_suppliers', 'label' => 'Suppliers'],
+					['key' => 'stk_departments', 'label' => 'Departments'],
+					['key' => 'stk_employees', 'label' => 'Employees'],
+					['key' => 'stk_ledger', 'label' => 'Stock ledger'],
+					['key' => 'stk_report_daily', 'label' => 'Daily report'],
+					['key' => 'stk_report_weekly', 'label' => 'Weekly report'],
+					['key' => 'stk_report_monthly', 'label' => 'Monthly report'],
+					['key' => 'stk_report_custom', 'label' => 'Custom report'],
+					['key' => 'stk_adjust', 'label' => 'Corrections'],
+					['key' => 'stk_audit', 'label' => 'Audit logs'],
+					['key' => 'stk_settings', 'label' => 'Settings'],
+				],
+			],
+			[
 				'key' => 'library',
 				'label' => 'Library Management (legacy group)',
 				'children' => [
@@ -606,7 +637,14 @@ class MenuClearance
 			[
 				'key' => 'pocket_money',
 				'label' => 'Pocket Money',
-				'children' => [],
+				'children' => [
+					['key' => 'pocket_money_ledger', 'label' => 'Pocket Money'],
+					['key' => 'parents_account', 'label' => 'Parents account'],
+					['key' => 'pocket_money_report', 'label' => 'Money report'],
+					['key' => 'pocket_cash_withdraw', 'label' => 'Cash withdraw'],
+					['key' => 'pocket_pos', 'label' => 'POS'],
+					['key' => 'canteen', 'label' => 'Canteen'],
+				],
 			],
 			[
 				'key' => 'leave_application',
@@ -688,6 +726,31 @@ class MenuClearance
 	 * @param string $parentKey
 	 * @return string[]
 	 */
+	/**
+	 * Operational stock menus for the storekeeper post.
+	 *
+	 * @return string[]
+	 */
+	public static function stockKeeperKeys()
+	{
+		return [
+			'stock_management',
+			'stk_dashboard',
+			'stk_entry',
+			'stk_issue',
+			'stk_items',
+			'stk_categories',
+			'stk_suppliers',
+			'stk_departments',
+			'stk_employees',
+			'stk_ledger',
+			'stk_report_daily',
+			'stk_report_weekly',
+			'stk_report_monthly',
+			'stk_report_custom',
+		];
+	}
+
 	public static function groupKeys($parentKey)
 	{
 		if ($parentKey === 'fees') {
@@ -732,6 +795,38 @@ class MenuClearance
 			}
 		}
 		return [];
+	}
+
+	/**
+	 * Head Teacher, Headmistress, Executive Principal, and Deputy Head Teacher
+	 * keep their other duties, but Level clearance can change their menus.
+	 */
+	public static function isCustomizableLeaderPost($postId)
+	{
+		$postId = (int) $postId;
+		if (in_array($postId, [15, 18, 25, 26], true)) {
+			return true;
+		}
+		$t = str_replace(['-', '_'], ' ', self::postTitle($postId));
+		return in_array($t, [
+			'executive principal',
+			'head teacher',
+			'headteacher',
+			'head mistress',
+			'headmistress',
+			'deputy head teacher',
+			'deputy headteacher',
+		], true);
+	}
+
+	/** Level clearance cannot restrict these posts. */
+	public static function isMenuLockedPost($postId)
+	{
+		$postId = (int) $postId;
+		if (self::isCustomizableLeaderPost($postId)) {
+			return false;
+		}
+		return self::isFullAccessPost($postId);
 	}
 
 	/**
@@ -830,11 +925,128 @@ class MenuClearance
 		}
 	}
 
-	/** Pocket money transactions: school leaders, the pocket post, and Alice at Musanze. */
-	public static function canUsePocketMoney($postId)
+	/**
+	 * Pocket Money pages that can be ticked separately in Level clearance.
+	 *
+	 * @return string[]
+	 */
+	public static function pocketMenuKeys()
+	{
+		return [
+			'pocket_money_ledger',
+			'parents_account',
+			'pocket_money_report',
+			'pocket_cash_withdraw',
+			'pocket_pos',
+			'canteen',
+		];
+	}
+
+	/**
+	 * A saved "Pocket Money" tick with no child ticks still means every pocket page.
+	 *
+	 * @param string[] $keys
+	 * @return string[]
+	 */
+	public static function expandPocketMenus(array $keys)
+	{
+		$set = array_flip($keys);
+		$children = self::pocketMenuKeys();
+		$hasChild = false;
+		foreach ($children as $child) {
+			if (isset($set[$child])) {
+				$hasChild = true;
+				break;
+			}
+		}
+		if (!$hasChild && isset($set['pocket_money'])) {
+			$keys = array_merge($keys, $children);
+		}
+		$set = array_flip($keys);
+		$seesPocket = isset($set['pocket_money']);
+		if (!$seesPocket) {
+			foreach ($children as $child) {
+				if ($child !== 'pocket_pos' && isset($set[$child])) {
+					$seesPocket = true;
+					break;
+				}
+			}
+		}
+		if ($seesPocket && !isset($set['pocket_pos'])) {
+			$keys[] = 'pocket_pos';
+		}
+
+		return array_values(array_unique($keys));
+	}
+
+	/** Pocket money page: full-access posts, or the Level clearance key for that page. */
+	public static function canUsePocketMoney($postId, $menuKey = '')
 	{
 		$postId = (int) $postId;
-		return $postId === 14 || self::isFullAccessPost($postId) || self::isAliceNamahoroAtMusanze();
+		$menuKey = (string) $menuKey;
+		if (!function_exists('menu_clearance_allowed')) {
+			helper('qonics');
+		}
+		$bypass = self::isFullAccessPost($postId) && !self::isCustomizableLeaderPost($postId);
+		if ($menuKey !== '') {
+			return $bypass || menu_clearance_allowed($menuKey);
+		}
+		if ($bypass || menu_clearance_allowed('pocket_money')) {
+			return true;
+		}
+		foreach (self::pocketMenuKeys() as $key) {
+			if (menu_clearance_allowed($key)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Clinic daily report: Director, School Nurse, and the school administrators
+	 * (full-access posts: head teacher, headmaster, executive principal, deputy director).
+	 */
+	public static function canUseClinic($postId)
+	{
+		$postId = (int) $postId;
+		if ($postId < 1) {
+			return false;
+		}
+		if (self::isFullAccessPost($postId) || self::isDirectorPost($postId) || self::isHeadMasterEquivalent($postId)) {
+			return true;
+		}
+		$t = self::postTitle($postId);
+		if ($t === '') {
+			return false;
+		}
+		if (strpos($t, 'nurse') !== false || strpos($t, 'nuse') !== false) {
+			return true;
+		}
+		return in_array($t, [
+			'director',
+			'deputy director',
+			'executive principal',
+			'head master',
+			'headmaster',
+			'head mistress',
+			'headmistress',
+			'head teacher',
+			'headteacher',
+			'administrator',
+			'school administrator',
+		], true);
+	}
+
+	/** Only the school nurse may add or remove a clinic visit. Everyone else with Clinic may view. */
+	public static function canRecordClinic($postId)
+	{
+		$postId = (int) $postId;
+		if ($postId < 1) {
+			return false;
+		}
+		$t = self::postTitle($postId);
+		return $t !== '' && (strpos($t, 'nurse') !== false || strpos($t, 'nuse') !== false);
 	}
 
 	/** School Director (post 29). Director of studies and Director of Finance stay out. */
@@ -973,6 +1185,33 @@ class MenuClearance
 	}
 
 	/**
+	 * Who may be named in charge of a dormitory: matron, patron, customer care,
+	 * and other school leaders. Classroom teachers are not included.
+	 */
+	public static function canChargeDormitory($postId): bool
+	{
+		$postId = (int) $postId;
+		if ($postId < 1 || self::isTeacherPost($postId)) {
+			return false;
+		}
+		$t = self::postTitle($postId);
+		if ($t === '') {
+			return false;
+		}
+		if (preg_match('/\b(teacher|tutor|lecturer|instructor)\b/', $t)
+			&& !preg_match('/\b(head|deputy|director|principal|dean|coordinator)\b/', $t)) {
+			return false;
+		}
+		if (strpos($t, 'patron') !== false || strpos($t, 'matron') !== false) {
+			return true;
+		}
+		if (strpos($t, 'customer care') !== false) {
+			return true;
+		}
+		return (bool) preg_match('/\b(head|deputy|director|principal|dean|coordinator|headmaster|headmistress)\b/', $t);
+	}
+
+	/**
 	 * Material Check and Dormitories: Patron, Matron, Customer Care, Director,
 	 * Head of Discipline, Deputy HT Discipline.
 	 */
@@ -1031,9 +1270,10 @@ class MenuClearance
 			$keys[] = 'students';
 			$keys[] = 'student_material_check';
 			$keys[] = 'hostel_allocate';
+			$keys[] = 'dormitory_attendance';
 		} else {
 			$keys = array_values(array_filter($keys, static function ($k) {
-				return $k !== 'student_material_check' && $k !== 'hostel_allocate';
+				return $k !== 'student_material_check' && $k !== 'hostel_allocate' && $k !== 'dormitory_attendance';
 			}));
 		}
 		if (self::isChiefAccountantPost($postId)) {
@@ -1044,6 +1284,14 @@ class MenuClearance
 			|| self::isDirectorPost($postId)
 			|| self::isCustomerCarePost($postId)) {
 			$keys[] = 'leave_management';
+		}
+		if (self::canUseClinic($postId)) {
+			$keys[] = 'clinic';
+			$keys[] = 'clinic_daily';
+		} else {
+			$keys = array_values(array_filter($keys, static function ($k) {
+				return $k !== 'clinic' && $k !== 'clinic_daily';
+			}));
 		}
 		return array_values(array_unique($keys));
 	}
@@ -1243,14 +1491,20 @@ class MenuClearance
 			$keys = array_merge($keys, self::groupKeys('asset_management'));
 		}
 
+		// Storekeeper always receives and issues stock. Corrections stay on Level clearance.
+		if ((int) $postId === 12) {
+			$keys = array_merge($keys, self::stockKeeperKeys());
+		}
+
 		// Transport: is_allowed(1, 5, 6, 7, 3)
 		if (in_array($postId, [5, 6, 7], true)) {
 			$keys = array_merge($keys, self::groupKeys('transport'));
 		}
 
-		// Pocket money: is_allowed(1, 3, 14)
-		if ($postId === 14) {
+		// Pocket money: accountant post, and Director of Finance (full pocket pages).
+		if ($postId === 14 || $postId === 24) {
 			$keys[] = 'pocket_money';
+			$keys = array_merge($keys, self::pocketMenuKeys());
 		}
 
 		return array_values(array_unique($keys));
@@ -1301,7 +1555,7 @@ class MenuClearance
 
 		return [
 			'discipline' => self::groupVisibleForKeys($allowedKeys, 'behavior')
-				|| $has('discipline_record_entry') || $has('discipline_record'),
+				|| $has('discipline_record_entry') || $has('discipline_record') || $has('lateness_report'),
 			'visiting' => self::groupVisibleForKeys($allowedKeys, 'parent_visiting'),
 			'permission' => self::groupVisibleForKeys($allowedKeys, 'permissions')
 				|| $has('permission_entry') || $has('permission_record'),
@@ -1316,6 +1570,7 @@ class MenuClearance
 			'attendance' => $has('attendance_record') || $has('marks_entry')
 				|| self::groupVisibleForKeys($allowedKeys, 'marks'),
 			'daily_attendance' => $has('attendance_record') || $has('attendance-card'),
+			'dormitory_attendance' => $has('dormitory_attendance') || $has('hostel_allocate'),
 			'payment' => self::groupVisibleForKeys($allowedKeys, 'fees')
 				|| $has('fees_entry') || $has('extra_fees_entry'),
 			'library' => self::groupVisibleForKeys($allowedKeys, 'library')
@@ -1325,6 +1580,17 @@ class MenuClearance
 			'transport' => self::groupVisibleForKeys($allowedKeys, 'transport'),
 			'leaves' => $has('leave_application') || $has('leave_management'),
 			'cashflow' => self::groupVisibleForKeys($allowedKeys, 'budget_cashflow'),
+			'pocket' => self::groupVisibleForKeys($allowedKeys, 'pocket_money')
+				|| $has('pocket_money') || $has('pocket_money_ledger')
+				|| $has('pocket_cash_withdraw') || $has('pocket_pos') || $has('parents_account')
+				|| $has('pocket_money_report') || $has('canteen'),
+			'stock' => self::groupVisibleForKeys($allowedKeys, 'stock_management')
+				|| $has('stk_entry') || $has('stk_issue') || $has('stk_dashboard')
+				|| $has('stk_report_daily') || $has('stk_report_weekly') || $has('stk_report_monthly'),
+			'assets' => self::groupVisibleForKeys($allowedKeys, 'asset_management')
+				|| $has('asset_dashboard') || $has('asset_assets'),
+			'clinic' => self::groupVisibleForKeys($allowedKeys, 'clinic')
+				|| $has('clinic') || $has('clinic_daily'),
 		];
 	}
 }

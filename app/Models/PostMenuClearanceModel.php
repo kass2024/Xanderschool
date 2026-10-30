@@ -64,11 +64,13 @@ class PostMenuClearanceModel extends Model
 	public function allowedKeysForPost($postId, $schoolId = null)
 	{
 		$postId = (int) $postId;
-		if (MenuClearance::isFullAccessPost($postId)) {
+		$this->ensureSchema();
+		$row = $this->where('post_id', $postId)->first();
+		$useSaved = is_array($row) && MenuClearance::isCustomizableLeaderPost($postId);
+		if (MenuClearance::isMenuLockedPost($postId) || (MenuClearance::isFullAccessPost($postId) && !$useSaved)) {
 			$keys = MenuClearance::allKeys();
+			$row = null;
 		} else {
-			$this->ensureSchema();
-			$row = $this->where('post_id', $postId)->first();
 			if ($row === null || !is_array($row)) {
 				$keys = self::defaultKeysForPost($postId);
 			} else {
@@ -89,26 +91,31 @@ class PostMenuClearanceModel extends Model
 					}));
 					$keys[] = 'dashboard';
 					$keys[] = 'profile';
+					$keys[] = 'leave_application';
 					$keys = array_values(array_unique($keys));
 				}
 			}
 		}
 
-		if ($schoolId !== null) {
+		if (!$useSaved && $schoolId !== null) {
 			$keys = MenuClearance::applyChildSchoolFinancePolicy($keys, $postId, (int) $schoolId);
 		}
-		$keys = MenuClearance::applyFeeOperatorPolicy($keys, $postId);
+		if (!$useSaved) {
+			$keys = MenuClearance::applyFeeOperatorPolicy($keys, $postId);
 
-		// Existing custom rows predate Daily visiting — grant it with Parent visiting.
-		if (in_array('parent_visiting', $keys, true)
-			|| in_array('parent_visiting/report', $keys, true)
-			|| in_array('parent_visiting/assign', $keys, true)
-			|| in_array('parent_visiting/verify', $keys, true)
-			|| in_array('daily_visitors', $keys, true)) {
-			$keys = array_merge($keys, MenuClearance::groupKeys('daily_visitors'));
+			// Existing custom rows predate Daily visiting — grant it with Parent visiting.
+			if (in_array('parent_visiting', $keys, true)
+				|| in_array('parent_visiting/report', $keys, true)
+				|| in_array('parent_visiting/assign', $keys, true)
+				|| in_array('parent_visiting/verify', $keys, true)
+				|| in_array('daily_visitors', $keys, true)) {
+				$keys = array_merge($keys, MenuClearance::groupKeys('daily_visitors'));
+			}
+
+			$keys = MenuClearance::applyRoleMenuPolicy($keys, $postId);
 		}
-
-		$keys = MenuClearance::applyRoleMenuPolicy($keys, $postId);
+		$keys = MenuClearance::expandPocketMenus($keys);
+		$keys[] = 'leave_application';
 		return array_values(array_unique($keys));
 	}
 
@@ -135,7 +142,7 @@ class PostMenuClearanceModel extends Model
 	public function saveForPost($postId, array $keys, $updatedBy = 0)
 	{
 		$postId = (int) $postId;
-		if (MenuClearance::isFullAccessPost($postId)) {
+		if (MenuClearance::isMenuLockedPost($postId)) {
 			return MenuClearance::allKeys();
 		}
 
@@ -179,7 +186,7 @@ class PostMenuClearanceModel extends Model
 	public function resetToDefaults($postId)
 	{
 		$postId = (int) $postId;
-		if (MenuClearance::isFullAccessPost($postId)) {
+		if (MenuClearance::isMenuLockedPost($postId)) {
 			return false;
 		}
 		$this->ensureSchema();

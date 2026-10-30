@@ -64,11 +64,13 @@ if (!function_exists('menu_clearance_allowed')) {
 			if (!is_array($cacheKeys)) {
 				$cacheKeys = [];
 			}
-			if (\Config\MenuClearance::isFullAccessPost($postId)
+			if (!\Config\MenuClearance::isCustomizableLeaderPost($postId) && (
+				\Config\MenuClearance::isFullAccessPost($postId)
 				|| \Config\MenuClearance::isCoordinatorPost($postId)
 				|| \Config\MenuClearance::isHeadMasterEquivalent($postId)
 				|| \Config\MenuClearance::isChiefAccountantPost($postId)
-				|| \Config\MenuClearance::canEnterAllCourseMarks($postId, \Config\MenuClearance::postTitle($postId))) {
+				|| \Config\MenuClearance::canEnterAllCourseMarks($postId, \Config\MenuClearance::postTitle($postId))
+			)) {
 				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, [
 					'pedagogical',
 					'ped_analyse',
@@ -77,7 +79,7 @@ if (!function_exists('menu_clearance_allowed')) {
 					'timetable_dashboard',
 				])));
 			}
-			if (\Config\MenuClearance::seesAllMarksMenus($postId)) {
+			if (!\Config\MenuClearance::isCustomizableLeaderPost($postId) && \Config\MenuClearance::seesAllMarksMenus($postId)) {
 				$cacheKeys = array_values(array_unique(array_merge(
 					$cacheKeys,
 					\Config\MenuClearance::marksMenuKeys()
@@ -423,6 +425,9 @@ if (!function_exists('pedagogical_management_menu')) {
 	function pedagogical_management_menu()
 	{
 		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		if (\Config\MenuClearance::isCustomizableLeaderPost($postId)) {
+			return false;
+		}
 		if (\Config\MenuClearance::isFullAccessPost($postId)
 			|| \Config\MenuClearance::isCoordinatorPost($postId)
 			|| \Config\MenuClearance::isHeadMasterEquivalent($postId)
@@ -442,6 +447,9 @@ if (!function_exists('pedagogical_own_work_only')) {
 			return false;
 		}
 		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		if (\Config\MenuClearance::isCustomizableLeaderPost($postId)) {
+			return false;
+		}
 		if (\Config\MenuClearance::isFullAccessPost($postId)
 			|| \Config\MenuClearance::isCoordinatorPost($postId)
 			|| \Config\MenuClearance::isHeadMasterEquivalent($postId)
@@ -661,7 +669,7 @@ if (!function_exists('material_check_mentor_class_ids')) {
 if (!function_exists('material_check_menu_visible')) {
 	function material_check_menu_visible()
 	{
-		return material_check_full_access();
+		return material_check_full_access() || menu_clearance_allowed('student_material_check');
 	}
 }
 
