@@ -77,6 +77,23 @@ class HostelSchemaModel extends Model
 			$db->query("ALTER TABLE `hostels` ADD COLUMN `in_charge_staff_id` INT UNSIGNED NULL DEFAULT NULL AFTER `gender`");
 		}
 
+		$db->query("CREATE TABLE IF NOT EXISTS `dormitory_attendance` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+			`school_id` INT UNSIGNED NOT NULL,
+			`hostel_id` INT UNSIGNED NOT NULL,
+			`student_id` INT UNSIGNED NOT NULL,
+			`academic_year` INT UNSIGNED NOT NULL,
+			`datee` DATE NOT NULL,
+			`active_term` INT UNSIGNED NULL DEFAULT NULL,
+			`taken_by` INT UNSIGNED NULL DEFAULT NULL,
+			`taken_name` VARCHAR(160) NULL DEFAULT NULL,
+			`created_at` DATETIME NULL DEFAULT NULL,
+			`updated_at` DATETIME NULL DEFAULT NULL,
+			PRIMARY KEY (`id`),
+			UNIQUE KEY `uniq_dorm_att` (`student_id`, `hostel_id`, `datee`),
+			KEY `idx_dorm_att_day` (`school_id`, `hostel_id`, `datee`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 		self::$schemaReady = true;
 	}
 
@@ -352,23 +369,51 @@ class HostelSchemaModel extends Model
 		return $hostels;
 	}
 
+	/**
+	 * Beds taken by students who appear on the dormitory list.
+	 * Old allocation rows for dismissed or unenrolled students do not take a bed.
+	 *
+	 * @return array<int,int>
+	 */
+	private function occupiedCountsByHostel(int $schoolId, int $yearId): array
+	{
+		$db = \Config\Database::connect();
+		$rows = $db->table('hostel_allocations ha')
+			->select('ha.hostel_id, COUNT(DISTINCT ha.student_id) AS occupied', false)
+			->join('students', 'students.id = ha.student_id')
+			->join('class_records cr', 'cr.student = students.id AND cr.year = ' . (int) $yearId . ' AND cr.status = 1')
+			->join('classes c', 'c.id = cr.class')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->where('ha.school_id', $schoolId)
+			->where('ha.academic_year', $yearId)
+			->where('students.school_id', $schoolId)
+			->whereIn('students.status', [1, 2])
+			->where("IFNULL(c.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(l.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(d.title,'') NOT LIKE '%Holiday%'", null, false)
+			->where("IFNULL(d.code,'') NOT LIKE '%Holiday%'", null, false)
+			->groupBy('ha.hostel_id')
+			->get()->getResultArray();
+		$byId = [];
+		foreach ($rows as $row) {
+			$byId[(int) ($row['hostel_id'] ?? 0)] = (int) ($row['occupied'] ?? 0);
+		}
+		return $byId;
+	}
+
+	private function occupiedBeds(int $schoolId, int $hostelId, int $yearId): int
+	{
+		return (int) ($this->occupiedCountsByHostel($schoolId, $yearId)[$hostelId] ?? 0);
+	}
+
 	public function listHostelsWithOccupancy(int $schoolId, int $yearId): array
 	{
 		$hostels = $this->listHostels($schoolId, true);
 		if ($hostels === []) {
 			return [];
 		}
-		$db = \Config\Database::connect();
-		$counts = $db->table('hostel_allocations')
-			->select('hostel_id, COUNT(*) AS occupied')
-			->where('school_id', $schoolId)
-			->where('academic_year', $yearId)
-			->groupBy('hostel_id')
-			->get()->getResultArray();
-		$byId = [];
-		foreach ($counts as $c) {
-			$byId[(int) $c['hostel_id']] = (int) $c['occupied'];
-		}
+		$byId = $this->occupiedCountsByHostel($schoolId, $yearId);
 		foreach ($hostels as &$h) {
 			$hid = (int) $h['id'];
 			$h['occupied'] = $byId[$hid] ?? 0;
@@ -651,10 +696,7 @@ class HostelSchemaModel extends Model
 			return ['ok' => true, 'allocation_id' => (int) $existing['id']];
 		}
 
-		$occupied = (int) $db->table('hostel_allocations')
-			->where('hostel_id', $hostelId)
-			->where('academic_year', $yearId)
-			->countAllResults();
+		$occupied = $this->occupiedBeds($schoolId, $hostelId, $yearId);
 		// If reassigning from another hostel, bed frees on that hostel; still check target capacity
 		$willOccupyNew = !$existing || (int) $existing['hostel_id'] !== $hostelId;
 		if ($willOccupyNew && $occupied >= (int) $hostel['max_beds']) {
@@ -1296,5 +1338,197 @@ class HostelSchemaModel extends Model
 			}
 		}
 		return array_values($byId);
+	}
+
+	/**
+	 * Dorms this staff member may take attendance for.
+	 * Customer care sees every dormitory. An assigned matron or patron sees only theirs.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	public function dormsForAttendance(int $schoolId, int $staffId): array
+	{
+		$hostels = $this->listHostels($schoolId, true);
+		if ($this->staffSeesEveryDorm($schoolId, $staffId)) {
+			return $hostels;
+		}
+		$mine = [];
+		foreach ($hostels as $hostel) {
+			if ((int) ($hostel['in_charge_staff_id'] ?? 0) === $staffId && $staffId > 0) {
+				$mine[] = $hostel;
+			}
+		}
+		if ($mine !== []) {
+			return $mine;
+		}
+		return $hostels;
+	}
+
+	private function staffSeesEveryDorm(int $schoolId, int $staffId): bool
+	{
+		if ($staffId < 1 || $schoolId < 1) {
+			return false;
+		}
+		$row = \Config\Database::connect()->table('staffs')
+			->select('post')
+			->where('id', $staffId)
+			->where('school_id', $schoolId)
+			->get(1)->getRowArray();
+		if (!$row) {
+			return false;
+		}
+		return \Config\MenuClearance::isCustomerCarePost((int) ($row['post'] ?? 0));
+	}
+
+	public function staffMayTakeDorm(int $schoolId, int $staffId, int $hostelId): bool
+	{
+		if ($hostelId < 1) {
+			return false;
+		}
+		foreach ($this->dormsForAttendance($schoolId, $staffId) as $hostel) {
+			if ((int) ($hostel['id'] ?? 0) === $hostelId) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Boarding students currently in this dorm, plus who is already marked present today.
+	 * Dismissed students, holiday classes, and day scholars are left out.
+	 *
+	 * @return array{students:list<array>,present:list<int>,taken:bool,taken_name:string}
+	 */
+	public function dormitoryAttendanceSheet(int $schoolId, int $hostelId, int $yearId, string $date): array
+	{
+		$this->ensureSchema();
+		$db = \Config\Database::connect();
+		$rows = $db->table('hostel_allocations ha')
+			->select('students.id, students.regno, students.fname, students.lname, students.sex,
+				c.title AS class_title, l.title AS level_name, d.code AS dept_code')
+			->join('students', 'students.id = ha.student_id')
+			->join('class_records cr', 'cr.student = students.id AND cr.year = ' . (int) $yearId . ' AND cr.status = 1')
+			->join('classes c', 'c.id = cr.class')
+			->join('levels l', 'l.id = c.level', 'left')
+			->join('departments d', 'd.id = c.department', 'left')
+			->where('ha.school_id', $schoolId)
+			->where('ha.hostel_id', $hostelId)
+			->where('ha.academic_year', $yearId)
+			->where('students.school_id', $schoolId)
+			->where('students.studying_mode', self::MODE_BOARDING)
+			->whereIn('students.status', [1, 2])
+			->where("LOWER(CONCAT_WS(' ', IFNULL(c.title,''), IFNULL(l.title,''), IFNULL(d.title,''), IFNULL(d.code,''))) NOT LIKE '%holiday%'", null, false)
+			->where("LOWER(CONCAT_WS(' ', IFNULL(c.title,''), IFNULL(l.title,''), IFNULL(d.title,''), IFNULL(d.code,''))) NOT LIKE '%vacation%'", null, false)
+			->where("LOWER(CONCAT_WS(' ', IFNULL(c.title,''), IFNULL(l.title,''), IFNULL(d.title,''), IFNULL(d.code,''))) NOT LIKE '%vacances%'", null, false)
+			->orderBy('students.fname', 'ASC')
+			->orderBy('students.lname', 'ASC')
+			->get()->getResultArray();
+
+		$byId = [];
+		foreach ($rows as $row) {
+			$sid = (int) ($row['id'] ?? 0);
+			if ($sid < 1 || isset($byId[$sid])) {
+				continue;
+			}
+			$label = trim(preg_replace(
+				'/\s+/',
+				' ',
+				trim((string) ($row['level_name'] ?? '') . ' ' . (string) ($row['dept_code'] ?? '') . ' ' . (string) ($row['class_title'] ?? ''))
+			));
+			$byId[$sid] = [
+				'id' => $sid,
+				'regno' => (string) ($row['regno'] ?? ''),
+				'name' => trim((string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? '')),
+				'sex' => (string) ($row['sex'] ?? ''),
+				'class_label' => $label,
+			];
+		}
+
+		$presentRows = $db->table('dormitory_attendance')
+			->select('student_id, taken_name')
+			->where('school_id', $schoolId)
+			->where('hostel_id', $hostelId)
+			->where('datee', $date)
+			->get()->getResultArray();
+		$present = [];
+		$takenName = '';
+		foreach ($presentRows as $row) {
+			$sid = (int) ($row['student_id'] ?? 0);
+			if ($sid > 0) {
+				$present[] = $sid;
+			}
+			if ($takenName === '' && trim((string) ($row['taken_name'] ?? '')) !== '') {
+				$takenName = trim((string) $row['taken_name']);
+			}
+		}
+
+		return [
+			'students' => array_values($byId),
+			'present' => $present,
+			'taken' => $presentRows !== [],
+			'taken_name' => $takenName,
+		];
+	}
+
+	/**
+	 * Replace today's present list for one dorm.
+	 *
+	 * @param list<int> $presentIds
+	 */
+	public function saveDormitoryAttendance(
+		int $schoolId,
+		int $hostelId,
+		int $yearId,
+		int $termId,
+		int $staffId,
+		string $staffName,
+		array $presentIds,
+		string $date
+	): int {
+		$this->ensureSchema();
+		$db = \Config\Database::connect();
+		$allowed = [];
+		foreach ($this->dormitoryAttendanceSheet($schoolId, $hostelId, $yearId, $date)['students'] as $student) {
+			$allowed[(int) $student['id']] = true;
+		}
+		$now = date('Y-m-d H:i:s');
+		$db->table('dormitory_attendance')
+			->where('school_id', $schoolId)
+			->where('hostel_id', $hostelId)
+			->where('datee', $date)
+			->delete();
+		$saved = 0;
+		foreach ($presentIds as $studentId) {
+			$studentId = (int) $studentId;
+			if ($studentId < 1 || !isset($allowed[$studentId])) {
+				continue;
+			}
+			$db->table('dormitory_attendance')->insert([
+				'school_id' => $schoolId,
+				'hostel_id' => $hostelId,
+				'student_id' => $studentId,
+				'academic_year' => $yearId,
+				'datee' => $date,
+				'active_term' => $termId > 0 ? $termId : null,
+				'taken_by' => $staffId > 0 ? $staffId : null,
+				'taken_name' => $staffName !== '' ? $staffName : null,
+				'created_at' => $now,
+				'updated_at' => $now,
+			]);
+			$saved++;
+		}
+		$db->table('dormitory_attendance')->insert([
+			'school_id' => $schoolId,
+			'hostel_id' => $hostelId,
+			'student_id' => 0,
+			'academic_year' => $yearId,
+			'datee' => $date,
+			'active_term' => $termId > 0 ? $termId : null,
+			'taken_by' => $staffId > 0 ? $staffId : null,
+			'taken_name' => $staffName !== '' ? $staffName : null,
+			'created_at' => $now,
+			'updated_at' => $now,
+		]);
+		return $saved;
 	}
 }
