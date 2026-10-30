@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=9">
+<link rel="stylesheet" href="<?= base_url('assets/css/hostels.css'); ?>?v=10">
 <?php
 $hostels = $hostels ?? [];
 $roster = $roster ?? [];
@@ -66,7 +66,7 @@ $openCount = max(0, $studentCount - $assignedCount);
 		<div class="drm-hero-copy">
 			<div class="drm-kicker"><i class="fa fa-bed"></i> Boarding housing</div>
 			<h4>Dormitories</h4>
-			<p>Each student shows the dormitory they are in now. Use Move to when they should change dormitory. Day scholars who have no bed stay off this list.</p>
+			<p>Click a dormitory to see who is in it, add a student, or remove one. Day scholars stay off this list.</p>
 		</div>
 		<div class="drm-year">
 			<label for="drmYear">Academic year</label>
@@ -82,9 +82,9 @@ $openCount = max(0, $studentCount - $assignedCount);
 		</div>
 	</section>
 	<section class="drm-kpi" id="drmKpi">
-		<article class="drm-kpi-card"><i class="fa fa-users drm-kpi-ico"></i><span>Boarding</span><strong id="drmKpiStudents"><?= (int) $studentCount; ?></strong><small>This year</small></article>
-		<article class="drm-kpi-card drm-kpi-ok"><i class="fa fa-check drm-kpi-ico"></i><span>Assigned</span><strong id="drmKpiAssigned"><?= (int) $assignedCount; ?></strong><small>Have a dormitory</small></article>
-		<article class="drm-kpi-card drm-kpi-warn"><i class="fa fa-clock-o drm-kpi-ico"></i><span>Unassigned</span><strong id="drmKpiOpen"><?= (int) $openCount; ?></strong><small>Still need a bed</small></article>
+		<button type="button" class="drm-kpi-card is-on" data-filter="all"><i class="fa fa-users drm-kpi-ico"></i><span>Boarding</span><strong id="drmKpiStudents"><?= (int) $studentCount; ?></strong><small>Show the full list</small></button>
+		<button type="button" class="drm-kpi-card drm-kpi-ok" data-filter="assigned"><i class="fa fa-check drm-kpi-ico"></i><span>Assigned</span><strong id="drmKpiAssigned"><?= (int) $assignedCount; ?></strong><small>Have a dormitory</small></button>
+		<button type="button" class="drm-kpi-card drm-kpi-warn" data-filter="open"><i class="fa fa-clock-o drm-kpi-ico"></i><span>Unassigned</span><strong id="drmKpiOpen"><?= (int) $openCount; ?></strong><small>Still need a bed</small></button>
 		<article class="drm-kpi-card"><i class="fa fa-bed drm-kpi-ico"></i><span>Dormitories</span><strong id="drmKpiDorms"><?= count($hostels); ?></strong><small>From school settings</small></article>
 		<article class="drm-kpi-card"><i class="fa fa-bar-chart drm-kpi-ico"></i><span>Beds used</span><strong id="drmKpiUsed"><?= (int) $totalOcc; ?></strong><small id="drmKpiCap">of <?= (int) $totalBeds; ?> beds</small></article>
 		<article class="drm-kpi-card drm-kpi-free"><i class="fa fa-inbox drm-kpi-ico"></i><span>Free beds</span><strong id="drmKpiFree"><?= (int) $totalFree; ?></strong><small>Across all dormitories</small></article>
@@ -102,17 +102,35 @@ $openCount = max(0, $studentCount - $assignedCount);
 				$max = max(1, (int) ($h['max_beds'] ?? 0));
 				$pct = (int) min(100, round(((int) ($h['occupied'] ?? 0) / $max) * 100));
 			?>
-				<article class="drm-chip" data-id="<?= (int) $h['id']; ?>">
+				<button type="button" class="drm-chip" data-id="<?= (int) $h['id']; ?>" data-name="<?= esc((string) ($h['name'] ?? 'Dormitory'), 'attr'); ?>" data-gender="<?= $gid; ?>">
 					<div class="drm-chip-top">
 						<strong><?= esc($h['name'] ?? 'Dormitory'); ?></strong>
 						<span class="hst-gender-badge <?= $gid === 'F' ? 'hst-gender-f' : 'hst-gender-m'; ?>"><?= $gid === 'F' ? 'Female' : 'Male'; ?></span>
 					</div>
 					<div class="drm-bar"><span style="width:<?= $pct; ?>%"></span></div>
 					<small class="drm-chip-count"><?= (int) ($h['occupied'] ?? 0); ?> / <?= (int) ($h['max_beds'] ?? 0); ?> beds</small>
-				</article>
+				</button>
 			<?php endforeach; ?>
 		</section>
 	<?php endif; ?>
+	<section class="drm-room" id="drmRoom" hidden>
+		<div class="drm-room-head">
+			<div>
+				<h5 id="drmRoomTitle">Dormitory</h5>
+				<p id="drmRoomMeta"></p>
+			</div>
+			<button type="button" class="btn btn-sm btn-light" id="drmRoomClose">Close</button>
+		</div>
+		<div class="drm-room-add">
+			<label for="drmAddSearch">Add a student</label>
+			<div class="drm-search">
+				<i class="fa fa-search"></i>
+				<input type="search" id="drmAddSearch" placeholder="Name or registration number" autocomplete="off">
+			</div>
+			<div class="drm-add-hits" id="drmAddHits" hidden></div>
+		</div>
+		<div class="drm-room-list" id="drmRoomList"></div>
+	</section>
 	<section class="drm-board">
 		<div class="drm-tools">
 			<div class="drm-search">
@@ -163,7 +181,7 @@ $openCount = max(0, $studentCount - $assignedCount);
 								$name = trim((string) ($st['fname'] ?? '') . ' ' . (string) ($st['lname'] ?? ''));
 								$hay = strtolower($name . ' ' . (string) ($st['regno'] ?? '') . ' ' . $hostelName . ' ' . $classSearch);
 							?>
-								<div class="drm-student" data-search="<?= esc($hay, 'attr'); ?>" data-assigned="<?= $hid > 0 ? '1' : '0'; ?>">
+								<div class="drm-student" data-id="<?= $sid; ?>" data-hostel="<?= $hid; ?>" data-sex="<?= esc($sex, 'attr'); ?>" data-name="<?= esc($name, 'attr'); ?>" data-regno="<?= esc((string) ($st['regno'] ?? ''), 'attr'); ?>" data-class="<?= esc($group['label'], 'attr'); ?>" data-search="<?= esc($hay, 'attr'); ?>" data-assigned="<?= $hid > 0 ? '1' : '0'; ?>">
 									<div class="drm-who">
 										<span class="drm-avatar <?= $sex === 'F' ? 'is-f' : 'is-m'; ?>"><?= esc(strtoupper(substr($name !== '' ? $name : 'S', 0, 1))); ?></span>
 										<div>
@@ -280,11 +298,130 @@ $openCount = max(0, $studentCount - $assignedCount);
 		window.location = pageUrl + '?year=' + encodeURIComponent(this.value);
 	});
 	$('#drmSearch').on('input', applyFilter);
-	$('.drm-filter').on('click', function () {
-		filter = $(this).data('filter');
+	function setListFilter(next) {
+		filter = next || 'all';
 		$('.drm-filter').removeClass('is-on');
-		$(this).addClass('is-on');
+		$('.drm-filter[data-filter="' + filter + '"]').addClass('is-on');
+		$('.drm-kpi-card').removeClass('is-on');
+		$('.drm-kpi-card[data-filter="' + filter + '"]').addClass('is-on');
 		applyFilter();
+	}
+	$('.drm-filter').on('click', function () { setListFilter($(this).data('filter')); });
+	$('.drm-kpi-card[data-filter]').on('click', function () {
+		setListFilter($(this).data('filter'));
+		var board = document.getElementById('drmClasses') || document.querySelector('.drm-board');
+		if (board) board.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	});
+	function escText(value) {
+		return $('<div>').text(value || '').html();
+	}
+	function renderRoom() {
+		var $chip = $('.drm-chip.is-on');
+		if (!$chip.length) {
+			$('#drmRoom').prop('hidden', true);
+			return;
+		}
+		var id = String($chip.attr('data-id') || '');
+		var gender = $chip.attr('data-gender') === 'F' ? 'Female' : 'Male';
+		$('#drmRoomTitle').text($chip.attr('data-name') || 'Dormitory');
+		var rows = [];
+		$('.drm-student').each(function () {
+			if (String($(this).attr('data-hostel') || '0') === id) rows.push($(this));
+		});
+		rows.sort(function (a, b) {
+			var left = ($(a).attr('data-class') || '') + ' ' + ($(a).attr('data-name') || '');
+			var right = ($(b).attr('data-class') || '') + ' ' + ($(b).attr('data-name') || '');
+			return left.localeCompare(right);
+		});
+		$('#drmRoomMeta').text(gender + ' · ' + rows.length + ' student' + (rows.length === 1 ? '' : 's') + ' · ' + $.trim($chip.find('.drm-chip-count').text()));
+		if (!rows.length) {
+			$('#drmRoomList').html('<p class="drm-room-empty">No students in this dormitory yet. Search above to add one.</p>');
+		} else {
+			var html = '';
+			rows.forEach(function ($st) {
+				var sex = $st.attr('data-sex') === 'F' ? 'is-f' : 'is-m';
+				var initial = ($st.attr('data-name') || 'S').charAt(0).toUpperCase();
+				html += '<div class="drm-room-row">'
+					+ '<span class="drm-avatar ' + sex + '">' + escText(initial) + '</span>'
+					+ '<div><strong>' + escText($st.attr('data-name') || 'Student') + '</strong>'
+					+ '<small>' + escText($st.attr('data-class') || '') + ' · ' + escText($st.attr('data-regno') || '') + '</small></div>'
+					+ '<button type="button" class="drm-room-remove" data-student="' + escText($st.attr('data-id')) + '">Remove</button>'
+					+ '</div>';
+			});
+			$('#drmRoomList').html(html);
+		}
+		$('#drmAddSearch').val('');
+		$('#drmAddHits').prop('hidden', true).empty();
+		$('#drmRoom').prop('hidden', false);
+	}
+	function closeRoom() {
+		$('.drm-chip').removeClass('is-on');
+		$('#drmRoom').prop('hidden', true);
+		$('#drmAddHits').prop('hidden', true).empty();
+	}
+	$('.drm-strip').on('click', '.drm-chip', function () {
+		if ($(this).hasClass('is-on')) { closeRoom(); return; }
+		$('.drm-chip').removeClass('is-on');
+		$(this).addClass('is-on');
+		renderRoom();
+		var room = document.getElementById('drmRoom');
+		if (room) room.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+	});
+	$('#drmRoomClose').on('click', closeRoom);
+	$('#drmAddSearch').on('input', function () {
+		var q = ($(this).val() || '').toLowerCase().trim();
+		var $chip = $('.drm-chip.is-on');
+		var id = String($chip.attr('data-id') || '');
+		var gender = String($chip.attr('data-gender') || '');
+		if (q === '') { $('#drmAddHits').prop('hidden', true).empty(); return; }
+		var html = '';
+		var shown = 0;
+		$('.drm-student').each(function () {
+			if (shown >= 8) return false;
+			var $st = $(this);
+			var sex = String($st.attr('data-sex') || '');
+			if (sex !== '' && sex !== gender) return;
+			if (String($st.attr('data-hostel') || '0') === id) return;
+			if (($st.attr('data-search') || '').indexOf(q) === -1) return;
+			var where = String($st.attr('data-hostel') || '0') === '0' ? 'No dormitory' : ($st.find('.drm-now-name').text() || 'Other dormitory');
+			html += '<button type="button" class="drm-add-hit" data-student="' + escText($st.attr('data-id')) + '">'
+				+ '<span><strong>' + escText($st.attr('data-name') || 'Student') + '</strong>'
+				+ '<small>' + escText($st.attr('data-class') || '') + ' · ' + escText($st.attr('data-regno') || '') + ' · ' + escText(where) + '</small></span>'
+				+ '<em>Add</em></button>';
+			shown++;
+		});
+		if (!html) html = '<div class="drm-room-empty">No matching boarding student.</div>';
+		$('#drmAddHits').html(html).prop('hidden', false);
+	});
+	function savePlacement(studentId, hostelId, hostelName) {
+		var $sel = $('.drm-assign[data-student="' + studentId + '"]');
+		if (!$sel.length) { toast('That student is not on this list.', false); return; }
+		$sel.prop('disabled', true);
+		var payload = { student_id: studentId, year: $('#drmYear').val() || yearId };
+		var url = unassignUrl;
+		if (hostelId > 0) { url = assignUrl; payload.hostel_id = hostelId; }
+		$.post(url, payload).done(function (res) {
+			if (res && res.error) { toast(res.error, false); return; }
+			paintMove($sel, hostelId, hostelName);
+			applyBeds(res || {});
+			recount();
+			applyFilter();
+			renderRoom();
+			toast((res && res.success) || 'Saved.', true);
+		}).fail(function () {
+			toast('Could not save this change.', false);
+		}).always(function () { $sel.prop('disabled', false); });
+	}
+	$('#drmRoom').on('click', '.drm-room-remove', function () {
+		savePlacement(parseInt($(this).attr('data-student'), 10) || 0, 0, '');
+	});
+	$('#drmAddHits').on('click', '.drm-add-hit', function () {
+		var $chip = $('.drm-chip.is-on');
+		savePlacement(
+			parseInt($(this).attr('data-student'), 10) || 0,
+			parseInt($chip.attr('data-id'), 10) || 0,
+			$chip.attr('data-name') || ''
+		);
 	});
 	$('#drmClasses').on('click', '.drm-class-head', function () { $(this).closest('.drm-class').toggleClass('is-open'); });
 	$('#drmExpand').on('click', function () { $('.drm-class:visible').addClass('is-open'); });
@@ -295,6 +432,8 @@ $openCount = max(0, $studentCount - $assignedCount);
 		$row.find('.drm-now-name').text(name || 'No dormitory').toggleClass('is-empty', name === '');
 		$sel.attr('data-current', hostelId || 0);
 		$row.attr('data-assigned', hostelId > 0 ? '1' : '0');
+		$row.attr('data-hostel', hostelId || 0);
+		$row.attr('data-search', [($row.attr('data-name') || ''), ($row.attr('data-regno') || ''), name || '', ($row.attr('data-class') || '')].join(' ').toLowerCase());
 		var $remove = $sel.find('option[value="remove"]');
 		if (hostelId > 0) {
 			if (!$remove.length) {
@@ -327,6 +466,7 @@ $openCount = max(0, $studentCount - $assignedCount);
 			applyBeds(res || {});
 			recount();
 			applyFilter();
+			if ($('.drm-chip.is-on').length) renderRoom();
 			toast((res && res.success) || 'Saved.', true);
 		}).fail(function () {
 			$sel.val('');
