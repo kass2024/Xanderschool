@@ -90,16 +90,46 @@ if (!function_exists('menu_clearance_allowed')) {
 				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, [
 					'settings',
 					'pocket_money',
+					'pocket_money_ledger',
+					'pocket_pos',
 					'canteen',
 					'pocket_money_report',
+					'pedagogical',
+					'ped_analyse',
+					'ped_scheme_of_work',
+					'ped_session_plan',
+					'timetable_dashboard',
 				])));
 			}
 			try {
 				if ((new \App\Services\WisdomGroupOverview())->isAliceNamahoro()) {
-					$cacheKeys = array_values(array_unique(array_merge($cacheKeys, ['staffs'])));
+					$cacheKeys = array_values(array_unique(array_merge($cacheKeys, [
+						'students',
+						'register-student',
+						'pendingRegistrations',
+						'dismissedStudent',
+						'student-cards',
+						'student-photo',
+						'assign-card',
+						'student_material_check',
+						'hostel_allocate',
+						'dormitory_attendance',
+						'course',
+						'course-category',
+						'add_course',
+						'manage_courses',
+						'staffs',
+						'staff-cards',
+					])));
 				}
 			} catch (\Throwable $e) {
 			}
+			if (in_array('discipline_record', $cacheKeys, true)
+				|| in_array('discipline_record_entry', $cacheKeys, true)
+				|| in_array('behavior', $cacheKeys, true)) {
+				$cacheKeys[] = 'lateness_report';
+			}
+			$cacheKeys = array_values(array_unique($cacheKeys));
 			$cacheKeys = \Config\MenuClearance::expandPocketMenus($cacheKeys);
 			if (\Config\MenuClearance::isAliceNamahoroAtMusanze()) {
 				$pocketKeep = [
@@ -120,6 +150,9 @@ if (!function_exists('menu_clearance_allowed')) {
 			}));
 			if (\Config\MenuClearance::canViewFamilies($postId)) {
 				$cacheKeys[] = 'families';
+			}
+			if ((int) $postId === 12) {
+				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, \Config\MenuClearance::stockKeeperKeys())));
 			}
 		}
 
@@ -591,7 +624,14 @@ if (!function_exists('can_enter_all_course_marks')) {
 if (!function_exists('material_check_full_access')) {
 	function material_check_full_access()
 	{
-		return \Config\MenuClearance::canUseMaterialAndDormitory((int) ($_SESSION['soma_post'] ?? 0));
+		if (\Config\MenuClearance::canUseMaterialAndDormitory((int) ($_SESSION['soma_post'] ?? 0))) {
+			return true;
+		}
+		try {
+			return (new \App\Services\WisdomGroupOverview())->isAliceNamahoro();
+		} catch (\Throwable $e) {
+			return false;
+		}
 	}
 }
 
