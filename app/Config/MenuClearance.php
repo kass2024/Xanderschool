@@ -1105,10 +1105,11 @@ class MenuClearance
 		return $title === 'director of finance' || $title === 'finance director';
 	}
 
-	/** Only the Director of Finance may mark a whole canteen day card paid. */
+	/** Director or Director of Finance may mark a whole canteen day card paid or unpaid. */
 	public static function canSettleCanteenInvoice($postId)
 	{
-		return self::isDirectorOfFinancePost($postId);
+		$postId = (int) $postId;
+		return self::isDirectorOfFinancePost($postId) || self::isDirectorPost($postId);
 	}
 
 	/** Accountant, Chief Accountant, Head Teacher, or Director may fill another staff member's identity. */

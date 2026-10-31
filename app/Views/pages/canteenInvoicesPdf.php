@@ -63,6 +63,9 @@ $lines = $card['lines'] ?? [];
 <div class="kpi-row">
 	<span><strong>Day total:</strong> <?= number_format((int) ($card['amount'] ?? 0)); ?> Rwf</span>
 	<span><strong><?= !empty($card['paid']) ? 'Paid' : 'Unpaid'; ?></strong></span>
+	<?php if (empty($card['paid']) && trim((string) ($card['unmark_reason'] ?? '')) !== '') : ?>
+		<span><strong>Reason:</strong> <?= esc($card['unmark_reason']); ?></span>
+	<?php endif; ?>
 </div>
 
 <table class="report">

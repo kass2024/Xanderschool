@@ -176,7 +176,7 @@ $unitOptions = static function ($selected) use ($units): string {
 				<button type="button" data-status="paid">Paid</button>
 			</div>
 		</div>
-		<p class="cn-hint">Showing <span id="cnShown"><?= count($dayCards); ?></span> of <?= count($dayCards); ?> day cards.<?= $canSettle ? ' Mark a card paid only after the whole day is paid.' : ' The Director of Finance marks a card paid.'; ?></p>
+		<p class="cn-hint">Showing <span id="cnShown"><?= count($dayCards); ?></span> of <?= count($dayCards); ?> day cards.<?= $canSettle ? ' Mark a card paid only after the whole day is paid. Unmarking asks for a clear reason.' : ' The Director or Director of Finance marks a card paid.'; ?></p>
 
 		<div class="cn-days" id="cnDays">
 			<?php foreach ($dayCards as $card) :
@@ -211,8 +211,20 @@ $unitOptions = static function ($selected) use ($units): string {
 						<div class="cn-paid-note"><?php
 							if ($paid) {
 								echo esc(trim($paidLabel . ($by !== '' ? ' · ' . $by : '')));
-							} elseif ((int) ($card['settled_amount'] ?? 0) > 0) {
-								echo 'An earlier mark was ' . number_format((int) $card['settled_amount']) . ' Rwf. This day is unpaid until the full ' . number_format((int) $card['amount']) . ' Rwf is marked.';
+							} else {
+								$why = trim((string) ($card['unmark_reason'] ?? ''));
+								if ($why !== '') {
+									$unmarkedAt = strtotime((string) ($card['unmarked_at'] ?? ''));
+									$who = trim((string) ($card['unmarked_by_name'] ?? ''));
+									$when = $unmarkedAt ? date('d M Y H:i', $unmarkedAt) : '';
+									echo 'Unmarked';
+									if ($when !== '' || $who !== '') {
+										echo ' ' . esc(trim($when . ($who !== '' ? ' · ' . $who : '')));
+									}
+									echo ': ' . esc($why);
+								} elseif ((int) ($card['settled_amount'] ?? 0) > 0) {
+									echo 'An earlier mark was ' . number_format((int) $card['settled_amount']) . ' Rwf. This day is unpaid until the full ' . number_format((int) $card['amount']) . ' Rwf is marked.';
+								}
 							}
 						?></div>
 					</div>
@@ -458,11 +470,20 @@ $unitOptions = static function ($selected) use ($units): string {
 		if (!button) return;
 		var card = button.closest('.cn-day');
 		var nextPaid = button.getAttribute('data-paid') === '1' ? '0' : '1';
-		if (nextPaid === '1' && !window.confirm('Mark this whole day paid for ' + money(parseInt(card.getAttribute('data-amount') || '0', 10)) + ' Rwf?')) {
+		var reason = '';
+		if (nextPaid === '0') {
+			reason = window.prompt('Write a clear reason for marking this day unpaid.');
+			if (reason === null) return;
+			reason = reason.replace(/\s+/g, ' ').trim();
+			if (reason.length < 10) {
+				window.alert('Write a clear reason, not just a word.');
+				return;
+			}
+		} else if (!window.confirm('Mark this whole day paid for ' + money(parseInt(card.getAttribute('data-amount') || '0', 10)) + ' Rwf?')) {
 			return;
 		}
 		button.disabled = true;
-		var body = 'day=' + encodeURIComponent(card.getAttribute('data-day') || '') + '&paid=' + nextPaid;
+		var body = 'day=' + encodeURIComponent(card.getAttribute('data-day') || '') + '&paid=' + nextPaid + '&reason=' + encodeURIComponent(reason);
 		fetch(<?= json_encode(base_url('canteen_day_paid')); ?>, {
 			method: 'POST',
 			headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -487,7 +508,14 @@ $unitOptions = static function ($selected) use ($units): string {
 			}
 			var note = card.querySelector('.cn-paid-note');
 			if (note) {
-				note.textContent = paid ? [data.paid_at || '', data.paid_by_name || ''].filter(Boolean).join(' · ') : '';
+				if (paid) {
+					note.textContent = [data.paid_at || '', data.paid_by_name || ''].filter(Boolean).join(' · ');
+				} else if (data.unmark_reason) {
+					var who = [data.unmarked_at || '', data.unmarked_by_name || ''].filter(Boolean).join(' · ');
+					note.textContent = 'Unmarked' + (who ? ' ' + who : '') + ': ' + data.unmark_reason;
+				} else {
+					note.textContent = '';
+				}
 			}
 			button.setAttribute('data-paid', paid ? '1' : '0');
 			button.textContent = paid ? 'Mark unpaid' : 'Mark whole day paid';

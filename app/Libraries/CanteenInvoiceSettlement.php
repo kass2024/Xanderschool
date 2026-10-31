@@ -19,10 +19,19 @@ class CanteenInvoiceSettlement
 				amount INT NOT NULL,
 				paid_by INT UNSIGNED NOT NULL DEFAULT 0,
 				paid_at DATETIME NOT NULL,
+				unmark_reason VARCHAR(500) NOT NULL DEFAULT '',
+				unmarked_by INT UNSIGNED NOT NULL DEFAULT 0,
+				unmarked_at DATETIME NULL,
 				PRIMARY KEY (id),
 				UNIQUE KEY school_day (school_id, sale_date)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 		);
+		$reason = $db->query("SHOW COLUMNS FROM canteen_day_settlements LIKE 'unmark_reason'")->getRowArray();
+		if (!$reason) {
+			$db->query("ALTER TABLE canteen_day_settlements ADD COLUMN unmark_reason VARCHAR(500) NOT NULL DEFAULT '' AFTER paid_at");
+			$db->query("ALTER TABLE canteen_day_settlements ADD COLUMN unmarked_by INT UNSIGNED NOT NULL DEFAULT 0 AFTER unmark_reason");
+			$db->query("ALTER TABLE canteen_day_settlements ADD COLUMN unmarked_at DATETIME NULL AFTER unmarked_by");
+		}
 	}
 
 	/**
@@ -80,6 +89,9 @@ class CanteenInvoiceSettlement
 				'paid_at' => $paid ? (string) ($mark['paid_at'] ?? '') : '',
 				'paid_by_name' => $paid ? trim((string) ($mark['paid_by_name'] ?? '')) : '',
 				'settled_amount' => $mark !== null ? $settled : 0,
+				'unmark_reason' => !$paid ? trim((string) ($mark['unmark_reason'] ?? '')) : '',
+				'unmarked_at' => !$paid ? (string) ($mark['unmarked_at'] ?? '') : '',
+				'unmarked_by_name' => !$paid ? trim((string) ($mark['unmarked_by_name'] ?? '')) : '',
 				'lines' => $lines,
 			];
 		}
@@ -99,24 +111,34 @@ class CanteenInvoiceSettlement
 	/**
 	 * @return array{paid:bool,paid_at:string,paid_by_name:string,amount:int}
 	 */
-	public function setDayPaid(int $schoolId, string $date, int $staffId, bool $paid): array
+	public function setDayPaid(int $schoolId, string $date, int $staffId, bool $paid, string $reason = ''): array
 	{
 		$this->ensure();
 		if ($schoolId < 1 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
 			throw new \RuntimeException('Choose one selling day.');
 		}
+		$reason = trim(preg_replace('/\s+/', ' ', $reason));
+		if (!$paid && strlen($reason) < 10) {
+			throw new \RuntimeException('Write a clear reason for marking this day unpaid.');
+		}
+		if (strlen($reason) > 500) {
+			$reason = substr($reason, 0, 500);
+		}
 		$amount = $this->dayTotal($schoolId, $date);
 		$db = \Config\Database::connect();
 		$table = $db->table('canteen_day_settlements');
+		$existing = $table->where('school_id', $schoolId)->where('sale_date', $date)->get()->getRowArray();
 		if ($paid) {
 			if ($amount < 1) {
 				throw new \RuntimeException('That day has no sales to mark paid.');
 			}
-			$existing = $table->where('school_id', $schoolId)->where('sale_date', $date)->get()->getRowArray();
 			$payload = [
 				'amount' => $amount,
 				'paid_by' => $staffId,
 				'paid_at' => date('Y-m-d H:i:s'),
+				'unmark_reason' => '',
+				'unmarked_by' => 0,
+				'unmarked_at' => null,
 			];
 			if ($existing) {
 				$table->where('id', (int) $existing['id'])->update($payload);
@@ -126,7 +148,15 @@ class CanteenInvoiceSettlement
 				$table->insert($payload);
 			}
 		} else {
-			$table->where('school_id', $schoolId)->where('sale_date', $date)->delete();
+			if (!$existing || (int) ($existing['amount'] ?? 0) < 1) {
+				throw new \RuntimeException('This day is not marked paid.');
+			}
+			$table->where('id', (int) $existing['id'])->update([
+				'amount' => 0,
+				'unmark_reason' => $reason,
+				'unmarked_by' => $staffId,
+				'unmarked_at' => date('Y-m-d H:i:s'),
+			]);
 		}
 		$mark = $this->dayMap($schoolId, [$date]);
 		$row = $mark[$date] ?? null;
@@ -137,6 +167,9 @@ class CanteenInvoiceSettlement
 			'paid_at' => $isPaid ? (string) ($row['paid_at'] ?? '') : '',
 			'paid_by_name' => $isPaid ? trim((string) ($row['paid_by_name'] ?? '')) : '',
 			'amount' => $amount,
+			'unmark_reason' => !$isPaid ? trim((string) ($row['unmark_reason'] ?? '')) : '',
+			'unmarked_at' => !$isPaid ? (string) ($row['unmarked_at'] ?? '') : '',
+			'unmarked_by_name' => !$isPaid ? trim((string) ($row['unmarked_by_name'] ?? '')) : '',
 		];
 	}
 
@@ -212,8 +245,9 @@ class CanteenInvoiceSettlement
 		}
 		$db = \Config\Database::connect();
 		$found = $db->table('canteen_day_settlements s')
-			->select("s.sale_date, s.amount, s.paid_at, TRIM(CONCAT(IFNULL(st.fname,''), ' ', IFNULL(st.lname,''))) AS paid_by_name", false)
+			->select("s.sale_date, s.amount, s.paid_at, s.unmark_reason, s.unmarked_at, TRIM(CONCAT(IFNULL(st.fname,''), ' ', IFNULL(st.lname,''))) AS paid_by_name, TRIM(CONCAT(IFNULL(su.fname,''), ' ', IFNULL(su.lname,''))) AS unmarked_by_name", false)
 			->join('staffs st', 'st.id = s.paid_by', 'left')
+			->join('staffs su', 'su.id = s.unmarked_by', 'left')
 			->where('s.school_id', $schoolId)
 			->whereIn('s.sale_date', $dates)
 			->get()
