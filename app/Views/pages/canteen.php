@@ -41,7 +41,7 @@ $unitOptions = static function ($selected) use ($units): string {
 };
 ?>
 <link rel="stylesheet" href="<?= base_url('assets/css/fees-report.css'); ?>?v=6">
-<link rel="stylesheet" href="<?= base_url('assets/css/canteen.css'); ?>?v=1">
+<link rel="stylesheet" href="<?= base_url('assets/css/canteen.css'); ?>?v=2">
 <style>
 	#canteenPage .cn-tabs { display: flex; gap: 10px; margin: 0 0 16px; }
 	#canteenPage .cn-tabs a {
@@ -75,7 +75,7 @@ $unitOptions = static function ($selected) use ($units): string {
 	<div class="fr-center">
 		<div class="fr-header">
 			<h2>Canteen</h2>
-			<p><?= $canteenView === 'menu' ? 'What the till sells, with a unit and a stock count.' : ($canteenView === 'units' ? 'Measures used on the menu, such as cup or 1.5 L.' : 'Each card sale is its own invoice for ' . esc($label) . '.'); ?></p>
+			<p><?= $canteenView === 'menu' ? 'What the till sells, with a unit and a stock count.' : ($canteenView === 'units' ? 'Measures used on the menu, such as cup or 1.5 L.' : 'One card for each selling day in ' . esc($label) . '. A card is paid only when that day’s full amount is paid.'); ?></p>
 		</div>
 
 		<?php if (session()->getFlashdata('success')) { ?>
@@ -142,141 +142,117 @@ $unitOptions = static function ($selected) use ($units): string {
 		</div>
 
 		<?php
-		$invoiceRows = $desk['invoiceRows'] ?? [];
+		$dayCards = $desk['dayCards'] ?? [];
 		$canSettle = !empty($canSettleCanteen);
 		?>
 		<div class="cn-kpis">
 			<div class="cn-kpi">
 				<span>Sales</span>
 				<strong><?= number_format((int) ($desk['sales'] ?? 0)); ?></strong>
-				<small>Rwf this period</small>
+				<small>Rwf in this period</small>
 			</div>
 			<div class="cn-kpi cn-kpi-open">
-				<span>Unpaid</span>
+				<span>Unpaid days</span>
 				<strong id="cnUnpaidCount"><?= number_format((int) ($desk['unpaidCount'] ?? 0)); ?></strong>
 				<small id="cnUnpaidAmount"><?= number_format((int) ($desk['unpaidSales'] ?? 0)); ?> Rwf</small>
 			</div>
 			<div class="cn-kpi cn-kpi-paid">
-				<span>Paid</span>
+				<span>Paid days</span>
 				<strong id="cnPaidCount"><?= number_format((int) ($desk['paidCount'] ?? 0)); ?></strong>
 				<small id="cnPaidAmount"><?= number_format((int) ($desk['paidSales'] ?? 0)); ?> Rwf</small>
 			</div>
 			<div class="cn-kpi">
-				<span>Invoices</span>
-				<strong><?= number_format((int) ($desk['invoiceCount'] ?? 0)); ?></strong>
-				<small><?= number_format((int) ($desk['students'] ?? 0)); ?> students</small>
+				<span>Day cards</span>
+				<strong><?= number_format((int) ($desk['dayCount'] ?? count($dayCards))); ?></strong>
+				<small><?= number_format((int) ($desk['invoiceCount'] ?? 0)); ?> sales</small>
 			</div>
 		</div>
 
-		<div class="fr-panel">
-			<div class="fr-panel-head">
-				<h3>Invoices · <?= esc($label); ?></h3>
-				<div class="fr-actions">
-					<a href="<?= esc($link(['view' => 'invoices', 'pdf' => '1'])); ?>" target="_blank" class="btn btn-danger">
-						<i class="fa fa-file-pdf"></i> Export PDF
-					</a>
-				</div>
+		<div class="cn-tools">
+			<input type="search" class="form-control" id="canteenSearch" placeholder="Find a day or a student inside a card" autocomplete="off">
+			<div class="cn-pills" id="cnPills">
+				<button type="button" class="is-on" data-status="">All</button>
+				<button type="button" data-status="unpaid">Unpaid</button>
+				<button type="button" data-status="paid">Paid</button>
 			</div>
-			<div class="cn-tools">
-				<input type="search" class="form-control" id="canteenSearch" placeholder="Search one invoice: student, class, reg no, or item" autocomplete="off">
-				<div class="cn-pills" id="cnPills">
-					<button type="button" class="is-on" data-status="">All</button>
-					<button type="button" data-status="unpaid">Unpaid</button>
-					<button type="button" data-status="paid">Paid</button>
-				</div>
-			</div>
-			<p class="cn-hint" id="cnHint">Showing <span id="cnShown"><?= count($invoiceRows); ?></span> of <?= count($invoiceRows); ?> invoices.<?= $canSettle ? ' You can mark an invoice paid.' : ' Paid and unpaid stay separate.'; ?></p>
-			<div class="fr-table-wrap">
-				<table class="table mb-0 cn-invoices" id="canteenInvoices">
-					<thead>
-					<tr>
-						<th>INVOICE</th>
-						<th>STUDENT</th>
-						<th>WHAT THEY TOOK</th>
-						<th class="text-right">AMOUNT</th>
-						<th class="text-right">LEFT ON CARD</th>
-						<th>STATUS</th>
-					</tr>
-					</thead>
-					<tbody>
-					<?php foreach ($invoiceRows as $invoice) :
-						$paid = !empty($invoice['paid']);
-						$when = strtotime((string) ($invoice['at'] ?? ''));
-						$whenLabel = $when ? date('d M Y H:i', $when) : '';
-						$paidAt = strtotime((string) ($invoice['paid_at'] ?? ''));
-						$paidLabel = $paidAt ? date('d M Y H:i', $paidAt) : '';
-						$itemsText = trim((string) ($invoice['items'] ?? ''));
-						$chips = $itemsText === '' ? [] : array_values(array_filter(array_map('trim', explode(',', $itemsText))));
-						$search = strtolower('#' . (int) $invoice['id'] . ' ' . $invoice['name'] . ' ' . $invoice['regno'] . ' ' . $invoice['class_name'] . ' ' . $itemsText . ' ' . ($paid ? 'paid' : 'unpaid'));
-						?>
-						<tr class="<?= $paid ? 'is-paid' : 'is-unpaid'; ?>" data-search="<?= esc($search, 'attr'); ?>" data-status="<?= $paid ? 'paid' : 'unpaid'; ?>" data-id="<?= (int) $invoice['id']; ?>" data-amount="<?= (int) $invoice['amount']; ?>">
-							<td>
-								<div class="cn-inv">#<?= (int) $invoice['id']; ?></div>
-								<div class="cn-when"><?= esc($whenLabel); ?></div>
-							</td>
-							<td>
-								<div class="cn-name"><?= esc($invoice['name']); ?></div>
-								<div class="cn-meta"><?= esc($invoice['class_name'] !== '' ? $invoice['class_name'] : '—'); ?> · <?= esc($invoice['regno']); ?></div>
-							</td>
-							<td>
-								<?php if ($chips === []) { ?>
-									<span class="cn-meta">—</span>
-								<?php } else { foreach ($chips as $chip) { ?>
-									<span class="cn-chip"><?= esc($chip); ?></span>
-								<?php } } ?>
-							</td>
-							<td class="text-right cn-amount"><?= number_format((int) $invoice['amount']); ?></td>
-							<td class="text-right"><?= number_format((int) $invoice['balance']); ?></td>
-							<td class="cn-status">
-								<span class="cn-badge <?= $paid ? 'is-paid' : 'is-unpaid'; ?>"><?= $paid ? 'Paid' : 'Unpaid'; ?></span>
-								<div class="cn-paid-note"><?php
-									$by = trim((string) ($invoice['paid_by_name'] ?? ''));
-									echo $paid ? esc(trim($paidLabel . ($by !== '' ? ' · ' . $by : ''))) : '';
-								?></div>
-								<?php if ($canSettle) { ?>
-									<button type="button" class="cn-mark" data-paid="<?= $paid ? '1' : '0'; ?>"><?= $paid ? 'Mark unpaid' : 'Mark paid'; ?></button>
-								<?php } ?>
-							</td>
-						</tr>
-					<?php endforeach; ?>
-					</tbody>
-				</table>
-			</div>
-			<p class="cn-empty" id="cnEmpty"<?= $invoiceRows === [] ? '' : ' hidden'; ?>><?= $invoiceRows === [] ? 'No card sales in this period.' : 'No invoice matches that search.'; ?></p>
 		</div>
+		<p class="cn-hint">Showing <span id="cnShown"><?= count($dayCards); ?></span> of <?= count($dayCards); ?> day cards.<?= $canSettle ? ' Mark a card paid only after the whole day is paid.' : ' The Director of Finance marks a card paid.'; ?></p>
 
-		<div class="fr-panel">
-			<div class="fr-panel-head"><h3>Sold in this period</h3></div>
-			<div class="fr-table-wrap">
-				<table class="table mb-0">
-					<thead>
-					<tr>
-						<th>ITEM</th>
-						<th>UNIT</th>
-						<th class="text-right">QTY</th>
-						<th class="text-right">AMOUNT</th>
-					</tr>
-					</thead>
-					<tbody>
-					<?php foreach ($itemRows as $row) { ?>
-						<tr>
-							<td><?= esc($row['name']); ?></td>
-							<td><?= esc($row['unit'] !== '' ? $row['unit'] : '—'); ?></td>
-							<td class="text-right"><?= number_format((int) $row['qty']); ?></td>
-							<td class="text-right"><?= number_format((int) $row['amount']); ?></td>
-						</tr>
-					<?php } ?>
-					</tbody>
-					<tfoot>
-					<tr class="fr-balance-total">
-						<td colspan="3"><strong>TOTAL</strong></td>
-						<td class="text-right"><strong><?= number_format((int) ($desk['sales'] ?? 0)); ?></strong></td>
-					</tr>
-					</tfoot>
-				</table>
-			</div>
-			<?php if ($itemRows === []) { ?><p class="text-muted" style="padding:12px 16px;">No items sold in this period.</p><?php } ?>
+		<div class="cn-days" id="cnDays">
+			<?php foreach ($dayCards as $card) :
+				$paid = !empty($card['paid']);
+				$paidAt = strtotime((string) ($card['paid_at'] ?? ''));
+				$paidLabel = $paidAt ? date('d M Y H:i', $paidAt) : '';
+				$by = trim((string) ($card['paid_by_name'] ?? ''));
+				$searchBits = [$card['label'], $card['date'], $paid ? 'paid' : 'unpaid'];
+				foreach ($card['lines'] as $line) {
+					$searchBits[] = $line['name'] . ' ' . $line['regno'] . ' ' . $line['class_name'] . ' ' . $line['items'];
+				}
+				$export = base_url('canteen') . '?' . http_build_query(['export' => 'pdf', 'day' => $card['date']]);
+				$excel = base_url('canteen') . '?' . http_build_query(['export' => 'excel', 'day' => $card['date']]);
+				?>
+				<article class="cn-day <?= $paid ? 'is-paid' : 'is-unpaid'; ?>" data-status="<?= $paid ? 'paid' : 'unpaid'; ?>" data-day="<?= esc($card['date'], 'attr'); ?>" data-amount="<?= (int) $card['amount']; ?>" data-search="<?= esc(strtolower(implode(' ', $searchBits)), 'attr'); ?>">
+					<header class="cn-day-head">
+						<div>
+							<div class="cn-day-date"><?= esc($card['label']); ?></div>
+							<div class="cn-meta"><?= (int) $card['sales']; ?> sales · <?= (int) $card['students']; ?> students</div>
+						</div>
+						<div class="cn-day-total">
+							<strong><?= number_format((int) $card['amount']); ?> <small>Rwf</small></strong>
+							<span class="cn-badge <?= $paid ? 'is-paid' : 'is-unpaid'; ?>"><?= $paid ? 'Paid' : 'Unpaid'; ?></span>
+						</div>
+					</header>
+					<div class="cn-day-actions">
+						<a class="btn btn-danger btn-sm" href="<?= esc($export); ?>" target="_blank">PDF this card</a>
+						<a class="btn btn-success btn-sm" href="<?= esc($excel); ?>">Excel this card</a>
+						<?php if ($canSettle) { ?>
+							<button type="button" class="cn-mark" data-paid="<?= $paid ? '1' : '0'; ?>"><?= $paid ? 'Mark unpaid' : 'Mark whole day paid'; ?></button>
+						<?php } ?>
+						<div class="cn-paid-note"><?php
+							if ($paid) {
+								echo esc(trim($paidLabel . ($by !== '' ? ' · ' . $by : '')));
+							} elseif ((int) ($card['settled_amount'] ?? 0) > 0) {
+								echo 'An earlier mark was ' . number_format((int) $card['settled_amount']) . ' Rwf. This day is unpaid until the full ' . number_format((int) $card['amount']) . ' Rwf is marked.';
+							}
+						?></div>
+					</div>
+					<div class="fr-table-wrap">
+						<table class="table mb-0 cn-day-lines">
+							<thead>
+							<tr>
+								<th>TIME</th>
+								<th>STUDENT</th>
+								<th>WHAT THEY TOOK</th>
+								<th class="text-right">AMOUNT</th>
+							</tr>
+							</thead>
+							<tbody>
+							<?php foreach ($card['lines'] as $line) :
+								$when = strtotime((string) ($line['at'] ?? ''));
+								?>
+								<tr>
+									<td><?= $when ? esc(date('H:i', $when)) : ''; ?></td>
+									<td>
+										<div class="cn-name"><?= esc($line['name']); ?></div>
+										<div class="cn-meta"><?= esc($line['class_name'] !== '' ? $line['class_name'] : '—'); ?> · <?= esc($line['regno']); ?></div>
+									</td>
+									<td><?= esc($line['items'] !== '' ? $line['items'] : '—'); ?></td>
+									<td class="text-right cn-amount"><?= number_format((int) $line['amount']); ?></td>
+								</tr>
+							<?php endforeach; ?>
+							</tbody>
+							<tfoot>
+							<tr class="fr-balance-total">
+								<td colspan="3"><strong>Day total</strong></td>
+								<td class="text-right"><strong><?= number_format((int) $card['amount']); ?></strong></td>
+							</tr>
+							</tfoot>
+						</table>
+					</div>
+				</article>
+			<?php endforeach; ?>
 		</div>
+		<p class="cn-empty" id="cnEmpty"<?= $dayCards === [] ? '' : ' hidden'; ?>><?= $dayCards === [] ? 'No card sales in this period.' : 'No day card matches that search.'; ?></p>
 		<?php } ?>
 
 		<?php if ($canteenView === 'menu') { ?>
@@ -422,9 +398,9 @@ $unitOptions = static function ($selected) use ($units): string {
 <script>
 (function () {
 	var box = document.getElementById('canteenSearch');
-	var table = document.getElementById('canteenInvoices');
-	if (!table) return;
-	var rows = table.querySelectorAll('tbody tr');
+	var list = document.getElementById('cnDays');
+	if (!list) return;
+	var cards = list.querySelectorAll('.cn-day');
 	var pills = document.getElementById('cnPills');
 	var shown = document.getElementById('cnShown');
 	var empty = document.getElementById('cnEmpty');
@@ -434,9 +410,9 @@ $unitOptions = static function ($selected) use ($units): string {
 	}
 	function paintTotals() {
 		var paidN = 0, openN = 0, paidAmt = 0, openAmt = 0;
-		for (var i = 0; i < rows.length; i++) {
-			var amt = parseInt(rows[i].getAttribute('data-amount') || '0', 10) || 0;
-			if (rows[i].getAttribute('data-status') === 'paid') {
+		for (var i = 0; i < cards.length; i++) {
+			var amt = parseInt(cards[i].getAttribute('data-amount') || '0', 10) || 0;
+			if (cards[i].getAttribute('data-status') === 'paid') {
 				paidN++;
 				paidAmt += amt;
 			} else {
@@ -456,15 +432,15 @@ $unitOptions = static function ($selected) use ($units): string {
 	function applyFilter() {
 		var q = box ? box.value.toLowerCase().trim() : '';
 		var visible = 0;
-		for (var i = 0; i < rows.length; i++) {
-			var hay = rows[i].getAttribute('data-search') || '';
-			var st = rows[i].getAttribute('data-status') || '';
+		for (var i = 0; i < cards.length; i++) {
+			var hay = cards[i].getAttribute('data-search') || '';
+			var st = cards[i].getAttribute('data-status') || '';
 			var ok = (q === '' || hay.indexOf(q) !== -1) && (status === '' || st === status);
-			rows[i].style.display = ok ? '' : 'none';
+			cards[i].style.display = ok ? '' : 'none';
 			if (ok) visible++;
 		}
 		if (shown) shown.textContent = String(visible);
-		if (empty && rows.length) empty.hidden = visible !== 0;
+		if (empty && cards.length) empty.hidden = visible !== 0;
 	}
 	if (box) box.addEventListener('input', applyFilter);
 	if (pills) {
@@ -477,48 +453,48 @@ $unitOptions = static function ($selected) use ($units): string {
 			applyFilter();
 		});
 	}
-	table.addEventListener('click', function (event) {
+	list.addEventListener('click', function (event) {
 		var button = event.target.closest('.cn-mark');
 		if (!button) return;
-		var row = button.closest('tr');
+		var card = button.closest('.cn-day');
 		var nextPaid = button.getAttribute('data-paid') === '1' ? '0' : '1';
+		if (nextPaid === '1' && !window.confirm('Mark this whole day paid for ' + money(parseInt(card.getAttribute('data-amount') || '0', 10)) + ' Rwf?')) {
+			return;
+		}
 		button.disabled = true;
-		var body = 'id=' + encodeURIComponent(row.getAttribute('data-id') || '') + '&paid=' + nextPaid;
-		fetch(<?= json_encode(base_url('canteen_invoice_paid')); ?>, {
+		var body = 'day=' + encodeURIComponent(card.getAttribute('data-day') || '') + '&paid=' + nextPaid;
+		fetch(<?= json_encode(base_url('canteen_day_paid')); ?>, {
 			method: 'POST',
 			headers: {'Content-Type': 'application/x-www-form-urlencoded'},
 			body: body
 		}).then(function (res) {
 			return res.json().then(function (data) {
 				if (!res.ok || !data || data.ok !== true) {
-					throw new Error((data && data.error) || 'Could not update this invoice.');
+					throw new Error((data && data.error) || 'Could not update this day card.');
 				}
 				return data;
 			});
 		}).then(function (data) {
 			var paid = !!data.paid;
-			row.setAttribute('data-status', paid ? 'paid' : 'unpaid');
-			row.classList.toggle('is-paid', paid);
-			row.classList.toggle('is-unpaid', !paid);
-			var badge = row.querySelector('.cn-badge');
+			card.setAttribute('data-status', paid ? 'paid' : 'unpaid');
+			card.classList.toggle('is-paid', paid);
+			card.classList.toggle('is-unpaid', !paid);
+			var badge = card.querySelector('.cn-badge');
 			if (badge) {
 				badge.textContent = paid ? 'Paid' : 'Unpaid';
 				badge.classList.toggle('is-paid', paid);
 				badge.classList.toggle('is-unpaid', !paid);
 			}
-			var note = row.querySelector('.cn-paid-note');
+			var note = card.querySelector('.cn-paid-note');
 			if (note) {
 				note.textContent = paid ? [data.paid_at || '', data.paid_by_name || ''].filter(Boolean).join(' · ') : '';
 			}
-			var hay = row.getAttribute('data-search') || '';
-			hay = hay.replace(/\bpaid\b/g, '').replace(/\bunpaid\b/g, '').replace(/\s+/g, ' ').trim();
-			row.setAttribute('data-search', hay + ' ' + (paid ? 'paid' : 'unpaid'));
 			button.setAttribute('data-paid', paid ? '1' : '0');
-			button.textContent = paid ? 'Mark unpaid' : 'Mark paid';
+			button.textContent = paid ? 'Mark unpaid' : 'Mark whole day paid';
 			paintTotals();
 			applyFilter();
 		}).catch(function (err) {
-			window.alert(err.message || 'Could not update this invoice.');
+			window.alert(err.message || 'Could not update this day card.');
 		}).then(function () {
 			button.disabled = false;
 		});

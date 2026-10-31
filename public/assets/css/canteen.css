@@ -26,12 +26,7 @@
 	line-height: 1.1;
 	color: #0f172a;
 }
-#canteenPage .cn-kpi small {
-	display: block;
-	margin-top: 2px;
-	color: #64748b;
-	font-weight: 600;
-}
+#canteenPage .cn-kpi small { display: block; margin-top: 2px; color: #64748b; font-weight: 600; }
 #canteenPage .cn-kpi-open { border-top: 3px solid #d97706; }
 #canteenPage .cn-kpi-open strong { color: #b45309; }
 #canteenPage .cn-kpi-paid { border-top: 3px solid #059669; }
@@ -40,7 +35,7 @@
 	display: flex;
 	gap: 12px;
 	align-items: center;
-	padding: 12px 16px 0;
+	margin-bottom: 8px;
 }
 #canteenPage .cn-tools .form-control { flex: 1; min-width: 0; }
 #canteenPage .cn-pills { display: flex; gap: 6px; flex-shrink: 0; }
@@ -54,27 +49,39 @@
 	font-size: 0.82rem;
 }
 #canteenPage .cn-pills button.is-on { background: #0f172a; color: #fff; border-color: #0f172a; }
-#canteenPage .cn-hint { margin: 8px 16px 0; color: #64748b; font-size: 0.86rem; }
-#canteenPage .cn-invoices td { vertical-align: top; }
-#canteenPage .cn-invoices tr.is-unpaid { box-shadow: inset 3px 0 0 #f59e0b; }
-#canteenPage .cn-invoices tr.is-paid { box-shadow: inset 3px 0 0 #10b981; background: #f8fffb; }
-#canteenPage .cn-inv { font-weight: 800; color: #0f172a; }
-#canteenPage .cn-when, #canteenPage .cn-meta, #canteenPage .cn-paid-note { color: #64748b; font-size: 12px; }
-#canteenPage .cn-name { font-weight: 700; color: #0f172a; }
-#canteenPage .cn-chip {
-	display: inline-block;
-	margin: 0 6px 6px 0;
-	padding: 3px 8px;
-	border-radius: 999px;
-	background: #f1f5f9;
-	color: #334155;
-	font-size: 12px;
-	font-weight: 600;
+#canteenPage .cn-hint { margin: 0 0 14px; color: #64748b; font-size: 0.86rem; }
+#canteenPage .cn-days { display: grid; gap: 14px; }
+#canteenPage .cn-day {
+	background: #fff;
+	border: 1px solid #e8edf3;
+	border-radius: 18px;
+	overflow: hidden;
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
+#canteenPage .cn-day.is-unpaid { border-top: 4px solid #f59e0b; }
+#canteenPage .cn-day.is-paid { border-top: 4px solid #10b981; }
+#canteenPage .cn-day-head, #canteenPage .cn-day-actions {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	align-items: center;
+	padding: 16px 18px;
+}
+#canteenPage .cn-day-actions {
+	padding-top: 0;
+	flex-wrap: wrap;
+	justify-content: flex-start;
+}
+#canteenPage .cn-day-date { font-size: 1.15rem; font-weight: 800; color: #0f172a; }
+#canteenPage .cn-day-total { text-align: right; }
+#canteenPage .cn-day-total strong { display: block; font-size: 1.45rem; color: #0f172a; line-height: 1; }
+#canteenPage .cn-day-total strong small { font-size: 0.85rem; font-weight: 700; color: #64748b; }
+#canteenPage .cn-meta, #canteenPage .cn-paid-note { color: #64748b; font-size: 12px; }
+#canteenPage .cn-name { font-weight: 700; color: #0f172a; }
 #canteenPage .cn-amount { font-weight: 800; white-space: nowrap; }
-#canteenPage .cn-status { min-width: 148px; }
 #canteenPage .cn-badge {
 	display: inline-block;
+	margin-top: 6px;
 	border-radius: 999px;
 	padding: 3px 9px;
 	font-size: 12px;
@@ -83,19 +90,19 @@
 #canteenPage .cn-badge.is-unpaid { background: #fff7ed; color: #c2410c; }
 #canteenPage .cn-badge.is-paid { background: #ecfdf5; color: #047857; }
 #canteenPage .cn-mark {
-	display: inline-block;
-	margin-top: 6px;
-	border: 1px solid #cbd5e1;
-	background: #fff;
+	border: 0;
+	background: #0f172a;
+	color: #fff;
 	border-radius: 8px;
-	padding: 4px 8px;
+	padding: 6px 10px;
 	font-size: 12px;
 	font-weight: 700;
-	color: #0f172a;
 }
 #canteenPage .cn-mark:disabled { opacity: 0.6; }
-#canteenPage .cn-empty { padding: 12px 16px; color: #64748b; }
+#canteenPage .cn-day-lines td { vertical-align: top; }
+#canteenPage .cn-empty { padding: 12px 0; color: #64748b; }
 @media (max-width: 900px) {
 	#canteenPage .cn-kpis { grid-template-columns: 1fr 1fr; }
-	#canteenPage .cn-tools { flex-direction: column; align-items: stretch; }
+	#canteenPage .cn-tools, #canteenPage .cn-day-head { flex-direction: column; align-items: stretch; }
+	#canteenPage .cn-day-total { text-align: left; }
 }
