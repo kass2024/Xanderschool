@@ -1105,6 +1105,15 @@ class MenuClearance
 		return $title === 'director of finance' || $title === 'finance director';
 	}
 
+	/** Director of Finance, Director, or Chief Accountant may mark a canteen invoice paid. */
+	public static function canSettleCanteenInvoice($postId)
+	{
+		$postId = (int) $postId;
+		return self::isDirectorOfFinancePost($postId)
+			|| self::isDirectorPost($postId)
+			|| self::isChiefAccountantPost($postId);
+	}
+
 	/** Accountant, Chief Accountant, Head Teacher, or Director may fill another staff member's identity. */
 	public static function canEditStaffIdentity($postId)
 	{
