@@ -91,11 +91,6 @@ if (!function_exists('menu_clearance_allowed')) {
 			if (\Config\MenuClearance::isAliceNamahoroAtMusanze()) {
 				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, [
 					'settings',
-					'pocket_money',
-					'pocket_money_ledger',
-					'pocket_pos',
-					'canteen',
-					'pocket_money_report',
 					'pedagogical',
 					'ped_analyse',
 					'ped_scheme_of_work',
@@ -122,6 +117,12 @@ if (!function_exists('menu_clearance_allowed')) {
 						'manage_courses',
 						'staffs',
 						'staff-cards',
+						'pocket_money',
+						'pocket_money_ledger',
+						'parents_account',
+						'pocket_money_report',
+						'pocket_pos',
+						'canteen',
 					])));
 				}
 			} catch (\Throwable $e) {
@@ -133,19 +134,13 @@ if (!function_exists('menu_clearance_allowed')) {
 			}
 			$cacheKeys = array_values(array_unique($cacheKeys));
 			$cacheKeys = \Config\MenuClearance::expandPocketMenus($cacheKeys);
-			if (\Config\MenuClearance::isAliceNamahoroAtMusanze()) {
-				$pocketKeep = [
-					'pocket_money' => true,
-					'canteen' => true,
-					'pocket_money_report' => true,
-				];
-				$pocketDrop = array_flip(\Config\MenuClearance::pocketMenuKeys());
-				$cacheKeys = array_values(array_filter($cacheKeys, static function ($key) use ($pocketKeep, $pocketDrop) {
-					if (!isset($pocketDrop[$key])) {
-						return true;
-					}
-					return isset($pocketKeep[$key]);
-				}));
+			try {
+				if ((new \App\Services\WisdomGroupOverview())->isAliceNamahoro()) {
+					$cacheKeys = array_values(array_filter($cacheKeys, static function ($key) {
+						return $key !== 'pocket_cash_withdraw';
+					}));
+				}
+			} catch (\Throwable $e) {
 			}
 			$cacheKeys = array_values(array_filter($cacheKeys, static function ($key) {
 				return $key !== 'families' && strpos((string) $key, 'families/') !== 0;
