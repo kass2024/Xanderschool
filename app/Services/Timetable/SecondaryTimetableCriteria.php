@@ -1775,6 +1775,10 @@ class SecondaryTimetableCriteria
 		if ($levelA !== '' && $levelB !== '' && $levelA !== $levelB) {
 			return false;
 		}
+		// S1 French sections are different classes. S4, S5 and S6 French stay on the documented groups.
+		if ($famA === 'french' && $levelA === 'S1' && $levelB === 'S1') {
+			return false;
+		}
 		$titleNormA = strtolower(trim(preg_replace('/\s+/', ' ', $titleA)));
 		$titleNormB = strtolower(trim(preg_replace('/\s+/', ' ', $titleB)));
 		return $titleNormA !== '' && $titleNormA === $titleNormB;
@@ -1944,7 +1948,7 @@ class SecondaryTimetableCriteria
 			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'One class for S1 A+B+C+D, one class for S2 A+B and every S3 section, one class for S4 ST1+ST2+ANP with S5 ACC+ST1+ST2+ANP, and one class for S6 ANP+MCE+MPC+MEG+MCB+PCB. Always the last teaching period, never a morning period. At most one PE period per class day.'],
 			['group' => 'After lessons', 'title' => 'Home Science and Farming', 'detail' => 'Home Science sits in the afternoon, with French, ICT, Chinese and Kiswahili. Farming stays inside a normal teaching slot. Library and Clubs stay in Manage Course and are not placed.'],
 			['group' => 'After lessons', 'title' => 'Evening bells', 'detail' => '17:30–18:00 chapel, 18:00–19:00 dinner, 19:00–21:00 preps.'],
-			['group' => 'Afternoon', 'title' => 'ICT, French, Home Science, Chinese and Kiswahili', 'detail' => 'These courses sit after 12:00. A morning cell is used only when every legal afternoon cell is already taken. French is one class for S4 ST1+ST2, one class for S5 ST1+ST2, and one class for S6 MPC+MCE+PCB+MCB+MPG+MEG+ANP.'],
+			['group' => 'Afternoon', 'title' => 'ICT, French, Home Science, Chinese and Kiswahili', 'detail' => 'These courses sit after 12:00. A morning cell is used only when every legal afternoon cell is already taken. French for S1 A, S1 B, S1 C and S1 D is a different class for each section. French is one class for S4 ST1+ST2, one class for S5 ST1+ST2, and one class for S6 MPC+MCE+PCB+MCB+MPG+MEG+ANP.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
 			['group' => 'Morning', 'title' => 'Examinable subjects', 'detail' => 'Examinable Subjects stay between 07:00 and 12:00. A morning cell is filled before any of those courses uses the afternoon. An afternoon cell is used only when every morning cell for that class is already taken.'],
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Varlette, Marguerite and Linea teach S4, S5 and S6 ANP only inside the times listed under Windows.'],
