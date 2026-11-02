@@ -154,21 +154,57 @@ class TimetableGeneratorService
 	public static function weeklyHoursFromCourse(array $course): int
 	{
 		if (array_key_exists('_fitted_hours', $course)) {
-			return max(0, (int) $course['_fitted_hours']);
+			$base = max(0, (int) $course['_fitted_hours']);
+		} else {
+			$explicit = (int) ($course['weekly_hours'] ?? 0);
+			if ($explicit > 0 && $explicit <= 20) {
+				$base = $explicit;
+			} else {
+				$credit = (float) ($course['credit'] ?? 0);
+				if ($credit >= 1 && $credit <= 20) {
+					$base = (int) round($credit);
+				} else {
+					$base = self::defaultWeeklyHoursByTitle((string) ($course['course_title'] ?? ''));
+				}
+			}
 		}
-		$explicit = (int) ($course['weekly_hours'] ?? 0);
-		if ($explicit > 0 && $explicit <= 20) {
-			return $explicit;
+		$extra = self::extraDocumentPeriods($course);
+		if ($extra <= 0) {
+			return $base;
 		}
-
-		// Credit = weekly periods on the timetable (e.g. credit 3 → 3 lessons per week).
-		$credit = (float) ($course['credit'] ?? 0);
-		if ($credit >= 1 && $credit <= 20) {
-			return (int) round($credit);
-		}
-
-		return self::defaultWeeklyHoursByTitle((string) ($course['course_title'] ?? ''));
+		return min(24, $base + $extra);
 	}
+
+	/** S6 ANP Fundamentals of Nursing taught by Margueritte Uwimana: four added periods. */
+	private static function extraDocumentPeriods(array $course): int
+	{
+		$title = strtolower(trim((string) ($course['course_title'] ?? '')));
+		if (strpos($title, 'nurs') === false || strpos($title, 'fundamental') === false) {
+			return 0;
+		}
+		$teacher = strtolower(trim((string) ($course['teacher_name'] ?? '')));
+		if (strpos($teacher, 'marguer') === false && strpos($teacher, 'uwimana') === false) {
+			return 0;
+		}
+		$level = strtoupper((string) ($course['level_name'] ?? '') . ' ' . (string) ($course['level_title'] ?? '') . ' ' . (string) ($course['class_title'] ?? ''));
+		$dept = strtoupper((string) ($course['dept_code'] ?? '') . ' ' . (string) ($course['dept_title'] ?? '') . ' ' . (string) ($course['class_title'] ?? ''));
+		if (strpos($level, 'S6') === false) {
+			return 0;
+		}
+		if (strpos($dept, 'ANP') === false && strpos($dept, 'NURS') === false) {
+			return 0;
+		}
+		return 4;
+	}
+
+	/**
+	 * Cap nursery weekly periods to morning cells so courses stay on the grid.
+	 * Marks 100 (core) keep more periods; other courses are reduced first.
+	 *
+	 * @param list<array<string,mixed>> $assignments
+	 * @return list<array<string,mixed>>
+	 */
+
 
 	/**
 	 * Cap nursery weekly periods to morning cells so courses stay on the grid.
@@ -384,6 +420,9 @@ class TimetableGeneratorService
 		}
 
 		foreach ($assignments as $row) {
+			if ($this->secondaryCriteria && SecondaryTimetableCriteria::isOmittedFromGridTitle((string) ($row['course_title'] ?? ''))) {
+				continue;
+			}
 			if ($this->isCombineFollowerInBatch($row, $batchClassIds)) {
 				continue;
 			}
@@ -473,19 +512,31 @@ class TimetableGeneratorService
 					$entries[] = $entry;
 				}
 			} elseif ($blockSize === 2 && $remaining >= 2) {
-				// Keep periods in the generator (with double-completion scoring)
-				// instead of dumping them to parking as isolated singles.
-				array_unshift($lessonNeeds, [
-					'assignment' => $need['assignment'],
-					'block_size' => 1,
-					'hours' => (int) $need['hours'],
-					'nursery_homework' => $nurseryHwNeed ? 1 : 0,
-				], [
-					'assignment' => $need['assignment'],
-					'block_size' => 1,
-					'hours' => (int) $need['hours'],
-					'nursery_homework' => $nurseryHwNeed ? 1 : 0,
-				]);
+				$mainCourse = SecondaryTimetableCriteria::isExaminableMainCategory(
+					(string) ($need['assignment']['category_title'] ?? '')
+				);
+				$retries = (int) ($need['double_retries'] ?? 0);
+				if ($mainCourse && $retries < 4) {
+					$lessonNeeds[] = [
+						'assignment' => $need['assignment'],
+						'block_size' => 2,
+						'hours' => (int) $need['hours'],
+						'nursery_homework' => $nurseryHwNeed ? 1 : 0,
+						'double_retries' => $retries + 1,
+					];
+				} else {
+					array_unshift($lessonNeeds, [
+						'assignment' => $need['assignment'],
+						'block_size' => 1,
+						'hours' => (int) $need['hours'],
+						'nursery_homework' => $nurseryHwNeed ? 1 : 0,
+					], [
+						'assignment' => $need['assignment'],
+						'block_size' => 1,
+						'hours' => (int) $need['hours'],
+						'nursery_homework' => $nurseryHwNeed ? 1 : 0,
+					]);
+				}
 			} elseif ($blockSize === 2 && $remaining === 1) {
 				array_unshift($lessonNeeds, [
 					'assignment' => $need['assignment'],
@@ -1489,6 +1540,13 @@ class TimetableGeneratorService
 				isset($slot['end_time']) ? (string) $slot['end_time'] : null
 			);
 			$score += $this->namedWindowFillScore($row, $day, $slotIndex);
+			$slotPin = $this->teachingSlots[$slotIndex] ?? null;
+			$score += $this->secondaryCriteria->pinnedClockScoreDelta(
+				$row,
+				$day,
+				isset($slotPin['start_time']) ? (string) $slotPin['start_time'] : null,
+				isset($slotPin['end_time']) ? (string) $slotPin['end_time'] : null
+			);
 		}
 
 		if (NurseryTimetableCriteria::isNurseryRow($row)) {

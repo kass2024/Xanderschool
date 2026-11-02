@@ -20,8 +20,97 @@ class SecondaryTimetableCriteria
 	 */
 	public const MANAGER_ONLY_COURSE_IDS = [476, 478];
 
-	/** Locked ruleset used by every generation after the final Version 2 checkup. */
-	public const RULES_VERSION = 2;
+	/**
+	 * S6 PCM with no enrolled students is not a timetable class.
+	 * An empty sheet was sharing combined S6 lessons and crowding teacher loads.
+	 */
+	public static function excludeEmptyS6PcmSql(string $classAlias, string $levelAlias, string $deptAlias, int $year): string
+	{
+		$year = (int) $year;
+		return "NOT (UPPER(TRIM(IFNULL({$deptAlias}.code,''))) = 'PCM'"
+			. " AND UPPER(TRIM(IFNULL({$levelAlias}.title,''))) = 'S6'"
+			. " AND (SELECT COUNT(*) FROM class_records scr WHERE scr.class = {$classAlias}.id AND scr.year = {$year}) = 0)";
+	}
+
+	/** Locked ruleset used by every generation after the Musanze criteria update. */
+	public const RULES_VERSION = 3;
+
+	/**
+	 * Lessons the latest criteria still have to move. Everything else can stay locked.
+	 *
+	 * @param array<string,mixed> $row
+	 */
+	public static function shouldStayMovable(array $row): bool
+	{
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['course_title'] ?? '')) ?? ''));
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? '')) ?? ''));
+		$day = (int) ($row['day_of_week'] ?? -1);
+		$start = self::hmToMinutes((string) ($row['start_time'] ?? ''));
+		$end = self::hmToMinutes((string) ($row['end_time'] ?? ''));
+		$level = strtoupper((string) ($row['level_name'] ?? '') . ' ' . (string) ($row['class_title'] ?? ''));
+		$dept = strtoupper((string) ($row['dept_code'] ?? '') . ' ' . (string) ($row['dept_title'] ?? '') . ' ' . (string) ($row['class_title'] ?? ''));
+		if (TimetableGeneratorService::isPhysicalEducationSportTitle($title) || strpos($title, 'french') !== false) {
+			return true;
+		}
+		$morning = $start < (12 * 60);
+		if ($morning && (
+			strpos($title, 'chinese') !== false
+			|| strpos($title, 'kiswahili') !== false
+			|| strpos($title, 'kiswahil') !== false
+			|| strpos($title, 'home science') !== false
+			|| strpos($title, 'home scince') !== false
+			|| preg_match('/\bict\b/', $title) === 1
+		)) {
+			return true;
+		}
+		$math = strpos($title, 'mathematics') !== false || preg_match('/\bmath\b/', $title) === 1;
+		if ($math && (strpos($teacher, 'fabrice') !== false || strpos($teacher, 'ndacyayi') !== false)) {
+			return true;
+		}
+		if (strpos($teacher, 'bunezero') !== false && (
+			strpos($title, 'entrepreneur') !== false
+			|| strpos($title, 'general stud') !== false
+			|| strpos($title, 'gen stud') !== false
+			|| strpos($title, 'gs &') !== false
+			|| strpos($title, 'gs&') !== false
+		)) {
+			return true;
+		}
+		$s6MathDepts = ['MPC', 'MCB', 'MPG', 'MEG', 'MCE', 'MBC'];
+		if ($math && $day === 3 && $start < (14 * 60 + 20) && $end > (13 * 60) && strpos($level, 'S6') !== false) {
+			foreach ($s6MathDepts as $code) {
+				if (strpos($dept, $code) !== false) {
+					return true;
+				}
+			}
+		}
+		if (strpos($teacher, 'bizimana') !== false && strpos($teacher, 'bernard') !== false
+			&& in_array($day, [0, 1, 2], true) && $start >= (13 * 60)) {
+			return true;
+		}
+		if ((strpos($teacher, 'oreste') !== false || strpos($teacher, 'iragena') !== false || strpos($teacher, 'muvandimwe') !== false)
+			&& strpos($title, 'bio') !== false && $day === 0 && $start < (16 * 60 + 20) && $end > (15 * 60)) {
+			return true;
+		}
+		if ((strpos($teacher, 'marguer') !== false || strpos($teacher, 'uwimana') !== false)
+			&& strpos($title, 'fundamental') !== false && strpos($title, 'nurs') !== false
+			&& strpos($level, 'S6') !== false && strpos($dept, 'ANP') !== false) {
+			return true;
+		}
+		if (strpos($teacher, 'kwizera') !== false && strpos($teacher, 'joshua') !== false
+			&& strpos($title, 'physics') !== false && $start >= (12 * 60)) {
+			return true;
+		}
+		return false;
+	}
+
+	private static function hmToMinutes(string $clock): int
+	{
+		if (!preg_match('/(\d{1,2}):(\d{2})/', $clock, $m)) {
+			return 0;
+		}
+		return ((int) $m[1]) * 60 + (int) $m[2];
+	}
 
 	/** When true, a leftover lesson may use an empty Mon–Thu 15:40–16:20 cell. */
 	private $overflowFill = false;
@@ -215,8 +304,52 @@ class SecondaryTimetableCriteria
 		return false;
 	}
 
+	/**
+	 * Stay in Manage Course. Never placed on a class or teacher timetable.
+	 */
+	public static function isOmittedFromGridTitle(string $title): bool
+	{
+		$t = strtolower(trim(preg_replace('/\s+/', ' ', $title)));
+		if ($t === '') {
+			return false;
+		}
+		if (strpos($t, 'library') !== false) {
+			return true;
+		}
+		return false;
+	}
+
+	/** Main courses: Manage Course category "Examinable Subjects". */
+	public static function isExaminableMainCategory(?string $categoryTitle): bool
+	{
+		$cat = strtolower(trim(preg_replace('/\s+/', ' ', (string) $categoryTitle)));
+		return $cat === 'examinable subjects';
+	}
+
+	/**
+	 * Afternoon first. A morning cell is allowed only on the overflow pass,
+	 * after every legal afternoon cell is already taken.
+	 */
+	public static function prefersAfternoonTitle(string $title): bool
+	{
+		$t = strtolower(trim(preg_replace('/\s+/', ' ', $title)));
+		if ($t === '' || self::isOmittedFromGridTitle($t)) {
+			return false;
+		}
+		if (strpos($t, 'french') !== false || strpos($t, 'kiswahili') !== false || strpos($t, 'kiswahil') !== false) {
+			return true;
+		}
+		if (strpos($t, 'chinese') !== false || strpos($t, 'home science') !== false || strpos($t, 'home scince') !== false) {
+			return true;
+		}
+		return preg_match('/\bict\b/', $t) === 1;
+	}
+
 	public function prefersMorning(array $row): bool
 	{
+		if (self::prefersAfternoonTitle((string) ($row['course_title'] ?? ''))) {
+			return false;
+		}
 		$courseId = (int) ($row['course_id'] ?? 0);
 		$staffId = (int) ($row['lecturer'] ?? $row['staff_id'] ?? 0);
 		$classId = (int) ($row['class_id'] ?? 0);
@@ -261,10 +394,220 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
+	 * Hard blocks for the Musanze criteria that name a clock, not only a preference.
+	 */
+	private function isBlockedNamedSlot(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
+	{
+		if (!self::isSecondaryTrack($row)) {
+			return false;
+		}
+		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+		$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+		if ($end <= $start) {
+			return false;
+		}
+		$teacher = $this->teacherBlob($row);
+		$level = $this->rowLevel($row);
+		$dept = $this->rowDept($row);
+		$title = $this->courseTitle($row);
+
+		if ($day === 3 && $this->isPlainMathematics($row) && $level === 'S6'
+			&& in_array($dept, ['MPC', 'MCB', 'MPG', 'MEG', 'MCE'], true)
+			&& $start < (14 * 60 + 20) && $end > (13 * 60)) {
+			return true;
+		}
+		if ($this->isBernard($teacher) && in_array($day, [0, 1, 2], true) && $start >= (13 * 60)) {
+			return true;
+		}
+		if ($this->isBernard($teacher) && $day === 1 && $start < (8 * 60 + 20) && $end > (7 * 60 + 40)) {
+			return true;
+		}
+		if ($this->isOreste($teacher) && strpos($title, 'bio') !== false
+			&& $day === 0 && $start < (16 * 60 + 20) && $end > (15 * 60)) {
+			return true;
+		}
+		if ($this->isKwizera($teacher) && strpos($title, 'physics') !== false && $start >= (12 * 60)) {
+			return true;
+		}
+		if ($this->isBunezero($teacher) && $this->normalizeSubject((string) ($row['course_title'] ?? '')) === 'general_studies') {
+			$forbidden = ($start < (7 * 60 + 40) && $end > (7 * 60))
+				|| ($start < (14 * 60) && $end > (13 * 60));
+			$s6 = ['MPC', 'MCB', 'MCE', 'MPG', 'MEG', 'PCB'];
+			if ($forbidden && (
+				($day === 0 && $level === 'S5' && in_array($dept, ['ST1', 'ST2'], true))
+				|| ($day === 2 && $level === 'S4' && in_array($dept, ['ST1', 'ST2'], true))
+				|| ($day === 4 && $level === 'S6' && in_array($dept, $s6, true))
+			)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Lower is better. Pins the named doubles without taking the teacher off every other clock.
+	 */
+	public function pinnedClockScoreDelta(array $row, int $day, ?string $slotStart, ?string $slotEnd): int
+	{
+		if (!self::isSecondaryTrack($row)) {
+			return 0;
+		}
+		$start = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+		$end = $this->timeToMinutes((string) ($slotEnd ?? '00:00:00'));
+		if ($end <= $start) {
+			return 0;
+		}
+		$inside = static function (int $from, int $to) use ($start, $end): bool {
+			return $start >= $from && $end <= $to;
+		};
+		$teacher = $this->teacherBlob($row);
+		$level = $this->rowLevel($row);
+		$dept = $this->rowDept($row);
+		$subject = $this->normalizeSubject((string) ($row['course_title'] ?? ''));
+		$delta = 0;
+		$lateMorning = $inside(10 * 60 + 40, 12 * 60);
+
+		if ($this->isFabrice($teacher) && $subject === 'mathematics' && $lateMorning) {
+			if ($day === 1) {
+				$delta -= 16000;
+			}
+			if ($day === 2 && $this->isSection($row, 'S2', 'A')) {
+				$delta -= 16000;
+			}
+		}
+		if ($this->isBunezero($teacher) && $subject === 'entrepreneurship') {
+			if ($this->isSection($row, 'S2', 'A') && $day === 1 && $lateMorning) {
+				$delta -= 16000;
+			}
+			if ($this->isSection($row, 'S2', 'B') && $day === 2 && $lateMorning) {
+				$delta -= 16000;
+			}
+			if ($this->isSection($row, 'S2', 'A') && $day === 4 && $inside(10 * 60 + 40, 11 * 60 + 20)) {
+				$delta -= 16000;
+			}
+			if ($this->isSection($row, 'S2', 'B') && $day === 4 && $inside(11 * 60 + 20, 12 * 60)) {
+				$delta -= 16000;
+			}
+		}
+		if ($this->isBunezero($teacher) && $subject === 'general_studies') {
+			$s6 = ['MPC', 'MCB', 'MCE', 'MPG', 'MEG', 'PCB'];
+			if ($level === 'S4' && in_array($dept, ['ST1', 'ST2'], true) && $day === 0 && $lateMorning) {
+				$delta -= 16000;
+			}
+			if ($level === 'S5' && in_array($dept, ['ST1', 'ST2'], true) && $day === 0) {
+				$delta -= 8000;
+			}
+			if ($level === 'S5' && in_array($dept, ['ST1', 'ST2'], true) && $day === 2 && $lateMorning) {
+				$delta -= 16000;
+			}
+			if ($level === 'S4' && in_array($dept, ['ST1', 'ST2'], true) && $day === 2) {
+				$delta -= 8000;
+			}
+			if ($level === 'S6' && in_array($dept, $s6, true) && $day === 3 && $lateMorning) {
+				$delta -= 16000;
+			}
+			if ($level === 'S6' && in_array($dept, $s6, true) && $day === 3) {
+				$delta -= 6000;
+			}
+			if ($level === 'S6' && in_array($dept, $s6, true) && $day === 4) {
+				$delta -= 8000;
+			}
+		}
+		if ($this->isBernard($teacher) && $day === 1
+			&& ($inside(7 * 60, 7 * 60 + 40) || $inside(8 * 60 + 20, 12 * 60))) {
+			$delta -= 12000;
+		}
+		if ($this->isOreste($teacher) && $subject === 'biology' && $day === 1) {
+			$delta -= 12000;
+		}
+		if ($this->isKwizera($teacher) && $subject === 'physics' && $start < (12 * 60) && $end <= (12 * 60)) {
+			$delta -= 14000;
+		}
+		return $delta;
+	}
+
+	private function teacherBlob(array $row): string
+	{
+		return strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? '')) ?? ''));
+	}
+
+	private function nameHas(string $teacher, string $needle): bool
+	{
+		return $needle !== '' && strpos($teacher, $needle) !== false;
+	}
+
+	private function isFabrice(string $teacher): bool
+	{
+		return $this->nameHas($teacher, 'fabrice') || $this->nameHas($teacher, 'ndacyayi');
+	}
+
+	private function isBunezero(string $teacher): bool
+	{
+		return $this->nameHas($teacher, 'bunezero');
+	}
+
+	private function isBernard(string $teacher): bool
+	{
+		return $this->nameHas($teacher, 'bizimana') && $this->nameHas($teacher, 'bernard');
+	}
+
+	private function isOreste(string $teacher): bool
+	{
+		return $this->nameHas($teacher, 'oreste') || $this->nameHas($teacher, 'iragena') || $this->nameHas($teacher, 'muvandimwe');
+	}
+
+	private function isKwizera(string $teacher): bool
+	{
+		return $this->nameHas($teacher, 'kwizera') && $this->nameHas($teacher, 'joshua');
+	}
+
+	private function rowLevel(array $row): string
+	{
+		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+		$level = $meta !== null ? (string) ($meta['level'] ?? '') : '';
+		if ($level === '') {
+			$level = $this->entryLevel($row);
+		}
+		return $level;
+	}
+
+	private function rowDept(array $row): string
+	{
+		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+		$dept = $meta !== null ? (string) ($meta['dept'] ?? '') : '';
+		if ($dept === '') {
+			$dept = $this->entryDept($row);
+		}
+		if ($dept === 'MBC') {
+			return 'MCB';
+		}
+		if ($dept === 'MEC') {
+			return 'MCE';
+		}
+		return $dept;
+	}
+
+	private function isSection(array $row, string $level, string $letter): bool
+	{
+		if ($this->rowLevel($row) !== $level) {
+			return false;
+		}
+		if (strtoupper($this->rowDept($row)) === strtoupper($letter)) {
+			return true;
+		}
+		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+		$title = strtoupper(trim((string) ($row['class_title'] ?? '') . ' ' . (string) ($meta['class_title'] ?? '')));
+		return preg_match('/\b' . $level . '\s*' . $letter . '\b/', $title) === 1;
+	}
+
+	/**
 	 * Soft score adjustment: lower is better.
 	 */
 	public function morningScoreDelta(array $row, ?string $slotStart, ?string $slotEnd): int
 	{
+		if (self::prefersAfternoonTitle((string) ($row['course_title'] ?? ''))) {
+			return $this->isMorningSlotByTimes($slotStart, $slotEnd) ? 1800 : -500;
+		}
 		if ($this->isRwirangiraRow($row) && $this->isPlainMathematics($row)) {
 			return $this->isMorningSlotByTimes($slotStart, $slotEnd) ? -900 : 1600;
 		}
@@ -282,6 +625,29 @@ class SecondaryTimetableCriteria
 	 */
 	public function slotAllowed(array $row, int $day, ?string $slotStart, ?string $slotEnd): bool
 	{
+		if (self::isOmittedFromGridTitle((string) ($row['course_title'] ?? ''))) {
+			return false;
+		}
+		if ($day === 4) {
+			$eveningStart = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+			if ($eveningStart >= (16 * 60 + 40)) {
+				return false;
+			}
+		}
+		if (self::prefersAfternoonTitle((string) ($row['course_title'] ?? ''))) {
+			$startMin = $this->timeToMinutes((string) ($slotStart ?? '00:00:00'));
+			if ($startMin < (12 * 60) && !$this->overflowFill) {
+				return false;
+			}
+		}
+		if (!$this->overflowFill
+			&& TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($row['course_title'] ?? ''))
+			&& $this->isMorningSlotByTimes($slotStart, $slotEnd)) {
+			return false;
+		}
+		if ($this->isBlockedNamedSlot($row, $day, $slotStart, $slotEnd)) {
+			return false;
+		}
 		if (!$this->mathWindowAllows($row, $slotStart, $slotEnd)) {
 			return false;
 		}
@@ -400,18 +766,13 @@ class SecondaryTimetableCriteria
 			&& \App\Models\TimetableSchemaModel::slotClock($slotEnd) === '16:20:00';
 	}
 
-	/** S1–S3 Home Science is a morning lesson (10:00–12:00), not the 16:40 activity. */
+	/**
+	 * Home Science and Farming is one course. Every class of the same teacher
+	 * shares the 16:40 clock, including S1–S3.
+	 */
 	private function isMorningHomeScience(array $row): bool
 	{
-		if (self::afterLessonFamily((string) ($row['course_title'] ?? '')) !== 'home_science') {
-			return false;
-		}
-		$level = $this->entryLevel($row);
-		if (!in_array($level, ['S1', 'S2', 'S3'], true)) {
-			$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
-			$level = (string) ($meta['level'] ?? $level);
-		}
-		return in_array($level, ['S1', 'S2', 'S3'], true);
+		return false;
 	}
 
 	/** Level 3 and Level 4 Software Development stay inside 07:00–15:40. */
@@ -442,14 +803,14 @@ class SecondaryTimetableCriteria
 		return strpos($t, 'french') !== false || strpos($t, 'chinese') !== false;
 	}
 
-	/** Library and Clubs, and Home Science from S4 up, sit only at 16:40–17:30. */
+	/** Library and Clubs stay on the 16:40 clock. Home Science uses a normal period before 15:40. */
 	public function isFixedEveningActivity(array $row): bool
 	{
 		if ($this->isMorningHomeScience($row)) {
 			return false;
 		}
 		$family = self::afterLessonFamily((string) ($row['course_title'] ?? ''));
-		return $family === 'library_clubs' || $family === 'home_science';
+		return $family === 'library_clubs';
 	}
 
 	/** Farming / Library and Clubs / Home Science: after the teaching day, never night. */
@@ -465,11 +826,11 @@ class SecondaryTimetableCriteria
 		if ($t === '') {
 			return '';
 		}
-		if (strpos($t, 'farming') !== false) {
-			return 'farming';
-		}
 		if (strpos($t, 'home science') !== false) {
 			return 'home_science';
+		}
+		if (strpos($t, 'farming') !== false) {
+			return 'farming';
 		}
 		if (strpos($t, 'library') !== false || $t === 'club' || $t === 'clubs'
 			|| preg_match('/\blibrary\b.*\bclubs?\b/', $t) === 1) {
@@ -481,6 +842,9 @@ class SecondaryTimetableCriteria
 	public function requiresAfterLessons(array $row): bool
 	{
 		if ($this->isMorningHomeScience($row)) {
+			return false;
+		}
+		if (self::afterLessonFamily((string) ($row['course_title'] ?? '')) === 'home_science') {
 			return false;
 		}
 		if (self::isAfterLessonCourseTitle((string) ($row['course_title'] ?? ''))) {
@@ -734,6 +1098,9 @@ class SecondaryTimetableCriteria
 		if ($level === 'S4' && in_array($dept, ['ST1', 'ST2'], true)) {
 			return $start >= (7 * 60) && $end <= (12 * 60);
 		}
+		if ($level === 'S5' && in_array($dept, ['ST1', 'ST2'], true)) {
+			return $start >= (7 * 60) && $end <= (12 * 60);
+		}
 		if ($level === 'S1') {
 			// RWIRANGIRA's S1 mathematics uses the whole morning, not only after 10:00.
 			if ($this->isRwirangiraRow($row)) {
@@ -853,7 +1220,10 @@ class SecondaryTimetableCriteria
 		if ($teacher !== '' && (strpos($teacher, 'linea') !== false || strpos($teacher, 'linear') !== false)) {
 			return 2;
 		}
-		foreach (['varlette', 'varliette', 'vallette', 'ntabanganyimana', 'margueritte', 'marguerite', 'bunezero', 'ntazika', 'izabayo', 'patience'] as $needle) {
+		if ($teacher !== '' && strpos($teacher, 'iradukunda') !== false) {
+			return 2;
+		}
+		foreach (['varlette', 'varliette', 'vallette', 'ntabanganyimana', 'margueritte', 'marguerite', 'bunezero', 'ntazika', 'izabayo', 'patience', 'kwizera'] as $needle) {
 			if ($teacher !== '' && strpos($teacher, $needle) !== false) {
 				return 3;
 			}
@@ -951,6 +1321,91 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
+	 * Physical Education groups that cross a level (S2 with every S3 section).
+	 * Same-level groups also live in documentCombineGroups.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function physicalEducationPartners(array $row): array
+	{
+		if (!TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($row['course_title'] ?? ''))) {
+			return [];
+		}
+		$mine = $this->sectionKey($row);
+		$group = null;
+		foreach (self::physicalEducationGroups() as $candidate) {
+			if ($this->sectionInGroup($mine, $candidate)) {
+				$group = $candidate;
+				break;
+			}
+		}
+		if ($group === null) {
+			return [];
+		}
+		$classId = (int) ($row['class_id'] ?? 0);
+		$out = [];
+		$seen = [];
+		foreach ($this->assignmentsByKey as $cand) {
+			$cid = (int) ($cand['class_id'] ?? 0);
+			if ($cid <= 0 || $cid === $classId || isset($seen[$cid])) {
+				continue;
+			}
+			if (!self::isSecondaryTrack($cand)) {
+				continue;
+			}
+			if (!TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($cand['course_title'] ?? ''))) {
+				continue;
+			}
+			if (!$this->isSameCombineTeacher($row, $cand)) {
+				continue;
+			}
+			if (!$this->sectionInGroup($this->sectionKey($cand), $group)) {
+				continue;
+			}
+			$seen[$cid] = true;
+			$out[] = $cand;
+		}
+		return $out;
+	}
+
+	/**
+	 * @return list<array{keys:list<string>,any_level?:string}>
+	 */
+	public static function physicalEducationGroups(): array
+	{
+		return [
+			['keys' => ['S1|A', 'S1|B', 'S1|C', 'S1|D']],
+			['keys' => ['S2|A', 'S2|B'], 'any_level' => 'S3'],
+			['keys' => ['S4|ST1', 'S4|ST2', 'S4|ANP', 'S5|ACC', 'S5|ST1', 'S5|ST2', 'S5|ANP']],
+			['keys' => ['S6|ANP', 'S6|MCE', 'S6|MEC', 'S6|MPC', 'S6|MEG', 'S6|MCB', 'S6|PCB']],
+		];
+	}
+
+	private function sectionKey(array $row): string
+	{
+		$level = $this->rowLevel($row);
+		$dept = strtoupper($this->rowDept($row));
+		$meta = $this->classMeta[(string) ((int) ($row['class_id'] ?? 0))] ?? null;
+		$title = strtoupper(trim((string) ($row['class_title'] ?? '') . ' ' . (string) ($meta['class_title'] ?? '')));
+		if (in_array($level, ['S1', 'S2', 'S3'], true) && preg_match('/\b([A-D])\b/', $title . ' ' . $dept, $m)) {
+			$dept = $m[1];
+		}
+		return $level . '|' . $dept;
+	}
+
+	/**
+	 * @param array{keys:list<string>,any_level?:string} $group
+	 */
+	private function sectionInGroup(string $key, array $group): bool
+	{
+		if (in_array($key, $group['keys'] ?? [], true)) {
+			return true;
+		}
+		$any = (string) ($group['any_level'] ?? '');
+		return $any !== '' && strpos($key, $any . '|') === 0;
+	}
+
+	/**
 	 * Partner assignments for one combined lesson.
 	 * Word-file groups: same teacher AND same subject AND listed classes.
 	 * After-lesson (Farming / Library and Clubs): same teacher AND same activity
@@ -962,6 +1417,10 @@ class SecondaryTimetableCriteria
 	{
 		if (!self::isSecondaryTrack($row)) {
 			return [];
+		}
+		$pe = $this->physicalEducationPartners($row);
+		if ($pe !== []) {
+			return $pe;
 		}
 		$doc = $this->documentCombinePartners($row);
 		if ($doc !== []) {
@@ -1436,6 +1895,11 @@ class SecondaryTimetableCriteria
 			['subject' => 'english', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'English S4 Stream 1 + Stream 2'],
 			['subject' => 'english', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'English S5 Stream 1 + Stream 2'],
 			['subject' => 'english', 'level' => 'S6', 'depts' => ['MCE', 'MPC', 'PCB', 'PCM', 'MEG', 'MCB', 'MPG'], 'label' => 'English S6 MCE + MPC + PCB + PCM + MEG + MCB + MPG'],
+			['subject' => 'french', 'level' => 'S4', 'depts' => ['ST1', 'ST2'], 'label' => 'French S4 Stream 1 + Stream 2 (afternoon)'],
+			['subject' => 'french', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'French S5 Stream 1 + Stream 2 (afternoon)'],
+			['subject' => 'french', 'level' => 'S6', 'depts' => ['MPC', 'MCE', 'PCB', 'MCB', 'MPG', 'MEG', 'ANP'], 'label' => 'French S6 MPC + MCE + PCB + MCB + MPG + MEG + ANP (afternoon)'],
+			['subject' => 'physical_education', 'level' => 'S1', 'depts' => ['A', 'B', 'C', 'D'], 'label' => 'Physical Education S1 A + B + C + D (last period)'],
+			['subject' => 'physical_education', 'level' => 'S6', 'depts' => ['ANP', 'MCE', 'MEC', 'MPC', 'MEG', 'MCB', 'PCB'], 'label' => 'Physical Education S6 ANP + MCE + MPC + MEG + MCB + PCB (last period)'],
 		];
 	}
 
@@ -1448,38 +1912,45 @@ class SecondaryTimetableCriteria
 	{
 		$out = [
 			['group' => 'Scope', 'title' => 'High school only', 'detail' => 'These locked rules apply to O Level, A Level, TVET and Special. Nursery and primary are never included.'],
-			['group' => 'Day end', 'title' => 'Normal courses', 'detail' => 'Normal courses finish by 15:40 Monday to Thursday. On Friday they finish by 15:00, so 15:00–15:40 is not a normal lesson. Special activities, farming, library, and night periods stay on their own bells.'],
-			['group' => 'Day end', 'title' => 'Level 3 and Level 4 SOD', 'detail' => 'These courses start at 07:00 and finish by 15:40, including Friday. The 15:40–16:20 row is not used. Core courses are placed before French and Chinese.'],
+			['group' => 'Day end', 'title' => 'Normal courses', 'detail' => 'Normal courses finish by 15:40 Monday to Thursday. On Friday they finish by 15:00, so 15:00–15:40 is not a normal lesson. Chapel, dinner, preps, and night periods stay on their own bells.'],
+			['group' => 'Day end', 'title' => 'Level 3 and Level 4 SOD', 'detail' => 'These courses start at 07:00 and finish by 15:40, including Friday. The 15:40–16:20 row is not used. Core courses are placed before French. French sits in the afternoon.'],
 			['group' => 'Day end', 'title' => 'S4, S5 and S6 ANP', 'detail' => 'These classes teach 07:00–16:20, including 15:40–16:20, Monday to Friday.'],
 			['group' => 'Priority', 'title' => 'Schedule first', 'detail' => 'Clinical attachment, medical pathology, surgical pathology, pharmacology, MCH, fundamentals of nursing, ethics, biology, chemistry, physics, mathematics, and English. Medical and surgical pathology are not taught in S4 ANP. S4 Kinyarwanda is with these main courses. Named teacher availability is kept.'],
 			['group' => 'Priority', 'title' => 'S6 ANP after main courses', 'detail' => 'French, Kinyarwanda, and ICT.'],
 			['group' => 'Priority', 'title' => 'S5 ANP after main courses', 'detail' => 'French, citizenship, Kinyarwanda, and ICT.'],
 			['group' => 'Priority', 'title' => 'S4 ANP after main courses', 'detail' => 'ICT, French, citizenship, and entrepreneurship.'],
+			['group' => 'Blocks', 'title' => 'Examinable subjects', 'detail' => 'Main courses are the Examinable Subjects category. They are placed as doubles. A 3, 5 or 7 period course keeps one single. A 2 period course stays on two different days. A double that cannot fit is not split into two singles.'],
 			['group' => 'Blocks', 'title' => '4 and 6 periods', 'detail' => 'At least two periods together (doubles).'],
 			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
-			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'Always the last teaching period of the class (15:00–15:40; on Friday 14:20–15:00). For S4, S5 and S6 ANP the last period is 15:40–16:20. If that cell is taken, the other lesson is moved earlier. Never 13:40. At most one PE period per class day.'],
-			['group' => 'After lessons', 'title' => 'Library and Clubs / Home Science', 'detail' => '16:40–17:30 only, for the listed classes. S1 A, S1 B, S1 C, S1 D, S2 A, S2 B and S3 Home Science is the exception: NDAGIJIMANA John teaches it at 10:00–12:00. Same teacher shares one clock. Not at chapel, dinner, or preps.'],
+			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'One class for S1 A+B+C+D, one class for S2 A+B and every S3 section, one class for S4 ST1+ST2+ANP with S5 ACC+ST1+ST2+ANP, and one class for S6 ANP+MCE+MPC+MEG+MCB+PCB. Always the last teaching period, never a morning period. At most one PE period per class day.'],
+			['group' => 'After lessons', 'title' => 'Home Science and Farming', 'detail' => 'Home Science sits in the afternoon, with French, ICT, Chinese and Kiswahili. Farming stays inside a normal teaching slot. Library and Clubs stay in Manage Course and are not placed.'],
 			['group' => 'After lessons', 'title' => 'Evening bells', 'detail' => '17:30–18:00 chapel, 18:00–19:00 dinner, 19:00–21:00 preps.'],
-			['group' => 'After lessons', 'title' => 'Farming', 'detail' => 'After lessons (15:40–17:30), never night. Same teacher shares one clock.'],
+			['group' => 'Afternoon', 'title' => 'ICT, French, Home Science, Chinese and Kiswahili', 'detail' => 'These courses sit after 12:00. A morning cell is used only when every legal afternoon cell is already taken. French is one class for S4 ST1+ST2, one class for S5 ST1+ST2, and one class for S6 MPC+MCE+PCB+MCB+MPG+MEG+ANP.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
-			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00. S4 ST1 and ST2 Mathematics stay inside 07:00–12:00. S1 Mathematics is after break or after lunch.'],
+			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00. S4 and S5 ST1 and ST2 Mathematics stay inside 07:00–12:00. S1 Mathematics is after break or after lunch.'],
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Varlette, Marguerite and Linea teach S4, S5 and S6 ANP only inside the times listed under Windows.'],
 			['group' => 'Morning', 'title' => 'RWIRANGIRA JEAN CLAUDE', 'detail' => 'Mathematics, including S1, fills 07:00–12:00 first. Keep those morning periods continuous. A lesson stays after 12:00 only when every morning cell is already taken or the other course cannot move.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
-			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Teachers not named in this document use normal placement and fill from morning periods first.'],
-			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Farming and Library and Clubs also combine when the teacher is the same (each activity keeps its own clock). Different academic subjects or different teachers are never combined.'],
+			['group' => 'Morning', 'title' => 'No morning free time', 'detail' => 'A full-time teacher is not left idle from 07:00–12:00 when one of their lessons can move into that cell. Part-time staff keep the timetable they already have.'],
+			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Full-time teachers not named in this document use normal placement and fill morning periods before afternoon periods. Part-time staff are left unchanged.'],
+			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Home Science and Farming shares one clock only when every class of that teacher is free there. Different academic subjects or different teachers are never combined.'],
 			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'One combined class, Tuesday 07:00–12:00, 7 periods. No other S4 or S5 ANP lesson in that window.'],
 			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full teaching day 07:00–16:20. No other S6 ANP lesson on Wednesday.'],
 			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],
 			['group' => 'Windows', 'title' => 'Eric (L3 SOD)', 'detail' => 'Monday and Tuesday 07:00–10:00.'],
-			['group' => 'Windows', 'title' => 'Olivier', 'detail' => 'Friday 07:00–10:00.'],
-			['group' => 'Windows', 'title' => 'Varlette', 'detail' => 'Thursday 09:00–12:00 and Friday 08:00–12:00. S4, S5 and S6 MCH are three different classes.'],
-			['group' => 'Windows', 'title' => 'Marguerite', 'detail' => 'Monday 07:00–10:00, Wednesday 08:00–10:00, and Thursday 07:00–16:20.'],
+			['group' => 'Windows', 'title' => 'Iradukunda Olivier', 'detail' => 'Every Manage Course period is placed on the timetable. He is not limited to Friday morning.'],
+			['group' => 'Windows', 'title' => 'Kwizera Joshua', 'detail' => 'Physics stays in the morning, 07:00–12:00. Afternoon physics moves into a free morning cell.'],
+			['group' => 'Windows', 'title' => 'Varlette', 'detail' => 'Thursday 07:40–12:00 and Friday 07:40–12:00. S4, S5 and S6 MCH are three different classes.'],
+			['group' => 'Windows', 'title' => 'Marguerite', 'detail' => 'Monday 07:00–09:40 and Thursday 07:00–16:20. S6 ANP Fundamentals of Nursing has four extra periods in those times.'],
 			['group' => 'Windows', 'title' => 'Linea / Linear', 'detail' => 'Thursday 09:00–15:40. Friday 09:20–10:00 is the 09:00–09:40 lesson.'],
-			['group' => 'Windows', 'title' => 'Jean Pierre Bunezero', 'detail' => 'Every weekday 10:00–12:00 and 13:40–15:40.'],
-			['group' => 'Windows', 'title' => 'NDAGIJIMANA John', 'detail' => 'Home Science for S1, S2 and S3, every weekday 10:00–12:00.'],
-			['group' => 'Windows', 'title' => 'ISHARA NYORHA CHRISPIN', 'detail' => 'Kiswahili for S1 A–D. Tuesday 10:40–12:00, Wednesday 07:40–08:20, Friday 10:00–14:20. The Friday 13:40 bell ends at 14:20 so the period covering 14:10 can be used.'],
+			['group' => 'Windows', 'title' => 'Jean Pierre Bunezero', 'detail' => 'Entrepreneurship: S2 A Tuesday 10:40–12:00 (double) and Friday 10:40–11:20; S2 B Wednesday 10:40–12:00 (double) and Friday 11:20–12:00. General Studies: S4 ST1+ST2 Monday 10:40–12:00 (double) and one Wednesday period; S5 ST1+ST2 one Monday period and Wednesday 10:40–12:00 (double); S6 MPC+MCE+MCB+MPG+MEG+PCB Thursday double and one Friday period. Never 07:00–07:40 or 13:00–14:00 for those single periods.'],
+			['group' => 'Windows', 'title' => 'Fabrice mathematics', 'detail' => 'Two Mathematics periods together on Tuesday 10:40–12:00. S2 A also has two Mathematics periods together on Wednesday 10:40–12:00.'],
+			['group' => 'Windows', 'title' => 'S6 mathematics morning', 'detail' => 'Mathematics for S6 MPC, MCB, MPG, MEG and MCE moves off Thursday 13:00–14:20 into 07:00–12:00.'],
+			['group' => 'Windows', 'title' => 'Bizimana Bernard', 'detail' => 'Monday, Tuesday and Wednesday afternoon lessons move into Tuesday 07:00–07:40 and 08:20–12:00. Tuesday 07:40–08:20 stays as it is.'],
+			['group' => 'Windows', 'title' => 'Oreste biology', 'detail' => 'The two S6 biology periods on Monday 15:00–16:20 move to Tuesday, where he is free.'],
+			['group' => 'Windows', 'title' => 'NDAGIJIMANA John', 'detail' => 'Home Science and Farming for his own classes uses a free timetable slot before 15:40, on two different days. It is not combined with another teacher. Friday evening stays empty.'],
+			['group' => 'Windows', 'title' => 'ISHARA NYORHA CHRISPIN', 'detail' => 'Kiswahili for S1 A–D sits after 12:00. A morning cell is used only when every legal afternoon cell is already taken. The Friday 13:40 bell ends at 14:20 so the period covering 14:10 can be used.'],
 			['group' => 'Windows', 'title' => 'NTAZIKA Elias', 'detail' => 'Management Accounting, every weekday 10:00–12:00.'],
 			['group' => 'Windows', 'title' => 'IZABAYO Patience', 'detail' => 'Taxation: Tuesday 07:00–10:00, then Friday 13:00–15:00.'],
 		];
@@ -1637,6 +2108,12 @@ class SecondaryTimetableCriteria
 		if (strpos($t, 'english') !== false) {
 			return 'english';
 		}
+		if (strpos($t, 'french') !== false) {
+			return 'french';
+		}
+		if (strpos($t, 'physical education') !== false || strpos($t, 'physica education') !== false) {
+			return 'physical_education';
+		}
 		if (strpos($t, 'farming') !== false) {
 			return 'farming';
 		}
@@ -1703,6 +2180,7 @@ class SecondaryTimetableCriteria
 			'MPC' => 'MPC', 'MCE' => 'MCE', 'PCB' => 'PCB', 'HCB' => 'HCB',
 			'GE' => 'GE', 'SOD' => 'SOD', 'PCM' => 'PCM', 'MCB' => 'MCB',
 			'MBC' => 'MCB', 'MEG' => 'MEG', 'MPG' => 'MPG', 'ACC' => 'ACC',
+			'MEC' => 'MCE', 'A' => 'A', 'B' => 'B', 'C' => 'C', 'D' => 'D',
 		];
 		if (isset($map[$c])) {
 			return $map[$c];
@@ -1956,12 +2434,11 @@ class SecondaryTimetableCriteria
 	{
 		// Day: Mon=0 … Fri=4. Times in minutes from midnight.
 		$vallette = [
-			['day' => 3, 'start' => 9 * 60, 'end' => 12 * 60, 'scope' => null],
-			['day' => 4, 'start' => 8 * 60, 'end' => 12 * 60, 'scope' => null],
+			['day' => 3, 'start' => 7 * 60 + 40, 'end' => 12 * 60, 'scope' => null],
+			['day' => 4, 'start' => 7 * 60 + 40, 'end' => 12 * 60, 'scope' => null],
 		];
 		$marguerite = [
-			['day' => 0, 'start' => 7 * 60, 'end' => 10 * 60, 'scope' => null],
-			['day' => 2, 'start' => 8 * 60, 'end' => 10 * 60, 'scope' => null],
+			['day' => 0, 'start' => 7 * 60, 'end' => 9 * 60 + 40, 'scope' => null],
 			['day' => 3, 'start' => 7 * 60, 'end' => 16 * 60 + 20, 'scope' => null],
 		];
 		$linear = [
@@ -2000,9 +2477,6 @@ class SecondaryTimetableCriteria
 			'eric' => [
 				['day' => 0, 'start' => 7 * 60, 'end' => 10 * 60, 'scope' => 'sod_l3'],
 				['day' => 1, 'start' => 7 * 60, 'end' => 10 * 60, 'scope' => 'sod_l3'],
-			],
-			'olivier' => [
-				['day' => 4, 'start' => 7 * 60, 'end' => 10 * 60, 'scope' => null],
 			],
 			'varlette' => $vallette,
 			'varliette' => $vallette,

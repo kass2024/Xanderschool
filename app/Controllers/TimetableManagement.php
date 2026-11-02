@@ -126,7 +126,8 @@ class TimetableManagement extends Home
 				->where('slot_id >', 0)
 				->countAllResults();
 		}
-		$previewMode = $this->request->getGet('preview_mode') === 'teacher' ? 'teacher' : 'class';
+		$rawPreview = (string) $this->request->getGet('preview_mode');
+		$previewMode = in_array($rawPreview, ['teacher', 'overall'], true) ? $rawPreview : 'class';
 		$previewId = (int) $this->request->getGet('preview_id');
 		$data['preview_mode'] = $previewMode;
 		$data['preview_class_id'] = !empty($data['classes']) ? (int) $data['classes'][0]['id'] : 0;
@@ -142,7 +143,17 @@ class TimetableManagement extends Home
 			: (int) $data['preview_class_id'];
 		$data['preview_data'] = null;
 		$data['preview_error'] = null;
-		if ($previewEntityId > 0 && !empty($data['schedule'])) {
+		if ($previewMode === 'overall' && !empty($data['schedule'])) {
+			try {
+				$data['preview_data'] = $this->buildOverallView($schoolId, $schema);
+			} catch (\Throwable $e) {
+				log_message('error', 'Timetable overall preview failed: {msg}', [
+					'msg' => $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+				]);
+				$data['preview_data'] = null;
+				$data['preview_error'] = 'Could not build the overall timetable: ' . $e->getMessage();
+			}
+		} elseif ($previewEntityId > 0 && !empty($data['schedule'])) {
 			try {
 				$data['preview_data'] = $this->gridBodyViewData(
 					$this->buildGridView($schoolId, $schema, $previewMode, $previewEntityId, false, false)
@@ -327,7 +338,39 @@ class TimetableManagement extends Home
 		$this->denyMenu('timetable_dashboard');
 		list($schoolId, , $schema) = $this->bootTimetable();
 		$db = \Config\Database::connect();
-		$mode = $this->request->getGet('mode') === 'teacher' ? 'teacher' : 'class';
+		$modeRaw = (string) $this->request->getGet('mode');
+		if ($modeRaw === 'overall') {
+			try {
+				@ini_set('memory_limit', '512M');
+				@set_time_limit(120);
+				$sheet = $this->buildOverallView($schoolId, $schema);
+				$html = view('pages/timetable/_overall_body', $sheet);
+				$payload = [
+					'title' => 'Overall',
+					'html' => $html,
+					'editable' => false,
+				];
+				$flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+				if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+					$flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+				}
+				$json = json_encode($payload, $flags);
+				if ($json === false) {
+					return $this->response->setJSON(['error' => 'Could not encode the overall timetable.']);
+				}
+				return $this->response
+					->setHeader('Content-Type', 'application/json; charset=UTF-8')
+					->setBody($json);
+			} catch (\Throwable $e) {
+				log_message('error', 'Timetable overall preview failed: {msg}', [
+					'msg' => $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+				]);
+				return $this->response->setJSON([
+					'error' => 'Could not build the overall timetable: ' . $e->getMessage(),
+				]);
+			}
+		}
+		$mode = $modeRaw === 'teacher' ? 'teacher' : 'class';
 		$entityId = (int) $classId;
 
 		if ($entityId <= 0) {
@@ -657,9 +700,12 @@ class TimetableManagement extends Home
 			->select('cr.id, cr.course, cr.class, cr.lecturer, cr.term, COALESCE(c.credit,0) AS credit')
 			->join('courses c', 'c.id = cr.course', 'left')
 			->join('classes cl', 'cl.id = cr.class')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
 			->where('cl.school_id', $schoolId)
 			->where('cr.year', $year)
 			->where("find_in_set($term, cr.term) > 0", null, false)
+			->where(\App\Services\Timetable\SecondaryTimetableCriteria::excludeEmptyS6PcmSql('cl', 'l', 'd', $year), null, false)
 			->whereNotIn('cr.course', \App\Services\Timetable\SecondaryTimetableCriteria::MANAGER_ONLY_COURSE_IDS)
 			->orderBy('cr.id', 'ASC')
 			->get()->getResultArray();
@@ -1050,6 +1096,7 @@ class TimetableManagement extends Home
 		$slotTimesById = [];
 		if ($existingSchedule) {
 			$scheduleIdExisting = (int) $existingSchedule['id'];
+			(new TimetableStagingService())->dropLessonsNotInManageCourse($scheduleIdExisting, $schoolId);
 			if (!$replaceLocked) {
 				$this->lockAllPlacedEntries($scheduleIdExisting, $phase === 'all' ? [] : $classIdList);
 			}
@@ -1192,6 +1239,7 @@ class TimetableManagement extends Home
 		$existing = $existingSchedule;
 		if ($existing) {
 			$scheduleId = (int) $existing['id'];
+			$this->backupScheduleEntries($db, $scheduleId, $schoolId, $year, $term, 'Before ' . $phase . ' generate');
 			$decoded = json_decode((string) ($existing['generated_phases'] ?? ''), true);
 			if (is_array($decoded)) {
 				$phasesMeta = $decoded;
@@ -1290,6 +1338,10 @@ class TimetableManagement extends Home
 		} else {
 			$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 		}
+		if ($phase !== 'nursery') {
+			$stagingSvc->packAllMorningHoles($scheduleId, $schoolId, $schema);
+		}
+		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 
 		$now = date('Y-m-d H:i:s');
 		$entryCountsByPhase = [];
@@ -1377,6 +1429,7 @@ class TimetableManagement extends Home
 			$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 			$stagingCreated += $stagingSvc->reconcile($scheduleId, $schoolId, $phaseAssignments);
 			$stagingSvc->hardenLeftoverPlacement($scheduleId, $schoolId, $schema);
+			$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 			$stages = $this->markGenerationStage($stages, 'gemini', 'done');
 			$this->reportGenerationProgress($jobId, [
 				'message' => $geminiTip ?: 'AI collision check complete.',
@@ -1387,6 +1440,7 @@ class TimetableManagement extends Home
 		}
 
 		$stagingSvc->capPeriodsToManageCourse($scheduleId, $schoolId);
+		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 		$this->lockAllPlacedEntries($scheduleId, $phase === 'all' ? [] : $classIdList);
 
 		$collisionReport = $this->buildCollisionReport(
@@ -1664,8 +1718,10 @@ class TimetableManagement extends Home
 	}
 
 	/**
-	 * Freeze every placed lesson so a later generate cannot wipe the grid
+	 * Freeze placed lessons so a later generate cannot wipe the grid
 	 * unless Replace locked timetable is checked.
+	 * Lessons the Musanze criteria still have to move stay unlocked.
+	 * Already locked lessons are never unlocked here.
 	 *
 	 * @param list<int> $classIdList
 	 */
@@ -1678,17 +1734,72 @@ class TimetableManagement extends Home
 		if (!$db->fieldExists('is_locked', 'timetable_entries')) {
 			return 0;
 		}
-		$q = $db->table('timetable_entries')
-			->where('schedule_id', $scheduleId)
-			->where('entry_type', 'lesson')
-			->where('day_of_week >=', 0)
-			->where('slot_id >', 0)
-			->groupStart()->where('is_locked', 0)->orWhere('is_locked IS NULL', null, false)->groupEnd();
+		$placed = $db->table('timetable_entries te')
+			->select('te.id, te.day_of_week, te.is_locked, s.work_type, c.title AS course_title, CONCAT(s.fname, " ", s.lname) AS teacher_name, ts.start_time, ts.end_time, l.title AS level_name, d.code AS dept_code, cl.title AS class_title')
+			->join('staffs s', 's.id = te.staff_id', 'left')
+			->join('courses c', 'c.id = te.course_id', 'left')
+			->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
+			->join('classes cl', 'cl.id = te.class_id', 'left')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->where('te.schedule_id', $scheduleId)
+			->where('te.entry_type', 'lesson')
+			->where('te.day_of_week >=', 0)
+			->where('te.slot_id >', 0);
 		if ($classIdList !== []) {
-			$q->whereIn('class_id', $classIdList);
+			$placed->whereIn('te.class_id', $classIdList);
 		}
-		$q->update(['is_locked' => 1]);
-		return $db->affectedRows();
+		$lock = [];
+		foreach ($placed->get()->getResultArray() as $row) {
+			$id = (int) ($row['id'] ?? 0);
+			if ($id <= 0 || (int) ($row['is_locked'] ?? 0) === 1) {
+				continue;
+			}
+			if (\App\Services\Timetable\SecondaryTimetableCriteria::shouldStayMovable($row)) {
+				continue;
+			}
+			if ((int) ($row['work_type'] ?? 0) === 2) {
+				$lock[] = $id;
+			}
+		}
+		foreach (array_chunk($lock, 400) as $chunk) {
+			$db->table('timetable_entries')->whereIn('id', $chunk)->update(['is_locked' => 1]);
+		}
+		return count($lock);
+	}
+
+	private function backupScheduleEntries($db, int $scheduleId, int $schoolId, int $year, int $term, string $label): void
+	{
+		if ($scheduleId <= 0) {
+			return;
+		}
+		$db->query('CREATE TABLE IF NOT EXISTS timetable_entry_backups (
+			id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+			schedule_id INT NOT NULL,
+			school_id INT NOT NULL,
+			academic_year INT NOT NULL,
+			term INT NOT NULL,
+			label VARCHAR(160) NOT NULL,
+			entry_count INT NOT NULL DEFAULT 0,
+			payload LONGTEXT NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY schedule_id (schedule_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+		$rows = $db->table('timetable_entries')->where('schedule_id', $scheduleId)->get()->getResultArray();
+		if ($rows === []) {
+			return;
+		}
+		$db->table('timetable_entry_backups')->insert([
+			'schedule_id' => $scheduleId,
+			'school_id' => $schoolId,
+			'academic_year' => $year,
+			'term' => $term,
+			'label' => substr($label, 0, 160),
+			'entry_count' => count($rows),
+			'payload' => json_encode($rows),
+			'created_at' => date('Y-m-d H:i:s'),
+		]);
 	}
 
 	private function applyGeminiCollisionFixes(int $scheduleId, int $schoolId, TimetableSchemaModel $schema, ?string $jobId = null): ?string
@@ -2378,6 +2489,103 @@ class TimetableManagement extends Home
 		return view('main', $data);
 	}
 
+	public function overall()
+	{
+		$this->denyMenu('timetable_dashboard');
+		list($schoolId, , $schema) = $this->bootTimetable();
+		$data = $this->data;
+		$data['title'] = 'Overall timetable';
+		$data['subtitle'] = 'Pedagogical Documents';
+		$data['page'] = 'timetable_dashboard';
+		try {
+			$sheet = $this->buildOverallView($schoolId, $schema);
+		} catch (\Throwable $e) {
+			log_message('error', 'Timetable overall page failed: {msg}', [
+				'msg' => $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+			]);
+			$sheet = [
+				'school_name' => $this->schoolNameForId($schoolId),
+				'title' => 'Overall',
+				'subtitle' => 'Could not build the overall timetable',
+				'days' => [],
+				'collision_count' => 0,
+				'class_count' => 0,
+				'empty' => true,
+			];
+		}
+		$data['sheet'] = $sheet;
+		$data['content'] = view('pages/timetable/overall_page', $data);
+		return view('main', $data);
+	}
+
+	public function print_overall()
+	{
+		$this->denyMenu('timetable_dashboard');
+		list($schoolId, , $schema) = $this->bootTimetable();
+		try {
+			$sheet = $this->buildOverallView($schoolId, $schema);
+		} catch (\Throwable $e) {
+			log_message('error', 'Timetable overall PDF failed: {msg}', [
+				'msg' => $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+			]);
+			return $this->response->setStatusCode(500)->setBody('Could not build the overall timetable.');
+		}
+		$sheet['for_pdf'] = true;
+		$phase = TimetableTrack::normalizeGenerationPhase((string) $this->request->getGet('phase'));
+		if ($phase !== 'all') {
+			$sheet['departments'] = array_values(array_filter(
+				$sheet['departments'] ?? [],
+				static function (array $department) use ($phase): bool {
+					return ($department['key'] ?? '') === $phase;
+				}
+			));
+			$only = $sheet['departments'][0] ?? null;
+			if (is_array($only)) {
+				$sheet['title'] = (string) ($only['heading'] ?? 'Overall');
+				$sheet['subtitle'] = (string) ($only['detail'] ?? '');
+			}
+		}
+		$phaseSlug = $phase === 'all' ? 'All' : ucwords(str_replace('_', ' ', $phase));
+		$body = view('pages/timetable/_overall_body', $sheet);
+		$html = view('pages/timetable/_pdf_document', [
+			'doc_title' => 'Overall ' . $phaseSlug,
+			'inline_css' => 'body{margin:0;font-family:Arial,Helvetica,sans-serif;}@page{size:A4 landscape;margin:8mm;}',
+			'body' => $body,
+		]);
+		$dir = WRITEPATH . 'uploads/timetables';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0755, true);
+		}
+		if (!is_dir($dir) || !is_writable($dir)) {
+			$dir = rtrim(sys_get_temp_dir(), '/\\');
+		}
+		$filename = 'Overall_' . preg_replace('/[^A-Za-z0-9_\-]+/', '_', $phaseSlug) . '_' . date('Y-m-d') . '.pdf';
+		try {
+			$wk = new Wkhtmltopdf(['path' => $dir]);
+			$wk->setTitle('Overall ' . $phaseSlug);
+			$wk->setHtml($html);
+			$wk->setOrientation(Wkhtmltopdf::ORIENTATION_LANDSCAPE);
+			$wk->setPageSize(Wkhtmltopdf::SIZE_A4);
+			$wk->setEnableSmartShrinking(true);
+			$wk->setMargins(['top' => 6, 'bottom' => 6, 'left' => 6, 'right' => 6]);
+			$wk->setOptions(['encoding' => 'UTF-8']);
+			$pdf = $wk->output(Wkhtmltopdf::MODE_STRING, $filename);
+			if (!is_string($pdf) || strncmp($pdf, '%PDF', 4) !== 0) {
+				throw new \RuntimeException('PDF converter returned empty output.');
+			}
+			return $this->response
+				->setHeader('Content-Type', 'application/pdf')
+				->setHeader('Content-Disposition', 'inline; filename="' . $filename . '"')
+				->setHeader('Cache-Control', 'private, max-age=0, must-revalidate')
+				->setBody($pdf);
+		} catch (\Throwable $e) {
+			log_message('error', 'Overall PDF convert failed: {msg}', ['msg' => $e->getMessage()]);
+			return $this->response
+				->setHeader('Content-Type', 'text/html; charset=UTF-8')
+				->setBody($html);
+		}
+	}
+
 	public function print_class($classId = 0)
 	{
 		$this->denyMenu('timetable_dashboard');
@@ -2570,9 +2778,14 @@ class TimetableManagement extends Home
 			->where('cl.school_id', $schoolId)
 			->where('cr.year', $year)
 			->where("find_in_set($term, cr.term) > 0", null, false)
+			->where(\App\Services\Timetable\SecondaryTimetableCriteria::excludeEmptyS6PcmSql('cl', 'l', 'd', $year), null, false)
 			->whereNotIn('cr.course', \App\Services\Timetable\SecondaryTimetableCriteria::MANAGER_ONLY_COURSE_IDS)
+			->where('(s.work_type IS NULL OR s.work_type <> 2)', null, false)
 			->orderBy('cl.title')->orderBy('c.title')
 			->get()->getResultArray();
+		$rows = array_values(array_filter($rows, static function (array $row): bool {
+			return !\App\Services\Timetable\SecondaryTimetableCriteria::isOmittedFromGridTitle((string) ($row['course_title'] ?? ''));
+		}));
 
 		return $this->dedupeTimetableAssignments($rows);
 	}
@@ -3058,6 +3271,298 @@ class TimetableManagement extends Home
 		return $data;
 	}
 
+	/**
+	 * Every class, and the teacher in each period. Combined lessons that share
+	 * one teacher are not collisions.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function buildOverallView(int $schoolId, TimetableSchemaModel $schema): array
+	{
+		$db = \Config\Database::connect();
+		$year = (int) ($this->data['academic_year'] ?? 0);
+		$term = (int) ($this->data['term'] ?? 1);
+		$schedule = $db->table('timetable_schedules')
+			->where('school_id', $schoolId)
+			->where('academic_year', $year)
+			->where('term', $term)
+			->orderBy('id', 'DESC')
+			->get(1)->getRowArray();
+		$dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+		$sheet = [
+			'school_name' => $this->schoolNameForId($schoolId),
+			'title' => 'Overall',
+			'subtitle' => 'Teacher in each class',
+			'days' => [],
+			'collision_count' => 0,
+			'class_count' => 0,
+			'empty' => empty($schedule),
+		];
+		if (empty($schedule)) {
+			return $sheet;
+		}
+		$scheduleId = (int) $schedule['id'];
+		$entries = $db->table('timetable_entries te')
+			->select('te.id, te.class_id, te.staff_id, te.course_id, te.day_of_week, ts.start_time, ts.end_time, c.title AS course_title, cl.title AS class_title, l.id AS level_id, l.title AS level_name, d.code AS dept_code, d.title AS dept_title, CONCAT(s.fname, " ", s.lname) AS teacher_name')
+			->join('timetable_slots ts', 'ts.id = te.slot_id', 'left')
+			->join('courses c', 'c.id = te.course_id', 'left')
+			->join('classes cl', 'cl.id = te.class_id', 'left')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
+			->join('staffs s', 's.id = te.staff_id', 'left')
+			->where('te.schedule_id', $scheduleId)
+			->where('te.entry_type', 'lesson')
+			->where('te.day_of_week >=', 0)
+			->where('te.slot_id >', 0)
+			->get()->getResultArray();
+
+		$hit = [];
+		$messages = [];
+		$issues = (new TimetableConflictService())->findScheduleConflicts($scheduleId, $schoolId, $schema);
+		foreach ($issues as $issue) {
+			$msg = trim((string) ($issue['message'] ?? ''));
+			if ($msg !== '') {
+				$messages[$msg] = $msg;
+			}
+			foreach (['entry_id', 'other_id'] as $key) {
+				$id = (int) ($issue[$key] ?? 0);
+				if ($id <= 0) {
+					continue;
+				}
+				$hit[$id] = [
+					'type' => (string) ($issue['type'] ?? 'collision'),
+					'message' => $msg,
+				];
+			}
+		}
+
+		$trackSlots = [];
+		foreach (TimetableTrack::categoryKeys() as $track) {
+			$trackSlots[$track] = [];
+			foreach ($schema->teachingSlots($schoolId, $track) as $slot) {
+				if (!empty($slot['is_break'])) {
+					continue;
+				}
+				$start = substr((string) ($slot['start_time'] ?? ''), 0, 5);
+				$end = substr((string) ($slot['end_time'] ?? ''), 0, 5);
+				if ($start === '') {
+					continue;
+				}
+				$trackSlots[$track][$start] = ['start' => $start, 'end' => $end];
+			}
+		}
+		$palette = [
+			['#DBEAFE', '#1E3A8A'],
+			['#DCFCE7', '#14532D'],
+			['#FEF3C7', '#78350F'],
+			['#FCE7F3', '#831843'],
+			['#E0E7FF', '#312E81'],
+			['#FFEDD5', '#7C2D12'],
+			['#CCFBF1', '#134E4A'],
+			['#F3E8FF', '#581C87'],
+			['#E0F2FE', '#0C4A6E'],
+			['#ECFCCB', '#365314'],
+			['#FDE68A', '#713F12'],
+			['#CFFAFE', '#155E75'],
+		];
+		$teacherColor = [];
+		$classes = [];
+		$cells = [];
+		$classTrack = [];
+		foreach ($entries as $entry) {
+			$classId = (int) ($entry['class_id'] ?? 0);
+			$day = (int) ($entry['day_of_week'] ?? -1);
+			$start = substr((string) ($entry['start_time'] ?? ''), 0, 5);
+			if ($classId <= 0 || $day < 0 || $start === '') {
+				continue;
+			}
+			if (!isset($classTrack[$classId])) {
+				$classTrack[$classId] = (string) $schema->trackForClass($schoolId, $classId);
+			}
+			$track = $classTrack[$classId] !== '' ? $classTrack[$classId] : TimetableTrack::O_LEVEL;
+			if (!isset($trackSlots[$track][$start])) {
+				$trackSlots[$track][$start] = [
+					'start' => $start,
+					'end' => substr((string) ($entry['end_time'] ?? ''), 0, 5),
+				];
+			}
+			if (!isset($classes[$classId])) {
+				$label = trim(TimetableClassLabel::fromRow($entry));
+				$classes[$classId] = [
+					'id' => $classId,
+					'level_id' => (int) ($entry['level_id'] ?? 0),
+					'label' => $label !== '' ? $label : ('Class ' . $classId),
+					'track' => $track,
+				];
+			}
+			$staffId = (int) ($entry['staff_id'] ?? 0);
+			$colorKey = $staffId > 0 ? (string) $staffId : strtolower(trim((string) ($entry['teacher_name'] ?? '')));
+			if (!isset($teacherColor[$colorKey])) {
+				$teacherColor[$colorKey] = $palette[count($teacherColor) % count($palette)];
+			}
+			$entryId = (int) ($entry['id'] ?? 0);
+			$clash = $hit[$entryId] ?? null;
+			$fullName = trim((string) ($entry['teacher_name'] ?? '')) ?: 'Teacher';
+			$nameParts = preg_split('/\s+/', $fullName) ?: [];
+			$lastName = (string) array_pop($nameParts);
+			$firstName = trim(implode(' ', $nameParts));
+			$cells[$day][$classId][$start][] = [
+				'teacher' => $fullName,
+				'first' => $firstName,
+				'last' => $lastName !== '' ? $lastName : $fullName,
+				'course' => trim((string) ($entry['course_title'] ?? '')),
+				'collision' => $clash !== null,
+				'note' => (string) ($clash['message'] ?? ''),
+				'bg' => $clash !== null ? '#FECACA' : $teacherColor[$colorKey][0],
+				'ink' => $clash !== null ? '#7F1D1D' : $teacherColor[$colorKey][1],
+			];
+		}
+		foreach ($trackSlots as $track => $slots) {
+			uksort($trackSlots[$track], static function (string $a, string $b): int {
+				return strcmp($a, $b);
+			});
+		}
+		uasort($classes, static function (array $a, array $b): int {
+			$level = ((int) $a['level_id']) <=> ((int) $b['level_id']);
+			return $level !== 0 ? $level : strcmp((string) $a['label'], (string) $b['label']);
+		});
+		$trackLabels = TimetableTrack::labels();
+		$trackOrder = TimetableTrack::categoryKeys();
+		foreach ($classTrack as $track) {
+			if (!in_array($track, $trackOrder, true)) {
+				$trackOrder[] = $track;
+			}
+		}
+
+		$days = [];
+		for ($day = 0; $day <= 6; $day++) {
+			if ($day > 4 && empty($cells[$day])) {
+				continue;
+			}
+			$sections = [];
+			foreach ($trackOrder as $track) {
+				$columns = $trackSlots[$track] ?? [];
+				if ($columns === []) {
+					continue;
+				}
+				$rows = [];
+				$used = [];
+				foreach ($classes as $classId => $class) {
+					if (($class['track'] ?? '') !== $track) {
+						continue;
+					}
+					$rowCells = [];
+					foreach ($columns as $start => $column) {
+						$lines = $cells[$day][$classId][$start] ?? [];
+						if ($lines !== []) {
+							$used[$start] = true;
+						}
+						$clash = false;
+						foreach ($lines as $line) {
+							if (!empty($line['collision'])) {
+								$clash = true;
+								break;
+							}
+						}
+						$rowCells[] = [
+							'lines' => $lines,
+							'collision' => $clash,
+						];
+					}
+					$rows[] = [
+						'label' => $class['label'],
+						'cells' => $rowCells,
+					];
+				}
+				if ($rows === []) {
+					continue;
+				}
+				$kept = [];
+				$keptCells = [];
+				$index = 0;
+				foreach ($columns as $start => $column) {
+					if (!empty($used[$start])) {
+						$kept[] = $column;
+						$keptCells[] = $index;
+					}
+					$index++;
+				}
+				if ($kept === []) {
+					continue;
+				}
+				foreach ($rows as &$row) {
+					$next = [];
+					foreach ($keptCells as $cellIndex) {
+						$next[] = $row['cells'][$cellIndex] ?? ['lines' => [], 'collision' => false];
+					}
+					$row['cells'] = $next;
+				}
+				unset($row);
+				$sections[] = [
+					'track' => (string) ($trackLabels[$track] ?? $track),
+					'phase' => TimetableTrack::generationPhaseKey($track),
+					'columns' => $kept,
+					'rows' => $rows,
+				];
+			}
+			if ($sections === []) {
+				continue;
+			}
+			$days[] = [
+				'label' => $dayNames[$day] ?? ('Day ' . $day),
+				'sections' => $sections,
+			];
+		}
+		$phaseMeta = [
+			'high_school' => [
+				'heading' => 'High school',
+				'detail' => 'O Level, A Level, TVET and ANP',
+			],
+			'primary' => [
+				'heading' => 'Primary',
+				'detail' => 'Primary school, P1 to P6',
+			],
+			'nursery' => [
+				'heading' => 'Nursery',
+				'detail' => 'Nursery classes',
+			],
+		];
+		$departments = [];
+		foreach (array_keys($phaseMeta) as $phase) {
+			$phaseDays = [];
+			foreach ($days as $day) {
+				$phaseSections = [];
+				foreach ($day['sections'] as $section) {
+					if (($section['phase'] ?? '') === $phase) {
+						$phaseSections[] = $section;
+					}
+				}
+				if ($phaseSections === []) {
+					continue;
+				}
+				$phaseDays[] = [
+					'label' => $day['label'],
+					'sections' => $phaseSections,
+				];
+			}
+			if ($phaseDays === []) {
+				continue;
+			}
+			$departments[] = [
+				'key' => $phase,
+				'heading' => $phaseMeta[$phase]['heading'],
+				'detail' => $phaseMeta[$phase]['detail'],
+				'days' => $phaseDays,
+			];
+		}
+		$sheet['departments'] = $departments;
+		$sheet['days'] = $days;
+		$sheet['collision_count'] = count($messages);
+		$sheet['class_count'] = count($classes);
+		$sheet['empty'] = $classes === [];
+		return $sheet;
+	}
+
 	/** @param array<string,mixed> $data @return array<string,mixed> */
 	private function gridBodyViewData(array $data, bool $forPdf = false): array
 	{
@@ -3396,6 +3901,11 @@ class TimetableManagement extends Home
 	{
 		$rows = (new ClassesModel())->get_classes();
 		$rows = array_values(array_filter($rows, static function (array $row): bool {
+			$level = strtoupper(trim((string) ($row['level_name'] ?? '')));
+			$code = strtoupper(trim((string) ($row['code'] ?? '')));
+			if ($level === 'S6' && $code === 'PCM' && (int) ($row['students'] ?? 0) <= 0) {
+				return false;
+			}
 			$hay = strtolower(trim(
 				(string) ($row['level_name'] ?? '') . ' '
 				. (string) ($row['department_name'] ?? $row['dept_name'] ?? '') . ' '
