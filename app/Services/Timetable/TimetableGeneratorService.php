@@ -137,7 +137,7 @@ class TimetableGeneratorService
 		if ($hours === 2) {
 			return [1, 1];
 		}
-		// 3+ hours: prefer adjacent doubles (2+1, 2+2, 2+2+1, …).
+		// Non-examinable 3+ hours: doubles, with one leftover single when the total is odd.
 		$blocks = [];
 		$remaining = $hours;
 		while ($remaining >= 2) {
@@ -148,6 +148,30 @@ class TimetableGeneratorService
 			$blocks[] = 1;
 		}
 
+		return $blocks;
+	}
+
+	/**
+	 * Examinable subjects never keep a leftover single when the course has 2 or more periods.
+	 * Even totals are doubles. Odd totals are one triple plus doubles.
+	 *
+	 * @return list<int>
+	 */
+	public static function distributeExaminableHours(int $hours): array
+	{
+		$hours = max(0, min(20, $hours));
+		if ($hours <= 1) {
+			return $hours === 1 ? [1] : [];
+		}
+		$blocks = [];
+		if ($hours % 2 === 1) {
+			$blocks[] = 3;
+			$hours -= 3;
+		}
+		while ($hours >= 2) {
+			$blocks[] = 2;
+			$hours -= 2;
+		}
 		return $blocks;
 	}
 
@@ -196,15 +220,6 @@ class TimetableGeneratorService
 		}
 		return 4;
 	}
-
-	/**
-	 * Cap nursery weekly periods to morning cells so courses stay on the grid.
-	 * Marks 100 (core) keep more periods; other courses are reduced first.
-	 *
-	 * @param list<array<string,mixed>> $assignments
-	 * @return list<array<string,mixed>>
-	 */
-
 
 	/**
 	 * Cap nursery weekly periods to morning cells so courses stay on the grid.
@@ -511,20 +526,29 @@ class TimetableGeneratorService
 				foreach ($partnerExtra as $entry) {
 					$entries[] = $entry;
 				}
-			} elseif ($blockSize === 2 && $remaining >= 2) {
-				$mainCourse = SecondaryTimetableCriteria::isExaminableMainCategory(
-					(string) ($need['assignment']['category_title'] ?? '')
-				);
+			} elseif ($blockSize >= 2 && $remaining >= $blockSize) {
+				$mainCourse = $this->isExaminableBlockCourse($need['assignment']);
 				$retries = (int) ($need['double_retries'] ?? 0);
-				if ($mainCourse && $retries < 4) {
+				if ($mainCourse && $retries < 6) {
 					$lessonNeeds[] = [
 						'assignment' => $need['assignment'],
-						'block_size' => 2,
+						'block_size' => $blockSize,
 						'hours' => (int) $need['hours'],
 						'nursery_homework' => $nurseryHwNeed ? 1 : 0,
 						'double_retries' => $retries + 1,
 					];
-				} else {
+				} elseif ($mainCourse) {
+					$assignment = $need['assignment'];
+					for ($p = 0; $p < $blockSize; $p++) {
+						$entries[] = $this->parkingEntry($assignment);
+					}
+					$classLabel = TimetableClassLabel::fromRow($assignment);
+					$teacher = trim((string) ($assignment['teacher_name'] ?? ''));
+					$this->warnings[] = 'Could not place ' . ($assignment['course_title'] ?? 'course')
+						. ' in ' . ($classLabel !== '' ? $classLabel : 'class')
+						. ($teacher !== '' ? ' (' . $teacher . ')' : '')
+						. ' — parked ' . $blockSize . ' consecutive period(s) below the grid';
+				} elseif ($blockSize === 2) {
 					array_unshift($lessonNeeds, [
 						'assignment' => $need['assignment'],
 						'block_size' => 1,
@@ -536,6 +560,11 @@ class TimetableGeneratorService
 						'hours' => (int) $need['hours'],
 						'nursery_homework' => $nurseryHwNeed ? 1 : 0,
 					]);
+				} else {
+					$assignment = $need['assignment'];
+					for ($p = 0; $p < $blockSize; $p++) {
+						$entries[] = $this->parkingEntry($assignment);
+					}
 				}
 			} elseif ($blockSize === 2 && $remaining === 1) {
 				array_unshift($lessonNeeds, [
@@ -1371,66 +1400,81 @@ class TimetableGeneratorService
 				))) {
 					continue;
 				}
-				if ($blockSize === 2) {
-					for ($j = $i + 1; $j < $slotCount; $j++) {
-						if ($lastHour) {
-							if ($lastHourAllowed !== [] && !isset($lastHourAllowed[$j])) {
+				if ($blockSize >= 2) {
+					$chain = [$i];
+					$guard = 0;
+					while (count($chain) < $blockSize && $guard++ < $slotCount) {
+						$cursor = $chain[count($chain) - 1];
+						$next = null;
+						for ($j = $cursor + 1; $j < $slotCount; $j++) {
+							if ($lastHour) {
+								if ($lastHourAllowed !== [] && !isset($lastHourAllowed[$j])) {
+									continue;
+								}
+								if ($endOfDayWindow > 0 && !$this->slotIsLastTeachingHour($this->teachingSlots[$j] ?? [])) {
+									continue;
+								}
+							} elseif ($endOfDayWindow > 0 && $j < $lateStartIndex) {
 								continue;
 							}
-							if ($endOfDayWindow > 0 && !$this->slotIsLastTeachingHour($this->teachingSlots[$j] ?? [])) {
+							if ($morningOnly && !$this->slotIsMorning($this->teachingSlots[$j] ?? [])) {
 								continue;
 							}
-						} elseif ($endOfDayWindow > 0 && $j < $lateStartIndex) {
-							continue;
-						}
-						if ($morningOnly && !$this->slotIsMorning($this->teachingSlots[$j] ?? [])) {
-							continue;
-						}
-						$slotBMeta = $this->teachingSlots[$j] ?? [];
-						if ($homeworkWindowOnly && (
-							!NurseryTimetableCriteria::slotOverlapsHomeworkWindow(
+							$slotBMeta = $this->teachingSlots[$j] ?? [];
+							if ($homeworkWindowOnly && (
+								!NurseryTimetableCriteria::slotOverlapsHomeworkWindow(
+									(string) ($slotBMeta['start_time'] ?? ''),
+									(string) ($slotBMeta['end_time'] ?? '')
+								)
+								|| !NurseryTimetableCriteria::isHomeworkSizedSlot(
+									(string) ($slotBMeta['start_time'] ?? ''),
+									(string) ($slotBMeta['end_time'] ?? '')
+								)
+							)) {
+								continue;
+							}
+							if ($nursery && !$placeAsHomework && NurseryTimetableCriteria::slotIsAfterLunch(
 								(string) ($slotBMeta['start_time'] ?? ''),
 								(string) ($slotBMeta['end_time'] ?? '')
-							)
-							|| !NurseryTimetableCriteria::isHomeworkSizedSlot(
-								(string) ($slotBMeta['start_time'] ?? ''),
-								(string) ($slotBMeta['end_time'] ?? '')
-							)
-						)) {
-							continue;
+							)) {
+								continue;
+							}
+							$slotA = (int) ($this->teachingSlots[$cursor]['id'] ?? 0);
+							$slotB = (int) ($this->teachingSlots[$j]['id'] ?? 0);
+							if ($slotA <= 0 || $slotB <= 0 || !$this->slotsTemporallyAdjacent($slotA, $slotB)) {
+								continue;
+							}
+							$next = $j;
+							break;
 						}
-						if ($nursery && !$placeAsHomework && NurseryTimetableCriteria::slotIsAfterLunch(
-							(string) ($slotBMeta['start_time'] ?? ''),
-							(string) ($slotBMeta['end_time'] ?? '')
-						)) {
-							continue;
+						if ($next === null) {
+							break;
 						}
-						$slotA = (int) $this->teachingSlots[$i]['id'];
-						$slotB = (int) $this->teachingSlots[$j]['id'];
-						if (!$this->slotsTemporallyAdjacent($slotA, $slotB)) {
-							continue;
+						$chain[] = $next;
+					}
+					if (count($chain) === $blockSize) {
+						$slotIds = [];
+						foreach ($chain as $idx) {
+							$slotIds[] = (int) $this->teachingSlots[$idx]['id'];
 						}
-						$slotIds = [$slotA, $slotB];
-						if (!$this->slotsFree($classId, $staffId, $day, $slotIds, $row)) {
-							continue;
-						}
-						if (!$this->combinePartnerSlotsFree($row, $day, $slotIds)) {
-							continue;
-						}
-						$scoreRow = $row;
+						$endIndex = $chain[count($chain) - 1];
+						if ($this->slotsFree($classId, $staffId, $day, $slotIds, $row)
+							&& $this->combinePartnerSlotsFree($row, $day, $slotIds)) {
+							$scoreRow = $row;
 							if ($placeAsHomework) {
 								$scoreRow['_nursery_hw_place'] = true;
 							}
-							$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $j, $weeklyHours, $scoreRow);
-						if ($j !== $i + 1) {
-							$score += 15;
+							$score = $this->scorePlacement($classId, $staffId, $courseId, $day, $endIndex, $weeklyHours, $scoreRow);
+							if ($endIndex !== $i + $blockSize - 1) {
+								$score += 15;
+							}
+							if ($lastHour) {
+								$score += $this->lastHourIndexPenalty($endIndex, $lessonIndexes);
+							} elseif (!$afterLessons && $endIndex >= $reserveLate) {
+								$score += 900;
+							}
+							$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
 						}
-						if ($lastHour) {
-							$score += $this->lastHourIndexPenalty($j, $lessonIndexes);
-						} elseif (!$afterLessons && $j >= $reserveLate) {
-							$score += 900;
-						}
-						$candidates[] = ['score' => $score, 'day' => $day, 'slot_ids' => $slotIds];
 					}
 					continue;
 				}
@@ -1963,7 +2007,8 @@ class TimetableGeneratorService
 
 	/**
 	 * True when two teaching slots form a usable double.
-	 * Allows short changeover/tea break (<=25 min) but not lunch (>=45 min).
+	 * Allows a short break of up to 35 minutes (primary's 30-minute break)
+	 * and rejects lunch gaps of 45 minutes or more.
 	 */
 	private function slotsTemporallyAdjacent(int $slotA, int $slotB): bool
 	{
@@ -1973,7 +2018,7 @@ class TimetableGeneratorService
 			return true;
 		}
 		$gap = min(abs($a['end'] - $b['start']), abs($b['end'] - $a['start']));
-		return $gap <= 25;
+		return $gap <= 35;
 	}
 
 	private function busyKey(int $classId, int $day, int $slotId): string
@@ -1995,10 +2040,32 @@ class TimetableGeneratorService
 		if ($this->secondaryCriteria !== null && $this->secondaryCriteria->isClinicalAttachmentCourse($row)) {
 			return array_fill(0, $hours, 1);
 		}
+		if ($this->isExaminableBlockCourse($row)) {
+			return self::distributeExaminableHours($hours);
+		}
 		if (NurseryTimetableCriteria::isNurseryRow($row) || $this->requiresSpreadAcrossDays($row)) {
 			return array_fill(0, $hours, 1);
 		}
 		return self::distributeWeeklyHours($hours);
+	}
+
+	/** Examinable category, apart from PE: place in consecutive blocks of 2, or 3 when the total is odd. */
+	private function isExaminableBlockCourse(array $row): bool
+	{
+		if (NurseryTimetableCriteria::isNurseryRow($row)) {
+			return false;
+		}
+		if (!SecondaryTimetableCriteria::isExaminableMainCategory((string) ($row['category_title'] ?? ''))) {
+			return false;
+		}
+		$title = (string) ($row['course_title'] ?? '');
+		if (SecondaryTimetableCriteria::isOmittedFromGridTitle($title) || $this->isPhysicalEducationSportCourse($title)) {
+			return false;
+		}
+		if ($this->secondaryCriteria !== null && $this->secondaryCriteria->isClinicalAttachmentCourse($row)) {
+			return false;
+		}
+		return true;
 	}
 
 	private function maxPerDayForCourse(array $row, int $weeklyHours): int
@@ -2012,6 +2079,12 @@ class TimetableGeneratorService
 				return $peMax;
 			}
 		}
+		if ($this->isExaminableBlockCourse($row)) {
+			if ($weeklyHours <= 1) {
+				return 1;
+			}
+			return ($weeklyHours % 2 === 1) ? 3 : 2;
+		}
 		if ($this->requiresSpreadAcrossDays($row)) {
 			return 1;
 		}
@@ -2024,9 +2097,13 @@ class TimetableGeneratorService
 
 	private function requiresSpreadAcrossDays(array $row): bool
 	{
-		// Document: 2-period subjects stay as two singles; PE at most one period per day.
+		// PE stays one period per day. A 2-period examinable course is one double.
+		// Other 2-period courses stay as two singles on different days.
 		if ($this->isPhysicalEducationSportCourse((string) ($row['course_title'] ?? ''))) {
 			return true;
+		}
+		if ($this->isExaminableBlockCourse($row)) {
+			return false;
 		}
 		return self::weeklyHoursFromCourse($row) === 2;
 	}

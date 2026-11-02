@@ -273,8 +273,8 @@ class SecondaryTimetableCriteria
 	}
 
 	/**
-	 * Document block rules for secondary weekly hours.
-	 * 2 → separate singles; 3/5/7 → doubles + leftover single; 4/6 → doubles.
+	 * Examinable courses use consecutive blocks (see distributeExaminableHours).
+	 * Other courses: 2 → separate singles; 3/5/7 → doubles + leftover single; 4/6 → doubles.
 	 *
 	 * @return list<int>
 	 */
@@ -1941,10 +1941,10 @@ class SecondaryTimetableCriteria
 			['group' => 'Priority', 'title' => 'S6 ANP after main courses', 'detail' => 'French, Kinyarwanda, and ICT.'],
 			['group' => 'Priority', 'title' => 'S5 ANP after main courses', 'detail' => 'French, citizenship, Kinyarwanda, and ICT.'],
 			['group' => 'Priority', 'title' => 'S4 ANP after main courses', 'detail' => 'ICT, French, citizenship, and entrepreneurship.'],
-			['group' => 'Blocks', 'title' => 'Examinable subjects', 'detail' => 'Main courses are the Examinable Subjects category. They are placed as doubles. A 3, 5 or 7 period course keeps one single. A 2 period course stays on two different days. A double that cannot fit is not split into two singles.'],
-			['group' => 'Blocks', 'title' => '4 and 6 periods', 'detail' => 'At least two periods together (doubles).'],
-			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'Put 2 together and 1 separately (5 periods → 3 teaching sessions).'],
-			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Schedule the two periods on separate days.'],
+			['group' => 'Blocks', 'title' => 'Examinable subjects', 'detail' => 'Main courses are the Examinable Subjects category. Every course with two or more periods is grouped into consecutive hours. Even totals use doubles only. Odd totals use one block of three consecutive periods and the rest as doubles. A 1 period course stays a single. A block that cannot fit is not split into singles. Part-time teachers keep the cells they already have.'],
+			['group' => 'Blocks', 'title' => '4, 6 and 8 periods', 'detail' => 'Consecutive doubles only. No single period.'],
+			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'One block of three consecutive periods, and the rest as doubles. No leftover single.'],
+			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Both periods sit together on the same day.'],
 			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'One class for S1 A+B+C+D, one class for S2 A+B and every S3 section, one class for S4 ST1+ST2+ANP with S5 ACC+ST1+ST2+ANP, and one class for S6 ANP+MCE+MPC+MEG+MCB+PCB. Always the last teaching period, never a morning period. At most one PE period per class day.'],
 			['group' => 'After lessons', 'title' => 'Home Science and Farming', 'detail' => 'Home Science sits in the afternoon, with French, ICT, Chinese and Kiswahili. Farming stays inside a normal teaching slot. Library and Clubs stay in Manage Course and are not placed.'],
 			['group' => 'After lessons', 'title' => 'Evening bells', 'detail' => '17:30–18:00 chapel, 18:00–19:00 dinner, 19:00–21:00 preps.'],

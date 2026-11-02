@@ -1441,6 +1441,7 @@ class TimetableManagement extends Home
 
 		$stagingSvc->capPeriodsToManageCourse($scheduleId, $schoolId);
 		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
+		$stagingSvc->groupExaminableConsecutive($scheduleId, $schoolId, $schema);
 		$this->lockAllPlacedEntries($scheduleId, $phase === 'all' ? [] : $classIdList);
 
 		$collisionReport = $this->buildCollisionReport(
@@ -1720,7 +1721,8 @@ class TimetableManagement extends Home
 	/**
 	 * Freeze placed lessons so a later generate cannot wipe the grid
 	 * unless Replace locked timetable is checked.
-	 * Lessons the Musanze criteria still have to move stay unlocked.
+	 * Part-time teachers are always locked. Other lessons the Musanze
+	 * criteria still have to move stay unlocked.
 	 * Already locked lessons are never unlocked here.
 	 *
 	 * @param list<int> $classIdList
@@ -1755,12 +1757,11 @@ class TimetableManagement extends Home
 			if ($id <= 0 || (int) ($row['is_locked'] ?? 0) === 1) {
 				continue;
 			}
-			if (\App\Services\Timetable\SecondaryTimetableCriteria::shouldStayMovable($row)) {
+			$partTime = (int) ($row['work_type'] ?? 0) === 2;
+			if (!$partTime && \App\Services\Timetable\SecondaryTimetableCriteria::shouldStayMovable($row)) {
 				continue;
 			}
-			if ((int) ($row['work_type'] ?? 0) === 2) {
-				$lock[] = $id;
-			}
+			$lock[] = $id;
 		}
 		foreach (array_chunk($lock, 400) as $chunk) {
 			$db->table('timetable_entries')->whereIn('id', $chunk)->update(['is_locked' => 1]);
