@@ -1779,6 +1779,10 @@ class SecondaryTimetableCriteria
 		if ($famA === 'french' && $levelA === 'S1' && $levelB === 'S1') {
 			return false;
 		}
+		// S1 Geography is a different class in each section, including S1 C and S1 D.
+		if ($famA === 'geography' && $levelA === 'S1' && $levelB === 'S1') {
+			return false;
+		}
 		$titleNormA = strtolower(trim(preg_replace('/\s+/', ' ', $titleA)));
 		$titleNormB = strtolower(trim(preg_replace('/\s+/', ' ', $titleB)));
 		return $titleNormA !== '' && $titleNormA === $titleNormB;
@@ -1956,7 +1960,8 @@ class SecondaryTimetableCriteria
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'No morning free time', 'detail' => 'A full-time teacher is not left idle from 07:00–12:00 when one of their lessons can move into that cell. Part-time staff keep the timetable they already have.'],
 			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Full-time teachers not named in this document use normal placement and fill morning periods before afternoon periods. Part-time staff are left unchanged.'],
-			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Home Science and Farming shares one clock only when every class of that teacher is free there. Different academic subjects or different teachers are never combined.'],
+			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Home Science and Farming shares one clock only when every class of that teacher is free there. Different academic subjects or different teachers are never combined. Geography for S1 A, S1 B, S1 C and S1 D is a different class for each section.'],
+			['group' => 'Blocks', 'title' => 'AYOBIKEKA BENOIT Economics', 'detail' => 'Economics has 7 periods: three doubles and one single. The single stays on its own. S6 MCE and S6 MEG stay one combined class.'],
 			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'One combined class, Tuesday 07:00–12:00, 7 periods. No other S4 or S5 ANP lesson in that window.'],
 			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full teaching day 07:00–16:20. No other S6 ANP lesson on Wednesday.'],
 			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],

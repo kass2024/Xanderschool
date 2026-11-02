@@ -1240,6 +1240,10 @@ class TimetableStagingService
 		if ($classId <= 0 || $courseId <= 0) {
 			return false;
 		}
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($entry['teacher_name'] ?? $meta['teacher_name'] ?? ''))));
+		if (strpos($teacher, 'ayobikeka') !== false && strpos(strtolower($title), 'econ') !== false) {
+			return false;
+		}
 		if ($this->coursePeriodCount === null) {
 			$this->coursePeriodCount = [];
 			foreach ($state['by_id'] as $other) {

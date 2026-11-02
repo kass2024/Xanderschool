@@ -2041,12 +2041,41 @@ class TimetableGeneratorService
 			return array_fill(0, $hours, 1);
 		}
 		if ($this->isExaminableBlockCourse($row)) {
-			return self::distributeExaminableHours($hours);
+			return $this->examinableHourBlocks($row, $hours);
 		}
 		if (NurseryTimetableCriteria::isNurseryRow($row) || $this->requiresSpreadAcrossDays($row)) {
 			return array_fill(0, $hours, 1);
 		}
 		return self::distributeWeeklyHours($hours);
+	}
+
+	/**
+	 * AYOBIKEKA BENOIT Economics is 7 periods: three doubles and one single.
+	 *
+	 * @param array<string,mixed> $row
+	 */
+	private function economicsDoublesPlusSingle(array $row, int $hours): bool
+	{
+		if ($hours !== 7) {
+			return false;
+		}
+		$title = strtolower(trim((string) ($row['course_title'] ?? '')));
+		if (strpos($title, 'econ') === false) {
+			return false;
+		}
+		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
+		return strpos($teacher, 'ayobikeka') !== false;
+	}
+
+	/**
+	 * @return list<int>
+	 */
+	private function examinableHourBlocks(array $row, int $hours): array
+	{
+		if ($this->economicsDoublesPlusSingle($row, $hours)) {
+			return [2, 2, 2, 1];
+		}
+		return self::distributeExaminableHours($hours);
 	}
 
 	/** Examinable category, apart from PE: place in consecutive blocks of 2, or 3 when the total is odd. */
@@ -2082,6 +2111,9 @@ class TimetableGeneratorService
 		if ($this->isExaminableBlockCourse($row)) {
 			if ($weeklyHours <= 1) {
 				return 1;
+			}
+			if ($this->economicsDoublesPlusSingle($row, $weeklyHours)) {
+				return 2;
 			}
 			return ($weeklyHours % 2 === 1) ? 3 : 2;
 		}
