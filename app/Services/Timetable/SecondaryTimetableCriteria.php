@@ -617,6 +617,21 @@ class SecondaryTimetableCriteria
 		return $this->isMorningSlotByTimes($slotStart, $slotEnd) ? -450 : 700;
 	}
 
+	/** Examinable Subjects stay in the morning. Afternoon languages and PE are not held in that morning band. */
+	private function isExaminableLesson(array $row): bool
+	{
+		if (self::prefersAfternoonTitle((string) ($row['course_title'] ?? ''))) {
+			return false;
+		}
+		if (TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($row['course_title'] ?? ''))) {
+			return false;
+		}
+		if (self::isExaminableMainCategory($row['category_title'] ?? null)) {
+			return true;
+		}
+		return $this->isPrioritySubject($row);
+	}
+
 	/**
 	 * Hard slot gate used by generation and parking for every track.
 	 * Custom teacher days/windows apply school-wide; document windows, Alice,
@@ -643,6 +658,9 @@ class SecondaryTimetableCriteria
 		if (!$this->overflowFill
 			&& TimetableGeneratorService::isPhysicalEducationSportTitle((string) ($row['course_title'] ?? ''))
 			&& $this->isMorningSlotByTimes($slotStart, $slotEnd)) {
+			return false;
+		}
+		if (!$this->overflowFill && $this->isExaminableLesson($row) && !$this->isMorningSlotByTimes($slotStart, $slotEnd)) {
 			return false;
 		}
 		if ($this->isBlockedNamedSlot($row, $day, $slotStart, $slotEnd)) {
@@ -1928,7 +1946,7 @@ class SecondaryTimetableCriteria
 			['group' => 'After lessons', 'title' => 'Evening bells', 'detail' => '17:30–18:00 chapel, 18:00–19:00 dinner, 19:00–21:00 preps.'],
 			['group' => 'Afternoon', 'title' => 'ICT, French, Home Science, Chinese and Kiswahili', 'detail' => 'These courses sit after 12:00. A morning cell is used only when every legal afternoon cell is already taken. French is one class for S4 ST1+ST2, one class for S5 ST1+ST2, and one class for S6 MPC+MCE+PCB+MCB+MPG+MEG+ANP.'],
 			['group' => 'Alice', 'title' => 'Teacher Alice', 'detail' => 'Must not teach on Monday. Computer Science for S6 MPC and MCE is combined.'],
-			['group' => 'Morning', 'title' => 'Mathematics and Physics', 'detail' => 'Prefer 07:00–12:00. S4 and S5 ST1 and ST2 Mathematics stay inside 07:00–12:00. S1 Mathematics is after break or after lunch.'],
+			['group' => 'Morning', 'title' => 'Examinable subjects', 'detail' => 'Examinable Subjects stay between 07:00 and 12:00. A morning cell is filled before any of those courses uses the afternoon. An afternoon cell is used only when every morning cell for that class is already taken.'],
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Varlette, Marguerite and Linea teach S4, S5 and S6 ANP only inside the times listed under Windows.'],
 			['group' => 'Morning', 'title' => 'RWIRANGIRA JEAN CLAUDE', 'detail' => 'Mathematics, including S1, fills 07:00–12:00 first. Keep those morning periods continuous. A lesson stays after 12:00 only when every morning cell is already taken or the other course cannot move.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
