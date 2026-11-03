@@ -152,8 +152,9 @@ class TimetableGeneratorService
 	}
 
 	/**
-	 * Examinable subjects never keep a leftover single when the course has 2 or more periods.
-	 * Even totals are doubles. Odd totals are one triple plus doubles.
+	 * Fewer than 4 periods: consecutive pairs, with one single only when the total is 3.
+	 * 4 periods: two doubles. More than 4: pairs, plus one triple when the total is odd.
+	 * No block is longer than 3.
 	 *
 	 * @return list<int>
 	 */
@@ -162,6 +163,18 @@ class TimetableGeneratorService
 		$hours = max(0, min(20, $hours));
 		if ($hours <= 1) {
 			return $hours === 1 ? [1] : [];
+		}
+		if ($hours < 4) {
+			$blocks = [];
+			$left = $hours;
+			while ($left >= 2) {
+				$blocks[] = 2;
+				$left -= 2;
+			}
+			if ($left === 1) {
+				$blocks[] = 1;
+			}
+			return $blocks;
 		}
 		$blocks = [];
 		if ($hours % 2 === 1) {
@@ -2050,31 +2063,10 @@ class TimetableGeneratorService
 	}
 
 	/**
-	 * AYOBIKEKA BENOIT Economics is 7 periods: three doubles and one single.
-	 *
-	 * @param array<string,mixed> $row
-	 */
-	private function economicsDoublesPlusSingle(array $row, int $hours): bool
-	{
-		if ($hours !== 7) {
-			return false;
-		}
-		$title = strtolower(trim((string) ($row['course_title'] ?? '')));
-		if (strpos($title, 'econ') === false) {
-			return false;
-		}
-		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($row['teacher_name'] ?? ''))));
-		return strpos($teacher, 'ayobikeka') !== false;
-	}
-
-	/**
 	 * @return list<int>
 	 */
 	private function examinableHourBlocks(array $row, int $hours): array
 	{
-		if ($this->economicsDoublesPlusSingle($row, $hours)) {
-			return [2, 2, 2, 1];
-		}
 		return self::distributeExaminableHours($hours);
 	}
 
@@ -2112,7 +2104,7 @@ class TimetableGeneratorService
 			if ($weeklyHours <= 1) {
 				return 1;
 			}
-			if ($this->economicsDoublesPlusSingle($row, $weeklyHours)) {
+			if ($weeklyHours < 4) {
 				return 2;
 			}
 			return ($weeklyHours % 2 === 1) ? 3 : 2;

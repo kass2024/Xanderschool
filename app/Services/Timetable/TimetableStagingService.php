@@ -1240,10 +1240,6 @@ class TimetableStagingService
 		if ($classId <= 0 || $courseId <= 0) {
 			return false;
 		}
-		$teacher = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($entry['teacher_name'] ?? $meta['teacher_name'] ?? ''))));
-		if (strpos($teacher, 'ayobikeka') !== false && strpos(strtolower($title), 'econ') !== false) {
-			return false;
-		}
 		if ($this->coursePeriodCount === null) {
 			$this->coursePeriodCount = [];
 			foreach ($state['by_id'] as $other) {
@@ -2432,7 +2428,30 @@ class TimetableStagingService
 				}
 				$count++;
 			}
-			if ($count >= 2) {
+			$weekly = 0;
+			$tripleElsewhere = false;
+			$perDay = [];
+			foreach ($state['by_id'] as $other) {
+				if ((int) ($other['class_id'] ?? 0) !== $classId || (int) ($other['course_id'] ?? 0) !== $courseId) {
+					continue;
+				}
+				$weekly++;
+				$otherDay = (int) ($other['day_of_week'] ?? -1);
+				$perDay[$otherDay] = (int) ($perDay[$otherDay] ?? 0) + 1;
+			}
+			$max = 2;
+			if ($weekly > 4 && $weekly % 2 === 1) {
+				foreach ($perDay as $otherDay => $n) {
+					if ((int) $otherDay !== $day && $n >= 3) {
+						$tripleElsewhere = true;
+						break;
+					}
+				}
+				if (!$tripleElsewhere) {
+					$max = 3;
+				}
+			}
+			if ($count >= $max) {
 				return false;
 			}
 		}
@@ -3537,7 +3556,7 @@ class TimetableStagingService
 		$classId = (int) ($pe['class_id'] ?? 0);
 		$staffId = (int) ($pe['staff_id'] ?? 0);
 		$peId = (int) ($pe['id'] ?? 0);
-		if ($classId <= 0 || $peId <= 0) {
+		if ($classId <= 0 || $peId <= 0 || $this->isPartTimeStaff($staffId)) {
 			return false;
 		}
 		$trackKey = $schema->trackForClass($schoolId, $classId);

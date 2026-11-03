@@ -274,7 +274,7 @@ class SecondaryTimetableCriteria
 
 	/**
 	 * Examinable courses use consecutive blocks (see distributeExaminableHours).
-	 * Other courses: 2 → separate singles; 3/5/7 → doubles + leftover single; 4/6 → doubles.
+	 * Fewer than 4 periods stay in pairs. More than 4 use pairs, or one triple when odd.
 	 *
 	 * @return list<int>
 	 */
@@ -1945,9 +1945,9 @@ class SecondaryTimetableCriteria
 			['group' => 'Priority', 'title' => 'S6 ANP after main courses', 'detail' => 'French, Kinyarwanda, and ICT.'],
 			['group' => 'Priority', 'title' => 'S5 ANP after main courses', 'detail' => 'French, citizenship, Kinyarwanda, and ICT.'],
 			['group' => 'Priority', 'title' => 'S4 ANP after main courses', 'detail' => 'ICT, French, citizenship, and entrepreneurship.'],
-			['group' => 'Blocks', 'title' => 'Examinable subjects', 'detail' => 'Main courses are the Examinable Subjects category. Every course with two or more periods is grouped into consecutive hours. Even totals use doubles only. Odd totals use one block of three consecutive periods and the rest as doubles. A 1 period course stays a single. A block that cannot fit is not split into singles. Part-time teachers keep the cells they already have.'],
-			['group' => 'Blocks', 'title' => '4, 6 and 8 periods', 'detail' => 'Consecutive doubles only. No single period.'],
-			['group' => 'Blocks', 'title' => '3, 5 and 7 periods', 'detail' => 'One block of three consecutive periods, and the rest as doubles. No leftover single.'],
+			['group' => 'Blocks', 'title' => 'Examinable subjects', 'detail' => 'Main courses are the Examinable Subjects category. A course with fewer than 4 periods is grouped into consecutive pairs, so 3 periods is one double and one single. A course with 4 periods is two doubles. A course with more than 4 periods uses consecutive blocks of 2, or one block of 3 when the total is odd. No block is longer than 3. A 1 period course stays a single. Part-time teachers keep the cells they already have.'],
+			['group' => 'Blocks', 'title' => 'Fewer than 4 periods', 'detail' => 'Consecutive pairs. Three periods stay as one double and one single.'],
+			['group' => 'Blocks', 'title' => 'More than 4 periods', 'detail' => 'Consecutive blocks of 2, or one block of 3 when the total is odd. No leftover single and no block of 4.'],
 			['group' => 'Blocks', 'title' => '2 periods', 'detail' => 'Both periods sit together on the same day.'],
 			['group' => 'PE', 'title' => 'Physical Education Sport', 'detail' => 'One class for S1 A+B+C+D, one class for S2 A+B and every S3 section, one class for S4 ST1+ST2+ANP with S5 ACC+ST1+ST2+ANP, and one class for S6 ANP+MCE+MPC+MEG+MCB+PCB. Always the last teaching period, never a morning period. At most one PE period per class day.'],
 			['group' => 'After lessons', 'title' => 'Home Science and Farming', 'detail' => 'Home Science sits in the afternoon, with French, ICT, Chinese and Kiswahili. Farming stays inside a normal teaching slot. Library and Clubs stay in Manage Course and are not placed.'],
@@ -1958,10 +1958,10 @@ class SecondaryTimetableCriteria
 			['group' => 'Morning', 'title' => 'ANP teachers', 'detail' => 'Varlette, Marguerite and Linea teach S4, S5 and S6 ANP only inside the times listed under Windows.'],
 			['group' => 'Morning', 'title' => 'RWIRANGIRA JEAN CLAUDE', 'detail' => 'Mathematics, including S1, fills 07:00–12:00 first. Keep those morning periods continuous. A lesson stays after 12:00 only when every morning cell is already taken or the other course cannot move.'],
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
-			['group' => 'Morning', 'title' => 'No morning free time', 'detail' => 'A full-time teacher is not left idle from 07:00–12:00 when one of their lessons can move into that cell. Part-time staff keep the timetable they already have.'],
+			['group' => 'Morning', 'title' => 'No morning free time', 'detail' => 'No class is left with an empty teaching cell from 07:00–12:00 when one of its lessons can move into that cell. Examinable lessons take those morning cells first. Part-time staff keep the timetable they already have.'],
 			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Full-time teachers not named in this document use normal placement and fill morning periods before afternoon periods. Part-time staff are left unchanged.'],
 			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Home Science and Farming shares one clock only when every class of that teacher is free there. Different academic subjects or different teachers are never combined. O Level (S1–S3) never auto-combines: Entrepreneurship, Physics, English, Mathematics, Kinyarwanda, Kiswahili, ICT, French and Geography are a different class in each section. Only PE uses the Word-file O Level groups.'],
-			['group' => 'Blocks', 'title' => 'AYOBIKEKA BENOIT Economics', 'detail' => 'Economics has 7 periods: three doubles and one single. The single stays on its own. S6 MCE and S6 MEG stay one combined class.'],
+			['group' => 'Blocks', 'title' => 'AYOBIKEKA BENOIT Economics', 'detail' => 'Economics has 7 periods: one block of three consecutive periods and three doubles. S6 MCE and S6 MEG stay one combined class.'],
 			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'One combined class, Tuesday 07:00–12:00, 7 periods. No other S4 or S5 ANP lesson in that window.'],
 			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full teaching day 07:00–16:20. No other S6 ANP lesson on Wednesday.'],
 			['group' => 'Windows', 'title' => 'Innocent', 'detail' => 'Monday 10:00–12:00, Friday 10:00–12:00, Wednesday 07:00–10:00.'],

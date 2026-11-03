@@ -1474,6 +1474,16 @@ class TimetableManagement extends Home
 		$stagingSvc->capPeriodsToManageCourse($scheduleId, $schoolId);
 		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 		$stagingSvc->groupExaminableConsecutive($scheduleId, $schoolId, $schema);
+		try {
+			$quality = new \App\Services\Timetable\TimetableQualityRepair();
+			$onlyClasses = $phase === 'all' ? [] : $classIdList;
+			$quality->repair($scheduleId, $schoolId, $schema, $onlyClasses);
+			$stagingSvc->promotePeToLastHour($scheduleId, $schoolId, $schema);
+			$quality->repair($scheduleId, $schoolId, $schema, $onlyClasses);
+		} catch (\Throwable $e) {
+			log_message('error', 'Timetable quality repair failed: {msg}', ['msg' => $e->getMessage()]);
+		}
+		$stagingSvc->parkAllConflicts($scheduleId, $schoolId);
 		$this->lockAllPlacedEntries($scheduleId, $phase === 'all' ? [] : $classIdList);
 
 		$collisionReport = $this->buildCollisionReport(
