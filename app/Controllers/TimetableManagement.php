@@ -91,6 +91,38 @@ class TimetableManagement extends Home
 		);
 		$data['generation_levels'] = $this->buildGenerationLevelCards($schoolId, $year, $term, $schema, $data['schedule'] ?? null);
 		$data['last_generation_job'] = $this->findLastFinishedTimetableJob($schoolId, $year, $term);
+		// Overall uses the live grid. Refresh the Generate panel's collision snapshot so it cannot
+		// keep showing an old "19 collisions" after the grid was fixed and locked.
+		if (!empty($data['last_generation_job']) && !empty($data['schedule']['id'])) {
+			$liveCollisions = $this->buildCollisionReport(
+				(int) $data['schedule']['id'],
+				$schoolId,
+				$schema,
+				[],
+				null
+			);
+			$data['last_generation_job']['collision_report'] = $liveCollisions;
+			$hits = (int) ($liveCollisions['total'] ?? 0);
+			$msg = (string) ($data['last_generation_job']['message'] ?? '');
+			if ($hits <= 0) {
+				$msg = preg_replace('/\s*\d+\s+collisions?\s+still\s+need\s+a\s+move\.?/i', '. No teacher/class collisions.', $msg) ?? $msg;
+				$msg = preg_replace('/\s*\d+\s+collisions?\s+still\s+on\s+the\s+grid\.?/i', '', $msg) ?? $msg;
+			} else {
+				$msg = preg_replace(
+					'/\d+\s+collisions?\s+still\s+need\s+a\s+move/i',
+					$hits . ' collision' . ($hits === 1 ? '' : 's') . ' still need a move',
+					$msg
+				) ?? $msg;
+			}
+			$data['last_generation_job']['message'] = trim(preg_replace('/\.\s*\./', '.', $msg) ?? $msg);
+			$jobId = (string) ($data['last_generation_job']['id'] ?? '');
+			if ($jobId !== '') {
+				$this->updateTimetableJob($jobId, [
+					'collision_report' => $liveCollisions,
+					'message' => $data['last_generation_job']['message'],
+				]);
+			}
+		}
 		$criteriaStore = new TimetableCriteriaStore();
 		$data['custom_criteria'] = $criteriaStore->listForSchool($schoolId);
 		$data['document_criteria'] = SecondaryTimetableCriteria::documentCriteriaForDisplay();
