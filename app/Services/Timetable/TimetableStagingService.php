@@ -368,13 +368,17 @@ class TimetableStagingService
 			}
 		}
 
-		$busy = [];
+			$busy = [];
 		foreach ($scheduled as $entry) {
 			$classId = (int) ($entry['class_id'] ?? 0);
 			$day = (int) ($entry['day_of_week'] ?? -1);
 			$slotId = (int) ($entry['slot_id'] ?? 0);
+			$clock = substr((string) ($entry['start_time'] ?? ''), 0, 5);
 			if ($classId > 0 && $day >= 0 && $slotId > 0) {
 				$busy[$classId . ':' . $day . ':' . $slotId] = (int) ($entry['id'] ?? 0);
+				if ($clock !== '') {
+					$busy[$classId . ':' . $day . '@' . $clock] = (int) ($entry['id'] ?? 0);
+				}
 			}
 		}
 
@@ -459,8 +463,13 @@ class TimetableStagingService
 							if ($day < 0 || $slotId <= 0) {
 								continue;
 							}
+							$startHm = substr((string) ($host['start_time'] ?? ''), 0, 5);
 							$busyKey = $classId . ':' . $day . ':' . $slotId;
+							$clockKey = $startHm !== '' ? $classId . ':' . $day . '@' . $startHm : '';
 							$occupant = (int) ($busy[$busyKey] ?? 0);
+							if ($clockKey !== '' && (int) ($busy[$clockKey] ?? 0) > 0) {
+								$occupant = (int) $busy[$clockKey];
+							}
 							if ($occupant > 0 && $occupant !== $entryId) {
 								continue;
 							}
@@ -469,6 +478,9 @@ class TimetableStagingService
 								'slot_id' => $slotId,
 							]);
 							$busy[$busyKey] = $entryId;
+							if ($clockKey !== '') {
+								$busy[$clockKey] = $entryId;
+							}
 							$classClocks[$classId][$clock] = true;
 							$moved = true;
 							break;

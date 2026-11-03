@@ -88,6 +88,7 @@ class TimetableQualityRepair
 
 		$this->db->transStart();
 		try {
+			$this->clearDoubleBooks();
 			for ($pass = 0; $pass < 8; $pass++) {
 				$gained = 0;
 				$gained += $this->seatClinical();
@@ -109,8 +110,9 @@ class TimetableQualityRepair
 			$this->splitOversized();
 			$this->joinIsolates();
 			$this->fillHoles(false, false);
-			if ($this->collisionCount() > $beforeCollisions || $this->partTimeMoved()) {
-				throw new \RuntimeException('Timetable repair would add a collision or move part-time staff.');
+			$this->clearDoubleBooks();
+			if ($this->collisionCount() > 0 || $this->partTimeMoved()) {
+				throw new \RuntimeException('Timetable repair would leave a collision or move part-time staff.');
 			}
 			$this->db->transComplete();
 		} catch (\Throwable $e) {
@@ -1036,6 +1038,183 @@ class TimetableQualityRepair
 			}
 		}
 		return $moved;
+	}
+
+	/**
+	 * Two lessons in one class at the same clock, or one teacher in two
+	 * classes, is removed. The extra lesson moves to a legal cell.
+	 */
+	private function clearDoubleBooks(): int
+	{
+		$moved = 0;
+		for ($guard = 0; $guard < 40; $guard++) {
+			$pair = $this->firstDouble();
+			if ($pair === null) {
+				break;
+			}
+			$intruder = $this->chooseIntruder($pair[0], $pair[1]);
+			if ($intruder === null) {
+				break;
+			}
+			if ($this->reseatOne($intruder) || $this->parkOne($intruder)) {
+				$moved++;
+				continue;
+			}
+			break;
+		}
+		return $moved;
+	}
+
+	/** @return array{0:array<string,mixed>,1:array<string,mixed>}|null */
+	private function firstDouble(): ?array
+	{
+		$rows = array_values($this->byId);
+		$count = count($rows);
+		for ($i = 0; $i < $count; $i++) {
+			$a = $rows[$i];
+			$aStart = $this->mins((string) ($a['start_time'] ?? ''));
+			$aEnd = $this->mins((string) ($a['end_time'] ?? ''));
+			if ($aEnd <= $aStart) {
+				continue;
+			}
+			for ($j = $i + 1; $j < $count; $j++) {
+				$b = $rows[$j];
+				if ((int) ($a['day_of_week'] ?? -1) !== (int) ($b['day_of_week'] ?? -2)) {
+					continue;
+				}
+				$bStart = $this->mins((string) ($b['start_time'] ?? ''));
+				$bEnd = $this->mins((string) ($b['end_time'] ?? ''));
+				if ($aStart >= $bEnd || $bStart >= $aEnd) {
+					continue;
+				}
+				$sameClass = (int) ($a['class_id'] ?? 0) > 0 && (int) ($a['class_id'] ?? 0) === (int) ($b['class_id'] ?? 0);
+				$sameStaff = (int) ($a['staff_id'] ?? 0) > 0 && (int) ($a['staff_id'] ?? 0) === (int) ($b['staff_id'] ?? 0);
+				if ($sameClass) {
+					if (!$this->classAllowed((int) $a['class_id'])) {
+						continue;
+					}
+					return [$a, $b];
+				}
+				if ($sameStaff && !SecondaryTimetableCriteria::entriesAreCombinedLesson($this->combineRow($a), $this->combineRow($b))) {
+					if (!$this->classAllowed((int) ($a['class_id'] ?? 0)) && !$this->classAllowed((int) ($b['class_id'] ?? 0))) {
+						continue;
+					}
+					return [$a, $b];
+				}
+			}
+		}
+		return null;
+	}
+
+	/** @param array<string,mixed> $a @param array<string,mixed> $b @return array<string,mixed>|null */
+	private function chooseIntruder(array $a, array $b): ?array
+	{
+		$rank = function (array $entry): int {
+			if ($this->isPartTime((int) ($entry['staff_id'] ?? 0)) || !$this->classAllowed((int) ($entry['class_id'] ?? 0))) {
+				return 99;
+			}
+			if (($this->tracks[(int) ($entry['class_id'] ?? 0)] ?? '') === 'nursery') {
+				return 99;
+			}
+			$classTrack = (string) ($this->tracks[(int) ($entry['class_id'] ?? 0)] ?? '');
+			$slotTrack = $this->slotTrackOf((int) ($entry['slot_id'] ?? 0));
+			if ($slotTrack !== '' && $classTrack !== '' && $slotTrack !== $classTrack) {
+				return 0;
+			}
+			return 1;
+		};
+		$ordered = [$a, $b];
+		usort($ordered, function (array $left, array $right) use ($rank): int {
+			$score = $rank($left) <=> $rank($right);
+			if ($score !== 0) {
+				return $score;
+			}
+			return ((int) ($right['id'] ?? 0)) <=> ((int) ($left['id'] ?? 0));
+		});
+		return $rank($ordered[0]) < 99 ? $ordered[0] : null;
+	}
+
+	private function slotTrackOf(int $slotId): string
+	{
+		foreach ($this->slotsByTrack as $track => $slots) {
+			foreach ($slots as $slot) {
+				if ((int) ($slot['id'] ?? 0) === $slotId) {
+					return (string) $track;
+				}
+			}
+		}
+		return '';
+	}
+
+	/** @param array<string,mixed> $entry */
+	private function reseatOne(array $entry): bool
+	{
+		$entry = $this->current($entry);
+		if ($this->isPartTime((int) ($entry['staff_id'] ?? 0))) {
+			return false;
+		}
+		$classId = (int) ($entry['class_id'] ?? 0);
+		$track = (string) ($this->tracks[$classId] ?? '');
+		$dayNow = (int) ($entry['day_of_week'] ?? -1);
+		$startNow = substr((string) ($entry['start_time'] ?? ''), 0, 5);
+		$best = null;
+		$bestScore = 9999;
+		foreach ([0, 1, 2, 3, 4] as $day) {
+			foreach ($this->slotsByTrack[$track] ?? [] as $slot) {
+				$start = substr((string) ($slot['start_time'] ?? ''), 0, 5);
+				if ($day === $dayNow && $start === $startNow) {
+					continue;
+				}
+				$morning = $this->isMorning($start);
+				$exam = $this->isExam($entry);
+				$overflow = $exam ? !$morning : $morning;
+				if (!$this->canPlace([$entry], $day, $slot, [], $overflow)) {
+					continue;
+				}
+				$score = $exam ? ($morning ? 0 : 40) : ($morning ? 20 : 10);
+				if ($score < $bestScore) {
+					$bestScore = $score;
+					$best = ['day' => $day, 'slot' => $slot];
+				}
+			}
+		}
+		if ($best === null) {
+			return false;
+		}
+		$mark = $this->mark();
+		$before = $this->collisionCount();
+		if (!$this->placeGroup([$entry], (int) $best['day'], $best['slot'])
+			|| !$this->idsClean([(int) ($entry['id'] ?? 0)])
+			|| $this->collisionCount() >= $before) {
+			$this->revertTo($mark);
+			return false;
+		}
+		return true;
+	}
+
+	/** @param array<string,mixed> $entry */
+	private function parkOne(array $entry): bool
+	{
+		$entry = $this->current($entry);
+		$id = (int) ($entry['id'] ?? 0);
+		if ($id <= 0 || $this->isPartTime((int) ($entry['staff_id'] ?? 0))) {
+			return false;
+		}
+		if (!$this->classAllowed((int) ($entry['class_id'] ?? 0))) {
+			return false;
+		}
+		$this->remember($entry);
+		$update = ['day_of_week' => -1, 'slot_id' => 0];
+		if ($this->lockColumn) {
+			$update['is_locked'] = 1;
+		}
+		$this->db->table('timetable_entries')->where('id', $id)->update($update);
+		unset($this->byId[$id]);
+		$entry['day_of_week'] = -1;
+		$entry['slot_id'] = 0;
+		$this->parked[$id] = $entry;
+		$this->moved++;
+		return true;
 	}
 
 	/**
