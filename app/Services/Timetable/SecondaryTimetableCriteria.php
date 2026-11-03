@@ -1775,12 +1775,10 @@ class SecondaryTimetableCriteria
 		if ($levelA !== '' && $levelB !== '' && $levelA !== $levelB) {
 			return false;
 		}
-		// S1 French sections are different classes. S4, S5 and S6 French stay on the documented groups.
-		if ($famA === 'french' && $levelA === 'S1' && $levelB === 'S1') {
-			return false;
-		}
-		// S1 Geography is a different class in each section, including S1 C and S1 D.
-		if ($famA === 'geography' && $levelA === 'S1' && $levelB === 'S1') {
+		// O Level (S1–S3): only Word-file groups (PE) and after-lesson families combine.
+		// Same subject + same teacher alone must never mark Entrepreneurship, Physics,
+		// English, Math, etc. as COMBINED — each section is its own class.
+		if (in_array($levelA, ['S1', 'S2', 'S3'], true) || in_array($levelB, ['S1', 'S2', 'S3'], true)) {
 			return false;
 		}
 		$titleNormA = strtolower(trim(preg_replace('/\s+/', ' ', $titleA)));
@@ -1925,6 +1923,8 @@ class SecondaryTimetableCriteria
 			['subject' => 'french', 'level' => 'S5', 'depts' => ['ST1', 'ST2'], 'label' => 'French S5 Stream 1 + Stream 2 (afternoon)'],
 			['subject' => 'french', 'level' => 'S6', 'depts' => ['MPC', 'MCE', 'PCB', 'MCB', 'MPG', 'MEG', 'ANP'], 'label' => 'French S6 MPC + MCE + PCB + MCB + MPG + MEG + ANP (afternoon)'],
 			['subject' => 'physical_education', 'level' => 'S1', 'depts' => ['A', 'B', 'C', 'D'], 'label' => 'Physical Education S1 A + B + C + D (last period)'],
+			['subject' => 'physical_education', 'level' => 'S2', 'depts' => ['A', 'B'], 'label' => 'Physical Education S2 A + B (last period)'],
+			['subject' => 'physical_education', 'level' => 'S3', 'depts' => ['A', 'B', 'C', 'D'], 'label' => 'Physical Education S3 A + B + C + D (last period)'],
 			['subject' => 'physical_education', 'level' => 'S6', 'depts' => ['ANP', 'MCE', 'MEC', 'MPC', 'MEG', 'MCB', 'PCB'], 'label' => 'Physical Education S6 ANP + MCE + MPC + MEG + MCB + PCB (last period)'],
 		];
 	}
@@ -1960,7 +1960,7 @@ class SecondaryTimetableCriteria
 			['group' => 'Morning', 'title' => 'S6 ANP', 'detail' => 'Prefer morning 07:00–12:00.'],
 			['group' => 'Morning', 'title' => 'No morning free time', 'detail' => 'A full-time teacher is not left idle from 07:00–12:00 when one of their lessons can move into that cell. Part-time staff keep the timetable they already have.'],
 			['group' => 'Morning', 'title' => 'Other teachers', 'detail' => 'Full-time teachers not named in this document use normal placement and fill morning periods before afternoon periods. Part-time staff are left unchanged.'],
-			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Home Science and Farming shares one clock only when every class of that teacher is free there. Different academic subjects or different teachers are never combined. Geography for S1 A, S1 B, S1 C and S1 D is a different class for each section.'],
+			['group' => 'Combine', 'title' => 'No auto-combine', 'detail' => 'Word-file groups stay one subject + same teacher. Home Science and Farming shares one clock only when every class of that teacher is free there. Different academic subjects or different teachers are never combined. O Level (S1–S3) never auto-combines: Entrepreneurship, Physics, English, Mathematics, Kinyarwanda, Kiswahili, ICT, French and Geography are a different class in each section. Only PE uses the Word-file O Level groups.'],
 			['group' => 'Blocks', 'title' => 'AYOBIKEKA BENOIT Economics', 'detail' => 'Economics has 7 periods: three doubles and one single. The single stays on its own. S6 MCE and S6 MEG stay one combined class.'],
 			['group' => 'Clinical', 'title' => 'S4 and S5 ANP clinical', 'detail' => 'One combined class, Tuesday 07:00–12:00, 7 periods. No other S4 or S5 ANP lesson in that window.'],
 			['group' => 'Clinical', 'title' => 'S6 ANP clinical', 'detail' => 'Wednesday full teaching day 07:00–16:20. No other S6 ANP lesson on Wednesday.'],
@@ -2254,6 +2254,10 @@ class SecondaryTimetableCriteria
 		if (strpos($hay, 'SOD') !== false || strpos($hay, 'SOFTWARE') !== false) {
 			return 'SOD';
 		}
+		// Wisdom O Level sections are often class title A/B/C/D with an empty department code.
+		if (preg_match('/\b([A-D])\b/', strtoupper(trim($classTitle)), $m)) {
+			return $m[1];
+		}
 		return $c;
 	}
 
@@ -2470,7 +2474,7 @@ class SecondaryTimetableCriteria
 		];
 		$linear = [
 			['day' => 3, 'start' => 9 * 60, 'end' => 15 * 60 + 40, 'scope' => null],
-			['day' => 4, 'start' => 9 * 60, 'end' => 9 * 60 + 40, 'scope' => null],
+			['day' => 4, 'start' => 10 * 60 + 40, 'end' => 11 * 60 + 20, 'scope' => null],
 		];
 		$midMorning = [];
 		$bunezero = [];
@@ -2481,11 +2485,21 @@ class SecondaryTimetableCriteria
 			$bunezero[] = ['day' => $day, 'start' => 13 * 60 + 40, 'end' => 15 * 60 + 40, 'scope' => null];
 			$johnHome[] = ['day' => $day, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => 'home_science_s123'];
 		}
+		// Document: Kiswahili S1 A–D sits after 12:00; morning only when afternoons are full.
+		// Friday ends at 14:20 so the 13:40 bell remains usable.
+		// Morning Mon–Fri is overflow so each S1 section can stay a separate class
+		// without colliding Chrispin’s primary French bells (13:10 / 11:00).
 		$ishara = [
 			['day' => 1, 'start' => 10 * 60 + 40, 'end' => 12 * 60, 'scope' => 'kiswahili_s1'],
 			['day' => 2, 'start' => 7 * 60 + 40, 'end' => 8 * 60 + 20, 'scope' => 'kiswahili_s1'],
 			['day' => 4, 'start' => 10 * 60, 'end' => 14 * 60 + 20, 'scope' => 'kiswahili_s1'],
 		];
+		foreach ([0, 1, 2, 3] as $day) {
+			$ishara[] = ['day' => $day, 'start' => 12 * 60, 'end' => 15 * 60 + 40, 'scope' => 'kiswahili_s1'];
+		}
+		foreach ([0, 1, 2, 3, 4] as $day) {
+			$ishara[] = ['day' => $day, 'start' => 7 * 60, 'end' => 12 * 60, 'scope' => 'kiswahili_s1'];
+		}
 		$lateMorning = [];
 		foreach ([0, 1, 2, 3, 4] as $day) {
 			$lateMorning[] = ['day' => $day, 'start' => 10 * 60, 'end' => 12 * 60, 'scope' => null];
