@@ -2538,9 +2538,17 @@ class TimetableManagement extends Home
 		return view('main', $data);
 	}
 
+	protected function allowOverallTimetable(): void
+	{
+		if (function_exists('can_view_overall_timetable') && can_view_overall_timetable()) {
+			return;
+		}
+		$this->denyMenu('timetable_dashboard');
+	}
+
 	public function overall()
 	{
-		$this->denyMenu('timetable_dashboard');
+		$this->allowOverallTimetable();
 		list($schoolId, , $schema) = $this->bootTimetable();
 		$data = $this->data;
 		$data['title'] = 'Overall timetable';
@@ -2569,7 +2577,7 @@ class TimetableManagement extends Home
 
 	public function print_overall()
 	{
-		$this->denyMenu('timetable_dashboard');
+		$this->allowOverallTimetable();
 		list($schoolId, , $schema) = $this->bootTimetable();
 		try {
 			$sheet = $this->buildOverallView($schoolId, $schema);

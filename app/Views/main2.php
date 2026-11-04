@@ -368,10 +368,17 @@
 												Timetable Management
 											</a>
 										</li>
+										<li>
+											<a href="<?= base_url('timetable/overall'); ?>">
+												<i class="metismenu-icon"></i>
+												Overall timetable
+											</a>
+										</li>
 									</ul>
 								</li>
 								<?php
-							} elseif (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+							} elseif (function_exists('can_view_overall_timetable') && can_view_overall_timetable()) {
+								$pedOwnMenu = function_exists('pedagogical_own_work_only') && pedagogical_own_work_only();
 								?>
 								<li>
 									<a href="javascript:void">
@@ -380,6 +387,7 @@
 										<i class="metismenu-state-icon fa fa-caret-down"></i>
 									</a>
 									<ul class="mm-collapse">
+										<?php if ($pedOwnMenu) { ?>
 										<li>
 											<a href="<?= base_url('ped_scheme_of_work'); ?>">
 												<i class="metismenu-icon"></i>
@@ -396,6 +404,13 @@
 											<a href="<?= base_url('timetable/mine'); ?>">
 												<i class="metismenu-icon"></i>
 												My timetable
+											</a>
+										</li>
+										<?php } ?>
+										<li>
+											<a href="<?= base_url('timetable/overall'); ?>">
+												<i class="metismenu-icon"></i>
+												Overall timetable
 											</a>
 										</li>
 									</ul>

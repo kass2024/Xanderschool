@@ -566,8 +566,9 @@
 							<?php
 							$pedFullMenu = function_exists('pedagogical_management_menu') && pedagogical_management_menu();
 							$pedOwnMenu = function_exists('pedagogical_own_work_only') && pedagogical_own_work_only();
+							$pedOverall = function_exists('can_view_overall_timetable') && can_view_overall_timetable();
 							?>
-							<?php if (menu_clearance_group_visible('pedagogical') || $pedFullMenu || $pedOwnMenu) { ?>
+							<?php if (menu_clearance_group_visible('pedagogical') || $pedFullMenu || $pedOwnMenu || $pedOverall) { ?>
 								<li>
 									<a href="javascript:void">
 										<i class="metismenu-icon fa fa-magic"></i>
@@ -611,6 +612,14 @@
 											<a href="<?= base_url('timetable/mine'); ?>">
 												<i class="metismenu-icon"></i>
 												My timetable
+											</a>
+										</li>
+										<?php } ?>
+										<?php if ($pedOverall) { ?>
+										<li>
+											<a href="<?= base_url('timetable/overall'); ?>">
+												<i class="metismenu-icon"></i>
+												Overall timetable
 											</a>
 										</li>
 										<?php } ?>

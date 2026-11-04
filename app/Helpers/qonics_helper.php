@@ -458,6 +458,22 @@ if (!function_exists('pedagogical_own_work_only')) {
 	}
 }
 
+if (!function_exists('can_view_overall_timetable')) {
+	/** Every classroom teacher, and anyone who already manages the timetable. */
+	function can_view_overall_timetable()
+	{
+		if (function_exists('menu_clearance_allowed') && menu_clearance_allowed('timetable_dashboard')) {
+			return true;
+		}
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			return true;
+		}
+		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		return \Config\MenuClearance::isTeacherPost($postId)
+			|| \Config\MenuClearance::isAcademicStaffPost($postId);
+	}
+}
+
 if (!function_exists('_is_allowed')) {
 	function _is_allowed($allowed)
 	{
