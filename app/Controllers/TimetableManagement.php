@@ -75,12 +75,7 @@ class TimetableManagement extends Home
 
 		$data['classes'] = $this->fetchClassRows($db, $schoolId);
 
-		$data['schedule'] = $db->table('timetable_schedules')
-			->where('school_id', $schoolId)
-			->where('academic_year', $year)
-			->where('term', $term)
-			->orderBy('id', 'DESC')
-			->get(1)->getRowArray();
+		$data['schedule'] = $this->latestLiveSchedule($db, $schoolId, $year, $term);
 
 		$data['staffs'] = $this->fetchTimetableStaffRows(
 			$db,
@@ -701,6 +696,31 @@ class TimetableManagement extends Home
 		];
 	}
 
+	/**
+	 * The working timetable. Named copies stored with status "backup" stay out of this list.
+	 *
+	 * @param \CodeIgniter\Database\BaseConnection $db
+	 * @return array<string,mixed>|null
+	 */
+	private function latestLiveSchedule($db, int $schoolId, int $year, int $term): ?array
+	{
+		if ($schoolId <= 0 || $year <= 0 || $term <= 0) {
+			return null;
+		}
+		$row = $db->table('timetable_schedules')
+			->where('school_id', $schoolId)
+			->where('academic_year', $year)
+			->where('term', $term)
+			->groupStart()
+				->where('status !=', 'backup')
+				->orWhere('status', null)
+			->groupEnd()
+			->orderBy('id', 'DESC')
+			->get(1)->getRowArray();
+
+		return is_array($row) ? $row : null;
+	}
+
 	public function markTimetableDirty(int $schoolId, int $year, int $term): void
 	{
 		if ($schoolId <= 0 || $year <= 0 || $term <= 0) {
@@ -709,12 +729,7 @@ class TimetableManagement extends Home
 		try {
 			$db = \Config\Database::connect();
 			(new TimetableSchemaModel())->ensureSchema();
-			$existing = $db->table('timetable_schedules')
-				->where('school_id', $schoolId)
-				->where('academic_year', $year)
-				->where('term', $term)
-				->orderBy('id', 'DESC')
-				->get(1)->getRowArray();
+			$existing = $this->latestLiveSchedule($db, $schoolId, $year, $term);
 			if ($existing) {
 				$db->table('timetable_schedules')->where('id', (int) $existing['id'])->update([
 					'needs_regen' => 1,
@@ -764,12 +779,7 @@ class TimetableManagement extends Home
 			return false;
 		}
 		$db = \Config\Database::connect();
-		$schedule = $db->table('timetable_schedules')
-			->where('school_id', $schoolId)
-			->where('academic_year', $year)
-			->where('term', $term)
-			->orderBy('id', 'DESC')
-			->get(1)->getRowArray();
+		$schedule = $this->latestLiveSchedule($db, $schoolId, $year, $term);
 		if (!$schedule) {
 			return true;
 		}
@@ -1120,9 +1130,7 @@ class TimetableManagement extends Home
 		]);
 
 		// Keep other levels' placements so teachers are not double-booked across phases.
-		$existingSchedule = $db->table('timetable_schedules')
-			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
-			->orderBy('id', 'DESC')->get(1)->getRowArray();
+		$existingSchedule = $this->latestLiveSchedule($db, $schoolId, $year, $term);
 		$keepBusyEntries = [];
 		$lockedEntries = [];
 		$slotTimesById = [];
@@ -2481,9 +2489,7 @@ class TimetableManagement extends Home
 			return;
 		}
 
-		$schedule = $db->table('timetable_schedules')
-			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
-			->orderBy('id', 'DESC')->get(1)->getRowArray();
+		$schedule = $this->latestLiveSchedule($db, $schoolId, $year, $term);
 
 		$scheduledCount = 0;
 		if ($schedule) {
@@ -2726,9 +2732,7 @@ class TimetableManagement extends Home
 		$sheets = [];
 		$year = (int) ($this->data['academic_year'] ?? 0);
 		$term = (int) ($this->data['term'] ?? 1);
-		$schedule = $db->table('timetable_schedules')
-			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
-			->orderBy('id', 'DESC')->get(1)->getRowArray();
+		$schedule = $this->latestLiveSchedule($db, $schoolId, $year, $term);
 		$staffs = $this->fetchTimetableStaffRows($db, $schoolId, $year, $term, (int) ($schedule['id'] ?? 0));
 		foreach ($staffs as $staff) {
 			$grid = $this->buildGridView($schoolId, $schema, 'teacher', (int) $staff['id'], false, false);
@@ -2757,12 +2761,7 @@ class TimetableManagement extends Home
 		$year = (int) ($this->data['academic_year'] ?? 0);
 		$term = (int) ($this->data['term'] ?? 1);
 		$db = \Config\Database::connect();
-		$schedule = $db->table('timetable_schedules')
-			->where('school_id', $schoolId)
-			->where('academic_year', $year)
-			->where('term', $term)
-			->orderBy('id', 'DESC')
-			->get(1)->getRowArray();
+		$schedule = $this->latestLiveSchedule($db, $schoolId, $year, $term);
 		if (!$schedule) {
 			$this->session->setFlashdata('error', 'Generate a timetable first.');
 			return redirect()->to(site_url('timetable/dashboard'));
@@ -2903,9 +2902,7 @@ class TimetableManagement extends Home
 			$schema->repairOrphanEntrySlots($schoolId);
 		}
 
-		$schedule = $db->table('timetable_schedules')
-			->where('school_id', $schoolId)->where('academic_year', $year)->where('term', $term)
-			->orderBy('id', 'DESC')->get(1)->getRowArray();
+		$schedule = $this->latestLiveSchedule($db, $schoolId, $year, $term);
 
 		$settings = $db->table('timetable_settings')->where('school_id', $schoolId)->get(1)->getRowArray();
 		$dayLabels = TimetableSchemaModel::dayLabelsFromSettings($settings);
@@ -3325,12 +3322,7 @@ class TimetableManagement extends Home
 		$db = \Config\Database::connect();
 		$year = (int) ($this->data['academic_year'] ?? 0);
 		$term = (int) ($this->data['term'] ?? 1);
-		$schedule = $db->table('timetable_schedules')
-			->where('school_id', $schoolId)
-			->where('academic_year', $year)
-			->where('term', $term)
-			->orderBy('id', 'DESC')
-			->get(1)->getRowArray();
+		$schedule = $this->latestLiveSchedule($db, $schoolId, $year, $term);
 		$dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 		$sheet = [
 			'school_name' => $this->schoolNameForId($schoolId),
