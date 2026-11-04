@@ -3045,12 +3045,6 @@ class TimetableManagement extends Home
 		$grid = $this->buildGridFromSlots($slots, $dayLabels, $specialMap, $labelByDay);
 		$nurseryClassCache = [];
 		$combinedByClock = [];
-		$combineCriteria = new SecondaryTimetableCriteria();
-		try {
-			$combineCriteria->hydrateFromAssignments($this->loadAssignments($schoolId, $year, $term));
-		} catch (\Throwable $e) {
-			$combineCriteria->hydrateFromAssignments($entries);
-		}
 
 		if ($entries !== []) {
 			$slotMaps = $this->buildSlotIndexMaps($slots);
@@ -3107,15 +3101,7 @@ class TimetableManagement extends Home
 						}
 					}
 				}
-				$asAssign = $entry;
-				$asAssign['lecturer'] = (int) ($entry['staff_id'] ?? $entry['lecturer'] ?? 0);
-				foreach ($combineCriteria->combinePartners($asAssign) as $partner) {
-					$pl = TimetableClassLabel::fromRow($partner);
-					if ($pl !== '' && !in_array($pl, $partnerLabels, true)) {
-						$partnerLabels[] = $pl;
-					}
-				}
-				$isCombined = count($partnerLabels) > 1 || $combineCriteria->isCombinedAssignment($asAssign);
+				$isCombined = count($partnerLabels) > 1;
 				$existing = $grid[$si]['cells'][$dayLabel] ?? null;
 				$existFam = is_array($existing)
 					? SecondaryTimetableCriteria::subjectFamily((string) ($existing['course'] ?? ''))
