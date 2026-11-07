@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Libraries\TimetableClassLabel;
 use Config\Database;
 
 /**
@@ -208,11 +209,15 @@ class AssessmentUpload extends Home
 			return [];
 		}
 		$builder = Database::connect()->table('course_records cr')
-			->select('cr.class as class_id, cr.course as course_id, cl.title as class_title, c.title as course_title')
+			->select('cr.class as class_id, cr.course as course_id, cl.title as class_title, c.title as course_title, l.title as level_name, d.code as dept_code, d.title as department_name')
 			->join('classes cl', 'cl.id = cr.class')
 			->join('courses c', 'c.id = cr.course')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
 			->where('cr.lecturer', $staffId)
 			->where('cl.school_id', $schoolId)
+			->orderBy('l.title', 'ASC')
+			->orderBy('d.code', 'ASC')
 			->orderBy('cl.title', 'ASC')
 			->orderBy('c.title', 'ASC');
 		if ($yearId > 0) {
@@ -232,7 +237,7 @@ class AssessmentUpload extends Home
 			$out[] = [
 				'class_id' => $classId,
 				'course_id' => $courseId,
-				'class_title' => (string) ($row['class_title'] ?? ''),
+				'class_title' => $this->classLabel($row),
 				'course_title' => (string) ($row['course_title'] ?? ''),
 			];
 		}
@@ -256,9 +261,11 @@ class AssessmentUpload extends Home
 	protected function listUploads(int $schoolId, int $staffId, bool $viewAll, int $filterStaff): array
 	{
 		$builder = Database::connect()->table('teacher_assessment_uploads u')
-			->select('u.id, u.staff_id, u.assessment_type, u.original_name, u.byte_size, u.created_at, s.fname, s.lname, cl.title as class_title, c.title as course_title')
+			->select('u.id, u.staff_id, u.assessment_type, u.original_name, u.byte_size, u.created_at, s.fname, s.lname, cl.title as class_title, c.title as course_title, l.title as level_name, d.code as dept_code, d.title as department_name')
 			->join('staffs s', 's.id = u.staff_id AND s.school_id = u.school_id', 'left')
 			->join('classes cl', 'cl.id = u.class_id AND cl.school_id = u.school_id', 'left')
+			->join('levels l', 'l.id = cl.level', 'left')
+			->join('departments d', 'd.id = cl.department', 'left')
 			->join('courses c', 'c.id = u.course_id AND c.school_id = u.school_id', 'left')
 			->where('u.school_id', $schoolId)
 			->orderBy('u.id', 'DESC');
@@ -267,7 +274,16 @@ class AssessmentUpload extends Home
 		} elseif ($filterStaff > 0) {
 			$builder->where('u.staff_id', $filterStaff);
 		}
-		return $builder->get(300)->getResultArray();
+		$rows = $builder->get(300)->getResultArray();
+		foreach ($rows as $i => $row) {
+			$rows[$i]['class_title'] = $this->classLabel($row);
+		}
+		return $rows;
+	}
+
+	protected function classLabel(array $row): string
+	{
+		return TimetableClassLabel::fromRow($row);
 	}
 
 	protected function teacherChoices(int $schoolId): array
