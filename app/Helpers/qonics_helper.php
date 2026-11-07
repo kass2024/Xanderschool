@@ -474,6 +474,34 @@ if (!function_exists('can_view_overall_timetable')) {
 	}
 }
 
+if (!function_exists('can_view_all_teacher_assessments')) {
+	/** Head Teacher and Director only. Other teachers stay on their own uploads. */
+	function can_view_all_teacher_assessments()
+	{
+		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		if (function_exists('is_head_teacher_post') && is_head_teacher_post($postId)) {
+			return true;
+		}
+		return \Config\MenuClearance::isDirectorPost($postId);
+	}
+}
+
+if (!function_exists('can_use_assessment_upload')) {
+	/** Classroom teachers upload their own files. Head Teacher and Director review every teacher. */
+	function can_use_assessment_upload()
+	{
+		if (function_exists('can_view_all_teacher_assessments') && can_view_all_teacher_assessments()) {
+			return true;
+		}
+		if (function_exists('pedagogical_own_work_only') && pedagogical_own_work_only()) {
+			return true;
+		}
+		$postId = isset($_SESSION['soma_post']) ? (int) $_SESSION['soma_post'] : 0;
+		return \Config\MenuClearance::isTeacherPost($postId)
+			|| \Config\MenuClearance::isAcademicStaffPost($postId);
+	}
+}
+
 if (!function_exists('_is_allowed')) {
 	function _is_allowed($allowed)
 	{
