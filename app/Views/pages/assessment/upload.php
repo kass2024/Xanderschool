@@ -23,7 +23,7 @@ $myId = (int) ($_SESSION['soma_id'] ?? 0);
 			<div class="alert alert-danger"><?= esc(session()->getFlashdata('error')); ?></div>
 		<?php } ?>
 
-		<form method="post" action="<?= base_url('assessmentupload/save'); ?>" enctype="multipart/form-data">
+		<form id="assessUploadForm" method="post" action="<?= base_url('assessmentupload/save'); ?>" enctype="multipart/form-data">
 			<div class="form-row">
 				<?php if ($assignments !== []) { ?>
 				<div class="form-group col-md-4">
@@ -56,8 +56,129 @@ $myId = (int) ($_SESSION['soma_id'] ?? 0);
 					<input class="form-control" id="assessment_file" type="file" name="assessment_file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
 				</div>
 			</div>
-			<button type="submit" class="btn btn-primary">Upload assessment</button>
+			<button type="submit" class="btn btn-primary" id="assessUploadBtn">Upload assessment</button>
+			<div id="assessProgress" class="mt-3" hidden>
+				<div class="d-flex justify-content-between small mb-1">
+					<strong id="assessProgressLabel">Uploading</strong>
+					<span id="assessProgressPct">0%</span>
+				</div>
+				<div class="progress" style="height:12px;">
+					<div id="assessProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+				</div>
+				<div id="assessProgressDetail" class="small text-muted mt-1"></div>
+			</div>
 		</form>
+		<script>
+		(function () {
+			var form = document.getElementById('assessUploadForm');
+			if (!form || !window.FormData || !window.XMLHttpRequest) {
+				return;
+			}
+			var button = document.getElementById('assessUploadBtn');
+			var box = document.getElementById('assessProgress');
+			var label = document.getElementById('assessProgressLabel');
+			var pct = document.getElementById('assessProgressPct');
+			var bar = document.getElementById('assessProgressBar');
+			var detail = document.getElementById('assessProgressDetail');
+			var busy = false;
+
+			function bytes(n) {
+				n = Number(n) || 0;
+				if (n < 1024) return n + ' B';
+				if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+				return (n / 1048576).toFixed(1) + ' MB';
+			}
+			function show(on) {
+				box.hidden = !on;
+			}
+			function paint(percent, title, note, state) {
+				var width = Math.max(0, Math.min(100, percent));
+				bar.style.width = width + '%';
+				bar.setAttribute('aria-valuenow', String(Math.round(width)));
+				bar.className = 'progress-bar progress-bar-striped progress-bar-animated';
+				if (state === 'ok') bar.className = 'progress-bar bg-success';
+				if (state === 'bad') bar.className = 'progress-bar bg-danger';
+				pct.textContent = Math.round(width) + '%';
+				label.textContent = title;
+				detail.textContent = note || '';
+				detail.className = state === 'bad' ? 'small text-danger mt-1' : 'small text-muted mt-1';
+			}
+			function unlock() {
+				busy = false;
+				button.disabled = false;
+				button.textContent = 'Upload assessment';
+			}
+
+			form.addEventListener('submit', function (event) {
+				event.preventDefault();
+				if (busy) return;
+				var fileInput = document.getElementById('assessment_file');
+				var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+				if (!file) {
+					show(true);
+					paint(0, 'Choose a file', 'Select a PDF or Word document.', 'bad');
+					return;
+				}
+				var name = file.name || 'document';
+				var ext = name.split('.').pop().toLowerCase();
+				if (['pdf', 'doc', 'docx'].indexOf(ext) === -1) {
+					show(true);
+					paint(0, 'Wrong file type', 'Upload a PDF (.pdf) or Word (.doc, .docx) file.', 'bad');
+					return;
+				}
+				if (file.size > 15728640) {
+					show(true);
+					paint(0, 'File is too large', name + ' is ' + bytes(file.size) + '. The limit is 15 MB.', 'bad');
+					return;
+				}
+				busy = true;
+				button.disabled = true;
+				button.textContent = 'Uploading…';
+				show(true);
+				paint(0, 'Starting upload', name, '');
+				var started = Date.now();
+				var xhr = new XMLHttpRequest();
+				xhr.open('POST', form.getAttribute('action'));
+				xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+				xhr.setRequestHeader('Accept', 'application/json');
+				xhr.upload.onprogress = function (e) {
+					if (!e.lengthComputable || e.total < 1) {
+						paint(8, 'Uploading', name, '');
+						return;
+					}
+					var percent = Math.round((e.loaded / e.total) * 100);
+					var elapsed = (Date.now() - started) / 1000;
+					var note = bytes(e.loaded) + ' of ' + bytes(e.total);
+					if (percent >= 100) {
+						paint(100, 'Saving the assessment', 'The file has arrived. Checking it now.', '');
+						return;
+					}
+					if (elapsed > 0.4 && e.loaded > 0) {
+						var left = (e.total - e.loaded) / (e.loaded / elapsed);
+						if (left >= 1) note += ' · about ' + Math.ceil(left) + 's left';
+					}
+					paint(percent, 'Uploading ' + name, note, '');
+				};
+				xhr.onerror = function () {
+					paint(bar.getAttribute('aria-valuenow') || 0, 'Upload stopped', 'The connection failed. Try again.', 'bad');
+					unlock();
+				};
+				xhr.onload = function () {
+					var data = null;
+					try { data = JSON.parse(xhr.responseText); } catch (err) { data = null; }
+					if (xhr.status >= 200 && xhr.status < 300 && data && data.ok) {
+						paint(100, 'Assessment uploaded', 'Opening your list…', 'ok');
+						window.setTimeout(function () { window.location.reload(); }, 500);
+						return;
+					}
+					var message = (data && data.message) ? data.message : 'The upload did not finish. Try again.';
+					paint(100, 'Upload was not saved', message, 'bad');
+					unlock();
+				};
+				xhr.send(new FormData(form));
+			});
+		})();
+		</script>
 	</div>
 </div>
 

@@ -108,6 +108,9 @@ class AssessmentUpload extends Home
 			'created_at' => date('Y-m-d H:i:s'),
 		]);
 		$this->session->setFlashdata('success', 'Assessment uploaded.');
+		if ($this->wantsJson()) {
+			return $this->response->setJSON(['ok' => true, 'message' => 'Assessment uploaded.']);
+		}
 		return redirect()->to(base_url('assessmentupload'));
 	}
 
@@ -175,8 +178,16 @@ class AssessmentUpload extends Home
 		exit;
 	}
 
+	protected function wantsJson(): bool
+	{
+		return $this->request->isAJAX();
+	}
+
 	protected function fail(string $message)
 	{
+		if ($this->wantsJson()) {
+			return $this->response->setStatusCode(422)->setJSON(['ok' => false, 'message' => $message]);
+		}
 		$this->session->setFlashdata('error', $message);
 		return redirect()->to(base_url('assessmentupload'));
 	}
