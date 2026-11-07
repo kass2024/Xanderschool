@@ -12,7 +12,7 @@ class AssessmentUpload extends Home
 {
 	const MAX_BYTES = 15728640;
 
-	public function index()
+	public function page()
 	{
 		$this->_preset();
 		$this->guardUse();

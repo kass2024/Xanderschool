@@ -409,7 +409,7 @@ $routes->get('set_disc_lang', 'Home::set_disc_lang');
 $routes->get('guide/voice/(:segment)', 'Guide::voice/$1');
 $routes->post('packagecheckout/start', 'Packagecheckout::start');
 $routes->get('packagecheckout/status', 'Packagecheckout::status');
-$routes->get('assessmentupload', 'AssessmentUpload::index');
+$routes->get('assessmentupload', 'AssessmentUpload::page');
 $routes->post('assessmentupload/save', 'AssessmentUpload::save');
 $routes->get('assessmentupload/file/(:num)', 'AssessmentUpload::file/$1');
 $routes->post('assessmentupload/remove/(:num)', 'AssessmentUpload::remove/$1');
