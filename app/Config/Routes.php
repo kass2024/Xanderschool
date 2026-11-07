@@ -413,6 +413,7 @@ $routes->get('assessmentupload', 'AssessmentUpload::page');
 $routes->post('assessmentupload/save', 'AssessmentUpload::save');
 $routes->get('assessmentupload/file/(:num)', 'AssessmentUpload::file/$1');
 $routes->post('assessmentupload/remove/(:num)', 'AssessmentUpload::remove/$1');
+$routes->post('assessmentupload/reject/(:num)', 'AssessmentUpload::reject/$1');
 $routes->add('(:any)', 'Home::$1');
 $routes->get('/home/editRegno/(:num)', 'Home::editRegno/$1');
 $routes->post('/home/updateRegno/(:num)', 'Home::updateRegno/$1');

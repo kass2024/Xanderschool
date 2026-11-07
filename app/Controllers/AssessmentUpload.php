@@ -33,6 +33,7 @@ class AssessmentUpload extends Home
 		$data['assignments'] = $this->assignmentChoices($schoolId, $staffId, $yearId);
 		$data['uploads'] = $this->listUploads($schoolId, $staffId, $viewAll, $filterStaff);
 		$data['teachers'] = $viewAll ? $this->teacherChoices($schoolId) : [];
+		$data['can_reject_assessments'] = function_exists('is_head_teacher_post') && is_head_teacher_post();
 		$data['content'] = view('pages/assessment/upload', $data);
 		return view('main', $data);
 	}
@@ -111,6 +112,42 @@ class AssessmentUpload extends Home
 		if ($this->wantsJson()) {
 			return $this->response->setJSON(['ok' => true, 'message' => 'Assessment uploaded.']);
 		}
+		return redirect()->to(base_url('assessmentupload'));
+	}
+
+	public function reject($id = 0)
+	{
+		$this->_preset();
+		$this->guardUse();
+		if (strtolower($this->request->getMethod()) !== 'post') {
+			return redirect()->to(base_url('assessmentupload'));
+		}
+		if (!function_exists('is_head_teacher_post') || !is_head_teacher_post()) {
+			$this->session->setFlashdata('error', 'Only the Head Teacher can reject an assessment.');
+			return redirect()->to(base_url('assessmentupload'));
+		}
+		$this->ensureSchema();
+		$reason = trim(preg_replace('/\s+/', ' ', strip_tags((string) $this->request->getPost('reason'))));
+		if (strlen($reason) < 3 || strlen($reason) > 255) {
+			$this->session->setFlashdata('error', 'Write the reason for rejecting this assessment.');
+			return redirect()->to(base_url('assessmentupload'));
+		}
+		$schoolId = (int) $this->session->get('soma_school_id');
+		$row = Database::connect()->table('teacher_assessment_uploads')
+			->where('id', (int) $id)
+			->where('school_id', $schoolId)
+			->get(1)->getRowArray();
+		if (!$row) {
+			$this->session->setFlashdata('error', 'That assessment is not in this school.');
+			return redirect()->to(base_url('assessmentupload'));
+		}
+		Database::connect()->table('teacher_assessment_uploads')->where('id', (int) $row['id'])->update([
+			'status' => 'rejected',
+			'reject_reason' => $reason,
+			'rejected_by' => (int) $this->session->get('soma_id'),
+			'rejected_at' => date('Y-m-d H:i:s'),
+		]);
+		$this->session->setFlashdata('success', 'Assessment rejected.');
 		return redirect()->to(base_url('assessmentupload'));
 	}
 
@@ -207,11 +244,28 @@ class AssessmentUpload extends Home
 			`original_name` varchar(180) NOT NULL,
 			`stored_name` varchar(80) NOT NULL,
 			`byte_size` int unsigned NOT NULL DEFAULT 0,
+			`status` varchar(20) NOT NULL DEFAULT 'pending',
+			`reject_reason` varchar(255) DEFAULT NULL,
+			`rejected_by` int NOT NULL DEFAULT 0,
+			`rejected_at` datetime DEFAULT NULL,
 			`created_at` datetime NOT NULL,
 			PRIMARY KEY (`id`),
 			KEY `idx_school_staff` (`school_id`,`staff_id`),
 			KEY `idx_school_created` (`school_id`,`created_at`)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+		$fields = $db->getFieldNames('teacher_assessment_uploads');
+		if (!in_array('status', $fields, true)) {
+			$db->query("ALTER TABLE `teacher_assessment_uploads` ADD COLUMN `status` varchar(20) NOT NULL DEFAULT 'pending' AFTER `byte_size`");
+		}
+		if (!in_array('reject_reason', $fields, true)) {
+			$db->query("ALTER TABLE `teacher_assessment_uploads` ADD COLUMN `reject_reason` varchar(255) DEFAULT NULL AFTER `status`");
+		}
+		if (!in_array('rejected_by', $fields, true)) {
+			$db->query("ALTER TABLE `teacher_assessment_uploads` ADD COLUMN `rejected_by` int NOT NULL DEFAULT 0 AFTER `reject_reason`");
+		}
+		if (!in_array('rejected_at', $fields, true)) {
+			$db->query("ALTER TABLE `teacher_assessment_uploads` ADD COLUMN `rejected_at` datetime DEFAULT NULL AFTER `rejected_by`");
+		}
 	}
 
 	protected function assignmentChoices(int $schoolId, int $staffId, int $yearId): array
@@ -272,7 +326,7 @@ class AssessmentUpload extends Home
 	protected function listUploads(int $schoolId, int $staffId, bool $viewAll, int $filterStaff): array
 	{
 		$builder = Database::connect()->table('teacher_assessment_uploads u')
-			->select('u.id, u.staff_id, u.assessment_type, u.original_name, u.byte_size, u.created_at, s.fname, s.lname, cl.title as class_title, c.title as course_title, l.title as level_name, d.code as dept_code, d.title as department_name')
+			->select('u.id, u.staff_id, u.assessment_type, u.original_name, u.byte_size, u.created_at, u.status, u.reject_reason, s.fname, s.lname, cl.title as class_title, c.title as course_title, l.title as level_name, d.code as dept_code, d.title as department_name')
 			->join('staffs s', 's.id = u.staff_id AND s.school_id = u.school_id', 'left')
 			->join('classes cl', 'cl.id = u.class_id AND cl.school_id = u.school_id', 'left')
 			->join('levels l', 'l.id = cl.level', 'left')

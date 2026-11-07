@@ -440,7 +440,7 @@
 									</ul>
 								</li>
 							<?php } ?>
-							<?php if (menu_clearance_group_visible('marks')) { ?>
+							<?php if (menu_clearance_group_visible('marks') || (function_exists('can_use_assessment_upload') && can_use_assessment_upload())) { ?>
 							<li class="app-sidebar__heading"><?= lang("app.marks"); ?></li>
 							<li>
 								<a href="#">
@@ -454,6 +454,14 @@
 										<a href="#" data-toggle="modal" data-target="#mdlmarks">
 											<i class="metismenu-icon"></i>
 											<?= lang("app.marksEntry"); ?>
+										</a>
+									</li>
+									<?php } ?>
+									<?php if (function_exists('can_use_assessment_upload') && can_use_assessment_upload()) { ?>
+									<li class="<?= (!empty($page) && $page === 'assessment_upload') ? 'mm-active' : ''; ?>">
+										<a href="<?= base_url('assessmentupload'); ?>">
+											<i class="metismenu-icon"></i>
+											Assessment upload
 										</a>
 									</li>
 									<?php } ?>
@@ -567,9 +575,8 @@
 							$pedFullMenu = function_exists('pedagogical_management_menu') && pedagogical_management_menu();
 							$pedOwnMenu = function_exists('pedagogical_own_work_only') && pedagogical_own_work_only();
 							$pedOverall = function_exists('can_view_overall_timetable') && can_view_overall_timetable();
-							$pedAssess = function_exists('can_use_assessment_upload') && can_use_assessment_upload();
 							?>
-							<?php if (menu_clearance_group_visible('pedagogical') || $pedFullMenu || $pedOwnMenu || $pedOverall || $pedAssess) { ?>
+							<?php if (menu_clearance_group_visible('pedagogical') || $pedFullMenu || $pedOwnMenu || $pedOverall) { ?>
 								<li>
 									<a href="javascript:void">
 										<i class="metismenu-icon fa fa-magic"></i>
@@ -621,14 +628,6 @@
 											<a href="<?= base_url('timetable/overall'); ?>">
 												<i class="metismenu-icon"></i>
 												Overall timetable
-											</a>
-										</li>
-										<?php } ?>
-										<?php if ($pedAssess) { ?>
-										<li class="<?= (!empty($page) && $page === 'assessment_upload') ? 'mm-active' : ''; ?>">
-											<a href="<?= base_url('assessmentupload'); ?>">
-												<i class="metismenu-icon"></i>
-												Assessment upload
 											</a>
 										</li>
 										<?php } ?>

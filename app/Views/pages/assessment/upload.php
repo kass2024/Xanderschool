@@ -5,6 +5,7 @@ $teachers = $teachers ?? [];
 $viewAll = !empty($view_all_assessments);
 $filterTeacher = (int) ($filter_teacher ?? 0);
 $myId = (int) ($_SESSION['soma_id'] ?? 0);
+$canReject = !empty($can_reject_assessments);
 ?>
 <div class="card mb-3">
 	<div class="card-body">
@@ -12,6 +13,7 @@ $myId = (int) ($_SESSION['soma_id'] ?? 0);
 		<p class="text-muted mb-3">
 			<?php if ($viewAll) { ?>
 				Type the assessment and upload a PDF or Word file. You can open every teacher's assessment in this school. A teacher can open only the files they uploaded.
+				<?php if ($canReject) { ?> The Head Teacher can reject an assessment and write the reason the teacher will see.<?php } ?>
 			<?php } else { ?>
 				Select your class and course, type the assessment, and upload a PDF or Word file. Only you, the Head Teacher, and the Director can open it. Other teachers cannot.
 			<?php } ?>
@@ -211,18 +213,20 @@ $myId = (int) ($_SESSION['soma_id'] ?? 0);
 						<th>Assessment type</th>
 						<th>File</th>
 						<th>Uploaded</th>
+						<th>Status</th>
 						<th></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php if ($uploads === []) { ?>
 						<tr>
-							<td colspan="<?= $viewAll ? 7 : 6; ?>" class="text-muted">No assessment has been uploaded yet.</td>
+							<td colspan="<?= $viewAll ? 8 : 7; ?>" class="text-muted">No assessment has been uploaded yet.</td>
 						</tr>
 					<?php } ?>
 					<?php foreach ($uploads as $row) {
 						$name = trim((string) ($row['fname'] ?? '') . ' ' . (string) ($row['lname'] ?? ''));
 						$mine = (int) ($row['staff_id'] ?? 0) === $myId;
+						$rejected = (string) ($row['status'] ?? '') === 'rejected';
 						?>
 						<tr>
 							<?php if ($viewAll) { ?><td><?= esc($name !== '' ? $name : 'Teacher'); ?></td><?php } ?>
@@ -231,6 +235,20 @@ $myId = (int) ($_SESSION['soma_id'] ?? 0);
 							<td><?= esc((string) ($row['assessment_type'] ?? '')); ?></td>
 							<td><?= esc((string) ($row['original_name'] ?? '')); ?></td>
 							<td><?= esc((string) ($row['created_at'] ?? '')); ?></td>
+							<td>
+								<?php if ($rejected) { ?>
+									<span class="badge badge-danger">Rejected</span>
+									<div class="small text-danger mt-1"><?= esc((string) ($row['reject_reason'] ?? '')); ?></div>
+								<?php } else { ?>
+									<span class="badge badge-secondary">Pending</span>
+								<?php } ?>
+								<?php if ($canReject) { ?>
+									<form method="post" action="<?= base_url('assessmentupload/reject/' . (int) $row['id']); ?>" class="mt-2">
+										<input class="form-control form-control-sm mb-1" type="text" name="reason" maxlength="255" required placeholder="Reason for rejection" value="<?= $rejected ? esc((string) ($row['reject_reason'] ?? '')) : ''; ?>">
+										<button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
+									</form>
+								<?php } ?>
+							</td>
 							<td class="text-nowrap">
 								<a class="btn btn-sm btn-outline-primary" href="<?= base_url('assessmentupload/file/' . (int) $row['id']); ?>">Download</a>
 								<?php if ($mine) { ?>

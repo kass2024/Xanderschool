@@ -246,6 +246,14 @@
 											<?= lang("app.marksEntry"); ?>
 										</a>
 									</li>
+									<?php if (function_exists('can_use_assessment_upload') && can_use_assessment_upload()) { ?>
+									<li>
+										<a href="<?= base_url('assessmentupload'); ?>">
+											<i class="metismenu-icon"></i>
+											Assessment upload
+										</a>
+									</li>
+									<?php } ?>
 									<?php
 									if (is_allowed(1, 3) || (function_exists('staff_has_assigned_course') && staff_has_assigned_course())) {
 										?>
@@ -374,18 +382,10 @@
 												Overall timetable
 											</a>
 										</li>
-										<?php if (function_exists('can_use_assessment_upload') && can_use_assessment_upload()) { ?>
-										<li>
-											<a href="<?= base_url('assessmentupload'); ?>">
-												<i class="metismenu-icon"></i>
-												Assessment upload
-											</a>
-										</li>
-										<?php } ?>
 									</ul>
 								</li>
 								<?php
-							} elseif ((function_exists('can_view_overall_timetable') && can_view_overall_timetable()) || (function_exists('can_use_assessment_upload') && can_use_assessment_upload())) {
+							} elseif (function_exists('can_view_overall_timetable') && can_view_overall_timetable()) {
 								$pedOwnMenu = function_exists('pedagogical_own_work_only') && pedagogical_own_work_only();
 								?>
 								<li>
@@ -420,14 +420,6 @@
 											<a href="<?= base_url('timetable/overall'); ?>">
 												<i class="metismenu-icon"></i>
 												Overall timetable
-											</a>
-										</li>
-										<?php } ?>
-										<?php if (function_exists('can_use_assessment_upload') && can_use_assessment_upload()) { ?>
-										<li>
-											<a href="<?= base_url('assessmentupload'); ?>">
-												<i class="metismenu-icon"></i>
-												Assessment upload
 											</a>
 										</li>
 										<?php } ?>
