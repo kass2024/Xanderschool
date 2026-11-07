@@ -13,7 +13,7 @@ $canReject = !empty($can_reject_assessments);
 		<p class="text-muted mb-3">
 			<?php if ($viewAll) { ?>
 				Type the assessment and upload a PDF or Word file. You can open every teacher's assessment in this school. A teacher can open only the files they uploaded.
-				<?php if ($canReject) { ?> The Head Teacher can reject an assessment and write the reason the teacher will see.<?php } ?>
+				<?php if ($canReject) { ?> The Head Teacher and the Director can reject an assessment and write the reason, or remove it.<?php } ?>
 			<?php } else { ?>
 				Select your class and course, type the assessment, and upload a PDF or Word file. Only you, the Head Teacher, and the Director can open it. Other teachers cannot.
 			<?php } ?>
@@ -251,7 +251,7 @@ $canReject = !empty($can_reject_assessments);
 							</td>
 							<td class="text-nowrap">
 								<a class="btn btn-sm btn-outline-primary" href="<?= base_url('assessmentupload/file/' . (int) $row['id']); ?>">Download</a>
-								<?php if ($mine) { ?>
+								<?php if ($mine || $canReject) { ?>
 									<form method="post" action="<?= base_url('assessmentupload/remove/' . (int) $row['id']); ?>" class="d-inline" onsubmit="return confirm('Remove this assessment?');">
 										<button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
 									</form>

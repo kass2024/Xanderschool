@@ -33,7 +33,7 @@ class AssessmentUpload extends Home
 		$data['assignments'] = $this->assignmentChoices($schoolId, $staffId, $yearId);
 		$data['uploads'] = $this->listUploads($schoolId, $staffId, $viewAll, $filterStaff);
 		$data['teachers'] = $viewAll ? $this->teacherChoices($schoolId) : [];
-		$data['can_reject_assessments'] = function_exists('is_head_teacher_post') && is_head_teacher_post();
+		$data['can_reject_assessments'] = $this->canReviewAssessments();
 		$data['content'] = view('pages/assessment/upload', $data);
 		return view('main', $data);
 	}
@@ -122,8 +122,8 @@ class AssessmentUpload extends Home
 		if (strtolower($this->request->getMethod()) !== 'post') {
 			return redirect()->to(base_url('assessmentupload'));
 		}
-		if (!function_exists('is_head_teacher_post') || !is_head_teacher_post()) {
-			$this->session->setFlashdata('error', 'Only the Head Teacher can reject an assessment.');
+		if (!$this->canReviewAssessments()) {
+			$this->session->setFlashdata('error', 'Only the Head Teacher or the Director can reject an assessment.');
 			return redirect()->to(base_url('assessmentupload'));
 		}
 		$this->ensureSchema();
@@ -187,11 +187,13 @@ class AssessmentUpload extends Home
 		$this->ensureSchema();
 		$schoolId = (int) $this->session->get('soma_school_id');
 		$staffId = (int) $this->session->get('soma_id');
-		$row = Database::connect()->table('teacher_assessment_uploads')
+		$builder = Database::connect()->table('teacher_assessment_uploads')
 			->where('id', (int) $id)
-			->where('school_id', $schoolId)
-			->where('staff_id', $staffId)
-			->get(1)->getRowArray();
+			->where('school_id', $schoolId);
+		if (!$this->canReviewAssessments()) {
+			$builder->where('staff_id', $staffId);
+		}
+		$row = $builder->get(1)->getRowArray();
 		if (!$row) {
 			$this->session->setFlashdata('error', 'You can only remove an assessment you uploaded.');
 			return redirect()->to(base_url('assessmentupload'));
@@ -203,6 +205,15 @@ class AssessmentUpload extends Home
 		Database::connect()->table('teacher_assessment_uploads')->where('id', (int) $row['id'])->delete();
 		$this->session->setFlashdata('success', 'Assessment removed.');
 		return redirect()->to(base_url('assessmentupload'));
+	}
+
+	protected function canReviewAssessments(): bool
+	{
+		if (function_exists('is_head_teacher_post') && is_head_teacher_post()) {
+			return true;
+		}
+		$postId = (int) $this->session->get('soma_post');
+		return \Config\MenuClearance::isDirectorPost($postId);
 	}
 
 	protected function guardUse(): void
