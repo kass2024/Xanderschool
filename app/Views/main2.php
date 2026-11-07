@@ -102,6 +102,12 @@
 												<?= lang("app.viewStudents"); ?>
 											</a>
 										</li>
+										<li class="<?= (!empty($page) && $page === 'exam_sitting') ? 'mm-active' : ''; ?>">
+											<a href="<?= base_url('exam-sitting'); ?>">
+												<i class="metismenu-icon"></i>
+												Exam sitting Plan
+											</a>
+										</li>
 										<li>
 											<a href="<?= base_url('pendingRegistrations'); ?>">
 												<i class="metismenu-icon typcn typcn-group-outline"></i>

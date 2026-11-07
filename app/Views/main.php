@@ -154,7 +154,7 @@
 							</li>
 							<?php } ?>
 							<?php if (menu_clearance_group_visible('students')) { ?>
-								<li>
+								<li class="<?= (!empty($page) && $page === 'exam_sitting') ? 'mm-active' : ''; ?>">
 									<a href="#">
 										<i class="metismenu-icon typcn typcn-user-outline"></i>
 										<?= lang("app.students"); ?>
@@ -177,6 +177,12 @@
 											</a>
 										</li>
 										<?php } ?>
+										<li class="<?= (!empty($page) && $page === 'exam_sitting') ? 'mm-active' : ''; ?>">
+											<a href="<?= base_url('exam-sitting'); ?>">
+												<i class="metismenu-icon"></i>
+												Exam sitting Plan
+											</a>
+										</li>
 										<?php if (menu_clearance_allowed('pendingRegistrations')) { ?>
 										<li>
 											<a href="<?= base_url('pendingRegistrations'); ?>">
