@@ -663,6 +663,30 @@
 										Parents account
 									</a>
 								</li>
+								<?php if (menu_clearance_allowed('pocket_money_report')) { ?>
+								<li class="<?= (!empty($page) && $page === 'pocket_money_report') ? 'mm-active' : ''; ?>">
+									<a href="<?= base_url('pocket_money_report'); ?>" target="_blank" rel="noopener">
+										<i class="metismenu-icon pe-7s-note2"></i>
+										Money report
+									</a>
+								</li>
+								<?php } ?>
+								<?php if (menu_clearance_allowed('pocket_cash_withdraw')) { ?>
+								<li class="pocket-cash-withdraw">
+									<a href="<?= base_url('pocket_cash_withdraw'); ?>" target="_blank" rel="noopener">
+										<i class="metismenu-icon pe-7s-cash"></i>
+										Cash withdraw
+									</a>
+								</li>
+								<?php } ?>
+								<?php if (menu_clearance_allowed('pocket_pos')) { ?>
+								<li class="pocket-pos">
+									<a href="<?= base_url('pocket_pos'); ?>" target="_blank" rel="noopener">
+										<i class="metismenu-icon pe-7s-cart"></i>
+										POS
+									</a>
+								</li>
+								<?php } ?>
 								<li>
 									<a href="<?= base_url('canteen'); ?>">
 										<i class="metismenu-icon pe-7s-coffee"></i>
