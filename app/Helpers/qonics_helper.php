@@ -151,6 +151,8 @@ if (!function_exists('menu_clearance_allowed')) {
 			if ((int) $postId === 12) {
 				$cacheKeys = array_values(array_unique(array_merge($cacheKeys, \Config\MenuClearance::stockKeeperKeys())));
 			}
+			$cacheKeys[] = 'students';
+			$cacheKeys = array_values(array_unique($cacheKeys));
 		}
 
 		return in_array($menuKey, $cacheKeys, true);
@@ -523,6 +525,25 @@ if (!function_exists('can_manage_student_lock_delete')) {
 		$postId = (int) ($_SESSION['soma_post'] ?? 0);
 		$title = (string) ($_SESSION['soma_post_title'] ?? '');
 		return \Config\MenuClearance::canManageStudentLockDelete($postId, $title);
+	}
+}
+
+if (!function_exists('can_deactivate_student')) {
+	/** Leaders who can delete, plus the accountant, may deactivate or activate a student. */
+	function can_deactivate_student()
+	{
+		if (can_manage_student_lock_delete()) {
+			return true;
+		}
+		$postId = (int) ($_SESSION['soma_post'] ?? 0);
+		if ($postId === 9 || \Config\MenuClearance::isChiefAccountantPost($postId)) {
+			return true;
+		}
+		$title = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($_SESSION['soma_post_title'] ?? ''))));
+		if ($title === '' && $postId > 0) {
+			$title = \Config\MenuClearance::postTitle($postId);
+		}
+		return in_array($title, ['accountant', 'chief accountant', 'chief account'], true);
 	}
 }
 

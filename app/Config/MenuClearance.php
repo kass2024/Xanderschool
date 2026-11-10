@@ -401,6 +401,7 @@ class MenuClearance
 				'children' => [
 					['key' => 'register-student', 'label' => 'New Student'],
 					['key' => 'students', 'label' => 'View Students'],
+					['key' => 'exam_sitting', 'label' => 'Exam sitting Plan'],
 					['key' => 'pendingRegistrations', 'label' => 'Pending Registration'],
 					['key' => 'dismissedStudent', 'label' => 'Dismissed Students'],
 					['key' => 'student-cards', 'label' => 'Student Cards'],
@@ -500,6 +501,7 @@ class MenuClearance
 				'children' => [
 					['key' => 'messaging/parents', 'label' => 'Parents Messaging'],
 					['key' => 'messaging/employees', 'label' => 'Employees Messaging'],
+					['key' => 'messaging/students', 'label' => 'Students Messaging'],
 				],
 			],
 			[
@@ -1432,7 +1434,8 @@ class MenuClearance
 		$keys[] = 'marks';
 		$keys[] = 'marks_entry';
 
-		// Students: !is_blocked(2) → everyone except Teacher
+		// View Students is open to every role. Other student tools stay off the classroom Teacher post.
+		$keys[] = 'students';
 		if ($postId !== 2) {
 			$keys = array_merge($keys, self::groupKeys('students'));
 		}

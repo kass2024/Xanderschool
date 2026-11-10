@@ -785,7 +785,9 @@
 															   data-title="<?= esc(trim($student['fname'] . ' ' . $student['lname']) . ' from ' . trim($student['level'] . ' ' . $student['dept_code'] . ' ' . $student['class']) . ' only'); ?>"
 															   data-target="<?= $student['id']; ?>"
 															   data-target-record="<?= (int) $student['record_id']; ?>"
-															   data-href="delete_student"><?= lang("app.del");?></label> |
+															   data-href="delete_student"><?= lang("app.del");?></label>
+														<?php endif; ?>
+														<?php if (function_exists('can_deactivate_student') && can_deactivate_student()): ?>
 														<?=$status;?>
 														<?php endif; ?>
 														<?php if (!empty($student['from_registration'])): ?>

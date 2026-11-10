@@ -52,7 +52,7 @@
 													<td><?= $student['sex']; ?></td>
 													<td><?= $parent; ?></td>
 													<td>
-														<?php if (can_manage_student_lock_delete()): ?>
+														<?php if (function_exists('can_deactivate_student') && can_deactivate_student()): ?>
 														<?=$status;?>
 														<?php endif; ?>
 														<?php if (!empty($student['from_registration'])): ?>

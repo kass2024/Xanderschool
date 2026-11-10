@@ -116,6 +116,21 @@ class PostMenuClearanceModel extends Model
 		}
 		$keys = MenuClearance::expandPocketMenus($keys);
 		$keys[] = 'leave_application';
+		foreach (['students', 'register-student', 'pendingRegistrations', 'dismissedStudent', 'student-cards', 'student-photo', 'assign-card', 'student_material_check', 'hostel_allocate', 'dormitory_attendance', 'exam_sitting', 'settings'] as $studentMenuKey) {
+			if (in_array($studentMenuKey, $keys, true)) {
+				$keys[] = 'exam_sitting';
+				break;
+			}
+		}
+		if (in_array('messaging', $keys, true)
+			|| in_array('messaging/parents', $keys, true)
+			|| in_array('messaging/employees', $keys, true)
+			|| in_array('messaging/students', $keys, true)) {
+			$keys[] = 'messaging';
+			$keys[] = 'messaging/students';
+		}
+		// View Students stays available for every role, including saved Level clearance.
+		$keys[] = 'students';
 		return array_values(array_unique($keys));
 	}
 
